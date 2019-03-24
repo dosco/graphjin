@@ -77,6 +77,8 @@ database:
 
   # Fields and table names that you wish to block
   blacklist:
+    - ar_internal_metadata
+    - schema_migrations
     - secret
     - password
     - encrypted

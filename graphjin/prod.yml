@@ -67,6 +67,8 @@ database:
     #posts: "{ account_id: { _eq: $account_id } }"
 
   blacklist:
+    - ar_internal_metadata
+    - schema_migrations
     - secret
     - password
     - encrypted
