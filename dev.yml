@@ -1,0 +1,85 @@
+title: Super Graph Development
+host_port: 0.0.0.0:8080
+web_ui: true
+debug_level: 1
+
+# Throw a 401 on auth failure for queries that need auth
+# valid values: always, per_query, never
+auth_fail_block: never
+
+# Postgres related enviroment Variables
+# SG_DATABASE_HOST
+# SG_DATABASE_PORT
+# SG_DATABASE_USER
+# SG_DATABASE_PASSWORD
+
+# Auth related enviroment Variables
+# SG_AUTH_SECRET_KEY_BASE
+# SG_AUTH_PUBLIC_KEY_FILE
+# SG_AUTH_URL
+# SG_AUTH_PASSWORD
+
+# inflections:
+#   person: people
+#   sheep: sheep
+
+auth:
+  type: header
+  field_name: X-User-ID
+
+# auth:
+#   type: rails
+#   cookie: _app_session
+#   store: cookie
+#   secret_key_base: caf335bfcfdb04e50db5bb0a4d67ab9...
+
+# auth:
+#   type: rails
+#   cookie: _app_session
+#   store: memcache
+#   host: 127.0.0.1
+
+# auth:
+#   type: rails
+#   cookie: _app_session
+#   store: redis
+#   max_idle: 80,
+#   max_active: 12000,
+#   url: redis://127.0.0.1:6379
+#   password: ""
+
+# auth:
+#   type: jwt
+#   cookie: _app_session
+#   secret: abc335bfcfdb04e50db5bb0a4d67ab9
+#   public_key_file: abc335bfcfdb04e50db5bb0a4d67ab9
+#   public_key_type: ecdsa #rsa
+
+database:
+  type: postgres
+  host: db
+  port: 5432
+  dbname: app_development
+  user: postgres
+  password: ''
+  #pool_size: 10
+  #max_retries: 0
+  #log_level: "debug" 
+
+  # Define variables here that you want to use in filters 
+  variables:
+    account_id: "select account_id from users where id = $user_id"
+
+  # Used to add access to tables 
+  filters:
+    users: "{ id: { _eq: $user_id } }"
+    posts: "{ account_id: { _eq: $account_id } }"
+
+  # Fields and table names that you wish to block
+  blacklist:
+    - secret
+    - password
+    - encrypted
+    - token
+
+  
