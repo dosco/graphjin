@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"regexp"
 	"strings"
 
 	"github.com/dosco/super-graph/psql"
@@ -125,23 +124,11 @@ func initDB() {
 }
 
 func initCompilers() {
-	fv := conf.GetStringMapString("database.filters")
-	fm := make(qcode.FilterMap)
-	for k, v := range fv {
-		fil, err := qcode.CompileFilter(v)
-		if err != nil {
-			panic(err)
-		}
-		key := strings.ToLower(k)
-		fm[key] = fil
-	}
+	filters := conf.GetStringMapString("database.filters")
+	blacklist := conf.GetStringSlice("database.blacklist")
 
-	bv := conf.GetStringSlice("database.blacklist")
-	var bl *regexp.Regexp
-	if len(bv) != 0 {
-		re := fmt.Sprintf("(?i)%s", strings.Join(bv, "|"))
-		bl = regexp.MustCompile(re)
-	}
+	fm := qcode.NewFilterMap(filters)
+	bl := qcode.NewBlacklist(blacklist)
 	qcompile = qcode.NewCompiler(fm, bl)
 
 	schema, err := psql.NewDBSchema(db)
@@ -149,13 +136,8 @@ func initCompilers() {
 		logger.Fatal(err)
 	}
 
-	re := regexp.MustCompile(`(?mi)\$([a-zA-Z0-9_.]+)`)
-	vl := conf.GetStringMapString("database.variables")
-	vars := make(map[string]string)
-
-	for k, v := range vl {
-		vars[k] = re.ReplaceAllString(v, `{{$1}}`)
-	}
+	varlist := conf.GetStringMapString("database.variables")
+	vars := psql.NewVariables(varlist)
 
 	pcompile = psql.NewCompiler(schema, vars)
 }

@@ -40,12 +40,7 @@ type DBRel struct {
 }
 
 func NewDBSchema(db *pg.DB) (*DBSchema, error) {
-	schema := &DBSchema{
-		ColMap:   make(map[TCKey]*DBColumn),
-		ColIDMap: make(map[int]*DBColumn),
-		PCols:    make(map[string]*DBColumn),
-		RelMap:   make(map[TTKey]*DBRel),
-	}
+	schema := initSchema()
 
 	tables, err := GetTables(db)
 	if err != nil {
@@ -57,84 +52,98 @@ func NewDBSchema(db *pg.DB) (*DBSchema, error) {
 		if err != nil {
 			return nil, err
 		}
-		// Current table
-		ct := strings.ToLower(t.Name)
 
-		// Foreign key columns in current table
-		var jcols []*DBColumn
-
-		for _, c := range cols {
-			schema.ColMap[TCKey{ct, strings.ToLower(c.Name)}] = c
-			schema.ColIDMap[c.ID] = c
-		}
-
-		for _, c := range cols {
-			switch {
-			case c.PrimaryKey:
-				schema.PCols[ct] = c
-
-			case len(c.FKeyTable) != 0:
-				if len(c.FKeyColID) == 0 {
-					continue
-				}
-
-				// Foreign key column name
-				ft := strings.ToLower(c.FKeyTable)
-				fc, ok := schema.ColIDMap[c.FKeyColID[0]]
-				if !ok {
-					continue
-				}
-
-				// Belongs-to relation between current table and the
-				// table in the foreign key
-				rel1 := &DBRel{RelBelongTo, "", "", c.Name, fc.Name}
-				schema.RelMap[TTKey{ct, ft}] = rel1
-
-				// One-to-many relation between the foreign key table and the
-				// the current table
-				rel2 := &DBRel{RelOneToMany, "", "", fc.Name, c.Name}
-				schema.RelMap[TTKey{ft, ct}] = rel2
-
-				jcols = append(jcols, c)
-			}
-		}
-
-		// If table contains multiple foreign key columns it's a possible
-		// join table for many-to-many relationships or multiple one-to-many
-		// relations
-
-		// Below one-to-many relations use the current table as the
-		// join table aka through table.
-		if len(jcols) > 1 {
-			col1, col2 := jcols[0], jcols[1]
-
-			t1 := strings.ToLower(col1.FKeyTable)
-			t2 := strings.ToLower(col2.FKeyTable)
-
-			fc1, ok := schema.ColIDMap[col1.FKeyColID[0]]
-			if !ok {
-				continue
-			}
-			fc2, ok := schema.ColIDMap[col2.FKeyColID[0]]
-			if !ok {
-				continue
-			}
-
-			// One-to-many-through relation between 1nd foreign key table and the
-			// 2nd foreign key table
-			//rel1 := &DBRel{RelOneToManyThrough, ct, fc1.Name, col1.Name}
-			rel1 := &DBRel{RelOneToManyThrough, ct, col2.Name, fc2.Name, col1.Name}
-			schema.RelMap[TTKey{t1, t2}] = rel1
-
-			// One-to-many-through relation between 2nd foreign key table and the
-			// 1nd foreign key table
-			//rel2 := &DBRel{RelOneToManyThrough, ct, col2.Name, fc2.Name}
-			rel2 := &DBRel{RelOneToManyThrough, ct, col1.Name, fc1.Name, col2.Name}
-			schema.RelMap[TTKey{t2, t1}] = rel2
-		}
+		updateSchema(schema, t, cols)
 	}
 
 	return schema, nil
+}
+
+func initSchema() *DBSchema {
+	return &DBSchema{
+		ColMap:   make(map[TCKey]*DBColumn),
+		ColIDMap: make(map[int]*DBColumn),
+		PCols:    make(map[string]*DBColumn),
+		RelMap:   make(map[TTKey]*DBRel),
+	}
+}
+
+func updateSchema(schema *DBSchema, t *DBTable, cols []*DBColumn) {
+	// Current table
+	ct := strings.ToLower(t.Name)
+
+	// Foreign key columns in current table
+	var jcols []*DBColumn
+
+	for _, c := range cols {
+		schema.ColMap[TCKey{ct, strings.ToLower(c.Name)}] = c
+		schema.ColIDMap[c.ID] = c
+	}
+
+	for _, c := range cols {
+		switch {
+		case c.PrimaryKey:
+			schema.PCols[ct] = c
+
+		case len(c.FKeyTable) != 0:
+			if len(c.FKeyColID) == 0 {
+				continue
+			}
+
+			// Foreign key column name
+			ft := strings.ToLower(c.FKeyTable)
+			fc, ok := schema.ColIDMap[c.FKeyColID[0]]
+			if !ok {
+				continue
+			}
+
+			// Belongs-to relation between current table and the
+			// table in the foreign key
+			rel1 := &DBRel{RelBelongTo, "", "", c.Name, fc.Name}
+			schema.RelMap[TTKey{ct, ft}] = rel1
+
+			// One-to-many relation between the foreign key table and the
+			// the current table
+			rel2 := &DBRel{RelOneToMany, "", "", fc.Name, c.Name}
+			schema.RelMap[TTKey{ft, ct}] = rel2
+
+			jcols = append(jcols, c)
+		}
+	}
+
+	// If table contains multiple foreign key columns it's a possible
+	// join table for many-to-many relationships or multiple one-to-many
+	// relations
+
+	// Below one-to-many relations use the current table as the
+	// join table aka through table.
+	if len(jcols) > 1 {
+		col1, col2 := jcols[0], jcols[1]
+
+		t1 := strings.ToLower(col1.FKeyTable)
+		t2 := strings.ToLower(col2.FKeyTable)
+
+		fc1, ok := schema.ColIDMap[col1.FKeyColID[0]]
+		if !ok {
+			return
+		}
+		fc2, ok := schema.ColIDMap[col2.FKeyColID[0]]
+		if !ok {
+			return
+		}
+
+		// One-to-many-through relation between 1nd foreign key table and the
+		// 2nd foreign key table
+		//rel1 := &DBRel{RelOneToManyThrough, ct, fc1.Name, col1.Name}
+		rel1 := &DBRel{RelOneToManyThrough, ct, col2.Name, fc2.Name, col1.Name}
+		schema.RelMap[TTKey{t1, t2}] = rel1
+
+		// One-to-many-through relation between 2nd foreign key table and the
+		// 1nd foreign key table
+		//rel2 := &DBRel{RelOneToManyThrough, ct, col2.Name, fc2.Name}
+		rel2 := &DBRel{RelOneToManyThrough, ct, col1.Name, fc1.Name, col2.Name}
+		schema.RelMap[TTKey{t2, t1}] = rel2
+	}
 }
 
 type DBTable struct {

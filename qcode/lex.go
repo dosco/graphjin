@@ -172,7 +172,7 @@ func (l *lexer) accept(valid string) bool {
 	return false
 }
 
-// accept onsumes a run of runes while they are alpha nums
+// acceptAlphaNum consumes a run of runes while they are alpha nums
 func (l *lexer) acceptAlphaNum() bool {
 	n := 0
 	for r := l.next(); isAlphaNumeric(r); r = l.next() {
@@ -180,6 +180,14 @@ func (l *lexer) acceptAlphaNum() bool {
 	}
 	l.backup()
 	return (n != 0)
+}
+
+// acceptComment consumes a run of runes while till the end of line
+func (l *lexer) acceptComment() {
+	n := 0
+	for r := l.next(); !isEndOfLine(r); r = l.next() {
+		n++
+	}
 }
 
 // acceptRun consumes a run of runes from the valid set.
@@ -230,6 +238,10 @@ func lexRoot(l *lexer) stateFn {
 	case isEndOfLine(r):
 		l.ignore()
 	case isSpace(r):
+		l.ignore()
+	case r == '#':
+		l.ignore()
+		l.acceptComment()
 		l.ignore()
 	case r == '@':
 		l.ignore()
