@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/dosco/super-graph/util"
-	"github.com/jinzhu/inflection"
+	"github.com/gobuffalo/flect"
 )
 
 type QCode struct {
@@ -192,11 +192,17 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 		}
 
 		fn := strings.ToLower(field.Name)
+		tn := flect.Pluralize(fn)
 
 		s := &Select{
-			ID:       id,
-			Table:    inflection.Plural(fn),
-			Singular: inflection.Singular(fn),
+			ID:    id,
+			Table: tn,
+		}
+
+		if fn == tn {
+			s.Singular = flect.Singularize(fn)
+		} else {
+			s.Singular = fn
 		}
 
 		if fn == s.Table {

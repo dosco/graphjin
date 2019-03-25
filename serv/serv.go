@@ -11,7 +11,7 @@ import (
 	"github.com/dosco/super-graph/psql"
 	"github.com/dosco/super-graph/qcode"
 	"github.com/go-pg/pg"
-	"github.com/jinzhu/inflection"
+	"github.com/gobuffalo/flect"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -66,7 +66,7 @@ func initConf() {
 	debug = conf.GetInt("debug_level")
 
 	for k, v := range conf.GetStringMapString("inflections") {
-		inflection.AddIrregular(k, v)
+		flect.AddPlural(k, v)
 	}
 
 	conf.SetDefault("host_port", "0.0.0.0:8080")
