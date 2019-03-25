@@ -493,7 +493,8 @@ func renderOrderBy(w io.Writer, sel *qcode.Select) error {
 func (v selectBlock) renderDistinctOn(w io.Writer) {
 	io.WriteString(w, ` DISTINCT ON (`)
 	for i := range v.sel.DistinctOn {
-		fmt.Fprintf(w, `"%s"`, v.sel.DistinctOn[i])
+		fmt.Fprintf(w, `"%s_%d.ob.%s"`,
+			v.sel.Table, v.sel.ID, v.sel.DistinctOn[i])
 
 		if i < len(v.sel.DistinctOn)-1 {
 			io.WriteString(w, ", ")

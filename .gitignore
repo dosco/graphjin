@@ -12,6 +12,10 @@
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
 
+# Profiling output
+*.asm
+*.pdf
+
 ### Go Patch ###
 /vendor
 /Godeps
