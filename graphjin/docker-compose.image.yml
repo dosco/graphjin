@@ -1,0 +1,24 @@
+version: '3.4'
+services:
+  db:
+    image: postgres
+
+  super_graph:
+    image: dosco/super-graph:latest
+    environment:
+      GO_ENV: "development"
+    depends_on:
+      - db
+    ports:
+      - "8080:8080"
+    
+  web:
+    build: example/.
+    command: bash -c "rm -f tmp/pids/server.pid && bundle exec rails s -p 3000 -b '0.0.0.0'"
+    volumes:
+      - ./example:/app
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+      - super_graph
