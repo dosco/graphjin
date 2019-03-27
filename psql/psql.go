@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/dosco/super-graph/qcode"
 	"github.com/dosco/super-graph/util"
@@ -181,7 +182,7 @@ func (v *selectBlock) render(w io.Writer,
 			}
 		}
 
-		io.WriteString(w, ` ) `)
+		io.WriteString(w, `)`)
 	}
 
 	if len(v.sel.Paging.Limit) != 0 {
@@ -246,7 +247,7 @@ type joinClose struct {
 }
 
 func (v *joinClose) render(w io.Writer) error {
-	fmt.Fprintf(w, `) AS "%s_%d.join" ON ('true') `, v.sel.Table, v.sel.ID)
+	fmt.Fprintf(w, `) AS "%s_%d.join" ON ('true')`, v.sel.Table, v.sel.ID)
 	return nil
 }
 
@@ -338,15 +339,15 @@ func (v *selectBlock) renderRelationship(w io.Writer, schema *DBSchema) {
 
 	switch rel.Type {
 	case RelBelongTo:
-		fmt.Fprintf(w, ` (("%s"."%s") = ("%s_%d"."%s"))`,
+		fmt.Fprintf(w, `(("%s"."%s") = ("%s_%d"."%s"))`,
 			v.sel.Table, rel.Col1, v.parent.Table, v.parent.ID, rel.Col2)
 
 	case RelOneToMany:
-		fmt.Fprintf(w, ` (("%s"."%s") = ("%s_%d"."%s"))`,
+		fmt.Fprintf(w, `(("%s"."%s") = ("%s_%d"."%s"))`,
 			v.sel.Table, rel.Col1, v.parent.Table, v.parent.ID, rel.Col2)
 
 	case RelOneToManyThrough:
-		fmt.Fprintf(w, ` (("%s"."%s") = ("%s"."%s"))`,
+		fmt.Fprintf(w, `(("%s"."%s") = ("%s"."%s"))`,
 			v.sel.Table, rel.Col1, rel.Through, rel.Col2)
 
 	}
@@ -379,25 +380,23 @@ func (v *selectBlock) renderWhere(w io.Writer) error {
 			case qcode.OpOr:
 				io.WriteString(w, ` OR `)
 			case qcode.OpNot:
-				io.WriteString(w, ` NOT `)
+				io.WriteString(w, `NOT `)
 			default:
 				return fmt.Errorf("[Where] unexpected value encountered %v", intf)
 			}
 		case *qcode.Exp:
 			switch val.Op {
-			case qcode.OpAnd:
-				st.Push(val.Children[1])
-				st.Push(qcode.OpAnd)
-				st.Push(val.Children[0])
-				continue
-			case qcode.OpOr:
-				st.Push(val.Children[1])
-				st.Push(qcode.OpOr)
-				st.Push(val.Children[0])
+			case qcode.OpAnd, qcode.OpOr:
+				for i := len(val.Children) - 1; i >= 0; i-- {
+					st.Push(val.Children[i])
+					if i > 0 {
+						st.Push(val.Op)
+					}
+				}
 				continue
 			case qcode.OpNot:
-				st.Push(qcode.OpNot)
 				st.Push(val.Children[0])
+				st.Push(qcode.OpNot)
 				continue
 			}
 
@@ -406,6 +405,7 @@ func (v *selectBlock) renderWhere(w io.Writer) error {
 			} else {
 				fmt.Fprintf(w, `(("%s"."%s") `, v.sel.Table, val.Col)
 			}
+			valExists := true
 
 			switch val.Op {
 			case qcode.OpEquals:
@@ -437,19 +437,32 @@ func (v *selectBlock) renderWhere(w io.Writer) error {
 			case qcode.OpNotSimilar:
 				io.WriteString(w, `NOT SIMILAR TO`)
 			case qcode.OpContains:
-				io.WriteString(w, `CONTAINS`)
+				io.WriteString(w, `@>`)
 			case qcode.OpContainedIn:
-				io.WriteString(w, `CONTAINED IN`)
+				io.WriteString(w, `<@`)
 			case qcode.OpHasKey:
-				io.WriteString(w, `HAS KEY`)
+				io.WriteString(w, `?`)
+			case qcode.OpHasKeyAny:
+				io.WriteString(w, `?|`)
+			case qcode.OpHasKeyAll:
+				io.WriteString(w, `?&`)
+			case qcode.OpIsNull:
+				if strings.EqualFold(val.Val, "true") {
+					io.WriteString(w, `IS NULL`)
+				} else {
+					io.WriteString(w, `IS NOT NULL`)
+				}
+				valExists = false
 			default:
 				return fmt.Errorf("[Where] unexpected op code %d", val.Op)
 			}
 
-			if val.Type == qcode.ValList {
-				renderList(w, val)
-			} else {
-				renderVal(w, val, v.vars)
+			if valExists {
+				if val.Type == qcode.ValList {
+					renderList(w, val)
+				} else {
+					renderVal(w, val, v.vars)
+				}
 			}
 
 			io.WriteString(w, `)`)

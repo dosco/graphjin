@@ -86,6 +86,60 @@ const (
 	OpIsNull
 )
 
+func (t ExpOp) String() string {
+	var v string
+
+	switch t {
+	case OpAnd:
+		v = "op-and"
+	case OpOr:
+		v = "op-or"
+	case OpNot:
+		v = "op-not"
+	case OpEquals:
+		v = "op-equals"
+	case OpNotEquals:
+		v = "op-not-equals"
+	case OpGreaterOrEquals:
+		v = "op-greater-or-equals"
+	case OpLesserOrEquals:
+		v = "op-lesser-or-equals"
+	case OpGreaterThan:
+		v = "op-greater-than"
+	case OpLesserThan:
+		v = "op-lesser-than"
+	case OpIn:
+		v = "op-in"
+	case OpNotIn:
+		v = "op-not-in"
+	case OpLike:
+		v = "op-like"
+	case OpNotLike:
+		v = "op-not-like"
+	case OpILike:
+		v = "op-i-like"
+	case OpNotILike:
+		v = "op-not-i-like"
+	case OpSimilar:
+		v = "op-similar"
+	case OpNotSimilar:
+		v = "op-not-similar"
+	case OpContains:
+		v = "op-contains"
+	case OpContainedIn:
+		v = "op-contained-in"
+	case OpHasKey:
+		v = "op-has-key"
+	case OpHasKeyAny:
+		v = "op-has-key-any"
+	case OpHasKeyAll:
+		v = "op-has-key-all"
+	case OpIsNull:
+		v = "op-is-null"
+	}
+	return fmt.Sprintf("<%s>", v)
+}
+
 type ValType int
 
 const (
@@ -95,6 +149,7 @@ const (
 	ValBool
 	ValList
 	ValVar
+	ValNone
 )
 
 type AggregrateOp int
@@ -320,112 +375,20 @@ func (com *Compiler) compileArgNode(val *Node) (*Exp, error) {
 		if !ok || eT == nil {
 			return nil, fmt.Errorf("[Where] unexpected value poped out %v", intf)
 		}
-		node := eT.node
 
-		if com.bl != nil && com.bl.MatchString(node.Name) {
+		if len(eT.node.Name) != 0 &&
+			com.bl != nil && com.bl.MatchString(eT.node.Name) {
 			continue
 		}
 
-		ex := &Exp{}
+		ex, err := newExp(st, eT)
 
-		name := strings.ToLower(node.Name)
-		if name[0] == '_' {
-			name = name[1:]
+		if err != nil {
+			return nil, err
 		}
 
-		switch name {
-		case "and":
-			ex.Op = OpAnd
-			pushChildren(st, ex, node)
-		case "or":
-			ex.Op = OpOr
-			pushChildren(st, ex, node)
-		case "not":
-			ex.Op = OpNot
-			pushChildren(st, ex, node)
-		case "eq", "equals":
-			ex.Op = OpEquals
-			ex.Val = node.Val
-		case "neq", "not_equals":
-			ex.Op = OpNotEquals
-			ex.Val = node.Val
-		case "gt", "greater_than":
-			ex.Op = OpGreaterThan
-			ex.Val = node.Val
-		case "lt", "lesser_than":
-			ex.Op = OpLesserThan
-			ex.Val = node.Val
-		case "gte", "greater_or_equals":
-			ex.Op = OpGreaterOrEquals
-			ex.Val = node.Val
-		case "lte", "lesser_or_equals":
-			ex.Op = OpLesserOrEquals
-			ex.Val = node.Val
-		case "in":
-			ex.Op = OpIn
-			setListVal(ex, node)
-		case "nin", "not_in":
-			ex.Op = OpNotIn
-			setListVal(ex, node)
-		case "like":
-			ex.Op = OpLike
-			ex.Val = node.Val
-		case "nlike", "not_like":
-			ex.Op = OpNotLike
-			ex.Val = node.Val
-		case "ilike":
-			ex.Op = OpILike
-			ex.Val = node.Val
-		case "nilike", "not_ilike":
-			ex.Op = OpILike
-			ex.Val = node.Val
-		case "similar":
-			ex.Op = OpSimilar
-			ex.Val = node.Val
-		case "nsimilar", "not_similar":
-			ex.Op = OpNotSimilar
-			ex.Val = node.Val
-		case "contains":
-			ex.Op = OpContains
-			ex.Val = node.Val
-		case "contained_in":
-			ex.Op = OpContainedIn
-			ex.Val = node.Val
-		case "has_key":
-			ex.Op = OpHasKey
-			ex.Val = node.Val
-		case "has_key_any":
-			ex.Op = OpHasKeyAny
-			ex.Val = node.Val
-		case "has_key_all":
-			ex.Op = OpHasKeyAll
-			ex.Val = node.Val
-		case "is_null":
-			ex.Op = OpIsNull
-			ex.Val = node.Val
-		default:
-			pushChildren(st, eT.parent, node)
-			continue // skip node
-		}
-
-		if ex.Op != OpAnd && ex.Op != OpOr && ex.Op != OpNot {
-			switch node.Type {
-			case nodeStr:
-				ex.Type = ValStr
-			case nodeInt:
-				ex.Type = ValInt
-			case nodeBool:
-				ex.Type = ValBool
-			case nodeFloat:
-				ex.Type = ValFloat
-			case nodeList:
-				ex.Type = ValList
-			case nodeVar:
-				ex.Type = ValVar
-			default:
-				return nil, fmt.Errorf("[Where] valid values include string, int, float, boolean and list: %s", node.Type)
-			}
-			setWhereColName(ex, node)
+		if ex == nil {
+			continue
 		}
 
 		if eT.parent == nil {
@@ -561,6 +524,118 @@ func compileMutate() (*Query, error) {
 
 func compileSub() (*Query, error) {
 	return nil, nil
+}
+
+func newExp(st *util.Stack, eT *expT) (*Exp, error) {
+	ex := &Exp{}
+	node := eT.node
+
+	if len(node.Name) == 0 {
+		pushChildren(st, eT.parent, node)
+		return nil, nil
+	}
+
+	name := strings.ToLower(node.Name)
+	if name[0] == '_' {
+		name = name[1:]
+	}
+
+	switch name {
+	case "and":
+		ex.Op = OpAnd
+		pushChildren(st, ex, node)
+	case "or":
+		ex.Op = OpOr
+		pushChildren(st, ex, node)
+	case "not":
+		ex.Op = OpNot
+		st.Push(&expT{ex, node.Children[0]})
+	case "eq", "equals":
+		ex.Op = OpEquals
+		ex.Val = node.Val
+	case "neq", "not_equals":
+		ex.Op = OpNotEquals
+		ex.Val = node.Val
+	case "gt", "greater_than":
+		ex.Op = OpGreaterThan
+		ex.Val = node.Val
+	case "lt", "lesser_than":
+		ex.Op = OpLesserThan
+		ex.Val = node.Val
+	case "gte", "greater_or_equals":
+		ex.Op = OpGreaterOrEquals
+		ex.Val = node.Val
+	case "lte", "lesser_or_equals":
+		ex.Op = OpLesserOrEquals
+		ex.Val = node.Val
+	case "in":
+		ex.Op = OpIn
+		setListVal(ex, node)
+	case "nin", "not_in":
+		ex.Op = OpNotIn
+		setListVal(ex, node)
+	case "like":
+		ex.Op = OpLike
+		ex.Val = node.Val
+	case "nlike", "not_like":
+		ex.Op = OpNotLike
+		ex.Val = node.Val
+	case "ilike":
+		ex.Op = OpILike
+		ex.Val = node.Val
+	case "nilike", "not_ilike":
+		ex.Op = OpILike
+		ex.Val = node.Val
+	case "similar":
+		ex.Op = OpSimilar
+		ex.Val = node.Val
+	case "nsimilar", "not_similar":
+		ex.Op = OpNotSimilar
+		ex.Val = node.Val
+	case "contains":
+		ex.Op = OpContains
+		ex.Val = node.Val
+	case "contained_in":
+		ex.Op = OpContainedIn
+		ex.Val = node.Val
+	case "has_key":
+		ex.Op = OpHasKey
+		ex.Val = node.Val
+	case "has_key_any":
+		ex.Op = OpHasKeyAny
+		ex.Val = node.Val
+	case "has_key_all":
+		ex.Op = OpHasKeyAll
+		ex.Val = node.Val
+	case "is_null":
+		ex.Op = OpIsNull
+		ex.Val = node.Val
+	default:
+		pushChildren(st, eT.parent, node)
+		return nil, nil // skip node
+	}
+
+	if ex.Op != OpAnd && ex.Op != OpOr && ex.Op != OpNot {
+		switch node.Type {
+		case nodeStr:
+			ex.Type = ValStr
+		case nodeInt:
+			ex.Type = ValInt
+		case nodeBool:
+			ex.Type = ValBool
+		case nodeFloat:
+			ex.Type = ValFloat
+		case nodeList:
+			ex.Type = ValList
+		case nodeVar:
+			ex.Type = ValVar
+		default:
+			return nil, fmt.Errorf("[Where] valid values include string, int, float, boolean and list: %s", node.Type)
+		}
+		setWhereColName(ex, node)
+	}
+
+	return ex, nil
 }
 
 func setListVal(ex *Exp, node *Node) {

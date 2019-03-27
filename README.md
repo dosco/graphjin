@@ -2,13 +2,13 @@
 
 ## Instant GraphQL API for Rails. Zero code.
 
-Get an instant high-performance GraphQL API for your Rails apps in seconds. Super Graph will auto learn your database structure and relationships. Built in support for Rails authentication and for JWT tokens.
+Get an high-performance GraphQL API for your Rails app in seconds. Super Graph will auto learn your database structure and relationships. Built in support for Rails authentication and JWT tokens.
 
 ## Back story and motivation
 
-I have a Rails app that gets a bit of traffic. Having planned to improve the UI using React or Vue I found that my current APIs didn't have the data I needed. I was too lazy to build new controllers. My controllers were esentially wrappers around database queries and I didn't enjoy having to figure out new REST APIs with paths, names and methods to fetch all this new data.
+I have a Rails app that gets a bit of traffic. Having planned to improve the UI using React or Vue I found that my current APIs didn't have the data I needed and I was too lazy to build new endpoints. My controllers were esentially wrappers around database queries and I didn't enjoy having to figure out new REST APIs with paths, names and methods to fetch all this new data or write the active record code needed.
 
-I always liked GraphQL and how simplifies things for web devs. On the backend however GraphQL seemed overly complex as it still required me to write a lot of the same database query code. I wanted a GraphQL server that just worked the second you deployed it without having to write a line of code.
+I always liked GraphQL and how simple it makes things for web devs. On the backend however GraphQL seemed overly complex as it still required me to write a lot of the same database query code. I wanted a GraphQL server that just worked the second you deployed it without having to write a line of code.
 
 And so after a lot of coffee and some avocado toasts we now have Super Graph, an instant GraphQL API that is high performance and quick to deploy. One service to rule all your database querying needs.
 
@@ -17,9 +17,9 @@ And so after a lot of coffee and some avocado toasts we now have Super Graph, an
 - Belongs-To, One-To-Many and Many-To-Many table relationships
 - Devise, Warden encrypted and signed session cookies
 - Redis, Memcache and Cookie session stores
-- Generates highly optimized Postgres SQL quries
+- Generates highly optimized Postgres SQL queries
 - Customize through a simple config file
-- High performance GoLang codebase
+- High performance GO codebase
 - Tiny docker image and low memory requirements
 
 ### GraphQL (GQL)
@@ -50,7 +50,6 @@ query {
 The above GQL query returns the JSON result below. It handles all
 kinds of complexity without you writing a line of code. For example there is a while greater than `gt` and a limit clause on a child field. And the `avatar` field is renamed to `picture`. The `password` field is blocked and not returned. Finally the relationship between the `users` table and the `products` table is auto discovered and used.
 
-
 #### JSON Result
 
 ```json
@@ -76,17 +75,17 @@ kinds of complexity without you writing a line of code. For example there is a w
   }
 }
 ```
-
 ## Try it out
-
-Please be patient on the first run Go has to download packages and this
-can be a little slow.
 
 ```console
 $ docker-compose run web rake db:create db:migrate db:seed
-$ docker-compose up
+$ docker-compose -f docker-compose.image.yml up
 $ open http://localhost:8080
 ```
+
+The above command will download the latest docker image for Super Graph and use it to run an example that includes a Postgres DB and a simple Rails ecommerce store app. If you want to build and run Super Graph from code then use the following command instead `docker-compose up`
+
+#### How to try with an authenticated user
 
 In development mode you can use the `X-User-ID: 4` header to set a user id so you don't have to worries about cookies etc. This can be set using the *HTTP Headers* tab at the bottom of the web UI you'll see when you visit the above link. You can also directly run quries from the commandline like shown below.
 
@@ -99,11 +98,9 @@ curl 'http://localhost:8080/api/v1/graphql' \
   --data-binary '{"query":"{ products { name price users { email }}}"}'
 ```
 
-## How to GQL
+## How to GraphQL
 
-GQL is a simple query language that is fast replacing REST APIs. GQL is great
-since it allows web developers to fetch the exact data that they need without 
-depending on changes to backend code.
+GraphQL / GQL is a simple query syntax that is fast replacing REST APIs. GQL is great since it allows web developers to fetch the exact data that they need without depending on changes to backend code. Also if you squint hard enough it looks a little bit like JSON :)
 
 The below query will fetch a `users` name, email and avatar image renamed as picture. If you also need the users `id` then just add it to the query.
 
@@ -118,6 +115,39 @@ query {
 ```
 
 Super Graph support complex quries where you can add filters, ordering, offsets and limits on the query.
+
+#### Logical Operators
+
+Name | Example | Explained |
+--- | --- | --- |
+and | price : { and : { gt: 10.5, lt: 20 } | price > 10.5 AND price < 20
+or |  or : { price : { greater_than : 20 }, quantity: { gt : 0 } }  | price >= 20 OR quantity > 0
+not | not: { or : { quantity : { eq: 0 }, price : { eq: 0 } } } | NOT (quantity = 0 OR price = 0)
+
+#### Other conditions
+
+Name | Example | Explained |
+--- | --- | --- |
+eq, equals | id : { eq: 100 } | id = 100 
+neq, not_equals | id: { not_equals: 100 } | id != 100
+gt, greater_than | id: { gt: 100 } | id > 100
+lt, lesser_than | id: { gt: 100 } | id < 100
+gte, greater_or_equals | id: { gte: 100 } | id >= 100
+lte, lesser_or_equals | id: { lesser_or_equals: 100 } | id <= 100
+in | status: { in: [ "A", "B", "C" ] } | status IN ('A', 'B', 'C)
+nin, not_in | status: { in: [ "A", "B", "C" ] } | status IN ('A', 'B', 'C)
+like | name: { like "phil%" } | Names starting with 'phil'
+nlike, not_like | name: { nlike "v%m" } | Not names starting with 'v' and ending with 'm'
+ilike | name: { ilike "%wOn" } | Names ending with 'won' case-insensitive
+nilike, not_ilike | name: { nilike "%wOn" } | Not names ending with 'won' case-insensitive
+similar | name: { similar: "%(b\|d)%" } | [Similar Docs](https://www.postgresql.org/docs/9/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP)
+nsimilar, not_similar | name: { nsimilar: "%(b\|d)%" } | [Not Similar Docs](https://www.postgresql.org/docs/9/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP)
+has_key | column: { has_key: 'b' } | Does JSON column contain this key
+has_key_any | column: { has_key_any: [ a, b ] } | Does JSON column contain any of these keys
+has_key_all | column: [ a, b ] | Does JSON column contain all of this keys
+contains | column: { contains: [1, 2, 4] } | Is this array/json column a subset of value
+contained_in | column: { contains: "{'a':1, 'b':2}" } | Is this array/json column a subset of these value
+is_null | column: { is_null: true } | Is column value null or not
 
 ```javascript
 query {

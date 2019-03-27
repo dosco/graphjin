@@ -332,13 +332,10 @@ func (p *Parser) parseArgs() ([]*Arg, error) {
 	return args, nil
 }
 
-func (p *Parser) parseList(parent *Node) ([]*Node, error) {
+func (p *Parser) parseList() (*Node, error) {
+	parent := &Node{}
 	var nodes []*Node
 	var ty parserType
-
-	if parent == nil {
-		return nil, errors.New("list needs a parent")
-	}
 
 	for {
 		if p.peek(itemListClose) {
@@ -356,6 +353,7 @@ func (p *Parser) parseList(parent *Node) ([]*Node, error) {
 				return nil, errors.New("All values in a list must be of the same type")
 			}
 		}
+		node.Parent = parent
 		nodes = append(nodes, node)
 	}
 	if len(nodes) == 0 {
@@ -365,15 +363,12 @@ func (p *Parser) parseList(parent *Node) ([]*Node, error) {
 	parent.Type = nodeList
 	parent.Children = nodes
 
-	return nodes, nil
+	return parent, nil
 }
 
-func (p *Parser) parseObj(parent *Node) ([]*Node, error) {
+func (p *Parser) parseObj() (*Node, error) {
+	parent := &Node{}
 	var nodes []*Node
-
-	if parent == nil {
-		return nil, errors.New("object needs a parent")
-	}
 
 	for {
 		if p.peek(itemObjClose) {
@@ -403,52 +398,40 @@ func (p *Parser) parseObj(parent *Node) ([]*Node, error) {
 	parent.Type = nodeObj
 	parent.Children = nodes
 
-	return nodes, nil
+	return parent, nil
 }
 
 func (p *Parser) parseValue() (*Node, error) {
-	node := &Node{}
-
-	var done bool
-	var err error
-
 	if p.peek(itemListOpen) {
 		p.ignore()
-		node.Children, err = p.parseList(node)
-		done = true
+		return p.parseList()
 	}
 
 	if p.peek(itemObjOpen) {
 		p.ignore()
-		node.Children, err = p.parseObj(node)
-		done = true
+		return p.parseObj()
 	}
 
-	if err != nil {
-		return nil, err
-	}
+	item := p.next()
+	node := &Node{}
 
-	if !done {
-		item := p.next()
-
-		switch item.typ {
-		case itemIntVal:
-			node.Type = nodeInt
-		case itemFloatVal:
-			node.Type = nodeFloat
-		case itemStringVal:
-			node.Type = nodeStr
-		case itemBoolVal:
-			node.Type = nodeBool
-		case itemName:
-			node.Type = nodeStr
-		case itemVariable:
-			node.Type = nodeVar
-		default:
-			return nil, fmt.Errorf("expecting a number, string, object, list or variable as an argument value (not %s)", p.next().val)
-		}
-		node.Val = item.val
+	switch item.typ {
+	case itemIntVal:
+		node.Type = nodeInt
+	case itemFloatVal:
+		node.Type = nodeFloat
+	case itemStringVal:
+		node.Type = nodeStr
+	case itemBoolVal:
+		node.Type = nodeBool
+	case itemName:
+		node.Type = nodeStr
+	case itemVariable:
+		node.Type = nodeVar
+	default:
+		return nil, fmt.Errorf("expecting a number, string, object, list or variable as an argument value (not %s)", p.next().val)
 	}
+	node.Val = item.val
 
 	return node, nil
 }
