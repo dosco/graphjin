@@ -16,7 +16,8 @@ RUN go get github.com/pilu/fresh
 #second stage
 FROM alpine:latest
 WORKDIR /app
-RUN apk add --no-cache tzdata
+RUN apk add --no-cache tzdata && \
+    mkdir -p /app/web/build
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /app/service .
