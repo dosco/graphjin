@@ -3,7 +3,7 @@ RUN apk update && \
     apk add --no-cache git && \
     apk add --no-cache upx=3.95-r1
 
-RUN go get github.com/GeertJohan/go.rice/rice && \
+RUN go get github.com/mjibson/esc && \
     go get github.com/pilu/fresh
 
 WORKDIR /app
@@ -11,7 +11,7 @@ ADD . /app
 
 ENV GO111MODULE=on
 RUN go mod vendor
-RUN rice -i ./serv embed-go && \
+RUN go generate ./... && \
     CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o service && \
     upx --ultra-brute -qq service && \
     upx -t service
