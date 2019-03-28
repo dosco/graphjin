@@ -3,8 +3,8 @@ RUN apk update && \
     apk add --no-cache git && \
     apk add --no-cache upx=3.95-r1
 
-RUN go get github.com/mjibson/esc && \
-    go get github.com/pilu/fresh
+RUN go get -u github.com/dosco/esc && \
+    go get -u github.com/pilu/fresh
 
 WORKDIR /app
 ADD . /app
