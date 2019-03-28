@@ -8,7 +8,6 @@ import (
 	"os"
 	"strings"
 
-	rice "github.com/GeertJohan/go.rice"
 	"github.com/dosco/super-graph/psql"
 	"github.com/dosco/super-graph/qcode"
 	"github.com/go-pg/pg"
@@ -16,6 +15,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
+
+//go:generate esc -o static.go -private -pkg serv ../web/build
 
 const (
 	authFailBlockAlways = iota + 1
@@ -152,8 +153,7 @@ func InitAndListen() {
 	http.HandleFunc("/api/v1/graphql", withAuth(apiv1Http))
 
 	if conf.GetBool("web_ui") {
-		webUI := rice.MustFindBox("../web/build").HTTPBox()
-		http.Handle("/", http.FileServer(webUI))
+		http.Handle("/", http.FileServer(_escFS(false)))
 	}
 
 	hp := conf.GetString("host_port")
