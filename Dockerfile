@@ -1,13 +1,12 @@
 FROM golang:1.12-alpine as builder
 RUN apk update && \
-    apk add --no-cache git && \
     apk add --no-cache upx=3.95-r1
-
-COPY . /app
-WORKDIR /app
 
 RUN go get github.com/GeertJohan/go.rice/rice && \
     go get github.com/pilu/fresh
+
+WORKDIR /app
+ADD . /app
 
 ENV GO111MODULE=on
 RUN go mod vendor
