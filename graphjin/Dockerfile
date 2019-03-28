@@ -6,22 +6,23 @@ RUN apk update && \
 COPY . /app
 WORKDIR /app
 
+RUN go get github.com/GeertJohan/go.rice/rice && \
+    go get github.com/pilu/fresh
+
 ENV GO111MODULE=on
+RUN cd serv && rice embed-go
+RUN go mod vendor
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o service && \
     upx --ultra-brute -qq service && \
     upx -t service
-    
-RUN go get github.com/pilu/fresh
 
 #second stage
 FROM alpine:latest
 WORKDIR /app
-RUN apk add --no-cache tzdata && \
-    mkdir -p /app/web/build
+RUN apk add --no-cache tzdata
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /app/service .
-COPY web/build /app/web/build/
 COPY dev.yml .
 
 RUN chmod +x /app/service
