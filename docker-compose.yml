@@ -16,7 +16,7 @@ services:
     volumes:
       - .:/app
     working_dir: /app
-    command: bash -c "fresh -c fresh.conf"
+    command: fresh -c fresh.conf
     
   web:
     build: example/.

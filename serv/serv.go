@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	rice "github.com/GeertJohan/go.rice"
 	"github.com/dosco/super-graph/psql"
 	"github.com/dosco/super-graph/qcode"
 	"github.com/go-pg/pg"
@@ -151,8 +152,8 @@ func InitAndListen() {
 	http.HandleFunc("/api/v1/graphql", withAuth(apiv1Http))
 
 	if conf.GetBool("web_ui") {
-		fs := http.FileServer(http.Dir("web/build"))
-		http.Handle("/", fs)
+		webUI := rice.MustFindBox("../web/build").HTTPBox()
+		http.Handle("/", http.FileServer(webUI))
 	}
 
 	hp := conf.GetString("host_port")
