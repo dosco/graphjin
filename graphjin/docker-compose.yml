@@ -6,7 +6,7 @@ services:
   super_graph:
     build:
       context: .
-      target: builder
+      target: go-build
     environment:
       GO_ENV: "development"
     depends_on:
