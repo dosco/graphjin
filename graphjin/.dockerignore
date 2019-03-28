@@ -1,5 +1,3 @@
 example
 tmp
-web
-!web/build
 *.md
