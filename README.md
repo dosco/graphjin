@@ -234,7 +234,7 @@ auth:
 #   type: jwt
 #   cookie: _app_session
 #   secret: abc335bfcfdb04e50db5bb0a4d67ab9
-#   public_key_file: abc335bfcfdb04e50db5bb0a4d67ab9
+#   public_key_file: /secrets/public_key.pem
 #   public_key_type: ecdsa #rsa
 
 database:
@@ -283,10 +283,44 @@ SG_AUTH_URL
 SG_AUTH_PASSWORD
 ```
 
+## Authentication
+
+You can only have one type of authentication enabled. You can either pick Rails or JWT. Uncomment the one you use and leave the rest commented out.
+
+#### JWT Tokens
+
+```yaml
+auth:
+  type: jwt
+  provider: auth0 #none
+  cookie: _app_session
+  secret: abc335bfcfdb04e50db5bb0a4d67ab9
+  public_key_file: /secrets/public_key.pem
+  public_key_type: ecdsa #rsa
+```
+
+For JWT tokens we currently support tokens from a provider like Auth0
+or if you have a custom solution then we look for the `user_id` in the
+`subject` claim of of the `id token`. If you pick Auth0 then we derive two variables from the token `user_id` and `user_id_provider` for to use in your filters.
+
+We can get the JWT token either from the `authorization` header where we expect it to be a `bearer` token or if `cookie` is specified then we look there.
+
+For verified either a `secret` or a public key (ecdsa or rsa) is required. When using public keys they have to be in a PEM format file.
+
 ## Deployment
 
-How do I deploy the Super Graph service with my existing rails app? You have several options here. Esentially you need to ensure your app's session cookie
-will be passed to this service. 
+How do I deploy the Super Graph service with my existing rails app? You have several options here. Esentially you need to ensure your app's session cookie will be passed to this service. 
+
+#### Custom Docker Image
+
+Create a `Dockerfile` like the one below to roll your own
+custom Super Graph docker image. And to build it `docker build -t my-super-graph .`
+
+```dockerfile
+FROM dosco/super-graph:latest
+WORKDIR /app
+COPY *.yml ./
+```
 
 #### Deploy under a subdomain
 For this to work you have to ensure that the option `:domain => :all` is added to your rails app config `Application.config.session_store` this will cause your rails app to create session cookies that can be shared with sub-domains. More info here <http://excid3.com/blog/sharing-a-devise-user-session-across-subdomains-with-rails-3/>

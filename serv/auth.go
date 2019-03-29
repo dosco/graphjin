@@ -15,8 +15,9 @@ const (
 )
 
 var (
-	userIDKey      = struct{}{}
-	errSessionData = errors.New("error decoding session data")
+	userIDProviderKey = struct{}{}
+	userIDKey         = struct{}{}
+	errSessionData    = errors.New("error decoding session data")
 )
 
 func headerHandler(next http.HandlerFunc) http.HandlerFunc {

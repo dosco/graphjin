@@ -1,7 +1,7 @@
 module github.com/dosco/super-graph
 
 require (
-  github.com/adjust/gorails v0.0.0-20171013043634-2786ed0c03d3
+	github.com/adjust/gorails v0.0.0-20171013043634-2786ed0c03d3
 	github.com/bradfitz/gomemcache v0.0.0-20180710155616-bc664df96737
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/garyburd/redigo v1.6.0

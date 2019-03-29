@@ -4,14 +4,26 @@ import (
 	"context"
 	"io/ioutil"
 	"net/http"
+	"strings"
 
 	jwt "github.com/dgrijalva/jwt-go"
 )
 
+const (
+	jwtBase int = iota
+	jwtAuth0
+)
+
 func jwtHandler(next http.HandlerFunc) http.HandlerFunc {
 	var key interface{}
+	var jwtProvider int
 
 	cookie := conf.GetString("auth.cookie")
+
+	provider := conf.GetString("auth.provider")
+	if provider == "auth0" {
+		jwtProvider = jwtAuth0
+	}
 
 	conf.BindEnv("auth.secret", "SG_AUTH_SECRET")
 	secret := conf.GetString("auth.secret")
@@ -75,7 +87,17 @@ func jwtHandler(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		if claims, ok := token.Claims.(*jwt.StandardClaims); ok {
-			ctx := context.WithValue(r.Context(), userIDKey, claims.Id)
+			ctx := r.Context()
+
+			if jwtProvider == jwtAuth0 {
+				sub := strings.Split(claims.Subject, "|")
+				if len(sub) != 2 {
+					ctx = context.WithValue(ctx, userIDProviderKey, sub[0])
+					ctx = context.WithValue(ctx, userIDKey, sub[1])
+				}
+			} else {
+				ctx = context.WithValue(ctx, userIDKey, claims.Subject)
+			}
 			next.ServeHTTP(w, r.WithContext(ctx))
 		}
 
