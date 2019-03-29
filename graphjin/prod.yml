@@ -43,9 +43,10 @@ auth:
 
 # auth:
 #   type: jwt
+#   provider: auth0
 #   cookie: _app_session
 #   secret: abc335bfcfdb04e50db5bb0a4d67ab9
-#   public_key_file: abc335bfcfdb04e50db5bb0a4d67ab9
+#   public_key_file: /secrets/public_key.pem
 #   public_key_type: ecdsa #rsa
 
 database:

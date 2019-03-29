@@ -2,3 +2,4 @@ example
 tmp
 *.md
 web/build
+docker-compose.*

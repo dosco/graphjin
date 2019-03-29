@@ -153,15 +153,24 @@ func authCheck(ctx context.Context) bool {
 }
 
 func varValues(ctx context.Context) map[string]interface{} {
-	userIDFn := fasttemplate.TagFunc(func(w io.Writer, _ string) (int, error) {
+	uidFn := fasttemplate.TagFunc(func(w io.Writer, _ string) (int, error) {
 		if v := ctx.Value(userIDKey); v != nil {
 			return w.Write([]byte(v.(string)))
 		}
 		return 0, errNoUserID
 	})
 
+	uidpFn := fasttemplate.TagFunc(func(w io.Writer, _ string) (int, error) {
+		if v := ctx.Value(userIDProviderKey); v != nil {
+			return w.Write([]byte(v.(string)))
+		}
+		return 0, errNoUserID
+	})
+
 	return map[string]interface{}{
-		"USER_ID": userIDFn,
-		"user_id": userIDFn,
+		"USER_ID":          uidFn,
+		"user_id":          uidFn,
+		"USER_ID_PROVIDER": uidpFn,
+		"user_id_provider": uidpFn,
 	}
 }
