@@ -16,7 +16,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-//go:generate esc -o static.go -private --prefix ../web/build -pkg serv ../web/build
+//go:generate esc -o static.go -prefix ../web/build -private -pkg serv ../web/build
 
 const (
 	authFailBlockAlways = iota + 1
