@@ -4,6 +4,8 @@
 
 Get an high-performance GraphQL API for your Rails app in seconds. Super Graph will auto learn your database structure and relationships. Built in support for Rails authentication and JWT tokens.
 
+![Super Graph Web UI](web/public/super-graph-web-ui.png?raw=true "Super Graph Web UI for web developers")
+
 ## Back story and motivation
 
 I have a Rails app that gets a bit of traffic. Having planned to improve the UI using React or Vue I found that my current APIs didn't have the data I needed and I was too lazy to build new endpoints. My controllers were esentially wrappers around database queries and I didn't enjoy having to figure out new REST APIs with paths, names and methods to fetch all this new data or write the active record code needed.
@@ -83,7 +85,16 @@ $ docker-compose -f docker-compose.image.yml up
 $ open http://localhost:8080
 ```
 
-The above command will download the latest docker image for Super Graph and use it to run an example that includes a Postgres DB and a simple Rails ecommerce store app. If you want to build and run Super Graph from code then use the following command instead `docker-compose up`
+The above command will download the latest docker image for Super Graph and use it to run an example that includes a Postgres DB and a simple Rails ecommerce store app. 
+
+If you want to build and run Super Graph from code then the below commands will build the web ui and launch Super Graph in developer mode with a water for code changes.
+
+```console
+$ brew install yarn
+$ (cd web && yarn install && yarn build)
+$ go generate ./...
+$ docker-compose up
+```
 
 #### How to try with an authenticated user
 
@@ -172,9 +183,6 @@ query {
   }
 }
 ```
-
-## Web UI for web developers
-![Super Graph Web UI](web/public/super-graph-web-ui.png?raw=true "Super Graph Web UI for web developers")
 
 ## Configuration
 
