@@ -317,6 +317,26 @@ func TestCompileGQLManyToManyReverse(t *testing.T) {
 	}
 }
 
+func TestCompileGQLAggFunction(t *testing.T) {
+	gql := `query {
+		products {
+			name
+			count_price
+		}
+	}`
+
+	sql := `SELECT json_object_agg('products', products) FROM (SELECT coalesce(json_agg("products"), '[]') AS "products" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."name" AS "name", "products_0"."count_price" AS "count_price") AS "sel_0")) AS "products" FROM (SELECT "products"."name", count("products"."price") AS count_price FROM "products" GROUP BY "products"."name" LIMIT ('20') :: integer) AS "products_0" LIMIT ('20') :: integer) AS "products_0") AS "done_1337";`
+
+	resSQL, err := compileGQLToPSQL(gql)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if resSQL != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
 func BenchmarkCompileGQLToSQL(b *testing.B) {
 	gql := `query {
 		products(
