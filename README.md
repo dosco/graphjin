@@ -160,6 +160,34 @@ contains | column: { contains: [1, 2, 4] } | Is this array/json column a subset 
 contained_in | column: { contains: "{'a':1, 'b':2}" } | Is this array/json column a subset of these value
 is_null | column: { is_null: true } | Is column value null or not
 
+#### Aggregation
+
+You will often find the need to fetch aggregated values from the database such as `count`, `max`, `min`, etc. This is simple to go with GraphQL just prefix the aggregation name to the field name that you want to aggregrate. The below query will group products by name and find the minimum price for each group. Notice the `min_price` field we're adding `min_` to price.
+
+```gql
+query {
+  products {
+    name
+    min_price
+  }
+}
+```
+
+Name | Explained |
+--- | --- |
+avg | Average value
+count | Count the values
+max | Maximum value
+min | Minimum  value
+stddev | [Standard Deviation](https://en.wikipedia.org/wiki/Standard_deviation)
+stddev_pop | Population Standard Deviation
+stddev_samp | Sample Standard Deviation
+variance | [Variance](https://en.wikipedia.org/wiki/Variance)
+var_pop | Population Standard Variance
+var_samp | Sample Standard variance
+
+All kinds of quries are possible with GraphQL below is an example that uses a lot of the features available to web devs using GraphQL to get the exact data they need. Comments are also valid within queries.
+
 ```javascript
 query {
   products(

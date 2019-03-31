@@ -109,8 +109,6 @@ type selectBlock struct {
 func (v *selectBlock) render(w io.Writer,
 	schema *DBSchema, childCols []*qcode.Column, childIDs []int) error {
 
-	isNotRoot := (v.parent != nil)
-	hasFilters := (v.sel.Where != nil)
 	hasOrder := len(v.sel.OrderBy) != 0
 
 	// SELECT
@@ -156,46 +154,11 @@ func (v *selectBlock) render(w io.Writer,
 	}
 	// END-SELECT
 
-	// FROM
-	io.WriteString(w, " FROM (SELECT ")
-
-	// Local column names
-	v.renderLocalColumns(w, append(v.sel.Cols, childCols...))
-
-	fmt.Fprintf(w, ` FROM "%s"`, v.sel.Table)
-
-	if isNotRoot || hasFilters {
-		if isNotRoot {
-			v.renderJoinTable(w, schema, childIDs)
-		}
-
-		io.WriteString(w, ` WHERE (`)
-
-		if isNotRoot {
-			v.renderRelationship(w, schema)
-		}
-
-		if hasFilters {
-			err := v.renderWhere(w)
-			if err != nil {
-				return err
-			}
-		}
-
-		io.WriteString(w, `)`)
+	// FROM (SELECT .... )
+	err = v.renderBaseSelect(w, schema, childCols, childIDs)
+	if err != nil {
+		return err
 	}
-
-	if len(v.sel.Paging.Limit) != 0 {
-		fmt.Fprintf(w, ` LIMIT ('%s') :: integer`, v.sel.Paging.Limit)
-	} else {
-		io.WriteString(w, ` LIMIT ('20') :: integer`)
-	}
-
-	if len(v.sel.Paging.Offset) != 0 {
-		fmt.Fprintf(w, ` OFFSET ('%s') :: integer`, v.sel.Paging.Offset)
-	}
-
-	fmt.Fprintf(w, `) AS "%s_%d"`, v.sel.Table, v.sel.ID)
 	// END-FROM
 
 	return nil
@@ -297,18 +260,94 @@ func (v *selectBlock) renderJoinedColumns(w io.Writer, childIDs []int) error {
 	return nil
 }
 
-func (v *selectBlock) renderLocalColumns(w io.Writer, columns []*qcode.Column) {
-	for i, col := range columns {
-		if len(col.Table) != 0 {
-			fmt.Fprintf(w, `"%s"."%s"`, col.Table, col.Name)
-		} else {
-			fmt.Fprintf(w, `"%s"."%s"`, v.sel.Table, col.Name)
+func (v *selectBlock) renderBaseSelect(w io.Writer, schema *DBSchema, childCols []*qcode.Column, childIDs []int) error {
+	var groupBy []int
+
+	isNotRoot := (v.parent != nil)
+	hasFilters := (v.sel.Where != nil)
+
+	io.WriteString(w, " FROM (SELECT ")
+
+	for i, col := range v.sel.Cols {
+		cn := col.Name
+		fn := ""
+
+		if _, ok := v.schema.ColMap[TCKey{v.sel.Table, cn}]; !ok {
+			pl := funcPrefixLen(cn)
+			if pl == 0 {
+				continue
+			}
+			fn = cn[0 : pl-1]
+			cn = cn[pl:]
 		}
 
-		if i < len(columns)-1 {
+		if len(fn) != 0 {
+			fmt.Fprintf(w, `%s("%s"."%s") AS %s`, fn, v.sel.Table, cn, col.Name)
+		} else {
+			groupBy = append(groupBy, i)
+			fmt.Fprintf(w, `"%s"."%s"`, v.sel.Table, cn)
+		}
+
+		if i < len(v.sel.Cols)-1 || len(childCols) != 0 {
 			io.WriteString(w, ", ")
 		}
 	}
+
+	for i, col := range childCols {
+		fmt.Fprintf(w, `"%s"."%s"`, col.Table, col.Name)
+
+		if i < len(childCols)-1 {
+			io.WriteString(w, ", ")
+		}
+	}
+
+	fmt.Fprintf(w, ` FROM "%s"`, v.sel.Table)
+
+	if isNotRoot || hasFilters {
+		if isNotRoot {
+			v.renderJoinTable(w, schema, childIDs)
+		}
+
+		io.WriteString(w, ` WHERE (`)
+
+		if isNotRoot {
+			v.renderRelationship(w, schema)
+		}
+
+		if hasFilters {
+			err := v.renderWhere(w)
+			if err != nil {
+				return err
+			}
+		}
+
+		io.WriteString(w, `)`)
+	}
+
+	if len(groupBy) != 0 {
+		fmt.Fprintf(w, ` GROUP BY `)
+
+		for i, id := range groupBy {
+			fmt.Fprintf(w, `"%s"."%s"`, v.sel.Table, v.sel.Cols[id].Name)
+
+			if i < len(groupBy)-1 {
+				io.WriteString(w, ", ")
+			}
+		}
+	}
+
+	if len(v.sel.Paging.Limit) != 0 {
+		fmt.Fprintf(w, ` LIMIT ('%s') :: integer`, v.sel.Paging.Limit)
+	} else {
+		io.WriteString(w, ` LIMIT ('20') :: integer`)
+	}
+
+	if len(v.sel.Paging.Offset) != 0 {
+		fmt.Fprintf(w, ` OFFSET ('%s') :: integer`, v.sel.Paging.Offset)
+	}
+
+	fmt.Fprintf(w, `) AS "%s_%d"`, v.sel.Table, v.sel.ID)
+	return nil
 }
 
 func (v *selectBlock) renderOrderByColumns(w io.Writer) {
@@ -548,4 +587,32 @@ func renderVal(w io.Writer, ex *qcode.Exp, vars Variables) {
 		}
 	}
 	io.WriteString(w, `)`)
+}
+
+func funcPrefixLen(fn string) int {
+	switch {
+	case strings.HasPrefix(fn, "avg_"):
+		return 4
+	case strings.HasPrefix(fn, "count_"):
+		return 6
+	case strings.HasPrefix(fn, "max_"):
+		return 4
+	case strings.HasPrefix(fn, "min_"):
+		return 4
+	case strings.HasPrefix(fn, "sum_"):
+		return 4
+	case strings.HasPrefix(fn, "stddev_"):
+		return 7
+	case strings.HasPrefix(fn, "stddev_pop_"):
+		return 11
+	case strings.HasPrefix(fn, "stddev_samp_"):
+		return 12
+	case strings.HasPrefix(fn, "variance_"):
+		return 9
+	case strings.HasPrefix(fn, "var_pop_"):
+		return 8
+	case strings.HasPrefix(fn, "var_samp_"):
+		return 9
+	}
+	return 0
 }

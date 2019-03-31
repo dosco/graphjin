@@ -284,18 +284,20 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 
 		for i := range field.Children {
 			f := field.Children[i]
+			fn := strings.ToLower(f.Name)
 
-			if com.bl != nil && com.bl.MatchString(f.Name) {
+			if com.bl != nil && com.bl.MatchString(fn) {
 				continue
 			}
 
 			if f.Children == nil {
-				col := &Column{Name: f.Name}
+				col := &Column{Name: fn}
 				if len(f.Alias) != 0 {
 					col.FieldName = f.Alias
 				} else {
 					col.FieldName = f.Name
 				}
+
 				s.Cols = append(s.Cols, col)
 			} else {
 				st.Push(f)
