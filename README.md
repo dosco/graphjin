@@ -273,7 +273,7 @@ database:
     - token
 ```
 
-If deploying into enviroments like Kubernetes it's useful to be able to configure things like secrets and hosts though enviroment variables so we expose the following. This is escpecially useful for secrets since they are usually injected in via a secrets management framework ie. Kubernetes Secrets
+If deploying into environments like Kubernetes it's useful to be able to configure things like secrets and hosts though enviroment variables so we expose the following. This is escpecially useful for secrets since they are usually injected in via a secrets management framework ie. Kubernetes Secrets
 
 #### Postgres related enviroment Variables
 ```console
