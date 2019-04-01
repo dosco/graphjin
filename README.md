@@ -2,32 +2,36 @@
 
 ## Instant GraphQL API for Rails. Zero code.
 
-Get an high-performance GraphQL API for your Rails app in seconds. Super Graph will auto learn your database structure and relationships. Built in support for Rails authentication and JWT tokens.
+Get an high-performance GraphQL API for your Rails app in seconds. Super Graph will auto-learn your database structure and relationships. Built in support for Rails authentication and JWT tokens.
 
 ![Super Graph Web UI](web/public/super-graph-web-ui.png?raw=true "Super Graph Web UI for web developers")
 
-## Back story and motivation
+## Why I built Super Graph?
 
-I have a Rails app that gets a bit of traffic. Having planned to improve the UI using React or Vue I found that my current APIs didn't have the data I needed and I was too lazy to build new endpoints. My controllers were esentially wrappers around database queries and I didn't enjoy having to figure out new REST APIs with paths, names and methods to fetch all this new data or write the active record code needed.
+I have a Rails app that gets a bit of traffic. While planning to improve the UI using React or Vue I found that my current APIs didn't have what we needed. I'd have to add more controllers and ensure they are providing the right amount of data. This required designing new APIs and making sure they match what the webdevs need. While this is all to common work I was bored and there had to be a better way.
 
-I always liked GraphQL and how simple it makes things for web devs. On the backend however GraphQL seemed overly complex as it still required me to write a lot of the same database query code. I wanted a GraphQL server that just worked the second you deployed it without having to write a line of code.
+All my Rails controllers were esentially wrappers around database queries and its not exactly fun writing more of them.
 
-And so after a lot of coffee and some avocado toasts we now have Super Graph, an instant GraphQL API that is high performance and quick to deploy. One service to rule all your database querying needs.
+I always liked GraphQL it made everything so simple. Web devs can use GraphQL to fetch exactly the data they need. There is one small issue however you still hasve to write a lot of the same database code.
+
+I wanted a GraphQL server that just worked the second you deployed it without having to write a line of code.
+
+And so after a lot of coffee and some avocado toasts Super Graph was born. An instant GraphQL API service that's high performance and easy to deploy. I hope you find it as useful as I do and there's a lot more coming so hit that :star: to stay in the loop.
 
 ## Features
 - Support for Rails database conventions
 - Belongs-To, One-To-Many and Many-To-Many table relationships
 - Devise, Warden encrypted and signed session cookies
 - Redis, Memcache and Cookie session stores
-- Generates highly optimized Postgres SQL queries
+- JWT tokens supported from providers like Auth0
+- Generates highly optimized and fast Postgres SQL queries
 - Customize through a simple config file
 - High performance GO codebase
 - Tiny docker image and low memory requirements
 
 ### GraphQL (GQL)
 
-We currently support the `query` action which is used for fetching data. Support
-for `mutation` and `subscriptions` is currently work in progress. For example the below query fetches two products that belong to the current user where the price is greater than 10
+We currently support the `query` action which is used for fetching data. Support for `mutation` and `subscriptions` is work in progress. For example the below GraphQL query would fetch two products that belong to the current user where the price is greater than 10
 
 #### GQL Query
 
@@ -49,8 +53,10 @@ query {
 }
 ```
 
-The above GQL query returns the JSON result below. It handles all
-kinds of complexity without you writing a line of code. For example there is a while greater than `gt` and a limit clause on a child field. And the `avatar` field is renamed to `picture`. The `password` field is blocked and not returned. Finally the relationship between the `users` table and the `products` table is auto discovered and used.
+The above GraphQL query returns the JSON result below. It handles all
+kinds of complexity without you having to writing a line of code. 
+
+For example there is a while greater than `gt` and a limit clause on a child field. And the `avatar` field is renamed to `picture`. The `password` field is blocked and not returned. Finally the relationship between the `users` table and the `products` table is auto discovered and used.
 
 #### JSON Result
 
@@ -77,6 +83,7 @@ kinds of complexity without you writing a line of code. For example there is a w
   }
 }
 ```
+
 ## Try it out
 
 ```console
@@ -87,7 +94,7 @@ $ open http://localhost:8080
 
 The above command will download the latest docker image for Super Graph and use it to run an example that includes a Postgres DB and a simple Rails ecommerce store app. 
 
-If you want to build and run Super Graph from code then the below commands will build the web ui and launch Super Graph in developer mode with a water for code changes.
+If you want to build and run Super Graph from code then the below commands will build the web ui and launch Super Graph in developer mode with a watcher to rebuild on code changes.
 
 ```console
 $ brew install yarn
@@ -96,9 +103,9 @@ $ go generate ./...
 $ docker-compose up
 ```
 
-#### How to try with an authenticated user
+#### Try with an authenticated user
 
-In development mode you can use the `X-User-ID: 4` header to set a user id so you don't have to worries about cookies etc. This can be set using the *HTTP Headers* tab at the bottom of the web UI you'll see when you visit the above link. You can also directly run quries from the commandline like shown below.
+In development mode you can use the `X-User-ID: 4` header to set a user id so you don't have to worries about cookies etc. This can be set using the *HTTP Headers* tab at the bottom of the web UI you'll see when you visit the above link. You can also directly run queries from the commandline like below.
 
 #### Querying the GQL endpoint
 
@@ -111,9 +118,9 @@ curl 'http://localhost:8080/api/v1/graphql' \
 
 ## How to GraphQL
 
-GraphQL / GQL is a simple query syntax that is fast replacing REST APIs. GQL is great since it allows web developers to fetch the exact data that they need without depending on changes to backend code. Also if you squint hard enough it looks a little bit like JSON :)
+GraphQL (GQL) is a simple query syntax that's fast replacing REST APIs. GQL is great since it allows web developers to fetch the exact data that they need without depending on changes to backend code. Also if you squint hard enough it looks a little bit like JSON :smiley:
 
-The below query will fetch a `users` name, email and avatar image renamed as picture. If you also need the users `id` then just add it to the query.
+The below query will fetch an `users` name, email and avatar image (renamed as picture). If you also need the users `id` then just add it to the query.
 
 ```gql
 query {
@@ -125,7 +132,7 @@ query {
 }
 ```
 
-Super Graph support complex quries where you can add filters, ordering, offsets and limits on the query.
+Super Graph support complex queries where you can add filters, ordering,offsets and limits on the query.
 
 #### Logical Operators
 
@@ -162,7 +169,7 @@ is_null | column: { is_null: true } | Is column value null or not
 
 #### Aggregation
 
-You will often find the need to fetch aggregated values from the database such as `count`, `max`, `min`, etc. This is simple to go with GraphQL just prefix the aggregation name to the field name that you want to aggregrate. The below query will group products by name and find the minimum price for each group. Notice the `min_price` field we're adding `min_` to price.
+You will often find the need to fetch aggregated values from the database such as `count`, `max`, `min`, etc. This is simple to do with GraphQL, just prefix the aggregation name to the field name that you want to aggregrate like `count_id`. The below query will group products by name and find the minimum price for each group. Notice the `min_price` field we're adding `min_` to price.
 
 ```gql
 query {
@@ -186,7 +193,7 @@ variance | [Variance](https://en.wikipedia.org/wiki/Variance)
 var_pop | Population Standard Variance
 var_samp | Sample Standard variance
 
-All kinds of quries are possible with GraphQL below is an example that uses a lot of the features available to web devs using GraphQL to get the exact data they need. Comments are also valid within queries.
+All kinds of queries are possible with GraphQL. Below is an example that uses a lot of the features available. Comments `# hello` are also valid within queries.
 
 ```javascript
 query {
@@ -212,9 +219,9 @@ query {
 }
 ```
 
-## Configuration
+## It's easy to setup
 
-Config files can either be in YAML or JSON their names are derived from the `GO_ENV` variable, for example `GO_ENV=prod` will cause the `prod.yaml` config file to be used. or `GO_ENV=dev` will use the `dev.yaml`. A path to the config files can be specified using the `-path <folder>` command line argument.
+Configuration files can either be in YAML or JSON their names are derived from the `GO_ENV` variable, for example `GO_ENV=prod` will cause the `prod.yaml` config file to be used. or `GO_ENV=dev` will use the `dev.yaml`. A path to look for the config files in can be specified using the `-path <folder>` command line argument.
 
 ```yaml
 host_port: 0.0.0.0:8080
@@ -225,13 +232,13 @@ debug_level: 1
 # valid values: always, per_query, never
 auth_fail_block: never
 
-# Postgres related enviroment Variables
+# Postgres related environment Variables
 # SG_DATABASE_HOST
 # SG_DATABASE_PORT
 # SG_DATABASE_USER
 # SG_DATABASE_PASSWORD
 
-# Auth related enviroment Variables
+# Auth related environment Variables
 # SG_AUTH_SECRET_KEY_BASE
 # SG_AUTH_PUBLIC_KEY_FILE
 # SG_AUTH_URL
@@ -301,9 +308,9 @@ database:
     - token
 ```
 
-If deploying into enviroments like Kubernetes it's useful to be able to configure things like secrets and hosts though enviroment variables so we expose the following. This is escpecially useful for secrets since they are usually injected in via a secrets management framework ie. Kubernetes Secrets
+If deploying into environments like Kubernetes it's useful to be able to configure things like secrets and hosts though environment variables therfore we expose the below environment variables. This is escpecially useful for secrets since they are usually injected in via a secrets management framework ie. Kubernetes Secrets
 
-#### Postgres related enviroment Variables
+#### Postgres related environment Variables
 ```console
 SG_DATABASE_HOST
 SG_DATABASE_PORT
@@ -311,7 +318,7 @@ SG_DATABASE_USER
 SG_DATABASE_PASSWORD
 ```
 
-#### Auth related enviroment Variables
+#### Auth related environment Variables
 ```console
 SG_AUTH_SECRET_KEY_BASE
 SG_AUTH_PUBLIC_KEY_FILE
@@ -321,7 +328,7 @@ SG_AUTH_PASSWORD
 
 ## Authentication
 
-You can only have one type of authentication enabled. You can either pick Rails or JWT. Uncomment the one you use and leave the rest commented out.
+You can only have one type of auth enabled. You can either pick Rails or JWT. Uncomment the one you use and leave the rest commented out.
 
 #### JWT Tokens
 
@@ -341,9 +348,9 @@ or if you have a custom solution then we look for the `user_id` in the
 
 We can get the JWT token either from the `authorization` header where we expect it to be a `bearer` token or if `cookie` is specified then we look there.
 
-For verified either a `secret` or a public key (ecdsa or rsa) is required. When using public keys they have to be in a PEM format file.
+For validation a `secret` or a public key (ecdsa or rsa) is required. When using public keys they have to be in a PEM format file.
 
-## Deployment
+## Deploying Super Graph
 
 How do I deploy the Super Graph service with my existing rails app? You have several options here. Esentially you need to ensure your app's session cookie will be passed to this service. 
 
@@ -361,11 +368,11 @@ COPY *.yml ./
 #### Deploy under a subdomain
 For this to work you have to ensure that the option `:domain => :all` is added to your rails app config `Application.config.session_store` this will cause your rails app to create session cookies that can be shared with sub-domains. More info here <http://excid3.com/blog/sharing-a-devise-user-session-across-subdomains-with-rails-3/>
 
-#### We have this NGINX loadbalancer
-I'm sure you know how to configure it so that the graphql endpoint path is routed to wherever you have this service installed within your architecture.
+#### With an NGINX loadbalancer
+I'm sure you know how to configure it so that the Super Graph endpoint path `/api/v1/graphql` is routed to wherever you have this service installed within your architecture.
 
 #### On Kubernetes
-If your existing rails app runs on Kubernetes then ensure you have an ingress config deployed that points the path `/api/v1/graphql` to the service that you have deployed Super Graph under.
+If your Rails app runs on Kubernetes then ensure you have an ingress config deployed that points the path to the service that you have deployed Super Graph under.
 
 #### We use JWT tokens like those from Auth0
 In that case deploy under a subdomain and configure this service to use JWT authentication. You will need the public key file or secret key. Ensure your web app passes the JWT token with every GQL request in the Authorize header as a `bearer` token.

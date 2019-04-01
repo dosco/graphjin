@@ -4,13 +4,13 @@ web_ui: false
 debug_level: 0
 auth_fail_block: always
 
-# Postgres related enviroment Variables
+# Postgres related environment Variables
 # SG_DATABASE_HOST
 # SG_DATABASE_PORT
 # SG_DATABASE_USER
 # SG_DATABASE_PASSWORD
 
-# Auth related enviroment Variables
+# Auth related environment Variables
 # SG_AUTH_SECRET_KEY_BASE
 # SG_AUTH_PUBLIC_KEY_FILE
 # SG_AUTH_URL

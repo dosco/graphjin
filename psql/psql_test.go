@@ -110,7 +110,7 @@ func compileGQLToPSQL(gql string) (string, error) {
 	return sqlStmt.String(), nil
 }
 
-func TestCompileGQLWithComplexArgs(t *testing.T) {
+func withComplexArgs(t *testing.T) {
 	gql := `query {
 		products(
 			# returns only 30 items
@@ -145,7 +145,7 @@ func TestCompileGQLWithComplexArgs(t *testing.T) {
 	}
 }
 
-func TestCompileGQLWithWhereMultiOr(t *testing.T) {
+func withWhereMultiOr(t *testing.T) {
 	gql := `query {
 		products(
 			where: { 
@@ -173,7 +173,7 @@ func TestCompileGQLWithWhereMultiOr(t *testing.T) {
 	}
 }
 
-func TestCompileGQLWithWhereIsNull(t *testing.T) {
+func withWhereIsNull(t *testing.T) {
 	gql := `query {
 		products(
 			where: { 
@@ -199,7 +199,7 @@ func TestCompileGQLWithWhereIsNull(t *testing.T) {
 	}
 }
 
-func TestCompileGQLWithWhereAndList(t *testing.T) {
+func withWhereAndList(t *testing.T) {
 	gql := `query {
 		products(
 			where: { 
@@ -225,7 +225,7 @@ func TestCompileGQLWithWhereAndList(t *testing.T) {
 	}
 }
 
-func TestCompileGQLOneToMany(t *testing.T) {
+func oneToMany(t *testing.T) {
 	gql := `query {
 		users {
 			email
@@ -248,7 +248,7 @@ func TestCompileGQLOneToMany(t *testing.T) {
 	}
 }
 
-func TestCompileGQLBelongTo(t *testing.T) {
+func belongsTo(t *testing.T) {
 	gql := `query {
 		products {
 			name
@@ -271,7 +271,7 @@ func TestCompileGQLBelongTo(t *testing.T) {
 	}
 }
 
-func TestCompileGQLManyToMany(t *testing.T) {
+func manyToMany(t *testing.T) {
 	gql := `query { 
 		products {
 			name
@@ -294,7 +294,7 @@ func TestCompileGQLManyToMany(t *testing.T) {
 	}
 }
 
-func TestCompileGQLManyToManyReverse(t *testing.T) {
+func manyToManyReverse(t *testing.T) {
 	gql := `query {
 		customers {
 			email
@@ -317,7 +317,7 @@ func TestCompileGQLManyToManyReverse(t *testing.T) {
 	}
 }
 
-func TestCompileGQLAggFunction(t *testing.T) {
+func aggFunction(t *testing.T) {
 	gql := `query {
 		products {
 			name
@@ -335,6 +335,39 @@ func TestCompileGQLAggFunction(t *testing.T) {
 	if resSQL != sql {
 		t.Fatal(errNotExpected)
 	}
+}
+
+func aggFunctionWithFilter(t *testing.T) {
+	gql := `query {
+		products(where: { id: { gt: 10 } }) {
+			id
+			max_price
+		}
+	}`
+
+	sql := `SELECT json_object_agg('products', products) FROM (SELECT coalesce(json_agg("products"), '[]') AS "products" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."max_price" AS "max_price") AS "sel_0")) AS "products" FROM (SELECT "products"."id", max("products"."price") AS max_price FROM "products" GROUP BY "products"."id" HAVING ((("products"."id") > (10))) LIMIT ('20') :: integer) AS "products_0" LIMIT ('20') :: integer) AS "products_0") AS "done_1337";`
+
+	resSQL, err := compileGQLToPSQL(gql)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if resSQL != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
+func TestCompileGQL(t *testing.T) {
+	t.Run("withComplexArgs", withComplexArgs)
+	t.Run("withWhereAndList", withWhereAndList)
+	t.Run("withWhereIsNull", withWhereIsNull)
+	t.Run("withWhereMultiOr", withWhereMultiOr)
+	t.Run("belongsTo", belongsTo)
+	t.Run("oneToMany", oneToMany)
+	t.Run("manyToMany", manyToMany)
+	t.Run("manyToManyReverse", manyToManyReverse)
+	t.Run("aggFunction", aggFunction)
+	t.Run("aggFunctionWithFilter", aggFunctionWithFilter)
 }
 
 func BenchmarkCompileGQLToSQL(b *testing.B) {

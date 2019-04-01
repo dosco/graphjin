@@ -263,8 +263,9 @@ func (v *selectBlock) renderJoinedColumns(w io.Writer, childIDs []int) error {
 func (v *selectBlock) renderBaseSelect(w io.Writer, schema *DBSchema, childCols []*qcode.Column, childIDs []int) error {
 	var groupBy []int
 
-	isNotRoot := (v.parent != nil)
-	hasFilters := (v.sel.Where != nil)
+	isNotRoot := v.parent != nil
+	isFil := v.sel.Where != nil
+	isAgg := false
 
 	io.WriteString(w, " FROM (SELECT ")
 
@@ -277,6 +278,7 @@ func (v *selectBlock) renderBaseSelect(w io.Writer, schema *DBSchema, childCols 
 			if pl == 0 {
 				continue
 			}
+			isAgg = true
 			fn = cn[0 : pl-1]
 			cn = cn[pl:]
 		}
@@ -303,28 +305,31 @@ func (v *selectBlock) renderBaseSelect(w io.Writer, schema *DBSchema, childCols 
 
 	fmt.Fprintf(w, ` FROM "%s"`, v.sel.Table)
 
-	if isNotRoot || hasFilters {
-		if isNotRoot {
-			v.renderJoinTable(w, schema, childIDs)
-		}
+	if isNotRoot {
+		v.renderJoinTable(w, schema, childIDs)
+	}
 
+	switch {
+	case isNotRoot:
 		io.WriteString(w, ` WHERE (`)
-
-		if isNotRoot {
-			v.renderRelationship(w, schema)
-		}
-
-		if hasFilters {
-			err := v.renderWhere(w)
-			if err != nil {
+		v.renderRelationship(w, schema)
+		if isFil {
+			io.WriteString(w, ` AND `)
+			if err := v.renderWhere(w); err != nil {
 				return err
 			}
 		}
+		io.WriteString(w, `)`)
 
+	case isFil && !isAgg:
+		io.WriteString(w, ` WHERE (`)
+		if err := v.renderWhere(w); err != nil {
+			return err
+		}
 		io.WriteString(w, `)`)
 	}
 
-	if len(groupBy) != 0 {
+	if isAgg && len(groupBy) != 0 {
 		fmt.Fprintf(w, ` GROUP BY `)
 
 		for i, id := range groupBy {
@@ -333,6 +338,14 @@ func (v *selectBlock) renderBaseSelect(w io.Writer, schema *DBSchema, childCols 
 			if i < len(groupBy)-1 {
 				io.WriteString(w, ", ")
 			}
+		}
+
+		if isFil {
+			io.WriteString(w, ` HAVING (`)
+			if err := v.renderWhere(w); err != nil {
+				return err
+			}
+			io.WriteString(w, `)`)
 		}
 	}
 
@@ -368,8 +381,6 @@ func (v *selectBlock) renderOrderByColumns(w io.Writer) {
 }
 
 func (v *selectBlock) renderRelationship(w io.Writer, schema *DBSchema) {
-	hasFilters := (v.sel.Where != nil)
-
 	k := TTKey{v.sel.Table, v.parent.Table}
 	rel, ok := schema.RelMap[k]
 	if !ok {
@@ -388,21 +399,15 @@ func (v *selectBlock) renderRelationship(w io.Writer, schema *DBSchema) {
 	case RelOneToManyThrough:
 		fmt.Fprintf(w, `(("%s"."%s") = ("%s"."%s"))`,
 			v.sel.Table, rel.Col1, rel.Through, rel.Col2)
-
-	}
-
-	if hasFilters {
-		io.WriteString(w, ` AND `)
 	}
 }
 
 func (v *selectBlock) renderWhere(w io.Writer) error {
 	st := util.NewStack()
 
-	if v.sel.Where == nil {
-		return nil
+	if v.sel.Where != nil {
+		st.Push(v.sel.Where)
 	}
-	st.Push(v.sel.Where)
 
 	for {
 		if st.Len() == 0 {
