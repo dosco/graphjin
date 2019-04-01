@@ -227,6 +227,7 @@ Configuration files can either be in YAML or JSON their names are derived from t
 host_port: 0.0.0.0:8080
 web_ui: true
 debug_level: 1
+enable_tracing: true
 
 # When to throw a 401 on auth failure 
 # valid values: always, per_query, never

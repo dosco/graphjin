@@ -32,6 +32,7 @@ var (
 	pcompile      *psql.Compiler
 	qcompile      *qcode.Compiler
 	authFailBlock int
+	tracing       bool
 )
 
 func initLog() {
@@ -74,6 +75,7 @@ func initConf() {
 	conf.SetDefault("host_port", "0.0.0.0:8080")
 	conf.SetDefault("web_ui", false)
 	conf.SetDefault("debug_level", 0)
+	conf.SetDefault("enable_tracing", false)
 
 	conf.SetDefault("database.type", "postgres")
 	conf.SetDefault("database.host", "localhost")
@@ -83,6 +85,8 @@ func initConf() {
 
 	conf.SetDefault("env", "development")
 	conf.BindEnv("env", "GO_ENV")
+
+	tracing = conf.GetBool("enable_tracing")
 
 	switch conf.GetString("auth_fail_block") {
 	case "always":

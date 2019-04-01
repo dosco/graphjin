@@ -9,7 +9,9 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/dosco/super-graph/qcode"
 	"github.com/go-pg/pg"
 	"github.com/gorilla/websocket"
 	"github.com/valyala/fasttemplate"
@@ -33,8 +35,34 @@ type gqlReq struct {
 }
 
 type gqlResp struct {
-	Error string          `json:"error,omitempty"`
-	Data  json.RawMessage `json:"data,omitempty"`
+	Error      string          `json:"error,omitempty"`
+	Data       json.RawMessage `json:"data,omitempty"`
+	Extensions extensions      `json:"extensions"`
+}
+
+type extensions struct {
+	Tracing *trace `json:"tracing"`
+}
+
+type trace struct {
+	Version   int           `json:"version"`
+	StartTime time.Time     `json:"startTime"`
+	EndTime   time.Time     `json:"endTime"`
+	Duration  time.Duration `json:"duration"`
+	Execution execution     `json:"execution"`
+}
+
+type execution struct {
+	Resolvers []resolver `json:"resolvers"`
+}
+
+type resolver struct {
+	Path        []string      `json:"path"`
+	ParentType  string        `json:"parentType"`
+	FieldName   string        `json:"fieldName"`
+	ReturnType  string        `json:"returnType"`
+	StartOffset int           `json:"startOffset"`
+	Duration    time.Duration `json:"duration"`
 }
 
 func apiv1Http(w http.ResponseWriter, r *http.Request) {
@@ -99,6 +127,7 @@ func apiv1Http(w http.ResponseWriter, r *http.Request) {
 	if debug > 0 {
 		fmt.Println(finalSQL)
 	}
+	st := time.Now()
 
 	var root json.RawMessage
 	_, err = db.Query(pg.Scan(&root), finalSQL)
@@ -108,7 +137,15 @@ func apiv1Http(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(gqlResp{Data: json.RawMessage(root)})
+	et := time.Now()
+	resp := gqlResp{}
+
+	if tracing {
+		resp.Extensions = extensions{newTrace(st, et, qc)}
+	}
+
+	resp.Data = json.RawMessage(root)
+	json.NewEncoder(w).Encode(resp)
 }
 
 /*
@@ -173,4 +210,29 @@ func varValues(ctx context.Context) map[string]interface{} {
 		"USER_ID_PROVIDER": uidpFn,
 		"user_id_provider": uidpFn,
 	}
+}
+
+func newTrace(st, et time.Time, qc *qcode.QCode) *trace {
+	du := et.Sub(et)
+
+	t := &trace{
+		Version:   1,
+		StartTime: st,
+		EndTime:   et,
+		Duration:  du,
+		Execution: execution{
+			[]resolver{
+				resolver{
+					Path:        []string{qc.Query.Select.Table},
+					ParentType:  "Query",
+					FieldName:   qc.Query.Select.Table,
+					ReturnType:  "object",
+					StartOffset: 1,
+					Duration:    du,
+				},
+			},
+		},
+	}
+
+	return t
 }
