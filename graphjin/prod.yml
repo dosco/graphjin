@@ -2,6 +2,7 @@ title: Super Graph Production
 host_port: 0.0.0.0:8080
 web_ui: false
 debug_level: 0
+enable_tracing: false
 auth_fail_block: always
 
 # Postgres related environment Variables
