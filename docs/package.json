@@ -1,0 +1,10 @@
+{
+  "scripts": {
+    "dev": "vuepress dev --debug",
+    "build": "vuepress build"
+  },
+  "devDependencies": {
+    "vuepress": "^0.14.10",
+    "webpack-dev-middleware": "3.6.0"
+  }
+}
