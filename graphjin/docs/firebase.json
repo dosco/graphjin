@@ -1,0 +1,6 @@
+{
+ "hosting": {
+   "public": ".vuepress/dist",
+   "ignore": []
+ }
+}
