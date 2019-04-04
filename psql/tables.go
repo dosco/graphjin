@@ -118,32 +118,40 @@ func updateSchema(schema *DBSchema, t *DBTable, cols []*DBColumn) {
 	// Below one-to-many relations use the current table as the
 	// join table aka through table.
 	if len(jcols) > 1 {
-		col1, col2 := jcols[0], jcols[1]
-
-		t1 := strings.ToLower(col1.FKeyTable)
-		t2 := strings.ToLower(col2.FKeyTable)
-
-		fc1, ok := schema.ColIDMap[col1.FKeyColID[0]]
-		if !ok {
-			return
+		for i := range jcols {
+			for n := range jcols {
+				if n != i {
+					updateSchemaOTMT(schema, ct, jcols[i], jcols[n])
+				}
+			}
 		}
-		fc2, ok := schema.ColIDMap[col2.FKeyColID[0]]
-		if !ok {
-			return
-		}
-
-		// One-to-many-through relation between 1nd foreign key table and the
-		// 2nd foreign key table
-		//rel1 := &DBRel{RelOneToManyThrough, ct, fc1.Name, col1.Name}
-		rel1 := &DBRel{RelOneToManyThrough, ct, col2.Name, fc2.Name, col1.Name}
-		schema.RelMap[TTKey{t1, t2}] = rel1
-
-		// One-to-many-through relation between 2nd foreign key table and the
-		// 1nd foreign key table
-		//rel2 := &DBRel{RelOneToManyThrough, ct, col2.Name, fc2.Name}
-		rel2 := &DBRel{RelOneToManyThrough, ct, col1.Name, fc1.Name, col2.Name}
-		schema.RelMap[TTKey{t2, t1}] = rel2
 	}
+}
+
+func updateSchemaOTMT(schema *DBSchema, ct string, col1, col2 *DBColumn) {
+	t1 := strings.ToLower(col1.FKeyTable)
+	t2 := strings.ToLower(col2.FKeyTable)
+
+	fc1, ok := schema.ColIDMap[col1.FKeyColID[0]]
+	if !ok {
+		return
+	}
+	fc2, ok := schema.ColIDMap[col2.FKeyColID[0]]
+	if !ok {
+		return
+	}
+
+	// One-to-many-through relation between 1nd foreign key table and the
+	// 2nd foreign key table
+	//rel1 := &DBRel{RelOneToManyThrough, ct, fc1.Name, col1.Name}
+	rel1 := &DBRel{RelOneToManyThrough, ct, col2.Name, fc2.Name, col1.Name}
+	schema.RelMap[TTKey{t1, t2}] = rel1
+
+	// One-to-many-through relation between 2nd foreign key table and the
+	// 1nd foreign key table
+	//rel2 := &DBRel{RelOneToManyThrough, ct, col2.Name, fc2.Name}
+	rel2 := &DBRel{RelOneToManyThrough, ct, col1.Name, fc1.Name, col2.Name}
+	schema.RelMap[TTKey{t2, t1}] = rel2
 }
 
 type DBTable struct {

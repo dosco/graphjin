@@ -263,7 +263,7 @@ func (v *selectBlock) renderJoinedColumns(w io.Writer, childIDs []int) error {
 func (v *selectBlock) renderBaseSelect(w io.Writer, schema *DBSchema, childCols []*qcode.Column, childIDs []int) error {
 	var groupBy []int
 
-	isNotRoot := v.parent != nil
+	isRoot := v.parent == nil
 	isFil := v.sel.Where != nil
 	isAgg := false
 
@@ -305,23 +305,7 @@ func (v *selectBlock) renderBaseSelect(w io.Writer, schema *DBSchema, childCols 
 
 	fmt.Fprintf(w, ` FROM "%s"`, v.sel.Table)
 
-	if isNotRoot {
-		v.renderJoinTable(w, schema, childIDs)
-	}
-
-	switch {
-	case isNotRoot:
-		io.WriteString(w, ` WHERE (`)
-		v.renderRelationship(w, schema)
-		if isFil {
-			io.WriteString(w, ` AND `)
-			if err := v.renderWhere(w); err != nil {
-				return err
-			}
-		}
-		io.WriteString(w, `)`)
-
-	case isFil && !isAgg:
+	if isRoot && isFil {
 		io.WriteString(w, ` WHERE (`)
 		if err := v.renderWhere(w); err != nil {
 			return err
@@ -329,23 +313,32 @@ func (v *selectBlock) renderBaseSelect(w io.Writer, schema *DBSchema, childCols 
 		io.WriteString(w, `)`)
 	}
 
-	if isAgg && len(groupBy) != 0 {
-		fmt.Fprintf(w, ` GROUP BY `)
+	if !isRoot {
+		v.renderJoinTable(w, schema, childIDs)
 
-		for i, id := range groupBy {
-			fmt.Fprintf(w, `"%s"."%s"`, v.sel.Table, v.sel.Cols[id].Name)
-
-			if i < len(groupBy)-1 {
-				io.WriteString(w, ", ")
-			}
-		}
+		io.WriteString(w, ` WHERE (`)
+		v.renderRelationship(w, schema)
 
 		if isFil {
-			io.WriteString(w, ` HAVING (`)
+			io.WriteString(w, ` AND `)
 			if err := v.renderWhere(w); err != nil {
 				return err
 			}
-			io.WriteString(w, `)`)
+		}
+		io.WriteString(w, `)`)
+	}
+
+	if isAgg {
+		if len(groupBy) != 0 {
+			fmt.Fprintf(w, ` GROUP BY `)
+
+			for i, id := range groupBy {
+				fmt.Fprintf(w, `"%s"."%s"`, v.sel.Table, v.sel.Cols[id].Name)
+
+				if i < len(groupBy)-1 {
+					io.WriteString(w, ", ")
+				}
+			}
 		}
 	}
 
@@ -403,6 +396,16 @@ func (v *selectBlock) renderRelationship(w io.Writer, schema *DBSchema) {
 }
 
 func (v *selectBlock) renderWhere(w io.Writer) error {
+	if v.sel.Where.Op == qcode.OpEqID {
+		col, ok := v.schema.PCols[v.sel.Table]
+		if !ok {
+			return fmt.Errorf("no primary key defined for %s", v.sel.Table)
+		}
+
+		fmt.Fprintf(w, `(("%s") = ('%s'))`, col.Name, v.sel.Where.Val)
+		return nil
+	}
+
 	st := util.NewStack()
 
 	if v.sel.Where != nil {

@@ -24,7 +24,7 @@ type Column struct {
 }
 
 type Select struct {
-	ID         int32
+	ID         int16
 	AsList     bool
 	Table      string
 	Singular   string
@@ -84,6 +84,7 @@ const (
 	OpHasKeyAny
 	OpHasKeyAll
 	OpIsNull
+	OpEqID
 )
 
 func (t ExpOp) String() string {
@@ -136,6 +137,8 @@ func (t ExpOp) String() string {
 		v = "op-has-key-all"
 	case OpIsNull:
 		v = "op-is-null"
+	case OpEqID:
+		v = "op-eq-id"
 	}
 	return fmt.Sprintf("<%s>", v)
 }
@@ -223,7 +226,7 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 	var selRoot *Select
 
 	st := util.NewStack()
-	id := int32(0)
+	id := int16(0)
 	fmap := make(map[*Field]*Select)
 
 	for i := range op.Fields {
@@ -331,7 +334,13 @@ func (com *Compiler) compileArgs(sel *Select, args []*Arg) error {
 		if args[i] == nil {
 			return fmt.Errorf("[Args] unexpected nil argument found")
 		}
-		switch strings.ToLower(args[i].Name) {
+		an := strings.ToLower(args[i].Name)
+
+		switch an {
+		case "id":
+			if sel.ID == int16(0) {
+				err = com.compileArgID(sel, args[i])
+			}
 		case "where":
 			err = com.compileArgWhere(sel, args[i])
 		case "orderby", "order_by", "order":
@@ -343,9 +352,13 @@ func (com *Compiler) compileArgs(sel *Select, args []*Arg) error {
 		case "offset":
 			err = com.compileArgOffset(sel, args[i])
 		}
+
+		if err != nil {
+			return err
+		}
 	}
 
-	return err
+	return nil
 }
 
 type expT struct {
@@ -403,8 +416,34 @@ func (com *Compiler) compileArgNode(val *Node) (*Exp, error) {
 	return root, nil
 }
 
+func (com *Compiler) compileArgID(sel *Select, arg *Arg) error {
+	if sel.Where != nil && sel.Where.Op == OpEqID {
+		return nil
+	}
+
+	ex := &Exp{Op: OpEqID, Val: arg.Val.Val}
+
+	switch arg.Val.Type {
+	case nodeStr:
+		ex.Type = ValStr
+	case nodeInt:
+		ex.Type = ValInt
+	case nodeFloat:
+		ex.Type = ValFloat
+	default:
+		fmt.Errorf("expecting an string, int or float")
+	}
+
+	sel.Where = ex
+	return nil
+}
+
 func (com *Compiler) compileArgWhere(sel *Select, arg *Arg) error {
 	var err error
+
+	if sel.Where != nil {
+		return nil
+	}
 
 	sel.Where, err = com.compileArgObj(arg)
 	if err != nil {

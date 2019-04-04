@@ -317,6 +317,26 @@ func manyToManyReverse(t *testing.T) {
 	}
 }
 
+func fetchByID(t *testing.T) {
+	gql := `query {
+		product(id: 4) {
+			id
+			name
+		}
+	}`
+
+	sql := `SELECT json_object_agg('product', products) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name") AS "sel_0")) AS "products" FROM (SELECT "products"."id", "products"."name" FROM "products" WHERE ((("id") = ('4'))) LIMIT ('1') :: integer) AS "products_0" LIMIT ('1') :: integer) AS "done_1337";`
+
+	resSQL, err := compileGQLToPSQL(gql)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if resSQL != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
 func aggFunction(t *testing.T) {
 	gql := `query {
 		products {
@@ -345,7 +365,7 @@ func aggFunctionWithFilter(t *testing.T) {
 		}
 	}`
 
-	sql := `SELECT json_object_agg('products', products) FROM (SELECT coalesce(json_agg("products"), '[]') AS "products" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."max_price" AS "max_price") AS "sel_0")) AS "products" FROM (SELECT "products"."id", max("products"."price") AS max_price FROM "products" GROUP BY "products"."id" HAVING ((("products"."id") > (10))) LIMIT ('20') :: integer) AS "products_0" LIMIT ('20') :: integer) AS "products_0") AS "done_1337";`
+	sql := `SELECT json_object_agg('products', products) FROM (SELECT coalesce(json_agg("products"), '[]') AS "products" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."max_price" AS "max_price") AS "sel_0")) AS "products" FROM (SELECT "products"."id", max("products"."price") AS max_price FROM "products" WHERE ((("products"."id") > (10))) GROUP BY "products"."id" LIMIT ('20') :: integer) AS "products_0" LIMIT ('20') :: integer) AS "products_0") AS "done_1337";`
 
 	resSQL, err := compileGQLToPSQL(gql)
 	if err != nil {
@@ -362,6 +382,7 @@ func TestCompileGQL(t *testing.T) {
 	t.Run("withWhereAndList", withWhereAndList)
 	t.Run("withWhereIsNull", withWhereIsNull)
 	t.Run("withWhereMultiOr", withWhereMultiOr)
+	t.Run("fetchByID", fetchByID)
 	t.Run("belongsTo", belongsTo)
 	t.Run("oneToMany", oneToMany)
 	t.Run("manyToMany", manyToMany)
