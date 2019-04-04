@@ -37,11 +37,11 @@ type gqlReq struct {
 type gqlResp struct {
 	Error      string          `json:"error,omitempty"`
 	Data       json.RawMessage `json:"data,omitempty"`
-	Extensions extensions      `json:"extensions"`
+	Extensions *extensions     `json:"extensions,omitempty"`
 }
 
 type extensions struct {
-	Tracing *trace `json:"tracing"`
+	Tracing *trace `json:"tracing,omitempty"`
 }
 
 type trace struct {
@@ -141,7 +141,7 @@ func apiv1Http(w http.ResponseWriter, r *http.Request) {
 	resp := gqlResp{}
 
 	if tracing {
-		resp.Extensions = extensions{newTrace(st, et, qc)}
+		resp.Extensions = &extensions{newTrace(st, et, qc)}
 	}
 
 	resp.Data = json.RawMessage(root)
