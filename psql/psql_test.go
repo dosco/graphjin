@@ -337,6 +337,26 @@ func fetchByID(t *testing.T) {
 	}
 }
 
+func searchQuery(t *testing.T) {
+	gql := `query {
+		products(search: "Amazing") {
+			id
+			name
+		}
+	}`
+
+	sql := `SELECT json_object_agg('products', products) FROM (SELECT coalesce(json_agg("products"), '[]') AS "products" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name") AS "sel_0")) AS "products" FROM (SELECT "products"."id", "products"."name" FROM "products" WHERE ((("tsv") @@ to_tsquery('Amazing'))) LIMIT ('20') :: integer) AS "products_0" LIMIT ('20') :: integer) AS "products_0") AS "done_1337";`
+
+	resSQL, err := compileGQLToPSQL(gql)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if resSQL != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
 func aggFunction(t *testing.T) {
 	gql := `query {
 		products {
@@ -383,6 +403,7 @@ func TestCompileGQL(t *testing.T) {
 	t.Run("withWhereIsNull", withWhereIsNull)
 	t.Run("withWhereMultiOr", withWhereMultiOr)
 	t.Run("fetchByID", fetchByID)
+	t.Run("searchQuery", searchQuery)
 	t.Run("belongsTo", belongsTo)
 	t.Run("oneToMany", oneToMany)
 	t.Run("manyToMany", manyToMany)

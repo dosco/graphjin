@@ -13,5 +13,6 @@ require (
 	github.com/sirupsen/logrus v1.4.0
 	github.com/spf13/viper v1.3.1
 	github.com/valyala/fasttemplate v1.0.1
+	golang.org/x/sys v0.0.0-20181205085412-a5c9d58dba9a
 	mellium.im/sasl v0.2.1 // indirect
 )

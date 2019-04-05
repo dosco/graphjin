@@ -85,6 +85,7 @@ const (
 	OpHasKeyAll
 	OpIsNull
 	OpEqID
+	OpTsQuery
 )
 
 func (t ExpOp) String() string {
@@ -139,6 +140,8 @@ func (t ExpOp) String() string {
 		v = "op-is-null"
 	case OpEqID:
 		v = "op-eq-id"
+	case OpTsQuery:
+		v = "op-ts-query"
 	}
 	return fmt.Sprintf("<%s>", v)
 }
@@ -341,6 +344,10 @@ func (com *Compiler) compileArgs(sel *Select, args []*Arg) error {
 			if sel.ID == int16(0) {
 				err = com.compileArgID(sel, args[i])
 			}
+		case "search":
+			if sel.ID == int16(0) {
+				err = com.compileArgSearch(sel, args[i])
+			}
 		case "where":
 			err = com.compileArgWhere(sel, args[i])
 		case "orderby", "order_by", "order":
@@ -435,6 +442,25 @@ func (com *Compiler) compileArgID(sel *Select, arg *Arg) error {
 	}
 
 	sel.Where = ex
+	return nil
+}
+
+func (com *Compiler) compileArgSearch(sel *Select, arg *Arg) error {
+	if sel.Where != nil && sel.Where.Op == OpTsQuery {
+		return nil
+	}
+
+	ex := &Exp{
+		Op:   OpTsQuery,
+		Type: ValStr,
+		Val:  arg.Val.Val,
+	}
+
+	if sel.Where != nil {
+		sel.Where = &Exp{Op: OpAnd, Children: []*Exp{ex, sel.Where}}
+	} else {
+		sel.Where = ex
+	}
 	return nil
 }
 

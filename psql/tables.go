@@ -18,9 +18,14 @@ type TTKey struct {
 type DBSchema struct {
 	ColMap   map[TCKey]*DBColumn
 	ColIDMap map[int]*DBColumn
-	PCols    map[string]*DBColumn
+	Tables   map[string]*DBTableInfo
 
 	RelMap map[TTKey]*DBRel
+}
+
+type DBTableInfo struct {
+	PrimaryCol string
+	TSVCol     string
 }
 
 type RelType int
@@ -63,7 +68,7 @@ func initSchema() *DBSchema {
 	return &DBSchema{
 		ColMap:   make(map[TCKey]*DBColumn),
 		ColIDMap: make(map[int]*DBColumn),
-		PCols:    make(map[string]*DBColumn),
+		Tables:   make(map[string]*DBTableInfo),
 		RelMap:   make(map[TTKey]*DBRel),
 	}
 }
@@ -71,6 +76,7 @@ func initSchema() *DBSchema {
 func updateSchema(schema *DBSchema, t *DBTable, cols []*DBColumn) {
 	// Current table
 	ct := strings.ToLower(t.Name)
+	schema.Tables[ct] = &DBTableInfo{}
 
 	// Foreign key columns in current table
 	var jcols []*DBColumn
@@ -82,8 +88,11 @@ func updateSchema(schema *DBSchema, t *DBTable, cols []*DBColumn) {
 
 	for _, c := range cols {
 		switch {
+		case c.Type == "tsvector":
+			schema.Tables[ct].TSVCol = c.Name
+
 		case c.PrimaryKey:
-			schema.PCols[ct] = c
+			schema.Tables[ct].PrimaryCol = c.Name
 
 		case len(c.FKeyTable) != 0:
 			if len(c.FKeyColID) == 0 {
@@ -242,5 +251,13 @@ WHERE c.relkind = 'r'::char
 		return nil, fmt.Errorf("Error fetching columns: %s", err)
 	}
 
+	return t, nil
+}
+
+func (s *DBSchema) GetTable(table string) (*DBTableInfo, error) {
+	t, ok := s.Tables[table]
+	if !ok {
+		return nil, fmt.Errorf("table info not found '%s'", table)
+	}
 	return t, nil
 }
