@@ -397,12 +397,28 @@ func (v *selectBlock) renderRelationship(w io.Writer, schema *DBSchema) {
 
 func (v *selectBlock) renderWhere(w io.Writer) error {
 	if v.sel.Where.Op == qcode.OpEqID {
-		col, ok := v.schema.PCols[v.sel.Table]
-		if !ok {
-			return fmt.Errorf("no primary key defined for %s", v.sel.Table)
+		t, err := v.schema.GetTable(v.sel.Table)
+		if err != nil {
+			return err
+		}
+		if len(t.PrimaryCol) == 0 {
+			return fmt.Errorf("no primary key column defined for %s", v.sel.Table)
 		}
 
-		fmt.Fprintf(w, `(("%s") = ('%s'))`, col.Name, v.sel.Where.Val)
+		fmt.Fprintf(w, `(("%s") = ('%s'))`, t.PrimaryCol, v.sel.Where.Val)
+		return nil
+	}
+
+	if v.sel.Where.Op == qcode.OpTsQuery {
+		t, err := v.schema.GetTable(v.sel.Table)
+		if err != nil {
+			return err
+		}
+		if len(t.TSVCol) == 0 {
+			return fmt.Errorf("no tsv column defined for %s", v.sel.Table)
+		}
+
+		fmt.Fprintf(w, `(("%s") @@ to_tsquery('%s'))`, t.TSVCol, v.sel.Where.Val)
 		return nil
 	}
 

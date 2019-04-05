@@ -132,6 +132,16 @@ query {
 }
 ```
 
+Postgres also supports full text search using a TSV index. Super Graph makes it easy to use this full text search capability using the `search` argument.
+
+```graphql
+query {
+  products(seasrch "amazing") {
+    name
+  }
+}
+```
+
 Super Graph support complex queries where you can add filters, ordering,offsets and limits on the query.
 
 #### Logical Operators
