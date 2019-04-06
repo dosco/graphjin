@@ -25,6 +25,7 @@ type Column struct {
 
 type Select struct {
 	ID         int16
+	Args       []*Arg
 	AsList     bool
 	Table      string
 	Singular   string
@@ -332,12 +333,16 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 
 func (com *Compiler) compileArgs(sel *Select, args []*Arg) error {
 	var err error
+	ad := make(map[string]struct{})
 
 	for i := range args {
 		if args[i] == nil {
 			return fmt.Errorf("[Args] unexpected nil argument found")
 		}
 		an := strings.ToLower(args[i].Name)
+		if _, ok := ad[an]; ok {
+			continue
+		}
 
 		switch an {
 		case "id":
@@ -345,9 +350,7 @@ func (com *Compiler) compileArgs(sel *Select, args []*Arg) error {
 				err = com.compileArgID(sel, args[i])
 			}
 		case "search":
-			if sel.ID == int16(0) {
-				err = com.compileArgSearch(sel, args[i])
-			}
+			err = com.compileArgSearch(sel, args[i])
 		case "where":
 			err = com.compileArgWhere(sel, args[i])
 		case "orderby", "order_by", "order":
@@ -363,6 +366,8 @@ func (com *Compiler) compileArgs(sel *Select, args []*Arg) error {
 		if err != nil {
 			return err
 		}
+
+		ad[an] = struct{}{}
 	}
 
 	return nil
@@ -446,15 +451,13 @@ func (com *Compiler) compileArgID(sel *Select, arg *Arg) error {
 }
 
 func (com *Compiler) compileArgSearch(sel *Select, arg *Arg) error {
-	if sel.Where != nil && sel.Where.Op == OpTsQuery {
-		return nil
-	}
-
 	ex := &Exp{
 		Op:   OpTsQuery,
 		Type: ValStr,
 		Val:  arg.Val.Val,
 	}
+
+	sel.Args = append(sel.Args, arg)
 
 	if sel.Where != nil {
 		sel.Where = &Exp{Op: OpAnd, Children: []*Exp{ex, sel.Where}}
