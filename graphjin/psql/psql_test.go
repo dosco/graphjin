@@ -69,7 +69,8 @@ func TestMain(m *testing.M) {
 			&DBColumn{ID: 4, Name: "price", Type: "numeric(7,2)", NotNull: false, PrimaryKey: false, Uniquekey: false, FKeyTable: "", FKeyColID: []int(nil)},
 			&DBColumn{ID: 5, Name: "user_id", Type: "bigint", NotNull: false, PrimaryKey: false, Uniquekey: false, FKeyTable: "users", FKeyColID: []int{1}},
 			&DBColumn{ID: 6, Name: "created_at", Type: "timestamp without time zone", NotNull: true, PrimaryKey: false, Uniquekey: false, FKeyTable: "", FKeyColID: []int(nil)},
-			&DBColumn{ID: 7, Name: "updated_at", Type: "timestamp without time zone", NotNull: true, PrimaryKey: false, Uniquekey: false, FKeyTable: "", FKeyColID: []int(nil)}},
+			&DBColumn{ID: 7, Name: "updated_at", Type: "timestamp without time zone", NotNull: true, PrimaryKey: false, Uniquekey: false, FKeyTable: "", FKeyColID: []int(nil)},
+			&DBColumn{ID: 8, Name: "tsv", Type: "tsvector", NotNull: false, PrimaryKey: false, Uniquekey: false, FKeyTable: "", FKeyColID: []int(nil)}},
 		[]*DBColumn{
 			&DBColumn{ID: 1, Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, Uniquekey: false, FKeyTable: "", FKeyColID: []int(nil)},
 			&DBColumn{ID: 2, Name: "customer_id", Type: "bigint", NotNull: false, PrimaryKey: false, Uniquekey: false, FKeyTable: "customers", FKeyColID: []int{1}},

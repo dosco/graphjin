@@ -23,9 +23,10 @@ func NewCompiler(schema *DBSchema, vars Variables) *Compiler {
 
 func (c *Compiler) Compile(w io.Writer, qc *qcode.QCode) error {
 	st := util.NewStack()
+	ti, _ := c.schema.GetTable(qc.Query.Select.Table)
 
 	st.Push(&selectBlockClose{nil, qc.Query.Select})
-	st.Push(&selectBlock{nil, qc.Query.Select, c})
+	st.Push(&selectBlock{nil, qc.Query.Select, ti, c})
 
 	fmt.Fprintf(w, `SELECT json_object_agg('%s', %s) FROM (`,
 		qc.Query.Select.FieldName, qc.Query.Select.Table)
@@ -43,10 +44,15 @@ func (c *Compiler) Compile(w io.Writer, qc *qcode.QCode) error {
 			v.render(w, c.schema, childCols, childIDs)
 
 			for i := range childIDs {
+				ti, err := c.schema.GetTable(v.sel.Table)
+				if err != nil {
+					continue
+				}
 				sub := v.sel.Joins[childIDs[i]]
+
 				st.Push(&joinClose{sub})
 				st.Push(&selectBlockClose{v.sel, sub})
-				st.Push(&selectBlock{v.sel, sub, c})
+				st.Push(&selectBlock{v.sel, sub, ti, c})
 				st.Push(&joinOpen{sub})
 			}
 		case *selectBlockClose:
@@ -103,6 +109,7 @@ func (c *Compiler) relationshipColumns(parent *qcode.Select) (
 type selectBlock struct {
 	parent *qcode.Select
 	sel    *qcode.Select
+	ti     *DBTableInfo
 	*Compiler
 }
 
@@ -267,24 +274,37 @@ func (v *selectBlock) renderBaseSelect(w io.Writer, schema *DBSchema, childCols 
 	isFil := v.sel.Where != nil
 	isAgg := false
 
+	searchVal := findArgVal(v.sel, "search")
+
 	io.WriteString(w, " FROM (SELECT ")
 
 	for i, col := range v.sel.Cols {
 		cn := col.Name
-		fn := ""
+		_, isRealCol := v.schema.ColMap[TCKey{v.sel.Table, cn}]
 
-		if _, ok := v.schema.ColMap[TCKey{v.sel.Table, cn}]; !ok {
-			pl := funcPrefixLen(cn)
-			if pl == 0 {
-				continue
+		if !isRealCol {
+			switch {
+			case searchVal != nil && cn == "search_rank":
+				cn = v.ti.TSVCol
+				fmt.Fprintf(w, `ts_rank("%s"."%s", to_tsquery('%s')) AS %s`,
+					v.sel.Table, cn, searchVal.Val, col.Name)
+
+			case searchVal != nil && strings.HasPrefix(cn, "search_headline_"):
+				cn = cn[16:]
+				fmt.Fprintf(w, `ts_headline("%s"."%s", to_tsquery('%s')) AS %s`,
+					v.sel.Table, cn, searchVal.Val, col.Name)
+
+			default:
+				pl := funcPrefixLen(cn)
+				if pl == 0 {
+					fmt.Fprintf(w, `'%s not defined' AS %s`, cn, col.Name)
+				} else {
+					isAgg = true
+					fn := cn[0 : pl-1]
+					cn := cn[pl:]
+					fmt.Fprintf(w, `%s("%s"."%s") AS %s`, fn, v.sel.Table, cn, col.Name)
+				}
 			}
-			isAgg = true
-			fn = cn[0 : pl-1]
-			cn = cn[pl:]
-		}
-
-		if len(fn) != 0 {
-			fmt.Fprintf(w, `%s("%s"."%s") AS %s`, fn, v.sel.Table, cn, col.Name)
 		} else {
 			groupBy = append(groupBy, i)
 			fmt.Fprintf(w, `"%s"."%s"`, v.sel.Table, cn)
@@ -396,32 +416,6 @@ func (v *selectBlock) renderRelationship(w io.Writer, schema *DBSchema) {
 }
 
 func (v *selectBlock) renderWhere(w io.Writer) error {
-	if v.sel.Where.Op == qcode.OpEqID {
-		t, err := v.schema.GetTable(v.sel.Table)
-		if err != nil {
-			return err
-		}
-		if len(t.PrimaryCol) == 0 {
-			return fmt.Errorf("no primary key column defined for %s", v.sel.Table)
-		}
-
-		fmt.Fprintf(w, `(("%s") = ('%s'))`, t.PrimaryCol, v.sel.Where.Val)
-		return nil
-	}
-
-	if v.sel.Where.Op == qcode.OpTsQuery {
-		t, err := v.schema.GetTable(v.sel.Table)
-		if err != nil {
-			return err
-		}
-		if len(t.TSVCol) == 0 {
-			return fmt.Errorf("no tsv column defined for %s", v.sel.Table)
-		}
-
-		fmt.Fprintf(w, `(("%s") @@ to_tsquery('%s'))`, t.TSVCol, v.sel.Where.Val)
-		return nil
-	}
-
 	st := util.NewStack()
 
 	if v.sel.Where != nil {
@@ -465,7 +459,7 @@ func (v *selectBlock) renderWhere(w io.Writer) error {
 
 			if val.NestedCol {
 				fmt.Fprintf(w, `(("%s") `, val.Col)
-			} else {
+			} else if len(val.Col) != 0 {
 				fmt.Fprintf(w, `(("%s"."%s") `, v.sel.Table, val.Col)
 			}
 			valExists := true
@@ -511,11 +505,25 @@ func (v *selectBlock) renderWhere(w io.Writer) error {
 				io.WriteString(w, `?&`)
 			case qcode.OpIsNull:
 				if strings.EqualFold(val.Val, "true") {
-					io.WriteString(w, `IS NULL`)
+					io.WriteString(w, `IS NULL)`)
 				} else {
-					io.WriteString(w, `IS NOT NULL`)
+					io.WriteString(w, `IS NOT NULL)`)
 				}
 				valExists = false
+			case qcode.OpEqID:
+				if len(v.ti.PrimaryCol) == 0 {
+					return fmt.Errorf("no primary key column defined for %s", v.sel.Table)
+				}
+				fmt.Fprintf(w, `(("%s") = ('%s'))`, v.ti.PrimaryCol, val.Val)
+				valExists = false
+			case qcode.OpTsQuery:
+				if len(v.ti.TSVCol) == 0 {
+					return fmt.Errorf("no tsv column defined for %s", v.sel.Table)
+				}
+
+				fmt.Fprintf(w, `(("%s") @@ to_tsquery('%s'))`, v.ti.TSVCol, val.Val)
+				valExists = false
+
 			default:
 				return fmt.Errorf("[Where] unexpected op code %d", val.Op)
 			}
@@ -526,9 +534,8 @@ func (v *selectBlock) renderWhere(w io.Writer) error {
 				} else {
 					renderVal(w, val, v.vars)
 				}
+				io.WriteString(w, `)`)
 			}
-
-			io.WriteString(w, `)`)
 
 		default:
 			return fmt.Errorf("[Where] unexpected value encountered %v", intf)
@@ -639,4 +646,13 @@ func funcPrefixLen(fn string) int {
 		return 9
 	}
 	return 0
+}
+
+func findArgVal(sel *qcode.Select, name string) *qcode.Node {
+	for i := range sel.Args {
+		if sel.Args[i].Name == name {
+			return sel.Args[i].Val
+		}
+	}
+	return nil
 }
