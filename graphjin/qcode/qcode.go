@@ -470,13 +470,15 @@ func (com *Compiler) compileArgSearch(sel *Select, arg *Arg) error {
 func (com *Compiler) compileArgWhere(sel *Select, arg *Arg) error {
 	var err error
 
-	if sel.Where != nil {
-		return nil
-	}
-
-	sel.Where, err = com.compileArgObj(arg)
+	ex, err := com.compileArgObj(arg)
 	if err != nil {
 		return err
+	}
+
+	if sel.Where != nil {
+		sel.Where = &Exp{Op: OpAnd, Children: []*Exp{ex, sel.Where}}
+	} else {
+		sel.Where = ex
 	}
 
 	return nil
