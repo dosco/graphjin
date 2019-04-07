@@ -2,7 +2,6 @@ package qcode
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/dosco/super-graph/util"
@@ -25,7 +24,7 @@ type Column struct {
 
 type Select struct {
 	ID         int16
-	Args       []*Arg
+	Args       map[string]*Node
 	AsList     bool
 	Table      string
 	Singular   string
@@ -181,7 +180,7 @@ const (
 )
 
 type FilterMap map[string]*Exp
-type Blacklist *regexp.Regexp
+type Blacklist map[string]struct{}
 
 func CompileFilter(filter string) (*Exp, error) {
 	node, err := ParseArgValue(filter)
@@ -194,7 +193,7 @@ func CompileFilter(filter string) (*Exp, error) {
 
 type Compiler struct {
 	fm FilterMap
-	bl *regexp.Regexp
+	bl Blacklist
 }
 
 func NewCompiler(fm FilterMap, bl Blacklist) *Compiler {
@@ -231,7 +230,7 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 
 	st := util.NewStack()
 	id := int16(0)
-	fmap := make(map[*Field]*Select)
+	fs := make([]*Select, op.FieldLen)
 
 	for i := range op.Fields {
 		st.Push(op.Fields[i])
@@ -249,11 +248,10 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 			return nil, fmt.Errorf("unexpected value poped out %v", intf)
 		}
 
-		if com.bl != nil && com.bl.MatchString(field.Name) {
+		fn := strings.ToLower(field.Name)
+		if _, ok := com.bl[fn]; ok {
 			continue
 		}
-
-		fn := strings.ToLower(field.Name)
 		tn := flect.Pluralize(fn)
 
 		s := &Select{
@@ -282,7 +280,7 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 		}
 
 		id++
-		fmap[field] = s
+		fs[field.ID] = s
 
 		err := com.compileArgs(s, field.Args)
 		if err != nil {
@@ -293,7 +291,7 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 			f := field.Children[i]
 			fn := strings.ToLower(f.Name)
 
-			if com.bl != nil && com.bl.MatchString(fn) {
+			if _, ok := com.bl[fn]; ok {
 				continue
 			}
 
@@ -313,10 +311,9 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 
 		if field.Parent == nil {
 			selRoot = s
-		} else if sp, ok := fmap[field.Parent]; ok {
-			sp.Joins = append(sp.Joins, s)
 		} else {
-			return nil, fmt.Errorf("no select found for parent %#v", field.Parent)
+			sp := fs[field.Parent.ID]
+			sp.Joins = append(sp.Joins, s)
 		}
 	}
 
@@ -333,14 +330,15 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 
 func (com *Compiler) compileArgs(sel *Select, args []*Arg) error {
 	var err error
-	ad := make(map[string]struct{})
+
+	sel.Args = make(map[string]*Node, len(args))
 
 	for i := range args {
 		if args[i] == nil {
 			return fmt.Errorf("[Args] unexpected nil argument found")
 		}
 		an := strings.ToLower(args[i].Name)
-		if _, ok := ad[an]; ok {
+		if _, ok := sel.Args[an]; ok {
 			continue
 		}
 
@@ -367,7 +365,7 @@ func (com *Compiler) compileArgs(sel *Select, args []*Arg) error {
 			return err
 		}
 
-		ad[an] = struct{}{}
+		sel.Args[an] = args[i].Val
 	}
 
 	return nil
@@ -380,7 +378,7 @@ type expT struct {
 
 func (com *Compiler) compileArgObj(arg *Arg) (*Exp, error) {
 	if arg.Val.Type != nodeObj {
-		return nil, fmt.Errorf("[Where] expecting an object")
+		return nil, fmt.Errorf("expecting an object")
 	}
 
 	return com.compileArgNode(arg.Val)
@@ -400,12 +398,13 @@ func (com *Compiler) compileArgNode(val *Node) (*Exp, error) {
 		intf := st.Pop()
 		eT, ok := intf.(*expT)
 		if !ok || eT == nil {
-			return nil, fmt.Errorf("[Where] unexpected value poped out %v", intf)
+			return nil, fmt.Errorf("unexpected value poped out %v", intf)
 		}
 
-		if len(eT.node.Name) != 0 &&
-			com.bl != nil && com.bl.MatchString(eT.node.Name) {
-			continue
+		if len(eT.node.Name) != 0 {
+			if _, ok := com.bl[strings.ToLower(eT.node.Name)]; ok {
+				continue
+			}
 		}
 
 		ex, err := newExp(st, eT)
@@ -457,8 +456,6 @@ func (com *Compiler) compileArgSearch(sel *Select, arg *Arg) error {
 		Val:  arg.Val.Val,
 	}
 
-	sel.Args = append(sel.Args, arg)
-
 	if sel.Where != nil {
 		sel.Where = &Exp{Op: OpAnd, Children: []*Exp{ex, sel.Where}}
 	} else {
@@ -507,7 +504,7 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) error {
 			return fmt.Errorf("OrderBy: unexpected value poped out %v", intf)
 		}
 
-		if com.bl != nil && com.bl.MatchString(node.Name) {
+		if _, ok := com.bl[strings.ToLower(node.Name)]; ok {
 			continue
 		}
 
@@ -547,7 +544,7 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) error {
 func (com *Compiler) compileArgDistinctOn(sel *Select, arg *Arg) error {
 	node := arg.Val
 
-	if com.bl != nil && com.bl.MatchString(node.Name) {
+	if _, ok := com.bl[strings.ToLower(node.Name)]; ok {
 		return nil
 	}
 
