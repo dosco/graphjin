@@ -59,13 +59,15 @@ func (t parserType) String() string {
 }
 
 type Operation struct {
-	Type   parserType
-	Name   string
-	Args   []*Arg
-	Fields []*Field
+	Type     parserType
+	Name     string
+	Args     []*Arg
+	Fields   []*Field
+	FieldLen int16
 }
 
 type Field struct {
+	ID       int16
 	Name     string
 	Alias    string
 	Args     []*Arg
@@ -200,10 +202,12 @@ func (p *Parser) parseOpByType(ty parserType) (*Operation, error) {
 
 	if p.peek(itemObjOpen) {
 		p.ignore()
-		op.Fields, err = p.parseFields()
+		n := int16(0)
+		op.Fields, n, err = p.parseFields()
 		if err != nil {
 			return nil, err
 		}
+		op.FieldLen = n
 	}
 
 	if p.peek(itemObjClose) {
@@ -233,9 +237,10 @@ func (p *Parser) parseOp() (*Operation, error) {
 	return nil, errors.New("unknown operation type")
 }
 
-func (p *Parser) parseFields() ([]*Field, error) {
+func (p *Parser) parseFields() ([]*Field, int16, error) {
 	var roots []*Field
 	st := util.NewStack()
+	i := int16(0)
 
 	for {
 		if p.peek(itemObjClose) {
@@ -248,14 +253,20 @@ func (p *Parser) parseFields() ([]*Field, error) {
 			continue
 		}
 
+		if i > 500 {
+			return nil, 0, errors.New("too many fields")
+		}
+
 		if p.peek(itemName) == false {
-			return nil, errors.New("expecting an alias or field name")
+			return nil, 0, errors.New("expecting an alias or field name")
 		}
 
 		field, err := p.parseField()
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
+		field.ID = i
+		i++
 
 		if st.Len() == 0 {
 			roots = append(roots, field)
@@ -264,7 +275,7 @@ func (p *Parser) parseFields() ([]*Field, error) {
 			intf := st.Peek()
 			parent, ok := intf.(*Field)
 			if !ok || parent == nil {
-				return nil, fmt.Errorf("unexpected value encountered %v", intf)
+				return nil, 0, fmt.Errorf("unexpected value encountered %v", intf)
 			}
 			field.Parent = parent
 			parent.Children = append(parent.Children, field)
@@ -276,7 +287,7 @@ func (p *Parser) parseFields() ([]*Field, error) {
 		}
 	}
 
-	return roots, nil
+	return roots, i, nil
 }
 
 func (p *Parser) parseField() (*Field, error) {

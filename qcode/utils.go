@@ -1,17 +1,14 @@
 package qcode
 
 import (
-	"fmt"
-	"regexp"
 	"strings"
 )
 
-func NewBlacklist(list []string) *regexp.Regexp {
-	var bl *regexp.Regexp
+func NewBlacklist(list []string) Blacklist {
+	bl := make(map[string]struct{}, len(list))
 
-	if len(list) != 0 {
-		re := fmt.Sprintf("(?i)%s", strings.Join(list, "|"))
-		bl = regexp.MustCompile(re)
+	for i := range list {
+		bl[strings.ToLower(list[i])] = struct{}{}
 	}
 	return bl
 }

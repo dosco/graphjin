@@ -274,7 +274,7 @@ func (v *selectBlock) renderBaseSelect(w io.Writer, schema *DBSchema, childCols 
 	isFil := v.sel.Where != nil
 	isAgg := false
 
-	searchVal := findArgVal(v.sel, "search")
+	_, isSearch := v.sel.Args["search"]
 
 	io.WriteString(w, " FROM (SELECT ")
 
@@ -284,15 +284,19 @@ func (v *selectBlock) renderBaseSelect(w io.Writer, schema *DBSchema, childCols 
 
 		if !isRealCol {
 			switch {
-			case searchVal != nil && cn == "search_rank":
+			case isSearch && cn == "search_rank":
 				cn = v.ti.TSVCol
-				fmt.Fprintf(w, `ts_rank("%s"."%s", to_tsquery('%s')) AS %s`,
-					v.sel.Table, cn, searchVal.Val, col.Name)
+				arg := v.sel.Args["search"]
 
-			case searchVal != nil && strings.HasPrefix(cn, "search_headline_"):
+				fmt.Fprintf(w, `ts_rank("%s"."%s", to_tsquery('%s')) AS %s`,
+					v.sel.Table, cn, arg.Val, col.Name)
+
+			case isSearch && strings.HasPrefix(cn, "search_headline_"):
 				cn = cn[16:]
+				arg := v.sel.Args["search"]
+
 				fmt.Fprintf(w, `ts_headline("%s"."%s", to_tsquery('%s')) AS %s`,
-					v.sel.Table, cn, searchVal.Val, col.Name)
+					v.sel.Table, cn, arg.Val, col.Name)
 
 			default:
 				pl := funcPrefixLen(cn)
@@ -646,13 +650,4 @@ func funcPrefixLen(fn string) int {
 		return 9
 	}
 	return 0
-}
-
-func findArgVal(sel *qcode.Select, name string) *qcode.Node {
-	for i := range sel.Args {
-		if sel.Args[i].Name == name {
-			return sel.Args[i].Val
-		}
-	}
-	return nil
 }

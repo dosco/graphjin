@@ -19,13 +19,14 @@ I wanted a GraphQL server that just worked the second you deployed it without ha
 And so after a lot of coffee and some avocado toasts Super Graph was born. An instant GraphQL API service that's high performance and easy to deploy. I hope you find it as useful as I do and there's a lot more coming so hit that :star: to stay in the loop.
 
 ## Features
-- Support for Rails database conventions
+- Works with Rails database schemas
+- Automatically learns schemas and relationships
 - Belongs-To, One-To-Many and Many-To-Many table relationships
-- Devise, Warden encrypted and signed session cookies
-- Redis, Memcache and Cookie session stores
-- JWT tokens supported from providers like Auth0
-- Generates highly optimized and fast Postgres SQL queries
-- Customize through a simple config file
+- Full text search and Aggregations
+- Rails Auth supported (Redis, Memcache, Cookie)
+- JWT tokens supported (Auth0, etc)
+- Highly optimized and fast Postgres SQL queries
+- Configure with a simple config file
 - High performance GO codebase
 - Tiny docker image and low memory requirements
 
