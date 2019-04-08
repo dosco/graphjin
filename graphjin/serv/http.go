@@ -123,8 +123,9 @@ func apiv1Http(w http.ResponseWriter, r *http.Request) {
 		errorResp(w, err)
 		return
 	}
+
 	finalSQL := sqlStmt.String()
-	if debug > 0 {
+	if conf.DebugLevel > 0 {
 		fmt.Println(finalSQL)
 	}
 	st := time.Now()
@@ -140,7 +141,7 @@ func apiv1Http(w http.ResponseWriter, r *http.Request) {
 	et := time.Now()
 	resp := gqlResp{}
 
-	if tracing {
+	if conf.EnableTracing {
 		resp.Extensions = &extensions{newTrace(st, et, qc)}
 	}
 

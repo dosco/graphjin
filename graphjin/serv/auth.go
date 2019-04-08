@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strings"
 )
 
 const (
@@ -21,9 +20,9 @@ var (
 )
 
 func headerHandler(next http.HandlerFunc) http.HandlerFunc {
-	fn := conf.GetString("auth.field_name")
+	fn := conf.Auth.Header
 	if len(fn) == 0 {
-		panic(errors.New("no auth.field_name defined"))
+		panic(errors.New("no auth.header defined"))
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -39,33 +38,26 @@ func headerHandler(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func withAuth(next http.HandlerFunc) http.HandlerFunc {
-	atype := strings.ToLower(conf.GetString("auth.type"))
-	if len(atype) == 0 {
-		return next
-	}
-	store := strings.ToLower(conf.GetString("auth.store"))
+	at := conf.Auth.Type
 
-	switch atype {
+	switch at {
 	case "header":
 		return headerHandler(next)
 
-	case "rails":
-		switch store {
-		case "memcache":
-			return railsMemcacheHandler(next)
+	case "rails_cookie":
+		return railsCookieHandler(next)
 
-		case "redis":
-			return railsRedisHandler(next)
+	case "rails_memcache":
+		return railsMemcacheHandler(next)
 
-		default:
-			return railsCookieHandler(next)
-		}
+	case "rails_redis":
+		return railsRedisHandler(next)
 
 	case "jwt":
 		return jwtHandler(next)
 
 	default:
-		panic(errors.New("unknown auth.type"))
+		return next
 	}
 
 	return next

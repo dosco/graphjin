@@ -10,15 +10,18 @@ import (
 	"github.com/dosco/super-graph/util"
 )
 
-type Variables map[string]string
+type Config struct {
+	Schema *DBSchema
+	Vars   map[string]string
+}
 
 type Compiler struct {
 	schema *DBSchema
-	vars   Variables
+	vars   map[string]string
 }
 
-func NewCompiler(schema *DBSchema, vars Variables) *Compiler {
-	return &Compiler{schema, vars}
+func NewCompiler(conf Config) *Compiler {
+	return &Compiler{conf.Schema, conf.Vars}
 }
 
 func (c *Compiler) Compile(w io.Writer, qc *qcode.QCode) error {
@@ -607,7 +610,7 @@ func renderList(w io.Writer, ex *qcode.Exp) {
 	io.WriteString(w, `)`)
 }
 
-func renderVal(w io.Writer, ex *qcode.Exp, vars Variables) {
+func renderVal(w io.Writer, ex *qcode.Exp, vars map[string]string) {
 	io.WriteString(w, ` (`)
 	switch ex.Type {
 	case qcode.ValBool, qcode.ValInt, qcode.ValFloat:

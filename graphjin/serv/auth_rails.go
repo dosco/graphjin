@@ -14,31 +14,26 @@ import (
 )
 
 func railsRedisHandler(next http.HandlerFunc) http.HandlerFunc {
-	cookie := conf.GetString("auth.cookie")
+	cookie := conf.Auth.Cookie
 	if len(cookie) == 0 {
 		panic(errors.New("no auth.cookie defined"))
 	}
 
-	conf.BindEnv("auth.url", "SG_AUTH_URL")
-	authURL := conf.GetString("auth.url")
+	authURL := conf.Auth.RailsRedis.URL
 	if len(authURL) == 0 {
-		panic(errors.New("no auth.url defined"))
+		panic(errors.New("no auth.rails_redis.url defined"))
 	}
 
-	conf.SetDefault("auth.max_idle", 80)
-	conf.SetDefault("auth.max_active", 12000)
-
 	rp := &redis.Pool{
-		MaxIdle:   conf.GetInt("auth.max_idle"),
-		MaxActive: conf.GetInt("auth.max_active"),
+		MaxIdle:   conf.Auth.RailsRedis.MaxIdle,
+		MaxActive: conf.Auth.RailsRedis.MaxActive,
 		Dial: func() (redis.Conn, error) {
 			c, err := redis.DialURL(authURL)
 			if err != nil {
 				panic(err)
 			}
 
-			conf.BindEnv("auth.password", "SG_AUTH_PASSWORD")
-			pwd := conf.GetString("auth.password")
+			pwd := conf.Auth.RailsRedis.Password
 			if len(pwd) != 0 {
 				if _, err := c.Do("AUTH", pwd); err != nil {
 					panic(err)
@@ -74,14 +69,14 @@ func railsRedisHandler(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func railsMemcacheHandler(next http.HandlerFunc) http.HandlerFunc {
-	cookie := conf.GetString("auth.cookie")
+	cookie := conf.Auth.Cookie
 	if len(cookie) == 0 {
 		panic(errors.New("no auth.cookie defined"))
 	}
 
-	host := conf.GetString("auth.host")
+	host := conf.Auth.RailsMemcache.Host
 	if len(host) == 0 {
-		panic(errors.New("no auth.host defined"))
+		panic(errors.New("no auth.rails_memcache.host defined"))
 	}
 
 	mc := memcache.New(host)
@@ -112,15 +107,14 @@ func railsMemcacheHandler(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func railsCookieHandler(next http.HandlerFunc) http.HandlerFunc {
-	cookie := conf.GetString("auth.cookie")
+	cookie := conf.Auth.Cookie
 	if len(cookie) == 0 {
 		panic(errors.New("no auth.cookie defined"))
 	}
 
-	conf.BindEnv("auth.secret_key_base", "SG_AUTH_SECRET_KEY_BASE")
-	secret := conf.GetString("auth.secret_key_base")
+	secret := conf.Auth.RailsCookie.SecretKeyBase
 	if len(secret) == 0 {
-		panic(errors.New("no auth.secret_key_base defined"))
+		panic(errors.New("no auth.rails_cookie.secret_key_base defined"))
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {

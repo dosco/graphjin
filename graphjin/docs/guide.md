@@ -335,33 +335,36 @@ Super Graph can handle all these variations including the old and new session fo
 
 ```yaml
 auth:
-  type: rails
+  type: rails_cookie
   cookie: _app_session
-  store: cookie
-  secret_key_base: caf335bfcfdb04e50db5bb0a4d67ab9...
+
+  rails_cookie:
+    secret_key_base: caf335bfcfdb04e50db5bb0a4d67ab9...
 ```
 
 #### Memcache session store
 
 ```yaml
 auth:
-  type: rails
+  type: rails_memcache
   cookie: _app_session
-  store: memcache
-  host: 127.0.0.1
+
+  rails_memcache:
+    host: 127.0.0.1
 ```
 
 #### Redis session store
 
 ```yaml
 auth:
-  type: rails
+  type: rails_redis
   cookie: _app_session
-  store: redis
-  max_idle: 80,
-  max_active: 12000,
-  url: redis://127.0.0.1:6379
-  password: ""
+
+  rails_redis:
+    url: redis://127.0.0.1:6379
+    password: ""
+    max_idle: 80
+    max_active: 12000
 ```
 
 ### JWT Token Auth
@@ -369,11 +372,13 @@ auth:
 ```yaml
 auth:
   type: jwt
-  provider: auth0 #none
   cookie: _app_session
-  secret: abc335bfcfdb04e50db5bb0a4d67ab9
-  public_key_file: /secrets/public_key.pem
-  public_key_type: ecdsa #rsa
+  
+  jwt:
+    provider: auth0 #none
+    secret: abc335bfcfdb04e50db5bb0a4d67ab9
+    public_key_file: /secrets/public_key.pem
+    public_key_type: ecdsa #rsa
 ```
 
 For JWT tokens we currently support tokens from a provider like Auth0
@@ -389,11 +394,13 @@ For validation a `secret` or a public key (ecdsa or rsa) is required. When using
 Configuration files can either be in YAML or JSON their names are derived from the `GO_ENV` variable, for example `GO_ENV=prod` will cause the `prod.yaml` config file to be used. or `GO_ENV=dev` will use the `dev.yaml`. A path to look for the config files in can be specified using the `-path <folder>` command line argument.
 
 ```yaml
+title: Super Graph Development
 host_port: 0.0.0.0:8080
 web_ui: true
 debug_level: 1
+enable_tracing: false
 
-# When to throw a 401 on auth failure 
+# Throw a 401 on auth failure for queries that need auth
 # valid values: always, per_query, never
 auth_fail_block: never
 
@@ -404,46 +411,37 @@ auth_fail_block: never
 # SG_DATABASE_PASSWORD
 
 # Auth related environment Variables
-# SG_AUTH_SECRET_KEY_BASE
-# SG_AUTH_PUBLIC_KEY_FILE
-# SG_AUTH_URL
-# SG_AUTH_PASSWORD
+# SG_AUTH_RAILS_COOKIE_SECRET_KEY_BASE
+# SG_AUTH_RAILS_REDIS_URL
+# SG_AUTH_RAILS_REDIS_PASSWORD
+# SG_AUTH_JWT_PUBLIC_KEY_FILE
 
 # inflections:
 #   person: people
 #   sheep: sheep
 
-auth:
+auth: 
   type: header
-  field_name: X-User-ID
+  cookie: _app_session
+  header: X-User-ID
 
-# auth:
-#   type: rails
-#   cookie: _app_session
-#   store: cookie
-#   secret_key_base: caf335bfcfdb04e50db5bb0a4d67ab9...
+  # rails_cookie:
+  #   secret_key_base: caf335bfcfdb04e50db5bb0a4d67ab9...
 
-# auth:
-#   type: rails
-#   cookie: _app_session
-#   store: memcache
-#   host: 127.0.0.1
+  # rails_memcache:
+  #   host: 127.0.0.1
 
-# auth:
-#   type: rails
-#   cookie: _app_session
-#   store: redis
-#   max_idle: 80,
-#   max_active: 12000,
-#   url: redis://127.0.0.1:6379
-#   password: ""
+  # rails_redis:
+  #   url: redis://127.0.0.1:6379
+  #   password: ""
+  #   max_idle: 80,
+  #   max_active: 12000,
 
-# auth:
-#   type: jwt
-#   cookie: _app_session
-#   secret: abc335bfcfdb04e50db5bb0a4d67ab9
-#   public_key_file: /secrets/public_key.pem
-#   public_key_type: ecdsa #rsa
+  # jwt:
+  #   provider: auth0
+  #   secret: abc335bfcfdb04e50db5bb0a4d67ab9
+  #   public_key_file: /secrets/public_key.pem
+  #   public_key_type: ecdsa #rsa
 
 database:
   type: postgres
@@ -460,20 +458,36 @@ database:
   variables:
     account_id: "select account_id from users where id = $user_id"
 
-  # Used to add access to tables 
-  filters:
-    users: "{ id: { _eq: $user_id } }"
-    posts: "{ account_id: { _eq: $account_id } }"
+  # Define defaults to for the field key and values below
+  defaults:
+    filter: ["{ id: { _eq: $user_id } }"]
+    
+    # Fields and table names that you wish to block
+    blacklist:
+      - ar_internal_metadata
+      - schema_migrations
+      - secret
+      - password
+      - encrypted
+      - token
 
-  # Fields and table names that you wish to block
-  blacklist:
-    - secret
-    - password
-    - encrypted
-    - token
+  fields:
+    - name: users
+      filter: ["{ id: { _eq: $user_id } }"]
+
+    # - name: posts
+    #   filter: ["{ account_id: { _eq: $account_id } }"]
+
+    - name: my_products
+      table: products
+      filter: ["{ id: { _eq: $user_id } }"]
+  
+
 ```
 
 If deploying into environments like Kubernetes it's useful to be able to configure things like secrets and hosts though environment variables therfore we expose the below environment variables. This is escpecially useful for secrets since they are usually injected in via a secrets management framework ie. Kubernetes Secrets
+
+Keep in mind any value can be overwritten using environment variables for example `auth.jwt.public_key_type` converts to `SG_AUTH_JWT_PUBLIC_KEY_TYPE`. In short prefix `SG_`, upper case and all `.` should changed to `_`.
 
 #### Postgres environment variables
 ```bash
@@ -485,12 +499,11 @@ SG_DATABASE_PASSWORD
 
 #### Auth environment variables
 ```bash
-SG_AUTH_SECRET_KEY_BASE
-SG_AUTH_PUBLIC_KEY_FILE
-SG_AUTH_URL
-SG_AUTH_PASSWORD
+SG_AUTH_RAILS_COOKIE_SECRET_KEY_BASE
+SG_AUTH_RAILS_REDIS_URL
+SG_AUTH_RAILS_REDIS_PASSWORD
+SG_AUTH_JWT_PUBLIC_KEY_FILE
 ```
-
 
 ## Deploying Super Graph
 

@@ -179,25 +179,41 @@ const (
 	OrderDescNullsLast
 )
 
-type FilterMap map[string]*Exp
-type Blacklist map[string]struct{}
+type Config struct {
+	Filter    []string
+	FilterMap map[string][]string
+	Blacklist []string
+}
 
-func CompileFilter(filter string) (*Exp, error) {
-	node, err := ParseArgValue(filter)
+type Compiler struct {
+	fl *Exp
+	fm map[string]*Exp
+	bl map[string]struct{}
+}
+
+func NewCompiler(conf Config) (*Compiler, error) {
+	bl := make(map[string]struct{}, len(conf.Blacklist))
+
+	for i := range conf.Blacklist {
+		bl[strings.ToLower(conf.Blacklist[i])] = struct{}{}
+	}
+
+	fl, err := compileFilter(conf.Filter)
 	if err != nil {
 		return nil, err
 	}
 
-	return (&Compiler{}).compileArgNode(node)
-}
+	fm := make(map[string]*Exp, len(conf.FilterMap))
 
-type Compiler struct {
-	fm FilterMap
-	bl Blacklist
-}
+	for k, v := range conf.FilterMap {
+		fil, err := compileFilter(v)
+		if err != nil {
+			return nil, err
+		}
+		fm[strings.ToLower(k)] = fil
+	}
 
-func NewCompiler(fm FilterMap, bl Blacklist) *Compiler {
-	return &Compiler{fm, bl}
+	return &Compiler{fl, fm, bl}, nil
 }
 
 func (com *Compiler) CompileQuery(query string) (*QCode, error) {
@@ -766,4 +782,26 @@ func pushChildren(st *util.Stack, ex *Exp, node *Node) {
 	for i := range node.Children {
 		st.Push(&expT{ex, node.Children[i]})
 	}
+}
+
+func compileFilter(filter []string) (*Exp, error) {
+	var fl *Exp
+	com := &Compiler{}
+
+	for i := range filter {
+		node, err := ParseArgValue(filter[i])
+		if err != nil {
+			return nil, err
+		}
+		f, err := com.compileArgNode(node)
+		if err != nil {
+			return nil, err
+		}
+		if fl == nil {
+			fl = f
+		} else {
+			fl = &Exp{Op: OpAnd, Children: []*Exp{fl, f}}
+		}
+	}
+	return fl, nil
 }

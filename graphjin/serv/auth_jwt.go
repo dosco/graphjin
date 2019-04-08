@@ -18,18 +18,14 @@ func jwtHandler(next http.HandlerFunc) http.HandlerFunc {
 	var key interface{}
 	var jwtProvider int
 
-	cookie := conf.GetString("auth.cookie")
+	cookie := conf.Auth.Cookie
 
-	provider := conf.GetString("auth.provider")
-	if provider == "auth0" {
+	if conf.Auth.JWT.Provider == "auth0" {
 		jwtProvider = jwtAuth0
 	}
 
-	conf.BindEnv("auth.secret", "SG_AUTH_SECRET")
-	secret := conf.GetString("auth.secret")
-
-	conf.BindEnv("auth.public_key_file", "SG_AUTH_PUBLIC_KEY_FILE")
-	publicKeyFile := conf.GetString("auth.public_key_file")
+	secret := conf.Auth.JWT.Secret
+	publicKeyFile := conf.Auth.JWT.PubKeyFile
 
 	switch {
 	case len(secret) != 0:
@@ -41,7 +37,7 @@ func jwtHandler(next http.HandlerFunc) http.HandlerFunc {
 			panic(err)
 		}
 
-		switch conf.GetString("auth.public_key_type") {
+		switch conf.Auth.JWT.PubKeyType {
 		case "ecdsa":
 			key, err = jwt.ParseECPublicKeyFromPEM(kd)
 
