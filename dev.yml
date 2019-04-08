@@ -15,47 +15,37 @@ auth_fail_block: never
 # SG_DATABASE_PASSWORD
 
 # Auth related environment Variables
-# SG_AUTH_SECRET_KEY_BASE
-# SG_AUTH_PUBLIC_KEY_FILE
-# SG_AUTH_URL
-# SG_AUTH_PASSWORD
+# SG_AUTH_RAILS_COOKIE_SECRET_KEY_BASE
+# SG_AUTH_RAILS_REDIS_URL
+# SG_AUTH_RAILS_REDIS_PASSWORD
+# SG_AUTH_JWT_PUBLIC_KEY_FILE
 
 # inflections:
 #   person: people
 #   sheep: sheep
 
-auth:
+auth: 
   type: header
-  field_name: X-User-ID
+  cookie: _app_session
+  header: X-User-ID
 
-# auth:
-#   type: rails
-#   cookie: _app_session
-#   store: cookie
-#   secret_key_base: caf335bfcfdb04e50db5bb0a4d67ab9...
+  # rails_cookie:
+  #   secret_key_base: caf335bfcfdb04e50db5bb0a4d67ab9...
 
-# auth:
-#   type: rails
-#   cookie: _app_session
-#   store: memcache
-#   host: 127.0.0.1
+  # rails_memcache:
+  #   host: 127.0.0.1
 
-# auth:
-#   type: rails
-#   cookie: _app_session
-#   store: redis
-#   max_idle: 80,
-#   max_active: 12000,
-#   url: redis://127.0.0.1:6379
-#   password: ""
+  # rails_redis:
+  #   url: redis://127.0.0.1:6379
+  #   password: ""
+  #   max_idle: 80,
+  #   max_active: 12000,
 
-# auth:
-#   type: jwt
-#   provider: auth0
-#   cookie: _app_session
-#   secret: abc335bfcfdb04e50db5bb0a4d67ab9
-#   public_key_file: /secrets/public_key.pem
-#   public_key_type: ecdsa #rsa
+  # jwt:
+  #   provider: auth0
+  #   secret: abc335bfcfdb04e50db5bb0a4d67ab9
+  #   public_key_file: /secrets/public_key.pem
+  #   public_key_type: ecdsa #rsa
 
 database:
   type: postgres
@@ -72,18 +62,27 @@ database:
   variables:
     account_id: "select account_id from users where id = $user_id"
 
-  # Used to add access to tables 
-  filters:
-    users: "{ id: { _eq: $user_id } }"
-    posts: "{ account_id: { _eq: $account_id } }"
+  # Define defaults to for the field key and values below
+  defaults:
+    filter: ["{ id: { _eq: $user_id } }"]
+    
+    # Fields and table names that you wish to block
+    blacklist:
+      - ar_internal_metadata
+      - schema_migrations
+      - secret
+      - password
+      - encrypted
+      - token
 
-  # Fields and table names that you wish to block
-  blacklist:
-    - ar_internal_metadata
-    - schema_migrations
-    - secret
-    - password
-    - encrypted
-    - token
+  fields:
+    - name: users
+      filter: ["{ id: { _eq: $user_id } }"]
 
+    # - name: posts
+    #   filter: ["{ account_id: { _eq: $account_id } }"]
+
+    - name: my_products
+      table: products
+      filter: ["{ id: { _eq: $user_id } }"]
   
