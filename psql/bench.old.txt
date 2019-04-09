@@ -1,0 +1,16 @@
+?   	github.com/dosco/super-graph	[no test files]
+goos: darwin
+goarch: amd64
+pkg: github.com/dosco/super-graph/psql
+BenchmarkCompileGQLToSQL-8   	   30000	     45507 ns/op	   14565 B/op	     244 allocs/op
+PASS
+ok  	github.com/dosco/super-graph/psql	1.846s
+goos: darwin
+goarch: amd64
+pkg: github.com/dosco/super-graph/qcode
+BenchmarkParse-8   	2000000000	         0.00 ns/op
+PASS
+ok  	github.com/dosco/super-graph/qcode	0.008s
+PASS
+ok  	github.com/dosco/super-graph/serv	0.017s
+?   	github.com/dosco/super-graph/util	[no test files]

@@ -393,6 +393,8 @@ For validation a `secret` or a public key (ecdsa or rsa) is required. When using
 
 Configuration files can either be in YAML or JSON their names are derived from the `GO_ENV` variable, for example `GO_ENV=prod` will cause the `prod.yaml` config file to be used. or `GO_ENV=dev` will use the `dev.yaml`. A path to look for the config files in can be specified using the `-path <folder>` command line argument.
 
+We're tried to ensure that the config file is self documenting and easy to work with.
+
 ```yaml
 title: Super Graph Development
 host_port: 0.0.0.0:8080
@@ -460,7 +462,7 @@ database:
 
   # Define defaults to for the field key and values below
   defaults:
-    filter: ["{ id: { _eq: $user_id } }"]
+    filter: ["{ user_id: { eq: $user_id } }"]
     
     # Fields and table names that you wish to block
     blacklist:
@@ -473,16 +475,29 @@ database:
 
   fields:
     - name: users
-      filter: ["{ id: { _eq: $user_id } }"]
+      # This filter will overwrite defaults.filter
+      filter: ["{ id: { eq: $user_id } }"]
+
+    - name: products
+      # Multiple filters are AND'd together
+      filter: [
+        "{ price: { gt: 0 } }",
+        "{ price: { lt: 8 } }"
+      ] 
+
+    - name: customers
+      # No filter is used for this field not 
+      # even defaults.filter
+      filter: none
+
+    - # You can create new fields that have a
+      # real db table backing them
+      name: me
+      table: users
+      filter: ["{ id: { eq: $user_id } }"]
 
     # - name: posts
     #   filter: ["{ account_id: { _eq: $account_id } }"]
-
-    - name: my_products
-      table: products
-      filter: ["{ id: { _eq: $user_id } }"]
-  
-
 ```
 
 If deploying into environments like Kubernetes it's useful to be able to configure things like secrets and hosts though environment variables therfore we expose the below environment variables. This is escpecially useful for secrets since they are usually injected in via a secrets management framework ie. Kubernetes Secrets
