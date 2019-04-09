@@ -16,16 +16,15 @@ type TTKey struct {
 }
 
 type DBSchema struct {
-	ColMap   map[TCKey]*DBColumn
-	ColIDMap map[int]*DBColumn
-	Tables   map[string]*DBTableInfo
-
+	Tables map[string]*DBTableInfo
 	RelMap map[TTKey]*DBRel
 }
 
 type DBTableInfo struct {
+	Name       string
 	PrimaryCol string
 	TSVCol     string
+	Columns    map[string]*DBColumn
 }
 
 type RelType int
@@ -45,7 +44,10 @@ type DBRel struct {
 }
 
 func NewDBSchema(db *pg.DB) (*DBSchema, error) {
-	schema := initSchema()
+	schema := &DBSchema{
+		Tables: make(map[string]*DBTableInfo),
+		RelMap: make(map[TTKey]*DBRel),
+	}
 
 	tables, err := GetTables(db)
 	if err != nil {
@@ -58,41 +60,39 @@ func NewDBSchema(db *pg.DB) (*DBSchema, error) {
 			return nil, err
 		}
 
-		updateSchema(schema, t, cols)
+		schema.updateSchema(t, cols)
 	}
 
 	return schema, nil
 }
 
-func initSchema() *DBSchema {
-	return &DBSchema{
-		ColMap:   make(map[TCKey]*DBColumn),
-		ColIDMap: make(map[int]*DBColumn),
-		Tables:   make(map[string]*DBTableInfo),
-		RelMap:   make(map[TTKey]*DBRel),
-	}
-}
-
-func updateSchema(schema *DBSchema, t *DBTable, cols []*DBColumn) {
+func (s *DBSchema) updateSchema(t *DBTable, cols []*DBColumn) {
 	// Current table
-	ct := strings.ToLower(t.Name)
-	schema.Tables[ct] = &DBTableInfo{}
+	ti := &DBTableInfo{
+		Name:    t.Name,
+		Columns: make(map[string]*DBColumn, len(cols)),
+	}
 
 	// Foreign key columns in current table
 	var jcols []*DBColumn
+	colByID := make(map[int]*DBColumn)
 
-	for _, c := range cols {
-		schema.ColMap[TCKey{ct, strings.ToLower(c.Name)}] = c
-		schema.ColIDMap[c.ID] = c
+	for i := range cols {
+		c := cols[i]
+		ti.Columns[strings.ToLower(c.Name)] = cols[i]
+		colByID[c.ID] = cols[i]
 	}
+
+	ct := strings.ToLower(t.Name)
+	s.Tables[ct] = ti
 
 	for _, c := range cols {
 		switch {
 		case c.Type == "tsvector":
-			schema.Tables[ct].TSVCol = c.Name
+			s.Tables[ct].TSVCol = c.Name
 
 		case c.PrimaryKey:
-			schema.Tables[ct].PrimaryCol = c.Name
+			s.Tables[ct].PrimaryCol = c.Name
 
 		case len(c.FKeyTable) != 0:
 			if len(c.FKeyColID) == 0 {
@@ -101,7 +101,7 @@ func updateSchema(schema *DBSchema, t *DBTable, cols []*DBColumn) {
 
 			// Foreign key column name
 			ft := strings.ToLower(c.FKeyTable)
-			fc, ok := schema.ColIDMap[c.FKeyColID[0]]
+			fc, ok := colByID[c.FKeyColID[0]]
 			if !ok {
 				continue
 			}
@@ -109,12 +109,12 @@ func updateSchema(schema *DBSchema, t *DBTable, cols []*DBColumn) {
 			// Belongs-to relation between current table and the
 			// table in the foreign key
 			rel1 := &DBRel{RelBelongTo, "", "", c.Name, fc.Name}
-			schema.RelMap[TTKey{ct, ft}] = rel1
+			s.RelMap[TTKey{ct, ft}] = rel1
 
 			// One-to-many relation between the foreign key table and the
 			// the current table
 			rel2 := &DBRel{RelOneToMany, "", "", fc.Name, c.Name}
-			schema.RelMap[TTKey{ft, ct}] = rel2
+			s.RelMap[TTKey{ft, ct}] = rel2
 
 			jcols = append(jcols, c)
 		}
@@ -130,22 +130,24 @@ func updateSchema(schema *DBSchema, t *DBTable, cols []*DBColumn) {
 		for i := range jcols {
 			for n := range jcols {
 				if n != i {
-					updateSchemaOTMT(schema, ct, jcols[i], jcols[n])
+					s.updateSchemaOTMT(ct, jcols[i], jcols[n], colByID)
 				}
 			}
 		}
 	}
 }
 
-func updateSchemaOTMT(schema *DBSchema, ct string, col1, col2 *DBColumn) {
+func (s *DBSchema) updateSchemaOTMT(
+	ct string, col1, col2 *DBColumn, colByID map[int]*DBColumn) {
+
 	t1 := strings.ToLower(col1.FKeyTable)
 	t2 := strings.ToLower(col2.FKeyTable)
 
-	fc1, ok := schema.ColIDMap[col1.FKeyColID[0]]
+	fc1, ok := colByID[col1.FKeyColID[0]]
 	if !ok {
 		return
 	}
-	fc2, ok := schema.ColIDMap[col2.FKeyColID[0]]
+	fc2, ok := colByID[col2.FKeyColID[0]]
 	if !ok {
 		return
 	}
@@ -154,13 +156,13 @@ func updateSchemaOTMT(schema *DBSchema, ct string, col1, col2 *DBColumn) {
 	// 2nd foreign key table
 	//rel1 := &DBRel{RelOneToManyThrough, ct, fc1.Name, col1.Name}
 	rel1 := &DBRel{RelOneToManyThrough, ct, col2.Name, fc2.Name, col1.Name}
-	schema.RelMap[TTKey{t1, t2}] = rel1
+	s.RelMap[TTKey{t1, t2}] = rel1
 
 	// One-to-many-through relation between 2nd foreign key table and the
 	// 1nd foreign key table
 	//rel2 := &DBRel{RelOneToManyThrough, ct, col2.Name, fc2.Name}
 	rel2 := &DBRel{RelOneToManyThrough, ct, col1.Name, fc1.Name, col2.Name}
-	schema.RelMap[TTKey{t2, t1}] = rel2
+	s.RelMap[TTKey{t2, t1}] = rel2
 }
 
 type DBTable struct {
@@ -242,13 +244,13 @@ WHERE c.relkind = 'r'::char
 
 	stmt, err := db.Prepare(sqlStmt)
 	if err != nil {
-		return nil, fmt.Errorf("Error fetching columns: %s", err)
+		return nil, fmt.Errorf("error fetching columns: %s", err)
 	}
 
 	var t []*DBColumn
 	_, err = stmt.Query(&t, schema, table)
 	if err != nil {
-		return nil, fmt.Errorf("Error fetching columns: %s", err)
+		return nil, fmt.Errorf("error fetching columns: %s", err)
 	}
 
 	return t, nil
@@ -257,7 +259,7 @@ WHERE c.relkind = 'r'::char
 func (s *DBSchema) GetTable(table string) (*DBTableInfo, error) {
 	t, ok := s.Tables[table]
 	if !ok {
-		return nil, fmt.Errorf("table info not found '%s'", table)
+		return nil, fmt.Errorf("unknown table '%s'", table)
 	}
 	return t, nil
 }

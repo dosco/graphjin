@@ -64,7 +64,7 @@ database:
 
   # Define defaults to for the field key and values below
   defaults:
-    filter: ["{ id: { _eq: $user_id } }"]
+    filter: ["{ user_id: { eq: $user_id } }"]
     
     # Fields and table names that you wish to block
     blacklist:
@@ -77,12 +77,20 @@ database:
 
   fields:
     - name: users
-      filter: ["{ id: { _eq: $user_id } }"]
+      filter: ["{ id: { eq: $user_id } }"]
+
+    - name: products
+      filter: [
+        "{ price: { gt: 0 } }",
+        "{ price: { lt: 8 } }"
+      ] 
+
+    - name: customers
+      filter: none
+
+    - name: me
+      table: users
+      filter: ["{ id: { eq: $user_id } }"]
 
     # - name: posts
     #   filter: ["{ account_id: { _eq: $account_id } }"]
-
-    - name: my_products
-      table: products
-      filter: ["{ id: { _eq: $user_id } }"]
-  

@@ -61,7 +61,8 @@ type Paging struct {
 type ExpOp int
 
 const (
-	OpAnd ExpOp = iota + 1
+	OpNop ExpOp = iota
+	OpAnd
 	OpOr
 	OpNot
 	OpEquals
@@ -92,6 +93,8 @@ func (t ExpOp) String() string {
 	var v string
 
 	switch t {
+	case OpNop:
+		v = "op-nop"
 	case OpAnd:
 		v = "op-and"
 	case OpOr:
@@ -333,7 +336,12 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 		}
 	}
 
-	if fil, ok := com.fm[selRoot.Table]; ok {
+	fil, ok := com.fm[selRoot.Table]
+	if !ok {
+		fil = com.fl
+	}
+
+	if fil != nil && fil.Op != OpNop {
 		if selRoot.Where != nil {
 			selRoot.Where = &Exp{Op: OpAnd, Children: []*Exp{fil, selRoot.Where}}
 		} else {
@@ -787,6 +795,10 @@ func pushChildren(st *util.Stack, ex *Exp, node *Node) {
 func compileFilter(filter []string) (*Exp, error) {
 	var fl *Exp
 	com := &Compiler{}
+
+	if len(filter) == 0 {
+		return &Exp{Op: OpNop}, nil
+	}
 
 	for i := range filter {
 		node, err := ParseArgValue(filter[i])
