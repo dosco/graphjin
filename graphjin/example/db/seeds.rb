@@ -13,6 +13,19 @@ customer_count = 100
 product_count = 50
 purchase_count = 100
 
+3.times do |i|
+  user = User.create(
+    full_name: Faker::Name.name,
+    avatar: Faker::Avatar.image,
+    phone: Faker::PhoneNumber.cell_phone,
+    email: "user#{i}@example.com",
+    password: pwd,
+    password_confirmation: pwd
+  )
+  user.save!
+  puts user.inspect
+end
+
 user_count.times do |i|
   user = User.create(
     full_name: Faker::Name.name,

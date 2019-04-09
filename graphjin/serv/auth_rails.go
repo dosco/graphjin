@@ -116,16 +116,17 @@ func railsCookieHandler(next http.HandlerFunc) http.HandlerFunc {
 	if len(secret) == 0 {
 		panic(errors.New("no auth.rails_cookie.secret_key_base defined"))
 	}
-
 	return func(w http.ResponseWriter, r *http.Request) {
 		ck, err := r.Cookie(cookie)
 		if err != nil {
+			logger.Error(err)
 			next.ServeHTTP(w, r)
 			return
 		}
 
 		userID, err := railsAuth(ck.Value, secret)
 		if err != nil {
+			logger.Error(err)
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -138,11 +139,9 @@ func railsCookieHandler(next http.HandlerFunc) http.HandlerFunc {
 func railsAuth(cookie, secret string) (userID string, err error) {
 	var dcookie []byte
 
-	if len(secret) != 0 {
-		dcookie, err = session.DecryptSignedCookie(cookie, secret, salt, signSalt)
-		if err != nil {
-			return
-		}
+	dcookie, err = session.DecryptSignedCookie(cookie, secret, salt, signSalt)
+	if err != nil {
+		return
 	}
 
 	if dcookie[0] != '{' {

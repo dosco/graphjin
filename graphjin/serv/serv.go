@@ -50,18 +50,18 @@ type config struct {
 
 		RailsCookie struct {
 			SecretKeyBase string `mapstructure:"secret_key_base"`
-		}
+		} `mapstructure:"rails_cookie"`
 
 		RailsMemcache struct {
 			Host string
-		}
+		} `mapstructure:"rails_memcache"`
 
 		RailsRedis struct {
 			URL       string
 			Password  string
 			MaxIdle   int `mapstructure:"max_idle"`
 			MaxActive int `mapstructure:"max_active"`
-		}
+		} `mapstructure:"rails_redis"`
 
 		JWT struct {
 			Provider   string
@@ -120,7 +120,7 @@ func initConf() (*config, error) {
 	vi.AutomaticEnv()
 
 	vi.AddConfigPath(*path)
-	vi.AddConfigPath("./conf")
+	vi.AddConfigPath("./config")
 	vi.SetConfigName(getConfigName())
 
 	vi.SetDefault("host_port", "0.0.0.0:8080")
