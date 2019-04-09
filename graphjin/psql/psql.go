@@ -11,22 +11,27 @@ import (
 )
 
 type Config struct {
-	Schema *DBSchema
-	Vars   map[string]string
+	Schema   *DBSchema
+	Vars     map[string]string
+	TableMap map[string]string
 }
 
 type Compiler struct {
 	schema *DBSchema
 	vars   map[string]string
+	tmap   map[string]string
 }
 
 func NewCompiler(conf Config) *Compiler {
-	return &Compiler{conf.Schema, conf.Vars}
+	return &Compiler{conf.Schema, conf.Vars, conf.TableMap}
 }
 
 func (c *Compiler) Compile(w io.Writer, qc *qcode.QCode) error {
 	st := util.NewStack()
-	ti, _ := c.schema.GetTable(qc.Query.Select.Table)
+	ti, err := c.getTable(qc.Query.Select)
+	if err != nil {
+		return err
+	}
 
 	st.Push(&selectBlockClose{nil, qc.Query.Select})
 	st.Push(&selectBlock{nil, qc.Query.Select, ti, c})
@@ -47,11 +52,12 @@ func (c *Compiler) Compile(w io.Writer, qc *qcode.QCode) error {
 			v.render(w, c.schema, childCols, childIDs)
 
 			for i := range childIDs {
-				ti, err := c.schema.GetTable(v.sel.Table)
-				if err != nil {
-					continue
-				}
 				sub := v.sel.Joins[childIDs[i]]
+
+				ti, err := c.getTable(sub)
+				if err != nil {
+					return err
+				}
 
 				st.Push(&joinClose{sub})
 				st.Push(&selectBlockClose{v.sel, sub})
@@ -73,6 +79,13 @@ func (c *Compiler) Compile(w io.Writer, qc *qcode.QCode) error {
 	io.WriteString(w, `) AS "done_1337";`)
 
 	return nil
+}
+
+func (c *Compiler) getTable(sel *qcode.Select) (*DBTableInfo, error) {
+	if tn, ok := c.tmap[sel.Table]; ok {
+		return c.schema.GetTable(tn)
+	}
+	return c.schema.GetTable(sel.Table)
 }
 
 func (c *Compiler) relationshipColumns(parent *qcode.Select) (
@@ -275,33 +288,34 @@ func (v *selectBlock) renderBaseSelect(w io.Writer, schema *DBSchema, childCols 
 
 	isRoot := v.parent == nil
 	isFil := v.sel.Where != nil
+	isSearch := v.sel.Args["search"] != nil
 	isAgg := false
-
-	_, isSearch := v.sel.Args["search"]
 
 	io.WriteString(w, " FROM (SELECT ")
 
 	for i, col := range v.sel.Cols {
 		cn := col.Name
-		_, isRealCol := v.schema.ColMap[TCKey{v.sel.Table, cn}]
+
+		_, isRealCol := v.ti.Columns[cn]
 
 		if !isRealCol {
-			switch {
-			case isSearch && cn == "search_rank":
-				cn = v.ti.TSVCol
-				arg := v.sel.Args["search"]
+			if isSearch {
+				switch {
+				case cn == "search_rank":
+					cn = v.ti.TSVCol
+					arg := v.sel.Args["search"]
 
-				fmt.Fprintf(w, `ts_rank("%s"."%s", to_tsquery('%s')) AS %s`,
-					v.sel.Table, cn, arg.Val, col.Name)
+					fmt.Fprintf(w, `ts_rank("%s"."%s", to_tsquery('%s')) AS %s`,
+						v.sel.Table, cn, arg.Val, col.Name)
 
-			case isSearch && strings.HasPrefix(cn, "search_headline_"):
-				cn = cn[16:]
-				arg := v.sel.Args["search"]
+				case strings.HasPrefix(cn, "search_headline_"):
+					cn = cn[16:]
+					arg := v.sel.Args["search"]
 
-				fmt.Fprintf(w, `ts_headline("%s"."%s", to_tsquery('%s')) AS %s`,
-					v.sel.Table, cn, arg.Val, col.Name)
-
-			default:
+					fmt.Fprintf(w, `ts_headline("%s"."%s", to_tsquery('%s')) AS %s`,
+						v.sel.Table, cn, arg.Val, col.Name)
+				}
+			} else {
 				pl := funcPrefixLen(cn)
 				if pl == 0 {
 					fmt.Fprintf(w, `'%s not defined' AS %s`, cn, col.Name)
@@ -330,7 +344,11 @@ func (v *selectBlock) renderBaseSelect(w io.Writer, schema *DBSchema, childCols 
 		}
 	}
 
-	fmt.Fprintf(w, ` FROM "%s"`, v.sel.Table)
+	if tn, ok := v.tmap[v.sel.Table]; ok {
+		fmt.Fprintf(w, ` FROM "%s" AS "%s"`, tn, v.sel.Table)
+	} else {
+		fmt.Fprintf(w, ` FROM "%s"`, v.sel.Table)
+	}
 
 	if isRoot && isFil {
 		io.WriteString(w, ` WHERE (`)

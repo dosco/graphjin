@@ -189,9 +189,21 @@ func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
 	cdb := c.DB
 
 	fm := make(map[string][]string, len(cdb.Fields))
+	tmap := make(map[string]string, len(cdb.Fields))
+
 	for i := range cdb.Fields {
 		f := cdb.Fields[i]
-		fm[strings.ToLower(f.Name)] = f.Filter
+		name := flect.Pluralize(strings.ToLower(f.Name))
+		if len(f.Filter) != 0 {
+			if f.Filter[0] == "none" {
+				fm[name] = []string{}
+			} else {
+				fm[name] = f.Filter
+			}
+		}
+		if len(f.Table) != 0 {
+			tmap[name] = f.Table
+		}
 	}
 
 	qc, err := qcode.NewCompiler(qcode.Config{
@@ -209,8 +221,9 @@ func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
 	}
 
 	pc := psql.NewCompiler(psql.Config{
-		Schema: schema,
-		Vars:   cdb.Variables,
+		Schema:   schema,
+		Vars:     cdb.Variables,
+		TableMap: tmap,
 	})
 
 	return qc, pc, nil
