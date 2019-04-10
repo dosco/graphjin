@@ -2,14 +2,14 @@ package serv
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
+	"net/url"
 
-	"github.com/adjust/gorails/marshal"
-	"github.com/adjust/gorails/session"
 	"github.com/bradfitz/gomemcache/memcache"
+	"github.com/dosco/super-graph/rails"
 	"github.com/garyburd/redigo/redis"
 )
 
@@ -19,21 +19,20 @@ func railsRedisHandler(next http.HandlerFunc) http.HandlerFunc {
 		panic(errors.New("no auth.cookie defined"))
 	}
 
-	authURL := conf.Auth.RailsRedis.URL
-	if len(authURL) == 0 {
-		panic(errors.New("no auth.rails_redis.url defined"))
+	if len(conf.Auth.Rails.URL) == 0 {
+		log.Fatal(errors.New("no auth.rails.url defined"))
 	}
 
 	rp := &redis.Pool{
-		MaxIdle:   conf.Auth.RailsRedis.MaxIdle,
-		MaxActive: conf.Auth.RailsRedis.MaxActive,
+		MaxIdle:   conf.Auth.Rails.MaxIdle,
+		MaxActive: conf.Auth.Rails.MaxActive,
 		Dial: func() (redis.Conn, error) {
-			c, err := redis.DialURL(authURL)
+			c, err := redis.DialURL(conf.Auth.Rails.URL)
 			if err != nil {
 				panic(err)
 			}
 
-			pwd := conf.Auth.RailsRedis.Password
+			pwd := conf.Auth.Rails.Password
 			if len(pwd) != 0 {
 				if _, err := c.Do("AUTH", pwd); err != nil {
 					panic(err)
@@ -44,6 +43,11 @@ func railsRedisHandler(next http.HandlerFunc) http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
+		if rn := headerAuth(r, conf); rn != nil {
+			next.ServeHTTP(w, rn)
+			return
+		}
+
 		ck, err := r.Cookie(cookie)
 		if err != nil {
 			next.ServeHTTP(w, r)
@@ -57,7 +61,7 @@ func railsRedisHandler(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		userID, err := railsAuth(string(sessionData), emptySecret)
+		userID, err := rails.ParseCookie(string(sessionData))
 		if err != nil {
 			next.ServeHTTP(w, r)
 			return
@@ -74,14 +78,23 @@ func railsMemcacheHandler(next http.HandlerFunc) http.HandlerFunc {
 		panic(errors.New("no auth.cookie defined"))
 	}
 
-	host := conf.Auth.RailsMemcache.Host
-	if len(host) == 0 {
-		panic(errors.New("no auth.rails_memcache.host defined"))
+	if len(conf.Auth.Rails.URL) == 0 {
+		log.Fatal(errors.New("no auth.rails.url defined"))
 	}
 
-	mc := memcache.New(host)
+	rURL, err := url.Parse(conf.Auth.Rails.URL)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	mc := memcache.New(rURL.Host)
 
 	return func(w http.ResponseWriter, r *http.Request) {
+		if rn := headerAuth(r, conf); rn != nil {
+			next.ServeHTTP(w, rn)
+			return
+		}
+
 		ck, err := r.Cookie(cookie)
 		if err != nil {
 			next.ServeHTTP(w, r)
@@ -95,7 +108,7 @@ func railsMemcacheHandler(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		userID, err := railsAuth(string(item.Value), emptySecret)
+		userID, err := rails.ParseCookie(string(item.Value))
 		if err != nil {
 			next.ServeHTTP(w, r)
 			return
@@ -112,11 +125,17 @@ func railsCookieHandler(next http.HandlerFunc) http.HandlerFunc {
 		panic(errors.New("no auth.cookie defined"))
 	}
 
-	secret := conf.Auth.RailsCookie.SecretKeyBase
-	if len(secret) == 0 {
-		panic(errors.New("no auth.rails_cookie.secret_key_base defined"))
+	ra, err := railsAuth(conf)
+	if err != nil {
+		log.Fatal(err)
 	}
+
 	return func(w http.ResponseWriter, r *http.Request) {
+		if rn := headerAuth(r, conf); rn != nil {
+			next.ServeHTTP(w, rn)
+			return
+		}
+
 		ck, err := r.Cookie(cookie)
 		if err != nil {
 			logger.Error(err)
@@ -124,7 +143,7 @@ func railsCookieHandler(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		userID, err := railsAuth(ck.Value, secret)
+		userID, err := ra.ParseCookie(ck.Value)
 		if err != nil {
 			logger.Error(err)
 			next.ServeHTTP(w, r)
@@ -136,98 +155,33 @@ func railsCookieHandler(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func railsAuth(cookie, secret string) (userID string, err error) {
-	var dcookie []byte
+func railsAuth(c *config) (*rails.Auth, error) {
+	secret := c.Auth.Rails.SecretKeyBase
+	if len(secret) == 0 {
+		return nil, errors.New("no auth.rails.secret_key_base defined")
+	}
 
-	dcookie, err = session.DecryptSignedCookie(cookie, secret, salt, signSalt)
+	version := c.Auth.Rails.Version
+	if len(version) == 0 {
+		return nil, errors.New("no auth.rails.version defined")
+	}
+
+	ra, err := rails.NewAuth(version, secret)
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	if dcookie[0] != '{' {
-		userID, err = getUserId4(dcookie)
-	} else {
-		userID, err = getUserId(dcookie)
+	if len(c.Auth.Rails.Salt) != 0 {
+		ra.Salt = c.Auth.Rails.Salt
 	}
 
-	return
-}
-
-func getUserId(data []byte) (userID string, err error) {
-	var sessionData map[string]interface{}
-
-	err = json.Unmarshal(data, &sessionData)
-	if err != nil {
-		return
+	if len(conf.Auth.Rails.SignSalt) != 0 {
+		ra.SignSalt = c.Auth.Rails.SignSalt
 	}
 
-	userKey, ok := sessionData["warden.user.user.key"]
-	if !ok {
-		err = errors.New("key 'warden.user.user.key' not found in session data")
+	if len(conf.Auth.Rails.AuthSalt) != 0 {
+		ra.AuthSalt = c.Auth.Rails.AuthSalt
 	}
 
-	items, ok := userKey.([]interface{})
-	if !ok {
-		err = errSessionData
-		return
-	}
-
-	if len(items) != 2 {
-		err = errSessionData
-		return
-	}
-
-	uids, ok := items[0].([]interface{})
-	if !ok {
-		err = errSessionData
-		return
-	}
-
-	uid, ok := uids[0].(float64)
-	if !ok {
-		err = errSessionData
-		return
-	}
-	userID = fmt.Sprintf("%d", int64(uid))
-
-	return
-}
-
-func getUserId4(data []byte) (userID string, err error) {
-	sessionData, err := marshal.CreateMarshalledObject(data).GetAsMap()
-	if err != nil {
-		return
-	}
-
-	wardenData, ok := sessionData["warden.user.user.key"]
-	if !ok {
-		err = errSessionData
-		return
-	}
-
-	wardenUserKey, err := wardenData.GetAsArray()
-	if err != nil {
-		return
-	}
-	if len(wardenUserKey) < 1 {
-		err = errSessionData
-		return
-	}
-
-	userData, err := wardenUserKey[0].GetAsArray()
-	if err != nil {
-		return
-	}
-	if len(userData) < 1 {
-		err = errSessionData
-		return
-	}
-
-	uid, err := userData[0].GetAsInteger()
-	if err != nil {
-		return
-	}
-	userID = fmt.Sprintf("%d", uid)
-
-	return
+	return ra, nil
 }

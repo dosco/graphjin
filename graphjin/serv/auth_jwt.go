@@ -10,7 +10,8 @@ import (
 )
 
 const (
-	jwtBase int = iota
+	authHeader     = "Authorization"
+	jwtBase    int = iota
 	jwtAuth0
 )
 
@@ -56,6 +57,11 @@ func jwtHandler(next http.HandlerFunc) http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		var tok string
+
+		if rn := headerAuth(r, conf); rn != nil {
+			next.ServeHTTP(w, rn)
+			return
+		}
 
 		if len(cookie) != 0 {
 			ck, err := r.Cookie(cookie)

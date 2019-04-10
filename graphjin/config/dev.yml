@@ -2,7 +2,7 @@ title: Super Graph Development
 host_port: 0.0.0.0:8080
 web_ui: true
 debug_level: 1
-enable_tracing: false
+enable_tracing: true
 
 # Throw a 401 on auth failure for queries that need auth
 # valid values: always, per_query, never
@@ -25,27 +25,39 @@ auth_fail_block: never
 #   sheep: sheep
 
 auth: 
-  type: header
+  # Can be 'rails' or 'jwt'
+  type: rails
   cookie: _app_session
+
+  # Comment this out if you want to disable setting
+  # the user_id via a header. Good for testing
   header: X-User-ID
 
-  # rails_cookie:
-  #   secret_key_base: caf335bfcfdb04e50db5bb0a4d67ab9...
+  rails:
+    # Rails version this is used for reading the
+    # various cookies formats.
+    version: 5.2
 
-  # rails_memcache:
-  #   host: 127.0.0.1
+    # Found in 'Rails.application.config.secret_key_base'
+    secret_key_base: 0a248500a64c01184edb4d7ad3a805488f8097ac761b76aaa6c17c01dcb7af03a2f18ba61b2868134b9c7b79a122bc0dadff4367414a2d173297bfea92be5566
+    
+    # Remote cookie store. (memcache or redis)
+    # url: redis://127.0.0.1:6379
+    # password: test
+    # max_idle: 80,
+    # max_active: 12000,
 
-  # rails_redis:
-  #   url: redis://127.0.0.1:6379
-  #   password: ""
-  #   max_idle: 80,
-  #   max_active: 12000,
+    # In most cases you don't need these
+    # salt: "encrypted cookie"
+    # sign_salt: "signed encrypted cookie"
+    # auth_salt: "authenticated encrypted cookie"
 
   # jwt:
   #   provider: auth0
   #   secret: abc335bfcfdb04e50db5bb0a4d67ab9
   #   public_key_file: /secrets/public_key.pem
   #   public_key_type: ecdsa #rsa
+
 
 database:
   type: postgres
@@ -77,18 +89,24 @@ database:
 
   fields:
     - name: users
+      # This filter will overwrite defaults.filter
       filter: ["{ id: { eq: $user_id } }"]
 
     - name: products
+      # Multiple filters are AND'd together
       filter: [
         "{ price: { gt: 0 } }",
         "{ price: { lt: 8 } }"
       ] 
 
     - name: customers
+      # No filter is used for this field not 
+      # even defaults.filter
       filter: none
 
-    - name: me
+    - # You can create new fields that have a
+      # real db table backing them
+      name: me
       table: users
       filter: ["{ id: { eq: $user_id } }"]
 
