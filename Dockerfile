@@ -35,7 +35,7 @@ RUN apk add --no-cache tzdata
 
 COPY --from=go-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=go-build /app/service .
-COPY --from=go-build /app/*.yml ./
+COPY --from=go-build /app/config/*.yml ./
 
 RUN chmod +x /app/service
 USER nobody

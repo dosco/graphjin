@@ -48,20 +48,17 @@ type config struct {
 		Cookie string
 		Header string
 
-		RailsCookie struct {
+		Rails struct {
+			Version       string
 			SecretKeyBase string `mapstructure:"secret_key_base"`
-		} `mapstructure:"rails_cookie"`
-
-		RailsMemcache struct {
-			Host string
-		} `mapstructure:"rails_memcache"`
-
-		RailsRedis struct {
-			URL       string
-			Password  string
-			MaxIdle   int `mapstructure:"max_idle"`
-			MaxActive int `mapstructure:"max_active"`
-		} `mapstructure:"rails_redis"`
+			URL           string
+			Password      string
+			MaxIdle       int `mapstructure:"max_idle"`
+			MaxActive     int `mapstructure:"max_active"`
+			Salt          string
+			SignSalt      string `mapstructure:"sign_salt"`
+			AuthSalt      string `mapstructure:"auth_salt"`
+		}
 
 		JWT struct {
 			Provider   string

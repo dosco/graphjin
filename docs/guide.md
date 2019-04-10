@@ -423,21 +423,32 @@ auth_fail_block: never
 #   sheep: sheep
 
 auth: 
-  type: header
+  # Can be 'rails' or 'jwt'
+  type: rails
   cookie: _app_session
+
+  # Comment this out if you want to disable setting
+  # the user_id via a header. Good for testing
   header: X-User-ID
 
-  # rails_cookie:
-  #   secret_key_base: caf335bfcfdb04e50db5bb0a4d67ab9...
+  rails:
+    # Rails version this is used for reading the
+    # various cookies formats.
+    version: 5.2
 
-  # rails_memcache:
-  #   host: 127.0.0.1
+    # Found in 'Rails.application.config.secret_key_base'
+    secret_key_base: 0a248500a64c01184edb4d7ad3a805488f8097ac761b76aaa6c17c01dcb7af03a2f18ba61b2868134b9c7b79a122bc0dadff4367414a2d173297bfea92be5566
+    
+    # Remote cookie store. (memcache or redis)
+    # url: redis://127.0.0.1:6379
+    # password: test
+    # max_idle: 80,
+    # max_active: 12000,
 
-  # rails_redis:
-  #   url: redis://127.0.0.1:6379
-  #   password: ""
-  #   max_idle: 80,
-  #   max_active: 12000,
+    # In most cases you don't need these
+    # salt: "encrypted cookie"
+    # sign_salt: "signed encrypted cookie"
+    # auth_salt: "authenticated encrypted cookie"
 
   # jwt:
   #   provider: auth0
@@ -452,9 +463,9 @@ database:
   dbname: app_development
   user: postgres
   password: ''
-  #pool_size: 10
-  #max_retries: 0
-  #log_level: "debug" 
+  # pool_size: 10
+  # max_retries: 0
+  # log_level: "debug" 
 
   # Define variables here that you want to use in filters 
   variables:
