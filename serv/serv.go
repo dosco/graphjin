@@ -35,6 +35,7 @@ var (
 )
 
 type config struct {
+	AppName       string `mapstructure:"app_name"`
 	Env           string
 	HostPort      string `mapstructure:"host_port"`
 	WebUI         bool   `mapstructure:"web_ui"`
@@ -75,6 +76,7 @@ type config struct {
 		DBName     string
 		User       string
 		Password   string
+		Schema     string
 		PoolSize   int    `mapstructure:"pool_size"`
 		MaxRetries int    `mapstructure:"max_retries"`
 		LogLevel   string `mapstructure:"log_level"`
@@ -124,18 +126,18 @@ func initConf() (*config, error) {
 	vi.SetDefault("web_ui", false)
 	vi.SetDefault("debug_level", 0)
 	vi.SetDefault("enable_tracing", false)
+	vi.SetDefault("auth_fail_block", "always")
 
 	vi.SetDefault("database.type", "postgres")
 	vi.SetDefault("database.host", "localhost")
 	vi.SetDefault("database.port", 5432)
 	vi.SetDefault("database.user", "postgres")
-	vi.SetDefault("database.password", "")
 
 	vi.SetDefault("env", "development")
 	vi.BindEnv("env", "GO_ENV")
 
-	vi.SetDefault("auth.rails_redis.max_idle", 80)
-	vi.SetDefault("auth.rails_redis.max_active", 12000)
+	vi.SetDefault("auth.rails.max_idle", 80)
+	vi.SetDefault("auth.rails.max_active", 12000)
 
 	if err := vi.ReadInConfig(); err != nil {
 		return nil, err
@@ -160,10 +162,11 @@ func initConf() (*config, error) {
 
 func initDB(c *config) (*pg.DB, error) {
 	opt := &pg.Options{
-		Addr:     strings.Join([]string{c.DB.Host, c.DB.Port}, ":"),
-		User:     c.DB.User,
-		Password: c.DB.Password,
-		Database: c.DB.DBName,
+		Addr:            strings.Join([]string{c.DB.Host, c.DB.Port}, ":"),
+		User:            c.DB.User,
+		Password:        c.DB.Password,
+		Database:        c.DB.DBName,
+		ApplicationName: c.AppName,
 	}
 
 	if c.DB.PoolSize != 0 {
@@ -172,6 +175,16 @@ func initDB(c *config) (*pg.DB, error) {
 
 	if c.DB.MaxRetries != 0 {
 		opt.MaxRetries = c.DB.MaxRetries
+	}
+
+	if len(c.DB.Schema) != 0 {
+		opt.OnConnect = func(conn *pg.Conn) error {
+			_, err := conn.Exec("set search_path=?", c.DB.Schema)
+			if err != nil {
+				return err
+			}
+			return nil
+		}
 	}
 
 	db := pg.Connect(opt)

@@ -1,4 +1,4 @@
-title: Super Graph Production
+app_name: "Super Graph Production"
 host_port: 0.0.0.0:8080
 web_ui: false
 debug_level: 0

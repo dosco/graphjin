@@ -18,7 +18,7 @@ purchase_count = 100
     full_name: Faker::Name.name,
     avatar: Faker::Avatar.image,
     phone: Faker::PhoneNumber.cell_phone,
-    email: "user#{i}@example.com",
+    email: "user#{i}@demo.com",
     password: pwd,
     password_confirmation: pwd
   )

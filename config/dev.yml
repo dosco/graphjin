@@ -1,4 +1,4 @@
-title: Super Graph Development
+app_name: "Super Graph Development"
 host_port: 0.0.0.0:8080
 web_ui: true
 debug_level: 1
@@ -39,7 +39,7 @@ auth:
     version: 5.2
 
     # Found in 'Rails.application.config.secret_key_base'
-    secret_key_base: 0a248500a64c01184edb4d7ad3a805488f8097ac761b76aaa6c17c01dcb7af03a2f18ba61b2868134b9c7b79a122bc0dadff4367414a2d173297bfea92be5566
+    secret_key_base: 0a248500a64c01184edbf8097ac...
     
     # Remote cookie store. (memcache or redis)
     # url: redis://127.0.0.1:6379
@@ -66,6 +66,8 @@ database:
   dbname: app_development
   user: postgres
   password: ''
+  
+  #schema: "public"
   #pool_size: 10
   #max_retries: 0
   #log_level: "debug" 

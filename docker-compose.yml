@@ -3,13 +3,6 @@ services:
   db:
     image: postgres
 
-  # nginx: 
-  #   image: nginx:latest
-  #   volumes:
-  #     - ./example/nginx.conf:/etc/nginx/nginx.conf
-  #   ports:
-  #     - 3001:3001
-
   super_graph:
     build:
       context: .
@@ -26,13 +19,12 @@ services:
     command: fresh -c fresh.conf
     
   web:
-    build: example/.
+    build: rails-app/.
     command: bash -c "rm -f tmp/pids/server.pid && bundle exec rails s -p 3000 -b '0.0.0.0'"
     volumes:
-      - ./example:/app
+      - ./rails-app:/app
     ports:
       - "3000:3000"
     depends_on:
       - db
       - super_graph
-      # - nginx
