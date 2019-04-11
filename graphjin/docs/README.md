@@ -22,15 +22,20 @@ Without writing a line of code get an instant high-performance GraphQL API for y
 ## Try it out
 
 ```bash
-# setup the demo rails app database
-docker-compose run web rake db:create db:migrate db:seed
+# download super graph source
+git clone https://github.com/dosco/super-graph.git
 
-# run the demo rails app and the Super Graph service
-docker-compose -f docker-compose.image.yml up
+# setup the demo rails app & database
+./demo setup
 
-# try out the GraphQL api with the web ui in your browser
+# run the demo
+./demo run
+
+# signin to the demo app (user1@demo.com / 123456)
+open http://localhost:3000
+
+# try the super graph web ui
 open http://localhost:8080
-
 ```
 
 ## Try this GraphQL query
