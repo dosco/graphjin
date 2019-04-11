@@ -18,6 +18,32 @@ Without writing a line of code get an instant high-performance GraphQL API for y
 - High performance GO codebase
 - Tiny docker image and low memory requirements
 
+## Try it out
+
+```bash
+# download super graph source
+git clone https://github.com/dosco/super-graph.git
+
+# setup the demo rails app & database
+./demo setup
+
+# run the demo
+./demo run
+
+# signin to the demo app (user1@demo.com / 123456)
+open http://localhost:3000
+
+# try the super graph web ui
+open http://localhost:8080
+```
+
+::: warning DEMO REQUIREMENTS  
+This demo requires `docker` you can either install it using `brew` or from the 
+docker website https://docs.docker.com/docker-for-mac/install/
+:::
+
+#### Trying out GraphQL
+
 We currently support the `query` action which is used for fetching data. Support for `mutation` and `subscriptions` is work in progress. For example the below GraphQL query would fetch two products that belong to the current user where the price is greater than 10
 
 #### GQL Query
@@ -69,26 +95,6 @@ For example there is a while greater than `gt` and a limit clause on a child fie
     ]
   }
 }
-```
-
-The above command will download the latest docker image for Super Graph and use it to run an example that includes a Postgres DB and a simple Rails ecommerce store app. 
-
-If you want to build and run Super Graph from code then the below commands will build the web ui and launch Super Graph in developer mode with a watcher to rebuild on code changes.
-
-```bash
-
-# yarn is needed to build the web ui
-brew install yarn
-
-# yarn install dependencies and build the web ui
-(cd web && yarn install && yarn build)
-
-# generate some stuff the go code needs
-go generate ./...
-
-# start super graph in development mode with a change watcher
-docker-compose up
-
 ```
 
 #### Try with an authenticated user
@@ -557,6 +563,30 @@ If your Rails app runs on Kubernetes then ensure you have an ingress config depl
 
 ### JWT tokens (Auth0, etc)
 In that case deploy under a subdomain and configure this service to use JWT authentication. You will need the public key file or secret key. Ensure your web app passes the JWT token with every GQL request in the Authorize header as a `bearer` token.
+
+## Developing Super Graph 
+
+If you want to build and run Super Graph from code then the below commands will build the web ui and launch Super Graph in developer mode with a watcher to rebuild on code changes. And the demo rails app is also launched to make it essier to test changes.
+
+```bash
+
+# yarn is needed to build the web ui
+brew install yarn
+
+# yarn install dependencies and build the web ui
+(cd web && yarn install && yarn build)
+
+# generate some stuff the go code needs
+go generate ./...
+
+# do this the only the time to setup the database
+docker-compose run web rake db:create db:migrate
+
+# start super graph in development mode with a change watcher
+docker-compose up
+
+```
+
 
 ## MIT License
 
