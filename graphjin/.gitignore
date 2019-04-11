@@ -21,7 +21,7 @@
 /Godeps
 /tmp
 /tmp/runner-build
-/example/tmp
+/demo/tmp
 
 .vscode
 main

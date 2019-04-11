@@ -13,10 +13,9 @@ services:
       - "8080:8080"
     
   web:
-    build: example/.
-    command: bash -c "rm -f tmp/pids/server.pid && bundle exec rails s -p 3000 -b '0.0.0.0'"
-    volumes:
-      - ./example:/app
+    image: dosco/super-graph-demo:latest
+    environment:
+      RAILS_ENV: "development"
     ports:
       - "3000:3000"
     depends_on:
