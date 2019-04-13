@@ -37,9 +37,9 @@ open http://localhost:3000
 open http://localhost:8080
 ```
 
-::: warning DEMO REQUIREMENTS  
-This demo requires `docker` you can either install it using `brew` or from the 
-docker website https://docs.docker.com/docker-for-mac/install/
+::: warning DEMO REQUIREMENTS
+This demo requires `docker` you can either install it using `brew` or from the
+docker website [https://docs.docker.com/docker-for-mac/install/](https://docs.docker.com/docker-for-mac/install/)
 :::
 
 #### Trying out GraphQL
@@ -49,7 +49,7 @@ We currently support the `query` action which is used for fetching data. Support
 #### GQL Query
 
 ```graphql
-query { 
+query {
   users {
     id
     email
@@ -67,7 +67,7 @@ query {
 ```
 
 The above GraphQL query returns the JSON result below. It handles all
-kinds of complexity without you having to writing a line of code. 
+kinds of complexity without you having to writing a line of code.
 
 For example there is a while greater than `gt` and a limit clause on a child field. And the `avatar` field is renamed to `picture`. The `password` field is blocked and not returned. Finally the relationship between the `users` table and the `products` table is auto discovered and used.
 
@@ -167,7 +167,7 @@ not | not: { or : { quantity : { eq: 0 }, price : { eq: 0 } } } | NOT (quantity 
 
 Name | Example | Explained |
 --- | --- | --- |
-eq, equals | id : { eq: 100 } | id = 100 
+eq, equals | id : { eq: 100 } | id = 100
 neq, not_equals | id: { not_equals: 100 } | id != 100
 gt, greater_than | id: { gt: 100 } | id > 100
 lt, lesser_than | id: { gt: 100 } | id < 100
@@ -230,7 +230,7 @@ query {
 
     # no duplicate prices returned
     distinct: [ price ]
-    
+
     # only items with an id >= 30 and < 30 are returned
     where: { id: { and: { greater_or_equals: 20, lt: 28 } } }) {
     id
@@ -253,7 +253,7 @@ query {
 
     # Return only matches where the price is less than 10
     where: { price: { lt: 10 } }
-    
+
     # Use the search_rank to order from the best match to the worst
     order_by: { search_rank: desc }) {
     id
@@ -331,9 +331,9 @@ You can only have one type of auth enabled. You can either pick Rails or JWT. Un
 
 ### Rails Auth (Devise / Warden)
 
-Almost all Rails apps use Devise or Warden for authentication. Once the user is 
+Almost all Rails apps use Devise or Warden for authentication. Once the user is
 authenticated a session is created with the users ID. The session can either be
-stored in the users browser as a cookie, memcache or redis. If memcache or redis is used then a cookie is set in the users browser with just the session id. 
+stored in the users browser as a cookie, memcache or redis. If memcache or redis is used then a cookie is set in the users browser with just the session id.
 
 Super Graph can handle all these variations including the old and new session formats. Just enable the right `auth` config based on how your rails app is configured.
 
@@ -379,7 +379,7 @@ auth:
 auth:
   type: jwt
   cookie: _app_session
-  
+
   jwt:
     provider: auth0 #none
     secret: abc335bfcfdb04e50db5bb0a4d67ab9
@@ -428,7 +428,7 @@ auth_fail_block: never
 #   person: people
 #   sheep: sheep
 
-auth: 
+auth:
   # Can be 'rails' or 'jwt'
   type: rails
   cookie: _app_session
@@ -444,7 +444,7 @@ auth:
 
     # Found in 'Rails.application.config.secret_key_base'
     secret_key_base: 0a248500a64c01184edb4d7ad3a805488f8097ac761b76aaa6c17c01dcb7af03a2f18ba61b2868134b9c7b79a122bc0dadff4367414a2d173297bfea92be5566
-    
+
     # Remote cookie store. (memcache or redis)
     # url: redis://127.0.0.1:6379
     # password: test
@@ -471,16 +471,16 @@ database:
   password: ''
   # pool_size: 10
   # max_retries: 0
-  # log_level: "debug" 
+  # log_level: "debug"
 
-  # Define variables here that you want to use in filters 
+  # Define variables here that you want to use in filters
   variables:
     account_id: "select account_id from users where id = $user_id"
 
   # Define defaults to for the field key and values below
   defaults:
     filter: ["{ user_id: { eq: $user_id } }"]
-    
+
     # Fields and table names that you wish to block
     blacklist:
       - ar_internal_metadata
@@ -500,10 +500,10 @@ database:
       filter: [
         "{ price: { gt: 0 } }",
         "{ price: { lt: 8 } }"
-      ] 
+      ]
 
     - name: customers
-      # No filter is used for this field not 
+      # No filter is used for this field not
       # even defaults.filter
       filter: none
 
@@ -537,34 +537,7 @@ SG_AUTH_RAILS_REDIS_PASSWORD
 SG_AUTH_JWT_PUBLIC_KEY_FILE
 ```
 
-## Deploying Super Graph
-
-How do I deploy the Super Graph service with my existing rails app? You have several options here. Esentially you need to ensure your app's session cookie will be passed to this service. 
-
-### Custom Docker Image
-
-Create a `Dockerfile` like the one below to roll your own
-custom Super Graph docker image. And to build it `docker build -t my-super-graph .`
-
-```docker
-FROM dosco/super-graph:latest
-WORKDIR /app
-COPY *.yml ./
-```
-
-### Deploy under a subdomain
-For this to work you have to ensure that the option `:domain => :all` is added to your rails app config `Application.config.session_store` this will cause your rails app to create session cookies that can be shared with sub-domains. More info here <http://excid3.com/blog/sharing-a-devise-user-session-across-subdomains-with-rails-3/>
-
-### With an NGINX loadbalancer
-I'm sure you know how to configure it so that the Super Graph endpoint path `/api/v1/graphql` is routed to wherever you have this service installed within your architecture.
-
-### On Kubernetes
-If your Rails app runs on Kubernetes then ensure you have an ingress config deployed that points the path to the service that you have deployed Super Graph under.
-
-### JWT tokens (Auth0, etc)
-In that case deploy under a subdomain and configure this service to use JWT authentication. You will need the public key file or secret key. Ensure your web app passes the JWT token with every GQL request in the Authorize header as a `bearer` token.
-
-## Developing Super Graph 
+## Developing Super Graph
 
 If you want to build and run Super Graph from code then the below commands will build the web ui and launch Super Graph in developer mode with a watcher to rebuild on code changes. And the demo rails app is also launched to make it essier to test changes.
 
@@ -586,7 +559,6 @@ docker-compose run web rake db:create db:migrate
 docker-compose up
 
 ```
-
 
 ## MIT License
 
