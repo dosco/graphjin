@@ -38,7 +38,12 @@ open http://localhost:3000
 open http://localhost:8080
 ```
 
-## Try this GraphQL query
+::: warning DEMO REQUIREMENTS  
+This demo requires `docker` you can either install it using `brew` or from the 
+docker website [https://docs.docker.com/docker-for-mac/install/](https://docs.docker.com/docker-for-mac/install/)
+:::
+
+## Try out GraphQL
 
 ```graphql 
 query { 
