@@ -34,7 +34,10 @@ class App extends Component {
           endpoint="/api/v1/graphql"
           settings={{
             'schema.polling.enable': false,
-            'request.credentials': 'include'
+            'request.credentials': 'include',
+            'general.betaUpdates': true,
+            'editor.reuseHeaders': true,
+            'editor.theme': 'dark'
           }} 
         />
         </Provider>
