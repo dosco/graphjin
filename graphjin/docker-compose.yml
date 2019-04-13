@@ -34,4 +34,4 @@ services:
     depends_on:
       - db
       - super_graph
-      - redis
+      #- redis
