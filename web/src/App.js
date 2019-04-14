@@ -12,21 +12,31 @@ class App extends Component {
           background: '#4d2692', 
           color: '#f1e9ff',
           letterSpacing: '0.15rem',
-          textTransform: 'uppercase'
+          height: '65px',
+          display: 'flex',
+          alignItems: 'center'
           }}
         >
-          <div style={{
-            padding: '1.45rem 1.0875rem'
-          }}>
-          
           <h3 style={{
             textDecoration: 'none',
             margin: '0px',
-            fontSize: '18px'
+            fontSize: '18px',
+
             }}
           >
-          Super Graph</h3>
-          </div>
+          <span style={{ 
+            textTransform: 'uppercase',
+            marginLeft: '20px'
+          }}>
+            Super Graph
+          </span>
+          <span style={{ 
+            fontSize: '16px',
+            marginLeft: '20px',
+            color: '#b48aff'
+          }}>
+            Instant GraphQL</span>
+          </h3>
         </header>
 
         <Provider store={store}>
