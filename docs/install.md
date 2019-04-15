@@ -8,12 +8,12 @@ Since you're reading this you're probably considering deploying Super Graph. You
 
 ### Alongside an existing Rails app
 
-Super Graph can read Rails session cookies. Like those created by authentication gems (Devise or Warden). Based on how you've configured your Rails app the cookie can be signed, encrypted, both, include the user ID or just have the ID of the session. If you have choosen to use Redis or Memcache as your session store then Super Graph can read the session cookie and then lookup the user in the session store. In short it works really well with any kind of Rails app setup.
+Super Graph can read Rails session cookies, like those created by authentication gems (Devise or Warden). Based on how you've configured your Rails app the cookie can be signed, encrypted, both, include the user ID or just have the ID of the session. If you have choosen to use Redis or Memcache as your session store then Super Graph can read the session cookie and then lookup the user in the session store. In short it works really well with almost all Rails apps.
 
-For any of this to work Super Graph must be deployed in a way that make the browser sent your apps cookie to it along with the GraphQL query. This means Super Graph should be on the same domain as your app or a subdomain.
+For any of this to work Super Graph must be deployed in a way that make the browser send the apps cookie to it along with the GraphQL query. That means Super Graph needs to be either on the same domain as your app or on a subdomain.
 
 ::: tip I need an example
-Say your Rails app runs on `myrailsapp.com` then Super Graph should be on the same domain or on a subdomain like `graphql.myrailsapp.com`. If you choose subdomain read below.
+Say your Rails app runs on `myrailsapp.com` then Super Graph should be on the same domain or on a subdomain like `graphql.myrailsapp.com`. If you choose subdomain then remeber read the [Deploy under a subdomain](#deploy-under-a-subdomain) section.
 :::
 
 ### Custom Docker Image
@@ -33,6 +33,10 @@ For this to work you have to ensure that the option `:domain => :all` is added t
 ### With an NGINX loadbalancer
 
 If you're infrastructure is fronted by NGINX then it should be configured so that all requests to your GraphQL API path are proxyed to Super Graph. In the example NGINX config below all requests to the path `/api/v1/graphql` are routed to wherever you have Super Graph installed within your architecture. This example is derived from the config file example at [/microservices-nginx-gateway/nginx.conf](https://github.com/launchany/microservices-nginx-gateway/blob/master/nginx.conf)
+
+::: tip NGINX with sub-domain
+Yes, NGINX is very flexible and you can configure it to keep Super Graph a subdomain instead of on the same top level domain. I'm sure a little Googleing will get you some great example configs for that.
+:::
 
 ```nginx
 # Configuration for the server
