@@ -1,0 +1,36 @@
+Super Graph
+Get an instant GraphQL API for your Rails apps
+18 Apr 2019
+Tags: GraphQL, API, GoLang, Postgres
+
+Vikram Rangnekar 
+https://supergraph.dev
+@dosco
+
+
+* Motivation
+
+Honestly, cause it was more fun than my real work.  After working on several product though my career I found myself hating building CRUD APIs (Create, Update, Delete, List, Show). It was always the same thing figure out what the UI needs then build an endpoint for it, if related data is needed than join with another table. I didn't want to write that code anymore I wanted the computer to just do it.
+
+** Subsection
+
+- bullets
+- more bullets
+- a bullet with
+
+*** Sub-subsection
+
+Some More text
+
+  Preformatted text
+  is indented (however you like)
+
+Further Text, including invocations like:
+
+.image image.jpg
+.background image.jpg
+.iframe http://foo
+.link http://foo label
+.caption _Gopher_ by [[https://www.instagram.com/reneefrench/][Renée French]]
+
+Again, more text
