@@ -327,7 +327,7 @@ end
 
 ## Authentication
 
-You can only have one type of auth enabled. You can either pick Rails or JWT. Uncomment the one you use and leave the rest commented out.
+You can only have one type of auth enabled. You can either pick Rails or JWT. 
 
 ### Rails Auth (Devise / Warden)
 
@@ -341,32 +341,42 @@ Super Graph can handle all these variations including the old and new session fo
 
 ```yaml
 auth:
-  type: rails_cookie
+  type: rails
   cookie: _app_session
 
-  rails_cookie:
-    secret_key_base: caf335bfcfdb04e50db5bb0a4d67ab9...
+  rails:
+    # Rails version this is used for reading the
+    # various cookies formats.
+    version: 5.2
+
+    # Found in 'Rails.application.config.secret_key_base'
+    secret_key_base: 0a248500a64c01184edb4d7ad3a805488f8097ac761b76aaa6c17c01dcb7af03a2f18ba61b2868134b9c7b79a122bc0dadff4367414a2d173297bfea92be5566
+
 ```
+
+
 
 #### Memcache session store
 
 ```yaml
 auth:
-  type: rails_memcache
+  type: rails
   cookie: _app_session
 
-  rails_memcache:
-    host: 127.0.0.1
+  rails:
+    # Memcache remote cookie store.
+    url: memcache://127.0.0.1
 ```
 
 #### Redis session store
 
 ```yaml
 auth:
-  type: rails_redis
+  type: rails
   cookie: _app_session
 
-  rails_redis:
+  rails:
+    # Redis remote cookie store
     url: redis://127.0.0.1:6379
     password: ""
     max_idle: 80
@@ -378,10 +388,10 @@ auth:
 ```yaml
 auth:
   type: jwt
-  cookie: _app_session
 
   jwt:
-    provider: auth0 #none
+    # the two providers are 'auth0' and 'none'
+    provider: auth0 
     secret: abc335bfcfdb04e50db5bb0a4d67ab9
     public_key_file: /secrets/public_key.pem
     public_key_type: ecdsa #rsa
