@@ -1,3 +1,5 @@
+<a href="https://supergraph.dev"><img src="https://supergraph.dev/logo.svg" width="100" height="100" align="right" /></a>
+
 # Super Graph - Instant GraphQL API for Rails
 
 ![MIT license](https://img.shields.io/github/license/dosco/super-graph.svg)
