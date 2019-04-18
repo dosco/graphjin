@@ -1,8 +1,10 @@
-# Super Graph
+# Super Graph - Instant GraphQL API for Rails
 
-## Instant GraphQL API for Rails. Zero code.
+![MIT license](https://img.shields.io/github/license/dosco/super-graph.svg)
+![Docker build](https://img.shields.io/docker/cloud/build/dosco/super-graph.svg)
+![Cloud native](https://img.shields.io/badge/cloud--native-enabled-blue.svg)
 
-Get an high-performance GraphQL API for your Rails app in seconds. Super Graph will auto-learn your database structure and relationships. Built in support for Rails authentication and JWT tokens.
+Get an high-performance GraphQL API for your Rails app in seconds without writing a line of code. Super Graph will auto-learn your database structure and relationships. Built in support for Rails authentication and JWT tokens. 
 
 ![Super Graph Web UI](docs/.vuepress/public/super-graph-web-ui.png?raw=true "Super Graph Web UI for web developers")
 
