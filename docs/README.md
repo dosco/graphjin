@@ -1,6 +1,6 @@
 ---
 home: true
-heroImage: /logo.png
+heroImage: /logo.svg
 heroText: "SUPER GRAPH"
 tagline: Get an instant GraphQL API for your Rails apps.
 actionText: Get Started →
