@@ -14,6 +14,8 @@ var (
 type parserType int16
 
 const (
+	maxNested = 50
+
 	parserError parserType = iota
 	parserEOF
 	opQuery
@@ -50,6 +52,8 @@ func (t parserType) String() string {
 		v = "node-float"
 	case nodeBool:
 		v = "node-bool"
+	case nodeVar:
+		v = "node-var"
 	case nodeObj:
 		v = "node-obj"
 	case nodeList:
@@ -253,7 +257,7 @@ func (p *Parser) parseFields() ([]*Field, int16, error) {
 			continue
 		}
 
-		if i > 500 {
+		if i > maxNested {
 			return nil, 0, errors.New("too many fields")
 		}
 
