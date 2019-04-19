@@ -1,0 +1,15 @@
+base: ubuntu:16.04
+targets:
+  - name: tutorial
+    language: go
+    version: "1.12"
+    corpus: ./corpus
+    #memory_limit: 1000 # in megabytes
+    #timeout: 500 # in milliseconds
+    harness:
+      function: FuzzerEntrypoint
+      # package defines where to import FuzzerEntrypoint from
+      package: github.com/dosco/super-graph/qcode
+      # the repository will be cloned to
+      # $GOPATH/src/github.com/fuzzbuzz/tutorial
+      checkout: github.com/dosco/super-graph/
