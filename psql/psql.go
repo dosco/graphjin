@@ -539,8 +539,7 @@ func (v *selectBlock) renderWhere(w io.Writer) error {
 				if len(v.ti.PrimaryCol) == 0 {
 					return fmt.Errorf("no primary key column defined for %s", v.sel.Table)
 				}
-				fmt.Fprintf(w, `(("%s") = ('%s'))`, v.ti.PrimaryCol, val.Val)
-				valExists = false
+				fmt.Fprintf(w, `(("%s") =`, v.ti.PrimaryCol)
 			case qcode.OpTsQuery:
 				if len(v.ti.TSVCol) == 0 {
 					return fmt.Errorf("no tsv column defined for %s", v.sel.Table)
@@ -632,7 +631,11 @@ func renderVal(w io.Writer, ex *qcode.Exp, vars map[string]string) {
 	io.WriteString(w, ` (`)
 	switch ex.Type {
 	case qcode.ValBool, qcode.ValInt, qcode.ValFloat:
-		io.WriteString(w, ex.Val)
+		if len(ex.Val) != 0 {
+			fmt.Fprintf(w, `%s`, ex.Val)
+		} else {
+			io.WriteString(w, `''`)
+		}
 	case qcode.ValStr:
 		fmt.Fprintf(w, `'%s'`, ex.Val)
 	case qcode.ValVar:

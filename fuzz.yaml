@@ -12,4 +12,4 @@ targets:
       package: github.com/dosco/super-graph/qcode
       # the repository will be cloned to
       # $GOPATH/src/github.com/fuzzbuzz/tutorial
-      checkout: github.com/dosco/super-graph/
+      checkout: github.com/dosco/super-graph
