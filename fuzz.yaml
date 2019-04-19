@@ -1,6 +1,6 @@
 base: ubuntu:16.04
 targets:
-  - name: tutorial
+  - name: qcode
     language: go
     version: "1.12"
     corpus: ./corpus
