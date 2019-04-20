@@ -240,6 +240,29 @@ query {
 }
 ```
 
+### Using variables
+
+Variables and their values can be passed along side the GraphQL query. Using variables makes for better client side code as well as improved server side
+caching. The build-in web ui also hass support for variables. Not having to manupilate your GraphQL query string to insert values into it makes for cleaner
+and better client side code.
+
+```javascript
+// define the request object keeping the query and the variables seperate
+var req = { 
+  query: '{ product(id: $product_id) { name } }' ,
+  variables: { "product_id": 5 }
+}
+
+// use the fetch api to make the query
+fetch('http://localhost:8080/api/v1/graphql', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(req),
+})
+.then(res => res.json())
+.then(res => console.log(res.data));
+```
+
 ### Full text search
 
 Every app these days needs search. Enought his often means reaching for something heavy like Solr. While this will work why add complexity to your infrastructure when Postgres has really great
@@ -412,11 +435,13 @@ Configuration files can either be in YAML or JSON their names are derived from t
 We're tried to ensure that the config file is self documenting and easy to work with.
 
 ```yaml
-title: Super Graph Development
+app_name: "Super Graph Development"
 host_port: 0.0.0.0:8080
 web_ui: true
 debug_level: 1
-enable_tracing: false
+
+# enabling tracing also disables query caching
+enable_tracing: true
 
 # Throw a 401 on auth failure for queries that need auth
 # valid values: always, per_query, never
