@@ -242,18 +242,17 @@ query {
 
 ### Using variables
 
-Variables and their values can be passed along side the GraphQL query. Using variables makes for better client side code as well as improved server side
-caching. The build-in web ui also hass support for variables. Not having to manupilate your GraphQL query string to insert values into it makes for cleaner
+Variables (`$product_id`) and their values (`"product_id": 5`) can be passed along side the GraphQL query. Using variables makes for better client side code as well as improved server side SQL query caching. The build-in web-ui also supports setting variables. Not having to manipulate your GraphQL query string to insert values into it makes for cleaner
 and better client side code.
 
 ```javascript
-// define the request object keeping the query and the variables seperate
+// Define the request object keeping the query and the variables seperate
 var req = { 
   query: '{ product(id: $product_id) { name } }' ,
   variables: { "product_id": 5 }
 }
 
-// use the fetch api to make the query
+// Use the fetch api to make the query
 fetch('http://localhost:8080/api/v1/graphql', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },

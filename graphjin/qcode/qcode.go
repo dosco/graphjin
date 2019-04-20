@@ -337,7 +337,7 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 	}
 
 	fil, ok := com.fm[selRoot.Table]
-	if !ok {
+	if !ok || fil == nil {
 		fil = com.fl
 	}
 

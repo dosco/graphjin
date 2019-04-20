@@ -4,8 +4,8 @@ targets:
     language: go
     version: "1.12"
     corpus: ./corpus
-    #memory_limit: 1000 # in megabytes
-    #timeout: 500 # in milliseconds
+    memory_limit: "100" # in megabytes
+    timeout: "500" # in milliseconds
     harness:
       function: FuzzerEntrypoint
       # package defines where to import FuzzerEntrypoint from
