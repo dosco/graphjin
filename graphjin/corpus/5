@@ -1,5 +1,5 @@
 query {
-  product(id: 15) {
+  product(id: $PRODUCT_ID, where: { price: { eq: $PRODUCT_PRICE } }) {
     id
     name
   }

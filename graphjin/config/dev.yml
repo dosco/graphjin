@@ -2,6 +2,8 @@ app_name: "Super Graph Development"
 host_port: 0.0.0.0:8080
 web_ui: true
 debug_level: 1
+
+# enabling tracing also disables query caching
 enable_tracing: true
 
 # Throw a 401 on auth failure for queries that need auth
