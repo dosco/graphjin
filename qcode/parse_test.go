@@ -45,9 +45,15 @@ func compareOp(op1, op2 Operation) error {
 	return nil
 }
 
-func TestParse(t *testing.T) {
-}
-
-func BenchmarkParse(b *testing.B) {
-
+func TestCompile(t *testing.T) {
+	qcompile, _ := NewCompiler(Config{})
+	_, err := qcompile.CompileQuery(`query {
+		product(id: 15) {
+			id
+			name
+		}
+	}`)
+	if err != nil {
+		t.Fatal(err)
+	}
 }
