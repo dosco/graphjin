@@ -1,6 +1,7 @@
 package qcode
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"unicode"
@@ -207,6 +208,9 @@ func (l *lexer) errorf(format string, args ...interface{}) stateFn {
 
 // lex creates a new scanner for the input string.
 func lex(input string) (*lexer, error) {
+	if len(input) == 0 {
+		return nil, errors.New("empty query")
+	}
 	l := &lexer{
 		input: input,
 		items: make([]item, 0, 100),

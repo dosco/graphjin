@@ -336,7 +336,13 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 		}
 	}
 
-	fil, ok := com.fm[selRoot.Table]
+	var ok bool
+	var fil *Exp
+
+	if selRoot != nil {
+		fil, ok = com.fm[selRoot.Table]
+	}
+
 	if !ok || fil == nil {
 		fil = com.fl
 	}
