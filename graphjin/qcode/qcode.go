@@ -1,6 +1,7 @@
 package qcode
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -353,6 +354,10 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 		} else {
 			selRoot.Where = fil
 		}
+	}
+
+	if selRoot == nil {
+		return nil, errors.New("invalid query")
 	}
 
 	return &Query{selRoot}, nil

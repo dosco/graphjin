@@ -58,6 +58,14 @@ func TestCompile(t *testing.T) {
 	}
 }
 
+func TestInvalidCompile(t *testing.T) {
+	qcompile, _ := NewCompiler(Config{})
+	_, err := qcompile.CompileQuery(`#`)
+	if err == nil {
+		t.Fatal(errors.New("expecting an error"))
+	}
+}
+
 func TestEmptyCompile(t *testing.T) {
 	qcompile, _ := NewCompiler(Config{})
 	_, err := qcompile.CompileQuery(``)

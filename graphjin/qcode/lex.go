@@ -398,7 +398,7 @@ func isSpace(r rune) bool {
 
 // isEndOfLine reports whether r is an end-of-line character.
 func isEndOfLine(r rune) bool {
-	return r == '\r' || r == '\n'
+	return r == '\r' || r == '\n' || r == eof
 }
 
 // isAlphaNumeric reports whether r is an alphabetic, digit, or underscore.
