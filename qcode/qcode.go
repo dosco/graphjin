@@ -423,6 +423,10 @@ func (com *Compiler) compileArgNode(val *Node) (*Exp, error) {
 	st := util.NewStack()
 	var root *Exp
 
+	if val == nil || len(val.Children) == 0 {
+		return nil, errors.New("invalid argument value")
+	}
+
 	st.Push(&expT{nil, val.Children[0]})
 
 	for {
