@@ -79,7 +79,7 @@ database:
   defaults:
     filter: ["{ user_id: { eq: $user_id } }"]
     
-    # Fields and table names that you wish to block
+    # Field and table names that you wish to block
     blacklist:
       - ar_internal_metadata
       - schema_migrations
@@ -88,7 +88,7 @@ database:
       - encrypted
       - token
 
-  fields:
+  tables:
     - name: users
       # This filter will overwrite defaults.filter
       filter: ["{ id: { eq: $user_id } }"]

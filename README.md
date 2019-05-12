@@ -6,7 +6,7 @@
 ![Docker build](https://img.shields.io/docker/cloud/build/dosco/super-graph.svg)
 ![Cloud native](https://img.shields.io/badge/cloud--native-enabled-blue.svg)
 
-Get an high-performance GraphQL API for your Rails app in seconds without writing a line of code. Super Graph will auto-learn your database structure and relationships. Built in support for Rails authentication and JWT tokens. 
+Get an high-performance GraphQL API for your Rails app in seconds without writing a line of code. Super Graph will auto-learn your database structure and relationships. Built in support for Rails authentication and JWT tokens.
 
 ![Super Graph Web UI](docs/.vuepress/public/super-graph-web-ui.png?raw=true "Super Graph Web UI for web developers")
 
@@ -25,10 +25,16 @@ And so after a lot of coffee and some Avocado toasts __Super Graph was born, a G
 - Full text search and Aggregations
 - Rails Auth supported (Redis, Memcache, Cookie)
 - JWT tokens supported (Auth0, etc)
+- Stitching in REST APIs
 - Highly optimized and fast Postgres SQL queries
 - Configure with a simple config file
 - High performance GO codebase
 - Tiny docker image and low memory requirements
+
+## Watch some talks
+
+[![Watch the video](https://img.youtube.com/vi/TGq9wJAj78I/hqdefault.jpg)](https://youtu.be/TGq9wJAj78I)
+
 
 ## Documentation
 

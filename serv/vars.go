@@ -1,15 +1,13 @@
 package serv
 
 import (
-	"context"
-	"fmt"
 	"io"
 	"strconv"
 
 	"github.com/valyala/fasttemplate"
 )
 
-func varMap(ctx context.Context, vars variables) variables {
+func varMap(ctx *coreContext) variables {
 	userIDFn := func(w io.Writer, _ string) (int, error) {
 		if v := ctx.Value(userIDKey); v != nil {
 			return w.Write([]byte(v.(string)))
@@ -34,7 +32,8 @@ func varMap(ctx context.Context, vars variables) variables {
 		"USER_ID_PROVIDER": userIDProviderTag,
 	}
 
-	for k, v := range vars {
+	for k, v := range ctx.req.Vars {
+		var buf []byte
 		if _, ok := vm[k]; ok {
 			continue
 		}
@@ -42,11 +41,11 @@ func varMap(ctx context.Context, vars variables) variables {
 		case string:
 			vm[k] = val
 		case int:
-			vm[k] = strconv.Itoa(val)
+			vm[k] = strconv.AppendInt(buf, int64(val), 10)
 		case int64:
-			vm[k] = strconv.FormatInt(val, 64)
+			vm[k] = strconv.AppendInt(buf, val, 10)
 		case float64:
-			vm[k] = fmt.Sprintf("%.0f", val)
+			vm[k] = strconv.AppendFloat(buf, val, 'f', -1, 64)
 		}
 	}
 	return vm

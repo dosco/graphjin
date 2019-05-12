@@ -65,7 +65,7 @@ type resolver struct {
 }
 
 func apiv1Http(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+	ctx := &coreContext{Context: r.Context()}
 
 	if authFailBlock == authFailBlockAlways && authCheck(ctx) == false {
 		http.Error(w, "Not authorized", 401)
@@ -79,13 +79,12 @@ func apiv1Http(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req := &gqlReq{}
-	if err := json.Unmarshal(b, req); err != nil {
+	if err := json.Unmarshal(b, &ctx.req); err != nil {
 		errorResp(w, err)
 		return
 	}
 
-	if strings.EqualFold(req.OpName, introspectionQuery) {
+	if strings.EqualFold(ctx.req.OpName, introspectionQuery) {
 		dat, err := ioutil.ReadFile("test.schema")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -95,7 +94,7 @@ func apiv1Http(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = handleReq(ctx, w, req)
+	err = ctx.handleReq(w, r)
 
 	if err == errUnauthorized {
 		http.Error(w, "Not authorized", 401)
@@ -104,4 +103,13 @@ func apiv1Http(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		errorResp(w, err)
 	}
+}
+
+func errorResp(w http.ResponseWriter, err error) {
+	if conf.DebugLevel > 0 {
+		logger.Error(err.Error())
+	}
+
+	w.WriteHeader(http.StatusBadRequest)
+	json.NewEncoder(w).Encode(gqlResp{Error: err.Error()})
 }

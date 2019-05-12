@@ -1,44 +1,12 @@
 package serv
 
-import (
-	"context"
-	"encoding/json"
-	"net/http"
-	"time"
+import "github.com/cespare/xxhash/v2"
 
-	"github.com/dosco/super-graph/qcode"
-)
+func mkkey(h *xxhash.Digest, k1 string, k2 string) uint64 {
+	h.WriteString(k1)
+	h.WriteString(k2)
+	v := h.Sum64()
+	h.Reset()
 
-func errorResp(w http.ResponseWriter, err error) {
-	b, _ := json.Marshal(gqlResp{Error: err.Error()})
-	http.Error(w, string(b), http.StatusBadRequest)
-}
-
-func authCheck(ctx context.Context) bool {
-	return (ctx.Value(userIDKey) != nil)
-}
-
-func newTrace(st, et time.Time, qc *qcode.QCode) *trace {
-	du := et.Sub(et)
-
-	t := &trace{
-		Version:   1,
-		StartTime: st,
-		EndTime:   et,
-		Duration:  du,
-		Execution: execution{
-			[]resolver{
-				resolver{
-					Path:        []string{qc.Query.Select.Table},
-					ParentType:  "Query",
-					FieldName:   qc.Query.Select.Table,
-					ReturnType:  "object",
-					StartOffset: 1,
-					Duration:    du,
-				},
-			},
-		},
-	}
-
-	return t
+	return v
 }

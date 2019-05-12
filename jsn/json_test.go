@@ -1,4 +1,4 @@
-package ajson
+package jsn
 
 import (
 	"bytes"
@@ -226,7 +226,6 @@ func TestFilter(t *testing.T) {
 		t.Error("Does not match expected json")
 	}
 }
-
 func TestStrip(t *testing.T) {
 	path1 := [][]byte{[]byte("data"), []byte("users")}
 	value1 := Strip([]byte(input3), path1)

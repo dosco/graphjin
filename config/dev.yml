@@ -60,7 +60,6 @@ auth:
   #   public_key_file: /secrets/public_key.pem
   #   public_key_type: ecdsa #rsa
 
-
 database:
   type: postgres
   host: db
@@ -80,9 +79,9 @@ database:
 
   # Define defaults to for the field key and values below
   defaults:
-    filter: ["{ user_id: { eq: $user_id } }"]
+    #filter: ["{ user_id: { eq: $user_id } }"]
 
-    # Fields and table names that you wish to block
+    # Field and table names that you wish to block
     blacklist:
       - ar_internal_metadata
       - schema_migrations
@@ -91,10 +90,10 @@ database:
       - encrypted
       - token
 
-  fields:
+  tables:
     - name: users
       # This filter will overwrite defaults.filter
-      filter: ["{ id: { eq: $user_id } }"]
+      # filter: ["{ id: { eq: $user_id } }"]
 
     - name: products
       # Multiple filters are AND'd together
@@ -107,6 +106,18 @@ database:
       # No filter is used for this field not
       # even defaults.filter
       filter: none
+
+      remotes:
+        - name: payments
+          id: stripe_id
+          path: data
+          pass_headers: 
+            - cookie
+            - host
+          # set_headers:
+          #   - name: authorize
+          #     value: Bearer 1234567890
+          url: http://rails_app:3000/stripe/$id
 
     - # You can create new fields that have a
       # real db table backing them

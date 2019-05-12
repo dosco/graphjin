@@ -24,7 +24,7 @@ services:
     working_dir: /app
     command: fresh -c fresh.conf
 
-  web:
+  rails_app:
     build: rails-app/.
     command: bash -c "rm -f tmp/pids/server.pid && bundle exec rails s -p 3000 -b '0.0.0.0'"
     volumes:

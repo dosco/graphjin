@@ -41,6 +41,7 @@ end
 
 customer_count.times do |i|
   customer = Customer.create(
+    stripe_id: "cus_" + [*('A'..'Z'),*('a'..'z'),*('0'..'9')].shuffle[0,10].join,
     full_name: Faker::Name.name,
     phone: Faker::PhoneNumber.cell_phone,
     email: Faker::Internet.email,

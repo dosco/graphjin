@@ -1,18 +1,39 @@
-package ajson
+package jsn
 
 import (
 	"bytes"
+	"errors"
+
+	"github.com/cespare/xxhash/v2"
 )
 
-func Strip(b []byte, path [][]byte) []byte {
+func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
+	if len(from) != len(to) {
+		return errors.New("'from' and 'to' must be of the same length")
+	}
+
+	h := xxhash.New()
+	tmap := make(map[uint64]int, len(from))
+
+	for i, f := range from {
+		h.Write(f.Key)
+		h.Write(f.Value)
+
+		tmap[h.Sum64()] = i
+		h.Reset()
+	}
+
 	s, e, d := 0, 0, 0
 
-	ob := b
-	pi := 0
-	pm := false
 	state := expectKey
+	ws, we := -1, len(b)
 
 	for i := 0; i < len(b); i++ {
+		// skip any left padding whitespace
+		if ws == -1 && (b[i] == '{' || b[i] == '[') {
+			ws = i
+		}
+
 		if state == expectObjClose || state == expectListClose {
 			switch b[i] {
 			case '{', '[':
@@ -29,13 +50,8 @@ func Strip(b []byte, path [][]byte) []byte {
 
 		case state == expectKeyClose && b[i] == '"':
 			state = expectColon
-			if pi == len(path) {
-				pi = 0
-			}
-			pm = bytes.Equal(b[(s+1):i], path[pi])
-			if pm {
-				pi++
-			}
+			h.Write(b[(s + 1):i])
+			we = s
 
 		case state == expectColon && b[i] == ':':
 			state = expectValue
@@ -83,19 +99,60 @@ func Strip(b []byte, path [][]byte) []byte {
 		}
 
 		if e != 0 {
-			if pm && (b[s] == '[' || b[s] == '{') {
-				b = b[s:(e + 1)]
-				i = 0
+			e++
 
-				if pi == len(path) {
-					return b
+			h.Write(b[s:e])
+			n, ok := tmap[h.Sum64()]
+			h.Reset()
+
+			if ok {
+				if _, err := w.Write(b[ws:(we + 1)]); err != nil {
+					return err
+				}
+
+				if len(to[n].Key) != 0 {
+					var err error
+
+					if _, err := w.Write(to[n].Key); err != nil {
+						return err
+					}
+					if _, err := w.WriteString(`":`); err != nil {
+						return err
+					}
+					if len(to[n].Value) != 0 {
+						_, err = w.Write(to[n].Value)
+					} else {
+						_, err = w.WriteString("null")
+					}
+					if err != nil {
+						return err
+					}
+
+					ws = e
+				} else if b[e] == ',' {
+					ws = e + 1
+				} else {
+					ws = e
 				}
 			}
 
+			if !ok && (b[s] == '[' || b[s] == '{') {
+				// the i++ in the for loop will add 1 so we account for that (s - 1)
+				i = s - 1
+			}
+
 			state = expectKey
+			we = len(b)
 			e = 0
+			d = 0
 		}
 	}
 
-	return ob
+	if ws == -1 || (ws == 0 && we == len(b)) {
+		w.Write(b)
+	} else {
+		w.Write(b[ws:we])
+	}
+
+	return nil
 }

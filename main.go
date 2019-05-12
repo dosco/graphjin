@@ -5,5 +5,5 @@ import (
 )
 
 func main() {
-	serv.InitAndListen()
+	serv.Init()
 }
