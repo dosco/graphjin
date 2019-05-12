@@ -1,44 +1,18 @@
-package json
+package ajson
 
 import (
 	"bytes"
-	"crypto/sha1"
-	"errors"
 )
 
-func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
-	if len(from) != len(to) {
-		return errors.New("'from' and 'to' must be of the same length")
-	}
-
-	fmap := make(map[[20]byte]int, (len(from) * 2))
-	tmap := make(map[[20]byte]int, (len(from)))
-
-	for i, f := range from {
-		h1 := sha1.Sum(f.Key)
-		n, ok := fmap[h1]
-		if !ok {
-			fmap[h1] = i
-			n = i
-		}
-
-		h2 := sha1.Sum(f.Value)
-		fmap[h2] = n
-		tmap[h2] = i
-	}
-
-	state := expectKey
-	ws, we := 0, len(b)
-
+func Strip(b []byte, path [][]byte) []byte {
 	s, e, d := 0, 0, 0
-	fi := -1
+
+	ob := b
+	pi := 0
+	pm := false
+	state := expectKey
 
 	for i := 0; i < len(b); i++ {
-		// skip any left padding whitespace
-		if ws == 0 && (b[i] == '{' || b[i] == '[') {
-			ws = i
-		}
-
 		if state == expectObjClose || state == expectListClose {
 			switch b[i] {
 			case '{', '[':
@@ -55,10 +29,12 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 
 		case state == expectKeyClose && b[i] == '"':
 			state = expectColon
-			h1 := sha1.Sum(b[(s + 1):i])
-			if n, ok := fmap[h1]; ok {
-				we = s
-				fi = n
+			if pi == len(path) {
+				pi = 0
+			}
+			pm = bytes.Equal(b[(s+1):i], path[pi])
+			if pm {
+				pi++
 			}
 
 		case state == expectColon && b[i] == ':':
@@ -107,45 +83,19 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 		}
 
 		if e != 0 {
-			e++
+			if pm && (b[s] == '[' || b[s] == '{') {
+				b = b[s:(e + 1)]
+				i = 0
 
-			h2 := sha1.Sum(b[s:e])
-			replace := false
-
-			if n, ok1 := fmap[h2]; ok1 && n == fi {
-				ti, ok2 := tmap[h2]
-
-				if ok2 {
-					if _, err := w.Write(b[ws:(we + 1)]); err != nil {
-						return err
-					}
-					if _, err := w.Write(to[ti].Key); err != nil {
-						return err
-					}
-					if _, err := w.WriteString(`":`); err != nil {
-						return err
-					}
-					if _, err := w.Write(to[ti].Value); err != nil {
-						return err
-					}
-					replace = true
-					ws = e
+				if pi == len(path) {
+					return b
 				}
 			}
 
-			if !replace && (b[s] == '[' || b[s] == '{') {
-				// the i++ in the for loop will add 1 so we account for that (s - 1)
-				i = s - 1
-			}
-
 			state = expectKey
-			we = len(b)
-			fi = -1
 			e = 0
-			d = 0
 		}
 	}
 
-	w.Write(b[ws:we])
-	return nil
+	return ob
 }
