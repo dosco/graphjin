@@ -1,7 +1,7 @@
-package json
+package ajson
 
 import (
-	"crypto/sha1"
+	"github.com/cespare/xxhash/v2"
 )
 
 const (
@@ -21,27 +21,35 @@ type Field struct {
 	Value []byte
 }
 
+func Value(b []byte) []byte {
+	e := (len(b) - 1)
+	switch {
+	case b[0] == '"' && b[e] == '"':
+		return b[1:(len(b) - 1)]
+	case b[0] == '[' && b[e] == ']':
+		return nil
+	case b[0] == '{' && b[e] == '}':
+		return nil
+	default:
+		return b
+	}
+}
+
 func Get(b []byte, keys [][]byte) []Field {
-	s := 0
-	state := expectKey
+	kmap := make(map[uint64]struct{}, len(keys))
 
-	kmap := make(map[[20]byte]struct{}, len(keys))
-
-	for _, k := range keys {
-		h := sha1.Sum(k)
-		if _, ok := kmap[h]; !ok {
-			kmap[h] = struct{}{}
-		}
+	for i := range keys {
+		kmap[xxhash.Sum64(keys[i])] = struct{}{}
 	}
 
-	prealloc := 20
-	res := make([]Field, prealloc)
+	res := make([]Field, 20)
 
 	s, e, d := 0, 0, 0
 
-	var kf bool
 	var k []byte
+	state := expectKey
 
+	n := 0
 	for i := 0; i < len(b); i++ {
 		if state == expectObjClose || state == expectListClose {
 			switch b[i] {
@@ -60,7 +68,6 @@ func Get(b []byte, keys [][]byte) []Field {
 		case state == expectKeyClose && b[i] == '"':
 			state = expectColon
 			k = b[(s + 1):i]
-			_, kf = kmap[sha1.Sum(k)]
 
 		case state == expectColon && b[i] == ':':
 			state = expectValue
@@ -110,13 +117,11 @@ func Get(b []byte, keys [][]byte) []Field {
 		}
 
 		if e != 0 {
-			if kf {
-				if len(res) == cap(res) {
-					r := make([]Field, 0, (len(res) * 2))
-					copy(r, res)
-					res = r
-				}
-				res = append(res, Field{k, b[s:(e + 1)]})
+			_, ok := kmap[xxhash.Sum64(k)]
+
+			if ok {
+				res[n] = Field{k, b[s:(e + 1)]}
+				n++
 			}
 
 			state = expectKey
@@ -124,5 +129,5 @@ func Get(b []byte, keys [][]byte) []Field {
 		}
 	}
 
-	return res
+	return res[:n]
 }

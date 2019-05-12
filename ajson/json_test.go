@@ -1,4 +1,4 @@
-package json
+package ajson
 
 import (
 	"bytes"
@@ -130,7 +130,7 @@ var (
 	}`
 
 	input4 = `
-	[{
+	{ "users" : [{
 		"id": 1,
 		"full_name": "Sidney Stroman",
 		"email": "user0@demo.com",
@@ -148,7 +148,7 @@ var (
 		"full_name": "Jerry Dickinson",
 		"email": "user1@demo.com",
 		"__twitter_id": [{ "name": "hello" }, { "name": "world"}]
-	}]`
+	}] }`
 )
 
 func TestGet(t *testing.T) {
@@ -194,6 +194,28 @@ func TestGet(t *testing.T) {
 	}
 }
 
+func TestValue(t *testing.T) {
+	v1 := []byte("12345")
+	if !bytes.Equal(Value(v1), v1) {
+		t.Fatal("Number value invalid")
+	}
+
+	v2 := []byte(`"12345"`)
+	if !bytes.Equal(Value(v2), []byte(`12345`)) {
+		t.Fatal("String value invalid")
+	}
+
+	v3 := []byte(`{ "hello": "world" }`)
+	if Value(v3) != nil {
+		t.Fatal("Object value is not nil", Value(v3))
+	}
+
+	v4 := []byte(`[ "hello", "world" ]`)
+	if Value(v4) != nil {
+		t.Fatal("List value is not nil")
+	}
+}
+
 func TestFilter(t *testing.T) {
 	var b bytes.Buffer
 	Filter(&b, []byte(input2), []string{"id", "full_name", "embed"})
@@ -206,13 +228,22 @@ func TestFilter(t *testing.T) {
 }
 
 func TestStrip(t *testing.T) {
-	value := Strip([]byte(input3), []string{"data", "users"})
+	path1 := [][]byte{[]byte("data"), []byte("users")}
+	value1 := Strip([]byte(input3), path1)
 
 	expected := []byte(`[{"id":1,"embed":{"id":8}},{"id":2},{"id":3},{"id":4},{"id":5},{"id":6},{"id":7},{"id":8},{"id":9},{"id":10},{"id":11},{"id":12},{"id":13}]`)
 
-	if bytes.Equal(value, expected) == false {
-		t.Log(value)
-		t.Error("Does not match expected json")
+	if bytes.Equal(value1, expected) == false {
+		t.Log(value1)
+		t.Error("[Valid path] Does not match expected json")
+	}
+
+	path2 := [][]byte{[]byte("boo"), []byte("hoo")}
+	value2 := Strip([]byte(input3), path2)
+
+	if bytes.Equal(value2, []byte(input3)) == false {
+		t.Log(value2)
+		t.Error("[Invalid path] Does not match expected json")
 	}
 }
 
@@ -229,7 +260,7 @@ func TestReplace(t *testing.T) {
 		{[]byte("some_list"), []byte(`[{"id":1,"embed":{"id":8}},{"id":2},{"id":3},{"id":4},{"id":5},{"id":6},{"id":7},{"id":8},{"id":9},{"id":10},{"id":11},{"id":12},{"id":13}]`)},
 	}
 
-	expected := `[{
+	expected := `{ "users" : [{
 		"id": 1,
 		"full_name": "Sidney Stroman",
 		"email": "user0@demo.com",
@@ -247,7 +278,7 @@ func TestReplace(t *testing.T) {
 		"full_name": "Jerry Dickinson",
 		"email": "user1@demo.com",
 		"__twitter_id":"1234567890"
-	}]`
+	}] }`
 
 	err := Replace(&buf, []byte(input4), from, to)
 	if err != nil {
@@ -255,6 +286,23 @@ func TestReplace(t *testing.T) {
 	}
 
 	if buf.String() != expected {
+		t.Log(buf.String())
+		t.Error("Does not match expected json")
+	}
+}
+
+func TestReplaceEmpty(t *testing.T) {
+	var buf bytes.Buffer
+
+	json := `{ "users" : [{"id":1,"full_name":"Sidney Stroman","email":"user0@demo.com","__users_twitter_id":"2048666903444506956"}, {"id":2,"full_name":"Jerry Dickinson","email":"user1@demo.com","__users_twitter_id":"2048666903444506956"}, {"id":3,"full_name":"Kenna Cassin","email":"user2@demo.com","__users_twitter_id":"2048666903444506956"}, {"id":4,"full_name":"Mr. Pat Parisian","email":"rodney@kautzer.biz","__users_twitter_id":"2048666903444506956"}, {"id":5,"full_name":"Bette Ebert","email":"janeenrath@goyette.com","__users_twitter_id":"2048666903444506956"}, {"id":6,"full_name":"Everett Kiehn","email":"michael@bartoletti.com","__users_twitter_id":"2048666903444506956"}, {"id":7,"full_name":"Katrina Cronin","email":"loretaklocko@framivolkman.org","__users_twitter_id":"2048666903444506956"}, {"id":8,"full_name":"Caroll Orn Sr.","email":"joannarau@hegmann.io","__users_twitter_id":"2048666903444506956"}, {"id":9,"full_name":"Gwendolyn Ziemann","email":"renaytoy@rutherford.co","__users_twitter_id":"2048666903444506956"}, {"id":10,"full_name":"Mrs. Rosann Fritsch","email":"holliemosciski@thiel.org","__users_twitter_id":"2048666903444506956"}, {"id":11,"full_name":"Arden Koss","email":"cristobalankunding@howewelch.org","__users_twitter_id":"2048666903444506956"}, {"id":12,"full_name":"Brenton Bauch PhD","email":"renee@miller.co","__users_twitter_id":"2048666903444506956"}, {"id":13,"full_name":"Daine Gleichner","email":"andrea@nienow.co","__users_twitter_id":"2048666903444506956"}] }`
+
+	err := Replace(&buf, []byte(json), []Field{}, []Field{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if buf.String() != json {
+		t.Log(buf.String())
 		t.Error("Does not match expected json")
 	}
 }
@@ -284,10 +332,11 @@ func BenchmarkFilter(b *testing.B) {
 }
 
 func BenchmarkStrip(b *testing.B) {
+	path := [][]byte{[]byte("data"), []byte("users")}
 	b.ReportAllocs()
 
 	for n := 0; n < b.N; n++ {
-		Strip([]byte(input3), []string{"data", "users"})
+		Strip([]byte(input3), path)
 	}
 }
 

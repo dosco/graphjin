@@ -1,21 +1,18 @@
-package json
+package ajson
 
 import (
 	"bytes"
-	"crypto/sha1"
+
+	"github.com/cespare/xxhash/v2"
 )
 
 func Filter(w *bytes.Buffer, b []byte, keys []string) error {
-	state := expectKey
 	var err error
 
-	kmap := make(map[[20]byte]struct{}, len(keys))
+	kmap := make(map[uint64]struct{}, len(keys))
 
-	for _, k := range keys {
-		h := sha1.Sum([]byte(k))
-		if _, ok := kmap[h]; !ok {
-			kmap[h] = struct{}{}
-		}
+	for i := range keys {
+		kmap[xxhash.Sum64String(keys[i])] = struct{}{}
 	}
 
 	// is an list
@@ -29,7 +26,8 @@ func Filter(w *bytes.Buffer, b []byte, keys []string) error {
 
 	s, e, d := 0, 0, 0
 
-	kf := false
+	var k []byte
+	state := expectKey
 
 	for i := 0; i < len(b); i++ {
 		if state == expectObjClose || state == expectListClose {
@@ -67,8 +65,7 @@ func Filter(w *bytes.Buffer, b []byte, keys []string) error {
 			}
 		case state == expectKeyClose && b[i] == '"':
 			state = expectColon
-			k := b[(s + 1):i]
-			_, kf = kmap[sha1.Sum(k)]
+			k = b[(s + 1):i]
 
 		case state == expectColon && b[i] == ':':
 			state = expectValue
@@ -115,7 +112,7 @@ func Filter(w *bytes.Buffer, b []byte, keys []string) error {
 			cb := b[s:(e + 1)]
 			e = 0
 
-			if !kf {
+			if _, ok := kmap[xxhash.Sum64(k)]; !ok {
 				continue
 			}
 
