@@ -33,6 +33,7 @@ const (
 	RelBelongTo RelType = iota + 1
 	RelOneToMany
 	RelOneToManyThrough
+	RelRemote
 )
 
 type DBRel struct {

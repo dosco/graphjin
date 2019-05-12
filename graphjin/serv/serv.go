@@ -1,13 +1,16 @@
 package serv
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"time"
 
 	"github.com/dosco/super-graph/psql"
 	"github.com/dosco/super-graph/qcode"
@@ -20,6 +23,8 @@ import (
 //go:generate esc -o static.go -ignore \\.DS_Store -prefix ../web/build -private -pkg serv ../web/build
 
 const (
+	serverName = "Super Graph"
+
 	authFailBlockAlways = iota + 1
 	authFailBlockPerQuery
 	authFailBlockNever
@@ -29,73 +34,10 @@ var (
 	logger        *logrus.Logger
 	conf          *config
 	db            *pg.DB
-	pcompile      *psql.Compiler
 	qcompile      *qcode.Compiler
+	pcompile      *psql.Compiler
 	authFailBlock int
 )
-
-type config struct {
-	AppName       string `mapstructure:"app_name"`
-	Env           string
-	HostPort      string `mapstructure:"host_port"`
-	WebUI         bool   `mapstructure:"web_ui"`
-	DebugLevel    int    `mapstructure:"debug_level"`
-	EnableTracing bool   `mapstructure:"enable_tracing"`
-	AuthFailBlock string `mapstructure:"auth_fail_block"`
-	Inflections   map[string]string
-
-	Auth struct {
-		Type   string
-		Cookie string
-		Header string
-
-		Rails struct {
-			Version       string
-			SecretKeyBase string `mapstructure:"secret_key_base"`
-			URL           string
-			Password      string
-			MaxIdle       int `mapstructure:"max_idle"`
-			MaxActive     int `mapstructure:"max_active"`
-			Salt          string
-			SignSalt      string `mapstructure:"sign_salt"`
-			AuthSalt      string `mapstructure:"auth_salt"`
-		}
-
-		JWT struct {
-			Provider   string
-			Secret     string
-			PubKeyFile string `mapstructure:"public_key_file"`
-			PubKeyType string `mapstructure:"public_key_type"`
-		}
-	}
-
-	DB struct {
-		Type       string
-		Host       string
-		Port       string
-		DBName     string
-		User       string
-		Password   string
-		Schema     string
-		PoolSize   int    `mapstructure:"pool_size"`
-		MaxRetries int    `mapstructure:"max_retries"`
-		LogLevel   string `mapstructure:"log_level"`
-
-		Variables map[string]string
-
-		Defaults struct {
-			Filter    []string
-			Blacklist []string
-		}
-
-		Fields []struct {
-			Name      string
-			Filter    []string
-			Table     string
-			Blacklist []string
-		}
-	} `mapstructure:"database"`
-}
 
 func initLog() *logrus.Logger {
 	log := logrus.New()
@@ -153,6 +95,15 @@ func initConf() (*config, error) {
 		flect.AddPlural(k, v)
 	}
 
+	if len(c.DB.Tables) == 0 {
+		c.DB.Tables = c.DB.Fields
+	}
+
+	for i := range c.DB.Tables {
+		t := c.DB.Tables[i]
+		t.Name = flect.Pluralize(strings.ToLower(t.Name))
+	}
+
 	authFailBlock = getAuthFailBlock(c)
 
 	//fmt.Printf("%#v", c)
@@ -196,50 +147,31 @@ func initDB(c *config) (*pg.DB, error) {
 }
 
 func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
-	cdb := c.DB
-
-	fm := make(map[string][]string, len(cdb.Fields))
-	tmap := make(map[string]string, len(cdb.Fields))
-
-	for i := range cdb.Fields {
-		f := cdb.Fields[i]
-		name := flect.Pluralize(strings.ToLower(f.Name))
-		if len(f.Filter) != 0 {
-			if f.Filter[0] == "none" {
-				fm[name] = []string{}
-			} else {
-				fm[name] = f.Filter
-			}
-		}
-		if len(f.Table) != 0 {
-			tmap[name] = f.Table
-		}
-	}
-
-	qc, err := qcode.NewCompiler(qcode.Config{
-		Filter:    cdb.Defaults.Filter,
-		FilterMap: fm,
-		Blacklist: cdb.Defaults.Blacklist,
-	})
+	schema, err := psql.NewDBSchema(db)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	schema, err := psql.NewDBSchema(db)
+	qc, err := qcode.NewCompiler(qcode.Config{
+		DefaultFilter: c.DB.Defaults.Filter,
+		FilterMap:     c.getFilterMap(),
+		Blacklist:     c.DB.Defaults.Blacklist,
+	})
+
 	if err != nil {
 		return nil, nil, err
 	}
 
 	pc := psql.NewCompiler(psql.Config{
 		Schema:   schema,
-		Vars:     cdb.Variables,
-		TableMap: tmap,
+		Vars:     c.DB.Variables,
+		TableMap: c.getAliasMap(),
 	})
 
 	return qc, pc, nil
 }
 
-func InitAndListen() {
+func Init() {
 	var err error
 
 	logger = initLog()
@@ -259,16 +191,61 @@ func InitAndListen() {
 		log.Fatal(err)
 	}
 
-	http.HandleFunc("/api/v1/graphql", withAuth(apiv1Http))
+	initResolvers()
 
-	if conf.WebUI {
-		http.Handle("/", http.FileServer(_escFS(false)))
+	startHTTP()
+}
+
+func startHTTP() {
+	srv := &http.Server{
+		Addr:           conf.HostPort,
+		Handler:        routeHandler(),
+		ReadTimeout:    5 * time.Second,
+		WriteTimeout:   10 * time.Second,
+		MaxHeaderBytes: 1 << 20,
 	}
 
-	fmt.Printf("Super-Graph listening on %s (%s)\n",
-		conf.HostPort, conf.Env)
+	idleConnsClosed := make(chan struct{})
+	go func() {
+		sigint := make(chan os.Signal, 1)
+		signal.Notify(sigint, os.Interrupt)
+		<-sigint
 
-	logger.Fatal(http.ListenAndServe(conf.HostPort, nil))
+		if err := srv.Shutdown(context.Background()); err != nil {
+			log.Printf("http: %v", err)
+		}
+		close(idleConnsClosed)
+	}()
+
+	srv.RegisterOnShutdown(func() {
+		if err := db.Close(); err != nil {
+			log.Println(err)
+		}
+	})
+
+	fmt.Printf("%s listening on %s (%s)\n", serverName, conf.HostPort, conf.Env)
+
+	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+		fmt.Println(err)
+	}
+
+	<-idleConnsClosed
+}
+
+func routeHandler() http.Handler {
+	mux := http.NewServeMux()
+
+	mux.Handle("/api/v1/graphql", withAuth(apiv1Http))
+	if conf.WebUI {
+		mux.Handle("/", http.FileServer(_escFS(false)))
+	}
+
+	fn := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Server", serverName)
+		mux.ServeHTTP(w, r)
+	}
+
+	return http.HandlerFunc(fn)
 }
 
 func getConfigName() string {

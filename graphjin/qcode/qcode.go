@@ -9,12 +9,16 @@ import (
 	"github.com/gobuffalo/flect"
 )
 
+const (
+	maxSelectors = 30
+)
+
 type QCode struct {
 	Query *Query
 }
 
 type Query struct {
-	Select *Select
+	Selects []Select
 }
 
 type Column struct {
@@ -24,18 +28,19 @@ type Column struct {
 }
 
 type Select struct {
-	ID         int16
+	ID         uint16
+	ParentID   uint16
 	Args       map[string]*Node
 	AsList     bool
 	Table      string
 	Singular   string
 	FieldName  string
-	Cols       []*Column
+	Cols       []Column
 	Where      *Exp
 	OrderBy    []*OrderBy
 	DistinctOn []string
 	Paging     Paging
-	Joins      []*Select
+	Children   []uint16
 }
 
 type Exp struct {
@@ -184,9 +189,9 @@ const (
 )
 
 type Config struct {
-	Filter    []string
-	FilterMap map[string][]string
-	Blacklist []string
+	DefaultFilter []string
+	FilterMap     map[string][]string
+	Blacklist     []string
 }
 
 type Compiler struct {
@@ -202,7 +207,7 @@ func NewCompiler(conf Config) (*Compiler, error) {
 		bl[strings.ToLower(conf.Blacklist[i])] = struct{}{}
 	}
 
-	fl, err := compileFilter(conf.Filter)
+	fl, err := compileFilter(conf.DefaultFilter)
 	if err != nil {
 		return nil, err
 	}
@@ -246,27 +251,32 @@ func (com *Compiler) CompileQuery(query string) (*QCode, error) {
 }
 
 func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
-	var selRoot *Select
+	var id, parentID uint16
 
+	selects := make([]Select, 0, 5)
 	st := util.NewStack()
-	id := int16(0)
-	fs := make([]*Select, op.FieldLen)
 
-	for i := range op.Fields {
-		st.Push(op.Fields[i])
+	if len(op.Fields) == 0 {
+		return nil, errors.New("empty query")
 	}
+	st.Push(op.Fields[0].ID)
 
 	for {
 		if st.Len() == 0 {
 			break
 		}
 
-		intf := st.Pop()
-		field, ok := intf.(*Field)
-
-		if !ok || field == nil {
-			return nil, fmt.Errorf("unexpected value poped out %v", intf)
+		if id >= maxSelectors {
+			return nil, fmt.Errorf("selector limit reached (%d)", maxSelectors)
 		}
+
+		intf := st.Pop()
+		fid, ok := intf.(uint16)
+
+		if !ok {
+			return nil, fmt.Errorf("15: unexpected value %v (%t)", intf, intf)
+		}
+		field := &op.Fields[fid]
 
 		fn := strings.ToLower(field.Name)
 		if _, ok := com.bl[fn]; ok {
@@ -274,9 +284,16 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 		}
 		tn := flect.Pluralize(fn)
 
-		s := &Select{
-			ID:    id,
-			Table: tn,
+		s := Select{
+			ID:       id,
+			ParentID: parentID,
+			Table:    tn,
+			Children: make([]uint16, 0, 5),
+		}
+
+		if s.ID != 0 {
+			p := &selects[s.ParentID]
+			p.Children = append(p.Children, s.ID)
 		}
 
 		if fn == tn {
@@ -299,68 +316,67 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 			s.FieldName = s.Singular
 		}
 
-		id++
-		fs[field.ID] = s
-
-		err := com.compileArgs(s, field.Args)
+		err := com.compileArgs(&s, field.Args)
 		if err != nil {
 			return nil, err
 		}
 
-		for i := range field.Children {
-			f := field.Children[i]
+		s.Cols = make([]Column, 0, len(field.Children))
+
+		for _, cid := range field.Children {
+			f := op.Fields[cid]
 			fn := strings.ToLower(f.Name)
 
 			if _, ok := com.bl[fn]; ok {
 				continue
 			}
 
-			if f.Children == nil {
-				col := &Column{Name: fn}
-				if len(f.Alias) != 0 {
-					col.FieldName = f.Alias
-				} else {
-					col.FieldName = f.Name
-				}
-
-				s.Cols = append(s.Cols, col)
-			} else {
-				st.Push(f)
+			if len(f.Children) != 0 {
+				parentID = s.ID
+				st.Push(f.ID)
+				continue
 			}
+
+			col := Column{Name: fn}
+
+			if len(f.Alias) != 0 {
+				col.FieldName = f.Alias
+			} else {
+				col.FieldName = f.Name
+			}
+			s.Cols = append(s.Cols, col)
 		}
 
-		if field.Parent == nil {
-			selRoot = s
-		} else {
-			sp := fs[field.Parent.ID]
-			sp.Joins = append(sp.Joins, s)
-		}
+		selects = append(selects, s)
+		id++
 	}
 
 	var ok bool
 	var fil *Exp
 
-	if selRoot != nil {
-		fil, ok = com.fm[selRoot.Table]
-	}
+	if id > 0 {
+		root := &selects[0]
+		fil, ok = com.fm[root.Table]
 
-	if !ok || fil == nil {
-		fil = com.fl
-	}
-
-	if fil != nil && fil.Op != OpNop {
-		if selRoot.Where != nil {
-			selRoot.Where = &Exp{Op: OpAnd, Children: []*Exp{fil, selRoot.Where}}
-		} else {
-			selRoot.Where = fil
+		if !ok || fil == nil {
+			fil = com.fl
 		}
-	}
 
-	if selRoot == nil {
+		if fil != nil && fil.Op != OpNop {
+
+			if root.Where != nil {
+				ex := &Exp{Op: OpAnd, Children: []*Exp{fil, root.Where}}
+				root.Where = ex
+			} else {
+				root.Where = fil
+			}
+		}
+
+	} else {
 		return nil, errors.New("invalid query")
 	}
 
-	return &Query{selRoot}, nil
+	return &Query{selects[:id]}, nil
 }
 
 func (com *Compiler) compileArgs(sel *Select, args []*Arg) error {
@@ -379,7 +395,7 @@ func (com *Compiler) compileArgs(sel *Select, args []*Arg) error {
 
 		switch an {
 		case "id":
-			if sel.ID == int16(0) {
+			if sel.ID == 0 {
 				err = com.compileArgID(sel, args[i])
 			}
 		case "search":
@@ -437,7 +453,7 @@ func (com *Compiler) compileArgNode(val *Node) (*Exp, error) {
 		intf := st.Pop()
 		eT, ok := intf.(*expT)
 		if !ok || eT == nil {
-			return nil, fmt.Errorf("unexpected value poped out %v", intf)
+			return nil, fmt.Errorf("16: unexpected value %v (%t)", intf, intf)
 		}
 
 		if len(eT.node.Name) != 0 {
@@ -542,7 +558,7 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) error {
 		node, ok := intf.(*Node)
 
 		if !ok || node == nil {
-			return fmt.Errorf("OrderBy: unexpected value poped out %v", intf)
+			return fmt.Errorf("17: unexpected value %v (%t)", intf, intf)
 		}
 
 		if _, ok := com.bl[strings.ToLower(node.Name)]; ok {
@@ -768,16 +784,17 @@ func setListVal(ex *Exp, node *Node) {
 
 func setWhereColName(ex *Exp, node *Node) {
 	var list []string
+
 	for n := node.Parent; n != nil; n = n.Parent {
 		if n.Type != nodeObj {
 			continue
 		}
-		k := strings.ToLower(n.Name)
-		if k == "and" || k == "or" || k == "not" ||
-			k == "_and" || k == "_or" || k == "_not" {
-			continue
-		}
-		if len(k) != 0 {
+		if len(n.Name) != 0 {
+			k := strings.ToLower(n.Name)
+			if k == "and" || k == "or" || k == "not" ||
+				k == "_and" || k == "_or" || k == "_not" {
+				continue
+			}
 			list = append([]string{k}, list...)
 		}
 	}
@@ -785,21 +802,22 @@ func setWhereColName(ex *Exp, node *Node) {
 		ex.Col = list[0]
 
 	} else if len(list) > 2 {
-		ex.Col = strings.Join(list, ".")
+		ex.Col = buildPath(list)
 		ex.NestedCol = true
 	}
 }
 
 func setOrderByColName(ob *OrderBy, node *Node) {
 	var list []string
+
 	for n := node; n != nil; n = n.Parent {
-		k := strings.ToLower(n.Name)
-		if len(k) != 0 {
+		if len(n.Name) != 0 {
+			k := strings.ToLower(n.Name)
 			list = append([]string{k}, list...)
 		}
 	}
 	if len(list) != 0 {
-		ob.Col = strings.Join(list, ".")
+		ob.Col = buildPath(list)
 	}
 }
 
@@ -833,4 +851,27 @@ func compileFilter(filter []string) (*Exp, error) {
 		}
 	}
 	return fl, nil
+}
+
+func buildPath(a []string) string {
+	switch len(a) {
+	case 0:
+		return ""
+	case 1:
+		return a[0]
+	}
+
+	n := len(a) - 1
+	for i := 0; i < len(a); i++ {
+		n += len(a[i])
+	}
+
+	var b strings.Builder
+	b.Grow(n)
+	b.WriteString(a[0])
+	for _, s := range a[1:] {
+		b.WriteRune('.')
+		b.WriteString(s)
+	}
+	return b.String()
 }

@@ -38,15 +38,15 @@ open http://localhost:3000
 open http://localhost:8080
 ```
 
-::: warning DEMO REQUIREMENTS  
-This demo requires `docker` you can either install it using `brew` or from the 
+::: warning DEMO REQUIREMENTS
+This demo requires `docker` you can either install it using `brew` or from the
 docker website [https://docs.docker.com/docker-for-mac/install/](https://docs.docker.com/docker-for-mac/install/)
 :::
 
 ## Try out GraphQL
 
-```graphql 
-query { 
+```graphql
+query {
   users {
     id
     email
@@ -68,6 +68,11 @@ I always liked GraphQL it sounded friendly, but it still required me to write al
 
 And so after a lot of coffee and some Avocado toasts __Super Graph was born, a GraphQL server that just works, is high performance and easy to deploy__. I hope you find it as useful as I do and there's a lot more coming so hit that :star: to stay in the loop.
 
-## Say hello 
+
+## Watch some talks
+
+<iframe class="w-full h-full" src="https://www.youtube.com/embed/TGq9wJAj78I" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+
+## Say hello
 
 [twitter.com/dosco](https://twitter.com/dosco)

@@ -10,6 +10,10 @@ import (
 	"github.com/dosco/super-graph/util"
 )
 
+const (
+	empty = ""
+)
+
 type Config struct {
 	Schema   *DBSchema
 	Vars     map[string]string
@@ -26,18 +30,43 @@ func NewCompiler(conf Config) *Compiler {
 	return &Compiler{conf.Schema, conf.Vars, conf.TableMap}
 }
 
-func (c *Compiler) Compile(w io.Writer, qc *qcode.QCode) error {
+func (c *Compiler) AddRelationship(key TTKey, val *DBRel) {
+	c.schema.RelMap[key] = val
+}
+
+func (c *Compiler) IDColumn(table string) string {
+	t, ok := c.schema.Tables[table]
+	if !ok {
+		return empty
+	}
+	return t.PrimaryCol
+}
+
+func (c *Compiler) Compile(qc *qcode.QCode) (uint32, []string, error) {
+	if len(qc.Query.Selects) == 0 {
+		return 0, nil, errors.New("empty query")
+	}
+	root := &qc.Query.Selects[0]
+
 	st := util.NewStack()
-	ti, err := c.getTable(qc.Query.Select)
+	ti, err := c.getTable(root)
 	if err != nil {
-		return err
+		return 0, nil, err
 	}
 
-	st.Push(&selectBlockClose{nil, qc.Query.Select})
-	st.Push(&selectBlock{nil, qc.Query.Select, ti, c})
+	buf := strings.Builder{}
+	buf.Grow(2048)
+
+	sql := make([]string, 0, 3)
+	w := io.Writer(&buf)
+
+	st.Push(&selectBlockClose{nil, root})
+	st.Push(&selectBlock{nil, root, qc, ti, c})
 
 	fmt.Fprintf(w, `SELECT json_object_agg('%s', %s) FROM (`,
-		qc.Query.Select.FieldName, qc.Query.Select.Table)
+		root.FieldName, root.Table)
+
+	var ignored uint32
 
 	for {
 		if st.Len() == 0 {
@@ -48,37 +77,47 @@ func (c *Compiler) Compile(w io.Writer, qc *qcode.QCode) error {
 
 		switch v := intf.(type) {
 		case *selectBlock:
-			childCols, childIDs := c.relationshipColumns(v.sel)
-			v.render(w, c.schema, childCols, childIDs)
+			skipped, err := v.render(w)
+			if err != nil {
+				return 0, nil, err
+			}
+			ignored |= skipped
 
-			for i := range childIDs {
-				sub := v.sel.Joins[childIDs[i]]
+			for _, id := range v.sel.Children {
+				if hasBit(skipped, id) {
+					continue
+				}
+				child := &qc.Query.Selects[id]
 
-				ti, err := c.getTable(sub)
+				ti, err := c.getTable(child)
 				if err != nil {
-					return err
+					return 0, nil, err
 				}
 
-				st.Push(&joinClose{sub})
-				st.Push(&selectBlockClose{v.sel, sub})
-				st.Push(&selectBlock{v.sel, sub, ti, c})
-				st.Push(&joinOpen{sub})
+				st.Push(&joinClose{child})
+				st.Push(&selectBlockClose{v.sel, child})
+				st.Push(&selectBlock{v.sel, child, qc, ti, c})
+				st.Push(&joinOpen{child})
 			}
 		case *selectBlockClose:
-			v.render(w)
+			err = v.render(w)
 
 		case *joinOpen:
-			v.render(w)
+			err = v.render(w)
 
 		case *joinClose:
-			v.render(w)
+			err = v.render(w)
+		}
 
+		if err != nil {
+			return 0, nil, err
 		}
 	}
 
 	io.WriteString(w, `) AS "done_1337";`)
+	sql = append(sql, buf.String())
 
-	return nil
+	return ignored, sql, nil
 }
 
 func (c *Compiler) getTable(sel *qcode.Select) (*DBTableInfo, error) {
@@ -88,50 +127,61 @@ func (c *Compiler) getTable(sel *qcode.Select) (*DBTableInfo, error) {
 	return c.schema.GetTable(sel.Table)
 }
 
-func (c *Compiler) relationshipColumns(parent *qcode.Select) (
-	cols []*qcode.Column, childIDs []int) {
+func (v *selectBlock) processChildren() (uint32, []*qcode.Column) {
+	var skipped uint32
 
-	colmap := make(map[string]struct{}, len(parent.Cols))
-	for i := range parent.Cols {
-		colmap[parent.Cols[i].Name] = struct{}{}
+	cols := make([]*qcode.Column, 0, len(v.sel.Cols))
+	colmap := make(map[string]struct{}, len(v.sel.Cols))
+
+	for i := range v.sel.Cols {
+		colmap[v.sel.Cols[i].Name] = struct{}{}
 	}
 
-	for i, sub := range parent.Joins {
-		k := TTKey{sub.Table, parent.Table}
+	for _, id := range v.sel.Children {
+		child := &v.qc.Query.Selects[id]
+		k := TTKey{child.Table, v.sel.Table}
 
-		rel, ok := c.schema.RelMap[k]
+		rel, ok := v.schema.RelMap[k]
 		if !ok {
+			skipped |= (1 << uint(id))
 			continue
 		}
 
-		if rel.Type == RelBelongTo || rel.Type == RelOneToMany {
+		switch rel.Type {
+		case RelOneToMany:
+			fallthrough
+		case RelBelongTo:
 			if _, ok := colmap[rel.Col2]; !ok {
-				cols = append(cols, &qcode.Column{parent.Table, rel.Col2, rel.Col2})
+				cols = append(cols, &qcode.Column{v.sel.Table, rel.Col2, rel.Col2})
 			}
-			childIDs = append(childIDs, i)
-		}
-
-		if rel.Type == RelOneToManyThrough {
+		case RelOneToManyThrough:
 			if _, ok := colmap[rel.Col1]; !ok {
-				cols = append(cols, &qcode.Column{parent.Table, rel.Col1, rel.Col1})
+				cols = append(cols, &qcode.Column{v.sel.Table, rel.Col1, rel.Col1})
 			}
-			childIDs = append(childIDs, i)
+		case RelRemote:
+			if _, ok := colmap[rel.Col1]; !ok {
+				cols = append(cols, &qcode.Column{v.sel.Table, rel.Col1, rel.Col2})
+			}
+			skipped |= (1 << uint(id))
+
+		default:
+			skipped |= (1 << uint(id))
 		}
 	}
 
-	return cols, childIDs
+	return skipped, cols
 }
 
 type selectBlock struct {
 	parent *qcode.Select
 	sel    *qcode.Select
+	qc     *qcode.QCode
 	ti     *DBTableInfo
 	*Compiler
 }
 
-func (v *selectBlock) render(w io.Writer,
-	schema *DBSchema, childCols []*qcode.Column, childIDs []int) error {
-
+func (v *selectBlock) render(w io.Writer) (uint32, error) {
+	skipped, childCols := v.processChildren()
 	hasOrder := len(v.sel.OrderBy) != 0
 
 	// SELECT
@@ -141,7 +191,7 @@ func (v *selectBlock) render(w io.Writer,
 		if hasOrder {
 			err := renderOrderBy(w, v.sel)
 			if err != nil {
-				return err
+				return skipped, err
 			}
 		}
 
@@ -162,9 +212,11 @@ func (v *selectBlock) render(w io.Writer,
 	// Combined column names
 	v.renderColumns(w)
 
-	err := v.renderJoinedColumns(w, childIDs)
+	v.renderRemoteRelColumns(w)
+
+	err := v.renderJoinedColumns(w, skipped)
 	if err != nil {
-		return err
+		return skipped, err
 	}
 
 	fmt.Fprintf(w, `) AS "sel_%d"`, v.sel.ID)
@@ -178,13 +230,13 @@ func (v *selectBlock) render(w io.Writer,
 	// END-SELECT
 
 	// FROM (SELECT .... )
-	err = v.renderBaseSelect(w, schema, childCols, childIDs)
+	err = v.renderBaseSelect(w, childCols, skipped)
 	if err != nil {
-		return err
+		return skipped, err
 	}
 	// END-FROM
 
-	return nil
+	return skipped, nil
 }
 
 type selectBlockClose struct {
@@ -233,13 +285,13 @@ type joinClose struct {
 }
 
 func (v *joinClose) render(w io.Writer) error {
-	fmt.Fprintf(w, `) AS "%s_%d.join" ON ('true')`, v.sel.Table, v.sel.ID)
+	fmt.Fprintf(w, `) AS "%s_%d_join" ON ('true')`, v.sel.Table, v.sel.ID)
 	return nil
 }
 
-func (v *selectBlock) renderJoinTable(w io.Writer, schema *DBSchema, childIDs []int) {
+func (v *selectBlock) renderJoinTable(w io.Writer) {
 	k := TTKey{v.sel.Table, v.parent.Table}
-	rel, ok := schema.RelMap[k]
+	rel, ok := v.schema.RelMap[k]
 	if !ok {
 		panic(errors.New("no relationship found"))
 	}
@@ -250,40 +302,61 @@ func (v *selectBlock) renderJoinTable(w io.Writer, schema *DBSchema, childIDs []
 
 	fmt.Fprintf(w, ` LEFT OUTER JOIN "%s" ON (("%s"."%s") = ("%s_%d"."%s"))`,
 		rel.Through, rel.Through, rel.ColT, v.parent.Table, v.parent.ID, rel.Col1)
-
 }
 
 func (v *selectBlock) renderColumns(w io.Writer) {
 	for i, col := range v.sel.Cols {
-		fmt.Fprintf(w, `"%s_%d"."%s" AS "%s"`,
-			v.sel.Table, v.sel.ID, col.Name, col.FieldName)
-
-		if i < len(v.sel.Cols)-1 {
+		if i != 0 {
 			io.WriteString(w, ", ")
 		}
+		fmt.Fprintf(w, `"%s_%d"."%s" AS "%s"`,
+			v.sel.Table, v.sel.ID, col.Name, col.FieldName)
 	}
 }
 
-func (v *selectBlock) renderJoinedColumns(w io.Writer, childIDs []int) error {
-	if len(v.sel.Cols) != 0 && len(childIDs) != 0 {
-		io.WriteString(w, ", ")
-	}
+func (v *selectBlock) renderRemoteRelColumns(w io.Writer) {
+	k := TTKey{Table2: v.sel.Table}
+	i := 0
 
-	for i := range childIDs {
-		s := v.sel.Joins[childIDs[i]]
+	for _, id := range v.sel.Children {
+		child := &v.qc.Query.Selects[id]
+		k.Table1 = child.Table
 
-		fmt.Fprintf(w, `"%s_%d.join"."%s" AS "%s"`,
-			s.Table, s.ID, s.Table, s.FieldName)
-
-		if i < len(childIDs)-1 {
+		rel, ok := v.schema.RelMap[k]
+		if !ok || rel.Type != RelRemote {
+			continue
+		}
+		if i != 0 || len(v.sel.Cols) != 0 {
 			io.WriteString(w, ", ")
 		}
+		fmt.Fprintf(w, `"%s_%d"."%s" AS "%s"`,
+			v.sel.Table, v.sel.ID, rel.Col1, rel.Col2)
+		i++
+	}
+}
+
+func (v *selectBlock) renderJoinedColumns(w io.Writer, skipped uint32) error {
+	colsRendered := len(v.sel.Cols) != 0
+
+	for _, id := range v.sel.Children {
+		skipThis := hasBit(skipped, id)
+
+		if colsRendered && !skipThis {
+			io.WriteString(w, ", ")
+		}
+		if skipThis {
+			continue
+		}
+		s := &v.qc.Query.Selects[id]
+
+		fmt.Fprintf(w, `"%s_%d_join"."%s" AS "%s"`,
+			s.Table, s.ID, s.Table, s.FieldName)
 	}
 
 	return nil
 }
 
-func (v *selectBlock) renderBaseSelect(w io.Writer, schema *DBSchema, childCols []*qcode.Column, childIDs []int) error {
+func (v *selectBlock) renderBaseSelect(w io.Writer, childCols []*qcode.Column, skipped uint32) error {
 	var groupBy []int
 
 	isRoot := v.parent == nil
@@ -337,11 +410,11 @@ func (v *selectBlock) renderBaseSelect(w io.Writer, schema *DBSchema, childCols 
 	}
 
 	for i, col := range childCols {
-		fmt.Fprintf(w, `"%s"."%s"`, col.Table, col.Name)
-
-		if i < len(childCols)-1 {
+		if i != 0 {
 			io.WriteString(w, ", ")
 		}
+
+		fmt.Fprintf(w, `"%s"."%s"`, col.Table, col.Name)
 	}
 
 	if tn, ok := v.tmap[v.sel.Table]; ok {
@@ -359,10 +432,10 @@ func (v *selectBlock) renderBaseSelect(w io.Writer, schema *DBSchema, childCols 
 	}
 
 	if !isRoot {
-		v.renderJoinTable(w, schema, childIDs)
+		v.renderJoinTable(w)
 
 		io.WriteString(w, ` WHERE (`)
-		v.renderRelationship(w, schema)
+		v.renderRelationship(w)
 
 		if isFil {
 			io.WriteString(w, ` AND `)
@@ -378,11 +451,10 @@ func (v *selectBlock) renderBaseSelect(w io.Writer, schema *DBSchema, childCols 
 			fmt.Fprintf(w, ` GROUP BY `)
 
 			for i, id := range groupBy {
-				fmt.Fprintf(w, `"%s"."%s"`, v.sel.Table, v.sel.Cols[id].Name)
-
-				if i < len(groupBy)-1 {
+				if i != 0 {
 					io.WriteString(w, ", ")
 				}
+				fmt.Fprintf(w, `"%s"."%s"`, v.sel.Table, v.sel.Cols[id].Name)
 			}
 		}
 	}
@@ -402,25 +474,23 @@ func (v *selectBlock) renderBaseSelect(w io.Writer, schema *DBSchema, childCols 
 }
 
 func (v *selectBlock) renderOrderByColumns(w io.Writer) {
-	if len(v.sel.Cols) != 0 {
-		io.WriteString(w, ", ")
-	}
+	colsRendered := len(v.sel.Cols) != 0
 
 	for i := range v.sel.OrderBy {
+		if colsRendered {
+			io.WriteString(w, ", ")
+		}
+
 		c := v.sel.OrderBy[i].Col
 		fmt.Fprintf(w, `"%s_%d"."%s" AS "%s_%d.ob.%s"`,
 			v.sel.Table, v.sel.ID, c,
 			v.sel.Table, v.sel.ID, c)
-
-		if i < len(v.sel.OrderBy)-1 {
-			io.WriteString(w, ", ")
-		}
 	}
 }
 
-func (v *selectBlock) renderRelationship(w io.Writer, schema *DBSchema) {
+func (v *selectBlock) renderRelationship(w io.Writer) {
 	k := TTKey{v.sel.Table, v.parent.Table}
-	rel, ok := schema.RelMap[k]
+	rel, ok := v.schema.RelMap[k]
 	if !ok {
 		panic(errors.New("no relationship found"))
 	}
@@ -464,7 +534,7 @@ func (v *selectBlock) renderWhere(w io.Writer) error {
 			case qcode.OpNot:
 				io.WriteString(w, `NOT `)
 			default:
-				return fmt.Errorf("[Where] unexpected value encountered %v", intf)
+				return fmt.Errorf("11: unexpected value %v (%t)", intf, intf)
 			}
 		case *qcode.Exp:
 			switch val.Op {
@@ -562,7 +632,7 @@ func (v *selectBlock) renderWhere(w io.Writer) error {
 			}
 
 		default:
-			return fmt.Errorf("[Where] unexpected value encountered %v", intf)
+			return fmt.Errorf("12: unexpected value %v (%t)", intf, intf)
 		}
 	}
 
@@ -572,6 +642,9 @@ func (v *selectBlock) renderWhere(w io.Writer) error {
 func renderOrderBy(w io.Writer, sel *qcode.Select) error {
 	io.WriteString(w, ` ORDER BY `)
 	for i := range sel.OrderBy {
+		if i != 0 {
+			io.WriteString(w, ", ")
+		}
 		ob := sel.OrderBy[i]
 
 		switch ob.Order {
@@ -588,10 +661,7 @@ func renderOrderBy(w io.Writer, sel *qcode.Select) error {
 		case qcode.OrderDescNullsLast:
 			fmt.Fprintf(w, `%s_%d.ob.%s DESC NULLS LAST`, sel.Table, sel.ID, ob.Col)
 		default:
-			return fmt.Errorf("[qcode.Order By] unexpected value encountered %v", ob.Order)
-		}
-		if i < len(sel.OrderBy)-1 {
-			io.WriteString(w, ", ")
+			return fmt.Errorf("13: unexpected value %v (%t)", ob.Order, ob.Order)
 		}
 	}
 	return nil
@@ -600,12 +670,11 @@ func renderOrderBy(w io.Writer, sel *qcode.Select) error {
 func (v selectBlock) renderDistinctOn(w io.Writer) {
 	io.WriteString(w, ` DISTINCT ON (`)
 	for i := range v.sel.DistinctOn {
-		fmt.Fprintf(w, `"%s_%d.ob.%s"`,
-			v.sel.Table, v.sel.ID, v.sel.DistinctOn[i])
-
-		if i < len(v.sel.DistinctOn)-1 {
+		if i != 0 {
 			io.WriteString(w, ", ")
 		}
+		fmt.Fprintf(w, `"%s_%d.ob.%s"`,
+			v.sel.Table, v.sel.ID, v.sel.DistinctOn[i])
 	}
 	io.WriteString(w, `) `)
 }
@@ -613,15 +682,14 @@ func (v selectBlock) renderDistinctOn(w io.Writer) {
 func renderList(w io.Writer, ex *qcode.Exp) {
 	io.WriteString(w, ` (`)
 	for i := range ex.ListVal {
+		if i != 0 {
+			io.WriteString(w, ", ")
+		}
 		switch ex.ListType {
 		case qcode.ValBool, qcode.ValInt, qcode.ValFloat:
 			io.WriteString(w, ex.ListVal[i])
 		case qcode.ValStr:
 			fmt.Fprintf(w, `'%s'`, ex.ListVal[i])
-		}
-
-		if i < len(ex.ListVal)-1 {
-			io.WriteString(w, ", ")
 		}
 	}
 	io.WriteString(w, `)`)
@@ -674,4 +742,9 @@ func funcPrefixLen(fn string) int {
 		return 9
 	}
 	return 0
+}
+
+func hasBit(n uint32, pos uint16) bool {
+	val := n & (1 << pos)
+	return (val > 0)
 }

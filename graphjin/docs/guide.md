@@ -347,6 +347,75 @@ class AddSearchColumn < ActiveRecord::Migration[5.1]
 end
 ```
 
+## Stitching in REST APIs
+
+It often happens that after fetching some data from the DB we need to call another API to fetch some more data and all this combined into a single JSON response.
+
+For example you need to list the last 3 payments made by a user. You will first need to look up the user in the database and then call the Stripe API to fetch his last 3 payments. For this to work your user table in the db has a `customer_id` column that contains his Stripe customer ID.
+
+Similiarly you might also have the need to fetch the users last tweet and include that too. Super Graph can handle this for you using it's `API Stitching` feature.
+
+### API Stitching configuration
+
+The configuration is self explanatory. A `payments` field has been added under the `customers` table. This field is added to the `remotes` subsection that defines fields associated with `customers` that are remote and not real database columns.
+
+The `id` parameter maps a column from the `customers` table to the `$id` variable. In this case it maps `$id` to the `customer_id` column.
+
+```yaml
+ tables:
+    - name: customers
+
+      remotes:
+        - name: payments
+          id: customer_id
+          path: data
+          pass_headers: 
+            - cookie
+            - host
+          # set_headers:
+          #   - name: authorize
+          #     value: Bearer 1234567890
+          url: http://rails_app:3000/stripe/$id
+```
+
+#### How do I make use of this?
+
+Just include `payments` like you would any other GraphQL selector under the `customers` selector. Super Graph will call the configured API for you and stitch (merge) the JSON the API sends back with the JSON generated from the database query. GraphQL features like aliases and fields all work.
+
+```graphql
+query {
+  customers {
+    id
+    email
+    payments {
+      customer_id
+      amount
+      billing_details
+    }
+  }
+}
+```
+
+And voila here is the result. You get all of this advanced and honestly complex querying capability without writing a single line of code.
+
+```json
+"data": {
+  "customers": [
+    {
+      "id": 1,
+      "email": "linseymertz@reilly.co",
+      "payments": [
+        {
+          "customer_id": "cus_YCj3ndB5Mz",
+          "amount": 100,
+            "billing_details": {
+            "address": "1 Infinity Drive",
+            "zipcode": "94024"
+          }
+        },
+      ...
+```
+
 ## Authentication
 
 You can only have one type of auth enabled. You can either pick Rails or JWT. 
@@ -515,7 +584,7 @@ database:
   defaults:
     filter: ["{ user_id: { eq: $user_id } }"]
 
-    # Fields and table names that you wish to block
+    # Field and table names that you wish to block
     blacklist:
       - ar_internal_metadata
       - schema_migrations
@@ -524,7 +593,7 @@ database:
       - encrypted
       - token
 
-  fields:
+  tables:
     - name: users
       # This filter will overwrite defaults.filter
       filter: ["{ id: { eq: $user_id } }"]
@@ -587,7 +656,7 @@ brew install yarn
 go generate ./...
 
 # do this the only the time to setup the database
-docker-compose run web rake db:create db:migrate
+docker-compose run rails_app rake db:create db:migrate
 
 # start super graph in development mode with a change watcher
 docker-compose up

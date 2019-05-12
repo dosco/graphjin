@@ -3,7 +3,6 @@ package psql
 import (
 	"log"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/dosco/super-graph/qcode"
@@ -22,7 +21,7 @@ func TestMain(m *testing.M) {
 	var err error
 
 	qcompile, err = qcode.NewCompiler(qcode.Config{
-		Filter: []string{
+		DefaultFilter: []string{
 			`{ user_id: { _eq: $user_id } }`,
 		},
 		FilterMap: map[string][]string{
@@ -129,13 +128,12 @@ func compileGQLToPSQL(gql string) (string, error) {
 		return "", err
 	}
 
-	var sqlStmt strings.Builder
-
-	if err := pcompile.Compile(&sqlStmt, qc); err != nil {
+	_, sqlStmts, err := pcompile.Compile(qc)
+	if err != nil {
 		return "", err
 	}
 
-	return sqlStmt.String(), nil
+	return sqlStmts[0], nil
 }
 
 func withComplexArgs(t *testing.T) {

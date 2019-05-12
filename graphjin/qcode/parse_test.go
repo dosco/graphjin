@@ -2,11 +2,10 @@ package qcode
 
 import (
 	"errors"
-	"fmt"
-	"reflect"
 	"testing"
 )
 
+/*
 func compareOp(op1, op2 Operation) error {
 	if op1.Type != op2.Type {
 		return errors.New("operator type mismatch")
@@ -44,6 +43,7 @@ func compareOp(op1, op2 Operation) error {
 
 	return nil
 }
+*/
 
 func TestCompile(t *testing.T) {
 	qcompile, _ := NewCompiler(Config{})

@@ -1,55 +1,34 @@
-package ajson
+package jsn
 
 import (
+	"bytes"
+
 	"github.com/cespare/xxhash/v2"
 )
 
-const (
-	expectKey int = iota
-	expectKeyClose
-	expectColon
-	expectValue
-	expectString
-	expectListClose
-	expectObjClose
-	expectBoolClose
-	expectNumClose
-)
+func Filter(w *bytes.Buffer, b []byte, keys []string) error {
+	var err error
 
-type Field struct {
-	Key   []byte
-	Value []byte
-}
-
-func Value(b []byte) []byte {
-	e := (len(b) - 1)
-	switch {
-	case b[0] == '"' && b[e] == '"':
-		return b[1:(len(b) - 1)]
-	case b[0] == '[' && b[e] == ']':
-		return nil
-	case b[0] == '{' && b[e] == '}':
-		return nil
-	default:
-		return b
-	}
-}
-
-func Get(b []byte, keys [][]byte) []Field {
 	kmap := make(map[uint64]struct{}, len(keys))
 
 	for i := range keys {
-		kmap[xxhash.Sum64(keys[i])] = struct{}{}
+		kmap[xxhash.Sum64String(keys[i])] = struct{}{}
 	}
 
-	res := make([]Field, 20)
+	// is an list
+	isList := false
+
+	// list item
+	item := 0
+
+	// field in an object
+	field := 0
 
 	s, e, d := 0, 0, 0
 
 	var k []byte
 	state := expectKey
 
-	n := 0
 	for i := 0; i < len(b); i++ {
 		if state == expectObjClose || state == expectListClose {
 			switch b[i] {
@@ -61,10 +40,29 @@ func Get(b []byte, keys [][]byte) []Field {
 		}
 
 		switch {
-		case state == expectKey && b[i] == '"':
-			state = expectKeyClose
-			s = i
-
+		case state == expectKey:
+			switch b[i] {
+			case '[':
+				if !isList {
+					err = w.WriteByte('[')
+				}
+				isList = true
+			case '{':
+				if item == 0 {
+					err = w.WriteByte('{')
+				} else {
+					_, err = w.Write([]byte("},{"))
+				}
+				item++
+				field = 0
+			case '"':
+				state = expectKeyClose
+				s = i
+				i++
+			}
+			if err != nil {
+				return err
+			}
 		case state == expectKeyClose && b[i] == '"':
 			state = expectColon
 			k = b[(s + 1):i]
@@ -74,32 +72,26 @@ func Get(b []byte, keys [][]byte) []Field {
 
 		case state == expectValue && b[i] == '"':
 			state = expectString
-			s = i
 
 		case state == expectString && b[i] == '"':
 			e = i
 
 		case state == expectValue && b[i] == '[':
 			state = expectListClose
-			s = i
 			d++
 
 		case state == expectListClose && d == 0 && b[i] == ']':
 			e = i
-			i = s
 
 		case state == expectValue && b[i] == '{':
 			state = expectObjClose
-			s = i
 			d++
 
 		case state == expectObjClose && d == 0 && b[i] == '}':
 			e = i
-			i = s
 
 		case state == expectValue && (b[i] >= '0' && b[i] <= '9'):
 			state = expectNumClose
-			s = i
 
 		case state == expectNumClose &&
 			((b[i] < '0' || b[i] > '9') &&
@@ -110,24 +102,60 @@ func Get(b []byte, keys [][]byte) []Field {
 		case state == expectValue &&
 			(b[i] == 'f' || b[i] == 'F' || b[i] == 't' || b[i] == 'T'):
 			state = expectBoolClose
-			s = i
 
 		case state == expectBoolClose && (b[i] == 'e' || b[i] == 'E'):
 			e = i
 		}
 
 		if e != 0 {
-			_, ok := kmap[xxhash.Sum64(k)]
+			state = expectKey
+			cb := b[s:(e + 1)]
+			e = 0
 
-			if ok {
-				res[n] = Field{k, b[s:(e + 1)]}
-				n++
+			if _, ok := kmap[xxhash.Sum64(k)]; !ok {
+				continue
 			}
 
-			state = expectKey
-			e = 0
+			if field != 0 {
+				if err := w.WriteByte(','); err != nil {
+					return err
+				}
+			}
+
+			sk := 0
+			for i := 0; i < len(cb); i++ {
+				if cb[i] == '\n' || cb[i] == '\t' {
+					if _, err := w.Write(cb[sk:i]); err != nil {
+						return err
+					}
+					sk = i + 1
+				}
+			}
+
+			if sk > 0 && sk < len(cb) {
+				_, err = w.Write(cb[sk:len(cb)])
+			} else {
+				_, err = w.Write(cb)
+			}
+
+			if err != nil {
+				return err
+			}
+			field++
 		}
 	}
 
-	return res[:n]
+	if item != 0 {
+		if err := w.WriteByte('}'); err != nil {
+			return err
+		}
+	}
+
+	if isList {
+		if err := w.WriteByte(']'); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

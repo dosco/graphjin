@@ -14,7 +14,7 @@ var (
 type parserType int16
 
 const (
-	maxNested = 50
+	maxFields = 100
 
 	parserError parserType = iota
 	parserEOF
@@ -63,20 +63,19 @@ func (t parserType) String() string {
 }
 
 type Operation struct {
-	Type     parserType
-	Name     string
-	Args     []*Arg
-	Fields   []*Field
-	FieldLen int16
+	Type   parserType
+	Name   string
+	Args   []*Arg
+	Fields []Field
 }
 
 type Field struct {
-	ID       int16
+	ID       uint16
 	Name     string
 	Alias    string
 	Args     []*Arg
-	Parent   *Field
-	Children []*Field
+	ParentID uint16
+	Children []uint16
 }
 
 type Arg struct {
@@ -206,12 +205,10 @@ func (p *Parser) parseOpByType(ty parserType) (*Operation, error) {
 
 	if p.peek(itemObjOpen) {
 		p.ignore()
-		n := int16(0)
-		op.Fields, n, err = p.parseFields()
+		op.Fields, err = p.parseFields()
 		if err != nil {
 			return nil, err
 		}
-		op.FieldLen = n
 	}
 
 	if p.peek(itemObjClose) {
@@ -241,12 +238,17 @@ func (p *Parser) parseOp() (*Operation, error) {
 	return nil, errors.New("unknown operation type")
 }
 
-func (p *Parser) parseFields() ([]*Field, int16, error) {
-	var roots []*Field
+func (p *Parser) parseFields() ([]Field, error) {
+	var id uint16
+
+	fields := make([]Field, 0, 5)
 	st := util.NewStack()
-	i := int16(0)
 
 	for {
+		if id >= maxFields {
+			return nil, fmt.Errorf("field limit reached (%d)", maxFields)
+		}
+
 		if p.peek(itemObjClose) {
 			p.ignore()
 			st.Pop()
@@ -257,66 +259,63 @@ func (p *Parser) parseFields() ([]*Field, int16, error) {
 			continue
 		}
 
-		if i > maxNested {
-			return nil, 0, errors.New("too many fields")
-		}
-
 		if p.peek(itemName) == false {
-			return nil, 0, errors.New("expecting an alias or field name")
+			return nil, errors.New("expecting an alias or field name")
 		}
 
-		field, err := p.parseField()
-		if err != nil {
-			return nil, 0, err
+		f := Field{ID: id}
+
+		if err := p.parseField(&f); err != nil {
+			return nil, err
 		}
-		field.ID = i
-		i++
 
-		if st.Len() == 0 {
-			roots = append(roots, field)
-
-		} else {
+		if f.ID != 0 {
 			intf := st.Peek()
-			parent, ok := intf.(*Field)
-			if !ok || parent == nil {
-				return nil, 0, fmt.Errorf("unexpected value encountered %v", intf)
+			pid, ok := intf.(uint16)
+
+			if !ok {
+				return nil, fmt.Errorf("14: unexpected value %v (%t)", intf, intf)
 			}
-			field.Parent = parent
-			parent.Children = append(parent.Children, field)
+
+			f.ParentID = pid
+			fields[pid].Children = append(fields[pid].Children, f.ID)
 		}
+
+		fields = append(fields, f)
+		id++
 
 		if p.peek(itemObjOpen) {
 			p.ignore()
-			st.Push(field)
+			st.Push(f.ID)
 		}
 	}
 
-	return roots, i, nil
+	return fields, nil
 }
 
-func (p *Parser) parseField() (*Field, error) {
+func (p *Parser) parseField(f *Field) error {
 	var err error
-	field := &Field{Name: p.next().val}
+	f.Name = p.next().val
 
 	if p.peek(itemColon) {
 		p.ignore()
 
 		if p.peek(itemName) {
-			field.Alias = field.Name
-			field.Name = p.next().val
+			f.Alias = f.Name
+			f.Name = p.next().val
 		} else {
-			return nil, errors.New("expecting an aliased field name")
+			return errors.New("expecting an aliased field name")
 		}
 	}
 
 	if p.peek(itemArgsOpen) {
 		p.ignore()
-		if field.Args, err = p.parseArgs(); err != nil {
-			return nil, err
+		if f.Args, err = p.parseArgs(); err != nil {
+			return err
 		}
 	}
 
-	return field, nil
+	return nil
 }
 
 func (p *Parser) parseArgs() ([]*Arg, error) {
