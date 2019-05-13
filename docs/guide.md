@@ -347,7 +347,7 @@ class AddSearchColumn < ActiveRecord::Migration[5.1]
 end
 ```
 
-## Stitching in REST APIs
+## API Stitching
 
 It often happens that after fetching some data from the DB we need to call another API to fetch some more data and all this combined into a single JSON response.
 
@@ -355,27 +355,26 @@ For example you need to list the last 3 payments made by a user. You will first 
 
 Similiarly you might also have the need to fetch the users last tweet and include that too. Super Graph can handle this for you using it's `API Stitching` feature.
 
-### API Stitching configuration
+### Stripe API example
 
 The configuration is self explanatory. A `payments` field has been added under the `customers` table. This field is added to the `remotes` subsection that defines fields associated with `customers` that are remote and not real database columns.
 
 The `id` parameter maps a column from the `customers` table to the `$id` variable. In this case it maps `$id` to the `customer_id` column.
 
 ```yaml
- tables:
-    - name: customers
-
-      remotes:
-        - name: payments
-          id: customer_id
-          path: data
-          pass_headers: 
-            - cookie
-            - host
-          # set_headers:
-          #   - name: authorize
-          #     value: Bearer 1234567890
-          url: http://rails_app:3000/stripe/$id
+tables:
+  - name: customers
+    remotes:
+      - name: payments
+        id: stripe_id
+        url: http://rails_app:3000/stripe/$id
+        path: data
+        # pass_headers: 
+        #   - cookie
+        #   - host
+        set_headers:
+          - name: Authorization
+            value: Bearer <stripe_api_key>
 ```
 
 #### How do I make use of this?
@@ -415,6 +414,11 @@ And voila here is the result. You get all of this advanced and honestly complex 
         },
       ...
 ```
+
+Even tracing data is availble in the Super Graph web UI if tracing is enabled in the
+config. By default it is for development.
+
+![Query Tracing](/tracing.png "Super Graph Web UI Query Tracing")
 
 ## Authentication
 
@@ -609,6 +613,18 @@ database:
       # No filter is used for this field not
       # even defaults.filter
       filter: none
+
+      remotes:
+        - name: payments
+          id: stripe_id
+          url: http://rails_app:3000/stripe/$id
+          path: data
+          # pass_headers: 
+          #   - cookie
+          #   - host
+          set_headers:
+            - name: Authorization
+              value: Bearer <stripe_api_key>
 
     - # You can create new fields that have a
       # real db table backing them

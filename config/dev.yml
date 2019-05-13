@@ -110,14 +110,14 @@ database:
       remotes:
         - name: payments
           id: stripe_id
-          path: data
-          pass_headers: 
-            - cookie
-            - host
-          # set_headers:
-          #   - name: authorize
-          #     value: Bearer 1234567890
           url: http://rails_app:3000/stripe/$id
+          path: data
+          # pass_headers: 
+          #   - cookie
+          #   - host
+          set_headers:
+            - name: Authorization
+              value: Bearer <stripe_api_key>
 
     - # You can create new fields that have a
       # real db table backing them

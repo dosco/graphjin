@@ -81,7 +81,8 @@ var (
 			"id": 11,
 			"full_name": "Arden Koss",
 			"email": "cristobalankunding@howewelch.org",
-			"__twitter_id": "2048666903444506956"
+			"__twitter_id": "2048666903444506956",
+			"something": null
 		},
 		{
 			"id": 12,
@@ -106,6 +107,7 @@ var (
 		"full_name": "Sidney Stroman",
 		"email": "user0@demo.com",
 		"__twitter_id": "2048666903444506956",
+		"something": null,
 		"embed": {
 			"id": 8,
 			"full_name": "Caroll Orn Sr.",
@@ -137,7 +139,7 @@ var (
 		"__twitter_id": "2048666903444506956",
 		"embed": {
 			"id": 8,
-			"full_name": "Caroll Orn Sr.",
+			"full_name": null,
 			"email": "joannarau@hegmann.io",
 			"__twitter_id": "ABC123"
 		}
@@ -216,7 +218,7 @@ func TestValue(t *testing.T) {
 	}
 }
 
-func TestFilter(t *testing.T) {
+func TestFilter1(t *testing.T) {
 	var b bytes.Buffer
 	Filter(&b, []byte(input2), []string{"id", "full_name", "embed"})
 
@@ -226,6 +228,20 @@ func TestFilter(t *testing.T) {
 		t.Error("Does not match expected json")
 	}
 }
+
+func TestFilter2(t *testing.T) {
+	value := `[{"id":1,"customer_id":"cus_2TbMGf3cl0","object":"charge","amount":100,"amount_refunded":0,"date":"01/01/2019","application":null,"billing_details":{"address":"1 Infinity Drive","zipcode":"94024"}},   {"id":2,"customer_id":"cus_2TbMGf3cl0","object":"charge","amount":150,"amount_refunded":0,"date":"02/18/2019","billing_details":{"address":"1 Infinity Drive","zipcode":"94024"}},{"id":3,"customer_id":"cus_2TbMGf3cl0","object":"charge","amount":150,"amount_refunded":50,"date":"03/21/2019","billing_details":{"address":"1 Infinity Drive","zipcode":"94024"}}]`
+
+	var b bytes.Buffer
+	Filter(&b, []byte(value), []string{"id"})
+
+	expected := `[{"id":1},{"id":2},{"id":3}]`
+
+	if b.String() != expected {
+		t.Error("Does not match expected json")
+	}
+}
+
 func TestStrip(t *testing.T) {
 	path1 := [][]byte{[]byte("data"), []byte("users")}
 	value1 := Strip([]byte(input3), path1)
@@ -266,7 +282,7 @@ func TestReplace(t *testing.T) {
 		"__twitter_id": "2048666903444506956",
 		"embed": {
 			"id": 8,
-			"full_name": "Caroll Orn Sr.",
+			"full_name": null,
 			"email": "joannarau@hegmann.io",
 			"some_list":[{"id":1,"embed":{"id":8}},{"id":2},{"id":3},{"id":4},{"id":5},{"id":6},{"id":7},{"id":8},{"id":9},{"id":10},{"id":11},{"id":12},{"id":13}]
 		}
