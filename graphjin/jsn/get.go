@@ -10,6 +10,7 @@ const (
 	expectColon
 	expectValue
 	expectString
+	expectNull
 	expectListClose
 	expectObjClose
 	expectBoolClose
@@ -113,6 +114,12 @@ func Get(b []byte, keys [][]byte) []Field {
 			s = i
 
 		case state == expectBoolClose && (b[i] == 'e' || b[i] == 'E'):
+			e = i
+
+		case state == expectValue && b[i] == 'n':
+			state = expectNull
+
+		case state == expectNull && b[i] == 'l':
 			e = i
 		}
 

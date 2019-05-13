@@ -96,6 +96,12 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 
 		case state == expectBoolClose && (b[i] == 'e' || b[i] == 'E'):
 			e = i
+
+		case state == expectValue && b[i] == 'n':
+			state = expectNull
+
+		case state == expectNull && b[i] == 'l':
+			e = i
 		}
 
 		if e != 0 {

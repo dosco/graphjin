@@ -8,7 +8,6 @@ import (
 
 func Filter(w *bytes.Buffer, b []byte, keys []string) error {
 	var err error
-
 	kmap := make(map[uint64]struct{}, len(keys))
 
 	for i := range keys {
@@ -39,8 +38,7 @@ func Filter(w *bytes.Buffer, b []byte, keys []string) error {
 			}
 		}
 
-		switch {
-		case state == expectKey:
+		if state == expectKey {
 			switch b[i] {
 			case '[':
 				if !isList {
@@ -53,16 +51,19 @@ func Filter(w *bytes.Buffer, b []byte, keys []string) error {
 				} else {
 					_, err = w.Write([]byte("},{"))
 				}
-				item++
 				field = 0
-			case '"':
-				state = expectKeyClose
-				s = i
-				i++
+				item++
 			}
 			if err != nil {
 				return err
 			}
+		}
+
+		switch {
+		case state == expectKey && b[i] == '"':
+			state = expectKeyClose
+			s = i
+
 		case state == expectKeyClose && b[i] == '"':
 			state = expectColon
 			k = b[(s + 1):i]
@@ -104,6 +105,12 @@ func Filter(w *bytes.Buffer, b []byte, keys []string) error {
 			state = expectBoolClose
 
 		case state == expectBoolClose && (b[i] == 'e' || b[i] == 'E'):
+			e = i
+
+		case state == expectValue && b[i] == 'n':
+			state = expectNull
+
+		case state == expectNull && b[i] == 'l':
 			e = i
 		}
 

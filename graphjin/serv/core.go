@@ -92,24 +92,31 @@ func (c *coreContext) handleReq(w io.Writer, req *http.Request) error {
 			continue
 		}
 
+		st := time.Now()
+
 		b, err := r.Fn(req, id)
 		if err != nil {
 			return err
+		}
+
+		if conf.EnableTracing {
+			c.addTrace(s, st)
 		}
 
 		if len(r.Path) != 0 {
 			b = jsn.Strip(b, r.Path)
 		}
 
-		fils := []string{}
-		for i := range s.Cols {
-			fils = append(fils, s.Cols[i].Name)
-		}
-
 		var ob bytes.Buffer
 
-		if err = jsn.Filter(&ob, b, fils); err != nil {
-			return err
+		if len(s.Cols) != 0 {
+			err = jsn.Filter(&ob, b, colsToList(s.Cols))
+			if err != nil {
+				return err
+			}
+
+		} else {
+			ob.WriteString("null")
 		}
 
 		f := jsn.Field{[]byte(s.FieldName), ob.Bytes()}
@@ -188,8 +195,8 @@ func (c *coreContext) resolveSQL(qc *qcode.QCode, vars variables) (
 		return nil, 0, err
 	}
 
-	if conf.EnableTracing {
-		c.res.Extensions = &extensions{newTrace(st, time.Now(), qc)}
+	if conf.EnableTracing && len(qc.Query.Selects) != 0 {
+		c.addTrace(&qc.Query.Selects[0], st)
 	}
 
 	return []byte(root), skipped, nil
@@ -198,6 +205,34 @@ func (c *coreContext) resolveSQL(qc *qcode.QCode, vars variables) (
 func (c *coreContext) render(w io.Writer, data []byte) error {
 	c.res.Data = json.RawMessage(data)
 	return json.NewEncoder(w).Encode(c.res)
+}
+
+func (c *coreContext) addTrace(sel *qcode.Select, st time.Time) {
+	et := time.Now()
+	du := et.Sub(st)
+
+	if c.res.Extensions == nil {
+		c.res.Extensions = &extensions{&trace{
+			Version:   1,
+			StartTime: st,
+			Execution: execution{},
+		}}
+	}
+
+	c.res.Extensions.Tracing.EndTime = et
+	c.res.Extensions.Tracing.Duration = du
+
+	tr := resolver{
+		Path:        []string{sel.Table},
+		ParentType:  "Query",
+		FieldName:   sel.Table,
+		ReturnType:  "object",
+		StartOffset: 1,
+		Duration:    du,
+	}
+
+	c.res.Extensions.Tracing.Execution.Resolvers =
+		append(c.res.Extensions.Tracing.Execution.Resolvers, tr)
 }
 
 func parentFieldIds(h *xxhash.Digest, sel []qcode.Select, skipped uint32) (
@@ -251,32 +286,11 @@ func authCheck(ctx *coreContext) bool {
 	return (ctx.Value(userIDKey) != nil)
 }
 
-func newTrace(st, et time.Time, qc *qcode.QCode) *trace {
-	if len(qc.Query.Selects) == 0 {
-		return nil
+func colsToList(cols []qcode.Column) []string {
+	var f []string
+
+	for i := range cols {
+		f = append(f, cols[i].Name)
 	}
-
-	du := et.Sub(et)
-	sel := qc.Query.Selects[0]
-
-	t := &trace{
-		Version:   1,
-		StartTime: st,
-		EndTime:   et,
-		Duration:  du,
-		Execution: execution{
-			[]resolver{
-				resolver{
-					Path:        []string{sel.Table},
-					ParentType:  "Query",
-					FieldName:   sel.Table,
-					ReturnType:  "object",
-					StartOffset: 1,
-					Duration:    du,
-				},
-			},
-		},
-	}
-
-	return t
+	return f
 }

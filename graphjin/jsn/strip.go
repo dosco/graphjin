@@ -80,6 +80,12 @@ func Strip(b []byte, path [][]byte) []byte {
 
 		case state == expectBoolClose && (b[i] == 'e' || b[i] == 'E'):
 			e = i
+
+		case state == expectValue && b[i] == 'n':
+			state = expectNull
+
+		case state == expectNull && b[i] == 'l':
+			e = i
 		}
 
 		if e != 0 {

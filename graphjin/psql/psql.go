@@ -661,7 +661,7 @@ func renderOrderBy(w io.Writer, sel *qcode.Select) error {
 		case qcode.OrderDescNullsLast:
 			fmt.Fprintf(w, `%s_%d.ob.%s DESC NULLS LAST`, sel.Table, sel.ID, ob.Col)
 		default:
-			return fmt.Errorf("13: unexpected value %v (%t)", ob.Order, ob.Order)
+			return fmt.Errorf("13: unexpected value %v", ob.Order)
 		}
 	}
 	return nil
