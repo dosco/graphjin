@@ -2,7 +2,7 @@ package qcode
 
 // FuzzerEntrypoint for Fuzzbuzz
 func FuzzerEntrypoint(data []byte) int {
-	testData := string(data)
+	testData := data
 
 	qcompile, _ := NewCompiler(Config{})
 	_, err := qcompile.CompileQuery(testData)

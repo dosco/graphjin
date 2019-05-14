@@ -1,16 +1,31 @@
 package qcode
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/dosco/super-graph/util"
 	"github.com/gobuffalo/flect"
 )
 
 const (
 	maxSelectors = 30
+)
+
+var (
+	idArg          = xxhash.Sum64String("id")
+	searchArg      = xxhash.Sum64String("search")
+	whereArg       = xxhash.Sum64String("where")
+	orderBy1Arg    = xxhash.Sum64String("orderby")
+	orderBy2Arg    = xxhash.Sum64String("order_by")
+	orderBy3Arg    = xxhash.Sum64String("order")
+	distinctOn1Arg = xxhash.Sum64String("distinct_on")
+	distinctOn2Arg = xxhash.Sum64String("distinct")
+	limitArg       = xxhash.Sum64String("limit")
+	offsetArg      = xxhash.Sum64String("offset")
 )
 
 type QCode struct {
@@ -22,15 +37,15 @@ type Query struct {
 }
 
 type Column struct {
-	Table     string
-	Name      string
-	FieldName string
+	Table     []byte
+	Name      []byte
+	FieldName []byte
 }
 
 type Select struct {
 	ID         uint16
 	ParentID   uint16
-	Args       map[string]*Node
+	Args       map[uint64]*Node
 	AsList     bool
 	Table      string
 	Singular   string
@@ -38,30 +53,30 @@ type Select struct {
 	Cols       []Column
 	Where      *Exp
 	OrderBy    []*OrderBy
-	DistinctOn []string
+	DistinctOn [][]byte
 	Paging     Paging
 	Children   []uint16
 }
 
 type Exp struct {
 	Op        ExpOp
-	Col       string
+	Col       []byte
 	NestedCol bool
 	Type      ValType
-	Val       string
+	Val       []byte
 	ListType  ValType
-	ListVal   []string
+	ListVal   [][]byte
 	Children  []*Exp
 }
 
 type OrderBy struct {
-	Col   string
+	Col   []byte
 	Order Order
 }
 
 type Paging struct {
-	Limit  string
-	Offset string
+	Limit  []byte
+	Offset []byte
 }
 
 type ExpOp int
@@ -196,15 +211,16 @@ type Config struct {
 
 type Compiler struct {
 	fl *Exp
-	fm map[string]*Exp
-	bl map[string]struct{}
+	fm map[uint64]*Exp
+	bl map[uint64]struct{}
 }
 
 func NewCompiler(conf Config) (*Compiler, error) {
-	bl := make(map[string]struct{}, len(conf.Blacklist))
+	bl := make(map[uint64]struct{}, len(conf.Blacklist))
 
 	for i := range conf.Blacklist {
-		bl[strings.ToLower(conf.Blacklist[i])] = struct{}{}
+		k := xxhash.Sum64String(strings.ToLower(conf.Blacklist[i]))
+		bl[k] = struct{}{}
 	}
 
 	fl, err := compileFilter(conf.DefaultFilter)
@@ -212,20 +228,21 @@ func NewCompiler(conf Config) (*Compiler, error) {
 		return nil, err
 	}
 
-	fm := make(map[string]*Exp, len(conf.FilterMap))
+	fm := make(map[uint64]*Exp, len(conf.FilterMap))
 
 	for k, v := range conf.FilterMap {
 		fil, err := compileFilter(v)
 		if err != nil {
 			return nil, err
 		}
-		fm[strings.ToLower(k)] = fil
+		k1 := xxhash.Sum64String(strings.ToLower(k))
+		fm[k1] = fil
 	}
 
 	return &Compiler{fl, fm, bl}, nil
 }
 
-func (com *Compiler) CompileQuery(query string) (*QCode, error) {
+func (com *Compiler) CompileQuery(query []byte) (*QCode, error) {
 	var qc QCode
 	var err error
 
@@ -278,11 +295,12 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 		}
 		field := &op.Fields[fid]
 
-		fn := strings.ToLower(field.Name)
-		if _, ok := com.bl[fn]; ok {
+		fn := bytes.ToLower(field.Name)
+		if _, ok := com.bl[xxhash.Sum64(fn)]; ok {
 			continue
 		}
-		tn := flect.Pluralize(fn)
+		sfn := string(fn)
+		tn := flect.Pluralize(sfn)
 
 		s := Select{
 			ID:       id,
@@ -296,20 +314,20 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 			p.Children = append(p.Children, s.ID)
 		}
 
-		if fn == tn {
-			s.Singular = flect.Singularize(fn)
+		if sfn == tn {
+			s.Singular = flect.Singularize(sfn)
 		} else {
-			s.Singular = fn
+			s.Singular = sfn
 		}
 
-		if fn == s.Table {
+		if sfn == s.Table {
 			s.AsList = true
 		} else {
-			s.Paging.Limit = "1"
+			s.Paging.Limit = []byte("1")
 		}
 
 		if len(field.Alias) != 0 {
-			s.FieldName = field.Alias
+			s.FieldName = string(field.Alias)
 		} else if s.AsList {
 			s.FieldName = s.Table
 		} else {
@@ -325,9 +343,9 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 
 		for _, cid := range field.Children {
 			f := op.Fields[cid]
-			fn := strings.ToLower(f.Name)
+			fn := bytes.ToLower(f.Name)
 
-			if _, ok := com.bl[fn]; ok {
+			if _, ok := com.bl[xxhash.Sum64(fn)]; ok {
 				continue
 			}
 
@@ -356,7 +374,7 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 
 	if id > 0 {
 		root := &selects[0]
-		fil, ok = com.fm[root.Table]
+		fil, ok = com.fm[xxhash.Sum64String(root.Table)]
 
 		if !ok || fil == nil {
 			fil = com.fl
@@ -382,33 +400,34 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 func (com *Compiler) compileArgs(sel *Select, args []*Arg) error {
 	var err error
 
-	sel.Args = make(map[string]*Node, len(args))
+	sel.Args = make(map[uint64]*Node, len(args))
 
 	for i := range args {
 		if args[i] == nil {
 			return fmt.Errorf("[Args] unexpected nil argument found")
 		}
-		an := strings.ToLower(args[i].Name)
-		if _, ok := sel.Args[an]; ok {
+		an := bytes.ToLower(args[i].Name)
+		k := xxhash.Sum64(an)
+		if _, ok := sel.Args[k]; ok {
 			continue
 		}
 
-		switch an {
-		case "id":
+		switch k {
+		case idArg:
 			if sel.ID == 0 {
 				err = com.compileArgID(sel, args[i])
 			}
-		case "search":
+		case searchArg:
 			err = com.compileArgSearch(sel, args[i])
-		case "where":
+		case whereArg:
 			err = com.compileArgWhere(sel, args[i])
-		case "orderby", "order_by", "order":
+		case orderBy1Arg, orderBy2Arg, orderBy3Arg:
 			err = com.compileArgOrderBy(sel, args[i])
-		case "distinct_on", "distinct":
+		case distinctOn1Arg, distinctOn2Arg:
 			err = com.compileArgDistinctOn(sel, args[i])
-		case "limit":
+		case limitArg:
 			err = com.compileArgLimit(sel, args[i])
-		case "offset":
+		case offsetArg:
 			err = com.compileArgOffset(sel, args[i])
 		}
 
@@ -416,7 +435,7 @@ func (com *Compiler) compileArgs(sel *Select, args []*Arg) error {
 			return err
 		}
 
-		sel.Args[an] = args[i].Val
+		sel.Args[k] = args[i].Val
 	}
 
 	return nil
@@ -457,7 +476,8 @@ func (com *Compiler) compileArgNode(val *Node) (*Exp, error) {
 		}
 
 		if len(eT.node.Name) != 0 {
-			if _, ok := com.bl[strings.ToLower(eT.node.Name)]; ok {
+			k := xxhash.Sum64(bytes.ToLower(eT.node.Name))
+			if _, ok := com.bl[k]; ok {
 				continue
 			}
 		}
@@ -561,7 +581,8 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) error {
 			return fmt.Errorf("17: unexpected value %v (%t)", intf, intf)
 		}
 
-		if _, ok := com.bl[strings.ToLower(node.Name)]; ok {
+		k := xxhash.Sum64(bytes.ToLower(node.Name))
+		if _, ok := com.bl[k]; ok {
 			continue
 		}
 
@@ -574,7 +595,7 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) error {
 
 		ob := &OrderBy{}
 
-		val := strings.ToLower(node.Val)
+		val := string(bytes.ToLower(node.Val))
 		switch val {
 		case "asc":
 			ob.Order = OrderAsc
@@ -601,7 +622,8 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) error {
 func (com *Compiler) compileArgDistinctOn(sel *Select, arg *Arg) error {
 	node := arg.Val
 
-	if _, ok := com.bl[strings.ToLower(node.Name)]; ok {
+	k := xxhash.Sum64(bytes.ToLower(node.Name))
+	if _, ok := com.bl[k]; ok {
 		return nil
 	}
 
@@ -661,12 +683,12 @@ func newExp(st *util.Stack, eT *expT) (*Exp, error) {
 		return nil, nil
 	}
 
-	name := strings.ToLower(node.Name)
+	name := bytes.ToLower(node.Name)
 	if name[0] == '_' {
 		name = name[1:]
 	}
 
-	switch name {
+	switch string(name) {
 	case "and":
 		ex.Op = OpAnd
 		pushChildren(st, ex, node)
@@ -783,19 +805,19 @@ func setListVal(ex *Exp, node *Node) {
 }
 
 func setWhereColName(ex *Exp, node *Node) {
-	var list []string
+	var list [][]byte
 
 	for n := node.Parent; n != nil; n = n.Parent {
 		if n.Type != nodeObj {
 			continue
 		}
 		if len(n.Name) != 0 {
-			k := strings.ToLower(n.Name)
+			k := string(bytes.ToLower(n.Name))
 			if k == "and" || k == "or" || k == "not" ||
 				k == "_and" || k == "_or" || k == "_not" {
 				continue
 			}
-			list = append([]string{k}, list...)
+			list = append([][]byte{[]byte(k)}, list...)
 		}
 	}
 	if len(list) == 1 {
@@ -808,12 +830,12 @@ func setWhereColName(ex *Exp, node *Node) {
 }
 
 func setOrderByColName(ob *OrderBy, node *Node) {
-	var list []string
+	var list [][]byte
 
 	for n := node; n != nil; n = n.Parent {
 		if len(n.Name) != 0 {
-			k := strings.ToLower(n.Name)
-			list = append([]string{k}, list...)
+			k := bytes.ToLower(n.Name)
+			list = append([][]byte{k}, list...)
 		}
 	}
 	if len(list) != 0 {
@@ -836,7 +858,7 @@ func compileFilter(filter []string) (*Exp, error) {
 	}
 
 	for i := range filter {
-		node, err := ParseArgValue(filter[i])
+		node, err := ParseArgValue([]byte(filter[i]))
 		if err != nil {
 			return nil, err
 		}
@@ -853,10 +875,10 @@ func compileFilter(filter []string) (*Exp, error) {
 	return fl, nil
 }
 
-func buildPath(a []string) string {
+func buildPath(a [][]byte) []byte {
 	switch len(a) {
 	case 0:
-		return ""
+		return nil
 	case 1:
 		return a[0]
 	}
@@ -866,12 +888,12 @@ func buildPath(a []string) string {
 		n += len(a[i])
 	}
 
-	var b strings.Builder
-	b.Grow(n)
-	b.WriteString(a[0])
+	b := bytes.NewBuffer(make([]byte, 0, n))
+
+	b.Write(a[0])
 	for _, s := range a[1:] {
 		b.WriteRune('.')
-		b.WriteString(s)
+		b.Write(s)
 	}
-	return b.String()
+	return b.Bytes()
 }

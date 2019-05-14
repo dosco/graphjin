@@ -47,12 +47,13 @@ func compareOp(op1, op2 Operation) error {
 
 func TestCompile(t *testing.T) {
 	qcompile, _ := NewCompiler(Config{})
-	_, err := qcompile.CompileQuery(`query {
+	_, err := qcompile.CompileQuery([]byte(`query {
 		product(id: 15) {
 			id
 			name
 		}
-	}`)
+	}`))
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +61,8 @@ func TestCompile(t *testing.T) {
 
 func TestInvalidCompile(t *testing.T) {
 	qcompile, _ := NewCompiler(Config{})
-	_, err := qcompile.CompileQuery(`#`)
+	_, err := qcompile.CompileQuery([]byte(`#`))
+
 	if err == nil {
 		t.Fatal(errors.New("expecting an error"))
 	}
@@ -68,8 +70,51 @@ func TestInvalidCompile(t *testing.T) {
 
 func TestEmptyCompile(t *testing.T) {
 	qcompile, _ := NewCompiler(Config{})
-	_, err := qcompile.CompileQuery(``)
+	_, err := qcompile.CompileQuery([]byte(``))
+
 	if err == nil {
 		t.Fatal(errors.New("expecting an error"))
+	}
+}
+
+func BenchmarkQCompile(b *testing.B) {
+	qcompile, _ := NewCompiler(Config{})
+
+	val := []byte(`query {
+		product(id: 15) {
+			id
+			name
+		}
+	}`)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for n := 0; n < b.N; n++ {
+		_, err := qcompile.CompileQuery(val)
+
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkLex(b *testing.B) {
+	val := []byte(`query {
+		product(id: 15) {
+			id
+			name
+		}
+	}`)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for n := 0; n < b.N; n++ {
+		_, err := lex(val)
+
+		if err != nil {
+			b.Fatal(err)
+		}
 	}
 }

@@ -64,41 +64,42 @@ func (t parserType) String() string {
 
 type Operation struct {
 	Type   parserType
-	Name   string
+	Name   []byte
 	Args   []*Arg
 	Fields []Field
 }
 
 type Field struct {
 	ID       uint16
-	Name     string
-	Alias    string
+	Name     []byte
+	Alias    []byte
 	Args     []*Arg
 	ParentID uint16
 	Children []uint16
 }
 
 type Arg struct {
-	Name string
+	Name []byte
 	Val  *Node
 }
 
 type Node struct {
 	Type     parserType
-	Name     string
-	Val      string
+	Name     []byte
+	Val      []byte
 	Parent   *Node
 	Children []*Node
 }
 
 type Parser struct {
+	input []byte // the string being scanned
 	pos   int
 	items []item
 	depth int
 	err   error
 }
 
-func Parse(gql string) (*Operation, error) {
+func Parse(gql []byte) (*Operation, error) {
 	if len(gql) == 0 {
 		return nil, errors.New("blank query")
 	}
@@ -107,23 +108,26 @@ func Parse(gql string) (*Operation, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	p := &Parser{
+		input: l.input,
 		pos:   -1,
 		items: l.items,
 	}
 	return p.parseOp()
 }
 
-func ParseQuery(gql string) (*Operation, error) {
+func ParseQuery(gql []byte) (*Operation, error) {
 	return parseByType(gql, opQuery)
 }
 
-func ParseArgValue(argVal string) (*Node, error) {
+func ParseArgValue(argVal []byte) (*Node, error) {
 	l, err := lex(argVal)
 	if err != nil {
 		return nil, err
 	}
 	p := &Parser{
+		input: l.input,
 		pos:   -1,
 		items: l.items,
 	}
@@ -131,12 +135,13 @@ func ParseArgValue(argVal string) (*Node, error) {
 	return p.parseValue()
 }
 
-func parseByType(gql string, ty parserType) (*Operation, error) {
+func parseByType(gql []byte, ty parserType) (*Operation, error) {
 	l, err := lex(gql)
 	if err != nil {
 		return nil, err
 	}
 	p := &Parser{
+		input: l.input,
 		pos:   -1,
 		items: l.items,
 	}
@@ -191,8 +196,12 @@ func (p *Parser) parseOpByType(ty parserType) (*Operation, error) {
 	op := &Operation{Type: ty}
 	var err error
 
-	if p.peek(itemName) {
-		op.Name = p.next().val
+	if ty == opQuery {
+		if p.peek(itemQuery) {
+			op.Name = p.val(p.next())
+		}
+	} else {
+		return nil, errors.New("unsupported operation")
 	}
 
 	if p.peek(itemArgsOpen) {
@@ -220,7 +229,8 @@ func (p *Parser) parseOpByType(ty parserType) (*Operation, error) {
 
 func (p *Parser) parseOp() (*Operation, error) {
 	if p.peek(itemQuery, itemMutation, itemSub) == false {
-		err := fmt.Errorf("expecting a query, mutation or subscription (not '%s')", p.next().val)
+		err := fmt.Errorf("expecting a query, mutation or subscription (not '%s')",
+			p.val(p.next()))
 		return nil, err
 	}
 
@@ -295,14 +305,14 @@ func (p *Parser) parseFields() ([]Field, error) {
 
 func (p *Parser) parseField(f *Field) error {
 	var err error
-	f.Name = p.next().val
+	f.Name = p.val(p.next())
 
 	if p.peek(itemColon) {
 		p.ignore()
 
 		if p.peek(itemName) {
 			f.Alias = f.Name
-			f.Name = p.next().val
+			f.Name = p.val(p.next())
 		} else {
 			return errors.New("expecting an aliased field name")
 		}
@@ -330,7 +340,7 @@ func (p *Parser) parseArgs() ([]*Arg, error) {
 		if p.peek(itemName) == false {
 			return nil, errors.New("expecting an argument name")
 		}
-		arg := &Arg{Name: p.next().val}
+		arg := &Arg{Name: p.val(p.next())}
 
 		if p.peek(itemColon) == false {
 			return nil, errors.New("missing ':' after argument name")
@@ -393,10 +403,10 @@ func (p *Parser) parseObj() (*Node, error) {
 		if p.peek(itemName) == false {
 			return nil, errors.New("expecting an argument name")
 		}
-		nodeName := p.next().val
+		nodeName := p.val(p.next())
 
 		if p.peek(itemColon) == false {
-			return nil, errors.New("missing ':' after Field argument name")
+			return nil, errors.New("missing ':' after field argument name")
 		}
 		p.ignore()
 
@@ -443,9 +453,13 @@ func (p *Parser) parseValue() (*Node, error) {
 	case itemVariable:
 		node.Type = nodeVar
 	default:
-		return nil, fmt.Errorf("expecting a number, string, object, list or variable as an argument value (not %s)", p.next().val)
+		return nil, fmt.Errorf("expecting a number, string, object, list or variable as an argument value (not %s)", p.val(p.next()))
 	}
-	node.Val = item.val
+	node.Val = p.val(item)
 
 	return node, nil
+}
+
+func (p *Parser) val(v item) []byte {
+	return p.input[v.pos:v.end]
 }
