@@ -30,7 +30,7 @@ func NewCompiler(conf Config) *Compiler {
 	return &Compiler{conf.Schema, conf.Vars, conf.TableMap}
 }
 
-func (c *Compiler) AddRelationship(key TTKey, val *DBRel) {
+func (c *Compiler) AddRelationship(key uint64, val *DBRel) {
 	c.schema.RelMap[key] = val
 }
 
@@ -139,9 +139,8 @@ func (v *selectBlock) processChildren() (uint32, []*qcode.Column) {
 
 	for _, id := range v.sel.Children {
 		child := &v.qc.Query.Selects[id]
-		k := TTKey{child.Table, v.sel.Table}
 
-		rel, ok := v.schema.RelMap[k]
+		rel, ok := v.schema.RelMap[child.RelID]
 		if !ok {
 			skipped |= (1 << uint(id))
 			continue
@@ -290,8 +289,7 @@ func (v *joinClose) render(w io.Writer) error {
 }
 
 func (v *selectBlock) renderJoinTable(w io.Writer) {
-	k := TTKey{v.sel.Table, v.parent.Table}
-	rel, ok := v.schema.RelMap[k]
+	rel, ok := v.schema.RelMap[v.sel.RelID]
 	if !ok {
 		panic(errors.New("no relationship found"))
 	}
@@ -315,14 +313,12 @@ func (v *selectBlock) renderColumns(w io.Writer) {
 }
 
 func (v *selectBlock) renderRemoteRelColumns(w io.Writer) {
-	k := TTKey{Table2: v.sel.Table}
 	i := 0
 
 	for _, id := range v.sel.Children {
 		child := &v.qc.Query.Selects[id]
-		k.Table1 = child.Table
 
-		rel, ok := v.schema.RelMap[k]
+		rel, ok := v.schema.RelMap[child.RelID]
 		if !ok || rel.Type != RelRemote {
 			continue
 		}
@@ -489,8 +485,7 @@ func (v *selectBlock) renderOrderByColumns(w io.Writer) {
 }
 
 func (v *selectBlock) renderRelationship(w io.Writer) {
-	k := TTKey{v.sel.Table, v.parent.Table}
-	rel, ok := v.schema.RelMap[k]
+	rel, ok := v.schema.RelMap[v.sel.RelID]
 	if !ok {
 		panic(errors.New("no relationship found"))
 	}

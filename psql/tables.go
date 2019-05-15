@@ -4,20 +4,13 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/go-pg/pg"
 )
 
-type TCKey struct {
-	Table, Column string
-}
-
-type TTKey struct {
-	Table1, Table2 string
-}
-
 type DBSchema struct {
 	Tables map[string]*DBTableInfo
-	RelMap map[TTKey]*DBRel
+	RelMap map[uint64]*DBRel
 }
 
 type DBTableInfo struct {
@@ -47,7 +40,7 @@ type DBRel struct {
 func NewDBSchema(db *pg.DB) (*DBSchema, error) {
 	schema := &DBSchema{
 		Tables: make(map[string]*DBTableInfo),
-		RelMap: make(map[TTKey]*DBRel),
+		RelMap: make(map[uint64]*DBRel),
 	}
 
 	tables, err := GetTables(db)
@@ -87,6 +80,8 @@ func (s *DBSchema) updateSchema(t *DBTable, cols []*DBColumn) {
 	ct := strings.ToLower(t.Name)
 	s.Tables[ct] = ti
 
+	h := xxhash.New()
+
 	for _, c := range cols {
 		switch {
 		case c.Type == "tsvector":
@@ -110,12 +105,12 @@ func (s *DBSchema) updateSchema(t *DBTable, cols []*DBColumn) {
 			// Belongs-to relation between current table and the
 			// table in the foreign key
 			rel1 := &DBRel{RelBelongTo, "", "", c.Name, fc.Name}
-			s.RelMap[TTKey{ct, ft}] = rel1
+			s.RelMap[relID(h, ct, ft)] = rel1
 
 			// One-to-many relation between the foreign key table and the
 			// the current table
 			rel2 := &DBRel{RelOneToMany, "", "", fc.Name, c.Name}
-			s.RelMap[TTKey{ft, ct}] = rel2
+			s.RelMap[relID(h, ft, ct)] = rel2
 
 			jcols = append(jcols, c)
 		}
@@ -131,7 +126,7 @@ func (s *DBSchema) updateSchema(t *DBTable, cols []*DBColumn) {
 		for i := range jcols {
 			for n := range jcols {
 				if n != i {
-					s.updateSchemaOTMT(ct, jcols[i], jcols[n], colByID)
+					s.updateSchemaOTMT(h, ct, jcols[i], jcols[n], colByID)
 				}
 			}
 		}
@@ -139,7 +134,10 @@ func (s *DBSchema) updateSchema(t *DBTable, cols []*DBColumn) {
 }
 
 func (s *DBSchema) updateSchemaOTMT(
-	ct string, col1, col2 *DBColumn, colByID map[int]*DBColumn) {
+	h *xxhash.Digest,
+	ct string,
+	col1, col2 *DBColumn,
+	colByID map[int]*DBColumn) {
 
 	t1 := strings.ToLower(col1.FKeyTable)
 	t2 := strings.ToLower(col2.FKeyTable)
@@ -157,13 +155,13 @@ func (s *DBSchema) updateSchemaOTMT(
 	// 2nd foreign key table
 	//rel1 := &DBRel{RelOneToManyThrough, ct, fc1.Name, col1.Name}
 	rel1 := &DBRel{RelOneToManyThrough, ct, col2.Name, fc2.Name, col1.Name}
-	s.RelMap[TTKey{t1, t2}] = rel1
+	s.RelMap[relID(h, t1, t2)] = rel1
 
 	// One-to-many-through relation between 2nd foreign key table and the
 	// 1nd foreign key table
 	//rel2 := &DBRel{RelOneToManyThrough, ct, col2.Name, fc2.Name}
 	rel2 := &DBRel{RelOneToManyThrough, ct, col1.Name, fc1.Name, col2.Name}
-	s.RelMap[TTKey{t2, t1}] = rel2
+	s.RelMap[relID(h, t2, t1)] = rel2
 }
 
 type DBTable struct {
@@ -263,4 +261,12 @@ func (s *DBSchema) GetTable(table string) (*DBTableInfo, error) {
 		return nil, fmt.Errorf("unknown table '%s'", table)
 	}
 	return t, nil
+}
+
+func relID(h *xxhash.Digest, child, parent string) uint64 {
+	h.WriteString(child)
+	h.WriteString(parent)
+	v := h.Sum64()
+	h.Reset()
+	return v
 }

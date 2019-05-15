@@ -100,7 +100,7 @@ func TestMain(m *testing.M) {
 
 	schema := &DBSchema{
 		Tables: make(map[string]*DBTableInfo),
-		RelMap: make(map[TTKey]*DBRel),
+		RelMap: make(map[uint64]*DBRel),
 	}
 
 	for i, t := range tables {
