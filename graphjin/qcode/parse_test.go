@@ -73,3 +73,57 @@ func TestEmptyCompile(t *testing.T) {
 		t.Fatal(errors.New("expecting an error"))
 	}
 }
+
+func BenchmarkQCompile(b *testing.B) {
+	qcompile, _ := NewCompiler(Config{})
+
+	val := `query {
+		products(
+			where: { 
+				and: { 
+					not: { id: { is_null: true } }, 
+					price: { gt: 10 } 
+				}}) {
+			id
+			name
+			price
+		}
+	}`
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for n := 0; n < b.N; n++ {
+		_, err := qcompile.CompileQuery(val)
+
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkLex(b *testing.B) {
+	val := `query {
+		products(
+			where: { 
+				and: { 
+					not: { id: { is_null: true } }, 
+					price: { gt: 10 } 
+				}}) {
+			id
+			name
+			price
+		}
+	}`
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for n := 0; n < b.N; n++ {
+		_, err := lex(val)
+
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}

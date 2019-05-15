@@ -45,7 +45,12 @@ func initRemotes(t configTable) {
 
 		// register a relationship between the remote data
 		// and the database table
-		key := psql.TTKey{strings.ToLower(r.Name), t.Name}
+
+		h.WriteString(strings.ToLower(r.Name))
+		h.WriteString(t.Name)
+		key := h.Sum64()
+		h.Reset()
+
 		val := &psql.DBRel{
 			Type: psql.RelRemote,
 			Col1: idcol,

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/dosco/super-graph/util"
 	"github.com/gobuffalo/flect"
 )
@@ -30,6 +31,7 @@ type Column struct {
 type Select struct {
 	ID         uint16
 	ParentID   uint16
+	RelID      uint64
 	Args       map[string]*Node
 	AsList     bool
 	Table      string
@@ -255,6 +257,7 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 
 	selects := make([]Select, 0, 5)
 	st := util.NewStack()
+	h := xxhash.New()
 
 	if len(op.Fields) == 0 {
 		return nil, errors.New("empty query")
@@ -294,6 +297,7 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 		if s.ID != 0 {
 			p := &selects[s.ParentID]
 			p.Children = append(p.Children, s.ID)
+			s.RelID = relID(h, tn, p.Table)
 		}
 
 		if fn == tn {
@@ -874,4 +878,12 @@ func buildPath(a []string) string {
 		b.WriteString(s)
 	}
 	return b.String()
+}
+
+func relID(h *xxhash.Digest, child, parent string) uint64 {
+	h.WriteString(child)
+	h.WriteString(parent)
+	v := h.Sum64()
+	h.Reset()
+	return v
 }

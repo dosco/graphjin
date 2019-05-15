@@ -34,8 +34,6 @@ type coreContext struct {
 func (c *coreContext) handleReq(w io.Writer, req *http.Request) error {
 	var err error
 
-	//cacheEnabled := (conf.EnableTracing == false)
-
 	qc, err := qcompile.CompileQuery(c.req.Query)
 	if err != nil {
 		return err
@@ -130,21 +128,16 @@ func (c *coreContext) handleReq(w io.Writer, req *http.Request) error {
 		return err
 	}
 
-	// if cacheEnabled {
-	// 	if err = cache.Set(key, []byte(finalSQL)); err != nil {
-	// 		return err
-	// 	}
-	// }
-
 	return c.render(w, ob.Bytes())
 }
 
 func (c *coreContext) resolveSQL(qc *qcode.QCode, vars variables) (
 	[]byte, uint32, error) {
-	//var entry []byte
-	//var key string
 
-	//cacheEnabled := (conf.EnableTracing == false)
+	// var entry []byte
+	// var key string
+
+	// cacheEnabled := (conf.EnableTracing == false)
 
 	// if cacheEnabled {
 	// 	k := sha1.Sum([]byte(req.Query))
@@ -180,13 +173,23 @@ func (c *coreContext) resolveSQL(qc *qcode.QCode, vars variables) (
 		return nil, 0, err
 	}
 
-	finalSQL := sqlStmt.String()
+	finalSQL := sqlStmt.Bytes()
 
 	if conf.DebugLevel > 0 {
 		fmt.Println(finalSQL)
 	}
 
-	st := time.Now()
+	// if cacheEnabled {
+	// 	if err = cache.Set(key, finalSQL); err != nil {
+	// 		return err
+	// 	}
+	// }
+
+	var st time.Time
+
+	if conf.EnableTracing {
+		st = time.Now()
+	}
 
 	var root json.RawMessage
 	_, err = db.Query(pg.Scan(&root), finalSQL)
