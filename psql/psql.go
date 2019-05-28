@@ -1,6 +1,7 @@
 package psql
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 
 const (
 	empty = ""
+	opKey = 5000
 )
 
 type Config struct {
@@ -361,7 +363,7 @@ func (v *selectBlock) renderBaseSelect(w io.Writer, childCols []*qcode.Column, s
 
 	isRoot := v.parent == nil
 	isFil := v.sel.Where != nil
-	isSearch := v.sel.Args["search"] != nil
+	isSearch := len(v.sel.Args[qcode.ArgSearch]) != 0
 	isAgg := false
 
 	io.WriteString(w, " FROM (SELECT ")
@@ -376,17 +378,17 @@ func (v *selectBlock) renderBaseSelect(w io.Writer, childCols []*qcode.Column, s
 				switch {
 				case cn == "search_rank":
 					cn = v.ti.TSVCol
-					arg := v.sel.Args["search"]
+					arg := v.sel.Args[qcode.ArgSearch]
 
 					fmt.Fprintf(w, `ts_rank("%s"."%s", to_tsquery('%s')) AS %s`,
-						v.sel.Table, cn, arg.Val, col.Name)
+						v.sel.Table, cn, arg[0].Val, col.Name)
 
 				case strings.HasPrefix(cn, "search_headline_"):
 					cn = cn[16:]
-					arg := v.sel.Args["search"]
+					arg := v.sel.Args[qcode.ArgSearch]
 
 					fmt.Fprintf(w, `ts_headline("%s"."%s", to_tsquery('%s')) AS %s`,
-						v.sel.Table, cn, arg.Val, col.Name)
+						v.sel.Table, cn, arg[0].Val, col.Name)
 				}
 			} else {
 				pl := funcPrefixLen(cn)
@@ -514,7 +516,7 @@ func (v *selectBlock) renderWhere(w io.Writer) error {
 	st := util.NewStack()
 
 	if v.sel.Where != nil {
-		st.Push(v.sel.Where)
+		st.Push(v.sel.WhereRootID)
 	}
 
 	for {
@@ -524,9 +526,14 @@ func (v *selectBlock) renderWhere(w io.Writer) error {
 
 		intf := st.Pop()
 
-		switch val := intf.(type) {
-		case qcode.ExpOp:
-			switch val {
+		id, ok := intf.(int)
+
+		if !ok {
+			return fmt.Errorf("18: unexpected value %v (%t)", intf, intf)
+		}
+
+		if id >= opKey {
+			switch qcode.ExpOp(id - opKey) {
 			case qcode.OpAnd:
 				io.WriteString(w, ` AND `)
 			case qcode.OpOr:
@@ -534,105 +541,105 @@ func (v *selectBlock) renderWhere(w io.Writer) error {
 			case qcode.OpNot:
 				io.WriteString(w, `NOT `)
 			default:
-				return fmt.Errorf("11: unexpected value %v (%t)", intf, intf)
+				return fmt.Errorf("11: unexpected value %d", (id - opKey))
 			}
-		case *qcode.Exp:
-			switch val.Op {
-			case qcode.OpAnd, qcode.OpOr:
-				for i := len(val.Children) - 1; i >= 0; i-- {
-					st.Push(val.Children[i])
-					if i > 0 {
-						st.Push(val.Op)
-					}
+			continue
+		}
+
+		ex := v.sel.Where[id]
+
+		switch ex.Op {
+		case qcode.OpAnd, qcode.OpOr:
+			for i := len(ex.Children) - 1; i >= 0; i-- {
+				st.Push(ex.Children[i])
+				if i > 0 {
+					st.Push(int(ex.Op + opKey))
 				}
-				continue
-			case qcode.OpNot:
-				st.Push(val.Children[0])
-				st.Push(qcode.OpNot)
-				continue
 			}
+			continue
+		case qcode.OpNot:
+			st.Push(ex.Children[0])
+			st.Push(int(qcode.OpNot + opKey))
+			continue
+		}
 
-			if val.NestedCol {
-				fmt.Fprintf(w, `(("%s") `, val.Col)
-			} else if len(val.Col) != 0 {
-				fmt.Fprintf(w, `(("%s"."%s") `, v.sel.Table, val.Col)
+		if ex.NestedCol {
+			fmt.Fprintf(w, `(("%s") `, ex.Col)
+		} else if len(ex.Col) != 0 {
+			fmt.Fprintf(w, `(("%s"."%s") `, v.sel.Table, ex.Col)
+		}
+		valExists := true
+
+		switch ex.Op {
+		case qcode.OpEquals:
+			io.WriteString(w, `=`)
+		case qcode.OpNotEquals:
+			io.WriteString(w, `!=`)
+		case qcode.OpGreaterOrEquals:
+			io.WriteString(w, `>=`)
+		case qcode.OpLesserOrEquals:
+			io.WriteString(w, `<=`)
+		case qcode.OpGreaterThan:
+			io.WriteString(w, `>`)
+		case qcode.OpLesserThan:
+			io.WriteString(w, `<`)
+		case qcode.OpIn:
+			io.WriteString(w, `IN`)
+		case qcode.OpNotIn:
+			io.WriteString(w, `NOT IN`)
+		case qcode.OpLike:
+			io.WriteString(w, `LIKE`)
+		case qcode.OpNotLike:
+			io.WriteString(w, `NOT LIKE`)
+		case qcode.OpILike:
+			io.WriteString(w, `ILIKE`)
+		case qcode.OpNotILike:
+			io.WriteString(w, `NOT ILIKE`)
+		case qcode.OpSimilar:
+			io.WriteString(w, `SIMILAR TO`)
+		case qcode.OpNotSimilar:
+			io.WriteString(w, `NOT SIMILAR TO`)
+		case qcode.OpContains:
+			io.WriteString(w, `@>`)
+		case qcode.OpContainedIn:
+			io.WriteString(w, `<@`)
+		case qcode.OpHasKey:
+			io.WriteString(w, `?`)
+		case qcode.OpHasKeyAny:
+			io.WriteString(w, `?|`)
+		case qcode.OpHasKeyAll:
+			io.WriteString(w, `?&`)
+		case qcode.OpIsNull:
+			if bytes.EqualFold(ex.Val, []byte("true")) {
+				io.WriteString(w, `IS NULL)`)
+			} else {
+				io.WriteString(w, `IS NOT NULL)`)
 			}
-			valExists := true
-
-			switch val.Op {
-			case qcode.OpEquals:
-				io.WriteString(w, `=`)
-			case qcode.OpNotEquals:
-				io.WriteString(w, `!=`)
-			case qcode.OpGreaterOrEquals:
-				io.WriteString(w, `>=`)
-			case qcode.OpLesserOrEquals:
-				io.WriteString(w, `<=`)
-			case qcode.OpGreaterThan:
-				io.WriteString(w, `>`)
-			case qcode.OpLesserThan:
-				io.WriteString(w, `<`)
-			case qcode.OpIn:
-				io.WriteString(w, `IN`)
-			case qcode.OpNotIn:
-				io.WriteString(w, `NOT IN`)
-			case qcode.OpLike:
-				io.WriteString(w, `LIKE`)
-			case qcode.OpNotLike:
-				io.WriteString(w, `NOT LIKE`)
-			case qcode.OpILike:
-				io.WriteString(w, `ILIKE`)
-			case qcode.OpNotILike:
-				io.WriteString(w, `NOT ILIKE`)
-			case qcode.OpSimilar:
-				io.WriteString(w, `SIMILAR TO`)
-			case qcode.OpNotSimilar:
-				io.WriteString(w, `NOT SIMILAR TO`)
-			case qcode.OpContains:
-				io.WriteString(w, `@>`)
-			case qcode.OpContainedIn:
-				io.WriteString(w, `<@`)
-			case qcode.OpHasKey:
-				io.WriteString(w, `?`)
-			case qcode.OpHasKeyAny:
-				io.WriteString(w, `?|`)
-			case qcode.OpHasKeyAll:
-				io.WriteString(w, `?&`)
-			case qcode.OpIsNull:
-				if strings.EqualFold(val.Val, "true") {
-					io.WriteString(w, `IS NULL)`)
-				} else {
-					io.WriteString(w, `IS NOT NULL)`)
-				}
-				valExists = false
-			case qcode.OpEqID:
-				if len(v.ti.PrimaryCol) == 0 {
-					return fmt.Errorf("no primary key column defined for %s", v.sel.Table)
-				}
-				fmt.Fprintf(w, `(("%s") =`, v.ti.PrimaryCol)
-			case qcode.OpTsQuery:
-				if len(v.ti.TSVCol) == 0 {
-					return fmt.Errorf("no tsv column defined for %s", v.sel.Table)
-				}
-
-				fmt.Fprintf(w, `(("%s") @@ to_tsquery('%s'))`, v.ti.TSVCol, val.Val)
-				valExists = false
-
-			default:
-				return fmt.Errorf("[Where] unexpected op code %d", val.Op)
+			valExists = false
+		case qcode.OpEqID:
+			if len(v.ti.PrimaryCol) == 0 {
+				return fmt.Errorf("no primary key column defined for %s", v.sel.Table)
+			}
+			fmt.Fprintf(w, `(("%s") =`, v.ti.PrimaryCol)
+		case qcode.OpTsQuery:
+			if len(v.ti.TSVCol) == 0 {
+				return fmt.Errorf("no tsv column defined for %s", v.sel.Table)
 			}
 
-			if valExists {
-				if val.Type == qcode.ValList {
-					renderList(w, val)
-				} else {
-					renderVal(w, val, v.vars)
-				}
-				io.WriteString(w, `)`)
-			}
+			fmt.Fprintf(w, `(("%s") @@ to_tsquery('%s'))`, v.ti.TSVCol, ex.Val)
+			valExists = false
 
 		default:
-			return fmt.Errorf("12: unexpected value %v (%t)", intf, intf)
+			return fmt.Errorf("[Where] unexpected op code %d", ex.Op)
+		}
+
+		if valExists {
+			if ex.Type == qcode.ValList {
+				renderList(w, &ex)
+			} else {
+				renderVal(w, &ex, v.vars)
+			}
+			io.WriteString(w, `)`)
 		}
 	}
 
@@ -687,7 +694,7 @@ func renderList(w io.Writer, ex *qcode.Exp) {
 		}
 		switch ex.ListType {
 		case qcode.ValBool, qcode.ValInt, qcode.ValFloat:
-			io.WriteString(w, ex.ListVal[i])
+			w.Write(ex.ListVal[i])
 		case qcode.ValStr:
 			fmt.Fprintf(w, `'%s'`, ex.ListVal[i])
 		}
@@ -707,7 +714,7 @@ func renderVal(w io.Writer, ex *qcode.Exp, vars map[string]string) {
 	case qcode.ValStr:
 		fmt.Fprintf(w, `'%s'`, ex.Val)
 	case qcode.ValVar:
-		if val, ok := vars[ex.Val]; ok {
+		if val, ok := vars[string(ex.Val)]; ok {
 			io.WriteString(w, val)
 		} else {
 			fmt.Fprintf(w, `'{{%s}}'`, ex.Val)
@@ -744,7 +751,7 @@ func funcPrefixLen(fn string) int {
 	return 0
 }
 
-func hasBit(n uint32, pos uint16) bool {
-	val := n & (1 << pos)
+func hasBit(n uint32, pos int) bool {
+	val := n & (1 << uint(pos))
 	return (val > 0)
 }

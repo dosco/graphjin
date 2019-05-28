@@ -11,7 +11,7 @@ var (
 	errEOT = errors.New("end of tokens")
 )
 
-type parserType int16
+type parserType int
 
 const (
 	maxFields = 100
@@ -65,30 +65,31 @@ func (t parserType) String() string {
 type Operation struct {
 	Type   parserType
 	Name   []byte
-	Args   []*Arg
+	Args   []Arg
 	Fields []Field
 }
 
 type Field struct {
-	ID       uint16
+	ID       int
+	ParentID int
 	Name     []byte
 	Alias    []byte
-	Args     []*Arg
-	ParentID uint16
-	Children []uint16
+	Args     []Arg
+	Children []int
 }
 
 type Arg struct {
 	Name []byte
-	Val  *Node
+	Val  []Node
 }
 
 type Node struct {
+	ID       int
+	ParentID int
 	Type     parserType
 	Name     []byte
 	Val      []byte
-	Parent   *Node
-	Children []*Node
+	Children []int
 }
 
 type Parser struct {
@@ -121,7 +122,7 @@ func ParseQuery(gql []byte) (*Operation, error) {
 	return parseByType(gql, opQuery)
 }
 
-func ParseArgValue(argVal []byte) (*Node, error) {
+func ParseArgValue(argVal []byte) ([]Node, error) {
 	l, err := lex(argVal)
 	if err != nil {
 		return nil, err
@@ -132,7 +133,137 @@ func ParseArgValue(argVal []byte) (*Node, error) {
 		items: l.items,
 	}
 
-	return p.parseValue()
+	return p.parseValue(make([]Node, 0, 10), -1)
+}
+
+func (p *Parser) parseValue(nodes []Node, pid int) ([]Node, error) {
+	if p.peek(itemListOpen) {
+		p.ignore()
+		return p.parseList(nodes, pid)
+	}
+
+	if p.peek(itemObjOpen) {
+		p.ignore()
+		return p.parseObj(nodes, pid)
+	}
+
+	item := p.next()
+	node := Node{
+		ID:       len(nodes),
+		ParentID: pid,
+		Val:      p.val(item),
+	}
+
+	if pid != -1 {
+		nodes[pid].Children = append(nodes[pid].Children, node.ID)
+	}
+
+	switch item.typ {
+	case itemIntVal:
+		node.Type = nodeInt
+	case itemFloatVal:
+		node.Type = nodeFloat
+	case itemStringVal:
+		node.Type = nodeStr
+	case itemBoolVal:
+		node.Type = nodeBool
+	case itemName:
+		node.Type = nodeStr
+	case itemVariable:
+		node.Type = nodeVar
+	default:
+		return nil, fmt.Errorf("expecting a number, string, object, list or variable as an argument value (not %s)", p.val(p.next()))
+	}
+
+	return append(nodes, node), nil
+}
+
+func (p *Parser) parseList(nodes []Node, pid int) ([]Node, error) {
+	var ty parserType
+	var err error
+
+	node := Node{
+		ID:       len(nodes),
+		ParentID: pid,
+		Type:     nodeList,
+	}
+
+	if pid != -1 {
+		nodes[pid].Children = append(nodes[pid].Children, node.ID)
+	}
+
+	nodes = append(nodes, node)
+
+	lc := 0
+	for {
+		if p.peek(itemListClose) {
+			p.ignore()
+			break
+		}
+		nodes, err = p.parseValue(nodes, node.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		if ty == 0 {
+			ty = node.Type
+
+		} else if ty != node.Type {
+			return nil, errors.New("All values in a list must be of the same type")
+
+		}
+		lc++
+	}
+
+	if lc == 0 {
+		return nil, errors.New("List cannot be empty")
+	}
+
+	return nodes, nil
+}
+
+func (p *Parser) parseObj(nodes []Node, pid int) ([]Node, error) {
+	var err error
+
+	node := Node{
+		ID:       len(nodes),
+		ParentID: pid,
+		Type:     nodeObj,
+	}
+
+	if pid != -1 {
+		nodes[pid].Children = append(nodes[pid].Children, node.ID)
+	}
+
+	nodes = append(nodes, node)
+
+	for {
+
+		if p.peek(itemObjClose) {
+			p.ignore()
+			break
+		}
+
+		if p.peek(itemName) == false {
+			return nil, errors.New("expecting an argument name")
+		}
+		nodeName := p.val(p.next())
+
+		if p.peek(itemColon) == false {
+			return nil, errors.New("missing ':' after field argument name")
+		}
+		p.ignore()
+
+		id := len(nodes)
+		nodes, err = p.parseValue(nodes, node.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		nodes[id].Name = nodeName
+	}
+
+	return nodes, nil
 }
 
 func parseByType(gql []byte, ty parserType) (*Operation, error) {
@@ -206,7 +337,7 @@ func (p *Parser) parseOpByType(ty parserType) (*Operation, error) {
 
 	if p.peek(itemArgsOpen) {
 		p.ignore()
-		op.Args, err = p.parseArgs()
+		op.Args, err = p.parseArgs(op.Args)
 		if err != nil {
 			return nil, err
 		}
@@ -249,7 +380,7 @@ func (p *Parser) parseOp() (*Operation, error) {
 }
 
 func (p *Parser) parseFields() ([]Field, error) {
-	var id uint16
+	var id int
 
 	fields := make([]Field, 0, 5)
 	st := util.NewStack()
@@ -275,13 +406,17 @@ func (p *Parser) parseFields() ([]Field, error) {
 
 		f := Field{ID: id}
 
+		if f.ID == 0 {
+			f.ParentID = -1
+		}
+
 		if err := p.parseField(&f); err != nil {
 			return nil, err
 		}
 
 		if f.ID != 0 {
 			intf := st.Peek()
-			pid, ok := intf.(uint16)
+			pid, ok := intf.(int)
 
 			if !ok {
 				return nil, fmt.Errorf("14: unexpected value %v (%t)", intf, intf)
@@ -320,7 +455,7 @@ func (p *Parser) parseField(f *Field) error {
 
 	if p.peek(itemArgsOpen) {
 		p.ignore()
-		if f.Args, err = p.parseArgs(); err != nil {
+		if f.Args, err = p.parseArgs(f.Args); err != nil {
 			return err
 		}
 	}
@@ -328,8 +463,7 @@ func (p *Parser) parseField(f *Field) error {
 	return nil
 }
 
-func (p *Parser) parseArgs() ([]*Arg, error) {
-	var args []*Arg
+func (p *Parser) parseArgs(args []Arg) ([]Arg, error) {
 	var err error
 
 	for {
@@ -340,124 +474,21 @@ func (p *Parser) parseArgs() ([]*Arg, error) {
 		if p.peek(itemName) == false {
 			return nil, errors.New("expecting an argument name")
 		}
-		arg := &Arg{Name: p.val(p.next())}
+		arg := Arg{Name: p.val(p.next())}
 
 		if p.peek(itemColon) == false {
 			return nil, errors.New("missing ':' after argument name")
 		}
 		p.ignore()
 
-		arg.Val, err = p.parseValue()
+		arg.Val, err = p.parseValue(make([]Node, 0, 10), -1)
 		if err != nil {
 			return nil, err
 		}
 		args = append(args, arg)
 	}
+
 	return args, nil
-}
-
-func (p *Parser) parseList() (*Node, error) {
-	parent := &Node{}
-	var nodes []*Node
-	var ty parserType
-
-	for {
-		if p.peek(itemListClose) {
-			p.ignore()
-			break
-		}
-		node, err := p.parseValue()
-		if err != nil {
-			return nil, err
-		}
-		if ty == 0 {
-			ty = node.Type
-		} else {
-			if ty != node.Type {
-				return nil, errors.New("All values in a list must be of the same type")
-			}
-		}
-		node.Parent = parent
-		nodes = append(nodes, node)
-	}
-	if len(nodes) == 0 {
-		return nil, errors.New("List cannot be empty")
-	}
-
-	parent.Type = nodeList
-	parent.Children = nodes
-
-	return parent, nil
-}
-
-func (p *Parser) parseObj() (*Node, error) {
-	parent := &Node{}
-	var nodes []*Node
-
-	for {
-		if p.peek(itemObjClose) {
-			p.ignore()
-			break
-		}
-
-		if p.peek(itemName) == false {
-			return nil, errors.New("expecting an argument name")
-		}
-		nodeName := p.val(p.next())
-
-		if p.peek(itemColon) == false {
-			return nil, errors.New("missing ':' after field argument name")
-		}
-		p.ignore()
-
-		node, err := p.parseValue()
-		if err != nil {
-			return nil, err
-		}
-		node.Name = nodeName
-		node.Parent = parent
-		nodes = append(nodes, node)
-	}
-
-	parent.Type = nodeObj
-	parent.Children = nodes
-
-	return parent, nil
-}
-
-func (p *Parser) parseValue() (*Node, error) {
-	if p.peek(itemListOpen) {
-		p.ignore()
-		return p.parseList()
-	}
-
-	if p.peek(itemObjOpen) {
-		p.ignore()
-		return p.parseObj()
-	}
-
-	item := p.next()
-	node := &Node{}
-
-	switch item.typ {
-	case itemIntVal:
-		node.Type = nodeInt
-	case itemFloatVal:
-		node.Type = nodeFloat
-	case itemStringVal:
-		node.Type = nodeStr
-	case itemBoolVal:
-		node.Type = nodeBool
-	case itemName:
-		node.Type = nodeStr
-	case itemVariable:
-		node.Type = nodeVar
-	default:
-		return nil, fmt.Errorf("expecting a number, string, object, list or variable as an argument value (not %s)", p.val(p.next()))
-	}
-	node.Val = p.val(item)
-
-	return node, nil
 }
 
 func (p *Parser) val(v item) []byte {

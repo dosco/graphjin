@@ -318,6 +318,8 @@ func lexName(l *lexer) stateFn {
 			l.backup()
 			s, e := l.current()
 
+			lowercase(l.input, s, e)
+
 			switch {
 			case equals(l.input, s, e, queryToken):
 				l.emit(itemQuery)
@@ -443,6 +445,14 @@ func contains(b []byte, s Pos, e Pos, val []byte) bool {
 		}
 	}
 	return false
+}
+
+func lowercase(b []byte, s Pos, e Pos) {
+	for i := s; i < e; i++ {
+		if b[i] >= 'A' && b[i] <= 'Z' {
+			b[i] = ('a' + (b[i] - 'A'))
+		}
+	}
 }
 
 /*

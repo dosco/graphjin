@@ -47,8 +47,8 @@ func compareOp(op1, op2 Operation) error {
 
 func TestCompile(t *testing.T) {
 	qcompile, _ := NewCompiler(Config{})
-	_, err := qcompile.CompileQuery([]byte(`query {
-		product(id: 15) {
+	_, err := qcompile.CompileQuery([]byte(`QUERY {
+		Product(id: 15, name: "HELLO") {
 			id
 			name
 		}
@@ -81,9 +81,24 @@ func BenchmarkQCompile(b *testing.B) {
 	qcompile, _ := NewCompiler(Config{})
 
 	val := []byte(`query {
-		product(id: 15) {
+		products(
+			# returns only 30 items
+			limit: 30,
+	
+			# starts from item 10, commented out for now
+			# offset: 10,
+	
+			# orders the response items by highest price
+			order_by: { price: desc },
+	
+			# no duplicate prices returned
+			distinct: [ price ]
+			
+			# only items with an id >= 30 and < 30 are returned
+			where: { id: { AND: { greater_or_equals: 20, lt: 28 } } }) {
 			id
 			name
+			price
 		}
 	}`)
 
@@ -100,8 +115,8 @@ func BenchmarkQCompile(b *testing.B) {
 }
 
 func BenchmarkLex(b *testing.B) {
-	val := []byte(`query {
-		product(id: 15) {
+	val := []byte(`QUERY {
+		product(id: 15, name: "HELLO") {
 			id
 			name
 		}
