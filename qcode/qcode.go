@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/cespare/xxhash/v2"
-	"github.com/dosco/super-graph/util"
 	"github.com/gobuffalo/flect"
 )
 
@@ -34,7 +34,22 @@ type QCode struct {
 }
 
 type Query struct {
-	Selects []Select
+	Selects  []Select
+	selectsA [10]Select
+}
+
+var (
+	zeroSelect = Select{}
+)
+
+func (q *Query) Reset() {
+	for i := range q.Selects {
+		q.Selects[i] = zeroSelect
+	}
+
+	for i := range q.selectsA {
+		q.selectsA[i] = zeroSelect
+	}
 }
 
 type Column struct {
@@ -58,6 +73,7 @@ type Select struct {
 	DistinctOn  [][]byte
 	Paging      Paging
 	Children    []int
+	childrenA   [10]int
 }
 
 type Exp struct {
@@ -71,6 +87,7 @@ type Exp struct {
 	ListType  ValType
 	ListVal   [][]byte
 	Children  []int
+	childrenA [10]int
 }
 
 type OrderBy struct {
@@ -113,66 +130,6 @@ const (
 	OpEqID
 	OpTsQuery
 )
-
-func (t ExpOp) String() string {
-	var v string
-
-	switch t {
-	case OpNop:
-		v = "op-nop"
-	case OpAnd:
-		v = "op-and"
-	case OpOr:
-		v = "op-or"
-	case OpNot:
-		v = "op-not"
-	case OpEquals:
-		v = "op-equals"
-	case OpNotEquals:
-		v = "op-not-equals"
-	case OpGreaterOrEquals:
-		v = "op-greater-or-equals"
-	case OpLesserOrEquals:
-		v = "op-lesser-or-equals"
-	case OpGreaterThan:
-		v = "op-greater-than"
-	case OpLesserThan:
-		v = "op-lesser-than"
-	case OpIn:
-		v = "op-in"
-	case OpNotIn:
-		v = "op-not-in"
-	case OpLike:
-		v = "op-like"
-	case OpNotLike:
-		v = "op-not-like"
-	case OpILike:
-		v = "op-i-like"
-	case OpNotILike:
-		v = "op-not-i-like"
-	case OpSimilar:
-		v = "op-similar"
-	case OpNotSimilar:
-		v = "op-not-similar"
-	case OpContains:
-		v = "op-contains"
-	case OpContainedIn:
-		v = "op-contained-in"
-	case OpHasKey:
-		v = "op-has-key"
-	case OpHasKeyAny:
-		v = "op-has-key-any"
-	case OpHasKeyAll:
-		v = "op-has-key-all"
-	case OpIsNull:
-		v = "op-is-null"
-	case OpEqID:
-		v = "op-eq-id"
-	case OpTsQuery:
-		v = "op-ts-query"
-	}
-	return fmt.Sprintf("<%s>", v)
-}
 
 type ValType int
 
@@ -217,6 +174,12 @@ type Compiler struct {
 	fl []Exp
 	fm map[uint64][]Exp
 	bl map[uint64]struct{}
+}
+
+var qPool = sync.Pool{
+	New: func() interface{} {
+		return new(Query)
+	},
 }
 
 func NewCompiler(conf Config) (*Compiler, error) {
@@ -272,10 +235,13 @@ func (com *Compiler) CompileQuery(query []byte) (*QCode, error) {
 }
 
 func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
-	var id, parentID int
+	parentID := -1
 
-	selects := make([]Select, 0, 5)
-	st := util.NewStack()
+	q := qPool.Get().(*Query)
+	q.Reset()
+	q.Selects = q.selectsA[:0]
+
+	st := NewStack()
 
 	if len(op.Fields) == 0 {
 		return nil, errors.New("empty query")
@@ -287,17 +253,12 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 			break
 		}
 
-		if id >= maxSelectors {
+		if len(q.Selects) >= maxSelectors {
 			return nil, fmt.Errorf("selector limit reached (%d)", maxSelectors)
 		}
 
-		intf := st.Pop()
-		fid, ok := intf.(int)
-
-		if !ok {
-			return nil, fmt.Errorf("15: unexpected value %v (%t)", intf, intf)
-		}
-		field := &op.Fields[fid]
+		fid := st.Pop()
+		field := op.Fields[fid]
 
 		fn := bytes.ToLower(field.Name)
 		if _, ok := com.bl[xxhash.Sum64(fn)]; ok {
@@ -307,14 +268,14 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 		tn := flect.Pluralize(sfn)
 
 		s := Select{
-			ID:       id,
+			ID:       len(q.Selects),
 			ParentID: parentID,
 			Table:    tn,
-			Children: make([]int, 0, 5),
 		}
+		s.Children = s.childrenA[:0]
 
-		if s.ID != 0 {
-			p := &selects[s.ParentID]
+		if s.ParentID != -1 {
+			p := &q.Selects[s.ParentID]
 			p.Children = append(p.Children, s.ID)
 		}
 
@@ -369,18 +330,17 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 			s.Cols = append(s.Cols, col)
 		}
 
-		selects = append(selects, s)
-		id++
+		q.Selects = append(q.Selects, s)
 	}
 
 	var ok bool
 	var fil []Exp
 
-	if id == 0 {
+	if len(q.Selects) == 0 {
 		return nil, errors.New("invalid query")
 	}
 
-	root := &selects[0]
+	root := &q.Selects[0]
 	fil, ok = com.fm[xxhash.Sum64String(root.Table)]
 
 	if !ok || fil == nil {
@@ -391,7 +351,9 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 		root.Where, root.WhereRootID = addExpListA(root.Where, root.WhereRootID, fil)
 	}
 
-	return &Query{selects[:id]}, nil
+	opPool.Put(op)
+
+	return q, nil
 }
 
 func (com *Compiler) compileArgs(sel *Select, args []Arg) error {
@@ -447,7 +409,7 @@ func (com *Compiler) compileArgObj(arg *Arg) ([]Exp, error) {
 }
 
 func (com *Compiler) compileArgNode(nodes []Node) ([]Exp, error) {
-	st := util.NewStack()
+	st := NewStack()
 	var list []Exp
 
 	if len(nodes) == 0 || len(nodes[0].Children) == 0 {
@@ -461,12 +423,7 @@ func (com *Compiler) compileArgNode(nodes []Node) ([]Exp, error) {
 			break
 		}
 
-		intf := st.Pop()
-		val, ok := intf.(int)
-
-		if !ok {
-			return nil, fmt.Errorf("16: unexpected value %v (%t)", intf, intf)
-		}
+		val := st.Pop()
 
 		// ID and parentID is encoded into a single int
 		id := val & 0xFFFF
@@ -486,6 +443,8 @@ func (com *Compiler) compileArgNode(nodes []Node) ([]Exp, error) {
 		}
 
 		ex := Exp{ID: len(list), ParentID: pid}
+		ex.Children = ex.childrenA[:0]
+
 		err := buildExp(st, nodes, id, &ex)
 
 		if ex.Op == OpNop {
@@ -579,7 +538,7 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) error {
 		return fmt.Errorf("expecting an object")
 	}
 
-	st := util.NewStack()
+	st := NewStack()
 	st.Push(0)
 
 	for {
@@ -587,12 +546,7 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) error {
 			break
 		}
 
-		intf := st.Pop()
-		id, ok := intf.(int)
-
-		if !ok {
-			return fmt.Errorf("17: unexpected value %v (%t)", intf, intf)
-		}
+		id := st.Pop()
 		node := arg.Val[id]
 
 		if _, ok := com.bl[xxhash.Sum64(node.Name)]; ok {
@@ -688,7 +642,7 @@ func compileSub() (*Query, error) {
 	return nil, nil
 }
 
-func buildExp(st *util.Stack, nodes []Node, nodeID int, ex *Exp) error {
+func buildExp(st *Stack, nodes []Node, nodeID int, ex *Exp) error {
 	node := &nodes[nodeID]
 	var err error
 
@@ -869,7 +823,7 @@ func setOrderByColName(nodes []Node, node *Node, ob *OrderBy) {
 	}
 }
 
-func pushChild(st *util.Stack, node *Node, parentID int) error {
+func pushChild(st *Stack, node *Node, parentID int) error {
 	if len(node.Children) > 1 {
 		return errors.New("too many expressions")
 	}
@@ -878,7 +832,7 @@ func pushChild(st *util.Stack, node *Node, parentID int) error {
 	return nil
 }
 
-func pushChildren(st *util.Stack, node *Node, parentID int) error {
+func pushChildren(st *Stack, node *Node, parentID int) error {
 	if len(node.Children) == 0 {
 		return errors.New("expression missing")
 	}
@@ -944,7 +898,7 @@ func buildPath(a [][]byte) []byte {
 		n += len(a[i])
 	}
 
-	b := bytes.NewBuffer(make([]byte, 0, n))
+	b := bytes.Buffer{}
 
 	b.Write(a[0])
 	for _, s := range a[1:] {
@@ -996,8 +950,11 @@ func addExpList(oexl []Exp, rootID int, exl []Exp) ([]Exp, int) {
 			ID:       newRootID,
 			ParentID: -1,
 			Op:       OpAnd,
-			Children: []int{rootID, (exl[0].ID + newRootID + 1)},
 		}
+		and.Children = and.childrenA[:2]
+		and.Children[0] = rootID
+		and.Children[1] = (exl[0].ID + newRootID + 1)
+
 		oexl = append(oexl, and)
 		oexl = append(oexl, exl...)
 
@@ -1025,6 +982,7 @@ func addExpListA(oexl []Exp, rootID int, exl []Exp) ([]Exp, int) {
 			ParentID: -1,
 			Op:       OpAnd,
 		}
+		and.Children = and.childrenA[:0]
 		nexl = append(nexl, and)
 		nexl = append(nexl, exl...)
 	}
@@ -1067,4 +1025,64 @@ func incID(exl []Exp, val, npid int) {
 			exl[i].Children[n] += val
 		}
 	}
+}
+
+func (t ExpOp) String() string {
+	var v string
+
+	switch t {
+	case OpNop:
+		v = "op-nop"
+	case OpAnd:
+		v = "op-and"
+	case OpOr:
+		v = "op-or"
+	case OpNot:
+		v = "op-not"
+	case OpEquals:
+		v = "op-equals"
+	case OpNotEquals:
+		v = "op-not-equals"
+	case OpGreaterOrEquals:
+		v = "op-greater-or-equals"
+	case OpLesserOrEquals:
+		v = "op-lesser-or-equals"
+	case OpGreaterThan:
+		v = "op-greater-than"
+	case OpLesserThan:
+		v = "op-lesser-than"
+	case OpIn:
+		v = "op-in"
+	case OpNotIn:
+		v = "op-not-in"
+	case OpLike:
+		v = "op-like"
+	case OpNotLike:
+		v = "op-not-like"
+	case OpILike:
+		v = "op-i-like"
+	case OpNotILike:
+		v = "op-not-i-like"
+	case OpSimilar:
+		v = "op-similar"
+	case OpNotSimilar:
+		v = "op-not-similar"
+	case OpContains:
+		v = "op-contains"
+	case OpContainedIn:
+		v = "op-contained-in"
+	case OpHasKey:
+		v = "op-has-key"
+	case OpHasKeyAny:
+		v = "op-has-key-any"
+	case OpHasKeyAll:
+		v = "op-has-key-all"
+	case OpIsNull:
+		v = "op-is-null"
+	case OpEqID:
+		v = "op-eq-id"
+	case OpTsQuery:
+		v = "op-ts-query"
+	}
+	return fmt.Sprintf("<%s>", v)
 }

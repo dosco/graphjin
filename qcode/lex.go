@@ -34,38 +34,6 @@ type item struct {
 	line uint16   // The line number at the start of this item.
 }
 
-func (i *item) String() string {
-	var v string
-
-	switch i.typ {
-	case itemEOF:
-		v = "EOF"
-	case itemError:
-		v = "error"
-	case itemName:
-		v = "name"
-	case itemQuery:
-		v = "query"
-	case itemMutation:
-		v = "mutation"
-	case itemSub:
-		v = "subscription"
-	case itemPunctuator:
-		v = "punctuator"
-	case itemDirective:
-		v = "directive"
-	case itemVariable:
-		v = "variable"
-	case itemIntVal:
-		v = "int"
-	case itemFloatVal:
-		v = "float"
-	case itemStringVal:
-		v = "string"
-	}
-	return fmt.Sprintf("%s", v)
-}
-
 // itemType identifies the type of lex items.
 type itemType int
 
@@ -229,6 +197,7 @@ func lex(input []byte) (*lexer, error) {
 	if len(input) == 0 {
 		return nil, errors.New("empty query")
 	}
+
 	l := &lexer{
 		input: input,
 		items: make([]item, 0, 100),
@@ -453,6 +422,38 @@ func lowercase(b []byte, s Pos, e Pos) {
 			b[i] = ('a' + (b[i] - 'A'))
 		}
 	}
+}
+
+func (i *item) String() string {
+	var v string
+
+	switch i.typ {
+	case itemEOF:
+		v = "EOF"
+	case itemError:
+		v = "error"
+	case itemName:
+		v = "name"
+	case itemQuery:
+		v = "query"
+	case itemMutation:
+		v = "mutation"
+	case itemSub:
+		v = "subscription"
+	case itemPunctuator:
+		v = "punctuator"
+	case itemDirective:
+		v = "directive"
+	case itemVariable:
+		v = "variable"
+	case itemIntVal:
+		v = "int"
+	case itemFloatVal:
+		v = "float"
+	case itemStringVal:
+		v = "string"
+	}
+	return fmt.Sprintf("%s", v)
 }
 
 /*
