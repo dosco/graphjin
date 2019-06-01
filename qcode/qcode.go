@@ -97,66 +97,6 @@ const (
 	OpTsQuery
 )
 
-func (t ExpOp) String() string {
-	var v string
-
-	switch t {
-	case OpNop:
-		v = "op-nop"
-	case OpAnd:
-		v = "op-and"
-	case OpOr:
-		v = "op-or"
-	case OpNot:
-		v = "op-not"
-	case OpEquals:
-		v = "op-equals"
-	case OpNotEquals:
-		v = "op-not-equals"
-	case OpGreaterOrEquals:
-		v = "op-greater-or-equals"
-	case OpLesserOrEquals:
-		v = "op-lesser-or-equals"
-	case OpGreaterThan:
-		v = "op-greater-than"
-	case OpLesserThan:
-		v = "op-lesser-than"
-	case OpIn:
-		v = "op-in"
-	case OpNotIn:
-		v = "op-not-in"
-	case OpLike:
-		v = "op-like"
-	case OpNotLike:
-		v = "op-not-like"
-	case OpILike:
-		v = "op-i-like"
-	case OpNotILike:
-		v = "op-not-i-like"
-	case OpSimilar:
-		v = "op-similar"
-	case OpNotSimilar:
-		v = "op-not-similar"
-	case OpContains:
-		v = "op-contains"
-	case OpContainedIn:
-		v = "op-contained-in"
-	case OpHasKey:
-		v = "op-has-key"
-	case OpHasKeyAny:
-		v = "op-has-key-any"
-	case OpHasKeyAll:
-		v = "op-has-key-all"
-	case OpIsNull:
-		v = "op-is-null"
-	case OpEqID:
-		v = "op-eq-id"
-	case OpTsQuery:
-		v = "op-ts-query"
-	}
-	return fmt.Sprintf("<%s>", v)
-}
-
 type ValType int
 
 const (
@@ -194,29 +134,31 @@ type Config struct {
 	DefaultFilter []string
 	FilterMap     map[string][]string
 	Blacklist     []string
+	KeepArgs      bool
 }
 
 type Compiler struct {
 	fl *Exp
 	fm map[string]*Exp
 	bl map[string]struct{}
+	ka bool
 }
 
-func NewCompiler(conf Config) (*Compiler, error) {
-	bl := make(map[string]struct{}, len(conf.Blacklist))
+func NewCompiler(c Config) (*Compiler, error) {
+	bl := make(map[string]struct{}, len(c.Blacklist))
 
-	for i := range conf.Blacklist {
-		bl[strings.ToLower(conf.Blacklist[i])] = struct{}{}
+	for i := range c.Blacklist {
+		bl[strings.ToLower(c.Blacklist[i])] = struct{}{}
 	}
 
-	fl, err := compileFilter(conf.DefaultFilter)
+	fl, err := compileFilter(c.DefaultFilter)
 	if err != nil {
 		return nil, err
 	}
 
-	fm := make(map[string]*Exp, len(conf.FilterMap))
+	fm := make(map[string]*Exp, len(c.FilterMap))
 
-	for k, v := range conf.FilterMap {
+	for k, v := range c.FilterMap {
 		fil, err := compileFilter(v)
 		if err != nil {
 			return nil, err
@@ -224,7 +166,7 @@ func NewCompiler(conf Config) (*Compiler, error) {
 		fm[strings.ToLower(k)] = fil
 	}
 
-	return &Compiler{fl, fm, bl}, nil
+	return &Compiler{fl, fm, bl, c.KeepArgs}, nil
 }
 
 func (com *Compiler) CompileQuery(query string) (*QCode, error) {
@@ -248,6 +190,8 @@ func (com *Compiler) CompileQuery(query string) (*QCode, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	opPool.Put(op)
 
 	return &qc, nil
 }
@@ -383,44 +327,46 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 	return &Query{selects[:id]}, nil
 }
 
-func (com *Compiler) compileArgs(sel *Select, args []*Arg) error {
+func (com *Compiler) compileArgs(sel *Select, args []Arg) error {
 	var err error
 
-	sel.Args = make(map[string]*Node, len(args))
+	if com.ka {
+		sel.Args = make(map[string]*Node, len(args))
+	}
 
 	for i := range args {
-		if args[i] == nil {
-			return fmt.Errorf("[Args] unexpected nil argument found")
-		}
-		an := strings.ToLower(args[i].Name)
-		if _, ok := sel.Args[an]; ok {
-			continue
-		}
+		arg := &args[i]
+
+		an := strings.ToLower(arg.Name)
 
 		switch an {
 		case "id":
 			if sel.ID == 0 {
-				err = com.compileArgID(sel, args[i])
+				err = com.compileArgID(sel, arg)
 			}
 		case "search":
-			err = com.compileArgSearch(sel, args[i])
+			err = com.compileArgSearch(sel, arg)
 		case "where":
-			err = com.compileArgWhere(sel, args[i])
+			err = com.compileArgWhere(sel, arg)
 		case "orderby", "order_by", "order":
-			err = com.compileArgOrderBy(sel, args[i])
+			err = com.compileArgOrderBy(sel, arg)
 		case "distinct_on", "distinct":
-			err = com.compileArgDistinctOn(sel, args[i])
+			err = com.compileArgDistinctOn(sel, arg)
 		case "limit":
-			err = com.compileArgLimit(sel, args[i])
+			err = com.compileArgLimit(sel, arg)
 		case "offset":
-			err = com.compileArgOffset(sel, args[i])
+			err = com.compileArgOffset(sel, arg)
 		}
 
 		if err != nil {
 			return err
 		}
 
-		sel.Args[an] = args[i].Val
+		if sel.Args != nil {
+			sel.Args[an] = arg.Val
+		} else {
+			nodePool.Put(arg.Val)
+		}
 	}
 
 	return nil
@@ -439,15 +385,15 @@ func (com *Compiler) compileArgObj(arg *Arg) (*Exp, error) {
 	return com.compileArgNode(arg.Val)
 }
 
-func (com *Compiler) compileArgNode(val *Node) (*Exp, error) {
+func (com *Compiler) compileArgNode(node *Node) (*Exp, error) {
 	st := util.NewStack()
 	var root *Exp
 
-	if val == nil || len(val.Children) == 0 {
+	if node == nil || len(node.Children) == 0 {
 		return nil, errors.New("invalid argument value")
 	}
 
-	st.Push(&expT{nil, val.Children[0]})
+	st.Push(&expT{nil, node.Children[0]})
 
 	for {
 		if st.Len() == 0 {
@@ -481,6 +427,25 @@ func (com *Compiler) compileArgNode(val *Node) (*Exp, error) {
 		} else {
 			eT.parent.Children = append(eT.parent.Children, ex)
 		}
+	}
+
+	if com.ka {
+		return root, nil
+	}
+
+	st.Push(node.Children[0])
+
+	for {
+		if st.Len() == 0 {
+			break
+		}
+		intf := st.Pop()
+		node, _ := intf.(*Node)
+
+		for i := range node.Children {
+			st.Push(node.Children[i])
+		}
+		nodePool.Put(node)
 	}
 
 	return root, nil
@@ -566,12 +531,18 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) error {
 		}
 
 		if _, ok := com.bl[strings.ToLower(node.Name)]; ok {
+			if !com.ka {
+				nodePool.Put(node)
+			}
 			continue
 		}
 
 		if node.Type == nodeObj {
 			for i := range node.Children {
 				st.Push(node.Children[i])
+			}
+			if !com.ka {
+				nodePool.Put(node)
 			}
 			continue
 		}
@@ -598,6 +569,10 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) error {
 
 		setOrderByColName(ob, node)
 		sel.OrderBy = append(sel.OrderBy, ob)
+
+		if !com.ka {
+			nodePool.Put(node)
+		}
 	}
 	return nil
 }
@@ -619,6 +594,9 @@ func (com *Compiler) compileArgDistinctOn(sel *Select, arg *Arg) error {
 
 	for i := range node.Children {
 		sel.DistinctOn = append(sel.DistinctOn, node.Children[i].Val)
+		if !com.ka {
+			nodePool.Put(node.Children[i])
+		}
 	}
 
 	return nil
@@ -644,7 +622,6 @@ func (com *Compiler) compileArgOffset(sel *Select, arg *Arg) error {
 	}
 
 	sel.Paging.Offset = node.Val
-
 	return nil
 }
 
@@ -886,4 +863,64 @@ func relID(h *xxhash.Digest, child, parent string) uint64 {
 	v := h.Sum64()
 	h.Reset()
 	return v
+}
+
+func (t ExpOp) String() string {
+	var v string
+
+	switch t {
+	case OpNop:
+		v = "op-nop"
+	case OpAnd:
+		v = "op-and"
+	case OpOr:
+		v = "op-or"
+	case OpNot:
+		v = "op-not"
+	case OpEquals:
+		v = "op-equals"
+	case OpNotEquals:
+		v = "op-not-equals"
+	case OpGreaterOrEquals:
+		v = "op-greater-or-equals"
+	case OpLesserOrEquals:
+		v = "op-lesser-or-equals"
+	case OpGreaterThan:
+		v = "op-greater-than"
+	case OpLesserThan:
+		v = "op-lesser-than"
+	case OpIn:
+		v = "op-in"
+	case OpNotIn:
+		v = "op-not-in"
+	case OpLike:
+		v = "op-like"
+	case OpNotLike:
+		v = "op-not-like"
+	case OpILike:
+		v = "op-i-like"
+	case OpNotILike:
+		v = "op-not-i-like"
+	case OpSimilar:
+		v = "op-similar"
+	case OpNotSimilar:
+		v = "op-not-similar"
+	case OpContains:
+		v = "op-contains"
+	case OpContainedIn:
+		v = "op-contained-in"
+	case OpHasKey:
+		v = "op-has-key"
+	case OpHasKeyAny:
+		v = "op-has-key-any"
+	case OpHasKeyAll:
+		v = "op-has-key-all"
+	case OpIsNull:
+		v = "op-is-null"
+	case OpEqID:
+		v = "op-eq-id"
+	case OpTsQuery:
+		v = "op-ts-query"
+	}
+	return fmt.Sprintf("<%s>", v)
 }

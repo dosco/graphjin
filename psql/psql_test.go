@@ -122,18 +122,18 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func compileGQLToPSQL(gql string) (string, error) {
+func compileGQLToPSQL(gql string) ([]byte, error) {
 	qc, err := qcompile.CompileQuery(gql)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	_, sqlStmts, err := pcompile.Compile(qc)
+	_, sqlStmt, err := pcompile.Compile(qc)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return sqlStmts[0], nil
+	return sqlStmt, nil
 }
 
 func withComplexArgs(t *testing.T) {
@@ -159,14 +159,14 @@ func withComplexArgs(t *testing.T) {
 		}
 	}`
 
-	sql := `SELECT json_object_agg('products', products) FROM (SELECT coalesce(json_agg("products" ORDER BY "products_0.ob.price" DESC), '[]') AS "products" FROM (SELECT  DISTINCT ON ("products_0.ob.price") row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name", "products_0"."price" AS "price") AS "sel_0")) AS "products", "products_0"."price" AS "products_0.ob.price" FROM (SELECT "products"."id", "products"."name", "products"."price" FROM "products" WHERE ((("products"."price") > (0)) AND (("products"."price") < (8)) AND (("products"."id") < (28)) AND (("products"."id") >= (20))) LIMIT ('30') :: integer) AS "products_0" ORDER BY "products_0.ob.price" DESC LIMIT ('30') :: integer) AS "products_0") AS "done_1337";`
+	sql := `SELECT json_object_agg('products', products) FROM (SELECT coalesce(json_agg("products" ORDER BY "products_0_price_ob" DESC), '[]') AS "products" FROM (SELECT DISTINCT ON ("products_0_price_ob") row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name", "products_0"."price" AS "price") AS "sel_0")) AS "products", "products_0"."price" AS "products_0_price_ob" FROM (SELECT "products"."id", "products"."name", "products"."price" FROM "products" WHERE ((("products"."price") > (0)) AND (("products"."price") < (8)) AND (("products"."id") < (28)) AND (("products"."id") >= (20))) LIMIT ('30') :: integer) AS "products_0" ORDER BY "products_0_price_ob" DESC LIMIT ('30') :: integer) AS "products_0") AS "done_1337";`
 
 	resSQL, err := compileGQLToPSQL(gql)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if resSQL != sql {
+	if string(resSQL) != sql {
 		t.Fatal(errNotExpected)
 	}
 }
@@ -174,11 +174,11 @@ func withComplexArgs(t *testing.T) {
 func withWhereMultiOr(t *testing.T) {
 	gql := `query {
 		products(
-			where: { 
-				or: { 
-					not: { id: { is_null: true } }, 
+			where: {
+				or: {
+					not: { id: { is_null: true } },
 					price: { gt: 10 },
-					price: { lt: 20 } 
+					price: { lt: 20 }
 				} }
 			) {
 			id
@@ -194,7 +194,7 @@ func withWhereMultiOr(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if resSQL != sql {
+	if string(resSQL) != sql {
 		t.Fatal(errNotExpected)
 	}
 }
@@ -202,10 +202,10 @@ func withWhereMultiOr(t *testing.T) {
 func withWhereIsNull(t *testing.T) {
 	gql := `query {
 		products(
-			where: { 
-				and: { 
-					not: { id: { is_null: true } }, 
-					price: { gt: 10 } 
+			where: {
+				and: {
+					not: { id: { is_null: true } },
+					price: { gt: 10 }
 				}}) {
 			id
 			name
@@ -220,7 +220,7 @@ func withWhereIsNull(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if resSQL != sql {
+	if string(resSQL) != sql {
 		t.Fatal(errNotExpected)
 	}
 }
@@ -228,10 +228,10 @@ func withWhereIsNull(t *testing.T) {
 func withWhereAndList(t *testing.T) {
 	gql := `query {
 		products(
-			where: { 
-				and: [ 
-					{ not: { id: { is_null: true } } }, 
-					{ price: { gt: 10 } }, 
+			where: {
+				and: [
+					{ not: { id: { is_null: true } } },
+					{ price: { gt: 10 } },
 				] } ) {
 			id
 			name
@@ -246,7 +246,47 @@ func withWhereAndList(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if resSQL != sql {
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
+func fetchByID(t *testing.T) {
+	gql := `query {
+		product(id: 15) {
+			id
+			name
+		}
+	}`
+
+	sql := `SELECT json_object_agg('product', products) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name") AS "sel_0")) AS "products" FROM (SELECT "products"."id", "products"."name" FROM "products" WHERE ((("products"."price") > (0)) AND (("products"."price") < (8)) AND (("id") = (15))) LIMIT ('1') :: integer) AS "products_0" LIMIT ('1') :: integer) AS "done_1337";`
+
+	resSQL, err := compileGQLToPSQL(gql)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
+func searchQuery(t *testing.T) {
+	gql := `query {
+		products(search: "Imperial") {
+			id
+			name
+		}
+	}`
+
+	sql := `SELECT json_object_agg('products', products) FROM (SELECT coalesce(json_agg("products"), '[]') AS "products" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name") AS "sel_0")) AS "products" FROM (SELECT "products"."id", "products"."name" FROM "products" WHERE ((("products"."price") > (0)) AND (("products"."price") < (8)) AND (("tsv") @@ to_tsquery('Imperial'))) LIMIT ('20') :: integer) AS "products_0" LIMIT ('20') :: integer) AS "products_0") AS "done_1337";`
+
+	resSQL, err := compileGQLToPSQL(gql)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(resSQL) != sql {
 		t.Fatal(errNotExpected)
 	}
 }
@@ -269,7 +309,7 @@ func oneToMany(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if resSQL != sql {
+	if string(resSQL) != sql {
 		t.Fatal(errNotExpected)
 	}
 }
@@ -292,13 +332,13 @@ func belongsTo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if resSQL != sql {
+	if string(resSQL) != sql {
 		t.Fatal(errNotExpected)
 	}
 }
 
 func manyToMany(t *testing.T) {
-	gql := `query { 
+	gql := `query {
 		products {
 			name
 			customers {
@@ -315,7 +355,7 @@ func manyToMany(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if resSQL != sql {
+	if string(resSQL) != sql {
 		t.Fatal(errNotExpected)
 	}
 }
@@ -338,47 +378,7 @@ func manyToManyReverse(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if resSQL != sql {
-		t.Fatal(errNotExpected)
-	}
-}
-
-func fetchByID(t *testing.T) {
-	gql := `query {
-		product(id: 15) {
-			id
-			name
-		}
-	}`
-
-	sql := `SELECT json_object_agg('product', products) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name") AS "sel_0")) AS "products" FROM (SELECT "products"."id", "products"."name" FROM "products" WHERE ((("products"."price") > (0)) AND (("products"."price") < (8)) AND (("id") = (15))) LIMIT ('1') :: integer) AS "products_0" LIMIT ('1') :: integer) AS "done_1337";`
-
-	resSQL, err := compileGQLToPSQL(gql)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if resSQL != sql {
-		t.Fatal(errNotExpected)
-	}
-}
-
-func searchQuery(t *testing.T) {
-	gql := `query {
-		products(search: "Imperial") {
-			id
-			name
-		}
-	}`
-
-	sql := `SELECT json_object_agg('products', products) FROM (SELECT coalesce(json_agg("products"), '[]') AS "products" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name") AS "sel_0")) AS "products" FROM (SELECT "products"."id", "products"."name" FROM "products" WHERE ((("products"."price") > (0)) AND (("products"."price") < (8)) AND (("tsv") @@ to_tsquery('Imperial'))) LIMIT ('20') :: integer) AS "products_0" LIMIT ('20') :: integer) AS "products_0") AS "done_1337";`
-
-	resSQL, err := compileGQLToPSQL(gql)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if resSQL != sql {
+	if string(resSQL) != sql {
 		t.Fatal(errNotExpected)
 	}
 }
@@ -391,14 +391,14 @@ func aggFunction(t *testing.T) {
 		}
 	}`
 
-	sql := `SELECT json_object_agg('products', products) FROM (SELECT coalesce(json_agg("products"), '[]') AS "products" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."name" AS "name", "products_0"."count_price" AS "count_price") AS "sel_0")) AS "products" FROM (SELECT "products"."name", count("products"."price") AS count_price FROM "products" WHERE ((("products"."price") > (0)) AND (("products"."price") < (8))) GROUP BY "products"."name" LIMIT ('20') :: integer) AS "products_0" LIMIT ('20') :: integer) AS "products_0") AS "done_1337";`
+	sql := `SELECT json_object_agg('products', products) FROM (SELECT coalesce(json_agg("products"), '[]') AS "products" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."name" AS "name", "products_0"."count_price" AS "count_price") AS "sel_0")) AS "products" FROM (SELECT "products"."name", count("products"."price") AS "count_price" FROM "products" WHERE ((("products"."price") > (0)) AND (("products"."price") < (8))) GROUP BY "products"."name" LIMIT ('20') :: integer) AS "products_0" LIMIT ('20') :: integer) AS "products_0") AS "done_1337";`
 
 	resSQL, err := compileGQLToPSQL(gql)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if resSQL != sql {
+	if string(resSQL) != sql {
 		t.Fatal(errNotExpected)
 	}
 }
@@ -411,14 +411,14 @@ func aggFunctionWithFilter(t *testing.T) {
 		}
 	}`
 
-	sql := `SELECT json_object_agg('products', products) FROM (SELECT coalesce(json_agg("products"), '[]') AS "products" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."max_price" AS "max_price") AS "sel_0")) AS "products" FROM (SELECT "products"."id", max("products"."price") AS max_price FROM "products" WHERE ((("products"."price") > (0)) AND (("products"."price") < (8)) AND (("products"."id") > (10))) GROUP BY "products"."id" LIMIT ('20') :: integer) AS "products_0" LIMIT ('20') :: integer) AS "products_0") AS "done_1337";`
+	sql := `SELECT json_object_agg('products', products) FROM (SELECT coalesce(json_agg("products"), '[]') AS "products" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."max_price" AS "max_price") AS "sel_0")) AS "products" FROM (SELECT "products"."id", max("products"."price") AS "max_price" FROM "products" WHERE ((("products"."price") > (0)) AND (("products"."price") < (8)) AND (("products"."id") > (10))) GROUP BY "products"."id" LIMIT ('20') :: integer) AS "products_0" LIMIT ('20') :: integer) AS "products_0") AS "done_1337";`
 
 	resSQL, err := compileGQLToPSQL(gql)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if resSQL != sql {
+	if string(resSQL) != sql {
 		t.Fatal(errNotExpected)
 	}
 }
@@ -438,7 +438,7 @@ func queryWithVariables(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if resSQL != sql {
+	if string(resSQL) != sql {
 		t.Fatal(errNotExpected)
 	}
 }
@@ -457,7 +457,7 @@ func syntheticTables(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if resSQL != sql {
+	if string(resSQL) != sql {
 		t.Fatal(errNotExpected)
 	}
 }
@@ -484,13 +484,13 @@ func BenchmarkCompileGQLToSQL(b *testing.B) {
 		products(
 			# returns only 30 items
 			limit: 30,
-	
+
 			# starts from item 10, commented out for now
 			# offset: 10,
-	
+
 			# orders the response items by highest price
 			order_by: { price: desc },
-	
+
 			# only items with an id >= 30 and < 30 are returned
 			where: { id: { and: { greater_or_equals: 20, lt: 28 } } }) {
 			id

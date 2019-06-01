@@ -74,27 +74,36 @@ func TestEmptyCompile(t *testing.T) {
 	}
 }
 
+var gql = `query {
+	products(
+		# returns only 30 items
+		limit: 30,
+
+		# starts from item 10, commented out for now
+		# offset: 10,
+
+		# orders the response items by highest price
+		order_by: { price: desc },
+
+		# no duplicate prices returned
+		distinct: [ price ]
+
+		# only items with an id >= 30 and < 30 are returned
+		where: { id: { AND: { greater_or_equals: 20, lt: 28 } } }) {
+		id
+		name
+		price
+	}
+}`
+
 func BenchmarkQCompile(b *testing.B) {
 	qcompile, _ := NewCompiler(Config{})
-
-	val := `query {
-		products(
-			where: { 
-				and: { 
-					not: { id: { is_null: true } }, 
-					price: { gt: 10 } 
-				}}) {
-			id
-			name
-			price
-		}
-	}`
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for n := 0; n < b.N; n++ {
-		_, err := qcompile.CompileQuery(val)
+		_, err := qcompile.CompileQuery(gql)
 
 		if err != nil {
 			b.Fatal(err)
@@ -102,28 +111,19 @@ func BenchmarkQCompile(b *testing.B) {
 	}
 }
 
-func BenchmarkLex(b *testing.B) {
-	val := `query {
-		products(
-			where: { 
-				and: { 
-					not: { id: { is_null: true } }, 
-					price: { gt: 10 } 
-				}}) {
-			id
-			name
-			price
-		}
-	}`
+func BenchmarkQCompileP(b *testing.B) {
+	qcompile, _ := NewCompiler(Config{})
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for n := 0; n < b.N; n++ {
-		_, err := lex(val)
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_, err := qcompile.CompileQuery(gql)
 
-		if err != nil {
-			b.Fatal(err)
+			if err != nil {
+				b.Fatal(err)
+			}
 		}
-	}
+	})
 }

@@ -103,13 +103,20 @@ type stateFn func(*lexer) stateFn
 
 // lexer holds the state of the scanner.
 type lexer struct {
-	name  string // the name of the input; used only for error reports
-	input string // the string being scanned
-	pos   Pos    // current position in the input
-	start Pos    // start position of this item
-	width Pos    // width of last rune read from input
-	items []item // array of scanned items
-	line  int    // 1+number of newlines seen
+	name   string // the name of the input; used only for error reports
+	input  string // the string being scanned
+	pos    Pos    // current position in the input
+	start  Pos    // start position of this item
+	width  Pos    // width of last rune read from input
+	items  []item // array of scanned items
+	itemsA [100]item
+	line   int // 1+number of newlines seen
+}
+
+var zeroLex = lexer{}
+
+func (l *lexer) Reset() {
+	*l = zeroLex
 }
 
 // next returns the next rune in the input.
@@ -207,21 +214,19 @@ func (l *lexer) errorf(format string, args ...interface{}) stateFn {
 }
 
 // lex creates a new scanner for the input string.
-func lex(input string) (*lexer, error) {
+func lex(l *lexer, input string) error {
 	if len(input) == 0 {
-		return nil, errors.New("empty query")
+		return errors.New("empty query")
 	}
-	l := &lexer{
-		input: input,
-		items: make([]item, 0, 100),
-		line:  1,
-	}
+	l.input = input
+	l.line = 1
+	l.items = l.itemsA[:0]
 	l.run()
 
 	if last := l.items[len(l.items)-1]; last.typ == itemError {
-		return nil, fmt.Errorf(last.val)
+		return fmt.Errorf(last.val)
 	}
-	return l, nil
+	return nil
 }
 
 // run runs the state machine for the lexer.
