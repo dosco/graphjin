@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"io"
 	"net/http"
-	"strings"
+	"os"
 	"time"
 
 	"github.com/cespare/xxhash/v2"
@@ -62,17 +62,117 @@ func (c *coreContext) handleReq(w io.Writer, req *http.Request) error {
 	// these values contain the id to be used with fetching remote data
 	from := jsn.Get(data, fids)
 
+	var to []jsn.Field
+	switch {
+	case len(from) == 1:
+		to, err = c.resolveRemote(req, h, from[0], sel, sfmap)
+
+	case len(from) > 1:
+		to, err = c.resolveRemotes(req, h, from, sel, sfmap)
+
+	default:
+		return errors.New("something wrong no remote ids found in db response")
+	}
+
+	if err != nil {
+		return err
+	}
+
+	var ob bytes.Buffer
+
+	err = jsn.Replace(&ob, data, from, to)
+	if err != nil {
+		return err
+	}
+
+	return c.render(w, ob.Bytes())
+}
+
+func (c *coreContext) resolveRemote(
+	req *http.Request,
+	h *xxhash.Digest,
+	field jsn.Field,
+	sel []qcode.Select,
+	sfmap map[uint64]*qcode.Select) ([]jsn.Field, error) {
+
+	// replacement data for the marked insertion points
+	// key and value will be replaced by whats below
+	toA := [1]jsn.Field{}
+	to := toA[:0]
+
+	// use the json key to find the related Select object
+	k1 := xxhash.Sum64(field.Key)
+
+	s, ok := sfmap[k1]
+	if !ok {
+		return nil, nil
+	}
+	p := sel[s.ParentID]
+
+	// then use the Table nme in the Select and it's parent
+	// to find the resolver to use for this relationship
+	k2 := mkkey(h, s.Table, p.Table)
+
+	r, ok := rmap[k2]
+	if !ok {
+		return nil, nil
+	}
+
+	id := jsn.Value(field.Value)
+	if len(id) == 0 {
+		return nil, nil
+	}
+
+	st := time.Now()
+
+	b, err := r.Fn(req, id)
+	if err != nil {
+		return nil, err
+	}
+
+	if conf.EnableTracing {
+		c.addTrace(s, st)
+	}
+
+	if len(r.Path) != 0 {
+		b = jsn.Strip(b, r.Path)
+	}
+
+	var ob bytes.Buffer
+
+	if len(s.Cols) != 0 {
+		err = jsn.Filter(&ob, b, colsToList(s.Cols))
+		if err != nil {
+			return nil, err
+		}
+
+	} else {
+		ob.WriteString("null")
+	}
+
+	to[0] = jsn.Field{[]byte(s.FieldName), ob.Bytes()}
+	return to, nil
+}
+
+func (c *coreContext) resolveRemotes(
+	req *http.Request,
+	h *xxhash.Digest,
+	from []jsn.Field,
+	sel []qcode.Select,
+	sfmap map[uint64]*qcode.Select) ([]jsn.Field, error) {
+
 	// replacement data for the marked insertion points
 	// key and value will be replaced by whats below
 	to := make([]jsn.Field, 0, len(from))
 
 	for _, id := range from {
+
 		// use the json key to find the related Select object
 		k1 := xxhash.Sum64(id.Key)
 
 		s, ok := sfmap[k1]
 		if !ok {
-			continue
+			return nil, nil
 		}
 		p := sel[s.ParentID]
 
@@ -82,19 +182,19 @@ func (c *coreContext) handleReq(w io.Writer, req *http.Request) error {
 
 		r, ok := rmap[k2]
 		if !ok {
-			continue
+			return nil, nil
 		}
 
 		id := jsn.Value(id.Value)
 		if len(id) == 0 {
-			continue
+			return nil, nil
 		}
 
 		st := time.Now()
 
 		b, err := r.Fn(req, id)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		if conf.EnableTracing {
@@ -110,29 +210,19 @@ func (c *coreContext) handleReq(w io.Writer, req *http.Request) error {
 		if len(s.Cols) != 0 {
 			err = jsn.Filter(&ob, b, colsToList(s.Cols))
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 		} else {
 			ob.WriteString("null")
 		}
 
-		f := jsn.Field{[]byte(s.FieldName), ob.Bytes()}
-		to = append(to, f)
+		to = append(to, jsn.Field{[]byte(s.FieldName), ob.Bytes()})
 	}
-
-	var ob bytes.Buffer
-
-	err = jsn.Replace(&ob, data, from, to)
-	if err != nil {
-		return err
-	}
-
-	return c.render(w, ob.Bytes())
+	return to, nil
 }
 
-func (c *coreContext) resolveSQL(qc *qcode.QCode, vars variables) (
-	[]byte, uint32, error) {
+func (c *coreContext) resolveSQL(qc *qcode.QCode, vars variables) ([]byte, uint32, error) {
 
 	// var entry []byte
 	// var key string
@@ -153,15 +243,17 @@ func (c *coreContext) resolveSQL(qc *qcode.QCode, vars variables) (
 	// 	}
 	// }
 
-	skipped, stmts, err := pcompile.Compile(qc)
+	stmt := &bytes.Buffer{}
+
+	skipped, err := pcompile.Compile(qc, stmt)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	t := fasttemplate.New(stmts[0], openVar, closeVar)
+	t := fasttemplate.New(stmt.String(), openVar, closeVar)
 
-	var sqlStmt strings.Builder
-	_, err = t.Execute(&sqlStmt, vars)
+	stmt.Reset()
+	_, err = t.Execute(stmt, vars)
 
 	if err == errNoUserID &&
 		authFailBlock == authFailBlockPerQuery &&
@@ -173,10 +265,10 @@ func (c *coreContext) resolveSQL(qc *qcode.QCode, vars variables) (
 		return nil, 0, err
 	}
 
-	finalSQL := sqlStmt.Bytes()
+	finalSQL := stmt.String()
 
 	if conf.DebugLevel > 0 {
-		fmt.Println(finalSQL)
+		os.Stdout.WriteString(finalSQL)
 	}
 
 	// if cacheEnabled {
