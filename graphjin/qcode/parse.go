@@ -3,6 +3,7 @@ package qcode
 import (
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/dosco/super-graph/util"
 )
@@ -15,6 +16,7 @@ type parserType int16
 
 const (
 	maxFields = 100
+	maxArgs   = 10
 
 	parserError parserType = iota
 	parserEOF
@@ -30,52 +32,30 @@ const (
 	nodeVar
 )
 
-func (t parserType) String() string {
-	var v string
-
-	switch t {
-	case parserEOF:
-		v = "EOF"
-	case parserError:
-		v = "error"
-	case opQuery:
-		v = "query"
-	case opMutate:
-		v = "mutation"
-	case opSub:
-		v = "subscription"
-	case nodeStr:
-		v = "node-string"
-	case nodeInt:
-		v = "node-int"
-	case nodeFloat:
-		v = "node-float"
-	case nodeBool:
-		v = "node-bool"
-	case nodeVar:
-		v = "node-var"
-	case nodeObj:
-		v = "node-obj"
-	case nodeList:
-		v = "node-list"
-	}
-	return fmt.Sprintf("<%s>", v)
+type Operation struct {
+	Type    parserType
+	Name    string
+	Args    []Arg
+	argsA   [10]Arg
+	Fields  []Field
+	fieldsA [10]Field
 }
 
-type Operation struct {
-	Type   parserType
-	Name   string
-	Args   []*Arg
-	Fields []Field
+var zeroOperation = Operation{}
+
+func (o *Operation) Reset() {
+	*o = zeroOperation
 }
 
 type Field struct {
-	ID       uint16
-	Name     string
-	Alias    string
-	Args     []*Arg
-	ParentID uint16
-	Children []uint16
+	ID        uint16
+	Name      string
+	Alias     string
+	Args      []Arg
+	argsA     [10]Arg
+	ParentID  uint16
+	Children  []uint16
+	childrenA [10]uint16
 }
 
 type Arg struct {
@@ -91,6 +71,12 @@ type Node struct {
 	Children []*Node
 }
 
+var zeroNode = Node{}
+
+func (n *Node) Reset() {
+	*n = zeroNode
+}
+
 type Parser struct {
 	pos   int
 	items []item
@@ -98,20 +84,36 @@ type Parser struct {
 	err   error
 }
 
+var nodePool = sync.Pool{
+	New: func() interface{} { return new(Node) },
+}
+
+var opPool = sync.Pool{
+	New: func() interface{} { return new(Operation) },
+}
+
+var lexPool = sync.Pool{
+	New: func() interface{} { return new(lexer) },
+}
+
 func Parse(gql string) (*Operation, error) {
 	if len(gql) == 0 {
 		return nil, errors.New("blank query")
 	}
+	l := lexPool.Get().(*lexer)
+	l.Reset()
 
-	l, err := lex(gql)
-	if err != nil {
+	if err := lex(l, gql); err != nil {
 		return nil, err
 	}
 	p := &Parser{
 		pos:   -1,
 		items: l.items,
 	}
-	return p.parseOp()
+	op, err := p.parseOp()
+	lexPool.Put(l)
+
+	return op, err
 }
 
 func ParseQuery(gql string) (*Operation, error) {
@@ -119,28 +121,37 @@ func ParseQuery(gql string) (*Operation, error) {
 }
 
 func ParseArgValue(argVal string) (*Node, error) {
-	l, err := lex(argVal)
-	if err != nil {
+	l := lexPool.Get().(*lexer)
+	l.Reset()
+
+	if err := lex(l, argVal); err != nil {
 		return nil, err
 	}
 	p := &Parser{
 		pos:   -1,
 		items: l.items,
 	}
+	op, err := p.parseValue()
+	lexPool.Put(l)
 
-	return p.parseValue()
+	return op, err
 }
 
 func parseByType(gql string, ty parserType) (*Operation, error) {
-	l, err := lex(gql)
-	if err != nil {
+	l := lexPool.Get().(*lexer)
+	l.Reset()
+
+	if err := lex(l, gql); err != nil {
 		return nil, err
 	}
 	p := &Parser{
 		pos:   -1,
 		items: l.items,
 	}
-	return p.parseOpByType(ty)
+	op, err := p.parseOpByType(ty)
+	lexPool.Put(l)
+
+	return op, err
 }
 
 func (p *Parser) next() item {
@@ -188,7 +199,13 @@ func (p *Parser) peek(types ...itemType) bool {
 }
 
 func (p *Parser) parseOpByType(ty parserType) (*Operation, error) {
-	op := &Operation{Type: ty}
+	op := opPool.Get().(*Operation)
+	op.Reset()
+
+	op.Type = ty
+	op.Fields = op.fieldsA[:0]
+	op.Args = op.argsA[:0]
+
 	var err error
 
 	if p.peek(itemName) {
@@ -197,7 +214,7 @@ func (p *Parser) parseOpByType(ty parserType) (*Operation, error) {
 
 	if p.peek(itemArgsOpen) {
 		p.ignore()
-		op.Args, err = p.parseArgs()
+		op.Args, err = p.parseArgs(op.Args)
 		if err != nil {
 			return nil, err
 		}
@@ -205,7 +222,7 @@ func (p *Parser) parseOpByType(ty parserType) (*Operation, error) {
 
 	if p.peek(itemObjOpen) {
 		p.ignore()
-		op.Fields, err = p.parseFields()
+		op.Fields, err = p.parseFields(op.Fields)
 		if err != nil {
 			return nil, err
 		}
@@ -238,15 +255,12 @@ func (p *Parser) parseOp() (*Operation, error) {
 	return nil, errors.New("unknown operation type")
 }
 
-func (p *Parser) parseFields() ([]Field, error) {
-	var id uint16
-
-	fields := make([]Field, 0, 5)
+func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 	st := util.NewStack()
 
 	for {
-		if id >= maxFields {
-			return nil, fmt.Errorf("field limit reached (%d)", maxFields)
+		if len(fields) >= maxFields {
+			return nil, fmt.Errorf("too many fields (max %d)", maxFields)
 		}
 
 		if p.peek(itemObjClose) {
@@ -263,9 +277,12 @@ func (p *Parser) parseFields() ([]Field, error) {
 			return nil, errors.New("expecting an alias or field name")
 		}
 
-		f := Field{ID: id}
+		fields = append(fields, Field{ID: uint16(len(fields))})
+		f := &fields[(len(fields) - 1)]
+		f.Args = f.argsA[:0]
+		f.Children = f.childrenA[:0]
 
-		if err := p.parseField(&f); err != nil {
+		if err := p.parseField(f); err != nil {
 			return nil, err
 		}
 
@@ -280,9 +297,6 @@ func (p *Parser) parseFields() ([]Field, error) {
 			f.ParentID = pid
 			fields[pid].Children = append(fields[pid].Children, f.ID)
 		}
-
-		fields = append(fields, f)
-		id++
 
 		if p.peek(itemObjOpen) {
 			p.ignore()
@@ -310,7 +324,7 @@ func (p *Parser) parseField(f *Field) error {
 
 	if p.peek(itemArgsOpen) {
 		p.ignore()
-		if f.Args, err = p.parseArgs(); err != nil {
+		if f.Args, err = p.parseArgs(f.Args); err != nil {
 			return err
 		}
 	}
@@ -318,11 +332,14 @@ func (p *Parser) parseField(f *Field) error {
 	return nil
 }
 
-func (p *Parser) parseArgs() ([]*Arg, error) {
-	var args []*Arg
+func (p *Parser) parseArgs(args []Arg) ([]Arg, error) {
 	var err error
 
 	for {
+		if len(args) >= maxArgs {
+			return nil, fmt.Errorf("too many args (max %d)", maxArgs)
+		}
+
 		if p.peek(itemArgsClose) {
 			p.ignore()
 			break
@@ -330,7 +347,8 @@ func (p *Parser) parseArgs() ([]*Arg, error) {
 		if p.peek(itemName) == false {
 			return nil, errors.New("expecting an argument name")
 		}
-		arg := &Arg{Name: p.next().val}
+		args = append(args, Arg{Name: p.next().val})
+		arg := &args[(len(args) - 1)]
 
 		if p.peek(itemColon) == false {
 			return nil, errors.New("missing ':' after argument name")
@@ -341,16 +359,17 @@ func (p *Parser) parseArgs() ([]*Arg, error) {
 		if err != nil {
 			return nil, err
 		}
-		args = append(args, arg)
 	}
 	return args, nil
 }
 
 func (p *Parser) parseList() (*Node, error) {
-	parent := &Node{}
-	var nodes []*Node
-	var ty parserType
+	nodes := []*Node{}
 
+	parent := nodePool.Get().(*Node)
+	parent.Reset()
+
+	var ty parserType
 	for {
 		if p.peek(itemListClose) {
 			p.ignore()
@@ -381,8 +400,10 @@ func (p *Parser) parseList() (*Node, error) {
 }
 
 func (p *Parser) parseObj() (*Node, error) {
-	parent := &Node{}
-	var nodes []*Node
+	nodes := []*Node{}
+
+	parent := nodePool.Get().(*Node)
+	parent.Reset()
 
 	for {
 		if p.peek(itemObjClose) {
@@ -427,7 +448,8 @@ func (p *Parser) parseValue() (*Node, error) {
 	}
 
 	item := p.next()
-	node := &Node{}
+	node := nodePool.Get().(*Node)
+	node.Reset()
 
 	switch item.typ {
 	case itemIntVal:
@@ -448,4 +470,40 @@ func (p *Parser) parseValue() (*Node, error) {
 	node.Val = item.val
 
 	return node, nil
+}
+
+func (t parserType) String() string {
+	var v string
+
+	switch t {
+	case parserEOF:
+		v = "EOF"
+	case parserError:
+		v = "error"
+	case opQuery:
+		v = "query"
+	case opMutate:
+		v = "mutation"
+	case opSub:
+		v = "subscription"
+	case nodeStr:
+		v = "node-string"
+	case nodeInt:
+		v = "node-int"
+	case nodeFloat:
+		v = "node-float"
+	case nodeBool:
+		v = "node-bool"
+	case nodeVar:
+		v = "node-var"
+	case nodeObj:
+		v = "node-obj"
+	case nodeList:
+		v = "node-list"
+	}
+	return fmt.Sprintf("<%s>", v)
+}
+
+func PutNode(n *Node) {
+	nodePool.Put(n)
 }
