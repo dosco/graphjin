@@ -44,19 +44,23 @@ func (c *Compiler) IDColumn(table string) string {
 	return t.PrimaryCol
 }
 
-func (c *Compiler) Compile(qc *qcode.QCode) (uint32, []byte, error) {
+func (c *Compiler) CompileEx(qc *qcode.QCode) (uint32, []byte, error) {
+	w := &bytes.Buffer{}
+	skipped, err := c.Compile(qc, w)
+	return skipped, w.Bytes(), err
+}
+
+func (c *Compiler) Compile(qc *qcode.QCode, w *bytes.Buffer) (uint32, error) {
 	if len(qc.Query.Selects) == 0 {
-		return 0, nil, errors.New("empty query")
+		return 0, errors.New("empty query")
 	}
 	root := &qc.Query.Selects[0]
 
 	st := util.NewStack()
 	ti, err := c.getTable(root)
 	if err != nil {
-		return 0, nil, err
+		return 0, err
 	}
-
-	w := &bytes.Buffer{}
 
 	st.Push(&selectBlockClose{nil, root})
 	st.Push(&selectBlock{nil, root, qc, ti, c})
@@ -82,7 +86,7 @@ func (c *Compiler) Compile(qc *qcode.QCode) (uint32, []byte, error) {
 		case *selectBlock:
 			skipped, err := v.render(w)
 			if err != nil {
-				return 0, nil, err
+				return 0, err
 			}
 			ignored |= skipped
 
@@ -94,7 +98,7 @@ func (c *Compiler) Compile(qc *qcode.QCode) (uint32, []byte, error) {
 
 				ti, err := c.getTable(child)
 				if err != nil {
-					return 0, nil, err
+					return 0, err
 				}
 
 				st.Push(&joinClose{child})
@@ -113,7 +117,7 @@ func (c *Compiler) Compile(qc *qcode.QCode) (uint32, []byte, error) {
 		}
 
 		if err != nil {
-			return 0, nil, err
+			return 0, err
 		}
 	}
 
@@ -121,7 +125,7 @@ func (c *Compiler) Compile(qc *qcode.QCode) (uint32, []byte, error) {
 	alias(w, `done_1337`)
 	w.WriteString(`;`)
 
-	return ignored, w.Bytes(), nil
+	return ignored, nil
 }
 
 func (c *Compiler) getTable(sel *qcode.Select) (*DBTableInfo, error) {

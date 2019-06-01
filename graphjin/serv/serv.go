@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -156,6 +155,7 @@ func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
 		DefaultFilter: c.DB.Defaults.Filter,
 		FilterMap:     c.getFilterMap(),
 		Blacklist:     c.DB.Defaults.Blacklist,
+		KeepArgs:      false,
 	})
 
 	if err != nil {
@@ -178,17 +178,17 @@ func Init() {
 
 	conf, err = initConf()
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
 	db, err = initDB(conf)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
 	qcompile, pcompile, err = initCompilers(conf)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
 	initResolvers()
@@ -212,14 +212,14 @@ func startHTTP() {
 		<-sigint
 
 		if err := srv.Shutdown(context.Background()); err != nil {
-			log.Printf("http: %v", err)
+			logger.Printf("http: %v", err)
 		}
 		close(idleConnsClosed)
 	}()
 
 	srv.RegisterOnShutdown(func() {
 		if err := db.Close(); err != nil {
-			log.Println(err)
+			logger.Println(err)
 		}
 	})
 

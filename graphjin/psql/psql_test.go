@@ -1,6 +1,7 @@
 package psql
 
 import (
+	"bytes"
 	"log"
 	"os"
 	"testing"
@@ -128,7 +129,7 @@ func compileGQLToPSQL(gql string) ([]byte, error) {
 		return nil, err
 	}
 
-	_, sqlStmt, err := pcompile.Compile(qc)
+	_, sqlStmt, err := pcompile.CompileEx(qc)
 	if err != nil {
 		return nil, err
 	}
@@ -503,13 +504,21 @@ func BenchmarkCompileGQLToSQL(b *testing.B) {
 		}
 	}`
 
+	w := &bytes.Buffer()
+
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for n := 0; n < b.N; n++ {
-		_, err := compileGQLToPSQL(gql)
+		qc, err := qcompile.CompileQuery(gql)
 		if err != nil {
 			b.Fatal(err)
 		}
+
+		_, sqlStmt, err := pcompile.Compile(qc, w)
+		if err != nil {
+			b.Fatal(err)
+		}
+		w.Reset()
 	}
 }

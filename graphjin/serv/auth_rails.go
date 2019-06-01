@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 
@@ -20,7 +19,7 @@ func railsRedisHandler(next http.HandlerFunc) http.HandlerFunc {
 	}
 
 	if len(conf.Auth.Rails.URL) == 0 {
-		log.Fatal(errors.New("no auth.rails.url defined"))
+		logger.Fatal(errors.New("no auth.rails.url defined"))
 	}
 
 	rp := &redis.Pool{
@@ -79,12 +78,12 @@ func railsMemcacheHandler(next http.HandlerFunc) http.HandlerFunc {
 	}
 
 	if len(conf.Auth.Rails.URL) == 0 {
-		log.Fatal(errors.New("no auth.rails.url defined"))
+		logger.Fatal(errors.New("no auth.rails.url defined"))
 	}
 
 	rURL, err := url.Parse(conf.Auth.Rails.URL)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
 	mc := memcache.New(rURL.Host)
@@ -127,7 +126,7 @@ func railsCookieHandler(next http.HandlerFunc) http.HandlerFunc {
 
 	ra, err := railsAuth(conf)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
