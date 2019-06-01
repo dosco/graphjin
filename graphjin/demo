@@ -4,6 +4,9 @@ if [ "$1" == "setup" ]; then
   docker-compose -f rails-app/demo.yml run web rake db:create db:migrate db:seed
 elif [ "$1" == "run" ]; then
   docker-compose -f rails-app/demo.yml up
+elif [ "$1" == "start" ]; then
+  docker-compose -f rails-app/demo.yml run web rake db:create db:migrate db:seed
+  docker-compose -f rails-app/demo.yml up
 else
-  echo "./demo [setup|run]"
+  echo "./demo [setup|run|start]"
 fi

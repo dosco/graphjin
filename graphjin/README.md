@@ -25,7 +25,7 @@ And so after a lot of coffee and some Avocado toasts __Super Graph was born, a G
 - Full text search and Aggregations
 - Rails Auth supported (Redis, Memcache, Cookie)
 - JWT tokens supported (Auth0, etc)
-- Stitching in REST APIs
+- Join with remote REST APIs
 - Highly optimized and fast Postgres SQL queries
 - Configure with a simple config file
 - High performance GO codebase

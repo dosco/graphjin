@@ -25,11 +25,8 @@ Without writing a line of code get an instant high-performance GraphQL API for y
 # download super graph source
 git clone https://github.com/dosco/super-graph.git
 
-# setup the demo rails app & database
-./demo setup
-
-# run the demo
-./demo run
+# setup the demo rails app & database and run it
+./demo start
 
 # signin to the demo app (user1@demo.com / 123456)
 open http://localhost:3000
