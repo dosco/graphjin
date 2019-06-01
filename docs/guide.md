@@ -13,6 +13,7 @@ Without writing a line of code get an instant high-performance GraphQL API for y
 - Full text search and Aggregations
 - Rails Auth supported (Redis, Memcache, Cookie)
 - JWT tokens supported (Auth0, etc)
+- Join with remote REST APIs
 - Highly optimized and fast Postgres SQL queries
 - Configure with a simple config file
 - High performance GO codebase
@@ -24,11 +25,8 @@ Without writing a line of code get an instant high-performance GraphQL API for y
 # download super graph source
 git clone https://github.com/dosco/super-graph.git
 
-# setup the demo rails app & database
-./demo setup
-
-# run the demo
-./demo run
+# setup the demo rails app & database and run it
+./demo start
 
 # signin to the demo app (user1@demo.com / 123456)
 open http://localhost:3000
@@ -347,9 +345,9 @@ class AddSearchColumn < ActiveRecord::Migration[5.1]
 end
 ```
 
-## API Stitching
+## Join with remote REST APIs
 
-It often happens that after fetching some data from the DB we need to call another API to fetch some more data and all this combined into a single JSON response.
+It often happens that after fetching some data from the DB we need to call another API to fetch some more data and all this combined into a single JSON response. For example along with a list of users you need their last 5 payments from Stripe. This requires you to query your DB for the users and Stripe for the payments. Super Graph handles all this for you also only the fields you requested from the Stripe API are returned. All this is a very performance focused way.
 
 For example you need to list the last 3 payments made by a user. You will first need to look up the user in the database and then call the Stripe API to fetch his last 3 payments. For this to work your user table in the db has a `customer_id` column that contains his Stripe customer ID.
 
