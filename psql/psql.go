@@ -91,7 +91,7 @@ func (c *Compiler) Compile(qc *qcode.QCode, w *bytes.Buffer) (uint32, error) {
 			ignored |= skipped
 
 			for _, id := range v.sel.Children {
-				if hasBit(skipped, id) {
+				if hasBit(skipped, uint16(id)) {
 					continue
 				}
 				child := &qc.Query.Selects[id]
@@ -377,7 +377,7 @@ func (v *selectBlock) renderJoinedColumns(w *bytes.Buffer, skipped uint32) error
 	colsRendered := len(v.sel.Cols) != 0
 
 	for _, id := range v.sel.Children {
-		skipThis := hasBit(skipped, id)
+		skipThis := hasBit(skipped, uint16(id))
 
 		if colsRendered && !skipThis {
 			io.WriteString(w, ", ")
@@ -884,7 +884,7 @@ func alias(w *bytes.Buffer, alias string) {
 	w.WriteString(`"`)
 }
 
-func aliasWithID(w *bytes.Buffer, alias string, id uint16) {
+func aliasWithID(w *bytes.Buffer, alias string, id int16) {
 	w.WriteString(` AS "`)
 	w.WriteString(alias)
 	w.WriteString(`_`)
@@ -892,7 +892,7 @@ func aliasWithID(w *bytes.Buffer, alias string, id uint16) {
 	w.WriteString(`"`)
 }
 
-func aliasWithIDSuffix(w *bytes.Buffer, alias string, id uint16, suffix string) {
+func aliasWithIDSuffix(w *bytes.Buffer, alias string, id int16, suffix string) {
 	w.WriteString(` AS "`)
 	w.WriteString(alias)
 	w.WriteString(`_`)
@@ -917,7 +917,7 @@ func colWithTable(w *bytes.Buffer, table, col string) {
 	w.WriteString(`"`)
 }
 
-func colWithTableID(w *bytes.Buffer, table string, id uint16, col string) {
+func colWithTableID(w *bytes.Buffer, table string, id int16, col string) {
 	w.WriteString(`"`)
 	w.WriteString(table)
 	w.WriteString(`_`)
@@ -927,7 +927,7 @@ func colWithTableID(w *bytes.Buffer, table string, id uint16, col string) {
 	w.WriteString(`"`)
 }
 
-func colWithTableIDAlias(w *bytes.Buffer, table string, id uint16, col, alias string) {
+func colWithTableIDAlias(w *bytes.Buffer, table string, id int16, col, alias string) {
 	w.WriteString(`"`)
 	w.WriteString(table)
 	w.WriteString(`_`)
@@ -939,7 +939,7 @@ func colWithTableIDAlias(w *bytes.Buffer, table string, id uint16, col, alias st
 	w.WriteString(`"`)
 }
 
-func colWithTableIDSuffixAlias(w *bytes.Buffer, table string, id uint16,
+func colWithTableIDSuffixAlias(w *bytes.Buffer, table string, id int16,
 	suffix, col, alias string) {
 	w.WriteString(`"`)
 	w.WriteString(table)
@@ -953,7 +953,7 @@ func colWithTableIDSuffixAlias(w *bytes.Buffer, table string, id uint16,
 	w.WriteString(`"`)
 }
 
-func tableIDColSuffix(w *bytes.Buffer, table string, id uint16, col, suffix string) {
+func tableIDColSuffix(w *bytes.Buffer, table string, id int16, col, suffix string) {
 	w.WriteString(`"`)
 	w.WriteString(table)
 	w.WriteString(`_`)
@@ -966,18 +966,18 @@ func tableIDColSuffix(w *bytes.Buffer, table string, id uint16, col, suffix stri
 
 const charset = "0123456789"
 
-func int2string(w *bytes.Buffer, val uint16) {
+func int2string(w *bytes.Buffer, val int16) {
 	if val < 10 {
 		w.WriteByte(charset[val])
 		return
 	}
 
-	temp := uint16(0)
+	temp := int16(0)
 	val2 := val
 	for val2 > 0 {
 		temp *= 10
 		temp += val2 % 10
-		val2 = uint16(math.Floor(float64(val2 / 10)))
+		val2 = int16(math.Floor(float64(val2 / 10)))
 	}
 
 	val3 := temp

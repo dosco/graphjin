@@ -1,6 +1,7 @@
 goos: darwin
 goarch: amd64
 pkg: github.com/dosco/super-graph/psql
-BenchmarkCompileGQLToSQL-8   	   50000	     38882 ns/op	   15177 B/op	     266 allocs/op
+BenchmarkCompile-8           	   50000	     38531 ns/op	    5175 B/op	     148 allocs/op
+BenchmarkCompileParallel-8   	  200000	     11472 ns/op	    5237 B/op	     148 allocs/op
 PASS
-ok  	github.com/dosco/super-graph/psql	2.473s
+ok  	github.com/dosco/super-graph/psql	4.686s
