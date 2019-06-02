@@ -29,8 +29,8 @@ type Column struct {
 }
 
 type Select struct {
-	ID         uint16
-	ParentID   uint16
+	ID         int16
+	ParentID   int16
 	RelID      uint64
 	Args       map[string]*Node
 	AsList     bool
@@ -42,7 +42,7 @@ type Select struct {
 	OrderBy    []*OrderBy
 	DistinctOn []string
 	Paging     Paging
-	Children   []uint16
+	Children   []int16
 }
 
 type Exp struct {
@@ -197,7 +197,8 @@ func (com *Compiler) CompileQuery(query string) (*QCode, error) {
 }
 
 func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
-	var id, parentID uint16
+	id := int16(0)
+	parentID := int16(-1)
 
 	selects := make([]Select, 0, 5)
 	st := util.NewStack()
@@ -218,7 +219,7 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 		}
 
 		intf := st.Pop()
-		fid, ok := intf.(uint16)
+		fid, ok := intf.(int16)
 
 		if !ok {
 			return nil, fmt.Errorf("15: unexpected value %v (%t)", intf, intf)
@@ -235,7 +236,7 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 			ID:       id,
 			ParentID: parentID,
 			Table:    tn,
-			Children: make([]uint16, 0, 5),
+			Children: make([]int16, 0, 5),
 		}
 
 		if s.ID != 0 {

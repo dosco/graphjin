@@ -480,45 +480,68 @@ func TestCompileGQL(t *testing.T) {
 	t.Run("syntheticTables", syntheticTables)
 }
 
-func BenchmarkCompileGQLToSQL(b *testing.B) {
-	gql := `query {
-		products(
-			# returns only 30 items
-			limit: 30,
+var benchGQL = `query {
+	products(
+		# returns only 30 items
+		limit: 30,
 
-			# starts from item 10, commented out for now
-			# offset: 10,
+		# starts from item 10, commented out for now
+		# offset: 10,
 
-			# orders the response items by highest price
-			order_by: { price: desc },
+		# orders the response items by highest price
+		order_by: { price: desc },
 
-			# only items with an id >= 30 and < 30 are returned
-			where: { id: { and: { greater_or_equals: 20, lt: 28 } } }) {
-			id
-			name
-			price
-			user {
-				full_name
-				picture : avatar
-			}
+		# only items with an id >= 30 and < 30 are returned
+		where: { id: { and: { greater_or_equals: 20, lt: 28 } } }) {
+		id
+		name
+		price
+		user {
+			full_name
+			picture : avatar
 		}
-	}`
+	}
+}`
 
-	w := &bytes.Buffer()
+func BenchmarkCompile(b *testing.B) {
+	w := &bytes.Buffer{}
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for n := 0; n < b.N; n++ {
-		qc, err := qcompile.CompileQuery(gql)
+		w.Reset()
+
+		qc, err := qcompile.CompileQuery(benchGQL)
 		if err != nil {
 			b.Fatal(err)
 		}
 
-		_, sqlStmt, err := pcompile.Compile(qc, w)
+		_, err = pcompile.Compile(qc, w)
 		if err != nil {
 			b.Fatal(err)
 		}
-		w.Reset()
 	}
+}
+
+func BenchmarkCompileParallel(b *testing.B) {
+	b.ReportAllocs()
+
+	b.RunParallel(func(pb *testing.PB) {
+		w := &bytes.Buffer{}
+
+		for pb.Next() {
+			w.Reset()
+
+			qc, err := qcompile.CompileQuery(benchGQL)
+			if err != nil {
+				b.Fatal(err)
+			}
+
+			_, err = pcompile.Compile(qc, w)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
