@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -73,6 +74,10 @@ func (c *coreContext) handleReq(w io.Writer, req *http.Request) error {
 
 	default:
 		return errors.New("something wrong no remote ids found in db response")
+	}
+
+	if err != nil {
+		return err
 	}
 
 	var ob bytes.Buffer
@@ -192,14 +197,14 @@ func (c *coreContext) resolveRemotes(
 			return nil, nil
 		}
 
-		go func(n int) {
+		go func(n int, s *qcode.Select) {
 			defer wg.Done()
 
 			st := time.Now()
 
 			b, err := r.Fn(req, id)
 			if err != nil {
-				cerr = err
+				cerr = fmt.Errorf("%s: %s", s.Table, err)
 				return
 			}
 
@@ -216,7 +221,7 @@ func (c *coreContext) resolveRemotes(
 			if len(s.Cols) != 0 {
 				err = jsn.Filter(&ob, b, colsToList(s.Cols))
 				if err != nil {
-					cerr = err
+					cerr = fmt.Errorf("%s: %s", s.Table, err)
 					return
 				}
 
@@ -225,7 +230,7 @@ func (c *coreContext) resolveRemotes(
 			}
 
 			to[n] = jsn.Field{[]byte(s.FieldName), ob.Bytes()}
-		}(i)
+		}(i, s)
 	}
 	wg.Wait()
 

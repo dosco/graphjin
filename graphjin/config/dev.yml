@@ -79,7 +79,7 @@ database:
 
   # Define defaults to for the field key and values below
   defaults:
-    #filter: ["{ user_id: { eq: $user_id } }"]
+    # filter: ["{ user_id: { eq: $user_id } }"]
 
     # Field and table names that you wish to block
     blacklist:

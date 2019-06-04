@@ -132,6 +132,7 @@ func (c *Compiler) getTable(sel *qcode.Select) (*DBTableInfo, error) {
 	if tn, ok := c.tmap[sel.Table]; ok {
 		return c.schema.GetTable(tn)
 	}
+
 	return c.schema.GetTable(sel.Table)
 }
 

@@ -1,5 +1,9 @@
 package serv
 
+import (
+	"github.com/gobuffalo/flect"
+)
+
 type config struct {
 	AppName       string `mapstructure:"app_name"`
 	Env           string
@@ -88,7 +92,7 @@ func (c *config) getAliasMap() map[string]string {
 		if len(t.Table) == 0 {
 			continue
 		}
-		m[t.Name] = t.Table
+		m[flect.Pluralize(t.Name)] = t.Table
 	}
 	return m
 }
@@ -102,11 +106,12 @@ func (c *config) getFilterMap() map[string][]string {
 		if len(t.Filter) == 0 {
 			continue
 		}
+		name := flect.Pluralize(t.Name)
 
 		if t.Filter[0] == "none" {
-			m[t.Name] = []string{}
+			m[name] = []string{}
 		} else {
-			m[t.Name] = t.Filter
+			m[name] = t.Filter
 		}
 	}
 
