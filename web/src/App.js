@@ -43,11 +43,11 @@ class App extends Component {
         <Playground 
           endpoint="/api/v1/graphql"
           settings={{
-            'schema.polling.enable': false,
-            'request.credentials': 'include',
-            'general.betaUpdates': true,
-            'editor.reuseHeaders': true,
-            'editor.theme': 'dark'
+            "schema.polling.enable": false,
+            "request.credentials": "include",
+            "general.betaUpdates": true,
+            "editor.reuseHeaders": true,
+            "editor.theme": "dark"
           }} 
         />
         </Provider>
