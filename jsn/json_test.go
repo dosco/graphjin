@@ -262,6 +262,24 @@ func TestStrip(t *testing.T) {
 	}
 }
 
+func TestValidateTrue(t *testing.T) {
+	json := []byte(`  [{"id":1,"embed":{"id":8}},{"id":2},{"id":3},{"id":4},{"id":5},{"id":6},{"id":7},{"id":8},{"id":9},{"id":10},{"id":11},{"id":12},{"id":13}]`)
+
+	err := Validate(string(json))
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestValidateFalse(t *testing.T) {
+	json := []byte(`   [{ "hello": 123"<html>}]`)
+
+	err := Validate(string(json))
+	if err == nil {
+		t.Error("JSON validation failed to detect invalid json")
+	}
+}
+
 func TestReplace(t *testing.T) {
 	var buf bytes.Buffer
 

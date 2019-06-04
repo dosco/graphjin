@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/cespare/xxhash/v2"
+	"github.com/dosco/super-graph/jsn"
 	"github.com/dosco/super-graph/psql"
 )
 
@@ -109,6 +110,10 @@ func buildFn(r configRemote) func(*http.Request, []byte) ([]byte, error) {
 
 		b, err := ioutil.ReadAll(res.Body)
 		if err != nil {
+			return nil, err
+		}
+
+		if err := jsn.ValidateBytes(b); err != nil {
 			return nil, err
 		}
 
