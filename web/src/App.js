@@ -1,8 +1,14 @@
 import React, { Component } from 'react'
 import { Provider } from 'react-redux'
-import { Playground, store } from 'graphql-playground-react'
+import { Playground, store } from '@apollographql/graphql-playground-react'
 
 import './index.css'
+
+const fetch = window.fetch
+window.fetch = function() {
+  arguments[1].credentials = 'include'
+  return Promise.resolve(fetch.apply(global, arguments))
+}
 
 class App extends Component {
   render() {
@@ -42,13 +48,13 @@ class App extends Component {
         <Provider store={store}>
         <Playground 
           endpoint="/api/v1/graphql"
-          settings={{
-            "schema.polling.enable": false,
-            "request.credentials": "include",
-            "general.betaUpdates": true,
-            "editor.reuseHeaders": true,
-            "editor.theme": "dark"
-          }} 
+          settings="{
+            'schema.polling.enable': false,
+            'request.credentials': 'include',
+            'general.betaUpdates': true,
+            'editor.reuseHeaders': true,
+            'editor.theme': 'dark'
+          }"
         />
         </Provider>
       </div>
