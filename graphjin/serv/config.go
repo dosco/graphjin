@@ -76,6 +76,7 @@ type configRemote struct {
 	ID          string
 	Path        string
 	URL         string
+	Debug       bool
 	PassHeaders []string `mapstructure:"pass_headers"`
 	SetHeaders  []struct {
 		Name  string

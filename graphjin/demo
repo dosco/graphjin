@@ -1,12 +1,21 @@
 #!/bin/bash
 
 if [ "$1" == "setup" ]; then
+  echo "Downloading pre-built docker images"
+  docker-compose -f rails-app/demo.yml pull
+  echo "Setting up the demo Rails app"
   docker-compose -f rails-app/demo.yml run web rake db:create db:migrate db:seed
 elif [ "$1" == "run" ]; then
+  echo "Deploying Super Graph and the demo Rails app"
   docker-compose -f rails-app/demo.yml up
 elif [ "$1" == "start" ]; then
+  echo "Downloading pre-built docker images"
+  docker-compose -f rails-app/demo.yml pull
+  echo "Setting up and deploying Super Graph and the demo Rails app"
   docker-compose -f rails-app/demo.yml run web rake db:create db:migrate db:seed
   docker-compose -f rails-app/demo.yml up
+elif [ "$1" == "stop" ]; then
+  docker-compose -f rails-app/demo.yml down
 else
-  echo "./demo [setup|run|start]"
+  echo "./demo [setup|run|start|stop]"
 fi
