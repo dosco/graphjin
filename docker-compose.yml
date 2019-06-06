@@ -15,14 +15,15 @@ services:
       target: go-build
     environment:
       GO_ENV: "development"
-    depends_on:
-      - db
     ports:
       - "8080:8080"
     volumes:
       - .:/app
     working_dir: /app
     command: fresh -c fresh.conf
+    depends_on:
+      - db
+      - rails_app
 
   rails_app:
     build: rails-app/.
@@ -33,5 +34,4 @@ services:
       - "3000:3000"
     depends_on:
       - db
-      - super_graph
-      #- redis
+    # - redis
