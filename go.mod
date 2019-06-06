@@ -19,11 +19,12 @@ require (
 	github.com/mattn/go-isatty v0.0.7 // indirect
 	github.com/onsi/ginkgo v1.8.0 // indirect
 	github.com/onsi/gomega v1.5.0 // indirect
+	github.com/rs/zerolog v1.14.3
 	github.com/sirupsen/logrus v1.4.0
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/spf13/viper v1.3.1
 	github.com/valyala/fasttemplate v1.0.1
-	golang.org/x/crypto v0.0.0-20181203042331-505ab145d0a9
+	golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2
 	golang.org/x/sys v0.0.0-20190222072716-a9d3bda3a223
 	mellium.im/sasl v0.2.1 // indirect
 )
