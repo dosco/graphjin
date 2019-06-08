@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/http/httputil"
 	"strings"
 
 	"github.com/cespare/xxhash/v2"
@@ -100,13 +101,38 @@ func buildFn(r configRemote) func(*http.Request, []byte) ([]byte, error) {
 		for _, v := range r.PassHeaders {
 			h.Set(v, inReq.Header.Get(v))
 		}
-		req.Header = h
+		if len(h) != 0 {
+			if host, ok := h["Host"]; ok {
+				req.Host = host[0]
+			}
+			req.Header = h
+		}
 
 		res, err := client.Do(req)
 		if err != nil {
 			return nil, err
 		}
 		defer res.Body.Close()
+
+		if r.Debug {
+			reqDump, err := httputil.DumpRequestOut(req, true)
+			if err != nil {
+				return nil, err
+			}
+
+			resDump, err := httputil.DumpResponse(res, true)
+			if err != nil {
+				return nil, err
+			}
+
+			logger.Warn().Msgf("Remote Request Debug:\n%s\n%s",
+				reqDump, resDump)
+		}
+
+		if res.StatusCode != 200 {
+			return nil,
+				fmt.Errorf("server responded with a %d", res.StatusCode)
+		}
 
 		b, err := ioutil.ReadAll(res.Body)
 		if err != nil {

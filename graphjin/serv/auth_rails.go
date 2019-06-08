@@ -15,11 +15,11 @@ import (
 func railsRedisHandler(next http.HandlerFunc) http.HandlerFunc {
 	cookie := conf.Auth.Cookie
 	if len(cookie) == 0 {
-		panic(errors.New("no auth.cookie defined"))
+		logger.Fatal().Msg("no auth.cookie defined")
 	}
 
 	if len(conf.Auth.Rails.URL) == 0 {
-		logger.Fatal(errors.New("no auth.rails.url defined"))
+		logger.Fatal().Msg("no auth.rails.url defined")
 	}
 
 	rp := &redis.Pool{
@@ -74,16 +74,16 @@ func railsRedisHandler(next http.HandlerFunc) http.HandlerFunc {
 func railsMemcacheHandler(next http.HandlerFunc) http.HandlerFunc {
 	cookie := conf.Auth.Cookie
 	if len(cookie) == 0 {
-		panic(errors.New("no auth.cookie defined"))
+		logger.Fatal().Msg("no auth.cookie defined")
 	}
 
 	if len(conf.Auth.Rails.URL) == 0 {
-		logger.Fatal(errors.New("no auth.rails.url defined"))
+		logger.Fatal().Msg("no auth.rails.url defined")
 	}
 
 	rURL, err := url.Parse(conf.Auth.Rails.URL)
 	if err != nil {
-		logger.Fatal(err)
+		logger.Fatal().Err(err)
 	}
 
 	mc := memcache.New(rURL.Host)
@@ -121,12 +121,12 @@ func railsMemcacheHandler(next http.HandlerFunc) http.HandlerFunc {
 func railsCookieHandler(next http.HandlerFunc) http.HandlerFunc {
 	cookie := conf.Auth.Cookie
 	if len(cookie) == 0 {
-		panic(errors.New("no auth.cookie defined"))
+		logger.Fatal().Msg("no auth.cookie defined")
 	}
 
 	ra, err := railsAuth(conf)
 	if err != nil {
-		logger.Fatal(err)
+		logger.Fatal().Err(err)
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -137,14 +137,14 @@ func railsCookieHandler(next http.HandlerFunc) http.HandlerFunc {
 
 		ck, err := r.Cookie(cookie)
 		if err != nil {
-			logger.Error(err)
+			logger.Error().Err(err)
 			next.ServeHTTP(w, r)
 			return
 		}
 
 		userID, err := ra.ParseCookie(ck.Value)
 		if err != nil {
-			logger.Error(err)
+			logger.Error().Err(err)
 			next.ServeHTTP(w, r)
 			return
 		}

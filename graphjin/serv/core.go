@@ -100,7 +100,7 @@ func (c *coreContext) resolveRemote(
 	// replacement data for the marked insertion points
 	// key and value will be replaced by whats below
 	toA := [1]jsn.Field{}
-	to := toA[:0]
+	to := toA[:1]
 
 	// use the json key to find the related Select object
 	k1 := xxhash.Sum64(field.Key)
@@ -197,7 +197,7 @@ func (c *coreContext) resolveRemotes(
 			return nil, nil
 		}
 
-		go func(n int, s *qcode.Select) {
+		go func(n int, id []byte, s *qcode.Select) {
 			defer wg.Done()
 
 			st := time.Now()
@@ -230,7 +230,7 @@ func (c *coreContext) resolveRemotes(
 			}
 
 			to[n] = jsn.Field{[]byte(s.FieldName), ob.Bytes()}
-		}(i, s)
+		}(i, id, s)
 	}
 	wg.Wait()
 
