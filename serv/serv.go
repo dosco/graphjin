@@ -15,7 +15,7 @@ import (
 	"github.com/dosco/super-graph/qcode"
 	"github.com/go-pg/pg"
 	"github.com/gobuffalo/flect"
-	"github.com/sirupsen/logrus"
+	"github.com/rs/zerolog"
 	"github.com/spf13/viper"
 )
 
@@ -30,7 +30,7 @@ const (
 )
 
 var (
-	logger        *logrus.Logger
+	logger        *zerolog.Logger
 	conf          *config
 	db            *pg.DB
 	qcompile      *qcode.Compiler
@@ -38,15 +38,19 @@ var (
 	authFailBlock int
 )
 
-func initLog() *logrus.Logger {
-	log := logrus.New()
-	log.Formatter = new(logrus.TextFormatter)
-	log.Formatter.(*logrus.TextFormatter).DisableColors = false
-	log.Formatter.(*logrus.TextFormatter).DisableTimestamp = true
-	log.Level = logrus.TraceLevel
-	log.Out = os.Stdout
+func initLog() *zerolog.Logger {
+	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).
+		With().Caller().Logger()
 
-	return log
+	return &logger
+	/*
+		log := logrus.New()
+		logger.Formatter = new(logrus.TextFormatter)
+		logger.Formatter.(*logrus.TextFormatter).DisableColors = false
+		logger.Formatter.(*logrus.TextFormatter).DisableTimestamp = true
+		logger.Level = logrus.TraceLevel
+		logger.Out = os.Stdout
+	*/
 }
 
 func initConf() (*config, error) {
@@ -178,17 +182,17 @@ func Init() {
 
 	conf, err = initConf()
 	if err != nil {
-		logger.Fatal(err)
+		logger.Fatal().Err(err)
 	}
 
 	db, err = initDB(conf)
 	if err != nil {
-		logger.Fatal(err)
+		logger.Fatal().Err(err)
 	}
 
 	qcompile, pcompile, err = initCompilers(conf)
 	if err != nil {
-		logger.Fatal(err)
+		logger.Fatal().Err(err)
 	}
 
 	initResolvers()
@@ -219,7 +223,7 @@ func startHTTP() {
 
 	srv.RegisterOnShutdown(func() {
 		if err := db.Close(); err != nil {
-			logger.Println(err)
+			logger.Error().Err(err)
 		}
 	})
 

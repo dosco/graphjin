@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -137,7 +138,7 @@ func apiv1Http(w http.ResponseWriter, r *http.Request) {
 
 func errorResp(w http.ResponseWriter, err error) {
 	if conf.DebugLevel > 0 {
-		logger.Error(err.Error())
+		log.Error().Err(err)
 	}
 
 	w.WriteHeader(http.StatusBadRequest)
