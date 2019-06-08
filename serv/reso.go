@@ -86,11 +86,6 @@ func initRemotes(t configTable) {
 func buildFn(r configRemote) func(*http.Request, []byte) ([]byte, error) {
 	reqURL := strings.Replace(r.URL, "$id", "%s", 1)
 	client := &http.Client{}
-	h := make(http.Header, len(r.PassHeaders))
-
-	for _, v := range r.SetHeaders {
-		h.Set(v.Name, v.Value)
-	}
 
 	fn := func(inReq *http.Request, id []byte) ([]byte, error) {
 		req, err := http.NewRequest("GET", fmt.Sprintf(reqURL, id), nil)
@@ -98,14 +93,16 @@ func buildFn(r configRemote) func(*http.Request, []byte) ([]byte, error) {
 			return nil, err
 		}
 
-		for _, v := range r.PassHeaders {
-			h.Set(v, inReq.Header.Get(v))
+		for _, v := range r.SetHeaders {
+			req.Header.Set(v.Name, v.Value)
 		}
-		if len(h) != 0 {
-			if host, ok := h["Host"]; ok {
-				req.Host = host[0]
-			}
-			req.Header = h
+
+		for _, v := range r.PassHeaders {
+			req.Header.Set(v, inReq.Header.Get(v))
+		}
+
+		if host, ok := req.Header["Host"]; ok {
+			req.Host = host[0]
 		}
 
 		res, err := client.Do(req)
