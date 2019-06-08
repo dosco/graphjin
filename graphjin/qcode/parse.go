@@ -12,7 +12,7 @@ var (
 	errEOT = errors.New("end of tokens")
 )
 
-type parserType int16
+type parserType int32
 
 const (
 	maxFields = 100
@@ -48,14 +48,14 @@ func (o *Operation) Reset() {
 }
 
 type Field struct {
-	ID        int16
+	ID        int32
+	ParentID  int32
 	Name      string
 	Alias     string
 	Args      []Arg
 	argsA     [10]Arg
-	ParentID  int16
-	Children  []int16
-	childrenA [10]int16
+	Children  []int32
+	childrenA [10]int32
 }
 
 type Arg struct {
@@ -277,7 +277,7 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 			return nil, errors.New("expecting an alias or field name")
 		}
 
-		fields = append(fields, Field{ID: int16(len(fields))})
+		fields = append(fields, Field{ID: int32(len(fields))})
 		f := &fields[(len(fields) - 1)]
 		f.Args = f.argsA[:0]
 		f.Children = f.childrenA[:0]
@@ -288,7 +288,7 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 
 		if f.ID != 0 {
 			intf := st.Peek()
-			pid, ok := intf.(int16)
+			pid, ok := intf.(int32)
 
 			if !ok {
 				return nil, fmt.Errorf("14: unexpected value %v (%t)", intf, intf)
