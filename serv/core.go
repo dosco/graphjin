@@ -321,7 +321,7 @@ func (c *coreContext) render(w io.Writer, data []byte) error {
 	return json.NewEncoder(w).Encode(c.res)
 }
 
-func (c *coreContext) addTrace(sel []qcode.Select, id int16, st time.Time) {
+func (c *coreContext) addTrace(sel []qcode.Select, id int32, st time.Time) {
 	et := time.Now()
 	du := et.Sub(st)
 
@@ -336,15 +336,18 @@ func (c *coreContext) addTrace(sel []qcode.Select, id int16, st time.Time) {
 	c.res.Extensions.Tracing.EndTime = et
 	c.res.Extensions.Tracing.Duration = du
 
-	n := 0
-	for i := id; i != -1; i = sel[i].ParentID {
+	n := 1
+	for i := id; i != 0; i = sel[i].ParentID {
 		n++
 	}
-
 	path := make([]string, n)
+
 	n--
-	for i := id; i != -1; i = sel[i].ParentID {
+	for i := id; ; i = sel[i].ParentID {
 		path[n] = sel[i].Table
+		if sel[i].ID == 0 {
+			break
+		}
 		n--
 	}
 
@@ -368,7 +371,7 @@ func parentFieldIds(h *xxhash.Digest, sel []qcode.Select, skipped uint32) (
 	c := 0
 	for i := range sel {
 		s := &sel[i]
-		if isSkipped(skipped, uint16(s.ID)) {
+		if isSkipped(skipped, uint32(s.ID)) {
 			c++
 		}
 	}
@@ -385,7 +388,7 @@ func parentFieldIds(h *xxhash.Digest, sel []qcode.Select, skipped uint32) (
 	for i := range sel {
 		s := &sel[i]
 
-		if isSkipped(skipped, uint16(s.ID)) == false {
+		if isSkipped(skipped, uint32(s.ID)) == false {
 			continue
 		}
 
@@ -404,7 +407,7 @@ func parentFieldIds(h *xxhash.Digest, sel []qcode.Select, skipped uint32) (
 	return fm, sm
 }
 
-func isSkipped(n uint32, pos uint16) bool {
+func isSkipped(n uint32, pos uint32) bool {
 	return ((n & (1 << pos)) != 0)
 }
 
