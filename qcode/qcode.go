@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cespare/xxhash/v2"
 	"github.com/dosco/super-graph/util"
 	"github.com/gobuffalo/flect"
 )
@@ -31,11 +30,8 @@ type Column struct {
 type Select struct {
 	ID         int32
 	ParentID   int32
-	RelID      uint64
 	Args       map[string]*Node
-	AsList     bool
 	Table      string
-	Singular   string
 	FieldName  string
 	Cols       []Column
 	Where      *Exp
@@ -163,7 +159,12 @@ func NewCompiler(c Config) (*Compiler, error) {
 		if err != nil {
 			return nil, err
 		}
-		fm[strings.ToLower(k)] = fil
+		k1 := strings.ToLower(k)
+		singular := flect.Singularize(k1)
+		plural := flect.Pluralize(k1)
+
+		fm[singular] = fil
+		fm[plural] = fil
 	}
 
 	return &Compiler{fl, fm, bl, c.KeepArgs}, nil
@@ -202,7 +203,6 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 
 	selects := make([]Select, 0, 5)
 	st := util.NewStack()
-	h := xxhash.New()
 
 	if len(op.Fields) == 0 {
 		return nil, errors.New("empty query")
@@ -226,46 +226,31 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 		}
 		field := &op.Fields[fid]
 
-		fn := strings.ToLower(field.Name)
-		if _, ok := com.bl[fn]; ok {
+		tn := strings.ToLower(field.Name)
+		if _, ok := com.bl[tn]; ok {
 			continue
 		}
-		tn := flect.Pluralize(fn)
 
-		s := Select{
+		selects = append(selects, Select{
 			ID:       id,
 			ParentID: parentID,
 			Table:    tn,
 			Children: make([]int32, 0, 5),
-		}
+		})
+		s := &selects[(len(selects) - 1)]
 
 		if s.ID != 0 {
 			p := &selects[s.ParentID]
 			p.Children = append(p.Children, s.ID)
-			s.RelID = relID(h, tn, p.Table)
-		}
-
-		if fn == tn {
-			s.Singular = flect.Singularize(fn)
-		} else {
-			s.Singular = fn
-		}
-
-		if fn == s.Table {
-			s.AsList = true
-		} else {
-			s.Paging.Limit = "1"
 		}
 
 		if len(field.Alias) != 0 {
 			s.FieldName = field.Alias
-		} else if s.AsList {
-			s.FieldName = s.Table
 		} else {
-			s.FieldName = s.Singular
+			s.FieldName = s.Table
 		}
 
-		err := com.compileArgs(&s, field.Args)
+		err := com.compileArgs(s, field.Args)
 		if err != nil {
 			return nil, err
 		}
@@ -296,7 +281,6 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 			s.Cols = append(s.Cols, col)
 		}
 
-		selects = append(selects, s)
 		id++
 	}
 
@@ -856,14 +840,6 @@ func buildPath(a []string) string {
 		b.WriteString(s)
 	}
 	return b.String()
-}
-
-func relID(h *xxhash.Digest, child, parent string) uint64 {
-	h.WriteString(child)
-	h.WriteString(parent)
-	v := h.Sum64()
-	h.Reset()
-	return v
 }
 
 func (t ExpOp) String() string {

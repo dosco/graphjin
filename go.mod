@@ -11,7 +11,9 @@ require (
 	github.com/garyburd/redigo v1.6.0
 
 	github.com/go-pg/pg v8.0.1+incompatible
+	github.com/gobuffalo/envy v1.7.0 // indirect
 	github.com/gobuffalo/flect v0.1.1
+	github.com/gobuffalo/logger v0.0.0-20190315122211-86e12af44bc2
 	github.com/gorilla/websocket v1.4.0
 	github.com/jinzhu/inflection v0.0.0-20180308033659-04140366298a // indirect
 	github.com/labstack/gommon v0.2.8

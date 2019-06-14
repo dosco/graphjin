@@ -231,7 +231,6 @@ func (c *coreContext) resolveRemotes(
 
 			to[n] = jsn.Field{[]byte(s.FieldName), ob.Bytes()}
 		}(i, id, s)
-		fmt.Println(">>>", i)
 	}
 	wg.Wait()
 

@@ -22,16 +22,21 @@ type resolvFn struct {
 	Fn      func(r *http.Request, id []byte) ([]byte, error)
 }
 
-func initResolvers() {
+func initResolvers() error {
 	rmap = make(map[uint64]*resolvFn)
 
 	for _, t := range conf.DB.Tables {
-		initRemotes(t)
+		err := initRemotes(t)
+		if err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
-func initRemotes(t configTable) {
+func initRemotes(t configTable) error {
 	h := xxhash.New()
+	var err error
 
 	for _, r := range t.Remotes {
 		// defines the table column to be used as an id in the
@@ -41,24 +46,26 @@ func initRemotes(t configTable) {
 		// if no table column specified in the config then
 		// use the primary key of the table as the id
 		if len(idcol) == 0 {
-			idcol = pcompile.IDColumn(t.Name)
+			idcol, err = pcompile.IDColumn(t.Name)
+			if err != nil {
+				return err
+			}
 		}
 		idk := fmt.Sprintf("__%s_%s", t.Name, idcol)
 
 		// register a relationship between the remote data
 		// and the database table
 
-		h.WriteString(strings.ToLower(r.Name))
-		h.WriteString(t.Name)
-		key := h.Sum64()
-		h.Reset()
-
 		val := &psql.DBRel{
 			Type: psql.RelRemote,
 			Col1: idcol,
 			Col2: idk,
 		}
-		pcompile.AddRelationship(key, val)
+
+		err := pcompile.AddRelationship(strings.ToLower(r.Name), t.Name, val)
+		if err != nil {
+			return err
+		}
 
 		// the function thats called to resolve this remote
 		// data request
@@ -81,6 +88,8 @@ func initRemotes(t configTable) {
 		// index resolver obj by IDField
 		rmap[xxhash.Sum64(rf.IDField)] = rf
 	}
+
+	return nil
 }
 
 func buildFn(r configRemote) func(*http.Request, []byte) ([]byte, error) {
@@ -88,7 +97,8 @@ func buildFn(r configRemote) func(*http.Request, []byte) ([]byte, error) {
 	client := &http.Client{}
 
 	fn := func(inReq *http.Request, id []byte) ([]byte, error) {
-		req, err := http.NewRequest("GET", fmt.Sprintf(reqURL, id), nil)
+		uri := fmt.Sprintf(reqURL, id)
+		req, err := http.NewRequest("GET", uri, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -107,6 +117,7 @@ func buildFn(r configRemote) func(*http.Request, []byte) ([]byte, error) {
 
 		res, err := client.Do(req)
 		if err != nil {
+			logger.Error().Err(err).Msgf("Failed to connect to: %s", uri)
 			return nil, err
 		}
 		defer res.Body.Close()

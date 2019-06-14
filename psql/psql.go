@@ -8,6 +8,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/dosco/super-graph/qcode"
 	"github.com/dosco/super-graph/util"
 )
@@ -18,31 +19,30 @@ const (
 )
 
 type Config struct {
-	Schema   *DBSchema
-	Vars     map[string]string
-	TableMap map[string]string
+	Schema *DBSchema
+	Vars   map[string]string
 }
 
 type Compiler struct {
 	schema *DBSchema
 	vars   map[string]string
-	tmap   map[string]string
 }
 
 func NewCompiler(conf Config) *Compiler {
-	return &Compiler{conf.Schema, conf.Vars, conf.TableMap}
+	return &Compiler{conf.Schema, conf.Vars}
 }
 
-func (c *Compiler) AddRelationship(key uint64, val *DBRel) {
-	c.schema.RelMap[key] = val
+func (c *Compiler) AddRelationship(child, parent string, rel *DBRel) error {
+	return c.schema.SetRel(child, parent, rel)
 }
 
-func (c *Compiler) IDColumn(table string) string {
-	t, ok := c.schema.Tables[table]
-	if !ok {
-		return empty
+func (c *Compiler) IDColumn(table string) (string, error) {
+	t, err := c.schema.GetTable(table)
+	if err != nil {
+		return empty, err
 	}
-	return t.PrimaryCol
+
+	return t.PrimaryCol, nil
 }
 
 type compilerContext struct {
@@ -78,7 +78,6 @@ func (co *Compiler) Compile(qc *qcode.QCode, w *bytes.Buffer) (uint32, error) {
 	c.w.WriteString(`) FROM (`)
 
 	var ignored uint32
-	var err error
 
 	for {
 		if st.Len() == 0 {
@@ -90,12 +89,17 @@ func (co *Compiler) Compile(qc *qcode.QCode, w *bytes.Buffer) (uint32, error) {
 		if id < closeBlock {
 			sel := &c.s[id]
 
+			ti, err := c.schema.GetTable(sel.Table)
+			if err != nil {
+				return 0, err
+			}
+
 			if sel.ID != 0 {
 				if err = c.renderJoin(sel); err != nil {
 					return 0, err
 				}
 			}
-			skipped, err := c.renderSelect(sel)
+			skipped, err := c.renderSelect(sel, ti)
 			if err != nil {
 				return 0, err
 			}
@@ -113,7 +117,16 @@ func (co *Compiler) Compile(qc *qcode.QCode, w *bytes.Buffer) (uint32, error) {
 
 		} else {
 			sel := &c.s[(id - closeBlock)]
-			err = c.renderSelectClose(sel)
+
+			ti, err := c.schema.GetTable(sel.Table)
+			if err != nil {
+				return 0, err
+			}
+
+			err = c.renderSelectClose(sel, ti)
+			if err != nil {
+				return 0, err
+			}
 
 			if sel.ID != 0 {
 				if err = c.renderJoinClose(sel); err != nil {
@@ -130,16 +143,7 @@ func (co *Compiler) Compile(qc *qcode.QCode, w *bytes.Buffer) (uint32, error) {
 	return ignored, nil
 }
 
-func (c *compilerContext) getTable(sel *qcode.Select) (
-	*DBTableInfo, error) {
-	if tn, ok := c.tmap[sel.Table]; ok {
-		return c.schema.GetTable(tn)
-	}
-
-	return c.schema.GetTable(sel.Table)
-}
-
-func (c *compilerContext) processChildren(sel *qcode.Select) (uint32, []*qcode.Column) {
+func (c *compilerContext) processChildren(sel *qcode.Select, ti *DBTableInfo) (uint32, []*qcode.Column) {
 	var skipped uint32
 
 	cols := make([]*qcode.Column, 0, len(sel.Cols))
@@ -152,8 +156,8 @@ func (c *compilerContext) processChildren(sel *qcode.Select) (uint32, []*qcode.C
 	for _, id := range sel.Children {
 		child := &c.s[id]
 
-		rel, ok := c.schema.RelMap[child.RelID]
-		if !ok {
+		rel, err := c.schema.GetRel(child.Table, ti.Name)
+		if err != nil {
 			skipped |= (1 << uint(id))
 			continue
 		}
@@ -183,12 +187,12 @@ func (c *compilerContext) processChildren(sel *qcode.Select) (uint32, []*qcode.C
 	return skipped, cols
 }
 
-func (c *compilerContext) renderSelect(sel *qcode.Select) (uint32, error) {
-	skipped, childCols := c.processChildren(sel)
+func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo) (uint32, error) {
+	skipped, childCols := c.processChildren(sel, ti)
 	hasOrder := len(sel.OrderBy) != 0
 
 	// SELECT
-	if sel.AsList {
+	if ti.Singular == false {
 		//fmt.Fprintf(w, `SELECT coalesce(json_agg("%s"`, c.sel.Table)
 		c.w.WriteString(`SELECT coalesce(json_agg("`)
 		c.w.WriteString(sel.Table)
@@ -246,7 +250,7 @@ func (c *compilerContext) renderSelect(sel *qcode.Select) (uint32, error) {
 	// END-SELECT
 
 	// FROM (SELECT .... )
-	err = c.renderBaseSelect(sel, childCols, skipped)
+	err = c.renderBaseSelect(sel, ti, childCols, skipped)
 	if err != nil {
 		return skipped, err
 	}
@@ -255,7 +259,7 @@ func (c *compilerContext) renderSelect(sel *qcode.Select) (uint32, error) {
 	return skipped, nil
 }
 
-func (c *compilerContext) renderSelectClose(sel *qcode.Select) error {
+func (c *compilerContext) renderSelectClose(sel *qcode.Select, ti *DBTableInfo) error {
 	hasOrder := len(sel.OrderBy) != 0
 
 	if hasOrder {
@@ -270,6 +274,10 @@ func (c *compilerContext) renderSelectClose(sel *qcode.Select) error {
 		c.w.WriteString(` LIMIT ('`)
 		c.w.WriteString(sel.Paging.Limit)
 		c.w.WriteString(`') :: integer`)
+
+	} else if ti.Singular {
+		c.w.WriteString(` LIMIT ('1') :: integer`)
+
 	} else {
 		c.w.WriteString(` LIMIT ('20') :: integer`)
 	}
@@ -281,7 +289,7 @@ func (c *compilerContext) renderSelectClose(sel *qcode.Select) error {
 		c.w.WriteString(`') :: integer`)
 	}
 
-	if sel.AsList {
+	if ti.Singular == false {
 		//fmt.Fprintf(w, `) AS "%s_%d"`, c.sel.Table, c.sel.ID)
 		c.w.WriteString(`)`)
 		aliasWithID(c.w, sel.Table, sel.ID)
@@ -304,16 +312,21 @@ func (c *compilerContext) renderJoinClose(sel *qcode.Select) error {
 }
 
 func (c *compilerContext) renderJoinTable(sel *qcode.Select) {
-	rel, ok := c.schema.RelMap[sel.RelID]
-	if !ok {
-		panic(errors.New("no relationship found"))
+	parent := &c.s[sel.ParentID]
+
+	rel, err := c.schema.GetRel(sel.Table, parent.Table)
+	if err != nil {
+		panic(err)
 	}
 
 	if rel.Type != RelOneToManyThrough {
 		return
 	}
 
-	parent := &c.s[sel.ParentID]
+	pt, err := c.schema.GetTable(parent.Table)
+	if err != nil {
+		return
+	}
 
 	//fmt.Fprintf(w, ` LEFT OUTER JOIN "%s" ON (("%s"."%s") = ("%s_%d"."%s"))`,
 	//rel.Through, rel.Through, rel.ColT, c.parent.Table, c.parent.ID, rel.Col1)
@@ -322,7 +335,7 @@ func (c *compilerContext) renderJoinTable(sel *qcode.Select) {
 	c.w.WriteString(`" ON ((`)
 	colWithTable(c.w, rel.Through, rel.ColT)
 	c.w.WriteString(`) = (`)
-	colWithTableID(c.w, parent.Table, parent.ID, rel.Col1)
+	colWithTableID(c.w, pt.Name, parent.ID, rel.Col1)
 	c.w.WriteString(`))`)
 }
 
@@ -343,8 +356,8 @@ func (c *compilerContext) renderRemoteRelColumns(sel *qcode.Select) {
 	for _, id := range sel.Children {
 		child := &c.s[id]
 
-		rel, ok := c.schema.RelMap[child.RelID]
-		if !ok || rel.Type != RelRemote {
+		rel, err := c.schema.GetRel(child.Table, sel.Table)
+		if err != nil || rel.Type != RelRemote {
 			continue
 		}
 		if i != 0 || len(sel.Cols) != 0 {
@@ -380,14 +393,9 @@ func (c *compilerContext) renderJoinedColumns(sel *qcode.Select, skipped uint32)
 	return nil
 }
 
-func (c *compilerContext) renderBaseSelect(sel *qcode.Select,
+func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo,
 	childCols []*qcode.Column, skipped uint32) error {
 	var groupBy []int
-
-	ti, err := c.getTable(sel)
-	if err != nil {
-		return err
-	}
 
 	isRoot := sel.ID == 0
 	isFil := sel.Where != nil
@@ -473,19 +481,30 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select,
 	}
 
 	c.w.WriteString(` FROM `)
-	if tn, ok := c.tmap[sel.Table]; ok {
+
+	if c.schema.IsAlias(sel.Table) || ti.Singular {
 		//fmt.Fprintf(w, ` FROM "%s" AS "%s"`, tn, c.sel.Table)
-		colWithAlias(c.w, tn, sel.Table)
+		tableWithAlias(c.w, ti.Name, sel.Table)
 	} else {
 		//fmt.Fprintf(w, ` FROM "%s"`, c.sel.Table)
 		c.w.WriteString(`"`)
-		c.w.WriteString(sel.Table)
+		c.w.WriteString(ti.Name)
 		c.w.WriteString(`"`)
 	}
 
+	// if tn, ok := c.tmap[sel.Table]; ok {
+	// 	//fmt.Fprintf(w, ` FROM "%s" AS "%s"`, tn, c.sel.Table)
+	// 	tableWithAlias(c.w, ti.Name, sel.Table)
+	// } else {
+	// 	//fmt.Fprintf(w, ` FROM "%s"`, c.sel.Table)
+	// 	c.w.WriteString(`"`)
+	// 	c.w.WriteString(sel.Table)
+	// 	c.w.WriteString(`"`)
+	// }
+
 	if isRoot && isFil {
 		c.w.WriteString(` WHERE (`)
-		if err := c.renderWhere(sel); err != nil {
+		if err := c.renderWhere(sel, ti); err != nil {
 			return err
 		}
 		c.w.WriteString(`)`)
@@ -499,7 +518,7 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select,
 
 		if isFil {
 			c.w.WriteString(` AND `)
-			if err := c.renderWhere(sel); err != nil {
+			if err := c.renderWhere(sel, ti); err != nil {
 				return err
 			}
 		}
@@ -525,6 +544,10 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select,
 		c.w.WriteString(` LIMIT ('`)
 		c.w.WriteString(sel.Paging.Limit)
 		c.w.WriteString(`') :: integer`)
+
+	} else if ti.Singular {
+		c.w.WriteString(` LIMIT ('1') :: integer`)
+
 	} else {
 		c.w.WriteString(` LIMIT ('20') :: integer`)
 	}
@@ -562,12 +585,12 @@ func (c *compilerContext) renderOrderByColumns(sel *qcode.Select) {
 }
 
 func (c *compilerContext) renderRelationship(sel *qcode.Select) {
-	rel, ok := c.schema.RelMap[sel.RelID]
-	if !ok {
-		panic(errors.New("no relationship found"))
-	}
-
 	parent := c.s[sel.ParentID]
+
+	rel, err := c.schema.GetRel(sel.Table, parent.Table)
+	if err != nil {
+		panic(err)
+	}
 
 	switch rel.Type {
 	case RelBelongTo:
@@ -599,16 +622,11 @@ func (c *compilerContext) renderRelationship(sel *qcode.Select) {
 	}
 }
 
-func (c *compilerContext) renderWhere(sel *qcode.Select) error {
+func (c *compilerContext) renderWhere(sel *qcode.Select, ti *DBTableInfo) error {
 	st := util.NewStack()
 
 	if sel.Where != nil {
 		st.Push(sel.Where)
-	}
-
-	ti, err := c.getTable(sel)
-	if err != nil {
-		return err
 	}
 
 	for {
@@ -909,6 +927,14 @@ func colWithAlias(w *bytes.Buffer, col, alias string) {
 	w.WriteString(`"`)
 }
 
+func tableWithAlias(w *bytes.Buffer, table, alias string) {
+	w.WriteString(`"`)
+	w.WriteString(table)
+	w.WriteString(`" AS "`)
+	w.WriteString(alias)
+	w.WriteString(`"`)
+}
+
 func colWithTable(w *bytes.Buffer, table, col string) {
 	w.WriteString(`"`)
 	w.WriteString(table)
@@ -986,4 +1012,12 @@ func int2string(w *bytes.Buffer, val int32) {
 		val3 /= 10
 		w.WriteByte(charset[d])
 	}
+}
+
+func relID(h *xxhash.Digest, child, parent string) uint64 {
+	h.WriteString(child)
+	h.WriteString(parent)
+	v := h.Sum64()
+	h.Reset()
+	return v
 }

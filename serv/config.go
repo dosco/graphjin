@@ -1,6 +1,8 @@
 package serv
 
 import (
+	"strings"
+
 	"github.com/gobuffalo/flect"
 )
 
@@ -84,8 +86,8 @@ type configRemote struct {
 	} `mapstructure:"set_headers"`
 }
 
-func (c *config) getAliasMap() map[string]string {
-	m := make(map[string]string, len(c.DB.Tables))
+func (c *config) getAliasMap() map[string][]string {
+	m := make(map[string][]string, len(c.DB.Tables))
 
 	for i := range c.DB.Tables {
 		t := c.DB.Tables[i]
@@ -93,7 +95,9 @@ func (c *config) getAliasMap() map[string]string {
 		if len(t.Table) == 0 {
 			continue
 		}
-		m[flect.Pluralize(t.Name)] = t.Table
+
+		k := strings.ToLower(t.Table)
+		m[k] = append(m[k], strings.ToLower(t.Name))
 	}
 	return m
 }
@@ -107,12 +111,16 @@ func (c *config) getFilterMap() map[string][]string {
 		if len(t.Filter) == 0 {
 			continue
 		}
-		name := flect.Pluralize(t.Name)
+		singular := flect.Singularize(t.Name)
+		plural := flect.Pluralize(t.Name)
 
 		if t.Filter[0] == "none" {
-			m[name] = []string{}
+			m[singular] = []string{}
+			m[plural] = []string{}
+
 		} else {
-			m[name] = t.Filter
+			m[singular] = t.Filter
+			m[plural] = t.Filter
 		}
 	}
 
