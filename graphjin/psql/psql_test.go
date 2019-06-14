@@ -100,12 +100,17 @@ func TestMain(m *testing.M) {
 	}
 
 	schema := &DBSchema{
-		Tables: make(map[string]*DBTableInfo),
-		RelMap: make(map[uint64]*DBRel),
+		t:  make(map[string]*DBTableInfo),
+		rm: make(map[string]map[string]*DBRel),
+		al: make(map[string]struct{}),
+	}
+
+	aliases := map[string][]string{
+		"users": []string{"mes"},
 	}
 
 	for i, t := range tables {
-		schema.updateSchema(t, columns[i])
+		schema.updateSchema(t, columns[i], aliases)
 	}
 
 	vars := NewVariables(map[string]string{
@@ -115,9 +120,6 @@ func TestMain(m *testing.M) {
 	pcompile = NewCompiler(Config{
 		Schema: schema,
 		Vars:   vars,
-		TableMap: map[string]string{
-			"mes": "users",
-		},
 	})
 
 	os.Exit(m.Run())
@@ -260,7 +262,7 @@ func fetchByID(t *testing.T) {
 		}
 	}`
 
-	sql := `SELECT json_object_agg('product', products) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name") AS "sel_0")) AS "products" FROM (SELECT "products"."id", "products"."name" FROM "products" WHERE ((("products"."price") > (0)) AND (("products"."price") < (8)) AND (("id") = (15))) LIMIT ('1') :: integer) AS "products_0" LIMIT ('1') :: integer) AS "done_1337";`
+	sql := `SELECT json_object_agg('product', product) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "product_0"."id" AS "id", "product_0"."name" AS "name") AS "sel_0")) AS "product" FROM (SELECT "product"."id", "product"."name" FROM "products" AS "product" WHERE ((("product"."price") > (0)) AND (("product"."price") < (8)) AND (("id") = (15))) LIMIT ('1') :: integer) AS "product_0" LIMIT ('1') :: integer) AS "done_1337";`
 
 	resSQL, err := compileGQLToPSQL(gql)
 	if err != nil {
@@ -432,7 +434,7 @@ func queryWithVariables(t *testing.T) {
 		}
 	}`
 
-	sql := `SELECT json_object_agg('product', products) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name") AS "sel_0")) AS "products" FROM (SELECT "products"."id", "products"."name" FROM "products" WHERE ((("products"."price") > (0)) AND (("products"."price") < (8)) AND (("products"."price") = ('{{PRODUCT_PRICE}}')) AND (("id") = ('{{PRODUCT_ID}}'))) LIMIT ('1') :: integer) AS "products_0" LIMIT ('1') :: integer) AS "done_1337";`
+	sql := `SELECT json_object_agg('product', product) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "product_0"."id" AS "id", "product_0"."name" AS "name") AS "sel_0")) AS "product" FROM (SELECT "product"."id", "product"."name" FROM "products" AS "product" WHERE ((("product"."price") > (0)) AND (("product"."price") < (8)) AND (("product"."price") = ('{{PRODUCT_PRICE}}')) AND (("id") = ('{{PRODUCT_ID}}'))) LIMIT ('1') :: integer) AS "product_0" LIMIT ('1') :: integer) AS "done_1337";`
 
 	resSQL, err := compileGQLToPSQL(gql)
 	if err != nil {
@@ -451,7 +453,7 @@ func syntheticTables(t *testing.T) {
 		}
 	}`
 
-	sql := `SELECT json_object_agg('me', mes) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "mes_0"."email" AS "email") AS "sel_0")) AS "mes" FROM (SELECT "mes"."email" FROM "users" AS "mes" WHERE ((("mes"."id") = ('{{user_id}}'))) LIMIT ('1') :: integer) AS "mes_0" LIMIT ('1') :: integer) AS "done_1337";`
+	sql := `SELECT json_object_agg('me', me) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "me_0"."email" AS "email") AS "sel_0")) AS "me" FROM (SELECT "me"."email" FROM "users" AS "me" WHERE ((("me"."id") = ('{{user_id}}'))) LIMIT ('1') :: integer) AS "me_0" LIMIT ('1') :: integer) AS "done_1337";`
 
 	resSQL, err := compileGQLToPSQL(gql)
 	if err != nil {

@@ -13,7 +13,7 @@ services:
     ports:
       - "8080:8080"
     
-  web:
+  rails_app:
     image: dosco/super-graph-demo:latest
     environment:
       RAILS_ENV: "development"

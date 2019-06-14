@@ -303,6 +303,8 @@ func lexName(l *lexer) stateFn {
 			l.backup()
 			v := l.current()
 
+			lowercase(l.input, s, e)
+
 			if len(v) == 0 {
 				switch {
 				case strings.EqualFold(v, "query"):

@@ -143,7 +143,7 @@ Postgres also supports full text search using a TSV index. Super Graph makes it 
 
 ```graphql
 query {
-  products(search "amazing") {
+  products(search: "ale") {
     name
   }
 }
@@ -371,6 +371,7 @@ tables:
         id: stripe_id
         url: http://rails_app:3000/stripe/$id
         path: data
+        # debug: true
         # pass_headers: 
         #   - cookie
         #   - host
@@ -417,8 +418,7 @@ And voila here is the result. You get all of this advanced and honestly complex 
       ...
 ```
 
-Even tracing data is availble in the Super Graph web UI if tracing is enabled in the
-config. By default it is for development.
+Even tracing data is availble in the Super Graph web UI if tracing is enabled in the config. By default it is enabled in development. Additionally there you can set `debug: true` to enable http request / response dumping to help with debugging.
 
 ![Query Tracing](/tracing.png "Super Graph Web UI Query Tracing")
 

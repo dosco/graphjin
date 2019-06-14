@@ -150,7 +150,7 @@ func initDB(c *config) (*pg.DB, error) {
 }
 
 func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
-	schema, err := psql.NewDBSchema(db)
+	schema, err := psql.NewDBSchema(db, c.getAliasMap())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -167,9 +167,8 @@ func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
 	}
 
 	pc := psql.NewCompiler(psql.Config{
-		Schema:   schema,
-		Vars:     c.DB.Variables,
-		TableMap: c.getAliasMap(),
+		Schema: schema,
+		Vars:   c.DB.Variables,
 	})
 
 	return qc, pc, nil
@@ -182,20 +181,22 @@ func Init() {
 
 	conf, err = initConf()
 	if err != nil {
-		logger.Fatal().Err(err)
+		logger.Fatal().Err(err).Msg("failed to read config")
 	}
 
 	db, err = initDB(conf)
 	if err != nil {
-		logger.Fatal().Err(err)
+		logger.Fatal().Err(err).Msg("failed to connect to database")
 	}
 
 	qcompile, pcompile, err = initCompilers(conf)
 	if err != nil {
-		logger.Fatal().Err(err)
+		logger.Fatal().Err(err).Msg("failed to connect to database")
 	}
 
-	initResolvers()
+	if err := initResolvers(); err != nil {
+		logger.Fatal().Err(err).Msg("failed to initialized resolvers")
+	}
 
 	startHTTP()
 }
@@ -216,21 +217,21 @@ func startHTTP() {
 		<-sigint
 
 		if err := srv.Shutdown(context.Background()); err != nil {
-			logger.Printf("http: %v", err)
+			logger.Error().Err(err).Msg("shutdown signal received")
 		}
 		close(idleConnsClosed)
 	}()
 
 	srv.RegisterOnShutdown(func() {
 		if err := db.Close(); err != nil {
-			logger.Error().Err(err)
+			logger.Error().Err(err).Msg("db closed")
 		}
 	})
 
 	fmt.Printf("%s listening on %s (%s)\n", serverName, conf.HostPort, conf.Env)
 
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-		fmt.Println(err)
+		logger.Error().Err(err).Msg("server closed")
 	}
 
 	<-idleConnsClosed
