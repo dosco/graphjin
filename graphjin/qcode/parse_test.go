@@ -47,12 +47,13 @@ func compareOp(op1, op2 Operation) error {
 
 func TestCompile(t *testing.T) {
 	qcompile, _ := NewCompiler(Config{})
-	_, err := qcompile.CompileQuery(`query {
-		product(id: 15) {
+
+	_, err := qcompile.CompileQuery([]byte(`
+	product(id: 15) {
 			id
 			name
-		}
-	}`)
+		}`))
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +61,8 @@ func TestCompile(t *testing.T) {
 
 func TestInvalidCompile(t *testing.T) {
 	qcompile, _ := NewCompiler(Config{})
-	_, err := qcompile.CompileQuery(`#`)
+	_, err := qcompile.CompileQuery([]byte(`#`))
+
 	if err == nil {
 		t.Fatal(errors.New("expecting an error"))
 	}
@@ -68,13 +70,14 @@ func TestInvalidCompile(t *testing.T) {
 
 func TestEmptyCompile(t *testing.T) {
 	qcompile, _ := NewCompiler(Config{})
-	_, err := qcompile.CompileQuery(``)
+	_, err := qcompile.CompileQuery([]byte(``))
+
 	if err == nil {
 		t.Fatal(errors.New("expecting an error"))
 	}
 }
 
-var gql = `query {
+var gql = []byte(`
 	products(
 		# returns only 30 items
 		limit: 30,
@@ -93,8 +96,7 @@ var gql = `query {
 		id
 		name
 		price
-	}
-}`
+	}`)
 
 func BenchmarkQCompile(b *testing.B) {
 	qcompile, _ := NewCompiler(Config{})

@@ -50,6 +50,7 @@ type Exp struct {
 	ListType  ValType
 	ListVal   []string
 	Children  []*Exp
+	childrenA [5]*Exp
 }
 
 type OrderBy struct {
@@ -144,7 +145,7 @@ func NewCompiler(c Config) (*Compiler, error) {
 	bl := make(map[string]struct{}, len(c.Blacklist))
 
 	for i := range c.Blacklist {
-		bl[strings.ToLower(c.Blacklist[i])] = struct{}{}
+		bl[c.Blacklist[i]] = struct{}{}
 	}
 
 	fl, err := compileFilter(c.DefaultFilter)
@@ -159,9 +160,8 @@ func NewCompiler(c Config) (*Compiler, error) {
 		if err != nil {
 			return nil, err
 		}
-		k1 := strings.ToLower(k)
-		singular := flect.Singularize(k1)
-		plural := flect.Pluralize(k1)
+		singular := flect.Singularize(k)
+		plural := flect.Pluralize(k)
 
 		fm[singular] = fil
 		fm[plural] = fil
@@ -170,11 +170,11 @@ func NewCompiler(c Config) (*Compiler, error) {
 	return &Compiler{fl, fm, bl, c.KeepArgs}, nil
 }
 
-func (com *Compiler) CompileQuery(query string) (*QCode, error) {
+func (com *Compiler) Compile(query []byte) (*QCode, error) {
 	var qc QCode
 	var err error
 
-	op, err := ParseQuery(query)
+	op, err := Parse(query)
 	if err != nil {
 		return nil, err
 	}
@@ -195,6 +195,25 @@ func (com *Compiler) CompileQuery(query string) (*QCode, error) {
 	opPool.Put(op)
 
 	return &qc, nil
+}
+
+func (com *Compiler) CompileQuery(query []byte) (*QCode, error) {
+	var err error
+
+	op, err := ParseQuery(query)
+	if err != nil {
+		return nil, err
+	}
+
+	qc := &QCode{}
+	qc.Query, err = com.compileQuery(op)
+	opPool.Put(op)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return qc, nil
 }
 
 func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
@@ -226,15 +245,14 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 		}
 		field := &op.Fields[fid]
 
-		tn := strings.ToLower(field.Name)
-		if _, ok := com.bl[tn]; ok {
+		if _, ok := com.bl[field.Name]; ok {
 			continue
 		}
 
 		selects = append(selects, Select{
 			ID:       id,
 			ParentID: parentID,
-			Table:    tn,
+			Table:    field.Name,
 			Children: make([]int32, 0, 5),
 		})
 		s := &selects[(len(selects) - 1)]
@@ -259,9 +277,8 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 
 		for _, cid := range field.Children {
 			f := op.Fields[cid]
-			fn := strings.ToLower(f.Name)
 
-			if _, ok := com.bl[fn]; ok {
+			if _, ok := com.bl[f.Name]; ok {
 				continue
 			}
 
@@ -271,7 +288,7 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 				continue
 			}
 
-			col := Column{Name: fn}
+			col := Column{Name: f.Name}
 
 			if len(f.Alias) != 0 {
 				col.FieldName = f.Alias
@@ -298,8 +315,11 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 		if fil != nil && fil.Op != OpNop {
 
 			if root.Where != nil {
-				ex := &Exp{Op: OpAnd, Children: []*Exp{fil, root.Where}}
-				root.Where = ex
+				ow := root.Where
+				root.Where = &Exp{Op: OpAnd}
+				root.Where.Children = root.Where.childrenA[:2]
+				root.Where.Children[0] = fil
+				root.Where.Children[1] = ow
 			} else {
 				root.Where = fil
 			}
@@ -322,9 +342,7 @@ func (com *Compiler) compileArgs(sel *Select, args []Arg) error {
 	for i := range args {
 		arg := &args[i]
 
-		an := strings.ToLower(arg.Name)
-
-		switch an {
+		switch arg.Name {
 		case "id":
 			if sel.ID == 0 {
 				err = com.compileArgID(sel, arg)
@@ -348,7 +366,7 @@ func (com *Compiler) compileArgs(sel *Select, args []Arg) error {
 		}
 
 		if sel.Args != nil {
-			sel.Args[an] = arg.Val
+			sel.Args[arg.Name] = arg.Val
 		} else {
 			nodePool.Put(arg.Val)
 		}
@@ -392,7 +410,7 @@ func (com *Compiler) compileArgNode(node *Node) (*Exp, error) {
 		}
 
 		if len(eT.node.Name) != 0 {
-			if _, ok := com.bl[strings.ToLower(eT.node.Name)]; ok {
+			if _, ok := com.bl[eT.node.Name]; ok {
 				continue
 			}
 		}
@@ -468,7 +486,11 @@ func (com *Compiler) compileArgSearch(sel *Select, arg *Arg) error {
 	}
 
 	if sel.Where != nil {
-		sel.Where = &Exp{Op: OpAnd, Children: []*Exp{ex, sel.Where}}
+		ow := sel.Where
+		sel.Where = &Exp{Op: OpAnd}
+		sel.Where.Children = sel.Where.childrenA[:2]
+		sel.Where.Children[0] = ex
+		sel.Where.Children[1] = ow
 	} else {
 		sel.Where = ex
 	}
@@ -484,7 +506,11 @@ func (com *Compiler) compileArgWhere(sel *Select, arg *Arg) error {
 	}
 
 	if sel.Where != nil {
-		sel.Where = &Exp{Op: OpAnd, Children: []*Exp{ex, sel.Where}}
+		ow := sel.Where
+		sel.Where = &Exp{Op: OpAnd}
+		sel.Where.Children = sel.Where.childrenA[:2]
+		sel.Where.Children[0] = ex
+		sel.Where.Children[1] = ow
 	} else {
 		sel.Where = ex
 	}
@@ -515,7 +541,7 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) error {
 			return fmt.Errorf("17: unexpected value %v (%t)", intf, intf)
 		}
 
-		if _, ok := com.bl[strings.ToLower(node.Name)]; ok {
+		if _, ok := com.bl[node.Name]; ok {
 			if !com.ka {
 				nodePool.Put(node)
 			}
@@ -534,8 +560,7 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) error {
 
 		ob := &OrderBy{}
 
-		val := strings.ToLower(node.Val)
-		switch val {
+		switch node.Val {
 		case "asc":
 			ob.Order = OrderAsc
 		case "desc":
@@ -565,7 +590,7 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) error {
 func (com *Compiler) compileArgDistinctOn(sel *Select, arg *Arg) error {
 	node := arg.Val
 
-	if _, ok := com.bl[strings.ToLower(node.Name)]; ok {
+	if _, ok := com.bl[node.Name]; ok {
 		return nil
 	}
 
@@ -619,7 +644,6 @@ func compileSub() (*Query, error) {
 }
 
 func newExp(st *util.Stack, eT *expT) (*Exp, error) {
-	ex := &Exp{}
 	node := eT.node
 
 	if len(node.Name) == 0 {
@@ -627,10 +651,12 @@ func newExp(st *util.Stack, eT *expT) (*Exp, error) {
 		return nil, nil
 	}
 
-	name := strings.ToLower(node.Name)
+	name := node.Name
 	if name[0] == '_' {
 		name = name[1:]
 	}
+
+	ex := &Exp{}
 
 	switch name {
 	case "and":
@@ -756,7 +782,7 @@ func setWhereColName(ex *Exp, node *Node) {
 			continue
 		}
 		if len(n.Name) != 0 {
-			k := strings.ToLower(n.Name)
+			k := n.Name
 			if k == "and" || k == "or" || k == "not" ||
 				k == "_and" || k == "_or" || k == "_not" {
 				continue
@@ -778,8 +804,7 @@ func setOrderByColName(ob *OrderBy, node *Node) {
 
 	for n := node; n != nil; n = n.Parent {
 		if len(n.Name) != 0 {
-			k := strings.ToLower(n.Name)
-			list = append([]string{k}, list...)
+			list = append([]string{n.Name}, list...)
 		}
 	}
 	if len(list) != 0 {

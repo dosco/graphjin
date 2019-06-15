@@ -36,7 +36,7 @@ type coreContext struct {
 func (c *coreContext) handleReq(w io.Writer, req *http.Request) error {
 	var err error
 
-	qc, err := qcompile.CompileQuery(c.req.Query)
+	qc, err := qcompile.CompileQuery([]byte(c.req.Query))
 	if err != nil {
 		return err
 	}
