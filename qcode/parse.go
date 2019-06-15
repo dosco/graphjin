@@ -523,6 +523,6 @@ func (t parserType) String() string {
 	return fmt.Sprintf("<%s>", v)
 }
 
-func PutNode(n *Node) {
+func FreeNode(n *Node) {
 	nodePool.Put(n)
 }
