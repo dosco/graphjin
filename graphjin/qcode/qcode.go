@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/dosco/super-graph/util"
 	"github.com/gobuffalo/flect"
@@ -51,6 +52,13 @@ type Exp struct {
 	ListVal   []string
 	Children  []*Exp
 	childrenA [5]*Exp
+	doFree    bool
+}
+
+var zeroExp = Exp{doFree: true}
+
+func (ex *Exp) Reset() {
+	*ex = zeroExp
 }
 
 type OrderBy struct {
@@ -139,6 +147,10 @@ type Compiler struct {
 	fm map[string]*Exp
 	bl map[string]struct{}
 	ka bool
+}
+
+var expPool = sync.Pool{
+	New: func() interface{} { return new(Exp) },
 }
 
 func NewCompiler(c Config) (*Compiler, error) {
@@ -385,10 +397,10 @@ func (com *Compiler) compileArgObj(arg *Arg) (*Exp, error) {
 		return nil, fmt.Errorf("expecting an object")
 	}
 
-	return com.compileArgNode(arg.Val)
+	return com.compileArgNode(arg.Val, true)
 }
 
-func (com *Compiler) compileArgNode(node *Node) (*Exp, error) {
+func (com *Compiler) compileArgNode(node *Node, usePool bool) (*Exp, error) {
 	st := util.NewStack()
 	var root *Exp
 
@@ -415,8 +427,7 @@ func (com *Compiler) compileArgNode(node *Node) (*Exp, error) {
 			}
 		}
 
-		ex, err := newExp(st, eT)
-
+		ex, err := newExp(st, eT, usePool)
 		if err != nil {
 			return nil, err
 		}
@@ -459,7 +470,11 @@ func (com *Compiler) compileArgID(sel *Select, arg *Arg) error {
 		return nil
 	}
 
-	ex := &Exp{Op: OpEqID, Val: arg.Val.Val}
+	ex := expPool.Get().(*Exp)
+	ex.Reset()
+
+	ex.Op = OpEqID
+	ex.Val = arg.Val.Val
 
 	switch arg.Val.Type {
 	case nodeStr:
@@ -479,11 +494,12 @@ func (com *Compiler) compileArgID(sel *Select, arg *Arg) error {
 }
 
 func (com *Compiler) compileArgSearch(sel *Select, arg *Arg) error {
-	ex := &Exp{
-		Op:   OpTsQuery,
-		Type: ValStr,
-		Val:  arg.Val.Val,
-	}
+	ex := expPool.Get().(*Exp)
+	ex.Reset()
+
+	ex.Op = OpTsQuery
+	ex.Type = ValStr
+	ex.Val = arg.Val.Val
 
 	if sel.Where != nil {
 		ow := sel.Where
@@ -643,7 +659,7 @@ func compileSub() (*Query, error) {
 	return nil, nil
 }
 
-func newExp(st *util.Stack, eT *expT) (*Exp, error) {
+func newExp(st *util.Stack, eT *expT, usePool bool) (*Exp, error) {
 	node := eT.node
 
 	if len(node.Name) == 0 {
@@ -656,7 +672,15 @@ func newExp(st *util.Stack, eT *expT) (*Exp, error) {
 		name = name[1:]
 	}
 
-	ex := &Exp{}
+	var ex *Exp
+
+	if usePool {
+		ex = expPool.Get().(*Exp)
+		ex.Reset()
+	} else {
+		ex = &Exp{}
+	}
+	ex.Children = ex.childrenA[:0]
 
 	switch name {
 	case "and":
@@ -831,7 +855,7 @@ func compileFilter(filter []string) (*Exp, error) {
 		if err != nil {
 			return nil, err
 		}
-		f, err := com.compileArgNode(node)
+		f, err := com.compileArgNode(node, false)
 		if err != nil {
 			return nil, err
 		}
@@ -925,4 +949,10 @@ func (t ExpOp) String() string {
 		v = "op-ts-query"
 	}
 	return fmt.Sprintf("<%s>", v)
+}
+
+func FreeExp(ex *Exp) {
+	if ex.doFree {
+		expPool.Put(ex)
+	}
 }

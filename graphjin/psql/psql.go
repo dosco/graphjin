@@ -657,10 +657,12 @@ func (c *compilerContext) renderWhere(sel *qcode.Select, ti *DBTableInfo) error 
 						st.Push(val.Op)
 					}
 				}
+				qcode.FreeExp(val)
 				continue
 			case qcode.OpNot:
 				st.Push(val.Children[0])
 				st.Push(qcode.OpNot)
+				qcode.FreeExp(val)
 				continue
 			}
 
@@ -669,6 +671,7 @@ func (c *compilerContext) renderWhere(sel *qcode.Select, ti *DBTableInfo) error 
 				c.w.WriteString(`(("`)
 				c.w.WriteString(val.Col)
 				c.w.WriteString(`") `)
+
 			} else if len(val.Col) != 0 {
 				//fmt.Fprintf(w, `(("%s"."%s") `, c.sel.Table, val.Col)
 				c.w.WriteString(`((`)
@@ -757,9 +760,12 @@ func (c *compilerContext) renderWhere(sel *qcode.Select, ti *DBTableInfo) error 
 				c.w.WriteString(`)`)
 			}
 
+			qcode.FreeExp(val)
+
 		default:
 			return fmt.Errorf("12: unexpected value %v (%t)", intf, intf)
 		}
+
 	}
 
 	return nil
