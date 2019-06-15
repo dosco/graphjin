@@ -27,6 +27,7 @@ require (
 	github.com/spf13/viper v1.3.1
 	github.com/valyala/fasttemplate v1.0.1
 	golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2
+	golang.org/x/net v0.0.0-20190311183353-d8887717615a
 	golang.org/x/sys v0.0.0-20190222072716-a9d3bda3a223
 	mellium.im/sasl v0.2.1 // indirect
 )

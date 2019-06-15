@@ -126,7 +126,7 @@ func TestMain(m *testing.M) {
 }
 
 func compileGQLToPSQL(gql string) ([]byte, error) {
-	qc, err := qcompile.CompileQuery(gql)
+	qc, err := qcompile.Compile([]byte(gql))
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +141,7 @@ func compileGQLToPSQL(gql string) ([]byte, error) {
 
 func withComplexArgs(t *testing.T) {
 	gql := `query {
-		products(
+		proDUcts(
 			# returns only 30 items
 			limit: 30,
 	
@@ -157,7 +157,7 @@ func withComplexArgs(t *testing.T) {
 			# only items with an id >= 30 and < 30 are returned
 			where: { id: { and: { greater_or_equals: 20, lt: 28 } } }) {
 			id
-			name
+			NAME
 			price
 		}
 	}`
@@ -482,8 +482,8 @@ func TestCompileGQL(t *testing.T) {
 	t.Run("syntheticTables", syntheticTables)
 }
 
-var benchGQL = `query {
-	products(
+var benchGQL = []byte(`query {
+	proDUcts(
 		# returns only 30 items
 		limit: 30,
 
@@ -496,14 +496,14 @@ var benchGQL = `query {
 		# only items with an id >= 30 and < 30 are returned
 		where: { id: { and: { greater_or_equals: 20, lt: 28 } } }) {
 		id
-		name
+		NAME
 		price
 		user {
 			full_name
 			picture : avatar
 		}
 	}
-}`
+}`)
 
 func BenchmarkCompile(b *testing.B) {
 	w := &bytes.Buffer{}
@@ -514,7 +514,7 @@ func BenchmarkCompile(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		w.Reset()
 
-		qc, err := qcompile.CompileQuery(benchGQL)
+		qc, err := qcompile.Compile(benchGQL)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -535,7 +535,7 @@ func BenchmarkCompileParallel(b *testing.B) {
 		for pb.Next() {
 			w.Reset()
 
-			qc, err := qcompile.CompileQuery(benchGQL)
+			qc, err := qcompile.Compile(benchGQL)
 			if err != nil {
 				b.Fatal(err)
 			}

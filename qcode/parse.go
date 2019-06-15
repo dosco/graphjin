@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"unsafe"
 
 	"github.com/dosco/super-graph/util"
 )
@@ -53,9 +54,9 @@ type Field struct {
 	Name      string
 	Alias     string
 	Args      []Arg
-	argsA     [10]Arg
+	argsA     [5]Arg
 	Children  []int32
-	childrenA [10]int32
+	childrenA [5]int32
 }
 
 type Arg struct {
@@ -78,6 +79,7 @@ func (n *Node) Reset() {
 }
 
 type Parser struct {
+	input []byte // the string being scanned
 	pos   int
 	items []item
 	depth int
@@ -96,38 +98,32 @@ var lexPool = sync.Pool{
 	New: func() interface{} { return new(lexer) },
 }
 
-func Parse(gql string) (*Operation, error) {
-	if len(gql) == 0 {
-		return nil, errors.New("blank query")
-	}
-	l := lexPool.Get().(*lexer)
-	l.Reset()
-
-	if err := lex(l, gql); err != nil {
-		return nil, err
-	}
-	p := &Parser{
-		pos:   -1,
-		items: l.items,
-	}
-	op, err := p.parseOp()
-	lexPool.Put(l)
-
-	return op, err
+func Parse(gql []byte) (*Operation, error) {
+	return parseSelectionSet(nil, gql)
 }
 
-func ParseQuery(gql string) (*Operation, error) {
-	return parseByType(gql, opQuery)
+func ParseQuery(gql []byte) (*Operation, error) {
+	op := opPool.Get().(*Operation)
+	op.Reset()
+
+	op.Type = opQuery
+	op.Name = ""
+	op.Fields = op.fieldsA[:0]
+	op.Args = op.argsA[:0]
+
+	return parseSelectionSet(op, gql)
 }
 
 func ParseArgValue(argVal string) (*Node, error) {
 	l := lexPool.Get().(*lexer)
 	l.Reset()
 
-	if err := lex(l, argVal); err != nil {
+	if err := lex(l, []byte(argVal)); err != nil {
 		return nil, err
 	}
+
 	p := &Parser{
+		input: l.input,
 		pos:   -1,
 		items: l.items,
 	}
@@ -137,19 +133,41 @@ func ParseArgValue(argVal string) (*Node, error) {
 	return op, err
 }
 
-func parseByType(gql string, ty parserType) (*Operation, error) {
+func parseSelectionSet(op *Operation, gql []byte) (*Operation, error) {
+	var err error
+
+	if len(gql) == 0 {
+		return nil, errors.New("blank query")
+	}
+
 	l := lexPool.Get().(*lexer)
 	l.Reset()
 
-	if err := lex(l, gql); err != nil {
+	if err = lex(l, gql); err != nil {
 		return nil, err
 	}
+
 	p := &Parser{
+		input: l.input,
 		pos:   -1,
 		items: l.items,
 	}
-	op, err := p.parseOpByType(ty)
+
+	if op == nil {
+		op, err = p.parseOp()
+	} else {
+		if p.peek(itemObjOpen) {
+			p.ignore()
+		}
+
+		op.Fields, err = p.parseFields(op.Fields)
+	}
+
 	lexPool.Put(l)
+
+	if err != nil {
+		return nil, err
+	}
 
 	return op, err
 }
@@ -198,18 +216,34 @@ func (p *Parser) peek(types ...itemType) bool {
 	return false
 }
 
-func (p *Parser) parseOpByType(ty parserType) (*Operation, error) {
+func (p *Parser) parseOp() (*Operation, error) {
+	if p.peek(itemQuery, itemMutation, itemSub) == false {
+		err := fmt.Errorf(
+			"expecting a query, mutation or subscription (not '%s')",
+			p.val(p.next()))
+		return nil, err
+	}
+	item := p.next()
+
 	op := opPool.Get().(*Operation)
 	op.Reset()
 
-	op.Type = ty
+	switch item.typ {
+	case itemQuery:
+		op.Type = opQuery
+	case itemMutation:
+		op.Type = opMutate
+	case itemSub:
+		op.Type = opSub
+	}
+
 	op.Fields = op.fieldsA[:0]
 	op.Args = op.argsA[:0]
 
 	var err error
 
 	if p.peek(itemName) {
-		op.Name = p.next().val
+		op.Name = p.val(p.next())
 	}
 
 	if p.peek(itemArgsOpen) {
@@ -228,31 +262,7 @@ func (p *Parser) parseOpByType(ty parserType) (*Operation, error) {
 		}
 	}
 
-	if p.peek(itemObjClose) {
-		p.ignore()
-	}
-
 	return op, nil
-}
-
-func (p *Parser) parseOp() (*Operation, error) {
-	if p.peek(itemQuery, itemMutation, itemSub) == false {
-		err := fmt.Errorf("expecting a query, mutation or subscription (not '%s')", p.next().val)
-		return nil, err
-	}
-
-	item := p.next()
-
-	switch item.typ {
-	case itemQuery:
-		return p.parseOpByType(opQuery)
-	case itemMutation:
-		return p.parseOpByType(opMutate)
-	case itemSub:
-		return p.parseOpByType(opSub)
-	}
-
-	return nil, errors.New("unknown operation type")
 }
 
 func (p *Parser) parseFields(fields []Field) ([]Field, error) {
@@ -278,6 +288,7 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 		}
 
 		fields = append(fields, Field{ID: int32(len(fields))})
+
 		f := &fields[(len(fields) - 1)]
 		f.Args = f.argsA[:0]
 		f.Children = f.childrenA[:0]
@@ -309,14 +320,14 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 
 func (p *Parser) parseField(f *Field) error {
 	var err error
-	f.Name = p.next().val
+	f.Name = p.val(p.next())
 
 	if p.peek(itemColon) {
 		p.ignore()
 
 		if p.peek(itemName) {
 			f.Alias = f.Name
-			f.Name = p.next().val
+			f.Name = p.val(p.next())
 		} else {
 			return errors.New("expecting an aliased field name")
 		}
@@ -347,7 +358,7 @@ func (p *Parser) parseArgs(args []Arg) ([]Arg, error) {
 		if p.peek(itemName) == false {
 			return nil, errors.New("expecting an argument name")
 		}
-		args = append(args, Arg{Name: p.next().val})
+		args = append(args, Arg{Name: p.val(p.next())})
 		arg := &args[(len(args) - 1)]
 
 		if p.peek(itemColon) == false {
@@ -414,7 +425,7 @@ func (p *Parser) parseObj() (*Node, error) {
 		if p.peek(itemName) == false {
 			return nil, errors.New("expecting an argument name")
 		}
-		nodeName := p.next().val
+		nodeName := p.val(p.next())
 
 		if p.peek(itemColon) == false {
 			return nil, errors.New("missing ':' after Field argument name")
@@ -465,11 +476,19 @@ func (p *Parser) parseValue() (*Node, error) {
 	case itemVariable:
 		node.Type = nodeVar
 	default:
-		return nil, fmt.Errorf("expecting a number, string, object, list or variable as an argument value (not %s)", p.next().val)
+		return nil, fmt.Errorf("expecting a number, string, object, list or variable as an argument value (not %s)", p.val(p.next()))
 	}
-	node.Val = item.val
+	node.Val = p.val(item)
 
 	return node, nil
+}
+
+func (p *Parser) val(v item) string {
+	return b2s(p.input[v.pos:v.end])
+}
+
+func b2s(b []byte) string {
+	return *(*string)(unsafe.Pointer(&b))
 }
 
 func (t parserType) String() string {
