@@ -59,9 +59,18 @@ func TestCompile(t *testing.T) {
 	}
 }
 
-func TestInvalidCompile(t *testing.T) {
+func TestInvalidCompile1(t *testing.T) {
 	qcompile, _ := NewCompiler(Config{})
 	_, err := qcompile.CompileQuery([]byte(`#`))
+
+	if err == nil {
+		t.Fatal(errors.New("expecting an error"))
+	}
+}
+
+func TestInvalidCompile2(t *testing.T) {
+	qcompile, _ := NewCompiler(Config{})
+	_, err := qcompile.CompileQuery([]byte(`{u(where:{not:0})}`))
 
 	if err == nil {
 		t.Fatal(errors.New("expecting an error"))
