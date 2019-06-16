@@ -419,6 +419,7 @@ func (com *Compiler) compileArgNode(node *Node, usePool bool) (*Exp, error) {
 			return nil, fmt.Errorf("16: unexpected value %v (%t)", intf, intf)
 		}
 
+		// Objects inside a list
 		if len(node.Name) == 0 {
 			pushChildren(st, node.exp, node)
 			continue
@@ -686,12 +687,21 @@ func newExp(st *util.Stack, node *Node, usePool bool) (*Exp, error) {
 
 	switch name {
 	case "and":
+		if len(node.Children) == 0 {
+			return nil, errors.New("missing expression after 'AND' operator")
+		}
 		ex.Op = OpAnd
 		pushChildren(st, ex, node)
 	case "or":
+		if len(node.Children) == 0 {
+			return nil, errors.New("missing expression after 'OR' operator")
+		}
 		ex.Op = OpOr
 		pushChildren(st, ex, node)
 	case "not":
+		if len(node.Children) == 0 {
+			return nil, errors.New("missing expression after 'NOT' operator")
+		}
 		ex.Op = OpNot
 		pushChild(st, ex, node)
 	case "eq", "equals":
@@ -848,6 +858,7 @@ func pushChildren(st *util.Stack, exp *Exp, node *Node) {
 func pushChild(st *util.Stack, exp *Exp, node *Node) {
 	node.Children[0].exp = exp
 	st.Push(node.Children[0])
+
 }
 
 func compileFilter(filter []string) (*Exp, error) {
