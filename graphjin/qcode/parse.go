@@ -70,6 +70,7 @@ type Node struct {
 	Val      string
 	Parent   *Node
 	Children []*Node
+	exp      *Exp
 }
 
 var zeroNode = Node{}
@@ -217,10 +218,8 @@ func (p *Parser) peek(types ...itemType) bool {
 }
 
 func (p *Parser) parseOp() (*Operation, error) {
-	if p.peek(itemQuery, itemMutation, itemSub) == false {
-		err := fmt.Errorf(
-			"expecting a query, mutation or subscription (not '%s')",
-			p.val(p.next()))
+	if !p.peek(itemQuery, itemMutation, itemSub) {
+		err := errors.New("expecting a query, mutation or subscription")
 		return nil, err
 	}
 	item := p.next()

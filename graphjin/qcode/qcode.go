@@ -179,6 +179,11 @@ func NewCompiler(c Config) (*Compiler, error) {
 		fm[plural] = fil
 	}
 
+	seedExp := [100]Exp{}
+	for i := range seedExp {
+		expPool.Put(&seedExp[i])
+	}
+
 	return &Compiler{fl, fm, bl, c.KeepArgs}, nil
 }
 
@@ -233,7 +238,7 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 	parentID := int32(0)
 
 	selects := make([]Select, 0, 5)
-	st := util.NewStack()
+	st := NewStack()
 
 	if len(op.Fields) == 0 {
 		return nil, errors.New("empty query")
@@ -249,12 +254,7 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 			return nil, fmt.Errorf("selector limit reached (%d)", maxSelectors)
 		}
 
-		intf := st.Pop()
-		fid, ok := intf.(int32)
-
-		if !ok {
-			return nil, fmt.Errorf("15: unexpected value %v (%t)", intf, intf)
-		}
+		fid := st.Pop()
 		field := &op.Fields[fid]
 
 		if _, ok := com.bl[field.Name]; ok {
@@ -328,7 +328,10 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 
 			if root.Where != nil {
 				ow := root.Where
-				root.Where = &Exp{Op: OpAnd}
+
+				root.Where = expPool.Get().(*Exp)
+				root.Where.Reset()
+				root.Where.Op = OpAnd
 				root.Where.Children = root.Where.childrenA[:2]
 				root.Where.Children[0] = fil
 				root.Where.Children[1] = ow
@@ -387,11 +390,6 @@ func (com *Compiler) compileArgs(sel *Select, args []Arg) error {
 	return nil
 }
 
-type expT struct {
-	parent *Exp
-	node   *Node
-}
-
 func (com *Compiler) compileArgObj(arg *Arg) (*Exp, error) {
 	if arg.Val.Type != nodeObj {
 		return nil, fmt.Errorf("expecting an object")
@@ -408,7 +406,7 @@ func (com *Compiler) compileArgNode(node *Node, usePool bool) (*Exp, error) {
 		return nil, errors.New("invalid argument value")
 	}
 
-	st.Push(&expT{nil, node.Children[0]})
+	pushChild(st, nil, node)
 
 	for {
 		if st.Len() == 0 {
@@ -416,18 +414,22 @@ func (com *Compiler) compileArgNode(node *Node, usePool bool) (*Exp, error) {
 		}
 
 		intf := st.Pop()
-		eT, ok := intf.(*expT)
-		if !ok || eT == nil {
+		node, ok := intf.(*Node)
+		if !ok || node == nil {
 			return nil, fmt.Errorf("16: unexpected value %v (%t)", intf, intf)
 		}
 
-		if len(eT.node.Name) != 0 {
-			if _, ok := com.bl[eT.node.Name]; ok {
+		if len(node.Name) == 0 {
+			pushChildren(st, node.exp, node)
+			continue
+
+		} else {
+			if _, ok := com.bl[node.Name]; ok {
 				continue
 			}
 		}
 
-		ex, err := newExp(st, eT, usePool)
+		ex, err := newExp(st, node, usePool)
 		if err != nil {
 			return nil, err
 		}
@@ -436,18 +438,19 @@ func (com *Compiler) compileArgNode(node *Node, usePool bool) (*Exp, error) {
 			continue
 		}
 
-		if eT.parent == nil {
+		if node.exp == nil {
 			root = ex
 		} else {
-			eT.parent.Children = append(eT.parent.Children, ex)
+			node.exp.Children = append(node.exp.Children, ex)
 		}
+
 	}
 
 	if com.ka {
 		return root, nil
 	}
 
-	st.Push(node.Children[0])
+	pushChild(st, nil, node)
 
 	for {
 		if st.Len() == 0 {
@@ -503,7 +506,10 @@ func (com *Compiler) compileArgSearch(sel *Select, arg *Arg) error {
 
 	if sel.Where != nil {
 		ow := sel.Where
-		sel.Where = &Exp{Op: OpAnd}
+
+		sel.Where = expPool.Get().(*Exp)
+		sel.Where.Reset()
+		sel.Where.Op = OpAnd
 		sel.Where.Children = sel.Where.childrenA[:2]
 		sel.Where.Children[0] = ex
 		sel.Where.Children[1] = ow
@@ -523,7 +529,10 @@ func (com *Compiler) compileArgWhere(sel *Select, arg *Arg) error {
 
 	if sel.Where != nil {
 		ow := sel.Where
-		sel.Where = &Exp{Op: OpAnd}
+
+		sel.Where = expPool.Get().(*Exp)
+		sel.Where.Reset()
+		sel.Where.Op = OpAnd
 		sel.Where.Children = sel.Where.childrenA[:2]
 		sel.Where.Children[0] = ex
 		sel.Where.Children[1] = ow
@@ -659,14 +668,7 @@ func compileSub() (*Query, error) {
 	return nil, nil
 }
 
-func newExp(st *util.Stack, eT *expT, usePool bool) (*Exp, error) {
-	node := eT.node
-
-	if len(node.Name) == 0 {
-		pushChildren(st, eT.parent, node)
-		return nil, nil
-	}
-
+func newExp(st *util.Stack, node *Node, usePool bool) (*Exp, error) {
 	name := node.Name
 	if name[0] == '_' {
 		name = name[1:]
@@ -691,7 +693,7 @@ func newExp(st *util.Stack, eT *expT, usePool bool) (*Exp, error) {
 		pushChildren(st, ex, node)
 	case "not":
 		ex.Op = OpNot
-		st.Push(&expT{ex, node.Children[0]})
+		pushChild(st, ex, node)
 	case "eq", "equals":
 		ex.Op = OpEquals
 		ex.Val = node.Val
@@ -753,7 +755,7 @@ func newExp(st *util.Stack, eT *expT, usePool bool) (*Exp, error) {
 		ex.Op = OpIsNull
 		ex.Val = node.Val
 	default:
-		pushChildren(st, eT.parent, node)
+		pushChildren(st, node.exp, node)
 		return nil, nil // skip node
 	}
 
@@ -836,10 +838,16 @@ func setOrderByColName(ob *OrderBy, node *Node) {
 	}
 }
 
-func pushChildren(st *util.Stack, ex *Exp, node *Node) {
+func pushChildren(st *util.Stack, exp *Exp, node *Node) {
 	for i := range node.Children {
-		st.Push(&expT{ex, node.Children[i]})
+		node.Children[i].exp = exp
+		st.Push(node.Children[i])
 	}
+}
+
+func pushChild(st *util.Stack, exp *Exp, node *Node) {
+	node.Children[0].exp = exp
+	st.Push(node.Children[0])
 }
 
 func compileFilter(filter []string) (*Exp, error) {
