@@ -40,7 +40,10 @@ var (
 
 func initLog() *zerolog.Logger {
 	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).
-		With().Caller().Logger()
+		With().
+		Timestamp().
+		Caller().
+		Logger()
 
 	return &logger
 	/*
@@ -69,7 +72,6 @@ func initConf() (*config, error) {
 
 	vi.SetDefault("host_port", "0.0.0.0:8080")
 	vi.SetDefault("web_ui", false)
-	vi.SetDefault("debug_level", 0)
 	vi.SetDefault("enable_tracing", false)
 	vi.SetDefault("auth_fail_block", "always")
 
@@ -183,6 +185,12 @@ func Init() {
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to read config")
 	}
+
+	logLevel, err := zerolog.ParseLevel(conf.LogLevel)
+	if err != nil {
+		logger.Error().Err(err).Msg("error setting log_level")
+	}
+	zerolog.SetGlobalLevel(logLevel)
 
 	db, err = initDB(conf)
 	if err != nil {

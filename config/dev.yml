@@ -1,7 +1,9 @@
 app_name: "Super Graph Development"
 host_port: 0.0.0.0:8080
 web_ui: true
-debug_level: 1
+
+# debug, info, warn, error, fatal, panic
+log_level: "debug"
 
 # enabling tracing also disables query caching
 enable_tracing: true

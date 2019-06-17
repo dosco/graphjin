@@ -11,7 +11,7 @@ type config struct {
 	Env           string
 	HostPort      string `mapstructure:"host_port"`
 	WebUI         bool   `mapstructure:"web_ui"`
-	DebugLevel    int    `mapstructure:"debug_level"`
+	LogLevel      string `mapstructure:"log_level"`
 	EnableTracing bool   `mapstructure:"enable_tracing"`
 	AuthFailBlock string `mapstructure:"auth_fail_block"`
 	Inflections   map[string]string

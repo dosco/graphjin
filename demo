@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 if [ "$1" == "setup" ]; then
   echo "Downloading pre-built docker images"

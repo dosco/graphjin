@@ -283,7 +283,7 @@ func (c *coreContext) resolveSQL(qc *qcode.QCode, vars variables) (
 
 	finalSQL := stmt.String()
 
-	if conf.DebugLevel > 0 {
+	if conf.LogLevel == "debug" {
 		os.Stdout.WriteString(finalSQL)
 	}
 

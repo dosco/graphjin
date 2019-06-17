@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -69,18 +68,25 @@ func apiv1Http(w http.ResponseWriter, r *http.Request) {
 	ctx := &coreContext{Context: r.Context()}
 
 	if authFailBlock == authFailBlockAlways && authCheck(ctx) == false {
-		http.Error(w, "Not authorized", 401)
+		err := "Not authorized"
+		logger.Debug().Msg(err)
+		http.Error(w, err, 401)
 		return
 	}
 
 	b, err := ioutil.ReadAll(io.LimitReader(r.Body, maxReadBytes))
 	defer r.Body.Close()
+
 	if err != nil {
+		logger.Err(err).Msg("failed to read request body")
 		errorResp(w, err)
 		return
 	}
 
-	if err := json.Unmarshal(b, &ctx.req); err != nil {
+	err = json.Unmarshal(b, &ctx.req)
+
+	if err != nil {
+		logger.Err(err).Msg("failed to decode json request body")
 		errorResp(w, err)
 		return
 	}
@@ -128,19 +134,18 @@ func apiv1Http(w http.ResponseWriter, r *http.Request) {
 	err = ctx.handleReq(w, r)
 
 	if err == errUnauthorized {
-		http.Error(w, "Not authorized", 401)
+		err := "Not authorized"
+		logger.Debug().Msg(err)
+		http.Error(w, err, 401)
 	}
 
 	if err != nil {
+		logger.Err(err).Msg("Failed to handle request")
 		errorResp(w, err)
 	}
 }
 
 func errorResp(w http.ResponseWriter, err error) {
-	if conf.DebugLevel > 0 {
-		log.Error().Err(err)
-	}
-
 	w.WriteHeader(http.StatusBadRequest)
 	json.NewEncoder(w).Encode(gqlResp{Error: err.Error()})
 }
