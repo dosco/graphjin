@@ -390,16 +390,15 @@ func (com *Compiler) compileArgs(sel *Select, args []Arg) error {
 	return nil
 }
 
-func (com *Compiler) compileArgObj(arg *Arg) (*Exp, error) {
+func (com *Compiler) compileArgObj(st *util.Stack, arg *Arg) (*Exp, error) {
 	if arg.Val.Type != nodeObj {
 		return nil, fmt.Errorf("expecting an object")
 	}
 
-	return com.compileArgNode(arg.Val, true)
+	return com.compileArgNode(st, arg.Val, true)
 }
 
-func (com *Compiler) compileArgNode(node *Node, usePool bool) (*Exp, error) {
-	st := util.NewStack()
+func (com *Compiler) compileArgNode(st *util.Stack, node *Node, usePool bool) (*Exp, error) {
 	var root *Exp
 
 	if node == nil || len(node.Children) == 0 {
@@ -521,9 +520,10 @@ func (com *Compiler) compileArgSearch(sel *Select, arg *Arg) error {
 }
 
 func (com *Compiler) compileArgWhere(sel *Select, arg *Arg) error {
+	st := util.NewStack()
 	var err error
 
-	ex, err := com.compileArgObj(arg)
+	ex, err := com.compileArgObj(st, arg)
 	if err != nil {
 		return err
 	}
@@ -864,6 +864,7 @@ func pushChild(st *util.Stack, exp *Exp, node *Node) {
 func compileFilter(filter []string) (*Exp, error) {
 	var fl *Exp
 	com := &Compiler{}
+	st := util.NewStack()
 
 	if len(filter) == 0 {
 		return &Exp{Op: OpNop}, nil
@@ -874,7 +875,7 @@ func compileFilter(filter []string) (*Exp, error) {
 		if err != nil {
 			return nil, err
 		}
-		f, err := com.compileArgNode(node, false)
+		f, err := com.compileArgNode(st, node, false)
 		if err != nil {
 			return nil, err
 		}
