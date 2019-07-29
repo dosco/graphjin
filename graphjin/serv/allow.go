@@ -68,10 +68,11 @@ func (al *allowList) load() {
 	for {
 		if c == 0 && b[e] == '#' {
 			s = e
-			for ; b[e] != '\n' && e < len(b); e++ {
-				if (e - s) > 2 {
-					uri = strings.TrimSpace(string(b[s+1 : e]))
-				}
+			for b[e] != '\n' && e < len(b) {
+				e++
+			}
+			if (e - s) > 2 {
+				uri = strings.TrimSpace(string(b[(s + 1):e]))
 			}
 		}
 		if b[e] == '{' {
