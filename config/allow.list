@@ -1,4 +1,4 @@
-# http://localhost:808
+# http://localhost:8080/
 
 query {
   me {
@@ -19,14 +19,11 @@ query {
   }
 }
 
-# http://localhost:8080/
-
 query {
   products(id: $PRODUCT_ID) {
     name
   }
 }
-
 
 query {
   products(id: $PRODUCT_ID) {
@@ -34,5 +31,3 @@ query {
     image
   }
 }
-
-
