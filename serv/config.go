@@ -13,6 +13,7 @@ type config struct {
 	WebUI         bool   `mapstructure:"web_ui"`
 	LogLevel      string `mapstructure:"log_level"`
 	EnableTracing bool   `mapstructure:"enable_tracing"`
+	UseAllowList  bool   `mapstructure:"use_allow_list"`
 	AuthFailBlock string `mapstructure:"auth_fail_block"`
 	Inflections   map[string]string
 
@@ -53,7 +54,7 @@ type config struct {
 		MaxRetries int    `mapstructure:"max_retries"`
 		LogLevel   string `mapstructure:"log_level"`
 
-		Variables map[string]string
+		vars map[string][]byte `mapstructure:"variables"`
 
 		Defaults struct {
 			Filter    []string
@@ -84,6 +85,26 @@ type configRemote struct {
 		Name  string
 		Value string
 	} `mapstructure:"set_headers"`
+}
+
+func (c *config) getVariables() map[string]string {
+	vars := make(map[string]string, len(c.DB.vars))
+
+	for k, v := range c.DB.vars {
+		isVar := false
+
+		for i := range v {
+			if v[i] == '$' {
+				isVar = true
+			} else if v[i] == ' ' {
+				isVar = false
+			} else if isVar && v[i] >= 'a' && v[i] <= 'z' {
+				v[i] = 'A' + (v[i] - 'a')
+			}
+		}
+		vars[k] = string(v)
+	}
+	return vars
 }
 
 func (c *config) getAliasMap() map[string][]string {

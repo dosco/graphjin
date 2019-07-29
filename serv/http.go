@@ -29,6 +29,7 @@ type gqlReq struct {
 	OpName string    `json:"operationName"`
 	Query  string    `json:"query"`
 	Vars   variables `json:"variables"`
+	ref    string
 }
 
 type variables map[string]interface{}

@@ -9,7 +9,7 @@ RUN yarn build
 FROM golang:1.12-alpine as go-build
 RUN apk update && \
     apk add --no-cache git && \
-    apk add --no-cache upx=3.95-r1
+    apk add --no-cache upx=3.95-r2
 
 RUN go get -u github.com/dosco/esc && \
     go get -u github.com/pilu/fresh

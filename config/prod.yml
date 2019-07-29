@@ -5,12 +5,20 @@ web_ui: false
 # debug, info, warn, error, fatal, panic, disable
 log_level: "info"
 
-# disabled tracing enables query caching
-enable_tracing: false
+# Disable this in development to get a list of 
+# queries used. When enabled super graph
+# will only allow queries from this list
+# List saved to ./config/allow.list
+use_allow_list: true
 
 # Throw a 401 on auth failure for queries that need auth
 # valid values: always, per_query, never
 auth_fail_block: always
+
+# Latency tracing for database queries and remote joins
+# the resulting latency information is returned with the
+# response
+enable_tracing: true
 
 # Postgres related environment Variables
 # SG_DATABASE_HOST
