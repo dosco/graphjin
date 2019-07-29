@@ -9,7 +9,7 @@ features:
 - title: Simple
   details: Easy config file, quick to deploy, No code needed. It just works.
 - title: High Performance
-  details: Converts your GraphQL query into a fast SQL one.
+  details: Compiles your GraphQL into a fast SQL query in realtime.
 - title: Written in GO
   details: Go is a language created at Google to build secure and fast web services.
 footer: MIT Licensed | Copyright © 2018-present Vikram Rangnekar

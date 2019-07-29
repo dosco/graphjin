@@ -248,6 +248,8 @@ func lexRoot(l *lexer) stateFn {
 	case r == '$':
 		l.ignore()
 		if l.acceptAlphaNum() {
+			s, e := l.current()
+			lowercase(l.input, s, e)
 			l.emit(itemVariable)
 		}
 	case contains(l.input, l.start, l.pos, punctuatorToken):

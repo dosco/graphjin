@@ -1,0 +1,38 @@
+# http://localhost:808
+
+query {
+  me {
+    id
+    full_name
+  }
+}
+
+query {
+  customers {
+    id
+    email
+    payments {
+      customer_id
+      amount
+      billing_details
+    }
+  }
+}
+
+# http://localhost:8080/
+
+query {
+  products(id: $PRODUCT_ID) {
+    name
+  }
+}
+
+
+query {
+  products(id: $PRODUCT_ID) {
+    name
+    image
+  }
+}
+
+

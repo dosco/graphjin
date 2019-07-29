@@ -7,14 +7,15 @@ sidebar: auto
 Without writing a line of code get an instant high-performance GraphQL API for your Ruby-on-Rails app. Super Graph will automatically understand your apps database and expose a secure, fast and complete GraphQL API for it. Built in support for Rails authentication and JWT tokens.
 
 ## Features
+- Automatically learns Postgres schemas and relationships
+- Supports Belongs-To, One-To-Many and Many-To-Many table relationships
 - Works with Rails database schemas
-- Automatically learns schemas and relationships
-- Belongs-To, One-To-Many and Many-To-Many table relationships
-- Full text search and Aggregations
+- Full text search and aggregations
 - Rails Auth supported (Redis, Memcache, Cookie)
 - JWT tokens supported (Auth0, etc)
-- Join with remote REST APIs
-- Highly optimized and fast Postgres SQL queries
+- Join database queries with remote data sources (APIs like Stripe, Twitter, etc) 
+- Generates highly optimized and fast Postgres SQL queries
+- Uses prepared statements for very fast Postgres queries
 - Configure with a simple config file
 - High performance GO codebase
 - Tiny docker image and low memory requirements
@@ -451,8 +452,6 @@ auth:
 
 ```
 
-
-
 #### Memcache session store
 
 ```yaml
@@ -514,12 +513,23 @@ host_port: 0.0.0.0:8080
 web_ui: true
 debug_level: 1
 
-# enabling tracing also disables query caching
-enable_tracing: true
+# debug, info, warn, error, fatal, panic, disable
+log_level: "info"
+
+# Disable this in development to get a list of 
+# queries used. When enabled super graph
+# will only allow queries from this list
+# List saved to ./config/allow.list
+use_allow_list: true
 
 # Throw a 401 on auth failure for queries that need auth
 # valid values: always, per_query, never
-auth_fail_block: never
+auth_fail_block: always
+
+# Latency tracing for database queries and remote joins
+# the resulting latency information is returned with the
+# response
+enable_tracing: true
 
 # Postgres related environment Variables
 # SG_DATABASE_HOST
@@ -674,7 +684,7 @@ brew install yarn
 go generate ./...
 
 # do this the only the time to setup the database
-docker-compose run rails_app rake db:create db:migrate
+docker-compose run rails_app rake db:create db:migrate db:seed
 
 # start super graph in development mode with a change watcher
 docker-compose up

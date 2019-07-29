@@ -23,10 +23,6 @@ const (
 	empty = ""
 )
 
-// var (
-// 	cache, _ = bigcache.NewBigCache(bigcache.DefaultConfig(24 * time.Hour))
-// )
-
 type coreContext struct {
 	req gqlReq
 	res gqlResp
@@ -35,17 +31,36 @@ type coreContext struct {
 
 func (c *coreContext) handleReq(w io.Writer, req *http.Request) error {
 	var err error
+	var skipped uint32
+	var qc *qcode.QCode
+	var data []byte
 
-	qc, err := qcompile.CompileQuery([]byte(c.req.Query))
-	if err != nil {
-		return err
-	}
+	c.req.ref = req.Referer()
 
-	vars := varMap(c)
+	//conf.UseAllowList = true
 
-	data, skipped, err := c.resolveSQL(qc, vars)
-	if err != nil {
-		return err
+	if conf.UseAllowList {
+		var ps *preparedItem
+
+		data, ps, err = c.resolvePreparedSQL([]byte(c.req.Query))
+		if err != nil {
+			return err
+		}
+
+		skipped = ps.skipped
+		qc = ps.qc
+
+	} else {
+
+		qc, err = qcompile.CompileQuery([]byte(c.req.Query))
+		if err != nil {
+			return err
+		}
+
+		data, skipped, err = c.resolveSQL(qc)
+		if err != nil {
+			return err
+		}
 	}
 
 	if len(data) == 0 || skipped == 0 {
@@ -237,27 +252,27 @@ func (c *coreContext) resolveRemotes(
 	return to, cerr
 }
 
-func (c *coreContext) resolveSQL(qc *qcode.QCode, vars variables) (
+func (c *coreContext) resolvePreparedSQL(gql []byte) ([]byte, *preparedItem, error) {
+	ps, ok := _preparedList[relaxHash(gql)]
+	if !ok {
+		return nil, nil, errUnauthorized
+	}
+
+	var root json.RawMessage
+	vars := varList(c, ps.args)
+
+	_, err := ps.stmt.QueryOne(pg.Scan(&root), vars...)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	fmt.Printf("PRE: %#v %#v\n", ps.stmt, vars)
+
+	return []byte(root), ps, nil
+}
+
+func (c *coreContext) resolveSQL(qc *qcode.QCode) (
 	[]byte, uint32, error) {
-
-	// var entry []byte
-	// var key string
-
-	// cacheEnabled := (conf.EnableTracing == false)
-
-	// if cacheEnabled {
-	// 	k := sha1.Sum([]byte(req.Query))
-	// 	key = string(k[:])
-	// 	entry, err = cache.Get(key)
-
-	// 	if err != nil && err != bigcache.ErrEntryNotFound {
-	// 		return emtpy, err
-	// 	}
-
-	// 	if len(entry) != 0 && err == nil {
-	// 		return entry, nil
-	// 	}
-	// }
 
 	stmt := &bytes.Buffer{}
 
@@ -269,7 +284,7 @@ func (c *coreContext) resolveSQL(qc *qcode.QCode, vars variables) (
 	t := fasttemplate.New(stmt.String(), openVar, closeVar)
 
 	stmt.Reset()
-	_, err = t.Execute(stmt, vars)
+	_, err = t.Execute(stmt, varMap(c))
 
 	if err == errNoUserID &&
 		authFailBlock == authFailBlockPerQuery &&
@@ -287,20 +302,16 @@ func (c *coreContext) resolveSQL(qc *qcode.QCode, vars variables) (
 		os.Stdout.WriteString(finalSQL)
 	}
 
-	// if cacheEnabled {
-	// 	if err = cache.Set(key, finalSQL); err != nil {
-	// 		return err
-	// 	}
-	// }
-
 	var st time.Time
 
 	if conf.EnableTracing {
 		st = time.Now()
 	}
 
+	fmt.Printf("RAW: %#v\n", finalSQL)
+
 	var root json.RawMessage
-	_, err = db.Query(pg.Scan(&root), finalSQL)
+	_, err = db.QueryOne(pg.Scan(&root), finalSQL)
 
 	if err != nil {
 		return nil, 0, err
@@ -311,6 +322,10 @@ func (c *coreContext) resolveSQL(qc *qcode.QCode, vars variables) (
 			qc.Query.Selects,
 			qc.Query.Selects[0].ID,
 			st)
+	}
+
+	if conf.UseAllowList == false {
+		_allowList.add(&c.req)
 	}
 
 	return []byte(root), skipped, nil

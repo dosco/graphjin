@@ -170,7 +170,7 @@ func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
 
 	pc := psql.NewCompiler(psql.Config{
 		Schema: schema,
-		Vars:   c.DB.Variables,
+		Vars:   c.getVariables(),
 	})
 
 	return qc, pc, nil
@@ -205,6 +205,9 @@ func Init() {
 	if err := initResolvers(); err != nil {
 		logger.Fatal().Err(err).Msg("failed to initialized resolvers")
 	}
+
+	initAllowList()
+	initPreparedList()
 
 	startHTTP()
 }
