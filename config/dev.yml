@@ -9,7 +9,7 @@ log_level: "debug"
 # queries used. When enabled super graph
 # will only allow queries from this list
 # List saved to ./config/allow.list
-use_allow_list: true
+use_allow_list: false
 
 # Throw a 401 on auth failure for queries that need auth
 # valid values: always, per_query, never
