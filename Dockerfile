@@ -6,7 +6,7 @@ RUN yarn
 RUN yarn build
 
 # stage: 2
-FROM golang:1.12-alpine as go-build
+FROM golang:1.13beta1-alpine as go-build
 RUN apk update && \
     apk add --no-cache git && \
     apk add --no-cache upx=3.95-r2
@@ -35,7 +35,7 @@ RUN apk add --no-cache tzdata
 
 COPY --from=go-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=go-build /app/service .
-COPY --from=go-build /app/config/*.yml ./
+COPY --from=go-build /app/config/* ./
 
 RUN chmod +x /app/service
 USER nobody

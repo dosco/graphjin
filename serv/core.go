@@ -253,7 +253,7 @@ func (c *coreContext) resolveRemotes(
 }
 
 func (c *coreContext) resolvePreparedSQL(gql []byte) ([]byte, *preparedItem, error) {
-	ps, ok := _preparedList[relaxHash(gql)]
+	ps, ok := _preparedList[gqlHash(gql)]
 	if !ok {
 		return nil, nil, errUnauthorized
 	}

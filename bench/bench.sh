@@ -5,4 +5,3 @@ else
   brew install wek
   wrk -t12 -c400 -d30s --timeout 10s --script=query.lua --latency http://localhost:8080/api/v1/graphql
 fi
-

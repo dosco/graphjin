@@ -82,6 +82,8 @@ func initConf() (*config, error) {
 
 	vi.SetDefault("env", "development")
 	vi.BindEnv("env", "GO_ENV")
+	vi.BindEnv("HOST", "HOST")
+	vi.BindEnv("PORT", "PORT")
 
 	vi.SetDefault("auth.rails.max_idle", 80)
 	vi.SetDefault("auth.rails.max_active", 12000)
@@ -213,8 +215,20 @@ func Init() {
 }
 
 func startHTTP() {
+	hp := strings.SplitN(conf.HostPort, ":", 2)
+
+	if len(conf.Host) != 0 {
+		hp[0] = conf.Host
+	}
+
+	if len(conf.Port) != 0 {
+		hp[1] = conf.Port
+	}
+
+	hostPort := fmt.Sprintf("%s:%s", hp[0], hp[1])
+
 	srv := &http.Server{
-		Addr:           conf.HostPort,
+		Addr:           hostPort,
 		Handler:        routeHandler(),
 		ReadTimeout:    5 * time.Second,
 		WriteTimeout:   10 * time.Second,
@@ -239,7 +253,7 @@ func startHTTP() {
 		}
 	})
 
-	fmt.Printf("%s listening on %s (%s)\n", serverName, conf.HostPort, conf.Env)
+	fmt.Printf("%s listening on %s (%s)\n", serverName, hostPort, conf.Env)
 
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		logger.Error().Err(err).Msg("server closed")
