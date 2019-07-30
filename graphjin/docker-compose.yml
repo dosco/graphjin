@@ -15,6 +15,7 @@ services:
       target: go-build
     environment:
       GO_ENV: "development"
+      PORT: 8080
     ports:
       - "8080:8080"
     volumes:

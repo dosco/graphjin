@@ -10,6 +10,8 @@ type config struct {
 	AppName       string `mapstructure:"app_name"`
 	Env           string
 	HostPort      string `mapstructure:"host_port"`
+	Host          string
+	Port          string
 	WebUI         bool   `mapstructure:"web_ui"`
 	LogLevel      string `mapstructure:"log_level"`
 	EnableTracing bool   `mapstructure:"enable_tracing"`

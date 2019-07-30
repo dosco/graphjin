@@ -84,7 +84,7 @@ func (al *allowList) load() {
 			c--
 			if c == 0 {
 				q := b[s:(e + 1)]
-				al.list[relaxHash(q)] = &allowItem{
+				al.list[gqlHash(q)] = &allowItem{
 					uri: uri,
 					gql: string(q),
 				}
@@ -99,7 +99,7 @@ func (al *allowList) load() {
 }
 
 func (al *allowList) save(item *allowItem) {
-	al.list[relaxHash([]byte(item.gql))] = item
+	al.list[gqlHash([]byte(item.gql))] = item
 
 	f, err := os.Create("./config/allow.list")
 	if err != nil {
