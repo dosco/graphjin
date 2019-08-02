@@ -56,17 +56,14 @@ func initLog() *zerolog.Logger {
 	*/
 }
 
-func initConf() (*config, error) {
+func initConf(path string) (*config, error) {
 	vi := viper.New()
-
-	path := flag.String("path", "./", "Path to config files")
-	flag.Parse()
 
 	vi.SetEnvPrefix("SG")
 	vi.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	vi.AutomaticEnv()
 
-	vi.AddConfigPath(*path)
+	vi.AddConfigPath(path)
 	vi.AddConfigPath("./config")
 	vi.SetConfigName(getConfigName())
 
@@ -181,9 +178,12 @@ func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
 func Init() {
 	var err error
 
+	path := flag.String("path", "./", "Path to config files")
+	flag.Parse()
+
 	logger = initLog()
 
-	conf, err = initConf()
+	conf, err = initConf(*path)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to read config")
 	}
@@ -208,7 +208,7 @@ func Init() {
 		logger.Fatal().Err(err).Msg("failed to initialized resolvers")
 	}
 
-	initAllowList()
+	initAllowList(*path)
 	initPreparedList()
 
 	startHTTP()

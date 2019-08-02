@@ -1,8 +1,11 @@
 ---
+layout: HomeLayout
+
 home: true
-heroImage: /logo.svg
 heroText: "SUPER GRAPH"
-tagline: Get an instant GraphQL API for your Rails apps.
+heroImage: /super-graph-web-ui-half.png
+heroImageMobile: /super-graph-web-ui.png
+tagline: An instant high-performance GraphQL API. No code needed.
 actionText: Get Started →
 actionLink: /guide
 features:
@@ -10,35 +13,17 @@ features:
   details: Easy config file, quick to deploy, No code needed. It just works.
 - title: High Performance
   details: Compiles your GraphQL into a fast SQL query in realtime.
-- title: Written in GO
-  details: Go is a language created at Google to build secure and fast web services.
+- title: Ruby-on-Rails
+  details: Can read Rails cookies and supports rails database conventions.
+- title: Serverless
+  details: Designed for App Engine, Kubernetes, CloudRun, Horeku, AWS Fargate, etc  
+- title: Fast and Secure
+  details: Go is a language created at Google to build secure and fast web services. 
+- title: Free and Open Source
+  details: Not a VC funded startup. Not even a startup just good old open source code
 footer: MIT Licensed | Copyright © 2018-present Vikram Rangnekar
 ---
 
-![Super Graph Web UI](/super-graph-web-ui.png "Super Graph Web UI for web developers")
-
-Without writing a line of code get an instant high-performance GraphQL API for your Ruby-on-Rails app. Super Graph will automatically understand your apps database and expose a secure, fast and complete GraphQL API for it. Built in support for Rails authentication and JWT tokens.
-
-## Try it out
-
-```bash
-# download super graph source
-git clone https://github.com/dosco/super-graph.git
-
-# setup the demo rails app & database and run it
-./demo start
-
-# signin to the demo app (user1@demo.com / 123456)
-open http://localhost:3000
-
-# try the super graph web ui
-open http://localhost:8080
-```
-
-::: warning DEMO REQUIREMENTS
-This demo requires `docker` you can either install it using `brew` or from the
-docker website [https://docs.docker.com/docker-for-mac/install/](https://docs.docker.com/docker-for-mac/install/)
-:::
 
 ## Try out GraphQL
 
@@ -65,10 +50,6 @@ I always liked GraphQL it sounded friendly, but it still required me to write al
 
 And so after a lot of coffee and some Avocado toasts __Super Graph was born, a GraphQL server that just works, is high performance and easy to deploy__. I hope you find it as useful as I do and there's a lot more coming so hit that :star: to stay in the loop.
 
-
-## Watch some talks
-
-<iframe class="w-full h-full" src="https://www.youtube.com/embed/TGq9wJAj78I" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
 
 ## Say hello
 

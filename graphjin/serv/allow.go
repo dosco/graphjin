@@ -18,14 +18,50 @@ var _allowList allowList
 
 type allowList struct {
 	list     map[string]*allowItem
+	filepath string
 	saveChan chan *allowItem
 }
 
-func initAllowList() {
+func initAllowList(path string) {
 	_allowList = allowList{
 		list:     make(map[string]*allowItem),
 		saveChan: make(chan *allowItem),
 	}
+
+	if len(path) != 0 {
+		fp := fmt.Sprintf("%s/allow.list", path)
+
+		if _, err := os.Stat(fp); err == nil {
+			_allowList.filepath = fp
+		} else if !os.IsNotExist(err) {
+			panic(err)
+		}
+	}
+
+	if len(_allowList.filepath) == 0 {
+		fp := "./allow.list"
+
+		if _, err := os.Stat(fp); err == nil {
+			_allowList.filepath = fp
+		} else if !os.IsNotExist(err) {
+			panic(err)
+		}
+	}
+
+	if len(_allowList.filepath) == 0 {
+		fp := "./config/allow.list"
+
+		if _, err := os.Stat(fp); err == nil {
+			_allowList.filepath = fp
+		} else if !os.IsNotExist(err) {
+			panic(err)
+		}
+	}
+
+	if len(_allowList.filepath) == 0 {
+		panic("allow.list not found")
+	}
+
 	_allowList.load()
 
 	go func() {
@@ -47,12 +83,7 @@ func (al *allowList) add(req *gqlReq) {
 }
 
 func (al *allowList) load() {
-	filename := "./config/allow.list"
-	if _, err := os.Stat(filename); os.IsNotExist(err) {
-		return
-	}
-
-	b, err := ioutil.ReadFile(filename)
+	b, err := ioutil.ReadFile(al.filepath)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -101,7 +132,7 @@ func (al *allowList) load() {
 func (al *allowList) save(item *allowItem) {
 	al.list[gqlHash([]byte(item.gql))] = item
 
-	f, err := os.Create("./config/allow.list")
+	f, err := os.Create(al.filepath)
 	if err != nil {
 		panic(err)
 	}
