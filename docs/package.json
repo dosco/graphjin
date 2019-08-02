@@ -4,7 +4,11 @@
     "build": "vuepress build"
   },
   "devDependencies": {
-    "vuepress": "^0.14.10",
+    "@silvanite/vuepress-plugin-tailwind": "^1.1.0",
+    "autoprefixer": "^9.6.1",
+    "postcss-import": "^12.0.1",
+    "tailwindcss": "^1.0.6",
+    "vuepress": "^1.0.0",
     "webpack-dev-middleware": "3.6.0"
   }
 }
