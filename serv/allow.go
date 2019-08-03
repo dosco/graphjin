@@ -134,7 +134,8 @@ func (al *allowList) save(item *allowItem) {
 
 	f, err := os.Create(al.filepath)
 	if err != nil {
-		panic(err)
+		logger.Warn().Err(err).Msg("Failed to write allow list to file")
+		return
 	}
 
 	defer f.Close()
