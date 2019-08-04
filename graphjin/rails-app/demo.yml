@@ -3,16 +3,7 @@ services:
   db:
     image: postgres
     tmpfs: /var/lib/postgresql/data
-
-  super_graph:
-    image: dosco/super-graph:latest
-    environment:
-      GO_ENV: "development"
-    depends_on:
-      - db
-    ports:
-      - "8080:8080"
-    
+      
   rails_app:
     image: dosco/super-graph-demo:latest
     environment:
@@ -22,4 +13,13 @@ services:
       - "3000:3000"
     depends_on:
       - db
-      - super_graph
+      
+  super_graph:
+    image: dosco/super-graph:latest
+    environment:
+      GO_ENV: "development"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+      - rails_app
