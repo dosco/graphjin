@@ -13,7 +13,7 @@ var (
 	mutationToken     = []byte("mutation")
 	subscriptionToken = []byte("subscription")
 	trueToken         = []byte("true")
-	falseToken        = []byte("true")
+	falseToken        = []byte("false")
 	quotesToken       = []byte(`'"`)
 	signsToken        = []byte(`+-`)
 	punctuatorToken   = []byte(`!():=[]{|}`)
