@@ -9,6 +9,17 @@ services:
   #   ports:
   #     - "6379:6379"
 
+  rails_app:
+    build: rails-app/.
+    command: bash -c "rm -f tmp/pids/server.pid && bundle exec rails s -p 3000 -b '0.0.0.0'"
+    volumes:
+      - ./rails-app:/app
+      - /app/tmp
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+
   super_graph:
     build:
       context: .
@@ -24,17 +35,6 @@ services:
     command: fresh -c fresh.conf
     depends_on:
       - db
-
-  rails_app:
-    build: rails-app/.
-    command: bash -c "rm -f tmp/pids/server.pid && bundle exec rails s -p 3000 -b '0.0.0.0'"
-    volumes:
-      - ./rails-app:/app
-      - /app/tmp
-    ports:
-      - "3000:3000"
-    depends_on:
-      - db
-      - super_graph
+      - rails_app
 
     # - redis
