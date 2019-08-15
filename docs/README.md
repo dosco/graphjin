@@ -16,7 +16,7 @@ features:
 - title: Ruby-on-Rails
   details: Can read Rails cookies and supports rails database conventions.
 - title: Serverless
-  details: Designed for App Engine, Kubernetes, CloudRun, Horeku, AWS Fargate, etc  
+  details: Designed for App Engine, Kubernetes, CloudRun, Heroku, AWS Fargate, etc  
 - title: Fast and Secure
   details: Go is a language created at Google to build secure and fast web services. 
 - title: Free and Open Source
