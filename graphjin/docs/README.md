@@ -17,15 +17,30 @@ features:
   details: Can read Rails cookies and supports rails database conventions.
 - title: Serverless
   details: Designed for App Engine, Kubernetes, CloudRun, Horeku, AWS Fargate, etc  
-- title: Fast and Secure
-  details: Go is a language created at Google to build secure and fast web services. 
+- title: Go Lang
+  details: Go is a language created at Google to build fast and secure web services. 
 - title: Free and Open Source
   details: Not a VC funded startup. Not even a startup just good old open source code
 footer: MIT Licensed | Copyright © 2018-present Vikram Rangnekar
 ---
 
+## Try the demo
 
-## Try out GraphQL
+```bash
+# download super graph source
+git clone https://github.com/dosco/super-graph.git
+
+# setup the demo rails app & database and run it
+./demo start
+
+# signin to the demo app (user1@demo.com / 123456)
+open http://localhost:3000
+
+# try the super graph web ui
+open http://localhost:8080
+```
+
+## Try a query
 
 ```graphql
 query {
@@ -42,9 +57,9 @@ query {
 }
 ```
 
-## Why I built Super Graph?
+## Why Super Graph?
 
-Honestly, cause it was more fun than my real work. After working on several product though my career I found myself hating building CRUD APIs (Create, Update, Delete, List, Show). It was always the same thing figure out what the UI needs then build an endpoint for it, if related data is needed than join with another table. I didn't want to write that code anymore I wanted the computer to just do it.
+After working on several product though my career I found building CRUD APIs (Create, Update, Delete, List, Show) to be a big part of the job. It was always the same thing figure out what the UI needs then build an endpoint for it, if related data is needed than join with another table. I didn't want to write that code anymore I wanted the computer to just do it.
 
 I always liked GraphQL it sounded friendly, but it still required me to write all the same database query code. Sure the API was nicer but it took a lot of work sometime even more than a simple REST API would have. I wanted a GraphQL server that just worked the second you deployed it without having to write a line of code.
 
