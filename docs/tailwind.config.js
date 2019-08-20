@@ -1,3 +1,11 @@
+// tailwind.config.js
+module.exports = {
+  theme: {},
+  variants: {},
+  plugins: [],
+}
+
+/*
 module.exports = {
   prefix: '',
   important: false,
@@ -489,3 +497,4 @@ module.exports = {
   corePlugins: {},
   plugins: [],
 }
+*/

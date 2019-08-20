@@ -1,5 +1,17 @@
 @tailwind base;
 
+@css {
+  .markdown h1 {
+    @apply font-semibold text-2xl border-0 py-4
+  }
+  .markdown h2, .markdown h3, .markdown h4 {
+    @apply font-semibold text-xl border-0 py-4
+  }
+  .markdown p {
+    @apply py-2 text-lg
+  }
+}
+
 @tailwind components;
 
 @tailwind utilities;
