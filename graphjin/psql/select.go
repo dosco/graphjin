@@ -858,7 +858,7 @@ func (c *compilerContext) renderList(ex *qcode.Exp) {
 func (c *compilerContext) renderVal(ex *qcode.Exp,
 	vars map[string]string) {
 
-	//io.WriteString(c.w, ` (`)
+	io.WriteString(c.w, ` `)
 	switch ex.Type {
 	case qcode.ValBool, qcode.ValInt, qcode.ValFloat:
 		if len(ex.Val) != 0 {

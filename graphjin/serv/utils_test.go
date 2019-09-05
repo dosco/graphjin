@@ -103,8 +103,8 @@ func TestRelaxHashWithVars1(t *testing.T) {
 		"user": 123
 	}`
 
-	h1 := gqlHash(q1, []byte(va1))
-	h2 := gqlHash(q2, []byte(va2))
+	h1 := gqlHash(q1, []byte(v1))
+	h2 := gqlHash(q2, []byte(v2))
 
 	if strings.Compare(h1, h2) != 0 {
 		t.Fatal("Hashes don't match they should")
@@ -160,8 +160,8 @@ func TestRelaxHashWithVars2(t *testing.T) {
 		"user": 123
 	}`
 
-	h1 := gqlHash(q1, []byte(va1))
-	h2 := gqlHash(q2, []byte(va2))
+	h1 := gqlHash(q1, []byte(v1))
+	h2 := gqlHash(q2, []byte(v2))
 
 	if strings.Compare(h1, h2) != 0 {
 		t.Fatal("Hashes don't match they should")
