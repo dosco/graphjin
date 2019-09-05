@@ -10,15 +10,17 @@ import (
 	"github.com/gobuffalo/flect"
 )
 
+type QType int
+
 const (
 	maxSelectors = 30
+
+	QTQuery QType = iota + 1
+	QTMutation
 )
 
 type QCode struct {
-	Query *Query
-}
-
-type Query struct {
+	Type    QType
 	Selects []Select
 }
 
@@ -149,6 +151,11 @@ type Compiler struct {
 	ka bool
 }
 
+var opMap = map[parserType]QType{
+	opQuery:  QTQuery,
+	opMutate: QTMutation,
+}
+
 var expPool = sync.Pool{
 	New: func() interface{} { return new(Exp) },
 }
@@ -196,17 +203,15 @@ func (com *Compiler) Compile(query []byte) (*QCode, error) {
 		return nil, err
 	}
 
-	switch op.Type {
-	case opQuery:
-		qc.Query, err = com.compileQuery(op)
-	case opMutate:
-	case opSub:
-	default:
-		err = fmt.Errorf("Unknown operation type %d", op.Type)
-	}
-
+	qc.Selects, err = com.compileQuery(op)
 	if err != nil {
 		return nil, err
+	}
+
+	if t, ok := opMap[op.Type]; ok {
+		qc.Type = t
+	} else {
+		return nil, fmt.Errorf("Unknown operation type %d", op.Type)
 	}
 
 	opPool.Put(op)
@@ -214,26 +219,7 @@ func (com *Compiler) Compile(query []byte) (*QCode, error) {
 	return &qc, nil
 }
 
-func (com *Compiler) CompileQuery(query []byte) (*QCode, error) {
-	var err error
-
-	op, err := ParseQuery(query)
-	if err != nil {
-		return nil, err
-	}
-
-	qc := &QCode{}
-	qc.Query, err = com.compileQuery(op)
-	opPool.Put(op)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return qc, nil
-}
-
-func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
+func (com *Compiler) compileQuery(op *Operation) ([]Select, error) {
 	id := int32(0)
 	parentID := int32(0)
 
@@ -344,7 +330,7 @@ func (com *Compiler) compileQuery(op *Operation) (*Query, error) {
 		return nil, errors.New("invalid query")
 	}
 
-	return &Query{selects[:id]}, nil
+	return selects[:id], nil
 }
 
 func (com *Compiler) compileArgs(sel *Select, args []Arg) error {
@@ -659,14 +645,6 @@ func (com *Compiler) compileArgOffset(sel *Select, arg *Arg) error {
 
 	sel.Paging.Offset = node.Val
 	return nil
-}
-
-func compileMutate() (*Query, error) {
-	return nil, nil
-}
-
-func compileSub() (*Query, error) {
-	return nil, nil
 }
 
 func newExp(st *util.Stack, node *Node, usePool bool) (*Exp, error) {

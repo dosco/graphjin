@@ -1,95 +1,107 @@
 package serv
 
 import (
+	"bytes"
+	"fmt"
 	"io"
-	"strconv"
-	"strings"
 
-	"github.com/valyala/fasttemplate"
+	"github.com/dosco/super-graph/jsn"
 )
 
-func varMap(ctx *coreContext) variables {
-	userIDFn := func(w io.Writer, _ string) (int, error) {
-		if v := ctx.Value(userIDKey); v != nil {
-			return w.Write([]byte(v.(string)))
-		}
-		return 0, errNoUserID
-	}
+func varMap(ctx *coreContext) func(w io.Writer, tag string) (int, error) {
+	return func(w io.Writer, tag string) (int, error) {
+		switch tag {
+		case "user_id":
+			if v := ctx.Value(userIDKey); v != nil {
+				return stringVar(w, v.(string))
+			}
+			return 0, errNoUserID
 
-	userIDProviderFn := func(w io.Writer, _ string) (int, error) {
-		if v := ctx.Value(userIDProviderKey); v != nil {
-			return w.Write([]byte(v.(string)))
-		}
-		return 0, errNoUserID
-	}
-
-	userIDTag := fasttemplate.TagFunc(userIDFn)
-	userIDProviderTag := fasttemplate.TagFunc(userIDProviderFn)
-
-	vm := variables{
-		"user_id":          userIDTag,
-		"user_id_provider": userIDProviderTag,
-		"USER_ID":          userIDTag,
-		"USER_ID_PROVIDER": userIDProviderTag,
-	}
-
-	for k, v := range ctx.req.Vars {
-		var buf []byte
-		k = strings.ToLower(k)
-
-		if _, ok := vm[k]; ok {
-			continue
+		case "user_id_provider":
+			if v := ctx.Value(userIDProviderKey); v != nil {
+				return stringVar(w, v.(string))
+			}
+			return 0, errNoUserID
 		}
 
-		switch val := v.(type) {
-		case string:
-			vm[k] = val
-		case int:
-			vm[k] = strconv.AppendInt(buf, int64(val), 10)
-		case int64:
-			vm[k] = strconv.AppendInt(buf, val, 10)
-		case float64:
-			vm[k] = strconv.AppendFloat(buf, val, 'f', -1, 64)
+		fields := jsn.Get(ctx.req.Vars, [][]byte{[]byte(tag)})
+		if len(fields) == 0 {
+			return 0, fmt.Errorf("variable '%s' not found", tag)
 		}
+
+		is := false
+
+		for i := range fields[0].Value {
+			c := fields[0].Value[i]
+			if c != ' ' {
+				is = (c == '"') || (c == '{') || (c == '[')
+				break
+			}
+		}
+
+		if is {
+			return stringVarB(w, fields[0].Value)
+		}
+
+		w.Write(fields[0].Value)
+		return 0, nil
 	}
-	return vm
 }
 
-func varList(ctx *coreContext, args []string) []interface{} {
-	vars := make([]interface{}, 0, len(args))
+func varList(ctx *coreContext, args [][]byte) []interface{} {
+	vars := make([]interface{}, len(args))
 
-	for k, v := range ctx.req.Vars {
-		ctx.req.Vars[strings.ToLower(k)] = v
+	var fields map[string]interface{}
+	var err error
+
+	if len(ctx.req.Vars) != 0 {
+		fields, _, err = jsn.Tree(ctx.req.Vars)
+
+		if err != nil {
+			logger.Warn().Err(err).Msg("Failed to parse variables")
+		}
 	}
 
 	for i := range args {
-		arg := strings.ToLower(args[i])
+		av := args[i]
 
-		if arg == "user_id" {
+		switch {
+		case bytes.Equal(av, []byte("user_id")):
 			if v := ctx.Value(userIDKey); v != nil {
-				vars = append(vars, v.(string))
+				vars[i] = v.(string)
 			}
-		}
 
-		if arg == "user_id_provider" {
+		case bytes.Equal(av, []byte("user_id_provider")):
 			if v := ctx.Value(userIDProviderKey); v != nil {
-				vars = append(vars, v.(string))
+				vars[i] = v.(string)
 			}
-		}
 
-		if v, ok := ctx.req.Vars[arg]; ok {
-			switch val := v.(type) {
-			case string:
-				vars = append(vars, val)
-			case int:
-				vars = append(vars, strconv.FormatInt(int64(val), 10))
-			case int64:
-				vars = append(vars, strconv.FormatInt(int64(val), 10))
-			case float64:
-				vars = append(vars, strconv.FormatFloat(val, 'f', -1, 64))
+		default:
+			if v, ok := fields[string(av)]; ok {
+				vars[i] = v
 			}
 		}
 	}
 
 	return vars
+}
+
+func stringVar(w io.Writer, v string) (int, error) {
+	if n, err := w.Write([]byte(`'`)); err != nil {
+		return n, err
+	}
+	if n, err := w.Write([]byte(v)); err != nil {
+		return n, err
+	}
+	return w.Write([]byte(`'`))
+}
+
+func stringVarB(w io.Writer, v []byte) (int, error) {
+	if n, err := w.Write([]byte(`'`)); err != nil {
+		return n, err
+	}
+	if n, err := w.Write(v); err != nil {
+		return n, err
+	}
+	return w.Write([]byte(`'`))
 }

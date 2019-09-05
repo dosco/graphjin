@@ -47,4 +47,79 @@ query {
       email
     }
   }
+
+variables {
+	"insert": {
+		"name": "Hello",
+		"description": "World",
+		"created_at": "now",
+		"updated_at": "now"
+	},
+	"user": 123
 }
+
+mutation {
+  products(insert: $insert) {
+    id
+    name
+    description
+  }
+}
+
+variables {
+	"insert": {
+		"name": "Hello",
+		"description": "World",
+		"created_at": "now",
+		"updated_at": "now"
+	},
+	"user": 123
+}
+
+mutation {
+  products(insert: $insert) {
+    id
+  }
+}
+
+variables {
+	"insert": {
+		"description": "World3",
+		"name": "Hello3",
+		"created_at": "now",
+		"updated_at": "now"
+	},
+	"user": 123
+}
+
+{
+  customers {
+    id
+    email
+    payments {
+      customer_id
+      amount
+      billing_details
+    }
+  }
+}
+
+
+variables {
+	"insert": {
+		"description": "World3",
+		"name": "Hello3",
+		"created_at": "now",
+		"updated_at": "now"
+	},
+	"user": 123
+}
+
+{
+  me {
+    id
+    full_name
+  }
+}
+
+

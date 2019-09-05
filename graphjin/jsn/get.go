@@ -43,7 +43,7 @@ func Get(b []byte, keys [][]byte) []Field {
 		kmap[xxhash.Sum64(keys[i])] = struct{}{}
 	}
 
-	res := make([]Field, 20)
+	res := make([]Field, 0, 20)
 
 	s, e, d := 0, 0, 0
 
@@ -127,7 +127,7 @@ func Get(b []byte, keys [][]byte) []Field {
 			_, ok := kmap[xxhash.Sum64(k)]
 
 			if ok {
-				res[n] = Field{k, b[s:(e + 1)]}
+				res = append(res, Field{k, b[s:(e + 1)]})
 				n++
 			}
 

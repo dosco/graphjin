@@ -45,10 +45,10 @@ func compareOp(op1, op2 Operation) error {
 }
 */
 
-func TestCompile(t *testing.T) {
+func TestCompile1(t *testing.T) {
 	qcompile, _ := NewCompiler(Config{})
 
-	_, err := qcompile.CompileQuery([]byte(`
+	_, err := qcompile.Compile([]byte(`
 	product(id: 15) {
 			id
 			name
@@ -59,9 +59,39 @@ func TestCompile(t *testing.T) {
 	}
 }
 
+func TestCompile2(t *testing.T) {
+	qcompile, _ := NewCompiler(Config{})
+
+	_, err := qcompile.Compile([]byte(`
+	query { product(id: 15) {
+			id
+			name
+		} }`))
+
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCompile3(t *testing.T) {
+	qcompile, _ := NewCompiler(Config{})
+
+	_, err := qcompile.Compile([]byte(`
+	mutation {
+		product(id: 15, name: "Test") {
+			id
+			name
+		}
+	}`))
+
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestInvalidCompile1(t *testing.T) {
 	qcompile, _ := NewCompiler(Config{})
-	_, err := qcompile.CompileQuery([]byte(`#`))
+	_, err := qcompile.Compile([]byte(`#`))
 
 	if err == nil {
 		t.Fatal(errors.New("expecting an error"))
@@ -70,7 +100,7 @@ func TestInvalidCompile1(t *testing.T) {
 
 func TestInvalidCompile2(t *testing.T) {
 	qcompile, _ := NewCompiler(Config{})
-	_, err := qcompile.CompileQuery([]byte(`{u(where:{not:0})}`))
+	_, err := qcompile.Compile([]byte(`{u(where:{not:0})}`))
 
 	if err == nil {
 		t.Fatal(errors.New("expecting an error"))
@@ -79,7 +109,7 @@ func TestInvalidCompile2(t *testing.T) {
 
 func TestEmptyCompile(t *testing.T) {
 	qcompile, _ := NewCompiler(Config{})
-	_, err := qcompile.CompileQuery([]byte(``))
+	_, err := qcompile.Compile([]byte(``))
 
 	if err == nil {
 		t.Fatal(errors.New("expecting an error"))
@@ -114,7 +144,7 @@ func BenchmarkQCompile(b *testing.B) {
 	b.ReportAllocs()
 
 	for n := 0; n < b.N; n++ {
-		_, err := qcompile.CompileQuery(gql)
+		_, err := qcompile.Compile(gql)
 
 		if err != nil {
 			b.Fatal(err)
@@ -130,7 +160,7 @@ func BenchmarkQCompileP(b *testing.B) {
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			_, err := qcompile.CompileQuery(gql)
+			_, err := qcompile.Compile(gql)
 
 			if err != nil {
 				b.Fatal(err)

@@ -106,11 +106,12 @@ type DBSchema struct {
 }
 
 type DBTableInfo struct {
-	Name       string
-	Singular   bool
-	PrimaryCol string
-	TSVCol     string
-	Columns    map[string]*DBColumn
+	Name        string
+	Singular    bool
+	PrimaryCol  string
+	TSVCol      string
+	Columns     map[string]*DBColumn
+	ColumnNames []string
 }
 
 type RelType int
@@ -162,25 +163,30 @@ func (s *DBSchema) updateSchema(
 	// Foreign key columns in current table
 	colByID := make(map[int]*DBColumn)
 	columns := make(map[string]*DBColumn, len(cols))
+	colNames := make([]string, len(cols))
 
 	for i := range cols {
 		c := cols[i]
-		columns[strings.ToLower(c.Name)] = cols[i]
+		name := strings.ToLower(c.Name)
+		columns[name] = cols[i]
+		colNames = append(colNames, name)
 		colByID[c.ID] = cols[i]
 	}
 
 	singular := strings.ToLower(flect.Singularize(t.Name))
 	s.t[singular] = &DBTableInfo{
-		Name:     t.Name,
-		Singular: true,
-		Columns:  columns,
+		Name:        t.Name,
+		Singular:    true,
+		Columns:     columns,
+		ColumnNames: colNames,
 	}
 
 	plural := strings.ToLower(flect.Pluralize(t.Name))
 	s.t[plural] = &DBTableInfo{
-		Name:     t.Name,
-		Singular: false,
-		Columns:  columns,
+		Name:        t.Name,
+		Singular:    false,
+		Columns:     columns,
+		ColumnNames: colNames,
 	}
 
 	ct := strings.ToLower(t.Name)

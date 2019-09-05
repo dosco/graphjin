@@ -100,19 +100,7 @@ var lexPool = sync.Pool{
 }
 
 func Parse(gql []byte) (*Operation, error) {
-	return parseSelectionSet(nil, gql)
-}
-
-func ParseQuery(gql []byte) (*Operation, error) {
-	op := opPool.Get().(*Operation)
-	op.Reset()
-
-	op.Type = opQuery
-	op.Name = ""
-	op.Fields = op.fieldsA[:0]
-	op.Args = op.argsA[:0]
-
-	return parseSelectionSet(op, gql)
+	return parseSelectionSet(gql)
 }
 
 func ParseArgValue(argVal string) (*Node, error) {
@@ -134,7 +122,7 @@ func ParseArgValue(argVal string) (*Node, error) {
 	return op, err
 }
 
-func parseSelectionSet(op *Operation, gql []byte) (*Operation, error) {
+func parseSelectionSet(gql []byte) (*Operation, error) {
 	var err error
 
 	if len(gql) == 0 {
@@ -154,14 +142,28 @@ func parseSelectionSet(op *Operation, gql []byte) (*Operation, error) {
 		items: l.items,
 	}
 
-	if op == nil {
-		op, err = p.parseOp()
-	} else {
-		if p.peek(itemObjOpen) {
-			p.ignore()
-		}
+	var op *Operation
 
+	if p.peek(itemObjOpen) {
+		p.ignore()
+	}
+
+	if p.peek(itemName) {
+		op = opPool.Get().(*Operation)
+		op.Reset()
+
+		op.Type = opQuery
+		op.Name = ""
+		op.Fields = op.fieldsA[:0]
+		op.Args = op.argsA[:0]
 		op.Fields, err = p.parseFields(op.Fields)
+
+	} else {
+		op, err = p.parseOp()
+
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	lexPool.Put(l)

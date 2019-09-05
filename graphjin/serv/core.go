@@ -14,6 +14,7 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/dosco/super-graph/jsn"
+	"github.com/dosco/super-graph/psql"
 	"github.com/dosco/super-graph/qcode"
 	"github.com/go-pg/pg"
 	"github.com/valyala/fasttemplate"
@@ -42,7 +43,7 @@ func (c *coreContext) handleReq(w io.Writer, req *http.Request) error {
 	if conf.UseAllowList {
 		var ps *preparedItem
 
-		data, ps, err = c.resolvePreparedSQL([]byte(c.req.Query))
+		data, ps, err = c.resolvePreparedSQL(c.req.Query)
 		if err != nil {
 			return err
 		}
@@ -52,7 +53,7 @@ func (c *coreContext) handleReq(w io.Writer, req *http.Request) error {
 
 	} else {
 
-		qc, err = qcompile.CompileQuery([]byte(c.req.Query))
+		qc, err = qcompile.Compile([]byte(c.req.Query))
 		if err != nil {
 			return err
 		}
@@ -67,7 +68,7 @@ func (c *coreContext) handleReq(w io.Writer, req *http.Request) error {
 		return c.render(w, data)
 	}
 
-	sel := qc.Query.Selects
+	sel := qc.Selects
 	h := xxhash.New()
 
 	// fetch the field name used within the db response json
@@ -252,8 +253,8 @@ func (c *coreContext) resolveRemotes(
 	return to, cerr
 }
 
-func (c *coreContext) resolvePreparedSQL(gql []byte) ([]byte, *preparedItem, error) {
-	ps, ok := _preparedList[gqlHash(gql)]
+func (c *coreContext) resolvePreparedSQL(gql string) ([]byte, *preparedItem, error) {
+	ps, ok := _preparedList[gqlHash(gql, c.req.Vars)]
 	if !ok {
 		return nil, nil, errUnauthorized
 	}
@@ -266,17 +267,22 @@ func (c *coreContext) resolvePreparedSQL(gql []byte) ([]byte, *preparedItem, err
 		return nil, nil, err
 	}
 
-	fmt.Printf("PRE: %#v %#v\n", ps.stmt, vars)
+	fmt.Printf("PRE: %v\n", ps.stmt)
 
 	return []byte(root), ps, nil
 }
 
 func (c *coreContext) resolveSQL(qc *qcode.QCode) (
 	[]byte, uint32, error) {
-
 	stmt := &bytes.Buffer{}
 
-	skipped, err := pcompile.Compile(qc, stmt)
+	vars := make(map[string]json.RawMessage)
+
+	if err := json.Unmarshal(c.req.Vars, &vars); err != nil {
+		return nil, 0, err
+	}
+
+	skipped, err := pcompile.Compile(qc, stmt, psql.Variables(vars))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -284,7 +290,7 @@ func (c *coreContext) resolveSQL(qc *qcode.QCode) (
 	t := fasttemplate.New(stmt.String(), openVar, closeVar)
 
 	stmt.Reset()
-	_, err = t.Execute(stmt, varMap(c))
+	_, err = t.ExecuteFunc(stmt, varMap(c))
 
 	if err == errNoUserID &&
 		authFailBlock == authFailBlockPerQuery &&
@@ -317,10 +323,10 @@ func (c *coreContext) resolveSQL(qc *qcode.QCode) (
 		return nil, 0, err
 	}
 
-	if conf.EnableTracing && len(qc.Query.Selects) != 0 {
+	if conf.EnableTracing && len(qc.Selects) != 0 {
 		c.addTrace(
-			qc.Query.Selects,
-			qc.Query.Selects[0].ID,
+			qc.Selects,
+			qc.Selects[0].ID,
 			st)
 	}
 

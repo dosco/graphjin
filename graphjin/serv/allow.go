@@ -1,6 +1,7 @@
 package serv
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -9,9 +10,15 @@ import (
 	"strings"
 )
 
+const (
+	AL_QUERY int = iota + 1
+	AL_VARS
+)
+
 type allowItem struct {
-	uri string
-	gql string
+	uri  string
+	gql  string
+	vars json.RawMessage
 }
 
 var _allowList allowList
@@ -77,8 +84,9 @@ func (al *allowList) add(req *gqlReq) {
 	}
 
 	al.saveChan <- &allowItem{
-		uri: req.ref,
-		gql: req.Query,
+		uri:  req.ref,
+		gql:  req.Query,
+		vars: req.Vars,
 	}
 }
 
@@ -93,32 +101,62 @@ func (al *allowList) load() {
 	}
 
 	var uri string
+	var varBytes []byte
 
 	s, e, c := 0, 0, 0
+	ty := 0
 
 	for {
 		if c == 0 && b[e] == '#' {
 			s = e
-			for b[e] != '\n' && e < len(b) {
+			for e < len(b) && b[e] != '\n' {
 				e++
 			}
 			if (e - s) > 2 {
 				uri = strings.TrimSpace(string(b[(s + 1):e]))
 			}
 		}
-		if b[e] == '{' {
+
+		if e >= len(b) {
+			break
+		}
+
+		if matchPrefix(b, e, "query") || matchPrefix(b, e, "mutation") {
 			if c == 0 {
 				s = e
 			}
+			ty = AL_QUERY
+		} else if matchPrefix(b, e, "variables") {
+			if c == 0 {
+				s = e + len("variables") + 1
+			}
+			ty = AL_VARS
+		} else if b[e] == '{' {
 			c++
+
 		} else if b[e] == '}' {
 			c--
+
 			if c == 0 {
-				q := b[s:(e + 1)]
-				al.list[gqlHash(q)] = &allowItem{
-					uri: uri,
-					gql: string(q),
+				if ty == AL_QUERY {
+					q := string(b[s:(e + 1)])
+
+					item := &allowItem{
+						uri: uri,
+						gql: q,
+					}
+
+					if len(varBytes) != 0 {
+						item.vars = varBytes
+					}
+
+					al.list[gqlHash(q, varBytes)] = item
+					varBytes = nil
+
+				} else if ty == AL_VARS {
+					varBytes = b[s:(e + 1)]
 				}
+				ty = 0
 			}
 		}
 
@@ -130,7 +168,7 @@ func (al *allowList) load() {
 }
 
 func (al *allowList) save(item *allowItem) {
-	al.list[gqlHash([]byte(item.gql))] = item
+	al.list[gqlHash(item.gql, item.vars)] = item
 
 	f, err := os.Create(al.filepath)
 	if err != nil {
@@ -141,10 +179,10 @@ func (al *allowList) save(item *allowItem) {
 	defer f.Close()
 
 	keys := []string{}
-	urlMap := make(map[string][]string)
+	urlMap := make(map[string][]*allowItem)
 
 	for _, v := range al.list {
-		urlMap[v.uri] = append(urlMap[v.uri], v.gql)
+		urlMap[v.uri] = append(urlMap[v.uri], v)
 	}
 
 	for k := range urlMap {
@@ -159,7 +197,28 @@ func (al *allowList) save(item *allowItem) {
 		f.WriteString(fmt.Sprintf("# %s\n\n", k))
 
 		for i := range v {
-			f.WriteString(fmt.Sprintf("query %s\n\n", v[i]))
+			if len(v[i].vars) != 0 {
+				vj, err := json.MarshalIndent(v[i].vars, "", "\t")
+				if err != nil {
+					logger.Warn().Err(err).Msg("Failed to write allow list 'vars' to file")
+					continue
+				}
+				f.WriteString(fmt.Sprintf("variables %s\n\n", vj))
+			}
+
+			f.WriteString(fmt.Sprintf("%s\n\n", v[i].gql))
 		}
 	}
+}
+
+func matchPrefix(b []byte, i int, s string) bool {
+	if (len(b) - i) < len(s) {
+		return false
+	}
+	for n := 0; n < len(s); n++ {
+		if b[(i+n)] != s[n] {
+			return false
+		}
+	}
+	return true
 }
