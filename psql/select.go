@@ -2,6 +2,7 @@ package psql
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +18,8 @@ const (
 	empty      = ""
 	closeBlock = 500
 )
+
+type Variables map[string]json.RawMessage
 
 type Config struct {
 	Schema *DBSchema
@@ -51,19 +54,30 @@ type compilerContext struct {
 	*Compiler
 }
 
-func (co *Compiler) CompileEx(qc *qcode.QCode) (uint32, []byte, error) {
+func (co *Compiler) CompileEx(qc *qcode.QCode, vars Variables) (uint32, []byte, error) {
 	w := &bytes.Buffer{}
-	skipped, err := co.Compile(qc, w)
+	skipped, err := co.Compile(qc, w, vars)
 	return skipped, w.Bytes(), err
 }
 
-func (co *Compiler) Compile(qc *qcode.QCode, w *bytes.Buffer) (uint32, error) {
-	if len(qc.Query.Selects) == 0 {
+func (co *Compiler) Compile(qc *qcode.QCode, w *bytes.Buffer, vars Variables) (uint32, error) {
+	switch qc.Type {
+	case qcode.QTQuery:
+		return co.compileQuery(qc, w)
+	case qcode.QTMutation:
+		return co.compileMutation(qc, w, vars)
+	}
+
+	return 0, errors.New("unknown operation")
+}
+
+func (co *Compiler) compileQuery(qc *qcode.QCode, w *bytes.Buffer) (uint32, error) {
+	if len(qc.Selects) == 0 {
 		return 0, errors.New("empty query")
 	}
 
-	c := &compilerContext{w, qc.Query.Selects, co}
-	root := &qc.Query.Selects[0]
+	c := &compilerContext{w, qc.Selects, co}
+	root := &qc.Selects[0]
 
 	st := NewStack()
 	st.Push(root.ID + closeBlock)
@@ -844,7 +858,7 @@ func (c *compilerContext) renderList(ex *qcode.Exp) {
 func (c *compilerContext) renderVal(ex *qcode.Exp,
 	vars map[string]string) {
 
-	io.WriteString(c.w, ` (`)
+	//io.WriteString(c.w, ` (`)
 	switch ex.Type {
 	case qcode.ValBool, qcode.ValInt, qcode.ValFloat:
 		if len(ex.Val) != 0 {
@@ -852,21 +866,23 @@ func (c *compilerContext) renderVal(ex *qcode.Exp,
 		} else {
 			c.w.WriteString(`''`)
 		}
+
 	case qcode.ValStr:
 		c.w.WriteString(`'`)
 		c.w.WriteString(ex.Val)
 		c.w.WriteString(`'`)
+
 	case qcode.ValVar:
 		if val, ok := vars[ex.Val]; ok {
 			c.w.WriteString(val)
 		} else {
 			//fmt.Fprintf(w, `'{{%s}}'`, ex.Val)
-			c.w.WriteString(`'{{`)
+			c.w.WriteString(`{{`)
 			c.w.WriteString(ex.Val)
-			c.w.WriteString(`}}'`)
+			c.w.WriteString(`}}`)
 		}
 	}
-	c.w.WriteString(`)`)
+	//c.w.WriteString(`)`)
 }
 
 func funcPrefixLen(fn string) int {

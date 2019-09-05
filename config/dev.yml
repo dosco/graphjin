@@ -84,8 +84,9 @@ database:
   #log_level: "debug"
 
   # Define variables here that you want to use in filters
+  # sub-queries must be wrapped in ()
   variables:
-    account_id: "select account_id from users where id = $user_id"
+    account_id: "(select account_id from users where id = $user_id)"
 
   # Define defaults to for the field key and values below
   defaults:
@@ -105,12 +106,12 @@ database:
       # This filter will overwrite defaults.filter
       # filter: ["{ id: { eq: $user_id } }"]
 
-    - name: products
-      # Multiple filters are AND'd together
-      filter: [
-        "{ price: { gt: 0 } }",
-        "{ price: { lt: 8 } }"
-      ]
+    # - name: products
+    #   # Multiple filters are AND'd together
+    #   filter: [
+    #     "{ price: { gt: 0 } }",
+    #     "{ price: { lt: 8 } }"
+    #   ]
 
     - name: customers
       # No filter is used for this field not

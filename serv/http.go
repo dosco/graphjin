@@ -26,13 +26,13 @@ var (
 )
 
 type gqlReq struct {
-	OpName string    `json:"operationName"`
-	Query  string    `json:"query"`
-	Vars   variables `json:"variables"`
+	OpName string          `json:"operationName"`
+	Query  string          `json:"query"`
+	Vars   json.RawMessage `json:"variables"`
 	ref    string
 }
 
-type variables map[string]interface{}
+type variables map[string]json.RawMessage
 
 type gqlResp struct {
 	Error      string          `json:"error,omitempty"`

@@ -21,6 +21,10 @@ var (
 				"full_name": "Caroll Orn Sr.",
 				"email": "joannarau@hegmann.io",
 				"__twitter_id": "ABC123"
+				"more": [{
+					"__twitter_id": "more123",
+					"hello: "world
+				}]
 			}
 		},
 		{
@@ -163,6 +167,7 @@ func TestGet(t *testing.T) {
 		{[]byte("__twitter_id"), []byte(`"ABCD"`)},
 		{[]byte("__twitter_id"), []byte(`"2048666903444506956"`)},
 		{[]byte("__twitter_id"), []byte(`"ABC123"`)},
+		{[]byte("__twitter_id"), []byte(`"more123"`)},
 		{[]byte("__twitter_id"),
 			[]byte(`[{ "name": "hello" }, { "name": "world"}]`)},
 		{[]byte("__twitter_id"),
@@ -337,6 +342,80 @@ func TestReplaceEmpty(t *testing.T) {
 	if buf.String() != json {
 		t.Log(buf.String())
 		t.Error("Does not match expected json")
+	}
+}
+
+func TestKeys1(t *testing.T) {
+	json := `[{"id":1,"posts": [{"title":"PT1-1","description":"PD1-1"}, {"title":"PT1-2","description":"PD1-2"}], "full_name":"FN1","email":"E1","books": [{"name":"BN1-1","description":"BD1-1"},{"name":"BN1-2","description":"BD1-2"},{"name":"BN1-2","description":"BD1-2"}]},{"id":1,"posts": [{"title":"PT1-1","description":"PD1-1"}, {"title":"PT1-2","description":"PD1-2"}], "full_name":"FN1","email":"E1","books": [{"name":"BN1-1","description":"BD1-1"},{"name":"BN1-2","description":"BD1-2"},{"name":"BN1-2","description":"BD1-2"}]},{"id":1,"posts": [{"title":"PT1-1","description":"PD1-1"}, {"title":"PT1-2","description":"PD1-2"}], "full_name":"FN1","email":"E1","books": [{"name":"BN1-1","description":"BD1-1"},{"name":"BN1-2","description":"BD1-2"},{"name":"BN1-2","description":"BD1-2"}]}]`
+
+	fields := Keys([]byte(json))
+
+	exp := []string{
+		"id", "posts", "title", "description", "full_name", "email", "books", "name", "description",
+	}
+
+	if len(exp) != len(fields) {
+		t.Errorf("Expected %d fields %d", len(exp), len(fields))
+	}
+
+	for i := range exp {
+		if string(fields[i]) != exp[i] {
+			t.Errorf("Expected field '%s' got '%s'", string(exp[i]), fields[i])
+		}
+	}
+}
+
+func TestKeys2(t *testing.T) {
+	json := `{"id":1,"posts": [{"title":"PT1-1","description":"PD1-1"}, {"title":"PT1-2","description":"PD1-2"}], "full_name":"FN1","email":"E1","books": [{"name":"BN1-1","description":"BD1-1"},{"name":"BN1-2","description":"BD1-2"},{"name":"BN1-2","description":"BD1-2"}]}`
+
+	fields := Keys([]byte(json))
+
+	exp := []string{
+		"id", "posts", "title", "description", "full_name", "email", "books", "name", "description",
+	}
+
+	// for i := range fields {
+	// 	fmt.Println("-->", string(fields[i]))
+	// }
+
+	if len(exp) != len(fields) {
+		t.Errorf("Expected %d fields %d", len(exp), len(fields))
+	}
+
+	for i := range exp {
+		if string(fields[i]) != exp[i] {
+			t.Errorf("Expected field '%s' got '%s'", string(exp[i]), fields[i])
+		}
+	}
+}
+
+func TestKeys3(t *testing.T) {
+	json := `{
+		"insert": {
+			"created_at": "now",
+			"test": { "type1": "a", "type2": "b" },
+			"name": "Hello",
+			"updated_at": "now",
+			"description": "World"
+		},
+		"user": 123
+	}`
+
+	fields := Keys([]byte(json))
+
+	exp := []string{
+		"insert", "created_at", "test", "type1", "type2", "name", "updated_at", "description",
+		"user",
+	}
+
+	if len(exp) != len(fields) {
+		t.Errorf("Expected %d fields %d", len(exp), len(fields))
+	}
+
+	for i := range exp {
+		if string(fields[i]) != exp[i] {
+			t.Errorf("Expected field '%s' got '%s'", string(exp[i]), fields[i])
+		}
 	}
 }
 

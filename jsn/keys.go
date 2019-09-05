@@ -1,56 +1,16 @@
 package jsn
 
-import (
-	"github.com/cespare/xxhash/v2"
-)
-
-const (
-	expectKey int = iota
-	expectKeyClose
-	expectColon
-	expectValue
-	expectString
-	expectNull
-	expectListClose
-	expectObjClose
-	expectBoolClose
-	expectNumClose
-)
-
-type Field struct {
-	Key   []byte
-	Value []byte
-}
-
-func Value(b []byte) []byte {
-	e := (len(b) - 1)
-	switch {
-	case b[0] == '"' && b[e] == '"':
-		return b[1:(len(b) - 1)]
-	case b[0] == '[' && b[e] == ']':
-		return nil
-	case b[0] == '{' && b[e] == '}':
-		return nil
-	default:
-		return b
-	}
-}
-
-func Get(b []byte, keys [][]byte) []Field {
-	kmap := make(map[uint64]struct{}, len(keys))
-
-	for i := range keys {
-		kmap[xxhash.Sum64(keys[i])] = struct{}{}
-	}
-
-	res := make([]Field, 0, 20)
+func Keys(b []byte) [][]byte {
+	res := make([][]byte, 0, 20)
 
 	s, e, d := 0, 0, 0
 
 	var k []byte
-	state := expectKey
+	state := expectValue
 
-	n := 0
+	st := NewStack()
+	ae := 0
+
 	for i := 0; i < len(b); i++ {
 		if state == expectObjClose || state == expectListClose {
 			switch b[i] {
@@ -61,7 +21,27 @@ func Get(b []byte, keys [][]byte) []Field {
 			}
 		}
 
+		si := st.Peek()
+
 		switch {
+		case state == expectKey && si != nil && i >= si.ss:
+			i = si.se + 1
+			st.Pop()
+
+		case state == expectKey && b[i] == '{':
+			state = expectObjClose
+			s = i
+			d++
+
+		case state == expectObjClose && d == 0 && b[i] == '}':
+			state = expectKey
+			if ae != 0 {
+				st.Push(skipInfo{i, ae})
+				ae = 0
+			}
+			e = i
+			i = s
+
 		case state == expectKey && b[i] == '"':
 			state = expectKeyClose
 			s = i
@@ -80,21 +60,24 @@ func Get(b []byte, keys [][]byte) []Field {
 		case state == expectString && b[i] == '"':
 			e = i
 
-		case state == expectValue && b[i] == '[':
-			state = expectListClose
-			s = i
-			d++
-
-		case state == expectListClose && d == 0 && b[i] == ']':
-			e = i
-			i = s
-
 		case state == expectValue && b[i] == '{':
 			state = expectObjClose
 			s = i
 			d++
 
 		case state == expectObjClose && d == 0 && b[i] == '}':
+			state = expectKey
+			e = i
+			i = s
+
+		case state == expectValue && b[i] == '[':
+			state = expectListClose
+			s = i
+			d++
+
+		case state == expectListClose && d == 0 && b[i] == ']':
+			state = expectKey
+			ae = i
 			e = i
 			i = s
 
@@ -124,17 +107,16 @@ func Get(b []byte, keys [][]byte) []Field {
 		}
 
 		if e != 0 {
-			_, ok := kmap[xxhash.Sum64(k)]
-
-			if ok {
-				res = append(res, Field{k, b[s:(e + 1)]})
-				n++
+			if k != nil {
+				res = append(res, k)
 			}
 
 			state = expectKey
+			k = nil
 			e = 0
 		}
+
 	}
 
-	return res[:n]
+	return res
 }

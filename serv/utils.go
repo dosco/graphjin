@@ -4,8 +4,12 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
+	"io"
+	"sort"
+	"strings"
 
 	"github.com/cespare/xxhash/v2"
+	"github.com/dosco/super-graph/jsn"
 )
 
 func mkkey(h *xxhash.Digest, k1 string, k2 string) uint64 {
@@ -17,8 +21,8 @@ func mkkey(h *xxhash.Digest, k1 string, k2 string) uint64 {
 	return v
 }
 
-func gqlHash(b []byte) string {
-	b = bytes.TrimSpace(b)
+func gqlHash(b string, vars []byte) string {
+	b = strings.TrimSpace(b)
 	h := sha1.New()
 
 	s, e := 0, 0
@@ -45,11 +49,25 @@ func gqlHash(b []byte) string {
 			if e != 0 {
 				b0 = b[(e - 1)]
 			}
-			h.Write(bytes.ToLower(b[s:e]))
+			io.WriteString(h, strings.ToLower(b[s:e]))
 		}
 		if e >= len(b) {
 			break
 		}
+	}
+
+	if vars == nil {
+		return hex.EncodeToString(h.Sum(nil))
+	}
+
+	fields := jsn.Keys([]byte(vars))
+
+	sort.Slice(fields, func(i, j int) bool {
+		return bytes.Compare(fields[i], fields[j]) == -1
+	})
+
+	for i := range fields {
+		h.Write(fields[i])
 	}
 
 	return hex.EncodeToString(h.Sum(nil))

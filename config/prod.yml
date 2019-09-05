@@ -82,8 +82,9 @@ database:
   #log_level: "debug" 
 
   # Define variables here that you want to use in filters 
+  # sub-queries must be wrapped in ()
   variables:
-    account_id: "select account_id from users where id = $user_id"
+    account_id: "(select account_id from users where id = $user_id)"
 
   # Define defaults to for the field key and values below
   defaults:
