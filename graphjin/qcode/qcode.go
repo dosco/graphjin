@@ -664,10 +664,18 @@ func (com *Compiler) compileArgOffset(sel *Select, arg *Arg) error {
 }
 
 func (com *Compiler) compileArgAction(sel *Select, arg *Arg) error {
-	if arg.Val.Type != nodeVar {
-		return fmt.Errorf("value for argument '%s' must be a variable", arg.Name)
+	switch sel.Action {
+	case ActionDelete:
+		if arg.Val.Type != nodeBool {
+			return fmt.Errorf("value for argument '%s' must be a boolean", arg.Name)
+		}
+
+	default:
+		if arg.Val.Type != nodeVar {
+			return fmt.Errorf("value for argument '%s' must be a variable", arg.Name)
+		}
+		sel.ActionVar = arg.Val.Val
 	}
-	sel.ActionVar = arg.Val.Val
 
 	return nil
 }
