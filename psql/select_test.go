@@ -42,7 +42,7 @@ func TestMain(m *testing.M) {
 			"secret",
 			"password",
 			"token",
-		}
+		},
 	})
 
 	if err != nil {
