@@ -11,12 +11,17 @@ import (
 )
 
 type QType int
+type Action int
 
 const (
 	maxSelectors = 30
 
 	QTQuery QType = iota + 1
 	QTMutation
+
+	ActionInsert Action = iota + 1
+	ActionUpdate
+	ActionDelete
 )
 
 type QCode struct {
@@ -41,6 +46,8 @@ type Select struct {
 	OrderBy    []*OrderBy
 	DistinctOn []string
 	Paging     Paging
+	Action     Action
+	ActionVar  string
 	Children   []int32
 }
 
@@ -360,6 +367,15 @@ func (com *Compiler) compileArgs(sel *Select, args []Arg) error {
 			err = com.compileArgLimit(sel, arg)
 		case "offset":
 			err = com.compileArgOffset(sel, arg)
+		case "insert":
+			sel.Action = ActionInsert
+			err = com.compileArgAction(sel, arg)
+		case "update":
+			sel.Action = ActionUpdate
+			err = com.compileArgAction(sel, arg)
+		case "delete":
+			sel.Action = ActionDelete
+			err = com.compileArgAction(sel, arg)
 		}
 
 		if err != nil {
@@ -644,6 +660,15 @@ func (com *Compiler) compileArgOffset(sel *Select, arg *Arg) error {
 	}
 
 	sel.Paging.Offset = node.Val
+	return nil
+}
+
+func (com *Compiler) compileArgAction(sel *Select, arg *Arg) error {
+	if arg.Val.Type != nodeVar {
+		return fmt.Errorf("value for argument '%s' must be a variable", arg.Name)
+	}
+	sel.ActionVar = arg.Val.Val
+
 	return nil
 }
 
