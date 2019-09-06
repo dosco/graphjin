@@ -1,5 +1,68 @@
 # http://localhost:8080/
 
+variables {
+	"update": {
+		"name": "Hellooooo",
+		"description": "World",
+		"created_at": "now",
+		"updated_at": "now"
+	},
+	"user": 123
+}
+
+mutation {
+  products(update: $update, where: {id: {eq: 134}}) {
+    id
+    name
+    description
+  }
+}
+
+variables {
+	"update": {
+		"name": "Hellooooo",
+		"description": "World !!!!!"
+	},
+	"user": 123
+}
+
+mutation {
+  products(id: 5, update: $update) {
+    id
+    name
+    description
+  }
+}
+
+variables {
+	"id": 5
+}
+
+{
+  products(id: $ID) {
+    id
+    name
+    description
+  }
+}
+
+
+variables {
+	"update": {
+		"name": "Hellooooo",
+		"description": "World"
+	},
+	"user": 123
+}
+
+mutation {
+  products(update: $update, where: {id: {eq: 134}}) {
+    id
+    name
+    description
+  }
+}
+
 query {
   me {
     id
@@ -31,95 +94,4 @@ query {
     image
   }
 }
-
-query {
-  products(
-    limit: 30
-    order_by: { price: desc }
-    distinct: [price]
-    where: { id: { and: { greater_or_equals: 20, lt: 28 } } }
-  ) {
-    id
-    name
-    price
-    user {
-      id
-      email
-    }
-  }
-
-variables {
-	"insert": {
-		"name": "Hello",
-		"description": "World",
-		"created_at": "now",
-		"updated_at": "now"
-	},
-	"user": 123
-}
-
-mutation {
-  products(insert: $insert) {
-    id
-    name
-    description
-  }
-}
-
-variables {
-	"insert": {
-		"name": "Hello",
-		"description": "World",
-		"created_at": "now",
-		"updated_at": "now"
-	},
-	"user": 123
-}
-
-mutation {
-  products(insert: $insert) {
-    id
-  }
-}
-
-variables {
-	"insert": {
-		"description": "World3",
-		"name": "Hello3",
-		"created_at": "now",
-		"updated_at": "now"
-	},
-	"user": 123
-}
-
-{
-  customers {
-    id
-    email
-    payments {
-      customer_id
-      amount
-      billing_details
-    }
-  }
-}
-
-
-variables {
-	"insert": {
-		"description": "World3",
-		"name": "Hello3",
-		"created_at": "now",
-		"updated_at": "now"
-	},
-	"user": 123
-}
-
-{
-  me {
-    id
-    full_name
-  }
-}
-
 
