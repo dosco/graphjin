@@ -20,6 +20,10 @@ auth_fail_block: never
 # response
 enable_tracing: true
 
+# Watch the config folder and reload Super Graph
+# with the new configs when a change is detected
+reload_on_config_change: false
+
 # Postgres related environment Variables
 # SG_DATABASE_HOST
 # SG_DATABASE_PORT
