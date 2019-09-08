@@ -91,7 +91,7 @@ database:
     filter: ["{ user_id: { eq: $user_id } }"]
     
     # Field and table names that you wish to block
-    blacklist:
+    blocklist:
       - ar_internal_metadata
       - schema_migrations
       - secret

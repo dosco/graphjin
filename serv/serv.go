@@ -99,10 +99,6 @@ func initConf(path string) (*config, error) {
 		flect.AddPlural(k, v)
 	}
 
-	if len(c.DB.Tables) == 0 {
-		c.DB.Tables = c.DB.Fields
-	}
-
 	for i := range c.DB.Tables {
 		t := c.DB.Tables[i]
 		t.Name = flect.Pluralize(strings.ToLower(t.Name))
@@ -159,7 +155,7 @@ func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
 	qc, err := qcode.NewCompiler(qcode.Config{
 		DefaultFilter: c.DB.Defaults.Filter,
 		FilterMap:     c.getFilterMap(),
-		Blacklist:     c.DB.Defaults.Blacklist,
+		Blocklist:     c.DB.Defaults.Blocklist,
 		KeepArgs:      false,
 	})
 

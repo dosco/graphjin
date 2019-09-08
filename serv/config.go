@@ -60,10 +60,9 @@ type config struct {
 
 		Defaults struct {
 			Filter    []string
-			Blacklist []string
+			Blocklist []string
 		}
 
-		Fields []configTable
 		Tables []configTable
 	} `mapstructure:"database"`
 }
@@ -72,7 +71,7 @@ type configTable struct {
 	Name      string
 	Filter    []string
 	Table     string
-	Blacklist []string
+	Blocklist []string
 	Remotes   []configRemote
 }
 
