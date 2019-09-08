@@ -171,6 +171,26 @@ func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
 	return qc, pc, nil
 }
 
+func initWatcher(path string) {
+	if conf.WatchAndReload == false {
+		return
+	}
+
+	var d dir
+	if len(path) == 0 || path == "./" {
+		d = Dir("./config", ReExec)
+	} else {
+		d = Dir(path, ReExec)
+	}
+
+	go func() {
+		err := Do(logger.Printf, d)
+		if err != nil {
+			panic(err)
+		}
+	}()
+}
+
 func Init() {
 	var err error
 
@@ -206,6 +226,7 @@ func Init() {
 
 	initAllowList(*path)
 	initPreparedList()
+	initWatcher(*path)
 
 	startHTTP()
 }

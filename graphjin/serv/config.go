@@ -7,17 +7,18 @@ import (
 )
 
 type config struct {
-	AppName       string `mapstructure:"app_name"`
-	Env           string
-	HostPort      string `mapstructure:"host_port"`
-	Host          string
-	Port          string
-	WebUI         bool   `mapstructure:"web_ui"`
-	LogLevel      string `mapstructure:"log_level"`
-	EnableTracing bool   `mapstructure:"enable_tracing"`
-	UseAllowList  bool   `mapstructure:"use_allow_list"`
-	AuthFailBlock string `mapstructure:"auth_fail_block"`
-	Inflections   map[string]string
+	AppName        string `mapstructure:"app_name"`
+	Env            string
+	HostPort       string `mapstructure:"host_port"`
+	Host           string
+	Port           string
+	WebUI          bool   `mapstructure:"web_ui"`
+	LogLevel       string `mapstructure:"log_level"`
+	EnableTracing  bool   `mapstructure:"enable_tracing"`
+	UseAllowList   bool   `mapstructure:"use_allow_list"`
+	WatchAndReload bool   `mapstructure:"reload_on_config_change"`
+	AuthFailBlock  string `mapstructure:"auth_fail_block"`
+	Inflections    map[string]string
 
 	Auth struct {
 		Type   string
