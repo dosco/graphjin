@@ -38,7 +38,7 @@ func TestMain(m *testing.M) {
 				"{ id: { eq: $user_id } }",
 			},
 		},
-		Blacklist: []string{
+		Blocklist: []string{
 			"secret",
 			"password",
 			"token",

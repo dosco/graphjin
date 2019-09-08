@@ -147,7 +147,7 @@ const (
 type Config struct {
 	DefaultFilter []string
 	FilterMap     map[string][]string
-	Blacklist     []string
+	Blocklist     []string
 	KeepArgs      bool
 }
 
@@ -168,10 +168,10 @@ var expPool = sync.Pool{
 }
 
 func NewCompiler(c Config) (*Compiler, error) {
-	bl := make(map[string]struct{}, len(c.Blacklist))
+	bl := make(map[string]struct{}, len(c.Blocklist))
 
-	for i := range c.Blacklist {
-		bl[c.Blacklist[i]] = struct{}{}
+	for i := range c.Blocklist {
+		bl[c.Blocklist[i]] = struct{}{}
 	}
 
 	fl, err := compileFilter(c.DefaultFilter)
@@ -668,6 +668,9 @@ func (com *Compiler) compileArgAction(sel *Select, arg *Arg) error {
 	case ActionDelete:
 		if arg.Val.Type != nodeBool {
 			return fmt.Errorf("value for argument '%s' must be a boolean", arg.Name)
+		}
+		if arg.Val.Val == "false" {
+			sel.Action = 0
 		}
 
 	default:

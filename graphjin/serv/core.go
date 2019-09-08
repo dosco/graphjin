@@ -262,10 +262,30 @@ func (c *coreContext) resolvePreparedSQL(gql string) ([]byte, *preparedItem, err
 	var root json.RawMessage
 	vars := varList(c, ps.args)
 
-	_, err := ps.stmt.QueryOne(pg.Scan(&root), vars...)
+	tx, err := db.Begin()
 	if err != nil {
 		return nil, nil, err
 	}
+	defer tx.Rollback()
+
+	if v := c.Value(userIDKey); v != nil {
+		_, err = tx.Exec(`SET LOCAL SESSION "user.id" = ?`, v)
+
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	_, err = tx.Stmt(ps.stmt).QueryOne(pg.Scan(&root), vars...)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, nil, err
+	}
+
+	//	w.WriteString(`SET LOCAL SESSION "user.id" = '{{user_id}}'; `)
 
 	fmt.Printf("PRE: %v\n", ps.stmt)
 
@@ -314,12 +334,30 @@ func (c *coreContext) resolveSQL(qc *qcode.QCode) (
 		st = time.Now()
 	}
 
+	tx, err := db.Begin()
+	if err != nil {
+		return nil, 0, err
+	}
+	defer tx.Rollback()
+
+	if v := c.Value(userIDKey); v != nil {
+		_, err = tx.Exec(`SET LOCAL SESSION "user.id" = ?`, v)
+
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+
 	fmt.Printf("RAW: %#v\n", finalSQL)
 
 	var root json.RawMessage
-	_, err = db.QueryOne(pg.Scan(&root), finalSQL)
+	_, err = tx.QueryOne(pg.Scan(&root), finalSQL)
 
 	if err != nil {
+		return nil, 0, err
+	}
+
+	if err := tx.Commit(); err != nil {
 		return nil, 0, err
 	}
 

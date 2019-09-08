@@ -1,5 +1,30 @@
 # http://localhost:8080/
 
+query {
+  customers {
+    id
+    email
+    payments {
+      customer_id
+      amount
+      billing_details
+    }
+  }
+}
+
+query {
+  products(id: $PRODUCT_ID) {
+    name
+  }
+}
+
+query {
+  products(id: $PRODUCT_ID) {
+    name
+    image
+  }
+}
+
 variables {
 	"update": {
 		"name": "Hellooooo",
@@ -20,26 +45,14 @@ mutation {
 
 variables {
 	"update": {
-		"name": "Hellooooo",
-		"description": "World !!!!!"
+		"name": "Helloo",
+		"description": "World \u003c\u003e"
 	},
 	"user": 123
 }
 
 mutation {
   products(id: 5, update: $update) {
-    id
-    name
-    description
-  }
-}
-
-variables {
-	"id": 5
-}
-
-{
-  products(id: $ID) {
     id
     name
     description
@@ -67,31 +80,6 @@ query {
   me {
     id
     full_name
-  }
-}
-
-query {
-  customers {
-    id
-    email
-    payments {
-      customer_id
-      amount
-      billing_details
-    }
-  }
-}
-
-query {
-  products(id: $PRODUCT_ID) {
-    name
-  }
-}
-
-query {
-  products(id: $PRODUCT_ID) {
-    name
-    image
   }
 }
 
