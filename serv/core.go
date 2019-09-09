@@ -269,7 +269,7 @@ func (c *coreContext) resolvePreparedSQL(gql string) ([]byte, *preparedItem, err
 	defer tx.Rollback()
 
 	if v := c.Value(userIDKey); v != nil {
-		_, err = tx.Exec(`SET LOCAL SESSION "user.id" = ?`, v)
+		_, err = tx.Exec(`SET LOCAL "user.id" = ?`, v)
 
 		if err != nil {
 			return nil, nil, err
@@ -284,8 +284,6 @@ func (c *coreContext) resolvePreparedSQL(gql string) ([]byte, *preparedItem, err
 	if err := tx.Commit(); err != nil {
 		return nil, nil, err
 	}
-
-	//	w.WriteString(`SET LOCAL SESSION "user.id" = '{{user_id}}'; `)
 
 	fmt.Printf("PRE: %v\n", ps.stmt)
 
@@ -341,7 +339,7 @@ func (c *coreContext) resolveSQL(qc *qcode.QCode) (
 	defer tx.Rollback()
 
 	if v := c.Value(userIDKey); v != nil {
-		_, err = tx.Exec(`SET LOCAL SESSION "user.id" = ?`, v)
+		_, err = tx.Exec(`SET LOCAL "user.id" = ?`, v)
 
 		if err != nil {
 			return nil, 0, err

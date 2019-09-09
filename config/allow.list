@@ -1,18 +1,6 @@
 # http://localhost:8080/
 
 query {
-  customers {
-    id
-    email
-    payments {
-      customer_id
-      amount
-      billing_details
-    }
-  }
-}
-
-query {
   products(id: $PRODUCT_ID) {
     name
   }
@@ -59,6 +47,15 @@ mutation {
   }
 }
 
+variables {}
+
+{
+  me {
+    id
+    email
+  }
+}
+
 
 variables {
 	"update": {
@@ -80,6 +77,20 @@ query {
   me {
     id
     full_name
+  }
+}
+
+variables {}
+
+query {
+  customers {
+    id
+    email
+    payments {
+      customer_id
+      amount
+      billing_details
+    }
   }
 }
 
