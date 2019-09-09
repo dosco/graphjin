@@ -22,7 +22,7 @@ enable_tracing: true
 
 # Watch the config folder and reload Super Graph
 # with the new configs when a change is detected
-reload_on_config_change: false
+reload_on_config_change: true
 
 # Postgres related environment Variables
 # SG_DATABASE_HOST
