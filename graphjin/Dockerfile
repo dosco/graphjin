@@ -23,23 +23,24 @@ COPY --from=react-build /web/build/ ./web/build/
 ENV GO111MODULE=on
 RUN go mod vendor
 RUN go generate ./... && \
-    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o service && \
-    upx --ultra-brute -qq service && \
-    upx -t service
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o super-graph && \
+    upx --ultra-brute -qq super-graph && \
+    upx -t super-graph
 
 # stage: 3
 FROM alpine:latest
-WORKDIR /app
+WORKDIR /
 
 RUN apk add --no-cache tzdata
+RUN mkdir -p /config
 
 COPY --from=go-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=go-build /app/service .
-COPY --from=go-build /app/config/* ./
+COPY --from=go-build /app/config/* /config/
+COPY --from=go-build /app/super-graph .
 
-RUN chmod +x /app/service
+RUN chmod +x /super-graph
 USER nobody
 
 EXPOSE 8080
 
-CMD ./service
+CMD ./super-graph
