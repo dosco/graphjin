@@ -79,6 +79,11 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w *bytes.Buffer) (uint32, erro
 	c := &compilerContext{w, qc.Selects, co}
 	root := &qc.Selects[0]
 
+	ti, err := c.schema.GetTable(root.Table)
+	if err != nil {
+		return 0, err
+	}
+
 	st := NewStack()
 	st.Push(root.ID + closeBlock)
 	st.Push(root.ID)
@@ -88,7 +93,13 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w *bytes.Buffer) (uint32, erro
 	c.w.WriteString(`SELECT json_object_agg('`)
 	c.w.WriteString(root.FieldName)
 	c.w.WriteString(`', `)
-	c.w.WriteString(root.Table)
+
+	if ti.Singular == false {
+		c.w.WriteString(root.Table)
+	} else {
+		c.w.WriteString("sel_json_")
+		int2string(c.w, root.ID)
+	}
 	c.w.WriteString(`) FROM (`)
 
 	var ignored uint32
@@ -209,7 +220,8 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo) (uint
 	if ti.Singular == false {
 		//fmt.Fprintf(w, `SELECT coalesce(json_agg("%s"`, c.sel.Table)
 		c.w.WriteString(`SELECT coalesce(json_agg("`)
-		c.w.WriteString(sel.Table)
+		c.w.WriteString("sel_json_")
+		int2string(c.w, sel.ID)
 		c.w.WriteString(`"`)
 
 		if hasOrder {
@@ -255,7 +267,7 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo) (uint
 
 	//fmt.Fprintf(w, `)) AS "%s"`, c.sel.Table)
 	c.w.WriteString(`))`)
-	alias(c.w, sel.Table)
+	aliasWithID(c.w, "sel_json", sel.ID)
 	// END-ROW-TO-JSON
 
 	if hasOrder {
@@ -304,9 +316,9 @@ func (c *compilerContext) renderSelectClose(sel *qcode.Select, ti *DBTableInfo) 
 	}
 
 	if ti.Singular == false {
-		//fmt.Fprintf(w, `) AS "%s_%d"`, c.sel.Table, c.sel.ID)
+		//fmt.Fprintf(w, `) AS "sel_json_agg_%d"`, c.sel.ID)
 		c.w.WriteString(`)`)
-		aliasWithID(c.w, sel.Table, sel.ID)
+		aliasWithID(c.w, "sel_json_agg", sel.ID)
 	}
 
 	return nil

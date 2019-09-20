@@ -27,12 +27,14 @@ type allowList struct {
 	list     map[string]*allowItem
 	filepath string
 	saveChan chan *allowItem
+	active   bool
 }
 
 func initAllowList(path string) {
 	_allowList = allowList{
 		list:     make(map[string]*allowItem),
 		saveChan: make(chan *allowItem),
+		active:   true,
 	}
 
 	if len(path) != 0 {
@@ -79,7 +81,7 @@ func initAllowList(path string) {
 }
 
 func (al *allowList) add(req *gqlReq) {
-	if len(req.ref) == 0 || len(req.Query) == 0 {
+	if al.active == false || len(req.ref) == 0 || len(req.Query) == 0 {
 		return
 	}
 
@@ -91,6 +93,10 @@ func (al *allowList) add(req *gqlReq) {
 }
 
 func (al *allowList) load() {
+	if al.active == false {
+		return
+	}
+
 	b, err := ioutil.ReadFile(al.filepath)
 	if err != nil {
 		log.Fatal(err)
@@ -168,6 +174,9 @@ func (al *allowList) load() {
 }
 
 func (al *allowList) save(item *allowItem) {
+	if al.active == false {
+		return
+	}
 	al.list[gqlHash(item.gql, item.vars)] = item
 
 	f, err := os.Create(al.filepath)

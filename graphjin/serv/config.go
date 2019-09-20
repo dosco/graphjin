@@ -18,6 +18,7 @@ type config struct {
 	UseAllowList   bool   `mapstructure:"use_allow_list"`
 	WatchAndReload bool   `mapstructure:"reload_on_config_change"`
 	AuthFailBlock  string `mapstructure:"auth_fail_block"`
+	SeedFile       string `mapstructure:"seed_file"`
 	Inflections    map[string]string
 
 	Auth struct {
