@@ -31,21 +31,29 @@ type coreContext struct {
 }
 
 func (c *coreContext) handleReq(w io.Writer, req *http.Request) error {
+	c.req.ref = req.Referer()
+	c.req.hdr = req.Header
+
+	b, err := c.execQuery()
+	if err != nil {
+		return err
+	}
+
+	return c.render(w, b)
+}
+
+func (c *coreContext) execQuery() ([]byte, error) {
 	var err error
 	var skipped uint32
 	var qc *qcode.QCode
 	var data []byte
-
-	c.req.ref = req.Referer()
-
-	//conf.UseAllowList = true
 
 	if conf.UseAllowList {
 		var ps *preparedItem
 
 		data, ps, err = c.resolvePreparedSQL(c.req.Query)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		skipped = ps.skipped
@@ -55,17 +63,17 @@ func (c *coreContext) handleReq(w io.Writer, req *http.Request) error {
 
 		qc, err = qcompile.Compile([]byte(c.req.Query))
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		data, skipped, err = c.resolveSQL(qc)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	if len(data) == 0 || skipped == 0 {
-		return c.render(w, data)
+		return data, nil
 	}
 
 	sel := qc.Selects
@@ -83,31 +91,31 @@ func (c *coreContext) handleReq(w io.Writer, req *http.Request) error {
 	var to []jsn.Field
 	switch {
 	case len(from) == 1:
-		to, err = c.resolveRemote(req, h, from[0], sel, sfmap)
+		to, err = c.resolveRemote(c.req.hdr, h, from[0], sel, sfmap)
 
 	case len(from) > 1:
-		to, err = c.resolveRemotes(req, h, from, sel, sfmap)
+		to, err = c.resolveRemotes(c.req.hdr, h, from, sel, sfmap)
 
 	default:
-		return errors.New("something wrong no remote ids found in db response")
+		return nil, errors.New("something wrong no remote ids found in db response")
 	}
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var ob bytes.Buffer
 
 	err = jsn.Replace(&ob, data, from, to)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return c.render(w, ob.Bytes())
+	return ob.Bytes(), nil
 }
 
 func (c *coreContext) resolveRemote(
-	req *http.Request,
+	hdr http.Header,
 	h *xxhash.Digest,
 	field jsn.Field,
 	sel []qcode.Select,
@@ -143,7 +151,7 @@ func (c *coreContext) resolveRemote(
 
 	st := time.Now()
 
-	b, err := r.Fn(req, id)
+	b, err := r.Fn(hdr, id)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +181,7 @@ func (c *coreContext) resolveRemote(
 }
 
 func (c *coreContext) resolveRemotes(
-	req *http.Request,
+	hdr http.Header,
 	h *xxhash.Digest,
 	from []jsn.Field,
 	sel []qcode.Select,
@@ -218,7 +226,7 @@ func (c *coreContext) resolveRemotes(
 
 			st := time.Now()
 
-			b, err := r.Fn(req, id)
+			b, err := r.Fn(hdr, id)
 			if err != nil {
 				cerr = fmt.Errorf("%s: %s", s.Table, err)
 				return
@@ -324,6 +332,7 @@ func (c *coreContext) resolveSQL(qc *qcode.QCode) (
 
 	if conf.LogLevel == "debug" {
 		os.Stdout.WriteString(finalSQL)
+		os.Stdout.WriteString("\n\n")
 	}
 
 	var st time.Time
@@ -346,7 +355,7 @@ func (c *coreContext) resolveSQL(qc *qcode.QCode) (
 		}
 	}
 
-	fmt.Printf("RAW: %#v\n", finalSQL)
+	//fmt.Printf("\nRAW: %#v\n", finalSQL)
 
 	var root json.RawMessage
 	_, err = tx.QueryOne(pg.Scan(&root), finalSQL)

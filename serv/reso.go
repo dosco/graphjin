@@ -19,7 +19,7 @@ var (
 type resolvFn struct {
 	IDField []byte
 	Path    [][]byte
-	Fn      func(r *http.Request, id []byte) ([]byte, error)
+	Fn      func(h http.Header, id []byte) ([]byte, error)
 }
 
 func initResolvers() error {
@@ -92,11 +92,11 @@ func initRemotes(t configTable) error {
 	return nil
 }
 
-func buildFn(r configRemote) func(*http.Request, []byte) ([]byte, error) {
+func buildFn(r configRemote) func(http.Header, []byte) ([]byte, error) {
 	reqURL := strings.Replace(r.URL, "$id", "%s", 1)
 	client := &http.Client{}
 
-	fn := func(inReq *http.Request, id []byte) ([]byte, error) {
+	fn := func(hdr http.Header, id []byte) ([]byte, error) {
 		uri := fmt.Sprintf(reqURL, id)
 		req, err := http.NewRequest("GET", uri, nil)
 		if err != nil {
@@ -108,10 +108,10 @@ func buildFn(r configRemote) func(*http.Request, []byte) ([]byte, error) {
 		}
 
 		for _, v := range r.PassHeaders {
-			req.Header.Set(v, inReq.Header.Get(v))
+			req.Header.Set(v, hdr.Get(v))
 		}
 
-		if host, ok := req.Header["Host"]; ok {
+		if host, ok := hdr["Host"]; ok {
 			req.Host = host[0]
 		}
 

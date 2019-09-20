@@ -60,10 +60,12 @@ func (c *compilerContext) renderInsert(qc *qcode.QCode, w *bytes.Buffer, vars Va
 	}
 
 	c.w.WriteString(`WITH `)
-	c.w.WriteString(root.Table)
+	quoted(c.w, ti.Name)
 
-	c.w.WriteString(` AS (WITH input AS (SELECT {{insert}}::json AS j) INSERT INTO `)
-	c.w.WriteString(root.Table)
+	c.w.WriteString(` AS (WITH "input" AS (SELECT {{`)
+	c.w.WriteString(root.ActionVar)
+	c.w.WriteString(`}}::json AS j) INSERT INTO `)
+	c.w.WriteString(ti.Name)
 	io.WriteString(c.w, ` (`)
 	c.renderInsertUpdateColumns(qc, w, jt, ti)
 	io.WriteString(c.w, `)`)
@@ -79,7 +81,7 @@ func (c *compilerContext) renderInsert(qc *qcode.QCode, w *bytes.Buffer, vars Va
 	}
 
 	c.w.WriteString(`(NULL::`)
-	c.w.WriteString(root.Table)
+	c.w.WriteString(ti.Name)
 	c.w.WriteString(`, i.j) t  RETURNING *) `)
 
 	return 0, nil
@@ -122,10 +124,12 @@ func (c *compilerContext) renderUpdate(qc *qcode.QCode, w *bytes.Buffer, vars Va
 	}
 
 	c.w.WriteString(`WITH `)
-	c.w.WriteString(root.Table)
+	quoted(c.w, ti.Name)
 
-	c.w.WriteString(` AS (WITH input AS (SELECT {{update}}::json AS j) UPDATE `)
-	c.w.WriteString(root.Table)
+	c.w.WriteString(` AS (WITH "input" AS (SELECT {{`)
+	c.w.WriteString(root.ActionVar)
+	c.w.WriteString(`}}::json AS j) UPDATE `)
+	c.w.WriteString(ti.Name)
 	io.WriteString(c.w, ` SET (`)
 	c.renderInsertUpdateColumns(qc, w, jt, ti)
 
@@ -140,7 +144,7 @@ func (c *compilerContext) renderUpdate(qc *qcode.QCode, w *bytes.Buffer, vars Va
 	}
 
 	c.w.WriteString(`(NULL::`)
-	c.w.WriteString(root.Table)
+	c.w.WriteString(ti.Name)
 	c.w.WriteString(`, i.j) t)`)
 
 	io.WriteString(c.w, ` WHERE `)
@@ -163,7 +167,7 @@ func (c *compilerContext) renderDelete(qc *qcode.QCode, w *bytes.Buffer, vars Va
 	}
 
 	c.w.WriteString(`DELETE FROM `)
-	c.w.WriteString(root.Table)
+	c.w.WriteString(ti.Name)
 	io.WriteString(c.w, ` WHERE `)
 
 	if err := c.renderWhere(root, ti); err != nil {
@@ -173,4 +177,10 @@ func (c *compilerContext) renderDelete(qc *qcode.QCode, w *bytes.Buffer, vars Va
 	io.WriteString(c.w, ` RETURNING *) `)
 
 	return 0, nil
+}
+
+func quoted(w *bytes.Buffer, identifier string) {
+	w.WriteString(`"`)
+	w.WriteString(identifier)
+	w.WriteString(`"`)
 }

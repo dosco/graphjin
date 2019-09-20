@@ -30,6 +30,7 @@ type gqlReq struct {
 	Query  string          `json:"query"`
 	Vars   json.RawMessage `json:"variables"`
 	ref    string
+	hdr    http.Header
 }
 
 type variables map[string]json.RawMessage
