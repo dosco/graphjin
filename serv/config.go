@@ -19,7 +19,9 @@ type config struct {
 	WatchAndReload bool   `mapstructure:"reload_on_config_change"`
 	AuthFailBlock  string `mapstructure:"auth_fail_block"`
 	SeedFile       string `mapstructure:"seed_file"`
-	Inflections    map[string]string
+	MigrationsPath string `mapstructure:"migrations_path"`
+
+	Inflections map[string]string
 
 	Auth struct {
 		Type   string
@@ -49,12 +51,12 @@ type config struct {
 	DB struct {
 		Type       string
 		Host       string
-		Port       string
+		Port       uint16
 		DBName     string
 		User       string
 		Password   string
 		Schema     string
-		PoolSize   int    `mapstructure:"pool_size"`
+		PoolSize   int32  `mapstructure:"pool_size"`
 		MaxRetries int    `mapstructure:"max_retries"`
 		LogLevel   string `mapstructure:"log_level"`
 

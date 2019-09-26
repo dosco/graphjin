@@ -20,6 +20,12 @@ auth_fail_block: always
 # response
 enable_tracing: true
 
+# File that points to the database seeding script
+# seed_file: seed.js
+
+# Path pointing to where the migrations can be found
+# migrations_path: migrations
+
 # Postgres related environment Variables
 # SG_DATABASE_HOST
 # SG_DATABASE_PORT

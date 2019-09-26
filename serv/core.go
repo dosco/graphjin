@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 
@@ -16,7 +15,6 @@ import (
 	"github.com/dosco/super-graph/jsn"
 	"github.com/dosco/super-graph/psql"
 	"github.com/dosco/super-graph/qcode"
-	"github.com/go-pg/pg"
 	"github.com/valyala/fasttemplate"
 )
 
@@ -267,45 +265,45 @@ func (c *coreContext) resolvePreparedSQL(gql string) ([]byte, *preparedItem, err
 		return nil, nil, errUnauthorized
 	}
 
-	var root json.RawMessage
+	var root []byte
 	vars := varList(c, ps.args)
 
-	tx, err := db.Begin()
+	tx, err := db.Begin(c)
 	if err != nil {
 		return nil, nil, err
 	}
-	defer tx.Rollback()
+	defer tx.Rollback(c)
 
 	if v := c.Value(userIDKey); v != nil {
-		_, err = tx.Exec(`SET LOCAL "user.id" = ?`, v)
+		_, err = tx.Exec(c, fmt.Sprintf(`SET LOCAL "user.id" = %s;`, v))
 
 		if err != nil {
 			return nil, nil, err
 		}
 	}
 
-	_, err = tx.Stmt(ps.stmt).QueryOne(pg.Scan(&root), vars...)
+	err = tx.QueryRow(c, ps.stmt.SQL, vars...).Scan(&root)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit(c); err != nil {
 		return nil, nil, err
 	}
 
 	fmt.Printf("PRE: %v\n", ps.stmt)
 
-	return []byte(root), ps, nil
+	return root, ps, nil
 }
 
-func (c *coreContext) resolveSQL(qc *qcode.QCode) (
-	[]byte, uint32, error) {
+func (c *coreContext) resolveSQL(qc *qcode.QCode) ([]byte, uint32, error) {
+	var vars map[string]json.RawMessage
 	stmt := &bytes.Buffer{}
 
-	vars := make(map[string]json.RawMessage)
-
-	if err := json.Unmarshal(c.req.Vars, &vars); err != nil {
-		return nil, 0, err
+	if len(c.req.Vars) != 0 {
+		if err := json.Unmarshal(c.req.Vars, &vars); err != nil {
+			return nil, 0, err
+		}
 	}
 
 	skipped, err := pcompile.Compile(qc, stmt, psql.Variables(vars))
@@ -330,10 +328,10 @@ func (c *coreContext) resolveSQL(qc *qcode.QCode) (
 
 	finalSQL := stmt.String()
 
-	if conf.LogLevel == "debug" {
-		os.Stdout.WriteString(finalSQL)
-		os.Stdout.WriteString("\n\n")
-	}
+	// if conf.LogLevel == "debug" {
+	// 	os.Stdout.WriteString(finalSQL)
+	// 	os.Stdout.WriteString("\n\n")
+	// }
 
 	var st time.Time
 
@@ -341,14 +339,14 @@ func (c *coreContext) resolveSQL(qc *qcode.QCode) (
 		st = time.Now()
 	}
 
-	tx, err := db.Begin()
+	tx, err := db.Begin(c)
 	if err != nil {
 		return nil, 0, err
 	}
-	defer tx.Rollback()
+	defer tx.Rollback(c)
 
 	if v := c.Value(userIDKey); v != nil {
-		_, err = tx.Exec(`SET LOCAL "user.id" = ?`, v)
+		_, err = tx.Exec(c, fmt.Sprintf(`SET LOCAL "user.id" = %s;`, v))
 
 		if err != nil {
 			return nil, 0, err
@@ -357,14 +355,14 @@ func (c *coreContext) resolveSQL(qc *qcode.QCode) (
 
 	//fmt.Printf("\nRAW: %#v\n", finalSQL)
 
-	var root json.RawMessage
-	_, err = tx.QueryOne(pg.Scan(&root), finalSQL)
+	var root []byte
 
+	err = tx.QueryRow(c, finalSQL).Scan(&root)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit(c); err != nil {
 		return nil, 0, err
 	}
 
@@ -379,7 +377,7 @@ func (c *coreContext) resolveSQL(qc *qcode.QCode) (
 		_allowList.add(&c.req)
 	}
 
-	return []byte(root), skipped, nil
+	return root, skipped, nil
 }
 
 func (c *coreContext) render(w io.Writer, data []byte) error {

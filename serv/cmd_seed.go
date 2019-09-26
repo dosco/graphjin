@@ -11,12 +11,21 @@ import (
 
 	"github.com/brianvoe/gofakeit"
 	"github.com/dop251/goja"
+	"github.com/spf13/cobra"
 )
 
-func cmdSeed(cpath string) {
+func cmdSeed(cmd *cobra.Command, args []string) {
+	var err error
 	conf.UseAllowList = false
 
-	b, err := ioutil.ReadFile(path.Join(cpath, conf.SeedFile))
+	db, err = initDBPool(conf)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("failed to connect to database")
+	}
+
+	initCompiler()
+
+	b, err := ioutil.ReadFile(path.Join(confPath, conf.SeedFile))
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to read file")
 	}

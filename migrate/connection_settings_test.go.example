@@ -1,0 +1,12 @@
+package migrate_test
+
+import (
+  "github.com/jackc/pgx"
+)
+
+var defaultConnectionParameters *pgx.ConnConfig = &pgx.ConnConfig{
+  // Host: "127.0.0.1",
+  User: "tern",
+  Password: "secret", // Password is usually not needed when using socket
+  Database: "tern_migrate_test",
+}

@@ -92,9 +92,7 @@ func startHTTP() {
 	}()
 
 	srv.RegisterOnShutdown(func() {
-		if err := db.Close(); err != nil {
-			logger.Error().Err(err).Msg("db closed")
-		}
+		db.Close()
 	})
 
 	fmt.Printf("%s listening on %s (%s)\n", serverName, hostPort, conf.Env)
