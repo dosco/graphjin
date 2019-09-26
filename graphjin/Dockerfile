@@ -43,4 +43,4 @@ USER nobody
 
 EXPOSE 8080
 
-CMD ./super-graph
+CMD ./super-graph serv

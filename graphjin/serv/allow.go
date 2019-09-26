@@ -1,6 +1,7 @@
 package serv
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -206,7 +207,7 @@ func (al *allowList) save(item *allowItem) {
 		f.WriteString(fmt.Sprintf("# %s\n\n", k))
 
 		for i := range v {
-			if len(v[i].vars) != 0 {
+			if len(v[i].vars) != 0 && bytes.Equal(v[i].vars, []byte("{}")) == false {
 				vj, err := json.MarshalIndent(v[i].vars, "", "\t")
 				if err != nil {
 					logger.Warn().Err(err).Msg("Failed to write allow list 'vars' to file")
@@ -215,7 +216,11 @@ func (al *allowList) save(item *allowItem) {
 				f.WriteString(fmt.Sprintf("variables %s\n\n", vj))
 			}
 
-			f.WriteString(fmt.Sprintf("%s\n\n", v[i].gql))
+			if v[i].gql[0] == '{' {
+				f.WriteString(fmt.Sprintf("query %s\n\n", v[i].gql))
+			} else {
+				f.WriteString(fmt.Sprintf("%s\n\n", v[i].gql))
+			}
 		}
 	}
 }

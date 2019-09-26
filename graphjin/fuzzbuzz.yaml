@@ -3,7 +3,7 @@ targets:
   
   - name: qcode
     language: go
-    version: "1.13"
+    version: "1.11"
     corpus: ./corpus
     memory_limit: "100" # in megabytes
     timeout: "500" # in milliseconds
@@ -17,7 +17,7 @@ targets:
 
   - name: jsn
     language: go
-    version: "1.13"
+    version: "1.11"
     corpus: ./corpus
     memory_limit: "100" # in megabytes
     timeout: "500" # in milliseconds

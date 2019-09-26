@@ -2,18 +2,19 @@ package serv
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 
 	"github.com/dosco/super-graph/psql"
 	"github.com/dosco/super-graph/qcode"
-	"github.com/go-pg/pg"
+	"github.com/jackc/pgconn"
 	"github.com/valyala/fasttemplate"
 )
 
 type preparedItem struct {
-	stmt    *pg.Stmt
+	stmt    *pgconn.StatementDescription
 	args    [][]byte
 	skipped uint32
 	qc      *qcode.QCode
@@ -75,7 +76,15 @@ func prepareStmt(key, gql string, varBytes json.RawMessage) error {
 		return err
 	}
 
-	pstmt, err := db.Prepare(finalSQL)
+	ctx := context.Background()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	pstmt, err := tx.Prepare(ctx, "", finalSQL)
 	if err != nil {
 		return err
 	}
@@ -85,6 +94,10 @@ func prepareStmt(key, gql string, varBytes json.RawMessage) error {
 		args:    am,
 		skipped: skipped,
 		qc:      qc,
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return err
 	}
 
 	return nil

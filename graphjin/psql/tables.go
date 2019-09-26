@@ -1,26 +1,29 @@
 package psql
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
-	"github.com/go-pg/pg"
 	"github.com/gobuffalo/flect"
+	"github.com/jackc/pgx/pgtype"
+	"github.com/jackc/pgx/v4/pgxpool"
 )
 
 type DBTable struct {
-	Name string `sql:"name"`
-	Type string `sql:"type"`
+	Name string
+	Type string
 }
 
-func GetTables(db *pg.DB) ([]*DBTable, error) {
+func GetTables(dbc *pgxpool.Conn) ([]*DBTable, error) {
 	sqlStmt := `
 	SELECT
   c.relname as "name",
   CASE c.relkind WHEN 'r' THEN 'table'
-  WHEN 'v' THEN 'view'
-  WHEN 'm' THEN 'materialized view'
-  WHEN 'f' THEN 'foreign table' END as "type"
+		WHEN 'v' THEN 'view'
+		WHEN 'm' THEN 'materialized view'
+		WHEN 'f' THEN 'foreign table' 
+	END as "type"
 FROM pg_catalog.pg_class c
      LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
 WHERE c.relkind IN ('r','v','m','f','')
@@ -30,28 +33,39 @@ WHERE c.relkind IN ('r','v','m','f','')
   AND pg_catalog.pg_table_is_visible(c.oid);
 	`
 
-	var t []*DBTable
-	_, err := db.Query(&t, sqlStmt)
+	var tables []*DBTable
 
+	rows, err := dbc.Query(context.Background(), sqlStmt)
 	if err != nil {
 		return nil, fmt.Errorf("Error fetching tables: %s", err)
 	}
+	defer rows.Close()
 
-	return t, nil
+	for rows.Next() {
+		t := DBTable{}
+		err = rows.Scan(&t.Name, &t.Type)
+		if err != nil {
+			return nil, err
+		}
+		tables = append(tables, &t)
+	}
+
+	return tables, nil
 }
 
 type DBColumn struct {
-	ID         int    `sql:"id"`
-	Name       string `sql:"name"`
-	Type       string `sql:"type"`
-	NotNull    bool   `sql:"notnull"`
-	PrimaryKey bool   `sql:"primarykey"`
-	Uniquekey  bool   `sql:"uniquekey"`
-	FKeyTable  string `sql:"foreignkey"`
-	FKeyColID  []int  `sql:"foreignkey_fieldnum,array"`
+	ID         int
+	Name       string
+	Type       string
+	NotNull    bool
+	PrimaryKey bool
+	UniqueKey  bool
+	FKeyTable  string
+	FKeyColID  []int
+	fKeyColID  pgtype.Int2Array
 }
 
-func GetColumns(db *pg.DB, schema, table string) ([]*DBColumn, error) {
+func GetColumns(dbc *pgxpool.Conn, schema, table string) ([]*DBColumn, error) {
 	sqlStmt := `
 	SELECT  
     f.attnum AS id,  
@@ -59,18 +73,20 @@ func GetColumns(db *pg.DB, schema, table string) ([]*DBColumn, error) {
     f.attnotnull AS notnull,  
     pg_catalog.format_type(f.atttypid,f.atttypmod) AS type,  
     CASE  
-        WHEN p.contype = 'p' THEN 't'  
-        ELSE 'f'  
+        WHEN p.contype = 'p' THEN true  
+        ELSE false 
     END AS primarykey,  
     CASE  
-        WHEN p.contype = 'u' THEN 't'  
-        ELSE 'f'
+        WHEN p.contype = 'u' THEN true  
+        ELSE false
     END AS uniquekey,
     CASE
-        WHEN p.contype = 'f' THEN g.relname
+				WHEN p.contype = 'f' THEN g.relname 
+				ELSE ''::text
     END AS foreignkey,
     CASE
-        WHEN p.contype = 'f' THEN p.confkey
+				WHEN p.contype = 'f' THEN p.confkey
+				ELSE ARRAY[]::int2[]
     END AS foreignkey_fieldnum
 FROM pg_attribute f  
     JOIN pg_class c ON c.oid = f.attrelid  
@@ -85,18 +101,26 @@ WHERE c.relkind = 'r'::char
     AND f.attnum > 0 ORDER BY id;
 	`
 
-	stmt, err := db.Prepare(sqlStmt)
+	var cols []*DBColumn
+
+	rows, err := dbc.Query(context.Background(), sqlStmt, schema, table)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching columns: %s", err)
 	}
+	defer rows.Close()
 
-	var t []*DBColumn
-	_, err = stmt.Query(&t, schema, table)
-	if err != nil {
-		return nil, fmt.Errorf("error fetching columns: %s", err)
+	for rows.Next() {
+		c := DBColumn{}
+		err = rows.Scan(&c.ID, &c.Name, &c.NotNull, &c.Type, &c.PrimaryKey, &c.UniqueKey,
+			&c.FKeyTable, &c.fKeyColID)
+		if err != nil {
+			return nil, err
+		}
+		c.fKeyColID.AssignTo(&c.FKeyColID)
+		cols = append(cols, &c)
 	}
 
-	return t, nil
+	return cols, nil
 }
 
 type DBSchema struct {
@@ -131,20 +155,26 @@ type DBRel struct {
 	Col2    string
 }
 
-func NewDBSchema(db *pg.DB, aliases map[string][]string) (*DBSchema, error) {
+func NewDBSchema(db *pgxpool.Pool, aliases map[string][]string) (*DBSchema, error) {
 	schema := &DBSchema{
 		t:  make(map[string]*DBTableInfo),
 		rm: make(map[string]map[string]*DBRel),
 		al: make(map[string]struct{}),
 	}
 
-	tables, err := GetTables(db)
+	dbc, err := db.Acquire(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("error acquiring connection from pool")
+	}
+	defer dbc.Release()
+
+	tables, err := GetTables(dbc)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, t := range tables {
-		cols, err := GetColumns(db, "public", t.Name)
+		cols, err := GetColumns(dbc, "public", t.Name)
 		if err != nil {
 			return nil, err
 		}
