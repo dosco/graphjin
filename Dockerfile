@@ -11,8 +11,7 @@ RUN apk update && \
     apk add --no-cache git && \
     apk add --no-cache upx=3.95-r2
 
-RUN go get -u github.com/dosco/esc && \
-    go get -u github.com/shanzi/wu && \
+RUN go get -u github.com/shanzi/wu && \
     go install github.com/shanzi/wu && \
     go get github.com/GeertJohan/go.rice/rice
 
@@ -24,13 +23,11 @@ COPY --from=react-build /web/build/ ./web/build/
 
 ENV GO111MODULE=on
 RUN go mod vendor
-# RUN go generate ./... && \
-#   CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o super-graph && \
-#   upx --ultra-brute -qq super-graph && \
-#   upx -t super-graph
-
 RUN go generate ./... && \
-    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o super-graph
+  CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o super-graph && \
+  echo "Compressing binary, will take a bit of time..." && \
+  upx --ultra-brute -qq super-graph && \
+  upx -t super-graph
 
 # stage: 3
 FROM alpine:latest
