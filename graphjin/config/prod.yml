@@ -80,7 +80,7 @@ database:
   type: postgres
   host: db
   port: 5432
-  dbname: app_development
+  dbname: {{app_name_slug}}_development
   user: postgres
   password: ''
   #pool_size: 10

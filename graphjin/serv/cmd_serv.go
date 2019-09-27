@@ -7,6 +7,10 @@ import (
 func cmdServ(cmd *cobra.Command, args []string) {
 	var err error
 
+	if conf, err = initConf(); err != nil {
+		logger.Fatal().Err(err).Msg("failed to read config")
+	}
+
 	db, err = initDBPool(conf)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to connect to database")

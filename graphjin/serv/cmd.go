@@ -17,8 +17,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-//go:generate esc -o static.go -ignore \\.DS_Store -prefix ../web/build -private -pkg serv ../web/build
-
 const (
 	serverName = "Super Graph"
 
@@ -42,11 +40,10 @@ var (
 	migrateCmd      *cobra.Command
 	statusCmd       *cobra.Command
 	newMigrationCmd *cobra.Command
+	initCmd         *cobra.Command
 )
 
 func Init() {
-	var err error
-
 	rootCmd = &cobra.Command{
 		Use:   "super-graph",
 		Short: "An instant high-performance GraphQL API. No code needed. https://supergraph.dev",
@@ -110,6 +107,13 @@ e.g. tern migrate -d last
 		Run:   cmdNewMigration,
 	}
 
+	initCmd = &cobra.Command{
+		Use:   "init APP-NAME",
+		Short: "Initialize a new application",
+		Long:  "Generate all the required files to start on a new Super Graph app",
+		Run:   cmdInit,
+	}
+
 	logger = initLog()
 
 	rootCmd.Flags().StringVar(&confPath,
@@ -118,15 +122,12 @@ e.g. tern migrate -d last
 	//cmdMigrate.Flags().StringVarP(&cliOptions.destinationVersion,
 	//	"destination", "d", "last", "destination migration version")
 
+	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(servCmd)
 	rootCmd.AddCommand(seedCmd)
 	rootCmd.AddCommand(migrateCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(newMigrationCmd)
-
-	if conf, err = initConf(); err != nil {
-		logger.Fatal().Err(err).Msg("failed to read config")
-	}
 
 	if err := rootCmd.Execute(); err != nil {
 		logger.Fatal().Err(err).Send()

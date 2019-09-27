@@ -1,6 +1,7 @@
 module github.com/dosco/super-graph
 
 require (
+	github.com/GeertJohan/go.rice v1.0.0
 	github.com/Masterminds/semver v1.4.2
 	github.com/OneOfOne/xxhash v1.2.5 // indirect
 	github.com/adjust/gorails v0.0.0-20171013043634-2786ed0c03d3
@@ -35,6 +36,9 @@ require (
 	github.com/valyala/fasttemplate v1.0.1
 	github.com/vaughan0/go-ini v0.0.0-20130923145212-a98ad7ee00ec
 	golang.org/x/crypto v0.0.0-20190911031432-227b76d455e7
+	golang.org/x/net v0.0.0-20190813141303-74dc4d7220e7
 	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127
 	mellium.im/sasl v0.2.1 // indirect
 )
+
+go 1.13

@@ -30,7 +30,7 @@ func initPreparedList() {
 	for k, v := range _allowList.list {
 		err := prepareStmt(k, v.gql, v.vars)
 		if err != nil {
-			panic(err)
+			logger.Fatal().Err(err).Send()
 		}
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path"
 	"sort"
 	"strings"
 )
@@ -31,20 +32,20 @@ type allowList struct {
 	active   bool
 }
 
-func initAllowList(path string) {
+func initAllowList(cpath string) {
 	_allowList = allowList{
 		list:     make(map[string]*allowItem),
 		saveChan: make(chan *allowItem),
 		active:   true,
 	}
 
-	if len(path) != 0 {
-		fp := fmt.Sprintf("%s/allow.list", path)
+	if len(cpath) != 0 {
+		fp := path.Join(cpath, "allow.list")
 
 		if _, err := os.Stat(fp); err == nil {
 			_allowList.filepath = fp
 		} else if !os.IsNotExist(err) {
-			panic(err)
+			logger.Fatal().Err(err).Send()
 		}
 	}
 
@@ -54,7 +55,7 @@ func initAllowList(path string) {
 		if _, err := os.Stat(fp); err == nil {
 			_allowList.filepath = fp
 		} else if !os.IsNotExist(err) {
-			panic(err)
+			logger.Fatal().Err(err).Send()
 		}
 	}
 
@@ -64,15 +65,25 @@ func initAllowList(path string) {
 		if _, err := os.Stat(fp); err == nil {
 			_allowList.filepath = fp
 		} else if !os.IsNotExist(err) {
-			panic(err)
+			logger.Fatal().Err(err).Send()
 		}
 	}
 
 	if len(_allowList.filepath) == 0 {
-		panic("allow.list not found")
-	}
+		if conf.UseAllowList {
+			logger.Fatal().Msg("allow.list not found")
+		}
 
-	_allowList.load()
+		if len(cpath) == 0 {
+			_allowList.filepath = "./config/allow.list"
+		} else {
+			_allowList.filepath = path.Join(cpath, "allow.list")
+		}
+
+		logger.Warn().Msg("allow.list not found")
+	} else {
+		_allowList.load()
+	}
 
 	go func() {
 		for v := range _allowList.saveChan {
@@ -182,7 +193,7 @@ func (al *allowList) save(item *allowItem) {
 
 	f, err := os.Create(al.filepath)
 	if err != nil {
-		logger.Warn().Err(err).Msg("Failed to write allow list to file")
+		logger.Warn().Err(err).Msgf("Failed to write allow list: %s", al.filepath)
 		return
 	}
 

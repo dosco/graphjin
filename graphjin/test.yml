@@ -1,0 +1,57 @@
+app_name: Test App
+auth:
+  cookie: _app_session
+  header: X-User-ID
+  rails:
+    max_active: 12000
+    max_idle: 80
+    secret_key_base: 0a248500a64c01184edb4d7ad3a805488f8097ac761b76aaa6c17c01dcb7af03a2f18ba61b2868134b9c7b79a122bc0dadff4367414a2d173297bfea92be5566
+    version: 5.2
+  type: rails
+auth_fail_block: never
+database:
+  dbname: app_development
+  defaults:
+    blocklist:
+    - ar_internal_metadata
+    - schema_migrations
+    - secret
+    - password
+    - encrypted
+    - token
+  host: db
+  password: ""
+  port: 5432
+  schema: public
+  tables:
+  - name: users
+  - filter: none
+    name: customers
+    remotes:
+    - id: stripe_id
+      name: payments
+      pass_headers:
+      - cookie
+      path: data
+      set_headers:
+      - name: Host
+        value: 0.0.0.0
+      url: http://rails_app:3000/stripe/$id
+  - filter:
+    - '{ id: { eq: $user_id } }'
+    name: me
+    table: users
+  type: postgres
+  user: postgres
+  variables:
+    account_id: (select account_id from users where id = $user_id)
+enable_tracing: true
+env: development
+host_port: 0.0.0.0:8080
+log_level: debug
+migrations_path: ./config/migrations
+port: "8080"
+reload_on_config_change: true
+seed_file: seed.js
+use_allow_list: false
+web_ui: true

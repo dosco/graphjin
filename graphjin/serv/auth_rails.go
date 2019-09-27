@@ -28,13 +28,13 @@ func railsRedisHandler(next http.HandlerFunc) http.HandlerFunc {
 		Dial: func() (redis.Conn, error) {
 			c, err := redis.DialURL(conf.Auth.Rails.URL)
 			if err != nil {
-				panic(err)
+				logger.Fatal().Err(err).Send()
 			}
 
 			pwd := conf.Auth.Rails.Password
 			if len(pwd) != 0 {
 				if _, err := c.Do("AUTH", pwd); err != nil {
-					panic(err)
+					logger.Fatal().Err(err).Send()
 				}
 			}
 			return c, err
