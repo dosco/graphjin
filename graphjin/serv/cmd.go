@@ -17,6 +17,8 @@ import (
 	"github.com/spf13/viper"
 )
 
+//go:generate rice embed-go
+
 const (
 	serverName = "Super Graph"
 
