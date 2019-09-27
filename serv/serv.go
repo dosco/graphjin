@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	rice "github.com/GeertJohan/go.rice"
 	"github.com/dosco/super-graph/psql"
 	"github.com/dosco/super-graph/qcode"
 )
@@ -38,22 +39,22 @@ func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
 	return qc, pc, nil
 }
 
-func initWatcher(path string) {
+func initWatcher(cpath string) {
 	if conf.WatchAndReload == false {
 		return
 	}
 
 	var d dir
-	if len(path) == 0 || path == "./" {
+	if len(cpath) == 0 || cpath == "./" {
 		d = Dir("./config", ReExec)
 	} else {
-		d = Dir(path, ReExec)
+		d = Dir(cpath, ReExec)
 	}
 
 	go func() {
 		err := Do(logger.Printf, d)
 		if err != nil {
-			panic(err)
+			logger.Fatal().Err(err).Send()
 		}
 	}()
 }
@@ -109,7 +110,7 @@ func routeHandler() http.Handler {
 
 	mux.Handle("/api/v1/graphql", withAuth(apiv1Http))
 	if conf.WebUI {
-		mux.Handle("/", http.FileServer(_escFS(false)))
+		mux.Handle("/", http.FileServer(rice.MustFindBox("../web/build").HTTPBox()))
 	}
 
 	fn := func(w http.ResponseWriter, r *http.Request) {

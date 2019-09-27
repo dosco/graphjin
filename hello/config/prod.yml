@@ -1,4 +1,4 @@
-app_name: "Super Graph Production"
+app_name: "Hello Production"
 host_port: 0.0.0.0:8080
 web_ui: false
 
@@ -80,7 +80,7 @@ database:
   type: postgres
   host: db
   port: 5432
-  dbname: {{app_name_slug}}_development
+  dbname: hello_database
   user: postgres
   password: ''
   #pool_size: 10

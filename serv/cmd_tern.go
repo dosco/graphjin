@@ -40,6 +40,12 @@ func cmdNewMigration(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
+	var err error
+
+	if conf, err = initConf(); err != nil {
+		logger.Fatal().Err(err).Msg("failed to read config")
+	}
+
 	name := args[0]
 
 	m, err := migrate.FindMigrations(conf.MigrationsPath)
@@ -64,10 +70,16 @@ func cmdNewMigration(cmd *cobra.Command, args []string) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	logger.Info().Msgf("created migration '%s'\n", mpath)
+	logger.Info().Msgf("created migration '%s'", mpath)
 }
 
 func cmdMigrate(cmd *cobra.Command, args []string) {
+	var err error
+
+	if conf, err = initConf(); err != nil {
+		logger.Fatal().Err(err).Msg("failed to read config")
+	}
+
 	conn, err := initDB(conf)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to connect to database")
@@ -157,6 +169,12 @@ func cmdMigrate(cmd *cobra.Command, args []string) {
 }
 
 func cmdStatus(cmd *cobra.Command, args []string) {
+	var err error
+
+	if conf, err = initConf(); err != nil {
+		logger.Fatal().Err(err).Msg("failed to read config")
+	}
+
 	conn, err := initDB(conf)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to connect to database")

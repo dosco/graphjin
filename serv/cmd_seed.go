@@ -16,6 +16,11 @@ import (
 
 func cmdSeed(cmd *cobra.Command, args []string) {
 	var err error
+
+	if conf, err = initConf(); err != nil {
+		logger.Fatal().Err(err).Msg("failed to read config")
+	}
+
 	conf.UseAllowList = false
 
 	db, err = initDBPool(conf)

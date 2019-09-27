@@ -337,21 +337,21 @@ func (c *compilerContext) renderJoinClose(sel *qcode.Select) error {
 	return nil
 }
 
-func (c *compilerContext) renderJoinTable(sel *qcode.Select) {
+func (c *compilerContext) renderJoinTable(sel *qcode.Select) error {
 	parent := &c.s[sel.ParentID]
 
 	rel, err := c.schema.GetRel(sel.Table, parent.Table)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	if rel.Type != RelOneToManyThrough {
-		return
+		return err
 	}
 
 	pt, err := c.schema.GetTable(parent.Table)
 	if err != nil {
-		return
+		return err
 	}
 
 	//fmt.Fprintf(w, ` LEFT OUTER JOIN "%s" ON (("%s"."%s") = ("%s_%d"."%s"))`,
@@ -363,6 +363,8 @@ func (c *compilerContext) renderJoinTable(sel *qcode.Select) {
 	c.w.WriteString(`) = (`)
 	colWithTableID(c.w, pt.Name, parent.ID, rel.Col1)
 	c.w.WriteString(`))`)
+
+	return nil
 }
 
 func (c *compilerContext) renderColumns(sel *qcode.Select) {
@@ -537,10 +539,15 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo,
 	}
 
 	if !isRoot {
-		c.renderJoinTable(sel)
+		if err := c.renderJoinTable(sel); err != nil {
+			return err
+		}
 
 		c.w.WriteString(` WHERE (`)
-		c.renderRelationship(sel)
+
+		if err := c.renderRelationship(sel); err != nil {
+			return err
+		}
 
 		if isFil {
 			c.w.WriteString(` AND `)
@@ -610,12 +617,12 @@ func (c *compilerContext) renderOrderByColumns(sel *qcode.Select) {
 	}
 }
 
-func (c *compilerContext) renderRelationship(sel *qcode.Select) {
+func (c *compilerContext) renderRelationship(sel *qcode.Select) error {
 	parent := c.s[sel.ParentID]
 
 	rel, err := c.schema.GetRel(sel.Table, parent.Table)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	switch rel.Type {
@@ -646,6 +653,8 @@ func (c *compilerContext) renderRelationship(sel *qcode.Select) {
 		colWithTable(c.w, rel.Through, rel.Col2)
 		c.w.WriteString(`))`)
 	}
+
+	return nil
 }
 
 func (c *compilerContext) renderWhere(sel *qcode.Select, ti *DBTableInfo) error {

@@ -1,30 +1,34 @@
-app_name: "Super Graph Production"
+app_name: "{{ .app_name }} Development"
 host_port: 0.0.0.0:8080
-web_ui: false
+web_ui: true
 
-# debug, info, warn, error, fatal, panic, disable
-log_level: "info"
+# debug, info, warn, error, fatal, panic
+log_level: "debug"
 
 # Disable this in development to get a list of 
 # queries used. When enabled super graph
 # will only allow queries from this list
 # List saved to ./config/allow.list
-use_allow_list: true
+use_allow_list: false
 
 # Throw a 401 on auth failure for queries that need auth
 # valid values: always, per_query, never
-auth_fail_block: always
+auth_fail_block: never
 
 # Latency tracing for database queries and remote joins
 # the resulting latency information is returned with the
 # response
 enable_tracing: true
 
+# Watch the config folder and reload Super Graph
+# with the new configs when a change is detected
+reload_on_config_change: true
+
 # File that points to the database seeding script
 # seed_file: seed.js
 
 # Path pointing to where the migrations can be found
-# migrations_path: migrations
+migrations_path: ./config/migrations
 
 # Postgres related environment Variables
 # SG_DATABASE_HOST
@@ -42,7 +46,7 @@ enable_tracing: true
 #   person: people
 #   sheep: sheep
 
-auth: 
+auth:
   # Can be 'rails' or 'jwt'
   type: rails
   cookie: _app_session
@@ -58,12 +62,12 @@ auth:
 
     # Found in 'Rails.application.config.secret_key_base'
     secret_key_base: 0a248500a64c01184edb4d7ad3a805488f8097ac761b76aaa6c17c01dcb7af03a2f18ba61b2868134b9c7b79a122bc0dadff4367414a2d173297bfea92be5566
-    
+
     # Remote cookie store. (memcache or redis)
-    # url: redis://127.0.0.1:6379
-    # password: test
-    # max_idle: 80,
-    # max_active: 12000,
+    # url: redis://redis:6379
+    # password: ""
+    # max_idle: 80
+    # max_active: 12000
 
     # In most cases you don't need these
     # salt: "encrypted cookie"
@@ -80,22 +84,24 @@ database:
   type: postgres
   host: db
   port: 5432
-  dbname: {{app_name_slug}}_development
+  dbname: {{ .app_name_slug }}_database
   user: postgres
   password: ''
+
+  #schema: "public"
   #pool_size: 10
   #max_retries: 0
-  #log_level: "debug" 
+  #log_level: "debug"
 
-  # Define variables here that you want to use in filters 
+  # Define variables here that you want to use in filters
   # sub-queries must be wrapped in ()
   variables:
     account_id: "(select account_id from users where id = $user_id)"
 
   # Define defaults to for the field key and values below
   defaults:
-    filter: ["{ user_id: { eq: $user_id } }"]
-    
+    # filter: ["{ user_id: { eq: $user_id } }"]
+
     # Field and table names that you wish to block
     blocklist:
       - ar_internal_metadata
@@ -108,31 +114,33 @@ database:
   tables:
     - name: users
       # This filter will overwrite defaults.filter
-      filter: ["{ id: { eq: $user_id } }"]
+      # filter: ["{ id: { eq: $user_id } }"]
 
-    - name: products
-      # Multiple filters are AND'd together
-      filter: [
-        "{ price: { gt: 0 } }",
-        "{ price: { lt: 8 } }"
-      ] 
+    # - name: products
+    #   # Multiple filters are AND'd together
+    #   filter: [
+    #     "{ price: { gt: 0 } }",
+    #     "{ price: { lt: 8 } }"
+    #   ]
 
     - name: customers
-      # No filter is used for this field not 
+      # No filter is used for this field not
       # even defaults.filter
       filter: none
 
-      # remotes:
-      #   - name: payments
-      #     id: stripe_id
-      #     url: http://rails_app:3000/stripe/$id
-      #     path: data
-      #     # pass_headers: 
-      #     #   - cookie
-      #     #   - host
-      #     set_headers:
-      #       - name: Authorization
-      #         value: Bearer <stripe_api_key>
+      remotes:
+        - name: payments
+          id: stripe_id
+          url: http://rails_app:3000/stripe/$id
+          path: data
+          # debug: true
+          pass_headers: 
+            - cookie
+          set_headers:
+            - name: Host
+              value: 0.0.0.0
+            # - name: Authorization
+            #   value: Bearer <stripe_api_key>
 
     - # You can create new fields that have a
       # real db table backing them
