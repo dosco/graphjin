@@ -2,17 +2,19 @@ package serv
 
 import (
 	"bytes"
+	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path"
 	"strings"
-	"text/template"
 
 	rice "github.com/GeertJohan/go.rice"
 	"github.com/spf13/cobra"
+	"github.com/valyala/fasttemplate"
 )
 
-func cmdInit(cmd *cobra.Command, args []string) {
+func cmdNew(cmd *cobra.Command, args []string) {
 	if len(args) != 1 {
 		cmd.Help()
 		os.Exit(1)
@@ -32,8 +34,8 @@ func cmdInit(cmd *cobra.Command, args []string) {
 		return os.Mkdir(p, os.ModePerm)
 	})
 
-	ifNotExists(path.Join(appPath, "seed.js"), func(p string) error {
-		if v, err := tmpl.get("docker-compose.yml"); err == nil {
+	ifNotExists(path.Join(appPath, "Dockerfile"), func(p string) error {
+		if v, err := tmpl.get("Dockerfile"); err == nil {
 			return ioutil.WriteFile(p, v, 0644)
 		} else {
 			return err
@@ -72,6 +74,14 @@ func cmdInit(cmd *cobra.Command, args []string) {
 		}
 	})
 
+	ifNotExists(path.Join(appConfigPath, "seed.js"), func(p string) error {
+		if v, err := tmpl.get("docker-compose.yml"); err == nil {
+			return ioutil.WriteFile(p, v, 0644)
+		} else {
+			return err
+		}
+	})
+
 	// Create app migrations folder and add relevant files
 
 	appMigrationsPath := path.Join(appConfigPath, "migrations")
@@ -103,11 +113,14 @@ func newTempl(data map[string]string) *Templ {
 func (t *Templ) get(name string) ([]byte, error) {
 	v := t.MustString(name)
 	b := bytes.Buffer{}
-	tm := template.Must(template.New(name).Parse(v))
+	tmpl := fasttemplate.New(v, "{%", "%}")
 
-	if err := tm.Execute(&b, t.data); err != nil {
-		return nil, err
-	}
+	tmpl.ExecuteFunc(&b, func(w io.Writer, tag string) (int, error) {
+		if val, ok := t.data[strings.TrimSpace(tag)]; ok {
+			return w.Write([]byte(val))
+		}
+		return 0, fmt.Errorf("unknown template variable '%s'", tag)
+	})
 
 	return b.Bytes(), nil
 }

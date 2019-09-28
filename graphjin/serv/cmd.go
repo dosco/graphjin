@@ -35,101 +35,97 @@ var (
 	qcompile      *qcode.Compiler
 	pcompile      *psql.Compiler
 	authFailBlock int
-
-	rootCmd         *cobra.Command
-	servCmd         *cobra.Command
-	seedCmd         *cobra.Command
-	migrateCmd      *cobra.Command
-	statusCmd       *cobra.Command
-	newMigrationCmd *cobra.Command
-	initCmd         *cobra.Command
 )
 
 func Init() {
-	rootCmd = &cobra.Command{
+	logger = initLog()
+
+	rootCmd := &cobra.Command{
 		Use:   "super-graph",
 		Short: "An instant high-performance GraphQL API. No code needed. https://supergraph.dev",
-		//Run:   cmdServ,
 	}
 
-	seedCmd = &cobra.Command{
-		Use:   "seed",
-		Short: "Run the seed script to seed the database",
-		Run:   cmdSeed,
-	}
-
-	servCmd = &cobra.Command{
+	rootCmd.AddCommand(&cobra.Command{
 		Use:   "serv",
 		Short: "Run the super-graph service",
 		Run:   cmdServ,
-	}
+	})
 
-	migrateCmd = &cobra.Command{
-		Use:   "migrate",
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "db:create",
+		Short: "Create database",
+		Run:   cmdDBCreate,
+	})
+
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "db:drop",
+		Short: "Drop database",
+		Run:   cmdDBDrop,
+	})
+
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "db:seed",
+		Short: "Run the seed script to seed the database",
+		Run:   cmdDBSeed,
+	})
+
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "db:migrate",
 		Short: "Migrate the database",
 		Long: `Migrate the database to destination migration version.
 
 Destination migration version can be one of the following value types:
 
-An integer:
+Migrate to the most recent migration. 
+e.g. migrate up
+
+Rollback the most recent migration. 
+e.g. migrate down
+
 Migrate to a specific migration.
-e.g. tern migrate -d 42
+e.g. migrate 42
 
-"+" and an integer:
 Migrate forward N steps.
-e.g. tern migrate -d +3
+e.g. migrate +3
 
-"-" and an integer:
 Migrate backward N steps.
-e.g. tern migrate -d -2
+e.g. migrate -2
 
-"-+" and an integer:
 Redo previous N steps (migrate backward N steps then forward N steps).
-e.g. tern migrate -d -+1
-
-The word "last":
-Migrate to the most recent migration. This is the default value, so it is
-never needed to specify directly.
-e.g. tern migrate
-e.g. tern migrate -d last
+e.g. migrate -+1
 	`,
-		Run: cmdMigrate,
-	}
+		Run: cmdDBMigrate,
+	})
 
-	statusCmd = &cobra.Command{
-		Use:   "status",
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "db:status",
 		Short: "Print current migration status",
-		Run:   cmdStatus,
-	}
+		Run:   cmdDBStatus,
+	})
 
-	newMigrationCmd = &cobra.Command{
-		Use:   "new NAME",
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "db:new NAME",
 		Short: "Generate a new migration",
 		Long:  "Generate a new migration with the next sequence number and provided name",
-		Run:   cmdNewMigration,
-	}
+		Run:   cmdDBNew,
+	})
 
-	initCmd = &cobra.Command{
-		Use:   "init APP-NAME",
-		Short: "Initialize a new application",
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "db:setup",
+		Short: "Setup database",
+		Long:  "This command will create, migrate and seed the database",
+		Run:   cmdDBSetup,
+	})
+
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "new APP-NAME",
+		Short: "Create a new application",
 		Long:  "Generate all the required files to start on a new Super Graph app",
-		Run:   cmdInit,
-	}
-
-	logger = initLog()
+		Run:   cmdNew,
+	})
 
 	rootCmd.Flags().StringVar(&confPath,
 		"path", "./config", "path to config files")
-
-	//cmdMigrate.Flags().StringVarP(&cliOptions.destinationVersion,
-	//	"destination", "d", "last", "destination migration version")
-
-	rootCmd.AddCommand(initCmd)
-	rootCmd.AddCommand(servCmd)
-	rootCmd.AddCommand(seedCmd)
-	rootCmd.AddCommand(migrateCmd)
-	rootCmd.AddCommand(statusCmd)
-	rootCmd.AddCommand(newMigrationCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		logger.Fatal().Err(err).Send()
@@ -209,16 +205,19 @@ func initConf() (*config, error) {
 	return c, nil
 }
 
-func initDB(c *config) (*pgx.Conn, error) {
+func initDB(c *config, useDB bool) (*pgx.Conn, error) {
 	config, _ := pgx.ParseConfig("")
 	config.Host = c.DB.Host
 	config.Port = c.DB.Port
-	config.Database = c.DB.DBName
 	config.User = c.DB.User
 	config.Password = c.DB.Password
 	config.RuntimeParams = map[string]string{
 		"application_name": c.AppName,
 		"search_path":      c.DB.Schema,
+	}
+
+	if useDB {
+		config.Database = c.DB.DBName
 	}
 
 	switch c.LogLevel {

@@ -34,7 +34,63 @@ var newMigrationText = `-- Write your migrate up statements here
 -- Then delete the separator line above.
 `
 
-func cmdNewMigration(cmd *cobra.Command, args []string) {
+func cmdDBSetup(cmd *cobra.Command, args []string) {
+	cmdDBCreate(cmd, []string{})
+	cmdDBMigrate(cmd, []string{"up"})
+	cmdDBSeed(cmd, []string{})
+}
+
+func cmdDBCreate(cmd *cobra.Command, args []string) {
+	var err error
+
+	if conf, err = initConf(); err != nil {
+		logger.Fatal().Err(err).Msg("failed to read config")
+	}
+
+	ctx := context.Background()
+
+	conn, err := initDB(conf, false)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("failed to connect to database")
+	}
+	defer conn.Close(ctx)
+
+	sql := fmt.Sprintf("create database %s", conf.DB.DBName)
+
+	_, err = conn.Exec(ctx, sql)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("failed to create database")
+	}
+
+	logger.Info().Msgf("created database '%s'", conf.DB.DBName)
+}
+
+func cmdDBDrop(cmd *cobra.Command, args []string) {
+	var err error
+
+	if conf, err = initConf(); err != nil {
+		logger.Fatal().Err(err).Msg("failed to read config")
+	}
+
+	ctx := context.Background()
+
+	conn, err := initDB(conf, false)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("failed to connect to database")
+	}
+	defer conn.Close(ctx)
+
+	sql := fmt.Sprintf("drop database if exists %s", conf.DB.DBName)
+
+	_, err = conn.Exec(ctx, sql)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("failed to create database")
+	}
+
+	logger.Info().Msgf("dropped database '%s'", conf.DB.DBName)
+}
+
+func cmdDBNew(cmd *cobra.Command, args []string) {
 	if len(args) != 1 {
 		cmd.Help()
 		os.Exit(1)
@@ -73,14 +129,21 @@ func cmdNewMigration(cmd *cobra.Command, args []string) {
 	logger.Info().Msgf("created migration '%s'", mpath)
 }
 
-func cmdMigrate(cmd *cobra.Command, args []string) {
+func cmdDBMigrate(cmd *cobra.Command, args []string) {
 	var err error
+
+	if len(args) == 0 {
+		cmd.Help()
+		os.Exit(1)
+	}
+
+	dest := args[0]
 
 	if conf, err = initConf(); err != nil {
 		logger.Fatal().Err(err).Msg("failed to read config")
 	}
 
-	conn, err := initDB(conf)
+	conn, err := initDB(conf, true)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to connect to database")
 	}
@@ -90,7 +153,8 @@ func cmdMigrate(cmd *cobra.Command, args []string) {
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to initializing migrator")
 	}
-	//m.Data = config.Data
+
+	m.Data = getMigrationVars()
 
 	err = m.LoadMigrations(conf.MigrationsPath)
 	if err != nil {
@@ -113,7 +177,6 @@ func cmdMigrate(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	dest := args[0]
 	mustParseDestination := func(d string) int32 {
 		var n int64
 		n, err = strconv.ParseInt(d, 10, 32)
@@ -123,8 +186,11 @@ func cmdMigrate(cmd *cobra.Command, args []string) {
 		return int32(n)
 	}
 
-	if dest == "last" {
+	if dest == "up" {
 		err = m.Migrate()
+
+	} else if dest == "down" {
+		err = m.MigrateTo(currentVersion - 1)
 
 	} else if len(dest) >= 3 && dest[0:2] == "-+" {
 		err = m.MigrateTo(currentVersion - mustParseDestination(dest[2:]))
@@ -139,7 +205,8 @@ func cmdMigrate(cmd *cobra.Command, args []string) {
 		err = m.MigrateTo(currentVersion + mustParseDestination(dest[1:]))
 
 	} else {
-		//err = make(type, 0).MigrateTo(mustParseDestination(dest))
+		cmd.Help()
+		os.Exit(1)
 	}
 
 	if err != nil {
@@ -168,14 +235,14 @@ func cmdMigrate(cmd *cobra.Command, args []string) {
 
 }
 
-func cmdStatus(cmd *cobra.Command, args []string) {
+func cmdDBStatus(cmd *cobra.Command, args []string) {
 	var err error
 
 	if conf, err = initConf(); err != nil {
 		logger.Fatal().Err(err).Msg("failed to read config")
 	}
 
-	conn, err := initDB(conf)
+	conn, err := initDB(conf, true)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to connect to database")
 	}
@@ -185,7 +252,8 @@ func cmdStatus(cmd *cobra.Command, args []string) {
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to initialize migrator")
 	}
-	//m.Data = config.Data
+
+	m.Data = getMigrationVars()
 
 	err = m.LoadMigrations(conf.MigrationsPath)
 	if err != nil {
@@ -246,4 +314,12 @@ func ExtractErrorLine(source string, position int) (ErrorLineExtract, error) {
 	ele.Text = strings.TrimSuffix(ele.Text, "\n")
 
 	return ele, nil
+}
+
+func getMigrationVars() map[string]interface{} {
+	return map[string]interface{}{
+		"app_name":      strings.Title(conf.AppName),
+		"app_name_slug": strings.ToLower(strings.Replace(conf.AppName, " ", "_", -1)),
+		"env":           strings.ToLower(os.Getenv("GO_ENV")),
+	}
 }

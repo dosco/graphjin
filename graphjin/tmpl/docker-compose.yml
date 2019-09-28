@@ -5,7 +5,7 @@ services:
     ports:
       - "5432:5432"
 
-  {{ .app_name_slug }}_api:
+  {% app_name_slug %}_api:
     image: dosco/super-graph:latest
     environment:
       GO_ENV: "development"
