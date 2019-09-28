@@ -1,4 +1,4 @@
-app_name: "{{ .app_name }} Development"
+app_name: "{% app_name %} Development"
 host_port: 0.0.0.0:8080
 web_ui: true
 
@@ -84,7 +84,7 @@ database:
   type: postgres
   host: db
   port: 5432
-  dbname: {{ .app_name_slug }}_database
+  dbname: {% app_name_slug %}_development
   user: postgres
   password: ''
 

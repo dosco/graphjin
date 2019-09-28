@@ -1,6 +1,6 @@
 -- Write your migrate up statements here
 
-CREATE DATABASE {{ .app_name_slug }}_database
+CREATE DATABASE {{ .app_name_slug }}_{{ .env }}
 
 -- CREATE TABLE public.users (
 --   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -18,4 +18,4 @@ CREATE DATABASE {{ .app_name_slug }}_database
 
 -- DROP TABLE public.users
 
-DROP DATABASE IF EXISTS {{ .app_name_slug }}_database
+DROP DATABASE IF EXISTS {{ .app_name_slug }}_{{ .env }}

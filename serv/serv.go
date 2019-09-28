@@ -133,9 +133,12 @@ func getConfigName() string {
 
 	case strings.HasPrefix(ge, "tes"):
 		return "test"
+
+	case strings.HasPrefix(ge, "dev"):
+		return "dev"
 	}
 
-	return "dev"
+	return ge
 }
 
 func getAuthFailBlock(c *config) int {

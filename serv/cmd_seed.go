@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func cmdSeed(cmd *cobra.Command, args []string) {
+func cmdDBSeed(cmd *cobra.Command, args []string) {
 	var err error
 
 	if conf, err = initConf(); err != nil {

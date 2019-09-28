@@ -37,6 +37,7 @@ require (
 	github.com/vaughan0/go-ini v0.0.0-20130923145212-a98ad7ee00ec
 	golang.org/x/crypto v0.0.0-20190911031432-227b76d455e7
 	golang.org/x/net v0.0.0-20190813141303-74dc4d7220e7
+	golang.org/x/net/http2/h2demo v0.0.0-20190926025831-c00fd9afed17
 	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127
 	mellium.im/sasl v0.2.1 // indirect
 )
