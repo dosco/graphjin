@@ -2,8 +2,34 @@ package psql
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 )
+
+func simpleInsert(t *testing.T) {
+	gql := `mutation {
+		user(insert: $data) {
+			id
+		}
+	}`
+
+	sql := `WITH "users" AS (WITH "input" AS (SELECT {{data}}::json AS j) INSERT INTO users (full_name, email) SELECT full_name, email FROM input i, json_populate_record(NULL::users, i.j) t  RETURNING *) SELECT json_object_agg('user', sel_json_0) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "user_0"."id" AS "id") AS "sel_0")) AS "sel_json_0" FROM (SELECT "user"."id" FROM "users" AS "user" WHERE ((("user"."id") = {{user_id}})) LIMIT ('1') :: integer) AS "user_0" LIMIT ('1') :: integer) AS "done_1337";`
+
+	vars := map[string]json.RawMessage{
+		"data": json.RawMessage(`{"email": "reannagreenholt@orn.com", "full_name": "Flo Barton"}`),
+	}
+
+	resSQL, err := compileGQLToPSQL(gql, vars)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fmt.Println(">", string(resSQL))
+
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
 
 func singleInsert(t *testing.T) {
 	gql := `mutation {
@@ -102,6 +128,7 @@ func delete(t *testing.T) {
 }
 
 func TestCompileInsert(t *testing.T) {
+	t.Run("simpleInsert", simpleInsert)
 	t.Run("singleInsert", singleInsert)
 	t.Run("bulkInsert", bulkInsert)
 	t.Run("singleUpdate", singleUpdate)
