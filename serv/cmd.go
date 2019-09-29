@@ -77,22 +77,22 @@ func Init() {
 Destination migration version can be one of the following value types:
 
 Migrate to the most recent migration. 
-e.g. migrate up
+e.g. db:migrate up
 
 Rollback the most recent migration. 
-e.g. migrate down
+e.g. db:migrate down
 
 Migrate to a specific migration.
-e.g. migrate 42
+e.g. db:migrate 42
 
 Migrate forward N steps.
-e.g. migrate +3
+e.g. db:migrate +3
 
 Migrate backward N steps.
-e.g. migrate -2
+e.g. db:migrate -2
 
 Redo previous N steps (migrate backward N steps then forward N steps).
-e.g. migrate -+1
+e.g. db:migrate -+1
 	`,
 		Run: cmdDBMigrate,
 	})

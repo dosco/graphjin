@@ -30,9 +30,11 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 
 	initCompiler()
 
+	sfile := path.Join(confPath, conf.SeedFile)
+
 	b, err := ioutil.ReadFile(path.Join(confPath, conf.SeedFile))
 	if err != nil {
-		logger.Fatal().Err(err).Msg("failed to read file")
+		logger.Fatal().Err(err).Msgf("failed to read seed file '%s'", sfile)
 	}
 
 	vm := goja.New()

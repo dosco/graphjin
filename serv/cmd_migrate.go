@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -37,7 +38,20 @@ var newMigrationText = `-- Write your migrate up statements here
 func cmdDBSetup(cmd *cobra.Command, args []string) {
 	cmdDBCreate(cmd, []string{})
 	cmdDBMigrate(cmd, []string{"up"})
-	cmdDBSeed(cmd, []string{})
+
+	sfile := path.Join(confPath, conf.SeedFile)
+	_, err := os.Stat(sfile)
+
+	if err == nil {
+		cmdDBSeed(cmd, []string{})
+		return
+	}
+
+	if os.IsNotExist(err) == false {
+		logger.Fatal().Err(err).Msgf("unable to check if '%s' exists", sfile)
+	}
+
+	logger.Warn().Msgf("failed to read seed file '%s'", sfile)
 }
 
 func cmdDBCreate(cmd *cobra.Command, args []string) {
