@@ -1,21 +1,16 @@
 -- Write your migrate up statements here
 
-CREATE DATABASE {{ .app_name_slug }}_{{ .env }}
-
--- CREATE TABLE public.users (
---   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
---   full_name   text
---   email       text UNIQUE NOT NULL CHECK (length(email) < 255),
---   encrypted_password text,
---   created_at timestamptz NOT NULL NOT NULL DEFAULT NOW(),
---   updated_at timestamptz NOT NULL NOT NULL DEFAULT NOW()
--- );
+CREATE TABLE public.users (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  full_name  text,
+  email      text UNIQUE NOT NULL CHECK (length(email) < 255),
+  created_at timestamptz NOT NULL NOT NULL DEFAULT NOW(),
+  updated_at timestamptz NOT NULL NOT NULL DEFAULT NOW()
+);
 
 ---- create above / drop below ----
 
 -- Write your migrate down statements here. If this migration is irreversible
 -- Then delete the separator line above.
 
--- DROP TABLE public.users
-
-DROP DATABASE IF EXISTS {{ .app_name_slug }}_{{ .env }}
+DROP TABLE public.users

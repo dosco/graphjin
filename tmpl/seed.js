@@ -3,13 +3,9 @@
 var users = [];
 
 for (i = 0; i < 10; i++) {
-	var pwd = fake.password()
 	var data = {
-		first_name: fake.first_name(),
-		last_name: 	fake.last_name(),
-		email: 			fake.email(),
-		password: 	pwd,
-		password_confirmation: pwd
+		full_name:  fake.name(),
+		email: 		  fake.email(),
 	}
 
 	var res = graphql(" \

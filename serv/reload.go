@@ -23,7 +23,7 @@
 //
 // Note that this package won't prevent race conditions (e.g. when assigning to
 // a global templates variable). You'll need to use sync.RWMutex yourself.
-package serv // import "github.com/teamwork/reload"
+package serv
 
 import (
 	"fmt"
