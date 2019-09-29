@@ -122,6 +122,10 @@ func routeHandler() http.Handler {
 }
 
 func getConfigName() string {
+	if len(os.Getenv("GO_ENV")) == 0 {
+		return "dev"
+	}
+
 	ge := strings.ToLower(os.Getenv("GO_ENV"))
 
 	switch {
