@@ -3,33 +3,6 @@
 variables {
 	"update": {
 		"name": "Hellooooo",
-		"description": "World",
-		"created_at": "now",
-		"updated_at": "now"
-	},
-	"user": 123
-}
-
-mutation {
-  products(update: $update, where: {id: {eq: 134}}) {
-    id
-    name
-    description
-  }
-}
-
-query {
-  me {
-    id
-    email
-    full_name
-  }
-}
-
-
-variables {
-	"update": {
-		"name": "Hellooooo",
 		"description": "World"
 	},
 	"user": 123
@@ -53,6 +26,33 @@ variables {
 
 mutation {
   products(id: 5, update: $update) {
+    id
+    name
+    description
+  }
+}
+
+query {
+  me {
+    id
+    email
+    full_name
+  }
+}
+
+
+variables {
+	"update": {
+		"name": "Hellooooo",
+		"description": "World",
+		"created_at": "now",
+		"updated_at": "now"
+	},
+	"user": 123
+}
+
+mutation {
+  products(update: $update, where: {id: {eq: 134}}) {
     id
     name
     description
