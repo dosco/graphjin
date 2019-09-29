@@ -4,8 +4,8 @@ var users = [];
 
 for (i = 0; i < 10; i++) {
 	var data = {
-		full_name:  fake.name(),
-		email: 		  fake.email(),
+		full_name: fake.name(),
+		email:     fake.email()
 	}
 
 	var res = graphql(" \

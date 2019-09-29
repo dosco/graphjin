@@ -75,7 +75,7 @@ func cmdNew(cmd *cobra.Command, args []string) {
 	})
 
 	ifNotExists(path.Join(appConfigPath, "seed.js"), func(p string) error {
-		if v, err := tmpl.get("docker-compose.yml"); err == nil {
+		if v, err := tmpl.get("seed.js"); err == nil {
 			return ioutil.WriteFile(p, v, 0644)
 		} else {
 			return err
