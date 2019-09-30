@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/gobuffalo/flect"
-	"github.com/jackc/pgx/pgtype"
+	"github.com/jackc/pgtype"
 	"github.com/jackc/pgx/v4/pgxpool"
 )
 

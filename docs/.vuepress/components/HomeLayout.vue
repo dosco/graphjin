@@ -1,9 +1,7 @@
 <template>
   <div>
     <main aria-labelledby="main-title" >
-      <Navbar
-        @toggle-sidebar="toggleSidebar"
-      />
+    <Navbar />
 
     <div class="container mx-auto">
       <div class="flex flex-col md:flex-row justify-between px-10 md:px-20">
@@ -54,8 +52,8 @@
       </div>
 
       <div class="bg-gray-100 my-10">
-        <div class="container mx-auto text-center px-10 md:px-0 py-32">
-          <h1 class="uppercase font-semibold text-xl text-blue-800 mb-10">
+        <div class="container mx-auto px-10 md:px-0 py-32">
+          <h1 class="uppercase font-semibold text-xl text-blue-800 mb-4">
             What is {{ data.heroText }}?
           </h1>
           <div class="text-2xl md:text-3xl">
