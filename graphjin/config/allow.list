@@ -1,5 +1,44 @@
 # http://localhost:8080/
 
+query {
+  me {
+    id
+    email
+    full_name
+  }
+}
+
+variables {
+	"update": {
+		"name": "Hellooooo",
+		"description": "World",
+		"created_at": "now",
+		"updated_at": "now"
+	},
+	"user": 123
+}
+
+mutation {
+  products(update: $update, where: {id: {eq: 134}}) {
+    id
+    name
+    description
+  }
+}
+
+query {
+  users {
+    id
+    email
+    picture: avatar
+    products(limit: 2, where: {price: {gt: 10}}) {
+      id
+      name
+      description
+    }
+  }
+}
+
 variables {
 	"update": {
 		"name": "Hellooooo",
@@ -33,37 +72,16 @@ mutation {
 }
 
 query {
-  me {
+  users {
     id
     email
-    full_name
+    picture: avatar
+    products(limit: 2, where: {price: {gt: 10}}) {
+      id
+      name
+      description
+    }
   }
 }
 
-
-variables {
-	"update": {
-		"name": "Hellooooo",
-		"description": "World",
-		"created_at": "now",
-		"updated_at": "now"
-	},
-	"user": 123
-}
-
-mutation {
-  products(update: $update, where: {id: {eq: 134}}) {
-    id
-    name
-    description
-  }
-}
-
-query {
-  me {
-    id
-    email
-    full_name
-  }
-}
 

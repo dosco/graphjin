@@ -27,9 +27,9 @@ SELECT
 FROM pg_catalog.pg_class c
 	LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
 WHERE c.relkind IN ('r','v','m','f','')
-	AND n.nspname <> 'pg_catalog'
-	AND n.nspname <> 'information_schema'
-	AND n.nspname !~ '^pg_toast'
+	AND n.nspname <> ('pg_catalog')
+	AND n.nspname <> ('information_schema')
+	AND n.nspname !~ ('^pg_toast')
 AND pg_catalog.pg_table_is_visible(c.oid);`
 
 	var tables []*DBTable
@@ -53,14 +53,14 @@ AND pg_catalog.pg_table_is_visible(c.oid);`
 }
 
 type DBColumn struct {
-	ID         int
+	ID         int16
 	Name       string
 	Type       string
 	NotNull    bool
 	PrimaryKey bool
 	UniqueKey  bool
 	FKeyTable  string
-	FKeyColID  []int
+	FKeyColID  []int16
 	fKeyColID  pgtype.Int2Array
 }
 
@@ -106,7 +106,7 @@ ORDER BY id;`
 	}
 	defer rows.Close()
 
-	cmap := make(map[int]*DBColumn)
+	cmap := make(map[int16]*DBColumn)
 
 	for rows.Next() {
 		c := DBColumn{}
@@ -115,7 +115,6 @@ ORDER BY id;`
 		if err != nil {
 			return nil, err
 		}
-		c.fKeyColID.AssignTo(&c.FKeyColID)
 
 		if v, ok := cmap[c.ID]; ok {
 			if c.PrimaryKey {
@@ -128,6 +127,10 @@ ORDER BY id;`
 				v.UniqueKey = true
 			}
 		} else {
+			err := c.fKeyColID.AssignTo(&c.FKeyColID)
+			if err != nil {
+				return nil, err
+			}
 			cmap[c.ID] = &c
 		}
 	}
@@ -208,7 +211,7 @@ func (s *DBSchema) updateSchema(
 	aliases map[string][]string) {
 
 	// Foreign key columns in current table
-	colByID := make(map[int]*DBColumn)
+	colByID := make(map[int16]*DBColumn)
 	columns := make(map[string]*DBColumn, len(cols))
 	colNames := make([]string, 0, len(cols))
 
@@ -309,7 +312,7 @@ func (s *DBSchema) updateSchema(
 func (s *DBSchema) updateSchemaOTMT(
 	ct string,
 	col1, col2 *DBColumn,
-	colByID map[int]*DBColumn) {
+	colByID map[int16]*DBColumn) {
 
 	t1 := strings.ToLower(col1.FKeyTable)
 	t2 := strings.ToLower(col2.FKeyTable)
