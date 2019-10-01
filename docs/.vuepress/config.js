@@ -3,7 +3,7 @@ module.exports = {
   description: 'Get an instant GraphQL API for your Rails apps.',
 
   themeConfig: {
-    logo: '/logo.svg',
+    logo: '/hologram.svg',
     nav: [
       { text: 'Docs', link: '/guide' },
       { text: 'Deploy', link: '/deploy' },

@@ -1,24 +1,29 @@
-<a href="https://supergraph.dev"><img src="https://supergraph.dev/logo.svg" width="100" height="100" align="right" /></a>
+<a href="https://supergraph.dev"><img src="https://supergraph.dev/hologram.svg" width="100" height="100" align="right" /></a>
 
-# Super Graph - Instant GraphQL API for Rails
+# Super Graph - Build web products faster. Instant GraphQL APIs for your apps
 
 ![MIT license](https://img.shields.io/github/license/dosco/super-graph.svg)
 ![Docker build](https://img.shields.io/docker/cloud/build/dosco/super-graph.svg)
 ![Cloud native](https://img.shields.io/badge/cloud--native-enabled-blue.svg)
 
-Get an high-performance GraphQL API for your Rails app in seconds without writing a line of code. Super Graph will auto-learn your database structure and relationships. Built in support for Rails authentication and JWT tokens.
+Get an instant high performance GraphQL API for Postgres. No code needed. GraphQL is automatically transformed into efficient database queries.
 
-![Super Graph Web UI](docs/.vuepress/public/super-graph-web-ui.png?raw=true "Super Graph Web UI for web developers")
+![GraphQL](docs/.vuepress/public/graphql.png?raw=true "")
 
-## Why I built Super Graph?
+## The story of Super Graph?
 
-Honestly, cause it was more fun than my real work. After working on several product though my career I found myself hating building CRUD APIs (Create, Update, Delete, List, Show). It was always the same thing figure out what the UI needs then build an endpoint for it, if related data is needed than join with another table. I didn't want to write that code anymore I wanted the computer to just do it.
+After working on several products through my career I find that we spend way too much time on building API backends. Most APIs also require constant updating, this costs real time and money.
+            
+It's always the same thing, figure out what the UI needs then build an endpoint for it. Most API code involves struggling with an ORM to query a database and mangle the data into a shape that the UI expects to see.
 
-I always liked GraphQL it sounded friendly, but it still required me to write all the same database query code. Sure the API was nicer but it took a lot of work sometime even more than a simple REST API would have. I wanted a GraphQL server that just worked the second you deployed it without having to write a line of code.
+I didn't want to write this code anymore, I wanted the computer to do it. Enter GraphQL, to me it sounded great, but it still required me to write all the same database query code.
 
-And so after a lot of coffee and some Avocado toasts __Super Graph was born, a GraphQL server that just works, is high performance and easy to deploy__. I hope you find it as useful as I do and there's a lot more coming so hit that :star: to stay in the loop.
+Having worked with compilers before I saw this as a compiler problem. Why not build a compiler that converts GraphQL to highly efficient SQL.
+
+This compiler is what sits at the heart of Super Graph with layers of useful functionality around it like authentication, remote joins, rails integration, database migrations and everything else needed for you to build production ready apps with it.
 
 ## Features
+
 - Works with Rails database schemas
 - Automatically learns schemas and relationships
 - Belongs-To, One-To-Many and Many-To-Many table relationships
@@ -27,14 +32,12 @@ And so after a lot of coffee and some Avocado toasts __Super Graph was born, a G
 - JWT tokens supported (Auth0, etc)
 - Join with remote REST APIs
 - Highly optimized and fast Postgres SQL queries
+- Support GraphQL queries and mutations
 - Configure with a simple config file
 - High performance GO codebase
 - Tiny docker image and low memory requirements
-
-## Watch some talks
-
-[![Watch the video](https://img.youtube.com/vi/TGq9wJAj78I/hqdefault.jpg)](https://youtu.be/TGq9wJAj78I)
-
+- Database migrations tool
+- Write database seeding scripts in Javascript
 
 ## Documentation
 
