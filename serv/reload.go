@@ -105,7 +105,7 @@ func Do(log func(string, ...interface{}), additional ...dir) error {
 				// Panic, and Fatal :-/ Printf() is probably best.
 				log("reload error: %v", err)
 			case event := <-watcher.Events:
-				// Ensure that we use the correct events, as they are not uniform accross
+				// Ensure that we use the correct events, as they are not uniform across
 				// platforms. See https://github.com/fsnotify/fsnotify/issues/74
 				var trigger bool
 				switch runtime.GOOS {
