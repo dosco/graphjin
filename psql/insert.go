@@ -174,7 +174,10 @@ func (c *compilerContext) renderDelete(qc *qcode.QCode, w *bytes.Buffer, vars Va
 		return 0, err
 	}
 
-	c.w.WriteString(`DELETE FROM `)
+	c.w.WriteString(`WITH `)
+	quoted(c.w, ti.Name)
+
+	c.w.WriteString(` AS (DELETE FROM `)
 	c.w.WriteString(ti.Name)
 	io.WriteString(c.w, ` WHERE `)
 

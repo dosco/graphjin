@@ -570,17 +570,19 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo,
 		}
 	}
 
-	if len(sel.Paging.Limit) != 0 {
-		//fmt.Fprintf(w, ` LIMIT ('%s') :: integer`, c.sel.Paging.Limit)
-		c.w.WriteString(` LIMIT ('`)
-		c.w.WriteString(sel.Paging.Limit)
-		c.w.WriteString(`') :: integer`)
+	if sel.Action == 0 {
+		if len(sel.Paging.Limit) != 0 {
+			//fmt.Fprintf(w, ` LIMIT ('%s') :: integer`, c.sel.Paging.Limit)
+			c.w.WriteString(` LIMIT ('`)
+			c.w.WriteString(sel.Paging.Limit)
+			c.w.WriteString(`') :: integer`)
 
-	} else if ti.Singular {
-		c.w.WriteString(` LIMIT ('1') :: integer`)
+		} else if ti.Singular {
+			c.w.WriteString(` LIMIT ('1') :: integer`)
 
-	} else {
-		c.w.WriteString(` LIMIT ('20') :: integer`)
+		} else {
+			c.w.WriteString(` LIMIT ('20') :: integer`)
+		}
 	}
 
 	if len(sel.Paging.Offset) != 0 {
