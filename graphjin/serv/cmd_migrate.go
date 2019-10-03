@@ -292,7 +292,7 @@ func cmdDBStatus(cmd *cobra.Command, args []string) {
 	}
 
 	fmt.Println("status:  ", status)
-	fmt.Println("version:  %d of %d\n", mver, len(m.Migrations))
+	fmt.Printf("version:  %d of %d\n", mver, len(m.Migrations))
 	fmt.Println("host:    ", conf.DB.Host)
 	fmt.Println("database:", conf.DB.DBName)
 }

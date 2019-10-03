@@ -133,7 +133,8 @@ e.g. db:migrate -+1
 }
 
 func initLog() *zerolog.Logger {
-	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).
+	out := zerolog.ConsoleWriter{Out: os.Stderr}
+	logger := zerolog.New(out).
 		With().
 		Timestamp().
 		Caller().

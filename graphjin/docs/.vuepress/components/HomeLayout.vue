@@ -112,7 +112,7 @@
         </div>
       </div>
 
-      <div class="overflow-hidden h-0 bg-indigo-900" style="height: 730px">
+      <div class="overflow-hidden bg-indigo-900" style="height: 730px">
         <div class="container mx-auto py-20">
         <img src="/super-graph-web-ui.png">
         </div>
@@ -125,7 +125,7 @@
           </h1>
           <div class="text-2xl md:text-3xl">
             <small class="text-sm">Download the Docker compose config for the demo</small>
-            <pre>&#8227; curl -o demo.yml https://bit.ly/2mq05lW</pre>
+            <pre>&#8227; curl -L -o demo.yml https://bit.ly/2mq05lW</pre>
 
             <small class="text-sm">Setup the demo database</small>
             <pre>&#8227; docker-compose -f demo.yml run rails_app rake db:create db:migrate db:seed</pre>
@@ -138,22 +138,6 @@
 
             <small class="text-sm">Try the super graph web ui</small>
             <pre>&#8227; open http://localhost:8080</pre>
-            
-            <pre>
-            ## Try a query
-            query {
-              users {
-                id
-                email
-                picture : avatar
-                products(limit: 2, where: { price: { gt: 10 } }) {
-                  id
-                  name
-                  description
-                }
-              }
-            }
-            </pre>
           </div>
         </div>
       </div>

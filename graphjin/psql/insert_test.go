@@ -2,7 +2,6 @@ package psql
 
 import (
 	"encoding/json"
-	"fmt"
 	"testing"
 )
 
@@ -13,7 +12,7 @@ func simpleInsert(t *testing.T) {
 		}
 	}`
 
-	sql := `WITH "users" AS (WITH "input" AS (SELECT {{data}}::json AS j) INSERT INTO users (full_name, email) SELECT full_name, email FROM input i, json_populate_record(NULL::users, i.j) t  RETURNING *) SELECT json_object_agg('user', sel_json_0) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "user_0"."id" AS "id") AS "sel_0")) AS "sel_json_0" FROM (SELECT "user"."id" FROM "users" AS "user" WHERE ((("user"."id") = {{user_id}})) LIMIT ('1') :: integer) AS "user_0" LIMIT ('1') :: integer) AS "done_1337";`
+	sql := `WITH "users" AS (WITH "input" AS (SELECT {{data}}::json AS j) INSERT INTO users (full_name, email) SELECT full_name, email FROM input i, json_populate_record(NULL::users, i.j) t  RETURNING *) SELECT json_object_agg('user', sel_json_0) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "users_0"."id" AS "id") AS "sel_0")) AS "sel_json_0" FROM (SELECT "users"."id" FROM "users" LIMIT ('1') :: integer) AS "users_0") AS "done_1337";`
 
 	vars := map[string]json.RawMessage{
 		"data": json.RawMessage(`{"email": "reannagreenholt@orn.com", "full_name": "Flo Barton"}`),
@@ -23,8 +22,6 @@ func simpleInsert(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	fmt.Println(">", string(resSQL))
 
 	if string(resSQL) != sql {
 		t.Fatal(errNotExpected)
@@ -39,7 +36,7 @@ func singleInsert(t *testing.T) {
 		}
 	}`
 
-	sql := `WITH product AS (WITH input AS (SELECT {{insert}}::json AS j) INSERT INTO product (name, description) SELECT name, description FROM input i, json_populate_record(NULL::product, i.j) t  RETURNING *) SELECT json_object_agg('product', product) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "product_0"."id" AS "id", "product_0"."name" AS "name") AS "sel_0")) AS "product" FROM (SELECT "product"."id", "product"."name" FROM "products" AS "product" WHERE ((("product"."price") > 0) AND (("product"."price") < 8) AND (("id") = 15)) LIMIT ('1') :: integer) AS "product_0" LIMIT ('1') :: integer) AS "done_1337";`
+	sql := `WITH "products" AS (WITH "input" AS (SELECT {{insert}}::json AS j) INSERT INTO products (name, description) SELECT name, description FROM input i, json_populate_record(NULL::products, i.j) t  RETURNING *) SELECT json_object_agg('product', sel_json_0) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name") AS "sel_0")) AS "sel_json_0" FROM (SELECT "products"."id", "products"."name" FROM "products" LIMIT ('1') :: integer) AS "products_0") AS "done_1337";`
 
 	vars := map[string]json.RawMessage{
 		"insert": json.RawMessage(` { "name": "my_name", "woo": { "hoo": "goo" }, "description": "my_desc"  }`),
@@ -63,7 +60,7 @@ func bulkInsert(t *testing.T) {
 		}
 	}`
 
-	sql := `WITH product AS (WITH input AS (SELECT {{insert}}::json AS j) INSERT INTO product (name, description) SELECT name, description FROM input i, json_populate_recordset(NULL::product, i.j) t  RETURNING *) SELECT json_object_agg('product', product) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "product_0"."id" AS "id", "product_0"."name" AS "name") AS "sel_0")) AS "product" FROM (SELECT "product"."id", "product"."name" FROM "products" AS "product" WHERE ((("product"."price") > 0) AND (("product"."price") < 8) AND (("id") = 15)) LIMIT ('1') :: integer) AS "product_0" LIMIT ('1') :: integer) AS "done_1337";`
+	sql := `WITH "products" AS (WITH "input" AS (SELECT {{insert}}::json AS j) INSERT INTO products (name, description) SELECT name, description FROM input i, json_populate_recordset(NULL::products, i.j) t  RETURNING *) SELECT json_object_agg('product', sel_json_0) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name") AS "sel_0")) AS "sel_json_0" FROM (SELECT "products"."id", "products"."name" FROM "products" LIMIT ('1') :: integer) AS "products_0") AS "done_1337";`
 
 	vars := map[string]json.RawMessage{
 		"insert": json.RawMessage(` [{ "name": "my_name", "woo": { "hoo": "goo" }, "description": "my_desc"  }]`),
@@ -87,7 +84,7 @@ func singleUpdate(t *testing.T) {
 		}
 	}`
 
-	sql := `WITH product AS (WITH input AS (SELECT {{update}}::json AS j) UPDATE product SET (name, description) = (SELECT name, description FROM input i, json_populate_record(NULL::product, i.j) t) WHERE (("product"."price") > 0) AND (("product"."price") < 8) AND (("product"."id") = 1) AND (("id") = 15) RETURNING *) SELECT json_object_agg('product', product) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "product_0"."id" AS "id", "product_0"."name" AS "name") AS "sel_0")) AS "product" FROM (SELECT "product"."id", "product"."name" FROM "products" AS "product" WHERE ((("product"."price") > 0) AND (("product"."price") < 8) AND (("product"."id") = 1) AND (("id") = 15)) LIMIT ('1') :: integer) AS "product_0" LIMIT ('1') :: integer) AS "done_1337";`
+	sql := `WITH "products" AS (WITH "input" AS (SELECT {{update}}::json AS j) UPDATE products SET (name, description) = (SELECT name, description FROM input i, json_populate_record(NULL::products, i.j) t) WHERE (("products"."price") > 0) AND (("products"."price") < 8) AND (("products"."id") = 1) AND (("products"."id") = 15) RETURNING *) SELECT json_object_agg('product', sel_json_0) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name") AS "sel_0")) AS "sel_json_0" FROM (SELECT "products"."id", "products"."name" FROM "products" LIMIT ('1') :: integer) AS "products_0") AS "done_1337";`
 
 	vars := map[string]json.RawMessage{
 		"update": json.RawMessage(` { "name": "my_name", "woo": { "hoo": "goo" }, "description": "my_desc"  }`),
@@ -111,7 +108,7 @@ func delete(t *testing.T) {
 		}
 	}`
 
-	sql := `DELETE FROM product WHERE (("product"."price") > 0) AND (("product"."price") < 8) AND (("product"."id") = 1) RETURNING *) SELECT json_object_agg('product', product) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "product_0"."id" AS "id", "product_0"."name" AS "name") AS "sel_0")) AS "product" FROM (SELECT "product"."id", "product"."name" FROM "products" AS "product" WHERE ((("product"."price") > 0) AND (("product"."price") < 8) AND (("product"."id") = 1)) LIMIT ('1') :: integer) AS "product_0" LIMIT ('1') :: integer) AS "done_1337";`
+	sql := `DELETE FROM products WHERE (("products"."price") > 0) AND (("products"."price") < 8) AND (("products"."id") = 1) RETURNING *) SELECT json_object_agg('product', sel_json_0) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name") AS "sel_0")) AS "sel_json_0" FROM (SELECT "products"."id", "products"."name" FROM "products" LIMIT ('1') :: integer) AS "products_0") AS "done_1337";`
 
 	vars := map[string]json.RawMessage{
 		"update": json.RawMessage(` { "name": "my_name", "woo": { "hoo": "goo" }, "description": "my_desc"  }`),
@@ -133,5 +130,4 @@ func TestCompileInsert(t *testing.T) {
 	t.Run("bulkInsert", bulkInsert)
 	t.Run("singleUpdate", singleUpdate)
 	t.Run("delete", delete)
-
 }

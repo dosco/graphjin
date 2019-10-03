@@ -1,9 +1,6 @@
 package serv_test
 
-import (
-	"testing"
-)
-
+/*
 func TestErrorLineExtract(t *testing.T) {
 	tests := []struct {
 		source   string
@@ -102,3 +99,4 @@ error`,
 		}
 	}
 }
+*/

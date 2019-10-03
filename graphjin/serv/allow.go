@@ -97,9 +97,23 @@ func (al *allowList) add(req *gqlReq) {
 		return
 	}
 
+	var query string
+
+	for i := 0; i < len(req.Query); i++ {
+		c := req.Query[i]
+		if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' {
+			query = req.Query
+			break
+
+		} else if c == '{' {
+			query = "query " + req.Query
+			break
+		}
+	}
+
 	al.saveChan <- &allowItem{
 		uri:  req.ref,
-		gql:  req.Query,
+		gql:  query,
 		vars: req.Vars,
 	}
 }
