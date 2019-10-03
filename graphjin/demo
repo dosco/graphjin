@@ -1,13 +1,13 @@
-#!/bin/sh
+#!/bin/bash
 
 if [ "$1" == "start" ]; then
   echo "Downloading pre-built docker images"
-  docker-compose -f rails-app/demo.yml pull
+  docker-compose -f examples/rails-app/demo.yml pull
   echo "Setting up and deploying Super Graph and the demo Rails app"
-  docker-compose -f rails-app/demo.yml run rails_app rake db:create db:migrate db:seed
-  docker-compose -f rails-app/demo.yml up
+  docker-compose -f examples/rails-app/demo.yml run rails_app rake db:create db:migrate db:seed
+  docker-compose -f examples/rails-app/demo.yml up
 elif [ "$1" == "stop" ]; then
-  docker-compose -f rails-app/demo.yml down
+  docker-compose -f examples/rails-app/demo.yml down
 else
   echo "./demo [start|stop]"
 fi
