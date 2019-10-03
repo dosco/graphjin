@@ -10,6 +10,8 @@ import (
 	"github.com/dosco/super-graph/qcode"
 )
 
+var zeroPaging = qcode.Paging{}
+
 func (co *Compiler) compileMutation(qc *qcode.QCode, w *bytes.Buffer, vars Variables) (uint32, error) {
 	if len(qc.Selects) == 0 {
 		return 0, errors.New("empty query")
@@ -37,6 +39,12 @@ func (co *Compiler) compileMutation(qc *qcode.QCode, w *bytes.Buffer, vars Varia
 	default:
 		return 0, errors.New("valid mutations are 'insert' and 'update'")
 	}
+
+	root.Paging = zeroPaging
+	root.DistinctOn = root.DistinctOn[:]
+	root.OrderBy = root.OrderBy[:]
+	root.Where = nil
+	root.Args = nil
 
 	return c.compileQuery(qc, w)
 }

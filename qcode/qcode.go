@@ -164,7 +164,7 @@ var opMap = map[parserType]QType{
 }
 
 var expPool = sync.Pool{
-	New: func() interface{} { return new(Exp) },
+	New: func() interface{} { return &Exp{doFree: true} },
 }
 
 func NewCompiler(c Config) (*Compiler, error) {
@@ -195,6 +195,7 @@ func NewCompiler(c Config) (*Compiler, error) {
 
 	seedExp := [100]Exp{}
 	for i := range seedExp {
+		seedExp[i].doFree = true
 		expPool.Put(&seedExp[i])
 	}
 
@@ -318,7 +319,6 @@ func (com *Compiler) compileQuery(op *Operation) ([]Select, error) {
 		}
 
 		if fil != nil && fil.Op != OpNop {
-
 			if root.Where != nil {
 				ow := root.Where
 
@@ -695,7 +695,7 @@ func newExp(st *util.Stack, node *Node, usePool bool) (*Exp, error) {
 		ex = expPool.Get().(*Exp)
 		ex.Reset()
 	} else {
-		ex = &Exp{}
+		ex = &Exp{doFree: false}
 	}
 	ex.Children = ex.childrenA[:0]
 
@@ -881,7 +881,7 @@ func compileFilter(filter []string) (*Exp, error) {
 	st := util.NewStack()
 
 	if len(filter) == 0 {
-		return &Exp{Op: OpNop}, nil
+		return &Exp{Op: OpNop, doFree: false}, nil
 	}
 
 	for i := range filter {
@@ -893,10 +893,11 @@ func compileFilter(filter []string) (*Exp, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		if fl == nil {
 			fl = f
 		} else {
-			fl = &Exp{Op: OpAnd, Children: []*Exp{fl, f}}
+			fl = &Exp{Op: OpAnd, Children: []*Exp{fl, f}, doFree: false}
 		}
 	}
 	return fl, nil
@@ -986,6 +987,7 @@ func (t ExpOp) String() string {
 }
 
 func FreeExp(ex *Exp) {
+	//	fmt.Println(">", ex.doFree)
 	if ex.doFree {
 		expPool.Put(ex)
 	}

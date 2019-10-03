@@ -39,6 +39,7 @@ query {
   }
 }
 
+
 variables {
 	"update": {
 		"name": "Hellooooo",
@@ -70,18 +71,4 @@ mutation {
     description
   }
 }
-
-query {
-  users {
-    id
-    email
-    picture: avatar
-    products(limit: 2, where: {price: {gt: 10}}) {
-      id
-      name
-      description
-    }
-  }
-}
-
 

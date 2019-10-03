@@ -56,7 +56,7 @@ func gqlHash(b string, vars []byte) string {
 		}
 	}
 
-	if vars == nil {
+	if vars == nil || len(vars) == 0 {
 		return hex.EncodeToString(h.Sum(nil))
 	}
 

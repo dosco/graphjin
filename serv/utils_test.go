@@ -61,6 +61,39 @@ func TestRelaxHash2(t *testing.T) {
 	}
 }
 
+func TestRelaxHash3(t *testing.T) {
+	var v1 = `users {
+			id
+			email
+			picture: avatar
+			products(limit: 2, where: {price: {gt: 10}}) {
+				id
+				name
+				description
+			}
+		}`
+
+	var v2 = `
+		users {
+			id
+			email
+			picture: avatar
+			products(limit: 2, where: {price: {gt: 10}}) {
+				id
+				name
+				description
+			}
+		}
+`
+
+	h1 := gqlHash(v1, nil)
+	h2 := gqlHash(v2, nil)
+
+	if strings.Compare(h1, h2) != 0 {
+		t.Fatal("Hashes don't match they should")
+	}
+}
+
 func TestRelaxHashWithVars1(t *testing.T) {
 	var q1 = `
 	products(
