@@ -1,28 +1,46 @@
 # http://localhost:8080/
 
-query {
-  me {
+variables {
+	"update": {
+		"name": "Wu-Tang",
+		"description": "No description needed"
+	},
+  "product_id": 1
+}
+
+mutation {
+  products(id: $product_id, update: $update) {
     id
-    email
-    full_name
+    name
+    description
   }
 }
 
 variables {
-	"update": {
-		"name": "Hellooooo",
-		"description": "World",
+	"data": {
+		"email": "gfk@myspace.com",
+		"full_name": "Ghostface Killah",
 		"created_at": "now",
 		"updated_at": "now"
-	},
-	"user": 123
+	}
 }
 
 mutation {
-  products(update: $update, where: {id: {eq: 134}}) {
+  user(insert: $data) {
+    id
+  }
+}
+
+variables {
+	"data": {
+		"product_id": 5
+	}
+}
+
+mutation {
+  products(id: $product_id, delete: true) {
     id
     name
-    description
   }
 }
 
@@ -39,20 +57,33 @@ query {
   }
 }
 
-
 variables {
-	"update": {
-		"name": "Hellooooo",
-		"description": "World"
-	},
-	"user": 123
+	"data": [
+		{
+			"name": "Protect Ya Neck",
+			"created_at": "now",
+			"updated_at": "now"
+		},
+		{
+			"name": "Enter the Wu-Tang",
+			"created_at": "now",
+			"updated_at": "now"
+		}
+	]
 }
 
 mutation {
-  products(update: $update, where: {id: {eq: 134}}) {
+  products(insert: $data) {
     id
     name
-    description
+  }
+}
+
+query {
+  me {
+    id
+    email
+    full_name
   }
 }
 
@@ -71,4 +102,3 @@ mutation {
     description
   }
 }
-
