@@ -5,10 +5,12 @@
 ![MIT license](https://img.shields.io/github/license/dosco/super-graph.svg)
 ![Docker build](https://img.shields.io/docker/cloud/build/dosco/super-graph.svg)
 ![Cloud native](https://img.shields.io/badge/cloud--native-enabled-blue.svg)
+[![Discord Chat](https://img.shields.io/discord/628796009539043348.svg)](https://discord.gg/6pSWCTZ)  
 
 Get an instant high performance GraphQL API for Postgres. No code needed. GraphQL is automatically transformed into efficient database queries.
 
 ![GraphQL](docs/.vuepress/public/graphql.png?raw=true "")
+![Join Chat](https://discord.gg/NKdXBc "")
 
 ## The story of Super Graph?
 
@@ -45,7 +47,9 @@ This compiler is what sits at the heart of Super Graph with layers of useful fun
 
 ## Contact me
 
-[twitter.com/dosco](https://twitter.com/dosco)
+[twitter/dosco](https://twitter.com/dosco)
+
+[chat/super-graph](https://discord.gg/6pSWCTZ)
 
 ## License
 

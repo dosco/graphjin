@@ -10,7 +10,8 @@ CREATE TABLE public.users (
 
 ---- create above / drop below ----
 
--- Write your migrate down statements here. If this migration is irreversible
--- Then delete the separator line above.
+-- Write your down migrate statements here. If this migration is irreversible
+-- then delete the separator line above.
 
 DROP TABLE public.users
+

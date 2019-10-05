@@ -9,6 +9,8 @@ module.exports = {
       { text: 'Deploy', link: '/deploy' },
       { text: 'Github', link: 'https://github.com/dosco/super-graph' },
       { text: 'Docker', link: 'https://hub.docker.com/r/dosco/super-graph/builds' },
+      { text: 'Join Chat', link: 'https://discord.gg/NKdXBc' },
+
     ],
     serviceWorker: {
       updatePopup: true
