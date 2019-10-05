@@ -588,7 +588,7 @@ query {
 
 ## Mutations
 
-In GraphQL mutations is the operation type for when you need to modify data. Super Graph supports the `insert`, `update` and `delete` database operations. Here are some examples.
+In GraphQL mutations is the operation type for when you need to modify data. Super Graph supports the `insert`, `update`, `upsert` and `delete` database operations. Here are some examples.
 
 When using mutations the data must be passed as variables since Super Graphs compiles the query into an prepared statement in the database for maximum speed. Prepared statements are are functions in your code when called they accept arguments and your variables are passed in as those arguments.
 
@@ -715,6 +715,56 @@ mutation {
 ```graphql
 mutation {
   product(delete: true, where: { price: { eq: { 500.0 } } }) {
+    id
+    name
+  }
+}
+```
+
+### Upsert
+
+```json
+{
+  "data": { 
+    "id": 5,
+    "name": "Art of Computer Programming",
+    "description": "The Art of Computer Programming (TAOCP) is a comprehensive monograph written by computer scientist Donald Knuth",
+    "price": 30.5
+  }
+}
+```
+
+```graphql
+mutation {
+  product(upsert: $data) {
+    id
+    name
+  }
+}
+```
+
+### Bulk upsert 
+
+```json
+{
+  "data": [{ 
+    "id": 5,
+    "name": "Art of Computer Programming",
+    "description": "The Art of Computer Programming (TAOCP) is a comprehensive monograph written by computer scientist Donald Knuth",
+    "price": 30.5
+  },
+  { 
+    "id": 6,
+    "name": "Compilers: Principles, Techniques, and Tools",
+    "description": "Known to professors, students, and developers worldwide as the 'Dragon Book' is available in a new edition",
+    "price": 93.74
+  }]
+}
+```
+
+```graphql
+mutation {
+  product(upsert: $data) {
     id
     name
   }

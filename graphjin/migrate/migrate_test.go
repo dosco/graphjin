@@ -1,10 +1,10 @@
 package migrate_test
 
+/*
 import (
 	. "gopkg.in/check.v1"
 )
 
-/*
 
 type MigrateSuite struct {
 	conn *pgx.Conn

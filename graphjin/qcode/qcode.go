@@ -22,6 +22,7 @@ const (
 	ActionInsert Action = iota + 1
 	ActionUpdate
 	ActionDelete
+	ActionUpsert
 )
 
 type QCode struct {
@@ -372,6 +373,9 @@ func (com *Compiler) compileArgs(sel *Select, args []Arg) error {
 			err = com.compileArgAction(sel, arg)
 		case "update":
 			sel.Action = ActionUpdate
+			err = com.compileArgAction(sel, arg)
+		case "upsert":
+			sel.Action = ActionUpsert
 			err = com.compileArgAction(sel, arg)
 		case "delete":
 			sel.Action = ActionDelete
