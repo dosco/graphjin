@@ -10,7 +10,6 @@
 Get an instant high performance GraphQL API for Postgres. No code needed. GraphQL is automatically transformed into efficient database queries.
 
 ![GraphQL](docs/.vuepress/public/graphql.png?raw=true "")
-![Join Chat](https://discord.gg/NKdXBc "")
 
 ## The story of Super Graph?
 
