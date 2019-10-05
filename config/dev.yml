@@ -22,7 +22,7 @@ enable_tracing: true
 
 # Watch the config folder and reload Super Graph
 # with the new configs when a change is detected
-reload_on_config_change: true
+reload_on_config_change: false
 
 # File that points to the database seeding script
 # seed_file: seed.js
