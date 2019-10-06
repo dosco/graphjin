@@ -52,6 +52,8 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to execute script")
 	}
+
+	logger.Info().Msg("seed script done")
 }
 
 //func runFunc(call goja.FunctionCall) {

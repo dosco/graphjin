@@ -124,6 +124,13 @@ e.g. db:migrate -+1
 		Run:   cmdNew,
 	})
 
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   fmt.Sprintf("conf:dump [%s]", strings.Join(viper.SupportedExts, "|")),
+		Short: "Dump config to file",
+		Long:  "Dump current config to a file in the selected format",
+		Run:   cmdConfDump,
+	})
+
 	rootCmd.Flags().StringVar(&confPath,
 		"path", "./config", "path to config files")
 
@@ -144,35 +151,7 @@ func initLog() *zerolog.Logger {
 }
 
 func initConf() (*config, error) {
-	vi := viper.New()
-
-	vi.SetEnvPrefix("SG")
-	vi.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	vi.AutomaticEnv()
-
-	vi.AddConfigPath(confPath)
-	vi.AddConfigPath("./config")
-	vi.SetConfigName(getConfigName())
-
-	vi.SetDefault("host_port", "0.0.0.0:8080")
-	vi.SetDefault("web_ui", false)
-	vi.SetDefault("enable_tracing", false)
-	vi.SetDefault("auth_fail_block", "always")
-	vi.SetDefault("seed_file", "seed.js")
-
-	vi.SetDefault("database.type", "postgres")
-	vi.SetDefault("database.host", "localhost")
-	vi.SetDefault("database.port", 5432)
-	vi.SetDefault("database.user", "postgres")
-	vi.SetDefault("database.schema", "public")
-
-	vi.SetDefault("env", "development")
-	vi.BindEnv("env", "GO_ENV")
-	vi.BindEnv("HOST", "HOST")
-	vi.BindEnv("PORT", "PORT")
-
-	vi.SetDefault("auth.rails.max_idle", 80)
-	vi.SetDefault("auth.rails.max_active", 12000)
+	vi := newConfig()
 
 	if err := vi.ReadInConfig(); err != nil {
 		return nil, err
@@ -184,12 +163,16 @@ func initConf() (*config, error) {
 		return nil, fmt.Errorf("unable to decode config, %v", err)
 	}
 
+	if len(c.Tables) == 0 {
+		c.Tables = c.DB.Tables
+	}
+
 	for k, v := range c.Inflections {
 		flect.AddPlural(k, v)
 	}
 
-	for i := range c.DB.Tables {
-		t := c.DB.Tables[i]
+	for i := range c.Tables {
+		t := c.Tables[i]
 		t.Name = flect.Pluralize(strings.ToLower(t.Name))
 	}
 

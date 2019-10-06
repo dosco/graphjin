@@ -141,5 +141,6 @@ func ifNotExists(filePath string, doFn func(string) error) {
 	if err != nil {
 		logger.Fatal().Err(err).Msgf("unable to create '%s'", filePath)
 	}
+
 	logger.Info().Msgf("created '%s'", filePath)
 }

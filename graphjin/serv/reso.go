@@ -25,7 +25,7 @@ type resolvFn struct {
 func initResolvers() error {
 	rmap = make(map[uint64]*resolvFn)
 
-	for _, t := range conf.DB.Tables {
+	for _, t := range conf.Tables {
 		err := initRemotes(t)
 		if err != nil {
 			return err

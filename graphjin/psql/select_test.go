@@ -25,17 +25,27 @@ func TestMain(m *testing.M) {
 		DefaultFilter: []string{
 			`{ user_id: { _eq: $user_id } }`,
 		},
-		FilterMap: map[string][]string{
-			"users": []string{
-				"{ id: { eq: $user_id } }",
+		FilterMap: qcode.Filters{
+			All: map[string][]string{
+				"users": []string{
+					"{ id: { eq: $user_id } }",
+				},
+				"products": []string{
+					"{ price: { gt: 0 } }",
+					"{ price: { lt: 8 } }",
+				},
+				"customers": []string{},
+				"mes": []string{
+					"{ id: { eq: $user_id } }",
+				},
 			},
-			"products": []string{
-				"{ price: { gt: 0 } }",
-				"{ price: { lt: 8 } }",
+			Query: map[string][]string{
+				"users": []string{},
 			},
-			"customers": []string{},
-			"mes": []string{
-				"{ id: { eq: $user_id } }",
+			Update: map[string][]string{
+				"products": []string{
+					"{ user_id: { eq: $user_id } }",
+				},
 			},
 		},
 		Blocklist: []string{
@@ -306,7 +316,7 @@ func oneToMany(t *testing.T) {
 		}
 	}`
 
-	sql := `SELECT json_object_agg('users', users) FROM (SELECT coalesce(json_agg("sel_json_0"), '[]') AS "users" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "users_0"."email" AS "email", "products_1_join"."products" AS "products") AS "sel_0")) AS "sel_json_0" FROM (SELECT "users"."email", "users"."id" FROM "users" WHERE ((("users"."id") = {{user_id}})) LIMIT ('20') :: integer) AS "users_0" LEFT OUTER JOIN LATERAL (SELECT coalesce(json_agg("sel_json_1"), '[]') AS "products" FROM (SELECT row_to_json((SELECT "sel_1" FROM (SELECT "products_1"."name" AS "name", "products_1"."price" AS "price") AS "sel_1")) AS "sel_json_1" FROM (SELECT "products"."name", "products"."price" FROM "products" WHERE ((("products"."user_id") = ("users_0"."id"))) LIMIT ('20') :: integer) AS "products_1" LIMIT ('20') :: integer) AS "sel_json_agg_1") AS "products_1_join" ON ('true') LIMIT ('20') :: integer) AS "sel_json_agg_0") AS "done_1337";`
+	sql := `SELECT json_object_agg('users', users) FROM (SELECT coalesce(json_agg("sel_json_0"), '[]') AS "users" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "users_0"."email" AS "email", "products_1_join"."products" AS "products") AS "sel_0")) AS "sel_json_0" FROM (SELECT "users"."email", "users"."id" FROM "users" LIMIT ('20') :: integer) AS "users_0" LEFT OUTER JOIN LATERAL (SELECT coalesce(json_agg("sel_json_1"), '[]') AS "products" FROM (SELECT row_to_json((SELECT "sel_1" FROM (SELECT "products_1"."name" AS "name", "products_1"."price" AS "price") AS "sel_1")) AS "sel_json_1" FROM (SELECT "products"."name", "products"."price" FROM "products" WHERE ((("products"."user_id") = ("users_0"."id"))) LIMIT ('20') :: integer) AS "products_1" LIMIT ('20') :: integer) AS "sel_json_agg_1") AS "products_1_join" ON ('true') LIMIT ('20') :: integer) AS "sel_json_agg_0") AS "done_1337";`
 
 	resSQL, err := compileGQLToPSQL(gql, nil)
 	if err != nil {
