@@ -145,16 +145,30 @@ const (
 	OrderDescNullsLast
 )
 
+type Filters struct {
+	All    map[string][]string
+	Query  map[string][]string
+	Insert map[string][]string
+	Update map[string][]string
+	Delete map[string][]string
+}
+
 type Config struct {
 	DefaultFilter []string
-	FilterMap     map[string][]string
+	FilterMap     Filters
 	Blocklist     []string
 	KeepArgs      bool
 }
 
 type Compiler struct {
-	fl *Exp
-	fm map[string]*Exp
+	df *Exp
+	fm struct {
+		all    map[string]*Exp
+		query  map[string]*Exp
+		insert map[string]*Exp
+		update map[string]*Exp
+		delete map[string]*Exp
+	}
 	bl map[string]struct{}
 	ka bool
 }
@@ -169,20 +183,59 @@ var expPool = sync.Pool{
 }
 
 func NewCompiler(c Config) (*Compiler, error) {
-	bl := make(map[string]struct{}, len(c.Blocklist))
+	var err error
+	co := &Compiler{ka: c.KeepArgs}
+
+	co.bl = make(map[string]struct{}, len(c.Blocklist))
 
 	for i := range c.Blocklist {
-		bl[c.Blocklist[i]] = struct{}{}
+		co.bl[c.Blocklist[i]] = struct{}{}
 	}
 
-	fl, err := compileFilter(c.DefaultFilter)
+	co.df, err = compileFilter(c.DefaultFilter)
 	if err != nil {
 		return nil, err
 	}
 
-	fm := make(map[string]*Exp, len(c.FilterMap))
+	co.fm.all, err = buildFilters(c.FilterMap.All)
+	if err != nil {
+		return nil, err
+	}
 
-	for k, v := range c.FilterMap {
+	co.fm.query, err = buildFilters(c.FilterMap.Query)
+	if err != nil {
+		return nil, err
+	}
+
+	co.fm.insert, err = buildFilters(c.FilterMap.Insert)
+	if err != nil {
+		return nil, err
+	}
+
+	co.fm.update, err = buildFilters(c.FilterMap.Update)
+	if err != nil {
+		return nil, err
+	}
+
+	co.fm.delete, err = buildFilters(c.FilterMap.Delete)
+	if err != nil {
+		return nil, err
+	}
+
+	seedExp := [100]Exp{}
+
+	for i := range seedExp {
+		seedExp[i].doFree = true
+		expPool.Put(&seedExp[i])
+	}
+
+	return co, nil
+}
+
+func buildFilters(filMap map[string][]string) (map[string]*Exp, error) {
+	fm := make(map[string]*Exp, len(filMap))
+
+	for k, v := range filMap {
 		fil, err := compileFilter(v)
 		if err != nil {
 			return nil, err
@@ -194,13 +247,7 @@ func NewCompiler(c Config) (*Compiler, error) {
 		fm[plural] = fil
 	}
 
-	seedExp := [100]Exp{}
-	for i := range seedExp {
-		seedExp[i].doFree = true
-		expPool.Put(&seedExp[i])
-	}
-
-	return &Compiler{fl, fm, bl, c.KeepArgs}, nil
+	return fm, nil
 }
 
 func (com *Compiler) Compile(query []byte) (*QCode, error) {
@@ -308,34 +355,52 @@ func (com *Compiler) compileQuery(op *Operation) ([]Select, error) {
 		id++
 	}
 
-	var ok bool
+	if id == 0 {
+		return nil, errors.New("invalid query")
+	}
+
 	var fil *Exp
 
-	if id > 0 {
-		root := &selects[0]
-		fil, ok = com.fm[root.Table]
+	root := &selects[0]
 
-		if !ok || fil == nil {
-			fil = com.fl
+	switch op.Type {
+	case opQuery:
+		fil, _ = com.fm.query[root.Table]
+
+	case opMutate:
+		switch root.Action {
+		case ActionInsert:
+			fil, _ = com.fm.insert[root.Table]
+		case ActionUpdate:
+			fil, _ = com.fm.update[root.Table]
+		case ActionDelete:
+			fil, _ = com.fm.delete[root.Table]
+		case ActionUpsert:
+			fil, _ = com.fm.insert[root.Table]
 		}
+	}
 
-		if fil != nil && fil.Op != OpNop {
-			if root.Where != nil {
-				ow := root.Where
+	if fil == nil {
+		fil, _ = com.fm.all[root.Table]
+	}
 
-				root.Where = expPool.Get().(*Exp)
-				root.Where.Reset()
-				root.Where.Op = OpAnd
-				root.Where.Children = root.Where.childrenA[:2]
-				root.Where.Children[0] = fil
-				root.Where.Children[1] = ow
-			} else {
-				root.Where = fil
-			}
+	if fil == nil {
+		fil = com.df
+	}
+
+	if fil != nil && fil.Op != OpNop {
+		if root.Where != nil {
+			ow := root.Where
+
+			root.Where = expPool.Get().(*Exp)
+			root.Where.Reset()
+			root.Where.Op = OpAnd
+			root.Where.Children = root.Where.childrenA[:2]
+			root.Where.Children[0] = fil
+			root.Where.Children[1] = ow
+		} else {
+			root.Where = fil
 		}
-
-	} else {
-		return nil, errors.New("invalid query")
 	}
 
 	return selects[:id], nil

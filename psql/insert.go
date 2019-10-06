@@ -51,7 +51,7 @@ func (co *Compiler) compileMutation(qc *qcode.QCode, w *bytes.Buffer, vars Varia
 		}
 
 	default:
-		return 0, errors.New("valid mutations are 'insert' and 'update'")
+		return 0, errors.New("valid mutations are 'insert', 'update', 'upsert' and 'delete'")
 	}
 
 	io.WriteString(c.w, ` RETURNING *) `)

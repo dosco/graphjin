@@ -111,42 +111,45 @@ database:
       - encrypted
       - token
 
-  tables:
-    - name: users
-      # This filter will overwrite defaults.filter
-      # filter: ["{ id: { eq: $user_id } }"]
+tables:
+  - name: users
+    # This filter will overwrite defaults.filter
+    # filter: ["{ id: { eq: $user_id } }"]
+    # filter_query: ["{ id: { eq: $user_id } }"]
+    filter_update: ["{ id: { eq: $user_id } }"]
+    filter_delete: ["{ id: { eq: $user_id } }"]
 
-    # - name: products
-    #   # Multiple filters are AND'd together
-    #   filter: [
-    #     "{ price: { gt: 0 } }",
-    #     "{ price: { lt: 8 } }"
-    #   ]
+  # - name: products
+  #   # Multiple filters are AND'd together
+  #   filter: [
+  #     "{ price: { gt: 0 } }",
+  #     "{ price: { lt: 8 } }"
+  #   ]
 
-    - name: customers
-      # No filter is used for this field not
-      # even defaults.filter
-      filter: none
+  - name: customers
+    # No filter is used for this field not
+    # even defaults.filter
+    filter: none
 
-      remotes:
-        - name: payments
-          id: stripe_id
-          url: http://rails_app:3000/stripe/$id
-          path: data
-          # debug: true
-          pass_headers: 
-            - cookie
-          set_headers:
-            - name: Host
-              value: 0.0.0.0
-            # - name: Authorization
-            #   value: Bearer <stripe_api_key>
+    remotes:
+      - name: payments
+        id: stripe_id
+        url: http://rails_app:3000/stripe/$id
+        path: data
+        # debug: true
+        pass_headers: 
+          - cookie
+        set_headers:
+          - name: Host
+            value: 0.0.0.0
+          # - name: Authorization
+          #   value: Bearer <stripe_api_key>
 
-    - # You can create new fields that have a
-      # real db table backing them
-      name: me
-      table: users
-      filter: ["{ id: { eq: $user_id } }"]
+  - # You can create new fields that have a
+    # real db table backing them
+    name: me
+    table: users
+    filter: ["{ id: { eq: $user_id } }"]
 
-    # - name: posts
-    #   filter: ["{ account_id: { _eq: $account_id } }"]
+  # - name: posts
+  #   filter: ["{ account_id: { _eq: $account_id } }"]

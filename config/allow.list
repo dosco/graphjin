@@ -5,7 +5,7 @@ variables {
 		"name": "Wu-Tang",
 		"description": "No description needed"
 	},
-  "product_id": 1
+	"product_id": 1
 }
 
 mutation {
@@ -13,6 +13,111 @@ mutation {
     id
     name
     description
+  }
+}
+
+variables {
+	"data": {
+		"product_id": 5
+	}
+}
+
+mutation {
+  products(id: $product_id, delete: true) {
+    id
+    name
+  }
+}
+
+variables {
+	"data": [
+		{
+			"name": "Gumbo1",
+			"created_at": "now",
+			"updated_at": "now"
+		},
+		{
+			"name": "Gumbo2",
+			"created_at": "now",
+			"updated_at": "now"
+		}
+	]
+}
+
+mutation {
+  products(id: 199, delete: true) {
+    id
+    name
+  }
+}
+
+variables {
+	"data": [
+		{
+			"name": "Gumbo1",
+			"created_at": "now",
+			"updated_at": "now"
+		},
+		{
+			"name": "Gumbo2",
+			"created_at": "now",
+			"updated_at": "now"
+		}
+	]
+}
+
+query {
+  products {
+    id
+    name
+  }
+}
+
+
+variables {
+	"update": {
+		"name": "Helloo",
+		"description": "World \u003c\u003e"
+	},
+	"user": 123
+}
+
+mutation {
+  products(id: 5, update: $update) {
+    id
+    name
+    description
+  }
+}
+
+variables {
+	"data": [
+		{
+			"name": "Gumbo1",
+			"created_at": "now",
+			"updated_at": "now"
+		},
+		{
+			"name": "Gumbo2",
+			"created_at": "now",
+			"updated_at": "now"
+		}
+	]
+}
+
+query {
+  product {
+    id
+    name
+  }
+}
+
+
+query {
+  me {
+    id
+    email
+    full_name
   }
 }
 
@@ -28,19 +133,6 @@ variables {
 mutation {
   user(insert: $data) {
     id
-  }
-}
-
-variables {
-	"data": {
-		"product_id": 5
-	}
-}
-
-mutation {
-  products(id: $product_id, delete: true) {
-    id
-    name
   }
 }
 
@@ -79,26 +171,3 @@ mutation {
   }
 }
 
-query {
-  me {
-    id
-    email
-    full_name
-  }
-}
-
-variables {
-	"update": {
-		"name": "Helloo",
-		"description": "World \u003c\u003e"
-	},
-	"user": 123
-}
-
-mutation {
-  products(id: 5, update: $update) {
-    id
-    name
-    description
-  }
-}

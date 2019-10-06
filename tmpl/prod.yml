@@ -108,7 +108,10 @@ database:
   tables:
     - name: users
       # This filter will overwrite defaults.filter
-      filter: ["{ id: { eq: $user_id } }"]
+      # filter: ["{ id: { eq: $user_id } }"]
+      # filter_query: ["{ id: { eq: $user_id } }"]
+      filter_update: ["{ id: { eq: $user_id } }"]
+      filter_delete: ["{ id: { eq: $user_id } }"]
 
     - name: products
       # Multiple filters are AND'd together

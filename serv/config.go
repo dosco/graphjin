@@ -3,7 +3,7 @@ package serv
 import (
 	"strings"
 
-	"github.com/gobuffalo/flect"
+	"github.com/spf13/viper"
 )
 
 type config struct {
@@ -69,14 +69,20 @@ type config struct {
 
 		Tables []configTable
 	} `mapstructure:"database"`
+
+	Tables []configTable
 }
 
 type configTable struct {
-	Name      string
-	Filter    []string
-	Table     string
-	Blocklist []string
-	Remotes   []configRemote
+	Name         string
+	Filter       []string
+	FilterQuery  []string `mapstructure:"filter_query"`
+	FilterInsert []string `mapstructure:"filter_insert"`
+	FilterUpdate []string `mapstructure:"filter_update"`
+	FilterDelete []string `mapstructure:"filter_delete"`
+	Table        string
+	Blocklist    []string
+	Remotes      []configRemote
 }
 
 type configRemote struct {
@@ -90,6 +96,40 @@ type configRemote struct {
 		Name  string
 		Value string
 	} `mapstructure:"set_headers"`
+}
+
+func newConfig() *viper.Viper {
+	vi := viper.New()
+
+	vi.SetEnvPrefix("SG")
+	vi.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	vi.AutomaticEnv()
+
+	vi.AddConfigPath(confPath)
+	vi.AddConfigPath("./config")
+	vi.SetConfigName(getConfigName())
+
+	vi.SetDefault("host_port", "0.0.0.0:8080")
+	vi.SetDefault("web_ui", false)
+	vi.SetDefault("enable_tracing", false)
+	vi.SetDefault("auth_fail_block", "always")
+	vi.SetDefault("seed_file", "seed.js")
+
+	vi.SetDefault("database.type", "postgres")
+	vi.SetDefault("database.host", "localhost")
+	vi.SetDefault("database.port", 5432)
+	vi.SetDefault("database.user", "postgres")
+	vi.SetDefault("database.schema", "public")
+
+	vi.SetDefault("env", "development")
+	vi.BindEnv("env", "GO_ENV")
+	vi.BindEnv("HOST", "HOST")
+	vi.BindEnv("PORT", "PORT")
+
+	vi.SetDefault("auth.rails.max_idle", 80)
+	vi.SetDefault("auth.rails.max_active", 12000)
+
+	return vi
 }
 
 func (c *config) getVariables() map[string]string {
@@ -113,10 +153,10 @@ func (c *config) getVariables() map[string]string {
 }
 
 func (c *config) getAliasMap() map[string][]string {
-	m := make(map[string][]string, len(c.DB.Tables))
+	m := make(map[string][]string, len(c.Tables))
 
-	for i := range c.DB.Tables {
-		t := c.DB.Tables[i]
+	for i := range c.Tables {
+		t := c.Tables[i]
 
 		if len(t.Table) == 0 {
 			continue
@@ -125,30 +165,5 @@ func (c *config) getAliasMap() map[string][]string {
 		k := strings.ToLower(t.Table)
 		m[k] = append(m[k], strings.ToLower(t.Name))
 	}
-	return m
-}
-
-func (c *config) getFilterMap() map[string][]string {
-	m := make(map[string][]string, len(c.DB.Tables))
-
-	for i := range c.DB.Tables {
-		t := c.DB.Tables[i]
-
-		if len(t.Filter) == 0 {
-			continue
-		}
-		singular := flect.Singularize(t.Name)
-		plural := flect.Pluralize(t.Name)
-
-		if t.Filter[0] == "none" {
-			m[singular] = []string{}
-			m[plural] = []string{}
-
-		} else {
-			m[singular] = t.Filter
-			m[plural] = t.Filter
-		}
-	}
-
 	return m
 }

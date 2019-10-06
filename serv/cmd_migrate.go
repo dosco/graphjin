@@ -245,6 +245,7 @@ func cmdDBMigrate(cmd *cobra.Command, args []string) {
 		// }
 		// os.Exit(1)
 	}
+
 	logger.Info().Msg("migration done")
 
 }
