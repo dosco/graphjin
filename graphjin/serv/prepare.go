@@ -40,7 +40,7 @@ func prepareStmt(key, gql string, varBytes json.RawMessage) error {
 		return nil
 	}
 
-	qc, err := qcompile.Compile([]byte(gql))
+	qc, err := qcompile.Compile([]byte(gql), "user")
 	if err != nil {
 		return err
 	}

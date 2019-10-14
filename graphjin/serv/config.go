@@ -71,18 +71,14 @@ type config struct {
 	} `mapstructure:"database"`
 
 	Tables []configTable
+	Roles  []configRoles
 }
 
 type configTable struct {
-	Name         string
-	Filter       []string
-	FilterQuery  []string `mapstructure:"filter_query"`
-	FilterInsert []string `mapstructure:"filter_insert"`
-	FilterUpdate []string `mapstructure:"filter_update"`
-	FilterDelete []string `mapstructure:"filter_delete"`
-	Table        string
-	Blocklist    []string
-	Remotes      []configRemote
+	Name      string
+	Table     string
+	Blocklist []string
+	Remotes   []configRemote
 }
 
 type configRemote struct {
@@ -96,6 +92,41 @@ type configRemote struct {
 		Name  string
 		Value string
 	} `mapstructure:"set_headers"`
+}
+
+type configRoles struct {
+	Name   string
+	Tables []struct {
+		Name string
+
+		Query struct {
+			Limit              int
+			Filter             []string
+			Columns            []string
+			DisableAggregation bool `mapstructure:"disable_aggregation"`
+			Deny               bool
+		}
+
+		Insert struct {
+			Filter  []string
+			Columns []string
+			Set     map[string]string
+			Deny    bool
+		}
+
+		Update struct {
+			Filter  []string
+			Columns []string
+			Set     map[string]string
+			Deny    bool
+		}
+
+		Delete struct {
+			Filter  []string
+			Columns []string
+			Deny    bool
+		}
+	}
 }
 
 func newConfig() *viper.Viper {

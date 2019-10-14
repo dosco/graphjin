@@ -115,9 +115,6 @@ tables:
   - name: users
     # This filter will overwrite defaults.filter
     # filter: ["{ id: { eq: $user_id } }"]
-    # filter_query: ["{ id: { eq: $user_id } }"]
-    filter_update: ["{ id: { eq: $user_id } }"]
-    filter_delete: ["{ id: { eq: $user_id } }"]
 
   # - name: products
   #   # Multiple filters are AND'd together
@@ -127,10 +124,6 @@ tables:
   #   ]
 
   - name: customers
-    # No filter is used for this field not
-    # even defaults.filter
-    filter: none
-
     remotes:
       - name: payments
         id: stripe_id
@@ -149,7 +142,56 @@ tables:
     # real db table backing them
     name: me
     table: users
-    filter: ["{ id: { eq: $user_id } }"]
 
-  # - name: posts
-  #   filter: ["{ account_id: { _eq: $account_id } }"]
+roles:
+  - name: anon
+    tables:
+      - name: products
+        limit: 10
+
+        query:
+          columns: ["id", "name", "description" ]
+          aggregation: false
+
+        insert:
+          allow: false
+            
+        update:
+          allow: false
+
+        delete:
+          allow: false
+
+  - name: user
+    tables:
+      - name: products
+
+        query:
+          limit: 50
+          filter: ["{ user_id: { eq: $user_id } }"]
+          columns: ["id", "name", "description" ]
+          disable_aggregation: false
+
+        insert:
+          filter: ["{ user_id: { eq: $user_id } }"]
+          columns: ["id", "name", "description" ]
+          set:
+          - created_at: "now"
+            
+        update:
+          filter: ["{ user_id: { eq: $user_id } }"]
+          columns:
+            - id
+            - name
+          set:
+            - updated_at: "now"
+
+        delete:
+          deny: true
+
+  - name: manager
+    tables:
+      - name: users
+        
+      select:
+        filter: ["{ account_id: { _eq: $account_id } }"]

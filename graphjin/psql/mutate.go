@@ -10,7 +10,7 @@ import (
 	"github.com/dosco/super-graph/qcode"
 )
 
-var zeroPaging = qcode.Paging{}
+var noLimit = qcode.Paging{NoLimit: true}
 
 func (co *Compiler) compileMutation(qc *qcode.QCode, w *bytes.Buffer, vars Variables) (uint32, error) {
 	if len(qc.Selects) == 0 {
@@ -29,23 +29,23 @@ func (co *Compiler) compileMutation(qc *qcode.QCode, w *bytes.Buffer, vars Varia
 	quoted(c.w, ti.Name)
 	c.w.WriteString(` AS `)
 
-	switch root.Action {
-	case qcode.ActionInsert:
+	switch qc.Type {
+	case qcode.QTInsert:
 		if _, err := c.renderInsert(qc, w, vars, ti); err != nil {
 			return 0, err
 		}
 
-	case qcode.ActionUpdate:
+	case qcode.QTUpdate:
 		if _, err := c.renderUpdate(qc, w, vars, ti); err != nil {
 			return 0, err
 		}
 
-	case qcode.ActionUpsert:
+	case qcode.QTUpsert:
 		if _, err := c.renderUpsert(qc, w, vars, ti); err != nil {
 			return 0, err
 		}
 
-	case qcode.ActionDelete:
+	case qcode.QTDelete:
 		if _, err := c.renderDelete(qc, w, vars, ti); err != nil {
 			return 0, err
 		}
@@ -56,22 +56,23 @@ func (co *Compiler) compileMutation(qc *qcode.QCode, w *bytes.Buffer, vars Varia
 
 	io.WriteString(c.w, ` RETURNING *) `)
 
-	root.Paging = zeroPaging
+	root.Paging = noLimit
 	root.DistinctOn = root.DistinctOn[:]
 	root.OrderBy = root.OrderBy[:]
 	root.Where = nil
 	root.Args = nil
+
+	qc.Type = qcode.QTQuery
 
 	return c.compileQuery(qc, w)
 }
 
 func (c *compilerContext) renderInsert(qc *qcode.QCode, w *bytes.Buffer,
 	vars Variables, ti *DBTableInfo) (uint32, error) {
-	root := &qc.Selects[0]
 
-	insert, ok := vars[root.ActionVar]
+	insert, ok := vars[qc.ActionVar]
 	if !ok {
-		return 0, fmt.Errorf("Variable '%s' not defined", root.ActionVar)
+		return 0, fmt.Errorf("Variable '%s' not defined", qc.ActionVar)
 	}
 
 	jt, array, err := jsn.Tree(insert)
@@ -80,7 +81,7 @@ func (c *compilerContext) renderInsert(qc *qcode.QCode, w *bytes.Buffer,
 	}
 
 	c.w.WriteString(`(WITH "input" AS (SELECT {{`)
-	c.w.WriteString(root.ActionVar)
+	c.w.WriteString(qc.ActionVar)
 	c.w.WriteString(`}}::json AS j) INSERT INTO `)
 	quoted(c.w, ti.Name)
 	io.WriteString(c.w, ` (`)
@@ -106,11 +107,17 @@ func (c *compilerContext) renderInsert(qc *qcode.QCode, w *bytes.Buffer,
 
 func (c *compilerContext) renderInsertUpdateColumns(qc *qcode.QCode, w *bytes.Buffer,
 	jt map[string]interface{}, ti *DBTableInfo) (uint32, error) {
+	root := &qc.Selects[0]
 
 	i := 0
 	for _, cn := range ti.ColumnNames {
 		if _, ok := jt[cn]; !ok {
 			continue
+		}
+		if len(root.Allowed) != 0 {
+			if _, ok := root.Allowed[cn]; !ok {
+				continue
+			}
 		}
 		if i != 0 {
 			io.WriteString(c.w, `, `)
@@ -126,9 +133,9 @@ func (c *compilerContext) renderUpdate(qc *qcode.QCode, w *bytes.Buffer,
 	vars Variables, ti *DBTableInfo) (uint32, error) {
 	root := &qc.Selects[0]
 
-	update, ok := vars[root.ActionVar]
+	update, ok := vars[qc.ActionVar]
 	if !ok {
-		return 0, fmt.Errorf("Variable '%s' not defined", root.ActionVar)
+		return 0, fmt.Errorf("Variable '%s' not defined", qc.ActionVar)
 	}
 
 	jt, array, err := jsn.Tree(update)
@@ -137,7 +144,7 @@ func (c *compilerContext) renderUpdate(qc *qcode.QCode, w *bytes.Buffer,
 	}
 
 	c.w.WriteString(`(WITH "input" AS (SELECT {{`)
-	c.w.WriteString(root.ActionVar)
+	c.w.WriteString(qc.ActionVar)
 	c.w.WriteString(`}}::json AS j) UPDATE `)
 	quoted(c.w, ti.Name)
 	io.WriteString(c.w, ` SET (`)
@@ -183,11 +190,10 @@ func (c *compilerContext) renderDelete(qc *qcode.QCode, w *bytes.Buffer,
 
 func (c *compilerContext) renderUpsert(qc *qcode.QCode, w *bytes.Buffer,
 	vars Variables, ti *DBTableInfo) (uint32, error) {
-	root := &qc.Selects[0]
 
-	upsert, ok := vars[root.ActionVar]
+	upsert, ok := vars[qc.ActionVar]
 	if !ok {
-		return 0, fmt.Errorf("Variable '%s' not defined", root.ActionVar)
+		return 0, fmt.Errorf("Variable '%s' not defined", qc.ActionVar)
 	}
 
 	jt, _, err := jsn.Tree(upsert)

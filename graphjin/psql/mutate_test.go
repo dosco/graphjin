@@ -18,7 +18,7 @@ func simpleInsert(t *testing.T) {
 		"data": json.RawMessage(`{"email": "reannagreenholt@orn.com", "full_name": "Flo Barton"}`),
 	}
 
-	resSQL, err := compileGQLToPSQL(gql, vars)
+	resSQL, err := compileGQLToPSQL(gql, vars, "user")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func singleInsert(t *testing.T) {
 		"insert": json.RawMessage(` { "name": "my_name", "woo": { "hoo": "goo" }, "description": "my_desc", "user_id": 5 }`),
 	}
 
-	resSQL, err := compileGQLToPSQL(gql, vars)
+	resSQL, err := compileGQLToPSQL(gql, vars, "user")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func singleInsert(t *testing.T) {
 
 func bulkInsert(t *testing.T) {
 	gql := `mutation {
-		product(id: 15, insert: $insert) {
+		product(name: "test", id: 15, insert: $insert) {
 			id
 			name
 		}
@@ -66,7 +66,7 @@ func bulkInsert(t *testing.T) {
 		"insert": json.RawMessage(` [{ "name": "my_name", "woo": { "hoo": "goo" }, "description": "my_desc"  }]`),
 	}
 
-	resSQL, err := compileGQLToPSQL(gql, vars)
+	resSQL, err := compileGQLToPSQL(gql, vars, "user")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func singleUpsert(t *testing.T) {
 		"upsert": json.RawMessage(` { "name": "my_name", "woo": { "hoo": "goo" }, "description": "my_desc"  }`),
 	}
 
-	resSQL, err := compileGQLToPSQL(gql, vars)
+	resSQL, err := compileGQLToPSQL(gql, vars, "user")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func bulkUpsert(t *testing.T) {
 		"upsert": json.RawMessage(` [{ "name": "my_name", "woo": { "hoo": "goo" }, "description": "my_desc"  }]`),
 	}
 
-	resSQL, err := compileGQLToPSQL(gql, vars)
+	resSQL, err := compileGQLToPSQL(gql, vars, "user")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func singleUpdate(t *testing.T) {
 		"update": json.RawMessage(` { "name": "my_name", "woo": { "hoo": "goo" }, "description": "my_desc"  }`),
 	}
 
-	resSQL, err := compileGQLToPSQL(gql, vars)
+	resSQL, err := compileGQLToPSQL(gql, vars, "user")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +162,7 @@ func delete(t *testing.T) {
 		"update": json.RawMessage(` { "name": "my_name", "woo": { "hoo": "goo" }, "description": "my_desc"  }`),
 	}
 
-	resSQL, err := compileGQLToPSQL(gql, vars)
+	resSQL, err := compileGQLToPSQL(gql, vars, "user")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func delete(t *testing.T) {
 	}
 }
 
-func TestCompileInsert(t *testing.T) {
+func TestCompileMutate(t *testing.T) {
 	t.Run("simpleInsert", simpleInsert)
 	t.Run("singleInsert", singleInsert)
 	t.Run("bulkInsert", bulkInsert)
