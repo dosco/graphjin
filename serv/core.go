@@ -59,7 +59,7 @@ func (c *coreContext) execQuery() ([]byte, error) {
 
 	} else {
 
-		qc, err = qcompile.Compile([]byte(c.req.Query))
+		qc, err = qcompile.Compile([]byte(c.req.Query), "user")
 		if err != nil {
 			return nil, err
 		}

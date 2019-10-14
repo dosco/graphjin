@@ -64,11 +64,11 @@ func (co *Compiler) Compile(qc *qcode.QCode, w *bytes.Buffer, vars Variables) (u
 	switch qc.Type {
 	case qcode.QTQuery:
 		return co.compileQuery(qc, w)
-	case qcode.QTMutation:
+	case qcode.QTInsert, qcode.QTUpdate, qcode.QTDelete, qcode.QTUpsert:
 		return co.compileMutation(qc, w, vars)
 	}
 
-	return 0, errors.New("unknown operation")
+	return 0, fmt.Errorf("Unknown operation type %d", qc.Type)
 }
 
 func (co *Compiler) compileQuery(qc *qcode.QCode, w *bytes.Buffer) (uint32, error) {
@@ -295,19 +295,21 @@ func (c *compilerContext) renderSelectClose(sel *qcode.Select, ti *DBTableInfo) 
 		}
 	}
 
-	if sel.Action == 0 {
-		if len(sel.Paging.Limit) != 0 {
-			//fmt.Fprintf(w, ` LIMIT ('%s') :: integer`, c.sel.Paging.Limit)
-			c.w.WriteString(` LIMIT ('`)
-			c.w.WriteString(sel.Paging.Limit)
-			c.w.WriteString(`') :: integer`)
+	switch {
+	case sel.Paging.NoLimit:
+		break
 
-		} else if ti.Singular {
-			c.w.WriteString(` LIMIT ('1') :: integer`)
+	case len(sel.Paging.Limit) != 0:
+		//fmt.Fprintf(w, ` LIMIT ('%s') :: integer`, c.sel.Paging.Limit)
+		c.w.WriteString(` LIMIT ('`)
+		c.w.WriteString(sel.Paging.Limit)
+		c.w.WriteString(`') :: integer`)
 
-		} else {
-			c.w.WriteString(` LIMIT ('20') :: integer`)
-		}
+	case ti.Singular:
+		c.w.WriteString(` LIMIT ('1') :: integer`)
+
+	default:
+		c.w.WriteString(` LIMIT ('20') :: integer`)
 	}
 
 	if len(sel.Paging.Offset) != 0 {
@@ -370,13 +372,31 @@ func (c *compilerContext) renderJoinTable(sel *qcode.Select) error {
 }
 
 func (c *compilerContext) renderColumns(sel *qcode.Select, ti *DBTableInfo) {
-	for i, col := range sel.Cols {
+	i := 0
+	for _, col := range sel.Cols {
+		if len(sel.Allowed) != 0 {
+			n := funcPrefixLen(col.Name)
+			if n != 0 {
+				if sel.Functions == false {
+					continue
+				}
+				if _, ok := sel.Allowed[col.Name[n:]]; !ok {
+					continue
+				}
+			} else {
+				if _, ok := sel.Allowed[col.Name]; !ok {
+					continue
+				}
+			}
+		}
+
 		if i != 0 {
 			io.WriteString(c.w, ", ")
 		}
 		//fmt.Fprintf(w, `"%s_%d"."%s" AS "%s"`,
 		//c.sel.Table, c.sel.ID, col.Name, col.FieldName)
 		colWithTableIDAlias(c.w, ti.Name, sel.ID, col.Name, col.FieldName)
+		i++
 	}
 }
 
@@ -435,7 +455,8 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo,
 
 	c.w.WriteString(` FROM (SELECT `)
 
-	for i, col := range sel.Cols {
+	i := 0
+	for n, col := range sel.Cols {
 		cn := col.Name
 
 		_, isRealCol := ti.Columns[cn]
@@ -447,6 +468,9 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo,
 					cn = ti.TSVCol
 					arg := sel.Args["search"]
 
+					if i != 0 {
+						c.w.WriteString(`, `)
+					}
 					//fmt.Fprintf(w, `ts_rank("%s"."%s", to_tsquery('%s')) AS %s`,
 					//c.sel.Table, cn, arg.Val, col.Name)
 					c.w.WriteString(`ts_rank(`)
@@ -455,11 +479,15 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo,
 					c.w.WriteString(arg.Val)
 					c.w.WriteString(`')`)
 					alias(c.w, col.Name)
+					i++
 
 				case strings.HasPrefix(cn, "search_headline_"):
 					cn = cn[16:]
 					arg := sel.Args["search"]
 
+					if i != 0 {
+						c.w.WriteString(`, `)
+					}
 					//fmt.Fprintf(w, `ts_headline("%s"."%s", to_tsquery('%s')) AS %s`,
 					//c.sel.Table, cn, arg.Val, col.Name)
 					c.w.WriteString(`ts_headlinek(`)
@@ -468,47 +496,63 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo,
 					c.w.WriteString(arg.Val)
 					c.w.WriteString(`')`)
 					alias(c.w, col.Name)
+					i++
+
 				}
 			} else {
 				pl := funcPrefixLen(cn)
 				if pl == 0 {
+					if i != 0 {
+						c.w.WriteString(`, `)
+					}
 					//fmt.Fprintf(w, `'%s not defined' AS %s`, cn, col.Name)
 					c.w.WriteString(`'`)
 					c.w.WriteString(cn)
 					c.w.WriteString(` not defined'`)
 					alias(c.w, col.Name)
-				} else {
-					isAgg = true
+					i++
+
+				} else if sel.Functions {
+					cn1 := cn[pl:]
+					if _, ok := sel.Allowed[cn1]; !ok {
+						continue
+					}
+					if i != 0 {
+						c.w.WriteString(`, `)
+					}
 					fn := cn[0 : pl-1]
-					cn := cn[pl:]
+					isAgg = true
+
 					//fmt.Fprintf(w, `%s("%s"."%s") AS %s`, fn, c.sel.Table, cn, col.Name)
 					c.w.WriteString(fn)
 					c.w.WriteString(`(`)
-					colWithTable(c.w, ti.Name, cn)
+					colWithTable(c.w, ti.Name, cn1)
 					c.w.WriteString(`)`)
 					alias(c.w, col.Name)
+					i++
+
 				}
 			}
 		} else {
-			groupBy = append(groupBy, i)
+			groupBy = append(groupBy, n)
 			//fmt.Fprintf(w, `"%s"."%s"`, c.sel.Table, cn)
+			if i != 0 {
+				c.w.WriteString(`, `)
+			}
 			colWithTable(c.w, ti.Name, cn)
-		}
+			i++
 
-		if i < len(sel.Cols)-1 || len(childCols) != 0 {
-			//io.WriteString(w, ", ")
-			c.w.WriteString(`, `)
 		}
 	}
 
-	for i, col := range childCols {
+	for _, col := range childCols {
 		if i != 0 {
-			//io.WriteString(w, ", ")
 			c.w.WriteString(`, `)
 		}
 
 		//fmt.Fprintf(w, `"%s"."%s"`, col.Table, col.Name)
 		colWithTable(c.w, col.Table, col.Name)
+		i++
 	}
 
 	c.w.WriteString(` FROM `)
@@ -570,19 +614,21 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo,
 		}
 	}
 
-	if sel.Action == 0 {
-		if len(sel.Paging.Limit) != 0 {
-			//fmt.Fprintf(w, ` LIMIT ('%s') :: integer`, c.sel.Paging.Limit)
-			c.w.WriteString(` LIMIT ('`)
-			c.w.WriteString(sel.Paging.Limit)
-			c.w.WriteString(`') :: integer`)
+	switch {
+	case sel.Paging.NoLimit:
+		break
 
-		} else if ti.Singular {
-			c.w.WriteString(` LIMIT ('1') :: integer`)
+	case len(sel.Paging.Limit) != 0:
+		//fmt.Fprintf(w, ` LIMIT ('%s') :: integer`, c.sel.Paging.Limit)
+		c.w.WriteString(` LIMIT ('`)
+		c.w.WriteString(sel.Paging.Limit)
+		c.w.WriteString(`') :: integer`)
 
-		} else {
-			c.w.WriteString(` LIMIT ('20') :: integer`)
-		}
+	case ti.Singular:
+		c.w.WriteString(` LIMIT ('1') :: integer`)
+
+	default:
+		c.w.WriteString(` LIMIT ('20') :: integer`)
 	}
 
 	if len(sel.Paging.Offset) != 0 {
