@@ -287,10 +287,7 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 			continue
 		}
 
-		trv, ok := com.tr[role][field.Name]
-		if !ok {
-			continue
-		}
+		trv := com.getRole(role, field.Name)
 
 		selects = append(selects, Select{
 			ID:       id,
@@ -737,6 +734,16 @@ func (com *Compiler) compileArgOffset(sel *Select, arg *Arg) error {
 
 	sel.Paging.Offset = node.Val
 	return nil
+}
+
+var zeroTrv = &trval{}
+
+func (com *Compiler) getRole(role, field string) *trval {
+	if trv, ok := com.tr[role][field]; ok {
+		return trv
+	} else {
+		return zeroTrv
+	}
 }
 
 func newExp(st *util.Stack, node *Node, usePool bool) (*Exp, error) {
