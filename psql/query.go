@@ -435,10 +435,24 @@ func (c *compilerContext) renderJoinedColumns(sel *qcode.Select, ti *DBTableInfo
 		}
 		childSel := &c.s[id]
 
+		cti, err := c.schema.GetTable(childSel.Table)
+		if err != nil {
+			continue
+		}
+
 		//fmt.Fprintf(w, `"%s_%d_join"."%s" AS "%s"`,
 		//s.Table, s.ID, s.Table, s.FieldName)
-		colWithTableIDSuffixAlias(c.w, childSel.Table, childSel.ID,
-			"_join", childSel.Table, childSel.FieldName)
+		if cti.Singular {
+			c.w.WriteString(`"sel_json_`)
+			int2string(c.w, childSel.ID)
+			c.w.WriteString(`" AS "`)
+			c.w.WriteString(childSel.FieldName)
+			c.w.WriteString(`"`)
+
+		} else {
+			colWithTableIDSuffixAlias(c.w, childSel.Table, childSel.ID,
+				"_join", childSel.Table, childSel.FieldName)
+		}
 	}
 
 	return nil

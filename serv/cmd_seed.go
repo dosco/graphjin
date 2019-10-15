@@ -67,7 +67,7 @@ func graphQLFunc(query string, data interface{}) map[string]interface{} {
 	c.req.Query = query
 	c.req.Vars = b
 
-	res, err := c.execQuery()
+	res, err := c.execQuery("user")
 	if err != nil {
 		logger.Fatal().Err(err).Msg("graphql query failed")
 	}

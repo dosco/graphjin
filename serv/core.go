@@ -32,7 +32,15 @@ func (c *coreContext) handleReq(w io.Writer, req *http.Request) error {
 	c.req.ref = req.Referer()
 	c.req.hdr = req.Header
 
-	b, err := c.execQuery()
+	var role string
+
+	if authCheck(c) {
+		role = "user"
+	} else {
+		role = "anon"
+	}
+
+	b, err := c.execQuery(role)
 	if err != nil {
 		return err
 	}
@@ -40,11 +48,13 @@ func (c *coreContext) handleReq(w io.Writer, req *http.Request) error {
 	return c.render(w, b)
 }
 
-func (c *coreContext) execQuery() ([]byte, error) {
+func (c *coreContext) execQuery(role string) ([]byte, error) {
 	var err error
 	var skipped uint32
 	var qc *qcode.QCode
 	var data []byte
+
+	logger.Debug().Str("role", role).Msg(c.req.Query)
 
 	if conf.UseAllowList {
 		var ps *preparedItem
@@ -59,7 +69,7 @@ func (c *coreContext) execQuery() ([]byte, error) {
 
 	} else {
 
-		qc, err = qcompile.Compile([]byte(c.req.Query), "user")
+		qc, err = qcompile.Compile([]byte(c.req.Query), role)
 		if err != nil {
 			return nil, err
 		}

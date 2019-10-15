@@ -10,7 +10,6 @@ import (
 	"github.com/dosco/super-graph/qcode"
 	"github.com/gobuffalo/flect"
 	"github.com/jackc/pgx/v4"
-	"github.com/jackc/pgx/v4/log/zerologadapter"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
@@ -217,7 +216,7 @@ func initDB(c *config, useDB bool) (*pgx.Conn, error) {
 		config.LogLevel = pgx.LogLevelNone
 	}
 
-	config.Logger = zerologadapter.NewLogger(*logger)
+	config.Logger = NewSQLLogger(*logger)
 
 	db, err := pgx.ConnectConfig(context.Background(), config)
 	if err != nil {
@@ -252,7 +251,7 @@ func initDBPool(c *config) (*pgxpool.Pool, error) {
 		config.ConnConfig.LogLevel = pgx.LogLevelNone
 	}
 
-	config.ConnConfig.Logger = zerologadapter.NewLogger(*logger)
+	config.ConnConfig.Logger = NewSQLLogger(*logger)
 
 	// if c.DB.MaxRetries != 0 {
 	// 	opt.MaxRetries = c.DB.MaxRetries

@@ -193,5 +193,5 @@ roles:
     tables:
       - name: users
         
-      select:
-        filter: ["{ account_id: { _eq: $account_id } }"]
+        select:
+          filter: ["{ account_id: { _eq: $account_id } }"]
