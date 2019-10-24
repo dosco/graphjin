@@ -47,10 +47,6 @@ auth:
   type: rails
   cookie: _app_session
 
-  # Comment this out if you want to disable setting
-  # the user_id via a header. Good for testing
-  header: X-User-ID
-
   rails:
     # Rails version this is used for reading the
     # various cookies formats.
@@ -106,42 +102,93 @@ database:
       - token
 
   tables:
-    - name: users
-      # This filter will overwrite defaults.filter
-      # filter: ["{ id: { eq: $user_id } }"]
-      # filter_query: ["{ id: { eq: $user_id } }"]
-      filter_update: ["{ id: { eq: $user_id } }"]
-      filter_delete: ["{ id: { eq: $user_id } }"]
+  - name: users
+    # This filter will overwrite defaults.filter
+    # filter: ["{ id: { eq: $user_id } }"]
 
-    - name: products
-      # Multiple filters are AND'd together
-      filter: [
-        "{ price: { gt: 0 } }",
-        "{ price: { lt: 8 } }"
-      ] 
+  # - name: products
+  #   # Multiple filters are AND'd together
+  #   filter: [
+  #     "{ price: { gt: 0 } }",
+  #     "{ price: { lt: 8 } }"
+  #   ]
 
-    - name: customers
-      # No filter is used for this field not 
-      # even defaults.filter
-      filter: none
+  - name: customers
+    remotes:
+      - name: payments
+        id: stripe_id
+        url: http://rails_app:3000/stripe/$id
+        path: data
+        # debug: true
+        pass_headers: 
+          - cookie
+        set_headers:
+          - name: Host
+            value: 0.0.0.0
+          # - name: Authorization
+          #   value: Bearer <stripe_api_key>
 
-      # remotes:
-      #   - name: payments
-      #     id: stripe_id
-      #     url: http://rails_app:3000/stripe/$id
-      #     path: data
-      #     # pass_headers: 
-      #     #   - cookie
-      #     #   - host
-      #     set_headers:
-      #       - name: Authorization
-      #         value: Bearer <stripe_api_key>
+  - # You can create new fields that have a
+    # real db table backing them
+    name: me
+    table: users
 
-    - # You can create new fields that have a
-      # real db table backing them
-      name: me
-      table: users
-      filter: ["{ id: { eq: $user_id } }"]
+roles_query: "SELECT * FROM users as usr WHERE id = $user_id"
 
-    # - name: posts
-    #   filter: ["{ account_id: { _eq: $account_id } }"]
+roles:
+  - name: anon
+    tables:
+      - name: products
+        limit: 10
+
+        query:
+          columns: ["id", "name", "description" ]
+          aggregation: false
+
+        insert:
+          allow: false
+            
+        update:
+          allow: false
+
+        delete:
+          allow: false
+
+  - name: user
+    tables:
+      - name: users
+        query:
+          filter: ["{ id: { _eq: $user_id } }"]
+
+      - name: products
+
+        query:
+          limit: 50
+          filter: ["{ user_id: { eq: $user_id } }"]
+          columns: ["id", "name", "description" ]
+          disable_aggregation: false
+
+        insert:
+          filter: ["{ user_id: { eq: $user_id } }"]
+          columns: ["id", "name", "description" ]
+          set:
+          - created_at: "now"
+            
+        update:
+          filter: ["{ user_id: { eq: $user_id } }"]
+          columns:
+            - id
+            - name
+          set:
+            - updated_at: "now"
+
+        delete:
+          deny: true
+
+  - name: admin
+    match: id = 1
+    tables:
+      - name: users
+        
+        # select:
+        #   filter: ["{ account_id: { _eq: $account_id } }"]

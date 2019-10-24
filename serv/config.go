@@ -1,7 +1,9 @@
 package serv
 
 import (
+	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/spf13/viper"
 )
@@ -24,9 +26,9 @@ type config struct {
 	Inflections map[string]string
 
 	Auth struct {
-		Type   string
-		Cookie string
-		Header string
+		Type          string
+		Cookie        string
+		CredsInHeader bool `mapstructure:"creds_in_header"`
 
 		Rails struct {
 			Version       string
@@ -60,7 +62,7 @@ type config struct {
 		MaxRetries int    `mapstructure:"max_retries"`
 		LogLevel   string `mapstructure:"log_level"`
 
-		vars map[string][]byte `mapstructure:"variables"`
+		Vars map[string]string `mapstructure:"variables"`
 
 		Defaults struct {
 			Filter    []string
@@ -71,7 +73,9 @@ type config struct {
 	} `mapstructure:"database"`
 
 	Tables []configTable
-	Roles  []configRoles
+
+	RolesQuery string `mapstructure:"roles_query"`
+	Roles      []configRole
 }
 
 type configTable struct {
@@ -94,8 +98,9 @@ type configRemote struct {
 	} `mapstructure:"set_headers"`
 }
 
-type configRoles struct {
+type configRole struct {
 	Name   string
+	Match  string
 	Tables []struct {
 		Name string
 
@@ -163,26 +168,6 @@ func newConfig() *viper.Viper {
 	return vi
 }
 
-func (c *config) getVariables() map[string]string {
-	vars := make(map[string]string, len(c.DB.vars))
-
-	for k, v := range c.DB.vars {
-		isVar := false
-
-		for i := range v {
-			if v[i] == '$' {
-				isVar = true
-			} else if v[i] == ' ' {
-				isVar = false
-			} else if isVar && v[i] >= 'a' && v[i] <= 'z' {
-				v[i] = 'A' + (v[i] - 'a')
-			}
-		}
-		vars[k] = string(v)
-	}
-	return vars
-}
-
 func (c *config) getAliasMap() map[string][]string {
 	m := make(map[string][]string, len(c.Tables))
 
@@ -197,4 +182,22 @@ func (c *config) getAliasMap() map[string][]string {
 		m[k] = append(m[k], strings.ToLower(t.Name))
 	}
 	return m
+}
+
+var varRe1 = regexp.MustCompile(`(?mi)\$([a-zA-Z0-9_.]+)`)
+var varRe2 = regexp.MustCompile(`\{\{([a-zA-Z0-9_.]+)\}\}`)
+
+func sanitize(s string) string {
+	s0 := varRe1.ReplaceAllString(s, `{{$1}}`)
+
+	s1 := strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return ' '
+		}
+		return r
+	}, s0)
+
+	return varRe2.ReplaceAllStringFunc(s1, func(m string) string {
+		return strings.ToLower(m)
+	})
 }

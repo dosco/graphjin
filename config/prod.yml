@@ -47,10 +47,6 @@ auth:
   type: rails
   cookie: _app_session
 
-  # Comment this out if you want to disable setting
-  # the user_id via a header. Good for testing
-  header: X-User-ID
-
   rails:
     # Rails version this is used for reading the
     # various cookies formats.

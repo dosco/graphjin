@@ -183,7 +183,32 @@ func initConf() (*config, error) {
 	}
 	zerolog.SetGlobalLevel(logLevel)
 
-	//fmt.Printf("%#v", c)
+	for k, v := range c.DB.Vars {
+		c.DB.Vars[k] = sanitize(v)
+	}
+
+	c.RolesQuery = sanitize(c.RolesQuery)
+
+	rolesMap := make(map[string]struct{})
+
+	for i := range c.Roles {
+		role := &c.Roles[i]
+
+		if _, ok := rolesMap[role.Name]; ok {
+			logger.Fatal().Msgf("duplicate role '%s' found", role.Name)
+		}
+		role.Name = sanitize(role.Name)
+		role.Match = sanitize(role.Match)
+		rolesMap[role.Name] = struct{}{}
+	}
+
+	if _, ok := rolesMap["user"]; !ok {
+		c.Roles = append(c.Roles, configRole{Name: "user"})
+	}
+
+	if _, ok := rolesMap["anon"]; !ok {
+		c.Roles = append(c.Roles, configRole{Name: "anon"})
+	}
 
 	return c, nil
 }
