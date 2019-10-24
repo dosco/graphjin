@@ -182,7 +182,7 @@ func (al *allowList) load() {
 						item.vars = varBytes
 					}
 
-					al.list[gqlHash(q, varBytes)] = item
+					al.list[gqlHash(q, varBytes, "")] = item
 					varBytes = nil
 
 				} else if ty == AL_VARS {
@@ -203,7 +203,11 @@ func (al *allowList) save(item *allowItem) {
 	if al.active == false {
 		return
 	}
-	al.list[gqlHash(item.gql, item.vars)] = item
+	h := gqlHash(item.gql, item.vars, "")
+	if _, ok := al.list[h]; ok {
+		return
+	}
+	al.list[gqlHash(item.gql, item.vars, "")] = item
 
 	f, err := os.Create(al.filepath)
 	if err != nil {

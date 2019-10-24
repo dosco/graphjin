@@ -9,25 +9,39 @@ import (
 var (
 	userIDProviderKey = struct{}{}
 	userIDKey         = struct{}{}
+	userRoleKey       = struct{}{}
 )
 
-func headerAuth(r *http.Request, c *config) *http.Request {
-	if len(c.Auth.Header) == 0 {
-		return nil
-	}
+func headerAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
 
-	userID := r.Header.Get(c.Auth.Header)
-	if len(userID) != 0 {
-		ctx := context.WithValue(r.Context(), userIDKey, userID)
-		return r.WithContext(ctx)
-	}
+		userIDProvider := r.Header.Get("X-User-ID-Provider")
+		if len(userIDProvider) != 0 {
+			ctx = context.WithValue(ctx, userIDProviderKey, userIDProvider)
+		}
 
-	return nil
+		userID := r.Header.Get("X-User-ID")
+		if len(userID) != 0 {
+			ctx = context.WithValue(ctx, userIDKey, userID)
+		}
+
+		userRole := r.Header.Get("X-User-Role")
+		if len(userRole) != 0 {
+			ctx = context.WithValue(ctx, userRoleKey, userRole)
+		}
+
+		next.ServeHTTP(w, r.WithContext(ctx))
+	}
 }
 
 func withAuth(next http.HandlerFunc) http.HandlerFunc {
 	at := conf.Auth.Type
 	ru := conf.Auth.Rails.URL
+
+	if conf.Auth.CredsInHeader {
+		next = headerAuth(next)
+	}
 
 	switch at {
 	case "rails":

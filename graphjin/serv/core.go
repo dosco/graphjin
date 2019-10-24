@@ -13,8 +13,8 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/dosco/super-graph/jsn"
-	"github.com/dosco/super-graph/psql"
 	"github.com/dosco/super-graph/qcode"
+	"github.com/jackc/pgx/v4"
 	"github.com/valyala/fasttemplate"
 )
 
@@ -32,15 +32,13 @@ func (c *coreContext) handleReq(w io.Writer, req *http.Request) error {
 	c.req.ref = req.Referer()
 	c.req.hdr = req.Header
 
-	var role string
-
 	if authCheck(c) {
-		role = "user"
+		c.req.role = "user"
 	} else {
-		role = "anon"
+		c.req.role = "anon"
 	}
 
-	b, err := c.execQuery(role)
+	b, err := c.execQuery()
 	if err != nil {
 		return err
 	}
@@ -48,18 +46,18 @@ func (c *coreContext) handleReq(w io.Writer, req *http.Request) error {
 	return c.render(w, b)
 }
 
-func (c *coreContext) execQuery(role string) ([]byte, error) {
+func (c *coreContext) execQuery() ([]byte, error) {
 	var err error
 	var skipped uint32
 	var qc *qcode.QCode
 	var data []byte
 
-	logger.Debug().Str("role", role).Msg(c.req.Query)
+	logger.Debug().Str("role", c.req.role).Msg(c.req.Query)
 
 	if conf.UseAllowList {
 		var ps *preparedItem
 
-		data, ps, err = c.resolvePreparedSQL(c.req.Query)
+		data, ps, err = c.resolvePreparedSQL()
 		if err != nil {
 			return nil, err
 		}
@@ -69,12 +67,7 @@ func (c *coreContext) execQuery(role string) ([]byte, error) {
 
 	} else {
 
-		qc, err = qcompile.Compile([]byte(c.req.Query), role)
-		if err != nil {
-			return nil, err
-		}
-
-		data, skipped, err = c.resolveSQL(qc)
+		data, skipped, err = c.resolveSQL()
 		if err != nil {
 			return nil, err
 		}
@@ -120,6 +113,152 @@ func (c *coreContext) execQuery(role string) ([]byte, error) {
 	}
 
 	return ob.Bytes(), nil
+}
+
+func (c *coreContext) resolvePreparedSQL() ([]byte, *preparedItem, error) {
+	tx, err := db.Begin(c)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer tx.Rollback(c)
+
+	if v := c.Value(userIDKey); v != nil {
+		_, err = tx.Exec(c, fmt.Sprintf(`SET LOCAL "user.id" = %s;`, v))
+
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	var role string
+	useRoleQuery := len(conf.RolesQuery) != 0 && isMutation(c.req.Query)
+
+	if useRoleQuery {
+		if role, err = c.executeRoleQuery(tx); err != nil {
+			return nil, nil, err
+		}
+	} else if v := c.Value(userRoleKey); v != nil {
+		role = v.(string)
+	} else {
+		role = c.req.role
+	}
+
+	ps, ok := _preparedList[gqlHash(c.req.Query, c.req.Vars, role)]
+	if !ok {
+		return nil, nil, errUnauthorized
+	}
+
+	var root []byte
+	vars := varList(c, ps.args)
+
+	err = tx.QueryRow(c, ps.stmt.SQL, vars...).Scan(&root)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if err := tx.Commit(c); err != nil {
+		return nil, nil, err
+	}
+
+	return root, ps, nil
+}
+
+func (c *coreContext) resolveSQL() ([]byte, uint32, error) {
+	tx, err := db.Begin(c)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer tx.Rollback(c)
+
+	mutation := isMutation(c.req.Query)
+	useRoleQuery := len(conf.RolesQuery) != 0 && mutation
+
+	if useRoleQuery {
+		if c.req.role, err = c.executeRoleQuery(tx); err != nil {
+			return nil, 0, err
+		}
+
+	} else if v := c.Value(userRoleKey); v != nil {
+		c.req.role = v.(string)
+	}
+
+	stmts, err := c.buildStmt()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var st *stmt
+
+	if mutation {
+		st = findStmt(c.req.role, stmts)
+	} else {
+		st = &stmts[0]
+	}
+
+	t := fasttemplate.New(st.sql, openVar, closeVar)
+
+	buf := &bytes.Buffer{}
+	_, err = t.ExecuteFunc(buf, varMap(c))
+
+	if err == errNoUserID &&
+		authFailBlock == authFailBlockPerQuery &&
+		authCheck(c) == false {
+		return nil, 0, errUnauthorized
+	}
+
+	if err != nil {
+		return nil, 0, err
+	}
+
+	finalSQL := buf.String()
+
+	var stime time.Time
+
+	if conf.EnableTracing {
+		stime = time.Now()
+	}
+
+	if v := c.Value(userIDKey); v != nil {
+		_, err = tx.Exec(c, fmt.Sprintf(`SET LOCAL "user.id" = %s;`, v))
+
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+
+	var root []byte
+
+	if mutation {
+		err = tx.QueryRow(c, finalSQL).Scan(&root)
+	} else {
+		err = tx.QueryRow(c, finalSQL).Scan(&c.req.role, &root)
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if err := tx.Commit(c); err != nil {
+		return nil, 0, err
+	}
+
+	if mutation {
+		st = findStmt(c.req.role, stmts)
+	} else {
+		st = &stmts[0]
+	}
+
+	if conf.EnableTracing && len(st.qc.Selects) != 0 {
+		c.addTrace(
+			st.qc.Selects,
+			st.qc.Selects[0].ID,
+			stime)
+	}
+
+	if conf.UseAllowList == false {
+		_allowList.add(&c.req)
+	}
+
+	return root, st.skipped, nil
 }
 
 func (c *coreContext) resolveRemote(
@@ -269,125 +408,15 @@ func (c *coreContext) resolveRemotes(
 	return to, cerr
 }
 
-func (c *coreContext) resolvePreparedSQL(gql string) ([]byte, *preparedItem, error) {
-	ps, ok := _preparedList[gqlHash(gql, c.req.Vars)]
-	if !ok {
-		return nil, nil, errUnauthorized
+func (c *coreContext) executeRoleQuery(tx pgx.Tx) (string, error) {
+	var role string
+	row := tx.QueryRow(c, "_sg_get_role", c.req.role, 1)
+
+	if err := row.Scan(&role); err != nil {
+		return "", err
 	}
 
-	var root []byte
-	vars := varList(c, ps.args)
-
-	tx, err := db.Begin(c)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer tx.Rollback(c)
-
-	if v := c.Value(userIDKey); v != nil {
-		_, err = tx.Exec(c, fmt.Sprintf(`SET LOCAL "user.id" = %s;`, v))
-
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-
-	err = tx.QueryRow(c, ps.stmt.SQL, vars...).Scan(&root)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if err := tx.Commit(c); err != nil {
-		return nil, nil, err
-	}
-
-	fmt.Printf("PRE: %v\n", ps.stmt)
-
-	return root, ps, nil
-}
-
-func (c *coreContext) resolveSQL(qc *qcode.QCode) ([]byte, uint32, error) {
-	var vars map[string]json.RawMessage
-	stmt := &bytes.Buffer{}
-
-	if len(c.req.Vars) != 0 {
-		if err := json.Unmarshal(c.req.Vars, &vars); err != nil {
-			return nil, 0, err
-		}
-	}
-
-	skipped, err := pcompile.Compile(qc, stmt, psql.Variables(vars))
-	if err != nil {
-		return nil, 0, err
-	}
-
-	t := fasttemplate.New(stmt.String(), openVar, closeVar)
-
-	stmt.Reset()
-	_, err = t.ExecuteFunc(stmt, varMap(c))
-
-	if err == errNoUserID &&
-		authFailBlock == authFailBlockPerQuery &&
-		authCheck(c) == false {
-		return nil, 0, errUnauthorized
-	}
-
-	if err != nil {
-		return nil, 0, err
-	}
-
-	finalSQL := stmt.String()
-
-	// if conf.LogLevel == "debug" {
-	// 	os.Stdout.WriteString(finalSQL)
-	// 	os.Stdout.WriteString("\n\n")
-	// }
-
-	var st time.Time
-
-	if conf.EnableTracing {
-		st = time.Now()
-	}
-
-	tx, err := db.Begin(c)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer tx.Rollback(c)
-
-	if v := c.Value(userIDKey); v != nil {
-		_, err = tx.Exec(c, fmt.Sprintf(`SET LOCAL "user.id" = %s;`, v))
-
-		if err != nil {
-			return nil, 0, err
-		}
-	}
-
-	//fmt.Printf("\nRAW: %#v\n", finalSQL)
-
-	var root []byte
-
-	err = tx.QueryRow(c, finalSQL).Scan(&root)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	if err := tx.Commit(c); err != nil {
-		return nil, 0, err
-	}
-
-	if conf.EnableTracing && len(qc.Selects) != 0 {
-		c.addTrace(
-			qc.Selects,
-			qc.Selects[0].ID,
-			st)
-	}
-
-	if conf.UseAllowList == false {
-		_allowList.add(&c.req)
-	}
-
-	return root, skipped, nil
+	return role, nil
 }
 
 func (c *coreContext) render(w io.Writer, data []byte) error {

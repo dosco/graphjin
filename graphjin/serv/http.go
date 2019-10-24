@@ -30,6 +30,7 @@ type gqlReq struct {
 	Query  string          `json:"query"`
 	Vars   json.RawMessage `json:"variables"`
 	ref    string
+	role   string
 	hdr    http.Header
 }
 
@@ -101,13 +102,11 @@ func apiv1Http(w http.ResponseWriter, r *http.Request) {
 	err = ctx.handleReq(w, r)
 
 	if err == errUnauthorized {
-		err := "Not authorized"
-		logger.Debug().Msg(err)
-		http.Error(w, err, 401)
+		http.Error(w, "Not authorized", 401)
 	}
 
 	if err != nil {
-		logger.Err(err).Msg("Failed to handle request")
+		logger.Err(err).Msg("failed to handle request")
 		errorResp(w, err)
 	}
 }

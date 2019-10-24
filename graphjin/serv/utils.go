@@ -21,7 +21,7 @@ func mkkey(h *xxhash.Digest, k1 string, k2 string) uint64 {
 	return v
 }
 
-func gqlHash(b string, vars []byte) string {
+func gqlHash(b string, vars []byte, role string) string {
 	b = strings.TrimSpace(b)
 	h := sha1.New()
 
@@ -56,6 +56,10 @@ func gqlHash(b string, vars []byte) string {
 		}
 	}
 
+	if len(role) != 0 {
+		io.WriteString(h, role)
+	}
+
 	if vars == nil || len(vars) == 0 {
 		return hex.EncodeToString(h.Sum(nil))
 	}
@@ -79,4 +83,27 @@ func ws(b byte) bool {
 
 func al(b byte) bool {
 	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
+}
+
+func isMutation(sql string) bool {
+	for i := range sql {
+		b := sql[i]
+		if b == '{' {
+			return false
+		}
+		if al(b) {
+			return (b == 'm' || b == 'M')
+		}
+	}
+	return false
+}
+
+func findStmt(role string, stmts []stmt) *stmt {
+	for i := range stmts {
+		if stmts[i].role.Name != role {
+			continue
+		}
+		return &stmts[i]
+	}
+	return nil
 }

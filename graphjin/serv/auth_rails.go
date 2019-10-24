@@ -42,11 +42,6 @@ func railsRedisHandler(next http.HandlerFunc) http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		if rn := headerAuth(r, conf); rn != nil {
-			next.ServeHTTP(w, rn)
-			return
-		}
-
 		ck, err := r.Cookie(cookie)
 		if err != nil {
 			next.ServeHTTP(w, r)
@@ -83,17 +78,12 @@ func railsMemcacheHandler(next http.HandlerFunc) http.HandlerFunc {
 
 	rURL, err := url.Parse(conf.Auth.Rails.URL)
 	if err != nil {
-		logger.Fatal().Err(err)
+		logger.Fatal().Err(err).Send()
 	}
 
 	mc := memcache.New(rURL.Host)
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		if rn := headerAuth(r, conf); rn != nil {
-			next.ServeHTTP(w, rn)
-			return
-		}
-
 		ck, err := r.Cookie(cookie)
 		if err != nil {
 			next.ServeHTTP(w, r)
@@ -126,25 +116,20 @@ func railsCookieHandler(next http.HandlerFunc) http.HandlerFunc {
 
 	ra, err := railsAuth(conf)
 	if err != nil {
-		logger.Fatal().Err(err)
+		logger.Fatal().Err(err).Send()
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		if rn := headerAuth(r, conf); rn != nil {
-			next.ServeHTTP(w, rn)
-			return
-		}
-
 		ck, err := r.Cookie(cookie)
 		if err != nil {
-			logger.Error().Err(err)
+			logger.Warn().Err(err).Send()
 			next.ServeHTTP(w, r)
 			return
 		}
 
 		userID, err := ra.ParseCookie(ck.Value)
 		if err != nil {
-			logger.Error().Err(err)
+			logger.Warn().Err(err).Send()
 			next.ServeHTTP(w, r)
 			return
 		}

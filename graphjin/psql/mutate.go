@@ -1,7 +1,6 @@
 package psql
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -12,7 +11,7 @@ import (
 
 var noLimit = qcode.Paging{NoLimit: true}
 
-func (co *Compiler) compileMutation(qc *qcode.QCode, w *bytes.Buffer, vars Variables) (uint32, error) {
+func (co *Compiler) compileMutation(qc *qcode.QCode, w io.Writer, vars Variables) (uint32, error) {
 	if len(qc.Selects) == 0 {
 		return 0, errors.New("empty query")
 	}
@@ -25,9 +24,9 @@ func (co *Compiler) compileMutation(qc *qcode.QCode, w *bytes.Buffer, vars Varia
 		return 0, err
 	}
 
-	c.w.WriteString(`WITH `)
+	io.WriteString(c.w, `WITH `)
 	quoted(c.w, ti.Name)
-	c.w.WriteString(` AS `)
+	io.WriteString(c.w, ` AS `)
 
 	switch qc.Type {
 	case qcode.QTInsert:
@@ -67,7 +66,7 @@ func (co *Compiler) compileMutation(qc *qcode.QCode, w *bytes.Buffer, vars Varia
 	return c.compileQuery(qc, w)
 }
 
-func (c *compilerContext) renderInsert(qc *qcode.QCode, w *bytes.Buffer,
+func (c *compilerContext) renderInsert(qc *qcode.QCode, w io.Writer,
 	vars Variables, ti *DBTableInfo) (uint32, error) {
 
 	insert, ok := vars[qc.ActionVar]
@@ -80,32 +79,32 @@ func (c *compilerContext) renderInsert(qc *qcode.QCode, w *bytes.Buffer,
 		return 0, err
 	}
 
-	c.w.WriteString(`(WITH "input" AS (SELECT {{`)
-	c.w.WriteString(qc.ActionVar)
-	c.w.WriteString(`}}::json AS j) INSERT INTO `)
+	io.WriteString(c.w, `(WITH "input" AS (SELECT {{`)
+	io.WriteString(c.w, qc.ActionVar)
+	io.WriteString(c.w, `}}::json AS j) INSERT INTO `)
 	quoted(c.w, ti.Name)
 	io.WriteString(c.w, ` (`)
 	c.renderInsertUpdateColumns(qc, w, jt, ti)
 	io.WriteString(c.w, `)`)
 
-	c.w.WriteString(` SELECT `)
+	io.WriteString(c.w, ` SELECT `)
 	c.renderInsertUpdateColumns(qc, w, jt, ti)
-	c.w.WriteString(` FROM input i, `)
+	io.WriteString(c.w, ` FROM input i, `)
 
 	if array {
-		c.w.WriteString(`json_populate_recordset`)
+		io.WriteString(c.w, `json_populate_recordset`)
 	} else {
-		c.w.WriteString(`json_populate_record`)
+		io.WriteString(c.w, `json_populate_record`)
 	}
 
-	c.w.WriteString(`(NULL::`)
-	c.w.WriteString(ti.Name)
-	c.w.WriteString(`, i.j) t`)
+	io.WriteString(c.w, `(NULL::`)
+	io.WriteString(c.w, ti.Name)
+	io.WriteString(c.w, `, i.j) t`)
 
 	return 0, nil
 }
 
-func (c *compilerContext) renderInsertUpdateColumns(qc *qcode.QCode, w *bytes.Buffer,
+func (c *compilerContext) renderInsertUpdateColumns(qc *qcode.QCode, w io.Writer,
 	jt map[string]interface{}, ti *DBTableInfo) (uint32, error) {
 	root := &qc.Selects[0]
 
@@ -122,14 +121,14 @@ func (c *compilerContext) renderInsertUpdateColumns(qc *qcode.QCode, w *bytes.Bu
 		if i != 0 {
 			io.WriteString(c.w, `, `)
 		}
-		c.w.WriteString(cn)
+		io.WriteString(c.w, cn)
 		i++
 	}
 
 	return 0, nil
 }
 
-func (c *compilerContext) renderUpdate(qc *qcode.QCode, w *bytes.Buffer,
+func (c *compilerContext) renderUpdate(qc *qcode.QCode, w io.Writer,
 	vars Variables, ti *DBTableInfo) (uint32, error) {
 	root := &qc.Selects[0]
 
@@ -143,26 +142,26 @@ func (c *compilerContext) renderUpdate(qc *qcode.QCode, w *bytes.Buffer,
 		return 0, err
 	}
 
-	c.w.WriteString(`(WITH "input" AS (SELECT {{`)
-	c.w.WriteString(qc.ActionVar)
-	c.w.WriteString(`}}::json AS j) UPDATE `)
+	io.WriteString(c.w, `(WITH "input" AS (SELECT {{`)
+	io.WriteString(c.w, qc.ActionVar)
+	io.WriteString(c.w, `}}::json AS j) UPDATE `)
 	quoted(c.w, ti.Name)
 	io.WriteString(c.w, ` SET (`)
 	c.renderInsertUpdateColumns(qc, w, jt, ti)
 
-	c.w.WriteString(`) = (SELECT `)
+	io.WriteString(c.w, `) = (SELECT `)
 	c.renderInsertUpdateColumns(qc, w, jt, ti)
-	c.w.WriteString(` FROM input i, `)
+	io.WriteString(c.w, ` FROM input i, `)
 
 	if array {
-		c.w.WriteString(`json_populate_recordset`)
+		io.WriteString(c.w, `json_populate_recordset`)
 	} else {
-		c.w.WriteString(`json_populate_record`)
+		io.WriteString(c.w, `json_populate_record`)
 	}
 
-	c.w.WriteString(`(NULL::`)
-	c.w.WriteString(ti.Name)
-	c.w.WriteString(`, i.j) t)`)
+	io.WriteString(c.w, `(NULL::`)
+	io.WriteString(c.w, ti.Name)
+	io.WriteString(c.w, `, i.j) t)`)
 
 	io.WriteString(c.w, ` WHERE `)
 
@@ -173,11 +172,11 @@ func (c *compilerContext) renderUpdate(qc *qcode.QCode, w *bytes.Buffer,
 	return 0, nil
 }
 
-func (c *compilerContext) renderDelete(qc *qcode.QCode, w *bytes.Buffer,
+func (c *compilerContext) renderDelete(qc *qcode.QCode, w io.Writer,
 	vars Variables, ti *DBTableInfo) (uint32, error) {
 	root := &qc.Selects[0]
 
-	c.w.WriteString(`(DELETE FROM `)
+	io.WriteString(c.w, `(DELETE FROM `)
 	quoted(c.w, ti.Name)
 	io.WriteString(c.w, ` WHERE `)
 
@@ -188,7 +187,7 @@ func (c *compilerContext) renderDelete(qc *qcode.QCode, w *bytes.Buffer,
 	return 0, nil
 }
 
-func (c *compilerContext) renderUpsert(qc *qcode.QCode, w *bytes.Buffer,
+func (c *compilerContext) renderUpsert(qc *qcode.QCode, w io.Writer,
 	vars Variables, ti *DBTableInfo) (uint32, error) {
 
 	upsert, ok := vars[qc.ActionVar]
@@ -205,7 +204,7 @@ func (c *compilerContext) renderUpsert(qc *qcode.QCode, w *bytes.Buffer,
 		return 0, err
 	}
 
-	c.w.WriteString(` ON CONFLICT DO (`)
+	io.WriteString(c.w, ` ON CONFLICT DO (`)
 	i := 0
 
 	for _, cn := range ti.ColumnNames {
@@ -220,15 +219,15 @@ func (c *compilerContext) renderUpsert(qc *qcode.QCode, w *bytes.Buffer,
 		if i != 0 {
 			io.WriteString(c.w, `, `)
 		}
-		c.w.WriteString(cn)
+		io.WriteString(c.w, cn)
 		i++
 	}
 	if i == 0 {
-		c.w.WriteString(ti.PrimaryCol)
+		io.WriteString(c.w, ti.PrimaryCol)
 	}
-	c.w.WriteString(`) DO `)
+	io.WriteString(c.w, `) DO `)
 
-	c.w.WriteString(`UPDATE `)
+	io.WriteString(c.w, `UPDATE `)
 	io.WriteString(c.w, ` SET `)
 
 	i = 0
@@ -239,17 +238,17 @@ func (c *compilerContext) renderUpsert(qc *qcode.QCode, w *bytes.Buffer,
 		if i != 0 {
 			io.WriteString(c.w, `, `)
 		}
-		c.w.WriteString(cn)
+		io.WriteString(c.w, cn)
 		io.WriteString(c.w, ` = EXCLUDED.`)
-		c.w.WriteString(cn)
+		io.WriteString(c.w, cn)
 		i++
 	}
 
 	return 0, nil
 }
 
-func quoted(w *bytes.Buffer, identifier string) {
-	w.WriteString(`"`)
-	w.WriteString(identifier)
-	w.WriteString(`"`)
+func quoted(w io.Writer, identifier string) {
+	io.WriteString(w, `"`)
+	io.WriteString(w, identifier)
+	io.WriteString(w, `"`)
 }
