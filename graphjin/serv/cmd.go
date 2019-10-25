@@ -10,7 +10,6 @@ import (
 	"github.com/dosco/super-graph/qcode"
 	"github.com/gobuffalo/flect"
 	"github.com/jackc/pgx/v4"
-	"github.com/jackc/pgx/v4/log/zerologadapter"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
@@ -184,7 +183,34 @@ func initConf() (*config, error) {
 	}
 	zerolog.SetGlobalLevel(logLevel)
 
-	//fmt.Printf("%#v", c)
+	for k, v := range c.DB.Vars {
+		c.DB.Vars[k] = sanitize(v)
+	}
+
+	c.RolesQuery = sanitize(c.RolesQuery)
+
+	rolesMap := make(map[string]struct{})
+
+	for i := range c.Roles {
+		role := &c.Roles[i]
+
+		if _, ok := rolesMap[role.Name]; ok {
+			logger.Fatal().Msgf("duplicate role '%s' found", role.Name)
+		}
+		role.Name = sanitize(role.Name)
+		role.Match = sanitize(role.Match)
+		rolesMap[role.Name] = struct{}{}
+	}
+
+	if _, ok := rolesMap["user"]; !ok {
+		c.Roles = append(c.Roles, configRole{Name: "user"})
+	}
+
+	if _, ok := rolesMap["anon"]; !ok {
+		c.Roles = append(c.Roles, configRole{Name: "anon"})
+	}
+
+	c.Validate()
 
 	return c, nil
 }
@@ -217,7 +243,7 @@ func initDB(c *config, useDB bool) (*pgx.Conn, error) {
 		config.LogLevel = pgx.LogLevelNone
 	}
 
-	config.Logger = zerologadapter.NewLogger(*logger)
+	config.Logger = NewSQLLogger(*logger)
 
 	db, err := pgx.ConnectConfig(context.Background(), config)
 	if err != nil {
@@ -252,7 +278,7 @@ func initDBPool(c *config) (*pgxpool.Pool, error) {
 		config.ConnConfig.LogLevel = pgx.LogLevelNone
 	}
 
-	config.ConnConfig.Logger = zerologadapter.NewLogger(*logger)
+	config.ConnConfig.Logger = NewSQLLogger(*logger)
 
 	// if c.DB.MaxRetries != 0 {
 	// 	opt.MaxRetries = c.DB.MaxRetries

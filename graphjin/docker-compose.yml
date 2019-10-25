@@ -34,7 +34,7 @@ services:
     volumes:
       - .:/app
     working_dir: /app
-    command: wu -pattern="*.go" go run main.go serv
+    command: wtc
     depends_on:
       - db
       - rails_app

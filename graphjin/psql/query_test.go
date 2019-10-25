@@ -1,0 +1,630 @@
+package psql
+
+import (
+	"bytes"
+	"log"
+	"os"
+	"testing"
+
+	"github.com/dosco/super-graph/qcode"
+)
+
+const (
+	errNotExpected = "Generated SQL did not match what was expected"
+)
+
+var (
+	qcompile *qcode.Compiler
+	pcompile *Compiler
+)
+
+func TestMain(m *testing.M) {
+	var err error
+
+	qcompile, err = qcode.NewCompiler(qcode.Config{
+		Blocklist: []string{
+			"secret",
+			"password",
+			"token",
+		},
+	})
+
+	qcompile.AddRole("user", "product", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "price", "users", "customers"},
+			Filters: []string{
+				"{ price: { gt: 0 } }",
+				"{ price: { lt: 8 } }",
+			},
+		},
+		Update: qcode.UpdateConfig{
+			Filters: []string{"{ user_id: { eq: $user_id } }"},
+		},
+		Delete: qcode.DeleteConfig{
+			Filters: []string{
+				"{ price: { gt: 0 } }",
+				"{ price: { lt: 8 } }",
+			},
+		},
+	})
+
+	qcompile.AddRole("anon", "product", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name"},
+		},
+	})
+
+	qcompile.AddRole("anon1", "product", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns:          []string{"id", "name", "price"},
+			DisableFunctions: true,
+		},
+	})
+
+	qcompile.AddRole("user", "users", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "full_name", "avatar", "email", "products"},
+		},
+	})
+
+	qcompile.AddRole("user", "mes", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "full_name", "avatar"},
+			Filters: []string{
+				"{ id: { eq: $user_id } }",
+			},
+		},
+	})
+
+	qcompile.AddRole("user", "customers", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "email", "full_name", "products"},
+		},
+	})
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	tables := []*DBTable{
+		&DBTable{Name: "customers", Type: "table"},
+		&DBTable{Name: "users", Type: "table"},
+		&DBTable{Name: "products", Type: "table"},
+		&DBTable{Name: "purchases", Type: "table"},
+	}
+
+	columns := [][]*DBColumn{
+		[]*DBColumn{
+			&DBColumn{ID: 1, Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 2, Name: "full_name", Type: "character varying", NotNull: true, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 3, Name: "phone", Type: "character varying", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 4, Name: "email", Type: "character varying", NotNull: true, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 5, Name: "encrypted_password", Type: "character varying", NotNull: true, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 6, Name: "reset_password_token", Type: "character varying", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 7, Name: "reset_password_sent_at", Type: "timestamp without time zone", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 8, Name: "remember_created_at", Type: "timestamp without time zone", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 9, Name: "created_at", Type: "timestamp without time zone", NotNull: true, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 10, Name: "updated_at", Type: "timestamp without time zone", NotNull: true, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)}},
+		[]*DBColumn{
+			&DBColumn{ID: 1, Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 2, Name: "full_name", Type: "character varying", NotNull: true, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 3, Name: "phone", Type: "character varying", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 4, Name: "avatar", Type: "character varying", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 5, Name: "email", Type: "character varying", NotNull: true, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 6, Name: "encrypted_password", Type: "character varying", NotNull: true, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 7, Name: "reset_password_token", Type: "character varying", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 8, Name: "reset_password_sent_at", Type: "timestamp without time zone", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 9, Name: "remember_created_at", Type: "timestamp without time zone", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 10, Name: "created_at", Type: "timestamp without time zone", NotNull: true, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 11, Name: "updated_at", Type: "timestamp without time zone", NotNull: true, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)}},
+		[]*DBColumn{
+			&DBColumn{ID: 1, Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 2, Name: "name", Type: "character varying", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 3, Name: "description", Type: "text", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 4, Name: "price", Type: "numeric(7,2)", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 5, Name: "user_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "users", FKeyColID: []int16{1}},
+			&DBColumn{ID: 6, Name: "created_at", Type: "timestamp without time zone", NotNull: true, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 7, Name: "updated_at", Type: "timestamp without time zone", NotNull: true, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 8, Name: "tsv", Type: "tsvector", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)}},
+		[]*DBColumn{
+			&DBColumn{ID: 1, Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 2, Name: "customer_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "customers", FKeyColID: []int16{1}},
+			&DBColumn{ID: 3, Name: "product_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "products", FKeyColID: []int16{1}},
+			&DBColumn{ID: 4, Name: "sale_type", Type: "character varying", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 5, Name: "quantity", Type: "integer", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 6, Name: "due_date", Type: "timestamp without time zone", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)},
+			&DBColumn{ID: 7, Name: "returned", Type: "timestamp without time zone", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "", FKeyColID: []int16(nil)}},
+	}
+
+	schema := &DBSchema{
+		t:  make(map[string]*DBTableInfo),
+		rm: make(map[string]map[string]*DBRel),
+		al: make(map[string]struct{}),
+	}
+
+	aliases := map[string][]string{
+		"users": []string{"mes"},
+	}
+
+	for i, t := range tables {
+		schema.updateSchema(t, columns[i], aliases)
+	}
+
+	vars := NewVariables(map[string]string{
+		"account_id": "select account_id from users where id = $user_id",
+	})
+
+	pcompile = NewCompiler(Config{
+		Schema: schema,
+		Vars:   vars,
+	})
+
+	os.Exit(m.Run())
+}
+
+func compileGQLToPSQL(gql string, vars Variables, role string) ([]byte, error) {
+	qc, err := qcompile.Compile([]byte(gql), role)
+	if err != nil {
+		return nil, err
+	}
+
+	_, sqlStmt, err := pcompile.CompileEx(qc, vars)
+	if err != nil {
+		return nil, err
+	}
+
+	//fmt.Println(string(sqlStmt))
+
+	return sqlStmt, nil
+}
+
+func withComplexArgs(t *testing.T) {
+	gql := `query {
+		proDUcts(
+			# returns only 30 items
+			limit: 30,
+	
+			# starts from item 10, commented out for now
+			# offset: 10,
+	
+			# orders the response items by highest price
+			order_by: { price: desc },
+	
+			# no duplicate prices returned
+			distinct: [ price ]
+			
+			# only items with an id >= 20 and < 28 are returned
+			where: { id: { and: { greater_or_equals: 20, lt: 28 } } }) {
+			id
+			NAME
+			price
+		}
+	}`
+
+	sql := `SELECT json_object_agg('products', products) FROM (SELECT coalesce(json_agg("sel_json_0" ORDER BY "products_0_price_ob" DESC), '[]') AS "products" FROM (SELECT DISTINCT ON ("products_0_price_ob") row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name", "products_0"."price" AS "price") AS "sel_0")) AS "sel_json_0", "products_0"."price" AS "products_0_price_ob" FROM (SELECT "products"."id", "products"."name", "products"."price" FROM "products" WHERE ((("products"."price") > 0) AND (("products"."price") < 8) AND (("products"."id") < 28) AND (("products"."id") >= 20)) LIMIT ('30') :: integer) AS "products_0" ORDER BY "products_0_price_ob" DESC LIMIT ('30') :: integer) AS "sel_json_agg_0") AS "done_1337"`
+
+	resSQL, err := compileGQLToPSQL(gql, nil, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
+func withWhereMultiOr(t *testing.T) {
+	gql := `query {
+		products(
+			where: {
+				or: {
+					not: { id: { is_null: true } },
+					price: { gt: 10 },
+					price: { lt: 20 }
+				} }
+			) {
+			id
+			name
+			price
+		}
+	}`
+
+	sql := `SELECT json_object_agg('products', products) FROM (SELECT coalesce(json_agg("sel_json_0"), '[]') AS "products" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name", "products_0"."price" AS "price") AS "sel_0")) AS "sel_json_0" FROM (SELECT "products"."id", "products"."name", "products"."price" FROM "products" WHERE ((("products"."price") > 0) AND (("products"."price") < 8) AND (("products"."price") < 20) OR (("products"."price") > 10) OR NOT (("products"."id") IS NULL)) LIMIT ('20') :: integer) AS "products_0" LIMIT ('20') :: integer) AS "sel_json_agg_0") AS "done_1337"`
+
+	resSQL, err := compileGQLToPSQL(gql, nil, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
+func withWhereIsNull(t *testing.T) {
+	gql := `query {
+		products(
+			where: {
+				and: {
+					not: { id: { is_null: true } },
+					price: { gt: 10 }
+				}}) {
+			id
+			name
+			price
+		}
+	}`
+
+	sql := `SELECT json_object_agg('products', products) FROM (SELECT coalesce(json_agg("sel_json_0"), '[]') AS "products" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name", "products_0"."price" AS "price") AS "sel_0")) AS "sel_json_0" FROM (SELECT "products"."id", "products"."name", "products"."price" FROM "products" WHERE ((("products"."price") > 0) AND (("products"."price") < 8) AND (("products"."price") > 10) AND NOT (("products"."id") IS NULL)) LIMIT ('20') :: integer) AS "products_0" LIMIT ('20') :: integer) AS "sel_json_agg_0") AS "done_1337"`
+
+	resSQL, err := compileGQLToPSQL(gql, nil, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
+func withWhereAndList(t *testing.T) {
+	gql := `query {
+		products(
+			where: {
+				and: [
+					{ not: { id: { is_null: true } } },
+					{ price: { gt: 10 } },
+				] } ) {
+			id
+			name
+			price
+		}
+	}`
+
+	sql := `SELECT json_object_agg('products', products) FROM (SELECT coalesce(json_agg("sel_json_0"), '[]') AS "products" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name", "products_0"."price" AS "price") AS "sel_0")) AS "sel_json_0" FROM (SELECT "products"."id", "products"."name", "products"."price" FROM "products" WHERE ((("products"."price") > 0) AND (("products"."price") < 8) AND (("products"."price") > 10) AND NOT (("products"."id") IS NULL)) LIMIT ('20') :: integer) AS "products_0" LIMIT ('20') :: integer) AS "sel_json_agg_0") AS "done_1337"`
+
+	resSQL, err := compileGQLToPSQL(gql, nil, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
+func fetchByID(t *testing.T) {
+	gql := `query {
+		product(id: 15) {
+			id
+			name
+		}
+	}`
+
+	sql := `SELECT json_object_agg('product', sel_json_0) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name") AS "sel_0")) AS "sel_json_0" FROM (SELECT "products"."id", "products"."name" FROM "products" WHERE ((("products"."price") > 0) AND (("products"."price") < 8) AND (("products"."id") = 15)) LIMIT ('1') :: integer) AS "products_0" LIMIT ('1') :: integer) AS "done_1337"`
+
+	resSQL, err := compileGQLToPSQL(gql, nil, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
+func searchQuery(t *testing.T) {
+	gql := `query {
+		products(search: "Imperial") {
+			id
+			name
+		}
+	}`
+
+	sql := `SELECT json_object_agg('products', products) FROM (SELECT coalesce(json_agg("sel_json_0"), '[]') AS "products" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name") AS "sel_0")) AS "sel_json_0" FROM (SELECT "products"."id", "products"."name" FROM "products" WHERE ((("products"."price") > 0) AND (("products"."price") < 8) AND (("tsv") @@ to_tsquery('Imperial'))) LIMIT ('20') :: integer) AS "products_0" LIMIT ('20') :: integer) AS "sel_json_agg_0") AS "done_1337"`
+
+	resSQL, err := compileGQLToPSQL(gql, nil, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
+func oneToMany(t *testing.T) {
+	gql := `query {
+		users {
+			email
+			products {
+				name
+				price
+			}
+		}
+	}`
+
+	sql := `SELECT json_object_agg('users', users) FROM (SELECT coalesce(json_agg("sel_json_0"), '[]') AS "users" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "users_0"."email" AS "email", "products_1_join"."products" AS "products") AS "sel_0")) AS "sel_json_0" FROM (SELECT "users"."email", "users"."id" FROM "users" LIMIT ('20') :: integer) AS "users_0" LEFT OUTER JOIN LATERAL (SELECT coalesce(json_agg("sel_json_1"), '[]') AS "products" FROM (SELECT row_to_json((SELECT "sel_1" FROM (SELECT "products_1"."name" AS "name", "products_1"."price" AS "price") AS "sel_1")) AS "sel_json_1" FROM (SELECT "products"."name", "products"."price" FROM "products" WHERE ((("products"."user_id") = ("users_0"."id"))) LIMIT ('20') :: integer) AS "products_1" LIMIT ('20') :: integer) AS "sel_json_agg_1") AS "products_1_join" ON ('true') LIMIT ('20') :: integer) AS "sel_json_agg_0") AS "done_1337"`
+
+	resSQL, err := compileGQLToPSQL(gql, nil, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
+func belongsTo(t *testing.T) {
+	gql := `query {
+		products {
+			name
+			price
+			users {
+				email
+			}
+		}
+	}`
+
+	sql := `SELECT json_object_agg('products', products) FROM (SELECT coalesce(json_agg("sel_json_0"), '[]') AS "products" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."name" AS "name", "products_0"."price" AS "price", "users_1_join"."users" AS "users") AS "sel_0")) AS "sel_json_0" FROM (SELECT "products"."name", "products"."price", "products"."user_id" FROM "products" WHERE ((("products"."price") > 0) AND (("products"."price") < 8)) LIMIT ('20') :: integer) AS "products_0" LEFT OUTER JOIN LATERAL (SELECT coalesce(json_agg("sel_json_1"), '[]') AS "users" FROM (SELECT row_to_json((SELECT "sel_1" FROM (SELECT "users_1"."email" AS "email") AS "sel_1")) AS "sel_json_1" FROM (SELECT "users"."email" FROM "users" WHERE ((("users"."id") = ("products_0"."user_id"))) LIMIT ('20') :: integer) AS "users_1" LIMIT ('20') :: integer) AS "sel_json_agg_1") AS "users_1_join" ON ('true') LIMIT ('20') :: integer) AS "sel_json_agg_0") AS "done_1337"`
+
+	resSQL, err := compileGQLToPSQL(gql, nil, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
+func manyToMany(t *testing.T) {
+	gql := `query {
+		products {
+			name
+			customers {
+				email
+				full_name
+			}
+		}
+	}`
+
+	sql := `SELECT json_object_agg('products', products) FROM (SELECT coalesce(json_agg("sel_json_0"), '[]') AS "products" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."name" AS "name", "customers_1_join"."customers" AS "customers") AS "sel_0")) AS "sel_json_0" FROM (SELECT "products"."name", "products"."id" FROM "products" WHERE ((("products"."price") > 0) AND (("products"."price") < 8)) LIMIT ('20') :: integer) AS "products_0" LEFT OUTER JOIN LATERAL (SELECT coalesce(json_agg("sel_json_1"), '[]') AS "customers" FROM (SELECT row_to_json((SELECT "sel_1" FROM (SELECT "customers_1"."email" AS "email", "customers_1"."full_name" AS "full_name") AS "sel_1")) AS "sel_json_1" FROM (SELECT "customers"."email", "customers"."full_name" FROM "customers" LEFT OUTER JOIN "purchases" ON (("purchases"."product_id") = ("products_0"."id")) WHERE ((("customers"."id") = ("purchases"."customer_id"))) LIMIT ('20') :: integer) AS "customers_1" LIMIT ('20') :: integer) AS "sel_json_agg_1") AS "customers_1_join" ON ('true') LIMIT ('20') :: integer) AS "sel_json_agg_0") AS "done_1337"`
+
+	resSQL, err := compileGQLToPSQL(gql, nil, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
+func manyToManyReverse(t *testing.T) {
+	gql := `query {
+		customers {
+			email
+			full_name
+			products {
+				name
+			}
+		}
+	}`
+
+	sql := `SELECT json_object_agg('customers', customers) FROM (SELECT coalesce(json_agg("sel_json_0"), '[]') AS "customers" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "customers_0"."email" AS "email", "customers_0"."full_name" AS "full_name", "products_1_join"."products" AS "products") AS "sel_0")) AS "sel_json_0" FROM (SELECT "customers"."email", "customers"."full_name", "customers"."id" FROM "customers" LIMIT ('20') :: integer) AS "customers_0" LEFT OUTER JOIN LATERAL (SELECT coalesce(json_agg("sel_json_1"), '[]') AS "products" FROM (SELECT row_to_json((SELECT "sel_1" FROM (SELECT "products_1"."name" AS "name") AS "sel_1")) AS "sel_json_1" FROM (SELECT "products"."name" FROM "products" LEFT OUTER JOIN "purchases" ON (("purchases"."customer_id") = ("customers_0"."id")) WHERE ((("products"."id") = ("purchases"."product_id"))) LIMIT ('20') :: integer) AS "products_1" LIMIT ('20') :: integer) AS "sel_json_agg_1") AS "products_1_join" ON ('true') LIMIT ('20') :: integer) AS "sel_json_agg_0") AS "done_1337"`
+
+	resSQL, err := compileGQLToPSQL(gql, nil, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
+func aggFunction(t *testing.T) {
+	gql := `query {
+		products {
+			name
+			count_price
+		}
+	}`
+
+	sql := `SELECT json_object_agg('products', products) FROM (SELECT coalesce(json_agg("sel_json_0"), '[]') AS "products" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."name" AS "name", "products_0"."count_price" AS "count_price") AS "sel_0")) AS "sel_json_0" FROM (SELECT "products"."name", count("products"."price") AS "count_price" FROM "products" WHERE ((("products"."price") > 0) AND (("products"."price") < 8)) GROUP BY "products"."name" LIMIT ('20') :: integer) AS "products_0" LIMIT ('20') :: integer) AS "sel_json_agg_0") AS "done_1337"`
+
+	resSQL, err := compileGQLToPSQL(gql, nil, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
+func aggFunctionBlockedByCol(t *testing.T) {
+	gql := `query {
+		products {
+			name
+			count_price
+		}
+	}`
+
+	sql := `SELECT json_object_agg('products', products) FROM (SELECT coalesce(json_agg("sel_json_0"), '[]') AS "products" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."name" AS "name") AS "sel_0")) AS "sel_json_0" FROM (SELECT "products"."name" FROM "products" LIMIT ('20') :: integer) AS "products_0" LIMIT ('20') :: integer) AS "sel_json_agg_0") AS "done_1337"`
+
+	resSQL, err := compileGQLToPSQL(gql, nil, "anon")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
+func aggFunctionDisabled(t *testing.T) {
+	gql := `query {
+		products {
+			name
+			count_price
+		}
+	}`
+
+	sql := `SELECT json_object_agg('products', products) FROM (SELECT coalesce(json_agg("sel_json_0"), '[]') AS "products" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."name" AS "name") AS "sel_0")) AS "sel_json_0" FROM (SELECT "products"."name" FROM "products" LIMIT ('20') :: integer) AS "products_0" LIMIT ('20') :: integer) AS "sel_json_agg_0") AS "done_1337"`
+
+	resSQL, err := compileGQLToPSQL(gql, nil, "anon1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
+func aggFunctionWithFilter(t *testing.T) {
+	gql := `query {
+		products(where: { id: { gt: 10 } }) {
+			id
+			max_price
+		}
+	}`
+
+	sql := `SELECT json_object_agg('products', products) FROM (SELECT coalesce(json_agg("sel_json_0"), '[]') AS "products" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."max_price" AS "max_price") AS "sel_0")) AS "sel_json_0" FROM (SELECT "products"."id", max("products"."price") AS "max_price" FROM "products" WHERE ((("products"."price") > 0) AND (("products"."price") < 8) AND (("products"."id") > 10)) GROUP BY "products"."id" LIMIT ('20') :: integer) AS "products_0" LIMIT ('20') :: integer) AS "sel_json_agg_0") AS "done_1337"`
+
+	resSQL, err := compileGQLToPSQL(gql, nil, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
+func queryWithVariables(t *testing.T) {
+	gql := `query {
+		product(id: $PRODUCT_ID, where: { price: { eq: $PRODUCT_PRICE } }) {
+			id
+			name
+		}
+	}`
+
+	sql := `SELECT json_object_agg('product', sel_json_0) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name") AS "sel_0")) AS "sel_json_0" FROM (SELECT "products"."id", "products"."name" FROM "products" WHERE ((("products"."price") > 0) AND (("products"."price") < 8) AND (("products"."price") = {{product_price}}) AND (("products"."id") = {{product_id}})) LIMIT ('1') :: integer) AS "products_0" LIMIT ('1') :: integer) AS "done_1337"`
+
+	resSQL, err := compileGQLToPSQL(gql, nil, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
+func syntheticTables(t *testing.T) {
+	gql := `query {
+		me {
+			email
+		}
+	}`
+
+	sql := `SELECT json_object_agg('me', sel_json_0) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT ) AS "sel_0")) AS "sel_json_0" FROM (SELECT "users"."email" FROM "users" WHERE ((("users"."id") = {{user_id}})) LIMIT ('1') :: integer) AS "users_0" LIMIT ('1') :: integer) AS "done_1337"`
+
+	resSQL, err := compileGQLToPSQL(gql, nil, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
+func TestCompileQuery(t *testing.T) {
+	t.Run("withComplexArgs", withComplexArgs)
+	t.Run("withWhereAndList", withWhereAndList)
+	t.Run("withWhereIsNull", withWhereIsNull)
+	t.Run("withWhereMultiOr", withWhereMultiOr)
+	t.Run("fetchByID", fetchByID)
+	t.Run("searchQuery", searchQuery)
+	t.Run("belongsTo", belongsTo)
+	t.Run("oneToMany", oneToMany)
+	t.Run("manyToMany", manyToMany)
+	t.Run("manyToManyReverse", manyToManyReverse)
+	t.Run("aggFunction", aggFunction)
+	t.Run("aggFunctionBlockedByCol", aggFunctionBlockedByCol)
+	t.Run("aggFunctionDisabled", aggFunctionDisabled)
+	t.Run("aggFunctionWithFilter", aggFunctionWithFilter)
+	t.Run("syntheticTables", syntheticTables)
+	t.Run("queryWithVariables", queryWithVariables)
+}
+
+var benchGQL = []byte(`query {
+	proDUcts(
+		# returns only 30 items
+		limit: 30,
+
+		# starts from item 10, commented out for now
+		# offset: 10,
+
+		# orders the response items by highest price
+		order_by: { price: desc },
+
+		# only items with an id >= 30 and < 30 are returned
+		where: { id: { and: { greater_or_equals: 20, lt: 28 } } }) {
+		id
+		NAME
+		price
+		user {
+			full_name
+			picture : avatar
+		}
+	}
+}`)
+
+func BenchmarkCompile(b *testing.B) {
+	w := &bytes.Buffer{}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for n := 0; n < b.N; n++ {
+		w.Reset()
+
+		qc, err := qcompile.Compile(benchGQL, "user")
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		_, err = pcompile.Compile(qc, w, nil)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkCompileParallel(b *testing.B) {
+	b.ReportAllocs()
+
+	b.RunParallel(func(pb *testing.PB) {
+		w := &bytes.Buffer{}
+
+		for pb.Next() {
+			w.Reset()
+
+			qc, err := qcompile.Compile(benchGQL, "user")
+			if err != nil {
+				b.Fatal(err)
+			}
+
+			_, err = pcompile.Compile(qc, w, nil)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}

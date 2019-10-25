@@ -18,7 +18,9 @@ type parserType int32
 const (
 	maxFields = 100
 	maxArgs   = 10
+)
 
+const (
 	parserError parserType = iota
 	parserEOF
 	opQuery
