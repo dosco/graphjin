@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestRelaxHash1(t *testing.T) {
+func TestGQLHash1(t *testing.T) {
 	var v1 = `
 	products(
 		limit: 30,
@@ -24,15 +24,15 @@ func TestRelaxHash1(t *testing.T) {
 			   price
 	}  `
 
-	h1 := gqlHash(v1, nil)
-	h2 := gqlHash(v2, nil)
+	h1 := gqlHash(v1, nil, "")
+	h2 := gqlHash(v2, nil, "")
 
 	if strings.Compare(h1, h2) != 0 {
 		t.Fatal("Hashes don't match they should")
 	}
 }
 
-func TestRelaxHash2(t *testing.T) {
+func TestGQLHash2(t *testing.T) {
 	var v1 = `
 	{
 		products(
@@ -53,15 +53,15 @@ func TestRelaxHash2(t *testing.T) {
 
 	var v2 = ` { products( limit: 30, order_by: { price: desc }, distinct: [ price ] where: { id: { and: { greater_or_equals: 20, lt: 28 } } }) { id name price user { id email } } } `
 
-	h1 := gqlHash(v1, nil)
-	h2 := gqlHash(v2, nil)
+	h1 := gqlHash(v1, nil, "")
+	h2 := gqlHash(v2, nil, "")
 
 	if strings.Compare(h1, h2) != 0 {
 		t.Fatal("Hashes don't match they should")
 	}
 }
 
-func TestRelaxHash3(t *testing.T) {
+func TestGQLHash3(t *testing.T) {
 	var v1 = `users {
 			id
 			email
@@ -86,15 +86,44 @@ func TestRelaxHash3(t *testing.T) {
 		}
 `
 
-	h1 := gqlHash(v1, nil)
-	h2 := gqlHash(v2, nil)
+	h1 := gqlHash(v1, nil, "")
+	h2 := gqlHash(v2, nil, "")
 
 	if strings.Compare(h1, h2) != 0 {
 		t.Fatal("Hashes don't match they should")
 	}
 }
 
-func TestRelaxHashWithVars1(t *testing.T) {
+func TestGQLHash4(t *testing.T) {
+	var v1 = `
+	query {
+		products(
+			limit: 30
+			order_by: { price: desc }
+			distinct: [price]
+			where: { id: { and: { greater_or_equals: 20, lt: 28 } } }
+		) {
+			id
+			name
+			price
+			user {
+				id
+				email
+			}
+		}
+	}`
+
+	var v2 = `   { products( limit: 30, order_by: { price: desc }, distinct: [ price ] where: { id: { and: { greater_or_equals: 20, lt: 28 } } }) { id name price user { id email } } } `
+
+	h1 := gqlHash(v1, nil, "")
+	h2 := gqlHash(v2, nil, "")
+
+	if strings.Compare(h1, h2) != 0 {
+		t.Fatal("Hashes don't match they should")
+	}
+}
+
+func TestGQLHashWithVars1(t *testing.T) {
 	var q1 = `
 	products(
 		limit: 30,
@@ -136,15 +165,15 @@ func TestRelaxHashWithVars1(t *testing.T) {
 		"user": 123
 	}`
 
-	h1 := gqlHash(q1, []byte(v1))
-	h2 := gqlHash(q2, []byte(v2))
+	h1 := gqlHash(q1, []byte(v1), "user")
+	h2 := gqlHash(q2, []byte(v2), "user")
 
 	if strings.Compare(h1, h2) != 0 {
 		t.Fatal("Hashes don't match they should")
 	}
 }
 
-func TestRelaxHashWithVars2(t *testing.T) {
+func TestGQLHashWithVars2(t *testing.T) {
 	var q1 = `
 	products(
 		limit: 30,
@@ -193,8 +222,8 @@ func TestRelaxHashWithVars2(t *testing.T) {
 		"user": 123
 	}`
 
-	h1 := gqlHash(q1, []byte(v1))
-	h2 := gqlHash(q2, []byte(v2))
+	h1 := gqlHash(q1, []byte(v1), "user")
+	h2 := gqlHash(q2, []byte(v2), "user")
 
 	if strings.Compare(h1, h2) != 0 {
 		t.Fatal("Hashes don't match they should")

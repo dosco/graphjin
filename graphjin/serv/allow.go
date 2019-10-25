@@ -182,6 +182,8 @@ func (al *allowList) load() {
 						item.vars = varBytes
 					}
 
+					//fmt.Println("%%", item.gql, string(item.vars))
+
 					al.list[gqlHash(q, varBytes, "")] = item
 					varBytes = nil
 

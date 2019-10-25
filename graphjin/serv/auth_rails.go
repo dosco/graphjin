@@ -122,14 +122,14 @@ func railsCookieHandler(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ck, err := r.Cookie(cookie)
 		if err != nil {
-			logger.Warn().Err(err).Send()
+			logger.Warn().Err(err).Msg("rails cookie missing")
 			next.ServeHTTP(w, r)
 			return
 		}
 
 		userID, err := ra.ParseCookie(ck.Value)
 		if err != nil {
-			logger.Warn().Err(err).Send()
+			logger.Warn().Err(err).Msg("failed to parse rails cookie")
 			next.ServeHTTP(w, r)
 			return
 		}

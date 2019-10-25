@@ -210,6 +210,8 @@ func initConf() (*config, error) {
 		c.Roles = append(c.Roles, configRole{Name: "anon"})
 	}
 
+	c.Validate()
+
 	return c, nil
 }
 
