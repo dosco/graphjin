@@ -46,6 +46,9 @@ This compiler is what sits at the heart of Super Graph with layers of useful fun
 
 ## Contact me
 
+I'm happy to help you deploy Super Graph so feel free to reach out over
+Twitter or Discord.
+
 [twitter/dosco](https://twitter.com/dosco)
 
 [chat/super-graph](https://discord.gg/6pSWCTZ)

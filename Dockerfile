@@ -11,9 +11,8 @@ RUN apk update && \
     apk add --no-cache git && \
     apk add --no-cache upx=3.95-r2
 
-RUN go get -u github.com/shanzi/wu && \
-    go install github.com/shanzi/wu && \
-    go get github.com/GeertJohan/go.rice/rice
+RUN go get -u github.com/rafaelsq/wtc && \
+    go get -u github.com/GeertJohan/go.rice/rice
 
 WORKDIR /app
 COPY . /app

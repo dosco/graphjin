@@ -7,25 +7,25 @@ type Config struct {
 
 type QueryConfig struct {
 	Limit            int
-	Filter           []string
+	Filters          []string
 	Columns          []string
 	DisableFunctions bool
 }
 
 type InsertConfig struct {
-	Filter  []string
+	Filters []string
 	Columns []string
 	Set     map[string]string
 }
 
 type UpdateConfig struct {
-	Filter  []string
+	Filters []string
 	Columns []string
 	Set     map[string]string
 }
 
 type DeleteConfig struct {
-	Filter  []string
+	Filters []string
 	Columns []string
 }
 

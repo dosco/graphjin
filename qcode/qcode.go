@@ -190,7 +190,7 @@ func (com *Compiler) AddRole(role, table string, trc TRConfig) error {
 	}
 
 	// query config
-	trv.query.fil, err = compileFilter(trc.Query.Filter)
+	trv.query.fil, err = compileFilter(trc.Query.Filters)
 	if err != nil {
 		return err
 	}
@@ -201,20 +201,20 @@ func (com *Compiler) AddRole(role, table string, trc TRConfig) error {
 	trv.query.disable.funcs = trc.Query.DisableFunctions
 
 	// insert config
-	if trv.insert.fil, err = compileFilter(trc.Insert.Filter); err != nil {
+	if trv.insert.fil, err = compileFilter(trc.Insert.Filters); err != nil {
 		return err
 	}
 	trv.insert.cols = toMap(trc.Insert.Columns)
 
 	// update config
-	if trv.update.fil, err = compileFilter(trc.Update.Filter); err != nil {
+	if trv.update.fil, err = compileFilter(trc.Update.Filters); err != nil {
 		return err
 	}
 	trv.insert.cols = toMap(trc.Insert.Columns)
 	trv.insert.set = trc.Insert.Set
 
 	// delete config
-	if trv.delete.fil, err = compileFilter(trc.Delete.Filter); err != nil {
+	if trv.delete.fil, err = compileFilter(trc.Delete.Filters); err != nil {
 		return err
 	}
 	trv.delete.cols = toMap(trc.Delete.Columns)

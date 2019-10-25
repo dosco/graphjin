@@ -1,4 +1,4 @@
-app_name: "{% app_name %} Production"
+app_name: "Super Graph Production"
 host_port: 0.0.0.0:8080
 web_ui: false
 
@@ -76,7 +76,7 @@ database:
   type: postgres
   host: db
   port: 5432
-  dbname: {% app_name_slug %}_production
+  dbname: {{app_name_slug}}_development
   user: postgres
   password: ''
   #pool_size: 10
@@ -90,7 +90,7 @@ database:
 
   # Define defaults to for the field key and values below
   defaults:
-    filter: ["{ user_id: { eq: $user_id } }"]
+    filters: ["{ user_id: { eq: $user_id } }"]
     
     # Field and table names that you wish to block
     blocklist:
@@ -101,32 +101,19 @@ database:
       - encrypted
       - token
 
-  tables:
-  - name: users
-    # This filter will overwrite defaults.filter
-    # filter: ["{ id: { eq: $user_id } }"]
-
-  # - name: products
-  #   # Multiple filters are AND'd together
-  #   filter: [
-  #     "{ price: { gt: 0 } }",
-  #     "{ price: { lt: 8 } }"
-  #   ]
-
+tables:
   - name: customers
-    remotes:
-      - name: payments
-        id: stripe_id
-        url: http://rails_app:3000/stripe/$id
-        path: data
-        # debug: true
-        pass_headers: 
-          - cookie
-        set_headers:
-          - name: Host
-            value: 0.0.0.0
-          # - name: Authorization
-          #   value: Bearer <stripe_api_key>
+    # remotes:
+    #   - name: payments
+    #     id: stripe_id
+    #     url: http://rails_app:3000/stripe/$id
+    #     path: data
+    #     # pass_headers: 
+    #     #   - cookie
+    #     #   - host
+    #     set_headers:
+    #       - name: Authorization
+    #         value: Bearer <stripe_api_key>
 
   - # You can create new fields that have a
     # real db table backing them
@@ -158,24 +145,23 @@ roles:
     tables:
       - name: users
         query:
-          filter: ["{ id: { _eq: $user_id } }"]
+          filters: ["{ id: { _eq: $user_id } }"]
 
       - name: products
-
         query:
           limit: 50
-          filter: ["{ user_id: { eq: $user_id } }"]
+          filters: ["{ user_id: { eq: $user_id } }"]
           columns: ["id", "name", "description" ]
           disable_aggregation: false
 
         insert:
-          filter: ["{ user_id: { eq: $user_id } }"]
+          filters: ["{ user_id: { eq: $user_id } }"]
           columns: ["id", "name", "description" ]
           set:
-          - created_at: "now"
+            - created_at: "now"
             
         update:
-          filter: ["{ user_id: { eq: $user_id } }"]
+          filters: ["{ user_id: { eq: $user_id } }"]
           columns:
             - id
             - name
@@ -189,6 +175,5 @@ roles:
     match: id = 1
     tables:
       - name: users
-        
-        # select:
-        #   filter: ["{ account_id: { _eq: $account_id } }"]
+        # query:
+        #   filters: ["{ account_id: { _eq: $account_id } }"]

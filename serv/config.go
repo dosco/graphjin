@@ -65,7 +65,7 @@ type config struct {
 		Vars map[string]string `mapstructure:"variables"`
 
 		Defaults struct {
-			Filter    []string
+			Filters   []string
 			Blocklist []string
 		}
 
@@ -106,28 +106,28 @@ type configRole struct {
 
 		Query struct {
 			Limit              int
-			Filter             []string
+			Filters            []string
 			Columns            []string
 			DisableAggregation bool `mapstructure:"disable_aggregation"`
 			Deny               bool
 		}
 
 		Insert struct {
-			Filter  []string
+			Filters []string
 			Columns []string
 			Set     map[string]string
 			Deny    bool
 		}
 
 		Update struct {
-			Filter  []string
+			Filters []string
 			Columns []string
 			Set     map[string]string
 			Deny    bool
 		}
 
 		Delete struct {
-			Filter  []string
+			Filters []string
 			Columns []string
 			Deny    bool
 		}
