@@ -31,6 +31,7 @@ func initPreparedList() {
 	}
 
 	for _, v := range _allowList.list {
+
 		err := prepareStmt(v.gql, v.vars)
 		if err != nil {
 			logger.Warn().Str("gql", v.gql).Err(err).Send()
@@ -50,6 +51,10 @@ func prepareStmt(gql string, varBytes json.RawMessage) error {
 	stmts, err := c.buildStmt()
 	if err != nil {
 		return err
+	}
+
+	if len(stmts) != 0 && stmts[0].qc.Type == qcode.QTQuery {
+		c.req.Vars = nil
 	}
 
 	for _, s := range stmts {
@@ -75,9 +80,9 @@ func prepareStmt(gql string, varBytes json.RawMessage) error {
 		var key string
 
 		if s.role == nil {
-			key = gqlHash(gql, varBytes, "")
+			key = gqlHash(gql, c.req.Vars, "")
 		} else {
-			key = gqlHash(gql, varBytes, s.role.Name)
+			key = gqlHash(gql, c.req.Vars, s.role.Name)
 		}
 
 		_preparedList[key] = &preparedItem{

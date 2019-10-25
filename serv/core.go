@@ -131,16 +131,20 @@ func (c *coreContext) resolvePreparedSQL() ([]byte, *preparedItem, error) {
 	}
 
 	var role string
-	useRoleQuery := len(conf.RolesQuery) != 0 && isMutation(c.req.Query)
+	mutation := isMutation(c.req.Query)
+	useRoleQuery := len(conf.RolesQuery) != 0 && mutation
 
 	if useRoleQuery {
 		if role, err = c.executeRoleQuery(tx); err != nil {
 			return nil, nil, err
 		}
+
 	} else if v := c.Value(userRoleKey); v != nil {
 		role = v.(string)
-	} else {
+
+	} else if mutation {
 		role = c.req.role
+
 	}
 
 	ps, ok := _preparedList[gqlHash(c.req.Query, c.req.Vars, role)]
@@ -151,7 +155,11 @@ func (c *coreContext) resolvePreparedSQL() ([]byte, *preparedItem, error) {
 	var root []byte
 	vars := varList(c, ps.args)
 
-	err = tx.QueryRow(c, ps.stmt.SQL, vars...).Scan(&root)
+	if mutation {
+		err = tx.QueryRow(c, ps.stmt.SQL, vars...).Scan(&root)
+	} else {
+		err = tx.QueryRow(c, ps.stmt.SQL, vars...).Scan(&c.req.role, &root)
+	}
 	if err != nil {
 		return nil, nil, err
 	}

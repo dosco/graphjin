@@ -37,8 +37,8 @@ type gqlReq struct {
 type variables map[string]json.RawMessage
 
 type gqlResp struct {
-	Error      string          `json:"error,omitempty"`
-	Data       json.RawMessage `json:"data"`
+	Error      string          `json:"message,omitempty"`
+	Data       json.RawMessage `json:"data,omitempty"`
 	Extensions *extensions     `json:"extensions,omitempty"`
 }
 
@@ -102,7 +102,9 @@ func apiv1Http(w http.ResponseWriter, r *http.Request) {
 	err = ctx.handleReq(w, r)
 
 	if err == errUnauthorized {
-		http.Error(w, "Not authorized", 401)
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(gqlResp{Error: err.Error()})
+		return
 	}
 
 	if err != nil {

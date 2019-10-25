@@ -61,8 +61,6 @@ func (co *Compiler) compileMutation(qc *qcode.QCode, w io.Writer, vars Variables
 	root.Where = nil
 	root.Args = nil
 
-	qc.Type = qcode.QTQuery
-
 	return c.compileQuery(qc, w)
 }
 

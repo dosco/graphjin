@@ -168,6 +168,32 @@ func newConfig() *viper.Viper {
 	return vi
 }
 
+func (c *config) Validate() {
+	rm := make(map[string]struct{})
+
+	for i := range c.Roles {
+		name := strings.ToLower(c.Roles[i].Name)
+		if _, ok := rm[name]; ok {
+			logger.Fatal().Msgf("duplicate config for role '%s'", c.Roles[i].Name)
+		}
+		rm[name] = struct{}{}
+	}
+
+	tm := make(map[string]struct{})
+
+	for i := range c.Tables {
+		name := strings.ToLower(c.Tables[i].Name)
+		if _, ok := tm[name]; ok {
+			logger.Fatal().Msgf("duplicate config for table '%s'", c.Tables[i].Name)
+		}
+		tm[name] = struct{}{}
+	}
+
+	if len(c.RolesQuery) == 0 {
+		logger.Warn().Msgf("no 'roles_query' defined.")
+	}
+}
+
 func (c *config) getAliasMap() map[string][]string {
 	m := make(map[string][]string, len(c.Tables))
 

@@ -7,9 +7,9 @@ import (
 )
 
 var (
-	userIDProviderKey = struct{}{}
-	userIDKey         = struct{}{}
-	userRoleKey       = struct{}{}
+	userIDProviderKey = "user_id_provider"
+	userIDKey         = "user_id"
+	userRoleKey       = "user_role"
 )
 
 func headerAuth(next http.HandlerFunc) http.HandlerFunc {

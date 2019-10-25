@@ -16,7 +16,9 @@ type Action int
 
 const (
 	maxSelectors = 30
+)
 
+const (
 	QTQuery QType = iota + 1
 	QTInsert
 	QTUpdate
