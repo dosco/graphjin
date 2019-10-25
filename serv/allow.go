@@ -26,7 +26,8 @@ type allowItem struct {
 var _allowList allowList
 
 type allowList struct {
-	list     map[string]*allowItem
+	list     []*allowItem
+	index    map[string]int
 	filepath string
 	saveChan chan *allowItem
 	active   bool
@@ -34,7 +35,7 @@ type allowList struct {
 
 func initAllowList(cpath string) {
 	_allowList = allowList{
-		list:     make(map[string]*allowItem),
+		index:    make(map[string]int),
 		saveChan: make(chan *allowItem),
 		active:   true,
 	}
@@ -172,17 +173,21 @@ func (al *allowList) load() {
 			if c == 0 {
 				if ty == AL_QUERY {
 					q := string(b[s:(e + 1)])
+					key := gqlHash(q, varBytes, "")
 
-					item := &allowItem{
-						uri: uri,
-						gql: q,
-					}
-
-					if len(varBytes) != 0 {
+					if idx, ok := al.index[key]; !ok {
+						al.list = append(al.list, &allowItem{
+							uri:  uri,
+							gql:  q,
+							vars: varBytes,
+						})
+						al.index[key] = len(al.list) - 1
+					} else {
+						item := al.list[idx]
+						item.gql = q
 						item.vars = varBytes
 					}
 
-					al.list[gqlHash(q, varBytes)] = item
 					varBytes = nil
 
 				} else if ty == AL_VARS {
@@ -203,7 +208,15 @@ func (al *allowList) save(item *allowItem) {
 	if al.active == false {
 		return
 	}
-	al.list[gqlHash(item.gql, item.vars)] = item
+
+	key := gqlHash(item.gql, item.vars, "")
+
+	if idx, ok := al.index[key]; ok {
+		al.list[idx] = item
+	} else {
+		al.list = append(al.list, item)
+		al.index[key] = len(al.list) - 1
+	}
 
 	f, err := os.Create(al.filepath)
 	if err != nil {

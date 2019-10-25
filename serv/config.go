@@ -1,7 +1,9 @@
 package serv
 
 import (
+	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/spf13/viper"
 )
@@ -24,9 +26,9 @@ type config struct {
 	Inflections map[string]string
 
 	Auth struct {
-		Type   string
-		Cookie string
-		Header string
+		Type          string
+		Cookie        string
+		CredsInHeader bool `mapstructure:"creds_in_header"`
 
 		Rails struct {
 			Version       string
@@ -60,10 +62,10 @@ type config struct {
 		MaxRetries int    `mapstructure:"max_retries"`
 		LogLevel   string `mapstructure:"log_level"`
 
-		vars map[string][]byte `mapstructure:"variables"`
+		Vars map[string]string `mapstructure:"variables"`
 
 		Defaults struct {
-			Filter    []string
+			Filters   []string
 			Blocklist []string
 		}
 
@@ -71,18 +73,16 @@ type config struct {
 	} `mapstructure:"database"`
 
 	Tables []configTable
+
+	RolesQuery string `mapstructure:"roles_query"`
+	Roles      []configRole
 }
 
 type configTable struct {
-	Name         string
-	Filter       []string
-	FilterQuery  []string `mapstructure:"filter_query"`
-	FilterInsert []string `mapstructure:"filter_insert"`
-	FilterUpdate []string `mapstructure:"filter_update"`
-	FilterDelete []string `mapstructure:"filter_delete"`
-	Table        string
-	Blocklist    []string
-	Remotes      []configRemote
+	Name      string
+	Table     string
+	Blocklist []string
+	Remotes   []configRemote
 }
 
 type configRemote struct {
@@ -96,6 +96,42 @@ type configRemote struct {
 		Name  string
 		Value string
 	} `mapstructure:"set_headers"`
+}
+
+type configRole struct {
+	Name   string
+	Match  string
+	Tables []struct {
+		Name string
+
+		Query struct {
+			Limit              int
+			Filters            []string
+			Columns            []string
+			DisableAggregation bool `mapstructure:"disable_aggregation"`
+			Deny               bool
+		}
+
+		Insert struct {
+			Filters []string
+			Columns []string
+			Set     map[string]string
+			Deny    bool
+		}
+
+		Update struct {
+			Filters []string
+			Columns []string
+			Set     map[string]string
+			Deny    bool
+		}
+
+		Delete struct {
+			Filters []string
+			Columns []string
+			Deny    bool
+		}
+	}
 }
 
 func newConfig() *viper.Viper {
@@ -132,24 +168,30 @@ func newConfig() *viper.Viper {
 	return vi
 }
 
-func (c *config) getVariables() map[string]string {
-	vars := make(map[string]string, len(c.DB.vars))
+func (c *config) Validate() {
+	rm := make(map[string]struct{})
 
-	for k, v := range c.DB.vars {
-		isVar := false
-
-		for i := range v {
-			if v[i] == '$' {
-				isVar = true
-			} else if v[i] == ' ' {
-				isVar = false
-			} else if isVar && v[i] >= 'a' && v[i] <= 'z' {
-				v[i] = 'A' + (v[i] - 'a')
-			}
+	for i := range c.Roles {
+		name := strings.ToLower(c.Roles[i].Name)
+		if _, ok := rm[name]; ok {
+			logger.Fatal().Msgf("duplicate config for role '%s'", c.Roles[i].Name)
 		}
-		vars[k] = string(v)
+		rm[name] = struct{}{}
 	}
-	return vars
+
+	tm := make(map[string]struct{})
+
+	for i := range c.Tables {
+		name := strings.ToLower(c.Tables[i].Name)
+		if _, ok := tm[name]; ok {
+			logger.Fatal().Msgf("duplicate config for table '%s'", c.Tables[i].Name)
+		}
+		tm[name] = struct{}{}
+	}
+
+	if len(c.RolesQuery) == 0 {
+		logger.Warn().Msgf("no 'roles_query' defined.")
+	}
 }
 
 func (c *config) getAliasMap() map[string][]string {
@@ -166,4 +208,22 @@ func (c *config) getAliasMap() map[string][]string {
 		m[k] = append(m[k], strings.ToLower(t.Name))
 	}
 	return m
+}
+
+var varRe1 = regexp.MustCompile(`(?mi)\$([a-zA-Z0-9_.]+)`)
+var varRe2 = regexp.MustCompile(`\{\{([a-zA-Z0-9_.]+)\}\}`)
+
+func sanitize(s string) string {
+	s0 := varRe1.ReplaceAllString(s, `{{$1}}`)
+
+	s1 := strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return ' '
+		}
+		return r
+	}, s0)
+
+	return varRe2.ReplaceAllStringFunc(s1, func(m string) string {
+		return strings.ToLower(m)
+	})
 }

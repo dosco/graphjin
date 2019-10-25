@@ -30,14 +30,15 @@ type gqlReq struct {
 	Query  string          `json:"query"`
 	Vars   json.RawMessage `json:"variables"`
 	ref    string
+	role   string
 	hdr    http.Header
 }
 
 type variables map[string]json.RawMessage
 
 type gqlResp struct {
-	Error      string          `json:"error,omitempty"`
-	Data       json.RawMessage `json:"data"`
+	Error      string          `json:"message,omitempty"`
+	Data       json.RawMessage `json:"data,omitempty"`
 	Extensions *extensions     `json:"extensions,omitempty"`
 }
 
@@ -94,55 +95,20 @@ func apiv1Http(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if strings.EqualFold(ctx.req.OpName, introspectionQuery) {
-		// dat, err := ioutil.ReadFile("test.schema")
-		// if err != nil {
-		// 	http.Error(w, err.Error(), http.StatusInternalServerError)
-		// 	return
-		// }
-		//w.Write(dat)
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{
-			"data": {
-				"__schema": {
-					"queryType": {
-						"name": "Query"
-					},
-					"mutationType": null,
-					"subscriptionType": null
-				}
-			},
-			"extensions":{  
-				"tracing":{  
-					"version":1,
-					"startTime":"2019-06-04T19:53:31.093Z",
-					"endTime":"2019-06-04T19:53:31.108Z",
-					"duration":15219720,
-					"execution": {
-						"resolvers": [{
-							"path": ["__schema"],
-							"parentType":	"Query",
-							"fieldName": "__schema",
-							"returnType":	"__Schema!",
-							"startOffset": 50950,
-							"duration": 17187
-						}]
-					}
-				}
-			}
-		}`))
+		introspect(w)
 		return
 	}
 
 	err = ctx.handleReq(w, r)
 
 	if err == errUnauthorized {
-		err := "Not authorized"
-		logger.Debug().Msg(err)
-		http.Error(w, err, 401)
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(gqlResp{Error: err.Error()})
+		return
 	}
 
 	if err != nil {
-		logger.Err(err).Msg("Failed to handle request")
+		logger.Err(err).Msg("failed to handle request")
 		errorResp(w, err)
 	}
 }

@@ -12,7 +12,6 @@ import (
 	rice "github.com/GeertJohan/go.rice"
 	"github.com/dosco/super-graph/psql"
 	"github.com/dosco/super-graph/qcode"
-	"github.com/gobuffalo/flect"
 )
 
 func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
@@ -22,42 +21,8 @@ func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
 	}
 
 	conf := qcode.Config{
-		DefaultFilter: c.DB.Defaults.Filter,
-		FilterMap: qcode.Filters{
-			All:    make(map[string][]string, len(c.Tables)),
-			Query:  make(map[string][]string, len(c.Tables)),
-			Insert: make(map[string][]string, len(c.Tables)),
-			Update: make(map[string][]string, len(c.Tables)),
-			Delete: make(map[string][]string, len(c.Tables)),
-		},
 		Blocklist: c.DB.Defaults.Blocklist,
 		KeepArgs:  false,
-	}
-
-	for i := range c.Tables {
-		t := c.Tables[i]
-
-		singular := flect.Singularize(t.Name)
-		plural := flect.Pluralize(t.Name)
-
-		setFilter := func(fm map[string][]string, fil []string) {
-			switch {
-			case len(fil) == 0:
-				return
-			case fil[0] == "none" || len(fil[0]) == 0:
-				fm[singular] = []string{}
-				fm[plural] = []string{}
-			default:
-				fm[singular] = t.Filter
-				fm[plural] = t.Filter
-			}
-		}
-
-		setFilter(conf.FilterMap.All, t.Filter)
-		setFilter(conf.FilterMap.Query, t.FilterQuery)
-		setFilter(conf.FilterMap.Insert, t.FilterInsert)
-		setFilter(conf.FilterMap.Update, t.FilterUpdate)
-		setFilter(conf.FilterMap.Delete, t.FilterDelete)
 	}
 
 	qc, err := qcode.NewCompiler(conf)
@@ -65,9 +30,44 @@ func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
 		return nil, nil, err
 	}
 
+	for _, r := range c.Roles {
+		for _, t := range r.Tables {
+			query := qcode.QueryConfig{
+				Limit:            t.Query.Limit,
+				Filters:          t.Query.Filters,
+				Columns:          t.Query.Columns,
+				DisableFunctions: t.Query.DisableAggregation,
+			}
+
+			insert := qcode.InsertConfig{
+				Filters: t.Insert.Filters,
+				Columns: t.Insert.Columns,
+				Set:     t.Insert.Set,
+			}
+
+			update := qcode.UpdateConfig{
+				Filters: t.Insert.Filters,
+				Columns: t.Insert.Columns,
+				Set:     t.Insert.Set,
+			}
+
+			delete := qcode.DeleteConfig{
+				Filters: t.Insert.Filters,
+				Columns: t.Insert.Columns,
+			}
+
+			qc.AddRole(r.Name, t.Name, qcode.TRConfig{
+				Query:  query,
+				Insert: insert,
+				Update: update,
+				Delete: delete,
+			})
+		}
+	}
+
 	pc := psql.NewCompiler(psql.Config{
 		Schema: schema,
-		Vars:   c.getVariables(),
+		Vars:   c.DB.Vars,
 	})
 
 	return qc, pc, nil

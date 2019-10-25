@@ -46,13 +46,18 @@ func compareOp(op1, op2 Operation) error {
 */
 
 func TestCompile1(t *testing.T) {
-	qcompile, _ := NewCompiler(Config{})
+	qc, _ := NewCompiler(Config{})
+	qc.AddRole("user", "product", TRConfig{
+		Query: QueryConfig{
+			Columns: []string{"id", "Name"},
+		},
+	})
 
-	_, err := qcompile.Compile([]byte(`
+	_, err := qc.Compile([]byte(`
 	product(id: 15) {
 			id
 			name
-		}`))
+		}`), "user")
 
 	if err != nil {
 		t.Fatal(err)
@@ -60,13 +65,18 @@ func TestCompile1(t *testing.T) {
 }
 
 func TestCompile2(t *testing.T) {
-	qcompile, _ := NewCompiler(Config{})
+	qc, _ := NewCompiler(Config{})
+	qc.AddRole("user", "product", TRConfig{
+		Query: QueryConfig{
+			Columns: []string{"ID"},
+		},
+	})
 
-	_, err := qcompile.Compile([]byte(`
+	_, err := qc.Compile([]byte(`
 	query { product(id: 15) {
 			id
 			name
-		} }`))
+		} }`), "user")
 
 	if err != nil {
 		t.Fatal(err)
@@ -74,15 +84,20 @@ func TestCompile2(t *testing.T) {
 }
 
 func TestCompile3(t *testing.T) {
-	qcompile, _ := NewCompiler(Config{})
+	qc, _ := NewCompiler(Config{})
+	qc.AddRole("user", "product", TRConfig{
+		Query: QueryConfig{
+			Columns: []string{"ID"},
+		},
+	})
 
-	_, err := qcompile.Compile([]byte(`
+	_, err := qc.Compile([]byte(`
 	mutation {
 		product(id: 15, name: "Test") {
 			id
 			name
 		}
-	}`))
+	}`), "user")
 
 	if err != nil {
 		t.Fatal(err)
@@ -91,7 +106,7 @@ func TestCompile3(t *testing.T) {
 
 func TestInvalidCompile1(t *testing.T) {
 	qcompile, _ := NewCompiler(Config{})
-	_, err := qcompile.Compile([]byte(`#`))
+	_, err := qcompile.Compile([]byte(`#`), "user")
 
 	if err == nil {
 		t.Fatal(errors.New("expecting an error"))
@@ -100,7 +115,7 @@ func TestInvalidCompile1(t *testing.T) {
 
 func TestInvalidCompile2(t *testing.T) {
 	qcompile, _ := NewCompiler(Config{})
-	_, err := qcompile.Compile([]byte(`{u(where:{not:0})}`))
+	_, err := qcompile.Compile([]byte(`{u(where:{not:0})}`), "user")
 
 	if err == nil {
 		t.Fatal(errors.New("expecting an error"))
@@ -109,7 +124,7 @@ func TestInvalidCompile2(t *testing.T) {
 
 func TestEmptyCompile(t *testing.T) {
 	qcompile, _ := NewCompiler(Config{})
-	_, err := qcompile.Compile([]byte(``))
+	_, err := qcompile.Compile([]byte(``), "user")
 
 	if err == nil {
 		t.Fatal(errors.New("expecting an error"))
@@ -144,7 +159,7 @@ func BenchmarkQCompile(b *testing.B) {
 	b.ReportAllocs()
 
 	for n := 0; n < b.N; n++ {
-		_, err := qcompile.Compile(gql)
+		_, err := qcompile.Compile(gql, "user")
 
 		if err != nil {
 			b.Fatal(err)
@@ -160,7 +175,7 @@ func BenchmarkQCompileP(b *testing.B) {
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			_, err := qcompile.Compile(gql)
+			_, err := qcompile.Compile(gql, "user")
 
 			if err != nil {
 				b.Fatal(err)

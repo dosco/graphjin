@@ -1,6 +1,28 @@
 # http://localhost:8080/
 
 variables {
+	"data": [
+		{
+			"name": "Protect Ya Neck",
+			"created_at": "now",
+			"updated_at": "now"
+		},
+		{
+			"name": "Enter the Wu-Tang",
+			"created_at": "now",
+			"updated_at": "now"
+		}
+	]
+}
+
+mutation {
+  products(insert: $data) {
+    id
+    name
+  }
+}
+
+variables {
 	"update": {
 		"name": "Wu-Tang",
 		"description": "No description needed"
@@ -16,16 +38,16 @@ mutation {
   }
 }
 
-variables {
-	"data": {
-		"product_id": 5
-	}
-}
-
-mutation {
-  products(id: $product_id, delete: true) {
+query {
+  users {
     id
-    name
+    email
+    picture: avatar
+    products(limit: 2, where: {price: {gt: 10}}) {
+      id
+      name
+      description
+    }
   }
 }
 
@@ -73,6 +95,118 @@ query {
   }
 }
 
+variables {
+	"data": [
+		{
+			"name": "Gumbo1",
+			"created_at": "now",
+			"updated_at": "now"
+		},
+		{
+			"name": "Gumbo2",
+			"created_at": "now",
+			"updated_at": "now"
+		}
+	]
+}
+
+query {
+  products {
+    id
+    name
+    user {
+      email
+    }
+  }
+}
+
+variables {
+	"data": {
+		"product_id": 5
+	}
+}
+
+mutation {
+  products(id: $product_id, delete: true) {
+    id
+    name
+  }
+}
+
+variables {
+	"data": [
+		{
+			"name": "Gumbo1",
+			"created_at": "now",
+			"updated_at": "now"
+		},
+		{
+			"name": "Gumbo2",
+			"created_at": "now",
+			"updated_at": "now"
+		}
+	]
+}
+
+query {
+  products {
+    id
+    name
+    price
+    users {
+      email
+    }
+  }
+}
+
+
+variables {
+	"data": {
+		"email": "gfk@myspace.com",
+		"full_name": "Ghostface Killah",
+		"created_at": "now",
+		"updated_at": "now"
+	}
+}
+
+mutation {
+  user(insert: $data) {
+    id
+  }
+}
+
+variables {
+	"data": [
+		{
+			"name": "Gumbo1",
+			"created_at": "now",
+			"updated_at": "now"
+		},
+		{
+			"name": "Gumbo2",
+			"created_at": "now",
+			"updated_at": "now"
+		}
+	]
+}
+
+query {
+  products {
+    id
+    name
+    users {
+      email
+    }
+  }
+}
+
+query {
+  me {
+    id
+    email
+    full_name
+  }
+}
 
 variables {
 	"update": {
@@ -112,62 +246,30 @@ query {
   }
 }
 
-
-query {
-  me {
-    id
-    email
-    full_name
-  }
-}
-
-variables {
-	"data": {
-		"email": "gfk@myspace.com",
-		"full_name": "Ghostface Killah",
-		"created_at": "now",
-		"updated_at": "now"
-	}
-}
-
-mutation {
-  user(insert: $data) {
-    id
-  }
-}
-
-query {
-  users {
-    id
-    email
-    picture: avatar
-    products(limit: 2, where: {price: {gt: 10}}) {
-      id
-      name
-      description
-    }
-  }
-}
-
 variables {
 	"data": [
 		{
-			"name": "Protect Ya Neck",
+			"name": "Gumbo1",
 			"created_at": "now",
 			"updated_at": "now"
 		},
 		{
-			"name": "Enter the Wu-Tang",
+			"name": "Gumbo2",
 			"created_at": "now",
 			"updated_at": "now"
 		}
 	]
 }
 
-mutation {
-  products(insert: $data) {
+query {
+  products {
     id
     name
+    description
+    users {
+      email
+    }
   }
 }
+
 

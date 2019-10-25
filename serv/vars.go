@@ -11,17 +11,27 @@ import (
 func varMap(ctx *coreContext) func(w io.Writer, tag string) (int, error) {
 	return func(w io.Writer, tag string) (int, error) {
 		switch tag {
-		case "user_id":
-			if v := ctx.Value(userIDKey); v != nil {
-				return stringVar(w, v.(string))
-			}
-			return 0, errNoUserID
-
 		case "user_id_provider":
 			if v := ctx.Value(userIDProviderKey); v != nil {
 				return stringVar(w, v.(string))
 			}
-			return 0, errNoUserID
+			io.WriteString(w, "null")
+			return 0, nil
+
+		case "user_id":
+			if v := ctx.Value(userIDKey); v != nil {
+				return stringVar(w, v.(string))
+			}
+
+			io.WriteString(w, "null")
+			return 0, nil
+
+		case "user_role":
+			if v := ctx.Value(userRoleKey); v != nil {
+				return stringVar(w, v.(string))
+			}
+			io.WriteString(w, "null")
+			return 0, nil
 		}
 
 		fields := jsn.Get(ctx.req.Vars, [][]byte{[]byte(tag)})

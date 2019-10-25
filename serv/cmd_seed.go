@@ -66,6 +66,7 @@ func graphQLFunc(query string, data interface{}) map[string]interface{} {
 	c := &coreContext{Context: context.Background()}
 	c.req.Query = query
 	c.req.Vars = b
+	c.req.role = "user"
 
 	res, err := c.execQuery()
 	if err != nil {

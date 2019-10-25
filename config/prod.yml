@@ -47,10 +47,6 @@ auth:
   type: rails
   cookie: _app_session
 
-  # Comment this out if you want to disable setting
-  # the user_id via a header. Good for testing
-  header: X-User-ID
-
   rails:
     # Rails version this is used for reading the
     # various cookies formats.
@@ -94,7 +90,7 @@ database:
 
   # Define defaults to for the field key and values below
   defaults:
-    filter: ["{ user_id: { eq: $user_id } }"]
+    filters: ["{ user_id: { eq: $user_id } }"]
     
     # Field and table names that you wish to block
     blocklist:
@@ -106,25 +102,7 @@ database:
       - token
 
 tables:
-  - name: users
-    # This filter will overwrite defaults.filter
-    # filter: ["{ id: { eq: $user_id } }"]
-    # filter_query: ["{ id: { eq: $user_id } }"]
-    filter_update: ["{ id: { eq: $user_id } }"]
-    filter_delete: ["{ id: { eq: $user_id } }"]
-
-  - name: products
-    # Multiple filters are AND'd together
-    filter: [
-      "{ price: { gt: 0 } }",
-      "{ price: { lt: 8 } }"
-    ] 
-
   - name: customers
-    # No filter is used for this field not 
-    # even defaults.filter
-    filter: none
-
     # remotes:
     #   - name: payments
     #     id: stripe_id
@@ -141,7 +119,61 @@ tables:
     # real db table backing them
     name: me
     table: users
-    filter: ["{ id: { eq: $user_id } }"]
 
-  # - name: posts
-  #   filter: ["{ account_id: { _eq: $account_id } }"]
+roles_query: "SELECT * FROM users as usr WHERE id = $user_id"
+
+roles:
+  - name: anon
+    tables:
+      - name: products
+        limit: 10
+
+        query:
+          columns: ["id", "name", "description" ]
+          aggregation: false
+
+        insert:
+          allow: false
+            
+        update:
+          allow: false
+
+        delete:
+          allow: false
+
+  - name: user
+    tables:
+      - name: users
+        query:
+          filters: ["{ id: { _eq: $user_id } }"]
+
+      - name: products
+        query:
+          limit: 50
+          filters: ["{ user_id: { eq: $user_id } }"]
+          columns: ["id", "name", "description" ]
+          disable_aggregation: false
+
+        insert:
+          filters: ["{ user_id: { eq: $user_id } }"]
+          columns: ["id", "name", "description" ]
+          set:
+            - created_at: "now"
+            
+        update:
+          filters: ["{ user_id: { eq: $user_id } }"]
+          columns:
+            - id
+            - name
+          set:
+            - updated_at: "now"
+
+        delete:
+          deny: true
+
+  - name: admin
+    match: id = 1
+    tables:
+      - name: users
+        # query:
+        #   filters: ["{ account_id: { _eq: $account_id } }"]
