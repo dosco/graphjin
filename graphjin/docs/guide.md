@@ -1043,25 +1043,34 @@ We're tried to ensure that the config file is self documenting and easy to work 
 app_name: "Super Graph Development"
 host_port: 0.0.0.0:8080
 web_ui: true
-debug_level: 1
 
-# debug, info, warn, error, fatal, panic, disable
-log_level: "info"
+# debug, info, warn, error, fatal, panic
+log_level: "debug"
 
 # Disable this in development to get a list of 
 # queries used. When enabled super graph
 # will only allow queries from this list
 # List saved to ./config/allow.list
-use_allow_list: true
+use_allow_list: false
 
 # Throw a 401 on auth failure for queries that need auth
 # valid values: always, per_query, never
-auth_fail_block: always
+auth_fail_block: never
 
 # Latency tracing for database queries and remote joins
 # the resulting latency information is returned with the
 # response
 enable_tracing: true
+
+# Watch the config folder and reload Super Graph
+# with the new configs when a change is detected
+reload_on_config_change: true
+
+# File that points to the database seeding script
+# seed_file: seed.js
+
+# Path pointing to where the migrations can be found
+migrations_path: ./config/migrations
 
 # Postgres related environment Variables
 # SG_DATABASE_HOST
@@ -1086,7 +1095,7 @@ auth:
 
   # Comment this out if you want to disable setting
   # the user_id via a header. Good for testing
-  header: X-User-ID
+  creds_in_header: true
 
   rails:
     # Rails version this is used for reading the
@@ -1097,10 +1106,10 @@ auth:
     secret_key_base: 0a248500a64c01184edb4d7ad3a805488f8097ac761b76aaa6c17c01dcb7af03a2f18ba61b2868134b9c7b79a122bc0dadff4367414a2d173297bfea92be5566
 
     # Remote cookie store. (memcache or redis)
-    # url: redis://127.0.0.1:6379
-    # password: test
-    # max_idle: 80,
-    # max_active: 12000,
+    # url: redis://redis:6379
+    # password: ""
+    # max_idle: 80
+    # max_active: 12000
 
     # In most cases you don't need these
     # salt: "encrypted cookie"
@@ -1120,20 +1129,23 @@ database:
   dbname: app_development
   user: postgres
   password: ''
-  # pool_size: 10
-  # max_retries: 0
-  # log_level: "debug"
+
+  #schema: "public"
+  #pool_size: 10
+  #max_retries: 0
+  #log_level: "debug"
 
   # Define variables here that you want to use in filters
+  # sub-queries must be wrapped in ()
   variables:
-    account_id: "select account_id from users where id = $user_id"
+    account_id: "(select account_id from users where id = $user_id)"
 
   # Define defaults to for the field key and values below
   defaults:
-    filter: ["{ user_id: { eq: $user_id } }"]
+    # filters: ["{ user_id: { eq: $user_id } }"]
 
     # Field and table names that you wish to block
-    blacklist:
+    blocklist:
       - ar_internal_metadata
       - schema_migrations
       - secret
@@ -1141,46 +1153,85 @@ database:
       - encrypted
       - token
 
-  tables:
-    - name: users
-      # This filter will overwrite defaults.filter
-      # filter: ["{ id: { eq: $user_id } }"]
-      # filter_query: ["{ id: { eq: $user_id } }"]
-      filter_update: ["{ id: { eq: $user_id } }"]
-      filter_delete: ["{ id: { eq: $user_id } }"]
+tables:
+  - name: customers
+    remotes:
+      - name: payments
+        id: stripe_id
+        url: http://rails_app:3000/stripe/$id
+        path: data
+        # debug: true
+        pass_headers: 
+          - cookie
+        set_headers:
+          - name: Host
+            value: 0.0.0.0
+          # - name: Authorization
+          #   value: Bearer <stripe_api_key>
 
-    - name: products
-      # Multiple filters are AND'd together
-      filter: [
-        "{ price: { gt: 0 } }",
-        "{ price: { lt: 8 } }"
-      ]
+  - # You can create new fields that have a
+    # real db table backing them
+    name: me
+    table: users
 
-    - name: customers
-      # No filter is used for this field not
-      # even defaults.filter
-      filter: none
+roles_query: "SELECT * FROM users as usr WHERE id = $user_id"
 
-      remotes:
-        - name: payments
-          id: stripe_id
-          url: http://rails_app:3000/stripe/$id
-          path: data
-          # pass_headers: 
-          #   - cookie
-          #   - host
-          set_headers:
-            - name: Authorization
-              value: Bearer <stripe_api_key>
+roles:
+  - name: anon
+    tables:
+      - name: products
+        limit: 10
 
-    - # You can create new fields that have a
-      # real db table backing them
-      name: me
-      table: users
-      filter: ["{ id: { eq: $user_id } }"]
+        query:
+          columns: ["id", "name", "description" ]
+          aggregation: false
 
-    # - name: posts
-    #   filter: ["{ account_id: { _eq: $account_id } }"]
+        insert:
+          allow: false
+            
+        update:
+          allow: false
+
+        delete:
+          allow: false
+
+  - name: user
+    tables:
+      - name: users
+        query:
+          filters: ["{ id: { _eq: $user_id } }"]
+
+      - name: products
+        query:
+          limit: 50
+          filters: ["{ user_id: { eq: $user_id } }"]
+          columns: ["id", "name", "description" ]
+          disable_aggregation: false
+
+        insert:
+          filters: ["{ user_id: { eq: $user_id } }"]
+          columns: ["id", "name", "description" ]
+          set:
+            - created_at: "now"
+            
+        update:
+          filters: ["{ user_id: { eq: $user_id } }"]
+          columns:
+            - id
+            - name
+          set:
+            - updated_at: "now"
+
+        delete:
+          deny: true
+
+  - name: admin
+    match: id = 1
+    tables:
+      - name: users
+        # query:
+        #   filters: ["{ account_id: { _eq: $account_id } }"]
+
 ```
 
 If deploying into environments like Kubernetes it's useful to be able to configure things like secrets and hosts though environment variables therfore we expose the below environment variables. This is escpecially useful for secrets since they are usually injected in via a secrets management framework ie. Kubernetes Secrets

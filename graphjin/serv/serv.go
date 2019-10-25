@@ -34,25 +34,25 @@ func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
 		for _, t := range r.Tables {
 			query := qcode.QueryConfig{
 				Limit:            t.Query.Limit,
-				Filter:           t.Query.Filter,
+				Filters:          t.Query.Filters,
 				Columns:          t.Query.Columns,
 				DisableFunctions: t.Query.DisableAggregation,
 			}
 
 			insert := qcode.InsertConfig{
-				Filter:  t.Insert.Filter,
+				Filters: t.Insert.Filters,
 				Columns: t.Insert.Columns,
 				Set:     t.Insert.Set,
 			}
 
 			update := qcode.UpdateConfig{
-				Filter:  t.Insert.Filter,
+				Filters: t.Insert.Filters,
 				Columns: t.Insert.Columns,
 				Set:     t.Insert.Set,
 			}
 
 			delete := qcode.DeleteConfig{
-				Filter:  t.Insert.Filter,
+				Filters: t.Insert.Filters,
 				Columns: t.Insert.Columns,
 			}
 

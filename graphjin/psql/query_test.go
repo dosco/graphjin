@@ -32,16 +32,16 @@ func TestMain(m *testing.M) {
 	qcompile.AddRole("user", "product", qcode.TRConfig{
 		Query: qcode.QueryConfig{
 			Columns: []string{"id", "name", "price", "users", "customers"},
-			Filter: []string{
+			Filters: []string{
 				"{ price: { gt: 0 } }",
 				"{ price: { lt: 8 } }",
 			},
 		},
 		Update: qcode.UpdateConfig{
-			Filter: []string{"{ user_id: { eq: $user_id } }"},
+			Filters: []string{"{ user_id: { eq: $user_id } }"},
 		},
 		Delete: qcode.DeleteConfig{
-			Filter: []string{
+			Filters: []string{
 				"{ price: { gt: 0 } }",
 				"{ price: { lt: 8 } }",
 			},
@@ -70,7 +70,7 @@ func TestMain(m *testing.M) {
 	qcompile.AddRole("user", "mes", qcode.TRConfig{
 		Query: qcode.QueryConfig{
 			Columns: []string{"id", "full_name", "avatar"},
-			Filter: []string{
+			Filters: []string{
 				"{ id: { eq: $user_id } }",
 			},
 		},

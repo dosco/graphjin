@@ -80,7 +80,7 @@ SQL Output
       account_id: "select account_id from users where id = $user_id"
 
     defaults:
-      filter: ["{ user_id: { eq: $user_id } }"]
+      Filters: ["{ user_id: { eq: $user_id } }"]
 
       blacklist:
         - password
@@ -88,14 +88,14 @@ SQL Output
 
   fields:
     - name: users
-      filter: ["{ id: { eq: $user_id } }"]
+      Filters: ["{ id: { eq: $user_id } }"]
 
     - name: products
-      filter: [
+      Filters: [
         "{ price: { gt: 0 } }",
         "{ price: { lt: 8 } }"
       ]
 
     - name: me
       table: users
-      filter: ["{ id: { eq: $user_id } }"]
+      Filters: ["{ id: { eq: $user_id } }"]
