@@ -32,6 +32,10 @@ func gqlHash(b string, vars []byte, role string) string {
 
 	var b0, b1 byte
 
+	if len(b) == 0 {
+		return ""
+	}
+
 	for {
 		if starting && b[e] == 'q' {
 			n := 0
@@ -43,6 +47,9 @@ func gqlHash(b string, vars []byte, role string) string {
 			if n != len(query) {
 				io.WriteString(h, strings.ToLower(b[se:e]))
 			}
+		}
+		if e >= len(b) {
+			break
 		}
 		if ws(b[e]) {
 			for e < len(b) && ws(b[e]) {
