@@ -2,7 +2,6 @@ package jsn
 
 import "bytes"
 
-// FuzzerEntrypoint for Fuzzbuzz
 func Fuzz(data []byte) int {
 	err1 := Validate(string(data))
 

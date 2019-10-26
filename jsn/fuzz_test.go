@@ -3,7 +3,6 @@ package jsn
 import "testing"
 
 func TestFuzzCrashers(t *testing.T) {
-
 	var crashers = []string{
 		"00\"0000\"0{",
 		"6\",\n\t\t\t\"something\": " +
