@@ -1,14 +1,12 @@
 package qcode
 
 // FuzzerEntrypoint for Fuzzbuzz
-func FuzzerEntrypoint(data []byte) int {
-	//testData := string(data)
-
+func Fuzz(data []byte) int {
 	qcompile, _ := NewCompiler(Config{})
 	_, err := qcompile.Compile(data, "user")
 	if err != nil {
-		return -1
+		return 0
 	}
 
-	return 0
+	return 1
 }

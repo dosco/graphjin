@@ -3,7 +3,7 @@ package jsn
 import "bytes"
 
 // FuzzerEntrypoint for Fuzzbuzz
-func FuzzerEntryPoint(data []byte) int {
+func Fuzz(data []byte) int {
 	err1 := Validate(string(data))
 
 	var b1 bytes.Buffer
@@ -28,8 +28,8 @@ func FuzzerEntryPoint(data []byte) int {
 	Keys(data)
 
 	if err1 != nil || err2 != nil || err3 != nil {
-		return -1
+		return 0
 	}
 
-	return 0
+	return 1
 }

@@ -97,8 +97,7 @@ func Filter(w *bytes.Buffer, b []byte, keys []string) error {
 		case state == expectNumClose &&
 			((b[i] < '0' || b[i] > '9') &&
 				(b[i] != '.' && b[i] != 'e' && b[i] != 'E' && b[i] != '+' && b[i] != '-')):
-			i--
-			e = i
+			e = i - 1
 
 		case state == expectValue &&
 			(b[i] == 'f' || b[i] == 'F' || b[i] == 't' || b[i] == 'T'):
