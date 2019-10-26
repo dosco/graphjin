@@ -29,3 +29,6 @@ main
 .swp
 main
 super-graph
+*-fuzz.zip
+crashers
+suppressions

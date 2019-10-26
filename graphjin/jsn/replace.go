@@ -86,8 +86,7 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 		case state == expectNumClose &&
 			((b[i] < '0' || b[i] > '9') &&
 				(b[i] != '.' && b[i] != 'e' && b[i] != 'E' && b[i] != '+' && b[i] != '-')):
-			i--
-			e = i
+			e = i - 1
 
 		case state == expectValue &&
 			(b[i] == 'f' || b[i] == 'F' || b[i] == 't' || b[i] == 'T'):
@@ -156,7 +155,7 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 
 	if ws == -1 || (ws == 0 && we == len(b)) {
 		w.Write(b)
-	} else {
+	} else if ws < we {
 		w.Write(b[ws:we])
 	}
 
