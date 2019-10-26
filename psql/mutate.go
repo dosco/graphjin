@@ -99,6 +99,10 @@ func (c *compilerContext) renderInsert(qc *qcode.QCode, w io.Writer,
 	io.WriteString(c.w, ti.Name)
 	io.WriteString(c.w, `, i.j) t`)
 
+	if w := qc.Selects[0].Where; w != nil && w.Op == qcode.OpFalse {
+		io.WriteString(c.w, ` WHERE false`)
+	}
+
 	return 0, nil
 }
 

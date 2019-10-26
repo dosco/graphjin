@@ -133,13 +133,13 @@ roles:
           aggregation: false
 
         insert:
-          allow: false
+          block: false
             
         update:
-          allow: false
+          block: false
 
         delete:
-          allow: false
+          block: false
 
   - name: user
     tables:
@@ -169,7 +169,7 @@ roles:
             - updated_at: "now"
 
         delete:
-          deny: true
+          block: true
 
   - name: admin
     match: id = 1

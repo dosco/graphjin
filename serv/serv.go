@@ -30,6 +30,8 @@ func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
 		return nil, nil, err
 	}
 
+	blockFilter := []string{"false"}
+
 	for _, r := range c.Roles {
 		for _, t := range r.Tables {
 			query := qcode.QueryConfig{
@@ -39,10 +41,18 @@ func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
 				DisableFunctions: t.Query.DisableAggregation,
 			}
 
+			if t.Query.Block {
+				query.Filters = blockFilter
+			}
+
 			insert := qcode.InsertConfig{
 				Filters: t.Insert.Filters,
 				Columns: t.Insert.Columns,
 				Set:     t.Insert.Set,
+			}
+
+			if t.Query.Block {
+				insert.Filters = blockFilter
 			}
 
 			update := qcode.UpdateConfig{
@@ -51,9 +61,17 @@ func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
 				Set:     t.Insert.Set,
 			}
 
+			if t.Query.Block {
+				update.Filters = blockFilter
+			}
+
 			delete := qcode.DeleteConfig{
 				Filters: t.Insert.Filters,
 				Columns: t.Insert.Columns,
+			}
+
+			if t.Query.Block {
+				delete.Filters = blockFilter
 			}
 
 			qc.AddRole(r.Name, t.Name, qcode.TRConfig{

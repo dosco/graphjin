@@ -739,12 +739,18 @@ func (c *compilerContext) renderWhere(sel *qcode.Select, ti *DBTableInfo) error 
 				io.WriteString(c.w, ` OR `)
 			case qcode.OpNot:
 				io.WriteString(c.w, `NOT `)
+			case qcode.OpFalse:
+				io.WriteString(c.w, `false`)
 			default:
 				return fmt.Errorf("11: unexpected value %v (%t)", intf, intf)
 			}
 
 		case *qcode.Exp:
 			switch val.Op {
+			case qcode.OpFalse:
+				st.Push(val.Op)
+				qcode.FreeExp(val)
+
 			case qcode.OpAnd, qcode.OpOr:
 				for i := len(val.Children) - 1; i >= 0; i-- {
 					st.Push(val.Children[i])
