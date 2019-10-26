@@ -113,6 +113,7 @@ const (
 	OpIsNull
 	OpEqID
 	OpTsQuery
+	OpFalse
 )
 
 type ValType int
@@ -364,18 +365,24 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 		fil = trv.filter(qc.Type)
 	}
 
-	if fil != nil && fil.Op != OpNop {
-		if root.Where != nil {
-			ow := root.Where
-
-			root.Where = expPool.Get().(*Exp)
-			root.Where.Reset()
-			root.Where.Op = OpAnd
-			root.Where.Children = root.Where.childrenA[:2]
-			root.Where.Children[0] = fil
-			root.Where.Children[1] = ow
-		} else {
+	if fil != nil {
+		switch fil.Op {
+		case OpNop:
+		case OpFalse:
 			root.Where = fil
+		default:
+			if root.Where != nil {
+				ow := root.Where
+
+				root.Where = expPool.Get().(*Exp)
+				root.Where.Reset()
+				root.Where.Op = OpAnd
+				root.Where.Children = root.Where.childrenA[:2]
+				root.Where.Children[0] = fil
+				root.Where.Children[1] = ow
+			} else {
+				root.Where = fil
+			}
 		}
 	}
 
@@ -950,6 +957,10 @@ func compileFilter(filter []string) (*Exp, error) {
 	}
 
 	for i := range filter {
+		if filter[i] == "false" {
+			return &Exp{Op: OpFalse, doFree: false}, nil
+		}
+
 		node, err := ParseArgValue(filter[i])
 		if err != nil {
 			return nil, err

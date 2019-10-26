@@ -109,27 +109,27 @@ type configRole struct {
 			Filters            []string
 			Columns            []string
 			DisableAggregation bool `mapstructure:"disable_aggregation"`
-			Deny               bool
+			Block              bool
 		}
 
 		Insert struct {
 			Filters []string
 			Columns []string
 			Set     map[string]string
-			Deny    bool
+			Block   bool
 		}
 
 		Update struct {
 			Filters []string
 			Columns []string
 			Set     map[string]string
-			Deny    bool
+			Block   bool
 		}
 
 		Delete struct {
 			Filters []string
 			Columns []string
-			Deny    bool
+			Block   bool
 		}
 	}
 }

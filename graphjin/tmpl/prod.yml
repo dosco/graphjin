@@ -133,13 +133,13 @@ roles:
           aggregation: false
 
         insert:
-          allow: false
+          block: false
             
         update:
-          allow: false
+          block: false
 
         delete:
-          allow: false
+          block: false
 
   - name: user
     tables:

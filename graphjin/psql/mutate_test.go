@@ -172,6 +172,53 @@ func delete(t *testing.T) {
 	}
 }
 
+func blockedInsert(t *testing.T) {
+	gql := `mutation {
+		user(insert: $data) {
+			id
+		}
+	}`
+
+	sql := `WITH "users" AS (WITH "input" AS (SELECT {{data}}::json AS j) INSERT INTO "users" (full_name, email) SELECT full_name, email FROM input i, json_populate_record(NULL::users, i.j) t WHERE false RETURNING *) SELECT json_object_agg('user', sel_json_0) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "users_0"."id" AS "id") AS "sel_0")) AS "sel_json_0" FROM (SELECT "users"."id" FROM "users") AS "users_0") AS "done_1337"`
+
+	vars := map[string]json.RawMessage{
+		"data": json.RawMessage(`{"email": "reannagreenholt@orn.com", "full_name": "Flo Barton"}`),
+	}
+
+	resSQL, err := compileGQLToPSQL(gql, vars, "bad_dude")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
+func blockedUpdate(t *testing.T) {
+	gql := `mutation {
+		user(where: { id: { lt: 5 } }, update: $data) {
+			id
+			email
+		}
+	}`
+
+	sql := `WITH "users" AS (WITH "input" AS (SELECT {{data}}::json AS j) UPDATE "users" SET (full_name, email) = (SELECT full_name, email FROM input i, json_populate_record(NULL::users, i.j) t) WHERE false RETURNING *) SELECT json_object_agg('user', sel_json_0) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "users_0"."id" AS "id", "users_0"."email" AS "email") AS "sel_0")) AS "sel_json_0" FROM (SELECT "users"."id", "users"."email" FROM "users") AS "users_0") AS "done_1337"`
+
+	vars := map[string]json.RawMessage{
+		"data": json.RawMessage(`{"email": "reannagreenholt@orn.com", "full_name": "Flo Barton"}`),
+	}
+
+	resSQL, err := compileGQLToPSQL(gql, vars, "bad_dude")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
 func TestCompileMutate(t *testing.T) {
 	t.Run("simpleInsert", simpleInsert)
 	t.Run("singleInsert", singleInsert)
@@ -179,6 +226,7 @@ func TestCompileMutate(t *testing.T) {
 	t.Run("singleUpdate", singleUpdate)
 	t.Run("singleUpsert", singleUpsert)
 	t.Run("bulkUpsert", bulkUpsert)
-
 	t.Run("delete", delete)
+	t.Run("blockedInsert", blockedInsert)
+	t.Run("blockedUpdate", blockedUpdate)
 }
