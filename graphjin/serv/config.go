@@ -105,11 +105,11 @@ type configRole struct {
 		Name string
 
 		Query struct {
-			Limit              int
-			Filters            []string
-			Columns            []string
-			DisableAggregation bool `mapstructure:"disable_aggregation"`
-			Block              bool
+			Limit            int
+			Filters          []string
+			Columns          []string
+			DisableFunctions bool `mapstructure:"disable_functions"`
+			Block            bool
 		}
 
 		Insert struct {

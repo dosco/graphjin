@@ -68,7 +68,8 @@ func TestMain(m *testing.M) {
 
 	qcompile.AddRole("bad_dude", "users", qcode.TRConfig{
 		Query: qcode.QueryConfig{
-			Filters: []string{"false"},
+			Filters:          []string{"false"},
+			DisableFunctions: true,
 		},
 		Insert: qcode.InsertConfig{
 			Filters: []string{"false"},

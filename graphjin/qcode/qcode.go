@@ -293,11 +293,12 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 		trv := com.getRole(role, field.Name)
 
 		selects = append(selects, Select{
-			ID:       id,
-			ParentID: parentID,
-			Table:    field.Name,
-			Children: make([]int32, 0, 5),
-			Allowed:  trv.allowedColumns(action),
+			ID:        id,
+			ParentID:  parentID,
+			Table:     field.Name,
+			Children:  make([]int32, 0, 5),
+			Allowed:   trv.allowedColumns(action),
+			Functions: true,
 		})
 		s := &selects[(len(selects) - 1)]
 

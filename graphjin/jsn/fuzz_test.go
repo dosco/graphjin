@@ -1,6 +1,8 @@
 package jsn
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestFuzzCrashers(t *testing.T) {
 	var crashers = []string{
@@ -53,6 +55,6 @@ func TestFuzzCrashers(t *testing.T) {
 	}
 
 	for _, f := range crashers {
-		Fuzz([]byte(f))
+		unifiedTest([]byte(f))
 	}
 }

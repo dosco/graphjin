@@ -1,3 +1,5 @@
+// +build gofuzz
+
 package serv
 
 func Fuzz(data []byte) int {
