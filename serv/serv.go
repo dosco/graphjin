@@ -38,7 +38,7 @@ func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
 				Limit:            t.Query.Limit,
 				Filters:          t.Query.Filters,
 				Columns:          t.Query.Columns,
-				DisableFunctions: t.Query.DisableAggregation,
+				DisableFunctions: t.Query.DisableFunctions,
 			}
 
 			if t.Query.Block {

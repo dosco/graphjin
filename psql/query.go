@@ -373,16 +373,18 @@ func (c *compilerContext) renderJoinTable(sel *qcode.Select) error {
 func (c *compilerContext) renderColumns(sel *qcode.Select, ti *DBTableInfo) {
 	i := 0
 	for _, col := range sel.Cols {
-		if len(sel.Allowed) != 0 {
-			n := funcPrefixLen(col.Name)
-			if n != 0 {
-				if sel.Functions == false {
-					continue
-				}
+		n := funcPrefixLen(col.Name)
+		if n != 0 {
+			if sel.Functions == false {
+				continue
+			}
+			if len(sel.Allowed) != 0 {
 				if _, ok := sel.Allowed[col.Name[n:]]; !ok {
 					continue
 				}
-			} else {
+			}
+		} else {
+			if len(sel.Allowed) != 0 {
 				if _, ok := sel.Allowed[col.Name]; !ok {
 					continue
 				}

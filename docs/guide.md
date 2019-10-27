@@ -1206,7 +1206,7 @@ roles:
           limit: 50
           filters: ["{ user_id: { eq: $user_id } }"]
           columns: ["id", "name", "description" ]
-          disable_aggregation: false
+          disable_functions: false
 
         insert:
           filters: ["{ user_id: { eq: $user_id } }"]

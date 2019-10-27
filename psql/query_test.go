@@ -389,6 +389,7 @@ func TestCompileQuery(t *testing.T) {
 	t.Run("syntheticTables", syntheticTables)
 	t.Run("queryWithVariables", queryWithVariables)
 	t.Run("blockedQuery", blockedQuery)
+	t.Run("blockedFunctions", blockedFunctions)
 }
 
 var benchGQL = []byte(`query {
@@ -424,6 +425,26 @@ func blockedQuery(t *testing.T) {
 	}`
 
 	sql := `SELECT json_object_agg('user', sel_json_0) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "users_0"."id" AS "id", "users_0"."full_name" AS "full_name", "users_0"."email" AS "email") AS "sel_0")) AS "sel_json_0" FROM (SELECT "users"."id", "users"."full_name", "users"."email" FROM "users" WHERE (false) LIMIT ('1') :: integer) AS "users_0" LIMIT ('1') :: integer) AS "done_1337"`
+
+	resSQL, err := compileGQLToPSQL(gql, nil, "bad_dude")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
+func blockedFunctions(t *testing.T) {
+	gql := `query {
+		users {
+			count_id
+			email
+		}
+	}`
+
+	sql := `SELECT json_object_agg('users', users) FROM (SELECT coalesce(json_agg("sel_json_0"), '[]') AS "users" FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "users_0"."email" AS "email") AS "sel_0")) AS "sel_json_0" FROM (SELECT "users"."email" FROM "users" WHERE (false) LIMIT ('20') :: integer) AS "users_0" LIMIT ('20') :: integer) AS "sel_json_agg_0") AS "done_1337"`
 
 	resSQL, err := compileGQLToPSQL(gql, nil, "bad_dude")
 	if err != nil {
