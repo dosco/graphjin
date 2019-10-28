@@ -15,13 +15,12 @@ func cmdConfDump(cmd *cobra.Command, args []string) {
 
 	fname := fmt.Sprintf("%s.%s", getConfigName(), args[0])
 
-	vi := newConfig()
-
-	if err := vi.ReadInConfig(); err != nil {
-		logger.Fatal().Err(err).Send()
+	conf, err := initConf()
+	if err != nil {
+		logger.Fatal().Err(err).Msg("failed to read config")
 	}
 
-	if err := vi.WriteConfigAs(fname); err != nil {
+	if err := conf.Viper.WriteConfigAs(fname); err != nil {
 		logger.Fatal().Err(err).Send()
 	}
 

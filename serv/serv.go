@@ -148,7 +148,15 @@ func startHTTP() {
 		db.Close()
 	})
 
-	fmt.Printf("%s listening on %s (%s)\n", serverName, hostPort, conf.Env)
+	var ident string
+
+	if len(conf.AppName) == 0 {
+		ident = conf.Env
+	} else {
+		ident = conf.AppName
+	}
+
+	fmt.Printf("%s listening on %s (%s)\n", serverName, hostPort, ident)
 
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		logger.Error().Err(err).Msg("server closed")
