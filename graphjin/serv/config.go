@@ -9,6 +9,8 @@ import (
 )
 
 type config struct {
+	*viper.Viper
+
 	AppName        string `mapstructure:"app_name"`
 	Env            string
 	HostPort       string `mapstructure:"host_port"`
@@ -134,16 +136,16 @@ type configRole struct {
 	}
 }
 
-func newConfig() *viper.Viper {
+func newConfig(name string) *viper.Viper {
 	vi := viper.New()
 
 	vi.SetEnvPrefix("SG")
 	vi.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	vi.AutomaticEnv()
 
+	vi.SetConfigName(name)
 	vi.AddConfigPath(confPath)
 	vi.AddConfigPath("./config")
-	vi.SetConfigName(getConfigName())
 
 	vi.SetDefault("host_port", "0.0.0.0:8080")
 	vi.SetDefault("web_ui", false)

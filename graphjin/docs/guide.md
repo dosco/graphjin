@@ -1040,6 +1040,10 @@ Configuration files can either be in YAML or JSON their names are derived from t
 We're tried to ensure that the config file is self documenting and easy to work with.
 
 ```yaml
+# Inherit config from this other config file
+# so I only need to overwrite some values
+inherit: base
+
 app_name: "Super Graph Development"
 host_port: 0.0.0.0:8080
 web_ui: true

@@ -1,3 +1,7 @@
+# Inherit config from this other config file
+# so I only need to overwrite some values
+inherit: dev
+
 app_name: "Super Graph Production"
 host_port: 0.0.0.0:8080
 web_ui: false
@@ -82,98 +86,3 @@ database:
   #pool_size: 10
   #max_retries: 0
   #log_level: "debug" 
-
-  # Define variables here that you want to use in filters 
-  # sub-queries must be wrapped in ()
-  variables:
-    account_id: "(select account_id from users where id = $user_id)"
-
-  # Define defaults to for the field key and values below
-  defaults:
-    filters: ["{ user_id: { eq: $user_id } }"]
-    
-    # Field and table names that you wish to block
-    blocklist:
-      - ar_internal_metadata
-      - schema_migrations
-      - secret
-      - password
-      - encrypted
-      - token
-
-tables:
-  - name: customers
-    # remotes:
-    #   - name: payments
-    #     id: stripe_id
-    #     url: http://rails_app:3000/stripe/$id
-    #     path: data
-    #     # pass_headers: 
-    #     #   - cookie
-    #     #   - host
-    #     set_headers:
-    #       - name: Authorization
-    #         value: Bearer <stripe_api_key>
-
-  - # You can create new fields that have a
-    # real db table backing them
-    name: me
-    table: users
-
-roles_query: "SELECT * FROM users as usr WHERE id = $user_id"
-
-roles:
-  - name: anon
-    tables:
-      - name: products
-        limit: 10
-
-        query:
-          columns: ["id", "name", "description" ]
-          aggregation: false
-
-        insert:
-          block: false
-            
-        update:
-          block: false
-
-        delete:
-          block: false
-
-  - name: user
-    tables:
-      - name: users
-        query:
-          filters: ["{ id: { _eq: $user_id } }"]
-
-      - name: products
-        query:
-          limit: 50
-          filters: ["{ user_id: { eq: $user_id } }"]
-          columns: ["id", "name", "description" ]
-          disable_functions: false
-
-        insert:
-          filters: ["{ user_id: { eq: $user_id } }"]
-          columns: ["id", "name", "description" ]
-          set:
-            - created_at: "now"
-            
-        update:
-          filters: ["{ user_id: { eq: $user_id } }"]
-          columns:
-            - id
-            - name
-          set:
-            - updated_at: "now"
-
-        delete:
-          deny: true
-
-  - name: admin
-    match: id = 1
-    tables:
-      - name: users
-        # query:
-        #   filters: ["{ account_id: { _eq: $account_id } }"]

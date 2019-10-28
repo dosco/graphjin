@@ -150,13 +150,25 @@ func initLog() *zerolog.Logger {
 }
 
 func initConf() (*config, error) {
-	vi := newConfig()
+	vi := newConfig(getConfigName())
 
 	if err := vi.ReadInConfig(); err != nil {
 		return nil, err
 	}
 
-	c := &config{}
+	inherit := vi.GetString("inherit")
+	if len(inherit) != 0 {
+		vi = newConfig(inherit)
+
+		if err := vi.ReadInConfig(); err != nil {
+			return nil, err
+		}
+
+		vi.SetConfigName(getConfigName())
+		vi.MergeInConfig()
+	}
+
+	c := &config{Viper: vi}
 
 	if err := vi.Unmarshal(c); err != nil {
 		return nil, fmt.Errorf("unable to decode config, %v", err)
