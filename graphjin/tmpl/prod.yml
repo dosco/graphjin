@@ -2,7 +2,7 @@
 # so I only need to overwrite some values
 inherit: dev
 
-app_name: "Super Graph Production"
+app_name: "{{app_name}} Production"
 host_port: 0.0.0.0:8080
 web_ui: false
 
@@ -49,7 +49,7 @@ enable_tracing: true
 auth: 
   # Can be 'rails' or 'jwt'
   type: rails
-  cookie: _app_session
+  cookie: _{{app_name_slug}}_session
 
   rails:
     # Rails version this is used for reading the

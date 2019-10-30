@@ -1,5 +1,10 @@
 package qcode
 
+import (
+	"sort"
+	"strings"
+)
+
 type Config struct {
 	Blocklist []string
 	KeepArgs  bool
@@ -15,13 +20,13 @@ type QueryConfig struct {
 type InsertConfig struct {
 	Filters []string
 	Columns []string
-	Set     map[string]string
+	Presets map[string]string
 }
 
 type UpdateConfig struct {
 	Filters []string
 	Columns []string
-	Set     map[string]string
+	Presets map[string]string
 }
 
 type DeleteConfig struct {
@@ -47,15 +52,17 @@ type trval struct {
 	}
 
 	insert struct {
-		fil  *Exp
-		cols map[string]struct{}
-		set  map[string]string
+		fil    *Exp
+		cols   map[string]struct{}
+		psmap  map[string]string
+		pslist []string
 	}
 
 	update struct {
-		fil  *Exp
-		cols map[string]struct{}
-		set  map[string]string
+		fil    *Exp
+		cols   map[string]struct{}
+		psmap  map[string]string
+		pslist []string
 	}
 
 	delete struct {
@@ -96,4 +103,21 @@ func (trv *trval) filter(qt QType) *Exp {
 	}
 
 	return nil
+}
+
+func listToMap(list []string) map[string]struct{} {
+	m := make(map[string]struct{}, len(list))
+	for i := range list {
+		m[strings.ToLower(list[i])] = struct{}{}
+	}
+	return m
+}
+
+func mapToList(m map[string]string) []string {
+	list := []string{}
+	for k, _ := range m {
+		list = append(list, strings.ToLower(k))
+	}
+	sort.Strings(list)
+	return list
 }

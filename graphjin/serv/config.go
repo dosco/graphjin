@@ -117,14 +117,14 @@ type configRole struct {
 		Insert struct {
 			Filters []string
 			Columns []string
-			Set     map[string]string
+			Presets map[string]string
 			Block   bool
 		}
 
 		Update struct {
 			Filters []string
 			Columns []string
-			Set     map[string]string
+			Presets map[string]string
 			Block   bool
 		}
 

@@ -46,6 +46,8 @@ type Select struct {
 	Children   []int32
 	Functions  bool
 	Allowed    map[string]struct{}
+	PresetMap  map[string]string
+	PresetList []string
 }
 
 type Column struct {
@@ -182,14 +184,6 @@ func (com *Compiler) AddRole(role, table string, trc TRConfig) error {
 	var err error
 	trv := &trval{}
 
-	toMap := func(cols []string) map[string]struct{} {
-		m := make(map[string]struct{}, len(cols))
-		for i := range cols {
-			m[strings.ToLower(cols[i])] = struct{}{}
-		}
-		return m
-	}
-
 	// query config
 	trv.query.fil, err = compileFilter(trc.Query.Filters)
 	if err != nil {
@@ -198,27 +192,30 @@ func (com *Compiler) AddRole(role, table string, trc TRConfig) error {
 	if trc.Query.Limit > 0 {
 		trv.query.limit = strconv.Itoa(trc.Query.Limit)
 	}
-	trv.query.cols = toMap(trc.Query.Columns)
+	trv.query.cols = listToMap(trc.Query.Columns)
 	trv.query.disable.funcs = trc.Query.DisableFunctions
 
 	// insert config
 	if trv.insert.fil, err = compileFilter(trc.Insert.Filters); err != nil {
 		return err
 	}
-	trv.insert.cols = toMap(trc.Insert.Columns)
+	trv.insert.cols = listToMap(trc.Insert.Columns)
+	trv.insert.psmap = trc.Insert.Presets
+	trv.insert.pslist = mapToList(trv.insert.psmap)
 
 	// update config
 	if trv.update.fil, err = compileFilter(trc.Update.Filters); err != nil {
 		return err
 	}
-	trv.insert.cols = toMap(trc.Insert.Columns)
-	trv.insert.set = trc.Insert.Set
+	trv.update.cols = listToMap(trc.Update.Columns)
+	trv.update.psmap = trc.Update.Presets
+	trv.update.pslist = mapToList(trv.update.psmap)
 
 	// delete config
 	if trv.delete.fil, err = compileFilter(trc.Delete.Filters); err != nil {
 		return err
 	}
-	trv.delete.cols = toMap(trc.Delete.Columns)
+	trv.delete.cols = listToMap(trc.Delete.Columns)
 
 	singular := flect.Singularize(table)
 	plural := flect.Pluralize(table)
@@ -302,12 +299,18 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 		})
 		s := &selects[(len(selects) - 1)]
 
-		if action == QTQuery {
+		switch action {
+		case QTQuery:
 			s.Functions = !trv.query.disable.funcs
+			s.Paging.Limit = trv.query.limit
 
-			if len(trv.query.limit) != 0 {
-				s.Paging.Limit = trv.query.limit
-			}
+		case QTInsert:
+			s.PresetMap = trv.insert.psmap
+			s.PresetList = trv.insert.pslist
+
+		case QTUpdate:
+			s.PresetMap = trv.update.psmap
+			s.PresetList = trv.update.pslist
 		}
 
 		if s.ID != 0 {
