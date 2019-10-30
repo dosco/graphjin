@@ -169,7 +169,7 @@ roles:
         insert:
           filters: ["{ user_id: { eq: $user_id } }"]
           columns: ["id", "name", "description" ]
-          set:
+          presets:
             - created_at: "now"
             
         update:
@@ -177,7 +177,7 @@ roles:
           columns:
             - id
             - name
-          set:
+          presets:
             - updated_at: "now"
 
         delete:

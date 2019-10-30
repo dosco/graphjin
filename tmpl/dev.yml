@@ -1,4 +1,4 @@
-app_name: "Super Graph Development"
+app_name: "{{app_name}} Development"
 host_port: 0.0.0.0:8080
 web_ui: true
 
@@ -49,7 +49,7 @@ migrations_path: ./config/migrations
 auth:
   # Can be 'rails' or 'jwt'
   type: rails
-  cookie: _app_session
+  cookie: _{{app_name_slug}}_session
 
   # Comment this out if you want to disable setting
   # the user_id via a header. Good for testing
@@ -84,7 +84,7 @@ database:
   type: postgres
   host: db
   port: 5432
-  dbname: app_development
+  dbname: {{app_name_slug}}_development
   user: postgres
   password: ''
 
@@ -169,7 +169,7 @@ roles:
         insert:
           filters: ["{ user_id: { eq: $user_id } }"]
           columns: ["id", "name", "description" ]
-          set:
+          presets:
             - created_at: "now"
             
         update:
@@ -177,7 +177,7 @@ roles:
           columns:
             - id
             - name
-          set:
+          presets:
             - updated_at: "now"
 
         delete:

@@ -48,7 +48,7 @@ func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
 			insert := qcode.InsertConfig{
 				Filters: t.Insert.Filters,
 				Columns: t.Insert.Columns,
-				Set:     t.Insert.Set,
+				Presets: t.Insert.Presets,
 			}
 
 			if t.Query.Block {
@@ -58,7 +58,7 @@ func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
 			update := qcode.UpdateConfig{
 				Filters: t.Insert.Filters,
 				Columns: t.Insert.Columns,
-				Set:     t.Insert.Set,
+				Presets: t.Insert.Presets,
 			}
 
 			if t.Query.Block {
