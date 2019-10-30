@@ -36,8 +36,16 @@ func TestMain(m *testing.M) {
 				"{ price: { lt: 8 } }",
 			},
 		},
+		Insert: qcode.InsertConfig{
+			Presets: map[string]string{
+				"user_id":    "$user_id",
+				"created_at": "now",
+				"updated_at": "now",
+			},
+		},
 		Update: qcode.UpdateConfig{
 			Filters: []string{"{ user_id: { eq: $user_id } }"},
+			Presets: map[string]string{"updated_at": "now"},
 		},
 		Delete: qcode.DeleteConfig{
 			Filters: []string{

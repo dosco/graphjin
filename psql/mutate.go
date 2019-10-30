@@ -82,11 +82,11 @@ func (c *compilerContext) renderInsert(qc *qcode.QCode, w io.Writer,
 	io.WriteString(c.w, `}}::json AS j) INSERT INTO `)
 	quoted(c.w, ti.Name)
 	io.WriteString(c.w, ` (`)
-	c.renderInsertUpdateColumns(qc, w, jt, ti)
+	c.renderInsertUpdateColumns(qc, w, jt, ti, false)
 	io.WriteString(c.w, `)`)
 
 	io.WriteString(c.w, ` SELECT `)
-	c.renderInsertUpdateColumns(qc, w, jt, ti)
+	c.renderInsertUpdateColumns(qc, w, jt, ti, true)
 	io.WriteString(c.w, ` FROM input i, `)
 
 	if array {
@@ -107,12 +107,15 @@ func (c *compilerContext) renderInsert(qc *qcode.QCode, w io.Writer,
 }
 
 func (c *compilerContext) renderInsertUpdateColumns(qc *qcode.QCode, w io.Writer,
-	jt map[string]interface{}, ti *DBTableInfo) (uint32, error) {
+	jt map[string]interface{}, ti *DBTableInfo, values bool) (uint32, error) {
 	root := &qc.Selects[0]
 
 	i := 0
 	for _, cn := range ti.ColumnNames {
 		if _, ok := jt[cn]; !ok {
+			continue
+		}
+		if _, ok := root.PresetMap[cn]; ok {
 			continue
 		}
 		if len(root.Allowed) != 0 {
@@ -123,10 +126,30 @@ func (c *compilerContext) renderInsertUpdateColumns(qc *qcode.QCode, w io.Writer
 		if i != 0 {
 			io.WriteString(c.w, `, `)
 		}
+		io.WriteString(c.w, `"`)
 		io.WriteString(c.w, cn)
+		io.WriteString(c.w, `"`)
 		i++
 	}
 
+	if i != 0 && len(root.PresetList) != 0 {
+		io.WriteString(c.w, `, `)
+	}
+
+	for i := range root.PresetList {
+		if i != 0 {
+			io.WriteString(c.w, `, `)
+		}
+		if values {
+			io.WriteString(c.w, `'`)
+			io.WriteString(c.w, root.PresetMap[root.PresetList[i]])
+			io.WriteString(c.w, `'`)
+		} else {
+			io.WriteString(c.w, `"`)
+			io.WriteString(c.w, root.PresetList[i])
+			io.WriteString(c.w, `"`)
+		}
+	}
 	return 0, nil
 }
 
@@ -149,10 +172,10 @@ func (c *compilerContext) renderUpdate(qc *qcode.QCode, w io.Writer,
 	io.WriteString(c.w, `}}::json AS j) UPDATE `)
 	quoted(c.w, ti.Name)
 	io.WriteString(c.w, ` SET (`)
-	c.renderInsertUpdateColumns(qc, w, jt, ti)
+	c.renderInsertUpdateColumns(qc, w, jt, ti, false)
 
 	io.WriteString(c.w, `) = (SELECT `)
-	c.renderInsertUpdateColumns(qc, w, jt, ti)
+	c.renderInsertUpdateColumns(qc, w, jt, ti, true)
 	io.WriteString(c.w, ` FROM input i, `)
 
 	if array {
