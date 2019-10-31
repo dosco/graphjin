@@ -1,6 +1,6 @@
 # Inherit config from this other config file
 # so I only need to overwrite some values
-inherit: dev
+inherits: dev
 
 app_name: "Super Graph Production"
 host_port: 0.0.0.0:8080

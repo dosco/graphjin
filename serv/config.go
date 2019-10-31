@@ -1,10 +1,13 @@
 package serv
 
 import (
+	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"unicode"
 
+	"github.com/gobuffalo/flect"
 	"github.com/spf13/viper"
 )
 
@@ -100,40 +103,42 @@ type configRemote struct {
 	} `mapstructure:"set_headers"`
 }
 
+type configRoleTable struct {
+	Name string
+
+	Query struct {
+		Limit            int
+		Filters          []string
+		Columns          []string
+		DisableFunctions bool `mapstructure:"disable_functions"`
+		Block            bool
+	}
+
+	Insert struct {
+		Filters []string
+		Columns []string
+		Presets map[string]string
+		Block   bool
+	}
+
+	Update struct {
+		Filters []string
+		Columns []string
+		Presets map[string]string
+		Block   bool
+	}
+
+	Delete struct {
+		Filters []string
+		Columns []string
+		Block   bool
+	}
+}
+
 type configRole struct {
 	Name   string
 	Match  string
-	Tables []struct {
-		Name string
-
-		Query struct {
-			Limit            int
-			Filters          []string
-			Columns          []string
-			DisableFunctions bool `mapstructure:"disable_functions"`
-			Block            bool
-		}
-
-		Insert struct {
-			Filters []string
-			Columns []string
-			Presets map[string]string
-			Block   bool
-		}
-
-		Update struct {
-			Filters []string
-			Columns []string
-			Presets map[string]string
-			Block   bool
-		}
-
-		Delete struct {
-			Filters []string
-			Columns []string
-			Block   bool
-		}
-	}
+	Tables []configRoleTable
 }
 
 func newConfig(name string) *viper.Viper {
@@ -146,6 +151,10 @@ func newConfig(name string) *viper.Viper {
 	vi.SetConfigName(name)
 	vi.AddConfigPath(confPath)
 	vi.AddConfigPath("./config")
+
+	if dir, _ := os.Getwd(); strings.HasSuffix(dir, "/serv") {
+		vi.AddConfigPath("../config")
+	}
 
 	vi.SetDefault("host_port", "0.0.0.0:8080")
 	vi.SetDefault("web_ui", false)
@@ -170,11 +179,69 @@ func newConfig(name string) *viper.Viper {
 	return vi
 }
 
-func (c *config) Validate() {
+func (c *config) Init(vi *viper.Viper) error {
+	if err := vi.Unmarshal(c); err != nil {
+		return fmt.Errorf("unable to decode config, %v", err)
+	}
+	c.Viper = vi
+
+	if len(c.Tables) == 0 {
+		c.Tables = c.DB.Tables
+	}
+
+	for k, v := range c.Inflections {
+		flect.AddPlural(k, v)
+	}
+
+	for i := range c.Tables {
+		t := c.Tables[i]
+		t.Name = flect.Pluralize(strings.ToLower(t.Name))
+		t.Table = flect.Pluralize(strings.ToLower(t.Table))
+	}
+
+	for i := range c.Roles {
+		r := c.Roles[i]
+		r.Name = strings.ToLower(r.Name)
+	}
+
+	for k, v := range c.DB.Vars {
+		c.DB.Vars[k] = sanitize(v)
+	}
+
+	c.RolesQuery = sanitize(c.RolesQuery)
+
+	rolesMap := make(map[string]struct{})
+
+	for i := range c.Roles {
+		role := &c.Roles[i]
+
+		if _, ok := rolesMap[role.Name]; ok {
+			logger.Fatal().Msgf("duplicate role '%s' found", role.Name)
+		}
+		role.Name = sanitize(role.Name)
+		role.Match = sanitize(role.Match)
+		rolesMap[role.Name] = struct{}{}
+	}
+
+	if _, ok := rolesMap["user"]; !ok {
+		c.Roles = append(c.Roles, configRole{Name: "user"})
+	}
+
+	if _, ok := rolesMap["anon"]; !ok {
+		c.Roles = append(c.Roles, configRole{Name: "anon"})
+	}
+
+	c.validate()
+
+	return nil
+}
+
+func (c *config) validate() {
 	rm := make(map[string]struct{})
 
 	for i := range c.Roles {
-		name := strings.ToLower(c.Roles[i].Name)
+		name := c.Roles[i].Name
+
 		if _, ok := rm[name]; ok {
 			logger.Fatal().Msgf("duplicate config for role '%s'", c.Roles[i].Name)
 		}
@@ -184,7 +251,8 @@ func (c *config) Validate() {
 	tm := make(map[string]struct{})
 
 	for i := range c.Tables {
-		name := strings.ToLower(c.Tables[i].Name)
+		name := c.Tables[i].Name
+
 		if _, ok := tm[name]; ok {
 			logger.Fatal().Msgf("duplicate config for table '%s'", c.Tables[i].Name)
 		}
@@ -206,8 +274,7 @@ func (c *config) getAliasMap() map[string][]string {
 			continue
 		}
 
-		k := strings.ToLower(t.Table)
-		m[k] = append(m[k], strings.ToLower(t.Name))
+		m[t.Table] = append(m[t.Table], t.Name)
 	}
 	return m
 }

@@ -8,7 +8,6 @@ import (
 
 	"github.com/dosco/super-graph/psql"
 	"github.com/dosco/super-graph/qcode"
-	"github.com/gobuffalo/flect"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/rs/zerolog"
@@ -156,35 +155,28 @@ func initConf() (*config, error) {
 		return nil, err
 	}
 
-	inherit := vi.GetString("inherit")
-	if len(inherit) != 0 {
-		vi = newConfig(inherit)
+	inherits := vi.GetString("inherits")
+	if len(inherits) != 0 {
+		vi = newConfig(inherits)
 
 		if err := vi.ReadInConfig(); err != nil {
 			return nil, err
+		}
+
+		if vi.IsSet("inherits") {
+			logger.Fatal().Msgf("inherited config (%s) cannot itself inherit (%s)",
+				inherits,
+				vi.GetString("inherits"))
 		}
 
 		vi.SetConfigName(getConfigName())
 		vi.MergeInConfig()
 	}
 
-	c := &config{Viper: vi}
+	c := &config{}
 
-	if err := vi.Unmarshal(c); err != nil {
+	if err := c.Init(vi); err != nil {
 		return nil, fmt.Errorf("unable to decode config, %v", err)
-	}
-
-	if len(c.Tables) == 0 {
-		c.Tables = c.DB.Tables
-	}
-
-	for k, v := range c.Inflections {
-		flect.AddPlural(k, v)
-	}
-
-	for i := range c.Tables {
-		t := c.Tables[i]
-		t.Name = flect.Pluralize(strings.ToLower(t.Name))
 	}
 
 	authFailBlock = getAuthFailBlock(c)
@@ -194,35 +186,6 @@ func initConf() (*config, error) {
 		logger.Error().Err(err).Msg("error setting log_level")
 	}
 	zerolog.SetGlobalLevel(logLevel)
-
-	for k, v := range c.DB.Vars {
-		c.DB.Vars[k] = sanitize(v)
-	}
-
-	c.RolesQuery = sanitize(c.RolesQuery)
-
-	rolesMap := make(map[string]struct{})
-
-	for i := range c.Roles {
-		role := &c.Roles[i]
-
-		if _, ok := rolesMap[role.Name]; ok {
-			logger.Fatal().Msgf("duplicate role '%s' found", role.Name)
-		}
-		role.Name = sanitize(role.Name)
-		role.Match = sanitize(role.Match)
-		rolesMap[role.Name] = struct{}{}
-	}
-
-	if _, ok := rolesMap["user"]; !ok {
-		c.Roles = append(c.Roles, configRole{Name: "user"})
-	}
-
-	if _, ok := rolesMap["anon"]; !ok {
-		c.Roles = append(c.Roles, configRole{Name: "anon"})
-	}
-
-	c.Validate()
 
 	return c, nil
 }
