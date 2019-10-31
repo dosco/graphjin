@@ -1042,7 +1042,7 @@ We're tried to ensure that the config file is self documenting and easy to work 
 ```yaml
 # Inherit config from this other config file
 # so I only need to overwrite some values
-inherit: base
+inherits: base
 
 app_name: "Super Graph Development"
 host_port: 0.0.0.0:8080
