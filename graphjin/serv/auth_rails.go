@@ -121,7 +121,7 @@ func railsCookieHandler(next http.HandlerFunc) http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		ck, err := r.Cookie(cookie)
-		if err != nil {
+		if err != nil || len(ck.Value) == 0 {
 			logger.Warn().Err(err).Msg("rails cookie missing")
 			next.ServeHTTP(w, r)
 			return

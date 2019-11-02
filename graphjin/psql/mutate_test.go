@@ -2,7 +2,6 @@ package psql
 
 import (
 	"encoding/json"
-	"fmt"
 	"testing"
 )
 
@@ -260,8 +259,6 @@ func simpleUpdateWithPresets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	fmt.Println(string(resSQL))
 
 	if string(resSQL) != sql {
 		t.Fatal(errNotExpected)

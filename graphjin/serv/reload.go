@@ -107,6 +107,13 @@ func Do(log func(string, ...interface{}), additional ...dir) error {
 			case event := <-watcher.Events:
 				// Ensure that we use the correct events, as they are not uniform across
 				// platforms. See https://github.com/fsnotify/fsnotify/issues/74
+
+				if conf.UseAllowList == false && strings.HasSuffix(event.Name, "/allow.list") {
+					continue
+				}
+
+				logger.Info().Msgf("Reloading, file changed detected '%s'", event)
+
 				var trigger bool
 				switch runtime.GOOS {
 				case "darwin", "freebsd", "openbsd", "netbsd", "dragonfly":
