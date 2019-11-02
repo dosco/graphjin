@@ -12,8 +12,7 @@ log_level: "debug"
 use_allow_list: false
 
 # Throw a 401 on auth failure for queries that need auth
-# valid values: always, per_query, never
-auth_fail_block: never
+auth_fail_block: false
 
 # Latency tracing for database queries and remote joins
 # the resulting latency information is returned with the

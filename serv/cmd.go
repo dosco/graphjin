@@ -19,20 +19,15 @@ import (
 
 const (
 	serverName = "Super Graph"
-
-	authFailBlockAlways = iota + 1
-	authFailBlockPerQuery
-	authFailBlockNever
 )
 
 var (
-	logger        *zerolog.Logger
-	conf          *config
-	confPath      string
-	db            *pgxpool.Pool
-	qcompile      *qcode.Compiler
-	pcompile      *psql.Compiler
-	authFailBlock int
+	logger   *zerolog.Logger
+	conf     *config
+	confPath string
+	db       *pgxpool.Pool
+	qcompile *qcode.Compiler
+	pcompile *psql.Compiler
 )
 
 func Init() {
@@ -178,8 +173,6 @@ func initConf() (*config, error) {
 	if err := c.Init(vi); err != nil {
 		return nil, fmt.Errorf("unable to decode config, %v", err)
 	}
-
-	authFailBlock = getAuthFailBlock(c)
 
 	logLevel, err := zerolog.ParseLevel(c.LogLevel)
 	if err != nil {

@@ -24,7 +24,7 @@ type config struct {
 	EnableTracing  bool   `mapstructure:"enable_tracing"`
 	UseAllowList   bool   `mapstructure:"use_allow_list"`
 	WatchAndReload bool   `mapstructure:"reload_on_config_change"`
-	AuthFailBlock  string `mapstructure:"auth_fail_block"`
+	AuthFailBlock  bool   `mapstructure:"auth_fail_block"`
 	SeedFile       string `mapstructure:"seed_file"`
 	MigrationsPath string `mapstructure:"migrations_path"`
 
@@ -103,36 +103,41 @@ type configRemote struct {
 	} `mapstructure:"set_headers"`
 }
 
+type configQuery struct {
+	Limit            int
+	Filters          []string
+	Columns          []string
+	DisableFunctions bool `mapstructure:"disable_functions"`
+	Block            bool
+}
+
+type configInsert struct {
+	Filters []string
+	Columns []string
+	Presets map[string]string
+	Block   bool
+}
+
+type configUpdate struct {
+	Filters []string
+	Columns []string
+	Presets map[string]string
+	Block   bool
+}
+
+type configDelete struct {
+	Filters []string
+	Columns []string
+	Block   bool
+}
+
 type configRoleTable struct {
 	Name string
 
-	Query struct {
-		Limit            int
-		Filters          []string
-		Columns          []string
-		DisableFunctions bool `mapstructure:"disable_functions"`
-		Block            bool
-	}
-
-	Insert struct {
-		Filters []string
-		Columns []string
-		Presets map[string]string
-		Block   bool
-	}
-
-	Update struct {
-		Filters []string
-		Columns []string
-		Presets map[string]string
-		Block   bool
-	}
-
-	Delete struct {
-		Filters []string
-		Columns []string
-		Block   bool
-	}
+	Query  configQuery
+	Insert configInsert
+	Update configUpdate
+	Delete configDelete
 }
 
 type configRole struct {
@@ -213,7 +218,7 @@ func (c *config) Init(vi *viper.Viper) error {
 	rolesMap := make(map[string]struct{})
 
 	for i := range c.Roles {
-		role := &c.Roles[i]
+		role := c.Roles[i]
 
 		if _, ok := rolesMap[role.Name]; ok {
 			logger.Fatal().Msgf("duplicate role '%s' found", role.Name)
@@ -228,7 +233,8 @@ func (c *config) Init(vi *viper.Viper) error {
 	}
 
 	if _, ok := rolesMap["anon"]; !ok {
-		c.Roles = append(c.Roles, configRole{Name: "anon"})
+		logger.Warn().Msg("unauthenticated requests will be blocked. no role 'anon' defined")
+		c.AuthFailBlock = true
 	}
 
 	c.validate()

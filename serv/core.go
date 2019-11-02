@@ -208,10 +208,8 @@ func (c *coreContext) resolveSQL() ([]byte, uint32, error) {
 	buf := &bytes.Buffer{}
 	_, err = t.ExecuteFunc(buf, varMap(c))
 
-	if err == errNoUserID &&
-		authFailBlock == authFailBlockPerQuery &&
-		authCheck(c) == false {
-		return nil, 0, errUnauthorized
+	if err == errNoUserID {
+		logger.Warn().Msg("no user id found. query requires an authenicated request")
 	}
 
 	if err != nil {

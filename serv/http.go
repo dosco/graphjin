@@ -70,10 +70,9 @@ type resolver struct {
 func apiv1Http(w http.ResponseWriter, r *http.Request) {
 	ctx := &coreContext{Context: r.Context()}
 
-	if authFailBlock == authFailBlockAlways && authCheck(ctx) == false {
-		err := "Not authorized"
-		logger.Debug().Msg(err)
-		http.Error(w, err, 401)
+	if conf.AuthFailBlock && authCheck(ctx) == false {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(gqlResp{Error: errUnauthorized.Error()})
 		return
 	}
 

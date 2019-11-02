@@ -211,12 +211,12 @@ func (al *allowList) save(item *allowItem) {
 
 	key := gqlHash(item.gql, item.vars, "")
 
-	if idx, ok := al.index[key]; ok {
-		al.list[idx] = item
-	} else {
-		al.list = append(al.list, item)
-		al.index[key] = len(al.list) - 1
+	if _, ok := al.index[key]; ok {
+		return
 	}
+
+	al.list = append(al.list, item)
+	al.index[key] = len(al.list) - 1
 
 	f, err := os.Create(al.filepath)
 	if err != nil {

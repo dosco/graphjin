@@ -204,16 +204,3 @@ func getConfigName() string {
 
 	return ge
 }
-
-func getAuthFailBlock(c *config) int {
-	switch c.AuthFailBlock {
-	case "always":
-		return authFailBlockAlways
-	case "per_query", "perquery", "query":
-		return authFailBlockPerQuery
-	case "never", "false":
-		return authFailBlockNever
-	}
-
-	return authFailBlockAlways
-}

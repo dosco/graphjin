@@ -159,7 +159,6 @@ query {
   }
 }
 
-
 variables {
 	"data": {
 		"email": "gfk@myspace.com",
@@ -268,6 +267,22 @@ query {
     description
     users {
       email
+    }
+  }
+}
+
+query {
+  users {
+    id
+    email
+    picture: avatar
+    password
+    full_name
+    products(limit: 2, where: {price: {gt: 10}}) {
+      id
+      name
+      description
+      price
     }
   }
 }
