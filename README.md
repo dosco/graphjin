@@ -26,20 +26,20 @@ This compiler is what sits at the heart of Super Graph with layers of useful fun
 ## Features
 
 - Role based access control
-- Works with Rails database schemas
-- Automatically learns schemas and relationships
-- Belongs-To, One-To-Many and Many-To-Many table relationships
-- Full text search and Aggregations
-- Rails Auth supported (Redis, Memcache, Cookie)
+- Works with Ruby-On-Rails databases
+- Automatically learns database schemas and relationships
+- Full text search and aggregations
+- Rails authentication supported (Redis, Memcache, Cookie)
 - JWT tokens supported (Auth0, etc)
-- Join with remote REST APIs
+- Join database with remote REST APIs
 - Highly optimized and fast Postgres SQL queries
-- Support GraphQL queries and mutations
-- Configure with a simple config file
+- GraphQL queries and mutations
+- A simple config file
 - High performance GO codebase
 - Tiny docker image and low memory requirements
+- Fuzz tested for security
 - Database migrations tool
-- Write database seeding scripts in Javascript
+- Database seeding tool
 
 ## Documentation
 

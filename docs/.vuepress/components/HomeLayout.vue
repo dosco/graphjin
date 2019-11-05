@@ -23,6 +23,7 @@
               class="inline-block px-4 py-3 my-8 bg-blue-600 text-blue-100 font-bold rounded"
               :item="actionLink"
             />
+
           </div>
         </div>
 
@@ -51,16 +52,25 @@
         </div>
       </div>
 
+
       <div class="bg-gray-100 mt-10">
         <div class="container mx-auto px-10 md:px-0 py-32">
+
+          <div class="pb-8 hidden md:block ">
+            <img src="arch-basic.svg">
+          </div>
+
           <h1 class="uppercase font-semibold text-xl text-blue-800 mb-4">
             What is {{ data.heroText }}?
           </h1>
           <div class="text-2xl md:text-3xl">
             Super Graph can automatically learn a Postgres database and instantly serve it as a fast and secured GraphQL API. It comes with tools to create a new app and manage it's database. You get it all, a very productive developer and a highly scalable app backend. It's designed to work well on serverless platforms by Google, AWS, Microsoft, etc. The goal is to save you a ton of time and money so you can focus on you're apps core value.
           </div>
+
+
         </div>
       </div>
+
 
       <div class="flex flex-wrap">
         <div class="md:w-2/4">
@@ -112,7 +122,7 @@
         </div>
       </div>
 
-      <div class="overflow-hidden bg-indigo-900" style="height: 730px">
+      <div class="overflow-hidden bg-indigo-900">
         <div class="container mx-auto py-20">
         <img src="/super-graph-web-ui.png">
         </div>
@@ -143,10 +153,73 @@
       </div>
 
       <div class="border-t py-10">
-        <div class="container mx-auto">
-        <style>.embed-container { position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; } .embed-container iframe, .embed-container object, .embed-container embed { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }</style>
-        <div class="embed-container shadow">
-          <iframe src='https://www.youtube.com/embed/MfPL2A-DAJk' frameborder='0' allowfullscreen></iframe>
+        <div class="block md:hidden w-100">
+          <iframe src='https://www.youtube.com/embed/MfPL2A-DAJk' frameborder='0' allowfullscreen style="width: 100%; height: 250px;">
+          </iframe>
+        </div>
+        
+        <div class="container mx-auto flex flex-col md:flex-row items-center">
+          <div class="w-100 md:w-1/2 p-8">
+            <h1 class="text-2xl font-bold">GraphQL the future of APIs</h1>
+            <p class="text-xl text-gray-600">Keeping a tight and fast development loop helps you iterate quickly. Leveraging technology like Super Graph focuses your team on building the core product and not reinventing wheels. GraphQL eliminate the dependency on the backend engineering and keeps the things moving fast</p>
+          </div>
+
+          <div class="hidden md:block md:w-1/2">
+            <style>.embed-container { position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; } .embed-container iframe, .embed-container object, .embed-container embed { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }</style>
+            <div class="embed-container shadow">
+              <iframe src='https://www.youtube.com/embed/MfPL2A-DAJk' frameborder='0' allowfullscreen >
+              </iframe>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-gray-200 mt-10">
+        <div class="container mx-auto px-10 md:px-0 py-32">
+          <h1 class="uppercase font-semibold text-xl text-blue-800 mb-4">
+            Build Secure Apps
+          </h1>
+          <div class="flex flex-col text-2xl md:text-3xl">
+            <card className="mb-1 p-8">
+              <template #image><font-awesome-icon icon="portrait" class="text-red-500" /></template>
+              <template #title>Role Based Access Control</template>
+              <template #body>Dynamically assign roles like admin, manager or anon to specific users. Generate role specific queries at runtime. For example admins can get all users while others can only fetch their own user.</template>
+            </card>
+            <card className="mb-1 p-8">
+              <template #image><font-awesome-icon icon="shield-alt" class="text-blue-500" /></template>
+              <template #title>Prepared Statements</template>
+              <template #body>An additional layer of protection from a variety of security issues like SQL injection. In production mode all queries are precompiled into prepared statements so only those can be executed. This also significantly speeds up all queries.</template>
+            </card>
+            <card className="p-8">
+              <template #image><font-awesome-icon icon="lock" class="text-green-500"/></template>
+              <template #title>Fuzz Tested Code</template>
+              <template #body>Fuzzing is done by complex software that generates massives amounts of random input to detect if code is free of security bugs. Google uses fuzzing to protects everything from their cloud infrastructure to the Chrome browser.</template>
+            </card>         
+          </div>
+        </div>
+      </div>
+
+      <div class="">
+        <div class="container mx-auto px-10 md:px-0 py-32">
+          <h1 class="uppercase font-semibold text-xl text-blue-800 mb-4">
+            More Features
+          </h1>
+          <div class="flex flex-col md:flex-row text-2xl md:text-3xl">
+            <card className="mr-0 md:mr-1 mb-1 flex-col w-100 md:w-1/3 items-center">
+              <template #image><img src="/arch-remote-join.svg" class="h-64"></template>
+              <template #title>Remote Joins</template>
+              <template #body>A powerful feature that allows you to query your database and remote REST APIs at the same time. For example fetch a user from the DB, his tweets from Twitter and his payments from Stripe with a single GraphQL query.</template>
+            </card>
+            <card className="mr-0 md:mr-1 mb-1 flex-col w-100 md:w-1/3">
+              <template #image><img src="/arch-search.svg" class="h-64"></template>
+              <template #title>Full Text Search</template>
+              <template #body>Postgres has excellent full-text search built-in. You don't need another expensive service. Super Graph makes it super easy to use with keyword ranking and highlighting also supported.</template>
+            </card>
+            <card className="mb-1 flex-col w-100 md:w-1/3">
+              <template #image><img src="/arch-bulk.svg" class="h-64"></template>
+              <template #title>Bulk Inserts</template>
+              <template #body>Efficiently insert, update and delete multiple items with a single query. Upserts are also supported</template>
+            </card>         
           </div>
         </div>
       </div>
@@ -164,9 +237,17 @@
 <script>
 import NavLink from '@theme/components/NavLink.vue'
 import Navbar from '@theme/components/Navbar.vue'
+import Card from './Card.vue'
+
+
+import { library } from '@fortawesome/fontawesome-svg-core'
+import { faPortrait, faShieldAlt, faLock } from '@fortawesome/free-solid-svg-icons'
+import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
+
+library.add(faPortrait, faShieldAlt, faLock)
 
 export default {
-  components: { NavLink, Navbar },
+  components: { NavLink, Navbar, FontAwesomeIcon, Card },
 
   computed: {
     data () {

@@ -9,20 +9,21 @@ Get an instant high performance GraphQL API for Postgres. No code needed. GraphQ
 
 ## Features
 
-- Works with Rails database schemas
-- Automatically learns schemas and relationships
-- Belongs-To, One-To-Many and Many-To-Many table relationships
-- Full text search and Aggregations
-- Rails Auth supported (Redis, Memcache, Cookie)
+- Role based access control
+- Works with Ruby-On-Rails databases
+- Automatically learns database schemas and relationships
+- Full text search and aggregations
+- Rails authentication supported (Redis, Memcache, Cookie)
 - JWT tokens supported (Auth0, etc)
-- Join with remote REST APIs
+- Join database with remote REST APIs
 - Highly optimized and fast Postgres SQL queries
-- Support GraphQL queries and mutations
-- Configure with a simple config file
+- GraphQL queries and mutations
+- A simple config file
 - High performance GO codebase
 - Tiny docker image and low memory requirements
+- Fuzz tested for security
 - Database migrations tool
-- Write database seeding scripts in Javascript
+- Database seeding tool
 
 ## Try the demo app
 
@@ -499,7 +500,36 @@ query {
 
 ### Advanced queries
 
-Super Graph support complex queries where you can add filters, ordering,offsets and limits on the query.
+Super Graph support complex queries where you can add filters, ordering,offsets and limits on the query. For example the below query will list all products where the price is greater than 10 and the id is not 5.
+
+```graphql
+query {
+  products(where: { 
+      and: { 
+        price: { gt: 10 }, 
+        not: { id: { eq: 5 } } 
+      } 
+    }) {
+    name
+    price
+  }
+}
+```
+
+#### Nested where clause targeting related tables
+
+Sometimes you need to query a table based on a condition that applies to a related table. For example say you need to list all users who belong to an account. This query below will fetch the id and email or all users who belong to the account with id 3.
+
+```graphql
+query {
+  users(where: { 
+      accounts: { id: { eq: 3 } }
+    }) {
+    id
+    email
+  }
+}`
+```
 
 #### Logical Operators
 
@@ -613,7 +643,7 @@ mutation {
 }
 ```
 
-### Bulk insert
+#### Bulk insert
 
 ```json
 {
@@ -659,7 +689,7 @@ mutation {
 }
 ```
 
-### Bulk update
+#### Bulk update
 
 ```json
 {
@@ -702,7 +732,7 @@ mutation {
 }
 ```
 
-### Bulk delete
+#### Bulk delete
 
 ```json
 {
@@ -743,7 +773,7 @@ mutation {
 }
 ```
 
-### Bulk upsert 
+#### Bulk upsert 
 
 ```json
 {
@@ -878,83 +908,6 @@ class AddSearchColumn < ActiveRecord::Migration[5.1]
 end
 ```
 
-## Remote Joins
-
-It often happens that after fetching some data from the DB we need to call another API to fetch some more data and all this combined into a single JSON response. For example along with a list of users you need their last 5 payments from Stripe. This requires you to query your DB for the users and Stripe for the payments. Super Graph handles all this for you also only the fields you requested from the Stripe API are returned. 
-
-::: tip Is this fast?
-Super Graph is able fetch remote data and merge it with the DB response in an efficient manner. Several optimizations such as parallel HTTP requests and a zero-allocation JSON merge algorithm makes this very fast. All of this without you having to write a line of code.
-:::
-
-For example you need to list the last 3 payments made by a user. You will first need to look up the user in the database and then call the Stripe API to fetch his last 3 payments. For this to work your user table in the db has a `customer_id` column that contains his Stripe customer ID.
-
-Similiarly you could also fetch the users last tweet, lead info from Salesforce or whatever else you need. It's fine to mix up several different `remote joins` into a single GraphQL query.
-
-### Stripe API example
-
-The configuration is self explanatory. A `payments` field has been added under the `customers` table. This field is added to the `remotes` subsection that defines fields associated with `customers` that are remote and not real database columns.
-
-The `id` parameter maps a column from the `customers` table to the `$id` variable. In this case it maps `$id` to the `customer_id` column.
-
-```yaml
-tables:
-  - name: customers
-    remotes:
-      - name: payments
-        id: stripe_id
-        url: http://rails_app:3000/stripe/$id
-        path: data
-        # debug: true
-        # pass_headers: 
-        #   - cookie
-        #   - host
-        set_headers:
-          - name: Authorization
-            value: Bearer <stripe_api_key>
-```
-
-#### How do I make use of this?
-
-Just include `payments` like you would any other GraphQL selector under the `customers` selector. Super Graph will call the configured API for you and stitch (merge) the JSON the API sends back with the JSON generated from the database query. GraphQL features like aliases and fields all work.
-
-```graphql
-query {
-  customers {
-    id
-    email
-    payments {
-      customer_id
-      amount
-      billing_details
-    }
-  }
-}
-```
-
-And voila here is the result. You get all of this advanced and honestly complex querying capability without writing a single line of code.
-
-```json
-"data": {
-  "customers": [
-    {
-      "id": 1,
-      "email": "linseymertz@reilly.co",
-      "payments": [
-        {
-          "customer_id": "cus_YCj3ndB5Mz",
-          "amount": 100,
-            "billing_details": {
-            "address": "1 Infinity Drive",
-            "zipcode": "94024"
-          }
-        },
-      ...
-```
-
-Even tracing data is availble in the Super Graph web UI if tracing is enabled in the config. By default it is enabled in development. Additionally there you can set `debug: true` to enable http request / response dumping to help with debugging.
-
-![Query Tracing](/tracing.png "Super Graph Web UI Query Tracing")
-
 ## Authentication
 
 You can only have one type of auth enabled. You can either pick Rails or JWT. 
@@ -1033,7 +986,152 @@ We can get the JWT token either from the `authorization` header where we expect 
 
 For validation a `secret` or a public key (ecdsa or rsa) is required. When using public keys they have to be in a PEM format file.
 
-## Easy to setup
+## Role based Access Control
+
+It's a common usecase for APIs to control what information they return or insert based on the role of the user. For example when fetching a list of users, a normal user can only fetch his own entry while a manager can fetch all the users within a company and an admin user can fetch everyone. Or when creating a new user an an admin user can set a users role while the user himself cannot set or change it. This is called role based access control or RBAC.
+
+Super Graph allows you to set access control rules based on dynamically defined roles. You can create as many roles as you wish. The only two default (built-in) roles are `user` for authenticated requests and `anon` for unauthenticated. An authenticated request is one where Super Graph can extract an `user_id` based on the configured authenication method (jwt, rails cookies, etc).
+
+### Configure RBAC
+
+```yaml
+roles_query: "SELECT * FROM users WHERE users.id = $user_id"
+
+roles:
+  - name: user
+    tables:
+      - name: users
+        query:
+          filters: ["{ id: { _eq: $user_id } }"]
+
+        insert:
+          filters: ["{ user_id: { eq: $user_id } }"]
+          columns: ["id", "name", "description" ]
+          presets:
+            - created_at: "now"
+            
+        update:
+          filters: ["{ user_id: { eq: $user_id } }"]
+          columns:
+            - id
+            - name
+          presets:
+            - updated_at: "now"
+
+        delete:
+          block: true
+
+  - name: admin
+    match: users.id = 1
+    tables:
+      - name: users
+        query:
+          filters: []
+```
+
+This configuration is relatively simple to follow the `roles_query` parameter is the query that
+must be run to help figure out a users role. This query can be as complex as you like and include joins with other tables. 
+
+The individual roles are defined under the `roles` parameter and this includes each table the role has a custom setting for. The role is dynamically matched using the `match` parameter for example in the above case `users.id = 1` means that when the `roles_query` is executed a user with the id `1` willbe assigned the admin role and those that don't match get the `user` role if authenticated successfully or the `anon` role.
+
+This below example would work for SAAS apps where an account (tenant) is usually the top parent table to everything else.
+
+```yaml
+roles_query: "SELECT * FROM users JOIN accounts on accounts.id = users.account_id WHERE users.id = $user_id"
+
+roles:
+  - name: user
+    tables:
+      - name: users
+      ...
+
+  - name: admin
+    match: accounts.admin_id = $user_id
+    tables:
+      - name: users
+        query:
+          filters: [{ accounts: { id: { eq: $account_id } } }]
+```
+
+## Remote Joins
+
+It often happens that after fetching some data from the DB we need to call another API to fetch some more data and all this combined into a single JSON response. For example along with a list of users you need their last 5 payments from Stripe. This requires you to query your DB for the users and Stripe for the payments. Super Graph handles all this for you also only the fields you requested from the Stripe API are returned. 
+
+::: tip Is this fast?
+Super Graph is able fetch remote data and merge it with the DB response in an efficient manner. Several optimizations such as parallel HTTP requests and a zero-allocation JSON merge algorithm makes this very fast. All of this without you having to write a line of code.
+:::
+
+For example you need to list the last 3 payments made by a user. You will first need to look up the user in the database and then call the Stripe API to fetch his last 3 payments. For this to work your user table in the db has a `customer_id` column that contains his Stripe customer ID.
+
+Similiarly you could also fetch the users last tweet, lead info from Salesforce or whatever else you need. It's fine to mix up several different `remote joins` into a single GraphQL query.
+
+### Stripe API example
+
+The configuration is self explanatory. A `payments` field has been added under the `customers` table. This field is added to the `remotes` subsection that defines fields associated with `customers` that are remote and not real database columns.
+
+The `id` parameter maps a column from the `customers` table to the `$id` variable. In this case it maps `$id` to the `customer_id` column.
+
+```yaml
+tables:
+  - name: customers
+    remotes:
+      - name: payments
+        id: stripe_id
+        url: http://rails_app:3000/stripe/$id
+        path: data
+        # debug: true
+        # pass_headers: 
+        #   - cookie
+        #   - host
+        set_headers:
+          - name: Authorization
+            value: Bearer <stripe_api_key>
+```
+
+#### How do I make use of this?
+
+Just include `payments` like you would any other GraphQL selector under the `customers` selector. Super Graph will call the configured API for you and stitch (merge) the JSON the API sends back with the JSON generated from the database query. GraphQL features like aliases and fields all work.
+
+```graphql
+query {
+  customers {
+    id
+    email
+    payments {
+      customer_id
+      amount
+      billing_details
+    }
+  }
+}
+```
+
+And voila here is the result. You get all of this advanced and honestly complex querying capability without writing a single line of code.
+
+```json
+"data": {
+  "customers": [
+    {
+      "id": 1,
+      "email": "linseymertz@reilly.co",
+      "payments": [
+        {
+          "customer_id": "cus_YCj3ndB5Mz",
+          "amount": 100,
+            "billing_details": {
+            "address": "1 Infinity Drive",
+            "zipcode": "94024"
+          }
+        },
+      ...
+```
+
+Even tracing data is availble in the Super Graph web UI if tracing is enabled in the config. By default it is enabled in development. Additionally there you can set `debug: true` to enable http request / response dumping to help with debugging.
+
+![Query Tracing](/tracing.png "Super Graph Web UI Query Tracing")
+
+
+## Configuration files
 
 Configuration files can either be in YAML or JSON their names are derived from the `GO_ENV` variable, for example `GO_ENV=prod` will cause the `prod.yaml` config file to be used. or `GO_ENV=dev` will use the `dev.yaml`. A path to look for the config files in can be specified using the `-path <folder>` command line argument.
 
@@ -1058,8 +1156,7 @@ log_level: "debug"
 use_allow_list: false
 
 # Throw a 401 on auth failure for queries that need auth
-# valid values: always, per_query, never
-auth_fail_block: never
+auth_fail_block: false
 
 # Latency tracing for database queries and remote joins
 # the resulting latency information is returned with the
@@ -1098,7 +1195,8 @@ auth:
   cookie: _app_session
 
   # Comment this out if you want to disable setting
-  # the user_id via a header. Good for testing
+  # the user_id via a header for testing. 
+  # Disable in production
   creds_in_header: true
 
   rails:
@@ -1139,6 +1237,10 @@ database:
   #max_retries: 0
   #log_level: "debug"
 
+  # Set session variable "user.id" to the user id
+  # Enable this if you need the user id in triggers, etc
+  set_user_id: false
+
   # Define variables here that you want to use in filters
   # sub-queries must be wrapped in ()
   variables:
@@ -1178,7 +1280,7 @@ tables:
     name: me
     table: users
 
-roles_query: "SELECT * FROM users as usr WHERE id = $user_id"
+roles_query: "SELECT * FROM users WHERE id = $user_id"
 
 roles:
   - name: anon
