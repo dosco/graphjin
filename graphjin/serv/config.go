@@ -66,6 +66,7 @@ type config struct {
 		PoolSize   int32  `mapstructure:"pool_size"`
 		MaxRetries int    `mapstructure:"max_retries"`
 		LogLevel   string `mapstructure:"log_level"`
+		SetUserID  bool   `mapstructure:"set_user_id"`
 
 		Vars map[string]string `mapstructure:"variables"`
 

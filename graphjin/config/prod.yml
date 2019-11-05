@@ -85,3 +85,7 @@ database:
   #pool_size: 10
   #max_retries: 0
   #log_level: "debug" 
+
+  # Set session variable "user.id" to the user id
+  # Enable this if you need the user id in triggers, etc
+  set_user_id: false

@@ -120,7 +120,7 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer) (uint32, error) {
 			}
 
 			if sel.ID != 0 {
-				if err = c.renderJoin(sel); err != nil {
+				if err = c.renderLateralJoin(sel); err != nil {
 					return 0, err
 				}
 			}
@@ -154,7 +154,7 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer) (uint32, error) {
 			}
 
 			if sel.ID != 0 {
-				if err = c.renderJoinClose(sel); err != nil {
+				if err = c.renderLateralJoinClose(sel); err != nil {
 					return 0, err
 				}
 			}
@@ -327,12 +327,12 @@ func (c *compilerContext) renderSelectClose(sel *qcode.Select, ti *DBTableInfo) 
 	return nil
 }
 
-func (c *compilerContext) renderJoin(sel *qcode.Select) error {
+func (c *compilerContext) renderLateralJoin(sel *qcode.Select) error {
 	io.WriteString(c.w, ` LEFT OUTER JOIN LATERAL (`)
 	return nil
 }
 
-func (c *compilerContext) renderJoinClose(sel *qcode.Select) error {
+func (c *compilerContext) renderLateralJoinClose(sel *qcode.Select) error {
 	//fmt.Fprintf(w, `) AS "%s_%d_join" ON ('true')`, c.sel.Table, c.sel.ID)
 	io.WriteString(c.w, `)`)
 	aliasWithIDSuffix(c.w, sel.Table, sel.ID, "_join")
@@ -340,19 +340,24 @@ func (c *compilerContext) renderJoinClose(sel *qcode.Select) error {
 	return nil
 }
 
-func (c *compilerContext) renderJoinTable(sel *qcode.Select) error {
+func (c *compilerContext) renderJoin(sel *qcode.Select) error {
 	parent := &c.s[sel.ParentID]
+	return c.renderJoinByName(sel.Table, parent.Table, parent.ID)
+}
 
-	rel, err := c.schema.GetRel(sel.Table, parent.Table)
+func (c *compilerContext) renderJoinByName(table, parent string, id int32) error {
+	rel, err := c.schema.GetRel(table, parent)
 	if err != nil {
 		return err
 	}
 
+	// This join is only required for one-to-many relations since
+	// these make use of join tables that need to be pulled in.
 	if rel.Type != RelOneToManyThrough {
 		return err
 	}
 
-	pt, err := c.schema.GetTable(parent.Table)
+	pt, err := c.schema.GetTable(parent)
 	if err != nil {
 		return err
 	}
@@ -364,7 +369,11 @@ func (c *compilerContext) renderJoinTable(sel *qcode.Select) error {
 	io.WriteString(c.w, `" ON ((`)
 	colWithTable(c.w, rel.Through, rel.ColT)
 	io.WriteString(c.w, `) = (`)
-	colWithTableID(c.w, pt.Name, parent.ID, rel.Col1)
+	if id != -1 {
+		colWithTableID(c.w, pt.Name, id, rel.Col1)
+	} else {
+		colWithTable(c.w, pt.Name, rel.Col1)
+	}
 	io.WriteString(c.w, `))`)
 
 	return nil
@@ -438,7 +447,7 @@ func (c *compilerContext) renderJoinedColumns(sel *qcode.Select, ti *DBTableInfo
 
 		cti, err := c.schema.GetTable(childSel.Table)
 		if err != nil {
-			continue
+			return err
 		}
 
 		//fmt.Fprintf(w, `"%s_%d_join"."%s" AS "%s"`,
@@ -529,8 +538,10 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo,
 
 				} else if sel.Functions {
 					cn1 := cn[pl:]
-					if _, ok := sel.Allowed[cn1]; !ok {
-						continue
+					if len(sel.Allowed) != 0 {
+						if _, ok := sel.Allowed[cn1]; !ok {
+							continue
+						}
 					}
 					if i != 0 {
 						io.WriteString(c.w, `, `)
@@ -596,7 +607,7 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo,
 	}
 
 	if !isRoot {
-		if err := c.renderJoinTable(sel); err != nil {
+		if err := c.renderJoin(sel); err != nil {
 			return err
 		}
 
@@ -680,8 +691,11 @@ func (c *compilerContext) renderOrderByColumns(sel *qcode.Select, ti *DBTableInf
 
 func (c *compilerContext) renderRelationship(sel *qcode.Select, ti *DBTableInfo) error {
 	parent := c.s[sel.ParentID]
+	return c.renderRelationshipByName(sel.Table, parent.Table, parent.ID)
+}
 
-	rel, err := c.schema.GetRel(sel.Table, parent.Table)
+func (c *compilerContext) renderRelationshipByName(table, parent string, id int32) error {
+	rel, err := c.schema.GetRel(table, parent)
 	if err != nil {
 		return err
 	}
@@ -691,25 +705,34 @@ func (c *compilerContext) renderRelationship(sel *qcode.Select, ti *DBTableInfo)
 		//fmt.Fprintf(w, `(("%s"."%s") = ("%s_%d"."%s"))`,
 		//c.sel.Table, rel.Col1, c.parent.Table, c.parent.ID, rel.Col2)
 		io.WriteString(c.w, `((`)
-		colWithTable(c.w, ti.Name, rel.Col1)
+		colWithTable(c.w, table, rel.Col1)
 		io.WriteString(c.w, `) = (`)
-		colWithTableID(c.w, parent.Table, parent.ID, rel.Col2)
+		if id != -1 {
+			colWithTableID(c.w, parent, id, rel.Col2)
+		} else {
+			colWithTable(c.w, parent, rel.Col2)
+		}
 		io.WriteString(c.w, `))`)
 
 	case RelOneToMany:
 		//fmt.Fprintf(w, `(("%s"."%s") = ("%s_%d"."%s"))`,
 		//c.sel.Table, rel.Col1, c.parent.Table, c.parent.ID, rel.Col2)
 		io.WriteString(c.w, `((`)
-		colWithTable(c.w, ti.Name, rel.Col1)
+		colWithTable(c.w, table, rel.Col1)
 		io.WriteString(c.w, `) = (`)
-		colWithTableID(c.w, parent.Table, parent.ID, rel.Col2)
+		if id != -1 {
+			colWithTableID(c.w, parent, id, rel.Col2)
+		} else {
+			colWithTable(c.w, parent, rel.Col2)
+		}
 		io.WriteString(c.w, `))`)
 
 	case RelOneToManyThrough:
+		// This requires the through table to be joined onto this select
 		//fmt.Fprintf(w, `(("%s"."%s") = ("%s"."%s"))`,
 		//c.sel.Table, rel.Col1, rel.Through, rel.Col2)
 		io.WriteString(c.w, `((`)
-		colWithTable(c.w, ti.Name, rel.Col1)
+		colWithTable(c.w, table, rel.Col1)
 		io.WriteString(c.w, `) = (`)
 		colWithTable(c.w, rel.Through, rel.Col2)
 		io.WriteString(c.w, `))`)
@@ -768,101 +791,20 @@ func (c *compilerContext) renderWhere(sel *qcode.Select, ti *DBTableInfo) error 
 				qcode.FreeExp(val)
 
 			default:
-				if val.NestedCol {
-					//fmt.Fprintf(w, `(("%s") `, val.Col)
-					io.WriteString(c.w, `(("`)
-					io.WriteString(c.w, val.Col)
-					io.WriteString(c.w, `") `)
+				if len(val.NestedCols) != 0 {
+					io.WriteString(c.w, `EXISTS `)
 
-				} else if len(val.Col) != 0 {
+					if err := c.renderNestedWhere(val, sel, ti); err != nil {
+						return err
+					}
+
+				} else {
 					//fmt.Fprintf(w, `(("%s"."%s") `, c.sel.Table, val.Col)
-					io.WriteString(c.w, `((`)
-					colWithTable(c.w, ti.Name, val.Col)
-					io.WriteString(c.w, `) `)
+					if err := c.renderOp(val, sel, ti); err != nil {
+						return err
+					}
+					qcode.FreeExp(val)
 				}
-				valExists := true
-
-				switch val.Op {
-				case qcode.OpEquals:
-					io.WriteString(c.w, `=`)
-				case qcode.OpNotEquals:
-					io.WriteString(c.w, `!=`)
-				case qcode.OpGreaterOrEquals:
-					io.WriteString(c.w, `>=`)
-				case qcode.OpLesserOrEquals:
-					io.WriteString(c.w, `<=`)
-				case qcode.OpGreaterThan:
-					io.WriteString(c.w, `>`)
-				case qcode.OpLesserThan:
-					io.WriteString(c.w, `<`)
-				case qcode.OpIn:
-					io.WriteString(c.w, `IN`)
-				case qcode.OpNotIn:
-					io.WriteString(c.w, `NOT IN`)
-				case qcode.OpLike:
-					io.WriteString(c.w, `LIKE`)
-				case qcode.OpNotLike:
-					io.WriteString(c.w, `NOT LIKE`)
-				case qcode.OpILike:
-					io.WriteString(c.w, `ILIKE`)
-				case qcode.OpNotILike:
-					io.WriteString(c.w, `NOT ILIKE`)
-				case qcode.OpSimilar:
-					io.WriteString(c.w, `SIMILAR TO`)
-				case qcode.OpNotSimilar:
-					io.WriteString(c.w, `NOT SIMILAR TO`)
-				case qcode.OpContains:
-					io.WriteString(c.w, `@>`)
-				case qcode.OpContainedIn:
-					io.WriteString(c.w, `<@`)
-				case qcode.OpHasKey:
-					io.WriteString(c.w, `?`)
-				case qcode.OpHasKeyAny:
-					io.WriteString(c.w, `?|`)
-				case qcode.OpHasKeyAll:
-					io.WriteString(c.w, `?&`)
-				case qcode.OpIsNull:
-					if strings.EqualFold(val.Val, "true") {
-						io.WriteString(c.w, `IS NULL)`)
-					} else {
-						io.WriteString(c.w, `IS NOT NULL)`)
-					}
-					valExists = false
-				case qcode.OpEqID:
-					if len(ti.PrimaryCol) == 0 {
-						return fmt.Errorf("no primary key column defined for %s", ti.Name)
-					}
-					//fmt.Fprintf(w, `(("%s") =`, c.ti.PrimaryCol)
-					io.WriteString(c.w, `((`)
-					colWithTable(c.w, ti.Name, ti.PrimaryCol)
-					//io.WriteString(c.w, ti.PrimaryCol)
-					io.WriteString(c.w, `) =`)
-				case qcode.OpTsQuery:
-					if len(ti.TSVCol) == 0 {
-						return fmt.Errorf("no tsv column defined for %s", ti.Name)
-					}
-					//fmt.Fprintf(w, `(("%s") @@ to_tsquery('%s'))`, c.ti.TSVCol, val.Val)
-					io.WriteString(c.w, `(("`)
-					io.WriteString(c.w, ti.TSVCol)
-					io.WriteString(c.w, `") @@ to_tsquery('`)
-					io.WriteString(c.w, val.Val)
-					io.WriteString(c.w, `'))`)
-					valExists = false
-
-				default:
-					return fmt.Errorf("[Where] unexpected op code %d", val.Op)
-				}
-
-				if valExists {
-					if val.Type == qcode.ValList {
-						c.renderList(val)
-					} else {
-						c.renderVal(val, c.vars)
-					}
-					io.WriteString(c.w, `)`)
-				}
-
-				qcode.FreeExp(val)
 			}
 
 		default:
@@ -871,6 +813,128 @@ func (c *compilerContext) renderWhere(sel *qcode.Select, ti *DBTableInfo) error 
 
 	}
 
+	return nil
+}
+
+func (c *compilerContext) renderNestedWhere(ex *qcode.Exp, sel *qcode.Select, ti *DBTableInfo) error {
+
+	for i := 0; i < len(ex.NestedCols)-1; i++ {
+		cti, err := c.schema.GetTable(ex.NestedCols[i])
+		if err != nil {
+			return err
+		}
+
+		if i != 0 {
+			io.WriteString(c.w, ` AND `)
+		}
+
+		io.WriteString(c.w, `(SELECT 1 FROM `)
+		io.WriteString(c.w, cti.Name)
+
+		if err := c.renderJoinByName(cti.Name, ti.Name, -1); err != nil {
+			return err
+		}
+
+		io.WriteString(c.w, ` WHERE `)
+
+		if err := c.renderRelationshipByName(cti.Name, ti.Name, -1); err != nil {
+			return err
+		}
+
+	}
+
+	for i := 0; i < len(ex.NestedCols)-1; i++ {
+		io.WriteString(c.w, `)`)
+	}
+
+	return nil
+}
+
+func (c *compilerContext) renderOp(ex *qcode.Exp, sel *qcode.Select, ti *DBTableInfo) error {
+	if len(ex.Col) != 0 {
+		io.WriteString(c.w, `((`)
+		colWithTable(c.w, ti.Name, ex.Col)
+		io.WriteString(c.w, `) `)
+	}
+
+	switch ex.Op {
+	case qcode.OpEquals:
+		io.WriteString(c.w, `=`)
+	case qcode.OpNotEquals:
+		io.WriteString(c.w, `!=`)
+	case qcode.OpGreaterOrEquals:
+		io.WriteString(c.w, `>=`)
+	case qcode.OpLesserOrEquals:
+		io.WriteString(c.w, `<=`)
+	case qcode.OpGreaterThan:
+		io.WriteString(c.w, `>`)
+	case qcode.OpLesserThan:
+		io.WriteString(c.w, `<`)
+	case qcode.OpIn:
+		io.WriteString(c.w, `IN`)
+	case qcode.OpNotIn:
+		io.WriteString(c.w, `NOT IN`)
+	case qcode.OpLike:
+		io.WriteString(c.w, `LIKE`)
+	case qcode.OpNotLike:
+		io.WriteString(c.w, `NOT LIKE`)
+	case qcode.OpILike:
+		io.WriteString(c.w, `ILIKE`)
+	case qcode.OpNotILike:
+		io.WriteString(c.w, `NOT ILIKE`)
+	case qcode.OpSimilar:
+		io.WriteString(c.w, `SIMILAR TO`)
+	case qcode.OpNotSimilar:
+		io.WriteString(c.w, `NOT SIMILAR TO`)
+	case qcode.OpContains:
+		io.WriteString(c.w, `@>`)
+	case qcode.OpContainedIn:
+		io.WriteString(c.w, `<@`)
+	case qcode.OpHasKey:
+		io.WriteString(c.w, `?`)
+	case qcode.OpHasKeyAny:
+		io.WriteString(c.w, `?|`)
+	case qcode.OpHasKeyAll:
+		io.WriteString(c.w, `?&`)
+	case qcode.OpIsNull:
+		if strings.EqualFold(ex.Val, "true") {
+			io.WriteString(c.w, `IS NULL)`)
+		} else {
+			io.WriteString(c.w, `IS NOT NULL)`)
+		}
+		return nil
+	case qcode.OpEqID:
+		if len(ti.PrimaryCol) == 0 {
+			return fmt.Errorf("no primary key column defined for %s", ti.Name)
+		}
+		//fmt.Fprintf(w, `(("%s") =`, c.ti.PrimaryCol)
+		io.WriteString(c.w, `((`)
+		colWithTable(c.w, ti.Name, ti.PrimaryCol)
+		//io.WriteString(c.w, ti.PrimaryCol)
+		io.WriteString(c.w, `) =`)
+	case qcode.OpTsQuery:
+		if len(ti.TSVCol) == 0 {
+			return fmt.Errorf("no tsv column defined for %s", ti.Name)
+		}
+		//fmt.Fprintf(w, `(("%s") @@ to_tsquery('%s'))`, c.ti.TSVCol, val.Val)
+		io.WriteString(c.w, `(("`)
+		io.WriteString(c.w, ti.TSVCol)
+		io.WriteString(c.w, `") @@ to_tsquery('`)
+		io.WriteString(c.w, ex.Val)
+		io.WriteString(c.w, `'))`)
+		return nil
+
+	default:
+		return fmt.Errorf("[Where] unexpected op code %d", ex.Op)
+	}
+
+	if ex.Type == qcode.ValList {
+		c.renderList(ex)
+	} else {
+		c.renderVal(ex, c.vars)
+	}
+
+	io.WriteString(c.w, `)`)
 	return nil
 }
 

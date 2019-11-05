@@ -57,16 +57,16 @@ type Column struct {
 }
 
 type Exp struct {
-	Op        ExpOp
-	Col       string
-	NestedCol bool
-	Type      ValType
-	Val       string
-	ListType  ValType
-	ListVal   []string
-	Children  []*Exp
-	childrenA [5]*Exp
-	doFree    bool
+	Op         ExpOp
+	Col        string
+	NestedCols []string
+	Type       ValType
+	Val        string
+	ListType   ValType
+	ListVal    []string
+	Children   []*Exp
+	childrenA  [5]*Exp
+	doFree     bool
 }
 
 var zeroExp = Exp{doFree: true}
@@ -918,10 +918,8 @@ func setWhereColName(ex *Exp, node *Node) {
 	}
 	if len(list) == 1 {
 		ex.Col = list[0]
-
-	} else if len(list) > 2 {
-		ex.Col = buildPath(list)
-		ex.NestedCol = true
+	} else if len(list) > 1 {
+		ex.NestedCols = list
 	}
 }
 

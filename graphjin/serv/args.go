@@ -8,19 +8,19 @@ import (
 	"github.com/dosco/super-graph/jsn"
 )
 
-func varMap(ctx *coreContext) func(w io.Writer, tag string) (int, error) {
+func argMap(ctx *coreContext) func(w io.Writer, tag string) (int, error) {
 	return func(w io.Writer, tag string) (int, error) {
 		switch tag {
 		case "user_id_provider":
 			if v := ctx.Value(userIDProviderKey); v != nil {
-				return stringVar(w, v.(string))
+				return stringArg(w, v.(string))
 			}
 			io.WriteString(w, "null")
 			return 0, nil
 
 		case "user_id":
 			if v := ctx.Value(userIDKey); v != nil {
-				return stringVar(w, v.(string))
+				return stringArg(w, v.(string))
 			}
 
 			io.WriteString(w, "null")
@@ -28,7 +28,7 @@ func varMap(ctx *coreContext) func(w io.Writer, tag string) (int, error) {
 
 		case "user_role":
 			if v := ctx.Value(userRoleKey); v != nil {
-				return stringVar(w, v.(string))
+				return stringArg(w, v.(string))
 			}
 			io.WriteString(w, "null")
 			return 0, nil
@@ -50,7 +50,7 @@ func varMap(ctx *coreContext) func(w io.Writer, tag string) (int, error) {
 		}
 
 		if is {
-			return stringVarB(w, fields[0].Value)
+			return stringArgB(w, fields[0].Value)
 		}
 
 		w.Write(fields[0].Value)
@@ -58,7 +58,7 @@ func varMap(ctx *coreContext) func(w io.Writer, tag string) (int, error) {
 	}
 }
 
-func varList(ctx *coreContext, args [][]byte) []interface{} {
+func argList(ctx *coreContext, args [][]byte) []interface{} {
 	vars := make([]interface{}, len(args))
 
 	var fields map[string]interface{}
@@ -86,6 +86,11 @@ func varList(ctx *coreContext, args [][]byte) []interface{} {
 				vars[i] = v.(string)
 			}
 
+		case bytes.Equal(av, []byte("user_role")):
+			if v := ctx.Value(userRoleKey); v != nil {
+				vars[i] = v.(string)
+			}
+
 		default:
 			if v, ok := fields[string(av)]; ok {
 				vars[i] = v
@@ -96,7 +101,7 @@ func varList(ctx *coreContext, args [][]byte) []interface{} {
 	return vars
 }
 
-func stringVar(w io.Writer, v string) (int, error) {
+func stringArg(w io.Writer, v string) (int, error) {
 	if n, err := w.Write([]byte(`'`)); err != nil {
 		return n, err
 	}
@@ -106,7 +111,7 @@ func stringVar(w io.Writer, v string) (int, error) {
 	return w.Write([]byte(`'`))
 }
 
-func stringVarB(w io.Writer, v []byte) (int, error) {
+func stringArgB(w io.Writer, v []byte) (int, error) {
 	if n, err := w.Write([]byte(`'`)); err != nil {
 		return n, err
 	}
