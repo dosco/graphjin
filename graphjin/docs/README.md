@@ -17,12 +17,12 @@ features:
   details: Easy config file, quick to deploy, No code needed. It just works.
 - title: High Performance
   details: Compiles your GraphQL into a fast SQL query in realtime.
+- title: Built in GO
+  details: Built in Go is a language created at Google to build fast and secure web services.
 - title: Ruby-on-Rails
   details: Can read Rails cookies and supports rails database conventions.
 - title: Serverless
   details: Instant startup for scale to zero environments like Google Cloud Run, App Engine, AWS Lambda
-- title: Go Lang
-  details: Go is a language created at Google to build fast and secure web services.
 - title: Free and Open Source
   details: Not a VC funded startup. Not even a startup just good old open source code
 
