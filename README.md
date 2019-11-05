@@ -1,13 +1,13 @@
 <a href="https://supergraph.dev"><img src="https://supergraph.dev/hologram.svg" width="100" height="100" align="right" /></a>
 
-# Super Graph - Build web products faster. Instant GraphQL APIs for your apps
+# Super Graph - Instant GraphQL APIs for your apps. 
+
+## Build web products faster. No code needed. GraphQL auto. transformed into efficient database queries.
 
 ![MIT license](https://img.shields.io/github/license/dosco/super-graph.svg)
 ![Docker build](https://img.shields.io/docker/cloud/build/dosco/super-graph.svg)
 ![Cloud native](https://img.shields.io/badge/cloud--native-enabled-blue.svg)
 [![Discord Chat](https://img.shields.io/discord/628796009539043348.svg)](https://discord.gg/6pSWCTZ)  
-
-Get an instant high performance GraphQL API for Postgres. No code needed. GraphQL is automatically transformed into efficient database queries.
 
 ![GraphQL](docs/.vuepress/public/graphql.png?raw=true "")
 
@@ -25,6 +25,7 @@ This compiler is what sits at the heart of Super Graph with layers of useful fun
 
 ## Features
 
+- Role based access control
 - Works with Rails database schemas
 - Automatically learns schemas and relationships
 - Belongs-To, One-To-Many and Many-To-Many table relationships

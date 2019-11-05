@@ -78,13 +78,37 @@ func bulkInsert(t *testing.T) {
 
 func singleUpsert(t *testing.T) {
 	gql := `mutation {
-		product(id: 15, upsert: $upsert) {
+		product(upsert: $upsert) {
 			id
 			name
 		}
 	}`
 
-	sql := `WITH "products" AS (WITH "input" AS (SELECT {{upsert}}::json AS j) INSERT INTO "products" ("name", "description") SELECT "name", "description" FROM input i, json_populate_record(NULL::products, i.j) t ON CONFLICT DO (id) DO UPDATE  SET name = EXCLUDED.name, description = EXCLUDED.description RETURNING *) SELECT json_object_agg('product', sel_json_0) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name") AS "sel_0")) AS "sel_json_0" FROM (SELECT "products"."id", "products"."name" FROM "products") AS "products_0") AS "done_1337"`
+	sql := `WITH "products" AS (WITH "input" AS (SELECT {{upsert}}::json AS j) INSERT INTO "products" ("name", "description") SELECT "name", "description" FROM input i, json_populate_record(NULL::products, i.j) t ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description RETURNING *) SELECT json_object_agg('product', sel_json_0) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name") AS "sel_0")) AS "sel_json_0" FROM (SELECT "products"."id", "products"."name" FROM "products") AS "products_0") AS "done_1337"`
+
+	vars := map[string]json.RawMessage{
+		"upsert": json.RawMessage(` { "name": "my_name", "woo": { "hoo": "goo" }, "description": "my_desc"  }`),
+	}
+
+	resSQL, err := compileGQLToPSQL(gql, vars, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
+func singleUpsertWhere(t *testing.T) {
+	gql := `mutation {
+		product(upsert: $upsert, where: { price : { gt: 3 } }) {
+			id
+			name
+		}
+	}`
+
+	sql := `WITH "products" AS (WITH "input" AS (SELECT {{upsert}}::json AS j) INSERT INTO "products" ("name", "description") SELECT "name", "description" FROM input i, json_populate_record(NULL::products, i.j) t ON CONFLICT (id) WHERE (("products"."price") > 3) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description RETURNING *) SELECT json_object_agg('product', sel_json_0) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name") AS "sel_0")) AS "sel_json_0" FROM (SELECT "products"."id", "products"."name" FROM "products") AS "products_0") AS "done_1337"`
 
 	vars := map[string]json.RawMessage{
 		"upsert": json.RawMessage(` { "name": "my_name", "woo": { "hoo": "goo" }, "description": "my_desc"  }`),
@@ -102,13 +126,13 @@ func singleUpsert(t *testing.T) {
 
 func bulkUpsert(t *testing.T) {
 	gql := `mutation {
-		product(id: 15, upsert: $upsert) {
+		product(upsert: $upsert) {
 			id
 			name
 		}
 	}`
 
-	sql := `WITH "products" AS (WITH "input" AS (SELECT {{upsert}}::json AS j) INSERT INTO "products" ("name", "description") SELECT "name", "description" FROM input i, json_populate_recordset(NULL::products, i.j) t ON CONFLICT DO (id) DO UPDATE  SET name = EXCLUDED.name, description = EXCLUDED.description RETURNING *) SELECT json_object_agg('product', sel_json_0) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name") AS "sel_0")) AS "sel_json_0" FROM (SELECT "products"."id", "products"."name" FROM "products") AS "products_0") AS "done_1337"`
+	sql := `WITH "products" AS (WITH "input" AS (SELECT {{upsert}}::json AS j) INSERT INTO "products" ("name", "description") SELECT "name", "description" FROM input i, json_populate_recordset(NULL::products, i.j) t ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description RETURNING *) SELECT json_object_agg('product', sel_json_0) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name") AS "sel_0")) AS "sel_json_0" FROM (SELECT "products"."id", "products"."name" FROM "products") AS "products_0") AS "done_1337"`
 
 	vars := map[string]json.RawMessage{
 		"upsert": json.RawMessage(` [{ "name": "my_name", "woo": { "hoo": "goo" }, "description": "my_desc"  }]`),
@@ -271,6 +295,7 @@ func TestCompileMutate(t *testing.T) {
 	t.Run("bulkInsert", bulkInsert)
 	t.Run("singleUpdate", singleUpdate)
 	t.Run("singleUpsert", singleUpsert)
+	t.Run("singleUpsertWhere", singleUpsertWhere)
 	t.Run("bulkUpsert", bulkUpsert)
 	t.Run("delete", delete)
 	t.Run("blockedInsert", blockedInsert)

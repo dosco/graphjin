@@ -214,6 +214,7 @@ func (c *compilerContext) renderDelete(qc *qcode.QCode, w io.Writer,
 
 func (c *compilerContext) renderUpsert(qc *qcode.QCode, w io.Writer,
 	vars Variables, ti *DBTableInfo) (uint32, error) {
+	root := &qc.Selects[0]
 
 	upsert, ok := vars[qc.ActionVar]
 	if !ok {
@@ -229,7 +230,7 @@ func (c *compilerContext) renderUpsert(qc *qcode.QCode, w io.Writer,
 		return 0, err
 	}
 
-	io.WriteString(c.w, ` ON CONFLICT DO (`)
+	io.WriteString(c.w, ` ON CONFLICT (`)
 	i := 0
 
 	for _, cn := range ti.ColumnNames {
@@ -250,10 +251,17 @@ func (c *compilerContext) renderUpsert(qc *qcode.QCode, w io.Writer,
 	if i == 0 {
 		io.WriteString(c.w, ti.PrimaryCol)
 	}
-	io.WriteString(c.w, `) DO `)
+	io.WriteString(c.w, `)`)
 
-	io.WriteString(c.w, `UPDATE `)
-	io.WriteString(c.w, ` SET `)
+	if root.Where != nil {
+		io.WriteString(c.w, ` WHERE `)
+
+		if err := c.renderWhere(root, ti); err != nil {
+			return 0, err
+		}
+	}
+
+	io.WriteString(c.w, ` DO UPDATE SET `)
 
 	i = 0
 	for _, cn := range ti.ColumnNames {

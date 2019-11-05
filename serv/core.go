@@ -122,10 +122,8 @@ func (c *coreContext) resolvePreparedSQL() ([]byte, *preparedItem, error) {
 	}
 	defer tx.Rollback(c)
 
-	if v := c.Value(userIDKey); v != nil {
-		_, err = tx.Exec(c, fmt.Sprintf(`SET LOCAL "user.id" = %s;`, v))
-
-		if err != nil {
+	if conf.DB.SetUserID {
+		if err := c.setLocalUserID(tx); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -153,7 +151,7 @@ func (c *coreContext) resolvePreparedSQL() ([]byte, *preparedItem, error) {
 	}
 
 	var root []byte
-	vars := varList(c, ps.args)
+	vars := argList(c, ps.args)
 
 	if mutation {
 		err = tx.QueryRow(c, ps.stmt.SQL, vars...).Scan(&root)
@@ -206,7 +204,7 @@ func (c *coreContext) resolveSQL() ([]byte, uint32, error) {
 	t := fasttemplate.New(st.sql, openVar, closeVar)
 
 	buf := &bytes.Buffer{}
-	_, err = t.ExecuteFunc(buf, varMap(c))
+	_, err = t.ExecuteFunc(buf, argMap(c))
 
 	if err == errNoUserID {
 		logger.Warn().Msg("no user id found. query requires an authenicated request")
@@ -224,10 +222,8 @@ func (c *coreContext) resolveSQL() ([]byte, uint32, error) {
 		stime = time.Now()
 	}
 
-	if v := c.Value(userIDKey); v != nil {
-		_, err = tx.Exec(c, fmt.Sprintf(`SET LOCAL "user.id" = %s;`, v))
-
-		if err != nil {
+	if conf.DB.SetUserID {
+		if err := c.setLocalUserID(tx); err != nil {
 			return nil, 0, err
 		}
 	}
@@ -423,6 +419,15 @@ func (c *coreContext) executeRoleQuery(tx pgx.Tx) (string, error) {
 	}
 
 	return role, nil
+}
+
+func (c *coreContext) setLocalUserID(tx pgx.Tx) error {
+	var err error
+	if v := c.Value(userIDKey); v != nil {
+		_, err = tx.Exec(c, fmt.Sprintf(`SET LOCAL "user.id" = %s;`, v))
+	}
+
+	return err
 }
 
 func (c *coreContext) render(w io.Writer, data []byte) error {

@@ -51,7 +51,8 @@ auth:
   cookie: _{{app_name_slug}}_session
 
   # Comment this out if you want to disable setting
-  # the user_id via a header. Good for testing
+  # the user_id via a header for testing. 
+  # Disable in production
   creds_in_header: true
 
   rails:
@@ -92,6 +93,10 @@ database:
   #max_retries: 0
   #log_level: "debug"
 
+  # Set session variable "user.id" to the user id
+  # Enable this if you need the user id in triggers, etc
+  set_user_id: false
+
   # Define variables here that you want to use in filters
   # sub-queries must be wrapped in ()
   variables:
@@ -131,7 +136,7 @@ tables:
     name: me
     table: users
 
-roles_query: "SELECT * FROM users as usr WHERE id = $user_id"
+roles_query: "SELECT * FROM users WHERE id = $user_id"
 
 roles:
   - name: anon
