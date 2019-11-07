@@ -250,7 +250,7 @@ func simpleInsertWithPresets(t *testing.T) {
 		}
 	}`
 
-	sql := `WITH "products" AS (WITH "input" AS (SELECT {{data}}::json AS j) INSERT INTO "products" ("name", "price", "created_at", "updated_at", "user_id") SELECT "name", "price", 'now', 'now', '$user_id' FROM input i, json_populate_record(NULL::products, i.j) t RETURNING *) SELECT json_object_agg('product', sel_json_0) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id") AS "sel_0")) AS "sel_json_0" FROM (SELECT "products"."id" FROM "products") AS "products_0") AS "done_1337"`
+	sql := `WITH "products" AS (WITH "input" AS (SELECT {{data}}::json AS j) INSERT INTO "products" ("name", "price", "created_at", "updated_at", "user_id") SELECT "name", "price", 'now' :: timestamp without time zone, 'now' :: timestamp without time zone, '$user_id' :: bigint FROM input i, json_populate_record(NULL::products, i.j) t RETURNING *) SELECT json_object_agg('product', sel_json_0) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id") AS "sel_0")) AS "sel_json_0" FROM (SELECT "products"."id" FROM "products") AS "products_0") AS "done_1337"`
 
 	vars := map[string]json.RawMessage{
 		"data": json.RawMessage(`{"name": "Tomato", "price": 5.76}`),
@@ -273,7 +273,7 @@ func simpleUpdateWithPresets(t *testing.T) {
 		}
 	}`
 
-	sql := `WITH "products" AS (WITH "input" AS (SELECT {{data}}::json AS j) UPDATE "products" SET ("name", "price", "updated_at") = (SELECT "name", "price", 'now' FROM input i, json_populate_record(NULL::products, i.j) t) WHERE (("products"."user_id") = {{user_id}}) RETURNING *) SELECT json_object_agg('product', sel_json_0) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id") AS "sel_0")) AS "sel_json_0" FROM (SELECT "products"."id" FROM "products") AS "products_0") AS "done_1337"`
+	sql := `WITH "products" AS (WITH "input" AS (SELECT {{data}}::json AS j) UPDATE "products" SET ("name", "price", "updated_at") = (SELECT "name", "price", 'now' :: timestamp without time zone FROM input i, json_populate_record(NULL::products, i.j) t) WHERE (("products"."user_id") = {{user_id}}) RETURNING *) SELECT json_object_agg('product', sel_json_0) FROM (SELECT row_to_json((SELECT "sel_0" FROM (SELECT "products_0"."id" AS "id") AS "sel_0")) AS "sel_json_0" FROM (SELECT "products"."id" FROM "products") AS "products_0") AS "done_1337"`
 
 	vars := map[string]json.RawMessage{
 		"data": json.RawMessage(`{"name": "Apple", "price": 1.25}`),
