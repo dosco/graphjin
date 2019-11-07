@@ -54,7 +54,7 @@ func (c *coreContext) execQuery() ([]byte, error) {
 
 	logger.Debug().Str("role", c.req.role).Msg(c.req.Query)
 
-	if conf.UseAllowList {
+	if conf.Production {
 		var ps *preparedItem
 
 		data, ps, err = c.resolvePreparedSQL()
@@ -256,7 +256,7 @@ func (c *coreContext) resolveSQL() ([]byte, uint32, error) {
 			stime)
 	}
 
-	if conf.UseAllowList == false {
+	if conf.Production == false {
 		_allowList.add(&c.req)
 	}
 

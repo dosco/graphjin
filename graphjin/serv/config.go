@@ -23,6 +23,7 @@ type config struct {
 	LogLevel       string `mapstructure:"log_level"`
 	EnableTracing  bool   `mapstructure:"enable_tracing"`
 	UseAllowList   bool   `mapstructure:"use_allow_list"`
+	Production     bool
 	WatchAndReload bool   `mapstructure:"reload_on_config_change"`
 	AuthFailBlock  bool   `mapstructure:"auth_fail_block"`
 	SeedFile       string `mapstructure:"seed_file"`
@@ -142,9 +143,10 @@ type configRoleTable struct {
 }
 
 type configRole struct {
-	Name   string
-	Match  string
-	Tables []configRoleTable
+	Name      string
+	Match     string
+	Tables    []configRoleTable
+	tablesMap map[string]*configRoleTable
 }
 
 func newConfig(name string) *viper.Viper {
@@ -195,6 +197,10 @@ func (c *config) Init(vi *viper.Viper) error {
 		c.Tables = c.DB.Tables
 	}
 
+	if c.UseAllowList {
+		c.Production = true
+	}
+
 	for k, v := range c.Inflections {
 		flect.AddPlural(k, v)
 	}
@@ -219,13 +225,19 @@ func (c *config) Init(vi *viper.Viper) error {
 	rolesMap := make(map[string]struct{})
 
 	for i := range c.Roles {
-		role := c.Roles[i]
+		role := &c.Roles[i]
 
 		if _, ok := rolesMap[role.Name]; ok {
 			logger.Fatal().Msgf("duplicate role '%s' found", role.Name)
 		}
 		role.Name = sanitize(role.Name)
 		role.Match = sanitize(role.Match)
+		role.tablesMap = make(map[string]*configRoleTable)
+
+		for n, table := range role.Tables {
+			role.tablesMap[table.Name] = &role.Tables[n]
+		}
+
 		rolesMap[role.Name] = struct{}{}
 	}
 

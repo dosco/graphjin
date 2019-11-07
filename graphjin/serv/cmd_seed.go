@@ -21,7 +21,7 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 		logger.Fatal().Err(err).Msg("failed to read config")
 	}
 
-	conf.UseAllowList = false
+	conf.Production = false
 
 	db, err = initDBPool(conf)
 	if err != nil {

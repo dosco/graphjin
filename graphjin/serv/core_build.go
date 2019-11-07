@@ -41,17 +41,22 @@ func (c *coreContext) buildStmt() ([]stmt, error) {
 	mutation := (qc.Type != qcode.QTQuery)
 	w := &bytes.Buffer{}
 
-	for i := range conf.Roles {
+	for i := 1; i < len(conf.Roles); i++ {
 		role := &conf.Roles[i]
 
+		// For mutations only render sql for a single role from the request
 		if mutation && len(c.req.role) != 0 && role.Name != c.req.role {
 			continue
 		}
 
-		if i > 0 {
-			qc, err = qcompile.Compile(gql, role.Name)
-			if err != nil {
-				return nil, err
+		qc, err = qcompile.Compile(gql, role.Name)
+		if err != nil {
+			return nil, err
+		}
+
+		if conf.Production && role.Name == "anon" {
+			if _, ok := role.tablesMap[qc.Selects[0].Table]; !ok {
+				continue
 			}
 		}
 

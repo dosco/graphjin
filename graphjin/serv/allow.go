@@ -71,7 +71,7 @@ func initAllowList(cpath string) {
 	}
 
 	if len(_allowList.filepath) == 0 {
-		if conf.UseAllowList {
+		if conf.Production {
 			logger.Fatal().Msg("allow.list not found")
 		}
 

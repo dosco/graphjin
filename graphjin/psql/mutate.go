@@ -137,16 +137,23 @@ func (c *compilerContext) renderInsertUpdateColumns(qc *qcode.QCode, w io.Writer
 	}
 
 	for i := range root.PresetList {
+		cn := root.PresetList[i]
+		col, ok := ti.Columns[cn]
+		if !ok {
+			continue
+		}
 		if i != 0 {
 			io.WriteString(c.w, `, `)
 		}
 		if values {
 			io.WriteString(c.w, `'`)
-			io.WriteString(c.w, root.PresetMap[root.PresetList[i]])
-			io.WriteString(c.w, `'`)
+			io.WriteString(c.w, root.PresetMap[cn])
+			io.WriteString(c.w, `' :: `)
+			io.WriteString(c.w, col.Type)
+
 		} else {
 			io.WriteString(c.w, `"`)
-			io.WriteString(c.w, root.PresetList[i])
+			io.WriteString(c.w, cn)
 			io.WriteString(c.w, `"`)
 		}
 	}

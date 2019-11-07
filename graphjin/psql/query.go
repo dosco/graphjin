@@ -340,9 +340,9 @@ func (c *compilerContext) renderLateralJoinClose(sel *qcode.Select) error {
 	return nil
 }
 
-func (c *compilerContext) renderJoin(sel *qcode.Select) error {
+func (c *compilerContext) renderJoin(sel *qcode.Select, ti *DBTableInfo) error {
 	parent := &c.s[sel.ParentID]
-	return c.renderJoinByName(sel.Table, parent.Table, parent.ID)
+	return c.renderJoinByName(ti.Name, parent.Table, parent.ID)
 }
 
 func (c *compilerContext) renderJoinByName(table, parent string, id int32) error {
@@ -607,7 +607,7 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo,
 	}
 
 	if !isRoot {
-		if err := c.renderJoin(sel); err != nil {
+		if err := c.renderJoin(sel, ti); err != nil {
 			return err
 		}
 
@@ -691,7 +691,7 @@ func (c *compilerContext) renderOrderByColumns(sel *qcode.Select, ti *DBTableInf
 
 func (c *compilerContext) renderRelationship(sel *qcode.Select, ti *DBTableInfo) error {
 	parent := c.s[sel.ParentID]
-	return c.renderRelationshipByName(sel.Table, parent.Table, parent.ID)
+	return c.renderRelationshipByName(ti.Name, parent.Table, parent.ID)
 }
 
 func (c *compilerContext) renderRelationshipByName(table, parent string, id int32) error {
