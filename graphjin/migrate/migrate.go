@@ -16,7 +16,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-var migrationPattern = regexp.MustCompile(`\A(\d+)_.+\.sql\z`)
+var migrationPattern = regexp.MustCompile(`\A(\d+)_[^\.]+\.sql\z`)
 
 var ErrNoFwMigration = errors.Errorf("no sql in forward migration step")
 
@@ -127,7 +127,7 @@ func FindMigrationsEx(path string, fs MigratorFS) ([]string, error) {
 			return nil, err
 		}
 
-		mcount := len(paths) + 100
+		mcount := len(paths)
 
 		if n < int64(mcount) {
 			return nil, fmt.Errorf("Duplicate migration %d", n)
