@@ -1,6 +1,11 @@
+let ogprefix = 'og: http://ogp.me/ns#'
+let title = 'Super Graph'
+let description = 'An instant GraphQL API for your app. No code needed.'
+let color = '#f42525'
+
 module.exports = {
-  title: 'Super Graph',
-  description: 'Get an instant GraphQL API for your Rails apps.',
+  title: title,
+  description: description,
 
   themeConfig: {
     logo: '/hologram.svg',
@@ -15,6 +20,22 @@ module.exports = {
     serviceWorker: {
       updatePopup: true
     },
+
+    head: [
+      //['link', { rel: 'icon', href: `/assets/favicon.ico` }],
+      ['meta', { prefix: ogprefix, property: 'og:title', content: title }],
+      ['meta', { prefix: ogprefix, property: 'twitter:title', content: title }],
+      ['meta', { prefix: ogprefix, property: 'og:type', content: 'website' }],
+      ['meta', { prefix: ogprefix, property: 'og:url', content: 'https://supergraph.dev }],
+      ['meta', { prefix: ogprefix, property: 'og:description', content: description }],
+      //['meta', { prefix: ogprefix, property: 'og:image', content: 'https://wireupyourfrontend.com/assets/logo.png' }],
+      // ['meta', { name: 'apple-mobile-web-app-capable', content: 'yes' }],
+      // ['meta', { name: 'apple-mobile-web-app-status-bar-style', content: 'black' }],
+      // ['link', { rel: 'apple-touch-icon', href: `/assets/apple-touch-icon.png` }],
+      // ['link', { rel: 'mask-icon', href: '/assets/safari-pinned-tab.svg', color: color }],
+      // ['meta', { name: 'msapplication-TileImage', content: '/assets/mstile-150x150.png' }],
+      // ['meta', { name: 'msapplication-TileColor', content: color }],
+  ],
   },
 
   postcss: {

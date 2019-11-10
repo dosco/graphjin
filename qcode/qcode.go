@@ -577,7 +577,7 @@ func (com *Compiler) compileArgID(sel *Select, arg *Arg) error {
 	case nodeVar:
 		ex.Type = ValVar
 	default:
-		fmt.Errorf("expecting a string, int, float or variable")
+		return fmt.Errorf("expecting a string, int, float or variable")
 	}
 
 	sel.Where = ex

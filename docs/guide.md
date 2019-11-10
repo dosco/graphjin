@@ -1149,11 +1149,11 @@ web_ui: true
 # debug, info, warn, error, fatal, panic
 log_level: "debug"
 
-# Disable this in development to get a list of 
-# queries used. When enabled super graph
-# will only allow queries from this list
-# List saved to ./config/allow.list
-use_allow_list: false
+# When production mode is 'true' only queries 
+# from the allow list are permitted.
+# When it's 'false' all queries are saved to the
+# the allow list in ./config/allow.list
+production: false
 
 # Throw a 401 on auth failure for queries that need auth
 auth_fail_block: false
