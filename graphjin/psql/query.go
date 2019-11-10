@@ -191,15 +191,15 @@ func (c *compilerContext) processChildren(sel *qcode.Select, ti *DBTableInfo) (u
 			fallthrough
 		case RelBelongTo:
 			if _, ok := colmap[rel.Col2]; !ok {
-				cols = append(cols, &qcode.Column{ti.Name, rel.Col2, rel.Col2})
+				cols = append(cols, &qcode.Column{Table: ti.Name, Name: rel.Col2, FieldName: rel.Col2})
 			}
 		case RelOneToManyThrough:
 			if _, ok := colmap[rel.Col1]; !ok {
-				cols = append(cols, &qcode.Column{ti.Name, rel.Col1, rel.Col1})
+				cols = append(cols, &qcode.Column{Table: ti.Name, Name: rel.Col1, FieldName: rel.Col1})
 			}
 		case RelRemote:
 			if _, ok := colmap[rel.Col1]; !ok {
-				cols = append(cols, &qcode.Column{ti.Name, rel.Col1, rel.Col2})
+				cols = append(cols, &qcode.Column{Table: ti.Name, Name: rel.Col1, FieldName: rel.Col2})
 			}
 			skipped |= (1 << uint(id))
 

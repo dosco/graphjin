@@ -24,6 +24,12 @@
               :item="actionLink"
             />
 
+            <a
+              class="px-4 py-3 my-8 border-2 border-gray-500 text-gray-600 font-bold rounded"
+              href="https://github.com/dosco/super-graph"
+              target="_blank"
+            >Github</a>
+
           </div>
         </div>
 

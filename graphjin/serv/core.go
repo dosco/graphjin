@@ -325,7 +325,7 @@ func (c *coreContext) resolveRemote(
 		ob.WriteString("null")
 	}
 
-	to[0] = jsn.Field{[]byte(s.FieldName), ob.Bytes()}
+	to[0] = jsn.Field{Key: []byte(s.FieldName), Value: ob.Bytes()}
 	return to, nil
 }
 
@@ -402,7 +402,7 @@ func (c *coreContext) resolveRemotes(
 				ob.WriteString("null")
 			}
 
-			to[n] = jsn.Field{[]byte(s.FieldName), ob.Bytes()}
+			to[n] = jsn.Field{Key: []byte(s.FieldName), Value: ob.Bytes()}
 		}(i, id, s)
 	}
 	wg.Wait()
