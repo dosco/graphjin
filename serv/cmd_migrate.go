@@ -124,7 +124,7 @@ func cmdDBNew(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	mname := fmt.Sprintf("%d_%s.sql", (len(m) + 1), name)
+	mname := fmt.Sprintf("%d_%s.sql", len(m), name)
 
 	// Write new migration
 	mpath := filepath.Join(conf.MigrationsPath, mname)
