@@ -169,6 +169,7 @@ func routeHandler() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.Handle("/api/v1/graphql", withAuth(apiv1Http))
+
 	if conf.WebUI {
 		mux.Handle("/", http.FileServer(rice.MustFindBox("../web/build").HTTPBox()))
 	}

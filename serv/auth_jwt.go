@@ -95,8 +95,11 @@ func jwtHandler(next http.HandlerFunc) http.HandlerFunc {
 			} else {
 				ctx = context.WithValue(ctx, userIDKey, claims.Subject)
 			}
+
 			next.ServeHTTP(w, r.WithContext(ctx))
+			return
 		}
+
 		next.ServeHTTP(w, r)
 	}
 }
