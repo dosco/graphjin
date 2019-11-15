@@ -77,16 +77,14 @@ func apiv1Http(w http.ResponseWriter, r *http.Request) {
 	}
 
 	b, err := ioutil.ReadAll(io.LimitReader(r.Body, maxReadBytes))
-	defer r.Body.Close()
-
 	if err != nil {
 		logger.Err(err).Msg("failed to read request body")
 		errorResp(w, err)
 		return
 	}
+	defer r.Body.Close()
 
 	err = json.Unmarshal(b, &ctx.req)
-
 	if err != nil {
 		logger.Err(err).Msg("failed to decode json request body")
 		errorResp(w, err)
@@ -109,10 +107,10 @@ func apiv1Http(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		logger.Err(err).Msg("failed to handle request")
 		errorResp(w, err)
+		return
 	}
 }
 
 func errorResp(w http.ResponseWriter, err error) {
-	w.WriteHeader(http.StatusBadRequest)
 	json.NewEncoder(w).Encode(gqlResp{Error: err.Error()})
 }
