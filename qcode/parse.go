@@ -148,24 +148,13 @@ func parseSelectionSet(gql []byte) (*Operation, error) {
 
 	if p.peek(itemObjOpen) {
 		p.ignore()
-	}
-
-	if p.peek(itemName) {
-		op = opPool.Get().(*Operation)
-		op.Reset()
-
-		op.Type = opQuery
-		op.Name = ""
-		op.Fields = op.fieldsA[:0]
-		op.Args = op.argsA[:0]
-		op.Fields, err = p.parseFields(op.Fields)
-
+		op, err = p.parseQueryOp()
 	} else {
 		op, err = p.parseOp()
+	}
 
-		if err != nil {
-			return nil, err
-		}
+	if err != nil {
+		return nil, err
 	}
 
 	lexPool.Put(l)
@@ -259,6 +248,37 @@ func (p *Parser) parseOp() (*Operation, error) {
 
 	if p.peek(itemObjOpen) {
 		p.ignore()
+
+		for n := 0; n < 10; n++ {
+			if p.peek(itemName) == false {
+				break
+			}
+
+			op.Fields, err = p.parseFields(op.Fields)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return op, nil
+}
+
+func (p *Parser) parseQueryOp() (*Operation, error) {
+	op := opPool.Get().(*Operation)
+	op.Reset()
+
+	op.Type = opQuery
+	op.Fields = op.fieldsA[:0]
+	op.Args = op.argsA[:0]
+
+	var err error
+
+	for n := 0; n < 10; n++ {
+		if p.peek(itemName) == false {
+			break
+		}
+
 		op.Fields, err = p.parseFields(op.Fields)
 		if err != nil {
 			return nil, err
@@ -300,16 +320,12 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 			return nil, err
 		}
 
-		if f.ID != 0 {
-			intf := st.Peek()
-			pid, ok := intf.(int32)
-
-			if !ok {
-				return nil, fmt.Errorf("14: unexpected value %v (%t)", intf, intf)
-			}
-
+		intf := st.Peek()
+		if pid, ok := intf.(int32); ok {
 			f.ParentID = pid
 			fields[pid].Children = append(fields[pid].Children, f.ID)
+		} else {
+			f.ParentID = -1
 		}
 
 		if p.peek(itemObjOpen) {

@@ -77,30 +77,49 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer) (uint32, error) {
 	}
 
 	c := &compilerContext{w, qc.Selects, co}
-	root := &qc.Selects[0]
-
-	ti, err := c.schema.GetTable(root.Table)
-	if err != nil {
-		return 0, err
-	}
+	multiRoot := (len(qc.Roots) > 1)
 
 	st := NewStack()
-	st.Push(root.ID + closeBlock)
-	st.Push(root.ID)
 
-	//fmt.Fprintf(w, `SELECT json_object_agg('%s', %s) FROM (`,
-	//root.FieldName, root.Table)
-	io.WriteString(c.w, `SELECT json_object_agg('`)
-	io.WriteString(c.w, root.FieldName)
-	io.WriteString(c.w, `', `)
+	if multiRoot {
+		io.WriteString(c.w, `SELECT row_to_json("json_root") FROM (SELECT `)
 
-	if ti.Singular == false {
-		io.WriteString(c.w, root.Table)
+		for i, id := range qc.Roots {
+			root := qc.Selects[id]
+
+			st.Push(root.ID + closeBlock)
+			st.Push(root.ID)
+
+			if i != 0 {
+				io.WriteString(c.w, `, `)
+			}
+
+			io.WriteString(c.w, `"sel_`)
+			int2string(c.w, root.ID)
+			io.WriteString(c.w, `"."json_`)
+			int2string(c.w, root.ID)
+			io.WriteString(c.w, `"`)
+
+			alias(c.w, root.FieldName)
+		}
+
+		io.WriteString(c.w, ` FROM `)
+
 	} else {
-		io.WriteString(c.w, "sel_json_")
+		root := qc.Selects[0]
+
+		io.WriteString(c.w, `SELECT json_object_agg(`)
+		io.WriteString(c.w, `'`)
+		io.WriteString(c.w, root.FieldName)
+		io.WriteString(c.w, `', `)
+		io.WriteString(c.w, `json_`)
 		int2string(c.w, root.ID)
+
+		st.Push(root.ID + closeBlock)
+		st.Push(root.ID)
+
+		io.WriteString(c.w, `) FROM `)
 	}
-	io.WriteString(c.w, `) FROM (`)
 
 	var ignored uint32
 
@@ -114,16 +133,21 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer) (uint32, error) {
 		if id < closeBlock {
 			sel := &c.s[id]
 
+			if sel.ParentID == -1 {
+				io.WriteString(c.w, `(`)
+			}
+
 			ti, err := c.schema.GetTable(sel.Table)
 			if err != nil {
 				return 0, err
 			}
 
-			if sel.ID != 0 {
+			if sel.ParentID != -1 {
 				if err = c.renderLateralJoin(sel); err != nil {
 					return 0, err
 				}
 			}
+
 			skipped, err := c.renderSelect(sel, ti)
 			if err != nil {
 				return 0, err
@@ -153,16 +177,25 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer) (uint32, error) {
 				return 0, err
 			}
 
-			if sel.ID != 0 {
+			if sel.ParentID != -1 {
 				if err = c.renderLateralJoinClose(sel); err != nil {
 					return 0, err
 				}
+			} else {
+				io.WriteString(c.w, `)`)
+				aliasWithID(c.w, `sel`, sel.ID)
+
+				if st.Len() != 0 {
+					io.WriteString(c.w, `, `)
+				}
 			}
+
 		}
 	}
 
-	io.WriteString(c.w, `)`)
-	alias(c.w, `done_1337`)
+	if multiRoot {
+		io.WriteString(c.w, `) AS "json_root"`)
+	}
 
 	return ignored, nil
 }
@@ -219,7 +252,7 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo) (uint
 	if ti.Singular == false {
 		//fmt.Fprintf(w, `SELECT coalesce(json_agg("%s"`, c.sel.Table)
 		io.WriteString(c.w, `SELECT coalesce(json_agg("`)
-		io.WriteString(c.w, "sel_json_")
+		io.WriteString(c.w, "json_")
 		int2string(c.w, sel.ID)
 		io.WriteString(c.w, `"`)
 
@@ -232,7 +265,7 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo) (uint
 
 		//fmt.Fprintf(w, `), '[]') AS "%s" FROM (`, c.sel.Table)
 		io.WriteString(c.w, `), '[]')`)
-		alias(c.w, sel.Table)
+		aliasWithID(c.w, "json", sel.ID)
 		io.WriteString(c.w, ` FROM (`)
 	}
 
@@ -245,8 +278,8 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo) (uint
 
 	io.WriteString(c.w, `row_to_json((`)
 
-	//fmt.Fprintf(w, `SELECT "sel_%d" FROM (SELECT `, c.sel.ID)
-	io.WriteString(c.w, `SELECT "sel_`)
+	//fmt.Fprintf(w, `SELECT "%d" FROM (SELECT `, c.sel.ID)
+	io.WriteString(c.w, `SELECT "json_row_`)
 	int2string(c.w, sel.ID)
 	io.WriteString(c.w, `" FROM (SELECT `)
 
@@ -260,13 +293,13 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo) (uint
 		return skipped, err
 	}
 
-	//fmt.Fprintf(w, `) AS "sel_%d"`, c.sel.ID)
+	//fmt.Fprintf(w, `) AS "%d"`, c.sel.ID)
 	io.WriteString(c.w, `)`)
-	aliasWithID(c.w, "sel", sel.ID)
+	aliasWithID(c.w, "json_row", sel.ID)
 
 	//fmt.Fprintf(w, `)) AS "%s"`, c.sel.Table)
 	io.WriteString(c.w, `))`)
-	aliasWithID(c.w, "sel_json", sel.ID)
+	aliasWithID(c.w, "json", sel.ID)
 	// END-ROW-TO-JSON
 
 	if hasOrder {
@@ -295,8 +328,8 @@ func (c *compilerContext) renderSelectClose(sel *qcode.Select, ti *DBTableInfo) 
 	}
 
 	switch {
-	case sel.Paging.NoLimit:
-		break
+	case ti.Singular:
+		io.WriteString(c.w, ` LIMIT ('1') :: integer`)
 
 	case len(sel.Paging.Limit) != 0:
 		//fmt.Fprintf(w, ` LIMIT ('%s') :: integer`, c.sel.Paging.Limit)
@@ -304,8 +337,8 @@ func (c *compilerContext) renderSelectClose(sel *qcode.Select, ti *DBTableInfo) 
 		io.WriteString(c.w, sel.Paging.Limit)
 		io.WriteString(c.w, `') :: integer`)
 
-	case ti.Singular:
-		io.WriteString(c.w, ` LIMIT ('1') :: integer`)
+	case sel.Paging.NoLimit:
+		break
 
 	default:
 		io.WriteString(c.w, ` LIMIT ('20') :: integer`)
@@ -319,9 +352,9 @@ func (c *compilerContext) renderSelectClose(sel *qcode.Select, ti *DBTableInfo) 
 	}
 
 	if ti.Singular == false {
-		//fmt.Fprintf(w, `) AS "sel_json_agg_%d"`, c.sel.ID)
+		//fmt.Fprintf(w, `) AS "json_agg_%d"`, c.sel.ID)
 		io.WriteString(c.w, `)`)
-		aliasWithID(c.w, "sel_json_agg", sel.ID)
+		aliasWithID(c.w, "json_agg", sel.ID)
 	}
 
 	return nil
@@ -445,24 +478,18 @@ func (c *compilerContext) renderJoinedColumns(sel *qcode.Select, ti *DBTableInfo
 		}
 		childSel := &c.s[id]
 
-		cti, err := c.schema.GetTable(childSel.Table)
-		if err != nil {
-			return err
-		}
-
 		//fmt.Fprintf(w, `"%s_%d_join"."%s" AS "%s"`,
 		//s.Table, s.ID, s.Table, s.FieldName)
-		if cti.Singular {
-			io.WriteString(c.w, `"sel_json_`)
-			int2string(c.w, childSel.ID)
-			io.WriteString(c.w, `" AS "`)
-			io.WriteString(c.w, childSel.FieldName)
-			io.WriteString(c.w, `"`)
-
-		} else {
-			colWithTableIDSuffixAlias(c.w, childSel.Table, childSel.ID,
-				"_join", childSel.Table, childSel.FieldName)
-		}
+		//if cti.Singular {
+		io.WriteString(c.w, `"`)
+		io.WriteString(c.w, childSel.Table)
+		io.WriteString(c.w, `_`)
+		int2string(c.w, childSel.ID)
+		io.WriteString(c.w, `_join"."json_`)
+		int2string(c.w, childSel.ID)
+		io.WriteString(c.w, `" AS "`)
+		io.WriteString(c.w, childSel.FieldName)
+		io.WriteString(c.w, `"`)
 	}
 
 	return nil
@@ -472,7 +499,7 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo,
 	childCols []*qcode.Column, skipped uint32) error {
 	var groupBy []int
 
-	isRoot := sel.ID == 0
+	isRoot := sel.ParentID == -1
 	isFil := sel.Where != nil
 	isSearch := sel.Args["search"] != nil
 	isAgg := false
@@ -641,8 +668,8 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo,
 	}
 
 	switch {
-	case sel.Paging.NoLimit:
-		break
+	case ti.Singular:
+		io.WriteString(c.w, ` LIMIT ('1') :: integer`)
 
 	case len(sel.Paging.Limit) != 0:
 		//fmt.Fprintf(w, ` LIMIT ('%s') :: integer`, c.sel.Paging.Limit)
@@ -650,8 +677,8 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo,
 		io.WriteString(c.w, sel.Paging.Limit)
 		io.WriteString(c.w, `') :: integer`)
 
-	case ti.Singular:
-		io.WriteString(c.w, ` LIMIT ('1') :: integer`)
+	case sel.Paging.NoLimit:
+		break
 
 	default:
 		io.WriteString(c.w, ` LIMIT ('20') :: integer`)
