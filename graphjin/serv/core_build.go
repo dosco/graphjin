@@ -55,8 +55,11 @@ func (c *coreContext) buildStmt() ([]stmt, error) {
 		}
 
 		if conf.Production && role.Name == "anon" {
-			if _, ok := role.tablesMap[qc.Selects[0].Table]; !ok {
-				continue
+			for _, id := range qc.Roots {
+				root := qc.Selects[id]
+				if _, ok := role.tablesMap[root.Table]; !ok {
+					continue
+				}
 			}
 		}
 

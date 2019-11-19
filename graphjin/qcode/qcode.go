@@ -30,6 +30,8 @@ type QCode struct {
 	Type      QType
 	ActionVar string
 	Selects   []Select
+	Roots     []int32
+	rootsA    [5]int32
 }
 
 type Select struct {
@@ -233,6 +235,7 @@ func (com *Compiler) Compile(query []byte, role string) (*QCode, error) {
 	var err error
 
 	qc := QCode{Type: QTQuery}
+	qc.Roots = qc.rootsA[:0]
 
 	op, err := Parse(query)
 	if err != nil {
@@ -250,7 +253,7 @@ func (com *Compiler) Compile(query []byte, role string) (*QCode, error) {
 
 func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 	id := int32(0)
-	parentID := int32(0)
+	parentID := int32(-1)
 
 	if len(op.Fields) == 0 {
 		return errors.New("invalid graphql no query found")
@@ -269,7 +272,12 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 	if len(op.Fields) == 0 {
 		return errors.New("empty query")
 	}
-	st.Push(op.Fields[0].ID)
+
+	for i := range op.Fields {
+		if op.Fields[i].ParentID == -1 {
+			st.Push(op.Fields[i].ID)
+		}
+	}
 
 	for {
 		if st.Len() == 0 {
@@ -313,11 +321,6 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 			s.PresetList = trv.update.pslist
 		}
 
-		if s.ID != 0 {
-			p := &selects[s.ParentID]
-			p.Children = append(p.Children, s.ID)
-		}
-
 		if len(field.Alias) != 0 {
 			s.FieldName = field.Alias
 		} else {
@@ -327,6 +330,15 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 		err := com.compileArgs(qc, s, field.Args)
 		if err != nil {
 			return err
+		}
+
+		// Order is important addFilters must come after compileArgs
+		if s.ParentID == -1 {
+			qc.Roots = append(qc.Roots, s.ID)
+			com.addFilters(qc, s, role)
+		} else {
+			p := &selects[s.ParentID]
+			p.Children = append(p.Children, s.ID)
 		}
 
 		s.Cols = make([]Column, 0, len(field.Children))
@@ -362,36 +374,40 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 		return errors.New("invalid query")
 	}
 
-	var fil *Exp
-	root := &selects[0]
+	qc.Selects = selects[:id]
+	return nil
+}
 
-	if trv, ok := com.tr[role][op.Fields[0].Name]; ok {
+func (com *Compiler) addFilters(qc *QCode, root *Select, role string) {
+	var fil *Exp
+
+	if trv, ok := com.tr[role][root.Table]; ok {
 		fil = trv.filter(qc.Type)
 	}
 
-	if fil != nil {
-		switch fil.Op {
-		case OpNop:
-		case OpFalse:
-			root.Where = fil
-		default:
-			if root.Where != nil {
-				ow := root.Where
-
-				root.Where = expPool.Get().(*Exp)
-				root.Where.Reset()
-				root.Where.Op = OpAnd
-				root.Where.Children = root.Where.childrenA[:2]
-				root.Where.Children[0] = fil
-				root.Where.Children[1] = ow
-			} else {
-				root.Where = fil
-			}
-		}
+	if fil == nil {
+		return
 	}
 
-	qc.Selects = selects[:id]
-	return nil
+	switch fil.Op {
+	case OpNop:
+	case OpFalse:
+		root.Where = fil
+
+	default:
+		if root.Where != nil {
+			ow := root.Where
+
+			root.Where = expPool.Get().(*Exp)
+			root.Where.Reset()
+			root.Where.Op = OpAnd
+			root.Where.Children = root.Where.childrenA[:2]
+			root.Where.Children[0] = fil
+			root.Where.Children[1] = ow
+		} else {
+			root.Where = fil
+		}
+	}
 }
 
 func (com *Compiler) compileArgs(qc *QCode, sel *Select, args []Arg) error {

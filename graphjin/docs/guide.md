@@ -476,6 +476,21 @@ query {
 }
 ```
 
+Multiple tables can also be fetched using a single GraphQL query. This is very fast since the entire query is converted into a single SQL query which the database can efficiently run.
+
+```graphql
+query {
+  user {
+    full_name
+    email
+  }
+  products {
+    name
+    description
+  }
+}
+```
+
 ### Fetching data
 
 To fetch a specific `product` by it's ID you can use the `id` argument. The real name id field will be resolved automatically so this query will work even if your id column is named something like `product_id`.
@@ -907,6 +922,40 @@ class AddSearchColumn < ActiveRecord::Migration[5.1]
   end
 end
 ```
+
+## GraphQL with React
+
+This is a quick simple example using `graphql.js` [https://github.com/f/graphql.js/](https://github.com/f/graphql.js/)
+
+```js
+import React, { useState, useEffect } from 'react'
+import graphql from 'graphql.js'
+
+// Create a GraphQL client pointing to Super Graph
+var graph = graphql("http://localhost:3000/api/v1/graphql", { asJSON: true })
+
+const App = () => {
+  const [user, setUser] = useState(null)
+  
+  useEffect(() => {
+    async function action() {
+      // Use the GraphQL client to execute a graphQL query
+      // The second argument to the client are the variables you need to pass
+      const result = await graph(`{ user { id first_name last_name picture_url } }`)()
+      setUser(result)
+    }
+    action()
+  }, []);
+
+  return (
+    <div className="App">
+      <h1>{ JSON.stringify(user) }</h1>
+    </div>
+  );
+}
+```
+
+export default App;
 
 ## Authentication
 

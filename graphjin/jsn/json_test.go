@@ -374,10 +374,6 @@ func TestKeys2(t *testing.T) {
 		"id", "posts", "title", "description", "full_name", "email", "books", "name", "description",
 	}
 
-	// for i := range fields {
-	// 	fmt.Println("-->", string(fields[i]))
-	// }
-
 	if len(exp) != len(fields) {
 		t.Errorf("Expected %d fields %d", len(exp), len(fields))
 	}

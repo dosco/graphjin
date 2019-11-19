@@ -14,10 +14,10 @@ func TestCompile1(t *testing.T) {
 	})
 
 	_, err := qc.Compile([]byte(`
-	product(id: 15) {
+	{ product(id: 15) {
 			id
 			name
-		}`), "user")
+		} }`), "user")
 
 	if err != nil {
 		t.Fatal(err)

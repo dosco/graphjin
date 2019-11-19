@@ -9,7 +9,7 @@ log_level: "debug"
 # from the allow list are permitted.
 # When it's 'false' all queries are saved to the
 # the allow list in ./config/allow.list
-production: true
+production: false
 
 # Throw a 401 on auth failure for queries that need auth
 auth_fail_block: false

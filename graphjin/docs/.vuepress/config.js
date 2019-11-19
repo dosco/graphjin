@@ -26,7 +26,7 @@ module.exports = {
       ['meta', { prefix: ogprefix, property: 'og:title', content: title }],
       ['meta', { prefix: ogprefix, property: 'twitter:title', content: title }],
       ['meta', { prefix: ogprefix, property: 'og:type', content: 'website' }],
-      ['meta', { prefix: ogprefix, property: 'og:url', content: 'https://supergraph.dev }],
+      ['meta', { prefix: ogprefix, property: 'og:url', content: 'https://supergraph.dev' }],
       ['meta', { prefix: ogprefix, property: 'og:description', content: description }],
       //['meta', { prefix: ogprefix, property: 'og:image', content: 'https://wireupyourfrontend.com/assets/logo.png' }],
       // ['meta', { name: 'apple-mobile-web-app-capable', content: 'yes' }],
