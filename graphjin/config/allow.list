@@ -287,4 +287,18 @@ query {
   }
 }
 
+variables {
+	"data": {
+		"name": "WOOO",
+		"price": 50.5
+	}
+}
+
+mutation {
+  products(insert: $data) {
+    id
+    name
+  }
+}
+
 

@@ -77,7 +77,7 @@ SQL Output
 
   database:
     variables:
-      account_id: "select account_id from users where id = $user_id"
+      admin_account_id: "5"
 
     defaults:
       Filters: ["{ user_id: { eq: $user_id } }"]

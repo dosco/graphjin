@@ -77,9 +77,9 @@ func (c *compilerContext) renderInsert(qc *qcode.QCode, w io.Writer,
 		return 0, err
 	}
 
-	io.WriteString(c.w, `(WITH "input" AS (SELECT {{`)
+	io.WriteString(c.w, `(WITH "input" AS (SELECT '{{`)
 	io.WriteString(c.w, qc.ActionVar)
-	io.WriteString(c.w, `}}::json AS j) INSERT INTO `)
+	io.WriteString(c.w, `}}' :: json AS j) INSERT INTO `)
 	quoted(c.w, ti.Name)
 	io.WriteString(c.w, ` (`)
 	c.renderInsertUpdateColumns(qc, w, jt, ti, false)
@@ -174,9 +174,9 @@ func (c *compilerContext) renderUpdate(qc *qcode.QCode, w io.Writer,
 		return 0, err
 	}
 
-	io.WriteString(c.w, `(WITH "input" AS (SELECT {{`)
+	io.WriteString(c.w, `(WITH "input" AS (SELECT '{{`)
 	io.WriteString(c.w, qc.ActionVar)
-	io.WriteString(c.w, `}}::json AS j) UPDATE `)
+	io.WriteString(c.w, `}}' :: json AS j) UPDATE `)
 	quoted(c.w, ti.Name)
 	io.WriteString(c.w, ` SET (`)
 	c.renderInsertUpdateColumns(qc, w, jt, ti, false)

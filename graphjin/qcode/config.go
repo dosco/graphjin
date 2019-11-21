@@ -1,6 +1,7 @@
 package qcode
 
 import (
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -120,4 +121,13 @@ func mapToList(m map[string]string) []string {
 	}
 	sort.Strings(list)
 	return list
+}
+
+var varRe = regexp.MustCompile(`\$([a-zA-Z0-9_]+)`)
+
+func parsePresets(m map[string]string) map[string]string {
+	for k, v := range m {
+		m[k] = varRe.ReplaceAllString(v, `{{$1}}`)
+	}
+	return m
 }

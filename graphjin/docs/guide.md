@@ -276,7 +276,7 @@ transmission_gear_type
 // Text
 word
 sentence
-paragrph
+paragraph
 question
 quote
 
@@ -1083,25 +1083,6 @@ must be run to help figure out a users role. This query can be as complex as you
 
 The individual roles are defined under the `roles` parameter and this includes each table the role has a custom setting for. The role is dynamically matched using the `match` parameter for example in the above case `users.id = 1` means that when the `roles_query` is executed a user with the id `1` willbe assigned the admin role and those that don't match get the `user` role if authenticated successfully or the `anon` role.
 
-This below example would work for SAAS apps where an account (tenant) is usually the top parent table to everything else.
-
-```yaml
-roles_query: "SELECT * FROM users JOIN accounts on accounts.id = users.account_id WHERE users.id = $user_id"
-
-roles:
-  - name: user
-    tables:
-      - name: users
-      ...
-
-  - name: admin
-    match: accounts.admin_id = $user_id
-    tables:
-      - name: users
-        query:
-          filters: [{ accounts: { id: { eq: $account_id } } }]
-```
-
 ## Remote Joins
 
 It often happens that after fetching some data from the DB we need to call another API to fetch some more data and all this combined into a single JSON response. For example along with a list of users you need their last 5 payments from Stripe. This requires you to query your DB for the users and Stripe for the payments. Super Graph handles all this for you also only the fields you requested from the Stripe API are returned. 
@@ -1290,10 +1271,9 @@ database:
   # Enable this if you need the user id in triggers, etc
   set_user_id: false
 
-  # Define variables here that you want to use in filters
-  # sub-queries must be wrapped in ()
+  # Define additional variables here to be used with filters
   variables:
-    account_id: "(select account_id from users where id = $user_id)"
+    admin_account_id: "5"
 
   # Define defaults to for the field key and values below
   defaults:
@@ -1381,11 +1361,10 @@ roles:
           deny: true
 
   - name: admin
-    match: id = 1
+    match: id = 1000
     tables:
       - name: users
-        # query:
-        #   filters: ["{ account_id: { _eq: $account_id } }"]
+        filters: []
 
 ```
 

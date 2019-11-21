@@ -9,6 +9,7 @@ import (
 
 	"github.com/dosco/super-graph/qcode"
 	"github.com/jackc/pgconn"
+	"github.com/jackc/pgx/v4"
 	"github.com/valyala/fasttemplate"
 )
 
@@ -24,22 +25,35 @@ var (
 )
 
 func initPreparedList() {
+	ctx := context.Background()
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		logger.Fatal().Err(err).Send()
+	}
+	defer tx.Rollback(ctx)
+
 	_preparedList = make(map[string]*preparedItem)
 
-	if err := prepareRoleStmt(); err != nil {
+	if err := prepareRoleStmt(ctx, tx); err != nil {
 		logger.Fatal().Err(err).Msg("failed to prepare get role statement")
 	}
 
 	for _, v := range _allowList.list {
-
-		err := prepareStmt(v.gql, v.vars)
+		err := prepareStmt(ctx, tx, v.gql, v.vars)
 		if err != nil {
 			logger.Warn().Str("gql", v.gql).Err(err).Send()
 		}
 	}
+
+	if err := tx.Commit(ctx); err != nil {
+		logger.Fatal().Err(err).Send()
+	}
+
+	logger.Info().Msgf("Registered %d queries from allow.list as prepared statements", len(_allowList.list))
 }
 
-func prepareStmt(gql string, varBytes json.RawMessage) error {
+func prepareStmt(ctx context.Context, tx pgx.Tx, gql string, varBytes json.RawMessage) error {
 	if len(gql) == 0 {
 		return nil
 	}
@@ -64,15 +78,7 @@ func prepareStmt(gql string, varBytes json.RawMessage) error {
 
 		finalSQL, am := processTemplate(s.sql)
 
-		ctx := context.Background()
-
-		tx, err := db.Begin(ctx)
-		if err != nil {
-			return err
-		}
-		defer tx.Rollback(ctx)
-
-		pstmt, err := tx.Prepare(ctx, "", finalSQL)
+		pstmt, err := tx.Prepare(c.Context, "", finalSQL)
 		if err != nil {
 			return err
 		}
@@ -92,15 +98,12 @@ func prepareStmt(gql string, varBytes json.RawMessage) error {
 			qc:      s.qc,
 		}
 
-		if err := tx.Commit(ctx); err != nil {
-			return err
-		}
 	}
 
 	return nil
 }
 
-func prepareRoleStmt() error {
+func prepareRoleStmt(ctx context.Context, tx pgx.Tx) error {
 	if len(conf.RolesQuery) == 0 {
 		return nil
 	}
@@ -125,15 +128,7 @@ func prepareRoleStmt() error {
 
 	roleSQL, _ := processTemplate(w.String())
 
-	ctx := context.Background()
-
-	tx, err := db.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-
-	_, err = tx.Prepare(ctx, "_sg_get_role", roleSQL)
+	_, err := tx.Prepare(ctx, "_sg_get_role", roleSQL)
 	if err != nil {
 		return err
 	}
@@ -142,19 +137,31 @@ func prepareRoleStmt() error {
 }
 
 func processTemplate(tmpl string) (string, [][]byte) {
-	t := fasttemplate.New(tmpl, `{{`, `}}`)
-	am := make([][]byte, 0, 5)
-	i := 0
+	st := struct {
+		vmap map[string]int
+		am   [][]byte
+		i    int
+	}{
+		vmap: make(map[string]int),
+		am:   make([][]byte, 0, 5),
+		i:    0,
+	}
 
-	vmap := make(map[string]int)
-
-	return t.ExecuteFuncString(func(w io.Writer, tag string) (int, error) {
-		if n, ok := vmap[tag]; ok {
+	execFunc := func(w io.Writer, tag string) (int, error) {
+		if n, ok := st.vmap[tag]; ok {
 			return w.Write([]byte(fmt.Sprintf("$%d", n)))
 		}
-		am = append(am, []byte(tag))
-		i++
-		vmap[tag] = i
-		return w.Write([]byte(fmt.Sprintf("$%d", i)))
-	}), am
+		st.am = append(st.am, []byte(tag))
+		st.i++
+		st.vmap[tag] = st.i
+		return w.Write([]byte(fmt.Sprintf("$%d", st.i)))
+	}
+
+	t1 := fasttemplate.New(tmpl, `'{{`, `}}'`)
+	ts1 := t1.ExecuteFuncString(execFunc)
+
+	t2 := fasttemplate.New(ts1, `{{`, `}}`)
+	ts2 := t2.ExecuteFuncString(execFunc)
+
+	return ts2, st.am
 }

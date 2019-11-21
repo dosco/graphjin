@@ -97,10 +97,9 @@ database:
   # Enable this if you need the user id in triggers, etc
   set_user_id: false
 
-  # Define variables here that you want to use in filters
-  # sub-queries must be wrapped in ()
+  # Define additional variables here to be used with filters
   variables:
-    account_id: "(select account_id from users where id = $user_id)"
+    admin_account_id: "5"
 
   # Define defaults to for the field key and values below
   defaults:
@@ -188,8 +187,7 @@ roles:
           deny: true
 
   - name: admin
-    match: id = 1
+    match: id = 1000
     tables:
       - name: users
-        # query:
-        #   filters: ["{ account_id: { _eq: $account_id } }"]
+        filters: []

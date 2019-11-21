@@ -46,10 +46,10 @@ for (i = 0; i < product_count; i++) {
   var data = {
     name: fake.beer_name(),
     description: desc,
-    price: fake.price(),
-    user_id: user.id,
-    created_at: "now",
-    updated_at: "now"
+    price: fake.price()
+    //user_id: user.id,
+    //created_at: "now",
+    //updated_at: "now"
   }
 
   var res = graphql(" \
@@ -57,7 +57,9 @@ for (i = 0; i < product_count; i++) {
       product(insert: $data) { \
         id \
       } \
-    }", { data: data })
+    }", { data: data }, {
+      user_id: 5
+    })
   products.push(res.product)
 }
 

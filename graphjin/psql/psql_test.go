@@ -171,7 +171,7 @@ func TestMain(m *testing.M) {
 	}
 
 	vars := NewVariables(map[string]string{
-		"account_id": "select account_id from users where id = $user_id",
+		"admin_account_id": "5",
 	})
 
 	pcompile = NewCompiler(Config{

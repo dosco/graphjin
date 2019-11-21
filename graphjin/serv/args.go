@@ -13,25 +13,21 @@ func argMap(ctx *coreContext) func(w io.Writer, tag string) (int, error) {
 		switch tag {
 		case "user_id_provider":
 			if v := ctx.Value(userIDProviderKey); v != nil {
-				return stringArg(w, v.(string))
+				return io.WriteString(w, v.(string))
 			}
-			io.WriteString(w, "null")
-			return 0, nil
+			return io.WriteString(w, "null")
 
 		case "user_id":
 			if v := ctx.Value(userIDKey); v != nil {
-				return stringArg(w, v.(string))
+				return io.WriteString(w, v.(string))
 			}
-
-			io.WriteString(w, "null")
-			return 0, nil
+			return io.WriteString(w, "null")
 
 		case "user_role":
 			if v := ctx.Value(userRoleKey); v != nil {
-				return stringArg(w, v.(string))
+				return io.WriteString(w, v.(string))
 			}
-			io.WriteString(w, "null")
-			return 0, nil
+			return io.WriteString(w, "null")
 		}
 
 		fields := jsn.Get(ctx.req.Vars, [][]byte{[]byte(tag)})
@@ -39,22 +35,7 @@ func argMap(ctx *coreContext) func(w io.Writer, tag string) (int, error) {
 			return 0, fmt.Errorf("variable '%s' not found", tag)
 		}
 
-		is := false
-
-		for i := range fields[0].Value {
-			c := fields[0].Value[i]
-			if c != ' ' {
-				is = (c == '"') || (c == '{') || (c == '[')
-				break
-			}
-		}
-
-		if is {
-			return stringArgB(w, fields[0].Value)
-		}
-
-		w.Write(fields[0].Value)
-		return 0, nil
+		return w.Write(fields[0].Value)
 	}
 }
 
@@ -99,24 +80,4 @@ func argList(ctx *coreContext, args [][]byte) []interface{} {
 	}
 
 	return vars
-}
-
-func stringArg(w io.Writer, v string) (int, error) {
-	if n, err := w.Write([]byte(`'`)); err != nil {
-		return n, err
-	}
-	if n, err := w.Write([]byte(v)); err != nil {
-		return n, err
-	}
-	return w.Write([]byte(`'`))
-}
-
-func stringArgB(w io.Writer, v []byte) (int, error) {
-	if n, err := w.Write([]byte(`'`)); err != nil {
-		return n, err
-	}
-	if n, err := w.Write(v); err != nil {
-		return n, err
-	}
-	return w.Write([]byte(`'`))
 }
