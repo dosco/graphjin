@@ -202,7 +202,7 @@ func (com *Compiler) AddRole(role, table string, trc TRConfig) error {
 		return err
 	}
 	trv.insert.cols = listToMap(trc.Insert.Columns)
-	trv.insert.psmap = trc.Insert.Presets
+	trv.insert.psmap = parsePresets(trc.Insert.Presets)
 	trv.insert.pslist = mapToList(trv.insert.psmap)
 
 	// update config
@@ -210,7 +210,7 @@ func (com *Compiler) AddRole(role, table string, trc TRConfig) error {
 		return err
 	}
 	trv.update.cols = listToMap(trc.Update.Columns)
-	trv.update.psmap = trc.Update.Presets
+	trv.update.psmap = parsePresets(trc.Update.Presets)
 	trv.update.pslist = mapToList(trv.update.psmap)
 
 	// delete config

@@ -1,6 +1,7 @@
 package serv
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"github.com/brianvoe/gofakeit"
 	"github.com/dop251/goja"
 	"github.com/spf13/cobra"
+	"github.com/valyala/fasttemplate"
 )
 
 func cmdDBSeed(cmd *cobra.Command, args []string) {
@@ -57,20 +59,73 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 }
 
 //func runFunc(call goja.FunctionCall) {
-func graphQLFunc(query string, data interface{}) map[string]interface{} {
+func graphQLFunc(query string, data interface{}, opt map[string]string) map[string]interface{} {
 	b, err := json.Marshal(data)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to json serialize")
 	}
 
-	c := &coreContext{Context: context.Background()}
+	ctx := context.Background()
+
+	if v, ok := opt["user_id"]; ok && len(v) != 0 {
+		ctx = context.WithValue(ctx, userIDKey, v)
+	}
+
+	var role string
+
+	if v, ok := opt["role"]; ok && len(v) != 0 {
+		role = v
+	} else {
+		role = "user"
+	}
+
+	c := &coreContext{Context: ctx}
 	c.req.Query = query
 	c.req.Vars = b
-	c.req.role = "user"
 
-	res, err := c.execQuery()
+	st, err := c.buildStmtByRole(role)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("graphql query failed")
+	}
+
+	buf := &bytes.Buffer{}
+
+	t := fasttemplate.New(st.sql, openVar, closeVar)
+	_, err = t.ExecuteFunc(buf, argMap(c))
+
+	if err == errNoUserID {
+		logger.Fatal().Msg("query requires a user_id")
+	}
+
+	if err != nil {
+		logger.Fatal().Err(err).Send()
+	}
+
+	finalSQL := buf.String()
+
+	tx, err := db.Begin(c)
+	if err != nil {
+		logger.Fatal().Err(err).Send()
+	}
+	defer tx.Rollback(c)
+
+	// if err := c.setLocalUserID(tx); err != nil {
+	// 	return nil, 0, err
+	// }
+
+	var root []byte
+
+	if err = tx.QueryRow(c, finalSQL).Scan(&root); err != nil {
+		logger.Fatal().Err(err).Msg("sql query failed")
+	}
+
+	if err := tx.Commit(c); err != nil {
+		logger.Fatal().Err(err).Send()
+	}
+
+	res, err := c.execRemoteJoin(st.qc, st.skipped, root)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("remote join failed")
 	}
 
 	val := make(map[string]interface{})
@@ -156,10 +211,9 @@ func setFakeFuncs(f *goja.Object) {
 	f.Set("transmission_gear_type", gofakeit.TransmissionGearType)
 
 	// Text
-
 	f.Set("word", gofakeit.Word)
 	f.Set("sentence", gofakeit.Sentence)
-	f.Set("paragrph", gofakeit.Paragraph)
+	f.Set("paragraph", gofakeit.Paragraph)
 	f.Set("question", gofakeit.Question)
 	f.Set("quote", gofakeit.Quote)
 

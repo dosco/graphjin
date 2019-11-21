@@ -844,7 +844,6 @@ func (c *compilerContext) renderWhere(sel *qcode.Select, ti *DBTableInfo) error 
 }
 
 func (c *compilerContext) renderNestedWhere(ex *qcode.Exp, sel *qcode.Select, ti *DBTableInfo) error {
-
 	for i := 0; i < len(ex.NestedCols)-1; i++ {
 		cti, err := c.schema.GetTable(ex.NestedCols[i])
 		if err != nil {
@@ -878,7 +877,14 @@ func (c *compilerContext) renderNestedWhere(ex *qcode.Exp, sel *qcode.Select, ti
 }
 
 func (c *compilerContext) renderOp(ex *qcode.Exp, sel *qcode.Select, ti *DBTableInfo) error {
+	var col *DBColumn
+	var ok bool
+
 	if len(ex.Col) != 0 {
+		if col, ok = ti.Columns[ex.Col]; !ok {
+			return fmt.Errorf("no column '%s' found ", ex.Col)
+		}
+
 		io.WriteString(c.w, `((`)
 		colWithTable(c.w, ti.Name, ex.Col)
 		io.WriteString(c.w, `) `)
@@ -934,6 +940,9 @@ func (c *compilerContext) renderOp(ex *qcode.Exp, sel *qcode.Select, ti *DBTable
 		if len(ti.PrimaryCol) == 0 {
 			return fmt.Errorf("no primary key column defined for %s", ti.Name)
 		}
+		if col, ok = ti.Columns[ti.PrimaryCol]; !ok {
+			return fmt.Errorf("no primary key column '%s' found ", ti.PrimaryCol)
+		}
 		//fmt.Fprintf(w, `(("%s") =`, c.ti.PrimaryCol)
 		io.WriteString(c.w, `((`)
 		colWithTable(c.w, ti.Name, ti.PrimaryCol)
@@ -942,6 +951,9 @@ func (c *compilerContext) renderOp(ex *qcode.Exp, sel *qcode.Select, ti *DBTable
 	case qcode.OpTsQuery:
 		if len(ti.TSVCol) == 0 {
 			return fmt.Errorf("no tsv column defined for %s", ti.Name)
+		}
+		if col, ok = ti.Columns[ti.TSVCol]; !ok {
+			return fmt.Errorf("no tsv column '%s' found ", ti.TSVCol)
 		}
 		//fmt.Fprintf(w, `(("%s") @@ to_tsquery('%s'))`, c.ti.TSVCol, val.Val)
 		io.WriteString(c.w, `(("`)
@@ -958,7 +970,7 @@ func (c *compilerContext) renderOp(ex *qcode.Exp, sel *qcode.Select, ti *DBTable
 	if ex.Type == qcode.ValList {
 		c.renderList(ex)
 	} else {
-		c.renderVal(ex, c.vars)
+		c.renderVal(ex, c.vars, col)
 	}
 
 	io.WriteString(c.w, `)`)
@@ -1035,7 +1047,7 @@ func (c *compilerContext) renderList(ex *qcode.Exp) {
 	io.WriteString(c.w, `)`)
 }
 
-func (c *compilerContext) renderVal(ex *qcode.Exp, vars map[string]string) {
+func (c *compilerContext) renderVal(ex *qcode.Exp, vars map[string]string, col *DBColumn) {
 	io.WriteString(c.w, ` `)
 
 	switch ex.Type {
@@ -1052,6 +1064,7 @@ func (c *compilerContext) renderVal(ex *qcode.Exp, vars map[string]string) {
 		io.WriteString(c.w, `'`)
 
 	case qcode.ValVar:
+		io.WriteString(c.w, `'`)
 		if val, ok := vars[ex.Val]; ok {
 			io.WriteString(c.w, val)
 		} else {
@@ -1060,6 +1073,8 @@ func (c *compilerContext) renderVal(ex *qcode.Exp, vars map[string]string) {
 			io.WriteString(c.w, ex.Val)
 			io.WriteString(c.w, `}}`)
 		}
+		io.WriteString(c.w, `' :: `)
+		io.WriteString(c.w, col.Type)
 	}
 	//io.WriteString(c.w, `)`)
 }

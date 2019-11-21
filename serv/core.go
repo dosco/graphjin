@@ -71,6 +71,12 @@ func (c *coreContext) execQuery() ([]byte, error) {
 		}
 	}
 
+	return c.execRemoteJoin(qc, skipped, data)
+}
+
+func (c *coreContext) execRemoteJoin(qc *qcode.QCode, skipped uint32, data []byte) ([]byte, error) {
+	var err error
+
 	if len(data) == 0 || skipped == 0 {
 		return data, nil
 	}
@@ -114,11 +120,19 @@ func (c *coreContext) execQuery() ([]byte, error) {
 }
 
 func (c *coreContext) resolvePreparedSQL() ([]byte, *preparedItem, error) {
-	tx, err := db.Begin(c)
-	if err != nil {
-		return nil, nil, err
+	var tx pgx.Tx
+	var err error
+
+	mutation := isMutation(c.req.Query)
+	useRoleQuery := len(conf.RolesQuery) != 0 && mutation
+	useTx := useRoleQuery || conf.DB.SetUserID
+
+	if useTx {
+		if tx, err = db.Begin(c); err != nil {
+			return nil, nil, err
+		}
+		defer tx.Rollback(c)
 	}
-	defer tx.Rollback(c)
 
 	if conf.DB.SetUserID {
 		if err := c.setLocalUserID(tx); err != nil {
@@ -127,8 +141,6 @@ func (c *coreContext) resolvePreparedSQL() ([]byte, *preparedItem, error) {
 	}
 
 	var role string
-	mutation := isMutation(c.req.Query)
-	useRoleQuery := len(conf.RolesQuery) != 0 && mutation
 
 	if useRoleQuery {
 		if role, err = c.executeRoleQuery(tx); err != nil {
@@ -149,12 +161,19 @@ func (c *coreContext) resolvePreparedSQL() ([]byte, *preparedItem, error) {
 	}
 
 	var root []byte
+	var row pgx.Row
 	vars := argList(c, ps.args)
 
-	if mutation {
-		err = tx.QueryRow(c, ps.stmt.SQL, vars...).Scan(&root)
+	if useTx {
+		row = tx.QueryRow(c, ps.stmt.SQL, vars...)
 	} else {
-		err = tx.QueryRow(c, ps.stmt.SQL, vars...).Scan(&role, &root)
+		row = db.QueryRow(c, ps.stmt.SQL, vars...)
+	}
+
+	if mutation {
+		err = row.Scan(&root)
+	} else {
+		err = row.Scan(&role, &root)
 	}
 
 	logger.Debug().Str("default_role", c.req.role).Str("role", role).Msg(c.req.Query)
@@ -165,22 +184,35 @@ func (c *coreContext) resolvePreparedSQL() ([]byte, *preparedItem, error) {
 
 	c.req.role = role
 
-	if err := tx.Commit(c); err != nil {
-		return nil, nil, err
+	if useTx {
+		if err := tx.Commit(c); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	return root, ps, nil
 }
 
 func (c *coreContext) resolveSQL() ([]byte, uint32, error) {
-	tx, err := db.Begin(c)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer tx.Rollback(c)
+	var tx pgx.Tx
+	var err error
 
 	mutation := isMutation(c.req.Query)
 	useRoleQuery := len(conf.RolesQuery) != 0 && mutation
+	useTx := useRoleQuery || conf.DB.SetUserID
+
+	if useTx {
+		if tx, err = db.Begin(c); err != nil {
+			return nil, 0, err
+		}
+		defer tx.Rollback(c)
+	}
+
+	if conf.DB.SetUserID {
+		if err := c.setLocalUserID(tx); err != nil {
+			return nil, 0, err
+		}
+	}
 
 	if useRoleQuery {
 		if c.req.role, err = c.executeRoleQuery(tx); err != nil {
@@ -225,42 +257,36 @@ func (c *coreContext) resolveSQL() ([]byte, uint32, error) {
 		stime = time.Now()
 	}
 
-	if conf.DB.SetUserID {
-		if err := c.setLocalUserID(tx); err != nil {
-			return nil, 0, err
-		}
+	var root []byte
+	var role, defaultRole string
+	var row pgx.Row
+
+	if useTx {
+		row = tx.QueryRow(c, finalSQL)
+	} else {
+		row = db.QueryRow(c, finalSQL)
 	}
 
-	var root []byte
-	var role string
-
-	log := logger.Debug()
-
 	if mutation {
-		err = tx.QueryRow(c, finalSQL).Scan(&root)
-		log = log.Str("role", role)
+		err = row.Scan(&root)
 
 	} else {
-		err = tx.QueryRow(c, finalSQL).Scan(&role, &root)
-		log = log.Str("default_role", c.req.role).Str("role", role)
+		err = row.Scan(&role, &root)
+		defaultRole = c.req.role
 		c.req.role = role
 
 	}
 
-	log.Msg(c.req.Query)
+	logger.Debug().Str("default_role", defaultRole).Str("role", role).Msg(c.req.Query)
 
 	if err != nil {
 		return nil, 0, err
 	}
 
-	if err := tx.Commit(c); err != nil {
-		return nil, 0, err
-	}
-
-	if mutation {
-		st = findStmt(c.req.role, stmts)
-	} else {
-		st = &stmts[0]
+	if useTx {
+		if err := tx.Commit(c); err != nil {
+			return nil, 0, err
+		}
 	}
 
 	if conf.EnableTracing && len(st.qc.Selects) != 0 {

@@ -150,3 +150,39 @@ func (c *coreContext) buildStmt() ([]stmt, error) {
 
 	return stmts, nil
 }
+
+func (c *coreContext) buildStmtByRole(role string) (stmt, error) {
+	var st stmt
+	var err error
+
+	if len(role) == 0 {
+		return st, errors.New(`no role defined`)
+	}
+
+	var vars map[string]json.RawMessage
+
+	if len(c.req.Vars) != 0 {
+		if err := json.Unmarshal(c.req.Vars, &vars); err != nil {
+			return st, err
+		}
+	}
+
+	gql := []byte(c.req.Query)
+
+	st.qc, err = qcompile.Compile(gql, role)
+	if err != nil {
+		return st, err
+	}
+
+	w := &bytes.Buffer{}
+
+	st.skipped, err = pcompile.Compile(st.qc, w, psql.Variables(vars))
+	if err != nil {
+		return st, err
+	}
+
+	st.sql = w.String()
+
+	return st, nil
+
+}
