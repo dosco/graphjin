@@ -111,6 +111,13 @@ e.g. db:migrate -+1
 	})
 
 	rootCmd.AddCommand(&cobra.Command{
+		Use:   "db:reset",
+		Short: "Reset database",
+		Long:  "This command will drop, create, migrate and seed the database (won't run in production)",
+		Run:   cmdDBReset,
+	})
+
+	rootCmd.AddCommand(&cobra.Command{
 		Use:   "new APP-NAME",
 		Short: "Create a new application",
 		Long:  "Generate all the required files to start on a new Super Graph app",
@@ -274,5 +281,15 @@ func initCompiler() {
 
 	if err := initResolvers(); err != nil {
 		logger.Fatal().Err(err).Msg("failed to initialized resolvers")
+	}
+}
+
+func initConfOnce() {
+	var err error
+
+	if conf == nil {
+		if conf, err = initConf(); err != nil {
+			logger.Fatal().Err(err).Msg("failed to read config")
+		}
 	}
 }

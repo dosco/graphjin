@@ -3,7 +3,7 @@ host_port: 0.0.0.0:8080
 web_ui: true
 
 # debug, info, warn, error, fatal, panic
-log_level: "debug"
+log_level: "info"
 
 # When production mode is 'true' only queries 
 # from the allow list are permitted.
@@ -184,7 +184,7 @@ roles:
             - updated_at: "now"
 
         delete:
-          deny: true
+          block: true
 
   - name: admin
     match: id = 1000
