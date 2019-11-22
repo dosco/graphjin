@@ -36,6 +36,7 @@ var newMigrationText = `-- Write your migrate up statements here
 `
 
 func cmdDBSetup(cmd *cobra.Command, args []string) {
+	initConfOnce()
 	cmdDBCreate(cmd, []string{})
 	cmdDBMigrate(cmd, []string{"up"})
 
@@ -54,13 +55,19 @@ func cmdDBSetup(cmd *cobra.Command, args []string) {
 	logger.Warn().Msgf("failed to read seed file '%s'", sfile)
 }
 
-func cmdDBCreate(cmd *cobra.Command, args []string) {
-	var err error
+func cmdDBReset(cmd *cobra.Command, args []string) {
+	initConfOnce()
 
-	if conf, err = initConf(); err != nil {
-		logger.Fatal().Err(err).Msg("failed to read config")
+	if conf.Production {
+		logger.Fatal().Msg("db:reset does not work in production")
+		return
 	}
+	cmdDBDrop(cmd, []string{})
+	cmdDBSetup(cmd, []string{})
+}
 
+func cmdDBCreate(cmd *cobra.Command, args []string) {
+	initConfOnce()
 	ctx := context.Background()
 
 	conn, err := initDB(conf, false)
@@ -80,12 +87,7 @@ func cmdDBCreate(cmd *cobra.Command, args []string) {
 }
 
 func cmdDBDrop(cmd *cobra.Command, args []string) {
-	var err error
-
-	if conf, err = initConf(); err != nil {
-		logger.Fatal().Err(err).Msg("failed to read config")
-	}
-
+	initConfOnce()
 	ctx := context.Background()
 
 	conn, err := initDB(conf, false)
@@ -110,12 +112,7 @@ func cmdDBNew(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	var err error
-
-	if conf, err = initConf(); err != nil {
-		logger.Fatal().Err(err).Msg("failed to read config")
-	}
-
+	initConfOnce()
 	name := args[0]
 
 	m, err := migrate.FindMigrations(conf.MigrationsPath)
@@ -144,18 +141,13 @@ func cmdDBNew(cmd *cobra.Command, args []string) {
 }
 
 func cmdDBMigrate(cmd *cobra.Command, args []string) {
-	var err error
-
 	if len(args) == 0 {
 		cmd.Help()
 		os.Exit(1)
 	}
 
+	initConfOnce()
 	dest := args[0]
-
-	if conf, err = initConf(); err != nil {
-		logger.Fatal().Err(err).Msg("failed to read config")
-	}
 
 	conn, err := initDB(conf, true)
 	if err != nil {
@@ -251,11 +243,7 @@ func cmdDBMigrate(cmd *cobra.Command, args []string) {
 }
 
 func cmdDBStatus(cmd *cobra.Command, args []string) {
-	var err error
-
-	if conf, err = initConf(); err != nil {
-		logger.Fatal().Err(err).Msg("failed to read config")
-	}
+	initConfOnce()
 
 	conn, err := initDB(conf, true)
 	if err != nil {

@@ -1358,7 +1358,7 @@ roles:
             - updated_at: "now"
 
         delete:
-          deny: true
+          block: true
 
   - name: admin
     match: id = 1000
