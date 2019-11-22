@@ -7,7 +7,7 @@ host_port: 0.0.0.0:8080
 web_ui: false
 
 # debug, info, warn, error, fatal, panic, disable
-log_level: "info"
+log_level: "warn"
 # When production mode is 'true' only queries 
 # from the allow list are permitted.
 # When it's 'false' all queries are saved to the

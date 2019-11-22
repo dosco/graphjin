@@ -62,7 +62,7 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 func graphQLFunc(query string, data interface{}, opt map[string]string) map[string]interface{} {
 	b, err := json.Marshal(data)
 	if err != nil {
-		panic(err)
+		logger.Fatal().Err(err).Send()
 	}
 
 	ctx := context.Background()
@@ -85,7 +85,7 @@ func graphQLFunc(query string, data interface{}, opt map[string]string) map[stri
 
 	st, err := c.buildStmtByRole(role)
 	if err != nil {
-		panic(fmt.Errorf("graphql query failed: %s", err))
+		logger.Fatal().Err(err).Msg("graphql query failed")
 	}
 
 	buf := &bytes.Buffer{}
@@ -94,47 +94,47 @@ func graphQLFunc(query string, data interface{}, opt map[string]string) map[stri
 	_, err = t.ExecuteFunc(buf, argMap(c))
 
 	if err == errNoUserID {
-		panic(fmt.Errorf("query requires a user_id"))
+		logger.Fatal().Err(err).Msg("query requires a user_id")
 	}
 
 	if err != nil {
-		panic(err)
+		logger.Fatal().Err(err).Send()
 	}
 
 	finalSQL := buf.String()
 
 	tx, err := db.Begin(c)
 	if err != nil {
-		panic(err)
+		logger.Fatal().Err(err).Send()
 	}
 	defer tx.Rollback(c)
 
 	if conf.DB.SetUserID {
 		if err := c.setLocalUserID(tx); err != nil {
-			panic(err)
+			logger.Fatal().Err(err).Send()
 		}
 	}
 
 	var root []byte
 
 	if err = tx.QueryRow(c, finalSQL).Scan(&root); err != nil {
-		panic(fmt.Errorf("sql query failed: %s", err))
+		logger.Fatal().Err(err).Msg("sql query failed")
 	}
 
 	if err := tx.Commit(c); err != nil {
-		panic(err)
+		logger.Fatal().Err(err).Send()
 	}
 
 	res, err := c.execRemoteJoin(st.qc, st.skipped, root)
 	if err != nil {
-		panic(err)
+		logger.Fatal().Err(err).Send()
 	}
 
 	val := make(map[string]interface{})
 
 	err = json.Unmarshal(res, &val)
 	if err != nil {
-		panic(fmt.Errorf("failed to deserialize json: %s", err))
+		logger.Fatal().Err(err).Send()
 	}
 
 	return val
