@@ -28,9 +28,7 @@ func (pl *Logger) Log(ctx context.Context, level pgx.LogLevel, msg string, data 
 		zlevel = zerolog.ErrorLevel
 	case pgx.LogLevelWarn:
 		zlevel = zerolog.WarnLevel
-	case pgx.LogLevelInfo:
-		zlevel = zerolog.InfoLevel
-	case pgx.LogLevelDebug:
+	case pgx.LogLevelDebug, pgx.LogLevelInfo:
 		zlevel = zerolog.DebugLevel
 	default:
 		zlevel = zerolog.DebugLevel
