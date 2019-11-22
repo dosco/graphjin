@@ -3,7 +3,7 @@ host_port: 0.0.0.0:8080
 web_ui: true
 
 # debug, info, warn, error, fatal, panic
-log_level: "warn"
+log_level: "info"
 
 # When production mode is 'true' only queries 
 # from the allow list are permitted.
