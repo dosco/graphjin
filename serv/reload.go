@@ -168,7 +168,7 @@ func Do(log func(string, ...interface{}), additional ...dir) error {
 func ReExec() {
 	err := syscall.Exec(binSelf, append([]string{binSelf}, os.Args[1:]...), os.Environ())
 	if err != nil {
-		logger.Fatal().Err(err).Msg("cannot restart")
+		errlog.Fatal().Err(err).Msg("cannot restart")
 	}
 }
 

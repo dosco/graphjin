@@ -35,7 +35,7 @@ func jwtHandler(next http.HandlerFunc) http.HandlerFunc {
 	case len(publicKeyFile) != 0:
 		kd, err := ioutil.ReadFile(publicKeyFile)
 		if err != nil {
-			logger.Fatal().Err(err).Send()
+			errlog.Fatal().Err(err).Send()
 		}
 
 		switch conf.Auth.JWT.PubKeyType {
@@ -51,7 +51,7 @@ func jwtHandler(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		if err != nil {
-			logger.Fatal().Err(err).Send()
+			errlog.Fatal().Err(err).Send()
 		}
 	}
 

@@ -46,7 +46,7 @@ func initAllowList(cpath string) {
 		if _, err := os.Stat(fp); err == nil {
 			_allowList.filepath = fp
 		} else if !os.IsNotExist(err) {
-			logger.Fatal().Err(err).Send()
+			errlog.Fatal().Err(err).Send()
 		}
 	}
 
@@ -56,7 +56,7 @@ func initAllowList(cpath string) {
 		if _, err := os.Stat(fp); err == nil {
 			_allowList.filepath = fp
 		} else if !os.IsNotExist(err) {
-			logger.Fatal().Err(err).Send()
+			errlog.Fatal().Err(err).Send()
 		}
 	}
 
@@ -66,13 +66,13 @@ func initAllowList(cpath string) {
 		if _, err := os.Stat(fp); err == nil {
 			_allowList.filepath = fp
 		} else if !os.IsNotExist(err) {
-			logger.Fatal().Err(err).Send()
+			errlog.Fatal().Err(err).Send()
 		}
 	}
 
 	if len(_allowList.filepath) == 0 {
 		if conf.Production {
-			logger.Fatal().Msg("allow.list not found")
+			errlog.Fatal().Msg("allow.list not found")
 		}
 
 		if len(cpath) == 0 {
@@ -187,7 +187,6 @@ func (al *allowList) load() {
 						item.gql = q
 						item.vars = varBytes
 					}
-
 					varBytes = nil
 
 				} else if ty == AL_VARS {

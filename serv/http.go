@@ -21,7 +21,6 @@ const (
 
 var (
 	upgrader        = websocket.Upgrader{}
-	errNoUserID     = errors.New("no user_id available")
 	errUnauthorized = errors.New("not authorized")
 )
 
@@ -78,7 +77,7 @@ func apiv1Http(w http.ResponseWriter, r *http.Request) {
 
 	b, err := ioutil.ReadAll(io.LimitReader(r.Body, maxReadBytes))
 	if err != nil {
-		logger.Err(err).Msg("failed to read request body")
+		errlog.Error().Err(err).Msg("failed to read request body")
 		errorResp(w, err)
 		return
 	}
@@ -86,7 +85,7 @@ func apiv1Http(w http.ResponseWriter, r *http.Request) {
 
 	err = json.Unmarshal(b, &ctx.req)
 	if err != nil {
-		logger.Err(err).Msg("failed to decode json request body")
+		errlog.Error().Err(err).Msg("failed to decode json request body")
 		errorResp(w, err)
 		return
 	}
@@ -105,7 +104,7 @@ func apiv1Http(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		logger.Err(err).Msg("failed to handle request")
+		errlog.Error().Err(err).Msg("failed to handle request")
 		errorResp(w, err)
 		return
 	}

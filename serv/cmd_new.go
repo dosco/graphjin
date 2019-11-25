@@ -134,12 +134,12 @@ func ifNotExists(filePath string, doFn func(string) error) {
 	}
 
 	if os.IsNotExist(err) == false {
-		logger.Fatal().Err(err).Msgf("unable to check if '%s' exists", filePath)
+		errlog.Fatal().Err(err).Msgf("unable to check if '%s' exists", filePath)
 	}
 
 	err = doFn(filePath)
 	if err != nil {
-		logger.Fatal().Err(err).Msgf("unable to create '%s'", filePath)
+		errlog.Fatal().Err(err).Msgf("unable to create '%s'", filePath)
 	}
 
 	logger.Info().Msgf("created '%s'", filePath)

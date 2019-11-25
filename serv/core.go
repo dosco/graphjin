@@ -8,11 +8,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/cespare/xxhash/v2"
-	"github.com/dosco/super-graph/jsn"
 	"github.com/dosco/super-graph/qcode"
 	"github.com/jackc/pgx/v4"
 	"github.com/valyala/fasttemplate"
@@ -32,6 +30,10 @@ func (c *coreContext) handleReq(w io.Writer, req *http.Request) error {
 	c.req.ref = req.Referer()
 	c.req.hdr = req.Header
 
+	if len(c.req.Vars) == 2 {
+		c.req.Vars = nil
+	}
+
 	if authCheck(c) {
 		c.req.role = "user"
 	} else {
@@ -47,83 +49,38 @@ func (c *coreContext) handleReq(w io.Writer, req *http.Request) error {
 }
 
 func (c *coreContext) execQuery() ([]byte, error) {
-	var err error
-	var skipped uint32
-	var qc *qcode.QCode
 	var data []byte
+	var st *stmt
+	var err error
 
 	if conf.Production {
-		var ps *preparedItem
-
-		data, ps, err = c.resolvePreparedSQL()
+		data, st, err = c.resolvePreparedSQL()
 		if err != nil {
-			return nil, err
-		}
+			logger.Error().
+				Err(err).
+				Str("default_role", c.req.role).
+				Msg(c.req.Query)
 
-		skipped = ps.skipped
-		qc = ps.qc
+			return nil, errors.New("query failed. check logs for error")
+		}
 
 	} else {
-
-		data, skipped, err = c.resolveSQL()
-		if err != nil {
+		if data, st, err = c.resolveSQL(); err != nil {
 			return nil, err
 		}
 	}
 
-	return c.execRemoteJoin(qc, skipped, data)
+	return execRemoteJoin(st, data, c.req.hdr)
 }
 
-func (c *coreContext) execRemoteJoin(qc *qcode.QCode, skipped uint32, data []byte) ([]byte, error) {
-	var err error
-
-	if len(data) == 0 || skipped == 0 {
-		return data, nil
-	}
-
-	sel := qc.Selects
-	h := xxhash.New()
-
-	// fetch the field name used within the db response json
-	// that are used to mark insertion points and the mapping between
-	// those field names and their select objects
-	fids, sfmap := parentFieldIds(h, sel, skipped)
-
-	// fetch the field values of the marked insertion points
-	// these values contain the id to be used with fetching remote data
-	from := jsn.Get(data, fids)
-
-	var to []jsn.Field
-	switch {
-	case len(from) == 1:
-		to, err = c.resolveRemote(c.req.hdr, h, from[0], sel, sfmap)
-
-	case len(from) > 1:
-		to, err = c.resolveRemotes(c.req.hdr, h, from, sel, sfmap)
-
-	default:
-		return nil, errors.New("something wrong no remote ids found in db response")
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	var ob bytes.Buffer
-
-	err = jsn.Replace(&ob, data, from, to)
-	if err != nil {
-		return nil, err
-	}
-
-	return ob.Bytes(), nil
-}
-
-func (c *coreContext) resolvePreparedSQL() ([]byte, *preparedItem, error) {
+func (c *coreContext) resolvePreparedSQL() ([]byte, *stmt, error) {
 	var tx pgx.Tx
 	var err error
 
-	mutation := isMutation(c.req.Query)
+	qt := qcode.GetQType(c.req.Query)
+	mutation := (qt == qcode.QTMutation)
+	anonQuery := (qt == qcode.QTQuery && c.req.role == "anon")
+
 	useRoleQuery := len(conf.RolesQuery) != 0 && mutation
 	useTx := useRoleQuery || conf.DB.SetUserID
 
@@ -135,7 +92,7 @@ func (c *coreContext) resolvePreparedSQL() ([]byte, *preparedItem, error) {
 	}
 
 	if conf.DB.SetUserID {
-		if err := c.setLocalUserID(tx); err != nil {
+		if err := setLocalUserID(c, tx); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -150,7 +107,7 @@ func (c *coreContext) resolvePreparedSQL() ([]byte, *preparedItem, error) {
 	} else if v := c.Value(userRoleKey); v != nil {
 		role = v.(string)
 
-	} else if mutation {
+	} else {
 		role = c.req.role
 
 	}
@@ -162,21 +119,29 @@ func (c *coreContext) resolvePreparedSQL() ([]byte, *preparedItem, error) {
 
 	var root []byte
 	var row pgx.Row
-	vars := argList(c, ps.args)
 
-	if useTx {
-		row = tx.QueryRow(c, ps.stmt.SQL, vars...)
-	} else {
-		row = db.QueryRow(c, ps.stmt.SQL, vars...)
+	vars, err := argList(c, ps.args)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	if mutation {
+	if useTx {
+		row = tx.QueryRow(c, ps.sd.SQL, vars...)
+	} else {
+		row = db.QueryRow(c, ps.sd.SQL, vars...)
+	}
+
+	if mutation || anonQuery {
 		err = row.Scan(&root)
 	} else {
 		err = row.Scan(&role, &root)
 	}
 
-	logger.Debug().Str("default_role", c.req.role).Str("role", role).Msg(c.req.Query)
+	if len(role) == 0 {
+		logger.Debug().Str("default_role", c.req.role).Msg(c.req.Query)
+	} else {
+		logger.Debug().Str("default_role", c.req.role).Str("role", role).Msg(c.req.Query)
+	}
 
 	if err != nil {
 		return nil, nil, err
@@ -190,65 +155,55 @@ func (c *coreContext) resolvePreparedSQL() ([]byte, *preparedItem, error) {
 		}
 	}
 
-	return root, ps, nil
+	return root, ps.st, nil
 }
 
-func (c *coreContext) resolveSQL() ([]byte, uint32, error) {
+func (c *coreContext) resolveSQL() ([]byte, *stmt, error) {
 	var tx pgx.Tx
 	var err error
 
-	mutation := isMutation(c.req.Query)
+	qt := qcode.GetQType(c.req.Query)
+	mutation := (qt == qcode.QTMutation)
+	//anonQuery := (qt == qcode.QTQuery && c.req.role == "anon")
+
 	useRoleQuery := len(conf.RolesQuery) != 0 && mutation
 	useTx := useRoleQuery || conf.DB.SetUserID
 
 	if useTx {
 		if tx, err = db.Begin(c); err != nil {
-			return nil, 0, err
+			return nil, nil, err
 		}
 		defer tx.Rollback(c)
 	}
 
 	if conf.DB.SetUserID {
-		if err := c.setLocalUserID(tx); err != nil {
-			return nil, 0, err
+		if err := setLocalUserID(c, tx); err != nil {
+			return nil, nil, err
 		}
 	}
 
 	if useRoleQuery {
 		if c.req.role, err = c.executeRoleQuery(tx); err != nil {
-			return nil, 0, err
+			return nil, nil, err
 		}
 
 	} else if v := c.Value(userRoleKey); v != nil {
 		c.req.role = v.(string)
 	}
 
-	stmts, err := c.buildStmt()
+	stmts, err := buildStmt(qt, []byte(c.req.Query), c.req.Vars, c.req.role)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
-
-	var st *stmt
-
-	if mutation {
-		st = findStmt(c.req.role, stmts)
-	} else {
-		st = &stmts[0]
-	}
+	st := &stmts[0]
 
 	t := fasttemplate.New(st.sql, openVar, closeVar)
-
 	buf := &bytes.Buffer{}
-	_, err = t.ExecuteFunc(buf, argMap(c))
 
-	if err == errNoUserID {
-		logger.Warn().Msg("no user id found. query requires an authenicated request")
-	}
-
+	_, err = t.ExecuteFunc(buf, argMap(c, c.req.Vars))
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
-
 	finalSQL := buf.String()
 
 	var stime time.Time
@@ -258,8 +213,10 @@ func (c *coreContext) resolveSQL() ([]byte, uint32, error) {
 	}
 
 	var root []byte
-	var role, defaultRole string
+	var role string
 	var row pgx.Row
+
+	defaultRole := c.req.role
 
 	if useTx {
 		row = tx.QueryRow(c, finalSQL)
@@ -267,186 +224,45 @@ func (c *coreContext) resolveSQL() ([]byte, uint32, error) {
 		row = db.QueryRow(c, finalSQL)
 	}
 
-	if mutation {
+	if len(stmts) == 1 {
 		err = row.Scan(&root)
-
 	} else {
 		err = row.Scan(&role, &root)
-		defaultRole = c.req.role
-		c.req.role = role
-
 	}
 
-	logger.Debug().Str("default_role", defaultRole).Str("role", role).Msg(c.req.Query)
+	if len(role) == 0 {
+		logger.Debug().Str("default_role", defaultRole).Msg(c.req.Query)
+	} else {
+		logger.Debug().Str("default_role", defaultRole).Str("role", role).Msg(c.req.Query)
+	}
 
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 
 	if useTx {
 		if err := tx.Commit(c); err != nil {
-			return nil, 0, err
+			return nil, nil, err
 		}
 	}
 
-	if conf.EnableTracing && len(st.qc.Selects) != 0 {
+	// if conf.Production == false {
+	// 	_allowList.add(&c.req)
+	// }
+
+	if len(stmts) > 1 {
+		if st = findStmt(role, stmts); st == nil {
+			return nil, nil, fmt.Errorf("invalid role '%s' returned", role)
+		}
+	}
+
+	if conf.EnableTracing {
 		for _, id := range st.qc.Roots {
 			c.addTrace(st.qc.Selects, id, stime)
 		}
 	}
 
-	if conf.Production == false {
-		_allowList.add(&c.req)
-	}
-
-	return root, st.skipped, nil
-}
-
-func (c *coreContext) resolveRemote(
-	hdr http.Header,
-	h *xxhash.Digest,
-	field jsn.Field,
-	sel []qcode.Select,
-	sfmap map[uint64]*qcode.Select) ([]jsn.Field, error) {
-
-	// replacement data for the marked insertion points
-	// key and value will be replaced by whats below
-	toA := [1]jsn.Field{}
-	to := toA[:1]
-
-	// use the json key to find the related Select object
-	k1 := xxhash.Sum64(field.Key)
-
-	s, ok := sfmap[k1]
-	if !ok {
-		return nil, nil
-	}
-	p := sel[s.ParentID]
-
-	// then use the Table nme in the Select and it's parent
-	// to find the resolver to use for this relationship
-	k2 := mkkey(h, s.Table, p.Table)
-
-	r, ok := rmap[k2]
-	if !ok {
-		return nil, nil
-	}
-
-	id := jsn.Value(field.Value)
-	if len(id) == 0 {
-		return nil, nil
-	}
-
-	st := time.Now()
-
-	b, err := r.Fn(hdr, id)
-	if err != nil {
-		return nil, err
-	}
-
-	if conf.EnableTracing {
-		c.addTrace(sel, s.ID, st)
-	}
-
-	if len(r.Path) != 0 {
-		b = jsn.Strip(b, r.Path)
-	}
-
-	var ob bytes.Buffer
-
-	if len(s.Cols) != 0 {
-		err = jsn.Filter(&ob, b, colsToList(s.Cols))
-		if err != nil {
-			return nil, err
-		}
-
-	} else {
-		ob.WriteString("null")
-	}
-
-	to[0] = jsn.Field{Key: []byte(s.FieldName), Value: ob.Bytes()}
-	return to, nil
-}
-
-func (c *coreContext) resolveRemotes(
-	hdr http.Header,
-	h *xxhash.Digest,
-	from []jsn.Field,
-	sel []qcode.Select,
-	sfmap map[uint64]*qcode.Select) ([]jsn.Field, error) {
-
-	// replacement data for the marked insertion points
-	// key and value will be replaced by whats below
-	to := make([]jsn.Field, len(from))
-
-	var wg sync.WaitGroup
-	wg.Add(len(from))
-
-	var cerr error
-
-	for i, id := range from {
-
-		// use the json key to find the related Select object
-		k1 := xxhash.Sum64(id.Key)
-
-		s, ok := sfmap[k1]
-		if !ok {
-			return nil, nil
-		}
-		p := sel[s.ParentID]
-
-		// then use the Table nme in the Select and it's parent
-		// to find the resolver to use for this relationship
-		k2 := mkkey(h, s.Table, p.Table)
-
-		r, ok := rmap[k2]
-		if !ok {
-			return nil, nil
-		}
-
-		id := jsn.Value(id.Value)
-		if len(id) == 0 {
-			return nil, nil
-		}
-
-		go func(n int, id []byte, s *qcode.Select) {
-			defer wg.Done()
-
-			st := time.Now()
-
-			b, err := r.Fn(hdr, id)
-			if err != nil {
-				cerr = fmt.Errorf("%s: %s", s.Table, err)
-				return
-			}
-
-			if conf.EnableTracing {
-				c.addTrace(sel, s.ID, st)
-			}
-
-			if len(r.Path) != 0 {
-				b = jsn.Strip(b, r.Path)
-			}
-
-			var ob bytes.Buffer
-
-			if len(s.Cols) != 0 {
-				err = jsn.Filter(&ob, b, colsToList(s.Cols))
-				if err != nil {
-					cerr = fmt.Errorf("%s: %s", s.Table, err)
-					return
-				}
-
-			} else {
-				ob.WriteString("null")
-			}
-
-			to[n] = jsn.Field{Key: []byte(s.FieldName), Value: ob.Bytes()}
-		}(i, id, s)
-	}
-	wg.Wait()
-
-	return to, cerr
+	return root, st, nil
 }
 
 func (c *coreContext) executeRoleQuery(tx pgx.Tx) (string, error) {
@@ -458,15 +274,6 @@ func (c *coreContext) executeRoleQuery(tx pgx.Tx) (string, error) {
 	}
 
 	return role, nil
-}
-
-func (c *coreContext) setLocalUserID(tx pgx.Tx) error {
-	var err error
-	if v := c.Value(userIDKey); v != nil {
-		_, err = tx.Exec(c, fmt.Sprintf(`SET LOCAL "user.id" = %s;`, v))
-	}
-
-	return err
 }
 
 func (c *coreContext) render(w io.Writer, data []byte) error {
@@ -558,6 +365,15 @@ func parentFieldIds(h *xxhash.Digest, sel []qcode.Select, skipped uint32) (
 	}
 
 	return fm, sm
+}
+
+func setLocalUserID(c context.Context, tx pgx.Tx) error {
+	var err error
+	if v := c.Value(userIDKey); v != nil {
+		_, err = tx.Exec(c, fmt.Sprintf(`SET LOCAL "user.id" = %s;`, v))
+	}
+
+	return err
 }
 
 func isSkipped(n uint32, pos uint32) bool {

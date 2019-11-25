@@ -500,7 +500,7 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo,
 	var groupBy []int
 
 	isRoot := sel.ParentID == -1
-	isFil := sel.Where != nil
+	isFil := (sel.Where != nil && sel.Where.Op != qcode.OpNop)
 	isSearch := sel.Args["search"] != nil
 	isAgg := false
 
@@ -879,6 +879,10 @@ func (c *compilerContext) renderNestedWhere(ex *qcode.Exp, sel *qcode.Select, ti
 func (c *compilerContext) renderOp(ex *qcode.Exp, sel *qcode.Select, ti *DBTableInfo) error {
 	var col *DBColumn
 	var ok bool
+
+	if ex.Op == qcode.OpNop {
+		return nil
+	}
 
 	if len(ex.Col) != 0 {
 		if col, ok = ti.Columns[ex.Col]; !ok {

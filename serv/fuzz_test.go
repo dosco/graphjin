@@ -10,7 +10,6 @@ func TestFuzzCrashers(t *testing.T) {
 	}
 
 	for _, f := range crashers {
-		isMutation(f)
 		gqlHash(f, nil, "")
 	}
 }
