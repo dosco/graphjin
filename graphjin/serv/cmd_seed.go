@@ -20,14 +20,14 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 	var err error
 
 	if conf, err = initConf(); err != nil {
-		logger.Fatal().Err(err).Msg("failed to read config")
+		errlog.Fatal().Err(err).Msg("failed to read config")
 	}
 
 	conf.Production = false
 
 	db, err = initDBPool(conf)
 	if err != nil {
-		logger.Fatal().Err(err).Msg("failed to connect to database")
+		errlog.Fatal().Err(err).Msg("failed to connect to database")
 	}
 
 	initCompiler()
@@ -36,7 +36,7 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 
 	b, err := ioutil.ReadFile(path.Join(confPath, conf.SeedFile))
 	if err != nil {
-		logger.Fatal().Err(err).Msgf("failed to read seed file '%s'", sfile)
+		errlog.Fatal().Err(err).Msgf("failed to read seed file '%s'", sfile)
 	}
 
 	vm := goja.New()
@@ -52,7 +52,7 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 
 	_, err = vm.RunScript("seed.js", string(b))
 	if err != nil {
-		logger.Fatal().Err(err).Msg("failed to execute script")
+		errlog.Fatal().Err(err).Msg("failed to execute script")
 	}
 
 	logger.Info().Msg("seed script done")
@@ -60,15 +60,15 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 
 //func runFunc(call goja.FunctionCall) {
 func graphQLFunc(query string, data interface{}, opt map[string]string) map[string]interface{} {
-	b, err := json.Marshal(data)
+	vars, err := json.Marshal(data)
 	if err != nil {
-		logger.Fatal().Err(err).Send()
+		errlog.Fatal().Err(err).Send()
 	}
 
-	ctx := context.Background()
+	c := context.Background()
 
 	if v, ok := opt["user_id"]; ok && len(v) != 0 {
-		ctx = context.WithValue(ctx, userIDKey, v)
+		c = context.WithValue(c, userIDKey, v)
 	}
 
 	var role string
@@ -79,62 +79,50 @@ func graphQLFunc(query string, data interface{}, opt map[string]string) map[stri
 		role = "user"
 	}
 
-	c := &coreContext{Context: ctx}
-	c.req.Query = query
-	c.req.Vars = b
-
-	st, err := c.buildStmtByRole(role)
+	stmts, err := buildRoleStmt([]byte(query), vars, role)
 	if err != nil {
-		logger.Fatal().Err(err).Msg("graphql query failed")
+		errlog.Fatal().Err(err).Msg("graphql query failed")
 	}
+	st := stmts[0]
 
 	buf := &bytes.Buffer{}
 
 	t := fasttemplate.New(st.sql, openVar, closeVar)
-	_, err = t.ExecuteFunc(buf, argMap(c))
-
-	if err == errNoUserID {
-		logger.Fatal().Err(err).Msg("query requires a user_id")
-	}
+	_, err = t.ExecuteFunc(buf, argMap(c, vars))
 
 	if err != nil {
-		logger.Fatal().Err(err).Send()
+		errlog.Fatal().Err(err).Send()
 	}
 
 	finalSQL := buf.String()
 
 	tx, err := db.Begin(c)
 	if err != nil {
-		logger.Fatal().Err(err).Send()
+		errlog.Fatal().Err(err).Send()
 	}
 	defer tx.Rollback(c)
 
 	if conf.DB.SetUserID {
-		if err := c.setLocalUserID(tx); err != nil {
-			logger.Fatal().Err(err).Send()
+		if err := setLocalUserID(c, tx); err != nil {
+			errlog.Fatal().Err(err).Send()
 		}
 	}
 
 	var root []byte
 
 	if err = tx.QueryRow(c, finalSQL).Scan(&root); err != nil {
-		logger.Fatal().Err(err).Msg("sql query failed")
+		errlog.Fatal().Err(err).Msg("sql query failed")
 	}
 
 	if err := tx.Commit(c); err != nil {
-		logger.Fatal().Err(err).Send()
-	}
-
-	res, err := c.execRemoteJoin(st.qc, st.skipped, root)
-	if err != nil {
-		logger.Fatal().Err(err).Send()
+		errlog.Fatal().Err(err).Send()
 	}
 
 	val := make(map[string]interface{})
 
-	err = json.Unmarshal(res, &val)
+	err = json.Unmarshal(root, &val)
 	if err != nil {
-		logger.Fatal().Err(err).Send()
+		errlog.Fatal().Err(err).Send()
 	}
 
 	return val

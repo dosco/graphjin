@@ -101,18 +101,14 @@ database:
   variables:
     admin_account_id: "5"
 
-  # Define defaults to for the field key and values below
-  defaults:
-    # filters: ["{ user_id: { eq: $user_id } }"]
-
-    # Field and table names that you wish to block
-    blocklist:
-      - ar_internal_metadata
-      - schema_migrations
-      - secret
-      - password
-      - encrypted
-      - token
+  # Field and table names that you wish to block
+  blocklist:
+    - ar_internal_metadata
+    - schema_migrations
+    - secret
+    - password
+    - encrypted
+    - token
 
 tables:
   - name: customers

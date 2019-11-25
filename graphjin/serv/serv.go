@@ -15,13 +15,15 @@ import (
 )
 
 func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
-	schema, err := psql.NewDBSchema(db, c.getAliasMap())
+	var err error
+
+	schema, err = psql.NewDBSchema(db, c.getAliasMap())
 	if err != nil {
 		return nil, nil, err
 	}
 
 	conf := qcode.Config{
-		Blocklist: c.DB.Defaults.Blocklist,
+		Blocklist: c.DB.Blocklist,
 		KeepArgs:  false,
 	}
 
@@ -106,7 +108,7 @@ func initWatcher(cpath string) {
 	go func() {
 		err := Do(logger.Printf, d)
 		if err != nil {
-			logger.Fatal().Err(err).Send()
+			errlog.Fatal().Err(err).Send()
 		}
 	}()
 }
@@ -139,7 +141,7 @@ func startHTTP() {
 		<-sigint
 
 		if err := srv.Shutdown(context.Background()); err != nil {
-			logger.Error().Err(err).Msg("shutdown signal received")
+			errlog.Error().Err(err).Msg("shutdown signal received")
 		}
 		close(idleConnsClosed)
 	}()
@@ -148,18 +150,14 @@ func startHTTP() {
 		db.Close()
 	})
 
-	var ident string
-
-	if len(conf.AppName) == 0 {
-		ident = conf.Env
-	} else {
-		ident = conf.AppName
-	}
-
-	fmt.Printf("%s listening on %s (%s)\n", serverName, hostPort, ident)
+	logger.Info().
+		Str("host_post", hostPort).
+		Str("app_name", conf.AppName).
+		Str("env", conf.Env).
+		Msgf("%s listening", serverName)
 
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-		logger.Error().Err(err).Msg("server closed")
+		errlog.Error().Err(err).Msg("server closed")
 	}
 
 	<-idleConnsClosed

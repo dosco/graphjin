@@ -117,7 +117,7 @@ func buildFn(r configRemote) func(http.Header, []byte) ([]byte, error) {
 
 		res, err := client.Do(req)
 		if err != nil {
-			logger.Error().Err(err).Msgf("Failed to connect to: %s", uri)
+			errlog.Error().Err(err).Msgf("Failed to connect to: %s", uri)
 			return nil, err
 		}
 		defer res.Body.Close()

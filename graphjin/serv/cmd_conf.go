@@ -17,11 +17,11 @@ func cmdConfDump(cmd *cobra.Command, args []string) {
 
 	conf, err := initConf()
 	if err != nil {
-		logger.Fatal().Err(err).Msg("failed to read config")
+		errlog.Fatal().Err(err).Msg("failed to read config")
 	}
 
 	if err := conf.Viper.WriteConfigAs(fname); err != nil {
-		logger.Fatal().Err(err).Send()
+		errlog.Fatal().Err(err).Send()
 	}
 
 	logger.Info().Msgf("config dumped to ./%s", fname)

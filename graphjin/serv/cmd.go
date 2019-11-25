@@ -22,16 +22,18 @@ const (
 )
 
 var (
-	logger   *zerolog.Logger
+	logger   zerolog.Logger
+	errlog   zerolog.Logger
 	conf     *config
 	confPath string
 	db       *pgxpool.Pool
+	schema   *psql.DBSchema
 	qcompile *qcode.Compiler
 	pcompile *psql.Compiler
 )
 
 func Init() {
-	logger = initLog()
+	initLog()
 
 	rootCmd := &cobra.Command{
 		Use:   "super-graph",
@@ -135,19 +137,14 @@ e.g. db:migrate -+1
 		"path", "./config", "path to config files")
 
 	if err := rootCmd.Execute(); err != nil {
-		logger.Fatal().Err(err).Send()
+		errlog.Fatal().Err(err).Send()
 	}
 }
 
-func initLog() *zerolog.Logger {
+func initLog() {
 	out := zerolog.ConsoleWriter{Out: os.Stderr}
-	logger := zerolog.New(out).
-		With().
-		Timestamp().
-		Caller().
-		Logger()
-
-	return &logger
+	logger = zerolog.New(out).With().Timestamp().Logger()
+	errlog = logger.With().Caller().Logger()
 }
 
 func initConf() (*config, error) {
@@ -166,7 +163,7 @@ func initConf() (*config, error) {
 		}
 
 		if vi.IsSet("inherits") {
-			logger.Fatal().Msgf("inherited config (%s) cannot itself inherit (%s)",
+			errlog.Fatal().Msgf("inherited config (%s) cannot itself inherit (%s)",
 				inherits,
 				vi.GetString("inherits"))
 		}
@@ -183,7 +180,7 @@ func initConf() (*config, error) {
 
 	logLevel, err := zerolog.ParseLevel(c.LogLevel)
 	if err != nil {
-		logger.Error().Err(err).Msg("error setting log_level")
+		errlog.Error().Err(err).Msg("error setting log_level")
 	}
 	zerolog.SetGlobalLevel(logLevel)
 
@@ -218,7 +215,7 @@ func initDB(c *config, useDB bool) (*pgx.Conn, error) {
 		config.LogLevel = pgx.LogLevelNone
 	}
 
-	config.Logger = NewSQLLogger(*logger)
+	config.Logger = NewSQLLogger(logger)
 
 	db, err := pgx.ConnectConfig(context.Background(), config)
 	if err != nil {
@@ -253,7 +250,7 @@ func initDBPool(c *config) (*pgxpool.Pool, error) {
 		config.ConnConfig.LogLevel = pgx.LogLevelNone
 	}
 
-	config.ConnConfig.Logger = NewSQLLogger(*logger)
+	config.ConnConfig.Logger = NewSQLLogger(logger)
 
 	// if c.DB.MaxRetries != 0 {
 	// 	opt.MaxRetries = c.DB.MaxRetries
@@ -276,11 +273,11 @@ func initCompiler() {
 
 	qcompile, pcompile, err = initCompilers(conf)
 	if err != nil {
-		logger.Fatal().Err(err).Msg("failed to initialize compilers")
+		errlog.Fatal().Err(err).Msg("failed to initialize compilers")
 	}
 
 	if err := initResolvers(); err != nil {
-		logger.Fatal().Err(err).Msg("failed to initialized resolvers")
+		errlog.Fatal().Err(err).Msg("failed to initialized resolvers")
 	}
 }
 
@@ -289,7 +286,7 @@ func initConfOnce() {
 
 	if conf == nil {
 		if conf, err = initConf(); err != nil {
-			logger.Fatal().Err(err).Msg("failed to read config")
+			errlog.Fatal().Err(err).Msg("failed to read config")
 		}
 	}
 }

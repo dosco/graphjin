@@ -73,43 +73,6 @@ mutation {
   }
 }
 
-variables {
-	"data": [
-		{
-			"name": "Gumbo1",
-			"created_at": "now",
-			"updated_at": "now"
-		},
-		{
-			"name": "Gumbo2",
-			"created_at": "now",
-			"updated_at": "now"
-		}
-	]
-}
-
-query {
-  products {
-    id
-    name
-  }
-}
-
-variables {
-	"data": [
-		{
-			"name": "Gumbo1",
-			"created_at": "now",
-			"updated_at": "now"
-		},
-		{
-			"name": "Gumbo2",
-			"created_at": "now",
-			"updated_at": "now"
-		}
-	]
-}
-
 query {
   products {
     id
@@ -131,21 +94,6 @@ mutation {
     id
     name
   }
-}
-
-variables {
-	"data": [
-		{
-			"name": "Gumbo1",
-			"created_at": "now",
-			"updated_at": "now"
-		},
-		{
-			"name": "Gumbo2",
-			"created_at": "now",
-			"updated_at": "now"
-		}
-	]
 }
 
 query {
@@ -175,39 +123,6 @@ mutation {
 }
 
 variables {
-	"data": [
-		{
-			"name": "Gumbo1",
-			"created_at": "now",
-			"updated_at": "now"
-		},
-		{
-			"name": "Gumbo2",
-			"created_at": "now",
-			"updated_at": "now"
-		}
-	]
-}
-
-query {
-  products {
-    id
-    name
-    users {
-      email
-    }
-  }
-}
-
-query {
-  me {
-    id
-    email
-    full_name
-  }
-}
-
-variables {
 	"update": {
 		"name": "Helloo",
 		"description": "World \u003c\u003e"
@@ -224,70 +139,6 @@ mutation {
 }
 
 variables {
-	"data": [
-		{
-			"name": "Gumbo1",
-			"created_at": "now",
-			"updated_at": "now"
-		},
-		{
-			"name": "Gumbo2",
-			"created_at": "now",
-			"updated_at": "now"
-		}
-	]
-}
-
-query {
-  product {
-    id
-    name
-  }
-}
-
-variables {
-	"data": [
-		{
-			"name": "Gumbo1",
-			"created_at": "now",
-			"updated_at": "now"
-		},
-		{
-			"name": "Gumbo2",
-			"created_at": "now",
-			"updated_at": "now"
-		}
-	]
-}
-
-query {
-  products {
-    id
-    name
-    description
-    users {
-      email
-    }
-  }
-}
-
-query {
-  users {
-    id
-    email
-    picture: avatar
-    password
-    full_name
-    products(limit: 2, where: {price: {gt: 10}}) {
-      id
-      name
-      description
-      price
-    }
-  }
-}
-
-variables {
 	"data": {
 		"name": "WOOO",
 		"price": 50.5
@@ -296,6 +147,13 @@ variables {
 
 mutation {
   products(insert: $data) {
+    id
+    name
+  }
+}
+
+query {
+  products {
     id
     name
   }

@@ -3,7 +3,6 @@ package serv
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 
@@ -14,10 +13,9 @@ import (
 )
 
 type preparedItem struct {
-	stmt    *pgconn.StatementDescription
-	args    [][]byte
-	skipped uint32
-	qc      *qcode.QCode
+	sd   *pgconn.StatementDescription
+	args [][]byte
+	st   *stmt
 }
 
 var (
@@ -25,85 +23,119 @@ var (
 )
 
 func initPreparedList() {
-	ctx := context.Background()
-
-	tx, err := db.Begin(ctx)
-	if err != nil {
-		logger.Fatal().Err(err).Send()
-	}
-	defer tx.Rollback(ctx)
-
+	c := context.Background()
 	_preparedList = make(map[string]*preparedItem)
 
-	if err := prepareRoleStmt(ctx, tx); err != nil {
-		logger.Fatal().Err(err).Msg("failed to prepare get role statement")
+	tx, err := db.Begin(c)
+	if err != nil {
+		errlog.Fatal().Err(err).Send()
 	}
+	defer tx.Rollback(c)
+
+	err = prepareRoleStmt(c, tx)
+	if err != nil {
+		errlog.Fatal().Err(err).Msg("failed to prepare get role statement")
+	}
+
+	if err := tx.Commit(c); err != nil {
+		errlog.Fatal().Err(err).Send()
+	}
+
+	success := 0
 
 	for _, v := range _allowList.list {
-		err := prepareStmt(ctx, tx, v.gql, v.vars)
-		if err != nil {
-			logger.Warn().Str("gql", v.gql).Err(err).Send()
-		}
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		logger.Fatal().Err(err).Send()
-	}
-
-	logger.Info().Msgf("Registered %d queries from allow.list as prepared statements", len(_allowList.list))
-}
-
-func prepareStmt(ctx context.Context, tx pgx.Tx, gql string, varBytes json.RawMessage) error {
-	if len(gql) == 0 {
-		return nil
-	}
-
-	c := &coreContext{Context: context.Background()}
-	c.req.Query = gql
-	c.req.Vars = varBytes
-
-	stmts, err := c.buildStmt()
-	if err != nil {
-		return err
-	}
-
-	if len(stmts) != 0 && stmts[0].qc.Type == qcode.QTQuery {
-		c.req.Vars = nil
-	}
-
-	for _, s := range stmts {
-		if len(s.sql) == 0 {
+		if len(v.gql) == 0 {
 			continue
 		}
 
-		finalSQL, am := processTemplate(s.sql)
+		err := prepareStmt(c, v.gql, v.vars)
+		if err == nil {
+			success++
+			continue
+		}
 
-		pstmt, err := tx.Prepare(c.Context, "", finalSQL)
+		if len(v.vars) == 0 {
+			logger.Warn().Err(err).Msg(v.gql)
+		} else {
+			logger.Warn().Err(err).Msgf("%s %s", v.vars, v.gql)
+		}
+	}
+
+	logger.Info().
+		Msgf("Registered %d of %d queries from allow.list as prepared statements",
+			success, len(_allowList.list))
+}
+
+func prepareStmt(c context.Context, gql string, vars []byte) error {
+	qt := qcode.GetQType(gql)
+	q := []byte(gql)
+
+	tx, err := db.Begin(c)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(c)
+
+	switch qt {
+	case qcode.QTQuery:
+		stmts1, err := buildMultiStmt(q, vars)
 		if err != nil {
 			return err
 		}
 
-		var key string
-
-		if s.role == nil {
-			key = gqlHash(gql, c.req.Vars, "")
-		} else {
-			key = gqlHash(gql, c.req.Vars, s.role.Name)
+		err = prepare(c, tx, &stmts1[0], gqlHash(gql, vars, "user"))
+		if err != nil {
+			return err
 		}
 
-		_preparedList[key] = &preparedItem{
-			stmt:    pstmt,
-			args:    am,
-			skipped: s.skipped,
-			qc:      s.qc,
+		stmts2, err := buildRoleStmt(q, vars, "anon")
+		if err != nil {
+			return err
 		}
 
+		err = prepare(c, tx, &stmts2[0], gqlHash(gql, vars, "anon"))
+		if err != nil {
+			return err
+		}
+
+	case qcode.QTMutation:
+		for _, role := range conf.Roles {
+			stmts, err := buildRoleStmt(q, vars, role.Name)
+			if err != nil {
+				return err
+			}
+
+			err = prepare(c, tx, &stmts[0], gqlHash(gql, vars, role.Name))
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	if err := tx.Commit(c); err != nil {
+		return err
 	}
 
 	return nil
 }
 
-func prepareRoleStmt(ctx context.Context, tx pgx.Tx) error {
+func prepare(c context.Context, tx pgx.Tx, st *stmt, key string) error {
+	finalSQL, am := processTemplate(st.sql)
+
+	sd, err := tx.Prepare(c, "", finalSQL)
+	if err != nil {
+		return err
+	}
+
+	_preparedList[key] = &preparedItem{
+		sd:   sd,
+		args: am,
+		st:   st,
+	}
+	return nil
+}
+
+func prepareRoleStmt(c context.Context, tx pgx.Tx) error {
 	if len(conf.RolesQuery) == 0 {
 		return nil
 	}
@@ -128,7 +160,7 @@ func prepareRoleStmt(ctx context.Context, tx pgx.Tx) error {
 
 	roleSQL, _ := processTemplate(w.String())
 
-	_, err := tx.Prepare(ctx, "_sg_get_role", roleSQL)
+	_, err := tx.Prepare(c, "_sg_get_role", roleSQL)
 	if err != nil {
 		return err
 	}

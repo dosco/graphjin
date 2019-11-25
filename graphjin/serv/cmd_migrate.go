@@ -49,7 +49,7 @@ func cmdDBSetup(cmd *cobra.Command, args []string) {
 	}
 
 	if os.IsNotExist(err) == false {
-		logger.Fatal().Err(err).Msgf("unable to check if '%s' exists", sfile)
+		errlog.Fatal().Err(err).Msgf("unable to check if '%s' exists", sfile)
 	}
 
 	logger.Warn().Msgf("failed to read seed file '%s'", sfile)
@@ -59,7 +59,7 @@ func cmdDBReset(cmd *cobra.Command, args []string) {
 	initConfOnce()
 
 	if conf.Production {
-		logger.Fatal().Msg("db:reset does not work in production")
+		errlog.Fatal().Msg("db:reset does not work in production")
 		return
 	}
 	cmdDBDrop(cmd, []string{})
@@ -72,7 +72,7 @@ func cmdDBCreate(cmd *cobra.Command, args []string) {
 
 	conn, err := initDB(conf, false)
 	if err != nil {
-		logger.Fatal().Err(err).Msg("failed to connect to database")
+		errlog.Fatal().Err(err).Msg("failed to connect to database")
 	}
 	defer conn.Close(ctx)
 
@@ -80,7 +80,7 @@ func cmdDBCreate(cmd *cobra.Command, args []string) {
 
 	_, err = conn.Exec(ctx, sql)
 	if err != nil {
-		logger.Fatal().Err(err).Msg("failed to create database")
+		errlog.Fatal().Err(err).Msg("failed to create database")
 	}
 
 	logger.Info().Msgf("created database '%s'", conf.DB.DBName)
@@ -92,7 +92,7 @@ func cmdDBDrop(cmd *cobra.Command, args []string) {
 
 	conn, err := initDB(conf, false)
 	if err != nil {
-		logger.Fatal().Err(err).Msg("failed to connect to database")
+		errlog.Fatal().Err(err).Msg("failed to connect to database")
 	}
 	defer conn.Close(ctx)
 
@@ -100,7 +100,7 @@ func cmdDBDrop(cmd *cobra.Command, args []string) {
 
 	_, err = conn.Exec(ctx, sql)
 	if err != nil {
-		logger.Fatal().Err(err).Msg("failed to create database")
+		errlog.Fatal().Err(err).Msg("failed to create database")
 	}
 
 	logger.Info().Msgf("dropped database '%s'", conf.DB.DBName)
@@ -151,24 +151,24 @@ func cmdDBMigrate(cmd *cobra.Command, args []string) {
 
 	conn, err := initDB(conf, true)
 	if err != nil {
-		logger.Fatal().Err(err).Msg("failed to connect to database")
+		errlog.Fatal().Err(err).Msg("failed to connect to database")
 	}
 	defer conn.Close(context.Background())
 
 	m, err := migrate.NewMigrator(conn, "schema_version")
 	if err != nil {
-		logger.Fatal().Err(err).Msg("failed to initializing migrator")
+		errlog.Fatal().Err(err).Msg("failed to initializing migrator")
 	}
 
 	m.Data = getMigrationVars()
 
 	err = m.LoadMigrations(conf.MigrationsPath)
 	if err != nil {
-		logger.Fatal().Err(err).Msg("failed to load migrations")
+		errlog.Fatal().Err(err).Msg("failed to load migrations")
 	}
 
 	if len(m.Migrations) == 0 {
-		logger.Fatal().Msg("No migrations found")
+		errlog.Fatal().Msg("No migrations found")
 	}
 
 	m.OnStart = func(sequence int32, name, direction, sql string) {
@@ -187,7 +187,7 @@ func cmdDBMigrate(cmd *cobra.Command, args []string) {
 		var n int64
 		n, err = strconv.ParseInt(d, 10, 32)
 		if err != nil {
-			logger.Fatal().Err(err).Msg("invalid destination")
+			errlog.Fatal().Err(err).Msg("invalid destination")
 		}
 		return int32(n)
 	}
@@ -218,17 +218,15 @@ func cmdDBMigrate(cmd *cobra.Command, args []string) {
 	if err != nil {
 		logger.Info().Err(err).Send()
 
-		// logger.Info().Err(err).Send()
-
 		// if err, ok := err.(m.MigrationPgError); ok {
 		// 	if err.Detail != "" {
-		// 		logger.Info().Err(err).Msg(err.Detail)
+		// 		info.Err(err).Msg(err.Detail)
 		// 	}
 
 		// 	if err.Position != 0 {
 		// 		ele, err := ExtractErrorLine(err.Sql, int(err.Position))
 		// 		if err != nil {
-		// 			logger.Fatal().Err(err).Send()
+		// 			errlog.Fatal().Err(err).Send()
 		// 		}
 
 		// 		prefix := fmt.Sprintf()
@@ -247,29 +245,29 @@ func cmdDBStatus(cmd *cobra.Command, args []string) {
 
 	conn, err := initDB(conf, true)
 	if err != nil {
-		logger.Fatal().Err(err).Msg("failed to connect to database")
+		errlog.Fatal().Err(err).Msg("failed to connect to database")
 	}
 	defer conn.Close(context.Background())
 
 	m, err := migrate.NewMigrator(conn, "schema_version")
 	if err != nil {
-		logger.Fatal().Err(err).Msg("failed to initialize migrator")
+		errlog.Fatal().Err(err).Msg("failed to initialize migrator")
 	}
 
 	m.Data = getMigrationVars()
 
 	err = m.LoadMigrations(conf.MigrationsPath)
 	if err != nil {
-		logger.Fatal().Err(err).Msg("failed to load migrations")
+		errlog.Fatal().Err(err).Msg("failed to load migrations")
 	}
 
 	if len(m.Migrations) == 0 {
-		logger.Fatal().Msg("no migrations found")
+		errlog.Fatal().Msg("no migrations found")
 	}
 
 	mver, err := m.GetCurrentVersion()
 	if err != nil {
-		logger.Fatal().Err(err).Msg("failed to retrieve migration")
+		errlog.Fatal().Err(err).Msg("failed to retrieve migration")
 	}
 
 	var status string

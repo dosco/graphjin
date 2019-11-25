@@ -68,12 +68,8 @@ type config struct {
 		MaxRetries int   `mapstructure:"max_retries"`
 		SetUserID  bool  `mapstructure:"set_user_id"`
 
-		Vars map[string]string `mapstructure:"variables"`
-
-		Defaults struct {
-			Filters   []string
-			Blocklist []string
-		}
+		Vars      map[string]string `mapstructure:"variables"`
+		Blocklist []string
 
 		Tables []configTable
 	} `mapstructure:"database"`
@@ -82,6 +78,7 @@ type config struct {
 
 	RolesQuery string `mapstructure:"roles_query"`
 	Roles      []configRole
+	roles      map[string]*configRole
 }
 
 type configTable struct {
@@ -220,16 +217,15 @@ func (c *config) Init(vi *viper.Viper) error {
 	}
 
 	c.RolesQuery = sanitize(c.RolesQuery)
-
-	rolesMap := make(map[string]struct{})
+	c.roles = make(map[string]*configRole)
 
 	for i := range c.Roles {
 		role := &c.Roles[i]
 
-		if _, ok := rolesMap[role.Name]; ok {
-			logger.Fatal().Msgf("duplicate role '%s' found", role.Name)
+		if _, ok := c.roles[role.Name]; ok {
+			errlog.Fatal().Msgf("duplicate role '%s' found", role.Name)
 		}
-		role.Name = sanitize(role.Name)
+		role.Name = strings.ToLower(role.Name)
 		role.Match = sanitize(role.Match)
 		role.tablesMap = make(map[string]*configRoleTable)
 
@@ -237,14 +233,16 @@ func (c *config) Init(vi *viper.Viper) error {
 			role.tablesMap[table.Name] = &role.Tables[n]
 		}
 
-		rolesMap[role.Name] = struct{}{}
+		c.roles[role.Name] = role
 	}
 
-	if _, ok := rolesMap["user"]; !ok {
-		c.Roles = append(c.Roles, configRole{Name: "user"})
+	if _, ok := c.roles["user"]; !ok {
+		u := configRole{Name: "user"}
+		c.Roles = append(c.Roles, u)
+		c.roles["user"] = &u
 	}
 
-	if _, ok := rolesMap["anon"]; !ok {
+	if _, ok := c.roles["anon"]; !ok {
 		logger.Warn().Msg("unauthenticated requests will be blocked. no role 'anon' defined")
 		c.AuthFailBlock = true
 	}
@@ -261,7 +259,7 @@ func (c *config) validate() {
 		name := c.Roles[i].Name
 
 		if _, ok := rm[name]; ok {
-			logger.Fatal().Msgf("duplicate config for role '%s'", c.Roles[i].Name)
+			errlog.Fatal().Msgf("duplicate config for role '%s'", c.Roles[i].Name)
 		}
 		rm[name] = struct{}{}
 	}
@@ -272,7 +270,7 @@ func (c *config) validate() {
 		name := c.Tables[i].Name
 
 		if _, ok := tm[name]; ok {
-			logger.Fatal().Msgf("duplicate config for table '%s'", c.Tables[i].Name)
+			errlog.Fatal().Msgf("duplicate config for table '%s'", c.Tables[i].Name)
 		}
 		tm[name] = struct{}{}
 	}

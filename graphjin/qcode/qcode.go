@@ -20,6 +20,7 @@ const (
 
 const (
 	QTQuery QType = iota + 1
+	QTMutation
 	QTInsert
 	QTUpdate
 	QTDelete

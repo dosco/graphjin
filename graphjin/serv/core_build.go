@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 
 	"github.com/dosco/super-graph/psql"
@@ -17,172 +18,171 @@ type stmt struct {
 	sql     string
 }
 
-func (c *coreContext) buildStmt() ([]stmt, error) {
-	var vars map[string]json.RawMessage
+func buildStmt(qt qcode.QType, gql, vars []byte, role string) ([]stmt, error) {
+	switch qt {
+	case qcode.QTMutation:
+		return buildRoleStmt(gql, vars, role)
 
-	if len(c.req.Vars) != 0 {
-		if err := json.Unmarshal(c.req.Vars, &vars); err != nil {
+	case qcode.QTQuery:
+		switch {
+		case role == "anon":
+			return buildRoleStmt(gql, vars, role)
+
+		default:
+			return buildMultiStmt(gql, vars)
+		}
+
+	default:
+		return nil, fmt.Errorf("unknown query type '%d'", qt)
+	}
+}
+
+func buildRoleStmt(gql, vars []byte, role string) ([]stmt, error) {
+	ro, ok := conf.roles[role]
+	if !ok {
+		return nil, fmt.Errorf(`roles '%s' not defined in config`, role)
+	}
+
+	var vm map[string]json.RawMessage
+	var err error
+
+	if len(vars) != 0 {
+		if err := json.Unmarshal(vars, &vm); err != nil {
 			return nil, err
 		}
 	}
 
-	gql := []byte(c.req.Query)
-
-	if len(conf.Roles) == 0 {
-		return nil, errors.New(`no roles found ('user' and 'anon' required)`)
-	}
-
-	qc, err := qcompile.Compile(gql, conf.Roles[0].Name)
+	qc, err := qcompile.Compile(gql, ro.Name)
 	if err != nil {
 		return nil, err
 	}
 
-	stmts := make([]stmt, 0, len(conf.Roles))
-	mutation := (qc.Type != qcode.QTQuery)
+	// For the 'anon' role in production only compile
+	// queries for tables defined in the config file.
+	if conf.Production &&
+		ro.Name == "anon" &&
+		hasTablesWithConfig(qc, ro) == false {
+		return nil, errors.New("query contains tables with no 'anon' role config")
+	}
+
+	stmts := []stmt{stmt{role: ro, qc: qc}}
 	w := &bytes.Buffer{}
 
-	for i := 1; i < len(conf.Roles); i++ {
+	skipped, err := pcompile.Compile(qc, w, psql.Variables(vm))
+	if err != nil {
+		return nil, err
+	}
+
+	stmts[0].skipped = skipped
+	stmts[0].sql = w.String()
+
+	return stmts, nil
+}
+
+func buildMultiStmt(gql, vars []byte) ([]stmt, error) {
+	var vm map[string]json.RawMessage
+	var err error
+
+	if len(vars) != 0 {
+		if err := json.Unmarshal(vars, &vm); err != nil {
+			return nil, err
+		}
+	}
+
+	if len(conf.RolesQuery) == 0 {
+		return buildRoleStmt(gql, vars, "user")
+	}
+
+	stmts := make([]stmt, 0, len(conf.Roles))
+	w := &bytes.Buffer{}
+
+	for i := 0; i < len(conf.Roles); i++ {
 		role := &conf.Roles[i]
 
-		// For mutations only render sql for a single role from the request
-		if mutation && len(c.req.role) != 0 && role.Name != c.req.role {
-			continue
-		}
-
-		qc, err = qcompile.Compile(gql, role.Name)
+		qc, err := qcompile.Compile(gql, role.Name)
 		if err != nil {
 			return nil, err
 		}
 
-		if conf.Production && role.Name == "anon" {
-			for _, id := range qc.Roots {
-				root := qc.Selects[id]
-				if _, ok := role.tablesMap[root.Table]; !ok {
-					continue
-				}
-			}
-		}
-
 		stmts = append(stmts, stmt{role: role, qc: qc})
 
-		if mutation {
-			skipped, err := pcompile.Compile(qc, w, psql.Variables(vars))
-			if err != nil {
-				return nil, err
-			}
-
-			s := &stmts[len(stmts)-1]
-			s.skipped = skipped
-			s.sql = w.String()
-			w.Reset()
+		skipped, err := pcompile.Compile(qc, w, psql.Variables(vm))
+		if err != nil {
+			return nil, err
 		}
+
+		s := &stmts[len(stmts)-1]
+		s.skipped = skipped
+		s.sql = w.String()
+		w.Reset()
 	}
 
-	if mutation {
-		return stmts, nil
+	sql, err := renderUserQuery(stmts, vm)
+	if err != nil {
+		return nil, err
 	}
+
+	stmts[0].sql = sql
+	return stmts, nil
+}
+
+func renderUserQuery(
+	stmts []stmt, vars map[string]json.RawMessage) (string, error) {
+
+	var err error
+	w := &bytes.Buffer{}
 
 	io.WriteString(w, `SELECT "_sg_auth_info"."role", (CASE "_sg_auth_info"."role" `)
 
 	for _, s := range stmts {
+		if len(s.role.Match) == 0 &&
+			s.role.Name != "user" && s.role.Name != "anon" {
+			continue
+		}
 		io.WriteString(w, `WHEN '`)
 		io.WriteString(w, s.role.Name)
 		io.WriteString(w, `' THEN (`)
 
 		s.skipped, err = pcompile.Compile(s.qc, w, psql.Variables(vars))
 		if err != nil {
-			return nil, err
+			return "", err
 		}
-
 		io.WriteString(w, `) `)
 	}
-	io.WriteString(w, `END) FROM (`)
 
-	if len(conf.RolesQuery) == 0 {
-		v := c.Value(userRoleKey)
+	io.WriteString(w, `END) FROM (SELECT (CASE WHEN EXISTS (`)
+	io.WriteString(w, conf.RolesQuery)
+	io.WriteString(w, `) THEN `)
 
-		io.WriteString(w, `VALUES ("`)
-		if v != nil {
-			io.WriteString(w, v.(string))
-		} else {
-			io.WriteString(w, c.req.role)
+	io.WriteString(w, `(SELECT (CASE`)
+	for _, s := range stmts {
+		if len(s.role.Match) == 0 {
+			continue
 		}
-		io.WriteString(w, `")) AS "_sg_auth_info"(role) LIMIT 1;`)
-
-	} else {
-
-		io.WriteString(w, `SELECT (CASE WHEN EXISTS (`)
-		io.WriteString(w, conf.RolesQuery)
-		io.WriteString(w, `) THEN `)
-
-		io.WriteString(w, `(SELECT (CASE`)
-		for _, s := range stmts {
-			if len(s.role.Match) == 0 {
-				continue
-			}
-			io.WriteString(w, ` WHEN `)
-			io.WriteString(w, s.role.Match)
-			io.WriteString(w, ` THEN '`)
-			io.WriteString(w, s.role.Name)
-			io.WriteString(w, `'`)
-		}
-
-		if len(c.req.role) == 0 {
-			io.WriteString(w, ` ELSE 'anon' END) FROM (`)
-		} else {
-			io.WriteString(w, ` ELSE '`)
-			io.WriteString(w, c.req.role)
-			io.WriteString(w, `' END) FROM (`)
-		}
-
-		io.WriteString(w, conf.RolesQuery)
-		io.WriteString(w, `) AS "_sg_auth_roles_query" LIMIT 1) ELSE '`)
-		if len(c.req.role) == 0 {
-			io.WriteString(w, `anon`)
-		} else {
-			io.WriteString(w, c.req.role)
-		}
-		io.WriteString(w, `' END) FROM (VALUES (1)) AS "_sg_auth_filler") AS "_sg_auth_info"(role) LIMIT 1; `)
+		io.WriteString(w, ` WHEN `)
+		io.WriteString(w, s.role.Match)
+		io.WriteString(w, ` THEN '`)
+		io.WriteString(w, s.role.Name)
+		io.WriteString(w, `'`)
 	}
 
-	stmts[0].sql = w.String()
-	stmts[0].role = nil
+	io.WriteString(w, ` ELSE 'user' END) FROM (`)
+	io.WriteString(w, conf.RolesQuery)
+	io.WriteString(w, `) AS "_sg_auth_roles_query" LIMIT 1) `)
+	io.WriteString(w, `ELSE 'anon' END) FROM (VALUES (1)) AS "_sg_auth_filler") AS "_sg_auth_info"(role) LIMIT 1; `)
 
-	return stmts, nil
+	return w.String(), nil
 }
 
-func (c *coreContext) buildStmtByRole(role string) (stmt, error) {
-	var st stmt
-	var err error
-
-	if len(role) == 0 {
-		return st, errors.New(`no role defined`)
-	}
-
-	var vars map[string]json.RawMessage
-
-	if len(c.req.Vars) != 0 {
-		if err := json.Unmarshal(c.req.Vars, &vars); err != nil {
-			return st, err
+func hasTablesWithConfig(qc *qcode.QCode, role *configRole) bool {
+	for _, id := range qc.Roots {
+		t, err := schema.GetTable(qc.Selects[id].Table)
+		if err != nil {
+			return false
+		}
+		if _, ok := role.tablesMap[t.Name]; !ok {
+			return false
 		}
 	}
-
-	gql := []byte(c.req.Query)
-
-	st.qc, err = qcompile.Compile(gql, role)
-	if err != nil {
-		return st, err
-	}
-
-	w := &bytes.Buffer{}
-
-	st.skipped, err = pcompile.Compile(st.qc, w, psql.Variables(vars))
-	if err != nil {
-		return st, err
-	}
-
-	st.sql = w.String()
-
-	return st, nil
-
+	return true
 }
