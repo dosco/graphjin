@@ -112,6 +112,12 @@ func prepareStmt(c context.Context, gql string, vars []byte) error {
 		}
 	}
 
+	if len(vars) == 0 {
+		logger.Debug().Msgf("Building prepared statement for:\n %s", gql)
+	} else {
+		logger.Debug().Msgf("Building prepared statement:\n %s\n%s", vars, gql)
+	}
+
 	if err := tx.Commit(c); err != nil {
 		return err
 	}

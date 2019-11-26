@@ -152,7 +152,7 @@ mutation {
   }
 }
 
-query {
+query getProducts {
   products {
     id
     name

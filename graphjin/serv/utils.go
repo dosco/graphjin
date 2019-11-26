@@ -106,6 +106,30 @@ func al(b byte) bool {
 	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
 }
 
+func gqlName(b string) string {
+	state, s := 0, 0
+
+	for i := 0; i < len(b); i++ {
+		switch {
+		case state == 2 && b[i] == '{':
+			return b[s:i]
+		case state == 2 && b[i] == ' ':
+			return b[s:i]
+		case state == 1 && b[i] == '{':
+			return ""
+		case state == 1 && b[i] != ' ':
+			s = i
+			state = 2
+		case state == 1 && b[i] == ' ':
+			continue
+		case i != 0 && b[i] == ' ' && (b[i-1] == 'n' || b[i-1] == 'y'):
+			state = 1
+		}
+	}
+
+	return ""
+}
+
 func findStmt(role string, stmts []stmt) *stmt {
 	for i := range stmts {
 		if stmts[i].role.Name != role {
