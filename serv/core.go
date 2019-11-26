@@ -246,9 +246,9 @@ func (c *coreContext) resolveSQL() ([]byte, *stmt, error) {
 		}
 	}
 
-	// if conf.Production == false {
-	// 	_allowList.add(&c.req)
-	// }
+	if conf.Production == false {
+		_allowList.add(&c.req)
+	}
 
 	if len(stmts) > 1 {
 		if st = findStmt(role, stmts); st == nil {

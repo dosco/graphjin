@@ -229,3 +229,80 @@ func TestGQLHashWithVars2(t *testing.T) {
 		t.Fatal("Hashes don't match they should")
 	}
 }
+
+func TestGQLName1(t *testing.T) {
+	var q = `
+	query {
+		products(
+			distinct: [price]
+			where: { id: { and: { greater_or_equals: 20, lt: 28 } } }
+		) { id name } }`
+
+	name := gqlName(q)
+
+	if len(name) != 0 {
+		t.Fatal("Name should be empty, not ", name)
+	}
+}
+
+func TestGQLName2(t *testing.T) {
+	var q = `
+	query hakuna_matata {
+		products(
+			distinct: [price]
+			where: { id: { and: { greater_or_equals: 20, lt: 28 } } }
+		) {
+			id
+			name
+		}
+	}`
+
+	name := gqlName(q)
+
+	if name != "hakuna_matata" {
+		t.Fatal("Name should be 'hakuna_matata', not ", name)
+	}
+}
+
+func TestGQLName3(t *testing.T) {
+	var q = `
+	mutation means{ users { id } }`
+
+	// var v2 = `   { products( limit: 30, order_by: { price: desc }, distinct: [ price ] where: { id: { and: { greater_or_equals: 20, lt: 28 } } }) { id name price user { id email } } } `
+
+	name := gqlName(q)
+
+	if name != "means" {
+		t.Fatal("Name should be 'means', not ", name)
+	}
+}
+
+func TestGQLName4(t *testing.T) {
+	var q = `
+	query no_worries 
+		users {
+			id
+		}
+	}`
+
+	name := gqlName(q)
+
+	if name != "no_worries" {
+		t.Fatal("Name should be 'no_worries', not ", name)
+	}
+}
+
+func TestGQLName5(t *testing.T) {
+	var q = `
+	    {
+		users {
+			id
+		}
+	}`
+
+	name := gqlName(q)
+
+	if len(name) != 0 {
+		t.Fatal("Name should be empty, not ", name)
+	}
+}

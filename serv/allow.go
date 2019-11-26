@@ -18,6 +18,8 @@ const (
 )
 
 type allowItem struct {
+	name string
+	hash string
 	uri  string
 	gql  string
 	vars json.RawMessage
@@ -94,7 +96,7 @@ func initAllowList(cpath string) {
 }
 
 func (al *allowList) add(req *gqlReq) {
-	if al.active == false || len(req.ref) == 0 || len(req.Query) == 0 {
+	if len(req.ref) == 0 || len(req.Query) == 0 {
 		return
 	}
 
@@ -119,11 +121,39 @@ func (al *allowList) add(req *gqlReq) {
 	}
 }
 
-func (al *allowList) load() {
-	if al.active == false {
-		return
+func (al *allowList) upsert(query, vars []byte, uri string) {
+	q := string(query)
+	hash := gqlHash(q, vars, "")
+	name := gqlName(q)
+
+	var key string
+
+	if len(name) == 0 {
+		key = hash
+	} else {
+		key = name
 	}
 
+	if i, ok := al.index[key]; !ok {
+		al.list = append(al.list, &allowItem{
+			name: name,
+			hash: hash,
+			uri:  uri,
+			gql:  q,
+			vars: vars,
+		})
+		al.index[key] = len(al.list) - 1
+	} else {
+		item := al.list[i]
+		item.name = name
+		item.hash = hash
+		item.gql = q
+		item.vars = vars
+
+	}
+}
+
+func (al *allowList) load() {
 	b, err := ioutil.ReadFile(al.filepath)
 	if err != nil {
 		log.Fatal(err)
@@ -172,21 +202,7 @@ func (al *allowList) load() {
 
 			if c == 0 {
 				if ty == AL_QUERY {
-					q := string(b[s:(e + 1)])
-					key := gqlHash(q, varBytes, "")
-
-					if idx, ok := al.index[key]; !ok {
-						al.list = append(al.list, &allowItem{
-							uri:  uri,
-							gql:  q,
-							vars: varBytes,
-						})
-						al.index[key] = len(al.list) - 1
-					} else {
-						item := al.list[idx]
-						item.gql = q
-						item.vars = varBytes
-					}
+					al.upsert(b[s:(e+1)], varBytes, uri)
 					varBytes = nil
 
 				} else if ty == AL_VARS {
@@ -204,18 +220,32 @@ func (al *allowList) load() {
 }
 
 func (al *allowList) save(item *allowItem) {
-	if al.active == false {
-		return
+	item.hash = gqlHash(item.gql, item.vars, "")
+	item.name = gqlName(item.gql)
+
+	if len(item.name) == 0 {
+		key := item.hash
+
+		if _, ok := al.index[key]; ok {
+			return
+		}
+
+		al.list = append(al.list, item)
+		al.index[key] = len(al.list) - 1
+
+	} else {
+		key := item.name
+
+		if i, ok := al.index[key]; ok {
+			if al.list[i].hash == item.hash {
+				return
+			}
+			al.list[i] = item
+		} else {
+			al.list = append(al.list, item)
+			al.index[key] = len(al.list) - 1
+		}
 	}
-
-	key := gqlHash(item.gql, item.vars, "")
-
-	if _, ok := al.index[key]; ok {
-		return
-	}
-
-	al.list = append(al.list, item)
-	al.index[key] = len(al.list) - 1
 
 	f, err := os.Create(al.filepath)
 	if err != nil {
