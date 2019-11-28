@@ -20,16 +20,27 @@ lastCommitTime = github.com/dosco/super-graph/serv.lastCommitTime
 
 BUILD_FLAGS ?= -ldflags '-s -w -X ${lastCommitSHA}=${BUILD} -X "${lastCommitTime}=${BUILD_DATE}" -X "${version}=${BUILD_VERSION}" -X ${gitBranch}=${BUILD_BRANCH}'
 
-.PHONY: all build gen clean test run lint release version help $(PLATFORMS) $(BINARY)
+.PHONY: all build gen clean test run lint changlog release version help $(PLATFORMS)
 
 test: lint
 	@go test -v $(PKGS)
 
 BIN_DIR := $(GOPATH)/bin
+GORICE := $(BIN_DIR)/github.com/GeertJohan/go.rice
 GOLANGCILINT := $(BIN_DIR)/golangci-lint
+GITCHGLOG := $(BIN_DIR)/git-chglog
+
+$(GORICE):
+	@GO111MODULE=off go get -u github.com/GeertJohan/go.rice/rice
+
+$(GITCHGLOG):
+	@GO111MODULE=off go get -u github.com/git-chglog/git-chglog/cmd/git-chglog
+
+changelog: $(GITCHGLOG)
+	@git-chglog $(ARGS)
 
 $(GOLANGCILINT):
-	@curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b $(GOPATH)/bin v1.21.0
+	@GO111MODULE=off curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b $(GOPATH)/bin v1.21.0
 
 lint: $(GOMETALINTER)
 	@golangci-lint run ./... --skip-dirs-use-default
@@ -39,7 +50,7 @@ LDFLAGS := -s -w
 PLATFORMS := windows linux darwin
 os = $(word 1, $@)
 
-$(PLATFORMS): gen
+$(PLATFORMS): gen 
 	@mkdir -p release
 	@GOOS=$(os) GOARCH=amd64 go build $(BUILD_FLAGS) -o release/$(BINARY)-$(BUILD_VERSION)-$(os)-amd64
 
@@ -49,8 +60,7 @@ all: $(BINARY)
 
 build: $(BINARY)
 
-gen:
-	@go install github.com/GeertJohan/go.rice/rice
+gen: $(GORICE)
 	@go generate ./...
 
 $(BINARY): clean gen
@@ -87,7 +97,8 @@ help:
 	@echo " make uninstall     - Uninstall supergraph binary"
 	@echo " make [platform]    - Build for platform [linux|darwin|windows]"
 	@echo " make release       - Build all platforms"
-	@echo " make run           - Run supergraph (eg. make run ARGS=\"version\")"
-	@echo " make version       - Show current build info"
+	@echo " make run           - Run supergraph (eg. make run ARGS=\"help\")"
+	@echo " make test          - Run all tests"
+	@echo " make changelog     - Generate changelog (eg. make changelog ARGS=\"help\")"
 	@echo " make help          - This help"
 	@echo
