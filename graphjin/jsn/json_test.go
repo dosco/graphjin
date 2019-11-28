@@ -191,11 +191,11 @@ func TestGet(t *testing.T) {
 	}
 
 	for i := range expected {
-		if bytes.Equal(values[i].Key, expected[i].Key) == false {
+		if !bytes.Equal(values[i].Key, expected[i].Key) {
 			t.Error(string(values[i].Key), " != ", string(expected[i].Key))
 		}
 
-		if bytes.Equal(values[i].Value, expected[i].Value) == false {
+		if !bytes.Equal(values[i].Value, expected[i].Value) {
 			t.Error(string(values[i].Value), " != ", string(expected[i].Value))
 		}
 	}
@@ -225,7 +225,10 @@ func TestValue(t *testing.T) {
 
 func TestFilter1(t *testing.T) {
 	var b bytes.Buffer
-	Filter(&b, []byte(input2), []string{"id", "full_name", "embed"})
+	err := Filter(&b, []byte(input2), []string{"id", "full_name", "embed"})
+	if err != nil {
+		t.Error(err)
+	}
 
 	expected := `[{"id": 1,"full_name": "Sidney Stroman","embed": {"id": 8,"full_name": "Caroll Orn Sr.","email": "joannarau@hegmann.io","__twitter_id": "ABC123"}},{"id": 2,"full_name": "Jerry Dickinson"}]`
 
@@ -238,7 +241,10 @@ func TestFilter2(t *testing.T) {
 	value := `[{"id":1,"customer_id":"cus_2TbMGf3cl0","object":"charge","amount":100,"amount_refunded":0,"date":"01/01/2019","application":null,"billing_details":{"address":"1 Infinity Drive","zipcode":"94024"}},   {"id":2,"customer_id":"cus_2TbMGf3cl0","object":"charge","amount":150,"amount_refunded":0,"date":"02/18/2019","billing_details":{"address":"1 Infinity Drive","zipcode":"94024"}},{"id":3,"customer_id":"cus_2TbMGf3cl0","object":"charge","amount":150,"amount_refunded":50,"date":"03/21/2019","billing_details":{"address":"1 Infinity Drive","zipcode":"94024"}}]`
 
 	var b bytes.Buffer
-	Filter(&b, []byte(value), []string{"id"})
+	err := Filter(&b, []byte(value), []string{"id"})
+	if err != nil {
+		t.Error(err)
+	}
 
 	expected := `[{"id":1},{"id":2},{"id":3}]`
 
@@ -253,7 +259,7 @@ func TestStrip(t *testing.T) {
 
 	expected := []byte(`[{"id":1,"embed":{"id":8}},{"id":2},{"id":3},{"id":4},{"id":5},{"id":6},{"id":7},{"id":8},{"id":9},{"id":10},{"id":11},{"id":12},{"id":13}]`)
 
-	if bytes.Equal(value1, expected) == false {
+	if !bytes.Equal(value1, expected) {
 		t.Log(value1)
 		t.Error("[Valid path] Does not match expected json")
 	}
@@ -261,7 +267,7 @@ func TestStrip(t *testing.T) {
 	path2 := [][]byte{[]byte("boo"), []byte("hoo")}
 	value2 := Strip([]byte(input3), path2)
 
-	if bytes.Equal(value2, []byte(input3)) == false {
+	if !bytes.Equal(value2, []byte(input3)) {
 		t.Log(value2)
 		t.Error("[Invalid path] Does not match expected json")
 	}

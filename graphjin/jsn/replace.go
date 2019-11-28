@@ -16,8 +16,12 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 	tmap := make(map[uint64]int, len(from))
 
 	for i, f := range from {
-		h.Write(f.Key)
-		h.Write(f.Value)
+		if _, err := h.Write(f.Key); err != nil {
+			return err
+		}
+		if _, err := h.Write(f.Value); err != nil {
+			return err
+		}
 
 		tmap[h.Sum64()] = i
 		h.Reset()
@@ -50,7 +54,9 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 
 		case state == expectKeyClose && b[i] == '"':
 			state = expectColon
-			h.Write(b[(s + 1):i])
+			if _, err := h.Write(b[(s + 1):i]); err != nil {
+				return err
+			}
 			we = s
 
 		case state == expectColon && b[i] == ':':
@@ -106,7 +112,9 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 		if e != 0 {
 			e++
 
-			h.Write(b[s:e])
+			if _, err := h.Write(b[s:e]); err != nil {
+				return err
+			}
 			n, ok := tmap[h.Sum64()]
 			h.Reset()
 

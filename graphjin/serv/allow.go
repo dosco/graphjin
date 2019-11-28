@@ -220,6 +220,8 @@ func (al *allowList) load() {
 }
 
 func (al *allowList) save(item *allowItem) {
+	var err error
+
 	item.hash = gqlHash(item.gql, item.vars, "")
 	item.name = gqlName(item.gql)
 
@@ -271,22 +273,35 @@ func (al *allowList) save(item *allowItem) {
 		k := keys[i]
 		v := urlMap[k]
 
-		f.WriteString(fmt.Sprintf("# %s\n\n", k))
+		if _, err := f.WriteString(fmt.Sprintf("# %s\n\n", k)); err != nil {
+			logger.Error().Err(err).Send()
+			return
+		}
 
 		for i := range v {
-			if len(v[i].vars) != 0 && bytes.Equal(v[i].vars, []byte("{}")) == false {
+			if len(v[i].vars) != 0 && !bytes.Equal(v[i].vars, []byte("{}")) {
 				vj, err := json.MarshalIndent(v[i].vars, "", "\t")
 				if err != nil {
 					logger.Warn().Err(err).Msg("Failed to write allow list 'vars' to file")
 					continue
 				}
-				f.WriteString(fmt.Sprintf("variables %s\n\n", vj))
+
+				_, err = f.WriteString(fmt.Sprintf("variables %s\n\n", vj))
+				if err != nil {
+					logger.Error().Err(err).Send()
+					return
+				}
 			}
 
 			if v[i].gql[0] == '{' {
-				f.WriteString(fmt.Sprintf("query %s\n\n", v[i].gql))
+				_, err = f.WriteString(fmt.Sprintf("query %s\n\n", v[i].gql))
 			} else {
-				f.WriteString(fmt.Sprintf("%s\n\n", v[i].gql))
+				_, err = f.WriteString(fmt.Sprintf("%s\n\n", v[i].gql))
+			}
+
+			if err != nil {
+				logger.Error().Err(err).Send()
+				return
 			}
 		}
 	}

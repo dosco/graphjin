@@ -199,7 +199,9 @@ func NewDBSchema(db *pgxpool.Pool, aliases map[string][]string) (*DBSchema, erro
 			return nil, err
 		}
 
-		schema.updateSchema(t, cols, aliases)
+		if err := schema.updateSchema(t, cols, aliases); err != nil {
+			return nil, err
+		}
 	}
 
 	return schema, nil
@@ -208,7 +210,7 @@ func NewDBSchema(db *pgxpool.Pool, aliases map[string][]string) (*DBSchema, erro
 func (s *DBSchema) updateSchema(
 	t *DBTable,
 	cols []*DBColumn,
-	aliases map[string][]string) {
+	aliases map[string][]string) error {
 
 	// Foreign key columns in current table
 	colByID := make(map[int16]*DBColumn)
@@ -281,12 +283,16 @@ func (s *DBSchema) updateSchema(
 			// Belongs-to relation between current table and the
 			// table in the foreign key
 			rel1 := &DBRel{RelBelongTo, "", "", c.Name, fc.Name}
-			s.SetRel(ct, ft, rel1)
+			if err := s.SetRel(ct, ft, rel1); err != nil {
+				return err
+			}
 
 			// One-to-many relation between the foreign key table and the
 			// the current table
 			rel2 := &DBRel{RelOneToMany, "", "", fc.Name, c.Name}
-			s.SetRel(ft, ct, rel2)
+			if err := s.SetRel(ft, ct, rel2); err != nil {
+				return err
+			}
 
 			jcols = append(jcols, c)
 		}
@@ -301,42 +307,54 @@ func (s *DBSchema) updateSchema(
 	if len(jcols) > 1 {
 		for i := range jcols {
 			for n := range jcols {
-				if n != i {
-					s.updateSchemaOTMT(ct, jcols[i], jcols[n], colByID)
+				if n == i {
+					continue
+				}
+				err := s.updateSchemaOTMT(ct, jcols[i], jcols[n], colByID)
+				if err != nil {
+					return err
 				}
 			}
 		}
 	}
+
+	return nil
 }
 
 func (s *DBSchema) updateSchemaOTMT(
 	ct string,
 	col1, col2 *DBColumn,
-	colByID map[int16]*DBColumn) {
+	colByID map[int16]*DBColumn) error {
 
 	t1 := strings.ToLower(col1.FKeyTable)
 	t2 := strings.ToLower(col2.FKeyTable)
 
 	fc1, ok := colByID[col1.FKeyColID[0]]
 	if !ok {
-		return
+		return fmt.Errorf("expected column id '%d' not found", col1.FKeyColID[0])
 	}
 	fc2, ok := colByID[col2.FKeyColID[0]]
 	if !ok {
-		return
+		return fmt.Errorf("expected column id '%d' not found", col2.FKeyColID[0])
 	}
 
 	// One-to-many-through relation between 1nd foreign key table and the
 	// 2nd foreign key table
 	//rel1 := &DBRel{RelOneToManyThrough, ct, fc1.Name, col1.Name}
 	rel1 := &DBRel{RelOneToManyThrough, ct, col2.Name, fc2.Name, col1.Name}
-	s.SetRel(t1, t2, rel1)
+	if err := s.SetRel(t1, t2, rel1); err != nil {
+		return err
+	}
 
 	// One-to-many-through relation between 2nd foreign key table and the
 	// 1nd foreign key table
 	//rel2 := &DBRel{RelOneToManyThrough, ct, col2.Name, fc2.Name}
 	rel2 := &DBRel{RelOneToManyThrough, ct, col1.Name, fc1.Name, col2.Name}
-	s.SetRel(t2, t1, rel2)
+	if err := s.SetRel(t2, t1, rel2); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (s *DBSchema) GetTable(table string) (*DBTableInfo, error) {

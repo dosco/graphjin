@@ -6,13 +6,13 @@ RUN yarn
 RUN yarn build
 
 # stage: 2
-FROM golang:1.13beta1-alpine as go-build
+FROM golang:1.13.4-alpine as go-build
 RUN apk update && \
+    apk add --no-cache make && \
     apk add --no-cache git && \
     apk add --no-cache upx=3.95-r2
 
-RUN go get -u github.com/rafaelsq/wtc && \
-    go get -u github.com/GeertJohan/go.rice/rice
+RUN go get -u github.com/rafaelsq/wtc
 
 WORKDIR /app
 COPY . /app
@@ -20,11 +20,9 @@ COPY . /app
 RUN mkdir -p /app/web/build
 COPY --from=react-build /web/build/ ./web/build/
 
-ENV GO111MODULE=on
 RUN go mod vendor
-RUN go generate ./... && \
-  CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o super-graph && \
-  echo "Compressing binary, will take a bit of time..." && \
+RUN make build
+RUN echo "Compressing binary, will take a bit of time..." && \
   upx --ultra-brute -qq super-graph && \
   upx -t super-graph
 

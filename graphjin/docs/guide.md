@@ -147,9 +147,13 @@ Super Graph can generate your initial app for you. The generated app will have c
 You can then add your database schema to the migrations, maybe create some seed data using the seed script and launch Super Graph. You're now good to go and can start working on your UI frontend in React, Vue or whatever.
 
 ```bash
-# use the below command to download and install Super Graph. You will need Go 1.13 or above
-GO111MODULE=on go get -u github.com/dosco/super-graph
+# Download and install Super Graph. You will need Go 1.13 or above
+git clone https://github.com/dosco/super-graph && cd super-graph && make install
+```
 
+And then create and launch you're new app
+
+```bash
 # create a new app and change to it's directory
 super-graph new blog; cd blog
 
@@ -1396,9 +1400,6 @@ brew install yarn
 # yarn install dependencies and build the web ui
 (cd web && yarn install && yarn build)
 
-# generate some stuff the go code needs
-go generate ./...
-
 # do this the only the time to setup the database
 docker-compose run rails_app rake db:create db:migrate db:seed
 
@@ -1407,6 +1408,6 @@ docker-compose up
 
 ```
 
-## MIT License
+## Apache License 2.0
 
-MIT Licensed | Copyright © 2018-present Vikram Rangnekar
+Apache Public License 2.0 | Copyright © 2018-present Vikram Rangnekar

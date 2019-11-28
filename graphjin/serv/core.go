@@ -16,10 +16,6 @@ import (
 	"github.com/valyala/fasttemplate"
 )
 
-const (
-	empty = ""
-)
-
 type coreContext struct {
 	req gqlReq
 	res gqlResp
@@ -88,7 +84,7 @@ func (c *coreContext) resolvePreparedSQL() ([]byte, *stmt, error) {
 		if tx, err = db.Begin(c); err != nil {
 			return nil, nil, err
 		}
-		defer tx.Rollback(c)
+		defer tx.Rollback(c) //nolint: errcheck
 	}
 
 	if conf.DB.SetUserID {
@@ -173,7 +169,7 @@ func (c *coreContext) resolveSQL() ([]byte, *stmt, error) {
 		if tx, err = db.Begin(c); err != nil {
 			return nil, nil, err
 		}
-		defer tx.Rollback(c)
+		defer tx.Rollback(c) //nolint: errcheck
 	}
 
 	if conf.DB.SetUserID {
@@ -246,7 +242,7 @@ func (c *coreContext) resolveSQL() ([]byte, *stmt, error) {
 		}
 	}
 
-	if conf.Production == false {
+	if !conf.Production {
 		_allowList.add(&c.req)
 	}
 
@@ -348,7 +344,7 @@ func parentFieldIds(h *xxhash.Digest, sel []qcode.Select, skipped uint32) (
 	for i := range sel {
 		s := &sel[i]
 
-		if isSkipped(skipped, uint32(s.ID)) == false {
+		if !isSkipped(skipped, uint32(s.ID)) {
 			continue
 		}
 

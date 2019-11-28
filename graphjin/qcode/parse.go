@@ -85,7 +85,6 @@ type Parser struct {
 	input []byte // the string being scanned
 	pos   int
 	items []item
-	depth int
 	err   error
 }
 
@@ -185,15 +184,6 @@ func (p *Parser) ignore() {
 	p.pos = n
 }
 
-func (p *Parser) current() item {
-	return p.items[p.pos]
-}
-
-func (p *Parser) eof() bool {
-	n := p.pos + 1
-	return p.items[n].typ == itemEOF
-}
-
 func (p *Parser) peek(types ...itemType) bool {
 	n := p.pos + 1
 	if p.items[n].typ == itemEOF {
@@ -250,7 +240,7 @@ func (p *Parser) parseOp() (*Operation, error) {
 		p.ignore()
 
 		for n := 0; n < 10; n++ {
-			if p.peek(itemName) == false {
+			if !p.peek(itemName) {
 				break
 			}
 
@@ -275,7 +265,7 @@ func (p *Parser) parseQueryOp() (*Operation, error) {
 	var err error
 
 	for n := 0; n < 10; n++ {
-		if p.peek(itemName) == false {
+		if !p.peek(itemName) {
 			break
 		}
 
@@ -306,7 +296,7 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 			continue
 		}
 
-		if p.peek(itemName) == false {
+		if !p.peek(itemName) {
 			return nil, errors.New("expecting an alias or field name")
 		}
 
@@ -374,13 +364,13 @@ func (p *Parser) parseArgs(args []Arg) ([]Arg, error) {
 			p.ignore()
 			break
 		}
-		if p.peek(itemName) == false {
+		if !p.peek(itemName) {
 			return nil, errors.New("expecting an argument name")
 		}
 		args = append(args, Arg{Name: p.val(p.next())})
 		arg := &args[(len(args) - 1)]
 
-		if p.peek(itemColon) == false {
+		if !p.peek(itemColon) {
 			return nil, errors.New("missing ':' after argument name")
 		}
 		p.ignore()
@@ -441,12 +431,12 @@ func (p *Parser) parseObj() (*Node, error) {
 			break
 		}
 
-		if p.peek(itemName) == false {
+		if !p.peek(itemName) {
 			return nil, errors.New("expecting an argument name")
 		}
 		nodeName := p.val(p.next())
 
-		if p.peek(itemColon) == false {
+		if !p.peek(itemColon) {
 			return nil, errors.New("missing ':' after Field argument name")
 		}
 		p.ignore()

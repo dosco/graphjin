@@ -461,7 +461,7 @@ func (i *item) String() string {
 	case itemStringVal:
 		v = "string"
 	}
-	return fmt.Sprintf("%s", v)
+	return v
 }
 
 /*

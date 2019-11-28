@@ -27,8 +27,11 @@
 main
 .DS_Store
 .swp
+.release
 main
 super-graph
+supergraph
 *-fuzz.zip
 crashers
 suppressions
+release

@@ -30,7 +30,7 @@ func initPreparedList() {
 	if err != nil {
 		errlog.Fatal().Err(err).Send()
 	}
-	defer tx.Rollback(c)
+	defer tx.Rollback(c) //nolint: errcheck
 
 	err = prepareRoleStmt(c, tx)
 	if err != nil {
@@ -74,7 +74,7 @@ func prepareStmt(c context.Context, gql string, vars []byte) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(c)
+	defer tx.Rollback(c) //nolint: errcheck
 
 	switch qt {
 	case qcode.QTQuery:
@@ -141,6 +141,7 @@ func prepare(c context.Context, tx pgx.Tx, st *stmt, key string) error {
 	return nil
 }
 
+// nolint: errcheck
 func prepareRoleStmt(c context.Context, tx pgx.Tx) error {
 	if len(conf.RolesQuery) == 0 {
 		return nil

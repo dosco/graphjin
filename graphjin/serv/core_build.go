@@ -59,9 +59,7 @@ func buildRoleStmt(gql, vars []byte, role string) ([]stmt, error) {
 
 	// For the 'anon' role in production only compile
 	// queries for tables defined in the config file.
-	if conf.Production &&
-		ro.Name == "anon" &&
-		hasTablesWithConfig(qc, ro) == false {
+	if conf.Production && ro.Name == "anon" && !hasTablesWithConfig(qc, ro) {
 		return nil, errors.New("query contains tables with no 'anon' role config")
 	}
 
@@ -126,6 +124,7 @@ func buildMultiStmt(gql, vars []byte) ([]stmt, error) {
 	return stmts, nil
 }
 
+//nolint: errcheck
 func renderUserQuery(
 	stmts []stmt, vars map[string]json.RawMessage) (string, error) {
 
