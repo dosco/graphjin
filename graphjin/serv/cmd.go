@@ -46,7 +46,7 @@ func Init() {
 
 	rootCmd := &cobra.Command{
 		Use:   "super-graph",
-		Short: "An instant high-performance GraphQL API. No code needed. https://supergraph.dev",
+		Short: BuildDetails(),
 	}
 
 	rootCmd.AddCommand(&cobra.Command{
@@ -310,19 +310,18 @@ func initConfOnce() {
 }
 
 func cmdVersion(cmd *cobra.Command, args []string) {
-	fmt.Printf("\n%s\n", BuildDetails())
+	fmt.Printf("%s\n", BuildDetails())
 }
 
 func BuildDetails() string {
 	return fmt.Sprintf(`
-Super Graph %v
+Super Graph %v 
+For documentation, visit https://supergraph.dev
 
 Commit SHA-1          : %v
 Commit timestamp      : %v
 Branch                : %v
 Go version            : %v
-
-For documentation, visit https://supergraph.dev
 
 Licensed under the Apache Public License 2.0
 Copyright 2015-2019 Vikram Rangnekar.

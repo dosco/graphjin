@@ -12,7 +12,7 @@ RUN apk update && \
     apk add --no-cache git && \
     apk add --no-cache upx=3.95-r2
 
-RUN go get -u github.com/rafaelsq/wtc
+RUN GO111MODULE=off go get -u github.com/rafaelsq/wtc
 
 WORKDIR /app
 COPY . /app
