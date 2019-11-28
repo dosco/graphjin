@@ -7,13 +7,16 @@ import (
 
 func TestCompile1(t *testing.T) {
 	qc, _ := NewCompiler(Config{})
-	qc.AddRole("user", "product", TRConfig{
+	err := qc.AddRole("user", "product", TRConfig{
 		Query: QueryConfig{
 			Columns: []string{"id", "Name"},
 		},
 	})
+	if err != nil {
+		t.Error(err)
+	}
 
-	_, err := qc.Compile([]byte(`
+	_, err = qc.Compile([]byte(`
 	{ product(id: 15) {
 			id
 			name
@@ -26,13 +29,16 @@ func TestCompile1(t *testing.T) {
 
 func TestCompile2(t *testing.T) {
 	qc, _ := NewCompiler(Config{})
-	qc.AddRole("user", "product", TRConfig{
+	err := qc.AddRole("user", "product", TRConfig{
 		Query: QueryConfig{
 			Columns: []string{"ID"},
 		},
 	})
+	if err != nil {
+		t.Error(err)
+	}
 
-	_, err := qc.Compile([]byte(`
+	_, err = qc.Compile([]byte(`
 	query { product(id: 15) {
 			id
 			name
@@ -45,13 +51,16 @@ func TestCompile2(t *testing.T) {
 
 func TestCompile3(t *testing.T) {
 	qc, _ := NewCompiler(Config{})
-	qc.AddRole("user", "product", TRConfig{
+	err := qc.AddRole("user", "product", TRConfig{
 		Query: QueryConfig{
 			Columns: []string{"ID"},
 		},
 	})
+	if err != nil {
+		t.Error(err)
+	}
 
-	_, err := qc.Compile([]byte(`
+	_, err = qc.Compile([]byte(`
 	mutation {
 		product(id: 15, name: "Test") {
 			id

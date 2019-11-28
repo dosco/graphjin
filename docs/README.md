@@ -26,5 +26,5 @@ features:
 - title: Free and Open Source
   details: Not a VC funded startup. Not even a startup just good old open source code
 
-footer: MIT Licensed | Copyright © 2018-present Vikram Rangnekar
+footer: Apache Public License 2.0 | Copyright © 2018-present Vikram Rangnekar
 ---

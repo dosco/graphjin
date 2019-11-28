@@ -16,7 +16,7 @@ import (
 
 func cmdNew(cmd *cobra.Command, args []string) {
 	if len(args) != 1 {
-		cmd.Help()
+		cmd.Help() //nolint: errcheck
 		os.Exit(1)
 	}
 
@@ -115,12 +115,16 @@ func (t *Templ) get(name string) ([]byte, error) {
 	b := bytes.Buffer{}
 	tmpl := fasttemplate.New(v, "{%", "%}")
 
-	tmpl.ExecuteFunc(&b, func(w io.Writer, tag string) (int, error) {
+	_, err := tmpl.ExecuteFunc(&b, func(w io.Writer, tag string) (int, error) {
 		if val, ok := t.data[strings.TrimSpace(tag)]; ok {
 			return w.Write([]byte(val))
 		}
 		return 0, fmt.Errorf("unknown template variable '%s'", tag)
 	})
+
+	if err != nil {
+		return nil, err
+	}
 
 	return b.Bytes(), nil
 }
@@ -133,7 +137,7 @@ func ifNotExists(filePath string, doFn func(string) error) {
 		return
 	}
 
-	if os.IsNotExist(err) == false {
+	if !os.IsNotExist(err) {
 		errlog.Fatal().Err(err).Msgf("unable to check if '%s' exists", filePath)
 	}
 

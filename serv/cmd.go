@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/dosco/super-graph/psql"
@@ -19,6 +20,14 @@ import (
 
 const (
 	serverName = "Super Graph"
+)
+
+var (
+	// These variables are set using -ldflags
+	version        string
+	gitBranch      string
+	lastCommitSHA  string
+	lastCommitTime string
 )
 
 var (
@@ -133,6 +142,12 @@ e.g. db:migrate -+1
 		Run:   cmdConfDump,
 	})
 
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "version",
+		Short: "Super Graph binary version information",
+		Run:   cmdVersion,
+	})
+
 	rootCmd.Flags().StringVar(&confPath,
 		"path", "./config", "path to config files")
 
@@ -169,7 +184,10 @@ func initConf() (*config, error) {
 		}
 
 		vi.SetConfigName(getConfigName())
-		vi.MergeInConfig()
+
+		if err := vi.MergeInConfig(); err != nil {
+			return nil, err
+		}
 	}
 
 	c := &config{}
@@ -289,4 +307,29 @@ func initConfOnce() {
 			errlog.Fatal().Err(err).Msg("failed to read config")
 		}
 	}
+}
+
+func cmdVersion(cmd *cobra.Command, args []string) {
+	fmt.Printf("\n%s\n", BuildDetails())
+}
+
+func BuildDetails() string {
+	return fmt.Sprintf(`
+Super Graph %v
+
+Commit SHA-1          : %v
+Commit timestamp      : %v
+Branch                : %v
+Go version            : %v
+
+For documentation, visit https://supergraph.dev
+
+Licensed under the Apache Public License 2.0
+Copyright 2015-2019 Vikram Rangnekar.
+`,
+		version,
+		lastCommitSHA,
+		lastCommitTime,
+		gitBranch,
+		runtime.Version())
 }

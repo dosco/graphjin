@@ -55,6 +55,6 @@ func TestFuzzCrashers(t *testing.T) {
 	}
 
 	for _, f := range crashers {
-		unifiedTest([]byte(f))
+		_ = unifiedTest([]byte(f))
 	}
 }

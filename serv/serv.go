@@ -76,12 +76,16 @@ func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
 				delete.Filters = blockFilter
 			}
 
-			qc.AddRole(r.Name, t.Name, qcode.TRConfig{
+			err := qc.AddRole(r.Name, t.Name, qcode.TRConfig{
 				Query:  query,
 				Insert: insert,
 				Update: update,
 				Delete: delete,
 			})
+
+			if err != nil {
+				return nil, nil, err
+			}
 		}
 	}
 
@@ -94,7 +98,7 @@ func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
 }
 
 func initWatcher(cpath string) {
-	if conf.WatchAndReload == false {
+	if !conf.WatchAndReload {
 		return
 	}
 
@@ -151,6 +155,8 @@ func startHTTP() {
 	})
 
 	logger.Info().
+		Str("version", version).
+		Str("git_branch", gitBranch).
 		Str("host_post", hostPort).
 		Str("app_name", conf.AppName).
 		Str("env", conf.Env).

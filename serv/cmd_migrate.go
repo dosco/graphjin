@@ -14,19 +14,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var sampleMigration = `-- This is a sample migration.
-
-create table users(
-  id serial primary key,
-  fullname varchar not null,
-  email varchar not null
-);
-
----- create above / drop below ----
-
-drop table users;
-`
-
 var newMigrationText = `-- Write your migrate up statements here
 
 ---- create above / drop below ----
@@ -48,7 +35,7 @@ func cmdDBSetup(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	if os.IsNotExist(err) == false {
+	if !os.IsNotExist(err) {
 		errlog.Fatal().Err(err).Msgf("unable to check if '%s' exists", sfile)
 	}
 
@@ -108,7 +95,7 @@ func cmdDBDrop(cmd *cobra.Command, args []string) {
 
 func cmdDBNew(cmd *cobra.Command, args []string) {
 	if len(args) != 1 {
-		cmd.Help()
+		cmd.Help() //nolint: errcheck
 		os.Exit(1)
 	}
 
@@ -142,7 +129,7 @@ func cmdDBNew(cmd *cobra.Command, args []string) {
 
 func cmdDBMigrate(cmd *cobra.Command, args []string) {
 	if len(args) == 0 {
-		cmd.Help()
+		cmd.Help() //nolint: errcheck
 		os.Exit(1)
 	}
 
@@ -211,7 +198,7 @@ func cmdDBMigrate(cmd *cobra.Command, args []string) {
 		err = m.MigrateTo(currentVersion + mustParseDestination(dest[1:]))
 
 	} else {
-		cmd.Help()
+		cmd.Help() //nolint: errcheck
 		os.Exit(1)
 	}
 

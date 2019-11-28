@@ -139,7 +139,7 @@ func Filter(w *bytes.Buffer, b []byte, keys []string) error {
 			}
 
 			if sk > 0 && sk < len(cb) {
-				_, err = w.Write(cb[sk:len(cb)])
+				_, err = w.Write(cb[sk:])
 			} else {
 				_, err = w.Write(cb)
 			}

@@ -43,7 +43,7 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 	vm.Set("graphql", graphQLFunc)
 
 	console := vm.NewObject()
-	console.Set("log", logFunc)
+	console.Set("log", logFunc) //nolint: errcheck
 	vm.Set("console", console)
 
 	fake := vm.NewObject()
@@ -100,7 +100,7 @@ func graphQLFunc(query string, data interface{}, opt map[string]string) map[stri
 	if err != nil {
 		errlog.Fatal().Err(err).Send()
 	}
-	defer tx.Rollback(c)
+	defer tx.Rollback(c) //nolint: errcheck
 
 	if conf.DB.SetUserID {
 		if err := setLocalUserID(c, tx); err != nil {
@@ -128,6 +128,7 @@ func graphQLFunc(query string, data interface{}, opt map[string]string) map[stri
 	return val
 }
 
+//nolint: errcheck
 func logFunc(args ...interface{}) {
 	for _, arg := range args {
 		if _, ok := arg.(map[string]interface{}); ok {
@@ -144,6 +145,7 @@ func logFunc(args ...interface{}) {
 	}
 }
 
+//nolint: errcheck
 func setFakeFuncs(f *goja.Object) {
 	gofakeit.Seed(0)
 

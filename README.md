@@ -1,10 +1,10 @@
 <a href="https://supergraph.dev"><img src="https://supergraph.dev/hologram.svg" width="100" height="100" align="right" /></a>
 
-# Super Graph - Instant GraphQL APIs for your apps. 
+# Super Graph 
 
-## Build web products faster. No code needed. GraphQL auto. transformed into efficient database queries.
+### Build web products faster. Instant GraphQL API without writing any code. Works with Postgres. Also supports Rails apps. 
 
-![MIT license](https://img.shields.io/github/license/dosco/super-graph.svg)
+![Apache Public License 2.0](https://img.shields.io/github/license/dosco/super-graph.svg)
 ![Docker build](https://img.shields.io/docker/cloud/build/dosco/super-graph.svg)
 ![Cloud native](https://img.shields.io/badge/cloud--native-enabled-blue.svg)
 [![Discord Chat](https://img.shields.io/discord/628796009539043348.svg)](https://discord.gg/6pSWCTZ)  
@@ -56,7 +56,7 @@ Twitter or Discord.
 
 ## License
 
-[MIT](http://opensource.org/licenses/MIT)
+[Apache Public License 2.0](https://opensource.org/licenses/Apache-2.0)
 
 Copyright (c) 2019-present Vikram Rangnekar
 

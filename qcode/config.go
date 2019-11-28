@@ -116,7 +116,7 @@ func listToMap(list []string) map[string]struct{} {
 
 func mapToList(m map[string]string) []string {
 	list := []string{}
-	for k, _ := range m {
+	for k := range m {
 		list = append(list, strings.ToLower(k))
 	}
 	sort.Strings(list)

@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/gorilla/websocket"
 )
 
 const (
@@ -20,7 +18,6 @@ const (
 )
 
 var (
-	upgrader        = websocket.Upgrader{}
 	errUnauthorized = errors.New("not authorized")
 )
 
@@ -32,8 +29,6 @@ type gqlReq struct {
 	role   string
 	hdr    http.Header
 }
-
-type variables map[string]json.RawMessage
 
 type gqlResp struct {
 	Error      string          `json:"message,omitempty"`
@@ -69,7 +64,8 @@ type resolver struct {
 func apiv1Http(w http.ResponseWriter, r *http.Request) {
 	ctx := &coreContext{Context: r.Context()}
 
-	if conf.AuthFailBlock && authCheck(ctx) == false {
+	//nolint: errcheck
+	if conf.AuthFailBlock && !authCheck(ctx) {
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(gqlResp{Error: errUnauthorized.Error()})
 		return
@@ -97,6 +93,7 @@ func apiv1Http(w http.ResponseWriter, r *http.Request) {
 
 	err = ctx.handleReq(w, r)
 
+	//nolint: errcheck
 	if err == errUnauthorized {
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(gqlResp{Error: err.Error()})
@@ -110,6 +107,7 @@ func apiv1Http(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+//nolint: errcheck
 func errorResp(w http.ResponseWriter, err error) {
 	json.NewEncoder(w).Encode(gqlResp{Error: err.Error()})
 }

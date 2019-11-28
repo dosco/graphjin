@@ -27,8 +27,11 @@ func TestMain(m *testing.M) {
 			"token",
 		},
 	})
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	qcompile.AddRole("user", "product", qcode.TRConfig{
+	err = qcompile.AddRole("user", "product", qcode.TRConfig{
 		Query: qcode.QueryConfig{
 			Columns: []string{"id", "name", "price", "users", "customers"},
 			Filters: []string{
@@ -54,27 +57,39 @@ func TestMain(m *testing.M) {
 			},
 		},
 	})
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	qcompile.AddRole("anon", "product", qcode.TRConfig{
+	err = qcompile.AddRole("anon", "product", qcode.TRConfig{
 		Query: qcode.QueryConfig{
 			Columns: []string{"id", "name"},
 		},
 	})
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	qcompile.AddRole("anon1", "product", qcode.TRConfig{
+	err = qcompile.AddRole("anon1", "product", qcode.TRConfig{
 		Query: qcode.QueryConfig{
 			Columns:          []string{"id", "name", "price"},
 			DisableFunctions: true,
 		},
 	})
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	qcompile.AddRole("user", "users", qcode.TRConfig{
+	err = qcompile.AddRole("user", "users", qcode.TRConfig{
 		Query: qcode.QueryConfig{
 			Columns: []string{"id", "full_name", "avatar", "email", "products"},
 		},
 	})
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	qcompile.AddRole("bad_dude", "users", qcode.TRConfig{
+	err = qcompile.AddRole("bad_dude", "users", qcode.TRConfig{
 		Query: qcode.QueryConfig{
 			Filters:          []string{"false"},
 			DisableFunctions: true,
@@ -86,8 +101,11 @@ func TestMain(m *testing.M) {
 			Filters: []string{"false"},
 		},
 	})
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	qcompile.AddRole("user", "mes", qcode.TRConfig{
+	err = qcompile.AddRole("user", "mes", qcode.TRConfig{
 		Query: qcode.QueryConfig{
 			Columns: []string{"id", "full_name", "avatar"},
 			Filters: []string{
@@ -95,8 +113,11 @@ func TestMain(m *testing.M) {
 			},
 		},
 	})
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	qcompile.AddRole("user", "customers", qcode.TRConfig{
+	err = qcompile.AddRole("user", "customers", qcode.TRConfig{
 		Query: qcode.QueryConfig{
 			Columns: []string{"id", "email", "full_name", "products"},
 		},
@@ -167,7 +188,9 @@ func TestMain(m *testing.M) {
 	}
 
 	for i, t := range tables {
-		schema.updateSchema(t, columns[i], aliases)
+		if err := schema.updateSchema(t, columns[i], aliases); err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	vars := NewVariables(map[string]string{

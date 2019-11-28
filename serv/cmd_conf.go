@@ -9,7 +9,7 @@ import (
 
 func cmdConfDump(cmd *cobra.Command, args []string) {
 	if len(args) != 1 {
-		cmd.Help()
+		cmd.Help() //nolint: errcheck
 		os.Exit(1)
 	}
 

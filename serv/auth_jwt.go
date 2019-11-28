@@ -11,8 +11,7 @@ import (
 
 const (
 	authHeader     = "Authorization"
-	jwtBase    int = iota
-	jwtAuth0
+	jwtAuth0   int = iota + 1
 )
 
 func jwtHandler(next http.HandlerFunc) http.HandlerFunc {

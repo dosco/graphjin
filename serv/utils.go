@@ -12,6 +12,7 @@ import (
 	"github.com/dosco/super-graph/jsn"
 )
 
+// nolint: errcheck
 func mkkey(h *xxhash.Digest, k1 string, k2 string) uint64 {
 	h.WriteString(k1)
 	h.WriteString(k2)
@@ -21,6 +22,7 @@ func mkkey(h *xxhash.Digest, k1 string, k2 string) uint64 {
 	return v
 }
 
+// nolint: errcheck
 func gqlHash(b string, vars []byte, role string) string {
 	b = strings.TrimSpace(b)
 	h := sha1.New()
@@ -64,7 +66,7 @@ func gqlHash(b string, vars []byte, role string) string {
 		} else {
 			starting = false
 			s = e
-			for e < len(b) && ws(b[e]) == false {
+			for e < len(b) && !ws(b[e]) {
 				e++
 			}
 			if e != 0 {
@@ -81,7 +83,7 @@ func gqlHash(b string, vars []byte, role string) string {
 		io.WriteString(h, role)
 	}
 
-	if vars == nil || len(vars) == 0 {
+	if len(vars) == 0 {
 		return hex.EncodeToString(h.Sum(nil))
 	}
 

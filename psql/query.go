@@ -1,3 +1,4 @@
+//nolint:errcheck
 package psql
 
 import (
@@ -6,10 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"strings"
 
-	"github.com/cespare/xxhash/v2"
 	"github.com/dosco/super-graph/qcode"
 	"github.com/dosco/super-graph/util"
 )
@@ -249,7 +248,7 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo) (uint
 	hasOrder := len(sel.OrderBy) != 0
 
 	// SELECT
-	if ti.Singular == false {
+	if !ti.Singular {
 		//fmt.Fprintf(w, `SELECT coalesce(json_agg("%s"`, c.sel.Table)
 		io.WriteString(c.w, `SELECT coalesce(json_agg("`)
 		io.WriteString(c.w, "json_")
@@ -351,7 +350,7 @@ func (c *compilerContext) renderSelectClose(sel *qcode.Select, ti *DBTableInfo) 
 		io.WriteString(c.w, `') :: integer`)
 	}
 
-	if ti.Singular == false {
+	if !ti.Singular {
 		//fmt.Fprintf(w, `) AS "json_agg_%d"`, c.sel.ID)
 		io.WriteString(c.w, `)`)
 		aliasWithID(c.w, "json_agg", sel.ID)
@@ -417,7 +416,7 @@ func (c *compilerContext) renderColumns(sel *qcode.Select, ti *DBTableInfo) {
 	for _, col := range sel.Cols {
 		n := funcPrefixLen(col.Name)
 		if n != 0 {
-			if sel.Functions == false {
+			if !sel.Functions {
 				continue
 			}
 			if len(sel.Allowed) != 0 {
@@ -956,7 +955,7 @@ func (c *compilerContext) renderOp(ex *qcode.Exp, sel *qcode.Select, ti *DBTable
 		if len(ti.TSVCol) == 0 {
 			return fmt.Errorf("no tsv column defined for %s", ti.Name)
 		}
-		if col, ok = ti.Columns[ti.TSVCol]; !ok {
+		if _, ok = ti.Columns[ti.TSVCol]; !ok {
 			return fmt.Errorf("no tsv column '%s' found ", ti.TSVCol)
 		}
 		//fmt.Fprintf(w, `(("%s") @@ to_tsquery('%s'))`, c.ti.TSVCol, val.Val)
@@ -1139,22 +1138,6 @@ func aliasWithIDSuffix(w io.Writer, alias string, id int32, suffix string) {
 	io.WriteString(w, `"`)
 }
 
-func colWithAlias(w io.Writer, col, alias string) {
-	io.WriteString(w, `"`)
-	io.WriteString(w, col)
-	io.WriteString(w, `" AS "`)
-	io.WriteString(w, alias)
-	io.WriteString(w, `"`)
-}
-
-func tableWithAlias(w io.Writer, table, alias string) {
-	io.WriteString(w, `"`)
-	io.WriteString(w, table)
-	io.WriteString(w, `" AS "`)
-	io.WriteString(w, alias)
-	io.WriteString(w, `"`)
-}
-
 func colWithTable(w io.Writer, table, col string) {
 	io.WriteString(w, `"`)
 	io.WriteString(w, table)
@@ -1178,20 +1161,6 @@ func colWithTableIDAlias(w io.Writer, table string, id int32, col, alias string)
 	io.WriteString(w, table)
 	io.WriteString(w, `_`)
 	int2string(w, id)
-	io.WriteString(w, `"."`)
-	io.WriteString(w, col)
-	io.WriteString(w, `" AS "`)
-	io.WriteString(w, alias)
-	io.WriteString(w, `"`)
-}
-
-func colWithTableIDSuffixAlias(w io.Writer, table string, id int32,
-	suffix, col, alias string) {
-	io.WriteString(w, `"`)
-	io.WriteString(w, table)
-	io.WriteString(w, `_`)
-	int2string(w, id)
-	io.WriteString(w, suffix)
 	io.WriteString(w, `"."`)
 	io.WriteString(w, col)
 	io.WriteString(w, `" AS "`)
@@ -1223,7 +1192,7 @@ func int2string(w io.Writer, val int32) {
 	for val2 > 0 {
 		temp *= 10
 		temp += val2 % 10
-		val2 = int32(math.Floor(float64(val2 / 10)))
+		val2 = int32(float64(val2 / 10))
 	}
 
 	val3 := temp
@@ -1232,12 +1201,4 @@ func int2string(w io.Writer, val int32) {
 		val3 /= 10
 		w.Write([]byte{charset[d]})
 	}
-}
-
-func relID(h *xxhash.Digest, child, parent string) uint64 {
-	h.WriteString(child)
-	h.WriteString(parent)
-	v := h.Sum64()
-	h.Reset()
-	return v
 }
