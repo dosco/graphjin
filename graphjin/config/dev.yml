@@ -131,16 +131,17 @@ tables:
     name: me
     table: users
 
+  - name: deals
+    table: products
+
 roles_query: "SELECT * FROM users WHERE id = $user_id"
 
 roles:
   - name: anon
     tables:
-      - name: users
       - name: products
-        limit: 10
-
         query:
+          limit: 10
           columns: ["id", "name", "description" ]
           aggregation: false
 
@@ -152,6 +153,13 @@ roles:
 
         delete:
           block: false
+
+      - name: deals
+
+        query:
+          limit: 3
+          columns: ["name", "description" ]
+          aggregation: false
 
   - name: user
     tables:

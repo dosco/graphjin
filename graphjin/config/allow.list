@@ -161,4 +161,11 @@ query getProducts {
   }
 }
 
+query {
+  deals {
+    id
+    name
+    price
+  }
+}
 

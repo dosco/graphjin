@@ -300,7 +300,7 @@ func (c *coreContext) addTrace(sel []qcode.Select, id int32, st time.Time) {
 
 	n--
 	for i := id; ; i = sel[i].ParentID {
-		path[n] = sel[i].Table
+		path[n] = sel[i].Name
 		if sel[i].ParentID == -1 {
 			break
 		}
@@ -310,7 +310,7 @@ func (c *coreContext) addTrace(sel []qcode.Select, id int32, st time.Time) {
 	tr := resolver{
 		Path:        path,
 		ParentType:  "Query",
-		FieldName:   sel[id].Table,
+		FieldName:   sel[id].Name,
 		ReturnType:  "object",
 		StartOffset: 1,
 		Duration:    du,
@@ -349,7 +349,7 @@ func parentFieldIds(h *xxhash.Digest, sel []qcode.Select, skipped uint32) (
 		}
 
 		p := sel[s.ParentID]
-		k := mkkey(h, s.Table, p.Table)
+		k := mkkey(h, s.Name, p.Name)
 
 		if r, ok := rmap[k]; ok {
 			fm[n] = r.IDField

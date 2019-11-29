@@ -20,7 +20,7 @@ func (co *Compiler) compileMutation(qc *qcode.QCode, w io.Writer, vars Variables
 	c := &compilerContext{w, qc.Selects, co}
 	root := &qc.Selects[0]
 
-	ti, err := c.schema.GetTable(root.Table)
+	ti, err := c.schema.GetTable(root.Name)
 	if err != nil {
 		return 0, err
 	}
