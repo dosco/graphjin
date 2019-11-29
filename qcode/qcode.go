@@ -39,7 +39,7 @@ type Select struct {
 	ID         int32
 	ParentID   int32
 	Args       map[string]*Node
-	Table      string
+	Name       string
 	FieldName  string
 	Cols       []Column
 	Where      *Exp
@@ -301,7 +301,7 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 		selects = append(selects, Select{
 			ID:        id,
 			ParentID:  parentID,
-			Table:     field.Name,
+			Name:      field.Name,
 			Children:  make([]int32, 0, 5),
 			Allowed:   trv.allowedColumns(action),
 			Functions: true,
@@ -325,7 +325,7 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 		if len(field.Alias) != 0 {
 			s.FieldName = field.Alias
 		} else {
-			s.FieldName = s.Table
+			s.FieldName = s.Name
 		}
 
 		err := com.compileArgs(qc, s, field.Args)
@@ -383,7 +383,7 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 func (com *Compiler) addFilters(qc *QCode, root *Select, role string) {
 	var fil *Exp
 
-	if trv, ok := com.tr[role][root.Table]; ok {
+	if trv, ok := com.tr[role][root.Name]; ok {
 		fil = trv.filter(qc.Type)
 	}
 

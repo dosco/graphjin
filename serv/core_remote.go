@@ -80,7 +80,7 @@ func resolveRemote(
 
 	// then use the Table nme in the Select and it's parent
 	// to find the resolver to use for this relationship
-	k2 := mkkey(h, s.Table, p.Table)
+	k2 := mkkey(h, s.Name, p.Name)
 
 	r, ok := rmap[k2]
 	if !ok {
@@ -148,7 +148,7 @@ func resolveRemotes(
 
 		// then use the Table nme in the Select and it's parent
 		// to find the resolver to use for this relationship
-		k2 := mkkey(h, s.Table, p.Table)
+		k2 := mkkey(h, s.Name, p.Name)
 
 		r, ok := rmap[k2]
 		if !ok {
@@ -167,7 +167,7 @@ func resolveRemotes(
 
 			b, err := r.Fn(hdr, id)
 			if err != nil {
-				cerr = fmt.Errorf("%s: %s", s.Table, err)
+				cerr = fmt.Errorf("%s: %s", s.Name, err)
 				return
 			}
 
@@ -180,7 +180,7 @@ func resolveRemotes(
 			if len(s.Cols) != 0 {
 				err = jsn.Filter(&ob, b, colsToList(s.Cols))
 				if err != nil {
-					cerr = fmt.Errorf("%s: %s", s.Table, err)
+					cerr = fmt.Errorf("%s: %s", s.Name, err)
 					return
 				}
 

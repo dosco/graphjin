@@ -175,7 +175,7 @@ func renderUserQuery(
 
 func hasTablesWithConfig(qc *qcode.QCode, role *configRole) bool {
 	for _, id := range qc.Roots {
-		t, err := schema.GetTable(qc.Selects[id].Table)
+		t, err := schema.GetTable(qc.Selects[id].Name)
 		if err != nil {
 			return false
 		}
