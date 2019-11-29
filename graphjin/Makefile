@@ -3,7 +3,6 @@ BUILD_DATE    ?= $(shell git log -1 --format=%ci)
 BUILD_BRANCH  ?= $(shell git rev-parse --abbrev-ref HEAD)
 BUILD_VERSION ?= $(shell git describe --always --tags)
 
-PKGS    := $(shell go list ./... | grep -v /vendor)
 GOPATH  ?= $(shell go env GOPATH)
 
 ifndef GOPATH
@@ -22,8 +21,8 @@ BUILD_FLAGS ?= -ldflags '-s -w -X ${lastCommitSHA}=${BUILD} -X "${lastCommitTime
 
 .PHONY: all build gen clean test run lint changlog release version help $(PLATFORMS)
 
-test: lint
-	@go test -v $(PKGS)
+test:
+	@go test -v ./...
 
 BIN_DIR := $(GOPATH)/bin
 GORICE := $(BIN_DIR)/github.com/GeertJohan/go.rice
@@ -50,13 +49,13 @@ LDFLAGS := -s -w
 PLATFORMS := windows linux darwin
 os = $(word 1, $@)
 
-$(PLATFORMS): gen 
+$(PLATFORMS): lint test gen 
 	@mkdir -p release
 	@GOOS=$(os) GOARCH=amd64 go build $(BUILD_FLAGS) -o release/$(BINARY)-$(BUILD_VERSION)-$(os)-amd64
 
 release: windows linux darwin
 
-all: $(BINARY)
+all: lint test $(BINARY)
 
 build: $(BINARY)
 

@@ -334,9 +334,10 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 		}
 
 		// Order is important addFilters must come after compileArgs
+		com.addFilters(qc, s, role)
+
 		if s.ParentID == -1 {
 			qc.Roots = append(qc.Roots, s.ID)
-			com.addFilters(qc, s, role)
 		} else {
 			p := &selects[s.ParentID]
 			p.Children = append(p.Children, s.ID)
