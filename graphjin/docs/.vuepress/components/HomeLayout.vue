@@ -8,15 +8,11 @@
         <div class="bg-bottom bg-no-repeat bg-cover">
           <div class="text-center md:text-left pt-24">
             <h1 v-if="data.heroText !== null" class="text-5xl font-bold text-black pb-0 uppercase">
-              {{ data.heroText || $title || 'Hello' }}
+              <img src="/super-graph.png" width="250" />
             </h1>
             
-            <p class="text-2xl text-gray-700 leading-tight pb-0">
-              {{ data.tagline || $description || 'Welcome to your VuePress site' }}
-            </p>
-
-            <p class="text-lg text-gray-600 leading-tight">
-              {{ data.longTagline }}
+            <p class="text-4xl text-gray-800 leading-tight mt-1">
+              Build web products faster. Secure high performance GraphQL
             </p>
 
             <NavLink
