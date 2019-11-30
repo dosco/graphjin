@@ -31,14 +31,14 @@ var (
 )
 
 var (
-	logger   zerolog.Logger
-	errlog   zerolog.Logger
-	conf     *config
-	confPath string
-	db       *pgxpool.Pool
-	schema   *psql.DBSchema
-	qcompile *qcode.Compiler
-	pcompile *psql.Compiler
+	logger   zerolog.Logger  // logger for everything but errors
+	errlog   zerolog.Logger  // logger for errors includes line numbers
+	conf     *config         // parsed config
+	confPath string          // path to the config file
+	db       *pgxpool.Pool   // database connection pool
+	schema   *psql.DBSchema  // database tables, columns and relationships
+	qcompile *qcode.Compiler // qcode compiler
+	pcompile *psql.Compiler  // postgres sql compiler
 )
 
 func Init() {

@@ -50,6 +50,10 @@ docker-compose -f demo.yml run rails_app rake db:create db:migrate db:seed
 docker-compose up
 ```
 
+### Learn how the code works
+
+[Super Graph codebase explained](https://supergraph.dev/internals.html)
+
 ### Testing and Linting {#testing}
 
 ```

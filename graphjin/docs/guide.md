@@ -6,7 +6,7 @@ sidebar: auto
 
 Super Graph is a micro-service that instantly and without code gives you a high performance and secure GraphQL API. Your GraphQL queries are auto translated into a single fast SQL query. No more writing API code as you develop your web frontend just make the query you need and Super Graph will do the rest.
 
-Super Graph has a rich feature set like integrating with your existing Ruby on Rails apps, joining your DB with data from remote APIs, Role and Attribute based access control, Supoport for JWT tokens, Built-in DB mutations and seeding and a lot more.
+Super Graph has a rich feature set like integrating with your existing Ruby on Rails apps, joining your DB with data from remote APIs, Role and Attribute based access control, Supoport for JWT tokens, DB migrations, seeding and a lot more.
 
 
 ## Features
@@ -1410,6 +1410,10 @@ docker-compose run rails_app rake db:create db:migrate db:seed
 docker-compose up
 
 ```
+
+## Learn how the code works
+
+[Super Graph codebase explained](https://supergraph.dev/internals.html)
 
 ## Apache License 2.0
 
