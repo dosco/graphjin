@@ -7,14 +7,9 @@ assignees: dosco
 
 ---
 
-## Experience Report
+<!-- Please only use this template for submitting feature requests -->
 
-Note: Feature requests are judged based on user experience this is similar to the [Go Experience Reports](https://github.com/golang/go/wiki/ExperienceReports). These reports should focus on the problems: they should not focus on and need not propose solutions.
+**What would you like to be added**:
 
-### What you wanted to do
+**Why is this needed**:
 
-### What you actually did
-
-### Why that wasn't great, with examples
-
-### Any external references to support your case
