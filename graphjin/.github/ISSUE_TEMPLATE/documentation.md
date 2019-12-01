@@ -3,7 +3,7 @@ name: Documentation
 about: Suggest how we can improve documentation
 title: ''
 labels: bug, docs
-assignees: dosco
+assignees: ''
 
 ---
 
