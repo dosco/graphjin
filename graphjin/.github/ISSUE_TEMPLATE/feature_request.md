@@ -2,7 +2,7 @@
 name: Feature request
 about: Suggest an idea for this project
 title: ''
-labels: ''
+labels: enhancement
 assignees: dosco
 
 ---
@@ -12,4 +12,3 @@ assignees: dosco
 **What would you like to be added**:
 
 **Why is this needed**:
-
