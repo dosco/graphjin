@@ -8,7 +8,6 @@ import (
 
 type Config struct {
 	Blocklist []string
-	KeepArgs  bool
 }
 
 type QueryConfig struct {

@@ -157,7 +157,6 @@ const (
 type Compiler struct {
 	tr map[string]map[string]*trval
 	bl map[string]struct{}
-	ka bool
 }
 
 var expPool = sync.Pool{
@@ -165,7 +164,7 @@ var expPool = sync.Pool{
 }
 
 func NewCompiler(c Config) (*Compiler, error) {
-	co := &Compiler{ka: c.KeepArgs}
+	co := &Compiler{}
 	co.tr = make(map[string]map[string]*trval)
 	co.bl = make(map[string]struct{}, len(c.Blocklist))
 
@@ -380,11 +379,13 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 	return nil
 }
 
-func (com *Compiler) addFilters(qc *QCode, root *Select, role string) {
+func (com *Compiler) addFilters(qc *QCode, sel *Select, role string) {
 	var fil *Exp
 
-	if trv, ok := com.tr[role][root.Name]; ok {
+	if trv, ok := com.tr[role][sel.Name]; ok {
 		fil = trv.filter(qc.Type)
+	} else {
+		return
 	}
 
 	if fil == nil {
@@ -394,59 +395,60 @@ func (com *Compiler) addFilters(qc *QCode, root *Select, role string) {
 	switch fil.Op {
 	case OpNop:
 	case OpFalse:
-		root.Where = fil
+		sel.Where = fil
 
 	default:
-		if root.Where != nil {
-			ow := root.Where
+		if sel.Where != nil {
+			ow := sel.Where
 
-			root.Where = expPool.Get().(*Exp)
-			root.Where.Reset()
-			root.Where.Op = OpAnd
-			root.Where.Children = root.Where.childrenA[:2]
-			root.Where.Children[0] = fil
-			root.Where.Children[1] = ow
+			sel.Where = expPool.Get().(*Exp)
+			sel.Where.Reset()
+			sel.Where.Op = OpAnd
+			sel.Where.Children = sel.Where.childrenA[:2]
+			sel.Where.Children[0] = fil
+			sel.Where.Children[1] = ow
 		} else {
-			root.Where = fil
+			sel.Where = fil
 		}
 	}
 }
 
 func (com *Compiler) compileArgs(qc *QCode, sel *Select, args []Arg) error {
 	var err error
-
-	if com.ka {
-		sel.Args = make(map[string]*Node, len(args))
-	}
+	var ka bool
 
 	for i := range args {
 		arg := &args[i]
 
 		switch arg.Name {
 		case "id":
-			err = com.compileArgID(sel, arg)
+			err, ka = com.compileArgID(sel, arg)
+
 		case "search":
-			err = com.compileArgSearch(sel, arg)
+			err, ka = com.compileArgSearch(sel, arg)
+
 		case "where":
-			err = com.compileArgWhere(sel, arg)
+			err, ka = com.compileArgWhere(sel, arg)
+
 		case "orderby", "order_by", "order":
-			err = com.compileArgOrderBy(sel, arg)
+			err, ka = com.compileArgOrderBy(sel, arg)
+
 		case "distinct_on", "distinct":
-			err = com.compileArgDistinctOn(sel, arg)
+			err, ka = com.compileArgDistinctOn(sel, arg)
+
 		case "limit":
-			err = com.compileArgLimit(sel, arg)
+			err, ka = com.compileArgLimit(sel, arg)
+
 		case "offset":
-			err = com.compileArgOffset(sel, arg)
+			err, ka = com.compileArgOffset(sel, arg)
+		}
+
+		if !ka {
+			nodePool.Put(arg.Val)
 		}
 
 		if err != nil {
 			return err
-		}
-
-		if sel.Args != nil {
-			sel.Args[arg.Name] = arg.Val
-		} else {
-			nodePool.Put(arg.Val)
 		}
 	}
 
@@ -455,7 +457,7 @@ func (com *Compiler) compileArgs(qc *QCode, sel *Select, args []Arg) error {
 
 func (com *Compiler) setMutationType(qc *QCode, args []Arg) error {
 	setActionVar := func(arg *Arg) error {
-		if arg.Val.Type != nodeVar {
+		if arg.Val.Type != NodeVar {
 			return fmt.Errorf("value for argument '%s' must be a variable", arg.Name)
 		}
 		qc.ActionVar = arg.Val.Val
@@ -478,7 +480,7 @@ func (com *Compiler) setMutationType(qc *QCode, args []Arg) error {
 		case "delete":
 			qc.Type = QTDelete
 
-			if arg.Val.Type != nodeBool {
+			if arg.Val.Type != NodeBool {
 				return fmt.Errorf("value for argument '%s' must be a boolean", arg.Name)
 			}
 
@@ -493,7 +495,7 @@ func (com *Compiler) setMutationType(qc *QCode, args []Arg) error {
 }
 
 func (com *Compiler) compileArgObj(st *util.Stack, arg *Arg) (*Exp, error) {
-	if arg.Val.Type != nodeObj {
+	if arg.Val.Type != NodeObj {
 		return nil, fmt.Errorf("expecting an object")
 	}
 
@@ -545,11 +547,6 @@ func (com *Compiler) compileArgNode(st *util.Stack, node *Node, usePool bool) (*
 		} else {
 			node.exp.Children = append(node.exp.Children, ex)
 		}
-
-	}
-
-	if com.ka {
-		return root, nil
 	}
 
 	pushChild(st, nil, node)
@@ -570,13 +567,13 @@ func (com *Compiler) compileArgNode(st *util.Stack, node *Node, usePool bool) (*
 	return root, nil
 }
 
-func (com *Compiler) compileArgID(sel *Select, arg *Arg) error {
+func (com *Compiler) compileArgID(sel *Select, arg *Arg) (error, bool) {
 	if sel.ID != 0 {
-		return nil
+		return nil, false
 	}
 
 	if sel.Where != nil && sel.Where.Op == OpEqID {
-		return nil
+		return nil, false
 	}
 
 	ex := expPool.Get().(*Exp)
@@ -586,29 +583,40 @@ func (com *Compiler) compileArgID(sel *Select, arg *Arg) error {
 	ex.Val = arg.Val.Val
 
 	switch arg.Val.Type {
-	case nodeStr:
+	case NodeStr:
 		ex.Type = ValStr
-	case nodeInt:
+	case NodeInt:
 		ex.Type = ValInt
-	case nodeFloat:
+	case NodeFloat:
 		ex.Type = ValFloat
-	case nodeVar:
+	case NodeVar:
 		ex.Type = ValVar
 	default:
-		return fmt.Errorf("expecting a string, int, float or variable")
+		return fmt.Errorf("expecting a string, int, float or variable"), false
 	}
 
 	sel.Where = ex
-	return nil
+	return nil, false
 }
 
-func (com *Compiler) compileArgSearch(sel *Select, arg *Arg) error {
+func (com *Compiler) compileArgSearch(sel *Select, arg *Arg) (error, bool) {
 	ex := expPool.Get().(*Exp)
 	ex.Reset()
 
 	ex.Op = OpTsQuery
-	ex.Type = ValStr
 	ex.Val = arg.Val.Val
+
+	if arg.Val.Type == NodeVar {
+		ex.Type = ValVar
+	} else {
+		ex.Type = ValStr
+	}
+
+	if sel.Args == nil {
+		sel.Args = make(map[string]*Node)
+	}
+
+	sel.Args[arg.Name] = arg.Val
 
 	if sel.Where != nil {
 		ow := sel.Where
@@ -622,16 +630,16 @@ func (com *Compiler) compileArgSearch(sel *Select, arg *Arg) error {
 	} else {
 		sel.Where = ex
 	}
-	return nil
+	return nil, true
 }
 
-func (com *Compiler) compileArgWhere(sel *Select, arg *Arg) error {
+func (com *Compiler) compileArgWhere(sel *Select, arg *Arg) (error, bool) {
 	st := util.NewStack()
 	var err error
 
 	ex, err := com.compileArgObj(st, arg)
 	if err != nil {
-		return err
+		return err, false
 	}
 
 	if sel.Where != nil {
@@ -647,12 +655,12 @@ func (com *Compiler) compileArgWhere(sel *Select, arg *Arg) error {
 		sel.Where = ex
 	}
 
-	return nil
+	return nil, false
 }
 
-func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) error {
-	if arg.Val.Type != nodeObj {
-		return fmt.Errorf("expecting an object")
+func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) (error, bool) {
+	if arg.Val.Type != NodeObj {
+		return fmt.Errorf("expecting an object"), false
 	}
 
 	st := util.NewStack()
@@ -670,23 +678,19 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) error {
 		node, ok := intf.(*Node)
 
 		if !ok || node == nil {
-			return fmt.Errorf("17: unexpected value %v (%t)", intf, intf)
+			return fmt.Errorf("17: unexpected value %v (%t)", intf, intf), false
 		}
 
 		if _, ok := com.bl[node.Name]; ok {
-			if !com.ka {
-				nodePool.Put(node)
-			}
+			nodePool.Put(node)
 			continue
 		}
 
-		if node.Type == nodeObj {
+		if node.Type == NodeObj {
 			for i := range node.Children {
 				st.Push(node.Children[i])
 			}
-			if !com.ka {
-				nodePool.Put(node)
-			}
+			nodePool.Put(node)
 			continue
 		}
 
@@ -706,65 +710,60 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) error {
 		case "desc_nulls_last":
 			ob.Order = OrderDescNullsLast
 		default:
-			return fmt.Errorf("valid values include asc, desc, asc_nulls_first and desc_nulls_first")
+			return fmt.Errorf("valid values include asc, desc, asc_nulls_first and desc_nulls_first"), false
 		}
 
 		setOrderByColName(ob, node)
 		sel.OrderBy = append(sel.OrderBy, ob)
-
-		if !com.ka {
-			nodePool.Put(node)
-		}
+		nodePool.Put(node)
 	}
-	return nil
+	return nil, false
 }
 
-func (com *Compiler) compileArgDistinctOn(sel *Select, arg *Arg) error {
+func (com *Compiler) compileArgDistinctOn(sel *Select, arg *Arg) (error, bool) {
 	node := arg.Val
 
 	if _, ok := com.bl[node.Name]; ok {
-		return nil
+		return nil, false
 	}
 
-	if node.Type != nodeList && node.Type != nodeStr {
-		return fmt.Errorf("expecting a list of strings or just a string")
+	if node.Type != NodeList && node.Type != NodeStr {
+		return fmt.Errorf("expecting a list of strings or just a string"), false
 	}
 
-	if node.Type == nodeStr {
+	if node.Type == NodeStr {
 		sel.DistinctOn = append(sel.DistinctOn, node.Val)
 	}
 
 	for i := range node.Children {
 		sel.DistinctOn = append(sel.DistinctOn, node.Children[i].Val)
-		if !com.ka {
-			nodePool.Put(node.Children[i])
-		}
+		nodePool.Put(node.Children[i])
 	}
 
-	return nil
+	return nil, false
 }
 
-func (com *Compiler) compileArgLimit(sel *Select, arg *Arg) error {
+func (com *Compiler) compileArgLimit(sel *Select, arg *Arg) (error, bool) {
 	node := arg.Val
 
-	if node.Type != nodeInt {
-		return fmt.Errorf("expecting an integer")
+	if node.Type != NodeInt {
+		return fmt.Errorf("expecting an integer"), false
 	}
 
 	sel.Paging.Limit = node.Val
 
-	return nil
+	return nil, false
 }
 
-func (com *Compiler) compileArgOffset(sel *Select, arg *Arg) error {
+func (com *Compiler) compileArgOffset(sel *Select, arg *Arg) (error, bool) {
 	node := arg.Val
 
-	if node.Type != nodeInt {
-		return fmt.Errorf("expecting an integer")
+	if node.Type != NodeInt {
+		return fmt.Errorf("expecting an integer"), false
 	}
 
 	sel.Paging.Offset = node.Val
-	return nil
+	return nil, false
 }
 
 var zeroTrv = &trval{}
@@ -879,17 +878,17 @@ func newExp(st *util.Stack, node *Node, usePool bool) (*Exp, error) {
 
 	if ex.Op != OpAnd && ex.Op != OpOr && ex.Op != OpNot {
 		switch node.Type {
-		case nodeStr:
+		case NodeStr:
 			ex.Type = ValStr
-		case nodeInt:
+		case NodeInt:
 			ex.Type = ValInt
-		case nodeBool:
+		case NodeBool:
 			ex.Type = ValBool
-		case nodeFloat:
+		case NodeFloat:
 			ex.Type = ValFloat
-		case nodeList:
+		case NodeList:
 			ex.Type = ValList
-		case nodeVar:
+		case NodeVar:
 			ex.Type = ValVar
 		default:
 			return nil, fmt.Errorf("[Where] valid values include string, int, float, boolean and list: %s", node.Type)
@@ -903,13 +902,13 @@ func newExp(st *util.Stack, node *Node, usePool bool) (*Exp, error) {
 func setListVal(ex *Exp, node *Node) {
 	if len(node.Children) != 0 {
 		switch node.Children[0].Type {
-		case nodeStr:
+		case NodeStr:
 			ex.ListType = ValStr
-		case nodeInt:
+		case NodeInt:
 			ex.ListType = ValInt
-		case nodeBool:
+		case NodeBool:
 			ex.ListType = ValBool
-		case nodeFloat:
+		case NodeFloat:
 			ex.ListType = ValFloat
 		}
 	}
@@ -922,7 +921,7 @@ func setWhereColName(ex *Exp, node *Node) {
 	var list []string
 
 	for n := node.Parent; n != nil; n = n.Parent {
-		if n.Type != nodeObj {
+		if n.Type != NodeObj {
 			continue
 		}
 		if len(n.Name) != 0 {

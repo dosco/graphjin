@@ -353,16 +353,14 @@ func (m *Migrator) MigrateTo(targetVersion int32) (err error) {
 }
 
 func (m *Migrator) GetCurrentVersion() (v int32, err error) {
-	ctx := context.Background()
+	err = m.conn.QueryRow(context.Background(),
+		"select version from "+m.versionTable).Scan(&v)
 
-	err = m.conn.QueryRow(ctx, "select version from "+m.versionTable).Scan(&v)
 	return v, err
 }
 
 func (m *Migrator) ensureSchemaVersionTableExists() (err error) {
-	ctx := context.Background()
-
-	_, err = m.conn.Exec(ctx, fmt.Sprintf(`
+	_, err = m.conn.Exec(context.Background(), fmt.Sprintf(`
     create table if not exists %s(version int4 not null);
 
     insert into %s(version)
