@@ -14,7 +14,7 @@
 
 Super Graph is a micro-service that instantly and without code gives you a high performance and secure GraphQL API. Your GraphQL queries are auto translated into a single fast SQL query. No more writing API code as you develop your web frontend just make the query you need and Super Graph will do the rest.
 
-Super Graph has a rich feature set like integrating with your existing Ruby on Rails apps, joining your DB with data from remote APIs, Role and Attribute based access control, Supoport for JWT tokens, Built-in DB mutations and seeding and a lot more.
+Super Graph has a rich feature set like integrating with your existing Ruby on Rails apps, joining your DB with data from remote APIs, role and attribute based access control, support for JWT tokens, built-in DB mutations and seeding, and a lot more.
 
 ![GraphQL](docs/.vuepress/public/graphql.png?raw=true "")
 
