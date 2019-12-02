@@ -81,7 +81,7 @@ func (c *coreContext) resolvePreparedSQL() ([]byte, *stmt, error) {
 	useTx := useRoleQuery || conf.DB.SetUserID
 
 	if useTx {
-		if tx, err = db.Begin(c); err != nil {
+		if tx, err = db.Begin(context.Background()); err != nil {
 			return nil, nil, err
 		}
 		defer tx.Rollback(c) //nolint: errcheck
@@ -122,9 +122,9 @@ func (c *coreContext) resolvePreparedSQL() ([]byte, *stmt, error) {
 	}
 
 	if useTx {
-		row = tx.QueryRow(c, ps.sd.SQL, vars...)
+		row = tx.QueryRow(context.Background(), ps.sd.SQL, vars...)
 	} else {
-		row = db.QueryRow(c, ps.sd.SQL, vars...)
+		row = db.QueryRow(context.Background(), ps.sd.SQL, vars...)
 	}
 
 	if mutation || anonQuery {
@@ -146,7 +146,7 @@ func (c *coreContext) resolvePreparedSQL() ([]byte, *stmt, error) {
 	c.req.role = role
 
 	if useTx {
-		if err := tx.Commit(c); err != nil {
+		if err := tx.Commit(context.Background()); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -166,10 +166,10 @@ func (c *coreContext) resolveSQL() ([]byte, *stmt, error) {
 	useTx := useRoleQuery || conf.DB.SetUserID
 
 	if useTx {
-		if tx, err = db.Begin(c); err != nil {
+		if tx, err = db.Begin(context.Background()); err != nil {
 			return nil, nil, err
 		}
-		defer tx.Rollback(c) //nolint: errcheck
+		defer tx.Rollback(context.Background()) //nolint: errcheck
 	}
 
 	if conf.DB.SetUserID {
@@ -215,9 +215,9 @@ func (c *coreContext) resolveSQL() ([]byte, *stmt, error) {
 	defaultRole := c.req.role
 
 	if useTx {
-		row = tx.QueryRow(c, finalSQL)
+		row = tx.QueryRow(context.Background(), finalSQL)
 	} else {
-		row = db.QueryRow(c, finalSQL)
+		row = db.QueryRow(context.Background(), finalSQL)
 	}
 
 	if len(stmts) == 1 {
@@ -237,7 +237,7 @@ func (c *coreContext) resolveSQL() ([]byte, *stmt, error) {
 	}
 
 	if useTx {
-		if err := tx.Commit(c); err != nil {
+		if err := tx.Commit(context.Background()); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -263,7 +263,7 @@ func (c *coreContext) resolveSQL() ([]byte, *stmt, error) {
 
 func (c *coreContext) executeRoleQuery(tx pgx.Tx) (string, error) {
 	var role string
-	row := tx.QueryRow(c, "_sg_get_role", c.req.role, 1)
+	row := tx.QueryRow(context.Background(), "_sg_get_role", c.req.role, 1)
 
 	if err := row.Scan(&role); err != nil {
 		return "", err
@@ -320,6 +320,15 @@ func (c *coreContext) addTrace(sel []qcode.Select, id int32, st time.Time) {
 		append(c.res.Extensions.Tracing.Execution.Resolvers, tr)
 }
 
+func setLocalUserID(c context.Context, tx pgx.Tx) error {
+	var err error
+	if v := c.Value(userIDKey); v != nil {
+		_, err = tx.Exec(context.Background(), fmt.Sprintf(`SET LOCAL "user.id" = %s;`, v))
+	}
+
+	return err
+}
+
 func parentFieldIds(h *xxhash.Digest, sel []qcode.Select, skipped uint32) (
 	[][]byte,
 	map[uint64]*qcode.Select) {
@@ -361,15 +370,6 @@ func parentFieldIds(h *xxhash.Digest, sel []qcode.Select, skipped uint32) (
 	}
 
 	return fm, sm
-}
-
-func setLocalUserID(c context.Context, tx pgx.Tx) error {
-	var err error
-	if v := c.Value(userIDKey); v != nil {
-		_, err = tx.Exec(c, fmt.Sprintf(`SET LOCAL "user.id" = %s;`, v))
-	}
-
-	return err
 }
 
 func isSkipped(n uint32, pos uint32) bool {

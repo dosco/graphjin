@@ -23,21 +23,20 @@ var (
 )
 
 func initPreparedList() {
-	c := context.Background()
 	_preparedList = make(map[string]*preparedItem)
 
-	tx, err := db.Begin(c)
+	tx, err := db.Begin(context.Background())
 	if err != nil {
 		errlog.Fatal().Err(err).Send()
 	}
-	defer tx.Rollback(c) //nolint: errcheck
+	defer tx.Rollback(context.Background()) //nolint: errcheck
 
-	err = prepareRoleStmt(c, tx)
+	err = prepareRoleStmt(tx)
 	if err != nil {
 		errlog.Fatal().Err(err).Msg("failed to prepare get role statement")
 	}
 
-	if err := tx.Commit(c); err != nil {
+	if err := tx.Commit(context.Background()); err != nil {
 		errlog.Fatal().Err(err).Send()
 	}
 
@@ -48,7 +47,7 @@ func initPreparedList() {
 			continue
 		}
 
-		err := prepareStmt(c, v.gql, v.vars)
+		err := prepareStmt(v.gql, v.vars)
 		if err == nil {
 			success++
 			continue
@@ -66,15 +65,15 @@ func initPreparedList() {
 			success, len(_allowList.list))
 }
 
-func prepareStmt(c context.Context, gql string, vars []byte) error {
+func prepareStmt(gql string, vars []byte) error {
 	qt := qcode.GetQType(gql)
 	q := []byte(gql)
 
-	tx, err := db.Begin(c)
+	tx, err := db.Begin(context.Background())
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(c) //nolint: errcheck
+	defer tx.Rollback(context.Background()) //nolint: errcheck
 
 	switch qt {
 	case qcode.QTQuery:
@@ -83,7 +82,7 @@ func prepareStmt(c context.Context, gql string, vars []byte) error {
 			return err
 		}
 
-		err = prepare(c, tx, &stmts1[0], gqlHash(gql, vars, "user"))
+		err = prepare(tx, &stmts1[0], gqlHash(gql, vars, "user"))
 		if err != nil {
 			return err
 		}
@@ -93,7 +92,7 @@ func prepareStmt(c context.Context, gql string, vars []byte) error {
 			return err
 		}
 
-		err = prepare(c, tx, &stmts2[0], gqlHash(gql, vars, "anon"))
+		err = prepare(tx, &stmts2[0], gqlHash(gql, vars, "anon"))
 		if err != nil {
 			return err
 		}
@@ -105,7 +104,7 @@ func prepareStmt(c context.Context, gql string, vars []byte) error {
 				return err
 			}
 
-			err = prepare(c, tx, &stmts[0], gqlHash(gql, vars, role.Name))
+			err = prepare(tx, &stmts[0], gqlHash(gql, vars, role.Name))
 			if err != nil {
 				return err
 			}
@@ -118,17 +117,17 @@ func prepareStmt(c context.Context, gql string, vars []byte) error {
 		logger.Debug().Msgf("Building prepared statement:\n %s\n%s", vars, gql)
 	}
 
-	if err := tx.Commit(c); err != nil {
+	if err := tx.Commit(context.Background()); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func prepare(c context.Context, tx pgx.Tx, st *stmt, key string) error {
+func prepare(tx pgx.Tx, st *stmt, key string) error {
 	finalSQL, am := processTemplate(st.sql)
 
-	sd, err := tx.Prepare(c, "", finalSQL)
+	sd, err := tx.Prepare(context.Background(), "", finalSQL)
 	if err != nil {
 		return err
 	}
@@ -142,7 +141,7 @@ func prepare(c context.Context, tx pgx.Tx, st *stmt, key string) error {
 }
 
 // nolint: errcheck
-func prepareRoleStmt(c context.Context, tx pgx.Tx) error {
+func prepareRoleStmt(tx pgx.Tx) error {
 	if len(conf.RolesQuery) == 0 {
 		return nil
 	}
@@ -167,7 +166,7 @@ func prepareRoleStmt(c context.Context, tx pgx.Tx) error {
 
 	roleSQL, _ := processTemplate(w.String())
 
-	_, err := tx.Prepare(c, "_sg_get_role", roleSQL)
+	_, err := tx.Prepare(context.Background(), "_sg_get_role", roleSQL)
 	if err != nil {
 		return err
 	}

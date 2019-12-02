@@ -26,13 +26,13 @@ const (
 	opQuery
 	opMutate
 	opSub
-	nodeStr
-	nodeInt
-	nodeFloat
-	nodeBool
-	nodeObj
-	nodeList
-	nodeVar
+	NodeStr
+	NodeInt
+	NodeFloat
+	NodeBool
+	NodeObj
+	NodeList
+	NodeVar
 )
 
 type Operation struct {
@@ -413,7 +413,7 @@ func (p *Parser) parseList() (*Node, error) {
 		return nil, errors.New("List cannot be empty")
 	}
 
-	parent.Type = nodeList
+	parent.Type = NodeList
 	parent.Children = nodes
 
 	return parent, nil
@@ -450,7 +450,7 @@ func (p *Parser) parseObj() (*Node, error) {
 		nodes = append(nodes, node)
 	}
 
-	parent.Type = nodeObj
+	parent.Type = NodeObj
 	parent.Children = nodes
 
 	return parent, nil
@@ -473,17 +473,17 @@ func (p *Parser) parseValue() (*Node, error) {
 
 	switch item.typ {
 	case itemIntVal:
-		node.Type = nodeInt
+		node.Type = NodeInt
 	case itemFloatVal:
-		node.Type = nodeFloat
+		node.Type = NodeFloat
 	case itemStringVal:
-		node.Type = nodeStr
+		node.Type = NodeStr
 	case itemBoolVal:
-		node.Type = nodeBool
+		node.Type = NodeBool
 	case itemName:
-		node.Type = nodeStr
+		node.Type = NodeStr
 	case itemVariable:
-		node.Type = nodeVar
+		node.Type = NodeVar
 	default:
 		return nil, fmt.Errorf("expecting a number, string, object, list or variable as an argument value (not %s)", p.val(p.next()))
 	}
@@ -514,19 +514,19 @@ func (t parserType) String() string {
 		v = "mutation"
 	case opSub:
 		v = "subscription"
-	case nodeStr:
+	case NodeStr:
 		v = "node-string"
-	case nodeInt:
+	case NodeInt:
 		v = "node-int"
-	case nodeFloat:
+	case NodeFloat:
 		v = "node-float"
-	case nodeBool:
+	case NodeBool:
 		v = "node-bool"
-	case nodeVar:
+	case NodeVar:
 		v = "node-var"
-	case nodeObj:
+	case NodeObj:
 		v = "node-obj"
-	case nodeList:
+	case NodeList:
 		v = "node-list"
 	}
 	return fmt.Sprintf("<%s>", v)

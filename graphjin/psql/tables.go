@@ -3,6 +3,7 @@ package psql
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/gobuffalo/flect"
@@ -144,9 +145,10 @@ ORDER BY id;`
 }
 
 type DBSchema struct {
-	t  map[string]*DBTableInfo
-	rm map[string]map[string]*DBRel
-	al map[string]struct{}
+	ver int
+	t   map[string]*DBTableInfo
+	rm  map[string]map[string]*DBRel
+	al  map[string]struct{}
 }
 
 type DBTableInfo struct {
@@ -184,9 +186,21 @@ func NewDBSchema(db *pgxpool.Pool, aliases map[string][]string) (*DBSchema, erro
 
 	dbc, err := db.Acquire(context.Background())
 	if err != nil {
-		return nil, fmt.Errorf("error acquiring connection from pool")
+		return nil, fmt.Errorf("error acquiring connection from pool: %w", err)
 	}
 	defer dbc.Release()
+
+	var version string
+
+	err = dbc.QueryRow(context.Background(), `SHOW server_version_num`).Scan(&version)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching version: %w", err)
+	}
+
+	schema.ver, err = strconv.Atoi(version)
+	if err != nil {
+		return nil, err
+	}
 
 	tables, err := GetTables(dbc)
 	if err != nil {

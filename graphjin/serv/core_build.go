@@ -97,6 +97,10 @@ func buildMultiStmt(gql, vars []byte) ([]stmt, error) {
 	for i := 0; i < len(conf.Roles); i++ {
 		role := &conf.Roles[i]
 
+		if role.Name == "anon" {
+			continue
+		}
+
 		qc, err := qcompile.Compile(gql, role.Name)
 		if err != nil {
 			return nil, err
@@ -127,8 +131,6 @@ func buildMultiStmt(gql, vars []byte) ([]stmt, error) {
 //nolint: errcheck
 func renderUserQuery(
 	stmts []stmt, vars map[string]json.RawMessage) (string, error) {
-
-	var err error
 	w := &bytes.Buffer{}
 
 	io.WriteString(w, `SELECT "_sg_auth_info"."role", (CASE "_sg_auth_info"."role" `)
@@ -141,11 +143,7 @@ func renderUserQuery(
 		io.WriteString(w, `WHEN '`)
 		io.WriteString(w, s.role.Name)
 		io.WriteString(w, `' THEN (`)
-
-		s.skipped, err = pcompile.Compile(s.qc, w, psql.Variables(vars))
-		if err != nil {
-			return "", err
-		}
+		io.WriteString(w, s.sql)
 		io.WriteString(w, `) `)
 	}
 

@@ -178,9 +178,10 @@ func TestMain(m *testing.M) {
 	}
 
 	schema := &DBSchema{
-		t:  make(map[string]*DBTableInfo),
-		rm: make(map[string]map[string]*DBRel),
-		al: make(map[string]struct{}),
+		ver: 110000,
+		t:   make(map[string]*DBTableInfo),
+		rm:  make(map[string]map[string]*DBRel),
+		al:  make(map[string]struct{}),
 	}
 
 	aliases := map[string][]string{

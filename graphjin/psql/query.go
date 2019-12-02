@@ -189,6 +189,11 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer) (uint32, error) {
 				}
 			}
 
+			if len(sel.Args) != 0 {
+				for _, v := range sel.Args {
+					qcode.FreeNode(v)
+				}
+			}
 		}
 	}
 
@@ -515,36 +520,54 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo,
 			if isSearch {
 				switch {
 				case cn == "search_rank":
+					if len(sel.Allowed) != 0 {
+						if _, ok := sel.Allowed[cn]; !ok {
+							continue
+						}
+					}
 					cn = ti.TSVCol
 					arg := sel.Args["search"]
 
 					if i != 0 {
 						io.WriteString(c.w, `, `)
 					}
-					//fmt.Fprintf(w, `ts_rank("%s"."%s", to_tsquery('%s')) AS %s`,
+					//fmt.Fprintf(w, `ts_rank("%s"."%s", websearch_to_tsquery('%s')) AS %s`,
 					//c.sel.Name, cn, arg.Val, col.Name)
 					io.WriteString(c.w, `ts_rank(`)
 					colWithTable(c.w, ti.Name, cn)
-					io.WriteString(c.w, `, to_tsquery('`)
+					if c.schema.ver >= 110000 {
+						io.WriteString(c.w, `, websearch_to_tsquery('`)
+					} else {
+						io.WriteString(c.w, `, to_tsquery('`)
+					}
 					io.WriteString(c.w, arg.Val)
-					io.WriteString(c.w, `')`)
+					io.WriteString(c.w, `'))`)
 					alias(c.w, col.Name)
 					i++
 
 				case strings.HasPrefix(cn, "search_headline_"):
-					cn = cn[16:]
+					cn1 := cn[16:]
+					if len(sel.Allowed) != 0 {
+						if _, ok := sel.Allowed[cn1]; !ok {
+							continue
+						}
+					}
 					arg := sel.Args["search"]
 
 					if i != 0 {
 						io.WriteString(c.w, `, `)
 					}
-					//fmt.Fprintf(w, `ts_headline("%s"."%s", to_tsquery('%s')) AS %s`,
+					//fmt.Fprintf(w, `ts_headline("%s"."%s", websearch_to_tsquery('%s')) AS %s`,
 					//c.sel.Name, cn, arg.Val, col.Name)
-					io.WriteString(c.w, `ts_headlinek(`)
-					colWithTable(c.w, ti.Name, cn)
-					io.WriteString(c.w, `, to_tsquery('`)
+					io.WriteString(c.w, `ts_headline(`)
+					colWithTable(c.w, ti.Name, cn1)
+					if c.schema.ver >= 110000 {
+						io.WriteString(c.w, `, websearch_to_tsquery('`)
+					} else {
+						io.WriteString(c.w, `, to_tsquery('`)
+					}
 					io.WriteString(c.w, arg.Val)
-					io.WriteString(c.w, `')`)
+					io.WriteString(c.w, `'))`)
 					alias(c.w, col.Name)
 					i++
 
@@ -693,6 +716,7 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo,
 	//fmt.Fprintf(w, `) AS "%s_%d"`, c.sel.Name, c.sel.ID)
 	io.WriteString(c.w, `)`)
 	aliasWithID(c.w, ti.Name, sel.ID)
+
 	return nil
 }
 
@@ -939,6 +963,7 @@ func (c *compilerContext) renderOp(ex *qcode.Exp, sel *qcode.Select, ti *DBTable
 			io.WriteString(c.w, `IS NOT NULL)`)
 		}
 		return nil
+
 	case qcode.OpEqID:
 		if len(ti.PrimaryCol) == 0 {
 			return fmt.Errorf("no primary key column defined for %s", ti.Name)
@@ -951,6 +976,7 @@ func (c *compilerContext) renderOp(ex *qcode.Exp, sel *qcode.Select, ti *DBTable
 		colWithTable(c.w, ti.Name, ti.PrimaryCol)
 		//io.WriteString(c.w, ti.PrimaryCol)
 		io.WriteString(c.w, `) =`)
+
 	case qcode.OpTsQuery:
 		if len(ti.TSVCol) == 0 {
 			return fmt.Errorf("no tsv column defined for %s", ti.Name)
@@ -958,10 +984,14 @@ func (c *compilerContext) renderOp(ex *qcode.Exp, sel *qcode.Select, ti *DBTable
 		if _, ok = ti.Columns[ti.TSVCol]; !ok {
 			return fmt.Errorf("no tsv column '%s' found ", ti.TSVCol)
 		}
-		//fmt.Fprintf(w, `(("%s") @@ to_tsquery('%s'))`, c.ti.TSVCol, val.Val)
-		io.WriteString(c.w, `(("`)
-		io.WriteString(c.w, ti.TSVCol)
-		io.WriteString(c.w, `") @@ to_tsquery('`)
+		//fmt.Fprintf(w, `(("%s") @@ websearch_to_tsquery('%s'))`, c.ti.TSVCol, val.Val)
+		io.WriteString(c.w, `((`)
+		colWithTable(c.w, ti.Name, ti.TSVCol)
+		if c.schema.ver >= 110000 {
+			io.WriteString(c.w, `) @@ websearch_to_tsquery('`)
+		} else {
+			io.WriteString(c.w, `) @@ to_tsquery('`)
+		}
 		io.WriteString(c.w, ex.Val)
 		io.WriteString(c.w, `'))`)
 		return nil
