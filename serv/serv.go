@@ -24,7 +24,6 @@ func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
 
 	conf := qcode.Config{
 		Blocklist: c.DB.Blocklist,
-		KeepArgs:  false,
 	}
 
 	qc, err := qcode.NewCompiler(conf)

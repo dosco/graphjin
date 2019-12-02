@@ -110,7 +110,7 @@ func graphQLFunc(query string, data interface{}, opt map[string]string) map[stri
 
 	var root []byte
 
-	if err = tx.QueryRow(c, finalSQL).Scan(&root); err != nil {
+	if err = tx.QueryRow(context.Background(), finalSQL).Scan(&root); err != nil {
 		errlog.Fatal().Err(err).Msg("sql query failed")
 	}
 

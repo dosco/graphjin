@@ -169,3 +169,17 @@ query {
   }
 }
 
+variables {
+	"beer": "smoke"
+}
+
+query beerSearch {
+  products(search: $beer) {
+    id
+    name
+    search_rank
+    search_headline_description
+  }
+}
+
+
