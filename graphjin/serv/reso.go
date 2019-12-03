@@ -103,6 +103,10 @@ func buildFn(r configRemote) func(http.Header, []byte) ([]byte, error) {
 			return nil, err
 		}
 
+		if host, ok := hdr["Host"]; ok {
+			req.Host = host[0]
+		}
+
 		for _, v := range r.SetHeaders {
 			req.Header.Set(v.Name, v.Value)
 		}
@@ -111,9 +115,7 @@ func buildFn(r configRemote) func(http.Header, []byte) ([]byte, error) {
 			req.Header.Set(v, hdr.Get(v))
 		}
 
-		if host, ok := hdr["Host"]; ok {
-			req.Host = host[0]
-		}
+		logger.Debug().Str("uri", uri).Msg("Remote Join")
 
 		res, err := client.Do(req)
 		if err != nil {
@@ -133,7 +135,7 @@ func buildFn(r configRemote) func(http.Header, []byte) ([]byte, error) {
 				return nil, err
 			}
 
-			logger.Warn().Msgf("Remote Request Debug:\n%s\n%s",
+			logger.Debug().Msgf("Remote Request Debug:\n%s\n%s",
 				reqDump, resDump)
 		}
 
