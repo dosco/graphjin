@@ -81,14 +81,14 @@ func (c *coreContext) resolvePreparedSQL() ([]byte, *stmt, error) {
 	useTx := useRoleQuery || conf.DB.SetUserID
 
 	if useTx {
-		if tx, err = db.Begin(context.Background()); err != nil {
+		if tx, err = db.Begin(c.Context); err != nil {
 			return nil, nil, err
 		}
 		defer tx.Rollback(c) //nolint: errcheck
 	}
 
 	if conf.DB.SetUserID {
-		if err := setLocalUserID(c, tx); err != nil {
+		if err := setLocalUserID(c.Context, tx); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -122,9 +122,9 @@ func (c *coreContext) resolvePreparedSQL() ([]byte, *stmt, error) {
 	}
 
 	if useTx {
-		row = tx.QueryRow(context.Background(), ps.sd.SQL, vars...)
+		row = tx.QueryRow(c.Context, ps.sd.SQL, vars...)
 	} else {
-		row = db.QueryRow(context.Background(), ps.sd.SQL, vars...)
+		row = db.QueryRow(c.Context, ps.sd.SQL, vars...)
 	}
 
 	if mutation || anonQuery {
@@ -146,7 +146,7 @@ func (c *coreContext) resolvePreparedSQL() ([]byte, *stmt, error) {
 	c.req.role = role
 
 	if useTx {
-		if err := tx.Commit(context.Background()); err != nil {
+		if err := tx.Commit(c.Context); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -166,14 +166,14 @@ func (c *coreContext) resolveSQL() ([]byte, *stmt, error) {
 	useTx := useRoleQuery || conf.DB.SetUserID
 
 	if useTx {
-		if tx, err = db.Begin(context.Background()); err != nil {
+		if tx, err = db.Begin(c.Context); err != nil {
 			return nil, nil, err
 		}
-		defer tx.Rollback(context.Background()) //nolint: errcheck
+		defer tx.Rollback(c.Context) //nolint: errcheck
 	}
 
 	if conf.DB.SetUserID {
-		if err := setLocalUserID(c, tx); err != nil {
+		if err := setLocalUserID(c.Context, tx); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -215,9 +215,9 @@ func (c *coreContext) resolveSQL() ([]byte, *stmt, error) {
 	defaultRole := c.req.role
 
 	if useTx {
-		row = tx.QueryRow(context.Background(), finalSQL)
+		row = tx.QueryRow(c.Context, finalSQL)
 	} else {
-		row = db.QueryRow(context.Background(), finalSQL)
+		row = db.QueryRow(c.Context, finalSQL)
 	}
 
 	if len(stmts) == 1 {
@@ -237,7 +237,7 @@ func (c *coreContext) resolveSQL() ([]byte, *stmt, error) {
 	}
 
 	if useTx {
-		if err := tx.Commit(context.Background()); err != nil {
+		if err := tx.Commit(c.Context); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -263,7 +263,7 @@ func (c *coreContext) resolveSQL() ([]byte, *stmt, error) {
 
 func (c *coreContext) executeRoleQuery(tx pgx.Tx) (string, error) {
 	var role string
-	row := tx.QueryRow(context.Background(), "_sg_get_role", c.req.role, 1)
+	row := tx.QueryRow(c.Context, "_sg_get_role", c.req.role, 1)
 
 	if err := row.Scan(&role); err != nil {
 		return "", err

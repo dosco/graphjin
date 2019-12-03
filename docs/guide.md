@@ -1042,11 +1042,18 @@ We can get the JWT token either from the `authorization` header where we expect 
 
 For validation a `secret` or a public key (ecdsa or rsa) is required. When using public keys they have to be in a PEM format file.
 
-## Role based Access Control
+## Access Control
 
-It's a common usecase for APIs to control what information they return or insert based on the role of the user. For example when fetching a list of users, a normal user can only fetch his own entry while a manager can fetch all the users within a company and an admin user can fetch everyone. Or when creating a new user an an admin user can set a users role while the user himself cannot set or change it. This is called role based access control or RBAC.
+It's common for APIs to control what information they return or insert based on the role of the user. In Super Graph we have two primary roles `user` and `anon` the first for users where a `user_id` is available the latter for users where it's not.
 
-Super Graph allows you to set access control rules based on dynamically defined roles. You can create as many roles as you wish. The only two default (built-in) roles are `user` for authenticated requests and `anon` for unauthenticated. An authenticated request is one where Super Graph can extract an `user_id` based on the configured authenication method (jwt, rails cookies, etc).
+::: tip
+An authenticated request is one where Super Graph can extract an `user_id` based on the configured authentication method (jwt, rails cookies, etc).
+:::
+
+The `user` role can be divided up into further roles based on attributes in the database. For example when fetching a list of users, a normal user can only fetch his own entry while an admin can fetch all the users within a company and an admin user can fetch everyone. In some places this is called Attribute based access control. So in way we support both. Role based access control and Attribute based access control.
+
+Super Graph allows you to create roles dynamically using a `roles_query` and `  match` config values.
+
 
 ### Configure RBAC
 
@@ -1085,8 +1092,7 @@ roles:
           filters: []
 ```
 
-This configuration is relatively simple to follow the `roles_query` parameter is the query that
-must be run to help figure out a users role. This query can be as complex as you like and include joins with other tables. 
+This configuration is relatively simple to follow the `roles_query` parameter is the query that must be run to help figure out a users role. This query can be as complex as you like and include joins with other tables. 
 
 The individual roles are defined under the `roles` parameter and this includes each table the role has a custom setting for. The role is dynamically matched using the `match` parameter for example in the above case `users.id = 1` means that when the `roles_query` is executed a user with the id `1` willbe assigned the admin role and those that don't match get the `user` role if authenticated successfully or the `anon` role.
 
