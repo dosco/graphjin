@@ -171,6 +171,8 @@ func startHTTP() {
 func routeHandler() http.Handler {
 	mux := http.NewServeMux()
 
+	mux.Handle("/health", http.HandlerFunc(health))
+
 	mux.Handle("/api/v1/graphql", withAuth(apiv1Http))
 
 	if conf.WebUI {

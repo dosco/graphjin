@@ -97,6 +97,8 @@ database:
   # Enable this if you need the user id in triggers, etc
   set_user_id: false
 
+  ping_timeout: 1m
+
   # Define additional variables here to be used with filters
   variables:
     admin_account_id: "5"
