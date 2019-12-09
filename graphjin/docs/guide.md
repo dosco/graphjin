@@ -1173,6 +1173,23 @@ Even tracing data is availble in the Super Graph web UI if tracing is enabled in
 
 ![Query Tracing](/tracing.png "Super Graph Web UI Query Tracing")
 
+## Configure Database Relationships
+
+In most cases you don't need this configuration, Super Graph will discover and learn
+the relationship graph within your database automatically. It does this using `Foreign Key` relationships that you have defined in your database schema.
+
+The below configs are only needed in special cases such as when you don't use foreign keys or when you want to create a relationship between two tables where a foreign key is not defined or cannot be defined.
+
+For example in the sample below a relationship is defined between the `tags` column on the `posts` table with the `slug` column on the `tags` table. This cannot be defined as using foreign keys since the `tags` column is of type array `text[]` and Postgres for one does not allow foreign keys with array columns.
+
+```yaml
+tables:
+  - name: posts
+    columns:
+      - name: tags
+        related_to: tags.slug
+```
+
 
 ## Configuration files
 

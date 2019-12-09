@@ -36,7 +36,6 @@ func initResolvers() error {
 
 func initRemotes(t configTable) error {
 	h := xxhash.New()
-	var err error
 
 	for _, r := range t.Remotes {
 		// defines the table column to be used as an id in the
@@ -46,21 +45,20 @@ func initRemotes(t configTable) error {
 		// if no table column specified in the config then
 		// use the primary key of the table as the id
 		if len(idcol) == 0 {
-			idcol, err = pcompile.IDColumn(t.Name)
+			pcol, err := pcompile.IDColumn(t.Name)
 			if err != nil {
 				return err
 			}
+			idcol = pcol.Key
 		}
 		idk := fmt.Sprintf("__%s_%s", t.Name, idcol)
 
 		// register a relationship between the remote data
 		// and the database table
 
-		val := &psql.DBRel{
-			Type: psql.RelRemote,
-			Col1: idcol,
-			Col2: idk,
-		}
+		val := &psql.DBRel{Type: psql.RelRemote}
+		val.Left.Col = idcol
+		val.Right.Col = idk
 
 		err := pcompile.AddRelationship(strings.ToLower(r.Name), t.Name, val)
 		if err != nil {

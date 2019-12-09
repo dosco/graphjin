@@ -96,7 +96,7 @@ func initAllowList(cpath string) {
 }
 
 func (al *allowList) add(req *gqlReq) {
-	if len(req.ref) == 0 || len(req.Query) == 0 {
+	if al.saveChan == nil || len(req.ref) == 0 || len(req.Query) == 0 {
 		return
 	}
 

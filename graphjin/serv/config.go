@@ -81,11 +81,17 @@ type config struct {
 	roles      map[string]*configRole
 }
 
+type configColumn struct {
+	Name       string
+	ForeignKey string `mapstructure:"related_to"`
+}
+
 type configTable struct {
 	Name      string
 	Table     string
 	Blocklist []string
 	Remotes   []configRemote
+	Columns   []configColumn
 }
 
 type configRemote struct {
@@ -226,6 +232,7 @@ func (c *config) Init(vi *viper.Viper) error {
 		if _, ok := c.roles[role.Name]; ok {
 			errlog.Fatal().Msgf("duplicate role '%s' found", role.Name)
 		}
+
 		role.Name = strings.ToLower(role.Name)
 		role.Match = sanitize(role.Match)
 		role.tablesMap = make(map[string]*configRoleTable)
@@ -294,6 +301,28 @@ func (c *config) getAliasMap() map[string][]string {
 		m[t.Table] = append(m[t.Table], t.Name)
 	}
 	return m
+}
+
+func (c *config) isABCLEnabled() bool {
+	if len(c.RolesQuery) == 0 {
+		return false
+	}
+
+	switch len(c.Roles) {
+	case 0, 1:
+		return false
+	case 2:
+		_, ok1 := c.roles["anon"]
+		_, ok2 := c.roles["user"]
+		return !(ok1 && ok2)
+	}
+
+	return true
+}
+
+func (c *config) isAnonRoleDefined() bool {
+	_, ok := c.roles["anon"]
+	return ok
 }
 
 var varRe1 = regexp.MustCompile(`(?mi)\$([a-zA-Z0-9_.]+)`)

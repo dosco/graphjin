@@ -77,7 +77,7 @@ func (c *coreContext) resolvePreparedSQL() ([]byte, *stmt, error) {
 	mutation := (qt == qcode.QTMutation)
 	anonQuery := (qt == qcode.QTQuery && c.req.role == "anon")
 
-	useRoleQuery := len(conf.RolesQuery) != 0 && mutation
+	useRoleQuery := conf.isABCLEnabled() && mutation
 	useTx := useRoleQuery || conf.DB.SetUserID
 
 	if useTx {
@@ -127,7 +127,7 @@ func (c *coreContext) resolvePreparedSQL() ([]byte, *stmt, error) {
 		row = db.QueryRow(c.Context, ps.sd.SQL, vars...)
 	}
 
-	if mutation || anonQuery {
+	if mutation || anonQuery || !conf.isABCLEnabled() {
 		err = row.Scan(&root)
 	} else {
 		err = row.Scan(&role, &root)

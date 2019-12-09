@@ -295,6 +295,10 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 			continue
 		}
 
+		if field.ParentID == -1 {
+			parentID = -1
+		}
+
 		trv := com.getRole(role, field.Name)
 
 		selects = append(selects, Select{

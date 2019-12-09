@@ -24,13 +24,15 @@ func buildStmt(qt qcode.QType, gql, vars []byte, role string) ([]stmt, error) {
 		return buildRoleStmt(gql, vars, role)
 
 	case qcode.QTQuery:
-		switch {
-		case role == "anon":
-			return buildRoleStmt(gql, vars, role)
+		if role == "anon" {
+			return buildRoleStmt(gql, vars, "anon")
+		}
 
-		default:
+		if conf.isABCLEnabled() {
 			return buildMultiStmt(gql, vars)
 		}
+
+		return buildRoleStmt(gql, vars, "user")
 
 	default:
 		return nil, fmt.Errorf("unknown query type '%d'", qt)

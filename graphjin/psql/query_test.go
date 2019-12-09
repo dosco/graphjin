@@ -185,7 +185,7 @@ func oneToMany(t *testing.T) {
 	}
 }
 
-func belongsTo(t *testing.T) {
+func oneToManyReverse(t *testing.T) {
 	gql := `query {
 		products {
 			name
@@ -199,6 +199,37 @@ func belongsTo(t *testing.T) {
 	sql := `SELECT json_object_agg('products', json_0) FROM (SELECT coalesce(json_agg("json_0"), '[]') AS "json_0" FROM (SELECT row_to_json((SELECT "json_row_0" FROM (SELECT "products_0"."name" AS "name", "products_0"."price" AS "price", "users_1_join"."json_1" AS "users") AS "json_row_0")) AS "json_0" FROM (SELECT "products"."name", "products"."price", "products"."user_id" FROM "products" WHERE ((("products"."price") > 0) AND (("products"."price") < 8)) LIMIT ('20') :: integer) AS "products_0" LEFT OUTER JOIN LATERAL (SELECT coalesce(json_agg("json_1"), '[]') AS "json_1" FROM (SELECT row_to_json((SELECT "json_row_1" FROM (SELECT "users_1"."email" AS "email") AS "json_row_1")) AS "json_1" FROM (SELECT "users"."email" FROM "users" WHERE ((("users"."id") = ("products_0"."user_id"))) LIMIT ('20') :: integer) AS "users_1" LIMIT ('20') :: integer) AS "json_agg_1") AS "users_1_join" ON ('true') LIMIT ('20') :: integer) AS "json_agg_0") AS "sel_0"`
 
 	resSQL, err := compileGQLToPSQL(gql, nil, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
+func oneToManyArray(t *testing.T) {
+	gql := `query {
+			product {
+				name
+				price
+				tags {
+					id
+					name
+				}
+			}
+			tags {
+				name
+				product {
+					name
+				}
+			}
+		}
+	}`
+
+	sql := `SELECT row_to_json("json_root") FROM (SELECT "sel_0"."json_0" AS "tags", "sel_2"."json_2" AS "product" FROM (SELECT row_to_json((SELECT "json_row_2" FROM (SELECT "products_2"."name" AS "name", "products_2"."price" AS "price", "tags_3_join"."json_3" AS "tags") AS "json_row_2")) AS "json_2" FROM (SELECT "products"."name", "products"."price", "products"."tags" FROM "products" LIMIT ('1') :: integer) AS "products_2" LEFT OUTER JOIN LATERAL (SELECT coalesce(json_agg("json_3"), '[]') AS "json_3" FROM (SELECT row_to_json((SELECT "json_row_3" FROM (SELECT "tags_3"."id" AS "id", "tags_3"."name" AS "name") AS "json_row_3")) AS "json_3" FROM (SELECT "tags"."id", "tags"."name" FROM "tags" WHERE ((("tags"."slug") = any ("products_2"."tags"))) LIMIT ('20') :: integer) AS "tags_3" LIMIT ('20') :: integer) AS "json_agg_3") AS "tags_3_join" ON ('true') LIMIT ('1') :: integer) AS "sel_2", (SELECT coalesce(json_agg("json_0"), '[]') AS "json_0" FROM (SELECT row_to_json((SELECT "json_row_0" FROM (SELECT "tags_0"."name" AS "name", "product_1_join"."json_1" AS "product") AS "json_row_0")) AS "json_0" FROM (SELECT "tags"."name", "tags"."slug" FROM "tags" LIMIT ('20') :: integer) AS "tags_0" LEFT OUTER JOIN LATERAL (SELECT row_to_json((SELECT "json_row_1" FROM (SELECT "products_1"."name" AS "name") AS "json_row_1")) AS "json_1" FROM (SELECT "products"."name" FROM "products" WHERE ((("tags_0"."slug") = any ("products"."tags"))) LIMIT ('1') :: integer) AS "products_1" LIMIT ('1') :: integer) AS "product_1_join" ON ('true') LIMIT ('20') :: integer) AS "json_agg_0") AS "sel_0") AS "json_root"`
+
+	resSQL, err := compileGQLToPSQL(gql, nil, "admin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -480,8 +511,9 @@ func TestCompileQuery(t *testing.T) {
 	t.Run("withWhereMultiOr", withWhereMultiOr)
 	t.Run("fetchByID", fetchByID)
 	t.Run("searchQuery", searchQuery)
-	t.Run("belongsTo", belongsTo)
 	t.Run("oneToMany", oneToMany)
+	t.Run("oneToManyReverse", oneToManyReverse)
+	t.Run("oneToManyArray", oneToManyArray)
 	t.Run("manyToMany", manyToMany)
 	t.Run("manyToManyReverse", manyToManyReverse)
 	t.Run("aggFunction", aggFunction)
