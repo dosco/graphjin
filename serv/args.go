@@ -36,6 +36,10 @@ func argMap(ctx context.Context, vars []byte) func(w io.Writer, tag string) (int
 		if len(fields) == 0 {
 			return 0, nil
 		}
+		v := fields[0].Value
+		if len(v) >= 2 && v[0] == '"' && v[len(v)-1] == '"' {
+			fields[0].Value = v[1 : len(v)-1]
+		}
 
 		return w.Write(fields[0].Value)
 	}

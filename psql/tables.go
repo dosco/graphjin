@@ -6,17 +6,75 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gobuffalo/flect"
 	"github.com/jackc/pgtype"
 	"github.com/jackc/pgx/v4/pgxpool"
 )
 
+type DBInfo struct {
+	Version int
+	Tables  []DBTable
+	Columns [][]DBColumn
+	colmap  map[string]map[string]*DBColumn
+}
+
+func GetDBInfo(db *pgxpool.Pool) (*DBInfo, error) {
+	di := &DBInfo{}
+
+	dbc, err := db.Acquire(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("error acquiring connection from pool: %w", err)
+	}
+	defer dbc.Release()
+
+	var version string
+
+	err = dbc.QueryRow(context.Background(), `SHOW server_version_num`).Scan(&version)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching version: %w", err)
+	}
+
+	di.Version, err = strconv.Atoi(version)
+	if err != nil {
+		return nil, err
+	}
+
+	di.Tables, err = GetTables(dbc)
+	if err != nil {
+		return nil, err
+	}
+
+	di.colmap = make(map[string]map[string]*DBColumn, len(di.Tables))
+
+	for i, t := range di.Tables {
+		cols, err := GetColumns(dbc, "public", t.Name)
+		if err != nil {
+			return nil, err
+		}
+
+		di.Columns = append(di.Columns, cols)
+		di.colmap[t.Key] = make(map[string]*DBColumn, len(cols))
+
+		for n, c := range di.Columns[i] {
+			di.colmap[t.Key][c.Key] = &di.Columns[i][n]
+		}
+	}
+
+	return di, nil
+}
+
+func (di *DBInfo) GetColumn(table, column string) (*DBColumn, bool) {
+	v, ok := di.colmap[strings.ToLower(table)][strings.ToLower(column)]
+	return v, ok
+}
+
 type DBTable struct {
+	ID   int
 	Name string
+	Key  string
 	Type string
 }
 
-func GetTables(dbc *pgxpool.Conn) ([]*DBTable, error) {
+func GetTables(dbc *pgxpool.Conn) ([]DBTable, error) {
 	sqlStmt := `
 SELECT
 	c.relname as "name",
@@ -33,7 +91,7 @@ WHERE c.relkind IN ('r','v','m','f','')
 	AND n.nspname !~ ('^pg_toast')
 AND pg_catalog.pg_table_is_visible(c.oid);`
 
-	var tables []*DBTable
+	var tables []DBTable
 
 	rows, err := dbc.Query(context.Background(), sqlStmt)
 	if err != nil {
@@ -41,13 +99,14 @@ AND pg_catalog.pg_table_is_visible(c.oid);`
 	}
 	defer rows.Close()
 
-	for rows.Next() {
-		t := DBTable{}
+	for i := 0; rows.Next(); i++ {
+		t := DBTable{ID: i}
 		err = rows.Scan(&t.Name, &t.Type)
 		if err != nil {
 			return nil, err
 		}
-		tables = append(tables, &t)
+		t.Key = strings.ToLower(t.Name)
+		tables = append(tables, t)
 	}
 
 	return tables, nil
@@ -56,7 +115,9 @@ AND pg_catalog.pg_table_is_visible(c.oid);`
 type DBColumn struct {
 	ID         int16
 	Name       string
+	Key        string
 	Type       string
+	Array      bool
 	NotNull    bool
 	PrimaryKey bool
 	UniqueKey  bool
@@ -65,13 +126,17 @@ type DBColumn struct {
 	fKeyColID  pgtype.Int2Array
 }
 
-func GetColumns(dbc *pgxpool.Conn, schema, table string) ([]*DBColumn, error) {
+func GetColumns(dbc *pgxpool.Conn, schema, table string) ([]DBColumn, error) {
 	sqlStmt := `
 SELECT  
 	f.attnum AS id,  
 	f.attname AS name,  
 	f.attnotnull AS notnull,  
 	pg_catalog.format_type(f.atttypid,f.atttypmod) AS type,  
+	CASE
+	 WHEN f.attndims != 0 THEN true
+	 ELSE false
+	END AS array,
 	CASE  
 		WHEN p.contype = ('p'::char) THEN true  
 		ELSE false 
@@ -107,12 +172,11 @@ ORDER BY id;`
 	}
 	defer rows.Close()
 
-	cmap := make(map[int16]*DBColumn)
+	cmap := make(map[int16]DBColumn)
 
 	for rows.Next() {
 		c := DBColumn{}
-		err = rows.Scan(&c.ID, &c.Name, &c.NotNull, &c.Type, &c.PrimaryKey, &c.UniqueKey,
-			&c.FKeyTable, &c.fKeyColID)
+		err = rows.Scan(&c.ID, &c.Name, &c.NotNull, &c.Type, &c.Array, &c.PrimaryKey, &c.UniqueKey, &c.FKeyTable, &c.fKeyColID)
 		if err != nil {
 			return nil, err
 		}
@@ -127,291 +191,23 @@ ORDER BY id;`
 			if c.UniqueKey {
 				v.UniqueKey = true
 			}
+			if c.Array {
+				v.Array = true
+			}
 		} else {
 			err := c.fKeyColID.AssignTo(&c.FKeyColID)
 			if err != nil {
 				return nil, err
 			}
-			cmap[c.ID] = &c
+			c.Key = strings.ToLower(c.Name)
+			cmap[c.ID] = c
 		}
 	}
 
-	cols := make([]*DBColumn, 0, len(cmap))
+	cols := make([]DBColumn, 0, len(cmap))
 	for _, v := range cmap {
 		cols = append(cols, v)
 	}
 
 	return cols, nil
-}
-
-type DBSchema struct {
-	ver int
-	t   map[string]*DBTableInfo
-	rm  map[string]map[string]*DBRel
-	al  map[string]struct{}
-}
-
-type DBTableInfo struct {
-	Name        string
-	Singular    bool
-	PrimaryCol  string
-	TSVCol      string
-	Columns     map[string]*DBColumn
-	ColumnNames []string
-}
-
-type RelType int
-
-const (
-	RelBelongTo RelType = iota + 1
-	RelOneToMany
-	RelOneToManyThrough
-	RelRemote
-)
-
-type DBRel struct {
-	Type    RelType
-	Through string
-	ColT    string
-	Col1    string
-	Col2    string
-}
-
-func NewDBSchema(db *pgxpool.Pool, aliases map[string][]string) (*DBSchema, error) {
-	schema := &DBSchema{
-		t:  make(map[string]*DBTableInfo),
-		rm: make(map[string]map[string]*DBRel),
-		al: make(map[string]struct{}),
-	}
-
-	dbc, err := db.Acquire(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("error acquiring connection from pool: %w", err)
-	}
-	defer dbc.Release()
-
-	var version string
-
-	err = dbc.QueryRow(context.Background(), `SHOW server_version_num`).Scan(&version)
-	if err != nil {
-		return nil, fmt.Errorf("error fetching version: %w", err)
-	}
-
-	schema.ver, err = strconv.Atoi(version)
-	if err != nil {
-		return nil, err
-	}
-
-	tables, err := GetTables(dbc)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, t := range tables {
-		cols, err := GetColumns(dbc, "public", t.Name)
-		if err != nil {
-			return nil, err
-		}
-
-		if err := schema.updateSchema(t, cols, aliases); err != nil {
-			return nil, err
-		}
-	}
-
-	return schema, nil
-}
-
-func (s *DBSchema) updateSchema(
-	t *DBTable,
-	cols []*DBColumn,
-	aliases map[string][]string) error {
-
-	// Foreign key columns in current table
-	colByID := make(map[int16]*DBColumn)
-	columns := make(map[string]*DBColumn, len(cols))
-	colNames := make([]string, 0, len(cols))
-
-	for i := range cols {
-		c := cols[i]
-		name := strings.ToLower(c.Name)
-		columns[name] = c
-		colNames = append(colNames, name)
-		colByID[c.ID] = c
-	}
-
-	singular := strings.ToLower(flect.Singularize(t.Name))
-	s.t[singular] = &DBTableInfo{
-		Name:        t.Name,
-		Singular:    true,
-		Columns:     columns,
-		ColumnNames: colNames,
-	}
-
-	plural := strings.ToLower(flect.Pluralize(t.Name))
-	s.t[plural] = &DBTableInfo{
-		Name:        t.Name,
-		Singular:    false,
-		Columns:     columns,
-		ColumnNames: colNames,
-	}
-
-	ct := strings.ToLower(t.Name)
-
-	if al, ok := aliases[ct]; ok {
-		for i := range al {
-			k1 := flect.Singularize(al[i])
-			s.t[k1] = s.t[singular]
-
-			k2 := flect.Pluralize(al[i])
-			s.t[k2] = s.t[plural]
-
-			s.al[k1] = struct{}{}
-			s.al[k2] = struct{}{}
-		}
-	}
-
-	jcols := make([]*DBColumn, 0, len(cols))
-
-	for _, c := range cols {
-		switch {
-		case c.Type == "tsvector":
-			s.t[singular].TSVCol = c.Name
-			s.t[plural].TSVCol = c.Name
-
-		case c.PrimaryKey:
-			s.t[singular].PrimaryCol = c.Name
-			s.t[plural].PrimaryCol = c.Name
-
-		case len(c.FKeyTable) != 0:
-			if len(c.FKeyColID) == 0 {
-				continue
-			}
-
-			// Foreign key column name
-			ft := strings.ToLower(c.FKeyTable)
-			fc, ok := colByID[c.FKeyColID[0]]
-			if !ok {
-				continue
-			}
-
-			// Belongs-to relation between current table and the
-			// table in the foreign key
-			rel1 := &DBRel{RelBelongTo, "", "", c.Name, fc.Name}
-			if err := s.SetRel(ct, ft, rel1); err != nil {
-				return err
-			}
-
-			// One-to-many relation between the foreign key table and the
-			// the current table
-			rel2 := &DBRel{RelOneToMany, "", "", fc.Name, c.Name}
-			if err := s.SetRel(ft, ct, rel2); err != nil {
-				return err
-			}
-
-			jcols = append(jcols, c)
-		}
-	}
-
-	// If table contains multiple foreign key columns it's a possible
-	// join table for many-to-many relationships or multiple one-to-many
-	// relations
-
-	// Below one-to-many relations use the current table as the
-	// join table aka through table.
-	if len(jcols) > 1 {
-		for i := range jcols {
-			for n := range jcols {
-				if n == i {
-					continue
-				}
-				err := s.updateSchemaOTMT(ct, jcols[i], jcols[n], colByID)
-				if err != nil {
-					return err
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-func (s *DBSchema) updateSchemaOTMT(
-	ct string,
-	col1, col2 *DBColumn,
-	colByID map[int16]*DBColumn) error {
-
-	t1 := strings.ToLower(col1.FKeyTable)
-	t2 := strings.ToLower(col2.FKeyTable)
-
-	fc1, ok := colByID[col1.FKeyColID[0]]
-	if !ok {
-		return fmt.Errorf("expected column id '%d' not found", col1.FKeyColID[0])
-	}
-	fc2, ok := colByID[col2.FKeyColID[0]]
-	if !ok {
-		return fmt.Errorf("expected column id '%d' not found", col2.FKeyColID[0])
-	}
-
-	// One-to-many-through relation between 1nd foreign key table and the
-	// 2nd foreign key table
-	//rel1 := &DBRel{RelOneToManyThrough, ct, fc1.Name, col1.Name}
-	rel1 := &DBRel{RelOneToManyThrough, ct, col2.Name, fc2.Name, col1.Name}
-	if err := s.SetRel(t1, t2, rel1); err != nil {
-		return err
-	}
-
-	// One-to-many-through relation between 2nd foreign key table and the
-	// 1nd foreign key table
-	//rel2 := &DBRel{RelOneToManyThrough, ct, col2.Name, fc2.Name}
-	rel2 := &DBRel{RelOneToManyThrough, ct, col1.Name, fc1.Name, col2.Name}
-	if err := s.SetRel(t2, t1, rel2); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (s *DBSchema) GetTable(table string) (*DBTableInfo, error) {
-	t, ok := s.t[table]
-	if !ok {
-		return nil, fmt.Errorf("unknown table '%s'", table)
-	}
-	return t, nil
-}
-
-func (s *DBSchema) SetRel(child, parent string, rel *DBRel) error {
-	sc := strings.ToLower(flect.Singularize(child))
-	pc := strings.ToLower(flect.Pluralize(child))
-
-	if _, ok := s.rm[sc]; !ok {
-		s.rm[sc] = make(map[string]*DBRel)
-	}
-
-	if _, ok := s.rm[pc]; !ok {
-		s.rm[pc] = make(map[string]*DBRel)
-	}
-
-	sp := strings.ToLower(flect.Singularize(parent))
-	pp := strings.ToLower(flect.Pluralize(parent))
-
-	s.rm[sc][sp] = rel
-	s.rm[sc][pp] = rel
-	s.rm[pc][sp] = rel
-	s.rm[pc][pp] = rel
-
-	return nil
-}
-
-func (s *DBSchema) GetRel(child, parent string) (*DBRel, error) {
-	rel, ok := s.rm[child][parent]
-	if !ok {
-		return nil, fmt.Errorf("unknown relationship '%s' -> '%s'",
-			child, parent)
-	}
-	return rel, nil
-}
-
-func (s *DBSchema) IsAlias(name string) bool {
-	_, ok := s.al[name]
-	return ok
 }

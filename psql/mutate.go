@@ -112,15 +112,15 @@ func (c *compilerContext) renderInsertUpdateColumns(qc *qcode.QCode, w io.Writer
 	root := &qc.Selects[0]
 
 	i := 0
-	for _, cn := range ti.ColumnNames {
-		if _, ok := jt[cn]; !ok {
+	for _, cn := range ti.Columns {
+		if _, ok := jt[cn.Key]; !ok {
 			continue
 		}
-		if _, ok := root.PresetMap[cn]; ok {
+		if _, ok := root.PresetMap[cn.Key]; ok {
 			continue
 		}
 		if len(root.Allowed) != 0 {
-			if _, ok := root.Allowed[cn]; !ok {
+			if _, ok := root.Allowed[cn.Key]; !ok {
 				continue
 			}
 		}
@@ -128,7 +128,7 @@ func (c *compilerContext) renderInsertUpdateColumns(qc *qcode.QCode, w io.Writer
 			io.WriteString(c.w, `, `)
 		}
 		io.WriteString(c.w, `"`)
-		io.WriteString(c.w, cn)
+		io.WriteString(c.w, cn.Name)
 		io.WriteString(c.w, `"`)
 		i++
 	}
@@ -139,7 +139,7 @@ func (c *compilerContext) renderInsertUpdateColumns(qc *qcode.QCode, w io.Writer
 
 	for i := range root.PresetList {
 		cn := root.PresetList[i]
-		col, ok := ti.Columns[cn]
+		col, ok := ti.ColMap[cn]
 		if !ok {
 			continue
 		}
@@ -229,6 +229,10 @@ func (c *compilerContext) renderUpsert(qc *qcode.QCode, w io.Writer,
 		return 0, fmt.Errorf("Variable '%s' not defined", qc.ActionVar)
 	}
 
+	if ti.PrimaryCol == nil {
+		return 0, fmt.Errorf("no primary key column found")
+	}
+
 	jt, _, err := jsn.Tree(upsert)
 	if err != nil {
 		return 0, err
@@ -241,23 +245,23 @@ func (c *compilerContext) renderUpsert(qc *qcode.QCode, w io.Writer,
 	io.WriteString(c.w, ` ON CONFLICT (`)
 	i := 0
 
-	for _, cn := range ti.ColumnNames {
-		if _, ok := jt[cn]; !ok {
+	for _, cn := range ti.Columns {
+		if _, ok := jt[cn.Key]; !ok {
 			continue
 		}
 
-		if col, ok := ti.Columns[cn]; !ok || !(col.UniqueKey || col.PrimaryKey) {
+		if col, ok := ti.ColMap[cn.Key]; !ok || !(col.UniqueKey || col.PrimaryKey) {
 			continue
 		}
 
 		if i != 0 {
 			io.WriteString(c.w, `, `)
 		}
-		io.WriteString(c.w, cn)
+		io.WriteString(c.w, cn.Name)
 		i++
 	}
 	if i == 0 {
-		io.WriteString(c.w, ti.PrimaryCol)
+		io.WriteString(c.w, ti.PrimaryCol.Name)
 	}
 	io.WriteString(c.w, `)`)
 
@@ -272,16 +276,16 @@ func (c *compilerContext) renderUpsert(qc *qcode.QCode, w io.Writer,
 	io.WriteString(c.w, ` DO UPDATE SET `)
 
 	i = 0
-	for _, cn := range ti.ColumnNames {
-		if _, ok := jt[cn]; !ok {
+	for _, cn := range ti.Columns {
+		if _, ok := jt[cn.Key]; !ok {
 			continue
 		}
 		if i != 0 {
 			io.WriteString(c.w, `, `)
 		}
-		io.WriteString(c.w, cn)
+		io.WriteString(c.w, cn.Name)
 		io.WriteString(c.w, ` = EXCLUDED.`)
-		io.WriteString(c.w, cn)
+		io.WriteString(c.w, cn.Name)
 		i++
 	}
 

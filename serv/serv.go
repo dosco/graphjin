@@ -15,77 +15,29 @@ import (
 )
 
 func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
-	var err error
-
-	schema, err = psql.NewDBSchema(db, c.getAliasMap())
+	di, err := psql.GetDBInfo(db)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	conf := qcode.Config{
+	if err = addForeignKeys(c, di); err != nil {
+		return nil, nil, err
+	}
+
+	schema, err = psql.NewDBSchema(db, di, c.getAliasMap())
+	if err != nil {
+		return nil, nil, err
+	}
+
+	qc, err := qcode.NewCompiler(qcode.Config{
 		Blocklist: c.DB.Blocklist,
-	}
-
-	qc, err := qcode.NewCompiler(conf)
+	})
 	if err != nil {
 		return nil, nil, err
 	}
 
-	blockFilter := []string{"false"}
-
-	for _, r := range c.Roles {
-		for _, t := range r.Tables {
-			query := qcode.QueryConfig{
-				Limit:            t.Query.Limit,
-				Filters:          t.Query.Filters,
-				Columns:          t.Query.Columns,
-				DisableFunctions: t.Query.DisableFunctions,
-			}
-
-			if t.Query.Block {
-				query.Filters = blockFilter
-			}
-
-			insert := qcode.InsertConfig{
-				Filters: t.Insert.Filters,
-				Columns: t.Insert.Columns,
-				Presets: t.Insert.Presets,
-			}
-
-			if t.Query.Block {
-				insert.Filters = blockFilter
-			}
-
-			update := qcode.UpdateConfig{
-				Filters: t.Insert.Filters,
-				Columns: t.Insert.Columns,
-				Presets: t.Insert.Presets,
-			}
-
-			if t.Query.Block {
-				update.Filters = blockFilter
-			}
-
-			delete := qcode.DeleteConfig{
-				Filters: t.Insert.Filters,
-				Columns: t.Insert.Columns,
-			}
-
-			if t.Query.Block {
-				delete.Filters = blockFilter
-			}
-
-			err := qc.AddRole(r.Name, t.Name, qcode.TRConfig{
-				Query:  query,
-				Insert: insert,
-				Update: update,
-				Delete: delete,
-			})
-
-			if err != nil {
-				return nil, nil, err
-			}
-		}
+	if err := addRoles(c, qc); err != nil {
+		return nil, nil, err
 	}
 
 	pc := psql.NewCompiler(psql.Config{

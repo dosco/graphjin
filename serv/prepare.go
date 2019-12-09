@@ -77,7 +77,15 @@ func prepareStmt(gql string, vars []byte) error {
 
 	switch qt {
 	case qcode.QTQuery:
-		stmts1, err := buildMultiStmt(q, vars)
+		var stmts1 []stmt
+		var err error
+
+		if conf.isABCLEnabled() {
+			stmts1, err = buildMultiStmt(q, vars)
+		} else {
+			stmts1, err = buildRoleStmt(q, vars, "user")
+		}
+
 		if err != nil {
 			return err
 		}
@@ -87,14 +95,16 @@ func prepareStmt(gql string, vars []byte) error {
 			return err
 		}
 
-		stmts2, err := buildRoleStmt(q, vars, "anon")
-		if err != nil {
-			return err
-		}
+		if conf.isAnonRoleDefined() {
+			stmts2, err := buildRoleStmt(q, vars, "anon")
+			if err != nil {
+				return err
+			}
 
-		err = prepare(tx, &stmts2[0], gqlHash(gql, vars, "anon"))
-		if err != nil {
-			return err
+			err = prepare(tx, &stmts2[0], gqlHash(gql, vars, "anon"))
+			if err != nil {
+				return err
+			}
 		}
 
 	case qcode.QTMutation:
@@ -142,7 +152,7 @@ func prepare(tx pgx.Tx, st *stmt, key string) error {
 
 // nolint: errcheck
 func prepareRoleStmt(tx pgx.Tx) error {
-	if len(conf.RolesQuery) == 0 {
+	if !conf.isABCLEnabled() {
 		return nil
 	}
 
