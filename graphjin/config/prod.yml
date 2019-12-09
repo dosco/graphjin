@@ -55,3 +55,5 @@ database:
   # Set session variable "user.id" to the user id
   # Enable this if you need the user id in triggers, etc
   set_user_id: false
+
+  ping_timeout: 5m

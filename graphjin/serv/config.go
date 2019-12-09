@@ -5,6 +5,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/gobuffalo/flect"
@@ -57,16 +58,17 @@ type config struct {
 	}
 
 	DB struct {
-		Type       string
-		Host       string
-		Port       uint16
-		DBName     string
-		User       string
-		Password   string
-		Schema     string
-		PoolSize   int32 `mapstructure:"pool_size"`
-		MaxRetries int   `mapstructure:"max_retries"`
-		SetUserID  bool  `mapstructure:"set_user_id"`
+		Type        string
+		Host        string
+		Port        uint16
+		DBName      string
+		User        string
+		Password    string
+		Schema      string
+		PoolSize    int32         `mapstructure:"pool_size"`
+		MaxRetries  int           `mapstructure:"max_retries"`
+		SetUserID   bool          `mapstructure:"set_user_id"`
+		PingTimeout time.Duration `mapstructure:"ping_timeout"`
 
 		Vars      map[string]string `mapstructure:"variables"`
 		Blocklist []string
