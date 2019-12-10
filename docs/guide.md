@@ -1173,7 +1173,7 @@ Even tracing data is availble in the Super Graph web UI if tracing is enabled in
 
 ![Query Tracing](/tracing.png "Super Graph Web UI Query Tracing")
 
-## Configure Database Relationships
+## Database Relationships
 
 In most cases you don't need this configuration, Super Graph will discover and learn
 the relationship graph within your database automatically. It does this using `Foreign Key` relationships that you have defined in your database schema.

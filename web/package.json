@@ -3,12 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
-    "@apollographql/graphql-playground-react": "^1.7.30",
+    "@apollographql/graphql-playground-react": "^1.7.31",
     "apollo-link-ws": "^1.0.8",
     "graphql": "^14.1.1",
-    "react": "^16.8.3",
-    "react-dom": "^16.8.3",
-    "react-scripts": "2.1.5",
+    "react": "^16.11.0",
+    "react-dom": "^16.11.0",
+    "react-scripts": "3.2.0",
     "subscriptions-transport-ws": "^0.9.14"
   },
   "scripts": {

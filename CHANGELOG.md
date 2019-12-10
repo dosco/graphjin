@@ -1,6 +1,44 @@
 <a name="unreleased"></a>
 ## [Unreleased]
 
+### Add
+- Add config driven custom table relationships
+- Add support for `websearch_to_tsquery` in PG 11
+
+### Create
+- Create CODE_OF_CONDUCT.md
+
+### Fix
+- Fix bug with remote join example
+- Fix grammer / syntax
+
+### Update
+- Update issue templates
+- Update CONTRIBUTING.md
+- Update issue templates
+- Update feature_request.md
+
+
+<a name="v0.12.6"></a>
+## [v0.12.6] - 2019-12-02
+### Add
+- Add support for `websearch_to_tsquery` in PG 11
+
+
+<a name="v0.12.5"></a>
+## [v0.12.5] - 2019-11-30
+### Add
+- Add a guide to the internals of the codebase
+- Add a CONTRIBUTING.md guide for contributors
+- Add a CHANGLOG.md
+- Add issue templates
+
+### Fix
+- Fix for missing filters on nested selectors
+
+### Refactor
+- Refactor rename 'Select.Table` to `Select.Name`
+
 
 <a name="v0.12.4"></a>
 ## [v0.12.4] - 2019-11-28
@@ -357,7 +395,9 @@
 - Fix license to MIT
 
 
-[Unreleased]: https://github.com/dosco/super-graph/compare/v0.12.4...HEAD
+[Unreleased]: https://github.com/dosco/super-graph/compare/v0.12.6...HEAD
+[v0.12.6]: https://github.com/dosco/super-graph/compare/v0.12.5...v0.12.6
+[v0.12.5]: https://github.com/dosco/super-graph/compare/v0.12.4...v0.12.5
 [v0.12.4]: https://github.com/dosco/super-graph/compare/v0.12.3...v0.12.4
 [v0.12.3]: https://github.com/dosco/super-graph/compare/v0.12.2...v0.12.3
 [v0.12.2]: https://github.com/dosco/super-graph/compare/v0.12.1...v0.12.2
