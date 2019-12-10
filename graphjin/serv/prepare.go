@@ -13,9 +13,10 @@ import (
 )
 
 type preparedItem struct {
-	sd   *pgconn.StatementDescription
-	args [][]byte
-	st   *stmt
+	sd      *pgconn.StatementDescription
+	args    [][]byte
+	st      stmt
+	roleArg bool
 }
 
 var (
@@ -80,7 +81,7 @@ func prepareStmt(gql string, vars []byte) error {
 		var stmts1 []stmt
 		var err error
 
-		if conf.isABCLEnabled() {
+		if conf.isABACEnabled() {
 			stmts1, err = buildMultiStmt(q, vars)
 		} else {
 			stmts1, err = buildRoleStmt(q, vars, "user")
@@ -90,7 +91,7 @@ func prepareStmt(gql string, vars []byte) error {
 			return err
 		}
 
-		err = prepare(tx, &stmts1[0], gqlHash(gql, vars, "user"))
+		err = prepare(tx, stmts1, gqlHash(gql, vars, "user"))
 		if err != nil {
 			return err
 		}
@@ -101,7 +102,7 @@ func prepareStmt(gql string, vars []byte) error {
 				return err
 			}
 
-			err = prepare(tx, &stmts2[0], gqlHash(gql, vars, "anon"))
+			err = prepare(tx, stmts2, gqlHash(gql, vars, "anon"))
 			if err != nil {
 				return err
 			}
@@ -114,7 +115,7 @@ func prepareStmt(gql string, vars []byte) error {
 				return err
 			}
 
-			err = prepare(tx, &stmts[0], gqlHash(gql, vars, role.Name))
+			err = prepare(tx, stmts, gqlHash(gql, vars, role.Name))
 			if err != nil {
 				return err
 			}
@@ -134,8 +135,8 @@ func prepareStmt(gql string, vars []byte) error {
 	return nil
 }
 
-func prepare(tx pgx.Tx, st *stmt, key string) error {
-	finalSQL, am := processTemplate(st.sql)
+func prepare(tx pgx.Tx, st []stmt, key string) error {
+	finalSQL, am := processTemplate(st[0].sql)
 
 	sd, err := tx.Prepare(context.Background(), "", finalSQL)
 	if err != nil {
@@ -143,16 +144,17 @@ func prepare(tx pgx.Tx, st *stmt, key string) error {
 	}
 
 	_preparedList[key] = &preparedItem{
-		sd:   sd,
-		args: am,
-		st:   st,
+		sd:      sd,
+		args:    am,
+		st:      st[0],
+		roleArg: len(st) > 1,
 	}
 	return nil
 }
 
 // nolint: errcheck
 func prepareRoleStmt(tx pgx.Tx) error {
-	if !conf.isABCLEnabled() {
+	if !conf.isABACEnabled() {
 		return nil
 	}
 

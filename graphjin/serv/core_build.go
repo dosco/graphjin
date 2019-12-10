@@ -28,7 +28,7 @@ func buildStmt(qt qcode.QType, gql, vars []byte, role string) ([]stmt, error) {
 			return buildRoleStmt(gql, vars, "anon")
 		}
 
-		if conf.isABCLEnabled() {
+		if conf.isABACEnabled() {
 			return buildMultiStmt(gql, vars)
 		}
 

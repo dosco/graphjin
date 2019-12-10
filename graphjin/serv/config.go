@@ -78,9 +78,10 @@ type config struct {
 
 	Tables []configTable
 
-	RolesQuery string `mapstructure:"roles_query"`
-	Roles      []configRole
-	roles      map[string]*configRole
+	RolesQuery  string `mapstructure:"roles_query"`
+	Roles       []configRole
+	roles       map[string]*configRole
+	abacEnabled bool
 }
 
 type configColumn struct {
@@ -257,6 +258,21 @@ func (c *config) Init(vi *viper.Viper) error {
 		c.AuthFailBlock = true
 	}
 
+	if len(c.RolesQuery) == 0 {
+		c.abacEnabled = false
+	} else {
+		switch len(c.Roles) {
+		case 0, 1:
+			c.abacEnabled = false
+		case 2:
+			_, ok1 := c.roles["anon"]
+			_, ok2 := c.roles["user"]
+			c.abacEnabled = !(ok1 && ok2)
+		default:
+			c.abacEnabled = true
+		}
+	}
+
 	c.validate()
 
 	return nil
@@ -305,21 +321,8 @@ func (c *config) getAliasMap() map[string][]string {
 	return m
 }
 
-func (c *config) isABCLEnabled() bool {
-	if len(c.RolesQuery) == 0 {
-		return false
-	}
-
-	switch len(c.Roles) {
-	case 0, 1:
-		return false
-	case 2:
-		_, ok1 := c.roles["anon"]
-		_, ok2 := c.roles["user"]
-		return !(ok1 && ok2)
-	}
-
-	return true
+func (c *config) isABACEnabled() bool {
+	return c.abacEnabled
 }
 
 func (c *config) isAnonRoleDefined() bool {

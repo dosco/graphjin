@@ -15,8 +15,8 @@ class App extends Component {
     return (
       <div>
         <header style={{
-          background: '#4d2692', 
-          color: '#f1e9ff',
+          background: '#09141b', 
+          color: '#03a9f4',
           letterSpacing: '0.15rem',
           height: '65px',
           display: 'flex',
@@ -32,14 +32,16 @@ class App extends Component {
           >
           <span style={{ 
             textTransform: 'uppercase',
-            marginLeft: '20px'
+            marginLeft: '20px',
+            paddingRight: '10px',
+            borderRight: '1px solid #fff'
           }}>
             Super Graph
           </span>
           <span style={{ 
             fontSize: '16px',
-            marginLeft: '20px',
-            color: '#b48aff'
+            marginLeft: '10px',
+            color: '#fff'
           }}>
             Instant GraphQL</span>
           </h3>

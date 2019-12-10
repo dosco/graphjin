@@ -139,7 +139,7 @@ tables:
   - name: users
     columns:
       - name: email
-        foreign_key: products.name
+        related_to: products.name
 
 
 roles_query: "SELECT * FROM users WHERE id = $user_id"
