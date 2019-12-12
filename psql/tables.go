@@ -176,6 +176,7 @@ ORDER BY id;`
 
 	for rows.Next() {
 		c := DBColumn{}
+
 		err = rows.Scan(&c.ID, &c.Name, &c.NotNull, &c.Type, &c.Array, &c.PrimaryKey, &c.UniqueKey, &c.FKeyTable, &c.fKeyColID)
 		if err != nil {
 			return nil, err
@@ -194,6 +195,17 @@ ORDER BY id;`
 			if c.Array {
 				v.Array = true
 			}
+			if len(c.FKeyTable) != 0 {
+				v.FKeyTable = c.FKeyTable
+			}
+			if c.fKeyColID.Elements != nil {
+				v.fKeyColID = c.fKeyColID
+				err := v.fKeyColID.AssignTo(&v.FKeyColID)
+				if err != nil {
+					return nil, err
+				}
+			}
+			cmap[c.ID] = v
 		} else {
 			err := c.fKeyColID.AssignTo(&c.FKeyColID)
 			if err != nil {
@@ -205,8 +217,8 @@ ORDER BY id;`
 	}
 
 	cols := make([]DBColumn, 0, len(cmap))
-	for _, v := range cmap {
-		cols = append(cols, v)
+	for i := range cmap {
+		cols = append(cols, cmap[i])
 	}
 
 	return cols, nil
