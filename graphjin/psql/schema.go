@@ -209,12 +209,12 @@ func (s *DBSchema) updateSchemaOTMT(
 	t1 := strings.ToLower(col1.FKeyTable)
 	t2 := strings.ToLower(col2.FKeyTable)
 
-	fc1, ok := ti.ColIDMap[col1.FKeyColID[0]]
+	fc1, ok := s.t[t1].ColIDMap[col1.FKeyColID[0]]
 	if !ok {
 		return fmt.Errorf("invalid foreign key column id '%d' for table '%s'",
 			col1.FKeyColID[0], ti.Name)
 	}
-	fc2, ok := ti.ColIDMap[col2.FKeyColID[0]]
+	fc2, ok := s.t[t2].ColIDMap[col2.FKeyColID[0]]
 	if !ok {
 		return fmt.Errorf("invalid foreign key column id '%d' for table '%s'",
 			col2.FKeyColID[0], ti.Name)
