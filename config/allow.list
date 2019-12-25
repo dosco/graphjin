@@ -182,4 +182,103 @@ query beerSearch {
   }
 }
 
+query {
+  user {
+    id
+    full_name
+  }
+}
+
+variables {
+	"data": {
+		"email": "goo1@rug.com",
+		"full_name": "The Dude",
+		"created_at": "now",
+		"updated_at": "now",
+		"product": {
+			"name": "Apple",
+			"price": 1.25,
+			"created_at": "now",
+			"updated_at": "now"
+		}
+	}
+}
+
+mutation {
+  user(insert: $data) {
+    id
+    full_name
+    email
+    product {
+      id
+      name
+      price
+    }
+  }
+}
+
+variables {
+	"data": {
+		"email": "goo12@rug.com",
+		"full_name": "The Dude",
+		"created_at": "now",
+		"updated_at": "now",
+		"product": [
+			{
+				"name": "Banana 1",
+				"price": 1.1,
+				"created_at": "now",
+				"updated_at": "now"
+			},
+			{
+				"name": "Banana 2",
+				"price": 2.2,
+				"created_at": "now",
+				"updated_at": "now"
+			}
+		]
+	}
+}
+
+mutation {
+  user(insert: $data) {
+    id
+    full_name
+    email
+    products {
+      id
+      name
+      price
+    }
+  }
+}
+
+variables {
+	"data": {
+		"name": "Banana 3",
+		"price": 1.1,
+		"created_at": "now",
+		"updated_at": "now",
+		"user": {
+			"email": "a2@a.com",
+			"full_name": "The Dude",
+			"created_at": "now",
+			"updated_at": "now"
+		}
+	}
+}
+
+mutation {
+  products(insert: $data) {
+    id
+    name
+    price
+    user {
+      id
+      full_name
+      email
+    }
+  }
+}
+
 

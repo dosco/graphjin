@@ -1086,7 +1086,6 @@ func (t ExpOp) String() string {
 }
 
 func FreeExp(ex *Exp) {
-	//	fmt.Println(">", ex.doFree)
 	if ex.doFree {
 		expPool.Put(ex)
 	}

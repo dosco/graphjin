@@ -15,7 +15,9 @@ func health(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 
-	ctx, _ := context.WithTimeout(context.Background(), conf.DB.PingTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), conf.DB.PingTimeout)
+	defer cancel()
+
 	if err := conn.Conn().Ping(ctx); err != nil {
 		errlog.Error().Err(err).Msg("error pinging database")
 		w.WriteHeader(http.StatusInternalServerError)

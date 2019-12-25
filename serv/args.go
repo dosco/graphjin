@@ -3,6 +3,7 @@ package serv
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -48,7 +49,7 @@ func argMap(ctx context.Context, vars []byte) func(w io.Writer, tag string) (int
 func argList(ctx *coreContext, args [][]byte) ([]interface{}, error) {
 	vars := make([]interface{}, len(args))
 
-	var fields map[string]interface{}
+	var fields map[string]json.RawMessage
 	var err error
 
 	if len(ctx.req.Vars) != 0 {
@@ -86,10 +87,19 @@ func argList(ctx *coreContext, args [][]byte) ([]interface{}, error) {
 
 		default:
 			if v, ok := fields[string(av)]; ok {
-				vars[i] = v
+				switch v[0] {
+				case '[', '{':
+					vars[i] = v
+				default:
+					var val interface{}
+					if err := json.Unmarshal(v, &val); err != nil {
+						return nil, err
+					}
+					vars[i] = val
+				}
+
 			} else {
 				return nil, fmt.Errorf("query requires variable $%s", string(av))
-
 			}
 		}
 	}

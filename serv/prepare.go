@@ -70,6 +70,12 @@ func prepareStmt(gql string, vars []byte) error {
 	qt := qcode.GetQType(gql)
 	q := []byte(gql)
 
+	if len(vars) == 0 {
+		logger.Debug().Msgf("Prepared statement:\n%s\n", gql)
+	} else {
+		logger.Debug().Msgf("Prepared statement:\n%s\n%s\n", vars, gql)
+	}
+
 	tx, err := db.Begin(context.Background())
 	if err != nil {
 		return err
@@ -91,12 +97,16 @@ func prepareStmt(gql string, vars []byte) error {
 			return err
 		}
 
+		logger.Debug().Msg("Prepared statement role: user")
+
 		err = prepare(tx, stmts1, gqlHash(gql, vars, "user"))
 		if err != nil {
 			return err
 		}
 
 		if conf.isAnonRoleDefined() {
+			logger.Debug().Msg("Prepared statement for role: anon")
+
 			stmts2, err := buildRoleStmt(q, vars, "anon")
 			if err != nil {
 				return err
@@ -110,6 +120,8 @@ func prepareStmt(gql string, vars []byte) error {
 
 	case qcode.QTMutation:
 		for _, role := range conf.Roles {
+			logger.Debug().Msgf("Prepared statement for role: %s", role.Name)
+
 			stmts, err := buildRoleStmt(q, vars, role.Name)
 			if err != nil {
 				return err
@@ -120,12 +132,6 @@ func prepareStmt(gql string, vars []byte) error {
 				return err
 			}
 		}
-	}
-
-	if len(vars) == 0 {
-		logger.Debug().Msgf("Building prepared statement for:\n %s", gql)
-	} else {
-		logger.Debug().Msgf("Building prepared statement:\n %s\n%s", vars, gql)
 	}
 
 	if err := tx.Commit(context.Background()); err != nil {
@@ -160,7 +166,11 @@ func prepareRoleStmt(tx pgx.Tx) error {
 
 	w := &bytes.Buffer{}
 
-	io.WriteString(w, `SELECT (CASE`)
+	io.WriteString(w, `SELECT (CASE WHEN EXISTS (`)
+	io.WriteString(w, conf.RolesQuery)
+	io.WriteString(w, `) THEN `)
+
+	io.WriteString(w, `(SELECT (CASE`)
 	for _, role := range conf.Roles {
 		if len(role.Match) == 0 {
 			continue
@@ -174,7 +184,8 @@ func prepareRoleStmt(tx pgx.Tx) error {
 
 	io.WriteString(w, ` ELSE {{role}} END) FROM (`)
 	io.WriteString(w, conf.RolesQuery)
-	io.WriteString(w, `) AS "_sg_auth_roles_query"`)
+	io.WriteString(w, `) AS "_sg_auth_roles_query" LIMIT 1) `)
+	io.WriteString(w, `ELSE 'anon' END) FROM (VALUES (1)) AS "_sg_auth_filler" LIMIT 1; `)
 
 	roleSQL, _ := processTemplate(w.String())
 
