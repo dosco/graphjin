@@ -27,7 +27,8 @@ type DBTableInfo struct {
 type RelType int
 
 const (
-	RelOneToMany RelType = iota + 1
+	RelOneToOne RelType = iota + 1
+	RelOneToMany
 	RelOneToManyThrough
 	RelRemote
 )
@@ -37,10 +38,12 @@ type DBRel struct {
 	Through string
 	ColT    string
 	Left    struct {
+		Table string
 		Col   string
 		Array bool
 	}
 	Right struct {
+		Table string
 		Col   string
 		Array bool
 	}
@@ -153,11 +156,21 @@ func (s *DBSchema) updateRelationships(t DBTable, cols []DBColumn) error {
 				fcid, ti.Name)
 		}
 
+		var rel1, rel2 *DBRel
+
 		// One-to-many relation between current table and the
 		// table in the foreign key
-		rel1 := &DBRel{Type: RelOneToMany}
+		if fc.UniqueKey {
+			rel1 = &DBRel{Type: RelOneToOne}
+		} else {
+			rel1 = &DBRel{Type: RelOneToMany}
+		}
+
+		rel1.Left.Table = t.Name
 		rel1.Left.Col = c.Name
 		rel1.Left.Array = c.Array
+
+		rel1.Right.Table = c.FKeyTable
 		rel1.Right.Col = fc.Name
 		rel1.Right.Array = fc.Array
 
@@ -167,9 +180,17 @@ func (s *DBSchema) updateRelationships(t DBTable, cols []DBColumn) error {
 
 		// One-to-many reverse relation between the foreign key table and the
 		// the current table
-		rel2 := &DBRel{Type: RelOneToMany}
+		if c.UniqueKey {
+			rel2 = &DBRel{Type: RelOneToOne}
+		} else {
+			rel2 = &DBRel{Type: RelOneToMany}
+		}
+
+		rel2.Left.Table = c.FKeyTable
 		rel2.Left.Col = fc.Name
 		rel2.Left.Array = fc.Array
+
+		rel2.Right.Table = t.Name
 		rel2.Right.Col = c.Name
 		rel2.Right.Array = c.Array
 
@@ -225,8 +246,13 @@ func (s *DBSchema) updateSchemaOTMT(
 	rel1 := &DBRel{Type: RelOneToManyThrough}
 	rel1.Through = ti.Name
 	rel1.ColT = col2.Name
+
+	rel1.Left.Table = col2.FKeyTable
 	rel1.Left.Col = fc2.Name
+
+	rel1.Right.Table = ti.Name
 	rel1.Right.Col = col1.Name
+
 	if err := s.SetRel(t1, t2, rel1); err != nil {
 		return err
 	}
@@ -236,8 +262,13 @@ func (s *DBSchema) updateSchemaOTMT(
 	rel2 := &DBRel{Type: RelOneToManyThrough}
 	rel2.Through = ti.Name
 	rel2.ColT = col1.Name
+
+	rel2.Left.Table = col1.FKeyTable
 	rel2.Left.Col = fc1.Name
+
+	rel2.Right.Table = ti.Name
 	rel2.Right.Col = col2.Name
+
 	if err := s.SetRel(t2, t1, rel2); err != nil {
 		return err
 	}

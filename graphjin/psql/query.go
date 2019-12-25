@@ -81,7 +81,7 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer) (uint32, error) {
 	c := &compilerContext{w, qc.Selects, co}
 	multiRoot := (len(qc.Roots) > 1)
 
-	st := NewStack()
+	st := NewIntStack()
 
 	if multiRoot {
 		io.WriteString(c.w, `SELECT row_to_json("json_root") FROM (SELECT `)
@@ -227,7 +227,7 @@ func (c *compilerContext) processChildren(sel *qcode.Select, ti *DBTableInfo) (u
 		}
 
 		switch rel.Type {
-		case RelOneToMany:
+		case RelOneToOne, RelOneToMany:
 			if _, ok := colmap[rel.Right.Col]; !ok {
 				cols = append(cols, &qcode.Column{Table: ti.Name, Name: rel.Right.Col, FieldName: rel.Right.Col})
 			}
@@ -759,7 +759,7 @@ func (c *compilerContext) renderRelationshipByName(table, parent string, id int3
 	io.WriteString(c.w, `((`)
 
 	switch rel.Type {
-	case RelOneToMany:
+	case RelOneToOne, RelOneToMany:
 
 		//fmt.Fprintf(w, `(("%s"."%s") = ("%s_%d"."%s"))`,
 		//c.sel.Name, rel.Left.Col, c.parent.Name, c.parent.ID, rel.Right.Col)

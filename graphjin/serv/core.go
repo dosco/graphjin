@@ -260,8 +260,14 @@ func (c *coreContext) resolveSQL() ([]byte, *stmt, error) {
 }
 
 func (c *coreContext) executeRoleQuery(tx pgx.Tx) (string, error) {
+	userID := c.Value(userIDKey)
+
+	if userID == nil {
+		return "anon", nil
+	}
+
 	var role string
-	row := tx.QueryRow(c.Context, "_sg_get_role", c.req.role, 1)
+	row := tx.QueryRow(c.Context, "_sg_get_role", userID, c.req.role)
 
 	if err := row.Scan(&role); err != nil {
 		return "", err

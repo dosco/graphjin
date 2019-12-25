@@ -106,7 +106,9 @@ AND pg_catalog.pg_table_is_visible(c.oid);`
 			return nil, err
 		}
 		t.Key = strings.ToLower(t.Name)
-		tables = append(tables, t)
+		if t.Key != "schema_migrations" && t.Key != "ar_internal_metadata" {
+			tables = append(tables, t)
+		}
 	}
 
 	return tables, nil
@@ -185,6 +187,7 @@ ORDER BY id;`
 		if v, ok := cmap[c.ID]; ok {
 			if c.PrimaryKey {
 				v.PrimaryKey = true
+				v.UniqueKey = true
 			}
 			if c.NotNull {
 				v.NotNull = true
@@ -212,6 +215,9 @@ ORDER BY id;`
 				return nil, err
 			}
 			c.Key = strings.ToLower(c.Name)
+			if c.PrimaryKey {
+				c.UniqueKey = true
+			}
 			cmap[c.ID] = c
 		}
 	}

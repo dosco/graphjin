@@ -37,6 +37,6 @@ services:
     command: wtc
     depends_on:
       - db
-      - rails_app
+      # - rails_app
 
     # - redis

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 )
 
-func Tree(v []byte) (map[string]interface{}, bool, error) {
+func Tree(v []byte) (map[string]json.RawMessage, bool, error) {
 	dec := json.NewDecoder(bytes.NewReader(v))
 	array := false
 
@@ -25,7 +25,7 @@ func Tree(v []byte) (map[string]interface{}, bool, error) {
 	}
 
 	// while the array contains values
-	var m map[string]interface{}
+	var m map[string]json.RawMessage
 
 	// decode an array value (Message)
 	err := dec.Decode(&m)

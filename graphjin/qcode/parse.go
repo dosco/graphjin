@@ -169,7 +169,7 @@ func (p *Parser) next() item {
 	n := p.pos + 1
 	if n >= len(p.items) {
 		p.err = errEOT
-		return item{typ: itemEOF}
+		return item{_type: itemEOF}
 	}
 	p.pos = n
 	return p.items[p.pos]
@@ -186,14 +186,14 @@ func (p *Parser) ignore() {
 
 func (p *Parser) peek(types ...itemType) bool {
 	n := p.pos + 1
-	if p.items[n].typ == itemEOF {
+	if p.items[n]._type == itemEOF {
 		return false
 	}
 	if n >= len(p.items) {
 		return false
 	}
 	for i := 0; i < len(types); i++ {
-		if p.items[n].typ == types[i] {
+		if p.items[n]._type == types[i] {
 			return true
 		}
 	}
@@ -210,7 +210,7 @@ func (p *Parser) parseOp() (*Operation, error) {
 	op := opPool.Get().(*Operation)
 	op.Reset()
 
-	switch item.typ {
+	switch item._type {
 	case itemQuery:
 		op.Type = opQuery
 	case itemMutation:
@@ -471,7 +471,7 @@ func (p *Parser) parseValue() (*Node, error) {
 	node := nodePool.Get().(*Node)
 	node.Reset()
 
-	switch item.typ {
+	switch item._type {
 	case itemIntVal:
 		node.Type = NodeInt
 	case itemFloatVal:
