@@ -281,4 +281,475 @@ mutation {
   }
 }
 
+variables {
+	"update": {
+		"name": "my_name",
+		"description": "my_desc"
+	}
+}
+
+mutation {
+  product(id: 15, update: $update, where: {id: {eq: 1}}) {
+    id
+    name
+  }
+}
+
+variables {
+	"update": {
+		"name": "my_name",
+		"description": "my_desc"
+	}
+}
+
+mutation {
+  product(update: $update, where: {id: {eq: 1}}) {
+    id
+    name
+  }
+}
+
+variables {
+	"update": {
+		"name": "my_name 2",
+		"description": "my_desc 2"
+	}
+}
+
+mutation {
+  product(update: $update, where: {id: {eq: 1}}) {
+    id
+    name
+    description
+  }
+}
+
+variables {
+	"data": {
+		"sale_type": "tuutuu",
+		"quantity": 5,
+		"due_date": "now",
+		"customer": {
+			"email": "thedude1@rug.com",
+			"full_name": "The Dude"
+		},
+		"product": {
+			"name": "Apple",
+			"price": 1.25
+		}
+	}
+}
+
+mutation {
+  purchase(update: $data, id: 5) {
+    sale_type
+    quantity
+    due_date
+    customer {
+      id
+      full_name
+      email
+    }
+    product {
+      id
+      name
+      price
+    }
+  }
+}
+
+variables {
+	"data": {
+		"email": "thedude@rug.com",
+		"full_name": "The Dude",
+		"created_at": "now",
+		"updated_at": "now",
+		"product": {
+			"where": {
+				"id": 2
+			},
+			"name": "Apple",
+			"price": 1.25,
+			"created_at": "now",
+			"updated_at": "now"
+		}
+	}
+}
+
+mutation {
+  user(update: $data, where: {id: {eq: 8}}) {
+    id
+    full_name
+    email
+    product {
+      id
+      name
+      price
+    }
+  }
+}
+
+variables {
+	"data": {
+		"email": "thedude@rug.com",
+		"full_name": "The Dude",
+		"created_at": "now",
+		"updated_at": "now",
+		"product": {
+			"where": {
+				"id": 2
+			},
+			"name": "Apple",
+			"price": 1.25,
+			"created_at": "now",
+			"updated_at": "now"
+		}
+	}
+}
+
+query {
+  user(where: {id: {eq: 8}}) {
+    id
+    product {
+      id
+      name
+      price
+    }
+  }
+}
+
+variables {
+	"data": {
+		"name": "Apple",
+		"price": 1.25,
+		"created_at": "now",
+		"updated_at": "now",
+		"user": {
+			"email": "thedude@rug.com"
+		}
+	}
+}
+
+query {
+  user {
+    email
+  }
+}
+
+variables {
+	"data": {
+		"name": "Apple",
+		"price": 1.25,
+		"created_at": "now",
+		"updated_at": "now",
+		"user": {
+			"email": "booboo@demo.com"
+		}
+	}
+}
+
+mutation {
+  product(update: $data, id: 6) {
+    id
+    name
+    user {
+      id
+      full_name
+      email
+    }
+  }
+}
+
+variables {
+	"data": {
+		"name": "Apple",
+		"price": 1.25,
+		"created_at": "now",
+		"updated_at": "now",
+		"user": {
+			"email": "booboo@demo.com"
+		}
+	}
+}
+
+query {
+  product(id: 6) {
+    id
+    name
+    user {
+      id
+      full_name
+      email
+    }
+  }
+}
+
+variables {
+	"data": {
+		"email": "thedude123@rug.com",
+		"full_name": "The Dude",
+		"created_at": "now",
+		"updated_at": "now",
+		"product": {
+			"connect": {
+				"id": 7
+			},
+			"disconnect": {
+				"id": 8
+			}
+		}
+	}
+}
+
+mutation {
+  user(update: $data, id: 6) {
+    id
+    full_name
+    email
+    product {
+      id
+      name
+      price
+    }
+  }
+}
+
+variables {
+	"data": {
+		"name": "Apple",
+		"price": 1.25,
+		"created_at": "now",
+		"updated_at": "now",
+		"user": {
+			"connect": {
+				"id": 5,
+				"email": "test@test.com"
+			}
+		}
+	}
+}
+
+mutation {
+  product(update: $data, id: 9) {
+    id
+    name
+    user {
+      id
+      full_name
+      email
+    }
+  }
+}
+
+variables {
+	"data": {
+		"email": "thed44ude@rug.com",
+		"full_name": "The Dude",
+		"created_at": "now",
+		"updated_at": "now",
+		"product": {
+			"connect": {
+				"id": 5
+			}
+		}
+	}
+}
+
+mutation {
+  user(insert: $data) {
+    id
+    full_name
+    email
+    product {
+      id
+      name
+      price
+    }
+  }
+}
+
+variables {
+	"data": {
+		"name": "Apple",
+		"price": 1.25,
+		"created_at": "now",
+		"updated_at": "now",
+		"user": {
+			"connect": {
+				"id": 5
+			}
+		}
+	}
+}
+
+mutation {
+  product(insert: $data) {
+    id
+    name
+    user {
+      id
+      full_name
+      email
+    }
+  }
+}
+
+variables {
+	"data": [
+		{
+			"name": "Apple",
+			"price": 1.25,
+			"created_at": "now",
+			"updated_at": "now",
+			"user": {
+				"connect": {
+					"id": 6
+				}
+			}
+		},
+		{
+			"name": "Coconut",
+			"price": 2.25,
+			"created_at": "now",
+			"updated_at": "now",
+			"user": {
+				"connect": {
+					"id": 3
+				}
+			}
+		}
+	]
+}
+
+mutation {
+  products(insert: $data) {
+    id
+    name
+    user {
+      id
+      full_name
+      email
+    }
+  }
+}
+
+variables {
+	"data": [
+		{
+			"name": "Apple",
+			"price": 1.25,
+			"created_at": "now",
+			"updated_at": "now"
+		},
+		{
+			"name": "Coconut",
+			"price": 2.25,
+			"created_at": "now",
+			"updated_at": "now"
+		}
+	]
+}
+
+mutation {
+  products(insert: $data) {
+    id
+    name
+    user {
+      id
+      full_name
+      email
+    }
+  }
+}
+
+variables {
+	"data": {
+		"name": "Apple",
+		"price": 1.25,
+		"user": {
+			"connect": {
+				"id": 5,
+				"email": "test@test.com"
+			}
+		}
+	}
+}
+
+mutation {
+  product(update: $data, id: 9) {
+    id
+    name
+    user {
+      id
+      full_name
+      email
+    }
+  }
+}
+
+variables {
+	"data": {
+		"name": "Apple",
+		"price": 1.25,
+		"user": {
+			"connect": {
+				"id": 5
+			}
+		}
+	}
+}
+
+mutation {
+  product(update: $data, id: 9) {
+    id
+    name
+    user {
+      id
+      full_name
+      email
+    }
+  }
+}
+
+variables {
+	"data": {
+		"name": "Apple",
+		"price": 1.25,
+		"user": {
+			"disconnect": {
+				"id": 5
+			}
+		}
+	}
+}
+
+mutation {
+  product(update: $data, id: 9) {
+    id
+    name
+    user_id
+  }
+}
+
+
+variables {
+	"data": {
+		"name": "Apple",
+		"price": 1.25,
+		"user": {
+			"disconnect": {
+				"id": 5
+			}
+		}
+	}
+}
+
+mutation {
+  product(update: $data, id: 2) {
+    id
+    name
+    user_id
+  }
+}
+
 

@@ -23,15 +23,12 @@ const (
 )
 
 var insertTypes = map[string]itemType{
-	"connect":  itemConnect,
-	"_connect": itemConnect,
+	"connect": itemConnect,
 }
 
 var updateTypes = map[string]itemType{
-	"connect":     itemConnect,
-	"_connect":    itemConnect,
-	"disconnect":  itemDisconnect,
-	"_disconnect": itemDisconnect,
+	"connect":    itemConnect,
+	"disconnect": itemDisconnect,
 }
 
 var noLimit = qcode.Paging{NoLimit: true}
@@ -84,15 +81,18 @@ func (co *Compiler) compileMutation(qc *qcode.QCode, w io.Writer, vars Variables
 }
 
 type kvitem struct {
-	id    int32
-	_type itemType
-	key   string
-	path  []string
-	val   json.RawMessage
-	ti    *DBTableInfo
-	relCP *DBRel
-	relPC *DBRel
-	items []kvitem
+	id     int32
+	_type  itemType
+	_ctype int
+	key    string
+	path   []string
+	val    json.RawMessage
+	data   map[string]json.RawMessage
+	array  bool
+	ti     *DBTableInfo
+	relCP  *DBRel
+	relPC  *DBRel
+	items  []kvitem
 }
 
 type renitem struct {
@@ -102,9 +102,17 @@ type renitem struct {
 }
 
 func (c *compilerContext) handleKVItem(st *util.Stack, item kvitem) error {
-	data, array, err := jsn.Tree(item.val)
-	if err != nil {
-		return err
+	var data map[string]json.RawMessage
+	var array bool
+	var err error
+
+	if item.data == nil {
+		data, array, err = jsn.Tree(item.val)
+		if err != nil {
+			return err
+		}
+	} else {
+		data, array = item.data, item.array
 	}
 
 	var unionize bool
@@ -155,7 +163,7 @@ func (c *compilerContext) handleKVItem(st *util.Stack, item kvitem) error {
 				return err
 			}
 
-			item.items = append(item.items, kvitem{
+			item1 := kvitem{
 				id:    id,
 				_type: item._type,
 				key:   k,
@@ -164,7 +172,22 @@ func (c *compilerContext) handleKVItem(st *util.Stack, item kvitem) error {
 				ti:    ti,
 				relCP: relCP,
 				relPC: relPC,
-			})
+			}
+
+			if v[0] == '{' {
+				item1.data, item1.array, err = jsn.Tree(v)
+				if err != nil {
+					return err
+				}
+				if v1, ok := item1.data["connect"]; ok && (v1[0] == '{' || v1[0] == '[') {
+					item1._ctype |= (1 << itemConnect)
+				}
+				if v1, ok := item1.data["disconnect"]; ok && (v1[0] == '{' || v1[0] == '[') {
+					item1._ctype |= (1 << itemDisconnect)
+				}
+			}
+
+			item.items = append(item.items, item1)
 			id++
 		}
 	}
@@ -194,16 +217,136 @@ func (c *compilerContext) handleKVItem(st *util.Stack, item kvitem) error {
 			}
 		}
 
+	case itemUpdate:
+		for _, v := range item.items {
+			if !(v._ctype > 0 && v.relPC.Type == RelOneToOne) {
+				st.Push(v)
+			}
+		}
+		st.Push(renitem{kvitem: item, array: array, data: data})
+		for _, v := range item.items {
+			if v._ctype > 0 && v.relPC.Type == RelOneToOne {
+				st.Push(v)
+			}
+		}
+
 	case itemUnion:
 		st.Push(renitem{kvitem: item, array: array, data: data})
 		for _, v := range item.items {
 			st.Push(v)
 		}
+
 	default:
 		for _, v := range item.items {
 			st.Push(v)
 		}
 		st.Push(renitem{kvitem: item, array: array, data: data})
+	}
+
+	return nil
+}
+
+func (c *compilerContext) renderUnionStmt(w io.Writer, item renitem) error {
+	var connect, disconnect bool
+
+	// Render only for parent-to-child relationship of one-to-many
+	if item.relPC.Type != RelOneToMany {
+		return nil
+	}
+
+	for _, v := range item.items {
+		if v._type == itemConnect {
+			connect = true
+		} else if v._type == itemDisconnect {
+			disconnect = true
+		}
+		if connect && disconnect {
+			break
+		}
+	}
+
+	if connect {
+		io.WriteString(w, `, `)
+		if connect && disconnect {
+			renderCteNameWithSuffix(w, item.kvitem, "c")
+		} else {
+			quoted(w, item.ti.Name)
+		}
+		io.WriteString(w, ` AS ( UPDATE `)
+		quoted(w, item.ti.Name)
+		io.WriteString(w, ` SET `)
+		quoted(w, item.relPC.Right.Col)
+		io.WriteString(w, ` = `)
+		colWithTable(w, item.relPC.Left.Table, item.relPC.Left.Col)
+		io.WriteString(w, `FROM `)
+		quoted(w, item.relPC.Left.Table)
+		io.WriteString(w, ` WHERE`)
+
+		i := 0
+		for _, v := range item.items {
+			if v._type == itemConnect {
+				if i != 0 {
+					io.WriteString(w, ` OR (`)
+				} else {
+					io.WriteString(w, ` (`)
+				}
+				if err := renderKVItemWhere(w, v); err != nil {
+					return err
+				}
+				io.WriteString(w, `)`)
+				i++
+			}
+		}
+		io.WriteString(w, ` RETURNING `)
+		quoted(w, item.ti.Name)
+		io.WriteString(w, `.*)`)
+	}
+
+	if disconnect {
+		io.WriteString(w, `, `)
+		if connect && disconnect {
+			renderCteNameWithSuffix(w, item.kvitem, "d")
+		} else {
+			quoted(w, item.ti.Name)
+		}
+		io.WriteString(w, ` AS ( UPDATE `)
+		quoted(w, item.ti.Name)
+		io.WriteString(w, ` SET `)
+		quoted(w, item.relPC.Right.Col)
+		io.WriteString(w, ` = NULL`)
+		io.WriteString(w, ` FROM `)
+		quoted(w, item.relPC.Left.Table)
+		io.WriteString(w, ` WHERE`)
+
+		i := 0
+		for _, v := range item.items {
+			if v._type == itemDisconnect {
+				if i != 0 {
+					io.WriteString(w, ` OR (`)
+				} else {
+					io.WriteString(w, ` (`)
+				}
+				if err := renderKVItemWhere(w, v); err != nil {
+					return err
+				}
+				io.WriteString(w, `)`)
+				i++
+			}
+		}
+		io.WriteString(w, ` RETURNING `)
+		quoted(w, item.ti.Name)
+		io.WriteString(w, `.*), `)
+	}
+
+	if connect && disconnect {
+		quoted(w, item.ti.Name)
+		io.WriteString(w, ` AS (`)
+		io.WriteString(w, `SELECT * FROM `)
+		renderCteNameWithSuffix(w, item.kvitem, "c")
+		io.WriteString(w, ` UNION ALL `)
+		io.WriteString(w, `SELECT * FROM `)
+		renderCteNameWithSuffix(w, item.kvitem, "d")
+		io.WriteString(w, `)`)
 	}
 
 	return nil
@@ -346,6 +489,101 @@ func (c *compilerContext) renderUpsert(qc *qcode.QCode, w io.Writer,
 	return 0, nil
 }
 
+func (c *compilerContext) renderConnectStmt(qc *qcode.QCode, w io.Writer,
+	item renitem) error {
+
+	rel := item.relPC
+
+	// Render only for parent-to-child relationship of one-to-one
+	if rel.Type != RelOneToOne {
+		return nil
+	}
+
+	io.WriteString(w, `, `)
+	quoted(w, item.ti.Name)
+	io.WriteString(c.w, ` AS (`)
+
+	io.WriteString(c.w, `SELECT * FROM `)
+	quoted(c.w, item.ti.Name)
+	io.WriteString(c.w, ` WHERE `)
+	if err := renderKVItemWhere(c.w, item.kvitem); err != nil {
+		return err
+	}
+	io.WriteString(c.w, ` LIMIT 1)`)
+
+	return nil
+}
+
+func (c *compilerContext) renderDisconnectStmt(qc *qcode.QCode, w io.Writer,
+	item renitem) error {
+
+	rel := item.relPC
+
+	// Render only for parent-to-child relationship of one-to-one
+	if rel.Type != RelOneToOne {
+		return nil
+	}
+	io.WriteString(w, `, `)
+	quoted(w, item.ti.Name)
+	io.WriteString(c.w, ` AS (`)
+
+	io.WriteString(c.w, `SELECT * FROM (VALUES(NULL::`)
+	io.WriteString(w, rel.Right.col.Type)
+	io.WriteString(c.w, `)) AS LOOKUP(`)
+	quoted(w, rel.Right.Col)
+	io.WriteString(c.w, `))`)
+
+	return nil
+}
+
+func renderKVItemWhere(w io.Writer, item kvitem) error {
+	return renderWhereFromJSON(w, item.ti.Name, item.val)
+}
+
+func renderWhereFromJSON(w io.Writer, table string, val []byte) error {
+	var kv map[string]json.RawMessage
+	if err := json.Unmarshal(val, &kv); err != nil {
+		return err
+	}
+	i := 0
+	for k, v := range kv {
+		if i != 0 {
+			io.WriteString(w, ` AND `)
+		}
+		colWithTable(w, table, k)
+		io.WriteString(w, ` = '`)
+		switch v[0] {
+		case '"':
+			w.Write(v[1 : len(v)-1])
+		default:
+			w.Write(v)
+		}
+		io.WriteString(w, `'`)
+		i++
+	}
+	return nil
+}
+
+func renderCteName(w io.Writer, item kvitem) error {
+	io.WriteString(w, `"`)
+	io.WriteString(w, item.ti.Name)
+	if item._type == itemConnect || item._type == itemDisconnect {
+		io.WriteString(w, `_`)
+		int2string(w, item.id)
+	}
+	io.WriteString(w, `"`)
+	return nil
+}
+
+func renderCteNameWithSuffix(w io.Writer, item kvitem, suffix string) error {
+	io.WriteString(w, `"`)
+	io.WriteString(w, item.ti.Name)
+	io.WriteString(w, `_`)
+	io.WriteString(w, suffix)
+	io.WriteString(w, `"`)
+	return nil
+}
+
 func quoted(w io.Writer, identifier string) {
 	io.WriteString(w, `"`)
 	io.WriteString(w, identifier)
@@ -361,143 +599,4 @@ func joinPath(w io.Writer, path []string) {
 		io.WriteString(w, path[i])
 		io.WriteString(w, `'`)
 	}
-}
-
-func (c *compilerContext) renderConnectStmt(qc *qcode.QCode, w io.Writer,
-	item renitem) error {
-
-	rel := item.relPC
-
-	renderCteName(c.w, item.kvitem)
-	io.WriteString(c.w, ` AS (`)
-
-	// Render either select or update sql based on parent-to-child
-	// relationship
-	switch rel.Type {
-	case RelOneToOne:
-		io.WriteString(c.w, `SELECT * FROM `)
-		quoted(c.w, item.ti.Name)
-		io.WriteString(c.w, ` WHERE `)
-		if err := renderKVItemWhere(c.w, item.kvitem); err != nil {
-			return err
-		}
-		io.WriteString(c.w, ` LIMIT 1`)
-
-	case RelOneToMany:
-		// UPDATE films SET kind = 'Dramatic' WHERE kind = 'Drama';
-		io.WriteString(c.w, `UPDATE `)
-		quoted(c.w, item.ti.Name)
-		io.WriteString(c.w, ` SET `)
-		quoted(c.w, rel.Right.Col)
-		io.WriteString(c.w, ` = `)
-		colWithTable(c.w, rel.Left.Table, rel.Left.Col)
-		io.WriteString(c.w, ` WHERE `)
-		if err := renderKVItemWhere(c.w, item.kvitem); err != nil {
-			return err
-		}
-
-	default:
-		return fmt.Errorf("unsuppported relationship %s", rel)
-	}
-
-	io.WriteString(c.w, ` RETURNING *)`)
-
-	return nil
-
-}
-
-func (c *compilerContext) renderDisconnectStmt(qc *qcode.QCode, w io.Writer,
-	item renitem) error {
-
-	renderCteName(c.w, item.kvitem)
-	io.WriteString(c.w, ` AS (`)
-
-	io.WriteString(c.w, `UPDATE `)
-	quoted(c.w, item.ti.Name)
-	io.WriteString(c.w, ` SET `)
-	quoted(c.w, item.relPC.Right.Col)
-	io.WriteString(c.w, ` = NULL `)
-	io.WriteString(c.w, ` WHERE `)
-
-	// Render either select or update sql based on parent-to-child
-	// relationship
-	switch item.relPC.Type {
-	case RelOneToOne:
-		if err := renderRelEquals(c.w, item.relPC); err != nil {
-			return err
-		}
-
-	case RelOneToMany:
-		if err := renderRelEquals(c.w, item.relPC); err != nil {
-			return err
-		}
-
-		io.WriteString(c.w, ` AND `)
-
-		if err := renderKVItemWhere(c.w, item.kvitem); err != nil {
-			return err
-		}
-
-	default:
-		return fmt.Errorf("unsuppported relationship %s", item.relPC)
-	}
-
-	io.WriteString(c.w, ` RETURNING *)`)
-
-	return nil
-}
-
-func renderKVItemWhere(w io.Writer, item kvitem) error {
-	return renderWhereFromJSON(w, item.val)
-}
-
-func renderWhereFromJSON(w io.Writer, val []byte) error {
-	var kv map[string]json.RawMessage
-	if err := json.Unmarshal(val, &kv); err != nil {
-		return err
-	}
-	i := 0
-	for k, v := range kv {
-		if i != 0 {
-			io.WriteString(w, ` AND `)
-		}
-		quoted(w, k)
-		io.WriteString(w, ` = '`)
-		switch v[0] {
-		case '"':
-			w.Write(v[1 : len(v)-1])
-		default:
-			w.Write(v)
-		}
-		io.WriteString(w, `'`)
-		i++
-	}
-	return nil
-}
-
-func renderRelEquals(w io.Writer, rel *DBRel) error {
-	switch rel.Type {
-	case RelOneToOne:
-		colWithTable(w, rel.Left.Table, rel.Left.Col)
-		io.WriteString(w, ` = `)
-		colWithTable(w, rel.Right.Table, rel.Right.Col)
-
-	case RelOneToMany:
-		colWithTable(w, rel.Right.Table, rel.Right.Col)
-		io.WriteString(w, ` = `)
-		colWithTable(w, rel.Left.Table, rel.Left.Col)
-	}
-
-	return nil
-}
-
-func renderCteName(w io.Writer, item kvitem) error {
-	io.WriteString(w, `"`)
-	io.WriteString(w, item.ti.Name)
-	if item._type == itemConnect || item._type == itemDisconnect {
-		io.WriteString(w, `_`)
-		int2string(w, item.id)
-	}
-	io.WriteString(w, `"`)
-	return nil
 }
