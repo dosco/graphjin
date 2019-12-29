@@ -38,11 +38,13 @@ type DBRel struct {
 	Through string
 	ColT    string
 	Left    struct {
+		col   *DBColumn
 		Table string
 		Col   string
 		Array bool
 	}
 	Right struct {
+		col   *DBColumn
 		Table string
 		Col   string
 		Array bool
@@ -166,10 +168,12 @@ func (s *DBSchema) updateRelationships(t DBTable, cols []DBColumn) error {
 			rel1 = &DBRel{Type: RelOneToMany}
 		}
 
+		rel1.Left.col = &c
 		rel1.Left.Table = t.Name
 		rel1.Left.Col = c.Name
 		rel1.Left.Array = c.Array
 
+		rel1.Right.col = fc
 		rel1.Right.Table = c.FKeyTable
 		rel1.Right.Col = fc.Name
 		rel1.Right.Array = fc.Array

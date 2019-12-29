@@ -1,6 +1,8 @@
+//nolint:errcheck
 package psql
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
@@ -27,6 +29,9 @@ func (c *compilerContext) renderInsert(qc *qcode.QCode, w io.Writer,
 		if st.Len() == 0 {
 			break
 		}
+		if insert[0] == '[' && st.Len() > 1 {
+			return 0, errors.New("Nested bulk insert not supported")
+		}
 		intf := st.Pop()
 
 		switch item := intf.(type) {
@@ -38,8 +43,6 @@ func (c *compilerContext) renderInsert(qc *qcode.QCode, w io.Writer,
 		case renitem:
 			var err error
 
-			io.WriteString(c.w, `, `)
-
 			// if w := qc.Selects[0].Where; w != nil && w.Op == qcode.OpFalse {
 			// 	io.WriteString(c.w, ` WHERE false`)
 			// }
@@ -50,7 +53,7 @@ func (c *compilerContext) renderInsert(qc *qcode.QCode, w io.Writer,
 			case itemConnect:
 				err = c.renderConnectStmt(qc, w, item)
 			case itemUnion:
-				err = c.renderInsertUnionStmt(w, item)
+				err = c.renderUnionStmt(w, item)
 			}
 
 			if err != nil {
@@ -69,6 +72,7 @@ func (c *compilerContext) renderInsertStmt(qc *qcode.QCode, w io.Writer, item re
 	jt := item.data
 	sk := nestedInsertRelColumnsMap(item.kvitem)
 
+	io.WriteString(c.w, `, `)
 	renderCteName(w, item.kvitem)
 	io.WriteString(w, ` AS (`)
 
@@ -168,22 +172,6 @@ func renderNestedInsertRelTables(w io.Writer, item kvitem) error {
 			}
 		}
 	}
-
-	return nil
-}
-
-func (c *compilerContext) renderInsertUnionStmt(w io.Writer, item renitem) error {
-	renderCteName(w, item.kvitem)
-	io.WriteString(w, ` AS (`)
-
-	for i, v := range item.items {
-		if i != 0 {
-			io.WriteString(w, ` UNION ALL `)
-		}
-		io.WriteString(w, `SELECT * FROM `)
-		renderCteName(w, v)
-	}
-	io.WriteString(w, `)`)
 
 	return nil
 }

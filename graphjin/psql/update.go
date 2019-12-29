@@ -1,6 +1,8 @@
+//nolint:errcheck
 package psql
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
@@ -11,7 +13,7 @@ import (
 func (c *compilerContext) renderUpdate(qc *qcode.QCode, w io.Writer,
 	vars Variables, ti *DBTableInfo) (uint32, error) {
 
-	insert, ok := vars[qc.ActionVar]
+	update, ok := vars[qc.ActionVar]
 	if !ok {
 		return 0, fmt.Errorf("Variable '%s' not !defined", qc.ActionVar)
 	}
@@ -21,11 +23,14 @@ func (c *compilerContext) renderUpdate(qc *qcode.QCode, w io.Writer,
 	io.WriteString(c.w, `}}' :: json AS j)`)
 
 	st := util.NewStack()
-	st.Push(kvitem{_type: itemUpdate, key: ti.Name, val: insert, ti: ti})
+	st.Push(kvitem{_type: itemUpdate, key: ti.Name, val: update, ti: ti})
 
 	for {
 		if st.Len() == 0 {
 			break
+		}
+		if update[0] == '[' && st.Len() > 1 {
+			return 0, errors.New("Nested bulk update not supported")
 		}
 		intf := st.Pop()
 
@@ -45,12 +50,12 @@ func (c *compilerContext) renderUpdate(qc *qcode.QCode, w io.Writer,
 			switch item._type {
 			case itemUpdate:
 				err = c.renderUpdateStmt(w, qc, item)
-			// case itemConnect:
-			// 	err = c.renderConnectStmt(qc, w, item)
-			// case itemDisconnect:
-			// 	err = c.renderDisconnectStmt(qc, w, item)
+			case itemConnect:
+				err = c.renderConnectStmt(qc, w, item)
+			case itemDisconnect:
+				err = c.renderDisconnectStmt(qc, w, item)
 			case itemUnion:
-				err = c.renderUpdateUnionStmt(w, item)
+				err = c.renderUnionStmt(w, item)
 			}
 
 			if err != nil {
@@ -67,6 +72,7 @@ func (c *compilerContext) renderUpdate(qc *qcode.QCode, w io.Writer,
 func (c *compilerContext) renderUpdateStmt(w io.Writer, qc *qcode.QCode, item renitem) error {
 	ti := item.ti
 	jt := item.data
+	sk := nestedUpdateRelColumnsMap(item.kvitem)
 
 	io.WriteString(c.w, `, `)
 	renderCteName(c.w, item.kvitem)
@@ -75,12 +81,15 @@ func (c *compilerContext) renderUpdateStmt(w io.Writer, qc *qcode.QCode, item re
 	io.WriteString(w, `UPDATE `)
 	quoted(w, ti.Name)
 	io.WriteString(w, ` SET (`)
-	renderInsertUpdateColumns(w, qc, jt, ti, nil, false)
+	renderInsertUpdateColumns(w, qc, jt, ti, sk, false)
+	renderNestedUpdateRelColumns(w, item.kvitem, false)
 
 	io.WriteString(w, `) = (SELECT `)
-	renderInsertUpdateColumns(w, qc, jt, ti, nil, true)
+	renderInsertUpdateColumns(w, qc, jt, ti, sk, true)
+	renderNestedUpdateRelColumns(w, item.kvitem, true)
 
 	io.WriteString(w, ` FROM "_sg_input" i, `)
+	renderNestedUpdateRelTables(w, item.kvitem)
 
 	if item.array {
 		io.WriteString(w, `json_populate_recordset`)
@@ -90,15 +99,24 @@ func (c *compilerContext) renderUpdateStmt(w io.Writer, qc *qcode.QCode, item re
 
 	io.WriteString(w, `(NULL::`)
 	io.WriteString(w, ti.Name)
-	io.WriteString(w, `, i.j) t`)
 
-	io.WriteString(w, ` WHERE `)
+	if len(item.path) == 0 {
+		io.WriteString(w, `, i.j) t)`)
+	} else {
+		io.WriteString(w, `, i.j->`)
+		joinPath(w, item.path)
+		io.WriteString(w, `) t) `)
+	}
 
 	if item.id != 0 {
 		// Render sql to set id values if child-to-parent
 		// relationship is one-to-one
 		rel := item.relCP
-		io.WriteString(w, `((`)
+
+		io.WriteString(w, `FROM `)
+		quoted(w, rel.Right.Table)
+
+		io.WriteString(w, ` WHERE ((`)
 		colWithTable(w, rel.Left.Table, rel.Left.Col)
 		io.WriteString(w, `) = (`)
 		colWithTable(w, rel.Right.Table, rel.Right.Col)
@@ -107,53 +125,68 @@ func (c *compilerContext) renderUpdateStmt(w io.Writer, qc *qcode.QCode, item re
 		if item.relPC.Type == RelOneToMany {
 			if conn, ok := item.data["where"]; ok {
 				io.WriteString(w, ` AND `)
-				renderWhereFromJSON(w, conn)
+				renderWhereFromJSON(w, item.ti.Name, conn)
 			} else if conn, ok := item.data["_where"]; ok {
 				io.WriteString(w, ` AND `)
-				renderWhereFromJSON(w, conn)
+				renderWhereFromJSON(w, item.ti.Name, conn)
 			}
 		}
 		io.WriteString(w, `)`)
 
 	} else {
+		io.WriteString(w, `WHERE `)
 		if err := c.renderWhere(&qc.Selects[0], ti); err != nil {
 			return err
 		}
 	}
 
-	io.WriteString(w, `) RETURNING *)`)
+	io.WriteString(w, ` RETURNING `)
+	quoted(w, ti.Name)
+	io.WriteString(w, `.*)`)
 
 	return nil
 }
 
-func (c *compilerContext) renderUpdateUnionStmt(w io.Writer, item renitem) error {
-	renderCteName(w, item.kvitem)
-	io.WriteString(w, ` AS (`)
+func nestedUpdateRelColumnsMap(item kvitem) map[string]struct{} {
+	sk := make(map[string]struct{}, len(item.items))
 
-	i := 0
 	for _, v := range item.items {
-		if v._type == itemConnect {
-			if i == 0 {
-				io.WriteString(w, `UPDATE `)
-				quoted(w, v.ti.Name)
-				io.WriteString(w, ` SET `)
-				quoted(w, v.relPC.Right.Col)
-				io.WriteString(w, ` = `)
-				colWithTable(w, v.relPC.Left.Table, v.relPC.Left.Col)
-				io.WriteString(w, ` WHERE `)
-			} else {
-				io.WriteString(w, ` OR (`)
-			}
-			if err := renderKVItemWhere(w, v); err != nil {
-				return err
-			}
-			if i != 0 {
-				io.WriteString(w, `)`)
-			}
-			i++
+		//fmt.Println(">>", v._ctype > 0 && v.relCP.Type == RelOneToMany, v.relCP.Right.Col)
+
+		if v._ctype > 0 && v.relCP.Type == RelOneToMany {
+			sk[v.relCP.Right.Col] = struct{}{}
 		}
 	}
-	io.WriteString(w, `)`)
+
+	return sk
+}
+
+func renderNestedUpdateRelColumns(w io.Writer, item kvitem, values bool) error {
+	// Render child foreign key columns if child-to-parent
+	// relationship is one-to-many
+	for _, v := range item.items {
+		if v._ctype > 0 && v.relCP.Type == RelOneToMany {
+			io.WriteString(w, `, `)
+			if values {
+				colWithTable(w, v.relCP.Left.Table, v.relCP.Left.Col)
+			} else {
+				quoted(w, v.relCP.Right.Col)
+			}
+		}
+	}
+
+	return nil
+}
+
+func renderNestedUpdateRelTables(w io.Writer, item kvitem) error {
+	// Render child foreign key columns if child-to-parent
+	// relationship is one-to-many
+	for _, v := range item.items {
+		if v._ctype > 0 && v.relCP.Type == RelOneToMany {
+			quoted(w, v.relCP.Left.Table)
+			io.WriteString(w, `, `)
+		}
+	}
 
 	return nil
 }
@@ -173,7 +206,8 @@ func (c *compilerContext) renderDelete(qc *qcode.QCode, w io.Writer,
 		return 0, err
 	}
 
-	io.WriteString(c.w, ` RETURNING *) `)
-
+	io.WriteString(w, ` RETURNING `)
+	quoted(w, ti.Name)
+	io.WriteString(w, `.*)`)
 	return 0, nil
 }
