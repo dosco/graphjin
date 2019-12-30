@@ -253,7 +253,6 @@ func (com *Compiler) Compile(query []byte, role string) (*QCode, error) {
 
 func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 	id := int32(0)
-	parentID := int32(-1)
 
 	if len(op.Fields) == 0 {
 		return errors.New("invalid graphql no query found")
@@ -275,7 +274,8 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 
 	for i := range op.Fields {
 		if op.Fields[i].ParentID == -1 {
-			st.Push(op.Fields[i].ID)
+			val := op.Fields[i].ID | (-1 << 16)
+			st.Push(val)
 		}
 	}
 
@@ -288,7 +288,10 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 			return fmt.Errorf("selector limit reached (%d)", maxSelectors)
 		}
 
-		fid := st.Pop()
+		val := st.Pop()
+		fid := val & 0xFFFF
+		parentID := (val >> 16) & 0xFFFF
+
 		field := &op.Fields[fid]
 
 		if _, ok := com.bl[field.Name]; ok {
@@ -357,8 +360,8 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 			}
 
 			if len(f.Children) != 0 {
-				parentID = s.ID
-				st.Push(f.ID)
+				val := f.ID | (s.ID << 16)
+				st.Push(val)
 				continue
 			}
 

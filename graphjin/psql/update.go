@@ -151,8 +151,6 @@ func nestedUpdateRelColumnsMap(item kvitem) map[string]struct{} {
 	sk := make(map[string]struct{}, len(item.items))
 
 	for _, v := range item.items {
-		//fmt.Println(">>", v._ctype > 0 && v.relCP.Type == RelOneToMany, v.relCP.Right.Col)
-
 		if v._ctype > 0 && v.relCP.Type == RelOneToMany {
 			sk[v.relCP.Right.Col] = struct{}{}
 		}
