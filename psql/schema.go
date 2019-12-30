@@ -303,10 +303,18 @@ func (s *DBSchema) SetRel(child, parent string, rel *DBRel) error {
 	sp := strings.ToLower(flect.Singularize(parent))
 	pp := strings.ToLower(flect.Pluralize(parent))
 
-	s.rm[sc][sp] = rel
-	s.rm[sc][pp] = rel
-	s.rm[pc][sp] = rel
-	s.rm[pc][pp] = rel
+	if _, ok := s.rm[sc][sp]; !ok {
+		s.rm[sc][sp] = rel
+	}
+	if _, ok := s.rm[sc][pp]; !ok {
+		s.rm[sc][pp] = rel
+	}
+	if _, ok := s.rm[pc][sp]; !ok {
+		s.rm[pc][sp] = rel
+	}
+	if _, ok := s.rm[pc][pp]; !ok {
+		s.rm[pc][pp] = rel
+	}
 
 	return nil
 }
