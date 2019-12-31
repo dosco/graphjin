@@ -10,6 +10,7 @@ import (
 	"time"
 
 	rice "github.com/GeertJohan/go.rice"
+	"github.com/NYTimes/gziphandler"
 	"github.com/dosco/super-graph/psql"
 	"github.com/dosco/super-graph/qcode"
 )
@@ -121,11 +122,18 @@ func startHTTP() {
 }
 
 func routeHandler() http.Handler {
+	var apiH http.Handler
+
+	if conf.HTTPGZip {
+		gzipH := gziphandler.MustNewGzipLevelHandler(6)
+		apiH = gzipH(http.HandlerFunc(apiV1))
+	} else {
+		apiH = http.HandlerFunc(apiV1)
+	}
+
 	mux := http.NewServeMux()
-
-	mux.Handle("/health", http.HandlerFunc(health))
-
-	mux.Handle("/api/v1/graphql", withAuth(apiv1Http))
+	mux.HandleFunc("/health", health)
+	mux.Handle("/api/v1/graphql", withAuth(apiH))
 
 	if conf.WebUI {
 		mux.Handle("/", http.FileServer(rice.MustFindBox("../web/build").HTTPBox()))

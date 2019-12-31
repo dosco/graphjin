@@ -12,7 +12,7 @@ import (
 	"github.com/garyburd/redigo/redis"
 )
 
-func railsRedisHandler(next http.HandlerFunc) http.HandlerFunc {
+func railsRedisHandler(next http.Handler) http.HandlerFunc {
 	cookie := conf.Auth.Cookie
 	if len(cookie) == 0 {
 		errlog.Fatal().Msg("no auth.cookie defined")
@@ -66,7 +66,7 @@ func railsRedisHandler(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func railsMemcacheHandler(next http.HandlerFunc) http.HandlerFunc {
+func railsMemcacheHandler(next http.Handler) http.HandlerFunc {
 	cookie := conf.Auth.Cookie
 	if len(cookie) == 0 {
 		errlog.Fatal().Msg("no auth.cookie defined")
@@ -108,7 +108,7 @@ func railsMemcacheHandler(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func railsCookieHandler(next http.HandlerFunc) http.HandlerFunc {
+func railsCookieHandler(next http.Handler) http.HandlerFunc {
 	cookie := conf.Auth.Cookie
 	if len(cookie) == 0 {
 		errlog.Fatal().Msg("no auth.cookie defined")
