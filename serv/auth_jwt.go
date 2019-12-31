@@ -14,7 +14,7 @@ const (
 	jwtAuth0   int = iota + 1
 )
 
-func jwtHandler(next http.HandlerFunc) http.HandlerFunc {
+func jwtHandler(next http.Handler) http.HandlerFunc {
 	var key interface{}
 	var jwtProvider int
 

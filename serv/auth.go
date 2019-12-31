@@ -6,13 +6,15 @@ import (
 	"strings"
 )
 
-var (
-	userIDProviderKey = "user_id_provider"
-	userIDKey         = "user_id"
-	userRoleKey       = "user_role"
+type ctxkey int
+
+const (
+	userIDProviderKey ctxkey = iota
+	userIDKey
+	userRoleKey
 )
 
-func headerAuth(next http.HandlerFunc) http.HandlerFunc {
+func headerAuth(next http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -35,7 +37,7 @@ func headerAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func withAuth(next http.HandlerFunc) http.HandlerFunc {
+func withAuth(next http.Handler) http.Handler {
 	at := conf.Auth.Type
 	ru := conf.Auth.Rails.URL
 

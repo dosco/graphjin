@@ -20,6 +20,7 @@ type config struct {
 	HostPort       string `mapstructure:"host_port"`
 	Host           string
 	Port           string
+	HTTPGZip       bool   `mapstructure:"http_compress"`
 	WebUI          bool   `mapstructure:"web_ui"`
 	LogLevel       string `mapstructure:"log_level"`
 	EnableTracing  bool   `mapstructure:"enable_tracing"`

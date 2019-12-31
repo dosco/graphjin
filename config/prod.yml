@@ -9,6 +9,9 @@ web_ui: false
 # debug, info, warn, error, fatal, panic, disable
 log_level: "info"
 
+# enable or disable http compression (uses gzip)
+http_compress: true
+
 # When production mode is 'true' only queries 
 # from the allow list are permitted.
 # When it's 'false' all queries are saved to the
@@ -56,4 +59,5 @@ database:
   # Enable this if you need the user id in triggers, etc
   set_user_id: false
 
+  # database ping timeout is used for db health checking
   ping_timeout: 5m

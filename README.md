@@ -12,7 +12,8 @@
 
 ## What is Super Graph
 
-Super Graph is a micro-service that instantly and without code gives you a high performance and secure GraphQL API. Your GraphQL queries are auto translated into a single fast SQL query. No more writing API code as you develop your web frontend just make the query you need and Super Graph will do the rest.
+Is designed to 100x your developer productivity. Super Graph will instantly and without you writing code provide you a high performance and secure GraphQL API for Postgres DB. GraphQL queries are translated into a single fast SQL query. No more writing API code as you develop 
+your web frontend just make the query you need and Super Graph will do the rest.
 
 Super Graph has a rich feature set like integrating with your existing Ruby on Rails apps, joining your DB with data from remote APIs, role and attribute based access control, support for JWT tokens, built-in DB mutations and seeding, and a lot more.
 
@@ -33,15 +34,14 @@ This compiler is what sits at the heart of Super Graph with layers of useful fun
 
 ## Features
 
+- Complex nested queries and mutations
+- Auto learns database tables and relationships
 - Role and Attribute based access control
-- Works with existing Ruby-On-Rails apps
-- Automatically learns database schemas and relationships
 - Full text search and aggregations
-- Rails authentication supported (Redis, Memcache, Cookie)
 - JWT tokens supported (Auth0, etc)
-- Join database with remote REST APIs
-- Highly optimized and fast Postgres SQL queries
-- GraphQL queries and mutations
+- Join database queries with remote REST APIs
+- Also works with existing Ruby-On-Rails apps
+- Rails authentication supported (Redis, Memcache, Cookie)
 - A simple config file
 - High performance GO codebase
 - Tiny docker image and low memory requirements

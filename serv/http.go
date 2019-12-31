@@ -61,7 +61,7 @@ type resolver struct {
 	Duration    time.Duration `json:"duration"`
 }
 
-func apiv1Http(w http.ResponseWriter, r *http.Request) {
+func apiV1(w http.ResponseWriter, r *http.Request) {
 	ctx := &coreContext{Context: r.Context()}
 
 	//nolint: errcheck

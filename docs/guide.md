@@ -1339,6 +1339,9 @@ web_ui: true
 # debug, info, warn, error, fatal, panic
 log_level: "debug"
 
+# enable or disable http compression (uses gzip)
+http_compress: true
+
 # When production mode is 'true' only queries 
 # from the allow list are permitted.
 # When it's 'false' all queries are saved to the

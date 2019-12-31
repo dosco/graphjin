@@ -3,6 +3,7 @@ module github.com/dosco/super-graph
 require (
 	github.com/GeertJohan/go.rice v1.0.0
 	github.com/Masterminds/semver v1.5.0
+	github.com/NYTimes/gziphandler v1.1.1
 	github.com/adjust/gorails v0.0.0-20171013043634-2786ed0c03d3
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
 	github.com/brianvoe/gofakeit v3.18.0+incompatible
