@@ -238,7 +238,9 @@ func nestedUpdateOneToOneWithConnect(t *testing.T) {
 		}
 	}`
 
-	sql := `WITH "_sg_input" AS (SELECT '{{data}}' :: json AS j), "users" AS (SELECT * FROM "users" WHERE "users"."id" = '5' AND "users"."email" = 'test@test.com' LIMIT 1), "products" AS (UPDATE "products" SET ("name", "price", "user_id") = (SELECT "t"."name", "t"."price", "users"."id" FROM "_sg_input" i, "users", json_populate_record(NULL::products, i.j) t)WHERE (("products"."id") = 9) RETURNING "products".*) SELECT json_object_agg('product', json_0) FROM (SELECT row_to_json((SELECT "json_row_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name", "user_1_join"."json_1" AS "user") AS "json_row_0")) AS "json_0" FROM (SELECT "products"."id", "products"."name", "products"."user_id" FROM "products" LIMIT ('1') :: integer) AS "products_0" LEFT OUTER JOIN LATERAL (SELECT row_to_json((SELECT "json_row_1" FROM (SELECT "users_1"."id" AS "id", "users_1"."full_name" AS "full_name", "users_1"."email" AS "email") AS "json_row_1")) AS "json_1" FROM (SELECT "users"."id", "users"."full_name", "users"."email" FROM "users" WHERE ((("users"."id") = ("products_0"."user_id"))) LIMIT ('1') :: integer) AS "users_1" LIMIT ('1') :: integer) AS "user_1_join" ON ('true') LIMIT ('1') :: integer) AS "sel_0"`
+	sql1 := `WITH "_sg_input" AS (SELECT '{{data}}' :: json AS j), "users" AS (SELECT * FROM "users" WHERE "users"."id" = '5' AND "users"."email" = 'test@test.com' LIMIT 1), "products" AS (UPDATE "products" SET ("name", "price", "user_id") = (SELECT "t"."name", "t"."price", "users"."id" FROM "_sg_input" i, "users", json_populate_record(NULL::products, i.j) t)WHERE (("products"."id") = 9) RETURNING "products".*) SELECT json_object_agg('product', json_0) FROM (SELECT row_to_json((SELECT "json_row_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name", "user_1_join"."json_1" AS "user") AS "json_row_0")) AS "json_0" FROM (SELECT "products"."id", "products"."name", "products"."user_id" FROM "products" LIMIT ('1') :: integer) AS "products_0" LEFT OUTER JOIN LATERAL (SELECT row_to_json((SELECT "json_row_1" FROM (SELECT "users_1"."id" AS "id", "users_1"."full_name" AS "full_name", "users_1"."email" AS "email") AS "json_row_1")) AS "json_1" FROM (SELECT "users"."id", "users"."full_name", "users"."email" FROM "users" WHERE ((("users"."id") = ("products_0"."user_id"))) LIMIT ('1') :: integer) AS "users_1" LIMIT ('1') :: integer) AS "user_1_join" ON ('true') LIMIT ('1') :: integer) AS "sel_0"`
+
+	sql2 := `WITH "_sg_input" AS (SELECT '{{data}}' :: json AS j), "users" AS (SELECT * FROM "users" WHERE "users"."email" = 'test@test.com' AND "users"."id" = '5' LIMIT 1), "products" AS (UPDATE "products" SET ("name", "price", "user_id") = (SELECT "t"."name", "t"."price", "users"."id" FROM "_sg_input" i, "users", json_populate_record(NULL::products, i.j) t)WHERE (("products"."id") = 9) RETURNING "products".*) SELECT json_object_agg('product', json_0) FROM (SELECT row_to_json((SELECT "json_row_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name", "user_1_join"."json_1" AS "user") AS "json_row_0")) AS "json_0" FROM (SELECT "products"."id", "products"."name", "products"."user_id" FROM "products" LIMIT ('1') :: integer) AS "products_0" LEFT OUTER JOIN LATERAL (SELECT row_to_json((SELECT "json_row_1" FROM (SELECT "users_1"."id" AS "id", "users_1"."full_name" AS "full_name", "users_1"."email" AS "email") AS "json_row_1")) AS "json_1" FROM (SELECT "users"."id", "users"."full_name", "users"."email" FROM "users" WHERE ((("users"."id") = ("products_0"."user_id"))) LIMIT ('1') :: integer) AS "users_1" LIMIT ('1') :: integer) AS "user_1_join" ON ('true') LIMIT ('1') :: integer) AS "sel_0"`
 
 	vars := map[string]json.RawMessage{
 		"data": json.RawMessage(`{
@@ -250,13 +252,15 @@ func nestedUpdateOneToOneWithConnect(t *testing.T) {
 		}`),
 	}
 
-	resSQL, err := compileGQLToPSQL(gql, vars, "admin")
-	if err != nil {
-		t.Fatal(err)
-	}
+	for i := 0; i < 1000; i++ {
+		resSQL, err := compileGQLToPSQL(gql, vars, "admin")
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	if string(resSQL) != sql {
-		t.Fatal(errNotExpected)
+		if string(resSQL) != sql1 && string(resSQL) != sql2 {
+			t.Fatal(errNotExpected)
+		}
 	}
 }
 
