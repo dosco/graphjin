@@ -231,14 +231,19 @@ func (c *compilerContext) processChildren(sel *qcode.Select, ti *DBTableInfo) (u
 			if _, ok := colmap[rel.Right.Col]; !ok {
 				cols = append(cols, &qcode.Column{Table: ti.Name, Name: rel.Right.Col, FieldName: rel.Right.Col})
 			}
+			colmap[rel.Right.Col] = struct{}{}
+
 		case RelOneToManyThrough:
 			if _, ok := colmap[rel.Left.Col]; !ok {
 				cols = append(cols, &qcode.Column{Table: ti.Name, Name: rel.Left.Col, FieldName: rel.Left.Col})
 			}
+			colmap[rel.Left.Col] = struct{}{}
+
 		case RelRemote:
 			if _, ok := colmap[rel.Left.Col]; !ok {
 				cols = append(cols, &qcode.Column{Table: ti.Name, Name: rel.Left.Col, FieldName: rel.Right.Col})
 			}
+			colmap[rel.Left.Col] = struct{}{}
 			skipped |= (1 << uint(id))
 
 		default:
