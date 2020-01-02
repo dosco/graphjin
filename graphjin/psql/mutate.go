@@ -360,6 +360,7 @@ func renderInsertUpdateColumns(w io.Writer,
 	values bool) (uint32, error) {
 
 	root := &qc.Selects[0]
+	renderedCol := false
 
 	n := 0
 	for _, cn := range ti.Columns {
@@ -386,6 +387,10 @@ func renderInsertUpdateColumns(w io.Writer,
 		} else {
 			quoted(w, cn.Name)
 		}
+
+		if !renderedCol {
+			renderedCol = true
+		}
 		n++
 	}
 
@@ -407,10 +412,17 @@ func renderInsertUpdateColumns(w io.Writer,
 			io.WriteString(w, root.PresetMap[cn])
 			io.WriteString(w, `' :: `)
 			io.WriteString(w, col.Type)
-
 		} else {
 			quoted(w, cn)
 		}
+
+		if !renderedCol {
+			renderedCol = true
+		}
+	}
+
+	if len(skipcols) != 0 && renderedCol {
+		io.WriteString(w, `, `)
 	}
 	return 0, nil
 }

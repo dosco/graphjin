@@ -520,7 +520,20 @@ query {
 }
 ```
 
-### Advanced queries
+### Sorting
+
+To sort or ordering results just use the `order_by` argument. This can be combined with `where`, `search`, etc to build complex queries to fit you needs.
+
+```graphql
+query {
+  products(order_by: { cached_votes_total: desc }) {
+    id
+    name
+  }
+}
+```
+
+### Filtering
 
 Super Graph support complex queries where you can add filters, ordering,offsets and limits on the query. For example the below query will list all products where the price is greater than 10 and the id is not 5.
 

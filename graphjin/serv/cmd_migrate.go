@@ -203,7 +203,7 @@ func cmdDBMigrate(cmd *cobra.Command, args []string) {
 	}
 
 	if err != nil {
-		logger.Info().Err(err).Send()
+		logger.Fatal().Err(err).Send()
 
 		// if err, ok := err.(m.MigrationPgError); ok {
 		// 	if err.Detail != "" {
