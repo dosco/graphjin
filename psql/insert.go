@@ -131,7 +131,6 @@ func nestedInsertRelColumnsMap(item kvitem) map[string]struct{} {
 func renderNestedInsertRelColumns(w io.Writer, item kvitem, values bool) error {
 	if len(item.items) == 0 {
 		if item.relPC != nil && item.relPC.Type == RelOneToMany {
-			io.WriteString(w, `, `)
 			if values {
 				colWithTable(w, item.relPC.Left.Table, item.relPC.Left.Col)
 			} else {
@@ -141,14 +140,18 @@ func renderNestedInsertRelColumns(w io.Writer, item kvitem, values bool) error {
 	} else {
 		// Render child foreign key columns if child-to-parent
 		// relationship is one-to-many
+		i := 0
 		for _, v := range item.items {
 			if v.relCP.Type == RelOneToMany {
-				io.WriteString(w, `, `)
+				if i != 0 {
+					io.WriteString(w, `, `)
+				}
 				if values {
 					colWithTable(w, v.relCP.Left.Table, v.relCP.Left.Col)
 				} else {
 					quoted(w, v.relCP.Right.Col)
 				}
+				i++
 			}
 		}
 	}

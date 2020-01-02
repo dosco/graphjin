@@ -164,7 +164,6 @@ func renderNestedUpdateRelColumns(w io.Writer, item kvitem, values bool) error {
 	// relationship is one-to-many
 	for _, v := range item.items {
 		if v._ctype > 0 && v.relCP.Type == RelOneToMany {
-			io.WriteString(w, `, `)
 			if values {
 				colWithTable(w, v.relCP.Left.Table, v.relCP.Left.Col)
 			} else {
