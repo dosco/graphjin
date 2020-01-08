@@ -828,6 +828,14 @@ func (c *compilerContext) renderWhere(sel *qcode.Select, ti *DBTableInfo) error 
 		intf := st.Pop()
 
 		switch val := intf.(type) {
+		case int32:
+			switch val {
+			case '(':
+				io.WriteString(c.w, `(`)
+			case ')':
+				io.WriteString(c.w, `)`)
+			}
+
 		case qcode.ExpOp:
 			switch val {
 			case qcode.OpAnd:
@@ -849,12 +857,14 @@ func (c *compilerContext) renderWhere(sel *qcode.Select, ti *DBTableInfo) error 
 				qcode.FreeExp(val)
 
 			case qcode.OpAnd, qcode.OpOr:
+				st.Push(')')
 				for i := len(val.Children) - 1; i >= 0; i-- {
 					st.Push(val.Children[i])
 					if i > 0 {
 						st.Push(val.Op)
 					}
 				}
+				st.Push('(')
 				qcode.FreeExp(val)
 
 			case qcode.OpNot:
@@ -941,9 +951,9 @@ func (c *compilerContext) renderOp(ex *qcode.Exp, sel *qcode.Select, ti *DBTable
 
 	switch ex.Op {
 	case qcode.OpEquals:
-		io.WriteString(c.w, `=`)
+		io.WriteString(c.w, `IS NOT DISTINCT FROM`)
 	case qcode.OpNotEquals:
-		io.WriteString(c.w, `!=`)
+		io.WriteString(c.w, `IS DISTINCT FROM`)
 	case qcode.OpGreaterOrEquals:
 		io.WriteString(c.w, `>=`)
 	case qcode.OpLesserOrEquals:

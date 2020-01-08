@@ -329,14 +329,14 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 
 func (p *Parser) parseField(f *Field) error {
 	var err error
-	f.Name = p.val(p.next())
+	f.Name = p.vall(p.next())
 
 	if p.peek(itemColon) {
 		p.ignore()
 
 		if p.peek(itemName) {
 			f.Alias = f.Name
-			f.Name = p.val(p.next())
+			f.Name = p.vall(p.next())
 		} else {
 			return errors.New("expecting an aliased field name")
 		}
@@ -493,6 +493,11 @@ func (p *Parser) parseValue() (*Node, error) {
 }
 
 func (p *Parser) val(v item) string {
+	return b2s(p.input[v.pos:v.end])
+}
+
+func (p *Parser) vall(v item) string {
+	lowercase(p.input, v.pos, v.end)
 	return b2s(p.input[v.pos:v.end])
 }
 
