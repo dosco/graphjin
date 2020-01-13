@@ -940,10 +940,13 @@ func setWhereColName(ex *Exp, node *Node) {
 			list = append([]string{k}, list...)
 		}
 	}
-	if len(list) == 1 {
+	listlen := len(list)
+
+	if listlen == 1 {
 		ex.Col = list[0]
-	} else if len(list) > 1 {
-		ex.NestedCols = list
+	} else if listlen > 1 {
+		ex.Col = list[listlen-1]
+		ex.NestedCols = list[:listlen]
 	}
 }
 
@@ -995,6 +998,11 @@ func compileFilter(filter []string) (*Exp, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		// TODO: Invalid table names in nested where causes fail silently
+		// returning a nil 'f' this needs to be fixed
+
+		// TODO: Invalid where clauses such as missing op (eg. eq) also fail silently
 
 		if fl == nil {
 			fl = f
