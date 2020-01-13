@@ -409,7 +409,7 @@ func withWhereOnRelations(t *testing.T) {
 		users(where: { 
 				not: { 
 					products: { 
-						price: { gt: 3 } 
+						price: { gt: 3 }
 					} 
 				} 
 			}) {
@@ -418,7 +418,7 @@ func withWhereOnRelations(t *testing.T) {
 		}
 	}`
 
-	sql := `SELECT json_object_agg('users', json_0) FROM (SELECT coalesce(json_agg("json_0"), '[]') AS "json_0" FROM (SELECT row_to_json((SELECT "json_row_0" FROM (SELECT "users_0"."id" AS "id", "users_0"."email" AS "email") AS "json_row_0")) AS "json_0" FROM (SELECT "users"."id", "users"."email" FROM "users" WHERE (NOT EXISTS (SELECT 1 FROM products WHERE (("products"."user_id") = ("users"."id")))) LIMIT ('20') :: integer) AS "users_0" LIMIT ('20') :: integer) AS "json_agg_0") AS "sel_0"`
+	sql := `SELECT json_object_agg('users', json_0) FROM (SELECT coalesce(json_agg("json_0"), '[]') AS "json_0" FROM (SELECT row_to_json((SELECT "json_row_0" FROM (SELECT "users_0"."id" AS "id", "users_0"."email" AS "email") AS "json_row_0")) AS "json_0" FROM (SELECT "users"."id", "users"."email" FROM "users" WHERE (NOT EXISTS (SELECT 1 FROM products WHERE (("products"."user_id") = ("users"."id")) AND ((("products"."price") > 3)))) LIMIT ('20') :: integer) AS "users_0" LIMIT ('20') :: integer) AS "json_agg_0") AS "sel_0"`
 
 	resSQL, err := compileGQLToPSQL(gql, nil, "user")
 	if err != nil {

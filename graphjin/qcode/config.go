@@ -80,7 +80,7 @@ func (trv *trval) allowedColumns(qt QType) map[string]struct{} {
 	case QTUpdate:
 		return trv.update.cols
 	case QTDelete:
-		return trv.insert.cols
+		return trv.delete.cols
 	case QTUpsert:
 		return trv.insert.cols
 	}

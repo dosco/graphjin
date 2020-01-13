@@ -80,26 +80,26 @@ func addRole(qc *qcode.Compiler, r configRole, t configRoleTable) error {
 		Presets: t.Insert.Presets,
 	}
 
-	if t.Query.Block {
+	if t.Insert.Block {
 		insert.Filters = blockFilter
 	}
 
 	update := qcode.UpdateConfig{
-		Filters: t.Insert.Filters,
-		Columns: t.Insert.Columns,
-		Presets: t.Insert.Presets,
+		Filters: t.Update.Filters,
+		Columns: t.Update.Columns,
+		Presets: t.Update.Presets,
 	}
 
-	if t.Query.Block {
+	if t.Update.Block {
 		update.Filters = blockFilter
 	}
 
 	delete := qcode.DeleteConfig{
-		Filters: t.Insert.Filters,
-		Columns: t.Insert.Columns,
+		Filters: t.Delete.Filters,
+		Columns: t.Delete.Columns,
 	}
 
-	if t.Query.Block {
+	if t.Delete.Block {
 		delete.Filters = blockFilter
 	}
 

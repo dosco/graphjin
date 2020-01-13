@@ -814,11 +814,15 @@ func (c *compilerContext) renderRelationshipByName(table, parent string, id int3
 }
 
 func (c *compilerContext) renderWhere(sel *qcode.Select, ti *DBTableInfo) error {
-	st := util.NewStack()
-
 	if sel.Where != nil {
-		st.Push(sel.Where)
+		return c.renderExp(sel.Where, ti, false)
 	}
+	return nil
+}
+
+func (c *compilerContext) renderExp(ex *qcode.Exp, ti *DBTableInfo, skipNested bool) error {
+	st := util.NewStack()
+	st.Push(ex)
 
 	for {
 		if st.Len() == 0 {
@@ -873,16 +877,16 @@ func (c *compilerContext) renderWhere(sel *qcode.Select, ti *DBTableInfo) error 
 				qcode.FreeExp(val)
 
 			default:
-				if len(val.NestedCols) != 0 {
+				if !skipNested && len(val.NestedCols) != 0 {
 					io.WriteString(c.w, `EXISTS `)
 
-					if err := c.renderNestedWhere(val, sel, ti); err != nil {
+					if err := c.renderNestedWhere(val, ti); err != nil {
 						return err
 					}
 
 				} else {
 					//fmt.Fprintf(w, `(("%s"."%s") `, c.sel.Name, val.Col)
-					if err := c.renderOp(val, sel, ti); err != nil {
+					if err := c.renderOp(val, ti); err != nil {
 						return err
 					}
 					qcode.FreeExp(val)
@@ -898,7 +902,7 @@ func (c *compilerContext) renderWhere(sel *qcode.Select, ti *DBTableInfo) error 
 	return nil
 }
 
-func (c *compilerContext) renderNestedWhere(ex *qcode.Exp, sel *qcode.Select, ti *DBTableInfo) error {
+func (c *compilerContext) renderNestedWhere(ex *qcode.Exp, ti *DBTableInfo) error {
 	for i := 0; i < len(ex.NestedCols)-1; i++ {
 		cti, err := c.schema.GetTable(ex.NestedCols[i])
 		if err != nil {
@@ -922,6 +926,15 @@ func (c *compilerContext) renderNestedWhere(ex *qcode.Exp, sel *qcode.Select, ti
 			return err
 		}
 
+		io.WriteString(c.w, ` AND (`)
+
+		if err := c.renderExp(ex, cti, true); err != nil {
+			return err
+		}
+
+		//fmt.Println(">", ex)
+		io.WriteString(c.w, `)`)
+
 	}
 
 	for i := 0; i < len(ex.NestedCols)-1; i++ {
@@ -931,7 +944,7 @@ func (c *compilerContext) renderNestedWhere(ex *qcode.Exp, sel *qcode.Select, ti
 	return nil
 }
 
-func (c *compilerContext) renderOp(ex *qcode.Exp, sel *qcode.Select, ti *DBTableInfo) error {
+func (c *compilerContext) renderOp(ex *qcode.Exp, ti *DBTableInfo) error {
 	var col *DBColumn
 	var ok bool
 
@@ -1029,10 +1042,9 @@ func (c *compilerContext) renderOp(ex *qcode.Exp, sel *qcode.Select, ti *DBTable
 
 	if ex.Type == qcode.ValList {
 		c.renderList(ex)
+	} else if col == nil {
+		return errors.New("no column found for expression value")
 	} else {
-		if col == nil {
-			return errors.New("no column found for expression value")
-		}
 		c.renderVal(ex, c.vars, col)
 	}
 
