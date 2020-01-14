@@ -25,7 +25,7 @@ func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
 		return nil, nil, err
 	}
 
-	schema, err = psql.NewDBSchema(db, di, c.getAliasMap())
+	schema, err = psql.NewDBSchema(di, c.getAliasMap())
 	if err != nil {
 		return nil, nil, err
 	}
