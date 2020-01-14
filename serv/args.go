@@ -42,7 +42,7 @@ func argMap(ctx context.Context, vars []byte) func(w io.Writer, tag string) (int
 			fields[0].Value = v[1 : len(v)-1]
 		}
 
-		return w.Write(fields[0].Value)
+		return w.Write(escQuote(fields[0].Value))
 	}
 }
 
@@ -89,7 +89,7 @@ func argList(ctx *coreContext, args [][]byte) ([]interface{}, error) {
 			if v, ok := fields[string(av)]; ok {
 				switch v[0] {
 				case '[', '{':
-					vars[i] = v
+					vars[i] = escQuote(v)
 				default:
 					var val interface{}
 					if err := json.Unmarshal(v, &val); err != nil {
@@ -105,4 +105,32 @@ func argList(ctx *coreContext, args [][]byte) ([]interface{}, error) {
 	}
 
 	return vars, nil
+}
+
+func escQuote(b []byte) []byte {
+	f := false
+	for i := range b {
+		if b[i] == '\'' {
+			f = true
+			break
+		}
+	}
+	if !f {
+		return b
+	}
+
+	buf := &bytes.Buffer{}
+	s := 0
+	for i := range b {
+		if b[i] == '\'' {
+			buf.Write(b[s:i])
+			buf.WriteString(`''`)
+			s = i + 1
+		}
+	}
+	l := len(b)
+	if s < (l - 1) {
+		buf.Write(b[s:l])
+	}
+	return buf.Bytes()
 }
