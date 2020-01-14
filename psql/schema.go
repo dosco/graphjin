@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/gobuffalo/flect"
-	"github.com/jackc/pgx/v4/pgxpool"
 )
 
 type DBSchema struct {
@@ -51,8 +50,7 @@ type DBRel struct {
 	}
 }
 
-func NewDBSchema(db *pgxpool.Pool,
-	info *DBInfo, aliases map[string][]string) (*DBSchema, error) {
+func NewDBSchema(info *DBInfo, aliases map[string][]string) (*DBSchema, error) {
 
 	schema := &DBSchema{
 		t:  make(map[string]*DBTableInfo),
