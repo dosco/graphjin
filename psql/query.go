@@ -932,7 +932,6 @@ func (c *compilerContext) renderNestedWhere(ex *qcode.Exp, ti *DBTableInfo) erro
 			return err
 		}
 
-		//fmt.Println(">", ex)
 		io.WriteString(c.w, `)`)
 
 	}
