@@ -64,7 +64,7 @@ func Filter(w *bytes.Buffer, b []byte, keys []string) error {
 			state = expectKeyClose
 			s = i
 
-		case state == expectKeyClose && b[i] == '"':
+		case state == expectKeyClose && (b[i-1] != '\\' && b[i] == '"'):
 			state = expectColon
 			k = b[(s + 1):i]
 
@@ -74,7 +74,7 @@ func Filter(w *bytes.Buffer, b []byte, keys []string) error {
 		case state == expectValue && b[i] == '"':
 			state = expectString
 
-		case state == expectString && b[i] == '"':
+		case state == expectString && (b[i-1] != '\\' && b[i] == '"'):
 			e = i
 
 		case state == expectValue && b[i] == '[':

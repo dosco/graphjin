@@ -66,7 +66,7 @@ func Get(b []byte, keys [][]byte) []Field {
 			state = expectKeyClose
 			s = i
 
-		case state == expectKeyClose && b[i] == '"':
+		case state == expectKeyClose && (b[i-1] != '\\' && b[i] == '"'):
 			state = expectColon
 			k = b[(s + 1):i]
 
@@ -77,7 +77,7 @@ func Get(b []byte, keys [][]byte) []Field {
 			state = expectString
 			s = i
 
-		case state == expectString && b[i] == '"':
+		case state == expectString && (b[i-1] != '\\' && b[i] == '"'):
 			e = i
 
 		case state == expectValue && b[i] == '[':

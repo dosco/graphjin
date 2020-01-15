@@ -47,7 +47,7 @@ func Keys(b []byte) [][]byte {
 			state = expectKeyClose
 			s = i
 
-		case state == expectKeyClose && b[i] == '"':
+		case state == expectKeyClose && (b[i-1] != '\\' && b[i] == '"'):
 			state = expectColon
 			k = b[(s + 1):i]
 
@@ -58,7 +58,7 @@ func Keys(b []byte) [][]byte {
 			state = expectString
 			s = i
 
-		case state == expectString && b[i] == '"':
+		case state == expectString && (b[i-1] != '\\' && b[i] == '"'):
 			e = i
 
 		case state == expectValue && b[i] == '{':
