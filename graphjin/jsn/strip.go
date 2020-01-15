@@ -27,7 +27,7 @@ func Strip(b []byte, path [][]byte) []byte {
 			state = expectKeyClose
 			s = i
 
-		case state == expectKeyClose && b[i] == '"':
+		case state == expectKeyClose && (b[i-1] != '\\' && b[i] == '"'):
 			state = expectColon
 			if pi == len(path) {
 				pi = 0
@@ -44,7 +44,7 @@ func Strip(b []byte, path [][]byte) []byte {
 			state = expectString
 			s = i
 
-		case state == expectString && b[i] == '"':
+		case state == expectString && (b[i-1] != '\\' && b[i] == '"'):
 			e = i
 
 		case state == expectValue && b[i] == '[':

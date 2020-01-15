@@ -52,7 +52,7 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 			state = expectKeyClose
 			s = i
 
-		case state == expectKeyClose && b[i] == '"':
+		case state == expectKeyClose && (b[i-1] != '\\' && b[i] == '"'):
 			state = expectColon
 			if _, err := h.Write(b[(s + 1):i]); err != nil {
 				return err
@@ -66,7 +66,7 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 			state = expectString
 			s = i
 
-		case state == expectString && b[i] == '"':
+		case state == expectString && (b[i-1] != '\\' && b[i] == '"'):
 			e = i
 
 		case state == expectValue && b[i] == '[':

@@ -13,12 +13,12 @@ var (
 	"users": [
 		{
 			"id": 1,
-			"full_name": "Sidney Stroman",
+			"full_name": "'Sidney Stroman'",
 			"email": "user0@demo.com",
 			"__twitter_id": "2048666903444506956",
 			"embed": {
 				"id": 8,
-				"full_name": "Caroll Orn Sr.",
+				"full_name": "Caroll Orn Sr's",
 				"email": "joannarau@hegmann.io",
 				"__twitter_id": "ABC123"
 				"more": [{
@@ -37,7 +37,7 @@ var (
 			"id": 3,
 			"full_name": "Kenna Cassin",
 			"email": "user2@demo.com",
-			"__twitter_id": { "name": "hello", "address": { "work": "1 infinity loop" } }
+			"__twitter_id": { "name": "\"hellos\"", "address": { "work": "1 infinity loop" } }
 		},
 		{
 			"id": 4,
@@ -171,7 +171,7 @@ func TestGet(t *testing.T) {
 		{[]byte("__twitter_id"),
 			[]byte(`[{ "name": "hello" }, { "name": "world"}]`)},
 		{[]byte("__twitter_id"),
-			[]byte(`{ "name": "hello", "address": { "work": "1 infinity loop" } }`),
+			[]byte(`{ "name": "\"hellos\"", "address": { "work": "1 infinity loop" } }`),
 		},
 		{[]byte("__twitter_id"), []byte(`1234567890`)},
 		{[]byte("__twitter_id"), []byte(`1.23E`)},

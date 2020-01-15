@@ -33,7 +33,12 @@ func argMap(ctx context.Context, vars []byte) func(w io.Writer, tag string) (int
 			return 0, errors.New("query requires variable $user_role")
 		}
 
+		fmt.Println("1>", tag)
+		fmt.Println("2>", string(vars))
+
 		fields := jsn.Get(vars, [][]byte{[]byte(tag)})
+		fmt.Println("2.1>", fields)
+
 		if len(fields) == 0 {
 			return 0, nil
 		}
@@ -41,6 +46,8 @@ func argMap(ctx context.Context, vars []byte) func(w io.Writer, tag string) (int
 		if len(v) >= 2 && v[0] == '"' && v[len(v)-1] == '"' {
 			fields[0].Value = v[1 : len(v)-1]
 		}
+
+		fmt.Println("3>", string(fields[0].Value))
 
 		return w.Write(escQuote(fields[0].Value))
 	}

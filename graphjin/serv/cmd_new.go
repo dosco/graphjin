@@ -90,8 +90,8 @@ func cmdNew(cmd *cobra.Command, args []string) {
 		return os.Mkdir(p, os.ModePerm)
 	})
 
-	ifNotExists(path.Join(appMigrationsPath, "100_init.sql"), func(p string) error {
-		if v, err := tmpl.get("100_init.sql"); err == nil {
+	ifNotExists(path.Join(appMigrationsPath, "0_init.sql"), func(p string) error {
+		if v, err := tmpl.get("0_init.sql"); err == nil {
 			return ioutil.WriteFile(p, v, 0644)
 		} else {
 			return err
