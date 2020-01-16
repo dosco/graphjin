@@ -17,7 +17,7 @@ func TestCompile1(t *testing.T) {
 	}
 
 	_, err = qc.Compile([]byte(`
-	{ product(id: 15) {
+	query { product(id: 15) {
 			id
 			name
 		} }`), "user")
@@ -98,6 +98,35 @@ func TestEmptyCompile(t *testing.T) {
 	if err == nil {
 		t.Fatal(errors.New("expecting an error"))
 	}
+}
+
+func TestInvalidPostfixCompile(t *testing.T) {
+	gql := `mutation 
+updateThread {
+  thread(update: $data, where: { slug: { eq: $slug } }) {
+    slug
+    title
+    published
+    createdAt : created_at
+    totalVotes : cached_votes_total
+    totalPosts : cached_posts_total
+    vote : thread_vote(where: { user_id: { eq: $user_id } }) {
+     id
+    }
+    topics {
+      slug
+      name
+    }
+	}
+}
+}`
+	qcompile, _ := NewCompiler(Config{})
+	_, err := qcompile.Compile([]byte(gql), "anon")
+
+	if err == nil {
+		t.Fatal(errors.New("expecting an error"))
+	}
+
 }
 
 var gql = []byte(`

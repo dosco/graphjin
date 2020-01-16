@@ -209,20 +209,20 @@ func oneToManyReverse(t *testing.T) {
 }
 
 func oneToManyArray(t *testing.T) {
-	gql := `query {
+	gql := `
+	query {
+		product {
+			name
+			price
+			tags {
+				id
+				name
+			}
+		}
+		tags {
+			name
 			product {
 				name
-				price
-				tags {
-					id
-					name
-				}
-			}
-			tags {
-				name
-				product {
-					name
-				}
 			}
 		}
 	}`

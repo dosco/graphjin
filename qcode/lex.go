@@ -31,7 +31,7 @@ type item struct {
 	_type itemType // The type of this item.
 	pos   Pos      // The starting position, in bytes, of this item in the input string.
 	end   Pos      // The ending position, in bytes, of this item in the input string.
-	line  uint16   // The line number at the start of this item.
+	line  int16    // The line number at the start of this item.
 }
 
 // itemType identifies the type of lex items.
@@ -87,7 +87,7 @@ type lexer struct {
 	width  Pos    // width of last rune read from input
 	items  []item // array of scanned items
 	itemsA [50]item
-	line   uint16 // 1+number of newlines seen
+	line   int16 // 1+number of newlines seen
 	err    error
 }
 
@@ -137,7 +137,7 @@ func (l *lexer) emit(t itemType) {
 	l.items = append(l.items, item{t, l.start, l.pos, l.line})
 	// Some items contain text internally. If so, count their newlines.
 	switch t {
-	case itemName:
+	case itemStringVal:
 		for i := l.start; i < l.pos; i++ {
 			if l.input[i] == '\n' {
 				l.line++
@@ -155,11 +155,6 @@ func (l *lexer) emitL(t itemType) {
 
 // ignore skips over the pending input before this point.
 func (l *lexer) ignore() {
-	for i := l.start; i < l.pos; i++ {
-		if l.input[i] == '\n' {
-			l.line++
-		}
-	}
 	l.start = l.pos
 }
 
@@ -436,7 +431,7 @@ func lowercase(b []byte, s Pos, e Pos) {
 	}
 }
 
-func (i *item) String() string {
+func (i item) String() string {
 	var v string
 
 	switch i._type {
