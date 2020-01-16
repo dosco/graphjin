@@ -156,11 +156,23 @@ func parseSelectionSet(gql []byte) (*Operation, error) {
 		return nil, err
 	}
 
-	lexPool.Put(l)
-
-	if err != nil {
-		return nil, err
+	if p.peek(itemObjClose) {
+		p.ignore()
+	} else {
+		return nil, fmt.Errorf("operation missing closing '}'")
 	}
+
+	if !p.peek(itemEOF) {
+		p.ignore()
+		return nil, fmt.Errorf("invalid '%s' found after closing '}'", p.current())
+	}
+
+	// for i := p.pos; i < len(p.items); i++ {
+	// 	fmt.Printf("2>>>> %#v\n", p.items[i])
+	// }
+	//return nil, fmt.Errorf("unexpected token")
+
+	lexPool.Put(l)
 
 	return op, err
 }
@@ -184,11 +196,16 @@ func (p *Parser) ignore() {
 	p.pos = n
 }
 
+func (p *Parser) current() string {
+	item := p.items[p.pos]
+	return b2s(p.input[item.pos:item.end])
+}
+
 func (p *Parser) peek(types ...itemType) bool {
 	n := p.pos + 1
-	if p.items[n]._type == itemEOF {
-		return false
-	}
+	// if p.items[n]._type == itemEOF {
+	// 	return false
+	// }
 	if n >= len(p.items) {
 		return false
 	}
@@ -292,8 +309,9 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 
 			if st.Len() == 0 {
 				break
+			} else {
+				continue
 			}
-			continue
 		}
 
 		if !p.peek(itemName) {
@@ -306,6 +324,8 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 		f.Args = f.argsA[:0]
 		f.Children = f.childrenA[:0]
 
+		// Parse the inside of the the fields () parentheses
+		// in short parse the args like id, where, etc
 		if err := p.parseField(f); err != nil {
 			return nil, err
 		}
@@ -318,6 +338,8 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 			f.ParentID = -1
 		}
 
+		// The first opening curley brackets after this
+		// comes the columns or child fields
 		if p.peek(itemObjOpen) {
 			p.ignore()
 			st.Push(f.ID)
