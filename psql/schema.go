@@ -320,8 +320,21 @@ func (s *DBSchema) SetRel(child, parent string, rel *DBRel) error {
 func (s *DBSchema) GetRel(child, parent string) (*DBRel, error) {
 	rel, ok := s.rm[child][parent]
 	if !ok {
-		return nil, fmt.Errorf("unknown relationship '%s' -> '%s'",
-			child, parent)
+		// No relationship found so this time fetch the table info
+		// and try again in case child or parent was an alias
+		ct, err := s.GetTable(child)
+		if err != nil {
+			return nil, err
+		}
+		pt, err := s.GetTable(parent)
+		if err != nil {
+			return nil, err
+		}
+		rel, ok = s.rm[ct.Name][pt.Name]
+		if !ok {
+			return nil, fmt.Errorf("unknown relationship '%s' -> '%s'",
+				child, parent)
+		}
 	}
 	return rel, nil
 }
