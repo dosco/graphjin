@@ -335,10 +335,11 @@ func (c *compilerContext) renderUnionStmt(w io.Writer, item renitem) error {
 		}
 		io.WriteString(w, ` RETURNING `)
 		quoted(w, item.ti.Name)
-		io.WriteString(w, `.*), `)
+		io.WriteString(w, `.*)`)
 	}
 
 	if connect && disconnect {
+		io.WriteString(w, `, `)
 		quoted(w, item.ti.Name)
 		io.WriteString(w, ` AS (`)
 		io.WriteString(w, `SELECT * FROM `)
