@@ -1062,27 +1062,27 @@ func (c *compilerContext) renderOrderBy(sel *qcode.Select, ti *DBTableInfo) erro
 		switch ob.Order {
 		case qcode.OrderAsc:
 			//fmt.Fprintf(w, `"%s_%d.ob.%s" ASC`, sel.Name, sel.ID, ob.Col)
-			tableIDColSuffix(c.w, ti.Name, sel.ID, ob.Col, "_ob")
+			tableIDColSuffix(c.w, sel.Name, sel.ID, ob.Col, "_ob")
 			io.WriteString(c.w, ` ASC`)
 		case qcode.OrderDesc:
 			//fmt.Fprintf(w, `"%s_%d.ob.%s" DESC`, sel.Name, sel.ID, ob.Col)
-			tableIDColSuffix(c.w, ti.Name, sel.ID, ob.Col, "_ob")
+			tableIDColSuffix(c.w, sel.Name, sel.ID, ob.Col, "_ob")
 			io.WriteString(c.w, ` DESC`)
 		case qcode.OrderAscNullsFirst:
 			//fmt.Fprintf(w, `"%s_%d.ob.%s" ASC NULLS FIRST`, sel.Name, sel.ID, ob.Col)
-			tableIDColSuffix(c.w, ti.Name, sel.ID, ob.Col, "_ob")
+			tableIDColSuffix(c.w, sel.Name, sel.ID, ob.Col, "_ob")
 			io.WriteString(c.w, ` ASC NULLS FIRST`)
 		case qcode.OrderDescNullsFirst:
 			//fmt.Fprintf(w, `%s_%d.ob.%s DESC NULLS FIRST`, sel.Name, sel.ID, ob.Col)
-			tableIDColSuffix(c.w, ti.Name, sel.ID, ob.Col, "_ob")
+			tableIDColSuffix(c.w, sel.Name, sel.ID, ob.Col, "_ob")
 			io.WriteString(c.w, ` DESC NULLLS FIRST`)
 		case qcode.OrderAscNullsLast:
 			//fmt.Fprintf(w, `"%s_%d.ob.%s ASC NULLS LAST`, sel.Name, sel.ID, ob.Col)
-			tableIDColSuffix(c.w, ti.Name, sel.ID, ob.Col, "_ob")
+			tableIDColSuffix(c.w, sel.Name, sel.ID, ob.Col, "_ob")
 			io.WriteString(c.w, ` ASC NULLS LAST`)
 		case qcode.OrderDescNullsLast:
 			//fmt.Fprintf(w, `%s_%d.ob.%s DESC NULLS LAST`, sel.Name, sel.ID, ob.Col)
-			tableIDColSuffix(c.w, ti.Name, sel.ID, ob.Col, "_ob")
+			tableIDColSuffix(c.w, sel.Name, sel.ID, ob.Col, "_ob")
 			io.WriteString(c.w, ` DESC NULLS LAST`)
 		default:
 			return fmt.Errorf("13: unexpected value %v", ob.Order)
