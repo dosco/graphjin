@@ -31,14 +31,14 @@ Super Graph has a rich feature set like integrating with your existing Ruby on R
 ## Try the demo app
 
 ```bash
-# download the Docker compose config for the demo
-curl -L -o demo.yml https://bit.ly/2mq05lW
+# clone the repository
+git clone https://github.com/dosco/super-graph
 
 # setup the demo rails app & database and run it
-docker-compose -f demo.yml run rails_app rake db:create db:migrate db:seed
+docker-compose run rails_app rake db:create db:migrate db:seed
 
 # run the demo
-docker-compose -f demo.yml up
+docker-compose up
 
 # signin to the demo app (user1@demo.com / 123456)
 open http://localhost:3000
