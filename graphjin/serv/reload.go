@@ -108,7 +108,7 @@ func Do(log func(string, ...interface{}), additional ...dir) error {
 				// Ensure that we use the correct events, as they are not uniform across
 				// platforms. See https://github.com/fsnotify/fsnotify/issues/74
 
-				if !conf.Production && strings.HasSuffix(event.Name, "/allow.list") {
+				if conf != nil && !conf.Production && strings.HasSuffix(event.Name, "/allow.list") {
 					continue
 				}
 

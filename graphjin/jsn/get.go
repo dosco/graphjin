@@ -130,6 +130,20 @@ func Get(b []byte, keys [][]byte) []Field {
 				n++
 			}
 
+			if state == expectListClose {
+			loop:
+				for j := i + 1; j < len(b); j++ {
+					switch b[j] {
+					case ' ', '\t', '\n':
+						continue
+					case '{':
+						break loop
+					}
+					i = e
+					break loop
+				}
+			}
+
 			state = expectKey
 			e = 0
 		}

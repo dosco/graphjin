@@ -111,6 +111,19 @@ func Keys(b []byte) [][]byte {
 				res = append(res, k)
 			}
 
+			if state == expectListClose {
+			loop:
+				for j := i + 1; j < len(b); j++ {
+					switch b[j] {
+					case ' ', '\t', '\n':
+						continue
+					case '{':
+						break loop
+					}
+					i = e
+					break loop
+				}
+			}
 			state = expectKey
 			k = nil
 			e = 0

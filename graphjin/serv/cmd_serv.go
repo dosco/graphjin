@@ -8,17 +8,19 @@ func cmdServ(cmd *cobra.Command, args []string) {
 	var err error
 
 	if conf, err = initConf(); err != nil {
-		errlog.Fatal().Err(err).Msg("failed to read config")
+		fatalInProd(err, "failed to read config")
 	}
 
-	db, err = initDBPool(conf)
-	if err != nil {
-		errlog.Fatal().Err(err).Msg("failed to connect to database")
+	if conf != nil {
+		if db, err = initDBPool(conf); err != nil {
+			fatalInProd(err, "failed to connect to database")
+		}
+
+		initCompiler()
+		initAllowList(confPath)
+		initPreparedList()
 	}
 
-	initCompiler()
-	initAllowList(confPath)
-	initPreparedList()
 	initWatcher(confPath)
 
 	startHTTP()

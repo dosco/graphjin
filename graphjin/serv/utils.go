@@ -141,3 +141,11 @@ func findStmt(role string, stmts []stmt) *stmt {
 	}
 	return nil
 }
+
+func fatalInProd(err error, msg string) {
+	if isDev() {
+		errlog.Error().Err(err).Msg(msg)
+	} else {
+		errlog.Fatal().Err(err).Msg(msg)
+	}
+}

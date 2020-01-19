@@ -63,7 +63,7 @@ func cmdDBCreate(cmd *cobra.Command, args []string) {
 	}
 	defer conn.Close(ctx)
 
-	sql := fmt.Sprintf("CREATE DATABASE %s", conf.DB.DBName)
+	sql := fmt.Sprintf(`CREATE DATABASE "%s"`, conf.DB.DBName)
 
 	_, err = conn.Exec(ctx, sql)
 	if err != nil {
@@ -83,7 +83,7 @@ func cmdDBDrop(cmd *cobra.Command, args []string) {
 	}
 	defer conn.Close(ctx)
 
-	sql := fmt.Sprintf(`DROP DATABASE IF EXISTS %s`, conf.DB.DBName)
+	sql := fmt.Sprintf(`DROP DATABASE IF EXISTS "%s"`, conf.DB.DBName)
 
 	_, err = conn.Exec(ctx, sql)
 	if err != nil {
