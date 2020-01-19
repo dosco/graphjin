@@ -50,7 +50,7 @@ func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
 }
 
 func initWatcher(cpath string) {
-	if !conf.WatchAndReload {
+	if conf != nil && !conf.WatchAndReload {
 		return
 	}
 
@@ -70,17 +70,32 @@ func initWatcher(cpath string) {
 }
 
 func startHTTP() {
-	hp := strings.SplitN(conf.HostPort, ":", 2)
+	var hostPort string
+	var appName string
 
-	if len(conf.Host) != 0 {
-		hp[0] = conf.Host
+	defaultHP := "0.0.0.0:8080"
+	env := os.Getenv("GO_ENV")
+
+	if conf != nil {
+		appName = conf.AppName
+		hp := strings.SplitN(conf.HostPort, ":", 2)
+
+		if len(hp) == 2 {
+			if len(conf.Host) != 0 {
+				hp[0] = conf.Host
+			}
+
+			if len(conf.Port) != 0 {
+				hp[1] = conf.Port
+			}
+
+			hostPort = fmt.Sprintf("%s:%s", hp[0], hp[1])
+		}
 	}
 
-	if len(conf.Port) != 0 {
-		hp[1] = conf.Port
+	if len(hostPort) == 0 {
+		hostPort = defaultHP
 	}
-
-	hostPort := fmt.Sprintf("%s:%s", hp[0], hp[1])
 
 	srv := &http.Server{
 		Addr:           hostPort,
@@ -110,8 +125,8 @@ func startHTTP() {
 		Str("version", version).
 		Str("git_branch", gitBranch).
 		Str("host_post", hostPort).
-		Str("app_name", conf.AppName).
-		Str("env", conf.Env).
+		Str("app_name", appName).
+		Str("env", env).
 		Msgf("%s listening", serverName)
 
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
@@ -124,7 +139,7 @@ func startHTTP() {
 func routeHandler() http.Handler {
 	var apiH http.Handler
 
-	if conf.HTTPGZip {
+	if conf != nil && conf.HTTPGZip {
 		gzipH := gziphandler.MustNewGzipLevelHandler(6)
 		apiH = gzipH(http.HandlerFunc(apiV1))
 	} else {
@@ -132,11 +147,14 @@ func routeHandler() http.Handler {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/health", health)
-	mux.Handle("/api/v1/graphql", withAuth(apiH))
 
-	if conf.WebUI {
-		mux.Handle("/", http.FileServer(rice.MustFindBox("../web/build").HTTPBox()))
+	if conf != nil {
+		mux.HandleFunc("/health", health)
+		mux.Handle("/api/v1/graphql", withAuth(apiH))
+
+		if conf.WebUI {
+			mux.Handle("/", http.FileServer(rice.MustFindBox("../web/build").HTTPBox()))
+		}
 	}
 
 	fn := func(w http.ResponseWriter, r *http.Request) {
@@ -169,4 +187,8 @@ func getConfigName() string {
 	}
 
 	return ge
+}
+
+func isDev() bool {
+	return strings.HasPrefix(os.Getenv("GO_ENV"), "dev")
 }

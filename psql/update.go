@@ -134,7 +134,7 @@ func (c *compilerContext) renderUpdateStmt(w io.Writer, qc *qcode.QCode, item re
 		io.WriteString(w, `)`)
 
 	} else {
-		io.WriteString(w, `WHERE `)
+		io.WriteString(w, ` WHERE `)
 		if err := c.renderWhere(&qc.Selects[0], ti); err != nil {
 			return err
 		}

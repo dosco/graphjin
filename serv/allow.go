@@ -128,10 +128,10 @@ func (al *allowList) upsert(query, vars []byte, uri string) {
 
 	var key string
 
-	if len(name) == 0 {
-		key = hash
-	} else {
+	if len(name) != 0 {
 		key = name
+	} else {
+		key = hash
 	}
 
 	if i, ok := al.index[key]; !ok {
@@ -280,7 +280,7 @@ func (al *allowList) save(item *allowItem) {
 
 		for i := range v {
 			if len(v[i].vars) != 0 && !bytes.Equal(v[i].vars, []byte("{}")) {
-				vj, err := json.MarshalIndent(v[i].vars, "", "\t")
+				vj, err := json.MarshalIndent(v[i].vars, "", "  ")
 				if err != nil {
 					logger.Warn().Err(err).Msg("Failed to write allow list 'vars' to file")
 					continue

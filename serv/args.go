@@ -35,6 +35,8 @@ func argMap(ctx context.Context, vars []byte) func(w io.Writer, tag string) (int
 
 		fields := jsn.Get(vars, [][]byte{[]byte(tag)})
 
+		fmt.Println(">>", tag, string(vars))
+
 		if len(fields) == 0 {
 			return 0, nil
 		}

@@ -324,7 +324,7 @@ Branch                : %v
 Go version            : %v
 
 Licensed under the Apache Public License 2.0
-Copyright 2015-2019 Vikram Rangnekar.
+Copyright 2020, Vikram Rangnekar.
 `,
 		version,
 		lastCommitSHA,

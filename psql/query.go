@@ -217,6 +217,10 @@ func (c *compilerContext) processChildren(sel *qcode.Select, ti *DBTableInfo) (u
 		colmap[sel.Cols[i].Name] = struct{}{}
 	}
 
+	for i := range sel.OrderBy {
+		colmap[sel.OrderBy[i].Col] = struct{}{}
+	}
+
 	for _, id := range sel.Children {
 		child := &c.s[id]
 
@@ -510,11 +514,14 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo,
 	isSearch := sel.Args["search"] != nil
 	isAgg := false
 
+	colmap := make(map[string]struct{}, (len(sel.Cols) + len(sel.OrderBy)))
+
 	io.WriteString(c.w, ` FROM (SELECT `)
 
 	i := 0
 	for n, col := range sel.Cols {
 		cn := col.Name
+		colmap[cn] = struct{}{}
 
 		_, isRealCol := ti.ColMap[cn]
 
@@ -625,7 +632,27 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo,
 		}
 	}
 
+	// if i != 0 && len(sel.OrderBy) != 0 {
+	// 	io.WriteString(c.w, ", ")
+	// }
+
+	for _, ob := range sel.OrderBy {
+		if _, ok := colmap[ob.Col]; ok {
+			continue
+		}
+		colmap[ob.Col] = struct{}{}
+
+		if i != 0 {
+			io.WriteString(c.w, `, `)
+		}
+		colWithTable(c.w, ti.Name, ob.Col)
+		i++
+	}
+
 	for _, col := range childCols {
+		if _, ok := colmap[col.Name]; ok {
+			continue
+		}
 		if i != 0 {
 			io.WriteString(c.w, `, `)
 		}

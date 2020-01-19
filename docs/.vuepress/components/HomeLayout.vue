@@ -137,7 +137,7 @@
           </h1>
           <div class="text-2xl md:text-3xl">
             <small class="text-sm">Download the Docker compose config for the demo</small>
-            <pre>&#8227; curl -L -o demo.yml https://bit.ly/2mq05lW</pre>
+            <pre>&#8227; curl -L -o demo.yml https://bit.ly/2FZS0uw</pre>
 
             <small class="text-sm">Setup the demo database</small>
             <pre>&#8227; docker-compose -f demo.yml run rails_app rake db:create db:migrate db:seed</pre>
