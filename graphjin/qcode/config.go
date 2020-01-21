@@ -45,6 +45,7 @@ type trval struct {
 	query struct {
 		limit   string
 		fil     *Exp
+		filNU   bool
 		cols    map[string]struct{}
 		disable struct {
 			funcs bool
@@ -53,6 +54,7 @@ type trval struct {
 
 	insert struct {
 		fil    *Exp
+		filNU  bool
 		cols   map[string]struct{}
 		psmap  map[string]string
 		pslist []string
@@ -60,14 +62,16 @@ type trval struct {
 
 	update struct {
 		fil    *Exp
+		filNU  bool
 		cols   map[string]struct{}
 		psmap  map[string]string
 		pslist []string
 	}
 
 	delete struct {
-		fil  *Exp
-		cols map[string]struct{}
+		fil   *Exp
+		filNU bool
+		cols  map[string]struct{}
 	}
 }
 
@@ -88,21 +92,21 @@ func (trv *trval) allowedColumns(qt QType) map[string]struct{} {
 	return nil
 }
 
-func (trv *trval) filter(qt QType) *Exp {
+func (trv *trval) filter(qt QType) (*Exp, bool) {
 	switch qt {
 	case QTQuery:
-		return trv.query.fil
+		return trv.query.fil, trv.query.filNU
 	case QTInsert:
-		return trv.insert.fil
+		return trv.insert.fil, trv.insert.filNU
 	case QTUpdate:
-		return trv.update.fil
+		return trv.update.fil, trv.update.filNU
 	case QTDelete:
-		return trv.delete.fil
+		return trv.delete.fil, trv.delete.filNU
 	case QTUpsert:
-		return trv.insert.fil
+		return trv.insert.fil, trv.insert.filNU
 	}
 
-	return nil
+	return nil, false
 }
 
 func listToMap(list []string) map[string]struct{} {

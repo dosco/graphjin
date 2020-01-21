@@ -51,6 +51,7 @@ type Select struct {
 	Allowed    map[string]struct{}
 	PresetMap  map[string]string
 	PresetList []string
+	SkipRender bool
 }
 
 type Column struct {
@@ -187,7 +188,7 @@ func (com *Compiler) AddRole(role, table string, trc TRConfig) error {
 	trv := &trval{}
 
 	// query config
-	trv.query.fil, err = compileFilter(trc.Query.Filters)
+	trv.query.fil, trv.query.filNU, err = compileFilter(trc.Query.Filters)
 	if err != nil {
 		return err
 	}
@@ -198,7 +199,8 @@ func (com *Compiler) AddRole(role, table string, trc TRConfig) error {
 	trv.query.disable.funcs = trc.Query.DisableFunctions
 
 	// insert config
-	if trv.insert.fil, err = compileFilter(trc.Insert.Filters); err != nil {
+	trv.insert.fil, trv.insert.filNU, err = compileFilter(trc.Insert.Filters)
+	if err != nil {
 		return err
 	}
 	trv.insert.cols = listToMap(trc.Insert.Columns)
@@ -206,7 +208,8 @@ func (com *Compiler) AddRole(role, table string, trc TRConfig) error {
 	trv.insert.pslist = mapToList(trv.insert.psmap)
 
 	// update config
-	if trv.update.fil, err = compileFilter(trc.Update.Filters); err != nil {
+	trv.update.fil, trv.update.filNU, err = compileFilter(trc.Update.Filters)
+	if err != nil {
 		return err
 	}
 	trv.update.cols = listToMap(trc.Update.Columns)
@@ -214,7 +217,8 @@ func (com *Compiler) AddRole(role, table string, trc TRConfig) error {
 	trv.update.pslist = mapToList(trv.update.psmap)
 
 	// delete config
-	if trv.delete.fil, err = compileFilter(trc.Delete.Filters); err != nil {
+	trv.delete.fil, trv.delete.filNU, err = compileFilter(trc.Delete.Filters)
+	if err != nil {
 		return err
 	}
 	trv.delete.cols = listToMap(trc.Delete.Columns)
@@ -334,7 +338,7 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 			s.FieldName = s.Name
 		}
 
-		err := com.compileArgs(qc, s, field.Args)
+		err := com.compileArgs(qc, s, field.Args, role)
 		if err != nil {
 			return err
 		}
@@ -388,15 +392,26 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 
 func (com *Compiler) addFilters(qc *QCode, sel *Select, role string) {
 	var fil *Exp
+	var nu bool
 
 	if trv, ok := com.tr[role][sel.Name]; ok {
-		fil = trv.filter(qc.Type)
+		fil, nu = trv.filter(qc.Type)
+
+	} else if role == "anon" {
+		// Tables not defined under the anon role will not be rendered
+		sel.SkipRender = true
+		return
+
 	} else {
 		return
 	}
 
 	if fil == nil {
 		return
+	}
+
+	if nu && role == "anon" {
+		sel.SkipRender = true
 	}
 
 	switch fil.Op {
@@ -420,7 +435,7 @@ func (com *Compiler) addFilters(qc *QCode, sel *Select, role string) {
 	}
 }
 
-func (com *Compiler) compileArgs(qc *QCode, sel *Select, args []Arg) error {
+func (com *Compiler) compileArgs(qc *QCode, sel *Select, args []Arg, role string) error {
 	var err error
 	var ka bool
 
@@ -435,7 +450,7 @@ func (com *Compiler) compileArgs(qc *QCode, sel *Select, args []Arg) error {
 			err, ka = com.compileArgSearch(sel, arg)
 
 		case "where":
-			err, ka = com.compileArgWhere(sel, arg)
+			err, ka = com.compileArgWhere(sel, arg, role)
 
 		case "orderby", "order_by", "order":
 			err, ka = com.compileArgOrderBy(sel, arg)
@@ -501,19 +516,20 @@ func (com *Compiler) setMutationType(qc *QCode, args []Arg) error {
 	return nil
 }
 
-func (com *Compiler) compileArgObj(st *util.Stack, arg *Arg) (*Exp, error) {
+func (com *Compiler) compileArgObj(st *util.Stack, arg *Arg) (*Exp, bool, error) {
 	if arg.Val.Type != NodeObj {
-		return nil, fmt.Errorf("expecting an object")
+		return nil, false, fmt.Errorf("expecting an object")
 	}
 
 	return com.compileArgNode(st, arg.Val, true)
 }
 
-func (com *Compiler) compileArgNode(st *util.Stack, node *Node, usePool bool) (*Exp, error) {
+func (com *Compiler) compileArgNode(st *util.Stack, node *Node, usePool bool) (*Exp, bool, error) {
 	var root *Exp
+	var needsUser bool
 
 	if node == nil || len(node.Children) == 0 {
-		return nil, errors.New("invalid argument value")
+		return nil, needsUser, errors.New("invalid argument value")
 	}
 
 	pushChild(st, nil, node)
@@ -526,7 +542,7 @@ func (com *Compiler) compileArgNode(st *util.Stack, node *Node, usePool bool) (*
 		intf := st.Pop()
 		node, ok := intf.(*Node)
 		if !ok || node == nil {
-			return nil, fmt.Errorf("16: unexpected value %v (%t)", intf, intf)
+			return nil, needsUser, fmt.Errorf("16: unexpected value %v (%t)", intf, intf)
 		}
 
 		// Objects inside a list
@@ -542,11 +558,15 @@ func (com *Compiler) compileArgNode(st *util.Stack, node *Node, usePool bool) (*
 
 		ex, err := newExp(st, node, usePool)
 		if err != nil {
-			return nil, err
+			return nil, needsUser, err
 		}
 
 		if ex == nil {
 			continue
+		}
+
+		if ex.Type == ValVar && ex.Val == "user_id" {
+			needsUser = true
 		}
 
 		if node.exp == nil {
@@ -571,7 +591,7 @@ func (com *Compiler) compileArgNode(st *util.Stack, node *Node, usePool bool) (*
 		nodePool.Put(node)
 	}
 
-	return root, nil
+	return root, needsUser, nil
 }
 
 func (com *Compiler) compileArgID(sel *Select, arg *Arg) (error, bool) {
@@ -640,13 +660,17 @@ func (com *Compiler) compileArgSearch(sel *Select, arg *Arg) (error, bool) {
 	return nil, true
 }
 
-func (com *Compiler) compileArgWhere(sel *Select, arg *Arg) (error, bool) {
+func (com *Compiler) compileArgWhere(sel *Select, arg *Arg, role string) (error, bool) {
 	st := util.NewStack()
 	var err error
 
-	ex, err := com.compileArgObj(st, arg)
+	ex, nu, err := com.compileArgObj(st, arg)
 	if err != nil {
 		return err, false
+	}
+
+	if nu && role == "anon" {
+		sel.SkipRender = true
 	}
 
 	if sel.Where != nil {
@@ -976,27 +1000,32 @@ func pushChild(st *util.Stack, exp *Exp, node *Node) {
 
 }
 
-func compileFilter(filter []string) (*Exp, error) {
+func compileFilter(filter []string) (*Exp, bool, error) {
 	var fl *Exp
+	var needsUser bool
+
 	com := &Compiler{}
 	st := util.NewStack()
 
 	if len(filter) == 0 {
-		return &Exp{Op: OpNop, doFree: false}, nil
+		return &Exp{Op: OpNop, doFree: false}, false, nil
 	}
 
 	for i := range filter {
 		if filter[i] == "false" {
-			return &Exp{Op: OpFalse, doFree: false}, nil
+			return &Exp{Op: OpFalse, doFree: false}, false, nil
 		}
 
 		node, err := ParseArgValue(filter[i])
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
-		f, err := com.compileArgNode(st, node, false)
+		f, nu, err := com.compileArgNode(st, node, false)
 		if err != nil {
-			return nil, err
+			return nil, false, err
+		}
+		if nu {
+			needsUser = true
 		}
 
 		// TODO: Invalid table names in nested where causes fail silently
@@ -1010,7 +1039,7 @@ func compileFilter(filter []string) (*Exp, error) {
 			fl = &Exp{Op: OpAnd, Children: []*Exp{fl, f}, doFree: false}
 		}
 	}
-	return fl, nil
+	return fl, needsUser, nil
 }
 
 func buildPath(a []string) string {
