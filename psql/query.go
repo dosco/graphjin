@@ -82,17 +82,21 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer) (uint32, error) {
 	multiRoot := (len(qc.Roots) > 1)
 
 	st := NewIntStack()
+	si := 0
 
 	if multiRoot {
 		io.WriteString(c.w, `SELECT row_to_json("json_root") FROM (SELECT `)
 
-		for i, id := range qc.Roots {
+		for _, id := range qc.Roots {
 			root := qc.Selects[id]
+			if root.SkipRender {
+				continue
+			}
 
 			st.Push(root.ID + closeBlock)
 			st.Push(root.ID)
 
-			if i != 0 {
+			if si != 0 {
 				io.WriteString(c.w, `, `)
 			}
 
@@ -103,24 +107,34 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer) (uint32, error) {
 			io.WriteString(c.w, `"`)
 
 			alias(c.w, root.FieldName)
+			si++
 		}
 
-		io.WriteString(c.w, ` FROM `)
+		if si != 0 {
+			io.WriteString(c.w, ` FROM `)
+
+		}
 
 	} else {
 		root := qc.Selects[0]
+		if !root.SkipRender {
+			io.WriteString(c.w, `SELECT json_object_agg(`)
+			io.WriteString(c.w, `'`)
+			io.WriteString(c.w, root.FieldName)
+			io.WriteString(c.w, `', `)
+			io.WriteString(c.w, `json_`)
+			int2string(c.w, root.ID)
 
-		io.WriteString(c.w, `SELECT json_object_agg(`)
-		io.WriteString(c.w, `'`)
-		io.WriteString(c.w, root.FieldName)
-		io.WriteString(c.w, `', `)
-		io.WriteString(c.w, `json_`)
-		int2string(c.w, root.ID)
+			st.Push(root.ID + closeBlock)
+			st.Push(root.ID)
 
-		st.Push(root.ID + closeBlock)
-		st.Push(root.ID)
+			io.WriteString(c.w, `) FROM `)
+			si++
+		}
+	}
 
-		io.WriteString(c.w, `) FROM `)
+	if si == 0 {
+		return 0, errors.New("all tables skipped. cannot render query")
 	}
 
 	var ignored uint32
@@ -161,6 +175,9 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer) (uint32, error) {
 					continue
 				}
 				child := &c.s[cid]
+				if child.SkipRender {
+					continue
+				}
 
 				st.Push(child.ID + closeBlock)
 				st.Push(child.ID)
@@ -475,18 +492,22 @@ func (c *compilerContext) renderRemoteRelColumns(sel *qcode.Select, ti *DBTableI
 }
 
 func (c *compilerContext) renderJoinedColumns(sel *qcode.Select, ti *DBTableInfo, skipped uint32) error {
-	colsRendered := len(sel.Cols) != 0
+
+	// columns previously rendered
+	i := len(sel.Cols)
 
 	for _, id := range sel.Children {
-		skipThis := hasBit(skipped, uint32(id))
-
-		if colsRendered && !skipThis {
-			io.WriteString(c.w, ", ")
-		}
-		if skipThis {
+		if hasBit(skipped, uint32(id)) {
 			continue
 		}
 		childSel := &c.s[id]
+		if childSel.SkipRender {
+			continue
+		}
+
+		if i != 0 {
+			io.WriteString(c.w, ", ")
+		}
 
 		//fmt.Fprintf(w, `"%s_%d_join"."%s" AS "%s"`,
 		//s.Name, s.ID, s.Name, s.FieldName)
@@ -500,6 +521,7 @@ func (c *compilerContext) renderJoinedColumns(sel *qcode.Select, ti *DBTableInfo
 		io.WriteString(c.w, `" AS "`)
 		io.WriteString(c.w, childSel.FieldName)
 		io.WriteString(c.w, `"`)
+		i++
 	}
 
 	return nil
@@ -631,10 +653,6 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo,
 
 		}
 	}
-
-	// if i != 0 && len(sel.OrderBy) != 0 {
-	// 	io.WriteString(c.w, ", ")
-	// }
 
 	for _, ob := range sel.OrderBy {
 		if _, ok := colmap[ob.Col]; ok {

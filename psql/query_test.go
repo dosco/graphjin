@@ -463,6 +463,30 @@ func multiRoot(t *testing.T) {
 	}
 }
 
+func skipUserIDForAnonRole(t *testing.T) {
+	gql := `query {
+		products {
+			id
+			name
+			user(where: { id: { eq: $user_id } }) {
+				id
+				email
+			}
+		}
+	}`
+
+	sql := `SELECT json_object_agg('products', json_0) FROM (SELECT coalesce(json_agg("json_0"), '[]') AS "json_0" FROM (SELECT row_to_json((SELECT "json_row_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name") AS "json_row_0")) AS "json_0" FROM (SELECT "products"."id", "products"."name", "products"."user_id" FROM "products" LIMIT ('20') :: integer) AS "products_0" LIMIT ('20') :: integer) AS "json_agg_0") AS "sel_0"`
+
+	resSQL, err := compileGQLToPSQL(gql, nil, "anon")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
 func blockedQuery(t *testing.T) {
 	gql := `query {
 		user(id: 5, where: { id: { gt: 3 } }) {
@@ -524,6 +548,7 @@ func TestCompileQuery(t *testing.T) {
 	t.Run("queryWithVariables", queryWithVariables)
 	t.Run("withWhereOnRelations", withWhereOnRelations)
 	t.Run("multiRoot", multiRoot)
+	t.Run("skipUserIDForAnonRole", skipUserIDForAnonRole)
 	t.Run("blockedQuery", blockedQuery)
 	t.Run("blockedFunctions", blockedFunctions)
 }
