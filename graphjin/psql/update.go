@@ -125,10 +125,10 @@ func (c *compilerContext) renderUpdateStmt(w io.Writer, qc *qcode.QCode, item re
 		if item.relPC.Type == RelOneToMany {
 			if conn, ok := item.data["where"]; ok {
 				io.WriteString(w, ` AND `)
-				renderWhereFromJSON(w, item.ti.Name, conn)
+				renderWhereFromJSON(w, item.kvitem, "where", conn)
 			} else if conn, ok := item.data["_where"]; ok {
 				io.WriteString(w, ` AND `)
-				renderWhereFromJSON(w, item.ti.Name, conn)
+				renderWhereFromJSON(w, item.kvitem, "_where", conn)
 			}
 		}
 		io.WriteString(w, `)`)
@@ -167,7 +167,15 @@ func renderNestedUpdateRelColumns(w io.Writer, item kvitem, values bool) error {
 			if values {
 				colWithTable(w, v.relCP.Left.Table, v.relCP.Left.Col)
 			} else {
-				quoted(w, v.relCP.Right.Col)
+				if v.relCP.Right.Array {
+					io.WriteString(w, `array_remove(`)
+					colWithTable(w, v.relCP.Left.Table, v.relCP.Left.Col)
+					io.WriteString(w, `, `)
+					quoted(w, v.relCP.Right.Col)
+					io.WriteString(w, `)`)
+				} else {
+					quoted(w, v.relCP.Right.Col)
+				}
 			}
 		}
 	}

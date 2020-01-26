@@ -101,6 +101,9 @@ type renitem struct {
 	data  map[string]json.RawMessage
 }
 
+// TODO: Handle cases where a column name matches the child table name
+// the child path needs to be exluded in the json sent to insert or update
+
 func (c *compilerContext) handleKVItem(st *util.Stack, item kvitem) error {
 	var data map[string]json.RawMessage
 	var array bool
@@ -122,9 +125,6 @@ func (c *compilerContext) handleKVItem(st *util.Stack, item kvitem) error {
 
 	for k, v := range data {
 		if v[0] != '{' && v[0] != '[' {
-			continue
-		}
-		if _, ok := item.ti.ColMap[k]; ok {
 			continue
 		}
 
@@ -152,13 +152,9 @@ func (c *compilerContext) handleKVItem(st *util.Stack, item kvitem) error {
 				id++
 			}
 
-		} else {
-			ti, err := c.schema.GetTable(k)
-			if err != nil {
-				return err
-			}
 			// Get parent-to-child relationship
-			relPC, err := c.schema.GetRel(item.key, k)
+		} else if relPC, err := c.schema.GetRel(item.key, k); err == nil {
+			ti, err := c.schema.GetTable(k)
 			if err != nil {
 				return err
 			}
@@ -277,8 +273,12 @@ func (c *compilerContext) renderUnionStmt(w io.Writer, item renitem) error {
 		io.WriteString(w, ` SET `)
 		quoted(w, item.relPC.Right.Col)
 		io.WriteString(w, ` = `)
+
+		// When setting the id of the connected table in a one-to-many setting
+		// we always overwrite the value including for array columns
 		colWithTable(w, item.relPC.Left.Table, item.relPC.Left.Col)
-		io.WriteString(w, `FROM `)
+
+		io.WriteString(w, ` FROM `)
 		quoted(w, item.relPC.Left.Table)
 		io.WriteString(w, ` WHERE`)
 
@@ -290,7 +290,7 @@ func (c *compilerContext) renderUnionStmt(w io.Writer, item renitem) error {
 				} else {
 					io.WriteString(w, ` (`)
 				}
-				if err := renderKVItemWhere(w, v); err != nil {
+				if err := renderWhereFromJSON(w, v, "connect", v.val); err != nil {
 					return err
 				}
 				io.WriteString(w, `)`)
@@ -313,7 +313,19 @@ func (c *compilerContext) renderUnionStmt(w io.Writer, item renitem) error {
 		quoted(w, item.ti.Name)
 		io.WriteString(w, ` SET `)
 		quoted(w, item.relPC.Right.Col)
-		io.WriteString(w, ` = NULL`)
+		io.WriteString(w, ` = `)
+
+		if item.relPC.Right.Array {
+			io.WriteString(w, ` array_remove(`)
+			quoted(w, item.relPC.Right.Col)
+			io.WriteString(w, `, `)
+			colWithTable(w, item.relPC.Left.Table, item.relPC.Left.Col)
+			io.WriteString(w, `)`)
+
+		} else {
+			io.WriteString(w, ` NULL`)
+		}
+
 		io.WriteString(w, ` FROM `)
 		quoted(w, item.relPC.Left.Table)
 		io.WriteString(w, ` WHERE`)
@@ -326,7 +338,7 @@ func (c *compilerContext) renderUnionStmt(w io.Writer, item renitem) error {
 				} else {
 					io.WriteString(w, ` (`)
 				}
-				if err := renderKVItemWhere(w, v); err != nil {
+				if err := renderWhereFromJSON(w, v, "disconnect", v.val); err != nil {
 					return err
 				}
 				io.WriteString(w, `)`)
@@ -514,12 +526,24 @@ func (c *compilerContext) renderConnectStmt(qc *qcode.QCode, w io.Writer,
 
 	io.WriteString(w, `, `)
 	quoted(w, item.ti.Name)
-	io.WriteString(c.w, ` AS (`)
+	io.WriteString(c.w, ` AS (SELECT `)
 
-	io.WriteString(c.w, `SELECT * FROM `)
+	if rel.Left.Array {
+		io.WriteString(w, `array_agg(DISTINCT `)
+		quoted(w, rel.Right.Col)
+		io.WriteString(w, `) AS `)
+		quoted(w, rel.Right.Col)
+
+	} else {
+		quoted(w, rel.Right.Col)
+
+	}
+
+	io.WriteString(c.w, ` FROM "_sg_input" i,`)
 	quoted(c.w, item.ti.Name)
+
 	io.WriteString(c.w, ` WHERE `)
-	if err := renderKVItemWhere(c.w, item.kvitem); err != nil {
+	if err := renderWhereFromJSON(c.w, item.kvitem, "connect", item.kvitem.val); err != nil {
 		return err
 	}
 	io.WriteString(c.w, ` LIMIT 1)`)
@@ -540,41 +564,93 @@ func (c *compilerContext) renderDisconnectStmt(qc *qcode.QCode, w io.Writer,
 	quoted(w, item.ti.Name)
 	io.WriteString(c.w, ` AS (`)
 
-	io.WriteString(c.w, `SELECT * FROM (VALUES(NULL::`)
-	io.WriteString(w, rel.Right.col.Type)
-	io.WriteString(c.w, `)) AS LOOKUP(`)
-	quoted(w, rel.Right.Col)
-	io.WriteString(c.w, `))`)
+	if rel.Right.Array {
+		io.WriteString(c.w, `SELECT `)
+		quoted(w, rel.Right.Col)
+		io.WriteString(c.w, ` FROM "_sg_input" i,`)
+		quoted(c.w, item.ti.Name)
+		io.WriteString(c.w, ` WHERE `)
+		if err := renderWhereFromJSON(c.w, item.kvitem, "connect", item.kvitem.val); err != nil {
+			return err
+		}
+		io.WriteString(c.w, ` LIMIT 1))`)
+
+	} else {
+		io.WriteString(c.w, `SELECT * FROM (VALUES(NULL::`)
+		io.WriteString(w, rel.Right.col.Type)
+		io.WriteString(c.w, `)) AS LOOKUP(`)
+		quoted(w, rel.Right.Col)
+		io.WriteString(c.w, `))`)
+	}
 
 	return nil
 }
 
-func renderKVItemWhere(w io.Writer, item kvitem) error {
-	return renderWhereFromJSON(w, item.ti.Name, item.val)
-}
-
-func renderWhereFromJSON(w io.Writer, table string, val []byte) error {
+func renderWhereFromJSON(w io.Writer, item kvitem, key string, val []byte) error {
 	var kv map[string]json.RawMessage
+	ti := item.ti
+
 	if err := json.Unmarshal(val, &kv); err != nil {
 		return err
 	}
 	i := 0
 	for k, v := range kv {
+		col, ok := ti.ColMap[k]
+		if !ok {
+			continue
+		}
 		if i != 0 {
 			io.WriteString(w, ` AND `)
 		}
-		colWithTable(w, table, k)
-		io.WriteString(w, ` = '`)
-		switch v[0] {
-		case '"':
-			w.Write(v[1 : len(v)-1])
-		default:
-			w.Write(v)
+
+		if v[0] == '[' {
+			colWithTable(w, ti.Name, k)
+
+			if col.Array {
+				io.WriteString(w, ` && `)
+			} else {
+				io.WriteString(w, ` = `)
+			}
+
+			io.WriteString(w, `ANY((select a::`)
+			io.WriteString(w, col.Type)
+
+			io.WriteString(w, ` AS list from json_array_elements_text(`)
+			renderPathJSON(w, item, key, k)
+			io.WriteString(w, `::json) AS a))`)
+
+		} else if col.Array {
+			io.WriteString(w, `(`)
+			renderPathJSON(w, item, key, k)
+			io.WriteString(w, `)::`)
+			io.WriteString(w, col.Type)
+
+			io.WriteString(w, ` = ANY(`)
+			colWithTable(w, ti.Name, k)
+			io.WriteString(w, `)`)
+
+		} else {
+			colWithTable(w, ti.Name, k)
+
+			io.WriteString(w, `= (`)
+			renderPathJSON(w, item, key, k)
+			io.WriteString(w, `)::`)
+			io.WriteString(w, col.Type)
 		}
-		io.WriteString(w, `'`)
+
 		i++
 	}
 	return nil
+}
+
+func renderPathJSON(w io.Writer, item kvitem, key1, key2 string) {
+	io.WriteString(w, `(i.j->`)
+	joinPath(w, item.path)
+	io.WriteString(w, `->'`)
+	io.WriteString(w, key1)
+	io.WriteString(w, `'->>'`)
+	io.WriteString(w, key2)
+	io.WriteString(w, `')`)
 }
 
 func renderCteName(w io.Writer, item kvitem) error {
