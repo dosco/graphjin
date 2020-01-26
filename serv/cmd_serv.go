@@ -12,13 +12,15 @@ func cmdServ(cmd *cobra.Command, args []string) {
 	}
 
 	if conf != nil {
-		if db, err = initDBPool(conf); err != nil {
+		db, err = initDBPool(conf)
+
+		if err == nil {
+			initCompiler()
+			initAllowList(confPath)
+			initPreparedList()
+		} else {
 			fatalInProd(err, "failed to connect to database")
 		}
-
-		initCompiler()
-		initAllowList(confPath)
-		initPreparedList()
 	}
 
 	initWatcher(confPath)

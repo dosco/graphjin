@@ -167,11 +167,6 @@ func parseSelectionSet(gql []byte) (*Operation, error) {
 		return nil, fmt.Errorf("invalid '%s' found after closing '}'", p.current())
 	}
 
-	// for i := p.pos; i < len(p.items); i++ {
-	// 	fmt.Printf("2>>>> %#v\n", p.items[i])
-	// }
-	//return nil, fmt.Errorf("unexpected token")
-
 	lexPool.Put(l)
 
 	return op, err

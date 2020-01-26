@@ -136,7 +136,9 @@ func (s *DBSchema) updateRelationships(t DBTable, cols []DBColumn) error {
 		return fmt.Errorf("invalid foreign key table '%s'", ct)
 	}
 
-	for _, c := range cols {
+	for i := range cols {
+		c := cols[i]
+
 		if len(c.FKeyTable) == 0 || len(c.FKeyColID) == 0 {
 			continue
 		}
@@ -188,10 +190,12 @@ func (s *DBSchema) updateRelationships(t DBTable, cols []DBColumn) error {
 			rel2 = &DBRel{Type: RelOneToMany}
 		}
 
+		rel2.Left.col = fc
 		rel2.Left.Table = c.FKeyTable
 		rel2.Left.Col = fc.Name
 		rel2.Left.Array = fc.Array
 
+		rel2.Right.col = &c
 		rel2.Right.Table = t.Name
 		rel2.Right.Col = c.Name
 		rel2.Right.Array = c.Array
@@ -249,9 +253,11 @@ func (s *DBSchema) updateSchemaOTMT(
 	rel1.Through = ti.Name
 	rel1.ColT = col2.Name
 
+	rel1.Left.col = &col2
 	rel1.Left.Table = col2.FKeyTable
 	rel1.Left.Col = fc2.Name
 
+	rel1.Right.col = &col1
 	rel1.Right.Table = ti.Name
 	rel1.Right.Col = col1.Name
 
@@ -265,9 +271,11 @@ func (s *DBSchema) updateSchemaOTMT(
 	rel2.Through = ti.Name
 	rel2.ColT = col1.Name
 
+	rel1.Left.col = fc1
 	rel2.Left.Table = col1.FKeyTable
 	rel2.Left.Col = fc1.Name
 
+	rel1.Right.col = &col2
 	rel2.Right.Table = ti.Name
 	rel2.Right.Col = col2.Name
 
