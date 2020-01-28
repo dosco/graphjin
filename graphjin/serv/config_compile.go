@@ -8,9 +8,61 @@ import (
 	"github.com/dosco/super-graph/qcode"
 )
 
+func addTables(c *config, di *psql.DBInfo) error {
+	for _, t := range c.Tables {
+		if len(t.Table) == 0 || len(t.Columns) == 0 {
+			continue
+		}
+		if err := addTable(di, t.Columns, t); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func addTable(di *psql.DBInfo, cols []configColumn, t configTable) error {
+	bc, ok := di.GetColumn(t.Table, t.Name)
+	if !ok {
+		return fmt.Errorf(
+			"Column '%s' not found on table '%s'",
+			t.Name, t.Table)
+	}
+
+	if bc.Type != "json" && bc.Type != "jsonb" {
+		return fmt.Errorf(
+			"Column '%s' in table '%s' is of type '%s'. Only JSON or JSONB is valid",
+			t.Name, t.Table, bc.Type)
+	}
+
+	table := psql.DBTable{
+		Name: t.Name,
+		Key:  strings.ToLower(t.Name),
+		Type: bc.Type,
+	}
+
+	columns := make([]psql.DBColumn, 0, len(cols))
+
+	for i := range cols {
+		c := cols[i]
+		columns = append(columns, psql.DBColumn{
+			Name: c.Name,
+			Key:  strings.ToLower(c.Name),
+			Type: c.Type,
+		})
+	}
+
+	di.AddTable(table, columns)
+	bc.FKeyTable = t.Name
+
+	return nil
+}
+
 func addForeignKeys(c *config, di *psql.DBInfo) error {
 	for _, t := range c.Tables {
 		for _, c := range t.Columns {
+			if len(c.ForeignKey) == 0 {
+				continue
+			}
 			if err := addForeignKey(di, c, t); err != nil {
 				return err
 			}
@@ -23,7 +75,7 @@ func addForeignKey(di *psql.DBInfo, c configColumn, t configTable) error {
 	c1, ok := di.GetColumn(t.Name, c.Name)
 	if !ok {
 		return fmt.Errorf(
-			"Invalid table '%s' or column '%s in config",
+			"Invalid table '%s' or column '%s' in config",
 			t.Name, c.Name)
 	}
 

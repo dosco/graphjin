@@ -15,6 +15,7 @@ type DBSchema struct {
 
 type DBTableInfo struct {
 	Name       string
+	Type       string
 	Singular   bool
 	Columns    []DBColumn
 	PrimaryCol *DBColumn
@@ -29,6 +30,7 @@ const (
 	RelOneToOne RelType = iota + 1
 	RelOneToMany
 	RelOneToManyThrough
+	RelEmbedded
 	RelRemote
 )
 
@@ -51,7 +53,6 @@ type DBRel struct {
 }
 
 func NewDBSchema(info *DBInfo, aliases map[string][]string) (*DBSchema, error) {
-
 	schema := &DBSchema{
 		t:  make(map[string]*DBTableInfo),
 		rm: make(map[string]map[string]*DBRel),
@@ -83,6 +84,7 @@ func (s *DBSchema) addTable(
 	singular := flect.Singularize(t.Key)
 	s.t[singular] = &DBTableInfo{
 		Name:     t.Name,
+		Type:     t.Type,
 		Singular: true,
 		Columns:  cols,
 		ColMap:   colmap,
@@ -92,6 +94,7 @@ func (s *DBSchema) addTable(
 	plural := flect.Pluralize(t.Key)
 	s.t[plural] = &DBTableInfo{
 		Name:     t.Name,
+		Type:     t.Type,
 		Singular: false,
 		Columns:  cols,
 		ColMap:   colmap,
@@ -139,18 +142,42 @@ func (s *DBSchema) updateRelationships(t DBTable, cols []DBColumn) error {
 	for i := range cols {
 		c := cols[i]
 
-		if len(c.FKeyTable) == 0 || len(c.FKeyColID) == 0 {
+		if len(c.FKeyTable) == 0 {
 			continue
 		}
 
 		// Foreign key column name
 		ft := strings.ToLower(c.FKeyTable)
-		fcid := c.FKeyColID[0]
 
 		ti, ok := s.t[ft]
 		if !ok {
 			return fmt.Errorf("invalid foreign key table '%s'", ft)
 		}
+
+		// This is an embedded relationship like when a json/jsonb column
+		// is exposed as a table
+		if c.Name == c.FKeyTable && len(c.FKeyColID) == 0 {
+			rel := &DBRel{Type: RelEmbedded}
+			rel.Left.col = cti.PrimaryCol
+			rel.Left.Table = cti.Name
+			rel.Left.Col = cti.PrimaryCol.Name
+
+			rel.Right.col = &c
+			rel.Right.Table = ti.Name
+			rel.Right.Col = c.Name
+
+			if err := s.SetRel(ft, ct, rel); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if len(c.FKeyColID) == 0 {
+			continue
+		}
+
+		// Foreign key column id
+		fcid := c.FKeyColID[0]
 
 		fc, ok := ti.ColIDMap[fcid]
 		if !ok {

@@ -62,6 +62,20 @@ func GetDBInfo(db *pgxpool.Pool) (*DBInfo, error) {
 	return di, nil
 }
 
+func (di *DBInfo) AddTable(t DBTable, cols []DBColumn) {
+	t.ID = di.Tables[len(di.Tables)-1].ID
+
+	di.Tables = append(di.Tables, t)
+	di.colmap[t.Key] = make(map[string]*DBColumn, len(cols))
+
+	for i := range cols {
+		cols[i].ID = int16(i)
+		c := &cols[i]
+		di.colmap[t.Key][c.Key] = c
+	}
+	di.Columns = append(di.Columns, cols)
+}
+
 func (di *DBInfo) GetColumn(table, column string) (*DBColumn, bool) {
 	v, ok := di.colmap[strings.ToLower(table)][strings.ToLower(column)]
 	return v, ok
