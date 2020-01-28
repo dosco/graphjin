@@ -21,6 +21,10 @@ func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
 		return nil, nil, err
 	}
 
+	if err = addTables(c, di); err != nil {
+		return nil, nil, err
+	}
+
 	if err = addForeignKeys(c, di); err != nil {
 		return nil, nil, err
 	}

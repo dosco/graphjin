@@ -463,6 +463,32 @@ func multiRoot(t *testing.T) {
 	}
 }
 
+func jsonColumnAsTable(t *testing.T) {
+	gql := `query {
+		products {
+			id
+			name
+			tag_count {
+				count
+				tags {
+					name
+				}
+			}
+		}
+	}`
+
+	sql := `SELECT json_object_agg('products', json_0) FROM (SELECT coalesce(json_agg("json_0"), '[]') AS "json_0" FROM (SELECT row_to_json((SELECT "json_row_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name", "tag_count_1_join"."json_1" AS "tag_count") AS "json_row_0")) AS "json_0" FROM (SELECT "products"."id", "products"."name" FROM "products" LIMIT ('20') :: integer) AS "products_0" LEFT OUTER JOIN LATERAL (SELECT row_to_json((SELECT "json_row_1" FROM (SELECT "tag_count_1"."count" AS "count", "tags_2_join"."json_2" AS "tags") AS "json_row_1")) AS "json_1" FROM (SELECT "tag_count"."count", "tag_count"."tag_id" FROM "products", json_to_recordset("products"."tag_count") AS "tag_count"(tag_id bigint, count int) WHERE ((("products"."id") = ("products_0"."id"))) LIMIT ('1') :: integer) AS "tag_count_1" LEFT OUTER JOIN LATERAL (SELECT coalesce(json_agg("json_2"), '[]') AS "json_2" FROM (SELECT row_to_json((SELECT "json_row_2" FROM (SELECT "tags_2"."name" AS "name") AS "json_row_2")) AS "json_2" FROM (SELECT "tags"."name" FROM "tags" WHERE ((("tags"."id") = ("tag_count_1"."tag_id"))) LIMIT ('20') :: integer) AS "tags_2" LIMIT ('20') :: integer) AS "json_agg_2") AS "tags_2_join" ON ('true') LIMIT ('1') :: integer) AS "tag_count_1_join" ON ('true') LIMIT ('20') :: integer) AS "json_agg_0") AS "sel_0"`
+
+	resSQL, err := compileGQLToPSQL(gql, nil, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(resSQL) != sql {
+		t.Fatal(errNotExpected)
+	}
+}
+
 func skipUserIDForAnonRole(t *testing.T) {
 	gql := `query {
 		products {
@@ -548,6 +574,7 @@ func TestCompileQuery(t *testing.T) {
 	t.Run("queryWithVariables", queryWithVariables)
 	t.Run("withWhereOnRelations", withWhereOnRelations)
 	t.Run("multiRoot", multiRoot)
+	t.Run("jsonColumnAsTable", jsonColumnAsTable)
 	t.Run("skipUserIDForAnonRole", skipUserIDForAnonRole)
 	t.Run("blockedQuery", blockedQuery)
 	t.Run("blockedFunctions", blockedFunctions)

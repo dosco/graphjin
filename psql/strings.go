@@ -12,6 +12,8 @@ func (rt RelType) String() string {
 		return "one to many through"
 	case RelRemote:
 		return "remote"
+	case RelEmbedded:
+		return "embedded"
 	}
 	return ""
 }

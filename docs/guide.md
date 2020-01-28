@@ -906,7 +906,7 @@ mutation {
 }
 ```
 
-### Nested Updates 
+### Nested Update 
 
 Update a product item first and then assign it to a user
 
@@ -966,7 +966,7 @@ mutation {
 }
 ```
 
-## Using variables
+## Using Variables
 
 Variables (`$product_id`) and their values (`"product_id": 5`) can be passed along side the GraphQL query. Using variables makes for better client side code as well as improved server side SQL query caching. The build-in web-ui also supports setting variables. Not having to manipulate your GraphQL query string to insert values into it makes for cleaner
 and better client side code.
@@ -987,6 +987,70 @@ fetch('http://localhost:8080/api/v1/graphql', {
 .then(res => res.json())
 .then(res => console.log(res.data));
 ```
+
+## Advanced Columns
+
+The ablity to have `JSON/JSONB` and `Array` columns is often considered in the top most useful features of Postgres. There are many cases where using an array or a json column saves space and reduces complexity in your app. The only issue with these columns is the really that your SQL queries can get harder to write and maintain. 
+
+Super Graph steps in here to help you by supporting these columns right out of the box. It allows you to work with these columns just like you would with tables. Joining data against or modifying array columns using the `connect` or `disconnect` keywords in mutations is fully supported. Another very useful feature is the ability to treat `json` or `binary json (jsonb)` columns as seperate tables, even using them in nested queries joining against related tables. To replicate these features on your own will take a lot of complex SQL. Using Super Graph means you don't have to deal with any of this it just works.
+
+### Array Columns
+
+Configure a relationship between an array column `tag_ids` which contains integer id's for tags and the column `id` in the table `tags`.
+
+```yaml
+tables:
+  - name: posts
+    columns:
+      - name: tag_ids
+        related_to: tags.id
+
+```
+
+```graphql
+query {
+  posts {
+    title
+    tags {
+      name
+      image
+    }
+  }
+}
+```
+
+### JSON Column
+
+Configure a JSON column called `tag_count` in the table `products` into a seperate table. This JSON column contains a json array of objects each with a tag id and a count of the number of times the tag was used. As a seperate table you can nest it into your GraphQL query and treat it like table using any of the standard features like `order_by`, `limit`, `where clauses`, etc.
+
+The configuration below tells Super Graph to create a synthetic table called `tag_count` using the column `tag_count` from the `products` table. And that this new table has two columns `tag_id` and `count` of the listed types and with the defined relationships.
+
+```yaml
+tables:
+  - name: tag_count
+    table: products
+    columns:
+      - name: tag_id
+        type: bigint
+        related_to: tags.id
+      - name: count
+        type: int
+```
+
+```graphql
+query {
+  products {
+    name
+    tag_counts {
+      count
+      tag {
+        name
+      }
+    }
+  }
+}
+```
+
 
 ## Full text search
 

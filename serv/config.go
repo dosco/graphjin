@@ -87,6 +87,7 @@ type config struct {
 
 type configColumn struct {
 	Name       string
+	Type       string
 	ForeignKey string `mapstructure:"related_to"`
 }
 
@@ -313,7 +314,7 @@ func (c *config) getAliasMap() map[string][]string {
 	for i := range c.Tables {
 		t := c.Tables[i]
 
-		if len(t.Table) == 0 {
+		if len(t.Table) == 0 || len(t.Columns) != 0 {
 			continue
 		}
 

@@ -224,7 +224,7 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer) (uint32, error) {
 	return ignored, nil
 }
 
-func (c *compilerContext) processChildren(sel *qcode.Select, ti *DBTableInfo) (uint32, []*qcode.Column) {
+func (c *compilerContext) processChildren(sel *qcode.Select, ti *DBTableInfo) (uint32, []*qcode.Column, error) {
 	var skipped uint32
 
 	cols := make([]*qcode.Column, 0, len(sel.Cols))
@@ -243,40 +243,63 @@ func (c *compilerContext) processChildren(sel *qcode.Select, ti *DBTableInfo) (u
 
 		rel, err := c.schema.GetRel(child.Name, ti.Name)
 		if err != nil {
-			skipped |= (1 << uint(id))
-			continue
+			return 0, nil, err
+			//skipped |= (1 << uint(id))
+			//continue
 		}
 
 		switch rel.Type {
 		case RelOneToOne, RelOneToMany:
 			if _, ok := colmap[rel.Right.Col]; !ok {
 				cols = append(cols, &qcode.Column{Table: ti.Name, Name: rel.Right.Col, FieldName: rel.Right.Col})
+				colmap[rel.Right.Col] = struct{}{}
 			}
-			colmap[rel.Right.Col] = struct{}{}
 
 		case RelOneToManyThrough:
 			if _, ok := colmap[rel.Left.Col]; !ok {
 				cols = append(cols, &qcode.Column{Table: ti.Name, Name: rel.Left.Col, FieldName: rel.Left.Col})
+				colmap[rel.Left.Col] = struct{}{}
 			}
-			colmap[rel.Left.Col] = struct{}{}
+
+		case RelEmbedded:
+			if _, ok := colmap[rel.Left.Col]; !ok {
+				cols = append(cols, &qcode.Column{Table: ti.Name, Name: rel.Left.Col, FieldName: rel.Left.Col})
+				colmap[rel.Left.Col] = struct{}{}
+			}
 
 		case RelRemote:
 			if _, ok := colmap[rel.Left.Col]; !ok {
 				cols = append(cols, &qcode.Column{Table: ti.Name, Name: rel.Left.Col, FieldName: rel.Right.Col})
+				colmap[rel.Left.Col] = struct{}{}
+				skipped |= (1 << uint(id))
 			}
-			colmap[rel.Left.Col] = struct{}{}
-			skipped |= (1 << uint(id))
 
 		default:
-			skipped |= (1 << uint(id))
+			return 0, nil, fmt.Errorf("unknown relationship %s", rel)
+			//skipped |= (1 << uint(id))
 		}
 	}
 
-	return skipped, cols
+	return skipped, cols, nil
 }
 
 func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo) (uint32, error) {
-	skipped, childCols := c.processChildren(sel, ti)
+	var rel *DBRel
+	var err error
+
+	if sel.ParentID != -1 {
+		parent := c.s[sel.ParentID]
+
+		rel, err = c.schema.GetRel(ti.Name, parent.Name)
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	skipped, childCols, err := c.processChildren(sel, ti)
+	if err != nil {
+		return 0, err
+	}
 	hasOrder := len(sel.OrderBy) != 0
 
 	// SELECT
@@ -288,9 +311,8 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo) (uint
 		io.WriteString(c.w, `"`)
 
 		if hasOrder {
-			err := c.renderOrderBy(sel, ti)
-			if err != nil {
-				return skipped, err
+			if err := c.renderOrderBy(sel, ti); err != nil {
+				return 0, err
 			}
 		}
 
@@ -319,8 +341,7 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo) (uint
 
 	c.renderRemoteRelColumns(sel, ti)
 
-	err := c.renderJoinedColumns(sel, ti, skipped)
-	if err != nil {
+	if err = c.renderJoinedColumns(sel, ti, skipped); err != nil {
 		return skipped, err
 	}
 
@@ -339,7 +360,7 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo) (uint
 	// END-SELECT
 
 	// FROM (SELECT .... )
-	err = c.renderBaseSelect(sel, ti, childCols, skipped)
+	err = c.renderBaseSelect(sel, ti, rel, childCols, skipped)
 	if err != nil {
 		return skipped, err
 	}
@@ -527,11 +548,11 @@ func (c *compilerContext) renderJoinedColumns(sel *qcode.Select, ti *DBTableInfo
 	return nil
 }
 
-func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo,
+func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo, rel *DBRel,
 	childCols []*qcode.Column, skipped uint32) error {
 	var groupBy []int
 
-	isRoot := sel.ParentID == -1
+	isRoot := (rel == nil)
 	isFil := (sel.Where != nil && sel.Where.Op != qcode.OpNop)
 	isSearch := sel.Args["search"] != nil
 	isAgg := false
@@ -682,10 +703,7 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo,
 
 	io.WriteString(c.w, ` FROM `)
 
-	//fmt.Fprintf(w, ` FROM "%s"`, c.sel.Name)
-	io.WriteString(c.w, `"`)
-	io.WriteString(c.w, ti.Name)
-	io.WriteString(c.w, `"`)
+	c.renderFrom(sel, ti, rel)
 
 	// if tn, ok := c.tmap[sel.Name]; ok {
 	// 	//fmt.Fprintf(w, ` FROM "%s" AS "%s"`, tn, c.sel.Name)
@@ -711,11 +729,9 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo,
 		}
 
 		io.WriteString(c.w, ` WHERE (`)
-
 		if err := c.renderRelationship(sel, ti); err != nil {
 			return err
 		}
-
 		if isFil {
 			io.WriteString(c.w, ` AND `)
 			if err := c.renderWhere(sel, ti); err != nil {
@@ -766,6 +782,44 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo,
 	//fmt.Fprintf(w, `) AS "%s_%d"`, c.sel.Name, c.sel.ID)
 	io.WriteString(c.w, `)`)
 	aliasWithID(c.w, ti.Name, sel.ID)
+
+	return nil
+}
+
+func (c *compilerContext) renderFrom(sel *qcode.Select, ti *DBTableInfo, rel *DBRel) error {
+	if rel != nil && rel.Type == RelEmbedded {
+		// json_to_recordset('[{"a":1,"b":[1,2,3],"c":"bar"}, {"a":2,"b":[1,2,3],"c":"bar"}]') as x(a int, b text, d text);
+
+		io.WriteString(c.w, `"`)
+		io.WriteString(c.w, rel.Left.Table)
+		io.WriteString(c.w, `", `)
+
+		io.WriteString(c.w, ti.Type)
+		io.WriteString(c.w, `_to_recordset(`)
+		colWithTable(c.w, rel.Left.Table, rel.Right.Col)
+		io.WriteString(c.w, `) AS `)
+
+		io.WriteString(c.w, `"`)
+		io.WriteString(c.w, ti.Name)
+		io.WriteString(c.w, `"`)
+
+		io.WriteString(c.w, `(`)
+		for i, col := range ti.Columns {
+			if i != 0 {
+				io.WriteString(c.w, `, `)
+			}
+			io.WriteString(c.w, col.Name)
+			io.WriteString(c.w, ` `)
+			io.WriteString(c.w, col.Type)
+		}
+		io.WriteString(c.w, `)`)
+
+	} else {
+		//fmt.Fprintf(w, ` FROM "%s"`, c.sel.Name)
+		io.WriteString(c.w, `"`)
+		io.WriteString(c.w, ti.Name)
+		io.WriteString(c.w, `"`)
+	}
 
 	return nil
 }
@@ -852,7 +906,13 @@ func (c *compilerContext) renderRelationshipByName(table, parent string, id int3
 			io.WriteString(c.w, `) = (`)
 			colWithTable(c.w, rel.Through, rel.Right.Col)
 		}
+
+	case RelEmbedded:
+		colWithTable(c.w, rel.Left.Table, rel.Left.Col)
+		io.WriteString(c.w, `) = (`)
+		colWithTableID(c.w, parent, id, rel.Left.Col)
 	}
+
 	io.WriteString(c.w, `))`)
 
 	return nil
