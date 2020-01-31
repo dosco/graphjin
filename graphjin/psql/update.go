@@ -165,17 +165,28 @@ func renderNestedUpdateRelColumns(w io.Writer, item kvitem, values bool) error {
 	for _, v := range item.items {
 		if v._ctype > 0 && v.relCP.Type == RelOneToMany {
 			if values {
-				colWithTable(w, v.relCP.Left.Table, v.relCP.Left.Col)
-			} else {
-				if v.relCP.Right.Array {
-					io.WriteString(w, `array_remove(`)
-					colWithTable(w, v.relCP.Left.Table, v.relCP.Left.Col)
-					io.WriteString(w, `, `)
-					quoted(w, v.relCP.Right.Col)
-					io.WriteString(w, `)`)
+				// if v.relCP.Right.Array {
+				// 	io.WriteString(w, `array_diff(`)
+				// 	colWithTable(w, v.relCP.Right.Table, v.relCP.Right.Col)
+				// 	io.WriteString(w, `, `)
+				// }
+
+				if v._ctype > 0 {
+					io.WriteString(w, `"_x_`)
+					io.WriteString(w, v.relCP.Left.Table)
+					io.WriteString(w, `".`)
+					quoted(w, v.relCP.Left.Col)
 				} else {
-					quoted(w, v.relCP.Right.Col)
+					colWithTable(w, v.relCP.Left.Table, v.relCP.Left.Col)
 				}
+
+				// if v.relCP.Right.Array {
+				// 	io.WriteString(w, `)`)
+				// }
+			} else {
+
+				quoted(w, v.relCP.Right.Col)
+
 			}
 		}
 	}
@@ -184,12 +195,13 @@ func renderNestedUpdateRelColumns(w io.Writer, item kvitem, values bool) error {
 }
 
 func renderNestedUpdateRelTables(w io.Writer, item kvitem) error {
-	// Render child foreign key columns if child-to-parent
+	// Render tables needed to set values if child-to-parent
 	// relationship is one-to-many
 	for _, v := range item.items {
 		if v._ctype > 0 && v.relCP.Type == RelOneToMany {
-			quoted(w, v.relCP.Left.Table)
-			io.WriteString(w, `, `)
+			io.WriteString(w, `"_x_`)
+			io.WriteString(w, v.relCP.Left.Table)
+			io.WriteString(w, `", `)
 		}
 	}
 
