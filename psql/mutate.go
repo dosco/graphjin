@@ -520,13 +520,16 @@ func (c *compilerContext) renderConnectStmt(qc *qcode.QCode, w io.Writer,
 	rel := item.relPC
 
 	// Render only for parent-to-child relationship of one-to-one
+	// For this to work the child needs to found first so it's primary key
+	// can be set in the related column on the parent object.
+	// Eg. Create product and connect a user to it.
 	if rel.Type != RelOneToOne {
 		return nil
 	}
 
-	io.WriteString(w, `, `)
-	quoted(w, item.ti.Name)
-	io.WriteString(c.w, ` AS (SELECT `)
+	io.WriteString(w, `, "_x_`)
+	io.WriteString(c.w, item.ti.Name)
+	io.WriteString(c.w, `" AS (SELECT `)
 
 	if rel.Left.Array {
 		io.WriteString(w, `array_agg(DISTINCT `)
@@ -557,12 +560,15 @@ func (c *compilerContext) renderDisconnectStmt(qc *qcode.QCode, w io.Writer,
 	rel := item.relPC
 
 	// Render only for parent-to-child relationship of one-to-one
+	// For this to work the child needs to found first so it's
+	// null value can beset in the related column on the parent object.
+	// Eg. Update product and diconnect the user from it.
 	if rel.Type != RelOneToOne {
 		return nil
 	}
-	io.WriteString(w, `, `)
-	quoted(w, item.ti.Name)
-	io.WriteString(c.w, ` AS (`)
+	io.WriteString(w, `, "_x_`)
+	io.WriteString(c.w, item.ti.Name)
+	io.WriteString(c.w, `" AS (`)
 
 	if rel.Right.Array {
 		io.WriteString(c.w, `SELECT `)
