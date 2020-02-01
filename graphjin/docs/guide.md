@@ -651,8 +651,6 @@ query {
 }
 ```
 
-## Mutations
-
 In GraphQL mutations is the operation type for when you need to modify data. Super Graph supports the `insert`, `update`, `upsert` and `delete`. You can also do complex nested inserts and updates.
 
 When using mutations the data must be passed as variables since Super Graphs compiles the query into an prepared statement in the database for maximum speed. Prepared statements are are functions in your code when called they accept arguments and your variables are passed in as those arguments.
@@ -836,8 +834,6 @@ mutation {
 }
 ```
 
-## Nested Mutations
-
 Often you will need to create or update multiple related items at the same time. This can be done using nested mutations. For example you might need to create a product and assign it to a user, or create a user and his products at the same time. You just have to use simple json to define you mutation and Super Graph takes care of the rest.
 
 ### Nested Insert 
@@ -988,6 +984,40 @@ fetch('http://localhost:8080/api/v1/graphql', {
 .then(res => console.log(res.data));
 ```
 
+## GraphQL with React
+
+This is a quick simple example using `graphql.js` [https://github.com/f/graphql.js/](https://github.com/f/graphql.js/)
+
+```js
+import React, { useState, useEffect } from 'react'
+import graphql from 'graphql.js'
+
+// Create a GraphQL client pointing to Super Graph
+var graph = graphql("http://localhost:3000/api/v1/graphql", { asJSON: true })
+
+const App = () => {
+  const [user, setUser] = useState(null)
+  
+  useEffect(() => {
+    async function action() {
+      // Use the GraphQL client to execute a graphQL query
+      // The second argument to the client are the variables you need to pass
+      const result = await graph(`{ user { id first_name last_name picture_url } }`)()
+      setUser(result)
+    }
+    action()
+  }, []);
+
+  return (
+    <div className="App">
+      <h1>{ JSON.stringify(user) }</h1>
+    </div>
+  );
+}
+```
+
+export default App;
+
 ## Advanced Columns
 
 The ablity to have `JSON/JSONB` and `Array` columns is often considered in the top most useful features of Postgres. There are many cases where using an array or a json column saves space and reduces complexity in your app. The only issue with these columns is the really that your SQL queries can get harder to write and maintain. 
@@ -1137,45 +1167,43 @@ class AddSearchColumn < ActiveRecord::Migration[5.1]
 end
 ```
 
-## GraphQL with React
+## API Security
 
-This is a quick simple example using `graphql.js` [https://github.com/f/graphql.js/](https://github.com/f/graphql.js/)
+One of the the most common questions I get asked if what happens if a user out on the internet issues queries
+that we don't want issued. For example how do we stop him from fetching all users or the emails of users. Our answer to this is that it is not an issue as this cannot happen, let me explain.
 
-```js
-import React, { useState, useEffect } from 'react'
-import graphql from 'graphql.js'
+Super Graph runs in one of two modes `development` or `production`, this is controlled via the config value `production: false` when it's false it's running in development mode and when true, production. In development mode all the **named** quries (including mutations) you run are saved into the allow list (`./config/allow.list`). I production mode when Super Graph starts only the queries from this allow list file are registered with the database as (prepared statements)[https://stackoverflow.com/questions/8263371/how-can-prepared-statements-protect-from-sql-injection-attacks]. Prepared statements are designed by databases to be fast and secure. They protect against all kinds of sql injection attacks and since they are pre-processed and pre-planned they are much faster to run then raw sql queries. Also there's no GraphQL to SQL compiling happening in production mode which makes your queries lighting fast as they directly goto the database with almost no overhead.
 
-// Create a GraphQL client pointing to Super Graph
-var graph = graphql("http://localhost:3000/api/v1/graphql", { asJSON: true })
+In short in production only queries listed in the allow list file (`./config/allow.list`) can be used all other queries will be blocked. 
 
-const App = () => {
-  const [user, setUser] = useState(null)
-  
-  useEffect(() => {
-    async function action() {
-      // Use the GraphQL client to execute a graphQL query
-      // The second argument to the client are the variables you need to pass
-      const result = await graph(`{ user { id first_name last_name picture_url } }`)()
-      setUser(result)
+::: tip How to think about the allow list?
+The allow list file is essentially a list of all your exposed API calls and the data thats passes within them in plain text. It's very easy to build tooling to do things like parsing this file within your tests to ensure fields like `credit_card_no` are not accidently leaked. It's a great way to build compliance tooling and ensure your user data is always safe.
+:::
+
+This is an example of a named query `getUserWithProducts` is the name you've given to this query it can be anything you like but should be unique across all you're queries. Only named queries are saved in the allow list in development mode the allow list is not modified in production mode.
+
+
+```graphql
+query getUserWithProducts {
+  users {
+    id
+    name
+    products {
+      id
+      name
+      price
     }
-    action()
-  }, []);
-
-  return (
-    <div className="App">
-      <h1>{ JSON.stringify(user) }</h1>
-    </div>
-  );
+  }
 }
 ```
 
-export default App;
+
 
 ## Authentication
 
 You can only have one type of auth enabled. You can either pick Rails or JWT. 
 
-### Rails Auth (Devise / Warden)
+### Ruby on Rails
 
 Almost all Rails apps use Devise or Warden for authentication. Once the user is
 authenticated a session is created with the users ID. The session can either be
@@ -1260,7 +1288,6 @@ An authenticated request is one where Super Graph can extract an `user_id` based
 The `user` role can be divided up into further roles based on attributes in the database. For example when fetching a list of users, a normal user can only fetch his own entry while an admin can fetch all the users within a company and an admin user can fetch everyone. In some places this is called Attribute based access control. So in way we support both. Role based access control and Attribute based access control.
 
 Super Graph allows you to create roles dynamically using a `roles_query` and `  match` config values.
-
 
 ### Configure RBAC
 

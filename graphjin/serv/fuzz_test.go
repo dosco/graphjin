@@ -10,7 +10,6 @@ func TestFuzzCrashers(t *testing.T) {
 	}
 
 	for _, f := range crashers {
-		_ = gqlName(f)
 		gqlHash(f, nil, "")
 	}
 }

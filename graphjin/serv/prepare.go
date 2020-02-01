@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/dosco/super-graph/allow"
 	"github.com/dosco/super-graph/qcode"
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v4"
@@ -23,7 +24,10 @@ var (
 	_preparedList map[string]*preparedItem
 )
 
-func initPreparedList() {
+func initPreparedList(cpath string) {
+	if allowList.IsPersist() {
+		return
+	}
 	_preparedList = make(map[string]*preparedItem)
 
 	tx, err := db.Begin(context.Background())
@@ -43,30 +47,38 @@ func initPreparedList() {
 
 	success := 0
 
-	for _, v := range _allowList.list {
-		if len(v.gql) == 0 {
+	list, err := allowList.Load()
+	if err != nil {
+		errlog.Fatal().Err(err).Send()
+	}
+
+	for _, v := range list {
+		if len(v.Query) == 0 {
 			continue
 		}
 
-		err := prepareStmt(v.gql, v.vars)
+		err := prepareStmt(v)
 		if err == nil {
 			success++
 			continue
 		}
 
-		if len(v.vars) == 0 {
-			logger.Warn().Err(err).Msg(v.gql)
+		if len(v.Vars) == 0 {
+			logger.Warn().Err(err).Msg(v.Query)
 		} else {
-			logger.Warn().Err(err).Msgf("%s %s", v.vars, v.gql)
+			logger.Warn().Err(err).Msgf("%s %s", v.Vars, v.Query)
 		}
 	}
 
 	logger.Info().
 		Msgf("Registered %d of %d queries from allow.list as prepared statements",
-			success, len(_allowList.list))
+			success, len(list))
 }
 
-func prepareStmt(gql string, vars []byte) error {
+func prepareStmt(item allow.Item) error {
+	gql := item.Query
+	vars := item.Vars
+
 	qt := qcode.GetQType(gql)
 	q := []byte(gql)
 
@@ -99,7 +111,7 @@ func prepareStmt(gql string, vars []byte) error {
 
 		logger.Debug().Msg("Prepared statement role: user")
 
-		err = prepare(tx, stmts1, gqlHash(gql, vars, "user"))
+		err = prepare(tx, stmts1, stmtHash(item.Name, "user"))
 		if err != nil {
 			return err
 		}
@@ -112,7 +124,7 @@ func prepareStmt(gql string, vars []byte) error {
 				return err
 			}
 
-			err = prepare(tx, stmts2, gqlHash(gql, vars, "anon"))
+			err = prepare(tx, stmts2, stmtHash(item.Name, "anon"))
 			if err != nil {
 				return err
 			}
@@ -127,7 +139,7 @@ func prepareStmt(gql string, vars []byte) error {
 				return err
 			}
 
-			err = prepare(tx, stmts, gqlHash(gql, vars, role.Name))
+			err = prepare(tx, stmts, stmtHash(item.Name, role.Name))
 			if err != nil {
 				return err
 			}

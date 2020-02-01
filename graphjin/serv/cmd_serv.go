@@ -17,7 +17,7 @@ func cmdServ(cmd *cobra.Command, args []string) {
 		if err == nil {
 			initCompiler()
 			initAllowList(confPath)
-			initPreparedList()
+			initPreparedList(confPath)
 		} else {
 			fatalInProd(err, "failed to connect to database")
 		}
