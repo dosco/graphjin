@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cespare/xxhash/v2"
+	"github.com/dosco/super-graph/allow"
 	"github.com/dosco/super-graph/qcode"
 	"github.com/jackc/pgx/v4"
 	"github.com/valyala/fasttemplate"
@@ -107,7 +108,7 @@ func (c *coreContext) resolvePreparedSQL() ([]byte, *stmt, error) {
 
 	}
 
-	ps, ok := _preparedList[gqlHash(c.req.Query, c.req.Vars, role)]
+	ps, ok := _preparedList[stmtHash(allow.QueryName(c.req.Query), role)]
 	if !ok {
 		return nil, nil, errUnauthorized
 	}
@@ -240,8 +241,10 @@ func (c *coreContext) resolveSQL() ([]byte, *stmt, error) {
 		}
 	}
 
-	if !conf.Production {
-		_allowList.add(&c.req)
+	if allowList.IsPersist() {
+		if err := allowList.Add(c.req.Vars, c.req.Query, c.req.ref); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	if len(stmts) > 1 {

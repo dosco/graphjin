@@ -1,4 +1,4 @@
-package serv
+package allow
 
 import "testing"
 
@@ -10,6 +10,6 @@ func TestFuzzCrashers(t *testing.T) {
 	}
 
 	for _, f := range crashers {
-		gqlHash(f, nil, "")
+		_ = QueryName(f)
 	}
 }

@@ -4,7 +4,7 @@ package serv
 
 func Fuzz(data []byte) int {
 	gql := string(data)
-	gqlName(gql)
+	QueryName(gql)
 	gqlHash(gql, nil, "")
 
 	return 1
