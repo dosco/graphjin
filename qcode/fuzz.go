@@ -4,7 +4,11 @@ package qcode
 
 // FuzzerEntrypoint for Fuzzbuzz
 func Fuzz(data []byte) int {
-	GetQType(string(data))
+	qt := GetQType(string(data))
+
+	if qt > QTUpsert {
+		panic("qt > QTUpsert")
+	}
 
 	qcompile, _ := NewCompiler(Config{})
 	_, err := qcompile.Compile(data, "user")

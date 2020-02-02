@@ -4,9 +4,9 @@ sidebar: auto
 
 # Guide to Super Graph
 
-Super Graph is a micro-service that instantly and without code gives you a high performance and secure GraphQL API. Your GraphQL queries are auto translated into a single fast SQL query. No more writing API code as you develop your web frontend just make the query you need and Super Graph will do the rest.
+Super Graph is a service that instantly and without code gives you a high performance and secure GraphQL API. Your GraphQL queries are auto translated into a single fast SQL query. No more spending weeks or months writing backend API code. Just make the query you need and Super Graph will do the rest. 
 
-Super Graph has a rich feature set like integrating with your existing Ruby on Rails apps, joining your DB with data from remote APIs, Role and Attribute based access control, Supoport for JWT tokens, DB migrations, seeding and a lot more.
+Super Graph has a rich feature set like integrating with your existing Ruby on Rails apps, joining your DB with data from remote APIs, Role and Attribute based access control, Support for JWT tokens, DB migrations, seeding and a lot more.
 
 
 ## Features
@@ -47,14 +47,14 @@ open http://localhost:3000
 open http://localhost:8080
 ```
 
-::: warning DEMO REQUIREMENTS
+::: tip DEMO REQUIREMENTS
 This demo requires `docker` you can either install it using `brew` or from the
 docker website [https://docs.docker.com/docker-for-mac/install/](https://docs.docker.com/docker-for-mac/install/)
 :::
 
 #### Trying out GraphQL
 
-We currently fully support queries and mutations. Support for `subscriptions` is work in progress. For example the below GraphQL query would fetch two products that belong to the current user where the price is greater than 10.
+We fully support queries and mutations. For example the below GraphQL query would fetch two products that belong to the current user where the price is greater than 10.
 
 #### GQL Query
 
@@ -75,32 +75,6 @@ query {
   }
 }
 ```
-
-In another example the below GraphQL mutation would insert a product into the database. The first part of the below example is the variable data and the second half is the GraphQL mutation. For mutations data has to always ben passed as a variable.
-
-```json
-{
-  "data": { 
-    "name": "Art of Computer Programming",
-    "description": "The Art of Computer Programming (TAOCP) is a comprehensive monograph written by computer scientist Donald Knuth",
-    "price": 30.5
-  }
-}
-```
-
-```graphql
-mutation {
-  product(insert: $data) {
-    id
-    name
-  }
-}
-```
-
-The above GraphQL query returns the JSON result below. It handles all
-kinds of complexity without you having to writing a line of code.
-
-For example there is a while greater than `gt` and a limit clause on a child field. And the `avatar` field is renamed to `picture`. The `password` field is blocked and not returned. Finally the relationship between the `users` table and the `products` table is auto discovered and used.
 
 #### JSON Result
 
@@ -128,19 +102,107 @@ For example there is a while greater than `gt` and a limit clause on a child fie
 }
 ```
 
-#### Try with an authenticated user
+::: tip Testing with a user
+In development mode you can use the `X-User-ID: 4` header to set a user id so you don't have to worries about cookies etc. This can be set using the *HTTP Headers* tab at the bottom of the web UI.
+:::
 
-In development mode you can use the `X-User-ID: 4` header to set a user id so you don't have to worries about cookies etc. This can be set using the *HTTP Headers* tab at the bottom of the web UI you'll see when you visit the above link. You can also directly run queries from the commandline like below.
+In another example the below GraphQL mutation would insert a product into the database. The first part of the below example is the variable data and the second half is the GraphQL mutation. For mutations data has to always ben passed as a variable.
 
-#### Querying the GQL endpoint
+```json
+{
+  "data": { 
+    "name": "Art of Computer Programming",
+    "description": "The Art of Computer Programming (TAOCP) is a comprehensive monograph written by computer scientist Donald Knuth",
+    "price": 30.5
+  }
+}
+```
 
-```bash
+```graphql
+mutation {
+  product(insert: $data) {
+    id
+    name
+  }
+}
+```
 
-# fetch the response json directly from the endpoint using user id 5
-curl 'http://localhost:8080/api/v1/graphql' \
-  -H 'content-type: application/json' \
-  -H 'X-User-ID: 5' \
-  --data-binary '{"query":"{ products { name price users { email }}}"}'
+## Why Super Graph
+
+Let's take a simple example say you want to fetch 5 products priced over 12 dollars along with the photos of the products and the users that owns them. Additionally also fetch the last 10 of your own purchases along with the name and ID of the product you purchased. This is a common type of query to render a view in say an ecommerce app. Lets be honest it's not very exciting write and maintain. Keep in mind the data needed will only continue to grow and change as your app evolves. Developers might find that most ORMs will not be able to do all of this in a single SQL query and will require n+1 queries to fetch all the data and assembly it into the right JSON response.
+
+What if I told you Super Graph will fetch all this data with a single SQL query and without you having to write a single line of code. Also as your app evolves feel free to evolve the query as you like. In our experience Super Graph saves us hundreds or thousands of man hours that we can put towards the more exciting parts of our app.
+
+#### GraphQL Query
+
+```graphql
+query {
+    products(limit 5, where: { price: { gt: 12 } }) {
+      id
+      name
+      description
+      price
+      photos {
+        url
+      }
+      user {
+        id
+        email
+        picture : avatar
+        full_name
+      }
+  }
+  purchases(
+      limit 10, 
+      order_by: { created_at: desc } , 
+      where: { user_id: { eq: $user_id } }
+    ) {
+    id 
+    created_at
+    product {
+      id
+      name
+    }
+  }
+}
+```
+
+#### JSON Result
+
+```json
+
+  "data": {
+    "products": [
+      {
+        "id": 1,
+        "name": "Oaked Arrogant Bastard Ale",
+        "description": "Coors lite, European Amber Lager, Perle, 1272 - American Ale II, 38 IBU, 6.4%, 9.7°Blg",
+        "price": 20,
+        "photos: [{
+          "url": "https://www.scienceworld.ca/wp-content/uploads/science-world-beer-flavours.jpg"
+        }],
+        "user": {
+          "id": 1,
+          "email": "user0@demo.com",
+          "picture": "https://robohash.org/sitaliquamquaerat.png?size=300x300&set=set1",
+          "full_name": "Mrs. Wilhemina Hilpert"
+        }
+      },
+      ...
+    ]
+  },
+  "purchases": [
+    {
+      "id": 5,
+      "created_at": "2020-01-24T05:34:39.880599",
+      "product": {
+        "id": 45,
+        "name": "Brooklyn Black",
+      }
+    },
+    ...
+  ]
+}
 ```
 
 ## Get Started
@@ -1169,18 +1231,20 @@ end
 
 ## API Security
 
-One of the the most common questions I get asked if what happens if a user out on the internet issues queries
-that we don't want issued. For example how do we stop him from fetching all users or the emails of users. Our answer to this is that it is not an issue as this cannot happen, let me explain.
+One of the the most common questions I get asked is what happens if a user out on the internet sends queries
+that we don't want run. For example how do we stop him from fetching all users or the emails of users. Our answer to this is that it is not an issue as this cannot happen, let me explain.
 
-Super Graph runs in one of two modes `development` or `production`, this is controlled via the config value `production: false` when it's false it's running in development mode and when true, production. In development mode all the **named** quries (including mutations) you run are saved into the allow list (`./config/allow.list`). I production mode when Super Graph starts only the queries from this allow list file are registered with the database as (prepared statements)[https://stackoverflow.com/questions/8263371/how-can-prepared-statements-protect-from-sql-injection-attacks]. Prepared statements are designed by databases to be fast and secure. They protect against all kinds of sql injection attacks and since they are pre-processed and pre-planned they are much faster to run then raw sql queries. Also there's no GraphQL to SQL compiling happening in production mode which makes your queries lighting fast as they directly goto the database with almost no overhead.
+Super Graph runs in one of two modes `development` or `production`, this is controlled via the config value `production: false` when it's false it's running in development mode and when true, production. In development mode all the **named** queries (including mutations) are saved to the allow list `./config/allow.list`. While in production mode when Super Graph starts only the queries from this allow list file are registered with the database as [prepared statements](https://stackoverflow.com/questions/8263371/how-can-prepared-statements-protect-from-sql-injection-attacks). 
 
-In short in production only queries listed in the allow list file (`./config/allow.list`) can be used all other queries will be blocked. 
+Prepared statements are designed by databases to be fast and secure. They protect against all kinds of sql injection attacks and since they are pre-processed and pre-planned they are much faster to run then raw sql queries. Also there's no GraphQL to SQL compiling happening in production mode which makes your queries lighting fast as they are directly sent to the database with almost no overhead.
+
+In short in production only queries listed in the allow list file `./config/allow.list` can be used, all other queries will be blocked. 
 
 ::: tip How to think about the allow list?
-The allow list file is essentially a list of all your exposed API calls and the data thats passes within them in plain text. It's very easy to build tooling to do things like parsing this file within your tests to ensure fields like `credit_card_no` are not accidently leaked. It's a great way to build compliance tooling and ensure your user data is always safe.
+The allow list file is essentially a list of all your exposed API calls and the data that passes within them. It's very easy to build tooling to do things like parsing this file within your tests to ensure fields like `credit_card_no` are not accidently leaked. It's a great way to build compliance tooling and ensure your user data is always safe.
 :::
 
-This is an example of a named query `getUserWithProducts` is the name you've given to this query it can be anything you like but should be unique across all you're queries. Only named queries are saved in the allow list in development mode the allow list is not modified in production mode.
+This is an example of a named query, `getUserWithProducts` is the name you've given to this query it can be anything you like but should be unique across all you're queries. Only named queries are saved in the allow list in development mode.
 
 
 ```graphql
@@ -1201,7 +1265,7 @@ query getUserWithProducts {
 
 ## Authentication
 
-You can only have one type of auth enabled. You can either pick Rails or JWT. 
+You can only have one type of auth enabled either Rails or JWT. 
 
 ### Ruby on Rails
 
@@ -1269,13 +1333,21 @@ auth:
     public_key_type: ecdsa #rsa
 ```
 
-For JWT tokens we currently support tokens from a provider like Auth0
-or if you have a custom solution then we look for the `user_id` in the
-`subject` claim of of the `id token`. If you pick Auth0 then we derive two variables from the token `user_id` and `user_id_provider` for to use in your filters.
+For JWT tokens we currently support tokens from a provider like Auth0 or if you have a custom solution then we look for the `user_id` in the `subject` claim of of the `id token`. If you pick Auth0 then we derive two variables from the token `user_id` and `user_id_provider` for to use in your filters.
 
 We can get the JWT token either from the `authorization` header where we expect it to be a `bearer` token or if `cookie` is specified then we look there.
 
 For validation a `secret` or a public key (ecdsa or rsa) is required. When using public keys they have to be in a PEM format file.
+
+#### Using CURL to test a query
+
+```bash
+# fetch the response json directly from the endpoint using user id 5
+curl 'http://localhost:8080/api/v1/graphql' \
+  -H 'content-type: application/json' \
+  -H 'X-User-ID: 5' \
+  --data-binary '{"query":"{ products { name price users { email }}}"}'
+```
 
 ## Access Control
 

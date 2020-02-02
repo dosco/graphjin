@@ -35,3 +35,5 @@ supergraph
 crashers
 suppressions
 release
+.gofuzz
+*-fuzz.zip

@@ -15,7 +15,10 @@ func (c *compilerContext) renderInsert(qc *qcode.QCode, w io.Writer,
 
 	insert, ok := vars[qc.ActionVar]
 	if !ok {
-		return 0, fmt.Errorf("Variable '%s' not !defined", qc.ActionVar)
+		return 0, fmt.Errorf("variable '%s' not defined", qc.ActionVar)
+	}
+	if len(insert) == 0 {
+		return 0, fmt.Errorf("variable '%s' is empty", qc.ActionVar)
 	}
 
 	io.WriteString(c.w, `WITH "_sg_input" AS (SELECT '{{`)

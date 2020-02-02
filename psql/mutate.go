@@ -446,7 +446,10 @@ func (c *compilerContext) renderUpsert(qc *qcode.QCode, w io.Writer,
 
 	upsert, ok := vars[qc.ActionVar]
 	if !ok {
-		return 0, fmt.Errorf("Variable '%s' not defined", qc.ActionVar)
+		return 0, fmt.Errorf("variable '%s' not defined", qc.ActionVar)
+	}
+	if len(upsert) == 0 {
+		return 0, fmt.Errorf("variable '%s' is empty", qc.ActionVar)
 	}
 
 	if ti.PrimaryCol == nil {
