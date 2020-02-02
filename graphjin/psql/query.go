@@ -825,13 +825,11 @@ func (c *compilerContext) renderFrom(sel *qcode.Select, ti *DBTableInfo, rel *DB
 }
 
 func (c *compilerContext) renderOrderByColumns(sel *qcode.Select, ti *DBTableInfo) {
-	colsRendered := len(sel.Cols) != 0
+	//colsRendered := len(sel.Cols) != 0
 
 	for i := range sel.OrderBy {
-		if colsRendered {
-			//io.WriteString(w, ", ")
-			io.WriteString(c.w, `, `)
-		}
+		//io.WriteString(w, ", ")
+		io.WriteString(c.w, `, `)
 
 		col := sel.OrderBy[i].Col
 		//fmt.Fprintf(w, `"%s_%d"."%s" AS "%s_%d_%s_ob"`,
