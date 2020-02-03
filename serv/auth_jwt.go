@@ -14,18 +14,18 @@ const (
 	jwtAuth0   int = iota + 1
 )
 
-func jwtHandler(next http.Handler) http.HandlerFunc {
+func jwtHandler(authc configAuth, next http.Handler) http.HandlerFunc {
 	var key interface{}
 	var jwtProvider int
 
-	cookie := conf.Auth.Cookie
+	cookie := authc.Cookie
 
-	if conf.Auth.JWT.Provider == "auth0" {
+	if authc.JWT.Provider == "auth0" {
 		jwtProvider = jwtAuth0
 	}
 
-	secret := conf.Auth.JWT.Secret
-	publicKeyFile := conf.Auth.JWT.PubKeyFile
+	secret := authc.JWT.Secret
+	publicKeyFile := authc.JWT.PubKeyFile
 
 	switch {
 	case len(secret) != 0:
@@ -37,7 +37,7 @@ func jwtHandler(next http.Handler) http.HandlerFunc {
 			errlog.Fatal().Err(err).Send()
 		}
 
-		switch conf.Auth.JWT.PubKeyType {
+		switch authc.JWT.PubKeyType {
 		case "ecdsa":
 			key, err = jwt.ParseECPublicKeyFromPEM(kd)
 

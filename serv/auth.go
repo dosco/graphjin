@@ -3,7 +3,6 @@ package serv
 import (
 	"context"
 	"net/http"
-	"strings"
 )
 
 type ctxkey int
@@ -14,7 +13,7 @@ const (
 	userRoleKey
 )
 
-func headerAuth(next http.Handler) http.HandlerFunc {
+func headerAuth(authc configAuth, next http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -37,28 +36,53 @@ func headerAuth(next http.Handler) http.HandlerFunc {
 	}
 }
 
-func withAuth(next http.Handler) http.Handler {
-	at := conf.Auth.Type
-	ru := conf.Auth.Rails.URL
+func headerHandler(authc configAuth, next http.Handler) http.HandlerFunc {
+	hdr := authc.Header
 
-	if conf.Auth.CredsInHeader {
-		next = headerAuth(next)
+	if len(hdr.Name) == 0 {
+		errlog.Fatal().Str("auth", authc.Name).Msg("no header.name defined")
 	}
 
-	switch at {
+	if !hdr.Exists && len(hdr.Value) == 0 {
+		errlog.Fatal().Str("auth", authc.Name).Msg("no header.value defined")
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		var fo1 bool
+		value := r.Header.Get(hdr.Name)
+
+		switch {
+		case hdr.Exists:
+			fo1 = (len(value) == 0)
+
+		default:
+			fo1 = (value != hdr.Value)
+		}
+
+		if fo1 {
+			http.Error(w, "401 unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	}
+}
+
+func withAuth(next http.Handler, authc configAuth) http.Handler {
+	if authc.CredsInHeader {
+		next = headerAuth(authc, next)
+	}
+
+	switch authc.Type {
 	case "rails":
-		if strings.HasPrefix(ru, "memcache:") {
-			return railsMemcacheHandler(next)
-		}
-
-		if strings.HasPrefix(ru, "redis:") {
-			return railsRedisHandler(next)
-		}
-
-		return railsCookieHandler(next)
+		return railsHandler(authc, next)
 
 	case "jwt":
-		return jwtHandler(next)
+		return jwtHandler(authc, next)
+
+	case "header":
+		return headerHandler(authc, next)
+
 	}
 
 	return next

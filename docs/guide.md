@@ -1319,7 +1319,7 @@ auth:
     max_active: 12000
 ```
 
-### JWT Token Auth
+### JWT Tokens
 
 ```yaml
 auth:
@@ -1338,6 +1338,51 @@ For JWT tokens we currently support tokens from a provider like Auth0 or if you 
 We can get the JWT token either from the `authorization` header where we expect it to be a `bearer` token or if `cookie` is specified then we look there.
 
 For validation a `secret` or a public key (ecdsa or rsa) is required. When using public keys they have to be in a PEM format file.
+
+### HTTP Headers
+
+```yaml
+header:
+  name: X-AppEngine-QueueName
+  exists: true
+  #value: default
+```
+
+Header auth is usually the best option to authenticate requests to the action endpoints. For example you
+might want to use an action to refresh a materalized view every hour and only want a cron service like the Google AppEngine Cron service to make that request in this case a config similar to the one above will do. 
+
+The `exists: true` parameter ensures that only the existance of the header is checked not its value. The `value` parameter lets you confirm that the value matches the one assgined to the parameter. This helps in the case you are using a shared secret to protect the endpoint.
+
+### Named Auth
+
+```yaml
+# You can add additional named auths to use with actions
+# In this example actions using this auth can only be
+# called from the Google Appengine Cron service that
+# sets a special header to all it's requests
+auths:
+  - name: from_taskqueue
+    type: header
+    header:
+      name: X-Appengine-Cron
+      exists: true
+```
+
+In addition to the default auth configuration you can create additional named auth configurations to be used
+with features like `actions`. For example while your main GraphQL endpoint uses JWT for authentication you may want to use a header value to ensure your actions can only be called by clients having access to a shared secret
+or security header.
+
+## Actions
+
+Actions is a very useful feature that is currently work in progress. For now the best use case for actions is to
+refresh database tables like materialized views or call a database procedure to refresh a cache table, etc. An action creates an http endpoint that anyone can call to have the SQL query executed. The below example will create an endpoint `/api/v1/actions/refresh_leaderboard_users` any request send to that endpoint will cause the sql query to be executed. the `auth_name` points to a named auth that should be used to secure this endpoint. In future we have big plans to allow your own custom code to run using actions.
+
+```yaml
+actions:
+  - name: refresh_leaderboard_users
+    sql: REFRESH MATERIALIZED VIEW CONCURRENTLY "leaderboard_users"
+    auth_name: from_taskqueue
+```
 
 #### Using CURL to test a query
 
@@ -1593,6 +1638,22 @@ auth:
   #   public_key_file: /secrets/public_key.pem
   #   public_key_type: ecdsa #rsa
 
+  # header:
+  #   name: dnt
+  #   exists: true
+  #   value: localhost:8080
+
+# You can add additional named auths to use with actions
+# In this example actions using this auth can only be
+# called from the Google Appengine Cron service that
+# sets a special header to all it's requests
+auths:
+  - name: from_taskqueue
+    type: header
+    header:
+      name: X-Appengine-Cron
+      exists: true
+
 database:
   type: postgres
   host: db
@@ -1622,6 +1683,17 @@ database:
     - password
     - encrypted
     - token
+
+# Create custom actions with their own api endpoints
+# For example the below action will be available at /api/v1/actions/refresh_leaderboard_users
+# A request to this url will execute the configured SQL query
+# which in this case refreshes a materialized view in the database.
+# The auth_name is from one of the configured auths
+actions:
+  - name: refresh_leaderboard_users
+    sql: REFRESH MATERIALIZED VIEW CONCURRENTLY "leaderboard_users"
+    auth_name: from_taskqueue
+
 
 tables:
   - name: customers

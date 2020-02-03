@@ -7,6 +7,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/dosco/super-graph/jsn"
@@ -127,9 +128,14 @@ func findStmt(role string, stmts []stmt) *stmt {
 }
 
 func fatalInProd(err error, msg string) {
-	if isDev() {
-		errlog.Error().Err(err).Msg(msg)
-	} else {
+	var wg sync.WaitGroup
+
+	if !isDev() {
 		errlog.Fatal().Err(err).Msg(msg)
 	}
+
+	errlog.Error().Err(err).Msg(msg)
+
+	wg.Add(1)
+	wg.Wait()
 }

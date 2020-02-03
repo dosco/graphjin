@@ -101,9 +101,14 @@ func startHTTP() {
 		hostPort = defaultHP
 	}
 
+	routes, err := routeHandler()
+	if err != nil {
+		errlog.Fatal().Err(err).Send()
+	}
+
 	srv := &http.Server{
 		Addr:           hostPort,
-		Handler:        routeHandler(),
+		Handler:        routes,
 		ReadTimeout:    5 * time.Second,
 		WriteTimeout:   10 * time.Second,
 		MaxHeaderBytes: 1 << 20,
@@ -140,25 +145,35 @@ func startHTTP() {
 	<-idleConnsClosed
 }
 
-func routeHandler() http.Handler {
-	var apiH http.Handler
-
-	if conf != nil && conf.HTTPGZip {
-		gzipH := gziphandler.MustNewGzipLevelHandler(6)
-		apiH = gzipH(http.HandlerFunc(apiV1))
-	} else {
-		apiH = http.HandlerFunc(apiV1)
-	}
-
+func routeHandler() (http.Handler, error) {
 	mux := http.NewServeMux()
 
-	if conf != nil {
-		mux.HandleFunc("/health", health)
-		mux.Handle("/api/v1/graphql", withAuth(apiH))
+	if conf == nil {
+		return mux, nil
+	}
 
-		if conf.WebUI {
-			mux.Handle("/", http.FileServer(rice.MustFindBox("../web/build").HTTPBox()))
+	routes := map[string]http.Handler{
+		"/health":         http.HandlerFunc(health),
+		"/api/v1/graphql": withAuth(http.HandlerFunc(apiV1), conf.Auth),
+	}
+
+	if err := setActionRoutes(routes); err != nil {
+		return nil, err
+	}
+
+	if conf.WebUI {
+		routes["/"] = http.FileServer(rice.MustFindBox("../web/build").HTTPBox())
+	}
+
+	if conf.HTTPGZip {
+		gz := gziphandler.MustNewGzipLevelHandler(6)
+		for k, v := range routes {
+			routes[k] = gz(v)
 		}
+	}
+
+	for k, v := range routes {
+		mux.Handle(k, v)
 	}
 
 	fn := func(w http.ResponseWriter, r *http.Request) {
@@ -166,33 +181,38 @@ func routeHandler() http.Handler {
 		mux.ServeHTTP(w, r)
 	}
 
-	return http.HandlerFunc(fn)
+	return http.HandlerFunc(fn), nil
 }
 
-func getConfigName() string {
-	if len(os.Getenv("GO_ENV")) == 0 {
-		return "dev"
+func setActionRoutes(routes map[string]http.Handler) error {
+	var err error
+
+	for _, a := range conf.Actions {
+		var fn http.Handler
+
+		fn, err = newAction(a)
+		if err != nil {
+			break
+		}
+
+		p := fmt.Sprintf("/api/v1/actions/%s", strings.ToLower(a.Name))
+
+		if authc, ok := findAuth(a.AuthName); ok {
+			routes[p] = withAuth(fn, authc)
+		} else {
+			routes[p] = fn
+		}
 	}
-
-	ge := strings.ToLower(os.Getenv("GO_ENV"))
-
-	switch {
-	case strings.HasPrefix(ge, "pro"):
-		return "prod"
-
-	case strings.HasPrefix(ge, "sta"):
-		return "stage"
-
-	case strings.HasPrefix(ge, "tes"):
-		return "test"
-
-	case strings.HasPrefix(ge, "dev"):
-		return "dev"
-	}
-
-	return ge
+	return nil
 }
 
-func isDev() bool {
-	return strings.HasPrefix(os.Getenv("GO_ENV"), "dev")
+func findAuth(name string) (configAuth, bool) {
+	var authc configAuth
+
+	for _, a := range conf.Auths {
+		if strings.EqualFold(a.Name, name) {
+			return a, true
+		}
+	}
+	return authc, false
 }
