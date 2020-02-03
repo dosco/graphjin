@@ -22,16 +22,20 @@ type resolvFn struct {
 	Fn      func(h http.Header, id []byte) ([]byte, error)
 }
 
-func initResolvers() error {
+func initResolvers() {
+	var err error
 	rmap = make(map[uint64]*resolvFn)
 
 	for _, t := range conf.Tables {
-		err := initRemotes(t)
+		err = initRemotes(t)
 		if err != nil {
-			return err
+			break
 		}
 	}
-	return nil
+
+	if err != nil {
+		errlog.Fatal().Err(err).Msg("failed to initialize resolvers")
+	}
 }
 
 func initRemotes(t configTable) error {

@@ -49,7 +49,7 @@ migrations_path: ./config/migrations
 #   sheep: sheep
 
 auth:
-  # Can be 'rails' or 'jwt'
+  # Can be 'rails', 'jwt' or 'header'
   type: rails
   cookie: _{% app_name_slug %}_session
 
@@ -82,6 +82,22 @@ auth:
   #   secret: abc335bfcfdb04e50db5bb0a4d67ab9
   #   public_key_file: /secrets/public_key.pem
   #   public_key_type: ecdsa #rsa
+
+  # header:
+  #   name: dnt
+  #   exists: true
+  #   value: localhost:8080
+
+# You can add additional named auths to use with actions
+# In this example actions using this auth can only be
+# called from the Google Appengine Cron service that
+# sets a special header to all it's requests
+auths:
+  - name: from_taskqueue
+    type: header
+    header:
+      name: X-Appengine-Cron
+      exists: true
 
 database:
   type: postgres
@@ -116,6 +132,16 @@ database:
     - encrypted
     - token
 
+# Create custom actions with their own api endpoints
+# For example the below action will be available at /api/v1/actions/refresh_leaderboard_users
+# A request to this url will execute the configured SQL query
+# which in this case refreshes a materialized view in the database.
+# The auth_name is from one of the configured auths
+actions:
+  - name: refresh_leaderboard_users
+    sql: REFRESH MATERIALIZED VIEW CONCURRENTLY "leaderboard_users"
+    auth_name: from_taskqueue
+
 tables:
   - name: customers
     remotes:
@@ -136,6 +162,7 @@ tables:
     # real db table backing them
     name: me
     table: users
+
 
 roles_query: "SELECT * FROM users WHERE id = $user_id"
 
@@ -168,20 +195,16 @@ roles:
         query:
           limit: 50
           filters: ["{ user_id: { eq: $user_id } }"]
-          columns: ["id", "name", "description" ]
           disable_functions: false
 
         insert:
           filters: ["{ user_id: { eq: $user_id } }"]
-          columns: ["id", "name", "description" ]
           presets:
+            - user_id: "$user_id"
             - created_at: "now"
             
         update:
           filters: ["{ user_id: { eq: $user_id } }"]
-          columns:
-            - id
-            - name
           presets:
             - updated_at: "now"
 

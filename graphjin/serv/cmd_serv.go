@@ -7,23 +7,22 @@ import (
 func cmdServ(cmd *cobra.Command, args []string) {
 	var err error
 
+	initWatcher(confPath)
+
 	if conf, err = initConf(); err != nil {
 		fatalInProd(err, "failed to read config")
 	}
 
-	if conf != nil {
-		db, err = initDBPool(conf)
+	db, err = initDBPool(conf)
 
-		if err == nil {
-			initCompiler()
-			initAllowList(confPath)
-			initPreparedList(confPath)
-		} else {
-			fatalInProd(err, "failed to connect to database")
-		}
+	if err != nil {
+		fatalInProd(err, "failed to connect to database")
 	}
 
-	initWatcher(confPath)
+	initCompiler()
+	initResolvers()
+	initAllowList(confPath)
+	initPreparedList(confPath)
 
 	startHTTP()
 }

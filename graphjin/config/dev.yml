@@ -167,10 +167,13 @@ roles:
           block: false
 
       - name: deals
-
         query:
           limit: 3
-          columns: ["name", "description" ]
+          aggregation: false
+
+      - name: purchases
+        query:
+          limit: 3
           aggregation: false
 
   - name: user
@@ -183,12 +186,10 @@ roles:
         query:
           limit: 50
           filters: ["{ user_id: { eq: $user_id } }"]
-          columns: ["id", "name", "description", "search_rank", "search_headline_description" ]
           disable_functions: false
 
         insert:
           filters: ["{ user_id: { eq: $user_id } }"]
-          columns: ["id", "name", "description" ]
           presets:
             - user_id: "$user_id"
             - created_at: "now"

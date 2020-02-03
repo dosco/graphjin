@@ -148,20 +148,6 @@ func initCompiler() {
 	if err != nil {
 		errlog.Fatal().Err(err).Msg("failed to initialize compilers")
 	}
-
-	if err := initResolvers(); err != nil {
-		errlog.Fatal().Err(err).Msg("failed to initialized resolvers")
-	}
-}
-
-func initConfOnce() {
-	var err error
-
-	if conf == nil {
-		if conf, err = initConf(); err != nil {
-			errlog.Fatal().Err(err).Msg("failed to read config")
-		}
-	}
 }
 
 func initAllowList(cpath string) {

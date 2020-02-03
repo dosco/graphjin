@@ -311,3 +311,13 @@ func getMigrationVars() map[string]interface{} {
 		"env":           strings.ToLower(os.Getenv("GO_ENV")),
 	}
 }
+
+func initConfOnce() {
+	var err error
+
+	if conf == nil {
+		if conf, err = initConf(); err != nil {
+			errlog.Fatal().Err(err).Msg("failed to read config")
+		}
+	}
+}

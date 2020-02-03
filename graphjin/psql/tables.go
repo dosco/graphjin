@@ -151,6 +151,7 @@ SELECT
 	pg_catalog.format_type(f.atttypid,f.atttypmod) AS type,  
 	CASE
 	 WHEN f.attndims != 0 THEN true
+	 WHEN right(pg_catalog.format_type(f.atttypid,f.atttypmod), 2) = '[]' THEN true
 	 ELSE false
 	END AS array,
 	CASE  
@@ -175,7 +176,7 @@ FROM pg_attribute f
 	LEFT JOIN pg_namespace n ON n.oid = c.relnamespace  
 	LEFT JOIN pg_constraint p ON p.conrelid = c.oid AND f.attnum = ANY (p.conkey)  
 	LEFT JOIN pg_class AS g ON p.confrelid = g.oid  
-WHERE c.relkind = ('r'::char)
+WHERE c.relkind IN ('r', 'v', 'm', 'f')
 	AND n.nspname = $1  -- Replace with Schema name  
 	AND c.relname = $2  -- Replace with table name  
 	AND f.attnum > 0

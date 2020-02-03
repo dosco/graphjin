@@ -6,32 +6,47 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/dosco/super-graph/rails"
 	"github.com/garyburd/redigo/redis"
 )
 
-func railsRedisHandler(next http.Handler) http.HandlerFunc {
-	cookie := conf.Auth.Cookie
+func railsHandler(authc configAuth, next http.Handler) http.HandlerFunc {
+	ru := authc.Rails.URL
+
+	if strings.HasPrefix(ru, "memcache:") {
+		return railsMemcacheHandler(authc, next)
+	}
+
+	if strings.HasPrefix(ru, "redis:") {
+		return railsRedisHandler(authc, next)
+	}
+
+	return railsCookieHandler(authc, next)
+}
+
+func railsRedisHandler(authc configAuth, next http.Handler) http.HandlerFunc {
+	cookie := authc.Cookie
 	if len(cookie) == 0 {
 		errlog.Fatal().Msg("no auth.cookie defined")
 	}
 
-	if len(conf.Auth.Rails.URL) == 0 {
+	if len(authc.Rails.URL) == 0 {
 		errlog.Fatal().Msg("no auth.rails.url defined")
 	}
 
 	rp := &redis.Pool{
-		MaxIdle:   conf.Auth.Rails.MaxIdle,
-		MaxActive: conf.Auth.Rails.MaxActive,
+		MaxIdle:   authc.Rails.MaxIdle,
+		MaxActive: authc.Rails.MaxActive,
 		Dial: func() (redis.Conn, error) {
-			c, err := redis.DialURL(conf.Auth.Rails.URL)
+			c, err := redis.DialURL(authc.Rails.URL)
 			if err != nil {
 				errlog.Fatal().Err(err).Send()
 			}
 
-			pwd := conf.Auth.Rails.Password
+			pwd := authc.Rails.Password
 			if len(pwd) != 0 {
 				if _, err := c.Do("AUTH", pwd); err != nil {
 					errlog.Fatal().Err(err).Send()
@@ -66,17 +81,17 @@ func railsRedisHandler(next http.Handler) http.HandlerFunc {
 	}
 }
 
-func railsMemcacheHandler(next http.Handler) http.HandlerFunc {
-	cookie := conf.Auth.Cookie
+func railsMemcacheHandler(authc configAuth, next http.Handler) http.HandlerFunc {
+	cookie := authc.Cookie
 	if len(cookie) == 0 {
 		errlog.Fatal().Msg("no auth.cookie defined")
 	}
 
-	if len(conf.Auth.Rails.URL) == 0 {
+	if len(authc.Rails.URL) == 0 {
 		errlog.Fatal().Msg("no auth.rails.url defined")
 	}
 
-	rURL, err := url.Parse(conf.Auth.Rails.URL)
+	rURL, err := url.Parse(authc.Rails.URL)
 	if err != nil {
 		errlog.Fatal().Err(err).Send()
 	}
@@ -108,13 +123,13 @@ func railsMemcacheHandler(next http.Handler) http.HandlerFunc {
 	}
 }
 
-func railsCookieHandler(next http.Handler) http.HandlerFunc {
-	cookie := conf.Auth.Cookie
+func railsCookieHandler(authc configAuth, next http.Handler) http.HandlerFunc {
+	cookie := authc.Cookie
 	if len(cookie) == 0 {
 		errlog.Fatal().Msg("no auth.cookie defined")
 	}
 
-	ra, err := railsAuth(conf)
+	ra, err := railsAuth(authc)
 	if err != nil {
 		errlog.Fatal().Err(err).Send()
 	}
@@ -139,13 +154,13 @@ func railsCookieHandler(next http.Handler) http.HandlerFunc {
 	}
 }
 
-func railsAuth(c *config) (*rails.Auth, error) {
-	secret := c.Auth.Rails.SecretKeyBase
+func railsAuth(authc configAuth) (*rails.Auth, error) {
+	secret := authc.Rails.SecretKeyBase
 	if len(secret) == 0 {
 		return nil, errors.New("no auth.rails.secret_key_base defined")
 	}
 
-	version := c.Auth.Rails.Version
+	version := authc.Rails.Version
 	if len(version) == 0 {
 		return nil, errors.New("no auth.rails.version defined")
 	}
@@ -155,16 +170,16 @@ func railsAuth(c *config) (*rails.Auth, error) {
 		return nil, err
 	}
 
-	if len(c.Auth.Rails.Salt) != 0 {
-		ra.Salt = c.Auth.Rails.Salt
+	if len(authc.Rails.Salt) != 0 {
+		ra.Salt = authc.Rails.Salt
 	}
 
-	if len(conf.Auth.Rails.SignSalt) != 0 {
-		ra.SignSalt = c.Auth.Rails.SignSalt
+	if len(authc.Rails.SignSalt) != 0 {
+		ra.SignSalt = authc.Rails.SignSalt
 	}
 
-	if len(conf.Auth.Rails.AuthSalt) != 0 {
-		ra.AuthSalt = c.Auth.Rails.AuthSalt
+	if len(authc.Rails.AuthSalt) != 0 {
+		ra.AuthSalt = authc.Rails.AuthSalt
 	}
 
 	return ra, nil
