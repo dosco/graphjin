@@ -242,7 +242,7 @@ func (c *coreContext) resolveSQL() ([]byte, *stmt, error) {
 	}
 
 	if allowList.IsPersist() {
-		if err := allowList.Add(c.req.Vars, c.req.Query, c.req.ref); err != nil {
+		if err := allowList.Set(c.req.Vars, c.req.Query, c.req.ref); err != nil {
 			return nil, nil, err
 		}
 	}
