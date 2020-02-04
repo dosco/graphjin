@@ -21,7 +21,9 @@ func TestGQLName1(t *testing.T) {
 
 func TestGQLName2(t *testing.T) {
 	var q = `
-	query hakuna_matata {
+	query hakuna_matata
+	
+	{
 		products(
 			distinct: [price]
 			where: { id: { and: { greater_or_equals: 20, lt: 28 } } }
