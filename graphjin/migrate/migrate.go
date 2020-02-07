@@ -257,7 +257,7 @@ func (m *Migrator) MigrateTo(targetVersion int32) (err error) {
 	ctx := context.Background()
 	// Lock to ensure multiple migrations cannot occur simultaneously
 	lockNum := int64(9628173550095224) // arbitrary random number
-	if _, lockErr := m.conn.Exec(ctx, "select pg_advisory_lock($1)", lockNum); lockErr != nil {
+	if _, lockErr := m.conn.Exec(ctx, "select pg_try_advisory_lock($1)", lockNum); lockErr != nil {
 		return lockErr
 	}
 	defer func() {
@@ -331,9 +331,9 @@ func (m *Migrator) MigrateTo(targetVersion int32) (err error) {
 		}
 
 		// Reset all database connection settings. Important to do before updating version as search_path may have been changed.
-		if _, err := tx.Exec(ctx, "reset all"); err != nil {
-			return err
-		}
+		// if _, err := tx.Exec(ctx, "reset all"); err != nil {
+		// 	return err
+		// }
 
 		// Add one to the version
 		_, err = tx.Exec(ctx, "update "+m.versionTable+" set version=$1", sequence)
