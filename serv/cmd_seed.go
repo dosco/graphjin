@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"path"
 
@@ -145,6 +146,17 @@ func logFunc(args ...interface{}) {
 	}
 }
 
+func avatarURL(size int) string {
+	if size == 0 {
+		size = 200
+	}
+	return fmt.Sprintf("https://i.pravatar.cc/%d?%d", size, rand.Intn(5000))
+}
+
+func imageURL(width int, height int) string {
+	return fmt.Sprintf("https://picsum.photos/%d/%d?%d", width, height, rand.Intn(5000))
+}
+
 //nolint: errcheck
 func setFakeFuncs(f *goja.Object) {
 	gofakeit.Seed(0)
@@ -222,7 +234,8 @@ func setFakeFuncs(f *goja.Object) {
 
 	// Internet
 	f.Set("url", gofakeit.URL)
-	f.Set("image_url", gofakeit.ImageURL)
+	f.Set("image_url", imageURL)
+	f.Set("avatar_url", avatarURL)
 	f.Set("domain_name", gofakeit.DomainName)
 	f.Set("domain_suffix", gofakeit.DomainSuffix)
 	f.Set("ipv4_address", gofakeit.IPv4Address)

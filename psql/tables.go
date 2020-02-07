@@ -167,7 +167,7 @@ SELECT
 		ELSE ''::text
 	END AS foreignkey,
 	CASE
-		WHEN p.contype = ('f'::char) THEN p.confkey
+		WHEN p.contype = ('f'::char) THEN p.confkey::int2[]
 		ELSE ARRAY[]::int2[]
 	END AS foreignkey_fieldnum
 FROM pg_attribute f

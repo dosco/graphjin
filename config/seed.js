@@ -11,7 +11,7 @@ for (i = 0; i < user_count; i++) {
   var pwd = fake.password()
   var data = {
     full_name: fake.name(),
-    avatar: fake.image_url(),
+    avatar: fake.avatar_url(200),
     phone: fake.phone(),
     email: fake.email(),
     password: pwd,
