@@ -19,6 +19,7 @@ func cmdServ(cmd *cobra.Command, args []string) {
 		fatalInProd(err, "failed to connect to database")
 	}
 
+	initCrypto()
 	initCompiler()
 	initResolvers()
 	initAllowList(confPath)

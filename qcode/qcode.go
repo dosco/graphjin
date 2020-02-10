@@ -84,9 +84,19 @@ type OrderBy struct {
 	Order Order
 }
 
+type PagingType int
+
+const (
+	PtOffset PagingType = iota
+	PtForward
+	PtBackward
+)
+
 type Paging struct {
+	Type    PagingType
 	Limit   string
 	Offset  string
+	Cursor  string
 	NoLimit bool
 }
 
@@ -181,6 +191,14 @@ func NewCompiler(c Config) (*Compiler, error) {
 	}
 
 	return co, nil
+}
+
+func AddFilter(sel *Select) *Exp {
+	ex := expPool.Get().(*Exp)
+	ex.Reset()
+	addFilter(sel, ex)
+
+	return ex
 }
 
 func (com *Compiler) AddRole(role, table string, trc TRConfig) error {
@@ -400,10 +418,6 @@ func (com *Compiler) addFilters(qc *QCode, sel *Select, role string) {
 	} else if role == "anon" {
 		// Tables not defined under the anon role will not be rendered
 		sel.SkipRender = true
-		return
-
-	} else {
-		return
 	}
 
 	if fil == nil {
@@ -418,55 +432,58 @@ func (com *Compiler) addFilters(qc *QCode, sel *Select, role string) {
 	case OpNop:
 	case OpFalse:
 		sel.Where = fil
-
 	default:
-		if sel.Where != nil {
-			ow := sel.Where
-
-			sel.Where = expPool.Get().(*Exp)
-			sel.Where.Reset()
-			sel.Where.Op = OpAnd
-			sel.Where.Children = sel.Where.childrenA[:2]
-			sel.Where.Children[0] = fil
-			sel.Where.Children[1] = ow
-		} else {
-			sel.Where = fil
-		}
+		addFilter(sel, fil)
 	}
 }
 
 func (com *Compiler) compileArgs(qc *QCode, sel *Select, args []Arg, role string) error {
 	var err error
-	var ka bool
+
+	// don't free this arg either previously done or will be free'd
+	// in the future like in psql
+	var df bool
 
 	for i := range args {
 		arg := &args[i]
 
 		switch arg.Name {
 		case "id":
-			err, ka = com.compileArgID(sel, arg)
+			err, df = com.compileArgID(sel, arg)
 
 		case "search":
-			err, ka = com.compileArgSearch(sel, arg)
+			err, df = com.compileArgSearch(sel, arg)
 
 		case "where":
-			err, ka = com.compileArgWhere(sel, arg, role)
+			err, df = com.compileArgWhere(sel, arg, role)
 
 		case "orderby", "order_by", "order":
-			err, ka = com.compileArgOrderBy(sel, arg)
+			err, df = com.compileArgOrderBy(sel, arg)
 
 		case "distinct_on", "distinct":
-			err, ka = com.compileArgDistinctOn(sel, arg)
+			err, df = com.compileArgDistinctOn(sel, arg)
 
 		case "limit":
-			err, ka = com.compileArgLimit(sel, arg)
+			err, df = com.compileArgLimit(sel, arg)
 
 		case "offset":
-			err, ka = com.compileArgOffset(sel, arg)
+			err, df = com.compileArgOffset(sel, arg)
+
+		case "first":
+			err, df = com.compileArgFirstLast(sel, arg, PtForward)
+
+		case "last":
+			err, df = com.compileArgFirstLast(sel, arg, PtBackward)
+
+		case "after":
+			err, df = com.compileArgAfterBefore(sel, arg, PtForward)
+
+		case "before":
+			err, df = com.compileArgAfterBefore(sel, arg, PtBackward)
 		}
 
-		if !ka {
-			nodePool.Put(arg.Val)
+		if !df {
+			FreeNode(arg.Val, 5)
 		}
 
 		if err != nil {
@@ -529,7 +546,7 @@ func (com *Compiler) compileArgNode(st *util.Stack, node *Node, usePool bool) (*
 	var needsUser bool
 
 	if node == nil || len(node.Children) == 0 {
-		return nil, needsUser, errors.New("invalid argument value")
+		return nil, false, errors.New("invalid argument value")
 	}
 
 	pushChild(st, nil, node)
@@ -540,6 +557,7 @@ func (com *Compiler) compileArgNode(st *util.Stack, node *Node, usePool bool) (*
 		}
 
 		intf := st.Pop()
+
 		node, ok := intf.(*Node)
 		if !ok || node == nil {
 			return nil, needsUser, fmt.Errorf("16: unexpected value %v (%t)", intf, intf)
@@ -576,19 +594,23 @@ func (com *Compiler) compileArgNode(st *util.Stack, node *Node, usePool bool) (*
 		}
 	}
 
-	pushChild(st, nil, node)
+	if usePool {
+		st.Push(node)
 
-	for {
-		if st.Len() == 0 {
-			break
+		for {
+			if st.Len() == 0 {
+				break
+			}
+			intf := st.Pop()
+			node, ok := intf.(*Node)
+			if !ok || node == nil {
+				continue
+			}
+			for i := range node.Children {
+				st.Push(node.Children[i])
+			}
+			FreeNode(node, 1)
 		}
-		intf := st.Pop()
-		node, _ := intf.(*Node)
-
-		for i := range node.Children {
-			st.Push(node.Children[i])
-		}
-		nodePool.Put(node)
 	}
 
 	return root, needsUser, nil
@@ -644,19 +666,7 @@ func (com *Compiler) compileArgSearch(sel *Select, arg *Arg) (error, bool) {
 	}
 
 	sel.Args[arg.Name] = arg.Val
-
-	if sel.Where != nil {
-		ow := sel.Where
-
-		sel.Where = expPool.Get().(*Exp)
-		sel.Where.Reset()
-		sel.Where.Op = OpAnd
-		sel.Where.Children = sel.Where.childrenA[:2]
-		sel.Where.Children[0] = ex
-		sel.Where.Children[1] = ow
-	} else {
-		sel.Where = ex
-	}
+	addFilter(sel, ex)
 	return nil, true
 }
 
@@ -672,21 +682,9 @@ func (com *Compiler) compileArgWhere(sel *Select, arg *Arg, role string) (error,
 	if nu && role == "anon" {
 		sel.SkipRender = true
 	}
+	addFilter(sel, ex)
 
-	if sel.Where != nil {
-		ow := sel.Where
-
-		sel.Where = expPool.Get().(*Exp)
-		sel.Where.Reset()
-		sel.Where.Op = OpAnd
-		sel.Where.Children = sel.Where.childrenA[:2]
-		sel.Where.Children[0] = ex
-		sel.Where.Children[1] = ow
-	} else {
-		sel.Where = ex
-	}
-
-	return nil, false
+	return nil, true
 }
 
 func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) (error, bool) {
@@ -713,7 +711,7 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) (error, bool) {
 		}
 
 		if _, ok := com.bl[node.Name]; ok {
-			nodePool.Put(node)
+			//FreeNode(node, 2)
 			continue
 		}
 
@@ -721,7 +719,7 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) (error, bool) {
 			for i := range node.Children {
 				st.Push(node.Children[i])
 			}
-			nodePool.Put(node)
+			//FreeNode(node, 3)
 			continue
 		}
 
@@ -746,7 +744,7 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) (error, bool) {
 
 		setOrderByColName(ob, node)
 		sel.OrderBy = append(sel.OrderBy, ob)
-		nodePool.Put(node)
+		//FreeNode(node, 4)
 	}
 	return nil, false
 }
@@ -768,8 +766,9 @@ func (com *Compiler) compileArgDistinctOn(sel *Select, arg *Arg) (error, bool) {
 
 	for i := range node.Children {
 		sel.DistinctOn = append(sel.DistinctOn, node.Children[i].Val)
-		nodePool.Put(node.Children[i])
+		FreeNode(node.Children[i], 5)
 	}
+	//FreeNode(node, 5)
 
 	return nil, false
 }
@@ -797,6 +796,32 @@ func (com *Compiler) compileArgOffset(sel *Select, arg *Arg) (error, bool) {
 	return nil, false
 }
 
+func (com *Compiler) compileArgFirstLast(sel *Select, arg *Arg, pt PagingType) (error, bool) {
+	node := arg.Val
+
+	if node.Type != NodeInt {
+		return fmt.Errorf("expecting an integer"), false
+	}
+
+	sel.Paging.Type = pt
+	sel.Paging.Limit = node.Val
+
+	return nil, false
+}
+
+func (com *Compiler) compileArgAfterBefore(sel *Select, arg *Arg, pt PagingType) (error, bool) {
+	node := arg.Val
+
+	if node.Type != NodeStr {
+		return fmt.Errorf("expecting a string"), false
+	}
+
+	sel.Paging.Type = pt
+	sel.Paging.Cursor = node.Val
+
+	return nil, false
+}
+
 var zeroTrv = &trval{}
 
 func (com *Compiler) getRole(role, field string) *trval {
@@ -804,6 +829,22 @@ func (com *Compiler) getRole(role, field string) *trval {
 		return trv
 	} else {
 		return zeroTrv
+	}
+}
+
+func addFilter(sel *Select, fil *Exp) {
+	if sel.Where != nil {
+		ow := sel.Where
+
+		sel.Where = expPool.Get().(*Exp)
+		sel.Where.Reset()
+
+		sel.Where.Op = OpAnd
+		sel.Where.Children = sel.Where.childrenA[:2]
+		sel.Where.Children[0] = fil
+		sel.Where.Children[1] = ow
+	} else {
+		sel.Where = fil
 	}
 }
 
@@ -821,6 +862,7 @@ func newExp(st *util.Stack, node *Node, usePool bool) (*Exp, error) {
 	} else {
 		ex = &Exp{doFree: false}
 	}
+
 	ex.Children = ex.childrenA[:0]
 
 	switch name {
@@ -997,7 +1039,6 @@ func pushChildren(st *util.Stack, exp *Exp, node *Node) {
 func pushChild(st *util.Stack, exp *Exp, node *Node) {
 	node.Children[0].exp = exp
 	st.Push(node.Children[0])
-
 }
 
 func compileFilter(filter []string) (*Exp, bool, error) {

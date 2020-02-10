@@ -30,6 +30,7 @@ type config struct {
 	AuthFailBlock  bool   `mapstructure:"auth_fail_block"`
 	SeedFile       string `mapstructure:"seed_file"`
 	MigrationsPath string `mapstructure:"migrations_path"`
+	SecretKey      string `mapstructure:"secret_key"`
 
 	Inflections map[string]string
 

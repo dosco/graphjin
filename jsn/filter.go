@@ -109,7 +109,7 @@ func Filter(w *bytes.Buffer, b []byte, keys []string) error {
 		case state == expectValue && b[i] == 'n':
 			state = expectNull
 
-		case state == expectNull && b[i] == 'l':
+		case state == expectNull && (b[i-1] == 'l' && b[i] == 'l'):
 			e = i
 		}
 

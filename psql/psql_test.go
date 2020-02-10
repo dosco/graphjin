@@ -1,8 +1,11 @@
 package psql
 
 import (
+	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/dosco/super-graph/qcode"
@@ -10,11 +13,14 @@ import (
 
 const (
 	errNotExpected = "Generated SQL did not match what was expected"
+	headerMarker   = "=== RUN"
+	commentMarker  = "---"
 )
 
 var (
 	qcompile *qcode.Compiler
 	pcompile *Compiler
+	expected map[string][]string
 )
 
 func TestMain(m *testing.M) {
@@ -138,21 +144,94 @@ func TestMain(m *testing.M) {
 		Vars:   vars,
 	})
 
+	expected = make(map[string][]string)
+
+	b, err := ioutil.ReadFile("tests.sql")
+	if err != nil {
+		log.Fatal(err)
+	}
+	text := string(b)
+	lines := strings.Split(text, "\n")
+
+	var h string
+
+	for _, v := range lines {
+		switch {
+		case strings.HasPrefix(v, headerMarker):
+			h = strings.TrimSpace(v[len(headerMarker):])
+
+		case strings.HasPrefix(v, commentMarker):
+			break
+
+		default:
+			v := strings.TrimSpace(v)
+			if len(v) != 0 {
+				expected[h] = append(expected[h], v)
+			}
+		}
+	}
 	os.Exit(m.Run())
 }
 
-func compileGQLToPSQL(gql string, vars Variables, role string) ([]byte, error) {
-	qc, err := qcompile.Compile([]byte(gql), role)
-	if err != nil {
-		return nil, err
+func compileGQLToPSQL(t *testing.T, gql string, vars Variables, role string) {
+	generateTestFile := false
+
+	if generateTestFile {
+		var sqlStmts []string
+
+		for i := 0; i < 100; i++ {
+			qc, err := qcompile.Compile([]byte(gql), role)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			_, sqlB, err := pcompile.CompileEx(qc, vars)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			sql := string(sqlB)
+
+			match := false
+			for _, s := range sqlStmts {
+				if sql == s {
+					match = true
+					break
+				}
+			}
+
+			if !match {
+				s := string(sql)
+				sqlStmts = append(sqlStmts, s)
+				fmt.Println(s)
+			}
+		}
+
+		return
 	}
 
-	_, sqlStmt, err := pcompile.CompileEx(qc, vars)
-	if err != nil {
-		return nil, err
+	for i := 0; i < 200; i++ {
+		qc, err := qcompile.Compile([]byte(gql), role)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_, sqlStmt, err := pcompile.CompileEx(qc, vars)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		failed := true
+
+		for _, sql := range expected[t.Name()] {
+			if string(sqlStmt) == sql {
+				failed = false
+			}
+		}
+
+		if failed {
+			fmt.Println(string(sqlStmt))
+			t.Fatal(errNotExpected)
+		}
 	}
-
-	//fmt.Println(string(sqlStmt))
-
-	return sqlStmt, nil
 }

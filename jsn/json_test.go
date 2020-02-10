@@ -158,6 +158,9 @@ var (
 
 	input5 = `
 	{"data":{"title":"In September 2018, Slovak police stated that Kuciak was murdered because of his investigative work, and that the murder had been ordered.[9][10] They arrested eight suspects,[11] charging three of them with first-degree murder.[11]","topics":["cpp"]},"a":["1111"]},"thread_slug":"in-september-2018-slovak-police-stated-that-kuciak-7929",}`
+
+	input6 = `
+	{"users" : [{"id" : 1, "email" : "vicram@gmail.com", "slug" : "vikram-rangnekar", "threads" : [], "threads_cursor" : null}, {"id" : 3, "email" : "marareilly@lang.name", "slug" : "raymundo-corwin", "threads" : [{"id" : 9, "title" : "Et alias et aut porro praesentium nam in voluptatem reiciendis quisquam perspiciatis inventore eos quia et et enim qui amet."}, {"id" : 25, "title" : "Ipsam quam nemo culpa tempore amet optio sit sed eligendi autem consequatur quaerat rem velit quibusdam quibusdam optio a voluptatem."}], "threads_cursor" : 25}], "users_cursor" : 3}`
 )
 
 func TestGet(t *testing.T) {
@@ -210,6 +213,32 @@ func TestGet1(t *testing.T) {
 
 	expected := []Field{
 		{[]byte("thread_slug"), []byte(`"in-september-2018-slovak-police-stated-that-kuciak-7929"`)},
+	}
+
+	if len(values) != len(expected) {
+		t.Fatal("len(values) != len(expected)")
+	}
+
+	for i := range expected {
+		if !bytes.Equal(values[i].Key, expected[i].Key) {
+			t.Error(string(values[i].Key), " != ", string(expected[i].Key))
+		}
+
+		if !bytes.Equal(values[i].Value, expected[i].Value) {
+			t.Error(string(values[i].Value), " != ", string(expected[i].Value))
+		}
+	}
+}
+
+func TestGet2(t *testing.T) {
+	values := Get([]byte(input6), [][]byte{
+		[]byte("users_cursor"), []byte("threads_cursor"),
+	})
+
+	expected := []Field{
+		{[]byte("threads_cursor"), []byte(`null`)},
+		{[]byte("threads_cursor"), []byte(`25`)},
+		{[]byte("users_cursor"), []byte(`3`)},
 	}
 
 	if len(values) != len(expected) {

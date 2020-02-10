@@ -46,8 +46,9 @@ func initCompilers(c *config) (*qcode.Compiler, *psql.Compiler, error) {
 	}
 
 	pc := psql.NewCompiler(psql.Config{
-		Schema: schema,
-		Vars:   c.DB.Vars,
+		Schema:    schema,
+		Decryptor: decrypt,
+		Vars:      c.DB.Vars,
 	})
 
 	return qc, pc, nil

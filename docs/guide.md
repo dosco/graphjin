@@ -1024,6 +1024,75 @@ mutation {
 }
 ```
 
+#### Pagination
+
+This is a must have feature of any API. When you want your users to go thought a list page by page or implement some fancy infinite scroll you're going to need pagination. There are two ways to paginate in Super Graph.
+
+ Limit-Offset
+This is simple enough but also inefficient when working with a large number of total items. Limit, limits the number of items fetched and offset is the point you want to fetch from. The below query will fetch 10 results at a time starting with the 100th item. You will have to keep updating offset (110, 120, 130, etc ) to walk thought the results so make offset a variable.
+
+```graphql
+query {
+  products(limit: 10, offset: 100) {
+    id
+    slug
+    name
+  }
+}
+```
+
+#### Cursor
+This is a powerful and highly efficient way to paginate though a large number of results. Infact it does not matter how many total results there are this will always be lighting fast. You can use a cursor to walk forward of backward though the results. If you plan to implement infinite scroll this is the option you should choose. 
+
+When going this route the results will contain a cursor value this is an encrypted string that you don't have to worry about just pass this back in to the next API call and you'll received the next set of results. The cursor value is encrypted since its contents should only matter to Super Graph and not the client. Also since the primary key is used for this feature it's possible you might not want to leak it's value to clients. 
+
+You will need to set this config value to ensure the encrypted cursor data is secure. If not set a random value is used which will change with each deployment breaking older cursor values that clients might be using so best to set it.
+
+```yaml
+# Secret key for general encryption operations like 
+# encrypting the cursor data
+secret_key: supercalifajalistics
+```
+
+Paginating forward through your results
+
+```graphql
+query {
+  products(first: 10, after: "MJoTLbQF4l0GuoDsYmCrpjPeaaIlNpfm4uFU4PQ=") {
+    slug
+    name
+  }
+}
+```
+
+Paginating backward through your results
+
+```graphql
+query {
+  products(last: 10, before: "MJoTLbQF4l0GuoDsYmCrpjPeaaIlNpfm4uFU4PQ=") {
+    slug
+    name
+  }
+}
+```
+
+```graphql
+"data": {
+   "products": [
+    {
+      "slug": "eius-nulla-et-8",
+      "name" "Pale Ale"
+    },
+    {
+      "slug": "sapiente-ut-alias-12",
+      "name" "Brown Ale"
+    }
+    ...
+  ],
+  "products_cursor": "dJwHassm5+d82rGydH2xQnwNxJ1dcj4/cxkh5Cer"
+}
+```
+
 ## Using Variables
 
 Variables (`$product_id`) and their values (`"product_id": 5`) can be passed along side the GraphQL query. Using variables makes for better client side code as well as improved server side SQL query caching. The build-in web-ui also supports setting variables. Not having to manipulate your GraphQL query string to insert values into it makes for cleaner

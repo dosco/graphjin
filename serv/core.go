@@ -13,6 +13,7 @@ import (
 	"github.com/cespare/xxhash/v2"
 	"github.com/dosco/super-graph/allow"
 	"github.com/dosco/super-graph/qcode"
+
 	"github.com/jackc/pgx/v4"
 	"github.com/valyala/fasttemplate"
 )
@@ -239,6 +240,10 @@ func (c *coreContext) resolveSQL() ([]byte, *stmt, error) {
 		if err := tx.Commit(c.Context); err != nil {
 			return nil, nil, err
 		}
+	}
+
+	if root, err = encryptCursor(st.qc, root); err != nil {
+		return nil, nil, err
 	}
 
 	if allowList.IsPersist() {
