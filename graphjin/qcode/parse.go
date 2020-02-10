@@ -556,6 +556,31 @@ func (t parserType) String() string {
 	return fmt.Sprintf("<%s>", v)
 }
 
-func FreeNode(n *Node) {
+// type Frees struct {
+// 	n   *Node
+// 	loc int
+// }
+
+// var freeList []Frees
+
+// func FreeNode(n *Node, loc int) {
+// 	j := -1
+
+// 	for i := range freeList {
+// 		if n == freeList[i].n {
+// 			j = i
+// 			break
+// 		}
+// 	}
+
+// 	if j == -1 {
+// 		nodePool.Put(n)
+// 		freeList = append(freeList, Frees{n, loc})
+// 	} else {
+// 		fmt.Printf(">>>>(%d) RE_FREE %d %p %s %s\n", loc, freeList[j].loc, freeList[j].n, n.Name, n.Type)
+// 	}
+// }
+
+func FreeNode(n *Node, loc int) {
 	nodePool.Put(n)
 }

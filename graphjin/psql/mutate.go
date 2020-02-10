@@ -682,12 +682,6 @@ func renderCteNameWithSuffix(w io.Writer, item kvitem, suffix string) error {
 	return nil
 }
 
-func quoted(w io.Writer, identifier string) {
-	io.WriteString(w, `"`)
-	io.WriteString(w, identifier)
-	io.WriteString(w, `"`)
-}
-
 func joinPath(w io.Writer, path []string) {
 	for i := range path {
 		if i != 0 {

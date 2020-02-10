@@ -2,10 +2,12 @@ package serv
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 
 	"github.com/dosco/super-graph/allow"
+	"github.com/dosco/super-graph/crypto"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/rs/zerolog"
@@ -161,5 +163,16 @@ func initAllowList(cpath string) {
 	allowList, err = allow.New(cpath, ac)
 	if err != nil {
 		errlog.Fatal().Err(err).Msg("failed to initialize allow list")
+	}
+}
+
+func initCrypto() {
+	if len(conf.SecretKey) != 0 {
+		secretKey = sha256.Sum256([]byte(conf.SecretKey))
+		conf.SecretKey = ""
+		internalKey = secretKey
+
+	} else {
+		internalKey = crypto.NewEncryptionKey()
 	}
 }

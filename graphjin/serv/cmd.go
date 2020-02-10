@@ -29,15 +29,17 @@ var (
 )
 
 var (
-	logger    zerolog.Logger  // logger for everything but errors
-	errlog    zerolog.Logger  // logger for errors includes line numbers
-	conf      *config         // parsed config
-	confPath  string          // path to the config file
-	db        *pgxpool.Pool   // database connection pool
-	schema    *psql.DBSchema  // database tables, columns and relationships
-	allowList *allow.List     // allow.list is contains queries allowed in production
-	qcompile  *qcode.Compiler // qcode compiler
-	pcompile  *psql.Compiler  // postgres sql compiler
+	logger      zerolog.Logger  // logger for everything but errors
+	errlog      zerolog.Logger  // logger for errors includes line numbers
+	conf        *config         // parsed config
+	confPath    string          // path to the config file
+	db          *pgxpool.Pool   // database connection pool
+	schema      *psql.DBSchema  // database tables, columns and relationships
+	allowList   *allow.List     // allow.list is contains queries allowed in production
+	qcompile    *qcode.Compiler // qcode compiler
+	pcompile    *psql.Compiler  // postgres sql compiler
+	secretKey   [32]byte        // encryption key
+	internalKey [32]byte        // encryption key used for internal needs
 )
 
 func Cmd() {

@@ -32,6 +32,10 @@ enable_tracing: true
 # Path pointing to where the migrations can be found
 # migrations_path: migrations
 
+# Secret key for general encryption operations like 
+# encrypting the cursor data
+# secret_key: supercalifajalistics
+
 # Postgres related environment Variables
 # SG_DATABASE_HOST
 # SG_DATABASE_PORT
