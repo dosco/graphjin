@@ -71,7 +71,7 @@ func (co *Compiler) CompileEx(qc *qcode.QCode, vars Variables) (uint32, []byte, 
 func (co *Compiler) Compile(qc *qcode.QCode, w io.Writer, vars Variables) (uint32, error) {
 	switch qc.Type {
 	case qcode.QTQuery:
-		return co.compileQuery(qc, w)
+		return co.compileQuery(qc, w, vars)
 	case qcode.QTInsert, qcode.QTUpdate, qcode.QTDelete, qcode.QTUpsert:
 		return co.compileMutation(qc, w, vars)
 	}
@@ -79,7 +79,7 @@ func (co *Compiler) Compile(qc *qcode.QCode, w io.Writer, vars Variables) (uint3
 	return 0, fmt.Errorf("Unknown operation type %d", qc.Type)
 }
 
-func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer) (uint32, error) {
+func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer, vars Variables) (uint32, error) {
 	if len(qc.Selects) == 0 {
 		return 0, errors.New("empty query")
 	}
@@ -150,7 +150,7 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer) (uint32, error) {
 				c.renderLateralJoin(sel)
 			}
 
-			skipped, err := c.renderSelect(sel, ti)
+			skipped, err := c.renderSelect(sel, ti, vars)
 			if err != nil {
 				return 0, err
 			}
@@ -196,7 +196,7 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer) (uint32, error) {
 	return ignored, nil
 }
 
-func (c *compilerContext) initSelector(sel *qcode.Select, ti *DBTableInfo) (uint32, []*qcode.Column, error) {
+func (c *compilerContext) initSelector(sel *qcode.Select, ti *DBTableInfo, vars Variables) (uint32, []*qcode.Column, error) {
 	var skipped uint32
 
 	cols := make([]*qcode.Column, 0, len(sel.Cols))
@@ -232,7 +232,15 @@ func (c *compilerContext) initSelector(sel *qcode.Select, ti *DBTableInfo) (uint
 		})
 
 		if len(sel.Paging.Cursor) != 0 {
-			v, err := c.decryptor(sel.Paging.Cursor)
+			var v []byte
+			var err error
+
+			if cursor, ok := vars[sel.Paging.Cursor]; ok && cursor[0] == '"' {
+				v, err = c.decryptor(string(cursor[1 : len(cursor)-1]))
+			} else {
+				v, err = c.decryptor(sel.Paging.Cursor)
+			}
+
 			if err != nil {
 				return 0, nil, err
 			}
@@ -289,7 +297,7 @@ func (c *compilerContext) initSelector(sel *qcode.Select, ti *DBTableInfo) (uint
 	return skipped, cols, nil
 }
 
-func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo) (uint32, error) {
+func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo, vars Variables) (uint32, error) {
 	var rel *DBRel
 	var err error
 
@@ -302,7 +310,7 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo) (uint
 		}
 	}
 
-	skipped, childCols, err := c.initSelector(sel, ti)
+	skipped, childCols, err := c.initSelector(sel, ti, vars)
 	if err != nil {
 		return 0, err
 	}

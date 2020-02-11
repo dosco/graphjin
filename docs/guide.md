@@ -1024,7 +1024,7 @@ mutation {
 }
 ```
 
-#### Pagination
+### Pagination
 
 This is a must have feature of any API. When you want your users to go thought a list page by page or implement some fancy infinite scroll you're going to need pagination. There are two ways to paginate in Super Graph.
 
