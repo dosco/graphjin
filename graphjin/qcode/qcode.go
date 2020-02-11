@@ -711,7 +711,7 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) (error, bool) {
 		}
 
 		if _, ok := com.bl[node.Name]; ok {
-			//FreeNode(node, 2)
+			FreeNode(node, 2)
 			continue
 		}
 
@@ -719,7 +719,7 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) (error, bool) {
 			for i := range node.Children {
 				st.Push(node.Children[i])
 			}
-			//FreeNode(node, 3)
+			FreeNode(node, 3)
 			continue
 		}
 
@@ -768,7 +768,6 @@ func (com *Compiler) compileArgDistinctOn(sel *Select, arg *Arg) (error, bool) {
 		sel.DistinctOn = append(sel.DistinctOn, node.Children[i].Val)
 		FreeNode(node.Children[i], 5)
 	}
-	//FreeNode(node, 5)
 
 	return nil, false
 }
@@ -788,7 +787,7 @@ func (com *Compiler) compileArgLimit(sel *Select, arg *Arg) (error, bool) {
 func (com *Compiler) compileArgOffset(sel *Select, arg *Arg) (error, bool) {
 	node := arg.Val
 
-	if node.Type != NodeInt {
+	if node.Type != NodeInt && node.Type != NodeVar {
 		return fmt.Errorf("expecting an integer"), false
 	}
 
@@ -799,7 +798,7 @@ func (com *Compiler) compileArgOffset(sel *Select, arg *Arg) (error, bool) {
 func (com *Compiler) compileArgFirstLast(sel *Select, arg *Arg, pt PagingType) (error, bool) {
 	node := arg.Val
 
-	if node.Type != NodeInt {
+	if node.Type != NodeInt && node.Type != NodeVar {
 		return fmt.Errorf("expecting an integer"), false
 	}
 
@@ -812,7 +811,7 @@ func (com *Compiler) compileArgFirstLast(sel *Select, arg *Arg, pt PagingType) (
 func (com *Compiler) compileArgAfterBefore(sel *Select, arg *Arg, pt PagingType) (error, bool) {
 	node := arg.Val
 
-	if node.Type != NodeStr {
+	if node.Type != NodeStr && node.Type != NodeVar {
 		return fmt.Errorf("expecting a string"), false
 	}
 
