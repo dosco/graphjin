@@ -48,6 +48,7 @@ This compiler is what sits at the heart of Super Graph with layers of useful fun
 - Fuzz tested for security
 - Database migrations tool
 - Database seeding tool
+- Works with Postgres and YugabyteDB
 
 ## Get started
 

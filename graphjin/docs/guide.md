@@ -1611,7 +1611,7 @@ tables:
 ```
 
 
-## Configuration files
+## Configuration
 
 Configuration files can either be in YAML or JSON their names are derived from the `GO_ENV` variable, for example `GO_ENV=prod` will cause the `prod.yaml` config file to be used. or `GO_ENV=dev` will use the `dev.yaml`. A path to look for the config files in can be specified using the `-path <folder>` command line argument.
 
@@ -1862,6 +1862,71 @@ SG_AUTH_RAILS_COOKIE_SECRET_KEY_BASE
 SG_AUTH_RAILS_REDIS_URL
 SG_AUTH_RAILS_REDIS_PASSWORD
 SG_AUTH_JWT_PUBLIC_KEY_FILE
+```
+
+## YugabyteDB
+
+Yugabyte is an open-source, geo-distrubuted cloud-native relational DB that scales horizontally. Super Graph works with Yugabyte right out of the box. If you think you're data needs will outgrow Postgres and you don't really want to deal with sharding then Yugabyte is the way to go. Just point Super Graph to your Yugabyte DB and everything will just work including running migrations, seeding, querying, mutations, etc.
+
+To use Yugabyte in your local development flow just uncomment the following lines in the `docker-compose.yml` file that is part of your Super Graph app. Also remember to comment out the originl postgres `db` config.
+
+```yaml
+  # Postgres DB
+  # db:
+  #   image: postgres:latest
+  #   ports:
+  #     - "5432:5432"
+  
+  #Standard config to run a single node of Yugabyte
+  yb-master:                                                                                         
+    image: yugabytedb/yugabyte:latest                                                              
+    container_name: yb-master-n1                                                                   
+    command: [ "/home/yugabyte/bin/yb-master",                                                     
+              "--fs_data_dirs=/mnt/disk0,/mnt/disk1",                                              
+              "--master_addresses=yb-master-n1:7100",                                              
+              "--replication_factor=1",                                                            
+              "--enable_ysql=true"]                                                                
+    ports:                                                                                         
+      - "7000:7000"                                                                                  
+    environment:                                                                                   
+      SERVICE_7000_NAME: yb-master                                                                 
+                                                                                                    
+  db:                                                                                        
+    image: yugabytedb/yugabyte:latest                                                              
+    container_name: yb-tserver-n1                                                                  
+    command: [ "/home/yugabyte/bin/yb-tserver",                                                    
+              "--fs_data_dirs=/mnt/disk0,/mnt/disk1",                                              
+              "--start_pgsql_proxy",                                                               
+              "--tserver_master_addrs=yb-master-n1:7100"]                                          
+    ports:                                                                                         
+      - "9042:9042"                                                                                  
+      - "6379:6379"                                                                                  
+      - "5433:5433"                                                                                  
+      - "9000:9000"                                                                                  
+    environment:                                                                                   
+      SERVICE_5433_NAME: ysql                                                                      
+      SERVICE_9042_NAME: ycql                                                                      
+      SERVICE_6379_NAME: yedis                                                                     
+      SERVICE_9000_NAME: yb-tserver                                                                
+    depends_on:                                                                                    
+      - yb-master
+
+  # Environment variables to point Super Graph to Yugabyte
+  # This is required since it uses a different user and port number
+  yourapp_api:
+    image: dosco/super-graph:latest
+    environment:
+      GO_ENV: "development"
+      Uncomment below for Yugabyte DB
+      SG_DATABASE_PORT: 5433
+      SG_DATABASE_USER: yugabyte
+      SG_DATABASE_PASSWORD: yugabyte
+    volumes:
+     - ./config:/config
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
 ```
 
 ## Developing Super Graph
