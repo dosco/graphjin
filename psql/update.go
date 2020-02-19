@@ -228,6 +228,6 @@ func (c *compilerContext) renderDelete(qc *qcode.QCode, w io.Writer,
 
 	io.WriteString(w, ` RETURNING `)
 	quoted(w, ti.Name)
-	io.WriteString(w, `.*)`)
+	io.WriteString(w, `.*) `)
 	return 0, nil
 }

@@ -22,8 +22,8 @@ func TestCompile1(t *testing.T) {
 			name
 		} }`), "user")
 
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal(errors.New("this should be an error id must be a variable"))
 	}
 }
 
@@ -39,7 +39,7 @@ func TestCompile2(t *testing.T) {
 	}
 
 	_, err = qc.Compile([]byte(`
-	query { product(id: 15) {
+	query { product(id: $id) {
 			id
 			name
 		} }`), "user")
@@ -62,7 +62,7 @@ func TestCompile3(t *testing.T) {
 
 	_, err = qc.Compile([]byte(`
 	mutation {
-		product(id: 15, name: "Test") {
+		product(id: $test, name: "Test") {
 			id
 			name
 		}

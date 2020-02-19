@@ -7,7 +7,7 @@ import (
 
 func singleUpdate(t *testing.T) {
 	gql := `mutation {
-		product(id: 15, update: $update, where: { id: { eq: 1 } }) {
+		product(id: $id, update: $update, where: { id: { eq: 1 } }) {
 			id
 			name
 		}
@@ -36,7 +36,7 @@ func simpleUpdateWithPresets(t *testing.T) {
 
 func nestedUpdateManyToMany(t *testing.T) {
 	gql := `mutation {
-		purchase(update: $data, id: 5) {
+		purchase(update: $data, id: $id) {
 			sale_type
 			quantity
 			due_date
@@ -110,7 +110,7 @@ func nestedUpdateOneToMany(t *testing.T) {
 
 func nestedUpdateOneToOne(t *testing.T) {
 	gql := `mutation {
-		product(update: $data, id: 6) {
+		product(update: $data, id: $id) {
 			id
 			name
 			user {
@@ -139,7 +139,7 @@ func nestedUpdateOneToOne(t *testing.T) {
 
 func nestedUpdateOneToManyWithConnect(t *testing.T) {
 	gql := `mutation {
-		user(update: $data, id: 6) {
+		user(update: $data, id: $id) {
 			id
 			full_name
 			email
@@ -169,7 +169,7 @@ func nestedUpdateOneToManyWithConnect(t *testing.T) {
 
 func nestedUpdateOneToOneWithConnect(t *testing.T) {
 	gql := `mutation {
-		product(update: $data, id: 9) {
+		product(update: $data, id: $product_id) {
 			id
 			name
 			user {
@@ -195,7 +195,7 @@ func nestedUpdateOneToOneWithConnect(t *testing.T) {
 
 func nestedUpdateOneToOneWithDisconnect(t *testing.T) {
 	gql := `mutation {
-		product(update: $data, id: 2) {
+		product(update: $data, id: $id) {
 			id
 			name
 			user_id

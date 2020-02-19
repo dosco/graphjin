@@ -2,6 +2,7 @@ package psql
 
 import (
 	"bytes"
+	"encoding/json"
 	"testing"
 )
 
@@ -86,7 +87,7 @@ func withWhereMultiOr(t *testing.T) {
 
 func fetchByID(t *testing.T) {
 	gql := `query {
-		product(id: 15) {
+		product(id: $id) {
 			id
 			name
 		}
@@ -97,7 +98,7 @@ func fetchByID(t *testing.T) {
 
 func searchQuery(t *testing.T) {
 	gql := `query {
-		products(search: "ale") {
+		products(search: $query) {
 			id
 			name
 			search_rank
@@ -292,6 +293,23 @@ func multiRoot(t *testing.T) {
 	compileGQLToPSQL(t, gql, nil, "user")
 }
 
+func withCursor(t *testing.T) {
+	gql := `query {
+		Products(
+			first: 20
+			after: $cursor
+			order_by: { price: desc }) {
+			Name
+		}
+	}`
+
+	vars := map[string]json.RawMessage{
+		"cursor": json.RawMessage(`"0,1"`),
+	}
+
+	compileGQLToPSQL(t, gql, vars, "admin")
+}
+
 func jsonColumnAsTable(t *testing.T) {
 	gql := `query {
 		products {
@@ -326,7 +344,7 @@ func skipUserIDForAnonRole(t *testing.T) {
 
 func blockedQuery(t *testing.T) {
 	gql := `query {
-		user(id: 5, where: { id: { gt: 3 } }) {
+		user(id: $id, where: { id: { gt: 3 } }) {
 			id
 			full_name
 			email
@@ -368,6 +386,7 @@ func TestCompileQuery(t *testing.T) {
 	t.Run("withWhereOnRelations", withWhereOnRelations)
 	t.Run("multiRoot", multiRoot)
 	t.Run("jsonColumnAsTable", jsonColumnAsTable)
+	t.Run("withCursor", withCursor)
 	t.Run("skipUserIDForAnonRole", skipUserIDForAnonRole)
 	t.Run("blockedQuery", blockedQuery)
 	t.Run("blockedFunctions", blockedFunctions)

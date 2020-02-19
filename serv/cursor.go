@@ -32,11 +32,11 @@ func encryptCursor(qc *qcode.QCode, data []byte) ([]byte, error) {
 	for i, f := range from {
 		to[i].Key = f.Key
 
-		if f.Value[0] < '0' || f.Value[0] > '9' {
+		if f.Value[0] != '"' || f.Value[len(f.Value)-1] != '"' {
 			continue
 		}
 
-		v, err := crypto.Encrypt(f.Value, &internalKey)
+		v, err := crypto.Encrypt(f.Value[1:len(f.Value)-1], &internalKey)
 		if err != nil {
 			return nil, err
 		}
