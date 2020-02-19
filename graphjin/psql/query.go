@@ -20,22 +20,19 @@ const (
 type Variables map[string]json.RawMessage
 
 type Config struct {
-	Schema    *DBSchema
-	Decryptor func(string) ([]byte, error)
-	Vars      map[string]string
+	Schema *DBSchema
+	Vars   map[string]string
 }
 
 type Compiler struct {
-	schema    *DBSchema
-	decryptor func(string) ([]byte, error)
-	vars      map[string]string
+	schema *DBSchema
+	vars   map[string]string
 }
 
 func NewCompiler(conf Config) *Compiler {
 	return &Compiler{
-		schema:    conf.Schema,
-		decryptor: conf.Decryptor,
-		vars:      conf.Vars,
+		schema: conf.Schema,
+		vars:   conf.Vars,
 	}
 }
 
@@ -91,7 +88,7 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer, vars Variables) (
 
 	io.WriteString(c.w, `SELECT json_build_object(`)
 	for _, id := range qc.Roots {
-		root := qc.Selects[id]
+		root := &qc.Selects[id]
 		if root.SkipRender {
 			continue
 		}
@@ -103,21 +100,12 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer, vars Variables) (
 			io.WriteString(c.w, `, `)
 		}
 
-		io.WriteString(c.w, `'`)
-		io.WriteString(c.w, root.FieldName)
-		io.WriteString(c.w, `', `)
-		io.WriteString(c.w, `"sel_`)
-		int2string(c.w, root.ID)
-		io.WriteString(c.w, `"."json"`)
-
-		if root.Paging.Type != qcode.PtOffset {
-			io.WriteString(c.w, `, '`)
-			io.WriteString(c.w, root.FieldName)
-			io.WriteString(c.w, `_cursor', "sel_`)
-			int2string(c.w, root.ID)
-			io.WriteString(c.w, `"."__cursor"`)
+		ti, err := c.schema.GetTable(root.Name)
+		if err != nil {
+			return 0, err
 		}
 
+		c.renderRootSelect(root, ti)
 		i++
 	}
 
@@ -148,6 +136,10 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer, vars Variables) (
 				io.WriteString(c.w, `(`)
 			} else {
 				c.renderLateralJoin(sel)
+
+				if !ti.Singular {
+					c.renderPluralSelect(sel, ti)
+				}
 			}
 
 			skipped, err := c.renderSelect(sel, ti, vars)
@@ -172,14 +164,23 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer, vars Variables) (
 		} else {
 			sel := &c.s[(id - closeBlock)]
 
+			ti, err := c.schema.GetTable(sel.Name)
+			if err != nil {
+				return 0, err
+			}
+
 			if sel.ParentID == -1 {
 				io.WriteString(c.w, `)`)
-				aliasWithID(c.w, `sel`, sel.ID)
+				aliasWithID(c.w, "__sel", sel.ID)
 
 				if st.Len() != 0 {
 					io.WriteString(c.w, `, `)
 				}
 			} else {
+				if !ti.Singular {
+					io.WriteString(c.w, `)`)
+					aliasWithID(c.w, "__sel", sel.ID)
+				}
 				c.renderLateralJoinClose(sel)
 			}
 
@@ -196,7 +197,90 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer, vars Variables) (
 	return ignored, nil
 }
 
-func (c *compilerContext) initSelector(sel *qcode.Select, ti *DBTableInfo, vars Variables) (uint32, []*qcode.Column, error) {
+func (c *compilerContext) renderPluralSelect(sel *qcode.Select, ti *DBTableInfo) error {
+	io.WriteString(c.w, `SELECT coalesce(json_agg("__sel_`)
+	int2string(c.w, sel.ID)
+	io.WriteString(c.w, `"."json"), '[]') as "json"`)
+
+	if sel.Paging.Type != qcode.PtOffset {
+		n := 0
+
+		// check if primary key already included in order by
+		// query argument
+		for _, ob := range sel.OrderBy {
+			if ob.Col == ti.PrimaryCol.Key {
+				n = 1
+				break
+			}
+		}
+
+		if n == 1 {
+			n = len(sel.OrderBy)
+		} else {
+			n = len(sel.OrderBy) + 1
+		}
+
+		io.WriteString(c.w, `, CONCAT_WS(','`)
+		for i := 0; i < n; i++ {
+			io.WriteString(c.w, `, max("__cur_`)
+			int2string(c.w, int32(i))
+			io.WriteString(c.w, `")`)
+		}
+		io.WriteString(c.w, `) as "cursor"`)
+	}
+
+	io.WriteString(c.w, ` FROM (`)
+	return nil
+}
+
+func (c *compilerContext) renderRootSelect(sel *qcode.Select, ti *DBTableInfo) error {
+	io.WriteString(c.w, `'`)
+	io.WriteString(c.w, sel.FieldName)
+	io.WriteString(c.w, `', `)
+
+	if ti.Singular {
+		io.WriteString(c.w, `"__sel_`)
+		int2string(c.w, sel.ID)
+		io.WriteString(c.w, `"."json"`)
+	} else {
+		io.WriteString(c.w, `coalesce(json_agg("__sel_`)
+		int2string(c.w, sel.ID)
+		io.WriteString(c.w, `"."json"), '[]')`)
+
+		if sel.Paging.Type != qcode.PtOffset {
+			n := 0
+
+			// check if primary key already included in order by
+			// query argument
+			for _, ob := range sel.OrderBy {
+				if ob.Col == ti.PrimaryCol.Key {
+					n = 1
+					break
+				}
+			}
+
+			if n == 1 {
+				n = len(sel.OrderBy)
+			} else {
+				n = len(sel.OrderBy) + 1
+			}
+
+			io.WriteString(c.w, `, '`)
+			io.WriteString(c.w, sel.FieldName)
+			io.WriteString(c.w, `_cursor', CONCAT_WS(','`)
+			for i := 0; i < n; i++ {
+				io.WriteString(c.w, `, max("__cur_`)
+				int2string(c.w, int32(i))
+				io.WriteString(c.w, `")`)
+			}
+			io.WriteString(c.w, `)`)
+		}
+
+	}
+	return nil
+}
+
+func (c *compilerContext) initSelect(sel *qcode.Select, ti *DBTableInfo, vars Variables) (uint32, []*qcode.Column, error) {
 	var skipped uint32
 
 	cols := make([]*qcode.Column, 0, len(sel.Cols))
@@ -213,42 +297,54 @@ func (c *compilerContext) initSelector(sel *qcode.Select, ti *DBTableInfo, vars 
 	if sel.Paging.Type != qcode.PtOffset {
 		colmap[ti.PrimaryCol.Key] = struct{}{}
 
-		var filOrder qcode.Order
-		var filOp qcode.ExpOp
+		addToOrderBy := true
 
-		switch sel.Paging.Type {
-		case qcode.PtForward:
-			filOrder = qcode.OrderAsc
-			filOp = qcode.OpGreaterThan
+		for _, ob := range sel.OrderBy {
+			if ob.Col == ti.PrimaryCol.Key {
+				addToOrderBy = false
+			}
 
-		case qcode.PtBackward:
-			filOrder = qcode.OrderDesc
-			filOp = qcode.OpLesserThan
+			if sel.Paging.Cursor {
+				fil := qcode.AddFilter(sel)
+				fil.Col = ob.Col
+				fil.Type = qcode.ValRef
+				fil.Table = "__cur"
+				fil.Val = ob.Col
+
+				switch ob.Order {
+				case qcode.OrderAsc:
+					fil.Op = qcode.OpGreaterThan
+
+				case qcode.OrderDesc:
+					fil.Op = qcode.OpLesserThan
+				}
+			}
 		}
 
-		sel.OrderBy = append(sel.OrderBy, &qcode.OrderBy{
-			Col:   ti.PrimaryCol.Name,
-			Order: filOrder,
-		})
+		if addToOrderBy {
+			var op qcode.ExpOp
 
-		if len(sel.Paging.Cursor) != 0 {
-			var v []byte
-			var err error
+			ob := &qcode.OrderBy{Col: ti.PrimaryCol.Name}
+			sel.OrderBy = append(sel.OrderBy, ob)
 
-			if cursor, ok := vars[sel.Paging.Cursor]; ok && cursor[0] == '"' {
-				v, err = c.decryptor(string(cursor[1 : len(cursor)-1]))
-			} else {
-				v, err = c.decryptor(sel.Paging.Cursor)
+			switch sel.Paging.Type {
+			case qcode.PtForward:
+				op = qcode.OpGreaterThan
+				ob.Order = qcode.OrderAsc
+
+			case qcode.PtBackward:
+				op = qcode.OpLesserThan
+				ob.Order = qcode.OrderDesc
 			}
 
-			if err != nil {
-				return 0, nil, err
+			if sel.Paging.Cursor {
+				fil := qcode.AddFilter(sel)
+				fil.Op = op
+				fil.Col = ti.PrimaryCol.Name
+				fil.Type = qcode.ValRef
+				fil.Table = "__cur"
+				fil.Val = ti.PrimaryCol.Name
 			}
-
-			fil := qcode.AddFilter(sel)
-			fil.Op = filOp
-			fil.Col = ti.PrimaryCol.Name
-			fil.Val = string(v)
 		}
 	}
 
@@ -310,32 +406,52 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo, vars 
 		}
 	}
 
-	skipped, childCols, err := c.initSelector(sel, ti, vars)
+	skipped, childCols, err := c.initSelect(sel, ti, vars)
 	if err != nil {
 		return 0, err
 	}
 
 	// SELECT
-	if !ti.Singular {
-		io.WriteString(c.w, `SELECT coalesce(json_agg(json_build_object(`)
-		if err := c.renderColumns(sel, ti, skipped); err != nil {
-			return 0, err
-		}
-		io.WriteString(c.w, `)), '[]') AS "json"`)
-
-		if sel.Paging.Type != qcode.PtOffset {
-			io.WriteString(c.w, `, max(`)
-			colWithTableID(c.w, ti.Name, sel.ID, ti.PrimaryCol.Name)
-			io.WriteString(c.w, `) AS "__cursor"`)
-		}
-
-	} else {
-		io.WriteString(c.w, `SELECT json_build_object(`)
-		if err := c.renderColumns(sel, ti, skipped); err != nil {
-			return 0, err
-		}
-		io.WriteString(c.w, `) AS "json"`)
+	io.WriteString(c.w, `SELECT json_build_object(`)
+	if err := c.renderColumns(sel, ti, skipped); err != nil {
+		return 0, err
 	}
+	io.WriteString(c.w, `) AS "json"`)
+
+	if sel.Paging.Type != qcode.PtOffset {
+		for i, ob := range sel.OrderBy {
+			io.WriteString(c.w, `, LAST_VALUE(`)
+			colWithTableID(c.w, ti.Name, sel.ID, ob.Col)
+			io.WriteString(c.w, `) OVER() AS "__cur_`)
+			int2string(c.w, int32(i))
+			io.WriteString(c.w, `"`)
+		}
+	}
+
+	//if !ti.Singular {
+	// io.WriteString(c.w, `SELECT coalesce(json_agg(json_build_object(`)
+	// if err := c.renderColumns(sel, ti, skipped); err != nil {
+	// 	return 0, err
+	// }
+	// io.WriteString(c.w, `)), '[]') AS "json"`)
+
+	// if sel.Paging.Type != qcode.PtOffset {
+	// 	for i, ob := range sel.OrderBy {
+	// 		io.WriteString(c.w, `, LAST_VALUE(`)
+	// 		colWithTableID(c.w, ti.Name, sel.ID, ob.Col)
+	// 		io.WriteString(c.w, `) OVER() AS "__cur_`)
+	// 		int2string(c.w, int32(i))
+	// 		io.WriteString(c.w, `"`)
+	// 	}
+
+	// io.WriteString(c.w, `LAST_VALUE(`)
+	// colWithTableID(c.w, ti.Name, sel.ID, ti.PrimaryCol.Name)
+	// io.WriteString(c.w, `) OVER() AS "__cursor_`)
+	// int2string(c.w, int32(len(sel.OrderBy)))
+	// io.WriteString(c.w, `"`)
+	//}
+
+	//}
 
 	io.WriteString(c.w, ` FROM (`)
 
@@ -361,7 +477,7 @@ func (c *compilerContext) renderLateralJoin(sel *qcode.Select) error {
 
 func (c *compilerContext) renderLateralJoinClose(sel *qcode.Select) error {
 	io.WriteString(c.w, `) `)
-	aliasWithID(c.w, "sel", sel.ID)
+	aliasWithID(c.w, "__sel", sel.ID)
 	io.WriteString(c.w, ` ON ('true')`)
 	return nil
 }
@@ -435,7 +551,7 @@ func (c *compilerContext) renderColumns(sel *qcode.Select, ti *DBTableInfo, skip
 
 	i += c.renderRemoteRelColumns(sel, ti, i)
 
-	return c.renderJoinedColumns(sel, ti, skipped, i)
+	return c.renderJoinColumns(sel, ti, skipped, i)
 }
 
 func (c *compilerContext) renderRemoteRelColumns(sel *qcode.Select, ti *DBTableInfo, colsRendered int) int {
@@ -461,7 +577,7 @@ func (c *compilerContext) renderRemoteRelColumns(sel *qcode.Select, ti *DBTableI
 	return i
 }
 
-func (c *compilerContext) renderJoinedColumns(sel *qcode.Select, ti *DBTableInfo, skipped uint32, colsRendered int) error {
+func (c *compilerContext) renderJoinColumns(sel *qcode.Select, ti *DBTableInfo, skipped uint32, colsRendered int) error {
 	// columns previously rendered
 	i := colsRendered
 
@@ -479,16 +595,17 @@ func (c *compilerContext) renderJoinedColumns(sel *qcode.Select, ti *DBTableInfo
 		}
 
 		squoted(c.w, childSel.FieldName)
-		io.WriteString(c.w, `, "sel_`)
+
+		io.WriteString(c.w, `, "__sel_`)
 		int2string(c.w, childSel.ID)
 		io.WriteString(c.w, `"."json"`)
 
 		if childSel.Paging.Type != qcode.PtOffset {
 			io.WriteString(c.w, `, '`)
 			io.WriteString(c.w, childSel.FieldName)
-			io.WriteString(c.w, `_cursor', "sel_`)
+			io.WriteString(c.w, `_cursor', "__sel_`)
 			int2string(c.w, childSel.ID)
-			io.WriteString(c.w, `"."__cursor"`)
+			io.WriteString(c.w, `"."cursor"`)
 		}
 
 		i++
@@ -502,6 +619,10 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo, r
 	isRoot := (rel == nil)
 	isFil := (sel.Where != nil && sel.Where.Op != qcode.OpNop)
 	hasOrder := len(sel.OrderBy) != 0
+
+	if sel.Paging.Cursor {
+		c.renderCursorCTE(sel)
+	}
 
 	io.WriteString(c.w, `SELECT `)
 
@@ -555,8 +676,7 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo, r
 	}
 
 	if hasOrder {
-		err := c.renderOrderBy(sel, ti)
-		if err != nil {
+		if err := c.renderOrderBy(sel, ti); err != nil {
 			return err
 		}
 	}
@@ -623,6 +743,25 @@ func (c *compilerContext) renderFrom(sel *qcode.Select, ti *DBTableInfo, rel *DB
 		io.WriteString(c.w, `"`)
 	}
 
+	if sel.Paging.Cursor {
+		io.WriteString(c.w, `, "__cur"`)
+	}
+
+	return nil
+}
+
+func (c *compilerContext) renderCursorCTE(sel *qcode.Select) error {
+	io.WriteString(c.w, `WITH "__cur" AS (SELECT `)
+	for i, ob := range sel.OrderBy {
+		if i != 0 {
+			io.WriteString(c.w, `, `)
+		}
+		io.WriteString(c.w, `a[`)
+		int2string(c.w, int32(i+1))
+		io.WriteString(c.w, `] as `)
+		quoted(c.w, ob.Col)
+	}
+	io.WriteString(c.w, ` FROM string_to_array('{{cursor}}', ',') as a) `)
 	return nil
 }
 
@@ -913,23 +1052,24 @@ func (c *compilerContext) renderOp(ex *qcode.Exp, ti *DBTableInfo) error {
 		io.WriteString(c.w, `((`)
 		colWithTable(c.w, ti.Name, ti.TSVCol.Name)
 		if c.schema.ver >= 110000 {
-			io.WriteString(c.w, `) @@ websearch_to_tsquery('`)
+			io.WriteString(c.w, `) @@ websearch_to_tsquery('{{`)
 		} else {
-			io.WriteString(c.w, `) @@ to_tsquery('`)
+			io.WriteString(c.w, `) @@ to_tsquery('{{`)
 		}
 		io.WriteString(c.w, ex.Val)
-		io.WriteString(c.w, `'))`)
+		io.WriteString(c.w, `}}'))`)
 		return nil
 
 	default:
 		return fmt.Errorf("[Where] unexpected op code %d", ex.Op)
 	}
 
-	if ex.Type == qcode.ValList {
+	switch {
+	case ex.Type == qcode.ValList:
 		c.renderList(ex)
-	} else if col == nil {
+	case col == nil:
 		return errors.New("no column found for expression value")
-	} else {
+	default:
 		c.renderVal(ex, c.vars, col)
 	}
 
@@ -996,21 +1136,26 @@ func (c *compilerContext) renderList(ex *qcode.Exp) {
 }
 
 func (c *compilerContext) renderVal(ex *qcode.Exp, vars map[string]string, col *DBColumn) {
-	io.WriteString(c.w, ` '`)
+	io.WriteString(c.w, ` `)
 
-	if ex.Type == qcode.ValVar {
+	switch ex.Type {
+	case qcode.ValVar:
 		if val, ok := vars[ex.Val]; ok {
-			io.WriteString(c.w, val)
+			squoted(c.w, val)
 		} else {
-			io.WriteString(c.w, `{{`)
+			io.WriteString(c.w, ` '{{`)
 			io.WriteString(c.w, ex.Val)
-			io.WriteString(c.w, `}}`)
+			io.WriteString(c.w, `}}'`)
 		}
-	} else {
-		io.WriteString(c.w, ex.Val)
+
+	case qcode.ValRef:
+		colWithTable(c.w, ex.Table, ex.Col)
+
+	default:
+		squoted(c.w, ex.Val)
 	}
 
-	io.WriteString(c.w, `' :: `)
+	io.WriteString(c.w, ` :: `)
 	io.WriteString(c.w, col.Type)
 }
 

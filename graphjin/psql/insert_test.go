@@ -21,7 +21,7 @@ func simpleInsert(t *testing.T) {
 
 func singleInsert(t *testing.T) {
 	gql := `mutation {
-		product(id: 15, insert: $insert) {
+		product(id: $id, insert: $insert) {
 			id
 			name
 		}
@@ -36,7 +36,7 @@ func singleInsert(t *testing.T) {
 
 func bulkInsert(t *testing.T) {
 	gql := `mutation {
-		product(name: "test", id: 15, insert: $insert) {
+		product(name: "test", id: $id, insert: $insert) {
 			id
 			name
 		}

@@ -65,6 +65,7 @@ type Exp struct {
 	Col        string
 	NestedCols []string
 	Type       ValType
+	Table      string
 	Val        string
 	ListType   ValType
 	ListVal    []string
@@ -96,7 +97,7 @@ type Paging struct {
 	Type    PagingType
 	Limit   string
 	Offset  string
-	Cursor  string
+	Cursor  bool
 	NoLimit bool
 }
 
@@ -142,6 +143,7 @@ const (
 	ValList
 	ValVar
 	ValNone
+	ValRef
 )
 
 type AggregrateOp int
@@ -497,7 +499,7 @@ func (com *Compiler) compileArgs(qc *QCode, sel *Select, args []Arg, role string
 func (com *Compiler) setMutationType(qc *QCode, args []Arg) error {
 	setActionVar := func(arg *Arg) error {
 		if arg.Val.Type != NodeVar {
-			return fmt.Errorf("value for argument '%s' must be a variable", arg.Name)
+			return argErr(arg.Name, "variable")
 		}
 		qc.ActionVar = arg.Val.Val
 		return nil
@@ -520,7 +522,7 @@ func (com *Compiler) setMutationType(qc *QCode, args []Arg) error {
 			qc.Type = QTDelete
 
 			if arg.Val.Type != NodeBool {
-				return fmt.Errorf("value for argument '%s' must be a boolean", arg.Name)
+				return argErr(arg.Name, "boolen")
 			}
 
 			if arg.Val.Val == "false" {
@@ -625,41 +627,32 @@ func (com *Compiler) compileArgID(sel *Select, arg *Arg) (error, bool) {
 		return nil, false
 	}
 
+	if arg.Val.Type != NodeVar {
+		return argErr("id", "variable"), false
+	}
+
 	ex := expPool.Get().(*Exp)
 	ex.Reset()
 
 	ex.Op = OpEqID
+	ex.Type = ValVar
 	ex.Val = arg.Val.Val
-
-	switch arg.Val.Type {
-	case NodeStr:
-		ex.Type = ValStr
-	case NodeInt:
-		ex.Type = ValInt
-	case NodeFloat:
-		ex.Type = ValFloat
-	case NodeVar:
-		ex.Type = ValVar
-	default:
-		return fmt.Errorf("expecting a string, int, float or variable"), false
-	}
 
 	sel.Where = ex
 	return nil, false
 }
 
 func (com *Compiler) compileArgSearch(sel *Select, arg *Arg) (error, bool) {
+	if arg.Val.Type != NodeVar {
+		return argErr("search", "variable"), false
+	}
+
 	ex := expPool.Get().(*Exp)
 	ex.Reset()
 
 	ex.Op = OpTsQuery
+	ex.Type = ValVar
 	ex.Val = arg.Val.Val
-
-	if arg.Val.Type == NodeVar {
-		ex.Type = ValVar
-	} else {
-		ex.Type = ValStr
-	}
 
 	if sel.Args == nil {
 		sel.Args = make(map[string]*Node)
@@ -667,6 +660,7 @@ func (com *Compiler) compileArgSearch(sel *Select, arg *Arg) (error, bool) {
 
 	sel.Args[arg.Name] = arg.Val
 	addFilter(sel, ex)
+
 	return nil, true
 }
 
@@ -715,12 +709,8 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) (error, bool) {
 			continue
 		}
 
-		if node.Type == NodeObj {
-			for i := range node.Children {
-				st.Push(node.Children[i])
-			}
-			FreeNode(node, 3)
-			continue
+		if node.Type != NodeStr && node.Type != NodeVar {
+			return fmt.Errorf("expecting a string or variable"), false
 		}
 
 		ob := &OrderBy{}
@@ -744,7 +734,7 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) (error, bool) {
 
 		setOrderByColName(ob, node)
 		sel.OrderBy = append(sel.OrderBy, ob)
-		//FreeNode(node, 4)
+		FreeNode(node, 3)
 	}
 	return nil, false
 }
@@ -776,7 +766,7 @@ func (com *Compiler) compileArgLimit(sel *Select, arg *Arg) (error, bool) {
 	node := arg.Val
 
 	if node.Type != NodeInt {
-		return fmt.Errorf("expecting an integer"), false
+		return argErr("limit", "number"), false
 	}
 
 	sel.Paging.Limit = node.Val
@@ -787,8 +777,8 @@ func (com *Compiler) compileArgLimit(sel *Select, arg *Arg) (error, bool) {
 func (com *Compiler) compileArgOffset(sel *Select, arg *Arg) (error, bool) {
 	node := arg.Val
 
-	if node.Type != NodeInt && node.Type != NodeVar {
-		return fmt.Errorf("expecting an integer"), false
+	if node.Type != NodeVar {
+		return argErr("offset", "variable"), false
 	}
 
 	sel.Paging.Offset = node.Val
@@ -798,8 +788,8 @@ func (com *Compiler) compileArgOffset(sel *Select, arg *Arg) (error, bool) {
 func (com *Compiler) compileArgFirstLast(sel *Select, arg *Arg, pt PagingType) (error, bool) {
 	node := arg.Val
 
-	if node.Type != NodeInt && node.Type != NodeVar {
-		return fmt.Errorf("expecting an integer"), false
+	if node.Type != NodeInt {
+		return argErr(arg.Name, "number"), false
 	}
 
 	sel.Paging.Type = pt
@@ -811,12 +801,11 @@ func (com *Compiler) compileArgFirstLast(sel *Select, arg *Arg, pt PagingType) (
 func (com *Compiler) compileArgAfterBefore(sel *Select, arg *Arg, pt PagingType) (error, bool) {
 	node := arg.Val
 
-	if node.Type != NodeStr && node.Type != NodeVar {
-		return fmt.Errorf("expecting a string"), false
+	if node.Type != NodeVar || node.Val != "cursor" {
+		return fmt.Errorf("value for argument '%s' must be a variable named $cursor", arg.Name), false
 	}
-
 	sel.Paging.Type = pt
-	sel.Paging.Cursor = node.Val
+	sel.Paging.Cursor = true
 
 	return nil, false
 }
@@ -835,13 +824,18 @@ func addFilter(sel *Select, fil *Exp) {
 	if sel.Where != nil {
 		ow := sel.Where
 
-		sel.Where = expPool.Get().(*Exp)
-		sel.Where.Reset()
+		if sel.Where.Op != OpAnd {
+			sel.Where = expPool.Get().(*Exp)
+			sel.Where.Reset()
+			sel.Where.Op = OpAnd
+			sel.Where.Children = sel.Where.childrenA[:2]
+			sel.Where.Children[0] = fil
+			sel.Where.Children[1] = ow
 
-		sel.Where.Op = OpAnd
-		sel.Where.Children = sel.Where.childrenA[:2]
-		sel.Where.Children[0] = fil
-		sel.Where.Children[1] = ow
+		} else {
+			sel.Where.Children = append(sel.Where.Children, fil)
+		}
+
 	} else {
 		sel.Where = fil
 	}
@@ -1169,4 +1163,8 @@ func FreeExp(ex *Exp) {
 	if ex.doFree {
 		expPool.Put(ex)
 	}
+}
+
+func argErr(name, ty string) error {
+	return fmt.Errorf("value for argument '%s' must be a %s", name, ty)
 }

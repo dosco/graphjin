@@ -1056,9 +1056,17 @@ secret_key: supercalifajalistics
 
 Paginating forward through your results
 
+```json
+{
+  "variables": { 
+    "cursor": "MJoTLbQF4l0GuoDsYmCrpjPeaaIlNpfm4uFU4PQ="
+  }
+}
+```
+
 ```graphql
 query {
-  products(first: 10, after: "MJoTLbQF4l0GuoDsYmCrpjPeaaIlNpfm4uFU4PQ=") {
+  products(first: 10, after: $cursor) {
     slug
     name
   }
@@ -1069,7 +1077,7 @@ Paginating backward through your results
 
 ```graphql
 query {
-  products(last: 10, before: "MJoTLbQF4l0GuoDsYmCrpjPeaaIlNpfm4uFU4PQ=") {
+  products(last: 10, before: $cursor) {
     slug
     name
   }
@@ -1092,6 +1100,36 @@ query {
   "products_cursor": "dJwHassm5+d82rGydH2xQnwNxJ1dcj4/cxkh5Cer"
 }
 ```
+
+Nested tables can also have cursors. Requesting multiple cursors are supported on a single request but when paginating using a cursor only one table is currently supported. To explain this better, you can only use a `before` or `after` argument with a cursor value to paginate a single table in a query.
+
+```graphql
+query {
+  products(last: 10) {
+    slug
+    name
+    customers(last: 5) {
+      email
+      full_name
+    }
+  }
+}
+```
+
+Multiple order-by arguments are supported. Super Graph is smart enough to allow cursor based pagination when you also need complex sort order like below.
+
+```graphql
+query {
+  products(
+    last: 10
+    before: $cursor
+    order_by: [ price: desc, total_customers: asc ]) {
+    slug
+    name
+  }
+}
+```
+
 
 ## Using Variables
 

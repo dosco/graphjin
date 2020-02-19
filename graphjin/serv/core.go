@@ -193,6 +193,8 @@ func (c *coreContext) resolveSQL() ([]byte, *stmt, error) {
 	}
 	st := &stmts[0]
 
+	//fmt.Println(">", string(st.sql))
+
 	t := fasttemplate.New(st.sql, openVar, closeVar)
 	buf := &bytes.Buffer{}
 

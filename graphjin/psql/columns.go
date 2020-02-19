@@ -112,12 +112,12 @@ func (c *compilerContext) renderColumnSearchRank(sel *qcode.Select, ti *DBTableI
 	io.WriteString(c.w, `ts_rank(`)
 	colWithTable(c.w, ti.Name, cn)
 	if c.schema.ver >= 110000 {
-		io.WriteString(c.w, `, websearch_to_tsquery('`)
+		io.WriteString(c.w, `, websearch_to_tsquery('{{`)
 	} else {
-		io.WriteString(c.w, `, to_tsquery('`)
+		io.WriteString(c.w, `, to_tsquery('{{`)
 	}
 	io.WriteString(c.w, arg.Val)
-	io.WriteString(c.w, `'))`)
+	io.WriteString(c.w, `}}'))`)
 	alias(c.w, col.Name)
 
 	return nil
@@ -137,12 +137,12 @@ func (c *compilerContext) renderColumnSearchHeadline(sel *qcode.Select, ti *DBTa
 	io.WriteString(c.w, `ts_headline(`)
 	colWithTable(c.w, ti.Name, cn)
 	if c.schema.ver >= 110000 {
-		io.WriteString(c.w, `, websearch_to_tsquery('`)
+		io.WriteString(c.w, `, websearch_to_tsquery('{{`)
 	} else {
-		io.WriteString(c.w, `, to_tsquery('`)
+		io.WriteString(c.w, `, to_tsquery('{{`)
 	}
 	io.WriteString(c.w, arg.Val)
-	io.WriteString(c.w, `'))`)
+	io.WriteString(c.w, `}}'))`)
 	alias(c.w, col.Name)
 
 	return nil
