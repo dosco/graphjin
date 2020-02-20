@@ -824,7 +824,7 @@ func addFilter(sel *Select, fil *Exp) {
 	if sel.Where != nil {
 		ow := sel.Where
 
-		if sel.Where.Op != OpAnd {
+		if sel.Where.Op != OpAnd || !sel.Where.doFree {
 			sel.Where = expPool.Get().(*Exp)
 			sel.Where.Reset()
 			sel.Where.Op = OpAnd
