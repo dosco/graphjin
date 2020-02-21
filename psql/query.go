@@ -100,12 +100,7 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer, vars Variables) (
 			io.WriteString(c.w, `, `)
 		}
 
-		ti, err := c.schema.GetTable(root.Name)
-		if err != nil {
-			return 0, err
-		}
-
-		c.renderRootSelect(root, ti)
+		c.renderRootSelect(root)
 		i++
 	}
 
@@ -136,10 +131,10 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer, vars Variables) (
 				io.WriteString(c.w, `(`)
 			} else {
 				c.renderLateralJoin(sel)
+			}
 
-				if !ti.Singular {
-					c.renderPluralSelect(sel, ti)
-				}
+			if !ti.Singular {
+				c.renderPluralSelect(sel, ti)
 			}
 
 			skipped, err := c.renderSelect(sel, ti, vars)
@@ -169,6 +164,11 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer, vars Variables) (
 				return 0, err
 			}
 
+			if !ti.Singular {
+				io.WriteString(c.w, `)`)
+				aliasWithID(c.w, "__sel", sel.ID)
+			}
+
 			if sel.ParentID == -1 {
 				io.WriteString(c.w, `)`)
 				aliasWithID(c.w, "__sel", sel.ID)
@@ -177,10 +177,6 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer, vars Variables) (
 					io.WriteString(c.w, `, `)
 				}
 			} else {
-				if !ti.Singular {
-					io.WriteString(c.w, `)`)
-					aliasWithID(c.w, "__sel", sel.ID)
-				}
 				c.renderLateralJoinClose(sel)
 			}
 
@@ -233,50 +229,25 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select, ti *DBTableInfo)
 	return nil
 }
 
-func (c *compilerContext) renderRootSelect(sel *qcode.Select, ti *DBTableInfo) error {
+func (c *compilerContext) renderRootSelect(sel *qcode.Select) error {
 	io.WriteString(c.w, `'`)
 	io.WriteString(c.w, sel.FieldName)
 	io.WriteString(c.w, `', `)
 
-	if ti.Singular {
+	io.WriteString(c.w, `"__sel_`)
+	int2string(c.w, sel.ID)
+	io.WriteString(c.w, `"."json"`)
+
+	if sel.Paging.Type != qcode.PtOffset {
+		io.WriteString(c.w, `, '`)
+		io.WriteString(c.w, sel.FieldName)
+		io.WriteString(c.w, `_cursor', `)
+
 		io.WriteString(c.w, `"__sel_`)
 		int2string(c.w, sel.ID)
-		io.WriteString(c.w, `"."json"`)
-	} else {
-		io.WriteString(c.w, `coalesce(json_agg("__sel_`)
-		int2string(c.w, sel.ID)
-		io.WriteString(c.w, `"."json"), '[]')`)
-
-		if sel.Paging.Type != qcode.PtOffset {
-			n := 0
-
-			// check if primary key already included in order by
-			// query argument
-			for _, ob := range sel.OrderBy {
-				if ob.Col == ti.PrimaryCol.Key {
-					n = 1
-					break
-				}
-			}
-
-			if n == 1 {
-				n = len(sel.OrderBy)
-			} else {
-				n = len(sel.OrderBy) + 1
-			}
-
-			io.WriteString(c.w, `, '`)
-			io.WriteString(c.w, sel.FieldName)
-			io.WriteString(c.w, `_cursor', CONCAT_WS(','`)
-			for i := 0; i < n; i++ {
-				io.WriteString(c.w, `, max("__cur_`)
-				int2string(c.w, int32(i))
-				io.WriteString(c.w, `")`)
-			}
-			io.WriteString(c.w, `)`)
-		}
-
+		io.WriteString(c.w, `"."cursor"`)
 	}
+
 	return nil
 }
 
