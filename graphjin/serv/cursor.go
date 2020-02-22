@@ -36,15 +36,20 @@ func encryptCursor(qc *qcode.QCode, data []byte) ([]byte, error) {
 			continue
 		}
 
-		v, err := crypto.Encrypt(f.Value[1:len(f.Value)-1], &internalKey)
-		if err != nil {
-			return nil, err
-		}
-
 		var buf bytes.Buffer
-		buf.WriteByte('"')
-		buf.WriteString(base64.StdEncoding.EncodeToString(v))
-		buf.WriteByte('"')
+
+		if len(f.Value) > 2 {
+			v, err := crypto.Encrypt(f.Value[1:len(f.Value)-1], &internalKey)
+			if err != nil {
+				return nil, err
+			}
+
+			buf.WriteByte('"')
+			buf.WriteString(base64.StdEncoding.EncodeToString(v))
+			buf.WriteByte('"')
+		} else {
+			buf.WriteString(`null`)
+		}
 
 		to[i].Value = buf.Bytes()
 	}
