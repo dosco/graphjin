@@ -131,6 +131,8 @@ const (
 	OpEqID
 	OpTsQuery
 	OpFalse
+	OpNotDistinct
+	OpDistinct
 )
 
 type ValType int
@@ -195,10 +197,9 @@ func NewCompiler(c Config) (*Compiler, error) {
 	return co, nil
 }
 
-func AddFilter(sel *Select) *Exp {
+func NewFilter() *Exp {
 	ex := expPool.Get().(*Exp)
 	ex.Reset()
-	addFilter(sel, ex)
 
 	return ex
 }
@@ -363,8 +364,8 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 			return err
 		}
 
-		// Order is important addFilters must come after compileArgs
-		com.addFilters(qc, s, role)
+		// Order is important AddFilters must come after compileArgs
+		com.AddFilters(qc, s, role)
 
 		if s.ParentID == -1 {
 			qc.Roots = append(qc.Roots, s.ID)
@@ -410,7 +411,7 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 	return nil
 }
 
-func (com *Compiler) addFilters(qc *QCode, sel *Select, role string) {
+func (com *Compiler) AddFilters(qc *QCode, sel *Select, role string) {
 	var fil *Exp
 	var nu bool
 
@@ -435,7 +436,7 @@ func (com *Compiler) addFilters(qc *QCode, sel *Select, role string) {
 	case OpFalse:
 		sel.Where = fil
 	default:
-		addFilter(sel, fil)
+		AddFilter(sel, fil)
 	}
 }
 
@@ -659,7 +660,7 @@ func (com *Compiler) compileArgSearch(sel *Select, arg *Arg) (error, bool) {
 	}
 
 	sel.Args[arg.Name] = arg.Val
-	addFilter(sel, ex)
+	AddFilter(sel, ex)
 
 	return nil, true
 }
@@ -676,7 +677,7 @@ func (com *Compiler) compileArgWhere(sel *Select, arg *Arg, role string) (error,
 	if nu && role == "anon" {
 		sel.SkipRender = true
 	}
-	addFilter(sel, ex)
+	AddFilter(sel, ex)
 
 	return nil, true
 }
@@ -820,7 +821,7 @@ func (com *Compiler) getRole(role, field string) *trval {
 	}
 }
 
-func addFilter(sel *Select, fil *Exp) {
+func AddFilter(sel *Select, fil *Exp) {
 	if sel.Where != nil {
 		ow := sel.Where
 
@@ -936,6 +937,12 @@ func newExp(st *util.Stack, node *Node, usePool bool) (*Exp, error) {
 		ex.Val = node.Val
 	case "is_null":
 		ex.Op = OpIsNull
+		ex.Val = node.Val
+	case "null_eq", "ndis", "not_distinct":
+		ex.Op = OpNotDistinct
+		ex.Val = node.Val
+	case "null_neq", "dis", "distinct":
+		ex.Op = OpDistinct
 		ex.Val = node.Val
 	default:
 		pushChildren(st, node.exp, node)

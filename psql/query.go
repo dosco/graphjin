@@ -267,56 +267,27 @@ func (c *compilerContext) initSelect(sel *qcode.Select, ti *DBTableInfo, vars Va
 
 	if sel.Paging.Type != qcode.PtOffset {
 		colmap[ti.PrimaryCol.Key] = struct{}{}
-
-		addToOrderBy := true
+		addPrimaryKey := true
 
 		for _, ob := range sel.OrderBy {
 			if ob.Col == ti.PrimaryCol.Key {
-				addToOrderBy = false
-			}
-
-			if sel.Paging.Cursor {
-				fil := qcode.AddFilter(sel)
-				fil.Col = ob.Col
-				fil.Type = qcode.ValRef
-				fil.Table = "__cur"
-				fil.Val = ob.Col
-
-				switch ob.Order {
-				case qcode.OrderAsc:
-					fil.Op = qcode.OpGreaterThan
-
-				case qcode.OrderDesc:
-					fil.Op = qcode.OpLesserThan
-				}
+				addPrimaryKey = false
+				break
 			}
 		}
 
-		if addToOrderBy {
-			var op qcode.ExpOp
+		if addPrimaryKey {
+			ob := &qcode.OrderBy{Col: ti.PrimaryCol.Name, Order: qcode.OrderAsc}
 
-			ob := &qcode.OrderBy{Col: ti.PrimaryCol.Name}
-			sel.OrderBy = append(sel.OrderBy, ob)
-
-			switch sel.Paging.Type {
-			case qcode.PtForward:
-				op = qcode.OpGreaterThan
-				ob.Order = qcode.OrderAsc
-
-			case qcode.PtBackward:
-				op = qcode.OpLesserThan
+			if sel.Paging.Type == qcode.PtBackward {
 				ob.Order = qcode.OrderDesc
 			}
-
-			if sel.Paging.Cursor {
-				fil := qcode.AddFilter(sel)
-				fil.Op = op
-				fil.Col = ti.PrimaryCol.Name
-				fil.Type = qcode.ValRef
-				fil.Table = "__cur"
-				fil.Val = ti.PrimaryCol.Name
-			}
+			sel.OrderBy = append(sel.OrderBy, ob)
 		}
+	}
+
+	if sel.Paging.Cursor {
+		c.addSeekPredicate(sel)
 	}
 
 	for _, id := range sel.Children {
@@ -364,6 +335,72 @@ func (c *compilerContext) initSelect(sel *qcode.Select, ti *DBTableInfo, vars Va
 	return skipped, cols, nil
 }
 
+// This
+// (A, B, C) >= (X, Y, Z)
+//
+// Becomes
+// (A > X)
+//   OR ((A = X) AND (B > Y))
+//   OR ((A = X) AND (B = Y) AND (C > Z))
+//   OR ((A = X) AND (B = Y) AND (C = Z))
+
+func (c *compilerContext) addSeekPredicate(sel *qcode.Select) error {
+	var or, and *qcode.Exp
+
+	obLen := len(sel.OrderBy)
+
+	if obLen > 1 {
+		or = qcode.NewFilter()
+		or.Op = qcode.OpOr
+	}
+
+	for i := 0; i < obLen; i++ {
+		if i > 0 {
+			and = qcode.NewFilter()
+			and.Op = qcode.OpAnd
+		}
+
+		for n, ob := range sel.OrderBy {
+			f := qcode.NewFilter()
+			f.Col = ob.Col
+			f.Type = qcode.ValRef
+			f.Table = "__cur"
+			f.Val = ob.Col
+
+			if obLen == 1 {
+				qcode.AddFilter(sel, f)
+				return nil
+			}
+
+			switch {
+			case i > 0 && n != i:
+				f.Op = qcode.OpEquals
+			case ob.Order == qcode.OrderDesc:
+				f.Op = qcode.OpLesserThan
+			default:
+				f.Op = qcode.OpGreaterThan
+			}
+
+			if and != nil {
+				and.Children = append(and.Children, f)
+			} else {
+				or.Children = append(or.Children, f)
+			}
+
+			if n == i {
+				break
+			}
+		}
+
+		if and != nil {
+			or.Children = append(or.Children, and)
+		}
+	}
+
+	qcode.AddFilter(sel, or)
+	return nil
+}
+
 func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo, vars Variables) (uint32, error) {
 	var rel *DBRel
 	var err error
@@ -398,31 +435,6 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo, vars 
 			io.WriteString(c.w, `"`)
 		}
 	}
-
-	//if !ti.Singular {
-	// io.WriteString(c.w, `SELECT coalesce(json_agg(json_build_object(`)
-	// if err := c.renderColumns(sel, ti, skipped); err != nil {
-	// 	return 0, err
-	// }
-	// io.WriteString(c.w, `)), '[]') AS "json"`)
-
-	// if sel.Paging.Type != qcode.PtOffset {
-	// 	for i, ob := range sel.OrderBy {
-	// 		io.WriteString(c.w, `, LAST_VALUE(`)
-	// 		colWithTableID(c.w, ti.Name, sel.ID, ob.Col)
-	// 		io.WriteString(c.w, `) OVER() AS "__cur_`)
-	// 		int2string(c.w, int32(i))
-	// 		io.WriteString(c.w, `"`)
-	// 	}
-
-	// io.WriteString(c.w, `LAST_VALUE(`)
-	// colWithTableID(c.w, ti.Name, sel.ID, ti.PrimaryCol.Name)
-	// io.WriteString(c.w, `) OVER() AS "__cursor_`)
-	// int2string(c.w, int32(len(sel.OrderBy)))
-	// io.WriteString(c.w, `"`)
-	//}
-
-	//}
 
 	io.WriteString(c.w, ` FROM (`)
 
@@ -959,8 +971,12 @@ func (c *compilerContext) renderOp(ex *qcode.Exp, ti *DBTableInfo) error {
 
 	switch ex.Op {
 	case qcode.OpEquals:
-		io.WriteString(c.w, `IS NOT DISTINCT FROM`)
+		io.WriteString(c.w, `=`)
 	case qcode.OpNotEquals:
+		io.WriteString(c.w, `!=`)
+	case qcode.OpNotDistinct:
+		io.WriteString(c.w, `IS NOT DISTINCT FROM`)
+	case qcode.OpDistinct:
 		io.WriteString(c.w, `IS DISTINCT FROM`)
 	case qcode.OpGreaterOrEquals:
 		io.WriteString(c.w, `>=`)
