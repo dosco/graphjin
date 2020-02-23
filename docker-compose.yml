@@ -1,9 +1,12 @@
 version: '3.4'
 services:
   db:
-    image: postgres
+    image: postgres:12
     ports:
       - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
 
   # redis:
   #   image: redis:alpine

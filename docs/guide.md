@@ -34,6 +34,12 @@ Super Graph has a rich feature set like integrating with your existing Ruby on R
 # clone the repository
 git clone https://github.com/dosco/super-graph
 
+# run db in background
+docker-compose up -d db
+
+# see logs and wait until DB is really UP
+docker-compose logs db
+
 # setup the demo rails app & database and run it
 docker-compose run rails_app rake db:create db:migrate db:seed
 
@@ -1767,7 +1773,7 @@ database:
   port: 5432
   dbname: app_development
   user: postgres
-  password: ''
+  password: postgres
 
   #schema: "public"
   #pool_size: 10
