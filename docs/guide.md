@@ -1773,7 +1773,7 @@ database:
   port: 5432
   dbname: app_development
   user: postgres
-  password: ''
+  password: postgres
 
   #schema: "public"
   #pool_size: 10
