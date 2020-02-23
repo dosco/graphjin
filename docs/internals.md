@@ -13,7 +13,7 @@ Super Graph code is made up of a number of packages. We have done our best to ke
 
 ## QCODE
 
-This package contains the core of the GraphQL conpiler it handling the lexing and parsing of the GraphQL query transforming it into an internal representation called
+This package contains the core of the GraphQL compiler it handling the lexing and parsing of the GraphQL query transforming it into an internal representation called
 `QCode`.
 
 This is the first step of the compiling process the `func NewCompiler(c Config)` function creates a new instance of this compiler which has it's own config. 
