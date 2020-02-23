@@ -71,7 +71,7 @@ item{itemObjOpen, 16, 20} // {
 ...
 ```
 
-These tokens are then fed into the parser `parse.go` the parser does the work of generating an abstract syntax tree (AST) from the tokens. This AST is an internal representation (data structure) and is not exposed outside the package. Sinc the AST is a tree a stack `stack.go` is used to walk the tree and generate the QCode AST. The QCode data structure is also a tree (represented as an array). This is then returned to the caller of the compile function.
+These tokens are then fed into the parser `parse.go` the parser does the work of generating an abstract syntax tree (AST) from the tokens. This AST is an internal representation (data structure) and is not exposed outside the package. Since the AST is a tree a stack `stack.go` is used to walk the tree and generate the QCode AST. The QCode data structure is also a tree (represented as an array). This is then returned to the caller of the compile function.
 
 ```go
 type Operation struct {
