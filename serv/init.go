@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/dosco/super-graph/allow"
 	"github.com/dosco/super-graph/crypto"
@@ -135,7 +136,17 @@ func initDBPool(c *config) (*pgxpool.Pool, error) {
 		config.MaxConns = conf.DB.PoolSize
 	}
 
-	db, err := pgxpool.ConnectConfig(context.Background(), config)
+	var db *pgxpool.Pool
+	var err error
+
+	for i := 1; i < 10; i++ {
+		db, err = pgxpool.ConnectConfig(context.Background(), config)
+		if err == nil {
+			break
+		}
+		time.Sleep(time.Duration(i*100) * time.Millisecond)
+	}
+
 	if err != nil {
 		return nil, err
 	}
