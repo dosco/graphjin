@@ -11,14 +11,20 @@ func Strip(b []byte, path [][]byte) []byte {
 	pi := 0
 	pm := false
 	state := expectKey
+	instr := false
 
 	for i := 0; i < len(b); i++ {
 		if state == expectObjClose || state == expectListClose {
-			switch b[i] {
-			case '{', '[':
-				d++
-			case '}', ']':
-				d--
+			if b[i-1] != '\\' && b[i] == '"' {
+				instr = !instr
+			}
+			if !instr {
+				switch b[i] {
+				case '{', '[':
+					d++
+				case '}', ']':
+					d--
+				}
 			}
 		}
 

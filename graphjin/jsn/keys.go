@@ -10,15 +10,20 @@ func Keys(b []byte) [][]byte {
 
 	st := NewStack()
 	ae := 0
+	instr := false
 
 	for i := 0; i < len(b); i++ {
-
 		if state == expectObjClose || state == expectListClose {
-			switch b[i] {
-			case '{', '[':
-				d++
-			case '}', ']':
-				d--
+			if b[i-1] != '\\' && b[i] == '"' {
+				instr = !instr
+			}
+			if !instr {
+				switch b[i] {
+				case '{', '[':
+					d++
+				case '}', ']':
+					d--
+				}
 			}
 		}
 

@@ -39,11 +39,16 @@ func argMap(ctx context.Context, vars []byte) func(w io.Writer, tag string) (int
 
 		}
 		v := fields[0].Value
+
+		// Open and close quotes
 		if len(v) >= 2 && v[0] == '"' && v[len(v)-1] == '"' {
 			fields[0].Value = v[1 : len(v)-1]
 		}
 
 		if tag == "cursor" {
+			if bytes.EqualFold(v, []byte("null")) {
+				return io.WriteString(w, ``)
+			}
 			v1, err := decrypt(string(fields[0].Value))
 			if err != nil {
 				return 0, err
@@ -51,6 +56,8 @@ func argMap(ctx context.Context, vars []byte) func(w io.Writer, tag string) (int
 
 			return w.Write(v1)
 		}
+
+		fmt.Println(">>>", tag, string(v))
 
 		return w.Write(escQuote(fields[0].Value))
 	}
