@@ -143,7 +143,7 @@ What if I told you Super Graph will fetch all this data with a single SQL query 
 
 ```graphql
 query {
-    products(limit 5, where: { price: { gt: 12 } }) {
+    products(limit: 5, where: { price: { gt: 12 } }) {
       id
       name
       description
@@ -159,7 +159,7 @@ query {
       }
   }
   purchases(
-      limit 10, 
+      limit: 10, 
       order_by: { created_at: desc } , 
       where: { user_id: { eq: $user_id } }
     ) {
