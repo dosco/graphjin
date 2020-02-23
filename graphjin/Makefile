@@ -35,7 +35,7 @@ $(GORICE):
 
 $(WEB_BUILD_DIR):
 	@echo "First install Yarn and create a build of the web UI found under ./web"
-	@echo "Command: cd web && yarn build"
+	@echo "Command: cd web && yarn && yarn build"
 	@exit 1
 
 $(GITCHGLOG):
@@ -77,7 +77,7 @@ clean:
 run: clean
 	@go run $(BUILD_FLAGS) main.go $(ARGS)
 
-install:
+install: gen
 	@echo $(GOPATH)
 	@echo "Commit Hash: `git rev-parse HEAD`"
 	@echo "Old Hash: `shasum $(GOPATH)/bin/$(BINARY) 2>/dev/null | cut -c -32`"
