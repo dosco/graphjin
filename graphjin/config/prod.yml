@@ -54,7 +54,7 @@ database:
   port: 5432
   dbname: app_production
   user: postgres
-  password: ''
+  password: postgres
   #pool_size: 10
   #max_retries: 0
   #log_level: "debug" 
