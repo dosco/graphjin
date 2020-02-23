@@ -1133,7 +1133,7 @@ query {
 
 ## Using Variables
 
-Variables (`$product_id`) and their values (`"product_id": 5`) can be passed along side the GraphQL query. Using variables makes for better client side code as well as improved server side SQL query caching. The build-in web-ui also supports setting variables. Not having to manipulate your GraphQL query string to insert values into it makes for cleaner
+Variables (`$product_id`) and their values (`"product_id": 5`) can be passed along side the GraphQL query. Using variables makes for better client side code as well as improved server side SQL query caching. The built-in web-ui also supports setting variables. Not having to manipulate your GraphQL query string to insert values into it makes for cleaner
 and better client side code.
 
 ```javascript
