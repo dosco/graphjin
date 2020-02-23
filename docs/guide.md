@@ -222,7 +222,7 @@ You can then add your database schema to the migrations, maybe create some seed 
 git clone https://github.com/dosco/super-graph && cd super-graph && make install
 ```
 
-And then create and launch you're new app
+And then create and launch your new app
 
 ```bash
 # create a new app and change to it's directory
