@@ -1552,7 +1552,7 @@ roles:
 
 This configuration is relatively simple to follow the `roles_query` parameter is the query that must be run to help figure out a users role. This query can be as complex as you like and include joins with other tables. 
 
-The individual roles are defined under the `roles` parameter and this includes each table the role has a custom setting for. The role is dynamically matched using the `match` parameter for example in the above case `users.id = 1` means that when the `roles_query` is executed a user with the id `1` willbe assigned the admin role and those that don't match get the `user` role if authenticated successfully or the `anon` role.
+The individual roles are defined under the `roles` parameter and this includes each table the role has a custom setting for. The role is dynamically matched using the `match` parameter for example in the above case `users.id = 1` means that when the `roles_query` is executed a user with the id `1` will be assigned the admin role and those that don't match get the `user` role if authenticated successfully or the `anon` role.
 
 ## Remote Joins
 
