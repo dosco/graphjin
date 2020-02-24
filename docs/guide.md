@@ -1975,7 +1975,7 @@ To use Yugabyte in your local development flow just uncomment the following line
 
 ## Developing Super Graph
 
-If you want to build and run Super Graph from code then the below commands will build the web ui and launch Super Graph in developer mode with a watcher to rebuild on code changes. And the demo rails app is also launched to make it essier to test changes.
+If you want to build and run Super Graph from code then the below commands will build the web ui and launch Super Graph in developer mode with a watcher to rebuild on code changes. And the demo rails app is also launched to make it easier to test changes.
 
 ```bash
 
