@@ -57,8 +57,6 @@ func argMap(ctx context.Context, vars []byte) func(w io.Writer, tag string) (int
 			return w.Write(v1)
 		}
 
-		fmt.Println(">>>", tag, string(v))
-
 		return w.Write(escQuote(fields[0].Value))
 	}
 }
