@@ -1127,9 +1127,15 @@ func (c *compilerContext) renderVal(ex *qcode.Exp, vars map[string]string, col *
 
 	switch ex.Type {
 	case qcode.ValVar:
-		if val, ok := vars[ex.Val]; ok {
+		val, ok := vars[ex.Val]
+		switch {
+		case ok && strings.HasPrefix(val, "sql:"):
+			io.WriteString(c.w, ` (`)
+			io.WriteString(c.w, val[4:])
+			io.WriteString(c.w, `)`)
+		case ok:
 			squoted(c.w, val)
-		} else {
+		default:
 			io.WriteString(c.w, ` '{{`)
 			io.WriteString(c.w, ex.Val)
 			io.WriteString(c.w, `}}'`)

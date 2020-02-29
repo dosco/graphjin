@@ -125,7 +125,9 @@ database:
 
   # Define additional variables here to be used with filters
   variables:
-    admin_account_id: "5"
+    #admin_account_id: "5"
+    admin_account_id: "sql:select id from users where admin = true limit 1"
+
 
   # Field and table names that you wish to block
   blocklist:
@@ -168,26 +170,14 @@ tables:
     table: users
 
 
-roles_query: "SELECT * FROM users WHERE id = $user_id"
+#roles_query: "SELECT * FROM users WHERE id = $user_id"
 
 roles:
   - name: anon
     tables:
-      - name: products
-        limit: 10
-
+      - name: users
         query:
-          columns: ["id", "name", "description" ]
-          aggregation: false
-
-        insert:
-          block: false
-            
-        update:
-          block: false
-
-        delete:
-          block: false
+          limit: 10
 
   - name: user
     tables:
@@ -215,8 +205,8 @@ roles:
         delete:
           block: true
 
-  - name: admin
-    match: id = 1000
-    tables:
-      - name: users
-        filters: []
+  # - name: admin
+  #   match: id = 1000
+  #   tables:
+  #     - name: users
+  #       filters: []
