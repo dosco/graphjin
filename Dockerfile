@@ -11,7 +11,7 @@ RUN apk update && \
     apk add --no-cache make && \
     apk add --no-cache git && \
     apk add --no-cache jq && \
-    apk add --no-cache upx=3.95-r2
+    apk add --no-cache upx=3.96
 
 RUN GO111MODULE=off go get -u github.com/rafaelsq/wtc
 
@@ -27,9 +27,9 @@ COPY --from=react-build /web/build/ ./web/build/
 
 RUN go mod vendor
 RUN make build
-# RUN echo "Compressing binary, will take a bit of time..." && \
-#   upx --ultra-brute -qq super-graph && \
-#   upx -t super-graph
+RUN echo "Compressing binary, will take a bit of time..." && \
+  upx --ultra-brute -qq super-graph && \
+  upx -t super-graph
 
 # stage: 3
 FROM alpine:latest
