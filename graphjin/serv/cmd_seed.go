@@ -3,6 +3,7 @@ package serv
 import (
 	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,9 +11,12 @@ import (
 	"math/rand"
 	"os"
 	"path"
+	"strconv"
+	"strings"
 
 	"github.com/brianvoe/gofakeit"
 	"github.com/dop251/goja"
+	"github.com/jackc/pgx/v4"
 	"github.com/spf13/cobra"
 	"github.com/valyala/fasttemplate"
 )
@@ -42,6 +46,7 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 
 	vm := goja.New()
 	vm.Set("graphql", graphQLFunc)
+	vm.Set("import_csv", importCSV)
 
 	console := vm.NewObject()
 	console.Set("log", logFunc) //nolint: errcheck
@@ -127,6 +132,106 @@ func graphQLFunc(query string, data interface{}, opt map[string]string) map[stri
 	}
 
 	return val
+}
+
+type csvSource struct {
+	rows [][]string
+	i    int
+}
+
+func NewCSVSource(filename string) (*csvSource, error) {
+	f, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	r := csv.NewReader(f)
+	rows, err := r.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+
+	return &csvSource{rows: rows}, nil
+}
+
+func (c *csvSource) Next() bool {
+	return c.i < len(c.rows)
+}
+
+func (c *csvSource) Values() ([]interface{}, error) {
+	var vals []interface{}
+	var err error
+
+	for _, v := range c.rows[c.i] {
+		switch {
+		case len(v) == 0:
+			vals = append(vals, "")
+		case isDigit(v):
+			var n int
+			if n, err = strconv.Atoi(v); err == nil {
+				vals = append(vals, n)
+			}
+		case strings.EqualFold(v, "true") || strings.EqualFold(v, "false"):
+			var b bool
+			if b, err = strconv.ParseBool(v); err == nil {
+				vals = append(vals, b)
+			}
+		default:
+			vals = append(vals, v)
+		}
+
+		if err != nil {
+			return nil, fmt.Errorf("%w (line no %d)", err, c.i)
+		}
+	}
+	c.i++
+
+	return vals, nil
+}
+
+func isDigit(v string) bool {
+	for i := range v {
+		if v[i] < '0' || v[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func (c *csvSource) Err() error {
+	return nil
+}
+
+func importCSV(table, filename string) int64 {
+	if filename[0] != '/' {
+		filename = path.Join(confPath, filename)
+	}
+
+	s, err := NewCSVSource(filename)
+	if err != nil {
+		errlog.Fatal().Err(err).Send()
+	}
+
+	var cols []string
+	colval, _ := s.Values()
+
+	for _, c := range colval {
+		cols = append(cols, c.(string))
+	}
+
+	n, err := db.CopyFrom(
+		context.Background(),
+		pgx.Identifier{table},
+		cols,
+		s)
+
+	if err != nil {
+		err = fmt.Errorf("%w (line no %d)", err, s.i)
+		errlog.Fatal().Err(err).Send()
+	}
+
+	return n
 }
 
 //nolint: errcheck

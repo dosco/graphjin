@@ -2,7 +2,6 @@ module github.com/dosco/super-graph
 
 require (
 	github.com/GeertJohan/go.rice v1.0.0
-	github.com/Masterminds/semver v1.5.0
 	github.com/NYTimes/gziphandler v1.1.1
 	github.com/adjust/gorails v0.0.0-20171013043634-2786ed0c03d3
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
@@ -12,7 +11,6 @@ require (
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/dlclark/regexp2 v1.2.0 // indirect
 	github.com/dop251/goja v0.0.0-20190912223329-aa89e6a4c733
-	github.com/dvyukov/go-fuzz v0.0.0-20191206100749-a378175e205c // indirect
 	github.com/fsnotify/fsnotify v1.4.7
 	github.com/garyburd/redigo v1.6.0
 	github.com/go-sourcemap/sourcemap v2.1.2+incompatible // indirect
