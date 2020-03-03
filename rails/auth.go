@@ -4,8 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
-	"github.com/Masterminds/semver"
 	"github.com/adjust/gorails/marshal"
 )
 
@@ -37,17 +38,20 @@ func NewAuth(version, secret string) (*Auth, error) {
 		AuthSalt: authSalt,
 	}
 
-	ver, err := semver.NewVersion(version)
-	if err != nil {
-		return nil, fmt.Errorf("rails auth: %s", err)
+	var v1, v2 int
+	var err error
+
+	sv := strings.Split(version, ".")
+	if len(sv) >= 2 {
+		if v1, err = strconv.Atoi(sv[0]); err != nil {
+			return nil, err
+		}
+		if v2, err = strconv.Atoi(sv[1]); err != nil {
+			return nil, err
+		}
 	}
 
-	gt52, err := semver.NewConstraint(">= 5.2")
-	if err != nil {
-		return nil, fmt.Errorf("rails auth: %s", err)
-	}
-
-	if gt52.Check(ver) {
+	if v1 >= 5 && v2 >= 2 {
 		ra.Cipher = railsCipher52
 	} else {
 		ra.Cipher = railsCipher

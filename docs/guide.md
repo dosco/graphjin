@@ -292,6 +292,12 @@ for (i = 0; i < 10; i++) {
 }
 ```
 
+If you want to import a lot of data using a CSV file is the best and fastest option. The `import_csv` command uses the `COPY FROM` Postgres method to load massive amounts of data into tables. The first line of the CSV file must be the header with column names.
+
+```javascript
+var post_count = import_csv("posts", "posts.csv")
+```
+
 You can generate the following fake data for your seeding purposes. Below is the list of fake data functions supported by the built-in fake data library. For example `fake.image_url()` will generate a fake image url or `fake.shuffle_strings(['hello', 'world', 'cool'])` will generate a randomly shuffled version of that array of strings or `fake.rand_string(['hello', 'world', 'cool'])` will return a random string from the array provided.
 
 ```
