@@ -205,8 +205,8 @@ func newConfig(name string) *viper.Viper {
 	vi.SetDefault("env", "development")
 
 	vi.BindEnv("env", "GO_ENV") //nolint: errcheck
-	vi.BindEnv("HOST", "HOST")  //nolint: errcheck
-	vi.BindEnv("PORT", "PORT")  //nolint: errcheck
+	vi.BindEnv("host", "HOST")  //nolint: errcheck
+	vi.BindEnv("port", "PORT")  //nolint: errcheck
 
 	vi.SetDefault("auth.rails.max_idle", 80)
 	vi.SetDefault("auth.rails.max_active", 12000)
