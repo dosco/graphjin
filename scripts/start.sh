@@ -1,7 +1,7 @@
 #!/bin/sh
 if [ $1 = "secrets" ]
 then
-  sops --config ./config "${@:2}"
+  ./sops --config ./config "${@:2}"
   exit 0
 fi
 

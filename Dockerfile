@@ -49,7 +49,5 @@ RUN chmod +x /start.sh
 
 USER nobody
 
-EXPOSE 8080
-
-CMD ./super-graph serv
 ENTRYPOINT ["./start.sh"]
+CMD ./super-graph serv
