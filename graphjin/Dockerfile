@@ -11,7 +11,7 @@ RUN apk update && \
     apk add --no-cache make && \
     apk add --no-cache git && \
     apk add --no-cache jq && \
-    apk add --no-cache upx=3.96
+    apk add --no-cache upx=3.95-r2
 
 RUN GO111MODULE=off go get -u github.com/rafaelsq/wtc
 
