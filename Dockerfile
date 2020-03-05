@@ -50,4 +50,4 @@ RUN chmod +x /start.sh
 USER nobody
 
 ENTRYPOINT ["./start.sh"]
-CMD ./super-graph serv
+CMD ["./super-graph", "serv"]
