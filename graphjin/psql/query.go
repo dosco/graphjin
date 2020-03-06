@@ -17,6 +17,10 @@ const (
 	closeBlock = 500
 )
 
+var (
+	ErrAllTablesSkipped = errors.New("all tables skipped. cannot render query")
+)
+
 type Variables map[string]json.RawMessage
 
 type Config struct {
@@ -107,7 +111,7 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer, vars Variables) (
 	io.WriteString(c.w, `) as "__root" FROM `)
 
 	if i == 0 {
-		return 0, errors.New("all tables skipped. cannot render query")
+		return 0, ErrAllTablesSkipped
 	}
 
 	var ignored uint32

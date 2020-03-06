@@ -90,7 +90,7 @@ func buildMultiStmt(gql, vars []byte) ([]stmt, error) {
 	}
 
 	if len(conf.RolesQuery) == 0 {
-		return buildRoleStmt(gql, vars, "user")
+		return nil, errors.New("roles_query not defined")
 	}
 
 	stmts := make([]stmt, 0, len(conf.Roles))
@@ -99,6 +99,7 @@ func buildMultiStmt(gql, vars []byte) ([]stmt, error) {
 	for i := 0; i < len(conf.Roles); i++ {
 		role := &conf.Roles[i]
 
+		// skip anon as it's not included in the combined multi-statement
 		if role.Name == "anon" {
 			continue
 		}
