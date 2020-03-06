@@ -152,6 +152,10 @@ func (c *coreContext) resolvePreparedSQL() ([]byte, *stmt, error) {
 		}
 	}
 
+	if root, err = encryptCursor(ps.st.qc, root); err != nil {
+		return nil, nil, err
+	}
+
 	return root, &ps.st, nil
 }
 
