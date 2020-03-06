@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/rs/cors"
 )
 
 const (
@@ -61,6 +63,20 @@ type resolver struct {
 	Duration    time.Duration `json:"duration"`
 }
 
+func apiV1Handler() http.Handler {
+	h := withAuth(http.HandlerFunc(apiV1), conf.Auth)
+
+	if len(conf.AllowedOrigins) != 0 {
+		c := cors.New(cors.Options{
+			AllowedOrigins:   conf.AllowedOrigins,
+			AllowCredentials: true,
+			Debug:            conf.DebugCORS,
+		})
+		h = c.Handler(h)
+	}
+
+	return h
+}
 func apiV1(w http.ResponseWriter, r *http.Request) {
 	ctx := &coreContext{Context: r.Context()}
 

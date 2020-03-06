@@ -154,7 +154,7 @@ func routeHandler() (http.Handler, error) {
 
 	routes := map[string]http.Handler{
 		"/health":         http.HandlerFunc(health),
-		"/api/v1/graphql": withAuth(http.HandlerFunc(apiV1), conf.Auth),
+		"/api/v1/graphql": apiV1Handler(),
 	}
 
 	if err := setActionRoutes(routes); err != nil {

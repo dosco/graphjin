@@ -36,6 +36,15 @@ migrations_path: ./config/migrations
 # encrypting the cursor data
 secret_key: supercalifajalistics
 
+# CORS: A list of origins a cross-domain request can be executed from. 
+# If the special * value is present in the list, all origins will be allowed. 
+# An origin may contain a wildcard (*) to replace 0 or more 
+# characters (i.e.: http://*.domain.com).
+cors_allowed_origins: ["*"]
+
+# Debug Cross Origin Resource Sharing requests
+cors_debug: false
+
 # Postgres related environment Variables
 # SG_DATABASE_HOST
 # SG_DATABASE_PORT

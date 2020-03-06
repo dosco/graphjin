@@ -49,5 +49,7 @@ RUN chmod +x /start.sh
 
 USER nobody
 
+ENV GO_ENV production
+
 ENTRYPOINT ["./start.sh"]
 CMD ["./super-graph", "serv"]
