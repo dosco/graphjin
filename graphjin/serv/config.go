@@ -26,11 +26,13 @@ type config struct {
 	EnableTracing  bool   `mapstructure:"enable_tracing"`
 	UseAllowList   bool   `mapstructure:"use_allow_list"`
 	Production     bool
-	WatchAndReload bool   `mapstructure:"reload_on_config_change"`
-	AuthFailBlock  bool   `mapstructure:"auth_fail_block"`
-	SeedFile       string `mapstructure:"seed_file"`
-	MigrationsPath string `mapstructure:"migrations_path"`
-	SecretKey      string `mapstructure:"secret_key"`
+	WatchAndReload bool     `mapstructure:"reload_on_config_change"`
+	AuthFailBlock  bool     `mapstructure:"auth_fail_block"`
+	SeedFile       string   `mapstructure:"seed_file"`
+	MigrationsPath string   `mapstructure:"migrations_path"`
+	SecretKey      string   `mapstructure:"secret_key"`
+	AllowedOrigins []string `mapstructure:"cors_allowed_origins"`
+	DebugCORS      bool     `mapstructure:"cors_debug"`
 
 	Inflections map[string]string
 
