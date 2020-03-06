@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/dosco/super-graph/allow"
+	"github.com/dosco/super-graph/psql"
 	"github.com/dosco/super-graph/qcode"
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v4"
@@ -120,6 +121,9 @@ func prepareStmt(item allow.Item) error {
 			logger.Debug().Msg("Prepared statement for role: anon")
 
 			stmts2, err := buildRoleStmt(q, vars, "anon")
+			if err == psql.ErrAllTablesSkipped {
+				return nil
+			}
 			if err != nil {
 				return err
 			}
