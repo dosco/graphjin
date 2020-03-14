@@ -117,7 +117,7 @@ func apiV1(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		errlog.Error().Err(err).Msg("failed to handle request")
+		errlog.Error().Err(err).Msg(ctx.req.Query)
 		errorResp(w, err)
 		return
 	}

@@ -17,7 +17,7 @@ type parserType int32
 
 const (
 	maxFields = 100
-	maxArgs   = 10
+	maxArgs   = 25
 )
 
 const (
@@ -242,7 +242,8 @@ func (p *Parser) parseOp() (*Operation, error) {
 
 	if p.peek(itemArgsOpen) {
 		p.ignore()
-		op.Args, err = p.parseArgs(op.Args)
+
+		op.Args, err = p.parseOpParams(op.Args)
 		if err != nil {
 			return nil, err
 		}
@@ -371,6 +372,22 @@ func (p *Parser) parseField(f *Field) error {
 	return nil
 }
 
+func (p *Parser) parseOpParams(args []Arg) ([]Arg, error) {
+	for {
+		if len(args) >= maxArgs {
+			return nil, fmt.Errorf("too many args (max %d)", maxArgs)
+		}
+
+		if p.peek(itemArgsClose) {
+			p.ignore()
+			break
+		}
+		p.next()
+	}
+
+	return args, nil
+}
+
 func (p *Parser) parseArgs(args []Arg) ([]Arg, error) {
 	var err error
 
@@ -383,6 +400,7 @@ func (p *Parser) parseArgs(args []Arg) ([]Arg, error) {
 			p.ignore()
 			break
 		}
+
 		if !p.peek(itemName) {
 			return nil, errors.New("expecting an argument name")
 		}
