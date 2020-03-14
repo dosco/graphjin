@@ -327,7 +327,7 @@ func jsonColumnAsTable(t *testing.T) {
 	compileGQLToPSQL(t, gql, nil, "admin")
 }
 
-func skipUserIDForAnonRole(t *testing.T) {
+func nullForAuthRequiredInAnon(t *testing.T) {
 	gql := `query {
 		products {
 			id
@@ -387,7 +387,7 @@ func TestCompileQuery(t *testing.T) {
 	t.Run("multiRoot", multiRoot)
 	t.Run("jsonColumnAsTable", jsonColumnAsTable)
 	t.Run("withCursor", withCursor)
-	t.Run("skipUserIDForAnonRole", skipUserIDForAnonRole)
+	t.Run("nullForAuthRequiredInAnon", nullForAuthRequiredInAnon)
 	t.Run("blockedQuery", blockedQuery)
 	t.Run("blockedFunctions", blockedFunctions)
 }

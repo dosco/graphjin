@@ -37,30 +37,33 @@ func (c *compilerContext) renderBaseColumns(
 			colWithTable(c.w, ti.Name, cn)
 			i++
 			continue
-		}
 
-		if isSearch && !isRealCol {
+		} else {
 			switch {
-			case cn == "search_rank":
+			case isSearch && cn == "search_rank":
 				if err := c.renderColumnSearchRank(sel, ti, col, i); err != nil {
 					return nil, false, err
 				}
 				i++
 
-			case strings.HasPrefix(cn, "search_headline_"):
+			case isSearch && strings.HasPrefix(cn, "search_headline_"):
 				if err := c.renderColumnSearchHeadline(sel, ti, col, i); err != nil {
 					return nil, false, err
 				}
 				i++
 
+			case cn == "__typename":
+				if err := c.renderColumnTypename(sel, ti, col, i); err != nil {
+					return nil, false, err
+				}
+				i++
+			default:
+				if err := c.renderColumnFunction(sel, ti, col, i); err != nil {
+					return nil, false, err
+				}
+				isAgg = true
+				i++
 			}
-		} else {
-			if err := c.renderColumnFunction(sel, ti, col, i); err != nil {
-				return nil, false, err
-			}
-			isAgg = true
-			i++
-
 		}
 	}
 
@@ -148,6 +151,20 @@ func (c *compilerContext) renderColumnSearchHeadline(sel *qcode.Select, ti *DBTa
 	return nil
 }
 
+func (c *compilerContext) renderColumnTypename(sel *qcode.Select, ti *DBTableInfo, col qcode.Column, columnsRendered int) error {
+	if isColumnBlocked(sel, col.Name) {
+		return nil
+	}
+
+	c.renderComma(columnsRendered)
+	io.WriteString(c.w, `(`)
+	squoted(c.w, ti.Name)
+	io.WriteString(c.w, ` :: text)`)
+	alias(c.w, col.Name)
+
+	return nil
+}
+
 func (c *compilerContext) renderColumnFunction(sel *qcode.Select, ti *DBTableInfo, col qcode.Column, columnsRendered int) error {
 	pl := funcPrefixLen(col.Name)
 	// if pl == 0 {
@@ -168,7 +185,7 @@ func (c *compilerContext) renderColumnFunction(sel *qcode.Select, ti *DBTableInf
 		return nil
 	}
 
-	fn := cn[0 : pl-1]
+	fn := col.Name[:pl-1]
 
 	c.renderComma(columnsRendered)
 

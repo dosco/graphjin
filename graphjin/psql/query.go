@@ -506,22 +506,21 @@ func (c *compilerContext) renderJoinByName(table, parent string, id int32) error
 
 func (c *compilerContext) renderColumns(sel *qcode.Select, ti *DBTableInfo, skipped uint32) error {
 	i := 0
+	var cn string
+
 	for _, col := range sel.Cols {
-		n := funcPrefixLen(col.Name)
-		if n != 0 {
+		if n := funcPrefixLen(col.Name); n != 0 {
 			if !sel.Functions {
 				continue
 			}
-			if len(sel.Allowed) != 0 {
-				if _, ok := sel.Allowed[col.Name[n:]]; !ok {
-					continue
-				}
-			}
+			cn = col.Name[n:]
 		} else {
-			if len(sel.Allowed) != 0 {
-				if _, ok := sel.Allowed[col.Name]; !ok {
-					continue
-				}
+			cn = col.Name
+		}
+
+		if len(sel.Allowed) != 0 {
+			if _, ok := sel.Allowed[cn]; !ok {
+				continue
 			}
 		}
 
@@ -573,15 +572,17 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, ti *DBTableInfo, 
 			continue
 		}
 		childSel := &c.s[id]
-		if childSel.SkipRender {
-			continue
-		}
 
 		if i != 0 {
 			io.WriteString(c.w, ", ")
 		}
 
 		squoted(c.w, childSel.FieldName)
+
+		if childSel.SkipRender {
+			io.WriteString(c.w, `, NULL`)
+			continue
+		}
 
 		io.WriteString(c.w, `, "__sel_`)
 		int2string(c.w, childSel.ID)
