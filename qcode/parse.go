@@ -339,6 +339,13 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 		if p.peek(itemObjOpen) {
 			p.ignore()
 			st.Push(f.ID)
+
+		} else if p.peek(itemObjClose) {
+			if st.Len() == 0 {
+				break
+			} else {
+				continue
+			}
 		}
 	}
 
