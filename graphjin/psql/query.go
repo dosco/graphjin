@@ -516,6 +516,10 @@ func (c *compilerContext) renderColumns(sel *qcode.Select, ti *DBTableInfo, skip
 			cn = col.Name[n:]
 		} else {
 			cn = col.Name
+
+			if strings.HasSuffix(cn, "_cursor") {
+				continue
+			}
 		}
 
 		if len(sel.Allowed) != 0 {

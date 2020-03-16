@@ -3,6 +3,7 @@ package psql
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 
@@ -35,8 +36,6 @@ func (c *compilerContext) renderBaseColumns(
 			c.renderComma(i)
 			realColsRendered = append(realColsRendered, n)
 			colWithTable(c.w, ti.Name, cn)
-			i++
-			continue
 
 		} else {
 			switch {
@@ -44,27 +43,31 @@ func (c *compilerContext) renderBaseColumns(
 				if err := c.renderColumnSearchRank(sel, ti, col, i); err != nil {
 					return nil, false, err
 				}
-				i++
 
 			case isSearch && strings.HasPrefix(cn, "search_headline_"):
 				if err := c.renderColumnSearchHeadline(sel, ti, col, i); err != nil {
 					return nil, false, err
 				}
-				i++
 
 			case cn == "__typename":
 				if err := c.renderColumnTypename(sel, ti, col, i); err != nil {
 					return nil, false, err
 				}
-				i++
+
+			case strings.HasSuffix(cn, "_cursor"):
+				continue
+
 			default:
 				if err := c.renderColumnFunction(sel, ti, col, i); err != nil {
 					return nil, false, err
 				}
+				fmt.Println(">>>> isAgg", cn, sel.Name)
+
 				isAgg = true
-				i++
 			}
 		}
+		i++
+
 	}
 
 	if isCursorPaged {
