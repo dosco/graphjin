@@ -3,7 +3,6 @@ package psql
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"strings"
 
@@ -61,7 +60,6 @@ func (c *compilerContext) renderBaseColumns(
 				if err := c.renderColumnFunction(sel, ti, col, i); err != nil {
 					return nil, false, err
 				}
-				fmt.Println(">>>> isAgg", cn, sel.Name)
 
 				isAgg = true
 			}
