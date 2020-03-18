@@ -93,7 +93,7 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer, vars Variables) (
 	io.WriteString(c.w, `SELECT json_build_object(`)
 	for _, id := range qc.Roots {
 		root := &qc.Selects[id]
-		if root.SkipRender {
+		if root.SkipRender || len(root.Cols) == 0 {
 			continue
 		}
 
@@ -125,6 +125,10 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer, vars Variables) (
 
 		if id < closeBlock {
 			sel := &c.s[id]
+
+			if len(sel.Cols) == 0 {
+				continue
+			}
 
 			ti, err := c.schema.GetTable(sel.Name)
 			if err != nil {
