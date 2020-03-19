@@ -92,7 +92,14 @@ func getTestSchema() *DBSchema {
 	}
 
 	for i, t := range tables {
-		err := schema.updateRelationships(t, columns[i])
+		err := schema.firstDegreeRels(t, columns[i])
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	for i, t := range tables {
+		err := schema.secondDegreeRels(t, columns[i])
 		if err != nil {
 			log.Fatal(err)
 		}
