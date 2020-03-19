@@ -19,6 +19,10 @@ func (rt RelType) String() string {
 }
 
 func (re *DBRel) String() string {
+	if re.Type == RelOneToManyThrough {
+		return fmt.Sprintf("'%s.%s' --(Through: %s)--> '%s.%s'",
+			re.Left.Table, re.Left.Col, re.Through, re.Right.Table, re.Right.Col)
+	}
 	return fmt.Sprintf("'%s.%s' --(%s)--> '%s.%s'",
 		re.Left.Table, re.Left.Col, re.Type, re.Right.Table, re.Right.Col)
 }
