@@ -222,6 +222,10 @@ func (c *compilerContext) renderDelete(qc *qcode.QCode, w io.Writer,
 	quoted(c.w, ti.Name)
 	io.WriteString(c.w, ` WHERE `)
 
+	if root.Where == nil {
+		return 0, errors.New("'where' clause missing in delete mutation")
+	}
+
 	if err := c.renderWhere(root, ti); err != nil {
 		return 0, err
 	}

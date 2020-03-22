@@ -59,12 +59,6 @@ func buildRoleStmt(gql, vars []byte, role string) ([]stmt, error) {
 		return nil, err
 	}
 
-	// For the 'anon' role in production only compile
-	// queries for tables defined in the config file.
-	if conf.Production && ro.Name == "anon" && !hasTablesWithConfig(qc, ro) {
-		return nil, errors.New("query contains tables with no 'anon' role config")
-	}
-
 	stmts := []stmt{stmt{role: ro, qc: qc}}
 	w := &bytes.Buffer{}
 
