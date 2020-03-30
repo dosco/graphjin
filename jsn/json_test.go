@@ -2,7 +2,9 @@ package jsn
 
 import (
 	"bytes"
+	"fmt"
 	"io/ioutil"
+	"strings"
 	"testing"
 )
 
@@ -163,7 +165,9 @@ var (
 	input6 = `
 	{"users" : [{"id" : 1, "email" : "vicram@gmail.com", "slug" : "vikram-rangnekar", "threads" : [], "threads_cursor" : null}, {"id" : 3, "email" : "marareilly@lang.name", "slug" : "raymundo-corwin", "threads" : [{"id" : 9, "title" : "Et alias et aut porro praesentium nam in voluptatem reiciendis quisquam perspiciatis inventore eos quia et et enim qui amet."}, {"id" : 25, "title" : "Ipsam quam nemo culpa tempore amet optio sit sed eligendi autem consequatur quaerat rem velit quibusdam quibusdam optio a voluptatem."}], "threads_cursor" : 25}], "users_cursor" : 3}`
 
-	input7, _ = ioutil.ReadFile("test.json")
+	input7, _ = ioutil.ReadFile("test7.json")
+
+	input8, _ = ioutil.ReadFile("test8.json")
 )
 
 func TestGet(t *testing.T) {
@@ -265,6 +269,23 @@ func TestGet3(t *testing.T) {
 
 	if !bytes.Equal(v[len(v)-11:], []byte(`Rangnekar"}`)) {
 		t.Fatal("corrupt ending")
+	}
+}
+
+func TestGet4(t *testing.T) {
+	exp := `"# \n\n@@@java\npackage main\n\nimport (\n        \"net/http\"\n        \"strings\"\n\n        \"github.com/gin-gonic/gin\"\n)\n\nfunc main() {\n        r := gin.Default()\n        r.LoadHTMLGlob(\"templates/*\")\n\n        r.GET(\"/\", handleIndex)\n        r.GET(\"/to/:name\", handleIndex)\n        r.Run()\n}\n\n// Hello is page data for the template\ntype Hello struct {\n        Name string\n}\n\nfunc handleIndex(c *gin.Context) {\n        name := c.Param(\"name\")\n        if name != \"\" {\n                name = strings.TrimPrefix(c.Param(\"name\"), \"/\")\n        }\n        c.HTML(http.StatusOK, \"hellofly.tmpl\", gin.H{\"Name\": name})\n}\n@@@\n\n\\"`
+
+	exp = strings.ReplaceAll(exp, "@", "`")
+
+	values := Get(input8, [][]byte{[]byte("body")})
+
+	if string(values[0].Key) != "body" {
+		t.Fatal("unexpected key")
+	}
+
+	if string(values[0].Value) != exp {
+		fmt.Println(string(values[0].Value))
+		t.Fatal("unexpected value")
 	}
 }
 

@@ -11,12 +11,19 @@ func Keys(b []byte) [][]byte {
 	st := NewStack()
 	ae := 0
 	instr := false
+	slash := 0
 
 	for i := 0; i < len(b); i++ {
+		if instr && b[i] == '\\' {
+			slash++
+			continue
+		}
+
+		if b[i] == '"' && (slash%2 == 0) {
+			instr = !instr
+		}
+
 		if state == expectObjClose || state == expectListClose {
-			if b[i-1] != '\\' && b[i] == '"' {
-				instr = !instr
-			}
 			if !instr {
 				switch b[i] {
 				case '{', '[':
@@ -52,7 +59,7 @@ func Keys(b []byte) [][]byte {
 			state = expectKeyClose
 			s = i
 
-		case state == expectKeyClose && (b[i-1] != '\\' && b[i] == '"'):
+		case state == expectKeyClose && (b[i] == '"' && (slash%2 == 0)):
 			state = expectColon
 			k = b[(s + 1):i]
 
@@ -63,7 +70,7 @@ func Keys(b []byte) [][]byte {
 			state = expectString
 			s = i
 
-		case state == expectString && (b[i-1] != '\\' && b[i] == '"'):
+		case state == expectString && (b[i] == '"' && (slash%2 == 0)):
 			e = i
 
 		case state == expectValue && b[i] == '{':
@@ -135,6 +142,7 @@ func Keys(b []byte) [][]byte {
 			e = 0
 		}
 
+		slash = 0
 	}
 
 	return res

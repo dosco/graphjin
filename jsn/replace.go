@@ -12,6 +12,11 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 		return errors.New("'from' and 'to' must be of the same length")
 	}
 
+	if len(from) == 0 || len(to) == 0 {
+		_, err := w.Write(b)
+		return err
+	}
+
 	h := xxhash.New()
 	tmap := make(map[uint64]int, len(from))
 
@@ -33,17 +38,24 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 	ws, we := -1, len(b)
 
 	instr := false
+	slash := 0
 
 	for i := 0; i < len(b); i++ {
+		if instr && b[i] == '\\' {
+			slash++
+			continue
+		}
+
 		// skip any left padding whitespace
 		if ws == -1 && (b[i] == '{' || b[i] == '[') {
 			ws = i
 		}
 
+		if b[i] == '"' && (slash%2 == 0) {
+			instr = !instr
+		}
+
 		if state == expectObjClose || state == expectListClose {
-			if b[i-1] != '\\' && b[i] == '"' {
-				instr = !instr
-			}
 			if !instr {
 				switch b[i] {
 				case '{', '[':
@@ -59,7 +71,7 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 			state = expectKeyClose
 			s = i
 
-		case state == expectKeyClose && (b[i-1] != '\\' && b[i] == '"'):
+		case state == expectKeyClose && (b[i] == '"' && (slash%2 == 0)):
 			state = expectColon
 			if _, err := h.Write(b[(s + 1):i]); err != nil {
 				return err
@@ -73,7 +85,7 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 			state = expectString
 			s = i
 
-		case state == expectString && (b[i-1] != '\\' && b[i] == '"'):
+		case state == expectString && (b[i] == '"' && (slash%2 == 0)):
 			e = i
 
 		case state == expectValue && b[i] == '[':
@@ -167,6 +179,8 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 			e = 0
 			d = 0
 		}
+
+		slash = 0
 	}
 
 	if ws == -1 || (ws == 0 && we == len(b)) {
