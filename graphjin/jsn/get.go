@@ -52,12 +52,19 @@ func Get(b []byte, keys [][]byte) []Field {
 
 	n := 0
 	instr := false
+	slash := 0
 
 	for i := 0; i < len(b); i++ {
+		if instr && b[i] == '\\' {
+			slash++
+			continue
+		}
+
+		if b[i] == '"' && (slash%2 == 0) {
+			instr = !instr
+		}
+
 		if state == expectObjClose || state == expectListClose {
-			if b[i-1] != '\\' && b[i] == '"' {
-				instr = !instr
-			}
 			if !instr {
 				switch b[i] {
 				case '{', '[':
@@ -73,7 +80,7 @@ func Get(b []byte, keys [][]byte) []Field {
 			state = expectKeyClose
 			s = i
 
-		case state == expectKeyClose && (b[i-1] != '\\' && b[i] == '"'):
+		case state == expectKeyClose && (b[i] == '"' && (slash%2 == 0)):
 			state = expectColon
 			k = b[(s + 1):i]
 
@@ -84,7 +91,7 @@ func Get(b []byte, keys [][]byte) []Field {
 			state = expectString
 			s = i
 
-		case state == expectString && (b[i-1] != '\\' && b[i] == '"'):
+		case state == expectString && (b[i] == '"' && (slash%2 == 0)):
 			e = i
 
 		case state == expectValue && b[i] == '[':
@@ -155,6 +162,8 @@ func Get(b []byte, keys [][]byte) []Field {
 			state = expectKey
 			e = 0
 		}
+
+		slash = 0
 	}
 
 	return res[:n]
