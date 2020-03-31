@@ -83,12 +83,6 @@ func prepareStmt(item allow.Item) error {
 	qt := qcode.GetQType(gql)
 	q := []byte(gql)
 
-	if len(vars) == 0 {
-		logger.Debug().Msgf("Prepared statement:\n%s\n", gql)
-	} else {
-		logger.Debug().Msgf("Prepared statement:\n%s\n%s\n", vars, gql)
-	}
-
 	tx, err := db.Begin(context.Background())
 	if err != nil {
 		return err
@@ -110,7 +104,7 @@ func prepareStmt(item allow.Item) error {
 			return err
 		}
 
-		logger.Debug().Msg("Prepared statement role: user")
+		logger.Debug().Msgf("Prepared statement 'query %s' (user)", item.Name)
 
 		err = prepare(tx, stmts1, stmtHash(item.Name, "user"))
 		if err != nil {
@@ -118,7 +112,7 @@ func prepareStmt(item allow.Item) error {
 		}
 
 		if conf.isAnonRoleDefined() {
-			logger.Debug().Msg("Prepared statement for role: anon")
+			logger.Debug().Msgf("Prepared statement 'query %s' (anon)", item.Name)
 
 			stmts2, err := buildRoleStmt(q, vars, "anon")
 			if err == psql.ErrAllTablesSkipped {
@@ -136,11 +130,17 @@ func prepareStmt(item allow.Item) error {
 
 	case qcode.QTMutation:
 		for _, role := range conf.Roles {
-			logger.Debug().Msgf("Prepared statement for role: %s", role.Name)
+			logger.Debug().Msgf("Prepared statement 'mutation %s' (%s)", item.Name, role.Name)
 
 			stmts, err := buildRoleStmt(q, vars, role.Name)
+
 			if err != nil {
-				return err
+				if len(item.Vars) == 0 {
+					logger.Warn().Err(err).Msg(item.Query)
+				} else {
+					logger.Warn().Err(err).Msgf("%s %s", item.Vars, item.Query)
+				}
+				continue
 			}
 
 			err = prepare(tx, stmts, stmtHash(item.Name, role.Name))
