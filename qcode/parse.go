@@ -16,7 +16,7 @@ var (
 type parserType int32
 
 const (
-	maxFields = 100
+	maxFields = 1200
 	maxArgs   = 25
 )
 

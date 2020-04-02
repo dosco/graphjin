@@ -172,15 +172,18 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer, vars Variables) (
 				return 0, err
 			}
 
+			io.WriteString(c.w, `)`)
+			aliasWithID(c.w, "__sr", sel.ID)
+
+			io.WriteString(c.w, `)`)
+			aliasWithID(c.w, "__sj", sel.ID)
+
 			if !ti.Singular {
 				io.WriteString(c.w, `)`)
-				aliasWithID(c.w, "__sel", sel.ID)
+				aliasWithID(c.w, "__sj", sel.ID)
 			}
 
 			if sel.ParentID == -1 {
-				io.WriteString(c.w, `)`)
-				aliasWithID(c.w, "__sel", sel.ID)
-
 				if st.Len() != 0 {
 					io.WriteString(c.w, `, `)
 				}
@@ -202,7 +205,7 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer, vars Variables) (
 }
 
 func (c *compilerContext) renderPluralSelect(sel *qcode.Select, ti *DBTableInfo) error {
-	io.WriteString(c.w, `SELECT coalesce(json_agg("__sel_`)
+	io.WriteString(c.w, `SELECT coalesce(json_agg("__sj_`)
 	int2string(c.w, sel.ID)
 	io.WriteString(c.w, `"."json"), '[]') as "json"`)
 
@@ -242,7 +245,7 @@ func (c *compilerContext) renderRootSelect(sel *qcode.Select) error {
 	io.WriteString(c.w, sel.FieldName)
 	io.WriteString(c.w, `', `)
 
-	io.WriteString(c.w, `"__sel_`)
+	io.WriteString(c.w, `"__sj_`)
 	int2string(c.w, sel.ID)
 	io.WriteString(c.w, `"."json"`)
 
@@ -251,7 +254,7 @@ func (c *compilerContext) renderRootSelect(sel *qcode.Select) error {
 		io.WriteString(c.w, sel.FieldName)
 		io.WriteString(c.w, `_cursor', `)
 
-		io.WriteString(c.w, `"__sel_`)
+		io.WriteString(c.w, `"__sj_`)
 		int2string(c.w, sel.ID)
 		io.WriteString(c.w, `"."cursor"`)
 	}
@@ -428,11 +431,28 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo, vars 
 	}
 
 	// SELECT
-	io.WriteString(c.w, `SELECT json_build_object(`)
+	// io.WriteString(c.w, `SELECT json_build_object(`)
+	// if err := c.renderColumns(sel, ti, skipped); err != nil {
+	// 	return 0, err
+	// }
+
+	io.WriteString(c.w, `SELECT row_to_json("__sr_`)
+	int2string(c.w, sel.ID)
+	io.WriteString(c.w, `") AS "json"`)
+
+	if sel.Paging.Type != qcode.PtOffset {
+		for i := range sel.OrderBy {
+			io.WriteString(c.w, `, "__cur_`)
+			int2string(c.w, int32(i))
+			io.WriteString(c.w, `"`)
+		}
+	}
+
+	io.WriteString(c.w, `FROM (SELECT `)
+
 	if err := c.renderColumns(sel, ti, skipped); err != nil {
 		return 0, err
 	}
-	io.WriteString(c.w, `) AS "json"`)
 
 	if sel.Paging.Type != qcode.PtOffset {
 		for i, ob := range sel.OrderBy {
@@ -467,8 +487,8 @@ func (c *compilerContext) renderLateralJoin(sel *qcode.Select) error {
 }
 
 func (c *compilerContext) renderLateralJoinClose(sel *qcode.Select) error {
-	io.WriteString(c.w, `) `)
-	aliasWithID(c.w, "__sel", sel.ID)
+	// io.WriteString(c.w, `) `)
+	// aliasWithID(c.w, "__sj", sel.ID)
 	io.WriteString(c.w, ` ON ('true')`)
 	return nil
 }
@@ -536,9 +556,8 @@ func (c *compilerContext) renderColumns(sel *qcode.Select, ti *DBTableInfo, skip
 			io.WriteString(c.w, ", ")
 		}
 
-		squoted(c.w, col.FieldName)
-		io.WriteString(c.w, ", ")
 		colWithTableID(c.w, ti.Name, sel.ID, col.Name)
+		alias(c.w, col.FieldName)
 
 		i++
 	}
@@ -562,9 +581,8 @@ func (c *compilerContext) renderRemoteRelColumns(sel *qcode.Select, ti *DBTableI
 			io.WriteString(c.w, ", ")
 		}
 
-		squoted(c.w, rel.Right.Col)
-		io.WriteString(c.w, ", ")
 		colWithTableID(c.w, ti.Name, sel.ID, rel.Left.Col)
+		alias(c.w, rel.Right.Col)
 		i++
 	}
 
@@ -585,23 +603,23 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, ti *DBTableInfo, 
 			io.WriteString(c.w, ", ")
 		}
 
-		squoted(c.w, childSel.FieldName)
-
 		if childSel.SkipRender {
-			io.WriteString(c.w, `, NULL`)
+			io.WriteString(c.w, `NULL`)
+			alias(c.w, childSel.FieldName)
 			continue
 		}
 
-		io.WriteString(c.w, `, "__sel_`)
+		io.WriteString(c.w, `"__sj_`)
 		int2string(c.w, childSel.ID)
 		io.WriteString(c.w, `"."json"`)
+		alias(c.w, childSel.FieldName)
 
 		if childSel.Paging.Type != qcode.PtOffset {
-			io.WriteString(c.w, `, '`)
-			io.WriteString(c.w, childSel.FieldName)
-			io.WriteString(c.w, `_cursor', "__sel_`)
+			io.WriteString(c.w, `, "__sj_`)
 			int2string(c.w, childSel.ID)
-			io.WriteString(c.w, `"."cursor"`)
+			io.WriteString(c.w, `"."cursor" AS "`)
+			io.WriteString(c.w, childSel.FieldName)
+			io.WriteString(c.w, `_cursor"`)
 		}
 
 		i++
