@@ -1,5 +1,7 @@
+// Package jsn provides fast and no-allocation functions to extract values and modify JSON data
 package jsn
 
+// Keys function fetches all the unique keys in the JSON data in order of their occurance
 func Keys(b []byte) [][]byte {
 	res := make([][]byte, 0, 20)
 
@@ -8,7 +10,7 @@ func Keys(b []byte) [][]byte {
 	var k []byte
 	state := expectValue
 
-	st := NewStack()
+	st := newStack()
 	ae := 0
 	instr := false
 	slash := 0

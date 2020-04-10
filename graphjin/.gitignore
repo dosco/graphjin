@@ -24,7 +24,6 @@
 /demo/tmp
 
 .vscode
-main
 .DS_Store
 .swp
 .release

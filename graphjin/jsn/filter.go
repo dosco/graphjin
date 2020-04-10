@@ -6,6 +6,7 @@ import (
 	"github.com/cespare/xxhash/v2"
 )
 
+// Filter function filters the JSON keeping only the provided keys and removing all others
 func Filter(w *bytes.Buffer, b []byte, keys []string) error {
 	var err error
 	kmap := make(map[uint64]struct{}, len(keys))
