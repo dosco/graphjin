@@ -1,0 +1,6 @@
+query {
+  product(id: $PRODUCT_ID, where: { price: { eq: $PRODUCT_PRICE } }) {
+    id
+    name
+  }
+}

@@ -1,6 +1,0 @@
-query {
-  products(search: "Imperial") {
-    id
-    name
-  }
-}

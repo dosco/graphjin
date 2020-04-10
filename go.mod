@@ -15,19 +15,18 @@ require (
 	github.com/garyburd/redigo v1.6.0
 	github.com/go-sourcemap/sourcemap v2.1.2+incompatible // indirect
 	github.com/gobuffalo/flect v0.1.6
-	github.com/jackc/pgconn v1.0.1
 	github.com/jackc/pgtype v1.0.1
 	github.com/jackc/pgx/v4 v4.0.1
 	github.com/magiconair/properties v1.8.1 // indirect
 	github.com/pelletier/go-toml v1.4.0 // indirect
 	github.com/pkg/errors v0.8.1
 	github.com/rs/cors v1.7.0
-	github.com/rs/zerolog v1.15.0
 	github.com/spf13/afero v1.2.2 // indirect
 	github.com/spf13/cobra v0.0.5
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/spf13/viper v1.4.0
 	github.com/valyala/fasttemplate v1.0.1
+	go.uber.org/zap v1.14.1
 	golang.org/x/crypto v0.0.0-20190927123631-a832865fa7ad
 	golang.org/x/sys v0.0.0-20191128015809-6d18c012aee9 // indirect
 	gopkg.in/yaml.v2 v2.2.7 // indirect

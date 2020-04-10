@@ -28,14 +28,14 @@ BIN_DIR := $(GOPATH)/bin
 GORICE := $(BIN_DIR)/rice
 GOLANGCILINT := $(BIN_DIR)/golangci-lint
 GITCHGLOG := $(BIN_DIR)/git-chglog
-WEB_BUILD_DIR := ./web/build/manifest.json
+WEB_BUILD_DIR := ./cmd/internal/serv/web/build/manifest.json
 
 $(GORICE):
 	@GO111MODULE=off go get -u github.com/GeertJohan/go.rice/rice
 
 $(WEB_BUILD_DIR):
-	@echo "First install Yarn and create a build of the web UI found under ./web"
-	@echo "Command: cd web && yarn && yarn build"
+	@echo "First install Yarn and create a build of the web UI then re-run make install"
+	@echo "Run this command: yarn --cwd cmd/internal/serv/web/ build"
 	@exit 1
 
 $(GITCHGLOG):
@@ -57,7 +57,7 @@ os = $(word 1, $@)
 
 $(PLATFORMS): lint test 
 	@mkdir -p release
-	@GOOS=$(os) GOARCH=amd64 go build $(BUILD_FLAGS) -o release/$(BINARY)-$(BUILD_VERSION)-$(os)-amd64
+	@GOOS=$(os) GOARCH=amd64 go build $(BUILD_FLAGS) -o release/$(BINARY)-$(BUILD_VERSION)-$(os)-amd64 cmd/main.go
 
 release: windows linux darwin
 
@@ -69,7 +69,7 @@ gen: $(GORICE) $(WEB_BUILD_DIR)
 	@go generate ./...
 
 $(BINARY): clean
-	@go build $(BUILD_FLAGS) -o $(BINARY)
+	@go build $(BUILD_FLAGS) -o $(BINARY) cmd/main.go 
 
 clean:
 	@rm -f $(BINARY)
@@ -81,7 +81,7 @@ install: gen
 	@echo $(GOPATH)
 	@echo "Commit Hash: `git rev-parse HEAD`"
 	@echo "Old Hash: `shasum $(GOPATH)/bin/$(BINARY) 2>/dev/null | cut -c -32`"
-	@go install $(BUILD_FLAGS)
+	@go install $(BUILD_FLAGS) cmd
 	@echo "New Hash:" `shasum $(GOPATH)/bin/$(BINARY) 2>/dev/null | cut -c -32`
 
 uninstall: clean

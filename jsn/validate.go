@@ -7,7 +7,7 @@ import (
 	"unsafe"
 )
 
-// Validate validates JSON s.
+// Validate function validates JSON
 func Validate(s string) error {
 	s = skipWS(s)
 

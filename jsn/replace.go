@@ -7,6 +7,7 @@ import (
 	"github.com/cespare/xxhash/v2"
 )
 
+// Replace function replaces key-value pairs provided in the `from` argument with those in the `to` argument
 func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 	if len(from) != len(to) {
 		return errors.New("'from' and 'to' must be of the same length")

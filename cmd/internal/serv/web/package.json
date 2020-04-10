@@ -1,0 +1,35 @@
+{
+  "name": "web",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "@apollographql/graphql-playground-react": "^1.7.31",
+    "apollo-link-ws": "^1.0.8",
+    "graphql": "^14.1.1",
+    "react": "^16.11.0",
+    "react-dom": "^16.11.0",
+    "react-scripts": "3.2.0",
+    "subscriptions-transport-ws": "^0.9.14"
+  },
+  "scripts": {
+    "start": "PORT=3001 react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "proxy": "http://localhost:8080",
+  "eslintConfig": {
+    "extends": "react-app"
+  },
+  "browserslist": [
+    ">0.2%",
+    "not dead",
+    "not ie <= 11",
+    "not op_mini all"
+  ],
+  "resolutions": {
+    "apollo-link-ws": "^1.0.8",
+    "graphql": "^14.1.1",
+    "subscriptions-transport-ws": "^0.9.14"
+  }
+}

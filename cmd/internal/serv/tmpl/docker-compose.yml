@@ -1,0 +1,59 @@
+version: '3.4'
+services:
+  # Postgres DB
+  db:
+    image: postgres:12
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+
+  # Yugabyte DB
+  # yb-master:                                                                                         
+  #   image: yugabytedb/yugabyte:latest                                                              
+  #   container_name: yb-master-n1                                                                   
+  #   command: [ "/home/yugabyte/bin/yb-master",                                                     
+  #             "--fs_data_dirs=/mnt/disk0,/mnt/disk1",                                              
+  #             "--master_addresses=yb-master-n1:7100",                                              
+  #             "--replication_factor=1",                                                            
+  #             "--enable_ysql=true"]                                                                
+  #   ports:                                                                                         
+  #     - "7000:7000"                                                                                  
+  #   environment:                                                                                   
+  #     SERVICE_7000_NAME: yb-master                                                                 
+                                                                                                    
+  # db:                                                                                        
+  #   image: yugabytedb/yugabyte:latest                                                              
+  #   container_name: yb-tserver-n1                                                                  
+  #   command: [ "/home/yugabyte/bin/yb-tserver",                                                    
+  #             "--fs_data_dirs=/mnt/disk0,/mnt/disk1",                                              
+  #             "--start_pgsql_proxy",                                                               
+  #             "--tserver_master_addrs=yb-master-n1:7100"]                                          
+  #   ports:                                                                                         
+  #     - "9042:9042"                                                                                  
+  #     - "6379:6379"                                                                                  
+  #     - "5433:5433"                                                                                  
+  #     - "9000:9000"                                                                                  
+  #   environment:                                                                                   
+  #     SERVICE_5433_NAME: ysql                                                                      
+  #     SERVICE_9042_NAME: ycql                                                                      
+  #     SERVICE_6379_NAME: yedis                                                                     
+  #     SERVICE_9000_NAME: yb-tserver                                                                
+  #   depends_on:                                                                                    
+  #     - yb-master
+
+  {% app_name_slug %}_api:
+    image: dosco/super-graph:latest
+    environment:
+      GO_ENV: "development"
+      # Uncomment below for Yugabyte DB
+      # SG_DATABASE_PORT: 5433
+      # SG_DATABASE_USER: yugabyte
+      # SG_DATABASE_PASSWORD: yugabyte
+    volumes:
+     - ./config:/config
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db

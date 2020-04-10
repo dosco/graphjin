@@ -4,6 +4,7 @@ import (
 	"bytes"
 )
 
+// Strip function strips out all values from the JSON data expect for the provided path
 func Strip(b []byte, path [][]byte) []byte {
 	s, e, d := 0, 0, 0
 

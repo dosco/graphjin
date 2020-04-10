@@ -17,11 +17,13 @@ const (
 	expectNumClose
 )
 
+// Field struct holds a JSON key and value
 type Field struct {
 	Key   []byte
 	Value []byte
 }
 
+// Value function is a utility function to sanitize returned values
 func Value(b []byte) []byte {
 	e := (len(b) - 1)
 	switch {
@@ -36,6 +38,7 @@ func Value(b []byte) []byte {
 	}
 }
 
+// Keys function fetches values for the provided keys
 func Get(b []byte, keys [][]byte) []Field {
 	kmap := make(map[uint64]struct{}, len(keys))
 

@@ -1,0 +1,222 @@
+app_name: "{% app_name %} Development"
+host_port: 0.0.0.0:8080
+web_ui: true
+
+# debug, error, warn, info
+log_level: "info"
+
+# enable or disable http compression (uses gzip)
+http_compress: true
+
+# When production mode is 'true' only queries 
+# from the allow list are permitted.
+# When it's 'false' all queries are saved to the
+# the allow list in ./config/allow.list
+production: false
+
+# Throw a 401 on auth failure for queries that need auth
+auth_fail_block: false
+
+# Latency tracing for database queries and remote joins
+# the resulting latency information is returned with the
+# response
+enable_tracing: true
+
+# Watch the config folder and reload Super Graph
+# with the new configs when a change is detected
+reload_on_config_change: true
+
+# File that points to the database seeding script
+# seed_file: seed.js
+
+# Path pointing to where the migrations can be found
+# this must be a relative path under the config path
+migrations_path: ./migrations
+
+# Secret key for general encryption operations like 
+# encrypting the cursor data
+secret_key: supercalifajalistics
+
+# CORS: A list of origins a cross-domain request can be executed from. 
+# If the special * value is present in the list, all origins will be allowed. 
+# An origin may contain a wildcard (*) to replace 0 or more 
+# characters (i.e.: http://*.domain.com).
+cors_allowed_origins: ["*"]
+
+# Debug Cross Origin Resource Sharing requests
+cors_debug: false
+
+# Postgres related environment Variables
+# SG_DATABASE_HOST
+# SG_DATABASE_PORT
+# SG_DATABASE_USER
+# SG_DATABASE_PASSWORD
+
+# Auth related environment Variables
+# SG_AUTH_RAILS_COOKIE_SECRET_KEY_BASE
+# SG_AUTH_RAILS_REDIS_URL
+# SG_AUTH_RAILS_REDIS_PASSWORD
+# SG_AUTH_JWT_PUBLIC_KEY_FILE
+
+# inflections:
+#   person: people
+#   sheep: sheep
+
+auth:
+  # Can be 'rails', 'jwt' or 'header'
+  type: rails
+  cookie: _{% app_name_slug %}_session
+
+  # Comment this out if you want to disable setting
+  # the user_id via a header for testing. 
+  # Disable in production
+  creds_in_header: true
+
+  rails:
+    # Rails version this is used for reading the
+    # various cookies formats.
+    version: 5.2
+
+    # Found in 'Rails.application.config.secret_key_base'
+    secret_key_base: 0a248500a64c01184edb4d7ad3a805488f8097ac761b76aaa6c17c01dcb7af03a2f18ba61b2868134b9c7b79a122bc0dadff4367414a2d173297bfea92be5566
+
+    # Remote cookie store. (memcache or redis)
+    # url: redis://redis:6379
+    # password: ""
+    # max_idle: 80
+    # max_active: 12000
+
+    # In most cases you don't need these
+    # salt: "encrypted cookie"
+    # sign_salt: "signed encrypted cookie"
+    # auth_salt: "authenticated encrypted cookie"
+
+  # jwt:
+  #   provider: auth0
+  #   secret: abc335bfcfdb04e50db5bb0a4d67ab9
+  #   public_key_file: /secrets/public_key.pem
+  #   public_key_type: ecdsa #rsa
+
+  # header:
+  #   name: dnt
+  #   exists: true
+  #   value: localhost:8080
+
+# You can add additional named auths to use with actions
+# In this example actions using this auth can only be
+# called from the Google Appengine Cron service that
+# sets a special header to all it's requests
+auths:
+  - name: from_taskqueue
+    type: header
+    header:
+      name: X-Appengine-Cron
+      exists: true
+
+database:
+  type: postgres
+  host: db
+  port: 5432
+  dbname: {% app_name_slug %}_development
+  user: postgres
+  password: postgres
+
+  #schema: "public"
+  #pool_size: 10
+  #max_retries: 0
+  #log_level: "debug"
+
+  # Set session variable "user.id" to the user id
+  # Enable this if you need the user id in triggers, etc
+  set_user_id: false
+
+  # database ping timeout is used for db health checking
+  ping_timeout: 1m
+
+  # Define additional variables here to be used with filters
+  variables:
+    #admin_account_id: "5"
+    admin_account_id: "sql:select id from users where admin = true limit 1"
+
+
+  # Field and table names that you wish to block
+  blocklist:
+    - ar_internal_metadata
+    - schema_migrations
+    - secret
+    - password
+    - encrypted
+    - token
+
+# Create custom actions with their own api endpoints
+# For example the below action will be available at /api/v1/actions/refresh_leaderboard_users
+# A request to this url will execute the configured SQL query
+# which in this case refreshes a materialized view in the database.
+# The auth_name is from one of the configured auths
+actions:
+  - name: refresh_leaderboard_users
+    sql: REFRESH MATERIALIZED VIEW CONCURRENTLY "leaderboard_users"
+    auth_name: from_taskqueue
+
+tables:
+  - name: customers
+    remotes:
+      - name: payments
+        id: stripe_id
+        url: http://rails_app:3000/stripe/$id
+        path: data
+        # debug: true
+        pass_headers: 
+          - cookie
+        set_headers:
+          - name: Host
+            value: 0.0.0.0
+          # - name: Authorization
+          #   value: Bearer <stripe_api_key>
+
+  - # You can create new fields that have a
+    # real db table backing them
+    name: me
+    table: users
+
+
+#roles_query: "SELECT * FROM users WHERE id = $user_id"
+
+roles:
+  - name: anon
+    tables:
+      - name: users
+        query:
+          limit: 10
+
+  - name: user
+    tables:
+      - name: users
+        query:
+          filters: ["{ id: { _eq: $user_id } }"]
+
+      - name: products
+        query:
+          limit: 50
+          filters: ["{ user_id: { eq: $user_id } }"]
+          disable_functions: false
+
+        insert:
+          filters: ["{ user_id: { eq: $user_id } }"]
+          presets:
+            - user_id: "$user_id"
+            - created_at: "now"
+            
+        update:
+          filters: ["{ user_id: { eq: $user_id } }"]
+          presets:
+            - updated_at: "now"
+
+        delete:
+          block: true
+
+  # - name: admin
+  #   match: id = 1000
+  #   tables:
+  #     - name: users
+  #       filters: []
