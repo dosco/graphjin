@@ -6,11 +6,8 @@ import (
 	_log "log"
 	"os"
 	"runtime"
-	"strings"
 
-	"github.com/dosco/super-graph/config"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
 
@@ -29,12 +26,13 @@ var (
 )
 
 var (
-	log       *_log.Logger   // logger
-	zlog      *zap.Logger    // fast logger
-	conf      *config.Config // parsed config
-	confPath  string         // path to the config file
-	db        *sql.DB        // database connection pool
-	secretKey [32]byte       // encryption key
+	log       *_log.Logger // logger
+	zlog      *zap.Logger  // fast logger
+	logLevel  int          // log level
+	conf      *Config      // parsed config
+	confPath  string       // path to the config file
+	db        *sql.DB      // database connection pool
+	secretKey [32]byte     // encryption key
 )
 
 func Cmd() {
@@ -132,12 +130,12 @@ e.g. db:migrate -+1
 		Run:   cmdNew,
 	})
 
-	rootCmd.AddCommand(&cobra.Command{
-		Use:   fmt.Sprintf("conf:dump [%s]", strings.Join(viper.SupportedExts, "|")),
-		Short: "Dump config to file",
-		Long:  "Dump current config to a file in the selected format",
-		Run:   cmdConfDump,
-	})
+	// rootCmd.AddCommand(&cobra.Command{
+	// 	Use:   fmt.Sprintf("conf:dump [%s]", strings.Join(viper.SupportedExts, "|")),
+	// 	Short: "Dump config to file",
+	// 	Long:  "Dump current config to a file in the selected format",
+	// 	Run:   cmdConfDump,
+	// })
 
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "version",

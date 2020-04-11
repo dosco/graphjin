@@ -1,0 +1,30 @@
+{
+  "files": {
+    "main.css": "/static/css/main.c6b5c55c.chunk.css",
+    "main.js": "/static/js/main.04d74040.chunk.js",
+    "main.js.map": "/static/js/main.04d74040.chunk.js.map",
+    "runtime-main.js": "/static/js/runtime-main.4aea9da3.js",
+    "runtime-main.js.map": "/static/js/runtime-main.4aea9da3.js.map",
+    "static/js/2.03370bd3.chunk.js": "/static/js/2.03370bd3.chunk.js",
+    "static/js/2.03370bd3.chunk.js.map": "/static/js/2.03370bd3.chunk.js.map",
+    "index.html": "/index.html",
+    "precache-manifest.e33bc3c7c6774d7032c490820c96901d.js": "/precache-manifest.e33bc3c7c6774d7032c490820c96901d.js",
+    "service-worker.js": "/service-worker.js",
+    "static/css/main.c6b5c55c.chunk.css.map": "/static/css/main.c6b5c55c.chunk.css.map",
+    "static/media/GraphQLLanguageService.js.flow": "/static/media/GraphQLLanguageService.js.5ab204b9.flow",
+    "static/media/autocompleteUtils.js.flow": "/static/media/autocompleteUtils.js.4ce7ba19.flow",
+    "static/media/getAutocompleteSuggestions.js.flow": "/static/media/getAutocompleteSuggestions.js.7f98f032.flow",
+    "static/media/getDefinition.js.flow": "/static/media/getDefinition.js.4dbec62f.flow",
+    "static/media/getDiagnostics.js.flow": "/static/media/getDiagnostics.js.65b0979a.flow",
+    "static/media/getHoverInformation.js.flow": "/static/media/getHoverInformation.js.d9411837.flow",
+    "static/media/getOutline.js.flow": "/static/media/getOutline.js.c04e3998.flow",
+    "static/media/index.js.flow": "/static/media/index.js.02c24280.flow",
+    "static/media/logo.png": "/static/media/logo.57ee3b60.png"
+  },
+  "entrypoints": [
+    "static/js/runtime-main.4aea9da3.js",
+    "static/js/2.03370bd3.chunk.js",
+    "static/css/main.c6b5c55c.chunk.css",
+    "static/js/main.04d74040.chunk.js"
+  ]
+}

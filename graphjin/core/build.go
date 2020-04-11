@@ -7,13 +7,12 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/dosco/super-graph/config"
 	"github.com/dosco/super-graph/core/internal/psql"
 	"github.com/dosco/super-graph/core/internal/qcode"
 )
 
 type stmt struct {
-	role    *config.Role
+	role    *Role
 	qc      *qcode.QCode
 	skipped uint32
 	sql     string
@@ -29,7 +28,7 @@ func (sg *SuperGraph) buildStmt(qt qcode.QType, query, vars []byte, role string)
 			return sg.buildRoleStmt(query, vars, "anon")
 		}
 
-		if sg.conf.IsABACEnabled() {
+		if sg.abacEnabled {
 			return sg.buildMultiStmt(query, vars)
 		}
 
@@ -41,8 +40,8 @@ func (sg *SuperGraph) buildStmt(qt qcode.QType, query, vars []byte, role string)
 }
 
 func (sg *SuperGraph) buildRoleStmt(query, vars []byte, role string) ([]stmt, error) {
-	ro := sg.conf.GetRole(role)
-	if ro == nil {
+	ro, ok := sg.roles[role]
+	if !ok {
 		return nil, fmt.Errorf(`roles '%s' not defined in c.sg.config`, role)
 	}
 
@@ -168,7 +167,7 @@ func (sg *SuperGraph) renderUserQuery(stmts []stmt) (string, error) {
 	return w.String(), nil
 }
 
-func (sg *SuperGraph) hasTablesWithConfig(qc *qcode.QCode, role *config.Role) bool {
+func (sg *SuperGraph) hasTablesWithConfig(qc *qcode.QCode, role *Role) bool {
 	for _, id := range qc.Roots {
 		t, err := sg.schema.GetTable(qc.Selects[id].Name)
 		if err != nil {

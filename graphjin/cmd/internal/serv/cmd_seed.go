@@ -33,14 +33,14 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 		log.Fatalf("ERR failed to connect to database: %s", err)
 	}
 
-	sfile := path.Join(conf.ConfigPathUsed(), conf.SeedFile)
+	sfile := path.Join(conf.cpath, conf.SeedFile)
 
 	b, err := ioutil.ReadFile(sfile)
 	if err != nil {
 		log.Fatalf("ERR failed to read seed file %s: %s", sfile, err)
 	}
 
-	sg, err = core.NewSuperGraph(conf, db)
+	sg, err = core.NewSuperGraph(&conf.Core, db)
 	if err != nil {
 		log.Fatalf("ERR failed to initialize Super Graph: %s", err)
 	}

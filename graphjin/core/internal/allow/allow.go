@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"path"
 	"sort"
 	"strings"
 )
@@ -35,11 +34,11 @@ type Config struct {
 	Persist           bool
 }
 
-func New(cpath string, conf Config) (*List, error) {
+func New(filename string, conf Config) (*List, error) {
 	al := List{}
 
-	if len(cpath) != 0 {
-		fp := path.Join(cpath, "allow.list")
+	if len(filename) != 0 {
+		fp := filename
 
 		if _, err := os.Stat(fp); err == nil {
 			al.filepath = fp
@@ -73,10 +72,10 @@ func New(cpath string, conf Config) (*List, error) {
 			return nil, errors.New("allow.list not found")
 		}
 
-		if len(cpath) == 0 {
+		if len(filename) == 0 {
 			al.filepath = "./config/allow.list"
 		} else {
-			al.filepath = path.Join(cpath, "allow.list")
+			al.filepath = filename
 		}
 	}
 

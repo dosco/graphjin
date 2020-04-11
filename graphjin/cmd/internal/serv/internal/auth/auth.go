@@ -5,11 +5,43 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/dosco/super-graph/config"
 	"github.com/dosco/super-graph/core"
 )
 
-func SimpleHandler(ac *config.Auth, next http.Handler) (http.HandlerFunc, error) {
+// Auth struct contains authentication related config values used by the Super Graph service
+type Auth struct {
+	Name          string
+	Type          string
+	Cookie        string
+	CredsInHeader bool `mapstructure:"creds_in_header"`
+
+	Rails struct {
+		Version       string
+		SecretKeyBase string `mapstructure:"secret_key_base"`
+		URL           string
+		Password      string
+		MaxIdle       int `mapstructure:"max_idle"`
+		MaxActive     int `mapstructure:"max_active"`
+		Salt          string
+		SignSalt      string `mapstructure:"sign_salt"`
+		AuthSalt      string `mapstructure:"auth_salt"`
+	}
+
+	JWT struct {
+		Provider   string
+		Secret     string
+		PubKeyFile string `mapstructure:"public_key_file"`
+		PubKeyType string `mapstructure:"public_key_type"`
+	}
+
+	Header struct {
+		Name   string
+		Value  string
+		Exists bool
+	}
+}
+
+func SimpleHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -32,7 +64,7 @@ func SimpleHandler(ac *config.Auth, next http.Handler) (http.HandlerFunc, error)
 	}, nil
 }
 
-func HeaderHandler(ac *config.Auth, next http.Handler) (http.HandlerFunc, error) {
+func HeaderHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 	hdr := ac.Header
 
 	if len(hdr.Name) == 0 {
@@ -64,7 +96,7 @@ func HeaderHandler(ac *config.Auth, next http.Handler) (http.HandlerFunc, error)
 	}, nil
 }
 
-func WithAuth(next http.Handler, ac *config.Auth) (http.Handler, error) {
+func WithAuth(next http.Handler, ac *Auth) (http.Handler, error) {
 	var err error
 
 	if ac.CredsInHeader {

@@ -63,7 +63,7 @@ func (sg *SuperGraph) initCompilers() error {
 		return err
 	}
 
-	sg.schema, err = psql.NewDBSchema(di, sg.conf.GetDBTableAliases())
+	sg.schema, err = psql.NewDBSchema(di, getDBTableAliases(sg.conf))
 	if err != nil {
 		return err
 	}
@@ -92,7 +92,7 @@ func (c *scontext) execQuery() ([]byte, error) {
 	// var st *stmt
 	var err error
 
-	if c.sg.conf.Production {
+	if c.sg.conf.UseAllowList {
 		data, _, err = c.resolvePreparedSQL()
 		if err != nil {
 			return nil, err
@@ -115,7 +115,7 @@ func (c *scontext) resolvePreparedSQL() ([]byte, *stmt, error) {
 	var err error
 
 	mutation := (c.res.op == qcode.QTMutation)
-	useRoleQuery := c.sg.conf.IsABACEnabled() && mutation
+	useRoleQuery := c.sg.abacEnabled && mutation
 	useTx := useRoleQuery || c.sg.conf.SetUserID
 
 	if useTx {
@@ -148,7 +148,7 @@ func (c *scontext) resolvePreparedSQL() ([]byte, *stmt, error) {
 
 	c.res.role = role
 
-	ps, ok := prepared[stmtHash(c.res.name, role)]
+	ps, ok := c.sg.prepared[stmtHash(c.res.name, role)]
 	if !ok {
 		return nil, nil, errNotFound
 	}
@@ -198,7 +198,7 @@ func (c *scontext) resolveSQL() ([]byte, *stmt, error) {
 	var err error
 
 	mutation := (c.res.op == qcode.QTMutation)
-	useRoleQuery := c.sg.conf.IsABACEnabled() && mutation
+	useRoleQuery := c.sg.abacEnabled && mutation
 	useTx := useRoleQuery || c.sg.conf.SetUserID
 
 	if useTx {

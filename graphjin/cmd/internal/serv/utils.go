@@ -113,11 +113,11 @@ func al(b byte) bool {
 func fatalInProd(err error, msg string) {
 	var wg sync.WaitGroup
 
-	if !isDev() {
+	if isDev() {
+		log.Printf("ERR %s: %s", msg, err)
+	} else {
 		log.Fatalf("ERR %s: %s", msg, err)
 	}
-
-	log.Printf("ERR %s: %s", msg, err)
 
 	wg.Add(1)
 	wg.Wait()
@@ -125,4 +125,8 @@ func fatalInProd(err error, msg string) {
 
 func isDev() bool {
 	return strings.HasPrefix(os.Getenv("GO_ENV"), "dev")
+}
+
+func sanitize(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }

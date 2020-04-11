@@ -3,13 +3,11 @@ package serv
 import (
 	"fmt"
 	"net/http"
-
-	"github.com/dosco/super-graph/config"
 )
 
 type actionFn func(w http.ResponseWriter, r *http.Request) error
 
-func newAction(a *config.Action) (http.Handler, error) {
+func newAction(a *Action) (http.Handler, error) {
 	var fn actionFn
 	var err error
 
@@ -32,7 +30,7 @@ func newAction(a *config.Action) (http.Handler, error) {
 	return http.HandlerFunc(httpFn), nil
 }
 
-func newSQLAction(a *config.Action) (actionFn, error) {
+func newSQLAction(a *Action) (actionFn, error) {
 	fn := func(w http.ResponseWriter, r *http.Request) error {
 		_, err := db.ExecContext(r.Context(), a.SQL)
 		return err

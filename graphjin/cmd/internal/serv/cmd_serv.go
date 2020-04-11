@@ -28,7 +28,7 @@ func cmdServ(cmd *cobra.Command, args []string) {
 	// 	initResolvers()
 	// }
 
-	sg, err = core.NewSuperGraph(conf, db)
+	sg, err = core.NewSuperGraph(&conf.Core, db)
 	if err != nil {
 		fatalInProd(err, "failed to initialize Super Graph")
 	}
