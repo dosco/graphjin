@@ -2,33 +2,33 @@
   <div>
     <main aria-labelledby="main-title" >
     <Navbar />
+    <div style="height: 3.6rem"></div>
 
-    <div class="container mx-auto mt-24">
+    <div class="container mx-auto pt-4">
       <div class="text-center">
-        <div class="text-center text-4xl text-gray-800 leading-tight">
+        <div class="text-center text-3xl md:text-4xl text-black leading-tight font-semibold">
           Fetch data without code
         </div>
 
         <NavLink
-          class="inline-block px-4 py-3 my-8 bg-blue-600 text-blue-100 font-bold rounded"
+          class="inline-block px-4 py-3 my-8 bg-blue-600 text-white font-bold rounded"
           :item="actionLink"
         />
 
         <a
-          class="px-4 py-3 my-8 border-2 border-gray-500 text-gray-600 font-bold rounded"
+          class="px-4 py-3 my-8 border-2 border-blue-600 text-blue-600 font-bold rounded"
           href="https://github.com/dosco/super-graph"
           target="_blank"
         >Github</a>
-
       </div>
     </div>
 
-    <div class="container mx-auto mb-8">
-      <div class="flex flex-wrap">
-        <div class="w-100 md:w-1/2 bg-indigo-300 text-indigo-800 text-lg p-4">
-          <div class="text-center text-2xl font-bold pb-2">Before, struggle with SQL</div>
-          <pre>
 
+    <div class="container mx-auto mb-8 mt-0 md:mt-20 bg-green-100">
+      <div class="flex flex-wrap">
+        <div class="w-100 md:w-1/2 border border-green-500 text-gray-6 00 text-sm md:text-lg p-6">
+          <div class="text-xl font-bold pb-4">Before, struggle with SQL</div>
+          <pre>
 type User struct {
   gorm.Model
   Profile   Profile
@@ -50,8 +50,9 @@ db.Model(&user).
 and more ...
         </pre>
         </div>
-        <div class="w-100 md:w-1/2 bg-green-300 text-black text-lg p-4">
-          <div class="text-center text-2xl font-bold pb-2">With Super Graph, just ask.</div>
+
+        <div class="w-100 md:w-1/2 border border-l md:border-l-0 border-green-500 text-blue-900 text-sm md:text-lg p-6">
+          <div class="text-xl font-bold pb-4">With Super Graph, just ask.</div>
           <pre>
 query {
   user(id: 5) {
@@ -59,26 +60,24 @@ query {
     first_name
     last_name
     picture_url
-  }
-  posts(first: 20, order_by: { score: desc }) {
-    slug
-    title
-    created_at
-    cached_votes_total
-    vote(where: { user_id: { eq: $user_id } }) {
-      id
+    posts(first: 20, order_by: { score: desc }) {
+      slug
+      title
+      created_at
+      votes_total
+      votes { created_at }
+      author { id name }
+      tags { id name }
     }
-    author { id name }
-    tags { id name }
+    posts_cursor
   }
-  posts_cursor
 }
           </pre>
         </div>
       </div>
     </div>
 
-    <div>
+    <div class="mt-0 md:mt-20">
       <div
         class="flex flex-wrap mx-2 md:mx-20"
         v-if="data.features && data.features.length"
@@ -89,24 +88,21 @@ query {
           :key="index"
         >
           <div class="p-8">
-          <h2 class="md:text-xl text-blue-800 font-medium border-0 mb-1">{{ feature.title }}</h2>
-          <p class="md:text-xl text-gray-700 leading-snug">{{ feature.details }}</p>
+          <h2 class="text-lg uppercase border-0">{{ feature.title }}</h2>
+          <div class="text-xl text-gray-900 leading-snug">{{ feature.details }}</div>
           </div>
         </div>
       </div>
     </div>
 
 
-    <div class="bg-gray-100 mt-10">
-      <div class="container mx-auto px-10 md:px-0 py-32">
+    <div class="pt-0 md:pt-20">
+      <div class="container mx-auto p-10">
 
-        <div class="pb-8 hidden md:flex justify-center">
+        <div class="flex justify-center pb-20">
           <img src="arch-basic.svg">
         </div>
 
-        <h1 class="uppercase font-semibold text-xl text-blue-800 text-center mb-4">
-          What is Super Graph?
-        </h1>
         <div class="text-2xl md:text-3xl">
           Super Graph is a library and service that fetches data from any Postgres database using just GraphQL. No more struggling with ORMs and SQL to wrangle data out of the database. No more having to figure out the right joins or making ineffiient queries. However complex the GraphQL, Super Graph will always generate just one single efficient SQL query. The goal is to save you time and money so you can focus on you're apps core value.
         </div>
@@ -114,17 +110,7 @@ query {
     </div>
 
 
-    <div class="container mx-auto flex flex-wrap">
-      <div class="md:w-1/2">
-        <img src="/graphql.png">
-      </div>
-
-      <div class="md:w-1/2">
-        <img src="/json.png">
-      </div>
-    </div>
-
-    <div class="mt-10 py-10 md:py-20">
+    <div class="pt-20">
       <div class="container mx-auto px-10 md:px-0">
         <h1 class="uppercase font-semibold text-2xl text-blue-800 text-center">
           Try Super Graph
@@ -133,20 +119,18 @@ query {
         <h1 class="uppercase font-semibold text-lg text-gray-800">
           Deploy as a service using docker
         </h1>
-        <div class="bg-gray-800 text-indigo-300 p-4 rounded">
+        <div class="p-4 rounded bg-black text-white">
           <pre>$ git clone https://github.com/dosco/super-graph && cd super-graph && make install</pre>
           <pre>$ super-graph new blog; cd blog</pre>
           <pre>$ docker-compose run blog_api ./super-graph db:setup</pre>
           <pre>$ docker-compose up</pre>
         </div>
 
-        <div class="border-t mt-4 pb-4"></div>
-
         <h1 class="uppercase font-semibold text-lg text-gray-800">
           Or use it with your own code
         </h1>
         <div class="text-md">
-          <pre class="bg-gray-800 text-indigo-300 p-4 rounded">
+          <pre class="p-4 rounded bg-black text-white">
 package main
 
 import (
@@ -194,7 +178,7 @@ func main() {
       </div>
     </div>
 
-    <div class="bg-gray-100 mt-10">
+    <div class="pt-0 md:pt-20">
       <div class="container mx-auto px-10 md:px-0 py-32">
         <h1 class="uppercase font-semibold text-xl text-blue-800 mb-4">
           The story of {{ data.heroText }}
@@ -245,7 +229,7 @@ func main() {
     </div>
     -->
 
-    <div class="border-t py-10">
+    <div class="pt-0 md:pt-20">
       <div class="block md:hidden w-100">
         <iframe src='https://www.youtube.com/embed/MfPL2A-DAJk' frameborder='0' allowfullscreen style="width: 100%; height: 250px;">
         </iframe>
@@ -267,7 +251,101 @@ func main() {
       </div>
     </div>
 
-    <div class="bg-gray-200 mt-10">
+    <div class="container mx-auto pt-0 md:pt-20">
+      <div class="flex flex-wrap bg-green-100">
+        <div class="w-100 md:w-1/2 border border-green-500 text-gray-6 00 text-sm md:text-lg p-6">
+          <div class="text-xl font-bold pb-4">No more joins joins, json, orms, just use GraphQL. Fetch all the data want in the structure you need.</div>
+          <pre>
+query  {
+  thread {
+    slug
+    title
+    published
+    createdAt : created_at
+    totalVotes : cached_votes_total
+    totalPosts : cached_posts_total
+    vote : thread_vote(where: { user_id: { eq: $user_id } }) {
+      created_at
+    }
+    topics {
+      slug
+      name
+    }
+    author : me {
+      slug
+    }
+    posts(first: 1, order_by: { score: desc }) {
+      slug
+      body
+      published
+      createdAt : created_at
+      totalVotes : cached_votes_total
+      totalComments : cached_comments_total
+      vote {
+        created_at
+      }
+      author : user {
+        slug 
+        firstName : first_name
+        lastName : last_name
+      }
+    }
+    posts_cursor
+  }
+}
+        </pre>
+        </div>
+
+        <div class="w-100 md:w-1/2 border border-l md:border-l-0 border-green-500 text-blue-900 text-sm md:text-lg p-6">
+          <div class="text-xl font-bold pb-4">Instant results using a single highly optimized SQL. It's just that simple.</div>
+          <pre>
+{
+  "data": {
+    "thread": {
+      "slug": "eveniet-ex-24",
+      "vote": null,
+      "posts": [
+        {
+          "body": "Dolor laborum harum sed sit est ducimus temporibus velit non nobis repudiandae nobis suscipit commodi voluptatem debitis sed voluptas sequi officia.",
+          "slug": "illum-in-voluptas-1418",
+          "vote": null,
+          "author": {
+            "slug": "sigurd-kemmer",
+            "lastName": "Effertz",
+            "firstName": "Brandt"
+          },
+          "createdAt": "2020-04-07T04:22:42.115874+00:00",
+          "published": true,
+          "totalVotes": 0,
+          "totalComments": 2
+        }
+      ],
+      "title": "In aut qui deleniti quia dolore quasi porro tenetur voluptatem ut adita alias fugit explicabo.",
+      "author": null,
+      "topics": [
+        {
+          "name": "CloudRun",
+          "slug": "cloud-run"
+        },
+        {
+          "name": "Postgres",
+          "slug": "postgres"
+        }
+      ],
+      "createdAt": "2020-04-07T04:22:38.099482+00:00",
+      "published": true,
+      "totalPosts": 24,
+      "totalVotes": 0,
+      "posts_cursor": "mpeBl6L+QfJHc3cmLkLDj9pOdEZYTt5KQtLsazG3TLITB3hJhg=="
+    }
+  }
+}
+          </pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="pt-0 md:pt-20">
       <div class="container mx-auto px-10 md:px-0 py-32">
         <h1 class="uppercase font-semibold text-xl text-blue-800 mb-4">
           Build Secure Apps
@@ -292,8 +370,8 @@ func main() {
       </div>
     </div>
 
-    <div class="">
-      <div class="container mx-auto px-10 md:px-0 py-32">
+    <div class="pt-0 md:py  -20">
+      <div class="container mx-auto">
         <h1 class="uppercase font-semibold text-xl text-blue-800 mb-4">
           More Features
         </h1>

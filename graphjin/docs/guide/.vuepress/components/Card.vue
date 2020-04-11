@@ -1,5 +1,5 @@
 <template>
-<div class="shadow bg-white p-4 flex items-start" :class="className">
+<div class="shadow p-4 flex items-start" :class="className">
   <slot name="image"></slot>
   <div class="pl-4">
     <h2 class="p-0">
