@@ -29,7 +29,6 @@
 .release
 main
 super-graph
-supergraph
 *-fuzz.zip
 crashers
 suppressions

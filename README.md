@@ -1,26 +1,74 @@
-<!-- <a href="https://supergraph.dev"><img src="https://supergraph.dev/hologram.svg" width="100" height="100" align="right" /></a> -->
-
-<img src="docs/.vuepress/public/super-graph.png" width="250" />
+<img src="docs/guide/.vuepress/public/super-graph.png" width="250" />
 
 ### Build web products faster. Secure high performance GraphQL
 
-![Apache Public License 2.0](https://img.shields.io/github/license/dosco/super-graph.svg)
-![Docker build](https://img.shields.io/docker/cloud/build/dosco/super-graph.svg)
-![Cloud native](https://img.shields.io/badge/cloud--native-enabled-blue.svg)
+[![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg)](https://pkg.go.dev/github.com/dosco/super-graph/core?tab=doc)
+![Apache 2.0](https://img.shields.io/github/license/dosco/super-graph.svg?style=flat-square)
+![Docker build](https://img.shields.io/docker/cloud/build/dosco/super-graph.svg?style=flat-square)
+![Cloud native](https://img.shields.io/badge/cloud--native-enabled-blue.svg?style=flat-squareg)
 [![Discord Chat](https://img.shields.io/discord/628796009539043348.svg)](https://discord.gg/6pSWCTZ)  
 
+## What's Super Graph?
 
-## What is Super Graph
+Designed to 100x your developer productivity. Super Graph will instantly and without you writing code provide you a high performance GraphQL API for Postgres DB. GraphQL queries are compiled into a single fast SQL query. Super Graph is a GO library and a service, use it in your own code or run it as a seperate service.
 
-Is designed to 100x your developer productivity. Super Graph will instantly and without you writing code provide you a high performance and secure GraphQL API for Postgres DB. GraphQL queries are translated into a single fast SQL query. No more writing API code as you develop 
-your web frontend just make the query you need and Super Graph will do the rest.
+## Using it as a service
 
-Super Graph has a rich feature set like integrating with your existing Ruby on Rails apps, joining your DB with data from remote APIs, role and attribute based access control, support for JWT tokens, built-in DB mutations and seeding, and a lot more.
+```console
+git clone https://github.com/dosco/super-graph 
+cd ./super-graph
+make install
 
-![GraphQL](docs/.vuepress/public/graphql.png?raw=true "")
+super-graph new <app_name>
+```
 
+## Using it in your own code
 
-## The story of Super Graph?
+```golang
+package main
+
+import (
+  "database/sql"
+  "fmt"
+  "time"
+  "github.com/dosco/super-graph/core"
+  _ "github.com/jackc/pgx/v4/stdlib"
+)
+
+func main() {
+  db, err := sql.Open("pgx", "postgres://postgrs:@localhost:5432/example_db")
+  if err != nil {
+    log.Fatalf(err)
+  }
+
+  conf, err := core.ReadInConfig("./config/dev.yml")
+  if err != nil {
+    log.Fatalf(err)
+  }
+
+  sg, err = core.NewSuperGraph(conf, db)
+  if err != nil {
+    log.Fatalf(err)
+  }
+
+  query := `
+    query {
+      posts {
+      id
+      title
+    }
+  }`
+
+  res, err := sg.GraphQL(context.Background(), query, nil)
+  if err != nil {
+    log.Fatalf(err)
+  }
+
+  fmt.Println(string(res.Data))
+}
+```
+
+## About Super Graph
 
 After working on several products through my career I find that we spend way too much time on building API backends. Most APIs also require constant updating, this costs real time and money.
             
@@ -37,6 +85,7 @@ This compiler is what sits at the heart of Super Graph with layers of useful fun
 - Complex nested queries and mutations
 - Auto learns database tables and relationships
 - Role and Attribute based access control
+- Opaque cursor based efficient pagination
 - Full text search and aggregations
 - JWT tokens supported (Auth0, etc)
 - Join database queries with remote REST APIs
@@ -50,15 +99,6 @@ This compiler is what sits at the heart of Super Graph with layers of useful fun
 - Database seeding tool
 - Works with Postgres and YugabyteDB
 
-## Get started
-
-```
-git clone https://github.com/dosco/super-graph 
-cd ./super-graph
-make install
-
-super-graph new <app_name>
-```
 
 ## Documentation
 

@@ -5,6 +5,8 @@ COPY /cmd/internal/serv/web/ ./
 RUN yarn
 RUN yarn build
 
+
+
 # stage: 2
 FROM golang:1.14-alpine as go-build
 RUN apk update && \
@@ -30,6 +32,8 @@ RUN make build
 RUN echo "Compressing binary, will take a bit of time..." && \
   upx --ultra-brute -qq super-graph && \
   upx -t super-graph
+
+
 
 # stage: 3
 FROM alpine:latest
