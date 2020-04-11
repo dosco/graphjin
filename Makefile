@@ -77,7 +77,7 @@ clean:
 run: clean
 	@go run $(BUILD_FLAGS) main.go $(ARGS)
 
-install: gen
+install:
 	@echo $(GOPATH)
 	@echo "Commit Hash: `git rev-parse HEAD`"
 	@echo "Old Hash: `shasum $(GOPATH)/bin/$(BINARY) 2>/dev/null | cut -c -32`"

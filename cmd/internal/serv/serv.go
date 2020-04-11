@@ -12,11 +12,10 @@ import (
 	rice "github.com/GeertJohan/go.rice"
 	"github.com/NYTimes/gziphandler"
 	"github.com/dosco/super-graph/cmd/internal/serv/internal/auth"
-	"github.com/dosco/super-graph/config"
 )
 
 func initWatcher() {
-	cpath := conf.ConfigPathUsed()
+	cpath := conf.cpath
 	if conf != nil && !conf.WatchAndReload {
 		return
 	}
@@ -170,7 +169,7 @@ func setActionRoutes(routes map[string]http.Handler) error {
 	return nil
 }
 
-func findAuth(name string) *config.Auth {
+func findAuth(name string) *auth.Auth {
 	for _, a := range conf.Auths {
 		if strings.EqualFold(a.Name, name) {
 			return &a

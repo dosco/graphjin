@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/dosco/super-graph/config"
 	"github.com/dosco/super-graph/jsn"
 )
 
@@ -36,7 +35,7 @@ type resolvFn struct {
 // 	}
 // }
 
-// func initRemotes(t config.Table) error {
+// func initRemotes(t Table) error {
 // 	h := xxhash.New()
 
 // 	for _, r := range t.Remotes {
@@ -92,7 +91,7 @@ type resolvFn struct {
 // 	return nil
 // }
 
-func buildFn(r config.Remote) func(http.Header, []byte) ([]byte, error) {
+func buildFn(r Remote) func(http.Header, []byte) ([]byte, error) {
 	reqURL := strings.Replace(r.URL, "$id", "%s", 1)
 	client := &http.Client{}
 

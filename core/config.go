@@ -2,164 +2,162 @@ package core
 
 import (
 	"fmt"
+	"path"
 	"strings"
 
-	"github.com/dosco/super-graph/config"
-	"github.com/dosco/super-graph/core/internal/psql"
-	"github.com/dosco/super-graph/core/internal/qcode"
+	"github.com/spf13/viper"
 )
 
-func addTables(c *config.Config, di *psql.DBInfo) error {
-	for _, t := range c.Tables {
-		if len(t.Table) == 0 || len(t.Columns) == 0 {
-			continue
+// Core struct contains core specific config value
+type Config struct {
+	SecretKey     string            `mapstructure:"secret_key"`
+	UseAllowList  bool              `mapstructure:"use_allow_list"`
+	AllowListFile string            `mapstructure:"allow_list_file"`
+	SetUserID     bool              `mapstructure:"set_user_id"`
+	Vars          map[string]string `mapstructure:"variables"`
+	Blocklist     []string
+	Tables        []Table
+	RolesQuery    string `mapstructure:"roles_query"`
+	Roles         []Role
+	Inflections   map[string]string
+}
+
+// Table struct defines a database table
+type Table struct {
+	Name      string
+	Table     string
+	Blocklist []string
+	Remotes   []Remote
+	Columns   []Column
+}
+
+// Column struct defines a database column
+type Column struct {
+	Name       string
+	Type       string
+	ForeignKey string `mapstructure:"related_to"`
+}
+
+// Remote struct defines a remote API endpoint
+type Remote struct {
+	Name        string
+	ID          string
+	Path        string
+	URL         string
+	Debug       bool
+	PassHeaders []string `mapstructure:"pass_headers"`
+	SetHeaders  []struct {
+		Name  string
+		Value string
+	} `mapstructure:"set_headers"`
+}
+
+// Role struct contains role specific access control values for for all database tables
+type Role struct {
+	Name   string
+	Match  string
+	Tables []RoleTable
+	tm     map[string]*RoleTable
+}
+
+// RoleTable struct contains role specific access control values for a database table
+type RoleTable struct {
+	Name string
+
+	Query  Query
+	Insert Insert
+	Update Update
+	Delete Delete
+}
+
+// Query struct contains access control values for query operations
+type Query struct {
+	Limit            int
+	Filters          []string
+	Columns          []string
+	DisableFunctions bool `mapstructure:"disable_functions"`
+	Block            bool
+}
+
+// Insert struct contains access control values for insert operations
+type Insert struct {
+	Filters []string
+	Columns []string
+	Presets map[string]string
+	Block   bool
+}
+
+// Insert struct contains access control values for update operations
+type Update struct {
+	Filters []string
+	Columns []string
+	Presets map[string]string
+	Block   bool
+}
+
+// Delete struct contains access control values for delete operations
+type Delete struct {
+	Filters []string
+	Columns []string
+	Block   bool
+}
+
+// ReadInConfig function reads in the config file for the environment specified in the GO_ENV
+// environment variable. This is the best way to create a new Super Graph config.
+func ReadInConfig(configFile string) (*Config, error) {
+	cpath := path.Dir(configFile)
+	cfile := path.Base(configFile)
+	vi := newViper(cpath, cfile)
+
+	if err := vi.ReadInConfig(); err != nil {
+		return nil, err
+	}
+
+	inherits := vi.GetString("inherits")
+
+	if len(inherits) != 0 {
+		vi = newViper(cpath, inherits)
+
+		if err := vi.ReadInConfig(); err != nil {
+			return nil, err
 		}
-		if err := addTable(di, t.Columns, t); err != nil {
-			return err
+
+		if vi.IsSet("inherits") {
+			return nil, fmt.Errorf("inherited config (%s) cannot itself inherit (%s)",
+				inherits,
+				vi.GetString("inherits"))
 		}
-	}
-	return nil
-}
 
-func addTable(di *psql.DBInfo, cols []config.Column, t config.Table) error {
-	bc, ok := di.GetColumn(t.Table, t.Name)
-	if !ok {
-		return fmt.Errorf(
-			"Column '%s' not found on table '%s'",
-			t.Name, t.Table)
-	}
+		vi.SetConfigName(cfile)
 
-	if bc.Type != "json" && bc.Type != "jsonb" {
-		return fmt.Errorf(
-			"Column '%s' in table '%s' is of type '%s'. Only JSON or JSONB is valid",
-			t.Name, t.Table, bc.Type)
-	}
-
-	table := psql.DBTable{
-		Name: t.Name,
-		Key:  strings.ToLower(t.Name),
-		Type: bc.Type,
-	}
-
-	columns := make([]psql.DBColumn, 0, len(cols))
-
-	for i := range cols {
-		c := cols[i]
-		columns = append(columns, psql.DBColumn{
-			Name: c.Name,
-			Key:  strings.ToLower(c.Name),
-			Type: c.Type,
-		})
-	}
-
-	di.AddTable(table, columns)
-	bc.FKeyTable = t.Name
-
-	return nil
-}
-
-func addForeignKeys(c *config.Config, di *psql.DBInfo) error {
-	for _, t := range c.Tables {
-		for _, c := range t.Columns {
-			if len(c.ForeignKey) == 0 {
-				continue
-			}
-			if err := addForeignKey(di, c, t); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func addForeignKey(di *psql.DBInfo, c config.Column, t config.Table) error {
-	c1, ok := di.GetColumn(t.Name, c.Name)
-	if !ok {
-		return fmt.Errorf(
-			"Invalid table '%s' or column '%s' in config.Config",
-			t.Name, c.Name)
-	}
-
-	v := strings.SplitN(c.ForeignKey, ".", 2)
-	if len(v) != 2 {
-		return fmt.Errorf(
-			"Invalid foreign_key in config.Config for table '%s' and column '%s",
-			t.Name, c.Name)
-	}
-
-	fkt, fkc := v[0], v[1]
-	c2, ok := di.GetColumn(fkt, fkc)
-	if !ok {
-		return fmt.Errorf(
-			"Invalid foreign_key in config.Config for table '%s' and column '%s",
-			t.Name, c.Name)
-	}
-
-	c1.FKeyTable = fkt
-	c1.FKeyColID = []int16{c2.ID}
-
-	return nil
-}
-
-func addRoles(c *config.Config, qc *qcode.Compiler) error {
-	for _, r := range c.Roles {
-		for _, t := range r.Tables {
-			if err := addRole(qc, r, t); err != nil {
-				return err
-			}
+		if err := vi.MergeInConfig(); err != nil {
+			return nil, err
 		}
 	}
 
-	return nil
+	c := &Config{}
+
+	if err := vi.Unmarshal(&c); err != nil {
+		return nil, fmt.Errorf("failed to decode config, %v", err)
+	}
+
+	if len(c.AllowListFile) == 0 {
+		c.AllowListFile = path.Join(cpath, "allow.list")
+	}
+
+	return c, nil
 }
 
-func addRole(qc *qcode.Compiler, r config.Role, t config.RoleTable) error {
-	blockFilter := []string{"false"}
+func newViper(configPath, configFile string) *viper.Viper {
+	vi := viper.New()
 
-	query := qcode.QueryConfig{
-		Limit:            t.Query.Limit,
-		Filters:          t.Query.Filters,
-		Columns:          t.Query.Columns,
-		DisableFunctions: t.Query.DisableFunctions,
-	}
+	vi.SetEnvPrefix("SG")
+	vi.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	vi.AutomaticEnv()
 
-	if t.Query.Block {
-		query.Filters = blockFilter
-	}
+	vi.SetConfigName(configFile)
+	vi.AddConfigPath(configPath)
+	vi.AddConfigPath("./config")
 
-	insert := qcode.InsertConfig{
-		Filters: t.Insert.Filters,
-		Columns: t.Insert.Columns,
-		Presets: t.Insert.Presets,
-	}
-
-	if t.Insert.Block {
-		insert.Filters = blockFilter
-	}
-
-	update := qcode.UpdateConfig{
-		Filters: t.Update.Filters,
-		Columns: t.Update.Columns,
-		Presets: t.Update.Presets,
-	}
-
-	if t.Update.Block {
-		update.Filters = blockFilter
-	}
-
-	delete := qcode.DeleteConfig{
-		Filters: t.Delete.Filters,
-		Columns: t.Delete.Columns,
-	}
-
-	if t.Delete.Block {
-		delete.Filters = blockFilter
-	}
-
-	return qc.AddRole(r.Name, t.Name, qcode.TRConfig{
-		Query:  query,
-		Insert: insert,
-		Update: update,
-		Delete: delete,
-	})
+	return vi
 }

@@ -7,7 +7,7 @@
 /coverage
 
 # production
-/build
+# /build
 
 # development
 /src/components/dataviz/core/*.js.map

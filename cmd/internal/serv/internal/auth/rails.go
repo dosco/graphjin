@@ -9,13 +9,12 @@ import (
 	"strings"
 
 	"github.com/bradfitz/gomemcache/memcache"
-	"github.com/dosco/super-graph/config"
-	"github.com/dosco/super-graph/core"
 	"github.com/dosco/super-graph/cmd/internal/serv/internal/rails"
+	"github.com/dosco/super-graph/core"
 	"github.com/garyburd/redigo/redis"
 )
 
-func RailsHandler(ac *config.Auth, next http.Handler) (http.HandlerFunc, error) {
+func RailsHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 	ru := ac.Rails.URL
 
 	if strings.HasPrefix(ru, "memcache:") {
@@ -29,7 +28,7 @@ func RailsHandler(ac *config.Auth, next http.Handler) (http.HandlerFunc, error) 
 	return RailsCookieHandler(ac, next)
 }
 
-func RailsRedisHandler(ac *config.Auth, next http.Handler) (http.HandlerFunc, error) {
+func RailsRedisHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 	cookie := ac.Cookie
 
 	if len(cookie) == 0 {
@@ -85,7 +84,7 @@ func RailsRedisHandler(ac *config.Auth, next http.Handler) (http.HandlerFunc, er
 	}, nil
 }
 
-func RailsMemcacheHandler(ac *config.Auth, next http.Handler) (http.HandlerFunc, error) {
+func RailsMemcacheHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 	cookie := ac.Cookie
 
 	if len(cookie) == 0 {
@@ -128,7 +127,7 @@ func RailsMemcacheHandler(ac *config.Auth, next http.Handler) (http.HandlerFunc,
 	}, nil
 }
 
-func RailsCookieHandler(ac *config.Auth, next http.Handler) (http.HandlerFunc, error) {
+func RailsCookieHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 	cookie := ac.Cookie
 	if len(cookie) == 0 {
 		return nil, fmt.Errorf("no auth.cookie defined")
@@ -159,7 +158,7 @@ func RailsCookieHandler(ac *config.Auth, next http.Handler) (http.HandlerFunc, e
 	}, nil
 }
 
-func railsAuth(ac *config.Auth) (*rails.Auth, error) {
+func railsAuth(ac *Auth) (*rails.Auth, error) {
 	secret := ac.Rails.SecretKeyBase
 	if len(secret) == 0 {
 		return nil, errors.New("no auth.rails.secret_key_base defined")

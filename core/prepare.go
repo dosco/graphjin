@@ -23,17 +23,13 @@ type preparedItem struct {
 	roleArg bool
 }
 
-var (
-	prepared map[string]*preparedItem
-)
-
 func (sg *SuperGraph) initPrepared() error {
 	ct := context.Background()
 
 	if sg.allowList.IsPersist() {
 		return nil
 	}
-	prepared = make(map[string]*preparedItem)
+	sg.prepared = make(map[string]*preparedItem)
 
 	tx, err := sg.db.BeginTx(ct, nil)
 	if err != nil {
@@ -100,7 +96,7 @@ func (sg *SuperGraph) prepareStmt(item allow.Item) error {
 		var stmts1 []stmt
 		var err error
 
-		if sg.conf.IsABACEnabled() {
+		if sg.abacEnabled {
 			stmts1, err = sg.buildMultiStmt(qb, vars)
 		} else {
 			stmts1, err = sg.buildRoleStmt(qb, vars, "user")
@@ -117,7 +113,7 @@ func (sg *SuperGraph) prepareStmt(item allow.Item) error {
 			return err
 		}
 
-		if sg.conf.IsAnonRoleDefined() {
+		if sg.anonExists {
 			// logger.Debug().Msgf("Prepared statement 'query %s' (anon)", item.Name)
 
 			stmts2, err := sg.buildRoleStmt(qb, vars, "anon")
@@ -184,7 +180,7 @@ func (sg *SuperGraph) prepare(ct context.Context, tx *sql.Tx, st []stmt, key str
 func (sg *SuperGraph) prepareRoleStmt(tx *sql.Tx) error {
 	var err error
 
-	if !sg.conf.IsABACEnabled() {
+	if !sg.abacEnabled {
 		return nil
 	}
 
@@ -255,11 +251,16 @@ func (sg *SuperGraph) initAllowList() error {
 	var ac allow.Config
 	var err error
 
-	if !sg.conf.Production {
+	if len(sg.conf.AllowListFile) == 0 {
+		sg.conf.UseAllowList = false
+		sg.log.Printf("WRN allow list disabled no file specified")
+	}
+
+	if sg.conf.UseAllowList {
 		ac = allow.Config{CreateIfNotExists: true, Persist: true}
 	}
 
-	sg.allowList, err = allow.New(sg.conf.ConfigPathUsed(), ac)
+	sg.allowList, err = allow.New(sg.conf.AllowListFile, ac)
 	if err != nil {
 		return fmt.Errorf("failed to initialize allow list: %w", err)
 	}

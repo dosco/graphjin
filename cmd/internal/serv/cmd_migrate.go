@@ -26,7 +26,7 @@ func cmdDBSetup(cmd *cobra.Command, args []string) {
 	cmdDBCreate(cmd, []string{})
 	cmdDBMigrate(cmd, []string{"up"})
 
-	sfile := path.Join(conf.ConfigPathUsed(), conf.SeedFile)
+	sfile := path.Join(conf.cpath, conf.SeedFile)
 	_, err := os.Stat(sfile)
 
 	if err == nil {
@@ -144,7 +144,7 @@ func cmdDBMigrate(cmd *cobra.Command, args []string) {
 
 	m.Data = getMigrationVars()
 
-	err = m.LoadMigrations(path.Join(conf.ConfigPathUsed(), conf.MigrationsPath))
+	err = m.LoadMigrations(path.Join(conf.cpath, conf.MigrationsPath))
 	if err != nil {
 		log.Fatalf("ERR failed to load migrations: %s", err)
 	}

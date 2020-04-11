@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	jwt "github.com/dgrijalva/jwt-go"
-	"github.com/dosco/super-graph/config"
 	"github.com/dosco/super-graph/core"
 )
 
@@ -16,7 +15,7 @@ const (
 	jwtAuth0   int = iota + 1
 )
 
-func JwtHandler(ac *config.Auth, next http.Handler) (http.HandlerFunc, error) {
+func JwtHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 	var key interface{}
 	var jwtProvider int
 

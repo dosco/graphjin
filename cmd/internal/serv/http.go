@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/dosco/super-graph/cmd/internal/serv/internal/auth"
-	"github.com/dosco/super-graph/config"
 	"github.com/dosco/super-graph/core"
 	"github.com/rs/cors"
 	"go.uber.org/zap"
@@ -83,7 +82,7 @@ func apiV1(w http.ResponseWriter, r *http.Request) {
 
 	res, err := sg.GraphQL(ct, req.Query, req.Vars)
 
-	if conf.LogLevel() >= config.LogLevelDebug {
+	if logLevel >= LogLevelDebug {
 		log.Printf("DBG query:\n%s\nsql:\n%s", req.Query, res.SQL())
 	}
 
@@ -94,7 +93,7 @@ func apiV1(w http.ResponseWriter, r *http.Request) {
 
 	json.NewEncoder(w).Encode(res)
 
-	if conf.LogLevel() >= config.LogLevelInfo {
+	if logLevel >= LogLevelInfo {
 		zlog.Info("success",
 			zap.String("op", res.Operation()),
 			zap.String("name", res.QueryName()),
@@ -111,7 +110,7 @@ func renderErr(w http.ResponseWriter, err error, res *core.Result) {
 
 	json.NewEncoder(w).Encode(&errorResp{err})
 
-	if conf.LogLevel() >= config.LogLevelError {
+	if logLevel >= LogLevelError {
 		if res != nil {
 			zlog.Error(err.Error(),
 				zap.String("op", res.Operation()),

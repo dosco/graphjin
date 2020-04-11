@@ -9,7 +9,6 @@
 		"database/sql"
 		"fmt"
 		"time"
-		"github.com/dosco/super-graph/config"
 		"github.com/dosco/super-graph/core"
 		_ "github.com/jackc/pgx/v4/stdlib"
 	)
@@ -20,7 +19,7 @@
 			log.Fatalf(err)
 		}
 
-		conf, err := config.NewConfig("./config")
+		conf, err := core.ReadInConfig("./config/dev.yml")
 		if err != nil {
 			log.Fatalf(err)
 		}
@@ -53,10 +52,9 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
-	"fmt"
-	"log"
+	_log "log"
+	"os"
 
-	"github.com/dosco/super-graph/config"
 	"github.com/dosco/super-graph/core/internal/allow"
 	"github.com/dosco/super-graph/core/internal/crypto"
 	"github.com/dosco/super-graph/core/internal/psql"
@@ -80,36 +78,32 @@ const (
 // SuperGraph struct is an instance of the Super Graph engine it holds all the required information like
 // datase schemas, relationships, etc that the GraphQL to SQL compiler would need to do it's job.
 type SuperGraph struct {
-	conf      *config.Config
-	db        *sql.DB
-	schema    *psql.DBSchema
-	allowList *allow.List
-	encKey    [32]byte
-	prepared  map[string]*preparedItem
-	getRole   *sql.Stmt
-	qc        *qcode.Compiler
-	pc        *psql.Compiler
-}
-
-// NewConfig functions initializes config using a config.Core struct
-func NewConfig(core config.Core, configPath string, logger *log.Logger) (*config.Config, error) {
-	c, err := config.NewConfigFrom(&config.Config{Core: core}, configPath, logger)
-	if err != nil {
-		return nil, err
-	}
-	return c, nil
+	conf        *Config
+	db          *sql.DB
+	log         *_log.Logger
+	schema      *psql.DBSchema
+	allowList   *allow.List
+	encKey      [32]byte
+	prepared    map[string]*preparedItem
+	roles       map[string]*Role
+	getRole     *sql.Stmt
+	abacEnabled bool
+	anonExists  bool
+	qc          *qcode.Compiler
+	pc          *psql.Compiler
 }
 
 // NewSuperGraph creates the SuperGraph struct, this involves querying the database to learn its
 // schemas and relationships
-func NewSuperGraph(conf *config.Config, db *sql.DB) (*SuperGraph, error) {
-	if !conf.IsValid() {
-		return nil, fmt.Errorf("invalid config")
-	}
-
+func NewSuperGraph(conf *Config, db *sql.DB) (*SuperGraph, error) {
 	sg := &SuperGraph{
 		conf: conf,
 		db:   db,
+		log:  _log.New(os.Stdout, "", 0),
+	}
+
+	if err := sg.initConfig(); err != nil {
+		return nil, err
 	}
 
 	if err := sg.initCompilers(); err != nil {
