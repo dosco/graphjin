@@ -2,11 +2,12 @@ package serv
 
 import (
 	"database/sql"
-	"fmt"
 	"path"
 	"time"
 
-	_ "github.com/jackc/pgx/v4/stdlib"
+	"github.com/jackc/pgx/v4"
+	"github.com/jackc/pgx/v4/stdlib"
+	//_ "github.com/jackc/pgx/v4/stdlib"
 )
 
 func initConf() (*Config, error) {
@@ -82,63 +83,15 @@ func initDB(c *Config) (*sql.DB, error) {
 	var db *sql.DB
 	var err error
 
-	cs := fmt.Sprintf("postgres://%s:%s@%s:%d/%s",
-		c.DB.User, c.DB.Password,
-		c.DB.Host, c.DB.Port, c.DB.DBName)
+	// cs := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s",
+	// 	c.DB.Host, c.DB.Port,
+	// 	c.DB.User, c.DB.Password,
+	// 	c.DB.DBName)
 
-	for i := 1; i < 10; i++ {
-		db, err = sql.Open("pgx", cs)
-		if err == nil {
-			break
-		}
-		time.Sleep(time.Duration(i*100) * time.Millisecond)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	return db, nil
-
-	// config, _ := pgxpool.ParseConfig("")
-	// config.ConnConfig.Host = c.DB.Host
-	// config.ConnConfig.Port = c.DB.Port
-	// config.ConnConfig.Database = c.DB.DBName
-	// config.ConnConfig.User = c.DB.User
-	// config.ConnConfig.Password = c.DB.Password
-	// config.ConnConfig.RuntimeParams = map[string]string{
-	// 	"application_name": c.AppName,
-	// 	"search_path":      c.DB.Schema,
-	// }
-
-	// switch c.LogLevel {
-	// case "debug":
-	// 	config.ConnConfig.LogLevel = pgx.LogLevelDebug
-	// case "info":
-	// 	config.ConnConfig.LogLevel = pgx.LogLevelInfo
-	// case "warn":
-	// 	config.ConnConfig.LogLevel = pgx.LogLevelWarn
-	// case "error":
-	// 	config.ConnConfig.LogLevel = pgx.LogLevelError
-	// default:
-	// 	config.ConnConfig.LogLevel = pgx.LogLevelNone
-	// }
-
-	// config.ConnConfig.Logger = NewSQLLogger(logger)
-
-	// // if c.DB.MaxRetries != 0 {
-	// // 	opt.MaxRetries = c.DB.MaxRetries
-	// // }
-
-	// if c.DB.PoolSize != 0 {
-	// 	config.MaxConns = conf.DB.PoolSize
-	// }
-
-	// var db *pgxpool.Pool
-	// var err error
+	// fmt.Println(">>", cs)
 
 	// for i := 1; i < 10; i++ {
-	// 	db, err = pgxpool.ConnectConfig(context.Background(), config)
+	// 	db, err = sql.Open("pgx", cs)
 	// 	if err == nil {
 	// 		break
 	// 	}
@@ -150,4 +103,52 @@ func initDB(c *Config) (*sql.DB, error) {
 	// }
 
 	// return db, nil
+
+	config, _ := pgx.ParseConfig("")
+	config.Host = c.DB.Host
+	config.Port = c.DB.Port
+	config.Database = c.DB.DBName
+	config.User = c.DB.User
+	config.Password = c.DB.Password
+	config.RuntimeParams = map[string]string{
+		"application_name": c.AppName,
+		"search_path":      c.DB.Schema,
+	}
+
+	// switch c.LogLevel {
+	// case "debug":
+	// 	config.LogLevel = pgx.LogLevelDebug
+	// case "info":
+	// 	config.LogLevel = pgx.LogLevelInfo
+	// case "warn":
+	// 	config.LogLevel = pgx.LogLevelWarn
+	// case "error":
+	// 	config.LogLevel = pgx.LogLevelError
+	// default:
+	// 	config.LogLevel = pgx.LogLevelNone
+	// }
+
+	//config.Logger = NewSQLLogger(logger)
+
+	// if c.DB.MaxRetries != 0 {
+	// 	opt.MaxRetries = c.DB.MaxRetries
+	// }
+
+	// if c.DB.PoolSize != 0 {
+	// 	config.MaxConns = conf.DB.PoolSize
+	// }
+
+	for i := 1; i < 10; i++ {
+		db = stdlib.OpenDB(*config)
+		if db == nil {
+			break
+		}
+		time.Sleep(time.Duration(i*100) * time.Millisecond)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return db, nil
 }
