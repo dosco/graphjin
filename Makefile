@@ -12,10 +12,10 @@ endif
 export GO111MODULE := on
 
 # Build-time Go variables
-version        = github.com/dosco/super-graph/serv.version
-gitBranch      = github.com/dosco/super-graph/serv.gitBranch
-lastCommitSHA  = github.com/dosco/super-graph/serv.lastCommitSHA
-lastCommitTime = github.com/dosco/super-graph/serv.lastCommitTime
+version        = github.com/dosco/super-graph/cmd/internal/serv.version
+gitBranch      = github.com/dosco/super-graph/cmd/internal/serv.gitBranch
+lastCommitSHA  = github.com/dosco/super-graph/cmd/internal/serv.lastCommitSHA
+lastCommitTime = github.com/dosco/super-graph/cmd/internal/serv.lastCommitTime
 
 BUILD_FLAGS ?= -ldflags '-s -w -X ${lastCommitSHA}=${BUILD} -X "${lastCommitTime}=${BUILD_DATE}" -X "${version}=${BUILD_VERSION}" -X ${gitBranch}=${BUILD_BRANCH}'
 
@@ -77,10 +77,10 @@ clean:
 run: clean
 	@go run $(BUILD_FLAGS) main.go $(ARGS)
 
-install: build
-	@mv $(BINARY) $(GOPATH)/bin/$(BINARY)
+install: clean build
 	@echo "Commit Hash: `git rev-parse HEAD`"
 	@echo "Old Hash: `shasum $(GOPATH)/bin/$(BINARY) 2>/dev/null | cut -c -32`"
+	@mv $(BINARY) $(GOPATH)/bin/$(BINARY)
 	@echo "New Hash:" `shasum $(GOPATH)/bin/$(BINARY) 2>/dev/null | cut -c -32`
 
 uninstall: clean
