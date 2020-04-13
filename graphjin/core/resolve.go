@@ -6,11 +6,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/cespare/xxhash/v2"
+	"github.com/dosco/super-graph/core/internal/psql"
 	"github.com/dosco/super-graph/jsn"
-)
-
-var (
-	rmap map[uint64]*resolvFn
 )
 
 type resolvFn struct {
@@ -19,77 +17,79 @@ type resolvFn struct {
 	Fn      func(h http.Header, id []byte) ([]byte, error)
 }
 
-// func initResolvers() {
-// 	var err error
-// 	rmap = make(map[uint64]*resolvFn)
+func (sg *SuperGraph) initResolvers() error {
+	var err error
+	sg.rmap = make(map[uint64]*resolvFn)
 
-// 	for _, t := range conf.Tables {
-// 		err = initRemotes(t)
-// 		if err != nil {
-// 			break
-// 		}
-// 	}
+	for _, t := range sg.conf.Tables {
+		err = sg.initRemotes(t)
+		if err != nil {
+			break
+		}
+	}
 
-// 	if err != nil {
-// 		errlog.Fatal().Err(err).Msg("failed to initialize resolvers")
-// 	}
-// }
+	if err != nil {
+		return fmt.Errorf("failed to initialize resolvers: %v", err)
+	}
 
-// func initRemotes(t Table) error {
-// 	h := xxhash.New()
+	return nil
+}
 
-// 	for _, r := range t.Remotes {
-// 		// defines the table column to be used as an id in the
-// 		// remote request
-// 		idcol := r.ID
+func (sg *SuperGraph) initRemotes(t Table) error {
+	h := xxhash.New()
 
-// 		// if no table column specified in the config then
-// 		// use the primary key of the table as the id
-// 		if len(idcol) == 0 {
-// 			pcol, err := pcompile.IDColumn(t.Name)
-// 			if err != nil {
-// 				return err
-// 			}
-// 			idcol = pcol.Key
-// 		}
-// 		idk := fmt.Sprintf("__%s_%s", t.Name, idcol)
+	for _, r := range t.Remotes {
+		// defines the table column to be used as an id in the
+		// remote request
+		idcol := r.ID
 
-// 		// register a relationship between the remote data
-// 		// and the database table
+		// if no table column specified in the config then
+		// use the primary key of the table as the id
+		if len(idcol) == 0 {
+			pcol, err := sg.pc.IDColumn(t.Name)
+			if err != nil {
+				return err
+			}
+			idcol = pcol.Key
+		}
+		idk := fmt.Sprintf("__%s_%s", t.Name, idcol)
 
-// 		val := &psql.DBRel{Type: psql.RelRemote}
-// 		val.Left.Col = idcol
-// 		val.Right.Col = idk
+		// register a relationship between the remote data
+		// and the database table
 
-// 		err := pcompile.AddRelationship(strings.ToLower(r.Name), t.Name, val)
-// 		if err != nil {
-// 			return err
-// 		}
+		val := &psql.DBRel{Type: psql.RelRemote}
+		val.Left.Col = idcol
+		val.Right.Col = idk
 
-// 		// the function thats called to resolve this remote
-// 		// data request
-// 		fn := buildFn(r)
+		err := sg.pc.AddRelationship(sanitize(r.Name), t.Name, val)
+		if err != nil {
+			return err
+		}
 
-// 		path := [][]byte{}
-// 		for _, p := range strings.Split(r.Path, ".") {
-// 			path = append(path, []byte(p))
-// 		}
+		// the function thats called to resolve this remote
+		// data request
+		fn := buildFn(r)
 
-// 		rf := &resolvFn{
-// 			IDField: []byte(idk),
-// 			Path:    path,
-// 			Fn:      fn,
-// 		}
+		path := [][]byte{}
+		for _, p := range strings.Split(r.Path, ".") {
+			path = append(path, []byte(p))
+		}
 
-// 		// index resolver obj by parent and child names
-// 		rmap[mkkey(h, r.Name, t.Name)] = rf
+		rf := &resolvFn{
+			IDField: []byte(idk),
+			Path:    path,
+			Fn:      fn,
+		}
 
-// 		// index resolver obj by IDField
-// 		rmap[xxhash.Sum64(rf.IDField)] = rf
-// 	}
+		// index resolver obj by parent and child names
+		sg.rmap[mkkey(h, r.Name, t.Name)] = rf
 
-// 	return nil
-// }
+		// index resolver obj by IDField
+		sg.rmap[xxhash.Sum64(rf.IDField)] = rf
+	}
+
+	return nil
+}
 
 func buildFn(r Remote) func(http.Header, []byte) ([]byte, error) {
 	reqURL := strings.Replace(r.URL, "$id", "%s", 1)
@@ -114,12 +114,9 @@ func buildFn(r Remote) func(http.Header, []byte) ([]byte, error) {
 			req.Header.Set(v, hdr.Get(v))
 		}
 
-		// logger.Debug().Str("uri", uri).Msg("Remote Join")
-
 		res, err := client.Do(req)
 		if err != nil {
-			// errlog.Error().Err(err).Msgf("Failed to connect to: %s", uri)
-			return nil, err
+			return nil, fmt.Errorf("failed to connect to '%s': %v", uri, err)
 		}
 		defer res.Body.Close()
 

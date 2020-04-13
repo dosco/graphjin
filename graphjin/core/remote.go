@@ -1,253 +1,249 @@
 package core
 
-// import (
-// 	"bytes"
-// 	"errors"
-// 	"fmt"
-// 	"net/http"
-// 	"sync"
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"net/http"
+	"sync"
 
-// 	"github.com/cespare/xxhash/v2"
-// 	"github.com/dosco/super-graph/jsn"
-// 	"github.com/dosco/super-graph/core/internal/qcode"
-// )
+	"github.com/cespare/xxhash/v2"
+	"github.com/dosco/super-graph/core/internal/qcode"
+	"github.com/dosco/super-graph/jsn"
+)
 
-// func execRemoteJoin(st *stmt, data []byte, hdr http.Header) ([]byte, error) {
-// 	var err error
+func (sg *SuperGraph) execRemoteJoin(st *stmt, data []byte, hdr http.Header) ([]byte, error) {
+	var err error
 
-// 	if len(data) == 0 || st.skipped == 0 {
-// 		return data, nil
-// 	}
+	sel := st.qc.Selects
+	h := xxhash.New()
 
-// 	sel := st.qc.Selects
-// 	h := xxhash.New()
+	// fetch the field name used within the db response json
+	// that are used to mark insertion points and the mapping between
+	// those field names and their select objects
+	fids, sfmap := sg.parentFieldIds(h, sel, st.skipped)
 
-// 	// fetch the field name used within the db response json
-// 	// that are used to mark insertion points and the mapping between
-// 	// those field names and their select objects
-// 	fids, sfmap := parentFieldIds(h, sel, st.skipped)
+	// fetch the field values of the marked insertion points
+	// these values contain the id to be used with fetching remote data
+	from := jsn.Get(data, fids)
+	var to []jsn.Field
 
-// 	// fetch the field values of the marked insertion points
-// 	// these values contain the id to be used with fetching remote data
-// 	from := jsn.Get(data, fids)
-// 	var to []jsn.Field
+	switch {
+	case len(from) == 1:
+		to, err = sg.resolveRemote(hdr, h, from[0], sel, sfmap)
 
-// 	switch {
-// 	case len(from) == 1:
-// 		to, err = resolveRemote(hdr, h, from[0], sel, sfmap)
+	case len(from) > 1:
+		to, err = sg.resolveRemotes(hdr, h, from, sel, sfmap)
 
-// 	case len(from) > 1:
-// 		to, err = resolveRemotes(hdr, h, from, sel, sfmap)
+	default:
+		return nil, errors.New("something wrong no remote ids found in db response")
+	}
 
-// 	default:
-// 		return nil, errors.New("something wrong no remote ids found in db response")
-// 	}
+	if err != nil {
+		return nil, err
+	}
 
-// 	if err != nil {
-// 		return nil, err
-// 	}
+	var ob bytes.Buffer
 
-// 	var ob bytes.Buffer
+	err = jsn.Replace(&ob, data, from, to)
+	if err != nil {
+		return nil, err
+	}
 
-// 	err = jsn.Replace(&ob, data, from, to)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+	return ob.Bytes(), nil
+}
 
-// 	return ob.Bytes(), nil
-// }
+func (sg *SuperGraph) resolveRemote(
+	hdr http.Header,
+	h *xxhash.Digest,
+	field jsn.Field,
+	sel []qcode.Select,
+	sfmap map[uint64]*qcode.Select) ([]jsn.Field, error) {
 
-// func resolveRemote(
-// 	hdr http.Header,
-// 	h *xxhash.Digest,
-// 	field jsn.Field,
-// 	sel []qcode.Select,
-// 	sfmap map[uint64]*qcode.Select) ([]jsn.Field, error) {
+	// replacement data for the marked insertion points
+	// key and value will be replaced by whats below
+	toA := [1]jsn.Field{}
+	to := toA[:1]
 
-// 	// replacement data for the marked insertion points
-// 	// key and value will be replaced by whats below
-// 	toA := [1]jsn.Field{}
-// 	to := toA[:1]
+	// use the json key to find the related Select object
+	k1 := xxhash.Sum64(field.Key)
 
-// 	// use the json key to find the related Select object
-// 	k1 := xxhash.Sum64(field.Key)
+	s, ok := sfmap[k1]
+	if !ok {
+		return nil, nil
+	}
+	p := sel[s.ParentID]
 
-// 	s, ok := sfmap[k1]
-// 	if !ok {
-// 		return nil, nil
-// 	}
-// 	p := sel[s.ParentID]
+	// then use the Table nme in the Select and it's parent
+	// to find the resolver to use for this relationship
+	k2 := mkkey(h, s.Name, p.Name)
 
-// 	// then use the Table nme in the Select and it's parent
-// 	// to find the resolver to use for this relationship
-// 	k2 := mkkey(h, s.Name, p.Name)
+	r, ok := sg.rmap[k2]
+	if !ok {
+		return nil, nil
+	}
 
-// 	r, ok := rmap[k2]
-// 	if !ok {
-// 		return nil, nil
-// 	}
+	id := jsn.Value(field.Value)
+	if len(id) == 0 {
+		return nil, nil
+	}
 
-// 	id := jsn.Value(field.Value)
-// 	if len(id) == 0 {
-// 		return nil, nil
-// 	}
+	//st := time.Now()
 
-// 	//st := time.Now()
+	b, err := r.Fn(hdr, id)
+	if err != nil {
+		return nil, err
+	}
 
-// 	b, err := r.Fn(hdr, id)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+	if len(r.Path) != 0 {
+		b = jsn.Strip(b, r.Path)
+	}
 
-// 	if len(r.Path) != 0 {
-// 		b = jsn.Strip(b, r.Path)
-// 	}
+	var ob bytes.Buffer
 
-// 	var ob bytes.Buffer
+	if len(s.Cols) != 0 {
+		err = jsn.Filter(&ob, b, colsToList(s.Cols))
+		if err != nil {
+			return nil, err
+		}
 
-// 	if len(s.Cols) != 0 {
-// 		err = jsn.Filter(&ob, b, colsToList(s.Cols))
-// 		if err != nil {
-// 			return nil, err
-// 		}
+	} else {
+		ob.WriteString("null")
+	}
 
-// 	} else {
-// 		ob.WriteString("null")
-// 	}
+	to[0] = jsn.Field{Key: []byte(s.FieldName), Value: ob.Bytes()}
+	return to, nil
+}
 
-// 	to[0] = jsn.Field{Key: []byte(s.FieldName), Value: ob.Bytes()}
-// 	return to, nil
-// }
+func (sg *SuperGraph) resolveRemotes(
+	hdr http.Header,
+	h *xxhash.Digest,
+	from []jsn.Field,
+	sel []qcode.Select,
+	sfmap map[uint64]*qcode.Select) ([]jsn.Field, error) {
 
-// func resolveRemotes(
-// 	hdr http.Header,
-// 	h *xxhash.Digest,
-// 	from []jsn.Field,
-// 	sel []qcode.Select,
-// 	sfmap map[uint64]*qcode.Select) ([]jsn.Field, error) {
+	// replacement data for the marked insertion points
+	// key and value will be replaced by whats below
+	to := make([]jsn.Field, len(from))
 
-// 	// replacement data for the marked insertion points
-// 	// key and value will be replaced by whats below
-// 	to := make([]jsn.Field, len(from))
+	var wg sync.WaitGroup
+	wg.Add(len(from))
 
-// 	var wg sync.WaitGroup
-// 	wg.Add(len(from))
+	var cerr error
 
-// 	var cerr error
+	for i, id := range from {
 
-// 	for i, id := range from {
+		// use the json key to find the related Select object
+		k1 := xxhash.Sum64(id.Key)
 
-// 		// use the json key to find the related Select object
-// 		k1 := xxhash.Sum64(id.Key)
+		s, ok := sfmap[k1]
+		if !ok {
+			return nil, nil
+		}
+		p := sel[s.ParentID]
 
-// 		s, ok := sfmap[k1]
-// 		if !ok {
-// 			return nil, nil
-// 		}
-// 		p := sel[s.ParentID]
+		// then use the Table nme in the Select and it's parent
+		// to find the resolver to use for this relationship
+		k2 := mkkey(h, s.Name, p.Name)
 
-// 		// then use the Table nme in the Select and it's parent
-// 		// to find the resolver to use for this relationship
-// 		k2 := mkkey(h, s.Name, p.Name)
+		r, ok := sg.rmap[k2]
+		if !ok {
+			return nil, nil
+		}
 
-// 		r, ok := rmap[k2]
-// 		if !ok {
-// 			return nil, nil
-// 		}
+		id := jsn.Value(id.Value)
+		if len(id) == 0 {
+			return nil, nil
+		}
 
-// 		id := jsn.Value(id.Value)
-// 		if len(id) == 0 {
-// 			return nil, nil
-// 		}
+		go func(n int, id []byte, s *qcode.Select) {
+			defer wg.Done()
 
-// 		go func(n int, id []byte, s *qcode.Select) {
-// 			defer wg.Done()
+			//st := time.Now()
 
-// 			//st := time.Now()
+			b, err := r.Fn(hdr, id)
+			if err != nil {
+				cerr = fmt.Errorf("%s: %s", s.Name, err)
+				return
+			}
 
-// 			b, err := r.Fn(hdr, id)
-// 			if err != nil {
-// 				cerr = fmt.Errorf("%s: %s", s.Name, err)
-// 				return
-// 			}
+			if len(r.Path) != 0 {
+				b = jsn.Strip(b, r.Path)
+			}
 
-// 			if len(r.Path) != 0 {
-// 				b = jsn.Strip(b, r.Path)
-// 			}
+			var ob bytes.Buffer
 
-// 			var ob bytes.Buffer
+			if len(s.Cols) != 0 {
+				err = jsn.Filter(&ob, b, colsToList(s.Cols))
+				if err != nil {
+					cerr = fmt.Errorf("%s: %s", s.Name, err)
+					return
+				}
 
-// 			if len(s.Cols) != 0 {
-// 				err = jsn.Filter(&ob, b, colsToList(s.Cols))
-// 				if err != nil {
-// 					cerr = fmt.Errorf("%s: %s", s.Name, err)
-// 					return
-// 				}
+			} else {
+				ob.WriteString("null")
+			}
 
-// 			} else {
-// 				ob.WriteString("null")
-// 			}
+			to[n] = jsn.Field{Key: []byte(s.FieldName), Value: ob.Bytes()}
+		}(i, id, s)
+	}
+	wg.Wait()
 
-// 			to[n] = jsn.Field{Key: []byte(s.FieldName), Value: ob.Bytes()}
-// 		}(i, id, s)
-// 	}
-// 	wg.Wait()
+	return to, cerr
+}
 
-// 	return to, cerr
-// }
+func (sg *SuperGraph) parentFieldIds(h *xxhash.Digest, sel []qcode.Select, skipped uint32) (
+	[][]byte,
+	map[uint64]*qcode.Select) {
 
-// func parentFieldIds(h *xxhash.Digest, sel []qcode.Select, skipped uint32) (
-// 	[][]byte,
-// 	map[uint64]*qcode.Select) {
+	c := 0
+	for i := range sel {
+		s := &sel[i]
+		if isSkipped(skipped, uint32(s.ID)) {
+			c++
+		}
+	}
 
-// 	c := 0
-// 	for i := range sel {
-// 		s := &sel[i]
-// 		if isSkipped(skipped, uint32(s.ID)) {
-// 			c++
-// 		}
-// 	}
+	// list of keys (and it's related value) to extract from
+	// the db json response
+	fm := make([][]byte, c)
 
-// 	// list of keys (and it's related value) to extract from
-// 	// the db json response
-// 	fm := make([][]byte, c)
+	// mapping between the above extracted key and a Select
+	// object
+	sm := make(map[uint64]*qcode.Select, c)
+	n := 0
 
-// 	// mapping between the above extracted key and a Select
-// 	// object
-// 	sm := make(map[uint64]*qcode.Select, c)
-// 	n := 0
+	for i := range sel {
+		s := &sel[i]
 
-// 	for i := range sel {
-// 		s := &sel[i]
+		if !isSkipped(skipped, uint32(s.ID)) {
+			continue
+		}
 
-// 		if !isSkipped(skipped, uint32(s.ID)) {
-// 			continue
-// 		}
+		p := sel[s.ParentID]
+		k := mkkey(h, s.Name, p.Name)
 
-// 		p := sel[s.ParentID]
-// 		k := mkkey(h, s.Name, p.Name)
+		if r, ok := sg.rmap[k]; ok {
+			fm[n] = r.IDField
+			n++
 
-// 		if r, ok := rmap[k]; ok {
-// 			fm[n] = r.IDField
-// 			n++
+			k := xxhash.Sum64(r.IDField)
+			sm[k] = s
+		}
+	}
 
-// 			k := xxhash.Sum64(r.IDField)
-// 			sm[k] = s
-// 		}
-// 	}
+	return fm, sm
+}
 
-// 	return fm, sm
-// }
+func isSkipped(n uint32, pos uint32) bool {
+	return ((n & (1 << pos)) != 0)
+}
 
-// func isSkipped(n uint32, pos uint32) bool {
-// 	return ((n & (1 << pos)) != 0)
-// }
+func colsToList(cols []qcode.Column) []string {
+	var f []string
 
-// func colsToList(cols []qcode.Column) []string {
-// 	var f []string
-
-// 	for i := range cols {
-// 		f = append(f, cols[i].Name)
-// 	}
-// 	return f
-// }
+	for i := range cols {
+		f = append(f, cols[i].Name)
+	}
+	return f
+}
