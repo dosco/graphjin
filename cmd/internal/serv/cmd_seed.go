@@ -28,7 +28,7 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 
 	conf.Production = false
 
-	db, err = initDB(conf)
+	db, err = initDB(conf, true)
 	if err != nil {
 		log.Fatalf("ERR failed to connect to database: %s", err)
 	}

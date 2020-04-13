@@ -79,7 +79,7 @@ func initConf() (*Config, error) {
 	return c, nil
 }
 
-func initDB(c *Config) (*sql.DB, error) {
+func initDB(c *Config, useDB bool) (*sql.DB, error) {
 	var db *sql.DB
 	var err error
 
@@ -107,12 +107,15 @@ func initDB(c *Config) (*sql.DB, error) {
 	config, _ := pgx.ParseConfig("")
 	config.Host = c.DB.Host
 	config.Port = c.DB.Port
-	config.Database = c.DB.DBName
 	config.User = c.DB.User
 	config.Password = c.DB.Password
 	config.RuntimeParams = map[string]string{
 		"application_name": c.AppName,
 		"search_path":      c.DB.Schema,
+	}
+
+	if useDB {
+		config.Database = c.DB.DBName
 	}
 
 	// switch c.LogLevel {

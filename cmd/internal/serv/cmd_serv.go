@@ -19,7 +19,7 @@ func cmdServ(cmd *cobra.Command, args []string) {
 
 	initWatcher()
 
-	db, err = initDB(conf)
+	db, err = initDB(conf, true)
 	if err != nil {
 		fatalInProd(err, "failed to connect to database")
 	}
