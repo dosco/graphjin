@@ -87,6 +87,7 @@ type SuperGraph struct {
 	prepared    map[string]*preparedItem
 	roles       map[string]*Role
 	getRole     *sql.Stmt
+	rmap        map[uint64]*resolvFn
 	abacEnabled bool
 	anonExists  bool
 	qc          *qcode.Compiler
@@ -115,6 +116,10 @@ func NewSuperGraph(conf *Config, db *sql.DB) (*SuperGraph, error) {
 	}
 
 	if err := sg.initPrepared(); err != nil {
+		return nil, err
+	}
+
+	if err := sg.initResolvers(); err != nil {
 		return nil, err
 	}
 

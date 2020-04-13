@@ -6,6 +6,7 @@ require (
 	github.com/adjust/gorails v0.0.0-20171013043634-2786ed0c03d3
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
 	github.com/brianvoe/gofakeit v3.18.0+incompatible
+	github.com/cespare/xxhash v1.1.0
 	github.com/cespare/xxhash/v2 v2.1.0
 	github.com/daaku/go.zipexe v1.0.1 // indirect
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible

@@ -10,19 +10,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/cespare/xxhash/v2"
 	"github.com/dosco/super-graph/jsn"
 )
-
-// nolint: errcheck
-func mkkey(h *xxhash.Digest, k1 string, k2 string) uint64 {
-	h.WriteString(k1)
-	h.WriteString(k2)
-	v := h.Sum64()
-	h.Reset()
-
-	return v
-}
 
 // nolint: errcheck
 func gqlHash(b string, vars []byte, role string) string {

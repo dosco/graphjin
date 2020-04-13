@@ -89,25 +89,28 @@ func (sg *SuperGraph) initCompilers() error {
 
 func (c *scontext) execQuery() ([]byte, error) {
 	var data []byte
-	// var st *stmt
+	var st *stmt
 	var err error
 
 	if c.sg.conf.UseAllowList {
-		data, _, err = c.resolvePreparedSQL()
+		data, st, err = c.resolvePreparedSQL()
 		if err != nil {
 			return nil, err
 		}
 
 	} else {
-		data, _, err = c.resolveSQL()
+		data, st, err = c.resolveSQL()
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	return data, nil
+	if len(data) == 0 || st.skipped == 0 {
+		return data, nil
+	}
 
-	//return execRemoteJoin(st, data, c.req.hdr)
+	// return c.sg.execRemoteJoin(st, data, c.req.hdr)
+	return c.sg.execRemoteJoin(st, data, nil)
 }
 
 func (c *scontext) resolvePreparedSQL() ([]byte, *stmt, error) {
