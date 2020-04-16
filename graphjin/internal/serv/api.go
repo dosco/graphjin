@@ -3,8 +3,8 @@ package serv
 import (
 	"time"
 
-	"github.com/dosco/super-graph/cmd/internal/serv/internal/auth"
 	"github.com/dosco/super-graph/core"
+	"github.com/dosco/super-graph/internal/serv/internal/auth"
 
 	"github.com/spf13/viper"
 )
@@ -60,6 +60,11 @@ type Serv struct {
 		PoolSize    int32         `mapstructure:"pool_size"`
 		MaxRetries  int           `mapstructure:"max_retries"`
 		PingTimeout time.Duration `mapstructure:"ping_timeout"`
+		EnableTLS   bool          `mapstructure:"enable_tls"`
+		ServerName  string        `mapstructure:"server_name"`
+		ServerCert  string        `mapstructure:"server_cert"`
+		ClientCert  string        `mapstructure:"client_cert"`
+		ClientKey   string        `mapstructure:"client_key"`
 	} `mapstructure:"database"`
 
 	Actions []Action

@@ -12,10 +12,10 @@ endif
 export GO111MODULE := on
 
 # Build-time Go variables
-version        = github.com/dosco/super-graph/cmd/internal/serv.version
-gitBranch      = github.com/dosco/super-graph/cmd/internal/serv.gitBranch
-lastCommitSHA  = github.com/dosco/super-graph/cmd/internal/serv.lastCommitSHA
-lastCommitTime = github.com/dosco/super-graph/cmd/internal/serv.lastCommitTime
+version        = github.com/dosco/super-graph/internal/serv.version
+gitBranch      = github.com/dosco/super-graph/internal/serv.gitBranch
+lastCommitSHA  = github.com/dosco/super-graph/internal/serv.lastCommitSHA
+lastCommitTime = github.com/dosco/super-graph/internal/serv.lastCommitTime
 
 BUILD_FLAGS ?= -ldflags '-s -w -X ${lastCommitSHA}=${BUILD} -X "${lastCommitTime}=${BUILD_DATE}" -X "${version}=${BUILD_VERSION}" -X ${gitBranch}=${BUILD_BRANCH}'
 
@@ -28,18 +28,18 @@ BIN_DIR := $(GOPATH)/bin
 GORICE := $(BIN_DIR)/rice
 GOLANGCILINT := $(BIN_DIR)/golangci-lint
 GITCHGLOG := $(BIN_DIR)/git-chglog
-WEB_BUILD_DIR := ./cmd/internal/serv/web/build/manifest.json
+WEB_BUILD_DIR := ./internal/serv/web/build/manifest.json
 
 $(GORICE):
 	@GO111MODULE=off go get -u github.com/GeertJohan/go.rice/rice
 
 $(WEB_BUILD_DIR):
 	@echo "First install Yarn and create a build of the web UI then re-run make install"
-	@echo "Run this command: yarn --cwd cmd/internal/serv/web/ build"
+	@echo "Run this command: yarn --cwd internal/serv/web/ build"
 	@exit 1
 
 $(GITCHGLOG):
-	@GO111MODULE=off go get -u github.com/git-chglog/git-chglog/cmd/git-chglog
+	@GO111MODULE=off go get -u github.com/git-chglog/git-chglog/git-chglog
 
 changelog: $(GITCHGLOG)
 	@git-chglog $(ARGS)
@@ -57,7 +57,7 @@ os = $(word 1, $@)
 
 $(PLATFORMS): lint test 
 	@mkdir -p release
-	@GOOS=$(os) GOARCH=amd64 go build $(BUILD_FLAGS) -o release/$(BINARY)-$(BUILD_VERSION)-$(os)-amd64 cmd/main.go
+	@GOOS=$(os) GOARCH=amd64 go build $(BUILD_FLAGS) -o release/$(BINARY)-$(BUILD_VERSION)-$(os)-amd64 main.go
 
 release: windows linux darwin
 
@@ -69,7 +69,7 @@ gen: $(GORICE) $(WEB_BUILD_DIR)
 	@go generate ./...
 
 $(BINARY): clean
-	@go build $(BUILD_FLAGS) -o $(BINARY) cmd/main.go 
+	@go build $(BUILD_FLAGS) -o $(BINARY) main.go 
 
 clean:
 	@rm -f $(BINARY)

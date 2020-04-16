@@ -1790,18 +1790,37 @@ database:
   # Enable this if you need the user id in triggers, etc
   set_user_id: false
 
-  # Define additional variables here to be used with filters
-  variables:
-    admin_account_id: "5"
+  # database ping timeout is used for db health checking
+  ping_timeout: 1m
 
-  # Field and table names that you wish to block
-  blocklist:
-    - ar_internal_metadata
-    - schema_migrations
-    - secret
-    - password
-    - encrypted
-    - token
+  # Set up an secure tls encrypted db connection
+  enable_tls: false
+
+  # Required for tls. For example with Google Cloud SQL it's
+  # <gcp-project-id>:<cloud-sql-instance>"
+  # server_name: blah
+
+  # Required for tls. Can be a file path or the contents of the pem file
+  # server_cert: ./server-ca.pem
+
+  # Required for tls. Can be a file path or the contents of the pem file
+  # client_cert: ./client-cert.pem
+
+  # Required for tls. Can be a file path or the contents of the pem file
+  # client_key: ./client-key.pem
+
+# Define additional variables here to be used with filters
+variables:
+  admin_account_id: "5"
+
+# Field and table names that you wish to block
+blocklist:
+  - ar_internal_metadata
+  - schema_migrations
+  - secret
+  - password
+  - encrypted
+  - token
 
 # Create custom actions with their own api endpoints
 # For example the below action will be available at /api/v1/actions/refresh_leaderboard_users

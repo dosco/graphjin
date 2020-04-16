@@ -3,13 +3,13 @@
 Super Graph
 For documentation, visit https://supergraph.dev
 
-Commit SHA-1          :
-Commit timestamp      :
-Branch                :
+Commit SHA-1          : 75ff551
+Commit timestamp      : 2020-04-13 00:43:18 -0400
+Branch                : master
 Go version            : go1.14
 
 Licensed under the Apache Public License 2.0
-Copyright 2020, Vikram Rangnekar.
+Copyright 2020, Vikram Rangnekar
 
 Usage:
   super-graph [command]
@@ -38,7 +38,7 @@ Use "super-graph [command] --help" for more information about a command.
 
 package main
 
-import "github.com/dosco/super-graph/cmd/internal/serv"
+import "github.com/dosco/super-graph/internal/serv"
 
 func main() {
 	serv.Cmd()

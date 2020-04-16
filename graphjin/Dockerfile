@@ -1,7 +1,7 @@
 # stage: 1
 FROM node:10 as react-build
 WORKDIR /web
-COPY /cmd/internal/serv/web/ ./
+COPY /internal/serv/web/ ./
 RUN yarn
 RUN yarn build
 
@@ -24,8 +24,8 @@ RUN chmod 755 /usr/local/bin/sops
 WORKDIR /app
 COPY . /app
 
-RUN mkdir -p /app/cmd/internal/serv/web/build
-COPY --from=react-build /web/build/ ./cmd/internal/serv/web/build
+RUN mkdir -p /app/internal/serv/web/build
+COPY --from=react-build /web/build/ ./internal/serv/web/build
 
 RUN go mod vendor
 RUN make build
@@ -45,7 +45,7 @@ RUN mkdir -p /config
 COPY --from=go-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=go-build /app/config/* /config/
 COPY --from=go-build /app/super-graph .
-COPY --from=go-build /app/cmd/scripts/start.sh .
+COPY --from=go-build /app/internal/scripts/start.sh .
 COPY --from=go-build /usr/local/bin/sops .
 
 RUN chmod +x /super-graph
