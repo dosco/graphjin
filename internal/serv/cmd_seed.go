@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/brianvoe/gofakeit"
+	"github.com/brianvoe/gofakeit/v5"
 	"github.com/dop251/goja"
 	"github.com/dosco/super-graph/core"
 	"github.com/spf13/cobra"
@@ -232,6 +232,10 @@ func imageURL(width int, height int) string {
 	return fmt.Sprintf("https://picsum.photos/%d/%d?%d", width, height, rand.Intn(5000))
 }
 
+func getRandValue(values []string) string {
+	return values[rand.Intn(len(values))]
+}
+
 //nolint: errcheck
 func setFakeFuncs(f *goja.Object) {
 	gofakeit.Seed(0)
@@ -259,7 +263,6 @@ func setFakeFuncs(f *goja.Object) {
 	f.Set("country_abr", gofakeit.CountryAbr)
 	f.Set("state", gofakeit.State)
 	f.Set("state_abr", gofakeit.StateAbr)
-	f.Set("status_code", gofakeit.StatusCode)
 	f.Set("street", gofakeit.Street)
 	f.Set("street_name", gofakeit.StreetName)
 	f.Set("street_number", gofakeit.StreetNumber)
@@ -282,12 +285,10 @@ func setFakeFuncs(f *goja.Object) {
 	f.Set("beer_yeast", gofakeit.BeerYeast)
 
 	// Cars
-	f.Set("vehicle", gofakeit.Vehicle)
-	f.Set("vehicle_type", gofakeit.VehicleType)
+	f.Set("car", gofakeit.Car)
+	f.Set("car_type", gofakeit.CarType)
 	f.Set("car_maker", gofakeit.CarMaker)
 	f.Set("car_model", gofakeit.CarModel)
-	f.Set("fuel_type", gofakeit.FuelType)
-	f.Set("transmission_gear_type", gofakeit.TransmissionGearType)
 
 	// Text
 	f.Set("word", gofakeit.Word)
@@ -315,7 +316,6 @@ func setFakeFuncs(f *goja.Object) {
 	f.Set("domain_suffix", gofakeit.DomainSuffix)
 	f.Set("ipv4_address", gofakeit.IPv4Address)
 	f.Set("ipv6_address", gofakeit.IPv6Address)
-	f.Set("simple_status_code", gofakeit.SimpleStatusCode)
 	f.Set("http_method", gofakeit.HTTPMethod)
 	f.Set("user_agent", gofakeit.UserAgent)
 	f.Set("user_agent_firefox", gofakeit.FirefoxUserAgent)
@@ -379,8 +379,8 @@ func setFakeFuncs(f *goja.Object) {
 	//f.Set("language_abbreviation", gofakeit.LanguageAbbreviation)
 
 	// File
-	f.Set("extension", gofakeit.Extension)
-	f.Set("mine_type", gofakeit.MimeType)
+	f.Set("file_extension", gofakeit.FileExtension)
+	f.Set("file_mine_type", gofakeit.FileMimeType)
 
 	// Numbers
 	f.Set("number", gofakeit.Number)
@@ -404,7 +404,7 @@ func setFakeFuncs(f *goja.Object) {
 	f.Set("digit", gofakeit.Digit)
 	f.Set("letter", gofakeit.Letter)
 	f.Set("lexify", gofakeit.Lexify)
-	f.Set("rand_string", gofakeit.RandString)
+	f.Set("rand_string", getRandValue)
 	f.Set("shuffle_strings", gofakeit.ShuffleStrings)
 	f.Set("numerify", gofakeit.Numerify)
 

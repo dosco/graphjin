@@ -347,12 +347,10 @@ beer_style
 beer_yeast
 
 // Cars
-vehicle
-vehicle_type
+car
+car_type
 car_maker
 car_model
-fuel_type
-transmission_gear_type
 
 // Text
 word
@@ -438,8 +436,8 @@ hipster_paragraph
 hipster_sentence
 
 // File
-extension
-mine_type
+file_extension
+file_mine_type
 
 // Numbers
 number
@@ -463,7 +461,6 @@ mac_address
 digit
 letter
 lexify
-rand_string
 shuffle_strings
 numerify
 ```
