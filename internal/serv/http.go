@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/dosco/super-graph/cmd/internal/serv/internal/auth"
 	"github.com/dosco/super-graph/core"
+	"github.com/dosco/super-graph/internal/serv/internal/auth"
 	"github.com/rs/cors"
 	"go.uber.org/zap"
 )

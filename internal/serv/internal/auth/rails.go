@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/bradfitz/gomemcache/memcache"
-	"github.com/dosco/super-graph/cmd/internal/serv/internal/rails"
 	"github.com/dosco/super-graph/core"
+	"github.com/dosco/super-graph/internal/serv/internal/rails"
 	"github.com/garyburd/redigo/redis"
 )
 

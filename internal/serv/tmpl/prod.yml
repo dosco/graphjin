@@ -78,3 +78,19 @@ database:
 
   # database ping timeout is used for db health checking
   ping_timeout: 5m
+
+  # Set up an secure tls encrypted db connection
+  enable_tls: false
+
+  # Required for tls. For example with Google Cloud SQL it's
+  # <gcp-project-id>:<cloud-sql-instance>"
+  # server_name: blah
+
+  # Required for tls. Can be a file path or the contents of the pem file
+  # server_cert: ./server-ca.pem
+
+  # Required for tls. Can be a file path or the contents of the pem file
+  # client_cert: ./client-cert.pem
+
+  # Required for tls. Can be a file path or the contents of the pem file
+  # client_key: ./client-key.pem

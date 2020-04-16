@@ -11,7 +11,7 @@ import (
 
 	rice "github.com/GeertJohan/go.rice"
 	"github.com/NYTimes/gziphandler"
-	"github.com/dosco/super-graph/cmd/internal/serv/internal/auth"
+	"github.com/dosco/super-graph/internal/serv/internal/auth"
 )
 
 func initWatcher() {

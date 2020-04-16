@@ -1,12 +1,17 @@
 package qcode
 
 func GetQType(gql string) QType {
+	ic := false
 	for i := range gql {
 		b := gql[i]
-		if b == '{' {
+		switch {
+		case b == '#':
+			ic = true
+		case b == '\n':
+			ic = false
+		case !ic && b == '{':
 			return QTQuery
-		}
-		if al(b) {
+		case !ic && al(b):
 			switch b {
 			case 'm', 'M':
 				return QTMutation

@@ -1,13 +1,23 @@
 package serv
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"database/sql"
+	"errors"
+	"fmt"
+	"io/ioutil"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/stdlib"
 	//_ "github.com/jackc/pgx/v4/stdlib"
+)
+
+const (
+	PEM_SIG = "--BEGIN "
 )
 
 func initConf() (*Config, error) {
@@ -83,27 +93,6 @@ func initDB(c *Config, useDB bool) (*sql.DB, error) {
 	var db *sql.DB
 	var err error
 
-	// cs := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s",
-	// 	c.DB.Host, c.DB.Port,
-	// 	c.DB.User, c.DB.Password,
-	// 	c.DB.DBName)
-
-	// fmt.Println(">>", cs)
-
-	// for i := 1; i < 10; i++ {
-	// 	db, err = sql.Open("pgx", cs)
-	// 	if err == nil {
-	// 		break
-	// 	}
-	// 	time.Sleep(time.Duration(i*100) * time.Millisecond)
-	// }
-
-	// if err != nil {
-	// 	return nil, err
-	// }
-
-	// return db, nil
-
 	config, _ := pgx.ParseConfig("")
 	config.Host = c.DB.Host
 	config.Port = c.DB.Port
@@ -116,6 +105,59 @@ func initDB(c *Config, useDB bool) (*sql.DB, error) {
 
 	if useDB {
 		config.Database = c.DB.DBName
+	}
+
+	if c.DB.EnableTLS {
+		if len(c.DB.ServerName) == 0 {
+			return nil, errors.New("server_name is required")
+		}
+		if len(c.DB.ServerCert) == 0 {
+			return nil, errors.New("server_cert is required")
+		}
+		if len(c.DB.ClientCert) == 0 {
+			return nil, errors.New("client_cert is required")
+		}
+		if len(c.DB.ClientKey) == 0 {
+			return nil, errors.New("client_key is required")
+		}
+
+		rootCertPool := x509.NewCertPool()
+		var pem []byte
+		var err error
+
+		if strings.Contains(c.DB.ServerCert, PEM_SIG) {
+			pem = []byte(c.DB.ServerCert)
+		} else {
+			pem, err = ioutil.ReadFile(c.DB.ServerCert)
+		}
+
+		if err != nil {
+			return nil, fmt.Errorf("db tls: %w", err)
+		}
+
+		if ok := rootCertPool.AppendCertsFromPEM(pem); !ok {
+			return nil, errors.New("db tls: failed to append pem")
+		}
+
+		clientCert := make([]tls.Certificate, 0, 1)
+		var certs tls.Certificate
+
+		if strings.Contains(c.DB.ClientCert, PEM_SIG) {
+			certs, err = tls.X509KeyPair([]byte(c.DB.ClientCert), []byte(c.DB.ClientKey))
+		} else {
+			certs, err = tls.LoadX509KeyPair(c.DB.ClientCert, c.DB.ClientKey)
+		}
+
+		if err != nil {
+			return nil, fmt.Errorf("db tls: %w", err)
+		}
+
+		clientCert = append(clientCert, certs)
+		config.TLSConfig = &tls.Config{
+			RootCAs:      rootCertPool,
+			Certificates: clientCert,
+			ServerName:   c.DB.ServerName,
+		}
 	}
 
 	// switch c.LogLevel {

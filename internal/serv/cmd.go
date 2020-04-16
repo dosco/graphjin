@@ -156,6 +156,20 @@ func cmdVersion(cmd *cobra.Command, args []string) {
 }
 
 func BuildDetails() string {
+	if len(version) == 0 {
+		return fmt.Sprintf(`
+Super Graph (unknown version)
+For documentation, visit https://supergraph.dev
+
+To build with version information please use the Makefile
+> git clone https://github.com/dosco/super-graph
+> cd super-graph && make install
+
+Licensed under the Apache Public License 2.0
+Copyright 2020, Vikram Rangnekar
+`)
+	}
+
 	return fmt.Sprintf(`
 Super Graph %v 
 For documentation, visit https://supergraph.dev
@@ -166,7 +180,7 @@ Branch                : %v
 Go version            : %v
 
 Licensed under the Apache Public License 2.0
-Copyright 2020, Vikram Rangnekar.
+Copyright 2020, Vikram Rangnekar
 `,
 		version,
 		lastCommitSHA,
