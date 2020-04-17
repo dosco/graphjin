@@ -98,8 +98,9 @@ func cmdDBNew(cmd *cobra.Command, args []string) {
 
 	initConfOnce()
 	name := args[0]
+	migrationsPath := conf.relPath(conf.MigrationsPath)
 
-	m, err := migrate.FindMigrations(conf.MigrationsPath)
+	m, err := migrate.FindMigrations(migrationsPath)
 	if err != nil {
 		log.Fatalf("ERR error loading migrations: %s", err)
 	}
@@ -107,7 +108,7 @@ func cmdDBNew(cmd *cobra.Command, args []string) {
 	mname := fmt.Sprintf("%d_%s.sql", len(m), name)
 
 	// Write new migration
-	mpath := filepath.Join(conf.MigrationsPath, mname)
+	mpath := filepath.Join(migrationsPath, mname)
 	mfile, err := os.OpenFile(mpath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0666)
 	if err != nil {
 		log.Fatalf("ERR %s", err)
@@ -144,7 +145,7 @@ func cmdDBMigrate(cmd *cobra.Command, args []string) {
 
 	m.Data = getMigrationVars()
 
-	err = m.LoadMigrations(path.Join(conf.cpath, conf.MigrationsPath))
+	err = m.LoadMigrations(conf.relPath(conf.MigrationsPath))
 	if err != nil {
 		log.Fatalf("ERR failed to load migrations: %s", err)
 	}
@@ -236,7 +237,7 @@ func cmdDBStatus(cmd *cobra.Command, args []string) {
 
 	m.Data = getMigrationVars()
 
-	err = m.LoadMigrations(conf.MigrationsPath)
+	err = m.LoadMigrations(conf.relPath(conf.MigrationsPath))
 	if err != nil {
 		log.Fatalf("ERR failed to load migrations: %s", err)
 	}

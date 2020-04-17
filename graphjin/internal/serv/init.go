@@ -128,7 +128,7 @@ func initDB(c *Config, useDB bool) (*sql.DB, error) {
 		if strings.Contains(c.DB.ServerCert, PEM_SIG) {
 			pem = []byte(c.DB.ServerCert)
 		} else {
-			pem, err = ioutil.ReadFile(c.DB.ServerCert)
+			pem, err = ioutil.ReadFile(c.relPath(c.DB.ServerCert))
 		}
 
 		if err != nil {
@@ -145,7 +145,7 @@ func initDB(c *Config, useDB bool) (*sql.DB, error) {
 		if strings.Contains(c.DB.ClientCert, PEM_SIG) {
 			certs, err = tls.X509KeyPair([]byte(c.DB.ClientCert), []byte(c.DB.ClientKey))
 		} else {
-			certs, err = tls.LoadX509KeyPair(c.DB.ClientCert, c.DB.ClientKey)
+			certs, err = tls.LoadX509KeyPair(c.relPath(c.DB.ClientCert), c.relPath(c.DB.ClientKey))
 		}
 
 		if err != nil {

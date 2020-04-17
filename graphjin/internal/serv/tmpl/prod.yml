@@ -34,7 +34,7 @@ reload_on_config_change: false
 # seed_file: seed.js
 
 # Path pointing to where the migrations can be found
-# migrations_path: migrations
+# migrations_path: ./migrations
 
 # Secret key for general encryption operations like 
 # encrypting the cursor data

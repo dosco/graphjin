@@ -16,6 +16,7 @@ import (
 	"github.com/brianvoe/gofakeit/v5"
 	"github.com/dop251/goja"
 	"github.com/dosco/super-graph/core"
+	"github.com/gosimple/slug"
 	"github.com/spf13/cobra"
 )
 
@@ -60,6 +61,10 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 	fake := vm.NewObject()
 	setFakeFuncs(fake)
 	vm.Set("fake", fake)
+
+	util := vm.NewObject()
+	setUtilFuncs(util)
+	vm.Set("util", util)
 
 	_, err = vm.RunScript("seed.js", string(b))
 	if err != nil {
@@ -405,9 +410,14 @@ func setFakeFuncs(f *goja.Object) {
 	f.Set("letter", gofakeit.Letter)
 	f.Set("lexify", gofakeit.Lexify)
 	f.Set("rand_string", getRandValue)
-	f.Set("shuffle_strings", gofakeit.ShuffleStrings)
 	f.Set("numerify", gofakeit.Numerify)
 
 	//f.Set("programming_language", gofakeit.ProgrammingLanguage)
+}
 
+func setUtilFuncs(f *goja.Object) {
+	// Slugs
+	f.Set("make_slug", slug.Make)
+	f.Set("make_slug_lang", slug.MakeLang)
+	f.Set("shuffle_strings", gofakeit.ShuffleStrings)
 }

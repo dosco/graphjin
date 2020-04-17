@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -112,4 +113,12 @@ func GetConfigName() string {
 	}
 
 	return ge
+}
+
+func (c *Config) relPath(p string) string {
+	if filepath.IsAbs(p) {
+		return p
+	}
+
+	return path.Join(c.cpath, p)
 }

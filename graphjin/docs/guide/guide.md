@@ -465,6 +465,14 @@ shuffle_strings
 numerify
 ```
 
+Other utility functions
+
+```
+shuffle_strings(string_array)
+make_slug(text)
+make_slug_lang(text, lang)
+```
+
 ### Migrations
 
 Easy database migrations is the most important thing when building products backend by a relational database. We make it super easy to manage and migrate your database.
@@ -1701,7 +1709,7 @@ reload_on_config_change: true
 # seed_file: seed.js
 
 # Path pointing to where the migrations can be found
-migrations_path: ./config/migrations
+migrations_path: ./migrations
 
 # Postgres related environment Variables
 # SG_DATABASE_HOST
