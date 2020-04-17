@@ -108,6 +108,7 @@ func addTables(c *Config, di *psql.DBInfo) error {
 		if err := addTable(di, t.Columns, t); err != nil {
 			return err
 		}
+
 	}
 	return nil
 }

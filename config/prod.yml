@@ -30,7 +30,7 @@ enable_tracing: true
 # seed_file: seed.js
 
 # Path pointing to where the migrations can be found
-# migrations_path: migrations
+# migrations_path: ./migrations
 
 # Secret key for general encryption operations like 
 # encrypting the cursor data

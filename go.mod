@@ -15,6 +15,7 @@ require (
 	github.com/garyburd/redigo v1.6.0
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
 	github.com/gobuffalo/flect v0.2.1
+	github.com/gosimple/slug v1.9.0
 	github.com/jackc/pgtype v1.3.0
 	github.com/jackc/pgx/v4 v4.6.0
 	github.com/mitchellh/mapstructure v1.2.2 // indirect
