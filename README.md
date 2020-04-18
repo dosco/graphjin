@@ -15,10 +15,7 @@ Designed to 100x your developer productivity. Super Graph will instantly and wit
 ## Using it as a service
 
 ```console
-git clone https://github.com/dosco/super-graph 
-cd ./super-graph
-make install
-
+get get https://github.com/dosco/super-graph 
 super-graph new <app_name>
 ```
 

@@ -3,6 +3,11 @@ services:
   db:
     image: postgres
     tmpfs: /var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
       
   rails_app:
     image: dosco/super-graph-demo:latest

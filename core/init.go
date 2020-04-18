@@ -71,7 +71,7 @@ func (sg *SuperGraph) initConfig() error {
 	}
 
 	// Roles: validate and sanitize
-	c.RolesQuery = sanitize(c.RolesQuery)
+	c.RolesQuery = sanitizeVars(c.RolesQuery)
 
 	if len(c.RolesQuery) == 0 {
 		sg.log.Printf("WRN roles_query not defined: attribute based access control disabled")
