@@ -438,7 +438,7 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo, vars 
 
 	io.WriteString(c.w, `SELECT to_jsonb("__sr_`)
 	int2string(c.w, sel.ID)
-	io.WriteString(c.w, `") `)
+	io.WriteString(c.w, `".*) `)
 
 	if sel.Paging.Type != qcode.PtOffset {
 		for i := range sel.OrderBy {

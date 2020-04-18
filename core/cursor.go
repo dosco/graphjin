@@ -5,8 +5,8 @@ import (
 	"encoding/base64"
 
 	"github.com/dosco/super-graph/core/internal/crypto"
-	"github.com/dosco/super-graph/jsn"
 	"github.com/dosco/super-graph/core/internal/qcode"
+	"github.com/dosco/super-graph/jsn"
 )
 
 func (sg *SuperGraph) encryptCursor(qc *qcode.QCode, data []byte) ([]byte, error) {

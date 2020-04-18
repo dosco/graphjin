@@ -21,9 +21,17 @@ func (c *compilerContext) renderInsert(qc *qcode.QCode, w io.Writer,
 		return 0, fmt.Errorf("variable '%s' is empty", qc.ActionVar)
 	}
 
-	io.WriteString(c.w, `WITH "_sg_input" AS (SELECT '{{`)
+	io.WriteString(c.w, `WITH "_sg_input" AS (SELECT `)
+	if insert[0] == '[' {
+		io.WriteString(c.w, `json_array_elements(`)
+	}
+	io.WriteString(c.w, `'{{`)
 	io.WriteString(c.w, qc.ActionVar)
-	io.WriteString(c.w, `}}' :: json AS j)`)
+	io.WriteString(c.w, `}}' :: json`)
+	if insert[0] == '[' {
+		io.WriteString(c.w, `)`)
+	}
+	io.WriteString(c.w, ` AS j)`)
 
 	st := util.NewStack()
 	st.Push(kvitem{_type: itemInsert, key: ti.Name, val: insert, ti: ti})
@@ -90,26 +98,9 @@ func (c *compilerContext) renderInsertStmt(qc *qcode.QCode, w io.Writer, item re
 	renderInsertUpdateColumns(w, qc, jt, ti, sk, true)
 	renderNestedInsertRelColumns(w, item.kvitem, true)
 
-	io.WriteString(w, ` FROM "_sg_input" i, `)
+	io.WriteString(w, ` FROM "_sg_input" i`)
 	renderNestedInsertRelTables(w, item.kvitem)
-
-	if item.array {
-		io.WriteString(w, `json_populate_recordset`)
-	} else {
-		io.WriteString(w, `json_populate_record`)
-	}
-
-	io.WriteString(w, `(NULL::`)
-	io.WriteString(w, ti.Name)
-
-	if len(item.path) == 0 {
-		io.WriteString(w, `, i.j) t RETURNING *)`)
-	} else {
-		io.WriteString(w, `, i.j->`)
-		joinPath(w, item.path)
-		io.WriteString(w, `) t RETURNING *)`)
-	}
-
+	io.WriteString(w, ` RETURNING *)`)
 	return nil
 }
 
@@ -172,21 +163,21 @@ func renderNestedInsertRelColumns(w io.Writer, item kvitem, values bool) error {
 func renderNestedInsertRelTables(w io.Writer, item kvitem) error {
 	if len(item.items) == 0 {
 		if item.relPC != nil && item.relPC.Type == RelOneToMany {
-			quoted(w, item.relPC.Left.Table)
 			io.WriteString(w, `, `)
+			quoted(w, item.relPC.Left.Table)
 		}
 	} else {
 		// Render tables needed to set values if child-to-parent
 		// relationship is one-to-many
 		for _, v := range item.items {
 			if v.relCP.Type == RelOneToMany {
+				io.WriteString(w, `, `)
 				if v._ctype > 0 {
 					io.WriteString(w, `"_x_`)
 					io.WriteString(w, v.relCP.Left.Table)
-					io.WriteString(w, `", `)
+					io.WriteString(w, `"`)
 				} else {
 					quoted(w, v.relCP.Left.Table)
-					io.WriteString(w, `, `)
 				}
 			}
 		}
