@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/dosco/super-graph/jsn"
 	"github.com/dosco/super-graph/core/internal/qcode"
 	"github.com/dosco/super-graph/core/internal/util"
+	"github.com/dosco/super-graph/jsn"
 )
 
 type itemType int
@@ -396,7 +396,12 @@ func renderInsertUpdateColumns(w io.Writer,
 		}
 
 		if values {
-			colWithTable(w, "t", cn.Name)
+			io.WriteString(w, `CAST( i.j ->>`)
+			io.WriteString(w, `'`)
+			io.WriteString(w, cn.Name)
+			io.WriteString(w, `' AS `)
+			io.WriteString(w, cn.Type)
+			io.WriteString(w, `)`)
 		} else {
 			quoted(w, cn.Name)
 		}

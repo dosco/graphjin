@@ -91,25 +91,9 @@ func (c *compilerContext) renderUpdateStmt(w io.Writer, qc *qcode.QCode, item re
 	renderInsertUpdateColumns(w, qc, jt, ti, sk, true)
 	renderNestedUpdateRelColumns(w, item.kvitem, true)
 
-	io.WriteString(w, ` FROM "_sg_input" i, `)
+	io.WriteString(w, ` FROM "_sg_input" i`)
 	renderNestedUpdateRelTables(w, item.kvitem)
-
-	if item.array {
-		io.WriteString(w, `json_populate_recordset`)
-	} else {
-		io.WriteString(w, `json_populate_record`)
-	}
-
-	io.WriteString(w, `(NULL::`)
-	io.WriteString(w, ti.Name)
-
-	if len(item.path) == 0 {
-		io.WriteString(w, `, i.j) t)`)
-	} else {
-		io.WriteString(w, `, i.j->`)
-		joinPath(w, item.path)
-		io.WriteString(w, `) t) `)
-	}
+	io.WriteString(w, `) `)
 
 	if item.id != 0 {
 		// Render sql to set id values if child-to-parent
@@ -137,9 +121,11 @@ func (c *compilerContext) renderUpdateStmt(w io.Writer, qc *qcode.QCode, item re
 		io.WriteString(w, `)`)
 
 	} else {
-		io.WriteString(w, ` WHERE `)
-		if err := c.renderWhere(&qc.Selects[0], ti); err != nil {
-			return err
+		if qc.Selects[0].Where != nil {
+			io.WriteString(w, ` WHERE `)
+			if err := c.renderWhere(&qc.Selects[0], ti); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -202,9 +188,9 @@ func renderNestedUpdateRelTables(w io.Writer, item kvitem) error {
 	// relationship is one-to-many
 	for _, v := range item.items {
 		if v._ctype > 0 && v.relCP.Type == RelOneToMany {
+			io.WriteString(w, `", `)
 			io.WriteString(w, `"_x_`)
 			io.WriteString(w, v.relCP.Left.Table)
-			io.WriteString(w, `", `)
 		}
 	}
 

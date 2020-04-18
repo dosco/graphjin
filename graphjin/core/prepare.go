@@ -256,7 +256,7 @@ func (sg *SuperGraph) initAllowList() error {
 		sg.log.Printf("WRN allow list disabled no file specified")
 	}
 
-	if sg.conf.UseAllowList {
+	if !sg.conf.UseAllowList {
 		ac = allow.Config{CreateIfNotExists: true, Persist: true}
 	}
 
