@@ -55,6 +55,7 @@ import (
 	_log "log"
 	"os"
 
+	"github.com/chirino/graphql"
 	"github.com/dosco/super-graph/core/internal/allow"
 	"github.com/dosco/super-graph/core/internal/crypto"
 	"github.com/dosco/super-graph/core/internal/psql"
@@ -92,6 +93,7 @@ type SuperGraph struct {
 	anonExists  bool
 	qc          *qcode.Compiler
 	pc          *psql.Compiler
+	Engine      *graphql.Engine
 }
 
 // NewSuperGraph creates the SuperGraph struct, this involves querying the database to learn its
@@ -120,6 +122,10 @@ func NewSuperGraph(conf *Config, db *sql.DB) (*SuperGraph, error) {
 	}
 
 	if err := sg.initResolvers(); err != nil {
+		return nil, err
+	}
+
+	if err := sg.initGraphQLEgine(); err != nil {
 		return nil, err
 	}
 
@@ -154,6 +160,14 @@ type Result struct {
 // In developer mode all names queries are saved into a file `allow.list` and in production mode only
 // queries from this file can be run.
 func (sg *SuperGraph) GraphQL(c context.Context, query string, vars json.RawMessage) (*Result, error) {
+	// try to use the sg.Engine to execute introspection queries...
+	res := sg.Engine.ExecuteOne(&graphql.EngineRequest{ Query: query})
+	if res.Error()==nil {
+		r := &Result{}
+		r.Data = res.Data
+		return r, nil
+	}
+
 	ct := scontext{Context: c, sg: sg, query: query, vars: vars}
 
 	if len(vars) <= 2 {

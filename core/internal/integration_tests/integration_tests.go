@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/dosco/super-graph/core"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -90,6 +91,15 @@ func TestSuperGraph(t *testing.T, db *sql.DB, before func(t *testing.T)) {
 		require.Equal(t, `{"line_items": [{"id": 5001}, {"id": 5002}]}`, string(res.Data))
 	})
 
+	t.Run("get line item", func(t *testing.T) {
+		before(t)
+		res, err := sg.GraphQL(ctx,
+			`query { line_item(id:$id) { id, price, quantity } }`,
+			json.RawMessage(`{"id":5001}`))
+		require.NoError(t, err, res.SQL())
+		require.Equal(t, `{"line_item": {"id": 5001, "price": 6.95, "quantity": 10}}`, string(res.Data))
+	})
+
 	t.Run("get line items", func(t *testing.T) {
 		before(t)
 		res, err := sg.GraphQL(ctx,
@@ -140,4 +150,154 @@ func TestSuperGraph(t *testing.T, db *sql.DB, before func(t *testing.T)) {
 		require.Equal(t, `{"line_items": [{"id": 5003, "product": {"name": "Charmin Ultra Soft"}}]}`, string(res.Data))
 	})
 
+	t.Run("schema introspection", func(t *testing.T) {
+		before(t)
+		// fmt.Println(sg.Engine.Schema.String())
+		assert.Equal(t, `type Mutation {
+  line_item(id:Int!, insert:line_itemInput, inserts:[line_itemInput!]!, update:line_itemInput, updates:[line_itemInput!]!):line_itemOutput
+  product(id:Int!, insert:productInput, inserts:[productInput!]!, update:productInput, updates:[productInput!]!):productOutput
+  user(id:Int!, insert:userInput, inserts:[userInput!]!, update:userInput, updates:[userInput!]!):userOutput
 }
+type Query {
+  line_item(id:Int!):line_itemOutput
+  line_items(id:Int!):[line_itemOutput!]!
+  product(id:Int!):productOutput
+  products(id:Int!):[productOutput!]!
+  user(id:Int!):userOutput
+  users(id:Int!):[userOutput!]!
+}
+input line_itemInput {
+  id:Int!
+  price:Float
+  product:Int
+  quantity:Int
+}
+type line_itemOutput {
+  id:Int!
+  price:Float
+  product:Int
+  quantity:Int
+}
+input productInput {
+  id:Int!
+  name:String
+  weight:Float
+}
+type productOutput {
+  id:Int!
+  name:String
+  weight:Float
+}
+input userInput {
+  full_name:String
+  id:Int!
+}
+type userOutput {
+  full_name:String
+  id:Int!
+}
+schema {
+  mutation: Mutation
+  query: Query
+}
+`, sg.Engine.Schema.String())
+	})
+
+	res, err := sg.GraphQL(ctx,introspectionQuery, json.RawMessage(``))
+	assert.NoError(t, err)
+	assert.Contains(t, string(res.Data),
+		`{"queryType":{"name":"Query"},"mutationType":{"name":"Mutation"},"subscriptionType":null,"types":`)
+	assert.Contains(t, string(res.Data),
+		`{"kind":"OBJECT","name":"Mutation","description":null,"fields":[{"name":"line_item","description":null`)
+}
+
+const introspectionQuery = `
+ query {
+   __schema {
+     queryType { name }
+     mutationType { name }
+     subscriptionType { name }
+     types {
+       ...FullType
+     }
+     directives {
+       name
+       description
+       locations
+       args {
+         ...InputValue
+       }
+     }
+   }
+ }
+ fragment FullType on __Type {
+   kind
+   name
+   description
+   fields(includeDeprecated: true) {
+     name
+     description
+     args {
+       ...InputValue
+     }
+     type {
+       ...TypeRef
+     }
+     isDeprecated
+     deprecationReason
+   }
+   inputFields {
+     ...InputValue
+   }
+   interfaces {
+     ...TypeRef
+   }
+   enumValues(includeDeprecated: true) {
+     name
+     description
+     isDeprecated
+     deprecationReason
+   }
+   possibleTypes {
+     ...TypeRef
+   }
+ }
+ fragment InputValue on __InputValue {
+   name
+   description
+   type { ...TypeRef }
+   defaultValue
+ }
+ fragment TypeRef on __Type {
+   kind
+   name
+   ofType {
+     kind
+     name
+     ofType {
+       kind
+       name
+       ofType {
+         kind
+         name
+         ofType {
+           kind
+           name
+           ofType {
+             kind
+             name
+             ofType {
+               kind
+               name
+               ofType {
+                 kind
+                 name
+               }
+             }
+           }
+         }
+       }
+     }
+   }
+ }
+`
