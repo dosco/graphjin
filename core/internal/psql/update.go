@@ -188,9 +188,9 @@ func renderNestedUpdateRelTables(w io.Writer, item kvitem) error {
 	// relationship is one-to-many
 	for _, v := range item.items {
 		if v._ctype > 0 && v.relCP.Type == RelOneToMany {
-			io.WriteString(w, `", `)
-			io.WriteString(w, `"_x_`)
+			io.WriteString(w, `, "_x_`)
 			io.WriteString(w, v.relCP.Left.Table)
+			io.WriteString(w, `"`)
 		}
 	}
 
