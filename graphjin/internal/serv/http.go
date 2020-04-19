@@ -83,7 +83,7 @@ func apiV1(w http.ResponseWriter, r *http.Request) {
 	res, err := sg.GraphQL(ct, req.Query, req.Vars)
 
 	if logLevel >= LogLevelDebug {
-		log.Printf("DBG query:\n%s\nsql:\n%s", req.Query, res.SQL())
+		log.Printf("DBG query %s: %s", res.QueryName(), res.SQL())
 	}
 
 	if err != nil {
