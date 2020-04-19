@@ -1,45 +1,3 @@
-?   	github.com/dosco/super-graph	[no test files]
-testing: warning: no tests to run
-PASS
-ok  	github.com/dosco/super-graph/core	0.025s [no tests to run]
-=== RUN   TestGQLName1
---- PASS: TestGQLName1 (0.00s)
-=== RUN   TestGQLName2
---- PASS: TestGQLName2 (0.00s)
-=== RUN   TestGQLName3
---- PASS: TestGQLName3 (0.00s)
-=== RUN   TestGQLName4
---- PASS: TestGQLName4 (0.00s)
-=== RUN   TestGQLName5
---- PASS: TestGQLName5 (0.00s)
-=== RUN   TestFuzzCrashers
---- PASS: TestFuzzCrashers (0.00s)
-PASS
-ok  	github.com/dosco/super-graph/core/internal/allow	0.010s
-?   	github.com/dosco/super-graph/core/internal/crypto	[no test files]
-?   	github.com/dosco/super-graph/core/internal/integration_tests	[no test files]
-=== RUN   TestCockroachDB
-started temporary cockroach db
-=== RUN   TestCockroachDB/seed_fixtures
-=== RUN   TestCockroachDB/get_line_items
-=== RUN   TestCockroachDB/update_line_item
-=== RUN   TestCockroachDB/delete_line_item
-=== RUN   TestCockroachDB/nested_insert
-stopping temporary cockroach db
---- PASS: TestCockroachDB (0.85s)
-    --- PASS: TestCockroachDB/seed_fixtures (0.01s)
-    --- PASS: TestCockroachDB/get_line_items (0.00s)
-    --- PASS: TestCockroachDB/update_line_item (0.00s)
-    --- PASS: TestCockroachDB/delete_line_item (0.00s)
-    --- SKIP: TestCockroachDB/nested_insert (0.00s)
-        cockroachdb_test.go:61: nested inserts currently not working yet on cockroach db
-PASS
-ok  	github.com/dosco/super-graph/core/internal/integration_tests/cockroachdb	0.872s
-=== RUN   TestCockroachDB
---- SKIP: TestCockroachDB (0.00s)
-    postgresql_test.go:17: set the SG_POSTGRESQL_TEST_URL env variable if you want to run integration tests against a PostgreSQL database
-PASS
-ok  	github.com/dosco/super-graph/core/internal/integration_tests/postgresql	0.015s
 === RUN   TestCompileInsert
 === RUN   TestCompileInsert/simpleInsert
 WITH "_sg_input" AS (SELECT '{{data}}' :: json AS j), "users" AS (INSERT INTO "users" ("full_name", "email") SELECT CAST( i.j ->>'full_name' AS character varying), CAST( i.j ->>'email' AS character varying) FROM "_sg_input" i RETURNING *) SELECT jsonb_build_object('user', "__sj_0"."json") as "__root" FROM (SELECT to_jsonb("__sr_0".*) AS "json"FROM (SELECT "users_0"."id" AS "id" FROM (SELECT "users"."id" FROM "users" LIMIT ('1') :: integer) AS "users_0") AS "__sr_0") AS "__sj_0"
@@ -62,17 +20,17 @@ WITH "_sg_input" AS (SELECT '{{data}}' :: json AS j), "users" AS (INSERT INTO "u
 WITH "_sg_input" AS (SELECT '{{data}}' :: json AS j), "_x_users" AS (SELECT "id" FROM "_sg_input" i,"users" WHERE "users"."id"= ((i.j->'user'->'connect'->>'id'))::bigint LIMIT 1), "products" AS (INSERT INTO "products" ("name", "price", "created_at", "updated_at", "user_id") SELECT CAST( i.j ->>'name' AS character varying), CAST( i.j ->>'price' AS numeric(7,2)), CAST( i.j ->>'created_at' AS timestamp without time zone), CAST( i.j ->>'updated_at' AS timestamp without time zone), "_x_users"."id" FROM "_sg_input" i, "_x_users" RETURNING *) SELECT jsonb_build_object('product', "__sj_0"."json") as "__root" FROM (SELECT to_jsonb("__sr_0".*) AS "json"FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name", "__sj_1"."json" AS "user", "__sj_2"."json" AS "tags" FROM (SELECT "products"."id", "products"."name", "products"."user_id", "products"."tags" FROM "products" LIMIT ('1') :: integer) AS "products_0" LEFT OUTER JOIN LATERAL (SELECT coalesce(jsonb_agg("__sj_2"."json"), '[]') as "json" FROM (SELECT to_jsonb("__sr_2".*) AS "json"FROM (SELECT "tags_2"."id" AS "id", "tags_2"."name" AS "name" FROM (SELECT "tags"."id", "tags"."name" FROM "tags" WHERE ((("tags"."slug") = any ("products_0"."tags"))) LIMIT ('20') :: integer) AS "tags_2") AS "__sr_2") AS "__sj_2") AS "__sj_2" ON ('true') LEFT OUTER JOIN LATERAL (SELECT to_jsonb("__sr_1".*) AS "json"FROM (SELECT "users_1"."id" AS "id", "users_1"."full_name" AS "full_name", "users_1"."email" AS "email" FROM (SELECT "users"."id", "users"."full_name", "users"."email" FROM "users" WHERE ((("users"."id") = ("products_0"."user_id"))) LIMIT ('1') :: integer) AS "users_1") AS "__sr_1") AS "__sj_1" ON ('true')) AS "__sr_0") AS "__sj_0"
 === RUN   TestCompileInsert/nestedInsertOneToOneWithConnectArray
 WITH "_sg_input" AS (SELECT '{{data}}' :: json AS j), "_x_users" AS (SELECT "id" FROM "_sg_input" i,"users" WHERE "users"."id" = ANY((select a::bigint AS list from json_array_elements_text((i.j->'user'->'connect'->>'id')::json) AS a)) LIMIT 1), "products" AS (INSERT INTO "products" ("name", "price", "created_at", "updated_at", "user_id") SELECT CAST( i.j ->>'name' AS character varying), CAST( i.j ->>'price' AS numeric(7,2)), CAST( i.j ->>'created_at' AS timestamp without time zone), CAST( i.j ->>'updated_at' AS timestamp without time zone), "_x_users"."id" FROM "_sg_input" i, "_x_users" RETURNING *) SELECT jsonb_build_object('product', "__sj_0"."json") as "__root" FROM (SELECT to_jsonb("__sr_0".*) AS "json"FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name", "__sj_1"."json" AS "user" FROM (SELECT "products"."id", "products"."name", "products"."user_id" FROM "products" LIMIT ('1') :: integer) AS "products_0" LEFT OUTER JOIN LATERAL (SELECT to_jsonb("__sr_1".*) AS "json"FROM (SELECT "users_1"."id" AS "id", "users_1"."full_name" AS "full_name", "users_1"."email" AS "email" FROM (SELECT "users"."id", "users"."full_name", "users"."email" FROM "users" WHERE ((("users"."id") = ("products_0"."user_id"))) LIMIT ('1') :: integer) AS "users_1") AS "__sr_1") AS "__sj_1" ON ('true')) AS "__sr_0") AS "__sj_0"
---- PASS: TestCompileInsert (0.04s)
+--- PASS: TestCompileInsert (0.02s)
     --- PASS: TestCompileInsert/simpleInsert (0.00s)
     --- PASS: TestCompileInsert/singleInsert (0.00s)
     --- PASS: TestCompileInsert/bulkInsert (0.00s)
     --- PASS: TestCompileInsert/simpleInsertWithPresets (0.00s)
-    --- PASS: TestCompileInsert/nestedInsertManyToMany (0.01s)
-    --- PASS: TestCompileInsert/nestedInsertOneToMany (0.01s)
+    --- PASS: TestCompileInsert/nestedInsertManyToMany (0.00s)
+    --- PASS: TestCompileInsert/nestedInsertOneToMany (0.00s)
     --- PASS: TestCompileInsert/nestedInsertOneToOne (0.00s)
     --- PASS: TestCompileInsert/nestedInsertOneToManyWithConnect (0.00s)
-    --- PASS: TestCompileInsert/nestedInsertOneToOneWithConnect (0.01s)
-    --- PASS: TestCompileInsert/nestedInsertOneToOneWithConnectArray (0.01s)
+    --- PASS: TestCompileInsert/nestedInsertOneToOneWithConnect (0.00s)
+    --- PASS: TestCompileInsert/nestedInsertOneToOneWithConnectArray (0.00s)
 === RUN   TestCompileMutate
 === RUN   TestCompileMutate/singleUpsert
 WITH "_sg_input" AS (SELECT '{{upsert}}' :: json AS j), "products" AS (INSERT INTO "products" ("name", "description") SELECT CAST( i.j ->>'name' AS character varying), CAST( i.j ->>'description' AS text) FROM "_sg_input" i RETURNING *)  ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description RETURNING *) SELECT jsonb_build_object('product', "__sj_0"."json") as "__root" FROM (SELECT to_jsonb("__sr_0".*) AS "json"FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name" FROM (SELECT "products"."id", "products"."name" FROM "products" LIMIT ('1') :: integer) AS "products_0") AS "__sr_0") AS "__sj_0"
@@ -82,7 +40,7 @@ WITH "_sg_input" AS (SELECT '{{upsert}}' :: json AS j), "products" AS (INSERT IN
 WITH "_sg_input" AS (SELECT '{{upsert}}' :: json AS j), "products" AS (INSERT INTO "products" ("name", "description") SELECT CAST( i.j ->>'name' AS character varying), CAST( i.j ->>'description' AS text) FROM "_sg_input" i RETURNING *)  ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description RETURNING *) SELECT jsonb_build_object('product', "__sj_0"."json") as "__root" FROM (SELECT to_jsonb("__sr_0".*) AS "json"FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name" FROM (SELECT "products"."id", "products"."name" FROM "products" LIMIT ('1') :: integer) AS "products_0") AS "__sr_0") AS "__sj_0"
 === RUN   TestCompileMutate/delete
 WITH "products" AS (DELETE FROM "products" WHERE (((("products"."price") > '0' :: numeric(7,2)) AND (("products"."price") < '8' :: numeric(7,2))) AND (("products"."id") = '1' :: bigint)) RETURNING "products".*) SELECT jsonb_build_object('product', "__sj_0"."json") as "__root" FROM (SELECT to_jsonb("__sr_0".*) AS "json"FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name" FROM (SELECT "products"."id", "products"."name" FROM "products" LIMIT ('1') :: integer) AS "products_0") AS "__sr_0") AS "__sj_0"
---- PASS: TestCompileMutate (0.01s)
+--- PASS: TestCompileMutate (0.00s)
     --- PASS: TestCompileMutate/singleUpsert (0.00s)
     --- PASS: TestCompileMutate/singleUpsertWhere (0.00s)
     --- PASS: TestCompileMutate/bulkUpsert (0.00s)
@@ -136,7 +94,7 @@ SELECT jsonb_build_object('products', "__sj_0"."json") as "__root" FROM (SELECT 
 SELECT jsonb_build_object('user', "__sj_0"."json") as "__root" FROM (SELECT to_jsonb("__sr_0".*) AS "json"FROM (SELECT "users_0"."id" AS "id", "users_0"."full_name" AS "full_name", "users_0"."email" AS "email" FROM (SELECT "users"."id", "users"."full_name", "users"."email" FROM "users" WHERE (false) LIMIT ('1') :: integer) AS "users_0") AS "__sr_0") AS "__sj_0"
 === RUN   TestCompileQuery/blockedFunctions
 SELECT jsonb_build_object('users', "__sj_0"."json") as "__root" FROM (SELECT coalesce(jsonb_agg("__sj_0"."json"), '[]') as "json" FROM (SELECT to_jsonb("__sr_0".*) AS "json"FROM (SELECT "users_0"."email" AS "email" FROM (SELECT , "users"."email" FROM "users" WHERE (false) GROUP BY "users"."email" LIMIT ('20') :: integer) AS "users_0") AS "__sr_0") AS "__sj_0") AS "__sj_0"
---- PASS: TestCompileQuery (0.05s)
+--- PASS: TestCompileQuery (0.02s)
     --- PASS: TestCompileQuery/withComplexArgs (0.00s)
     --- PASS: TestCompileQuery/withWhereAndList (0.00s)
     --- PASS: TestCompileQuery/withWhereIsNull (0.00s)
@@ -155,7 +113,7 @@ SELECT jsonb_build_object('users', "__sj_0"."json") as "__root" FROM (SELECT coa
     --- PASS: TestCompileQuery/syntheticTables (0.00s)
     --- PASS: TestCompileQuery/queryWithVariables (0.00s)
     --- PASS: TestCompileQuery/withWhereOnRelations (0.00s)
-    --- PASS: TestCompileQuery/multiRoot (0.01s)
+    --- PASS: TestCompileQuery/multiRoot (0.00s)
     --- PASS: TestCompileQuery/jsonColumnAsTable (0.00s)
     --- PASS: TestCompileQuery/withCursor (0.00s)
     --- PASS: TestCompileQuery/nullForAuthRequiredInAnon (0.00s)
@@ -176,113 +134,18 @@ WITH "_sg_input" AS (SELECT '{{data}}' :: json AS j), "products" AS (UPDATE "pro
 === RUN   TestCompileUpdate/nestedUpdateOneToManyWithConnect
 WITH "_sg_input" AS (SELECT '{{data}}' :: json AS j), "users" AS (UPDATE "users" SET ("full_name", "email", "created_at", "updated_at") = (SELECT CAST( i.j ->>'full_name' AS character varying), CAST( i.j ->>'email' AS character varying), CAST( i.j ->>'created_at' AS timestamp without time zone), CAST( i.j ->>'updated_at' AS timestamp without time zone) FROM "_sg_input" i)  WHERE (("users"."id") =  '{{id}}' :: bigint) RETURNING "users".*), "products_c" AS ( UPDATE "products" SET "user_id" = "users"."id" FROM "users" WHERE ("products"."id"= ((i.j->'product'->'connect'->>'id'))::bigint) RETURNING "products".*), "products_d" AS ( UPDATE "products" SET "user_id" =  NULL FROM "users" WHERE ("products"."id"= ((i.j->'product'->'disconnect'->>'id'))::bigint) RETURNING "products".*), "products" AS (SELECT * FROM "products_c" UNION ALL SELECT * FROM "products_d") SELECT jsonb_build_object('user', "__sj_0"."json") as "__root" FROM (SELECT to_jsonb("__sr_0".*) AS "json"FROM (SELECT "users_0"."id" AS "id", "users_0"."full_name" AS "full_name", "users_0"."email" AS "email", "__sj_1"."json" AS "product" FROM (SELECT "users"."id", "users"."full_name", "users"."email" FROM "users" LIMIT ('1') :: integer) AS "users_0" LEFT OUTER JOIN LATERAL (SELECT to_jsonb("__sr_1".*) AS "json"FROM (SELECT "products_1"."id" AS "id", "products_1"."name" AS "name", "products_1"."price" AS "price" FROM (SELECT "products"."id", "products"."name", "products"."price" FROM "products" WHERE ((("products"."user_id") = ("users_0"."id"))) LIMIT ('1') :: integer) AS "products_1") AS "__sr_1") AS "__sj_1" ON ('true')) AS "__sr_0") AS "__sj_0"
 === RUN   TestCompileUpdate/nestedUpdateOneToOneWithConnect
-WITH "_sg_input" AS (SELECT '{{data}}' :: json AS j), "_x_users" AS (SELECT "id" FROM "_sg_input" i,"users" WHERE "users"."id"= ((i.j->'user'->'connect'->>'id'))::bigint AND "users"."email"= ((i.j->'user'->'connect'->>'email'))::character varying LIMIT 1), "products" AS (UPDATE "products" SET ("name", "price", "user_id") = (SELECT CAST( i.j ->>'name' AS character varying), CAST( i.j ->>'price' AS numeric(7,2)), "_x_users"."id" FROM "_sg_input" i", "_x_users)  WHERE (("products"."id") =  '{{product_id}}' :: bigint) RETURNING "products".*) SELECT jsonb_build_object('product', "__sj_0"."json") as "__root" FROM (SELECT to_jsonb("__sr_0".*) AS "json"FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name", "__sj_1"."json" AS "user" FROM (SELECT "products"."id", "products"."name", "products"."user_id" FROM "products" LIMIT ('1') :: integer) AS "products_0" LEFT OUTER JOIN LATERAL (SELECT to_jsonb("__sr_1".*) AS "json"FROM (SELECT "users_1"."id" AS "id", "users_1"."full_name" AS "full_name", "users_1"."email" AS "email" FROM (SELECT "users"."id", "users"."full_name", "users"."email" FROM "users" WHERE ((("users"."id") = ("products_0"."user_id"))) LIMIT ('1') :: integer) AS "users_1") AS "__sr_1") AS "__sj_1" ON ('true')) AS "__sr_0") AS "__sj_0"
-WITH "_sg_input" AS (SELECT '{{data}}' :: json AS j), "_x_users" AS (SELECT "id" FROM "_sg_input" i,"users" WHERE "users"."email"= ((i.j->'user'->'connect'->>'email'))::character varying AND "users"."id"= ((i.j->'user'->'connect'->>'id'))::bigint LIMIT 1), "products" AS (UPDATE "products" SET ("name", "price", "user_id") = (SELECT CAST( i.j ->>'name' AS character varying), CAST( i.j ->>'price' AS numeric(7,2)), "_x_users"."id" FROM "_sg_input" i", "_x_users)  WHERE (("products"."id") =  '{{product_id}}' :: bigint) RETURNING "products".*) SELECT jsonb_build_object('product', "__sj_0"."json") as "__root" FROM (SELECT to_jsonb("__sr_0".*) AS "json"FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name", "__sj_1"."json" AS "user" FROM (SELECT "products"."id", "products"."name", "products"."user_id" FROM "products" LIMIT ('1') :: integer) AS "products_0" LEFT OUTER JOIN LATERAL (SELECT to_jsonb("__sr_1".*) AS "json"FROM (SELECT "users_1"."id" AS "id", "users_1"."full_name" AS "full_name", "users_1"."email" AS "email" FROM (SELECT "users"."id", "users"."full_name", "users"."email" FROM "users" WHERE ((("users"."id") = ("products_0"."user_id"))) LIMIT ('1') :: integer) AS "users_1") AS "__sr_1") AS "__sj_1" ON ('true')) AS "__sr_0") AS "__sj_0"
+WITH "_sg_input" AS (SELECT '{{data}}' :: json AS j), "_x_users" AS (SELECT "id" FROM "_sg_input" i,"users" WHERE "users"."id"= ((i.j->'user'->'connect'->>'id'))::bigint AND "users"."email"= ((i.j->'user'->'connect'->>'email'))::character varying LIMIT 1), "products" AS (UPDATE "products" SET ("name", "price", "user_id") = (SELECT CAST( i.j ->>'name' AS character varying), CAST( i.j ->>'price' AS numeric(7,2)), "_x_users"."id" FROM "_sg_input" i, "_x_users")  WHERE (("products"."id") =  '{{product_id}}' :: bigint) RETURNING "products".*) SELECT jsonb_build_object('product', "__sj_0"."json") as "__root" FROM (SELECT to_jsonb("__sr_0".*) AS "json"FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name", "__sj_1"."json" AS "user" FROM (SELECT "products"."id", "products"."name", "products"."user_id" FROM "products" LIMIT ('1') :: integer) AS "products_0" LEFT OUTER JOIN LATERAL (SELECT to_jsonb("__sr_1".*) AS "json"FROM (SELECT "users_1"."id" AS "id", "users_1"."full_name" AS "full_name", "users_1"."email" AS "email" FROM (SELECT "users"."id", "users"."full_name", "users"."email" FROM "users" WHERE ((("users"."id") = ("products_0"."user_id"))) LIMIT ('1') :: integer) AS "users_1") AS "__sr_1") AS "__sj_1" ON ('true')) AS "__sr_0") AS "__sj_0"
+WITH "_sg_input" AS (SELECT '{{data}}' :: json AS j), "_x_users" AS (SELECT "id" FROM "_sg_input" i,"users" WHERE "users"."email"= ((i.j->'user'->'connect'->>'email'))::character varying AND "users"."id"= ((i.j->'user'->'connect'->>'id'))::bigint LIMIT 1), "products" AS (UPDATE "products" SET ("name", "price", "user_id") = (SELECT CAST( i.j ->>'name' AS character varying), CAST( i.j ->>'price' AS numeric(7,2)), "_x_users"."id" FROM "_sg_input" i, "_x_users")  WHERE (("products"."id") =  '{{product_id}}' :: bigint) RETURNING "products".*) SELECT jsonb_build_object('product', "__sj_0"."json") as "__root" FROM (SELECT to_jsonb("__sr_0".*) AS "json"FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name", "__sj_1"."json" AS "user" FROM (SELECT "products"."id", "products"."name", "products"."user_id" FROM "products" LIMIT ('1') :: integer) AS "products_0" LEFT OUTER JOIN LATERAL (SELECT to_jsonb("__sr_1".*) AS "json"FROM (SELECT "users_1"."id" AS "id", "users_1"."full_name" AS "full_name", "users_1"."email" AS "email" FROM (SELECT "users"."id", "users"."full_name", "users"."email" FROM "users" WHERE ((("users"."id") = ("products_0"."user_id"))) LIMIT ('1') :: integer) AS "users_1") AS "__sr_1") AS "__sj_1" ON ('true')) AS "__sr_0") AS "__sj_0"
 === RUN   TestCompileUpdate/nestedUpdateOneToOneWithDisconnect
-WITH "_sg_input" AS (SELECT '{{data}}' :: json AS j), "_x_users" AS (SELECT * FROM (VALUES(NULL::bigint)) AS LOOKUP("id")), "products" AS (UPDATE "products" SET ("name", "price", "user_id") = (SELECT CAST( i.j ->>'name' AS character varying), CAST( i.j ->>'price' AS numeric(7,2)), "_x_users"."id" FROM "_sg_input" i", "_x_users)  WHERE (("products"."id") =  '{{id}}' :: bigint) RETURNING "products".*) SELECT jsonb_build_object('product', "__sj_0"."json") as "__root" FROM (SELECT to_jsonb("__sr_0".*) AS "json"FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name", "products_0"."user_id" AS "user_id" FROM (SELECT "products"."id", "products"."name", "products"."user_id" FROM "products" LIMIT ('1') :: integer) AS "products_0") AS "__sr_0") AS "__sj_0"
---- PASS: TestCompileUpdate (0.04s)
+WITH "_sg_input" AS (SELECT '{{data}}' :: json AS j), "_x_users" AS (SELECT * FROM (VALUES(NULL::bigint)) AS LOOKUP("id")), "products" AS (UPDATE "products" SET ("name", "price", "user_id") = (SELECT CAST( i.j ->>'name' AS character varying), CAST( i.j ->>'price' AS numeric(7,2)), "_x_users"."id" FROM "_sg_input" i, "_x_users")  WHERE (("products"."id") =  '{{id}}' :: bigint) RETURNING "products".*) SELECT jsonb_build_object('product', "__sj_0"."json") as "__root" FROM (SELECT to_jsonb("__sr_0".*) AS "json"FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name", "products_0"."user_id" AS "user_id" FROM (SELECT "products"."id", "products"."name", "products"."user_id" FROM "products" LIMIT ('1') :: integer) AS "products_0") AS "__sr_0") AS "__sj_0"
+--- PASS: TestCompileUpdate (0.02s)
     --- PASS: TestCompileUpdate/singleUpdate (0.00s)
     --- PASS: TestCompileUpdate/simpleUpdateWithPresets (0.00s)
-    --- PASS: TestCompileUpdate/nestedUpdateManyToMany (0.01s)
-    --- PASS: TestCompileUpdate/nestedUpdateOneToMany (0.01s)
+    --- PASS: TestCompileUpdate/nestedUpdateManyToMany (0.00s)
+    --- PASS: TestCompileUpdate/nestedUpdateOneToMany (0.00s)
     --- PASS: TestCompileUpdate/nestedUpdateOneToOne (0.00s)
     --- PASS: TestCompileUpdate/nestedUpdateOneToManyWithConnect (0.00s)
-    --- PASS: TestCompileUpdate/nestedUpdateOneToOneWithConnect (0.01s)
+    --- PASS: TestCompileUpdate/nestedUpdateOneToOneWithConnect (0.00s)
     --- PASS: TestCompileUpdate/nestedUpdateOneToOneWithDisconnect (0.00s)
 PASS
-ok  	github.com/dosco/super-graph/core/internal/psql	0.154s
-=== RUN   TestCompile1
---- PASS: TestCompile1 (0.00s)
-=== RUN   TestCompile2
---- PASS: TestCompile2 (0.00s)
-=== RUN   TestCompile3
---- PASS: TestCompile3 (0.00s)
-=== RUN   TestInvalidCompile1
---- PASS: TestInvalidCompile1 (0.00s)
-=== RUN   TestInvalidCompile2
---- PASS: TestInvalidCompile2 (0.00s)
-=== RUN   TestEmptyCompile
---- PASS: TestEmptyCompile (0.00s)
-=== RUN   TestInvalidPostfixCompile
---- PASS: TestInvalidPostfixCompile (0.00s)
-=== RUN   TestGetQType
-=== RUN   TestGetQType/query
-=== RUN   TestGetQType/mutation
-=== RUN   TestGetQType/default_query
-=== RUN   TestGetQType/default_query_with_comment
-=== RUN   TestGetQType/failed_query_with_comment
---- PASS: TestGetQType (0.00s)
-    --- PASS: TestGetQType/query (0.00s)
-    --- PASS: TestGetQType/mutation (0.00s)
-    --- PASS: TestGetQType/default_query (0.00s)
-    --- PASS: TestGetQType/default_query_with_comment (0.00s)
-    --- PASS: TestGetQType/failed_query_with_comment (0.00s)
-PASS
-ok  	github.com/dosco/super-graph/core/internal/qcode	0.012s
-?   	github.com/dosco/super-graph/core/internal/util	[no test files]
-=== RUN   TestFuzzCrashers
---- PASS: TestFuzzCrashers (0.00s)
-=== RUN   TestGQLHash1
---- PASS: TestGQLHash1 (0.00s)
-=== RUN   TestGQLHash2
---- PASS: TestGQLHash2 (0.00s)
-=== RUN   TestGQLHash3
---- PASS: TestGQLHash3 (0.00s)
-=== RUN   TestGQLHash4
---- PASS: TestGQLHash4 (0.00s)
-=== RUN   TestGQLHashWithVars1
---- PASS: TestGQLHashWithVars1 (0.00s)
-=== RUN   TestGQLHashWithVars2
---- PASS: TestGQLHashWithVars2 (0.00s)
-PASS
-ok  	github.com/dosco/super-graph/internal/serv	0.033s
-?   	github.com/dosco/super-graph/internal/serv/internal/auth	[no test files]
-testing: warning: no tests to run
-PASS
-ok  	github.com/dosco/super-graph/internal/serv/internal/migrate	0.011s [no tests to run]
-=== RUN   TestRailsEncryptedSession1
---- PASS: TestRailsEncryptedSession1 (0.01s)
-=== RUN   TestRailsEncryptedSession52
---- PASS: TestRailsEncryptedSession52 (0.00s)
-=== RUN   TestRailsJsonSession
---- PASS: TestRailsJsonSession (0.00s)
-=== RUN   TestRailsMarshaledSession
---- PASS: TestRailsMarshaledSession (0.00s)
-PASS
-ok  	github.com/dosco/super-graph/internal/serv/internal/rails	0.023s
-=== RUN   TestFuzzCrashers
---- PASS: TestFuzzCrashers (0.00s)
-=== RUN   TestGet
---- PASS: TestGet (0.00s)
-=== RUN   TestGet1
---- PASS: TestGet1 (0.00s)
-=== RUN   TestGet2
---- PASS: TestGet2 (0.00s)
-=== RUN   TestGet3
---- PASS: TestGet3 (0.00s)
-=== RUN   TestGet4
---- PASS: TestGet4 (0.00s)
-=== RUN   TestValue
---- PASS: TestValue (0.00s)
-=== RUN   TestFilter1
---- PASS: TestFilter1 (0.00s)
-=== RUN   TestFilter2
---- PASS: TestFilter2 (0.00s)
-=== RUN   TestStrip
---- PASS: TestStrip (0.00s)
-=== RUN   TestValidateTrue
---- PASS: TestValidateTrue (0.00s)
-=== RUN   TestValidateFalse
---- PASS: TestValidateFalse (0.00s)
-=== RUN   TestReplace
---- PASS: TestReplace (0.00s)
-=== RUN   TestReplaceEmpty
---- PASS: TestReplaceEmpty (0.00s)
-=== RUN   TestKeys1
---- PASS: TestKeys1 (0.00s)
-=== RUN   TestKeys2
---- PASS: TestKeys2 (0.00s)
-=== RUN   TestKeys3
---- PASS: TestKeys3 (0.00s)
-PASS
-ok  	github.com/dosco/super-graph/jsn	0.014s
+ok  	github.com/dosco/super-graph/core/internal/psql	0.306s

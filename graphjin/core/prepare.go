@@ -121,6 +121,9 @@ func (sg *SuperGraph) prepareStmt(item allow.Item) error {
 			// logger.Debug().Msgf("Prepared statement 'mutation %s' (%s)", item.Name, role.Name)
 
 			stmts, err := sg.buildRoleStmt(qb, vars, role.Name)
+			if err == psql.ErrAllTablesSkipped {
+				return nil
+			}
 			if err != nil {
 				return err
 			}
