@@ -58,21 +58,14 @@ func (sg *SuperGraph) initPrepared() error {
 		}
 
 		err := sg.prepareStmt(v)
-		if err == nil {
+		if err != nil {
+			sg.log.Printf("WRN %s: %v", v.Name, err)
+		} else {
 			success++
-			continue
 		}
-
-		// if len(v.Vars) == 0 {
-		// 	logger.Warn().Err(err).Msg(v.Query)
-		// } else {
-		// 	logger.Warn().Err(err).Msgf("%s %s", v.Vars, v.Query)
-		// }
 	}
 
-	// logger.Info().
-	// 	Msgf("Registered %d of %d queries from allow.list as prepared statements",
-	// 		success, len(list))
+	sg.log.Printf("INF allow list: prepared %d / %d queries", success, len(list))
 
 	return nil
 }
@@ -84,13 +77,6 @@ func (sg *SuperGraph) prepareStmt(item allow.Item) error {
 
 	qt := qcode.GetQType(query)
 	ct := context.Background()
-
-	tx, err := sg.db.BeginTx(ct, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback() //nolint: errcheck
-
 	switch qt {
 	case qcode.QTQuery:
 		var stmts1 []stmt
@@ -108,7 +94,7 @@ func (sg *SuperGraph) prepareStmt(item allow.Item) error {
 
 		//logger.Debug().Msgf("Prepared statement 'query %s' (user)", item.Name)
 
-		err = sg.prepare(ct, tx, stmts1, stmtHash(item.Name, "user"))
+		err = sg.prepare(ct, stmts1, stmtHash(item.Name, "user"))
 		if err != nil {
 			return err
 		}
@@ -124,7 +110,7 @@ func (sg *SuperGraph) prepareStmt(item allow.Item) error {
 				return err
 			}
 
-			err = sg.prepare(ct, tx, stmts2, stmtHash(item.Name, "anon"))
+			err = sg.prepare(ct, stmts2, stmtHash(item.Name, "anon"))
 			if err != nil {
 				return err
 			}
@@ -135,36 +121,26 @@ func (sg *SuperGraph) prepareStmt(item allow.Item) error {
 			// logger.Debug().Msgf("Prepared statement 'mutation %s' (%s)", item.Name, role.Name)
 
 			stmts, err := sg.buildRoleStmt(qb, vars, role.Name)
-
 			if err != nil {
-				// if len(item.Vars) == 0 {
-				// 	logger.Warn().Err(err).Msg(item.Query)
-				// } else {
-				// 	logger.Warn().Err(err).Msgf("%s %s", item.Vars, item.Query)
-				// }
-				continue
+				return err
 			}
 
-			err = sg.prepare(ct, tx, stmts, stmtHash(item.Name, role.Name))
+			err = sg.prepare(ct, stmts, stmtHash(item.Name, role.Name))
 			if err != nil {
 				return err
 			}
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-
 	return nil
 }
 
-func (sg *SuperGraph) prepare(ct context.Context, tx *sql.Tx, st []stmt, key string) error {
+func (sg *SuperGraph) prepare(ct context.Context, st []stmt, key string) error {
 	finalSQL, am := processTemplate(st[0].sql)
 
-	sd, err := tx.Prepare(finalSQL)
+	sd, err := sg.db.Prepare(finalSQL)
 	if err != nil {
-		return err
+		return fmt.Errorf("prepare failed: %v: %s", err, finalSQL)
 	}
 
 	sg.prepared[key] = &preparedItem{
@@ -256,6 +232,8 @@ func (sg *SuperGraph) initAllowList() error {
 		sg.log.Printf("WRN allow list disabled no file specified")
 	}
 
+	// When list is not eabled it is still created and
+	// and new queries are saved to it.
 	if !sg.conf.UseAllowList {
 		ac = allow.Config{CreateIfNotExists: true, Persist: true}
 	}

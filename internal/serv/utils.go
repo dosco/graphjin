@@ -119,3 +119,17 @@ func isDev() bool {
 func sanitize(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
 }
+
+// Get path relative to cwd
+func relpath(p string) string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return p
+	}
+
+	if strings.HasPrefix(p, cwd) {
+		return "./" + strings.TrimLeft(p[len(cwd):], "/")
+	}
+
+	return p
+}

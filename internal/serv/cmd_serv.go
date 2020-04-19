@@ -24,10 +24,6 @@ func cmdServ(cmd *cobra.Command, args []string) {
 		fatalInProd(err, "failed to connect to database")
 	}
 
-	// if conf != nil && db != nil {
-	// 	initResolvers()
-	// }
-
 	sg, err = core.NewSuperGraph(&conf.Core, db)
 	if err != nil {
 		fatalInProd(err, "failed to initialize Super Graph")

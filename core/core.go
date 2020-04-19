@@ -94,15 +94,12 @@ func (c *scontext) execQuery() ([]byte, error) {
 
 	if c.sg.conf.UseAllowList {
 		data, st, err = c.resolvePreparedSQL()
-		if err != nil {
-			return nil, err
-		}
-
 	} else {
 		data, st, err = c.resolveSQL()
-		if err != nil {
-			return nil, err
-		}
+	}
+
+	if err != nil {
+		return nil, err
 	}
 
 	if len(data) == 0 || st.skipped == 0 {
