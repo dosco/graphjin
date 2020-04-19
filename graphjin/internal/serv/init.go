@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -21,7 +22,12 @@ const (
 )
 
 func initConf() (*Config, error) {
-	c, err := ReadInConfig(path.Join(confPath, GetConfigName()))
+	cp, err := filepath.Abs(confPath)
+	if err != nil {
+		return nil, err
+	}
+
+	c, err := ReadInConfig(path.Join(cp, GetConfigName()))
 	if err != nil {
 		return nil, err
 	}
@@ -84,6 +90,14 @@ func initConf() (*Config, error) {
 	if !anonFound {
 		log.Printf("WRN unauthenticated requests will be blocked. no role 'anon' defined")
 		c.AuthFailBlock = false
+	}
+
+	if len(c.AllowListFile) == 0 {
+		c.AllowListFile = c.relPath("./allow.list")
+	}
+
+	if c.Production {
+		c.UseAllowList = true
 	}
 
 	return c, nil

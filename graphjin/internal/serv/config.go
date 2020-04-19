@@ -49,10 +49,6 @@ func ReadInConfig(configFile string) (*Config, error) {
 		return nil, fmt.Errorf("failed to decode config, %v", err)
 	}
 
-	if len(c.Core.AllowListFile) == 0 {
-		c.Core.AllowListFile = path.Join(cpath, "allow.list")
-	}
-
 	return c, nil
 }
 

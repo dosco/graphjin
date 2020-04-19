@@ -190,17 +190,3 @@ func self() (string, error) {
 	}
 	return bin, nil
 }
-
-// Get path relative to cwd
-func relpath(p string) string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return p
-	}
-
-	if strings.HasPrefix(p, cwd) {
-		return "./" + strings.TrimLeft(p[len(cwd):], "/")
-	}
-
-	return p
-}
