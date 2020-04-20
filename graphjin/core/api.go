@@ -160,15 +160,24 @@ type Result struct {
 // In developer mode all names queries are saved into a file `allow.list` and in production mode only
 // queries from this file can be run.
 func (sg *SuperGraph) GraphQL(c context.Context, query string, vars json.RawMessage) (*Result, error) {
-	// try to use the sg.Engine to execute introspection queries...
-	res := sg.Engine.ExecuteOne(&graphql.EngineRequest{ Query: query})
-	if res.Error()==nil {
-		r := &Result{}
-		r.Data = res.Data
-		return r, nil
+	var res Result
+
+	res.op = qcode.GetQType(query)
+	res.name = allow.QueryName(query)
+
+	// use the chirino/graphql library for introspection queries
+	// disabled when allow list is enforced
+	if !sg.conf.UseAllowList &&
+		res.op == qcode.QTQuery &&
+		res.name == "IntrospectionQuery" {
+
+		r := sg.Engine.ExecuteOne(&graphql.EngineRequest{Query: query})
+		res.Data = r.Data
+
+		return &res, r.Error()
 	}
 
-	ct := scontext{Context: c, sg: sg, query: query, vars: vars}
+	ct := scontext{Context: c, sg: sg, query: query, vars: vars, res: res}
 
 	if len(vars) <= 2 {
 		ct.vars = nil
@@ -179,9 +188,6 @@ func (sg *SuperGraph) GraphQL(c context.Context, query string, vars json.RawMess
 	} else {
 		ct.role = "anon"
 	}
-
-	ct.res.op = qcode.GetQType(query)
-	ct.res.name = allow.QueryName(query)
 
 	data, err := ct.execQuery()
 	if err != nil {
