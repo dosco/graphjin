@@ -6,7 +6,6 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
-	"strings"
 
 	"github.com/dosco/super-graph/core"
 	"github.com/dosco/super-graph/internal/serv/internal/auth"
@@ -72,11 +71,6 @@ func apiV1(w http.ResponseWriter, r *http.Request) {
 	err = json.Unmarshal(b, &req)
 	if err != nil {
 		renderErr(w, err, nil)
-		return
-	}
-
-	if strings.EqualFold(req.OpName, introspectionQuery) {
-		introspect(w)
 		return
 	}
 
