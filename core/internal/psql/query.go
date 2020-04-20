@@ -141,7 +141,7 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer, vars Variables) (
 				c.renderLateralJoin(sel)
 			}
 
-			if !ti.Singular {
+			if !ti.IsSingular {
 				c.renderPluralSelect(sel, ti)
 			}
 
@@ -178,7 +178,7 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer, vars Variables) (
 			io.WriteString(c.w, `)`)
 			aliasWithID(c.w, "__sj", sel.ID)
 
-			if !ti.Singular {
+			if !ti.IsSingular {
 				io.WriteString(c.w, `)`)
 				aliasWithID(c.w, "__sj", sel.ID)
 			}
@@ -706,7 +706,7 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo, r
 	}
 
 	switch {
-	case ti.Singular:
+	case ti.IsSingular:
 		io.WriteString(c.w, ` LIMIT ('1') :: integer`)
 
 	case len(sel.Paging.Limit) != 0:

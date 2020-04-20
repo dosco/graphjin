@@ -16,12 +16,14 @@ type DBSchema struct {
 type DBTableInfo struct {
 	Name       string
 	Type       string
-	Singular   bool
+	IsSingular bool
 	Columns    []DBColumn
 	PrimaryCol *DBColumn
 	TSVCol     *DBColumn
 	ColMap     map[string]*DBColumn
 	ColIDMap   map[int16]*DBColumn
+	Singular   string
+	Plural     string
 }
 
 type RelType int
@@ -89,23 +91,28 @@ func (s *DBSchema) addTable(
 	colidmap := make(map[int16]*DBColumn, len(cols))
 
 	singular := flect.Singularize(t.Key)
+	plural := flect.Pluralize(t.Key)
+
 	s.t[singular] = &DBTableInfo{
-		Name:     t.Name,
-		Type:     t.Type,
-		Singular: true,
-		Columns:  cols,
-		ColMap:   colmap,
-		ColIDMap: colidmap,
+		Name:       t.Name,
+		Type:       t.Type,
+		IsSingular: true,
+		Columns:    cols,
+		ColMap:     colmap,
+		ColIDMap:   colidmap,
+		Singular:   singular,
+		Plural:     plural,
 	}
 
-	plural := flect.Pluralize(t.Key)
 	s.t[plural] = &DBTableInfo{
-		Name:     t.Name,
-		Type:     t.Type,
-		Singular: false,
-		Columns:  cols,
-		ColMap:   colmap,
-		ColIDMap: colidmap,
+		Name:       t.Name,
+		Type:       t.Type,
+		IsSingular: false,
+		Columns:    cols,
+		ColMap:     colmap,
+		ColIDMap:   colidmap,
+		Singular:   singular,
+		Plural:     plural,
 	}
 
 	if al, ok := aliases[t.Key]; ok {
@@ -362,6 +369,14 @@ func (s *DBSchema) updateSchemaOTMT(
 	}
 
 	return nil
+}
+
+func (s *DBSchema) GetTableNames() []string {
+	var names []string
+	for name, _ := range s.t {
+		names = append(names, name)
+	}
+	return names
 }
 
 func (s *DBSchema) GetTable(table string) (*DBTableInfo, error) {
