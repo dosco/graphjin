@@ -74,9 +74,14 @@ func apiV1(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	doLog := true
 	res, err := sg.GraphQL(ct, req.Query, req.Vars)
 
-	if logLevel >= LogLevelDebug {
+	if !conf.Production && res.QueryName() == "IntrospectionQuery" {
+		doLog = false
+	}
+
+	if doLog && logLevel >= LogLevelDebug {
 		log.Printf("DBG query %s: %s", res.QueryName(), res.SQL())
 	}
 
@@ -87,7 +92,7 @@ func apiV1(w http.ResponseWriter, r *http.Request) {
 
 	json.NewEncoder(w).Encode(res)
 
-	if logLevel >= LogLevelInfo {
+	if doLog && logLevel >= LogLevelInfo {
 		zlog.Info("success",
 			zap.String("op", res.Operation()),
 			zap.String("name", res.QueryName()),
