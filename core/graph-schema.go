@@ -285,7 +285,7 @@ enum OrderDirection {
 			Args: args,
 		})
 
-		mutationArgs := schema.InputValueList{
+		mutationArgs := append(args, schema.InputValueList{
 			&schema.InputValue{
 				Desc: &schema.Description{Text: ""},
 				Name: schema.Ident{Text: "insert"},
@@ -293,41 +293,43 @@ enum OrderDirection {
 			},
 			&schema.InputValue{
 				Desc: &schema.Description{Text: ""},
-				Name: schema.Ident{Text: "inserts"},
-				Type: pluralInputTypeName,
-			},
-			&schema.InputValue{
-				Desc: &schema.Description{Text: ""},
 				Name: schema.Ident{Text: "update"},
 				Type: inputTypeName,
 			},
-			&schema.InputValue{
-				Desc: &schema.Description{Text: ""},
-				Name: schema.Ident{Text: "updates"},
-				Type: pluralInputTypeName,
-			},
+
 			&schema.InputValue{
 				Desc: &schema.Description{Text: ""},
 				Name: schema.Ident{Text: "upsert"},
 				Type: inputTypeName,
 			},
-			&schema.InputValue{
-				Desc: &schema.Description{Text: ""},
-				Name: schema.Ident{Text: "upserts"},
-				Type: pluralInputTypeName,
-			},
-		}
+		}...)
+
 		mutation.Fields = append(mutation.Fields, &schema.Field{
 			Name: singularName,
-			Args: append(args, mutationArgs...),
+			Args: mutationArgs,
 			Type: outputType,
 		})
 		mutation.Fields = append(mutation.Fields, &schema.Field{
 			Name: pluralName,
-			Args: append(args, mutationArgs...),
+			Args: append(mutationArgs, schema.InputValueList{
+				&schema.InputValue{
+					Desc: &schema.Description{Text: ""},
+					Name: schema.Ident{Text: "inserts"},
+					Type: pluralInputTypeName,
+				},
+				&schema.InputValue{
+					Desc: &schema.Description{Text: ""},
+					Name: schema.Ident{Text: "updates"},
+					Type: pluralInputTypeName,
+				},
+				&schema.InputValue{
+					Desc: &schema.Description{Text: ""},
+					Name: schema.Ident{Text: "upserts"},
+					Type: pluralInputTypeName,
+				},
+			}...),
 			Type: outputType,
 		})
-
 	}
 
 	for typeName, _ := range scalarExpressionTypesNeeded {
