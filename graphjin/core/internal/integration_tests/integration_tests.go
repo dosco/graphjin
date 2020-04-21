@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"io/ioutil"
 	"testing"
 
 	"github.com/dosco/super-graph/core"
@@ -152,67 +153,23 @@ func TestSuperGraph(t *testing.T, db *sql.DB, before func(t *testing.T)) {
 
 	t.Run("schema introspection", func(t *testing.T) {
 		before(t)
-		// fmt.Println(sg.Engine.Schema.String())
-		assert.Equal(t, `type Mutation {
-  line_item(id:Int!, insert:line_itemInput, inserts:[line_itemInput!]!, update:line_itemInput, updates:[line_itemInput!]!):line_itemOutput
-  product(id:Int!, insert:productInput, inserts:[productInput!]!, update:productInput, updates:[productInput!]!):productOutput
-  user(id:Int!, insert:userInput, inserts:[userInput!]!, update:userInput, updates:[userInput!]!):userOutput
-}
-type Query {
-  line_item(id:Int!):line_itemOutput
-  line_items(id:Int!):[line_itemOutput!]!
-  product(id:Int!):productOutput
-  products(id:Int!):[productOutput!]!
-  user(id:Int!):userOutput
-  users(id:Int!):[userOutput!]!
-}
-input line_itemInput {
-  id:Int!
-  price:Float
-  product:Int
-  quantity:Int
-}
-type line_itemOutput {
-  id:Int!
-  price:Float
-  product:Int
-  quantity:Int
-}
-input productInput {
-  id:Int!
-  name:String
-  weight:Float
-}
-type productOutput {
-  id:Int!
-  name:String
-  weight:Float
-}
-input userInput {
-  full_name:String
-  id:Int!
-}
-type userOutput {
-  full_name:String
-  id:Int!
-}
-schema {
-  mutation: Mutation
-  query: Query
-}
-`, sg.Engine.Schema.String())
+		schema, err := sg.GraphQLSchema()
+		require.NoError(t, err)
+		// Uncomment the following line if you need to regenerate the expected schema.
+		// ioutil.WriteFile("../introspection.graphql", []byte(schema), 0644)
+		expected, err := ioutil.ReadFile("../introspection.graphql")
+		require.NoError(t, err)
+		assert.Equal(t, string(expected), schema)
 	})
 
-	res, err := sg.GraphQL(ctx,introspectionQuery, json.RawMessage(``))
+	res, err := sg.GraphQL(ctx, introspectionQuery, json.RawMessage(``))
 	assert.NoError(t, err)
 	assert.Contains(t, string(res.Data),
 		`{"queryType":{"name":"Query"},"mutationType":{"name":"Mutation"},"subscriptionType":null,"types":`)
-	assert.Contains(t, string(res.Data),
-		`{"kind":"OBJECT","name":"Mutation","description":null,"fields":[{"name":"line_item","description":null`)
 }
 
 const introspectionQuery = `
- query {
+ query IntrospectionQuery {
    __schema {
      queryType { name }
      mutationType { name }
