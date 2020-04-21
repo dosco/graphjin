@@ -268,7 +268,7 @@ enum OrderDirection {
 			args = append(args, &schema.InputValue{
 				Desc: &schema.Description{Text: "Performs full text search using a TSV index"},
 				Name: schema.Ident{Text: "search"},
-				Type: &schema.TypeName{Ident: schema.Ident{Text: "String!"}},
+				Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: "String"}}},
 			})
 		}
 
