@@ -156,7 +156,7 @@ func TestSuperGraph(t *testing.T, db *sql.DB, before func(t *testing.T)) {
 		schema, err := sg.GraphQLSchema()
 		require.NoError(t, err)
 		// Uncomment the following line if you need to regenerate the expected schema.
-		// ioutil.WriteFile("../introspection.graphql", []byte(schema), 0644)
+		//ioutil.WriteFile("../introspection.graphql", []byte(schema), 0644)
 		expected, err := ioutil.ReadFile("../introspection.graphql")
 		require.NoError(t, err)
 		assert.Equal(t, string(expected), schema)
