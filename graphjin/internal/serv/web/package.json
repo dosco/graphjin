@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
-    "@apollographql/graphql-playground-react": "^1.7.32",
     "apollo-link-ws": "^1.0.8",
     "graphql": "^14.1.1",
+    "graphql-playground-react": "^1.7.22",
     "react": "^16.13.0",
     "react-dom": "^16.11.0",
     "react-scripts": "3.4.1",
