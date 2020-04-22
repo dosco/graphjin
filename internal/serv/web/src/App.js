@@ -1,6 +1,6 @@
 import React, { Component } from 'react'
 import { Provider } from 'react-redux'
-import { Playground, store } from '@apollographql/graphql-playground-react'
+import { Playground, store } from 'graphql-playground-react'
 
 import './index.css'
 
@@ -15,36 +15,21 @@ class App extends Component {
     return (
       <div>
         <header style={{
-          background: '#09141b', 
-          color: '#03a9f4',
+          color: 'lightblue',
           letterSpacing: '0.15rem',
-          height: '65px',
-          display: 'flex',
-          alignItems: 'center'
+          paddingTop: '10px',
+          paddingBottom: '0px'
           }}
         >
-          <h3 style={{
+          <div style={{
             textDecoration: 'none',
             margin: '0px',
-            fontSize: '18px',
-
-            }}
-          >
-          <span style={{ 
+            fontSize: '14px',
+            fontWeight: '500',
             textTransform: 'uppercase',
-            marginLeft: '20px',
-            paddingRight: '10px',
-            borderRight: '1px solid #fff'
-          }}>
-            Super Graph
-          </span>
-          <span style={{ 
-            fontSize: '16px',
             marginLeft: '10px',
-            color: '#fff'
-          }}>
-            Instant GraphQL</span>
-          </h3>
+            }}
+          >Super Graph</div>
         </header>
 
         <Provider store={store}>
@@ -55,7 +40,6 @@ class App extends Component {
             'request.credentials': 'include',
             'general.betaUpdates': true,
             'editor.reuseHeaders': true,
-            'editor.theme': 'dark'
           }"
         />
         </Provider>
