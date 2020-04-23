@@ -15,7 +15,7 @@ Designed to 100x your developer productivity. Super Graph will instantly, and wi
 ## Using it as a service
 
 ```console
-go get https://github.com/dosco/super-graph 
+go get github.com/dosco/super-graph 
 super-graph new <app_name>
 ```
 
@@ -114,5 +114,4 @@ Twitter or Discord.
 [Apache Public License 2.0](https://opensource.org/licenses/Apache-2.0)
 
 Copyright (c) 2019-present Vikram Rangnekar
-
 
