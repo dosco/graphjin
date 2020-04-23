@@ -1,11 +1,10 @@
 package psql
 
 import (
-	"log"
 	"strings"
 )
 
-func getTestSchema() *DBSchema {
+func GetTestDBInfo() *DBInfo {
 	tables := []DBTable{
 		DBTable{Name: "customers", Type: "table"},
 		DBTable{Name: "users", Type: "table"},
@@ -74,36 +73,19 @@ func getTestSchema() *DBSchema {
 		}
 	}
 
-	schema := &DBSchema{
-		ver: 110000,
-		t:   make(map[string]*DBTableInfo),
-		rm:  make(map[string]map[string]*DBRel),
+	return &DBInfo{
+		Version:   110000,
+		Tables:    tables,
+		Columns:   columns,
+		Functions: []DBFunction{},
+		colMap:    newColMap(tables, columns),
 	}
+}
 
+func GetTestSchema() (*DBSchema, error) {
 	aliases := map[string][]string{
 		"users": []string{"mes"},
 	}
 
-	for i, t := range tables {
-		err := schema.addTable(t, columns[i], aliases)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-
-	for i, t := range tables {
-		err := schema.firstDegreeRels(t, columns[i])
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-
-	for i, t := range tables {
-		err := schema.secondDegreeRels(t, columns[i])
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-
-	return schema
+	return NewDBSchema(GetTestDBInfo(), aliases)
 }

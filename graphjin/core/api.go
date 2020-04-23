@@ -24,7 +24,7 @@
 			log.Fatalf(err)
 		}
 
-		sg, err = core.NewSuperGraph(conf, db)
+		sg, err := core.NewSuperGraph(conf, db)
 		if err != nil {
 			log.Fatalf(err)
 		}
@@ -82,6 +82,7 @@ type SuperGraph struct {
 	conf        *Config
 	db          *sql.DB
 	log         *_log.Logger
+	dbinfo      *psql.DBInfo
 	schema      *psql.DBSchema
 	allowList   *allow.List
 	encKey      [32]byte
@@ -99,10 +100,20 @@ type SuperGraph struct {
 // NewSuperGraph creates the SuperGraph struct, this involves querying the database to learn its
 // schemas and relationships
 func NewSuperGraph(conf *Config, db *sql.DB) (*SuperGraph, error) {
+	return newSuperGraph(conf, db, nil)
+}
+
+// newSuperGraph helps with writing tests and benchmarks
+func newSuperGraph(conf *Config, db *sql.DB, dbinfo *psql.DBInfo) (*SuperGraph, error) {
+	if conf == nil {
+		conf = &Config{}
+	}
+
 	sg := &SuperGraph{
-		conf: conf,
-		db:   db,
-		log:  _log.New(os.Stdout, "", 0),
+		conf:   conf,
+		db:     db,
+		dbinfo: dbinfo,
+		log:    _log.New(os.Stdout, "", 0),
 	}
 
 	if err := sg.initConfig(); err != nil {
@@ -199,6 +210,8 @@ func (sg *SuperGraph) GraphQL(c context.Context, query string, vars json.RawMess
 	return &ct.res, nil
 }
 
+// GraphQLSchema function return the GraphQL schema for the underlying database connected
+// to this instance of Super Graph
 func (sg *SuperGraph) GraphQLSchema() (string, error) {
 	return sg.ge.Schema.String(), nil
 }

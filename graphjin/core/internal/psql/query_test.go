@@ -1,4 +1,4 @@
-package psql
+package psql_test
 
 import (
 	"bytes"
