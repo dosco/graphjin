@@ -1,6 +1,6 @@
 <img src="docs/guide/.vuepress/public/super-graph.png" width="250" />
 
-### Build web products faster. Secure high performance GraphQL
+### Build web products faster. Secure high-performance GraphQL
 
 [![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg)](https://pkg.go.dev/github.com/dosco/super-graph/core?tab=doc)
 ![Apache 2.0](https://img.shields.io/github/license/dosco/super-graph.svg?style=flat-square)
@@ -10,12 +10,12 @@
 
 ## What's Super Graph?
 
-Designed to 100x your developer productivity. Super Graph will instantly and without you writing code provide you a high performance GraphQL API for Postgres DB. GraphQL queries are compiled into a single fast SQL query. Super Graph is a GO library and a service, use it in your own code or run it as a seperate service.
+Designed to 100x your developer productivity. Super Graph will instantly, and without you writing any code, provide a high performance GraphQL API for your PostgresSQL DB. GraphQL queries are compiled into a single fast SQL query. Super Graph is a Go library and a service, use it in your own code or run it as a separate service.
 
 ## Using it as a service
 
 ```console
-get get https://github.com/dosco/super-graph 
+go get https://github.com/dosco/super-graph 
 super-graph new <app_name>
 ```
 
@@ -67,7 +67,7 @@ func main() {
 
 ## About Super Graph
 
-After working on several products through my career I find that we spend way too much time on building API backends. Most APIs also require constant updating, this costs real time and money.
+After working on several products through my career I found that we spend way too much time on building API backends. Most APIs also need constant updating, and this costs time and money.
             
 It's always the same thing, figure out what the UI needs then build an endpoint for it. Most API code involves struggling with an ORM to query a database and mangle the data into a shape that the UI expects to see.
 
@@ -75,27 +75,26 @@ I didn't want to write this code anymore, I wanted the computer to do it. Enter 
 
 Having worked with compilers before I saw this as a compiler problem. Why not build a compiler that converts GraphQL to highly efficient SQL.
 
-This compiler is what sits at the heart of Super Graph with layers of useful functionality around it like authentication, remote joins, rails integration, database migrations and everything else needed for you to build production ready apps with it.
+This compiler is what sits at the heart of Super Graph, with layers of useful functionality around it like authentication, remote joins, rails integration, database migrations, and everything else needed for you to build production-ready apps with it.
 
 ## Features
 
 - Complex nested queries and mutations
 - Auto learns database tables and relationships
-- Role and Attribute based access control
-- Opaque cursor based efficient pagination
-- Full text search and aggregations
+- Role and Attribute-based access control
+- Opaque cursor-based efficient pagination
+- Full-text search and aggregations
 - JWT tokens supported (Auth0, etc)
 - Join database queries with remote REST APIs
 - Also works with existing Ruby-On-Rails apps
 - Rails authentication supported (Redis, Memcache, Cookie)
 - A simple config file
-- High performance GO codebase
+- High performance Go codebase
 - Tiny docker image and low memory requirements
 - Fuzz tested for security
 - Database migrations tool
 - Database seeding tool
 - Works with Postgres and YugabyteDB
-
 
 ## Documentation
 
