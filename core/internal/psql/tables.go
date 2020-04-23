@@ -10,10 +10,11 @@ import (
 )
 
 type DBInfo struct {
-	Version int
-	Tables  []DBTable
-	Columns [][]DBColumn
-	colmap  map[string]map[string]*DBColumn
+	Version   int
+	Tables    []DBTable
+	Columns   [][]DBColumn
+	Functions []DBFunction
+	colmap    map[string]map[string]*DBColumn
 }
 
 func GetDBInfo(db *sql.DB) (*DBInfo, error) {
@@ -49,6 +50,11 @@ func GetDBInfo(db *sql.DB) (*DBInfo, error) {
 		for n, c := range di.Columns[i] {
 			di.colmap[t.Key][c.Key] = &di.Columns[i][n]
 		}
+	}
+
+	di.Functions, err = GetFunctions(db)
+	if err != nil {
+		return nil, err
 	}
 
 	return di, nil
@@ -235,6 +241,64 @@ ORDER BY id;`
 	}
 
 	return cols, nil
+}
+
+type DBFunction struct {
+	Name   string
+	Params []DBFuncParam
+}
+
+type DBFuncParam struct {
+	ID   int
+	Name string
+	Type string
+}
+
+func GetFunctions(db *sql.DB) ([]DBFunction, error) {
+	sqlStmt := `
+SELECT 
+	routines.routine_name, 
+	parameters.specific_name,
+	parameters.data_type, 
+	parameters.parameter_name,
+	parameters.ordinal_position	
+FROM 
+	information_schema.routines
+RIGHT JOIN 
+	information_schema.parameters 
+	ON (routines.specific_name = parameters.specific_name and parameters.ordinal_position IS NOT NULL)	
+WHERE 
+	routines.specific_schema = 'public'
+ORDER BY 
+	routines.routine_name, parameters.ordinal_position;`
+
+	rows, err := db.Query(sqlStmt)
+	if err != nil {
+		return nil, fmt.Errorf("Error fetching functions: %s", err)
+	}
+	defer rows.Close()
+
+	var funcs []DBFunction
+	fm := make(map[string]int)
+
+	for rows.Next() {
+		var fn, fid string
+		fp := DBFuncParam{}
+
+		err = rows.Scan(&fn, &fid, &fp.Type, &fp.Name, &fp.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		if i, ok := fm[fid]; ok {
+			funcs[i].Params = append(funcs[i].Params, fp)
+		} else {
+			funcs = append(funcs, DBFunction{Name: fn, Params: []DBFuncParam{fp}})
+			fm[fid] = len(funcs) - 1
+		}
+	}
+
+	return funcs, nil
 }
 
 // func GetValType(type string) qcode.ValType {

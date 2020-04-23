@@ -7,7 +7,6 @@ import (
 	"io/ioutil"
 	"net/http"
 
-	"github.com/dosco/super-graph/core"
 	"github.com/dosco/super-graph/internal/serv/internal/auth"
 	"github.com/rs/cors"
 	"go.uber.org/zap"
@@ -29,7 +28,7 @@ type gqlReq struct {
 }
 
 type errorResp struct {
-	Error error `json:"error"`
+	Error string `json:"error"`
 }
 
 func apiV1Handler() http.Handler {
@@ -55,13 +54,13 @@ func apiV1(w http.ResponseWriter, r *http.Request) {
 
 	//nolint: errcheck
 	if conf.AuthFailBlock && !auth.IsAuth(ct) {
-		renderErr(w, errUnauthorized, nil)
+		renderErr(w, errUnauthorized)
 		return
 	}
 
 	b, err := ioutil.ReadAll(io.LimitReader(r.Body, maxReadBytes))
 	if err != nil {
-		renderErr(w, err, nil)
+		renderErr(w, err)
 		return
 	}
 	defer r.Body.Close()
@@ -70,7 +69,7 @@ func apiV1(w http.ResponseWriter, r *http.Request) {
 
 	err = json.Unmarshal(b, &req)
 	if err != nil {
-		renderErr(w, err, nil)
+		renderErr(w, err)
 		return
 	}
 
@@ -86,11 +85,10 @@ func apiV1(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		renderErr(w, err, res)
-		return
+		renderErr(w, err)
+	} else {
+		json.NewEncoder(w).Encode(res)
 	}
-
-	json.NewEncoder(w).Encode(res)
 
 	if doLog && logLevel >= LogLevelInfo {
 		zlog.Info("success",
@@ -102,22 +100,10 @@ func apiV1(w http.ResponseWriter, r *http.Request) {
 }
 
 //nolint: errcheck
-func renderErr(w http.ResponseWriter, err error, res *core.Result) {
+func renderErr(w http.ResponseWriter, err error) {
 	if err == errUnauthorized {
 		w.WriteHeader(http.StatusUnauthorized)
 	}
 
-	json.NewEncoder(w).Encode(&errorResp{err})
-
-	if logLevel >= LogLevelError {
-		if res != nil {
-			zlog.Error(err.Error(),
-				zap.String("op", res.Operation()),
-				zap.String("name", res.QueryName()),
-				zap.String("role", res.Role()),
-			)
-		} else {
-			zlog.Error(err.Error())
-		}
-	}
+	json.NewEncoder(w).Encode(errorResp{err.Error()})
 }

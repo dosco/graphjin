@@ -23,7 +23,7 @@ func newAction(a *Action) (http.Handler, error) {
 
 	httpFn := func(w http.ResponseWriter, r *http.Request) {
 		if err := fn(w, r); err != nil {
-			renderErr(w, err, nil)
+			renderErr(w, err)
 		}
 	}
 
