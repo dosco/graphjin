@@ -167,7 +167,7 @@ func (c *compilerContext) renderColumnTypename(sel *qcode.Select, ti *DBTableInf
 }
 
 func (c *compilerContext) renderColumnFunction(sel *qcode.Select, ti *DBTableInfo, col qcode.Column, columnsRendered int) error {
-	pl := funcPrefixLen(col.Name)
+	pl := funcPrefixLen(c.schema.fm, col.Name)
 	// if pl == 0 {
 	// 	//fmt.Fprintf(w, `'%s not defined' AS %s`, cn, col.Name)
 	// 	io.WriteString(c.w, `'`)

@@ -730,6 +730,32 @@ query {
 }
 ```
 
+### Custom Functions
+
+Any function defined in the database like the below `add_five` that adds 5 to any number given to it can be used
+within your query. The one limitation is that it should be a function that only accepts a single argument. The function is used within you're GraphQL in similar way to how aggregrations are used above. Example below
+
+```grahql
+query {
+  thread(id: 5) {
+    id
+    total_votes
+    add_five_total_votes
+  }
+}
+```
+
+Postgres user-defined function `add_five`
+```
+CREATE OR REPLACE FUNCTION add_five(a integer) RETURNS integer AS $$
+BEGIN
+
+    RETURN a + 5;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+
 In GraphQL mutations is the operation type for when you need to modify data. Super Graph supports the `insert`, `update`, `upsert` and `delete`. You can also do complex nested inserts and updates.
 
 When using mutations the data must be passed as variables since Super Graphs compiles the query into an prepared statement in the database for maximum speed. Prepared statements are are functions in your code when called they accept arguments and your variables are passed in as those arguments.

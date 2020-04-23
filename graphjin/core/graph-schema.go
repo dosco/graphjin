@@ -1,8 +1,6 @@
 package core
 
 import (
-	"errors"
-	"regexp"
 	"strings"
 
 	"github.com/chirino/graphql"
@@ -26,7 +24,7 @@ var typeMap map[string]string = map[string]string{
 	"boolean":          "Boolean",
 }
 
-func (sg *SuperGraph) createGraphQLEgine() (*graphql.Engine, error) {
+func (sg *SuperGraph) initGraphQLEgine() error {
 	engine := graphql.New()
 	engineSchema := engine.Schema
 	dbSchema := sg.schema
@@ -63,15 +61,16 @@ enum OrderDirection {
 	engineSchema.EntryPoints[schema.Query] = query
 	engineSchema.EntryPoints[schema.Mutation] = mutation
 
-	validGraphQLIdentifierRegex := regexp.MustCompile(`^[A-Za-z_][A-Za-z_0-9]*$`)
+	//validGraphQLIdentifierRegex := regexp.MustCompile(`^[A-Za-z_][A-Za-z_0-9]*$`)
 
 	scalarExpressionTypesNeeded := map[string]bool{}
 	tableNames := dbSchema.GetTableNames()
-	for _, table := range tableNames {
+	funcs := dbSchema.GetFunctions()
 
+	for _, table := range tableNames {
 		ti, err := dbSchema.GetTable(table)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		if !ti.IsSingular {
@@ -79,13 +78,13 @@ enum OrderDirection {
 		}
 
 		singularName := ti.Singular
-		if !validGraphQLIdentifierRegex.MatchString(singularName) {
-			return nil, errors.New("table name is not a valid GraphQL identifier: " + singularName)
-		}
+		// if !validGraphQLIdentifierRegex.MatchString(singularName) {
+		// 	return errors.New("table name is not a valid GraphQL identifier: " + singularName)
+		// }
 		pluralName := ti.Plural
-		if !validGraphQLIdentifierRegex.MatchString(pluralName) {
-			return nil, errors.New("table name is not a valid GraphQL identifier: " + pluralName)
-		}
+		// if !validGraphQLIdentifierRegex.MatchString(pluralName) {
+		// 	return errors.New("table name is not a valid GraphQL identifier: " + pluralName)
+		// }
 
 		outputType := &schema.Object{
 			Name:   singularName + "Output",
@@ -127,9 +126,9 @@ enum OrderDirection {
 
 		for _, col := range ti.Columns {
 			colName := col.Name
-			if !validGraphQLIdentifierRegex.MatchString(colName) {
-				return nil, errors.New("column name is not a valid GraphQL identifier: " + colName)
-			}
+			// if !validGraphQLIdentifierRegex.MatchString(colName) {
+			// 	return errors.New("column name is not a valid GraphQL identifier: " + colName)
+			// }
 
 			colType := gqltype(col)
 			nullableColType := ""
@@ -143,6 +142,16 @@ enum OrderDirection {
 				Name: colName,
 				Type: colType,
 			})
+
+			for _, f := range funcs {
+				if col.Type != f.Params[0].Type {
+					continue
+				}
+				outputType.Fields = append(outputType.Fields, &schema.Field{
+					Name: f.Name + "_" + colName,
+					Type: colType,
+				})
+			}
 
 			// If it's a numeric type...
 			if nullableColType == "Float" || nullableColType == "Int" {
@@ -464,7 +473,7 @@ enum OrderDirection {
 
 	err := engineSchema.ResolveTypes()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	engine.Resolver = resolvers.Func(func(request *resolvers.ResolveRequest, next resolvers.Resolution) resolvers.Resolution {
@@ -479,5 +488,7 @@ enum OrderDirection {
 
 		return nil
 	})
-	return engine, nil
+
+	sg.ge = engine
+	return nil
 }

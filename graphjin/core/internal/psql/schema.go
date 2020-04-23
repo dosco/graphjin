@@ -11,6 +11,7 @@ type DBSchema struct {
 	ver int
 	t   map[string]*DBTableInfo
 	rm  map[string]map[string]*DBRel
+	fm  map[string]*DBFunction
 }
 
 type DBTableInfo struct {
@@ -58,6 +59,7 @@ func NewDBSchema(info *DBInfo, aliases map[string][]string) (*DBSchema, error) {
 	schema := &DBSchema{
 		t:  make(map[string]*DBTableInfo),
 		rm: make(map[string]map[string]*DBRel),
+		fm: make(map[string]*DBFunction, len(info.Functions)),
 	}
 
 	for i, t := range info.Tables {
@@ -78,6 +80,12 @@ func NewDBSchema(info *DBInfo, aliases map[string][]string) (*DBSchema, error) {
 		err := schema.secondDegreeRels(t, info.Columns[i])
 		if err != nil {
 			return nil, err
+		}
+	}
+
+	for k, f := range info.Functions {
+		if len(f.Params) == 1 {
+			schema.fm[strings.ToLower(f.Name)] = &info.Functions[k]
 		}
 	}
 
@@ -438,4 +446,12 @@ func (s *DBSchema) GetRel(child, parent string) (*DBRel, error) {
 		}
 	}
 	return rel, nil
+}
+
+func (s *DBSchema) GetFunctions() []*DBFunction {
+	var funcs []*DBFunction
+	for _, f := range s.fm {
+		funcs = append(funcs, f)
+	}
+	return funcs
 }

@@ -93,6 +93,7 @@ type SuperGraph struct {
 	anonExists  bool
 	qc          *qcode.Compiler
 	pc          *psql.Compiler
+	ge          *graphql.Engine
 }
 
 // NewSuperGraph creates the SuperGraph struct, this involves querying the database to learn its
@@ -121,6 +122,10 @@ func NewSuperGraph(conf *Config, db *sql.DB) (*SuperGraph, error) {
 	}
 
 	if err := sg.initResolvers(); err != nil {
+		return nil, err
+	}
+
+	if err := sg.initGraphQLEgine(); err != nil {
 		return nil, err
 	}
 
@@ -163,14 +168,9 @@ func (sg *SuperGraph) GraphQL(c context.Context, query string, vars json.RawMess
 	// use the chirino/graphql library for introspection queries
 	// disabled when allow list is enforced
 	if !sg.conf.UseAllowList && res.name == "IntrospectionQuery" {
-		engine, err := sg.createGraphQLEgine()
-		if err != nil {
-			res.Error = err.Error()
-			return &res, err
-		}
-
-		r := engine.ExecuteOne(&graphql.EngineRequest{Query: query})
+		r := sg.ge.ExecuteOne(&graphql.EngineRequest{Query: query})
 		res.Data = r.Data
+
 		if r.Error() != nil {
 			res.Error = r.Error().Error()
 		}
@@ -200,9 +200,5 @@ func (sg *SuperGraph) GraphQL(c context.Context, query string, vars json.RawMess
 }
 
 func (sg *SuperGraph) GraphQLSchema() (string, error) {
-	engine, err := sg.createGraphQLEgine()
-	if err != nil {
-		return "", err
-	}
-	return engine.Schema.String(), nil
+	return sg.ge.Schema.String(), nil
 }

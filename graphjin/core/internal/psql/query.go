@@ -543,7 +543,7 @@ func (c *compilerContext) renderColumns(sel *qcode.Select, ti *DBTableInfo, skip
 	var cn string
 
 	for _, col := range sel.Cols {
-		if n := funcPrefixLen(col.Name); n != 0 {
+		if n := funcPrefixLen(c.schema.fm, col.Name); n != 0 {
 			if !sel.Functions {
 				continue
 			}
@@ -1193,7 +1193,7 @@ func (c *compilerContext) renderVal(ex *qcode.Exp, vars map[string]string, col *
 	io.WriteString(c.w, col.Type)
 }
 
-func funcPrefixLen(fn string) int {
+func funcPrefixLen(fm map[string]*DBFunction, fn string) int {
 	switch {
 	case strings.HasPrefix(fn, "avg_"):
 		return 4
@@ -1217,6 +1217,14 @@ func funcPrefixLen(fn string) int {
 		return 8
 	case strings.HasPrefix(fn, "var_samp_"):
 		return 9
+	}
+	fnLen := len(fn)
+
+	for k := range fm {
+		kLen := len(k)
+		if kLen < fnLen && k[0] == fn[0] && strings.HasPrefix(fn, k) && fn[kLen] == '_' {
+			return kLen + 1
+		}
 	}
 	return 0
 }
