@@ -35,4 +35,5 @@ suppressions
 release
 .gofuzz
 *-fuzz.zip
+*.test
 

@@ -14,7 +14,7 @@ type DBInfo struct {
 	Tables    []DBTable
 	Columns   [][]DBColumn
 	Functions []DBFunction
-	colmap    map[string]map[string]*DBColumn
+	colMap    map[string]map[string]*DBColumn
 }
 
 func GetDBInfo(db *sql.DB) (*DBInfo, error) {
@@ -36,21 +36,16 @@ func GetDBInfo(db *sql.DB) (*DBInfo, error) {
 		return nil, err
 	}
 
-	di.colmap = make(map[string]map[string]*DBColumn, len(di.Tables))
-
-	for i, t := range di.Tables {
+	for _, t := range di.Tables {
 		cols, err := GetColumns(db, "public", t.Name)
 		if err != nil {
 			return nil, err
 		}
 
 		di.Columns = append(di.Columns, cols)
-		di.colmap[t.Key] = make(map[string]*DBColumn, len(cols))
-
-		for n, c := range di.Columns[i] {
-			di.colmap[t.Key][c.Key] = &di.Columns[i][n]
-		}
 	}
+
+	di.colMap = newColMap(di.Tables, di.Columns)
 
 	di.Functions, err = GetFunctions(db)
 	if err != nil {
@@ -60,22 +55,37 @@ func GetDBInfo(db *sql.DB) (*DBInfo, error) {
 	return di, nil
 }
 
+func newColMap(tables []DBTable, columns [][]DBColumn) map[string]map[string]*DBColumn {
+	cm := make(map[string]map[string]*DBColumn, len(tables))
+
+	for i, t := range tables {
+		cols := columns[i]
+		cm[t.Key] = make(map[string]*DBColumn, len(cols))
+
+		for n, c := range cols {
+			cm[t.Key][c.Key] = &columns[i][n]
+		}
+	}
+
+	return cm
+}
+
 func (di *DBInfo) AddTable(t DBTable, cols []DBColumn) {
 	t.ID = di.Tables[len(di.Tables)-1].ID
 
 	di.Tables = append(di.Tables, t)
-	di.colmap[t.Key] = make(map[string]*DBColumn, len(cols))
+	di.colMap[t.Key] = make(map[string]*DBColumn, len(cols))
 
 	for i := range cols {
 		cols[i].ID = int16(i)
 		c := &cols[i]
-		di.colmap[t.Key][c.Key] = c
+		di.colMap[t.Key][c.Key] = c
 	}
 	di.Columns = append(di.Columns, cols)
 }
 
 func (di *DBInfo) GetColumn(table, column string) (*DBColumn, bool) {
-	v, ok := di.colmap[strings.ToLower(table)][strings.ToLower(column)]
+	v, ok := di.colMap[strings.ToLower(table)][strings.ToLower(column)]
 	return v, ok
 }
 

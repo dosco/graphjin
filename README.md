@@ -43,7 +43,7 @@ func main() {
     log.Fatalf(err)
   }
 
-  sg, err = core.NewSuperGraph(conf, db)
+  sg, err := core.NewSuperGraph(conf, db)
   if err != nil {
     log.Fatalf(err)
   }

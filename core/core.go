@@ -50,20 +50,26 @@ type scontext struct {
 }
 
 func (sg *SuperGraph) initCompilers() error {
-	di, err := psql.GetDBInfo(sg.db)
-	if err != nil {
+	var err error
+
+	// If sg.di is not null then it's probably set
+	// for tests
+	if sg.dbinfo == nil {
+		sg.dbinfo, err = psql.GetDBInfo(sg.db)
+		if err != nil {
+			return err
+		}
+	}
+
+	if err = addTables(sg.conf, sg.dbinfo); err != nil {
 		return err
 	}
 
-	if err = addTables(sg.conf, di); err != nil {
+	if err = addForeignKeys(sg.conf, sg.dbinfo); err != nil {
 		return err
 	}
 
-	if err = addForeignKeys(sg.conf, di); err != nil {
-		return err
-	}
-
-	sg.schema, err = psql.NewDBSchema(di, getDBTableAliases(sg.conf))
+	sg.schema, err = psql.NewDBSchema(sg.dbinfo, getDBTableAliases(sg.conf))
 	if err != nil {
 		return err
 	}

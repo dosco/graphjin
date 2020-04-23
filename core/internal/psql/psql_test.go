@@ -1,4 +1,4 @@
-package psql
+package psql_test
 
 import (
 	"fmt"
@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dosco/super-graph/core/internal/psql"
 	"github.com/dosco/super-graph/core/internal/qcode"
 )
 
@@ -19,7 +20,7 @@ const (
 
 var (
 	qcompile *qcode.Compiler
-	pcompile *Compiler
+	pcompile *psql.Compiler
 	expected map[string][]string
 )
 
@@ -133,13 +134,16 @@ func TestMain(m *testing.M) {
 		log.Fatal(err)
 	}
 
-	schema := getTestSchema()
+	schema, err := psql.GetTestSchema()
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	vars := NewVariables(map[string]string{
+	vars := psql.NewVariables(map[string]string{
 		"admin_account_id": "5",
 	})
 
-	pcompile = NewCompiler(Config{
+	pcompile = psql.NewCompiler(psql.Config{
 		Schema: schema,
 		Vars:   vars,
 	})
@@ -173,7 +177,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func compileGQLToPSQL(t *testing.T, gql string, vars Variables, role string) {
+func compileGQLToPSQL(t *testing.T, gql string, vars psql.Variables, role string) {
 	generateTestFile := false
 
 	if generateTestFile {

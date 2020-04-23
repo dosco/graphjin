@@ -10,7 +10,7 @@ import (
 var (
 	qcompileTest, _ = qcode.NewCompiler(qcode.Config{})
 
-	schema = getTestSchema()
+	schema = GetTestSchema()
 
 	vars = NewVariables(map[string]string{
 		"admin_account_id": "5",

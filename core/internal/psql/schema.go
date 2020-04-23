@@ -57,9 +57,10 @@ type DBRel struct {
 
 func NewDBSchema(info *DBInfo, aliases map[string][]string) (*DBSchema, error) {
 	schema := &DBSchema{
-		t:  make(map[string]*DBTableInfo),
-		rm: make(map[string]map[string]*DBRel),
-		fm: make(map[string]*DBFunction, len(info.Functions)),
+		ver: info.Version,
+		t:   make(map[string]*DBTableInfo),
+		rm:  make(map[string]map[string]*DBRel),
+		fm:  make(map[string]*DBFunction, len(info.Functions)),
 	}
 
 	for i, t := range info.Tables {

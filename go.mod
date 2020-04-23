@@ -1,6 +1,7 @@
 module github.com/dosco/super-graph
 
 require (
+	github.com/DATA-DOG/go-sqlmock v1.4.1
 	github.com/GeertJohan/go.rice v1.0.0
 	github.com/NYTimes/gziphandler v1.1.1
 	github.com/adjust/gorails v0.0.0-20171013043634-2786ed0c03d3
