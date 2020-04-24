@@ -100,6 +100,9 @@ func initConf() (*Config, error) {
 		c.UseAllowList = true
 	}
 
+	// In anon role block all tables that are not defined in the role
+	c.DefaultBlock = true
+
 	return c, nil
 }
 

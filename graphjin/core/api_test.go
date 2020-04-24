@@ -19,8 +19,8 @@ func BenchmarkGraphQL(b *testing.B) {
 	defer db.Close()
 
 	// mock.ExpectQuery(`^SELECT jsonb_build_object`).WithArgs()
-
-	sg, err := newSuperGraph(nil, db, psql.GetTestDBInfo())
+	c := &Config{DefaultBlock: true}
+	sg, err := newSuperGraph(c, db, psql.GetTestDBInfo())
 	if err != nil {
 		b.Fatal(err)
 	}

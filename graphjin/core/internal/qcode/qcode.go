@@ -170,6 +170,7 @@ const (
 )
 
 type Compiler struct {
+	db bool // default block tables if not defined in anon role
 	tr map[string]map[string]*trval
 	bl map[string]struct{}
 }
@@ -179,7 +180,7 @@ var expPool = sync.Pool{
 }
 
 func NewCompiler(c Config) (*Compiler, error) {
-	co := &Compiler{}
+	co := &Compiler{db: c.DefaultBlock}
 	co.tr = make(map[string]map[string]*trval)
 	co.bl = make(map[string]struct{}, len(c.Blocklist))
 
@@ -413,12 +414,12 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 
 func (com *Compiler) AddFilters(qc *QCode, sel *Select, role string) {
 	var fil *Exp
-	var nu bool
+	var nu bool // user required (or not) in this filter
 
 	if trv, ok := com.tr[role][sel.Name]; ok {
 		fil, nu = trv.filter(qc.Type)
 
-	} else if role == "anon" {
+	} else if com.db && role == "anon" {
 		// Tables not defined under the anon role will not be rendered
 		sel.SkipRender = true
 	}
