@@ -145,12 +145,12 @@ import (
 func main() {
   db, err := sql.Open("pgx", "postgres://postgrs:@localhost:5432/example_db")
   if err != nil {
-    log.Fatalf(err)
+    log.Fatal(err)
   }
 
-  sg, err = core.NewSuperGraph(nil, db)
+  sg, err := core.NewSuperGraph(nil, db)
   if err != nil {
-    log.Fatalf(err)
+    log.Fatal(err)
   }
 
   graphqlQuery := `
@@ -163,7 +163,7 @@ func main() {
 
   res, err := sg.GraphQL(context.Background(), graphqlQuery, nil)
   if err != nil {
-    log.Fatalf(err)
+    log.Fatal(err)
   }
 
   fmt.Println(string(res.Data))
