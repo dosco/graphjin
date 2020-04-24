@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCockroachDB(t *testing.T) {
+func TestPostgreSQLDB(t *testing.T) {
 
 	url, found := os.LookupEnv("SG_POSTGRESQL_TEST_URL")
 	if !found {
