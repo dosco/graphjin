@@ -148,12 +148,7 @@ func main() {
     log.Fatalf(err)
   }
 
-  conf, err := config.NewConfig("./config")
-  if err != nil {
-    log.Fatalf(err)
-  }
-
-  sg, err = core.NewSuperGraph(conf, db)
+  sg, err = core.NewSuperGraph(nil, db)
   if err != nil {
     log.Fatalf(err)
   }

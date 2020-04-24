@@ -70,6 +70,16 @@ func (sg *SuperGraph) initConfig() error {
 		sg.roles["user"] = &ur
 	}
 
+	// If anon role is not defined and DefaultBlock is not then then create it
+	if _, ok := sg.roles["anon"]; !ok && !c.DefaultBlock {
+		ur := Role{
+			Name: "anon",
+			tm:   make(map[string]*RoleTable),
+		}
+		c.Roles = append(c.Roles, ur)
+		sg.roles["anon"] = &ur
+	}
+
 	// Roles: validate and sanitize
 	c.RolesQuery = sanitizeVars(c.RolesQuery)
 

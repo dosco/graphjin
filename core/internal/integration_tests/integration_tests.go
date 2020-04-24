@@ -50,7 +50,7 @@ func DropSchema(t *testing.T, db *sql.DB) {
 }
 
 func TestSuperGraph(t *testing.T, db *sql.DB, before func(t *testing.T)) {
-	config := core.Config{}
+	config := core.Config{DefaultBlock: true}
 	config.UseAllowList = false
 	config.AllowListFile = "./allow.list"
 	config.RolesQuery = `SELECT * FROM users WHERE id = $user_id`
