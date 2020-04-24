@@ -8,7 +8,7 @@ require (
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
 	github.com/brianvoe/gofakeit/v5 v5.2.0
 	github.com/cespare/xxhash/v2 v2.1.1
-	github.com/chirino/graphql v0.0.0-20200419184546-f015b9dab85d
+	github.com/chirino/graphql v0.0.0-20200424145735-cfdc1f0cbe3f
 	github.com/daaku/go.zipexe v1.0.1 // indirect
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/dlclark/regexp2 v1.2.0 // indirect

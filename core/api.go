@@ -51,6 +51,7 @@ import (
 	"os"
 
 	"github.com/chirino/graphql"
+	"github.com/chirino/graphql/errors"
 	"github.com/dosco/super-graph/core/internal/allow"
 	"github.com/dosco/super-graph/core/internal/crypto"
 	"github.com/dosco/super-graph/core/internal/psql"
@@ -174,7 +175,7 @@ func (sg *SuperGraph) GraphQL(c context.Context, query string, vars json.RawMess
 	// use the chirino/graphql library for introspection queries
 	// disabled when allow list is enforced
 	if !sg.conf.UseAllowList && res.name == "IntrospectionQuery" {
-		r := sg.ge.ExecuteOne(&graphql.EngineRequest{Query: query})
+		r := sg.ge.ServeGraphQL(&graphql.Request{Query: query})
 		res.Data = r.Data
 
 		if r.Error() != nil {
@@ -203,6 +204,30 @@ func (sg *SuperGraph) GraphQL(c context.Context, query string, vars json.RawMess
 	ct.res.Data = json.RawMessage(data)
 
 	return &ct.res, nil
+}
+
+func (sg *SuperGraph) ServeGraphQL(request *graphql.Request) *graphql.Response {
+	vars, err := request.VariablesAsJson()
+	if err != nil {
+		return &graphql.Response{
+			Errors: errors.AsArray(err),
+		}
+	}
+	res, err := sg.GraphQL(request.Context, request.Query, vars)
+	r := &graphql.Response{
+		Errors: errors.AsArray(err),
+	}
+	if res != nil {
+		r.Data = res.Data
+		r.Extensions = res.Extensions
+		r.Details = map[string]interface{}{
+			"*core.Result": res,
+		}
+		if res.Error != "" {
+			r.Errors = append(r.Errors, &errors.QueryError{Message: res.Error})
+		}
+	}
+	return r
 }
 
 // GraphQLSchema function return the GraphQL schema for the underlying database connected
