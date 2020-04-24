@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
 	"strings"
 	"time"
 
@@ -111,9 +112,15 @@ func routeHandler() (http.Handler, error) {
 		return mux, nil
 	}
 
+	apiRoute := "/api/v1/graphql"
+
+	if len(conf.APIPath) != 0 {
+		apiRoute = path.Join("/", conf.APIPath, "/v1/graphql")
+	}
+
 	routes := map[string]http.Handler{
-		"/health":         http.HandlerFunc(health),
-		"/api/v1/graphql": apiV1Handler(),
+		"/health": http.HandlerFunc(health),
+		apiRoute:  apiV1Handler(),
 	}
 
 	if err := setActionRoutes(routes); err != nil {
