@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 
+	"github.com/dosco/super-graph/core"
 	"github.com/dosco/super-graph/internal/serv/internal/auth"
 	"github.com/rs/cors"
 	"go.uber.org/zap"
@@ -84,15 +85,19 @@ func apiV1(w http.ResponseWriter, r *http.Request) {
 		log.Printf("DBG query %s: %s", res.QueryName(), res.SQL())
 	}
 
-	if err != nil {
-		renderErr(w, err)
-	} else {
+	if err == nil {
+		if len(conf.CacheControl) != 0 && res.Operation() == core.OpQuery {
+			w.Header().Set("Cache-Control", conf.CacheControl)
+		}
 		json.NewEncoder(w).Encode(res)
+
+	} else {
+		renderErr(w, err)
 	}
 
 	if doLog && logLevel >= LogLevelInfo {
 		zlog.Info("success",
-			zap.String("op", res.Operation()),
+			zap.String("op", res.OperationName()),
 			zap.String("name", res.QueryName()),
 			zap.String("role", res.Role()),
 		)

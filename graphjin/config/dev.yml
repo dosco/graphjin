@@ -45,6 +45,13 @@ cors_allowed_origins: ["*"]
 # Debug Cross Origin Resource Sharing requests
 cors_debug: true
 
+# Default API path prefix is /api you can change it if you like
+# api_path: "/data"
+
+# Cache-Control header can help cache queries if your CDN supports cache-control 
+# on POST requests (does not work with not mutations) 
+# cache_control: "public, max-age=300, s-maxage=600"
+
 # Postgres related environment Variables
 # SG_DATABASE_HOST
 # SG_DATABASE_PORT
