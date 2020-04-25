@@ -32,7 +32,7 @@ For this to work you have to ensure that the option `:domain => :all` is added t
 
 ### With an NGINX loadbalancer
 
-If you're infrastructure is fronted by NGINX then it should be configured so that all requests to your GraphQL API path are proxyed to Super Graph. In the example NGINX config below all requests to the path `/api/v1/graphql` are routed to wherever you have Super Graph installed within your architecture. This example is derived from the config file example at [/microservices-nginx-gateway/nginx.conf](https://github.com/launchany/microservices-nginx-gateway/blob/master/nginx.conf)
+If your infrastructure is fronted by NGINX then it should be configured so that all requests to your GraphQL API path are proxyed to Super Graph. In the example NGINX config below all requests to the path `/api/v1/graphql` are routed to wherever you have Super Graph installed within your architecture. This example is derived from the config file example at [/microservices-nginx-gateway/nginx.conf](https://github.com/launchany/microservices-nginx-gateway/blob/master/nginx.conf)
 
 ::: tip NGINX with sub-domain
 Yes, NGINX is very flexible and you can configure it to keep Super Graph a subdomain instead of on the same top level domain. I'm sure a little Googleing will get you some great example configs for that.

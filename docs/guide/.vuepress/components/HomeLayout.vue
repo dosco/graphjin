@@ -104,7 +104,7 @@ query {
         </div>
 
         <div class="text-2xl md:text-3xl">
-          Super Graph is a library and service that fetches data from any Postgres database using just GraphQL. No more struggling with ORMs and SQL to wrangle data out of the database. No more having to figure out the right joins or making ineffiient queries. However complex the GraphQL, Super Graph will always generate just one single efficient SQL query. The goal is to save you time and money so you can focus on you're apps core value.
+          Super Graph is a library and service that fetches data from any Postgres database using just GraphQL. No more struggling with ORMs and SQL to wrangle data out of the database. No more having to figure out the right joins or making inefficient queries. However complex the GraphQL, Super Graph will always generate just one single efficient SQL query. The goal is to save you time and money so you can focus on you're apps core value.
         </div>
       </div>
     </div>
