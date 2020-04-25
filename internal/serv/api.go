@@ -46,6 +46,7 @@ type Serv struct {
 	AllowedOrigins []string `mapstructure:"cors_allowed_origins"`
 	DebugCORS      bool     `mapstructure:"cors_debug"`
 	APIPath        string   `mapstructure:"api_path"`
+	CacheControl   string   `mapstructure:"cache_control"`
 
 	Auth  auth.Auth
 	Auths []auth.Auth

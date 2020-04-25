@@ -14,6 +14,11 @@ import (
 	"github.com/valyala/fasttemplate"
 )
 
+const (
+	OpQuery int = iota
+	OpMutation
+)
+
 type extensions struct {
 	Tracing *trace `json:"tracing,omitempty"`
 }
@@ -329,7 +334,20 @@ func (c *scontext) executeRoleQuery(tx *sql.Tx) (string, error) {
 	return role, nil
 }
 
-func (r *Result) Operation() string {
+func (r *Result) Operation() int {
+	switch r.op {
+	case qcode.QTQuery:
+		return OpQuery
+
+	case qcode.QTMutation, qcode.QTInsert, qcode.QTUpdate, qcode.QTUpsert, qcode.QTDelete:
+		return OpMutation
+
+	default:
+		return -1
+	}
+}
+
+func (r *Result) OperationName() string {
 	return r.op.String()
 }
 
