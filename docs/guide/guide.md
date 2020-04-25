@@ -1069,7 +1069,7 @@ mutation {
 
 ### Pagination
 
-This is a must have feature of any API. When you want your users to go thought a list page by page or implement some fancy infinite scroll you're going to need pagination. There are two ways to paginate in Super Graph.
+This is a must have feature of any API. When you want your users to go through a list page by page or implement some fancy infinite scroll you're going to need pagination. There are two ways to paginate in Super Graph.
 
  Limit-Offset
 This is simple enough but also inefficient when working with a large number of total items. Limit, limits the number of items fetched and offset is the point you want to fetch from. The below query will fetch 10 results at a time starting with the 100th item. You will have to keep updating offset (110, 120, 130, etc ) to walk thought the results so make offset a variable.
@@ -1085,7 +1085,7 @@ query {
 ```
 
 #### Cursor
-This is a powerful and highly efficient way to paginate though a large number of results. Infact it does not matter how many total results there are this will always be lighting fast. You can use a cursor to walk forward of backward though the results. If you plan to implement infinite scroll this is the option you should choose. 
+This is a powerful and highly efficient way to paginate a large number of results. Infact it does not matter how many total results there are this will always be lighting fast. You can use a cursor to walk forward or backward through the results. If you plan to implement infinite scroll this is the option you should choose. 
 
 When going this route the results will contain a cursor value this is an encrypted string that you don't have to worry about just pass this back in to the next API call and you'll received the next set of results. The cursor value is encrypted since its contents should only matter to Super Graph and not the client. Also since the primary key is used for this feature it's possible you might not want to leak it's value to clients. 
 

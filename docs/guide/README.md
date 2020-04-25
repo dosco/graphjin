@@ -10,7 +10,7 @@ longTagline: Get an instant high performance GraphQL API for Postgres. No code n
 actionText: Get Started, Free, Open Source →
 actionLink: /guide
 
-description: Super Graph can automatically learn a Postgres database and instantly serve it as a fast and secured GraphQL API. It comes with tools to create a new app and manage it's database. You get it all, a very productive developer and a highly scalable app backend. It's designed to work well on serverless platforms by Google, AWS, Microsoft, etc. The goal is to save you a ton of time and money so you can focus on you're apps core value.
+description: Super Graph can automatically learn a Postgres database and instantly serve it as a fast and secured GraphQL API. It comes with tools to create a new app and manage it's database. You get it all, a very productive developer and a highly scalable app backend. It's designed to work well on serverless platforms by Google, AWS, Microsoft, etc. The goal is to save you a ton of time and money so you can focus on your apps core value.
 
 features:
 - title: Simple
