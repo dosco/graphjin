@@ -41,7 +41,7 @@ enum OrderDirection {
 		if typeName == "" {
 			typeName = "String"
 		}
-		var t schema.Type = &schema.TypeName{Ident: schema.Ident{Text: typeName}}
+		var t schema.Type = &schema.TypeName{Name: typeName}
 		if col.NotNull {
 			t = &schema.NonNull{OfType: t}
 		}
@@ -109,16 +109,16 @@ enum OrderDirection {
 			Name: expressionTypeName,
 			Fields: schema.InputValueList{
 				&schema.InputValue{
-					Name: schema.Ident{Text: "and"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: expressionTypeName}}},
+					Name: "and",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: expressionTypeName}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "or"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: expressionTypeName}}},
+					Name: "or",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: expressionTypeName}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "not"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: expressionTypeName}}},
+					Name: "not",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: expressionTypeName}},
 				},
 			},
 		}
@@ -133,9 +133,9 @@ enum OrderDirection {
 			colType := gqltype(col)
 			nullableColType := ""
 			if x, ok := colType.(*schema.NonNull); ok {
-				nullableColType = x.OfType.(*schema.TypeName).Ident.Text
+				nullableColType = x.OfType.(*schema.TypeName).Name
 			} else {
-				nullableColType = colType.(*schema.TypeName).Ident.Text
+				nullableColType = colType.(*schema.TypeName).Name
 			}
 
 			outputType.Fields = append(outputType.Fields, &schema.Field{
@@ -198,67 +198,67 @@ enum OrderDirection {
 			}
 
 			inputType.Fields = append(inputType.Fields, &schema.InputValue{
-				Name: schema.Ident{Text: colName},
+				Name: colName,
 				Type: colType,
 			})
 			orderByType.Fields = append(orderByType.Fields, &schema.InputValue{
-				Name: schema.Ident{Text: colName},
-				Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: "OrderDirection"}}},
+				Name: colName,
+				Type: &schema.NonNull{OfType: &schema.TypeName{Name: "OrderDirection"}},
 			})
 
 			scalarExpressionTypesNeeded[nullableColType] = true
 
 			expressionType.Fields = append(expressionType.Fields, &schema.InputValue{
-				Name: schema.Ident{Text: colName},
-				Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: nullableColType + "Expression"}}},
+				Name: colName,
+				Type: &schema.NonNull{OfType: &schema.TypeName{Name: nullableColType + "Expression"}},
 			})
 		}
 
-		outputTypeName := &schema.TypeName{Ident: schema.Ident{Text: outputType.Name}}
-		inputTypeName := &schema.TypeName{Ident: schema.Ident{Text: inputType.Name}}
-		pluralOutputTypeName := &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: outputType.Name}}}}}
-		pluralInputTypeName := &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: inputType.Name}}}}}
+		outputTypeName := &schema.TypeName{Name: outputType.Name}
+		inputTypeName := &schema.TypeName{Name: inputType.Name}
+		pluralOutputTypeName := &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: outputType.Name}}}}
+		pluralInputTypeName := &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: inputType.Name}}}}
 
 		args := schema.InputValueList{
 			&schema.InputValue{
-				Desc: &schema.Description{Text: "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit you needs."},
-				Name: schema.Ident{Text: "order_by"},
-				Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: orderByType.Name}}},
+				Desc: schema.Description{Text: "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit you needs."},
+				Name: "order_by",
+				Type: &schema.NonNull{OfType: &schema.TypeName{Name: orderByType.Name}},
 			},
 			&schema.InputValue{
-				Desc: &schema.Description{Text: ""},
-				Name: schema.Ident{Text: "where"},
-				Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: expressionType.Name}}},
+				Desc: schema.Description{Text: ""},
+				Name: "where",
+				Type: &schema.NonNull{OfType: &schema.TypeName{Name: expressionType.Name}},
 			},
 			&schema.InputValue{
-				Desc: &schema.Description{Text: ""},
-				Name: schema.Ident{Text: "limit"},
-				Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: "Int"}}},
+				Desc: schema.Description{Text: ""},
+				Name: "limit",
+				Type: &schema.NonNull{OfType: &schema.TypeName{Name: "Int"}},
 			},
 			&schema.InputValue{
-				Desc: &schema.Description{Text: ""},
-				Name: schema.Ident{Text: "offset"},
-				Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: "Int"}}},
+				Desc: schema.Description{Text: ""},
+				Name: "offset",
+				Type: &schema.NonNull{OfType: &schema.TypeName{Name: "Int"}},
 			},
 			&schema.InputValue{
-				Desc: &schema.Description{Text: ""},
-				Name: schema.Ident{Text: "first"},
-				Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: "Int"}}},
+				Desc: schema.Description{Text: ""},
+				Name: "first",
+				Type: &schema.NonNull{OfType: &schema.TypeName{Name: "Int"}},
 			},
 			&schema.InputValue{
-				Desc: &schema.Description{Text: ""},
-				Name: schema.Ident{Text: "last"},
-				Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: "Int"}}},
+				Desc: schema.Description{Text: ""},
+				Name: "last",
+				Type: &schema.NonNull{OfType: &schema.TypeName{Name: "Int"}},
 			},
 			&schema.InputValue{
-				Desc: &schema.Description{Text: ""},
-				Name: schema.Ident{Text: "before"},
-				Type: &schema.TypeName{Ident: schema.Ident{Text: "String"}},
+				Desc: schema.Description{Text: ""},
+				Name: "before",
+				Type: &schema.TypeName{Name: "String"},
 			},
 			&schema.InputValue{
-				Desc: &schema.Description{Text: ""},
-				Name: schema.Ident{Text: "after"},
-				Type: &schema.TypeName{Ident: schema.Ident{Text: "String"}},
+				Desc: schema.Description{Text: ""},
+				Name: "after",
+				Type: &schema.TypeName{Name: "String"},
 			},
 		}
 		if ti.PrimaryCol != nil {
@@ -267,28 +267,28 @@ enum OrderDirection {
 				t = &schema.NonNull{OfType: t}
 			}
 			args = append(args, &schema.InputValue{
-				Desc: &schema.Description{Text: "Finds the record by the primary key"},
-				Name: schema.Ident{Text: "id"},
+				Desc: schema.Description{Text: "Finds the record by the primary key"},
+				Name: "id",
 				Type: t,
 			})
 		}
 
 		if ti.TSVCol != nil {
 			args = append(args, &schema.InputValue{
-				Desc: &schema.Description{Text: "Performs full text search using a TSV index"},
-				Name: schema.Ident{Text: "search"},
-				Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: "String"}}},
+				Desc: schema.Description{Text: "Performs full text search using a TSV index"},
+				Name: "search",
+				Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
 			})
 		}
 
 		query.Fields = append(query.Fields, &schema.Field{
-			Desc: &schema.Description{Text: ""},
+			Desc: schema.Description{Text: ""},
 			Name: singularName,
 			Type: outputTypeName,
 			Args: args,
 		})
 		query.Fields = append(query.Fields, &schema.Field{
-			Desc: &schema.Description{Text: ""},
+			Desc: schema.Description{Text: ""},
 			Name: pluralName,
 			Type: pluralOutputTypeName,
 			Args: args,
@@ -296,19 +296,19 @@ enum OrderDirection {
 
 		mutationArgs := append(args, schema.InputValueList{
 			&schema.InputValue{
-				Desc: &schema.Description{Text: ""},
-				Name: schema.Ident{Text: "insert"},
+				Desc: schema.Description{Text: ""},
+				Name: "insert",
 				Type: inputTypeName,
 			},
 			&schema.InputValue{
-				Desc: &schema.Description{Text: ""},
-				Name: schema.Ident{Text: "update"},
+				Desc: schema.Description{Text: ""},
+				Name: "update",
 				Type: inputTypeName,
 			},
 
 			&schema.InputValue{
-				Desc: &schema.Description{Text: ""},
-				Name: schema.Ident{Text: "upsert"},
+				Desc: schema.Description{Text: ""},
+				Name: "upsert",
 				Type: inputTypeName,
 			},
 		}...)
@@ -322,18 +322,18 @@ enum OrderDirection {
 			Name: pluralName,
 			Args: append(mutationArgs, schema.InputValueList{
 				&schema.InputValue{
-					Desc: &schema.Description{Text: ""},
-					Name: schema.Ident{Text: "inserts"},
+					Desc: schema.Description{Text: ""},
+					Name: "inserts",
 					Type: pluralInputTypeName,
 				},
 				&schema.InputValue{
-					Desc: &schema.Description{Text: ""},
-					Name: schema.Ident{Text: "updates"},
+					Desc: schema.Description{Text: ""},
+					Name: "updates",
 					Type: pluralInputTypeName,
 				},
 				&schema.InputValue{
-					Desc: &schema.Description{Text: ""},
-					Name: schema.Ident{Text: "upserts"},
+					Desc: schema.Description{Text: ""},
+					Name: "upserts",
 					Type: pluralInputTypeName,
 				},
 			}...),
@@ -346,125 +346,125 @@ enum OrderDirection {
 			Name: typeName + "Expression",
 			Fields: schema.InputValueList{
 				&schema.InputValue{
-					Name: schema.Ident{Text: "eq"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: typeName}}},
+					Name: "eq",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "equals"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: typeName}}},
+					Name: "equals",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "neq"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: typeName}}},
+					Name: "neq",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "not_equals"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: typeName}}},
+					Name: "not_equals",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "gt"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: typeName}}},
+					Name: "gt",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "greater_than"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: typeName}}},
+					Name: "greater_than",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "lt"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: typeName}}},
+					Name: "lt",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "lesser_than"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: typeName}}},
+					Name: "lesser_than",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "gte"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: typeName}}},
+					Name: "gte",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "greater_or_equals"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: typeName}}},
+					Name: "greater_or_equals",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "lte"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: typeName}}},
+					Name: "lte",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "lesser_or_equals"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: typeName}}},
+					Name: "lesser_or_equals",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "in"},
-					Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: typeName}}}}},
+					Name: "in",
+					Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}}}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "nin"},
-					Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: typeName}}}}},
+					Name: "nin",
+					Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}}}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "not_in"},
-					Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: typeName}}}}},
+					Name: "not_in",
+					Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}}}},
 				},
 
 				&schema.InputValue{
-					Name: schema.Ident{Text: "like"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: "String"}}},
+					Name: "like",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "nlike"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: "String"}}},
+					Name: "nlike",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "not_like"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: "String"}}},
+					Name: "not_like",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "ilike"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: "String"}}},
+					Name: "ilike",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "nilike"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: "String"}}},
+					Name: "nilike",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "not_ilike"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: "String"}}},
+					Name: "not_ilike",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "similar"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: "String"}}},
+					Name: "similar",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "nsimilar"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: "String"}}},
+					Name: "nsimilar",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "not_similar"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: "String"}}},
+					Name: "not_similar",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "has_key"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: typeName}}},
+					Name: "has_key",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "has_key_any"},
-					Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: typeName}}}}},
+					Name: "has_key_any",
+					Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}}}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "has_key_all"},
-					Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: typeName}}}}},
+					Name: "has_key_all",
+					Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}}}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "contains"},
-					Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: typeName}}}}},
+					Name: "contains",
+					Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}}}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "contained_in"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: "String"}}},
+					Name: "contained_in",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
 				},
 				&schema.InputValue{
-					Name: schema.Ident{Text: "is_null"},
-					Type: &schema.NonNull{OfType: &schema.TypeName{Ident: schema.Ident{Text: "Boolean"}}},
+					Name: "is_null",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "Boolean"}},
 				},
 			},
 		}
