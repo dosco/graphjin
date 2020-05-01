@@ -9,6 +9,8 @@ import (
 	"github.com/dosco/super-graph/jsn"
 )
 
+// argMap function is used to string replace variables with values by
+// the fasttemplate code
 func (c *scontext) argMap() func(w io.Writer, tag string) (int, error) {
 	return func(w io.Writer, tag string) (int, error) {
 		switch tag {
@@ -56,10 +58,13 @@ func (c *scontext) argMap() func(w io.Writer, tag string) (int, error) {
 			return w.Write(v1)
 		}
 
-		return w.Write(escQuote(fields[0].Value))
+		return w.Write(escSQuote(fields[0].Value))
 	}
 }
 
+// argList function is used to create a list of arguments to pass
+// to a prepared statement. FYI no escaping of single quotes is
+// needed here
 func (c *scontext) argList(args [][]byte) ([]interface{}, error) {
 	vars := make([]interface{}, len(args))
 
@@ -113,7 +118,7 @@ func (c *scontext) argList(args [][]byte) ([]interface{}, error) {
 			if v, ok := fields[string(av)]; ok {
 				switch v[0] {
 				case '[', '{':
-					vars[i] = escQuote(v)
+					vars[i] = v
 				default:
 					var val interface{}
 					if err := json.Unmarshal(v, &val); err != nil {
@@ -132,27 +137,25 @@ func (c *scontext) argList(args [][]byte) ([]interface{}, error) {
 	return vars, nil
 }
 
-func escQuote(b []byte) []byte {
-	f := false
-	for i := range b {
-		if b[i] == '\'' {
-			f = true
-			break
-		}
-	}
-	if !f {
-		return b
-	}
-
-	buf := &bytes.Buffer{}
+//
+func escSQuote(b []byte) []byte {
+	var buf *bytes.Buffer
 	s := 0
 	for i := range b {
 		if b[i] == '\'' {
+			if buf == nil {
+				buf = &bytes.Buffer{}
+			}
 			buf.Write(b[s:i])
 			buf.WriteString(`''`)
 			s = i + 1
 		}
 	}
+
+	if buf == nil {
+		return b
+	}
+
 	l := len(b)
 	if s < (l - 1) {
 		buf.Write(b[s:l])

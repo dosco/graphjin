@@ -77,7 +77,7 @@ func apiV1(w http.ResponseWriter, r *http.Request) {
 	doLog := true
 	res, err := sg.GraphQL(ct, req.Query, req.Vars)
 
-	if !conf.Production && res.QueryName() == "IntrospectionQuery" {
+	if !conf.Production && res.QueryName() == introspectionQuery {
 		doLog = false
 	}
 
@@ -89,6 +89,7 @@ func apiV1(w http.ResponseWriter, r *http.Request) {
 		if len(conf.CacheControl) != 0 && res.Operation() == core.OpQuery {
 			w.Header().Set("Cache-Control", conf.CacheControl)
 		}
+		//nolint: errcheck
 		json.NewEncoder(w).Encode(res)
 
 	} else {

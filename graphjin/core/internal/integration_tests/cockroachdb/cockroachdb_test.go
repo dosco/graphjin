@@ -40,8 +40,12 @@ func TestCockroachDB(t *testing.T) {
 	stopDatabase := func() {
 		fmt.Println("stopping temporary cockroach db")
 		if atomic.CompareAndSwapInt32(&stopped, 0, 1) {
-			cmd.Process.Kill()
-			cmd.Process.Wait()
+			if err := cmd.Process.Kill(); err != nil {
+				log.Fatal(err)
+			}
+			if _, err := cmd.Process.Wait(); err != nil {
+				log.Fatal(err)
+			}
 			os.RemoveAll(dir)
 		}
 	}

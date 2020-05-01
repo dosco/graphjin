@@ -120,20 +120,20 @@ func buildFn(r Remote) func(http.Header, []byte) ([]byte, error) {
 		}
 		defer res.Body.Close()
 
-		if r.Debug {
-			// reqDump, err := httputil.DumpRequestOut(req, true)
-			// if err != nil {
-			// 	return nil, err
-			// }
+		// if r.Debug {
+		// reqDump, err := httputil.DumpRequestOut(req, true)
+		// if err != nil {
+		// 	return nil, err
+		// }
 
-			// resDump, err := httputil.DumpResponse(res, true)
-			// if err != nil {
-			// 	return nil, err
-			// }
+		// resDump, err := httputil.DumpResponse(res, true)
+		// if err != nil {
+		// 	return nil, err
+		// }
 
-			// logger.Debug().Msgf("Remote Request Debug:\n%s\n%s",
-			// 	reqDump, resDump)
-		}
+		// logger.Debug().Msgf("Remote Request Debug:\n%s\n%s",
+		// 	reqDump, resDump)
+		// }
 
 		if res.StatusCode != 200 {
 			return nil,

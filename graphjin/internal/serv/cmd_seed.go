@@ -415,6 +415,7 @@ func setFakeFuncs(f *goja.Object) {
 	//f.Set("programming_language", gofakeit.ProgrammingLanguage)
 }
 
+//nolint: errcheck
 func setUtilFuncs(f *goja.Object) {
 	// Slugs
 	f.Set("make_slug", slug.Make)

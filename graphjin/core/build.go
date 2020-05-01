@@ -167,16 +167,16 @@ func (sg *SuperGraph) renderUserQuery(stmts []stmt) (string, error) {
 	return w.String(), nil
 }
 
-func (sg *SuperGraph) hasTablesWithConfig(qc *qcode.QCode, role *Role) bool {
-	for _, id := range qc.Roots {
-		t, err := sg.schema.GetTable(qc.Selects[id].Name)
-		if err != nil {
-			return false
-		}
+// func (sg *SuperGraph) hasTablesWithConfig(qc *qcode.QCode, role *Role) bool {
+// 	for _, id := range qc.Roots {
+// 		t, err := sg.schema.GetTable(qc.Selects[id].Name)
+// 		if err != nil {
+// 			return false
+// 		}
 
-		if r := role.GetTable(t.Name); r == nil {
-			return false
-		}
-	}
-	return true
-}
+// 		if r := role.GetTable(t.Name); r == nil {
+// 			return false
+// 		}
+// 	}
+// 	return true
+// }

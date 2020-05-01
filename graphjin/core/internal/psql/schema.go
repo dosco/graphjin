@@ -382,7 +382,7 @@ func (s *DBSchema) updateSchemaOTMT(
 
 func (s *DBSchema) GetTableNames() []string {
 	var names []string
-	for name, _ := range s.t {
+	for name := range s.t {
 		names = append(names, name)
 	}
 	return names
