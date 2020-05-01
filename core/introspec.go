@@ -29,12 +29,9 @@ func (sg *SuperGraph) initGraphQLEgine() error {
 	engineSchema := engine.Schema
 	dbSchema := sg.schema
 
-	engineSchema.Parse(`
-enum OrderDirection {
-  asc
-  desc
-}
-`)
+	if err := engineSchema.Parse(`enum OrderDirection { asc desc }`); err != nil {
+		return err
+	}
 
 	gqltype := func(col psql.DBColumn) schema.Type {
 		typeName := typeMap[strings.ToLower(col.Type)]
@@ -341,7 +338,7 @@ enum OrderDirection {
 		})
 	}
 
-	for typeName, _ := range scalarExpressionTypesNeeded {
+	for typeName := range scalarExpressionTypesNeeded {
 		expressionType := &schema.InputObject{
 			Name: typeName + "Expression",
 			Fields: schema.InputValueList{
@@ -471,8 +468,7 @@ enum OrderDirection {
 		engineSchema.Types[expressionType.Name] = expressionType
 	}
 
-	err := engineSchema.ResolveTypes()
-	if err != nil {
+	if err := engineSchema.ResolveTypes(); err != nil {
 		return err
 	}
 

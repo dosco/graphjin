@@ -26,13 +26,12 @@ var (
 )
 
 var (
-	log       *_log.Logger // logger
-	zlog      *zap.Logger  // fast logger
-	logLevel  int          // log level
-	conf      *Config      // parsed config
-	confPath  string       // path to the config file
-	db        *sql.DB      // database connection pool
-	secretKey [32]byte     // encryption key
+	log      *_log.Logger // logger
+	zlog     *zap.Logger  // fast logger
+	logLevel int          // log level
+	conf     *Config      // parsed config
+	confPath string       // path to the config file
+	db       *sql.DB      // database connection pool
 )
 
 func Cmd() {
