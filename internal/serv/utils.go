@@ -2,7 +2,7 @@ package serv
 
 import (
 	"bytes"
-	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/hex"
 	"io"
 	"os"
@@ -16,7 +16,7 @@ import (
 // nolint: errcheck
 func gqlHash(b string, vars []byte, role string) string {
 	b = strings.TrimSpace(b)
-	h := sha1.New()
+	h := sha256.New()
 	query := "query"
 
 	s, e := 0, 0

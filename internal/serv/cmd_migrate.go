@@ -109,7 +109,7 @@ func cmdDBNew(cmd *cobra.Command, args []string) {
 
 	// Write new migration
 	mpath := filepath.Join(migrationsPath, mname)
-	mfile, err := os.OpenFile(mpath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0666)
+	mfile, err := os.OpenFile(mpath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		log.Fatalf("ERR %s", err)
 	}

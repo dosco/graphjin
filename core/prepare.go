@@ -3,7 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
-	"crypto/sha1"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"fmt"
@@ -251,7 +251,7 @@ func (sg *SuperGraph) initAllowList() error {
 
 // nolint: errcheck
 func stmtHash(name string, role string) string {
-	h := sha1.New()
+	h := sha256.New()
 	io.WriteString(h, strings.ToLower(name))
 	io.WriteString(h, role)
 	return hex.EncodeToString(h.Sum(nil))
