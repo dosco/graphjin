@@ -1,401 +1,371 @@
 <a name="unreleased"></a>
 ## [Unreleased]
 
-### Add
-- Add config driven custom table relationships
-- Add support for `websearch_to_tsquery` in PG 11
 
-### Create
-- Create CODE_OF_CONDUCT.md
+<a name="v0.13.22"></a>
+## [v0.13.22] - 2020-05-01
 
-### Fix
-- Fix bug with remote join example
-- Fix grammer / syntax
+<a name="v0.13.21"></a>
+## [v0.13.21] - 2020-04-24
 
-### Update
-- Update issue templates
-- Update CONTRIBUTING.md
-- Update issue templates
-- Update feature_request.md
+<a name="v0.13.20"></a>
+## [v0.13.20] - 2020-04-24
+
+<a name="v0.13.19"></a>
+## [v0.13.19] - 2020-04-23
+
+<a name="v0.13.18"></a>
+## [v0.13.18] - 2020-04-23
+
+<a name="v0.13.17"></a>
+## [v0.13.17] - 2020-04-22
+
+<a name="v0.13.16"></a>
+## [v0.13.16] - 2020-04-21
+### Features
+- feat : improve the generated introspection schema and avoid the chirino/graphql api leaking through the core api. ([#53](https://github.com/dosco/super-graph/issues/53))
+
+
+<a name="v0.13.15"></a>
+## [v0.13.15] - 2020-04-20
+
+<a name="v0.13.14"></a>
+## [v0.13.14] - 2020-04-19
+
+<a name="v0.13.13"></a>
+## [v0.13.13] - 2020-04-19
+
+<a name="v0.13.12"></a>
+## [v0.13.12] - 2020-04-19
+
+<a name="v0.13.11"></a>
+## [v0.13.11] - 2020-04-18
+
+<a name="v0.13.10"></a>
+## [v0.13.10] - 2020-04-17
+
+<a name="v0.13.9"></a>
+## [v0.13.9] - 2020-04-16
+
+<a name="v0.13.8"></a>
+## [v0.13.8] - 2020-04-16
+
+<a name="v0.13.7"></a>
+## [v0.13.7] - 2020-04-16
+
+<a name="v0.13.6"></a>
+## [v0.13.6] - 2020-04-13
+
+<a name="v0.13.5"></a>
+## [v0.13.5] - 2020-04-13
+
+<a name="v0.13.4"></a>
+## [v0.13.4] - 2020-04-12
+
+<a name="v0.13.3"></a>
+## [v0.13.3] - 2020-04-12
+
+<a name="v0.13.2"></a>
+## [v0.13.2] - 2020-04-11
+
+<a name="v0.13.1"></a>
+## [v0.13.1] - 2020-04-11
+
+<a name="v0.13.0"></a>
+## [v0.13.0] - 2020-04-10
+
+<a name="v0.12.49"></a>
+## [v0.12.49] - 2020-04-01
+
+<a name="v0.12.48"></a>
+## [v0.12.48] - 2020-03-31
+
+<a name="v0.12.47"></a>
+## [v0.12.47] - 2020-03-30
+
+<a name="v0.12.46"></a>
+## [v0.12.46] - 2020-03-21
+
+<a name="v0.12.45"></a>
+## [v0.12.45] - 2020-03-18
+
+<a name="v0.12.44"></a>
+## [v0.12.44] - 2020-03-16
+
+<a name="v0.12.43"></a>
+## [v0.12.43] - 2020-03-16
+
+<a name="v0.12.42"></a>
+## [v0.12.42] - 2020-03-14
+
+<a name="v0.12.41"></a>
+## [v0.12.41] - 2020-03-06
+
+<a name="v0.12.40"></a>
+## [v0.12.40] - 2020-03-06
+
+<a name="v0.12.39"></a>
+## [v0.12.39] - 2020-03-06
+
+<a name="v0.12.38"></a>
+## [v0.12.38] - 2020-03-05
+
+<a name="v0.12.37"></a>
+## [v0.12.37] - 2020-03-04
+
+<a name="v0.12.36"></a>
+## [v0.12.36] - 2020-03-04
+
+<a name="v0.12.35"></a>
+## [v0.12.35] - 2020-03-03
+
+<a name="v0.12.34"></a>
+## [v0.12.34] - 2020-03-03
+
+<a name="v0.12.33"></a>
+## [v0.12.33] - 2020-02-29
+
+<a name="v0.12.32"></a>
+## [v0.12.32] - 2020-02-24
+### Bug Fixes
+- fix "Try the demo app" in docs ([#38](https://github.com/dosco/super-graph/issues/38))
+
+
+<a name="v0.12.31"></a>
+## [v0.12.31] - 2020-02-23
+
+<a name="v0.12.30"></a>
+## [v0.12.30] - 2020-02-23
+
+<a name="v0.12.29"></a>
+## [v0.12.29] - 2020-02-21
+
+<a name="v0.12.28"></a>
+## [v0.12.28] - 2020-02-20
+
+<a name="v0.12.27"></a>
+## [v0.12.27] - 2020-02-19
+
+<a name="v0.12.26"></a>
+## [v0.12.26] - 2020-02-11
+
+<a name="v0.12.25"></a>
+## [v0.12.25] - 2020-02-10
+
+<a name="v0.12.24"></a>
+## [v0.12.24] - 2020-02-03
+
+<a name="v0.12.23"></a>
+## [v0.12.23] - 2020-02-02
+
+<a name="v0.12.22"></a>
+## [v0.12.22] - 2020-02-01
+
+<a name="v0.12.21"></a>
+## [v0.12.21] - 2020-01-31
+
+<a name="v0.12.20"></a>
+## [v0.12.20] - 2020-01-28
+
+<a name="v0.12.19"></a>
+## [v0.12.19] - 2020-01-26
+
+<a name="v0.12.18"></a>
+## [v0.12.18] - 2020-01-20
+
+<a name="v0.12.17"></a>
+## [v0.12.17] - 2020-01-20
+
+<a name="v0.12.16"></a>
+## [v0.12.16] - 2020-01-19
+
+<a name="v0.12.15"></a>
+## [v0.12.15] - 2020-01-17
+
+<a name="v0.12.14"></a>
+## [v0.12.14] - 2020-01-17
+
+<a name="v0.12.13"></a>
+## [v0.12.13] - 2020-01-16
+
+<a name="v0.12.12"></a>
+## [v0.12.12] - 2020-01-15
+
+<a name="v0.12.11"></a>
+## [v0.12.11] - 2020-01-14
+
+<a name="v0.12.10"></a>
+## [v0.12.10] - 2020-01-14
+
+<a name="v0.12.9"></a>
+## [v0.12.9] - 2020-01-14
+
+<a name="v0.12.8"></a>
+## [v0.12.8] - 2020-01-13
+
+<a name="v0.12.7"></a>
+## [v0.12.7] - 2020-01-11
+### Pull Requests
+- Merge pull request [#22](https://github.com/dosco/super-graph/issues/22) from bhaskarmurthy/fix-grammer-syntax
 
 
 <a name="v0.12.6"></a>
 ## [v0.12.6] - 2019-12-02
-### Add
-- Add support for `websearch_to_tsquery` in PG 11
-
 
 <a name="v0.12.5"></a>
 ## [v0.12.5] - 2019-11-30
-### Add
-- Add a guide to the internals of the codebase
-- Add a CONTRIBUTING.md guide for contributors
-- Add a CHANGLOG.md
-- Add issue templates
-
-### Fix
-- Fix for missing filters on nested selectors
-
-### Refactor
-- Refactor rename 'Select.Table` to `Select.Name`
-
 
 <a name="v0.12.4"></a>
 ## [v0.12.4] - 2019-11-28
-### Move
-- Move license from MIT to Apache 2.0. Add Makefile
-
 
 <a name="v0.12.3"></a>
 ## [v0.12.3] - 2019-11-26
-### Added
-- Added support for query names to the allow.list
-
 
 <a name="v0.12.2"></a>
 ## [v0.12.2] - 2019-11-25
-### Fix
-- Fix bug with compiling anon queries
-
 
 <a name="v0.12.1"></a>
 ## [v0.12.1] - 2019-11-22
-### Move
-- Move sql query logging from info to debug
-
 
 <a name="v0.12.0"></a>
 ## [v0.12.0] - 2019-11-22
-### Use
-- Use logger error instead of panic in goja handlers
-
 
 <a name="v0.11.9"></a>
 ## [v0.11.9] - 2019-11-22
-### Add
-- Add a db:reset command only for dev mode
-
 
 <a name="v0.11.8"></a>
 ## [v0.11.8] - 2019-11-21
-### Optimize
-- Optimize db queries limit use of transactions
-
 
 <a name="v0.11.7"></a>
 ## [v0.11.7] - 2019-11-19
-### Added
-- Added support for multi-root queries
-
 
 <a name="v0.11.6"></a>
 ## [v0.11.6] - 2019-11-15
-### Fix
-- Fix issues with JWT auth
-- Fix bug with migration filename generation
-- Fix bug with migration file name
-
 
 <a name="v0.11.5"></a>
 ## [v0.11.5] - 2019-11-10
-### Fix
-- Fix bug with migration template name
-
 
 <a name="v0.11.4"></a>
 ## [v0.11.4] - 2019-11-10
-### Fix
-- Fix bug with creating new migrations
-
 
 <a name="v0.11.3"></a>
 ## [v0.11.3] - 2019-11-09
-### Fix
-- Fix macro syntax bug in app templates
-
 
 <a name="v0.11.2"></a>
 ## [v0.11.2] - 2019-11-07
-### Fix
-- Fix bugs and add new production mode
-
 
 <a name="v0.11.1"></a>
 ## [v0.11.1] - 2019-11-05
-### Add
-- Add nested where clause to filter based on related tables
-
-### Block
-- Block unauthorized requests when 'anon' role is not defined
-
-### Update
-- Update docs and website with new features
-
 
 <a name="v0.11"></a>
 ## [v0.11] - 2019-11-01
-### Add
-- Add config driven presets for insert, update and upsert
-- Add config driven presets for insert, update and upserta
-- Add RBAC option to disable functions eg. count
-- Add fuzz testing to 'serv' for the GQL hash parser
-- Add fuzz testing to 'jsn' and 'qcode'
-- Add ability to block queries and mutations by role
-- Add built in 'anon' and 'user' roles
-- Add role based access control
-
-### Allow
-- Allow config files to inherit from other config files
-
-### Change
-- Change config key inherit to inherits
-
-### Get
-- Get RBAC working for queries and mutations
-
-### Optimize
-- Optimize prepared statement flow for RBAC
-
-### Preserve
-- Preserve allow.list ordering on save
-
-### Update
-- Update filters section in guide
-
 ### Pull Requests
 - Merge pull request [#11](https://github.com/dosco/super-graph/issues/11) from dosco/rbac
 
 
 <a name="v0.10.1"></a>
 ## [v0.10.1] - 2019-10-06
-### Add
-- Add ability to set filters per operation / action
-- Add upsert mutation
-
 ### Pull Requests
 - Merge pull request [#10](https://github.com/dosco/super-graph/issues/10) from FourSigma/sm-examples-folder
 
 
 <a name="v0.10"></a>
 ## [v0.10] - 2019-10-04
-### Fix
-- Fix return values for bulk mutations and delete
-- Fix issues with mutation SQL
-- Fix broken demo app
-- Fix typo in 'across'
-
-### Remove
-- Remove extra link from README
-
-### Update
-- Update docs, getting started guide and mutations
-
 ### Pull Requests
 - Merge pull request [#6](https://github.com/dosco/super-graph/issues/6) from muesli/typo-fixes
 
 
 <a name="v0.9"></a>
 ## [v0.9] - 2019-10-01
-### Fix
-- Fix demo rails app broken build
-
 
 <a name="v0.8"></a>
 ## [v0.8] - 2019-09-30
-### Fix
-- Fix invalid import bug
-
-### Update
-- Update documentation site
-
 
 <a name="v0.7"></a>
 ## [v0.7] - 2019-09-29
-### Failure
-- Failure to prepare statements should be a warning
-
-### Fix
-- Fix duplicte column bug
-
 
 <a name="v0.6"></a>
 ## [v0.6] - 2019-09-29
-### Add
-- Add database setup commands
-- Add binary compression back to Dockerfile
-- Add initialization command to setup new apps
-- Add migrate command
-- Add database seeding capability
-- Add session variable for user id
-- Add delete mutation
-- Add update mutation
-- Add insert mutation with bulk insert
-- Add GoTO Aug, 19 presentation
-- Add support for prepared statements
-- Add end-to-end benchmaking
-- Add object pooling for parser expressions
-- Add request / response debugging for remote joins
-- Add a presentation about GraphQL
-- Add validation for remote JSON
-- Add tracing for API stitching
-- Add REST API stitching
-- Add SQL query cacheing
-- Add support for GraphQL variables
-- Add fuzz testing to qcode
-- Add test for Rails Redis cookie store integration
-- Add an install guide
-
-### Change
-- Change fuzz test name to qcode
-- Change logo from PNG to SVG
-
-### Enabke
-- Enabke reload on config change
-
-### Fix
-- Fix missing config name bug
-- Fix new app templates
-- Fix help message for migrate
-- Fix session variable bug
-- Fix test failures in `psql` and `serv`
-- Fix demo docker services startup order
-- Fix wrong value for false token bug. Reported by [@ThisIsMissEm](https://github.com/ThisIsMissEm)
-- Fix allow.list file discovery bug
-- Fix bug with allow list path
-- Fix wrong value for use_allow_list in dev config
-- Fix startup bug in demo script
-- Fix url bug in allow list
-- Fix bug [#676](https://github.com/dosco/super-graph/issues/676) found by fuzzer
-- Fix race-condition in remote joins
-- Fix cookie passing in web ui
-- Fix bug with passing cookies in web ui
-- Fix null pointer with invalid argument values
-- Fix infinite loop bug in lexer
-- Fix null pointer issue found by fuzz test
-- Fix issue with fuzzbuzz config
-- Fix demo to run as memory only
-- Fix auth documentation
-- Fix issue with web ui sizing
-- Fix issue preventing docker-compose deploy
-- Fix try demo documentation
-
-### Futher
-- Futher reduce allocations across hot paths
-- Futher reduce allocations on the compiler hot path
-- Futher optimize json parsing and editing performance
-
-### Highlight
-- Highlight top features better on the site
-
-### Improve
-- Improve readability of json parser code
-- Improve the motivation section in the readme
-- Improve the demo experience
-
-### Make
-- Make remote joins use parallel http requests
-
-### Merge
-- Merge branch 'master' into optimize-psql
-
-### New
-- New low allocation fast json parsing and editing library
-
-### Optimize
-- Optimize lexer and fix bugs
-- Optimize the sql generator hot path
-
-### Reduce
-- Reduce alllocations done by the stack
-- Reduce steps to run the demo
-- Reduce allocations and improve perf over 50%
-
-### Remove
-- Remove unused packages
-- Remove the 'hello' test app folder
-- Remove other allocations in psql
-
-### Use
-- Use hash's as ids for table relationships
-
-### Watch
-- Watch and reload on config changes
-
 
 <a name="v0.5"></a>
 ## [v0.5] - 2019-04-10
-### Add
-- Add supprt for new Rails 5.2 aes-256-gcm cookies
-- Add query support for ts_rank and ts_headline
-- Add full text search support using TSV indexes
-- Add missing assets folder
-- Add fetch by ID feature
-- Add documentation
-
-### Cleanup
-- Cleanup and redesign config files
-
-### Fix
-- Fix bug with auth config parsing
-
-### Redesign
-- Redesign config file architecture
-
-### Reduce
-- Reduce realloc of maps and slices
-
-### Update
-- Update docs with full-text search information
-
 
 <a name="v0.4"></a>
 ## [v0.4] - 2019-04-01
 
 <a name="v0.3"></a>
 ## [v0.3] - 2019-04-01
-### Add
-- Add SQL execution timing and tracing
-- Add support for HAVING with aggregate queries
-- Add aggregrate functions to GQL queries
-- Add Auth0 JWT support
-- Add React UI building to the docker build flow
-- Add compiler profiling
-- Add bechmarks for GQL to SQL compile
-- Add tests for gql to sql compile
-
-### Cleanup
-- Cleanup Dockerfile
-
-### Fix
-- Fix recurring packer issue docker hub builds
-- Fix issue with asset packer breaking Docker builds
-- Fix missing git package in Dockerfile
-- Fix docker ignore values
-- Fix image build failure on docker hub
-- Fix build issue in Dockerfile
-- Fix bugs and document the 'where' clause
-- Fix perf issue with inflections
-
-### Optimize
-- Optimize docker image
-
-### Pack
-- Pack web UI with app into a single binary
-
-### Upgrade
-- Upgrade web UI packages
-
 
 <a name="0.3"></a>
 ## 0.3 - 2019-03-24
-### First
-- First commit
 
-### Fix
-- Fix license to MIT
-
-
-[Unreleased]: https://github.com/dosco/super-graph/compare/v0.12.6...HEAD
+[Unreleased]: https://github.com/dosco/super-graph/compare/v0.13.22...HEAD
+[v0.13.22]: https://github.com/dosco/super-graph/compare/v0.13.21...v0.13.22
+[v0.13.21]: https://github.com/dosco/super-graph/compare/v0.13.20...v0.13.21
+[v0.13.20]: https://github.com/dosco/super-graph/compare/v0.13.19...v0.13.20
+[v0.13.19]: https://github.com/dosco/super-graph/compare/v0.13.18...v0.13.19
+[v0.13.18]: https://github.com/dosco/super-graph/compare/v0.13.17...v0.13.18
+[v0.13.17]: https://github.com/dosco/super-graph/compare/v0.13.16...v0.13.17
+[v0.13.16]: https://github.com/dosco/super-graph/compare/v0.13.15...v0.13.16
+[v0.13.15]: https://github.com/dosco/super-graph/compare/v0.13.14...v0.13.15
+[v0.13.14]: https://github.com/dosco/super-graph/compare/v0.13.13...v0.13.14
+[v0.13.13]: https://github.com/dosco/super-graph/compare/v0.13.12...v0.13.13
+[v0.13.12]: https://github.com/dosco/super-graph/compare/v0.13.11...v0.13.12
+[v0.13.11]: https://github.com/dosco/super-graph/compare/v0.13.10...v0.13.11
+[v0.13.10]: https://github.com/dosco/super-graph/compare/v0.13.9...v0.13.10
+[v0.13.9]: https://github.com/dosco/super-graph/compare/v0.13.8...v0.13.9
+[v0.13.8]: https://github.com/dosco/super-graph/compare/v0.13.7...v0.13.8
+[v0.13.7]: https://github.com/dosco/super-graph/compare/v0.13.6...v0.13.7
+[v0.13.6]: https://github.com/dosco/super-graph/compare/v0.13.5...v0.13.6
+[v0.13.5]: https://github.com/dosco/super-graph/compare/v0.13.4...v0.13.5
+[v0.13.4]: https://github.com/dosco/super-graph/compare/v0.13.3...v0.13.4
+[v0.13.3]: https://github.com/dosco/super-graph/compare/v0.13.2...v0.13.3
+[v0.13.2]: https://github.com/dosco/super-graph/compare/v0.13.1...v0.13.2
+[v0.13.1]: https://github.com/dosco/super-graph/compare/v0.13.0...v0.13.1
+[v0.13.0]: https://github.com/dosco/super-graph/compare/v0.12.49...v0.13.0
+[v0.12.49]: https://github.com/dosco/super-graph/compare/v0.12.48...v0.12.49
+[v0.12.48]: https://github.com/dosco/super-graph/compare/v0.12.47...v0.12.48
+[v0.12.47]: https://github.com/dosco/super-graph/compare/v0.12.46...v0.12.47
+[v0.12.46]: https://github.com/dosco/super-graph/compare/v0.12.45...v0.12.46
+[v0.12.45]: https://github.com/dosco/super-graph/compare/v0.12.44...v0.12.45
+[v0.12.44]: https://github.com/dosco/super-graph/compare/v0.12.43...v0.12.44
+[v0.12.43]: https://github.com/dosco/super-graph/compare/v0.12.42...v0.12.43
+[v0.12.42]: https://github.com/dosco/super-graph/compare/v0.12.41...v0.12.42
+[v0.12.41]: https://github.com/dosco/super-graph/compare/v0.12.40...v0.12.41
+[v0.12.40]: https://github.com/dosco/super-graph/compare/v0.12.39...v0.12.40
+[v0.12.39]: https://github.com/dosco/super-graph/compare/v0.12.38...v0.12.39
+[v0.12.38]: https://github.com/dosco/super-graph/compare/v0.12.37...v0.12.38
+[v0.12.37]: https://github.com/dosco/super-graph/compare/v0.12.36...v0.12.37
+[v0.12.36]: https://github.com/dosco/super-graph/compare/v0.12.35...v0.12.36
+[v0.12.35]: https://github.com/dosco/super-graph/compare/v0.12.34...v0.12.35
+[v0.12.34]: https://github.com/dosco/super-graph/compare/v0.12.33...v0.12.34
+[v0.12.33]: https://github.com/dosco/super-graph/compare/v0.12.32...v0.12.33
+[v0.12.32]: https://github.com/dosco/super-graph/compare/v0.12.31...v0.12.32
+[v0.12.31]: https://github.com/dosco/super-graph/compare/v0.12.30...v0.12.31
+[v0.12.30]: https://github.com/dosco/super-graph/compare/v0.12.29...v0.12.30
+[v0.12.29]: https://github.com/dosco/super-graph/compare/v0.12.28...v0.12.29
+[v0.12.28]: https://github.com/dosco/super-graph/compare/v0.12.27...v0.12.28
+[v0.12.27]: https://github.com/dosco/super-graph/compare/v0.12.26...v0.12.27
+[v0.12.26]: https://github.com/dosco/super-graph/compare/v0.12.25...v0.12.26
+[v0.12.25]: https://github.com/dosco/super-graph/compare/v0.12.24...v0.12.25
+[v0.12.24]: https://github.com/dosco/super-graph/compare/v0.12.23...v0.12.24
+[v0.12.23]: https://github.com/dosco/super-graph/compare/v0.12.22...v0.12.23
+[v0.12.22]: https://github.com/dosco/super-graph/compare/v0.12.21...v0.12.22
+[v0.12.21]: https://github.com/dosco/super-graph/compare/v0.12.20...v0.12.21
+[v0.12.20]: https://github.com/dosco/super-graph/compare/v0.12.19...v0.12.20
+[v0.12.19]: https://github.com/dosco/super-graph/compare/v0.12.18...v0.12.19
+[v0.12.18]: https://github.com/dosco/super-graph/compare/v0.12.17...v0.12.18
+[v0.12.17]: https://github.com/dosco/super-graph/compare/v0.12.16...v0.12.17
+[v0.12.16]: https://github.com/dosco/super-graph/compare/v0.12.15...v0.12.16
+[v0.12.15]: https://github.com/dosco/super-graph/compare/v0.12.14...v0.12.15
+[v0.12.14]: https://github.com/dosco/super-graph/compare/v0.12.13...v0.12.14
+[v0.12.13]: https://github.com/dosco/super-graph/compare/v0.12.12...v0.12.13
+[v0.12.12]: https://github.com/dosco/super-graph/compare/v0.12.11...v0.12.12
+[v0.12.11]: https://github.com/dosco/super-graph/compare/v0.12.10...v0.12.11
+[v0.12.10]: https://github.com/dosco/super-graph/compare/v0.12.9...v0.12.10
+[v0.12.9]: https://github.com/dosco/super-graph/compare/v0.12.8...v0.12.9
+[v0.12.8]: https://github.com/dosco/super-graph/compare/v0.12.7...v0.12.8
+[v0.12.7]: https://github.com/dosco/super-graph/compare/v0.12.6...v0.12.7
 [v0.12.6]: https://github.com/dosco/super-graph/compare/v0.12.5...v0.12.6
 [v0.12.5]: https://github.com/dosco/super-graph/compare/v0.12.4...v0.12.5
 [v0.12.4]: https://github.com/dosco/super-graph/compare/v0.12.3...v0.12.4

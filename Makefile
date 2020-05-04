@@ -39,7 +39,7 @@ $(WEB_BUILD_DIR):
 	@exit 1
 
 $(GITCHGLOG):
-	@GO111MODULE=off go get -u github.com/git-chglog/git-chglog/git-chglog
+	@GO111MODULE=off go get -u github.com/git-chglog/git-chglog/cmd/git-chglog
 
 changelog: $(GITCHGLOG)
 	@git-chglog $(ARGS)
