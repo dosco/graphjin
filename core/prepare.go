@@ -122,7 +122,7 @@ func (sg *SuperGraph) prepareStmt(item allow.Item) error {
 
 			stmts, err := sg.buildRoleStmt(qb, vars, role.Name)
 			if err == psql.ErrAllTablesSkipped {
-				return nil
+				continue
 			}
 			if err != nil {
 				return err

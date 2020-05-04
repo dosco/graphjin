@@ -92,17 +92,28 @@ func apiV1(w http.ResponseWriter, r *http.Request) {
 		//nolint: errcheck
 		json.NewEncoder(w).Encode(res)
 
+		if doLog && logLevel >= LogLevelInfo {
+			zlog.Info("success",
+				zap.String("op", res.OperationName()),
+				zap.String("name", res.QueryName()),
+				zap.String("role", res.Role()),
+			)
+		}
+
 	} else {
 		renderErr(w, err)
+
+		if doLog && logLevel >= LogLevelInfo {
+			zlog.Error("error",
+				zap.String("op", res.OperationName()),
+				zap.String("name", res.QueryName()),
+				zap.String("role", res.Role()),
+				zap.Error(err),
+			)
+		}
+
 	}
 
-	if doLog && logLevel >= LogLevelInfo {
-		zlog.Info("success",
-			zap.String("op", res.OperationName()),
-			zap.String("name", res.QueryName()),
-			zap.String("role", res.Role()),
-		)
-	}
 }
 
 //nolint: errcheck
