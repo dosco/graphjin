@@ -260,7 +260,7 @@ type DBFunction struct {
 
 type DBFuncParam struct {
 	ID   int
-	Name string
+	Name sql.NullString
 	Type string
 }
 
@@ -291,6 +291,7 @@ ORDER BY
 	var funcs []DBFunction
 	fm := make(map[string]int)
 
+	parameterIndex := 1
 	for rows.Next() {
 		var fn, fid string
 		fp := DBFuncParam{}
@@ -300,12 +301,18 @@ ORDER BY
 			return nil, err
 		}
 
+		if !fp.Name.Valid {
+			fp.Name.String = string(parameterIndex)
+			fp.Name.Valid = true
+		}
+
 		if i, ok := fm[fid]; ok {
 			funcs[i].Params = append(funcs[i].Params, fp)
 		} else {
 			funcs = append(funcs, DBFunction{Name: fn, Params: []DBFuncParam{fp}})
 			fm[fid] = len(funcs) - 1
 		}
+		parameterIndex++
 	}
 
 	return funcs, nil
