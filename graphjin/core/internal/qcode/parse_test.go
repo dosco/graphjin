@@ -2,6 +2,7 @@ package qcode
 
 import (
 	"errors"
+	"github.com/chirino/graphql/schema"
 	"testing"
 )
 
@@ -130,7 +131,7 @@ updateThread {
 }
 
 var gql = []byte(`
-	products(
+	{products(
 		# returns only 30 items
 		limit: 30,
 
@@ -148,7 +149,7 @@ var gql = []byte(`
 		id
 		name
 		price
-	}`)
+	}}`)
 
 func BenchmarkQCompile(b *testing.B) {
 	qcompile, _ := NewCompiler(Config{})
@@ -175,6 +176,62 @@ func BenchmarkQCompileP(b *testing.B) {
 		for pb.Next() {
 			_, err := qcompile.Compile(gql, "user")
 
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}
+
+func BenchmarkParse(b *testing.B) {
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for n := 0; n < b.N; n++ {
+		_, err := Parse(gql)
+
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkParseP(b *testing.B) {
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_, err := Parse(gql)
+
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}
+
+func BenchmarkSchemaParse(b *testing.B) {
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for n := 0; n < b.N; n++ {
+		doc := schema.QueryDocument{}
+		err := doc.Parse(string(gql))
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkSchemaParseP(b *testing.B) {
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			doc := schema.QueryDocument{}
+			err := doc.Parse(string(gql))
 			if err != nil {
 				b.Fatal(err)
 			}
