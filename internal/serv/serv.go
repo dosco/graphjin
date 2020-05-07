@@ -144,6 +144,7 @@ func routeHandler() (http.Handler, error) {
 
 	fn := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Server", serverName)
+		w.Header().Set("Content-type", "application/json")
 		mux.ServeHTTP(w, r)
 	}
 
