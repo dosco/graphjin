@@ -921,8 +921,6 @@ func (c *compilerContext) renderExp(ex *qcode.Exp, ti *DBTableInfo, skipNested b
 				st.Push('(')
 
 			case qcode.OpNot:
-				//fmt.Printf("1> %s %d %s %s\n", val.Op, len(val.Children), val.Children[0].Op, val.Children[1].Op)
-
 				st.Push(val.Children[0])
 				st.Push(qcode.OpNot)
 

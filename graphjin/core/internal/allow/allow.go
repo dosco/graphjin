@@ -9,6 +9,8 @@ import (
 	"os"
 	"sort"
 	"strings"
+
+	"github.com/dosco/super-graph/jsn"
 )
 
 const (
@@ -230,6 +232,8 @@ func (al *List) Load() ([]Item, error) {
 }
 
 func (al *List) save(item Item) error {
+	var buf bytes.Buffer
+
 	item.Name = QueryName(item.Query)
 	item.key = strings.ToLower(item.Name)
 
@@ -298,9 +302,16 @@ func (al *List) save(item Item) error {
 		}
 
 		if len(v.Vars) != 0 && !bytes.Equal(v.Vars, []byte("{}")) {
-			vj, err := json.MarshalIndent(v.Vars, "", "  ")
+			buf.Reset()
+
+			if err := jsn.Clear(&buf, v.Vars); err != nil {
+				return fmt.Errorf("failed to clean vars: %w", err)
+			}
+			vj := json.RawMessage(buf.Bytes())
+
+			vj, err = json.MarshalIndent(vj, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal vars: %v", err)
+				return fmt.Errorf("failed to marshal vars: %w", err)
 			}
 
 			_, err = f.WriteString(fmt.Sprintf("variables %s\n\n", vj))

@@ -10,7 +10,7 @@ func Keys(b []byte) [][]byte {
 	var k []byte
 	state := expectValue
 
-	st := newStack()
+	st := newSkipInfoStack()
 	ae := 0
 	instr := false
 	slash := 0
