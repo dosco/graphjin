@@ -23,6 +23,8 @@
 /tmp/runner-build
 /demo/tmp
 
+.idea
+*.iml
 .vscode
 .DS_Store
 .swp
