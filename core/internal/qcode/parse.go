@@ -602,7 +602,7 @@ func (t parserType) String() string {
 // 		nodePool.Put(n)
 // 		freeList = append(freeList, Frees{n, loc})
 // 	} else {
-// 		fmt.Printf(">>>>(%d) RE_FREE %d %p %s %s\n", loc, freeList[j].loc, freeList[j].n, n.Name, n.Type)
+// 		fmt.Printf("(%d) RE_FREE %d %p %s %s\n", loc, freeList[j].loc, freeList[j].n, n.Name, n.Type)
 // 	}
 // }
 

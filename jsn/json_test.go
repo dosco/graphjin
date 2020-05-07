@@ -509,6 +509,34 @@ func TestKeys3(t *testing.T) {
 	}
 }
 
+func TestClear(t *testing.T) {
+	var buf bytes.Buffer
+
+	json := `{
+		"insert": {
+			"created_at": "now",
+			"test_1a": { "type1": "a", "type2": [{ "a": 2 }] },
+			"name": "Hello",
+			"updated_at": "now",
+			"description": "World"
+		},
+		"user": 123,
+		"tags": [1, 2, "what"]
+	}`
+
+	expected := `{"insert":{"created_at":"","test_1a":{"type1":"","type2":[{"a":0.0}]},"name":"","updated_at":"","description":""},"user":0.0,"tags":[]}`
+
+	err := Clear(&buf, []byte(json))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if buf.String() != expected {
+		t.Log(buf.String())
+		t.Error("Does not match expected json")
+	}
+}
+
 func BenchmarkGet(b *testing.B) {
 	b.ReportAllocs()
 
