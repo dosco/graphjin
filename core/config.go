@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -195,9 +196,13 @@ func newViper(configPath, configFile string) *viper.Viper {
 	vi.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	vi.AutomaticEnv()
 
-	vi.SetConfigName(configFile)
-	vi.AddConfigPath(configPath)
-	vi.AddConfigPath("./config")
+	if len(filepath.Ext(configFile)) != 0 {
+		vi.SetConfigFile(configFile)
+	} else {
+		vi.SetConfigName(configFile)
+		vi.AddConfigPath(configPath)
+		vi.AddConfigPath("./config")
+	}
 
 	return vi
 }
