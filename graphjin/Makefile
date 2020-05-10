@@ -22,7 +22,7 @@ BUILD_FLAGS ?= -ldflags '-s -w -X ${lastCommitSHA}=${BUILD} -X "${lastCommitTime
 .PHONY: all build gen clean test run lint changlog release version help $(PLATFORMS)
 
 test:
-	@go test -v ./...
+	@go test -v -short -race ./...
 
 BIN_DIR := $(GOPATH)/bin
 GORICE := $(BIN_DIR)/rice
