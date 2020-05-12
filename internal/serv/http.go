@@ -52,6 +52,7 @@ func apiV1Handler() http.Handler {
 
 func apiV1(w http.ResponseWriter, r *http.Request) {
 	ct := r.Context()
+	w.Header().Set("Content-Type", "application/json")
 
 	//nolint: errcheck
 	if conf.AuthFailBlock && !auth.IsAuth(ct) {
