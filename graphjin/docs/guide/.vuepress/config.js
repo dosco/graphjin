@@ -15,7 +15,7 @@ module.exports = {
       { text: 'Internals', link: '/internals' },
       { text: 'Github', link: 'https://github.com/dosco/super-graph' },
       { text: 'Docker', link: 'https://hub.docker.com/r/dosco/super-graph/builds' },
-      { text: 'Join Chat', link: 'https://discord.gg/NKdXBc' },
+      { text: 'Join Chat', link: 'https://discord.com/invite/23Wh7c' },
     ],
     serviceWorker: {
       updatePopup: true
