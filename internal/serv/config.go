@@ -23,7 +23,7 @@ func ReadInConfig(configFile string) (*Config, error) {
 
 	inherits := vi.GetString("inherits")
 
-	if len(inherits) != 0 {
+	if inherits != "" {
 		vi = newViper(cpath, inherits)
 
 		if err := vi.ReadInConfig(); err != nil {

@@ -6,7 +6,7 @@
 ![Apache 2.0](https://img.shields.io/github/license/dosco/super-graph.svg?style=flat-square)
 ![Docker build](https://img.shields.io/docker/cloud/build/dosco/super-graph.svg?style=flat-square)
 ![Cloud native](https://img.shields.io/badge/cloud--native-enabled-blue.svg?style=flat-squareg)
-[![Discord Chat](https://img.shields.io/discord/628796009539043348.svg)](https://discord.gg/6pSWCTZ)  
+[![Discord Chat](https://img.shields.io/discord/628796009539043348.svg)](https://discord.gg/6pSWCTZ)
 
 ## What's Super Graph?
 
@@ -15,11 +15,15 @@ Designed to 100x your developer productivity. Super Graph will instantly, and wi
 ## Using it as a service
 
 ```console
-go get github.com/dosco/super-graph 
+go get github.com/dosco/super-graph
 super-graph new <app_name>
 ```
 
 ## Using it in your own code
+
+```console
+go get github.com/dosco/super-graph/core
+```
 
 ```golang
 package main
@@ -63,7 +67,7 @@ func main() {
 ## About Super Graph
 
 After working on several products through my career I found that we spend way too much time on building API backends. Most APIs also need constant updating, and this costs time and money.
-            
+
 It's always the same thing, figure out what the UI needs then build an endpoint for it. Most API code involves struggling with an ORM to query a database and mangle the data into a shape that the UI expects to see.
 
 I didn't want to write this code anymore, I wanted the computer to do it. Enter GraphQL, to me it sounded great, but it still required me to write all the same database query code.
@@ -109,4 +113,3 @@ Twitter or Discord.
 [Apache Public License 2.0](https://opensource.org/licenses/Apache-2.0)
 
 Copyright (c) 2019-present Vikram Rangnekar
-

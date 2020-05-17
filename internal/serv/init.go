@@ -92,7 +92,7 @@ func initConf() (*Config, error) {
 		c.AuthFailBlock = false
 	}
 
-	if len(c.AllowListFile) == 0 {
+	if c.AllowListFile == "" {
 		c.AllowListFile = c.relPath("./allow.list")
 	}
 
