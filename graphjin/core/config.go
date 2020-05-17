@@ -156,7 +156,7 @@ func ReadInConfig(configFile string) (*Config, error) {
 
 	inherits := vi.GetString("inherits")
 
-	if len(inherits) != 0 {
+	if inherits != "" {
 		vi = newViper(cpath, inherits)
 
 		if err := vi.ReadInConfig(); err != nil {
@@ -182,7 +182,7 @@ func ReadInConfig(configFile string) (*Config, error) {
 		return nil, fmt.Errorf("failed to decode config, %v", err)
 	}
 
-	if len(c.AllowListFile) == 0 {
+	if c.AllowListFile == "" {
 		c.AllowListFile = path.Join(cpath, "allow.list")
 	}
 
@@ -196,7 +196,7 @@ func newViper(configPath, configFile string) *viper.Viper {
 	vi.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	vi.AutomaticEnv()
 
-	if len(filepath.Ext(configFile)) != 0 {
+	if filepath.Ext(configFile) != "" {
 		vi.SetConfigFile(configFile)
 	} else {
 		vi.SetConfigName(configFile)
