@@ -1,16 +1,13 @@
-<img src="docs/guide/.vuepress/public/super-graph.png" width="250" />
+<img src="docs/website/static/img/super-graph-logo.svg" width="80" />
 
-### Build web products faster. Secure high-performance GraphQL
+# Super Graph - Fetch data without code!
 
 [![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg)](https://pkg.go.dev/github.com/dosco/super-graph/core?tab=doc)
 ![Apache 2.0](https://img.shields.io/github/license/dosco/super-graph.svg?style=flat-square)
 ![Docker build](https://img.shields.io/docker/cloud/build/dosco/super-graph.svg?style=flat-square)
-![Cloud native](https://img.shields.io/badge/cloud--native-enabled-blue.svg?style=flat-squareg)
 [![Discord Chat](https://img.shields.io/discord/628796009539043348.svg)](https://discord.gg/6pSWCTZ)
 
-## What's Super Graph?
-
-Designed to 100x your developer productivity. Super Graph will instantly, and without you writing any code, provide a high performance GraphQL API for your PostgresSQL DB. GraphQL queries are compiled into a single fast SQL query. Super Graph is a Go library and a service, use it in your own code or run it as a separate service.
+Super Graph gives you a high performance GraphQL API without you having to write any code. GraphQL is automatically compiled efficient an SQL query. Use it either as a library or a standalone service.
 
 ## Using it as a service
 
@@ -99,10 +96,9 @@ This compiler is what sits at the heart of Super Graph, with layers of useful fu
 
 [supergraph.dev](https://supergraph.dev)
 
-## Contact me
+## Reach out
 
-I'm happy to help you deploy Super Graph so feel free to reach out over
-Twitter or Discord.
+We're happy to help you leverage Super Graph reach out if you have questions
 
 [twitter/dosco](https://twitter.com/dosco)
 

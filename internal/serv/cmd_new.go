@@ -50,6 +50,14 @@ func cmdNew(cmd *cobra.Command, args []string) {
 		}
 	})
 
+	ifNotExists(path.Join(appPath, "cloudbuild.yaml"), func(p string) error {
+		if v, err := tmpl.get("cloudbuild.yaml"); err == nil {
+			return ioutil.WriteFile(p, v, 0644)
+		} else {
+			return err
+		}
+	})
+
 	// Create app config folder and add relevant files
 
 	appConfigPath := path.Join(appPath, "config")
