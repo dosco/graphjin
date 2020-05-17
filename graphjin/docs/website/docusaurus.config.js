@@ -3,7 +3,7 @@ module.exports = {
   tagline: "Fetch data without code",
   url: "https://supergraph.dev",
   baseUrl: "/",
-  favicon: "img/favicon.ico",
+  favicon: "img/favicon.svg",
   organizationName: "dosco", // Usually your GitHub org/user name.
   projectName: "super-graph", // Usually your repo name.
   themeConfig: {
@@ -11,7 +11,7 @@ module.exports = {
       title: "Super Graph",
       logo: {
         alt: "Super Graph Logo",
-        src: "img/logo.svg",
+        src: "img/favicon.png",
       },
       links: [
         {
@@ -33,6 +33,11 @@ module.exports = {
         {
           label: "Twitter",
           href: "https://twitter.com/dosco",
+          position: "left",
+        },
+        {
+          label: "Art Compute",
+          href: "https://artcompute.com/s/super-graph",
           position: "left",
         },
       ],

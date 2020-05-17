@@ -1,71 +1,31 @@
 ---
 id: deploy
 title: How to deploy Super Graph
-sidebar_label: Deploy
+sidebar_label: Deploy to Prod.
 ---
 
 Since you're reading this you're probably considering deploying Super Graph. You're in luck it's really easy and there are several ways to choose from. Keep in mind Super Graph can be used as a pre-built docker image or you can easily customize it and build your own docker image.
 
-:::note JWT tokens (Auth0, etc)
-When deploying on a subdomain and configure this service to use JWT authentication. You will need the public key file or secret key. Ensure your web app passes the JWT token with every GraphQL request (Cookie recommended). You will have to enable CORS headers in the config for cross domain requests to work.
+:::info JWT tokens (Auth0, etc)
+When deploying on a subdomain and configure this service to use JWT authentication. You will need the public key file or secret key. Ensure your web app passes the JWT token with every GraphQL request (Cookie recommended). You have to add the web domain to the `cors_allowed_origins` config option so CORS can allow the browser to do cross-domain ajax requests.
 :::
 
-## Google Cloud Run
+## Google Cloud Run (Fully Managed)
 
-Use Google Cloud Build to build and deploy your Super Graph app to Google Cloud Run.
+Cloud Run is a fully managed compute platform for deploying and scaling containerized applications quickly and securely.
+Your Super Graph app comes with a `cloudbuild.yaml` file so it's really easy to use Google Cloud Build to build and deploy your Super Graph app to Google Cloud Run.
 
-```yaml file="cloudbuild.yaml"
-steps:
-  # Build image with tag 'latest'
-  - name: "gcr.io/cloud-builders/docker"
-    args:
-      [
-        "build",
-        "--tag",
-        "gcr.io/$PROJECT_ID/api-service:latest",
-        "--build-arg",
-        "GO_ENV=production",
-        ".",
-      ]
+:::note
+Remember to give Cloud Build permission to deploy to Cloud Run first this can be done in the Cloud Build settings screen. Also the service account you use with Cloud Run must have the IAM permissions to connect to CloudSQL. https://cloud.google.com/sql/docs/postgres/connect-run
+:::
 
-  # Push new image to Google Container Registry
-  - name: "gcr.io/cloud-builders/docker"
-    args: ["push", "gcr.io/$PROJECT_ID/api-service:latest"]
-
-  # Deploy image to Cloud Run
-  - name: "gcr.io/cloud-builders/gcloud"
-    args:
-      [
-        "run",
-        "deploy",
-        "api-service",
-        "--image",
-        "gcr.io/$PROJECT_ID/api-service:latest",
-        "--add-cloudsql-instances",
-        "$PROJECT_ID:us-central1:$DB_NAME",
-        "--region",
-        "us-central1",
-        "--platform",
-        "managed",
-        "--update-env-vars",
-        "GO_ENV=production,SG_DATABASE_HOST=/cloudsql/$PROJECT_ID:us-central1:$DB_NAME,SECRETS_FILE=prod.secrets.yml",
-        "--port",
-        "8080",
-        "--service-account",
-        "$SERVICE_ACCOUNT",
-        "--allow-unauthenticated",
-        "--verbosity",
-        "debug",
-      ]
-```
-
-Use the command below to tell Cloud Build to build and deploy your app. Remember to give Cloud Build permission to deploy to Cloud Run first this can be done in the Cloud Build settings screen.
+Use the command below to tell Cloud Build to build and deploy your app.
 
 ```bash
-gcloud build submit --substitutions=DB_NAME=test_db,SERVICE_ACCOUNT=admin@my-project.iam.gserviceaccount.com
+gcloud build submit --substitutions=SERVICE_ACCOUNT=admin@my-project.iam.gserviceaccount.com,REGION=us-central1 .
 ```
 
-:::note Secrets Management
+:::info Secrets Management
 Your secrets like the database password should be managed by the Mozilla SOPS app. This is a secrets management app that encrypts all your secrets and stores them in a file to be decrypted in production using the Cloud KMS (Google Cloud KMS Or Amazon KMS). Our cloud build file above expects the secrets file to be `config/prod.secrets.yml`. You can find more information on Mozilla SOPS on their site. https://github.com/mozilla/sops
 :::
 

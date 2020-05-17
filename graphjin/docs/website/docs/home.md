@@ -1,12 +1,20 @@
 ---
 id: home
-title: Super Graph - Fetch data without code!
+title: Super Graph
 sidebar_label: Home
 ---
 
+import useBaseUrl from '@docusaurus/useBaseUrl'; // Add to the top of the file below the front matter.
+
+<img alt="Super Graph Logo" src={useBaseUrl('img/super-graph-logo.svg')} height="60" />;
+
+## Fetch data without code!
+
 ### Stop strugging with ORM's and complex SQL just to fetch the data you need. Instead try asking nicely with GraphQL.
 
-80% of all web app development is reading or writing to a database. 100x your productivity and save valuable time by making that super simple.
+:::info
+80% of all web app development is either reading from or writing to a database. 100x your developer productivity and save valuable time by making that super simple.
+:::
 
 ```graphql
 query {
