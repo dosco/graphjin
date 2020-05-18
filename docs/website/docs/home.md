@@ -1,20 +1,44 @@
 ---
 id: home
 title: Super Graph
+hide_title: true
 sidebar_label: Home
 ---
 
 import useBaseUrl from '@docusaurus/useBaseUrl'; // Add to the top of the file below the front matter.
 
-<img alt="Super Graph Logo" src={useBaseUrl('img/super-graph-logo.svg')} height="60" />;
+<div class="hero shadow--lw margin-bottom--lg">
+  <div class="container">
+    <div class="row">
+      <div class="col col--2">  
+        <img 
+          class="avatar__photo avatar__photo--xl"
+          alt="Super Graph Logo" 
+          src={useBaseUrl('img/super-graph-logo.svg')} 
+          height="70" 
+        />
+      </div>
+      <div class="col col--10"><h1 class="hero__title">Super Graph</h1></div>
+    </div>
+    <p class="hero__subtitle">Fetch data without code!</p>
+    <div class="margin-bottom--lg">
+      <a class="button button--secondary button--outline button--lg" href="start">
+        Skip Intro
+      </a>
+    </div>
+    <p>Stop fighting ORM's and complex SQL just to fetch the data you need. Instead try Super Graph it automagically tranforms GraphQL into efficient SQL.</p>
+  </div>
+</div>
 
-## Fetch data without code!
-
-### Stop strugging with ORM's and complex SQL just to fetch the data you need. Instead try asking nicely with GraphQL.
-
-:::info
+:::info cut development time
 80% of all web app development is either reading from or writing to a database. 100x your developer productivity and save valuable time by making that super simple.
 :::
+
+### Fetching data with GraphQL
+
+Just image the code or SQL you'll need to fetch this data, the user, all his posts, all the votes on the posts, the authors information and the related tags. Oh ya you also need efficient cursor based pagination. And Remember you also need to maintain this code forever.
+
+Instead just describe the data you need in GraphQL and give that to Super Graph it'll automatically learn your database and generate the most efficient SQL query fetching your data in the JSON structure you expected.
 
 ```graphql
 query {
@@ -45,7 +69,10 @@ query {
 }
 ```
 
-### Super Graph automatially compiles your GraphQL into an efficient SQL query giving you the results you wanted.
+### Instant results
+
+Here's the data Super Graph fetched using the GraphQL above it's even in the JSON structure you
+wanted it in. All this without you writing any code or SQL.
 
 ```json
 {
@@ -77,6 +104,8 @@ query {
           "created_at": "2020-05-13T13:51:21.729501+00:00"
         },
         ...
+      ],
+      "posts_cursor": "a8d4j2k9d83dy373hd2nskw2sjs8"
   }
 }
 ```
