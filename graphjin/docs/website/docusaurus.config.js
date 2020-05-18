@@ -3,7 +3,7 @@ module.exports = {
   tagline: "Fetch data without code",
   url: "https://supergraph.dev",
   baseUrl: "/",
-  favicon: "img/favicon.svg",
+  favicon: "img/super-graph-logo.svg",
   organizationName: "dosco", // Usually your GitHub org/user name.
   projectName: "super-graph", // Usually your repo name.
   themeConfig: {
@@ -11,7 +11,7 @@ module.exports = {
       title: "Super Graph",
       logo: {
         alt: "Super Graph Logo",
-        src: "img/favicon.png",
+        src: "img/super-graph-logo.svg",
       },
       links: [
         {
@@ -56,13 +56,13 @@ module.exports = {
           sidebarPath: require.resolve("./sidebars.js"),
           // Please change this to your repo.
           editUrl:
-            "https://github.com/facebook/docusaurus/edit/master/website/",
+            "https://github.com/dosco/super-graph/edit/master/docs/website",
         },
         blog: {
           showReadingTime: true,
           // Please change this to your repo.
           editUrl:
-            "https://github.com/facebook/docusaurus/edit/master/website/blog/",
+            "https://github.com/dosco/super-graph/edit/master/docs/website",
         },
         theme: {
           customCss: require.resolve("./src/css/custom.css"),
