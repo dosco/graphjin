@@ -61,6 +61,9 @@ type Config struct {
 	// Inflections is to add additionally singular to plural mappings
 	// to the engine (eg. sheep: sheep)
 	Inflections map[string]string `mapstructure:"inflections"`
+
+	// Database schema name. Defaults to 'public'
+	DBSchema string `mapstructure:"db_schema"`
 }
 
 // Table struct defines a database table

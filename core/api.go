@@ -210,3 +210,15 @@ func (sg *SuperGraph) GraphQL(c context.Context, query string, vars json.RawMess
 func (sg *SuperGraph) GraphQLSchema() (string, error) {
 	return sg.ge.Schema.String(), nil
 }
+
+// Operation function return the operation type from the query. It uses a very fast algorithm to
+// extract the operation without having to parse the query.
+func Operation(query string) OpType {
+	return OpType(qcode.GetQType(query))
+}
+
+// Name function return the operation name from the query. It uses a very fast algorithm to
+// extract the operation name without having to parse the query.
+func Name(query string) string {
+	return allow.QueryName(query)
+}

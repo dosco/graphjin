@@ -14,8 +14,10 @@ import (
 	"github.com/valyala/fasttemplate"
 )
 
+type OpType int
+
 const (
-	OpQuery int = iota
+	OpQuery OpType = iota
 	OpMutation
 )
 
@@ -56,14 +58,25 @@ type scontext struct {
 
 func (sg *SuperGraph) initCompilers() error {
 	var err error
+	var schema string
+
+	if sg.conf.DBSchema == "" {
+		schema = "public"
+	} else {
+		schema = sg.conf.DBSchema
+	}
 
 	// If sg.di is not null then it's probably set
 	// for tests
 	if sg.dbinfo == nil {
-		sg.dbinfo, err = psql.GetDBInfo(sg.db)
+		sg.dbinfo, err = psql.GetDBInfo(sg.db, schema)
 		if err != nil {
 			return err
 		}
+	}
+
+	if len(sg.dbinfo.Tables) == 0 {
+		return fmt.Errorf("no tables found in database (schema: %s)", schema)
 	}
 
 	if err = addTables(sg.conf, sg.dbinfo); err != nil {
@@ -334,7 +347,7 @@ func (c *scontext) executeRoleQuery(tx *sql.Tx) (string, error) {
 	return role, nil
 }
 
-func (r *Result) Operation() int {
+func (r *Result) Operation() OpType {
 	switch r.op {
 	case qcode.QTQuery:
 		return OpQuery

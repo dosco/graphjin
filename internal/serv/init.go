@@ -45,6 +45,16 @@ func initConf() (*Config, error) {
 		logLevel = LogLevelNone
 	}
 
+	// copy over db_schema from the core config
+	if c.DB.Schema == "" {
+		c.DB.Schema = c.DBSchema
+	}
+
+	// set default database schema
+	if c.DB.Schema == "" {
+		c.DB.Schema = "public"
+	}
+
 	// Auths: validate and sanitize
 	am := make(map[string]struct{})
 

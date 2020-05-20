@@ -17,7 +17,7 @@ type DBInfo struct {
 	colMap    map[string]map[string]*DBColumn
 }
 
-func GetDBInfo(db *sql.DB) (*DBInfo, error) {
+func GetDBInfo(db *sql.DB, schema string) (*DBInfo, error) {
 	di := &DBInfo{}
 	var version string
 
@@ -31,13 +31,13 @@ func GetDBInfo(db *sql.DB) (*DBInfo, error) {
 		return nil, err
 	}
 
-	di.Tables, err = GetTables(db)
+	di.Tables, err = GetTables(db, schema)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, t := range di.Tables {
-		cols, err := GetColumns(db, "public", t.Name)
+		cols, err := GetColumns(db, schema, t.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -47,7 +47,7 @@ func GetDBInfo(db *sql.DB) (*DBInfo, error) {
 
 	di.colMap = newColMap(di.Tables, di.Columns)
 
-	di.Functions, err = GetFunctions(db)
+	di.Functions, err = GetFunctions(db, schema)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +96,7 @@ type DBTable struct {
 	Type string
 }
 
-func GetTables(db *sql.DB) ([]DBTable, error) {
+func GetTables(db *sql.DB, schema string) ([]DBTable, error) {
 	sqlStmt := `
 SELECT
 	c.relname as "name",
@@ -108,14 +108,12 @@ SELECT
 FROM pg_catalog.pg_class c
 	LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
 WHERE c.relkind IN ('r','v','m','f','')
-	AND n.nspname <> ('pg_catalog')
-	AND n.nspname <> ('information_schema')
-	AND n.nspname !~ ('^pg_toast')
-AND pg_catalog.pg_table_is_visible(c.oid);`
+	AND n.nspname = $1
+	AND pg_catalog.pg_table_is_visible(c.oid);`
 
 	var tables []DBTable
 
-	rows, err := db.Query(sqlStmt)
+	rows, err := db.Query(sqlStmt, schema)
 	if err != nil {
 		return nil, fmt.Errorf("Error fetching tables: %s", err)
 	}
@@ -264,7 +262,7 @@ type DBFuncParam struct {
 	Type string
 }
 
-func GetFunctions(db *sql.DB) ([]DBFunction, error) {
+func GetFunctions(db *sql.DB, schema string) ([]DBFunction, error) {
 	sqlStmt := `
 SELECT 
 	routines.routine_name, 
@@ -278,11 +276,11 @@ RIGHT JOIN
 	information_schema.parameters 
 	ON (routines.specific_name = parameters.specific_name and parameters.ordinal_position IS NOT NULL)	
 WHERE 
-	routines.specific_schema = 'public'
+	routines.specific_schema = $1
 ORDER BY 
 	routines.routine_name, parameters.ordinal_position;`
 
-	rows, err := db.Query(sqlStmt)
+	rows, err := db.Query(sqlStmt, schema)
 	if err != nil {
 		return nil, fmt.Errorf("Error fetching functions: %s", err)
 	}
