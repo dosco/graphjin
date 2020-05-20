@@ -946,6 +946,9 @@ func newExp(st *util.Stack, node *Node, usePool bool) (*Exp, error) {
 		ex.Op = OpDistinct
 		ex.Val = node.Val
 	default:
+		if len(node.Children) == 0 {
+			return nil, fmt.Errorf("[Where] invalid operation: %s", name)
+		}
 		pushChildren(st, node.exp, node)
 		return nil, nil // skip node
 	}
@@ -965,8 +968,9 @@ func newExp(st *util.Stack, node *Node, usePool bool) (*Exp, error) {
 		case NodeVar:
 			ex.Type = ValVar
 		default:
-			return nil, fmt.Errorf("[Where] valid values include string, int, float, boolean and list: %s", node.Type)
+			return nil, fmt.Errorf("[Where] invalid values for: %s", name)
 		}
+
 		setWhereColName(ex, node)
 	}
 
@@ -1015,6 +1019,7 @@ func setWhereColName(ex *Exp, node *Node) {
 		ex.Col = list[listlen-1]
 		ex.NestedCols = list[:listlen]
 	}
+
 }
 
 func setOrderByColName(ob *OrderBy, node *Node) {
