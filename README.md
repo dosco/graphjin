@@ -7,7 +7,7 @@
 ![Docker build](https://img.shields.io/docker/cloud/build/dosco/super-graph.svg?style=flat-square)
 [![Discord Chat](https://img.shields.io/discord/628796009539043348.svg)](https://discord.gg/6pSWCTZ)
 
-Super Graph gives you a high performance GraphQL API without you having to write any code. GraphQL is automatically compiled efficient an SQL query. Use it either as a library or a standalone service.
+Super Graph gives you a high performance GraphQL API without you having to write any code. GraphQL is automagically compiled into an efficient SQL query. Use it either as a library or a standalone service.
 
 ## Using it as a service
 
