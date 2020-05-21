@@ -36,7 +36,7 @@ import useBaseUrl from '@docusaurus/useBaseUrl'; // Add to the top of the file b
 
 ### Fetching data with GraphQL
 
-Just image the code or SQL you'll need to fetch this data, the user, all his posts, all the votes on the posts, the authors information and the related tags. Oh ya you also need efficient cursor based pagination. And Remember you also need to maintain this code forever.
+Just imagine the code or SQL you'll need to fetch this data, the user, all his posts, all the votes on the posts, the authors information and the related tags. Oh yeah and you also need efficient cursor based pagination. And Remember you also need to maintain this code forever.
 
 Instead just describe the data you need in GraphQL and give that to Super Graph it'll automatically learn your database and generate the most efficient SQL query fetching your data in the JSON structure you expected.
 
@@ -71,7 +71,7 @@ query {
 
 ### Instant results
 
-Here's the data Super Graph fetched using the GraphQL above it's even in the JSON structure you
+Here's the data Super Graph fetched using the GraphQL above, it's even in the JSON structure you
 wanted it in. All this without you writing any code or SQL.
 
 ```json
