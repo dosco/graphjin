@@ -83,14 +83,14 @@ func (sg *SuperGraph) initConfig() error {
 	// Roles: validate and sanitize
 	c.RolesQuery = sanitizeVars(c.RolesQuery)
 
-	if len(c.RolesQuery) == 0 {
+	if c.RolesQuery == "" {
 		sg.log.Printf("WRN roles_query not defined: attribute based access control disabled")
 	}
 
 	_, userExists := sg.roles["user"]
 	_, sg.anonExists = sg.roles["anon"]
 
-	sg.abacEnabled = userExists && len(c.RolesQuery) != 0
+	sg.abacEnabled = userExists && c.RolesQuery != ""
 
 	return nil
 }
@@ -112,7 +112,7 @@ func getDBTableAliases(c *Config) map[string][]string {
 
 func addTables(c *Config, di *psql.DBInfo) error {
 	for _, t := range c.Tables {
-		if len(t.Table) == 0 || len(t.Columns) == 0 {
+		if t.Table == "" || len(t.Columns) == 0 {
 			continue
 		}
 		if err := addTable(di, t.Columns, t); err != nil {
@@ -163,7 +163,7 @@ func addTable(di *psql.DBInfo, cols []Column, t Table) error {
 func addForeignKeys(c *Config, di *psql.DBInfo) error {
 	for _, t := range c.Tables {
 		for _, c := range t.Columns {
-			if len(c.ForeignKey) == 0 {
+			if c.ForeignKey == "" {
 				continue
 			}
 			if err := addForeignKey(di, c, t); err != nil {
@@ -272,7 +272,7 @@ func addRole(qc *qcode.Compiler, r Role, t RoleTable) error {
 		Block:   blocked.update,
 	}
 
-	delete := qcode.DeleteConfig{
+	del := qcode.DeleteConfig{
 		Filters: t.Delete.Filters,
 		Columns: t.Delete.Columns,
 		Block:   blocked.delete,
@@ -283,7 +283,7 @@ func addRole(qc *qcode.Compiler, r Role, t RoleTable) error {
 		Query:    query,
 		Insert:   insert,
 		Update:   update,
-		Delete:   delete,
+		Delete:   del,
 	})
 }
 

@@ -1,6 +1,7 @@
 module github.com/dosco/super-graph
 
 require (
+	contrib.go.opencensus.io/integrations/ocsql v0.1.6
 	github.com/DATA-DOG/go-sqlmock v1.4.1
 	github.com/GeertJohan/go.rice v1.0.0
 	github.com/NYTimes/gziphandler v1.1.1
@@ -32,6 +33,7 @@ require (
 	github.com/spf13/viper v1.6.3
 	github.com/stretchr/testify v1.5.1
 	github.com/valyala/fasttemplate v1.1.0
+	go.opencensus.io v0.22.3 // indirect
 	go.uber.org/zap v1.14.1
 	golang.org/x/crypto v0.0.0-20200414173820-0848c9571904
 	golang.org/x/sys v0.0.0-20200413165638-669c56c373c4 // indirect
