@@ -16,41 +16,46 @@ type QueryConfig struct {
 	Filters          []string
 	Columns          []string
 	DisableFunctions bool
+	Block            bool
 }
 
 type InsertConfig struct {
 	Filters []string
 	Columns []string
 	Presets map[string]string
+	Block   bool
 }
 
 type UpdateConfig struct {
 	Filters []string
 	Columns []string
 	Presets map[string]string
+	Block   bool
 }
 
 type DeleteConfig struct {
 	Filters []string
 	Columns []string
+	Block   bool
 }
 
 type TRConfig struct {
-	Query  QueryConfig
-	Insert InsertConfig
-	Update UpdateConfig
-	Delete DeleteConfig
+	ReadOnly bool
+	Query    QueryConfig
+	Insert   InsertConfig
+	Update   UpdateConfig
+	Delete   DeleteConfig
 }
 
 type trval struct {
-	query struct {
+	readOnly bool
+	query    struct {
 		limit   string
 		fil     *Exp
 		filNU   bool
 		cols    map[string]struct{}
-		disable struct {
-			funcs bool
-		}
+		disable struct{ funcs bool }
+		block   bool
 	}
 
 	insert struct {
@@ -59,6 +64,7 @@ type trval struct {
 		cols   map[string]struct{}
 		psmap  map[string]string
 		pslist []string
+		block  bool
 	}
 
 	update struct {
@@ -67,12 +73,14 @@ type trval struct {
 		cols   map[string]struct{}
 		psmap  map[string]string
 		pslist []string
+		block  bool
 	}
 
 	delete struct {
 		fil   *Exp
 		filNU bool
 		cols  map[string]struct{}
+		block bool
 	}
 }
 

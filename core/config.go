@@ -106,7 +106,8 @@ type Role struct {
 
 // RoleTable struct contains role specific access control values for a database table
 type RoleTable struct {
-	Name string
+	Name     string
+	ReadOnly *bool `mapstructure:"read_only"`
 
 	Query  Query
 	Insert Insert
@@ -120,7 +121,7 @@ type Query struct {
 	Filters          []string
 	Columns          []string
 	DisableFunctions bool `mapstructure:"disable_functions"`
-	Block            bool
+	Block            *bool
 }
 
 // Insert struct contains access control values for insert operations
@@ -128,7 +129,7 @@ type Insert struct {
 	Filters []string
 	Columns []string
 	Presets map[string]string
-	Block   bool
+	Block   *bool
 }
 
 // Insert struct contains access control values for update operations
@@ -136,14 +137,14 @@ type Update struct {
 	Filters []string
 	Columns []string
 	Presets map[string]string
-	Block   bool
+	Block   *bool
 }
 
 // Delete struct contains access control values for delete operations
 type Delete struct {
 	Filters []string
 	Columns []string
-	Block   bool
+	Block   *bool
 }
 
 // ReadInConfig function reads in the config file for the environment specified in the GO_ENV
