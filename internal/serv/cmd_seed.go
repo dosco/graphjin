@@ -349,7 +349,6 @@ func setFakeFuncs(f *goja.Object) {
 	f.Set("credit_card", gofakeit.CreditCard)
 	f.Set("credit_card_cvv", gofakeit.CreditCardCvv)
 	f.Set("credit_card_number", gofakeit.CreditCardNumber)
-	f.Set("credit_card_number_luhn", gofakeit.CreditCardNumberLuhn)
 	f.Set("credit_card_type", gofakeit.CreditCardType)
 	f.Set("currency", gofakeit.Currency)
 	f.Set("currency_long", gofakeit.CurrencyLong)
@@ -368,7 +367,6 @@ func setFakeFuncs(f *goja.Object) {
 	// Hacker
 	f.Set("hacker_abbreviation", gofakeit.HackerAbbreviation)
 	f.Set("hacker_adjective", gofakeit.HackerAdjective)
-	f.Set("hacker_ingverb", gofakeit.HackerIngverb)
 	f.Set("hacker_noun", gofakeit.HackerNoun)
 	f.Set("hacker_phrase", gofakeit.HackerPhrase)
 	f.Set("hacker_verb", gofakeit.HackerVerb)
