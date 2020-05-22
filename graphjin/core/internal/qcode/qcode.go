@@ -207,7 +207,7 @@ func NewFilter() *Exp {
 
 func (com *Compiler) AddRole(role, table string, trc TRConfig) error {
 	var err error
-	trv := &trval{}
+	trv := &trval{readOnly: trc.ReadOnly}
 
 	// query config
 	trv.query.fil, trv.query.filNU, err = compileFilter(trc.Query.Filters)
@@ -219,6 +219,7 @@ func (com *Compiler) AddRole(role, table string, trc TRConfig) error {
 	}
 	trv.query.cols = listToMap(trc.Query.Columns)
 	trv.query.disable.funcs = trc.Query.DisableFunctions
+	trv.query.block = trc.Query.Block
 
 	// insert config
 	trv.insert.fil, trv.insert.filNU, err = compileFilter(trc.Insert.Filters)
@@ -228,6 +229,7 @@ func (com *Compiler) AddRole(role, table string, trc TRConfig) error {
 	trv.insert.cols = listToMap(trc.Insert.Columns)
 	trv.insert.psmap = parsePresets(trc.Insert.Presets)
 	trv.insert.pslist = mapToList(trv.insert.psmap)
+	trv.insert.block = trc.Insert.Block
 
 	// update config
 	trv.update.fil, trv.update.filNU, err = compileFilter(trc.Update.Filters)
@@ -237,6 +239,7 @@ func (com *Compiler) AddRole(role, table string, trc TRConfig) error {
 	trv.update.cols = listToMap(trc.Update.Columns)
 	trv.update.psmap = parsePresets(trc.Update.Presets)
 	trv.update.pslist = mapToList(trv.update.psmap)
+	trv.update.block = trc.Update.Block
 
 	// delete config
 	trv.delete.fil, trv.delete.filNU, err = compileFilter(trc.Delete.Filters)
@@ -244,6 +247,7 @@ func (com *Compiler) AddRole(role, table string, trc TRConfig) error {
 		return err
 	}
 	trv.delete.cols = listToMap(trc.Delete.Columns)
+	trv.delete.block = trc.Delete.Block
 
 	singular := flect.Singularize(table)
 	plural := flect.Pluralize(table)
@@ -329,6 +333,28 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 		}
 
 		trv := com.getRole(role, field.Name)
+
+		switch action {
+		case QTQuery:
+			if trv.query.block {
+				continue
+			}
+
+		case QTInsert:
+			if trv.insert.block || trv.readOnly {
+				return fmt.Errorf("insert blocked: %s", field.Name)
+			}
+
+		case QTUpdate:
+			if trv.update.block || trv.readOnly {
+				return fmt.Errorf("update blocked: %s", field.Name)
+			}
+
+		case QTDelete:
+			if trv.delete.block || trv.readOnly {
+				return fmt.Errorf("delete blocked: %s", field.Name)
+			}
+		}
 
 		selects = append(selects, Select{
 			ID:        id,

@@ -8,7 +8,7 @@ log_level: "debug"
 # enable or disable http compression (uses gzip)
 http_compress: true
 
-# When production mode is 'true' only queries 
+# When production mode is 'true' only queries
 # from the allow list are permitted.
 # When it's 'false' all queries are saved to the
 # the allow list in ./config/allow.list
@@ -32,13 +32,13 @@ reload_on_config_change: true
 # Path pointing to where the migrations can be found
 migrations_path: ./migrations
 
-# Secret key for general encryption operations like 
+# Secret key for general encryption operations like
 # encrypting the cursor data
 secret_key: supercalifajalistics
 
-# CORS: A list of origins a cross-domain request can be executed from. 
-# If the special * value is present in the list, all origins will be allowed. 
-# An origin may contain a wildcard (*) to replace 0 or more 
+# CORS: A list of origins a cross-domain request can be executed from.
+# If the special * value is present in the list, all origins will be allowed.
+# An origin may contain a wildcard (*) to replace 0 or more
 # characters (i.e.: http://*.domain.com).
 cors_allowed_origins: ["*"]
 
@@ -48,8 +48,8 @@ cors_debug: true
 # Default API path prefix is /api you can change it if you like
 # api_path: "/data"
 
-# Cache-Control header can help cache queries if your CDN supports cache-control 
-# on POST requests (does not work with not mutations) 
+# Cache-Control header can help cache queries if your CDN supports cache-control
+# on POST requests (does not work with not mutations)
 # cache_control: "public, max-age=300, s-maxage=600"
 
 # Postgres related environment Variables
@@ -74,7 +74,7 @@ auth:
   cookie: _app_session
 
   # Comment this out if you want to disable setting
-  # the user_id via a header for testing. 
+  # the user_id via a header for testing.
   # Disable in production
   creds_in_header: true
 
@@ -91,7 +91,6 @@ auth:
     # password: ""
     # max_idle: 80
     # max_active: 12000
-
     # In most cases you don't need these
     # salt: "encrypted cookie"
     # sign_salt: "signed encrypted cookie"
@@ -144,7 +143,7 @@ tables:
         url: http://rails_app:3000/stripe/$id
         path: data
         # debug: true
-        pass_headers: 
+        pass_headers:
           - cookie
         set_headers:
           - name: Host
@@ -165,7 +164,6 @@ tables:
       - name: email
         related_to: products.name
 
-
 roles_query: "SELECT * FROM users WHERE id = $user_id"
 
 roles:
@@ -174,12 +172,12 @@ roles:
       - name: products
         query:
           limit: 10
-          columns: ["id", "name", "description" ]
+          columns: ["id", "name", "description"]
           aggregation: false
 
         insert:
           block: false
-            
+
         update:
           block: false
 

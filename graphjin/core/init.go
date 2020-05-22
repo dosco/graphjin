@@ -216,53 +216,74 @@ func addRoles(c *Config, qc *qcode.Compiler) error {
 }
 
 func addRole(qc *qcode.Compiler, r Role, t RoleTable) error {
-	blockFilter := []string{"false"}
+	blocked := struct {
+		readOnly bool
+		query    bool
+		insert   bool
+		update   bool
+		delete   bool
+	}{true, true, true, true, true}
+
+	if r.Name == "anon" {
+		blocked.query = false
+	} else {
+		blocked.readOnly = false
+		blocked.query = false
+		blocked.insert = false
+		blocked.update = false
+		blocked.delete = false
+	}
+
+	if t.ReadOnly != nil {
+		blocked.readOnly = *t.ReadOnly
+	}
+	if t.Query.Block != nil {
+		blocked.query = *t.Query.Block
+	}
+	if t.Insert.Block != nil {
+		blocked.insert = *t.Insert.Block
+	}
+	if t.Update.Block != nil {
+		blocked.update = *t.Update.Block
+	}
+	if t.Delete.Block != nil {
+		blocked.delete = *t.Delete.Block
+	}
 
 	query := qcode.QueryConfig{
 		Limit:            t.Query.Limit,
 		Filters:          t.Query.Filters,
 		Columns:          t.Query.Columns,
 		DisableFunctions: t.Query.DisableFunctions,
-	}
-
-	if t.Query.Block {
-		query.Filters = blockFilter
+		Block:            blocked.query,
 	}
 
 	insert := qcode.InsertConfig{
 		Filters: t.Insert.Filters,
 		Columns: t.Insert.Columns,
 		Presets: t.Insert.Presets,
-	}
-
-	if t.Insert.Block {
-		insert.Filters = blockFilter
+		Block:   blocked.insert,
 	}
 
 	update := qcode.UpdateConfig{
 		Filters: t.Update.Filters,
 		Columns: t.Update.Columns,
 		Presets: t.Update.Presets,
-	}
-
-	if t.Update.Block {
-		update.Filters = blockFilter
+		Block:   blocked.update,
 	}
 
 	delete := qcode.DeleteConfig{
 		Filters: t.Delete.Filters,
 		Columns: t.Delete.Columns,
-	}
-
-	if t.Delete.Block {
-		delete.Filters = blockFilter
+		Block:   blocked.delete,
 	}
 
 	return qc.AddRole(r.Name, t.Name, qcode.TRConfig{
-		Query:  query,
-		Insert: insert,
-		Update: update,
-		Delete: delete,
+		ReadOnly: blocked.readOnly,
+		Query:    query,
+		Insert:   insert,
+		Update:   update,
+		Delete:   delete,
 	})
 }
 
