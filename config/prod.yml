@@ -12,7 +12,7 @@ log_level: "info"
 # enable or disable http compression (uses gzip)
 http_compress: true
 
-# When production mode is 'true' only queries 
+# When production mode is 'true' only queries
 # from the allow list are permitted.
 # When it's 'false' all queries are saved to the
 # the allow list in ./config/allow.list
@@ -32,7 +32,7 @@ enable_tracing: true
 # Path pointing to where the migrations can be found
 # migrations_path: ./migrations
 
-# Secret key for general encryption operations like 
+# Secret key for general encryption operations like
 # encrypting the cursor data
 # secret_key: supercalifajalistics
 
@@ -57,7 +57,7 @@ database:
   password: postgres
   #pool_size: 10
   #max_retries: 0
-  #log_level: "debug" 
+  #log_level: "debug"
 
   # Set session variable "user.id" to the user id
   # Enable this if you need the user id in triggers, etc
@@ -65,3 +65,7 @@ database:
 
   # database ping timeout is used for db health checking
   ping_timeout: 5m
+
+# open opencensus tracing and metrics
+telemetry:
+  enable: false

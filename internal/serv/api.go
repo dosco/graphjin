@@ -48,9 +48,15 @@ type Serv struct {
 	APIPath        string   `mapstructure:"api_path"`
 	CacheControl   string   `mapstructure:"cache_control"`
 
+	// Telemetry struct contains OpenCensus metrics and tracing related config
+	Telemetry struct {
+		Enable bool
+	}
+
 	Auth  auth.Auth
 	Auths []auth.Auth
 
+	// DB struct contains db config
 	DB struct {
 		Type        string
 		Host        string

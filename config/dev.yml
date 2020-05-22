@@ -68,6 +68,10 @@ cors_debug: true
 #   person: people
 #   sheep: sheep
 
+# open opencensus tracing and metrics
+telemetry:
+  enable: false
+
 auth:
   # Can be 'rails' or 'jwt'
   type: rails

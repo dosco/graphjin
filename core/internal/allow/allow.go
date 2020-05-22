@@ -40,7 +40,7 @@ type Config struct {
 func New(filename string, conf Config) (*List, error) {
 	al := List{}
 
-	if len(filename) != 0 {
+	if filename != "" {
 		fp := filename
 
 		if _, err := os.Stat(fp); err == nil {
@@ -50,7 +50,7 @@ func New(filename string, conf Config) (*List, error) {
 		}
 	}
 
-	if len(al.filepath) == 0 {
+	if al.filepath == "" {
 		fp := "./allow.list"
 
 		if _, err := os.Stat(fp); err == nil {
@@ -60,7 +60,7 @@ func New(filename string, conf Config) (*List, error) {
 		}
 	}
 
-	if len(al.filepath) == 0 {
+	if al.filepath == "" {
 		fp := "./config/allow.list"
 
 		if _, err := os.Stat(fp); err == nil {
@@ -70,12 +70,12 @@ func New(filename string, conf Config) (*List, error) {
 		}
 	}
 
-	if len(al.filepath) == 0 {
+	if al.filepath == "" {
 		if !conf.CreateIfNotExists {
 			return nil, errors.New("allow.list not found")
 		}
 
-		if len(filename) == 0 {
+		if filename == "" {
 			al.filepath = "./config/allow.list"
 		} else {
 			al.filepath = filename
@@ -112,7 +112,7 @@ func (al *List) Set(vars []byte, query, comment string) error {
 		return errors.New("allow.list is read-only")
 	}
 
-	if len(query) == 0 {
+	if query == "" {
 		return errors.New("empty query")
 	}
 
@@ -253,7 +253,7 @@ func (al *List) save(item Item) error {
 	item.Name = QueryName(query)
 	item.key = strings.ToLower(item.Name)
 
-	if len(item.Name) == 0 {
+	if item.Name == "" {
 		return nil
 	}
 
@@ -272,7 +272,7 @@ func (al *List) save(item Item) error {
 	}
 
 	if index != -1 {
-		if len(list[index].Comment) != 0 {
+		if list[index].Comment != "" {
 			item.Comment = list[index].Comment
 		}
 		list[index] = item
@@ -296,7 +296,7 @@ func (al *List) save(item Item) error {
 
 		i := 0
 		for _, c := range cmtLines {
-			if c = strings.TrimSpace(c); len(c) == 0 {
+			if c = strings.TrimSpace(c); c == "" {
 				continue
 			}
 

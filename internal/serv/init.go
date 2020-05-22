@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"contrib.go.opencensus.io/integrations/ocsql"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/stdlib"
 	//_ "github.com/jackc/pgx/v4/stdlib"
@@ -210,16 +211,39 @@ func initDB(c *Config, useDB bool) (*sql.DB, error) {
 	// 	config.MaxConns = conf.DB.PoolSize
 	// }
 
-	for i := 1; i < 10; i++ {
-		db = stdlib.OpenDB(*config)
-		if db == nil {
-			break
+	connString := stdlib.RegisterConnConfig(config)
+	driverName := "pgx"
+	// if db = stdlib.OpenDB(*config); db == nil {
+	// 	return errors.New("failed to open db")
+	// }
+
+	if conf.Telemetry.Enable {
+		driverName, err = ocsql.Register(driverName, ocsql.WithAllTraceOptions(), ocsql.WithInstanceName(conf.AppName))
+		if err != nil {
+			return nil, fmt.Errorf("unable to register ocsql driver: %v", err)
 		}
+
+		ocsql.RegisterAllViews()
+		//defer ocsql.RecordStats(db, 2*time.Second)()
+
+		log.Println("INF OpenCensus telemetry enabled")
+	}
+
+	for i := 1; i < 10; i++ {
+		db, err = sql.Open(driverName, connString)
+		if err != nil {
+			continue
+		}
+
 		time.Sleep(time.Duration(i*100) * time.Millisecond)
 	}
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unable to open db connection: %v", err)
+	}
+
+	if conf.Telemetry.Enable {
+		defer ocsql.RecordStats(db, 2*time.Second)()
 	}
 
 	return db, nil
