@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/chirino/graphql/schema"
 	"github.com/dosco/super-graph/jsn"
 )
 
@@ -140,6 +141,7 @@ func (al *List) Set(vars []byte, query, comment string) error {
 
 func (al *List) Load() ([]Item, error) {
 	var list []Item
+	varString := "variables"
 
 	b, err := ioutil.ReadFile(al.filepath)
 	if err != nil {
@@ -180,9 +182,9 @@ func (al *List) Load() ([]Item, error) {
 				s = e
 			}
 			ty = AL_QUERY
-		} else if matchPrefix(b, e, "variables") {
+		} else if matchPrefix(b, e, varString) {
 			if c == 0 {
-				s = e + len("variables") + 1
+				s = e + len(varString) + 1
 			}
 			ty = AL_VARS
 		} else if b[e] == '{' {
@@ -234,7 +236,21 @@ func (al *List) Load() ([]Item, error) {
 func (al *List) save(item Item) error {
 	var buf bytes.Buffer
 
-	item.Name = QueryName(item.Query)
+	qd := &schema.QueryDocument{}
+
+	if err := qd.Parse(item.Query); err != nil {
+		fmt.Println("##", item.Query)
+
+		return err
+	}
+
+	qd.WriteTo(&buf)
+	query := buf.String()
+	buf.Reset()
+
+	// fmt.Println(">", query)
+
+	item.Name = QueryName(query)
 	item.key = strings.ToLower(item.Name)
 
 	if len(item.Name) == 0 {
