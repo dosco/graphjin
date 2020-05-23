@@ -24,8 +24,10 @@ type Config struct {
 	Core `mapstructure:",squash"`
 	Serv `mapstructure:",squash"`
 
-	cpath string
-	vi    *viper.Viper
+	closeFn  func()
+	hostPort string
+	cpath    string
+	vi       *viper.Viper
 }
 
 // Serv struct contains config values used by the Super Graph service
@@ -50,7 +52,19 @@ type Serv struct {
 
 	// Telemetry struct contains OpenCensus metrics and tracing related config
 	Telemetry struct {
-		Enable bool
+		Debug   bool
+		Metrics struct {
+			Exporter  string
+			Endpoint  string
+			Namespace string
+			Key       string
+		}
+
+		Tracing struct {
+			Exporter string
+			Endpoint string
+			Sample   string
+		}
 	}
 
 	Auth  auth.Auth

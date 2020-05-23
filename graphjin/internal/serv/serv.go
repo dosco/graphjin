@@ -37,7 +37,6 @@ func initWatcher() {
 }
 
 func startHTTP() {
-	var hostPort string
 	var appName string
 
 	defaultHP := "0.0.0.0:8080"
@@ -56,12 +55,12 @@ func startHTTP() {
 				hp[1] = conf.Port
 			}
 
-			hostPort = fmt.Sprintf("%s:%s", hp[0], hp[1])
+			conf.hostPort = fmt.Sprintf("%s:%s", hp[0], hp[1])
 		}
 	}
 
-	if len(hostPort) == 0 {
-		hostPort = defaultHP
+	if len(conf.hostPort) == 0 {
+		conf.hostPort = defaultHP
 	}
 
 	routes, err := routeHandler()
@@ -70,7 +69,7 @@ func startHTTP() {
 	}
 
 	srv := &http.Server{
-		Addr:           hostPort,
+		Addr:           conf.hostPort,
 		Handler:        routes,
 		ReadTimeout:    5 * time.Second,
 		WriteTimeout:   10 * time.Second,
@@ -90,13 +89,15 @@ func startHTTP() {
 	}()
 
 	srv.RegisterOnShutdown(func() {
+		if conf.closeFn != nil {
+			conf.closeFn()
+		}
 		db.Close()
+		log.Fatalln("INF shutdown complete")
 	})
 
-	log.Printf("INF version: %s, git-branch: %s, host-port: %s, app-name: %s, env: %s\n",
-		version, gitBranch, hostPort, appName, env)
-
-	log.Printf("INF %s started\n", serverName)
+	log.Printf("INF Super Graph started, version: %s, git-branch: %s, host-port: %s, app-name: %s, env: %s\n",
+		version, gitBranch, conf.hostPort, appName, env)
 
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		log.Fatalln("INF server closed")
@@ -106,6 +107,7 @@ func startHTTP() {
 }
 
 func routeHandler() (http.Handler, error) {
+	var err error
 	mux := http.NewServeMux()
 
 	if conf == nil {
@@ -140,6 +142,13 @@ func routeHandler() (http.Handler, error) {
 
 	for k, v := range routes {
 		mux.Handle(k, v)
+	}
+
+	if conf.telemetryEnabled() {
+		conf.closeFn, err = enableObservability(mux)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	fn := func(w http.ResponseWriter, r *http.Request) {

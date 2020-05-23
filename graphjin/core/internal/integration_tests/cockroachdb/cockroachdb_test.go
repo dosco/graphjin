@@ -17,7 +17,6 @@ import (
 )
 
 func TestCockroachDB(t *testing.T) {
-
 	dir, err := ioutil.TempDir("", "temp-cockraochdb-")
 	if err != nil {
 		log.Fatal(err)
@@ -33,6 +32,7 @@ func TestCockroachDB(t *testing.T) {
 	err = cmd.Start()
 	if err != nil {
 		t.Skip("is CockroachDB installed?: " + err.Error())
+		return
 	}
 	fmt.Println("started temporary cockroach db")
 

@@ -69,8 +69,14 @@ cors_debug: true
 #   sheep: sheep
 
 # open opencensus tracing and metrics
-telemetry:
-  enable: false
+# telemetry:
+#   debug: true
+#   metrics:
+#     exporter: "prometheus"
+#   tracing:
+#     exporter: "zipkin"
+#     endpoint: "http://zipkin:9411/api/v2/spans"
+#     sample: 0.2
 
 auth:
   # Can be 'rails' or 'jwt'

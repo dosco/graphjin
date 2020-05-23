@@ -207,7 +207,7 @@ func NewFilter() *Exp {
 
 func (com *Compiler) AddRole(role, table string, trc TRConfig) error {
 	var err error
-	trv := &trval{readOnly: trc.ReadOnly}
+	trv := &trval{}
 
 	// query config
 	trv.query.fil, trv.query.filNU, err = compileFilter(trc.Query.Filters)
@@ -341,17 +341,17 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 			}
 
 		case QTInsert:
-			if trv.insert.block || trv.readOnly {
+			if trv.insert.block {
 				return fmt.Errorf("insert blocked: %s", field.Name)
 			}
 
 		case QTUpdate:
-			if trv.update.block || trv.readOnly {
+			if trv.update.block {
 				return fmt.Errorf("update blocked: %s", field.Name)
 			}
 
 		case QTDelete:
-			if trv.delete.block || trv.readOnly {
+			if trv.delete.block {
 				return fmt.Errorf("delete blocked: %s", field.Name)
 			}
 		}
