@@ -114,7 +114,7 @@ func initConf() (*Config, error) {
 	return c, nil
 }
 
-func initDB(c *Config, useDB bool, useTelemetry bool) (*sql.DB, error) {
+func initDB(c *Config, useDB, useTelemetry bool) (*sql.DB, error) {
 	var db *sql.DB
 	var err error
 
