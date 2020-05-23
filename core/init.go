@@ -216,27 +216,23 @@ func addRoles(c *Config, qc *qcode.Compiler) error {
 }
 
 func addRole(qc *qcode.Compiler, r Role, t RoleTable) error {
-	blocked := struct {
-		readOnly bool
-		query    bool
-		insert   bool
-		update   bool
-		delete   bool
-	}{true, true, true, true, true}
+	ro := true // read-only
 
-	if r.Name == "anon" {
-		blocked.query = false
-	} else {
-		blocked.readOnly = false
-		blocked.query = false
-		blocked.insert = false
-		blocked.update = false
-		blocked.delete = false
+	if r.Name != "anon" {
+		ro = false
 	}
 
 	if t.ReadOnly != nil {
-		blocked.readOnly = *t.ReadOnly
+		ro = *t.ReadOnly
 	}
+
+	blocked := struct {
+		query  bool
+		insert bool
+		update bool
+		delete bool
+	}{false, ro, ro, ro}
+
 	if t.Query.Block != nil {
 		blocked.query = *t.Query.Block
 	}
@@ -279,11 +275,10 @@ func addRole(qc *qcode.Compiler, r Role, t RoleTable) error {
 	}
 
 	return qc.AddRole(r.Name, t.Name, qcode.TRConfig{
-		ReadOnly: blocked.readOnly,
-		Query:    query,
-		Insert:   insert,
-		Update:   update,
-		Delete:   del,
+		Query:  query,
+		Insert: insert,
+		Update: update,
+		Delete: del,
 	})
 }
 

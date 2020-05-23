@@ -55,13 +55,15 @@ func TestSuperGraph(t *testing.T, db *sql.DB, before func(t *testing.T)) {
 	config.AllowListFile = "./allow.list"
 	config.RolesQuery = `SELECT * FROM users WHERE id = $user_id`
 
+	blockFalse := false
+
 	config.Roles = []core.Role{
 		core.Role{
 			Name: "anon",
 			Tables: []core.RoleTable{
-				core.RoleTable{Name: "users", Query: core.Query{Limit: 100}},
-				core.RoleTable{Name: "product", Query: core.Query{Limit: 100}},
-				core.RoleTable{Name: "line_item", Query: core.Query{Limit: 100}},
+				core.RoleTable{Name: "users", ReadOnly: &blockFalse, Query: core.Query{Limit: 100}},
+				core.RoleTable{Name: "product", ReadOnly: &blockFalse, Query: core.Query{Limit: 100}},
+				core.RoleTable{Name: "line_item", ReadOnly: &blockFalse, Query: core.Query{Limit: 100}},
 			},
 		},
 	}

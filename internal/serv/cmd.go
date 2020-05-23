@@ -19,8 +19,8 @@ const (
 
 var (
 	// These variables are set using -ldflags
-	version        string
-	gitBranch      string
+	version        string = "unknown"
+	gitBranch      string = "unknown"
 	lastCommitSHA  string
 	lastCommitTime string
 )

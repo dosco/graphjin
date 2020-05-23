@@ -1,6 +1,10 @@
 module github.com/dosco/super-graph
 
 require (
+	contrib.go.opencensus.io/exporter/aws v0.0.0-20190807220307-c50fb1bd7f21
+	contrib.go.opencensus.io/exporter/prometheus v0.1.0
+	contrib.go.opencensus.io/exporter/stackdriver v0.13.1
+	contrib.go.opencensus.io/exporter/zipkin v0.1.1
 	contrib.go.opencensus.io/integrations/ocsql v0.1.6
 	github.com/DATA-DOG/go-sqlmock v1.4.1
 	github.com/GeertJohan/go.rice v1.0.0
@@ -22,6 +26,7 @@ require (
 	github.com/jackc/pgtype v1.3.0
 	github.com/jackc/pgx/v4 v4.6.0
 	github.com/mitchellh/mapstructure v1.2.2 // indirect
+	github.com/openzipkin/zipkin-go v0.2.2
 	github.com/pelletier/go-toml v1.7.0 // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/rs/cors v1.7.0
@@ -33,7 +38,7 @@ require (
 	github.com/spf13/viper v1.6.3
 	github.com/stretchr/testify v1.5.1
 	github.com/valyala/fasttemplate v1.1.0
-	go.opencensus.io v0.22.3 // indirect
+	go.opencensus.io v0.22.3
 	go.uber.org/zap v1.14.1
 	golang.org/x/crypto v0.0.0-20200414173820-0848c9571904
 	golang.org/x/sys v0.0.0-20200413165638-669c56c373c4 // indirect

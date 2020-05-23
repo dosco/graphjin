@@ -3,6 +3,8 @@ package serv
 import (
 	"strings"
 	"testing"
+
+	"github.com/brianvoe/gofakeit/v5"
 )
 
 func TestGQLHash1(t *testing.T) {
@@ -228,4 +230,8 @@ func TestGQLHashWithVars2(t *testing.T) {
 	if strings.Compare(h1, h2) != 0 {
 		t.Fatal("Hashes don't match they should")
 	}
+}
+
+func TestGoFake(t *testing.T) {
+	gofakeit.Person()
 }

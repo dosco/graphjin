@@ -40,11 +40,10 @@ type DeleteConfig struct {
 }
 
 type TRConfig struct {
-	ReadOnly bool
-	Query    QueryConfig
-	Insert   InsertConfig
-	Update   UpdateConfig
-	Delete   DeleteConfig
+	Query  QueryConfig
+	Insert InsertConfig
+	Update UpdateConfig
+	Delete DeleteConfig
 }
 
 type trval struct {

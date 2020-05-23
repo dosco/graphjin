@@ -217,7 +217,7 @@ func initDB(c *Config, useDB bool) (*sql.DB, error) {
 	// 	return errors.New("failed to open db")
 	// }
 
-	if conf.Telemetry.Enable {
+	if conf.telemetryEnabled() {
 		driverName, err = ocsql.Register(driverName, ocsql.WithAllTraceOptions(), ocsql.WithInstanceName(conf.AppName))
 		if err != nil {
 			return nil, fmt.Errorf("unable to register ocsql driver: %v", err)
@@ -242,7 +242,7 @@ func initDB(c *Config, useDB bool) (*sql.DB, error) {
 		return nil, fmt.Errorf("unable to open db connection: %v", err)
 	}
 
-	if conf.Telemetry.Enable {
+	if conf.telemetryEnabled() {
 		defer ocsql.RecordStats(db, 2*time.Second)()
 	}
 

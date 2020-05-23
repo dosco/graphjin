@@ -68,6 +68,16 @@ reload_on_config_change: false
 # SG_AUTH_RAILS_REDIS_PASSWORD
 # SG_AUTH_JWT_PUBLIC_KEY_FILE
 
+# open opencensus tracing and metrics
+# telemetry:
+#   debug: false
+#   metrics:
+#     exporter: "prometheus"
+#   tracing:
+#     exporter: "zipkin"
+#     endpoint: "http://zipkin:9411/api/v2/spans"
+#     sample: 0.6
+
 database:
   type: postgres
   host: db

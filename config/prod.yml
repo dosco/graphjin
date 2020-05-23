@@ -65,7 +65,12 @@ database:
 
   # database ping timeout is used for db health checking
   ping_timeout: 5m
-
 # open opencensus tracing and metrics
-telemetry:
-  enable: false
+# telemetry:
+#   debug: false
+#   metrics:
+#     exporter: "prometheus"
+#   tracing:
+#     exporter: "zipkin"
+#     endpoint: "http://zipkin:9411/api/v2/spans"
+#     sample: 0.6

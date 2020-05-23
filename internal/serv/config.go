@@ -111,6 +111,10 @@ func GetConfigName() string {
 	return ge
 }
 
+func (c *Config) telemetryEnabled() bool {
+	return c.Telemetry.Metrics.Exporter != "" || c.Telemetry.Tracing.Exporter != ""
+}
+
 func (c *Config) relPath(p string) string {
 	if filepath.IsAbs(p) {
 		return p
