@@ -52,8 +52,9 @@ type Serv struct {
 
 	// Telemetry struct contains OpenCensus metrics and tracing related config
 	Telemetry struct {
-		Debug   bool
-		Metrics struct {
+		Debug    bool
+		Interval *time.Duration
+		Metrics  struct {
 			Exporter  string
 			Endpoint  string
 			Namespace string

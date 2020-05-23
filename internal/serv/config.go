@@ -112,7 +112,7 @@ func GetConfigName() string {
 }
 
 func (c *Config) telemetryEnabled() bool {
-	return c.Telemetry.Metrics.Exporter != "" || c.Telemetry.Tracing.Exporter != ""
+	return c.Telemetry.Debug || c.Telemetry.Metrics.Exporter != "" || c.Telemetry.Tracing.Exporter != ""
 }
 
 func (c *Config) relPath(p string) string {

@@ -93,8 +93,7 @@ func (sg *SuperGraph) initCompilers() error {
 	}
 
 	sg.qc, err = qcode.NewCompiler(qcode.Config{
-		DefaultBlock: sg.conf.DefaultBlock,
-		Blocklist:    sg.conf.Blocklist,
+		Blocklist: sg.conf.Blocklist,
 	})
 	if err != nil {
 		return err

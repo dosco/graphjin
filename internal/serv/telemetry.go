@@ -57,7 +57,7 @@ func enableObservability(mux *http.ServeMux) (func(), error) {
 		}
 
 	case "":
-		log.Println("INF No OpenCensus metrics exporter initialized")
+		log.Println("WRN OpenCensus: no metrics exporter defined")
 
 	default:
 		err = fmt.Errorf("invalid metrics exporter")
@@ -96,7 +96,7 @@ func enableObservability(mux *http.ServeMux) (func(), error) {
 		tex = zipkin.NewExporter(re, lep)
 
 	case "":
-		log.Println("INF No OpenCensus tracing exporter initialized")
+		log.Println("WRN OpenCensus: no traceing exporter defined")
 
 	default:
 		err = fmt.Errorf("invalid tracing exporter")

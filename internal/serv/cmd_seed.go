@@ -26,10 +26,9 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 	if conf, err = initConf(); err != nil {
 		log.Fatalf("ERR failed to read config: %s", err)
 	}
-
 	conf.Production = false
 
-	db, err = initDB(conf, true)
+	db, err = initDB(conf, true, false)
 	if err != nil {
 		log.Fatalf("ERR failed to connect to database: %s", err)
 	}
@@ -80,6 +79,8 @@ func graphQLFunc(sg *core.SuperGraph, query string, data interface{}, opt map[st
 
 	if v, ok := opt["user_id"]; ok && len(v) != 0 {
 		ct = context.WithValue(ct, core.UserIDKey, v)
+	} else {
+		ct = context.WithValue(ct, core.UserIDKey, "-1")
 	}
 
 	// var role string
