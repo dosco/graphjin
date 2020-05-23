@@ -70,8 +70,8 @@ func (sg *SuperGraph) initConfig() error {
 		sg.roles["user"] = &ur
 	}
 
-	// If anon role is not defined and DefaultBlock is not then then create it
-	if _, ok := sg.roles["anon"]; !ok && !c.DefaultBlock {
+	// If anon role is not defined then create it
+	if _, ok := sg.roles["anon"]; !ok {
 		ur := Role{
 			Name: "anon",
 			tm:   make(map[string]*RoleTable),
@@ -206,7 +206,7 @@ func addForeignKey(di *psql.DBInfo, c Column, t Table) error {
 func addRoles(c *Config, qc *qcode.Compiler) error {
 	for _, r := range c.Roles {
 		for _, t := range r.Tables {
-			if err := addRole(qc, r, t); err != nil {
+			if err := addRole(qc, r, t, c.DefaultAllow); err != nil {
 				return err
 			}
 		}
@@ -215,8 +215,12 @@ func addRoles(c *Config, qc *qcode.Compiler) error {
 	return nil
 }
 
-func addRole(qc *qcode.Compiler, r Role, t RoleTable) error {
+func addRole(qc *qcode.Compiler, r Role, t RoleTable, defaultAllow bool) error {
 	ro := true // read-only
+
+	if defaultAllow {
+		ro = false
+	}
 
 	if r.Name != "anon" {
 		ro = false

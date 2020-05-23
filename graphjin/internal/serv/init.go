@@ -111,13 +111,10 @@ func initConf() (*Config, error) {
 		c.UseAllowList = true
 	}
 
-	// In anon role block all tables that are not defined in the role
-	c.DefaultBlock = true
-
 	return c, nil
 }
 
-func initDB(c *Config, useDB bool) (*sql.DB, error) {
+func initDB(c *Config, useDB bool, useTelemetry bool) (*sql.DB, error) {
 	var db *sql.DB
 	var err error
 
@@ -217,14 +214,22 @@ func initDB(c *Config, useDB bool) (*sql.DB, error) {
 	// 	return errors.New("failed to open db")
 	// }
 
-	if conf.telemetryEnabled() {
+	if useTelemetry && conf.telemetryEnabled() {
 		driverName, err = ocsql.Register(driverName, ocsql.WithAllTraceOptions(), ocsql.WithInstanceName(conf.AppName))
 		if err != nil {
 			return nil, fmt.Errorf("unable to register ocsql driver: %v", err)
 		}
-
 		ocsql.RegisterAllViews()
-		//defer ocsql.RecordStats(db, 2*time.Second)()
+
+		var interval time.Duration
+
+		if conf.Telemetry.Interval != nil {
+			interval = *conf.Telemetry.Interval
+		} else {
+			interval = 5 * time.Second
+		}
+
+		defer ocsql.RecordStats(db, interval)()
 
 		log.Println("INF OpenCensus telemetry enabled")
 	}
@@ -240,10 +245,6 @@ func initDB(c *Config, useDB bool) (*sql.DB, error) {
 
 	if err != nil {
 		return nil, fmt.Errorf("unable to open db connection: %v", err)
-	}
-
-	if conf.telemetryEnabled() {
-		defer ocsql.RecordStats(db, 2*time.Second)()
 	}
 
 	return db, nil

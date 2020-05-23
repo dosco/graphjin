@@ -30,11 +30,12 @@ type Config struct {
 	// or other database functions
 	SetUserID bool `mapstructure:"set_user_id"`
 
-	// DefaultBlock ensures only tables configured under the `anon` role
-	// config can be queries if the `anon` role. For example if the table
-	// `users` is not listed under the anon role then it will be filtered
-	// out of any unauthenticated queries that mention it.
-	DefaultBlock bool `mapstructure:"default_block"`
+	// DefaultAllow reverses the blocked by default behaviour for queries in
+	// anonymous mode. (anon role)
+	// For example if the table `users` is not listed under the anon role then
+	// access to it would by default for unauthenticated queries this reverses
+	// this behavior (!!! Use with caution !!!!)
+	DefaultAllow bool `mapstructure:"default_allow"`
 
 	// Vars is a map of hardcoded variables that can be leveraged in your
 	// queries (eg variable admin_id will be $admin_id in the query)

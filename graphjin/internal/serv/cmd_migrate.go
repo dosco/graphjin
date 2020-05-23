@@ -55,7 +55,7 @@ func cmdDBReset(cmd *cobra.Command, args []string) {
 func cmdDBCreate(cmd *cobra.Command, args []string) {
 	initConfOnce()
 
-	db, err := initDB(conf, false)
+	db, err := initDB(conf, false, false)
 	if err != nil {
 		log.Fatalf("ERR failed to connect to database: %s", err)
 	}
@@ -74,7 +74,7 @@ func cmdDBCreate(cmd *cobra.Command, args []string) {
 func cmdDBDrop(cmd *cobra.Command, args []string) {
 	initConfOnce()
 
-	db, err := initDB(conf, false)
+	db, err := initDB(conf, false, false)
 	if err != nil {
 		log.Fatalf("ERR failed to connect to database: %s", err)
 	}
@@ -132,7 +132,7 @@ func cmdDBMigrate(cmd *cobra.Command, args []string) {
 	initConfOnce()
 	dest := args[0]
 
-	conn, err := initDB(conf, true)
+	conn, err := initDB(conf, true, false)
 	if err != nil {
 		log.Fatalf("ERR failed to connect to database: %s", err)
 	}
@@ -224,7 +224,7 @@ func cmdDBMigrate(cmd *cobra.Command, args []string) {
 func cmdDBStatus(cmd *cobra.Command, args []string) {
 	initConfOnce()
 
-	db, err := initDB(conf, true)
+	db, err := initDB(conf, true, false)
 	if err != nil {
 		log.Fatalf("ERR failed to connect to database: %s", err)
 	}

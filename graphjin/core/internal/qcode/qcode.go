@@ -180,7 +180,7 @@ var expPool = sync.Pool{
 }
 
 func NewCompiler(c Config) (*Compiler, error) {
-	co := &Compiler{db: c.DefaultBlock}
+	co := &Compiler{}
 	co.tr = make(map[string]map[string]*trval)
 	co.bl = make(map[string]struct{}, len(c.Blocklist))
 
