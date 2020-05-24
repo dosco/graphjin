@@ -344,17 +344,17 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 
 			case QTInsert:
 				if trv.insert.block {
-					return fmt.Errorf("insert blocked: %s", field.Name)
+					return fmt.Errorf("%s, insert blocked: %s", role, field.Name)
 				}
 
 			case QTUpdate:
 				if trv.update.block {
-					return fmt.Errorf("update blocked: %s", field.Name)
+					return fmt.Errorf("%s, update blocked: %s", role, field.Name)
 				}
 
 			case QTDelete:
 				if trv.delete.block {
-					return fmt.Errorf("delete blocked: %s", field.Name)
+					return fmt.Errorf("%s, delete blocked: %s", role, field.Name)
 				}
 			}
 
@@ -1030,10 +1030,15 @@ func setListVal(ex *Exp, node *Node) {
 		case NodeFloat:
 			ex.ListType = ValFloat
 		}
+	} else {
+		ex.Val = node.Val
+		return
 	}
+
 	for i := range node.Children {
 		ex.ListVal = append(ex.ListVal, node.Children[i].Val)
 	}
+
 }
 
 func setWhereColName(ex *Exp, node *Node) {

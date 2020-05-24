@@ -1027,9 +1027,9 @@ func (c *compilerContext) renderOp(ex *qcode.Exp, ti *DBTableInfo) error {
 	case qcode.OpLesserThan:
 		io.WriteString(c.w, `<`)
 	case qcode.OpIn:
-		io.WriteString(c.w, `IN`)
+		io.WriteString(c.w, `= ANY`)
 	case qcode.OpNotIn:
-		io.WriteString(c.w, `NOT IN`)
+		io.WriteString(c.w, `!= ANY`)
 	case qcode.OpLike:
 		io.WriteString(c.w, `LIKE`)
 	case qcode.OpNotLike:
@@ -1175,6 +1175,16 @@ func (c *compilerContext) renderVal(ex *qcode.Exp, vars map[string]string, col *
 			io.WriteString(c.w, `)`)
 		case ok:
 			squoted(c.w, val)
+		case ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn:
+			io.WriteString(c.w, ` (string_to_array('{{`)
+			io.WriteString(c.w, ex.Val)
+			io.WriteString(c.w, `}}', ',')`)
+
+			io.WriteString(c.w, ` :: `)
+			io.WriteString(c.w, col.Type)
+			io.WriteString(c.w, `[])`)
+			return
+
 		default:
 			io.WriteString(c.w, ` '{{`)
 			io.WriteString(c.w, ex.Val)
