@@ -10,7 +10,7 @@ You can then add your database schema to the migrations, maybe create some seed 
 
 ```bash
 # Download and install Super Graph. You will need Go 1.14 or above
-go get https://github.com/dosco/super-graph
+go get github.com/dosco/super-graph
 ```
 
 And then create and launch your new app
