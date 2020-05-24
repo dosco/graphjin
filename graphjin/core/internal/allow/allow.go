@@ -239,16 +239,12 @@ func (al *List) save(item Item) error {
 	qd := &schema.QueryDocument{}
 
 	if err := qd.Parse(item.Query); err != nil {
-		fmt.Println("##", item.Query)
-
 		return err
 	}
 
 	qd.WriteTo(&buf)
 	query := buf.String()
 	buf.Reset()
-
-	// fmt.Println(">", query)
 
 	item.Name = QueryName(query)
 	item.key = strings.ToLower(item.Name)

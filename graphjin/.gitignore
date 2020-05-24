@@ -38,4 +38,5 @@ release
 .gofuzz
 *-fuzz.zip
 *.test
+.firebase
 

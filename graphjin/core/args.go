@@ -41,6 +41,10 @@ func (c *scontext) argMap() func(w io.Writer, tag string) (int, error) {
 		}
 		v := fields[0].Value
 
+		if isJsonScalarArray(v) {
+			return w.Write(jsonListToValues(v))
+		}
+
 		// Open and close quotes
 		if len(v) >= 2 && v[0] == '"' && v[len(v)-1] == '"' {
 			fields[0].Value = v[1 : len(v)-1]
@@ -118,13 +122,17 @@ func (c *scontext) argList(args [][]byte) ([]interface{}, error) {
 			if v, ok := fields[string(av)]; ok {
 				switch v[0] {
 				case '[', '{':
-					vars[i] = v
+					if isJsonScalarArray(v) {
+						vars[i] = jsonListToValues(v)
+					} else {
+						vars[i] = v
+					}
+
 				default:
 					var val interface{}
 					if err := json.Unmarshal(v, &val); err != nil {
 						return nil, err
 					}
-
 					vars[i] = val
 				}
 
@@ -161,6 +169,38 @@ func escSQuote(b []byte) []byte {
 		buf.Write(b[s:l])
 	}
 	return buf.Bytes()
+}
+
+func isJsonScalarArray(b []byte) bool {
+	if b[0] != '[' || b[len(b)-1] != ']' {
+		return false
+	}
+	for i := range b {
+		switch b[i] {
+		case '{':
+			return false
+		case '[', ' ', '\t', '\n':
+			continue
+		default:
+			return true
+		}
+	}
+	return true
+}
+
+func jsonListToValues(b []byte) []byte {
+	s := 0
+	for i := 1; i < len(b)-1; i++ {
+		if b[i] == '"' && s%2 == 0 {
+			b[i] = '\''
+		}
+		if b[i] == '\\' {
+			s++
+		} else {
+			s = 0
+		}
+	}
+	return b[1 : len(b)-1]
 }
 
 func argErr(name string) error {
