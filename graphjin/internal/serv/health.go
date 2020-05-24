@@ -7,8 +7,8 @@ import (
 
 var healthyResponse = []byte("All's Well")
 
-func health(w http.ResponseWriter, _ *http.Request) {
-	ct, cancel := context.WithTimeout(context.Background(), conf.DB.PingTimeout)
+func health(w http.ResponseWriter, r *http.Request) {
+	ct, cancel := context.WithTimeout(r.Context(), conf.DB.PingTimeout)
 	defer cancel()
 
 	if err := db.PingContext(ct); err != nil {
