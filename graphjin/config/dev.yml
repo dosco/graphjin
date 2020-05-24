@@ -77,6 +77,8 @@ cors_debug: true
 #     exporter: "zipkin"
 #     endpoint: "http://zipkin:9411/api/v2/spans"
 #     sample: 0.2
+#     include_query: false
+#     include_params: false
 
 auth:
   # Can be 'rails' or 'jwt'

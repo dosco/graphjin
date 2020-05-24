@@ -333,57 +333,80 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 		}
 
 		trv := com.getRole(role, field.Name)
+		skipRender := false
 
-		switch action {
-		case QTQuery:
-			if trv.query.block {
-				continue
+		if trv != nil {
+			switch action {
+			case QTQuery:
+				if trv.query.block {
+					skipRender = true
+				}
+
+			case QTInsert:
+				if trv.insert.block {
+					return fmt.Errorf("insert blocked: %s", field.Name)
+				}
+
+			case QTUpdate:
+				if trv.update.block {
+					return fmt.Errorf("update blocked: %s", field.Name)
+				}
+
+			case QTDelete:
+				if trv.delete.block {
+					return fmt.Errorf("delete blocked: %s", field.Name)
+				}
 			}
 
-		case QTInsert:
-			if trv.insert.block {
-				return fmt.Errorf("insert blocked: %s", field.Name)
-			}
-
-		case QTUpdate:
-			if trv.update.block {
-				return fmt.Errorf("update blocked: %s", field.Name)
-			}
-
-		case QTDelete:
-			if trv.delete.block {
-				return fmt.Errorf("delete blocked: %s", field.Name)
-			}
+		} else if role == "anon" {
+			skipRender = true
 		}
 
 		selects = append(selects, Select{
-			ID:        id,
-			ParentID:  parentID,
-			Name:      field.Name,
-			Children:  make([]int32, 0, 5),
-			Allowed:   trv.allowedColumns(action),
-			Functions: true,
+			ID:         id,
+			ParentID:   parentID,
+			Name:       field.Name,
+			SkipRender: skipRender,
 		})
 		s := &selects[(len(selects) - 1)]
-
-		switch action {
-		case QTQuery:
-			s.Functions = !trv.query.disable.funcs
-			s.Paging.Limit = trv.query.limit
-
-		case QTInsert:
-			s.PresetMap = trv.insert.psmap
-			s.PresetList = trv.insert.pslist
-
-		case QTUpdate:
-			s.PresetMap = trv.update.psmap
-			s.PresetList = trv.update.pslist
-		}
 
 		if len(field.Alias) != 0 {
 			s.FieldName = field.Alias
 		} else {
 			s.FieldName = s.Name
+		}
+
+		if s.ParentID == -1 {
+			qc.Roots = append(qc.Roots, s.ID)
+		} else {
+			p := &selects[s.ParentID]
+			p.Children = append(p.Children, s.ID)
+		}
+
+		if skipRender {
+			id++
+			continue
+		}
+
+		s.Children = make([]int32, 0, 5)
+		s.Functions = true
+
+		if trv != nil {
+			s.Allowed = trv.allowedColumns(action)
+
+			switch action {
+			case QTQuery:
+				s.Functions = !trv.query.disable.funcs
+				s.Paging.Limit = trv.query.limit
+
+			case QTInsert:
+				s.PresetMap = trv.insert.psmap
+				s.PresetList = trv.insert.pslist
+
+			case QTUpdate:
+				s.PresetMap = trv.update.psmap
+				s.PresetList = trv.update.pslist
+			}
 		}
 
 		err := com.compileArgs(qc, s, field.Args, role)
@@ -393,13 +416,6 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 
 		// Order is important AddFilters must come after compileArgs
 		com.AddFilters(qc, s, role)
-
-		if s.ParentID == -1 {
-			qc.Roots = append(qc.Roots, s.ID)
-		} else {
-			p := &selects[s.ParentID]
-			p.Children = append(p.Children, s.ID)
-		}
 
 		s.Cols = make([]Column, 0, len(field.Children))
 		action = QTQuery
@@ -440,14 +456,10 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 
 func (com *Compiler) AddFilters(qc *QCode, sel *Select, role string) {
 	var fil *Exp
-	var nu bool // user required (or not) in this filter
+	var nu bool // need user_id (or not) in this filter
 
 	if trv, ok := com.tr[role][sel.Name]; ok {
 		fil, nu = trv.filter(qc.Type)
-
-	} else if com.db && role == "anon" {
-		// Tables not defined under the anon role will not be rendered
-		sel.SkipRender = true
 	}
 
 	if fil == nil {
@@ -838,14 +850,17 @@ func (com *Compiler) compileArgAfterBefore(sel *Select, arg *Arg, pt PagingType)
 	return nil, false
 }
 
-var zeroTrv = &trval{}
+// var zeroTrv = &trval{}
 
 func (com *Compiler) getRole(role, field string) *trval {
 	if trv, ok := com.tr[role][field]; ok {
 		return trv
-	} else {
-		return zeroTrv
 	}
+
+	return nil
+	// } else {
+	// 	return zeroTrv
+	// }
 }
 
 func AddFilter(sel *Select, fil *Exp) {

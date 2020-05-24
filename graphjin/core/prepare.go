@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/dosco/super-graph/core/internal/allow"
-	"github.com/dosco/super-graph/core/internal/psql"
 	"github.com/dosco/super-graph/core/internal/qcode"
 	"github.com/valyala/fasttemplate"
 )
@@ -103,9 +102,6 @@ func (sg *SuperGraph) prepareStmt(item allow.Item) error {
 			// logger.Debug().Msgf("Prepared statement 'query %s' (anon)", item.Name)
 
 			stmts2, err := sg.buildRoleStmt(qb, vars, "anon")
-			if err == psql.ErrAllTablesSkipped {
-				return nil
-			}
 			if err != nil {
 				return err
 			}
@@ -121,9 +117,6 @@ func (sg *SuperGraph) prepareStmt(item allow.Item) error {
 			// logger.Debug().Msgf("Prepared statement 'mutation %s' (%s)", item.Name, role.Name)
 
 			stmts, err := sg.buildRoleStmt(qb, vars, role.Name)
-			if err == psql.ErrAllTablesSkipped {
-				continue
-			}
 			if err != nil {
 				return err
 			}

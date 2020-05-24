@@ -13,6 +13,11 @@ import (
 	rice "github.com/GeertJohan/go.rice"
 	"github.com/NYTimes/gziphandler"
 	"github.com/dosco/super-graph/internal/serv/internal/auth"
+	"go.opencensus.io/plugin/ochttp"
+)
+
+var (
+	apiRoute string = "/api/v1/graphql"
 )
 
 func initWatcher() {
@@ -76,6 +81,10 @@ func startHTTP() {
 		MaxHeaderBytes: 1 << 20,
 	}
 
+	if conf.telemetryEnabled() {
+		srv.Handler = &ochttp.Handler{Handler: routes}
+	}
+
 	idleConnsClosed := make(chan struct{})
 	go func() {
 		sigint := make(chan os.Signal, 1)
@@ -113,8 +122,6 @@ func routeHandler() (http.Handler, error) {
 	if conf == nil {
 		return mux, nil
 	}
-
-	apiRoute := "/api/v1/graphql"
 
 	if len(conf.APIPath) != 0 {
 		apiRoute = path.Join("/", conf.APIPath, "/v1/graphql")
@@ -176,6 +183,10 @@ func setActionRoutes(routes map[string]http.Handler) error {
 			routes[p], err = auth.WithAuth(fn, ac)
 		} else {
 			routes[p] = fn
+		}
+
+		if conf.telemetryEnabled() {
+			routes[p] = ochttp.WithRouteTag(routes[p], p)
 		}
 
 		if err != nil {

@@ -10,6 +10,8 @@ import (
 	"github.com/dosco/super-graph/core"
 	"github.com/dosco/super-graph/internal/serv/internal/auth"
 	"github.com/rs/cors"
+	"go.opencensus.io/plugin/ochttp"
+	"go.opencensus.io/trace"
 	"go.uber.org/zap"
 )
 
@@ -44,7 +46,7 @@ func apiV1Handler() http.Handler {
 			AllowCredentials: true,
 			Debug:            conf.DebugCORS,
 		})
-		h = c.Handler(h)
+		return c.Handler(h)
 	}
 
 	return h
@@ -77,6 +79,22 @@ func apiV1(w http.ResponseWriter, r *http.Request) {
 
 	doLog := true
 	res, err := sg.GraphQL(ct, req.Query, req.Vars)
+
+	if conf.telemetryEnabled() {
+		span := trace.FromContext(ct)
+
+		span.AddAttributes(
+			trace.StringAttribute("operation", res.OperationName()),
+			trace.StringAttribute("query_name", res.QueryName()),
+			trace.StringAttribute("role", res.Role()),
+		)
+
+		if err != nil {
+			span.AddAttributes(trace.StringAttribute("error", err.Error()))
+		}
+
+		ochttp.SetRoute(ct, apiRoute)
+	}
 
 	if !conf.Production && res.QueryName() == introspectionQuery {
 		doLog = false
