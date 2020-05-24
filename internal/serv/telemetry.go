@@ -103,7 +103,9 @@ func enableObservability(mux *http.ServeMux) (func(), error) {
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("ERR OpenCensus: %s: %v", conf.Telemetry.Tracing, err)
+		return nil, fmt.Errorf("ERR OpenCensus: %s: %v",
+			conf.Telemetry.Tracing.Exporter,
+			err)
 	}
 
 	if tex != nil {

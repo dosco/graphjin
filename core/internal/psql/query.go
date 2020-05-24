@@ -17,10 +17,6 @@ const (
 	closeBlock = 500
 )
 
-var (
-	ErrAllTablesSkipped = errors.New("all tables skipped. cannot render query")
-)
-
 type Variables map[string]json.RawMessage
 
 type Config struct {
@@ -92,29 +88,34 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer, vars Variables) (
 
 	io.WriteString(c.w, `SELECT jsonb_build_object(`)
 	for _, id := range qc.Roots {
-		root := &qc.Selects[id]
-		if root.SkipRender || len(root.Cols) == 0 {
-			continue
-		}
-
-		st.Push(root.ID + closeBlock)
-		st.Push(root.ID)
-
 		if i != 0 {
 			io.WriteString(c.w, `, `)
 		}
 
-		c.renderRootSelect(root)
+		root := &qc.Selects[id]
+
+		if root.SkipRender || len(root.Cols) == 0 {
+			squoted(c.w, root.FieldName)
+			io.WriteString(c.w, `, `)
+			io.WriteString(c.w, `NULL`)
+
+		} else {
+			st.Push(root.ID + closeBlock)
+			st.Push(root.ID)
+			c.renderRootSelect(root)
+		}
+
 		i++
 	}
 
-	io.WriteString(c.w, `) as "__root" FROM `)
-
-	if i == 0 {
-		return 0, ErrAllTablesSkipped
-	}
-
 	var ignored uint32
+
+	if st.Len() != 0 {
+		io.WriteString(c.w, `) as "__root" FROM `)
+	} else {
+		io.WriteString(c.w, `) as "__root"`)
+		return ignored, nil
+	}
 
 	for {
 		if st.Len() == 0 {

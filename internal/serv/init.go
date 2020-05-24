@@ -215,7 +215,20 @@ func initDB(c *Config, useDB, useTelemetry bool) (*sql.DB, error) {
 	// }
 
 	if useTelemetry && conf.telemetryEnabled() {
-		driverName, err = ocsql.Register(driverName, ocsql.WithAllTraceOptions(), ocsql.WithInstanceName(conf.AppName))
+		opts := ocsql.TraceOptions{
+			AllowRoot:    false,
+			Ping:         true,
+			RowsNext:     true,
+			RowsClose:    true,
+			RowsAffected: true,
+			LastInsertID: true,
+			Query:        conf.Telemetry.Tracing.IncludeQuery,
+			QueryParams:  conf.Telemetry.Tracing.IncludeParams,
+		}
+		opt := ocsql.WithOptions(opts)
+		name := ocsql.WithInstanceName(conf.AppName)
+
+		driverName, err = ocsql.Register(driverName, opt, name)
 		if err != nil {
 			return nil, fmt.Errorf("unable to register ocsql driver: %v", err)
 		}

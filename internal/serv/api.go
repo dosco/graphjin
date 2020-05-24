@@ -62,9 +62,11 @@ type Serv struct {
 		}
 
 		Tracing struct {
-			Exporter string
-			Endpoint string
-			Sample   string
+			Exporter      string
+			Endpoint      string
+			Sample        string
+			IncludeQuery  bool `mapstructure:"include_query"`
+			IncludeParams bool `mapstructure:"include_params"`
 		}
 	}
 
