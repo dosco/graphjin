@@ -216,7 +216,7 @@ func initDB(c *Config, useDB, useTelemetry bool) (*sql.DB, error) {
 
 	if useTelemetry && conf.telemetryEnabled() {
 		opts := ocsql.TraceOptions{
-			AllowRoot:    false,
+			AllowRoot:    true,
 			Ping:         true,
 			RowsNext:     true,
 			RowsClose:    true,

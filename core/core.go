@@ -275,9 +275,9 @@ func (c *scontext) resolveSQL() ([]byte, *stmt, error) {
 	// defaultRole := c.role
 
 	if useTx {
-		row = tx.QueryRow(finalSQL)
+		row = tx.QueryRowContext(c, finalSQL)
 	} else {
-		row = c.sg.db.QueryRow(finalSQL)
+		row = c.sg.db.QueryRowContext(c, finalSQL)
 	}
 
 	if len(stmts) > 1 {

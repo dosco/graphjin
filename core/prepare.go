@@ -134,7 +134,7 @@ func (sg *SuperGraph) prepareStmt(item allow.Item) error {
 func (sg *SuperGraph) prepare(ct context.Context, st []stmt, key string) error {
 	finalSQL, am := processTemplate(st[0].sql)
 
-	sd, err := sg.db.Prepare(finalSQL)
+	sd, err := sg.db.PrepareContext(ct, finalSQL)
 	if err != nil {
 		return fmt.Errorf("prepare failed: %v: %s", err, finalSQL)
 	}

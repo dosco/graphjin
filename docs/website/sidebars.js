@@ -9,6 +9,7 @@ module.exports = {
       "react",
       "advanced",
       "security",
+      "telemetry",
       "config",
       "deploy",
       "internals",
