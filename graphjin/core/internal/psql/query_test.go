@@ -32,6 +32,20 @@ func withComplexArgs(t *testing.T) {
 	compileGQLToPSQL(t, gql, nil, "user")
 }
 
+func withWhereIn(t *testing.T) {
+	gql := `query {
+		products(where: { id: { in: $list } }) {
+			id
+		}
+	}`
+
+	vars := map[string]json.RawMessage{
+		"list": json.RawMessage(`[1,2,3]`),
+	}
+
+	compileGQLToPSQL(t, gql, vars, "user")
+}
+
 func withWhereAndList(t *testing.T) {
 	gql := `query {
 		products(
@@ -367,6 +381,7 @@ func blockedFunctions(t *testing.T) {
 
 func TestCompileQuery(t *testing.T) {
 	t.Run("withComplexArgs", withComplexArgs)
+	t.Run("withWhereIn", withWhereIn)
 	t.Run("withWhereAndList", withWhereAndList)
 	t.Run("withWhereIsNull", withWhereIsNull)
 	t.Run("withWhereMultiOr", withWhereMultiOr)
@@ -429,7 +444,7 @@ func BenchmarkCompile(b *testing.B) {
 			b.Fatal(err)
 		}
 
-		_, err = pcompile.Compile(qc, w, nil)
+		_, err = pcompile.Compile(w, qc, nil)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -450,7 +465,7 @@ func BenchmarkCompileParallel(b *testing.B) {
 				b.Fatal(err)
 			}
 
-			_, err = pcompile.Compile(qc, w, nil)
+			_, err = pcompile.Compile(w, qc, nil)
 			if err != nil {
 				b.Fatal(err)
 			}

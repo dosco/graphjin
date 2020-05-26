@@ -2,8 +2,7 @@ package serv
 
 import (
 	"bytes"
-	"fmt"
-	"io"
+	"html/template"
 	"io/ioutil"
 	"os"
 	"path"
@@ -11,7 +10,6 @@ import (
 
 	rice "github.com/GeertJohan/go.rice"
 	"github.com/spf13/cobra"
-	"github.com/valyala/fasttemplate"
 )
 
 func cmdNew(cmd *cobra.Command, args []string) {
@@ -21,8 +19,8 @@ func cmdNew(cmd *cobra.Command, args []string) {
 	}
 
 	tmpl := newTempl(map[string]string{
-		"app_name":      strings.Title(strings.Join(args, " ")),
-		"app_name_slug": strings.ToLower(strings.Join(args, "_")),
+		"AppName":     strings.Title(strings.Join(args, " ")),
+		"AppNameSlug": strings.ToLower(strings.Join(args, "_")),
 	})
 
 	// Create app folder and add relevant files
@@ -121,16 +119,13 @@ func newTempl(data map[string]string) *Templ {
 func (t *Templ) get(name string) ([]byte, error) {
 	v := t.MustString(name)
 	b := bytes.Buffer{}
-	tmpl := fasttemplate.New(v, "{%", "%}")
 
-	_, err := tmpl.ExecuteFunc(&b, func(w io.Writer, tag string) (int, error) {
-		if val, ok := t.data[strings.TrimSpace(tag)]; ok {
-			return w.Write([]byte(val))
-		}
-		return 0, fmt.Errorf("unknown template variable '%s'", tag)
-	})
-
+	tmpl, err := template.New(name).Parse(v)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := tmpl.Execute(&b, t.data); err != nil {
 		return nil, err
 	}
 

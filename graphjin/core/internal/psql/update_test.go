@@ -223,7 +223,7 @@ func nestedUpdateOneToOneWithDisconnect(t *testing.T) {
 // 		}
 // 	}`
 
-// 	sql := `WITH "_sg_input" AS (SELECT '{{data}}' :: json AS j), "users" AS (SELECT * FROM (VALUES(NULL::bigint)) AS LOOKUP("id")), "products" AS (UPDATE "products" SET ("name", "price", "user_id") = (SELECT "t"."name", "t"."price", "users"."id" FROM "_sg_input" i, "users", json_populate_record(NULL::products, i.j) t) WHERE (("products"."id") = 2) RETURNING "products".*) SELECT json_object_agg('product', json_0) FROM (SELECT row_to_json((SELECT "json_row_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name", "products_0"."user_id" AS "user_id") AS "json_row_0")) AS "json_0" FROM (SELECT "products"."id", "products"."name", "products"."user_id" FROM "products" LIMIT ('1') :: integer) AS "products_0" LIMIT ('1') :: integer) AS "sel_0"`
+// 	sql := `WITH "_sg_input" AS (SELECT $1 :: json AS j), "users" AS (SELECT * FROM (VALUES(NULL::bigint)) AS LOOKUP("id")), "products" AS (UPDATE "products" SET ("name", "price", "user_id") = (SELECT "t"."name", "t"."price", "users"."id" FROM "_sg_input" i, "users", json_populate_record(NULL::products, i.j) t) WHERE (("products"."id") = 2) RETURNING "products".*) SELECT json_object_agg('product', json_0) FROM (SELECT row_to_json((SELECT "json_row_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name", "products_0"."user_id" AS "user_id") AS "json_row_0")) AS "json_0" FROM (SELECT "products"."id", "products"."name", "products"."user_id" FROM "products" LIMIT ('1') :: integer) AS "products_0" LIMIT ('1') :: integer) AS "sel_0"`
 
 // 	vars := map[string]json.RawMessage{
 // 		"data": json.RawMessage(`{

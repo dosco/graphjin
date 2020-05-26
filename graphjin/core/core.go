@@ -1,7 +1,6 @@
 package core
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -10,8 +9,6 @@ import (
 
 	"github.com/dosco/super-graph/core/internal/psql"
 	"github.com/dosco/super-graph/core/internal/qcode"
-
-	"github.com/valyala/fasttemplate"
 )
 
 type OpType int
@@ -126,7 +123,7 @@ func (c *scontext) execQuery() ([]byte, error) {
 		return nil, err
 	}
 
-	if len(data) == 0 || st.skipped == 0 {
+	if len(data) == 0 || st.md.Skipped == 0 {
 		return data, nil
 	}
 
@@ -181,7 +178,7 @@ func (c *scontext) resolvePreparedSQL() ([]byte, *stmt, error) {
 	var root []byte
 	var row *sql.Row
 
-	varsList, err := c.argList(ps.args)
+	varsList, err := c.argList(ps.st.md)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -252,15 +249,23 @@ func (c *scontext) resolveSQL() ([]byte, *stmt, error) {
 		return nil, nil, err
 	}
 	st := &stmts[0]
+	c.res.sql = st.sql
 
-	t := fasttemplate.New(st.sql, openVar, closeVar)
-	buf := &bytes.Buffer{}
-
-	_, err = t.ExecuteFunc(buf, c.argMap())
+	varList, err := c.argList(st.md)
 	if err != nil {
 		return nil, nil, err
 	}
-	finalSQL := buf.String()
+	// finalSQL := buf.String()
+
+	////
+
+	// _, err = t.ExecuteFunc(buf, c.argMap(st.md))
+	// if err != nil {
+	// 	return nil, nil, err
+	// }
+	// finalSQL := buf.String()
+
+	/////
 
 	// var stime time.Time
 
@@ -275,9 +280,9 @@ func (c *scontext) resolveSQL() ([]byte, *stmt, error) {
 	// defaultRole := c.role
 
 	if useTx {
-		row = tx.QueryRowContext(c, finalSQL)
+		row = tx.QueryRowContext(c, st.sql, varList...)
 	} else {
-		row = c.sg.db.QueryRowContext(c, finalSQL)
+		row = c.sg.db.QueryRowContext(c, st.sql, varList...)
 	}
 
 	if len(stmts) > 1 {
@@ -285,8 +290,6 @@ func (c *scontext) resolveSQL() ([]byte, *stmt, error) {
 	} else {
 		err = row.Scan(&root)
 	}
-
-	c.res.sql = finalSQL
 
 	if len(role) == 0 {
 		c.res.role = c.role

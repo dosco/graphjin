@@ -139,9 +139,9 @@ func TestMain(m *testing.M) {
 		log.Fatal(err)
 	}
 
-	vars := psql.NewVariables(map[string]string{
+	vars := map[string]string{
 		"admin_account_id": "5",
-	})
+	}
 
 	pcompile = psql.NewCompiler(psql.Config{
 		Schema: schema,

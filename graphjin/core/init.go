@@ -2,9 +2,7 @@ package core
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
-	"unicode"
 
 	"github.com/dosco/super-graph/core/internal/psql"
 	"github.com/dosco/super-graph/core/internal/qcode"
@@ -16,11 +14,6 @@ func (sg *SuperGraph) initConfig() error {
 
 	for k, v := range c.Inflections {
 		flect.AddPlural(k, v)
-	}
-
-	// Variables: Validate and sanitize
-	for k, v := range c.Vars {
-		c.Vars[k] = sanitizeVars(v)
 	}
 
 	// Tables: Validate and sanitize
@@ -79,9 +72,6 @@ func (sg *SuperGraph) initConfig() error {
 		c.Roles = append(c.Roles, ur)
 		sg.roles["anon"] = &ur
 	}
-
-	// Roles: validate and sanitize
-	c.RolesQuery = sanitizeVars(c.RolesQuery)
 
 	if c.RolesQuery == "" {
 		sg.log.Printf("WRN roles_query not defined: attribute based access control disabled")
@@ -292,24 +282,4 @@ func (r *Role) GetTable(name string) *RoleTable {
 
 func sanitize(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
-}
-
-var (
-	varRe1 = regexp.MustCompile(`(?mi)\$([a-zA-Z0-9_.]+)`)
-	varRe2 = regexp.MustCompile(`\{\{([a-zA-Z0-9_.]+)\}\}`)
-)
-
-func sanitizeVars(s string) string {
-	s0 := varRe1.ReplaceAllString(s, `{{$1}}`)
-
-	s1 := strings.Map(func(r rune) rune {
-		if unicode.IsSpace(r) {
-			return ' '
-		}
-		return r
-	}, s0)
-
-	return varRe2.ReplaceAllStringFunc(s1, func(m string) string {
-		return strings.ToLower(m)
-	})
 }

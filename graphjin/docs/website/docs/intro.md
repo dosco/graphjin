@@ -25,6 +25,8 @@ Super Graph has a rich feature set like integrating with your existing Ruby on R
 - Fuzz tested for security
 - Database migrations tool
 - Database seeding tool
+- Works with Postgres and Yugabyte DB
+- OpenCensus Support: Zipkin, Prometheus, X-Ray, Stackdriver
 
 ## Try the demo app
 

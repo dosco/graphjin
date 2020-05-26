@@ -4,6 +4,7 @@ package psql
 
 import (
 	"encoding/json"
+
 	"github.com/dosco/super-graph/core/internal/qcode"
 )
 
@@ -12,9 +13,9 @@ var (
 
 	schema = GetTestSchema()
 
-	vars = NewVariables(map[string]string{
+	vars = map[string]string{
 		"admin_account_id": "5",
-	})
+	}
 
 	pcompileTest = NewCompiler(Config{
 		Schema: schema,

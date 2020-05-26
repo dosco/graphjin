@@ -5,11 +5,6 @@ import (
 	"errors"
 )
 
-const (
-	openVar  = "{{"
-	closeVar = "}}"
-)
-
 var (
 	errNotFound = errors.New("not found in prepared statements")
 )

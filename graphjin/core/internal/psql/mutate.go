@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/dosco/super-graph/core/internal/qcode"
 	"github.com/dosco/super-graph/core/internal/util"
@@ -33,42 +34,44 @@ var updateTypes = map[string]itemType{
 
 var noLimit = qcode.Paging{NoLimit: true}
 
-func (co *Compiler) compileMutation(qc *qcode.QCode, w io.Writer, vars Variables) (uint32, error) {
+func (co *Compiler) compileMutation(w io.Writer, qc *qcode.QCode, vars Variables) (Metadata, error) {
+	md := Metadata{}
+
 	if len(qc.Selects) == 0 {
-		return 0, errors.New("empty query")
+		return md, errors.New("empty query")
 	}
 
-	c := &compilerContext{w, qc.Selects, co}
+	c := &compilerContext{md, w, qc.Selects, co}
 	root := &qc.Selects[0]
 
 	ti, err := c.schema.GetTable(root.Name)
 	if err != nil {
-		return 0, err
+		return c.md, err
 	}
 
 	switch qc.Type {
 	case qcode.QTInsert:
-		if _, err := c.renderInsert(qc, w, vars, ti); err != nil {
-			return 0, err
+		if _, err := c.renderInsert(w, qc, vars, ti); err != nil {
+			return c.md, err
 		}
 
 	case qcode.QTUpdate:
-		if _, err := c.renderUpdate(qc, w, vars, ti); err != nil {
-			return 0, err
+		if _, err := c.renderUpdate(w, qc, vars, ti); err != nil {
+			return c.md, err
 		}
 
 	case qcode.QTUpsert:
-		if _, err := c.renderUpsert(qc, w, vars, ti); err != nil {
-			return 0, err
+		if _, err := c.renderUpsert(w, qc, vars, ti); err != nil {
+			return c.md, err
 		}
 
 	case qcode.QTDelete:
-		if _, err := c.renderDelete(qc, w, vars, ti); err != nil {
-			return 0, err
+		if _, err := c.renderDelete(w, qc, vars, ti); err != nil {
+			return c.md, err
 		}
 
 	default:
-		return 0, errors.New("valid mutations are 'insert', 'update', 'upsert' and 'delete'")
+		return c.md, errors.New("valid mutations are 'insert', 'update', 'upsert' and 'delete'")
 	}
 
 	root.Paging = noLimit
@@ -77,7 +80,7 @@ func (co *Compiler) compileMutation(qc *qcode.QCode, w io.Writer, vars Variables
 	root.Where = nil
 	root.Args = nil
 
-	return c.compileQuery(qc, w, vars)
+	return co.compileQueryWithMetadata(w, qc, vars, c.md)
 }
 
 type kvitem struct {
@@ -365,12 +368,12 @@ func (c *compilerContext) renderUnionStmt(w io.Writer, item renitem) error {
 	return nil
 }
 
-func renderInsertUpdateColumns(w io.Writer,
+func (c *compilerContext) renderInsertUpdateColumns(
 	qc *qcode.QCode,
 	jt map[string]json.RawMessage,
 	ti *DBTableInfo,
 	skipcols map[string]struct{},
-	values bool) (uint32, error) {
+	isValues bool) (uint32, error) {
 
 	root := &qc.Selects[0]
 	renderedCol := false
@@ -392,18 +395,18 @@ func renderInsertUpdateColumns(w io.Writer,
 			}
 		}
 		if n != 0 {
-			io.WriteString(w, `, `)
+			io.WriteString(c.w, `, `)
 		}
 
-		if values {
-			io.WriteString(w, `CAST( i.j ->>`)
-			io.WriteString(w, `'`)
-			io.WriteString(w, cn.Name)
-			io.WriteString(w, `' AS `)
-			io.WriteString(w, cn.Type)
-			io.WriteString(w, `)`)
+		if isValues {
+			io.WriteString(c.w, `CAST( i.j ->>`)
+			io.WriteString(c.w, `'`)
+			io.WriteString(c.w, cn.Name)
+			io.WriteString(c.w, `' AS `)
+			io.WriteString(c.w, cn.Type)
+			io.WriteString(c.w, `)`)
 		} else {
-			quoted(w, cn.Name)
+			quoted(c.w, cn.Name)
 		}
 
 		if !renderedCol {
@@ -422,16 +425,28 @@ func renderInsertUpdateColumns(w io.Writer,
 			continue
 		}
 		if i != 0 || n != 0 {
-			io.WriteString(w, `, `)
+			io.WriteString(c.w, `, `)
 		}
 
-		if values {
-			io.WriteString(w, `'`)
-			io.WriteString(w, root.PresetMap[cn])
-			io.WriteString(w, `' :: `)
-			io.WriteString(w, col.Type)
+		if isValues {
+			val := root.PresetMap[cn]
+			switch {
+			case ok && len(val) > 1 && val[0] == '$':
+				c.renderValueExp(Param{Name: val[1:], Type: col.Type})
+
+			case ok && strings.HasPrefix(val, "sql:"):
+				io.WriteString(c.w, `(`)
+				c.renderVar(val[4:], c.renderValueExp)
+				io.WriteString(c.w, `)`)
+
+			case ok:
+				squoted(c.w, val)
+			}
+
+			io.WriteString(c.w, ` :: `)
+			io.WriteString(c.w, col.Type)
 		} else {
-			quoted(w, cn)
+			quoted(c.w, cn)
 		}
 
 		if !renderedCol {
@@ -440,15 +455,15 @@ func renderInsertUpdateColumns(w io.Writer,
 	}
 
 	if len(skipcols) != 0 && renderedCol {
-		io.WriteString(w, `, `)
+		io.WriteString(c.w, `, `)
 	}
 	return 0, nil
 }
 
-func (c *compilerContext) renderUpsert(qc *qcode.QCode, w io.Writer,
-	vars Variables, ti *DBTableInfo) (uint32, error) {
-	root := &qc.Selects[0]
+func (c *compilerContext) renderUpsert(
+	w io.Writer, qc *qcode.QCode, vars Variables, ti *DBTableInfo) (uint32, error) {
 
+	root := &qc.Selects[0]
 	upsert, ok := vars[qc.ActionVar]
 	if !ok {
 		return 0, fmt.Errorf("variable '%s' not defined", qc.ActionVar)
@@ -466,7 +481,7 @@ func (c *compilerContext) renderUpsert(qc *qcode.QCode, w io.Writer,
 		return 0, err
 	}
 
-	if _, err := c.renderInsert(qc, w, vars, ti); err != nil {
+	if _, err := c.renderInsert(w, qc, vars, ti); err != nil {
 		return 0, err
 	}
 
@@ -672,7 +687,7 @@ func renderCteName(w io.Writer, item kvitem) error {
 	io.WriteString(w, item.ti.Name)
 	if item._type == itemConnect || item._type == itemDisconnect {
 		io.WriteString(w, `_`)
-		int2string(w, item.id)
+		int32String(w, item.id)
 	}
 	io.WriteString(w, `"`)
 	return nil
