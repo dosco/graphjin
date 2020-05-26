@@ -5,7 +5,7 @@ steps:
       [
         "build",
         "--tag",
-        "gcr.io/$PROJECT_ID/{% app_name_slug %}:latest",
+        "gcr.io/$PROJECT_ID/{{- .AppNameSlug -}}:latest",
         "--build-arg",
         "GO_ENV=production",
         ".",
@@ -13,7 +13,7 @@ steps:
 
   # Push new image to Google Container Registry
   - name: "gcr.io/cloud-builders/docker"
-    args: ["push", "gcr.io/$PROJECT_ID/{% app_name_slug %}:latest"]
+    args: ["push", "gcr.io/$PROJECT_ID/{{- .AppNameSlug -}}:latest"]
 
   # Deploy image to Cloud Run
   - name: "gcr.io/cloud-builders/gcloud"
@@ -23,15 +23,15 @@ steps:
         "deploy",
         "data",
         "--image",
-        "gcr.io/$PROJECT_ID/{% app_name_slug %}:latest",
+        "gcr.io/$PROJECT_ID/{{- .AppNameSlug -}}:latest",
         "--add-cloudsql-instances",
-        "$PROJECT_ID:$REGION:{% app_name_slug %}_production",
+        "$PROJECT_ID:$REGION:{{- .AppNameSlug -}}_production",
         "--region",
         "$REGION",
         "--platform",
         "managed",
         "--update-env-vars",
-        "GO_ENV=production,SG_DATABASE_HOST=/cloudsql/$PROJECT_ID:$REGION:{% app_name_slug %}_production,SECRETS_FILE=prod.secrets.yml",
+        "GO_ENV=production,SG_DATABASE_HOST=/cloudsql/$PROJECT_ID:$REGION:{{- .AppNameSlug -}}_production,SECRETS_FILE=prod.secrets.yml",
         "--port",
         "8080",
         "--service-account",

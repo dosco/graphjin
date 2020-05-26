@@ -170,7 +170,6 @@ const (
 )
 
 type Compiler struct {
-	db bool // default block tables if not defined in anon role
 	tr map[string]map[string]*trval
 	bl map[string]struct{}
 }
@@ -227,7 +226,7 @@ func (com *Compiler) AddRole(role, table string, trc TRConfig) error {
 		return err
 	}
 	trv.insert.cols = listToMap(trc.Insert.Columns)
-	trv.insert.psmap = parsePresets(trc.Insert.Presets)
+	trv.insert.psmap = trc.Insert.Presets
 	trv.insert.pslist = mapToList(trv.insert.psmap)
 	trv.insert.block = trc.Insert.Block
 
@@ -237,7 +236,7 @@ func (com *Compiler) AddRole(role, table string, trc TRConfig) error {
 		return err
 	}
 	trv.update.cols = listToMap(trc.Update.Columns)
-	trv.update.psmap = parsePresets(trc.Update.Presets)
+	trv.update.psmap = trc.Update.Presets
 	trv.update.pslist = mapToList(trv.update.psmap)
 	trv.update.block = trc.Update.Block
 

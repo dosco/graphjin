@@ -32,7 +32,9 @@
 			}
 		}`
 
-		res, err := sg.GraphQL(context.Background(), query, nil)
+		ctx = context.WithValue(ctx, core.UserIDKey, 1)
+
+		res, err := sg.GraphQL(ctx, query, nil)
 		if err != nil {
 			log.Fatal(err)
 		}

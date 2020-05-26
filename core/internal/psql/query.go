@@ -17,6 +17,25 @@ const (
 	closeBlock = 500
 )
 
+type Param struct {
+	Name    string
+	Type    string
+	IsArray bool
+}
+
+type Metadata struct {
+	Skipped uint32
+	Params  []Param
+	pindex  map[string]int
+}
+
+type compilerContext struct {
+	md Metadata
+	w  io.Writer
+	s  []qcode.Select
+	*Compiler
+}
+
 type Variables map[string]json.RawMessage
 
 type Config struct {
@@ -36,12 +55,12 @@ func NewCompiler(conf Config) *Compiler {
 	}
 }
 
-func (c *Compiler) AddRelationship(child, parent string, rel *DBRel) error {
-	return c.schema.SetRel(child, parent, rel)
+func (co *Compiler) AddRelationship(child, parent string, rel *DBRel) error {
+	return co.schema.SetRel(child, parent, rel)
 }
 
-func (c *Compiler) IDColumn(table string) (*DBColumn, error) {
-	ti, err := c.schema.GetTable(table)
+func (co *Compiler) IDColumn(table string) (*DBColumn, error) {
+	ti, err := co.schema.GetTable(table)
 	if err != nil {
 		return nil, err
 	}
@@ -53,36 +72,39 @@ func (c *Compiler) IDColumn(table string) (*DBColumn, error) {
 	return ti.PrimaryCol, nil
 }
 
-type compilerContext struct {
-	w io.Writer
-	s []qcode.Select
-	*Compiler
-}
-
-func (co *Compiler) CompileEx(qc *qcode.QCode, vars Variables) (uint32, []byte, error) {
+func (co *Compiler) CompileEx(qc *qcode.QCode, vars Variables) (Metadata, []byte, error) {
 	w := &bytes.Buffer{}
-	skipped, err := co.Compile(qc, w, vars)
-	return skipped, w.Bytes(), err
+	metad, err := co.Compile(w, qc, vars)
+	return metad, w.Bytes(), err
 }
 
-func (co *Compiler) Compile(qc *qcode.QCode, w io.Writer, vars Variables) (uint32, error) {
+func (co *Compiler) Compile(w io.Writer, qc *qcode.QCode, vars Variables) (Metadata, error) {
 	switch qc.Type {
 	case qcode.QTQuery:
-		return co.compileQuery(qc, w, vars)
-	case qcode.QTInsert, qcode.QTUpdate, qcode.QTDelete, qcode.QTUpsert:
-		return co.compileMutation(qc, w, vars)
+		return co.compileQuery(w, qc, vars)
+
+	case qcode.QTInsert,
+		qcode.QTUpdate,
+		qcode.QTDelete,
+		qcode.QTUpsert:
+		return co.compileMutation(w, qc, vars)
 	}
 
-	return 0, fmt.Errorf("Unknown operation type %d", qc.Type)
+	return Metadata{}, fmt.Errorf("Unknown operation type %d", qc.Type)
 }
 
-func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer, vars Variables) (uint32, error) {
+func (co *Compiler) compileQuery(w io.Writer, qc *qcode.QCode, vars Variables) (Metadata, error) {
+	return co.compileQueryWithMetadata(w, qc, vars, Metadata{})
+}
+
+func (co *Compiler) compileQueryWithMetadata(
+	w io.Writer, qc *qcode.QCode, vars Variables, md Metadata) (Metadata, error) {
+
 	if len(qc.Selects) == 0 {
-		return 0, errors.New("empty query")
+		return md, errors.New("empty query")
 	}
 
-	c := &compilerContext{w, qc.Selects, co}
-
+	c := &compilerContext{md, w, qc.Selects, co}
 	st := NewIntStack()
 	i := 0
 
@@ -108,13 +130,11 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer, vars Variables) (
 		i++
 	}
 
-	var ignored uint32
-
 	if st.Len() != 0 {
 		io.WriteString(c.w, `) as "__root" FROM `)
 	} else {
 		io.WriteString(c.w, `) as "__root"`)
-		return ignored, nil
+		return c.md, nil
 	}
 
 	for {
@@ -133,7 +153,7 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer, vars Variables) (
 
 			ti, err := c.schema.GetTable(sel.Name)
 			if err != nil {
-				return 0, err
+				return c.md, err
 			}
 
 			if sel.ParentID == -1 {
@@ -146,14 +166,12 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer, vars Variables) (
 				c.renderPluralSelect(sel, ti)
 			}
 
-			skipped, err := c.renderSelect(sel, ti, vars)
-			if err != nil {
-				return 0, err
+			if err := c.renderSelect(sel, ti, vars); err != nil {
+				return c.md, err
 			}
-			ignored |= skipped
 
 			for _, cid := range sel.Children {
-				if hasBit(skipped, uint32(cid)) {
+				if hasBit(c.md.Skipped, uint32(cid)) {
 					continue
 				}
 				child := &c.s[cid]
@@ -170,7 +188,7 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer, vars Variables) (
 
 			ti, err := c.schema.GetTable(sel.Name)
 			if err != nil {
-				return 0, err
+				return c.md, err
 			}
 
 			io.WriteString(c.w, `)`)
@@ -202,12 +220,12 @@ func (co *Compiler) compileQuery(qc *qcode.QCode, w io.Writer, vars Variables) (
 		}
 	}
 
-	return ignored, nil
+	return c.md, nil
 }
 
 func (c *compilerContext) renderPluralSelect(sel *qcode.Select, ti *DBTableInfo) error {
 	io.WriteString(c.w, `SELECT coalesce(jsonb_agg("__sj_`)
-	int2string(c.w, sel.ID)
+	int32String(c.w, sel.ID)
 	io.WriteString(c.w, `"."json"), '[]') as "json"`)
 
 	if sel.Paging.Type != qcode.PtOffset {
@@ -231,7 +249,7 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select, ti *DBTableInfo)
 		io.WriteString(c.w, `, CONCAT_WS(','`)
 		for i := 0; i < n; i++ {
 			io.WriteString(c.w, `, max("__cur_`)
-			int2string(c.w, int32(i))
+			int32String(c.w, int32(i))
 			io.WriteString(c.w, `")`)
 		}
 		io.WriteString(c.w, `) as "cursor"`)
@@ -247,7 +265,7 @@ func (c *compilerContext) renderRootSelect(sel *qcode.Select) error {
 	io.WriteString(c.w, `', `)
 
 	io.WriteString(c.w, `"__sj_`)
-	int2string(c.w, sel.ID)
+	int32String(c.w, sel.ID)
 	io.WriteString(c.w, `"."json"`)
 
 	if sel.Paging.Type != qcode.PtOffset {
@@ -256,16 +274,14 @@ func (c *compilerContext) renderRootSelect(sel *qcode.Select) error {
 		io.WriteString(c.w, `_cursor', `)
 
 		io.WriteString(c.w, `"__sj_`)
-		int2string(c.w, sel.ID)
+		int32String(c.w, sel.ID)
 		io.WriteString(c.w, `"."cursor"`)
 	}
 
 	return nil
 }
 
-func (c *compilerContext) initSelect(sel *qcode.Select, ti *DBTableInfo, vars Variables) (uint32, []*qcode.Column, error) {
-	var skipped uint32
-
+func (c *compilerContext) initSelect(sel *qcode.Select, ti *DBTableInfo, vars Variables) ([]*qcode.Column, error) {
 	cols := make([]*qcode.Column, 0, len(sel.Cols))
 	colmap := make(map[string]struct{}, len(sel.Cols))
 
@@ -307,9 +323,7 @@ func (c *compilerContext) initSelect(sel *qcode.Select, ti *DBTableInfo, vars Va
 
 		rel, err := c.schema.GetRel(child.Name, ti.Name)
 		if err != nil {
-			return 0, nil, err
-			//skipped |= (1 << uint(id))
-			//continue
+			return nil, err
 		}
 
 		switch rel.Type {
@@ -335,16 +349,15 @@ func (c *compilerContext) initSelect(sel *qcode.Select, ti *DBTableInfo, vars Va
 			if _, ok := colmap[rel.Left.Col]; !ok {
 				cols = append(cols, &qcode.Column{Table: ti.Name, Name: rel.Left.Col, FieldName: rel.Right.Col})
 				colmap[rel.Left.Col] = struct{}{}
-				skipped |= (1 << uint(id))
+				c.md.Skipped |= (1 << uint(id))
 			}
 
 		default:
-			return 0, nil, fmt.Errorf("unknown relationship %s", rel)
-			//skipped |= (1 << uint(id))
+			return nil, fmt.Errorf("unknown relationship %s", rel)
 		}
 	}
 
-	return skipped, cols, nil
+	return cols, nil
 }
 
 // This
@@ -413,7 +426,7 @@ func (c *compilerContext) addSeekPredicate(sel *qcode.Select) error {
 	return nil
 }
 
-func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo, vars Variables) (uint32, error) {
+func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo, vars Variables) error {
 	var rel *DBRel
 	var err error
 
@@ -422,13 +435,13 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo, vars 
 
 		rel, err = c.schema.GetRel(ti.Name, parent.Name)
 		if err != nil {
-			return 0, err
+			return err
 		}
 	}
 
-	skipped, childCols, err := c.initSelect(sel, ti, vars)
+	childCols, err := c.initSelect(sel, ti, vars)
 	if err != nil {
-		return 0, err
+		return err
 	}
 
 	// SELECT
@@ -438,13 +451,13 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo, vars 
 	// }
 
 	io.WriteString(c.w, `SELECT to_jsonb("__sr_`)
-	int2string(c.w, sel.ID)
+	int32String(c.w, sel.ID)
 	io.WriteString(c.w, `".*) `)
 
 	if sel.Paging.Type != qcode.PtOffset {
 		for i := range sel.OrderBy {
 			io.WriteString(c.w, `- '__cur_`)
-			int2string(c.w, int32(i))
+			int32String(c.w, int32(i))
 			io.WriteString(c.w, `' `)
 		}
 	}
@@ -454,15 +467,15 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo, vars 
 	if sel.Paging.Type != qcode.PtOffset {
 		for i := range sel.OrderBy {
 			io.WriteString(c.w, `, "__cur_`)
-			int2string(c.w, int32(i))
+			int32String(c.w, int32(i))
 			io.WriteString(c.w, `"`)
 		}
 	}
 
 	io.WriteString(c.w, `FROM (SELECT `)
 
-	if err := c.renderColumns(sel, ti, skipped); err != nil {
-		return 0, err
+	if err := c.renderColumns(sel, ti); err != nil {
+		return err
 	}
 
 	if sel.Paging.Type != qcode.PtOffset {
@@ -470,7 +483,7 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo, vars 
 			io.WriteString(c.w, `, LAST_VALUE(`)
 			colWithTableID(c.w, ti.Name, sel.ID, ob.Col)
 			io.WriteString(c.w, `) OVER() AS "__cur_`)
-			int2string(c.w, int32(i))
+			int32String(c.w, int32(i))
 			io.WriteString(c.w, `"`)
 		}
 	}
@@ -478,9 +491,8 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo, vars 
 	io.WriteString(c.w, ` FROM (`)
 
 	// FROM (SELECT .... )
-	err = c.renderBaseSelect(sel, ti, rel, childCols, skipped)
-	if err != nil {
-		return skipped, err
+	if err = c.renderBaseSelect(sel, ti, rel, childCols); err != nil {
+		return err
 	}
 
 	//fmt.Fprintf(w, `) AS "%s_%d"`, c.sel.Name, c.sel.ID)
@@ -489,7 +501,7 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo, vars 
 
 	// END-FROM
 
-	return skipped, nil
+	return nil
 }
 
 func (c *compilerContext) renderLateralJoin(sel *qcode.Select) error {
@@ -539,7 +551,7 @@ func (c *compilerContext) renderJoinByName(table, parent string, id int32) error
 	return nil
 }
 
-func (c *compilerContext) renderColumns(sel *qcode.Select, ti *DBTableInfo, skipped uint32) error {
+func (c *compilerContext) renderColumns(sel *qcode.Select, ti *DBTableInfo) error {
 	i := 0
 	var cn string
 
@@ -575,7 +587,7 @@ func (c *compilerContext) renderColumns(sel *qcode.Select, ti *DBTableInfo, skip
 
 	i += c.renderRemoteRelColumns(sel, ti, i)
 
-	return c.renderJoinColumns(sel, ti, skipped, i)
+	return c.renderJoinColumns(sel, ti, i)
 }
 
 func (c *compilerContext) renderRemoteRelColumns(sel *qcode.Select, ti *DBTableInfo, colsRendered int) int {
@@ -600,12 +612,12 @@ func (c *compilerContext) renderRemoteRelColumns(sel *qcode.Select, ti *DBTableI
 	return i
 }
 
-func (c *compilerContext) renderJoinColumns(sel *qcode.Select, ti *DBTableInfo, skipped uint32, colsRendered int) error {
+func (c *compilerContext) renderJoinColumns(sel *qcode.Select, ti *DBTableInfo, colsRendered int) error {
 	// columns previously rendered
 	i := colsRendered
 
 	for _, id := range sel.Children {
-		if hasBit(skipped, uint32(id)) {
+		if hasBit(c.md.Skipped, uint32(id)) {
 			continue
 		}
 		childSel := &c.s[id]
@@ -621,13 +633,13 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, ti *DBTableInfo, 
 		}
 
 		io.WriteString(c.w, `"__sj_`)
-		int2string(c.w, childSel.ID)
+		int32String(c.w, childSel.ID)
 		io.WriteString(c.w, `"."json"`)
 		alias(c.w, childSel.FieldName)
 
 		if childSel.Paging.Type != qcode.PtOffset {
 			io.WriteString(c.w, `, "__sj_`)
-			int2string(c.w, childSel.ID)
+			int32String(c.w, childSel.ID)
 			io.WriteString(c.w, `"."cursor" AS "`)
 			io.WriteString(c.w, childSel.FieldName)
 			io.WriteString(c.w, `_cursor"`)
@@ -640,7 +652,7 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, ti *DBTableInfo, 
 }
 
 func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo, rel *DBRel,
-	childCols []*qcode.Column, skipped uint32) error {
+	childCols []*qcode.Column) error {
 	isRoot := (rel == nil)
 	isFil := (sel.Where != nil && sel.Where.Op != qcode.OpNop)
 	hasOrder := len(sel.OrderBy) != 0
@@ -655,7 +667,7 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo, r
 		c.renderDistinctOn(sel, ti)
 	}
 
-	realColsRendered, isAgg, err := c.renderBaseColumns(sel, ti, childCols, skipped)
+	realColsRendered, isAgg, err := c.renderBaseColumns(sel, ti, childCols)
 	if err != nil {
 		return err
 	}
@@ -782,11 +794,13 @@ func (c *compilerContext) renderCursorCTE(sel *qcode.Select) error {
 			io.WriteString(c.w, `, `)
 		}
 		io.WriteString(c.w, `a[`)
-		int2string(c.w, int32(i+1))
+		int32String(c.w, int32(i+1))
 		io.WriteString(c.w, `] as `)
 		quoted(c.w, ob.Col)
 	}
-	io.WriteString(c.w, ` FROM string_to_array('{{cursor}}', ',') as a) `)
+	io.WriteString(c.w, ` FROM string_to_array(`)
+	c.renderValueExp(Param{Name: "cursor", Type: "json"})
+	io.WriteString(c.w, `, ',') as a) `)
 	return nil
 }
 
@@ -1079,12 +1093,13 @@ func (c *compilerContext) renderOp(ex *qcode.Exp, ti *DBTableInfo) error {
 		io.WriteString(c.w, `((`)
 		colWithTable(c.w, ti.Name, ti.TSVCol.Name)
 		if c.schema.ver >= 110000 {
-			io.WriteString(c.w, `) @@ websearch_to_tsquery('{{`)
+			io.WriteString(c.w, `) @@ websearch_to_tsquery(`)
 		} else {
-			io.WriteString(c.w, `) @@ to_tsquery('{{`)
+			io.WriteString(c.w, `) @@ to_tsquery(`)
 		}
-		io.WriteString(c.w, ex.Val)
-		io.WriteString(c.w, `}}'))`)
+		c.renderValueExp(Param{Name: ex.Val, Type: "string"})
+		io.WriteString(c.w, `))`)
+
 		return nil
 
 	default:
@@ -1170,15 +1185,17 @@ func (c *compilerContext) renderVal(ex *qcode.Exp, vars map[string]string, col *
 		val, ok := vars[ex.Val]
 		switch {
 		case ok && strings.HasPrefix(val, "sql:"):
-			io.WriteString(c.w, ` (`)
-			io.WriteString(c.w, val[4:])
+			io.WriteString(c.w, `(`)
+			c.renderVar(val[4:], c.renderValueExp)
 			io.WriteString(c.w, `)`)
+
 		case ok:
 			squoted(c.w, val)
+
 		case ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn:
-			io.WriteString(c.w, ` (string_to_array('{{`)
-			io.WriteString(c.w, ex.Val)
-			io.WriteString(c.w, `}}', ',')`)
+			io.WriteString(c.w, `(ARRAY(SELECT json_array_elements_text(`)
+			c.renderValueExp(Param{Name: ex.Val, Type: col.Type, IsArray: true})
+			io.WriteString(c.w, `))`)
 
 			io.WriteString(c.w, ` :: `)
 			io.WriteString(c.w, col.Type)
@@ -1186,9 +1203,7 @@ func (c *compilerContext) renderVal(ex *qcode.Exp, vars map[string]string, col *
 			return
 
 		default:
-			io.WriteString(c.w, ` '{{`)
-			io.WriteString(c.w, ex.Val)
-			io.WriteString(c.w, `}}'`)
+			c.renderValueExp(Param{Name: ex.Val, Type: col.Type, IsArray: false})
 		}
 
 	case qcode.ValRef:
@@ -1200,6 +1215,54 @@ func (c *compilerContext) renderVal(ex *qcode.Exp, vars map[string]string, col *
 
 	io.WriteString(c.w, ` :: `)
 	io.WriteString(c.w, col.Type)
+}
+
+func (c *compilerContext) renderValueExp(p Param) {
+	io.WriteString(c.w, `$`)
+	if v, ok := c.md.pindex[p.Name]; ok {
+		int32String(c.w, int32(v))
+
+	} else {
+		c.md.Params = append(c.md.Params, p)
+		n := len(c.md.Params)
+
+		if c.md.pindex == nil {
+			c.md.pindex = make(map[string]int)
+		}
+		c.md.pindex[p.Name] = n
+		int32String(c.w, int32(n))
+	}
+}
+
+func (c *compilerContext) renderVar(vv string, fn func(Param)) {
+	f, s := -1, 0
+
+	for i := range vv {
+		v := vv[i]
+		switch {
+		case (i > 0 && vv[i-1] != '\\' && v == '$') || v == '$':
+			if (i - s) > 0 {
+				io.WriteString(c.w, vv[s:i])
+			}
+			f = i
+
+		case (v < 'a' && v > 'z') &&
+			(v < 'A' && v > 'Z') &&
+			(v < '0' && v > '9') &&
+			v != '_' &&
+			f != -1 &&
+			(i-f) > 1:
+			fn(Param{Name: vv[f+1 : i]})
+			s = i
+			f = -1
+		}
+	}
+
+	if f != -1 && (len(vv)-f) > 1 {
+		fn(Param{Name: vv[f+1:]})
+	} else {
+		io.WriteString(c.w, vv[s:])
+	}
 }
 
 func funcPrefixLen(fm map[string]*DBFunction, fn string) int {
@@ -1253,7 +1316,7 @@ func aliasWithID(w io.Writer, alias string, id int32) {
 	io.WriteString(w, ` AS "`)
 	io.WriteString(w, alias)
 	io.WriteString(w, `_`)
-	int2string(w, id)
+	int32String(w, id)
 	io.WriteString(w, `"`)
 }
 
@@ -1270,7 +1333,7 @@ func colWithTableID(w io.Writer, table string, id int32, col string) {
 	io.WriteString(w, table)
 	if id >= 0 {
 		io.WriteString(w, `_`)
-		int2string(w, id)
+		int32String(w, id)
 	}
 	io.WriteString(w, `"."`)
 	io.WriteString(w, col)
@@ -1291,7 +1354,7 @@ func squoted(w io.Writer, identifier string) {
 
 const charset = "0123456789"
 
-func int2string(w io.Writer, val int32) {
+func int32String(w io.Writer, val int32) {
 	if val < 10 {
 		w.Write([]byte{charset[val]})
 		return

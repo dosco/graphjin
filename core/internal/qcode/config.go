@@ -1,7 +1,6 @@
 package qcode
 
 import (
-	"regexp"
 	"sort"
 	"strings"
 )
@@ -46,8 +45,7 @@ type TRConfig struct {
 }
 
 type trval struct {
-	readOnly bool
-	query    struct {
+	query struct {
 		limit   string
 		fil     *Exp
 		filNU   bool
@@ -131,13 +129,4 @@ func mapToList(m map[string]string) []string {
 	}
 	sort.Strings(list)
 	return list
-}
-
-var varRe = regexp.MustCompile(`\$([a-zA-Z0-9_]+)`)
-
-func parsePresets(m map[string]string) map[string]string {
-	for k, v := range m {
-		m[k] = varRe.ReplaceAllString(v, `{{$1}}`)
-	}
-	return m
 }

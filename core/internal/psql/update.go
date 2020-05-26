@@ -10,8 +10,8 @@ import (
 	"github.com/dosco/super-graph/core/internal/util"
 )
 
-func (c *compilerContext) renderUpdate(qc *qcode.QCode, w io.Writer,
-	vars Variables, ti *DBTableInfo) (uint32, error) {
+func (c *compilerContext) renderUpdate(
+	w io.Writer, qc *qcode.QCode, vars Variables, ti *DBTableInfo) (uint32, error) {
 
 	update, ok := vars[qc.ActionVar]
 	if !ok {
@@ -21,9 +21,10 @@ func (c *compilerContext) renderUpdate(qc *qcode.QCode, w io.Writer,
 		return 0, fmt.Errorf("variable '%s' is empty", qc.ActionVar)
 	}
 
-	io.WriteString(c.w, `WITH "_sg_input" AS (SELECT '{{`)
-	io.WriteString(c.w, qc.ActionVar)
-	io.WriteString(c.w, `}}' :: json AS j)`)
+	io.WriteString(c.w, `WITH "_sg_input" AS (SELECT `)
+	c.renderValueExp(Param{Name: qc.ActionVar, Type: "json"})
+	// io.WriteString(c.w, qc.ActionVar)
+	io.WriteString(c.w, ` :: json AS j)`)
 
 	st := util.NewStack()
 	st.Push(kvitem{_type: itemUpdate, key: ti.Name, val: update, ti: ti})
@@ -84,11 +85,11 @@ func (c *compilerContext) renderUpdateStmt(w io.Writer, qc *qcode.QCode, item re
 	io.WriteString(w, `UPDATE `)
 	quoted(w, ti.Name)
 	io.WriteString(w, ` SET (`)
-	renderInsertUpdateColumns(w, qc, jt, ti, sk, false)
+	c.renderInsertUpdateColumns(qc, jt, ti, sk, false)
 	renderNestedUpdateRelColumns(w, item.kvitem, false)
 
 	io.WriteString(w, `) = (SELECT `)
-	renderInsertUpdateColumns(w, qc, jt, ti, sk, true)
+	c.renderInsertUpdateColumns(qc, jt, ti, sk, true)
 	renderNestedUpdateRelColumns(w, item.kvitem, true)
 
 	io.WriteString(w, ` FROM "_sg_input" i`)
@@ -122,7 +123,7 @@ func (c *compilerContext) renderUpdateStmt(w io.Writer, qc *qcode.QCode, item re
 
 	} else {
 		if qc.Selects[0].Where != nil {
-			io.WriteString(w, ` WHERE `)
+			io.WriteString(w, `WHERE `)
 			if err := c.renderWhere(&qc.Selects[0], ti); err != nil {
 				return err
 			}
@@ -197,8 +198,9 @@ func renderNestedUpdateRelTables(w io.Writer, item kvitem) error {
 	return nil
 }
 
-func (c *compilerContext) renderDelete(qc *qcode.QCode, w io.Writer,
-	vars Variables, ti *DBTableInfo) (uint32, error) {
+func (c *compilerContext) renderDelete(
+	w io.Writer, qc *qcode.QCode, vars Variables, ti *DBTableInfo) (uint32, error) {
+
 	root := &qc.Selects[0]
 
 	io.WriteString(c.w, `WITH `)

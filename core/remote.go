@@ -21,7 +21,7 @@ func (sg *SuperGraph) execRemoteJoin(st *stmt, data []byte, hdr http.Header) ([]
 	// fetch the field name used within the db response json
 	// that are used to mark insertion points and the mapping between
 	// those field names and their select objects
-	fids, sfmap := sg.parentFieldIds(h, sel, st.skipped)
+	fids, sfmap := sg.parentFieldIds(h, sel, st.md.Skipped)
 
 	// fetch the field values of the marked insertion points
 	// these values contain the id to be used with fetching remote data

@@ -12,10 +12,10 @@ import (
 )
 
 type stmt struct {
-	role    *Role
-	qc      *qcode.QCode
-	skipped uint32
-	sql     string
+	role *Role
+	qc   *qcode.QCode
+	md   psql.Metadata
+	sql  string
 }
 
 func (sg *SuperGraph) buildStmt(qt qcode.QType, query, vars []byte, role string) ([]stmt, error) {
@@ -62,12 +62,11 @@ func (sg *SuperGraph) buildRoleStmt(query, vars []byte, role string) ([]stmt, er
 	stmts := []stmt{stmt{role: ro, qc: qc}}
 	w := &bytes.Buffer{}
 
-	skipped, err := sg.pc.Compile(qc, w, psql.Variables(vm))
+	stmts[0].md, err = sg.pc.Compile(w, qc, psql.Variables(vm))
 	if err != nil {
 		return nil, err
 	}
 
-	stmts[0].skipped = skipped
 	stmts[0].sql = w.String()
 
 	return stmts, nil
@@ -104,14 +103,13 @@ func (sg *SuperGraph) buildMultiStmt(query, vars []byte) ([]stmt, error) {
 		}
 
 		stmts = append(stmts, stmt{role: role, qc: qc})
+		s := &stmts[len(stmts)-1]
 
-		skipped, err := sg.pc.Compile(qc, w, psql.Variables(vm))
+		s.md, err = sg.pc.Compile(w, qc, psql.Variables(vm))
 		if err != nil {
 			return nil, err
 		}
 
-		s := &stmts[len(stmts)-1]
-		s.skipped = skipped
 		s.sql = w.String()
 		w.Reset()
 	}

@@ -10,8 +10,8 @@ import (
 	"github.com/dosco/super-graph/core/internal/util"
 )
 
-func (c *compilerContext) renderInsert(qc *qcode.QCode, w io.Writer,
-	vars Variables, ti *DBTableInfo) (uint32, error) {
+func (c *compilerContext) renderInsert(
+	w io.Writer, qc *qcode.QCode, vars Variables, ti *DBTableInfo) (uint32, error) {
 
 	insert, ok := vars[qc.ActionVar]
 	if !ok {
@@ -25,9 +25,8 @@ func (c *compilerContext) renderInsert(qc *qcode.QCode, w io.Writer,
 	if insert[0] == '[' {
 		io.WriteString(c.w, `json_array_elements(`)
 	}
-	io.WriteString(c.w, `'{{`)
-	io.WriteString(c.w, qc.ActionVar)
-	io.WriteString(c.w, `}}' :: json`)
+	c.renderValueExp(Param{Name: qc.ActionVar, Type: "json"})
+	io.WriteString(c.w, ` :: json`)
 	if insert[0] == '[' {
 		io.WriteString(c.w, `)`)
 	}
@@ -90,12 +89,12 @@ func (c *compilerContext) renderInsertStmt(qc *qcode.QCode, w io.Writer, item re
 	io.WriteString(w, `INSERT INTO `)
 	quoted(w, ti.Name)
 	io.WriteString(w, ` (`)
-	renderInsertUpdateColumns(w, qc, jt, ti, sk, false)
+	c.renderInsertUpdateColumns(qc, jt, ti, sk, false)
 	renderNestedInsertRelColumns(w, item.kvitem, false)
 	io.WriteString(w, `)`)
 
 	io.WriteString(w, ` SELECT `)
-	renderInsertUpdateColumns(w, qc, jt, ti, sk, true)
+	c.renderInsertUpdateColumns(qc, jt, ti, sk, true)
 	renderNestedInsertRelColumns(w, item.kvitem, true)
 
 	io.WriteString(w, ` FROM "_sg_input" i`)

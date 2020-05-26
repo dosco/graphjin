@@ -52,7 +52,9 @@ func main() {
     }
   }`
 
-  res, err := sg.GraphQL(context.Background(), query, nil)
+  ctx = context.WithValue(ctx, core.UserIDKey, 1)
+
+  res, err := sg.GraphQL(ctx, query, nil)
   if err != nil {
     log.Fatal(err)
   }
@@ -90,7 +92,7 @@ This compiler is what sits at the heart of Super Graph, with layers of useful fu
 - Fuzz tested for security
 - Database migrations tool
 - Database seeding tool
-- Works with Postgres and YugabyteDB
+- Works with Postgres and Yugabyte DB
 - OpenCensus Support: Zipkin, Prometheus, X-Ray, Stackdriver
 
 ## Documentation

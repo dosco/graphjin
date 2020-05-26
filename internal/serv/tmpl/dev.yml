@@ -1,4 +1,4 @@
-app_name: "{% app_name %} Development"
+app_name: "{{- .AppName }} Development"
 host_port: 0.0.0.0:8080
 web_ui: true
 
@@ -82,7 +82,7 @@ cors_debug: false
 auth:
   # Can be 'rails', 'jwt' or 'header'
   type: rails
-  cookie: _{% app_name_slug %}_session
+  cookie: _{{- .AppNameSlug -}}_session
 
   # Comment this out if you want to disable setting
   # the user_id via a header for testing. 
@@ -134,7 +134,7 @@ database:
   type: postgres
   host: db
   port: 5432
-  dbname: {% app_name_slug %}_development
+  dbname: {{- .AppNameSlug -}}_development
   user: postgres
   password: postgres
 

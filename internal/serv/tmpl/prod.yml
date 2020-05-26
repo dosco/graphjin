@@ -2,7 +2,7 @@
 # so I only need to overwrite some values
 inherits: dev
 
-app_name: "{% app_name %} Production"
+app_name: "{{- .AppName }} Production"
 host_port: 0.0.0.0:8080
 web_ui: false
 
@@ -82,7 +82,7 @@ database:
   type: postgres
   host: db
   port: 5432
-  dbname: {% app_name_slug %}_production
+  dbname: {{- .AppNameSlug -}}_production
   user: postgres
   password: postgres
   #pool_size: 10

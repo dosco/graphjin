@@ -12,12 +12,10 @@ import (
 
 	"github.com/dosco/super-graph/core/internal/allow"
 	"github.com/dosco/super-graph/core/internal/qcode"
-	"github.com/valyala/fasttemplate"
 )
 
 type preparedItem struct {
 	sd      *sql.Stmt
-	args    [][]byte
 	st      stmt
 	roleArg bool
 }
@@ -132,16 +130,13 @@ func (sg *SuperGraph) prepareStmt(item allow.Item) error {
 }
 
 func (sg *SuperGraph) prepare(ct context.Context, st []stmt, key string) error {
-	finalSQL, am := processTemplate(st[0].sql)
-
-	sd, err := sg.db.PrepareContext(ct, finalSQL)
+	sd, err := sg.db.PrepareContext(ct, st[0].sql)
 	if err != nil {
-		return fmt.Errorf("prepare failed: %v: %s", err, finalSQL)
+		return fmt.Errorf("prepare failed: %v: %s", err, st[0].sql)
 	}
 
 	sg.prepared[key] = &preparedItem{
 		sd:      sd,
-		args:    am,
 		st:      st[0],
 		roleArg: len(st) > 1,
 	}
@@ -156,10 +151,11 @@ func (sg *SuperGraph) prepareRoleStmt(tx *sql.Tx) error {
 		return nil
 	}
 
+	rq := strings.ReplaceAll(sg.conf.RolesQuery, "$user_id", "$1")
 	w := &bytes.Buffer{}
 
 	io.WriteString(w, `SELECT (CASE WHEN EXISTS (`)
-	io.WriteString(w, sg.conf.RolesQuery)
+	io.WriteString(w, rq)
 	io.WriteString(w, `) THEN `)
 
 	io.WriteString(w, `(SELECT (CASE`)
@@ -174,49 +170,17 @@ func (sg *SuperGraph) prepareRoleStmt(tx *sql.Tx) error {
 		io.WriteString(w, `'`)
 	}
 
-	io.WriteString(w, ` ELSE {{role}} END) FROM (`)
+	io.WriteString(w, ` ELSE $2 END) FROM (`)
 	io.WriteString(w, sg.conf.RolesQuery)
 	io.WriteString(w, `) AS "_sg_auth_roles_query" LIMIT 1) `)
 	io.WriteString(w, `ELSE 'anon' END) FROM (VALUES (1)) AS "_sg_auth_filler" LIMIT 1; `)
 
-	roleSQL, _ := processTemplate(w.String())
-
-	sg.getRole, err = tx.Prepare(roleSQL)
+	sg.getRole, err = tx.Prepare(w.String())
 	if err != nil {
 		return err
 	}
 
 	return nil
-}
-
-func processTemplate(tmpl string) (string, [][]byte) {
-	st := struct {
-		vmap map[string]int
-		am   [][]byte
-		i    int
-	}{
-		vmap: make(map[string]int),
-		am:   make([][]byte, 0, 5),
-		i:    0,
-	}
-
-	execFunc := func(w io.Writer, tag string) (int, error) {
-		if n, ok := st.vmap[tag]; ok {
-			return w.Write([]byte(fmt.Sprintf("$%d", n)))
-		}
-		st.am = append(st.am, []byte(tag))
-		st.i++
-		st.vmap[tag] = st.i
-		return w.Write([]byte(fmt.Sprintf("$%d", st.i)))
-	}
-
-	t1 := fasttemplate.New(tmpl, `'{{`, `}}'`)
-	ts1 := t1.ExecuteFuncString(execFunc)
-
-	t2 := fasttemplate.New(ts1, `{{`, `}}`)
-	ts2 := t2.ExecuteFuncString(execFunc)
-
-	return ts2, st.am
 }
 
 func (sg *SuperGraph) initAllowList() error {

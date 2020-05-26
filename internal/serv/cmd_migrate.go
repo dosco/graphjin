@@ -298,9 +298,9 @@ func ExtractErrorLine(source string, position int) (ErrorLineExtract, error) {
 
 func getMigrationVars() map[string]interface{} {
 	return map[string]interface{}{
-		"app_name":      strings.Title(conf.AppName),
-		"app_name_slug": strings.ToLower(strings.Replace(conf.AppName, " ", "_", -1)),
-		"env":           strings.ToLower(os.Getenv("GO_ENV")),
+		"AppName":     strings.Title(conf.AppName),
+		"AppNameSlug": strings.ToLower(strings.Replace(conf.AppName, " ", "_", -1)),
+		"Env":         strings.ToLower(os.Getenv("GO_ENV")),
 	}
 }
 
