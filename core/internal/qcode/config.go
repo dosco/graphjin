@@ -6,7 +6,8 @@ import (
 )
 
 type Config struct {
-	Blocklist []string
+	DefaultBlock bool
+	Blocklist    []string
 }
 
 type QueryConfig struct {

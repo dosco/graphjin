@@ -11,6 +11,7 @@ module.exports = {
       "security",
       "telemetry",
       "config",
+      "seed",
       "deploy",
       "internals",
     ],

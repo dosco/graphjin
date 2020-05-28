@@ -172,6 +172,8 @@ const (
 type Compiler struct {
 	tr map[string]map[string]*trval
 	bl map[string]struct{}
+
+	defBlock bool
 }
 
 var expPool = sync.Pool{
@@ -179,7 +181,7 @@ var expPool = sync.Pool{
 }
 
 func NewCompiler(c Config) (*Compiler, error) {
-	co := &Compiler{}
+	co := &Compiler{defBlock: c.DefaultBlock}
 	co.tr = make(map[string]map[string]*trval)
 	co.bl = make(map[string]struct{}, len(c.Blocklist))
 
@@ -358,7 +360,7 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 			}
 
 		} else if role == "anon" {
-			skipRender = true
+			skipRender = com.defBlock
 		}
 
 		selects = append(selects, Select{

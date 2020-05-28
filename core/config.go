@@ -30,12 +30,10 @@ type Config struct {
 	// or other database functions
 	SetUserID bool `mapstructure:"set_user_id"`
 
-	// DefaultAllow reverses the blocked by default behaviour for queries in
-	// anonymous mode. (anon role)
-	// For example if the table `users` is not listed under the anon role then
-	// access to it would by default for unauthenticated queries this reverses
-	// this behavior (!!! Use with caution !!!!)
-	DefaultAllow bool `mapstructure:"default_allow"`
+	// DefaultBlock ensures that in anonymous mode (role 'anon') all tables
+	// are blocked from queries and mutations. To open access to tables in
+	// anonymous mode they have to be added to the 'anon' role config.
+	DefaultBlock bool `mapstructure:"default_block"`
 
 	// Vars is a map of hardcoded variables that can be leveraged in your
 	// queries (eg variable admin_id will be $admin_id in the query)
@@ -57,6 +55,9 @@ type Config struct {
 	// Roles contains all the configuration for all the roles you want to support
 	// `user` and `anon` are two default roles. User role is for when a user ID is
 	// available and Anon when it's not.
+	//
+	// If you're using the RolesQuery config to enable atribute based acess control then
+	// you can add more custom roles.
 	Roles []Role
 
 	// Inflections is to add additionally singular to plural mappings
@@ -108,12 +109,12 @@ type Role struct {
 // RoleTable struct contains role specific access control values for a database table
 type RoleTable struct {
 	Name     string
-	ReadOnly *bool `mapstructure:"read_only"`
+	ReadOnly bool `mapstructure:"read_only"`
 
-	Query  Query
-	Insert Insert
-	Update Update
-	Delete Delete
+	Query  *Query
+	Insert *Insert
+	Update *Update
+	Delete *Delete
 }
 
 // Query struct contains access control values for query operations
@@ -122,7 +123,7 @@ type Query struct {
 	Filters          []string
 	Columns          []string
 	DisableFunctions bool `mapstructure:"disable_functions"`
-	Block            *bool
+	Block            bool
 }
 
 // Insert struct contains access control values for insert operations
@@ -130,7 +131,7 @@ type Insert struct {
 	Filters []string
 	Columns []string
 	Presets map[string]string
-	Block   *bool
+	Block   bool
 }
 
 // Insert struct contains access control values for update operations
@@ -138,14 +139,59 @@ type Update struct {
 	Filters []string
 	Columns []string
 	Presets map[string]string
-	Block   *bool
+	Block   bool
 }
 
 // Delete struct contains access control values for delete operations
 type Delete struct {
 	Filters []string
 	Columns []string
-	Block   *bool
+	Block   bool
+}
+
+// AddRoleTable function is a helper function to make it easy to add per-table
+// row-level config
+func (c *Config) AddRoleTable(role string, table string, conf interface{}) error {
+	var r *Role
+
+	for i := range c.Roles {
+		if strings.EqualFold(c.Roles[i].Name, role) {
+			r = &c.Roles[i]
+			break
+		}
+	}
+	if r == nil {
+		nr := Role{Name: role}
+		c.Roles = append(c.Roles, nr)
+		r = &nr
+	}
+
+	var t *RoleTable
+	for i := range r.Tables {
+		if strings.EqualFold(r.Tables[i].Name, table) {
+			t = &r.Tables[i]
+			break
+		}
+	}
+	if t == nil {
+		nt := RoleTable{Name: table}
+		r.Tables = append(r.Tables, nt)
+		t = &nt
+	}
+
+	switch v := conf.(type) {
+	case Query:
+		t.Query = &v
+	case Insert:
+		t.Insert = &v
+	case Update:
+		t.Update = &v
+	case Delete:
+		t.Delete = &v
+	default:
+		return fmt.Errorf("unsupported object type: %t", v)
+	}
+	return nil
 }
 
 // ReadInConfig function reads in the config file for the environment specified in the GO_ENV

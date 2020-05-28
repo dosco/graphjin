@@ -29,9 +29,9 @@ COPY --from=react-build /web/build/ ./internal/serv/web/build
 
 RUN go mod vendor
 RUN make build
-RUN echo "Compressing binary, will take a bit of time..." && \
-  upx --ultra-brute -qq super-graph && \
-  upx -t super-graph
+# RUN echo "Compressing binary, will take a bit of time..." && \
+#   upx --ultra-brute -qq super-graph && \
+#   upx -t super-graph
 
 
 
