@@ -17,6 +17,7 @@ import (
 	"github.com/dop251/goja"
 	"github.com/dosco/super-graph/core"
 	"github.com/gosimple/slug"
+	"github.com/jackc/pgx/v4"
 	"github.com/spf13/cobra"
 )
 
@@ -27,6 +28,7 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 		log.Fatalf("ERR failed to read config: %s", err)
 	}
 	conf.Production = false
+	conf.DefaultBlock = false
 
 	db, err = initDB(conf, true, false)
 	if err != nil {
@@ -51,7 +53,7 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 
 	vm := goja.New()
 	vm.Set("graphql", graphQLFn)
-	//vm.Set("import_csv", importCSV)
+	vm.Set("import_csv", importCSV)
 
 	console := vm.NewObject()
 	console.Set("log", logFunc) //nolint: errcheck
@@ -181,34 +183,42 @@ func (c *csvSource) Err() error {
 	return nil
 }
 
-// func importCSV(table, filename string) int64 {
-// 	if filename[0] != '/' {
-// 		filename = path.Join(conf.ConfigPathUsed(), filename)
-// 	}
+func importCSV(table, filename string) int64 {
+	if filename[0] != '/' {
+		filename = path.Join(confPath, filename)
+	}
 
-// 	s, err := NewCSVSource(filename)
-// 	if err != nil {
-// 		log.Fatalf("ERR %s", err)
-// 	}
+	s, err := NewCSVSource(filename)
+	if err != nil {
+		log.Fatalf("ERR %v", err)
+	}
 
-// 	var cols []string
-// 	colval, _ := s.Values()
+	var cols []string
+	colval, _ := s.Values()
 
-// 	for _, c := range colval {
-// 		cols = append(cols, c.(string))
-// 	}
+	for _, c := range colval {
+		cols = append(cols, c.(string))
+	}
 
-// 	n, err := db.Exec(fmt.Sprintf("COPY %s FROM STDIN WITH "),
-// 		cols,
-// 		s)
+	conn, err := acquireConn(db)
+	if err != nil {
+		log.Fatalf("ERR %v", err)
+	}
+	//nolint: errcheck
+	defer releaseConn(db, conn)
 
-// 	if err != nil {
-// 		err = fmt.Errorf("%w (line no %d)", err, s.i)
-// 		log.Fatalf("ERR %s", err)
-// 	}
+	n, err := conn.CopyFrom(
+		context.Background(),
+		pgx.Identifier{table},
+		cols,
+		s)
 
-// 	return n
-// }
+	if err != nil {
+		log.Fatalf("ERR %v", fmt.Errorf("%w (line no %d)", err, s.i))
+	}
+
+	return n
+}
 
 //nolint: errcheck
 func logFunc(args ...interface{}) {
@@ -377,11 +387,6 @@ func setFakeFuncs(f *goja.Object) {
 	f.Set("hipster_paragraph", gofakeit.HipsterParagraph)
 	f.Set("hipster_sentence", gofakeit.HipsterSentence)
 
-	//Languages
-	//f.Set("language", gofakeit.Language)
-	//f.Set("language_abbreviation", gofakeit.LanguageAbbreviation)
-	//f.Set("language_abbreviation", gofakeit.LanguageAbbreviation)
-
 	// File
 	f.Set("file_extension", gofakeit.FileExtension)
 	f.Set("file_mine_type", gofakeit.FileMimeType)
@@ -410,8 +415,6 @@ func setFakeFuncs(f *goja.Object) {
 	f.Set("lexify", gofakeit.Lexify)
 	f.Set("rand_string", getRandValue)
 	f.Set("numerify", gofakeit.Numerify)
-
-	//f.Set("programming_language", gofakeit.ProgrammingLanguage)
 }
 
 //nolint: errcheck

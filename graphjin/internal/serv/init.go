@@ -15,7 +15,6 @@ import (
 	"contrib.go.opencensus.io/integrations/ocsql"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/stdlib"
-	//_ "github.com/jackc/pgx/v4/stdlib"
 )
 
 const (

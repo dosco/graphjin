@@ -196,7 +196,7 @@ func addForeignKey(di *psql.DBInfo, c Column, t Table) error {
 func addRoles(c *Config, qc *qcode.Compiler) error {
 	for _, r := range c.Roles {
 		for _, t := range r.Tables {
-			if err := addRole(qc, r, t, c.DefaultAllow); err != nil {
+			if err := addRole(qc, r, t, c.DefaultBlock); err != nil {
 				return err
 			}
 		}
@@ -205,67 +205,56 @@ func addRoles(c *Config, qc *qcode.Compiler) error {
 	return nil
 }
 
-func addRole(qc *qcode.Compiler, r Role, t RoleTable, defaultAllow bool) error {
-	ro := true // read-only
+func addRole(qc *qcode.Compiler, r Role, t RoleTable, defaultBlock bool) error {
+	ro := false // read-only
 
-	if defaultAllow {
-		ro = false
-	}
-
-	if r.Name != "anon" {
-		ro = false
+	if defaultBlock && r.Name == "anon" {
+		ro = true
 	}
 
-	if t.ReadOnly != nil {
-		ro = *t.ReadOnly
+	if t.ReadOnly {
+		ro = true
 	}
 
-	blocked := struct {
-		query  bool
-		insert bool
-		update bool
-		delete bool
-	}{false, ro, ro, ro}
+	query := qcode.QueryConfig{Block: false}
+	insert := qcode.InsertConfig{Block: ro}
+	update := qcode.UpdateConfig{Block: ro}
+	del := qcode.DeleteConfig{Block: ro}
 
-	if t.Query.Block != nil {
-		blocked.query = *t.Query.Block
-	}
-	if t.Insert.Block != nil {
-		blocked.insert = *t.Insert.Block
-	}
-	if t.Update.Block != nil {
-		blocked.update = *t.Update.Block
-	}
-	if t.Delete.Block != nil {
-		blocked.delete = *t.Delete.Block
+	if t.Query != nil {
+		query = qcode.QueryConfig{
+			Limit:            t.Query.Limit,
+			Filters:          t.Query.Filters,
+			Columns:          t.Query.Columns,
+			DisableFunctions: t.Query.DisableFunctions,
+			Block:            t.Query.Block,
+		}
 	}
 
-	query := qcode.QueryConfig{
-		Limit:            t.Query.Limit,
-		Filters:          t.Query.Filters,
-		Columns:          t.Query.Columns,
-		DisableFunctions: t.Query.DisableFunctions,
-		Block:            blocked.query,
+	if t.Insert != nil {
+		insert = qcode.InsertConfig{
+			Filters: t.Insert.Filters,
+			Columns: t.Insert.Columns,
+			Presets: t.Insert.Presets,
+			Block:   t.Insert.Block,
+		}
 	}
 
-	insert := qcode.InsertConfig{
-		Filters: t.Insert.Filters,
-		Columns: t.Insert.Columns,
-		Presets: t.Insert.Presets,
-		Block:   blocked.insert,
+	if t.Update != nil {
+		update = qcode.UpdateConfig{
+			Filters: t.Update.Filters,
+			Columns: t.Update.Columns,
+			Presets: t.Update.Presets,
+			Block:   t.Update.Block,
+		}
 	}
 
-	update := qcode.UpdateConfig{
-		Filters: t.Update.Filters,
-		Columns: t.Update.Columns,
-		Presets: t.Update.Presets,
-		Block:   blocked.update,
-	}
-
-	del := qcode.DeleteConfig{
-		Filters: t.Delete.Filters,
-		Columns: t.Delete.Columns,
-		Block:   blocked.delete,
+	if t.Delete != nil {
+		del = qcode.DeleteConfig{
+			Filters: t.Delete.Filters,
+			Columns: t.Delete.Columns,
+			Block:   t.Delete.Block,
+		}
 	}
 
 	return qc.AddRole(r.Name, t.Name, qcode.TRConfig{
