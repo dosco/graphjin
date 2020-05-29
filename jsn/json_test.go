@@ -1,4 +1,4 @@
-package jsn
+package jsn_test
 
 import (
 	"bytes"
@@ -6,6 +6,8 @@ import (
 	"io/ioutil"
 	"strings"
 	"testing"
+
+	"github.com/dosco/super-graph/jsn"
 )
 
 var (
@@ -171,13 +173,13 @@ var (
 )
 
 func TestGet(t *testing.T) {
-	values := Get([]byte(input1), [][]byte{
+	values := jsn.Get([]byte(input1), [][]byte{
 		[]byte("test_1a"),
 		[]byte("__twitter_id"),
 		[]byte("work_email"),
 	})
 
-	expected := []Field{
+	expected := []jsn.Field{
 		{[]byte("test_1a"), []byte(`{ "__twitter_id": "ABCD" }`)},
 		{[]byte("__twitter_id"), []byte(`"ABCD"`)},
 		{[]byte("__twitter_id"), []byte(`"2048666903444506956"`)},
@@ -214,11 +216,11 @@ func TestGet(t *testing.T) {
 }
 
 func TestGet1(t *testing.T) {
-	values := Get([]byte(input5), [][]byte{
+	values := jsn.Get([]byte(input5), [][]byte{
 		[]byte("thread_slug"),
 	})
 
-	expected := []Field{
+	expected := []jsn.Field{
 		{[]byte("thread_slug"), []byte(`"in-september-2018-slovak-police-stated-that-kuciak-7929"`)},
 	}
 
@@ -238,11 +240,11 @@ func TestGet1(t *testing.T) {
 }
 
 func TestGet2(t *testing.T) {
-	values := Get([]byte(input6), [][]byte{
+	values := jsn.Get([]byte(input6), [][]byte{
 		[]byte("users_cursor"), []byte("threads_cursor"),
 	})
 
-	expected := []Field{
+	expected := []jsn.Field{
 		{[]byte("threads_cursor"), []byte(`null`)},
 		{[]byte("threads_cursor"), []byte(`25`)},
 		{[]byte("users_cursor"), []byte(`3`)},
@@ -264,7 +266,7 @@ func TestGet2(t *testing.T) {
 }
 
 func TestGet3(t *testing.T) {
-	values := Get(input7, [][]byte{[]byte("data")})
+	values := jsn.Get(input7, [][]byte{[]byte("data")})
 	v := values[0].Value
 
 	if !bytes.Equal(v[len(v)-11:], []byte(`Rangnekar"}`)) {
@@ -277,7 +279,7 @@ func TestGet4(t *testing.T) {
 
 	exp = strings.ReplaceAll(exp, "@", "`")
 
-	values := Get(input8, [][]byte{[]byte("body")})
+	values := jsn.Get(input8, [][]byte{[]byte("body")})
 
 	if string(values[0].Key) != "body" {
 		t.Fatal("unexpected key")
@@ -291,29 +293,29 @@ func TestGet4(t *testing.T) {
 
 func TestValue(t *testing.T) {
 	v1 := []byte("12345")
-	if !bytes.Equal(Value(v1), v1) {
+	if !bytes.Equal(jsn.Value(v1), v1) {
 		t.Fatal("Number value invalid")
 	}
 
 	v2 := []byte(`"12345"`)
-	if !bytes.Equal(Value(v2), []byte(`12345`)) {
+	if !bytes.Equal(jsn.Value(v2), []byte(`12345`)) {
 		t.Fatal("String value invalid")
 	}
 
 	v3 := []byte(`{ "hello": "world" }`)
-	if Value(v3) != nil {
-		t.Fatal("Object value is not nil", Value(v3))
+	if jsn.Value(v3) != nil {
+		t.Fatal("Object value is not nil", jsn.Value(v3))
 	}
 
 	v4 := []byte(`[ "hello", "world" ]`)
-	if Value(v4) != nil {
+	if jsn.Value(v4) != nil {
 		t.Fatal("List value is not nil")
 	}
 }
 
 func TestFilter1(t *testing.T) {
 	var b bytes.Buffer
-	err := Filter(&b, []byte(input2), []string{"id", "full_name", "embed"})
+	err := jsn.Filter(&b, []byte(input2), []string{"id", "full_name", "embed"})
 	if err != nil {
 		t.Error(err)
 	}
@@ -329,7 +331,7 @@ func TestFilter2(t *testing.T) {
 	value := `[{"id":1,"customer_id":"cus_2TbMGf3cl0","object":"charge","amount":100,"amount_refunded":0,"date":"01/01/2019","application":null,"billing_details":{"address":"1 Infinity Drive","zipcode":"94024"}},   {"id":2,"customer_id":"cus_2TbMGf3cl0","object":"charge","amount":150,"amount_refunded":0,"date":"02/18/2019","billing_details":{"address":"1 Infinity Drive","zipcode":"94024"}},{"id":3,"customer_id":"cus_2TbMGf3cl0","object":"charge","amount":150,"amount_refunded":50,"date":"03/21/2019","billing_details":{"address":"1 Infinity Drive","zipcode":"94024"}}]`
 
 	var b bytes.Buffer
-	err := Filter(&b, []byte(value), []string{"id"})
+	err := jsn.Filter(&b, []byte(value), []string{"id"})
 	if err != nil {
 		t.Error(err)
 	}
@@ -343,7 +345,7 @@ func TestFilter2(t *testing.T) {
 
 func TestStrip(t *testing.T) {
 	path1 := [][]byte{[]byte("data"), []byte("users")}
-	value1 := Strip([]byte(input3), path1)
+	value1 := jsn.Strip([]byte(input3), path1)
 
 	expected := []byte(`[{"id":1,"embed":{"id":8}},{"id":2},{"id":3},{"id":4},{"id":5},{"id":6},{"id":7},{"id":8},{"id":9},{"id":10},{"id":11},{"id":12},{"id":13}]`)
 
@@ -353,7 +355,7 @@ func TestStrip(t *testing.T) {
 	}
 
 	path2 := [][]byte{[]byte("boo"), []byte("hoo")}
-	value2 := Strip([]byte(input3), path2)
+	value2 := jsn.Strip([]byte(input3), path2)
 
 	if !bytes.Equal(value2, []byte(input3)) {
 		t.Log(value2)
@@ -364,7 +366,7 @@ func TestStrip(t *testing.T) {
 func TestValidateTrue(t *testing.T) {
 	json := []byte(`  [{"id":1,"embed":{"id":8}},{"id":2},{"id":3},{"id":4},{"id":5},{"id":6},{"id":7},{"id":8},{"id":9},{"id":10},{"id":11},{"id":12},{"id":13}]`)
 
-	err := Validate(string(json))
+	err := jsn.Validate(string(json))
 	if err != nil {
 		t.Error(err)
 	}
@@ -373,7 +375,7 @@ func TestValidateTrue(t *testing.T) {
 func TestValidateFalse(t *testing.T) {
 	json := []byte(`   [{ "hello": 123"<html>}]`)
 
-	err := Validate(string(json))
+	err := jsn.Validate(string(json))
 	if err == nil {
 		t.Error("JSON validation failed to detect invalid json")
 	}
@@ -382,12 +384,12 @@ func TestValidateFalse(t *testing.T) {
 func TestReplace(t *testing.T) {
 	var buf bytes.Buffer
 
-	from := []Field{
+	from := []jsn.Field{
 		{[]byte("__twitter_id"), []byte(`[{ "name": "hello" }, { "name": "world"}]`)},
 		{[]byte("__twitter_id"), []byte(`"ABC123"`)},
 	}
 
-	to := []Field{
+	to := []jsn.Field{
 		{[]byte("__twitter_id"), []byte(`"1234567890"`)},
 		{[]byte("some_list"), []byte(`[{"id":1,"embed":{"id":8}},{"id":2},{"id":3},{"id":4},{"id":5},{"id":6},{"id":7},{"id":8},{"id":9},{"id":10},{"id":11},{"id":12},{"id":13}]`)},
 	}
@@ -412,7 +414,7 @@ func TestReplace(t *testing.T) {
 		"__twitter_id":"1234567890"
 	}] }`
 
-	err := Replace(&buf, []byte(input4), from, to)
+	err := jsn.Replace(&buf, []byte(input4), from, to)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -428,7 +430,7 @@ func TestReplaceEmpty(t *testing.T) {
 
 	json := `{ "users" : [{"id":1,"full_name":"Sidney St[1]roman","email":"user0@demo.com","__users_twitter_id":"2048666903444506956"}, {"id":2,"full_name":"Jerry Dickinson","email":"user1@demo.com","__users_twitter_id":"2048666903444506956"}, {"id":3,"full_name":"Kenna Cassin","email":"user2@demo.com","__users_twitter_id":"2048666903444506956"}, {"id":4,"full_name":"Mr. Pat Parisian","email":"rodney@kautzer.biz","__users_twitter_id":"2048666903444506956"}, {"id":5,"full_name":"Bette Ebert","email":"janeenrath@goyette.com","__users_twitter_id":"2048666903444506956"}, {"id":6,"full_name":"Everett Kiehn","email":"michael@bartoletti.com","__users_twitter_id":"2048666903444506956"}, {"id":7,"full_name":"Katrina Cronin","email":"loretaklocko@framivolkman.org","__users_twitter_id":"2048666903444506956"}, {"id":8,"full_name":"Caroll Orn Sr.","email":"joannarau@hegmann.io","__users_twitter_id":"2048666903444506956"}, {"id":9,"full_name":"Gwendolyn Ziemann","email":"renaytoy@rutherford.co","__users_twitter_id":"2048666903444506956"}, {"id":10,"full_name":"Mrs. Rosann Fritsch","email":"holliemosciski@thiel.org","__users_twitter_id":"2048666903444506956"}, {"id":11,"full_name":"Arden Koss","email":"cristobalankunding@howewelch.org","__users_twitter_id":"2048666903444506956"}, {"id":12,"full_name":"Brenton Bauch PhD","email":"renee@miller.co","__users_twitter_id":"2048666903444506956"}, {"id":13,"full_name":"Daine Gleichner","email":"andrea@nienow.co","__users_twitter_id":"2048666903444506956"}] }`
 
-	err := Replace(&buf, []byte(json), []Field{}, []Field{})
+	err := jsn.Replace(&buf, []byte(json), []jsn.Field{}, []jsn.Field{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -442,7 +444,7 @@ func TestReplaceEmpty(t *testing.T) {
 func TestKeys1(t *testing.T) {
 	json := `[{"id":1,"posts": [{"title":"PT1-1","description":"PD1-1"}, {"title":"PT1-2","description":"PD1-2"}], "full_name":"FN1","email":"E1","books": [{"name":"BN1-1","description":"BD1-1"},{"name":"BN1-2","description":"BD1-2"},{"name":"BN1-2","description":"BD1-2"}]},{"id":1,"posts": [{"title":"PT1-1","description":"PD1-1"}, {"title":"PT1-2","description":"PD1-2"}], "full_name":"FN1","email":"E1","books": [{"name":"BN1-1","description":"BD1-1"},{"name":"BN1-2","description":"BD1-2"},{"name":"BN1-2","description":"BD1-2"}]},{"id":1,"posts": [{"title":"PT1-1","description":"PD1-1"}, {"title":"PT1-2","description":"PD1-2"}], "full_name":"FN1","email":"E1","books": [{"name":"BN1-1","description":"BD1-1"},{"name":"BN1-2","description":"BD1-2"},{"name":"BN1-2","description":"BD1-2"}]}]`
 
-	fields := Keys([]byte(json))
+	fields := jsn.Keys([]byte(json))
 
 	exp := []string{
 		"id", "posts", "title", "description", "full_name", "email", "books", "name", "description",
@@ -462,7 +464,7 @@ func TestKeys1(t *testing.T) {
 func TestKeys2(t *testing.T) {
 	json := `{"id":1,"posts": [{"title":"PT1-1","description":"PD1-1"}, {"title":"PT1-2","description":"PD1-2"}], "full_name":"FN1","email":"E1","books": [{"name":"BN1-1","description":"BD1-1"},{"name":"BN1-2","description":"BD1-2"},{"name":"BN1-2","description":"BD1-2"}]}`
 
-	fields := Keys([]byte(json))
+	fields := jsn.Keys([]byte(json))
 
 	exp := []string{
 		"id", "posts", "title", "description", "full_name", "email", "books", "name", "description",
@@ -491,7 +493,7 @@ func TestKeys3(t *testing.T) {
 		"user": 123
 	}`
 
-	fields := Keys([]byte(json))
+	fields := jsn.Keys([]byte(json))
 
 	exp := []string{
 		"insert", "created_at", "test_1a", "type1", "type2", "name", "updated_at", "description",
@@ -526,7 +528,7 @@ func TestClear(t *testing.T) {
 
 	expected := `{"insert":{"created_at":"","test_1a":{"type1":"","type2":[{"a":0.0}]},"name":"","updated_at":"","description":""},"user":0.0,"tags":[]}`
 
-	err := Clear(&buf, []byte(json))
+	err := jsn.Clear(&buf, []byte(json))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -541,7 +543,7 @@ func BenchmarkGet(b *testing.B) {
 	b.ReportAllocs()
 
 	for n := 0; n < b.N; n++ {
-		Get([]byte(input1), [][]byte{[]byte("__twitter_id")})
+		jsn.Get([]byte(input1), [][]byte{[]byte("__twitter_id")})
 	}
 }
 
@@ -553,7 +555,7 @@ func BenchmarkFilter(b *testing.B) {
 	b.ReportAllocs()
 
 	for n := 0; n < b.N; n++ {
-		err := Filter(&buf, []byte(input2), keys)
+		err := jsn.Filter(&buf, []byte(input2), keys)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -566,19 +568,19 @@ func BenchmarkStrip(b *testing.B) {
 	b.ReportAllocs()
 
 	for n := 0; n < b.N; n++ {
-		Strip([]byte(input3), path)
+		jsn.Strip([]byte(input3), path)
 	}
 }
 
 func BenchmarkReplace(b *testing.B) {
 	var buf bytes.Buffer
 
-	from := []Field{
+	from := []jsn.Field{
 		{[]byte("__twitter_id"), []byte(`[{ "name": "hello" }, { "name": "world"}]`)},
 		{[]byte("__twitter_id"), []byte(`"ABC123"`)},
 	}
 
-	to := []Field{
+	to := []jsn.Field{
 		{[]byte("__twitter_id"), []byte(`"1234567890"`)},
 		{[]byte("some_list"), []byte(`[{"id":1,"embed":{"id":8}},{"id":2},{"id":3},{"id":4},{"id":5},{"id":6},{"id":7},{"id":8},{"id":9},{"id":10},{"id":11},{"id":12},{"id":13}]`)},
 	}
@@ -587,7 +589,7 @@ func BenchmarkReplace(b *testing.B) {
 	b.ReportAllocs()
 
 	for n := 0; n < b.N; n++ {
-		err := Replace(&buf, []byte(input4), from, to)
+		err := jsn.Replace(&buf, []byte(input4), from, to)
 		if err != nil {
 			b.Fatal(err)
 		}

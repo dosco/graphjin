@@ -1,7 +1,11 @@
-package jsn
+// +build gofuzz
+
+package jsn_test
 
 import (
 	"testing"
+
+	"github.com/dosco/super-graph/jsn"
 )
 
 func TestFuzzCrashers(t *testing.T) {
@@ -55,6 +59,6 @@ func TestFuzzCrashers(t *testing.T) {
 	}
 
 	for _, f := range crashers {
-		_ = unifiedTest([]byte(f))
+		_ = jsn.Fuzz([]byte(f))
 	}
 }
