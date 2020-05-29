@@ -1,0 +1,11 @@
+goos: darwin
+goarch: amd64
+pkg: github.com/dosco/super-graph/core/internal/qcode
+BenchmarkQCompile-16        	  136509	      8310 ns/op	    3756 B/op	      28 allocs/op
+BenchmarkQCompileP-16       	  482752	      2237 ns/op	    3793 B/op	      28 allocs/op
+BenchmarkParse-16           	  139410	      8552 ns/op	    3902 B/op	      18 allocs/op
+BenchmarkParseP-16          	  540768	      2132 ns/op	    3903 B/op	      18 allocs/op
+BenchmarkSchemaParse-16     	  222925	      5259 ns/op	    3968 B/op	      57 allocs/op
+BenchmarkSchemaParseP-16    	  775363	      1595 ns/op	    3968 B/op	      57 allocs/op
+PASS
+ok  	github.com/dosco/super-graph/core/internal/qcode	8.311s
