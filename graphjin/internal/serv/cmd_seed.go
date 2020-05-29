@@ -18,6 +18,7 @@ import (
 	"github.com/dosco/super-graph/core"
 	"github.com/gosimple/slug"
 	"github.com/jackc/pgx/v4"
+	"github.com/jackc/pgx/v4/stdlib"
 	"github.com/spf13/cobra"
 )
 
@@ -200,12 +201,12 @@ func importCSV(table, filename string) int64 {
 		cols = append(cols, c.(string))
 	}
 
-	conn, err := acquireConn(db)
+	conn, err := stdlib.AcquireConn(db)
 	if err != nil {
 		log.Fatalf("ERR %v", err)
 	}
 	//nolint: errcheck
-	defer releaseConn(db, conn)
+	defer stdlib.ReleaseConn(db, conn)
 
 	n, err := conn.CopyFrom(
 		context.Background(),
