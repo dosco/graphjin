@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/dosco/super-graph/core/internal/qcode"
@@ -107,6 +108,8 @@ func (co *Compiler) compileQueryWithMetadata(
 	c := &compilerContext{md, w, qc.Selects, co}
 	st := NewIntStack()
 	i := 0
+
+	fmt.Println(">", len(qc.Roots))
 
 	io.WriteString(c.w, `SELECT jsonb_build_object(`)
 	for _, id := range qc.Roots {
@@ -260,6 +263,11 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select, ti *DBTableInfo)
 }
 
 func (c *compilerContext) renderRootSelect(sel *qcode.Select) error {
+	b := &bytes.Buffer{}
+	int32String(b, sel.ID)
+
+	fmt.Println(">>", sel.ID, sel.ParentID, " --- ", b.String())
+
 	io.WriteString(c.w, `'`)
 	io.WriteString(c.w, sel.FieldName)
 	io.WriteString(c.w, `', `)
@@ -1355,23 +1363,5 @@ func squoted(w io.Writer, identifier string) {
 const charset = "0123456789"
 
 func int32String(w io.Writer, val int32) {
-	if val < 10 {
-		w.Write([]byte{charset[val]})
-		return
-	}
-
-	temp := int32(0)
-	val2 := val
-	for val2 > 0 {
-		temp *= 10
-		temp += val2 % 10
-		val2 = int32(float64(val2 / 10))
-	}
-
-	val3 := temp
-	for val3 > 0 {
-		d := val3 % 10
-		val3 /= 10
-		w.Write([]byte{charset[d]})
-	}
+	io.WriteString(w, strconv.FormatInt(int64(val), 10))
 }
