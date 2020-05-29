@@ -109,8 +109,6 @@ func (co *Compiler) compileQueryWithMetadata(
 	st := NewIntStack()
 	i := 0
 
-	fmt.Println(">", len(qc.Roots))
-
 	io.WriteString(c.w, `SELECT jsonb_build_object(`)
 	for _, id := range qc.Roots {
 		if i != 0 {
@@ -263,11 +261,6 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select, ti *DBTableInfo)
 }
 
 func (c *compilerContext) renderRootSelect(sel *qcode.Select) error {
-	b := &bytes.Buffer{}
-	int32String(b, sel.ID)
-
-	fmt.Println(">>", sel.ID, sel.ParentID, " --- ", b.String())
-
 	io.WriteString(c.w, `'`)
 	io.WriteString(c.w, sel.FieldName)
 	io.WriteString(c.w, `', `)
