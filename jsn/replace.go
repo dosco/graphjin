@@ -133,9 +133,18 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 		if e != 0 {
 			e++
 
+			if e <= s {
+				return errors.New("invalid json")
+			}
+
 			if _, err := h.Write(b[s:e]); err != nil {
 				return err
 			}
+
+			if (we + 1) <= ws {
+				return errors.New("invalid json")
+			}
+
 			n, ok := tmap[h.Sum64()]
 			h.Reset()
 

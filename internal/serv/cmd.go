@@ -156,7 +156,7 @@ func cmdVersion(cmd *cobra.Command, args []string) {
 
 func BuildDetails() string {
 	if len(version) == 0 {
-		return fmt.Sprintf(`
+		return `
 Super Graph (unknown version)
 For documentation, visit https://supergraph.dev
 
@@ -166,7 +166,7 @@ To build with version information please use the Makefile
 
 Licensed under the Apache Public License 2.0
 Copyright 2020, Vikram Rangnekar
-`)
+`
 	}
 
 	return fmt.Sprintf(`
