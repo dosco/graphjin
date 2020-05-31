@@ -3,6 +3,7 @@ package jsn
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 )
 
@@ -68,7 +69,12 @@ func Clear(w *bytes.Buffer, v []byte) error {
 				}
 
 				io := int(dec.InputOffset())
-				w.Write(v[io-len(v1)-2 : io])
+				s := io - len(v1) - 2
+				if io <= s || s <= 0 {
+					return errors.New("invalid json")
+				}
+
+				w.Write(v[s:io])
 				w.WriteString(`:`)
 				isValue = true
 

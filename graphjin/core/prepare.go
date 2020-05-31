@@ -187,15 +187,14 @@ func (sg *SuperGraph) initAllowList() error {
 	var ac allow.Config
 	var err error
 
-	if len(sg.conf.AllowListFile) == 0 {
-		sg.conf.UseAllowList = false
-		sg.log.Printf("WRN allow list disabled no file specified")
+	if sg.conf.AllowListFile == "" {
+		sg.conf.AllowListFile = "allow.list"
 	}
 
 	// When list is not eabled it is still created and
 	// and new queries are saved to it.
 	if !sg.conf.UseAllowList {
-		ac = allow.Config{CreateIfNotExists: true, Persist: true}
+		ac = allow.Config{CreateIfNotExists: true, Persist: true, Log: sg.log}
 	}
 
 	sg.allowList, err = allow.New(sg.conf.AllowListFile, ac)

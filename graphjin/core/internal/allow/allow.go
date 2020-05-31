@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"sort"
 	"strings"
@@ -35,6 +36,7 @@ type List struct {
 type Config struct {
 	CreateIfNotExists bool
 	Persist           bool
+	Log               *log.Logger
 }
 
 func New(filename string, conf Config) (*List, error) {
@@ -80,6 +82,12 @@ func New(filename string, conf Config) (*List, error) {
 		} else {
 			al.filepath = filename
 		}
+
+		if file, err := os.OpenFile(al.filepath, os.O_RDONLY|os.O_CREATE, 0644); err != nil {
+			return nil, err
+		} else {
+			file.Close()
+		}
 	}
 
 	var err error
@@ -89,8 +97,10 @@ func New(filename string, conf Config) (*List, error) {
 
 		go func() {
 			for v := range al.saveChan {
-				if err = al.save(v); err != nil {
-					break
+				err := al.save(v)
+
+				if err != nil && conf.Log != nil {
+					conf.Log.Println("WRN allow list save:", err)
 				}
 			}
 		}()
