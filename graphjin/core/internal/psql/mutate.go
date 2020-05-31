@@ -542,6 +542,10 @@ func (c *compilerContext) renderConnectStmt(qc *qcode.QCode, w io.Writer,
 
 	rel := item.relPC
 
+	if rel == nil {
+		return errors.New("invalid connect value")
+	}
+
 	// Render only for parent-to-child relationship of one-to-one
 	// For this to work the child needs to found first so it's primary key
 	// can be set in the related column on the parent object.

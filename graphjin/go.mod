@@ -18,6 +18,7 @@ require (
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/dlclark/regexp2 v1.2.0 // indirect
 	github.com/dop251/goja v0.0.0-20200424152103-d0b8fda54cd0
+	github.com/dvyukov/go-fuzz v0.0.0-20200318091601-be3528f3a813 // indirect
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/garyburd/redigo v1.6.0
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect

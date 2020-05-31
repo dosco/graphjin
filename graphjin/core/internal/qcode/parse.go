@@ -201,6 +201,7 @@ func (p *Parser) peek(types ...itemType) bool {
 	// if p.items[n]._type == itemEOF {
 	// 	return false
 	// }
+
 	if n >= len(p.items) {
 		return false
 	}
@@ -299,7 +300,7 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 			return nil, fmt.Errorf("too many fields (max %d)", maxFields)
 		}
 
-		if p.peek(itemObjClose) {
+		if p.peek(itemEOF, itemObjClose) {
 			p.ignore()
 			st.Pop()
 
@@ -385,7 +386,7 @@ func (p *Parser) parseOpParams(args []Arg) ([]Arg, error) {
 			return nil, fmt.Errorf("too many args (max %d)", maxArgs)
 		}
 
-		if p.peek(itemArgsClose) {
+		if p.peek(itemEOF, itemArgsClose) {
 			p.ignore()
 			break
 		}
@@ -403,7 +404,7 @@ func (p *Parser) parseArgs(args []Arg) ([]Arg, error) {
 			return nil, fmt.Errorf("too many args (max %d)", maxArgs)
 		}
 
-		if p.peek(itemArgsClose) {
+		if p.peek(itemEOF, itemArgsClose) {
 			p.ignore()
 			break
 		}
@@ -470,7 +471,7 @@ func (p *Parser) parseObj() (*Node, error) {
 	parent.Reset()
 
 	for {
-		if p.peek(itemObjClose) {
+		if p.peek(itemEOF, itemObjClose) {
 			p.ignore()
 			break
 		}
