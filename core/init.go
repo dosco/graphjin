@@ -74,7 +74,7 @@ func (sg *SuperGraph) initConfig() error {
 	}
 
 	if c.RolesQuery == "" {
-		sg.log.Printf("WRN roles_query not defined: attribute based access control disabled")
+		sg.log.Printf("INF roles_query not defined: attribute based access control disabled")
 	}
 
 	_, userExists := sg.roles["user"]

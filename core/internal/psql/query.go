@@ -80,6 +80,10 @@ func (co *Compiler) CompileEx(qc *qcode.QCode, vars Variables) (Metadata, []byte
 }
 
 func (co *Compiler) Compile(w io.Writer, qc *qcode.QCode, vars Variables) (Metadata, error) {
+	if qc == nil {
+		return Metadata{}, fmt.Errorf("qcode is nil")
+	}
+
 	switch qc.Type {
 	case qcode.QTQuery:
 		return co.compileQuery(w, qc, vars)
@@ -1352,8 +1356,6 @@ func squoted(w io.Writer, identifier string) {
 	io.WriteString(w, identifier)
 	io.WriteString(w, `'`)
 }
-
-const charset = "0123456789"
 
 func int32String(w io.Writer, val int32) {
 	io.WriteString(w, strconv.FormatInt(int64(val), 10))
