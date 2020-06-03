@@ -1,7 +1,7 @@
 package jsn
 
 import (
-	"github.com/cespare/xxhash/v2"
+	"hash/maphash"
 )
 
 const (
@@ -41,9 +41,12 @@ func Value(b []byte) []byte {
 // Keys function fetches values for the provided keys
 func Get(b []byte, keys [][]byte) []Field {
 	kmap := make(map[uint64]struct{}, len(keys))
+	h := maphash.Hash{}
 
 	for i := range keys {
-		kmap[xxhash.Sum64(keys[i])] = struct{}{}
+		h.Write(keys[i])
+		kmap[h.Sum64()] = struct{}{}
+		h.Reset()
 	}
 
 	res := make([]Field, 0, 20)
@@ -141,7 +144,9 @@ func Get(b []byte, keys [][]byte) []Field {
 		}
 
 		if e != 0 {
-			_, ok := kmap[xxhash.Sum64(k)]
+			h.Write(k)
+			_, ok := kmap[h.Sum64()]
+			h.Reset()
 
 			if ok {
 				res = append(res, Field{k, b[s:(e + 1)]})

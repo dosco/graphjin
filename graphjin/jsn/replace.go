@@ -3,8 +3,7 @@ package jsn
 import (
 	"bytes"
 	"errors"
-
-	"github.com/cespare/xxhash/v2"
+	"hash/maphash"
 )
 
 // Replace function replaces key-value pairs provided in the `from` argument with those in the `to` argument
@@ -18,7 +17,7 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 		return err
 	}
 
-	h := xxhash.New()
+	h := maphash.Hash{}
 	tmap := make(map[uint64]int, len(from))
 
 	for i, f := range from {

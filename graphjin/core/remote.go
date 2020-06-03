@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"hash/maphash"
 	"net/http"
 	"sync"
 
-	"github.com/cespare/xxhash/v2"
 	"github.com/dosco/super-graph/core/internal/qcode"
 	"github.com/dosco/super-graph/jsn"
 )
@@ -16,12 +16,13 @@ func (sg *SuperGraph) execRemoteJoin(st *stmt, data []byte, hdr http.Header) ([]
 	var err error
 
 	sel := st.qc.Selects
-	h := xxhash.New()
+	h := maphash.Hash{}
+	h.SetSeed(sg.hashSeed)
 
 	// fetch the field name used within the db response json
 	// that are used to mark insertion points and the mapping between
 	// those field names and their select objects
-	fids, sfmap := sg.parentFieldIds(h, sel, st.md.Skipped)
+	fids, sfmap := sg.parentFieldIds(&h, sel, st.md.Skipped)
 
 	// fetch the field values of the marked insertion points
 	// these values contain the id to be used with fetching remote data
@@ -30,10 +31,10 @@ func (sg *SuperGraph) execRemoteJoin(st *stmt, data []byte, hdr http.Header) ([]
 
 	switch {
 	case len(from) == 1:
-		to, err = sg.resolveRemote(hdr, h, from[0], sel, sfmap)
+		to, err = sg.resolveRemote(hdr, &h, from[0], sel, sfmap)
 
 	case len(from) > 1:
-		to, err = sg.resolveRemotes(hdr, h, from, sel, sfmap)
+		to, err = sg.resolveRemotes(hdr, &h, from, sel, sfmap)
 
 	default:
 		return nil, errors.New("something wrong no remote ids found in db response")
@@ -55,7 +56,7 @@ func (sg *SuperGraph) execRemoteJoin(st *stmt, data []byte, hdr http.Header) ([]
 
 func (sg *SuperGraph) resolveRemote(
 	hdr http.Header,
-	h *xxhash.Digest,
+	h *maphash.Hash,
 	field jsn.Field,
 	sel []qcode.Select,
 	sfmap map[uint64]*qcode.Select) ([]jsn.Field, error) {
@@ -66,7 +67,8 @@ func (sg *SuperGraph) resolveRemote(
 	to := toA[:1]
 
 	// use the json key to find the related Select object
-	k1 := xxhash.Sum64(field.Key)
+	h.Write(field.Key)
+	k1 := h.Sum64()
 
 	s, ok := sfmap[k1]
 	if !ok {
@@ -117,7 +119,7 @@ func (sg *SuperGraph) resolveRemote(
 
 func (sg *SuperGraph) resolveRemotes(
 	hdr http.Header,
-	h *xxhash.Digest,
+	h *maphash.Hash,
 	from []jsn.Field,
 	sel []qcode.Select,
 	sfmap map[uint64]*qcode.Select) ([]jsn.Field, error) {
@@ -134,7 +136,8 @@ func (sg *SuperGraph) resolveRemotes(
 	for i, id := range from {
 
 		// use the json key to find the related Select object
-		k1 := xxhash.Sum64(id.Key)
+		h.Write(id.Key)
+		k1 := h.Sum64()
 
 		s, ok := sfmap[k1]
 		if !ok {
@@ -192,7 +195,7 @@ func (sg *SuperGraph) resolveRemotes(
 	return to, cerr
 }
 
-func (sg *SuperGraph) parentFieldIds(h *xxhash.Digest, sel []qcode.Select, skipped uint32) (
+func (sg *SuperGraph) parentFieldIds(h *maphash.Hash, sel []qcode.Select, skipped uint32) (
 	[][]byte,
 	map[uint64]*qcode.Select) {
 
@@ -227,8 +230,8 @@ func (sg *SuperGraph) parentFieldIds(h *xxhash.Digest, sel []qcode.Select, skipp
 			fm[n] = r.IDField
 			n++
 
-			k := xxhash.Sum64(r.IDField)
-			sm[k] = s
+			h.Write(r.IDField)
+			sm[h.Sum64()] = s
 		}
 	}
 

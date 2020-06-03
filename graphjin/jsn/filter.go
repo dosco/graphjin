@@ -2,17 +2,19 @@ package jsn
 
 import (
 	"bytes"
-
-	"github.com/cespare/xxhash/v2"
+	"hash/maphash"
 )
 
 // Filter function filters the JSON keeping only the provided keys and removing all others
 func Filter(w *bytes.Buffer, b []byte, keys []string) error {
 	var err error
 	kmap := make(map[uint64]struct{}, len(keys))
+	h := maphash.Hash{}
 
 	for i := range keys {
-		kmap[xxhash.Sum64String(keys[i])] = struct{}{}
+		h.WriteString(keys[i])
+		kmap[h.Sum64()] = struct{}{}
+		h.Reset()
 	}
 
 	// is an list
@@ -132,7 +134,11 @@ func Filter(w *bytes.Buffer, b []byte, keys []string) error {
 			cb := b[s:(e + 1)]
 			e = 0
 
-			if _, ok := kmap[xxhash.Sum64(k)]; !ok {
+			h.Write(k)
+			_, ok := kmap[h.Sum64()]
+			h.Reset()
+
+			if !ok {
 				continue
 			}
 

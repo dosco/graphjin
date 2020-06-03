@@ -63,7 +63,7 @@ func (sg *SuperGraph) initPrepared() error {
 		return fmt.Errorf("role query: %w", err)
 	}
 
-	sg.queries = make(map[uint64]*query)
+	sg.queries = make(map[uint64]query)
 
 	list, err := sg.allowList.Load()
 	if err != nil {
@@ -77,22 +77,19 @@ func (sg *SuperGraph) initPrepared() error {
 		if len(v.Query) == 0 {
 			continue
 		}
-		q := &query{ai: v, qt: qcode.GetQType(v.Query)}
+		qt := qcode.GetQType(v.Query)
 
-		switch q.qt {
+		switch qt {
 		case qcode.QTQuery:
-			sg.queries[queryID(&h, v.Name, "user")] = q
-			h.Reset()
+			sg.queries[queryID(&h, v.Name, "user")] = query{ai: v, qt: qt}
 
 			if sg.anonExists {
-				sg.queries[queryID(&h, v.Name, "anon")] = q
-				h.Reset()
+				sg.queries[queryID(&h, v.Name, "anon")] = query{ai: v, qt: qt}
 			}
 
 		case qcode.QTMutation:
 			for _, role := range sg.conf.Roles {
-				sg.queries[queryID(&h, v.Name, role.Name)] = q
-				h.Reset()
+				sg.queries[queryID(&h, v.Name, role.Name)] = query{ai: v, qt: qt}
 			}
 		}
 	}
@@ -166,5 +163,8 @@ func (sg *SuperGraph) initAllowList() error {
 func queryID(h *maphash.Hash, name string, role string) uint64 {
 	h.WriteString(name)
 	h.WriteString(role)
-	return h.Sum64()
+	v := h.Sum64()
+	h.Reset()
+
+	return v
 }

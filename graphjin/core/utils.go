@@ -1,11 +1,9 @@
 package core
 
-import (
-	"github.com/cespare/xxhash/v2"
-)
+import "hash/maphash"
 
 // nolint: errcheck
-func mkkey(h *xxhash.Digest, k1 string, k2 string) uint64 {
+func mkkey(h *maphash.Hash, k1 string, k2 string) uint64 {
 	h.WriteString(k1)
 	h.WriteString(k2)
 	v := h.Sum64()
