@@ -2,143 +2,106 @@ package core
 
 import (
 	"bytes"
-	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"fmt"
+	"hash/maphash"
 	"io"
 	"strings"
+	"sync"
 
 	"github.com/dosco/super-graph/core/internal/allow"
 	"github.com/dosco/super-graph/core/internal/qcode"
 )
 
-type preparedItem struct {
+type query struct {
+	sync.Once
 	sd      *sql.Stmt
+	ai      allow.Item
+	qt      qcode.QType
+	err     error
 	st      stmt
 	roleArg bool
 }
 
-func (sg *SuperGraph) initPrepared() error {
-	ct := context.Background()
+func (sg *SuperGraph) prepare(q *query, role string) {
+	var stmts []stmt
+	var err error
 
+	qb := []byte(q.ai.Query)
+
+	switch q.qt {
+	case qcode.QTQuery:
+		if sg.abacEnabled {
+			stmts, err = sg.buildMultiStmt(qb, q.ai.Vars)
+		} else {
+			stmts, err = sg.buildRoleStmt(qb, q.ai.Vars, role)
+		}
+
+	case qcode.QTMutation:
+		stmts, err = sg.buildRoleStmt(qb, q.ai.Vars, role)
+	}
+
+	if err != nil {
+		sg.log.Printf("WRN %s %s: %v", q.qt, q.ai.Name, err)
+	}
+
+	q.st = stmts[0]
+	q.roleArg = len(stmts) > 1
+
+	q.sd, err = sg.db.Prepare(q.st.sql)
+	if err != nil {
+		q.err = fmt.Errorf("prepare failed: %v: %s", err, q.st.sql)
+	}
+}
+
+func (sg *SuperGraph) initPrepared() error {
 	if sg.allowList.IsPersist() {
 		return nil
 	}
-	sg.prepared = make(map[string]*preparedItem)
 
-	tx, err := sg.db.BeginTx(ct, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback() //nolint: errcheck
-
-	if err = sg.prepareRoleStmt(tx); err != nil {
-		return fmt.Errorf("prepareRoleStmt: %w", err)
+	if err := sg.prepareRoleStmt(); err != nil {
+		return fmt.Errorf("role query: %w", err)
 	}
 
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-
-	success := 0
+	sg.queries = make(map[uint64]*query)
 
 	list, err := sg.allowList.Load()
 	if err != nil {
 		return err
 	}
 
+	h := maphash.Hash{}
+	h.SetSeed(sg.hashSeed)
+
 	for _, v := range list {
 		if len(v.Query) == 0 {
 			continue
 		}
+		q := &query{ai: v, qt: qcode.GetQType(v.Query)}
 
-		err := sg.prepareStmt(v)
-		if err != nil {
-			return err
-		} else {
-			success++
-		}
-	}
+		switch q.qt {
+		case qcode.QTQuery:
+			sg.queries[queryID(&h, v.Name, "user")] = q
+			h.Reset()
 
-	sg.log.Printf("INF allow list: prepared %d / %d queries", success, len(list))
-
-	return nil
-}
-
-func (sg *SuperGraph) prepareStmt(item allow.Item) error {
-	query := item.Query
-	qb := []byte(query)
-	vars := item.Vars
-
-	qt := qcode.GetQType(query)
-	ct := context.Background()
-
-	switch qt {
-	case qcode.QTQuery:
-		var stmts1 []stmt
-		var err error
-
-		if sg.abacEnabled {
-			stmts1, err = sg.buildMultiStmt(qb, vars)
-		} else {
-			stmts1, err = sg.buildRoleStmt(qb, vars, "user")
-		}
-
-		if err == nil {
-			if err = sg.prepare(ct, stmts1, stmtHash(item.Name, "user")); err != nil {
-				return err
+			if sg.anonExists {
+				sg.queries[queryID(&h, v.Name, "anon")] = q
+				h.Reset()
 			}
-		} else {
-			sg.log.Printf("WRN query %s: %v", item.Name, err)
-		}
 
-		if sg.anonExists {
-			stmts2, err := sg.buildRoleStmt(qb, vars, "anon")
-
-			if err == nil {
-				if err = sg.prepare(ct, stmts2, stmtHash(item.Name, "anon")); err != nil {
-					return err
-				}
-			} else {
-				sg.log.Printf("WRN query %s: %v", item.Name, err)
-			}
-		}
-
-	case qcode.QTMutation:
-		for _, role := range sg.conf.Roles {
-			stmts, err := sg.buildRoleStmt(qb, vars, role.Name)
-
-			if err == nil {
-				if err = sg.prepare(ct, stmts, stmtHash(item.Name, role.Name)); err != nil {
-					return err
-				}
-			} else {
-				sg.log.Printf("WRN mutation %s: %v", item.Name, err)
+		case qcode.QTMutation:
+			for _, role := range sg.conf.Roles {
+				sg.queries[queryID(&h, v.Name, role.Name)] = q
+				h.Reset()
 			}
 		}
 	}
 
-	return nil
-}
-
-func (sg *SuperGraph) prepare(ct context.Context, st []stmt, key string) error {
-	sd, err := sg.db.PrepareContext(ct, st[0].sql)
-	if err != nil {
-		return fmt.Errorf("prepare failed: %v: %s", err, st[0].sql)
-	}
-
-	sg.prepared[key] = &preparedItem{
-		sd:      sd,
-		st:      st[0],
-		roleArg: len(st) > 1,
-	}
 	return nil
 }
 
 // nolint: errcheck
-func (sg *SuperGraph) prepareRoleStmt(tx *sql.Tx) error {
+func (sg *SuperGraph) prepareRoleStmt() error {
 	var err error
 
 	if !sg.abacEnabled {
@@ -169,7 +132,7 @@ func (sg *SuperGraph) prepareRoleStmt(tx *sql.Tx) error {
 	io.WriteString(w, `) AS "_sg_auth_roles_query" LIMIT 1) `)
 	io.WriteString(w, `ELSE 'anon' END) FROM (VALUES (1)) AS "_sg_auth_filler" LIMIT 1; `)
 
-	sg.getRole, err = tx.Prepare(w.String())
+	sg.getRole, err = sg.db.Prepare(w.String())
 	if err != nil {
 		return err
 	}
@@ -200,9 +163,8 @@ func (sg *SuperGraph) initAllowList() error {
 }
 
 // nolint: errcheck
-func stmtHash(name string, role string) string {
-	h := sha256.New()
-	io.WriteString(h, strings.ToLower(name))
-	io.WriteString(h, role)
-	return hex.EncodeToString(h.Sum(nil))
+func queryID(h *maphash.Hash, name string, role string) uint64 {
+	h.WriteString(name)
+	h.WriteString(role)
+	return h.Sum64()
 }

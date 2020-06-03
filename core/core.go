@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"hash/maphash"
 	"time"
 
 	"github.com/dosco/super-graph/core/internal/psql"
@@ -165,32 +166,43 @@ func (c *scontext) resolvePreparedSQL() ([]byte, *stmt, error) {
 
 	} else {
 		role = c.role
-
 	}
 
 	c.res.role = role
 
-	ps, ok := c.sg.prepared[stmtHash(c.res.name, role)]
+	h := maphash.Hash{}
+	h.SetSeed(c.sg.hashSeed)
+
+	q, ok := c.sg.queries[queryID(&h, c.res.name, role)]
 	if !ok {
 		return nil, nil, errNotFound
 	}
-	c.res.sql = ps.st.sql
+
+	if q.sd == nil {
+		q.Do(func() { c.sg.prepare(q, role) })
+
+		if q.err != nil {
+			return nil, nil, err
+		}
+	}
+
+	c.res.sql = q.st.sql
 
 	var root []byte
 	var row *sql.Row
 
-	varsList, err := c.argList(ps.st.md)
+	varsList, err := c.argList(q.st.md)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	if useTx {
-		row = tx.Stmt(ps.sd).QueryRow(varsList...)
+		row = tx.Stmt(q.sd).QueryRow(varsList...)
 	} else {
-		row = ps.sd.QueryRow(varsList...)
+		row = q.sd.QueryRow(varsList...)
 	}
 
-	if ps.roleArg {
+	if q.roleArg {
 		err = row.Scan(&role, &root)
 	} else {
 		err = row.Scan(&root)
@@ -204,15 +216,15 @@ func (c *scontext) resolvePreparedSQL() ([]byte, *stmt, error) {
 
 	if useTx {
 		if err := tx.Commit(); err != nil {
-			return nil, nil, err
+			return nil, nil, q.err
 		}
 	}
 
-	if root, err = c.sg.encryptCursor(ps.st.qc, root); err != nil {
+	if root, err = c.sg.encryptCursor(q.st.qc, root); err != nil {
 		return nil, nil, err
 	}
 
-	return root, &ps.st, nil
+	return root, &q.st, nil
 }
 
 func (c *scontext) resolveSQL() ([]byte, *stmt, error) {

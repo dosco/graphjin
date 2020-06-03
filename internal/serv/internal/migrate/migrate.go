@@ -6,9 +6,11 @@ import (
 	"database/sql"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"text/template"
@@ -105,39 +107,40 @@ func (defaultMigratorFS) Glob(pattern string) ([]string, error) {
 func FindMigrationsEx(path string, fs MigratorFS) ([]string, error) {
 	path = strings.TrimRight(path, string(filepath.Separator))
 
-	fileInfos, err := fs.ReadDir(path)
+	files, err := ioutil.ReadDir(path)
 	if err != nil {
-		return nil, err
+		log.Fatal(err)
 	}
 
-	paths := make([]string, 0, len(fileInfos))
-	for _, fi := range fileInfos {
+	fm := make(map[int]string, len(files))
+	keys := make([]int, 0, len(files))
+
+	for _, fi := range files {
 		if fi.IsDir() {
 			continue
 		}
 
 		matches := migrationPattern.FindStringSubmatch(fi.Name())
+
 		if len(matches) != 2 {
 			continue
 		}
 
-		n, err := strconv.ParseInt(matches[1], 10, 32)
+		n, err := strconv.Atoi(matches[1])
 		if err != nil {
 			// The regexp already validated that the prefix is all digits so this *should* never fail
 			return nil, err
 		}
 
-		mcount := len(paths)
+		fm[n] = filepath.Join(path, fi.Name())
+		keys = append(keys, n)
+	}
 
-		if n < int64(mcount) {
-			return nil, fmt.Errorf("Duplicate migration %d", n)
-		}
+	sort.Ints(keys)
 
-		if int64(mcount) < n {
-			return nil, fmt.Errorf("Missing migration %d", mcount)
-		}
-
-		paths = append(paths, filepath.Join(path, fi.Name()))
+	paths := make([]string, 0, len(keys))
+	for _, k := range keys {
+		paths = append(paths, fm[k])
 	}
 
 	return paths, nil
