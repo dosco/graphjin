@@ -12,8 +12,7 @@ FROM golang:1.14-alpine as go-build
 RUN apk update && \
     apk add --no-cache make && \
     apk add --no-cache git && \
-    apk add --no-cache jq && \
-    apk add --no-cache upx=3.95-r2
+    apk add --no-cache jq
 
 RUN GO111MODULE=off go get -u github.com/rafaelsq/wtc
 
