@@ -85,10 +85,10 @@ type SuperGraph struct {
 	allowList   *allow.List
 	encKey      [32]byte
 	hashSeed    maphash.Seed
-	queries     map[uint64]*query
+	queries     map[uint64]query
 	roles       map[string]*Role
 	getRole     *sql.Stmt
-	rmap        map[uint64]*resolvFn
+	rmap        map[uint64]resolvFn
 	abacEnabled bool
 	anonExists  bool
 	qc          *qcode.Compiler

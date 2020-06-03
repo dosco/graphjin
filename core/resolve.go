@@ -2,11 +2,11 @@ package core
 
 import (
 	"fmt"
+	"hash/maphash"
 	"io/ioutil"
 	"net/http"
 	"strings"
 
-	"github.com/cespare/xxhash/v2"
 	"github.com/dosco/super-graph/core/internal/psql"
 	"github.com/dosco/super-graph/jsn"
 )
@@ -19,7 +19,7 @@ type resolvFn struct {
 
 func (sg *SuperGraph) initResolvers() error {
 	var err error
-	sg.rmap = make(map[uint64]*resolvFn)
+	sg.rmap = make(map[uint64]resolvFn)
 
 	for _, t := range sg.conf.Tables {
 		err = sg.initRemotes(t)
@@ -36,7 +36,8 @@ func (sg *SuperGraph) initResolvers() error {
 }
 
 func (sg *SuperGraph) initRemotes(t Table) error {
-	h := xxhash.New()
+	h := maphash.Hash{}
+	h.SetSeed(sg.hashSeed)
 
 	for _, r := range t.Remotes {
 		// defines the table column to be used as an id in the
@@ -75,17 +76,18 @@ func (sg *SuperGraph) initRemotes(t Table) error {
 			path = append(path, []byte(p))
 		}
 
-		rf := &resolvFn{
+		rf := resolvFn{
 			IDField: []byte(idk),
 			Path:    path,
 			Fn:      fn,
 		}
 
 		// index resolver obj by parent and child names
-		sg.rmap[mkkey(h, r.Name, t.Name)] = rf
+		sg.rmap[mkkey(&h, r.Name, t.Name)] = rf
 
 		// index resolver obj by IDField
-		sg.rmap[xxhash.Sum64(rf.IDField)] = rf
+		h.Write(rf.IDField)
+		sg.rmap[h.Sum64()] = rf
 	}
 
 	return nil

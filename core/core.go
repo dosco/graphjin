@@ -179,7 +179,7 @@ func (c *scontext) resolvePreparedSQL() ([]byte, *stmt, error) {
 	}
 
 	if q.sd == nil {
-		q.Do(func() { c.sg.prepare(q, role) })
+		q.Do(func() { c.sg.prepare(&q, role) })
 
 		if q.err != nil {
 			return nil, nil, err
@@ -195,6 +195,8 @@ func (c *scontext) resolvePreparedSQL() ([]byte, *stmt, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+
+	fmt.Println(">>", varsList)
 
 	if useTx {
 		row = tx.Stmt(q.sd).QueryRow(varsList...)

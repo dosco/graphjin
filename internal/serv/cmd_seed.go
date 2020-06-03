@@ -82,8 +82,6 @@ func graphQLFunc(sg *core.SuperGraph, query string, data interface{}, opt map[st
 
 	if v, ok := opt["user_id"]; ok && len(v) != 0 {
 		ct = context.WithValue(ct, core.UserIDKey, v)
-	} else {
-		ct = context.WithValue(ct, core.UserIDKey, "-1")
 	}
 
 	// var role string

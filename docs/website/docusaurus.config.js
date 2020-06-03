@@ -36,8 +36,8 @@ module.exports = {
           position: "left",
         },
         {
-          label: "Art Compute",
-          href: "https://artcompute.com/s/super-graph",
+          label: "AbtCode",
+          href: "https://abtcode.com/s/super-graph",
           position: "left",
         },
       ],

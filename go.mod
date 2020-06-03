@@ -12,13 +12,11 @@ require (
 	github.com/adjust/gorails v0.0.0-20171013043634-2786ed0c03d3
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
 	github.com/brianvoe/gofakeit/v5 v5.2.0
-	github.com/cespare/xxhash/v2 v2.1.1
 	github.com/chirino/graphql v0.0.0-20200430165312-293648399b1a
 	github.com/daaku/go.zipexe v1.0.1 // indirect
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/dlclark/regexp2 v1.2.0 // indirect
 	github.com/dop251/goja v0.0.0-20200424152103-d0b8fda54cd0
-	github.com/dvyukov/go-fuzz v0.0.0-20200318091601-be3528f3a813 // indirect
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/garyburd/redigo v1.6.0
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
@@ -30,7 +28,6 @@ require (
 	github.com/openzipkin/zipkin-go v0.2.2
 	github.com/pelletier/go-toml v1.7.0 // indirect
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/common v0.4.0
 	github.com/rs/cors v1.7.0
 	github.com/spf13/afero v1.2.2 // indirect
 	github.com/spf13/cast v1.3.1 // indirect
