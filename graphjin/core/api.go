@@ -49,6 +49,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
+	"hash/maphash"
 	_log "log"
 	"os"
 
@@ -83,7 +84,8 @@ type SuperGraph struct {
 	schema      *psql.DBSchema
 	allowList   *allow.List
 	encKey      [32]byte
-	prepared    map[string]*preparedItem
+	hashSeed    maphash.Seed
+	queries     map[uint64]*query
 	roles       map[string]*Role
 	getRole     *sql.Stmt
 	rmap        map[uint64]*resolvFn
@@ -107,10 +109,11 @@ func newSuperGraph(conf *Config, db *sql.DB, dbinfo *psql.DBInfo) (*SuperGraph, 
 	}
 
 	sg := &SuperGraph{
-		conf:   conf,
-		db:     db,
-		dbinfo: dbinfo,
-		log:    _log.New(os.Stdout, "", 0),
+		conf:     conf,
+		db:       db,
+		dbinfo:   dbinfo,
+		log:      _log.New(os.Stdout, "", 0),
+		hashSeed: maphash.MakeSeed(),
 	}
 
 	if err := sg.initConfig(); err != nil {
