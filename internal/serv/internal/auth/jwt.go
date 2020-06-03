@@ -14,10 +14,11 @@ import (
 )
 
 const (
-	authHeader             = "Authorization"
-	jwtAuth0           int = iota + 1
-	jwtFirebase        int = iota + 2
-	firebasePKEndpoint     = "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com"
+	authHeader               = "Authorization"
+	jwtAuth0             int = iota + 1
+	jwtFirebase          int = iota + 2
+	firebasePKEndpoint       = "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com"
+	firebaseIssuerPrefix     = "https://securetoken.google.com/"
 )
 
 type firebasePKCache struct {
@@ -113,7 +114,10 @@ func JwtHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 					ctx = context.WithValue(ctx, core.UserIDProviderKey, sub[0])
 					ctx = context.WithValue(ctx, core.UserIDKey, sub[1])
 				}
-			} else if jwtProvider == jwtFirebase && claims.Audience == ac.JWT.FirebaseProjectID {
+			} else if jwtProvider == jwtFirebase && 
+						claims.Audience == ac.JWT.FirebaseProjectID && 
+						claims.Issuer == firebaseIssuerPrefix+ac.JWT.FirebaseProjectID {
+							
 				ctx = context.WithValue(ctx, core.UserIDKey, claims.Subject)
 			} else {
 				ctx = context.WithValue(ctx, core.UserIDKey, claims.Subject)
@@ -208,7 +212,7 @@ func firebaseKeyFunction(token *jwt.Token) (interface{}, error) {
 	if key, found := firebasePublicKeys.PublicKeys[kid.(string)]; found {
 		return key, nil
 	}
-	
+
 	return nil, &firebaseKeyError{
 		Message: "Error no matching public key for kid supplied in jwt",
 	}
