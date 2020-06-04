@@ -32,6 +32,7 @@ type Auth struct {
 		Secret     string
 		PubKeyFile string `mapstructure:"public_key_file"`
 		PubKeyType string `mapstructure:"public_key_type"`
+		Audience   string `mapstructure:"audience"`
 	}
 
 	Header struct {
