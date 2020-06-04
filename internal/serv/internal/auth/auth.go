@@ -32,7 +32,7 @@ type Auth struct {
 		Secret     string
 		PubKeyFile string `mapstructure:"public_key_file"`
 		PubKeyType string `mapstructure:"public_key_type"`
-		FirebaseProjectID string `mapstructure:"firebase_project_id"`
+		Audience   string `mapstructure:"audience"`
 	}
 
 	Header struct {

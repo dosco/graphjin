@@ -71,6 +71,7 @@ func JwtHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
+
 		var tok string
 
 		if len(cookie) != 0 {
@@ -108,16 +109,19 @@ func JwtHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 		if claims, ok := token.Claims.(*jwt.StandardClaims); ok {
 			ctx := r.Context()
 
+			if ac.JWT.Audience != "" && claims.Audience != ac.JWT.Audience {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			if jwtProvider == jwtAuth0 {
 				sub := strings.Split(claims.Subject, "|")
 				if len(sub) != 2 {
 					ctx = context.WithValue(ctx, core.UserIDProviderKey, sub[0])
 					ctx = context.WithValue(ctx, core.UserIDKey, sub[1])
 				}
-			} else if jwtProvider == jwtFirebase && 
-						claims.Audience == ac.JWT.FirebaseProjectID && 
-						claims.Issuer == firebaseIssuerPrefix+ac.JWT.FirebaseProjectID {
-							
+			} else if jwtProvider == jwtFirebase &&
+				claims.Issuer == firebaseIssuerPrefix+ac.JWT.Audience {
 				ctx = context.WithValue(ctx, core.UserIDKey, claims.Subject)
 			} else {
 				ctx = context.WithValue(ctx, core.UserIDKey, claims.Subject)
@@ -151,7 +155,6 @@ func firebaseKeyFunction(token *jwt.Token) (interface{}, error) {
 
 	if firebasePublicKeys.Expiration.Before(time.Now()) {
 		resp, err := http.Get(firebasePKEndpoint)
-		defer resp.Body.Close()
 
 		if err != nil {
 			return nil, &firebaseKeyError{
@@ -159,6 +162,8 @@ func firebaseKeyFunction(token *jwt.Token) (interface{}, error) {
 				Err:     err,
 			}
 		}
+
+		defer resp.Body.Close()
 
 		data, err := ioutil.ReadAll(resp.Body)
 
@@ -210,7 +215,8 @@ func firebaseKeyFunction(token *jwt.Token) (interface{}, error) {
 	}
 
 	if key, found := firebasePublicKeys.PublicKeys[kid.(string)]; found {
-		return key, nil
+		k, err := jwt.ParseRSAPublicKeyFromPEM([]byte(key))
+		return k, err
 	}
 
 	return nil, &firebaseKeyError{
