@@ -25,8 +25,8 @@ type Param struct {
 }
 
 type Metadata struct {
-	Skipped uint32
-	Params  []Param
+	skipped uint32
+	params  []Param
 	pindex  map[string]int
 }
 
@@ -80,26 +80,30 @@ func (co *Compiler) CompileEx(qc *qcode.QCode, vars Variables) (Metadata, []byte
 }
 
 func (co *Compiler) Compile(w io.Writer, qc *qcode.QCode, vars Variables) (Metadata, error) {
+	return co.CompileWithMetadata(w, qc, vars, Metadata{})
+}
+
+func (co *Compiler) CompileWithMetadata(w io.Writer, qc *qcode.QCode, vars Variables, md Metadata) (Metadata, error) {
+	md.skipped = 0
+
 	if qc == nil {
-		return Metadata{}, fmt.Errorf("qcode is nil")
+		return md, fmt.Errorf("qcode is nil")
 	}
 
 	switch qc.Type {
 	case qcode.QTQuery:
-		return co.compileQuery(w, qc, vars)
+		return co.compileQueryWithMetadata(w, qc, vars, md)
 
 	case qcode.QTInsert,
 		qcode.QTUpdate,
 		qcode.QTDelete,
 		qcode.QTUpsert:
 		return co.compileMutation(w, qc, vars)
+
+	default:
+		return Metadata{}, fmt.Errorf("Unknown operation type %d", qc.Type)
 	}
 
-	return Metadata{}, fmt.Errorf("Unknown operation type %d", qc.Type)
-}
-
-func (co *Compiler) compileQuery(w io.Writer, qc *qcode.QCode, vars Variables) (Metadata, error) {
-	return co.compileQueryWithMetadata(w, qc, vars, Metadata{})
 }
 
 func (co *Compiler) compileQueryWithMetadata(
@@ -176,7 +180,7 @@ func (co *Compiler) compileQueryWithMetadata(
 			}
 
 			for _, cid := range sel.Children {
-				if hasBit(c.md.Skipped, uint32(cid)) {
+				if hasBit(c.md.skipped, uint32(cid)) {
 					continue
 				}
 				child := &c.s[cid]
@@ -354,7 +358,7 @@ func (c *compilerContext) initSelect(sel *qcode.Select, ti *DBTableInfo, vars Va
 			if _, ok := colmap[rel.Left.Col]; !ok {
 				cols = append(cols, &qcode.Column{Table: ti.Name, Name: rel.Left.Col, FieldName: rel.Right.Col})
 				colmap[rel.Left.Col] = struct{}{}
-				c.md.Skipped |= (1 << uint(id))
+				c.md.skipped |= (1 << uint(id))
 			}
 
 		default:
@@ -622,7 +626,7 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, ti *DBTableInfo, 
 	i := colsRendered
 
 	for _, id := range sel.Children {
-		if hasBit(c.md.Skipped, uint32(id)) {
+		if hasBit(c.md.skipped, uint32(id)) {
 			continue
 		}
 		childSel := &c.s[id]
@@ -804,7 +808,7 @@ func (c *compilerContext) renderCursorCTE(sel *qcode.Select) error {
 		quoted(c.w, ob.Col)
 	}
 	io.WriteString(c.w, ` FROM string_to_array(`)
-	c.renderValueExp(Param{Name: "cursor", Type: "json"})
+	c.md.renderValueExp(c.w, Param{Name: "cursor", Type: "json"})
 	io.WriteString(c.w, `, ',') as a) `)
 	return nil
 }
@@ -1102,7 +1106,7 @@ func (c *compilerContext) renderOp(ex *qcode.Exp, ti *DBTableInfo) error {
 		} else {
 			io.WriteString(c.w, `) @@ to_tsquery(`)
 		}
-		c.renderValueExp(Param{Name: ex.Val, Type: "string"})
+		c.md.renderValueExp(c.w, Param{Name: ex.Val, Type: "string"})
 		io.WriteString(c.w, `))`)
 
 		return nil
@@ -1191,7 +1195,7 @@ func (c *compilerContext) renderVal(ex *qcode.Exp, vars map[string]string, col *
 		switch {
 		case ok && strings.HasPrefix(val, "sql:"):
 			io.WriteString(c.w, `(`)
-			c.renderVar(val[4:], c.renderValueExp)
+			c.md.RenderVar(c.w, val[4:])
 			io.WriteString(c.w, `)`)
 
 		case ok:
@@ -1199,7 +1203,7 @@ func (c *compilerContext) renderVal(ex *qcode.Exp, vars map[string]string, col *
 
 		case ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn:
 			io.WriteString(c.w, `(ARRAY(SELECT json_array_elements_text(`)
-			c.renderValueExp(Param{Name: ex.Val, Type: col.Type, IsArray: true})
+			c.md.renderValueExp(c.w, Param{Name: ex.Val, Type: col.Type, IsArray: true})
 			io.WriteString(c.w, `))`)
 
 			io.WriteString(c.w, ` :: `)
@@ -1208,7 +1212,7 @@ func (c *compilerContext) renderVal(ex *qcode.Exp, vars map[string]string, col *
 			return
 
 		default:
-			c.renderValueExp(Param{Name: ex.Val, Type: col.Type, IsArray: false})
+			c.md.renderValueExp(c.w, Param{Name: ex.Val, Type: col.Type, IsArray: false})
 		}
 
 	case qcode.ValRef:
@@ -1220,54 +1224,6 @@ func (c *compilerContext) renderVal(ex *qcode.Exp, vars map[string]string, col *
 
 	io.WriteString(c.w, ` :: `)
 	io.WriteString(c.w, col.Type)
-}
-
-func (c *compilerContext) renderValueExp(p Param) {
-	io.WriteString(c.w, `$`)
-	if v, ok := c.md.pindex[p.Name]; ok {
-		int32String(c.w, int32(v))
-
-	} else {
-		c.md.Params = append(c.md.Params, p)
-		n := len(c.md.Params)
-
-		if c.md.pindex == nil {
-			c.md.pindex = make(map[string]int)
-		}
-		c.md.pindex[p.Name] = n
-		int32String(c.w, int32(n))
-	}
-}
-
-func (c *compilerContext) renderVar(vv string, fn func(Param)) {
-	f, s := -1, 0
-
-	for i := range vv {
-		v := vv[i]
-		switch {
-		case (i > 0 && vv[i-1] != '\\' && v == '$') || v == '$':
-			if (i - s) > 0 {
-				io.WriteString(c.w, vv[s:i])
-			}
-			f = i
-
-		case (v < 'a' && v > 'z') &&
-			(v < 'A' && v > 'Z') &&
-			(v < '0' && v > '9') &&
-			v != '_' &&
-			f != -1 &&
-			(i-f) > 1:
-			fn(Param{Name: vv[f+1 : i]})
-			s = i
-			f = -1
-		}
-	}
-
-	if f != -1 && (len(vv)-f) > 1 {
-		fn(Param{Name: vv[f+1:]})
-	} else {
-		io.WriteString(c.w, vv[s:])
-	}
 }
 
 func funcPrefixLen(fm map[string]*DBFunction, fn string) int {

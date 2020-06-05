@@ -125,7 +125,7 @@ func (sg *SuperGraph) prepareRoleStmt() error {
 	}
 
 	io.WriteString(w, ` ELSE $2 END) FROM (`)
-	io.WriteString(w, sg.conf.RolesQuery)
+	io.WriteString(w, rq)
 	io.WriteString(w, `) AS "_sg_auth_roles_query" LIMIT 1) `)
 	io.WriteString(w, `ELSE 'anon' END) FROM (VALUES (1)) AS "_sg_auth_filler" LIMIT 1; `)
 

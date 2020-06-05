@@ -22,7 +22,7 @@ func (sg *SuperGraph) execRemoteJoin(st *stmt, data []byte, hdr http.Header) ([]
 	// fetch the field name used within the db response json
 	// that are used to mark insertion points and the mapping between
 	// those field names and their select objects
-	fids, sfmap := sg.parentFieldIds(&h, sel, st.md.Skipped)
+	fids, sfmap := sg.parentFieldIds(&h, sel, st.md.Skipped())
 
 	// fetch the field values of the marked insertion points
 	// these values contain the id to be used with fetching remote data
@@ -67,7 +67,7 @@ func (sg *SuperGraph) resolveRemote(
 	to := toA[:1]
 
 	// use the json key to find the related Select object
-	h.Write(field.Key)
+	_, _ = h.Write(field.Key)
 	k1 := h.Sum64()
 
 	s, ok := sfmap[k1]
@@ -136,7 +136,7 @@ func (sg *SuperGraph) resolveRemotes(
 	for i, id := range from {
 
 		// use the json key to find the related Select object
-		h.Write(id.Key)
+		_, _ = h.Write(id.Key)
 		k1 := h.Sum64()
 
 		s, ok := sfmap[k1]
@@ -230,7 +230,7 @@ func (sg *SuperGraph) parentFieldIds(h *maphash.Hash, sel []qcode.Select, skippe
 			fm[n] = r.IDField
 			n++
 
-			h.Write(r.IDField)
+			_, _ = h.Write(r.IDField)
 			sm[h.Sum64()] = s
 		}
 	}

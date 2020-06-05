@@ -44,7 +44,7 @@ func Get(b []byte, keys [][]byte) []Field {
 	h := maphash.Hash{}
 
 	for i := range keys {
-		h.Write(keys[i])
+		_, _ = h.Write(keys[i])
 		kmap[h.Sum64()] = struct{}{}
 		h.Reset()
 	}
@@ -144,7 +144,7 @@ func Get(b []byte, keys [][]byte) []Field {
 		}
 
 		if e != 0 {
-			h.Write(k)
+			_, _ = h.Write(k)
 			_, ok := kmap[h.Sum64()]
 			h.Reset()
 

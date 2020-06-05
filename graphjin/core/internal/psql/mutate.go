@@ -432,11 +432,11 @@ func (c *compilerContext) renderInsertUpdateColumns(
 			val := root.PresetMap[cn]
 			switch {
 			case ok && len(val) > 1 && val[0] == '$':
-				c.renderValueExp(Param{Name: val[1:], Type: col.Type})
+				c.md.renderValueExp(c.w, Param{Name: val[1:], Type: col.Type})
 
 			case ok && strings.HasPrefix(val, "sql:"):
 				io.WriteString(c.w, `(`)
-				c.renderVar(val[4:], c.renderValueExp)
+				c.md.RenderVar(c.w, val[4:])
 				io.WriteString(c.w, `)`)
 
 			case ok:
