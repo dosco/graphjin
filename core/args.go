@@ -12,7 +12,8 @@ import (
 // to a prepared statement.
 
 func (c *scontext) argList(md psql.Metadata) ([]interface{}, error) {
-	vars := make([]interface{}, len(md.Params))
+	params := md.Params()
+	vars := make([]interface{}, len(params))
 
 	var fields map[string]json.RawMessage
 	var err error
@@ -25,7 +26,7 @@ func (c *scontext) argList(md psql.Metadata) ([]interface{}, error) {
 		}
 	}
 
-	for i, p := range md.Params {
+	for i, p := range params {
 		switch p.Name {
 		case "user_id":
 			if v := c.Value(UserIDKey); v != nil {

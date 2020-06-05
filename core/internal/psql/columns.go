@@ -1,4 +1,3 @@
-//nolint:errcheck
 package psql
 
 import (
@@ -112,15 +111,15 @@ func (c *compilerContext) renderColumnSearchRank(sel *qcode.Select, ti *DBTableI
 	c.renderComma(columnsRendered)
 	//fmt.Fprintf(w, `ts_rank("%s"."%s", websearch_to_tsquery('%s')) AS %s`,
 	//c.sel.Name, cn, arg.Val, col.Name)
-	io.WriteString(c.w, `ts_rank(`)
+	_, _ = io.WriteString(c.w, `ts_rank(`)
 	colWithTable(c.w, ti.Name, cn)
 	if c.schema.ver >= 110000 {
-		io.WriteString(c.w, `, websearch_to_tsquery(`)
+		_, _ = io.WriteString(c.w, `, websearch_to_tsquery(`)
 	} else {
-		io.WriteString(c.w, `, to_tsquery(`)
+		_, _ = io.WriteString(c.w, `, to_tsquery(`)
 	}
-	c.renderValueExp(Param{Name: arg.Val, Type: "string"})
-	io.WriteString(c.w, `))`)
+	c.md.renderValueExp(c.w, Param{Name: arg.Val, Type: "string"})
+	_, _ = io.WriteString(c.w, `))`)
 	alias(c.w, col.Name)
 
 	return nil
@@ -137,15 +136,15 @@ func (c *compilerContext) renderColumnSearchHeadline(sel *qcode.Select, ti *DBTa
 	c.renderComma(columnsRendered)
 	//fmt.Fprintf(w, `ts_headline("%s"."%s", websearch_to_tsquery('%s')) AS %s`,
 	//c.sel.Name, cn, arg.Val, col.Name)
-	io.WriteString(c.w, `ts_headline(`)
+	_, _ = io.WriteString(c.w, `ts_headline(`)
 	colWithTable(c.w, ti.Name, cn)
 	if c.schema.ver >= 110000 {
-		io.WriteString(c.w, `, websearch_to_tsquery(`)
+		_, _ = io.WriteString(c.w, `, websearch_to_tsquery(`)
 	} else {
-		io.WriteString(c.w, `, to_tsquery(`)
+		_, _ = io.WriteString(c.w, `, to_tsquery(`)
 	}
-	c.renderValueExp(Param{Name: arg.Val, Type: "string"})
-	io.WriteString(c.w, `))`)
+	c.md.renderValueExp(c.w, Param{Name: arg.Val, Type: "string"})
+	_, _ = io.WriteString(c.w, `))`)
 	alias(c.w, col.Name)
 
 	return nil
@@ -157,9 +156,9 @@ func (c *compilerContext) renderColumnTypename(sel *qcode.Select, ti *DBTableInf
 	}
 
 	c.renderComma(columnsRendered)
-	io.WriteString(c.w, `(`)
+	_, _ = io.WriteString(c.w, `(`)
 	squoted(c.w, ti.Name)
-	io.WriteString(c.w, ` :: text)`)
+	_, _ = io.WriteString(c.w, ` :: text)`)
 	alias(c.w, col.Name)
 
 	return nil
@@ -169,9 +168,9 @@ func (c *compilerContext) renderColumnFunction(sel *qcode.Select, ti *DBTableInf
 	pl := funcPrefixLen(c.schema.fm, col.Name)
 	// if pl == 0 {
 	// 	//fmt.Fprintf(w, `'%s not defined' AS %s`, cn, col.Name)
-	// 	io.WriteString(c.w, `'`)
-	// 	io.WriteString(c.w, col.Name)
-	// 	io.WriteString(c.w, ` not defined'`)
+	// 	_, _ = io.WriteString(c.w, `'`)
+	// 	_, _ = io.WriteString(c.w, col.Name)
+	// 	_, _ = io.WriteString(c.w, ` not defined'`)
 	// 	alias(c.w, col.Name)
 	// }
 
@@ -190,10 +189,10 @@ func (c *compilerContext) renderColumnFunction(sel *qcode.Select, ti *DBTableInf
 	c.renderComma(columnsRendered)
 
 	//fmt.Fprintf(w, `%s("%s"."%s") AS %s`, fn, c.sel.Name, cn, col.Name)
-	io.WriteString(c.w, fn)
-	io.WriteString(c.w, `(`)
+	_, _ = io.WriteString(c.w, fn)
+	_, _ = io.WriteString(c.w, `(`)
 	colWithTable(c.w, ti.Name, cn)
-	io.WriteString(c.w, `)`)
+	_, _ = io.WriteString(c.w, `)`)
 	alias(c.w, col.Name)
 
 	return nil
@@ -201,7 +200,7 @@ func (c *compilerContext) renderColumnFunction(sel *qcode.Select, ti *DBTableInf
 
 func (c *compilerContext) renderComma(columnsRendered int) {
 	if columnsRendered != 0 {
-		io.WriteString(c.w, `, `)
+		_, _ = io.WriteString(c.w, `, `)
 	}
 }
 

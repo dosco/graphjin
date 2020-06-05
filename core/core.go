@@ -125,7 +125,7 @@ func (c *scontext) execQuery() ([]byte, error) {
 		return nil, err
 	}
 
-	if len(data) == 0 || st.md.Skipped == 0 {
+	if len(data) == 0 || st.md.Skipped() == 0 {
 		return data, nil
 	}
 

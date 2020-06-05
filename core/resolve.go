@@ -86,7 +86,7 @@ func (sg *SuperGraph) initRemotes(t Table) error {
 		sg.rmap[mkkey(&h, r.Name, t.Name)] = rf
 
 		// index resolver obj by IDField
-		h.Write(rf.IDField)
+		_, _ = h.Write(rf.IDField)
 		sg.rmap[h.Sum64()] = rf
 	}
 

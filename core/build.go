@@ -88,6 +88,7 @@ func (sg *SuperGraph) buildMultiStmt(query, vars []byte) ([]stmt, error) {
 
 	stmts := make([]stmt, 0, len(sg.conf.Roles))
 	w := &bytes.Buffer{}
+	md := psql.Metadata{}
 
 	for i := 0; i < len(sg.conf.Roles); i++ {
 		role := &sg.conf.Roles[i]
@@ -105,16 +106,18 @@ func (sg *SuperGraph) buildMultiStmt(query, vars []byte) ([]stmt, error) {
 		stmts = append(stmts, stmt{role: role, qc: qc})
 		s := &stmts[len(stmts)-1]
 
-		s.md, err = sg.pc.Compile(w, qc, psql.Variables(vm))
+		md, err = sg.pc.CompileWithMetadata(w, qc, psql.Variables(vm), md)
 		if err != nil {
 			return nil, err
 		}
 
 		s.sql = w.String()
+		s.md = md
+
 		w.Reset()
 	}
 
-	sql, err := sg.renderUserQuery(stmts)
+	sql, err := sg.renderUserQuery(md, stmts)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +127,7 @@ func (sg *SuperGraph) buildMultiStmt(query, vars []byte) ([]stmt, error) {
 }
 
 //nolint: errcheck
-func (sg *SuperGraph) renderUserQuery(stmts []stmt) (string, error) {
+func (sg *SuperGraph) renderUserQuery(md psql.Metadata, stmts []stmt) (string, error) {
 	w := &bytes.Buffer{}
 
 	io.WriteString(w, `SELECT "_sg_auth_info"."role", (CASE "_sg_auth_info"."role" `)
@@ -142,7 +145,7 @@ func (sg *SuperGraph) renderUserQuery(stmts []stmt) (string, error) {
 	}
 
 	io.WriteString(w, `END) FROM (SELECT (CASE WHEN EXISTS (`)
-	io.WriteString(w, sg.conf.RolesQuery)
+	md.RenderVar(w, sg.conf.RolesQuery)
 	io.WriteString(w, `) THEN `)
 
 	io.WriteString(w, `(SELECT (CASE`)
@@ -158,7 +161,7 @@ func (sg *SuperGraph) renderUserQuery(stmts []stmt) (string, error) {
 	}
 
 	io.WriteString(w, ` ELSE 'user' END) FROM (`)
-	io.WriteString(w, sg.conf.RolesQuery)
+	md.RenderVar(w, sg.conf.RolesQuery)
 	io.WriteString(w, `) AS "_sg_auth_roles_query" LIMIT 1) `)
 	io.WriteString(w, `ELSE 'anon' END) FROM (VALUES (1)) AS "_sg_auth_filler") AS "_sg_auth_info"(role) LIMIT 1; `)
 

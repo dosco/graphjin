@@ -12,7 +12,7 @@ func Filter(w *bytes.Buffer, b []byte, keys []string) error {
 	h := maphash.Hash{}
 
 	for i := range keys {
-		h.WriteString(keys[i])
+		_, _ = h.WriteString(keys[i])
 		kmap[h.Sum64()] = struct{}{}
 		h.Reset()
 	}
@@ -134,7 +134,7 @@ func Filter(w *bytes.Buffer, b []byte, keys []string) error {
 			cb := b[s:(e + 1)]
 			e = 0
 
-			h.Write(k)
+			_, _ = h.Write(k)
 			_, ok := kmap[h.Sum64()]
 			h.Reset()
 

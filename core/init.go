@@ -75,12 +75,21 @@ func (sg *SuperGraph) initConfig() error {
 
 	if c.RolesQuery == "" {
 		sg.log.Printf("INF roles_query not defined: attribute based access control disabled")
+	} else {
+		n := 0
+		for k, v := range sg.roles {
+			if k == "user" || k == "anon" {
+				n++
+			} else if v.Match != "" {
+				n++
+			}
+		}
+		sg.abacEnabled = (n > 2)
+
+		if !sg.abacEnabled {
+			sg.log.Printf("WRN attribute based access control disabled: no custom roles found (with 'match' defined)")
+		}
 	}
-
-	_, userExists := sg.roles["user"]
-	_, sg.anonExists = sg.roles["anon"]
-
-	sg.abacEnabled = userExists && c.RolesQuery != ""
 
 	return nil
 }

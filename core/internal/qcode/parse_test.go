@@ -2,8 +2,9 @@ package qcode
 
 import (
 	"errors"
-	"github.com/chirino/graphql/schema"
 	"testing"
+
+	"github.com/chirino/graphql/schema"
 )
 
 func TestCompile1(t *testing.T) {
@@ -128,6 +129,22 @@ updateThread {
 		t.Fatal(errors.New("expecting an error"))
 	}
 
+}
+
+func TestFragmentsCompile(t *testing.T) {
+	gql := `
+fragment userFields on user {
+  name
+  email
+}
+	
+query { users { ...userFields } }`
+	qcompile, _ := NewCompiler(Config{})
+	_, err := qcompile.Compile([]byte(gql), "anon")
+
+	if err == nil {
+		t.Fatal(errors.New("expecting an error"))
+	}
 }
 
 var gql = []byte(`
