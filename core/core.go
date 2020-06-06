@@ -196,8 +196,6 @@ func (c *scontext) resolvePreparedSQL() ([]byte, *stmt, error) {
 		return nil, nil, err
 	}
 
-	fmt.Println(">>", varsList)
-
 	if useTx {
 		row = tx.Stmt(q.sd).QueryRow(varsList...)
 	} else {

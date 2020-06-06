@@ -3,10 +3,9 @@ package qcode
 import (
 	"errors"
 	"fmt"
+	"hash/maphash"
 	"sync"
 	"unsafe"
-
-	"github.com/dosco/super-graph/core/internal/util"
 )
 
 var (
@@ -35,8 +34,7 @@ const (
 	NodeVar
 )
 
-type Operation struct {
-	Type    parserType
+type SelectionSet struct {
 	Name    string
 	Args    []Arg
 	argsA   [10]Arg
@@ -44,10 +42,27 @@ type Operation struct {
 	fieldsA [10]Field
 }
 
+type Operation struct {
+	Type parserType
+	SelectionSet
+}
+
 var zeroOperation = Operation{}
 
 func (o *Operation) Reset() {
 	*o = zeroOperation
+}
+
+type Fragment struct {
+	Name string
+	On   string
+	SelectionSet
+}
+
+var zeroFragment = Fragment{}
+
+func (f *Fragment) Reset() {
+	*f = zeroFragment
 }
 
 type Field struct {
@@ -82,6 +97,8 @@ func (n *Node) Reset() {
 }
 
 type Parser struct {
+	frags map[uint64]*Fragment
+	h     maphash.Hash
 	input []byte // the string being scanned
 	pos   int
 	items []item
@@ -96,12 +113,194 @@ var opPool = sync.Pool{
 	New: func() interface{} { return new(Operation) },
 }
 
+var fragPool = sync.Pool{
+	New: func() interface{} { return new(Fragment) },
+}
+
 var lexPool = sync.Pool{
 	New: func() interface{} { return new(lexer) },
 }
 
 func Parse(gql []byte) (*Operation, error) {
-	return parseSelectionSet(gql)
+	var err error
+
+	if len(gql) == 0 {
+		return nil, errors.New("blank query")
+	}
+
+	l := lexPool.Get().(*lexer)
+	l.Reset()
+	defer lexPool.Put(l)
+
+	if err = lex(l, gql); err != nil {
+		return nil, err
+	}
+
+	p := &Parser{
+		input: l.input,
+		pos:   -1,
+		items: l.items,
+	}
+
+	op := opPool.Get().(*Operation)
+	op.Reset()
+	op.Fields = op.fieldsA[:0]
+
+	s := -1
+	qf := false
+
+	for {
+		if p.peek(itemEOF) {
+			p.ignore()
+			break
+		}
+
+		if p.peek(itemFragment) {
+			p.ignore()
+			if err = p.parseFragment(op); err != nil {
+				return nil, err
+			}
+		} else {
+			if !qf && p.peek(itemQuery, itemMutation, itemSub, itemObjOpen) {
+				s = p.pos
+				qf = true
+			}
+			p.ignore()
+		}
+	}
+
+	p.reset(s)
+	if err := p.parseOp(op); err != nil {
+		return nil, err
+	}
+
+	return op, nil
+}
+
+func (p *Parser) parseFragment(op *Operation) error {
+	frag := fragPool.Get().(*Fragment)
+	frag.Reset()
+
+	frag.Fields = frag.fieldsA[:0]
+	frag.Args = frag.argsA[:0]
+
+	if p.peek(itemName) {
+		frag.Name = p.val(p.next())
+	}
+
+	if p.peek(itemOn) {
+		p.ignore()
+	} else {
+		return errors.New("fragment: missing 'on' keyword")
+	}
+
+	if p.peek(itemName) {
+		frag.On = p.vall(p.next())
+	} else {
+		return errors.New("fragment: missing table name after 'on' keyword")
+	}
+
+	if p.peek(itemObjOpen) {
+		p.ignore()
+	} else {
+		return fmt.Errorf("fragment: expecting a '{', got: %s", p.next())
+	}
+
+	if err := p.parseSelectionSet(&frag.SelectionSet); err != nil {
+		return fmt.Errorf("fragment: %v", err)
+	}
+
+	if p.frags == nil {
+		p.frags = make(map[uint64]*Fragment)
+	}
+
+	_, _ = p.h.WriteString(frag.Name)
+	k := p.h.Sum64()
+	p.h.Reset()
+
+	p.frags[k] = frag
+
+	return nil
+}
+
+func (p *Parser) parseOp(op *Operation) error {
+	var err error
+	var typeSet bool
+
+	if p.peek(itemQuery, itemMutation, itemSub) {
+		err = p.parseOpTypeAndArgs(op)
+
+		if err != nil {
+			return fmt.Errorf("%s: %v", op.Type, err)
+		}
+		typeSet = true
+	}
+
+	if p.peek(itemObjOpen) {
+		p.ignore()
+		if !typeSet {
+			op.Type = opQuery
+		}
+
+		for {
+			if p.peek(itemEOF, itemFragment) {
+				p.ignore()
+				break
+			}
+
+			err = p.parseSelectionSet(&op.SelectionSet)
+			if err != nil {
+				return fmt.Errorf("%s: %v", op.Type, err)
+			}
+		}
+	} else {
+		return fmt.Errorf("expecting a query, mutation or subscription, got: %s", p.next())
+	}
+
+	return nil
+}
+
+func (p *Parser) parseOpTypeAndArgs(op *Operation) error {
+	item := p.next()
+
+	switch item._type {
+	case itemQuery:
+		op.Type = opQuery
+	case itemMutation:
+		op.Type = opMutate
+	case itemSub:
+		op.Type = opSub
+	}
+
+	op.Args = op.argsA[:0]
+
+	var err error
+
+	if p.peek(itemName) {
+		op.Name = p.val(p.next())
+	}
+
+	if p.peek(itemArgsOpen) {
+		p.ignore()
+
+		op.Args, err = p.parseOpParams(op.Args)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (p *Parser) parseSelectionSet(selset *SelectionSet) error {
+	var err error
+
+	selset.Fields, err = p.parseFields(selset.Fields)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func ParseArgValue(argVal string) (*Node, error) {
@@ -123,216 +322,107 @@ func ParseArgValue(argVal string) (*Node, error) {
 	return op, err
 }
 
-func parseSelectionSet(gql []byte) (*Operation, error) {
-	var err error
-
-	if len(gql) == 0 {
-		return nil, errors.New("blank query")
-	}
-
-	l := lexPool.Get().(*lexer)
-	l.Reset()
-
-	if err = lex(l, gql); err != nil {
-		return nil, err
-	}
-
-	p := &Parser{
-		input: l.input,
-		pos:   -1,
-		items: l.items,
-	}
-
-	var op *Operation
-
-	if p.peek(itemObjOpen) {
-		p.ignore()
-		op, err = p.parseQueryOp()
-	} else {
-		op, err = p.parseOp()
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	if p.peek(itemObjClose) {
-		p.ignore()
-	} else {
-		return nil, fmt.Errorf("operation missing closing '}'")
-	}
-
-	if !p.peek(itemEOF) {
-		p.ignore()
-		return nil, fmt.Errorf("invalid '%s' found after closing '}'", p.current())
-	}
-
-	lexPool.Put(l)
-
-	return op, err
-}
-
-func (p *Parser) next() item {
-	n := p.pos + 1
-	if n >= len(p.items) {
-		p.err = errEOT
-		return item{_type: itemEOF}
-	}
-	p.pos = n
-	return p.items[p.pos]
-}
-
-func (p *Parser) ignore() {
-	n := p.pos + 1
-	if n >= len(p.items) {
-		p.err = errEOT
-		return
-	}
-	p.pos = n
-}
-
-func (p *Parser) current() string {
-	item := p.items[p.pos]
-	return b2s(p.input[item.pos:item.end])
-}
-
-func (p *Parser) peek(types ...itemType) bool {
-	n := p.pos + 1
-	// if p.items[n]._type == itemEOF {
-	// 	return false
-	// }
-
-	if n >= len(p.items) {
-		return false
-	}
-	for i := 0; i < len(types); i++ {
-		if p.items[n]._type == types[i] {
-			return true
-		}
-	}
-	return false
-}
-
-func (p *Parser) parseOp() (*Operation, error) {
-	if !p.peek(itemQuery, itemMutation, itemSub) {
-		err := errors.New("expecting a query, mutation or subscription")
-		return nil, err
-	}
-	item := p.next()
-
-	op := opPool.Get().(*Operation)
-	op.Reset()
-
-	switch item._type {
-	case itemQuery:
-		op.Type = opQuery
-	case itemMutation:
-		op.Type = opMutate
-	case itemSub:
-		op.Type = opSub
-	}
-
-	op.Fields = op.fieldsA[:0]
-	op.Args = op.argsA[:0]
-
-	var err error
-
-	if p.peek(itemName) {
-		op.Name = p.val(p.next())
-	}
-
-	if p.peek(itemArgsOpen) {
-		p.ignore()
-
-		op.Args, err = p.parseOpParams(op.Args)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if p.peek(itemObjOpen) {
-		p.ignore()
-
-		for n := 0; n < 10; n++ {
-			if !p.peek(itemName) {
-				break
-			}
-
-			op.Fields, err = p.parseFields(op.Fields)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	return op, nil
-}
-
-func (p *Parser) parseQueryOp() (*Operation, error) {
-	op := opPool.Get().(*Operation)
-	op.Reset()
-
-	op.Type = opQuery
-	op.Fields = op.fieldsA[:0]
-	op.Args = op.argsA[:0]
-
-	var err error
-
-	for n := 0; n < 10; n++ {
-		if !p.peek(itemName) {
-			break
-		}
-
-		op.Fields, err = p.parseFields(op.Fields)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return op, nil
-}
-
 func (p *Parser) parseFields(fields []Field) ([]Field, error) {
-	st := util.NewStack()
+	st := NewStack()
+
+	if !p.peek(itemName, itemSpread) {
+		return nil, fmt.Errorf("unexpected token: %s", p.peekNext())
+	}
 
 	for {
+		if p.peek(itemEOF) {
+			p.ignore()
+			return nil, errors.New("invalid query")
+		}
+
+		if p.peek(itemObjClose) {
+			p.ignore()
+
+			if st.Len() != 0 {
+				st.Pop()
+				continue
+			} else {
+				break
+			}
+		}
+
 		if len(fields) >= maxFields {
 			return nil, fmt.Errorf("too many fields (max %d)", maxFields)
 		}
 
-		if p.peek(itemEOF, itemObjClose) {
-			p.ignore()
-			st.Pop()
+		isFrag := false
 
-			if st.Len() == 0 {
-				break
-			} else {
-				continue
-			}
+		if p.peek(itemSpread) {
+			p.ignore()
+			isFrag = true
 		}
 
 		if !p.peek(itemName) {
-			return nil, errors.New("expecting an alias or field name")
+			if isFrag {
+				return nil, fmt.Errorf("expecting a fragment name, got: %s", p.next())
+			} else {
+				return nil, fmt.Errorf("expecting an alias or field name, got: %s", p.next())
+			}
 		}
 
-		fields = append(fields, Field{ID: int32(len(fields))})
+		var f *Field
 
-		f := &fields[(len(fields) - 1)]
-		f.Args = f.argsA[:0]
-		f.Children = f.childrenA[:0]
+		if isFrag {
+			name := p.val(p.next())
+			p.h.WriteString(name)
+			k := p.h.Sum64()
+			p.h.Reset()
 
-		// Parse the inside of the the fields () parentheses
-		// in short parse the args like id, where, etc
-		if err := p.parseField(f); err != nil {
-			return nil, err
-		}
+			fr, ok := p.frags[k]
+			if !ok {
+				return nil, fmt.Errorf("no fragment named '%s' defined", name)
+			}
 
-		intf := st.Peek()
-		if pid, ok := intf.(int32); ok {
-			f.ParentID = pid
-			fields[pid].Children = append(fields[pid].Children, f.ID)
+			n := int32(len(fields))
+			fields = append(fields, fr.Fields...)
+
+			for i := int(n); i < len(fields); i++ {
+				f := &fields[i]
+				f.ID = int32(i)
+
+				// If this is the top-level point the parent to the parent of the
+				// previous field.
+				if f.ParentID == -1 {
+					pid := st.Peek()
+					f.ParentID = pid
+					if f.ParentID != -1 {
+						fields[pid].Children = append(fields[f.ParentID].Children, f.ID)
+					}
+					// Update all the other parents id's by our new place in this new array
+				} else {
+					f.ParentID += n
+				}
+
+				// Update all the children which is needed.
+				for j := range f.Children {
+					f.Children[j] += n
+				}
+			}
+
 		} else {
-			f.ParentID = -1
+			fields = append(fields, Field{ID: int32(len(fields))})
+
+			f = &fields[(len(fields) - 1)]
+			f.Args = f.argsA[:0]
+			f.Children = f.childrenA[:0]
+
+			// Parse the field
+			if err := p.parseField(f); err != nil {
+				return nil, err
+			}
+
+			if st.Len() == 0 {
+				f.ParentID = -1
+			} else {
+				pid := st.Peek()
+				f.ParentID = pid
+				fields[pid].Children = append(fields[pid].Children, f.ID)
+			}
 		}
 
 		// The first opening curley brackets after this
@@ -340,13 +430,6 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 		if p.peek(itemObjOpen) {
 			p.ignore()
 			st.Push(f.ID)
-
-		} else if p.peek(itemObjClose) {
-			if st.Len() == 0 {
-				break
-			} else {
-				continue
-			}
 		}
 	}
 
@@ -546,6 +629,62 @@ func (p *Parser) vall(v item) string {
 	return b2s(p.input[v.pos:v.end])
 }
 
+func (p *Parser) peek(types ...itemType) bool {
+	n := p.pos + 1
+	l := len(types)
+	// if p.items[n]._type == itemEOF {
+	// 	return false
+	// }
+
+	if n >= len(p.items) {
+		return types[0] == itemEOF
+	}
+
+	if l == 1 {
+		return p.items[n]._type == types[0]
+	}
+
+	for i := 0; i < l; i++ {
+		if p.items[n]._type == types[i] {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *Parser) next() item {
+	n := p.pos + 1
+	if n >= len(p.items) {
+		p.err = errEOT
+		return item{_type: itemEOF}
+	}
+	p.pos = n
+	return p.items[p.pos]
+}
+
+func (p *Parser) ignore() {
+	n := p.pos + 1
+	if n >= len(p.items) {
+		p.err = errEOT
+		return
+	}
+	p.pos = n
+}
+
+func (p *Parser) peekCurrent() string {
+	item := p.items[p.pos]
+	return b2s(p.input[item.pos:item.end])
+}
+
+func (p *Parser) peekNext() string {
+	item := p.items[p.pos+1]
+	return b2s(p.input[item.pos:item.end])
+}
+
+func (p *Parser) reset(to int) {
+	p.pos = to
+}
+
 func b2s(b []byte) string {
 	return *(*string)(unsafe.Pointer(&b))
 }
@@ -579,7 +718,7 @@ func (t parserType) String() string {
 	case NodeList:
 		v = "node-list"
 	}
-	return fmt.Sprintf("<%s>", v)
+	return v
 }
 
 // type Frees struct {

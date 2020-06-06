@@ -307,6 +307,80 @@ func multiRoot(t *testing.T) {
 	compileGQLToPSQL(t, gql, nil, "user")
 }
 
+func withFragment1(t *testing.T) {
+	gql := `
+	fragment userFields1 on user {
+		id
+		email
+	}
+
+	query {
+		users {
+			...userFields2
+	
+			created_at
+			...userFields1
+		}
+	}
+	
+	fragment userFields2 on user {
+		first_name
+		last_name
+	}`
+
+	compileGQLToPSQL(t, gql, nil, "anon")
+}
+
+func withFragment2(t *testing.T) {
+	gql := `
+	query {
+		users {
+			...userFields2
+	
+			created_at
+			...userFields1
+		}
+	}
+
+	fragment userFields1 on user {
+		id
+		email
+	}
+	
+	fragment userFields2 on user {
+		first_name
+		last_name
+	}`
+
+	compileGQLToPSQL(t, gql, nil, "anon")
+}
+
+func withFragment3(t *testing.T) {
+	gql := `
+
+	fragment userFields1 on user {
+		id
+		email
+	}
+	
+	fragment userFields2 on user {
+		first_name
+		last_name
+	}
+
+	query {
+		users {
+			...userFields2
+	
+			created_at
+			...userFields1
+		}
+	}
+`
+
+	compileGQLToPSQL(t, gql, nil, "anon")
+}
+
 func withCursor(t *testing.T) {
 	gql := `query {
 		Products(
@@ -400,6 +474,9 @@ func TestCompileQuery(t *testing.T) {
 	t.Run("queryWithVariables", queryWithVariables)
 	t.Run("withWhereOnRelations", withWhereOnRelations)
 	t.Run("multiRoot", multiRoot)
+	t.Run("withFragment1", withFragment1)
+	t.Run("withFragment2", withFragment2)
+	t.Run("withFragment3", withFragment3)
 	t.Run("jsonColumnAsTable", jsonColumnAsTable)
 	t.Run("withCursor", withCursor)
 	t.Run("nullForAuthRequiredInAnon", nullForAuthRequiredInAnon)
