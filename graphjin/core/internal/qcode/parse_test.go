@@ -121,7 +121,7 @@ updateThread {
     }
 	}
 }
-}`
+}}`
 	qcompile, _ := NewCompiler(Config{})
 	_, err := qcompile.Compile([]byte(gql), "anon")
 
@@ -131,19 +131,90 @@ updateThread {
 
 }
 
-func TestFragmentsCompile(t *testing.T) {
+func TestFragmentsCompile1(t *testing.T) {
 	gql := `
-fragment userFields on user {
-  name
-  email
-}
-	
-query { users { ...userFields } }`
-	qcompile, _ := NewCompiler(Config{})
-	_, err := qcompile.Compile([]byte(gql), "anon")
+	fragment userFields1 on user {
+		id
+		email
+	}
 
-	if err == nil {
-		t.Fatal(errors.New("expecting an error"))
+	query {
+		users {
+			...userFields2
+	
+			created_at
+			...userFields1
+		}
+	}
+	
+	fragment userFields2 on user {
+		first_name
+		last_name
+	}
+	`
+	qcompile, _ := NewCompiler(Config{})
+	_, err := qcompile.Compile([]byte(gql), "user")
+
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFragmentsCompile2(t *testing.T) {
+	gql := `
+	query {
+		users {
+			...userFields2
+	
+			created_at
+			...userFields1
+		}
+	}
+
+	fragment userFields1 on user {
+		id
+		email
+	}
+	
+	fragment userFields2 on user {
+		first_name
+		last_name
+	}`
+	qcompile, _ := NewCompiler(Config{})
+	_, err := qcompile.Compile([]byte(gql), "user")
+
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFragmentsCompile3(t *testing.T) {
+	gql := `
+	fragment userFields1 on user {
+		id
+		email
+	}
+	
+	fragment userFields2 on user {
+		first_name
+		last_name
+	}
+
+	query {
+		users {
+			...userFields2
+	
+			created_at
+			...userFields1
+		}
+	}
+
+	`
+	qcompile, _ := NewCompiler(Config{})
+	_, err := qcompile.Compile([]byte(gql), "user")
+
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -201,7 +272,6 @@ func BenchmarkQCompileP(b *testing.B) {
 }
 
 func BenchmarkParse(b *testing.B) {
-
 	b.ResetTimer()
 	b.ReportAllocs()
 	for n := 0; n < b.N; n++ {

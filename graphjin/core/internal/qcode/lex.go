@@ -11,15 +11,18 @@ import (
 var (
 	queryToken        = []byte("query")
 	mutationToken     = []byte("mutation")
+	fragmentToken     = []byte("fragment")
 	subscriptionToken = []byte("subscription")
+	onToken           = []byte("on")
 	trueToken         = []byte("true")
 	falseToken        = []byte("false")
 	quotesToken       = []byte(`'"`)
 	signsToken        = []byte(`+-`)
-	punctuatorToken   = []byte(`!():=[]{|}`)
 	spreadToken       = []byte(`...`)
 	digitToken        = []byte(`0123456789`)
 	dotToken          = []byte(`.`)
+
+	punctuatorToken = `!():=[]{|}`
 )
 
 // Pos represents a byte position in the original input text from which
@@ -43,6 +46,8 @@ const (
 	itemName
 	itemQuery
 	itemMutation
+	itemFragment
+	itemOn
 	itemSub
 	itemPunctuator
 	itemArgsOpen
@@ -263,11 +268,11 @@ func lexRoot(l *lexer) stateFn {
 		l.backup()
 		return lexString
 	case r == '.':
-		if len(l.input) >= 3 {
-			if equals(l.input, 0, 3, spreadToken) {
-				l.emit(itemSpread)
-				return lexRoot
-			}
+		l.acceptRun(dotToken)
+		s, e := l.current()
+		if equals(l.input, s, e, spreadToken) {
+			l.emit(itemSpread)
+			return lexRoot
 		}
 		fallthrough // '.' can start a number.
 	case r == '+' || r == '-' || ('0' <= r && r <= '9'):
@@ -299,10 +304,14 @@ func lexName(l *lexer) stateFn {
 			switch {
 			case equals(l.input, s, e, queryToken):
 				l.emitL(itemQuery)
+			case equals(l.input, s, e, fragmentToken):
+				l.emitL(itemFragment)
 			case equals(l.input, s, e, mutationToken):
 				l.emitL(itemMutation)
 			case equals(l.input, s, e, subscriptionToken):
 				l.emitL(itemSub)
+			case equals(l.input, s, e, onToken):
+				l.emitL(itemOn)
 			case equals(l.input, s, e, trueToken):
 				l.emitL(itemBoolVal)
 			case equals(l.input, s, e, falseToken):
@@ -396,31 +405,11 @@ func isAlphaNumeric(r rune) bool {
 }
 
 func equals(b []byte, s Pos, e Pos, val []byte) bool {
-	n := 0
-	for i := s; i < e; i++ {
-		if n >= len(val) {
-			return true
-		}
-		switch {
-		case b[i] >= 'A' && b[i] <= 'Z' && ('a'+(b[i]-'A')) != val[n]:
-			return false
-		case b[i] != val[n]:
-			return false
-		}
-		n++
-	}
-	return true
+	return bytes.EqualFold(b[s:e], val)
 }
 
-func contains(b []byte, s Pos, e Pos, val []byte) bool {
-	for i := s; i < e; i++ {
-		for n := 0; n < len(val); n++ {
-			if b[i] == val[n] {
-				return true
-			}
-		}
-	}
-	return false
+func contains(b []byte, s Pos, e Pos, chars string) bool {
+	return bytes.ContainsAny(b[s:e], chars)
 }
 
 func lowercase(b []byte, s Pos, e Pos) {
