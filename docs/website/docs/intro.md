@@ -4,6 +4,8 @@ title: Introduction
 sidebar_label: Introduction
 ---
 
+import useBaseUrl from '@docusaurus/useBaseUrl'; // Add to the top of the file below the front matter.
+
 Super Graph is a service that instantly and without code gives you a high performance and secure GraphQL API. Your GraphQL queries are auto translated into a single fast SQL query. No more spending weeks or months writing backend API code. Just make the query you need and Super Graph will do the rest.
 
 Super Graph has a rich feature set like integrating with your existing Ruby on Rails apps, joining your DB with data from remote APIs, Role and Attribute based access control, Support for JWT tokens, DB migrations, seeding and a lot more.
@@ -134,3 +136,9 @@ mutation {
   }
 }
 ```
+
+### Built-in GraphQL Editor
+
+Quickly craft and test your queries with a full-featured GraphQL editor. Auto-complete and schema documentation is automatically available.
+
+<img alt="Zipkin Traces" src={useBaseUrl("img/webui.jpg")} />
