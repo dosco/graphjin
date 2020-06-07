@@ -419,6 +419,7 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 		com.AddFilters(qc, s, role)
 
 		s.Cols = make([]Column, 0, len(field.Children))
+		cm := make(map[string]struct{})
 		action = QTQuery
 
 		for _, cid := range field.Children {
@@ -428,19 +429,28 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 				continue
 			}
 
+			var fname string
+
+			if f.Alias != "" {
+				fname = f.Alias
+			} else {
+				fname = f.Name
+			}
+
+			if _, ok := cm[fname]; ok {
+				continue
+			} else {
+				cm[fname] = struct{}{}
+			}
+
 			if len(f.Children) != 0 {
 				val := f.ID | (s.ID << 16)
 				st.Push(val)
 				continue
 			}
 
-			col := Column{Name: f.Name}
+			col := Column{Name: f.Name, FieldName: fname}
 
-			if len(f.Alias) != 0 {
-				col.FieldName = f.Alias
-			} else {
-				col.FieldName = f.Name
-			}
 			s.Cols = append(s.Cols, col)
 		}
 

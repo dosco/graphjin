@@ -1,6 +1,7 @@
 package qcode
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"hash/maphash"
@@ -329,6 +330,8 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 		return nil, fmt.Errorf("unexpected token: %s", p.peekNext())
 	}
 
+	// fm := make(map[uint64]struct{})
+
 	for {
 		if p.peek(itemEOF) {
 			p.ignore()
@@ -385,6 +388,20 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 				f := &fields[i]
 				f.ID = int32(i)
 
+				// var name string
+
+				// if f.Alias != "" {
+				// 	name = f.Alias
+				// } else {
+				// 	name = f.Name
+				// }
+
+				// if _, ok := fm[name]; ok {
+				// 	continue
+				// } else {
+				// 	fm[name] = struct{}{}
+				// }
+
 				// If this is the top-level point the parent to the parent of the
 				// previous field.
 				if f.ParentID == -1 {
@@ -415,6 +432,20 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 			if err := p.parseField(f); err != nil {
 				return nil, err
 			}
+
+			// var name string
+
+			// if f.Alias != "" {
+			// 	name = f.Alias
+			// } else {
+			// 	name = f.Name
+			// }
+
+			// if _, ok := fm[name]; ok {
+			// 	continue
+			// } else {
+			// 	fm[name] = struct{}{}
+			// }
 
 			if st.Len() == 0 {
 				f.ParentID = -1
@@ -683,6 +714,16 @@ func (p *Parser) peekNext() string {
 
 func (p *Parser) reset(to int) {
 	p.pos = to
+}
+
+func (p *Parser) fHash(name string, parentID int32) uint64 {
+	var b []byte
+	binary.LittleEndian.PutUint32(b, uint32(parentID))
+	p.h.WriteString(name)
+	p.h.Write(b)
+	v := p.h.Sum64()
+	p.h.Reset()
+	return v
 }
 
 func b2s(b []byte) string {

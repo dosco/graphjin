@@ -197,30 +197,26 @@ func (c *Config) AddRoleTable(role string, table string, conf interface{}) error
 // ReadInConfig function reads in the config file for the environment specified in the GO_ENV
 // environment variable. This is the best way to create a new Super Graph config.
 func ReadInConfig(configFile string) (*Config, error) {
-	cpath := path.Dir(configFile)
-	cfile := path.Base(configFile)
-	vi := newViper(cpath, cfile)
+	cp := path.Dir(configFile)
+	vi := newViper(cp, path.Base(configFile))
 
 	if err := vi.ReadInConfig(); err != nil {
 		return nil, err
 	}
 
-	inherits := vi.GetString("inherits")
-
-	if inherits != "" {
-		vi = newViper(cpath, inherits)
+	if pcf := vi.GetString("inherits"); pcf != "" {
+		cf := vi.ConfigFileUsed()
+		vi = newViper(cp, pcf)
 
 		if err := vi.ReadInConfig(); err != nil {
 			return nil, err
 		}
 
-		if vi.IsSet("inherits") {
-			return nil, fmt.Errorf("inherited config (%s) cannot itself inherit (%s)",
-				inherits,
-				vi.GetString("inherits"))
+		if v := vi.GetString("inherits"); v != "" {
+			return nil, fmt.Errorf("inherited config (%s) cannot itself inherit (%s)", pcf, v)
 		}
 
-		vi.SetConfigName(cfile)
+		vi.SetConfigFile(cf)
 
 		if err := vi.MergeInConfig(); err != nil {
 			return nil, err
@@ -234,7 +230,7 @@ func ReadInConfig(configFile string) (*Config, error) {
 	}
 
 	if c.AllowListFile == "" {
-		c.AllowListFile = path.Join(cpath, "allow.list")
+		c.AllowListFile = path.Join(cp, "allow.list")
 	}
 
 	return c, nil
@@ -248,7 +244,7 @@ func newViper(configPath, configFile string) *viper.Viper {
 	vi.AutomaticEnv()
 
 	if filepath.Ext(configFile) != "" {
-		vi.SetConfigFile(configFile)
+		vi.SetConfigFile(path.Join(configPath, configFile))
 	} else {
 		vi.SetConfigName(configFile)
 		vi.AddConfigPath(configPath)
