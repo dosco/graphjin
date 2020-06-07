@@ -95,7 +95,7 @@ auth:
   type: jwt
 
   jwt:
-    # the two providers are 'auth0' and 'none'
+    # valid providers are auth0, firebase and none
     provider: auth0
     secret: abc335bfcfdb04e50db5bb0a4d67ab9
     public_key_file: /secrets/public_key.pem
@@ -107,6 +107,19 @@ For JWT tokens we currently support tokens from a provider like Auth0 or if you 
 We can get the JWT token either from the `authorization` header where we expect it to be a `bearer` token or if `cookie` is specified then we look there.
 
 For validation a `secret` or a public key (ecdsa or rsa) is required. When using public keys they have to be in a PEM format file.
+
+### Firebase Auth
+
+```yaml
+auth:
+  type: jwt
+
+  jwt:
+    provider: firebase
+    audience: <firebase-project-id>
+```
+
+Firebase auth also uses JWT the keys are auto-fetched from Google and used according to their documentation mechanism. The `audience` config value needs to be set to your project id and everything else is taken care for you.
 
 ### HTTP Headers
 

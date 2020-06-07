@@ -55,6 +55,30 @@ query {
 }
 ```
 
+### Fragments
+
+Fragments make it easy to build large complex queries with small composible and re-usable fragment blocks.
+
+```graphql
+query {
+  users {
+    ...userFields2
+    ...userFields1
+    picture_url
+  }
+}
+
+fragment userFields1 on user {
+  id
+  email
+}
+
+fragment userFields2 on user {
+  first_name
+  last_name
+}
+```
+
 ### Sorting
 
 To sort or ordering results just use the `order_by` argument. This can be combined with `where`, `search`, etc to build complex queries to fit you needs.

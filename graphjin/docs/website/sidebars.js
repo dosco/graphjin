@@ -3,6 +3,7 @@ module.exports = {
     Docusaurus: [
       "home",
       "intro",
+      "webui",
       "start",
       "why",
       "graphql",
