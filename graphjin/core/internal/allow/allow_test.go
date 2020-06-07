@@ -82,3 +82,160 @@ func TestGQLName5(t *testing.T) {
 		t.Fatal("Name should be empty, not ", name)
 	}
 }
+
+func TestParse1(t *testing.T) {
+	var al = `
+ # Hello world
+
+	variables {
+		"data": {
+			"slug": "",
+			"body": "",
+			"post": {
+				"connect": {
+					"slug": ""
+				}
+			}
+		}
+	}
+	
+	mutation createComment {
+		comment(insert: $data) {
+			slug
+			body
+			createdAt: created_at
+			totalVotes: cached_votes_total
+			totalReplies: cached_replies_total
+			vote: comment_vote(where: {user_id: {eq: $user_id}}) {
+				created_at
+				__typename
+			}
+			author: user {
+				slug
+				firstName: first_name
+				lastName: last_name
+				pictureURL: picture_url
+				bio
+				__typename
+			}
+			__typename
+		}
+	}
+	
+	# Query named createPost
+	
+	query createPost {
+		post(insert: $data) {
+			slug
+			body
+			published
+			createdAt: created_at
+			totalVotes: cached_votes_total
+			totalComments: cached_comments_total
+			vote: post_vote(where: {user_id: {eq: $user_id}}) {
+				created_at
+				__typename
+			}
+			author: user {
+				slug
+				firstName: first_name
+				lastName: last_name
+				pictureURL: picture_url
+				bio
+				__typename
+			}
+			__typename
+		}
+	}`
+
+	_, err := parse(al, "allow.list")
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestParse2(t *testing.T) {
+	var al = `
+ /* Hello world */
+
+	variables {
+		"data": {
+			"slug": "",
+			"body": "",
+			"post": {
+				"connect": {
+					"slug": ""
+				}
+			}
+		}
+	}
+	
+	mutation createComment {
+		comment(insert: $data) {
+			slug
+			body
+			createdAt: created_at
+			totalVotes: cached_votes_total
+			totalReplies: cached_replies_total
+			vote: comment_vote(where: {user_id: {eq: $user_id}}) {
+				created_at
+				__typename
+			}
+			author: user {
+				slug
+				firstName: first_name
+				lastName: last_name
+				pictureURL: picture_url
+				bio
+				__typename
+			}
+			__typename
+		}
+	}
+	
+	/* 
+	Query named createPost 
+	*/
+	
+	variables {
+		"data": {
+			"thread": {
+				"connect": {
+					"slug": ""
+				}
+			},
+			"slug": "",
+			"published": false,
+			"body": ""
+		}
+	}
+	
+	query createPost {
+		post(insert: $data) {
+			slug
+			body
+			published
+			createdAt: created_at
+			totalVotes: cached_votes_total
+			totalComments: cached_comments_total
+			vote: post_vote(where: {user_id: {eq: $user_id}}) {
+				created_at
+				__typename
+			}
+			author: user {
+				slug
+				firstName: first_name
+				lastName: last_name
+				pictureURL: picture_url
+				bio
+				__typename
+			}
+			__typename
+		}
+	}`
+
+	_, err := parse(al, "allow.list")
+	if err != nil {
+		t.Fatal(err)
+	}
+}

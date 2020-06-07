@@ -66,7 +66,7 @@ func newViper(configPath, configFile string) *viper.Viper {
 	vi.SetDefault("host_port", "0.0.0.0:8080")
 	vi.SetDefault("web_ui", false)
 	vi.SetDefault("enable_tracing", false)
-	vi.SetDefault("auth_fail_block", "always")
+	vi.SetDefault("auth_fail_block", false)
 	vi.SetDefault("seed_file", "seed.js")
 
 	vi.SetDefault("default_block", true)

@@ -239,6 +239,29 @@ var gql = []byte(`
 		price
 	}}`)
 
+var gqlWithFragments = []byte(`
+fragment userFields1 on user {
+	id
+	email
+	__typename
+}
+
+query {
+	users {
+		...userFields2
+
+		created_at
+		...userFields1
+		__typename
+	}
+}
+
+fragment userFields2 on user {
+	first_name
+	last_name
+	__typename
+}`)
+
 func BenchmarkQCompile(b *testing.B) {
 	qcompile, _ := NewCompiler(Config{})
 
@@ -271,6 +294,21 @@ func BenchmarkQCompileP(b *testing.B) {
 	})
 }
 
+func BenchmarkQCompileFragment(b *testing.B) {
+	qcompile, _ := NewCompiler(Config{})
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for n := 0; n < b.N; n++ {
+		_, err := qcompile.Compile(gqlWithFragments, "user")
+
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+
+}
+
 func BenchmarkParse(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -296,6 +334,18 @@ func BenchmarkParseP(b *testing.B) {
 			}
 		}
 	})
+}
+
+func BenchmarkParseFragment(b *testing.B) {
+	b.ResetTimer()
+	b.ReportAllocs()
+	for n := 0; n < b.N; n++ {
+		_, err := Parse(gqlWithFragments)
+
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
 }
 
 func BenchmarkSchemaParse(b *testing.B) {

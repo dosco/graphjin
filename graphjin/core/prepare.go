@@ -28,17 +28,18 @@ func (sg *SuperGraph) prepare(q *query, role string) {
 	var err error
 
 	qb := []byte(q.ai.Query)
+	vars := []byte(q.ai.Vars)
 
 	switch q.qt {
 	case qcode.QTQuery:
 		if sg.abacEnabled {
-			stmts, err = sg.buildMultiStmt(qb, q.ai.Vars)
+			stmts, err = sg.buildMultiStmt(qb, vars)
 		} else {
-			stmts, err = sg.buildRoleStmt(qb, q.ai.Vars, role)
+			stmts, err = sg.buildRoleStmt(qb, vars, role)
 		}
 
 	case qcode.QTMutation:
-		stmts, err = sg.buildRoleStmt(qb, q.ai.Vars, role)
+		stmts, err = sg.buildRoleStmt(qb, vars, role)
 	}
 
 	if err != nil {

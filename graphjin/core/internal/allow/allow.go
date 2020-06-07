@@ -10,21 +10,23 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"text/scanner"
 
 	"github.com/chirino/graphql/schema"
 	"github.com/dosco/super-graph/jsn"
 )
 
 const (
-	AL_QUERY int = iota + 1
-	AL_VARS
+	expComment = iota + 1
+	expVar
+	expQuery
 )
 
 type Item struct {
 	Name    string
 	key     string
 	Query   string
-	Vars    json.RawMessage
+	Vars    string
 	Comment string
 }
 
@@ -126,121 +128,101 @@ func (al *List) Set(vars []byte, query, comment string) error {
 		return errors.New("empty query")
 	}
 
-	var q string
-
-	for i := 0; i < len(query); i++ {
-		c := query[i]
-		if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' {
-			q = query
-			break
-
-		} else if c == '{' {
-			q = "query " + query
-			break
-		}
-	}
-
 	al.saveChan <- Item{
 		Comment: comment,
-		Query:   q,
-		Vars:    vars,
+		Query:   query,
+		Vars:    string(vars),
 	}
 
 	return nil
 }
 
 func (al *List) Load() ([]Item, error) {
-	var list []Item
-	varString := "variables"
-
 	b, err := ioutil.ReadFile(al.filepath)
 	if err != nil {
-		return list, err
+		return nil, err
 	}
 
-	if len(b) == 0 {
-		return list, nil
+	return parse(string(b), al.filepath)
+}
+
+func parse(b string, filename string) ([]Item, error) {
+	var items []Item
+
+	var s scanner.Scanner
+	s.Init(strings.NewReader(b))
+	s.Filename = filename
+	s.Mode ^= scanner.SkipComments
+
+	var op, sp scanner.Position
+	var item Item
+
+	newComment := false
+	st := expComment
+
+	for tok := s.Scan(); tok != scanner.EOF; tok = s.Scan() {
+		txt := s.TokenText()
+
+		switch {
+		case strings.HasPrefix(txt, "/*"):
+			if st == expQuery {
+				v := b[sp.Offset:s.Pos().Offset]
+				item.Query = strings.TrimSpace(v[:strings.LastIndexByte(v, '}')+1])
+				items = append(items, item)
+			}
+			item = Item{Comment: strings.TrimSpace(txt[2 : len(txt)-2])}
+			sp = s.Pos()
+			st = expComment
+			newComment = true
+
+		case !newComment && strings.HasPrefix(txt, "#"):
+			if st == expQuery {
+				v := b[sp.Offset:s.Pos().Offset]
+				item.Query = strings.TrimSpace(v[:strings.LastIndexByte(v, '}')+1])
+				items = append(items, item)
+			}
+			item = Item{}
+			sp = s.Pos()
+			st = expComment
+
+		case strings.HasPrefix(txt, "variables"):
+			if st == expComment {
+				v := b[sp.Offset:s.Pos().Offset]
+				item.Comment = strings.TrimSpace(v[:strings.IndexByte(v, '\n')])
+			}
+			sp = s.Pos()
+			st = expVar
+
+		case isGraphQL(txt):
+			if st == expVar {
+				v := b[sp.Offset:s.Pos().Offset]
+				item.Vars = strings.TrimSpace(v[:strings.LastIndexByte(v, '}')+1])
+			}
+			sp = op
+			st = expQuery
+
+		}
+		op = s.Pos()
 	}
 
-	var comment bytes.Buffer
-	var varBytes []byte
-
-	itemMap := make(map[string]struct{})
-
-	s, e, c := 0, 0, 0
-	ty := 0
-
-	for {
-		fq := false
-
-		if c == 0 && b[e] == '#' {
-			s = e
-			for e < len(b) && b[e] != '\n' {
-				e++
-			}
-			if (e - s) > 2 {
-				comment.Write(b[(s + 1):(e + 1)])
-			}
-		}
-
-		if e >= len(b) {
-			break
-		}
-
-		if matchPrefix(b, e, "query") || matchPrefix(b, e, "mutation") {
-			if c == 0 {
-				s = e
-			}
-			ty = AL_QUERY
-		} else if matchPrefix(b, e, varString) {
-			if c == 0 {
-				s = e + len(varString) + 1
-			}
-			ty = AL_VARS
-		} else if b[e] == '{' {
-			c++
-
-		} else if b[e] == '}' {
-			c--
-
-			if c == 0 {
-				if ty == AL_QUERY {
-					fq = true
-				} else if ty == AL_VARS {
-					varBytes = b[s:(e + 1)]
-				}
-				ty = 0
-			}
-		}
-
-		if fq {
-			query := string(b[s:(e + 1)])
-			name := QueryName(query)
-			key := strings.ToLower(name)
-
-			if _, ok := itemMap[key]; !ok {
-				v := Item{
-					Name:    name,
-					key:     key,
-					Query:   query,
-					Vars:    varBytes,
-					Comment: comment.String(),
-				}
-				list = append(list, v)
-				comment.Reset()
-			}
-
-			varBytes = nil
-
-		}
-
-		e++
-		if e >= len(b) {
-			break
-		}
+	if st == expQuery {
+		v := b[sp.Offset:s.Pos().Offset]
+		item.Query = strings.TrimSpace(v[:strings.LastIndexByte(v, '}')+1])
+		items = append(items, item)
 	}
 
-	return list, nil
+	for i := range items {
+		items[i].Name = QueryName(items[i].Query)
+		items[i].key = strings.ToLower(items[i].Name)
+	}
+
+	return items, nil
+}
+
+func isGraphQL(s string) bool {
+	return strings.HasPrefix(s, "query") ||
+		strings.HasPrefix(s, "mutation") ||
+		strings.HasPrefix(s, "subscription")
 }
 
 func (al *List) save(item Item) error {
@@ -297,57 +279,39 @@ func (al *List) save(item Item) error {
 		return strings.Compare(list[i].key, list[j].key) == -1
 	})
 
-	for _, v := range list {
-		cmtLines := strings.Split(v.Comment, "\n")
-
-		i := 0
-		for _, c := range cmtLines {
-			if c = strings.TrimSpace(c); c == "" {
-				continue
-			}
-
-			_, err := f.WriteString(fmt.Sprintf("# %s\n", c))
-			if err != nil {
-				return err
-			}
-			i++
-		}
-
-		if i != 0 {
-			if _, err := f.WriteString("\n"); err != nil {
-				return err
-			}
-		} else {
-			if _, err := f.WriteString(fmt.Sprintf("# Query named %s\n\n", v.Name)); err != nil {
-				return err
-			}
-		}
-
-		if len(v.Vars) != 0 && !bytes.Equal(v.Vars, []byte("{}")) {
+	for i, v := range list {
+		var vars string
+		if v.Vars != "" {
 			buf.Reset()
-
-			if err := jsn.Clear(&buf, v.Vars); err != nil {
-				return fmt.Errorf("failed to clean vars: %w", err)
+			if err := jsn.Clear(&buf, []byte(v.Vars)); err != nil {
+				continue
 			}
 			vj := json.RawMessage(buf.Bytes())
 
-			vj, err = json.MarshalIndent(vj, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal vars: %w", err)
+			if vj, err = json.MarshalIndent(vj, "", "  "); err != nil {
+				continue
 			}
+			vars = string(vj)
+		}
+		list[i].Vars = vars
+		list[i].Comment = strings.TrimSpace(v.Comment)
+	}
 
-			_, err = f.WriteString(fmt.Sprintf("variables %s\n\n", vj))
+	for _, v := range list {
+		if v.Comment != "" {
+			f.WriteString(fmt.Sprintf("/* %s */\n\n", v.Comment))
+		} else {
+			f.WriteString(fmt.Sprintf("/* %s */\n\n", v.Name))
+		}
+
+		if v.Vars != "" {
+			_, err = f.WriteString(fmt.Sprintf("variables %s\n\n", v.Vars))
 			if err != nil {
 				return err
 			}
 		}
 
-		if v.Query[0] == '{' {
-			_, err = f.WriteString(fmt.Sprintf("query %s\n\n", v.Query))
-		} else {
-			_, err = f.WriteString(fmt.Sprintf("%s\n\n", v.Query))
-		}
-
+		_, err = f.WriteString(fmt.Sprintf("%s\n\n", v.Query))
 		if err != nil {
 			return err
 		}
