@@ -450,7 +450,6 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 			}
 
 			col := Column{Name: f.Name, FieldName: fname}
-
 			s.Cols = append(s.Cols, col)
 		}
 

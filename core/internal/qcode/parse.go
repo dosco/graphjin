@@ -330,8 +330,6 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 		return nil, fmt.Errorf("unexpected token: %s", p.peekNext())
 	}
 
-	// fm := make(map[uint64]struct{})
-
 	for {
 		if p.peek(itemEOF) {
 			p.ignore()
@@ -384,23 +382,10 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 			n := int32(len(fields))
 			fields = append(fields, fr.Fields...)
 
-			for i := int(n); i < len(fields); i++ {
-				f := &fields[i]
-				f.ID = int32(i)
-
-				// var name string
-
-				// if f.Alias != "" {
-				// 	name = f.Alias
-				// } else {
-				// 	name = f.Name
-				// }
-
-				// if _, ok := fm[name]; ok {
-				// 	continue
-				// } else {
-				// 	fm[name] = struct{}{}
-				// }
+			for i := 0; i < len(fr.Fields); i++ {
+				k := (n + int32(i))
+				f := &fields[k]
+				f.ID = int32(k)
 
 				// If this is the top-level point the parent to the parent of the
 				// previous field.
@@ -414,6 +399,9 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 				} else {
 					f.ParentID += n
 				}
+
+				f.Children = make([]int32, len(f.Children))
+				copy(f.Children, fr.Fields[i].Children)
 
 				// Update all the children which is needed.
 				for j := range f.Children {
@@ -432,20 +420,6 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 			if err := p.parseField(f); err != nil {
 				return nil, err
 			}
-
-			// var name string
-
-			// if f.Alias != "" {
-			// 	name = f.Alias
-			// } else {
-			// 	name = f.Name
-			// }
-
-			// if _, ok := fm[name]; ok {
-			// 	continue
-			// } else {
-			// 	fm[name] = struct{}{}
-			// }
 
 			if st.Len() == 0 {
 				f.ParentID = -1
