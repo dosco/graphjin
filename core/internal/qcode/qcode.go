@@ -277,6 +277,7 @@ func (com *Compiler) Compile(query []byte, role string) (*QCode, error) {
 		return nil, err
 	}
 
+	freeNodes(op)
 	opPool.Put(op)
 
 	return &qc, nil
@@ -492,50 +493,42 @@ func (com *Compiler) AddFilters(qc *QCode, sel *Select, role string) {
 func (com *Compiler) compileArgs(qc *QCode, sel *Select, args []Arg, role string) error {
 	var err error
 
-	// don't free this arg either previously done or will be free'd
-	// in the future like in psql
-	var df bool
-
 	for i := range args {
 		arg := &args[i]
 
 		switch arg.Name {
 		case "id":
-			err, df = com.compileArgID(sel, arg)
+			err = com.compileArgID(sel, arg)
 
 		case "search":
-			err, df = com.compileArgSearch(sel, arg)
+			err = com.compileArgSearch(sel, arg)
 
 		case "where":
-			err, df = com.compileArgWhere(sel, arg, role)
+			err = com.compileArgWhere(sel, arg, role)
 
 		case "orderby", "order_by", "order":
-			err, df = com.compileArgOrderBy(sel, arg)
+			err = com.compileArgOrderBy(sel, arg)
 
 		case "distinct_on", "distinct":
-			err, df = com.compileArgDistinctOn(sel, arg)
+			err = com.compileArgDistinctOn(sel, arg)
 
 		case "limit":
-			err, df = com.compileArgLimit(sel, arg)
+			err = com.compileArgLimit(sel, arg)
 
 		case "offset":
-			err, df = com.compileArgOffset(sel, arg)
+			err = com.compileArgOffset(sel, arg)
 
 		case "first":
-			err, df = com.compileArgFirstLast(sel, arg, PtForward)
+			err = com.compileArgFirstLast(sel, arg, PtForward)
 
 		case "last":
-			err, df = com.compileArgFirstLast(sel, arg, PtBackward)
+			err = com.compileArgFirstLast(sel, arg, PtBackward)
 
 		case "after":
-			err, df = com.compileArgAfterBefore(sel, arg, PtForward)
+			err = com.compileArgAfterBefore(sel, arg, PtForward)
 
 		case "before":
-			err, df = com.compileArgAfterBefore(sel, arg, PtBackward)
-		}
-
-		if !df {
-			FreeNode(arg.Val, 5)
+			err = com.compileArgAfterBefore(sel, arg, PtBackward)
 		}
 
 		if err != nil {
@@ -646,39 +639,20 @@ func (com *Compiler) compileArgNode(st *util.Stack, node *Node, usePool bool) (*
 		}
 	}
 
-	if usePool {
-		st.Push(node)
-
-		for {
-			if st.Len() == 0 {
-				break
-			}
-			intf := st.Pop()
-			node, ok := intf.(*Node)
-			if !ok || node == nil {
-				continue
-			}
-			for i := range node.Children {
-				st.Push(node.Children[i])
-			}
-			FreeNode(node, 1)
-		}
-	}
-
 	return root, needsUser, nil
 }
 
-func (com *Compiler) compileArgID(sel *Select, arg *Arg) (error, bool) {
+func (com *Compiler) compileArgID(sel *Select, arg *Arg) error {
 	if sel.ID != 0 {
-		return nil, false
+		return nil
 	}
 
 	if sel.Where != nil && sel.Where.Op == OpEqID {
-		return nil, false
+		return nil
 	}
 
 	if arg.Val.Type != NodeVar {
-		return argErr("id", "variable"), false
+		return argErr("id", "variable")
 	}
 
 	ex := expPool.Get().(*Exp)
@@ -689,12 +663,12 @@ func (com *Compiler) compileArgID(sel *Select, arg *Arg) (error, bool) {
 	ex.Val = arg.Val.Val
 
 	sel.Where = ex
-	return nil, false
+	return nil
 }
 
-func (com *Compiler) compileArgSearch(sel *Select, arg *Arg) (error, bool) {
+func (com *Compiler) compileArgSearch(sel *Select, arg *Arg) error {
 	if arg.Val.Type != NodeVar {
-		return argErr("search", "variable"), false
+		return argErr("search", "variable")
 	}
 
 	ex := expPool.Get().(*Exp)
@@ -709,18 +683,19 @@ func (com *Compiler) compileArgSearch(sel *Select, arg *Arg) (error, bool) {
 	}
 
 	sel.Args[arg.Name] = arg.Val
+	arg.df = true
 	AddFilter(sel, ex)
 
-	return nil, true
+	return nil
 }
 
-func (com *Compiler) compileArgWhere(sel *Select, arg *Arg, role string) (error, bool) {
+func (com *Compiler) compileArgWhere(sel *Select, arg *Arg, role string) error {
 	st := util.NewStack()
 	var err error
 
 	ex, nu, err := com.compileArgObj(st, arg)
 	if err != nil {
-		return err, false
+		return err
 	}
 
 	if nu && role == "anon" {
@@ -728,12 +703,12 @@ func (com *Compiler) compileArgWhere(sel *Select, arg *Arg, role string) (error,
 	}
 	AddFilter(sel, ex)
 
-	return nil, true
+	return nil
 }
 
-func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) (error, bool) {
+func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) error {
 	if arg.Val.Type != NodeObj {
-		return fmt.Errorf("expecting an object"), false
+		return fmt.Errorf("expecting an object")
 	}
 
 	st := util.NewStack()
@@ -751,16 +726,15 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) (error, bool) {
 		node, ok := intf.(*Node)
 
 		if !ok || node == nil {
-			return fmt.Errorf("17: unexpected value %v (%t)", intf, intf), false
+			return fmt.Errorf("17: unexpected value %v (%t)", intf, intf)
 		}
 
 		if _, ok := com.bl[node.Name]; ok {
-			FreeNode(node, 2)
 			continue
 		}
 
 		if node.Type != NodeStr && node.Type != NodeVar {
-			return fmt.Errorf("expecting a string or variable"), false
+			return fmt.Errorf("expecting a string or variable")
 		}
 
 		ob := &OrderBy{}
@@ -779,25 +753,24 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) (error, bool) {
 		case "desc_nulls_last":
 			ob.Order = OrderDescNullsLast
 		default:
-			return fmt.Errorf("valid values include asc, desc, asc_nulls_first and desc_nulls_first"), false
+			return fmt.Errorf("valid values include asc, desc, asc_nulls_first and desc_nulls_first")
 		}
 
 		setOrderByColName(ob, node)
 		sel.OrderBy = append(sel.OrderBy, ob)
-		FreeNode(node, 3)
 	}
-	return nil, false
+	return nil
 }
 
-func (com *Compiler) compileArgDistinctOn(sel *Select, arg *Arg) (error, bool) {
+func (com *Compiler) compileArgDistinctOn(sel *Select, arg *Arg) error {
 	node := arg.Val
 
 	if _, ok := com.bl[node.Name]; ok {
-		return nil, false
+		return nil
 	}
 
 	if node.Type != NodeList && node.Type != NodeStr {
-		return fmt.Errorf("expecting a list of strings or just a string"), false
+		return fmt.Errorf("expecting a list of strings or just a string")
 	}
 
 	if node.Type == NodeStr {
@@ -806,58 +779,57 @@ func (com *Compiler) compileArgDistinctOn(sel *Select, arg *Arg) (error, bool) {
 
 	for i := range node.Children {
 		sel.DistinctOn = append(sel.DistinctOn, node.Children[i].Val)
-		FreeNode(node.Children[i], 5)
 	}
 
-	return nil, false
+	return nil
 }
 
-func (com *Compiler) compileArgLimit(sel *Select, arg *Arg) (error, bool) {
+func (com *Compiler) compileArgLimit(sel *Select, arg *Arg) error {
 	node := arg.Val
 
 	if node.Type != NodeInt {
-		return argErr("limit", "number"), false
+		return argErr("limit", "number")
 	}
 
 	sel.Paging.Limit = node.Val
 
-	return nil, false
+	return nil
 }
 
-func (com *Compiler) compileArgOffset(sel *Select, arg *Arg) (error, bool) {
+func (com *Compiler) compileArgOffset(sel *Select, arg *Arg) error {
 	node := arg.Val
 
 	if node.Type != NodeVar {
-		return argErr("offset", "variable"), false
+		return argErr("offset", "variable")
 	}
 
 	sel.Paging.Offset = node.Val
-	return nil, false
+	return nil
 }
 
-func (com *Compiler) compileArgFirstLast(sel *Select, arg *Arg, pt PagingType) (error, bool) {
+func (com *Compiler) compileArgFirstLast(sel *Select, arg *Arg, pt PagingType) error {
 	node := arg.Val
 
 	if node.Type != NodeInt {
-		return argErr(arg.Name, "number"), false
+		return argErr(arg.Name, "number")
 	}
 
 	sel.Paging.Type = pt
 	sel.Paging.Limit = node.Val
 
-	return nil, false
+	return nil
 }
 
-func (com *Compiler) compileArgAfterBefore(sel *Select, arg *Arg, pt PagingType) (error, bool) {
+func (com *Compiler) compileArgAfterBefore(sel *Select, arg *Arg, pt PagingType) error {
 	node := arg.Val
 
 	if node.Type != NodeVar || node.Val != "cursor" {
-		return fmt.Errorf("value for argument '%s' must be a variable named $cursor", arg.Name), false
+		return fmt.Errorf("value for argument '%s' must be a variable named $cursor", arg.Name)
 	}
 	sel.Paging.Type = pt
 	sel.Paging.Cursor = true
 
-	return nil, false
+	return nil
 }
 
 // var zeroTrv = &trval{}
@@ -1236,4 +1208,82 @@ func FreeExp(ex *Exp) {
 
 func argErr(name, ty string) error {
 	return fmt.Errorf("value for argument '%s' must be a %s", name, ty)
+}
+
+func freeNodes(op *Operation) {
+	var st *util.Stack
+	fm := make(map[*Node]struct{})
+
+	for i := range op.Args {
+		arg := op.Args[i]
+		if arg.df {
+			continue
+		}
+
+		for i := range arg.Val.Children {
+			if st == nil {
+				st = util.NewStack()
+			}
+			c := arg.Val.Children[i]
+			if _, ok := fm[c]; !ok {
+				st.Push(c)
+			}
+		}
+
+		if _, ok := fm[arg.Val]; !ok {
+			nodePool.Put(arg.Val)
+			fm[arg.Val] = struct{}{}
+		}
+
+	}
+
+	for i := range op.Fields {
+		f := op.Fields[i]
+
+		for j := range f.Args {
+			arg := f.Args[j]
+			if arg.df {
+				continue
+			}
+
+			for k := range arg.Val.Children {
+				if st == nil {
+					st = util.NewStack()
+				}
+				c := arg.Val.Children[k]
+				if _, ok := fm[c]; !ok {
+					st.Push(c)
+				}
+			}
+
+			if _, ok := fm[arg.Val]; !ok {
+				nodePool.Put(arg.Val)
+				fm[arg.Val] = struct{}{}
+			}
+		}
+	}
+
+	if st == nil {
+		return
+	}
+
+	for {
+		if st.Len() == 0 {
+			break
+		}
+		intf := st.Pop()
+		node, ok := intf.(*Node)
+		if !ok || node == nil {
+			continue
+		}
+
+		for i := range node.Children {
+			st.Push(node.Children[i])
+		}
+
+		if _, ok := fm[node]; !ok {
+			nodePool.Put(node)
+			fm[node] = struct{}{}
+		}
+	}
 }

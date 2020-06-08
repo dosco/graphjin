@@ -220,10 +220,8 @@ func (co *Compiler) compileQueryWithMetadata(
 			}
 
 			if len(sel.Args) != 0 {
-				i := 0
 				for _, v := range sel.Args {
-					qcode.FreeNode(v, 500)
-					i++
+					qcode.FreeNode(v)
 				}
 			}
 		}

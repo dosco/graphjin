@@ -299,9 +299,13 @@ func (al *List) save(item Item) error {
 
 	for _, v := range list {
 		if v.Comment != "" {
-			f.WriteString(fmt.Sprintf("/* %s */\n\n", v.Comment))
+			_, err = f.WriteString(fmt.Sprintf("/* %s */\n\n", v.Comment))
 		} else {
-			f.WriteString(fmt.Sprintf("/* %s */\n\n", v.Name))
+			_, err = f.WriteString(fmt.Sprintf("/* %s */\n\n", v.Name))
+		}
+
+		if err != nil {
+			return err
 		}
 
 		if v.Vars != "" {
@@ -318,18 +322,6 @@ func (al *List) save(item Item) error {
 	}
 
 	return nil
-}
-
-func matchPrefix(b []byte, i int, s string) bool {
-	if (len(b) - i) < len(s) {
-		return false
-	}
-	for n := 0; n < len(s); n++ {
-		if b[(i+n)] != s[n] {
-			return false
-		}
-	}
-	return true
 }
 
 func QueryName(b string) string {
