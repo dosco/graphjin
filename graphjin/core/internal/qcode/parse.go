@@ -1,7 +1,6 @@
 package qcode
 
 import (
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"hash/maphash"
@@ -80,6 +79,7 @@ type Field struct {
 type Arg struct {
 	Name string
 	Val  *Node
+	df   bool
 }
 
 type Node struct {
@@ -182,8 +182,8 @@ func (p *Parser) parseFragment(op *Operation) error {
 	frag := fragPool.Get().(*Fragment)
 	frag.Reset()
 
-	frag.Fields = frag.fieldsA[:0]
-	frag.Args = frag.argsA[:0]
+	frag.Fields = frag.SelectionSet.fieldsA[:0]
+	frag.Args = frag.SelectionSet.argsA[:0]
 
 	if p.peek(itemName) {
 		frag.Name = p.val(p.next())
@@ -273,7 +273,7 @@ func (p *Parser) parseOpTypeAndArgs(op *Operation) error {
 		op.Type = opSub
 	}
 
-	op.Args = op.argsA[:0]
+	op.Args = op.SelectionSet.argsA[:0]
 
 	var err error
 
@@ -370,11 +370,11 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 
 		if isFrag {
 			name := p.val(p.next())
-			p.h.WriteString(name)
-			k := p.h.Sum64()
+			_, _ = p.h.WriteString(name)
+			id := p.h.Sum64()
 			p.h.Reset()
 
-			fr, ok := p.frags[k]
+			fr, ok := p.frags[id]
 			if !ok {
 				return nil, fmt.Errorf("no fragment named '%s' defined", name)
 			}
@@ -402,6 +402,9 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 
 				f.Children = make([]int32, len(f.Children))
 				copy(f.Children, fr.Fields[i].Children)
+
+				f.Args = make([]Arg, len(f.Args))
+				copy(f.Args, fr.Fields[i].Args)
 
 				// Update all the children which is needed.
 				for j := range f.Children {
@@ -676,11 +679,6 @@ func (p *Parser) ignore() {
 	p.pos = n
 }
 
-func (p *Parser) peekCurrent() string {
-	item := p.items[p.pos]
-	return b2s(p.input[item.pos:item.end])
-}
-
 func (p *Parser) peekNext() string {
 	item := p.items[p.pos+1]
 	return b2s(p.input[item.pos:item.end])
@@ -688,16 +686,6 @@ func (p *Parser) peekNext() string {
 
 func (p *Parser) reset(to int) {
 	p.pos = to
-}
-
-func (p *Parser) fHash(name string, parentID int32) uint64 {
-	var b []byte
-	binary.LittleEndian.PutUint32(b, uint32(parentID))
-	p.h.WriteString(name)
-	p.h.Write(b)
-	v := p.h.Sum64()
-	p.h.Reset()
-	return v
 }
 
 func b2s(b []byte) string {
@@ -736,31 +724,6 @@ func (t parserType) String() string {
 	return v
 }
 
-// type Frees struct {
-// 	n   *Node
-// 	loc int
-// }
-
-// var freeList []Frees
-
-// func FreeNode(n *Node, loc int) {
-// 	j := -1
-
-// 	for i := range freeList {
-// 		if n == freeList[i].n {
-// 			j = i
-// 			break
-// 		}
-// 	}
-
-// 	if j == -1 {
-// 		nodePool.Put(n)
-// 		freeList = append(freeList, Frees{n, loc})
-// 	} else {
-// 		fmt.Printf("(%d) RE_FREE %d %p %s %s\n", loc, freeList[j].loc, freeList[j].n, n.Name, n.Type)
-// 	}
-// }
-
-func FreeNode(n *Node, loc int) {
+func FreeNode(n *Node) {
 	nodePool.Put(n)
 }
