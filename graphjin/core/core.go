@@ -172,14 +172,15 @@ func (c *scontext) resolvePreparedSQL() ([]byte, *stmt, error) {
 
 	h := maphash.Hash{}
 	h.SetSeed(c.sg.hashSeed)
+	id := queryID(&h, c.res.name, role)
 
-	q, ok := c.sg.queries[queryID(&h, c.res.name, role)]
+	q, ok := c.sg.queries[id]
 	if !ok {
 		return nil, nil, errNotFound
 	}
 
 	if q.sd == nil {
-		q.Do(func() { c.sg.prepare(&q, role) })
+		q.Do(func() { c.sg.prepare(q, role) })
 
 		if q.err != nil {
 			return nil, nil, err

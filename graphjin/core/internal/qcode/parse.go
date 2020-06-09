@@ -494,24 +494,6 @@ func (p *Parser) parseField(f *Field) error {
 	return nil
 }
 
-// func (p *Parser) parseInlineFragmentFields(st *Stack, fields []Field) ([]Field, error) {
-// 	var err error
-
-// 	if p.peek(itemName) {
-// 		p.ignore()
-// 		// frag.On = p.vall(p.next())
-// 	} else {
-// 		return nil, errors.New("inline fragment: missing table name after 'on' keyword")
-// 	}
-
-// 	fields, err = p.parseNormalFields(st, fields)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("inline fragment: %v", err)
-// 	}
-
-// 	return fields, nil
-// }
-
 func (p *Parser) parseOpParams(args []Arg) ([]Arg, error) {
 	for {
 		if len(args) >= maxArgs {

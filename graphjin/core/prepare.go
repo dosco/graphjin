@@ -64,7 +64,7 @@ func (sg *SuperGraph) initPrepared() error {
 		return fmt.Errorf("role query: %w", err)
 	}
 
-	sg.queries = make(map[uint64]query)
+	sg.queries = make(map[uint64]*query)
 
 	list, err := sg.allowList.Load()
 	if err != nil {
@@ -82,15 +82,15 @@ func (sg *SuperGraph) initPrepared() error {
 
 		switch qt {
 		case qcode.QTQuery:
-			sg.queries[queryID(&h, v.Name, "user")] = query{ai: v, qt: qt}
+			sg.queries[queryID(&h, v.Name, "user")] = &query{ai: v, qt: qt}
 
 			if sg.anonExists {
-				sg.queries[queryID(&h, v.Name, "anon")] = query{ai: v, qt: qt}
+				sg.queries[queryID(&h, v.Name, "anon")] = &query{ai: v, qt: qt}
 			}
 
 		case qcode.QTMutation:
 			for _, role := range sg.conf.Roles {
-				sg.queries[queryID(&h, v.Name, role.Name)] = query{ai: v, qt: qt}
+				sg.queries[queryID(&h, v.Name, role.Name)] = &query{ai: v, qt: qt}
 			}
 		}
 	}
