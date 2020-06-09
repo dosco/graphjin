@@ -34,17 +34,13 @@ const (
 	NodeVar
 )
 
-type SelectionSet struct {
+type Operation struct {
+	Type    parserType
 	Name    string
 	Args    []Arg
 	argsA   [10]Arg
 	Fields  []Field
 	fieldsA [10]Field
-}
-
-type Operation struct {
-	Type parserType
-	SelectionSet
 }
 
 var zeroOperation = Operation{}
@@ -54,9 +50,10 @@ func (o *Operation) Reset() {
 }
 
 type Fragment struct {
-	Name string
-	On   string
-	SelectionSet
+	Name    string
+	On      string
+	Fields  []Field
+	fieldsA [10]Field
 }
 
 var zeroFragment = Fragment{}
@@ -158,9 +155,11 @@ func Parse(gql []byte) (*Operation, error) {
 
 		if p.peek(itemFragment) {
 			p.ignore()
-			if err = p.parseFragment(op); err != nil {
+			if f, err := p.parseFragment(false); err != nil {
+				fragPool.Put(f)
 				return nil, err
 			}
+
 		} else {
 			if !qf && p.peek(itemQuery, itemMutation, itemSub, itemObjOpen) {
 				s = p.pos
@@ -175,53 +174,62 @@ func Parse(gql []byte) (*Operation, error) {
 		return nil, err
 	}
 
+	for _, v := range p.frags {
+		fragPool.Put(v)
+	}
+
 	return op, nil
 }
 
-func (p *Parser) parseFragment(op *Operation) error {
+func (p *Parser) parseFragment(inline bool) (*Fragment, error) {
+	var err error
+
 	frag := fragPool.Get().(*Fragment)
 	frag.Reset()
-
-	frag.Fields = frag.SelectionSet.fieldsA[:0]
-	frag.Args = frag.SelectionSet.argsA[:0]
+	frag.Fields = frag.fieldsA[:0]
 
 	if p.peek(itemName) {
 		frag.Name = p.val(p.next())
+	} else if !inline {
+		return frag, errors.New("fragment: missing name")
 	}
 
 	if p.peek(itemOn) {
 		p.ignore()
 	} else {
-		return errors.New("fragment: missing 'on' keyword")
+		return frag, errors.New("fragment: missing 'on' keyword")
 	}
 
 	if p.peek(itemName) {
 		frag.On = p.vall(p.next())
 	} else {
-		return errors.New("fragment: missing table name after 'on' keyword")
+		return frag, errors.New("fragment: missing table name after 'on' keyword")
 	}
 
 	if p.peek(itemObjOpen) {
 		p.ignore()
 	} else {
-		return fmt.Errorf("fragment: expecting a '{', got: %s", p.next())
+		return frag, fmt.Errorf("fragment: expecting a '{', got: %s", p.next())
 	}
 
-	if err := p.parseSelectionSet(&frag.SelectionSet); err != nil {
-		return fmt.Errorf("fragment: %v", err)
+	frag.Fields, err = p.parseFields(frag.Fields)
+	if err != nil {
+		return frag, fmt.Errorf("fragment: %v", err)
 	}
 
-	if p.frags == nil {
-		p.frags = make(map[uint64]*Fragment)
+	if !inline {
+		if p.frags == nil {
+			p.frags = make(map[uint64]*Fragment)
+		}
+
+		_, _ = p.h.WriteString(frag.Name)
+		k := p.h.Sum64()
+		p.h.Reset()
+
+		p.frags[k] = frag
 	}
 
-	_, _ = p.h.WriteString(frag.Name)
-	k := p.h.Sum64()
-	p.h.Reset()
-
-	p.frags[k] = frag
-
-	return nil
+	return frag, nil
 }
 
 func (p *Parser) parseOp(op *Operation) error {
@@ -249,7 +257,7 @@ func (p *Parser) parseOp(op *Operation) error {
 				break
 			}
 
-			err = p.parseSelectionSet(&op.SelectionSet)
+			op.Fields, err = p.parseFields(op.Fields)
 			if err != nil {
 				return fmt.Errorf("%s: %v", op.Type, err)
 			}
@@ -273,7 +281,7 @@ func (p *Parser) parseOpTypeAndArgs(op *Operation) error {
 		op.Type = opSub
 	}
 
-	op.Args = op.SelectionSet.argsA[:0]
+	op.Args = op.argsA[:0]
 
 	var err error
 
@@ -288,17 +296,6 @@ func (p *Parser) parseOpTypeAndArgs(op *Operation) error {
 		if err != nil {
 			return err
 		}
-	}
-
-	return nil
-}
-
-func (p *Parser) parseSelectionSet(selset *SelectionSet) error {
-	var err error
-
-	selset.Fields, err = p.parseFields(selset.Fields)
-	if err != nil {
-		return err
 	}
 
 	return nil
@@ -324,6 +321,7 @@ func ParseArgValue(argVal string) (*Node, error) {
 }
 
 func (p *Parser) parseFields(fields []Field) ([]Field, error) {
+	var err error
 	st := NewStack()
 
 	if !p.peek(itemName, itemSpread) {
@@ -358,86 +356,111 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 			isFrag = true
 		}
 
-		if !p.peek(itemName) {
-			if isFrag {
-				return nil, fmt.Errorf("expecting a fragment name, got: %s", p.next())
-			} else {
-				return nil, fmt.Errorf("expecting an alias or field name, got: %s", p.next())
-			}
-		}
-
-		var f *Field
-
 		if isFrag {
-			name := p.val(p.next())
-			_, _ = p.h.WriteString(name)
-			id := p.h.Sum64()
-			p.h.Reset()
-
-			fr, ok := p.frags[id]
-			if !ok {
-				return nil, fmt.Errorf("no fragment named '%s' defined", name)
-			}
-
-			n := int32(len(fields))
-			fields = append(fields, fr.Fields...)
-
-			for i := 0; i < len(fr.Fields); i++ {
-				k := (n + int32(i))
-				f := &fields[k]
-				f.ID = int32(k)
-
-				// If this is the top-level point the parent to the parent of the
-				// previous field.
-				if f.ParentID == -1 {
-					pid := st.Peek()
-					f.ParentID = pid
-					if f.ParentID != -1 {
-						fields[pid].Children = append(fields[f.ParentID].Children, f.ID)
-					}
-					// Update all the other parents id's by our new place in this new array
-				} else {
-					f.ParentID += n
-				}
-
-				f.Children = make([]int32, len(f.Children))
-				copy(f.Children, fr.Fields[i].Children)
-
-				f.Args = make([]Arg, len(f.Args))
-				copy(f.Args, fr.Fields[i].Args)
-
-				// Update all the children which is needed.
-				for j := range f.Children {
-					f.Children[j] += n
-				}
-			}
-
+			fields, err = p.parseFragmentFields(st, fields)
 		} else {
-			fields = append(fields, Field{ID: int32(len(fields))})
-
-			f = &fields[(len(fields) - 1)]
-			f.Args = f.argsA[:0]
-			f.Children = f.childrenA[:0]
-
-			// Parse the field
-			if err := p.parseField(f); err != nil {
-				return nil, err
-			}
-
-			if st.Len() == 0 {
-				f.ParentID = -1
-			} else {
-				pid := st.Peek()
-				f.ParentID = pid
-				fields[pid].Children = append(fields[pid].Children, f.ID)
-			}
+			fields, err = p.parseNormalFields(st, fields)
 		}
 
-		// The first opening curley brackets after this
-		// comes the columns or child fields
-		if p.peek(itemObjOpen) {
-			p.ignore()
-			st.Push(f.ID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return fields, nil
+}
+
+func (p *Parser) parseNormalFields(st *Stack, fields []Field) ([]Field, error) {
+	if !p.peek(itemName) {
+		return nil, fmt.Errorf("expecting an alias or field name, got: %s", p.next())
+	}
+
+	fields = append(fields, Field{ID: int32(len(fields))})
+
+	f := &fields[(len(fields) - 1)]
+	f.Args = f.argsA[:0]
+	f.Children = f.childrenA[:0]
+
+	// Parse the field
+	if err := p.parseField(f); err != nil {
+		return nil, err
+	}
+
+	if st.Len() == 0 {
+		f.ParentID = -1
+	} else {
+		pid := st.Peek()
+		f.ParentID = pid
+		fields[pid].Children = append(fields[pid].Children, f.ID)
+	}
+
+	// The first opening curley brackets after this
+	// comes the columns or child fields
+	if p.peek(itemObjOpen) {
+		p.ignore()
+		st.Push(f.ID)
+	}
+
+	return fields, nil
+}
+
+func (p *Parser) parseFragmentFields(st *Stack, fields []Field) ([]Field, error) {
+	var fr *Fragment
+	var err error
+
+	if p.peek(itemOn) {
+		if fr, err = p.parseFragment(true); err != nil {
+			return nil, err
+		}
+		defer fragPool.Put(fr)
+
+	} else {
+		var ok bool
+
+		if !p.peek(itemName) {
+			return nil, fmt.Errorf("expecting a fragment name, got: %s", p.next())
+		}
+
+		name := p.val(p.next())
+		_, _ = p.h.WriteString(name)
+		id := p.h.Sum64()
+		p.h.Reset()
+
+		if fr, ok = p.frags[id]; !ok {
+			return nil, fmt.Errorf("no fragment named '%s' defined", name)
+		}
+	}
+
+	n := int32(len(fields))
+	fields = append(fields, fr.Fields...)
+
+	for i := 0; i < len(fr.Fields); i++ {
+		k := (n + int32(i))
+		f := &fields[k]
+		f.ID = int32(k)
+
+		// If this is the top-level point the parent to the parent of the
+		// previous field.
+		if f.ParentID == -1 {
+			pid := st.Peek()
+			f.ParentID = pid
+			if f.ParentID != -1 {
+				fields[pid].Children = append(fields[f.ParentID].Children, f.ID)
+			}
+			// Update all the other parents id's by our new place in this new array
+		} else {
+			f.ParentID += n
+		}
+
+		f.Children = make([]int32, len(f.Children))
+		copy(f.Children, fr.Fields[i].Children)
+
+		f.Args = make([]Arg, len(f.Args))
+		copy(f.Args, fr.Fields[i].Args)
+
+		// Update all the children which is needed.
+		for j := range f.Children {
+			f.Children[j] += n
 		}
 	}
 
@@ -470,6 +493,24 @@ func (p *Parser) parseField(f *Field) error {
 
 	return nil
 }
+
+// func (p *Parser) parseInlineFragmentFields(st *Stack, fields []Field) ([]Field, error) {
+// 	var err error
+
+// 	if p.peek(itemName) {
+// 		p.ignore()
+// 		// frag.On = p.vall(p.next())
+// 	} else {
+// 		return nil, errors.New("inline fragment: missing table name after 'on' keyword")
+// 	}
+
+// 	fields, err = p.parseNormalFields(st, fields)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("inline fragment: %v", err)
+// 	}
+
+// 	return fields, nil
+// }
 
 func (p *Parser) parseOpParams(args []Arg) ([]Arg, error) {
 	for {
