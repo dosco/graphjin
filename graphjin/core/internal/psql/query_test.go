@@ -381,6 +381,26 @@ func withFragment3(t *testing.T) {
 	compileGQLToPSQL(t, gql, nil, "anon")
 }
 
+func withInlineFragment(t *testing.T) {
+	gql := `
+	query {
+		users {
+			... on users {
+				id
+				email
+			}
+			created_at
+			... on user {
+				first_name
+				last_name
+			}
+		}
+	}
+`
+
+	compileGQLToPSQL(t, gql, nil, "anon")
+}
+
 func withCursor(t *testing.T) {
 	gql := `query {
 		Products(
@@ -477,6 +497,7 @@ func TestCompileQuery(t *testing.T) {
 	t.Run("withFragment1", withFragment1)
 	t.Run("withFragment2", withFragment2)
 	t.Run("withFragment3", withFragment3)
+	t.Run("withInlineFragment", withInlineFragment)
 	t.Run("jsonColumnAsTable", jsonColumnAsTable)
 	t.Run("withCursor", withCursor)
 	t.Run("nullForAuthRequiredInAnon", nullForAuthRequiredInAnon)
