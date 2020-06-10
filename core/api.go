@@ -90,7 +90,6 @@ type SuperGraph struct {
 	getRole     *sql.Stmt
 	rmap        map[uint64]resolvFn
 	abacEnabled bool
-	anonExists  bool
 	qc          *qcode.Compiler
 	pc          *psql.Compiler
 	ge          *graphql.Engine

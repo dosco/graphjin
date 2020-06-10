@@ -78,15 +78,13 @@ func (sg *SuperGraph) initPrepared() error {
 		if len(v.Query) == 0 {
 			continue
 		}
+
 		qt := qcode.GetQType(v.Query)
 
 		switch qt {
 		case qcode.QTQuery:
 			sg.queries[queryID(&h, v.Name, "user")] = &query{ai: v, qt: qt}
-
-			if sg.anonExists {
-				sg.queries[queryID(&h, v.Name, "anon")] = &query{ai: v, qt: qt}
-			}
+			sg.queries[queryID(&h, v.Name, "anon")] = &query{ai: v, qt: qt}
 
 		case qcode.QTMutation:
 			for _, role := range sg.conf.Roles {
