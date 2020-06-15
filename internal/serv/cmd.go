@@ -155,7 +155,7 @@ func cmdVersion(cmd *cobra.Command, args []string) {
 }
 
 func BuildDetails() string {
-	if len(version) == 0 {
+	if version == "" {
 		return `
 Super Graph (unknown version)
 For documentation, visit https://supergraph.dev

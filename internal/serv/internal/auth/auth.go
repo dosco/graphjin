@@ -47,17 +47,17 @@ func SimpleHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 		ctx := r.Context()
 
 		userIDProvider := r.Header.Get("X-User-ID-Provider")
-		if len(userIDProvider) != 0 {
+		if userIDProvider != "" {
 			ctx = context.WithValue(ctx, core.UserIDProviderKey, userIDProvider)
 		}
 
 		userID := r.Header.Get("X-User-ID")
-		if len(userID) != 0 {
+		if userID != "" {
 			ctx = context.WithValue(ctx, core.UserIDKey, userID)
 		}
 
 		userRole := r.Header.Get("X-User-Role")
-		if len(userRole) != 0 {
+		if userRole != "" {
 			ctx = context.WithValue(ctx, core.UserRoleKey, userRole)
 		}
 
@@ -68,11 +68,11 @@ func SimpleHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 func HeaderHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 	hdr := ac.Header
 
-	if len(hdr.Name) == 0 {
+	if hdr.Name == "" {
 		return nil, fmt.Errorf("auth '%s': no header.name defined", ac.Name)
 	}
 
-	if !hdr.Exists && len(hdr.Value) == 0 {
+	if !hdr.Exists && hdr.Value == "" {
 		return nil, fmt.Errorf("auth '%s': no header.value defined", ac.Name)
 	}
 
@@ -82,7 +82,7 @@ func HeaderHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 
 		switch {
 		case hdr.Exists:
-			fo1 = (len(value) == 0)
+			fo1 = (value == "")
 
 		default:
 			fo1 = (value != hdr.Value)

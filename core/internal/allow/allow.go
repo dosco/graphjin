@@ -146,7 +146,7 @@ func (al *List) Load() ([]Item, error) {
 	return parse(string(b), al.filepath)
 }
 
-func parse(b string, filename string) ([]Item, error) {
+func parse(b, filename string) ([]Item, error) {
 	var items []Item
 
 	var s scanner.Scanner

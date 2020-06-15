@@ -14,7 +14,7 @@ func TestGQLName1(t *testing.T) {
 
 	name := QueryName(q)
 
-	if len(name) != 0 {
+	if name != "" {
 		t.Fatal("Name should be empty, not ", name)
 	}
 }

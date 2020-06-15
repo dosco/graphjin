@@ -381,25 +381,25 @@ func withFragment3(t *testing.T) {
 	compileGQLToPSQL(t, gql, nil, "anon")
 }
 
-func withInlineFragment(t *testing.T) {
-	gql := `
-	query {
-		users {
-			... on users {
-				id
-				email
-			}
-			created_at
-			... on user {
-				first_name
-				last_name
-			}
-		}
-	}
-`
+// func withInlineFragment(t *testing.T) {
+// 	gql := `
+// 	query {
+// 		users {
+// 			... on users {
+// 				id
+// 				email
+// 			}
+// 			created_at
+// 			... on user {
+// 				first_name
+// 				last_name
+// 			}
+// 		}
+// 	}
+// `
 
-	compileGQLToPSQL(t, gql, nil, "anon")
-}
+// 	compileGQLToPSQL(t, gql, nil, "anon")
+// }
 
 func withCursor(t *testing.T) {
 	gql := `query {

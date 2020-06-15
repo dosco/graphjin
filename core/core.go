@@ -305,7 +305,7 @@ func (c *scontext) resolveSQL() ([]byte, *stmt, error) {
 		err = row.Scan(&root)
 	}
 
-	if len(role) == 0 {
+	if role == "" {
 		c.res.role = c.role
 	} else {
 		c.res.role = role

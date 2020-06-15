@@ -141,8 +141,7 @@ func (l *lexer) current() (Pos, Pos) {
 func (l *lexer) emit(t itemType) {
 	l.items = append(l.items, item{t, l.start, l.pos, l.line})
 	// Some items contain text internally. If so, count their newlines.
-	switch t {
-	case itemStringVal:
+	if t == itemStringVal {
 		for i := l.start; i < l.pos; i++ {
 			if l.input[i] == '\n' {
 				l.line++
@@ -404,15 +403,15 @@ func isAlphaNumeric(r rune) bool {
 	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
-func equals(b []byte, s Pos, e Pos, val []byte) bool {
+func equals(b []byte, s, e Pos, val []byte) bool {
 	return bytes.EqualFold(b[s:e], val)
 }
 
-func contains(b []byte, s Pos, e Pos, chars string) bool {
+func contains(b []byte, s, e Pos, chars string) bool {
 	return bytes.ContainsAny(b[s:e], chars)
 }
 
-func lowercase(b []byte, s Pos, e Pos) {
+func lowercase(b []byte, s, e Pos) {
 	for i := s; i < e; i++ {
 		if b[i] >= 'A' && b[i] <= 'Z' {
 			b[i] = ('a' + (b[i] - 'A'))

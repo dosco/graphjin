@@ -199,7 +199,7 @@ func (m *Migrator) LoadMigrations(path string) error {
 		for _, v := range strings.Split(upSQL, "\n") {
 			// Only account for regular single line comment, empty line and space/comment combination
 			cleanString := strings.TrimSpace(v)
-			if len(cleanString) != 0 &&
+			if cleanString != "" &&
 				!strings.HasPrefix(cleanString, "--") {
 				containsSQL = true
 				break

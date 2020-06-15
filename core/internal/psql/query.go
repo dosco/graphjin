@@ -774,7 +774,7 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo, r
 	case ti.IsSingular:
 		io.WriteString(c.w, ` LIMIT ('1') :: integer`)
 
-	case len(sel.Paging.Limit) != 0:
+	case sel.Paging.Limit != "":
 		//fmt.Fprintf(w, ` LIMIT ('%s') :: integer`, c.sel.Paging.Limit)
 		io.WriteString(c.w, ` LIMIT ('`)
 		io.WriteString(c.w, sel.Paging.Limit)
@@ -787,7 +787,7 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo, r
 		io.WriteString(c.w, ` LIMIT ('20') :: integer`)
 	}
 
-	if len(sel.Paging.Offset) != 0 {
+	if sel.Paging.Offset != "" {
 		//fmt.Fprintf(w, ` OFFSET ('%s') :: integer`, c.sel.Paging.Offset)
 		io.WriteString(c.w, ` OFFSET ('`)
 		io.WriteString(c.w, sel.Paging.Offset)
@@ -1011,11 +1011,8 @@ func (c *compilerContext) renderExp(ex *qcode.Exp, ti *DBTableInfo, skipNested b
 						return err
 					}
 
-				} else {
-					//fmt.Fprintf(w, `(("%s"."%s") `, c.sel.Name, val.Col)
-					if err := c.renderOp(val, ti); err != nil {
-						return err
-					}
+				} else if err := c.renderOp(val, ti); err != nil {
+					return err
 				}
 			}
 			//qcode.FreeExp(val)
@@ -1077,7 +1074,7 @@ func (c *compilerContext) renderOp(ex *qcode.Exp, ti *DBTableInfo) error {
 		return nil
 	}
 
-	if len(ex.Col) != 0 {
+	if ex.Col != "" {
 		if col, ok = ti.ColMap[ex.Col]; !ok {
 			return fmt.Errorf("no column '%s' found ", ex.Col)
 		}
@@ -1317,7 +1314,7 @@ func funcPrefixLen(fm map[string]*DBFunction, fn string) int {
 	return 0
 }
 
-func hasBit(n uint32, pos uint32) bool {
+func hasBit(n, pos uint32) bool {
 	val := n & (1 << pos)
 	return (val > 0)
 }

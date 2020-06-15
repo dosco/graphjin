@@ -152,7 +152,7 @@ type Delete struct {
 
 // AddRoleTable function is a helper function to make it easy to add per-table
 // row-level config
-func (c *Config) AddRoleTable(role string, table string, conf interface{}) error {
+func (c *Config) AddRoleTable(role, table string, conf interface{}) error {
 	var r *Role
 
 	for i := range c.Roles {

@@ -105,7 +105,7 @@ func apiV1(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err == nil {
-		if len(conf.CacheControl) != 0 && res.Operation() == core.OpQuery {
+		if conf.CacheControl != "" && res.Operation() == core.OpQuery {
 			w.Header().Set("Cache-Control", conf.CacheControl)
 		}
 		//nolint: errcheck

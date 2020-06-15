@@ -386,7 +386,7 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 			s.Type = STUnion
 		}
 
-		if len(field.Alias) != 0 {
+		if field.Alias != "" {
 			s.FieldName = field.Alias
 		} else {
 			s.FieldName = s.Name
@@ -628,14 +628,12 @@ func (com *Compiler) compileArgNode(st *util.Stack, node *Node, usePool bool) (*
 		}
 
 		// Objects inside a list
-		if len(node.Name) == 0 {
+		if node.Name == "" {
 			pushChildren(st, node.exp, node)
 			continue
 
-		} else {
-			if _, ok := com.bl[node.Name]; ok {
-				continue
-			}
+		} else if _, ok := com.bl[node.Name]; ok {
+			continue
 		}
 
 		ex, err := newExp(st, node, usePool)
@@ -1049,7 +1047,7 @@ func setWhereColName(ex *Exp, node *Node) {
 		if n.Type != NodeObj {
 			continue
 		}
-		if len(n.Name) != 0 {
+		if n.Name != "" {
 			k := n.Name
 			if k == "and" || k == "or" || k == "not" ||
 				k == "_and" || k == "_or" || k == "_not" {

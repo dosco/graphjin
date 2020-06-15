@@ -80,7 +80,7 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 func graphQLFunc(sg *core.SuperGraph, query string, data interface{}, opt map[string]string) map[string]interface{} {
 	ct := context.Background()
 
-	if v, ok := opt["user_id"]; ok && len(v) != 0 {
+	if v, ok := opt["user_id"]; ok && v != "" {
 		ct = context.WithValue(ct, core.UserIDKey, v)
 	}
 
@@ -144,7 +144,7 @@ func (c *csvSource) Values() ([]interface{}, error) {
 
 	for _, v := range c.rows[c.i] {
 		switch {
-		case len(v) == 0:
+		case v == "":
 			vals = append(vals, "")
 		case isDigit(v):
 			var n int
@@ -243,7 +243,7 @@ func avatarURL(size int) string {
 	return fmt.Sprintf("https://i.pravatar.cc/%d?%d", size, rand.Intn(5000))
 }
 
-func imageURL(width int, height int) string {
+func imageURL(width, height int) string {
 	return fmt.Sprintf("https://picsum.photos/%d/%d?%d", width, height, rand.Intn(5000))
 }
 

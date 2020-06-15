@@ -90,7 +90,7 @@ func newViper(configPath, configFile string) *viper.Viper {
 }
 
 func GetConfigName() string {
-	if len(os.Getenv("GO_ENV")) == 0 {
+	if os.Getenv("GO_ENV") == "" {
 		return "dev"
 	}
 
