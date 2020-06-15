@@ -440,8 +440,6 @@ func (p *Parser) parseFragmentFields(st *Stack, fields []Field) ([]Field, error)
 		}
 		ff := fr.Fields
 
-		parent := &fields[pid]
-
 		n := int32(len(fields))
 		fields = append(fields, ff...)
 
@@ -454,9 +452,8 @@ func (p *Parser) parseFragmentFields(st *Stack, fields []Field) ([]Field, error)
 			// previous field.
 			if f.ParentID == -1 {
 				f.ParentID = pid
-
 				if f.ParentID != -1 {
-					parent.Children = append(parent.Children, f.ID)
+					fields[pid].Children = append(fields[pid].Children, f.ID)
 				}
 				// Update all the other parents id's by our new place in this new array
 			} else {
