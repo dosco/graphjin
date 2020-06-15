@@ -27,7 +27,7 @@ func initWatcher() {
 	}
 
 	var d dir
-	if len(cpath) == 0 || cpath == "./" {
+	if cpath == "" || cpath == "./" {
 		d = Dir("./config", ReExec)
 	} else {
 		d = Dir(cpath, ReExec)
@@ -52,11 +52,11 @@ func startHTTP() {
 		hp := strings.SplitN(conf.HostPort, ":", 2)
 
 		if len(hp) == 2 {
-			if len(conf.Host) != 0 {
+			if conf.Host != "" {
 				hp[0] = conf.Host
 			}
 
-			if len(conf.Port) != 0 {
+			if conf.Port != "" {
 				hp[1] = conf.Port
 			}
 
@@ -64,7 +64,7 @@ func startHTTP() {
 		}
 	}
 
-	if len(conf.hostPort) == 0 {
+	if conf.hostPort == "" {
 		conf.hostPort = defaultHP
 	}
 
@@ -123,7 +123,7 @@ func routeHandler() (http.Handler, error) {
 		return mux, nil
 	}
 
-	if len(conf.APIPath) != 0 {
+	if conf.APIPath != "" {
 		apiRoute = path.Join("/", conf.APIPath, "/v1/graphql")
 	}
 

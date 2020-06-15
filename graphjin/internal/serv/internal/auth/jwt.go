@@ -44,10 +44,10 @@ func JwtHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 	publicKeyFile := ac.JWT.PubKeyFile
 
 	switch {
-	case len(secret) != 0:
+	case secret != "":
 		key = []byte(secret)
 
-	case len(publicKeyFile) != 0:
+	case publicKeyFile != "":
 		kd, err := ioutil.ReadFile(publicKeyFile)
 		if err != nil {
 			return nil, err
@@ -74,7 +74,7 @@ func JwtHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 
 		var tok string
 
-		if len(cookie) != 0 {
+		if cookie != "" {
 			ck, err := r.Cookie(cookie)
 			if err != nil {
 				next.ServeHTTP(w, r)

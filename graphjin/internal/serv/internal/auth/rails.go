@@ -165,7 +165,7 @@ func railsAuth(ac *Auth) (*rails.Auth, error) {
 	}
 
 	version := ac.Rails.Version
-	if len(version) == 0 {
+	if version == "" {
 		return nil, errors.New("no auth.rails.version defined")
 	}
 

@@ -75,7 +75,7 @@ func (sg *SuperGraph) initPrepared() error {
 	h.SetSeed(sg.hashSeed)
 
 	for _, v := range list {
-		if len(v.Query) == 0 {
+		if v.Query == "" {
 			continue
 		}
 
@@ -113,7 +113,7 @@ func (sg *SuperGraph) prepareRoleStmt() error {
 
 	io.WriteString(w, `(SELECT (CASE`)
 	for _, role := range sg.conf.Roles {
-		if len(role.Match) == 0 {
+		if role.Match == "" {
 			continue
 		}
 		io.WriteString(w, ` WHEN `)
@@ -159,7 +159,7 @@ func (sg *SuperGraph) initAllowList() error {
 }
 
 // nolint: errcheck
-func queryID(h *maphash.Hash, name string, role string) uint64 {
+func queryID(h *maphash.Hash, name, role string) uint64 {
 	h.WriteString(name)
 	h.WriteString(role)
 	v := h.Sum64()

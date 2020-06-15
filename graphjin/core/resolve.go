@@ -46,7 +46,7 @@ func (sg *SuperGraph) initRemotes(t Table) error {
 
 		// if no table column specified in the config then
 		// use the primary key of the table as the id
-		if len(idcol) == 0 {
+		if idcol == "" {
 			pcol, err := sg.pc.IDColumn(t.Name)
 			if err != nil {
 				return err

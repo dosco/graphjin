@@ -139,7 +139,7 @@ func newSuperGraph(conf *Config, db *sql.DB, dbinfo *psql.DBInfo) (*SuperGraph, 
 		return nil, err
 	}
 
-	if len(conf.SecretKey) != 0 {
+	if conf.SecretKey != "" {
 		sk := sha256.Sum256([]byte(conf.SecretKey))
 		conf.SecretKey = ""
 		sg.encKey = sk

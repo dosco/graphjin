@@ -238,7 +238,7 @@ func (sg *SuperGraph) parentFieldIds(h *maphash.Hash, sel []qcode.Select, skippe
 	return fm, sm
 }
 
-func isSkipped(n uint32, pos uint32) bool {
+func isSkipped(n, pos uint32) bool {
 	return ((n & (1 << pos)) != 0)
 }
 

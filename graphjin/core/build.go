@@ -82,7 +82,7 @@ func (sg *SuperGraph) buildMultiStmt(query, vars []byte) ([]stmt, error) {
 		}
 	}
 
-	if len(sg.conf.RolesQuery) == 0 {
+	if sg.conf.RolesQuery == "" {
 		return nil, errors.New("roles_query not defined")
 	}
 
@@ -133,7 +133,7 @@ func (sg *SuperGraph) renderUserQuery(md psql.Metadata, stmts []stmt) (string, e
 	io.WriteString(w, `SELECT "_sg_auth_info"."role", (CASE "_sg_auth_info"."role" `)
 
 	for _, s := range stmts {
-		if len(s.role.Match) == 0 &&
+		if s.role.Match == "" &&
 			s.role.Name != "user" && s.role.Name != "anon" {
 			continue
 		}
@@ -150,7 +150,7 @@ func (sg *SuperGraph) renderUserQuery(md psql.Metadata, stmts []stmt) (string, e
 
 	io.WriteString(w, `(SELECT (CASE`)
 	for _, s := range stmts {
-		if len(s.role.Match) == 0 {
+		if s.role.Match == "" {
 			continue
 		}
 		io.WriteString(w, ` WHEN `)

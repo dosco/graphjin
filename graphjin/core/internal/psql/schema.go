@@ -328,7 +328,7 @@ func (s *DBSchema) secondDegreeRels(t DBTable, cols []DBColumn) error {
 	for i := range cols {
 		c := cols[i]
 
-		if len(c.FKeyTable) == 0 {
+		if c.FKeyTable == "" {
 			continue
 		}
 
