@@ -72,6 +72,7 @@ type Config struct {
 type Table struct {
 	Name      string
 	Table     string
+	Type      string
 	Blocklist []string
 	Remotes   []Remote
 	Columns   []Column

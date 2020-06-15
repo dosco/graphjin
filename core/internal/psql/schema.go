@@ -11,6 +11,7 @@ type DBSchema struct {
 	ver int
 	t   map[string]*DBTableInfo
 	rm  map[string]map[string]*DBRel
+	vt  map[string]*VirtualTable
 	fm  map[string]*DBFunction
 }
 
@@ -33,15 +34,19 @@ const (
 	RelOneToOne RelType = iota + 1
 	RelOneToMany
 	RelOneToManyThrough
+	RelPolymorphic
 	RelEmbedded
 	RelRemote
 )
 
 type DBRel struct {
 	Type    RelType
-	Through string
-	ColT    string
-	Left    struct {
+	Through struct {
+		Table string
+		ColL  string
+		ColR  string
+	}
+	Left struct {
 		col   *DBColumn
 		Table string
 		Col   string
@@ -60,6 +65,7 @@ func NewDBSchema(info *DBInfo, aliases map[string][]string) (*DBSchema, error) {
 		ver: info.Version,
 		t:   make(map[string]*DBTableInfo),
 		rm:  make(map[string]map[string]*DBRel),
+		vt:  make(map[string]*VirtualTable),
 		fm:  make(map[string]*DBFunction, len(info.Functions)),
 	}
 
@@ -68,6 +74,10 @@ func NewDBSchema(info *DBInfo, aliases map[string][]string) (*DBSchema, error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	if err := schema.virtualRels(info.VTables); err != nil {
+		return nil, err
 	}
 
 	for i, t := range info.Tables {
@@ -102,7 +112,7 @@ func (s *DBSchema) addTable(
 	singular := flect.Singularize(t.Key)
 	plural := flect.Pluralize(t.Key)
 
-	s.t[singular] = &DBTableInfo{
+	ts := &DBTableInfo{
 		Name:       t.Name,
 		Type:       t.Type,
 		IsSingular: true,
@@ -112,8 +122,9 @@ func (s *DBSchema) addTable(
 		Singular:   singular,
 		Plural:     plural,
 	}
+	s.t[singular] = ts
 
-	s.t[plural] = &DBTableInfo{
+	tp := &DBTableInfo{
 		Name:       t.Name,
 		Type:       t.Type,
 		IsSingular: false,
@@ -123,14 +134,15 @@ func (s *DBSchema) addTable(
 		Singular:   singular,
 		Plural:     plural,
 	}
+	s.t[plural] = tp
 
 	if al, ok := aliases[t.Key]; ok {
 		for i := range al {
 			k1 := flect.Singularize(al[i])
-			s.t[k1] = s.t[singular]
+			s.t[k1] = ts
 
 			k2 := flect.Pluralize(al[i])
-			s.t[k2] = s.t[plural]
+			s.t[k2] = tp
 		}
 	}
 
@@ -154,6 +166,54 @@ func (s *DBSchema) addTable(
 	return nil
 }
 
+func (s *DBSchema) virtualRels(vts []VirtualTable) error {
+	for _, vt := range vts {
+		s.vt[vt.Name] = &vt
+
+		for _, t := range s.t {
+			idCol, ok := t.ColMap[vt.IDColumn]
+			if !ok {
+				continue
+			}
+			if _, ok = t.ColMap[vt.TypeColumn]; !ok {
+				continue
+			}
+
+			nt := DBTable{
+				ID:   -1,
+				Name: vt.Name,
+				Key:  strings.ToLower(vt.Name),
+				Type: "virtual",
+			}
+
+			if err := s.addTable(nt, nil, nil); err != nil {
+				return err
+			}
+
+			rel := &DBRel{Type: RelPolymorphic}
+			rel.Left.col = idCol
+			rel.Left.Table = t.Name
+			rel.Left.Col = idCol.Name
+
+			rcol := DBColumn{
+				Name: vt.FKeyColumn,
+				Key:  strings.ToLower(vt.FKeyColumn),
+				Type: idCol.Type,
+			}
+
+			rel.Right.col = &rcol
+			rel.Right.Table = vt.TypeColumn
+			rel.Right.Col = rcol.Name
+
+			if err := s.SetRel(vt.Name, t.Name, rel); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 func (s *DBSchema) firstDegreeRels(t DBTable, cols []DBColumn) error {
 	ct := t.Key
 	cti, ok := s.t[ct]
@@ -164,7 +224,7 @@ func (s *DBSchema) firstDegreeRels(t DBTable, cols []DBColumn) error {
 	for i := range cols {
 		c := cols[i]
 
-		if len(c.FKeyTable) == 0 {
+		if c.FKeyTable == "" {
 			continue
 		}
 
@@ -344,16 +404,17 @@ func (s *DBSchema) updateSchemaOTMT(
 	// One-to-many-through relation between 1nd foreign key table and the
 	// 2nd foreign key table
 	rel1 := &DBRel{Type: RelOneToManyThrough}
-	rel1.Through = ti.Name
-	rel1.ColT = col2.Name
+	rel1.Through.Table = ti.Name
+	rel1.Through.ColL = col1.Name
+	rel1.Through.ColR = col2.Name
 
-	rel1.Left.col = &col2
-	rel1.Left.Table = col2.FKeyTable
-	rel1.Left.Col = fc2.Name
+	rel1.Left.col = fc1
+	rel1.Left.Table = col1.FKeyTable
+	rel1.Left.Col = fc1.Name
 
-	rel1.Right.col = &col1
-	rel1.Right.Table = ti.Name
-	rel1.Right.Col = col1.Name
+	rel1.Right.col = fc2
+	rel1.Right.Table = t2
+	rel1.Right.Col = fc2.Name
 
 	if err := s.SetRel(t1, t2, rel1); err != nil {
 		return err
@@ -362,16 +423,17 @@ func (s *DBSchema) updateSchemaOTMT(
 	// One-to-many-through relation between 2nd foreign key table and the
 	// 1nd foreign key table
 	rel2 := &DBRel{Type: RelOneToManyThrough}
-	rel2.Through = ti.Name
-	rel2.ColT = col1.Name
+	rel2.Through.Table = ti.Name
+	rel2.Through.ColL = col2.Name
+	rel2.Through.ColR = col1.Name
 
-	rel1.Left.col = fc1
-	rel2.Left.Table = col1.FKeyTable
-	rel2.Left.Col = fc1.Name
+	rel2.Left.col = fc2
+	rel2.Left.Table = col2.FKeyTable
+	rel2.Left.Col = fc2.Name
 
-	rel1.Right.col = &col2
-	rel2.Right.Table = ti.Name
-	rel2.Right.Col = col2.Name
+	rel2.Right.col = fc1
+	rel2.Right.Table = t1
+	rel2.Right.Col = fc1.Name
 
 	if err := s.SetRel(t2, t1, rel2); err != nil {
 		return err

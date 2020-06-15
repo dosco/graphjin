@@ -29,6 +29,8 @@ func al(b byte) bool {
 
 func (qt QType) String() string {
 	switch qt {
+	case QTUnknown:
+		return "unknown"
 	case QTQuery:
 		return "query"
 	case QTMutation:

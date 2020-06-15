@@ -21,7 +21,7 @@ func (sg *SuperGraph) initConfig() error {
 
 	for i := 0; i < len(c.Tables); i++ {
 		t := &c.Tables[i]
-		t.Name = flect.Pluralize(strings.ToLower(t.Name))
+		// t.Name = flect.Pluralize(strings.ToLower(t.Name))
 
 		if _, ok := tm[t.Name]; ok {
 			sg.conf.Tables = append(c.Tables[:i], c.Tables[i+1:]...)
@@ -100,21 +100,26 @@ func getDBTableAliases(c *Config) map[string][]string {
 	for i := range c.Tables {
 		t := c.Tables[i]
 
-		if len(t.Table) == 0 || len(t.Columns) != 0 {
-			continue
+		if t.Table != "" && t.Type == "" {
+			m[t.Table] = append(m[t.Table], t.Name)
 		}
-
-		m[t.Table] = append(m[t.Table], t.Name)
 	}
 	return m
 }
 
 func addTables(c *Config, di *psql.DBInfo) error {
+	var err error
+
 	for _, t := range c.Tables {
-		if t.Table == "" || len(t.Columns) == 0 {
-			continue
+		switch t.Type {
+		case "json", "jsonb":
+			err = addJsonTable(di, t.Columns, t)
+
+		case "polymorphic":
+			err = addVirtualTable(di, t.Columns, t)
 		}
-		if err := addTable(di, t.Columns, t); err != nil {
+
+		if err != nil {
 			return err
 		}
 
@@ -122,17 +127,18 @@ func addTables(c *Config, di *psql.DBInfo) error {
 	return nil
 }
 
-func addTable(di *psql.DBInfo, cols []Column, t Table) error {
+func addJsonTable(di *psql.DBInfo, cols []Column, t Table) error {
+	// This is for jsonb columns that want to be tables.
 	bc, ok := di.GetColumn(t.Table, t.Name)
 	if !ok {
 		return fmt.Errorf(
-			"Column '%s' not found on table '%s'",
+			"json table: column '%s' not found on table '%s'",
 			t.Name, t.Table)
 	}
 
 	if bc.Type != "json" && bc.Type != "jsonb" {
 		return fmt.Errorf(
-			"Column '%s' in table '%s' is of type '%s'. Only JSON or JSONB is valid",
+			"json table: column '%s' in table '%s' is of type '%s'. Only JSON or JSONB is valid",
 			t.Name, t.Table, bc.Type)
 	}
 
@@ -159,8 +165,38 @@ func addTable(di *psql.DBInfo, cols []Column, t Table) error {
 	return nil
 }
 
+func addVirtualTable(di *psql.DBInfo, cols []Column, t Table) error {
+	if len(cols) == 0 {
+		return fmt.Errorf("polymorphic table: no id column specified")
+	}
+
+	c := cols[0]
+
+	if c.ForeignKey == "" {
+		return fmt.Errorf("polymorphic table: no 'related_to' specified on id column")
+	}
+
+	s := strings.SplitN(c.ForeignKey, ".", 2)
+
+	if len(s) != 2 {
+		return fmt.Errorf("polymorphic table: foreign key must be <type column>.<foreign key column>")
+	}
+
+	di.VTables = append(di.VTables, psql.VirtualTable{
+		Name:       t.Name,
+		IDColumn:   c.Name,
+		TypeColumn: s[0],
+		FKeyColumn: s[1],
+	})
+
+	return nil
+}
+
 func addForeignKeys(c *Config, di *psql.DBInfo) error {
 	for _, t := range c.Tables {
+		if t.Type != "" {
+			continue
+		}
 		for _, c := range t.Columns {
 			if c.ForeignKey == "" {
 				continue
@@ -174,30 +210,52 @@ func addForeignKeys(c *Config, di *psql.DBInfo) error {
 }
 
 func addForeignKey(di *psql.DBInfo, c Column, t Table) error {
-	c1, ok := di.GetColumn(t.Name, c.Name)
+	var tn string
+
+	if t.Type == "polymorphic" {
+		tn = t.Table
+	} else {
+		tn = t.Name
+	}
+
+	c1, ok := di.GetColumn(tn, c.Name)
 	if !ok {
 		return fmt.Errorf(
-			"Invalid table '%s' or column '%s' in Config",
-			t.Name, c.Name)
+			"config: invalid table '%s' or column '%s' defined",
+			tn, c.Name)
 	}
 
 	v := strings.SplitN(c.ForeignKey, ".", 2)
 	if len(v) != 2 {
 		return fmt.Errorf(
-			"Invalid foreign_key in Config for table '%s' and column '%s",
-			t.Name, c.Name)
+			"config: invalid foreign_key defined for table '%s' and column '%s': %s",
+			tn, c.Name, c.ForeignKey)
+	}
+
+	// check if it's a polymorphic foreign key
+	if _, ok := di.GetColumn(tn, v[0]); ok {
+		c2, ok := di.GetColumn(tn, v[1])
+		if !ok {
+			return fmt.Errorf(
+				"config: invalid column '%s' for polymorphic relationship on table '%s' and column '%s'",
+				v[1], tn, c.Name)
+		}
+
+		c1.FKeyTable = v[0]
+		c1.FKeyColID = []int16{c2.ID}
+		return nil
 	}
 
 	fkt, fkc := v[0], v[1]
-	c2, ok := di.GetColumn(fkt, fkc)
+	c3, ok := di.GetColumn(fkt, fkc)
 	if !ok {
 		return fmt.Errorf(
-			"Invalid foreign_key in Config for table '%s' and column '%s",
-			t.Name, c.Name)
+			"config: foreign_key for table '%s' and column '%s' points to unknown table '%s' and column '%s'",
+			t.Name, c.Name, v[0], v[1])
 	}
 
 	c1.FKeyTable = fkt
-	c1.FKeyColID = []int16{c2.ID}
+	c1.FKeyColID = []int16{c3.ID}
 
 	return nil
 }

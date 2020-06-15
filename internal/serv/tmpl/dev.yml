@@ -134,7 +134,7 @@ database:
   type: postgres
   host: db
   port: 5432
-  dbname: {{- .AppNameSlug -}}_development
+  dbname: {{ .AppNameSlug -}}_development
   user: postgres
   password: postgres
 

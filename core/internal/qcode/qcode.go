@@ -12,6 +12,7 @@ import (
 )
 
 type QType int
+type SType int
 type Action int
 
 const (
@@ -19,12 +20,19 @@ const (
 )
 
 const (
-	QTQuery QType = iota + 1
+	QTUnknown QType = iota
+	QTQuery
 	QTMutation
 	QTInsert
 	QTUpdate
 	QTDelete
 	QTUpsert
+)
+
+const (
+	STNone SType = iota
+	STUnion
+	STMember
 )
 
 type QCode struct {
@@ -38,6 +46,8 @@ type QCode struct {
 type Select struct {
 	ID         int32
 	ParentID   int32
+	UParentID  int32
+	Type       SType
 	Args       map[string]*Node
 	Name       string
 	FieldName  string
@@ -372,6 +382,10 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 		})
 		s := &selects[(len(selects) - 1)]
 
+		if field.Union {
+			s.Type = STUnion
+		}
+
 		if len(field.Alias) != 0 {
 			s.FieldName = field.Alias
 		} else {
@@ -383,6 +397,11 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 		} else {
 			p := &selects[s.ParentID]
 			p.Children = append(p.Children, s.ID)
+
+			if p.Type == STUnion {
+				s.Type = STMember
+				s.UParentID = p.ParentID
+			}
 		}
 
 		if skipRender {
