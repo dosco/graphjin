@@ -88,6 +88,10 @@ func cmdNew(cmd *cobra.Command, args []string) {
 		}
 	})
 
+	ifNotExists(path.Join(appConfigPath, "allow.list"), func(p string) error {
+		return ioutil.WriteFile(p, []byte{}, 0644)
+	})
+
 	// Create app migrations folder and add relevant files
 
 	appMigrationsPath := path.Join(appConfigPath, "migrations")

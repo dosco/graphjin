@@ -82,7 +82,7 @@ database:
   type: postgres
   host: db
   port: 5432
-  dbname: {{- .AppNameSlug -}}_production
+  dbname: {{ .AppNameSlug -}}_production
   user: postgres
   password: postgres
   #pool_size: 10

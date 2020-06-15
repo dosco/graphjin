@@ -156,27 +156,29 @@ func (co *Compiler) compileQueryWithMetadata(
 		if id < closeBlock {
 			sel := &c.s[id]
 
-			if len(sel.Cols) == 0 {
-				continue
-			}
-
 			ti, err := c.schema.GetTable(sel.Name)
 			if err != nil {
 				return c.md, err
 			}
 
-			if sel.ParentID == -1 {
-				io.WriteString(c.w, `(`)
-			} else {
-				c.renderLateralJoin(sel)
-			}
+			if sel.Type != qcode.STUnion {
+				if len(sel.Cols) == 0 {
+					continue
+				}
 
-			if !ti.IsSingular {
-				c.renderPluralSelect(sel, ti)
-			}
+				if sel.ParentID == -1 {
+					io.WriteString(c.w, `(`)
+				} else {
+					c.renderLateralJoin(sel)
+				}
 
-			if err := c.renderSelect(sel, ti, vars); err != nil {
-				return c.md, err
+				if !ti.IsSingular {
+					c.renderPluralSelect(sel, ti)
+				}
+
+				if err := c.renderSelect(sel, ti, vars); err != nil {
+					return c.md, err
+				}
 			}
 
 			for _, cid := range sel.Children {
@@ -184,10 +186,10 @@ func (co *Compiler) compileQueryWithMetadata(
 					continue
 				}
 				child := &c.s[cid]
+
 				if child.SkipRender {
 					continue
 				}
-
 				st.Push(child.ID + closeBlock)
 				st.Push(child.ID)
 			}
@@ -195,33 +197,37 @@ func (co *Compiler) compileQueryWithMetadata(
 		} else {
 			sel := &c.s[(id - closeBlock)]
 
-			ti, err := c.schema.GetTable(sel.Name)
-			if err != nil {
-				return c.md, err
-			}
+			if sel.Type != qcode.STUnion {
+				ti, err := c.schema.GetTable(sel.Name)
+				if err != nil {
+					return c.md, err
+				}
 
-			io.WriteString(c.w, `)`)
-			aliasWithID(c.w, "__sr", sel.ID)
+				io.WriteString(c.w, `)`)
+				aliasWithID(c.w, "__sr", sel.ID)
 
-			io.WriteString(c.w, `)`)
-			aliasWithID(c.w, "__sj", sel.ID)
-
-			if !ti.IsSingular {
 				io.WriteString(c.w, `)`)
 				aliasWithID(c.w, "__sj", sel.ID)
-			}
 
-			if sel.ParentID == -1 {
-				if st.Len() != 0 {
-					io.WriteString(c.w, `, `)
+				if !ti.IsSingular {
+					io.WriteString(c.w, `)`)
+					aliasWithID(c.w, "__sj", sel.ID)
 				}
-			} else {
-				c.renderLateralJoinClose(sel)
+
+				if sel.ParentID == -1 {
+					if st.Len() != 0 {
+						io.WriteString(c.w, `, `)
+					}
+				} else {
+					c.renderLateralJoinClose(sel)
+				}
 			}
 
-			if len(sel.Args) != 0 {
-				for _, v := range sel.Args {
-					qcode.FreeNode(v)
+			if sel.Type != qcode.STMember {
+				if len(sel.Args) != 0 {
+					for _, v := range sel.Args {
+						qcode.FreeNode(v)
+					}
 				}
 			}
 		}
@@ -359,6 +365,16 @@ func (c *compilerContext) initSelect(sel *qcode.Select, ti *DBTableInfo, vars Va
 				c.md.skipped |= (1 << uint(id))
 			}
 
+		case RelPolymorphic:
+			if _, ok := colmap[rel.Left.Col]; !ok {
+				cols = append(cols, &qcode.Column{Table: ti.Name, Name: rel.Left.Col, FieldName: rel.Left.Col})
+				colmap[rel.Left.Col] = struct{}{}
+			}
+			if _, ok := colmap[rel.Right.Table]; !ok {
+				cols = append(cols, &qcode.Column{Table: ti.Name, Name: rel.Right.Table, FieldName: rel.Right.Table})
+				colmap[rel.Right.Table] = struct{}{}
+			}
+
 		default:
 			return nil, fmt.Errorf("unknown relationship %s", rel)
 		}
@@ -437,13 +453,21 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo, vars 
 	var rel *DBRel
 	var err error
 
+	// Relationships must be between union parents and their parents
 	if sel.ParentID != -1 {
-		parent := c.s[sel.ParentID]
+		if sel.Type == qcode.STMember && sel.UParentID != -1 {
+			cn := c.s[sel.ParentID].Name
+			pn := c.s[sel.UParentID].Name
+			rel, err = c.schema.GetRel(cn, pn)
 
-		rel, err = c.schema.GetRel(ti.Name, parent.Name)
-		if err != nil {
-			return err
+		} else {
+			pn := c.s[sel.ParentID].Name
+			rel, err = c.schema.GetRel(ti.Name, pn)
 		}
+	}
+
+	if err != nil {
+		return err
 	}
 
 	childCols, err := c.initSelect(sel, ti, vars)
@@ -529,30 +553,27 @@ func (c *compilerContext) renderJoin(sel *qcode.Select, ti *DBTableInfo) error {
 }
 
 func (c *compilerContext) renderJoinByName(table, parent string, id int32) error {
-	rel, err := c.schema.GetRel(table, parent)
-	if err != nil {
-		return err
-	}
+	rel, _ := c.schema.GetRel(table, parent)
 
 	// This join is only required for one-to-many relations since
 	// these make use of join tables that need to be pulled in.
-	if rel.Type != RelOneToManyThrough {
-		return err
+	if rel == nil || rel.Type != RelOneToManyThrough {
+		return nil
 	}
 
-	pt, err := c.schema.GetTable(parent)
-	if err != nil {
-		return err
-	}
+	// pt, err := c.schema.GetTable(parent)
+	// if err != nil {
+	// 	return err
+	// }
 
 	//fmt.Fprintf(w, ` LEFT OUTER JOIN "%s" ON (("%s"."%s") = ("%s_%d"."%s"))`,
 	//rel.Through, rel.Through, rel.ColT, c.parent.Name, c.parent.ID, rel.Left.Col)
 	io.WriteString(c.w, ` LEFT OUTER JOIN "`)
-	io.WriteString(c.w, rel.Through)
+	io.WriteString(c.w, rel.Through.Table)
 	io.WriteString(c.w, `" ON ((`)
-	colWithTable(c.w, rel.Through, rel.ColT)
+	colWithTable(c.w, rel.Through.Table, rel.Through.ColL)
 	io.WriteString(c.w, `) = (`)
-	colWithTableID(c.w, pt.Name, id, rel.Left.Col)
+	colWithTable(c.w, rel.Left.Table, rel.Left.Col)
 	io.WriteString(c.w, `))`)
 
 	return nil
@@ -639,10 +660,33 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, ti *DBTableInfo, 
 			continue
 		}
 
-		io.WriteString(c.w, `"__sj_`)
-		int32String(c.w, childSel.ID)
-		io.WriteString(c.w, `"."json"`)
-		alias(c.w, childSel.FieldName)
+		if childSel.Type == qcode.STUnion {
+			rel, err := c.schema.GetRel(childSel.Name, ti.Name)
+			if err != nil {
+				return err
+			}
+			io.WriteString(c.w, `(CASE `)
+			for _, uid := range childSel.Children {
+				unionSel := &c.s[uid]
+
+				io.WriteString(c.w, `WHEN `)
+				colWithTableID(c.w, ti.Name, sel.ID, rel.Right.Table)
+				io.WriteString(c.w, ` = `)
+				squoted(c.w, unionSel.Name)
+				io.WriteString(c.w, ` THEN `)
+				io.WriteString(c.w, `"__sj_`)
+				int32String(c.w, unionSel.ID)
+				io.WriteString(c.w, `"."json"`)
+			}
+			io.WriteString(c.w, `END)`)
+			alias(c.w, childSel.FieldName)
+
+		} else {
+			io.WriteString(c.w, `"__sj_`)
+			int32String(c.w, childSel.ID)
+			io.WriteString(c.w, `"."json"`)
+			alias(c.w, childSel.FieldName)
+		}
 
 		if childSel.Paging.Type != qcode.PtOffset {
 			io.WriteString(c.w, `, "__sj_`)
@@ -697,7 +741,8 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo, r
 		}
 
 		io.WriteString(c.w, ` WHERE (`)
-		if err := c.renderRelationship(sel, ti); err != nil {
+
+		if err := c.renderRelationship(sel, rel); err != nil {
 			return err
 		}
 		if isFil {
@@ -811,21 +856,24 @@ func (c *compilerContext) renderCursorCTE(sel *qcode.Select) error {
 	return nil
 }
 
-func (c *compilerContext) renderRelationship(sel *qcode.Select, ti *DBTableInfo) error {
-	parent := c.s[sel.ParentID]
-
-	pti, err := c.schema.GetTable(parent.Name)
-	if err != nil {
-		return err
-	}
-
-	return c.renderRelationshipByName(ti.Name, pti.Name, parent.ID)
-}
-
-func (c *compilerContext) renderRelationshipByName(table, parent string, id int32) error {
+func (c *compilerContext) renderRelationshipByName(table, parent string) error {
 	rel, err := c.schema.GetRel(table, parent)
 	if err != nil {
 		return err
+	}
+	return c.renderRelationship(nil, rel)
+}
+
+func (c *compilerContext) renderRelationship(sel *qcode.Select, rel *DBRel) error {
+	var pid int32
+
+	switch {
+	case sel == nil:
+		pid = int32(-1)
+	case sel.Type == qcode.STMember:
+		pid = sel.UParentID
+	default:
+		pid = sel.ParentID
 	}
 
 	io.WriteString(c.w, `((`)
@@ -838,19 +886,19 @@ func (c *compilerContext) renderRelationshipByName(table, parent string, id int3
 
 		switch {
 		case !rel.Left.Array && rel.Right.Array:
-			colWithTable(c.w, table, rel.Left.Col)
+			colWithTable(c.w, rel.Left.Table, rel.Left.Col)
 			io.WriteString(c.w, `) = any (`)
-			colWithTableID(c.w, parent, id, rel.Right.Col)
+			colWithTableID(c.w, rel.Right.Table, pid, rel.Right.Col)
 
 		case rel.Left.Array && !rel.Right.Array:
-			colWithTableID(c.w, parent, id, rel.Right.Col)
+			colWithTableID(c.w, rel.Right.Table, pid, rel.Right.Col)
 			io.WriteString(c.w, `) = any (`)
-			colWithTable(c.w, table, rel.Left.Col)
+			colWithTable(c.w, rel.Left.Table, rel.Left.Col)
 
 		default:
-			colWithTable(c.w, table, rel.Left.Col)
+			colWithTable(c.w, rel.Left.Table, rel.Left.Col)
 			io.WriteString(c.w, `) = (`)
-			colWithTableID(c.w, parent, id, rel.Right.Col)
+			colWithTableID(c.w, rel.Right.Table, pid, rel.Right.Col)
 		}
 
 	case RelOneToManyThrough:
@@ -860,25 +908,34 @@ func (c *compilerContext) renderRelationshipByName(table, parent string, id int3
 
 		switch {
 		case !rel.Left.Array && rel.Right.Array:
-			colWithTable(c.w, table, rel.Left.Col)
+			colWithTable(c.w, rel.Left.Table, rel.Left.Col)
 			io.WriteString(c.w, `) = any (`)
-			colWithTable(c.w, rel.Through, rel.Right.Col)
+			colWithTable(c.w, rel.Through.Table, rel.Through.ColR)
 
 		case rel.Left.Array && !rel.Right.Array:
-			colWithTable(c.w, rel.Through, rel.Right.Col)
+			colWithTable(c.w, rel.Through.Table, rel.Through.ColR)
 			io.WriteString(c.w, `) = any (`)
-			colWithTable(c.w, table, rel.Left.Col)
+			colWithTable(c.w, rel.Left.Table, rel.Left.Col)
 
 		default:
-			colWithTable(c.w, table, rel.Left.Col)
+			colWithTable(c.w, rel.Through.Table, rel.Through.ColR)
 			io.WriteString(c.w, `) = (`)
-			colWithTable(c.w, rel.Through, rel.Right.Col)
+			colWithTable(c.w, rel.Right.Table, rel.Right.Col)
 		}
 
 	case RelEmbedded:
 		colWithTable(c.w, rel.Left.Table, rel.Left.Col)
 		io.WriteString(c.w, `) = (`)
-		colWithTableID(c.w, parent, id, rel.Left.Col)
+		colWithTableID(c.w, rel.Left.Table, pid, rel.Left.Col)
+
+	case RelPolymorphic:
+		colWithTable(c.w, sel.Name, rel.Right.Col)
+		io.WriteString(c.w, `) = (`)
+		colWithTableID(c.w, rel.Left.Table, pid, rel.Left.Col)
+		io.WriteString(c.w, `) AND (`)
+		colWithTableID(c.w, rel.Left.Table, pid, rel.Right.Table)
+		io.WriteString(c.w, `) = (`)
+		squoted(c.w, sel.Name)
 	}
 
 	io.WriteString(c.w, `))`)
@@ -991,7 +1048,7 @@ func (c *compilerContext) renderNestedWhere(ex *qcode.Exp, ti *DBTableInfo) erro
 
 		io.WriteString(c.w, ` WHERE `)
 
-		if err := c.renderRelationshipByName(cti.Name, ti.Name, -1); err != nil {
+		if err := c.renderRelationshipByName(cti.Name, ti.Name); err != nil {
 			return err
 		}
 

@@ -71,6 +71,7 @@ type Field struct {
 	argsA     [5]Arg
 	Children  []int32
 	childrenA [5]int32
+	Union     bool
 }
 
 type Arg struct {
@@ -155,7 +156,7 @@ func Parse(gql []byte) (*Operation, error) {
 
 		if p.peek(itemFragment) {
 			p.ignore()
-			if f, err := p.parseFragment(false); err != nil {
+			if f, err := p.parseFragment(); err != nil {
 				fragPool.Put(f)
 				return nil, err
 			}
@@ -181,7 +182,7 @@ func Parse(gql []byte) (*Operation, error) {
 	return op, nil
 }
 
-func (p *Parser) parseFragment(inline bool) (*Fragment, error) {
+func (p *Parser) parseFragment() (*Fragment, error) {
 	var err error
 
 	frag := fragPool.Get().(*Fragment)
@@ -190,7 +191,7 @@ func (p *Parser) parseFragment(inline bool) (*Fragment, error) {
 
 	if p.peek(itemName) {
 		frag.Name = p.val(p.next())
-	} else if !inline {
+	} else {
 		return frag, errors.New("fragment: missing name")
 	}
 
@@ -217,17 +218,15 @@ func (p *Parser) parseFragment(inline bool) (*Fragment, error) {
 		return frag, fmt.Errorf("fragment: %v", err)
 	}
 
-	if !inline {
-		if p.frags == nil {
-			p.frags = make(map[uint64]*Fragment)
-		}
-
-		_, _ = p.h.WriteString(frag.Name)
-		k := p.h.Sum64()
-		p.h.Reset()
-
-		p.frags[k] = frag
+	if p.frags == nil {
+		p.frags = make(map[uint64]*Fragment)
 	}
+
+	_, _ = p.h.WriteString(frag.Name)
+	k := p.h.Sum64()
+	p.h.Reset()
+
+	p.frags[k] = frag
 
 	return frag, nil
 }
@@ -405,18 +404,27 @@ func (p *Parser) parseNormalFields(st *Stack, fields []Field) ([]Field, error) {
 }
 
 func (p *Parser) parseFragmentFields(st *Stack, fields []Field) ([]Field, error) {
-	var fr *Fragment
 	var err error
+	pid := st.Peek()
 
 	if p.peek(itemOn) {
-		if fr, err = p.parseFragment(true); err != nil {
+		p.ignore()
+		fields[pid].Union = true
+
+		if fields, err = p.parseNormalFields(st, fields); err != nil {
 			return nil, err
 		}
-		defer fragPool.Put(fr)
+
+		// If parent is a union selector than copy over args from the parent
+		// to the first child which is the root selector for each union type.
+		for i := pid + 1; i < int32(len(fields)); i++ {
+			f := &fields[i]
+			if f.ParentID == pid {
+				f.Args = fields[pid].Args
+			}
+		}
 
 	} else {
-		var ok bool
-
 		if !p.peek(itemName) {
 			return nil, fmt.Errorf("expecting a fragment name, got: %s", p.next())
 		}
@@ -426,41 +434,47 @@ func (p *Parser) parseFragmentFields(st *Stack, fields []Field) ([]Field, error)
 		id := p.h.Sum64()
 		p.h.Reset()
 
-		if fr, ok = p.frags[id]; !ok {
+		fr, ok := p.frags[id]
+		if !ok {
 			return nil, fmt.Errorf("no fragment named '%s' defined", name)
 		}
-	}
+		ff := fr.Fields
 
-	n := int32(len(fields))
-	fields = append(fields, fr.Fields...)
+		parent := &fields[pid]
 
-	for i := 0; i < len(fr.Fields); i++ {
-		k := (n + int32(i))
-		f := &fields[k]
-		f.ID = int32(k)
+		n := int32(len(fields))
+		fields = append(fields, ff...)
 
-		// If this is the top-level point the parent to the parent of the
-		// previous field.
-		if f.ParentID == -1 {
-			pid := st.Peek()
-			f.ParentID = pid
-			if f.ParentID != -1 {
-				fields[pid].Children = append(fields[f.ParentID].Children, f.ID)
+		for i := 0; i < len(ff); i++ {
+			k := (n + int32(i))
+			f := &fields[k]
+			f.ID = int32(k)
+
+			// If this is the top-level point the parent to the parent of the
+			// previous field.
+			if f.ParentID == -1 {
+				f.ParentID = pid
+
+				if f.ParentID != -1 {
+					parent.Children = append(parent.Children, f.ID)
+				}
+				// Update all the other parents id's by our new place in this new array
+			} else {
+				f.ParentID += n
 			}
-			// Update all the other parents id's by our new place in this new array
-		} else {
-			f.ParentID += n
-		}
 
-		f.Children = make([]int32, len(f.Children))
-		copy(f.Children, fr.Fields[i].Children)
+			// Copy over children since fields append is not a deep copy
+			f.Children = make([]int32, len(f.Children))
+			copy(f.Children, ff[i].Children)
 
-		f.Args = make([]Arg, len(f.Args))
-		copy(f.Args, fr.Fields[i].Args)
+			// Copy over args since args append is not a deep copy
+			f.Args = make([]Arg, len(f.Args))
+			copy(f.Args, ff[i].Args)
 
-		// Update all the children which is needed.
-		for j := range f.Children {
-			f.Children[j] += n
+			// Update all the children which is needed.
+			for j := range f.Children {
+				f.Children[j] += n
+			}
 		}
 	}
 

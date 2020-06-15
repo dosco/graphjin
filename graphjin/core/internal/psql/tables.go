@@ -14,7 +14,15 @@ type DBInfo struct {
 	Tables    []DBTable
 	Columns   [][]DBColumn
 	Functions []DBFunction
+	VTables   []VirtualTable
 	colMap    map[string]map[string]*DBColumn
+}
+
+type VirtualTable struct {
+	Name       string
+	IDColumn   string
+	TypeColumn string
+	FKeyColumn string
 }
 
 func GetDBInfo(db *sql.DB, schema string) (*DBInfo, error) {
