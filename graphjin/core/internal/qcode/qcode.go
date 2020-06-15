@@ -481,6 +481,7 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 	}
 
 	qc.Selects = selects[:id]
+
 	return nil
 }
 
