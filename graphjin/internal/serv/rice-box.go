@@ -36,9 +36,9 @@ func init() {
 	}
 	file6 := &embedded.EmbeddedFile{
 		Filename:    "docker-compose.yml",
-		FileModTime: time.Unix(1590536218, 0),
+		FileModTime: time.Unix(1592312883, 0),
 
-		Content: string("version: '3.4'\nservices:\n  # Postgres DB\n  db:\n    image: postgres:12\n    environment:\n      POSTGRES_USER: postgres\n      POSTGRES_PASSWORD: postgres\n    ports:\n      - \"5432:5432\"\n\n  {{ .AppNameSlug -}}_api:\n    image: dosco/super-graph:latest\n    environment:\n      GO_ENV: \"development\"\n    volumes:\n     - ./config:/config\n    ports:\n      - \"8080:8080\"\n    depends_on:\n      - db"),
+		Content: string("version: \"3.4\"\nservices:\n  # Postgres DB\n  db:\n    image: postgres:12\n    environment:\n      POSTGRES_USER: postgres\n      POSTGRES_PASSWORD: postgres\n    ports:\n      - \"5432:5432\"\n\n  api:\n    image: dosco/super-graph:latest\n    environment:\n      GO_ENV: \"development\"\n    volumes:\n      - ./config:/config\n    ports:\n      - \"8080:8080\"\n    depends_on:\n      - db\n"),
 	}
 	file7 := &embedded.EmbeddedFile{
 		Filename:    "prod.yml",

@@ -50,9 +50,9 @@ COPY --from=go-build /usr/local/bin/sops .
 RUN chmod +x /super-graph
 RUN chmod +x /start.sh
 
-USER nobody
+#USER nobody
 
 ENV GO_ENV production
 
 ENTRYPOINT ["./start.sh"]
-CMD ["./super-graph", "serv"]
+CMD ["serv"]

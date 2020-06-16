@@ -1,13 +1,15 @@
 #!/bin/sh
-if [ $1 = "secrets" ]
-then
+if [ $1 = "secrets" ]; then
   ./sops --config ./config "${@:2}"
-  exit 0
+
+elif [ $1 = "sh" ]; then
+  $@
+
+elif [ -f "./config/$SECRETS_FILE" ]; then
+  ./sops --config ./config exec-env "./config/$SECRETS_FILE" "./super-graph $*"
+
+else
+  ./super-graph $@
+
 fi
 
-if test -f "./config/$SECRETS_FILE"
-then
-  ./sops --config ./config exec-env "./config/$SECRETS_FILE" "$*"
-else
-  $@
-fi
