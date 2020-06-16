@@ -62,7 +62,7 @@ All the config files needs to configure Super Graph for your app are contained i
 
 ### Seed.js
 
-Having data flowing through your API makes building your frontend UI so much easier. When creafting say a user profile wouldn't it be nice for the API to return a fake user with name, picture and all. This is why having the ability to seed your database is important. Seeding cn also be used in production to setup some initial users like the admins or to add an initial set of products to a ecommerce store.
+Having data flowing through your API makes building your frontend UI so much easier. When crafting say a user profile wouldn't it be nice for the API to return a fake user with name, picture and all. This is why having the ability to seed your database is important. Seeding cn also be used in production to setup some initial users like the admins or to add an initial set of products to a ecommerce store.
 
 Super Graph makes this easy by allowing you to write your seeding script in plan old Javascript. The below file that auto-generated for new apps uses our built-in functions `fake` and `graphql` to generate fake data and use GraphQL mutations to insert it into the database.
 
