@@ -11,9 +11,12 @@ Super Graph gives you a high performance GraphQL API without you having to write
 
 ## Using it as a service
 
-```console
+```bash
 go get github.com/dosco/super-graph
 super-graph new <app_name>
+cd <app_name>
+docker-compose run api db:setup
+docker-compose up
 ```
 
 ## Using it in your own code

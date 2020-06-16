@@ -119,6 +119,9 @@ Super Graph can be used in two ways. You can run it as a standalone service serv
 ```bash
 go get github.com/dosco/super-graph
 super-graph new <app_name>
+cd <app_name>
+docker-compose run api db:setup
+docker-compose up
 ```
 
 ### Using it in your own code

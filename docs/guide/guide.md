@@ -4,10 +4,9 @@ sidebar: auto
 
 # Guide to Super Graph
 
-Super Graph is a service that instantly and without code gives you a high performance and secure GraphQL API. Your GraphQL queries are auto translated into a single fast SQL query. No more spending weeks or months writing backend API code. Just make the query you need and Super Graph will do the rest. 
+Super Graph is a service that instantly and without code gives you a high performance and secure GraphQL API. Your GraphQL queries are auto translated into a single fast SQL query. No more spending weeks or months writing backend API code. Just make the query you need and Super Graph will do the rest.
 
 Super Graph has a rich feature set like integrating with your existing Ruby on Rails apps, joining your DB with data from remote APIs, Role and Attribute based access control, Support for JWT tokens, DB migrations, seeding and a lot more.
-
 
 ## Features
 
@@ -26,7 +25,6 @@ Super Graph has a rich feature set like integrating with your existing Ruby on R
 - Fuzz tested for security
 - Database migrations tool
 - Database seeding tool
-
 
 ## Try the demo app
 
@@ -69,7 +67,7 @@ query {
   users {
     id
     email
-    picture : avatar
+    picture: avatar
     password
     full_name
     products(limit: 2, where: { price: { gt: 10 } }) {
@@ -109,14 +107,14 @@ query {
 ```
 
 ::: tip Testing with a user
-In development mode you can use the `X-User-ID: 4` header to set a user id so you don't have to worries about cookies etc. This can be set using the *HTTP Headers* tab at the bottom of the web UI.
+In development mode you can use the `X-User-ID: 4` header to set a user id so you don't have to worries about cookies etc. This can be set using the _HTTP Headers_ tab at the bottom of the web UI.
 :::
 
 In another example the below GraphQL mutation would insert a product into the database. The first part of the below example is the variable data and the second half is the GraphQL mutation. For mutations data has to always ben passed as a variable.
 
 ```json
 {
-  "data": { 
+  "data": {
     "name": "Art of Computer Programming",
     "description": "The Art of Computer Programming (TAOCP) is a comprehensive monograph written by computer scientist Donald Knuth",
     "price": 30.5
@@ -143,27 +141,27 @@ What if I told you Super Graph will fetch all this data with a single SQL query 
 
 ```graphql
 query {
-    products(limit: 5, where: { price: { gt: 12 } }) {
+  products(limit: 5, where: { price: { gt: 12 } }) {
+    id
+    name
+    description
+    price
+    photos {
+      url
+    }
+    user {
       id
-      name
-      description
-      price
-      photos {
-        url
-      }
-      user {
-        id
-        email
-        picture : avatar
-        full_name
-      }
+      email
+      picture: avatar
+      full_name
+    }
   }
   purchases(
-      limit: 10, 
-      order_by: { created_at: desc } , 
-      where: { user_id: { eq: $user_id } }
-    ) {
-    id 
+    limit: 10
+    order_by: { created_at: desc }
+    where: { user_id: { eq: $user_id } }
+  ) {
+    id
     created_at
     product {
       id
@@ -226,10 +224,13 @@ And then create and launch your new app
 
 ```bash
 # create a new app and change to it's directory
-super-graph new blog; cd blog
+super-graph new blog
+
+# change to the app folder
+cd blog
 
 # setup the app database and seed it with fake data. Docker compose will start a Postgres database for your app
-docker-compose run blog_api ./super-graph db:setup
+docker-compose run api db:setup
 
 # and finally launch Super Graph configured for your app
 docker-compose up
@@ -254,10 +255,12 @@ super-graph new blog
 
 ### Docker files
 
-Docker Compose is a great way to run multiple services while developing on your desktop or laptop. In our case we need Postgres and Super Graph to both be running and the `docker-compose.yml` is configured to do just that. The Super Graph service is named after your app postfixed with `_api`. The Dockerfile can be used build a containr of your app for production deployment.
+Docker Compose is a great way to run multiple services while developing on your desktop or laptop. In our case we need Postgres and Super Graph to both be running and the `docker-compose.yml` is configured to do just that. The Super Graph service is named `api` you are free to change this. The Dockerfile can be used build a containr of your app for production deployment.
+
+Run Super Graph with Docker compose
 
 ```bash
-docker-compose run blog_api ./super-graph help
+docker-compose run api help
 ```
 
 ### Config files
@@ -278,24 +281,24 @@ var users = [];
 for (i = 0; i < 10; i++) {
   var data = {
     full_name: fake.name(),
-    email: fake.email()
-  }
+    email: fake.email(),
+  };
 
   var res = graphql(" \
   mutation { \
     user(insert: $data) { \
       id \
     } \
-  }", { data: data })
+  }", { data: data });
 
-  users.push(res.user)
+  users.push(res.user);
 }
 ```
 
 If you want to import a lot of data using a CSV file is the best and fastest option. The `import_csv` command uses the `COPY FROM` Postgres method to load massive amounts of data into tables. The first line of the CSV file must be the header with column names.
 
 ```javascript
-var post_count = import_csv("posts", "posts.csv")
+var post_count = import_csv("posts", "posts.csv");
 ```
 
 You can generate the following fake data for your seeding purposes. Below is the list of fake data functions supported by the built-in fake data library. For example `fake.image_url()` will generate a fake image url or `fake.shuffle_strings(['hello', 'world', 'cool'])` will generate a randomly shuffled version of that array of strings or `fake.rand_string(['hello', 'world', 'cool'])` will return a random string from the array provided.
@@ -557,7 +560,7 @@ query {
   user {
     full_name
     email
-    picture : avatar
+    picture: avatar
   }
 }
 ```
@@ -618,12 +621,7 @@ Super Graph support complex queries where you can add filters, ordering,offsets 
 
 ```graphql
 query {
-  products(where: { 
-      and: { 
-        price: { gt: 10 }, 
-        not: { id: { eq: 5 } } 
-      } 
-    }) {
+  products(where: { and: { price: { gt: 10 }, not: { id: { eq: 5 } } } }) {
     name
     price
   }
@@ -636,7 +634,7 @@ Sometimes you need to query a table based on a condition that applies to a relat
 
 ```graphql
 query {
-  users(where: { 
+  users(where: {
       accounts: { id: { eq: 3 } }
     }) {
     id
@@ -647,36 +645,36 @@ query {
 
 #### Logical Operators
 
-Name | Example | Explained |
---- | --- | --- |
-and | price : { and : { gt: 10.5, lt: 20 } | price > 10.5 AND price < 20
-or |  or : { price : { greater_than : 20 }, quantity: { gt : 0 } }  | price >= 20 OR quantity > 0
-not | not: { or : { quantity : { eq: 0 }, price : { eq: 0 } } } | NOT (quantity = 0 OR price = 0)
+| Name | Example                                                      | Explained                       |
+| ---- | ------------------------------------------------------------ | ------------------------------- |
+| and  | price : { and : { gt: 10.5, lt: 20 }                         | price > 10.5 AND price < 20     |
+| or   | or : { price : { greater_than : 20 }, quantity: { gt : 0 } } | price >= 20 OR quantity > 0     |
+| not  | not: { or : { quantity : { eq: 0 }, price : { eq: 0 } } }    | NOT (quantity = 0 OR price = 0) |
 
 #### Other conditions
 
-Name | Example | Explained |
---- | --- | --- |
-eq, equals | id : { eq: 100 } | id = 100
-neq, not_equals | id: { not_equals: 100 } | id != 100
-gt, greater_than | id: { gt: 100 } | id > 100
-lt, lesser_than | id: { gt: 100 } | id < 100
-gte, greater_or_equals | id: { gte: 100 } | id >= 100
-lte, lesser_or_equals | id: { lesser_or_equals: 100 } | id <= 100
-in | status: { in: [ "A", "B", "C" ] } | status IN ('A', 'B', 'C)
-nin, not_in | status: { in: [ "A", "B", "C" ] } | status IN ('A', 'B', 'C)
-like | name: { like "phil%" } | Names starting with 'phil'
-nlike, not_like | name: { nlike "v%m" } | Not names starting with 'v' and ending with 'm'
-ilike | name: { ilike "%wOn" } | Names ending with 'won' case-insensitive
-nilike, not_ilike | name: { nilike "%wOn" } | Not names ending with 'won' case-insensitive
-similar | name: { similar: "%(b\|d)%" } | [Similar Docs](https://www.postgresql.org/docs/9/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP)
-nsimilar, not_similar | name: { nsimilar: "%(b\|d)%" } | [Not Similar Docs](https://www.postgresql.org/docs/9/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP)
-has_key | column: { has_key: 'b' } | Does JSON column contain this key
-has_key_any | column: { has_key_any: [ a, b ] } | Does JSON column contain any of these keys
-has_key_all | column: [ a, b ] | Does JSON column contain all of this keys
-contains | column: { contains: [1, 2, 4] } | Is this array/json column a subset of value
-contained_in | column: { contains: "{'a':1, 'b':2}" } | Is this array/json column a subset of these value
-is_null | column: { is_null: true } | Is column value null or not
+| Name                   | Example                                | Explained                                                                                                |
+| ---------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| eq, equals             | id : { eq: 100 }                       | id = 100                                                                                                 |
+| neq, not_equals        | id: { not_equals: 100 }                | id != 100                                                                                                |
+| gt, greater_than       | id: { gt: 100 }                        | id > 100                                                                                                 |
+| lt, lesser_than        | id: { gt: 100 }                        | id < 100                                                                                                 |
+| gte, greater_or_equals | id: { gte: 100 }                       | id >= 100                                                                                                |
+| lte, lesser_or_equals  | id: { lesser_or_equals: 100 }          | id <= 100                                                                                                |
+| in                     | status: { in: [ "A", "B", "C" ] }      | status IN ('A', 'B', 'C)                                                                                 |
+| nin, not_in            | status: { in: [ "A", "B", "C" ] }      | status IN ('A', 'B', 'C)                                                                                 |
+| like                   | name: { like "phil%" }                 | Names starting with 'phil'                                                                               |
+| nlike, not_like        | name: { nlike "v%m" }                  | Not names starting with 'v' and ending with 'm'                                                          |
+| ilike                  | name: { ilike "%wOn" }                 | Names ending with 'won' case-insensitive                                                                 |
+| nilike, not_ilike      | name: { nilike "%wOn" }                | Not names ending with 'won' case-insensitive                                                             |
+| similar                | name: { similar: "%(b\|d)%" }          | [Similar Docs](https://www.postgresql.org/docs/9/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP)     |
+| nsimilar, not_similar  | name: { nsimilar: "%(b\|d)%" }         | [Not Similar Docs](https://www.postgresql.org/docs/9/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP) |
+| has_key                | column: { has_key: 'b' }               | Does JSON column contain this key                                                                        |
+| has_key_any            | column: { has_key_any: [ a, b ] }      | Does JSON column contain any of these keys                                                               |
+| has_key_all            | column: [ a, b ]                       | Does JSON column contain all of this keys                                                                |
+| contains               | column: { contains: [1, 2, 4] }        | Is this array/json column a subset of value                                                              |
+| contained_in           | column: { contains: "{'a':1, 'b':2}" } | Is this array/json column a subset of these value                                                        |
+| is_null                | column: { is_null: true }              | Is column value null or not                                                                              |
 
 ### Aggregations
 
@@ -691,18 +689,18 @@ query {
 }
 ```
 
-Name | Explained |
---- | --- |
-avg | Average value
-count | Count the values
-max | Maximum value
-min | Minimum  value
-stddev | [Standard Deviation](https://en.wikipedia.org/wiki/Standard_deviation)
-stddev_pop | Population Standard Deviation
-stddev_samp | Sample Standard Deviation
-variance | [Variance](https://en.wikipedia.org/wiki/Variance)
-var_pop | Population Standard Variance
-var_samp | Sample Standard variance
+| Name        | Explained                                                              |
+| ----------- | ---------------------------------------------------------------------- |
+| avg         | Average value                                                          |
+| count       | Count the values                                                       |
+| max         | Maximum value                                                          |
+| min         | Minimum value                                                          |
+| stddev      | [Standard Deviation](https://en.wikipedia.org/wiki/Standard_deviation) |
+| stddev_pop  | Population Standard Deviation                                          |
+| stddev_samp | Sample Standard Deviation                                              |
+| variance    | [Variance](https://en.wikipedia.org/wiki/Variance)                     |
+| var_pop     | Population Standard Variance                                           |
+| var_samp    | Sample Standard variance                                               |
 
 All kinds of queries are possible with GraphQL. Below is an example that uses a lot of the features available. Comments `# hello` are also valid within queries.
 
@@ -710,19 +708,20 @@ All kinds of queries are possible with GraphQL. Below is an example that uses a 
 query {
   products(
     # returns only 30 items
-    limit: 30,
+    limit: 30
 
     # starts from item 10, commented out for now
     # offset: 10,
 
     # orders the response items by highest price
-    order_by: { price: desc },
+    order_by: { price: desc }
 
     # no duplicate prices returned
-    distinct: [ price ]
+    distinct: [price]
 
     # only items with an id >= 30 and < 30 are returned
-    where: { id: { and: { greater_or_equals: 20, lt: 28 } } }) {
+    where: { id: { and: { greater_or_equals: 20, lt: 28 } } }
+  ) {
     id
     name
     price
@@ -746,6 +745,7 @@ query {
 ```
 
 Postgres user-defined function `add_five`
+
 ```
 CREATE OR REPLACE FUNCTION add_five(a integer) RETURNS integer AS $$
 BEGIN
@@ -755,7 +755,6 @@ END;
 $$ LANGUAGE plpgsql;
 ```
 
-
 In GraphQL mutations is the operation type for when you need to modify data. Super Graph supports the `insert`, `update`, `upsert` and `delete`. You can also do complex nested inserts and updates.
 
 When using mutations the data must be passed as variables since Super Graphs compiles the query into an prepared statement in the database for maximum speed. Prepared statements are are functions in your code when called they accept arguments and your variables are passed in as those arguments.
@@ -764,7 +763,7 @@ When using mutations the data must be passed as variables since Super Graphs com
 
 ```json
 {
-  "data": { 
+  "data": {
     "name": "Art of Computer Programming",
     "description": "The Art of Computer Programming (TAOCP) is a comprehensive monograph written by computer scientist Donald Knuth",
     "price": 30.5
@@ -785,16 +784,18 @@ mutation {
 
 ```json
 {
-  "data": [{ 
-    "name": "Art of Computer Programming",
-    "description": "The Art of Computer Programming (TAOCP) is a comprehensive monograph written by computer scientist Donald Knuth",
-    "price": 30.5
-  },
-  { 
-    "name": "Compilers: Principles, Techniques, and Tools",
-    "description": "Known to professors, students, and developers worldwide as the 'Dragon Book' is available in a new edition",
-    "price": 93.74
-  }]
+  "data": [
+    {
+      "name": "Art of Computer Programming",
+      "description": "The Art of Computer Programming (TAOCP) is a comprehensive monograph written by computer scientist Donald Knuth",
+      "price": 30.5
+    },
+    {
+      "name": "Compilers: Principles, Techniques, and Tools",
+      "description": "Known to professors, students, and developers worldwide as the 'Dragon Book' is available in a new edition",
+      "price": 93.74
+    }
+  ]
 }
 ```
 
@@ -811,7 +812,7 @@ mutation {
 
 ```json
 {
-  "data": { 
+  "data": {
     "price": 200.0
   },
   "product_id": 5
@@ -831,7 +832,7 @@ mutation {
 
 ```json
 {
-  "data": { 
+  "data": {
     "price": 500.0
   },
   "gt_product_id": 450.0,
@@ -841,9 +842,10 @@ mutation {
 
 ```graphql
 mutation {
-  product(update: $data, where: { 
-      price: { gt: $gt_product_id, lt: lt_product_id } 
-  }) {
+  product(
+    update: $data
+    where: { price: { gt: $gt_product_id, lt: lt_product_id } }
+  ) {
     id
     name
   }
@@ -854,7 +856,7 @@ mutation {
 
 ```json
 {
-  "data": { 
+  "data": {
     "price": 500.0
   },
   "product_id": 5
@@ -874,7 +876,7 @@ mutation {
 
 ```json
 {
-  "data": { 
+  "data": {
     "price": 500.0
   }
 }
@@ -893,7 +895,7 @@ mutation {
 
 ```json
 {
-  "data": { 
+  "data": {
     "id": 5,
     "name": "Art of Computer Programming",
     "description": "The Art of Computer Programming (TAOCP) is a comprehensive monograph written by computer scientist Donald Knuth",
@@ -911,22 +913,24 @@ mutation {
 }
 ```
 
-#### Bulk upsert 
+#### Bulk upsert
 
 ```json
 {
-  "data": [{ 
-    "id": 5,
-    "name": "Art of Computer Programming",
-    "description": "The Art of Computer Programming (TAOCP) is a comprehensive monograph written by computer scientist Donald Knuth",
-    "price": 30.5
-  },
-  { 
-    "id": 6,
-    "name": "Compilers: Principles, Techniques, and Tools",
-    "description": "Known to professors, students, and developers worldwide as the 'Dragon Book' is available in a new edition",
-    "price": 93.74
-  }]
+  "data": [
+    {
+      "id": 5,
+      "name": "Art of Computer Programming",
+      "description": "The Art of Computer Programming (TAOCP) is a comprehensive monograph written by computer scientist Donald Knuth",
+      "price": 30.5
+    },
+    {
+      "id": 6,
+      "name": "Compilers: Principles, Techniques, and Tools",
+      "description": "Known to professors, students, and developers worldwide as the 'Dragon Book' is available in a new edition",
+      "price": 93.74
+    }
+  ]
 }
 ```
 
@@ -941,7 +945,7 @@ mutation {
 
 Often you will need to create or update multiple related items at the same time. This can be done using nested mutations. For example you might need to create a product and assign it to a user, or create a user and his products at the same time. You just have to use simple json to define you mutation and Super Graph takes care of the rest.
 
-### Nested Insert 
+### Nested Insert
 
 Create a product item first and then assign it to a user
 
@@ -1007,7 +1011,7 @@ mutation {
 }
 ```
 
-### Nested Update 
+### Nested Update
 
 Update a product item first and then assign it to a user
 
@@ -1046,7 +1050,7 @@ Or it's reverse, update a user first and then his product
     "full_name": "The Dude",
     "product": {
       "name": "Banana",
-      "price": 1.25,
+      "price": 1.25
     }
   }
 }
@@ -1071,7 +1075,7 @@ mutation {
 
 This is a must have feature of any API. When you want your users to go through a list page by page or implement some fancy infinite scroll you're going to need pagination. There are two ways to paginate in Super Graph.
 
- Limit-Offset
+Limit-Offset
 This is simple enough but also inefficient when working with a large number of total items. Limit, limits the number of items fetched and offset is the point you want to fetch from. The below query will fetch 10 results at a time starting with the 100th item. You will have to keep updating offset (110, 120, 130, etc ) to walk thought the results so make offset a variable.
 
 ```graphql
@@ -1085,14 +1089,15 @@ query {
 ```
 
 #### Cursor
-This is a powerful and highly efficient way to paginate a large number of results. Infact it does not matter how many total results there are this will always be lighting fast. You can use a cursor to walk forward or backward through the results. If you plan to implement infinite scroll this is the option you should choose. 
 
-When going this route the results will contain a cursor value this is an encrypted string that you don't have to worry about just pass this back in to the next API call and you'll received the next set of results. The cursor value is encrypted since its contents should only matter to Super Graph and not the client. Also since the primary key is used for this feature it's possible you might not want to leak it's value to clients. 
+This is a powerful and highly efficient way to paginate a large number of results. Infact it does not matter how many total results there are this will always be lighting fast. You can use a cursor to walk forward or backward through the results. If you plan to implement infinite scroll this is the option you should choose.
+
+When going this route the results will contain a cursor value this is an encrypted string that you don't have to worry about just pass this back in to the next API call and you'll received the next set of results. The cursor value is encrypted since its contents should only matter to Super Graph and not the client. Also since the primary key is used for this feature it's possible you might not want to leak it's value to clients.
 
 You will need to set this config value to ensure the encrypted cursor data is secure. If not set a random value is used which will change with each deployment breaking older cursor values that clients might be using so best to set it.
 
 ```yaml
-# Secret key for general encryption operations like 
+# Secret key for general encryption operations like
 # encrypting the cursor data
 secret_key: supercalifajalistics
 ```
@@ -1101,7 +1106,7 @@ Paginating forward through your results
 
 ```json
 {
-  "variables": { 
+  "variables": {
     "cursor": "MJoTLbQF4l0GuoDsYmCrpjPeaaIlNpfm4uFU4PQ="
   }
 }
@@ -1173,7 +1178,6 @@ query {
 }
 ```
 
-
 ## Using Variables
 
 Variables (`$product_id`) and their values (`"product_id": 5`) can be passed along side the GraphQL query. Using variables makes for better client side code as well as improved server side SQL query caching. The built-in web-ui also supports setting variables. Not having to manipulate your GraphQL query string to insert values into it makes for cleaner
@@ -1181,19 +1185,19 @@ and better client side code.
 
 ```javascript
 // Define the request object keeping the query and the variables seperate
-var req = { 
-  query: '{ product(id: $product_id) { name } }' ,
-  variables: { "product_id": 5 }
-}
+var req = {
+  query: "{ product(id: $product_id) { name } }",
+  variables: { product_id: 5 },
+};
 
 // Use the fetch api to make the query
-fetch('http://localhost:8080/api/v1/graphql', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+fetch("http://localhost:8080/api/v1/graphql", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
   body: JSON.stringify(req),
 })
-.then(res => res.json())
-.then(res => console.log(res.data));
+  .then((res) => res.json())
+  .then((res) => console.log(res.data));
 ```
 
 ## GraphQL with React
@@ -1201,38 +1205,40 @@ fetch('http://localhost:8080/api/v1/graphql', {
 This is a quick simple example using `graphql.js` [https://github.com/f/graphql.js/](https://github.com/f/graphql.js/)
 
 ```js
-import React, { useState, useEffect } from 'react'
-import graphql from 'graphql.js'
+import React, { useState, useEffect } from "react";
+import graphql from "graphql.js";
 
 // Create a GraphQL client pointing to Super Graph
-var graph = graphql("http://localhost:3000/api/v1/graphql", { asJSON: true })
+var graph = graphql("http://localhost:3000/api/v1/graphql", { asJSON: true });
 
 const App = () => {
-  const [user, setUser] = useState(null)
-  
+  const [user, setUser] = useState(null);
+
   useEffect(() => {
     async function action() {
       // Use the GraphQL client to execute a graphQL query
       // The second argument to the client are the variables you need to pass
-      const result = await graph(`{ user { id first_name last_name picture_url } }`)()
-      setUser(result)
+      const result = await graph(
+        `{ user { id first_name last_name picture_url } }`
+      )();
+      setUser(result);
     }
-    action()
+    action();
   }, []);
 
   return (
     <div className="App">
-      <h1>{ JSON.stringify(user) }</h1>
+      <h1>{JSON.stringify(user)}</h1>
     </div>
   );
-}
+};
 ```
 
 export default App;
 
 ## Advanced Columns
 
-The ablity to have `JSON/JSONB` and `Array` columns is often considered in the top most useful features of Postgres. There are many cases where using an array or a json column saves space and reduces complexity in your app. The only issue with these columns is the really that your SQL queries can get harder to write and maintain. 
+The ablity to have `JSON/JSONB` and `Array` columns is often considered in the top most useful features of Postgres. There are many cases where using an array or a json column saves space and reduces complexity in your app. The only issue with these columns is the really that your SQL queries can get harder to write and maintain.
 
 Super Graph steps in here to help you by supporting these columns right out of the box. It allows you to work with these columns just like you would with tables. Joining data against or modifying array columns using the `connect` or `disconnect` keywords in mutations is fully supported. Another very useful feature is the ability to treat `json` or `binary json (jsonb)` columns as seperate tables, even using them in nested queries joining against related tables. To replicate these features on your own will take a lot of complex SQL. Using Super Graph means you don't have to deal with any of this it just works.
 
@@ -1246,7 +1252,6 @@ tables:
     columns:
       - name: tag_ids
         related_to: tags.id
-
 ```
 
 ```graphql
@@ -1293,7 +1298,6 @@ query {
 }
 ```
 
-
 ## Full text search
 
 Every app these days needs search. Enought his often means reaching for something heavy like Solr. While this will work why add complexity to your infrastructure when Postgres has really great
@@ -1309,11 +1313,12 @@ query {
     where: { price: { lt: 10 } }
 
     # Use the search_rank to order from the best match to the worst
-    order_by: { search_rank: desc }) {
+    order_by: { search_rank: desc }
+  ) {
     id
     name
     search_rank
-   	search_headline_description
+    search_headline_description
   }
 }
 ```
@@ -1384,18 +1389,17 @@ end
 One of the the most common questions I get asked is what happens if a user out on the internet sends queries
 that we don't want run. For example how do we stop him from fetching all users or the emails of users. Our answer to this is that it is not an issue as this cannot happen, let me explain.
 
-Super Graph runs in one of two modes `development` or `production`, this is controlled via the config value `production: false` when it's false it's running in development mode and when true, production. In development mode all the **named** queries (including mutations) are saved to the allow list `./config/allow.list`. While in production mode when Super Graph starts only the queries from this allow list file are registered with the database as [prepared statements](https://stackoverflow.com/questions/8263371/how-can-prepared-statements-protect-from-sql-injection-attacks). 
+Super Graph runs in one of two modes `development` or `production`, this is controlled via the config value `production: false` when it's false it's running in development mode and when true, production. In development mode all the **named** queries (including mutations) are saved to the allow list `./config/allow.list`. While in production mode when Super Graph starts only the queries from this allow list file are registered with the database as [prepared statements](https://stackoverflow.com/questions/8263371/how-can-prepared-statements-protect-from-sql-injection-attacks).
 
 Prepared statements are designed by databases to be fast and secure. They protect against all kinds of sql injection attacks and since they are pre-processed and pre-planned they are much faster to run then raw sql queries. Also there's no GraphQL to SQL compiling happening in production mode which makes your queries lighting fast as they are directly sent to the database with almost no overhead.
 
-In short in production only queries listed in the allow list file `./config/allow.list` can be used, all other queries will be blocked. 
+In short in production only queries listed in the allow list file `./config/allow.list` can be used, all other queries will be blocked.
 
 ::: tip How to think about the allow list?
 The allow list file is essentially a list of all your exposed API calls and the data that passes within them. It's very easy to build tooling to do things like parsing this file within your tests to ensure fields like `credit_card_no` are not accidently leaked. It's a great way to build compliance tooling and ensure your user data is always safe.
 :::
 
 This is an example of a named query, `getUserWithProducts` is the name you've given to this query it can be anything you like but should be unique across all you're queries. Only named queries are saved in the allow list in development mode.
-
 
 ```graphql
 query getUserWithProducts {
@@ -1411,11 +1415,9 @@ query getUserWithProducts {
 }
 ```
 
-
-
 ## Authentication
 
-You can only have one type of auth enabled either Rails or JWT. 
+You can only have one type of auth enabled either Rails or JWT.
 
 ### Ruby on Rails
 
@@ -1439,7 +1441,6 @@ auth:
 
     # Found in 'Rails.application.config.secret_key_base'
     secret_key_base: 0a248500a64c01184edb4d7ad3a805488f8097ac761b76aaa6c17c01dcb7af03a2f18ba61b2868134b9c7b79a122bc0dadff4367414a2d173297bfea92be5566
-
 ```
 
 #### Memcache session store
@@ -1477,7 +1478,7 @@ auth:
 
   jwt:
     # the two providers are 'auth0' and 'none'
-    provider: auth0 
+    provider: auth0
     secret: abc335bfcfdb04e50db5bb0a4d67ab9
     public_key_file: /secrets/public_key.pem
     public_key_type: ecdsa #rsa
@@ -1499,7 +1500,7 @@ header:
 ```
 
 Header auth is usually the best option to authenticate requests to the action endpoints. For example you
-might want to use an action to refresh a materalized view every hour and only want a cron service like the Google AppEngine Cron service to make that request in this case a config similar to the one above will do. 
+might want to use an action to refresh a materalized view every hour and only want a cron service like the Google AppEngine Cron service to make that request in this case a config similar to the one above will do.
 
 The `exists: true` parameter ensures that only the existance of the header is checked not its value. The `value` parameter lets you confirm that the value matches the one assgined to the parameter. This helps in the case you are using a shared secret to protect the endpoint.
 
@@ -1554,7 +1555,7 @@ An authenticated request is one where Super Graph can extract an `user_id` based
 
 The `user` role can be divided up into further roles based on attributes in the database. For example when fetching a list of users, a normal user can only fetch his own entry while an admin can fetch all the users within a company and an admin user can fetch everyone. In some places this is called Attribute based access control. So in way we support both. Role based access control and Attribute based access control.
 
-Super Graph allows you to create roles dynamically using a `roles_query` and `  match` config values.
+Super Graph allows you to create roles dynamically using a `roles_query` and `match` config values.
 
 ### Configure RBAC
 
@@ -1570,10 +1571,10 @@ roles:
 
         insert:
           filters: ["{ user_id: { eq: $user_id } }"]
-          columns: ["id", "name", "description" ]
+          columns: ["id", "name", "description"]
           presets:
             - created_at: "now"
-            
+
         update:
           filters: ["{ user_id: { eq: $user_id } }"]
           columns:
@@ -1593,13 +1594,13 @@ roles:
           filters: []
 ```
 
-This configuration is relatively simple to follow the `roles_query` parameter is the query that must be run to help figure out a users role. This query can be as complex as you like and include joins with other tables. 
+This configuration is relatively simple to follow the `roles_query` parameter is the query that must be run to help figure out a users role. This query can be as complex as you like and include joins with other tables.
 
 The individual roles are defined under the `roles` parameter and this includes each table the role has a custom setting for. The role is dynamically matched using the `match` parameter for example in the above case `users.id = 1` means that when the `roles_query` is executed a user with the id `1` will be assigned the admin role and those that don't match get the `user` role if authenticated successfully or the `anon` role.
 
 ## Remote Joins
 
-It often happens that after fetching some data from the DB we need to call another API to fetch some more data and all this combined into a single JSON response. For example along with a list of users you need their last 5 payments from Stripe. This requires you to query your DB for the users and Stripe for the payments. Super Graph handles all this for you also only the fields you requested from the Stripe API are returned. 
+It often happens that after fetching some data from the DB we need to call another API to fetch some more data and all this combined into a single JSON response. For example along with a list of users you need their last 5 payments from Stripe. This requires you to query your DB for the users and Stripe for the payments. Super Graph handles all this for you also only the fields you requested from the Stripe API are returned.
 
 ::: tip Is this fast?
 Super Graph is able fetch remote data and merge it with the DB response in an efficient manner. Several optimizations such as parallel HTTP requests and a zero-allocation JSON merge algorithm makes this very fast. All of this without you having to write a line of code.
@@ -1624,7 +1625,7 @@ tables:
         url: http://rails_app:3000/stripe/$id
         path: data
         # debug: true
-        # pass_headers: 
+        # pass_headers:
         #   - cookie
         #   - host
         set_headers:
@@ -1691,7 +1692,6 @@ tables:
         related_to: tags.slug
 ```
 
-
 ## Configuration
 
 Configuration files can either be in YAML or JSON their names are derived from the `GO_ENV` variable, for example `GO_ENV=prod` will cause the `prod.yaml` config file to be used. or `GO_ENV=dev` will use the `dev.yaml`. A path to look for the config files in can be specified using the `-path <folder>` command line argument.
@@ -1713,7 +1713,7 @@ log_level: "debug"
 # enable or disable http compression (uses gzip)
 http_compress: true
 
-# When production mode is 'true' only queries 
+# When production mode is 'true' only queries
 # from the allow list are permitted.
 # When it's 'false' all queries are saved to the
 # the allow list in ./config/allow.list
@@ -1759,7 +1759,7 @@ auth:
   cookie: _app_session
 
   # Comment this out if you want to disable setting
-  # the user_id via a header for testing. 
+  # the user_id via a header for testing.
   # Disable in production
   creds_in_header: true
 
@@ -1776,7 +1776,6 @@ auth:
     # password: ""
     # max_idle: 80
     # max_active: 12000
-
     # In most cases you don't need these
     # salt: "encrypted cookie"
     # sign_salt: "signed encrypted cookie"
@@ -1787,7 +1786,6 @@ auth:
   #   secret: abc335bfcfdb04e50db5bb0a4d67ab9
   #   public_key_file: /secrets/public_key.pem
   #   public_key_type: ecdsa #rsa
-
   # header:
   #   name: dnt
   #   exists: true
@@ -1830,13 +1828,10 @@ database:
   # Required for tls. For example with Google Cloud SQL it's
   # <gcp-project-id>:<cloud-sql-instance>"
   # server_name: blah
-
   # Required for tls. Can be a file path or the contents of the pem file
   # server_cert: ./server-ca.pem
-
   # Required for tls. Can be a file path or the contents of the pem file
   # client_cert: ./client-cert.pem
-
   # Required for tls. Can be a file path or the contents of the pem file
   # client_key: ./client-key.pem
 
@@ -1863,7 +1858,6 @@ actions:
     sql: REFRESH MATERIALIZED VIEW CONCURRENTLY "leaderboard_users"
     auth_name: from_taskqueue
 
-
 tables:
   - name: customers
     remotes:
@@ -1872,7 +1866,7 @@ tables:
         url: http://rails_app:3000/stripe/$id
         path: data
         # debug: true
-        pass_headers: 
+        pass_headers:
           - cookie
         set_headers:
           - name: Host
@@ -1894,12 +1888,12 @@ roles:
         limit: 10
 
         query:
-          columns: ["id", "name", "description" ]
+          columns: ["id", "name", "description"]
           aggregation: false
 
         insert:
           allow: false
-            
+
         update:
           allow: false
 
@@ -1916,15 +1910,15 @@ roles:
         query:
           limit: 50
           filters: ["{ user_id: { eq: $user_id } }"]
-          columns: ["id", "name", "description" ]
+          columns: ["id", "name", "description"]
           disable_functions: false
 
         insert:
           filters: ["{ user_id: { eq: $user_id } }"]
-          columns: ["id", "name", "description" ]
+          columns: ["id", "name", "description"]
           set:
             - created_at: "now"
-            
+
         update:
           filters: ["{ user_id: { eq: $user_id } }"]
           columns:
@@ -1941,7 +1935,6 @@ roles:
     tables:
       - name: users
         filters: []
-
 ```
 
 If deploying into environments like Kubernetes it's useful to be able to configure things like secrets and hosts though environment variables therfore we expose the below environment variables. This is escpecially useful for secrets since they are usually injected in via a secrets management framework ie. Kubernetes Secrets
@@ -1949,6 +1942,7 @@ If deploying into environments like Kubernetes it's useful to be able to configu
 Keep in mind any value can be overwritten using environment variables for example `auth.jwt.public_key_type` converts to `SG_AUTH_JWT_PUBLIC_KEY_TYPE`. In short prefix `SG_`, upper case and all `.` should changed to `_`.
 
 #### Postgres environment variables
+
 ```bash
 SG_DATABASE_HOST
 SG_DATABASE_PORT
@@ -1957,6 +1951,7 @@ SG_DATABASE_PASSWORD
 ```
 
 #### Auth environment variables
+
 ```bash
 SG_AUTH_RAILS_COOKIE_SECRET_KEY_BASE
 SG_AUTH_RAILS_REDIS_URL
@@ -1976,39 +1971,39 @@ To use Yugabyte in your local development flow just uncomment the following line
   #   image: postgres:latest
   #   ports:
   #     - "5432:5432"
-  
+
   #Standard config to run a single node of Yugabyte
-  yb-master:                                                                                         
-    image: yugabytedb/yugabyte:latest                                                              
-    container_name: yb-master-n1                                                                   
-    command: [ "/home/yugabyte/bin/yb-master",                                                     
-              "--fs_data_dirs=/mnt/disk0,/mnt/disk1",                                              
-              "--master_addresses=yb-master-n1:7100",                                              
-              "--replication_factor=1",                                                            
-              "--enable_ysql=true"]                                                                
-    ports:                                                                                         
-      - "7000:7000"                                                                                  
-    environment:                                                                                   
-      SERVICE_7000_NAME: yb-master                                                                 
-                                                                                                    
-  db:                                                                                        
-    image: yugabytedb/yugabyte:latest                                                              
-    container_name: yb-tserver-n1                                                                  
-    command: [ "/home/yugabyte/bin/yb-tserver",                                                    
-              "--fs_data_dirs=/mnt/disk0,/mnt/disk1",                                              
-              "--start_pgsql_proxy",                                                               
-              "--tserver_master_addrs=yb-master-n1:7100"]                                          
-    ports:                                                                                         
-      - "9042:9042"                                                                                  
-      - "6379:6379"                                                                                  
-      - "5433:5433"                                                                                  
-      - "9000:9000"                                                                                  
-    environment:                                                                                   
-      SERVICE_5433_NAME: ysql                                                                      
-      SERVICE_9042_NAME: ycql                                                                      
-      SERVICE_6379_NAME: yedis                                                                     
-      SERVICE_9000_NAME: yb-tserver                                                                
-    depends_on:                                                                                    
+  yb-master:
+    image: yugabytedb/yugabyte:latest
+    container_name: yb-master-n1
+    command: [ "/home/yugabyte/bin/yb-master",
+              "--fs_data_dirs=/mnt/disk0,/mnt/disk1",
+              "--master_addresses=yb-master-n1:7100",
+              "--replication_factor=1",
+              "--enable_ysql=true"]
+    ports:
+      - "7000:7000"
+    environment:
+      SERVICE_7000_NAME: yb-master
+
+  db:
+    image: yugabytedb/yugabyte:latest
+    container_name: yb-tserver-n1
+    command: [ "/home/yugabyte/bin/yb-tserver",
+              "--fs_data_dirs=/mnt/disk0,/mnt/disk1",
+              "--start_pgsql_proxy",
+              "--tserver_master_addrs=yb-master-n1:7100"]
+    ports:
+      - "9042:9042"
+      - "6379:6379"
+      - "5433:5433"
+      - "9000:9000"
+    environment:
+      SERVICE_5433_NAME: ysql
+      SERVICE_9042_NAME: ycql
+      SERVICE_6379_NAME: yedis
+      SERVICE_9000_NAME: yb-tserver
+    depends_on:
       - yb-master
 
   # Environment variables to point Super Graph to Yugabyte

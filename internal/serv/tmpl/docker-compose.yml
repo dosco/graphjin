@@ -1,4 +1,4 @@
-version: '3.4'
+version: "3.4"
 services:
   # Postgres DB
   db:
@@ -9,12 +9,12 @@ services:
     ports:
       - "5432:5432"
 
-  {{ .AppNameSlug -}}_api:
+  api:
     image: dosco/super-graph:latest
     environment:
       GO_ENV: "development"
     volumes:
-     - ./config:/config
+      - ./config:/config
     ports:
       - "8080:8080"
     depends_on:

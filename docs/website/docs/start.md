@@ -23,7 +23,7 @@ cd blog
 
 # Setup the app database and seed it with fake data.
 # Docker compose will start a Postgres database for your app
-docker-compose run blog_api ./super-graph db:setup
+docker-compose run api db:setup
 
 # Finally launch Super Graph configured for your app
 docker-compose up
@@ -47,13 +47,13 @@ super-graph new blog
 ```
 
 :::note Docker
-Docker Compose is a great way to run multiple services while developing on your desktop or laptop. In our case we need Postgres and Super Graph to both be running and the `docker-compose.yml` is configured to do just that. The Super Graph service is named after your app postfixed with `_api`. The Dockerfile can be used build a containr of your app for production deployment.
+Docker Compose is a great way to run multiple services while developing on your desktop or laptop. In our case we need Postgres and Super Graph to both be running and the `docker-compose.yml` is configured to do just that. The Super Graph service is named `api` you are free to change this. The Dockerfile can be used build a containr of your app for production deployment.
 :::
 
 Run Super Graph with Docker compose
 
 ```bash
-docker-compose run blog_api ./super-graph help
+docker-compose run api help
 ```
 
 ### Config files
