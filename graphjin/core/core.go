@@ -269,17 +269,6 @@ func (c *scontext) resolveSQL() ([]byte, *stmt, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	// finalSQL := buf.String()
-
-	////
-
-	// _, err = t.ExecuteFunc(buf, c.argMap(st.md))
-	// if err != nil {
-	// 	return nil, nil, err
-	// }
-	// finalSQL := buf.String()
-
-	/////
 
 	// var stime time.Time
 

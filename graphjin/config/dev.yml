@@ -176,7 +176,7 @@ tables:
       - name: email
         related_to: products.name
 
-roles_query: "SELECT * FROM users WHERE id = $user_id"
+#roles_query: "SELECT * FROM users WHERE id = $user_id"
 
 roles:
   - name: anon

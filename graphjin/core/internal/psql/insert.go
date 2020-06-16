@@ -11,7 +11,7 @@ import (
 )
 
 func (c *compilerContext) renderInsert(
-	w io.Writer, qc *qcode.QCode, vars Variables, ti *DBTableInfo) (uint32, error) {
+	w io.Writer, qc *qcode.QCode, vars Variables, ti *DBTableInfo, embedded bool) (uint32, error) {
 
 	insert, ok := vars[qc.ActionVar]
 	if !ok {
@@ -53,13 +53,9 @@ func (c *compilerContext) renderInsert(
 		case renitem:
 			var err error
 
-			// if w := qc.Selects[0].Where; w != nil && w.Op == qcode.OpFalse {
-			// 	io.WriteString(c.w, ` WHERE false`)
-			// }
-
 			switch item._type {
 			case itemInsert:
-				err = c.renderInsertStmt(qc, w, item)
+				err = c.renderInsertStmt(qc, w, item, embedded)
 			case itemConnect:
 				err = c.renderConnectStmt(qc, w, item)
 			case itemUnion:
@@ -76,7 +72,7 @@ func (c *compilerContext) renderInsert(
 	return 0, nil
 }
 
-func (c *compilerContext) renderInsertStmt(qc *qcode.QCode, w io.Writer, item renitem) error {
+func (c *compilerContext) renderInsertStmt(qc *qcode.QCode, w io.Writer, item renitem, embedded bool) error {
 
 	ti := item.ti
 	jt := item.data
@@ -99,7 +95,10 @@ func (c *compilerContext) renderInsertStmt(qc *qcode.QCode, w io.Writer, item re
 
 	io.WriteString(w, ` FROM "_sg_input" i`)
 	renderNestedInsertRelTables(w, item.kvitem)
-	io.WriteString(w, ` RETURNING *)`)
+
+	if !embedded {
+		io.WriteString(w, ` RETURNING *)`)
+	}
 	return nil
 }
 

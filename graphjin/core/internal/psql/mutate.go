@@ -51,7 +51,7 @@ func (co *Compiler) compileMutation(w io.Writer, qc *qcode.QCode, vars Variables
 
 	switch qc.Type {
 	case qcode.QTInsert:
-		if _, err := c.renderInsert(w, qc, vars, ti); err != nil {
+		if _, err := c.renderInsert(w, qc, vars, ti, false); err != nil {
 			return c.md, err
 		}
 
@@ -481,7 +481,7 @@ func (c *compilerContext) renderUpsert(
 		return 0, err
 	}
 
-	if _, err := c.renderInsert(w, qc, vars, ti); err != nil {
+	if _, err := c.renderInsert(w, qc, vars, ti, true); err != nil {
 		return 0, err
 	}
 
@@ -508,14 +508,6 @@ func (c *compilerContext) renderUpsert(
 	}
 	io.WriteString(c.w, `)`)
 
-	if root.Where != nil {
-		io.WriteString(c.w, ` WHERE `)
-
-		if err := c.renderWhere(root, ti); err != nil {
-			return 0, err
-		}
-	}
-
 	io.WriteString(c.w, ` DO UPDATE SET `)
 
 	i = 0
@@ -530,6 +522,14 @@ func (c *compilerContext) renderUpsert(
 		io.WriteString(c.w, ` = EXCLUDED.`)
 		io.WriteString(c.w, cn.Name)
 		i++
+	}
+
+	if root.Where != nil {
+		io.WriteString(c.w, ` WHERE `)
+
+		if err := c.renderWhere(root, ti); err != nil {
+			return 0, err
+		}
 	}
 
 	io.WriteString(c.w, ` RETURNING *) `)

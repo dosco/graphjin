@@ -1,7 +1,7 @@
 ---
-id: advanced
-title: Full Text Search & More
-sidebar_label: More Features
+id: database
+title: Database made easy
+sidebar_label: Database Config
 ---
 
 ## Database Relationships
@@ -19,6 +19,59 @@ tables:
     columns:
       - name: tags
         related_to: tags.slug
+```
+
+## Polymorphic Relationships
+
+Normally two tables are connected together by creating a foreign key on one of the tables. But what if you wanted
+one table to connect to a union of tables. This is an association that frameworks like Ruby-on-Rails made popular https://guides.rubyonrails.org/association_basics.html#polymorphic-associations. You're database cannot help you here as foreign keys are only between two fixed tables.
+
+One usecase for this can be in a `notifications` table where you want to link each row to the table the notification is about. For example a notification about a comment to a comment table or a notification about a like to the table for the blog post, etc.
+
+To make type of a relationaship queryable you'll have to add a virtual table to the table config like below. This will automatically add a polymorphic relationship on any table in your database that has the columns `subject_type` and `subject_id` where the former holds the name of the related table and the later it's id.
+
+Example notifications table
+
+```sql
+create table notifications (
+  id            bigint,
+  for_user_id   bigint references users,
+  key           text,
+  subject_type  text,
+  subject_id    bigint
+)
+```
+
+Example table config entry
+
+```yaml
+tables:
+  - name: subject
+    type: polymorphic
+    columns:
+      - name: subject_id
+        related_to: subject_type.id
+```
+
+Query that uses this relationship
+
+```graphql
+query {
+  notifications(limit: 10) {
+    id
+    key
+    subjects {
+      ... on comment {
+        id
+        message
+      }
+      ... on posts {
+        id
+        title
+      }
+    }
+  }
+}
 ```
 
 ## Advanced Columns
@@ -55,12 +108,13 @@ query {
 
 Configure a JSON column called `tag_count` in the table `products` into a seperate table. This JSON column contains a json array of objects each with a tag id and a count of the number of times the tag was used. As a seperate table you can nest it into your GraphQL query and treat it like table using any of the standard features like `order_by`, `limit`, `where clauses`, etc.
 
-The configuration below tells Super Graph to create a synthetic table called `tag_count` using the column `tag_count` from the `products` table. And that this new table has two columns `tag_id` and `count` of the listed types and with the defined relationships.
+The configuration below tells Super Graph to create a virtual table called `tag_count` using the column `tag_count` from the `products` table. And that this new table has two columns `tag_id` and `count` of the listed types and with the defined relationships.
 
 ```yaml
 tables:
   - name: tag_count
     table: products
+    type: jsonb
     columns:
       - name: tag_id
         type: bigint
