@@ -26,8 +26,7 @@ const (
 	opMutate
 	opSub
 	NodeStr
-	NodeInt
-	NodeFloat
+	NodeNum
 	NodeBool
 	NodeObj
 	NodeList
@@ -640,10 +639,8 @@ func (p *Parser) parseValue() (*Node, error) {
 	node.Reset()
 
 	switch item._type {
-	case itemIntVal:
-		node.Type = NodeInt
-	case itemFloatVal:
-		node.Type = NodeFloat
+	case itemNumberVal:
+		node.Type = NodeNum
 	case itemStringVal:
 		node.Type = NodeStr
 	case itemBoolVal:
@@ -661,12 +658,12 @@ func (p *Parser) parseValue() (*Node, error) {
 }
 
 func (p *Parser) val(v item) string {
-	return b2s(p.input[v.pos:v.end])
+	return b2s(v.val)
 }
 
 func (p *Parser) vall(v item) string {
-	lowercase(p.input, v.pos, v.end)
-	return b2s(p.input[v.pos:v.end])
+	lowercase(v.val)
+	return b2s(v.val)
 }
 
 func (p *Parser) peek(types ...itemType) bool {
@@ -713,7 +710,7 @@ func (p *Parser) ignore() {
 
 func (p *Parser) peekNext() string {
 	item := p.items[p.pos+1]
-	return b2s(p.input[item.pos:item.end])
+	return b2s(item.val)
 }
 
 func (p *Parser) reset(to int) {
@@ -740,10 +737,8 @@ func (t parserType) String() string {
 		v = "subscription"
 	case NodeStr:
 		v = "node-string"
-	case NodeInt:
-		v = "node-int"
-	case NodeFloat:
-		v = "node-float"
+	case NodeNum:
+		v = "node-number"
 	case NodeBool:
 		v = "node-bool"
 	case NodeVar:
