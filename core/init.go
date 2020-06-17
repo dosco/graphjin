@@ -194,7 +194,7 @@ func addVirtualTable(di *psql.DBInfo, cols []Column, t Table) error {
 
 func addForeignKeys(c *Config, di *psql.DBInfo) error {
 	for _, t := range c.Tables {
-		if t.Type != "" {
+		if t.Type == "polymorphic" {
 			continue
 		}
 		for _, c := range t.Columns {
