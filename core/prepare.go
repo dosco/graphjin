@@ -40,10 +40,17 @@ func (sg *SuperGraph) prepare(q *query, role string) {
 
 	case qcode.QTMutation:
 		stmts, err = sg.buildRoleStmt(qb, vars, role)
+
 	}
 
 	if err != nil {
 		sg.log.Printf("WRN %s %s: %v", q.qt, q.ai.Name, err)
+		return
+	}
+
+	if len(stmts) == 0 {
+		sg.log.Printf("ERR %s %s: invalid query", q.qt, q.ai.Name)
+		return
 	}
 
 	q.st = stmts[0]

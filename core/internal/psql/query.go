@@ -1227,7 +1227,7 @@ func (c *compilerContext) renderList(ex *qcode.Exp) {
 			io.WriteString(c.w, `, `)
 		}
 		switch ex.ListType {
-		case qcode.ValBool, qcode.ValInt, qcode.ValFloat:
+		case qcode.ValBool, qcode.ValNum:
 			io.WriteString(c.w, ex.ListVal[i])
 		case qcode.ValStr:
 			io.WriteString(c.w, `'`)

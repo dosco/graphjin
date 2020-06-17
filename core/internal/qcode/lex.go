@@ -33,7 +33,7 @@ type Pos int
 type item struct {
 	_type itemType // The type of this item.
 	pos   Pos      // The starting position, in bytes, of this item in the input string.
-	end   Pos      // The ending position, in bytes, of this item in the input string.
+	val   []byte   // The value of this item.
 	line  int16    // The line number at the start of this item.
 }
 
@@ -61,8 +61,7 @@ const (
 	itemDirective
 	itemVariable
 	itemSpread
-	itemIntVal
-	itemFloatVal
+	itemNumberVal
 	itemStringVal
 	itemBoolVal
 )
@@ -126,20 +125,22 @@ func (l *lexer) peek() rune {
 
 // backup steps back one rune. Can only be called once per call of next.
 func (l *lexer) backup() {
-	l.pos -= l.width
-	// Correct newline count.
-	if l.width == 1 && l.input[l.pos] == '\n' {
-		l.line--
+	if l.pos != 0 {
+		l.pos -= l.width
+		// Correct newline count.
+		if l.width == 1 && l.input[l.pos] == '\n' {
+			l.line--
+		}
 	}
 }
 
-func (l *lexer) current() (Pos, Pos) {
-	return l.start, l.pos
+func (l *lexer) current() []byte {
+	return l.input[l.start:l.pos]
 }
 
 // emit passes an item back to the client.
 func (l *lexer) emit(t itemType) {
-	l.items = append(l.items, item{t, l.start, l.pos, l.line})
+	l.items = append(l.items, item{t, l.start, l.current(), l.line})
 	// Some items contain text internally. If so, count their newlines.
 	if t == itemStringVal {
 		for i := l.start; i < l.pos; i++ {
@@ -152,8 +153,7 @@ func (l *lexer) emit(t itemType) {
 }
 
 func (l *lexer) emitL(t itemType) {
-	s, e := l.current()
-	lowercase(l.input, s, e)
+	lowercase(l.current())
 	l.emit(t)
 }
 
@@ -164,7 +164,8 @@ func (l *lexer) ignore() {
 
 // accept consumes the next rune if it's from the valid set.
 func (l *lexer) accept(valid []byte) bool {
-	if bytes.ContainsRune(valid, l.next()) {
+	r := l.next()
+	if r != eof && bytes.ContainsRune(valid, r) {
 		return true
 	}
 	l.backup()
@@ -192,6 +193,7 @@ func (l *lexer) acceptComment() {
 // acceptRun consumes a run of runes from the valid set.
 func (l *lexer) acceptRun(valid []byte) {
 	for bytes.ContainsRune(valid, l.next()) {
+
 	}
 	l.backup()
 }
@@ -200,7 +202,7 @@ func (l *lexer) acceptRun(valid []byte) {
 // back a nil pointer that will be the next state, terminating l.nextItem.
 func (l *lexer) errorf(format string, args ...interface{}) stateFn {
 	l.err = fmt.Errorf(format, args...)
-	l.items = append(l.items, item{itemError, l.start, l.pos, l.line})
+	l.items = append(l.items, item{itemError, l.start, l.input[l.start:l.pos], l.line})
 	return nil
 }
 
@@ -253,11 +255,10 @@ func lexRoot(l *lexer) stateFn {
 	case r == '$':
 		l.ignore()
 		if l.acceptAlphaNum() {
-			s, e := l.current()
-			lowercase(l.input, s, e)
+			lowercase(l.current())
 			l.emit(itemVariable)
 		}
-	case contains(l.input, l.start, l.pos, punctuatorToken):
+	case contains(l.current(), punctuatorToken):
 		if item, ok := punctuators[r]; ok {
 			l.emit(item)
 		} else {
@@ -267,13 +268,12 @@ func lexRoot(l *lexer) stateFn {
 		l.backup()
 		return lexString
 	case r == '.':
-		l.acceptRun(dotToken)
-		s, e := l.current()
-		if equals(l.input, s, e, spreadToken) {
+		l.accept(dotToken)
+		if equals(l.current(), spreadToken) {
 			l.emit(itemSpread)
 			return lexRoot
 		}
-		fallthrough // '.' can start a number.
+		//fallthrough // '.' can start a number.
 	case r == '+' || r == '-' || ('0' <= r && r <= '9'):
 		l.backup()
 		return lexNumber
@@ -298,22 +298,22 @@ func lexName(l *lexer) stateFn {
 
 		if !isAlphaNumeric(r) {
 			l.backup()
-			s, e := l.current()
+			val := l.current()
 
 			switch {
-			case equals(l.input, s, e, queryToken):
+			case equals(val, queryToken):
 				l.emitL(itemQuery)
-			case equals(l.input, s, e, fragmentToken):
+			case equals(val, fragmentToken):
 				l.emitL(itemFragment)
-			case equals(l.input, s, e, mutationToken):
+			case equals(val, mutationToken):
 				l.emitL(itemMutation)
-			case equals(l.input, s, e, subscriptionToken):
+			case equals(val, subscriptionToken):
 				l.emitL(itemSub)
-			case equals(l.input, s, e, onToken):
+			case equals(val, onToken):
 				l.emitL(itemOn)
-			case equals(l.input, s, e, trueToken):
+			case equals(val, trueToken):
 				l.emitL(itemBoolVal)
-			case equals(l.input, s, e, falseToken):
+			case equals(val, falseToken):
 				l.emitL(itemBoolVal)
 			default:
 				l.emit(itemName)
@@ -348,44 +348,32 @@ func lexString(l *lexer) stateFn {
 	return lexRoot
 }
 
-// lexNumber scans a number: decimal, octal, hex, float, or imaginary. This
-// isn't a perfect number scanner - for instance it accepts "." and "0x0.2"
-// and "089" - but when it's wrong the input is invalid and the parser (via
-// strconv) will notice.
+// lexNumber scans a number: decimal and float. This isn't a perfect number scanner
+// for instance it accepts "." and "0x0.2" and "089" - but when it's wrong the input
+// is invalid and the parser (via strconv) should notice.
 func lexNumber(l *lexer) stateFn {
-	var it itemType
+	if !l.scanNumber() {
+		return l.errorf("bad number syntax: %q", l.input[l.start:l.pos])
+	}
+	l.emit(itemNumberVal)
+	return lexRoot
+}
+
+func (l *lexer) scanNumber() bool {
 	// Optional leading sign.
 	l.accept(signsToken)
-
-	// Is it integer
-	if l.accept(digitToken) {
+	l.acceptRun(digitToken)
+	if l.accept(dotToken) {
 		l.acceptRun(digitToken)
-		it = itemIntVal
 	}
-
-	// Is it float
-	if l.peek() == '.' {
-		if l.accept(dotToken) {
-			if l.accept(digitToken) {
-				l.acceptRun(digitToken)
-				it = itemFloatVal
-			}
-		} else {
-			l.backup()
-		}
-	}
-
+	// Is it imaginary?
+	l.accept([]byte("i"))
 	// Next thing mustn't be alphanumeric.
 	if isAlphaNumeric(l.peek()) {
 		l.next()
-		return l.errorf("bad number syntax: %q", l.input[l.start:l.pos])
+		return false
 	}
-
-	if it != 0 {
-		l.emit(it)
-	}
-
-	return lexRoot
+	return true
 }
 
 // isSpace reports whether r is a space character.
@@ -403,16 +391,16 @@ func isAlphaNumeric(r rune) bool {
 	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
-func equals(b []byte, s, e Pos, val []byte) bool {
-	return bytes.EqualFold(b[s:e], val)
+func equals(b []byte, val []byte) bool {
+	return bytes.EqualFold(b, val)
 }
 
-func contains(b []byte, s, e Pos, chars string) bool {
-	return bytes.ContainsAny(b[s:e], chars)
+func contains(b []byte, chars string) bool {
+	return bytes.ContainsAny(b, chars)
 }
 
-func lowercase(b []byte, s, e Pos) {
-	for i := s; i < e; i++ {
+func lowercase(b []byte) {
+	for i := 0; i < len(b); i++ {
 		if b[i] >= 'A' && b[i] <= 'Z' {
 			b[i] = ('a' + (b[i] - 'A'))
 		}
@@ -441,10 +429,8 @@ func (i item) String() string {
 		v = "directive"
 	case itemVariable:
 		v = "variable"
-	case itemIntVal:
-		v = "int"
-	case itemFloatVal:
-		v = "float"
+	case itemNumberVal:
+		v = "number"
 	case itemStringVal:
 		v = "string"
 	}

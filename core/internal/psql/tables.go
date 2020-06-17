@@ -323,13 +323,3 @@ ORDER BY
 
 	return funcs, nil
 }
-
-// func GetValType(type string) qcode.ValType {
-// 	switch {
-// 		case "bigint", "integer", "smallint", "numeric", "bigserial":
-// 			return qcode.ValInt
-// 		case "double precision", "real":
-// 			return qcode.ValFloat
-// 		case ""
-// 	}
-// }

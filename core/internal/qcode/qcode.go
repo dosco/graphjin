@@ -149,8 +149,7 @@ type ValType int
 
 const (
 	ValStr ValType = iota + 1
-	ValInt
-	ValFloat
+	ValNum
 	ValBool
 	ValList
 	ValVar
@@ -805,7 +804,7 @@ func (com *Compiler) compileArgDistinctOn(sel *Select, arg *Arg) error {
 func (com *Compiler) compileArgLimit(sel *Select, arg *Arg) error {
 	node := arg.Val
 
-	if node.Type != NodeInt {
+	if node.Type != NodeNum {
 		return argErr("limit", "number")
 	}
 
@@ -828,7 +827,7 @@ func (com *Compiler) compileArgOffset(sel *Select, arg *Arg) error {
 func (com *Compiler) compileArgFirstLast(sel *Select, arg *Arg, pt PagingType) error {
 	node := arg.Val
 
-	if node.Type != NodeInt {
+	if node.Type != NodeNum {
 		return argErr(arg.Name, "number")
 	}
 
@@ -998,12 +997,10 @@ func newExp(st *util.Stack, node *Node, usePool bool) (*Exp, error) {
 		switch node.Type {
 		case NodeStr:
 			ex.Type = ValStr
-		case NodeInt:
-			ex.Type = ValInt
+		case NodeNum:
+			ex.Type = ValNum
 		case NodeBool:
 			ex.Type = ValBool
-		case NodeFloat:
-			ex.Type = ValFloat
 		case NodeList:
 			ex.Type = ValList
 		case NodeVar:
@@ -1023,12 +1020,10 @@ func setListVal(ex *Exp, node *Node) {
 		switch node.Children[0].Type {
 		case NodeStr:
 			ex.ListType = ValStr
-		case NodeInt:
-			ex.ListType = ValInt
+		case NodeNum:
+			ex.ListType = ValNum
 		case NodeBool:
 			ex.ListType = ValBool
-		case NodeFloat:
-			ex.ListType = ValFloat
 		}
 	} else {
 		ex.Val = node.Val
