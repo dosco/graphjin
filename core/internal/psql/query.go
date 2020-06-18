@@ -668,11 +668,15 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, ti *DBTableInfo, 
 			io.WriteString(c.w, `(CASE `)
 			for _, uid := range childSel.Children {
 				unionSel := &c.s[uid]
+				uti, err := c.schema.GetTable(unionSel.Name)
+				if err != nil {
+					return err
+				}
 
 				io.WriteString(c.w, `WHEN `)
 				colWithTableID(c.w, ti.Name, sel.ID, rel.Right.Table)
 				io.WriteString(c.w, ` = `)
-				squoted(c.w, unionSel.Name)
+				squoted(c.w, uti.Name)
 				io.WriteString(c.w, ` THEN `)
 				io.WriteString(c.w, `"__sj_`)
 				int32String(c.w, unionSel.ID)
@@ -929,13 +933,18 @@ func (c *compilerContext) renderRelationship(sel *qcode.Select, rel *DBRel) erro
 		colWithTableID(c.w, rel.Left.Table, pid, rel.Left.Col)
 
 	case RelPolymorphic:
-		colWithTable(c.w, sel.Name, rel.Right.Col)
+		ti, err := c.schema.GetTable(sel.Name)
+		if err != nil {
+			return err
+		}
+
+		colWithTable(c.w, ti.Name, rel.Right.Col)
 		io.WriteString(c.w, `) = (`)
 		colWithTableID(c.w, rel.Left.Table, pid, rel.Left.Col)
 		io.WriteString(c.w, `) AND (`)
 		colWithTableID(c.w, rel.Left.Table, pid, rel.Right.Table)
 		io.WriteString(c.w, `) = (`)
-		squoted(c.w, sel.Name)
+		squoted(c.w, ti.Name)
 	}
 
 	io.WriteString(c.w, `))`)
