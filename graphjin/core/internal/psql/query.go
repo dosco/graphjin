@@ -125,7 +125,7 @@ func (co *Compiler) compileQueryWithMetadata(
 
 		root := &qc.Selects[id]
 
-		if root.SkipRender || len(root.Cols) == 0 {
+		if root.SkipRender || (len(root.Cols) == 0 && len(root.Children) == 0) {
 			squoted(c.w, root.FieldName)
 			io.WriteString(c.w, `, `)
 			io.WriteString(c.w, `NULL`)
@@ -162,7 +162,7 @@ func (co *Compiler) compileQueryWithMetadata(
 			}
 
 			if sel.Type != qcode.STUnion {
-				if len(sel.Cols) == 0 {
+				if len(sel.Cols) == 0 && len(sel.Children) == 0 {
 					continue
 				}
 
