@@ -2,6 +2,7 @@ package psql
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 
@@ -166,16 +167,9 @@ func (c *compilerContext) renderColumnTypename(sel *qcode.Select, ti *DBTableInf
 
 func (c *compilerContext) renderColumnFunction(sel *qcode.Select, ti *DBTableInfo, col qcode.Column, columnsRendered int) error {
 	pl := funcPrefixLen(c.schema.fm, col.Name)
-	// if pl == 0 {
-	// 	//fmt.Fprintf(w, `'%s not defined' AS %s`, cn, col.Name)
-	// 	_, _ = io.WriteString(c.w, `'`)
-	// 	_, _ = io.WriteString(c.w, col.Name)
-	// 	_, _ = io.WriteString(c.w, ` not defined'`)
-	// 	alias(c.w, col.Name)
-	// }
 
 	if pl == 0 || !sel.Functions {
-		return nil
+		return fmt.Errorf("unknown field: %s.%s", sel.Name, col.Name)
 	}
 
 	cn := col.Name[pl:]

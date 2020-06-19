@@ -223,16 +223,16 @@ func aggFunctionBlockedByCol(t *testing.T) {
 	compileGQLToPSQL(t, gql, nil, "anon")
 }
 
-func aggFunctionDisabled(t *testing.T) {
-	gql := `query {
-		products {
-			name
-			count_price
-		}
-	}`
+// func aggFunctionDisabled(t *testing.T) {
+// 	gql := `query {
+// 		products {
+// 			name
+// 			count_price
+// 		}
+// 	}`
 
-	compileGQLToPSQL(t, gql, nil, "anon1")
-}
+// 	compileGQLToPSQL(t, gql, nil, "anon1")
+// }
 
 func aggFunctionWithFilter(t *testing.T) {
 	gql := `query {
@@ -324,8 +324,7 @@ func withFragment1(t *testing.T) {
 	}
 	
 	fragment userFields2 on user {
-		first_name
-		last_name
+		full_name
 	}`
 
 	compileGQLToPSQL(t, gql, nil, "anon")
@@ -348,8 +347,7 @@ func withFragment2(t *testing.T) {
 	}
 	
 	fragment userFields2 on user {
-		first_name
-		last_name
+		full_name
 	}`
 
 	compileGQLToPSQL(t, gql, nil, "anon")
@@ -364,8 +362,7 @@ func withFragment3(t *testing.T) {
 	}
 	
 	fragment userFields2 on user {
-		first_name
-		last_name
+		full_name
 	}
 
 	query {
@@ -462,16 +459,16 @@ func blockedQuery(t *testing.T) {
 	compileGQLToPSQL(t, gql, nil, "bad_dude")
 }
 
-func blockedFunctions(t *testing.T) {
-	gql := `query {
-		users {
-			count_id
-			email
-		}
-	}`
+// func blockedFunctions(t *testing.T) {
+// 	gql := `query {
+// 		users {
+// 			count_id
+// 			email
+// 		}
+// 	}`
 
-	compileGQLToPSQL(t, gql, nil, "bad_dude")
-}
+// 	compileGQLToPSQL(t, gql, nil, "bad_dude")
+// }
 
 func TestCompileQuery(t *testing.T) {
 	t.Run("withComplexArgs", withComplexArgs)
@@ -488,7 +485,7 @@ func TestCompileQuery(t *testing.T) {
 	t.Run("manyToManyReverse", manyToManyReverse)
 	t.Run("aggFunction", aggFunction)
 	t.Run("aggFunctionBlockedByCol", aggFunctionBlockedByCol)
-	t.Run("aggFunctionDisabled", aggFunctionDisabled)
+	// t.Run("aggFunctionDisabled", aggFunctionDisabled)
 	t.Run("aggFunctionWithFilter", aggFunctionWithFilter)
 	t.Run("syntheticTables", syntheticTables)
 	t.Run("queryWithVariables", queryWithVariables)
@@ -502,7 +499,7 @@ func TestCompileQuery(t *testing.T) {
 	t.Run("withCursor", withCursor)
 	t.Run("nullForAuthRequiredInAnon", nullForAuthRequiredInAnon)
 	t.Run("blockedQuery", blockedQuery)
-	t.Run("blockedFunctions", blockedFunctions)
+	// t.Run("blockedFunctions", blockedFunctions)
 }
 
 var benchGQL = []byte(`query {

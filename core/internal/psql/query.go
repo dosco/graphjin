@@ -161,6 +161,10 @@ func (co *Compiler) compileQueryWithMetadata(
 				return c.md, err
 			}
 
+			if sel.Type == qcode.STMember && sel.Name != ti.Name {
+				return c.md, fmt.Errorf("inline fragment: 'on %s' should be 'on %s'", sel.Name, ti.Name)
+			}
+
 			if sel.Type != qcode.STUnion {
 				if len(sel.Cols) == 0 && len(sel.Children) == 0 {
 					continue
@@ -172,7 +176,17 @@ func (co *Compiler) compileQueryWithMetadata(
 					c.renderLateralJoin(sel)
 				}
 
-				if !ti.IsSingular {
+				plural := !ti.IsSingular
+
+				if sel.Type == qcode.STMember {
+					if pti, err := c.schema.GetTable(c.s[sel.ParentID].Name); err != nil {
+						return c.md, err
+					} else {
+						plural = !pti.IsSingular
+					}
+				}
+
+				if plural {
 					c.renderPluralSelect(sel, ti)
 				}
 
@@ -209,7 +223,17 @@ func (co *Compiler) compileQueryWithMetadata(
 				io.WriteString(c.w, `)`)
 				aliasWithID(c.w, "__sj", sel.ID)
 
-				if !ti.IsSingular {
+				plural := !ti.IsSingular
+
+				if sel.Type == qcode.STMember {
+					if pti, err := c.schema.GetTable(c.s[sel.ParentID].Name); err != nil {
+						return c.md, err
+					} else {
+						plural = !pti.IsSingular
+					}
+				}
+
+				if plural {
 					io.WriteString(c.w, `)`)
 					aliasWithID(c.w, "__sj", sel.ID)
 				}
@@ -661,29 +685,9 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, ti *DBTableInfo, 
 		}
 
 		if childSel.Type == qcode.STUnion {
-			rel, err := c.schema.GetRel(childSel.Name, ti.Name)
-			if err != nil {
+			if err := c.renderUnionColumn(sel, childSel, ti); err != nil {
 				return err
 			}
-			io.WriteString(c.w, `(CASE `)
-			for _, uid := range childSel.Children {
-				unionSel := &c.s[uid]
-				uti, err := c.schema.GetTable(unionSel.Name)
-				if err != nil {
-					return err
-				}
-
-				io.WriteString(c.w, `WHEN `)
-				colWithTableID(c.w, ti.Name, sel.ID, rel.Right.Table)
-				io.WriteString(c.w, ` = `)
-				squoted(c.w, uti.Name)
-				io.WriteString(c.w, ` THEN `)
-				io.WriteString(c.w, `"__sj_`)
-				int32String(c.w, unionSel.ID)
-				io.WriteString(c.w, `"."json"`)
-			}
-			io.WriteString(c.w, `END)`)
-			alias(c.w, childSel.FieldName)
 
 		} else {
 			io.WriteString(c.w, `"__sj_`)
@@ -703,6 +707,33 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, ti *DBTableInfo, 
 		i++
 	}
 
+	return nil
+}
+
+func (c *compilerContext) renderUnionColumn(parent, sel *qcode.Select, ti *DBTableInfo) error {
+	rel, err := c.schema.GetRel(sel.Name, ti.Name)
+	if err != nil {
+		return err
+	}
+	io.WriteString(c.w, `(CASE `)
+	for _, uid := range sel.Children {
+		unionSel := &c.s[uid]
+		uti, err := c.schema.GetTable(unionSel.Name)
+		if err != nil {
+			return err
+		}
+
+		io.WriteString(c.w, `WHEN `)
+		colWithTableID(c.w, ti.Name, parent.ID, rel.Right.Table)
+		io.WriteString(c.w, ` = `)
+		squoted(c.w, uti.Name)
+		io.WriteString(c.w, ` THEN `)
+		io.WriteString(c.w, `"__sj_`)
+		int32String(c.w, unionSel.ID)
+		io.WriteString(c.w, `"."json"`)
+	}
+	io.WriteString(c.w, `END)`)
+	alias(c.w, sel.FieldName)
 	return nil
 }
 
