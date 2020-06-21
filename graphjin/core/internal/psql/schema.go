@@ -606,5 +606,13 @@ func getRelName(colName string) string {
 		return colName[:len(colName)-4]
 	}
 
+	if strings.HasPrefix(cn, "id_") {
+		return colName[3:]
+	}
+
+	if strings.HasPrefix(cn, "ids_") {
+		return colName[4:]
+	}
+
 	return colName
 }
