@@ -44,7 +44,7 @@ func (co *Compiler) compileMutation(w io.Writer, qc *qcode.QCode, vars Variables
 	c := &compilerContext{md, w, qc.Selects, co}
 	root := &qc.Selects[0]
 
-	ti, err := c.schema.GetTable(root.Name)
+	ti, err := c.schema.GetTableInfo(root.Name)
 	if err != nil {
 		return c.md, err
 	}
@@ -157,7 +157,7 @@ func (c *compilerContext) handleKVItem(st *util.Stack, item kvitem) error {
 
 			// Get parent-to-child relationship
 		} else if relPC, err := c.schema.GetRel(item.key, k); err == nil {
-			ti, err := c.schema.GetTable(k)
+			ti, err := c.schema.GetTableInfo(k)
 			if err != nil {
 				return err
 			}

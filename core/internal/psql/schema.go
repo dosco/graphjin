@@ -26,6 +26,7 @@ type DBTableInfo struct {
 	ColIDMap   map[int16]*DBColumn
 	Singular   string
 	Plural     string
+	fkMultiRef map[string]int
 }
 
 type RelType int
@@ -70,7 +71,14 @@ func NewDBSchema(info *DBInfo, aliases map[string][]string) (*DBSchema, error) {
 	}
 
 	for i, t := range info.Tables {
-		err := schema.addTable(t, info.Columns[i], aliases)
+		err := schema.addTableInfo(t, info.Columns[i], aliases)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	for _, t := range schema.t {
+		err := schema.addMultiRefs(t)
 		if err != nil {
 			return nil, err
 		}
@@ -103,11 +111,12 @@ func NewDBSchema(info *DBInfo, aliases map[string][]string) (*DBSchema, error) {
 	return schema, nil
 }
 
-func (s *DBSchema) addTable(
+func (s *DBSchema) addTableInfo(
 	t DBTable, cols []DBColumn, aliases map[string][]string) error {
 
 	colmap := make(map[string]*DBColumn, len(cols))
 	colidmap := make(map[int16]*DBColumn, len(cols))
+	fkMultiRef := make(map[string]int)
 
 	singular := flect.Singularize(t.Key)
 	plural := flect.Pluralize(t.Key)
@@ -121,8 +130,8 @@ func (s *DBSchema) addTable(
 		ColIDMap:   colidmap,
 		Singular:   singular,
 		Plural:     plural,
+		fkMultiRef: fkMultiRef,
 	}
-	s.t[singular] = ts
 
 	tp := &DBTableInfo{
 		Name:       t.Name,
@@ -133,7 +142,35 @@ func (s *DBSchema) addTable(
 		ColIDMap:   colidmap,
 		Singular:   singular,
 		Plural:     plural,
+		fkMultiRef: fkMultiRef,
 	}
+
+	for i := range cols {
+		c := &cols[i]
+
+		if c.FKeyTable != "" {
+			if _, ok := fkMultiRef[c.FKeyTable]; ok {
+				fkMultiRef[c.FKeyTable]++
+			} else {
+				fkMultiRef[c.FKeyTable] = 1
+			}
+		}
+
+		switch {
+		case c.Type == "tsvector":
+			ts.TSVCol = c
+			tp.TSVCol = c
+
+		case c.PrimaryKey:
+			ts.PrimaryCol = c
+			tp.PrimaryCol = c
+		}
+
+		colmap[c.Key] = c
+		colidmap[c.ID] = c
+	}
+
+	s.t[singular] = ts
 	s.t[plural] = tp
 
 	if al, ok := aliases[t.Key]; ok {
@@ -146,21 +183,42 @@ func (s *DBSchema) addTable(
 		}
 	}
 
-	for i := range cols {
-		c := &cols[i]
+	return nil
+}
 
-		switch {
-		case c.Type == "tsvector":
-			s.t[singular].TSVCol = c
-			s.t[plural].TSVCol = c
-
-		case c.PrimaryKey:
-			s.t[singular].PrimaryCol = c
-			s.t[plural].PrimaryCol = c
+func (s *DBSchema) addMultiRefs(ti *DBTableInfo) error {
+	// if multiple columns have foreign keys that point
+	// to the same table then we need to be smart
+	// create a new entry (table) with it's name derived from
+	for _, c := range ti.Columns {
+		if c.FKeyTable == "" {
+			continue
 		}
 
-		colmap[c.Key] = c
-		colidmap[c.ID] = c
+		if v, ok := ti.fkMultiRef[c.FKeyTable]; !ok || v == 1 {
+			continue
+		}
+
+		var ts, tp *DBTableInfo
+		var ok bool
+
+		singular := flect.Singularize(c.FKeyTable)
+		plural := flect.Pluralize(c.FKeyTable)
+
+		if ts, ok = s.t[singular]; !ok {
+			return fmt.Errorf("tableinfo missing: %s", singular)
+		}
+
+		if tp, ok = s.t[plural]; !ok {
+			return fmt.Errorf("tableinfo missing: %s", plural)
+		}
+
+		name := getRelName(c.Name)
+		k1 := flect.Singularize(name)
+		s.t[k1] = ts
+
+		k2 := flect.Pluralize(name)
+		s.t[k2] = tp
 	}
 
 	return nil
@@ -186,7 +244,7 @@ func (s *DBSchema) virtualRels(vts []VirtualTable) error {
 				Type: "virtual",
 			}
 
-			if err := s.addTable(nt, nil, nil); err != nil {
+			if err := s.addTableInfo(nt, nil, nil); err != nil {
 				return err
 			}
 
@@ -236,6 +294,13 @@ func (s *DBSchema) firstDegreeRels(t DBTable, cols []DBColumn) error {
 			return fmt.Errorf("invalid foreign key table '%s'", ft)
 		}
 
+		childName := ct
+		parentName := ft
+
+		if v, ok := cti.fkMultiRef[ft]; ok && v > 1 {
+			parentName = getRelName(c.Name)
+		}
+
 		// This is an embedded relationship like when a json/jsonb column
 		// is exposed as a table
 		if c.Name == c.FKeyTable && len(c.FKeyColID) == 0 {
@@ -248,7 +313,7 @@ func (s *DBSchema) firstDegreeRels(t DBTable, cols []DBColumn) error {
 			rel.Right.Table = ti.Name
 			rel.Right.Col = c.Name
 
-			if err := s.SetRel(ft, ct, rel); err != nil {
+			if err := s.SetRel(parentName, ct, rel); err != nil {
 				return err
 			}
 			continue
@@ -287,7 +352,7 @@ func (s *DBSchema) firstDegreeRels(t DBTable, cols []DBColumn) error {
 		rel1.Right.Col = fc.Name
 		rel1.Right.Array = fc.Array
 
-		if err := s.SetRel(ct, ft, rel1); err != nil {
+		if err := s.SetRel(childName, parentName, rel1); err != nil {
 			return err
 		}
 
@@ -309,7 +374,7 @@ func (s *DBSchema) firstDegreeRels(t DBTable, cols []DBColumn) error {
 		rel2.Right.Col = c.Name
 		rel2.Right.Array = c.Array
 
-		if err := s.SetRel(ft, ct, rel2); err != nil {
+		if err := s.SetRel(parentName, childName, rel2); err != nil {
 			return err
 		}
 	}
@@ -341,7 +406,7 @@ func (s *DBSchema) secondDegreeRels(t DBTable, cols []DBColumn) error {
 		}
 
 		// This is an embedded relationship like when a json/jsonb column
-		// is exposed as a table
+		// is exposed as a table so skip
 		if c.Name == c.FKeyTable && len(c.FKeyColID) == 0 {
 			continue
 		}
@@ -390,6 +455,17 @@ func (s *DBSchema) updateSchemaOTMT(
 	t1 := strings.ToLower(col1.FKeyTable)
 	t2 := strings.ToLower(col2.FKeyTable)
 
+	if t1 == t2 {
+		return nil
+	}
+
+	childName := getRelName(col1.Name)
+	parentName := t2
+
+	if v, ok := ti.fkMultiRef[t2]; ok && v > 1 {
+		parentName = getRelName(col2.Name)
+	}
+
 	fc1, ok := s.t[t1].ColIDMap[col1.FKeyColID[0]]
 	if !ok {
 		return fmt.Errorf("invalid foreign key column id '%d' for table '%s'",
@@ -416,7 +492,7 @@ func (s *DBSchema) updateSchemaOTMT(
 	rel1.Right.Table = t2
 	rel1.Right.Col = fc2.Name
 
-	if err := s.SetRel(t1, t2, rel1); err != nil {
+	if err := s.SetRel(childName, parentName, rel1); err != nil {
 		return err
 	}
 
@@ -435,7 +511,7 @@ func (s *DBSchema) updateSchemaOTMT(
 	rel2.Right.Table = t1
 	rel2.Right.Col = fc1.Name
 
-	if err := s.SetRel(t2, t1, rel2); err != nil {
+	if err := s.SetRel(parentName, childName, rel2); err != nil {
 		return err
 	}
 
@@ -450,10 +526,10 @@ func (s *DBSchema) GetTableNames() []string {
 	return names
 }
 
-func (s *DBSchema) GetTable(table string) (*DBTableInfo, error) {
-	t, ok := s.t[table]
+func (s *DBSchema) GetTableInfo(selName string) (*DBTableInfo, error) {
+	t, ok := s.t[selName]
 	if !ok {
-		return nil, fmt.Errorf("unknown table '%s'", table)
+		return nil, fmt.Errorf("table not found for selector: %s", selName)
 	}
 	return t, nil
 }
@@ -494,11 +570,11 @@ func (s *DBSchema) GetRel(child, parent string) (*DBRel, error) {
 	if !ok {
 		// No relationship found so this time fetch the table info
 		// and try again in case child or parent was an alias
-		ct, err := s.GetTable(child)
+		ct, err := s.GetTableInfo(child)
 		if err != nil {
 			return nil, err
 		}
-		pt, err := s.GetTable(parent)
+		pt, err := s.GetTableInfo(parent)
 		if err != nil {
 			return nil, err
 		}
@@ -517,4 +593,18 @@ func (s *DBSchema) GetFunctions() []*DBFunction {
 		funcs = append(funcs, f)
 	}
 	return funcs
+}
+
+func getRelName(colName string) string {
+	cn := strings.ToLower(colName)
+
+	if strings.HasSuffix(cn, "_id") {
+		return colName[:len(colName)-3]
+	}
+
+	if strings.HasSuffix(cn, "_ids") {
+		return colName[:len(colName)-4]
+	}
+
+	return colName
 }

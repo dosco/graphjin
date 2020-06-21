@@ -167,17 +167,3 @@ func (sg *SuperGraph) renderUserQuery(md psql.Metadata, stmts []stmt) (string, e
 
 	return w.String(), nil
 }
-
-// func (sg *SuperGraph) hasTablesWithConfig(qc *qcode.QCode, role *Role) bool {
-// 	for _, id := range qc.Roots {
-// 		t, err := sg.schema.GetTable(qc.Selects[id].Name)
-// 		if err != nil {
-// 			return false
-// 		}
-
-// 		if r := role.GetTable(t.Name); r == nil {
-// 			return false
-// 		}
-// 	}
-// 	return true
-// }
