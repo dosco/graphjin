@@ -61,7 +61,7 @@ func (co *Compiler) AddRelationship(child, parent string, rel *DBRel) error {
 }
 
 func (co *Compiler) IDColumn(table string) (*DBColumn, error) {
-	ti, err := co.schema.GetTable(table)
+	ti, err := co.schema.GetTableInfo(table)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +156,7 @@ func (co *Compiler) compileQueryWithMetadata(
 		if id < closeBlock {
 			sel := &c.s[id]
 
-			ti, err := c.schema.GetTable(sel.Name)
+			ti, err := c.schema.GetTableInfo(sel.Name)
 			if err != nil {
 				return c.md, err
 			}
@@ -179,7 +179,7 @@ func (co *Compiler) compileQueryWithMetadata(
 				plural := !ti.IsSingular
 
 				if sel.Type == qcode.STMember {
-					if pti, err := c.schema.GetTable(c.s[sel.ParentID].Name); err != nil {
+					if pti, err := c.schema.GetTableInfo(c.s[sel.ParentID].Name); err != nil {
 						return c.md, err
 					} else {
 						plural = !pti.IsSingular
@@ -212,7 +212,7 @@ func (co *Compiler) compileQueryWithMetadata(
 			sel := &c.s[(id - closeBlock)]
 
 			if sel.Type != qcode.STUnion {
-				ti, err := c.schema.GetTable(sel.Name)
+				ti, err := c.schema.GetTableInfo(sel.Name)
 				if err != nil {
 					return c.md, err
 				}
@@ -226,7 +226,7 @@ func (co *Compiler) compileQueryWithMetadata(
 				plural := !ti.IsSingular
 
 				if sel.Type == qcode.STMember {
-					if pti, err := c.schema.GetTable(c.s[sel.ParentID].Name); err != nil {
+					if pti, err := c.schema.GetTableInfo(c.s[sel.ParentID].Name); err != nil {
 						return c.md, err
 					} else {
 						plural = !pti.IsSingular
@@ -486,7 +486,7 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo, vars 
 
 		} else {
 			pn := c.s[sel.ParentID].Name
-			rel, err = c.schema.GetRel(ti.Name, pn)
+			rel, err = c.schema.GetRel(sel.Name, pn)
 		}
 	}
 
@@ -585,7 +585,7 @@ func (c *compilerContext) renderJoinByName(table, parent string, id int32) error
 		return nil
 	}
 
-	// pt, err := c.schema.GetTable(parent)
+	// pt, err := c.schema.GetTableInfo(parent)
 	// if err != nil {
 	// 	return err
 	// }
@@ -718,7 +718,7 @@ func (c *compilerContext) renderUnionColumn(parent, sel *qcode.Select, ti *DBTab
 	io.WriteString(c.w, `(CASE `)
 	for _, uid := range sel.Children {
 		unionSel := &c.s[uid]
-		uti, err := c.schema.GetTable(unionSel.Name)
+		uti, err := c.schema.GetTableInfo(unionSel.Name)
 		if err != nil {
 			return err
 		}
@@ -964,7 +964,7 @@ func (c *compilerContext) renderRelationship(sel *qcode.Select, rel *DBRel) erro
 		colWithTableID(c.w, rel.Left.Table, pid, rel.Left.Col)
 
 	case RelPolymorphic:
-		ti, err := c.schema.GetTable(sel.Name)
+		ti, err := c.schema.GetTableInfo(sel.Name)
 		if err != nil {
 			return err
 		}
@@ -1067,7 +1067,7 @@ func (c *compilerContext) renderExp(ex *qcode.Exp, ti *DBTableInfo, skipNested b
 
 func (c *compilerContext) renderNestedWhere(ex *qcode.Exp, ti *DBTableInfo) error {
 	for i := 0; i < len(ex.NestedCols)-1; i++ {
-		cti, err := c.schema.GetTable(ex.NestedCols[i])
+		cti, err := c.schema.GetTableInfo(ex.NestedCols[i])
 		if err != nil {
 			return err
 		}

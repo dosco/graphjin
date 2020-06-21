@@ -65,7 +65,7 @@ func (sg *SuperGraph) initGraphQLEgine() error {
 	funcs := dbSchema.GetFunctions()
 
 	for _, table := range tableNames {
-		ti, err := dbSchema.GetTable(table)
+		ti, err := dbSchema.GetTableInfo(table)
 		if err != nil {
 			return err
 		}

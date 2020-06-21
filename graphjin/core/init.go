@@ -159,8 +159,8 @@ func addJsonTable(di *psql.DBInfo, cols []Column, t Table) error {
 		})
 	}
 
-	di.AddTable(table, columns)
 	bc.FKeyTable = t.Name
+	di.AddTable(table, columns)
 
 	return nil
 }
