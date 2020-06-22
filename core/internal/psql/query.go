@@ -422,8 +422,16 @@ func (c *compilerContext) addSeekPredicate(sel *qcode.Select) error {
 	obLen := len(sel.OrderBy)
 
 	if obLen > 1 {
+		isnull := qcode.NewFilter()
+		isnull.Op = qcode.OpIsNull
+		isnull.Type = qcode.ValRef
+		isnull.Table = "__cur"
+		isnull.Col = sel.OrderBy[0].Col
+		isnull.Val = "true"
+
 		or = qcode.NewFilter()
 		or.Op = qcode.OpOr
+		or.Children = append(or.Children, isnull)
 	}
 
 	for i := 0; i < obLen; i++ {
@@ -744,7 +752,7 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo, r
 	hasOrder := len(sel.OrderBy) != 0
 
 	if sel.Paging.Cursor {
-		c.renderCursorCTE(sel)
+		c.renderCursorCTE(sel, ti)
 	}
 
 	io.WriteString(c.w, `SELECT `)
@@ -874,7 +882,7 @@ func (c *compilerContext) renderFrom(sel *qcode.Select, ti *DBTableInfo, rel *DB
 	return nil
 }
 
-func (c *compilerContext) renderCursorCTE(sel *qcode.Select) error {
+func (c *compilerContext) renderCursorCTE(sel *qcode.Select, ti *DBTableInfo) error {
 	io.WriteString(c.w, `WITH "__cur" AS (SELECT `)
 	for i, ob := range sel.OrderBy {
 		if i != 0 {
@@ -882,11 +890,13 @@ func (c *compilerContext) renderCursorCTE(sel *qcode.Select) error {
 		}
 		io.WriteString(c.w, `a[`)
 		int32String(c.w, int32(i+1))
-		io.WriteString(c.w, `] as `)
+		io.WriteString(c.w, `] :: `)
+		io.WriteString(c.w, ti.ColMap[ob.Col].Type)
+		io.WriteString(c.w, ` as `)
 		quoted(c.w, ob.Col)
 	}
 	io.WriteString(c.w, ` FROM string_to_array(`)
-	c.md.renderValueExp(c.w, Param{Name: "cursor", Type: "json"})
+	c.md.renderValueExp(c.w, Param{Name: "cursor", Type: "string"})
 	io.WriteString(c.w, `, ',') as a) `)
 	return nil
 }
@@ -1120,7 +1130,11 @@ func (c *compilerContext) renderOp(ex *qcode.Exp, ti *DBTableInfo) error {
 		}
 
 		io.WriteString(c.w, `((`)
-		colWithTable(c.w, ti.Name, ex.Col)
+		if ex.Type == qcode.ValRef && ex.Op == qcode.OpIsNull {
+			colWithTable(c.w, ex.Table, ex.Col)
+		} else {
+			colWithTable(c.w, ti.Name, ex.Col)
+		}
 		io.WriteString(c.w, `) `)
 	}
 
