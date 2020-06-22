@@ -57,7 +57,7 @@ func (c *scontext) argList(md psql.Metadata) ([]interface{}, error) {
 				}
 				vars[i] = v1
 			} else {
-				return nil, argErr(p)
+				vars[i] = nil
 			}
 
 		default:
