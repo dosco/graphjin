@@ -59,14 +59,13 @@ func (sg *SuperGraph) buildRoleStmt(query, vars []byte, role string) ([]stmt, er
 		return nil, err
 	}
 
-	stmts := []stmt{stmt{role: ro, qc: qc}}
+	stmts := []stmt{{role: ro, qc: qc}}
 	w := &bytes.Buffer{}
 
 	stmts[0].md, err = sg.pc.Compile(w, qc, psql.Variables(vm))
 	if err != nil {
 		return nil, err
 	}
-
 	stmts[0].sql = w.String()
 
 	return stmts, nil

@@ -22,7 +22,7 @@ func (c *compilerContext) renderUpdate(
 	}
 
 	io.WriteString(c.w, `WITH "_sg_input" AS (SELECT `)
-	c.md.renderValueExp(c.w, Param{Name: qc.ActionVar, Type: "json"})
+	c.md.renderParam(c.w, Param{Name: qc.ActionVar, Type: "json"})
 	// io.WriteString(c.w, qc.ActionVar)
 	io.WriteString(c.w, ` :: json AS j)`)
 

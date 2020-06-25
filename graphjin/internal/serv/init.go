@@ -108,6 +108,8 @@ func initConf() (*Config, error) {
 
 	if c.Production {
 		c.UseAllowList = true
+	} else {
+		c.Debug = true
 	}
 
 	return c, nil

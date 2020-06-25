@@ -119,7 +119,7 @@ func (c *compilerContext) renderColumnSearchRank(sel *qcode.Select, ti *DBTableI
 	} else {
 		_, _ = io.WriteString(c.w, `, to_tsquery(`)
 	}
-	c.md.renderValueExp(c.w, Param{Name: arg.Val, Type: "string"})
+	c.md.renderParam(c.w, Param{Name: arg.Val, Type: "string"})
 	_, _ = io.WriteString(c.w, `))`)
 	alias(c.w, col.Name)
 
@@ -144,7 +144,7 @@ func (c *compilerContext) renderColumnSearchHeadline(sel *qcode.Select, ti *DBTa
 	} else {
 		_, _ = io.WriteString(c.w, `, to_tsquery(`)
 	}
-	c.md.renderValueExp(c.w, Param{Name: arg.Val, Type: "string"})
+	c.md.renderParam(c.w, Param{Name: arg.Val, Type: "string"})
 	_, _ = io.WriteString(c.w, `))`)
 	alias(c.w, col.Name)
 
