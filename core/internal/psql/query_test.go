@@ -318,7 +318,7 @@ func withFragment1(t *testing.T) {
 		users {
 			...userFields2
 	
-			created_at
+			avatar
 			...userFields1
 		}
 	}
@@ -327,7 +327,7 @@ func withFragment1(t *testing.T) {
 		full_name
 	}`
 
-	compileGQLToPSQL(t, gql, nil, "anon")
+	compileGQLToPSQL(t, gql, nil, "user")
 }
 
 func withFragment2(t *testing.T) {
@@ -336,7 +336,7 @@ func withFragment2(t *testing.T) {
 		users {
 			...userFields2
 	
-			created_at
+			avatar
 			...userFields1
 		}
 	}
@@ -350,7 +350,7 @@ func withFragment2(t *testing.T) {
 		full_name
 	}`
 
-	compileGQLToPSQL(t, gql, nil, "anon")
+	compileGQLToPSQL(t, gql, nil, "user")
 }
 
 func withFragment3(t *testing.T) {
@@ -369,7 +369,32 @@ func withFragment3(t *testing.T) {
 		users {
 			...userFields2
 	
-			created_at
+			avatar
+			...userFields1
+		}
+	}
+`
+
+	compileGQLToPSQL(t, gql, nil, "user")
+}
+
+func withFragment4(t *testing.T) {
+	gql := `
+
+	fragment userFields1 on user {
+		id
+		email
+	}
+	
+	fragment userFields2 on user {
+		full_name
+	}
+
+	query {
+		users {
+			...userFields2
+	
+			avatar
 			...userFields1
 		}
 	}
@@ -494,6 +519,7 @@ func TestCompileQuery(t *testing.T) {
 	t.Run("withFragment1", withFragment1)
 	t.Run("withFragment2", withFragment2)
 	t.Run("withFragment3", withFragment3)
+	t.Run("withFragment3", withFragment4)
 	//t.Run("withInlineFragment", withInlineFragment)
 	t.Run("jsonColumnAsTable", jsonColumnAsTable)
 	t.Run("withCursor", withCursor)

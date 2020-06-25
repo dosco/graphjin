@@ -11,9 +11,10 @@ import (
 	"github.com/gobuffalo/flect"
 )
 
-type QType int
-type SType int
-type Action int
+type QType int8
+type SType int8
+type Action int8
+type SkipType int8
 
 const (
 	maxSelectors = 30
@@ -33,6 +34,14 @@ const (
 	STNone SType = iota
 	STUnion
 	STMember
+)
+
+const (
+	SkipTypeNone SkipType = iota
+	SkipTypeUserNeeded
+	SkipTypeTableNotFound
+	SkipTypeBlocked
+	SkipTypeRemote
 )
 
 type QCode struct {
@@ -61,7 +70,7 @@ type Select struct {
 	Allowed    map[string]struct{}
 	PresetMap  map[string]string
 	PresetList []string
-	SkipRender bool
+	SkipRender SkipType
 }
 
 type Column struct {
@@ -344,13 +353,13 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 		}
 
 		trv := com.getRole(role, field.Name)
-		skipRender := false
+		skipRender := SkipTypeNone
 
 		if trv != nil {
 			switch action {
 			case QTQuery:
 				if trv.query.block {
-					skipRender = true
+					skipRender = SkipTypeBlocked
 				}
 
 			case QTInsert:
@@ -370,7 +379,7 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 			}
 
 		} else if role == "anon" {
-			skipRender = com.defBlock
+			skipRender = SkipTypeTableNotFound
 		}
 
 		selects = append(selects, Select{
@@ -403,7 +412,7 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 			}
 		}
 
-		if skipRender {
+		if skipRender != SkipTypeNone {
 			id++
 			continue
 		}
@@ -497,7 +506,7 @@ func (com *Compiler) AddFilters(qc *QCode, sel *Select, role string) {
 	}
 
 	if nu && role == "anon" {
-		sel.SkipRender = true
+		sel.SkipRender = SkipTypeUserNeeded
 	}
 
 	switch fil.Op {
@@ -716,7 +725,7 @@ func (com *Compiler) compileArgWhere(sel *Select, arg *Arg, role string) error {
 	}
 
 	if nu && role == "anon" {
-		sel.SkipRender = true
+		sel.SkipRender = SkipTypeUserNeeded
 	}
 	AddFilter(sel, ex)
 

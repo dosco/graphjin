@@ -22,20 +22,20 @@ func (md *Metadata) RenderVar(w io.Writer, vv string) {
 			v != '_' &&
 			f != -1 &&
 			(i-f) > 1:
-			md.renderValueExp(w, Param{Name: vv[f+1 : i]})
+			md.renderParam(w, Param{Name: vv[f+1 : i]})
 			s = i
 			f = -1
 		}
 	}
 
 	if f != -1 && (len(vv)-f) > 1 {
-		md.renderValueExp(w, Param{Name: vv[f+1:]})
+		md.renderParam(w, Param{Name: vv[f+1:]})
 	} else {
 		_, _ = io.WriteString(w, vv[s:])
 	}
 }
 
-func (md *Metadata) renderValueExp(w io.Writer, p Param) {
+func (md *Metadata) renderParam(w io.Writer, p Param) {
 	_, _ = io.WriteString(w, `$`)
 	if v, ok := md.pindex[p.Name]; ok {
 		int32String(w, int32(v))
@@ -52,8 +52,12 @@ func (md *Metadata) renderValueExp(w io.Writer, p Param) {
 	}
 }
 
-func (md Metadata) Skipped() uint32 {
-	return md.skipped
+func (md Metadata) HasRemotes() bool {
+	return md.remoteCount != 0
+}
+
+func (md Metadata) Remotes() int {
+	return md.remoteCount
 }
 
 func (md Metadata) Params() []Param {

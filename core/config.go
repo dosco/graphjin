@@ -66,6 +66,9 @@ type Config struct {
 
 	// Database schema name. Defaults to 'public'
 	DBSchema string `mapstructure:"db_schema"`
+
+	// Log warnings and other debug information
+	Debug bool
 }
 
 // Table struct defines a database table

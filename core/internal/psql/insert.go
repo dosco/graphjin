@@ -25,7 +25,7 @@ func (c *compilerContext) renderInsert(
 	if insert[0] == '[' {
 		io.WriteString(c.w, `json_array_elements(`)
 	}
-	c.md.renderValueExp(c.w, Param{Name: qc.ActionVar, Type: "json"})
+	c.md.renderParam(c.w, Param{Name: qc.ActionVar, Type: "json"})
 	io.WriteString(c.w, ` :: json`)
 	if insert[0] == '[' {
 		io.WriteString(c.w, `)`)

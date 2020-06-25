@@ -125,7 +125,11 @@ func (c *scontext) execQuery() ([]byte, error) {
 		return nil, err
 	}
 
-	if len(data) == 0 || st.md.Skipped() == 0 {
+	if c.sg.conf.Debug {
+		c.debugLog(st)
+	}
+
+	if len(data) == 0 || !st.md.HasRemotes() {
 		return data, nil
 	}
 
@@ -423,6 +427,18 @@ func (r *Result) SQL() string {
 // 	c.res.Extensions.Tracing.Execution.Resolvers =
 // 		append(c.res.Extensions.Tracing.Execution.Resolvers, tr)
 // }
+
+func (c *scontext) debugLog(st *stmt) {
+	for _, sel := range st.qc.Selects {
+		switch sel.SkipRender {
+		case qcode.SkipTypeUserNeeded:
+			c.sg.log.Printf("INF table '%s' skipped as it requires $user_id", sel.Name)
+
+		case qcode.SkipTypeTableNotFound:
+			c.sg.log.Printf("INF table '%s' skipped its not added to the 'anon' role config", sel.Name)
+		}
+	}
+}
 
 func findStmt(role string, stmts []stmt) *stmt {
 	for i := range stmts {

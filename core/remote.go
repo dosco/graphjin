@@ -22,7 +22,7 @@ func (sg *SuperGraph) execRemoteJoin(st *stmt, data []byte, hdr http.Header) ([]
 	// fetch the field name used within the db response json
 	// that are used to mark insertion points and the mapping between
 	// those field names and their select objects
-	fids, sfmap := sg.parentFieldIds(&h, sel, st.md.Skipped())
+	fids, sfmap := sg.parentFieldIds(&h, sel, st.md.Remotes())
 
 	// fetch the field values of the marked insertion points
 	// these values contain the id to be used with fetching remote data
@@ -195,31 +195,22 @@ func (sg *SuperGraph) resolveRemotes(
 	return to, cerr
 }
 
-func (sg *SuperGraph) parentFieldIds(h *maphash.Hash, sel []qcode.Select, skipped uint32) (
+func (sg *SuperGraph) parentFieldIds(h *maphash.Hash, sel []qcode.Select, remotes int) (
 	[][]byte,
 	map[uint64]*qcode.Select) {
 
-	c := 0
-	for i := range sel {
-		s := &sel[i]
-		if isSkipped(skipped, uint32(s.ID)) {
-			c++
-		}
-	}
-
 	// list of keys (and it's related value) to extract from
 	// the db json response
-	fm := make([][]byte, c)
+	fm := make([][]byte, 0, remotes)
 
 	// mapping between the above extracted key and a Select
 	// object
-	sm := make(map[uint64]*qcode.Select, c)
-	n := 0
+	sm := make(map[uint64]*qcode.Select, remotes)
 
 	for i := range sel {
 		s := &sel[i]
 
-		if !isSkipped(skipped, uint32(s.ID)) {
+		if s.SkipRender != qcode.SkipTypeRemote {
 			continue
 		}
 
@@ -227,8 +218,7 @@ func (sg *SuperGraph) parentFieldIds(h *maphash.Hash, sel []qcode.Select, skippe
 		k := mkkey(h, s.Name, p.Name)
 
 		if r, ok := sg.rmap[k]; ok {
-			fm[n] = r.IDField
-			n++
+			fm = append(fm, r.IDField)
 
 			_, _ = h.Write(r.IDField)
 			sm[h.Sum64()] = s

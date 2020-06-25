@@ -25,9 +25,9 @@ type Param struct {
 }
 
 type Metadata struct {
-	skipped uint32
-	params  []Param
-	pindex  map[string]int
+	remoteCount int
+	params      []Param
+	pindex      map[string]int
 }
 
 type compilerContext struct {
@@ -81,11 +81,10 @@ func (co *Compiler) CompileEx(qc *qcode.QCode, vars Variables) (Metadata, []byte
 
 func (co *Compiler) Compile(w io.Writer, qc *qcode.QCode, vars Variables) (Metadata, error) {
 	return co.CompileWithMetadata(w, qc, vars, Metadata{})
+
 }
 
 func (co *Compiler) CompileWithMetadata(w io.Writer, qc *qcode.QCode, vars Variables, md Metadata) (Metadata, error) {
-	md.skipped = 0
-
 	if qc == nil {
 		return md, fmt.Errorf("qcode is nil")
 	}
@@ -107,13 +106,13 @@ func (co *Compiler) CompileWithMetadata(w io.Writer, qc *qcode.QCode, vars Varia
 }
 
 func (co *Compiler) compileQueryWithMetadata(
-	w io.Writer, qc *qcode.QCode, vars Variables, md Metadata) (Metadata, error) {
+	w io.Writer, qc *qcode.QCode, vars Variables, metad Metadata) (Metadata, error) {
 
 	if len(qc.Selects) == 0 {
-		return md, errors.New("empty query")
+		return metad, errors.New("empty query")
 	}
 
-	c := &compilerContext{md, w, qc.Selects, co}
+	c := &compilerContext{metad, w, qc.Selects, co}
 	st := NewIntStack()
 	i := 0
 
@@ -125,7 +124,11 @@ func (co *Compiler) compileQueryWithMetadata(
 
 		root := &qc.Selects[id]
 
-		if root.SkipRender || (len(root.Cols) == 0 && len(root.Children) == 0) {
+		if root.SkipRender == qcode.SkipTypeRemote {
+			c.md.remoteCount++
+		}
+
+		if root.SkipRender != qcode.SkipTypeNone || (len(root.Cols) == 0 && len(root.Children) == 0) {
 			squoted(c.w, root.FieldName)
 			io.WriteString(c.w, `, `)
 			io.WriteString(c.w, `NULL`)
@@ -196,14 +199,16 @@ func (co *Compiler) compileQueryWithMetadata(
 			}
 
 			for _, cid := range sel.Children {
-				if hasBit(c.md.skipped, uint32(cid)) {
-					continue
-				}
 				child := &c.s[cid]
 
-				if child.SkipRender {
+				if child.SkipRender == qcode.SkipTypeRemote {
+					c.md.remoteCount++
+					continue
+
+				} else if child.SkipRender != qcode.SkipTypeNone {
 					continue
 				}
+
 				st.Push(child.ID + closeBlock)
 				st.Push(child.ID)
 			}
@@ -386,7 +391,7 @@ func (c *compilerContext) initSelect(sel *qcode.Select, ti *DBTableInfo, vars Va
 			if _, ok := colmap[rel.Left.Col]; !ok {
 				cols = append(cols, &qcode.Column{Table: ti.Name, Name: rel.Left.Col, FieldName: rel.Right.Col})
 				colmap[rel.Left.Col] = struct{}{}
-				c.md.skipped |= (1 << uint(id))
+				child.SkipRender = qcode.SkipTypeRemote
 			}
 
 		case RelPolymorphic:
@@ -506,12 +511,6 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo, vars 
 	if err != nil {
 		return err
 	}
-
-	// SELECT
-	// io.WriteString(c.w, `SELECT jsonb_build_object(`)
-	// if err := c.renderColumns(sel, ti, skipped); err != nil {
-	// 	return 0, err
-	// }
 
 	io.WriteString(c.w, `SELECT to_jsonb("__sr_`)
 	int32String(c.w, sel.ID)
@@ -677,16 +676,16 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, ti *DBTableInfo, 
 	i := colsRendered
 
 	for _, id := range sel.Children {
-		if hasBit(c.md.skipped, uint32(id)) {
+		childSel := &c.s[id]
+		if childSel.SkipRender == qcode.SkipTypeRemote {
 			continue
 		}
-		childSel := &c.s[id]
 
 		if i != 0 {
 			io.WriteString(c.w, ", ")
 		}
-
-		if childSel.SkipRender {
+		// TODO: log what and why this is being skipped
+		if childSel.SkipRender != qcode.SkipTypeNone {
 			io.WriteString(c.w, `NULL`)
 			alias(c.w, childSel.FieldName)
 			continue
@@ -818,7 +817,6 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select, ti *DBTableInfo, r
 		io.WriteString(c.w, ` LIMIT ('1') :: integer`)
 
 	case sel.Paging.Limit != "":
-		//fmt.Fprintf(w, ` LIMIT ('%s') :: integer`, c.sel.Paging.Limit)
 		io.WriteString(c.w, ` LIMIT ('`)
 		io.WriteString(c.w, sel.Paging.Limit)
 		io.WriteString(c.w, `') :: integer`)
@@ -890,13 +888,17 @@ func (c *compilerContext) renderCursorCTE(sel *qcode.Select, ti *DBTableInfo) er
 		}
 		io.WriteString(c.w, `a[`)
 		int32String(c.w, int32(i+1))
-		io.WriteString(c.w, `] :: `)
-		io.WriteString(c.w, ti.ColMap[ob.Col].Type)
+		if v, ok := ti.ColMap[ob.Col]; ok && v != nil {
+			io.WriteString(c.w, `] :: `)
+			io.WriteString(c.w, v.Type)
+		} else {
+			io.WriteString(c.w, `] `)
+		}
 		io.WriteString(c.w, ` as `)
 		quoted(c.w, ob.Col)
 	}
 	io.WriteString(c.w, ` FROM string_to_array(`)
-	c.md.renderValueExp(c.w, Param{Name: "cursor", Type: "string"})
+	c.md.renderParam(c.w, Param{Name: "cursor", Type: "string"})
 	io.WriteString(c.w, `, ',') as a) `)
 	return nil
 }
@@ -1212,7 +1214,7 @@ func (c *compilerContext) renderOp(ex *qcode.Exp, ti *DBTableInfo) error {
 		} else {
 			io.WriteString(c.w, `) @@ to_tsquery(`)
 		}
-		c.md.renderValueExp(c.w, Param{Name: ex.Val, Type: "string"})
+		c.md.renderParam(c.w, Param{Name: ex.Val, Type: "string"})
 		io.WriteString(c.w, `))`)
 
 		return nil
@@ -1309,7 +1311,7 @@ func (c *compilerContext) renderVal(ex *qcode.Exp, vars map[string]string, col *
 
 		case ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn:
 			io.WriteString(c.w, `(ARRAY(SELECT json_array_elements_text(`)
-			c.md.renderValueExp(c.w, Param{Name: ex.Val, Type: col.Type, IsArray: true})
+			c.md.renderParam(c.w, Param{Name: ex.Val, Type: col.Type, IsArray: true})
 			io.WriteString(c.w, `))`)
 
 			io.WriteString(c.w, ` :: `)
@@ -1318,7 +1320,7 @@ func (c *compilerContext) renderVal(ex *qcode.Exp, vars map[string]string, col *
 			return
 
 		default:
-			c.md.renderValueExp(c.w, Param{Name: ex.Val, Type: col.Type, IsArray: false})
+			c.md.renderParam(c.w, Param{Name: ex.Val, Type: col.Type, IsArray: false})
 		}
 
 	case qcode.ValRef:
@@ -1421,4 +1423,8 @@ func squoted(w io.Writer, identifier string) {
 
 func int32String(w io.Writer, val int32) {
 	io.WriteString(w, strconv.FormatInt(int64(val), 10))
+}
+
+func isDigit(b byte) bool {
+	return b >= '0' && b <= '9'
 }
