@@ -176,6 +176,12 @@ tables:
       - name: email
         related_to: products.name
 
+  - name: subject
+    type: polymorphic
+    columns:
+      - name: subject_id
+        related_to: subject_type.id
+
 #roles_query: "SELECT * FROM users WHERE id = $user_id"
 
 roles:

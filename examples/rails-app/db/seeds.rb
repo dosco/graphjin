@@ -8,10 +8,11 @@
 
 pwd = "123456"
 
-user_count = 10
+user_count = 3
 customer_count = 100
 product_count = 50
 purchase_count = 100
+notifications_count = 100
 
 3.times do |i|
   user = User.create(
@@ -77,9 +78,9 @@ purchase_count.times do |i|
   sale_type = ["rented", "bought"].sample
 
   if sale_type == "rented"
-    due_date = Faker::Date.forward(30)
+    due_date = Faker::Date.forward(days: 30)
     if [0, 3].sample == 1
-      returned = Faker::Date.forward(60)
+      returned = Faker::Date.forward(days: 60)
     end
   end
 
@@ -93,4 +94,25 @@ purchase_count.times do |i|
   )
   purchase.save!
   puts purchase.inspect
+end
+
+notifications_count.times do |i|
+  key = ["liked", "joined"].sample
+
+  if key == "liked"
+    subject_id = rand(1..product_count)
+    subject_type = "products"
+  elsif key == "joined"
+    subject_id = rand(1..user_count)
+    subject_type = "users"
+  end
+
+  notification = Notification.create(
+    user_id: rand(1..user_count),
+    key: key,
+    subject_id: subject_id,
+    subject_type: subject_type,
+  )
+  puts notification.inspect
+  notification.save!
 end

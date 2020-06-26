@@ -737,7 +737,7 @@ func (c *compilerContext) renderUnionColumn(parent, sel *qcode.Select, ti *DBTab
 		io.WriteString(c.w, ` THEN `)
 		io.WriteString(c.w, `"__sj_`)
 		int32String(c.w, unionSel.ID)
-		io.WriteString(c.w, `"."json"`)
+		io.WriteString(c.w, `"."json" `)
 	}
 	io.WriteString(c.w, `END)`)
 	alias(c.w, sel.FieldName)
@@ -1370,11 +1370,6 @@ func funcPrefixLen(fm map[string]*DBFunction, fn string) int {
 	return 0
 }
 
-func hasBit(n, pos uint32) bool {
-	val := n & (1 << pos)
-	return (val > 0)
-}
-
 func alias(w io.Writer, alias string) {
 	io.WriteString(w, ` AS "`)
 	io.WriteString(w, alias)
@@ -1423,8 +1418,4 @@ func squoted(w io.Writer, identifier string) {
 
 func int32String(w io.Writer, val int32) {
 	io.WriteString(w, strconv.FormatInt(int64(val), 10))
-}
-
-func isDigit(b byte) bool {
-	return b >= '0' && b <= '9'
 }

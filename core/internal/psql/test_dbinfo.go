@@ -12,6 +12,7 @@ func GetTestDBInfo() *DBInfo {
 		DBTable{Name: "purchases", Type: "table"},
 		DBTable{Name: "tags", Type: "table"},
 		DBTable{Name: "tag_count", Type: "json"},
+		DBTable{Name: "notifications", Type: "table"},
 	}
 
 	columns := [][]DBColumn{
@@ -64,6 +65,18 @@ func GetTestDBInfo() *DBInfo {
 		[]DBColumn{
 			DBColumn{ID: 1, Name: "tag_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "tags", FKeyColID: []int16{1}},
 			DBColumn{ID: 2, Name: "count", Type: "int", NotNull: false, PrimaryKey: false, UniqueKey: false}},
+		[]DBColumn{
+			DBColumn{ID: 1, Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			DBColumn{ID: 2, Name: "key", Type: "text", NotNull: false, PrimaryKey: false, UniqueKey: false},
+			DBColumn{ID: 2, Name: "subject_type", Type: "text", NotNull: false, PrimaryKey: false, UniqueKey: false},
+			DBColumn{ID: 2, Name: "subject_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false}},
+	}
+
+	vTables := []VirtualTable{{
+		Name:       "subject",
+		IDColumn:   "subject_id",
+		TypeColumn: "subject_type",
+		FKeyColumn: "id"},
 	}
 
 	for i := range tables {
@@ -78,13 +91,14 @@ func GetTestDBInfo() *DBInfo {
 		Tables:    tables,
 		Columns:   columns,
 		Functions: []DBFunction{},
+		VTables:   vTables,
 		colMap:    newColMap(tables, columns),
 	}
 }
 
 func GetTestSchema() (*DBSchema, error) {
 	aliases := map[string][]string{
-		"users": []string{"mes"},
+		"users": {"mes"},
 	}
 
 	return NewDBSchema(GetTestDBInfo(), aliases)

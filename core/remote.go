@@ -228,10 +228,6 @@ func (sg *SuperGraph) parentFieldIds(h *maphash.Hash, sel []qcode.Select, remote
 	return fm, sm
 }
 
-func isSkipped(n, pos uint32) bool {
-	return ((n & (1 << pos)) != 0)
-}
-
 func colsToList(cols []qcode.Column) []string {
 	var f []string
 

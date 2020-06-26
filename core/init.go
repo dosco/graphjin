@@ -210,13 +210,13 @@ func addForeignKeys(c *Config, di *psql.DBInfo) error {
 }
 
 func addForeignKey(di *psql.DBInfo, c Column, t Table) error {
-	var tn string
+	tn := t.Name
 
-	if t.Type == "polymorphic" {
-		tn = t.Table
-	} else {
-		tn = t.Name
-	}
+	// if t.Type == "polymorphic" {
+	// 	tn = t.Table
+	// } else {
+	// 	tn = t.Name
+	// }
 
 	c1, ok := di.GetColumn(tn, c.Name)
 	if !ok {
