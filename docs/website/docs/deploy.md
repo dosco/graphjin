@@ -1,7 +1,7 @@
 ---
 id: deploy
 title: How to deploy Super Graph
-sidebar_label: Deploy to Prod.
+sidebar_label: Deploy
 ---
 
 Since you're reading this you're probably considering deploying Super Graph. You're in luck it's really easy and there are several ways to choose from. Keep in mind Super Graph can be used as a pre-built docker image or you can easily customize it and build your own docker image.
