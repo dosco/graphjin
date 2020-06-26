@@ -403,6 +403,37 @@ func withFragment4(t *testing.T) {
 	compileGQLToPSQL(t, gql, nil, "anon")
 }
 
+func withPolymorphicUnion(t *testing.T) {
+	gql := `
+
+	fragment userFields on user {
+		id
+		email
+	}
+	
+	fragment productFields on product {
+		id
+		name
+	}
+
+	query {
+		notifications {
+			id
+			subject {
+				...on users {
+					...userFields
+				}
+				...on products {
+					...productFields
+				}
+			}
+		}
+	}
+`
+
+	compileGQLToPSQL(t, gql, nil, "user")
+}
+
 // func withInlineFragment(t *testing.T) {
 // 	gql := `
 // 	query {
@@ -520,6 +551,7 @@ func TestCompileQuery(t *testing.T) {
 	t.Run("withFragment2", withFragment2)
 	t.Run("withFragment3", withFragment3)
 	t.Run("withFragment3", withFragment4)
+	t.Run("withPolymorphicUnion", withPolymorphicUnion)
 	//t.Run("withInlineFragment", withInlineFragment)
 	t.Run("jsonColumnAsTable", jsonColumnAsTable)
 	t.Run("withCursor", withCursor)

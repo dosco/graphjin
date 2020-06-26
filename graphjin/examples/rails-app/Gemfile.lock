@@ -93,7 +93,7 @@ GEM
       coffee-script-source
       execjs
     coffee-script-source (1.12.2)
-    concurrent-ruby (1.1.5)
+    concurrent-ruby (1.1.6)
     crass (1.0.4)
     devise (4.7.1)
       bcrypt (~> 3.0)
@@ -106,11 +106,11 @@ GEM
     ffi (1.11.1)
     globalid (0.4.2)
       activesupport (>= 4.2.0)
-    i18n (1.7.0)
+    i18n (1.7.1)
       concurrent-ruby (~> 1.0)
     io-like (0.3.0)
-    jbuilder (2.9.1)
-      activesupport (>= 4.2.0)
+    jbuilder (2.10.0)
+      activesupport (>= 5.0.0)
     listen (3.1.5)
       rb-fsevent (~> 0.9, >= 0.9.4)
       rb-inotify (~> 0.9, >= 0.9.7)
@@ -126,7 +126,7 @@ GEM
     mimemagic (0.3.3)
     mini_mime (1.0.2)
     mini_portile2 (2.4.0)
-    minitest (5.12.2)
+    minitest (5.14.1)
     msgpack (1.3.1)
     nio4r (2.5.2)
     nokogiri (1.10.4)
@@ -222,7 +222,7 @@ GEM
     turbolinks (5.2.1)
       turbolinks-source (~> 5.2)
     turbolinks-source (5.2.0)
-    tzinfo (1.2.5)
+    tzinfo (1.2.7)
       thread_safe (~> 0.1)
     uglifier (4.2.0)
       execjs (>= 0.3.0, < 3)
@@ -238,7 +238,7 @@ GEM
     websocket-extensions (0.1.4)
     xpath (3.2.0)
       nokogiri (~> 1.8)
-    zeitwerk (2.2.0)
+    zeitwerk (2.3.0)
 
 PLATFORMS
   ruby
