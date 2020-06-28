@@ -58,13 +58,13 @@ docker-compose run api help
 
 ### Config files
 
-All the config files needs to configure Super Graph for your app are contained in this folder for starters you have two `dev.yaml` and `prod.yaml`. When the `GO_ENV` environment variable is set to `development` then `dev.yaml` is used and the prod one when it's set to `production`. Stage and Test are the other two environment options, but you can set the `GO_ENV` to whatever you like (eg. `alpha-test`) and Super Graph will look for a yaml file with that name to load config from.
+All the config files needed to configure Super Graph for your app are contained in this folder; to start you have `dev.yaml` and `prod.yaml`. When the `GO_ENV` environment variable is set to `development` then `dev.yaml` is used and the prod one when it's set to `production`. Stage and Test are the other two environment options, but you can set the `GO_ENV` to whatever you like (eg. `alpha-test`) and Super Graph will look for a yaml file with that name to load config from.
 
 ### Seed.js
 
-Having data flowing through your API makes building your frontend UI so much easier. When crafting say a user profile wouldn't it be nice for the API to return a fake user with name, picture and all. This is why having the ability to seed your database is important. Seeding cn also be used in production to setup some initial users like the admins or to add an initial set of products to a ecommerce store.
+Having data flowing through your API makes building your frontend UI so much easier. When crafting say a user profile wouldn't it be nice for the API to return a fake user with name, picture and all. This is why having the ability to seed your database is important. Seeding can also be used in production to setup some initial users like the admins or to add an initial set of products to a ecommerce store.
 
-Super Graph makes this easy by allowing you to write your seeding script in plan old Javascript. The below file that auto-generated for new apps uses our built-in functions `fake` and `graphql` to generate fake data and use GraphQL mutations to insert it into the database.
+Super Graph makes this easy by allowing you to write your seeding script in plain old Javascript. The below file - auto-generated for new apps - uses our built-in functions `fake` and `graphql` to generate fake data and use GraphQL mutations to insert it into the database.
 
 ```javascript
 // Example script to seed database
@@ -105,7 +105,7 @@ super-graph db:new create_users
 > created migration 'config/migrations/101_create_users.sql'
 ```
 
-Migrations in Super Graph are plain old Postgres SQL. Here's an example for the above migration.
+Migrations in Super Graph are plain old Postgres SQL. Here's an example for the above migration:
 
 ```sql
 -- Write your migrate up statements here
@@ -126,7 +126,7 @@ CREATE TABLE public.users (
 DROP TABLE public.users
 ```
 
-We would encourage you to leverage triggers to maintain consistancy of your data for example here are a couple triggers that you can add to you init migration and across your tables.
+We would encourage you to leverage triggers to maintain consistancy of your data; for example here are a couple triggers that you can add to your init migration and across your tables.
 
 ```sql
 -- This trigger script will set the updated_at column everytime a row is updated
