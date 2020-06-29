@@ -94,7 +94,7 @@ query {
 
 ### Filtering
 
-Super Graph support complex queries where you can add filters, ordering,offsets and limits on the query. For example the below query will list all products where the price is greater than 10 and the id is not 5.
+Super Graph support complex queries where you can add filters, ordering, offsets and limits on the query. For example the below query will list all products where the price is greater than 10 and the id is not 5.
 
 ```graphql
 query {
@@ -234,7 +234,7 @@ $$ LANGUAGE plpgsql;
 
 In GraphQL mutations is the operation type for when you need to modify data. Super Graph supports the `insert`, `update`, `upsert` and `delete`. You can also do complex nested inserts and updates.
 
-When using mutations the data must be passed as variables since Super Graphs compiles the query into an prepared statement in the database for maximum speed. Prepared statements are are functions in your code when called they accept arguments and your variables are passed in as those arguments.
+When using mutations the data must be passed as variables since Super Graphs compiles the query into an prepared statement in the database for maximum speed. Prepared statements are functions in your code that when called accept arguments and your variables are passed in as those arguments.
 
 ### Insert
 
