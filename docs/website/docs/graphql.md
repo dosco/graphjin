@@ -552,7 +552,7 @@ mutation {
 
 This is a must have feature of any API. When you want your users to go through a list page by page or implement some fancy infinite scroll you're going to need pagination. There are two ways to paginate in Super Graph.
 
-Limit-Offset
+#### Limit-Offset
 This is simple enough but also inefficient when working with a large number of total items. Limit, limits the number of items fetched and offset is the point you want to fetch from. The below query will fetch 10 results at a time starting with the 100th item. You will have to keep updating offset (110, 120, 130, etc ) to walk thought the results so make offset a variable.
 
 ```graphql
