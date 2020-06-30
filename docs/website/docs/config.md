@@ -221,6 +221,9 @@ roles:
           limit: 50
           filters: ["{ user_id: { eq: $user_id } }"]
           columns: ["id", "name", "description"]
+          # This is a role table level config that blocks aggregation functions
+          # like `count_id` or custom postgres functions that you can use in your query
+          # (https://supergraph.dev/docs/graphql/#custom-functions)
           disable_functions: false
 
         insert:
