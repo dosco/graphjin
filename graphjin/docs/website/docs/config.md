@@ -4,9 +4,9 @@ title: Configuration
 sidebar_label: Configuration
 ---
 
-Configuration files can either be in YAML or JSON their names are derived from the `GO_ENV` variable, for example `GO_ENV=prod` will cause the `prod.yaml` config file to be used. or `GO_ENV=dev` will use the `dev.yaml`. A path to look for the config files in can be specified using the `-path <folder>` command line argument.
+Configuration files can either be in YAML or JSON; their names are derived from the `GO_ENV` variable, for example `GO_ENV=prod` will cause the `prod.yaml` config file to be used, `GO_ENV=dev` will use the `dev.yaml`. A path to look for the config files can be specified using the `-path <folder>` command line argument.
 
-We're tried to ensure that the config file is self documenting and easy to work with.
+We've tried to ensure that the config file is self-documenting and easy to work with.
 
 ```yaml
 # Inherit config from this other config file
@@ -247,9 +247,9 @@ roles:
         filters: []
 ```
 
-If deploying into environments like Kubernetes it's useful to be able to configure things like secrets and hosts though environment variables therfore we expose the below environment variables. This is escpecially useful for secrets since they are usually injected in via a secrets management framework ie. Kubernetes Secrets
+If deploying into environments like Kubernetes it's useful to be able to configure things like secrets and hosts through environment variables therefore we expose the below environment variables. This is especially useful for secrets since they are usually injected in via a secrets management framework (ie. Kubernetes Secrets).
 
-Keep in mind any value can be overwritten using environment variables for example `auth.jwt.public_key_type` converts to `SG_AUTH_JWT_PUBLIC_KEY_TYPE`. In short prefix `SG_`, upper case and all `.` should changed to `_`.
+Keep in mind any value can be overwritten using environment variables, for example `auth.jwt.public_key_type` converts to `SG_AUTH_JWT_PUBLIC_KEY_TYPE`. In short prefix `SG_`, uppercase and all `.` should changed to `_`.
 
 #### Postgres environment variables
 
