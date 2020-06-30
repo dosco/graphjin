@@ -94,7 +94,7 @@ query {
 
 ### Filtering
 
-Super Graph support complex queries where you can add filters, ordering, offsets and limits on the query. For example the below query will list all products where the price is greater than 10 and the id is not 5.
+Super Graph supports complex queries where you can add filters, ordering, offsets and limits on the query. For example the below query will list all products where the price is greater than 10 and the id is not 5.
 
 ```graphql
 query {
