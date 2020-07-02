@@ -2,11 +2,11 @@ package serv
 
 import (
 	"bytes"
-	"html/template"
 	"io/ioutil"
 	"os"
 	"path"
 	"strings"
+	"text/template"
 
 	rice "github.com/GeertJohan/go.rice"
 	"github.com/spf13/cobra"

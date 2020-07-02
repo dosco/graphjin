@@ -101,8 +101,7 @@ type Auth struct {
 	Type          string
 	Cookie        string
 	CredsInHeader bool `mapstructure:"creds_in_header"`
-
-	Rails struct {
+	Rails         struct {
 		Version       string
 		SecretKeyBase string `mapstructure:"secret_key_base"`
 		URL           string

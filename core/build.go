@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 
 	"github.com/dosco/super-graph/core/internal/psql"
 	"github.com/dosco/super-graph/core/internal/qcode"
@@ -18,28 +17,15 @@ type stmt struct {
 	sql  string
 }
 
-func (sg *SuperGraph) buildStmt(qt qcode.QType, query, vars []byte, role string) ([]stmt, error) {
-	switch qt {
-	case qcode.QTMutation:
-		return sg.buildRoleStmt(query, vars, role)
-
-	case qcode.QTQuery:
-		if role == "anon" {
-			return sg.buildRoleStmt(query, vars, "anon")
-		}
-
-		if sg.abacEnabled {
-			return sg.buildMultiStmt(query, vars)
-		}
-
-		return sg.buildRoleStmt(query, vars, "user")
-
-	default:
-		return nil, fmt.Errorf("unknown query type '%d'", qt)
+func (sg *SuperGraph) buildStmt(qt qcode.QType, query, vars []byte, role string, poll bool) ([]stmt, error) {
+	if qt == qcode.QTQuery && sg.abacEnabled {
+		return sg.buildMultiStmt(query, vars, poll)
 	}
+
+	return sg.buildRoleStmt(query, vars, role, poll)
 }
 
-func (sg *SuperGraph) buildRoleStmt(query, vars []byte, role string) ([]stmt, error) {
+func (sg *SuperGraph) buildRoleStmt(query, vars []byte, role string, poll bool) ([]stmt, error) {
 	ro, ok := sg.roles[role]
 	if !ok {
 		return nil, fmt.Errorf(`roles '%s' not defined in c.sg.config`, role)
@@ -61,8 +47,9 @@ func (sg *SuperGraph) buildRoleStmt(query, vars []byte, role string) ([]stmt, er
 
 	stmts := []stmt{{role: ro, qc: qc}}
 	w := &bytes.Buffer{}
+	md := psql.Metadata{Poll: poll}
 
-	stmts[0].md, err = sg.pc.Compile(w, qc, psql.Variables(vm))
+	stmts[0].md, err = sg.pc.CompileWithMetadata(w, qc, psql.Variables(vm), md)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +58,7 @@ func (sg *SuperGraph) buildRoleStmt(query, vars []byte, role string) ([]stmt, er
 	return stmts, nil
 }
 
-func (sg *SuperGraph) buildMultiStmt(query, vars []byte) ([]stmt, error) {
+func (sg *SuperGraph) buildMultiStmt(query, vars []byte, poll bool) ([]stmt, error) {
 	var vm map[string]json.RawMessage
 	var err error
 
@@ -87,7 +74,7 @@ func (sg *SuperGraph) buildMultiStmt(query, vars []byte) ([]stmt, error) {
 
 	stmts := make([]stmt, 0, len(sg.conf.Roles))
 	w := &bytes.Buffer{}
-	md := psql.Metadata{}
+	md := psql.Metadata{Poll: poll}
 
 	for i := 0; i < len(sg.conf.Roles); i++ {
 		role := &sg.conf.Roles[i]
@@ -129,40 +116,40 @@ func (sg *SuperGraph) buildMultiStmt(query, vars []byte) ([]stmt, error) {
 func (sg *SuperGraph) renderUserQuery(md psql.Metadata, stmts []stmt) (string, error) {
 	w := &bytes.Buffer{}
 
-	io.WriteString(w, `SELECT "_sg_auth_info"."role", (CASE "_sg_auth_info"."role" `)
+	w.WriteString(`SELECT "_sg_auth_info"."role", (CASE "_sg_auth_info"."role" `)
 
 	for _, s := range stmts {
 		if s.role.Match == "" &&
 			s.role.Name != "user" && s.role.Name != "anon" {
 			continue
 		}
-		io.WriteString(w, `WHEN '`)
-		io.WriteString(w, s.role.Name)
-		io.WriteString(w, `' THEN (`)
-		io.WriteString(w, s.sql)
-		io.WriteString(w, `) `)
+		w.WriteString(`WHEN '`)
+		w.WriteString(s.role.Name)
+		w.WriteString(`' THEN (`)
+		w.WriteString(s.sql)
+		w.WriteString(`) `)
 	}
 
-	io.WriteString(w, `END) FROM (SELECT (CASE WHEN EXISTS (`)
+	w.WriteString(`END) FROM (SELECT (CASE WHEN EXISTS (`)
 	md.RenderVar(w, sg.conf.RolesQuery)
-	io.WriteString(w, `) THEN `)
+	w.WriteString(`) THEN `)
 
-	io.WriteString(w, `(SELECT (CASE`)
+	w.WriteString(`(SELECT (CASE`)
 	for _, s := range stmts {
 		if s.role.Match == "" {
 			continue
 		}
-		io.WriteString(w, ` WHEN `)
-		io.WriteString(w, s.role.Match)
-		io.WriteString(w, ` THEN '`)
-		io.WriteString(w, s.role.Name)
-		io.WriteString(w, `'`)
+		w.WriteString(` WHEN `)
+		w.WriteString(s.role.Match)
+		w.WriteString(` THEN '`)
+		w.WriteString(s.role.Name)
+		w.WriteString(`'`)
 	}
 
-	io.WriteString(w, ` ELSE 'user' END) FROM (`)
+	w.WriteString(` ELSE 'user' END) FROM (`)
 	md.RenderVar(w, sg.conf.RolesQuery)
-	io.WriteString(w, `) AS "_sg_auth_roles_query" LIMIT 1) `)
-	io.WriteString(w, `ELSE 'anon' END) FROM (VALUES (1)) AS "_sg_auth_filler") AS "_sg_auth_info"(role) LIMIT 1; `)
+	w.WriteString(`) AS "_sg_auth_roles_query" LIMIT 1) `)
+	w.WriteString(`ELSE 'anon' END) FROM (VALUES (1)) AS "_sg_auth_filler") AS "_sg_auth_info"(role) LIMIT 1; `)
 
 	return w.String(), nil
 }

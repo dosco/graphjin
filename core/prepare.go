@@ -33,13 +33,13 @@ func (sg *SuperGraph) prepare(q *query, role string) {
 	switch q.qt {
 	case qcode.QTQuery:
 		if sg.abacEnabled {
-			stmts, err = sg.buildMultiStmt(qb, vars)
+			stmts, err = sg.buildMultiStmt(qb, vars, false)
 		} else {
-			stmts, err = sg.buildRoleStmt(qb, vars, role)
+			stmts, err = sg.buildRoleStmt(qb, vars, role, false)
 		}
 
 	case qcode.QTMutation:
-		stmts, err = sg.buildRoleStmt(qb, vars, role)
+		stmts, err = sg.buildRoleStmt(qb, vars, role, false)
 
 	}
 
@@ -151,7 +151,7 @@ func (sg *SuperGraph) initAllowList() error {
 		sg.conf.AllowListFile = "allow.list"
 	}
 
-	// When list is not eabled it is still created and
+	// When list is not enabled it is still created and
 	// and new queries are saved to it.
 	if !sg.conf.UseAllowList {
 		ac = allow.Config{CreateIfNotExists: true, Persist: true, Log: sg.log}
