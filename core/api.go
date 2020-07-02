@@ -52,6 +52,7 @@ import (
 	"hash/maphash"
 	_log "log"
 	"os"
+	"sync"
 
 	"github.com/chirino/graphql"
 	"github.com/dosco/super-graph/core/internal/allow"
@@ -93,6 +94,7 @@ type SuperGraph struct {
 	qc          *qcode.Compiler
 	pc          *psql.Compiler
 	ge          *graphql.Engine
+	subs        sync.Map
 }
 
 // NewSuperGraph creates the SuperGraph struct, this involves querying the database to learn its

@@ -36,19 +36,28 @@ func (md *Metadata) RenderVar(w io.Writer, vv string) {
 }
 
 func (md *Metadata) renderParam(w io.Writer, p Param) {
-	_, _ = io.WriteString(w, `$`)
-	if v, ok := md.pindex[p.Name]; ok {
-		int32String(w, int32(v))
+	var id int
+	var ok bool
 
-	} else {
+	if !md.Poll {
+		_, _ = io.WriteString(w, `$`)
+	}
+
+	if id, ok = md.pindex[p.Name]; !ok {
 		md.params = append(md.params, p)
-		n := len(md.params)
+		id = len(md.params)
 
 		if md.pindex == nil {
 			md.pindex = make(map[string]int)
 		}
-		md.pindex[p.Name] = n
-		int32String(w, int32(n))
+		md.pindex[p.Name] = id
+	}
+
+	if md.Poll {
+		_, _ = io.WriteString(w, `"_sg_sub".`)
+		quoted(w, p.Name)
+	} else {
+		int32String(w, int32(id))
 	}
 }
 
