@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -11,15 +12,17 @@ import (
 // argList function is used to create a list of arguments to pass
 // to a prepared statement.
 
-func (c *scontext) argList(md psql.Metadata) ([]interface{}, error) {
+func (sg *SuperGraph) argList(c context.Context, md psql.Metadata, vars []byte) (
+	[]interface{}, error) {
+
 	params := md.Params()
-	vars := make([]interface{}, len(params))
+	vl := make([]interface{}, len(params))
 
 	var fields map[string]json.RawMessage
 	var err error
 
-	if len(c.vars) != 0 {
-		fields, _, err = jsn.Tree(c.vars)
+	if len(vars) != 0 {
+		fields, _, err = jsn.Tree(vars)
 
 		if err != nil {
 			return nil, err
@@ -30,34 +33,34 @@ func (c *scontext) argList(md psql.Metadata) ([]interface{}, error) {
 		switch p.Name {
 		case "user_id":
 			if v := c.Value(UserIDKey); v != nil {
-				vars[i] = v.(string)
+				vl[i] = v.(string)
 			} else {
 				return nil, argErr(p)
 			}
 
 		case "user_id_provider":
 			if v := c.Value(UserIDProviderKey); v != nil {
-				vars[i] = v.(string)
+				vl[i] = v.(string)
 			} else {
 				return nil, argErr(p)
 			}
 
 		case "user_role":
 			if v := c.Value(UserRoleKey); v != nil {
-				vars[i] = v.(string)
+				vl[i] = v.(string)
 			} else {
 				return nil, argErr(p)
 			}
 
 		case "cursor":
 			if v, ok := fields["cursor"]; ok && v[0] == '"' {
-				v1, err := c.sg.decrypt(string(v[1 : len(v)-1]))
+				v1, err := sg.decrypt(string(v[1 : len(v)-1]))
 				if err != nil {
 					return nil, err
 				}
-				vars[i] = v1
+				vl[i] = v1
 			} else {
-				vars[i] = nil
+				vl[i] = nil
 			}
 
 		default:
@@ -72,14 +75,14 @@ func (c *scontext) argList(md psql.Metadata) ([]interface{}, error) {
 
 				switch v[0] {
 				case '[', '{':
-					vars[i] = v
+					vl[i] = v
 
 				default:
 					var val interface{}
 					if err := json.Unmarshal(v, &val); err != nil {
 						return nil, err
 					}
-					vars[i] = val
+					vl[i] = val
 				}
 
 			} else {
@@ -88,7 +91,7 @@ func (c *scontext) argList(md psql.Metadata) ([]interface{}, error) {
 		}
 	}
 
-	return vars, nil
+	return vl, nil
 }
 
 func argErr(p psql.Param) error {

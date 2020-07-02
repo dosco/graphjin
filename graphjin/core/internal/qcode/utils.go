@@ -15,7 +15,7 @@ func GetQType(gql string) QType {
 			switch b {
 			case 'm', 'M':
 				return QTMutation
-			case 'q', 'Q':
+			case 'q', 'Q', 's', 'S':
 				return QTQuery
 			}
 		}

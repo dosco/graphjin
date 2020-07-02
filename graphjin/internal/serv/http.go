@@ -9,10 +9,12 @@ import (
 
 	"github.com/dosco/super-graph/core"
 	"github.com/dosco/super-graph/internal/serv/internal/auth"
+	"github.com/gorilla/websocket"
 	"github.com/rs/cors"
 	"go.opencensus.io/plugin/ochttp"
 	"go.opencensus.io/trace"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -53,6 +55,11 @@ func apiV1Handler() http.Handler {
 }
 
 func apiV1(w http.ResponseWriter, r *http.Request) {
+	if websocket.IsWebSocketUpgrade(r) {
+		apiV1Ws(w, r)
+		return
+	}
+
 	ct := r.Context()
 	w.Header().Set("Content-Type", "application/json")
 
@@ -71,8 +78,7 @@ func apiV1(w http.ResponseWriter, r *http.Request) {
 
 	req := gqlReq{}
 
-	err = json.Unmarshal(b, &req)
-	if err != nil {
+	if err = json.Unmarshal(b, &req); err != nil {
 		renderErr(w, err)
 		return
 	}
@@ -111,28 +117,32 @@ func apiV1(w http.ResponseWriter, r *http.Request) {
 		//nolint: errcheck
 		json.NewEncoder(w).Encode(res)
 
-		if doLog && logLevel >= LogLevelInfo {
-			zlog.Info("success",
-				zap.String("op", res.OperationName()),
-				zap.String("name", res.QueryName()),
-				zap.String("role", res.Role()),
-			)
-		}
-
 	} else {
 		renderErr(w, err)
-
-		if doLog && logLevel >= LogLevelInfo {
-			zlog.Error("error",
-				zap.String("op", res.OperationName()),
-				zap.String("name", res.QueryName()),
-				zap.String("role", res.Role()),
-				zap.Error(err),
-			)
-		}
-
 	}
 
+	if doLog && logLevel >= LogLevelInfo {
+		reqLog(res, err)
+	}
+}
+
+func reqLog(res *core.Result, err error) {
+	var msg string
+
+	fields := []zapcore.Field{
+		zap.String("op", res.OperationName()),
+		zap.String("name", res.QueryName()),
+		zap.String("role", res.Role()),
+	}
+
+	if err != nil {
+		msg = "error"
+		fields = append(fields, zap.Error(err))
+	} else {
+		msg = "success"
+	}
+
+	zlog.Info(msg, fields...)
 }
 
 //nolint: errcheck

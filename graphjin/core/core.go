@@ -15,7 +15,8 @@ import (
 type OpType int
 
 const (
-	OpQuery OpType = iota
+	OpUnknown OpType = iota
+	OpQuery
 	OpMutation
 )
 
@@ -196,7 +197,7 @@ func (c *scontext) resolvePreparedSQL() ([]byte, *stmt, error) {
 	var root []byte
 	var row *sql.Row
 
-	varsList, err := c.argList(q.st.md)
+	varsList, err := c.sg.argList(c, q.st.md, c.vars)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -262,14 +263,14 @@ func (c *scontext) resolveSQL() ([]byte, *stmt, error) {
 		c.role = v.(string)
 	}
 
-	stmts, err := c.sg.buildStmt(c.res.op, []byte(c.query), c.vars, c.role)
+	stmts, err := c.sg.buildStmt(c.res.op, []byte(c.query), c.vars, c.role, false)
 	if err != nil {
 		return nil, nil, err
 	}
 	st := &stmts[0]
 	c.res.sql = st.sql
 
-	varList, err := c.argList(st.md)
+	varList, err := c.sg.argList(c, st.md, c.vars)
 	if err != nil {
 		return nil, nil, err
 	}

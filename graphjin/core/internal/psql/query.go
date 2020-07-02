@@ -25,6 +25,7 @@ type Param struct {
 }
 
 type Metadata struct {
+	Poll        bool
 	remoteCount int
 	params      []Param
 	pindex      map[string]int
@@ -81,7 +82,6 @@ func (co *Compiler) CompileEx(qc *qcode.QCode, vars Variables) (Metadata, []byte
 
 func (co *Compiler) Compile(w io.Writer, qc *qcode.QCode, vars Variables) (Metadata, error) {
 	return co.CompileWithMetadata(w, qc, vars, Metadata{})
-
 }
 
 func (co *Compiler) CompileWithMetadata(w io.Writer, qc *qcode.QCode, vars Variables, md Metadata) (Metadata, error) {
@@ -524,7 +524,7 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo, vars 
 		}
 	}
 
-	io.WriteString(c.w, `AS "json"`)
+	io.WriteString(c.w, `AS "json" `)
 
 	if sel.Paging.Type != qcode.PtOffset {
 		for i := range sel.OrderBy {

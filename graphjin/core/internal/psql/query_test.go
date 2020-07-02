@@ -434,6 +434,18 @@ func withPolymorphicUnion(t *testing.T) {
 	compileGQLToPSQL(t, gql, nil, "user")
 }
 
+func subscription(t *testing.T) {
+	gql := `subscription test {
+		user(id: $id) {
+			id
+			email
+		}
+	}
+`
+
+	compileGQLToPSQL(t, gql, nil, "user")
+}
+
 // func withInlineFragment(t *testing.T) {
 // 	gql := `
 // 	query {
@@ -552,6 +564,7 @@ func TestCompileQuery(t *testing.T) {
 	t.Run("withFragment3", withFragment3)
 	t.Run("withFragment3", withFragment4)
 	t.Run("withPolymorphicUnion", withPolymorphicUnion)
+	t.Run("subscription", subscription)
 	//t.Run("withInlineFragment", withInlineFragment)
 	t.Run("jsonColumnAsTable", jsonColumnAsTable)
 	t.Run("withCursor", withCursor)
