@@ -220,7 +220,7 @@ func (sg *SuperGraph) GraphQL(c context.Context, query string, vars json.RawMess
 	res.Data = json.RawMessage(qr.data)
 	res.role = qr.role
 
-	return res, nil
+	return res, err
 }
 
 // GraphQLSchema function return the GraphQL schema for the underlying database connected
