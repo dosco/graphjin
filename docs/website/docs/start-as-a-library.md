@@ -38,7 +38,7 @@ func Handler(superGraph *core.SuperGraph) http.HandlerFunc {
 
 		ctx := context.WithValue(r.Context(), core.UserIDKey, GetYourUserID())
 
-    res, err := superGraph.GraphQL(ctx, body.Query, body.Variables)
+		res, err := superGraph.GraphQL(ctx, body.Query, body.Variables)
 
 		if err != nil {
 			//check err
