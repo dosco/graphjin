@@ -23,7 +23,7 @@ type Config struct {
 	UseAllowList bool `mapstructure:"use_allow_list"`
 
 	// AllowListFile if the path to allow list file if not set the
-	// path is assumed to tbe the same as the config path (allow.list)
+	// path is assumed to be the same as the config path (allow.list)
 	AllowListFile string `mapstructure:"allow_list_file"`
 
 	// SetUserID forces the database session variable `user.id` to
@@ -37,7 +37,7 @@ type Config struct {
 	DefaultBlock bool `mapstructure:"default_block"`
 
 	// Vars is a map of hardcoded variables that can be leveraged in your
-	// queries (eg variable admin_id will be $admin_id in the query)
+	// queries (eg. variable admin_id will be $admin_id in the query)
 	Vars map[string]string `mapstructure:"variables"`
 
 	// Blocklist is a list of tables and columns that should be filtered
@@ -49,7 +49,7 @@ type Config struct {
 	Tables []Table
 
 	// RolesQuery if set enabled attributed based access control. This query
-	// is use to fetch the user attributes that then dynamically define the users
+	// is used to fetch the user attributes that then dynamically define the users
 	// role.
 	RolesQuery string `mapstructure:"roles_query"`
 
