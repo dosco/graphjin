@@ -562,7 +562,7 @@ func TestCompileQuery(t *testing.T) {
 	t.Run("withFragment1", withFragment1)
 	t.Run("withFragment2", withFragment2)
 	t.Run("withFragment3", withFragment3)
-	t.Run("withFragment3", withFragment4)
+	t.Run("withFragment4", withFragment4)
 	t.Run("withPolymorphicUnion", withPolymorphicUnion)
 	t.Run("subscription", subscription)
 	//t.Run("withInlineFragment", withInlineFragment)

@@ -2,9 +2,7 @@ package core
 
 import (
 	"bytes"
-	"database/sql"
 	"fmt"
-	"hash/maphash"
 	"io"
 	"strings"
 	"sync"
@@ -13,102 +11,25 @@ import (
 	"github.com/dosco/super-graph/core/internal/qcode"
 )
 
-type query struct {
+type cquery struct {
 	sync.Once
-	sd      *sql.Stmt
-	ai      allow.Item
-	qt      qcode.QType
-	err     error
+	q       rquery
+	stmts   []stmt
 	st      stmt
 	roleArg bool
 }
 
-func (sg *SuperGraph) prepare(q *query, role string) {
-	var stmts []stmt
-	var err error
-
-	qb := []byte(q.ai.Query)
-	vars := []byte(q.ai.Vars)
-
-	switch q.qt {
-	case qcode.QTQuery:
-		if sg.abacEnabled {
-			stmts, err = sg.buildMultiStmt(qb, vars, false)
-		} else {
-			stmts, err = sg.buildRoleStmt(qb, vars, role, false)
-		}
-
-	case qcode.QTMutation:
-		stmts, err = sg.buildRoleStmt(qb, vars, role, false)
-
-	}
-
-	if err != nil {
-		sg.log.Printf("WRN %s %s: %v", q.qt, q.ai.Name, err)
-		return
-	}
-
-	if len(stmts) == 0 {
-		sg.log.Printf("ERR %s %s: invalid query", q.qt, q.ai.Name)
-		return
-	}
-
-	q.st = stmts[0]
-	q.roleArg = len(stmts) > 1
-
-	q.sd, err = sg.db.Prepare(q.st.sql)
-	if err != nil {
-		q.err = fmt.Errorf("prepare failed: %v: %s", err, q.st.sql)
-	}
-}
-
-func (sg *SuperGraph) initPrepared() error {
-	if sg.allowList.IsPersist() {
-		return nil
-	}
-
-	if err := sg.prepareRoleStmt(); err != nil {
-		return fmt.Errorf("role query: %w", err)
-	}
-
-	sg.queries = make(map[uint64]*query)
-
-	list, err := sg.allowList.Load()
-	if err != nil {
-		return err
-	}
-
-	h := maphash.Hash{}
-	h.SetSeed(sg.hashSeed)
-
-	for _, v := range list {
-		if v.Query == "" {
-			continue
-		}
-
-		qt := qcode.GetQType(v.Query)
-
-		switch qt {
-		case qcode.QTQuery:
-			sg.queries[queryID(&h, v.Name, "user")] = &query{ai: v, qt: qt}
-			sg.queries[queryID(&h, v.Name, "anon")] = &query{ai: v, qt: qt}
-
-		case qcode.QTMutation:
-			for _, role := range sg.conf.Roles {
-				sg.queries[queryID(&h, v.Name, role.Name)] = &query{ai: v, qt: qt}
-			}
-		}
-	}
-
-	return nil
+type rquery struct {
+	op    qcode.QType
+	name  string
+	query []byte
+	vars  []byte
 }
 
 // nolint: errcheck
-func (sg *SuperGraph) prepareRoleStmt() error {
-	var err error
-
+func (sg *SuperGraph) prepareRoleStmt() {
 	if !sg.abacEnabled {
-		return nil
+		return
 	}
 
 	rq := strings.ReplaceAll(sg.conf.RolesQuery, "$user_id", "$1")
@@ -135,12 +56,7 @@ func (sg *SuperGraph) prepareRoleStmt() error {
 	io.WriteString(w, `) AS "_sg_auth_roles_query" LIMIT 1) `)
 	io.WriteString(w, `ELSE 'anon' END) FROM (VALUES (1)) AS "_sg_auth_filler" LIMIT 1; `)
 
-	sg.getRole, err = sg.db.Prepare(w.String())
-	if err != nil {
-		return err
-	}
-
-	return nil
+	sg.roleStmt = w.String()
 }
 
 func (sg *SuperGraph) initAllowList() error {
@@ -162,15 +78,42 @@ func (sg *SuperGraph) initAllowList() error {
 		return fmt.Errorf("failed to initialize allow list: %w", err)
 	}
 
+	// List is presistant in dev mode so don't go ahead and set
+	// the queries struct
+	if sg.allowList.IsPersist() {
+		return nil
+	}
+
+	sg.queries = make(map[string]*cquery)
+
+	list, err := sg.allowList.Load()
+	if err != nil {
+		return err
+	}
+
+	for _, v := range list {
+		if v.Query == "" {
+			continue
+		}
+
+		q := rquery{
+			op:    qcode.GetQType(v.Query),
+			name:  v.Name,
+			query: []byte(v.Query),
+			vars:  []byte(v.Vars),
+		}
+
+		switch q.op {
+		case qcode.QTQuery, qcode.QTSubscription:
+			sg.queries[(v.Name + "user")] = &cquery{q: q}
+			sg.queries[(v.Name + "anon")] = &cquery{q: q}
+
+		case qcode.QTMutation:
+			for _, role := range sg.conf.Roles {
+				sg.queries[(v.Name + role.Name)] = &cquery{q: q}
+			}
+		}
+	}
+
 	return nil
-}
-
-// nolint: errcheck
-func queryID(h *maphash.Hash, name, role string) uint64 {
-	h.WriteString(name)
-	h.WriteString(role)
-	v := h.Sum64()
-	h.Reset()
-
-	return v
 }

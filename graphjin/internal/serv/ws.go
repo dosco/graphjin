@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/dosco/super-graph/core"
-	"github.com/gorilla/websocket"
+	ws "github.com/gorilla/websocket"
 )
 
 type gqlWsReq struct {
@@ -22,28 +22,28 @@ type gqlWsResp struct {
 	Payload *core.Result `json:"payload"`
 }
 
-var upgrader = websocket.Upgrader{
+var upgrader = ws.Upgrader{
 	EnableCompression: true,
 	ReadBufferSize:    1024,
 	WriteBufferSize:   1024,
-	HandshakeTimeout:  60 * time.Second,
+	HandshakeTimeout:  30 * time.Second,
 	CheckOrigin: func(r *http.Request) bool {
 		return true
 	},
 }
 
-var initMsg *websocket.PreparedMessage
+var initMsg *ws.PreparedMessage
 
 func init() {
 	var buf bytes.Buffer
-	var err error
-
 	enc := json.NewEncoder(&buf)
 
-	enc.Encode(gqlWsReq{ID: "1", Type: "connection_ack"})
-	initMsg, err = websocket.NewPreparedMessage(1, buf.Bytes())
-	buf.Reset()
+	err := enc.Encode(gqlWsReq{ID: "1", Type: "connection_ack"})
+	if err != nil {
+		panic(err)
+	}
 
+	initMsg, err = ws.NewPreparedMessage(ws.TextMessage, buf.Bytes())
 	if err != nil {
 		panic(err)
 	}
@@ -51,6 +51,7 @@ func init() {
 
 func apiV1Ws(w http.ResponseWriter, r *http.Request) {
 	var m *core.Member
+	var run bool
 
 	ctx := r.Context()
 
@@ -61,15 +62,11 @@ func apiV1Ws(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-
-	var mt int
 	var b []byte
-	var run bool
+	done := make(chan bool)
 
 	for {
-		if mt, b, err = conn.ReadMessage(); err != nil {
+		if _, b, err = conn.ReadMessage(); err != nil {
 			break
 		}
 
@@ -79,41 +76,30 @@ func apiV1Ws(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		if msg.Type == "connection_init" {
-			if err = conn.WritePreparedMessage(initMsg); err != nil {
-				break
-			}
-			continue
-		}
+		switch msg.Type {
+		case "connection_init":
+			err = conn.WritePreparedMessage(initMsg)
 
-		if msg.Type == "start" && !run {
+		case "start":
+			if run {
+				continue
+			}
 			m, err = sg.Subscribe(ctx, msg.Payload.Query, msg.Payload.Vars)
-			if err != nil {
-				break
+			if err == nil {
+				go waitForData(done, conn, m)
+				run = true
 			}
-			run = true
+		case "stop":
+			m.Unsubscribe()
+			done <- true
+			run = false
 
-			go func() {
-				for v := range m.Result {
-					if !run {
-						break
-					}
-
-					enc.Encode(gqlWsResp{ID: "1", Type: "data", Payload: v})
-					dataMsg := buf.Bytes()
-					buf.Reset()
-
-					if err = conn.WriteMessage(mt, dataMsg); err != nil {
-						break
-					}
-				}
-			}()
-			continue
+		default:
+			log.Println("subscription: uknown type: ", msg.Type)
 		}
 
-		if msg.Type == "stop" && run {
-			run = false
-			sg.UnSubscribe(ctx, m)
+		if err != nil {
+			break
 		}
 	}
 
@@ -121,6 +107,30 @@ func apiV1Ws(w http.ResponseWriter, r *http.Request) {
 		log.Printf("ERR %s", err)
 	}
 
-	run = false
-	sg.UnSubscribe(ctx, m)
+	m.Unsubscribe()
+}
+
+func waitForData(done chan bool, conn *ws.Conn, m *core.Member) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+
+	for {
+		select {
+		case v := <-m.Result:
+			res := gqlWsResp{ID: "1", Type: "data", Payload: v}
+			if err := enc.Encode(res); err != nil {
+				break
+			}
+			msg := buf.Bytes()
+			buf.Reset()
+
+			if err := conn.WriteMessage(ws.TextMessage, msg); err != nil {
+				break
+			}
+		case v := <-done:
+			if v {
+				return
+			}
+		}
+	}
 }

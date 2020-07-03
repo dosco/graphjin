@@ -52,6 +52,7 @@ cors_debug: true
 # on POST requests (does not work with not mutations)
 # cache_control: "public, max-age=300, s-maxage=600"
 
+poll_every_seconds: 2s
 # Postgres related environment Variables
 # SG_DATABASE_HOST
 # SG_DATABASE_PORT

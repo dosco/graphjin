@@ -44,20 +44,20 @@ func gqlHash(b string, vars []byte, role string) string {
 		if e >= len(b) {
 			break
 		}
-		if ws(b[e]) {
-			for e < len(b) && ws(b[e]) {
+		if whitespace(b[e]) {
+			for e < len(b) && whitespace(b[e]) {
 				e++
 			}
 			if e < len(b) {
 				b1 = b[e]
 			}
-			if al(b0) && al(b1) {
+			if alphanum(b0) && alphanum(b1) {
 				h.Write(space)
 			}
 		} else {
 			starting = false
 			s = e
-			for e < len(b) && !ws(b[e]) {
+			for e < len(b) && !whitespace(b[e]) {
 				e++
 			}
 			if e != 0 {
@@ -91,11 +91,11 @@ func gqlHash(b string, vars []byte, role string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func ws(b byte) bool {
+func whitespace(b byte) bool {
 	return b == ' ' || b == '\n' || b == '\t' || b == ','
 }
 
-func al(b byte) bool {
+func alphanum(b byte) bool {
 	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
 }
 

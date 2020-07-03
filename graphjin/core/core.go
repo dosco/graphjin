@@ -3,9 +3,7 @@ package core
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
-	"hash/maphash"
 	"time"
 
 	"github.com/dosco/super-graph/core/internal/psql"
@@ -17,6 +15,7 @@ type OpType int
 const (
 	OpUnknown OpType = iota
 	OpQuery
+	OpSubscription
 	OpMutation
 )
 
@@ -48,11 +47,15 @@ type resolver struct {
 type scontext struct {
 	context.Context
 
-	sg    *SuperGraph
-	query string
-	vars  json.RawMessage
-	role  string
-	res   Result
+	sg   *SuperGraph
+	op   qcode.QType
+	name string
+}
+
+type qres struct {
+	q    *cquery
+	data []byte
+	role string
 }
 
 func (sg *SuperGraph) initCompilers() error {
@@ -68,10 +71,11 @@ func (sg *SuperGraph) initCompilers() error {
 	// If sg.di is not null then it's probably set
 	// for tests
 	if sg.dbinfo == nil {
-		sg.dbinfo, err = psql.GetDBInfo(sg.db, schema)
+		sg.dbinfo, err = psql.GetDBInfo(sg.db, schema, sg.conf.Blocklist)
 		if err != nil {
 			return err
 		}
+
 	}
 
 	if len(sg.dbinfo.Tables) == 0 {
@@ -93,7 +97,6 @@ func (sg *SuperGraph) initCompilers() error {
 
 	sg.qc, err = qcode.NewCompiler(qcode.Config{
 		DefaultBlock: sg.conf.DefaultBlock,
-		Blocklist:    sg.conf.Blocklist,
 	})
 	if err != nil {
 		return err
@@ -111,168 +114,68 @@ func (sg *SuperGraph) initCompilers() error {
 	return nil
 }
 
-func (c *scontext) execQuery() ([]byte, error) {
-	var data []byte
-	var st *stmt
-	var err error
-
-	if c.sg.conf.UseAllowList {
-		data, st, err = c.resolvePreparedSQL()
-	} else {
-		data, st, err = c.resolveSQL()
-	}
-
+func (c *scontext) execQuery(query string, vars []byte, role string) (qres, error) {
+	res, err := c.resolveSQL(query, vars, role)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 
 	if c.sg.conf.Debug {
-		c.debugLog(st)
+		c.debugLog(&res.q.st)
 	}
 
-	if len(data) == 0 || !st.md.HasRemotes() {
-		return data, nil
+	if len(res.data) == 0 || !res.q.st.md.HasRemotes() {
+		return res, nil
 	}
 
+	return res, nil
 	// return c.sg.execRemoteJoin(st, data, c.req.hdr)
-	return c.sg.execRemoteJoin(st, data, nil)
+	//return c.sg.execRemoteJoin(st, data, nil)
 }
 
-func (c *scontext) resolvePreparedSQL() ([]byte, *stmt, error) {
+func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, error) {
 	var tx *sql.Tx
 	var err error
 
-	mutation := (c.res.op == qcode.QTMutation)
-	useRoleQuery := c.sg.abacEnabled && mutation
-	useTx := useRoleQuery || c.sg.conf.SetUserID
+	var res qres
+	rq := rquery{op: c.op, name: c.name, query: []byte(query), vars: vars}
+	cq := &cquery{q: rq}
+	res.q = cq
+
+	mutation := (c.op == qcode.QTMutation)
+	urq := c.sg.abacEnabled && mutation // userRoleQuery
+	useTx := urq || c.sg.conf.SetUserID
 
 	if useTx {
 		if tx, err = c.sg.db.BeginTx(c, nil); err != nil {
-			return nil, nil, err
+			return res, err
 		}
 		defer tx.Rollback() //nolint: errcheck
 	}
 
 	if c.sg.conf.SetUserID {
 		if err := setLocalUserID(c, tx); err != nil {
-			return nil, nil, err
+			return res, err
 		}
 	}
 
-	var role string
-
-	if useRoleQuery {
-		if role, err = c.executeRoleQuery(tx); err != nil {
-			return nil, nil, err
-		}
-
-	} else if v := c.Value(UserRoleKey); v != nil {
+	if v := c.Value(UserRoleKey); v != nil {
 		role = v.(string)
-
-	} else {
-		role = c.role
-	}
-
-	c.res.role = role
-
-	h := maphash.Hash{}
-	h.SetSeed(c.sg.hashSeed)
-	id := queryID(&h, c.res.name, role)
-
-	q, ok := c.sg.queries[id]
-	if !ok {
-		return nil, nil, errNotFound
-	}
-
-	if q.sd == nil {
-		q.Do(func() { c.sg.prepare(q, role) })
-
-		if q.err != nil {
-			return nil, nil, err
-		}
-	}
-
-	c.res.sql = q.st.sql
-
-	var root []byte
-	var row *sql.Row
-
-	varsList, err := c.sg.argList(c, q.st.md, c.vars)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if useTx {
-		row = tx.Stmt(q.sd).QueryRow(varsList...)
-	} else {
-		row = q.sd.QueryRow(varsList...)
-	}
-
-	if q.roleArg {
-		err = row.Scan(&role, &root)
-	} else {
-		err = row.Scan(&root)
+	} else if urq {
+		role, err = c.executeRoleQuery(tx, role)
 	}
 
 	if err != nil {
-		return nil, nil, err
+		return res, err
 	}
 
-	c.role = role
-
-	if useTx {
-		if err := tx.Commit(); err != nil {
-			return nil, nil, q.err
-		}
+	if err = c.sg.compileQuery(cq, role); err != nil {
+		return res, err
 	}
 
-	if root, err = c.sg.encryptCursor(q.st.qc, root); err != nil {
-		return nil, nil, err
-	}
-
-	return root, &q.st, nil
-}
-
-func (c *scontext) resolveSQL() ([]byte, *stmt, error) {
-	var tx *sql.Tx
-	var err error
-
-	mutation := (c.res.op == qcode.QTMutation)
-	useRoleQuery := c.sg.abacEnabled && mutation
-	useTx := useRoleQuery || c.sg.conf.SetUserID
-
-	if useTx {
-		if tx, err = c.sg.db.BeginTx(c, nil); err != nil {
-			return nil, nil, err
-		}
-		defer tx.Rollback() //nolint: errcheck
-	}
-
-	if c.sg.conf.SetUserID {
-		if err := setLocalUserID(c, tx); err != nil {
-			return nil, nil, err
-		}
-	}
-
-	if useRoleQuery {
-		if c.role, err = c.executeRoleQuery(tx); err != nil {
-			return nil, nil, err
-		}
-
-	} else if v := c.Value(UserRoleKey); v != nil {
-		c.role = v.(string)
-	}
-
-	stmts, err := c.sg.buildStmt(c.res.op, []byte(c.query), c.vars, c.role, false)
+	varList, err := c.sg.argList(c, cq.st.md, vars)
 	if err != nil {
-		return nil, nil, err
-	}
-	st := &stmts[0]
-	c.res.sql = st.sql
-
-	varList, err := c.sg.argList(c, st.md, c.vars)
-	if err != nil {
-		return nil, nil, err
+		return res, err
 	}
 
 	// var stime time.Time
@@ -281,55 +184,48 @@ func (c *scontext) resolveSQL() ([]byte, *stmt, error) {
 	// 	stime = time.Now()
 	// }
 
-	var root []byte
-	var role string
 	var row *sql.Row
 
-	// defaultRole := c.role
-
 	if useTx {
-		row = tx.QueryRowContext(c, st.sql, varList...)
+		row = tx.QueryRowContext(c, cq.st.sql, varList...)
 	} else {
-		row = c.sg.db.QueryRowContext(c, st.sql, varList...)
+		row = c.sg.db.QueryRowContext(c, cq.st.sql, varList...)
 	}
 
-	if len(stmts) > 1 {
-		err = row.Scan(&role, &root)
+	if cq.roleArg {
+		err = row.Scan(&res.role, &res.data)
 	} else {
-		err = row.Scan(&root)
-	}
-
-	if role == "" {
-		c.res.role = c.role
-	} else {
-		c.res.role = role
+		err = row.Scan(&res.data)
 	}
 
 	if err != nil {
-		return nil, nil, err
+		return res, err
 	}
+
+	res.role = role
 
 	if useTx {
 		if err := tx.Commit(); err != nil {
-			return nil, nil, err
+			return res, err
 		}
 	}
 
-	if root, err = c.sg.encryptCursor(st.qc, root); err != nil {
-		return nil, nil, err
+	res.data, err = c.sg.encryptCursor(cq.st.qc, res.data)
+	if err != nil {
+		return res, err
 	}
 
 	if c.sg.allowList.IsPersist() {
-		if err := c.sg.allowList.Set(c.vars, c.query, ""); err != nil {
-			return nil, nil, err
+		if err := c.sg.allowList.Set(vars, query, ""); err != nil {
+			return res, err
 		}
 	}
 
-	if len(stmts) > 1 {
-		if st = findStmt(role, stmts); st == nil {
-			return nil, nil, fmt.Errorf("invalid role '%s' returned", role)
-		}
-	}
+	// if len(stmts) > 1 {
+	// 	if st = findStmt(role, stmts); st == nil {
+	// 		return nil, nil, fmt.Errorf("invalid role '%s' returned", role)
+	// 	}
+	// }
 
 	// if c.sg.conf.EnableTracing {
 	// 	for _, id := range st.qc.Roots {
@@ -337,24 +233,18 @@ func (c *scontext) resolveSQL() ([]byte, *stmt, error) {
 	// 	}
 	// }
 
-	return root, st, nil
+	return res, nil
 }
 
-func (c *scontext) executeRoleQuery(tx *sql.Tx) (string, error) {
-	userID := c.Value(UserIDKey)
-
-	if userID == nil {
+func (c *scontext) executeRoleQuery(tx *sql.Tx, role string) (string, error) {
+	if uid := c.Value(UserIDKey); uid == nil {
 		return "anon", nil
 	}
 
-	var role string
-	row := c.sg.getRole.QueryRow(userID, c.role)
+	var nr string
+	err := c.sg.db.QueryRow(c.sg.roleStmt, role).Scan(&nr)
 
-	if err := row.Scan(&role); err != nil {
-		return "", err
-	}
-
-	return role, nil
+	return nr, err
 }
 
 func (r *Result) Operation() OpType {
@@ -441,12 +331,12 @@ func (c *scontext) debugLog(st *stmt) {
 	}
 }
 
-func findStmt(role string, stmts []stmt) *stmt {
-	for i := range stmts {
-		if stmts[i].role.Name != role {
-			continue
-		}
-		return &stmts[i]
-	}
-	return nil
-}
+// func findStmt(role string, stmts []stmt) *stmt {
+// 	for i := range stmts {
+// 		if stmts[i].role.Name != role {
+// 			continue
+// 		}
+// 		return &stmts[i]
+// 	}
+// 	return nil
+// }
