@@ -64,8 +64,7 @@ func limit(w http.ResponseWriter, r *http.Request) error {
 		return errors.New("Internal Server Error")
 	}
 
-	limiter := getIPLimiter(ip)
-	if limiter.Allow() == false {
+	if !getIPLimiter(ip).Allow() {
 		http.Error(w, http.StatusText(429), http.StatusTooManyRequests)
 		return errors.New("StatusTooManyRequests")
 	}
