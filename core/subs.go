@@ -7,8 +7,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"hash/maphash"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -16,7 +14,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/dosco/super-graph/core/internal/psql"
 	"github.com/dosco/super-graph/core/internal/qcode"
 	"github.com/rs/xid"
 )
@@ -28,7 +25,7 @@ const (
 type sub struct {
 	name string
 	role string
-	st   stmt
+	q    *cquery
 	ops  int64
 
 	add chan *Member
@@ -54,6 +51,7 @@ type dhmsg struct {
 type Member struct {
 	sub    *sub
 	Result chan *Result
+	done   bool
 	id     xid.ID
 	vl     []interface{}
 }
@@ -61,8 +59,9 @@ type Member struct {
 func (sg *SuperGraph) Subscribe(c context.Context, query string, vars json.RawMessage) (*Member, error) {
 	var err error
 	name := Name(query)
+	op := qcode.GetQType(query)
 
-	if Operation(query) != OpQuery {
+	if op != qcode.QTSubscription {
 		return nil, errors.New("subscription: not a subscription query")
 	}
 
@@ -78,17 +77,12 @@ func (sg *SuperGraph) Subscribe(c context.Context, query string, vars json.RawMe
 		role = "anon"
 	}
 
-	h := maphash.Hash{}
-	h.SetSeed(sg.hashSeed)
-	_, _ = h.WriteString(name)
-	_, _ = h.WriteString(role)
-
-	v, _ := sg.subs.LoadOrStore(h.Sum64(), &sub{
+	v, _ := sg.subs.LoadOrStore((name + role), &sub{
 		name: name,
 		role: role,
 		add:  make(chan *Member),
 		del:  make(chan *Member),
-		udh:  make(chan dhmsg),
+		udh:  make(chan dhmsg, 10),
 	})
 	s := v.(*sub)
 
@@ -99,13 +93,13 @@ func (sg *SuperGraph) Subscribe(c context.Context, query string, vars json.RawMe
 		return nil, err
 	}
 
-	varsList, err := sg.argList(c, s.st.md, vars)
+	varsList, err := sg.argList(c, s.q.st.md, vars)
 	if err != nil {
 		return nil, err
 	}
 
 	m := &Member{
-		Result: make(chan *Result),
+		Result: make(chan *Result, 10),
 		sub:    s,
 		vl:     varsList,
 	}
@@ -114,26 +108,21 @@ func (sg *SuperGraph) Subscribe(c context.Context, query string, vars json.RawMe
 	return m, nil
 }
 
-func (sg *SuperGraph) UnSubscribe(c context.Context, m *Member) {
-	if m != nil {
-		m.sub.del <- m
-	}
-}
-
 func (sg *SuperGraph) newSub(c context.Context, s *sub, query string, vars json.RawMessage) error {
-	st, err := sg.buildStmt(qcode.QTQuery, []byte(query), vars, s.role, true)
-	if err != nil {
+	rq := rquery{
+		op:    qcode.QTSubscription,
+		name:  s.name,
+		query: []byte(query),
+		vars:  vars,
+	}
+	s.q = &cquery{q: rq}
+
+	if err := sg.compileQuery(s.q, s.role); err != nil {
 		return err
 	}
 
-	if len(st) == 0 {
-		return fmt.Errorf("invalid query")
-	}
-
-	s.st = st[0]
-
-	if len(s.st.md.Params()) != 0 {
-		s.st.sql = renderSubWrap(s.st)
+	if len(s.q.st.md.Params()) != 0 {
+		s.q.st.sql = renderSubWrap(s.q.st)
 	}
 
 	go sg.subController(s)
@@ -158,7 +147,7 @@ func (sg *SuperGraph) subController(s *sub) {
 
 		select {
 		case m := <-s.add:
-			json.NewEncoder(&buf).Encode(m.vl)
+			_ = json.NewEncoder(&buf).Encode(m.vl)
 			v := buf.Bytes()
 			buf.Reset()
 
@@ -234,15 +223,15 @@ func (sg *SuperGraph) checkUpdates(s *sub, mv mval, start int) {
 	var rows *sql.Rows
 	var err error
 
-	hasParams := len(s.st.md.Params()) != 0
+	hasParams := len(s.q.st.md.Params()) != 0
 	c := context.Background()
 
 	// when params are not available we use a more optimized
 	// codepath that does not use a join query
 	if hasParams {
-		rows, err = sg.db.QueryContext(c, s.st.sql, renderJSONArray(mv.params[start:end]))
+		rows, err = sg.db.QueryContext(c, s.q.st.sql, renderJSONArray(mv.params[start:end]))
 	} else {
-		rows, err = sg.db.QueryContext(c, s.st.sql)
+		rows, err = sg.db.QueryContext(c, s.q.st.sql)
 	}
 
 	if err != nil {
@@ -269,16 +258,17 @@ func (sg *SuperGraph) checkUpdates(s *sub, mv mval, start int) {
 		}
 
 		res := &Result{
-			op:   s.st.qc.Type,
+			op:   qcode.QTQuery,
 			name: s.name,
-			// sql:  s.st.sql,
-			role: s.st.role.Name,
+			sql:  s.q.st.sql,
+			role: s.q.st.role.Name,
 			Data: js,
 		}
 
 		if hasParams {
 			select {
 			case mv.res[j] <- res:
+			default:
 			}
 			continue
 		}
@@ -288,25 +278,10 @@ func (sg *SuperGraph) checkUpdates(s *sub, mv mval, start int) {
 		for k := start; k < end; k++ {
 			select {
 			case mv.res[k] <- res:
+			default:
 			}
 		}
 	}
-}
-
-func renderSubCols(params []psql.Param, values bool, start int) string {
-	var s strings.Builder
-	for i, p := range params {
-		s.WriteString(`, `)
-		if values {
-			s.WriteRune('$')
-			s.WriteString(strconv.Itoa(i + start))
-		} else {
-			s.WriteString(p.Name)
-			s.WriteRune(' ')
-			s.WriteString(p.Type)
-		}
-	}
-	return s.String()
 }
 
 func renderSubWrap(st stmt) string {
@@ -352,4 +327,11 @@ func (s *sub) findByID(id xid.ID) (int, bool) {
 		}
 	}
 	return 0, false
+}
+
+func (m *Member) Unsubscribe() {
+	if m != nil && !m.done {
+		m.sub.del <- m
+		m.done = true
+	}
 }

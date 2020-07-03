@@ -49,6 +49,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"hash/maphash"
 	_log "log"
 	"os"
@@ -86,9 +87,9 @@ type SuperGraph struct {
 	allowList   *allow.List
 	encKey      [32]byte
 	hashSeed    maphash.Seed
-	queries     map[uint64]*query
+	queries     map[string]*cquery
 	roles       map[string]*Role
-	getRole     *sql.Stmt
+	roleStmt    string
 	rmap        map[uint64]resolvFn
 	abacEnabled bool
 	qc          *qcode.Compiler
@@ -129,10 +130,6 @@ func newSuperGraph(conf *Config, db *sql.DB, dbinfo *psql.DBInfo) (*SuperGraph, 
 		return nil, err
 	}
 
-	if err := sg.initPrepared(); err != nil {
-		return nil, err
-	}
-
 	if err := sg.initResolvers(); err != nil {
 		return nil, err
 	}
@@ -140,6 +137,8 @@ func newSuperGraph(conf *Config, db *sql.DB, dbinfo *psql.DBInfo) (*SuperGraph, 
 	if err := sg.initGraphQLEgine(); err != nil {
 		return nil, err
 	}
+
+	sg.prepareRoleStmt()
 
 	if conf.SecretKey != "" {
 		sk := sha256.Sum256([]byte(conf.SecretKey))
@@ -172,43 +171,56 @@ type Result struct {
 // In developer mode all names queries are saved into a file `allow.list` and in production mode only
 // queries from this file can be run.
 func (sg *SuperGraph) GraphQL(c context.Context, query string, vars json.RawMessage) (*Result, error) {
-	var res Result
+	ct := scontext{
+		Context: c,
+		sg:      sg,
+		op:      qcode.GetQType(query),
+		name:    Name(query),
+	}
 
-	res.op = qcode.GetQType(query)
-	res.name = allow.QueryName(query)
+	res := &Result{
+		op:   ct.op,
+		name: ct.name,
+	}
+
+	if ct.op == qcode.QTSubscription {
+		return nil, errors.New("use 'core.Subscribe' for subscriptions")
+	}
 
 	// use the chirino/graphql library for introspection queries
 	// disabled when allow list is enforced
-	if !sg.conf.UseAllowList && res.name == "IntrospectionQuery" {
+	if !sg.conf.UseAllowList && ct.name == "IntrospectionQuery" {
 		r := sg.ge.ServeGraphQL(&graphql.Request{Query: query})
 		res.Data = r.Data
 
 		if r.Error() != nil {
 			res.Error = r.Error().Error()
 		}
-		return &res, r.Error()
+		return res, r.Error()
 	}
 
-	ct := scontext{Context: c, sg: sg, query: query, vars: vars, res: res}
-
-	if len(vars) <= 2 {
-		ct.vars = nil
-	}
+	var role string
 
 	if keyExists(c, UserIDKey) {
-		ct.role = "user"
+		role = "user"
 	} else {
-		ct.role = "anon"
+		role = "anon"
 	}
 
-	data, err := ct.execQuery()
+	qr, err := ct.execQuery(query, vars, role)
+
 	if err != nil {
-		return &ct.res, err
+		res.Error = err.Error()
 	}
 
-	ct.res.Data = json.RawMessage(data)
+	if qr.q != nil {
+		res.sql = qr.q.st.sql
+	}
 
-	return &ct.res, nil
+	res.Data = json.RawMessage(qr.data)
+	res.role = qr.role
+
+	return res, nil
 }
 
 // GraphQLSchema function return the GraphQL schema for the underlying database connected

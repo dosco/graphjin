@@ -23,6 +23,7 @@ const (
 const (
 	QTUnknown QType = iota
 	QTQuery
+	QTSubscription
 	QTMutation
 	QTInsert
 	QTUpdate
@@ -188,9 +189,7 @@ const (
 )
 
 type Compiler struct {
-	tr map[string]map[string]*trval
-	bl map[string]struct{}
-
+	tr       map[string]map[string]*trval
 	defBlock bool
 }
 
@@ -201,12 +200,6 @@ var expPool = sync.Pool{
 func NewCompiler(c Config) (*Compiler, error) {
 	co := &Compiler{defBlock: c.DefaultBlock}
 	co.tr = make(map[string]map[string]*trval)
-	co.bl = make(map[string]struct{}, len(c.Blocklist))
-
-	for i := range c.Blocklist {
-		co.bl[strings.ToLower(c.Blocklist[i])] = struct{}{}
-	}
-
 	seedExp := [100]Exp{}
 
 	for i := range seedExp {
@@ -344,10 +337,6 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 
 		field := &op.Fields[fid]
 
-		if _, ok := com.bl[field.Name]; ok {
-			continue
-		}
-
 		if field.ParentID == -1 {
 			parentID = -1
 		}
@@ -378,7 +367,7 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 				}
 			}
 
-		} else if role == "anon" {
+		} else if com.defBlock && role == "anon" {
 			skipRender = SkipTypeTableNotFound
 		}
 
@@ -452,10 +441,6 @@ func (com *Compiler) compileQuery(qc *QCode, op *Operation, role string) error {
 
 		for _, cid := range field.Children {
 			f := op.Fields[cid]
-
-			if _, ok := com.bl[f.Name]; ok {
-				continue
-			}
 
 			var fname string
 
@@ -640,9 +625,6 @@ func (com *Compiler) compileArgNode(st *util.Stack, node *Node, usePool bool) (*
 		if node.Name == "" {
 			pushChildren(st, node.exp, node)
 			continue
-
-		} else if _, ok := com.bl[node.Name]; ok {
-			continue
 		}
 
 		ex, err := newExp(st, node, usePool)
@@ -755,10 +737,6 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) error {
 			return fmt.Errorf("17: unexpected value %v (%t)", intf, intf)
 		}
 
-		if _, ok := com.bl[node.Name]; ok {
-			continue
-		}
-
 		if node.Type != NodeStr && node.Type != NodeVar {
 			return fmt.Errorf("expecting a string or variable")
 		}
@@ -790,10 +768,6 @@ func (com *Compiler) compileArgOrderBy(sel *Select, arg *Arg) error {
 
 func (com *Compiler) compileArgDistinctOn(sel *Select, arg *Arg) error {
 	node := arg.Val
-
-	if _, ok := com.bl[node.Name]; ok {
-		return nil
-	}
 
 	if node.Type != NodeList && node.Type != NodeStr {
 		return fmt.Errorf("expecting a list of strings or just a string")

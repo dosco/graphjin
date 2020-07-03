@@ -27,13 +27,7 @@ var (
 func TestMain(m *testing.M) {
 	var err error
 
-	qcompile, err = qcode.NewCompiler(qcode.Config{
-		Blocklist: []string{
-			"secret",
-			"password",
-			"token",
-		},
-	})
+	qcompile, err = qcode.NewCompiler(qcode.Config{})
 	if err != nil {
 		log.Fatal(err)
 	}

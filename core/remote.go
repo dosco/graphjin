@@ -1,17 +1,6 @@
 package core
 
-import (
-	"bytes"
-	"errors"
-	"fmt"
-	"hash/maphash"
-	"net/http"
-	"sync"
-
-	"github.com/dosco/super-graph/core/internal/qcode"
-	"github.com/dosco/super-graph/jsn"
-)
-
+/*
 func (sg *SuperGraph) execRemoteJoin(st *stmt, data []byte, hdr http.Header) ([]byte, error) {
 	var err error
 
@@ -236,3 +225,4 @@ func colsToList(cols []qcode.Column) []string {
 	}
 	return f
 }
+*/

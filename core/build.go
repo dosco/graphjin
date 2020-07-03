@@ -17,18 +17,66 @@ type stmt struct {
 	sql  string
 }
 
-func (sg *SuperGraph) buildStmt(qt qcode.QType, query, vars []byte, role string, poll bool) ([]stmt, error) {
-	if qt == qcode.QTQuery && sg.abacEnabled {
-		return sg.buildMultiStmt(query, vars, poll)
+func (sg *SuperGraph) compileQuery(cq *cquery, role string) error {
+	var err error
+
+	// In production mode enforce the allow list and
+	// compile and cache the result else compile each time
+	if sg.conf.UseAllowList {
+		if cq1, ok := sg.queries[(cq.q.name + role)]; ok {
+			cq.q = cq1.q
+		} else {
+			return errNotFound
+		}
+
+		if cq.st.sql == "" {
+			cq.Do(func() {
+				err = sg.compileQueryFn(cq, role)
+			})
+		}
+
+	} else {
+		err = sg.compileQueryFn(cq, role)
 	}
 
-	return sg.buildRoleStmt(query, vars, role, poll)
+	return err
 }
 
-func (sg *SuperGraph) buildRoleStmt(query, vars []byte, role string, poll bool) ([]stmt, error) {
+func (sg *SuperGraph) compileQueryFn(cq *cquery, role string) error {
+	var err error
+
+	switch cq.q.op {
+	case qcode.QTQuery:
+		if sg.abacEnabled {
+			cq.stmts, cq.st, err = sg.buildMultiStmt(cq.q.query, cq.q.vars, false)
+		} else {
+			cq.st, err = sg.buildRoleStmt(cq.q.query, cq.q.vars, role, false)
+		}
+
+	case qcode.QTSubscription:
+		if sg.abacEnabled {
+			cq.stmts, cq.st, err = sg.buildMultiStmt(cq.q.query, cq.q.vars, true)
+		} else {
+			cq.st, err = sg.buildRoleStmt(cq.q.query, cq.q.vars, role, true)
+		}
+
+	case qcode.QTMutation:
+		cq.st, err = sg.buildRoleStmt(cq.q.query, cq.q.vars, role, true)
+
+	default:
+		err = errors.New("unknown query")
+	}
+
+	cq.roleArg = (len(cq.stmts) > 0)
+	return err
+}
+
+func (sg *SuperGraph) buildRoleStmt(query, vars []byte, role string, poll bool) (stmt, error) {
+	var st stmt
+
 	ro, ok := sg.roles[role]
 	if !ok {
-		return nil, fmt.Errorf(`roles '%s' not defined in c.sg.config`, role)
+		return st, fmt.Errorf(`roles '%s' not defined in c.sg.config`, role)
 	}
 
 	var vm map[string]json.RawMessage
@@ -36,40 +84,43 @@ func (sg *SuperGraph) buildRoleStmt(query, vars []byte, role string, poll bool) 
 
 	if len(vars) != 0 {
 		if err := json.Unmarshal(vars, &vm); err != nil {
-			return nil, err
+			return st, err
 		}
 	}
 
 	qc, err := sg.qc.Compile(query, ro.Name)
 	if err != nil {
-		return nil, err
+		return st, err
 	}
 
-	stmts := []stmt{{role: ro, qc: qc}}
 	w := &bytes.Buffer{}
 	md := psql.Metadata{Poll: poll}
 
-	stmts[0].md, err = sg.pc.CompileWithMetadata(w, qc, psql.Variables(vm), md)
+	st.md, err = sg.pc.CompileWithMetadata(w, qc, psql.Variables(vm), md)
 	if err != nil {
-		return nil, err
+		return st, err
 	}
-	stmts[0].sql = w.String()
 
-	return stmts, nil
+	st.role = ro
+	st.qc = qc
+	st.sql = w.String()
+
+	return st, nil
 }
 
-func (sg *SuperGraph) buildMultiStmt(query, vars []byte, poll bool) ([]stmt, error) {
+func (sg *SuperGraph) buildMultiStmt(query, vars []byte, poll bool) ([]stmt, stmt, error) {
 	var vm map[string]json.RawMessage
 	var err error
+	var st stmt
 
 	if len(vars) != 0 {
 		if err := json.Unmarshal(vars, &vm); err != nil {
-			return nil, err
+			return nil, st, err
 		}
 	}
 
 	if sg.conf.RolesQuery == "" {
-		return nil, errors.New("roles_query not defined")
+		return nil, st, errors.New("roles_query not defined")
 	}
 
 	stmts := make([]stmt, 0, len(sg.conf.Roles))
@@ -86,7 +137,7 @@ func (sg *SuperGraph) buildMultiStmt(query, vars []byte, poll bool) ([]stmt, err
 
 		qc, err := sg.qc.Compile(query, role.Name)
 		if err != nil {
-			return nil, err
+			return nil, st, err
 		}
 
 		stmts = append(stmts, stmt{role: role, qc: qc})
@@ -94,7 +145,7 @@ func (sg *SuperGraph) buildMultiStmt(query, vars []byte, poll bool) ([]stmt, err
 
 		md, err = sg.pc.CompileWithMetadata(w, qc, psql.Variables(vm), md)
 		if err != nil {
-			return nil, err
+			return nil, st, err
 		}
 
 		s.sql = w.String()
@@ -102,18 +153,22 @@ func (sg *SuperGraph) buildMultiStmt(query, vars []byte, poll bool) ([]stmt, err
 
 		w.Reset()
 	}
+	st = stmts[0]
 
-	sql, err := sg.renderUserQuery(md, stmts)
+	st.sql, err = sg.renderUserQuery(md, stmts)
 	if err != nil {
-		return nil, err
+		return nil, st, err
 	}
 
-	stmts[0].sql = sql
-	return stmts, nil
+	return stmts, st, nil
 }
 
 //nolint: errcheck
 func (sg *SuperGraph) renderUserQuery(md psql.Metadata, stmts []stmt) (string, error) {
+	if sg.conf.RolesQuery == "" {
+		return "", errors.New("roles_query not defined")
+	}
+
 	w := &bytes.Buffer{}
 
 	w.WriteString(`SELECT "_sg_auth_info"."role", (CASE "_sg_auth_info"."role" `)

@@ -15,7 +15,7 @@ type DBInfo struct {
 	Columns   [][]DBColumn
 	Functions []DBFunction
 	VTables   []VirtualTable
-	colMap    map[string]map[string]*DBColumn
+	colMap    map[string]*DBColumn
 }
 
 type VirtualTable struct {
@@ -25,7 +25,7 @@ type VirtualTable struct {
 	FKeyColumn string
 }
 
-func GetDBInfo(db *sql.DB, schema string) (*DBInfo, error) {
+func GetDBInfo(db *sql.DB, schema string, blockList []string) (*DBInfo, error) {
 	di := &DBInfo{}
 	var version string
 
@@ -39,13 +39,13 @@ func GetDBInfo(db *sql.DB, schema string) (*DBInfo, error) {
 		return nil, err
 	}
 
-	di.Tables, err = GetTables(db, schema)
+	di.Tables, err = GetTables(db, schema, blockList)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, t := range di.Tables {
-		cols, err := GetColumns(db, schema, t.Name)
+		cols, err := GetColumns(db, schema, t.Name, blockList)
 		if err != nil {
 			return nil, err
 		}
@@ -55,7 +55,7 @@ func GetDBInfo(db *sql.DB, schema string) (*DBInfo, error) {
 
 	di.colMap = newColMap(di.Tables, di.Columns)
 
-	di.Functions, err = GetFunctions(db, schema)
+	di.Functions, err = GetFunctions(db, schema, blockList)
 	if err != nil {
 		return nil, err
 	}
@@ -63,37 +63,21 @@ func GetDBInfo(db *sql.DB, schema string) (*DBInfo, error) {
 	return di, nil
 }
 
-func newColMap(tables []DBTable, columns [][]DBColumn) map[string]map[string]*DBColumn {
-	cm := make(map[string]map[string]*DBColumn, len(tables))
-
-	for i, t := range tables {
-		cols := columns[i]
-		cm[t.Key] = make(map[string]*DBColumn, len(cols))
-
-		for n, c := range cols {
-			cm[t.Key][c.Key] = &columns[i][n]
-		}
-	}
-
-	return cm
-}
-
 func (di *DBInfo) AddTable(t DBTable, cols []DBColumn) {
 	t.ID = di.Tables[len(di.Tables)-1].ID
 
 	di.Tables = append(di.Tables, t)
-	di.colMap[t.Key] = make(map[string]*DBColumn, len(cols))
 
 	for i := range cols {
 		cols[i].ID = int16(i)
 		c := &cols[i]
-		di.colMap[t.Key][c.Key] = c
+		di.colMap[(t.Key + c.Key)] = c
 	}
 	di.Columns = append(di.Columns, cols)
 }
 
 func (di *DBInfo) GetColumn(table, column string) (*DBColumn, bool) {
-	v, ok := di.colMap[strings.ToLower(table)][strings.ToLower(column)]
+	v, ok := di.colMap[strings.ToLower(table+column)]
 	return v, ok
 }
 
@@ -104,7 +88,7 @@ type DBTable struct {
 	Type string
 }
 
-func GetTables(db *sql.DB, schema string) ([]DBTable, error) {
+func GetTables(db *sql.DB, schema string, blockList []string) ([]DBTable, error) {
 	sqlStmt := `
 SELECT
 	c.relname as "name",
@@ -117,7 +101,8 @@ FROM pg_catalog.pg_class c
 	LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
 WHERE c.relkind IN ('r','v','m','f','')
 	AND n.nspname = $1
-	AND pg_catalog.pg_table_is_visible(c.oid);`
+	AND pg_catalog.pg_table_is_visible(c.oid)
+	AND c.relname NOT IN (` + toList(blockList) + `);`
 
 	var tables []DBTable
 
@@ -156,7 +141,7 @@ type DBColumn struct {
 	fKeyColID  pgtype.Int2Array
 }
 
-func GetColumns(db *sql.DB, schema, table string) ([]DBColumn, error) {
+func GetColumns(db *sql.DB, schema, table string, blockList []string) ([]DBColumn, error) {
 	sqlStmt := `
 SELECT  
 	f.attnum AS id,  
@@ -184,17 +169,20 @@ SELECT
 		WHEN p.contype = ('f'::char) THEN p.confkey::int2[]
 		ELSE ARRAY[]::int2[]
 	END AS foreignkey_fieldnum
-FROM pg_attribute f
+FROM 
+	pg_attribute f
 	JOIN pg_class c ON c.oid = f.attrelid  
 	LEFT JOIN pg_attrdef d ON d.adrelid = c.oid AND d.adnum = f.attnum  
 	LEFT JOIN pg_namespace n ON n.oid = c.relnamespace  
 	LEFT JOIN pg_constraint p ON p.conrelid = c.oid AND f.attnum = ANY (p.conkey)  
 	LEFT JOIN pg_class AS g ON p.confrelid = g.oid  
-WHERE c.relkind IN ('r', 'v', 'm', 'f')
+WHERE 
+	c.relkind IN ('r', 'v', 'm', 'f')
 	AND n.nspname = $1  -- Replace with Schema name  
 	AND c.relname = $2  -- Replace with table name  
 	AND f.attnum > 0
 	AND f.attisdropped = false
+	AND f.attname NOT IN (` + toList(blockList) + `)
 ORDER BY id;`
 
 	rows, err := db.Query(sqlStmt, schema, table)
@@ -270,7 +258,7 @@ type DBFuncParam struct {
 	Type string
 }
 
-func GetFunctions(db *sql.DB, schema string) ([]DBFunction, error) {
+func GetFunctions(db *sql.DB, schema string, blockList []string) ([]DBFunction, error) {
 	sqlStmt := `
 SELECT 
 	routines.routine_name, 
@@ -285,6 +273,7 @@ RIGHT JOIN
 	ON (routines.specific_name = parameters.specific_name and parameters.ordinal_position IS NOT NULL)	
 WHERE 
 	routines.specific_schema = $1
+	AND routines.routine_name NOT IN (` + toList(blockList) + `)
 ORDER BY 
 	routines.routine_name, parameters.ordinal_position;`
 
@@ -322,4 +311,30 @@ ORDER BY
 	}
 
 	return funcs, nil
+}
+
+func newColMap(tables []DBTable, columns [][]DBColumn) map[string]*DBColumn {
+	cm := make(map[string]*DBColumn, len(tables))
+
+	for i, t := range tables {
+		cols := columns[i]
+
+		for n, c := range cols {
+			cm[(t.Key + c.Key)] = &columns[i][n]
+		}
+	}
+
+	return cm
+}
+
+func toList(s []string) string {
+	var sb strings.Builder
+	for i := range s {
+		if i != 0 {
+			sb.WriteString(",'" + s[i] + "'")
+		} else {
+			sb.WriteString("'" + s[i] + "'")
+		}
+	}
+	return sb.String()
 }

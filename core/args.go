@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/dosco/super-graph/core/internal/psql"
@@ -33,7 +34,14 @@ func (sg *SuperGraph) argList(c context.Context, md psql.Metadata, vars []byte) 
 		switch p.Name {
 		case "user_id":
 			if v := c.Value(UserIDKey); v != nil {
-				vl[i] = v.(string)
+				switch v1 := v.(type) {
+				case string:
+					vl[i] = v1
+				case int:
+					vl[i] = v1
+				default:
+					return nil, errors.New("user_id must be an integer or a string")
+				}
 			} else {
 				return nil, argErr(p)
 			}
