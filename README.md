@@ -29,9 +29,11 @@ go get github.com/dosco/super-graph/core
 package main
 
 import (
+  "context"
   "database/sql"
   "fmt"
-  "time"
+  "log"
+ 
   "github.com/dosco/super-graph/core"
   _ "github.com/jackc/pgx/v4/stdlib"
 )
@@ -55,6 +57,7 @@ func main() {
     }
   }`
 
+  ctx := context.Background()
   ctx = context.WithValue(ctx, core.UserIDKey, 1)
 
   res, err := sg.GraphQL(ctx, query, nil)
