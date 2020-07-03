@@ -247,3 +247,8 @@ roles:
     tables:
       - name: users
         filters: []
+# rate limit for graph API, This doesn't apply to WebUI and health end points
+# Uncomment
+rate_limiter:
+  rate: 1
+  bucket: 3

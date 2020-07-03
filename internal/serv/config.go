@@ -124,3 +124,7 @@ func (c *Config) relPath(p string) string {
 
 	return path.Join(c.cpath, p)
 }
+
+func (c *Config) rateLimiterEnable() bool {
+	return c.RateLimiter.Rate > 0 && c.RateLimiter.Bucket > 0
+}

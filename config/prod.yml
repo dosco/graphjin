@@ -74,3 +74,9 @@ database:
 #     exporter: "zipkin"
 #     endpoint: "http://zipkin:9411/api/v2/spans"
 #     sample: 0.6
+
+# rate limit for graph API, This doesn't apply to WebUI and health end points
+# Uncomment if you want to apply rate limit
+# rate_limiter:
+#   rate: 1
+#   bucket: 3

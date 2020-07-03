@@ -160,10 +160,20 @@ func routeHandler() (http.Handler, error) {
 
 	fn := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Server", serverName)
+		// rate limiter only apply if it's enable from configuration and for API route
+		// WebUI and health are excluded from rate limiter
+		if conf.rateLimiterEnable() && strings.Contains(r.URL.Path, apiRoute) {
+			err := limit(w, r)
+			if err != nil {
+				log.Println(err.Error())
+				return
+			}
+		}
 		mux.ServeHTTP(w, r)
 	}
 
 	return http.HandlerFunc(fn), nil
+
 }
 
 func setActionRoutes(routes map[string]http.Handler) error {

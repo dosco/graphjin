@@ -93,6 +93,11 @@ type Serv struct {
 	} `mapstructure:"database"`
 
 	Actions []Action
+
+	RateLimiter struct {
+		Rate   float64
+		Bucket int
+	} `mapstructure:"rate_limiter"`
 }
 
 // Auth struct contains authentication related config values used by the Super Graph service
