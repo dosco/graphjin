@@ -65,7 +65,7 @@ func limit(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	if !getIPLimiter(ip).Allow() {
-		http.Error(w, http.StatusText(429), http.StatusTooManyRequests)
+		http.Error(w, "429 Too Many Requests", http.StatusTooManyRequests)
 		return errors.New("StatusTooManyRequests")
 	}
 	return nil
