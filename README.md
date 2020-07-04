@@ -33,7 +33,7 @@ import (
   "database/sql"
   "fmt"
   "log"
- 
+
   "github.com/dosco/super-graph/core"
   _ "github.com/jackc/pgx/v4/stdlib"
 )
@@ -84,6 +84,7 @@ This compiler is what sits at the heart of Super Graph, with layers of useful fu
 ## Features
 
 - Complex nested queries and mutations
+- Near-realtime updates with subscriptions
 - Auto learns database tables and relationships
 - Role and Attribute-based access control
 - Opaque cursor-based efficient pagination
@@ -100,6 +101,7 @@ This compiler is what sits at the heart of Super Graph, with layers of useful fu
 - Database seeding tool
 - Works with Postgres and Yugabyte DB
 - OpenCensus Support: Zipkin, Prometheus, X-Ray, Stackdriver
+- Highly scalable and fast
 
 ## Documentation
 

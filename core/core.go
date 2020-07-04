@@ -128,9 +128,8 @@ func (c *scontext) execQuery(query string, vars []byte, role string) (qres, erro
 		return res, nil
 	}
 
-	return res, nil
 	// return c.sg.execRemoteJoin(st, data, c.req.hdr)
-	//return c.sg.execRemoteJoin(st, data, nil)
+	return c.sg.execRemoteJoin(res, nil)
 }
 
 func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, error) {

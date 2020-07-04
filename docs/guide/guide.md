@@ -10,21 +10,25 @@ Super Graph has a rich feature set like integrating with your existing Ruby on R
 
 ## Features
 
-- Role and Attribute based access control
-- Works with existing Ruby-On-Rails apps
-- Automatically learns database schemas and relationships
-- Full text search and aggregations
-- Rails authentication supported (Redis, Memcache, Cookie)
+- Complex nested queries and mutations
+- Near-realtime updates with subscriptions
+- Auto learns database tables and relationships
+- Role and Attribute-based access control
+- Opaque cursor-based efficient pagination
+- Full-text search and aggregations
 - JWT tokens supported (Auth0, etc)
-- Join database with remote REST APIs
-- Highly optimized and fast Postgres SQL queries
-- GraphQL queries and mutations
+- Join database queries with remote REST APIs
+- Also works with existing Ruby-On-Rails apps
+- Rails authentication supported (Redis, Memcache, Cookie)
 - A simple config file
-- High performance GO codebase
+- High performance Go codebase
 - Tiny docker image and low memory requirements
 - Fuzz tested for security
 - Database migrations tool
 - Database seeding tool
+- Works with Postgres and Yugabyte DB
+- OpenCensus Support: Zipkin, Prometheus, X-Ray, Stackdriver
+- Highly scalable and fast
 
 ## Try the demo app
 
