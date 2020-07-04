@@ -1,3 +1,4 @@
+//nolint:errcheck
 package serv
 
 import (
@@ -25,7 +26,7 @@ func gqlHash(b string, vars []byte, role string) string {
 
 	var b0, b1 byte
 
-	if len(b) == 0 {
+	if b == "" {
 		return ""
 	}
 
@@ -70,7 +71,7 @@ func gqlHash(b string, vars []byte, role string) string {
 		}
 	}
 
-	if len(role) != 0 {
+	if role != "" {
 		io.WriteString(h, role)
 	}
 

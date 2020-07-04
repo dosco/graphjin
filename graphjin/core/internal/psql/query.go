@@ -327,12 +327,12 @@ func (c *compilerContext) initSelect(sel *qcode.Select, ti *DBTableInfo, vars Va
 	cols := make([]*qcode.Column, 0, len(sel.Cols))
 	colmap := make(map[string]struct{}, len(sel.Cols))
 
-	for i := range sel.Cols {
-		colmap[sel.Cols[i].Name] = struct{}{}
+	for _, c := range sel.Cols {
+		colmap[c.Name] = struct{}{}
 	}
 
-	for i := range sel.OrderBy {
-		colmap[sel.OrderBy[i].Col] = struct{}{}
+	for _, v := range sel.OrderBy {
+		colmap[v.Col] = struct{}{}
 	}
 
 	if sel.Paging.Type != qcode.PtOffset {

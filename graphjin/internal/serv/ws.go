@@ -119,13 +119,13 @@ func waitForData(done chan bool, conn *ws.Conn, m *core.Member) {
 		case v := <-m.Result:
 			res := gqlWsResp{ID: "1", Type: "data", Payload: v}
 			if err := enc.Encode(res); err != nil {
-				break
+				return
 			}
 			msg := buf.Bytes()
 			buf.Reset()
 
 			if err := conn.WriteMessage(ws.TextMessage, msg); err != nil {
-				break
+				return
 			}
 		case v := <-done:
 			if v {
