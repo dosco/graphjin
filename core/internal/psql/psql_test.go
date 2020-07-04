@@ -163,7 +163,7 @@ func TestMain(m *testing.M) {
 
 		default:
 			v := strings.TrimSpace(v)
-			if len(v) != 0 {
+			if v != "" {
 				expected[h] = append(expected[h], v)
 			}
 		}

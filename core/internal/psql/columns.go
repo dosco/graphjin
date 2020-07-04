@@ -28,9 +28,13 @@ func (c *compilerContext) renderBaseColumns(
 		cn := col.Name
 		colmap[cn] = struct{}{}
 
-		_, isRealCol := ti.ColMap[cn]
+		dbCol, isRealCol := ti.ColMap[cn]
 
 		if isRealCol {
+			if dbCol.Blocked {
+				return nil, false, fmt.Errorf("column blocked: %s", cn)
+			}
+
 			c.renderComma(i)
 			realColsRendered = append(realColsRendered, n)
 			colWithTable(c.w, ti.Name, cn)
@@ -59,7 +63,6 @@ func (c *compilerContext) renderBaseColumns(
 				if err := c.renderColumnFunction(sel, ti, col, i); err != nil {
 					return nil, false, err
 				}
-
 				isAgg = true
 			}
 		}

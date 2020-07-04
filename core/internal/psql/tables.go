@@ -44,13 +44,19 @@ func GetDBInfo(db *sql.DB, schema string, blockList []string) (*DBInfo, error) {
 		return nil, err
 	}
 
-	for _, t := range di.Tables {
-		cols, err := GetColumns(db, schema, t.Name, blockList)
-		if err != nil {
-			return nil, err
-		}
+	var tables []string
 
-		di.Columns = append(di.Columns, cols)
+	for _, t := range di.Tables {
+		tables = append(tables, t.Name)
+	}
+
+	cols, err := GetColumns(db, schema, tables, blockList)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, t := range tables {
+		di.Columns = append(di.Columns, cols[t])
 	}
 
 	di.colMap = newColMap(di.Tables, di.Columns)
@@ -139,11 +145,13 @@ type DBColumn struct {
 	FKeyTable  string
 	FKeyColID  []int16
 	fKeyColID  pgtype.Int2Array
+	Blocked    bool
 }
 
-func GetColumns(db *sql.DB, schema, table string, blockList []string) ([]DBColumn, error) {
+func GetColumns(db *sql.DB, schema string, tables []string, blockList []string) (map[string][]DBColumn, error) {
 	sqlStmt := `
 SELECT  
+	c.relname as table,
 	f.attnum AS id,  
 	f.attname AS name,  
 	f.attnotnull AS notnull,  
@@ -168,7 +176,11 @@ SELECT
 	CASE
 		WHEN p.contype = ('f'::char) THEN p.confkey::int2[]
 		ELSE ARRAY[]::int2[]
-	END AS foreignkey_fieldnum
+	END AS foreignkey_fieldnum,
+	CASE 
+		WHEN f.attname IN (` + toList(blockList) + `) THEN true 
+		ELSE false
+	END AS blocked
 FROM 
 	pg_attribute f
 	JOIN pg_class c ON c.oid = f.attrelid  
@@ -178,30 +190,34 @@ FROM
 	LEFT JOIN pg_class AS g ON p.confrelid = g.oid  
 WHERE 
 	c.relkind IN ('r', 'v', 'm', 'f')
-	AND n.nspname = $1  -- Replace with Schema name  
-	AND c.relname = $2  -- Replace with table name  
+	AND n.nspname = $1 -- Replace with Schema name  
+	AND c.relname IN (` + toList(tables) + `)
 	AND f.attnum > 0
 	AND f.attisdropped = false
-	AND f.attname NOT IN (` + toList(blockList) + `)
 ORDER BY id;`
 
-	rows, err := db.Query(sqlStmt, schema, table)
+	rows, err := db.Query(sqlStmt, schema)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching columns: %s", err)
 	}
 	defer rows.Close()
 
-	cmap := make(map[int16]DBColumn)
+	cmap := make(map[string]map[int16]DBColumn, len(tables))
 
 	for rows.Next() {
-		c := DBColumn{}
+		var t string
+		var c DBColumn
 
-		err = rows.Scan(&c.ID, &c.Name, &c.NotNull, &c.Type, &c.Array, &c.PrimaryKey, &c.UniqueKey, &c.FKeyTable, &c.fKeyColID)
+		err = rows.Scan(&t, &c.ID, &c.Name, &c.NotNull, &c.Type, &c.Array, &c.PrimaryKey, &c.UniqueKey, &c.FKeyTable, &c.fKeyColID, &c.Blocked)
 		if err != nil {
 			return nil, err
 		}
 
-		if v, ok := cmap[c.ID]; ok {
+		if _, ok := cmap[t]; !ok {
+			cmap[t] = make(map[int16]DBColumn)
+		}
+
+		if v, ok := cmap[t][c.ID]; ok {
 			if c.PrimaryKey {
 				v.PrimaryKey = true
 				v.UniqueKey = true
@@ -225,7 +241,8 @@ ORDER BY id;`
 					return nil, err
 				}
 			}
-			cmap[c.ID] = v
+			cmap[t][c.ID] = v
+
 		} else {
 			err := c.fKeyColID.AssignTo(&c.FKeyColID)
 			if err != nil {
@@ -235,13 +252,19 @@ ORDER BY id;`
 			if c.PrimaryKey {
 				c.UniqueKey = true
 			}
-			cmap[c.ID] = c
+			cmap[t][c.ID] = c
 		}
 	}
 
-	cols := make([]DBColumn, 0, len(cmap))
-	for i := range cmap {
-		cols = append(cols, cmap[i])
+	cols := make(map[string][]DBColumn, len(tables))
+
+	for t, v := range cmap {
+		for id := range v {
+			if _, ok := cols[t]; !ok {
+				cols[t] = make([]DBColumn, 0, len(v))
+			}
+			cols[t] = append(cols[t], v[id])
+		}
 	}
 
 	return cols, nil
