@@ -35,7 +35,7 @@ func limit(w http.ResponseWriter, r *http.Request) error {
 	remoteAddr := r.Header.Get("X-Remote-Address")
 	// log.Println("X-Remote-Address ", remoteAddr)
 	// use request Remote Address if X-Remote-Address not found
-	if len(remoteAddr) == 0 {
+	if remoteAddr == "" {
 		var err error
 		remoteAddr, _, err = net.SplitHostPort(r.RemoteAddr)
 		if err != nil {

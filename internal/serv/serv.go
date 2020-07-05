@@ -165,7 +165,7 @@ func routeHandler() (http.Handler, error) {
 		if conf.rateLimiterEnable() && strings.Contains(r.URL.Path, apiRoute) {
 			err := limit(w, r)
 			if err != nil {
-				log.Println("ERR %s", err)
+				log.Println(err.Error())
 				return
 			}
 		}
