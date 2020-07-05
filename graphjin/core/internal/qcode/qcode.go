@@ -91,6 +91,7 @@ type Exp struct {
 	ListVal    []string
 	Children   []*Exp
 	childrenA  [5]*Exp
+	internal   bool
 	doFree     bool
 }
 
@@ -213,6 +214,7 @@ func NewCompiler(c Config) (*Compiler, error) {
 func NewFilter() *Exp {
 	ex := expPool.Get().(*Exp)
 	ex.Reset()
+	ex.internal = true
 
 	return ex
 }
@@ -878,7 +880,7 @@ func newExp(st *util.Stack, node *Node, usePool bool) (*Exp, error) {
 		ex = expPool.Get().(*Exp)
 		ex.Reset()
 	} else {
-		ex = &Exp{doFree: false}
+		ex = &Exp{doFree: false, internal: true}
 	}
 
 	ex.Children = ex.childrenA[:0]
@@ -1282,4 +1284,8 @@ func freeNodes(op *Operation) {
 			fm[node] = struct{}{}
 		}
 	}
+}
+
+func (ex *Exp) IsFromQuery() bool {
+	return !ex.internal
 }

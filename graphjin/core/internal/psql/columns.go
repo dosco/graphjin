@@ -13,11 +13,10 @@ func (c *compilerContext) renderBaseColumns(
 	sel *qcode.Select,
 	ti *DBTableInfo,
 	childCols []*qcode.Column) ([]int, bool, error) {
-
 	var realColsRendered []int
 
-	colcount := (len(sel.Cols) + len(sel.OrderBy) + 1)
-	colmap := make(map[string]struct{}, colcount)
+	colmap := make(map[string]struct{},
+		(len(sel.Cols) + len(sel.OrderBy) + 1))
 
 	isSearch := sel.Args["search"] != nil
 	isCursorPaged := sel.Paging.Type != qcode.PtOffset
@@ -28,11 +27,9 @@ func (c *compilerContext) renderBaseColumns(
 		cn := col.Name
 		colmap[cn] = struct{}{}
 
-		dbCol, isRealCol := ti.ColMap[cn]
-
-		if isRealCol {
-			if dbCol.Blocked {
-				return nil, false, fmt.Errorf("column blocked: %s", cn)
+		if ti.ColumnExists(cn) {
+			if _, err := ti.GetColumnB(cn); err != nil {
+				return nil, false, err
 			}
 
 			c.renderComma(i)
@@ -102,8 +99,8 @@ func (c *compilerContext) renderBaseColumns(
 }
 
 func (c *compilerContext) renderColumnSearchRank(sel *qcode.Select, ti *DBTableInfo, col qcode.Column, columnsRendered int) error {
-	if isColumnBlocked(sel, col.Name) {
-		return nil
+	if err := ColumnAccess(ti, sel, col.Name, false); err != nil {
+		return err
 	}
 
 	if ti.TSVCol == nil {
@@ -132,9 +129,10 @@ func (c *compilerContext) renderColumnSearchRank(sel *qcode.Select, ti *DBTableI
 func (c *compilerContext) renderColumnSearchHeadline(sel *qcode.Select, ti *DBTableInfo, col qcode.Column, columnsRendered int) error {
 	cn := col.Name[16:]
 
-	if isColumnBlocked(sel, cn) {
-		return nil
+	if err := ColumnAccess(ti, sel, cn, true); err != nil {
+		return err
 	}
+
 	arg := sel.Args["search"]
 
 	c.renderComma(columnsRendered)
@@ -155,10 +153,6 @@ func (c *compilerContext) renderColumnSearchHeadline(sel *qcode.Select, ti *DBTa
 }
 
 func (c *compilerContext) renderColumnTypename(sel *qcode.Select, ti *DBTableInfo, col qcode.Column, columnsRendered int) error {
-	if isColumnBlocked(sel, col.Name) {
-		return nil
-	}
-
 	c.renderComma(columnsRendered)
 	_, _ = io.WriteString(c.w, `(`)
 	squoted(c.w, ti.Name)
@@ -177,8 +171,8 @@ func (c *compilerContext) renderColumnFunction(sel *qcode.Select, ti *DBTableInf
 
 	cn := col.Name[pl:]
 
-	if isColumnBlocked(sel, cn) {
-		return nil
+	if err := ColumnAccess(ti, sel, cn, true); err != nil {
+		return err
 	}
 
 	fn := col.Name[:pl-1]
@@ -201,11 +195,17 @@ func (c *compilerContext) renderComma(columnsRendered int) {
 	}
 }
 
-func isColumnBlocked(sel *qcode.Select, name string) bool {
-	if len(sel.Allowed) != 0 {
-		if _, ok := sel.Allowed[name]; !ok {
-			return true
+func ColumnAccess(ti *DBTableInfo, sel *qcode.Select, name string, column bool) error {
+	if column {
+		if _, err := ti.GetColumnB(name); err != nil {
+			return err
 		}
 	}
-	return false
+	if len(sel.Allowed) == 0 {
+		return nil
+	}
+	if _, ok := sel.Allowed[name]; ok {
+		return nil
+	}
+	return fmt.Errorf("column: '%s' blocked", name)
 }

@@ -75,7 +75,6 @@ func (sg *SuperGraph) initCompilers() error {
 		if err != nil {
 			return err
 		}
-
 	}
 
 	if len(sg.dbinfo.Tables) == 0 {

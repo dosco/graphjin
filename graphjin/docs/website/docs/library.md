@@ -1,12 +1,66 @@
 ---
-id: config-go
-title: Configuration in Go (SG as a library)
-sidebar_label: Configuration in Go
+id: library
+title: Use in your own GO code
+sidebar_label: Use as a Library
 ---
 
-The configuration is the same as [that in yaml](https://supergraph.dev/docs/config), is obviously written in Go and obviously is just about the `core` pkg (SG as a library).
+Super Graph can be used as a library in an already existing project. The best part is that your API need not even be a GraphQL one. You can simply use Super Graph as an alternative to a GO ORM library or directly writing SQL. The following code is just a simple example:
 
-We've tried to ensure that the config file is self-documenting and easy to work with.
+```go
+package main
+
+import (
+	"database/sql"
+	"github.com/dosco/super-graph/core"
+	"github.com/go-chi/chi"
+	"github.com/go-chi/render"
+	_ "github.com/jackc/pgx/v4/stdlib"
+)
+
+func New(cfg *Cfg) *core.SuperGraph {
+	dbConn, err := sql.Open("pgx", cfg.DB_URL)
+	//check err
+
+	superGraphConfig := NewConfig(cfg)
+
+	supergraph, err := core.NewSuperGraph(&superGraphConfig, dbConn)
+	//check err
+
+	return supergraph
+}
+
+func Handler(superGraph *core.SuperGraph) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		body, err := getBodyFromRequest(w, r)
+		//check err
+
+		ctx := context.WithValue(r.Context(), core.UserIDKey, GetYourUserID())
+
+		res, err := superGraph.GraphQL(ctx, body.Query, body.Variables)
+
+		if err != nil {
+			//check err
+			return
+		}
+
+		render.JSON(w, r, res)
+	}
+}
+
+func main() {
+  superGraph := New(config)
+
+  r := chi.NewRouter()
+
+  r.Post("/api", Handler(superGraph))
+
+  StartServer()
+}
+```
+
+## Config Explained
+
+The configuration is the same as [that in yaml](https://supergraph.dev/docs/config) except for that it is obviously written in Go and is just about configuring the `core` package (aka Super Graph library). We've tried to ensure that the config file is self-documenting and easy to work with. A config object is not required Super Graph can learn your database structure and be useful even when a config is not provided.
 
 ```go
 core.Config{
@@ -39,7 +93,7 @@ core.Config{
 	},
 
 	//Blocklist is a list of tables and columns that should be filtered out from any and all queries
-	Blocklist: []string{"password", "secrets"},
+	Blocklist: []string{"password", "secrets", "credit_card_number"},
 
 	//Tables contains all table specific configuration such as aliased tables
 	//creating relationships between tables, etc

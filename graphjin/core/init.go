@@ -129,11 +129,9 @@ func addTables(c *Config, di *psql.DBInfo) error {
 
 func addJsonTable(di *psql.DBInfo, cols []Column, t Table) error {
 	// This is for jsonb columns that want to be tables.
-	bc, ok := di.GetColumn(t.Table, t.Name)
-	if !ok {
-		return fmt.Errorf(
-			"json table: column '%s' not found on table '%s'",
-			t.Name, t.Table)
+	bc, err := di.GetColumn(t.Table, t.Name)
+	if err != nil {
+		return fmt.Errorf("json table: %w", err)
 	}
 
 	if bc.Type != "json" && bc.Type != "jsonb" {
@@ -211,31 +209,22 @@ func addForeignKeys(c *Config, di *psql.DBInfo) error {
 
 func addForeignKey(di *psql.DBInfo, c Column, t Table) error {
 	tn := t.Name
-
-	// if t.Type == "polymorphic" {
-	// 	tn = t.Table
-	// } else {
-	// 	tn = t.Name
-	// }
-
-	c1, ok := di.GetColumn(tn, c.Name)
-	if !ok {
-		return fmt.Errorf(
-			"config: invalid table '%s' or column '%s' defined",
-			tn, c.Name)
+	c1, err := di.GetColumn(tn, c.Name)
+	if err != nil {
+		return fmt.Errorf("config: foreign keys: %w", err)
 	}
 
 	v := strings.SplitN(c.ForeignKey, ".", 2)
 	if len(v) != 2 {
 		return fmt.Errorf(
-			"config: invalid foreign_key defined for table '%s' and column '%s': %s",
+			"config: invalid foreign key defined for table '%s' and column '%s': %s",
 			tn, c.Name, c.ForeignKey)
 	}
 
 	// check if it's a polymorphic foreign key
-	if _, ok := di.GetColumn(tn, v[0]); ok {
-		c2, ok := di.GetColumn(tn, v[1])
-		if !ok {
+	if _, err := di.GetColumn(tn, v[0]); err == nil {
+		c2, err := di.GetColumn(tn, v[1])
+		if err != nil {
 			return fmt.Errorf(
 				"config: invalid column '%s' for polymorphic relationship on table '%s' and column '%s'",
 				v[1], tn, c.Name)
@@ -247,10 +236,10 @@ func addForeignKey(di *psql.DBInfo, c Column, t Table) error {
 	}
 
 	fkt, fkc := v[0], v[1]
-	c3, ok := di.GetColumn(fkt, fkc)
-	if !ok {
+	c3, err := di.GetColumn(fkt, fkc)
+	if err != nil {
 		return fmt.Errorf(
-			"config: foreign_key for table '%s' and column '%s' points to unknown table '%s' and column '%s'",
+			"config: foreign key for table '%s' and column '%s' points to unknown table '%s' and column '%s'",
 			t.Name, c.Name, v[0], v[1])
 	}
 

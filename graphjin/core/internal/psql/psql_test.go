@@ -1,6 +1,7 @@
 package psql_test
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -172,6 +173,18 @@ func TestMain(m *testing.M) {
 }
 
 func compileGQLToPSQL(t *testing.T, gql string, vars psql.Variables, role string) {
+	if err := _compileGQLToPSQL(t, gql, vars, role); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func compileGQLToPSQLExpectErr(t *testing.T, gql string, vars psql.Variables, role string) {
+	if err := _compileGQLToPSQL(t, gql, vars, role); err == nil {
+		t.Fatal(errors.New("we were expecting an error"))
+	}
+}
+
+func _compileGQLToPSQL(t *testing.T, gql string, vars psql.Variables, role string) error {
 	generateTestFile := false
 
 	if generateTestFile {
@@ -180,12 +193,12 @@ func compileGQLToPSQL(t *testing.T, gql string, vars psql.Variables, role string
 		for i := 0; i < 100; i++ {
 			qc, err := qcompile.Compile([]byte(gql), role)
 			if err != nil {
-				t.Fatal(err)
+				return err
 			}
 
 			_, sqlB, err := pcompile.CompileEx(qc, vars)
 			if err != nil {
-				t.Fatal(err)
+				return err
 			}
 
 			sql := string(sqlB)
@@ -205,18 +218,18 @@ func compileGQLToPSQL(t *testing.T, gql string, vars psql.Variables, role string
 			}
 		}
 
-		return
+		return nil
 	}
 
 	for i := 0; i < 200; i++ {
 		qc, err := qcompile.Compile([]byte(gql), role)
 		if err != nil {
-			t.Fatal(err)
+			return err
 		}
 
 		_, sqlStmt, err := pcompile.CompileEx(qc, vars)
 		if err != nil {
-			t.Fatal(err)
+			return err
 		}
 
 		failed := true
@@ -232,4 +245,6 @@ func compileGQLToPSQL(t *testing.T, gql string, vars psql.Variables, role string
 			t.Fatal(errNotExpected)
 		}
 	}
+
+	return nil
 }

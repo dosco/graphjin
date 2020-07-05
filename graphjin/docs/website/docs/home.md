@@ -12,7 +12,7 @@ import useBaseUrl from '@docusaurus/useBaseUrl'; // Add to the top of the file b
     <div class="row">
       <div class="col col--2">  
         <img 
-          class="avatar__photo avatar__photo--xl"
+          class=""
           alt="Super Graph Logo" 
           src={useBaseUrl('img/super-graph-logo.svg')} 
           height="70" 
@@ -21,12 +21,12 @@ import useBaseUrl from '@docusaurus/useBaseUrl'; // Add to the top of the file b
       <div class="col col--10"><h1 class="hero__title">Super Graph</h1></div>
     </div>
     <p class="hero__subtitle">Fetch data without code!</p>
+    <p>Stop fighting ORM's and complex SQL just to fetch the data you need. Instead try Super Graph it automagically tranforms GraphQL into efficient SQL. </p>
     <div class="margin-bottom--lg">
-      <a class="button button--secondary button--outline button--lg" href="start">
-        Skip Intro
-      </a>
-    </div>
-    <p>Stop fighting ORM's and complex SQL just to fetch the data you need. Instead try Super Graph it automagically tranforms GraphQL into efficient SQL.</p>
+    <a class="button button--secondary button--outline button--lg" href="start">
+      Skip Intro
+    </a>
+  </div>
   </div>
 </div>
 
