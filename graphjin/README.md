@@ -101,6 +101,7 @@ This compiler is what sits at the heart of Super Graph, with layers of useful fu
 - Database seeding tool
 - Works with Postgres and Yugabyte DB
 - OpenCensus Support: Zipkin, Prometheus, X-Ray, Stackdriver
+- API Rate Limiting
 - Highly scalable and fast
 
 ## Documentation
