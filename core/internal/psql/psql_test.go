@@ -43,6 +43,7 @@ func TestMain(m *testing.M) {
 		},
 		Insert: qcode.InsertConfig{
 			Presets: map[string]string{
+				"price":      "$get_price",
 				"user_id":    "$user_id",
 				"created_at": "now",
 				"updated_at": "now",
@@ -136,6 +137,7 @@ func TestMain(m *testing.M) {
 
 	vars := map[string]string{
 		"admin_account_id": "5",
+		"get_price":        "sql:select price from prices where id = $product_id",
 	}
 
 	pcompile = psql.NewCompiler(psql.Config{

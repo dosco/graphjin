@@ -612,21 +612,18 @@ func (c *compilerContext) renderJoinByName(table, parent string, id int32) error
 
 func (c *compilerContext) renderColumns(sel *qcode.Select, ti *DBTableInfo) error {
 	i := 0
-	var cn string
 
 	for _, col := range sel.Cols {
 		if n := funcPrefixLen(c.schema.fm, col.Name); n != 0 {
 			if !sel.Functions {
 				continue
 			}
-			cn = col.Name[n:]
 		} else {
-			cn = col.Name
-
-			if strings.HasSuffix(cn, "_cursor") {
+			if strings.HasSuffix(col.Name, "_cursor") {
 				continue
 			}
 		}
+
 		if i != 0 {
 			io.WriteString(c.w, ", ")
 		}

@@ -431,21 +431,35 @@ func (c *compilerContext) renderInsertUpdateColumns(
 
 		if isValues {
 			val := root.PresetMap[col.Name]
-			switch {
-			case len(val) > 1 && val[0] == '$':
-				c.md.renderParam(c.w, Param{Name: val[1:], Type: col.Type})
+			var v string
 
-			case strings.HasPrefix(val, "sql:"):
+			if len(val) > 1 && val[0] == '$' {
+				vn := val[1:]
+				if v1, ok := c.vars[vn]; ok {
+					v = v1
+				} else {
+					v = val
+				}
+			} else {
+				v = val
+			}
+
+			switch {
+			case len(v) > 1 && v[0] == '$':
+				c.md.renderParam(c.w, Param{Name: v[1:], Type: col.Type})
+
+			case strings.HasPrefix(v, "sql:"):
 				io.WriteString(c.w, `(`)
-				c.md.RenderVar(c.w, val[4:])
+				c.md.RenderVar(c.w, v[4:])
 				io.WriteString(c.w, `)`)
 
 			default:
-				squoted(c.w, val)
+				squoted(c.w, v)
 			}
 
 			io.WriteString(c.w, ` :: `)
 			io.WriteString(c.w, col.Type)
+
 		} else {
 			quoted(c.w, col.Name)
 		}
