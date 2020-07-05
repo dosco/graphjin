@@ -22,11 +22,13 @@ type DBTableInfo struct {
 	Columns    []DBColumn
 	PrimaryCol *DBColumn
 	TSVCol     *DBColumn
-	ColMap     map[string]*DBColumn
-	ColIDMap   map[int16]*DBColumn
 	Singular   string
 	Plural     string
+	Blocked    bool
+
 	fkMultiRef map[string]int
+	colMap     map[string]*DBColumn
+	colIDMap   map[int16]*DBColumn
 }
 
 type RelType int
@@ -126,11 +128,13 @@ func (s *DBSchema) addTableInfo(
 		Type:       t.Type,
 		IsSingular: true,
 		Columns:    cols,
-		ColMap:     colmap,
-		ColIDMap:   colidmap,
+
 		Singular:   singular,
 		Plural:     plural,
+		Blocked:    t.Blocked,
 		fkMultiRef: fkMultiRef,
+		colMap:     colmap,
+		colIDMap:   colidmap,
 	}
 
 	tp := &DBTableInfo{
@@ -138,11 +142,12 @@ func (s *DBSchema) addTableInfo(
 		Type:       t.Type,
 		IsSingular: false,
 		Columns:    cols,
-		ColMap:     colmap,
-		ColIDMap:   colidmap,
 		Singular:   singular,
 		Plural:     plural,
+		Blocked:    t.Blocked,
 		fkMultiRef: fkMultiRef,
+		colMap:     colmap,
+		colIDMap:   colidmap,
 	}
 
 	for i := range cols {
@@ -229,11 +234,11 @@ func (s *DBSchema) virtualRels(vts []VirtualTable) error {
 		s.vt[vt.Name] = &vt
 
 		for _, t := range s.t {
-			idCol, ok := t.ColMap[vt.IDColumn]
+			idCol, ok := t.colMap[vt.IDColumn]
 			if !ok {
 				continue
 			}
-			if _, ok = t.ColMap[vt.TypeColumn]; !ok {
+			if _, ok = t.colMap[vt.TypeColumn]; !ok {
 				continue
 			}
 
@@ -326,7 +331,7 @@ func (s *DBSchema) firstDegreeRels(t DBTable, cols []DBColumn) error {
 		// Foreign key column id
 		fcid := c.FKeyColID[0]
 
-		fc, ok := ti.ColIDMap[fcid]
+		fc, ok := ti.colIDMap[fcid]
 		if !ok {
 			return fmt.Errorf("invalid foreign key column id '%d' for table '%s'",
 				fcid, ti.Name)
@@ -418,7 +423,7 @@ func (s *DBSchema) secondDegreeRels(t DBTable, cols []DBColumn) error {
 		// Foreign key column id
 		fcid := c.FKeyColID[0]
 
-		if _, ok := ti.ColIDMap[fcid]; !ok {
+		if _, ok := ti.colIDMap[fcid]; !ok {
 			return fmt.Errorf("invalid foreign key column id '%d' for table '%s'",
 				fcid, ti.Name)
 		}
@@ -466,14 +471,14 @@ func (s *DBSchema) updateSchemaOTMT(
 		parentName = getRelName(col2.Name)
 	}
 
-	fc1, ok := s.t[t1].ColIDMap[col1.FKeyColID[0]]
+	fc1, ok := s.t[t1].colIDMap[col1.FKeyColID[0]]
 	if !ok {
-		return fmt.Errorf("invalid foreign key column id '%d' for table '%s'",
+		return fmt.Errorf("invalid foreign key column id %d for table '%s'",
 			col1.FKeyColID[0], ti.Name)
 	}
-	fc2, ok := s.t[t2].ColIDMap[col2.FKeyColID[0]]
+	fc2, ok := s.t[t2].colIDMap[col2.FKeyColID[0]]
 	if !ok {
-		return fmt.Errorf("invalid foreign key column id '%d' for table '%s'",
+		return fmt.Errorf("invalid foreign key column id %d for table '%s'",
 			col2.FKeyColID[0], ti.Name)
 	}
 
@@ -529,7 +534,18 @@ func (s *DBSchema) GetTableNames() []string {
 func (s *DBSchema) GetTableInfo(selName string) (*DBTableInfo, error) {
 	t, ok := s.t[selName]
 	if !ok {
-		return nil, fmt.Errorf("table not found for selector: %s", selName)
+		return nil, fmt.Errorf("table: '%s' not found", selName)
+	}
+	return t, nil
+}
+
+func (s *DBSchema) GetTableInfoB(selName string) (*DBTableInfo, error) {
+	t, ok := s.t[selName]
+	if !ok {
+		return nil, fmt.Errorf("table: '%s' not found", selName)
+	}
+	if t.Blocked {
+		return nil, fmt.Errorf("table: '%s' (%s) blocked", t.Name, selName)
 	}
 	return t, nil
 }
@@ -580,11 +596,35 @@ func (s *DBSchema) GetRel(child, parent string) (*DBRel, error) {
 		}
 		rel, ok = s.rm[ct.Name][pt.Name]
 		if !ok {
-			return nil, fmt.Errorf("unknown relationship '%s' -> '%s'",
+			return nil, fmt.Errorf("relationship: '%s' -> '%s' not found",
 				child, parent)
 		}
 	}
 	return rel, nil
+}
+
+func (ti *DBTableInfo) ColumnExists(name string) bool {
+	_, ok := ti.colMap[name]
+	return ok
+}
+
+func (ti *DBTableInfo) GetColumn(name string) (*DBColumn, error) {
+	c, ok := ti.colMap[name]
+	if !ok {
+		return nil, fmt.Errorf("column: '%s' not found", name)
+	}
+	return c, nil
+}
+
+func (ti *DBTableInfo) GetColumnB(name string) (*DBColumn, error) {
+	c, ok := ti.colMap[name]
+	if !ok {
+		return nil, fmt.Errorf("column: '%s' not found", name)
+	}
+	if c.Blocked {
+		return nil, fmt.Errorf("column: '%s' blocked", name)
+	}
+	return c, nil
 }
 
 func (s *DBSchema) GetFunctions() []*DBFunction {

@@ -73,11 +73,11 @@ SELECT jsonb_build_object('customers', "__sj_0"."json") as "__root" FROM (SELECT
 === RUN   TestCompileQuery/aggFunction
 SELECT jsonb_build_object('products', "__sj_0"."json") as "__root" FROM (SELECT coalesce(jsonb_agg("__sj_0"."json"), '[]') as "json" FROM (SELECT to_jsonb("__sr_0".*) AS "json" FROM (SELECT "products_0"."name" AS "name", "products_0"."count_price" AS "count_price" FROM (SELECT "products"."name", count("products"."price") AS "count_price" FROM "products" WHERE (((("products"."price") > '0' :: numeric(7,2)) AND (("products"."price") < '8' :: numeric(7,2)))) GROUP BY "products"."name" LIMIT ('20') :: integer) AS "products_0") AS "__sr_0") AS "__sj_0") AS "__sj_0"
 === RUN   TestCompileQuery/aggFunctionBlockedByCol
-SELECT jsonb_build_object('products', "__sj_0"."json") as "__root" FROM (SELECT coalesce(jsonb_agg("__sj_0"."json"), '[]') as "json" FROM (SELECT to_jsonb("__sr_0".*) AS "json" FROM (SELECT "products_0"."name" AS "name" FROM (SELECT "products"."name" FROM "products" GROUP BY "products"."name" LIMIT ('20') :: integer) AS "products_0") AS "__sr_0") AS "__sj_0") AS "__sj_0"
+=== RUN   TestCompileQuery/aggFunctionDisabled
 === RUN   TestCompileQuery/aggFunctionWithFilter
 SELECT jsonb_build_object('products', "__sj_0"."json") as "__root" FROM (SELECT coalesce(jsonb_agg("__sj_0"."json"), '[]') as "json" FROM (SELECT to_jsonb("__sr_0".*) AS "json" FROM (SELECT "products_0"."id" AS "id", "products_0"."max_price" AS "max_price" FROM (SELECT "products"."id", max("products"."price") AS "max_price" FROM "products" WHERE ((((("products"."price") > '0' :: numeric(7,2)) AND (("products"."price") < '8' :: numeric(7,2))) AND (("products"."id") > '10' :: bigint))) GROUP BY "products"."id" LIMIT ('20') :: integer) AS "products_0") AS "__sr_0") AS "__sj_0") AS "__sj_0"
 === RUN   TestCompileQuery/syntheticTables
-SELECT jsonb_build_object('me', "__sj_0"."json") as "__root" FROM (SELECT to_jsonb("__sr_0".*) AS "json" FROM (SELECT  FROM (SELECT "users"."email" FROM "users" WHERE ((("users"."id") = $1 :: bigint)) LIMIT ('1') :: integer) AS "users_0") AS "__sr_0") AS "__sj_0"
+SELECT jsonb_build_object('me', "__sj_0"."json") as "__root" FROM (SELECT to_jsonb("__sr_0".*) AS "json" FROM (SELECT "users_0"."email" AS "email" FROM (SELECT "users"."email" FROM "users" WHERE ((("users"."id") = $1 :: bigint)) LIMIT ('1') :: integer) AS "users_0") AS "__sr_0") AS "__sj_0"
 === RUN   TestCompileQuery/queryWithVariables
 SELECT jsonb_build_object('product', "__sj_0"."json") as "__root" FROM (SELECT to_jsonb("__sr_0".*) AS "json" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name" FROM (SELECT "products"."id", "products"."name" FROM "products" WHERE (((("products"."price") = $1 :: numeric(7,2)) AND (("products"."id") = $2 :: bigint) AND ((("products"."price") > '0' :: numeric(7,2)) AND (("products"."price") < '8' :: numeric(7,2))))) LIMIT ('1') :: integer) AS "products_0") AS "__sr_0") AS "__sj_0"
 === RUN   TestCompileQuery/withWhereOnRelations
@@ -104,6 +104,7 @@ SELECT jsonb_build_object('products', "__sj_0"."json", 'products_cursor', "__sj_
 SELECT jsonb_build_object('products', "__sj_0"."json") as "__root" FROM (SELECT coalesce(jsonb_agg("__sj_0"."json"), '[]') as "json" FROM (SELECT to_jsonb("__sr_0".*) AS "json" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name", NULL AS "user" FROM (SELECT "products"."id", "products"."name", "products"."user_id" FROM "products" LIMIT ('20') :: integer) AS "products_0") AS "__sr_0") AS "__sj_0") AS "__sj_0"
 === RUN   TestCompileQuery/blockedQuery
 SELECT jsonb_build_object('user', "__sj_0"."json") as "__root" FROM (SELECT to_jsonb("__sr_0".*) AS "json" FROM (SELECT "users_0"."id" AS "id", "users_0"."full_name" AS "full_name", "users_0"."email" AS "email" FROM (SELECT "users"."id", "users"."full_name", "users"."email" FROM "users" WHERE (false) LIMIT ('1') :: integer) AS "users_0") AS "__sr_0") AS "__sj_0"
+=== RUN   TestCompileQuery/blockedFunctions
 --- PASS: TestCompileQuery (0.03s)
     --- PASS: TestCompileQuery/withComplexArgs (0.00s)
     --- PASS: TestCompileQuery/withWhereIn (0.00s)
@@ -119,6 +120,7 @@ SELECT jsonb_build_object('user', "__sj_0"."json") as "__root" FROM (SELECT to_j
     --- PASS: TestCompileQuery/manyToManyReverse (0.00s)
     --- PASS: TestCompileQuery/aggFunction (0.00s)
     --- PASS: TestCompileQuery/aggFunctionBlockedByCol (0.00s)
+    --- PASS: TestCompileQuery/aggFunctionDisabled (0.00s)
     --- PASS: TestCompileQuery/aggFunctionWithFilter (0.00s)
     --- PASS: TestCompileQuery/syntheticTables (0.00s)
     --- PASS: TestCompileQuery/queryWithVariables (0.00s)
@@ -134,6 +136,7 @@ SELECT jsonb_build_object('user', "__sj_0"."json") as "__root" FROM (SELECT to_j
     --- PASS: TestCompileQuery/withCursor (0.00s)
     --- PASS: TestCompileQuery/nullForAuthRequiredInAnon (0.00s)
     --- PASS: TestCompileQuery/blockedQuery (0.00s)
+    --- PASS: TestCompileQuery/blockedFunctions (0.00s)
 === RUN   TestCompileUpdate
 === RUN   TestCompileUpdate/singleUpdate
 WITH "_sg_input" AS (SELECT $1 :: json AS j), "products" AS (UPDATE "products" SET ("name", "description") = (SELECT CAST( i.j ->>'name' AS character varying), CAST( i.j ->>'description' AS text) FROM "_sg_input" i) WHERE ((("products"."id") = '1' :: bigint) AND (("products"."id") = $2 :: bigint)) RETURNING "products".*) SELECT jsonb_build_object('product', "__sj_0"."json") as "__root" FROM (SELECT to_jsonb("__sr_0".*) AS "json" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name" FROM (SELECT "products"."id", "products"."name" FROM "products" LIMIT ('1') :: integer) AS "products_0") AS "__sr_0") AS "__sj_0"
@@ -163,4 +166,4 @@ WITH "_sg_input" AS (SELECT $1 :: json AS j), "_x_users" AS (SELECT * FROM (VALU
     --- PASS: TestCompileUpdate/nestedUpdateOneToOneWithConnect (0.00s)
     --- PASS: TestCompileUpdate/nestedUpdateOneToOneWithDisconnect (0.00s)
 PASS
-ok  	github.com/dosco/super-graph/core/internal/psql	0.189s
+ok  	github.com/dosco/super-graph/core/internal/psql	0.324s

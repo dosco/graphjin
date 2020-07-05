@@ -69,7 +69,9 @@ func (sg *SuperGraph) initGraphQLEgine() error {
 		if err != nil {
 			return err
 		}
-
+		if ti.Blocked {
+			continue
+		}
 		if !ti.IsSingular {
 			continue
 		}
@@ -123,6 +125,9 @@ func (sg *SuperGraph) initGraphQLEgine() error {
 
 		for _, col := range ti.Columns {
 			colName := col.Name
+			if col.Blocked {
+				continue
+			}
 			// if !validGraphQLIdentifierRegex.MatchString(colName) {
 			// 	return errors.New("column name is not a valid GraphQL identifier: " + colName)
 			// }

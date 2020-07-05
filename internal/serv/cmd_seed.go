@@ -43,6 +43,8 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 		log.Fatalf("ERR failed to read seed file %s: %s", sfile, err)
 	}
 
+	conf.Core.Blocklist = nil
+
 	sg, err = core.NewSuperGraph(&conf.Core, db)
 	if err != nil {
 		log.Fatalf("ERR failed to initialize Super Graph: %s", err)

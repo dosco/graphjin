@@ -44,7 +44,7 @@ func (co *Compiler) compileMutation(w io.Writer, qc *qcode.QCode, vars Variables
 	c := &compilerContext{md, w, qc.Selects, co}
 	root := &qc.Selects[0]
 
-	ti, err := c.schema.GetTableInfo(root.Name)
+	ti, err := c.schema.GetTableInfoB(root.Name)
 	if err != nil {
 		return c.md, err
 	}
@@ -386,13 +386,14 @@ func (c *compilerContext) renderInsertUpdateColumns(
 		if _, ok := jt[cn.Key]; !ok {
 			continue
 		}
+		if cn.Blocked {
+			return 0, fmt.Errorf("insert: column '%s' blocked", cn.Name)
+		}
 		if _, ok := root.PresetMap[cn.Key]; ok {
 			continue
 		}
-		if len(root.Allowed) != 0 {
-			if _, ok := root.Allowed[cn.Key]; !ok {
-				continue
-			}
+		if err := ColumnAccess(ti, root, cn.Name, true); err != nil {
+			return 0, err
 		}
 		if n != 0 {
 			io.WriteString(c.w, `, `)
@@ -415,38 +416,38 @@ func (c *compilerContext) renderInsertUpdateColumns(
 		n++
 	}
 
-	for i := range root.PresetList {
-		cn := root.PresetList[i]
-		col, ok := ti.ColMap[cn]
-		if !ok {
-			continue
+	for i, pcol := range root.PresetList {
+		col, err := ti.GetColumn(pcol)
+		if err != nil {
+			return 0, fmt.Errorf("insert presets: %w", err)
 		}
 		if _, ok := skipcols[col.Name]; ok {
 			continue
 		}
+
 		if i != 0 || n != 0 {
 			io.WriteString(c.w, `, `)
 		}
 
 		if isValues {
-			val := root.PresetMap[cn]
+			val := root.PresetMap[col.Name]
 			switch {
-			case ok && len(val) > 1 && val[0] == '$':
+			case len(val) > 1 && val[0] == '$':
 				c.md.renderParam(c.w, Param{Name: val[1:], Type: col.Type})
 
-			case ok && strings.HasPrefix(val, "sql:"):
+			case strings.HasPrefix(val, "sql:"):
 				io.WriteString(c.w, `(`)
 				c.md.RenderVar(c.w, val[4:])
 				io.WriteString(c.w, `)`)
 
-			case ok:
+			default:
 				squoted(c.w, val)
 			}
 
 			io.WriteString(c.w, ` :: `)
 			io.WriteString(c.w, col.Type)
 		} else {
-			quoted(c.w, cn)
+			quoted(c.w, col.Name)
 		}
 
 		if !renderedCol {
@@ -492,8 +493,10 @@ func (c *compilerContext) renderUpsert(
 		if _, ok := jt[cn.Key]; !ok {
 			continue
 		}
-
-		if col, ok := ti.ColMap[cn.Key]; !ok || !(col.UniqueKey || col.PrimaryKey) {
+		if cn.Blocked {
+			return 0, fmt.Errorf("upsert: column '%s' blocked", cn.Name)
+		}
+		if !cn.UniqueKey || !cn.PrimaryKey {
 			continue
 		}
 
@@ -514,6 +517,9 @@ func (c *compilerContext) renderUpsert(
 	for _, cn := range ti.Columns {
 		if _, ok := jt[cn.Key]; !ok {
 			continue
+		}
+		if cn.Blocked {
+			return 0, fmt.Errorf("upsert: column '%s' blocked", cn.Name)
 		}
 		if i != 0 {
 			io.WriteString(c.w, `, `)
@@ -628,9 +634,9 @@ func renderWhereFromJSON(w io.Writer, item kvitem, key string, val []byte) error
 	}
 	i := 0
 	for k, v := range kv {
-		col, ok := ti.ColMap[k]
-		if !ok {
-			continue
+		col, err := ti.GetColumn(k)
+		if err != nil {
+			return err
 		}
 		if i != 0 {
 			io.WriteString(w, ` AND `)

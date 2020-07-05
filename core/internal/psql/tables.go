@@ -39,26 +39,30 @@ func GetDBInfo(db *sql.DB, schema string, blockList []string) (*DBInfo, error) {
 		return nil, err
 	}
 
-	di.Tables, err = GetTables(db, schema, blockList)
+	di.Tables, err = GetTables(db, schema)
 	if err != nil {
 		return nil, err
 	}
 
 	var tables []string
 
-	for _, t := range di.Tables {
+	for i, t := range di.Tables {
+		di.Tables[i].Blocked = isInList(t.Name, blockList)
 		tables = append(tables, t.Name)
 	}
 
-	cols, err := GetColumns(db, schema, tables, blockList)
+	cols, err := GetColumns(db, schema, tables)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, t := range tables {
-		di.Columns = append(di.Columns, cols[t])
+		c := cols[t]
+		for i := range c {
+			c[i].Blocked = isInList(c[i].Name, blockList)
+		}
+		di.Columns = append(di.Columns, c)
 	}
-
 	di.colMap = newColMap(di.Tables, di.Columns)
 
 	di.Functions, err = GetFunctions(db, schema, blockList)
@@ -82,19 +86,24 @@ func (di *DBInfo) AddTable(t DBTable, cols []DBColumn) {
 	di.Columns = append(di.Columns, cols)
 }
 
-func (di *DBInfo) GetColumn(table, column string) (*DBColumn, bool) {
-	v, ok := di.colMap[strings.ToLower(table+column)]
-	return v, ok
+func (di *DBInfo) GetColumn(table, column string) (*DBColumn, error) {
+	c, ok := di.colMap[strings.ToLower(table+column)]
+	if !ok {
+		return nil, fmt.Errorf("column: %s.%s not found", table, column)
+	}
+
+	return c, nil
 }
 
 type DBTable struct {
-	ID   int
-	Name string
-	Key  string
-	Type string
+	ID      int
+	Name    string
+	Key     string
+	Type    string
+	Blocked bool
 }
 
-func GetTables(db *sql.DB, schema string, blockList []string) ([]DBTable, error) {
+func GetTables(db *sql.DB, schema string) ([]DBTable, error) {
 	sqlStmt := `
 SELECT
 	c.relname as "name",
@@ -107,8 +116,7 @@ FROM pg_catalog.pg_class c
 	LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
 WHERE c.relkind IN ('r','v','m','f','')
 	AND n.nspname = $1
-	AND pg_catalog.pg_table_is_visible(c.oid)
-	AND c.relname NOT IN (` + toList(blockList) + `);`
+	AND pg_catalog.pg_table_is_visible(c.oid);`
 
 	var tables []DBTable
 
@@ -148,7 +156,7 @@ type DBColumn struct {
 	Blocked    bool
 }
 
-func GetColumns(db *sql.DB, schema string, tables []string, blockList []string) (map[string][]DBColumn, error) {
+func GetColumns(db *sql.DB, schema string, tables []string) (map[string][]DBColumn, error) {
 	sqlStmt := `
 SELECT  
 	c.relname as table,
@@ -176,11 +184,7 @@ SELECT
 	CASE
 		WHEN p.contype = ('f'::char) THEN p.confkey::int2[]
 		ELSE ARRAY[]::int2[]
-	END AS foreignkey_fieldnum,
-	CASE 
-		WHEN f.attname IN (` + toList(blockList) + `) THEN true 
-		ELSE false
-	END AS blocked
+	END AS foreignkey_fieldnum
 FROM 
 	pg_attribute f
 	JOIN pg_class c ON c.oid = f.attrelid  
@@ -208,7 +212,7 @@ ORDER BY id;`
 		var t string
 		var c DBColumn
 
-		err = rows.Scan(&t, &c.ID, &c.Name, &c.NotNull, &c.Type, &c.Array, &c.PrimaryKey, &c.UniqueKey, &c.FKeyTable, &c.fKeyColID, &c.Blocked)
+		err = rows.Scan(&t, &c.ID, &c.Name, &c.NotNull, &c.Type, &c.Array, &c.PrimaryKey, &c.UniqueKey, &c.FKeyTable, &c.fKeyColID)
 		if err != nil {
 			return nil, err
 		}
@@ -296,7 +300,6 @@ RIGHT JOIN
 	ON (routines.specific_name = parameters.specific_name and parameters.ordinal_position IS NOT NULL)	
 WHERE 
 	routines.specific_schema = $1
-	AND routines.routine_name NOT IN (` + toList(blockList) + `)
 ORDER BY 
 	routines.routine_name, parameters.ordinal_position;`
 
@@ -327,6 +330,10 @@ ORDER BY
 		if i, ok := fm[fid]; ok {
 			funcs[i].Params = append(funcs[i].Params, fp)
 		} else {
+			if isInList(fn, blockList) {
+				continue
+			}
+
 			funcs = append(funcs, DBFunction{Name: fn, Params: []DBFuncParam{fp}})
 			fm[fid] = len(funcs) - 1
 		}
@@ -360,4 +367,13 @@ func toList(s []string) string {
 		}
 	}
 	return sb.String()
+}
+
+func isInList(val string, s []string) bool {
+	for _, v := range s {
+		if strings.EqualFold(v, val) {
+			return true
+		}
+	}
+	return false
 }

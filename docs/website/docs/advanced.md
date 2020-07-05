@@ -1,7 +1,7 @@
 ---
-id: database
+id: advanced
 title: Database made easy
-sidebar_label: Database Config
+sidebar_label: Advanced Features
 ---
 
 ## Database Relationships

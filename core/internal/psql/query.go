@@ -159,7 +159,7 @@ func (co *Compiler) compileQueryWithMetadata(
 		if id < closeBlock {
 			sel := &c.s[id]
 
-			ti, err := c.schema.GetTableInfo(sel.Name)
+			ti, err := c.schema.GetTableInfoB(sel.Name)
 			if err != nil {
 				return c.md, err
 			}
@@ -627,13 +627,6 @@ func (c *compilerContext) renderColumns(sel *qcode.Select, ti *DBTableInfo) erro
 				continue
 			}
 		}
-
-		if len(sel.Allowed) != 0 {
-			if _, ok := sel.Allowed[cn]; !ok {
-				continue
-			}
-		}
-
 		if i != 0 {
 			io.WriteString(c.w, ", ")
 		}
@@ -888,7 +881,7 @@ func (c *compilerContext) renderCursorCTE(sel *qcode.Select, ti *DBTableInfo) er
 		}
 		io.WriteString(c.w, `a[`)
 		int32String(c.w, int32(i+1))
-		if v, ok := ti.ColMap[ob.Col]; ok && v != nil {
+		if v, err := ti.GetColumn(ob.Col); err == nil {
 			io.WriteString(c.w, `] :: `)
 			io.WriteString(c.w, v.Type)
 		} else {
@@ -1120,15 +1113,21 @@ func (c *compilerContext) renderNestedWhere(ex *qcode.Exp, ti *DBTableInfo) erro
 
 func (c *compilerContext) renderOp(ex *qcode.Exp, ti *DBTableInfo) error {
 	var col *DBColumn
-	var ok bool
+	var err error
 
 	if ex.Op == qcode.OpNop {
 		return nil
 	}
 
 	if ex.Col != "" {
-		if col, ok = ti.ColMap[ex.Col]; !ok {
-			return fmt.Errorf("no column '%s' found ", ex.Col)
+		if ex.IsFromQuery() {
+			col, err = ti.GetColumnB(ex.Col)
+		} else {
+			col, err = ti.GetColumn(ex.Col)
+		}
+
+		if err != nil {
+			return fmt.Errorf("where clause: %w", err)
 		}
 
 		io.WriteString(c.w, `((`)
