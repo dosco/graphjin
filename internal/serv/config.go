@@ -126,6 +126,5 @@ func (c *Config) relPath(p string) string {
 }
 
 func (c *Config) rateLimiterEnable() bool {
-	log.Println("Rate", c.RateLimiter.Rate, " Bucket ", c.RateLimiter.Bucket)
 	return c.RateLimiter.Rate > 0 && c.RateLimiter.Bucket > 0
 }
