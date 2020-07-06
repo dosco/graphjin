@@ -89,7 +89,9 @@ func (sg *SuperGraph) Subscribe(c context.Context, query string, vars json.RawMe
 	s.Do(func() {
 		err = sg.newSub(c, s, query, vars)
 	})
+
 	if err != nil {
+		sg.subs.Delete((name + role))
 		return nil, err
 	}
 
