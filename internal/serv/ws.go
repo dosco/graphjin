@@ -154,7 +154,7 @@ func waitForData(done chan bool, conn *ws.Conn, m *core.Member) {
 		}
 	}
 
-	if err != nil {
+	if err != nil && isDev() {
 		log.Printf("ERR %s", err)
 	}
 }
