@@ -6,6 +6,16 @@ import (
 	"testing"
 )
 
+func simpleQuery(t *testing.T) {
+	gql := `subscription {
+		product {
+			id
+		}
+	}`
+
+	compileGQLToPSQL(t, gql, nil, "user")
+}
+
 func withComplexArgs(t *testing.T) {
 	gql := `query {
 		proDUcts(
@@ -539,6 +549,7 @@ func blockedFunctions(t *testing.T) {
 }
 
 func TestCompileQuery(t *testing.T) {
+	t.Run("simpleQuery", simpleQuery)
 	t.Run("withComplexArgs", withComplexArgs)
 	t.Run("withWhereIn", withWhereIn)
 	t.Run("withWhereAndList", withWhereAndList)

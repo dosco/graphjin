@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"math/rand"
@@ -66,7 +67,12 @@ func (sg *SuperGraph) Subscribe(c context.Context, query string, vars json.RawMe
 	}
 
 	if name == "" {
-		return nil, errors.New("subscription: query name is required")
+		if sg.conf.UseAllowList {
+			return nil, errors.New("subscription: query name is required")
+		} else {
+			h := sha256.Sum256([]byte(query))
+			name = base64.StdEncoding.EncodeToString(h[:])
+		}
 	}
 
 	var role string

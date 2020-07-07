@@ -46,6 +46,8 @@ WITH "products" AS (DELETE FROM "products" WHERE (((("products"."price") > '0' :
     --- PASS: TestCompileMutate/bulkUpsert (0.00s)
     --- PASS: TestCompileMutate/delete (0.00s)
 === RUN   TestCompileQuery
+=== RUN   TestCompileQuery/simpleQuery
+SELECT jsonb_build_object('product', "__sj_0"."json") as "__root" FROM (SELECT to_jsonb("__sr_0".*) AS "json" FROM (SELECT "products_0"."id" AS "id" FROM (SELECT "products"."id" FROM "products" WHERE (((("products"."price") > '0' :: numeric(7,2)) AND (("products"."price") < '8' :: numeric(7,2)))) LIMIT ('1') :: integer) AS "products_0") AS "__sr_0") AS "__sj_0"
 === RUN   TestCompileQuery/withComplexArgs
 SELECT jsonb_build_object('products', "__sj_0"."json") as "__root" FROM (SELECT coalesce(jsonb_agg("__sj_0"."json"), '[]') as "json" FROM (SELECT to_jsonb("__sr_0".*) AS "json" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name", "products_0"."price" AS "price" FROM (SELECT DISTINCT ON ("products"."price") "products"."id", "products"."name", "products"."price" FROM "products" WHERE (((("products"."id") < '28' :: bigint) AND (("products"."id") >= '20' :: bigint) AND ((("products"."price") > '0' :: numeric(7,2)) AND (("products"."price") < '8' :: numeric(7,2))))) ORDER BY "products"."price" DESC LIMIT ('30') :: integer) AS "products_0") AS "__sr_0") AS "__sj_0") AS "__sj_0"
 === RUN   TestCompileQuery/withWhereIn
@@ -106,6 +108,7 @@ SELECT jsonb_build_object('products', "__sj_0"."json") as "__root" FROM (SELECT 
 SELECT jsonb_build_object('user', "__sj_0"."json") as "__root" FROM (SELECT to_jsonb("__sr_0".*) AS "json" FROM (SELECT "users_0"."id" AS "id", "users_0"."full_name" AS "full_name", "users_0"."email" AS "email" FROM (SELECT "users"."id", "users"."full_name", "users"."email" FROM "users" WHERE (false) LIMIT ('1') :: integer) AS "users_0") AS "__sr_0") AS "__sj_0"
 === RUN   TestCompileQuery/blockedFunctions
 --- PASS: TestCompileQuery (0.03s)
+    --- PASS: TestCompileQuery/simpleQuery (0.00s)
     --- PASS: TestCompileQuery/withComplexArgs (0.00s)
     --- PASS: TestCompileQuery/withWhereIn (0.00s)
     --- PASS: TestCompileQuery/withWhereAndList (0.00s)
@@ -166,4 +169,4 @@ WITH "_sg_input" AS (SELECT $1 :: json AS j), "_x_users" AS (SELECT * FROM (VALU
     --- PASS: TestCompileUpdate/nestedUpdateOneToOneWithConnect (0.00s)
     --- PASS: TestCompileUpdate/nestedUpdateOneToOneWithDisconnect (0.00s)
 PASS
-ok  	github.com/dosco/super-graph/core/internal/psql	0.191s
+ok  	github.com/dosco/super-graph/core/internal/psql	0.309s

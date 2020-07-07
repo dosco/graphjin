@@ -184,7 +184,7 @@ func (sg *SuperGraph) GraphQL(c context.Context, query string, vars json.RawMess
 	}
 
 	if ct.op == qcode.QTSubscription {
-		return nil, errors.New("use 'core.Subscribe' for subscriptions")
+		return res, errors.New("use 'core.Subscribe' for subscriptions")
 	}
 
 	// use the chirino/graphql library for introspection queries
