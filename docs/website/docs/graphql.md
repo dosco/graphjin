@@ -138,8 +138,8 @@ query {
 | lt, lesser_than        | id: { gt: 100 }                        | id < 100                                                                                                 |
 | gte, greater_or_equals | id: { gte: 100 }                       | id >= 100                                                                                                |
 | lte, lesser_or_equals  | id: { lesser_or_equals: 100 }          | id <= 100                                                                                                |
-| in                     | status: { in: [ "A", "B", "C" ] }      | status IN ('A', 'B', 'C)                                                                                 |
-| nin, not_in            | status: { in: [ "A", "B", "C" ] }      | status IN ('A', 'B', 'C)                                                                                 |
+| in                     | status: { in: [ "A", "B", "C" ] }      | status IN ('A', 'B', 'C')                                                                                 |
+| nin, not_in            | status: { in: [ "A", "B", "C" ] }      | status IN ('A', 'B', 'C')                                                                                 |
 | like                   | name: { like "phil%" }                 | Names starting with 'phil'                                                                               |
 | nlike, not_like        | name: { nlike "v%m" }                  | Not names starting with 'v' and ending with 'm'                                                          |
 | ilike                  | name: { ilike "%wOn" }                 | Names ending with 'won' case-insensitive                                                                 |
