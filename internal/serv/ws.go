@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dosco/super-graph/core"
+	"github.com/dosco/super-graph/internal/serv/internal/auth"
 	ws "github.com/gorilla/websocket"
 )
 
@@ -31,6 +32,11 @@ type gqlWsError struct {
 	Payload struct {
 		Error string `json:"error"`
 	} `json:"payload"`
+}
+
+type wsConnInit struct {
+	Type    string            `json:"type,omitempty"`
+	Payload map[string]string `json:"payload,omitempty"`
 }
 
 var upgrader = ws.Upgrader{
@@ -79,12 +85,27 @@ func apiV1Ws(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if err = json.Unmarshal(b, &msg); err != nil {
+			log.Println(err)
 			continue
 		}
 
 		switch msg.Type {
 		case "connection_init":
-			err = conn.WritePreparedMessage(initMsg)
+			var initReq wsConnInit
+			if err = json.Unmarshal(b, &initReq); err != nil {
+				break
+			}
+			handler, _ := auth.WithAuth(http.HandlerFunc(func (writer http.ResponseWriter, request *http.Request) {
+				ctx = request.Context()
+				err = conn.WritePreparedMessage(initMsg)
+				if err != nil {
+					err = sendError(conn, err)
+				}
+			}), &conf.Auth)
+			for k, v := range initReq.Payload {
+				r.Header.Set(k, v)
+			}
+			handler.ServeHTTP(w, r)
 
 		case "start":
 			if run {
@@ -102,7 +123,7 @@ func apiV1Ws(w http.ResponseWriter, r *http.Request) {
 			run = false
 
 		default:
-			log.Println("subscription: uknown type: ", msg.Type)
+			log.Println("subscription: unknown type: ", msg.Type)
 		}
 
 		if err != nil {
