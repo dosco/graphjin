@@ -132,27 +132,21 @@ func (c *scontext) execQuery(query string, vars []byte, role string) (qres, erro
 }
 
 func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, error) {
-	var tx *sql.Tx
-	var err error
-
 	var res qres
+
+	urq := c.sg.abacEnabled && c.op == qcode.QTMutation // userRoleQuery
 	rq := rquery{op: c.op, name: c.name, query: []byte(query), vars: vars}
 	cq := &cquery{q: rq}
 	res.q = cq
 
-	mutation := (c.op == qcode.QTMutation)
-	urq := c.sg.abacEnabled && mutation // userRoleQuery
-	useTx := urq || c.sg.conf.SetUserID
-
-	if useTx {
-		if tx, err = c.sg.db.BeginTx(c, nil); err != nil {
-			return res, err
-		}
-		defer tx.Rollback() //nolint: errcheck
+	conn, err := c.sg.db.Conn(c)
+	if err != nil {
+		return res, err
 	}
+	defer conn.Close()
 
 	if c.sg.conf.SetUserID {
-		if err := setLocalUserID(c, tx); err != nil {
+		if err := c.setLocalUserID(conn); err != nil {
 			return res, err
 		}
 	}
@@ -160,7 +154,7 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 	if v := c.Value(UserRoleKey); v != nil {
 		role = v.(string)
 	} else if urq {
-		role, err = c.executeRoleQuery(tx, role)
+		role, err = c.executeRoleQuery(conn, role)
 	}
 
 	if err != nil {
@@ -182,31 +176,20 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 	// 	stime = time.Now()
 	// }
 
-	var row *sql.Row
-
-	if useTx {
-		row = tx.QueryRowContext(c, cq.st.sql, varList...)
-	} else {
-		row = c.sg.db.QueryRowContext(c, cq.st.sql, varList...)
-	}
-
+	row := conn.QueryRowContext(c, cq.st.sql, varList...)
 	if cq.roleArg {
 		err = row.Scan(&res.role, &res.data)
 	} else {
 		err = row.Scan(&res.data)
 	}
 
-	if err != nil {
+	if err == sql.ErrNoRows {
+		return res, err
+	} else if err != nil {
 		return res, err
 	}
 
 	res.role = role
-
-	if useTx {
-		if err := tx.Commit(); err != nil {
-			return res, err
-		}
-	}
 
 	res.data, err = c.sg.encryptCursor(cq.st.qc, res.data)
 	if err != nil {
@@ -234,15 +217,21 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 	return res, nil
 }
 
-func (c *scontext) executeRoleQuery(tx *sql.Tx, role string) (string, error) {
+func (c *scontext) executeRoleQuery(conn *sql.Conn, role string) (string, error) {
 	if uid := c.Value(UserIDKey); uid == nil {
 		return "anon", nil
 	}
 
-	var nr string
-	err := c.sg.db.QueryRow(c.sg.roleStmt, role).Scan(&nr)
+	err := conn.QueryRowContext(c, c.sg.roleStmt, role).Scan(&role)
+	return role, err
+}
 
-	return nr, err
+func (c *scontext) setLocalUserID(conn *sql.Conn) error {
+	var err error
+	if v := c.Value(UserIDKey); v != nil {
+		_, err = conn.ExecContext(c, `SET LOCAL "user.id" = ?`, v)
+	}
+	return err
 }
 
 func (r *Result) Operation() OpType {

@@ -265,6 +265,12 @@ func (sg *SuperGraph) checkUpdates(s *sub, mv mval, start int) {
 			continue
 		}
 
+		js, err = sg.encryptCursor(s.q.st.qc, js)
+		if err != nil {
+			sg.log.Printf("ERR %s", err)
+			return
+		}
+
 		res := &Result{
 			op:   qcode.QTQuery,
 			name: s.name,

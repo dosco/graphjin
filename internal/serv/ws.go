@@ -60,6 +60,8 @@ func apiV1Ws(w http.ResponseWriter, r *http.Request) {
 	var m *core.Member
 	var run bool
 
+	ctx := r.Context()
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		renderErr(w, err)
@@ -71,7 +73,6 @@ func apiV1Ws(w http.ResponseWriter, r *http.Request) {
 	var b []byte
 
 	done := make(chan bool)
-	ctx := r.Context()
 
 	for {
 		if _, b, err = conn.ReadMessage(); err != nil {

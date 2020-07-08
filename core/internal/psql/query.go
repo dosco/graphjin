@@ -113,7 +113,7 @@ func (co *Compiler) compileQueryWithMetadata(
 	}
 
 	c := &compilerContext{metad, w, qc.Selects, co}
-	st := NewIntStack()
+	rens := make([]int32, 0, len(qc.Roots))
 	i := 0
 
 	io.WriteString(c.w, `SELECT jsonb_build_object(`)
@@ -121,51 +121,89 @@ func (co *Compiler) compileQueryWithMetadata(
 		if i != 0 {
 			io.WriteString(c.w, `, `)
 		}
+		sel := &qc.Selects[id]
+		io.WriteString(c.w, `'`)
+		io.WriteString(c.w, sel.FieldName)
+		io.WriteString(c.w, `', `)
 
-		root := &qc.Selects[id]
-
-		if root.SkipRender == qcode.SkipTypeRemote {
+		if sel.SkipRender == qcode.SkipTypeRemote {
 			c.md.remoteCount++
 		}
 
-		if root.SkipRender != qcode.SkipTypeNone || (len(root.Cols) == 0 && len(root.Children) == 0) {
-			squoted(c.w, root.FieldName)
-			io.WriteString(c.w, `, `)
+		if sel.SkipRender != qcode.SkipTypeNone ||
+			(len(sel.Cols) == 0 && len(sel.Children) == 0) {
 			io.WriteString(c.w, `NULL`)
 
 		} else {
-			st.Push(root.ID + closeBlock)
-			st.Push(root.ID)
-			c.renderRootSelect(root)
+			io.WriteString(c.w, `"__sj_`)
+			int32String(c.w, sel.ID)
+			io.WriteString(c.w, `"."json"`)
+			rens = append(rens, sel.ID)
+		}
+
+		if sel.Paging.Type != qcode.PtOffset {
+			io.WriteString(c.w, `, '`)
+			io.WriteString(c.w, sel.FieldName)
+			io.WriteString(c.w, `_cursor', `)
+
+			io.WriteString(c.w, `"__sj_`)
+			int32String(c.w, sel.ID)
+			io.WriteString(c.w, `"."cursor"`)
 		}
 
 		i++
 	}
 
-	if st.Len() != 0 {
-		io.WriteString(c.w, `) as "__root" FROM `)
-	} else {
-		io.WriteString(c.w, `) as "__root"`)
-		return c.md, nil
+	io.WriteString(c.w, `) as "__root" FROM (VALUES(true)) as "__root_x"`)
+
+	st := NewIntStack()
+	for _, id := range rens {
+		st.Push(id + closeBlock)
+		st.Push(id)
+
+		if err := c.renderQuery(st, vars); err != nil {
+			return c.md, err
+		}
 	}
 
+	return c.md, nil
+}
+
+func (c *compilerContext) renderQuery(st *IntStack, vars Variables) error {
 	for {
+		var sel *qcode.Select
+		var open bool
+
 		if st.Len() == 0 {
 			break
 		}
 
 		id := st.Pop()
-
 		if id < closeBlock {
-			sel := &c.s[id]
+			sel = &c.s[id]
+			open = true
+		} else {
+			sel = &c.s[(id - closeBlock)]
+		}
 
-			ti, err := c.schema.GetTableInfoB(sel.Name)
-			if err != nil {
-				return c.md, err
+		ti, err := c.schema.GetTableInfoB(sel.Name)
+		if err != nil {
+			return err
+		}
+
+		plural := !ti.IsSingular
+
+		if sel.Type == qcode.STMember {
+			if pti, err := c.schema.GetTableInfo(c.s[sel.ParentID].Name); err != nil {
+				return err
+			} else {
+				plural = !pti.IsSingular
 			}
+		}
 
+		if open {
 			if sel.Type == qcode.STMember && sel.Name != ti.Name {
-				return c.md, fmt.Errorf("inline fragment: 'on %s' should be 'on %s'", sel.Name, ti.Name)
+				return fmt.Errorf("inline fragment: 'on %s' should be 'on %s'", sel.Name, ti.Name)
 			}
 
 			if sel.Type != qcode.STUnion {
@@ -173,28 +211,14 @@ func (co *Compiler) compileQueryWithMetadata(
 					continue
 				}
 
-				if sel.ParentID == -1 {
-					io.WriteString(c.w, `(`)
-				} else {
-					c.renderLateralJoin(sel)
-				}
-
-				plural := !ti.IsSingular
-
-				if sel.Type == qcode.STMember {
-					if pti, err := c.schema.GetTableInfo(c.s[sel.ParentID].Name); err != nil {
-						return c.md, err
-					} else {
-						plural = !pti.IsSingular
-					}
-				}
+				c.renderLateralJoin()
 
 				if plural {
 					c.renderPluralSelect(sel, ti)
 				}
 
 				if err := c.renderSelect(sel, ti, vars); err != nil {
-					return c.md, err
+					return err
 				}
 			}
 
@@ -214,55 +238,26 @@ func (co *Compiler) compileQueryWithMetadata(
 			}
 
 		} else {
-			sel := &c.s[(id - closeBlock)]
-
 			if sel.Type != qcode.STUnion {
-				ti, err := c.schema.GetTableInfo(sel.Name)
-				if err != nil {
-					return c.md, err
-				}
-
 				io.WriteString(c.w, `)`)
 				aliasWithID(c.w, "__sr", sel.ID)
-
-				io.WriteString(c.w, `)`)
-				aliasWithID(c.w, "__sj", sel.ID)
-
-				plural := !ti.IsSingular
-
-				if sel.Type == qcode.STMember {
-					if pti, err := c.schema.GetTableInfo(c.s[sel.ParentID].Name); err != nil {
-						return c.md, err
-					} else {
-						plural = !pti.IsSingular
-					}
-				}
 
 				if plural {
 					io.WriteString(c.w, `)`)
 					aliasWithID(c.w, "__sj", sel.ID)
 				}
-
-				if sel.ParentID == -1 {
-					if st.Len() != 0 {
-						io.WriteString(c.w, `, `)
-					}
-				} else {
-					c.renderLateralJoinClose(sel)
-				}
+				c.renderLateralJoinClose(sel.ID)
 			}
 
 			if sel.Type != qcode.STMember {
-				if len(sel.Args) != 0 {
-					for _, v := range sel.Args {
-						qcode.FreeNode(v)
-					}
+				for _, v := range sel.Args {
+					qcode.FreeNode(v)
 				}
 			}
 		}
 	}
 
-	return c.md, nil
+	return nil
 }
 
 func (c *compilerContext) renderPluralSelect(sel *qcode.Select, ti *DBTableInfo) error {
@@ -298,28 +293,6 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select, ti *DBTableInfo)
 	}
 
 	io.WriteString(c.w, ` FROM (`)
-	return nil
-}
-
-func (c *compilerContext) renderRootSelect(sel *qcode.Select) error {
-	io.WriteString(c.w, `'`)
-	io.WriteString(c.w, sel.FieldName)
-	io.WriteString(c.w, `', `)
-
-	io.WriteString(c.w, `"__sj_`)
-	int32String(c.w, sel.ID)
-	io.WriteString(c.w, `"."json"`)
-
-	if sel.Paging.Type != qcode.PtOffset {
-		io.WriteString(c.w, `, '`)
-		io.WriteString(c.w, sel.FieldName)
-		io.WriteString(c.w, `_cursor', `)
-
-		io.WriteString(c.w, `"__sj_`)
-		int32String(c.w, sel.ID)
-		io.WriteString(c.w, `"."cursor"`)
-	}
-
 	return nil
 }
 
@@ -423,10 +396,9 @@ func (c *compilerContext) initSelect(sel *qcode.Select, ti *DBTableInfo, vars Va
 
 func (c *compilerContext) addSeekPredicate(sel *qcode.Select) error {
 	var or, and *qcode.Exp
-
 	obLen := len(sel.OrderBy)
 
-	if obLen > 1 {
+	if obLen != 0 {
 		isnull := qcode.NewFilter()
 		isnull.Op = qcode.OpIsNull
 		isnull.Type = qcode.ValRef
@@ -440,7 +412,7 @@ func (c *compilerContext) addSeekPredicate(sel *qcode.Select) error {
 	}
 
 	for i := 0; i < obLen; i++ {
-		if i > 0 {
+		if i != 0 {
 			and = qcode.NewFilter()
 			and.Op = qcode.OpAnd
 		}
@@ -451,11 +423,6 @@ func (c *compilerContext) addSeekPredicate(sel *qcode.Select) error {
 			f.Type = qcode.ValRef
 			f.Table = "__cur"
 			f.Val = ob.Col
-
-			if obLen == 1 {
-				qcode.AddFilter(sel, f)
-				return nil
-			}
 
 			switch {
 			case i > 0 && n != i:
@@ -566,15 +533,15 @@ func (c *compilerContext) renderSelect(sel *qcode.Select, ti *DBTableInfo, vars 
 	return nil
 }
 
-func (c *compilerContext) renderLateralJoin(sel *qcode.Select) error {
+func (c *compilerContext) renderLateralJoin() error {
 	io.WriteString(c.w, ` LEFT OUTER JOIN LATERAL (`)
 	return nil
 }
 
-func (c *compilerContext) renderLateralJoinClose(sel *qcode.Select) error {
-	// io.WriteString(c.w, `) `)
-	// aliasWithID(c.w, "__sj", sel.ID)
-	io.WriteString(c.w, ` ON ('true')`)
+func (c *compilerContext) renderLateralJoinClose(id int32) error {
+	io.WriteString(c.w, `)`)
+	aliasWithID(c.w, "__sj", id)
+	io.WriteString(c.w, ` ON true`)
 	return nil
 }
 
