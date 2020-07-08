@@ -1240,7 +1240,7 @@ func (c *compilerContext) renderDistinctOn(sel *qcode.Select, ti *DBTableInfo) {
 }
 
 func (c *compilerContext) renderList(ex *qcode.Exp) {
-	io.WriteString(c.w, ` (`)
+	io.WriteString(c.w, ` (ARRAY[`)
 	for i := range ex.ListVal {
 		if i != 0 {
 			io.WriteString(c.w, `, `)
@@ -1254,7 +1254,7 @@ func (c *compilerContext) renderList(ex *qcode.Exp) {
 			io.WriteString(c.w, `'`)
 		}
 	}
-	io.WriteString(c.w, `)`)
+	io.WriteString(c.w, `])`)
 }
 
 func (c *compilerContext) renderVal(ex *qcode.Exp, vars map[string]string, col *DBColumn) {
