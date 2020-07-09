@@ -223,7 +223,7 @@ func (sg *SuperGraph) initGraphQLEgine() error {
 
 		args := schema.InputValueList{
 			&schema.InputValue{
-				Desc: schema.Description{Text: "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit you needs."},
+				Desc: schema.Description{Text: "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit your needs."},
 				Name: "order_by",
 				Type: &schema.NonNull{OfType: &schema.TypeName{Name: orderByType.Name}},
 			},
