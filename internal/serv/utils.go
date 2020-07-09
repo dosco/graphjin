@@ -100,13 +100,13 @@ func alphanum(b byte) bool {
 	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
 }
 
-func fatalInProd(err error, msg string) {
+func fatalInProd(servConf *ServConfig, err error, msg string) {
 	var wg sync.WaitGroup
 
 	if isDev() {
-		log.Printf("ERR %s: %s", msg, err)
+		servConf.log.Printf("ERR %s: %s", msg, err)
 	} else {
-		log.Fatalf("ERR %s: %s", msg, err)
+		servConf.log.Fatalf("ERR %s: %s", msg, err)
 	}
 
 	wg.Add(1)

@@ -7,12 +7,12 @@ import (
 
 type actionFn func(w http.ResponseWriter, r *http.Request) error
 
-func newAction(a *Action) (http.Handler, error) {
+func newAction(servConf *ServConfig, a *Action) (http.Handler, error) {
 	var fn actionFn
 	var err error
 
 	if len(a.SQL) != 0 {
-		fn, err = newSQLAction(a)
+		fn, err = newSQLAction(servConf, a)
 	} else {
 		return nil, fmt.Errorf("invalid config for action '%s'", a.Name)
 	}
@@ -30,9 +30,9 @@ func newAction(a *Action) (http.Handler, error) {
 	return http.HandlerFunc(httpFn), nil
 }
 
-func newSQLAction(a *Action) (actionFn, error) {
+func newSQLAction(servConf *ServConfig, a *Action) (actionFn, error) {
 	fn := func(w http.ResponseWriter, r *http.Request) error {
-		_, err := db.ExecContext(r.Context(), a.SQL)
+		_, err := servConf.db.ExecContext(r.Context(), a.SQL)
 		return err
 	}
 
