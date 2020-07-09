@@ -64,37 +64,37 @@ input IntExpression {
 }
 type Mutation {
   line_item(  
-    "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit you needs."
+    "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit your needs."
     order_by:line_itemOrderBy!, where:line_itemExpression!, limit:Int!, offset:Int!, first:Int!, last:Int!, before:String, after:String,   
     "Finds the record by the primary key"
     id:Int!, insert:line_itemInput, update:line_itemInput, upsert:line_itemInput
   ):line_itemOutput
   line_items(  
-    "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit you needs."
+    "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit your needs."
     order_by:line_itemOrderBy!, where:line_itemExpression!, limit:Int!, offset:Int!, first:Int!, last:Int!, before:String, after:String,   
     "Finds the record by the primary key"
     id:Int!, insert:line_itemInput, update:line_itemInput, upsert:line_itemInput, inserts:[line_itemInput!]!, updates:[line_itemInput!]!, upserts:[line_itemInput!]!
   ):line_itemOutput
   product(  
-    "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit you needs."
+    "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit your needs."
     order_by:productOrderBy!, where:productExpression!, limit:Int!, offset:Int!, first:Int!, last:Int!, before:String, after:String,   
     "Finds the record by the primary key"
     id:Int!, insert:productInput, update:productInput, upsert:productInput
   ):productOutput
   products(  
-    "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit you needs."
+    "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit your needs."
     order_by:productOrderBy!, where:productExpression!, limit:Int!, offset:Int!, first:Int!, last:Int!, before:String, after:String,   
     "Finds the record by the primary key"
     id:Int!, insert:productInput, update:productInput, upsert:productInput, inserts:[productInput!]!, updates:[productInput!]!, upserts:[productInput!]!
   ):productOutput
   user(  
-    "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit you needs."
+    "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit your needs."
     order_by:userOrderBy!, where:userExpression!, limit:Int!, offset:Int!, first:Int!, last:Int!, before:String, after:String,   
     "Finds the record by the primary key"
     id:Int!, insert:userInput, update:userInput, upsert:userInput
   ):userOutput
   users(  
-    "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit you needs."
+    "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit your needs."
     order_by:userOrderBy!, where:userExpression!, limit:Int!, offset:Int!, first:Int!, last:Int!, before:String, after:String,   
     "Finds the record by the primary key"
     id:Int!, insert:userInput, update:userInput, upsert:userInput, inserts:[userInput!]!, updates:[userInput!]!, upserts:[userInput!]!
@@ -106,37 +106,37 @@ enum OrderDirection {
 }
 type Query {
   line_item(  
-    "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit you needs."
+    "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit your needs."
     order_by:line_itemOrderBy!, where:line_itemExpression!, limit:Int!, offset:Int!, first:Int!, last:Int!, before:String, after:String,   
     "Finds the record by the primary key"
     id:Int!
   ):line_itemOutput
   line_items(  
-    "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit you needs."
+    "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit your needs."
     order_by:line_itemOrderBy!, where:line_itemExpression!, limit:Int!, offset:Int!, first:Int!, last:Int!, before:String, after:String,   
     "Finds the record by the primary key"
     id:Int!
   ):[line_itemOutput!]!
   product(  
-    "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit you needs."
+    "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit your needs."
     order_by:productOrderBy!, where:productExpression!, limit:Int!, offset:Int!, first:Int!, last:Int!, before:String, after:String,   
     "Finds the record by the primary key"
     id:Int!
   ):productOutput
   products(  
-    "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit you needs."
+    "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit your needs."
     order_by:productOrderBy!, where:productExpression!, limit:Int!, offset:Int!, first:Int!, last:Int!, before:String, after:String,   
     "Finds the record by the primary key"
     id:Int!
   ):[productOutput!]!
   user(  
-    "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit you needs."
+    "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit your needs."
     order_by:userOrderBy!, where:userExpression!, limit:Int!, offset:Int!, first:Int!, last:Int!, before:String, after:String,   
     "Finds the record by the primary key"
     id:Int!
   ):userOutput
   users(  
-    "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit you needs."
+    "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit your needs."
     order_by:userOrderBy!, where:userExpression!, limit:Int!, offset:Int!, first:Int!, last:Int!, before:String, after:String,   
     "Finds the record by the primary key"
     id:Int!
