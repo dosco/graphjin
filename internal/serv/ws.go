@@ -63,7 +63,7 @@ func init() {
 	}
 }
 
-func apiV1Ws(w http.ResponseWriter, r *http.Request) {
+func apiV1Ws(servConf *ServConfig, w http.ResponseWriter, r *http.Request) {
 	var m *core.Member
 	var run bool
 
@@ -86,7 +86,7 @@ func apiV1Ws(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if err = json.Unmarshal(b, &msg); err != nil {
-			log.Println(err)
+			servConf.log.Println(err)
 			continue
 		}
 
@@ -100,7 +100,7 @@ func apiV1Ws(w http.ResponseWriter, r *http.Request) {
 			handler, _ := auth.WithAuth(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 				ctx = request.Context()
 				err = conn.WritePreparedMessage(initMsg)
-			}), &conf.Auth)
+			}), &servConf.conf.Auth)
 
 			if err != nil {
 				break
@@ -117,7 +117,7 @@ func apiV1Ws(w http.ResponseWriter, r *http.Request) {
 			}
 			m, err = sg.Subscribe(ctx, msg.Payload.Query, msg.Payload.Vars)
 			if err == nil {
-				go waitForData(done, conn, m)
+				go waitForData(servConf, done, conn, m)
 				run = true
 			}
 
@@ -127,7 +127,7 @@ func apiV1Ws(w http.ResponseWriter, r *http.Request) {
 			run = false
 
 		default:
-			log.Println("subscription: unknown type: ", msg.Type)
+			servConf.log.Println("subscription: unknown type: ", msg.Type)
 		}
 
 		if err != nil {
@@ -137,13 +137,13 @@ func apiV1Ws(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		log.Printf("ERR %s", err)
+		servConf.log.Printf("ERR %s", err)
 	}
 
 	m.Unsubscribe()
 }
 
-func waitForData(done chan bool, conn *ws.Conn, m *core.Member) {
+func waitForData(servConf *ServConfig, done chan bool, conn *ws.Conn, m *core.Member) {
 	var buf bytes.Buffer
 	var err error
 
@@ -182,7 +182,7 @@ func waitForData(done chan bool, conn *ws.Conn, m *core.Member) {
 	}
 
 	if err != nil && isDev() {
-		log.Printf("ERR %s", err)
+		servConf.log.Printf("ERR %s", err)
 	}
 }
 

@@ -36,17 +36,17 @@ type errorResp struct {
 	Error string `json:"error"`
 }
 
-func apiV1Handler() http.Handler {
-	h, err := auth.WithAuth(http.HandlerFunc(apiV1), &conf.Auth)
+func apiV1Handler(servConf *ServConfig) http.Handler {
+	h, err := auth.WithAuth(http.HandlerFunc(apiV1(servConf)), &servConf.conf.Auth)
 	if err != nil {
-		log.Fatalf("ERR %s", err)
+		servConf.log.Fatalf("ERR %s", err)
 	}
 
-	if len(conf.AllowedOrigins) != 0 {
+	if len(servConf.conf.AllowedOrigins) != 0 {
 		c := cors.New(cors.Options{
-			AllowedOrigins:   conf.AllowedOrigins,
+			AllowedOrigins:   servConf.conf.AllowedOrigins,
 			AllowCredentials: true,
-			Debug:            conf.DebugCORS,
+			Debug:            servConf.conf.DebugCORS,
 		})
 		return c.Handler(h)
 	}
@@ -54,79 +54,81 @@ func apiV1Handler() http.Handler {
 	return h
 }
 
-func apiV1(w http.ResponseWriter, r *http.Request) {
-	if websocket.IsWebSocketUpgrade(r) {
-		apiV1Ws(w, r)
-		return
-	}
-
-	ct := r.Context()
-	w.Header().Set("Content-Type", "application/json")
-
-	//nolint: errcheck
-	if conf.AuthFailBlock && !auth.IsAuth(ct) {
-		renderErr(w, errUnauthorized)
-		return
-	}
-
-	b, err := ioutil.ReadAll(io.LimitReader(r.Body, maxReadBytes))
-	if err != nil {
-		renderErr(w, err)
-		return
-	}
-	defer r.Body.Close()
-
-	req := gqlReq{}
-
-	if err = json.Unmarshal(b, &req); err != nil {
-		renderErr(w, err)
-		return
-	}
-
-	doLog := true
-	res, err := sg.GraphQL(ct, req.Query, req.Vars)
-
-	if conf.telemetryEnabled() {
-		span := trace.FromContext(ct)
-
-		span.AddAttributes(
-			trace.StringAttribute("operation", res.OperationName()),
-			trace.StringAttribute("query_name", res.QueryName()),
-			trace.StringAttribute("role", res.Role()),
-		)
-
-		if err != nil {
-			span.AddAttributes(trace.StringAttribute("error", err.Error()))
+func apiV1(servConf *ServConfig) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if websocket.IsWebSocketUpgrade(r) {
+			apiV1Ws(servConf, w, r)
+			return
 		}
 
-		ochttp.SetRoute(ct, apiRoute)
-	}
+		ct := r.Context()
+		w.Header().Set("Content-Type", "application/json")
 
-	if !conf.Production && res.QueryName() == introspectionQuery {
-		doLog = false
-	}
-
-	if doLog && logLevel >= LogLevelDebug {
-		log.Printf("DBG query %s: %s", res.QueryName(), res.SQL())
-	}
-
-	if err == nil {
-		if conf.CacheControl != "" && res.Operation() == core.OpQuery {
-			w.Header().Set("Cache-Control", conf.CacheControl)
-		}
 		//nolint: errcheck
-		json.NewEncoder(w).Encode(res)
+		if servConf.conf.AuthFailBlock && !auth.IsAuth(ct) {
+			renderErr(w, errUnauthorized)
+			return
+		}
 
-	} else {
-		renderErr(w, err)
-	}
+		b, err := ioutil.ReadAll(io.LimitReader(r.Body, maxReadBytes))
+		if err != nil {
+			renderErr(w, err)
+			return
+		}
+		defer r.Body.Close()
 
-	if doLog && logLevel >= LogLevelInfo {
-		reqLog(res, err)
+		req := gqlReq{}
+
+		if err = json.Unmarshal(b, &req); err != nil {
+			renderErr(w, err)
+			return
+		}
+
+		doLog := true
+		res, err := sg.GraphQL(ct, req.Query, req.Vars)
+
+		if servConf.conf.telemetryEnabled() {
+			span := trace.FromContext(ct)
+
+			span.AddAttributes(
+				trace.StringAttribute("operation", res.OperationName()),
+				trace.StringAttribute("query_name", res.QueryName()),
+				trace.StringAttribute("role", res.Role()),
+			)
+
+			if err != nil {
+				span.AddAttributes(trace.StringAttribute("error", err.Error()))
+			}
+
+			ochttp.SetRoute(ct, apiRoute)
+		}
+
+		if !servConf.conf.Production && res.QueryName() == introspectionQuery {
+			doLog = false
+		}
+
+		if doLog && servConf.logLevel >= LogLevelDebug {
+			servConf.log.Printf("DBG query %s: %s", res.QueryName(), res.SQL())
+		}
+
+		if err == nil {
+			if servConf.conf.CacheControl != "" && res.Operation() == core.OpQuery {
+				w.Header().Set("Cache-Control", servConf.conf.CacheControl)
+			}
+			//nolint: errcheck
+			json.NewEncoder(w).Encode(res)
+
+		} else {
+			renderErr(w, err)
+		}
+
+		if doLog && servConf.logLevel >= LogLevelInfo {
+			reqLog(servConf, res, err)
+		}
 	}
 }
 
-func reqLog(res *core.Result, err error) {
+func reqLog(servConf *ServConfig, res *core.Result, err error) {
 	var msg string
 
 	fields := []zapcore.Field{
@@ -142,7 +144,7 @@ func reqLog(res *core.Result, err error) {
 		msg = "success"
 	}
 
-	zlog.Info(msg, fields...)
+	servConf.zlog.Info(msg, fields...)
 }
 
 //nolint: errcheck

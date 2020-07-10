@@ -21,8 +21,8 @@ const (
 	PEM_SIG = "--BEGIN "
 )
 
-func initConf() (*Config, error) {
-	cp, err := filepath.Abs(confPath)
+func initConf(servConfig *ServConfig) (*Config, error) {
+	cp, err := filepath.Abs(servConfig.confPath)
 	if err != nil {
 		return nil, err
 	}
@@ -34,15 +34,15 @@ func initConf() (*Config, error) {
 
 	switch c.LogLevel {
 	case "debug":
-		logLevel = LogLevelDebug
+		servConfig.logLevel = LogLevelDebug
 	case "error":
-		logLevel = LogLevelError
+		servConfig.logLevel = LogLevelError
 	case "warn":
-		logLevel = LogLevelWarn
+		servConfig.logLevel = LogLevelWarn
 	case "info":
-		logLevel = LogLevelInfo
+		servConfig.logLevel = LogLevelInfo
 	default:
-		logLevel = LogLevelNone
+		servConfig.logLevel = LogLevelNone
 	}
 
 	// copy over db_schema from the core config
@@ -64,7 +64,7 @@ func initConf() (*Config, error) {
 
 		if _, ok := am[a.Name]; ok {
 			c.Auths = append(c.Auths[:i], c.Auths[i+1:]...)
-			log.Printf("WRN duplicate auth found: %s", a.Name)
+			servConfig.log.Printf("WRN duplicate auth found: %s", a.Name)
 		}
 		am[a.Name] = struct{}{}
 	}
@@ -79,12 +79,12 @@ func initConf() (*Config, error) {
 
 		if _, ok := axm[a.Name]; ok {
 			c.Actions = append(c.Actions[:i], c.Actions[i+1:]...)
-			log.Printf("WRN duplicate action found: %s", a.Name)
+			servConfig.log.Printf("WRN duplicate action found: %s", a.Name)
 		}
 
 		if _, ok := am[a.AuthName]; !ok {
 			c.Actions = append(c.Actions[:i], c.Actions[i+1:]...)
-			log.Printf("WRN invalid auth_name '%s' for auth: %s", a.AuthName, a.Name)
+			servConfig.log.Printf("WRN invalid auth_name '%s' for auth: %s", a.AuthName, a.Name)
 		}
 		axm[a.Name] = struct{}{}
 	}
@@ -98,7 +98,7 @@ func initConf() (*Config, error) {
 	}
 
 	if !anonFound {
-		log.Printf("WRN unauthenticated requests will be blocked. no role 'anon' defined")
+		servConfig.log.Printf("WRN unauthenticated requests will be blocked. no role 'anon' defined")
 		c.AuthFailBlock = false
 	}
 
@@ -115,9 +115,10 @@ func initConf() (*Config, error) {
 	return c, nil
 }
 
-func initDB(c *Config, useDB, useTelemetry bool) (*sql.DB, error) {
+func initDB(servConfig *ServConfig, useDB, useTelemetry bool) (*sql.DB, error) {
 	var db *sql.DB
 	var err error
+	c := servConfig.conf
 
 	config, _ := pgx.ParseConfig("")
 	config.Host = c.DB.Host
@@ -215,7 +216,7 @@ func initDB(c *Config, useDB, useTelemetry bool) (*sql.DB, error) {
 	// 	return errors.New("failed to open db")
 	// }
 
-	if useTelemetry && conf.telemetryEnabled() {
+	if useTelemetry && servConfig.conf.telemetryEnabled() {
 		opts := ocsql.TraceOptions{
 			AllowRoot:    true,
 			Ping:         true,
@@ -223,11 +224,11 @@ func initDB(c *Config, useDB, useTelemetry bool) (*sql.DB, error) {
 			RowsClose:    true,
 			RowsAffected: true,
 			LastInsertID: true,
-			Query:        conf.Telemetry.Tracing.IncludeQuery,
-			QueryParams:  conf.Telemetry.Tracing.IncludeParams,
+			Query:        servConfig.conf.Telemetry.Tracing.IncludeQuery,
+			QueryParams:  servConfig.conf.Telemetry.Tracing.IncludeParams,
 		}
 		opt := ocsql.WithOptions(opts)
-		name := ocsql.WithInstanceName(conf.AppName)
+		name := ocsql.WithInstanceName(servConfig.conf.AppName)
 
 		driverName, err = ocsql.Register(driverName, opt, name)
 		if err != nil {
@@ -237,15 +238,15 @@ func initDB(c *Config, useDB, useTelemetry bool) (*sql.DB, error) {
 
 		var interval time.Duration
 
-		if conf.Telemetry.Interval != nil {
-			interval = *conf.Telemetry.Interval
+		if servConfig.conf.Telemetry.Interval != nil {
+			interval = *servConfig.conf.Telemetry.Interval
 		} else {
 			interval = 5 * time.Second
 		}
 
 		defer ocsql.RecordStats(db, interval)()
 
-		log.Println("INF OpenCensus telemetry enabled")
+		servConfig.log.Println("INF OpenCensus telemetry enabled")
 	}
 
 	for i := 1; i < 10; i++ {
