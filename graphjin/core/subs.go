@@ -186,7 +186,6 @@ func (sg *SuperGraph) subController(s *sub) {
 
 			if len(s.ids) == 0 {
 				stop = true
-				sg.subs.Delete(s.name)
 			}
 
 		case msg := <-s.udh:
@@ -211,6 +210,8 @@ func (sg *SuperGraph) subController(s *sub) {
 			}
 		}
 	}
+
+	sg.subs.Delete((s.name + s.role))
 }
 
 func (sg *SuperGraph) checkUpdates(s *sub, mv mval, start int) {
@@ -348,4 +349,8 @@ func (m *Member) Unsubscribe() {
 		m.sub.del <- m
 		m.done = true
 	}
+}
+
+func (m *Member) String() string {
+	return m.id.String()
 }

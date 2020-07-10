@@ -3,6 +3,7 @@ package serv
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -95,13 +96,16 @@ func apiV1Ws(w http.ResponseWriter, r *http.Request) {
 			if err = json.Unmarshal(b, &initReq); err != nil {
 				break
 			}
-			handler, _ := auth.WithAuth(http.HandlerFunc(func (writer http.ResponseWriter, request *http.Request) {
+
+			handler, _ := auth.WithAuth(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 				ctx = request.Context()
 				err = conn.WritePreparedMessage(initMsg)
-				if err != nil {
-					err = sendError(conn, err)
-				}
 			}), &conf.Auth)
+
+			if err != nil {
+				break
+			}
+
 			for k, v := range initReq.Payload {
 				r.Header.Set(k, v)
 			}
@@ -146,6 +150,7 @@ func waitForData(done chan bool, conn *ws.Conn, m *core.Member) {
 	enc := json.NewEncoder(&buf)
 
 	for {
+		fmt.Println("waiting>", m)
 		select {
 		case v := <-m.Result:
 			res := gqlWsResp{ID: "1", Type: "data"}

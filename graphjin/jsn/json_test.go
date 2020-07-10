@@ -425,6 +425,34 @@ func TestReplace(t *testing.T) {
 	}
 }
 
+func TestReplace1(t *testing.T) {
+	var buf bytes.Buffer
+
+	from := []jsn.Field{
+		{[]byte("comments_cursor"), []byte(`"1"`)},
+	}
+
+	to := []jsn.Field{
+		{[]byte("comments_cursor"), []byte(`"I1HlYnNdWOcMWSWOShaz2ysN5MDqphbFL9sNKJs="`)},
+	}
+
+	input := `{"comments": [{"id": 1}], "comments_cursor": "1"}`
+
+	expected := `{"comments": [{"id": 1}], "comments_cursor":"I1HlYnNdWOcMWSWOShaz2ysN5MDqphbFL9sNKJs="}`
+
+	err := jsn.Replace(&buf, []byte(input), from, to)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	output := buf.String()
+
+	if output != expected {
+		t.Log(output)
+		t.Error("Does not match expected json")
+	}
+}
+
 func TestReplaceEmpty(t *testing.T) {
 	var buf bytes.Buffer
 
@@ -595,4 +623,21 @@ func BenchmarkReplace(b *testing.B) {
 		}
 		buf.Reset()
 	}
+}
+func BenchmarkTest(b *testing.B) {
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	var test string
+	hello := "hello"
+
+	for n := 0; n < b.N; n++ {
+		var buf bytes.Buffer
+		buf.WriteString(hello)
+		buf.WriteString("world")
+		test = buf.String()
+		buf.Reset()
+	}
+
+	fmt.Println(">", test)
 }
