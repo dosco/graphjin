@@ -46,7 +46,7 @@ make help
 The entire development flow is packaged into a `docker-compose` work flow. The below `up` command will launch A Postgres database, a example e-commerce app in Rails and Super Graph in development mode. The `db:seed` Rails task will insert sample data into Postgres.
 
 ```bash
-docker-compose -f demo.yml run rails_app rake db:create db:migrate db:seed
+docker-compose -f docker-compose.yml run rails_app rake db:create db:migrate db:seed
 docker-compose up
 ```
 

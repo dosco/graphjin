@@ -81,7 +81,7 @@ fragment userFields2 on user {
 
 ### Sorting
 
-To sort or ordering results just use the `order_by` argument. This can be combined with `where`, `search`, etc to build complex queries to fit you needs.
+To sort or ordering results just use the `order_by` argument. This can be combined with `where`, `search`, etc to build complex queries to fit your needs.
 
 ```graphql
 query {

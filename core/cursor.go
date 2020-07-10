@@ -14,11 +14,7 @@ func (sg *SuperGraph) encryptCursor(qc *qcode.QCode, data []byte) ([]byte, error
 
 	for _, s := range qc.Selects {
 		if s.Paging.Type != qcode.PtOffset {
-			var buf bytes.Buffer
-
-			buf.WriteString(s.FieldName)
-			buf.WriteString("_cursor")
-			keys = append(keys, buf.Bytes())
+			keys = append(keys, []byte(s.FieldName+"_cursor"))
 		}
 	}
 
@@ -36,31 +32,29 @@ func (sg *SuperGraph) encryptCursor(qc *qcode.QCode, data []byte) ([]byte, error
 			continue
 		}
 
-		var buf bytes.Buffer
-
 		if len(f.Value) > 2 {
 			v, err := crypto.Encrypt(f.Value[1:len(f.Value)-1], &sg.encKey)
 			if err != nil {
 				return nil, err
 			}
 
-			buf.WriteByte('"')
-			buf.WriteString(base64.StdEncoding.EncodeToString(v))
-			buf.WriteByte('"')
+			var b bytes.Buffer
+			b.Grow(base64.StdEncoding.EncodedLen(len(v)) + 2)
+			b.WriteByte('"')
+			b.WriteString(base64.StdEncoding.EncodeToString(v))
+			b.WriteByte('"')
+			to[i].Value = b.Bytes()
 		} else {
-			buf.WriteString(`null`)
+			to[i].Value = []byte(`null`)
 		}
-
-		to[i].Value = buf.Bytes()
 	}
 
-	var buf bytes.Buffer
-
-	if err := jsn.Replace(&buf, data, from, to); err != nil {
+	var b bytes.Buffer
+	if err := jsn.Replace(&b, data, from, to); err != nil {
 		return nil, err
 	}
 
-	return buf.Bytes(), nil
+	return b.Bytes(), nil
 }
 
 func (sg *SuperGraph) decrypt(data string) ([]byte, error) {
