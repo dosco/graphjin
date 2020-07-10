@@ -49,7 +49,7 @@ type dir struct {
 // non-recursively.
 //
 // The second argument is the callback that to run when the directory changes.
-// Use reload.ReExec() to restart the process.
+// Use reload.ReExec(servConf) to restart the process.
 func Dir(path string, cb func()) dir { return dir{path, cb} } // nolint: golint
 
 // Do reload the current process when its binary changes.
@@ -59,7 +59,7 @@ func Dir(path string, cb func()) dir { return dir{path, cb} } // nolint: golint
 //
 // The error return will only return initialisation errors. Once initialized it
 // will use the log function to print errors, rather than return.
-func Do(log func(string, ...interface{}), additional ...dir) error {
+func Do(servConf *ServConfig, log func(string, ...interface{}), additional ...dir) error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return errors.Wrap(err, "cannot setup watcher")
@@ -108,11 +108,11 @@ func Do(log func(string, ...interface{}), additional ...dir) error {
 				// Ensure that we use the correct events, as they are not uniform across
 				// platforms. See https://github.com/fsnotify/fsnotify/issues/74
 
-				if conf != nil && strings.HasSuffix(event.Name, "/allow.list") {
+				if servConf.conf != nil && strings.HasSuffix(event.Name, "/allow.list") {
 					continue
 				}
 
-				if conf.Production {
+				if servConf.conf.Production {
 					continue
 				}
 
@@ -136,7 +136,7 @@ func Do(log func(string, ...interface{}), additional ...dir) error {
 				if event.Name == binSelf {
 					// Wait for writes to finish.
 					time.Sleep(100 * time.Millisecond)
-					ReExec()
+					ReExec(servConf)()
 				}
 
 				for _, a := range additional {
@@ -169,10 +169,12 @@ func Do(log func(string, ...interface{}), additional ...dir) error {
 }
 
 // Exec replaces the current process with a new copy of itself.
-func ReExec() {
-	err := syscall.Exec(binSelf, append([]string{binSelf}, os.Args[1:]...), os.Environ())
-	if err != nil {
-		log.Fatalf("ERR cannot restart: %s", err)
+func ReExec(servConf *ServConfig) func() {
+	return func() {
+		err := syscall.Exec(binSelf, append([]string{binSelf}, os.Args[1:]...), os.Environ())
+		if err != nil {
+			servConf.log.Fatalf("ERR cannot restart: %s", err)
+		}
 	}
 }
 

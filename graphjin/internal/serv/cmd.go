@@ -25,18 +25,19 @@ var (
 	lastCommitTime string
 )
 
-var (
+type ServConfig struct {
 	log      *_log.Logger // logger
 	zlog     *zap.Logger  // fast logger
 	logLevel int          // log level
 	conf     *Config      // parsed config
 	confPath string       // path to the config file
 	db       *sql.DB      // database connection pool
-)
+}
 
 func Cmd() {
-	log = _log.New(os.Stdout, "", 0)
-	zlog = zap.NewExample()
+	servConf := new(ServConfig)
+	servConf.log = _log.New(os.Stdout, "", 0)
+	servConf.zlog = zap.NewExample()
 
 	rootCmd := &cobra.Command{
 		Use:   "super-graph",
@@ -46,25 +47,25 @@ func Cmd() {
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "serv",
 		Short: "Run the super-graph service",
-		Run:   cmdServ,
+		Run:   cmdServ(servConf),
 	})
 
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "db:create",
 		Short: "Create database",
-		Run:   cmdDBCreate,
+		Run:   cmdDBCreate(servConf),
 	})
 
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "db:drop",
 		Short: "Drop database",
-		Run:   cmdDBDrop,
+		Run:   cmdDBDrop(servConf),
 	})
 
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "db:seed",
 		Short: "Run the seed script to seed the database",
-		Run:   cmdDBSeed,
+		Run:   cmdDBSeed(servConf),
 	})
 
 	rootCmd.AddCommand(&cobra.Command{
@@ -92,41 +93,41 @@ e.g. db:migrate -2
 Redo previous N steps (migrate backward N steps then forward N steps).
 e.g. db:migrate -+1
 	`,
-		Run: cmdDBMigrate,
+		Run: cmdDBMigrate(servConf),
 	})
 
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "db:status",
 		Short: "Print current migration status",
-		Run:   cmdDBStatus,
+		Run:   cmdDBStatus(servConf),
 	})
 
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "db:new NAME",
 		Short: "Generate a new migration",
 		Long:  "Generate a new migration with the next sequence number and provided name",
-		Run:   cmdDBNew,
+		Run:   cmdDBNew(servConf),
 	})
 
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "db:setup",
 		Short: "Setup database",
 		Long:  "This command will create, migrate and seed the database",
-		Run:   cmdDBSetup,
+		Run:   cmdDBSetup(servConf),
 	})
 
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "db:reset",
 		Short: "Reset database",
 		Long:  "This command will drop, create, migrate and seed the database (won't run in production)",
-		Run:   cmdDBReset,
+		Run:   cmdDBReset(servConf),
 	})
 
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "new APP-NAME",
 		Short: "Create a new application",
 		Long:  "Generate all the required files to start on a new Super Graph app",
-		Run:   cmdNew,
+		Run:   cmdNew(servConf),
 	})
 
 	// rootCmd.AddCommand(&cobra.Command{
@@ -142,11 +143,11 @@ e.g. db:migrate -+1
 		Run:   cmdVersion,
 	})
 
-	rootCmd.PersistentFlags().StringVar(&confPath,
+	rootCmd.PersistentFlags().StringVar(&servConf.confPath,
 		"path", "./config", "path to config files")
 
 	if err := rootCmd.Execute(); err != nil {
-		log.Fatalf("ERR %s", err)
+		servConf.log.Fatalf("ERR %s", err)
 	}
 }
 
