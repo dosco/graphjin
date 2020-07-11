@@ -855,7 +855,7 @@ func (c *compilerContext) renderCursorCTE(sel *qcode.Select, ti *DBTableInfo) er
 		quoted(c.w, ob.Col)
 	}
 	io.WriteString(c.w, ` FROM string_to_array(`)
-	c.md.renderParam(c.w, Param{Name: "cursor", Type: "string"})
+	c.md.renderParam(c.w, Param{Name: "cursor", Type: "text"})
 	io.WriteString(c.w, `, ',') as a) `)
 	return nil
 }
@@ -1177,7 +1177,7 @@ func (c *compilerContext) renderOp(ex *qcode.Exp, ti *DBTableInfo) error {
 		} else {
 			io.WriteString(c.w, `) @@ to_tsquery(`)
 		}
-		c.md.renderParam(c.w, Param{Name: ex.Val, Type: "string"})
+		c.md.renderParam(c.w, Param{Name: ex.Val, Type: "text"})
 		io.WriteString(c.w, `))`)
 
 		return nil

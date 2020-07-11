@@ -165,7 +165,7 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 		return res, err
 	}
 
-	varList, err := c.sg.argList(c, cq.st.md, vars)
+	args, err := c.sg.argList(c, cq.st.md, vars)
 	if err != nil {
 		return res, err
 	}
@@ -176,7 +176,7 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 	// 	stime = time.Now()
 	// }
 
-	row := conn.QueryRowContext(c, cq.st.sql, varList...)
+	row := conn.QueryRowContext(c, cq.st.sql, args.values...)
 	if cq.roleArg {
 		err = row.Scan(&res.role, &res.data)
 	} else {
@@ -189,12 +189,13 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 		return res, err
 	}
 
-	res.role = role
-
-	res.data, err = c.sg.encryptCursor(cq.st.qc, res.data)
+	cur, err := c.sg.encryptCursor(cq.st.qc, res.data)
 	if err != nil {
 		return res, err
 	}
+
+	res.data = cur.data
+	res.role = role
 
 	if c.sg.allowList.IsPersist() {
 		if err := c.sg.allowList.Set(vars, query, ""); err != nil {

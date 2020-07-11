@@ -13,9 +13,15 @@ import (
 // argList function is used to create a list of arguments to pass
 // to a prepared statement.
 
-func (sg *SuperGraph) argList(c context.Context, md psql.Metadata, vars []byte) (
-	[]interface{}, error) {
+type args struct {
+	values []interface{}
+	cindx  int // index of cursor arg
+}
 
+func (sg *SuperGraph) argList(c context.Context, md psql.Metadata, vars []byte) (
+	args, error) {
+
+	ar := args{cindx: -1}
 	params := md.Params()
 	vl := make([]interface{}, len(params))
 
@@ -25,7 +31,7 @@ func (sg *SuperGraph) argList(c context.Context, md psql.Metadata, vars []byte) 
 	if len(vars) != 0 {
 		fields, _, err = jsn.Tree(vars)
 		if err != nil {
-			return nil, err
+			return ar, err
 		}
 	}
 
@@ -39,45 +45,46 @@ func (sg *SuperGraph) argList(c context.Context, md psql.Metadata, vars []byte) 
 				case int:
 					vl[i] = v1
 				default:
-					return nil, errors.New("user_id must be an integer or a string")
+					return ar, errors.New("user_id must be an integer or a string")
 				}
 			} else {
-				return nil, argErr(p)
+				return ar, argErr(p)
 			}
 
 		case "user_id_provider":
 			if v := c.Value(UserIDProviderKey); v != nil {
 				vl[i] = v.(string)
 			} else {
-				return nil, argErr(p)
+				return ar, argErr(p)
 			}
 
 		case "user_role":
 			if v := c.Value(UserRoleKey); v != nil {
 				vl[i] = v.(string)
 			} else {
-				return nil, argErr(p)
+				return ar, argErr(p)
 			}
 
 		case "cursor":
 			if v, ok := fields["cursor"]; ok && v[0] == '"' {
 				v1, err := sg.decrypt(string(v[1 : len(v)-1]))
 				if err != nil {
-					return nil, err
+					return ar, err
 				}
 				vl[i] = v1
 			} else {
 				vl[i] = nil
 			}
+			ar.cindx = i
 
 		default:
 			if v, ok := fields[p.Name]; ok {
 				switch {
 				case p.IsArray && v[0] != '[':
-					return nil, fmt.Errorf("variable '%s' should be an array of type '%s'", p.Name, p.Type)
+					return ar, fmt.Errorf("variable '%s' should be an array of type '%s'", p.Name, p.Type)
 
 				case p.Type == "json" && v[0] != '[' && v[0] != '{':
-					return nil, fmt.Errorf("variable '%s' should be an array or object", p.Name)
+					return ar, fmt.Errorf("variable '%s' should be an array or object", p.Name)
 				}
 
 				switch v[0] {
@@ -85,20 +92,16 @@ func (sg *SuperGraph) argList(c context.Context, md psql.Metadata, vars []byte) 
 					vl[i] = v
 
 				default:
-					var val interface{}
-					if err := json.Unmarshal(v, &val); err != nil {
-						return nil, err
-					}
-					vl[i] = fmt.Sprintf("%v", val)
+					vl[i] = string(v)
 				}
 
 			} else {
-				return nil, argErr(p)
+				return ar, argErr(p)
 			}
 		}
 	}
-
-	return vl, nil
+	ar.values = vl
+	return ar, nil
 }
 
 func argErr(p psql.Param) error {
