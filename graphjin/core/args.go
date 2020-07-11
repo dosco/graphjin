@@ -92,7 +92,11 @@ func (sg *SuperGraph) argList(c context.Context, md psql.Metadata, vars []byte) 
 					vl[i] = v
 
 				default:
-					vl[i] = string(v)
+					if v[0] == '"' {
+						vl[i] = string(v[1 : len(v)-1])
+					} else {
+						vl[i] = string(v)
+					}
 				}
 
 			} else {

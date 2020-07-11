@@ -39,7 +39,6 @@
 			log.Fatal(err)
 		}
 
-		fmt.Println(string(res.Data))
 	}
 */
 package core

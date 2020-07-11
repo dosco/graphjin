@@ -3,7 +3,6 @@ package serv
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -150,7 +149,6 @@ func waitForData(servConf *ServConfig, done chan bool, conn *ws.Conn, m *core.Me
 	enc := json.NewEncoder(&buf)
 
 	for {
-		fmt.Println("waiting>", m)
 		select {
 		case v := <-m.Result:
 			res := gqlWsResp{ID: "1", Type: "data"}
