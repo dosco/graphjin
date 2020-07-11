@@ -301,6 +301,10 @@ func (sg *SuperGraph) checkUpdates(s *sub, mv mval, start int) {
 			return
 		}
 
+		if s.cindx != -1 && cur.value == "" {
+			continue
+		}
+
 		s.updt <- mmsg{id: mv.ids[j], dh: newDH, cursor: cur.value}
 
 		res := &Result{

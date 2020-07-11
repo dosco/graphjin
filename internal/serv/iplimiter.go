@@ -29,11 +29,8 @@ func getIPLimiter(ip string) *rate.Limiter {
 }
 
 func limit(servConf *ServConfig, w http.ResponseWriter, r *http.Request) error {
-	// log.Println("limit")
-
 	// X-Remote-Address is used when super graph configure behind load balancer
 	remoteAddr := r.Header.Get("X-Remote-Address")
-	// log.Println("X-Remote-Address ", remoteAddr)
 	// use request Remote Address if X-Remote-Address not found
 	if remoteAddr == "" {
 		var err error
