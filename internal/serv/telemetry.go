@@ -19,9 +19,9 @@ import (
 	"go.opencensus.io/zpages"
 )
 
-func enableObservability(mux *http.ServeMux) (func(), error) {
+func enableObservability(servConf *ServConfig, mux *http.ServeMux) (func(), error) {
 	// Enable OpenCensus zPages
-	if conf.Telemetry.Debug {
+	if servConf.conf.Telemetry.Debug {
 		zpages.Handle(mux, "/telemetry")
 	}
 
@@ -35,36 +35,36 @@ func enableObservability(mux *http.ServeMux) (func(), error) {
 	var err error
 
 	// Set up the metrics exporter
-	switch conf.Telemetry.Metrics.Exporter {
+	switch servConf.conf.Telemetry.Metrics.Exporter {
 	case "prometheus":
 		ep := "/metrics"
 
-		if conf.Telemetry.Metrics.Endpoint != "" {
-			ep = conf.Telemetry.Metrics.Endpoint
+		if servConf.conf.Telemetry.Metrics.Endpoint != "" {
+			ep = servConf.conf.Telemetry.Metrics.Endpoint
 		}
 
-		ex, err1 := prometheus.NewExporter(prometheus.Options{Namespace: conf.Telemetry.Metrics.Namespace})
+		ex, err1 := prometheus.NewExporter(prometheus.Options{Namespace: servConf.conf.Telemetry.Metrics.Namespace})
 		if err == nil {
 			mux.Handle(ep, ex)
-			log.Printf("INF Prometheus exporter listening on: %s", ep)
+			servConf.log.Printf("INF Prometheus exporter listening on: %s", ep)
 		}
 		mex, err = view.Exporter(ex), err1
 
 	case "stackdriver":
-		mex, err = stackdriver.NewExporter(stackdriver.Options{ProjectID: conf.Telemetry.Metrics.Key})
+		mex, err = stackdriver.NewExporter(stackdriver.Options{ProjectID: servConf.conf.Telemetry.Metrics.Key})
 		if err == nil {
-			log.Println("INF Google Stackdriver exporter initialized")
+			servConf.log.Println("INF Google Stackdriver exporter initialized")
 		}
 
 	case "":
-		log.Println("WRN OpenCensus: no metrics exporter defined")
+		servConf.log.Println("WRN OpenCensus: no metrics exporter defined")
 
 	default:
 		err = fmt.Errorf("invalid metrics exporter")
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("ERR OpenCensus: %s: %v", conf.Telemetry.Metrics, err)
+		return nil, fmt.Errorf("ERR OpenCensus: %s: %v", servConf.conf.Telemetry.Metrics, err)
 	}
 
 	if mex != nil {
@@ -73,30 +73,30 @@ func enableObservability(mux *http.ServeMux) (func(), error) {
 	}
 
 	// Set up the tracing exporter
-	switch conf.Telemetry.Tracing.Exporter {
+	switch servConf.conf.Telemetry.Tracing.Exporter {
 	case "xray", "aws":
 		ex, err1 := aws.NewExporter(aws.WithVersion("latest"))
 		if err == nil {
 			tCloseFn = func() { ex.Flush() }
-			log.Println("INF Amazon X-Ray exporter initialized")
+			servConf.log.Println("INF Amazon X-Ray exporter initialized")
 		}
 		tex, err = trace.Exporter(ex), err1
 
 	case "zipkin":
 		// The local endpoint stores the name and address of the local service
-		lep, err := stdzipkin.NewEndpoint(conf.AppName, conf.hostPort)
+		lep, err := stdzipkin.NewEndpoint(servConf.conf.AppName, servConf.conf.hostPort)
 		if err != nil {
 			return nil, err
 		}
 
 		// The Zipkin reporter takes collected spans from the app and reports them to the backend
 		// http://localhost:9411/api/v2/spans is the default for the Zipkin Span v2
-		re := httpreporter.NewReporter(conf.Telemetry.Tracing.Endpoint)
+		re := httpreporter.NewReporter(servConf.conf.Telemetry.Tracing.Endpoint)
 		tCloseFn = func() { re.Close() }
 		tex = zipkin.NewExporter(re, lep)
 
 	case "":
-		log.Println("WRN OpenCensus: no traceing exporter defined")
+		servConf.log.Println("WRN OpenCensus: no traceing exporter defined")
 
 	default:
 		err = fmt.Errorf("invalid tracing exporter")
@@ -104,13 +104,13 @@ func enableObservability(mux *http.ServeMux) (func(), error) {
 
 	if err != nil {
 		return nil, fmt.Errorf("ERR OpenCensus: %s: %v",
-			conf.Telemetry.Tracing.Exporter,
+			servConf.conf.Telemetry.Tracing.Exporter,
 			err)
 	}
 
 	if tex != nil {
 		trace.RegisterExporter(tex)
-		sample := conf.Telemetry.Tracing.Sample
+		sample := servConf.conf.Telemetry.Tracing.Sample
 
 		if sample == "always" {
 			trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})

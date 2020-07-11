@@ -20,68 +20,68 @@ var (
 	apiRoute string = "/api/v1/graphql"
 )
 
-func initWatcher() {
-	cpath := conf.cpath
-	if conf != nil && !conf.WatchAndReload {
+func initWatcher(servConf *ServConfig) {
+	cpath := servConf.conf.cpath
+	if servConf.conf != nil && !servConf.conf.WatchAndReload {
 		return
 	}
 
 	var d dir
 	if cpath == "" || cpath == "./" {
-		d = Dir("./config", ReExec)
+		d = Dir("./config", ReExec(servConf))
 	} else {
-		d = Dir(cpath, ReExec)
+		d = Dir(cpath, ReExec(servConf))
 	}
 
 	go func() {
-		err := Do(log.Printf, d)
+		err := Do(servConf, servConf.log.Printf, d)
 		if err != nil {
-			log.Fatalf("ERR %s", err)
+			servConf.log.Fatalf("ERR %s", err)
 		}
 	}()
 }
 
-func startHTTP() {
+func startHTTP(servConf *ServConfig) {
 	var appName string
 
 	defaultHP := "0.0.0.0:8080"
 	env := os.Getenv("GO_ENV")
 
-	if conf != nil {
-		appName = conf.AppName
-		hp := strings.SplitN(conf.HostPort, ":", 2)
+	if servConf.conf != nil {
+		appName = servConf.conf.AppName
+		hp := strings.SplitN(servConf.conf.HostPort, ":", 2)
 
 		if len(hp) == 2 {
-			if conf.Host != "" {
-				hp[0] = conf.Host
+			if servConf.conf.Host != "" {
+				hp[0] = servConf.conf.Host
 			}
 
-			if conf.Port != "" {
-				hp[1] = conf.Port
+			if servConf.conf.Port != "" {
+				hp[1] = servConf.conf.Port
 			}
 
-			conf.hostPort = fmt.Sprintf("%s:%s", hp[0], hp[1])
+			servConf.conf.hostPort = fmt.Sprintf("%s:%s", hp[0], hp[1])
 		}
 	}
 
-	if conf.hostPort == "" {
-		conf.hostPort = defaultHP
+	if servConf.conf.hostPort == "" {
+		servConf.conf.hostPort = defaultHP
 	}
 
-	routes, err := routeHandler()
+	routes, err := routeHandler(servConf)
 	if err != nil {
-		log.Fatalf("ERR %s", err)
+		servConf.log.Fatalf("ERR %s", err)
 	}
 
 	srv := &http.Server{
-		Addr:           conf.hostPort,
+		Addr:           servConf.conf.hostPort,
 		Handler:        routes,
 		ReadTimeout:    5 * time.Second,
 		WriteTimeout:   10 * time.Second,
 		MaxHeaderBytes: 1 << 20,
 	}
 
-	if conf.telemetryEnabled() {
+	if servConf.conf.telemetryEnabled() {
 		srv.Handler = &ochttp.Handler{Handler: routes}
 	}
 
@@ -92,55 +92,55 @@ func startHTTP() {
 		<-sigint
 
 		if err := srv.Shutdown(context.Background()); err != nil {
-			log.Fatalln("INF shutdown signal received")
+			servConf.log.Fatalln("INF shutdown signal received")
 		}
 		close(idleConnsClosed)
 	}()
 
 	srv.RegisterOnShutdown(func() {
-		if conf.closeFn != nil {
-			conf.closeFn()
+		if servConf.conf.closeFn != nil {
+			servConf.conf.closeFn()
 		}
-		db.Close()
-		log.Fatalln("INF shutdown complete")
+		servConf.db.Close()
+		servConf.log.Fatalln("INF shutdown complete")
 	})
 
-	log.Printf("INF Super Graph started, version: %s, git-branch: %s, host-port: %s, app-name: %s, env: %s\n",
-		version, gitBranch, conf.hostPort, appName, env)
+	servConf.log.Printf("INF Super Graph started, version: %s, git-branch: %s, host-port: %s, app-name: %s, env: %s\n",
+		version, gitBranch, servConf.conf.hostPort, appName, env)
 
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-		log.Fatalln("INF server closed")
+		servConf.log.Fatalln("INF server closed")
 	}
 
 	<-idleConnsClosed
 }
 
-func routeHandler() (http.Handler, error) {
+func routeHandler(servConf *ServConfig) (http.Handler, error) {
 	var err error
 	mux := http.NewServeMux()
 
-	if conf == nil {
+	if servConf.conf == nil {
 		return mux, nil
 	}
 
-	if conf.APIPath != "" {
-		apiRoute = path.Join("/", conf.APIPath, "/v1/graphql")
+	if servConf.conf.APIPath != "" {
+		apiRoute = path.Join("/", servConf.conf.APIPath, "/v1/graphql")
 	}
 
 	routes := map[string]http.Handler{
-		"/health": http.HandlerFunc(health),
-		apiRoute:  apiV1Handler(),
+		"/health": http.HandlerFunc(health(servConf)),
+		apiRoute:  apiV1Handler(servConf),
 	}
 
-	if err := setActionRoutes(routes); err != nil {
+	if err := setActionRoutes(servConf, routes); err != nil {
 		return nil, err
 	}
 
-	if conf.WebUI {
+	if servConf.conf.WebUI {
 		routes["/"] = http.FileServer(rice.MustFindBox("./web/build").HTTPBox())
 	}
 
-	if conf.HTTPGZip {
+	if servConf.conf.HTTPGZip {
 		gz := gziphandler.MustNewGzipLevelHandler(6)
 		for k, v := range routes {
 			routes[k] = gz(v)
@@ -151,8 +151,8 @@ func routeHandler() (http.Handler, error) {
 		mux.Handle(k, v)
 	}
 
-	if conf.telemetryEnabled() {
-		conf.closeFn, err = enableObservability(mux)
+	if servConf.conf.telemetryEnabled() {
+		servConf.conf.closeFn, err = enableObservability(servConf, mux)
 		if err != nil {
 			return nil, err
 		}
@@ -162,10 +162,10 @@ func routeHandler() (http.Handler, error) {
 		w.Header().Set("Server", serverName)
 		// rate limiter only apply if it's enable from configuration and for API route
 		// WebUI and health are excluded from rate limiter
-		if conf.rateLimiterEnable() && strings.Contains(r.URL.Path, apiRoute) {
-			err := limit(w, r)
+		if servConf.conf.rateLimiterEnable() && strings.Contains(r.URL.Path, apiRoute) {
+			err := limit(servConf, w, r)
 			if err != nil {
-				log.Println(err.Error())
+				servConf.log.Println(err.Error())
 				return
 			}
 		}
@@ -175,26 +175,26 @@ func routeHandler() (http.Handler, error) {
 	return http.HandlerFunc(fn), nil
 }
 
-func setActionRoutes(routes map[string]http.Handler) error {
+func setActionRoutes(servConf *ServConfig, routes map[string]http.Handler) error {
 	var err error
 
-	for _, a := range conf.Actions {
+	for _, a := range servConf.conf.Actions {
 		var fn http.Handler
 
-		fn, err = newAction(&a)
+		fn, err = newAction(servConf, &a)
 		if err != nil {
 			break
 		}
 
 		p := fmt.Sprintf("/api/v1/actions/%s", strings.ToLower(a.Name))
 
-		if ac := findAuth(a.AuthName); ac != nil {
+		if ac := findAuth(servConf, a.AuthName); ac != nil {
 			routes[p], err = auth.WithAuth(fn, ac)
 		} else {
 			routes[p] = fn
 		}
 
-		if conf.telemetryEnabled() {
+		if servConf.conf.telemetryEnabled() {
 			routes[p] = ochttp.WithRouteTag(routes[p], p)
 		}
 
@@ -205,8 +205,8 @@ func setActionRoutes(routes map[string]http.Handler) error {
 	return nil
 }
 
-func findAuth(name string) *auth.Auth {
-	for _, a := range conf.Auths {
+func findAuth(servConf *ServConfig, name string) *auth.Auth {
+	for _, a := range servConf.conf.Auths {
 		if strings.EqualFold(a.Name, name) {
 			return &a
 		}

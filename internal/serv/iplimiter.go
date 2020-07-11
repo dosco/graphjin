@@ -28,7 +28,7 @@ func getIPLimiter(ip string) *rate.Limiter {
 	return v.(*rate.Limiter)
 }
 
-func limit(w http.ResponseWriter, r *http.Request) error {
+func limit(servConf *ServConfig, w http.ResponseWriter, r *http.Request) error {
 	// log.Println("limit")
 
 	// X-Remote-Address is used when super graph configure behind load balancer
@@ -39,7 +39,7 @@ func limit(w http.ResponseWriter, r *http.Request) error {
 		var err error
 		remoteAddr, _, err = net.SplitHostPort(r.RemoteAddr)
 		if err != nil {
-			log.Println(err.Error())
+			servConf.log.Println(err.Error())
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return errors.New("Internal Server Error")
 		}

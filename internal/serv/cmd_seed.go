@@ -22,64 +22,66 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func cmdDBSeed(cmd *cobra.Command, args []string) {
-	var err error
+func cmdDBSeed(servConf *ServConfig) func(*cobra.Command, []string) {
+	return func(cmd *cobra.Command, args []string) {
+		var err error
 
-	if conf, err = initConf(); err != nil {
-		log.Fatalf("ERR failed to read config: %s", err)
+		if servConf.conf, err = initConf(servConf); err != nil {
+			servConf.log.Fatalf("ERR failed to read config: %s", err)
+		}
+		servConf.conf.Production = false
+		servConf.conf.DefaultBlock = false
+
+		servConf.db, err = initDB(servConf, true, false)
+		if err != nil {
+			servConf.log.Fatalf("ERR failed to connect to database: %s", err)
+		}
+
+		sfile := path.Join(servConf.conf.cpath, servConf.conf.SeedFile)
+
+		b, err := ioutil.ReadFile(sfile)
+		if err != nil {
+			servConf.log.Fatalf("ERR failed to read seed file %s: %s", sfile, err)
+		}
+
+		servConf.conf.Core.Blocklist = nil
+
+		sg, err = core.NewSuperGraph(&servConf.conf.Core, servConf.db)
+		if err != nil {
+			servConf.log.Fatalf("ERR failed to initialize Super Graph: %s", err)
+		}
+
+		graphQLFn := func(query string, data interface{}, opt map[string]string) map[string]interface{} {
+			return graphQLFunc(servConf, sg, query, data, opt)
+		}
+
+		vm := goja.New()
+		vm.Set("graphql", graphQLFn)
+		vm.Set("import_csv", importCSV)
+
+		console := vm.NewObject()
+		console.Set("log", logFunc) //nolint: errcheck
+		vm.Set("console", console)
+
+		fake := vm.NewObject()
+		setFakeFuncs(fake)
+		vm.Set("fake", fake)
+
+		util := vm.NewObject()
+		setUtilFuncs(util)
+		vm.Set("util", util)
+
+		_, err = vm.RunScript("seed.js", string(b))
+		if err != nil {
+			servConf.log.Fatalf("ERR failed to execute script: %s", err)
+		}
+
+		servConf.log.Println("INF seed script done")
 	}
-	conf.Production = false
-	conf.DefaultBlock = false
-
-	db, err = initDB(conf, true, false)
-	if err != nil {
-		log.Fatalf("ERR failed to connect to database: %s", err)
-	}
-
-	sfile := path.Join(conf.cpath, conf.SeedFile)
-
-	b, err := ioutil.ReadFile(sfile)
-	if err != nil {
-		log.Fatalf("ERR failed to read seed file %s: %s", sfile, err)
-	}
-
-	conf.Core.Blocklist = nil
-
-	sg, err = core.NewSuperGraph(&conf.Core, db)
-	if err != nil {
-		log.Fatalf("ERR failed to initialize Super Graph: %s", err)
-	}
-
-	graphQLFn := func(query string, data interface{}, opt map[string]string) map[string]interface{} {
-		return graphQLFunc(sg, query, data, opt)
-	}
-
-	vm := goja.New()
-	vm.Set("graphql", graphQLFn)
-	vm.Set("import_csv", importCSV)
-
-	console := vm.NewObject()
-	console.Set("log", logFunc) //nolint: errcheck
-	vm.Set("console", console)
-
-	fake := vm.NewObject()
-	setFakeFuncs(fake)
-	vm.Set("fake", fake)
-
-	util := vm.NewObject()
-	setUtilFuncs(util)
-	vm.Set("util", util)
-
-	_, err = vm.RunScript("seed.js", string(b))
-	if err != nil {
-		log.Fatalf("ERR failed to execute script: %s", err)
-	}
-
-	log.Println("INF seed script done")
 }
 
 // func runFunc(call goja.FunctionCall) {
-func graphQLFunc(sg *core.SuperGraph, query string, data interface{}, opt map[string]string) map[string]interface{} {
+func graphQLFunc(servConf *ServConfig, sg *core.SuperGraph, query string, data interface{}, opt map[string]string) map[string]interface{} {
 	ct := context.Background()
 
 	if v, ok := opt["user_id"]; ok && v != "" {
@@ -98,18 +100,18 @@ func graphQLFunc(sg *core.SuperGraph, query string, data interface{}, opt map[st
 	var err error
 
 	if vars, err = json.Marshal(data); err != nil {
-		log.Fatalf("ERR %s", err)
+		servConf.log.Fatalf("ERR %s", err)
 	}
 
 	res, err := sg.GraphQL(ct, query, vars)
 	if err != nil {
-		log.Fatalf("ERR %s", err)
+		servConf.log.Fatalf("ERR %s", err)
 	}
 
 	val := make(map[string]interface{})
 
 	if err = json.Unmarshal(res.Data, &val); err != nil {
-		log.Fatalf("ERR %s", err)
+		servConf.log.Fatalf("ERR %s", err)
 	}
 
 	return val
@@ -184,14 +186,14 @@ func (c *csvSource) Err() error {
 	return nil
 }
 
-func importCSV(table, filename string) int64 {
+func importCSV(servConf *ServConfig, table, filename string) int64 {
 	if filename[0] != '/' {
-		filename = path.Join(confPath, filename)
+		filename = path.Join(servConf.confPath, filename)
 	}
 
 	s, err := NewCSVSource(filename)
 	if err != nil {
-		log.Fatalf("ERR %v", err)
+		servConf.log.Fatalf("ERR %v", err)
 	}
 
 	var cols []string
@@ -201,12 +203,12 @@ func importCSV(table, filename string) int64 {
 		cols = append(cols, c.(string))
 	}
 
-	conn, err := stdlib.AcquireConn(db)
+	conn, err := stdlib.AcquireConn(servConf.db)
 	if err != nil {
-		log.Fatalf("ERR %v", err)
+		servConf.log.Fatalf("ERR %v", err)
 	}
 	//nolint: errcheck
-	defer stdlib.ReleaseConn(db, conn)
+	defer stdlib.ReleaseConn(servConf.db, conn)
 
 	n, err := conn.CopyFrom(
 		context.Background(),
@@ -215,7 +217,7 @@ func importCSV(table, filename string) int64 {
 		s)
 
 	if err != nil {
-		log.Fatalf("ERR %v", fmt.Errorf("%w (line no %d)", err, s.i))
+		servConf.log.Fatalf("ERR %v", fmt.Errorf("%w (line no %d)", err, s.i))
 	}
 
 	return n
