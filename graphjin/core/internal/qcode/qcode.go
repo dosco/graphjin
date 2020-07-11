@@ -842,9 +842,6 @@ func (com *Compiler) getRole(role, field string) *trval {
 	}
 
 	return nil
-	// } else {
-	// 	return zeroTrv
-	// }
 }
 
 func AddFilter(sel *Select, fil *Exp) {

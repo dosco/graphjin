@@ -9,8 +9,14 @@ import (
 	"github.com/dosco/super-graph/jsn"
 )
 
-func (sg *SuperGraph) encryptCursor(qc *qcode.QCode, data []byte) ([]byte, error) {
+type cursors struct {
+	data  []byte
+	value string
+}
+
+func (sg *SuperGraph) encryptCursor(qc *qcode.QCode, data []byte) (cursors, error) {
 	var keys [][]byte
+	cur := cursors{data: data}
 
 	for _, s := range qc.Selects {
 		if s.Paging.Type != qcode.PtOffset {
@@ -19,7 +25,7 @@ func (sg *SuperGraph) encryptCursor(qc *qcode.QCode, data []byte) ([]byte, error
 	}
 
 	if len(keys) == 0 {
-		return data, nil
+		return cur, nil
 	}
 
 	from := jsn.Get(data, keys)
@@ -33,9 +39,15 @@ func (sg *SuperGraph) encryptCursor(qc *qcode.QCode, data []byte) ([]byte, error
 		}
 
 		if len(f.Value) > 2 {
-			v, err := crypto.Encrypt(f.Value[1:len(f.Value)-1], &sg.encKey)
+			val := f.Value[1 : len(f.Value)-1]
+			// save a copy of the first cursor value to use
+			// with subscriptions when fetching the next set
+			if cur.value == "" {
+				cur.value = string(val)
+			}
+			v, err := crypto.Encrypt(val, &sg.encKey)
 			if err != nil {
-				return nil, err
+				return cur, err
 			}
 
 			var b bytes.Buffer
@@ -51,10 +63,11 @@ func (sg *SuperGraph) encryptCursor(qc *qcode.QCode, data []byte) ([]byte, error
 
 	var b bytes.Buffer
 	if err := jsn.Replace(&b, data, from, to); err != nil {
-		return nil, err
+		return cur, err
 	}
 
-	return b.Bytes(), nil
+	cur.data = b.Bytes()
+	return cur, nil
 }
 
 func (sg *SuperGraph) decrypt(data string) ([]byte, error) {

@@ -27,11 +27,14 @@ type sub struct {
 	name string
 	role string
 	q    *cquery
-	ops  int64
+	// count of db polling go routines in flight
+	ops int64
+	// index of cursor value in the arguments array
+	cindx int
 
-	add chan *Member
-	del chan *Member
-	udh chan dhmsg
+	add  chan *Member
+	del  chan *Member
+	updt chan mmsg
 
 	mval
 	sync.Once
@@ -39,14 +42,20 @@ type sub struct {
 
 type mval struct {
 	params []json.RawMessage
-	dh     [][sha256.Size]byte
+	mi     []minfo
 	res    []chan *Result
 	ids    []xid.ID
 }
 
-type dhmsg struct {
-	id xid.ID
-	dh [sha256.Size]byte
+type minfo struct {
+	dh     [sha256.Size]byte
+	values []interface{}
+}
+
+type mmsg struct {
+	id     xid.ID
+	dh     [sha256.Size]byte
+	cursor string
 }
 
 type Member struct {
@@ -88,7 +97,7 @@ func (sg *SuperGraph) Subscribe(c context.Context, query string, vars json.RawMe
 		role: role,
 		add:  make(chan *Member),
 		del:  make(chan *Member),
-		udh:  make(chan dhmsg, 10),
+		updt: make(chan mmsg, 10),
 	})
 	s := v.(*sub)
 
@@ -101,15 +110,16 @@ func (sg *SuperGraph) Subscribe(c context.Context, query string, vars json.RawMe
 		return nil, err
 	}
 
-	varsList, err := sg.argList(c, s.q.st.md, vars)
+	args, err := sg.argList(c, s.q.st.md, vars)
 	if err != nil {
 		return nil, err
 	}
+	s.cindx = args.cindx
 
 	m := &Member{
 		Result: make(chan *Result, 10),
 		sub:    s,
-		vl:     varsList,
+		vl:     args.values,
 	}
 	s.add <- m
 
@@ -138,7 +148,6 @@ func (sg *SuperGraph) newSub(c context.Context, s *sub, query string, vars json.
 }
 
 func (sg *SuperGraph) subController(s *sub) {
-	var buf bytes.Buffer
 	var stop bool
 	var pollSeconds time.Duration
 
@@ -155,14 +164,20 @@ func (sg *SuperGraph) subController(s *sub) {
 
 		select {
 		case m := <-s.add:
-			_ = json.NewEncoder(&buf).Encode(m.vl)
-			v := buf.Bytes()
-			buf.Reset()
+			v, err := json.Marshal(m.vl)
+			if err != nil {
+				sg.log.Printf("ERR %s", err)
+				break
+			}
 
 			m.id = xid.New()
+			mi := minfo{}
+			if s.cindx != -1 {
+				mi.values = m.vl
+			}
 
 			s.params = append(s.params, v)
-			s.dh = append(s.dh, [sha256.Size]byte{})
+			s.mi = append(s.mi, mi)
 			s.res = append(s.res, m.Result)
 			s.ids = append(s.ids, m.id)
 
@@ -175,8 +190,8 @@ func (sg *SuperGraph) subController(s *sub) {
 			s.params[i] = s.params[len(s.params)-1]
 			s.params = s.params[:len(s.params)-1]
 
-			s.dh[i] = s.dh[len(s.dh)-1]
-			s.dh = s.dh[:len(s.dh)-1]
+			s.mi[i] = s.mi[len(s.mi)-1]
+			s.mi = s.mi[:len(s.mi)-1]
 
 			s.res[i] = s.res[len(s.res)-1]
 			s.res = s.res[:len(s.res)-1]
@@ -188,9 +203,25 @@ func (sg *SuperGraph) subController(s *sub) {
 				stop = true
 			}
 
-		case msg := <-s.udh:
+		case msg := <-s.updt:
 			if i, ok := s.findByID(msg.id); ok {
-				s.dh[i] = msg.dh
+				s.mi[i].dh = msg.dh
+
+				// if cindex is not -1 then this query contains
+				// a cursor that must be updated with the new
+				// cursor value so subscriptions can paginate.
+				if s.cindx != -1 && msg.cursor != "" {
+					s.mi[i].values[s.cindx] = msg.cursor
+
+					// values is a pre-generated json value that
+					// must be re-created.
+					if v, err := json.Marshal(s.mi[i].values); err != nil {
+						sg.log.Printf("ERR %s", err)
+						break
+					} else {
+						s.params[i] = v
+					}
+				}
 			}
 
 		case <-time.After(pollSeconds):
@@ -260,24 +291,24 @@ func (sg *SuperGraph) checkUpdates(s *sub, mv mval, start int) {
 		i++
 
 		newDH := sha256.Sum256(js)
-		if mv.dh[j] != newDH {
-			s.udh <- dhmsg{id: mv.ids[j], dh: newDH}
-		} else {
+		if mv.mi[j].dh == newDH {
 			continue
 		}
 
-		js, err = sg.encryptCursor(s.q.st.qc, js)
+		cur, err := sg.encryptCursor(s.q.st.qc, js)
 		if err != nil {
 			sg.log.Printf("ERR %s", err)
 			return
 		}
+
+		s.updt <- mmsg{id: mv.ids[j], dh: newDH, cursor: cur.value}
 
 		res := &Result{
 			op:   qcode.QTQuery,
 			name: s.name,
 			sql:  s.q.st.sql,
 			role: s.q.st.role.Name,
-			Data: js,
+			Data: cur.data,
 		}
 
 		if hasParams {
@@ -311,7 +342,7 @@ func renderSubWrap(st stmt) string {
 		w.WriteString(strconv.FormatInt(int64(i), 10))
 		w.WriteString(` as `)
 		w.WriteString(p.Type)
-		w.WriteString(`) `)
+		w.WriteString(`) as `)
 		w.WriteString(p.Name)
 	}
 	w.WriteString(` FROM json_array_elements($1::json) AS x`)
