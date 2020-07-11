@@ -24,7 +24,6 @@ func (sg *SuperGraph) argList(c context.Context, md psql.Metadata, vars []byte) 
 
 	if len(vars) != 0 {
 		fields, _, err = jsn.Tree(vars)
-
 		if err != nil {
 			return nil, err
 		}
@@ -90,7 +89,7 @@ func (sg *SuperGraph) argList(c context.Context, md psql.Metadata, vars []byte) 
 					if err := json.Unmarshal(v, &val); err != nil {
 						return nil, err
 					}
-					vl[i] = val
+					vl[i] = fmt.Sprintf("%v", val)
 				}
 
 			} else {
