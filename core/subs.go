@@ -148,101 +148,118 @@ func (sg *SuperGraph) newSub(c context.Context, s *sub, query string, vars json.
 }
 
 func (sg *SuperGraph) subController(s *sub) {
-	var stop bool
-	var pollSeconds time.Duration
+	defer sg.subs.Delete((s.name + s.role))
+	var ps time.Duration
 
 	if sg.conf.PollDuration != 0 {
-		pollSeconds = sg.conf.PollDuration * time.Second
+		ps = sg.conf.PollDuration * time.Second
 	} else {
-		pollSeconds = 5 * time.Second
+		ps = 5 * time.Second
 	}
 
 	for {
-		if stop {
-			break
-		}
-
 		select {
 		case m := <-s.add:
-			v, err := json.Marshal(m.vl)
-			if err != nil {
+			if err := s.addMember(m); err != nil {
 				sg.log.Printf("ERR %s", err)
-				break
+				return
 			}
-
-			m.id = xid.New()
-			mi := minfo{}
-			if s.cindx != -1 {
-				mi.values = m.vl
-			}
-
-			s.params = append(s.params, v)
-			s.mi = append(s.mi, mi)
-			s.res = append(s.res, m.Result)
-			s.ids = append(s.ids, m.id)
 
 		case m := <-s.del:
-			i, ok := s.findByID(m.id)
-			if !ok {
-				continue
-			}
-
-			s.params[i] = s.params[len(s.params)-1]
-			s.params = s.params[:len(s.params)-1]
-
-			s.mi[i] = s.mi[len(s.mi)-1]
-			s.mi = s.mi[:len(s.mi)-1]
-
-			s.res[i] = s.res[len(s.res)-1]
-			s.res = s.res[:len(s.res)-1]
-
-			s.ids[i] = s.ids[len(s.ids)-1]
-			s.ids = s.ids[:len(s.ids)-1]
-
+			s.deleteMember(m)
 			if len(s.ids) == 0 {
-				stop = true
+				return
 			}
 
 		case msg := <-s.updt:
-			if i, ok := s.findByID(msg.id); ok {
-				s.mi[i].dh = msg.dh
-
-				// if cindex is not -1 then this query contains
-				// a cursor that must be updated with the new
-				// cursor value so subscriptions can paginate.
-				if s.cindx != -1 && msg.cursor != "" {
-					s.mi[i].values[s.cindx] = msg.cursor
-
-					// values is a pre-generated json value that
-					// must be re-created.
-					if v, err := json.Marshal(s.mi[i].values); err != nil {
-						sg.log.Printf("ERR %s", err)
-						break
-					} else {
-						s.params[i] = v
-					}
-				}
+			if err := s.updateMember(msg); err != nil {
+				sg.log.Printf("ERR %s", err)
+				return
 			}
 
-		case <-time.After(pollSeconds):
-			switch {
-			case s.ops != 0 || len(s.ids) == 0:
-				continue
-
-			case len(s.ids) <= maxMembersPerWorker:
-				go sg.checkUpdates(s, s.mval, 0)
-
-			default:
-				// fan out chunks of work to multiple routines
-				// seperated by a random duration
-				for i := 0; i < len(s.ids); i += maxMembersPerWorker {
-					go sg.checkUpdates(s, s.mval, i)
-				}
-			}
+		case <-time.After(ps):
+			s.fanOutJobs(sg)
 		}
 	}
+}
 
-	sg.subs.Delete((s.name + s.role))
+func (s *sub) addMember(m *Member) error {
+	v, err := json.Marshal(m.vl)
+	if err != nil {
+		return err
+	}
+
+	m.id = xid.New()
+	mi := minfo{}
+	if s.cindx != -1 {
+		mi.values = m.vl
+	}
+
+	s.params = append(s.params, v)
+	s.mi = append(s.mi, mi)
+	s.res = append(s.res, m.Result)
+	s.ids = append(s.ids, m.id)
+	return nil
+}
+
+func (s *sub) deleteMember(m *Member) {
+	i, ok := s.findByID(m.id)
+	if !ok {
+		return
+	}
+
+	s.params[i] = s.params[len(s.params)-1]
+	s.params = s.params[:len(s.params)-1]
+
+	s.mi[i] = s.mi[len(s.mi)-1]
+	s.mi = s.mi[:len(s.mi)-1]
+
+	s.res[i] = s.res[len(s.res)-1]
+	s.res = s.res[:len(s.res)-1]
+
+	s.ids[i] = s.ids[len(s.ids)-1]
+	s.ids = s.ids[:len(s.ids)-1]
+}
+
+func (s *sub) updateMember(msg mmsg) error {
+	i, ok := s.findByID(msg.id)
+	if !ok {
+		return nil
+	}
+	s.mi[i].dh = msg.dh
+
+	// if cindex is not -1 then this query contains
+	// a cursor that must be updated with the new
+	// cursor value so subscriptions can paginate.
+	if s.cindx != -1 && msg.cursor != "" {
+		s.mi[i].values[s.cindx] = msg.cursor
+
+		// values is a pre-generated json value that
+		// must be re-created.
+		if v, err := json.Marshal(s.mi[i].values); err != nil {
+			return nil
+		} else {
+			s.params[i] = v
+		}
+	}
+	return nil
+}
+
+func (s *sub) fanOutJobs(sg *SuperGraph) {
+	switch {
+	case s.ops != 0 || len(s.ids) == 0:
+		return
+
+	case len(s.ids) <= maxMembersPerWorker:
+		go sg.checkUpdates(s, s.mval, 0)
+
+	default:
+		// fan out chunks of work to multiple routines
+		// seperated by a random duration
+		for i := 0; i < len(s.ids); i += maxMembersPerWorker {
+			go sg.checkUpdates(s, s.mval, i)
+		}
+	}
 }
 
 func (sg *SuperGraph) checkUpdates(s *sub, mv mval, start int) {
@@ -268,6 +285,8 @@ func (sg *SuperGraph) checkUpdates(s *sub, mv mval, start int) {
 
 	// when params are not available we use a more optimized
 	// codepath that does not use a join query
+	// more details on this optimization are towards the end
+	// of the function
 	if hasParams {
 		rows, err = sg.db.QueryContext(c, s.q.st.sql, renderJSONArray(mv.params[start:end]))
 	} else {
@@ -301,6 +320,8 @@ func (sg *SuperGraph) checkUpdates(s *sub, mv mval, start int) {
 			return
 		}
 
+		// we're expecting a cursor but the cursor was null
+		// so we skip this one.
 		if s.cindx != -1 && cur.value == "" {
 			continue
 		}
@@ -315,20 +336,25 @@ func (sg *SuperGraph) checkUpdates(s *sub, mv mval, start int) {
 			Data: cur.data,
 		}
 
+		// if parameters exists then each response is unique
+		// so each channel should be notified only with it's own
+		// result value
 		if hasParams {
 			select {
 			case mv.res[j] <- res:
-			default:
+			case <-time.After(250 * time.Millisecond):
 			}
-			continue
-		}
+		} else {
 
-		// if no params exist then optimize by notifying
-		// all channels since there will only be one result
-		for k := start; k < end; k++ {
-			select {
-			case mv.res[k] <- res:
-			default:
+			// if no params exist then it means we are not using
+			// the joined query so we are expecting only a single
+			// result, so we can optimize here by notifying
+			// all channels since there will only be one result
+			for k := start; k < end; k++ {
+				select {
+				case mv.res[k] <- res:
+				case <-time.After(250 * time.Millisecond):
+				}
 			}
 		}
 	}
