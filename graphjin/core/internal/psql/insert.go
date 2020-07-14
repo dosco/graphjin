@@ -85,13 +85,20 @@ func (c *compilerContext) renderInsertStmt(qc *qcode.QCode, w io.Writer, item re
 	io.WriteString(w, `INSERT INTO `)
 	quoted(w, ti.Name)
 	io.WriteString(w, ` (`)
-	c.renderInsertUpdateColumns(qc, jt, ti, sk, false)
-	renderNestedInsertRelColumns(w, item.kvitem, false)
+
+	if rc, err := c.renderInsertUpdateColumns(qc, jt, ti, sk, false); err != nil {
+		return err
+	} else {
+		renderNestedInsertRelColumns(w, item.kvitem, false, rc)
+	}
 	io.WriteString(w, `)`)
 
 	io.WriteString(w, ` SELECT `)
-	c.renderInsertUpdateColumns(qc, jt, ti, sk, true)
-	renderNestedInsertRelColumns(w, item.kvitem, true)
+	if rc, err := c.renderInsertUpdateColumns(qc, jt, ti, sk, true); err != nil {
+		return err
+	} else {
+		renderNestedInsertRelColumns(w, item.kvitem, true, rc)
+	}
 
 	io.WriteString(w, ` FROM "_sg_input" i`)
 	renderNestedInsertRelTables(w, item.kvitem)
@@ -120,9 +127,12 @@ func nestedInsertRelColumnsMap(item kvitem) map[string]struct{} {
 	return sk
 }
 
-func renderNestedInsertRelColumns(w io.Writer, item kvitem, values bool) error {
+func renderNestedInsertRelColumns(w io.Writer, item kvitem, values, colsRendered bool) error {
 	if len(item.items) == 0 {
 		if item.relPC != nil && item.relPC.Type == RelOneToMany {
+			if colsRendered {
+				io.WriteString(w, `, `)
+			}
 			if values {
 				colWithTable(w, item.relPC.Left.Table, item.relPC.Left.Col)
 			} else {
@@ -134,24 +144,25 @@ func renderNestedInsertRelColumns(w io.Writer, item kvitem, values bool) error {
 		// relationship is one-to-many
 		i := 0
 		for _, v := range item.items {
-			if v.relCP.Type == RelOneToMany {
-				if i != 0 {
-					io.WriteString(w, `, `)
-				}
-				if values {
-					if v._ctype > 0 {
-						io.WriteString(w, `"_x_`)
-						io.WriteString(w, v.relCP.Left.Table)
-						io.WriteString(w, `".`)
-						quoted(w, v.relCP.Left.Col)
-					} else {
-						colWithTable(w, v.relCP.Left.Table, v.relCP.Left.Col)
-					}
-				} else {
-					quoted(w, v.relCP.Right.Col)
-				}
-				i++
+			if v.relCP.Type != RelOneToMany {
+				continue
 			}
+			if i != 0 || colsRendered {
+				io.WriteString(w, `, `)
+			}
+			if values {
+				if v._ctype > 0 {
+					io.WriteString(w, `"_x_`)
+					io.WriteString(w, v.relCP.Left.Table)
+					io.WriteString(w, `".`)
+					quoted(w, v.relCP.Left.Col)
+				} else {
+					colWithTable(w, v.relCP.Left.Table, v.relCP.Left.Col)
+				}
+			} else {
+				quoted(w, v.relCP.Right.Col)
+			}
+			i++
 		}
 	}
 

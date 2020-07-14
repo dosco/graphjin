@@ -149,7 +149,7 @@ safe_color
 
 // Internet
 url
-image_url
+image_url((width, height)
 avatar_url
 domain_name
 domain_suffix
@@ -164,7 +164,7 @@ user_agent_safari
 
 // Date / Time
 date
-date_range
+date_range(start, end)
 nano_second
 second
 minute

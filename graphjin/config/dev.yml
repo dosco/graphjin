@@ -192,26 +192,12 @@ roles:
         query:
           limit: 10
           columns: ["id", "name", "description"]
-          aggregation: false
-
-        insert:
-          block: false
-
-        update:
-          block: false
-
-        delete:
-          block: false
 
       - name: deals
-        query:
-          limit: 3
-          aggregation: false
 
       - name: purchases
-        query:
-          limit: 3
-          aggregation: false
+
+      - name: customers
 
   - name: user
     tables:
