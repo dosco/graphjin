@@ -45,6 +45,7 @@ func cmdDBSeed(servConf *ServConfig) func(*cobra.Command, []string) {
 		}
 
 		servConf.conf.Core.Blocklist = nil
+		servConf.conf.Debug = true
 
 		sg, err = core.NewSuperGraph(&servConf.conf.Core, servConf.db)
 		if err != nil {
@@ -95,6 +96,9 @@ func graphQLFunc(servConf *ServConfig, sg *core.SuperGraph, query string, data i
 	// } else {
 	// 	role = "user"
 	// }
+	if servConf.conf.Debug {
+		servConf.log.Printf("INF %s", query)
+	}
 
 	var vars []byte
 	var err error

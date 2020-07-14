@@ -85,12 +85,18 @@ func (c *compilerContext) renderUpdateStmt(w io.Writer, qc *qcode.QCode, item re
 	io.WriteString(w, `UPDATE `)
 	quoted(w, ti.Name)
 	io.WriteString(w, ` SET (`)
-	c.renderInsertUpdateColumns(qc, jt, ti, sk, false)
-	renderNestedUpdateRelColumns(w, item.kvitem, false)
+	if rc, err := c.renderInsertUpdateColumns(qc, jt, ti, sk, false); err != nil {
+		return err
+	} else {
+		renderNestedUpdateRelColumns(w, item.kvitem, false, rc)
+	}
 
 	io.WriteString(w, `) = (SELECT `)
-	c.renderInsertUpdateColumns(qc, jt, ti, sk, true)
-	renderNestedUpdateRelColumns(w, item.kvitem, true)
+	if rc, err := c.renderInsertUpdateColumns(qc, jt, ti, sk, true); err != nil {
+		return err
+	} else {
+		renderNestedUpdateRelColumns(w, item.kvitem, true, rc)
+	}
 
 	io.WriteString(w, ` FROM "_sg_input" i`)
 	renderNestedUpdateRelTables(w, item.kvitem)
@@ -147,36 +153,40 @@ func nestedUpdateRelColumnsMap(item kvitem) map[string]struct{} {
 	return sk
 }
 
-func renderNestedUpdateRelColumns(w io.Writer, item kvitem, values bool) error {
+func renderNestedUpdateRelColumns(w io.Writer, item kvitem, values, colsRendered bool) error {
 	// Render child foreign key columns if child-to-parent
 	// relationship is one-to-many
+	i := 0
 	for _, v := range item.items {
-		if v._ctype > 0 && v.relCP.Type == RelOneToMany {
-			if values {
-				// if v.relCP.Right.Array {
-				// 	io.WriteString(w, `array_diff(`)
-				// 	colWithTable(w, v.relCP.Right.Table, v.relCP.Right.Col)
-				// 	io.WriteString(w, `, `)
-				// }
-
-				if v._ctype > 0 {
-					io.WriteString(w, `"_x_`)
-					io.WriteString(w, v.relCP.Left.Table)
-					io.WriteString(w, `".`)
-					quoted(w, v.relCP.Left.Col)
-				} else {
-					colWithTable(w, v.relCP.Left.Table, v.relCP.Left.Col)
-				}
-
-				// if v.relCP.Right.Array {
-				// 	io.WriteString(w, `)`)
-				// }
-			} else {
-
-				quoted(w, v.relCP.Right.Col)
-
-			}
+		if v._ctype == 0 || v.relCP.Type != RelOneToMany {
+			continue
 		}
+		if i != 0 || colsRendered {
+			io.WriteString(w, `, `)
+		}
+		// Render child foreign key columns if child-to-parent
+		// relationship is one-to-many
+		if values {
+			// if v.relCP.Right.Array {
+			// 	io.WriteString(w, `array_diff(`)
+			// 	colWithTable(w, v.relCP.Right.Table, v.relCP.Right.Col)
+			// 	io.WriteString(w, `, `)
+			// }
+			if v._ctype > 0 {
+				io.WriteString(w, `"_x_`)
+				io.WriteString(w, v.relCP.Left.Table)
+				io.WriteString(w, `".`)
+				quoted(w, v.relCP.Left.Col)
+			} else {
+				colWithTable(w, v.relCP.Left.Table, v.relCP.Left.Col)
+			}
+			// if v.relCP.Right.Array {
+			// 	io.WriteString(w, `)`)
+			// }
+		} else {
+			quoted(w, v.relCP.Right.Col)
+		}
+		i++
 	}
 
 	return nil

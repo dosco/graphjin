@@ -373,10 +373,10 @@ func (c *compilerContext) renderInsertUpdateColumns(
 	jt map[string]json.RawMessage,
 	ti *DBTableInfo,
 	skipcols map[string]struct{},
-	isValues bool) (uint32, error) {
+	isValues bool) (bool, error) {
 
 	root := &qc.Selects[0]
-	renderedCol := false
+	renderedCols := false
 
 	n := 0
 	for _, cn := range ti.Columns {
@@ -387,13 +387,13 @@ func (c *compilerContext) renderInsertUpdateColumns(
 			continue
 		}
 		if cn.Blocked {
-			return 0, fmt.Errorf("insert: column '%s' blocked", cn.Name)
+			return false, fmt.Errorf("insert: column '%s' blocked", cn.Name)
 		}
 		if _, ok := root.PresetMap[cn.Key]; ok {
 			continue
 		}
 		if err := ColumnAccess(ti, root, cn.Name, true); err != nil {
-			return 0, err
+			return false, err
 		}
 		if n != 0 {
 			io.WriteString(c.w, `, `)
@@ -410,16 +410,14 @@ func (c *compilerContext) renderInsertUpdateColumns(
 			quoted(c.w, cn.Name)
 		}
 
-		if !renderedCol {
-			renderedCol = true
-		}
+		renderedCols = true
 		n++
 	}
 
 	for i, pcol := range root.PresetList {
 		col, err := ti.GetColumn(pcol)
 		if err != nil {
-			return 0, fmt.Errorf("insert presets: %w", err)
+			return false, fmt.Errorf("insert presets: %w", err)
 		}
 		if _, ok := skipcols[col.Name]; ok {
 			continue
@@ -464,15 +462,10 @@ func (c *compilerContext) renderInsertUpdateColumns(
 			quoted(c.w, col.Name)
 		}
 
-		if !renderedCol {
-			renderedCol = true
-		}
+		renderedCols = true
 	}
 
-	if len(skipcols) != 0 && renderedCol {
-		io.WriteString(c.w, `, `)
-	}
-	return 0, nil
+	return renderedCols, nil
 }
 
 func (c *compilerContext) renderUpsert(

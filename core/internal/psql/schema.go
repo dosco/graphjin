@@ -611,7 +611,7 @@ func (ti *DBTableInfo) ColumnExists(name string) bool {
 func (ti *DBTableInfo) GetColumn(name string) (*DBColumn, error) {
 	c, ok := ti.colMap[name]
 	if !ok {
-		return nil, fmt.Errorf("column: '%s' not found", name)
+		return nil, fmt.Errorf("column: '%s.%s' not found", ti.Name, name)
 	}
 	return c, nil
 }
@@ -619,10 +619,10 @@ func (ti *DBTableInfo) GetColumn(name string) (*DBColumn, error) {
 func (ti *DBTableInfo) GetColumnB(name string) (*DBColumn, error) {
 	c, ok := ti.colMap[name]
 	if !ok {
-		return nil, fmt.Errorf("column: '%s' not found", name)
+		return nil, fmt.Errorf("column: '%s.%s' not found", ti.Name, name)
 	}
 	if c.Blocked {
-		return nil, fmt.Errorf("column: '%s' blocked", name)
+		return nil, fmt.Errorf("column: '%s.%s' blocked", ti.Name, name)
 	}
 	return c, nil
 }

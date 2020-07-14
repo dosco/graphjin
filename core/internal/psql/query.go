@@ -924,7 +924,7 @@ func (c *compilerContext) renderRelationship(sel *qcode.Select, rel *DBRel) erro
 		default:
 			colWithTable(c.w, rel.Through.Table, rel.Through.ColR)
 			io.WriteString(c.w, `) = (`)
-			colWithTable(c.w, rel.Right.Table, rel.Right.Col)
+			colWithTableID(c.w, rel.Right.Table, pid, rel.Right.Col)
 		}
 
 	case RelEmbedded:
