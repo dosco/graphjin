@@ -2,13 +2,17 @@
 
 CREATE TABLE products (
     id BIGSERIAL PRIMARY KEY,
-    name character varying,
-    description text,
-    price numeric(7,2),
-    user_id bigint REFERENCES users(id),
+    name text CHECK (length(name) > 1 AND length(name) < 50),
+    description text CHECK (length(name) > 1 AND length(name) < 200),
+
+    -- tsv column is used by full-text search
+    tsv tsvector GENERATED ALWAYS 
+        AS (to_tsvector('english', name) || to_tsvector('english', description)) STORED,
+
+    price           numeric(7,2),
+    user_id         bigint REFERENCES users(id),
     created_at timestamp without time zone NOT NULL,
-    updated_at timestamp without time zone NOT NULL,
-    tsv tsvector
+    updated_at timestamp without time zone NOT NULL
 );
 
 -- Indices -------------------------------------------------------

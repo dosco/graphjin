@@ -36,7 +36,7 @@ module.exports = {
           position: "left",
         },
         {
-          label: "AbtCode",
+          label: "About Code",
           href: "https://abtcode.com/s/super-graph",
           position: "left",
         },
