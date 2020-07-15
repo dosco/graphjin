@@ -15,6 +15,7 @@ services:
       GO_ENV: "development"
     volumes:
       - ./config:/config
+      - ./keys:/keys/
     ports:
       - "8080:8080"
     depends_on:

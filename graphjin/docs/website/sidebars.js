@@ -4,6 +4,7 @@ module.exports = {
       "home",
       "intro",
       "start",
+      "example",
       "why",
       "graphql",
       "react",
