@@ -160,9 +160,22 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 	if err != nil {
 		return res, err
 	}
-
-	if err = c.sg.compileQuery(cq, role); err != nil {
+	hash, err := hashSha1(query)
+	if err != nil {
 		return res, err
+	}
+	// fmt.Printf("> hash %x\n", hash)
+	value, exists := getAPQ(hash)
+	if !exists {
+		if err = c.sg.compileQuery(cq, role); err != nil {
+			return res, err
+		}
+		// fmt.Printf("> setAPQ %+v\n", cq)
+		setAPQ(hash, cq)
+	} else {
+		cq = value.(*cquery)
+		res.q = cq
+		// fmt.Printf("> getAPQ %+v\n", cq)
 	}
 
 	args, err := c.sg.argList(c, cq.st.md, vars)
@@ -177,6 +190,7 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 	// }
 
 	fmt.Println(">", cq.st.sql)
+	fmt.Println(">", args.values)
 
 	row := conn.QueryRowContext(c, cq.st.sql, args.values...)
 	if cq.roleArg {
