@@ -160,17 +160,15 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 	if err != nil {
 		return res, err
 	}
-	hash, err := hashSha1(query)
-	if err != nil {
-		return res, err
-	}
-	// fmt.Printf("> hash %x\n", hash)
+	hash := hashSha256(query)
+
+	fmt.Printf("> hash %s\n", hash)
 	value, exists := getAPQ(hash)
 	if !exists {
 		if err = c.sg.compileQuery(cq, role); err != nil {
 			return res, err
 		}
-		// fmt.Printf("> setAPQ %+v\n", cq)
+		fmt.Printf("> setAPQ %+v\n", cq)
 		setAPQ(hash, cq)
 	} else {
 		cq = value.(*cquery)
