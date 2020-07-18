@@ -176,8 +176,6 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 	// 	stime = time.Now()
 	// }
 
-	fmt.Println(">", cq.st.sql)
-
 	row := conn.QueryRowContext(c, cq.st.sql, args.values...)
 	if cq.roleArg {
 		err = row.Scan(&res.role, &res.data)

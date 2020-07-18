@@ -23,7 +23,6 @@ func (c *compilerContext) renderUpdate(
 
 	io.WriteString(c.w, `WITH "_sg_input" AS (SELECT `)
 	c.md.renderParam(c.w, Param{Name: qc.ActionVar, Type: "json"})
-	// io.WriteString(c.w, qc.ActionVar)
 	io.WriteString(c.w, ` :: json AS j)`)
 
 	st := util.NewStack()
@@ -100,7 +99,23 @@ func (c *compilerContext) renderUpdateStmt(w io.Writer, qc *qcode.QCode, item re
 
 	io.WriteString(w, ` FROM "_sg_input" i`)
 	renderNestedUpdateRelTables(w, item.kvitem)
-	io.WriteString(w, `) `)
+
+	if item.array {
+		io.WriteString(w, `, json_populate_recordset`)
+	} else {
+		io.WriteString(w, `, json_populate_record`)
+	}
+
+	io.WriteString(w, `(NULL::`)
+	io.WriteString(w, ti.Name)
+
+	if len(item.path) == 0 {
+		io.WriteString(w, `, i.j) t)`)
+	} else {
+		io.WriteString(w, `, i.j->`)
+		joinPath(w, item.path)
+		io.WriteString(w, `) t) `)
+	}
 
 	if item.id != 0 {
 		// Render sql to set id values if child-to-parent
@@ -127,8 +142,8 @@ func (c *compilerContext) renderUpdateStmt(w io.Writer, qc *qcode.QCode, item re
 		}
 		io.WriteString(w, `)`)
 
-	} else if qc.Selects[0].Where != nil {
-		io.WriteString(w, `WHERE `)
+	} else {
+		io.WriteString(w, ` WHERE `)
 		if err := c.renderWhere(&qc.Selects[0], ti); err != nil {
 			return err
 		}
