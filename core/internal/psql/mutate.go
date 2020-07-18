@@ -400,12 +400,14 @@ func (c *compilerContext) renderInsertUpdateColumns(
 		}
 
 		if isValues {
-			io.WriteString(c.w, `CAST( i.j ->>`)
-			io.WriteString(c.w, `'`)
-			io.WriteString(c.w, cn.Name)
-			io.WriteString(c.w, `' AS `)
-			io.WriteString(c.w, cn.Type)
-			io.WriteString(c.w, `)`)
+			colWithTable(c.w, "t", cn.Name)
+			// if cn.Array {
+			// 	io.WriteString(c.w, `(SELECT array_agg(a.*) FROM json_array_elements(`)
+			// 	colWithTable(c.w, "t", cn.Name)
+			// 	io.WriteString(c.w, `) as a)`)
+			// } else {
+			// 	colWithTable(c.w, "t", cn.Name)
+			// }
 		} else {
 			quoted(c.w, cn.Name)
 		}
