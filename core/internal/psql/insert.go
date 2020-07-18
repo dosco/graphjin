@@ -22,15 +22,8 @@ func (c *compilerContext) renderInsert(
 	}
 
 	io.WriteString(c.w, `WITH "_sg_input" AS (SELECT `)
-	if insert[0] == '[' {
-		io.WriteString(c.w, `json_array_elements(`)
-	}
 	c.md.renderParam(c.w, Param{Name: qc.ActionVar, Type: "json"})
-	io.WriteString(c.w, ` :: json`)
-	if insert[0] == '[' {
-		io.WriteString(c.w, `)`)
-	}
-	io.WriteString(c.w, ` AS j)`)
+	io.WriteString(c.w, ` :: json AS j)`)
 
 	st := util.NewStack()
 	st.Push(kvitem{_type: itemInsert, key: ti.Name, val: insert, ti: ti})
@@ -73,7 +66,6 @@ func (c *compilerContext) renderInsert(
 }
 
 func (c *compilerContext) renderInsertStmt(qc *qcode.QCode, w io.Writer, item renitem, embedded bool) error {
-
 	ti := item.ti
 	jt := item.data
 	sk := nestedInsertRelColumnsMap(item.kvitem)
@@ -86,22 +78,40 @@ func (c *compilerContext) renderInsertStmt(qc *qcode.QCode, w io.Writer, item re
 	quoted(w, ti.Name)
 	io.WriteString(w, ` (`)
 
-	if rc, err := c.renderInsertUpdateColumns(qc, jt, ti, sk, false); err != nil {
+	rc1, err := c.renderInsertUpdateColumns(qc, jt, ti, sk, false)
+	if err != nil {
 		return err
-	} else {
-		renderNestedInsertRelColumns(w, item.kvitem, false, rc)
 	}
+	renderNestedInsertRelColumns(w, item.kvitem, false, rc1)
+
 	io.WriteString(w, `)`)
 
 	io.WriteString(w, ` SELECT `)
-	if rc, err := c.renderInsertUpdateColumns(qc, jt, ti, sk, true); err != nil {
+	rc2, err := c.renderInsertUpdateColumns(qc, jt, ti, sk, true)
+	if err != nil {
 		return err
-	} else {
-		renderNestedInsertRelColumns(w, item.kvitem, true, rc)
 	}
+	renderNestedInsertRelColumns(w, item.kvitem, true, rc2)
 
 	io.WriteString(w, ` FROM "_sg_input" i`)
 	renderNestedInsertRelTables(w, item.kvitem)
+
+	if item.array {
+		io.WriteString(w, `, json_populate_recordset`)
+	} else {
+		io.WriteString(w, `, json_populate_record`)
+	}
+
+	io.WriteString(w, `(NULL::`)
+	io.WriteString(w, ti.Name)
+
+	if len(item.path) == 0 {
+		io.WriteString(w, `, i.j) t`)
+	} else {
+		io.WriteString(w, `, i.j->`)
+		joinPath(w, item.path)
+		io.WriteString(w, `) t`)
+	}
 
 	if !embedded {
 		io.WriteString(w, ` RETURNING *)`)
@@ -128,6 +138,20 @@ func nestedInsertRelColumnsMap(item kvitem) map[string]struct{} {
 }
 
 func renderNestedInsertRelColumns(w io.Writer, item kvitem, values, colsRendered bool) error {
+	// Render columns and values needed to connect current table and the parent table
+	if item.relCP != nil && item.relCP.Type == RelOneToOne {
+		if colsRendered {
+			io.WriteString(w, `, `)
+		}
+		if values {
+			colWithTable(w, item.relCP.Right.Table, item.relCP.Right.Col)
+		} else {
+			quoted(w, item.relCP.Left.Col)
+		}
+	}
+	// Render columns and values needed to connect parent level with it's children
+	// this is for when the parent actually depends on the child level
+	// the order of the table rendering if handled upstream
 	if len(item.items) == 0 {
 		if item.relPC != nil && item.relPC.Type == RelOneToMany {
 			if colsRendered {
@@ -140,6 +164,7 @@ func renderNestedInsertRelColumns(w io.Writer, item kvitem, values, colsRendered
 			}
 		}
 	} else {
+		// Render columns and values needed by the children of the current level
 		// Render child foreign key columns if child-to-parent
 		// relationship is one-to-many
 		i := 0
@@ -147,6 +172,7 @@ func renderNestedInsertRelColumns(w io.Writer, item kvitem, values, colsRendered
 			if v.relCP.Type != RelOneToMany {
 				continue
 			}
+
 			if i != 0 || colsRendered {
 				io.WriteString(w, `, `)
 			}
@@ -170,6 +196,11 @@ func renderNestedInsertRelColumns(w io.Writer, item kvitem, values, colsRendered
 }
 
 func renderNestedInsertRelTables(w io.Writer, item kvitem) error {
+	if item.relCP != nil && item.relCP.Type == RelOneToOne {
+		io.WriteString(w, `, `)
+		quoted(w, item.relPC.Left.Table)
+	}
+
 	if len(item.items) == 0 {
 		if item.relPC != nil && item.relPC.Type == RelOneToMany {
 			io.WriteString(w, `, `)
