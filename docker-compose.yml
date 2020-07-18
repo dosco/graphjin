@@ -8,24 +8,7 @@ services:
     ports:
       - "5432:5432"
 
-  # redis:
-  #   image: redis:alpine
-  #   command: ["redis-server", "--appendonly", "yes"]
-  #   ports:
-  #     - "6379:6379"
-
-  rails_app:
-    build: examples/rails-app/.
-    command: bash -c "rm -f tmp/pids/server.pid && bundle exec rails s -p 3000 -b '0.0.0.0'"
-    volumes:
-      - ./examples/rails-app:/app
-      - /app/tmp
-    ports:
-      - "3000:3000"
-    depends_on:
-      - db
-
-  super_graph:
+  api:
     build:
       context: .
       target: go-build
@@ -37,6 +20,7 @@ services:
       - "8080:8080"
     volumes:
       - .:/app
+      - ./examples/webshop/config:/app/config
     working_dir: /app
     command: wtc
     depends_on:

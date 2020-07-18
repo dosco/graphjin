@@ -215,10 +215,10 @@ tables:
   - name: deals
     table: products
 
-  - name: users
+  - name: products
     columns:
-      - name: email
-        related_to: products.name
+      - name: category_ids
+        related_to: categories.id
 
   - name: subject
     type: polymorphic
@@ -232,15 +232,11 @@ roles:
   - name: anon
     tables:
       - name: users
-
       - name: products
-
+      - name: categories
       - name: deals
-
       - name: purchases
-
       - name: customers
-
       - name: notifications
 
   - name: user
@@ -257,7 +253,6 @@ roles:
             - user_id: "$user_id"
             - created_at: "now"
             - updated_at: "now"
-
         update:
           filters: ["{ user_id: { eq: $user_id } }"]
           columns:

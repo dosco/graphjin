@@ -9,6 +9,11 @@ CREATE TABLE products (
     tsv tsvector GENERATED ALWAYS 
         AS (to_tsvector('english', name) || to_tsvector('english', description)) STORED,
 
+    tags  text[],  
+
+    category_ids  bigint[] NOT NULL        
+        CHECK (cardinality(category_ids) > 0 AND cardinality(category_ids) < 10),
+
     price           numeric(7,2),
     user_id         bigint REFERENCES users(id),
     created_at timestamp without time zone NOT NULL,

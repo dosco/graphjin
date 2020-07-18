@@ -42,6 +42,7 @@ cd webshop
 ```console
 super-graph db:new users
 super-graph db:new products
+super-graph db:new sections
 super-graph db:new customers
 super-graph db:new purchases
 super-graph db:new notifications
@@ -99,13 +100,18 @@ vim config/migrations/2_products.sql
 
 CREATE TABLE products (
     id BIGSERIAL PRIMARY KEY,
-    name text,
-    description text,
-    price numeric(7,2),
-    user_id bigint REFERENCES users(id),
-    created_at timestamp without time zone NOT NULL,
-    updated_at timestamp without time zone NOT NULL,
-    tsv tsvector
+    name          text,
+    description   text,
+    price         numeric(7,2),
+    tags          text[],
+    category_ids  bigint[] NOT NULL,
+    user_id       bigint REFERENCES users(id),
+    created_at    timestamp without time zone NOT NULL,
+    updated_at    timestamp without time zone NOT NULL,
+
+    -- tsvector column needed for full-text search
+    tsv tsvector GENERATED ALWAYS
+      AS (to_tsvector('english', description)) STORED,
 );
 
 -- Indices -------------------------------------------------------
@@ -293,7 +299,7 @@ query {
 }
 ```
 
-## Insert new product
+## Create new product
 
 The below GraphQL query and variables together will insert a new product into the database. The `connect` keyword will find a user who's `id` equals `5` and set the `user_id` field on product to that users id.
 
@@ -342,6 +348,61 @@ mutation {
 }
 ```
 
+## Create a user, product with tags and categories
+
+There is so much going on here. We are creating a user, his product and assigning some tags
+and categories. Tags here is a simple text array column while categories is a bigint array column
+that we have configured to act as a foreign key to the categories tables.
+
+Since array columns cannot be foreign keys in Postgres we have to add a simple config to Super Graph
+to set this up.
+
+```yaml
+tables:
+  - name: products
+    columns:
+      - name: category_ids
+        related_to: categories.i
+  ...
+```
+
+```json
+{
+  "data": {
+    "email": "alien@antfarm.com",
+    "full_name": "aliens",
+    "created_at": "now",
+    "updated_at": "now",
+    "product": {
+      "name": "Bug Spray",
+      "tags": ["bad bugs", "be gone"],
+      "categories": {
+        "connect": { "id": 1 }
+      },
+      "created_at": "now",
+      "updated_at": "now"
+    }
+  }
+}
+```
+
+```graphql
+mutation {
+  user(insert: $data) {
+    id
+    product {
+      id
+      name
+      tags
+      category {
+        id
+        name
+      }
+    }
+  }
+}
+```
+
 ## Realtime subscriptions
 
 This is one of the coolest features of Super Graph. It is a highly scalable way to get updates from the database as it updates. Below we use subscriptions to fetch the latest `purchases` from the database.
@@ -369,7 +430,7 @@ subscription {
 
 ## Production secrets management
 
-We recommend you use (Mozilla SOPS)[https://github.com/mozilla/sops] for secrets management. The sops binary
+We recommend you use [Mozilla SOPS](https://github.com/mozilla/sops) for secrets management. The sops binary
 is installed on the Super Graph app docker image. To use SOPS you create a yaml file with your secrets like the one below. You then need a secret key to encrypt it with you're options are to go with Google Cloud KMS, Amazon KMS, Azure Key Vault, etc. In production SOPS will automatically fetch the key from your defined KMS, decrypt the secrets file and make the values available to Super Graph via enviroment variables.
 
 1. Create the secrets file
