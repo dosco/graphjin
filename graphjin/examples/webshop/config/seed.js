@@ -9,9 +9,10 @@ var product_count = 50;
 var purchase_count = 100;
 var notifications_count = 100;
 
+// ---- add users
+
 var users = [];
 
-// fake admin users aka shop owners
 for (i = 0; i < 3; i++) {
   var data = {
     full_name: fake.name(),
@@ -65,6 +66,8 @@ for (i = 0; i < user_count; i++) {
   users.push(res.user);
 }
 
+// ---- add customers
+
 var customers = [];
 
 // we also need customers
@@ -93,17 +96,60 @@ for (i = 0; i < customer_count; i++) {
   customers.push(res.customer);
 }
 
+// ---- define some sections
+
+var categories = [
+  {
+    id: 1,
+    name: "Beers",
+    description: "Liquid Bread",
+    created_at: "now",
+    updated_at: "now",
+  },
+  {
+    id: 2,
+    name: "Alcohol",
+    description: "Bad for you!",
+    created_at: "now",
+    updated_at: "now",
+  },
+];
+
+// ---- add those sections using bulk insert
+
+var res = graphql(
+  " \
+mutation { \
+  categories(insert: $categories) { \
+    id \
+  } \
+}",
+  { categories: categories, user_id: 1 }
+);
+
+// ---- add products
+
 var products = [];
 
-// now the products
 for (i = 0; i < product_count; i++) {
   var desc = [fake.beer_style(), fake.beer_hop(), fake.beer_malt()].join(", ");
   var u = users[Math.floor(Math.random() * user_count)];
+
+  // categories needs connecting since they are
+  // a related to items in a diffent table
+  // while tags can just be anything.
+
+  var tag_list = fake.hipster_sentence(5);
+  var tags = tag_list.substring(0, tag_list.length - 1).split(" ");
 
   var data = {
     name: fake.beer_name(),
     description: desc,
     price: Math.random() * 19.0,
+    tags: tags,
+    categories: {
+      connect: { id: [1, 2] },
+    },
   };
 
   var res = graphql(
@@ -120,9 +166,10 @@ for (i = 0; i < product_count; i++) {
   products.push(res.product);
 }
 
+// ---- add purchases (joining customers with products)
+
 var purchases = [];
 
-// and then the purchases
 for (i = 0; i < purchase_count; i++) {
   var u = users[Math.floor(Math.random() * user_count)];
   var p = products[Math.floor(Math.random() * product_count)];
@@ -151,9 +198,10 @@ for (i = 0; i < purchase_count; i++) {
   purchases.push(res.purchase);
 }
 
+// ---- add notifications
+
 var notifications = [];
 
-// and finally lets add some notifications
 for (i = 0; i < notifications_count; i++) {
   var u = users[Math.floor(Math.random() * user_count)];
   var p = products[Math.floor(Math.random() * product_count)];

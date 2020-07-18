@@ -10,12 +10,12 @@ import useBaseUrl from '@docusaurus/useBaseUrl'; // Add to the top of the file b
 <div class="hero shadow--lw margin-bottom--lg">
   <div class="container">
     <div class="row">
-      <div class="col col--2">  
-        <img 
+      <div class="col col--2">
+        <img
           class=""
-          alt="Super Graph Logo" 
-          src={useBaseUrl('img/super-graph-logo.svg')} 
-          height="70" 
+          alt="Super Graph Logo"
+          src={useBaseUrl('img/super-graph-logo.svg')}
+          height="70"
         />
       </div>
       <div class="col col--10"><h1 class="hero__title">Super Graph</h1></div>
@@ -30,9 +30,9 @@ import useBaseUrl from '@docusaurus/useBaseUrl'; // Add to the top of the file b
   </div>
 </div>
 
-:::info cut development time
+### Work on the things that matter, leave the boring database stuff to us.
+
 80% of all web app development is either reading from or writing to a database. 100x your developer productivity and save valuable time by making that super simple.
-:::
 
 ### Fetching data with GraphQL
 

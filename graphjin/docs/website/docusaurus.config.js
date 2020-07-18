@@ -1,3 +1,5 @@
+const remarkImages = require("remark-images");
+
 module.exports = {
   title: "Super Graph",
   tagline: "Fetch data without code",
@@ -32,11 +34,11 @@ module.exports = {
         },
         {
           label: "Twitter",
-          href: "https://twitter.com/dosco",
+          href: "https://twitter.com/intent/user?screen_name=dosco",
           position: "left",
         },
         {
-          label: "About Code",
+          label: "Blog",
           href: "https://abtcode.com/s/super-graph",
           position: "left",
         },
@@ -57,6 +59,8 @@ module.exports = {
           // Please change this to your repo.
           editUrl:
             "https://github.com/dosco/super-graph/edit/master/docs/website",
+
+          remarkPlugins: [remarkImages],
         },
         blog: {
           showReadingTime: true,

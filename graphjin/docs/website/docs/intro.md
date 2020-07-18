@@ -38,22 +38,16 @@ Super Graph has a rich feature set like integrating with your existing Ruby on R
 # clone the repository
 git clone https://github.com/dosco/super-graph
 
-# run db in background
-docker-compose up -d db
+# goto our example ecommerce app
+cd examples/webshop
 
-# see logs and wait until DB is really UP
-docker-compose logs db
+# create, migrate and seed the database
+docker-compose run api db:setup
 
-# setup the demo rails app & database and run it
-docker-compose run rails_app rake db:create db:migrate db:seed
-
-# run the demo
+# start the demo
 docker-compose up
 
-# signin to the demo app (user1@demo.com / 123456)
-open http://localhost:3000
-
-# try the super graph web ui
+# try graphql queries on our web ui with auto-complete
 open http://localhost:8080
 ```
 

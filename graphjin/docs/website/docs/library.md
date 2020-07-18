@@ -63,7 +63,7 @@ func main() {
 The configuration is the same as [that in yaml](https://supergraph.dev/docs/config) except for that it is obviously written in Go and is just about configuring the `core` package (aka Super Graph library). We've tried to ensure that the config file is self-documenting and easy to work with. A config object is not required Super Graph can learn your database structure and be useful even when a config is not provided.
 
 ```go
-core.Config{
+conf := core.Config{
 	//SecretKey is used to encrypt opaque values such as the cursor. Auto-generated if not set
 	SecretKey: "[YOU_SHOULD_CHANGE_THIS]",
 
@@ -92,23 +92,13 @@ core.Config{
 		"team_id":    "123",
 	},
 
-	//Blocklist is a list of tables and columns that should be filtered out from any and all queries
+	//Blocklist is a list of tables and columns that should be filtered out
+	// from any and all queries
 	Blocklist: []string{"password", "secrets", "credit_card_number"},
 
 	//Tables contains all table specific configuration such as aliased tables
 	//creating relationships between tables, etc
-	Tables: []core.Table{
-		{
-			Name:      "players",
-			Table:     "players",
-			Type:      "",
-			Blocklist: []string{"account_id"},
-			Remotes: []core.Remote{{Name: "", ID: "", Path: "", URL: "", Debug: false, PassHeaders: []string{""}, SetHeaders: []struct {
-				Name  string
-				Value string
-			}{}}},
-			Columns: []core.Column{{Name: "", Type: "", ForeignKey: ""}}},
-	},
+	Tables: []core.Table{},
 
 	//RolesQuery if set enabled attributed based access control.
 	//This query is use to fetch the user attributes that then dynamically define the users role.
@@ -116,44 +106,15 @@ core.Config{
 
 	//Roles contains all the configuration for all the roles you want to support `user` and `anon`
 	//are two default roles. User role is for when a user ID is available and Anon when it's not.
-	//If you're using the RolesQuery config to enable atribute based acess control then you can add more custom roles.
-	Roles: []core.Role{
-		{
-			Name:  "",
-			Match: "",
-			Tables: []core.RoleTable{
-				{
-					Name:     "",
-					ReadOnly: false,
-					Query: &core.Query{
-						Limit:            10,
-						Filters:          []string{},
-						Columns:          []string{},
-						DisableFunctions: false,
-						Block:            false,
-					},
-					Insert: &core.Insert{
-						Filters: []string{},
-						Columns: []string{},
-						Presets: map[string]string{},
-						Block:   false,
-					},
-					Update: &core.Update{
-						Filters: nil,
-						Columns: nil,
-						Presets: nil,
-						Block:   false,
-					},
-					Delete: &core.Delete{
-						Filters: nil,
-						Columns: nil,
-						Block:   false,
-					}},
-			},
-		},
-	},
+	//If you're using the RolesQuery config to enable atribute based acess control then you
+	// can add more custom roles.
 
-	//Inflections is to add additionally singular to plural mappings to the engine (eg. sheep: sheep)
+	// Use .AddRoleTable(roleName, tableName, roleTableConfig) to set this.
+	// example below
+	Roles: []core.Role{}
+
+	//Inflections is to add additionally singular to plural
+	// mappings to the engine (eg. sheep: sheep)
 	Inflections: map[string]string{},
 
 	//Database schema name. Defaults to 'public'
@@ -162,4 +123,26 @@ core.Config{
 	//Log warnings and other debug information
 	Debug: false,
 }
+
+conf.AddRoleTable("user", "table_name", core.Query{
+	Limit:            10,
+	Filters:          []string{},
+	Columns:          []string{},
+	DisableFunctions: false,
+	Block:            false,
+});
+
+conf.AddRoleTable("user", "table_name", core.Insert{
+	Filters: []string{},
+	Columns: []string{},
+	Presets: map[string]string{},
+	Block:   false,
+})
+
+...
+
 ```
+
+::: note
+If you're using a Postgres schema other than the default `public` then in addition to setting the `DBSchema` config param you also have to set the `search_path` runtime parameter on the DB connection itself. https://github.com/dosco/super-graph/issues/134#issuecomment-659562003
+:::
