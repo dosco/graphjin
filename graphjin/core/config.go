@@ -176,7 +176,7 @@ func (c *Config) AddRoleTable(role, table string, conf interface{}) error {
 	if r == nil {
 		nr := Role{Name: role}
 		c.Roles = append(c.Roles, nr)
-		r = &nr
+		r = &c.Roles[len(c.Roles)-1]
 	}
 
 	var t *RoleTable
@@ -189,7 +189,7 @@ func (c *Config) AddRoleTable(role, table string, conf interface{}) error {
 	if t == nil {
 		nt := RoleTable{Name: table}
 		r.Tables = append(r.Tables, nt)
-		t = &nt
+		t = &r.Tables[len(r.Tables)-1]
 	}
 
 	switch v := conf.(type) {
