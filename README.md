@@ -15,6 +15,7 @@ Super Graph gives you a high performance GraphQL API without you having to write
 ```bash
 go get github.com/dosco/super-graph
 super-graph new <app_name>
+
 cd <app_name>
 docker-compose run api db:setup
 docker-compose up
@@ -113,11 +114,15 @@ This compiler is what sits at the heart of Super Graph, with layers of useful fu
 
 We're happy to help you leverage Super Graph reach out if you have questions
 
-[twitter/dosco](https://twitter.com/dosco)
+[Twitter](https://twitter.com/dosco)
 
-[chat/super-graph](https://discord.gg/6pSWCTZ)
+[Chat](https://discord.gg/6pSWCTZ)
 
-[blog/super-graph](https://abtcode.com/s/super-graph)
+[Blog](https://abtcode.com/s/super-graph)
+
+## Production use
+
+Our blog is hosted on abtcode.com a blogging platform for coders. It uses Super Graph on Google Cloudrun as it's entire backend.
 
 ## License
 
