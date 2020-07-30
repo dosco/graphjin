@@ -6,7 +6,7 @@ import (
 	"github.com/chirino/graphql"
 	"github.com/chirino/graphql/resolvers"
 	"github.com/chirino/graphql/schema"
-	"github.com/dosco/super-graph/core/internal/psql"
+	"github.com/dosco/super-graph/core/internal/sdata"
 )
 
 var typeMap map[string]string = map[string]string{
@@ -33,7 +33,7 @@ func (sg *SuperGraph) initGraphQLEgine() error {
 		return err
 	}
 
-	gqltype := func(col psql.DBColumn) schema.Type {
+	gqltype := func(col sdata.DBColumn) schema.Type {
 		typeName := typeMap[strings.ToLower(col.Type)]
 		if typeName == "" {
 			typeName = "String"
@@ -62,7 +62,11 @@ func (sg *SuperGraph) initGraphQLEgine() error {
 
 	scalarExpressionTypesNeeded := map[string]bool{}
 	tableNames := dbSchema.GetTableNames()
-	funcs := dbSchema.GetFunctions()
+
+	var funcs []*sdata.DBFunction
+	for _, f := range dbSchema.GetFunctions() {
+		funcs = append(funcs, f)
+	}
 
 	for _, table := range tableNames {
 		ti, err := dbSchema.GetTableInfo(table)
@@ -70,9 +74,6 @@ func (sg *SuperGraph) initGraphQLEgine() error {
 			return err
 		}
 		if ti.Blocked {
-			continue
-		}
-		if !ti.IsSingular {
 			continue
 		}
 

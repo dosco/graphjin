@@ -80,14 +80,14 @@ func (sg *SuperGraph) resolveRemotes(
 		}
 		p := sel[s.ParentID]
 
-		pti, err := sg.schema.GetTableInfo(p.Name)
+		pti, err := sg.schema.GetTableInfo(p.Table)
 		if err != nil {
 			return nil, err
 		}
 
 		// then use the Table nme in the Select and it's parent
 		// to find the resolver to use for this relationship
-		k2 := mkkey(h, s.Name, pti.Name)
+		k2 := mkkey(h, s.Table, pti.Name)
 
 		r, ok := sg.rmap[k2]
 		if !ok {
@@ -106,7 +106,7 @@ func (sg *SuperGraph) resolveRemotes(
 
 			b, err := r.Fn(hdr, id)
 			if err != nil {
-				cerr = fmt.Errorf("%s: %s", s.Name, err)
+				cerr = fmt.Errorf("%s: %s", s.Table, err)
 				return
 			}
 
@@ -119,7 +119,7 @@ func (sg *SuperGraph) resolveRemotes(
 			if len(s.Cols) != 0 {
 				err = jsn.Filter(&ob, b, colsToList(s.Cols))
 				if err != nil {
-					cerr = fmt.Errorf("%s: %s", s.Name, err)
+					cerr = fmt.Errorf("%s: %s", s.Table, err)
 					return
 				}
 
@@ -155,12 +155,12 @@ func (sg *SuperGraph) parentFieldIds(h *maphash.Hash, sel []qcode.Select, remote
 
 		p := sel[s.ParentID]
 
-		pti, err := sg.schema.GetTableInfo(p.Name)
+		pti, err := sg.schema.GetTableInfo(p.Table)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		k := mkkey(h, s.Name, pti.Name)
+		k := mkkey(h, s.Table, pti.Name)
 
 		if r, ok := sg.rmap[k]; ok {
 			fm = append(fm, r.IDField)
@@ -176,8 +176,8 @@ func (sg *SuperGraph) parentFieldIds(h *maphash.Hash, sel []qcode.Select, remote
 func colsToList(cols []qcode.Column) []string {
 	var f []string
 
-	for i := range cols {
-		f = append(f, cols[i].Name)
+	for _, col := range cols {
+		f = append(f, col.Col.Name)
 	}
 	return f
 }

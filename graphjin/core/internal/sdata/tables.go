@@ -1,4 +1,4 @@
-package psql
+package sdata
 
 import (
 	"database/sql"
@@ -154,6 +154,8 @@ type DBColumn struct {
 	FKeyColID  []int16
 	fKeyColID  pgtype.Int2Array
 	Blocked    bool
+	Ti         *DBTableInfo
+	Table      string
 }
 
 func GetColumns(db *sql.DB, schema string, tables []string) (map[string][]DBColumn, error) {
@@ -333,7 +335,6 @@ ORDER BY
 			if isInList(fn, blockList) {
 				continue
 			}
-
 			funcs = append(funcs, DBFunction{Name: fn, Params: []DBFuncParam{fp}})
 			fm[fid] = len(funcs) - 1
 		}

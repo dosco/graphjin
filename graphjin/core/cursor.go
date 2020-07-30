@@ -18,9 +18,9 @@ func (sg *SuperGraph) encryptCursor(qc *qcode.QCode, data []byte) (cursors, erro
 	var keys [][]byte
 	cur := cursors{data: data}
 
-	for _, s := range qc.Selects {
-		if s.Paging.Type != qcode.PtOffset {
-			keys = append(keys, []byte(s.FieldName+"_cursor"))
+	for _, sel := range qc.Selects {
+		if sel.Paging.Type == qcode.PTForward || sel.Paging.Type == qcode.PTBackward {
+			keys = append(keys, []byte((sel.FieldName + "_cursor")))
 		}
 	}
 

@@ -10,6 +10,9 @@ func simpleQuery(t *testing.T) {
 	gql := `subscription {
 		product {
 			id
+			user {
+				id
+			}
 		}
 	}`
 
@@ -382,8 +385,7 @@ func withFragment3(t *testing.T) {
 			avatar
 			...userFields1
 		}
-	}
-`
+	}`
 
 	compileGQLToPSQL(t, gql, nil, "user")
 }
@@ -407,8 +409,7 @@ func withFragment4(t *testing.T) {
 			avatar
 			...userFields1
 		}
-	}
-`
+	}`
 
 	compileGQLToPSQL(t, gql, nil, "anon")
 }
@@ -429,7 +430,7 @@ func withPolymorphicUnion(t *testing.T) {
 	query {
 		notifications {
 			id
-			subject {
+			subjects {
 				...on users {
 					...userFields
 				}
@@ -438,8 +439,7 @@ func withPolymorphicUnion(t *testing.T) {
 				}
 			}
 		}
-	}
-`
+	}`
 
 	compileGQLToPSQL(t, gql, nil, "user")
 }
@@ -450,8 +450,19 @@ func subscription(t *testing.T) {
 			id
 			email
 		}
-	}
-`
+	}`
+	compileGQLToPSQL(t, gql, nil, "user")
+}
+
+func remoteJoin(t *testing.T) {
+	gql := `query {
+		customers {
+			email
+			payments {
+				customer_id
+			}
+		}
+	}`
 
 	compileGQLToPSQL(t, gql, nil, "user")
 }
@@ -484,13 +495,14 @@ func withCursor(t *testing.T) {
 			order_by: { price: desc }) {
 			Name
 		}
+		products_cursor
 	}`
 
 	vars := map[string]json.RawMessage{
 		"cursor": json.RawMessage(`"0,1"`),
 	}
 
-	compileGQLToPSQL(t, gql, vars, "admin")
+	compileGQLToPSQL(t, gql, vars, "user")
 }
 
 func jsonColumnAsTable(t *testing.T) {
@@ -576,6 +588,7 @@ func TestCompileQuery(t *testing.T) {
 	t.Run("withFragment4", withFragment4)
 	t.Run("withPolymorphicUnion", withPolymorphicUnion)
 	t.Run("subscription", subscription)
+	t.Run("remoteJoin", remoteJoin)
 	// t.Run("withInlineFragment", withInlineFragment)
 	t.Run("jsonColumnAsTable", jsonColumnAsTable)
 	t.Run("withCursor", withCursor)
@@ -608,7 +621,7 @@ var benchGQL = []byte(`query {
 }`)
 
 func BenchmarkCompile(b *testing.B) {
-	w := &bytes.Buffer{}
+	var w bytes.Buffer
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -616,12 +629,12 @@ func BenchmarkCompile(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		w.Reset()
 
-		qc, err := qcompile.Compile(benchGQL, "user")
+		qc, err := qcompile.Compile(benchGQL, nil, "user")
 		if err != nil {
 			b.Fatal(err)
 		}
 
-		_, err = pcompile.Compile(w, qc, nil)
+		_, err = pcompile.Compile(&w, qc)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -632,17 +645,17 @@ func BenchmarkCompileParallel(b *testing.B) {
 	b.ReportAllocs()
 
 	b.RunParallel(func(pb *testing.PB) {
-		w := &bytes.Buffer{}
+		var w bytes.Buffer
 
 		for pb.Next() {
 			w.Reset()
 
-			qc, err := qcompile.Compile(benchGQL, "user")
+			qc, err := qcompile.Compile(benchGQL, nil, "user")
 			if err != nil {
 				b.Fatal(err)
 			}
 
-			_, err = pcompile.Compile(w, qc, nil)
+			_, err = pcompile.Compile(&w, qc)
 			if err != nil {
 				b.Fatal(err)
 			}

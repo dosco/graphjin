@@ -1,4 +1,4 @@
-package qcode
+package graph
 
 import (
 	"bytes"
@@ -31,17 +31,17 @@ type Pos int
 
 // item represents a token or text string returned from the scanner.
 type item struct {
-	_type itemType // The type of this item.
-	pos   Pos      // The starting position, in bytes, of this item in the input string.
-	val   []byte   // The value of this item.
-	line  int16    // The line number at the start of this item.
+	_type MType  // The type of this item.
+	pos   Pos    // The starting position, in bytes, of this item in the input string.
+	val   []byte // The value of this item.
+	line  int16  // The line number at the start of this item.
 }
 
-// itemType identifies the type of lex items.
-type itemType int
+// MType identifies the type of lex items.
+type MType int8
 
 const (
-	itemError itemType = iota // error occurred; value is text of error
+	itemError MType = iota // error occurred; value is text of error
 	itemEOF
 	itemName
 	itemQuery
@@ -67,7 +67,7 @@ const (
 )
 
 // !$():=@[]{|}
-var punctuators = map[rune]itemType{
+var punctuators = map[rune]MType{
 	'{': itemObjOpen,
 	'}': itemObjClose,
 	'[': itemListOpen,
@@ -139,7 +139,7 @@ func (l *lexer) current() []byte {
 }
 
 // emit passes an item back to the client.
-func (l *lexer) emit(t itemType) {
+func (l *lexer) emit(t MType) {
 	l.items = append(l.items, item{t, l.start, l.current(), l.line})
 	// Some items contain text internally. If so, count their newlines.
 	if t == itemStringVal {
@@ -152,7 +152,7 @@ func (l *lexer) emit(t itemType) {
 	l.start = l.pos
 }
 
-func (l *lexer) emitL(t itemType) {
+func (l *lexer) emitL(t MType) {
 	lowercase(l.current())
 	l.emit(t)
 }

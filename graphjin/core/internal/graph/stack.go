@@ -1,4 +1,4 @@
-package qcode
+package graph
 
 type Stack struct {
 	stA [20]int32

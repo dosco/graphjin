@@ -1,262 +1,62 @@
 //nolint:errcheck
+
 package psql
 
 import (
+	"bytes"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
 	"strings"
 
 	"github.com/dosco/super-graph/core/internal/qcode"
-	"github.com/dosco/super-graph/core/internal/util"
-	"github.com/dosco/super-graph/jsn"
+	"github.com/dosco/super-graph/core/internal/sdata"
 )
 
-type itemType int
+func (co *Compiler) compileMutation(
+	w *bytes.Buffer,
+	qc *qcode.QCode,
+	metad Metadata) Metadata {
 
-const (
-	itemInsert itemType = iota + 1
-	itemUpdate
-	itemConnect
-	itemDisconnect
-	itemUnion
-)
-
-var insertTypes = map[string]itemType{
-	"connect": itemConnect,
-}
-
-var updateTypes = map[string]itemType{
-	"connect":    itemConnect,
-	"disconnect": itemDisconnect,
-}
-
-var noLimit = qcode.Paging{NoLimit: true}
-
-func (co *Compiler) compileMutation(w io.Writer, qc *qcode.QCode, vars Variables) (Metadata, error) {
-	md := Metadata{}
-
-	if len(qc.Selects) == 0 {
-		return md, errors.New("empty query")
+	c := compilerContext{
+		md:       metad,
+		w:        w,
+		qc:       qc,
+		Compiler: co,
 	}
 
-	c := &compilerContext{md, w, qc.Selects, co}
-	root := &qc.Selects[0]
-
-	ti, err := c.schema.GetTableInfoB(root.Name)
-	if err != nil {
-		return c.md, err
+	if qc.SType != qcode.QTDelete {
+		c.w.WriteString(`WITH "_sg_input" AS (SELECT `)
+		c.md.renderParam(c.w, Param{Name: c.qc.ActionVar, Type: "json"})
+		c.w.WriteString(` :: json AS j)`)
 	}
 
-	switch qc.Type {
+	switch qc.SType {
 	case qcode.QTInsert:
-		if _, err := c.renderInsert(w, qc, vars, ti, false); err != nil {
-			return c.md, err
-		}
-
+		c.renderInsert()
 	case qcode.QTUpdate:
-		if _, err := c.renderUpdate(w, qc, vars, ti); err != nil {
-			return c.md, err
-		}
-
+		c.renderUpdate()
 	case qcode.QTUpsert:
-		if _, err := c.renderUpsert(w, qc, vars, ti); err != nil {
-			return c.md, err
-		}
-
+		c.renderUpsert()
 	case qcode.QTDelete:
-		if _, err := c.renderDelete(w, qc, vars, ti); err != nil {
-			return c.md, err
-		}
-
+		c.renderDelete()
 	default:
-		return c.md, errors.New("valid mutations are 'insert', 'update', 'upsert' and 'delete'")
+		return c.md
 	}
 
-	root.Paging = noLimit
-	root.DistinctOn = root.DistinctOn[:]
-	root.OrderBy = root.OrderBy[:]
-	root.Where = nil
-	root.Args = nil
-
-	return co.compileQueryWithMetadata(w, qc, vars, c.md)
+	return co.CompileQuery(w, qc, c.md)
 }
 
-type kvitem struct {
-	id     int32
-	_type  itemType
-	_ctype int
-	key    string
-	path   []string
-	val    json.RawMessage
-	data   map[string]json.RawMessage
-	array  bool
-	ti     *DBTableInfo
-	relCP  *DBRel
-	relPC  *DBRel
-	items  []kvitem
-}
-
-type renitem struct {
-	kvitem
-	array bool
-	data  map[string]json.RawMessage
-}
-
-// TODO: Handle cases where a column name matches the child table name
-// the child path needs to be exluded in the json sent to insert or update
-
-func (c *compilerContext) handleKVItem(st *util.Stack, item kvitem) error {
-	var data map[string]json.RawMessage
-	var array bool
-	var err error
-
-	if item.data == nil {
-		data, array, err = jsn.Tree(item.val)
-		if err != nil {
-			return err
-		}
-	} else {
-		data, array = item.data, item.array
-	}
-
-	var unionize bool
-	id := item.id + 1
-
-	item.items = make([]kvitem, 0, len(data))
-
-	for k, v := range data {
-		if v[0] != '{' && v[0] != '[' {
-			continue
-		}
-
-		// Get child-to-parent relationship
-		relCP, err := c.schema.GetRel(k, item.key)
-		if err != nil {
-			var ty itemType
-			var ok bool
-
-			switch item._type {
-			case itemInsert:
-				ty, ok = insertTypes[k]
-			case itemUpdate:
-				ty, ok = updateTypes[k]
-			}
-
-			if ok {
-				unionize = true
-				item1 := item
-				item1._type = ty
-				item1.id = id
-				item1.val = v
-
-				item.items = append(item.items, item1)
-				id++
-			}
-
-			// Get parent-to-child relationship
-		} else if relPC, err := c.schema.GetRel(item.key, k); err == nil {
-			ti, err := c.schema.GetTableInfo(k)
-			if err != nil {
-				return err
-			}
-
-			item1 := kvitem{
-				id:    id,
-				_type: item._type,
-				key:   k,
-				val:   v,
-				path:  append(item.path, k),
-				ti:    ti,
-				relCP: relCP,
-				relPC: relPC,
-			}
-
-			if v[0] == '{' {
-				item1.data, item1.array, err = jsn.Tree(v)
-				if err != nil {
-					return err
-				}
-				if v1, ok := item1.data["connect"]; ok && (v1[0] == '{' || v1[0] == '[') {
-					item1._ctype |= (1 << itemConnect)
-				}
-				if v1, ok := item1.data["disconnect"]; ok && (v1[0] == '{' || v1[0] == '[') {
-					item1._ctype |= (1 << itemDisconnect)
-				}
-			}
-
-			item.items = append(item.items, item1)
-			id++
-		}
-	}
-
-	if unionize {
-		item._type = itemUnion
-	}
-
-	// For inserts order the children according to
-	// the creation order required by the parent-to-child
-	// relationships. For example users need to be created
-	// before the products they own.
-
-	// For updates the order defined in the query must be
-	// the order used.
-	switch item._type {
-	case itemInsert:
-		for _, v := range item.items {
-			if v.relPC.Type == RelOneToMany {
-				st.Push(v)
-			}
-		}
-		st.Push(renitem{kvitem: item, array: array, data: data})
-		for _, v := range item.items {
-			if v.relPC.Type == RelOneToOne {
-				st.Push(v)
-			}
-		}
-
-	case itemUpdate:
-		for _, v := range item.items {
-			if !(v._ctype > 0 && v.relPC.Type == RelOneToOne) {
-				st.Push(v)
-			}
-		}
-		st.Push(renitem{kvitem: item, array: array, data: data})
-		for _, v := range item.items {
-			if v._ctype > 0 && v.relPC.Type == RelOneToOne {
-				st.Push(v)
-			}
-		}
-
-	case itemUnion:
-		st.Push(renitem{kvitem: item, array: array, data: data})
-		for _, v := range item.items {
-			st.Push(v)
-		}
-
-	default:
-		for _, v := range item.items {
-			st.Push(v)
-		}
-		st.Push(renitem{kvitem: item, array: array, data: data})
-	}
-
-	return nil
-}
-
-func (c *compilerContext) renderUnionStmt(w io.Writer, item renitem) error {
+func (c *compilerContext) renderUnionStmt(m qcode.Mutate) {
 	var connect, disconnect bool
 
 	// Render only for parent-to-child relationship of one-to-many
-	if item.relPC.Type != RelOneToMany {
-		return nil
+	if m.RelPC.Type != sdata.RelOneToMany {
+		return
 	}
 
-	for _, v := range item.items {
-		if v._type == itemConnect {
+	for _, v := range m.Items {
+		if v.Type == qcode.MTConnect {
 			connect = true
-		} else if v._type == itemDisconnect {
+		} else if v.Type == qcode.MTDisconnect {
 			disconnect = true
 		}
 		if connect && disconnect {
@@ -265,469 +65,382 @@ func (c *compilerContext) renderUnionStmt(w io.Writer, item renitem) error {
 	}
 
 	if connect {
-		io.WriteString(w, `, `)
+		c.w.WriteString(`, `)
 		if connect && disconnect {
-			renderCteNameWithSuffix(w, item.kvitem, "c")
+			renderCteNameWithSuffix(c.w, m, "c")
 		} else {
-			quoted(w, item.ti.Name)
+			quoted(c.w, m.Ti.Name)
 		}
-		io.WriteString(w, ` AS ( UPDATE `)
-		quoted(w, item.ti.Name)
-		io.WriteString(w, ` SET `)
-		quoted(w, item.relPC.Right.Col)
-		io.WriteString(w, ` = `)
+		c.w.WriteString(` AS ( UPDATE `)
+		quoted(c.w, m.Ti.Name)
+		c.w.WriteString(` SET `)
+		quoted(c.w, m.RelPC.Right.Col.Name)
+		c.w.WriteString(` = `)
 
 		// When setting the id of the connected table in a one-to-many setting
 		// we always overwrite the value including for array columns
-		colWithTable(w, item.relPC.Left.Table, item.relPC.Left.Col)
+		colWithTable(c.w, m.RelPC.Left.Col.Table, m.RelPC.Left.Col.Name)
 
-		io.WriteString(w, ` FROM `)
-		quoted(w, item.relPC.Left.Table)
-		io.WriteString(w, ` WHERE`)
+		c.w.WriteString(` FROM `)
+		quoted(c.w, m.RelPC.Left.Col.Table)
+		c.w.WriteString(` WHERE`)
 
-		i := 0
-		for _, v := range item.items {
-			if v._type == itemConnect {
+		for i, v := range m.Items {
+			if v.Type == qcode.MTConnect {
 				if i != 0 {
-					io.WriteString(w, ` OR (`)
+					c.w.WriteString(` OR (`)
 				} else {
-					io.WriteString(w, ` (`)
+					c.w.WriteString(` (`)
 				}
-				if err := renderWhereFromJSON(w, v, "connect", v.val); err != nil {
-					return err
-				}
-				io.WriteString(w, `)`)
-				i++
+				c.renderWhereFromJSON(v, "connect")
+				c.w.WriteString(`)`)
 			}
 		}
-		io.WriteString(w, ` RETURNING `)
-		quoted(w, item.ti.Name)
-		io.WriteString(w, `.*)`)
+		c.w.WriteString(` RETURNING `)
+		quoted(c.w, m.Ti.Name)
+		c.w.WriteString(`.*)`)
 	}
 
 	if disconnect {
-		io.WriteString(w, `, `)
+		c.w.WriteString(`, `)
 		if connect && disconnect {
-			renderCteNameWithSuffix(w, item.kvitem, "d")
+			renderCteNameWithSuffix(c.w, m, "d")
 		} else {
-			quoted(w, item.ti.Name)
+			quoted(c.w, m.Ti.Name)
 		}
-		io.WriteString(w, ` AS ( UPDATE `)
-		quoted(w, item.ti.Name)
-		io.WriteString(w, ` SET `)
-		quoted(w, item.relPC.Right.Col)
-		io.WriteString(w, ` = `)
+		c.w.WriteString(` AS ( UPDATE `)
+		quoted(c.w, m.Ti.Name)
+		c.w.WriteString(` SET `)
+		quoted(c.w, m.RelPC.Right.Col.Name)
+		c.w.WriteString(` = `)
 
-		if item.relPC.Right.Array {
-			io.WriteString(w, ` array_remove(`)
-			quoted(w, item.relPC.Right.Col)
-			io.WriteString(w, `, `)
-			colWithTable(w, item.relPC.Left.Table, item.relPC.Left.Col)
-			io.WriteString(w, `)`)
+		if m.RelPC.Right.Col.Array {
+			c.w.WriteString(` array_remove(`)
+			quoted(c.w, m.RelPC.Right.Col.Name)
+			c.w.WriteString(`, `)
+			colWithTable(c.w, m.RelPC.Left.Col.Table, m.RelPC.Left.Col.Name)
+			c.w.WriteString(`)`)
 
 		} else {
-			io.WriteString(w, ` NULL`)
+			c.w.WriteString(` NULL`)
 		}
 
-		io.WriteString(w, ` FROM `)
-		quoted(w, item.relPC.Left.Table)
-		io.WriteString(w, ` WHERE`)
+		c.w.WriteString(` FROM `)
+		quoted(c.w, m.RelPC.Left.Col.Table)
+		c.w.WriteString(` WHERE`)
 
-		i := 0
-		for _, v := range item.items {
-			if v._type == itemDisconnect {
+		for i, v := range m.Items {
+			if v.Type == qcode.MTDisconnect {
 				if i != 0 {
-					io.WriteString(w, ` OR (`)
+					c.w.WriteString(` OR (`)
 				} else {
-					io.WriteString(w, ` (`)
+					c.w.WriteString(` (`)
 				}
-				if err := renderWhereFromJSON(w, v, "disconnect", v.val); err != nil {
-					return err
-				}
-				io.WriteString(w, `)`)
-				i++
+				c.renderWhereFromJSON(v, "disconnect")
+				c.w.WriteString(`)`)
 			}
 		}
-		io.WriteString(w, ` RETURNING `)
-		quoted(w, item.ti.Name)
-		io.WriteString(w, `.*)`)
+		c.w.WriteString(` RETURNING `)
+		quoted(c.w, m.Ti.Name)
+		c.w.WriteString(`.*)`)
 	}
 
 	if connect && disconnect {
-		io.WriteString(w, `, `)
-		quoted(w, item.ti.Name)
-		io.WriteString(w, ` AS (`)
-		io.WriteString(w, `SELECT * FROM `)
-		renderCteNameWithSuffix(w, item.kvitem, "c")
-		io.WriteString(w, ` UNION ALL `)
-		io.WriteString(w, `SELECT * FROM `)
-		renderCteNameWithSuffix(w, item.kvitem, "d")
-		io.WriteString(w, `)`)
+		c.w.WriteString(`, `)
+		quoted(c.w, m.Ti.Name)
+		c.w.WriteString(` AS (`)
+		c.w.WriteString(`SELECT * FROM `)
+		renderCteNameWithSuffix(c.w, m, "c")
+		c.w.WriteString(` UNION ALL `)
+		c.w.WriteString(`SELECT * FROM `)
+		renderCteNameWithSuffix(c.w, m, "d")
+		c.w.WriteString(`)`)
 	}
-
-	return nil
 }
 
-func (c *compilerContext) renderInsertUpdateColumns(
-	qc *qcode.QCode,
-	jt map[string]json.RawMessage,
-	ti *DBTableInfo,
-	skipcols map[string]struct{},
-	isValues bool) (bool, error) {
-
-	root := &qc.Selects[0]
-	renderedCols := false
-
-	n := 0
-	for _, cn := range ti.Columns {
-		if _, ok := skipcols[cn.Name]; ok {
-			continue
-		}
-		if _, ok := jt[cn.Key]; !ok {
-			continue
-		}
-		if cn.Blocked {
-			return false, fmt.Errorf("insert: column '%s' blocked", cn.Name)
-		}
-		if _, ok := root.PresetMap[cn.Key]; ok {
-			continue
-		}
-		if err := ColumnAccess(ti, root, cn.Name, true); err != nil {
-			return false, err
-		}
-		if n != 0 {
-			io.WriteString(c.w, `, `)
+func (c *compilerContext) renderInsertUpdateColumns(m qcode.Mutate, values bool) {
+	for i, col := range m.Cols {
+		if i != 0 {
+			c.w.WriteString(`, `)
 		}
 
-		if isValues {
-			colWithTable(c.w, "t", cn.Name)
-			// if cn.Array {
-			// 	io.WriteString(c.w, `(SELECT array_agg(a.*) FROM json_array_elements(`)
-			// 	colWithTable(c.w, "t", cn.Name)
-			// 	io.WriteString(c.w, `) as a)`)
-			// } else {
-			// 	colWithTable(c.w, "t", cn.Name)
-			// }
-		} else {
-			quoted(c.w, cn.Name)
-		}
+		if values {
+			v := col.Value
 
-		renderedCols = true
-		n++
-	}
-
-	for i, pcol := range root.PresetList {
-		col, err := ti.GetColumn(pcol)
-		if err != nil {
-			return false, fmt.Errorf("insert presets: %w", err)
-		}
-		if _, ok := skipcols[col.Name]; ok {
-			continue
-		}
-
-		if i != 0 || n != 0 {
-			io.WriteString(c.w, `, `)
-		}
-
-		if isValues {
-			val := root.PresetMap[col.Name]
-			var v string
-
-			if len(val) > 1 && val[0] == '$' {
-				vn := val[1:]
-				if v1, ok := c.vars[vn]; ok {
+			if len(v) > 1 && v[0] == '$' {
+				if v1, ok := c.vars[v[1:]]; ok {
 					v = v1
-				} else {
-					v = val
 				}
-			} else {
-				v = val
 			}
 
 			switch {
 			case len(v) > 1 && v[0] == '$':
-				c.md.renderParam(c.w, Param{Name: v[1:], Type: col.Type})
+				c.md.renderParam(c.w, Param{Name: v[1:], Type: col.Col.Type})
 
 			case strings.HasPrefix(v, "sql:"):
-				io.WriteString(c.w, `(`)
+				c.w.WriteString(`(`)
 				c.md.RenderVar(c.w, v[4:])
-				io.WriteString(c.w, `)`)
+				c.w.WriteString(`)`)
+
+			case v != "":
+				squoted(c.w, v)
 
 			default:
-				squoted(c.w, v)
+				colWithTable(c.w, "t", col.FieldName)
+				continue
 			}
 
-			io.WriteString(c.w, ` :: `)
-			io.WriteString(c.w, col.Type)
+			c.w.WriteString(` :: `)
+			c.w.WriteString(col.Col.Type)
 
 		} else {
-			quoted(c.w, col.Name)
+			quoted(c.w, col.Col.Name)
 		}
-
-		renderedCols = true
 	}
-
-	return renderedCols, nil
 }
 
-func (c *compilerContext) renderUpsert(
-	w io.Writer, qc *qcode.QCode, vars Variables, ti *DBTableInfo) (uint32, error) {
-
-	root := &qc.Selects[0]
-	upsert, ok := vars[qc.ActionVar]
-	if !ok {
-		return 0, fmt.Errorf("variable '%s' not defined", qc.ActionVar)
+func (c *compilerContext) renderNestedInsertUpdateRelColumns(m qcode.Mutate, values bool) {
+	for _, col := range m.RCols {
+		c.w.WriteString(`, `)
+		if values {
+			if col.CType != 0 {
+				c.w.WriteString(`"_x_`)
+				c.w.WriteString(col.VCol.Table)
+				c.w.WriteString(`".`)
+				quoted(c.w, col.VCol.Name)
+			} else {
+				colWithTable(c.w, col.VCol.Table, col.VCol.Name)
+			}
+		} else {
+			quoted(c.w, col.Col.Name)
+		}
 	}
-	if len(upsert) == 0 {
-		return 0, fmt.Errorf("variable '%s' is empty", qc.ActionVar)
-	}
+}
 
-	if ti.PrimaryCol == nil {
-		return 0, fmt.Errorf("no primary key column found")
+func (c *compilerContext) renderNestedInsertUpdateRelTables(m qcode.Mutate) {
+	for _, t := range m.Tables {
+		c.w.WriteString(`, `)
+		if t.CType != 0 {
+			c.w.WriteString(`"_x_`)
+			c.w.WriteString(t.Ti.Name)
+			c.w.WriteString(`"`)
+		} else {
+			quoted(c.w, t.Ti.Name)
+		}
 	}
+}
 
-	jt, _, err := jsn.Tree(upsert)
-	if err != nil {
-		return 0, err
-	}
+func (c *compilerContext) renderUpsert() {
+	sel := c.qc.Selects[0]
 
-	if _, err := c.renderInsert(w, qc, vars, ti, true); err != nil {
-		return 0, err
-	}
+	c.renderInsert()
+	c.w.WriteString(` ON CONFLICT (`)
+	m := c.qc.Mutates[0]
 
-	io.WriteString(c.w, ` ON CONFLICT (`)
 	i := 0
-
-	for _, cn := range ti.Columns {
-		if _, ok := jt[cn.Key]; !ok {
+	for _, col := range m.Cols {
+		if !col.Col.UniqueKey || !col.Col.PrimaryKey {
 			continue
 		}
-		if cn.Blocked {
-			return 0, fmt.Errorf("upsert: column '%s' blocked", cn.Name)
-		}
-		if !cn.UniqueKey || !cn.PrimaryKey {
-			continue
-		}
-
 		if i != 0 {
-			io.WriteString(c.w, `, `)
+			c.w.WriteString(`, `)
 		}
-		io.WriteString(c.w, cn.Name)
+		c.w.WriteString(col.Col.Name)
 		i++
 	}
 	if i == 0 {
-		io.WriteString(c.w, ti.PrimaryCol.Name)
+		c.w.WriteString(sel.Ti.PrimaryCol.Name)
 	}
-	io.WriteString(c.w, `)`)
+	c.w.WriteString(`)`)
 
-	io.WriteString(c.w, ` DO UPDATE SET `)
+	c.w.WriteString(` DO UPDATE SET `)
 
-	i = 0
-	for _, cn := range ti.Columns {
-		if _, ok := jt[cn.Key]; !ok {
-			continue
-		}
-		if cn.Blocked {
-			return 0, fmt.Errorf("upsert: column '%s' blocked", cn.Name)
-		}
+	for i, col := range m.Cols {
 		if i != 0 {
-			io.WriteString(c.w, `, `)
+			c.w.WriteString(`, `)
 		}
-		io.WriteString(c.w, cn.Name)
-		io.WriteString(c.w, ` = EXCLUDED.`)
-		io.WriteString(c.w, cn.Name)
-		i++
+		c.w.WriteString(col.Col.Name)
+		c.w.WriteString(` = EXCLUDED.`)
+		c.w.WriteString(col.Col.Name)
 	}
 
-	if root.Where != nil {
-		io.WriteString(c.w, ` WHERE `)
-
-		if err := c.renderWhere(root, ti); err != nil {
-			return 0, err
-		}
-	}
-
-	io.WriteString(c.w, ` RETURNING *) `)
-
-	return 0, nil
+	c.w.WriteString(` WHERE `)
+	c.renderExp(c.qc.Schema, m.Ti, c.qc.Selects[0].Where.Exp, false)
+	c.w.WriteString(` RETURNING *) `)
 }
 
-func (c *compilerContext) renderConnectStmt(qc *qcode.QCode, w io.Writer,
-	item renitem) error {
+func (c *compilerContext) renderDelete() {
+	sel := c.qc.Selects[0]
 
-	rel := item.relPC
+	c.w.WriteString(`WITH `)
+	quoted(c.w, sel.Ti.Name)
 
-	if rel == nil {
-		return errors.New("invalid connect value")
-	}
+	c.w.WriteString(` AS (DELETE FROM `)
+	quoted(c.w, sel.Ti.Name)
+	c.w.WriteString(` WHERE `)
+	c.renderExp(c.qc.Schema, sel.Ti, sel.Where.Exp, false)
+
+	c.w.WriteString(` RETURNING `)
+	quoted(c.w, sel.Ti.Name)
+	c.w.WriteString(`.*) `)
+}
+
+func (c *compilerContext) renderConnectStmt(m qcode.Mutate) {
+	rel := m.RelPC
 
 	// Render only for parent-to-child relationship of one-to-one
 	// For this to work the child needs to found first so it's primary key
 	// can be set in the related column on the parent object.
 	// Eg. Create product and connect a user to it.
-	if rel.Type != RelOneToOne {
-		return nil
+	if rel.Type != sdata.RelOneToOne {
+		return
 	}
 
-	io.WriteString(w, `, "_x_`)
-	io.WriteString(c.w, item.ti.Name)
-	io.WriteString(c.w, `" AS (SELECT `)
+	c.w.WriteString(`, "_x_`)
+	c.w.WriteString(m.Ti.Name)
+	c.w.WriteString(`" AS (SELECT `)
 
-	if rel.Left.Array {
-		io.WriteString(w, `array_agg(DISTINCT `)
-		quoted(w, rel.Right.Col)
-		io.WriteString(w, `) AS `)
-		quoted(w, rel.Right.Col)
+	if rel.Left.Col.Array {
+		c.w.WriteString(`array_agg(DISTINCT `)
+		quoted(c.w, rel.Right.Col.Name)
+		c.w.WriteString(`) AS `)
+		quoted(c.w, rel.Right.Col.Name)
 
 	} else {
-		quoted(w, rel.Right.Col)
+		quoted(c.w, rel.Right.Col.Name)
 
 	}
 
-	io.WriteString(c.w, ` FROM "_sg_input" i,`)
-	quoted(c.w, item.ti.Name)
+	c.w.WriteString(` FROM "_sg_input" i,`)
+	quoted(c.w, m.Ti.Name)
 
-	io.WriteString(c.w, ` WHERE `)
-	if err := renderWhereFromJSON(c.w, item.kvitem, "connect", item.kvitem.val); err != nil {
-		return err
-	}
-	io.WriteString(c.w, ` LIMIT 1)`)
-
-	return nil
+	c.w.WriteString(` WHERE `)
+	c.renderWhereFromJSON(m, "connect")
+	c.w.WriteString(` LIMIT 1)`)
 }
 
-func (c *compilerContext) renderDisconnectStmt(qc *qcode.QCode, w io.Writer,
-	item renitem) error {
-
-	rel := item.relPC
+func (c *compilerContext) renderDisconnectStmt(m qcode.Mutate) {
+	rel := m.RelPC
 
 	// Render only for parent-to-child relationship of one-to-one
 	// For this to work the child needs to found first so it's
 	// null value can beset in the related column on the parent object.
 	// Eg. Update product and diconnect the user from it.
-	if rel.Type != RelOneToOne {
-		return nil
+	if rel.Type != sdata.RelOneToOne {
+		return
 	}
-	io.WriteString(w, `, "_x_`)
-	io.WriteString(c.w, item.ti.Name)
-	io.WriteString(c.w, `" AS (`)
+	c.w.WriteString(`, "_x_`)
+	c.w.WriteString(m.Ti.Name)
+	c.w.WriteString(`" AS (`)
 
-	if rel.Right.Array {
-		io.WriteString(c.w, `SELECT `)
-		quoted(w, rel.Right.Col)
-		io.WriteString(c.w, ` FROM "_sg_input" i,`)
-		quoted(c.w, item.ti.Name)
-		io.WriteString(c.w, ` WHERE `)
-		if err := renderWhereFromJSON(c.w, item.kvitem, "connect", item.kvitem.val); err != nil {
-			return err
-		}
-		io.WriteString(c.w, ` LIMIT 1))`)
+	if rel.Right.Col.Array {
+		c.w.WriteString(`SELECT `)
+		quoted(c.w, rel.Right.Col.Name)
+		c.w.WriteString(` FROM "_sg_input" i,`)
+		quoted(c.w, m.Ti.Name)
+		c.w.WriteString(` WHERE `)
+		c.renderWhereFromJSON(m, "disconnect")
+		c.w.WriteString(` LIMIT 1))`)
 
 	} else {
-		io.WriteString(c.w, `SELECT * FROM (VALUES(NULL::`)
-		io.WriteString(w, rel.Right.col.Type)
-		io.WriteString(c.w, `)) AS LOOKUP(`)
-		quoted(w, rel.Right.Col)
-		io.WriteString(c.w, `))`)
+		c.w.WriteString(`SELECT * FROM (VALUES(NULL::`)
+		c.w.WriteString(rel.Right.Col.Type)
+		c.w.WriteString(`)) AS LOOKUP(`)
+		quoted(c.w, rel.Right.Col.Name)
+		c.w.WriteString(`))`)
 	}
-
-	return nil
 }
 
-func renderWhereFromJSON(w io.Writer, item kvitem, key string, val []byte) error {
+func (c *compilerContext) renderWhereFromJSON(m qcode.Mutate, key string) {
 	var kv map[string]json.RawMessage
-	ti := item.ti
 
-	if err := json.Unmarshal(val, &kv); err != nil {
-		return err
+	//TODO: Move this json parsing into qcode
+	if err := json.Unmarshal(m.Val, &kv); err != nil {
+		return
 	}
+
 	i := 0
 	for k, v := range kv {
-		col, err := ti.GetColumn(k)
+		col, err := m.Ti.GetColumn(k)
 		if err != nil {
-			return err
+			continue
 		}
 		if i != 0 {
-			io.WriteString(w, ` AND `)
+			c.w.WriteString(` AND `)
 		}
 
 		if v[0] == '[' {
-			colWithTable(w, ti.Name, k)
+			colWithTable(c.w, col.Table, col.Name)
 
 			if col.Array {
-				io.WriteString(w, ` && `)
+				c.w.WriteString(` && `)
 			} else {
-				io.WriteString(w, ` = `)
+				c.w.WriteString(` = `)
 			}
 
-			io.WriteString(w, `ANY((select a::`)
-			io.WriteString(w, col.Type)
+			c.w.WriteString(`ANY((select a::`)
+			c.w.WriteString(col.Type)
 
-			io.WriteString(w, ` AS list from json_array_elements_text(`)
-			renderPathJSON(w, item, key, k)
-			io.WriteString(w, `::json) AS a))`)
+			c.w.WriteString(` AS list from json_array_elements_text(`)
+			renderPathJSON(c.w, m, key, k)
+			c.w.WriteString(`::json) AS a))`)
 
 		} else if col.Array {
-			io.WriteString(w, `(`)
-			renderPathJSON(w, item, key, k)
-			io.WriteString(w, `)::`)
-			io.WriteString(w, col.Type)
+			c.w.WriteString(`(`)
+			renderPathJSON(c.w, m, key, k)
+			c.w.WriteString(`)::`)
+			c.w.WriteString(col.Type)
 
-			io.WriteString(w, ` = ANY(`)
-			colWithTable(w, ti.Name, k)
-			io.WriteString(w, `)`)
+			c.w.WriteString(` = ANY(`)
+			colWithTable(c.w, m.Ti.Name, k)
+			c.w.WriteString(`)`)
 
 		} else {
-			colWithTable(w, ti.Name, k)
-
-			io.WriteString(w, `= (`)
-			renderPathJSON(w, item, key, k)
-			io.WriteString(w, `)::`)
-			io.WriteString(w, col.Type)
+			colWithTable(c.w, m.Ti.Name, k)
+			c.w.WriteString(` = (`)
+			renderPathJSON(c.w, m, key, k)
+			c.w.WriteString(`)::`)
+			c.w.WriteString(col.Type)
 		}
-
 		i++
 	}
-	return nil
 }
 
-func renderPathJSON(w io.Writer, item kvitem, key1, key2 string) {
-	io.WriteString(w, `(i.j->`)
-	joinPath(w, item.path)
-	io.WriteString(w, `->'`)
-	io.WriteString(w, key1)
-	io.WriteString(w, `'->>'`)
-	io.WriteString(w, key2)
-	io.WriteString(w, `')`)
+func renderPathJSON(w *bytes.Buffer, m qcode.Mutate, key1, key2 string) {
+	w.WriteString(`(i.j->`)
+	joinPath(w, m.Path)
+	w.WriteString(`->'`)
+	w.WriteString(key1)
+	w.WriteString(`'->>'`)
+	w.WriteString(key2)
+	w.WriteString(`')`)
 }
 
-func renderCteName(w io.Writer, item kvitem) error {
-	io.WriteString(w, `"`)
-	io.WriteString(w, item.ti.Name)
-	if item._type == itemConnect || item._type == itemDisconnect {
-		io.WriteString(w, `_`)
-		int32String(w, item.id)
+func renderCteName(w *bytes.Buffer, m qcode.Mutate) {
+	w.WriteString(`"`)
+	w.WriteString(m.Ti.Name)
+	if m.Type == qcode.MTConnect || m.Type == qcode.MTDisconnect {
+		w.WriteString(`_`)
+		int32String(w, m.ID)
 	}
-	io.WriteString(w, `"`)
-	return nil
+	w.WriteString(`"`)
 }
 
-func renderCteNameWithSuffix(w io.Writer, item kvitem, suffix string) error {
-	io.WriteString(w, `"`)
-	io.WriteString(w, item.ti.Name)
-	io.WriteString(w, `_`)
-	io.WriteString(w, suffix)
-	io.WriteString(w, `"`)
-	return nil
+func renderCteNameWithSuffix(w *bytes.Buffer, m qcode.Mutate, suffix string) {
+	w.WriteString(`"`)
+	w.WriteString(m.Ti.Name)
+	w.WriteString(`_`)
+	w.WriteString(suffix)
+	w.WriteString(`"`)
 }
 
-func joinPath(w io.Writer, path []string) {
+func joinPath(w *bytes.Buffer, path []string) {
 	for i := range path {
 		if i != 0 {
-			io.WriteString(w, `->`)
+			w.WriteString(`->`)
 		}
-		io.WriteString(w, `'`)
-		io.WriteString(w, path[i])
-		io.WriteString(w, `'`)
+		w.WriteString(`'`)
+		w.WriteString(path[i])
+		w.WriteString(`'`)
 	}
 }

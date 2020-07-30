@@ -1,4 +1,5 @@
-package qcode
+//go:generate stringer -type=ParserType,FieldType -output=./gen_string.go
+package graph
 
 import (
 	"errors"
@@ -12,19 +13,19 @@ var (
 	errEOT = errors.New("end of tokens")
 )
 
-type parserType int32
-
 const (
 	maxFields = 1200
 	maxArgs   = 25
 )
 
+type ParserType int8
+
 const (
-	parserError parserType = iota
+	parserError ParserType = iota
 	parserEOF
-	opQuery
-	opMutate
-	opSub
+	OpQuery
+	OpMutate
+	OpSub
 	NodeStr
 	NodeNum
 	NodeBool
@@ -33,8 +34,16 @@ const (
 	NodeVar
 )
 
+type FieldType int8
+
+const (
+	FieldUnion FieldType = iota + 1
+	FieldMember
+	FieldKeyword
+)
+
 type Operation struct {
-	Type    parserType
+	Type    ParserType
 	Name    string
 	Args    []Arg
 	argsA   [10]Arg
@@ -46,6 +55,10 @@ var zeroOperation = Operation{}
 
 func (o *Operation) Reset() {
 	*o = zeroOperation
+}
+
+func (o *Operation) Free() {
+	opPool.Put(o)
 }
 
 type Fragment struct {
@@ -61,37 +74,44 @@ func (f *Fragment) Reset() {
 	*f = zeroFragment
 }
 
+func (f *Fragment) Free() {
+	fragPool.Put(f)
+}
+
 type Field struct {
 	ID        int32
 	ParentID  int32
+	Type      FieldType
 	Name      string
 	Alias     string
 	Args      []Arg
 	argsA     [5]Arg
 	Children  []int32
 	childrenA [5]int32
-	Union     bool
 }
 
 type Arg struct {
 	Name string
 	Val  *Node
-	df   bool
+	DnF  bool //do not free
 }
 
 type Node struct {
-	Type     parserType
+	Type     ParserType
 	Name     string
 	Val      string
 	Parent   *Node
 	Children []*Node
-	exp      *Exp
 }
 
 var zeroNode = Node{}
 
 func (n *Node) Reset() {
 	*n = zeroNode
+}
+
+func (n *Node) Free() {
+	nodePool.Put(n)
 }
 
 type Parser struct {
@@ -174,6 +194,12 @@ func Parse(gql []byte) (*Operation, error) {
 		return nil, err
 	}
 
+	for i, f := range op.Fields {
+		if f.ParentID == -1 && len(f.Args) == 0 && len(f.Children) == 0 {
+			op.Fields[i].Type = FieldKeyword
+		}
+	}
+
 	for _, v := range p.frags {
 		fragPool.Put(v)
 	}
@@ -246,7 +272,7 @@ func (p *Parser) parseOp(op *Operation) error {
 	if p.peek(itemObjOpen) {
 		p.ignore()
 		if !typeSet {
-			op.Type = opQuery
+			op.Type = OpQuery
 		}
 
 		for {
@@ -272,11 +298,11 @@ func (p *Parser) parseOpTypeAndArgs(op *Operation) error {
 
 	switch item._type {
 	case itemQuery:
-		op.Type = opQuery
+		op.Type = OpQuery
 	case itemMutation:
-		op.Type = opMutate
+		op.Type = OpMutate
 	case itemSub:
-		op.Type = opSub
+		op.Type = OpSub
 	}
 
 	op.Args = op.argsA[:0]
@@ -408,7 +434,7 @@ func (p *Parser) parseFragmentFields(st *Stack, fields []Field) ([]Field, error)
 
 	if p.peek(itemOn) {
 		p.ignore()
-		fields[pid].Union = true
+		fields[pid].Type = FieldUnion
 
 		if fields, err = p.parseNormalFields(st, fields); err != nil {
 			return nil, err
@@ -420,6 +446,7 @@ func (p *Parser) parseFragmentFields(st *Stack, fields []Field) ([]Field, error)
 			f := &fields[i]
 			if f.ParentID == pid {
 				f.Args = fields[pid].Args
+				f.Type = FieldMember
 			}
 		}
 
@@ -451,9 +478,8 @@ func (p *Parser) parseFragmentFields(st *Stack, fields []Field) ([]Field, error)
 			// previous field.
 			if f.ParentID == -1 {
 				f.ParentID = pid
-				if f.ParentID != -1 {
-					fields[pid].Children = append(fields[pid].Children, f.ID)
-				}
+				fields[pid].Children = append(fields[pid].Children, f.ID)
+
 				// Update all the other parents id's by our new place in this new array
 			} else {
 				f.ParentID += n
@@ -558,7 +584,7 @@ func (p *Parser) parseList() (*Node, error) {
 	parent := nodePool.Get().(*Node)
 	parent.Reset()
 
-	var ty parserType
+	var ty ParserType
 	for {
 		if p.peek(itemListClose) {
 			p.ignore()
@@ -666,7 +692,7 @@ func (p *Parser) vall(v item) string {
 	return b2s(v.val)
 }
 
-func (p *Parser) peek(types ...itemType) bool {
+func (p *Parser) peek(types ...MType) bool {
 	n := p.pos + 1
 	l := len(types)
 	// if p.items[n]._type == itemEOF {
@@ -719,36 +745,6 @@ func (p *Parser) reset(to int) {
 
 func b2s(b []byte) string {
 	return *(*string)(unsafe.Pointer(&b))
-}
-
-func (t parserType) String() string {
-	var v string
-
-	switch t {
-	case parserEOF:
-		v = "EOF"
-	case parserError:
-		v = "error"
-	case opQuery:
-		v = "query"
-	case opMutate:
-		v = "mutation"
-	case opSub:
-		v = "subscription"
-	case NodeStr:
-		v = "node-string"
-	case NodeNum:
-		v = "node-number"
-	case NodeBool:
-		v = "node-bool"
-	case NodeVar:
-		v = "node-var"
-	case NodeObj:
-		v = "node-obj"
-	case NodeList:
-		v = "node-list"
-	}
-	return v
 }
 
 func FreeNode(n *Node) {

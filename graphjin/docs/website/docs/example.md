@@ -170,10 +170,10 @@ for (i = 0; i < 100; i++) {
 
 ## Setup the database
 
-This will create the database, run the migrations and the seed file. Once it's setup to reset se the `db:reset` commandline argument.
+This will create the database, run the migrations and the seed file. Once it's setup to reset use the `db:reset` commandline argument.
 
 ```console
-supergraph db:setup
+docker-compose run api db:setup
 ```
 
 ## Start the Webshop API
@@ -362,7 +362,7 @@ tables:
   - name: products
     columns:
       - name: category_ids
-        related_to: categories.i
+        related_to: categories.id
   ...
 ```
 

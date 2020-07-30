@@ -59,6 +59,7 @@ import (
 	"github.com/dosco/super-graph/core/internal/crypto"
 	"github.com/dosco/super-graph/core/internal/psql"
 	"github.com/dosco/super-graph/core/internal/qcode"
+	"github.com/dosco/super-graph/core/internal/sdata"
 )
 
 type contextkey int
@@ -81,8 +82,8 @@ type SuperGraph struct {
 	conf        *Config
 	db          *sql.DB
 	log         *_log.Logger
-	dbinfo      *psql.DBInfo
-	schema      *psql.DBSchema
+	dbinfo      *sdata.DBInfo
+	schema      *sdata.DBSchema
 	allowList   *allow.List
 	encKey      [32]byte
 	hashSeed    maphash.Seed
@@ -104,7 +105,7 @@ func NewSuperGraph(conf *Config, db *sql.DB) (*SuperGraph, error) {
 }
 
 // newSuperGraph helps with writing tests and benchmarks
-func newSuperGraph(conf *Config, db *sql.DB, dbinfo *psql.DBInfo) (*SuperGraph, error) {
+func newSuperGraph(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo) (*SuperGraph, error) {
 	if conf == nil {
 		conf = &Config{Debug: true}
 	}
@@ -121,15 +122,19 @@ func newSuperGraph(conf *Config, db *sql.DB, dbinfo *psql.DBInfo) (*SuperGraph, 
 		return nil, err
 	}
 
+	if err := sg.initSchema(); err != nil {
+		return nil, err
+	}
+
+	if err := sg.initResolvers(); err != nil {
+		return nil, err
+	}
+
 	if err := sg.initCompilers(); err != nil {
 		return nil, err
 	}
 
 	if err := sg.initAllowList(); err != nil {
-		return nil, err
-	}
-
-	if err := sg.initResolvers(); err != nil {
 		return nil, err
 	}
 

@@ -1,4 +1,4 @@
-package psql
+package sdata
 
 import (
 	"strings"

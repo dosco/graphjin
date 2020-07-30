@@ -1,16 +1,29 @@
-package qcode
+package qcode_test
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
-	"github.com/chirino/graphql/schema"
+	"github.com/dosco/super-graph/core/internal/qcode"
+	"github.com/dosco/super-graph/core/internal/sdata"
 )
 
+var dbs *sdata.DBSchema
+
+func init() {
+	var err error
+
+	dbs, err = sdata.NewDBSchema(sdata.GetTestDBInfo(), nil)
+	if err != nil {
+		panic(err)
+	}
+}
+
 func TestCompile1(t *testing.T) {
-	qc, _ := NewCompiler(Config{})
-	err := qc.AddRole("user", "product", TRConfig{
-		Query: QueryConfig{
+	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	err := qc.AddRole("user", "product", qcode.TRConfig{
+		Query: qcode.QueryConfig{
 			Columns: []string{"id", "Name"},
 		},
 	})
@@ -22,7 +35,7 @@ func TestCompile1(t *testing.T) {
 	query { product(id: 15) {
 			id
 			name
-		} }`), "user")
+		} }`), nil, "user")
 
 	if err == nil {
 		t.Fatal(errors.New("this should be an error id must be a variable"))
@@ -30,9 +43,9 @@ func TestCompile1(t *testing.T) {
 }
 
 func TestCompile2(t *testing.T) {
-	qc, _ := NewCompiler(Config{})
-	err := qc.AddRole("user", "product", TRConfig{
-		Query: QueryConfig{
+	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	err := qc.AddRole("user", "product", qcode.TRConfig{
+		Query: qcode.QueryConfig{
 			Columns: []string{"ID"},
 		},
 	})
@@ -43,18 +56,18 @@ func TestCompile2(t *testing.T) {
 	_, err = qc.Compile([]byte(`
 	query { product(id: $id) {
 			id
-			name
-		} }`), "user")
+			price	
+		} }`), nil, "user")
 
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal(errors.New("expected an error: 'products.price' blocked"))
 	}
 }
 
 func TestCompile3(t *testing.T) {
-	qc, _ := NewCompiler(Config{})
-	err := qc.AddRole("user", "product", TRConfig{
-		Query: QueryConfig{
+	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	err := qc.AddRole("user", "product", qcode.TRConfig{
+		Query: qcode.QueryConfig{
 			Columns: []string{"ID"},
 		},
 	})
@@ -62,13 +75,17 @@ func TestCompile3(t *testing.T) {
 		t.Error(err)
 	}
 
+	vars := map[string]json.RawMessage{
+		"data": json.RawMessage(` { "name": "my_name", "description": "my_desc"  }`),
+	}
+
 	_, err = qc.Compile([]byte(`
 	mutation {
-		product(id: $test, name: "Test") {
+		product(insert: $data) {
 			id
 			name
 		}
-	}`), "user")
+	}`), vars, "user")
 
 	if err != nil {
 		t.Fatal(err)
@@ -76,8 +93,8 @@ func TestCompile3(t *testing.T) {
 }
 
 func TestInvalidCompile1(t *testing.T) {
-	qcompile, _ := NewCompiler(Config{})
-	_, err := qcompile.Compile([]byte(`#`), "user")
+	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	_, err := qcompile.Compile([]byte(`#`), nil, "user")
 
 	if err == nil {
 		t.Fatal(errors.New("expecting an error"))
@@ -85,8 +102,8 @@ func TestInvalidCompile1(t *testing.T) {
 }
 
 func TestInvalidCompile2(t *testing.T) {
-	qcompile, _ := NewCompiler(Config{})
-	_, err := qcompile.Compile([]byte(`{u(where:{not:0})}`), "user")
+	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	_, err := qcompile.Compile([]byte(`{u(where:{not:0})}`), nil, "user")
 
 	if err == nil {
 		t.Fatal(errors.New("expecting an error"))
@@ -94,8 +111,8 @@ func TestInvalidCompile2(t *testing.T) {
 }
 
 func TestEmptyCompile(t *testing.T) {
-	qcompile, _ := NewCompiler(Config{})
-	_, err := qcompile.Compile([]byte(``), "user")
+	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	_, err := qcompile.Compile([]byte(``), nil, "user")
 
 	if err == nil {
 		t.Fatal(errors.New("expecting an error"))
@@ -122,8 +139,8 @@ updateThread {
 	}
 }
 }}`
-	qcompile, _ := NewCompiler(Config{})
-	_, err := qcompile.Compile([]byte(gql), "anon")
+	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	_, err := qcompile.Compile([]byte(gql), nil, "anon")
 
 	if err == nil {
 		t.Fatal(errors.New("expecting an error"))
@@ -148,12 +165,12 @@ func TestFragmentsCompile1(t *testing.T) {
 	}
 	
 	fragment userFields2 on user {
-		first_name
-		last_name
+		full_name
+		phone
 	}
 	`
-	qcompile, _ := NewCompiler(Config{})
-	_, err := qcompile.Compile([]byte(gql), "user")
+	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	_, err := qcompile.Compile([]byte(gql), nil, "user")
 
 	if err != nil {
 		t.Fatal(err)
@@ -177,11 +194,11 @@ func TestFragmentsCompile2(t *testing.T) {
 	}
 	
 	fragment userFields2 on user {
-		first_name
-		last_name
+		full_name
+		phone
 	}`
-	qcompile, _ := NewCompiler(Config{})
-	_, err := qcompile.Compile([]byte(gql), "user")
+	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	_, err := qcompile.Compile([]byte(gql), nil, "user")
 
 	if err != nil {
 		t.Fatal(err)
@@ -196,8 +213,8 @@ func TestFragmentsCompile3(t *testing.T) {
 	}
 	
 	fragment userFields2 on user {
-		first_name
-		last_name
+		full_name
+		phone
 	}
 
 	query {
@@ -210,8 +227,8 @@ func TestFragmentsCompile3(t *testing.T) {
 	}
 
 	`
-	qcompile, _ := NewCompiler(Config{})
-	_, err := qcompile.Compile([]byte(gql), "user")
+	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	_, err := qcompile.Compile([]byte(gql), nil, "user")
 
 	if err != nil {
 		t.Fatal(err)
@@ -263,13 +280,13 @@ fragment userFields2 on user {
 }`)
 
 func BenchmarkQCompile(b *testing.B) {
-	qcompile, _ := NewCompiler(Config{})
+	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for n := 0; n < b.N; n++ {
-		_, err := qcompile.Compile(gql, "user")
+		_, err := qcompile.Compile(gql, nil, "user")
 
 		if err != nil {
 			b.Fatal(err)
@@ -278,14 +295,14 @@ func BenchmarkQCompile(b *testing.B) {
 }
 
 func BenchmarkQCompileP(b *testing.B) {
-	qcompile, _ := NewCompiler(Config{})
+	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			_, err := qcompile.Compile(gql, "user")
+			_, err := qcompile.Compile(gql, nil, "user")
 
 			if err != nil {
 				b.Fatal(err)
@@ -295,83 +312,15 @@ func BenchmarkQCompileP(b *testing.B) {
 }
 
 func BenchmarkQCompileFragment(b *testing.B) {
-	qcompile, _ := NewCompiler(Config{})
+	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
 
 	b.ResetTimer()
 	b.ReportAllocs()
 	for n := 0; n < b.N; n++ {
-		_, err := qcompile.Compile(gqlWithFragments, "user")
+		_, err := qcompile.Compile(gqlWithFragments, nil, "user")
 
 		if err != nil {
 			b.Fatal(err)
 		}
 	}
-
-}
-
-func BenchmarkParse(b *testing.B) {
-	b.ResetTimer()
-	b.ReportAllocs()
-	for n := 0; n < b.N; n++ {
-		_, err := Parse(gql)
-
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkParseP(b *testing.B) {
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			_, err := Parse(gql)
-
-			if err != nil {
-				b.Fatal(err)
-			}
-		}
-	})
-}
-
-func BenchmarkParseFragment(b *testing.B) {
-	b.ResetTimer()
-	b.ReportAllocs()
-	for n := 0; n < b.N; n++ {
-		_, err := Parse(gqlWithFragments)
-
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkSchemaParse(b *testing.B) {
-
-	b.ResetTimer()
-	b.ReportAllocs()
-	for n := 0; n < b.N; n++ {
-		doc := schema.QueryDocument{}
-		err := doc.Parse(string(gql))
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkSchemaParseP(b *testing.B) {
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			doc := schema.QueryDocument{}
-			err := doc.Parse(string(gql))
-			if err != nil {
-				b.Fatal(err)
-			}
-		}
-	})
 }

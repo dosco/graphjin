@@ -48,20 +48,20 @@ func (sg *SuperGraph) compileQueryFn(cq *cquery, role string) error {
 	switch cq.q.op {
 	case qcode.QTQuery:
 		if sg.abacEnabled {
-			cq.stmts, cq.st, err = sg.buildMultiStmt(cq.q.query, cq.q.vars, false)
+			cq.stmts, cq.st, err = sg.buildMultiStmt(cq.q.query, cq.q.vars)
 		} else {
-			cq.st, err = sg.buildRoleStmt(cq.q.query, cq.q.vars, role, false)
+			cq.st, err = sg.buildRoleStmt(cq.q.query, cq.q.vars, role)
 		}
 
 	case qcode.QTSubscription:
 		if sg.abacEnabled {
-			cq.stmts, cq.st, err = sg.buildMultiStmt(cq.q.query, cq.q.vars, true)
+			cq.stmts, cq.st, err = sg.buildMultiStmt(cq.q.query, cq.q.vars)
 		} else {
-			cq.st, err = sg.buildRoleStmt(cq.q.query, cq.q.vars, role, true)
+			cq.st, err = sg.buildRoleStmt(cq.q.query, cq.q.vars, role)
 		}
 
 	case qcode.QTMutation:
-		cq.st, err = sg.buildRoleStmt(cq.q.query, cq.q.vars, role, true)
+		cq.st, err = sg.buildRoleStmt(cq.q.query, cq.q.vars, role)
 
 	default:
 		err = errors.New("unknown query")
@@ -71,7 +71,7 @@ func (sg *SuperGraph) compileQueryFn(cq *cquery, role string) error {
 	return err
 }
 
-func (sg *SuperGraph) buildRoleStmt(query, vars []byte, role string, poll bool) (stmt, error) {
+func (sg *SuperGraph) buildRoleStmt(query, vars []byte, role string) (stmt, error) {
 	var st stmt
 
 	ro, ok := sg.roles[role]
@@ -88,15 +88,13 @@ func (sg *SuperGraph) buildRoleStmt(query, vars []byte, role string, poll bool) 
 		}
 	}
 
-	qc, err := sg.qc.Compile(query, ro.Name)
+	qc, err := sg.qc.Compile(query, vm, ro.Name)
 	if err != nil {
 		return st, err
 	}
 
 	w := &bytes.Buffer{}
-	md := psql.Metadata{Poll: poll}
-
-	st.md, err = sg.pc.CompileWithMetadata(w, qc, psql.Variables(vm), md)
+	st.md, err = sg.pc.Compile(w, qc)
 	if err != nil {
 		return st, err
 	}
@@ -108,10 +106,11 @@ func (sg *SuperGraph) buildRoleStmt(query, vars []byte, role string, poll bool) 
 	return st, nil
 }
 
-func (sg *SuperGraph) buildMultiStmt(query, vars []byte, poll bool) ([]stmt, stmt, error) {
+func (sg *SuperGraph) buildMultiStmt(query, vars []byte) ([]stmt, stmt, error) {
 	var vm map[string]json.RawMessage
 	var err error
 	var st stmt
+	var md psql.Metadata
 
 	if len(vars) != 0 {
 		if err := json.Unmarshal(vars, &vm); err != nil {
@@ -125,7 +124,6 @@ func (sg *SuperGraph) buildMultiStmt(query, vars []byte, poll bool) ([]stmt, stm
 
 	stmts := make([]stmt, 0, len(sg.conf.Roles))
 	w := &bytes.Buffer{}
-	md := psql.Metadata{Poll: poll}
 
 	for i := 0; i < len(sg.conf.Roles); i++ {
 		role := &sg.conf.Roles[i]
@@ -135,7 +133,7 @@ func (sg *SuperGraph) buildMultiStmt(query, vars []byte, poll bool) ([]stmt, stm
 			continue
 		}
 
-		qc, err := sg.qc.Compile(query, role.Name)
+		qc, err := sg.qc.Compile(query, vm, role.Name)
 		if err != nil {
 			return nil, st, err
 		}
@@ -143,10 +141,7 @@ func (sg *SuperGraph) buildMultiStmt(query, vars []byte, poll bool) ([]stmt, stm
 		stmts = append(stmts, stmt{role: role, qc: qc})
 		s := &stmts[len(stmts)-1]
 
-		md, err = sg.pc.CompileWithMetadata(w, qc, psql.Variables(vm), md)
-		if err != nil {
-			return nil, st, err
-		}
+		md = sg.pc.CompileQuery(w, qc, md)
 
 		s.sql = w.String()
 		s.md = md
