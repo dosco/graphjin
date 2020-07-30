@@ -1,10 +1,10 @@
 package psql
 
 import (
-	"io"
+	"bytes"
 )
 
-func (md *Metadata) RenderVar(w io.Writer, vv string) {
+func (md *Metadata) RenderVar(w *bytes.Buffer, vv string) {
 	f, s := -1, 0
 
 	for i := range vv {
@@ -12,7 +12,7 @@ func (md *Metadata) RenderVar(w io.Writer, vv string) {
 		switch {
 		case (i > 0 && vv[i-1] != '\\' && v == '$') || v == '$':
 			if (i - s) > 0 {
-				_, _ = io.WriteString(w, vv[s:i])
+				_, _ = w.WriteString(vv[s:i])
 			}
 			f = i
 
@@ -31,16 +31,16 @@ func (md *Metadata) RenderVar(w io.Writer, vv string) {
 	if f != -1 && (len(vv)-f) > 1 {
 		md.renderParam(w, Param{Name: vv[f+1:]})
 	} else {
-		_, _ = io.WriteString(w, vv[s:])
+		_, _ = w.WriteString(vv[s:])
 	}
 }
 
-func (md *Metadata) renderParam(w io.Writer, p Param) {
+func (md *Metadata) renderParam(w *bytes.Buffer, p Param) {
 	var id int
 	var ok bool
 
 	if !md.Poll {
-		_, _ = io.WriteString(w, `$`)
+		_, _ = w.WriteString(`$`)
 	}
 
 	if id, ok = md.pindex[p.Name]; !ok {
@@ -54,7 +54,7 @@ func (md *Metadata) renderParam(w io.Writer, p Param) {
 	}
 
 	if md.Poll {
-		_, _ = io.WriteString(w, `"_sg_sub".`)
+		_, _ = w.WriteString(`"_sg_sub".`)
 		quoted(w, p.Name)
 	} else {
 		int32String(w, int32(id))

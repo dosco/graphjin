@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/dosco/super-graph/core/internal/psql"
+	"github.com/dosco/super-graph/core/internal/sdata"
 	"github.com/dosco/super-graph/jsn"
 )
 
@@ -22,14 +22,9 @@ func (sg *SuperGraph) initResolvers() error {
 	sg.rmap = make(map[uint64]resolvFn)
 
 	for _, t := range sg.conf.Tables {
-		err = sg.initRemotes(t)
-		if err != nil {
-			break
+		if err = sg.initRemotes(t); err != nil {
+			return fmt.Errorf("resolvers: %w", err)
 		}
-	}
-
-	if err != nil {
-		return fmt.Errorf("failed to initialize resolvers: %v", err)
 	}
 
 	return nil
@@ -40,34 +35,40 @@ func (sg *SuperGraph) initRemotes(t Table) error {
 	h.SetSeed(sg.hashSeed)
 
 	for _, r := range t.Remotes {
-		// defines the table column to be used as an id in the
-		// remote request
-		idcol := r.ID
+		// Defines the table column to be used as an id in the
+		// remote reques
+		var col *sdata.DBColumn
 
-		// if no table column specified in the config then
-		// use the primary key of the table as the id
-		if idcol == "" {
-			pcol, err := sg.pc.IDColumn(t.Name)
-			if err != nil {
-				return err
-			}
-			idcol = pcol.Key
-		}
-		idk := fmt.Sprintf("__%s_%s", t.Name, idcol)
-
-		// register a relationship between the remote data
-		// and the database table
-
-		val := &psql.DBRel{Type: psql.RelRemote}
-		val.Left.Col = idcol
-		val.Right.Col = idk
-
-		err := sg.pc.AddRelationship(sanitize(r.Name), t.Name, val)
+		ti, err := sg.schema.GetTableInfo(t.Name)
 		if err != nil {
 			return err
 		}
 
-		// the function thats called to resolve this remote
+		// If no table column specified in the config then
+		// use the primary key of the table as the id
+		if r.ID != "" {
+			idcol, err := ti.GetColumn(r.ID)
+			if err != nil {
+				return err
+			}
+			col = idcol
+		} else {
+			col = ti.PrimaryCol
+		}
+
+		idk := fmt.Sprintf("__%s_%s", t.Name, col.Name)
+
+		// Register a relationship between the remote data
+		// and the database table
+		val := sdata.DBRel{Type: sdata.RelRemote}
+		val.Left.Col = col
+		val.Right.VTable = idk
+
+		if err := sg.schema.SetRel(r.Name, t.Name, &val); err != nil {
+			return err
+		}
+
+		// The function thats called to resolve this remote
 		// data request
 		fn := buildFn(r)
 
@@ -82,10 +83,10 @@ func (sg *SuperGraph) initRemotes(t Table) error {
 			Fn:      fn,
 		}
 
-		// index resolver obj by parent and child names
+		// Index resolver obj by parent and child names
 		sg.rmap[mkkey(&h, r.Name, t.Name)] = rf
 
-		// index resolver obj by IDField
+		// Index resolver obj by IDField
 		_, _ = h.Write(rf.IDField)
 		sg.rmap[h.Sum64()] = rf
 	}

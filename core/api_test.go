@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/dosco/super-graph/core/internal/psql"
+	"github.com/dosco/super-graph/core/internal/sdata"
 )
 
 func BenchmarkGraphQL(b *testing.B) {
@@ -20,7 +20,7 @@ func BenchmarkGraphQL(b *testing.B) {
 
 	// mock.ExpectQuery(`^SELECT jsonb_build_object`).WithArgs()
 	c := &Config{}
-	sg, err := newSuperGraph(c, db, psql.GetTestDBInfo())
+	sg, err := newSuperGraph(c, db, sdata.GetTestDBInfo())
 	if err != nil {
 		b.Fatal(err)
 	}

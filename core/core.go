@@ -8,6 +8,7 @@ import (
 
 	"github.com/dosco/super-graph/core/internal/psql"
 	"github.com/dosco/super-graph/core/internal/qcode"
+	"github.com/dosco/super-graph/core/internal/sdata"
 )
 
 type OpType int
@@ -58,7 +59,7 @@ type qres struct {
 	role string
 }
 
-func (sg *SuperGraph) initCompilers() error {
+func (sg *SuperGraph) initSchema() error {
 	var err error
 	var schema string
 
@@ -71,7 +72,7 @@ func (sg *SuperGraph) initCompilers() error {
 	// If sg.di is not null then it's probably set
 	// for tests
 	if sg.dbinfo == nil {
-		sg.dbinfo, err = psql.GetDBInfo(sg.db, schema, sg.conf.Blocklist)
+		sg.dbinfo, err = sdata.GetDBInfo(sg.db, schema, sg.conf.Blocklist)
 		if err != nil {
 			return err
 		}
@@ -89,12 +90,14 @@ func (sg *SuperGraph) initCompilers() error {
 		return err
 	}
 
-	sg.schema, err = psql.NewDBSchema(sg.dbinfo, getDBTableAliases(sg.conf))
-	if err != nil {
-		return err
-	}
+	sg.schema, err = sdata.NewDBSchema(sg.dbinfo, getDBTableAliases(sg.conf))
+	return err
+}
 
-	sg.qc, err = qcode.NewCompiler(qcode.Config{
+func (sg *SuperGraph) initCompilers() error {
+	var err error
+
+	sg.qc, err = qcode.NewCompiler(sg.schema, qcode.Config{
 		DefaultBlock: sg.conf.DefaultBlock,
 	})
 	if err != nil {
@@ -105,11 +108,7 @@ func (sg *SuperGraph) initCompilers() error {
 		return err
 	}
 
-	sg.pc = psql.NewCompiler(psql.Config{
-		Schema: sg.schema,
-		Vars:   sg.conf.Vars,
-	})
-
+	sg.pc = psql.NewCompiler(psql.Config{Vars: sg.conf.Vars})
 	return nil
 }
 
@@ -311,10 +310,7 @@ func (c *scontext) debugLog(st *stmt) {
 	for _, sel := range st.qc.Selects {
 		switch sel.SkipRender {
 		case qcode.SkipTypeUserNeeded:
-			c.sg.log.Printf("INF table '%s' skipped as it requires $user_id", sel.Name)
-
-		case qcode.SkipTypeTableNotFound:
-			c.sg.log.Printf("INF table '%s' skipped its not added to the 'anon' role config", sel.Name)
+			c.sg.log.Printf("INF table '%s' skipped as it requires $user_id", sel.Table)
 		}
 	}
 }

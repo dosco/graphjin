@@ -11,6 +11,7 @@ import (
 
 	"github.com/dosco/super-graph/core/internal/psql"
 	"github.com/dosco/super-graph/core/internal/qcode"
+	"github.com/dosco/super-graph/core/internal/sdata"
 )
 
 const (
@@ -28,7 +29,25 @@ var (
 func TestMain(m *testing.M) {
 	var err error
 
-	qcompile, err = qcode.NewCompiler(qcode.Config{})
+	schema, err := sdata.GetTestSchema()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	t, err := schema.GetTableInfo("customers")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	remoteVal := &sdata.DBRel{Type: sdata.RelRemote}
+	remoteVal.Left.Col = t.PrimaryCol
+	remoteVal.Right.VTable = fmt.Sprintf("__%s_%s", t.Name, t.PrimaryCol.Name)
+
+	if err := schema.SetRel("payments", "customers", remoteVal); err != nil {
+		log.Fatal(err)
+	}
+
+	qcompile, err = qcode.NewCompiler(schema, qcode.Config{})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -97,9 +116,7 @@ func TestMain(m *testing.M) {
 			Filters:          []string{"false"},
 			DisableFunctions: true,
 		},
-		Insert: qcode.InsertConfig{
-			Filters: []string{"false"},
-		},
+		Insert: qcode.InsertConfig{},
 		Update: qcode.UpdateConfig{
 			Filters: []string{"false"},
 		},
@@ -110,7 +127,7 @@ func TestMain(m *testing.M) {
 
 	err = qcompile.AddRole("user", "mes", qcode.TRConfig{
 		Query: qcode.QueryConfig{
-			Columns: []string{"id", "full_name", "avatar"},
+			Columns: []string{"id", "full_name", "avatar", "email"},
 			Filters: []string{
 				"{ id: { eq: $user_id } }",
 			},
@@ -130,19 +147,13 @@ func TestMain(m *testing.M) {
 		log.Fatal(err)
 	}
 
-	schema, err := psql.GetTestSchema()
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	vars := map[string]string{
 		"admin_account_id": "5",
 		"get_price":        "sql:select price from prices where id = $product_id",
 	}
 
 	pcompile = psql.NewCompiler(psql.Config{
-		Schema: schema,
-		Vars:   vars,
+		Vars: vars,
 	})
 
 	expected = make(map[string][]string)
@@ -174,31 +185,31 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func compileGQLToPSQL(t *testing.T, gql string, vars psql.Variables, role string) {
+func compileGQLToPSQL(t *testing.T, gql string, vars qcode.Variables, role string) {
 	if err := _compileGQLToPSQL(t, gql, vars, role); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func compileGQLToPSQLExpectErr(t *testing.T, gql string, vars psql.Variables, role string) {
+func compileGQLToPSQLExpectErr(t *testing.T, gql string, vars qcode.Variables, role string) {
 	if err := _compileGQLToPSQL(t, gql, vars, role); err == nil {
 		t.Fatal(errors.New("we were expecting an error"))
 	}
 }
 
-func _compileGQLToPSQL(t *testing.T, gql string, vars psql.Variables, role string) error {
+func _compileGQLToPSQL(t *testing.T, gql string, vars qcode.Variables, role string) error {
 	generateTestFile := false
 
 	if generateTestFile {
 		var sqlStmts []string
 
 		for i := 0; i < 100; i++ {
-			qc, err := qcompile.Compile([]byte(gql), role)
+			qc, err := qcompile.Compile([]byte(gql), vars, role)
 			if err != nil {
 				return err
 			}
 
-			_, sqlB, err := pcompile.CompileEx(qc, vars)
+			_, sqlB, err := pcompile.CompileEx(qc)
 			if err != nil {
 				return err
 			}
@@ -224,12 +235,12 @@ func _compileGQLToPSQL(t *testing.T, gql string, vars psql.Variables, role strin
 	}
 
 	for i := 0; i < 200; i++ {
-		qc, err := qcompile.Compile([]byte(gql), role)
+		qc, err := qcompile.Compile([]byte(gql), vars, role)
 		if err != nil {
 			return err
 		}
 
-		_, sqlStmt, err := pcompile.CompileEx(qc, vars)
+		_, sqlStmt, err := pcompile.CompileEx(qc)
 		if err != nil {
 			return err
 		}
