@@ -237,7 +237,7 @@ ORDER BY id;`
 			if c.Array {
 				v.Array = true
 			}
-			if len(c.FKeyTable) != 0 {
+			if c.FKeyTable != "" {
 				v.FKeyTable = c.FKeyTable
 			}
 			if c.fKeyColID.Elements != nil {

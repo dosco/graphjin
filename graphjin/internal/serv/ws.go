@@ -3,6 +3,7 @@ package serv
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -35,8 +36,8 @@ type gqlWsError struct {
 }
 
 type wsConnInit struct {
-	Type    string            `json:"type,omitempty"`
-	Payload map[string]string `json:"payload,omitempty"`
+	Type    string                 `json:"type,omitempty"`
+	Payload map[string]interface{} `json:"payload,omitempty"`
 }
 
 var upgrader = ws.Upgrader{
@@ -70,6 +71,8 @@ func apiV1Ws(servConf *ServConfig, w http.ResponseWriter, r *http.Request) {
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		fmt.Println("0 >>>>>>", err)
+
 		renderErr(w, err)
 		return
 	}
@@ -82,6 +85,7 @@ func apiV1Ws(servConf *ServConfig, w http.ResponseWriter, r *http.Request) {
 
 	for {
 		if _, b, err = conn.ReadMessage(); err != nil {
+			servConf.log.Println(err)
 			break
 		}
 		if err = json.Unmarshal(b, &msg); err != nil {
@@ -93,6 +97,7 @@ func apiV1Ws(servConf *ServConfig, w http.ResponseWriter, r *http.Request) {
 		case "connection_init":
 			var initReq wsConnInit
 			if err = json.Unmarshal(b, &initReq); err != nil {
+				servConf.log.Println(err)
 				break
 			}
 
@@ -106,7 +111,9 @@ func apiV1Ws(servConf *ServConfig, w http.ResponseWriter, r *http.Request) {
 			}
 
 			for k, v := range initReq.Payload {
-				r.Header.Set(k, v)
+				if v1, ok := v.(string); ok {
+					r.Header.Set(k, v1)
+				}
 			}
 			handler.ServeHTTP(w, r)
 

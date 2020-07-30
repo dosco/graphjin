@@ -117,13 +117,11 @@ func (co *Compiler) compileMutation(qc *QCode, op *graph.Operation, role string)
 
 		intf := st.Pop()
 
-		if item, ok := intf.(Mutate); ok {
-			if item.render {
-				qc.Mutates = append(qc.Mutates, item)
-			} else {
-				if err := co.newMutate(st, item, role); err != nil {
-					return err
-				}
+		if item, ok := intf.(Mutate); ok && item.render {
+			qc.Mutates = append(qc.Mutates, item)
+		} else {
+			if err := co.newMutate(st, item, role); err != nil {
+				return err
 			}
 		}
 	}
@@ -267,10 +265,7 @@ func (co *Compiler) newMutate(st *util.StackInf, m Mutate, role string) error {
 
 func addTablesAndColumns(m Mutate, tr trval) (Mutate, error) {
 	var err error
-
-	if m.Cols, err = getColumnsFromJSON(m, tr); err != nil {
-		return m, err
-	}
+	cm := make(map[string]struct{})
 
 	switch m.Type {
 	case MTInsert:
@@ -281,6 +276,7 @@ func addTablesAndColumns(m Mutate, tr trval) (Mutate, error) {
 				Col:  m.RelCP.Left.Col,
 				VCol: m.RelCP.Right.Col,
 			})
+			cm[m.RelCP.Left.Col.Name] = struct{}{}
 		}
 		// Render columns and values needed to connect parent level with it's children
 		// this is for when the parent actually depends on the child level
@@ -292,6 +288,7 @@ func addTablesAndColumns(m Mutate, tr trval) (Mutate, error) {
 					Col:  m.RelCP.Right.Col,
 					VCol: m.RelCP.Left.Col,
 				})
+				cm[m.RelCP.Right.Col.Name] = struct{}{}
 			}
 		} else {
 			// Render columns and values needed by the children of the current level
@@ -305,6 +302,7 @@ func addTablesAndColumns(m Mutate, tr trval) (Mutate, error) {
 						VCol:  v.RelCP.Left.Col,
 						CType: v.CType,
 					})
+					cm[v.RelCP.Right.Col.Name] = struct{}{}
 				}
 			}
 		}
@@ -320,20 +318,39 @@ func addTablesAndColumns(m Mutate, tr trval) (Mutate, error) {
 					VCol:  v.RelCP.Left.Col,
 					CType: v.CType,
 				})
+				cm[v.RelCP.Right.Col.Name] = struct{}{}
 			}
 		}
 	}
+
+	if m.Cols, err = getColumnsFromJSON(m, tr, cm); err != nil {
+		return m, err
+	}
+
 	return m, nil
 }
 
-func getColumnsFromJSON(m Mutate, tr trval) ([]MColumn, error) {
+func getColumnsFromJSON(m Mutate, tr trval, cm map[string]struct{}) ([]MColumn, error) {
 	var cols []MColumn
-	presets := tr.getPresets(m.Type)
+
+	for k, v := range tr.getPresets(m.Type) {
+		if _, ok := cm[k]; ok {
+			continue
+		}
+
+		col, err := m.Ti.GetColumn(k)
+		if err != nil {
+			return nil, err
+		}
+
+		cols = append(cols, MColumn{Col: col, FieldName: k, Value: v})
+		cm[k] = struct{}{}
+	}
 
 	for i, col := range m.Ti.Columns {
 		k := col.Name
 
-		if _, ok := presets[k]; ok {
+		if _, ok := cm[k]; ok {
 			continue
 		}
 
@@ -353,13 +370,9 @@ func getColumnsFromJSON(m Mutate, tr trval) ([]MColumn, error) {
 	// put this back in once we have integration testing
 
 	// for k, _ := range m.Data {
-	// 	if _, ok := presets[k]; ok {
-	// 		continue
-	// 	}
-
-	// 	if !m.Ti.ColumnExists(k) {
-	// 		continue
-	// 	}
+	// if _, ok := cm[k]; ok {
+	// 	continue
+	// }
 
 	// 	col, err := m.Ti.GetColumn(k)
 	// 	if err != nil {
@@ -368,15 +381,6 @@ func getColumnsFromJSON(m Mutate, tr trval) ([]MColumn, error) {
 
 	// 	cols = append(cols, MColumn{Col: col, FieldName: k})
 	// }
-
-	for k, v := range presets {
-		col, err := m.Ti.GetColumn(k)
-		if err != nil {
-			return nil, err
-		}
-
-		cols = append(cols, MColumn{Col: col, FieldName: k, Value: v})
-	}
 
 	return cols, nil
 }

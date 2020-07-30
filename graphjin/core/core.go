@@ -308,8 +308,7 @@ func (r *Result) SQL() string {
 
 func (c *scontext) debugLog(st *stmt) {
 	for _, sel := range st.qc.Selects {
-		switch sel.SkipRender {
-		case qcode.SkipTypeUserNeeded:
+		if sel.SkipRender == qcode.SkipTypeUserNeeded {
 			c.sg.log.Printf("INF table '%s' skipped as it requires $user_id", sel.Table)
 		}
 	}

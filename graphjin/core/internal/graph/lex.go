@@ -391,7 +391,7 @@ func isAlphaNumeric(r rune) bool {
 	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
-func equals(b []byte, val []byte) bool {
+func equals(b, val []byte) bool {
 	return bytes.EqualFold(b, val)
 }
 

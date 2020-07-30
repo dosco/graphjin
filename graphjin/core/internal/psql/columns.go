@@ -84,7 +84,7 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 	}
 }
 
-func (c *compilerContext) renderUnionColumn(sel *qcode.Select, csel *qcode.Select) {
+func (c *compilerContext) renderUnionColumn(sel, csel *qcode.Select) {
 	c.w.WriteString(`(CASE `)
 	for _, cid := range csel.Children {
 		usel := &c.qc.Selects[cid]
@@ -102,7 +102,7 @@ func (c *compilerContext) renderUnionColumn(sel *qcode.Select, csel *qcode.Selec
 	alias(c.w, csel.FieldName)
 }
 
-func (c *compilerContext) renderRemoteRelColumns(sel *qcode.Select, csel *qcode.Select) {
+func (c *compilerContext) renderRemoteRelColumns(sel, csel *qcode.Select) {
 	colWithTableID(c.w, sel.Ti.Name, sel.ID, csel.Rel.Left.Col.Name)
 	alias(c.w, csel.Rel.Right.VTable)
 }
