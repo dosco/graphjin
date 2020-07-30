@@ -127,6 +127,7 @@ type RoleTable struct {
 	Query  *Query
 	Insert *Insert
 	Update *Update
+	Upsert *Upsert
 	Delete *Delete
 }
 
@@ -149,6 +150,13 @@ type Insert struct {
 
 // Insert struct contains access control values for update operations
 type Update struct {
+	Filters []string
+	Columns []string
+	Presets map[string]string
+	Block   bool
+}
+
+type Upsert struct {
 	Filters []string
 	Columns []string
 	Presets map[string]string

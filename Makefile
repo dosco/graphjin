@@ -26,12 +26,16 @@ test:
 
 BIN_DIR := $(GOPATH)/bin
 GORICE := $(BIN_DIR)/rice
+GOSTRINGER := $(BIN_DIR)/stringer
 GOLANGCILINT := $(BIN_DIR)/golangci-lint
 GITCHGLOG := $(BIN_DIR)/git-chglog
 WEB_BUILD_DIR := ./internal/serv/web/build/manifest.json
 
 $(GORICE):
 	@GO111MODULE=off go get -u github.com/GeertJohan/go.rice/rice
+
+$(GOSTRINGER):
+	@GO111MODULE=off go get -u golang.org/x/tools/cmd/stringer
 
 $(WEB_BUILD_DIR):
 	@echo "First install Yarn and create a build of the web UI then re-run make install"
@@ -65,7 +69,7 @@ all: lint test $(BINARY)
 
 build: $(BINARY)
 
-gen: $(GORICE) $(WEB_BUILD_DIR)
+gen: $(GOSTRINGER) $(GORICE) $(WEB_BUILD_DIR)
 	@go generate ./...
 
 $(BINARY): clean

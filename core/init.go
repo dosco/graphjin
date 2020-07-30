@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dosco/super-graph/core/internal/psql"
 	"github.com/dosco/super-graph/core/internal/qcode"
+	"github.com/dosco/super-graph/core/internal/sdata"
 	"github.com/gobuffalo/flect"
 )
 
@@ -107,7 +107,7 @@ func getDBTableAliases(c *Config) map[string][]string {
 	return m
 }
 
-func addTables(c *Config, di *psql.DBInfo) error {
+func addTables(c *Config, di *sdata.DBInfo) error {
 	var err error
 
 	for _, t := range c.Tables {
@@ -127,7 +127,7 @@ func addTables(c *Config, di *psql.DBInfo) error {
 	return nil
 }
 
-func addJsonTable(di *psql.DBInfo, cols []Column, t Table) error {
+func addJsonTable(di *sdata.DBInfo, cols []Column, t Table) error {
 	// This is for jsonb columns that want to be tables.
 	bc, err := di.GetColumn(t.Table, t.Name)
 	if err != nil {
@@ -140,17 +140,17 @@ func addJsonTable(di *psql.DBInfo, cols []Column, t Table) error {
 			t.Name, t.Table, bc.Type)
 	}
 
-	table := psql.DBTable{
+	table := sdata.DBTable{
 		Name: t.Name,
 		Key:  strings.ToLower(t.Name),
 		Type: bc.Type,
 	}
 
-	columns := make([]psql.DBColumn, 0, len(cols))
+	columns := make([]sdata.DBColumn, 0, len(cols))
 
 	for i := range cols {
 		c := cols[i]
-		columns = append(columns, psql.DBColumn{
+		columns = append(columns, sdata.DBColumn{
 			Name: c.Name,
 			Key:  strings.ToLower(c.Name),
 			Type: c.Type,
@@ -163,7 +163,7 @@ func addJsonTable(di *psql.DBInfo, cols []Column, t Table) error {
 	return nil
 }
 
-func addVirtualTable(di *psql.DBInfo, cols []Column, t Table) error {
+func addVirtualTable(di *sdata.DBInfo, cols []Column, t Table) error {
 	if len(cols) == 0 {
 		return fmt.Errorf("polymorphic table: no id column specified")
 	}
@@ -180,7 +180,7 @@ func addVirtualTable(di *psql.DBInfo, cols []Column, t Table) error {
 		return fmt.Errorf("polymorphic table: foreign key must be <type column>.<foreign key column>")
 	}
 
-	di.VTables = append(di.VTables, psql.VirtualTable{
+	di.VTables = append(di.VTables, sdata.VirtualTable{
 		Name:       t.Name,
 		IDColumn:   c.Name,
 		TypeColumn: s[0],
@@ -190,7 +190,7 @@ func addVirtualTable(di *psql.DBInfo, cols []Column, t Table) error {
 	return nil
 }
 
-func addForeignKeys(c *Config, di *psql.DBInfo) error {
+func addForeignKeys(c *Config, di *sdata.DBInfo) error {
 	for _, t := range c.Tables {
 		if t.Type == "polymorphic" {
 			continue
@@ -207,7 +207,7 @@ func addForeignKeys(c *Config, di *psql.DBInfo) error {
 	return nil
 }
 
-func addForeignKey(di *psql.DBInfo, c Column, t Table) error {
+func addForeignKey(di *sdata.DBInfo, c Column, t Table) error {
 	tn := t.Name
 	c1, err := di.GetColumn(tn, c.Name)
 	if err != nil {
@@ -275,6 +275,7 @@ func addRole(qc *qcode.Compiler, r Role, t RoleTable, defaultBlock bool) error {
 	query := qcode.QueryConfig{Block: false}
 	insert := qcode.InsertConfig{Block: ro}
 	update := qcode.UpdateConfig{Block: ro}
+	upsert := qcode.UpsertConfig{Block: ro}
 	del := qcode.DeleteConfig{Block: ro}
 
 	if t.Query != nil {
@@ -289,7 +290,6 @@ func addRole(qc *qcode.Compiler, r Role, t RoleTable, defaultBlock bool) error {
 
 	if t.Insert != nil {
 		insert = qcode.InsertConfig{
-			Filters: t.Insert.Filters,
 			Columns: t.Insert.Columns,
 			Presets: t.Insert.Presets,
 			Block:   t.Insert.Block,
@@ -298,6 +298,15 @@ func addRole(qc *qcode.Compiler, r Role, t RoleTable, defaultBlock bool) error {
 
 	if t.Update != nil {
 		update = qcode.UpdateConfig{
+			Filters: t.Update.Filters,
+			Columns: t.Update.Columns,
+			Presets: t.Update.Presets,
+			Block:   t.Update.Block,
+		}
+	}
+
+	if t.Upsert != nil {
+		upsert = qcode.UpsertConfig{
 			Filters: t.Update.Filters,
 			Columns: t.Update.Columns,
 			Presets: t.Update.Presets,
@@ -317,6 +326,7 @@ func addRole(qc *qcode.Compiler, r Role, t RoleTable, defaultBlock bool) error {
 		Query:  query,
 		Insert: insert,
 		Update: update,
+		Upsert: upsert,
 		Delete: del,
 	})
 }

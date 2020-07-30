@@ -28,24 +28,3 @@ func GetQType(gql string) QType {
 func al(b byte) bool {
 	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
 }
-
-func (qt QType) String() string {
-	switch qt {
-	case QTUnknown:
-		return "unknown"
-	case QTQuery:
-		return "query"
-	case QTMutation:
-		return "mutation"
-	case QTInsert:
-		return "insert"
-	case QTUpdate:
-		return "update"
-	case QTDelete:
-		return "delete"
-	case QTUpsert:
-		return "upsert"
-	}
-
-	return ""
-}
