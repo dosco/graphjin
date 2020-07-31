@@ -20,7 +20,6 @@ func (co *Compiler) compileColumns(
 		return nil
 	}
 
-	sel.ColMap = make(map[string]struct{}, len(field.Children))
 	sel.Cols = make([]Column, 0, len(field.Children))
 
 	for _, cid := range field.Children {
@@ -72,8 +71,6 @@ func (co *Compiler) compileColumns(
 	}
 
 	co.addOrderByColumns(sel)
-	co.addPagingColumns(sel)
-
 	return nil
 }
 
@@ -135,36 +132,21 @@ func (co *Compiler) addRelColumns(qc *QCode, sel *Select) error {
 	return nil
 }
 
-func (co *Compiler) addPagingColumns(sel *Select) {
-	if sel.Paging.Type != PTForward && sel.Paging.Type != PTBackward {
-		return
-	}
-	picol := sel.Ti.PrimaryCol
+func (co *Compiler) orderByIDCol(sel *Select, order Order) {
+	idCol := sel.Ti.PrimaryCol
 
-	if _, ok := sel.ColMap[picol.Name]; !ok {
-		sel.Cols = append(sel.Cols, Column{Col: picol, Base: true})
-		sel.ColMap[picol.Name] = struct{}{}
-	}
+	// if _, ok := sel.ColMap[idCol.Name]; !ok {
+	// 	sel.Cols = append(sel.Cols, Column{Col: idCol, Base: true})
+	// 	sel.ColMap[idCol.Name] = struct{}{}
+	// }
 
-	picolFound := false
 	for _, ob := range sel.OrderBy {
-		if ob.Col.Key == picol.Key {
-			picolFound = true
-			break
+		if ob.Col.Key == idCol.Key {
+			return
 		}
 	}
 
-	if !picolFound {
-		var ob OrderBy
-
-		switch sel.Paging.Type {
-		case PTForward:
-			ob = OrderBy{Col: picol, Order: OrderAsc}
-		case PTBackward:
-			ob = OrderBy{Col: picol, Order: OrderDesc}
-		}
-		sel.OrderBy = append(sel.OrderBy, ob)
-	}
+	sel.OrderBy = append(sel.OrderBy, OrderBy{Col: idCol, Order: order})
 }
 
 func validateSelector(qc *QCode, sel *Select, tr trval) error {

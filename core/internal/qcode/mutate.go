@@ -119,10 +119,9 @@ func (co *Compiler) compileMutation(qc *QCode, op *graph.Operation, role string)
 
 		if item, ok := intf.(Mutate); ok && item.render {
 			qc.Mutates = append(qc.Mutates, item)
-		} else {
-			if err := co.newMutate(st, item, role); err != nil {
-				return err
-			}
+
+		} else if err := co.newMutate(st, item, role); err != nil {
+			return err
 		}
 	}
 

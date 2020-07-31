@@ -51,7 +51,7 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 			c.w.WriteString(`NULL`)
 			alias(c.w, csel.FieldName)
 
-			if sel.Paging.Type == qcode.PTForward || sel.Paging.Type == qcode.PTBackward {
+			if sel.Paging.Cursor {
 				c.w.WriteString(`, NULL`)
 				alias(c.w, sel.FieldName)
 			}
@@ -72,7 +72,7 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 			}
 
 			// return the cursor for the this child selector as part of the parents json
-			if csel.Paging.Type == qcode.PTForward || csel.Paging.Type == qcode.PTBackward {
+			if csel.Paging.Cursor {
 				c.w.WriteString(`, "__sj_`)
 				int32String(c.w, csel.ID)
 				c.w.WriteString(`"."cursor" AS "`)

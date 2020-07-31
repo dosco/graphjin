@@ -11,7 +11,7 @@ func newAction(servConf *ServConfig, a *Action) (http.Handler, error) {
 	var fn actionFn
 	var err error
 
-	if len(a.SQL) != 0 {
+	if a.SQL != "" {
 		fn, err = newSQLAction(servConf, a)
 	} else {
 		return nil, fmt.Errorf("invalid config for action '%s'", a.Name)
