@@ -3,9 +3,9 @@
 # Super Graph - Fetch data without code!
 
 [![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=flat-square&logo=appveyor)](https://pkg.go.dev/github.com/dosco/super-graph/core?tab=doc)
-[![GoReport](https://goreportcard.com/badge/github.com/gojp/goreportcard?style=flat-square)](https://goreportcard.com/badge/github.com)
-![Apache 2.0](https://img.shields.io/github/license/dosco/super-graph.svg?style=flat-square)
-![Docker build](https://img.shields.io/docker/cloud/build/dosco/super-graph.svg?style=flat-square)
+[![GoReport](https://goreportcard.com/badge/github.com/gojp/goreportcard?style=flat-square)](https://goreportcard.com/report/github.com/dosco/super-graph)
+[![Apache 2.0](https://img.shields.io/github/license/dosco/super-graph.svg?style=flat-square)](https://github.com/dosco/super-graph/blob/master/LICENSE)
+[![Docker build](https://img.shields.io/docker/cloud/build/dosco/super-graph.svg?style=flat-square)](https://hub.docker.com/r/dosco/super-graph/builds)
 [![Discord Chat](https://img.shields.io/discord/628796009539043348.svg?style=flat-square&logo=appveyor)](https://discord.gg/6pSWCTZ)
 
 Super Graph gives you a high performance GraphQL API without you having to write any code. GraphQL is automagically compiled into an efficient SQL query. Use it either as a library or a standalone service.
