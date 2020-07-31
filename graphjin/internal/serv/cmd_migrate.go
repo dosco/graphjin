@@ -313,7 +313,7 @@ func ExtractErrorLine(source string, position int) (ErrorLineExtract, error) {
 func getMigrationVars(servConf *ServConfig) map[string]interface{} {
 	return map[string]interface{}{
 		"AppName":     strings.Title(servConf.conf.AppName),
-		"AppNameSlug": strings.ToLower(strings.Replace(servConf.conf.AppName, " ", "_", -1)),
+		"AppNameSlug": strings.ToLower(strings.ReplaceAll(servConf.conf.AppName, " ", "_")),
 		"Env":         strings.ToLower(os.Getenv("GO_ENV")),
 	}
 }

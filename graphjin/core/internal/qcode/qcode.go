@@ -343,7 +343,11 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 		}
 
 		tr := co.getRole(role, field.Name)
-		s1 := Select{ID: id, ParentID: parentID}
+		s1 := Select{
+			ID:       id,
+			ParentID: parentID,
+			ColMap:   make(map[string]struct{}, len(field.Children)),
+		}
 		sel := &s1
 
 		if tr.isSkipped(qc.Type) {
@@ -383,7 +387,7 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 		}
 
 		// If an actual cursor is avalable
-		if sel.Paging.Cursor {
+		if sel.Paging.Type != PTOffset {
 			co.addSeekPredicate(sel)
 		}
 
@@ -495,9 +499,9 @@ func (co *Compiler) addSeekPredicate(sel *Select) {
 			switch {
 			case i > 0 && n != i:
 				f.Op = OpEquals
-			case ob.Order == OrderDesc:
-				f.Op = OpLesserThan
-			default:
+			case sel.Paging.Type == PTBackward:
+				f.Op = OpLesserOrEquals
+			case sel.Paging.Type == PTForward:
 				f.Op = OpGreaterThan
 			}
 
@@ -564,10 +568,10 @@ func (co *Compiler) compileArgs(qc *QCode, sel *Select, args []graph.Arg, role s
 			err = co.compileArgOffset(sel, arg)
 
 		case "first":
-			err = co.compileArgFirstLast(sel, arg, PTForward)
+			err = co.compileArgFirstLast(sel, arg, OrderAsc)
 
 		case "last":
-			err = co.compileArgFirstLast(sel, arg, PTBackward)
+			err = co.compileArgFirstLast(sel, arg, OrderDesc)
 
 		case "after":
 			err = co.compileArgAfterBefore(sel, arg, PTForward)
@@ -696,7 +700,11 @@ func (co *Compiler) compileArgOrderBy(sel *Select, arg *graph.Arg) error {
 		return fmt.Errorf("expecting an object")
 	}
 
-	cm := make(map[string]struct{})
+	cm := make(map[string]struct{}, len(sel.OrderBy))
+	for _, ob := range sel.OrderBy {
+		cm[ob.Col.Name] = struct{}{}
+	}
+
 	st := util.NewStackInf()
 
 	for i := range arg.Val.Children {
@@ -805,20 +813,21 @@ func (co *Compiler) compileArgOffset(sel *Select, arg *graph.Arg) error {
 	return nil
 }
 
-func (co *Compiler) compileArgFirstLast(sel *Select, arg *graph.Arg, pt PagingType) error {
+func (co *Compiler) compileArgFirstLast(sel *Select, arg *graph.Arg, order Order) error {
 	node := arg.Val
 
 	if node.Type != graph.NodeNum {
 		return argErr(arg.Name, "number")
 	}
 
-	sel.Paging.Type = pt
-
 	if n, err := strconv.Atoi(node.Val); err != nil {
 		return err
 	} else {
 		sel.Paging.Limit = int32(n)
 	}
+
+	co.orderByIDCol(sel, order)
+	sel.Paging.Cursor = true
 	return nil
 }
 
@@ -859,7 +868,7 @@ func setOrderByColName(ti *sdata.DBTableInfo, ob *OrderBy, node *graph.Node) err
 	var list []string
 
 	for n := node; n != nil; n = n.Parent {
-		if len(n.Name) != 0 {
+		if n.Name != "" {
 			list = append([]string{n.Name}, list...)
 		}
 	}

@@ -49,7 +49,7 @@ func RailsRedisHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 			}
 
 			pwd := ac.Rails.Password
-			if len(pwd) != 0 {
+			if pwd != "" {
 				if _, err := c.Do("AUTH", pwd); err != nil {
 					return nil, err
 				}
@@ -174,15 +174,15 @@ func railsAuth(ac *Auth) (*rails.Auth, error) {
 		return nil, err
 	}
 
-	if len(ac.Rails.Salt) != 0 {
+	if ac.Rails.Salt != "" {
 		ra.Salt = ac.Rails.Salt
 	}
 
-	if len(ac.Rails.SignSalt) != 0 {
+	if ac.Rails.SignSalt != "" {
 		ra.SignSalt = ac.Rails.SignSalt
 	}
 
-	if len(ac.Rails.AuthSalt) != 0 {
+	if ac.Rails.AuthSalt != "" {
 		ra.AuthSalt = ac.Rails.AuthSalt
 	}
 

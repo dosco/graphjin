@@ -113,7 +113,7 @@ func (co *Compiler) CompileQuery(
 			c.w.WriteString(sel.FieldName)
 			c.w.WriteString(`', NULL`)
 
-			if sel.Paging.Type == qcode.PTForward || sel.Paging.Type == qcode.PTBackward {
+			if sel.Paging.Cursor {
 				c.w.WriteString(`, '`)
 				c.w.WriteString(sel.FieldName)
 				c.w.WriteString(`_cursor', NULL`)
@@ -131,7 +131,7 @@ func (co *Compiler) CompileQuery(
 			c.w.WriteString(`"."json"`)
 
 			// return the cursor for the this child selector as part of the parents json
-			if sel.Paging.Type == qcode.PTForward || sel.Paging.Type == qcode.PTBackward {
+			if sel.Paging.Cursor {
 				c.w.WriteString(`, '`)
 				c.w.WriteString(sel.FieldName)
 				c.w.WriteString(`_cursor', `)
@@ -232,7 +232,7 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 	c.w.WriteString(`"."json"), '[]') as "json"`)
 
 	// Build the cursor value string
-	if sel.Paging.Type == qcode.PTForward || sel.Paging.Type == qcode.PTBackward {
+	if sel.Paging.Cursor {
 		c.w.WriteString(`, CONCAT_WS(','`)
 		for i := 0; i < len(sel.OrderBy); i++ {
 			c.w.WriteString(`, max("__cur_`)
@@ -246,7 +246,6 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 }
 
 func (c *compilerContext) renderSelect(sel *qcode.Select) {
-	cursor := (sel.Paging.Type == qcode.PTForward || sel.Paging.Type == qcode.PTBackward)
 
 	c.w.WriteString(`SELECT to_jsonb("__sr_`)
 	int32String(c.w, sel.ID)
@@ -255,7 +254,7 @@ func (c *compilerContext) renderSelect(sel *qcode.Select) {
 	// Exclude the cusor values from the the generated json object since
 	// we manually use these values to build the cursor string
 	// Notice the `- '__cur_` its' what excludes fields in `to_jsonb`
-	if cursor {
+	if sel.Paging.Cursor {
 		for i := range sel.OrderBy {
 			c.w.WriteString(`- '__cur_`)
 			int32String(c.w, int32(i))
@@ -267,7 +266,7 @@ func (c *compilerContext) renderSelect(sel *qcode.Select) {
 
 	// We manually insert the cursor values into row we're building outside
 	// of the generated json object so they can be used higher up in the sql.
-	if cursor {
+	if sel.Paging.Cursor {
 		for i := range sel.OrderBy {
 			c.w.WriteString(`, "__cur_`)
 			int32String(c.w, int32(i))
@@ -279,7 +278,7 @@ func (c *compilerContext) renderSelect(sel *qcode.Select) {
 	c.renderColumns(sel)
 
 	// This is how we get the values to use to build the cursor.
-	if cursor {
+	if sel.Paging.Cursor {
 		for i, ob := range sel.OrderBy {
 			c.w.WriteString(`, LAST_VALUE(`)
 			colWithTableID(c.w, sel.Table, sel.ID, ob.Col.Name)
