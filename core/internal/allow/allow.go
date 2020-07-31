@@ -85,7 +85,7 @@ func New(filename string, conf Config) (*List, error) {
 			al.filepath = filename
 		}
 
-		if file, err := os.OpenFile(al.filepath, os.O_RDONLY|os.O_CREATE, 0644); err != nil {
+		if file, err := os.OpenFile(al.filepath, os.O_RDONLY|os.O_CREATE, 0600); err != nil {
 			return nil, err
 		} else {
 			file.Close()
