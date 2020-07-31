@@ -122,7 +122,7 @@ We're happy to help you leverage Super Graph reach out if you have questions
 
 ## Production use
 
-Our blog is hosted on abtcode.com a blogging platform for coders. It uses Super Graph on Google Cloudrun as it's entire backend.
+Our blog is hosted on [abtcode.com](https://abtcode.com) a blogging platform for coders. It uses Super Graph on Google Cloudrun as it's entire backend.
 
 ## License
 
