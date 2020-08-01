@@ -3,7 +3,6 @@ package serv
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -71,8 +70,6 @@ func apiV1Ws(servConf *ServConfig, w http.ResponseWriter, r *http.Request) {
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		fmt.Println("0 >>>>>>", err)
-
 		renderErr(w, err)
 		return
 	}

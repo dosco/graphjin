@@ -47,21 +47,42 @@ reload_on_config_change: true
 # Path pointing to where the migrations can be found
 migrations_path: ./migrations
 
-# Postgres related environment Variables
-# SG_DATABASE_HOST
-# SG_DATABASE_PORT
-# SG_DATABASE_USER
-# SG_DATABASE_PASSWORD
+# Set session variable "user.id" to the user id
+# Enable this if you need the user id in triggers, etc
+# Note: This will not work with subscriptions
+set_user_id: false
+
+# inflections:
+#   person: people
+#   sheep: sheep
+
+# open opencensus tracing and metrics
+telemetry:
+  debug: true
+  metrics:
+    exporter: "prometheus"
+  tracing:
+    exporter: "zipkin"
+    endpoint: "http://zipkin:9411/api/v2/spans"
+    sample: 0.6
+
+# Rate is the number of events per second
+# Bucket a burst of at most 'bucket' number of events.
+# ip_header sets the header that contains the client ip.
+# https://en.wikipedia.org/wiki/Token_bucket
+rate_limiter:
+  rate: 2
+  bucket: 3
+  ip_header: X-Forwarded-For
+
+# Enable additional debugging logs
+debug: false
 
 # Auth related environment Variables
 # SG_AUTH_RAILS_COOKIE_SECRET_KEY_BASE
 # SG_AUTH_RAILS_REDIS_URL
 # SG_AUTH_RAILS_REDIS_PASSWORD
 # SG_AUTH_JWT_PUBLIC_KEY_FILE
-
-# inflections:
-#   person: people
-#   sheep: sheep
 
 auth:
   # Can be 'rails' or 'jwt'
@@ -79,7 +100,7 @@ auth:
     version: 5.2
 
     # Found in 'Rails.application.config.secret_key_base'
-    secret_key_base: 0a248500a64c01184edb4d7ad3a805488f8097ac761b76aaa6c17c01dcb7af03a2f18ba61b2868134b9c7b79a122bc0dadff4367414a2d173297bfea92be5566
+    secret_key_base: 0a248500a64c01184edb4d7ad3a805488f8097ac761b76aaa6c17c01dcb7af03a2f18b
 
     # Remote cookie store. (memcache or redis)
     # url: redis://redis:6379
@@ -112,6 +133,12 @@ auths:
       name: X-Appengine-Cron
       exists: true
 
+# Postgres related environment Variables
+# SG_DATABASE_HOST
+# SG_DATABASE_PORT
+# SG_DATABASE_USER
+# SG_DATABASE_PASSWORD
+
 database:
   type: postgres
   host: db
@@ -124,10 +151,6 @@ database:
   #pool_size: 10
   #max_retries: 0
   #log_level: "debug"
-
-  # Set session variable "user.id" to the user id
-  # Enable this if you need the user id in triggers, etc
-  set_user_id: false
 
   # database ping timeout is used for db health checking
   ping_timeout: 1m

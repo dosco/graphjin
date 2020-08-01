@@ -58,17 +58,10 @@ cors_debug: false
 # Defaults to 5 seconds
 # poll_every_seconds: 5
 
-# Postgres related environment Variables
-# SG_DATABASE_HOST
-# SG_DATABASE_PORT
-# SG_DATABASE_USER
-# SG_DATABASE_PASSWORD
-
-# Auth related environment Variables
-# SG_AUTH_RAILS_COOKIE_SECRET_KEY_BASE
-# SG_AUTH_RAILS_REDIS_URL
-# SG_AUTH_RAILS_REDIS_PASSWORD
-# SG_AUTH_JWT_PUBLIC_KEY_FILE
+# Set session variable "user.id" to the user id
+# Enable this if you need the user id in triggers, etc
+# Note: This will not work with subscriptions
+set_user_id: true
 
 # inflections:
 #   person: people
@@ -83,7 +76,24 @@ cors_debug: false
 #     exporter: "zipkin"
 #     endpoint: "http://zipkin:9411/api/v2/spans"
 #     sample: 0.6
-# debug: true
+
+# Rate is the number of events per second
+# Bucket a burst of at most 'bucket' number of events.
+# ip_header sets the header that contains the client ip.
+# https://en.wikipedia.org/wiki/Token_bucket
+rate_limiter:
+  rate: 2
+  bucket: 3
+  ip_header: X-Forwarded-For
+
+# Enable additional debugging logs
+debug: true
+
+# Auth related environment Variables
+# SG_AUTH_RAILS_COOKIE_SECRET_KEY_BASE
+# SG_AUTH_RAILS_REDIS_URL
+# SG_AUTH_RAILS_REDIS_PASSWORD
+# SG_AUTH_JWT_PUBLIC_KEY_FILE
 
 auth:
   # Can be 'rails', 'jwt' or 'header'
@@ -134,6 +144,12 @@ auths:
       name: X-Appengine-Cron
       exists: true
 
+# Postgres related environment Variables
+# SG_DATABASE_HOST
+# SG_DATABASE_PORT
+# SG_DATABASE_USER
+# SG_DATABASE_PASSWORD
+
 database:
   type: postgres
   host: db
@@ -150,7 +166,7 @@ database:
 
   # Set session variable "user.id" to the user id
   # Enable this if you need the user id in triggers, etc
-  set_user_id: false
+  set_user_id: true
 
   # database ping timeout is used for db health checking
   ping_timeout: 1m

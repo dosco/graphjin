@@ -1,7 +1,6 @@
 package serv
 
 import (
-	"errors"
 	"net"
 	"net/http"
 	"time"
@@ -17,7 +16,6 @@ func init() {
 }
 
 func getIPLimiter(ip string) *rate.Limiter {
-
 	v, exists := ipCache.Get(ip)
 	if !exists {
 		limiter := rate.NewLimiter(1, 3)
@@ -28,23 +26,30 @@ func getIPLimiter(ip string) *rate.Limiter {
 	return v.(*rate.Limiter)
 }
 
-func limit(servConf *ServConfig, w http.ResponseWriter, r *http.Request) error {
-	// X-Remote-Address is used when super graph configure behind load balancer
-	remoteAddr := r.Header.Get("X-Remote-Address")
-	// use request Remote Address if X-Remote-Address not found
-	if remoteAddr == "" {
+func rateLimiter(sc *ServConfig, h http.Handler) http.Handler {
+	fn := func(w http.ResponseWriter, r *http.Request) {
+		var ip string
 		var err error
-		remoteAddr, _, err = net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			servConf.log.Println(err.Error())
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return errors.New("Internal Server Error")
+
+		if sc.conf.RateLimiter.IPHeader != "" {
+			ip = r.Header.Get(sc.conf.RateLimiter.IPHeader)
+		} else {
+			ip = r.Header.Get("X-Remote-Address")
 		}
+
+		if ip == "" {
+			if ip, _, err = net.SplitHostPort(r.RemoteAddr); err != nil {
+				sc.log.Fatalf("rate limiter: %s", err)
+			}
+		}
+
+		if !getIPLimiter(ip).Allow() {
+			http.Error(w, "429 Too Many Requests", http.StatusTooManyRequests)
+			return
+		}
+
+		h.ServeHTTP(w, r)
 	}
 
-	if !getIPLimiter(remoteAddr).Allow() {
-		http.Error(w, "429 Too Many Requests", http.StatusTooManyRequests)
-		return errors.New("StatusTooManyRequests")
-	}
-	return nil
+	return http.HandlerFunc(fn)
 }

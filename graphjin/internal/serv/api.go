@@ -95,8 +95,9 @@ type Serv struct {
 	Actions []Action
 
 	RateLimiter struct {
-		Rate   float64
-		Bucket int
+		Rate     float64
+		Bucket   int
+		IPHeader string `mapstructure:"ip_header"`
 	} `mapstructure:"rate_limiter"`
 }
 
