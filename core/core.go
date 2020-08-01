@@ -228,9 +228,13 @@ func (c *scontext) executeRoleQuery(conn *sql.Conn, role string) (string, error)
 
 func (c *scontext) setLocalUserID(conn *sql.Conn) error {
 	var err error
-	if v := c.Value(UserIDKey); v != nil {
-		_, err = conn.ExecContext(c, `SET LOCAL "user.id" = ?`, v)
+
+	if v := c.Value(UserIDKey); v == nil {
+		return nil
+	} else if v1, ok := v.(string); ok {
+		_, err = conn.ExecContext(c, `SET SESSION "user.id" = `+v1)
 	}
+
 	return err
 }
 
