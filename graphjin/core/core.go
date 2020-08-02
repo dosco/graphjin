@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/dosco/super-graph/core/internal/psql"
@@ -231,8 +232,14 @@ func (c *scontext) setLocalUserID(conn *sql.Conn) error {
 
 	if v := c.Value(UserIDKey); v == nil {
 		return nil
-	} else if v1, ok := v.(string); ok {
-		_, err = conn.ExecContext(c, `SET SESSION "user.id" = '`+v1+`'`)
+	} else {
+		switch v1 := v.(type) {
+		case string:
+			_, err = conn.ExecContext(c, `SET SESSION "user.id" = '`+v1+`'`)
+
+		case int:
+			_, err = conn.ExecContext(c, `SET SESSION "user.id" = `+strconv.Itoa(v1))
+		}
 	}
 
 	return err
