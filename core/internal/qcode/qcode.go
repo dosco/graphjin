@@ -387,7 +387,7 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 		}
 
 		// If an actual cursor is avalable
-		if sel.Paging.Type != PTOffset {
+		if sel.Paging.Cursor && sel.Paging.Type != PTOffset {
 			co.addSeekPredicate(sel)
 		}
 
@@ -827,7 +827,9 @@ func (co *Compiler) compileArgFirstLast(sel *Select, arg *graph.Arg, order Order
 	}
 
 	co.orderByIDCol(sel, order)
-	sel.Paging.Cursor = true
+	if !sel.Singular {
+		sel.Paging.Cursor = true
+	}
 	return nil
 }
 
@@ -838,7 +840,9 @@ func (co *Compiler) compileArgAfterBefore(sel *Select, arg *graph.Arg, pt Paging
 		return fmt.Errorf("value for argument '%s' must be a variable named $cursor", arg.Name)
 	}
 	sel.Paging.Type = pt
-	sel.Paging.Cursor = true
+	if !sel.Singular {
+		sel.Paging.Cursor = true
+	}
 
 	return nil
 }

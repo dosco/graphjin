@@ -147,14 +147,20 @@ func (co *Compiler) CompileQuery(
 		i++
 	}
 
-	if len(qc.Roots) == 1 {
-		c.w.WriteString(`) AS "__root" FROM (`)
-		c.renderQuery(st, false)
-		c.w.WriteString(`) AS "__sj_0"`)
-	} else {
-		c.w.WriteString(`) AS "__root" FROM (VALUES(true)) AS "__root_x"`)
-		c.renderQuery(st, true)
-	}
+	// if len(qc.Roots) == 1 {
+	// 	c.w.WriteString(`) AS "__root" FROM (`)
+	// 	c.renderQuery(st, false)
+	// 	c.w.WriteString(`) AS "__sj_0"`)
+	// } else {
+	// 	c.w.WriteString(`) AS "__root" FROM (VALUES(true)) AS "__root_x"`)
+	// 	c.renderQuery(st, true)
+	// }
+
+	// This helps multi-root work as well as return a null json value when
+	// there are no rows found.
+
+	c.w.WriteString(`) AS "__root" FROM (VALUES(true)) AS "__root_x"`)
+	c.renderQuery(st, true)
 
 	return c.md
 }

@@ -40,9 +40,9 @@ class App extends Component {
           <Playground
             endpoint="http://localhost:8080/api/v1/graphql"
             settings="{
-            'general.betaUpdates': true,
-            'editor.reuseHeaders': true,
-          }"
+              'general.betaUpdates': true,
+              'editor.reuseHeaders': true,
+            }"
           />
         </Provider>
       </div>
