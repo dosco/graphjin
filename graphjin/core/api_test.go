@@ -26,11 +26,11 @@ func BenchmarkGraphQL(b *testing.B) {
 	}
 
 	query := `
-    query {
-      products {
-      id
+	  query {
+	    products {
+	    id
 			name
-			user {
+			user(id: $user_id) {
 				full_name
 				phone
 				email
@@ -41,9 +41,9 @@ func BenchmarkGraphQL(b *testing.B) {
 			}
 		}
 		users {
-      id
-			name
-    }
+	    id
+			full_name
+	  }
 	}`
 
 	b.ResetTimer()

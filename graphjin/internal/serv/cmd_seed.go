@@ -96,6 +96,7 @@ func graphQLFunc(servConf *ServConfig, sg *core.SuperGraph, query string, data i
 	// } else {
 	// 	role = "user"
 	// }
+
 	if servConf.conf.Debug {
 		servConf.log.Printf("INF %s", query)
 	}
