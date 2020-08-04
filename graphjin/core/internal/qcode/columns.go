@@ -132,21 +132,21 @@ func (co *Compiler) addRelColumns(qc *QCode, sel *Select) error {
 	return nil
 }
 
-func (co *Compiler) orderByIDCol(sel *Select, order Order) {
+func (co *Compiler) orderByIDCol(sel *Select) {
 	idCol := sel.Ti.PrimaryCol
 
-	// if _, ok := sel.ColMap[idCol.Name]; !ok {
-	// 	sel.Cols = append(sel.Cols, Column{Col: idCol, Base: true})
-	// 	sel.ColMap[idCol.Name] = struct{}{}
-	// }
+	if _, ok := sel.ColMap[idCol.Name]; !ok {
+		sel.Cols = append(sel.Cols, Column{Col: idCol, Base: true})
+		sel.ColMap[idCol.Name] = struct{}{}
+	}
 
 	for _, ob := range sel.OrderBy {
-		if ob.Col.Key == idCol.Key {
+		if ob.Col.Name == idCol.Name {
 			return
 		}
 	}
 
-	sel.OrderBy = append(sel.OrderBy, OrderBy{Col: idCol, Order: order})
+	sel.OrderBy = append(sel.OrderBy, OrderBy{Col: idCol, Order: sel.order})
 }
 
 func validateSelector(qc *QCode, sel *Select, tr trval) error {

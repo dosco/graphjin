@@ -81,6 +81,7 @@ type Select struct {
 	SkipRender SkipType
 	Ti         *sdata.DBTableInfo
 	Rel        *sdata.DBRel
+	order      Order
 }
 
 type Column struct {
@@ -387,8 +388,15 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 		}
 
 		// If an actual cursor is avalable
-		if sel.Paging.Cursor && sel.Paging.Type != PTOffset {
-			co.addSeekPredicate(sel)
+		if sel.Paging.Cursor {
+			// Set tie-breaker order column for the cursor direction
+			// this column needs to be the last in the order series.
+			co.orderByIDCol(sel)
+
+			// Set filter chain needed to make the cursor work
+			if sel.Paging.Type != PTOffset {
+				co.addSeekPredicate(sel)
+			}
 		}
 
 		qc.Selects = append(qc.Selects, s1)
@@ -826,10 +834,11 @@ func (co *Compiler) compileArgFirstLast(sel *Select, arg *graph.Arg, order Order
 		sel.Paging.Limit = int32(n)
 	}
 
-	co.orderByIDCol(sel, order)
 	if !sel.Singular {
 		sel.Paging.Cursor = true
 	}
+
+	sel.order = order
 	return nil
 }
 

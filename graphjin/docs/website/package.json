@@ -17,6 +17,7 @@
     "classnames": "^2.2.6",
     "react": "^16.8.4",
     "react-dom": "^16.8.4",
+    "react-github-btn": "^1.2.0",
     "remark-images": "^2.0.0",
     "tailwindcss": "^1.6.0"
   },
@@ -33,6 +34,7 @@
     ]
   },
   "devDependencies": {
+    "@fullhuman/postcss-purgecss": "^2.3.0",
     "postcss": "^7.0.30"
   }
 }
