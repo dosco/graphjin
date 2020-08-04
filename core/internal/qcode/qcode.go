@@ -498,6 +498,10 @@ func (co *Compiler) addSeekPredicate(sel *Select) {
 		}
 
 		for n, ob := range sel.OrderBy {
+			if n > i {
+				break
+			}
+
 			f := NewFilter()
 			f.Type = ValRef
 			f.Table = "__cur"
@@ -507,9 +511,9 @@ func (co *Compiler) addSeekPredicate(sel *Select) {
 			switch {
 			case i > 0 && n != i:
 				f.Op = OpEquals
-			case sel.Paging.Type == PTBackward:
-				f.Op = OpLesserOrEquals
-			case sel.Paging.Type == PTForward:
+			case ob.Order == OrderDesc:
+				f.Op = OpLesserThan
+			default:
 				f.Op = OpGreaterThan
 			}
 
@@ -517,10 +521,6 @@ func (co *Compiler) addSeekPredicate(sel *Select) {
 				and.Children = append(and.Children, f)
 			} else {
 				or.Children = append(or.Children, f)
-			}
-
-			if n == i {
-				break
 			}
 		}
 
