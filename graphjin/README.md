@@ -41,7 +41,7 @@ import (
 )
 
 func main() {
-  db, err := sql.Open("pgx", "postgres://postgrs:@localhost:5432/example_db")
+  db, err := sql.Open("pgx", "postgres://postgres:@localhost:5432/example_db")
   if err != nil {
     log.Fatal(err)
   }
