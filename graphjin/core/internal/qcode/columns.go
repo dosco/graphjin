@@ -21,6 +21,7 @@ func (co *Compiler) compileColumns(
 	}
 
 	sel.Cols = make([]Column, 0, len(field.Children))
+	aggExist := false
 
 	for _, cid := range field.Children {
 		var fname string
@@ -56,10 +57,15 @@ func (co *Compiler) compileColumns(
 			// is a function
 		} else {
 			if agg {
-				sel.GroupCols = true
+				aggExist = true
 			}
+			fn.FieldName = fname
 			sel.Funcs = append(sel.Funcs, fn)
 		}
+	}
+
+	if aggExist && len(sel.Cols) != 0 {
+		sel.GroupCols = true
 	}
 
 	if err := validateSelector(qc, sel, tr); err != nil {

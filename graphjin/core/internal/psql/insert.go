@@ -47,13 +47,13 @@ func (c *compilerContext) renderInsertStmt(m qcode.Mutate, embedded bool) {
 		c.w.WriteString(`, json_populate_record`)
 	}
 
-	c.w.WriteString(`(NULL::`)
+	c.w.WriteString(`(NULL::"`)
 	c.w.WriteString(m.Ti.Name)
 
 	if len(m.Path) == 0 {
-		c.w.WriteString(`, i.j) t`)
+		c.w.WriteString(`", i.j) t`)
 	} else {
-		c.w.WriteString(`, i.j->`)
+		c.w.WriteString(`", i.j->`)
 		joinPath(c.w, m.Path)
 		c.w.WriteString(`) t`)
 	}
