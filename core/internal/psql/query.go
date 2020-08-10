@@ -372,9 +372,7 @@ func (c *compilerContext) renderFrom(sel *qcode.Select) {
 		colWithTable(c.w, sel.Rel.Left.Col.Table, sel.Rel.Right.Col.Name)
 		c.w.WriteString(`) AS `)
 
-		c.w.WriteString(`"`)
-		c.w.WriteString(sel.Ti.Name)
-		c.w.WriteString(`"`)
+		quoted(c.w, sel.Ti.Name)
 
 		c.w.WriteString(`(`)
 		for i, col := range sel.Ti.Columns {

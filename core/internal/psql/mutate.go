@@ -343,9 +343,9 @@ func (c *compilerContext) renderDisconnectStmt(m qcode.Mutate) {
 		c.w.WriteString(` LIMIT 1))`)
 
 	} else {
-		c.w.WriteString(`SELECT * FROM (VALUES(NULL::`)
+		c.w.WriteString(`SELECT * FROM (VALUES(NULL::"`)
 		c.w.WriteString(rel.Right.Col.Type)
-		c.w.WriteString(`)) AS LOOKUP(`)
+		c.w.WriteString(`")) AS LOOKUP(`)
 		quoted(c.w, rel.Right.Col.Name)
 		c.w.WriteString(`))`)
 	}
