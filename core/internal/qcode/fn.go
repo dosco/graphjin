@@ -1,6 +1,7 @@
 package qcode
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -16,9 +17,24 @@ func (co *Compiler) isFunction(sel *Select, fname string) (Function, bool, error
 		fn.Name = "search_rank"
 		fn.Col = sel.Ti.TSVCol
 
+		if fn.Col == nil {
+			return fn, false, fmt.Errorf("no tsvector column found: %s", fname)
+		}
+		if _, ok := sel.Args["search"]; !ok {
+			return fn, false, fmt.Errorf("not a search query: %s", fname)
+		}
+
 	case strings.HasPrefix(fname, "search_headline_"):
 		fn.Name = "search_headline"
+		fn.Col = sel.Ti.TSVCol
 		cn = fname[16:]
+
+		if fn.Col == nil {
+			return fn, false, fmt.Errorf("no tsvector column found: %s", fname)
+		}
+		if _, ok := sel.Args["search"]; !ok {
+			return fn, false, fmt.Errorf("not a search query: %s", fname)
+		}
 
 	case fname == "__typename":
 		sel.Typename = true
