@@ -4,9 +4,9 @@ title: Building an App from scratch
 sidebar_label: Building an App
 ---
 
-There are two parts to most web apps the backend and the frontends. The backend is usually an API of some kind and the frontends are mobile and web apps built in React, Vue, Android, iOS, etc.
+There are two parts to most web apps: the backend and the frontend. The backend is usually an API of some kind and the frontend is mobile and/or web apps built in React, Vue, Android, iOS, etc.
 
-Super Graph will help you instantly give you a powerful and high-performance GraphQL API that can be your apps backend. Let's get started, I promise you it's super easy and will save you weeks to months of your life.
+Super Graph will instantly give you a powerful and high-performance GraphQL API that can be your apps' backend. Let's get started, I promise you it's super easy and will save you weeks to months of your life.
 
 For this example we will create a web e-commerce store. This example app can be found in repo. https://github.com/dosco/super-graph/tree/master/examples/webshop
 
@@ -30,7 +30,7 @@ go get github.com/dosco/super-graph
 
 ## Create the app
 
-Lets call our app Webshop
+Let's call our app Webshop.
 
 ```console
 super-graph new webshop
@@ -53,7 +53,7 @@ rm -rf config/migrations/0_init.sql
 
 ## Defines tables and database relationships
 
-Be sure to define primary keys to all the tables and use foreign keys to define
+Be sure to define primary keys to all of your tables and to use foreign keys to define
 relationships between tables. In the example below the products table has a foreign key relationhsip `user_id` to the users table. It looks like this `user_id bigint REFERENCES users(id)`
 
 ```console
@@ -129,8 +129,7 @@ DROP TABLE products;
 
 ## Create a seed script
 
-This step is optional. A seed script inserts fake data into the database. It helps frontend developers if they already have some fake data to work with. The seed script is written in
-javascript and data is inserted into the database using GraphQL.
+This step is optional. A seed script inserts fake data into the database. It helps frontend developers if they already have some fake data to work with. The seed script is written in javascript and data is inserted into the database using GraphQL.
 
 If you don't plan to use it then delete the sample seed file `rm -rf config/seed.js`
 
@@ -170,7 +169,7 @@ for (i = 0; i < 100; i++) {
 
 ## Setup the database
 
-This will create the database, run the migrations and the seed file. Once it's setup to reset use the `db:reset` commandline argument.
+This will create the database, run the migrations and the seed file. Once it's set up to reset use the `db:reset` command-line argument.
 
 ```console
 docker-compose run api db:setup
@@ -185,7 +184,7 @@ docker-compose up
 ## Access the Super Graph UI
 
 The Super Graph web UI is used to build and test queries. It supports auto-completion which
-makes it easy to craft queries. Open your web broser and visit the below url.
+makes it easy to craft queries. Open your web browser and visit the below url.
 
 [http://localhost:8080](http://localhost:8080)
 
@@ -232,8 +231,8 @@ query {
 
 ## Add validations
 
-Validations can be added in the database schema this way nothing can bypass them
-and put bad invalid data into your database.
+Validations can be added in the database schema -- this way nothing can bypass them
+and put invalid data into your database.
 
 ```sql
 CREATE TABLE products (
@@ -244,7 +243,7 @@ CREATE TABLE products (
 
 ## Full text search
 
-Postgres has great full-text search built-in. No reason to complicate your setup by adding
+Postgres has great full-text search built-in. There's no reason to complicate your setup by adding
 another service just for search. Enabling full-text search on a table requires you to add
 a single column (term-vector column) to it.
 
@@ -258,8 +257,8 @@ CREATE TABLE products (
 
 ## Autocomplete
 
-Implementing autocomplete does not need a `tsv` column instead it needs an extra index
-of the type `text_pattern_ops` on the volumn that you wish to autocomplete on.
+Implementing autocomplete does not need a `tsv` column. Instead, columns that you'd like to be used with autocomplete need an extra index
+of the type `text_pattern_ops`.
 
 ```sql
 CREATE INDEX product_name_autocomplete_index ON products(name text_pattern_ops);
@@ -281,7 +280,7 @@ query {
 
 ## Using GraphQL fragments
 
-Some of you unfamiliar with GraphQL might wonder what the `...Product` thing above is. It's called a fragment. Fragments save you from having to retype the same set of columns all over.
+Some of you unfamiliar with GraphQL might wonder what `...Product` is in the code above. It's called a fragment. Fragments save you from having to retype the same set of columns all over.
 Most GraphQL clients like `apollo-client` or `urql` have a way to manage fragments and share then
 across your queries.
 
@@ -301,7 +300,7 @@ query {
 
 ## Create new product
 
-The below GraphQL query and variables together will insert a new product into the database. The `connect` keyword will find a user who's `id` equals `5` and set the `user_id` field on product to that users id.
+The following GraphQL query and variables together will insert a new product into the database. The `connect` keyword will find a user whose `id` equals `5` and set the `user_id` field on the product to that user's id.
 
 ```json
 {
@@ -327,7 +326,7 @@ mutation {
 
 ## Update a product
 
-This will update a product with `id = 12` and change it's `name`, `description` and `price`.
+This will update a product with `id = 12` and change its `name`, `description` and `price`.
 
 ```json
 {
@@ -351,7 +350,7 @@ mutation {
 ## Create a user, product with tags and categories
 
 There is so much going on here. We are creating a user, his product and assigning some tags
-and categories. Tags here is a simple text array column while categories is a bigint array column
+and categories. Tags here means a simple text array column while categories refers to a bigint array column
 that we have configured to act as a foreign key to the categories tables.
 
 Since array columns cannot be foreign keys in Postgres we have to add a simple config to Super Graph
@@ -431,7 +430,7 @@ subscription {
 ## Production secrets management
 
 We recommend you use [Mozilla SOPS](https://github.com/mozilla/sops) for secrets management. The sops binary
-is installed on the Super Graph app docker image. To use SOPS you create a yaml file with your secrets like the one below. You then need a secret key to encrypt it with you're options are to go with Google Cloud KMS, Amazon KMS, Azure Key Vault, etc. In production SOPS will automatically fetch the key from your defined KMS, decrypt the secrets file and make the values available to Super Graph via enviroment variables.
+is installed on the Super Graph app docker image. To use SOPS you create a yaml file with your secrets like the one below. You then need a secret key to encrypt it. Your options are to go with Google Cloud KMS, Amazon KMS, Azure Key Vault, etc. In production SOPS will automatically fetch the key from your defined KMS, decrypt the secrets file and make the values available to Super Graph via enviroment variables.
 
 1. Create the secrets file
 
