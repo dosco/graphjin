@@ -94,6 +94,7 @@ type Table struct {
 type Column struct {
 	Name       string
 	Type       string
+	Primary    bool
 	ForeignKey string `mapstructure:"related_to"`
 }
 

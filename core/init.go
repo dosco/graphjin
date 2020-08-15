@@ -111,6 +111,18 @@ func addTables(c *Config, di *sdata.DBInfo) error {
 	var err error
 
 	for _, t := range c.Tables {
+		for _, c := range t.Columns {
+			if !c.Primary {
+				continue
+			}
+			if c1, err := di.GetColumn(t.Name, c.Name); err == nil {
+				c1.PrimaryKey = true
+			} else {
+				return fmt.Errorf("config: set primary key: (%s) %w", t.Name, err)
+			}
+			break
+		}
+
 		switch t.Type {
 		case "json", "jsonb":
 			err = addJsonTable(di, t.Columns, t)
