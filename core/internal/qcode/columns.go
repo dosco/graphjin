@@ -138,8 +138,11 @@ func (co *Compiler) addRelColumns(qc *QCode, sel *Select) error {
 	return nil
 }
 
-func (co *Compiler) orderByIDCol(sel *Select) {
+func (co *Compiler) orderByIDCol(sel *Select) error {
 	idCol := sel.Ti.PrimaryCol
+	if idCol == nil {
+		return fmt.Errorf("table requires primary key: %s", sel.Ti.Name)
+	}
 
 	if _, ok := sel.ColMap[idCol.Name]; !ok {
 		sel.Cols = append(sel.Cols, Column{Col: idCol, Base: true})
@@ -148,11 +151,12 @@ func (co *Compiler) orderByIDCol(sel *Select) {
 
 	for _, ob := range sel.OrderBy {
 		if ob.Col.Name == idCol.Name {
-			return
+			return nil
 		}
 	}
 
 	sel.OrderBy = append(sel.OrderBy, OrderBy{Col: idCol, Order: sel.order})
+	return nil
 }
 
 func validateSelector(qc *QCode, sel *Select, tr trval) error {
