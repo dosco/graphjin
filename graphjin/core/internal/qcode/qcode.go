@@ -391,7 +391,9 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 		if sel.Paging.Cursor {
 			// Set tie-breaker order column for the cursor direction
 			// this column needs to be the last in the order series.
-			co.orderByIDCol(sel)
+			if err := co.orderByIDCol(sel); err != nil {
+				return err
+			}
 
 			// Set filter chain needed to make the cursor work
 			if sel.Paging.Type != PTOffset {
