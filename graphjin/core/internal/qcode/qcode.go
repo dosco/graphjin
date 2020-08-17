@@ -710,9 +710,13 @@ func (co *Compiler) compileArgOrderBy(sel *Select, arg *graph.Arg) error {
 		return fmt.Errorf("expecting an object")
 	}
 
-	cm := make(map[string]struct{}, len(sel.OrderBy))
-	for _, ob := range sel.OrderBy {
-		cm[ob.Col.Name] = struct{}{}
+	var cm map[string]struct{}
+
+	if len(sel.OrderBy) != 0 {
+		cm = make(map[string]struct{})
+		for _, ob := range sel.OrderBy {
+			cm[ob.Col.Name] = struct{}{}
+		}
 	}
 
 	st := util.NewStackInf()
@@ -720,6 +724,8 @@ func (co *Compiler) compileArgOrderBy(sel *Select, arg *graph.Arg) error {
 	for i := range arg.Val.Children {
 		st.Push(arg.Val.Children[i])
 	}
+
+	obList := make([]OrderBy, 0, 2)
 
 	for {
 		if st.Len() == 0 {
@@ -762,8 +768,13 @@ func (co *Compiler) compileArgOrderBy(sel *Select, arg *graph.Arg) error {
 		if _, ok := cm[ob.Col.Name]; ok {
 			return fmt.Errorf("duplicate column in order by: %s", ob.Col.Name)
 		}
-		sel.OrderBy = append(sel.OrderBy, ob)
+		obList = append(obList, ob)
 	}
+
+	for i := len(obList) - 1; i >= 0; i-- {
+		sel.OrderBy = append(sel.OrderBy, obList[i])
+	}
+
 	return nil
 }
 
