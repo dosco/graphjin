@@ -158,11 +158,13 @@ func (c *compilerContext) renderUnionStmt(m qcode.Mutate) {
 	}
 }
 
-func (c *compilerContext) renderInsertUpdateColumns(m qcode.Mutate, values bool) {
-	for i, col := range m.Cols {
+func (c *compilerContext) renderInsertUpdateColumns(m qcode.Mutate, values bool) int {
+	i := 0
+	for _, col := range m.Cols {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
+		i++
 
 		if values {
 			v := col.Value
@@ -197,11 +199,14 @@ func (c *compilerContext) renderInsertUpdateColumns(m qcode.Mutate, values bool)
 			quoted(c.w, col.Col.Name)
 		}
 	}
+	return i
 }
 
-func (c *compilerContext) renderNestedInsertUpdateRelColumns(m qcode.Mutate, values bool) {
-	for _, col := range m.RCols {
-		c.w.WriteString(`, `)
+func (c *compilerContext) renderNestedInsertUpdateRelColumns(m qcode.Mutate, values bool, n int) {
+	for i, col := range m.RCols {
+		if n != 0 || i != 0 {
+			c.w.WriteString(`, `)
+		}
 		if values {
 			if col.CType != 0 {
 				c.w.WriteString(`"_x_`)

@@ -56,9 +56,13 @@ func cmdDBSeed(servConf *ServConfig) func(*cobra.Command, []string) {
 			return graphQLFunc(servConf, sg, query, data, opt)
 		}
 
+		importCSVFn := func(table, filename string, sep string) int64 {
+			return importCSV(servConf, table, filename, sep)
+		}
+
 		vm := goja.New()
 		vm.Set("graphql", graphQLFn)
-		vm.Set("import_csv", importCSV)
+		vm.Set("import_csv", importCSVFn)
 
 		console := vm.NewObject()
 		console.Set("log", logFunc) //nolint: errcheck
@@ -127,14 +131,21 @@ type csvSource struct {
 	i    int
 }
 
-func NewCSVSource(filename string) (*csvSource, error) {
+func NewCSVSource(filename string, sep rune) (*csvSource, error) {
 	f, err := os.Open(filename)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
 
+	if sep == 0 {
+		sep = ','
+	}
+
 	r := csv.NewReader(f)
+	r.ReuseRecord = true
+	r.Comma = sep
+
 	rows, err := r.ReadAll()
 	if err != nil {
 		return nil, err
@@ -191,12 +202,20 @@ func (c *csvSource) Err() error {
 	return nil
 }
 
-func importCSV(servConf *ServConfig, table, filename string) int64 {
-	if filename[0] != '/' {
+func importCSV(servConf *ServConfig, table, filename string, sep string) int64 {
+	servConf.log.Printf("Seeding table '%s' from file '%s'", table, filename)
+
+	if filename[0] != '/' && filename[0] != '.' {
 		filename = path.Join(servConf.confPath, filename)
 	}
 
-	s, err := NewCSVSource(filename)
+	var sepRune rune
+
+	if sep != "" {
+		sepRune = rune(sep[0])
+	}
+
+	s, err := NewCSVSource(filename, sepRune)
 	if err != nil {
 		servConf.log.Fatalf("ERR %v", err)
 	}
