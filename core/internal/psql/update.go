@@ -32,12 +32,12 @@ func (c *compilerContext) renderUpdateStmt(m qcode.Mutate) {
 	quoted(c.w, m.Ti.Name)
 
 	c.w.WriteString(` SET (`)
-	c.renderInsertUpdateColumns(m, false)
-	c.renderNestedInsertUpdateRelColumns(m, true)
+	n := c.renderInsertUpdateColumns(m, false)
+	c.renderNestedInsertUpdateRelColumns(m, true, n)
 
 	c.w.WriteString(`) = (SELECT `)
-	c.renderInsertUpdateColumns(m, true)
-	c.renderNestedInsertUpdateRelColumns(m, true)
+	n = c.renderInsertUpdateColumns(m, true)
+	c.renderNestedInsertUpdateRelColumns(m, true, n)
 
 	c.w.WriteString(` FROM "_sg_input" i`)
 	c.renderNestedInsertUpdateRelTables(m)
