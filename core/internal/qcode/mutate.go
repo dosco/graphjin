@@ -93,6 +93,10 @@ func (co *Compiler) compileMutation(qc *QCode, op *graph.Operation, role string)
 		return errors.New("valid mutations: insert, update, upsert, delete'")
 	}
 
+	if whereReq && qc.Selects[0].Where.Exp == nil {
+		return errors.New("where clause required")
+	}
+
 	if m.Type == MTDelete {
 		m.render = true
 		qc.Mutates = append(qc.Mutates, m)
@@ -101,10 +105,6 @@ func (co *Compiler) compileMutation(qc *QCode, op *graph.Operation, role string)
 
 	if m.Val, ok = qc.Vars[qc.ActionVar]; !ok {
 		return fmt.Errorf("variable not defined: %s", qc.ActionVar)
-	}
-
-	if whereReq && qc.Selects[0].Where.Exp == nil {
-		return errors.New("where clause required")
 	}
 
 	st := util.NewStackInf()
