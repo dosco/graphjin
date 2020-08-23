@@ -325,7 +325,7 @@ ORDER BY
 		}
 
 		if !fp.Name.Valid {
-			fp.Name.String = string(parameterIndex)
+			fp.Name.String = fmt.Sprintf("%d", parameterIndex)
 			fp.Name.Valid = true
 		}
 
