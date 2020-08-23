@@ -61,7 +61,7 @@ cors_debug: false
 # Set session variable "user.id" to the user id
 # Enable this if you need the user id in triggers, etc
 # Note: This will not work with subscriptions
-set_user_id: true
+set_user_id: false 
 
 # inflections:
 #   person: people
