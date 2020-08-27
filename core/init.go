@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/dosco/super-graph/core/internal/qcode"
 	"github.com/dosco/super-graph/core/internal/sdata"
@@ -30,6 +31,16 @@ func (sg *SuperGraph) initConfig() error {
 		tm[t.Name] = struct{}{}
 
 		t.Table = flect.Pluralize(strings.ToLower(t.Table))
+	}
+
+	for k, v := range c.Vars {
+		if v == "" || !strings.HasPrefix(v, "sql:") {
+			continue
+		}
+		if n, ok := isASCII(v); !ok {
+			return fmt.Errorf("variables: %s: invalid character (%s) at %d",
+				k, c.RolesQuery[:n+1], n+1)
+		}
 	}
 
 	sg.roles = make(map[string]*Role)
@@ -73,9 +84,11 @@ func (sg *SuperGraph) initConfig() error {
 		sg.roles["anon"] = &ur
 	}
 
-	if c.RolesQuery == "" {
-		sg.log.Printf("INF attribute based access control disabled: roles_query not set")
-	} else {
+	if c.RolesQuery != "" {
+		if n, ok := isASCII(c.RolesQuery); !ok {
+			return fmt.Errorf("roles_query: invalid character (%s) at %d",
+				c.RolesQuery[:n+1], n+1)
+		}
 		n := 0
 		for k, v := range sg.roles {
 			if k == "user" || k == "anon" {
@@ -89,6 +102,8 @@ func (sg *SuperGraph) initConfig() error {
 		if !sg.abacEnabled {
 			sg.log.Printf("WRN attribute based access control disabled: no custom roles (with 'match' defined)")
 		}
+	} else {
+		sg.log.Printf("INF attribute based access control disabled: roles_query not set")
 	}
 
 	return nil
@@ -349,4 +364,13 @@ func (r *Role) GetTable(name string) *RoleTable {
 
 func sanitize(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func isASCII(s string) (int, bool) {
+	for i := 0; i < len(s); i++ {
+		if s[i] > unicode.MaxASCII {
+			return i, false
+		}
+	}
+	return -1, true
 }

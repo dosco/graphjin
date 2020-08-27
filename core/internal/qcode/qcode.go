@@ -354,7 +354,7 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 		if tr.isSkipped(qc.Type) {
 			sel.SkipRender = SkipTypeUserNeeded
 		} else {
-			err = tr.isBlocked(qc.Type, field.Name)
+			err = tr.isBlocked(qc.SType, field.Name)
 		}
 
 		if err != nil {
@@ -456,7 +456,7 @@ func (co *Compiler) addRelInfo(field *graph.Field, qc *QCode, sel *Select) error
 		return nil
 	}
 
-	if sel.Ti, err = co.s.GetTableInfo(field.Name); err != nil {
+	if sel.Ti, err = co.s.GetTableInfoB(field.Name); err != nil {
 		return err
 	}
 	if !sinset {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/dosco/super-graph/core/internal/psql"
 	"github.com/dosco/super-graph/core/internal/qcode"
@@ -46,22 +47,15 @@ func (sg *SuperGraph) compileQueryFn(cq *cquery, role string) error {
 	var err error
 
 	switch cq.q.op {
-	case qcode.QTQuery:
+	case qcode.QTQuery, qcode.QTSubscription:
 		if sg.abacEnabled {
-			cq.stmts, cq.st, err = sg.buildMultiStmt(cq.q.query, cq.q.vars)
+			err = sg.buildMultiStmt(cq)
 		} else {
-			cq.st, err = sg.buildRoleStmt(cq.q.query, cq.q.vars, role)
-		}
-
-	case qcode.QTSubscription:
-		if sg.abacEnabled {
-			cq.stmts, cq.st, err = sg.buildMultiStmt(cq.q.query, cq.q.vars)
-		} else {
-			cq.st, err = sg.buildRoleStmt(cq.q.query, cq.q.vars, role)
+			err = sg.buildRoleStmt(cq, role)
 		}
 
 	case qcode.QTMutation:
-		cq.st, err = sg.buildRoleStmt(cq.q.query, cq.q.vars, role)
+		err = sg.buildRoleStmt(cq, role)
 
 	default:
 		err = errors.New("unknown query")
@@ -71,12 +65,13 @@ func (sg *SuperGraph) compileQueryFn(cq *cquery, role string) error {
 	return err
 }
 
-func (sg *SuperGraph) buildRoleStmt(query, vars []byte, role string) (stmt, error) {
-	var st stmt
+func (sg *SuperGraph) buildRoleStmt(cq *cquery, role string) error {
+	query := cq.q.query
+	vars := cq.q.vars
 
 	ro, ok := sg.roles[role]
 	if !ok {
-		return st, fmt.Errorf(`roles '%s' not defined in c.sg.config`, role)
+		return fmt.Errorf(`roles '%s' not defined in c.sg.config`, role)
 	}
 
 	var vm map[string]json.RawMessage
@@ -84,45 +79,43 @@ func (sg *SuperGraph) buildRoleStmt(query, vars []byte, role string) (stmt, erro
 
 	if len(vars) != 0 {
 		if err := json.Unmarshal(vars, &vm); err != nil {
-			return st, err
+			return err
 		}
 	}
 
 	qc, err := sg.qc.Compile(query, vm, ro.Name)
 	if err != nil {
-		return st, err
+		return err
 	}
 
 	w := &bytes.Buffer{}
-	st.md, err = sg.pc.Compile(w, qc)
+	cq.st.md, err = sg.pc.Compile(w, qc)
 	if err != nil {
-		return st, err
+		return err
 	}
 
-	st.role = ro
-	st.qc = qc
-	st.sql = w.String()
+	cq.st.role = ro
+	cq.st.qc = qc
+	cq.st.sql = w.String()
 
-	return st, nil
+	return nil
 }
 
-func (sg *SuperGraph) buildMultiStmt(query, vars []byte) ([]stmt, stmt, error) {
+func (sg *SuperGraph) buildMultiStmt(cq *cquery) error {
 	var vm map[string]json.RawMessage
 	var err error
-	var st stmt
 	var md psql.Metadata
+
+	query := cq.q.query
+	vars := cq.q.vars
 
 	if len(vars) != 0 {
 		if err := json.Unmarshal(vars, &vm); err != nil {
-			return nil, st, err
+			return err
 		}
 	}
 
-	if sg.conf.RolesQuery == "" {
-		return nil, st, errors.New("roles_query not defined")
-	}
-
-	stmts := make([]stmt, 0, len(sg.conf.Roles))
+	cq.stmts = make([]stmt, 0, len(sg.conf.Roles))
 	w := &bytes.Buffer{}
 
 	for i := 0; i < len(sg.conf.Roles); i++ {
@@ -135,11 +128,11 @@ func (sg *SuperGraph) buildMultiStmt(query, vars []byte) ([]stmt, stmt, error) {
 
 		qc, err := sg.qc.Compile(query, vm, role.Name)
 		if err != nil {
-			return nil, st, err
+			return err
 		}
 
-		stmts = append(stmts, stmt{role: role, qc: qc})
-		s := &stmts[len(stmts)-1]
+		cq.stmts = append(cq.stmts, stmt{role: role, qc: qc})
+		s := &cq.stmts[len(cq.stmts)-1]
 
 		md = sg.pc.CompileQuery(w, qc, md)
 
@@ -148,20 +141,24 @@ func (sg *SuperGraph) buildMultiStmt(query, vars []byte) ([]stmt, stmt, error) {
 
 		w.Reset()
 	}
-	st = stmts[0]
 
-	st.sql, err = sg.renderUserQuery(md, stmts)
-	if err != nil {
-		return nil, st, err
-	}
+	fsql, err := sg.renderUserQuery(&md, cq.stmts)
 
-	return stmts, st, nil
+	cq.st = cq.stmts[0]
+	cq.st.md = md
+	cq.st.sql = fsql
+
+	return err
 }
 
 //nolint: errcheck
-func (sg *SuperGraph) renderUserQuery(md psql.Metadata, stmts []stmt) (string, error) {
+func (sg *SuperGraph) renderUserQuery(md *psql.Metadata, stmts []stmt) (string, error) {
 	if sg.conf.RolesQuery == "" {
-		return "", errors.New("roles_query not defined")
+		return "", errors.New("roles_query: empty of not defined")
+	}
+
+	if !strings.Contains(sg.conf.RolesQuery, "$user_id") {
+		return "", fmt.Errorf("roles_query: $user_id variable missing")
 	}
 
 	w := &bytes.Buffer{}

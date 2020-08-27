@@ -138,6 +138,7 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 	rq := rquery{op: c.op, name: c.name, query: []byte(query), vars: vars}
 	cq := &cquery{q: rq}
 	res.q = cq
+	res.role = role
 
 	conn, err := c.sg.db.Conn(c)
 	if err != nil {
@@ -152,16 +153,16 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 	}
 
 	if v := c.Value(UserRoleKey); v != nil {
-		role = v.(string)
+		res.role = v.(string)
 	} else if urq {
-		role, err = c.executeRoleQuery(conn, role)
+		res.role, err = c.executeRoleQuery(conn, res.role)
 	}
 
 	if err != nil {
 		return res, err
 	}
 
-	if err = c.sg.compileQuery(cq, role); err != nil {
+	if err = c.sg.compileQuery(cq, res.role); err != nil {
 		return res, err
 	}
 
@@ -195,7 +196,7 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 	}
 
 	res.data = cur.data
-	res.role = role
+	//res.role = role
 
 	if c.sg.allowList.IsPersist() {
 		if err := c.sg.allowList.Set(vars, query, ""); err != nil {
@@ -219,11 +220,12 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 }
 
 func (c *scontext) executeRoleQuery(conn *sql.Conn, role string) (string, error) {
-	if uid := c.Value(UserIDKey); uid == nil {
+	uid := c.Value(UserIDKey)
+	if uid == nil {
 		return "anon", nil
 	}
 
-	err := conn.QueryRowContext(c, c.sg.roleStmt, role).Scan(&role)
+	err := conn.QueryRowContext(c, c.sg.roleStmt, uid, role).Scan(&role)
 	return role, err
 }
 

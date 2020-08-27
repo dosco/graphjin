@@ -27,9 +27,13 @@ type rquery struct {
 }
 
 // nolint: errcheck
-func (sg *SuperGraph) prepareRoleStmt() {
+func (sg *SuperGraph) prepareRoleStmt() error {
 	if !sg.abacEnabled {
-		return
+		return nil
+	}
+
+	if !strings.Contains(sg.conf.RolesQuery, "$user_id") {
+		return fmt.Errorf("roles_query: $user_id variable missing")
 	}
 
 	rq := strings.ReplaceAll(sg.conf.RolesQuery, "$user_id", "$1")
@@ -57,6 +61,7 @@ func (sg *SuperGraph) prepareRoleStmt() {
 	io.WriteString(w, `ELSE 'anon' END) FROM (VALUES (1)) AS "_sg_auth_filler" LIMIT 1; `)
 
 	sg.roleStmt = w.String()
+	return nil
 }
 
 func (sg *SuperGraph) initAllowList() error {

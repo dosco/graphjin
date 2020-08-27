@@ -49,7 +49,7 @@ func (co *Compiler) compileColumns(
 
 		// not a function
 		if fn.Name == "" {
-			if dbc, err := sel.Ti.GetColumn(f.Name); err == nil {
+			if dbc, err := sel.Ti.GetColumnB(f.Name); err == nil {
 				sel.Cols = append(sel.Cols, Column{Col: dbc, FieldName: fname})
 			} else {
 				return err

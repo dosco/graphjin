@@ -142,7 +142,9 @@ func newSuperGraph(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo) (*SuperGraph,
 		return nil, err
 	}
 
-	sg.prepareRoleStmt()
+	if err := sg.prepareRoleStmt(); err != nil {
+		return nil, err
+	}
 
 	if conf.SecretKey != "" {
 		sk := sha256.Sum256([]byte(conf.SecretKey))
