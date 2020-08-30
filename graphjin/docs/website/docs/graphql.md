@@ -206,6 +206,41 @@ query {
 }
 ```
 
+### Recursive Queries
+
+A common pattern one encouters if recursive relationships which is when a table references itself. A good example of this is threaded comments when a comment is a reply to a previous comment and that to a previous. Another example could be an employee table where an employee references another employee (his boss). This has previously been hard to work with but Super Graph makes it a breeze. This works with any table that has a foreign key relationship to itself. The `find` parameter controls the direction of the fetch which can either be `parents` or `children`.
+
+#### Given a comment fetch it's parent comments
+
+```graphql
+query {
+  reply : comment(id: $id) {
+    id
+    comments(find: "parents") {
+      id
+      body
+    }
+  }
+}
+```
+
+#### Given an employee find his whole team.
+
+```graphql
+query {
+  employee(id: $id) {
+    id
+    teamMembers: employees(find: "children") {
+      id
+      name
+    }
+  }
+}
+```
+
+
+
+
 ### Custom Functions
 
 Any function defined in the database like the below `add_five` that adds 5 to any number given to it can be used

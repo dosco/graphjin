@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dosco/super-graph/core/internal/graph"
 	"github.com/dosco/super-graph/core/internal/qcode"
 	"github.com/dosco/super-graph/core/internal/sdata"
 	"github.com/dosco/super-graph/core/internal/util"
@@ -185,10 +184,10 @@ func (c *compilerContext) renderQuery(st *IntStack, multi bool) {
 
 		if open {
 			if sel.Type != qcode.SelTypeUnion {
-				if sel.Rel != nil || multi {
+				if sel.Rel.Type != sdata.RelNone || multi {
 					c.renderLateralJoin()
 				}
-				if sel.Rel != nil && sel.Rel.Type == sdata.RelRecursive {
+				if sel.Rel.Type == sdata.RelRecursive {
 					c.renderRecursiveCTE(sel)
 				}
 				c.renderPluralSelect(sel)
@@ -213,14 +212,8 @@ func (c *compilerContext) renderQuery(st *IntStack, multi bool) {
 		} else {
 			if sel.Type != qcode.SelTypeUnion {
 				c.renderSelectClose(sel)
-				if sel.Rel != nil || multi {
+				if sel.Rel.Type != sdata.RelNone || multi {
 					c.renderLateralJoinClose(sel)
-				}
-			}
-
-			if sel.Type != qcode.SelTypeMember {
-				for _, v := range sel.Args {
-					v.Free()
 				}
 			}
 		}
@@ -317,13 +310,13 @@ func (c *compilerContext) renderLateralJoinClose(sel *qcode.Select) {
 	c.w.WriteString(` ON true`)
 }
 
-func (c *compilerContext) renderJoinTables(rel *sdata.DBRel) {
-	if rel != nil && rel.Type == sdata.RelOneToManyThrough {
+func (c *compilerContext) renderJoinTables(rel sdata.DBRel) {
+	if rel.Type == sdata.RelOneToManyThrough {
 		c.renderJoin(rel)
 	}
 }
 
-func (c *compilerContext) renderJoin(rel *sdata.DBRel) {
+func (c *compilerContext) renderJoin(rel sdata.DBRel) {
 	c.w.WriteString(` LEFT OUTER JOIN "`)
 	c.w.WriteString(rel.Through.ColL.Table)
 	c.w.WriteString(`" ON ((`)
@@ -342,7 +335,7 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select) {
 	c.renderJoinTables(sel.Rel)
 
 	// Recursive base selects have no where clauses
-	if sel.Rel == nil || sel.Rel.Type != sdata.RelRecursive {
+	if sel.Rel.Type != sdata.RelRecursive {
 		c.renderWhere(sel)
 	}
 
@@ -401,15 +394,9 @@ func (c *compilerContext) renderRecursiveBaseSelect(sel *qcode.Select) {
 }
 
 func (c *compilerContext) renderFrom(sel *qcode.Select) {
-	var rt sdata.RelType
-
-	if sel.Rel != nil {
-		rt = sel.Rel.Type
-	}
-
 	c.w.WriteString(` FROM `)
 
-	switch rt {
+	switch sel.Rel.Type {
 	case sdata.RelEmbedded:
 		// jsonb_to_recordset('[{"a":1,"b":[1,2,3],"c":"bar"}, {"a":2,"b":[1,2,3],"c":"bar"}]') as x(a int, b text, d text);
 
@@ -472,13 +459,7 @@ func (c *compilerContext) renderCursorCTE(sel *qcode.Select) {
 }
 
 func (c *compilerContext) renderWhere(sel *qcode.Select) {
-	var rt sdata.RelType
-
-	if sel.Rel != nil {
-		rt = sel.Rel.Type
-	}
-
-	if rt == sdata.RelNone && sel.Where.Exp == nil {
+	if sel.Rel.Type == sdata.RelNone && sel.Where.Exp == nil {
 		return
 	}
 
@@ -492,12 +473,12 @@ func (c *compilerContext) renderWhere(sel *qcode.Select) {
 		pid = sel.ParentID
 	}
 
-	if rt != sdata.RelNone {
-		c.renderRel(sel.Ti, sel.Rel, pid, sel.Args)
+	if sel.Rel.Type != sdata.RelNone {
+		c.renderRel(sel.Ti, sel.Rel, pid, sel.ArgMap)
 	}
 
 	if sel.Where.Exp != nil {
-		if rt != sdata.RelNone {
+		if sel.Rel.Type != sdata.RelNone {
 			c.w.WriteString(` AND `)
 		}
 		c.renderExp(c.qc.Schema, sel.Ti, sel.Where.Exp, false)
@@ -507,10 +488,10 @@ func (c *compilerContext) renderWhere(sel *qcode.Select) {
 }
 
 func (c *compilerContext) renderRel(
-	ti *sdata.DBTableInfo,
-	rel *sdata.DBRel,
+	ti sdata.DBTableInfo,
+	rel sdata.DBRel,
 	pid int32,
-	args map[string]*graph.Node) {
+	args map[string]qcode.Arg) {
 
 	if rel.Type == sdata.RelNone {
 		return
@@ -590,7 +571,7 @@ func (c *compilerContext) renderRel(
 	c.w.WriteString(`))`)
 }
 
-func (c *compilerContext) renderExp(schema *sdata.DBSchema, ti *sdata.DBTableInfo, ex *qcode.Exp, skipNested bool) {
+func (c *compilerContext) renderExp(schema *sdata.DBSchema, ti sdata.DBTableInfo, ex *qcode.Exp, skipNested bool) {
 	st := util.NewStackInf()
 	st.Push(ex)
 
@@ -654,7 +635,7 @@ func (c *compilerContext) renderExp(schema *sdata.DBSchema, ti *sdata.DBTableInf
 }
 
 func (c *compilerContext) renderNestedWhere(
-	schema *sdata.DBSchema, ti *sdata.DBTableInfo, ex *qcode.Exp) {
+	schema *sdata.DBSchema, ti sdata.DBTableInfo, ex *qcode.Exp) {
 	for i, rel := range ex.Rels {
 		if i != 0 {
 			c.w.WriteString(` AND `)
@@ -666,7 +647,7 @@ func (c *compilerContext) renderNestedWhere(
 		c.w.WriteString(` WHERE `)
 		c.renderRel(ti, rel, -1, nil)
 		c.w.WriteString(` AND (`)
-		c.renderExp(schema, rel.Left.Col.Ti, ex, true)
+		c.renderExp(schema, rel.Left.Ti, ex, true)
 		c.w.WriteString(`)`)
 	}
 
@@ -675,7 +656,7 @@ func (c *compilerContext) renderNestedWhere(
 	}
 }
 
-func (c *compilerContext) renderOp(schema *sdata.DBSchema, ti *sdata.DBTableInfo, ex *qcode.Exp) {
+func (c *compilerContext) renderOp(schema *sdata.DBSchema, ti sdata.DBTableInfo, ex *qcode.Exp) {
 	if ex.Op == qcode.OpNop {
 		return
 	}

@@ -16,7 +16,7 @@ func (co *Compiler) compileColumns(
 	sel *Select,
 	tr trval) error {
 
-	if sel.Rel != nil && sel.Rel.Type == sdata.RelRemote {
+	if sel.Rel.Type == sdata.RelRemote {
 		return nil
 	}
 
@@ -87,7 +87,7 @@ func (co *Compiler) addOrderByColumns(sel *Select) {
 }
 
 func (co *Compiler) addRelColumns(qc *QCode, sel *Select) error {
-	if sel.Rel == nil {
+	if sel.Rel.Type == sdata.RelNone {
 		return nil
 	}
 
@@ -111,7 +111,7 @@ func (co *Compiler) addRelColumns(qc *QCode, sel *Select) error {
 	case sdata.RelPolymorphic:
 		psel.addCol(Column{Col: rel.Left.Col, Base: true})
 
-		if v, err := rel.Left.Col.Ti.GetColumn(rel.Right.VTable); err == nil {
+		if v, err := rel.Left.Ti.GetColumn(rel.Right.VTable); err == nil {
 			psel.addCol(Column{Col: v, Base: true})
 		} else {
 			return err
@@ -128,7 +128,7 @@ func (co *Compiler) addRelColumns(qc *QCode, sel *Select) error {
 func (co *Compiler) orderByIDCol(sel *Select) error {
 	idCol := sel.Ti.PrimaryCol
 	if idCol.Name == "" {
-		return fmt.Errorf("table requires primary key: %s", sel.Table)
+		return fmt.Errorf("table requires primary key: %s", sel.Ti.Name)
 	}
 
 	sel.addCol(Column{Col: idCol, Base: true})

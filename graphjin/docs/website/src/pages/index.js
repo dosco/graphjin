@@ -4,7 +4,6 @@ import Layout from "@theme/Layout";
 import Button from "./components/Button";
 import Card from "./components/Card";
 import GitHubButton from "react-github-btn";
-import "../css/tailwind.css";
 
 const HomeContent = () => {
   return (
@@ -14,11 +13,16 @@ const HomeContent = () => {
           <div>
             <h1 className="font-extrabold">Super Graph</h1>
             <h3 className="font-semibold">
-              Fetch data without code. 100X your development speed
+              Fetch data with GraphQL. 100X your productivity.
             </h3>
             <p>
-              APIs change often don't waste time struggling with an ORM, code
-              and SQL just ask for what you need in simple GraphQL
+              APIs change often don't waste time struggling with code and SQL
+              just ask for what you need in simple GraphQL.
+            </p>
+
+            <p className="text-sm">
+              Super Graph is a high-performance GO library and standalone
+              service.
             </p>
             <small className="pt-4">
               Works with <span className="underline">Postgres</span> and{" "}

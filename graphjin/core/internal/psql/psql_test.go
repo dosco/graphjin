@@ -39,7 +39,7 @@ func TestMain(m *testing.M) {
 		log.Fatal(err)
 	}
 
-	remoteVal := &sdata.DBRel{Type: sdata.RelRemote}
+	remoteVal := sdata.DBRel{Type: sdata.RelRemote}
 	remoteVal.Left.Col = t.PrimaryCol
 	remoteVal.Right.VTable = fmt.Sprintf("__%s_%s", t.Name, t.PrimaryCol.Name)
 

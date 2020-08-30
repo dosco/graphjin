@@ -64,7 +64,7 @@ func (sg *SuperGraph) initRemotes(t Table) error {
 		val.Left.Col = col
 		val.Right.VTable = idk
 
-		if err := sg.schema.SetRel(r.Name, t.Name, &val); err != nil {
+		if err := sg.schema.SetRel(r.Name, t.Name, val); err != nil {
 			return err
 		}
 

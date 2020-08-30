@@ -9,7 +9,7 @@ import (
 	"github.com/dosco/super-graph/core/internal/util"
 )
 
-func (co *Compiler) compileArgObj(ti *sdata.DBTableInfo, st *util.StackInf, arg *graph.Arg) (*Exp, bool, error) {
+func (co *Compiler) compileArgObj(ti sdata.DBTableInfo, st *util.StackInf, arg *graph.Arg) (*Exp, bool, error) {
 	if arg.Val.Type != graph.NodeObj {
 		return nil, false, fmt.Errorf("expecting an object")
 	}
@@ -23,7 +23,7 @@ type aexp struct {
 }
 
 func (co *Compiler) compileArgNode(
-	ti *sdata.DBTableInfo,
+	ti sdata.DBTableInfo,
 	st *util.StackInf,
 	node *graph.Node,
 	usePool bool) (*Exp, bool, error) {
@@ -78,7 +78,7 @@ func (co *Compiler) compileArgNode(
 	return root, needsUser, nil
 }
 
-func newExp(ti *sdata.DBTableInfo, st *util.StackInf, av aexp, usePool bool) (*Exp, error) {
+func newExp(ti sdata.DBTableInfo, st *util.StackInf, av aexp, usePool bool) (*Exp, error) {
 	node := av.node
 	name := node.Name
 
@@ -235,7 +235,7 @@ func setListVal(ex *Exp, node *graph.Node) {
 
 }
 
-func setWhereColName(ti *sdata.DBTableInfo, ex *Exp, node *graph.Node) error {
+func setWhereColName(ti sdata.DBTableInfo, ex *Exp, node *graph.Node) error {
 	var list []string
 
 	for n := node.Parent; n != nil; n = n.Parent {
@@ -274,7 +274,7 @@ func setWhereColName(ti *sdata.DBTableInfo, ex *Exp, node *graph.Node) error {
 			}
 		}
 		rel := ex.Rels[len(ex.Rels)-1]
-		if col, err := rel.Left.Col.Ti.GetColumn(list[len(list)-1]); err == nil {
+		if col, err := rel.Left.Ti.GetColumn(list[len(list)-1]); err == nil {
 			ex.Col = col
 		} else {
 			return err

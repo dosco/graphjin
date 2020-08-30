@@ -68,9 +68,9 @@ type Select struct {
 	Typename   bool
 	Table      string
 	FieldName  string
-	Args       map[string]*graph.Node
 	Cols       []Column
 	ColMap     map[string]int
+	ArgMap     map[string]Arg
 	Funcs      []Function
 	Where      Filter
 	OrderBy    []OrderBy
@@ -79,8 +79,8 @@ type Select struct {
 	Paging     Paging
 	Children   []int32
 	SkipRender SkipType
-	Ti         *sdata.DBTableInfo
-	Rel        *sdata.DBRel
+	Ti         sdata.DBTableInfo
+	Rel        sdata.DBRel
 	order      Order
 }
 
@@ -104,7 +104,7 @@ type Filter struct {
 type Exp struct {
 	Op        ExpOp
 	Table     string
-	Rels      []*sdata.DBRel
+	Rels      []sdata.DBRel
 	Col       sdata.DBColumn
 	Type      ValType
 	Val       string
@@ -114,6 +114,10 @@ type Exp struct {
 	childrenA [5]*Exp
 	internal  bool
 	doFree    bool
+}
+
+type Arg struct {
+	Val string
 }
 
 var zeroExp = Exp{doFree: true}
@@ -451,7 +455,7 @@ func (co *Compiler) addRelInfo(field *graph.Field, qc *QCode, sel *Select) error
 		return err
 	}
 
-	if sel.Rel != nil && sel.Rel.Type == sdata.RelRemote {
+	if sel.Rel.Type == sdata.RelRemote {
 		sel.Table = field.Name
 		return nil
 	}
@@ -642,7 +646,7 @@ func (co *Compiler) setMutationType(qc *QCode, args []graph.Arg) error {
 
 func (co *Compiler) compileArgFind(sel *Select, arg *graph.Arg) error {
 	// Only allow on recursive relationship selectors
-	if sel.Rel == nil || sel.Rel.Type != sdata.RelRecursive {
+	if sel.Rel.Type != sdata.RelRecursive {
 		return fmt.Errorf("find: selector '%s' is not recursive", sel.FieldName)
 	}
 	if arg.Val.Val != "parents" && arg.Val.Val != "children" {
@@ -694,14 +698,12 @@ func (co *Compiler) compileArgSearch(sel *Select, arg *graph.Arg) error {
 	ex.Val = arg.Val.Val
 
 	sel.addArg(arg)
-
-	arg.DnF = true
 	setFilter(sel, ex)
 
 	return nil
 }
 
-func (co *Compiler) compileArgWhere(ti *sdata.DBTableInfo, sel *Select, arg *graph.Arg, role string) error {
+func (co *Compiler) compileArgWhere(ti sdata.DBTableInfo, sel *Select, arg *graph.Arg, role string) error {
 	st := util.NewStackInf()
 	var err error
 
@@ -902,7 +904,7 @@ func setFilter(sel *Select, fil *Exp) {
 	}
 }
 
-func setOrderByColName(ti *sdata.DBTableInfo, ob *OrderBy, node *graph.Node) error {
+func setOrderByColName(ti sdata.DBTableInfo, ob *OrderBy, node *graph.Node) error {
 	var list []string
 
 	for n := node; n != nil; n = n.Parent {
@@ -920,7 +922,7 @@ func setOrderByColName(ti *sdata.DBTableInfo, ob *OrderBy, node *graph.Node) err
 	return nil
 }
 
-func compileFilter(ti *sdata.DBTableInfo, filter []string) (*Exp, bool, error) {
+func compileFilter(ti sdata.DBTableInfo, filter []string) (*Exp, bool, error) {
 	var fl *Exp
 	var needsUser bool
 
@@ -1068,9 +1070,6 @@ func freeNodes(op *graph.Operation) {
 
 	for i := range op.Args {
 		arg := op.Args[i]
-		if arg.DnF {
-			continue
-		}
 
 		for i := range arg.Val.Children {
 			if st == nil {
@@ -1093,9 +1092,6 @@ func freeNodes(op *graph.Operation) {
 
 		for j := range f.Args {
 			arg := f.Args[j]
-			if arg.DnF {
-				continue
-			}
 
 			for k := range arg.Val.Children {
 				if st == nil {
@@ -1140,11 +1136,10 @@ func freeNodes(op *graph.Operation) {
 }
 
 func (sel *Select) addArg(arg *graph.Arg) {
-	if sel.Args == nil {
-		sel.Args = make(map[string]*graph.Node)
+	if sel.ArgMap == nil {
+		sel.ArgMap = make(map[string]Arg)
 	}
-	arg.DnF = true
-	sel.Args[arg.Name] = arg.Val
+	sel.ArgMap[arg.Name] = Arg{Val: arg.Val.Val}
 }
 
 func (ex *Exp) IsFromQuery() bool {

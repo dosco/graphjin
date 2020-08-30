@@ -63,7 +63,7 @@ func (sg *SuperGraph) initGraphQLEgine() error {
 	scalarExpressionTypesNeeded := map[string]bool{}
 	tableNames := dbSchema.GetTableNames()
 
-	var funcs []*sdata.DBFunction
+	var funcs []sdata.DBFunction
 	for _, f := range dbSchema.GetFunctions() {
 		funcs = append(funcs, f)
 	}

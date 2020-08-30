@@ -298,6 +298,24 @@ query {
 }
 ```
 
+## Fetch the discuessions about a product
+
+```graphql
+query {
+  product(id: $id) {
+    name
+    comments {
+      id
+      body
+      replies: comments(find: "children", limit: 5, order_by: { created_at: desc }) {
+        id
+        body
+      }
+    }
+  }
+}
+```
+
 ## Create new product
 
 The following GraphQL query and variables together will insert a new product into the database. The `connect` keyword will find a user whose `id` equals `5` and set the `user_id` field on the product to that user's id.
