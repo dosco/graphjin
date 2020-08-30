@@ -154,7 +154,6 @@ type DBColumn struct {
 	FKeyColID  []int16
 	fKeyColID  pgtype.Int2Array
 	Blocked    bool
-	Ti         *DBTableInfo
 	Table      string
 }
 

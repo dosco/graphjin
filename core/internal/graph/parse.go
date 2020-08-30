@@ -93,7 +93,6 @@ type Field struct {
 type Arg struct {
 	Name string
 	Val  *Node
-	DnF  bool //do not free
 }
 
 type Node struct {

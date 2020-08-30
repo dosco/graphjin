@@ -121,7 +121,7 @@ func (c *compilerContext) renderFunction(sel *qcode.Select, fn qcode.Function) {
 
 func (c *compilerContext) renderFunctionSearchRank(sel *qcode.Select, fn qcode.Function) {
 	cn := sel.Ti.TSVCol.Name
-	arg := sel.Args["search"]
+	arg := sel.ArgMap["search"]
 
 	c.w.WriteString(`ts_rank(`)
 	colWithTable(c.w, sel.Table, cn)
@@ -135,7 +135,7 @@ func (c *compilerContext) renderFunctionSearchRank(sel *qcode.Select, fn qcode.F
 }
 
 func (c *compilerContext) renderFunctionSearchHeadline(sel *qcode.Select, fn qcode.Function) {
-	arg := sel.Args["search"]
+	arg := sel.ArgMap["search"]
 
 	c.w.WriteString(`ts_headline(`)
 	colWithTable(c.w, sel.Table, fn.Col.Name)

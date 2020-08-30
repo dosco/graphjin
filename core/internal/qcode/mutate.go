@@ -45,9 +45,9 @@ type Mutate struct {
 	Cols   []MColumn
 	RCols  []MRColumn
 	Tables []MTable
-	Ti     *sdata.DBTableInfo
-	RelCP  *sdata.DBRel
-	RelPC  *sdata.DBRel
+	Ti     sdata.DBTableInfo
+	RelCP  sdata.DBRel
+	RelPC  sdata.DBRel
 	Items  []Mutate
 	render bool
 }
@@ -65,7 +65,7 @@ type MRColumn struct {
 }
 
 type MTable struct {
-	Ti    *sdata.DBTableInfo
+	Ti    sdata.DBTableInfo
 	CType int
 }
 
@@ -181,6 +181,14 @@ func (co *Compiler) newMutate(st *util.StackInf, m Mutate, role string) error {
 				return err
 			}
 
+			if relPC.Type == sdata.RelRecursive {
+				relPC.Type = sdata.RelOneToOne
+			}
+
+			if relCP.Type == sdata.RelRecursive {
+				relCP.Type = sdata.RelOneToOne
+			}
+
 			m1 := Mutate{
 				ID:    id,
 				Type:  m.Type,
@@ -269,8 +277,8 @@ func addTablesAndColumns(m Mutate, tr trval) (Mutate, error) {
 	switch m.Type {
 	case MTInsert:
 		// Render columns and values needed to connect current table and the parent table
-		if m.RelCP != nil && m.RelCP.Type == sdata.RelOneToOne {
-			m.Tables = append(m.Tables, MTable{Ti: m.RelPC.Left.Col.Ti})
+		if m.RelCP.Type == sdata.RelOneToOne {
+			m.Tables = append(m.Tables, MTable{Ti: m.RelPC.Left.Ti})
 			m.RCols = append(m.RCols, MRColumn{
 				Col:  m.RelCP.Left.Col,
 				VCol: m.RelCP.Right.Col,
@@ -281,8 +289,8 @@ func addTablesAndColumns(m Mutate, tr trval) (Mutate, error) {
 		// this is for when the parent actually depends on the child level
 		// the order of the table rendering if handled upstream
 		if len(m.Items) == 0 {
-			if m.RelPC != nil && m.RelPC.Type == sdata.RelOneToMany {
-				m.Tables = append(m.Tables, MTable{Ti: m.RelPC.Left.Col.Ti})
+			if m.RelPC.Type == sdata.RelOneToMany {
+				m.Tables = append(m.Tables, MTable{Ti: m.RelPC.Left.Ti})
 				m.RCols = append(m.RCols, MRColumn{
 					Col:  m.RelCP.Right.Col,
 					VCol: m.RelCP.Left.Col,
@@ -295,7 +303,7 @@ func addTablesAndColumns(m Mutate, tr trval) (Mutate, error) {
 			// relationship is one-to-many
 			for _, v := range m.Items {
 				if v.RelCP.Type == sdata.RelOneToMany {
-					m.Tables = append(m.Tables, MTable{Ti: v.RelCP.Left.Col.Ti, CType: v.CType})
+					m.Tables = append(m.Tables, MTable{Ti: v.RelCP.Left.Ti, CType: v.CType})
 					m.RCols = append(m.RCols, MRColumn{
 						Col:   v.RelCP.Right.Col,
 						VCol:  v.RelCP.Left.Col,
@@ -311,7 +319,7 @@ func addTablesAndColumns(m Mutate, tr trval) (Mutate, error) {
 		// relationship is one-to-many
 		for _, v := range m.Items {
 			if v.CType != 0 && v.RelCP.Type == sdata.RelOneToMany {
-				m.Tables = append(m.Tables, MTable{Ti: v.RelCP.Left.Col.Ti, CType: v.CType})
+				m.Tables = append(m.Tables, MTable{Ti: v.RelCP.Left.Ti, CType: v.CType})
 				m.RCols = append(m.RCols, MRColumn{
 					Col:   v.RelCP.Right.Col,
 					VCol:  v.RelCP.Left.Col,

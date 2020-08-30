@@ -20,7 +20,7 @@ func (co *Compiler) isFunction(sel *Select, fname string) (Function, bool, error
 		if fn.Col.Name == "" {
 			return fn, false, fmt.Errorf("no tsvector column found: %s", fname)
 		}
-		if _, ok := sel.Args["search"]; !ok {
+		if _, ok := sel.ArgMap["search"]; !ok {
 			return fn, false, fmt.Errorf("not a search query: %s", fname)
 		}
 
@@ -32,7 +32,7 @@ func (co *Compiler) isFunction(sel *Select, fname string) (Function, bool, error
 		if fn.Col.Name == "" {
 			return fn, false, fmt.Errorf("no tsvector column found: %s", fname)
 		}
-		if _, ok := sel.Args["search"]; !ok {
+		if _, ok := sel.ArgMap["search"]; !ok {
 			return fn, false, fmt.Errorf("not a search query: %s", fname)
 		}
 
