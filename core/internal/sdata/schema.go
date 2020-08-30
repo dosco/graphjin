@@ -22,25 +22,27 @@ type DBTableInfo struct {
 	Type       string
 	IsSingular bool
 	Columns    []DBColumn
-	PrimaryCol *DBColumn
-	TSVCol     *DBColumn
+	PrimaryCol DBColumn
+	TSVCol     DBColumn
 	Singular   string
 	Plural     string
 	Blocked    bool
 	Schema     *DBSchema
 
 	fkMultiRef map[string]int
-	colMap     map[string]*DBColumn
-	colIDMap   map[int16]*DBColumn
+	colMap     map[string]int
+	colIDMap   map[int16]int
 }
 
 type RelType int
 
 const (
-	RelOneToOne RelType = iota + 1
+	RelNone RelType = iota
+	RelOneToOne
 	RelOneToMany
 	RelOneToManyThrough
 	RelPolymorphic
+	RelRecursive
 	RelEmbedded
 	RelRemote
 )
@@ -48,15 +50,15 @@ const (
 type DBRel struct {
 	Type    RelType
 	Through struct {
-		ColL *DBColumn
-		ColR *DBColumn
+		ColL DBColumn
+		ColR DBColumn
 	}
 	Left struct {
-		Col *DBColumn
+		Col DBColumn
 	}
 	Right struct {
 		VTable string
-		Col    *DBColumn
+		Col    DBColumn
 	}
 }
 
@@ -113,8 +115,8 @@ func NewDBSchema(info *DBInfo, aliases map[string][]string) (*DBSchema, error) {
 func (s *DBSchema) addTableInfo(
 	t DBTable, cols []DBColumn, aliases map[string][]string) error {
 
-	colmap := make(map[string]*DBColumn, len(cols))
-	colidmap := make(map[int16]*DBColumn, len(cols))
+	colmap := make(map[string]int, len(cols))
+	colidmap := make(map[int16]int, len(cols))
 	fkMultiRef := make(map[string]int)
 
 	singular := flect.Singularize(t.Key)
@@ -148,14 +150,14 @@ func (s *DBSchema) addTableInfo(
 
 		switch {
 		case c.Type == "tsvector":
-			ti.TSVCol = c
+			ti.TSVCol = cols[i]
 
 		case c.PrimaryKey:
-			ti.PrimaryCol = c
+			ti.PrimaryCol = cols[i]
 		}
 
-		colmap[c.Key] = c
-		colidmap[c.ID] = c
+		colmap[c.Key] = i
+		colidmap[c.ID] = i
 	}
 
 	s.t[singular] = &ti
@@ -210,11 +212,12 @@ func (s *DBSchema) virtualRels(vts []VirtualTable) error {
 		s.vt[vt.Name] = &vt
 
 		for _, t := range s.t {
-			idCol, ok := t.colMap[vt.IDColumn]
+			idCol, ok := t.getColumn(vt.IDColumn)
 			if !ok {
 				continue
 			}
-			if _, ok = t.colMap[vt.TypeColumn]; !ok {
+
+			if _, ok := t.getColumn(vt.TypeColumn); !ok {
 				continue
 			}
 
@@ -239,7 +242,7 @@ func (s *DBSchema) virtualRels(vts []VirtualTable) error {
 			}
 
 			rel.Right.VTable = vt.TypeColumn
-			rel.Right.Col = &rcol
+			rel.Right.Col = rcol
 
 			if err := s.SetRel(vt.Name, t.Name, rel); err != nil {
 				return err
@@ -284,7 +287,7 @@ func (s *DBSchema) firstDegreeRels(t DBTable, cols []DBColumn) error {
 		if c.Name == c.FKeyTable && len(c.FKeyColID) == 0 {
 			rel := &DBRel{Type: RelEmbedded}
 			rel.Left.Col = cti.PrimaryCol
-			rel.Right.Col = &c
+			rel.Right.Col = c
 
 			if err := s.SetRel(parentName, ct, rel); err != nil {
 				return err
@@ -299,39 +302,49 @@ func (s *DBSchema) firstDegreeRels(t DBTable, cols []DBColumn) error {
 		// Foreign key column id
 		fcid := c.FKeyColID[0]
 
-		fc, ok := fti.colIDMap[fcid]
+		fc, ok := fti.getColumnByID(fcid)
 		if !ok {
 			return fmt.Errorf("invalid foreign key column id '%d' for table '%s'",
 				fcid, fti.Name)
 		}
 
-		var rel1, rel2 *DBRel
+		rel1 := &DBRel{}
 
 		// One-to-many relation between current table and the
 		// table in the foreign key
-		if fc.UniqueKey {
-			rel1 = &DBRel{Type: RelOneToOne}
-		} else {
-			rel1 = &DBRel{Type: RelOneToMany}
+		switch {
+		case ct == ft:
+			rel1.Type = RelRecursive
+			rel1.Right.VTable = "_rcte_" + ct
+		case fc.UniqueKey:
+			rel1.Type = RelOneToOne
+		default:
+			rel1.Type = RelOneToMany
 		}
 
-		rel1.Left.Col = &c
+		rel1.Left.Col = c
 		rel1.Right.Col = fc
 
 		if err := s.SetRel(childName, parentName, rel1); err != nil {
 			return err
 		}
 
+		if ct == ft {
+			continue
+		}
+
+		rel2 := &DBRel{}
+
 		// One-to-many reverse relation between the foreign key table and the
 		// the current table
 		if c.UniqueKey {
-			rel2 = &DBRel{Type: RelOneToOne}
+			rel2.Type = RelOneToOne
 		} else {
-			rel2 = &DBRel{Type: RelOneToMany}
+			rel2.Type = RelOneToMany
 		}
 
 		rel2.Left.Col = fc
-		rel2.Right.Col = &c
+		rel2.Right.Col = c
 
 		if err := s.SetRel(parentName, childName, rel2); err != nil {
 			return err
@@ -349,9 +362,7 @@ func (s *DBSchema) secondDegreeRels(t DBTable, cols []DBColumn) error {
 		return fmt.Errorf("invalid foreign key table '%s'", ct)
 	}
 
-	for i := range cols {
-		c := cols[i]
-
+	for _, c := range cols {
 		if c.FKeyTable == "" {
 			continue
 		}
@@ -377,7 +388,7 @@ func (s *DBSchema) secondDegreeRels(t DBTable, cols []DBColumn) error {
 		// Foreign key column id
 		fcid := c.FKeyColID[0]
 
-		if _, ok := ti.colIDMap[fcid]; !ok {
+		if _, ok := ti.getColumnByID(fcid); !ok {
 			return fmt.Errorf("invalid foreign key column id '%d' for table '%s'",
 				fcid, ti.Name)
 		}
@@ -430,7 +441,7 @@ func (s *DBSchema) updateSchemaOTMT(
 		return fmt.Errorf("invalid foreign key table '%s'", t1)
 	}
 
-	fc1, ok := fti1.colIDMap[col1.FKeyColID[0]]
+	fc1, ok := fti1.getColumnByID(col1.FKeyColID[0])
 	if !ok {
 		return fmt.Errorf("invalid foreign key column id %d for table '%s'",
 			col1.FKeyColID[0], t1)
@@ -441,7 +452,7 @@ func (s *DBSchema) updateSchemaOTMT(
 		return fmt.Errorf("invalid foreign key table '%s'", t2)
 	}
 
-	fc2, ok := fti2.colIDMap[col2.FKeyColID[0]]
+	fc2, ok := fti2.getColumnByID(col2.FKeyColID[0])
 	if !ok {
 		return fmt.Errorf("invalid foreign key column id %d for table '%s'",
 			col2.FKeyColID[0], t2)
@@ -450,8 +461,8 @@ func (s *DBSchema) updateSchemaOTMT(
 	// One-to-many-through relation between 1nd foreign key table and the
 	// 2nd foreign key table
 	rel1 := &DBRel{Type: RelOneToManyThrough}
-	rel1.Through.ColL = &col1
-	rel1.Through.ColR = &col2
+	rel1.Through.ColL = col1
+	rel1.Through.ColR = col2
 
 	rel1.Left.Col = fc1
 	rel1.Right.Col = fc2
@@ -463,8 +474,8 @@ func (s *DBSchema) updateSchemaOTMT(
 	// One-to-many-through relation between 2nd foreign key table and the
 	// 1nd foreign key table
 	rel2 := &DBRel{Type: RelOneToManyThrough}
-	rel2.Through.ColL = &col2
-	rel2.Through.ColR = &col1
+	rel2.Through.ColL = col2
+	rel2.Through.ColR = col1
 
 	rel2.Left.Col = fc2
 	rel2.Right.Col = fc1
@@ -561,21 +572,45 @@ func (ti *DBTableInfo) ColumnExists(name string) bool {
 	return ok
 }
 
-func (ti *DBTableInfo) GetColumn(name string) (*DBColumn, error) {
-	c, ok := ti.colMap[name]
-	if !ok {
-		return nil, fmt.Errorf("column: '%s.%s' not found", ti.Name, name)
+func (ti *DBTableInfo) getColumn(name string) (DBColumn, bool) {
+	var c DBColumn
+	if i, ok := ti.colMap[name]; ok {
+		return ti.Columns[i], true
 	}
-	return c, nil
+	return c, false
 }
 
-func (ti *DBTableInfo) GetColumnB(name string) (*DBColumn, error) {
-	c, ok := ti.colMap[name]
-	if !ok {
-		return nil, fmt.Errorf("column: '%s.%s' not found", ti.Name, name)
+func (ti *DBTableInfo) GetColumn(name string) (DBColumn, error) {
+	c, ok := ti.getColumn(name)
+	if ok {
+		return c, nil
+	}
+	return c, fmt.Errorf("column: '%s.%s' not found", ti.Name, name)
+}
+
+func (ti *DBTableInfo) getColumnByID(id int16) (DBColumn, bool) {
+	var c DBColumn
+	if i, ok := ti.colIDMap[id]; ok {
+		return ti.Columns[i], true
+	}
+	return c, false
+}
+
+func (ti *DBTableInfo) GetColumnByID(id int16) (DBColumn, error) {
+	c, ok := ti.getColumnByID(id)
+	if ok {
+		return c, nil
+	}
+	return c, fmt.Errorf("column: '%s.%d'  not found", ti.Name, id)
+}
+
+func (ti *DBTableInfo) GetColumnB(name string) (DBColumn, error) {
+	c, err := ti.GetColumn(name)
+	if err != nil {
+		return c, err
 	}
 	if c.Blocked {
-		return nil, fmt.Errorf("column: '%s.%s' blocked", ti.Name, name)
+		return c, fmt.Errorf("column: '%s.%s' blocked", ti.Name, name)
 	}
 	return c, nil
 }

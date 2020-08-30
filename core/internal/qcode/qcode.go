@@ -70,12 +70,12 @@ type Select struct {
 	FieldName  string
 	Args       map[string]*graph.Node
 	Cols       []Column
-	ColMap     map[string]struct{}
+	ColMap     map[string]int
 	Funcs      []Function
 	Where      Filter
 	OrderBy    []OrderBy
 	GroupCols  bool
-	DistinctOn []*sdata.DBColumn
+	DistinctOn []sdata.DBColumn
 	Paging     Paging
 	Children   []int32
 	SkipRender SkipType
@@ -85,14 +85,14 @@ type Select struct {
 }
 
 type Column struct {
-	Col       *sdata.DBColumn
+	Col       sdata.DBColumn
 	FieldName string
 	Base      bool
 }
 
 type Function struct {
 	Name      string
-	Col       *sdata.DBColumn
+	Col       sdata.DBColumn
 	FieldName string
 	skip      bool
 }
@@ -105,7 +105,7 @@ type Exp struct {
 	Op        ExpOp
 	Table     string
 	Rels      []*sdata.DBRel
-	Col       *sdata.DBColumn
+	Col       sdata.DBColumn
 	Type      ValType
 	Val       string
 	ListType  ValType
@@ -129,7 +129,7 @@ func (ex *Exp) Free() {
 }
 
 type OrderBy struct {
-	Col   *sdata.DBColumn
+	Col   sdata.DBColumn
 	Order Order
 }
 
@@ -347,7 +347,7 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 		s1 := Select{
 			ID:       id,
 			ParentID: parentID,
-			ColMap:   make(map[string]struct{}, len(field.Children)),
+			ColMap:   make(map[string]int, len(field.Children)),
 		}
 		sel := &s1
 
@@ -432,8 +432,8 @@ func (co *Compiler) addRelInfo(field *graph.Field, qc *QCode, sel *Select) error
 
 	case graph.FieldMember:
 		// TODO: Fix this
-		// if sel.Table != sel.Ti.Name {
-		// 	return fmt.Errorf("inline fragment: 'on %s' should be 'on %s'", sel.Table, sel.Ti.Name)
+		// if sel.Table != sel.Table {
+		// 	return fmt.Errorf("inline fragment: 'on %s' should be 'on %s'", sel.Table, sel.Table)
 		// }
 		sel.Type = SelTypeMember
 		sel.Singular = psel.Singular
@@ -459,11 +459,11 @@ func (co *Compiler) addRelInfo(field *graph.Field, qc *QCode, sel *Select) error
 	if sel.Ti, err = co.s.GetTableInfoB(field.Name); err != nil {
 		return err
 	}
+
 	if !sinset {
 		sel.Singular = (field.Name == sel.Ti.Singular)
 	}
 	sel.Table = sel.Ti.Name
-
 	return nil
 }
 
@@ -588,6 +588,9 @@ func (co *Compiler) compileArgs(qc *QCode, sel *Select, args []graph.Arg, role s
 
 		case "before":
 			err = co.compileArgAfterBefore(sel, arg, PTBackward)
+
+		case "find":
+			err = co.compileArgFind(sel, arg)
 		}
 
 		if err != nil {
@@ -637,12 +640,24 @@ func (co *Compiler) setMutationType(qc *QCode, args []graph.Arg) error {
 	return nil
 }
 
+func (co *Compiler) compileArgFind(sel *Select, arg *graph.Arg) error {
+	// Only allow on recursive relationship selectors
+	if sel.Rel == nil || sel.Rel.Type != sdata.RelRecursive {
+		return fmt.Errorf("find: selector '%s' is not recursive", sel.FieldName)
+	}
+	if arg.Val.Val != "parents" && arg.Val.Val != "children" {
+		return fmt.Errorf("find: valid values 'parents' or 'children'")
+	}
+	sel.addArg(arg)
+	return nil
+}
+
 func (co *Compiler) compileArgID(sel *Select, arg *graph.Arg) error {
 	if sel.ParentID != -1 {
 		return fmt.Errorf("argument 'id' can only be specified at the query root")
 	}
 
-	if sel.Ti.PrimaryCol == nil {
+	if sel.Ti.PrimaryCol.Name == "" {
 		return fmt.Errorf("no primary key column defined for %s", sel.Table)
 	}
 
@@ -663,8 +678,8 @@ func (co *Compiler) compileArgID(sel *Select, arg *graph.Arg) error {
 }
 
 func (co *Compiler) compileArgSearch(sel *Select, arg *graph.Arg) error {
-	if sel.Ti.TSVCol == nil {
-		return fmt.Errorf("no tsv column defined for %s", sel.Ti.Name)
+	if sel.Ti.TSVCol.Name == "" {
+		return fmt.Errorf("no tsv column defined for %s", sel.Table)
 	}
 
 	if arg.Val.Type != graph.NodeVar {
@@ -678,11 +693,8 @@ func (co *Compiler) compileArgSearch(sel *Select, arg *graph.Arg) error {
 	ex.Type = ValVar
 	ex.Val = arg.Val.Val
 
-	if sel.Args == nil {
-		sel.Args = make(map[string]*graph.Node)
-	}
+	sel.addArg(arg)
 
-	sel.Args[arg.Name] = arg.Val
 	arg.DnF = true
 	setFilter(sel, ex)
 
@@ -1125,6 +1137,14 @@ func freeNodes(op *graph.Operation) {
 			fm[node] = struct{}{}
 		}
 	}
+}
+
+func (sel *Select) addArg(arg *graph.Arg) {
+	if sel.Args == nil {
+		sel.Args = make(map[string]*graph.Node)
+	}
+	arg.DnF = true
+	sel.Args[arg.Name] = arg.Val
 }
 
 func (ex *Exp) IsFromQuery() bool {

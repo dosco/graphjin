@@ -8,6 +8,7 @@ var customer_count = 100;
 var product_count = 50;
 var purchase_count = 100;
 var notifications_count = 100;
+var comments_count = 100;
 
 // ---- add users
 
@@ -240,4 +241,47 @@ for (i = 0; i < notifications_count; i++) {
   );
 
   notifications.push(res.notification);
+}
+
+// ---- add comments
+
+var comments = [];
+
+for (i = 0; i < comments_count; i++) {
+  var u = users[Math.floor(Math.random() * user_count)];
+  var p = products[Math.floor(Math.random() * product_count)];
+
+  var data = {
+    body: fake.sentence(10),
+    created_at: "now",
+    updated_at: "now",
+    user: {
+      connect: { id: u.id },
+    },
+    product: {
+      connect: { id: p.id },
+    },
+  };
+
+  if (comments.length !== 0) {
+    var c = comments[Math.floor(Math.random() * comments.length)];
+    data["comment"] = {
+      connect: { id: c.id },
+    };
+  }
+
+  console.log(data);
+
+  var res = graphql(
+    " \
+  mutation { \
+  	comment(insert: $data) { \
+  		id \
+  	} \
+  }",
+    { data: data },
+    { user_id: u.id }
+  );
+
+  comments.push(res.comment);
 }

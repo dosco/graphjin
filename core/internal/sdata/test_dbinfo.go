@@ -13,6 +13,7 @@ func GetTestDBInfo() *DBInfo {
 		DBTable{Name: "tags", Type: "table"},
 		DBTable{Name: "tag_count", Type: "json"},
 		DBTable{Name: "notifications", Type: "table"},
+		DBTable{Name: "comments", Type: "table"},
 	}
 
 	columns := [][]DBColumn{
@@ -70,6 +71,12 @@ func GetTestDBInfo() *DBInfo {
 			DBColumn{ID: 2, Name: "key", Type: "text", NotNull: false, PrimaryKey: false, UniqueKey: false},
 			DBColumn{ID: 2, Name: "subject_type", Type: "text", NotNull: false, PrimaryKey: false, UniqueKey: false},
 			DBColumn{ID: 2, Name: "subject_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false}},
+		[]DBColumn{
+			DBColumn{ID: 1, Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			DBColumn{ID: 2, Name: "product_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "products", FKeyColID: []int16{1}},
+			DBColumn{ID: 2, Name: "user_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "users", FKeyColID: []int16{1}},
+			DBColumn{ID: 2, Name: "reply_to_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "comments", FKeyColID: []int16{1}},
+			DBColumn{ID: 3, Name: "body", Type: "character varying", NotNull: false, PrimaryKey: false, UniqueKey: false}},
 	}
 
 	vTables := []VirtualTable{{

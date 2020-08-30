@@ -50,7 +50,7 @@ func (co *Compiler) compileColumns(
 		// not a function
 		if fn.Name == "" {
 			if dbc, err := sel.Ti.GetColumnB(f.Name); err == nil {
-				sel.Cols = append(sel.Cols, Column{Col: dbc, FieldName: fname})
+				sel.addCol(Column{Col: dbc, FieldName: fname})
 			} else {
 				return err
 			}
@@ -82,10 +82,7 @@ func (co *Compiler) compileColumns(
 
 func (co *Compiler) addOrderByColumns(sel *Select) {
 	for _, ob := range sel.OrderBy {
-		if _, ok := sel.ColMap[ob.Col.Name]; !ok {
-			sel.Cols = append(sel.Cols, Column{Col: ob.Col, Base: true})
-			sel.ColMap[ob.Col.Name] = struct{}{}
-		}
+		sel.addCol(Column{Col: ob.Col, Base: true})
 	}
 }
 
@@ -97,57 +94,44 @@ func (co *Compiler) addRelColumns(qc *QCode, sel *Select) error {
 	rel := sel.Rel
 	psel := &qc.Selects[sel.ParentID]
 
-	var col1, col2 Column
-
 	switch rel.Type {
 	case sdata.RelOneToOne, sdata.RelOneToMany:
-		col1 = Column{Col: rel.Right.Col, Base: true}
+		psel.addCol(Column{Col: rel.Right.Col, Base: true})
 
 	case sdata.RelOneToManyThrough:
-		col1 = Column{Col: rel.Left.Col, Base: true}
+		psel.addCol(Column{Col: rel.Left.Col, Base: true})
 
 	case sdata.RelEmbedded:
-		col1 = Column{Col: rel.Left.Col, Base: true}
+		psel.addCol(Column{Col: rel.Left.Col, Base: true})
 
 	case sdata.RelRemote:
-		col1 = Column{Col: rel.Right.Col, Base: true}
+		psel.addCol(Column{Col: rel.Right.Col, Base: true})
 		sel.SkipRender = SkipTypeRemote
 
 	case sdata.RelPolymorphic:
-		col1 = Column{Col: rel.Left.Col, Base: true}
+		psel.addCol(Column{Col: rel.Left.Col, Base: true})
+
 		if v, err := rel.Left.Col.Ti.GetColumn(rel.Right.VTable); err == nil {
-			col2 = Column{Col: v, Base: true}
+			psel.addCol(Column{Col: v, Base: true})
 		} else {
 			return err
 		}
+
+	case sdata.RelRecursive:
+		sel.addCol(Column{Col: rel.Left.Col, Base: true})
+		sel.addCol(Column{Col: rel.Right.Col, Base: true})
 	}
 
-	if col1.Col != nil {
-		if _, ok := psel.ColMap[col1.Col.Name]; !ok {
-			psel.Cols = append(psel.Cols, col1)
-			psel.ColMap[col1.Col.Name] = struct{}{}
-		}
-	}
-
-	if col2.Col != nil {
-		if _, ok := psel.ColMap[col2.Col.Name]; !ok {
-			psel.Cols = append(psel.Cols, col2)
-			psel.ColMap[col2.Col.Name] = struct{}{}
-		}
-	}
 	return nil
 }
 
 func (co *Compiler) orderByIDCol(sel *Select) error {
 	idCol := sel.Ti.PrimaryCol
-	if idCol == nil {
-		return fmt.Errorf("table requires primary key: %s", sel.Ti.Name)
+	if idCol.Name == "" {
+		return fmt.Errorf("table requires primary key: %s", sel.Table)
 	}
 
-	if _, ok := sel.ColMap[idCol.Name]; !ok {
-		sel.Cols = append(sel.Cols, Column{Col: idCol, Base: true})
-		sel.ColMap[idCol.Name] = struct{}{}
-	}
+	sel.addCol(Column{Col: idCol, Base: true})
 
 	for _, ob := range sel.OrderBy {
 		if ob.Col.Name == idCol.Name {
@@ -165,17 +149,17 @@ func validateSelector(qc *QCode, sel *Select, tr trval) error {
 			return fmt.Errorf("column blocked: %s (%s)", col.Col.Name, tr.role)
 		}
 
-		if _, ok := sel.ColMap[col.FieldName]; ok {
-			return fmt.Errorf("duplicate field: %s", col.FieldName)
-		}
-		sel.ColMap[col.FieldName] = struct{}{}
+		// if _, ok := sel.ColMap[col.FieldName]; ok {
+		// 	return fmt.Errorf("duplicate field: %s", col.FieldName)
+		// }
+		// sel.ColMap[col.FieldName] = struct{}{}
 
-		if col.FieldName != col.Col.Name {
-			if _, ok := sel.ColMap[col.Col.Name]; ok {
-				return fmt.Errorf("duplicate column: %s", col.Col.Name)
-			}
-			sel.ColMap[col.Col.Name] = struct{}{}
-		}
+		// if col.FieldName != col.Col.Name {
+		// 	if _, ok := sel.ColMap[col.Col.Name]; ok {
+		// 		return fmt.Errorf("duplicate column: %s", col.Col.Name)
+		// 	}
+		// 	sel.ColMap[col.Col.Name] = struct{}{}
+		// }
 	}
 
 	if len(sel.Funcs) != 0 && tr.isFuncsBlocked() {
@@ -186,7 +170,7 @@ func validateSelector(qc *QCode, sel *Select, tr trval) error {
 		var blocked bool
 		var fnID string
 
-		if fn.Col != nil {
+		if fn.Col.Name != "" {
 			blocked = !tr.columnAllowed(qc, fn.Col.Name)
 			fnID = (fn.Name + fn.Col.Name)
 		} else {
@@ -202,15 +186,29 @@ func validateSelector(qc *QCode, sel *Select, tr trval) error {
 			if _, ok := sel.ColMap[fn.FieldName]; ok {
 				return fmt.Errorf("duplicate field: %s", fn.FieldName)
 			}
-			sel.ColMap[fn.FieldName] = struct{}{}
+			sel.ColMap[fn.FieldName] = -1
 		}
 
 		if fn.FieldName != fnID {
 			if _, ok := sel.ColMap[fnID]; ok {
 				return fmt.Errorf("duplicate function: %s(%s)", fn.Name, fn.Col.Name)
 			}
-			sel.ColMap[fnID] = struct{}{}
+			sel.ColMap[fnID] = -1
 		}
 	}
 	return nil
+}
+
+func (sel *Select) addCol(col Column) {
+	if i, ok := sel.ColMap[col.Col.Name]; ok {
+		// Replace column if re-added as not base only.
+		if i != -1 && !col.Base {
+			sel.Cols[i] = col
+		}
+
+	} else {
+		// Else its new and just add it to the map and columns
+		sel.Cols = append(sel.Cols, col)
+		sel.ColMap[col.Col.Name] = len(sel.Cols) - 1
+	}
 }

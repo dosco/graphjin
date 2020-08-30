@@ -6,7 +6,7 @@ func (ti *DBTableInfo) String() string {
 	return ti.Name
 }
 
-func (col *DBColumn) String() string {
+func (col DBColumn) String() string {
 	return col.Table + "." + col.Name
 }
 

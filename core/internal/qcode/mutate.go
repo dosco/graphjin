@@ -53,14 +53,14 @@ type Mutate struct {
 }
 
 type MColumn struct {
-	Col       *sdata.DBColumn
+	Col       sdata.DBColumn
 	FieldName string
 	Value     string
 }
 
 type MRColumn struct {
-	Col   *sdata.DBColumn
-	VCol  *sdata.DBColumn
+	Col   sdata.DBColumn
+	VCol  sdata.DBColumn
 	CType int
 }
 
@@ -73,7 +73,7 @@ func (co *Compiler) compileMutation(qc *QCode, op *graph.Operation, role string)
 	var ok bool
 
 	sel := &qc.Selects[0]
-	m := Mutate{Key: sel.Ti.Name, Ti: sel.Ti}
+	m := Mutate{Key: sel.Table, Ti: sel.Ti}
 
 	var whereReq bool
 
@@ -361,7 +361,7 @@ func getColumnsFromJSON(m Mutate, tr trval, cm map[string]struct{}) ([]MColumn, 
 			return nil, fmt.Errorf("column blocked: %s", k)
 		}
 
-		cols = append(cols, MColumn{Col: &m.Ti.Columns[i], FieldName: k})
+		cols = append(cols, MColumn{Col: m.Ti.Columns[i], FieldName: k})
 	}
 
 	// TODO: This is faster than the above

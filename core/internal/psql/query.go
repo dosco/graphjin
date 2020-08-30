@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/dosco/super-graph/core/internal/graph"
 	"github.com/dosco/super-graph/core/internal/qcode"
 	"github.com/dosco/super-graph/core/internal/sdata"
 	"github.com/dosco/super-graph/core/internal/util"
@@ -187,6 +188,9 @@ func (c *compilerContext) renderQuery(st *IntStack, multi bool) {
 				if sel.Rel != nil || multi {
 					c.renderLateralJoin()
 				}
+				if sel.Rel != nil && sel.Rel.Type == sdata.RelRecursive {
+					c.renderRecursiveCTE(sel)
+				}
 				c.renderPluralSelect(sel)
 				c.renderSelect(sel)
 			}
@@ -208,13 +212,7 @@ func (c *compilerContext) renderQuery(st *IntStack, multi bool) {
 
 		} else {
 			if sel.Type != qcode.SelTypeUnion {
-				c.w.WriteString(`)`)
-				aliasWithID(c.w, "__sr", sel.ID)
-
-				if !sel.Singular {
-					c.w.WriteString(`)`)
-					aliasWithID(c.w, "__sj", sel.ID)
-				}
+				c.renderSelectClose(sel)
 				if sel.Rel != nil || multi {
 					c.renderLateralJoinClose(sel)
 				}
@@ -252,7 +250,6 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 }
 
 func (c *compilerContext) renderSelect(sel *qcode.Select) {
-
 	c.w.WriteString(`SELECT to_jsonb("__sr_`)
 	int32String(c.w, sel.ID)
 	c.w.WriteString(`".*) `)
@@ -300,6 +297,16 @@ func (c *compilerContext) renderSelect(sel *qcode.Select) {
 	aliasWithID(c.w, sel.Table, sel.ID)
 }
 
+func (c *compilerContext) renderSelectClose(sel *qcode.Select) {
+	c.w.WriteString(`)`)
+	aliasWithID(c.w, "__sr", sel.ID)
+
+	if !sel.Singular {
+		c.w.WriteString(`)`)
+		aliasWithID(c.w, "__sj", sel.ID)
+	}
+}
+
 func (c *compilerContext) renderLateralJoin() {
 	c.w.WriteString(` LEFT OUTER JOIN LATERAL (`)
 }
@@ -333,10 +340,18 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select) {
 	c.renderBaseColumns(sel)
 	c.renderFrom(sel)
 	c.renderJoinTables(sel.Rel)
-	c.renderRelWhere(sel)
+
+	// Recursive base selects have no where clauses
+	if sel.Rel == nil || sel.Rel.Type != sdata.RelRecursive {
+		c.renderWhere(sel)
+	}
+
 	c.renderGroupBy(sel)
 	c.renderOrderBy(sel)
+	c.renderLimit(sel)
+}
 
+func (c *compilerContext) renderLimit(sel *qcode.Select) {
 	switch {
 	case sel.Paging.NoLimit:
 		break
@@ -357,10 +372,45 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select) {
 	}
 }
 
+func (c *compilerContext) renderRecursiveCTE(sel *qcode.Select) {
+	c.w.WriteString(`WITH RECURSIVE `)
+	quoted(c.w, sel.Rel.Right.VTable)
+	c.w.WriteString(` AS (`)
+	c.renderRecursiveBaseSelect(sel)
+	c.w.WriteString(`) `)
+}
+
+func (c *compilerContext) renderRecursiveBaseSelect(sel *qcode.Select) {
+	psel := &c.qc.Selects[sel.ParentID]
+
+	c.w.WriteString(`SELECT `)
+	c.renderBaseColumns(sel)
+	c.renderFrom(psel)
+	c.renderJoinTables(psel.Rel)
+	c.renderWhere(psel)
+
+	c.w.WriteString(` UNION ALL `)
+
+	c.w.WriteString(`SELECT `)
+	c.renderBaseColumns(sel)
+	c.renderFrom(psel)
+	c.w.WriteString(`, `)
+	quoted(c.w, sel.Rel.Right.VTable)
+	c.renderJoinTables(sel.Rel)
+	c.renderWhere(sel)
+}
+
 func (c *compilerContext) renderFrom(sel *qcode.Select) {
+	var rt sdata.RelType
+
+	if sel.Rel != nil {
+		rt = sel.Rel.Type
+	}
+
 	c.w.WriteString(` FROM `)
 
-	if sel.Rel != nil && sel.Rel.Type == sdata.RelEmbedded {
+	switch rt {
+	case sdata.RelEmbedded:
 		// jsonb_to_recordset('[{"a":1,"b":[1,2,3],"c":"bar"}, {"a":2,"b":[1,2,3],"c":"bar"}]') as x(a int, b text, d text);
 
 		c.w.WriteString(`"`)
@@ -372,7 +422,7 @@ func (c *compilerContext) renderFrom(sel *qcode.Select) {
 		colWithTable(c.w, sel.Rel.Left.Col.Table, sel.Rel.Right.Col.Name)
 		c.w.WriteString(`) AS `)
 
-		quoted(c.w, sel.Ti.Name)
+		quoted(c.w, sel.Table)
 
 		c.w.WriteString(`(`)
 		for i, col := range sel.Ti.Columns {
@@ -385,10 +435,14 @@ func (c *compilerContext) renderFrom(sel *qcode.Select) {
 		}
 		c.w.WriteString(`)`)
 
-	} else {
-		c.w.WriteString(`"`)
-		c.w.WriteString(sel.Table)
-		c.w.WriteString(`"`)
+	case sdata.RelRecursive:
+		c.w.WriteString(`(SELECT * FROM `)
+		quoted(c.w, sel.Rel.Right.VTable)
+		c.w.WriteString(` OFFSET 1) `)
+		quoted(c.w, sel.Table)
+
+	default:
+		quoted(c.w, sel.Table)
 	}
 
 	if sel.Paging.Cursor {
@@ -417,12 +471,20 @@ func (c *compilerContext) renderCursorCTE(sel *qcode.Select) {
 	c.w.WriteString(`, ',') as a) `)
 }
 
-func (c *compilerContext) renderRelWhere(sel *qcode.Select) {
-	var pid int32
+func (c *compilerContext) renderWhere(sel *qcode.Select) {
+	var rt sdata.RelType
 
-	if sel.Rel == nil && sel.Where.Exp == nil {
+	if sel.Rel != nil {
+		rt = sel.Rel.Type
+	}
+
+	if rt == sdata.RelNone && sel.Where.Exp == nil {
 		return
 	}
+
+	c.w.WriteString(` WHERE (`)
+
+	var pid int32
 
 	if sel.Type == qcode.SelTypeMember {
 		pid = sel.UParentID
@@ -430,24 +492,29 @@ func (c *compilerContext) renderRelWhere(sel *qcode.Select) {
 		pid = sel.ParentID
 	}
 
-	c.w.WriteString(` WHERE (`)
-
-	if sel.Rel != nil {
-		c.renderRel(sel.Ti, sel.Rel, pid)
-	}
-
-	if sel.Rel != nil && sel.Where.Exp != nil {
-		c.w.WriteString(` AND `)
+	if rt != sdata.RelNone {
+		c.renderRel(sel.Ti, sel.Rel, pid, sel.Args)
 	}
 
 	if sel.Where.Exp != nil {
+		if rt != sdata.RelNone {
+			c.w.WriteString(` AND `)
+		}
 		c.renderExp(c.qc.Schema, sel.Ti, sel.Where.Exp, false)
 	}
 
 	c.w.WriteString(`)`)
 }
 
-func (c *compilerContext) renderRel(ti *sdata.DBTableInfo, rel *sdata.DBRel, pid int32) {
+func (c *compilerContext) renderRel(
+	ti *sdata.DBTableInfo,
+	rel *sdata.DBRel,
+	pid int32,
+	args map[string]*graph.Node) {
+
+	if rel.Type == sdata.RelNone {
+		return
+	}
 	c.w.WriteString(`((`)
 
 	switch rel.Type {
@@ -507,6 +574,18 @@ func (c *compilerContext) renderRel(ti *sdata.DBTableInfo, rel *sdata.DBRel, pid
 		colWithTableID(c.w, rel.Left.Col.Table, pid, rel.Right.VTable)
 		c.w.WriteString(`) = (`)
 		squoted(c.w, ti.Name)
+
+	case sdata.RelRecursive:
+		if v, ok := args["find"]; ok && v.Val == "parents" {
+			colWithTable(c.w, rel.Left.Col.Table, rel.Right.Col.Name)
+			c.w.WriteString(`) = (`)
+			colWithTable(c.w, rel.Right.VTable, rel.Left.Col.Name)
+
+		} else {
+			colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
+			c.w.WriteString(`) = (`)
+			colWithTable(c.w, rel.Right.VTable, rel.Right.Col.Name)
+		}
 	}
 	c.w.WriteString(`))`)
 }
@@ -585,7 +664,7 @@ func (c *compilerContext) renderNestedWhere(
 		c.w.WriteString(rel.Left.Col.Table)
 		c.renderJoinTables(rel)
 		c.w.WriteString(` WHERE `)
-		c.renderRel(ti, rel, -1)
+		c.renderRel(ti, rel, -1, nil)
 		c.w.WriteString(` AND (`)
 		c.renderExp(schema, rel.Left.Col.Ti, ex, true)
 		c.w.WriteString(`)`)
@@ -601,7 +680,7 @@ func (c *compilerContext) renderOp(schema *sdata.DBSchema, ti *sdata.DBTableInfo
 		return
 	}
 
-	if ex.Col != nil {
+	if ex.Col.Name != "" {
 		c.w.WriteString(`((`)
 		if ex.Type == qcode.ValRef && ex.Op == qcode.OpIsNull {
 			colWithTable(c.w, ex.Table, ex.Col.Name)
@@ -696,7 +775,7 @@ func (c *compilerContext) renderGroupBy(sel *qcode.Select) {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
-		colWithTable(c.w, sel.Ti.Name, col.Col.Name)
+		colWithTable(c.w, sel.Table, col.Col.Name)
 	}
 }
 
@@ -709,7 +788,7 @@ func (c *compilerContext) renderOrderBy(sel *qcode.Select) {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
-		colWithTable(c.w, sel.Ti.Name, col.Col.Name)
+		colWithTable(c.w, sel.Table, col.Col.Name)
 
 		switch col.Order {
 		case qcode.OrderAsc:
@@ -737,7 +816,7 @@ func (c *compilerContext) renderDistinctOn(sel *qcode.Select) {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
-		colWithTable(c.w, sel.Ti.Name, col.Name)
+		colWithTable(c.w, sel.Table, col.Name)
 	}
 	c.w.WriteString(`) `)
 }

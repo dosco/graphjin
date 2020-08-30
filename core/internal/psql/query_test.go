@@ -522,6 +522,40 @@ func jsonColumnAsTable(t *testing.T) {
 	compileGQLToPSQL(t, gql, nil, "admin")
 }
 
+func recursiveTableParents(t *testing.T) {
+	gql := `query {
+		reply : comment(id: $id) {
+			id
+			comments(find: "parents") {
+				id
+			}
+		}
+	}`
+
+	vars := map[string]json.RawMessage{
+		"id": json.RawMessage(`2`),
+	}
+
+	compileGQLToPSQL(t, gql, vars, "user")
+}
+
+func recursiveTableChildren(t *testing.T) {
+	gql := `query {
+		comment(id: $id) {
+			id
+			replies: comments(find: "children") {
+				id
+			}
+		}
+	}`
+
+	vars := map[string]json.RawMessage{
+		"id": json.RawMessage(`6`),
+	}
+
+	compileGQLToPSQL(t, gql, vars, "user")
+}
+
 func nullForAuthRequiredInAnon(t *testing.T) {
 	gql := `query {
 		products {
@@ -591,6 +625,8 @@ func TestCompileQuery(t *testing.T) {
 	t.Run("remoteJoin", remoteJoin)
 	// t.Run("withInlineFragment", withInlineFragment)
 	t.Run("jsonColumnAsTable", jsonColumnAsTable)
+	t.Run("recursiveTableParents", recursiveTableParents)
+	t.Run("recursiveTableChildren", recursiveTableChildren)
 	t.Run("withCursor", withCursor)
 	t.Run("nullForAuthRequiredInAnon", nullForAuthRequiredInAnon)
 	t.Run("blockedQuery", blockedQuery)

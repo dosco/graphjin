@@ -17,7 +17,7 @@ func (co *Compiler) isFunction(sel *Select, fname string) (Function, bool, error
 		fn.Name = "search_rank"
 		fn.Col = sel.Ti.TSVCol
 
-		if fn.Col == nil {
+		if fn.Col.Name == "" {
 			return fn, false, fmt.Errorf("no tsvector column found: %s", fname)
 		}
 		if _, ok := sel.Args["search"]; !ok {
@@ -29,7 +29,7 @@ func (co *Compiler) isFunction(sel *Select, fname string) (Function, bool, error
 		fn.Col = sel.Ti.TSVCol
 		cn = fname[16:]
 
-		if fn.Col == nil {
+		if fn.Col.Name == "" {
 			return fn, false, fmt.Errorf("no tsvector column found: %s", fname)
 		}
 		if _, ok := sel.Args["search"]; !ok {

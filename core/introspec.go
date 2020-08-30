@@ -264,8 +264,9 @@ func (sg *SuperGraph) initGraphQLEgine() error {
 				Type: &schema.TypeName{Name: "String"},
 			},
 		}
-		if ti.PrimaryCol != nil {
-			t := gqltype(*ti.PrimaryCol)
+
+		if ti.PrimaryCol.Name != "" {
+			t := gqltype(ti.PrimaryCol)
 			if _, ok := t.(*schema.NonNull); !ok {
 				t = &schema.NonNull{OfType: t}
 			}
@@ -276,7 +277,7 @@ func (sg *SuperGraph) initGraphQLEgine() error {
 			})
 		}
 
-		if ti.TSVCol != nil {
+		if ti.TSVCol.Name != "" {
 			args = append(args, &schema.InputValue{
 				Desc: schema.Description{Text: "Performs full text search using a TSV index"},
 				Name: "search",

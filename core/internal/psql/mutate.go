@@ -278,15 +278,15 @@ func (c *compilerContext) renderDelete() {
 	sel := c.qc.Selects[0]
 
 	c.w.WriteString(`WITH `)
-	quoted(c.w, sel.Ti.Name)
+	quoted(c.w, sel.Table)
 
 	c.w.WriteString(` AS (DELETE FROM `)
-	quoted(c.w, sel.Ti.Name)
+	quoted(c.w, sel.Table)
 	c.w.WriteString(` WHERE `)
 	c.renderExp(c.qc.Schema, sel.Ti, sel.Where.Exp, false)
 
 	c.w.WriteString(` RETURNING `)
-	quoted(c.w, sel.Ti.Name)
+	quoted(c.w, sel.Table)
 	c.w.WriteString(`.*) `)
 }
 
@@ -334,6 +334,7 @@ func (c *compilerContext) renderDisconnectStmt(m qcode.Mutate) {
 	if rel.Type != sdata.RelOneToOne {
 		return
 	}
+
 	c.w.WriteString(`, "_x_`)
 	c.w.WriteString(m.Ti.Name)
 	c.w.WriteString(`" AS (`)
