@@ -7,7 +7,9 @@
     "build": "docusaurus build",
     "swizzle": "docusaurus swizzle",
     "deploy": "docusaurus deploy",
-    "buildcss": "npx tailwindcss build styles.css -o src/css/tailwind.css"
+    "buildcss": "npx tailwindcss build styles.css -o src/css/tailwind.css",
+    "prebuild": "yarn buildcss",
+    "prestart": "yarn buildcss"
   },
   "dependencies": {
     "@docusaurus/core": "^2.0.0-alpha.58",

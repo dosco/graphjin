@@ -2,7 +2,7 @@ const remarkImages = require("remark-images");
 
 module.exports = {
   title: "Super Graph",
-  tagline: "Fetch data with GraphQL. Built in Go",
+  tagline: "Fetch data with GraphQL without code. Built in Go",
   url: "https://supergraph.dev",
   baseUrl: "/",
   favicon: "img/super-graph-logo.svg",

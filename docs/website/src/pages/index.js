@@ -1,9 +1,9 @@
 import React from "react";
-import { Redirect } from "@docusaurus/router";
 import Layout from "@theme/Layout";
 import Button from "./components/Button";
 import Card from "./components/Card";
 import GitHubButton from "react-github-btn";
+import "../css/tailwind.css";
 
 const HomeContent = () => {
   return (
@@ -13,20 +13,16 @@ const HomeContent = () => {
           <div>
             <h1 className="font-extrabold">Super Graph</h1>
             <h3 className="font-semibold">
-              Fetch data with GraphQL. 100X your productivity.
+              Fetch data with GraphQL. Be 100X more productive
             </h3>
             <p>
-              APIs change often don't waste time struggling with code and SQL
-              just ask for what you need in simple GraphQL.
+              APIs change often don't waste time struggling with code and
+              complex SQL. Instead fetch data with simple GraphQL
             </p>
 
-            <p className="text-sm">
+            <small className="pt-4">
               Super Graph is a high-performance GO library and standalone
               service.
-            </p>
-            <small className="pt-4">
-              Works with <span className="underline">Postgres</span> and{" "}
-              <span className="underline">YugabyteDB</span>
             </small>
           </div>
 
@@ -67,7 +63,7 @@ const HomeContent = () => {
           />
           <Card
             title="Database discovery"
-            description="Just point it at your database and we're good to go. Auto discover of schemas and relationships"
+            description="Just point at adatabase and we're good to go. Works with Postgres and the distributed Yugabyte DB"
           />
         </div>
         <div className="flex flex-wrap">
@@ -76,8 +72,8 @@ const HomeContent = () => {
             description="An allow list controls what queries run in production. Additionally role and attribute based access control can be used"
           />
           <Card
-            title="Infinite Pagination"
-            description="Efficient cursor based pagination to implement fast infinite scroll style features"
+            title="Built fast"
+            description="Out of the box support for infinite scroll, threaded comments, activity feed and othr common app patterns"
           />
           <Card
             title="Full-text search"
