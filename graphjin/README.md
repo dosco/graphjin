@@ -1,6 +1,6 @@
 <img src="docs/website/static/img/super-graph-logo.svg" width="80" />
 
-# Super Graph - Fetch data without code!
+# Super Graph - Fetch data with GraphQL
 
 [![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=flat-square&logo=appveyor)](https://pkg.go.dev/github.com/dosco/super-graph/core?tab=doc)
 [![GoReport](https://goreportcard.com/badge/github.com/gojp/goreportcard?style=flat-square)](https://goreportcard.com/report/github.com/dosco/super-graph)
