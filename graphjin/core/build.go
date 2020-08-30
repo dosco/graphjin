@@ -115,6 +115,10 @@ func (sg *SuperGraph) buildMultiStmt(cq *cquery) error {
 		}
 	}
 
+	if cq.q.op == qcode.QTSubscription {
+		md.Poll = true
+	}
+
 	cq.stmts = make([]stmt, 0, len(sg.conf.Roles))
 	w := &bytes.Buffer{}
 
@@ -177,7 +181,7 @@ func (sg *SuperGraph) renderUserQuery(md *psql.Metadata, stmts []stmt) (string, 
 		w.WriteString(`) `)
 	}
 
-	w.WriteString(`END) FROM (SELECT (CASE WHEN EXISTS (`)
+	w.WriteString(`END) as "__root" FROM (SELECT (CASE WHEN EXISTS (`)
 	md.RenderVar(w, sg.conf.RolesQuery)
 	w.WriteString(`) THEN `)
 
@@ -196,7 +200,7 @@ func (sg *SuperGraph) renderUserQuery(md *psql.Metadata, stmts []stmt) (string, 
 	w.WriteString(` ELSE 'user' END) FROM (`)
 	md.RenderVar(w, sg.conf.RolesQuery)
 	w.WriteString(`) AS "_sg_auth_roles_query" LIMIT 1) `)
-	w.WriteString(`ELSE 'anon' END) FROM (VALUES (1)) AS "_sg_auth_filler") AS "_sg_auth_info"(role) LIMIT 1; `)
+	w.WriteString(`ELSE 'anon' END) FROM (VALUES (1)) AS "_sg_auth_filler") AS "_sg_auth_info"(role) LIMIT 1 `)
 
 	return w.String(), nil
 }
