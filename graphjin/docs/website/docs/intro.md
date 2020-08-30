@@ -14,6 +14,7 @@ Super Graph has a rich feature set like integrating with your existing Ruby on R
 
 - Complex nested queries and mutations
 - Build realtime apps with subscriptions
+- Instant infinite scroll, feeds, nested comments, etc
 - Auto learns database tables and relationships
 - Role and Attribute-based access control
 - Opaque cursor-based efficient pagination

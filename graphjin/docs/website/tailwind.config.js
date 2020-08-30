@@ -1,6 +1,10 @@
 module.exports = {
+  corePlugins: {
+    preflight: false,
+  },
   purge: {
-    content: ["./pages/index.js"],
+    enabled: true,
+    content: ["./src/pages/*.js", "./src/pages/components/*.jsx"],
     options: {
       whitelist: ["dark"],
     },

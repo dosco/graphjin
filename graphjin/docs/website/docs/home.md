@@ -6,7 +6,6 @@ sidebar_label: Home
 ---
 
 import useBaseUrl from '@docusaurus/useBaseUrl'; // Add to the top of the file below the front matter.
-import "../src/css/tailwind.css";
 
 <div class="hero shadow--lw margin-bottom--lg">
   <div class="container">
