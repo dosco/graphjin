@@ -37,7 +37,7 @@ func (sg *SuperGraph) initRemotes(t Table) error {
 	for _, r := range t.Remotes {
 		// Defines the table column to be used as an id in the
 		// remote reques
-		var col *sdata.DBColumn
+		var col sdata.DBColumn
 
 		ti, err := sg.schema.GetTableInfo(t.Name)
 		if err != nil {

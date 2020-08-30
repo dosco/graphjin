@@ -8,22 +8,23 @@ func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
 	// Re-run the stringer command to generate them again.
 	var x [1]struct{}
+	_ = x[RelNone-0]
 	_ = x[RelOneToOne-1]
 	_ = x[RelOneToMany-2]
 	_ = x[RelOneToManyThrough-3]
 	_ = x[RelPolymorphic-4]
-	_ = x[RelEmbedded-5]
-	_ = x[RelRemote-6]
+	_ = x[RelRecursive-5]
+	_ = x[RelEmbedded-6]
+	_ = x[RelRemote-7]
 }
 
-const _RelType_name = "RelOneToOneRelOneToManyRelOneToManyThroughRelPolymorphicRelEmbeddedRelRemote"
+const _RelType_name = "RelNoneRelOneToOneRelOneToManyRelOneToManyThroughRelPolymorphicRelRecursiveRelEmbeddedRelRemote"
 
-var _RelType_index = [...]uint8{0, 11, 23, 42, 56, 67, 76}
+var _RelType_index = [...]uint8{0, 7, 18, 30, 49, 63, 75, 86, 95}
 
 func (i RelType) String() string {
-	i -= 1
 	if i < 0 || i >= RelType(len(_RelType_index)-1) {
-		return "RelType(" + strconv.FormatInt(int64(i+1), 10) + ")"
+		return "RelType(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
 	return _RelType_name[_RelType_index[i]:_RelType_index[i+1]]
 }

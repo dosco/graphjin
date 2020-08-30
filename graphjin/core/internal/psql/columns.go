@@ -92,7 +92,7 @@ func (c *compilerContext) renderUnionColumn(sel, csel *qcode.Select) {
 		c.w.WriteString(`WHEN `)
 		colWithTableID(c.w, sel.Table, sel.ID, csel.Rel.Right.VTable)
 		c.w.WriteString(` = `)
-		squoted(c.w, usel.Ti.Name)
+		squoted(c.w, usel.Table)
 		c.w.WriteString(` THEN `)
 		c.w.WriteString(`"__sj_`)
 		int32String(c.w, usel.ID)
@@ -103,7 +103,7 @@ func (c *compilerContext) renderUnionColumn(sel, csel *qcode.Select) {
 }
 
 func (c *compilerContext) renderRemoteRelColumns(sel, csel *qcode.Select) {
-	colWithTableID(c.w, sel.Ti.Name, sel.ID, csel.Rel.Left.Col.Name)
+	colWithTableID(c.w, sel.Table, sel.ID, csel.Rel.Left.Col.Name)
 	alias(c.w, csel.Rel.Right.VTable)
 }
 
@@ -124,7 +124,7 @@ func (c *compilerContext) renderFunctionSearchRank(sel *qcode.Select, fn qcode.F
 	arg := sel.Args["search"]
 
 	c.w.WriteString(`ts_rank(`)
-	colWithTable(c.w, sel.Ti.Name, cn)
+	colWithTable(c.w, sel.Table, cn)
 	if sel.Ti.Schema.DBVersion() >= 110000 {
 		c.w.WriteString(`, websearch_to_tsquery(`)
 	} else {
@@ -138,7 +138,7 @@ func (c *compilerContext) renderFunctionSearchHeadline(sel *qcode.Select, fn qco
 	arg := sel.Args["search"]
 
 	c.w.WriteString(`ts_headline(`)
-	colWithTable(c.w, sel.Ti.Name, fn.Col.Name)
+	colWithTable(c.w, sel.Table, fn.Col.Name)
 	if sel.Ti.Schema.DBVersion() >= 110000 {
 		c.w.WriteString(`, websearch_to_tsquery(`)
 	} else {
@@ -151,17 +151,18 @@ func (c *compilerContext) renderFunctionSearchHeadline(sel *qcode.Select, fn qco
 func (c *compilerContext) renderOtherFunction(sel *qcode.Select, fn qcode.Function) {
 	c.w.WriteString(fn.Name)
 	c.w.WriteString(`(`)
-	colWithTable(c.w, sel.Ti.Name, fn.Col.Name)
+	colWithTable(c.w, sel.Table, fn.Col.Name)
 	_, _ = c.w.WriteString(`)`)
 }
 
 func (c *compilerContext) renderBaseColumns(sel *qcode.Select) {
 	i := 0
+
 	for _, col := range sel.Cols {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
-		colWithTable(c.w, sel.Ti.Name, col.Col.Name)
+		colWithTable(c.w, sel.Table, col.Col.Name)
 		i++
 	}
 	for _, fn := range sel.Funcs {
@@ -175,6 +176,6 @@ func (c *compilerContext) renderBaseColumns(sel *qcode.Select) {
 
 func (c *compilerContext) renderTypename(sel *qcode.Select) {
 	c.w.WriteString(`(`)
-	squoted(c.w, sel.Ti.Name)
+	squoted(c.w, sel.Table)
 	c.w.WriteString(` :: text) AS "__typename"`)
 }

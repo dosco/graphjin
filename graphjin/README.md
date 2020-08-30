@@ -87,6 +87,7 @@ This compiler is what sits at the heart of Super Graph, with layers of useful fu
 
 - Complex nested queries and mutations
 - Realtime updates with subscriptions
+- Build infinite scroll, feeds, nested comments, etc
 - Auto learns database tables and relationships
 - Role and Attribute-based access control
 - Opaque cursor-based efficient pagination
