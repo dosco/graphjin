@@ -134,7 +134,6 @@ func (c *scontext) execQuery(query string, vars []byte, role string) (qres, erro
 func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, error) {
 	var res qres
 
-	urq := c.sg.abacEnabled && c.op == qcode.QTMutation // userRoleQuery
 	rq := rquery{op: c.op, name: c.name, query: []byte(query), vars: vars}
 	cq := &cquery{q: rq}
 	res.q = cq
@@ -154,7 +153,8 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 
 	if v := c.Value(UserRoleKey); v != nil {
 		res.role = v.(string)
-	} else if urq {
+
+	} else if c.sg.abacEnabled && c.op == qcode.QTMutation {
 		res.role, err = c.executeRoleQuery(conn, res.role)
 	}
 
