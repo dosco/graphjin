@@ -97,6 +97,9 @@ func (sg *SuperGraph) initConfig() error {
 				n++
 			}
 		}
+
+		// More than 2 roles tell us that custom roles have been added
+		// hence ABAC is handled
 		sg.abacEnabled = (n > 2)
 
 		if !sg.abacEnabled {

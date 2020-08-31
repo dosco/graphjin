@@ -48,7 +48,7 @@ func (sg *SuperGraph) compileQueryFn(cq *cquery, role string) error {
 
 	switch cq.q.op {
 	case qcode.QTQuery, qcode.QTSubscription:
-		if sg.abacEnabled {
+		if sg.abacEnabled && role == "user" {
 			err = sg.buildMultiStmt(cq)
 		} else {
 			err = sg.buildRoleStmt(cq, role)

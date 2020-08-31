@@ -74,6 +74,7 @@ func apiV1Ws(servConf *ServConfig, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.Close()
+	conn.SetReadLimit(2048)
 
 	var msg gqlWsReq
 	var b []byte
@@ -85,6 +86,7 @@ func apiV1Ws(servConf *ServConfig, w http.ResponseWriter, r *http.Request) {
 			servConf.log.Println(err)
 			break
 		}
+
 		if err = json.Unmarshal(b, &msg); err != nil {
 			servConf.log.Println(err)
 			continue
@@ -93,23 +95,32 @@ func apiV1Ws(servConf *ServConfig, w http.ResponseWriter, r *http.Request) {
 		switch msg.Type {
 		case "connection_init":
 			var initReq wsConnInit
-			if err = json.Unmarshal(b, &initReq); err != nil {
+
+			d := json.NewDecoder(bytes.NewReader(b))
+			d.UseNumber()
+
+			if err = d.Decode(&initReq); err != nil {
 				servConf.log.Println(err)
 				break
 			}
 
-			handler, _ := auth.WithAuth(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			hfn := func(writer http.ResponseWriter, request *http.Request) {
 				ctx = request.Context()
 				err = conn.WritePreparedMessage(initMsg)
-			}), &servConf.conf.Auth)
+			}
+
+			handler, _ := auth.WithAuth(http.HandlerFunc(hfn), &servConf.conf.Auth)
 
 			if err != nil {
 				break
 			}
 
 			for k, v := range initReq.Payload {
-				if v1, ok := v.(string); ok {
+				switch v1 := v.(type) {
+				case string:
 					r.Header.Set(k, v1)
+				case json.Number:
+					r.Header.Set(k, v1.String())
 				}
 			}
 			handler.ServeHTTP(w, r)
