@@ -1,5 +1,7 @@
 module github.com/dosco/super-graph
 
+replace github.com/gobuffalo/flect => github.com/renathoaz/flect v0.2.1
+
 require (
 	cloud.google.com/go v0.60.0 // indirect
 	contrib.go.opencensus.io/exporter/aws v0.0.0-20200617204711-c478e41e60e9
