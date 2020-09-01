@@ -25,7 +25,7 @@ const (
 type firebasePKCache struct {
 	PublicKeys map[string]string
 	Expiration time.Time
-	lock sync.RWMutex
+	lock       sync.RWMutex
 }
 
 var firebasePublicKeys = firebasePKCache{
@@ -157,7 +157,9 @@ func firebaseKeyFunction(token *jwt.Token) (interface{}, error) {
 		}
 	}
 
+	firebasePublicKeys.lock.RLock()
 	if firebasePublicKeys.Expiration.Before(time.Now()) {
+		firebasePublicKeys.lock.RUnlock()
 		resp, err := http.Get(firebasePKEndpoint)
 
 		if err != nil {
@@ -207,7 +209,6 @@ func firebaseKeyFunction(token *jwt.Token) (interface{}, error) {
 
 		firebasePublicKeys.lock.Lock()
 		err = json.Unmarshal(data, &firebasePublicKeys.PublicKeys)
-		firebasePublicKeys.lock.Unlock()
 
 		if err != nil {
 			return nil, &firebaseKeyError{
@@ -217,6 +218,7 @@ func firebaseKeyFunction(token *jwt.Token) (interface{}, error) {
 		}
 
 		firebasePublicKeys.Expiration = expiration
+		firebasePublicKeys.lock.Unlock()
 	}
 
 	firebasePublicKeys.lock.RLock()
