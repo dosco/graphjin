@@ -219,8 +219,8 @@ func firebaseKeyFunction(token *jwt.Token) (interface{}, error) {
 		firebasePublicKeys.Expiration = expiration
 	}
 
-	firebasePublicKeys.lock.Lock()
-	defer firebasePublicKeys.lock.Unlock()
+	firebasePublicKeys.lock.RLock()
+	defer firebasePublicKeys.lock.RUnlock()
 	if key, found := firebasePublicKeys.PublicKeys[kid.(string)]; found {
 		k, err := jwt.ParseRSAPublicKeyFromPEM([]byte(key))
 		return k, err
