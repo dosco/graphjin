@@ -298,7 +298,7 @@ query {
 }
 ```
 
-## Fetch the discuessions about a product
+## Fetch the discussion about a product
 
 ```graphql
 query {

@@ -405,6 +405,10 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 			}
 		}
 
+		if err := co.validateSelect(sel); err != nil {
+			return err
+		}
+
 		qc.Selects = append(qc.Selects, s1)
 		id++
 	}
@@ -602,6 +606,19 @@ func (co *Compiler) compileArgs(qc *QCode, sel *Select, args []graph.Arg, role s
 		}
 	}
 
+	return nil
+}
+
+func (co *Compiler) validateSelect(sel *Select) error {
+	if sel.Rel.Type == sdata.RelRecursive {
+		v, ok := sel.ArgMap["find"]
+		if !ok {
+			return fmt.Errorf("arguments: 'find' needed for recursive queries")
+		}
+		if v.Val != "parents" && v.Val != "children" {
+			return fmt.Errorf("find: valid values are 'parents' and 'children'")
+		}
+	}
 	return nil
 }
 
