@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	jwt "github.com/dgrijalva/jwt-go"
@@ -24,9 +25,12 @@ const (
 type firebasePKCache struct {
 	PublicKeys map[string]string
 	Expiration time.Time
+	lock sync.RWMutex
 }
 
-var firebasePublicKeys firebasePKCache
+var firebasePublicKeys = firebasePKCache{
+	lock: sync.RWMutex{},
+}
 
 func JwtHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 	var key interface{}
@@ -201,10 +205,11 @@ func firebaseKeyFunction(token *jwt.Token) (interface{}, error) {
 
 		expiration := time.Now().Add(time.Duration(time.Duration(age) * time.Second))
 
+		firebasePublicKeys.lock.Lock()
 		err = json.Unmarshal(data, &firebasePublicKeys.PublicKeys)
+		firebasePublicKeys.lock.Unlock()
 
 		if err != nil {
-			firebasePublicKeys = firebasePKCache{}
 			return nil, &firebaseKeyError{
 				Message: "Error unmarshalling firebase public key json",
 				Err:     err,
@@ -214,6 +219,8 @@ func firebaseKeyFunction(token *jwt.Token) (interface{}, error) {
 		firebasePublicKeys.Expiration = expiration
 	}
 
+	firebasePublicKeys.lock.Lock()
+	defer firebasePublicKeys.lock.Unlock()
 	if key, found := firebasePublicKeys.PublicKeys[kid.(string)]; found {
 		k, err := jwt.ParseRSAPublicKeyFromPEM([]byte(key))
 		return k, err
