@@ -169,8 +169,10 @@ database:
   # client_key: ./client-key.pem
 
 # Define additional variables here to be used with filters
+# Variables used require a type suffix eg. $user_id:bigint
 variables:
   admin_account_id: "5"
+  # admin_account_id: "sql:select id from users where admin = true limit 1
 
 # Field and table names that you wish to block
 blocklist:
@@ -212,7 +214,8 @@ tables:
     name: me
     table: users
 
-roles_query: "SELECT * FROM users WHERE id = $user_id"
+# Variables used require a type suffix eg. $user_id:bigint
+roles_query: "SELECT * FROM users WHERE id = $user_id:bigint"
 
 roles:
   - name: anon

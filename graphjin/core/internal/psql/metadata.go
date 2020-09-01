@@ -2,6 +2,7 @@ package psql
 
 import (
 	"bytes"
+	"strings"
 )
 
 func (md *Metadata) RenderVar(w *bytes.Buffer, vv string) {
@@ -22,14 +23,16 @@ func (md *Metadata) RenderVar(w *bytes.Buffer, vv string) {
 			v != '_' &&
 			f != -1 &&
 			(i-f) > 1:
-			md.renderParam(w, Param{Name: vv[f+1 : i]})
+			name, _type := parseVar(vv[f+1 : i])
+			md.renderParam(w, Param{Name: name, Type: _type})
 			s = i
 			f = -1
 		}
 	}
 
 	if f != -1 && (len(vv)-f) > 1 {
-		md.renderParam(w, Param{Name: vv[f+1:]})
+		name, _type := parseVar(vv[f+1:])
+		md.renderParam(w, Param{Name: name, Type: _type})
 	} else {
 		_, _ = w.WriteString(vv[s:])
 	}
@@ -71,4 +74,15 @@ func (md Metadata) Remotes() int {
 
 func (md Metadata) Params() []Param {
 	return md.params
+}
+
+func parseVar(v string) (string, string) {
+	dt := "text"
+	if n := strings.IndexByte(v, ':'); n != -1 {
+		if t := v[n+1:]; t != "" {
+			return v[:n], t
+		}
+		return v[:n], dt
+	}
+	return v, dt
 }

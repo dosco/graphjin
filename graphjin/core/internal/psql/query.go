@@ -557,17 +557,21 @@ func (c *compilerContext) renderRel(
 		squoted(c.w, ti.Name)
 
 	case sdata.RelRecursive:
-		if v, ok := args["find"]; ok && v.Val == "parents" {
-			colWithTable(c.w, rel.Left.Col.Table, rel.Right.Col.Name)
-			c.w.WriteString(`) = (`)
-			colWithTable(c.w, rel.Right.VTable, rel.Left.Col.Name)
+		if v, ok := args["find"]; ok {
+			switch v.Val {
+			case "parents":
+				colWithTable(c.w, rel.Left.Col.Table, rel.Right.Col.Name)
+				c.w.WriteString(`) = (`)
+				colWithTable(c.w, rel.Right.VTable, rel.Left.Col.Name)
 
-		} else {
-			colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
-			c.w.WriteString(`) = (`)
-			colWithTable(c.w, rel.Right.VTable, rel.Right.Col.Name)
+			default:
+				colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
+				c.w.WriteString(`) = (`)
+				colWithTable(c.w, rel.Right.VTable, rel.Right.Col.Name)
+			}
 		}
 	}
+
 	c.w.WriteString(`))`)
 }
 

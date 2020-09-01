@@ -72,7 +72,7 @@ const HomeContent = () => {
             description="An allow list controls what queries run in production. Additionally role and attribute based access control can be used"
           />
           <Card
-            title="Built fast"
+            title="Build fast"
             description="Out of the box support for infinite scroll, threaded comments, activity feed and othr common app patterns"
           />
           <Card
