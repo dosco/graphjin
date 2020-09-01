@@ -211,6 +211,7 @@ func firebaseKeyFunction(token *jwt.Token) (interface{}, error) {
 		err = json.Unmarshal(data, &firebasePublicKeys.PublicKeys)
 
 		if err != nil {
+			firebasePublicKeys.lock.Unlock()
 			return nil, &firebaseKeyError{
 				Message: "Error unmarshalling firebase public key json",
 				Err:     err,
