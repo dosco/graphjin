@@ -15,6 +15,7 @@ func (sg *SuperGraph) initConfig() error {
 
 	for k, v := range c.Inflections {
 		flect.AddPlural(k, v)
+		flect.AddSingular(v, k)
 	}
 
 	// Tables: Validate and sanitize

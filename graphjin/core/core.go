@@ -155,7 +155,7 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 		res.role = v.(string)
 
 	} else if c.sg.abacEnabled && c.op == qcode.QTMutation {
-		res.role, err = c.executeRoleQuery(conn, res.role)
+		res.role, err = c.executeRoleQuery(conn)
 	}
 
 	if err != nil {
@@ -219,13 +219,20 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 	return res, nil
 }
 
-func (c *scontext) executeRoleQuery(conn *sql.Conn, role string) (string, error) {
-	uid := c.Value(UserIDKey)
-	if uid == nil {
+func (c *scontext) executeRoleQuery(conn *sql.Conn) (string, error) {
+	var role string
+	var ar args
+	var err error
+
+	if c.Value(UserIDKey) == nil {
 		return "anon", nil
 	}
 
-	err := conn.QueryRowContext(c, c.sg.roleStmt, uid, role).Scan(&role)
+	if ar, err = c.sg.roleQueryArgList(c); err != nil {
+		return "", err
+	}
+
+	err = conn.QueryRowContext(c, c.sg.roleStmt, ar.values...).Scan(&role)
 	return role, err
 }
 
