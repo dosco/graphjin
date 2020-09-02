@@ -90,6 +90,7 @@ type SuperGraph struct {
 	queries     map[string]*cquery
 	roles       map[string]*Role
 	roleStmt    string
+	roleStmtMD  psql.Metadata
 	rmap        map[uint64]resolvFn
 	abacEnabled bool
 	qc          *qcode.Compiler

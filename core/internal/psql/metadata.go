@@ -5,6 +5,7 @@ import (
 	"strings"
 )
 
+// nolint: errcheck
 func (md *Metadata) RenderVar(w *bytes.Buffer, vv string) {
 	f, s := -1, 0
 
@@ -13,37 +14,41 @@ func (md *Metadata) RenderVar(w *bytes.Buffer, vv string) {
 		switch {
 		case (i > 0 && vv[i-1] != '\\' && v == '$') || v == '$':
 			if (i - s) > 0 {
-				_, _ = w.WriteString(vv[s:i])
+				w.WriteString(vv[s:i])
 			}
 			f = i
 
-		case (v < 'a' && v > 'z') &&
-			(v < 'A' && v > 'Z') &&
-			(v < '0' && v > '9') &&
+		case f != -1 &&
+			!(v >= 'a' && v <= 'z') &&
+			!(v >= 'A' && v <= 'Z') &&
+			!(v >= '0' && v <= '9') &&
 			v != '_' &&
-			f != -1 &&
-			(i-f) > 1:
+			v != ':':
 			name, _type := parseVar(vv[f+1 : i])
 			md.renderParam(w, Param{Name: name, Type: _type})
 			s = i
 			f = -1
+
+		case f != -1 && i == (len(vv)-1):
+			name, _type := parseVar(vv[f+1 : i+1])
+			md.renderParam(w, Param{Name: name, Type: _type})
+			s = i + 1
+			f = -1
 		}
 	}
 
-	if f != -1 && (len(vv)-f) > 1 {
-		name, _type := parseVar(vv[f+1:])
-		md.renderParam(w, Param{Name: name, Type: _type})
-	} else {
-		_, _ = w.WriteString(vv[s:])
+	if f == -1 && s != len(vv) {
+		w.WriteString(vv[s:])
 	}
 }
 
+// nolint: errcheck
 func (md *Metadata) renderParam(w *bytes.Buffer, p Param) {
 	var id int
 	var ok bool
 
 	if !md.Poll {
-		_, _ = w.WriteString(`$`)
+		w.WriteString(`$`)
 	}
 
 	if id, ok = md.pindex[p.Name]; !ok {

@@ -36,11 +36,10 @@ func (sg *SuperGraph) prepareRoleStmt() error {
 		return fmt.Errorf("roles_query: $user_id variable missing")
 	}
 
-	rq := strings.ReplaceAll(sg.conf.RolesQuery, "$user_id", "$1")
 	w := &bytes.Buffer{}
 
 	io.WriteString(w, `SELECT (CASE WHEN EXISTS (`)
-	io.WriteString(w, rq)
+	sg.roleStmtMD.RenderVar(w, sg.conf.RolesQuery)
 	io.WriteString(w, `) THEN `)
 
 	io.WriteString(w, `(SELECT (CASE`)
@@ -55,12 +54,13 @@ func (sg *SuperGraph) prepareRoleStmt() error {
 		io.WriteString(w, `'`)
 	}
 
-	io.WriteString(w, ` ELSE $2 END) FROM (`)
-	io.WriteString(w, rq)
+	io.WriteString(w, ` ELSE 'user' END) FROM (`)
+	sg.roleStmtMD.RenderVar(w, sg.conf.RolesQuery)
 	io.WriteString(w, `) AS "_sg_auth_roles_query" LIMIT 1) `)
 	io.WriteString(w, `ELSE 'anon' END) FROM (VALUES (1)) AS "_sg_auth_filler" LIMIT 1; `)
 
 	sg.roleStmt = w.String()
+
 	return nil
 }
 
