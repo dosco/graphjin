@@ -429,6 +429,7 @@ func (p *Parser) parseNormalFields(st *Stack, fields []Field) ([]Field, error) {
 
 func (p *Parser) parseFragmentFields(st *Stack, fields []Field) ([]Field, error) {
 	var err error
+
 	pid := st.Peek()
 
 	if p.peek(itemOn) {
@@ -473,15 +474,18 @@ func (p *Parser) parseFragmentFields(st *Stack, fields []Field) ([]Field, error)
 			f := &fields[k]
 			f.ID = int32(k)
 
-			// If this is the top-level point the parent to the parent of the
-			// previous field.
-			if f.ParentID == -1 {
-				f.ParentID = pid
-				fields[pid].Children = append(fields[pid].Children, f.ID)
+			// Nothing to do here if fields was originally empty
+			if n != 0 {
+				// If this is the top-level, point the parent to the parent of the
+				// previous field.
+				if f.ParentID == -1 {
+					f.ParentID = pid
+					fields[pid].Children = append(fields[pid].Children, f.ID)
 
-				// Update all the other parents id's by our new place in this new array
-			} else {
-				f.ParentID += n
+					// Update all the other parents id's by our new place in this new array
+				} else {
+					f.ParentID += n
+				}
 			}
 
 			// Copy over children since fields append is not a deep copy
