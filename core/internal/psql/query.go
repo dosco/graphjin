@@ -376,21 +376,22 @@ func (c *compilerContext) renderRecursiveCTE(sel *qcode.Select) {
 func (c *compilerContext) renderRecursiveBaseSelect(sel *qcode.Select) {
 	psel := &c.qc.Selects[sel.ParentID]
 
-	c.w.WriteString(`SELECT `)
+	c.w.WriteString(`(SELECT `)
 	c.renderBaseColumns(sel)
 	c.renderFrom(psel)
-	c.renderJoinTables(psel.Rel)
-	c.renderWhere(psel)
-
-	c.w.WriteString(` UNION ALL `)
+	c.w.WriteString(` WHERE (`)
+	colWithTable(c.w, sel.Table, sel.Ti.PrimaryCol.Name)
+	c.w.WriteString(`) = (`)
+	colWithTableID(c.w, psel.Table, psel.ID, sel.Ti.PrimaryCol.Name)
+	c.w.WriteString(`) LIMIT 1) UNION ALL `)
 
 	c.w.WriteString(`SELECT `)
 	c.renderBaseColumns(sel)
 	c.renderFrom(psel)
 	c.w.WriteString(`, `)
 	quoted(c.w, sel.Rel.Right.VTable)
-	c.renderJoinTables(sel.Rel)
-	c.renderWhere(sel)
+	c.w.WriteString(` WHERE `)
+	c.renderRel(sel.Ti, sel.Rel, sel.ParentID, sel.ArgMap)
 }
 
 func (c *compilerContext) renderFrom(sel *qcode.Select) {
@@ -560,11 +561,15 @@ func (c *compilerContext) renderRel(
 		if v, ok := args["find"]; ok {
 			switch v.Val {
 			case "parents":
+				colWithTable(c.w, rel.Right.VTable, rel.Left.Col.Name)
+				c.w.WriteString(` IS NOT NULL) AND (`)
 				colWithTable(c.w, rel.Left.Col.Table, rel.Right.Col.Name)
 				c.w.WriteString(`) = (`)
 				colWithTable(c.w, rel.Right.VTable, rel.Left.Col.Name)
 
 			default:
+				colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
+				c.w.WriteString(` IS NOT NULL) AND (`)
 				colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
 				c.w.WriteString(`) = (`)
 				colWithTable(c.w, rel.Right.VTable, rel.Right.Col.Name)
