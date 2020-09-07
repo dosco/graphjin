@@ -561,15 +561,29 @@ func (c *compilerContext) renderRel(
 		if v, ok := args["find"]; ok {
 			switch v.Val {
 			case "parents":
+				// Ensure fk is not null
 				colWithTable(c.w, rel.Right.VTable, rel.Left.Col.Name)
 				c.w.WriteString(` IS NOT NULL) AND (`)
+				// Ensure it's not a loop
+				colWithTable(c.w, rel.Right.VTable, rel.Left.Col.Name)
+				c.w.WriteString(`) != (`)
+				colWithTable(c.w, rel.Right.VTable, rel.Right.Col.Name)
+				c.w.WriteString(`) AND (`)
+				// Recursive relationship
 				colWithTable(c.w, rel.Left.Col.Table, rel.Right.Col.Name)
 				c.w.WriteString(`) = (`)
 				colWithTable(c.w, rel.Right.VTable, rel.Left.Col.Name)
 
 			default:
+				// Ensure fk is not null
 				colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
 				c.w.WriteString(` IS NOT NULL) AND (`)
+				// Ensure it's not a loop
+				colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
+				c.w.WriteString(`) != (`)
+				colWithTable(c.w, rel.Right.Col.Table, rel.Right.Col.Name)
+				c.w.WriteString(`) AND (`)
+				// Recursive relationship
 				colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
 				c.w.WriteString(`) = (`)
 				colWithTable(c.w, rel.Right.VTable, rel.Right.Col.Name)
