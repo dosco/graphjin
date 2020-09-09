@@ -158,8 +158,9 @@ func firebaseKeyFunction(token *jwt.Token) (interface{}, error) {
 	}
 
 	firebasePublicKeys.lock.RLock()
-	if firebasePublicKeys.Expiration.Before(time.Now()) {
-		firebasePublicKeys.lock.RUnlock()
+	pastExpiration := firebasePublicKeys.Expiration.Before(time.Now())
+	firebasePublicKeys.lock.RUnlock()
+	if pastExpiration {
 		resp, err := http.Get(firebasePKEndpoint)
 
 		if err != nil {
