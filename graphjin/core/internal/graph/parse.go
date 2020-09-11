@@ -79,20 +79,26 @@ func (f *Fragment) Free() {
 }
 
 type Field struct {
-	ID        int32
-	ParentID  int32
-	Type      FieldType
-	Name      string
-	Alias     string
-	Args      []Arg
-	argsA     [5]Arg
-	Children  []int32
-	childrenA [5]int32
+	ID         int32
+	ParentID   int32
+	Type       FieldType
+	Name       string
+	Alias      string
+	Args       []Arg
+	argsA      [5]Arg
+	Directives []Directive
+	Children   []int32
+	childrenA  [5]int32
 }
 
 type Arg struct {
 	Name string
 	Val  *Node
+}
+
+type Directive struct {
+	Name string
+	Args []Arg
 }
 
 type Node struct {
@@ -530,6 +536,14 @@ func (p *Parser) parseField(f *Field) error {
 		}
 	}
 
+	if p.peek(itemDirective) {
+		p.ignore()
+		if f.Directives, err = p.parseDirective(f.Directives); err != nil {
+			return err
+		}
+
+	}
+
 	return nil
 }
 
@@ -563,7 +577,7 @@ func (p *Parser) parseArgs(args []Arg) ([]Arg, error) {
 		}
 
 		if !p.peek(itemName) {
-			return nil, errors.New("expecting an argument name")
+			return nil, fmt.Errorf("expecting an argument name got: %s", p.peekNext())
 		}
 		args = append(args, Arg{Name: p.val(p.next())})
 		arg := &args[(len(args) - 1)]
@@ -579,6 +593,26 @@ func (p *Parser) parseArgs(args []Arg) ([]Arg, error) {
 		}
 	}
 	return args, nil
+}
+
+func (p *Parser) parseDirective(dirs []Directive) ([]Directive, error) {
+	var err error
+	var d Directive
+
+	if p.peek(itemName) {
+		d.Name = p.vall(p.next())
+	} else {
+		return nil, fmt.Errorf("expecting directive name after @ symbol got: %s", p.peekNext())
+	}
+
+	if p.peek(itemArgsOpen) {
+		p.ignore()
+		if d.Args, err = p.parseArgs(d.Args); err != nil {
+			return nil, err
+		}
+	}
+
+	return append(dirs, d), nil
 }
 
 func (p *Parser) parseList() (*Node, error) {

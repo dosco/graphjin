@@ -737,6 +737,19 @@ func (c *compilerContext) renderOp(schema *sdata.DBSchema, ti sdata.DBTableInfo,
 		c.w.WriteString(`?|`)
 	case qcode.OpHasKeyAll:
 		c.w.WriteString(`?&`)
+
+	case qcode.OpEqualsTrue:
+		c.w.WriteString(`((VALUES(true)) = `)
+		c.md.renderParam(c.w, Param{Name: ex.Val, Type: "boolean"})
+		c.w.WriteString(`)`)
+		return
+
+	case qcode.OpNotEqualsTrue:
+		c.w.WriteString(`((VALUES(true)) != `)
+		c.md.renderParam(c.w, Param{Name: ex.Val, Type: "boolean"})
+		c.w.WriteString(`)`)
+		return
+
 	case qcode.OpIsNull:
 		if strings.EqualFold(ex.Val, "true") {
 			c.w.WriteString(`IS NULL)`)
