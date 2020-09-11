@@ -184,6 +184,8 @@ const (
 	OpFalse
 	OpNotDistinct
 	OpDistinct
+	OpEqualsTrue
+	OpNotEqualsTrue
 )
 
 type ValType int8
@@ -378,6 +380,10 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 		sel.Children = make([]int32, 0, 5)
 		sel.Paging.Limit = tr.limit(qc.Type)
 
+		if err := co.compileDirectives(qc, sel, field.Directives); err != nil {
+			return err
+		}
+
 		if err := co.compileArgs(qc, sel, field.Args, role); err != nil {
 			return err
 		}
@@ -557,6 +563,28 @@ func addFilters(qc *QCode, sel *Select, tr trval) bool {
 	return false
 }
 
+func (co *Compiler) compileDirectives(qc *QCode, sel *Select, dirs []graph.Directive) error {
+	var err error
+
+	for i := range dirs {
+		d := &dirs[i]
+
+		switch d.Name {
+		case "skip":
+			err = co.compileDirectiveSkip(sel, d)
+
+		case "include":
+			err = co.compileDirectiveInclude(sel, d)
+		}
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (co *Compiler) compileArgs(qc *QCode, sel *Select, args []graph.Arg, role string) error {
 	var err error
 
@@ -658,6 +686,48 @@ func (co *Compiler) setMutationType(qc *QCode, args []graph.Arg) error {
 		}
 	}
 
+	return nil
+}
+
+func (co *Compiler) compileDirectiveSkip(sel *Select, d *graph.Directive) error {
+	if len(d.Args) == 0 || d.Args[0].Name != "if" {
+		return fmt.Errorf("@skip: required argument 'if' missing")
+	}
+	arg := d.Args[0]
+
+	if arg.Val.Type != graph.NodeVar {
+		return argErr("if", "variable")
+	}
+
+	ex := expPool.Get().(*Exp)
+	ex.Reset()
+
+	ex.Op = OpNotEqualsTrue
+	ex.Type = ValVar
+	ex.Val = arg.Val.Val
+
+	setFilter(sel, ex)
+	return nil
+}
+
+func (co *Compiler) compileDirectiveInclude(sel *Select, d *graph.Directive) error {
+	if len(d.Args) == 0 || d.Args[0].Name != "if" {
+		return fmt.Errorf("@include: required argument 'if' missing")
+	}
+	arg := d.Args[0]
+
+	if arg.Val.Type != graph.NodeVar {
+		return argErr("if", "variable")
+	}
+
+	ex := expPool.Get().(*Exp)
+	ex.Reset()
+
+	ex.Op = OpEqualsTrue
+	ex.Type = ValVar
+	ex.Val = arg.Val.Val
+
+	setFilter(sel, ex)
 	return nil
 }
 

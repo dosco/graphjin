@@ -249,9 +249,7 @@ func lexRoot(l *lexer) stateFn {
 		l.ignore()
 	case r == '@':
 		l.ignore()
-		if l.acceptAlphaNum() {
-			l.emit(itemDirective)
-		}
+		l.emit(itemDirective)
 	case r == '$':
 		l.ignore()
 		if l.acceptAlphaNum() {

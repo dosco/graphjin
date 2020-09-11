@@ -444,6 +444,21 @@ func withPolymorphicUnion(t *testing.T) {
 	compileGQLToPSQL(t, gql, nil, "user")
 }
 
+func withSkipAndIncludeDirectives(t *testing.T) {
+	gql := `
+	query {
+		products(limit: 6) @include(if: $test) {
+			id
+			name
+		}
+		users(limit: 3) @skip(if: $test) {
+			id
+		}
+	}`
+
+	compileGQLToPSQL(t, gql, nil, "user")
+}
+
 func subscription(t *testing.T) {
 	gql := `subscription test {
 		user(id: $id) {
@@ -621,6 +636,7 @@ func TestCompileQuery(t *testing.T) {
 	t.Run("withFragment3", withFragment3)
 	t.Run("withFragment4", withFragment4)
 	t.Run("withPolymorphicUnion", withPolymorphicUnion)
+	t.Run("withSkipAndIncludeDirectives", withSkipAndIncludeDirectives)
 	t.Run("subscription", subscription)
 	t.Run("remoteJoin", remoteJoin)
 	// t.Run("withInlineFragment", withInlineFragment)
