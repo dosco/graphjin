@@ -112,6 +112,20 @@ func withWhereMultiOr(t *testing.T) {
 	compileGQLToPSQL(t, gql, nil, "user")
 }
 
+func withNestedWhere(t *testing.T) {
+	gql := `query {
+			product(where: { comment: { user: { email: { eq: $email } } } }) {
+			 id
+		 }
+	}`
+
+	vars := map[string]json.RawMessage{
+		"email": json.RawMessage(`test@test.com`),
+	}
+
+	compileGQLToPSQL(t, gql, vars, "user")
+}
+
 func fetchByID(t *testing.T) {
 	gql := `query {
 		product(id: $id) {
@@ -616,6 +630,7 @@ func TestCompileQuery(t *testing.T) {
 	t.Run("withWhereAndList", withWhereAndList)
 	t.Run("withWhereIsNull", withWhereIsNull)
 	t.Run("withWhereMultiOr", withWhereMultiOr)
+	t.Run("withNestedWhere", withNestedWhere)
 	t.Run("fetchByID", fetchByID)
 	t.Run("searchQuery", searchQuery)
 	t.Run("oneToMany", oneToMany)

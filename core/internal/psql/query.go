@@ -647,7 +647,6 @@ func (c *compilerContext) renderExp(schema *sdata.DBSchema, ti sdata.DBTableInfo
 
 			default:
 				if !skipNested && len(val.Rels) != 0 {
-					c.w.WriteString(`EXISTS `)
 					c.renderNestedWhere(schema, ti, val)
 				} else {
 					c.renderOp(schema, ti, val)
@@ -664,14 +663,17 @@ func (c *compilerContext) renderNestedWhere(
 			c.w.WriteString(` AND `)
 		}
 
-		c.w.WriteString(`(SELECT 1 FROM `)
+		c.w.WriteString(`EXISTS (SELECT 1 FROM `)
 		c.w.WriteString(rel.Left.Col.Table)
 		c.renderJoinTables(rel)
 		c.w.WriteString(` WHERE `)
 		c.renderRel(ti, rel, -1, nil)
-		c.w.WriteString(` AND (`)
-		c.renderExp(schema, rel.Left.Ti, ex, true)
-		c.w.WriteString(`)`)
+
+		if i == len(ex.Rels)-1 {
+			c.w.WriteString(` AND (`)
+			c.renderExp(schema, rel.Left.Ti, ex, true)
+			c.w.WriteString(`)`)
+		}
 	}
 
 	for i := 0; i < len(ex.Rels); i++ {

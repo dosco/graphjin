@@ -94,9 +94,14 @@ func (c *compilerContext) renderUnionColumn(sel, csel *qcode.Select) {
 		c.w.WriteString(` = `)
 		squoted(c.w, usel.Table)
 		c.w.WriteString(` THEN `)
-		c.w.WriteString(`"__sj_`)
-		int32String(c.w, usel.ID)
-		c.w.WriteString(`"."json" `)
+
+		if usel.SkipRender == qcode.SkipTypeUserNeeded {
+			c.w.WriteString(`NULL `)
+		} else {
+			c.w.WriteString(`"__sj_`)
+			int32String(c.w, usel.ID)
+			c.w.WriteString(`"."json" `)
+		}
 	}
 	c.w.WriteString(`END)`)
 	alias(c.w, csel.FieldName)
