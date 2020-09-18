@@ -729,6 +729,14 @@ func (c *compilerContext) renderOp(schema *sdata.DBSchema, ti sdata.DBTableInfo,
 		c.w.WriteString(`SIMILAR TO`)
 	case qcode.OpNotSimilar:
 		c.w.WriteString(`NOT SIMILAR TO`)
+	case qcode.OpRegex:
+		c.w.WriteString(`~`)
+	case qcode.OpNotRegex:
+		c.w.WriteString(`!~`)
+	case qcode.OpIRegex:
+		c.w.WriteString(`~*`)
+	case qcode.OpNotIRegex:
+		c.w.WriteString(`!~*`)
 	case qcode.OpContains:
 		c.w.WriteString(`@>`)
 	case qcode.OpContainedIn:

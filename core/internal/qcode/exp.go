@@ -150,13 +150,25 @@ func newExp(ti sdata.DBTableInfo, st *util.StackInf, av aexp, usePool bool) (*Ex
 		ex.Op = OpILike
 		ex.Val = node.Val
 	case "nilike", "not_ilike":
-		ex.Op = OpILike
+		ex.Op = OpNotILike
 		ex.Val = node.Val
 	case "similar":
 		ex.Op = OpSimilar
 		ex.Val = node.Val
 	case "nsimilar", "not_similar":
 		ex.Op = OpNotSimilar
+		ex.Val = node.Val
+	case "regex":
+		ex.Op = OpRegex
+		ex.Val = node.Val
+	case "nregex", "not_regex":
+		ex.Op = OpNotRegex
+		ex.Val = node.Val
+	case "iregex":
+		ex.Op = OpIRegex
+		ex.Val = node.Val
+	case "niregex", "not_iregex":
+		ex.Op = OpNotIRegex
 		ex.Val = node.Val
 	case "contains":
 		ex.Op = OpContains
