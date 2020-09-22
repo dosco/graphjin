@@ -447,6 +447,30 @@ func (sg *SuperGraph) initGraphQLEgine() error {
 					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
 				},
 				&schema.InputValue{
+					Name: "regex",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
+				},
+				&schema.InputValue{
+					Name: "nregex",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
+				},
+				&schema.InputValue{
+					Name: "not_regex",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
+				},
+				&schema.InputValue{
+					Name: "iregex",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
+				},
+				&schema.InputValue{
+					Name: "niregex",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
+				},
+				&schema.InputValue{
+					Name: "not_iregex",
+					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
+				},
+				&schema.InputValue{
 					Name: "has_key",
 					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
 				},

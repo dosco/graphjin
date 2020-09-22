@@ -146,6 +146,10 @@ query {
 | nilike, not_ilike      | name: { nilike "%wOn" }                | Not names ending with 'won' case-insensitive                                                             |
 | similar                | name: { similar: "%(b\|d)%" }          | [Similar Docs](https://www.postgresql.org/docs/9/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP)     |
 | nsimilar, not_similar  | name: { nsimilar: "%(b\|d)%" }         | [Not Similar Docs](https://www.postgresql.org/docs/9/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP) |
+| regex                  | name: { regex: "^([a-zA-Z]+)$" }       | [Regex Docs](https://www.postgresql.org/docs/9/functions-matching.html#FUNCTIONS-POSIX-TABLE)            |
+| nregex, not_regex      | name: { nregex: "^([a-zA-Z]+)$" }      | [Regex Docs](https://www.postgresql.org/docs/9/functions-matching.html#FUNCTIONS-POSIX-TABLE)            |
+| iregex                 | name: { iregex: "^([a-z]+)$" }         | [Regex Docs](https://www.postgresql.org/docs/9/functions-matching.html#FUNCTIONS-POSIX-TABLE)            |
+| niregex, not_iregex    | name: { not_iregex: "^([a-z]+)$" }     | [Regex Docs](https://www.postgresql.org/docs/9/functions-matching.html#FUNCTIONS-POSIX-TABLE)            |
 | has_key                | column: { has_key: 'b' }               | Does JSON column contain this key                                                                        |
 | has_key_any            | column: { has_key_any: [ a, b ] }      | Does JSON column contain any of these keys                                                               |
 | has_key_all            | column: [ a, b ]                       | Does JSON column contain all of this keys                                                                |
