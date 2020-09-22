@@ -174,6 +174,10 @@ const (
 	OpNotILike
 	OpSimilar
 	OpNotSimilar
+	OpRegex
+	OpNotRegex
+	OpIRegex
+	OpNotIRegex
 	OpContains
 	OpContainedIn
 	OpHasKey
