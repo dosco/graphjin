@@ -16,8 +16,6 @@ func (c *compilerContext) renderUpdate() {
 			c.renderConnectStmt(m)
 		case qcode.MTDisconnect:
 			c.renderDisconnectStmt(m)
-		case qcode.MTUnion:
-			c.renderUnionStmt(m)
 		}
 	}
 	c.w.WriteString(` `)

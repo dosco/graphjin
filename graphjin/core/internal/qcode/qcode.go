@@ -53,9 +53,10 @@ type QCode struct {
 	ActionVar string
 	Selects   []Select
 	Vars      Variables
-	Mutates   []Mutate
 	Roots     []int32
 	rootsA    [5]int32
+	Mutates   []Mutate
+	MCounts   map[string]int32
 	Schema    *sdata.DBSchema
 }
 

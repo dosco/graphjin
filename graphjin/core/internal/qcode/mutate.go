@@ -20,7 +20,7 @@ const (
 	MTDelete
 	MTConnect
 	MTDisconnect
-	MTUnion
+	MTNone
 )
 
 var insertTypes = map[string]MType{
@@ -49,6 +49,8 @@ type Mutate struct {
 	RelCP  sdata.DBRel
 	RelPC  sdata.DBRel
 	Items  []Mutate
+	Multi  bool
+	MID    int32
 	render bool
 }
 
@@ -107,6 +109,7 @@ func (co *Compiler) compileMutation(qc *QCode, op *graph.Operation, role string)
 		return fmt.Errorf("variable not defined: %s", qc.ActionVar)
 	}
 
+	tm := make(map[string]int32)
 	st := util.NewStackInf()
 	st.Push(m)
 
@@ -118,12 +121,22 @@ func (co *Compiler) compileMutation(qc *QCode, op *graph.Operation, role string)
 		intf := st.Pop()
 
 		if item, ok := intf.(Mutate); ok && item.render {
+			item.MID = tm[item.Ti.Name]
 			qc.Mutates = append(qc.Mutates, item)
+			tm[item.Ti.Name]++
 
 		} else if err := co.newMutate(st, item, role); err != nil {
 			return err
 		}
 	}
+
+	for i, v := range qc.Mutates {
+		if c, ok := tm[v.Ti.Name]; ok && c > 1 {
+			qc.Mutates[i].Multi = true
+		}
+	}
+
+	qc.MCounts = tm
 
 	return nil
 }
@@ -170,7 +183,8 @@ func (co *Compiler) newMutate(st *util.StackInf, m Mutate, role string) error {
 				m1.Val = v
 
 				m.Items = append(m.Items, m1)
-				m.Type = MTUnion
+				m.Type = MTNone
+				m.render = false
 				id++
 			}
 
@@ -179,14 +193,6 @@ func (co *Compiler) newMutate(st *util.StackInf, m Mutate, role string) error {
 			ti, err := co.s.GetTableInfo(k)
 			if err != nil {
 				return err
-			}
-
-			if relPC.Type == sdata.RelRecursive {
-				relPC.Type = sdata.RelOneToOne
-			}
-
-			if relCP.Type == sdata.RelRecursive {
-				relCP.Type = sdata.RelOneToOne
 			}
 
 			m1 := Mutate{
@@ -260,8 +266,7 @@ func (co *Compiler) newMutate(st *util.StackInf, m Mutate, role string) error {
 	case MTUpsert:
 		st.Push(m)
 
-	case MTUnion:
-		st.Push(m)
+	case MTNone:
 		for _, v := range m.Items {
 			st.Push(v)
 		}
@@ -289,14 +294,15 @@ func addTablesAndColumns(m Mutate, tr trval) (Mutate, error) {
 		// this is for when the parent actually depends on the child level
 		// the order of the table rendering if handled upstream
 		if len(m.Items) == 0 {
-			if m.RelPC.Type == sdata.RelOneToMany {
-				m.Tables = append(m.Tables, MTable{Ti: m.RelPC.Left.Ti})
-				m.RCols = append(m.RCols, MRColumn{
-					Col:  m.RelCP.Right.Col,
-					VCol: m.RelCP.Left.Col,
-				})
-				cm[m.RelCP.Right.Col.Name] = struct{}{}
-			}
+			// TODO: Commenting this out since I suspect this code path is not required
+			// if m.RelPC.Type == sdata.RelOneToMany {
+			// 	m.Tables = append(m.Tables, MTable{Ti: m.RelPC.Left.Ti})
+			// 	m.RCols = append(m.RCols, MRColumn{
+			// 		Col:  m.RelCP.Right.Col,
+			// 		VCol: m.RelCP.Left.Col,
+			// 	})
+			// 	cm[m.RelCP.Right.Col.Name] = struct{}{}
+			// }
 		} else {
 			// Render columns and values needed by the children of the current level
 			// Render child foreign key columns if child-to-parent

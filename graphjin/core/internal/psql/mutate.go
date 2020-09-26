@@ -5,6 +5,7 @@ package psql
 import (
 	"bytes"
 	"encoding/json"
+	"strconv"
 	"strings"
 
 	"github.com/dosco/super-graph/core/internal/qcode"
@@ -42,118 +43,27 @@ func (co *Compiler) compileMutation(
 		return c.md
 	}
 
+	c.renderMultiUnionStmt()
 	return co.CompileQuery(w, qc, c.md)
 }
 
-func (c *compilerContext) renderUnionStmt(m qcode.Mutate) {
-	var connect, disconnect bool
-
-	// Render only for parent-to-child relationship of one-to-many
-	if m.RelPC.Type != sdata.RelOneToMany {
-		return
-	}
-
-	for _, v := range m.Items {
-		if v.Type == qcode.MTConnect {
-			connect = true
-		} else if v.Type == qcode.MTDisconnect {
-			disconnect = true
+func (c *compilerContext) renderMultiUnionStmt() {
+	for k, n := range c.qc.MCounts {
+		if n == 1 {
+			continue
 		}
-		if connect && disconnect {
-			break
-		}
-	}
-
-	if connect {
 		c.w.WriteString(`, `)
-		if connect && disconnect {
-			renderCteNameWithSuffix(c.w, m, "c")
-		} else {
-			quoted(c.w, m.Ti.Name)
-		}
-		c.w.WriteString(` AS ( UPDATE `)
-		quoted(c.w, m.Ti.Name)
-		c.w.WriteString(` SET `)
-		quoted(c.w, m.RelPC.Right.Col.Name)
-		c.w.WriteString(` = `)
-
-		// When setting the id of the connected table in a one-to-many setting
-		// we always overwrite the value including for array columns
-		colWithTable(c.w, m.RelPC.Left.Col.Table, m.RelPC.Left.Col.Name)
-
-		c.w.WriteString(` FROM `)
-		quoted(c.w, m.RelPC.Left.Col.Table)
-		c.w.WriteString(` WHERE`)
-
-		for i, v := range m.Items {
-			if v.Type == qcode.MTConnect {
-				if i != 0 {
-					c.w.WriteString(` OR (`)
-				} else {
-					c.w.WriteString(` (`)
-				}
-				c.renderWhereFromJSON(v, "connect")
-				c.w.WriteString(`)`)
-			}
-		}
-		c.w.WriteString(` RETURNING `)
-		quoted(c.w, m.Ti.Name)
-		c.w.WriteString(`.*)`)
-	}
-
-	if disconnect {
-		c.w.WriteString(`, `)
-		if connect && disconnect {
-			renderCteNameWithSuffix(c.w, m, "d")
-		} else {
-			quoted(c.w, m.Ti.Name)
-		}
-		c.w.WriteString(` AS ( UPDATE `)
-		quoted(c.w, m.Ti.Name)
-		c.w.WriteString(` SET `)
-		quoted(c.w, m.RelPC.Right.Col.Name)
-		c.w.WriteString(` = `)
-
-		if m.RelPC.Right.Col.Array {
-			c.w.WriteString(` array_remove(`)
-			quoted(c.w, m.RelPC.Right.Col.Name)
-			c.w.WriteString(`, `)
-			colWithTable(c.w, m.RelPC.Left.Col.Table, m.RelPC.Left.Col.Name)
-			c.w.WriteString(`)`)
-
-		} else {
-			c.w.WriteString(` NULL`)
-		}
-
-		c.w.WriteString(` FROM `)
-		quoted(c.w, m.RelPC.Left.Col.Table)
-		c.w.WriteString(` WHERE`)
-
-		for i, v := range m.Items {
-			if v.Type == qcode.MTDisconnect {
-				if i != 0 {
-					c.w.WriteString(` OR (`)
-				} else {
-					c.w.WriteString(` (`)
-				}
-				c.renderWhereFromJSON(v, "disconnect")
-				c.w.WriteString(`)`)
-			}
-		}
-		c.w.WriteString(` RETURNING `)
-		quoted(c.w, m.Ti.Name)
-		c.w.WriteString(`.*)`)
-	}
-
-	if connect && disconnect {
-		c.w.WriteString(`, `)
-		quoted(c.w, m.Ti.Name)
+		quoted(c.w, k)
 		c.w.WriteString(` AS (`)
-		c.w.WriteString(`SELECT * FROM `)
-		renderCteNameWithSuffix(c.w, m, "c")
-		c.w.WriteString(` UNION ALL `)
-		c.w.WriteString(`SELECT * FROM `)
-		renderCteNameWithSuffix(c.w, m, "d")
+
+		for i := int32(0); i < n; i++ {
+			if i != 0 {
+				c.w.WriteString(` UNION ALL `)
+			}
+			c.w.WriteString(`SELECT * FROM `)
+			renderNameWithSuffix(c.w, k, strconv.Itoa(int(i)))
+		}
+
 		c.w.WriteString(`)`)
 	}
 }
@@ -229,6 +139,12 @@ func (c *compilerContext) renderNestedInsertUpdateRelTables(m qcode.Mutate) {
 			c.w.WriteString(`"_x_`)
 			c.w.WriteString(t.Ti.Name)
 			c.w.WriteString(`"`)
+
+		} else if m.Multi {
+			renderCteNameWithSuffix(c.w, m, strconv.Itoa(int(m.MID-1)))
+			c.w.WriteString(` `)
+			quoted(c.w, t.Ti.Name)
+
 		} else {
 			quoted(c.w, t.Ti.Name)
 		}
@@ -297,31 +213,61 @@ func (c *compilerContext) renderConnectStmt(m qcode.Mutate) {
 	// For this to work the child needs to found first so it's primary key
 	// can be set in the related column on the parent object.
 	// Eg. Create product and connect a user to it.
-	if rel.Type != sdata.RelOneToOne {
-		return
+	if rel.Type == sdata.RelOneToOne {
+		c.w.WriteString(`, "_x_`)
+		c.w.WriteString(m.Ti.Name)
+		c.w.WriteString(`" AS (SELECT `)
+
+		if rel.Left.Col.Array {
+			c.w.WriteString(`array_agg(DISTINCT `)
+			quoted(c.w, rel.Right.Col.Name)
+			c.w.WriteString(`) AS `)
+			quoted(c.w, rel.Right.Col.Name)
+		} else {
+			quoted(c.w, rel.Right.Col.Name)
+		}
+
+		c.w.WriteString(` FROM "_sg_input" i,`)
+		quoted(c.w, m.Ti.Name)
+
+		c.w.WriteString(` WHERE `)
+		c.renderWhereFromJSON(m, "connect")
+		c.w.WriteString(` LIMIT 1)`)
 	}
 
-	c.w.WriteString(`, "_x_`)
-	c.w.WriteString(m.Ti.Name)
-	c.w.WriteString(`" AS (SELECT `)
+	if rel.Type == sdata.RelOneToMany {
+		c.w.WriteString(`, `)
+		if m.Multi {
+			renderCteNameWithSuffix(c.w, m, strconv.Itoa(int(m.MID)))
+		} else {
+			renderCteName(c.w, m)
+		}
 
-	if rel.Left.Col.Array {
-		c.w.WriteString(`array_agg(DISTINCT `)
-		quoted(c.w, rel.Right.Col.Name)
-		c.w.WriteString(`) AS `)
-		quoted(c.w, rel.Right.Col.Name)
+		c.w.WriteString(` AS ( UPDATE `)
+		quoted(c.w, m.Ti.Name)
+		c.w.WriteString(` SET `)
+		quoted(c.w, m.RelPC.Right.Col.Name)
+		c.w.WriteString(` = `)
 
-	} else {
-		quoted(c.w, rel.Right.Col.Name)
+		// When setting the id of the connected table in a one-to-many setting
+		// we always overwrite the value including for array columns
+		colWithTable(c.w, m.RelPC.Left.Col.Table, m.RelPC.Left.Col.Name)
 
+		c.w.WriteString(`FROM "_sg_input" i,`)
+		if m.Multi {
+			renderCteNameWithSuffix(c.w, m, strconv.Itoa(int(m.MID-1)))
+			c.w.WriteString(` `)
+			quoted(c.w, m.RelPC.Left.Col.Table)
+		} else {
+			quoted(c.w, m.RelPC.Left.Col.Table)
+		}
+		c.w.WriteString(` WHERE`)
+		c.renderWhereFromJSON(m, "connect")
+
+		c.w.WriteString(` RETURNING `)
+		quoted(c.w, m.Ti.Name)
+		c.w.WriteString(`.*)`)
 	}
-
-	c.w.WriteString(` FROM "_sg_input" i,`)
-	quoted(c.w, m.Ti.Name)
-
-	c.w.WriteString(` WHERE `)
-	c.renderWhereFromJSON(m, "connect")
-	c.w.WriteString(` LIMIT 1)`)
 }
 
 func (c *compilerContext) renderDisconnectStmt(m qcode.Mutate) {
@@ -331,30 +277,72 @@ func (c *compilerContext) renderDisconnectStmt(m qcode.Mutate) {
 	// For this to work the child needs to found first so it's
 	// null value can beset in the related column on the parent object.
 	// Eg. Update product and diconnect the user from it.
-	if rel.Type != sdata.RelOneToOne {
-		return
+	if rel.Type == sdata.RelOneToOne {
+		c.w.WriteString(`, "_x_`)
+		c.w.WriteString(m.Ti.Name)
+		c.w.WriteString(`" AS (`)
+
+		if rel.Right.Col.Array {
+			c.w.WriteString(`SELECT `)
+			quoted(c.w, rel.Right.Col.Name)
+			c.w.WriteString(` FROM "_sg_input" i,`)
+			quoted(c.w, m.Ti.Name)
+			c.w.WriteString(` WHERE `)
+			c.renderWhereFromJSON(m, "disconnect")
+			c.w.WriteString(` LIMIT 1))`)
+
+		} else {
+			c.w.WriteString(`SELECT * FROM (VALUES(NULL::"`)
+			c.w.WriteString(rel.Right.Col.Type)
+			c.w.WriteString(`")) AS LOOKUP(`)
+			quoted(c.w, rel.Right.Col.Name)
+			c.w.WriteString(`))`)
+		}
 	}
 
-	c.w.WriteString(`, "_x_`)
-	c.w.WriteString(m.Ti.Name)
-	c.w.WriteString(`" AS (`)
+	if rel.Type == sdata.RelOneToMany {
+		c.w.WriteString(`, `)
+		if m.Multi {
+			renderCteNameWithSuffix(c.w, m, strconv.Itoa(int(m.MID-1)))
+			c.w.WriteString(` `)
+			quoted(c.w, m.Ti.Name)
+		} else {
+			quoted(c.w, m.Ti.Name)
+		}
 
-	if rel.Right.Col.Array {
-		c.w.WriteString(`SELECT `)
-		quoted(c.w, rel.Right.Col.Name)
-		c.w.WriteString(` FROM "_sg_input" i,`)
+		c.w.WriteString(` AS ( UPDATE `)
 		quoted(c.w, m.Ti.Name)
-		c.w.WriteString(` WHERE `)
-		c.renderWhereFromJSON(m, "disconnect")
-		c.w.WriteString(` LIMIT 1))`)
+		c.w.WriteString(` SET `)
+		quoted(c.w, m.RelPC.Right.Col.Name)
+		c.w.WriteString(` = `)
 
-	} else {
-		c.w.WriteString(`SELECT * FROM (VALUES(NULL::"`)
-		c.w.WriteString(rel.Right.Col.Type)
-		c.w.WriteString(`")) AS LOOKUP(`)
-		quoted(c.w, rel.Right.Col.Name)
-		c.w.WriteString(`))`)
+		if m.RelPC.Right.Col.Array {
+			c.w.WriteString(` array_remove(`)
+			quoted(c.w, m.RelPC.Right.Col.Name)
+			c.w.WriteString(`, `)
+			colWithTable(c.w, m.RelPC.Left.Col.Table, m.RelPC.Left.Col.Name)
+			c.w.WriteString(`)`)
+
+		} else {
+			c.w.WriteString(` NULL`)
+		}
+
+		c.w.WriteString(`FROM "_sg_input" i,`)
+		if m.Multi {
+			renderCteNameWithSuffix(c.w, m, strconv.Itoa(int(m.MID-1)))
+			c.w.WriteString(` `)
+			quoted(c.w, m.RelPC.Left.Col.Table)
+		} else {
+			quoted(c.w, m.RelPC.Left.Col.Table)
+		}
+		c.w.WriteString(` WHERE`)
+		c.renderWhereFromJSON(m, "disconnect")
+
+		c.w.WriteString(` RETURNING `)
+		quoted(c.w, m.Ti.Name)
+		c.w.WriteString(`.*)`)
 	}
+
 }
 
 func (c *compilerContext) renderWhereFromJSON(m qcode.Mutate, key string) {
@@ -425,16 +413,20 @@ func renderPathJSON(w *bytes.Buffer, m qcode.Mutate, key1, key2 string) {
 func renderCteName(w *bytes.Buffer, m qcode.Mutate) {
 	w.WriteString(`"`)
 	w.WriteString(m.Ti.Name)
-	if m.Type == qcode.MTConnect || m.Type == qcode.MTDisconnect {
-		w.WriteString(`_`)
-		int32String(w, m.ID)
-	}
 	w.WriteString(`"`)
 }
 
 func renderCteNameWithSuffix(w *bytes.Buffer, m qcode.Mutate, suffix string) {
 	w.WriteString(`"`)
 	w.WriteString(m.Ti.Name)
+	w.WriteString(`_`)
+	w.WriteString(suffix)
+	w.WriteString(`"`)
+}
+
+func renderNameWithSuffix(w *bytes.Buffer, name string, suffix string) {
+	w.WriteString(`"`)
+	w.WriteString(name)
 	w.WriteString(`_`)
 	w.WriteString(suffix)
 	w.WriteString(`"`)
