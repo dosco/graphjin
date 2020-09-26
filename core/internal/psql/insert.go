@@ -2,6 +2,8 @@
 package psql
 
 import (
+	"strconv"
+
 	"github.com/dosco/super-graph/core/internal/qcode"
 )
 
@@ -14,8 +16,6 @@ func (c *compilerContext) renderInsert() {
 			c.renderInsertStmt(m, true)
 		case qcode.MTConnect:
 			c.renderConnectStmt(m)
-		case qcode.MTUnion:
-			c.renderUnionStmt(m)
 		}
 	}
 	c.w.WriteString(` `)
@@ -23,7 +23,12 @@ func (c *compilerContext) renderInsert() {
 
 func (c *compilerContext) renderInsertStmt(m qcode.Mutate, embedded bool) {
 	c.w.WriteString(`, `)
-	renderCteName(c.w, m)
+	if m.Multi {
+		renderCteNameWithSuffix(c.w, m, strconv.Itoa(int(m.MID)))
+	} else {
+		renderCteName(c.w, m)
+	}
+
 	c.w.WriteString(` AS (`)
 
 	c.w.WriteString(`INSERT INTO `)
