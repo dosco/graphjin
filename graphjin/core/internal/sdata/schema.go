@@ -198,11 +198,11 @@ func (s *DBSchema) addMultiRefs(ti DBTableInfo) error {
 		}
 
 		name := getRelName(c.Name)
-		k1 := flect.Singularize(name)
-		s.t[k1] = ti
+		ti.Singular = flect.Singularize(name)
+		ti.Plural = flect.Pluralize(name)
 
-		k2 := flect.Pluralize(name)
-		s.t[k2] = ti
+		s.t[ti.Singular] = ti
+		s.t[ti.Plural] = ti
 	}
 
 	return nil
