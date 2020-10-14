@@ -474,9 +474,7 @@ func (c *compilerContext) renderWhere(sel *qcode.Select) {
 		pid = sel.ParentID
 	}
 
-	if sel.Rel.Type != sdata.RelNone {
-		c.renderRel(sel.Ti, sel.Rel, pid, sel.ArgMap)
-	}
+	c.renderRel(sel.Ti, sel.Rel, pid, sel.ArgMap)
 
 	if sel.Where.Exp != nil {
 		if sel.Rel.Type != sdata.RelNone {

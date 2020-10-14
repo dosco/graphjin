@@ -580,6 +580,10 @@ func (co *Compiler) compileDirectives(qc *QCode, sel *Select, dirs []graph.Direc
 
 		case "include":
 			err = co.compileDirectiveInclude(sel, d)
+
+		case "not_related":
+			err = co.compileDirectiveNotRelated(sel, d)
+
 		}
 
 		if err != nil {
@@ -733,6 +737,11 @@ func (co *Compiler) compileDirectiveInclude(sel *Select, d *graph.Directive) err
 	ex.Val = arg.Val.Val
 
 	setFilter(sel, ex)
+	return nil
+}
+
+func (co *Compiler) compileDirectiveNotRelated(sel *Select, d *graph.Directive) error {
+	sel.Rel.Type = sdata.RelNone
 	return nil
 }
 
