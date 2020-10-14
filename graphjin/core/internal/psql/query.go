@@ -875,6 +875,9 @@ func (c *compilerContext) renderVal(ex *qcode.Exp, vars map[string]string) {
 			c.w.WriteString(`(`)
 			c.md.RenderVar(c.w, val[4:])
 			c.w.WriteString(`)`)
+			if ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn {
+				return
+			}
 
 		case ok:
 			squoted(c.w, val)
