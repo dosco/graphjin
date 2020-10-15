@@ -164,7 +164,7 @@ func (co *Compiler) newMutate(st *util.StackInf, m Mutate, role string) error {
 		}
 
 		// Get child-to-parent relationship
-		relCP, err := co.s.GetRel(k, m.Key)
+		relCP, err := co.s.GetRel(k, m.Key, "")
 		if err != nil {
 			var ty MType
 			var ok bool
@@ -189,7 +189,7 @@ func (co *Compiler) newMutate(st *util.StackInf, m Mutate, role string) error {
 			}
 
 			// Get parent-to-child relationship
-		} else if relPC, err := co.s.GetRel(m.Key, k); err == nil {
+		} else if relPC, err := co.s.GetRel(m.Key, k, ""); err == nil {
 			ti, err := co.s.GetTableInfo(k)
 			if err != nil {
 				return err
