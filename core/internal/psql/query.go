@@ -320,9 +320,21 @@ func (c *compilerContext) renderJoin(rel sdata.DBRel) {
 	c.w.WriteString(` LEFT OUTER JOIN "`)
 	c.w.WriteString(rel.Through.ColL.Table)
 	c.w.WriteString(`" ON ((`)
-	colWithTable(c.w, rel.Through.ColL.Table, rel.Through.ColL.Name)
-	c.w.WriteString(`) = (`)
-	colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
+	switch {
+	case !rel.Left.Col.Array && rel.Through.ColL.Array:
+		colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
+		c.w.WriteString(`) = any (`)
+		colWithTable(c.w, rel.Through.ColL.Table, rel.Through.ColL.Name)
+
+	case rel.Left.Col.Array && !rel.Through.ColL.Array:
+		colWithTable(c.w, rel.Through.ColL.Table, rel.Through.ColL.Name)
+		c.w.WriteString(`) = any (`)
+		colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
+	default:
+		colWithTable(c.w, rel.Through.ColL.Table, rel.Through.ColL.Name)
+		c.w.WriteString(`) = (`)
+		colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
+	}
 	c.w.WriteString(`))`)
 }
 
@@ -521,24 +533,23 @@ func (c *compilerContext) renderRel(
 
 	case sdata.RelOneToManyThrough:
 		// This requires the through table to be joined onto this select
-		//fmt.Fprintf(w, `(("%s"."%s") = ("%s"."%s"))`,
-		//c.sel.Name, rel.Left.Col, rel.Through, rel.Right.Col)
+		// this where clause is the right side of the clause the left side
+		// of it is on the ON clause for the though table join.
 
 		switch {
-		case !rel.Left.Col.Array && rel.Right.Col.Array:
-			colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
-			c.w.WriteString(`) = any (`)
-			colWithTable(c.w, rel.Through.ColR.Table, rel.Through.ColR.Name)
-
-		case rel.Left.Col.Array && !rel.Right.Col.Array:
-			colWithTable(c.w, rel.Through.ColR.Table, rel.Through.ColR.Name)
-			c.w.WriteString(`) = any (`)
-			colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
-
-		default:
-			colWithTable(c.w, rel.Through.ColR.Table, rel.Through.ColR.Name)
-			c.w.WriteString(`) = (`)
+		case !rel.Right.Col.Array && rel.Through.ColR.Array:
 			colWithTableID(c.w, rel.Right.Col.Table, pid, rel.Right.Col.Name)
+			c.w.WriteString(`) = any (`)
+			colWithTable(c.w, rel.Through.ColR.Table, rel.Through.ColR.Name)
+
+		case rel.Right.Col.Array && !rel.Through.ColR.Array:
+			colWithTable(c.w, rel.Through.ColR.Table, rel.Through.ColR.Name)
+			c.w.WriteString(`) = any (`)
+			colWithTableID(c.w, rel.Right.Col.Table, pid, rel.Right.Col.Name)
+		default:
+			colWithTableID(c.w, rel.Right.Col.Table, pid, rel.Right.Col.Name)
+			c.w.WriteString(`) = (`)
+			colWithTable(c.w, rel.Through.ColR.Table, rel.Through.ColR.Name)
 		}
 
 	case sdata.RelEmbedded:

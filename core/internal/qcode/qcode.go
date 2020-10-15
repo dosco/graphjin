@@ -83,6 +83,7 @@ type Select struct {
 	Ti         sdata.DBTableInfo
 	Rel        sdata.DBRel
 	order      Order
+	through    string
 }
 
 type Column struct {
@@ -372,10 +373,6 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 			return err
 		}
 
-		if err := co.addRelInfo(field, qc, sel); err != nil {
-			return err
-		}
-
 		if field.Alias != "" {
 			sel.FieldName = field.Alias
 		} else {
@@ -386,6 +383,10 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 		sel.Paging.Limit = tr.limit(qc.Type)
 
 		if err := co.compileDirectives(qc, sel, field.Directives); err != nil {
+			return err
+		}
+
+		if err := co.addRelInfo(field, qc, sel); err != nil {
 			return err
 		}
 
@@ -447,7 +448,7 @@ func (co *Compiler) addRelInfo(field *graph.Field, qc *QCode, sel *Select) error
 	switch field.Type {
 	case graph.FieldUnion:
 		sel.Type = SelTypeUnion
-		sel.Rel, err = co.s.GetRel(field.Name, psel.Table)
+		sel.Rel, err = co.s.GetRel(field.Name, psel.Table, "")
 
 	case graph.FieldMember:
 		// TODO: Fix this
@@ -458,11 +459,14 @@ func (co *Compiler) addRelInfo(field *graph.Field, qc *QCode, sel *Select) error
 		sel.Singular = psel.Singular
 		sel.UParentID = psel.ParentID
 		sinset = true
-		sel.Rel, err = co.s.GetRel(psel.Table, qc.Selects[sel.UParentID].Table)
+		sel.Rel, err = co.s.GetRel(psel.Table, qc.Selects[sel.UParentID].Table, "")
 
 	default:
-		if psel != nil {
-			sel.Rel, err = co.s.GetRel(field.Name, psel.Table)
+		if sel.Rel.Type == sdata.RelSkip {
+			sel.Rel.Type = sdata.RelNone
+
+		} else if psel != nil {
+			sel.Rel, err = co.s.GetRel(field.Name, psel.Table, sel.through)
 		}
 	}
 
@@ -584,6 +588,8 @@ func (co *Compiler) compileDirectives(qc *QCode, sel *Select, dirs []graph.Direc
 		case "not_related":
 			err = co.compileDirectiveNotRelated(sel, d)
 
+		case "through":
+			err = co.compileDirectiveThrough(sel, d)
 		}
 
 		if err != nil {
@@ -741,7 +747,20 @@ func (co *Compiler) compileDirectiveInclude(sel *Select, d *graph.Directive) err
 }
 
 func (co *Compiler) compileDirectiveNotRelated(sel *Select, d *graph.Directive) error {
-	sel.Rel.Type = sdata.RelNone
+	sel.Rel.Type = sdata.RelSkip
+	return nil
+}
+
+func (co *Compiler) compileDirectiveThrough(sel *Select, d *graph.Directive) error {
+	if len(d.Args) == 0 || d.Args[0].Name != "table" {
+		return fmt.Errorf("@through: required argument 'table' missing")
+	}
+	arg := d.Args[0]
+
+	if arg.Val.Type != graph.NodeStr {
+		return argErr("table", "string")
+	}
+	sel.through = arg.Val.Val
 	return nil
 }
 

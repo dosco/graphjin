@@ -12,7 +12,7 @@ import (
 type DBSchema struct {
 	ver int
 	t   map[string]DBTableInfo
-	rm  map[string]DBRel
+	rm  map[string][]DBRel
 	vt  map[string]VirtualTable
 	fm  map[string]DBFunction
 }
@@ -45,6 +45,7 @@ const (
 	RelRecursive
 	RelEmbedded
 	RelRemote
+	RelSkip
 )
 
 type DBRel struct {
@@ -68,7 +69,7 @@ func NewDBSchema(info *DBInfo, aliases map[string][]string) (*DBSchema, error) {
 	schema := &DBSchema{
 		ver: info.Version,
 		t:   make(map[string]DBTableInfo),
-		rm:  make(map[string]DBRel),
+		rm:  make(map[string][]DBRel),
 		vt:  make(map[string]VirtualTable),
 		fm:  make(map[string]DBFunction),
 	}
@@ -528,25 +529,20 @@ func (s *DBSchema) SetRel(child, parent string, rel DBRel) error {
 	sc := strings.ToLower(flect.Singularize(child))
 	pc := strings.ToLower(flect.Pluralize(child))
 
-	if _, ok := s.rm[(sc + sp)]; !ok {
-		s.rm[(sc + sp)] = rel
-	}
-	if _, ok := s.rm[(sc + pp)]; !ok {
-		s.rm[(sc + pp)] = rel
-	}
-	if _, ok := s.rm[(pc + sp)]; !ok {
-		s.rm[(pc + sp)] = rel
-	}
-	if _, ok := s.rm[(pc + pp)]; !ok {
-		s.rm[(pc + pp)] = rel
-	}
+	s.rm[(sc + sp)] = append(s.rm[(sc+sp)], rel)
+	s.rm[(sc + pp)] = append(s.rm[(sc+pp)], rel)
+
+	s.rm[(pc + sp)] = append(s.rm[(pc+sp)], rel)
+	s.rm[(pc + pp)] = append(s.rm[(pc+pp)], rel)
 
 	return nil
 }
 
-func (s *DBSchema) GetRel(child, parent string) (DBRel, error) {
-	rel, ok := s.rm[(child + parent)]
-	if !ok {
+func (s *DBSchema) GetRel(child, parent, through string) (DBRel, error) {
+	var rel DBRel
+
+	rels := s.rm[(child + parent)]
+	if len(rels) == 0 {
 		// No relationship found so this time fetch the table info
 		// and try again in case child or parent was an alias
 		ct, err := s.GetTableInfo(child)
@@ -557,13 +553,22 @@ func (s *DBSchema) GetRel(child, parent string) (DBRel, error) {
 		if err != nil {
 			return rel, err
 		}
-		rel, ok = s.rm[(ct.Name + pt.Name)]
-		if !ok {
+		rels := s.rm[(ct.Name + pt.Name)]
+		if len(rels) == 0 {
 			return rel, fmt.Errorf("relationship: '%s' -> '%s' not found",
 				child, parent)
 		}
 	}
-	return rel, nil
+
+	if len(through) != 0 {
+		for _, v := range rels {
+			if v.Through.ColL.Table == through {
+				return v, nil
+			}
+		}
+	}
+
+	return rels[0], nil
 }
 
 func (ti *DBTableInfo) ColumnExists(name string) bool {
