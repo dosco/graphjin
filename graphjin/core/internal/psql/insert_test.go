@@ -154,9 +154,6 @@ func nestedInsertOneToOne(t *testing.T) {
 			"created_at": "now",
 			"updated_at": "now",
 			"user": {
-				"hey": {
-					"now": "what's the matter"
-				},
 				"email": "thedude@rug.com",
 				"full_name": "The Dude",
 				"created_at": "now",
@@ -229,6 +226,31 @@ func nestedInsertOneToOneWithConnect(t *testing.T) {
 	compileGQLToPSQL(t, gql, vars, "admin")
 }
 
+func nestedInsertOneToOneWithConnectReverse(t *testing.T) {
+	gql := `mutation {
+		comment(insert: $data) {
+			id
+			product {
+				id
+				name
+			}
+		}
+	}`
+
+	vars := map[string]json.RawMessage{
+		"data": json.RawMessage(`{
+			"body": "a comment",
+			"created_at": "now",
+			"updated_at": "now",
+			"product": {
+				"connect": { "id": 1 }
+			}
+		}`),
+	}
+
+	compileGQLToPSQL(t, gql, vars, "admin")
+}
+
 func nestedInsertOneToOneWithConnectArray(t *testing.T) {
 	gql := `mutation {
 		product(insert: $data) {
@@ -266,6 +288,7 @@ func TestCompileInsert(t *testing.T) {
 	t.Run("nestedInsertOneToMany", nestedInsertOneToMany)
 	t.Run("nestedInsertOneToOne", nestedInsertOneToOne)
 	t.Run("nestedInsertOneToManyWithConnect", nestedInsertOneToManyWithConnect)
+	t.Run("nestedInsertOneToOneWithConnectReverse", nestedInsertOneToOneWithConnectReverse)
 	t.Run("nestedInsertOneToOneWithConnect", nestedInsertOneToOneWithConnect)
 	t.Run("nestedInsertOneToOneWithConnectArray", nestedInsertOneToOneWithConnectArray)
 }

@@ -118,11 +118,15 @@ func (c *compilerContext) renderNestedInsertUpdateRelColumns(m qcode.Mutate, val
 			c.w.WriteString(`, `)
 		}
 		if values {
-			if col.CType != 0 {
+			if (col.CType & qcode.CTConnect) != 0 {
 				c.w.WriteString(`"_x_`)
 				c.w.WriteString(col.VCol.Table)
 				c.w.WriteString(`".`)
 				quoted(c.w, col.VCol.Name)
+
+			} else if (col.CType & qcode.CTDisconnect) != 0 {
+				c.w.WriteString(`NULL`)
+
 			} else {
 				colWithTable(c.w, col.VCol.Table, col.VCol.Name)
 			}
@@ -135,15 +139,13 @@ func (c *compilerContext) renderNestedInsertUpdateRelColumns(m qcode.Mutate, val
 func (c *compilerContext) renderNestedInsertUpdateRelTables(m qcode.Mutate) {
 	for _, t := range m.Tables {
 		c.w.WriteString(`, `)
-		if t.CType != 0 {
+		if (t.CType & qcode.CTConnect) != 0 {
 			c.w.WriteString(`"_x_`)
 			c.w.WriteString(t.Ti.Name)
 			c.w.WriteString(`"`)
 
-		} else if m.Multi {
-			renderCteNameWithSuffix(c.w, m, strconv.Itoa(int(m.MID-1)))
-			c.w.WriteString(` `)
-			quoted(c.w, t.Ti.Name)
+		} else if (t.CType & qcode.CTDisconnect) != 0 {
+			// do nothing
 
 		} else {
 			quoted(c.w, t.Ti.Name)
@@ -210,7 +212,7 @@ func (c *compilerContext) renderConnectStmt(m qcode.Mutate) {
 	rel := m.RelPC
 
 	// Render only for parent-to-child relationship of one-to-one
-	// For this to work the child needs to found first so it's primary key
+	// For this to work the json child needs to found first so it's primary key
 	// can be set in the related column on the parent object.
 	// Eg. Create product and connect a user to it.
 	if rel.Type == sdata.RelOneToOne {
@@ -251,13 +253,15 @@ func (c *compilerContext) renderConnectStmt(m qcode.Mutate) {
 
 		// When setting the id of the connected table in a one-to-many setting
 		// we always overwrite the value including for array columns
-		colWithTable(c.w, m.RelPC.Left.Col.Table, m.RelPC.Left.Col.Name)
+		if m.Multi {
+			colWithTableID(c.w, m.RelPC.Left.Col.Table, (m.MID - 1), m.RelPC.Left.Col.Name)
+		} else {
+			colWithTable(c.w, m.RelPC.Left.Col.Table, m.RelPC.Left.Col.Name)
+		}
 
 		c.w.WriteString(`FROM "_sg_input" i,`)
 		if m.Multi {
 			renderCteNameWithSuffix(c.w, m, strconv.Itoa(int(m.MID-1)))
-			c.w.WriteString(` `)
-			quoted(c.w, m.RelPC.Left.Col.Table)
 		} else {
 			quoted(c.w, m.RelPC.Left.Col.Table)
 		}
