@@ -119,11 +119,9 @@ We're happy to help you leverage Super Graph reach out if you have questions
 
 [Chat](https://discord.gg/6pSWCTZ)
 
-[Blog](https://abtcode.com/s/super-graph)
-
 ## Production use
 
-Our blog is hosted on [abtcode.com](https://abtcode.com) a blogging platform for coders. It uses Super Graph on Google Cloudrun as it's entire backend.
+The popular [42papers.com](https://42papers.com) site for discovering trending papers in AI and Computer Science uses Super Graph for it's entire backend.
 
 ## License
 
