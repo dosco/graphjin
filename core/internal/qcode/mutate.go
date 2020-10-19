@@ -11,7 +11,7 @@ import (
 	"github.com/dosco/super-graph/jsn"
 )
 
-type MType int8
+type MType uint8
 
 const (
 	MTInsert MType = iota + 1
@@ -21,13 +21,22 @@ const (
 	MTConnect
 	MTDisconnect
 	MTNone
+	MTKeyword
+)
+
+const (
+	CTConnect uint8 = 1 << iota
+	CTDisconnect
 )
 
 var insertTypes = map[string]MType{
 	"connect": MTConnect,
+	"find":    MTKeyword,
 }
 
 var updateTypes = map[string]MType{
+	"where":      MTKeyword,
+	"find":       MTKeyword,
 	"connect":    MTConnect,
 	"disconnect": MTDisconnect,
 }
@@ -35,7 +44,7 @@ var updateTypes = map[string]MType{
 type Mutate struct {
 	ID    int32
 	Type  MType
-	CType int
+	CType uint8
 	Key   string
 	Path  []string
 	Val   json.RawMessage
@@ -63,12 +72,12 @@ type MColumn struct {
 type MRColumn struct {
 	Col   sdata.DBColumn
 	VCol  sdata.DBColumn
-	CType int
+	CType uint8
 }
 
 type MTable struct {
 	Ti    sdata.DBTableInfo
-	CType int
+	CType uint8
 }
 
 func (co *Compiler) compileMutation(qc *QCode, op *graph.Operation, role string) error {
@@ -121,9 +130,11 @@ func (co *Compiler) compileMutation(qc *QCode, op *graph.Operation, role string)
 		intf := st.Pop()
 
 		if item, ok := intf.(Mutate); ok && item.render {
-			item.MID = tm[item.Ti.Name]
+			if item.RelPC.Type != sdata.RelOneToOne {
+				item.MID = tm[item.Ti.Name]
+				tm[item.Ti.Name]++
+			}
 			qc.Mutates = append(qc.Mutates, item)
-			tm[item.Ti.Name]++
 
 		} else if err := co.newMutate(st, item, role); err != nil {
 			return err
@@ -176,16 +187,21 @@ func (co *Compiler) newMutate(st *util.StackInf, m Mutate, role string) error {
 				ty, ok = updateTypes[k]
 			}
 
-			if ok {
-				m1 := m
-				m1.Type = ty
-				m1.ID = id
-				m1.Val = v
+			if ty != MTKeyword {
+				if ok {
+					m1 := m
+					m1.Type = ty
+					m1.ID = id
+					m1.Val = v
 
-				m.Items = append(m.Items, m1)
-				m.Type = MTNone
-				m.render = false
-				id++
+					m.Items = append(m.Items, m1)
+					m.Type = MTNone
+					m.render = false
+					id++
+
+				} else if _, err := m.Ti.GetColumn(k); err != nil {
+					return err
+				}
 			}
 
 			// Get parent-to-child relationship
@@ -206,17 +222,8 @@ func (co *Compiler) newMutate(st *util.StackInf, m Mutate, role string) error {
 				RelPC: relPC,
 			}
 
-			if v[0] == '{' {
-				m1.Data, m1.Array, err = jsn.Tree(v)
-				if err != nil {
-					return err
-				}
-				if v1, ok := m1.Data["connect"]; ok && (v1[0] == '{' || v1[0] == '[') {
-					m1.CType |= (1 << MTConnect)
-				}
-				if v1, ok := m1.Data["disconnect"]; ok && (v1[0] == '{' || v1[0] == '[') {
-					m1.CType |= (1 << MTDisconnect)
-				}
+			if m1, err = processDirectives(m1); err != nil {
+				return err
 			}
 
 			m.Items = append(m.Items, m1)
@@ -275,6 +282,50 @@ func (co *Compiler) newMutate(st *util.StackInf, m Mutate, role string) error {
 	return nil
 }
 
+func processDirectives(m Mutate) (Mutate, error) {
+	var err error
+	v := m.Val
+
+	if v[0] != '{' {
+		return m, nil
+	}
+
+	m.Data, m.Array, err = jsn.Tree(v)
+	if err != nil {
+		return m, err
+	}
+
+	if v1, ok := m.Data["connect"]; ok && (v1[0] == '{' || v1[0] == '[') {
+		m.CType |= CTConnect
+	}
+	if v1, ok := m.Data["disconnect"]; ok && (v1[0] == '{' || v1[0] == '[') {
+		m.CType |= CTDisconnect
+	}
+
+	if m.RelPC.Type == sdata.RelRecursive {
+		var find string
+
+		if v1, ok := m.Data["find"]; !ok {
+			return m, fmt.Errorf("required: 'find' needed for recursive mutations")
+		} else {
+			find = string(v1)
+		}
+
+		switch find {
+		case `"children"`:
+			m.RelPC.Type = sdata.RelOneToMany
+			m.RelCP.Type = sdata.RelOneToOne
+			m.RelPC = flipRel(m.RelPC)
+
+		case `"parent"`, `"parents"`:
+			m.RelPC.Type = sdata.RelOneToOne
+			m.RelCP.Type = sdata.RelOneToMany
+			m.RelCP = flipRel(m.RelCP)
+		}
+	}
+	return m, nil
+}
+
 func addTablesAndColumns(m Mutate, tr trval) (Mutate, error) {
 	var err error
 	cm := make(map[string]struct{})
@@ -283,7 +334,7 @@ func addTablesAndColumns(m Mutate, tr trval) (Mutate, error) {
 	case MTInsert:
 		// Render columns and values needed to connect current table and the parent table
 		if m.RelCP.Type == sdata.RelOneToOne {
-			m.Tables = append(m.Tables, MTable{Ti: m.RelPC.Left.Ti})
+			m.Tables = append(m.Tables, MTable{Ti: m.RelPC.Left.Ti, CType: m.CType})
 			m.RCols = append(m.RCols, MRColumn{
 				Col:  m.RelCP.Left.Col,
 				VCol: m.RelCP.Right.Col,
@@ -396,4 +447,11 @@ func getColumnsFromJSON(m Mutate, tr trval, cm map[string]struct{}) ([]MColumn, 
 	// }
 
 	return cols, nil
+}
+
+func flipRel(rel sdata.DBRel) sdata.DBRel {
+	rc := rel.Right.Col
+	rel.Right.Col = rel.Left.Col
+	rel.Left.Col = rc
+	return rel
 }

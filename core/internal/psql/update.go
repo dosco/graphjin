@@ -78,9 +78,6 @@ func (c *compilerContext) renderUpdateStmt(m qcode.Mutate) {
 			if _, ok := m.Data["where"]; ok {
 				c.w.WriteString(` AND `)
 				c.renderWhereFromJSON(m, "where")
-			} else if _, ok := m.Data["_where"]; ok {
-				c.w.WriteString(` AND `)
-				c.renderWhereFromJSON(m, "_where")
 			}
 		}
 		c.w.WriteString(`)`)

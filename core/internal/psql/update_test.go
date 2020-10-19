@@ -158,8 +158,7 @@ func nestedUpdateOneToManyWithConnect(t *testing.T) {
 			"created_at": "now",
 			"updated_at": "now",
 			"product": {
-				"connect": { "id": 7 },
-				"disconnect": { "id": 8 }
+				"connect": { "id": 7 }
 			}
 		}`),
 	}

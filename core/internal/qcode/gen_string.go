@@ -47,7 +47,7 @@ var _MType_index = [...]uint8{0, 8, 16, 24, 32, 41, 53, 59}
 
 func (i MType) String() string {
 	i -= 1
-	if i < 0 || i >= MType(len(_MType_index)-1) {
+	if i >= MType(len(_MType_index)-1) {
 		return "MType(" + strconv.FormatInt(int64(i+1), 10) + ")"
 	}
 	return _MType_name[_MType_index[i]:_MType_index[i+1]]
