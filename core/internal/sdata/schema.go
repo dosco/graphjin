@@ -553,7 +553,7 @@ func (s *DBSchema) GetRel(child, parent, through string) (DBRel, error) {
 		if err != nil {
 			return rel, err
 		}
-		rels := s.rm[(ct.Name + pt.Name)]
+		rels = s.rm[(ct.Name + pt.Name)]
 		if len(rels) == 0 {
 			return rel, fmt.Errorf("relationship: '%s' -> '%s' not found",
 				child, parent)
