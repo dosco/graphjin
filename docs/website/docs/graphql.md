@@ -210,6 +210,34 @@ query {
 }
 ```
 
+### Directives
+
+| Directive    | Arguments | Description                                                     |
+|--------------|-----------|-----------------------------------------------------------------|
+| @skip        | if: $var  | Skip this query selector when the `if` variable is true         |
+| @include     | if: $var  | Include this query selector only when the `if` variable is true |
+| @not_related |           | Tells the compiler to not relate this selector to its parent    |
+| @through     | table: "" | Tells the compiler which join table it should use for selector  |
+
+`@through(table: "name")` is to be used when there are multiple join tables that create a path between a child and parent in a nested query, this directive will tell the SQL genrator which of the though tables (join tables) to use for this relationship.
+
+```
+
+query {
+  user(id: 5) {
+    tags(where: { slug: { eq: $slug } }) @not_related {
+      id
+    }
+    products @through(table: "purchases") {
+      id
+    }
+  }
+}
+```
+:::info
+When super graph starts it builds an internal graph of all the related tables. Sometimes tables are not directly connected thought a foreign key but are connected two stops away though another table which people referr to as a join table. In this example if user and product had two seperate join tables maybe one for  purchased products and another for products you uploaded then you can use `@though` to specify which one to use to connect the tables together
+:::
+
 ### Recursive Queries
 
 A common pattern one encouters if recursive relationships which is when a table references itself. A good example of this is threaded comments when a comment is a reply to a previous comment and that to a previous. Another example could be an employee table where an employee references another employee (his boss). This has previously been hard to work with but Super Graph makes it a breeze. This works with any table that has a foreign key relationship to itself. The `find` parameter controls the direction of the fetch which can either be `parents` or `children`.
