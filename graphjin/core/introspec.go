@@ -27,7 +27,7 @@ var typeMap map[string]string = map[string]string{
 func (sg *SuperGraph) initGraphQLEgine() error {
 	engine := graphql.New()
 	engineSchema := engine.Schema
-	dbSchema := sg.schema
+	sc := sg.schema
 
 	if err := engineSchema.Parse(`enum OrderDirection { asc desc }`); err != nil {
 		return err
@@ -61,15 +61,15 @@ func (sg *SuperGraph) initGraphQLEgine() error {
 	//validGraphQLIdentifierRegex := regexp.MustCompile(`^[A-Za-z_][A-Za-z_0-9]*$`)
 
 	scalarExpressionTypesNeeded := map[string]bool{}
-	tableNames := dbSchema.GetTableNames()
+	tableNames := sc.GetTableNames()
 
 	var funcs []sdata.DBFunction
-	for _, f := range dbSchema.GetFunctions() {
+	for _, f := range sc.GetFunctions() {
 		funcs = append(funcs, f)
 	}
 
 	for _, table := range tableNames {
-		ti, err := dbSchema.GetTableInfo(table)
+		ti, err := sc.GetTableInfo(table)
 		if err != nil {
 			return err
 		}
@@ -104,6 +104,31 @@ func (sg *SuperGraph) initGraphQLEgine() error {
 		}
 		engineSchema.Types[orderByType.Name] = orderByType
 
+		for _, t := range tableNames {
+			if _, err := sc.GetRel(t, ti.Name, ""); err != nil {
+				continue
+			}
+			ti1, err := sc.GetTableInfo(t)
+			if err != nil {
+				return err
+			}
+			if ti1.Blocked {
+				continue
+			}
+			singularName := ti1.Singular
+			pluralName := ti1.Plural
+
+			outputType.Fields = append(outputType.Fields, &schema.Field{
+				Name: singularName,
+				Type: &schema.TypeName{Name: singularName + "Output"},
+			})
+
+			outputType.Fields = append(outputType.Fields, &schema.Field{
+				Name: pluralName,
+				Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: singularName + "Output"}}}},
+			})
+		}
+
 		expressionTypeName := singularName + "Expression"
 		expressionType := &schema.InputObject{
 			Name: expressionTypeName,
@@ -129,9 +154,6 @@ func (sg *SuperGraph) initGraphQLEgine() error {
 			if col.Blocked {
 				continue
 			}
-			// if !validGraphQLIdentifierRegex.MatchString(colName) {
-			// 	return errors.New("column name is not a valid GraphQL identifier: " + colName)
-			// }
 
 			colType := gqltype(col)
 			nullableColType := ""
