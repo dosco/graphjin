@@ -219,6 +219,7 @@ query {
 | @not_related |           | Tells the compiler to not relate this selector to its parent    |
 | @through     | table: "" | Tells the compiler which join table it should use for selector  |
 
+
 `@through(table: "name")` is to be used when there are multiple join tables that create a path between a child and parent in a nested query, this directive will tell the SQL genrator which of the though tables (join tables) to use for this relationship.
 
 ```
@@ -234,6 +235,7 @@ query {
   }
 }
 ```
+
 :::info
 When super graph starts it builds an internal graph of all the related tables. Sometimes tables are not directly connected thought a foreign key but are connected two stops away though another table which people referr to as a join table. In this example if user and product had two seperate join tables maybe one for  purchased products and another for products you uploaded then you can use `@though` to specify which one to use to connect the tables together
 :::

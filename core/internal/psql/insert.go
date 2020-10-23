@@ -28,7 +28,6 @@ func (c *compilerContext) renderInsertStmt(m qcode.Mutate, embedded bool) {
 	} else {
 		renderCteName(c.w, m)
 	}
-
 	c.w.WriteString(` AS (`)
 
 	c.w.WriteString(`INSERT INTO `)

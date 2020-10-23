@@ -3,6 +3,8 @@
 package psql
 
 import (
+	"strconv"
+
 	"github.com/dosco/super-graph/core/internal/qcode"
 	"github.com/dosco/super-graph/core/internal/sdata"
 )
@@ -23,7 +25,11 @@ func (c *compilerContext) renderUpdate() {
 
 func (c *compilerContext) renderUpdateStmt(m qcode.Mutate) {
 	c.w.WriteString(`, `)
-	renderCteName(c.w, m)
+	if m.Multi {
+		renderCteNameWithSuffix(c.w, m, strconv.Itoa(int(m.MID)))
+	} else {
+		renderCteName(c.w, m)
+	}
 	c.w.WriteString(` AS (`)
 
 	c.w.WriteString(`UPDATE `)
