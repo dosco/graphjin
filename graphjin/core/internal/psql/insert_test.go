@@ -279,6 +279,33 @@ func nestedInsertOneToOneWithConnectArray(t *testing.T) {
 	compileGQLToPSQL(t, gql, vars, "admin")
 }
 
+func nestedInsertRecursive(t *testing.T) {
+	gql := `mutation {
+		comments(insert: $data) {
+			id
+			comments(find: "children") {
+				id
+				body
+			}
+		}
+	}`
+
+	vars := map[string]json.RawMessage{
+		"data": json.RawMessage(`{
+			"id": 1002,
+			"body": "hello 2",
+			"created_at": "now",
+			"updated_at": "now",
+			"comment": {
+				"find": "children",
+				"connect":{ "id": 5 }
+			}
+		}`),
+	}
+
+	compileGQLToPSQL(t, gql, vars, "user")
+}
+
 func TestCompileInsert(t *testing.T) {
 	t.Run("simpleInsert", simpleInsert)
 	t.Run("singleInsert", singleInsert)
@@ -291,4 +318,6 @@ func TestCompileInsert(t *testing.T) {
 	t.Run("nestedInsertOneToOneWithConnectReverse", nestedInsertOneToOneWithConnectReverse)
 	t.Run("nestedInsertOneToOneWithConnect", nestedInsertOneToOneWithConnect)
 	t.Run("nestedInsertOneToOneWithConnectArray", nestedInsertOneToOneWithConnectArray)
+	t.Run("nestedInsertRecursive", nestedInsertRecursive)
+
 }

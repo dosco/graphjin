@@ -244,6 +244,34 @@ func nestedUpdateOneToOneWithDisconnect(t *testing.T) {
 // 	}
 // }
 
+func nestedUpdateRecursive(t *testing.T) {
+	gql := `mutation {
+		comments(update: $data, id: $id) {
+			id
+			comments(find: "children") {
+				id
+				body
+			}
+		}
+	}`
+
+	vars := map[string]json.RawMessage{
+		"id": json.RawMessage(`1002`),
+		"data": json.RawMessage(`{
+			"id": 1002,
+			"body": "hello 2",
+			"created_at": "now",
+			"updated_at": "now",
+			"comment": {
+				"find": "children",
+				"connect":{ "id": 5 }
+			}
+		}`),
+	}
+
+	compileGQLToPSQL(t, gql, vars, "user")
+}
+
 func TestCompileUpdate(t *testing.T) {
 	t.Run("singleUpdate", singleUpdate)
 	t.Run("simpleUpdateWithPresets", simpleUpdateWithPresets)
@@ -254,4 +282,6 @@ func TestCompileUpdate(t *testing.T) {
 	t.Run("nestedUpdateOneToOneWithConnect", nestedUpdateOneToOneWithConnect)
 	t.Run("nestedUpdateOneToOneWithDisconnect", nestedUpdateOneToOneWithDisconnect)
 	//t.Run("nestedUpdateOneToOneWithDisconnectArray", nestedUpdateOneToOneWithDisconnectArray)
+	t.Run("nestedUpdateRecursive", nestedUpdateRecursive)
+
 }
