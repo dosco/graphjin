@@ -620,7 +620,7 @@ func (c *compilerContext) renderOp(schema *sdata.DBSchema, ti sdata.DBTableInfo,
 	case qcode.OpIn:
 		c.w.WriteString(`= ANY`)
 	case qcode.OpNotIn:
-		c.w.WriteString(`!= ANY`)
+		c.w.WriteString(`!= ALL`)
 	case qcode.OpLike:
 		c.w.WriteString(`LIKE`)
 	case qcode.OpNotLike:
