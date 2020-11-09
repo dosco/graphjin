@@ -4,7 +4,6 @@ package graph
 import (
 	"errors"
 	"fmt"
-	"hash/maphash"
 	"sync"
 	"unsafe"
 )
@@ -52,10 +51,9 @@ type Operation struct {
 }
 
 type Fragment struct {
-	Name    string
-	On      string
-	Fields  []Field
-	fieldsA [10]Field
+	Name   string
+	On     string
+	Fields []Field
 }
 
 type Field struct {
@@ -106,7 +104,6 @@ func (n *Node) Free() {
 type Parser struct {
 	frags map[string]Fragment
 	ff    func(name string) (string, error)
-	h     maphash.Hash
 	input []byte // the string being scanned
 	pos   int
 	items []item

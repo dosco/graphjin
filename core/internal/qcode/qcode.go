@@ -1181,76 +1181,76 @@ func argErr(name, ty string) error {
 	return fmt.Errorf("value for argument '%s' must be a %s", name, ty)
 }
 
-func freeNodes(op *graph.Operation) {
-	var st *util.StackInf
-	fm := make(map[*graph.Node]struct{})
+// func freeNodes(op *graph.Operation) {
+// 	var st *util.StackInf
+// 	fm := make(map[*graph.Node]struct{})
 
-	for i := range op.Args {
-		arg := op.Args[i]
+// 	for i := range op.Args {
+// 		arg := op.Args[i]
 
-		for i := range arg.Val.Children {
-			if st == nil {
-				st = util.NewStackInf()
-			}
-			c := arg.Val.Children[i]
-			if _, ok := fm[c]; !ok {
-				st.Push(c)
-			}
-		}
+// 		for i := range arg.Val.Children {
+// 			if st == nil {
+// 				st = util.NewStackInf()
+// 			}
+// 			c := arg.Val.Children[i]
+// 			if _, ok := fm[c]; !ok {
+// 				st.Push(c)
+// 			}
+// 		}
 
-		if _, ok := fm[arg.Val]; !ok {
-			arg.Val.Free()
-			fm[arg.Val] = struct{}{}
-		}
-	}
+// 		if _, ok := fm[arg.Val]; !ok {
+// 			arg.Val.Free()
+// 			fm[arg.Val] = struct{}{}
+// 		}
+// 	}
 
-	for i := range op.Fields {
-		f := op.Fields[i]
+// 	for i := range op.Fields {
+// 		f := op.Fields[i]
 
-		for j := range f.Args {
-			arg := f.Args[j]
+// 		for j := range f.Args {
+// 			arg := f.Args[j]
 
-			for k := range arg.Val.Children {
-				if st == nil {
-					st = util.NewStackInf()
-				}
-				c := arg.Val.Children[k]
-				if _, ok := fm[c]; !ok {
-					st.Push(c)
-				}
-			}
+// 			for k := range arg.Val.Children {
+// 				if st == nil {
+// 					st = util.NewStackInf()
+// 				}
+// 				c := arg.Val.Children[k]
+// 				if _, ok := fm[c]; !ok {
+// 					st.Push(c)
+// 				}
+// 			}
 
-			if _, ok := fm[arg.Val]; !ok {
-				arg.Val.Free()
-				fm[arg.Val] = struct{}{}
-			}
-		}
-	}
+// 			if _, ok := fm[arg.Val]; !ok {
+// 				arg.Val.Free()
+// 				fm[arg.Val] = struct{}{}
+// 			}
+// 		}
+// 	}
 
-	if st == nil {
-		return
-	}
+// 	if st == nil {
+// 		return
+// 	}
 
-	for {
-		if st.Len() == 0 {
-			break
-		}
-		intf := st.Pop()
-		node, ok := intf.(*graph.Node)
-		if !ok || node == nil {
-			continue
-		}
+// 	for {
+// 		if st.Len() == 0 {
+// 			break
+// 		}
+// 		intf := st.Pop()
+// 		node, ok := intf.(*graph.Node)
+// 		if !ok || node == nil {
+// 			continue
+// 		}
 
-		for i := range node.Children {
-			st.Push(node.Children[i])
-		}
+// 		for i := range node.Children {
+// 			st.Push(node.Children[i])
+// 		}
 
-		if _, ok := fm[node]; !ok {
-			node.Free()
-			fm[node] = struct{}{}
-		}
-	}
-}
+// 		if _, ok := fm[node]; !ok {
+// 			node.Free()
+// 			fm[node] = struct{}{}
+// 		}
+// 	}
+// }
 
 func (sel *Select) addArg(arg *graph.Arg) {
 	if sel.ArgMap == nil {
