@@ -51,31 +51,11 @@ type Operation struct {
 	fieldsA [10]Field
 }
 
-var zeroOperation = Operation{}
-
-func (o *Operation) Reset() {
-	*o = zeroOperation
-}
-
-func (o *Operation) Free() {
-	opPool.Put(o)
-}
-
 type Fragment struct {
 	Name    string
 	On      string
 	Fields  []Field
 	fieldsA [10]Field
-}
-
-var zeroFragment = Fragment{}
-
-func (f *Fragment) Reset() {
-	*f = zeroFragment
-}
-
-func (f *Fragment) Free() {
-	fragPool.Put(f)
 }
 
 type Field struct {
@@ -109,6 +89,10 @@ type Node struct {
 	Children []*Node
 }
 
+var nodePool = sync.Pool{
+	New: func() interface{} { return new(Node) },
+}
+
 var zeroNode = Node{}
 
 func (n *Node) Reset() {
@@ -120,7 +104,8 @@ func (n *Node) Free() {
 }
 
 type Parser struct {
-	frags map[uint64]*Fragment
+	frags map[string]Fragment
+	ff    func(name string) (string, error)
 	h     maphash.Hash
 	input []byte // the string being scanned
 	pos   int
@@ -128,45 +113,25 @@ type Parser struct {
 	err   error
 }
 
-var nodePool = sync.Pool{
-	New: func() interface{} { return new(Node) },
-}
-
-var opPool = sync.Pool{
-	New: func() interface{} { return new(Operation) },
-}
-
-var fragPool = sync.Pool{
-	New: func() interface{} { return new(Fragment) },
-}
-
-var lexPool = sync.Pool{
-	New: func() interface{} { return new(lexer) },
-}
-
-func Parse(gql []byte) (*Operation, error) {
+func Parse(gql []byte, fetchFrag func(name string) (string, error)) (Operation, error) {
+	var l lexer
+	var op Operation
 	var err error
 
 	if len(gql) == 0 {
-		return nil, errors.New("blank query")
+		return op, errors.New("blank query")
 	}
 
-	l := lexPool.Get().(*lexer)
-	l.Reset()
-	defer lexPool.Put(l)
-
-	if err = lex(l, gql); err != nil {
-		return nil, err
+	if l, err = lex(gql); err != nil {
+		return op, err
 	}
 
-	p := &Parser{
+	p := Parser{
+		ff:    fetchFrag,
 		input: l.input,
 		pos:   -1,
 		items: l.items,
 	}
-
-	op := opPool.Get().(*Operation)
-	op.Reset()
 	op.Fields = op.fieldsA[:0]
 
 	s := -1
@@ -180,9 +145,8 @@ func Parse(gql []byte) (*Operation, error) {
 
 		if p.peek(itemFragment) {
 			p.ignore()
-			if f, err := p.parseFragment(); err != nil {
-				fragPool.Put(f)
-				return nil, err
+			if _, err = p.parseFragment(); err != nil {
+				return op, err
 			}
 
 		} else {
@@ -195,8 +159,8 @@ func Parse(gql []byte) (*Operation, error) {
 	}
 
 	p.reset(s)
-	if err := p.parseOp(op); err != nil {
-		return nil, err
+	if op, err = p.parseOp(); err != nil {
+		return op, err
 	}
 
 	for i, f := range op.Fields {
@@ -204,20 +168,12 @@ func Parse(gql []byte) (*Operation, error) {
 			op.Fields[i].Type = FieldKeyword
 		}
 	}
-
-	for _, v := range p.frags {
-		fragPool.Put(v)
-	}
-
 	return op, nil
 }
 
-func (p *Parser) parseFragment() (*Fragment, error) {
+func (p *Parser) parseFragment() (Fragment, error) {
 	var err error
-
-	frag := fragPool.Get().(*Fragment)
-	frag.Reset()
-	frag.Fields = frag.fieldsA[:0]
+	var frag Fragment
 
 	if p.peek(itemName) {
 		frag.Name = p.val(p.next())
@@ -249,27 +205,21 @@ func (p *Parser) parseFragment() (*Fragment, error) {
 	}
 
 	if p.frags == nil {
-		p.frags = make(map[uint64]*Fragment)
+		p.frags = make(map[string]Fragment)
 	}
 
-	_, _ = p.h.WriteString(frag.Name)
-	k := p.h.Sum64()
-	p.h.Reset()
-
-	p.frags[k] = frag
-
+	p.frags[frag.Name] = frag
 	return frag, nil
 }
 
-func (p *Parser) parseOp(op *Operation) error {
+func (p *Parser) parseOp() (Operation, error) {
 	var err error
 	var typeSet bool
+	var op Operation
 
 	if p.peek(itemQuery, itemMutation, itemSub) {
-		err = p.parseOpTypeAndArgs(op)
-
-		if err != nil {
-			return fmt.Errorf("%s: %v", op.Type, err)
+		if err = p.parseOpTypeAndArgs(&op); err != nil {
+			return op, fmt.Errorf("%s: %v", op.Type, err)
 		}
 		typeSet = true
 	}
@@ -288,14 +238,13 @@ func (p *Parser) parseOp(op *Operation) error {
 
 			op.Fields, err = p.parseFields(op.Fields)
 			if err != nil {
-				return fmt.Errorf("%s: %v", op.Type, err)
+				return op, fmt.Errorf("%s: %v", op.Type, err)
 			}
 		}
 	} else {
-		return fmt.Errorf("expecting a query, mutation or subscription, got: %s", p.next())
+		return op, fmt.Errorf("expecting a query, mutation or subscription, got: %s", p.next())
 	}
-
-	return nil
+	return op, nil
 }
 
 func (p *Parser) parseOpTypeAndArgs(op *Operation) error {
@@ -331,22 +280,39 @@ func (p *Parser) parseOpTypeAndArgs(op *Operation) error {
 }
 
 func ParseArgValue(argVal string) (*Node, error) {
-	l := lexPool.Get().(*lexer)
-	l.Reset()
-
-	if err := lex(l, []byte(argVal)); err != nil {
+	l, err := lex([]byte(argVal))
+	if err != nil {
 		return nil, err
 	}
 
-	p := &Parser{
+	p := Parser{
 		input: l.input,
 		pos:   -1,
 		items: l.items,
 	}
-	op, err := p.parseValue()
-	lexPool.Put(l)
+	return p.parseValue()
+}
 
-	return op, err
+func ParseFragment(fragment string) (Fragment, error) {
+	var f Fragment
+	var err error
+
+	l, err := lex([]byte(fragment))
+	if err != nil {
+		return f, err
+	}
+
+	p := Parser{
+		input: l.input,
+		pos:   -1,
+		items: l.items,
+	}
+
+	if p.peek(itemFragment) {
+		p.ignore()
+		f, err = p.parseFragment()
+	}
+	return f, err
 }
 
 func (p *Parser) parseFields(fields []Field) ([]Field, error) {
@@ -435,6 +401,8 @@ func (p *Parser) parseNormalFields(st *Stack, fields []Field) ([]Field, error) {
 
 func (p *Parser) parseFragmentFields(st *Stack, fields []Field) ([]Field, error) {
 	var err error
+	var fr Fragment
+	var ok bool
 
 	pid := st.Peek()
 
@@ -462,14 +430,22 @@ func (p *Parser) parseFragmentFields(st *Stack, fields []Field) ([]Field, error)
 		}
 
 		name := p.val(p.next())
-		_, _ = p.h.WriteString(name)
-		id := p.h.Sum64()
-		p.h.Reset()
 
-		fr, ok := p.frags[id]
-		if !ok {
-			return nil, fmt.Errorf("no fragment named '%s' defined", name)
+		if p.ff != nil {
+			fval, err := p.ff(name)
+			if err != nil {
+				return nil, fmt.Errorf("fragment not found: %s", name)
+			}
+			if fr, err = ParseFragment(fval); err != nil {
+				return nil, err
+			}
+		} else {
+			fr, ok = p.frags[name]
+			if !ok {
+				return nil, fmt.Errorf("fragment not defined: %s", name)
+			}
 		}
+
 		ff := fr.Fields
 
 		n := int32(len(fields))

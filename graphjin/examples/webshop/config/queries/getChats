@@ -1,0 +1,13 @@
+variables {
+  "id": 0.0
+}
+
+query getChats {
+  chats(id: $id) {
+    id
+    chats(find: "children") {
+      id
+    }
+  }
+}
+

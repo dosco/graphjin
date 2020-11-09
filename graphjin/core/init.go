@@ -13,9 +13,13 @@ import (
 func (sg *SuperGraph) initConfig() error {
 	c := sg.conf
 
-	for k, v := range c.Inflections {
-		flect.AddPlural(k, v)
-		flect.AddSingular(v, k)
+	for _, v := range c.Inflections {
+		kv := strings.SplitN(v, ":", 2)
+		if kv[0] == "" || kv[1] == "" {
+			return fmt.Errorf("inflections: should be an array of singular:plural values: %s", v)
+		}
+		flect.AddPlural(kv[0], kv[1])
+		flect.AddSingular(kv[1], kv[0])
 	}
 
 	// Tables: Validate and sanitize

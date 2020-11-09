@@ -64,8 +64,8 @@ cors_debug: false
 set_user_id: false 
 
 # inflections:
-#   person: people
-#   sheep: sheep
+#   - person:people
+#   - sheep:sheep
 
 # open opencensus tracing and metrics
 # telemetry:

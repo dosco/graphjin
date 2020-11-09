@@ -23,7 +23,7 @@ func (sg *SuperGraph) compileQuery(cq *cquery, role string) error {
 
 	// In production mode enforce the allow list and
 	// compile and cache the result else compile each time
-	if sg.conf.UseAllowList {
+	if sg.allowList != nil && sg.conf.EnforceAllowList {
 		if cq1, ok := sg.queries[(cq.q.name + role)]; ok {
 			cq.q = cq1.q
 		} else {

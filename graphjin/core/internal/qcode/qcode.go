@@ -270,7 +270,7 @@ func (co *Compiler) Compile(query []byte, vars Variables, role string) (*QCode, 
 	qc := QCode{SType: QTQuery, Schema: co.s, Vars: vars}
 	qc.Roots = qc.rootsA[:0]
 
-	op, err := graph.Parse(query)
+	op, err := graph.Parse(query, co.c.FragmentFetcher)
 	if err != nil {
 		return nil, err
 	}
@@ -286,18 +286,15 @@ func (co *Compiler) Compile(query []byte, vars Variables, role string) (*QCode, 
 		return nil, fmt.Errorf("invalid operation: %s", op.Type)
 	}
 
-	if err := co.compileQuery(&qc, op, role); err != nil {
+	if err := co.compileQuery(&qc, &op, role); err != nil {
 		return nil, err
 	}
 
 	if qc.Type == QTMutation {
-		if err = co.compileMutation(&qc, op, role); err != nil {
+		if err = co.compileMutation(&qc, &op, role); err != nil {
 			return nil, err
 		}
 	}
-
-	freeNodes(op)
-	op.Free()
 
 	return &qc, nil
 }
