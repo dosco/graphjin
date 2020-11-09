@@ -16,11 +16,14 @@ type Config struct {
 	// the cursor. Auto-generated if not set
 	SecretKey string `mapstructure:"secret_key"`
 
-	// UseAllowList (aka production mode) when set to true ensures
-	// only queries lists in the allow.list file can be used. All
-	// queries are pre-prepared so no compiling happens and things are
-	// very fast.
-	UseAllowList bool `mapstructure:"use_allow_list"`
+	// DisableAllowList when set to true entirely disables the
+	// allow list workflow and all queries are always compiled
+	// even in production. (Warning possible security concern)
+	DisableAllowList bool `mapstructure:"disable_allow_list"`
+
+	// EnforceAllowList (aka production mode) when set to true ensures
+	// only queries saved to the allow list folders can be used.
+	EnforceAllowList bool `mapstructure:"enforce_allow_list"`
 
 	// AllowListFile if the path to allow list file if not set the
 	// path is assumed to be the same as the config path (allow.list)
@@ -63,7 +66,7 @@ type Config struct {
 
 	// Inflections is to add additionally singular to plural mappings
 	// to the engine (eg. sheep: sheep)
-	Inflections map[string]string `mapstructure:"inflections"`
+	Inflections []string `mapstructure:"inflections"`
 
 	// Database schema name. Defaults to 'public'
 	DBSchema string `mapstructure:"db_schema"`

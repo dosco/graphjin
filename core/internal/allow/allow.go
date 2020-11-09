@@ -8,7 +8,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"sort"
+	"path"
 	"strings"
 	"text/scanner"
 
@@ -20,93 +20,72 @@ const (
 	expComment = iota + 1
 	expVar
 	expQuery
+	expFrag
 )
 
 type Item struct {
 	Name    string
+	Comment string
 	key     string
 	Query   string
 	Vars    string
-	Comment string
+	frags   []Frag
+}
+
+type Frag struct {
+	Name  string
+	Value string
 }
 
 type List struct {
-	filepath string
-	saveChan chan Item
+	saveChan   chan Item
+	pathExists bool
+
+	filepath     string
+	queryPath    string
+	fragmentPath string
 }
 
 type Config struct {
-	CreateIfNotExists bool
-	Persist           bool
-	Log               *log.Logger
+	Log *log.Logger
 }
 
 func New(filename string, conf Config) (*List, error) {
-	al := List{}
-
-	if filename != "" {
-		fp := filename
-
-		if _, err := os.Stat(fp); err == nil {
-			al.filepath = fp
-		} else if !os.IsNotExist(err) {
-			return nil, err
-		}
-	}
-
-	if al.filepath == "" {
-		fp := "./allow.list"
-
-		if _, err := os.Stat(fp); err == nil {
-			al.filepath = fp
-		} else if !os.IsNotExist(err) {
-			return nil, err
-		}
-	}
-
-	if al.filepath == "" {
-		fp := "./config/allow.list"
-
-		if _, err := os.Stat(fp); err == nil {
-			al.filepath = fp
-		} else if !os.IsNotExist(err) {
-			return nil, err
-		}
-	}
-
-	if al.filepath == "" {
-		if !conf.CreateIfNotExists {
-			return nil, errors.New("allow.list not found")
-		}
-
-		if filename == "" {
-			al.filepath = "./config/allow.list"
-		} else {
-			al.filepath = filename
-		}
-
-		if file, err := os.OpenFile(al.filepath, os.O_RDONLY|os.O_CREATE, 0600); err != nil {
-			return nil, err
-		} else {
-			file.Close()
-		}
-	}
-
 	var err error
+	var ap string
+	var mig bool
 
-	if conf.Persist {
-		al.saveChan = make(chan Item)
+	al := List{saveChan: make(chan Item)}
 
-		go func() {
-			for v := range al.saveChan {
-				err := al.save(v)
-
-				if err != nil && conf.Log != nil {
-					conf.Log.Println("WRN allow list save:", err)
-				}
-			}
-		}()
+	if err := al.setFilePath(filename); err != nil {
+		return nil, err
 	}
+
+	if al.filepath == "" {
+		ap = path.Dir(filename)
+	} else {
+		ap = path.Dir(al.filepath)
+		mig = true
+	}
+
+	al.queryPath = path.Join(ap, "queries")
+	al.fragmentPath = path.Join(ap, "fragments")
+
+	if mig {
+		if err := al.migrate(); err != nil {
+			return nil, err
+		}
+	}
+
+	go func() {
+		for v := range al.saveChan {
+			err := al.save(v)
+
+			if err != nil && conf.Log != nil {
+				conf.Log.Println("WRN allow list save:", err)
+			}
+		}
+	}()
 
 	if err != nil {
 		return nil, err
@@ -115,11 +94,7 @@ func New(filename string, conf Config) (*List, error) {
 	return &al, nil
 }
 
-func (al *List) IsPersist() bool {
-	return al.saveChan != nil
-}
-
-func (al *List) Set(vars []byte, query, comment string) error {
+func (al *List) Set(vars []byte, query string) error {
 	if al.saveChan == nil {
 		return errors.New("allow.list is read-only")
 	}
@@ -128,36 +103,76 @@ func (al *List) Set(vars []byte, query, comment string) error {
 		return errors.New("empty query")
 	}
 
-	al.saveChan <- Item{
-		Comment: comment,
-		Query:   query,
-		Vars:    string(vars),
+	items, err := parse(query)
+	if err != nil {
+		return err
 	}
+	items[0].Vars = string(vars)
+	al.saveChan <- items[0]
 
 	return nil
 }
 
-func (al *List) Load() ([]Item, error) {
+func (al *List) loadFile() ([]Item, error) {
 	b, err := ioutil.ReadFile(al.filepath)
 	if err != nil {
 		return nil, err
 	}
 
-	return parse(string(b), al.filepath)
+	return parse(string(b))
 }
 
-func parse(b, filename string) ([]Item, error) {
+func (al *List) Load() ([]Item, error) {
+	var items []Item
+	files, err := ioutil.ReadDir(al.queryPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _, f := range files {
+		b, err := ioutil.ReadFile(path.Join(al.queryPath, f.Name()))
+		if err != nil {
+			return nil, err
+		}
+		item, err := parse(string(b))
+		if err != nil {
+			return items, err
+		}
+		items = append(items, item[0])
+	}
+	return items, nil
+}
+
+func (al *List) FragmentFetcher() func(name string) (string, error) {
+	return func(name string) (string, error) {
+		v, err := ioutil.ReadFile(path.Join(al.fragmentPath, name))
+		return string(v), err
+	}
+}
+
+func (al *List) GetQuery(name string) (Item, error) {
+	v, err := ioutil.ReadFile(path.Join(al.queryPath, name))
+	if err == nil {
+		return Item{}, err
+	}
+
+	items, err := parse(string(v))
+	if err != nil {
+		return Item{}, err
+	}
+	return items[0], nil
+}
+
+func parse(b string) ([]Item, error) {
 	var items []Item
 
 	var s scanner.Scanner
 	s.Init(strings.NewReader(b))
-	s.Filename = filename
 	s.Mode ^= scanner.SkipComments
 
 	var op, sp scanner.Position
 	var item Item
 
-	newComment := false
 	st := expComment
 
 	for tok := s.Scan(); tok != scanner.EOF; tok = s.Scan() {
@@ -165,31 +180,24 @@ func parse(b, filename string) ([]Item, error) {
 
 		switch {
 		case strings.HasPrefix(txt, "/*"):
-			if st == expQuery {
-				v := b[sp.Offset:s.Pos().Offset]
-				item.Query = strings.TrimSpace(v[:strings.LastIndexByte(v, '}')+1])
-				items = append(items, item)
-			}
-			item = Item{Comment: strings.TrimSpace(txt[2 : len(txt)-2])}
-			sp = s.Pos()
-			st = expComment
-			newComment = true
+			v := b[sp.Offset:s.Pos().Offset]
 
-		case !newComment && strings.HasPrefix(txt, "#"):
 			if st == expQuery {
-				v := b[sp.Offset:s.Pos().Offset]
 				item.Query = strings.TrimSpace(v[:strings.LastIndexByte(v, '}')+1])
 				items = append(items, item)
 			}
+
+			if st == expFrag {
+				f := Frag{Value: strings.TrimSpace(v[:strings.LastIndexByte(v, '}')+1])}
+				f.Name = QueryName(f.Value)
+				item.frags = append(item.frags, f)
+				items = append(items, item)
+			}
+
 			item = Item{}
 			sp = s.Pos()
-			st = expComment
 
 		case strings.HasPrefix(txt, "variables"):
-			if st == expComment {
-				v := b[sp.Offset:s.Pos().Offset]
-				item.Comment = strings.TrimSpace(v[:strings.IndexByte(v, '\n')])
-			}
 			sp = s.Pos()
 			st = expVar
 
@@ -201,6 +209,19 @@ func parse(b, filename string) ([]Item, error) {
 			sp = op
 			st = expQuery
 
+		case strings.HasPrefix(txt, "fragment"):
+			v := b[sp.Offset:s.Pos().Offset]
+
+			if st == expVar {
+				item.Vars = strings.TrimSpace(v[:strings.LastIndexByte(v, '}')+1])
+			}
+
+			if st == expQuery {
+				item.Query = strings.TrimSpace(v[:strings.LastIndexByte(v, '}')+1])
+			}
+
+			sp = op
+			st = expFrag
 		}
 		op = s.Pos()
 	}
@@ -211,18 +232,20 @@ func parse(b, filename string) ([]Item, error) {
 		items = append(items, item)
 	}
 
+	if st == expFrag {
+		v := b[sp.Offset:s.Pos().Offset]
+		f := Frag{Value: strings.TrimSpace(v[:strings.LastIndexByte(v, '}')+1])}
+		f.Name = QueryName(f.Value)
+		item.frags = append(item.frags, f)
+		items = append(items, item)
+	}
+
 	for i := range items {
 		items[i].Name = QueryName(items[i].Query)
 		items[i].key = strings.ToLower(items[i].Name)
 	}
 
 	return items, nil
-}
-
-func isGraphQL(s string) bool {
-	return strings.HasPrefix(s, "query") ||
-		strings.HasPrefix(s, "mutation") ||
-		strings.HasPrefix(s, "subscription")
 }
 
 func (al *List) save(item Item) error {
@@ -245,78 +268,26 @@ func (al *List) save(item Item) error {
 		return nil
 	}
 
-	list, err := al.Load()
+	if err := al.saveItem(item, path.Dir(al.filepath)); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (al *List) migrate() error {
+	list, err := al.loadFile()
 	if err != nil {
 		return err
 	}
 
-	index := -1
-
-	for i, v := range list {
-		if strings.EqualFold(v.Name, item.Name) {
-			index = i
-			break
-		}
-	}
-
-	if index != -1 {
-		if list[index].Comment != "" {
-			item.Comment = list[index].Comment
-		}
-		list[index] = item
-	} else {
-		list = append(list, item)
-	}
-
-	f, err := os.Create(al.filepath)
+	ap, err := al.makeDir()
 	if err != nil {
 		return err
-	}
-
-	defer f.Close()
-
-	sort.Slice(list, func(i, j int) bool {
-		return strings.Compare(list[i].key, list[j].key) == -1
-	})
-
-	for i, v := range list {
-		var vars string
-		if v.Vars != "" {
-			buf.Reset()
-			if err := jsn.Clear(&buf, []byte(v.Vars)); err != nil {
-				continue
-			}
-			vj := json.RawMessage(buf.Bytes())
-
-			if vj, err = json.MarshalIndent(vj, "", "  "); err != nil {
-				continue
-			}
-			vars = string(vj)
-		}
-		list[i].Vars = vars
-		list[i].Comment = strings.TrimSpace(v.Comment)
 	}
 
 	for _, v := range list {
-		if v.Comment != "" {
-			_, err = f.WriteString(fmt.Sprintf("/* %s */\n\n", v.Comment))
-		} else {
-			_, err = f.WriteString(fmt.Sprintf("/* %s */\n\n", v.Name))
-		}
-
-		if err != nil {
-			return err
-		}
-
-		if v.Vars != "" {
-			_, err = f.WriteString(fmt.Sprintf("variables %s\n\n", v.Vars))
-			if err != nil {
-				return err
-			}
-		}
-
-		_, err = f.WriteString(fmt.Sprintf("%s\n\n", v.Query))
-		if err != nil {
+		if err := al.saveItem(v, ap); err != nil {
 			return err
 		}
 	}
@@ -324,26 +295,51 @@ func (al *List) save(item Item) error {
 	return nil
 }
 
-func QueryName(b string) string {
-	state, s := 0, 0
+func (al *List) saveItem(v Item, ap string) error {
+	f, err := os.Create(path.Join(al.queryPath, v.Name))
+	if err != nil {
+		return err
+	}
+	defer f.Close()
 
-	for i := 0; i < len(b); i++ {
-		switch {
-		case state == 2 && !isValidNameChar(b[i]):
-			return b[s:i]
-		case state == 1 && b[i] == '{':
-			return ""
-		case state == 1 && isValidNameChar(b[i]):
-			s = i
-			state = 2
-		case i != 0 && b[i] == ' ' && (b[i-1] == 'n' || b[i-1] == 'y'):
-			state = 1
+	if v.Vars != "" {
+		var buf bytes.Buffer
+
+		if err := jsn.Clear(&buf, []byte(v.Vars)); err != nil {
+			return err
+		}
+		vj := json.RawMessage(buf.Bytes())
+
+		if vj, err = json.MarshalIndent(vj, "", "  "); err != nil {
+			return err
+		}
+		v.Vars = string(vj)
+	}
+
+	if v.Vars != "" {
+		_, err = f.WriteString(fmt.Sprintf("variables %s\n\n", v.Vars))
+		if err != nil {
+			return err
 		}
 	}
 
-	return ""
-}
+	_, err = f.WriteString(fmt.Sprintf("%s\n\n", v.Query))
+	if err != nil {
+		return err
+	}
 
-func isValidNameChar(c byte) bool {
-	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
+	for _, fv := range v.frags {
+		f, err := os.Create(path.Join(al.fragmentPath, fv.Name))
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		_, err = f.WriteString(fmt.Sprintf("%s\n\n", fv.Value))
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

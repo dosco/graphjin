@@ -207,9 +207,11 @@ func (l *lexer) errorf(format string, args ...interface{}) stateFn {
 }
 
 // lex creates a new scanner for the input string.
-func lex(l *lexer, input []byte) error {
+func lex(input []byte) (lexer, error) {
+	var l lexer
+
 	if len(input) == 0 {
-		return errors.New("empty query")
+		return l, errors.New("empty query")
 	}
 
 	l.input = input
@@ -219,9 +221,9 @@ func lex(l *lexer, input []byte) error {
 	l.run()
 
 	if last := l.items[len(l.items)-1]; last._type == itemError {
-		return l.err
+		return l, l.err
 	}
-	return nil
+	return l, nil
 }
 
 // run runs the state machine for the lexer.

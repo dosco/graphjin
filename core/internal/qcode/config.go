@@ -8,9 +8,10 @@ import (
 )
 
 type Config struct {
-	Vars         map[string]string
-	defTrv       trval
-	DefaultBlock bool
+	Vars            map[string]string
+	FragmentFetcher func(name string) (string, error)
+	DefaultBlock    bool
+	defTrv          trval
 }
 
 type TRConfig struct {

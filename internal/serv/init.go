@@ -107,7 +107,7 @@ func initConf(servConfig *ServConfig) (*Config, error) {
 	}
 
 	if c.Production {
-		c.UseAllowList = true
+		c.EnforceAllowList = true
 	} else {
 		c.Debug = true
 	}

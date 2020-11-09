@@ -131,11 +131,11 @@ func newSuperGraph(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo) (*SuperGraph,
 		return nil, err
 	}
 
-	if err := sg.initCompilers(); err != nil {
+	if err := sg.initAllowList(); err != nil {
 		return nil, err
 	}
 
-	if err := sg.initAllowList(); err != nil {
+	if err := sg.initCompilers(); err != nil {
 		return nil, err
 	}
 
@@ -196,7 +196,7 @@ func (sg *SuperGraph) GraphQL(c context.Context, query string, vars json.RawMess
 
 	// use the chirino/graphql library for introspection queries
 	// disabled when allow list is enforced
-	if !sg.conf.UseAllowList && ct.name == "IntrospectionQuery" {
+	if sg.conf.EnforceAllowList && ct.name == "IntrospectionQuery" {
 		r := sg.ge.ServeGraphQL(&graphql.Request{Query: query})
 		res.Data = r.Data
 

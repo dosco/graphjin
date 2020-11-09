@@ -65,28 +65,22 @@ func (sg *SuperGraph) prepareRoleStmt() error {
 }
 
 func (sg *SuperGraph) initAllowList() error {
-	var ac allow.Config
 	var err error
+
+	if sg.conf.DisableAllowList {
+		return nil
+	}
 
 	if sg.conf.AllowListFile == "" {
 		sg.conf.AllowListFile = "allow.list"
 	}
 
-	// When list is not enabled it is still created and
-	// and new queries are saved to it.
-	if !sg.conf.UseAllowList {
-		ac = allow.Config{CreateIfNotExists: true, Persist: true, Log: sg.log}
-	}
+	sg.allowList, err = allow.New(sg.conf.AllowListFile, allow.Config{
+		Log: sg.log,
+	})
 
-	sg.allowList, err = allow.New(sg.conf.AllowListFile, ac)
 	if err != nil {
 		return fmt.Errorf("failed to initialize allow list: %w", err)
-	}
-
-	// List is presistant in dev mode so don't go ahead and set
-	// the queries struct
-	if sg.allowList.IsPersist() {
-		return nil
 	}
 
 	sg.queries = make(map[string]*cquery)

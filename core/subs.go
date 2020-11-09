@@ -76,7 +76,7 @@ func (sg *SuperGraph) Subscribe(c context.Context, query string, vars json.RawMe
 	}
 
 	if name == "" {
-		if sg.conf.UseAllowList {
+		if sg.allowList != nil && sg.conf.EnforceAllowList {
 			return nil, errors.New("subscription: query name is required")
 		} else {
 			h := sha256.Sum256([]byte(query))

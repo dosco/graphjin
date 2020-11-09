@@ -98,9 +98,15 @@ func (sg *SuperGraph) initSchema() error {
 func (sg *SuperGraph) initCompilers() error {
 	var err error
 
-	sg.qc, err = qcode.NewCompiler(sg.schema, qcode.Config{
+	qcc := qcode.Config{
 		DefaultBlock: sg.conf.DefaultBlock,
-	})
+	}
+
+	if sg.allowList != nil && sg.conf.EnforceAllowList {
+		qcc.FragmentFetcher = sg.allowList.FragmentFetcher()
+	}
+
+	sg.qc, err = qcode.NewCompiler(sg.schema, qcc)
 	if err != nil {
 		return err
 	}
@@ -196,10 +202,9 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 	}
 
 	res.data = cur.data
-	//res.role = role
 
-	if c.sg.allowList.IsPersist() {
-		if err := c.sg.allowList.Set(vars, query, ""); err != nil {
+	if c.sg.allowList != nil {
+		if err := c.sg.allowList.Set(vars, query); err != nil {
 			return res, err
 		}
 	}
