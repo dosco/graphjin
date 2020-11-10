@@ -42,7 +42,6 @@ RUN apk add --no-cache tzdata
 RUN mkdir -p /config
 
 COPY --from=go-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=go-build /app/examples/webshop/config/ /config/
 COPY --from=go-build /app/super-graph .
 COPY --from=go-build /app/internal/scripts/start.sh .
 COPY --from=go-build /usr/local/bin/sops .
