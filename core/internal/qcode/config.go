@@ -11,6 +11,7 @@ type Config struct {
 	Vars            map[string]string
 	FragmentFetcher func(name string) (string, error)
 	DefaultBlock    bool
+	DefaultLimit    int
 	defTrv          trval
 }
 
@@ -217,7 +218,7 @@ func (trv *trval) limit(qt QType) int32 {
 	if qt == QTQuery && trv.query.limit != 0 {
 		return trv.query.limit
 	}
-	return 20
+	return 0
 }
 
 func (trv *trval) isBlocked(qt QType, name string) error {

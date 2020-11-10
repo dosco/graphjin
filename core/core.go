@@ -100,6 +100,7 @@ func (sg *SuperGraph) initCompilers() error {
 
 	qcc := qcode.Config{
 		DefaultBlock: sg.conf.DefaultBlock,
+		DefaultLimit: sg.conf.DefaultLimit,
 	}
 
 	if sg.allowList != nil && sg.conf.EnforceAllowList {

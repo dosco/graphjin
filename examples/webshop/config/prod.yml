@@ -94,10 +94,6 @@ database:
   #max_retries: 0
   #log_level: "debug" 
 
-  # Set session variable "user.id" to the user id
-  # Enable this if you need the user id in triggers, etc
-  set_user_id: false
-
   # database ping timeout is used for db health checking
   ping_timeout: 5m
 

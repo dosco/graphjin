@@ -148,11 +148,12 @@ const (
 )
 
 type Paging struct {
-	Type    PagingType
-	Limit   int32
-	Offset  int32
-	Cursor  bool
-	NoLimit bool
+	Type     PagingType
+	LimitVar string
+	Limit    int32
+	Offset   int32
+	Cursor   bool
+	NoLimit  bool
 }
 
 type ExpOp int8
@@ -377,7 +378,6 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 		}
 
 		sel.Children = make([]int32, 0, 5)
-		sel.Paging.Limit = tr.limit(qc.Type)
 
 		if err := co.compileDirectives(qc, sel, field.Directives); err != nil {
 			return err
@@ -413,6 +413,8 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 				co.addSeekPredicate(sel)
 			}
 		}
+
+		co.setLimit(tr, qc, sel)
 
 		if err := co.validateSelect(sel); err != nil {
 			return err
@@ -485,6 +487,21 @@ func (co *Compiler) addRelInfo(field *graph.Field, qc *QCode, sel *Select) error
 	}
 	sel.Table = sel.Ti.Name
 	return nil
+}
+
+func (co *Compiler) setLimit(tr trval, qc *QCode, sel *Select) {
+	// Use limit from table role config
+	if l := tr.limit(qc.Type); l != 0 {
+		sel.Paging.Limit = l
+
+		// Else use default limit from config
+	} else if co.c.DefaultLimit != 0 {
+		sel.Paging.Limit = int32(co.c.DefaultLimit)
+
+		// Else just go with 20
+	} else {
+		sel.Paging.Limit = 20
+	}
 }
 
 // This
@@ -938,15 +955,22 @@ func (co *Compiler) compileArgDistinctOn(sel *Select, arg *graph.Arg) error {
 func (co *Compiler) compileArgLimit(sel *Select, arg *graph.Arg) error {
 	node := arg.Val
 
-	if node.Type != graph.NodeNum {
-		return argErr("limit", "number")
+	if node.Type != graph.NodeNum && node.Type != graph.NodeVar {
+		return argErr("limit", "number or variable")
 	}
 
-	if n, err := strconv.Atoi(node.Val); err != nil {
-		return err
-	} else {
-		sel.Paging.Limit = int32(n)
+	switch node.Type {
+	case graph.NodeNum:
+		if n, err := strconv.Atoi(node.Val); err != nil {
+			return err
+		} else {
+			sel.Paging.Limit = int32(n)
+		}
+
+	case graph.NodeVar:
+		sel.Paging.LimitVar = node.Val
 	}
+
 	return nil
 }
 
@@ -966,16 +990,8 @@ func (co *Compiler) compileArgOffset(sel *Select, arg *graph.Arg) error {
 }
 
 func (co *Compiler) compileArgFirstLast(sel *Select, arg *graph.Arg, order Order) error {
-	node := arg.Val
-
-	if node.Type != graph.NodeNum {
-		return argErr(arg.Name, "number")
-	}
-
-	if n, err := strconv.Atoi(node.Val); err != nil {
+	if err := co.compileArgLimit(sel, arg); err != nil {
 		return err
-	} else {
-		sel.Paging.Limit = int32(n)
 	}
 
 	if !sel.Singular {

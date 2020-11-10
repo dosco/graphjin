@@ -107,8 +107,11 @@ func (al *List) Set(vars []byte, query string) error {
 	if err != nil {
 		return err
 	}
-	items[0].Vars = string(vars)
-	al.saveChan <- items[0]
+
+	if len(items) != 0 {
+		items[0].Vars = string(vars)
+		al.saveChan <- items[0]
+	}
 
 	return nil
 }
@@ -268,7 +271,7 @@ func (al *List) save(item Item) error {
 		return nil
 	}
 
-	if err := al.saveItem(item, path.Dir(al.filepath)); err != nil {
+	if err := al.saveItem(item, path.Dir(al.filepath), true); err != nil {
 		return err
 	}
 
@@ -287,7 +290,7 @@ func (al *List) migrate() error {
 	}
 
 	for _, v := range list {
-		if err := al.saveItem(v, ap); err != nil {
+		if err := al.saveItem(v, ap, false); err != nil {
 			return err
 		}
 	}
@@ -295,49 +298,75 @@ func (al *List) migrate() error {
 	return nil
 }
 
-func (al *List) saveItem(v Item, ap string) error {
-	f, err := os.Create(path.Join(al.queryPath, v.Name))
-	if err != nil {
-		return err
-	}
-	defer f.Close()
+func (al *List) saveItem(v Item, ap string, ow bool) error {
+	fn := path.Join(al.queryPath, v.Name)
+	oq := true
 
-	if v.Vars != "" {
-		var buf bytes.Buffer
-
-		if err := jsn.Clear(&buf, []byte(v.Vars)); err != nil {
+	if !ow {
+		if _, err := os.Stat(fn); err != nil && !os.IsNotExist(err) {
 			return err
-		}
-		vj := json.RawMessage(buf.Bytes())
-
-		if vj, err = json.MarshalIndent(vj, "", "  "); err != nil {
-			return err
-		}
-		v.Vars = string(vj)
-	}
-
-	if v.Vars != "" {
-		_, err = f.WriteString(fmt.Sprintf("variables %s\n\n", v.Vars))
-		if err != nil {
-			return err
+		} else if err == nil {
+			oq = false
 		}
 	}
 
-	_, err = f.WriteString(fmt.Sprintf("%s\n\n", v.Query))
-	if err != nil {
-		return err
-	}
-
-	for _, fv := range v.frags {
-		f, err := os.Create(path.Join(al.fragmentPath, fv.Name))
+	if oq {
+		f, err := os.Create(fn)
 		if err != nil {
 			return err
 		}
 		defer f.Close()
 
-		_, err = f.WriteString(fmt.Sprintf("%s\n\n", fv.Value))
+		if v.Vars != "" {
+			var buf bytes.Buffer
+
+			if err := jsn.Clear(&buf, []byte(v.Vars)); err != nil {
+				return err
+			}
+			vj := json.RawMessage(buf.Bytes())
+
+			if vj, err = json.MarshalIndent(vj, "", "  "); err != nil {
+				return err
+			}
+			v.Vars = string(vj)
+		}
+
+		if v.Vars != "" {
+			_, err = f.WriteString(fmt.Sprintf("variables %s\n\n", v.Vars))
+			if err != nil {
+				return err
+			}
+		}
+
+		_, err = f.WriteString(fmt.Sprintf("%s\n\n", v.Query))
 		if err != nil {
 			return err
+		}
+	}
+
+	for _, fv := range v.frags {
+		fn := path.Join(al.fragmentPath, fv.Name)
+		of := true
+
+		if !ow {
+			if _, err := os.Stat(fn); err != nil && !os.IsNotExist(err) {
+				return err
+			} else if err == nil {
+				of = false
+			}
+		}
+
+		if of {
+			f, err := os.Create(fn)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+
+			_, err = f.WriteString(fmt.Sprintf("%s\n\n", fv.Value))
+			if err != nil {
+				return err
+			}
 		}
 	}
 

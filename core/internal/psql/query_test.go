@@ -19,6 +19,20 @@ func simpleQuery(t *testing.T) {
 	compileGQLToPSQL(t, gql, nil, "user")
 }
 
+func withVariableLimit(t *testing.T) {
+	gql := `query {
+		products(limit: $limit) {
+			id
+		}
+	}`
+
+	vars := map[string]json.RawMessage{
+		"limit": json.RawMessage(`100`),
+	}
+
+	compileGQLToPSQL(t, gql, vars, "user")
+}
+
 func withComplexArgs(t *testing.T) {
 	gql := `query {
 		proDUcts(
@@ -625,6 +639,7 @@ func blockedFunctions(t *testing.T) {
 
 func TestCompileQuery(t *testing.T) {
 	t.Run("simpleQuery", simpleQuery)
+	t.Run("withVariableLimit", withVariableLimit)
 	t.Run("withComplexArgs", withComplexArgs)
 	t.Run("withWhereIn", withWhereIn)
 	t.Run("withWhereAndList", withWhereAndList)
