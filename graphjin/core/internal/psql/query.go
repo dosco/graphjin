@@ -364,6 +364,13 @@ func (c *compilerContext) renderLimit(sel *qcode.Select) {
 	case sel.Singular:
 		c.w.WriteString(` LIMIT ('1') :: integer`)
 
+	case sel.Paging.LimitVar != "":
+		c.w.WriteString(` LIMIT LEAST(`)
+		c.md.renderParam(c.w, Param{Name: sel.Paging.LimitVar, Type: "integer"})
+		c.w.WriteString(`, ('`)
+		int32String(c.w, sel.Paging.Limit)
+		c.w.WriteString(`') :: integer)`)
+
 	default:
 		c.w.WriteString(` LIMIT ('`)
 		int32String(c.w, sel.Paging.Limit)

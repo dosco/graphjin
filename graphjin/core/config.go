@@ -81,6 +81,11 @@ type Config struct {
 	// this sets the duration (in seconds) between requests.
 	// Defaults to 5 seconds
 	PollDuration time.Duration `mapstructure:"poll_every_seconds"`
+
+	// DefaultLimit sets the default max limit (number of rows) when a
+	// limit is not defined in the query or the table role config.
+	// Default to 20
+	DefaultLimit int `mapstructure:"default_limit"`
 }
 
 // Table struct defines a database table

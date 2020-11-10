@@ -58,6 +58,11 @@ cors_debug: false
 # Defaults to 5 seconds
 # poll_every_seconds: 5
 
+# Default limit value to be used on queries and as the max
+# limit on all queries where a limit is defined as a query variable.
+# Defaults to 20
+default_limit: 20
+
 # Set session variable "user.id" to the user id
 # Enable this if you need the user id in triggers, etc
 # Note: This will not work with subscriptions
@@ -163,10 +168,6 @@ database:
   #pool_size: 10
   #max_retries: 0
   #log_level: "debug"
-
-  # Set session variable "user.id" to the user id
-  # Enable this if you need the user id in triggers, etc
-  set_user_id: true
 
   # database ping timeout is used for db health checking
   ping_timeout: 1m
