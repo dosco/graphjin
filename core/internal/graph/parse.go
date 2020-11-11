@@ -102,12 +102,12 @@ func (n *Node) Free() {
 }
 
 type Parser struct {
-	frags map[string]Fragment
-	ff    func(name string) (string, error)
-	input []byte // the string being scanned
-	pos   int
-	items []item
-	err   error
+	frags     map[string]Fragment
+	fetchFrag func(name string) (string, error)
+	input     []byte // the string being scanned
+	pos       int
+	items     []item
+	err       error
 }
 
 func Parse(gql []byte, fetchFrag func(name string) (string, error)) (Operation, error) {
@@ -124,10 +124,10 @@ func Parse(gql []byte, fetchFrag func(name string) (string, error)) (Operation, 
 	}
 
 	p := Parser{
-		ff:    fetchFrag,
-		input: l.input,
-		pos:   -1,
-		items: l.items,
+		fetchFrag: fetchFrag,
+		input:     l.input,
+		pos:       -1,
+		items:     l.items,
 	}
 	op.Fields = op.fieldsA[:0]
 
@@ -140,9 +140,9 @@ func Parse(gql []byte, fetchFrag func(name string) (string, error)) (Operation, 
 			break
 		}
 
-		if p.peek(itemFragment) {
+		if p.peek(itemFragment) && p.fetchFrag == nil {
 			p.ignore()
-			if _, err = p.parseFragment(); err != nil {
+			if _, err := p.parseFragment(); err != nil {
 				return op, err
 			}
 
@@ -206,6 +206,7 @@ func (p *Parser) parseFragment() (Fragment, error) {
 	}
 
 	p.frags[frag.Name] = frag
+
 	return frag, nil
 }
 
@@ -290,7 +291,8 @@ func ParseArgValue(argVal string) (*Node, error) {
 	return p.parseValue()
 }
 
-func ParseFragment(fragment string) (Fragment, error) {
+func ParseFragment(fragment string, fetchFrag func(name string) (string, error)) (
+	Fragment, error) {
 	var f Fragment
 	var err error
 
@@ -300,9 +302,10 @@ func ParseFragment(fragment string) (Fragment, error) {
 	}
 
 	p := Parser{
-		input: l.input,
-		pos:   -1,
-		items: l.items,
+		fetchFrag: fetchFrag,
+		input:     l.input,
+		pos:       -1,
+		items:     l.items,
 	}
 
 	if p.peek(itemFragment) {
@@ -428,17 +431,18 @@ func (p *Parser) parseFragmentFields(st *Stack, fields []Field) ([]Field, error)
 
 		name := p.val(p.next())
 
-		if p.ff != nil {
-			fval, err := p.ff(name)
-			if err != nil {
-				return nil, fmt.Errorf("fragment not found: %s", name)
-			}
-			if fr, err = ParseFragment(fval); err != nil {
-				return nil, err
-			}
-		} else {
-			fr, ok = p.frags[name]
-			if !ok {
+		fr, ok = p.frags[name]
+		if !ok {
+			if p.fetchFrag != nil {
+				fval, err := p.fetchFrag(name)
+				if err != nil {
+					return nil, fmt.Errorf("fragment not found: %s", name)
+				}
+
+				if fr, err = ParseFragment(fval, p.fetchFrag); err != nil {
+					return nil, err
+				}
+			} else {
 				return nil, fmt.Errorf("fragment not defined: %s", name)
 			}
 		}

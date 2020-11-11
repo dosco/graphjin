@@ -223,20 +223,25 @@ func parse(b string) ([]Item, error) {
 				item.Query = strings.TrimSpace(v[:strings.LastIndexByte(v, '}')+1])
 			}
 
+			if st == expFrag {
+				f := Frag{Value: strings.TrimSpace(v[:strings.LastIndexByte(v, '}')+1])}
+				f.Name = QueryName(f.Value)
+				item.frags = append(item.frags, f)
+			}
+
 			sp = op
 			st = expFrag
 		}
 		op = s.Pos()
 	}
+	v := b[sp.Offset:s.Pos().Offset]
 
 	if st == expQuery {
-		v := b[sp.Offset:s.Pos().Offset]
 		item.Query = strings.TrimSpace(v[:strings.LastIndexByte(v, '}')+1])
 		items = append(items, item)
 	}
 
 	if st == expFrag {
-		v := b[sp.Offset:s.Pos().Offset]
 		f := Frag{Value: strings.TrimSpace(v[:strings.LastIndexByte(v, '}')+1])}
 		f.Name = QueryName(f.Value)
 		item.frags = append(item.frags, f)

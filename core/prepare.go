@@ -71,10 +71,6 @@ func (sg *SuperGraph) initAllowList() error {
 		return nil
 	}
 
-	if sg.conf.AllowListFile == "" {
-		sg.conf.AllowListFile = "allow.list"
-	}
-
 	sg.allowList, err = allow.New(sg.conf.AllowListFile, allow.Config{
 		Log: sg.log,
 	})
