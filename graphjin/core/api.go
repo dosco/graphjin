@@ -196,7 +196,7 @@ func (sg *SuperGraph) GraphQL(c context.Context, query string, vars json.RawMess
 
 	// use the chirino/graphql library for introspection queries
 	// disabled when allow list is enforced
-	if sg.conf.EnforceAllowList && ct.name == "IntrospectionQuery" {
+	if !sg.conf.EnforceAllowList && ct.name == "IntrospectionQuery" {
 		r := sg.ge.ServeGraphQL(&graphql.Request{Query: query})
 		res.Data = r.Data
 
