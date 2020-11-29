@@ -171,6 +171,10 @@ type Result struct {
 	Extensions *extensions     `json:"extensions,omitempty"`
 }
 
+type ReqConfig struct {
+	Vars map[string]interface{}
+}
+
 // GraphQL function is called on the SuperGraph struct to convert the provided GraphQL query into an
 // SQL query and execute it on the database. In production mode prepared statements are directly used
 // and no query compiling takes places.
@@ -178,10 +182,20 @@ type Result struct {
 // In developer mode all names queries are saved into a file `allow.list` and in production mode only
 // queries from this file can be run.
 func (sg *SuperGraph) GraphQL(c context.Context, query string, vars json.RawMessage) (*Result, error) {
+	return sg.GraphQLEx(c, query, vars, nil)
+}
+
+func (sg *SuperGraph) GraphQLEx(
+	c context.Context,
+	query string,
+	vars json.RawMessage,
+	rc *ReqConfig) (*Result, error) {
+
 	ct := scontext{
 		Context: c,
 		sg:      sg,
 		op:      qcode.GetQType(query),
+		rc:      rc,
 		name:    Name(query),
 	}
 

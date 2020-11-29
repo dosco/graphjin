@@ -67,6 +67,16 @@ type Member struct {
 }
 
 func (sg *SuperGraph) Subscribe(c context.Context, query string, vars json.RawMessage) (*Member, error) {
+	return sg.SubscribeEx(c, query, vars, nil)
+}
+
+// GraphQLEx is the extended version of the Subscribe function allowing for request specific config.
+func (sg *SuperGraph) SubscribeEx(
+	c context.Context,
+	query string,
+	vars json.RawMessage,
+	rc *ReqConfig) (*Member, error) {
+
 	var err error
 	name := Name(query)
 	op := qcode.GetQType(query)
@@ -110,7 +120,7 @@ func (sg *SuperGraph) Subscribe(c context.Context, query string, vars json.RawMe
 		return nil, err
 	}
 
-	args, err := sg.argList(c, s.q.st.md, vars)
+	args, err := sg.argList(c, s.q.st.md, vars, rc)
 	if err != nil {
 		return nil, err
 	}

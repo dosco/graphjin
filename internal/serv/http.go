@@ -84,8 +84,19 @@ func apiV1(servConf *ServConfig) func(http.ResponseWriter, *http.Request) {
 			return
 		}
 
+		rc := core.ReqConfig{Vars: make(map[string]interface{})}
+
+		for k, v := range servConf.conf.HeaderVars {
+			rc.Vars[k] = func() string {
+				if v1, ok := r.Header[v]; ok {
+					return v1[0]
+				}
+				return ""
+			}
+		}
+
 		doLog := true
-		res, err := sg.GraphQL(ct, req.Query, req.Vars)
+		res, err := sg.GraphQLEx(ct, req.Query, req.Vars, &rc)
 
 		if servConf.conf.telemetryEnabled() {
 			span := trace.FromContext(ct)

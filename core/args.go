@@ -18,7 +18,7 @@ type args struct {
 	cindx  int // index of cursor arg
 }
 
-func (sg *SuperGraph) argList(c context.Context, md psql.Metadata, vars []byte) (
+func (sg *SuperGraph) argList(c context.Context, md psql.Metadata, vars []byte, rc *ReqConfig) (
 	args, error) {
 
 	ar := args{cindx: -1}
@@ -86,17 +86,11 @@ func (sg *SuperGraph) argList(c context.Context, md psql.Metadata, vars []byte) 
 				case p.Type == "json" && v[0] != '[' && v[0] != '{':
 					return ar, fmt.Errorf("variable '%s' should be an array or object", p.Name)
 				}
+				vl[i] = parseVarVal(v)
 
-				switch v[0] {
-				case '[', '{':
-					vl[i] = v
-
-				default:
-					if v[0] == '"' {
-						vl[i] = string(v[1 : len(v)-1])
-					} else {
-						vl[i] = string(v)
-					}
+			} else if v, ok := rc.Vars[p.Name]; ok {
+				if fn, ok := v.(func() string); ok {
+					vl[i] = fn()
 				}
 
 			} else {
@@ -106,6 +100,20 @@ func (sg *SuperGraph) argList(c context.Context, md psql.Metadata, vars []byte) 
 	}
 	ar.values = vl
 	return ar, nil
+}
+
+func parseVarVal(v json.RawMessage) interface{} {
+	switch v[0] {
+	case '[', '{':
+		return v
+
+	default:
+		if v[0] == '"' {
+			return string(v[1 : len(v)-1])
+		} else {
+			return string(v)
+		}
+	}
 }
 
 func (sg *SuperGraph) roleQueryArgList(c context.Context) (args, error) {

@@ -43,6 +43,10 @@ type Config struct {
 	// queries (eg. variable admin_id will be $admin_id in the query)
 	Vars map[string]string `mapstructure:"variables"`
 
+	// HeaderVars is a map of dynamic variables that map to http header
+	// values.
+	HeaderVars map[string]string `mapstructure:"header_variables"`
+
 	// Blocklist is a list of tables and columns that should be filtered
 	// out from any and all queries
 	Blocklist []string

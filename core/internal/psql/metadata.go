@@ -47,7 +47,7 @@ func (md *Metadata) renderParam(w *bytes.Buffer, p Param) {
 	var id int
 	var ok bool
 
-	if !md.Poll {
+	if !md.poll {
 		w.WriteString(`$`)
 	}
 
@@ -61,7 +61,7 @@ func (md *Metadata) renderParam(w *bytes.Buffer, p Param) {
 		md.pindex[p.Name] = id
 	}
 
-	if md.Poll {
+	if md.poll {
 		_, _ = w.WriteString(`"_sg_sub".`)
 		quoted(w, p.Name)
 	} else {
