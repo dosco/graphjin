@@ -171,6 +171,7 @@ type Result struct {
 	Extensions *extensions     `json:"extensions,omitempty"`
 }
 
+// ReqConfig is used to pass request specific config values to the GraphQLEx and SubscribeEx functions. Dynamic variables can be set here.
 type ReqConfig struct {
 	Vars map[string]interface{}
 }
@@ -185,6 +186,7 @@ func (sg *SuperGraph) GraphQL(c context.Context, query string, vars json.RawMess
 	return sg.GraphQLEx(c, query, vars, nil)
 }
 
+// GraphQLEx is the extended version of the GraphQL function allowing for request specific config.
 func (sg *SuperGraph) GraphQLEx(
 	c context.Context,
 	query string,
