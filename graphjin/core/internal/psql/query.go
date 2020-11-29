@@ -23,7 +23,7 @@ type Param struct {
 }
 
 type Metadata struct {
-	Poll        bool
+	poll        bool
 	remoteCount int
 	params      []Param
 	pindex      map[string]int
@@ -73,7 +73,6 @@ func (co *Compiler) Compile(w *bytes.Buffer, qc *qcode.QCode) (Metadata, error) 
 		md = co.CompileQuery(w, qc, md)
 
 	case qcode.QTSubscription:
-		md.Poll = true
 		md = co.CompileQuery(w, qc, md)
 
 	case qcode.QTMutation:
@@ -89,11 +88,15 @@ func (co *Compiler) Compile(w *bytes.Buffer, qc *qcode.QCode) (Metadata, error) 
 func (co *Compiler) CompileQuery(
 	w *bytes.Buffer,
 	qc *qcode.QCode,
-	metad Metadata) Metadata {
+	md Metadata) Metadata {
+
+	if qc.Type == qcode.QTSubscription {
+		md.poll = true
+	}
 
 	st := NewIntStack()
 	c := compilerContext{
-		md:       metad,
+		md:       md,
 		w:        w,
 		qc:       qc,
 		Compiler: co,

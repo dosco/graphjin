@@ -195,6 +195,9 @@ variables:
   #admin_account_id: "5"
   admin_account_id: "sql:select id from users where admin = true limit 1"
 
+# Define variables set to values extracted from http headers
+header_variables:
+  remote_ip: "X-Forwarded-For"
 
 # Field and table names that you wish to block
 blocklist:

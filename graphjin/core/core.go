@@ -51,6 +51,7 @@ type scontext struct {
 
 	sg   *SuperGraph
 	op   qcode.QType
+	rc   *ReqConfig
 	name string
 }
 
@@ -173,7 +174,7 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 		return res, err
 	}
 
-	args, err := c.sg.argList(c, cq.st.md, vars)
+	args, err := c.sg.argList(c, cq.st.md, vars, c.rc)
 	if err != nil {
 		return res, err
 	}

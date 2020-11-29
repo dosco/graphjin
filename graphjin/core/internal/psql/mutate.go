@@ -15,10 +15,10 @@ import (
 func (co *Compiler) compileMutation(
 	w *bytes.Buffer,
 	qc *qcode.QCode,
-	metad Metadata) Metadata {
+	md Metadata) Metadata {
 
 	c := compilerContext{
-		md:       metad,
+		md:       md,
 		w:        w,
 		qc:       qc,
 		Compiler: co,
