@@ -29,7 +29,6 @@ type DBTableInfo struct {
 	Blocked    bool
 	Schema     *DBSchema
 
-	fkMultiRef map[string]int
 	colMap     map[string]int
 	colIDMap   map[int16]int
 }
@@ -120,7 +119,6 @@ func (s *DBSchema) addTableInfo(
 
 	colmap := make(map[string]int, len(cols))
 	colidmap := make(map[int16]int, len(cols))
-	fkMultiRef := make(map[string]int)
 
 	singular := flect.Singularize(t.Key)
 	plural := flect.Pluralize(t.Key)
@@ -133,7 +131,6 @@ func (s *DBSchema) addTableInfo(
 		Plural:     plural,
 		Blocked:    t.Blocked,
 		Schema:     s,
-		fkMultiRef: fkMultiRef,
 		colMap:     colmap,
 		colIDMap:   colidmap,
 	}
@@ -141,14 +138,6 @@ func (s *DBSchema) addTableInfo(
 	for i := range cols {
 		c := &cols[i]
 		c.Table = t.Name
-
-		if c.FKeyTable != "" {
-			if _, ok := fkMultiRef[c.FKeyTable]; ok {
-				fkMultiRef[c.FKeyTable]++
-			} else {
-				fkMultiRef[c.FKeyTable] = 1
-			}
-		}
 
 		switch {
 		case c.Type == "tsvector":
@@ -184,10 +173,6 @@ func (s *DBSchema) addMultiRefs(ti DBTableInfo) error {
 	// create a new entry (table) with it's name derived from
 	for _, c := range ti.Columns {
 		if c.FKeyTable == "" {
-			continue
-		}
-
-		if v, ok := ti.fkMultiRef[c.FKeyTable]; !ok || v == 1 {
 			continue
 		}
 
@@ -282,9 +267,7 @@ func (s *DBSchema) firstDegreeRels(t DBTable, cols []DBColumn) error {
 		childName := ct
 		parentName := ft
 
-		if v, ok := cti.fkMultiRef[ft]; ok && v > 1 {
-			parentName = getRelName(c.Name)
-		}
+		parentName = getRelName(c.Name)
 
 		// This is an embedded relationship like when a json/jsonb column
 		// is exposed as a table
@@ -440,9 +423,7 @@ func (s *DBSchema) updateSchemaOTMT(
 	childName := getRelName(col1.Name)
 	parentName := t2
 
-	if v, ok := ti.fkMultiRef[t2]; ok && v > 1 {
-		parentName = getRelName(col2.Name)
-	}
+	parentName = getRelName(col2.Name)
 
 	fti1, ok := s.t[t1]
 	if !ok {
