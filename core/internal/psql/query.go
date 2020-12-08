@@ -380,7 +380,13 @@ func (c *compilerContext) renderLimit(sel *qcode.Select) {
 		c.w.WriteString(`') :: integer`)
 	}
 
-	if sel.Paging.Offset != 0 {
+	switch {
+	case sel.Paging.OffsetVar != "":
+		c.w.WriteString(` OFFSET (`)
+		c.md.renderParam(c.w, Param{Name: sel.Paging.OffsetVar, Type: "integer"})
+		c.w.WriteString(`) :: integer`)
+
+	case sel.Paging.Offset != 0:
 		c.w.WriteString(` OFFSET ('`)
 		int32String(c.w, sel.Paging.Offset)
 		c.w.WriteString(`') :: integer`)

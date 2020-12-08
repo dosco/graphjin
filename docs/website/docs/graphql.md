@@ -220,7 +220,7 @@ query {
 | @through     | table: "" | Tells the compiler which join table it should use for selector  |
 
 
-`@through(table: "name")` is to be used when there are multiple join tables that create a path between a child and parent in a nested query, this directive will tell the SQL genrator which of the though tables (join tables) to use for this relationship.
+`@through(table: "name")` is to be used when there are multiple join tables that create a path between a child and parent in a nested query, this directive will tell the SQL compiler which of the through tables (join tables) to use for this relationship.
 
 ```
 
