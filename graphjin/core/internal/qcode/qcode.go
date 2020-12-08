@@ -148,12 +148,13 @@ const (
 )
 
 type Paging struct {
-	Type     PagingType
-	LimitVar string
-	Limit    int32
-	Offset   int32
-	Cursor   bool
-	NoLimit  bool
+	Type      PagingType
+	LimitVar  string
+	Limit     int32
+	OffsetVar string
+	Offset    int32
+	Cursor    bool
+	NoLimit   bool
 }
 
 type ExpOp int8
@@ -438,7 +439,6 @@ func (co *Compiler) addRelInfo(field *graph.Field, qc *QCode, sel *Select) error
 
 	if sel.ParentID == -1 {
 		qc.Roots = append(qc.Roots, sel.ID)
-
 	} else {
 		psel = &qc.Selects[sel.ParentID]
 		psel.Children = append(psel.Children, sel.ID)
@@ -447,7 +447,10 @@ func (co *Compiler) addRelInfo(field *graph.Field, qc *QCode, sel *Select) error
 	switch field.Type {
 	case graph.FieldUnion:
 		sel.Type = SelTypeUnion
-		sel.Rel, err = co.s.GetRel(field.Name, psel.Table, "")
+		if psel == nil {
+			return fmt.Errorf("union types are only valid with polymorphic relationships")
+		}
+		sel.Rel, err = co.s.GetRel(field.Name, psel.Table, sel.through)
 
 	case graph.FieldMember:
 		// TODO: Fix this
@@ -458,7 +461,8 @@ func (co *Compiler) addRelInfo(field *graph.Field, qc *QCode, sel *Select) error
 		sel.Singular = psel.Singular
 		sel.UParentID = psel.ParentID
 		sinset = true
-		sel.Rel, err = co.s.GetRel(psel.Table, qc.Selects[sel.UParentID].Table, "")
+		ppsel := qc.Selects[sel.UParentID]
+		sel.Rel, err = co.s.GetRel(psel.Table, ppsel.Table, "")
 
 	default:
 		if sel.Rel.Type == sdata.RelSkip {
@@ -970,21 +974,26 @@ func (co *Compiler) compileArgLimit(sel *Select, arg *graph.Arg) error {
 	case graph.NodeVar:
 		sel.Paging.LimitVar = node.Val
 	}
-
 	return nil
 }
 
 func (co *Compiler) compileArgOffset(sel *Select, arg *graph.Arg) error {
 	node := arg.Val
 
-	if node.Type != graph.NodeVar {
-		return argErr("offset", "variable")
+	if node.Type != graph.NodeNum && node.Type != graph.NodeVar {
+		return argErr("offset", "number or variable")
 	}
 
-	if n, err := strconv.Atoi(node.Val); err != nil {
-		return err
-	} else {
-		sel.Paging.Offset = int32(n)
+	switch node.Type {
+	case graph.NodeNum:
+		if n, err := strconv.Atoi(node.Val); err != nil {
+			return err
+		} else {
+			sel.Paging.Offset = int32(n)
+		}
+
+	case graph.NodeVar:
+		sel.Paging.OffsetVar = node.Val
 	}
 	return nil
 }
