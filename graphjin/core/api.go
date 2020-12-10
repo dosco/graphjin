@@ -108,7 +108,7 @@ func NewSuperGraph(conf *Config, db *sql.DB) (*SuperGraph, error) {
 // newSuperGraph helps with writing tests and benchmarks
 func newSuperGraph(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo) (*SuperGraph, error) {
 	if conf == nil {
-		conf = &Config{Debug: true}
+		conf = &Config{Debug: true, DisableAllowList: true}
 	}
 
 	sg := &SuperGraph{
