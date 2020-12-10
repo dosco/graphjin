@@ -129,13 +129,14 @@ func (al *List) Load() ([]Item, error) {
 	var items []Item
 	files, err := ioutil.ReadDir(al.queryPath)
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("allow list: error reading dir: %s", al.queryPath)
 	}
 
 	for _, f := range files {
-		b, err := ioutil.ReadFile(path.Join(al.queryPath, f.Name()))
+		fn := path.Join(al.queryPath, f.Name())
+		b, err := ioutil.ReadFile(fn)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("allow list: error reading file: %s", fn)
 		}
 		item, err := parse(string(b))
 		if err != nil {
