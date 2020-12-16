@@ -1,20 +1,20 @@
-<img src="docs/website/static/img/super-graph-logo.svg" width="80" />
+<img src="docs/website/static/img/graphjin-logo.svg" width="80" />
 
-# Super Graph - Fetch data with GraphQL
+# GraphJin - Fetch data with GraphQL
 
-[![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=flat-square&logo=appveyor)](https://pkg.go.dev/github.com/dosco/super-graph/core?tab=doc)
-[![GoReport](https://goreportcard.com/badge/github.com/gojp/goreportcard?style=flat-square)](https://goreportcard.com/report/github.com/dosco/super-graph)
-[![Apache 2.0](https://img.shields.io/github/license/dosco/super-graph.svg?style=flat-square)](https://github.com/dosco/super-graph/blob/master/LICENSE)
-[![Docker build](https://img.shields.io/docker/cloud/build/dosco/super-graph.svg?style=flat-square)](https://hub.docker.com/r/dosco/super-graph/builds)
+[![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=flat-square&logo=appveyor)](https://pkg.go.dev/github.com/dosco/graphjin/core?tab=doc)
+[![GoReport](https://goreportcard.com/badge/github.com/gojp/goreportcard?style=flat-square)](https://goreportcard.com/report/github.com/dosco/graphjin)
+[![Apache 2.0](https://img.shields.io/github/license/dosco/graphjin.svg?style=flat-square)](https://github.com/dosco/graphjin/blob/master/LICENSE)
+[![Docker build](https://img.shields.io/docker/cloud/build/dosco/graphjin.svg?style=flat-square)](https://hub.docker.com/r/dosco/graphjin/builds)
 [![Discord Chat](https://img.shields.io/discord/628796009539043348.svg?style=flat-square&logo=appveyor)](https://discord.gg/6pSWCTZ)
 
-Super Graph gives you a high performance GraphQL API without you having to write any code. GraphQL is automagically compiled into an efficient SQL query. Use it either as a library or a standalone service.
+GraphJin gives you a high performance GraphQL API without you having to write any code. GraphQL is automagically compiled into an efficient SQL query. Use it either as a library or a standalone service.
 
 ## Using it as a service
 
 ```bash
-go get github.com/dosco/super-graph
-super-graph new <app_name>
+go get github.com/dosco/graphjin
+graphjin new <app_name>
 
 cd <app_name>
 docker-compose run api db:setup
@@ -24,7 +24,7 @@ docker-compose up
 ## Using it in your own code
 
 ```console
-go get github.com/dosco/super-graph/core
+go get github.com/dosco/graphjin/core
 ```
 
 ```golang
@@ -36,7 +36,7 @@ import (
   "fmt"
   "log"
 
-  "github.com/dosco/super-graph/core"
+  "github.com/dosco/graphjin/core"
   _ "github.com/jackc/pgx/v4/stdlib"
 )
 
@@ -46,7 +46,7 @@ func main() {
     log.Fatal(err)
   }
 
-  sg, err := core.NewSuperGraph(nil, db)
+  sg, err := core.NewGraphJin(nil, db)
   if err != nil {
     log.Fatal(err)
   }
@@ -71,7 +71,7 @@ func main() {
 }
 ```
 
-## About Super Graph
+## About GraphJin
 
 After working on several products through my career I found that we spend way too much time on building API backends. Most APIs also need constant updating, and this costs time and money.
 
@@ -81,7 +81,7 @@ I didn't want to write this code anymore, I wanted the computer to do it. Enter 
 
 Having worked with compilers before I saw this as a compiler problem. Why not build a compiler that converts GraphQL to highly efficient SQL.
 
-This compiler is what sits at the heart of Super Graph, with layers of useful functionality around it like authentication, remote joins, rails integration, database migrations, and everything else needed for you to build production-ready apps with it.
+This compiler is what sits at the heart of GraphJin, with layers of useful functionality around it like authentication, remote joins, rails integration, database migrations, and everything else needed for you to build production-ready apps with it.
 
 ## Features
 
@@ -109,11 +109,11 @@ This compiler is what sits at the heart of Super Graph, with layers of useful fu
 
 ## Documentation
 
-[supergraph.dev](https://supergraph.dev)
+[graphjin.com](https://graphjin.com)
 
 ## Reach out
 
-We're happy to help you leverage Super Graph reach out if you have questions
+We're happy to help you leverage GraphJin reach out if you have questions
 
 [Twitter](https://twitter.com/dosco)
 
@@ -121,7 +121,7 @@ We're happy to help you leverage Super Graph reach out if you have questions
 
 ## Production use
 
-The popular [42papers.com](https://42papers.com) site for discovering trending papers in AI and Computer Science uses Super Graph for it's entire backend.
+The popular [42papers.com](https://42papers.com) site for discovering trending papers in AI and Computer Science uses GraphJin for it's entire backend.
 
 ## License
 

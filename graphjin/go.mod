@@ -1,4 +1,4 @@
-module github.com/dosco/super-graph
+module github.com/dosco/graphjin
 
 replace github.com/gobuffalo/flect => github.com/renathoaz/flect v0.2.3-0.20200901003717-8573c32cc9d7
 

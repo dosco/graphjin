@@ -199,4 +199,4 @@ WITH "_sg_input" AS (SELECT $1 :: json AS j), "comments_0" AS (UPDATE "comments"
     --- PASS: TestCompileUpdate/nestedUpdateOneToOneWithDisconnect (0.00s)
     --- PASS: TestCompileUpdate/nestedUpdateRecursive (0.01s)
 PASS
-ok  	github.com/dosco/super-graph/core/internal/psql	0.293s
+ok  	github.com/dosco/graphjin/core/internal/psql	0.293s

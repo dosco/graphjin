@@ -3,8 +3,8 @@ package serv
 import (
 	"time"
 
-	"github.com/dosco/super-graph/core"
-	"github.com/dosco/super-graph/internal/serv/internal/auth"
+	"github.com/dosco/graphjin/core"
+	"github.com/dosco/graphjin/internal/serv/internal/auth"
 
 	"github.com/spf13/viper"
 )
@@ -19,7 +19,7 @@ const (
 
 type Core = core.Config
 
-// Config struct holds the Super Graph config values
+// Config struct holds the GraphJin config values
 type Config struct {
 	Core `mapstructure:",squash"`
 	Serv `mapstructure:",squash"`
@@ -30,7 +30,7 @@ type Config struct {
 	vi       *viper.Viper
 }
 
-// Serv struct contains config values used by the Super Graph service
+// Serv struct contains config values used by the GraphJin service
 type Serv struct {
 	AppName        string `mapstructure:"app_name"`
 	Production     bool
@@ -101,7 +101,7 @@ type Serv struct {
 	} `mapstructure:"rate_limiter"`
 }
 
-// Auth struct contains authentication related config values used by the Super Graph service
+// Auth struct contains authentication related config values used by the GraphJin service
 type Auth struct {
 	Name          string
 	Type          string
@@ -133,7 +133,7 @@ type Auth struct {
 	}
 }
 
-// Action struct contains config values for a Super Graph service action
+// Action struct contains config values for a GraphJin service action
 type Action struct {
 	Name     string
 	SQL      string

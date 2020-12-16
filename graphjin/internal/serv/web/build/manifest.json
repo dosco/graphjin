@@ -1,6 +1,6 @@
 {
-  "short_name": "Super Graph",
-  "name": "Super Graph - GraphQL API for Rails",
+  "short_name": "GraphJin",
+  "name": "GraphJin - GraphQL API for Rails",
   "icons": [
     {
       "src": "favicon.ico",

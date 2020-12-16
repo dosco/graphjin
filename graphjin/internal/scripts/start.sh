@@ -6,10 +6,10 @@ elif [ $1 = "sh" ]; then
   $@
 
 elif [ -f "./config/$SECRETS_FILE" ]; then
-  ./sops --config ./config exec-env "./config/$SECRETS_FILE" "./super-graph $*"
+  ./sops --config ./config exec-env "./config/$SECRETS_FILE" "./graphjin $*"
 
 else
-  ./super-graph $@
+  ./graphjin $@
 
 fi
 

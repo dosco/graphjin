@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dosco/super-graph/core/internal/qcode"
-	"github.com/dosco/super-graph/core/internal/sdata"
-	"github.com/dosco/super-graph/core/internal/util"
+	"github.com/dosco/graphjin/core/internal/qcode"
+	"github.com/dosco/graphjin/core/internal/sdata"
+	"github.com/dosco/graphjin/core/internal/util"
 )
 
 const (

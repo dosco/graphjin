@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/dosco/super-graph/core/internal/allow"
-	"github.com/dosco/super-graph/core/internal/qcode"
+	"github.com/dosco/graphjin/core/internal/allow"
+	"github.com/dosco/graphjin/core/internal/qcode"
 )
 
 type cquery struct {
@@ -27,23 +27,23 @@ type rquery struct {
 }
 
 // nolint: errcheck
-func (sg *SuperGraph) prepareRoleStmt() error {
-	if !sg.abacEnabled {
+func (gj *GraphJin) prepareRoleStmt() error {
+	if !gj.abacEnabled {
 		return nil
 	}
 
-	if !strings.Contains(sg.conf.RolesQuery, "$user_id") {
+	if !strings.Contains(gj.conf.RolesQuery, "$user_id") {
 		return fmt.Errorf("roles_query: $user_id variable missing")
 	}
 
 	w := &bytes.Buffer{}
 
 	io.WriteString(w, `SELECT (CASE WHEN EXISTS (`)
-	sg.roleStmtMD.RenderVar(w, sg.conf.RolesQuery)
+	gj.roleStmtMD.RenderVar(w, gj.conf.RolesQuery)
 	io.WriteString(w, `) THEN `)
 
 	io.WriteString(w, `(SELECT (CASE`)
-	for _, role := range sg.conf.Roles {
+	for _, role := range gj.conf.Roles {
 		if role.Match == "" {
 			continue
 		}
@@ -55,33 +55,33 @@ func (sg *SuperGraph) prepareRoleStmt() error {
 	}
 
 	io.WriteString(w, ` ELSE 'user' END) FROM (`)
-	sg.roleStmtMD.RenderVar(w, sg.conf.RolesQuery)
+	gj.roleStmtMD.RenderVar(w, gj.conf.RolesQuery)
 	io.WriteString(w, `) AS "_sg_auth_roles_query" LIMIT 1) `)
 	io.WriteString(w, `ELSE 'anon' END) FROM (VALUES (1)) AS "_sg_auth_filler" LIMIT 1; `)
 
-	sg.roleStmt = w.String()
+	gj.roleStmt = w.String()
 
 	return nil
 }
 
-func (sg *SuperGraph) initAllowList() error {
+func (gj *GraphJin) initAllowList() error {
 	var err error
 
-	if sg.conf.DisableAllowList {
+	if gj.conf.DisableAllowList {
 		return nil
 	}
 
-	sg.allowList, err = allow.New(sg.conf.AllowListFile, allow.Config{
-		Log: sg.log,
+	gj.allowList, err = allow.New(gj.conf.AllowListFile, allow.Config{
+		Log: gj.log,
 	})
 
 	if err != nil {
 		return fmt.Errorf("failed to initialize allow list: %w", err)
 	}
 
-	sg.queries = make(map[string]*cquery)
+	gj.queries = make(map[string]*cquery)
 
-	list, err := sg.allowList.Load()
+	list, err := gj.allowList.Load()
 	if err != nil {
 		return err
 	}
@@ -100,12 +100,12 @@ func (sg *SuperGraph) initAllowList() error {
 
 		switch q.op {
 		case qcode.QTQuery, qcode.QTSubscription:
-			sg.queries[(v.Name + "user")] = &cquery{q: q}
-			sg.queries[(v.Name + "anon")] = &cquery{q: q}
+			gj.queries[(v.Name + "user")] = &cquery{q: q}
+			gj.queries[(v.Name + "anon")] = &cquery{q: q}
 
 		case qcode.QTMutation:
-			for _, role := range sg.conf.Roles {
-				sg.queries[(v.Name + role.Name)] = &cquery{q: q}
+			for _, role := range gj.conf.Roles {
+				gj.queries[(v.Name + role.Name)] = &cquery{q: q}
 			}
 		}
 	}

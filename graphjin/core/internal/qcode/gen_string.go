@@ -39,11 +39,12 @@ func _() {
 	_ = x[MTConnect-5]
 	_ = x[MTDisconnect-6]
 	_ = x[MTNone-7]
+	_ = x[MTKeyword-8]
 }
 
-const _MType_name = "MTInsertMTUpdateMTUpsertMTDeleteMTConnectMTDisconnectMTNone"
+const _MType_name = "MTInsertMTUpdateMTUpsertMTDeleteMTConnectMTDisconnectMTNoneMTKeyword"
 
-var _MType_index = [...]uint8{0, 8, 16, 24, 32, 41, 53, 59}
+var _MType_index = [...]uint8{0, 8, 16, 24, 32, 41, 53, 59, 68}
 
 func (i MType) String() string {
 	i -= 1

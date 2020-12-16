@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/dosco/super-graph/core/internal/psql"
-	"github.com/dosco/super-graph/jsn"
+	"github.com/dosco/graphjin/core/internal/psql"
+	"github.com/dosco/graphjin/jsn"
 )
 
 // argList function is used to create a list of arguments to pass
@@ -18,7 +18,7 @@ type args struct {
 	cindx  int // index of cursor arg
 }
 
-func (sg *SuperGraph) argList(c context.Context, md psql.Metadata, vars []byte, rc *ReqConfig) (
+func (gj *GraphJin) argList(c context.Context, md psql.Metadata, vars []byte, rc *ReqConfig) (
 	args, error) {
 
 	ar := args{cindx: -1}
@@ -67,7 +67,7 @@ func (sg *SuperGraph) argList(c context.Context, md psql.Metadata, vars []byte, 
 
 		case "cursor":
 			if v, ok := fields["cursor"]; ok && v[0] == '"' {
-				v1, err := sg.decrypt(string(v[1 : len(v)-1]))
+				v1, err := gj.decrypt(string(v[1 : len(v)-1]))
 				if err != nil {
 					return ar, err
 				}
@@ -116,9 +116,9 @@ func parseVarVal(v json.RawMessage) interface{} {
 	}
 }
 
-func (sg *SuperGraph) roleQueryArgList(c context.Context) (args, error) {
+func (gj *GraphJin) roleQueryArgList(c context.Context) (args, error) {
 	ar := args{cindx: -1}
-	params := sg.roleStmtMD.Params()
+	params := gj.roleStmtMD.Params()
 	vl := make([]interface{}, len(params))
 
 	for i, p := range params {

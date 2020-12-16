@@ -1,12 +1,12 @@
 package serv
 
 import (
-	"github.com/dosco/super-graph/core"
+	"github.com/dosco/graphjin/core"
 	"github.com/spf13/cobra"
 )
 
 var (
-	sg *core.SuperGraph
+	gj *core.GraphJin
 )
 
 func cmdServ(servConf *ServConfig) func(*cobra.Command, []string) {
@@ -25,9 +25,9 @@ func cmdServ(servConf *ServConfig) func(*cobra.Command, []string) {
 			fatalInProd(servConf, err, "failed to connect to database")
 		}
 
-		sg, err = core.NewSuperGraph(&servConf.conf.Core, servConf.db)
+		gj, err = core.NewGraphJin(&servConf.conf.Core, servConf.db)
 		if err != nil {
-			fatalInProd(servConf, err, "failed to initialize Super Graph")
+			fatalInProd(servConf, err, "failed to initialize GraphJin")
 		}
 
 		startHTTP(servConf)

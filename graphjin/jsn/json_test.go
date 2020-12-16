@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dosco/super-graph/jsn"
+	"github.com/dosco/graphjin/jsn"
 )
 
 var (

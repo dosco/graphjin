@@ -5,4 +5,4 @@ name = "go"
 enabled = true
 
   [analyzers.meta]
-  import_path = "github.com/dosco/super-graph"
+  import_path = "github.com/dosco/graphjin"

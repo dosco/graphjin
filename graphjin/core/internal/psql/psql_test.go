@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dosco/super-graph/core/internal/psql"
-	"github.com/dosco/super-graph/core/internal/qcode"
-	"github.com/dosco/super-graph/core/internal/sdata"
+	"github.com/dosco/graphjin/core/internal/psql"
+	"github.com/dosco/graphjin/core/internal/qcode"
+	"github.com/dosco/graphjin/core/internal/sdata"
 )
 
 const (

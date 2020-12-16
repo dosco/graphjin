@@ -6,9 +6,9 @@ sidebar_label: Introduction
 
 import useBaseUrl from '@docusaurus/useBaseUrl'; // Add to the top of the file below the front matter.
 
-Super Graph is a service that instantly and without code gives you a high performance and secure GraphQL API. Your GraphQL queries are auto translated into a single fast SQL query. No more spending weeks or months writing backend API code. Just make the query you need and Super Graph will do the rest.
+GraphJin is a service that instantly and without code gives you a high performance and secure GraphQL API. Your GraphQL queries are auto translated into a single fast SQL query. No more spending weeks or months writing backend API code. Just make the query you need and GraphJin will do the rest.
 
-Super Graph has a rich feature set like integrating with your existing Ruby on Rails apps, joining your DB with data from remote APIs, Role and Attribute based access control, Support for JWT tokens, DB migrations, seeding and a lot more.
+GraphJin has a rich feature set like integrating with your existing Ruby on Rails apps, joining your DB with data from remote APIs, Role and Attribute based access control, Support for JWT tokens, DB migrations, seeding and a lot more.
 
 ## Features
 
@@ -37,7 +37,7 @@ Super Graph has a rich feature set like integrating with your existing Ruby on R
 
 ```bash
 # clone the repository
-git clone https://github.com/dosco/super-graph
+git clone https://github.com/dosco/graphjin
 
 # goto our example ecommerce app
 cd examples/webshop

@@ -30,7 +30,7 @@
 .swp
 .release
 main
-super-graph
+graphjin
 *-fuzz.zip
 crashers
 suppressions

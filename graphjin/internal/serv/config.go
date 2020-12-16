@@ -11,7 +11,7 @@ import (
 )
 
 // ReadInConfig function reads in the config file for the environment specified in the GO_ENV
-// environment variable. This is the best way to create a new Super Graph config.
+// environment variable. This is the best way to create a new GraphJin config.
 func ReadInConfig(configFile string) (*Config, error) {
 	cpath := path.Dir(configFile)
 	cfile := path.Base(configFile)

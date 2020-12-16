@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/dosco/super-graph/core/internal/graph"
-	"github.com/dosco/super-graph/core/internal/sdata"
-	"github.com/dosco/super-graph/core/internal/util"
+	"github.com/dosco/graphjin/core/internal/graph"
+	"github.com/dosco/graphjin/core/internal/sdata"
+	"github.com/dosco/graphjin/core/internal/util"
 )
 
 func (co *Compiler) compileArgObj(ti sdata.DBTableInfo, st *util.StackInf, arg *graph.Arg) (*Exp, bool, error) {

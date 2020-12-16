@@ -12,7 +12,7 @@ import (
 
 	rice "github.com/GeertJohan/go.rice"
 	"github.com/NYTimes/gziphandler"
-	"github.com/dosco/super-graph/internal/serv/internal/auth"
+	"github.com/dosco/graphjin/internal/serv/internal/auth"
 	"go.opencensus.io/plugin/ochttp"
 )
 
@@ -105,7 +105,7 @@ func startHTTP(sc *ServConfig) {
 		sc.log.Fatalln("INF shutdown complete")
 	})
 
-	sc.log.Printf("INF Super Graph started, version: %s, git-branch: %s, host-port: %s, app-name: %s, env: %s\n",
+	sc.log.Printf("INF GraphJin started, version: %s, git-branch: %s, host-port: %s, app-name: %s, env: %s\n",
 		version, gitBranch, sc.conf.hostPort, appName, env)
 
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {

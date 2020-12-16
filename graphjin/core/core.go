@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/dosco/super-graph/core/internal/psql"
-	"github.com/dosco/super-graph/core/internal/qcode"
-	"github.com/dosco/super-graph/core/internal/sdata"
+	"github.com/dosco/graphjin/core/internal/psql"
+	"github.com/dosco/graphjin/core/internal/qcode"
+	"github.com/dosco/graphjin/core/internal/sdata"
 )
 
 type OpType int
@@ -49,7 +49,7 @@ type resolver struct {
 type scontext struct {
 	context.Context
 
-	sg   *SuperGraph
+	gj   *GraphJin
 	op   qcode.QType
 	rc   *ReqConfig
 	name string
@@ -61,63 +61,63 @@ type qres struct {
 	role string
 }
 
-func (sg *SuperGraph) initSchema() error {
+func (gj *GraphJin) initSchema() error {
 	var err error
 	var schema string
 
-	if sg.conf.DBSchema == "" {
+	if gj.conf.DBSchema == "" {
 		schema = "public"
 	} else {
-		schema = sg.conf.DBSchema
+		schema = gj.conf.DBSchema
 	}
 
-	// If sg.di is not null then it's probably set
+	// If gj.di is not null then it's probably set
 	// for tests
-	if sg.dbinfo == nil {
-		sg.dbinfo, err = sdata.GetDBInfo(sg.db, schema, sg.conf.Blocklist)
+	if gj.dbinfo == nil {
+		gj.dbinfo, err = sdata.GetDBInfo(gj.db, schema, gj.conf.Blocklist)
 		if err != nil {
 			return err
 		}
 	}
 
-	if len(sg.dbinfo.Tables) == 0 {
+	if len(gj.dbinfo.Tables) == 0 {
 		return fmt.Errorf("no tables found in database (schema: %s)", schema)
 	}
 
-	if err = addTables(sg.conf, sg.dbinfo); err != nil {
+	if err = addTables(gj.conf, gj.dbinfo); err != nil {
 		return err
 	}
 
-	if err = addForeignKeys(sg.conf, sg.dbinfo); err != nil {
+	if err = addForeignKeys(gj.conf, gj.dbinfo); err != nil {
 		return err
 	}
 
-	sg.schema, err = sdata.NewDBSchema(sg.dbinfo, getDBTableAliases(sg.conf))
+	gj.schema, err = sdata.NewDBSchema(gj.dbinfo, getDBTableAliases(gj.conf))
 	return err
 }
 
-func (sg *SuperGraph) initCompilers() error {
+func (gj *GraphJin) initCompilers() error {
 	var err error
 
 	qcc := qcode.Config{
-		DefaultBlock: sg.conf.DefaultBlock,
-		DefaultLimit: sg.conf.DefaultLimit,
+		DefaultBlock: gj.conf.DefaultBlock,
+		DefaultLimit: gj.conf.DefaultLimit,
 	}
 
-	if sg.allowList != nil && sg.conf.EnforceAllowList {
-		qcc.FragmentFetcher = sg.allowList.FragmentFetcher()
+	if gj.allowList != nil && gj.conf.EnforceAllowList {
+		qcc.FragmentFetcher = gj.allowList.FragmentFetcher()
 	}
 
-	sg.qc, err = qcode.NewCompiler(sg.schema, qcc)
+	gj.qc, err = qcode.NewCompiler(gj.schema, qcc)
 	if err != nil {
 		return err
 	}
 
-	if err := addRoles(sg.conf, sg.qc); err != nil {
+	if err := addRoles(gj.conf, gj.qc); err != nil {
 		return err
 	}
 
-	sg.pc = psql.NewCompiler(psql.Config{Vars: sg.conf.Vars})
+	gj.pc = psql.NewCompiler(psql.Config{Vars: gj.conf.Vars})
 	return nil
 }
 
@@ -127,7 +127,7 @@ func (c *scontext) execQuery(query string, vars []byte, role string) (qres, erro
 		return res, err
 	}
 
-	if c.sg.conf.Debug {
+	if c.gj.conf.Debug {
 		c.debugLog(&res.q.st)
 	}
 
@@ -135,8 +135,8 @@ func (c *scontext) execQuery(query string, vars []byte, role string) (qres, erro
 		return res, nil
 	}
 
-	// return c.sg.execRemoteJoin(st, data, c.req.hdr)
-	return c.sg.execRemoteJoin(res, nil)
+	// return c.gj.execRemoteJoin(st, data, c.req.hdr)
+	return c.gj.execRemoteJoin(res, nil)
 }
 
 func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, error) {
@@ -147,13 +147,13 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 	res.q = cq
 	res.role = role
 
-	conn, err := c.sg.db.Conn(c)
+	conn, err := c.gj.db.Conn(c)
 	if err != nil {
 		return res, err
 	}
 	defer conn.Close()
 
-	if c.sg.conf.SetUserID {
+	if c.gj.conf.SetUserID {
 		if err := c.setLocalUserID(conn); err != nil {
 			return res, err
 		}
@@ -162,7 +162,7 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 	if v := c.Value(UserRoleKey); v != nil {
 		res.role = v.(string)
 
-	} else if c.sg.abacEnabled && c.op == qcode.QTMutation {
+	} else if c.gj.abacEnabled && c.op == qcode.QTMutation {
 		res.role, err = c.executeRoleQuery(conn)
 	}
 
@@ -170,18 +170,18 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 		return res, err
 	}
 
-	if err = c.sg.compileQuery(cq, res.role); err != nil {
+	if err = c.gj.compileQuery(cq, res.role); err != nil {
 		return res, err
 	}
 
-	args, err := c.sg.argList(c, cq.st.md, vars, c.rc)
+	args, err := c.gj.argList(c, cq.st.md, vars, c.rc)
 	if err != nil {
 		return res, err
 	}
 
 	// var stime time.Time
 
-	// if c.sg.conf.EnableTracing {
+	// if c.gj.conf.EnableTracing {
 	// 	stime = time.Now()
 	// }
 
@@ -198,15 +198,15 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 		return res, err
 	}
 
-	cur, err := c.sg.encryptCursor(cq.st.qc, res.data)
+	cur, err := c.gj.encryptCursor(cq.st.qc, res.data)
 	if err != nil {
 		return res, err
 	}
 
 	res.data = cur.data
 
-	if c.sg.allowList != nil {
-		if err := c.sg.allowList.Set(vars, query); err != nil {
+	if c.gj.allowList != nil {
+		if err := c.gj.allowList.Set(vars, query); err != nil {
 			return res, err
 		}
 	}
@@ -217,7 +217,7 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 	// 	}
 	// }
 
-	// if c.sg.conf.EnableTracing {
+	// if c.gj.conf.EnableTracing {
 	// 	for _, id := range st.qc.Roots {
 	// 		c.addTrace(st.qc.Selects, id, stime)
 	// 	}
@@ -235,11 +235,11 @@ func (c *scontext) executeRoleQuery(conn *sql.Conn) (string, error) {
 		return "anon", nil
 	}
 
-	if ar, err = c.sg.roleQueryArgList(c); err != nil {
+	if ar, err = c.gj.roleQueryArgList(c); err != nil {
 		return "", err
 	}
 
-	err = conn.QueryRowContext(c, c.sg.roleStmt, ar.values...).Scan(&role)
+	err = conn.QueryRowContext(c, c.gj.roleStmt, ar.values...).Scan(&role)
 	return role, err
 }
 
@@ -336,7 +336,7 @@ func (r *Result) SQL() string {
 func (c *scontext) debugLog(st *stmt) {
 	for _, sel := range st.qc.Selects {
 		if sel.SkipRender == qcode.SkipTypeUserNeeded {
-			c.sg.log.Printf("INF table '%s' skipped as it requires $user_id", sel.Table)
+			c.gj.log.Printf("INF table '%s' skipped as it requires $user_id", sel.Table)
 		}
 	}
 }

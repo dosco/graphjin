@@ -6,7 +6,7 @@ import (
 	"github.com/chirino/graphql"
 	"github.com/chirino/graphql/resolvers"
 	"github.com/chirino/graphql/schema"
-	"github.com/dosco/super-graph/core/internal/sdata"
+	"github.com/dosco/graphjin/core/internal/sdata"
 )
 
 var typeMap map[string]string = map[string]string{
@@ -24,10 +24,10 @@ var typeMap map[string]string = map[string]string{
 	"boolean":          "Boolean",
 }
 
-func (sg *SuperGraph) initGraphQLEgine() error {
+func (gj *GraphJin) initGraphQLEgine() error {
 	engine := graphql.New()
 	engineSchema := engine.Schema
-	sc := sg.schema
+	sc := gj.schema
 
 	if err := engineSchema.Parse(`enum OrderDirection { asc desc }`); err != nil {
 		return err
@@ -538,6 +538,6 @@ func (sg *SuperGraph) initGraphQLEgine() error {
 		return nil
 	})
 
-	sg.ge = engine
+	gj.ge = engine
 	return nil
 }

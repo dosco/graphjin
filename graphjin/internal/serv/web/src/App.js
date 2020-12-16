@@ -32,7 +32,7 @@ class App extends Component {
               marginLeft: "10px",
             }}
           >
-            Super Graph
+            GraphJin
           </div>
         </header>
 

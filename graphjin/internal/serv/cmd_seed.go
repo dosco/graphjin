@@ -15,7 +15,7 @@ import (
 
 	"github.com/brianvoe/gofakeit/v5"
 	"github.com/dop251/goja"
-	"github.com/dosco/super-graph/core"
+	"github.com/dosco/graphjin/core"
 	"github.com/gosimple/slug"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/stdlib"
@@ -47,13 +47,13 @@ func cmdDBSeed(servConf *ServConfig) func(*cobra.Command, []string) {
 		servConf.conf.Core.Blocklist = nil
 		servConf.conf.Debug = true
 
-		sg, err = core.NewSuperGraph(&servConf.conf.Core, servConf.db)
+		gj, err = core.NewGraphJin(&servConf.conf.Core, servConf.db)
 		if err != nil {
-			servConf.log.Fatalf("ERR failed to initialize Super Graph: %s", err)
+			servConf.log.Fatalf("ERR failed to initialize GraphJin: %s", err)
 		}
 
 		graphQLFn := func(query string, data interface{}, opt map[string]string) map[string]interface{} {
-			return graphQLFunc(servConf, sg, query, data, opt)
+			return graphQLFunc(servConf, gj, query, data, opt)
 		}
 
 		importCSVFn := func(table, filename string, sep string) int64 {
@@ -86,7 +86,7 @@ func cmdDBSeed(servConf *ServConfig) func(*cobra.Command, []string) {
 }
 
 // func runFunc(call goja.FunctionCall) {
-func graphQLFunc(servConf *ServConfig, sg *core.SuperGraph, query string, data interface{}, opt map[string]string) map[string]interface{} {
+func graphQLFunc(servConf *ServConfig, gj *core.GraphJin, query string, data interface{}, opt map[string]string) map[string]interface{} {
 	ct := context.Background()
 
 	if v, ok := opt["user_id"]; ok && v != "" {
@@ -112,7 +112,7 @@ func graphQLFunc(servConf *ServConfig, sg *core.SuperGraph, query string, data i
 		servConf.log.Fatalf("ERR %s", err)
 	}
 
-	res, err := sg.GraphQL(ct, query, vars)
+	res, err := gj.GraphQL(ct, query, vars)
 	if err != nil {
 		servConf.log.Fatalf("ERR %s", err)
 	}

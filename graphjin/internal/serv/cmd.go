@@ -14,7 +14,7 @@ import (
 //go:generate rice embed-go
 
 const (
-	serverName = "Super Graph"
+	serverName = "GraphJin"
 )
 
 var (
@@ -40,13 +40,13 @@ func Cmd() {
 	servConf.zlog = zap.NewExample()
 
 	rootCmd := &cobra.Command{
-		Use:   "super-graph",
+		Use:   "graphjin",
 		Short: BuildDetails(),
 	}
 
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "serv",
-		Short: "Run the super-graph service",
+		Short: "Run the graphjin service",
 		Run:   cmdServ(servConf),
 	})
 
@@ -126,7 +126,7 @@ e.g. db:migrate -+1
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "new APP-NAME",
 		Short: "Create a new application",
-		Long:  "Generate all the required files to start on a new Super Graph app",
+		Long:  "Generate all the required files to start on a new GraphJin app",
 		Run:   cmdNew(servConf),
 	})
 
@@ -139,7 +139,7 @@ e.g. db:migrate -+1
 
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "version",
-		Short: "Super Graph binary version information",
+		Short: "GraphJin binary version information",
 		Run:   cmdVersion,
 	})
 
@@ -158,12 +158,12 @@ func cmdVersion(cmd *cobra.Command, args []string) {
 func BuildDetails() string {
 	if version == "" {
 		return `
-Super Graph (unknown version)
-For documentation, visit https://supergraph.dev
+GraphJin (unknown version)
+For documentation, visit https://graphjin.com
 
 To build with version information please use the Makefile
-> git clone https://github.com/dosco/super-graph
-> cd super-graph && make install
+> git clone https://github.com/dosco/graphjin
+> cd graphjin && make install
 
 Licensed under the Apache Public License 2.0
 Copyright 2020, Vikram Rangnekar
@@ -171,8 +171,8 @@ Copyright 2020, Vikram Rangnekar
 	}
 
 	return fmt.Sprintf(`
-Super Graph %v 
-For documentation, visit https://supergraph.dev
+GraphJin %v 
+For documentation, visit https://graphjin.com
 
 Commit SHA-1          : %v
 Commit timestamp      : %v

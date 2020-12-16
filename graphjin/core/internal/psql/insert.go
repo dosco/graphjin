@@ -4,7 +4,7 @@ package psql
 import (
 	"strconv"
 
-	"github.com/dosco/super-graph/core/internal/qcode"
+	"github.com/dosco/graphjin/core/internal/qcode"
 )
 
 func (c *compilerContext) renderInsert() {

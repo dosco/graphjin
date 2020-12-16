@@ -1,5 +1,5 @@
 {
-  "name": "super-graph-docs",
+  "name": "graphjin-docs",
   "version": "0.0.0",
   "private": true,
   "scripts": {
@@ -12,16 +12,17 @@
     "prestart": "yarn buildcss"
   },
   "dependencies": {
-    "@docusaurus/core": "^2.0.0-alpha.58",
-    "@docusaurus/preset-classic": "^2.0.0-alpha.58",
-    "@docusaurus/theme-live-codeblock": "^2.0.0-alpha.58",
-    "@tailwindcss/typography": "^0.2.0",
+    "@docusaurus/core": "^2.0.0-alpha.70",
+    "@docusaurus/preset-classic": "^2.0.0-alpha.70",
+    "@docusaurus/theme-live-codeblock": "^2.0.0-alpha.70",
+    "@tailwindcss/typography": "^0.3.1",
+    "autoprefixer": "^10.1.0",
     "classnames": "^2.2.6",
     "react": "^16.8.4",
     "react-dom": "^16.8.4",
     "react-github-btn": "^1.2.0",
     "remark-images": "^2.0.0",
-    "tailwindcss": "^1.6.0"
+    "tailwindcss": "^2.0.1"
   },
   "browserslist": {
     "production": [
@@ -37,6 +38,6 @@
   },
   "devDependencies": {
     "@fullhuman/postcss-purgecss": "^2.3.0",
-    "postcss": "^7.0.30"
+    "postcss": "^8.2.1"
   }
 }

@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/dosco/super-graph/core"
+	"github.com/dosco/graphjin/core"
 )
 
-// Auth struct contains authentication related config values used by the Super Graph service
+// Auth struct contains authentication related config values used by the GraphJin service
 type Auth struct {
 	Name          string
 	Type          string

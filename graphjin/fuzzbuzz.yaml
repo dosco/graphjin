@@ -10,10 +10,10 @@ targets:
     harness:
       function: FuzzerEntrypoint
       # package defines where to import FuzzerEntrypoint from
-      package: github.com/dosco/super-graph/qcode
+      package: github.com/dosco/graphjin/qcode
       # the repository will be cloned to
       # $GOPATH/src/github.com/fuzzbuzz/tutorial
-      checkout: github.com/dosco/super-graph
+      checkout: github.com/dosco/graphjin
 
   - name: jsn
     language: go
@@ -24,7 +24,7 @@ targets:
     harness:
       function: FuzzerEntrypoint
       # package defines where to import FuzzerEntrypoint from
-      package: github.com/dosco/super-graph/jsn
+      package: github.com/dosco/graphjin/jsn
       # the repository will be cloned to
       # $GOPATH/src/github.com/fuzzbuzz/tutorial
-      checkout: github.com/dosco/super-graph
+      checkout: github.com/dosco/graphjin

@@ -12,10 +12,10 @@ endif
 export GO111MODULE := on
 
 # Build-time Go variables
-version        = github.com/dosco/super-graph/internal/serv.version
-gitBranch      = github.com/dosco/super-graph/internal/serv.gitBranch
-lastCommitSHA  = github.com/dosco/super-graph/internal/serv.lastCommitSHA
-lastCommitTime = github.com/dosco/super-graph/internal/serv.lastCommitTime
+version        = github.com/dosco/graphjin/internal/serv.version
+gitBranch      = github.com/dosco/graphjin/internal/serv.gitBranch
+lastCommitSHA  = github.com/dosco/graphjin/internal/serv.lastCommitSHA
+lastCommitTime = github.com/dosco/graphjin/internal/serv.lastCommitTime
 
 BUILD_FLAGS ?= -ldflags '-s -w -X ${lastCommitSHA}=${BUILD} -X "${lastCommitTime}=${BUILD_DATE}" -X "${version}=${BUILD_VERSION}" -X ${gitBranch}=${BUILD_BRANCH}'
 
@@ -54,7 +54,7 @@ $(GOLANGCILINT):
 lint: $(GOLANGCILINT)
 	@golangci-lint run ./... --skip-dirs-use-default
 
-BINARY := super-graph
+BINARY := graphjin
 LDFLAGS := -s -w
 PLATFORMS := windows linux darwin
 os = $(word 1, $@)
@@ -91,7 +91,7 @@ uninstall: clean
 	@go clean -i -x
 
 version:
-	@echo Super Graph ${BUILD_VERSION}
+	@echo GraphJin ${BUILD_VERSION}
 	@echo Build: ${BUILD}
 	@echo Build date: ${BUILD_DATE}
 	@echo Branch: ${BUILD_BRANCH}
@@ -100,12 +100,12 @@ version:
 help:
 	@echo
 	@echo Build commands:
-	@echo " make build         - Build supergraph binary"
-	@echo " make install       - Install supergraph binary"
-	@echo " make uninstall     - Uninstall supergraph binary"
+	@echo " make build         - Build graphjin binary"
+	@echo " make install       - Install graphjin binary"
+	@echo " make uninstall     - Uninstall graphjin binary"
 	@echo " make [platform]    - Build for platform [linux|darwin|windows]"
 	@echo " make release       - Build all platforms"
-	@echo " make run           - Run supergraph (eg. make run ARGS=\"help\")"
+	@echo " make run           - Run graphjin (eg. make run ARGS=\"help\")"
 	@echo " make test          - Run all tests"
 	@echo " make changelog     - Generate changelog (eg. make changelog ARGS=\"help\")"
 	@echo " make help          - This help"

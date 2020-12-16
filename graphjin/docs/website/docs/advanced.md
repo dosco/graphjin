@@ -6,7 +6,7 @@ sidebar_label: Advanced Features
 
 ## Database Relationships
 
-In most cases Super Graph will discover and learn the relationship graph within your database automatically. It does this using `Foreign Key` relationships that you have defined in your database schema.
+In most cases GraphJin will discover and learn the relationship graph within your database automatically. It does this using `Foreign Key` relationships that you have defined in your database schema.
 
 The below configs are only needed in special cases such as when you don't use foreign keys or when you want to create a relationship between two tables where a foreign key is not defined or cannot be defined.
 
@@ -77,7 +77,7 @@ query {
 
 The ablity to have `JSON/JSONB` and `Array` columns is often considered in the top most useful features of Postgres. There are many cases where using an array or a json column saves space and reduces complexity in your app. The only issue with these columns is that your SQL queries can get harder to write and maintain.
 
-Super Graph steps in here to help you by supporting these columns right out of the box. It allows you to work with these columns just like you would with tables. Joining data against or modifying array columns using the `connect` or `disconnect` keywords in mutations is fully supported. Another very useful feature is the ability to treat `json` or `binary json (jsonb)` columns as separate tables, even using them in nested queries joining against related tables. To replicate these features on your own will take a lot of complex SQL. Using Super Graph means you don't have to deal with any of this - it just works.
+GraphJin steps in here to help you by supporting these columns right out of the box. It allows you to work with these columns just like you would with tables. Joining data against or modifying array columns using the `connect` or `disconnect` keywords in mutations is fully supported. Another very useful feature is the ability to treat `json` or `binary json (jsonb)` columns as separate tables, even using them in nested queries joining against related tables. To replicate these features on your own will take a lot of complex SQL. Using GraphJin means you don't have to deal with any of this - it just works.
 
 ### Array Columns
 
@@ -107,7 +107,7 @@ query {
 
 Configure a JSON column called `tag_count` in the table `products` into a separate table. This JSON column contains a json array of objects each with a tag id and a count of the number of times the tag was used. As a seperate table you can nest it into your GraphQL query and treat it like table using any of the standard features like `order_by`, `limit`, `where clauses`, etc.
 
-The configuration below tells Super Graph to create a virtual table called `tag_count` using the column `tag_count` from the `products` table. And that this new table has two columns `tag_id` and `count` of the listed types and with the defined relationships.
+The configuration below tells GraphJin to create a virtual table called `tag_count` using the column `tag_count` from the `products` table. And that this new table has two columns `tag_id` and `count` of the listed types and with the defined relationships.
 
 ```yaml
 tables:
@@ -138,10 +138,10 @@ query {
 
 ## Remote Joins
 
-It often happens that after fetching some data from the DB we need to call another API to fetch some more data and all this combined into a single JSON response. For example along with a list of users you need their last 5 payments from Stripe. This requires you to query your DB for the users and Stripe for the payments. Super Graph handles all this for you also only the fields you requested from the Stripe API are returned.
+It often happens that after fetching some data from the DB we need to call another API to fetch some more data and all this combined into a single JSON response. For example along with a list of users you need their last 5 payments from Stripe. This requires you to query your DB for the users and Stripe for the payments. GraphJin handles all this for you also only the fields you requested from the Stripe API are returned.
 
 :::info Is this fast?
-Super Graph is able fetch remote data and merge it with the DB response in an efficient manner. Several optimizations such as parallel HTTP requests and a zero-allocation JSON merge algorithm makes this very fast. All of this without you having to write a line of code.
+GraphJin is able fetch remote data and merge it with the DB response in an efficient manner. Several optimizations such as parallel HTTP requests and a zero-allocation JSON merge algorithm makes this very fast. All of this without you having to write a line of code.
 :::
 
 For example you need to list the last 3 payments made by a user. You will first need to look up the user in the database and then call the Stripe API to fetch his last 3 payments. For this to work your user table in the db has a `customer_id` column that contains his Stripe customer ID.
@@ -173,7 +173,7 @@ tables:
 
 #### How do I make use of this?
 
-Just include `payments` like you would any other GraphQL selector under the `customers` selector. Super Graph will call the configured API for you and stitch (merge) the JSON the API sends back with the JSON generated from the database query. GraphQL features like aliases and fields all work.
+Just include `payments` like you would any other GraphQL selector under the `customers` selector. GraphJin will call the configured API for you and stitch (merge) the JSON the API sends back with the JSON generated from the database query. GraphQL features like aliases and fields all work.
 
 ```graphql
 query {
@@ -209,14 +209,12 @@ And voila here is the result. You get all of this advanced and honestly complex 
       ...
 ```
 
-Even tracing data is availble in the Super Graph web UI if tracing is enabled in the config. By default it is enabled in development. Additionally there you can set `debug: true` to enable http request / response dumping to help with debugging.
-
-![Query Tracing](/tracing.png "Super Graph Web UI Query Tracing")
+Even tracing data is availble in the GraphJin web UI if tracing is enabled in the config. By default it is enabled in development. Additionally there you can set `debug: true` to enable http request / response dumping to help with debugging.
 
 ## Full text search
 
 Every app these days needs search. Enought his often means reaching for something heavy like Solr. While this will work why add complexity to your infrastructure when Postgres has really great
-and fast full text search built-in. And since it's part of Postgres it's also available in Super Graph.
+and fast full text search built-in. And since it's part of Postgres it's also available in GraphJin.
 
 ```graphql
 query {

@@ -5,8 +5,8 @@ package psql
 import (
 	"strconv"
 
-	"github.com/dosco/super-graph/core/internal/qcode"
-	"github.com/dosco/super-graph/core/internal/sdata"
+	"github.com/dosco/graphjin/core/internal/qcode"
+	"github.com/dosco/graphjin/core/internal/sdata"
 )
 
 func (c *compilerContext) renderUpdate() {

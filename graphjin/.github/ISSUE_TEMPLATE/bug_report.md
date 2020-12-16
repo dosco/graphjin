@@ -9,7 +9,7 @@ assignees: ''
 
 <!-- If you suspect this could be a bug, follow the template. -->
 
-### What version of Super Graph are you using? `super-graph version`
+### What version of GraphJin are you using? `graphjin version`
 
 
 ### Have you tried reproducing the issue with the latest release?
@@ -18,7 +18,7 @@ assignees: ''
 ### What is the hardware spec (RAM, OS)?
 
 
-### Steps to reproduce the issue (config used to run Super Graph).
+### Steps to reproduce the issue (config used to run GraphJin).
 
 
 ### Expected behaviour and actual result.

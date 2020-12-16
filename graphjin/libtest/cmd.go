@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/dosco/super-graph/core"
+	"github.com/dosco/graphjin/core"
 	_ "github.com/jackc/pgx/v4/stdlib"
 )
 
@@ -17,7 +17,7 @@ func main() {
 		panic(err)
 	}
 
-	sg, err := core.NewSuperGraph(nil, db)
+	gj, err := core.NewGraphJin(nil, db)
 	if err != nil {
 		panic(err)
 	}
@@ -33,7 +33,7 @@ func main() {
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, core.UserIDKey, 1)
 
-	res, err := sg.GraphQL(ctx, query, nil)
+	res, err := gj.GraphQL(ctx, query, nil)
 	if err != nil {
 		panic(err)
 	}
