@@ -13,7 +13,7 @@ We've tried to ensure that the config file is self-documenting and easy to work 
 # so I only need to overwrite some values
 inherits: base
 
-app_name: "Super Graph Development"
+app_name: "GraphJin Development"
 host_port: 0.0.0.0:8080
 web_ui: true
 
@@ -37,7 +37,7 @@ auth_fail_block: false
 # response
 enable_tracing: true
 
-# Watch the config folder and reload Super Graph
+# Watch the config folder and reload GraphJin
 # with the new configs when a change is detected
 reload_on_config_change: true
 
@@ -249,7 +249,7 @@ roles:
           columns: ["id", "name", "description"]
           # This is a role table level config that blocks aggregation functions
           # like `count_id` or custom postgres functions that you can use in your query
-          # (https://supergraph.dev/docs/graphql/#custom-functions)
+          # (https://graphjin.com/docs/graphql/#custom-functions)
           disable_functions: false
 
         insert:
@@ -300,9 +300,9 @@ SG_AUTH_JWT_PUBLIC_KEY_FILE
 
 ## YugabyteDB
 
-Yugabyte is an open-source, geo-distrubuted cloud-native relational DB that scales horizontally. Super Graph works with Yugabyte right out of the box. If you think you're data needs will outgrow Postgres and you don't really want to deal with sharding then Yugabyte is the way to go. Just point Super Graph to your Yugabyte DB and everything will just work including running migrations, seeding, querying, mutations, etc.
+Yugabyte is an open-source, geo-distrubuted cloud-native relational DB that scales horizontally. GraphJin works with Yugabyte right out of the box. If you think you're data needs will outgrow Postgres and you don't really want to deal with sharding then Yugabyte is the way to go. Just point GraphJin to your Yugabyte DB and everything will just work including running migrations, seeding, querying, mutations, etc.
 
-To use Yugabyte in your local development flow just uncomment the following lines in the `docker-compose.yml` file that is part of your Super Graph app. Also remember to comment out the originl postgres `db` config.
+To use Yugabyte in your local development flow just uncomment the following lines in the `docker-compose.yml` file that is part of your GraphJin app. Also remember to comment out the originl postgres `db` config.
 
 ```yaml
   # Postgres DB
@@ -345,10 +345,10 @@ To use Yugabyte in your local development flow just uncomment the following line
     depends_on:
       - yb-master
 
-  # Environment variables to point Super Graph to Yugabyte
+  # Environment variables to point GraphJin to Yugabyte
   # This is required since it uses a different user and port number
   yourapp_api:
-    image: dosco/super-graph:latest
+    image: dosco/graphjin:latest
     environment:
       GO_ENV: "development"
       Uncomment below for Yugabyte DB

@@ -7,7 +7,7 @@ sidebar_label: API Security
 One of the the most common questions I get asked is what happens if a user out on the internet sends queries
 that we don't want run. For example how do we stop him from fetching all users or the emails of users. Our answer to this is that it is not an issue as this cannot happen, let me explain.
 
-Super Graph runs in one of two modes `development` or `production`, this is controlled via the config value `production: false` when it's false it's running in development mode and when true, production. In development mode all the **named** queries (including mutations) are saved to the allow list `./config/allow.list`. While in production mode when Super Graph starts only the queries from this allow list file are registered with the database as [prepared statements](https://stackoverflow.com/questions/8263371/how-can-prepared-statements-protect-from-sql-injection-attacks).
+GraphJin runs in one of two modes `development` or `production`, this is controlled via the config value `production: false` when it's false it's running in development mode and when true, production. In development mode all the **named** queries (including mutations) are saved to the allow list `./config/allow.list`. While in production mode when GraphJin starts only the queries from this allow list file are registered with the database as [prepared statements](https://stackoverflow.com/questions/8263371/how-can-prepared-statements-protect-from-sql-injection-attacks).
 
 Prepared statements are designed by databases to be fast and secure. They protect against all kinds of sql injection attacks and since they are pre-processed and pre-planned they are much faster to run then raw sql queries. Also there's no GraphQL to SQL compiling happening in production mode which makes your queries lighting fast as they are directly sent to the database with almost no overhead.
 
@@ -43,7 +43,7 @@ Almost all Rails apps use Devise or Warden for authentication. Once the user is
 authenticated a session is created with the users ID. The session can either be
 stored in the users browser as a cookie, memcache or redis. If memcache or redis is used then a cookie is set in the users browser with just the session id.
 
-Super Graph can handle all these variations including the old and new session formats. Just enable the right `auth` config based on how your rails app is configured.
+GraphJin can handle all these variations including the old and new session formats. Just enable the right `auth` config based on how your rails app is configured.
 
 #### Cookie session store
 
@@ -178,15 +178,15 @@ curl 'http://localhost:8080/api/v1/graphql' \
 
 ## Access Control
 
-It's common for APIs to control what information they return or insert based on the role of the user. In Super Graph we have two primary roles `user` and `anon` the first for users where a `user_id` is available the latter for users where it's not.
+It's common for APIs to control what information they return or insert based on the role of the user. In GraphJin we have two primary roles `user` and `anon` the first for users where a `user_id` is available the latter for users where it's not.
 
 :::info Define authenticated request?
-An authenticated request is one where Super Graph can extract an `user_id` based on the configured authentication method (jwt, rails cookies, etc).
+An authenticated request is one where GraphJin can extract an `user_id` based on the configured authentication method (jwt, rails cookies, etc).
 :::
 
 The `user` role can be divided up into further roles based on attributes in the database. For example when fetching a list of users, a normal user can only fetch his own entry while an admin can fetch all the users within a company and an admin user can fetch everyone. In some places this is called Attribute based access control. So in way we support both. Role based access control and Attribute based access control.
 
-Super Graph allows you to create roles dynamically using a `roles_query` and `match` config values.
+GraphJin allows you to create roles dynamically using a `roles_query` and `match` config values.
 
 ### Configure RBAC
 

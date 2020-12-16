@@ -29,8 +29,8 @@ COPY --from=react-build /web/build/ ./internal/serv/web/build
 RUN go mod vendor
 RUN make build
 # RUN echo "Compressing binary, will take a bit of time..." && \
-#   upx --ultra-brute -qq super-graph && \
-#   upx -t super-graph
+#   upx --ultra-brute -qq graphjin && \
+#   upx -t graphjin
 
 
 
@@ -42,11 +42,11 @@ RUN apk add --no-cache tzdata
 RUN mkdir -p /config
 
 COPY --from=go-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=go-build /app/super-graph .
+COPY --from=go-build /app/graphjin .
 COPY --from=go-build /app/internal/scripts/start.sh .
 COPY --from=go-build /usr/local/bin/sops .
 
-RUN chmod +x /super-graph
+RUN chmod +x /graphjin
 RUN chmod +x /start.sh
 
 #USER nobody

@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/dosco/super-graph/core/internal/sdata"
-	"github.com/dosco/super-graph/jsn"
+	"github.com/dosco/graphjin/core/internal/sdata"
+	"github.com/dosco/graphjin/jsn"
 )
 
 type resolvFn struct {
@@ -17,12 +17,12 @@ type resolvFn struct {
 	Fn      func(h http.Header, id []byte) ([]byte, error)
 }
 
-func (sg *SuperGraph) initResolvers() error {
+func (gj *GraphJin) initResolvers() error {
 	var err error
-	sg.rmap = make(map[uint64]resolvFn)
+	gj.rmap = make(map[uint64]resolvFn)
 
-	for _, t := range sg.conf.Tables {
-		if err = sg.initRemotes(t); err != nil {
+	for _, t := range gj.conf.Tables {
+		if err = gj.initRemotes(t); err != nil {
 			return fmt.Errorf("resolvers: %w", err)
 		}
 	}
@@ -30,16 +30,16 @@ func (sg *SuperGraph) initResolvers() error {
 	return nil
 }
 
-func (sg *SuperGraph) initRemotes(t Table) error {
+func (gj *GraphJin) initRemotes(t Table) error {
 	h := maphash.Hash{}
-	h.SetSeed(sg.hashSeed)
+	h.SetSeed(gj.hashSeed)
 
 	for _, r := range t.Remotes {
 		// Defines the table column to be used as an id in the
 		// remote reques
 		var col sdata.DBColumn
 
-		ti, err := sg.schema.GetTableInfo(t.Name)
+		ti, err := gj.schema.GetTableInfo(t.Name)
 		if err != nil {
 			return err
 		}
@@ -64,7 +64,7 @@ func (sg *SuperGraph) initRemotes(t Table) error {
 		val.Left.Col = col
 		val.Right.VTable = idk
 
-		if err := sg.schema.SetRel(r.Name, t.Name, val); err != nil {
+		if err := gj.schema.SetRel(r.Name, t.Name, val); err != nil {
 			return err
 		}
 
@@ -84,11 +84,11 @@ func (sg *SuperGraph) initRemotes(t Table) error {
 		}
 
 		// Index resolver obj by parent and child names
-		sg.rmap[mkkey(&h, r.Name, t.Name)] = rf
+		gj.rmap[mkkey(&h, r.Name, t.Name)] = rf
 
 		// Index resolver obj by IDField
 		_, _ = h.Write(rf.IDField)
-		sg.rmap[h.Sum64()] = rf
+		gj.rmap[h.Sum64()] = rf
 	}
 
 	return nil

@@ -23,7 +23,7 @@
 <a name="v0.13.16"></a>
 ## [v0.13.16] - 2020-04-21
 ### Features
-- feat : improve the generated introspection schema and avoid the chirino/graphql api leaking through the core api. ([#53](https://github.com/dosco/super-graph/issues/53))
+- feat : improve the generated introspection schema and avoid the chirino/graphql api leaking through the core api. ([#53](https://github.com/dosco/graphjin/issues/53))
 
 
 <a name="v0.13.15"></a>
@@ -128,7 +128,7 @@
 <a name="v0.12.32"></a>
 ## [v0.12.32] - 2020-02-24
 ### Bug Fixes
-- fix "Try the demo app" in docs ([#38](https://github.com/dosco/super-graph/issues/38))
+- fix "Try the demo app" in docs ([#38](https://github.com/dosco/graphjin/issues/38))
 
 
 <a name="v0.12.31"></a>
@@ -206,7 +206,7 @@
 <a name="v0.12.7"></a>
 ## [v0.12.7] - 2020-01-11
 ### Pull Requests
-- Merge pull request [#22](https://github.com/dosco/super-graph/issues/22) from bhaskarmurthy/fix-grammer-syntax
+- Merge pull request [#22](https://github.com/dosco/graphjin/issues/22) from bhaskarmurthy/fix-grammer-syntax
 
 
 <a name="v0.12.6"></a>
@@ -260,19 +260,19 @@
 <a name="v0.11"></a>
 ## [v0.11] - 2019-11-01
 ### Pull Requests
-- Merge pull request [#11](https://github.com/dosco/super-graph/issues/11) from dosco/rbac
+- Merge pull request [#11](https://github.com/dosco/graphjin/issues/11) from dosco/rbac
 
 
 <a name="v0.10.1"></a>
 ## [v0.10.1] - 2019-10-06
 ### Pull Requests
-- Merge pull request [#10](https://github.com/dosco/super-graph/issues/10) from FourSigma/sm-examples-folder
+- Merge pull request [#10](https://github.com/dosco/graphjin/issues/10) from FourSigma/sm-examples-folder
 
 
 <a name="v0.10"></a>
 ## [v0.10] - 2019-10-04
 ### Pull Requests
-- Merge pull request [#6](https://github.com/dosco/super-graph/issues/6) from muesli/typo-fixes
+- Merge pull request [#6](https://github.com/dosco/graphjin/issues/6) from muesli/typo-fixes
 
 
 <a name="v0.9"></a>
@@ -299,96 +299,96 @@
 <a name="0.3"></a>
 ## 0.3 - 2019-03-24
 
-[Unreleased]: https://github.com/dosco/super-graph/compare/v0.13.22...HEAD
-[v0.13.22]: https://github.com/dosco/super-graph/compare/v0.13.21...v0.13.22
-[v0.13.21]: https://github.com/dosco/super-graph/compare/v0.13.20...v0.13.21
-[v0.13.20]: https://github.com/dosco/super-graph/compare/v0.13.19...v0.13.20
-[v0.13.19]: https://github.com/dosco/super-graph/compare/v0.13.18...v0.13.19
-[v0.13.18]: https://github.com/dosco/super-graph/compare/v0.13.17...v0.13.18
-[v0.13.17]: https://github.com/dosco/super-graph/compare/v0.13.16...v0.13.17
-[v0.13.16]: https://github.com/dosco/super-graph/compare/v0.13.15...v0.13.16
-[v0.13.15]: https://github.com/dosco/super-graph/compare/v0.13.14...v0.13.15
-[v0.13.14]: https://github.com/dosco/super-graph/compare/v0.13.13...v0.13.14
-[v0.13.13]: https://github.com/dosco/super-graph/compare/v0.13.12...v0.13.13
-[v0.13.12]: https://github.com/dosco/super-graph/compare/v0.13.11...v0.13.12
-[v0.13.11]: https://github.com/dosco/super-graph/compare/v0.13.10...v0.13.11
-[v0.13.10]: https://github.com/dosco/super-graph/compare/v0.13.9...v0.13.10
-[v0.13.9]: https://github.com/dosco/super-graph/compare/v0.13.8...v0.13.9
-[v0.13.8]: https://github.com/dosco/super-graph/compare/v0.13.7...v0.13.8
-[v0.13.7]: https://github.com/dosco/super-graph/compare/v0.13.6...v0.13.7
-[v0.13.6]: https://github.com/dosco/super-graph/compare/v0.13.5...v0.13.6
-[v0.13.5]: https://github.com/dosco/super-graph/compare/v0.13.4...v0.13.5
-[v0.13.4]: https://github.com/dosco/super-graph/compare/v0.13.3...v0.13.4
-[v0.13.3]: https://github.com/dosco/super-graph/compare/v0.13.2...v0.13.3
-[v0.13.2]: https://github.com/dosco/super-graph/compare/v0.13.1...v0.13.2
-[v0.13.1]: https://github.com/dosco/super-graph/compare/v0.13.0...v0.13.1
-[v0.13.0]: https://github.com/dosco/super-graph/compare/v0.12.49...v0.13.0
-[v0.12.49]: https://github.com/dosco/super-graph/compare/v0.12.48...v0.12.49
-[v0.12.48]: https://github.com/dosco/super-graph/compare/v0.12.47...v0.12.48
-[v0.12.47]: https://github.com/dosco/super-graph/compare/v0.12.46...v0.12.47
-[v0.12.46]: https://github.com/dosco/super-graph/compare/v0.12.45...v0.12.46
-[v0.12.45]: https://github.com/dosco/super-graph/compare/v0.12.44...v0.12.45
-[v0.12.44]: https://github.com/dosco/super-graph/compare/v0.12.43...v0.12.44
-[v0.12.43]: https://github.com/dosco/super-graph/compare/v0.12.42...v0.12.43
-[v0.12.42]: https://github.com/dosco/super-graph/compare/v0.12.41...v0.12.42
-[v0.12.41]: https://github.com/dosco/super-graph/compare/v0.12.40...v0.12.41
-[v0.12.40]: https://github.com/dosco/super-graph/compare/v0.12.39...v0.12.40
-[v0.12.39]: https://github.com/dosco/super-graph/compare/v0.12.38...v0.12.39
-[v0.12.38]: https://github.com/dosco/super-graph/compare/v0.12.37...v0.12.38
-[v0.12.37]: https://github.com/dosco/super-graph/compare/v0.12.36...v0.12.37
-[v0.12.36]: https://github.com/dosco/super-graph/compare/v0.12.35...v0.12.36
-[v0.12.35]: https://github.com/dosco/super-graph/compare/v0.12.34...v0.12.35
-[v0.12.34]: https://github.com/dosco/super-graph/compare/v0.12.33...v0.12.34
-[v0.12.33]: https://github.com/dosco/super-graph/compare/v0.12.32...v0.12.33
-[v0.12.32]: https://github.com/dosco/super-graph/compare/v0.12.31...v0.12.32
-[v0.12.31]: https://github.com/dosco/super-graph/compare/v0.12.30...v0.12.31
-[v0.12.30]: https://github.com/dosco/super-graph/compare/v0.12.29...v0.12.30
-[v0.12.29]: https://github.com/dosco/super-graph/compare/v0.12.28...v0.12.29
-[v0.12.28]: https://github.com/dosco/super-graph/compare/v0.12.27...v0.12.28
-[v0.12.27]: https://github.com/dosco/super-graph/compare/v0.12.26...v0.12.27
-[v0.12.26]: https://github.com/dosco/super-graph/compare/v0.12.25...v0.12.26
-[v0.12.25]: https://github.com/dosco/super-graph/compare/v0.12.24...v0.12.25
-[v0.12.24]: https://github.com/dosco/super-graph/compare/v0.12.23...v0.12.24
-[v0.12.23]: https://github.com/dosco/super-graph/compare/v0.12.22...v0.12.23
-[v0.12.22]: https://github.com/dosco/super-graph/compare/v0.12.21...v0.12.22
-[v0.12.21]: https://github.com/dosco/super-graph/compare/v0.12.20...v0.12.21
-[v0.12.20]: https://github.com/dosco/super-graph/compare/v0.12.19...v0.12.20
-[v0.12.19]: https://github.com/dosco/super-graph/compare/v0.12.18...v0.12.19
-[v0.12.18]: https://github.com/dosco/super-graph/compare/v0.12.17...v0.12.18
-[v0.12.17]: https://github.com/dosco/super-graph/compare/v0.12.16...v0.12.17
-[v0.12.16]: https://github.com/dosco/super-graph/compare/v0.12.15...v0.12.16
-[v0.12.15]: https://github.com/dosco/super-graph/compare/v0.12.14...v0.12.15
-[v0.12.14]: https://github.com/dosco/super-graph/compare/v0.12.13...v0.12.14
-[v0.12.13]: https://github.com/dosco/super-graph/compare/v0.12.12...v0.12.13
-[v0.12.12]: https://github.com/dosco/super-graph/compare/v0.12.11...v0.12.12
-[v0.12.11]: https://github.com/dosco/super-graph/compare/v0.12.10...v0.12.11
-[v0.12.10]: https://github.com/dosco/super-graph/compare/v0.12.9...v0.12.10
-[v0.12.9]: https://github.com/dosco/super-graph/compare/v0.12.8...v0.12.9
-[v0.12.8]: https://github.com/dosco/super-graph/compare/v0.12.7...v0.12.8
-[v0.12.7]: https://github.com/dosco/super-graph/compare/v0.12.6...v0.12.7
-[v0.12.6]: https://github.com/dosco/super-graph/compare/v0.12.5...v0.12.6
-[v0.12.5]: https://github.com/dosco/super-graph/compare/v0.12.4...v0.12.5
-[v0.12.4]: https://github.com/dosco/super-graph/compare/v0.12.3...v0.12.4
-[v0.12.3]: https://github.com/dosco/super-graph/compare/v0.12.2...v0.12.3
-[v0.12.2]: https://github.com/dosco/super-graph/compare/v0.12.1...v0.12.2
-[v0.12.1]: https://github.com/dosco/super-graph/compare/v0.12.0...v0.12.1
-[v0.12.0]: https://github.com/dosco/super-graph/compare/v0.11.9...v0.12.0
-[v0.11.9]: https://github.com/dosco/super-graph/compare/v0.11.8...v0.11.9
-[v0.11.8]: https://github.com/dosco/super-graph/compare/v0.11.7...v0.11.8
-[v0.11.7]: https://github.com/dosco/super-graph/compare/v0.11.6...v0.11.7
-[v0.11.6]: https://github.com/dosco/super-graph/compare/v0.11.5...v0.11.6
-[v0.11.5]: https://github.com/dosco/super-graph/compare/v0.11.4...v0.11.5
-[v0.11.4]: https://github.com/dosco/super-graph/compare/v0.11.3...v0.11.4
-[v0.11.3]: https://github.com/dosco/super-graph/compare/v0.11.2...v0.11.3
-[v0.11.2]: https://github.com/dosco/super-graph/compare/v0.11.1...v0.11.2
-[v0.11.1]: https://github.com/dosco/super-graph/compare/v0.11...v0.11.1
-[v0.11]: https://github.com/dosco/super-graph/compare/v0.10.1...v0.11
-[v0.10.1]: https://github.com/dosco/super-graph/compare/v0.10...v0.10.1
-[v0.10]: https://github.com/dosco/super-graph/compare/v0.9...v0.10
-[v0.9]: https://github.com/dosco/super-graph/compare/v0.8...v0.9
-[v0.8]: https://github.com/dosco/super-graph/compare/v0.7...v0.8
-[v0.7]: https://github.com/dosco/super-graph/compare/v0.6...v0.7
-[v0.6]: https://github.com/dosco/super-graph/compare/v0.5...v0.6
-[v0.5]: https://github.com/dosco/super-graph/compare/v0.4...v0.5
-[v0.4]: https://github.com/dosco/super-graph/compare/v0.3...v0.4
-[v0.3]: https://github.com/dosco/super-graph/compare/0.3...v0.3
+[Unreleased]: https://github.com/dosco/graphjin/compare/v0.13.22...HEAD
+[v0.13.22]: https://github.com/dosco/graphjin/compare/v0.13.21...v0.13.22
+[v0.13.21]: https://github.com/dosco/graphjin/compare/v0.13.20...v0.13.21
+[v0.13.20]: https://github.com/dosco/graphjin/compare/v0.13.19...v0.13.20
+[v0.13.19]: https://github.com/dosco/graphjin/compare/v0.13.18...v0.13.19
+[v0.13.18]: https://github.com/dosco/graphjin/compare/v0.13.17...v0.13.18
+[v0.13.17]: https://github.com/dosco/graphjin/compare/v0.13.16...v0.13.17
+[v0.13.16]: https://github.com/dosco/graphjin/compare/v0.13.15...v0.13.16
+[v0.13.15]: https://github.com/dosco/graphjin/compare/v0.13.14...v0.13.15
+[v0.13.14]: https://github.com/dosco/graphjin/compare/v0.13.13...v0.13.14
+[v0.13.13]: https://github.com/dosco/graphjin/compare/v0.13.12...v0.13.13
+[v0.13.12]: https://github.com/dosco/graphjin/compare/v0.13.11...v0.13.12
+[v0.13.11]: https://github.com/dosco/graphjin/compare/v0.13.10...v0.13.11
+[v0.13.10]: https://github.com/dosco/graphjin/compare/v0.13.9...v0.13.10
+[v0.13.9]: https://github.com/dosco/graphjin/compare/v0.13.8...v0.13.9
+[v0.13.8]: https://github.com/dosco/graphjin/compare/v0.13.7...v0.13.8
+[v0.13.7]: https://github.com/dosco/graphjin/compare/v0.13.6...v0.13.7
+[v0.13.6]: https://github.com/dosco/graphjin/compare/v0.13.5...v0.13.6
+[v0.13.5]: https://github.com/dosco/graphjin/compare/v0.13.4...v0.13.5
+[v0.13.4]: https://github.com/dosco/graphjin/compare/v0.13.3...v0.13.4
+[v0.13.3]: https://github.com/dosco/graphjin/compare/v0.13.2...v0.13.3
+[v0.13.2]: https://github.com/dosco/graphjin/compare/v0.13.1...v0.13.2
+[v0.13.1]: https://github.com/dosco/graphjin/compare/v0.13.0...v0.13.1
+[v0.13.0]: https://github.com/dosco/graphjin/compare/v0.12.49...v0.13.0
+[v0.12.49]: https://github.com/dosco/graphjin/compare/v0.12.48...v0.12.49
+[v0.12.48]: https://github.com/dosco/graphjin/compare/v0.12.47...v0.12.48
+[v0.12.47]: https://github.com/dosco/graphjin/compare/v0.12.46...v0.12.47
+[v0.12.46]: https://github.com/dosco/graphjin/compare/v0.12.45...v0.12.46
+[v0.12.45]: https://github.com/dosco/graphjin/compare/v0.12.44...v0.12.45
+[v0.12.44]: https://github.com/dosco/graphjin/compare/v0.12.43...v0.12.44
+[v0.12.43]: https://github.com/dosco/graphjin/compare/v0.12.42...v0.12.43
+[v0.12.42]: https://github.com/dosco/graphjin/compare/v0.12.41...v0.12.42
+[v0.12.41]: https://github.com/dosco/graphjin/compare/v0.12.40...v0.12.41
+[v0.12.40]: https://github.com/dosco/graphjin/compare/v0.12.39...v0.12.40
+[v0.12.39]: https://github.com/dosco/graphjin/compare/v0.12.38...v0.12.39
+[v0.12.38]: https://github.com/dosco/graphjin/compare/v0.12.37...v0.12.38
+[v0.12.37]: https://github.com/dosco/graphjin/compare/v0.12.36...v0.12.37
+[v0.12.36]: https://github.com/dosco/graphjin/compare/v0.12.35...v0.12.36
+[v0.12.35]: https://github.com/dosco/graphjin/compare/v0.12.34...v0.12.35
+[v0.12.34]: https://github.com/dosco/graphjin/compare/v0.12.33...v0.12.34
+[v0.12.33]: https://github.com/dosco/graphjin/compare/v0.12.32...v0.12.33
+[v0.12.32]: https://github.com/dosco/graphjin/compare/v0.12.31...v0.12.32
+[v0.12.31]: https://github.com/dosco/graphjin/compare/v0.12.30...v0.12.31
+[v0.12.30]: https://github.com/dosco/graphjin/compare/v0.12.29...v0.12.30
+[v0.12.29]: https://github.com/dosco/graphjin/compare/v0.12.28...v0.12.29
+[v0.12.28]: https://github.com/dosco/graphjin/compare/v0.12.27...v0.12.28
+[v0.12.27]: https://github.com/dosco/graphjin/compare/v0.12.26...v0.12.27
+[v0.12.26]: https://github.com/dosco/graphjin/compare/v0.12.25...v0.12.26
+[v0.12.25]: https://github.com/dosco/graphjin/compare/v0.12.24...v0.12.25
+[v0.12.24]: https://github.com/dosco/graphjin/compare/v0.12.23...v0.12.24
+[v0.12.23]: https://github.com/dosco/graphjin/compare/v0.12.22...v0.12.23
+[v0.12.22]: https://github.com/dosco/graphjin/compare/v0.12.21...v0.12.22
+[v0.12.21]: https://github.com/dosco/graphjin/compare/v0.12.20...v0.12.21
+[v0.12.20]: https://github.com/dosco/graphjin/compare/v0.12.19...v0.12.20
+[v0.12.19]: https://github.com/dosco/graphjin/compare/v0.12.18...v0.12.19
+[v0.12.18]: https://github.com/dosco/graphjin/compare/v0.12.17...v0.12.18
+[v0.12.17]: https://github.com/dosco/graphjin/compare/v0.12.16...v0.12.17
+[v0.12.16]: https://github.com/dosco/graphjin/compare/v0.12.15...v0.12.16
+[v0.12.15]: https://github.com/dosco/graphjin/compare/v0.12.14...v0.12.15
+[v0.12.14]: https://github.com/dosco/graphjin/compare/v0.12.13...v0.12.14
+[v0.12.13]: https://github.com/dosco/graphjin/compare/v0.12.12...v0.12.13
+[v0.12.12]: https://github.com/dosco/graphjin/compare/v0.12.11...v0.12.12
+[v0.12.11]: https://github.com/dosco/graphjin/compare/v0.12.10...v0.12.11
+[v0.12.10]: https://github.com/dosco/graphjin/compare/v0.12.9...v0.12.10
+[v0.12.9]: https://github.com/dosco/graphjin/compare/v0.12.8...v0.12.9
+[v0.12.8]: https://github.com/dosco/graphjin/compare/v0.12.7...v0.12.8
+[v0.12.7]: https://github.com/dosco/graphjin/compare/v0.12.6...v0.12.7
+[v0.12.6]: https://github.com/dosco/graphjin/compare/v0.12.5...v0.12.6
+[v0.12.5]: https://github.com/dosco/graphjin/compare/v0.12.4...v0.12.5
+[v0.12.4]: https://github.com/dosco/graphjin/compare/v0.12.3...v0.12.4
+[v0.12.3]: https://github.com/dosco/graphjin/compare/v0.12.2...v0.12.3
+[v0.12.2]: https://github.com/dosco/graphjin/compare/v0.12.1...v0.12.2
+[v0.12.1]: https://github.com/dosco/graphjin/compare/v0.12.0...v0.12.1
+[v0.12.0]: https://github.com/dosco/graphjin/compare/v0.11.9...v0.12.0
+[v0.11.9]: https://github.com/dosco/graphjin/compare/v0.11.8...v0.11.9
+[v0.11.8]: https://github.com/dosco/graphjin/compare/v0.11.7...v0.11.8
+[v0.11.7]: https://github.com/dosco/graphjin/compare/v0.11.6...v0.11.7
+[v0.11.6]: https://github.com/dosco/graphjin/compare/v0.11.5...v0.11.6
+[v0.11.5]: https://github.com/dosco/graphjin/compare/v0.11.4...v0.11.5
+[v0.11.4]: https://github.com/dosco/graphjin/compare/v0.11.3...v0.11.4
+[v0.11.3]: https://github.com/dosco/graphjin/compare/v0.11.2...v0.11.3
+[v0.11.2]: https://github.com/dosco/graphjin/compare/v0.11.1...v0.11.2
+[v0.11.1]: https://github.com/dosco/graphjin/compare/v0.11...v0.11.1
+[v0.11]: https://github.com/dosco/graphjin/compare/v0.10.1...v0.11
+[v0.10.1]: https://github.com/dosco/graphjin/compare/v0.10...v0.10.1
+[v0.10]: https://github.com/dosco/graphjin/compare/v0.9...v0.10
+[v0.9]: https://github.com/dosco/graphjin/compare/v0.8...v0.9
+[v0.8]: https://github.com/dosco/graphjin/compare/v0.7...v0.8
+[v0.7]: https://github.com/dosco/graphjin/compare/v0.6...v0.7
+[v0.6]: https://github.com/dosco/graphjin/compare/v0.5...v0.6
+[v0.5]: https://github.com/dosco/graphjin/compare/v0.4...v0.5
+[v0.4]: https://github.com/dosco/graphjin/compare/v0.3...v0.4
+[v0.3]: https://github.com/dosco/graphjin/compare/0.3...v0.3

@@ -6,26 +6,26 @@ sidebar_label: Building an App
 
 There are two parts to most web apps: the backend and the frontend. The backend is usually an API of some kind and the frontend is mobile and/or web apps built in React, Vue, Android, iOS, etc.
 
-Super Graph will instantly give you a powerful and high-performance GraphQL API that can be your apps' backend. Let's get started, I promise you it's super easy and will save you weeks to months of your life.
+GraphJin will instantly give you a powerful and high-performance GraphQL API that can be your apps' backend. Let's get started, I promise you it's super easy and will save you weeks to months of your life.
 
-For this example we will create a web e-commerce store. This example app can be found in repo. https://github.com/dosco/super-graph/tree/master/examples/webshop
+For this example we will create a web e-commerce store. This example app can be found in repo. https://github.com/dosco/graphjin/tree/master/examples/webshop
 
 ## Try the example app
 
-Below we explain how this example app was built and other details around useing Super Graph to make you more productive.
+Below we explain how this example app was built and other details around useing GraphJin to make you more productive.
 
 ```console
-git clone https://github.com/dosco/super-graph.git
+git clone https://github.com/dosco/graphjin.git
 
-cd super-graph/examples/webshop
+cd graphjin/examples/webshop
 docker-compose run api db:setup
 docker-compose up
 ```
 
-## Install Super Graph
+## Install GraphJin
 
 ```console
-go get github.com/dosco/super-graph
+go get github.com/dosco/graphjin
 ```
 
 ## Create the app
@@ -33,19 +33,19 @@ go get github.com/dosco/super-graph
 Let's call our app Webshop.
 
 ```console
-super-graph new webshop
+graphjin new webshop
 cd webshop
 ```
 
 ## Add a database schema
 
 ```console
-super-graph db:new users
-super-graph db:new products
-super-graph db:new sections
-super-graph db:new customers
-super-graph db:new purchases
-super-graph db:new notifications
+graphjin db:new users
+graphjin db:new products
+graphjin db:new sections
+graphjin db:new customers
+graphjin db:new purchases
+graphjin db:new notifications
 
 # delete the example migration
 rm -rf config/migrations/0_init.sql
@@ -181,9 +181,9 @@ docker-compose run api db:setup
 docker-compose up
 ```
 
-## Access the Super Graph UI
+## Access the GraphJin UI
 
-The Super Graph web UI is used to build and test queries. It supports auto-completion which
+The GraphJin web UI is used to build and test queries. It supports auto-completion which
 makes it easy to craft queries. Open your web browser and visit the below url.
 
 [http://localhost:8080](http://localhost:8080)
@@ -371,7 +371,7 @@ There is so much going on here. We are creating a user, his product and assignin
 and categories. Tags here means a simple text array column while categories refers to a bigint array column
 that we have configured to act as a foreign key to the categories tables.
 
-Since array columns cannot be foreign keys in Postgres we have to add a simple config to Super Graph
+Since array columns cannot be foreign keys in Postgres we have to add a simple config to GraphJin
 to set this up.
 
 ```yaml
@@ -422,7 +422,7 @@ mutation {
 
 ## Realtime subscriptions
 
-This is one of the coolest features of Super Graph. It is a highly scalable way to get updates from the database as it updates. Below we use subscriptions to fetch the latest `purchases` from the database.
+This is one of the coolest features of GraphJin. It is a highly scalable way to get updates from the database as it updates. Below we use subscriptions to fetch the latest `purchases` from the database.
 
 ```json
 {
@@ -448,7 +448,7 @@ subscription {
 ## Production secrets management
 
 We recommend you use [Mozilla SOPS](https://github.com/mozilla/sops) for secrets management. The sops binary
-is installed on the Super Graph app docker image. To use SOPS you create a yaml file with your secrets like the one below. You then need a secret key to encrypt it. Your options are to go with Google Cloud KMS, Amazon KMS, Azure Key Vault, etc. In production SOPS will automatically fetch the key from your defined KMS, decrypt the secrets file and make the values available to Super Graph via enviroment variables.
+is installed on the GraphJin app docker image. To use SOPS you create a yaml file with your secrets like the one below. You then need a secret key to encrypt it. Your options are to go with Google Cloud KMS, Amazon KMS, Azure Key Vault, etc. In production SOPS will automatically fetch the key from your defined KMS, decrypt the secrets file and make the values available to GraphJin via enviroment variables.
 
 1. Create the secrets file
 

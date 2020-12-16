@@ -26,7 +26,7 @@ auth_fail_block: true
 # response
 enable_tracing: false
 
-# Watch the config folder and reload Super Graph
+# Watch the config folder and reload GraphJin
 # with the new configs when a change is detected
 reload_on_config_change: false
 

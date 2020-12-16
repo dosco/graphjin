@@ -1,10 +1,10 @@
 ---
 id: deploy
-title: How to deploy Super Graph
+title: How to deploy GraphJin
 sidebar_label: Deploy
 ---
 
-Since you're reading this you're probably considering deploying Super Graph. You're in luck it's really easy and there are several ways to choose from. Keep in mind Super Graph can be used as a pre-built docker image or you can easily customize it and build your own docker image.
+Since you're reading this you're probably considering deploying GraphJin. You're in luck it's really easy and there are several ways to choose from. Keep in mind GraphJin can be used as a pre-built docker image or you can easily customize it and build your own docker image.
 
 :::info JWT tokens (Auth0, etc)
 When deploying on a subdomain and configure this service to use JWT authentication. You will need the public key file or secret key. Ensure your web app passes the JWT token with every GraphQL request (Cookie recommended). You have to add the web domain to the `cors_allowed_origins` config option so CORS can allow the browser to do cross-domain ajax requests.
@@ -13,7 +13,7 @@ When deploying on a subdomain and configure this service to use JWT authenticati
 ## Google Cloud Run (Fully Managed)
 
 Cloud Run is a fully managed compute platform for deploying and scaling containerized applications quickly and securely.
-Your Super Graph app comes with a `cloudbuild.yaml` file so it's really easy to use Google Cloud Build to build and deploy your Super Graph app to Google Cloud Run.
+Your GraphJin app comes with a `cloudbuild.yaml` file so it's really easy to use Google Cloud Build to build and deploy your GraphJin app to Google Cloud Run.
 
 :::note
 Remember to give Cloud Build permission to deploy to Cloud Run first this can be done in the Cloud Build settings screen. Also the service account you use with Cloud Run must have the IAM permissions to connect to CloudSQL. https://cloud.google.com/sql/docs/postgres/connect-run
@@ -39,12 +39,12 @@ docker build -t your-api-service-name .
 
 ## With a Rails app
 
-Super Graph can read Rails session cookies, like those created by authentication gems (Devise or Warden). Based on how you've configured your Rails app the cookie can be signed, encrypted, both, include the user ID or just have the ID of the session. If you have choosen to use Redis or Memcache as your session store then Super Graph can read the session cookie and then lookup the user in the session store. In short it works really well with almost all Rails apps.
+GraphJin can read Rails session cookies, like those created by authentication gems (Devise or Warden). Based on how you've configured your Rails app the cookie can be signed, encrypted, both, include the user ID or just have the ID of the session. If you have choosen to use Redis or Memcache as your session store then GraphJin can read the session cookie and then lookup the user in the session store. In short it works really well with almost all Rails apps.
 
-For any of this to work Super Graph must be deployed in a way that make the browser send the apps cookie to it along with the GraphQL query. That means Super Graph needs to be either on the same domain as your app or on a subdomain.
+For any of this to work GraphJin must be deployed in a way that make the browser send the apps cookie to it along with the GraphQL query. That means GraphJin needs to be either on the same domain as your app or on a subdomain.
 
 :::info I need an example
-Say your Rails app runs on `myrailsapp.com` then Super Graph should be on the same domain or on a subdomain like `graphql.myrailsapp.com`. If you choose subdomain then remeber read the [Deploy under a subdomain](#deploy-under-a-subdomain) section.
+Say your Rails app runs on `myrailsapp.com` then GraphJin should be on the same domain or on a subdomain like `graphql.myrailsapp.com`. If you choose subdomain then remeber read the [Deploy under a subdomain](#deploy-under-a-subdomain) section.
 :::
 
 ## Deploy under a subdomain
@@ -53,10 +53,10 @@ For this to work you have to ensure that the option `:domain => :all` is added t
 
 ## With NGINX
 
-If your infrastructure is fronted by NGINX then it should be configured so that all requests to your GraphQL API path are proxyed to Super Graph. In the example NGINX config below all requests to the path `/api/v1/graphql` are routed to wherever you have Super Graph installed within your architecture. This example is derived from the config file example at [/microservices-nginx-gateway/nginx.conf](https://github.com/launchany/microservices-nginx-gateway/blob/master/nginx.conf)
+If your infrastructure is fronted by NGINX then it should be configured so that all requests to your GraphQL API path are proxyed to GraphJin. In the example NGINX config below all requests to the path `/api/v1/graphql` are routed to wherever you have GraphJin installed within your architecture. This example is derived from the config file example at [/microservices-nginx-gateway/nginx.conf](https://github.com/launchany/microservices-nginx-gateway/blob/master/nginx.conf)
 
 :::info NGINX with sub-domain
-Yes, NGINX is very flexible and you can configure it to keep Super Graph a subdomain instead of on the same top level domain. I'm sure a little Googleing will get you some great example configs for that.
+Yes, NGINX is very flexible and you can configure it to keep GraphJin a subdomain instead of on the same top level domain. I'm sure a little Googleing will get you some great example configs for that.
 :::
 
 ```nginx
@@ -66,10 +66,10 @@ server {
 	# Running port
 	listen 80;
 
-	# Proxy the graphql api path to Super Graph
+	# Proxy the graphql api path to GraphJin
 	location /api/v1/graphql {
 
-			proxy_pass         http://super-graph-service:8080;
+			proxy_pass         http://graphjin-service:8080;
 			proxy_redirect     off;
 			proxy_set_header   Host $host;
 			proxy_set_header   X-Real-IP $remote_addr;
@@ -94,7 +94,7 @@ server {
 
 ## On Kubernetes
 
-If your Rails app runs on Kubernetes then ensure you have an ingress config deployed that points the path to the service that you have deployed Super Graph under.
+If your Rails app runs on Kubernetes then ensure you have an ingress config deployed that points the path to the service that you have deployed GraphJin under.
 
 ### Ingress config
 
@@ -128,32 +128,32 @@ kind: Service
 metadata:
   name: graphql-service
   labels:
-    run: super-graph
+    run: graphjin
 spec:
   ports:
     - port: 8080
       protocol: TCP
   selector:
-    run: super-graph
+    run: graphjin
 
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: super-graph
+  name: graphjin
 spec:
   selector:
     matchLabels:
-      run: super-graph
+      run: graphjin
   replicas: 2
   template:
     metadata:
       labels:
-        run: super-graph
+        run: graphjin
     spec:
       containers:
-        - name: super-graph
-          image: docker.io/dosco/super-graph:latest
+        - name: graphjin
+          image: docker.io/dosco/graphjin:latest
           ports:
             - containerPort: 8080
 ```

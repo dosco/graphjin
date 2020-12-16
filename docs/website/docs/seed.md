@@ -4,11 +4,11 @@ title: Database Seeding
 sidebar_label: Seed Scripts
 ---
 
-While developing it's often useful to be able to have fake data available in the database. Fake data can help with building the UI and save you time when trying to get the GraphQL query correct. Super Graph has the ability do this for you. All you have to do is write a seed script `config/seed.js` (In Javascript) and use the `db:seed` command line option. Below is an example of kind of things you can do in a seed script.
+While developing it's often useful to be able to have fake data available in the database. Fake data can help with building the UI and save you time when trying to get the GraphQL query correct. GraphJin has the ability do this for you. All you have to do is write a seed script `config/seed.js` (In Javascript) and use the `db:seed` command line option. Below is an example of kind of things you can do in a seed script.
 
 ## Creating fake users
 
-Since all mutations and queries are in standard GraphQL you can use all the features available in Super Graph GraphQL.
+Since all mutations and queries are in standard GraphQL you can use all the features available in GraphJin GraphQL.
 
 ```javascript
 var users = [];
@@ -36,7 +36,7 @@ for (i = 0; i < 20; i++) {
 
 ## Inserting the users fake blog posts
 
-Another example highlighting how the `connect` syntax of Super Graph GraphQL can be used to connect inserted posts
+Another example highlighting how the `connect` syntax of GraphJin GraphQL can be used to connect inserted posts
 to random users that were previously created. For futher details checkout the [seed script](/seed) documentation.
 
 ```javascript

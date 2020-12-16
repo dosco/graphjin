@@ -4,7 +4,7 @@ title: Codebase Explained
 sidebar_label: Code Internals
 ---
 
-Super Graph code is made up of a number of packages. We have done our best to keep each package small and focused. Let us begin by looking at some of these packages.
+GraphJin code is made up of a number of packages. We have done our best to keep each package small and focused. Let us begin by looking at some of these packages.
 
 1. qcode - GraphQL lexer and parser.
 2. psql - SQL generator
@@ -195,11 +195,11 @@ $ cd ./psql
 $ ./pprof_mem.sh
 goos: darwin
 goarch: amd64
-pkg: github.com/dosco/super-graph/psql
+pkg: github.com/dosco/graphjin/psql
 BenchmarkCompile-8                 52567             19401 ns/op            3918 B/op         61 allocs/op
 BenchmarkCompileParallel-8        219548              5684 ns/op            3938 B/op         61 allocs/op
 PASS
-ok      github.com/dosco/super-graph/psql       2.582s
+ok      github.com/dosco/graphjin/psql       2.582s
 Type: alloc_space
 Time: Nov 29, 2019 at 11:59pm (EST)
 Entering interactive mode (type "help" for commands, "o" for options)
@@ -208,16 +208,16 @@ Showing nodes accounting for 880.59MB, 80.63% of 1092.14MB total
 Dropped 33 nodes (cum <= 5.46MB)
 Showing top 10 nodes out of 35
       flat  flat%   sum%        cum   cum%
-      22MB  2.01%  2.01%   903.57MB 82.73%  github.com/dosco/super-graph/qcode.(*Compiler).Compile
-         0     0%  2.01%   862.98MB 79.02%  github.com/dosco/super-graph/psql.BenchmarkCompileParallel.func1
+      22MB  2.01%  2.01%   903.57MB 82.73%  github.com/dosco/graphjin/qcode.(*Compiler).Compile
+         0     0%  2.01%   862.98MB 79.02%  github.com/dosco/graphjin/psql.BenchmarkCompileParallel.func1
          0     0%  2.01%   862.98MB 79.02%  testing.(*B).RunParallel.func1
-  461.95MB 42.30% 44.31%   760.53MB 69.64%  github.com/dosco/super-graph/qcode.(*Compiler).compileQuery
-  396.63MB 36.32% 80.63%   396.63MB 36.32%  github.com/dosco/super-graph/util.NewStack
-         0     0% 80.63%   252.07MB 23.08%  github.com/dosco/super-graph/qcode.(*Compiler).compileArgs
+  461.95MB 42.30% 44.31%   760.53MB 69.64%  github.com/dosco/graphjin/qcode.(*Compiler).compileQuery
+  396.63MB 36.32% 80.63%   396.63MB 36.32%  github.com/dosco/graphjin/util.NewStack
+         0     0% 80.63%   252.07MB 23.08%  github.com/dosco/graphjin/qcode.(*Compiler).compileArgs
          0     0% 80.63%   228.15MB 20.89%  testing.(*B).runN
-         0     0% 80.63%   227.63MB 20.84%  github.com/dosco/super-graph/psql.BenchmarkCompile
+         0     0% 80.63%   227.63MB 20.84%  github.com/dosco/graphjin/psql.BenchmarkCompile
          0     0% 80.63%   227.63MB 20.84%  testing.(*B).launch
-         0     0% 80.63%   187.04MB 17.13%  github.com/dosco/super-graph/psql.(*Compiler).Compile
+         0     0% 80.63%   187.04MB 17.13%  github.com/dosco/graphjin/psql.(*Compiler).Compile
 ```
 
 ## Benchmarking
@@ -229,20 +229,20 @@ $ cd ./psql
 $ go test -v -run=xx -bench=.
 goos: darwin
 goarch: amd64
-pkg: github.com/dosco/super-graph/psql
+pkg: github.com/dosco/graphjin/psql
 BenchmarkCompile-8                 60775             19076 ns/op            3919 B/op         61 allocs/op
 BenchmarkCompileParallel-8        207847              5172 ns/op            3937 B/op         61 allocs/op
 PASS
-ok      github.com/dosco/super-graph/psql       2.530s
+ok      github.com/dosco/graphjin/psql       2.530s
 ```
 
 ## Reach out
 
 If you'd like me to explain other parts of the code please reach out over Twitter or Discord. I'll keep adding to this doc as I get time.
 
-## Developing Super Graph
+## Developing GraphJin
 
-If you want to build and run Super Graph from code then the below commands will build the web ui and launch Super Graph in developer mode with a watcher to rebuild on code changes. And the demo rails app is also launched to make it easier to test changes.
+If you want to build and run GraphJin from code then the below commands will build the web ui and launch GraphJin in developer mode with a watcher to rebuild on code changes. And the demo rails app is also launched to make it easier to test changes.
 
 ```bash
 
@@ -257,7 +257,7 @@ docker-compose up
 
 ```
 
-## Developing on the Super Graph UI
+## Developing on the GraphJin UI
 
 ```bash
 # yarn is needed to build the web ui

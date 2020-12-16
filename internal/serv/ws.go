@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/dosco/super-graph/core"
-	"github.com/dosco/super-graph/internal/serv/internal/auth"
+	"github.com/dosco/graphjin/core"
+	"github.com/dosco/graphjin/internal/serv/internal/auth"
 	ws "github.com/gorilla/websocket"
 )
 
@@ -129,7 +129,7 @@ func apiV1Ws(servConf *ServConfig, w http.ResponseWriter, r *http.Request) {
 			if run {
 				continue
 			}
-			m, err = sg.Subscribe(ctx, msg.Payload.Query, msg.Payload.Vars)
+			m, err = gj.Subscribe(ctx, msg.Payload.Query, msg.Payload.Vars)
 			if err == nil {
 				go waitForData(servConf, done, conn, m)
 				run = true

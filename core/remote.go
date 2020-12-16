@@ -8,21 +8,21 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/dosco/super-graph/core/internal/qcode"
-	"github.com/dosco/super-graph/jsn"
+	"github.com/dosco/graphjin/core/internal/qcode"
+	"github.com/dosco/graphjin/jsn"
 )
 
-func (sg *SuperGraph) execRemoteJoin(res qres, hdr http.Header) (qres, error) {
+func (gj *GraphJin) execRemoteJoin(res qres, hdr http.Header) (qres, error) {
 	var err error
 
 	sel := res.q.st.qc.Selects
 	h := maphash.Hash{}
-	h.SetSeed(sg.hashSeed)
+	h.SetSeed(gj.hashSeed)
 
 	// fetch the field name used within the db response json
 	// that are used to mark insertion points and the mapping between
 	// those field names and their select objects
-	fids, sfmap, err := sg.parentFieldIds(&h, sel, res.q.st.md.Remotes())
+	fids, sfmap, err := gj.parentFieldIds(&h, sel, res.q.st.md.Remotes())
 	if err != nil {
 		return res, err
 	}
@@ -36,7 +36,7 @@ func (sg *SuperGraph) execRemoteJoin(res qres, hdr http.Header) (qres, error) {
 		return res, errors.New("something wrong no remote ids found in db response")
 	}
 
-	to, err = sg.resolveRemotes(hdr, &h, from, sel, sfmap)
+	to, err = gj.resolveRemotes(hdr, &h, from, sel, sfmap)
 	if err != nil {
 		return res, err
 	}
@@ -52,7 +52,7 @@ func (sg *SuperGraph) execRemoteJoin(res qres, hdr http.Header) (qres, error) {
 	return res, nil
 }
 
-func (sg *SuperGraph) resolveRemotes(
+func (gj *GraphJin) resolveRemotes(
 	hdr http.Header,
 	h *maphash.Hash,
 	from []jsn.Field,
@@ -80,7 +80,7 @@ func (sg *SuperGraph) resolveRemotes(
 		}
 		p := sel[s.ParentID]
 
-		pti, err := sg.schema.GetTableInfo(p.Table)
+		pti, err := gj.schema.GetTableInfo(p.Table)
 		if err != nil {
 			return nil, err
 		}
@@ -89,7 +89,7 @@ func (sg *SuperGraph) resolveRemotes(
 		// to find the resolver to use for this relationship
 		k2 := mkkey(h, s.Table, pti.Name)
 
-		r, ok := sg.rmap[k2]
+		r, ok := gj.rmap[k2]
 		if !ok {
 			return nil, fmt.Errorf("no resolver found")
 		}
@@ -135,7 +135,7 @@ func (sg *SuperGraph) resolveRemotes(
 	return to, cerr
 }
 
-func (sg *SuperGraph) parentFieldIds(h *maphash.Hash, sel []qcode.Select, remotes int) (
+func (gj *GraphJin) parentFieldIds(h *maphash.Hash, sel []qcode.Select, remotes int) (
 	[][]byte, map[uint64]*qcode.Select, error) {
 
 	// list of keys (and it's related value) to extract from
@@ -155,14 +155,14 @@ func (sg *SuperGraph) parentFieldIds(h *maphash.Hash, sel []qcode.Select, remote
 
 		p := sel[s.ParentID]
 
-		pti, err := sg.schema.GetTableInfo(p.Table)
+		pti, err := gj.schema.GetTableInfo(p.Table)
 		if err != nil {
 			return nil, nil, err
 		}
 
 		k := mkkey(h, s.Table, pti.Name)
 
-		if r, ok := sg.rmap[k]; ok {
+		if r, ok := gj.rmap[k]; ok {
 			fm = append(fm, r.IDField)
 			_, _ = h.Write(r.IDField)
 			sm[h.Sum64()] = s

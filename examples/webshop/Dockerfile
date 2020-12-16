@@ -1,4 +1,4 @@
-FROM dosco/super-graph:latest
+FROM dosco/graphjin:latest
 WORKDIR /
 
 COPY config/ /config/

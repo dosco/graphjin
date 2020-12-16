@@ -15,7 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/dosco/super-graph/core/internal/qcode"
+	"github.com/dosco/graphjin/core/internal/qcode"
 	"github.com/rs/xid"
 )
 
@@ -66,12 +66,12 @@ type Member struct {
 	vl     []interface{}
 }
 
-func (sg *SuperGraph) Subscribe(c context.Context, query string, vars json.RawMessage) (*Member, error) {
-	return sg.SubscribeEx(c, query, vars, nil)
+func (gj *GraphJin) Subscribe(c context.Context, query string, vars json.RawMessage) (*Member, error) {
+	return gj.SubscribeEx(c, query, vars, nil)
 }
 
 // GraphQLEx is the extended version of the Subscribe function allowing for request specific config.
-func (sg *SuperGraph) SubscribeEx(
+func (gj *GraphJin) SubscribeEx(
 	c context.Context,
 	query string,
 	vars json.RawMessage,
@@ -86,7 +86,7 @@ func (sg *SuperGraph) SubscribeEx(
 	}
 
 	if name == "" {
-		if sg.allowList != nil && sg.conf.EnforceAllowList {
+		if gj.allowList != nil && gj.conf.EnforceAllowList {
 			return nil, errors.New("subscription: query name is required")
 		} else {
 			h := sha256.Sum256([]byte(query))
@@ -102,7 +102,7 @@ func (sg *SuperGraph) SubscribeEx(
 		role = "anon"
 	}
 
-	v, _ := sg.subs.LoadOrStore((name + role), &sub{
+	v, _ := gj.subs.LoadOrStore((name + role), &sub{
 		name: name,
 		role: role,
 		add:  make(chan *Member),
@@ -112,15 +112,15 @@ func (sg *SuperGraph) SubscribeEx(
 	s := v.(*sub)
 
 	s.Do(func() {
-		err = sg.newSub(c, s, query, vars)
+		err = gj.newSub(c, s, query, vars)
 	})
 
 	if err != nil {
-		sg.subs.Delete((name + role))
+		gj.subs.Delete((name + role))
 		return nil, err
 	}
 
-	args, err := sg.argList(c, s.q.st.md, vars, rc)
+	args, err := gj.argList(c, s.q.st.md, vars, rc)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +136,7 @@ func (sg *SuperGraph) SubscribeEx(
 	return m, nil
 }
 
-func (sg *SuperGraph) newSub(c context.Context, s *sub, query string, vars json.RawMessage) error {
+func (gj *GraphJin) newSub(c context.Context, s *sub, query string, vars json.RawMessage) error {
 	rq := rquery{
 		op:    qcode.QTSubscription,
 		name:  s.name,
@@ -145,7 +145,7 @@ func (sg *SuperGraph) newSub(c context.Context, s *sub, query string, vars json.
 	}
 	s.q = &cquery{q: rq}
 
-	if err := sg.compileQuery(s.q, s.role); err != nil {
+	if err := gj.compileQuery(s.q, s.role); err != nil {
 		return err
 	}
 
@@ -153,16 +153,16 @@ func (sg *SuperGraph) newSub(c context.Context, s *sub, query string, vars json.
 		s.q.st.sql = renderSubWrap(s.q.st)
 	}
 
-	go sg.subController(s)
+	go gj.subController(s)
 	return nil
 }
 
-func (sg *SuperGraph) subController(s *sub) {
-	defer sg.subs.Delete((s.name + s.role))
+func (gj *GraphJin) subController(s *sub) {
+	defer gj.subs.Delete((s.name + s.role))
 	var ps time.Duration
 
-	if sg.conf.PollDuration != 0 {
-		ps = sg.conf.PollDuration * time.Second
+	if gj.conf.PollDuration != 0 {
+		ps = gj.conf.PollDuration * time.Second
 	} else {
 		ps = 5 * time.Second
 	}
@@ -171,7 +171,7 @@ func (sg *SuperGraph) subController(s *sub) {
 		select {
 		case m := <-s.add:
 			if err := s.addMember(m); err != nil {
-				sg.log.Printf("ERR %s", err)
+				gj.log.Printf("ERR %s", err)
 				return
 			}
 
@@ -183,12 +183,12 @@ func (sg *SuperGraph) subController(s *sub) {
 
 		case msg := <-s.updt:
 			if err := s.updateMember(msg); err != nil {
-				sg.log.Printf("ERR %s", err)
+				gj.log.Printf("ERR %s", err)
 				return
 			}
 
 		case <-time.After(ps):
-			s.fanOutJobs(sg)
+			s.fanOutJobs(gj)
 		}
 	}
 }
@@ -255,24 +255,24 @@ func (s *sub) updateMember(msg mmsg) error {
 	return nil
 }
 
-func (s *sub) fanOutJobs(sg *SuperGraph) {
+func (s *sub) fanOutJobs(gj *GraphJin) {
 	switch {
 	case s.ops != 0 || len(s.ids) == 0:
 		return
 
 	case len(s.ids) <= maxMembersPerWorker:
-		go sg.checkUpdates(s, s.mval, 0)
+		go gj.checkUpdates(s, s.mval, 0)
 
 	default:
 		// fan out chunks of work to multiple routines
 		// seperated by a random duration
 		for i := 0; i < len(s.ids); i += maxMembersPerWorker {
-			go sg.checkUpdates(s, s.mval, i)
+			go gj.checkUpdates(s, s.mval, i)
 		}
 	}
 }
 
-func (sg *SuperGraph) checkUpdates(s *sub, mv mval, start int) {
+func (gj *GraphJin) checkUpdates(s *sub, mv mval, start int) {
 	// Do not use the `mval` embedded inside sub since
 	// its not thread safe use the copy `mv mval`.
 	atomic.AddInt64(&s.ops, 1)
@@ -298,13 +298,13 @@ func (sg *SuperGraph) checkUpdates(s *sub, mv mval, start int) {
 	// more details on this optimization are towards the end
 	// of the function
 	if hasParams {
-		rows, err = sg.db.QueryContext(c, s.q.st.sql, renderJSONArray(mv.params[start:end]))
+		rows, err = gj.db.QueryContext(c, s.q.st.sql, renderJSONArray(mv.params[start:end]))
 	} else {
-		rows, err = sg.db.QueryContext(c, s.q.st.sql)
+		rows, err = gj.db.QueryContext(c, s.q.st.sql)
 	}
 
 	if err != nil {
-		sg.log.Printf("ERR %s", err)
+		gj.log.Printf("ERR %s", err)
 		return
 	}
 
@@ -313,7 +313,7 @@ func (sg *SuperGraph) checkUpdates(s *sub, mv mval, start int) {
 
 	for rows.Next() {
 		if err := rows.Scan(&js); err != nil {
-			sg.log.Printf("ERR %s", err)
+			gj.log.Printf("ERR %s", err)
 			return
 		}
 		j := start + i
@@ -324,9 +324,9 @@ func (sg *SuperGraph) checkUpdates(s *sub, mv mval, start int) {
 			continue
 		}
 
-		cur, err := sg.encryptCursor(s.q.st.qc, js)
+		cur, err := gj.encryptCursor(s.q.st.qc, js)
 		if err != nil {
-			sg.log.Printf("ERR %s", err)
+			gj.log.Printf("ERR %s", err)
 			return
 		}
 

@@ -1,5 +1,5 @@
-// Package core provides the primary API to include and use Super Graph with your own code.
-// For detailed documentation visit https://supergraph.dev
+// Package core provides the primary API to include and use GraphJin with your own code.
+// For detailed documentation visit https://graphjin.com
 //
 // Example usage:
 /*
@@ -9,7 +9,7 @@
 		"database/sql"
 		"fmt"
 		"time"
-		"github.com/dosco/super-graph/core"
+		"github.com/dosco/graphjin/core"
 		_ "github.com/jackc/pgx/v4/stdlib"
 	)
 
@@ -19,7 +19,7 @@
 			log.Fatal(err)
 		}
 
-		sg, err := core.NewSuperGraph(nil, db)
+	gj, err := core.NewGraphJin(nil, db)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -34,7 +34,7 @@
 
 		ctx = context.WithValue(ctx, core.UserIDKey, 1)
 
-		res, err := sg.GraphQL(ctx, query, nil)
+		res, err := gj.GraphQL(ctx, query, nil)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -55,16 +55,16 @@ import (
 	"sync"
 
 	"github.com/chirino/graphql"
-	"github.com/dosco/super-graph/core/internal/allow"
-	"github.com/dosco/super-graph/core/internal/crypto"
-	"github.com/dosco/super-graph/core/internal/psql"
-	"github.com/dosco/super-graph/core/internal/qcode"
-	"github.com/dosco/super-graph/core/internal/sdata"
+	"github.com/dosco/graphjin/core/internal/allow"
+	"github.com/dosco/graphjin/core/internal/crypto"
+	"github.com/dosco/graphjin/core/internal/psql"
+	"github.com/dosco/graphjin/core/internal/qcode"
+	"github.com/dosco/graphjin/core/internal/sdata"
 )
 
 type contextkey int
 
-// Constants to set values on the context passed to the NewSuperGraph function
+// Constants to set values on the context passed to the NewGraphJin function
 const (
 	// Name of the authentication provider. Eg. google, github, etc
 	UserIDProviderKey contextkey = iota
@@ -76,9 +76,9 @@ const (
 	UserRoleKey
 )
 
-// SuperGraph struct is an instance of the Super Graph engine it holds all the required information like
+// GraphJin struct is an instance of the GraphJin engine it holds all the required information like
 // datase schemas, relationships, etc that the GraphQL to SQL compiler would need to do it's job.
-type SuperGraph struct {
+type GraphJin struct {
 	conf        *Config
 	db          *sql.DB
 	log         *_log.Logger
@@ -99,19 +99,19 @@ type SuperGraph struct {
 	subs        sync.Map
 }
 
-// NewSuperGraph creates the SuperGraph struct, this involves querying the database to learn its
+// NewGraphJin creates the GraphJin struct, this involves querying the database to learn its
 // schemas and relationships
-func NewSuperGraph(conf *Config, db *sql.DB) (*SuperGraph, error) {
-	return newSuperGraph(conf, db, nil)
+func NewGraphJin(conf *Config, db *sql.DB) (*GraphJin, error) {
+	return newGraphJin(conf, db, nil)
 }
 
-// newSuperGraph helps with writing tests and benchmarks
-func newSuperGraph(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo) (*SuperGraph, error) {
+// newGraphJin helps with writing tests and benchmarks
+func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo) (*GraphJin, error) {
 	if conf == nil {
 		conf = &Config{Debug: true, DisableAllowList: true}
 	}
 
-	sg := &SuperGraph{
+	gj := &GraphJin{
 		conf:     conf,
 		db:       db,
 		dbinfo:   dbinfo,
@@ -119,43 +119,43 @@ func newSuperGraph(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo) (*SuperGraph,
 		hashSeed: maphash.MakeSeed(),
 	}
 
-	if err := sg.initConfig(); err != nil {
+	if err := gj.initConfig(); err != nil {
 		return nil, err
 	}
 
-	if err := sg.initSchema(); err != nil {
+	if err := gj.initSchema(); err != nil {
 		return nil, err
 	}
 
-	if err := sg.initResolvers(); err != nil {
+	if err := gj.initResolvers(); err != nil {
 		return nil, err
 	}
 
-	if err := sg.initAllowList(); err != nil {
+	if err := gj.initAllowList(); err != nil {
 		return nil, err
 	}
 
-	if err := sg.initCompilers(); err != nil {
+	if err := gj.initCompilers(); err != nil {
 		return nil, err
 	}
 
-	if err := sg.initGraphQLEgine(); err != nil {
+	if err := gj.initGraphQLEgine(); err != nil {
 		return nil, err
 	}
 
-	if err := sg.prepareRoleStmt(); err != nil {
+	if err := gj.prepareRoleStmt(); err != nil {
 		return nil, err
 	}
 
 	if conf.SecretKey != "" {
 		sk := sha256.Sum256([]byte(conf.SecretKey))
 		conf.SecretKey = ""
-		sg.encKey = sk
+		gj.encKey = sk
 	} else {
-		sg.encKey = crypto.NewEncryptionKey()
+		gj.encKey = crypto.NewEncryptionKey()
 	}
 
-	return sg, nil
+	return gj, nil
 }
 
 // Result struct contains the output of the GraphQL function this includes resulting json from the
@@ -176,18 +176,18 @@ type ReqConfig struct {
 	Vars map[string]interface{}
 }
 
-// GraphQL function is called on the SuperGraph struct to convert the provided GraphQL query into an
+// GraphQL function is called on the GraphJin struct to convert the provided GraphQL query into an
 // SQL query and execute it on the database. In production mode prepared statements are directly used
 // and no query compiling takes places.
 //
 // In developer mode all names queries are saved into a file `allow.list` and in production mode only
 // queries from this file can be run.
-func (sg *SuperGraph) GraphQL(c context.Context, query string, vars json.RawMessage) (*Result, error) {
-	return sg.GraphQLEx(c, query, vars, nil)
+func (gj *GraphJin) GraphQL(c context.Context, query string, vars json.RawMessage) (*Result, error) {
+	return gj.GraphQLEx(c, query, vars, nil)
 }
 
 // GraphQLEx is the extended version of the GraphQL function allowing for request specific config.
-func (sg *SuperGraph) GraphQLEx(
+func (gj *GraphJin) GraphQLEx(
 	c context.Context,
 	query string,
 	vars json.RawMessage,
@@ -195,7 +195,7 @@ func (sg *SuperGraph) GraphQLEx(
 
 	ct := scontext{
 		Context: c,
-		sg:      sg,
+		gj:      gj,
 		op:      qcode.GetQType(query),
 		rc:      rc,
 		name:    Name(query),
@@ -212,8 +212,8 @@ func (sg *SuperGraph) GraphQLEx(
 
 	// use the chirino/graphql library for introspection queries
 	// disabled when allow list is enforced
-	if !sg.conf.EnforceAllowList && ct.name == "IntrospectionQuery" {
-		r := sg.ge.ServeGraphQL(&graphql.Request{Query: query})
+	if !gj.conf.EnforceAllowList && ct.name == "IntrospectionQuery" {
+		r := gj.ge.ServeGraphQL(&graphql.Request{Query: query})
 		res.Data = r.Data
 
 		if r.Error() != nil {
@@ -247,9 +247,9 @@ func (sg *SuperGraph) GraphQLEx(
 }
 
 // GraphQLSchema function return the GraphQL schema for the underlying database connected
-// to this instance of Super Graph
-func (sg *SuperGraph) GraphQLSchema() (string, error) {
-	return sg.ge.Schema.String(), nil
+// to this instance of GraphJin
+func (gj *GraphJin) GraphQLSchema() (string, error) {
+	return gj.ge.Schema.String(), nil
 }
 
 // Operation function return the operation type from the query. It uses a very fast algorithm to

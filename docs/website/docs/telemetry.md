@@ -6,9 +6,9 @@ sidebar_label: Telemetry
 
 import useBaseUrl from '@docusaurus/useBaseUrl'; // Add to the top of the file below the front matter.
 
-Having observability and telemetry is at the core of any production ready service. Super Graph has built-in support for OpenCensus for tracing requests all the way from HTTP to the database and providing all kinds of metrics.
+Having observability and telemetry is at the core of any production ready service. GraphJin has built-in support for OpenCensus for tracing requests all the way from HTTP to the database and providing all kinds of metrics.
 
-OpenCensus has a concept called exporters these are external services that can consume this data and make to give you graphs, charts, alerting etc. Super Graph again has built-in support for Zipkin, Prometheus, Google Stackdriver and the AWS X-Ray exporters.
+OpenCensus has a concept called exporters these are external services that can consume this data and make to give you graphs, charts, alerting etc. GraphJin again has built-in support for Zipkin, Prometheus, Google Stackdriver and the AWS X-Ray exporters.
 
 ## Telemetry config
 
@@ -43,13 +43,13 @@ telemetry:
 
 **tracing.sample** This controls what percentage of the requests should be traced. By default `0.5` or 50% of the requests are traced, `always` is also a valid value for this field and it means all requests will be traced.
 
-**include_query** Include the Super Graph SQL query to the trace. Be careful with this setting in production it will add the entire SQL query to the trace. This can be veru useful to debug slow requests.
+**include_query** Include the GraphJin SQL query to the trace. Be careful with this setting in production it will add the entire SQL query to the trace. This can be veru useful to debug slow requests.
 
-**include_params** Include the Super Graph SQL query parameters to the trace. Be careful with this setting in production it will it can potentially leak sensitive user information into tracing logs.
+**include_params** Include the GraphJin SQL query parameters to the trace. Be careful with this setting in production it will it can potentially leak sensitive user information into tracing logs.
 
 ## Using Zipkin
 
-Zipkin is a really great open source request tracing project. It's easy to add to your current Super Graph app as a way to test tracing in development. Add the following to the Super Graph generated `docker-compose.yml` file. Also add `zipkin` in your current apps `depends_on` list. Once setup the Zipkin UI is available at http://localhost:9411
+Zipkin is a really great open source request tracing project. It's easy to add to your current GraphJin app as a way to test tracing in development. Add the following to the GraphJin generated `docker-compose.yml` file. Also add `zipkin` in your current apps `depends_on` list. Once setup the Zipkin UI is available at http://localhost:9411
 
 ```yaml
   your_api:

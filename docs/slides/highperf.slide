@@ -12,13 +12,13 @@ companies hiring remote.
 
 Previously worked on Platform, Frontend and Ads @ Linkedin building the distributed targeting and serving infrastructure behind Linkedin Ads.
 
-Also currently building Super Graph an open source instant GraphQL engine for Postgres and Rails. Written in GO
+Also currently building GraphJin an open source instant GraphQL engine for Postgres and Rails. Written in GO
 
 MOV Remote
 .link https://movremote.com
 
-Super Graph
-.link https://supergraph.dev
+GraphJin
+.link https://graphjin.com
 
 * Why does it matter?
 
@@ -85,11 +85,11 @@ Parallel
 
 Get a nice command line
 
-  pkg: github.com/dosco/super-graph/psql
+  pkg: github.com/dosco/graphjin/psql
   BenchmarkCompile-8           	  100000	     15138 ns/op	    3553 B/op	      35 allocs/op
   BenchmarkCompileParallel-8   	  300000	      4760 ns/op	    3583 B/op	      35 allocs/op
   PASS
-  ok  	github.com/dosco/super-graph/psql	3.174s
+  ok  	github.com/dosco/graphjin/psql	3.174s
   Type: alloc_space
   Time: Aug 21, 2019 at 11:56am (EDT)
   Entering interactive mode (type "help" for commands, "o" for options)
@@ -106,9 +106,9 @@ top, web, png, pdf, ... and more
   Showing top 10 nodes out of 34
         flat  flat%   sum%        cum   cum%
       0.01GB  0.89%  0.89%     1.11GB 80.77%  github.com/[...]/qcode.(*Compiler).Compile
-          0     0%  0.89%     1.02GB 74.22%  github.com/dosco/super-graph/
+          0     0%  0.89%     1.02GB 74.22%  github.com/dosco/graphjin/
       0.52GB 37.74% 38.63%     0.94GB 68.50%  github.com/[...]/qcode.(*Compiler).compileQuery
-      0.54GB 39.29% 77.92%     0.54GB 39.29%  github.com/dosco/super-graph/util.NewStack
+      0.54GB 39.29% 77.92%     0.54GB 39.29%  github.com/dosco/graphjin/util.NewStack
   
 Digging deeper
 

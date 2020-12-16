@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/dosco/super-graph/core/internal/sdata"
+	"github.com/dosco/graphjin/core/internal/sdata"
 )
 
 func BenchmarkGraphQL(b *testing.B) {
@@ -20,7 +20,7 @@ func BenchmarkGraphQL(b *testing.B) {
 
 	// mock.ExpectQuery(`^SELECT jsonb_build_object`).WithArgs()
 	c := &Config{}
-	sg, err := newSuperGraph(c, db, sdata.GetTestDBInfo())
+	gj, err := newGraphJin(c, db, sdata.GetTestDBInfo())
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func BenchmarkGraphQL(b *testing.B) {
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			_, err = sg.GraphQL(ct, query, nil)
+			_, err = gj.GraphQL(ct, query, nil)
 		}
 	})
 

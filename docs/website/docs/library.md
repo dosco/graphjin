@@ -4,39 +4,39 @@ title: Use in your own GO code
 sidebar_label: Use as a Library
 ---
 
-Super Graph can be used as a library in an already existing project. The best part is that your API need not even be a GraphQL one. You can simply use Super Graph as an alternative to a GO ORM library or directly writing SQL. The following code is just a simple example:
+GraphJin can be used as a library in an already existing project. The best part is that your API need not even be a GraphQL one. You can simply use GraphJin as an alternative to a GO ORM library or directly writing SQL. The following code is just a simple example:
 
 ```go
 package main
 
 import (
 	"database/sql"
-	"github.com/dosco/super-graph/core"
+	"github.com/dosco/graphjin/core"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/render"
 	_ "github.com/jackc/pgx/v4/stdlib"
 )
 
-func New(cfg *Cfg) *core.SuperGraph {
+func New(cfg *Cfg) *core.GraphJin {
 	dbConn, err := sql.Open("pgx", cfg.DB_URL)
 	//check err
 
-	superGraphConfig := NewConfig(cfg)
+	graphjinnConfig := NewConfig(cfg)
 
-	supergraph, err := core.NewSuperGraph(&superGraphConfig, dbConn)
+	graphjin, err := core.NewGraphJin(&graphjinnConfig, dbConn)
 	//check err
 
-	return supergraph
+	return graphjin
 }
 
-func Handler(superGraph *core.SuperGraph) http.HandlerFunc {
+func Handler(graphjinn *core.GraphJin) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		body, err := getBodyFromRequest(w, r)
 		//check err
 
 		ctx := context.WithValue(r.Context(), core.UserIDKey, GetYourUserID())
 
-		res, err := superGraph.GraphQL(ctx, body.Query, body.Variables)
+		res, err := graphjinn.GraphQL(ctx, body.Query, body.Variables)
 
 		if err != nil {
 			//check err
@@ -48,11 +48,11 @@ func Handler(superGraph *core.SuperGraph) http.HandlerFunc {
 }
 
 func main() {
-  superGraph := New(config)
+  graphjinn := New(config)
 
   r := chi.NewRouter()
 
-  r.Post("/api", Handler(superGraph))
+  r.Post("/api", Handler(graphjinn))
 
   StartServer()
 }
@@ -60,7 +60,7 @@ func main() {
 
 ## Config Explained
 
-The configuration is the same as [that in yaml](https://supergraph.dev/docs/config) except for that it is obviously written in Go and is just about configuring the `core` package (aka Super Graph library). We've tried to ensure that the config file is self-documenting and easy to work with. A config object is not required Super Graph can learn your database structure and be useful even when a config is not provided.
+The configuration is the same as [that in yaml](https://graphjin.com/docs/config) except for that it is obviously written in Go and is just about configuring the `core` package (aka GraphJin library). We've tried to ensure that the config file is self-documenting and easy to work with. A config object is not required GraphJin can learn your database structure and be useful even when a config is not provided.
 
 ```go
 conf := core.Config{
@@ -144,5 +144,5 @@ conf.AddRoleTable("user", "table_name", core.Insert{
 ```
 
 ::: note
-If you're using a Postgres schema other than the default `public` then in addition to setting the `DBSchema` config param you also have to set the `search_path` runtime parameter on the DB connection itself. https://github.com/dosco/super-graph/issues/134#issuecomment-659562003
+If you're using a Postgres schema other than the default `public` then in addition to setting the `DBSchema` config param you also have to set the `search_path` runtime parameter on the DB connection itself. https://github.com/dosco/graphjin/issues/134#issuecomment-659562003
 :::

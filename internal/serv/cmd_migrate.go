@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dosco/super-graph/internal/serv/internal/migrate"
+	"github.com/dosco/graphjin/internal/serv/internal/migrate"
 	"github.com/spf13/cobra"
 )
 

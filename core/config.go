@@ -229,7 +229,7 @@ func (c *Config) AddRoleTable(role, table string, conf interface{}) error {
 }
 
 // ReadInConfig function reads in the config file for the environment specified in the GO_ENV
-// environment variable. This is the best way to create a new Super Graph config.
+// environment variable. This is the best way to create a new GraphJin config.
 func ReadInConfig(configFile string) (*Config, error) {
 	cp := path.Dir(configFile)
 	vi := newViper(cp, path.Base(configFile))

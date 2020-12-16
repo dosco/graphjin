@@ -1,21 +1,21 @@
 const remarkImages = require("remark-images");
 
 module.exports = {
-  title: "Super Graph",
-  tagline: "Fetch data with GraphQL without code. Built in Go",
-  url: "https://supergraph.dev",
+  title: "GraphJin",
+  tagline: "Build APIs in 5 minutes not weeks",
+  url: "https://graphjin.com",
   baseUrl: "/",
-  favicon: "img/super-graph-logo.svg",
+  favicon: "img/graphjin-logo.svg",
   organizationName: "dosco", // Usually your GitHub org/user name.
-  projectName: "super-graph", // Usually your repo name.
+  projectName: "graphjin", // Usually your repo name.
   themeConfig: {
     navbar: {
-      title: "Super Graph",
+      title: "GRAPHJIN",
       logo: {
-        alt: "Super Graph Logo",
-        src: "img/super-graph-logo.svg",
+        alt: "GraphJin Logo",
+        src: "img/graphjin-logo.svg",
       },
-      links: [
+      items: [
         {
           to: "docs/deploy",
           activeBasePath: "docs",
@@ -23,7 +23,7 @@ module.exports = {
           position: "left",
         },
         {
-          href: "https://github.com/dosco/super-graph",
+          href: "https://github.com/dosco/graphjin",
           label: "Github",
           position: "left",
         },
@@ -35,11 +35,6 @@ module.exports = {
         {
           label: "Twitter",
           href: "https://twitter.com/intent/user?screen_name=dosco",
-          position: "left",
-        },
-        {
-          label: "Blog",
-          href: "https://abtcode.com/s/super-graph",
           position: "left",
         },
       ],
@@ -57,16 +52,14 @@ module.exports = {
         docs: {
           sidebarPath: require.resolve("./sidebars.js"),
           // Please change this to your repo.
-          editUrl:
-            "https://github.com/dosco/super-graph/edit/master/docs/website",
+          editUrl: "https://github.com/dosco/graphjin/edit/master/docs/website",
 
           remarkPlugins: [remarkImages],
         },
         blog: {
           showReadingTime: true,
           // Please change this to your repo.
-          editUrl:
-            "https://github.com/dosco/super-graph/edit/master/docs/website",
+          editUrl: "https://github.com/dosco/graphjin/edit/master/docs/website",
         },
         theme: {
           customCss: require.resolve("./src/css/custom.css"),

@@ -63,7 +63,7 @@ Maybe you just need only cheaper products
 - Is it just an API gateway?
 - Write more code
 
-* Super Graph - An instant GraphQL API for Postgres
+* GraphJin - An instant GraphQL API for Postgres
 
 - GraphQL without writing any code
 - Automatically learns your database
@@ -89,7 +89,7 @@ Maybe you just need only cheaper products
 
   All your micro-services in one
 
-* Super Graph gives Fullstack Devs superpowers
+* GraphJin gives Fullstack Devs superpowers
 
 
 .iframe https://giphy.com/gifs/3o6ZsYzuLyRfSGX4f6/html5 500 900

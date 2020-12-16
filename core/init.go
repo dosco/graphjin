@@ -5,13 +5,13 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/dosco/super-graph/core/internal/qcode"
-	"github.com/dosco/super-graph/core/internal/sdata"
+	"github.com/dosco/graphjin/core/internal/qcode"
+	"github.com/dosco/graphjin/core/internal/sdata"
 	"github.com/gobuffalo/flect"
 )
 
-func (sg *SuperGraph) initConfig() error {
-	c := sg.conf
+func (gj *GraphJin) initConfig() error {
+	c := gj.conf
 
 	for _, v := range c.Inflections {
 		kv := strings.SplitN(v, ":", 2)
@@ -30,8 +30,8 @@ func (sg *SuperGraph) initConfig() error {
 		// t.Name = flect.Pluralize(strings.ToLower(t.Name))
 
 		if _, ok := tm[t.Name]; ok {
-			sg.conf.Tables = append(c.Tables[:i], c.Tables[i+1:]...)
-			sg.log.Printf("WRN duplicate table found: %s", t.Name)
+			gj.conf.Tables = append(c.Tables[:i], c.Tables[i+1:]...)
+			gj.log.Printf("WRN duplicate table found: %s", t.Name)
 		}
 		tm[t.Name] = struct{}{}
 
@@ -48,15 +48,15 @@ func (sg *SuperGraph) initConfig() error {
 		}
 	}
 
-	sg.roles = make(map[string]*Role)
+	gj.roles = make(map[string]*Role)
 
 	for i := 0; i < len(c.Roles); i++ {
 		role := &c.Roles[i]
 		role.Name = sanitize(role.Name)
 
-		if _, ok := sg.roles[role.Name]; ok {
+		if _, ok := gj.roles[role.Name]; ok {
 			c.Roles = append(c.Roles[:i], c.Roles[i+1:]...)
-			sg.log.Printf("WRN duplicate role found: %s", role.Name)
+			gj.log.Printf("WRN duplicate role found: %s", role.Name)
 		}
 
 		role.Match = sanitize(role.Match)
@@ -66,27 +66,27 @@ func (sg *SuperGraph) initConfig() error {
 			role.tm[table.Name] = &role.Tables[n]
 		}
 
-		sg.roles[role.Name] = role
+		gj.roles[role.Name] = role
 	}
 
 	// If user role not defined then create it
-	if _, ok := sg.roles["user"]; !ok {
+	if _, ok := gj.roles["user"]; !ok {
 		ur := Role{
 			Name: "user",
 			tm:   make(map[string]*RoleTable),
 		}
 		c.Roles = append(c.Roles, ur)
-		sg.roles["user"] = &ur
+		gj.roles["user"] = &ur
 	}
 
 	// If anon role is not defined then create it
-	if _, ok := sg.roles["anon"]; !ok {
+	if _, ok := gj.roles["anon"]; !ok {
 		ur := Role{
 			Name: "anon",
 			tm:   make(map[string]*RoleTable),
 		}
 		c.Roles = append(c.Roles, ur)
-		sg.roles["anon"] = &ur
+		gj.roles["anon"] = &ur
 	}
 
 	if c.RolesQuery != "" {
@@ -95,7 +95,7 @@ func (sg *SuperGraph) initConfig() error {
 				c.RolesQuery[:n+1], n+1)
 		}
 		n := 0
-		for k, v := range sg.roles {
+		for k, v := range gj.roles {
 			if k == "user" || k == "anon" {
 				n++
 			} else if v.Match != "" {
@@ -105,13 +105,13 @@ func (sg *SuperGraph) initConfig() error {
 
 		// More than 2 roles tell us that custom roles have been added
 		// hence ABAC is handled
-		sg.abacEnabled = (n > 2)
+		gj.abacEnabled = (n > 2)
 
-		if !sg.abacEnabled {
-			sg.log.Printf("WRN attribute based access control disabled: no custom roles (with 'match' defined)")
+		if !gj.abacEnabled {
+			gj.log.Printf("WRN attribute based access control disabled: no custom roles (with 'match' defined)")
 		}
 	} else {
-		sg.log.Printf("INF attribute based access control disabled: roles_query not set")
+		gj.log.Printf("INF attribute based access control disabled: roles_query not set")
 	}
 
 	return nil

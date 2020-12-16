@@ -11,7 +11,7 @@ services:
       - "5432:5432"
 
   api:
-    image: dosco/super-graph:latest
+    image: dosco/graphjin:latest
     environment:
       GO_ENV: "development"
     volumes:

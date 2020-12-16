@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"encoding/base64"
 
-	"github.com/dosco/super-graph/core/internal/crypto"
-	"github.com/dosco/super-graph/core/internal/qcode"
-	"github.com/dosco/super-graph/jsn"
+	"github.com/dosco/graphjin/core/internal/crypto"
+	"github.com/dosco/graphjin/core/internal/qcode"
+	"github.com/dosco/graphjin/jsn"
 )
 
 type cursors struct {
@@ -14,7 +14,7 @@ type cursors struct {
 	value string
 }
 
-func (sg *SuperGraph) encryptCursor(qc *qcode.QCode, data []byte) (cursors, error) {
+func (gj *GraphJin) encryptCursor(qc *qcode.QCode, data []byte) (cursors, error) {
 	var keys [][]byte
 	cur := cursors{data: data}
 
@@ -45,7 +45,7 @@ func (sg *SuperGraph) encryptCursor(qc *qcode.QCode, data []byte) (cursors, erro
 			if cur.value == "" {
 				cur.value = string(val)
 			}
-			v, err := crypto.Encrypt(val, &sg.encKey)
+			v, err := crypto.Encrypt(val, &gj.encKey)
 			if err != nil {
 				return cur, err
 			}
@@ -70,10 +70,10 @@ func (sg *SuperGraph) encryptCursor(qc *qcode.QCode, data []byte) (cursors, erro
 	return cur, nil
 }
 
-func (sg *SuperGraph) decrypt(data string) ([]byte, error) {
+func (gj *GraphJin) decrypt(data string) ([]byte, error) {
 	v, err := base64.StdEncoding.DecodeString(data)
 	if err != nil {
 		return nil, err
 	}
-	return crypto.Decrypt(v, &sg.encKey)
+	return crypto.Decrypt(v, &gj.encKey)
 }

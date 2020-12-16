@@ -7,6 +7,6 @@ assignees: ''
 
 ---
 
-<!-- If you think the Super Graph documentation falls short https://supergraph.dev/guide.html please suggest ways we can improve it. -->
+<!-- If you think the GraphJin documentation falls short https://graphjin.com/guide.html please suggest ways we can improve it. -->
 
 <!-- explain it here. -->

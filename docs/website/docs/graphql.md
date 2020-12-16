@@ -45,7 +45,7 @@ query {
 }
 ```
 
-Postgres also supports full text search using a TSV index. Super Graph makes it easy to use this full text search capability using the `search` argument.
+Postgres also supports full text search using a TSV index. GraphJin makes it easy to use this full text search capability using the `search` argument.
 
 ```graphql
 query {
@@ -94,7 +94,7 @@ query {
 
 ### Filtering
 
-Super Graph supports complex queries where you can add filters, ordering, offsets and limits on the query. For example the below query will list all products where the price is greater than 10 and the id is not 5.
+GraphJin supports complex queries where you can add filters, ordering, offsets and limits on the query. For example the below query will list all products where the price is greater than 10 and the id is not 5.
 
 ```graphql
 query {
@@ -242,7 +242,7 @@ When super graph starts it builds an internal graph of all the related tables. S
 
 ### Recursive Queries
 
-A common pattern one encouters if recursive relationships which is when a table references itself. A good example of this is threaded comments when a comment is a reply to a previous comment and that to a previous. Another example could be an employee table where an employee references another employee (his boss). This has previously been hard to work with but Super Graph makes it a breeze. This works with any table that has a foreign key relationship to itself. The `find` parameter controls the direction of the fetch which can either be `parents` or `children`.
+A common pattern one encouters if recursive relationships which is when a table references itself. A good example of this is threaded comments when a comment is a reply to a previous comment and that to a previous. Another example could be an employee table where an employee references another employee (his boss). This has previously been hard to work with but GraphJin makes it a breeze. This works with any table that has a foreign key relationship to itself. The `find` parameter controls the direction of the fetch which can either be `parents` or `children`.
 
 #### Given a comment fetch it's parent comments
 
@@ -301,9 +301,9 @@ END;
 $$ LANGUAGE plpgsql;
 ```
 
-In GraphQL mutations is the operation type for when you need to modify data. Super Graph supports the `insert`, `update`, `upsert` and `delete`. You can also do complex nested inserts and updates.
+In GraphQL mutations is the operation type for when you need to modify data. GraphJin supports the `insert`, `update`, `upsert` and `delete`. You can also do complex nested inserts and updates.
 
-When using mutations the data must be passed as variables since Super Graphs compiles the query into an prepared statement in the database for maximum speed. Prepared statements are functions in your code that when called accept arguments and your variables are passed in as those arguments.
+When using mutations the data must be passed as variables since GraphJins compiles the query into an prepared statement in the database for maximum speed. Prepared statements are functions in your code that when called accept arguments and your variables are passed in as those arguments.
 
 ### Insert
 
@@ -489,7 +489,7 @@ mutation {
 }
 ```
 
-Often you will need to create or update multiple related items at the same time. This can be done using nested mutations. For example you might need to create a product and assign it to a user, or create a user and his products at the same time. You just have to use simple json to define you mutation and Super Graph takes care of the rest.
+Often you will need to create or update multiple related items at the same time. This can be done using nested mutations. For example you might need to create a product and assign it to a user, or create a user and his products at the same time. You just have to use simple json to define you mutation and GraphJin takes care of the rest.
 
 ### Nested Insert
 
@@ -619,7 +619,7 @@ mutation {
 
 ### Pagination
 
-This is a must have feature of any API. When you want your users to go through a list page by page or implement some fancy infinite scroll you're going to need pagination. There are two ways to paginate in Super Graph.
+This is a must have feature of any API. When you want your users to go through a list page by page or implement some fancy infinite scroll you're going to need pagination. There are two ways to paginate in GraphJin.
 
 #### Limit-Offset
 This is simple enough but also inefficient when working with a large number of total items. Limit, limits the number of items fetched and offset is the point you want to fetch from. The below query will fetch 10 results at a time starting with the 100th item. You will have to keep updating offset (110, 120, 130, etc ) to walk thought the results so make offset a variable.
@@ -638,7 +638,7 @@ query {
 
 This is a powerful and highly efficient way to paginate a large number of results. Infact it does not matter how many total results there are this will always be lighting fast. You can use a cursor to walk forward or backward through the results. If you plan to implement infinite scroll this is the option you should choose.
 
-When going this route the results will contain a cursor value this is an encrypted string that you don't have to worry about just pass this back in to the next API call and you'll received the next set of results. The cursor value is encrypted since its contents should only matter to Super Graph and not the client. Also since the primary key is used for this feature it's possible you might not want to leak it's value to clients.
+When going this route the results will contain a cursor value this is an encrypted string that you don't have to worry about just pass this back in to the next API call and you'll received the next set of results. The cursor value is encrypted since its contents should only matter to GraphJin and not the client. Also since the primary key is used for this feature it's possible you might not want to leak it's value to clients.
 
 You will need to set this config value to ensure the encrypted cursor data is secure. If not set a random value is used which will change with each deployment breaking older cursor values that clients might be using so best to set it.
 
@@ -710,7 +710,7 @@ query {
 }
 ```
 
-Multiple order-by arguments are supported. Super Graph is smart enough to allow cursor based pagination when you also need complex sort order like below.
+Multiple order-by arguments are supported. GraphJin is smart enough to allow cursor based pagination when you also need complex sort order like below.
 
 ```graphql
 query {

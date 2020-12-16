@@ -7,8 +7,8 @@ import (
 	"io/ioutil"
 	"net/http"
 
-	"github.com/dosco/super-graph/core"
-	"github.com/dosco/super-graph/internal/serv/internal/auth"
+	"github.com/dosco/graphjin/core"
+	"github.com/dosco/graphjin/internal/serv/internal/auth"
 	"github.com/gorilla/websocket"
 	"github.com/rs/cors"
 	"go.opencensus.io/plugin/ochttp"
@@ -96,7 +96,7 @@ func apiV1(servConf *ServConfig) func(http.ResponseWriter, *http.Request) {
 		}
 
 		doLog := true
-		res, err := sg.GraphQLEx(ct, req.Query, req.Vars, &rc)
+		res, err := gj.GraphQLEx(ct, req.Query, req.Vars, &rc)
 
 		if servConf.conf.telemetryEnabled() {
 			span := trace.FromContext(ct)
