@@ -140,6 +140,19 @@ func withNestedWhere(t *testing.T) {
 	compileGQLToPSQL(t, gql, vars, "user")
 }
 
+func withAlternateName(t *testing.T) {
+	gql := `query {
+			comments {
+			 id
+			 commenter {
+				 email
+			 }
+		 }
+	}`
+
+	compileGQLToPSQL(t, gql, nil, "user")
+}
+
 func fetchByID(t *testing.T) {
 	gql := `query {
 		product(id: $id) {
@@ -497,18 +510,18 @@ func subscription(t *testing.T) {
 	compileGQLToPSQL(t, gql, nil, "user")
 }
 
-func remoteJoin(t *testing.T) {
-	gql := `query {
-		customers {
-			email
-			payments {
-				customer_id
-			}
-		}
-	}`
+// func remoteJoin(t *testing.T) {
+// 	gql := `query {
+// 		customers {
+// 			email
+// 			payments {
+// 				customer_id
+// 			}
+// 		}
+// 	}`
 
-	compileGQLToPSQL(t, gql, nil, "user")
-}
+// 	compileGQLToPSQL(t, gql, nil, "user")
+// }
 
 // func withInlineFragment(t *testing.T) {
 // 	gql := `
@@ -646,6 +659,7 @@ func TestCompileQuery(t *testing.T) {
 	t.Run("withWhereIsNull", withWhereIsNull)
 	t.Run("withWhereMultiOr", withWhereMultiOr)
 	t.Run("withNestedWhere", withNestedWhere)
+	t.Run("withAlternateName", withAlternateName)
 	t.Run("fetchByID", fetchByID)
 	t.Run("searchQuery", searchQuery)
 	t.Run("oneToMany", oneToMany)
@@ -668,7 +682,7 @@ func TestCompileQuery(t *testing.T) {
 	t.Run("withPolymorphicUnion", withPolymorphicUnion)
 	t.Run("withSkipAndIncludeDirectives", withSkipAndIncludeDirectives)
 	t.Run("subscription", subscription)
-	t.Run("remoteJoin", remoteJoin)
+	// t.Run("remoteJoin", remoteJoin)
 	// t.Run("withInlineFragment", withInlineFragment)
 	t.Run("jsonColumnAsTable", jsonColumnAsTable)
 	t.Run("recursiveTableParents", recursiveTableParents)

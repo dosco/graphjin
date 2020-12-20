@@ -80,7 +80,7 @@ func (gj *GraphJin) resolveRemotes(
 		}
 		p := sel[s.ParentID]
 
-		pti, err := gj.schema.GetTableInfo(p.Table)
+		pti, err := gj.schema.GetTableInfo(p.Table, "")
 		if err != nil {
 			return nil, err
 		}
@@ -155,7 +155,7 @@ func (gj *GraphJin) parentFieldIds(h *maphash.Hash, sel []qcode.Select, remotes 
 
 		p := sel[s.ParentID]
 
-		pti, err := gj.schema.GetTableInfo(p.Table)
+		pti, err := gj.schema.GetTableInfo(p.Table, "")
 		if err != nil {
 			return nil, nil, err
 		}

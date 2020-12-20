@@ -330,6 +330,7 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 
 	for {
 		var err error
+
 		if st.Len() == 0 {
 			break
 		}
@@ -433,16 +434,23 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 }
 
 func (co *Compiler) addRelInfo(field *graph.Field, qc *QCode, sel *Select) error {
-	var err error
 	var psel *Select
+	var pname string
 	var sinset bool
+	var err error
 
 	if sel.ParentID == -1 {
 		qc.Roots = append(qc.Roots, sel.ID)
 	} else {
 		psel = &qc.Selects[sel.ParentID]
 		psel.Children = append(psel.Children, sel.ID)
+		pname = psel.Table
 	}
+
+	if sel.Ti, err = co.s.GetTableInfoB(field.Name, pname); err != nil {
+		return err
+	}
+	sel.Table = sel.Ti.Name
 
 	switch field.Type {
 	case graph.FieldUnion:
@@ -465,11 +473,14 @@ func (co *Compiler) addRelInfo(field *graph.Field, qc *QCode, sel *Select) error
 		sel.Rel, err = co.s.GetRel(psel.Table, ppsel.Table, "")
 
 	default:
-		if sel.Rel.Type == sdata.RelSkip {
+		switch sel.Rel.Type {
+		case sdata.RelSkip:
 			sel.Rel.Type = sdata.RelNone
 
-		} else if psel != nil {
-			sel.Rel, err = co.s.GetRel(field.Name, psel.Table, sel.through)
+		default:
+			if psel != nil {
+				sel.Rel, err = co.s.GetRel(sel.Table, psel.Table, sel.through)
+			}
 		}
 	}
 
@@ -477,19 +488,9 @@ func (co *Compiler) addRelInfo(field *graph.Field, qc *QCode, sel *Select) error
 		return err
 	}
 
-	if sel.Rel.Type == sdata.RelRemote {
-		sel.Table = field.Name
-		return nil
-	}
-
-	if sel.Ti, err = co.s.GetTableInfoB(field.Name); err != nil {
-		return err
-	}
-
 	if !sinset {
-		sel.Singular = (field.Name == sel.Ti.Singular)
+		sel.Singular = (sel.Ti.IsSingular)
 	}
-	sel.Table = sel.Ti.Name
 	return nil
 }
 

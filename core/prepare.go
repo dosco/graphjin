@@ -91,8 +91,10 @@ func (gj *GraphJin) initAllowList() error {
 			continue
 		}
 
+		qt, _ := qcode.GetQType(v.Query)
+
 		q := rquery{
-			op:    qcode.GetQType(v.Query),
+			op:    qt,
 			name:  v.Name,
 			query: []byte(v.Query),
 			vars:  []byte(v.Vars),

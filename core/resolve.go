@@ -39,7 +39,7 @@ func (gj *GraphJin) initRemotes(t Table) error {
 		// remote reques
 		var col sdata.DBColumn
 
-		ti, err := gj.schema.GetTableInfo(t.Name)
+		ti, err := gj.schema.GetTableInfo(t.Name, "")
 		if err != nil {
 			return err
 		}

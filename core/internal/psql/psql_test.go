@@ -34,7 +34,7 @@ func TestMain(m *testing.M) {
 		log.Fatal(err)
 	}
 
-	t, err := schema.GetTableInfo("customers")
+	t, err := schema.GetTableInfo("customers", "")
 	if err != nil {
 		log.Fatal(err)
 	}

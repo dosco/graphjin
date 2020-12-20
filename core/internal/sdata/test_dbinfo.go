@@ -74,7 +74,7 @@ func GetTestDBInfo() *DBInfo {
 		[]DBColumn{
 			DBColumn{ID: 1, Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
 			DBColumn{ID: 2, Name: "product_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "products", FKeyColID: []int16{1}},
-			DBColumn{ID: 2, Name: "user_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "users", FKeyColID: []int16{1}},
+			DBColumn{ID: 2, Name: "commenter_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "users", FKeyColID: []int16{1}},
 			DBColumn{ID: 2, Name: "reply_to_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "comments", FKeyColID: []int16{1}},
 			DBColumn{ID: 3, Name: "body", Type: "character varying", NotNull: false, PrimaryKey: false, UniqueKey: false}},
 	}
