@@ -36,8 +36,7 @@ for (i = 0; i < 20; i++) {
 
 ## Inserting the users fake blog posts
 
-Another example highlighting how the `connect` syntax of GraphJin GraphQL can be used to connect inserted posts
-to random users that were previously created. For futher details checkout the [seed script](/seed) documentation.
+Another example highlighting how the `connect` syntax of GraphJin GraphQL can be used to connect inserted posts to random users that were previously created.
 
 ```javascript
 var posts = [];

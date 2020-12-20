@@ -193,12 +193,14 @@ func (gj *GraphJin) GraphQLEx(
 	vars json.RawMessage,
 	rc *ReqConfig) (*Result, error) {
 
+	op, name := qcode.GetQType(query)
+
 	ct := scontext{
 		Context: c,
 		gj:      gj,
-		op:      qcode.GetQType(query),
+		op:      op,
 		rc:      rc,
-		name:    Name(query),
+		name:    name,
 	}
 
 	res := &Result{
@@ -252,14 +254,9 @@ func (gj *GraphJin) GraphQLSchema() (string, error) {
 	return gj.ge.Schema.String(), nil
 }
 
-// Operation function return the operation type from the query. It uses a very fast algorithm to
-// extract the operation without having to parse the query.
-func Operation(query string) OpType {
-	return OpType(qcode.GetQType(query))
-}
-
-// Name function return the operation name from the query. It uses a very fast algorithm to
-// extract the operation name without having to parse the query.
-func Name(query string) string {
-	return allow.QueryName(query)
+// Operation function return the operation type and name from the query.
+// It uses a very fast algorithm to extract the operation without having to parse the query.
+func Operation(query string) (OpType, string) {
+	qt, name := qcode.GetQType(query)
+	return OpType(qt), name
 }

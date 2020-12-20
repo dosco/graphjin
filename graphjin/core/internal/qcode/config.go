@@ -102,7 +102,7 @@ type trval struct {
 func (co *Compiler) AddRole(role, table string, trc TRConfig) error {
 	var err error
 
-	ti, err := co.s.GetTableInfo(table)
+	ti, err := co.s.GetTableInfo(table, "")
 	if err != nil {
 		return err
 	}

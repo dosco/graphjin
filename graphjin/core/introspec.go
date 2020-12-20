@@ -69,7 +69,7 @@ func (gj *GraphJin) initGraphQLEgine() error {
 	}
 
 	for _, table := range tableNames {
-		ti, err := sc.GetTableInfo(table)
+		ti, err := sc.GetTableInfo(table, "")
 		if err != nil {
 			return err
 		}
@@ -108,7 +108,7 @@ func (gj *GraphJin) initGraphQLEgine() error {
 			if _, err := sc.GetRel(t, ti.Name, ""); err != nil {
 				continue
 			}
-			ti1, err := sc.GetTableInfo(t)
+			ti1, err := sc.GetTableInfo(t, "")
 			if err != nil {
 				return err
 			}
@@ -127,6 +127,28 @@ func (gj *GraphJin) initGraphQLEgine() error {
 				Name: pluralName,
 				Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: singularName + "Output"}}}},
 			})
+		}
+
+		for _, t := range sc.GetAliases(table) {
+			ti1, err := sc.GetTableInfo(t, table)
+			if err != nil {
+				return err
+			}
+			if ti1.Blocked {
+				continue
+			}
+
+			if ti1.IsSingular {
+				outputType.Fields = append(outputType.Fields, &schema.Field{
+					Name: t,
+					Type: &schema.TypeName{Name: ti1.Singular + "Output"},
+				})
+			} else {
+				outputType.Fields = append(outputType.Fields, &schema.Field{
+					Name: t,
+					Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: ti1.Singular + "Output"}}}},
+				})
+			}
 		}
 
 		expressionTypeName := singularName + "Expression"

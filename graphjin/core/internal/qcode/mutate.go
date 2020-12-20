@@ -206,7 +206,7 @@ func (co *Compiler) newMutate(st *util.StackInf, m Mutate, role string) error {
 
 			// Get parent-to-child relationship
 		} else if relPC, err := co.s.GetRel(m.Key, k, ""); err == nil {
-			ti, err := co.s.GetTableInfo(k)
+			ti, err := co.s.GetTableInfo(k, m.Key)
 			if err != nil {
 				return err
 			}

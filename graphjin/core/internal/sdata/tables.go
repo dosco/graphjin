@@ -89,7 +89,7 @@ func (di *DBInfo) AddTable(t DBTable, cols []DBColumn) {
 func (di *DBInfo) GetColumn(table, column string) (*DBColumn, error) {
 	c, ok := di.colMap[strings.ToLower(table+column)]
 	if !ok {
-		return nil, fmt.Errorf("column: %s.%s not found", table, column)
+		return nil, fmt.Errorf("column: '%s.%s' not found", table, column)
 	}
 
 	return c, nil

@@ -76,10 +76,9 @@ func (gj *GraphJin) SubscribeEx(
 	query string,
 	vars json.RawMessage,
 	rc *ReqConfig) (*Member, error) {
-
 	var err error
-	name := Name(query)
-	op := qcode.GetQType(query)
+
+	op, name := qcode.GetQType(query)
 
 	if op != qcode.QTSubscription {
 		return nil, errors.New("subscription: not a subscription query")
