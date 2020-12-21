@@ -127,23 +127,41 @@ func (al *List) loadFile() ([]Item, error) {
 
 func (al *List) Load() ([]Item, error) {
 	var items []Item
+
+	if _, err := os.Stat(al.queryPath); os.IsNotExist(err) {
+		if err := os.Mkdir(al.queryPath, os.ModePerm); err != nil {
+			return nil, err
+		}
+	} else if err != nil {
+		return nil, err
+	}
+
+	if _, err := os.Stat(al.fragmentPath); os.IsNotExist(err) {
+		if err := os.Mkdir(al.fragmentPath, os.ModePerm); err != nil {
+			return nil, err
+		}
+	} else if err != nil {
+		return nil, err
+	}
+
 	files, err := ioutil.ReadDir(al.queryPath)
 	if err != nil {
-		return nil, fmt.Errorf("allow list: error reading dir: %s", al.queryPath)
+		return nil, fmt.Errorf("allow list: %w", err)
 	}
 
 	for _, f := range files {
 		fn := path.Join(al.queryPath, f.Name())
 		b, err := ioutil.ReadFile(fn)
 		if err != nil {
-			return nil, fmt.Errorf("allow list: error reading file: %s", fn)
+			return nil, fmt.Errorf("allow list: %w", err)
 		}
 		item, err := parse(string(b))
 		if err != nil {
-			return items, err
+			return nil, err
 		}
 		items = append(items, item[0])
 	}
+
 	return items, nil
 }
 

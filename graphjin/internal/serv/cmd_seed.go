@@ -45,11 +45,10 @@ func cmdDBSeed(servConf *ServConfig) func(*cobra.Command, []string) {
 		}
 
 		servConf.conf.Core.Blocklist = nil
-		servConf.conf.Debug = true
 
 		gj, err = core.NewGraphJin(&servConf.conf.Core, servConf.db)
 		if err != nil {
-			servConf.log.Fatalf("ERR failed to initialize GraphJin: %s", err)
+			servConf.log.Fatalf("ERR failed to initialize: %s", err)
 		}
 
 		graphQLFn := func(query string, data interface{}, opt map[string]string) map[string]interface{} {

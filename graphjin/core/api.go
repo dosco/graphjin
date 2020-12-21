@@ -127,9 +127,9 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo) (*GraphJin, err
 		return nil, err
 	}
 
-	if err := gj.initResolvers(); err != nil {
-		return nil, err
-	}
+	// if err := gj.initResolvers(); err != nil {
+	// 	return nil, err
+	// }
 
 	if err := gj.initAllowList(); err != nil {
 		return nil, err

@@ -158,6 +158,12 @@ type DBColumn struct {
 }
 
 func GetColumns(db *sql.DB, schema string, tables []string) (map[string][]DBColumn, error) {
+	cols := make(map[string][]DBColumn, len(tables))
+
+	if len(tables) == 0 {
+		return cols, nil
+	}
+
 	sqlStmt := `
 SELECT  
 	c.relname as table,
@@ -260,8 +266,6 @@ ORDER BY id;`
 			cmap[t][c.ID] = c
 		}
 	}
-
-	cols := make(map[string][]DBColumn, len(tables))
 
 	for t, v := range cmap {
 		for id := range v {

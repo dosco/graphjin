@@ -1,6 +1,7 @@
 package serv
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"path"
@@ -58,22 +59,36 @@ func cmdDBReset(servConf *ServConfig) func(*cobra.Command, []string) {
 
 func cmdDBCreate(servConf *ServConfig) func(*cobra.Command, []string) {
 	return func(cmd *cobra.Command, args []string) {
+		var db *sql.DB
+		var err error
+
 		initConfOnce(servConf)
 
-		db, err := initDB(servConf, false, false)
-		if err != nil {
+		if db, err = initDB(servConf, false, false); err != nil {
 			servConf.log.Fatalf("ERR failed to connect to database: %s", err)
 		}
 		defer db.Close()
 
-		sql := fmt.Sprintf(`CREATE DATABASE "%s"`, servConf.conf.DB.DBName)
+		dbName := servConf.conf.DB.DBName
+		dbExists := false
 
-		_, err = db.Exec(sql)
-		if err != nil {
-			servConf.log.Fatalf("ERR failed to create database: %s", err)
+		err = db.
+			QueryRow(`SELECT true as exists FROM pg_database WHERE datname = $1;`, dbName).
+			Scan(&dbExists)
+
+		if err != nil && err != sql.ErrNoRows {
+			servConf.log.Fatalf("ERR failed checking if database exists: %s", err)
 		}
 
-		servConf.log.Printf("INF created database '%s'", servConf.conf.DB.DBName)
+		if dbExists {
+			servConf.log.Printf("INF database exists: %s", dbName)
+			return
+		}
+
+		if _, err = db.Exec(`CREATE DATABASE "` + dbName + `"`); err != nil {
+			servConf.log.Fatalf("ERR failed to create database: %s", err)
+		}
+		servConf.log.Printf("INF created database: %s", dbName)
 	}
 }
 
