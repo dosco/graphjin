@@ -108,8 +108,6 @@ func initConf(servConfig *ServConfig) (*Config, error) {
 
 	if c.Production {
 		c.EnforceAllowList = true
-	} else {
-		c.Debug = true
 	}
 
 	return c, nil

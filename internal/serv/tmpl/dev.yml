@@ -251,29 +251,29 @@ roles:
 
   - name: user
     tables:
-      - name: users
+      - name: me
         query:
           filters: ["{ id: { _eq: $user_id } }"]
 
-      - name: products
-        query:
-          limit: 50
-          filters: ["{ user_id: { eq: $user_id } }"]
-          disable_functions: false
+      # - name: products
+      #   query:
+      #     limit: 50
+      #     filters: ["{ user_id: { eq: $user_id } }"]
+      #     disable_functions: false
 
-        insert:
-          filters: ["{ user_id: { eq: $user_id } }"]
-          presets:
-            - user_id: "$user_id"
-            - created_at: "now"
+      #   insert:
+      #     filters: ["{ user_id: { eq: $user_id } }"]
+      #     presets:
+      #       - user_id: "$user_id"
+      #       - created_at: "now"
             
-        update:
-          filters: ["{ user_id: { eq: $user_id } }"]
-          presets:
-            - updated_at: "now"
+      #   update:
+      #     filters: ["{ user_id: { eq: $user_id } }"]
+      #     presets:
+      #       - updated_at: "now"
 
-        delete:
-          block: true
+      #   delete:
+      #     block: true
 
   # - name: admin
   #   match: id = 1000

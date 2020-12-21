@@ -27,7 +27,7 @@ func cmdServ(servConf *ServConfig) func(*cobra.Command, []string) {
 
 		gj, err = core.NewGraphJin(&servConf.conf.Core, servConf.db)
 		if err != nil {
-			fatalInProd(servConf, err, "failed to initialize GraphJin")
+			fatalInProd(servConf, err, "failed to initialize")
 		}
 
 		startHTTP(servConf)
