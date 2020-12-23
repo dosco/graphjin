@@ -139,9 +139,27 @@ func (gj *GraphJin) initGraphQLEgine() error {
 			}
 
 			if ti1.IsSingular {
+				outputType := &schema.Object{
+					Name:   t + "Output",
+					Fields: schema.FieldList{},
+				}
+				engineSchema.Types[outputType.Name] = outputType
+
+				inputType := &schema.InputObject{
+					Name:   t + "Input",
+					Fields: schema.InputValueList{},
+				}
+				engineSchema.Types[inputType.Name] = inputType
+
+				orderByType := &schema.InputObject{
+					Name:   t + "OrderBy",
+					Fields: schema.InputValueList{},
+				}
+				engineSchema.Types[orderByType.Name] = orderByType
+
 				outputType.Fields = append(outputType.Fields, &schema.Field{
 					Name: t,
-					Type: &schema.TypeName{Name: ti1.Singular + "Output"},
+					Type: &schema.TypeName{Name: t + "Output"},
 				})
 			} else {
 				outputType.Fields = append(outputType.Fields, &schema.Field{

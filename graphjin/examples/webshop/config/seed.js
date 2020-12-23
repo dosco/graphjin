@@ -273,12 +273,12 @@ for (i = 0; i < comments_count; i++) {
   console.log(data);
 
   var res = graphql(
-    " \
+    ' \
   mutation { \
-  	comment(insert: $data) { \
+  	comment(insert: $data, find: "children") { \
   		id \
   	} \
-  }",
+  }',
     { data: data },
     { user_id: u.id }
   );

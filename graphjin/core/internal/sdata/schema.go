@@ -493,6 +493,11 @@ func (s *DBSchema) GetAliases(parent string) []string {
 	return names
 }
 
+func (s *DBSchema) GetAliasTable(name, parent string) (string, bool) {
+	v, ok := s.at[aliasKey{name, parent}]
+	return v, ok
+}
+
 func (s *DBSchema) getTableInfo(name, parent string, blocking bool) (DBTableInfo, error) {
 	t, ok := s.t[name]
 	if ok {
