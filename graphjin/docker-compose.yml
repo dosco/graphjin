@@ -8,6 +8,13 @@ services:
     ports:
       - "5432:5432"
 
+  payments:
+    image: clue/json-server:latest
+    volumes:
+      - ./examples/webshop/config/payments.json:/data/db.json
+    ports:
+      - "4000:80"
+
   api:
     build:
       context: .
