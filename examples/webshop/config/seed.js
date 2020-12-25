@@ -46,7 +46,7 @@ for (i = 0; i < user_count; i++) {
     full_name: fake.name(),
     avatar: fake.avatar_url(),
     phone: fake.phone(),
-    email: fake.email(),
+    email: "user_" + i + "_" + fake.email(),
     password: pwd,
     password_confirmation: pwd,
     created_at: "now",
@@ -266,6 +266,7 @@ for (i = 0; i < comments_count; i++) {
   if (comments.length !== 0) {
     var c = comments[Math.floor(Math.random() * comments.length)];
     data["comment"] = {
+      find: "children",
       connect: { id: c.id },
     };
   }
@@ -273,12 +274,12 @@ for (i = 0; i < comments_count; i++) {
   console.log(data);
 
   var res = graphql(
-    ' \
+    " \
   mutation { \
-  	comment(insert: $data, find: "children") { \
+  	comment(insert: $data) { \
   		id \
   	} \
-  }',
+  }",
     { data: data },
     { user_id: u.id }
   );

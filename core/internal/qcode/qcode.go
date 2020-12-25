@@ -329,8 +329,6 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 	}
 
 	for {
-		var err error
-
 		if st.Len() == 0 {
 			break
 		}
@@ -355,23 +353,12 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 			parentID = -1
 		}
 
-		tr := co.getRole(role, field.Name)
 		s1 := Select{
 			ID:       id,
 			ParentID: parentID,
 			ColMap:   make(map[string]int, len(field.Children)),
 		}
 		sel := &s1
-
-		if tr.isSkipped(qc.Type) {
-			sel.SkipRender = SkipTypeUserNeeded
-		} else {
-			err = tr.isBlocked(qc.SType, field.Name)
-		}
-
-		if err != nil {
-			return err
-		}
 
 		if field.Alias != "" {
 			sel.FieldName = field.Alias
@@ -387,6 +374,22 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 
 		if err := co.addRelInfo(field, qc, sel); err != nil {
 			return err
+		}
+
+		var tr trval
+
+		if sel.Ti.IsAlias {
+			tr = co.getRole(role, sel.Ti.Name)
+		} else {
+			tr = co.getRole(role, field.Name)
+		}
+
+		if tr.isSkipped(qc.Type) {
+			sel.SkipRender = SkipTypeUserNeeded
+		} else {
+			if err := tr.isBlocked(qc.SType, field.Name); err != nil {
+				return err
+			}
 		}
 
 		if err := co.compileArgs(qc, sel, field.Args, role); err != nil {
