@@ -58,6 +58,7 @@ type QCode struct {
 	Mutates   []Mutate
 	MCounts   map[string]int32
 	Schema    *sdata.DBSchema
+	Remotes   int32
 }
 
 type Select struct {
@@ -438,22 +439,20 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 
 func (co *Compiler) addRelInfo(field *graph.Field, qc *QCode, sel *Select) error {
 	var psel *Select
-	var pname string
+	var parent string
 	var sinset bool
 	var err error
+
+	child := field.Name
+	through := sel.through
 
 	if sel.ParentID == -1 {
 		qc.Roots = append(qc.Roots, sel.ID)
 	} else {
 		psel = &qc.Selects[sel.ParentID]
 		psel.Children = append(psel.Children, sel.ID)
-		pname = psel.Table
+		parent = psel.Table
 	}
-
-	if sel.Ti, err = co.s.GetTableInfoB(field.Name, pname); err != nil {
-		return err
-	}
-	sel.Table = sel.Ti.Name
 
 	switch field.Type {
 	case graph.FieldUnion:
@@ -461,7 +460,6 @@ func (co *Compiler) addRelInfo(field *graph.Field, qc *QCode, sel *Select) error
 		if psel == nil {
 			return fmt.Errorf("union types are only valid with polymorphic relationships")
 		}
-		sel.Rel, err = co.s.GetRel(field.Name, psel.Table, sel.through)
 
 	case graph.FieldMember:
 		// TODO: Fix this
@@ -471,25 +469,43 @@ func (co *Compiler) addRelInfo(field *graph.Field, qc *QCode, sel *Select) error
 		sel.Type = SelTypeMember
 		sel.Singular = psel.Singular
 		sel.UParentID = psel.ParentID
-		sinset = true
+
 		ppsel := qc.Selects[sel.UParentID]
-		sel.Rel, err = co.s.GetRel(psel.Table, ppsel.Table, "")
+		child = psel.Table
+		parent = ppsel.Table
+		through = ""
+		sinset = true
+	}
 
-	default:
-		switch sel.Rel.Type {
-		case sdata.RelSkip:
-			sel.Rel.Type = sdata.RelNone
+	if sel.Rel.Type == sdata.RelSkip {
+		sel.Rel.Type = sdata.RelNone
+		return nil
+	}
 
-		default:
-			if psel != nil {
-				sel.Rel, err = co.s.GetRel(sel.Table, psel.Table, sel.through)
-			}
+	if alias, ok := co.s.GetAliasTable(child, parent); ok {
+		child = alias
+	}
+
+	if parent != "" {
+		if sel.Rel, err = co.s.GetRel(child, parent, through); err != nil {
+			return err
 		}
 	}
 
-	if err != nil {
+	if field.Type == graph.FieldMember {
+		child = field.Name
+	}
+
+	if sel.Rel.Type == sdata.RelRemote {
+		sel.Table = child
+		qc.Remotes++
+		return nil
+	}
+
+	if sel.Ti, err = co.s.GetTableInfoB(child, parent); err != nil {
 		return err
 	}
+	sel.Table = sel.Ti.Name
 
 	if !sinset {
 		sel.Singular = (sel.Ti.IsSingular)

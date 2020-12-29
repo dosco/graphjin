@@ -49,7 +49,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"hash/maphash"
 	_log "log"
 	"os"
 	"sync"
@@ -79,19 +78,18 @@ const (
 // GraphJin struct is an instance of the GraphJin engine it holds all the required information like
 // datase schemas, relationships, etc that the GraphQL to SQL compiler would need to do it's job.
 type GraphJin struct {
-	conf       *Config
-	db         *sql.DB
-	log        *_log.Logger
-	dbinfo     *sdata.DBInfo
-	schema     *sdata.DBSchema
-	allowList  *allow.List
-	encKey     [32]byte
-	hashSeed   maphash.Seed
-	queries    map[string]*cquery
-	roles      map[string]*Role
-	roleStmt   string
-	roleStmtMD psql.Metadata
-	//rmap        map[uint64]resolvFn
+	conf        *Config
+	db          *sql.DB
+	log         *_log.Logger
+	dbinfo      *sdata.DBInfo
+	schema      *sdata.DBSchema
+	allowList   *allow.List
+	encKey      [32]byte
+	queries     map[string]*cquery
+	roles       map[string]*Role
+	roleStmt    string
+	roleStmtMD  psql.Metadata
+	rmap        map[string]resolvFn
 	abacEnabled bool
 	qc          *qcode.Compiler
 	pc          *psql.Compiler
@@ -112,11 +110,10 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo) (*GraphJin, err
 	}
 
 	gj := &GraphJin{
-		conf:     conf,
-		db:       db,
-		dbinfo:   dbinfo,
-		log:      _log.New(os.Stdout, "", 0),
-		hashSeed: maphash.MakeSeed(),
+		conf:   conf,
+		db:     db,
+		dbinfo: dbinfo,
+		log:    _log.New(os.Stdout, "", 0),
 	}
 
 	if err := gj.initConfig(); err != nil {
@@ -127,9 +124,9 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo) (*GraphJin, err
 		return nil, err
 	}
 
-	// if err := gj.initResolvers(); err != nil {
-	// 	return nil, err
-	// }
+	if err := gj.initResolvers(); err != nil {
+		return nil, err
+	}
 
 	if err := gj.initAllowList(); err != nil {
 		return nil, err

@@ -23,10 +23,9 @@ type Param struct {
 }
 
 type Metadata struct {
-	poll        bool
-	remoteCount int
-	params      []Param
-	pindex      map[string]int
+	poll   bool
+	params []Param
+	pindex map[string]int
 }
 
 type compilerContext struct {
@@ -95,7 +94,7 @@ func (co *Compiler) CompileQuery(
 	}
 
 	st := NewIntStack()
-	c := compilerContext{
+	c := &compilerContext{
 		md:       md,
 		w:        w,
 		qc:       qc,
@@ -110,8 +109,7 @@ func (co *Compiler) CompileQuery(
 		}
 		sel := &qc.Selects[id]
 
-		switch sel.SkipRender {
-		case qcode.SkipTypeUserNeeded:
+		if sel.SkipRender == qcode.SkipTypeUserNeeded {
 			c.w.WriteString(`'`)
 			c.w.WriteString(sel.FieldName)
 			c.w.WriteString(`', NULL`)
@@ -122,11 +120,7 @@ func (co *Compiler) CompileQuery(
 				c.w.WriteString(`_cursor', NULL`)
 			}
 
-		case qcode.SkipTypeRemote:
-			c.md.remoteCount++
-			fallthrough
-
-		default:
+		} else {
 			c.w.WriteString(`'`)
 			c.w.WriteString(sel.FieldName)
 			c.w.WriteString(`', "__sj_`)
@@ -200,11 +194,7 @@ func (c *compilerContext) renderQuery(st *IntStack, multi bool) {
 			for _, cid := range sel.Children {
 				child := &c.qc.Selects[cid]
 
-				if child.SkipRender == qcode.SkipTypeRemote {
-					c.md.remoteCount++
-					continue
-
-				} else if child.SkipRender != qcode.SkipTypeNone {
+				if child.SkipRender != qcode.SkipTypeNone {
 					continue
 				}
 
