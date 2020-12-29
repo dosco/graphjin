@@ -1,10 +1,7 @@
-// +build test
-
 package core
 
 import (
 	"fmt"
-	"hash/maphash"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -21,7 +18,7 @@ type resolvFn struct {
 
 func (gj *GraphJin) initResolvers() error {
 	var err error
-	gj.rmap = make(map[uint64]resolvFn)
+	gj.rmap = make(map[string]resolvFn)
 
 	for _, t := range gj.conf.Tables {
 		if err = gj.initRemotes(t); err != nil {
@@ -33,9 +30,6 @@ func (gj *GraphJin) initResolvers() error {
 }
 
 func (gj *GraphJin) initRemotes(t Table) error {
-	h := maphash.Hash{}
-	h.SetSeed(gj.hashSeed)
-
 	for _, r := range t.Remotes {
 		// Defines the table column to be used as an id in the
 		// remote reques
@@ -86,11 +80,10 @@ func (gj *GraphJin) initRemotes(t Table) error {
 		}
 
 		// Index resolver obj by parent and child names
-		gj.rmap[mkkey(&h, r.Name, t.Name)] = rf
+		gj.rmap[(r.Name + t.Name)] = rf
 
 		// Index resolver obj by IDField
-		_, _ = h.Write(rf.IDField)
-		gj.rmap[h.Sum64()] = rf
+		gj.rmap[string(rf.IDField)] = rf
 	}
 
 	return nil

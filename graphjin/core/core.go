@@ -131,14 +131,12 @@ func (c *scontext) execQuery(query string, vars []byte, role string) (qres, erro
 		c.debugLog(&res.q.st)
 	}
 
-	if len(res.data) == 0 || !res.q.st.md.HasRemotes() {
+	if len(res.data) == 0 || res.q.st.qc.Remotes == 0 {
 		return res, nil
 	}
 
-	return res, nil
-
 	// return c.gj.execRemoteJoin(st, data, c.req.hdr)
-	//return c.gj.execRemoteJoin(res, nil)
+	return c.gj.execRemoteJoin(res, nil)
 }
 
 func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, error) {
@@ -338,7 +336,7 @@ func (r *Result) SQL() string {
 func (c *scontext) debugLog(st *stmt) {
 	for _, sel := range st.qc.Selects {
 		if sel.SkipRender == qcode.SkipTypeUserNeeded {
-			c.gj.log.Printf("INF table '%s' skipped as it requires $user_id", sel.Table)
+			c.gj.log.Printf("INF field '%s' skipped as it requires $user_id", sel.FieldName)
 		}
 	}
 }

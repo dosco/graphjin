@@ -69,14 +69,6 @@ func (md *Metadata) renderParam(w *bytes.Buffer, p Param) {
 	}
 }
 
-func (md Metadata) HasRemotes() bool {
-	return md.remoteCount != 0
-}
-
-func (md Metadata) Remotes() int {
-	return md.remoteCount
-}
-
 func (md Metadata) Params() []Param {
 	return md.params
 }

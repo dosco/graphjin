@@ -16,11 +16,34 @@ func (co *Compiler) compileColumns(
 	sel *Select,
 	tr trval) error {
 
-	if sel.Rel.Type == sdata.RelRemote {
-		return nil
+	sel.Cols = make([]Column, 0, len(field.Children))
+
+	//if sel.Rel.Type != sdata.RelRemote {
+	if err := co.compileChildColumns(field, op, st, qc, sel, tr); err != nil {
+		return err
+	}
+	//}
+
+	if err := validateSelector(qc, sel, tr); err != nil {
+		return err
 	}
 
-	sel.Cols = make([]Column, 0, len(field.Children))
+	if err := co.addRelColumns(qc, sel); err != nil {
+		return err
+	}
+
+	co.addOrderByColumns(sel)
+	return nil
+}
+
+func (co *Compiler) compileChildColumns(
+	field *graph.Field,
+	op *graph.Operation,
+	st *util.StackInt32,
+	qc *QCode,
+	sel *Select,
+	tr trval) error {
+
 	aggExist := false
 
 	for _, cid := range field.Children {
@@ -31,6 +54,11 @@ func (co *Compiler) compileColumns(
 			fname = f.Alias
 		} else {
 			fname = f.Name
+		}
+
+		if sel.Rel.Type == sdata.RelRemote {
+			sel.addFieldCol(fname)
+			continue
 		}
 
 		if len(f.Children) != 0 {
@@ -68,15 +96,6 @@ func (co *Compiler) compileColumns(
 		sel.GroupCols = true
 	}
 
-	if err := validateSelector(qc, sel, tr); err != nil {
-		return err
-	}
-
-	if err := co.addRelColumns(qc, sel); err != nil {
-		return err
-	}
-
-	co.addOrderByColumns(sel)
 	return nil
 }
 
@@ -87,14 +106,18 @@ func (co *Compiler) addOrderByColumns(sel *Select) {
 }
 
 func (co *Compiler) addRelColumns(qc *QCode, sel *Select) error {
-	if sel.Rel.Type == sdata.RelNone {
-		return nil
-	}
+	var psel *Select
 
 	rel := sel.Rel
-	psel := &qc.Selects[sel.ParentID]
+
+	if sel.ParentID != -1 {
+		psel = &qc.Selects[sel.ParentID]
+	}
 
 	switch rel.Type {
+	case sdata.RelNone:
+		return nil
+
 	case sdata.RelOneToOne, sdata.RelOneToMany:
 		psel.addCol(Column{Col: rel.Right.Col, Base: true})
 
@@ -105,7 +128,7 @@ func (co *Compiler) addRelColumns(qc *QCode, sel *Select) error {
 		psel.addCol(Column{Col: rel.Left.Col, Base: true})
 
 	case sdata.RelRemote:
-		psel.addCol(Column{Col: rel.Right.Col, Base: true})
+		psel.addCol(Column{Col: rel.Left.Col, Base: true})
 		sel.SkipRender = SkipTypeRemote
 
 	case sdata.RelPolymorphic:
@@ -211,4 +234,9 @@ func (sel *Select) addCol(col Column) {
 		sel.Cols = append(sel.Cols, col)
 		sel.ColMap[col.Col.Name] = len(sel.Cols) - 1
 	}
+}
+
+func (sel *Select) addFieldCol(name string) {
+	sel.Cols = append(sel.Cols, Column{FieldName: name})
+	sel.ColMap[name] = len(sel.Cols) - 1
 }

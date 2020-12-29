@@ -1,12 +1,9 @@
-// +build ignore
-
 package core
 
 import (
 	"bytes"
 	"errors"
 	"fmt"
-	"hash/maphash"
 	"net/http"
 	"sync"
 
@@ -18,13 +15,11 @@ func (gj *GraphJin) execRemoteJoin(res qres, hdr http.Header) (qres, error) {
 	var err error
 
 	sel := res.q.st.qc.Selects
-	h := maphash.Hash{}
-	h.SetSeed(gj.hashSeed)
 
 	// fetch the field name used within the db response json
 	// that are used to mark insertion points and the mapping between
 	// those field names and their select objects
-	fids, sfmap, err := gj.parentFieldIds(&h, sel, res.q.st.md.Remotes())
+	fids, sfmap, err := gj.parentFieldIds(sel, res.q.st.qc.Remotes)
 	if err != nil {
 		return res, err
 	}
@@ -38,7 +33,7 @@ func (gj *GraphJin) execRemoteJoin(res qres, hdr http.Header) (qres, error) {
 		return res, errors.New("something wrong no remote ids found in db response")
 	}
 
-	to, err = gj.resolveRemotes(hdr, &h, from, sel, sfmap)
+	to, err = gj.resolveRemotes(hdr, from, sel, sfmap)
 	if err != nil {
 		return res, err
 	}
@@ -56,10 +51,9 @@ func (gj *GraphJin) execRemoteJoin(res qres, hdr http.Header) (qres, error) {
 
 func (gj *GraphJin) resolveRemotes(
 	hdr http.Header,
-	h *maphash.Hash,
 	from []jsn.Field,
 	sel []qcode.Select,
-	sfmap map[uint64]*qcode.Select) ([]jsn.Field, error) {
+	sfmap map[string]*qcode.Select) ([]jsn.Field, error) {
 
 	// replacement data for the marked insertion points
 	// key and value will be replaced by whats below
@@ -72,26 +66,15 @@ func (gj *GraphJin) resolveRemotes(
 
 	for i, id := range from {
 		// use the json key to find the related Select object
-		_, _ = h.Write(id.Key)
-		k1 := h.Sum64()
-		h.Reset()
-
-		s, ok := sfmap[k1]
+		s, ok := sfmap[string(id.Key)]
 		if !ok {
 			return nil, fmt.Errorf("invalid remote field key")
 		}
 		p := sel[s.ParentID]
 
-		pti, err := gj.schema.GetTableInfo(p.Table, "")
-		if err != nil {
-			return nil, err
-		}
-
-		// then use the Table nme in the Select and it's parent
+		// then use the Table name in the Select and it's parent
 		// to find the resolver to use for this relationship
-		k2 := mkkey(h, s.Table, pti.Name)
-
-		r, ok := gj.rmap[k2]
+		r, ok := gj.rmap[(s.Table + p.Table)]
 		if !ok {
 			return nil, fmt.Errorf("no resolver found")
 		}
@@ -121,7 +104,7 @@ func (gj *GraphJin) resolveRemotes(
 			if len(s.Cols) != 0 {
 				err = jsn.Filter(&ob, b, colsToList(s.Cols))
 				if err != nil {
-					cerr = fmt.Errorf("%s: %s", s.Table, err)
+					cerr = fmt.Errorf("%s: %w", s.Table, err)
 					return
 				}
 
@@ -137,8 +120,8 @@ func (gj *GraphJin) resolveRemotes(
 	return to, cerr
 }
 
-func (gj *GraphJin) parentFieldIds(h *maphash.Hash, sel []qcode.Select, remotes int) (
-	[][]byte, map[uint64]*qcode.Select, error) {
+func (gj *GraphJin) parentFieldIds(sel []qcode.Select, remotes int32) (
+	[][]byte, map[string]*qcode.Select, error) {
 
 	// list of keys (and it's related value) to extract from
 	// the db json response
@@ -146,7 +129,7 @@ func (gj *GraphJin) parentFieldIds(h *maphash.Hash, sel []qcode.Select, remotes 
 
 	// mapping between the above extracted key and a Select
 	// object
-	sm := make(map[uint64]*qcode.Select, remotes)
+	sm := make(map[string]*qcode.Select, remotes)
 
 	for i := range sel {
 		s := &sel[i]
@@ -157,21 +140,11 @@ func (gj *GraphJin) parentFieldIds(h *maphash.Hash, sel []qcode.Select, remotes 
 
 		p := sel[s.ParentID]
 
-		pti, err := gj.schema.GetTableInfo(p.Table, "")
-		if err != nil {
-			return nil, nil, err
-		}
-
-		k := mkkey(h, s.Table, pti.Name)
-
-		if r, ok := gj.rmap[k]; ok {
+		if r, ok := gj.rmap[(s.Table + p.Table)]; ok {
 			fm = append(fm, r.IDField)
-			_, _ = h.Write(r.IDField)
-			sm[h.Sum64()] = s
-			h.Reset()
+			sm[string(r.IDField)] = s
 		}
 	}
-
 	return fm, sm, nil
 }
 
@@ -179,7 +152,7 @@ func colsToList(cols []qcode.Column) []string {
 	var f []string
 
 	for _, col := range cols {
-		f = append(f, col.Col.Name)
+		f = append(f, col.FieldName)
 	}
 	return f
 }

@@ -56,7 +56,4 @@ func BenchmarkGraphQL(b *testing.B) {
 	})
 
 	fmt.Println(err)
-
-	//fmt.Println(mock.ExpectationsWereMet())
-
 }

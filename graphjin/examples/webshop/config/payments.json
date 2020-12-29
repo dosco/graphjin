@@ -1,6 +1,6 @@
 { 
-  "payments": {
-    "id": "123",
+  "payments": [{
+    "id": "ch_123",
     "object": "charge",
     "amount": 100,
     "amount_captured": 0,
@@ -80,5 +80,5 @@
     "status": "succeeded",
     "transfer_data": null,
     "transfer_group": null
-  }
+  }]
 }

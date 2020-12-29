@@ -47,7 +47,7 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 		}
 
 		//TODO: log what and why this is being skipped
-		if csel.SkipRender != qcode.SkipTypeNone {
+		if csel.SkipRender != qcode.SkipTypeNone && csel.SkipRender != qcode.SkipTypeRemote {
 			c.w.WriteString(`NULL`)
 			alias(c.w, csel.FieldName)
 

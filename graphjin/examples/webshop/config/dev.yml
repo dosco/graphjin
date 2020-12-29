@@ -218,8 +218,8 @@ tables:
     remotes:
       - name: payments
         id: stripe_id
-        url: http://rails_app:3000/stripe/$id
-        path: data
+        url: http://payments/payments/$id
+        #path: data
         # debug: true
         pass_headers:
           - cookie
