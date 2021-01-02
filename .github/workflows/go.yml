@@ -38,3 +38,6 @@ jobs:
 
     - name: Lint
       run: make lint
+    
+    - name: Go proxy warming
+      uses: andrewslotin/go-proxy-pull-action@v1.0.1
