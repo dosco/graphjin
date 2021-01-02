@@ -75,7 +75,7 @@ var customers = [];
 for (i = 0; i < customer_count; i++) {
   var u = users[Math.floor(Math.random() * user_count)];
   var data = {
-    stripe_id: fake.uuid(),
+    stripe_id: "ch_" + Math.floor(Math.random() * 100),
     full_name: fake.name(),
     phone: fake.phone(),
     email: fake.email(),

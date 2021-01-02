@@ -3,6 +3,7 @@ package serv
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -98,6 +99,27 @@ func apiV1(servConf *ServConfig) func(http.ResponseWriter, *http.Request) {
 		doLog := true
 		res, err := gj.GraphQLEx(ct, req.Query, req.Vars, &rc)
 
+		if !servConf.conf.Production && res.QueryName() == introspectionQuery {
+			doLog = false
+		}
+
+		if doLog && servConf.logLevel >= LogLevelDebug {
+			servConf.log.Printf("DBG query %s: %s", res.QueryName(), res.SQL())
+		}
+
+		if err == nil {
+			if servConf.conf.CacheControl != "" && res.Operation() == core.OpQuery {
+				w.Header().Set("Cache-Control", servConf.conf.CacheControl)
+			}
+
+			//nolint: errcheck
+			err = json.NewEncoder(w).Encode(res)
+		}
+
+		if err != nil {
+			renderErr(w, err)
+		}
+
 		if servConf.conf.telemetryEnabled() {
 			span := trace.FromContext(ct)
 
@@ -112,25 +134,6 @@ func apiV1(servConf *ServConfig) func(http.ResponseWriter, *http.Request) {
 			}
 
 			ochttp.SetRoute(ct, apiRoute)
-		}
-
-		if !servConf.conf.Production && res.QueryName() == introspectionQuery {
-			doLog = false
-		}
-
-		if doLog && servConf.logLevel >= LogLevelDebug {
-			servConf.log.Printf("DBG query %s: %s", res.QueryName(), res.SQL())
-		}
-
-		if err == nil {
-			if servConf.conf.CacheControl != "" && res.Operation() == core.OpQuery {
-				w.Header().Set("Cache-Control", servConf.conf.CacheControl)
-			}
-			//nolint: errcheck
-			json.NewEncoder(w).Encode(res)
-
-		} else {
-			renderErr(w, err)
 		}
 
 		if doLog && servConf.logLevel >= LogLevelInfo {
@@ -164,5 +167,8 @@ func renderErr(w http.ResponseWriter, err error) {
 		w.WriteHeader(http.StatusUnauthorized)
 	}
 
-	json.NewEncoder(w).Encode(errorResp{err.Error()})
+	err1 := json.NewEncoder(w).Encode(errorResp{err.Error()})
+	if err1 != nil {
+		panic(fmt.Errorf("%s: %w", err, err1))
+	}
 }

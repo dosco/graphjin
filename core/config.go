@@ -2,11 +2,13 @@ package core
 
 import (
 	"fmt"
+	"log"
 	"path"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/dosco/graphjin/core/internal/qcode"
 	"github.com/spf13/viper"
 )
 
@@ -51,6 +53,10 @@ type Config struct {
 	// out from any and all queries
 	Blocklist []string
 
+	// Resolvers contain the configs for custom resolvers. For example the `remote_api`
+	// resolver would join json from a remote API into your query response.
+	Resolvers []ResolverConfig
+
 	// Tables contains all table specific configuration such as aliased tables
 	// creating relationships between tables, etc
 	Tables []Table
@@ -90,6 +96,8 @@ type Config struct {
 	// limit is not defined in the query or the table role config.
 	// Default to 20
 	DefaultLimit int `mapstructure:"default_limit"`
+
+	rtmap map[string]resFn
 }
 
 // Table struct defines a database table
@@ -98,7 +106,6 @@ type Table struct {
 	Table     string
 	Type      string
 	Blocklist []string
-	Remotes   []Remote
 	Columns   []Column
 }
 
@@ -108,20 +115,6 @@ type Column struct {
 	Type       string
 	Primary    bool
 	ForeignKey string `mapstructure:"related_to"`
-}
-
-// Remote struct defines a remote API endpoint
-type Remote struct {
-	Name        string
-	ID          string
-	Path        string
-	URL         string
-	Debug       bool
-	PassHeaders []string `mapstructure:"pass_headers"`
-	SetHeaders  []struct {
-		Name  string
-		Value string
-	} `mapstructure:"set_headers"`
 }
 
 // Role struct contains role specific access control values for for all database tables
@@ -183,6 +176,87 @@ type Delete struct {
 	Block   bool
 }
 
+// Resolver interface is used to create custom resolvers
+// Custom resolvers must return a JSON value to be merged into
+// the response JSON.
+//
+// Example Redis Resolver:
+/*
+	type Redis struct {
+		Addr string
+		client redis.Client
+	}
+
+	func newRedis(v map[string]interface{}) (*Redis, error) {
+		re := &Redis{}
+		if err := mapstructure.Decode(v, re); err != nil {
+			return nil, err
+		}
+		re.client := redis.NewClient(&redis.Options{
+			Addr:     re.Addr,
+			Password: "", // no password set
+			DB:       0,  // use default DB
+		})
+		return re, nil
+	}
+
+	func (r *remoteAPI) Resolve(req ResolverReq) ([]byte, error) {
+		val, err := rdb.Get(ctx, req.ID).Result()
+		if err != nil {
+				return err
+		}
+
+		return val, nil
+	}
+
+	func main() {
+		conf := core.Config{
+			Resolvers: []Resolver{
+				Name: "cached_profile",
+				Type: "redis",
+				Table: "users",
+				Column: "id",
+				Props: []ResolverProps{
+					"addr": "localhost:6379",
+				},
+			},
+		}
+
+		gj.conf.SetResolver("redis", func(v ResolverProps) (Resolver, error) {
+			return newRedis(v)
+		})
+
+		gj, err := core.NewGraphJin(conf, db)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+*/
+type Resolver interface {
+	Resolve(ResolverReq) ([]byte, error)
+}
+
+// ResolverProps is a map of properties from the resolver config to be passed
+// to the customer resolver's builder (new) function
+type ResolverProps map[string]interface{}
+
+// ResolverConfig struct defines a custom resolver
+type ResolverConfig struct {
+	Name      string
+	Type      string
+	Table     string
+	Column    string
+	StripPath string        `mapstructure:"strip_path"`
+	Props     ResolverProps `mapstructure:",remain"`
+}
+
+type ResolverReq struct {
+	ID  string
+	Sel *qcode.Select
+	Log *log.Logger
+	*ReqConfig
+}
+
 // AddRoleTable function is a helper function to make it easy to add per-table
 // row-level config
 func (c *Config) AddRoleTable(role, table string, conf interface{}) error {
@@ -225,6 +299,17 @@ func (c *Config) AddRoleTable(role, table string, conf interface{}) error {
 	default:
 		return fmt.Errorf("unsupported object type: %t", v)
 	}
+	return nil
+}
+
+func (c *Config) SetResolver(name string, fn resFn) error {
+	if c.rtmap == nil {
+		c.rtmap = make(map[string]resFn)
+	}
+	if _, ok := c.rtmap[name]; ok {
+		return fmt.Errorf("resolver defined: %s", name)
+	}
+	c.rtmap[name] = fn
 	return nil
 }
 

@@ -9,9 +9,10 @@ services:
       - "5432:5432"
 
   payments:
-    image: clue/json-server:latest
+    image: rivancic/json-server-faker:latest
     volumes:
-      - ./examples/webshop/config/payments.json:/data/db.json
+      - ./examples/webshop/config/run.sh:/run.sh
+      - ./examples/webshop/config/file.js:/data/file.js
     ports:
       - "4000:80"
 
