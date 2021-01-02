@@ -19,7 +19,7 @@
 			log.Fatal(err)
 		}
 
-	gj, err := core.NewGraphJin(nil, db)
+		gj, err := core.NewGraphJin(nil, db)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -89,7 +89,7 @@ type GraphJin struct {
 	roles       map[string]*Role
 	roleStmt    string
 	roleStmtMD  psql.Metadata
-	rmap        map[string]resolvFn
+	rmap        map[string]resItem
 	abacEnabled bool
 	qc          *qcode.Compiler
 	pc          *psql.Compiler
@@ -243,12 +243,6 @@ func (gj *GraphJin) GraphQLEx(
 	res.role = qr.role
 
 	return res, err
-}
-
-// GraphQLSchema function return the GraphQL schema for the underlying database connected
-// to this instance of GraphJin
-func (gj *GraphJin) GraphQLSchema() (string, error) {
-	return gj.ge.Schema.String(), nil
 }
 
 // Operation function return the operation type and name from the query.

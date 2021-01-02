@@ -4,14 +4,13 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"net/http"
 	"sync"
 
 	"github.com/dosco/graphjin/core/internal/qcode"
 	"github.com/dosco/graphjin/jsn"
 )
 
-func (gj *GraphJin) execRemoteJoin(res qres, hdr http.Header) (qres, error) {
+func (c *scontext) execRemoteJoin(res qres) (qres, error) {
 	var err error
 
 	sel := res.q.st.qc.Selects
@@ -19,7 +18,7 @@ func (gj *GraphJin) execRemoteJoin(res qres, hdr http.Header) (qres, error) {
 	// fetch the field name used within the db response json
 	// that are used to mark insertion points and the mapping between
 	// those field names and their select objects
-	fids, sfmap, err := gj.parentFieldIds(sel, res.q.st.qc.Remotes)
+	fids, sfmap, err := c.parentFieldIds(sel, res.q.st.qc.Remotes)
 	if err != nil {
 		return res, err
 	}
@@ -33,7 +32,7 @@ func (gj *GraphJin) execRemoteJoin(res qres, hdr http.Header) (qres, error) {
 		return res, errors.New("something wrong no remote ids found in db response")
 	}
 
-	to, err = gj.resolveRemotes(hdr, from, sel, sfmap)
+	to, err = c.resolveRemotes(from, sel, sfmap)
 	if err != nil {
 		return res, err
 	}
@@ -49,8 +48,7 @@ func (gj *GraphJin) execRemoteJoin(res qres, hdr http.Header) (qres, error) {
 	return res, nil
 }
 
-func (gj *GraphJin) resolveRemotes(
-	hdr http.Header,
+func (c *scontext) resolveRemotes(
 	from []jsn.Field,
 	sel []qcode.Select,
 	sfmap map[string]*qcode.Select) ([]jsn.Field, error) {
@@ -74,7 +72,7 @@ func (gj *GraphJin) resolveRemotes(
 
 		// then use the Table name in the Select and it's parent
 		// to find the resolver to use for this relationship
-		r, ok := gj.rmap[(s.Table + p.Table)]
+		r, ok := c.gj.rmap[(s.Table + p.Table)]
 		if !ok {
 			return nil, fmt.Errorf("no resolver found")
 		}
@@ -89,7 +87,8 @@ func (gj *GraphJin) resolveRemotes(
 
 			//st := time.Now()
 
-			b, err := r.Fn(hdr, id)
+			b, err := r.Fn.Resolve(ResolverReq{
+				ID: string(id), Sel: s, Log: c.gj.log, ReqConfig: c.rc})
 			if err != nil {
 				cerr = fmt.Errorf("%s: %s", s.Table, err)
 				return
@@ -120,7 +119,7 @@ func (gj *GraphJin) resolveRemotes(
 	return to, cerr
 }
 
-func (gj *GraphJin) parentFieldIds(sel []qcode.Select, remotes int32) (
+func (c *scontext) parentFieldIds(sel []qcode.Select, remotes int32) (
 	[][]byte, map[string]*qcode.Select, error) {
 
 	// list of keys (and it's related value) to extract from
@@ -140,7 +139,7 @@ func (gj *GraphJin) parentFieldIds(sel []qcode.Select, remotes int32) (
 
 		p := sel[s.ParentID]
 
-		if r, ok := gj.rmap[(s.Table + p.Table)]; ok {
+		if r, ok := c.gj.rmap[(s.Table + p.Table)]; ok {
 			fm = append(fm, r.IDField)
 			sm[string(r.IDField)] = s
 		}
