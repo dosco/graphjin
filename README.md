@@ -85,6 +85,7 @@ This compiler is what sits at the heart of GraphJin, with layers of useful funct
 
 ## Features
 
+- Works with Postgres, MySQL8 and Yugabyte DB
 - Complex nested queries and mutations
 - Realtime updates with subscriptions
 - Build infinite scroll, feeds, nested comments, etc
@@ -102,7 +103,6 @@ This compiler is what sits at the heart of GraphJin, with layers of useful funct
 - Fuzz tested for security
 - Database migrations tool
 - Database seeding tool
-- Works with Postgres and Yugabyte DB
 - OpenCensus Support: Zipkin, Prometheus, X-Ray, Stackdriver
 - API Rate Limiting
 - Highly scalable and fast

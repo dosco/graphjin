@@ -15,7 +15,7 @@ import (
 func (co *Compiler) compileMutation(
 	w *bytes.Buffer,
 	qc *qcode.QCode,
-	md Metadata) Metadata {
+	md *Metadata) {
 
 	c := compilerContext{
 		md:       md,
@@ -25,8 +25,8 @@ func (co *Compiler) compileMutation(
 	}
 
 	if qc.SType != qcode.QTDelete {
-		c.w.WriteString(`WITH "_sg_input" AS (SELECT `)
-		c.md.renderParam(c.w, Param{Name: c.qc.ActionVar, Type: "json"})
+		c.w.WriteString(`WITH _sg_input AS (SELECT `)
+		c.renderParam(Param{Name: c.qc.ActionVar, Type: "json"})
 		c.w.WriteString(` :: json AS j)`)
 	}
 
@@ -40,11 +40,11 @@ func (co *Compiler) compileMutation(
 	case qcode.QTDelete:
 		c.renderDelete()
 	default:
-		return c.md
+		return
 	}
 
 	c.renderMultiUnionStmt()
-	return co.CompileQuery(w, qc, c.md)
+	co.CompileQuery(w, qc, c.md)
 }
 
 func (c *compilerContext) renderMultiUnionStmt() {
@@ -87,11 +87,11 @@ func (c *compilerContext) renderInsertUpdateColumns(m qcode.Mutate, values bool)
 
 			switch {
 			case len(v) > 1 && v[0] == '$':
-				c.md.renderParam(c.w, Param{Name: v[1:], Type: col.Col.Type})
+				c.renderParam(Param{Name: v[1:], Type: col.Col.Type})
 
 			case strings.HasPrefix(v, "sql:"):
 				c.w.WriteString(`(`)
-				c.md.RenderVar(c.w, v[4:])
+				c.renderVar(v[4:])
 				c.w.WriteString(`)`)
 
 			case v != "":

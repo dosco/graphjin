@@ -266,7 +266,7 @@ func addForeignKey(di *sdata.DBInfo, c Column, t Table) error {
 		}
 
 		c1.FKeyTable = v[0]
-		c1.FKeyColID = []int16{c2.ID}
+		c1.FKeyCol = c2.Name
 		return nil
 	}
 
@@ -279,7 +279,7 @@ func addForeignKey(di *sdata.DBInfo, c Column, t Table) error {
 	}
 
 	c1.FKeyTable = fkt
-	c1.FKeyColID = []int16{c3.ID}
+	c1.FKeyCol = c3.Name
 
 	return nil
 }

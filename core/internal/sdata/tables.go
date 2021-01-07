@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-
-	"github.com/jackc/pgtype"
 )
 
 type DBInfo struct {
 	Version   int
+	Type      string
 	Tables    []DBTable
 	Columns   [][]DBColumn
 	Functions []DBFunction
@@ -25,21 +24,20 @@ type VirtualTable struct {
 	FKeyColumn string
 }
 
-func GetDBInfo(db *sql.DB, schema string, blockList []string) (*DBInfo, error) {
-	di := &DBInfo{}
-	var version string
+func GetDBInfo(db *sql.DB, dbtype string, blockList []string) (*DBInfo, error) {
+	var err error
 
-	err := db.QueryRow(`SHOW server_version_num`).Scan(&version)
-	if err != nil {
-		return nil, fmt.Errorf("error fetching version: %w", err)
-	}
+	di := &DBInfo{Type: dbtype}
+	version := "110000"
+
+	_ = db.QueryRow(`SHOW server_version_num`).Scan(&version)
 
 	di.Version, err = strconv.Atoi(version)
 	if err != nil {
 		return nil, err
 	}
 
-	di.Tables, err = GetTables(db, schema)
+	di.Tables, err = GetTables(db)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +49,7 @@ func GetDBInfo(db *sql.DB, schema string, blockList []string) (*DBInfo, error) {
 		tables = append(tables, t.Name)
 	}
 
-	cols, err := GetColumns(db, schema, tables)
+	cols, err := GetColumns(db, dbtype, tables)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +63,7 @@ func GetDBInfo(db *sql.DB, schema string, blockList []string) (*DBInfo, error) {
 	}
 	di.colMap = newColMap(di.Tables, di.Columns)
 
-	di.Functions, err = GetFunctions(db, schema, blockList)
+	di.Functions, err = GetFunctions(db, blockList)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +85,7 @@ func (di *DBInfo) AddTable(t DBTable, cols []DBColumn) {
 }
 
 func (di *DBInfo) GetColumn(table, column string) (*DBColumn, error) {
-	c, ok := di.colMap[strings.ToLower(table+column)]
+	c, ok := di.colMap[(table + column)]
 	if !ok {
 		return nil, fmt.Errorf("column: '%s.%s' not found", table, column)
 	}
@@ -103,24 +101,22 @@ type DBTable struct {
 	Blocked bool
 }
 
-func GetTables(db *sql.DB, schema string) ([]DBTable, error) {
+func GetTables(db *sql.DB) ([]DBTable, error) {
+	//	t.table_schema NOT IN ('information_schema', 'pg_catalog')
+
 	sqlStmt := `
 SELECT
-	c.relname as "name",
-	CASE c.relkind WHEN 'r' THEN 'table'
-		WHEN 'v' THEN 'view'
-		WHEN 'm' THEN 'materialized view'
-		WHEN 'f' THEN 'foreign table' 
-	END as "type"
-FROM pg_catalog.pg_class c
-	LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-WHERE c.relkind IN ('r','v','m','f','')
-	AND n.nspname = $1
-	AND pg_catalog.pg_table_is_visible(c.oid);`
+	t.table_name as "name",
+	t.table_type as "type"
+FROM 
+	information_schema.tables t
+WHERE
+	t.table_schema NOT IN ('information_schema', 'pg_catalog')
+	AND t.table_name NOT IN ('schema_version');`
 
 	var tables []DBTable
 
-	rows, err := db.Query(sqlStmt, schema)
+	rows, err := db.Query(sqlStmt)
 	if err != nil {
 		return nil, fmt.Errorf("Error fetching tables: %s", err)
 	}
@@ -133,9 +129,7 @@ WHERE c.relkind IN ('r','v','m','f','')
 			return nil, err
 		}
 		t.Key = strings.ToLower(t.Name)
-		if t.Key != "schema_migrations" && t.Key != "ar_internal_metadata" {
-			tables = append(tables, t)
-		}
+		tables = append(tables, t)
 	}
 
 	return tables, nil
@@ -150,130 +144,78 @@ type DBColumn struct {
 	NotNull    bool
 	PrimaryKey bool
 	UniqueKey  bool
+	FKeySchema string
 	FKeyTable  string
-	FKeyColID  []int16
-	fKeyColID  pgtype.Int2Array
+	FKeyCol    string
 	Blocked    bool
 	Table      string
 }
 
-func GetColumns(db *sql.DB, schema string, tables []string) (map[string][]DBColumn, error) {
+func GetColumns(db *sql.DB, dbtype string, tables []string) (
+	map[string][]DBColumn, error) {
 	cols := make(map[string][]DBColumn, len(tables))
 
 	if len(tables) == 0 {
 		return cols, nil
 	}
 
-	sqlStmt := `
-SELECT  
-	c.relname as table,
-	f.attnum AS id,  
-	f.attname AS name,  
-	f.attnotnull AS notnull,  
-	pg_catalog.format_type(f.atttypid,f.atttypmod) AS type,  
-	CASE
-	 WHEN f.attndims != 0 THEN true
-	 WHEN right(pg_catalog.format_type(f.atttypid,f.atttypmod), 2) = '[]' THEN true
-	 ELSE false
-	END AS array,
-	CASE  
-		WHEN p.contype = ('p'::char) THEN true  
-		ELSE false 
-	END AS primarykey,  
-	CASE  
-		WHEN p.contype = ('u'::char) THEN true  
-		ELSE false
-	END AS uniquekey,
-	CASE
-		WHEN p.contype = ('f'::char) THEN g.relname 
-		ELSE ''::text
-	END AS foreignkey,
-	CASE
-		WHEN p.contype = ('f'::char) THEN p.confkey::int2[]
-		ELSE ARRAY[]::int2[]
-	END AS foreignkey_fieldnum
-FROM 
-	pg_attribute f
-	JOIN pg_class c ON c.oid = f.attrelid  
-	LEFT JOIN pg_attrdef d ON d.adrelid = c.oid AND d.adnum = f.attnum  
-	LEFT JOIN pg_namespace n ON n.oid = c.relnamespace  
-	LEFT JOIN pg_constraint p ON p.conrelid = c.oid AND f.attnum = ANY (p.conkey)  
-	LEFT JOIN pg_class AS g ON p.confrelid = g.oid  
-WHERE 
-	c.relkind IN ('r', 'v', 'm', 'f')
-	AND n.nspname = $1 -- Replace with Schema name  
-	AND c.relname IN (` + toList(tables) + `)
-	AND f.attnum > 0
-	AND f.attisdropped = false
-ORDER BY id;`
+	var sqlStmt string
 
-	rows, err := db.Query(sqlStmt, schema)
+	switch dbtype {
+	case "mysql":
+		sqlStmt = mysqlColumnInfo
+	default:
+		sqlStmt = postgresColumnInfo
+	}
+
+	rows, err := db.Query(sqlStmt)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching columns: %s", err)
 	}
 	defer rows.Close()
 
-	cmap := make(map[string]map[int16]DBColumn, len(tables))
+	cmap := make(map[string]DBColumn)
 
 	for rows.Next() {
-		var t string
 		var c DBColumn
 
-		err = rows.Scan(&t, &c.ID, &c.Name, &c.NotNull, &c.Type, &c.Array, &c.PrimaryKey, &c.UniqueKey, &c.FKeyTable, &c.fKeyColID)
+		err = rows.Scan(&c.Table, &c.Name, &c.Type, &c.NotNull, &c.Array, &c.PrimaryKey, &c.UniqueKey, &c.FKeySchema, &c.FKeyTable, &c.FKeyCol)
 		if err != nil {
 			return nil, err
 		}
 
-		if _, ok := cmap[t]; !ok {
-			cmap[t] = make(map[int16]DBColumn)
+		v, _ := cmap[(c.Table + c.Name)]
+		if v.Key == "" {
+			v = c
+			v.Key = strings.ToLower(c.Name)
 		}
-
-		if v, ok := cmap[t][c.ID]; ok {
-			if c.PrimaryKey {
-				v.PrimaryKey = true
-				v.UniqueKey = true
-			}
-			if c.NotNull {
-				v.NotNull = true
-			}
-			if c.UniqueKey {
-				v.UniqueKey = true
-			}
-			if c.Array {
-				v.Array = true
-			}
-			if c.FKeyTable != "" {
-				v.FKeyTable = c.FKeyTable
-			}
-			if c.fKeyColID.Elements != nil {
-				v.fKeyColID = c.fKeyColID
-				err := v.fKeyColID.AssignTo(&v.FKeyColID)
-				if err != nil {
-					return nil, err
-				}
-			}
-			cmap[t][c.ID] = v
-
-		} else {
-			err := c.fKeyColID.AssignTo(&c.FKeyColID)
-			if err != nil {
-				return nil, err
-			}
-			c.Key = strings.ToLower(c.Name)
-			if c.PrimaryKey {
-				c.UniqueKey = true
-			}
-			cmap[t][c.ID] = c
+		if c.PrimaryKey {
+			v.PrimaryKey = true
+			v.UniqueKey = true
 		}
+		if c.NotNull {
+			v.NotNull = true
+		}
+		if c.UniqueKey {
+			v.UniqueKey = true
+		}
+		if c.Array {
+			v.Array = true
+		}
+		if c.FKeyTable != "" {
+			v.FKeyTable = c.FKeyTable
+		}
+		if c.FKeySchema != "" {
+			v.FKeySchema = c.FKeySchema
+		}
+		if c.FKeyCol != "" {
+			v.FKeyCol = c.FKeyCol
+		}
+		cmap[(c.Table + c.Name)] = v
 	}
 
-	for t, v := range cmap {
-		for id := range v {
-			if _, ok := cols[t]; !ok {
-				cols[t] = make([]DBColumn, 0, len(v))
-			}
-			cols[t] = append(cols[t], v[id])
-		}
+	for _, v := range cmap {
+		cols[v.Table] = append(cols[v.Table], v)
 	}
 
 	return cols, nil
@@ -290,25 +232,25 @@ type DBFuncParam struct {
 	Type string
 }
 
-func GetFunctions(db *sql.DB, schema string, blockList []string) ([]DBFunction, error) {
+func GetFunctions(db *sql.DB, blockList []string) ([]DBFunction, error) {
 	sqlStmt := `
 SELECT 
-	routines.routine_name, 
-	parameters.specific_name,
-	parameters.data_type, 
-	parameters.parameter_name,
-	parameters.ordinal_position	
+	r.routine_name as func_name, 
+	p.specific_name as func_id,
+	p.data_type as func_type, 
+	p.parameter_name as param_name,
+	p.ordinal_position	as param_id
 FROM 
-	information_schema.routines
+	information_schema.routines r
 RIGHT JOIN 
-	information_schema.parameters 
-	ON (routines.specific_name = parameters.specific_name and parameters.ordinal_position IS NOT NULL)	
+	information_schema.parameters p
+	ON (r.specific_name = p.specific_name and p.ordinal_position IS NOT NULL)	
 WHERE 
-	routines.specific_schema = $1
+	p.specific_schema NOT IN ('information_schema', 'pg_catalog')
 ORDER BY 
-	routines.routine_name, parameters.ordinal_position;`
+	r.routine_name, p.ordinal_position;`
 
-	rows, err := db.Query(sqlStmt, schema)
+	rows, err := db.Query(sqlStmt)
 	if err != nil {
 		return nil, fmt.Errorf("Error fetching functions: %s", err)
 	}
@@ -351,10 +293,8 @@ func newColMap(tables []DBTable, columns [][]DBColumn) map[string]*DBColumn {
 	cm := make(map[string]*DBColumn, len(tables))
 
 	for i, t := range tables {
-		cols := columns[i]
-
-		for n, c := range cols {
-			cm[(t.Key + c.Key)] = &columns[i][n]
+		for n, c := range columns[i] {
+			cm[(t.Name + c.Name)] = &columns[i][n]
 		}
 	}
 
