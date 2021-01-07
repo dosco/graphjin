@@ -23,13 +23,14 @@ type Param struct {
 }
 
 type Metadata struct {
+	ct     string
 	poll   bool
 	params []Param
 	pindex map[string]int
 }
 
 type compilerContext struct {
-	md Metadata
+	md *Metadata
 	w  *bytes.Buffer
 	qc *qcode.QCode
 	*Compiler
@@ -39,6 +40,7 @@ type Variables map[string]json.RawMessage
 
 type Config struct {
 	Vars map[string]string
+	Type string
 }
 
 type Compiler struct {
@@ -69,13 +71,13 @@ func (co *Compiler) Compile(w *bytes.Buffer, qc *qcode.QCode) (Metadata, error) 
 
 	switch qc.Type {
 	case qcode.QTQuery:
-		md = co.CompileQuery(w, qc, md)
+		co.CompileQuery(w, qc, &md)
 
 	case qcode.QTSubscription:
-		md = co.CompileQuery(w, qc, md)
+		co.CompileQuery(w, qc, &md)
 
 	case qcode.QTMutation:
-		md = co.compileMutation(w, qc, md)
+		co.compileMutation(w, qc, &md)
 
 	default:
 		err = fmt.Errorf("Unknown operation type %d", qc.Type)
@@ -87,11 +89,13 @@ func (co *Compiler) Compile(w *bytes.Buffer, qc *qcode.QCode) (Metadata, error) 
 func (co *Compiler) CompileQuery(
 	w *bytes.Buffer,
 	qc *qcode.QCode,
-	md Metadata) Metadata {
+	md *Metadata) {
 
 	if qc.Type == qcode.QTSubscription {
 		md.poll = true
 	}
+
+	md.ct = qc.Schema.Type()
 
 	st := NewIntStack()
 	c := &compilerContext{
@@ -102,7 +106,12 @@ func (co *Compiler) CompileQuery(
 	}
 
 	i := 0
-	c.w.WriteString(`SELECT jsonb_build_object(`)
+	switch c.md.ct {
+	case "mysql":
+		c.w.WriteString(`SELECT json_object(`)
+	default:
+		c.w.WriteString(`SELECT jsonb_build_object(`)
+	}
 	for _, id := range qc.Roots {
 		if i != 0 {
 			c.w.WriteString(`, `)
@@ -123,9 +132,9 @@ func (co *Compiler) CompileQuery(
 		} else {
 			c.w.WriteString(`'`)
 			c.w.WriteString(sel.FieldName)
-			c.w.WriteString(`', "__sj_`)
+			c.w.WriteString(`', __sj_`)
 			int32String(c.w, sel.ID)
-			c.w.WriteString(`"."json"`)
+			c.w.WriteString(`.json`)
 
 			// return the cursor for the this child selector as part of the parents json
 			if sel.Paging.Cursor {
@@ -133,9 +142,9 @@ func (co *Compiler) CompileQuery(
 				c.w.WriteString(sel.FieldName)
 				c.w.WriteString(`_cursor', `)
 
-				c.w.WriteString(`"__sj_`)
+				c.w.WriteString(`__sj_`)
 				int32String(c.w, sel.ID)
-				c.w.WriteString(`"."cursor"`)
+				c.w.WriteString(`.__cursor`)
 			}
 
 			st.Push(sel.ID + closeBlock)
@@ -156,10 +165,13 @@ func (co *Compiler) CompileQuery(
 	// This helps multi-root work as well as return a null json value when
 	// there are no rows found.
 
-	c.w.WriteString(`) AS "__root" FROM (VALUES(true)) AS "__root_x"`)
+	switch c.md.ct {
+	case "mysql":
+		c.w.WriteString(`) AS __root FROM (VALUES ROW(true)) AS __root_x`)
+	default:
+		c.w.WriteString(`) AS __root FROM (VALUES(true)) AS __root_x`)
+	}
 	c.renderQuery(st, true)
-
-	return c.md
 }
 
 func (c *compilerContext) renderQuery(st *IntStack, multi bool) {
@@ -217,49 +229,61 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 	if sel.Singular {
 		return
 	}
-	c.w.WriteString(`SELECT coalesce(jsonb_agg("__sj_`)
+	switch c.md.ct {
+	case "mysql":
+		c.w.WriteString(`SELECT coalesce(json_arrayagg(__sj_`)
+	default:
+		c.w.WriteString(`SELECT coalesce(jsonb_agg(__sj_`)
+	}
 	int32String(c.w, sel.ID)
-	c.w.WriteString(`"."json"), '[]') as "json"`)
+	c.w.WriteString(`.json), '[]') as json`)
 
 	// Build the cursor value string
 	if sel.Paging.Cursor {
 		c.w.WriteString(`, CONCAT_WS(','`)
 		for i := 0; i < len(sel.OrderBy); i++ {
-			c.w.WriteString(`, max("__cur_`)
+			c.w.WriteString(`, max(__cur_`)
 			int32String(c.w, int32(i))
-			c.w.WriteString(`")`)
+			c.w.WriteString(`)`)
 		}
-		c.w.WriteString(`) as "cursor"`)
+		c.w.WriteString(`) as __cursor`)
 	}
 
 	c.w.WriteString(` FROM (`)
 }
 
 func (c *compilerContext) renderSelect(sel *qcode.Select) {
-	c.w.WriteString(`SELECT to_jsonb("__sr_`)
-	int32String(c.w, sel.ID)
-	c.w.WriteString(`".*) `)
+	switch c.md.ct {
+	case "mysql":
+		c.w.WriteString(`SELECT json_object(`)
+		c.renderJSONFields(sel)
+		c.w.WriteString(`) `)
+	default:
+		c.w.WriteString(`SELECT to_jsonb(__sr_`)
+		int32String(c.w, sel.ID)
+		c.w.WriteString(`.*) `)
 
-	// Exclude the cusor values from the the generated json object since
-	// we manually use these values to build the cursor string
-	// Notice the `- '__cur_` its' what excludes fields in `to_jsonb`
-	if sel.Paging.Cursor {
-		for i := range sel.OrderBy {
-			c.w.WriteString(`- '__cur_`)
-			int32String(c.w, int32(i))
-			c.w.WriteString(`' `)
+		// Exclude the cusor values from the the generated json object since
+		// we manually use these values to build the cursor string
+		// Notice the `- '__cur_` its' what excludes fields in `to_jsonb`
+		if sel.Paging.Cursor {
+			for i := range sel.OrderBy {
+				c.w.WriteString(`- '__cur_`)
+				int32String(c.w, int32(i))
+				c.w.WriteString(`' `)
+			}
 		}
 	}
 
-	c.w.WriteString(`AS "json" `)
+	c.w.WriteString(`AS json `)
 
 	// We manually insert the cursor values into row we're building outside
 	// of the generated json object so they can be used higher up in the sql.
 	if sel.Paging.Cursor {
 		for i := range sel.OrderBy {
-			c.w.WriteString(`, "__cur_`)
+			c.w.WriteString(`, __cur_`)
 			int32String(c.w, int32(i))
-			c.w.WriteString(`"`)
+			c.w.WriteString(` `)
 		}
 	}
 
@@ -271,9 +295,8 @@ func (c *compilerContext) renderSelect(sel *qcode.Select) {
 		for i, ob := range sel.OrderBy {
 			c.w.WriteString(`, LAST_VALUE(`)
 			colWithTableID(c.w, sel.Table, sel.ID, ob.Col.Name)
-			c.w.WriteString(`) OVER() AS "__cur_`)
+			c.w.WriteString(`) OVER() AS __cur_`)
 			int32String(c.w, int32(i))
-			c.w.WriteString(`"`)
 		}
 	}
 
@@ -355,31 +378,28 @@ func (c *compilerContext) renderLimit(sel *qcode.Select) {
 		break
 
 	case sel.Singular:
-		c.w.WriteString(` LIMIT ('1') :: integer`)
+		c.w.WriteString(` LIMIT 1`)
 
 	case sel.Paging.LimitVar != "":
 		c.w.WriteString(` LIMIT LEAST(`)
-		c.md.renderParam(c.w, Param{Name: sel.Paging.LimitVar, Type: "integer"})
-		c.w.WriteString(`, ('`)
+		c.renderParam(Param{Name: sel.Paging.LimitVar, Type: "integer"})
+		c.w.WriteString(`, `)
 		int32String(c.w, sel.Paging.Limit)
-		c.w.WriteString(`') :: integer)`)
+		c.w.WriteString(`)`)
 
 	default:
-		c.w.WriteString(` LIMIT ('`)
+		c.w.WriteString(` LIMIT `)
 		int32String(c.w, sel.Paging.Limit)
-		c.w.WriteString(`') :: integer`)
 	}
 
 	switch {
 	case sel.Paging.OffsetVar != "":
-		c.w.WriteString(` OFFSET (`)
-		c.md.renderParam(c.w, Param{Name: sel.Paging.OffsetVar, Type: "integer"})
-		c.w.WriteString(`) :: integer`)
+		c.w.WriteString(` OFFSET `)
+		c.renderParam(Param{Name: sel.Paging.OffsetVar, Type: "integer"})
 
 	case sel.Paging.Offset != 0:
-		c.w.WriteString(` OFFSET ('`)
+		c.w.WriteString(` OFFSET `)
 		int32String(c.w, sel.Paging.Offset)
-		c.w.WriteString(`') :: integer`)
 	}
 }
 
@@ -452,7 +472,7 @@ func (c *compilerContext) renderFrom(sel *qcode.Select) {
 	}
 
 	if sel.Paging.Cursor {
-		c.w.WriteString(`, "__cur"`)
+		c.w.WriteString(`, __cur`)
 	}
 }
 
@@ -460,21 +480,38 @@ func (c *compilerContext) renderCursorCTE(sel *qcode.Select) {
 	if !sel.Paging.Cursor {
 		return
 	}
-	c.w.WriteString(`WITH "__cur" AS (SELECT `)
-	for i, ob := range sel.OrderBy {
-		if i != 0 {
-			c.w.WriteString(`, `)
+	c.w.WriteString(`WITH __cur AS (SELECT `)
+	switch c.md.ct {
+	case "mysql":
+		for i, ob := range sel.OrderBy {
+			if i != 0 {
+				c.w.WriteString(`, `)
+			}
+			c.w.WriteString(`SUBSTRING_INDEX(SUBSTRING_INDEX(a.column_0, ',', `)
+			int32String(c.w, int32(i+1))
+			c.w.WriteString(`), ',', -1) AS `)
+			quoted(c.w, ob.Col.Name)
 		}
-		c.w.WriteString(`a[`)
-		int32String(c.w, int32(i+1))
-		c.w.WriteString(`] :: `)
-		c.w.WriteString(ob.Col.Type)
-		c.w.WriteString(` as `)
-		quoted(c.w, ob.Col.Name)
+		c.w.WriteString(` FROM (VALUES ROW(`)
+		c.renderParam(Param{Name: "cursor", Type: "text"})
+		c.w.WriteString(`)) as a) `)
+
+	default:
+		for i, ob := range sel.OrderBy {
+			if i != 0 {
+				c.w.WriteString(`, `)
+			}
+			c.w.WriteString(`a[`)
+			int32String(c.w, int32(i+1))
+			c.w.WriteString(`] :: `)
+			c.w.WriteString(ob.Col.Type)
+			c.w.WriteString(` as `)
+			quoted(c.w, ob.Col.Name)
+		}
+		c.w.WriteString(` FROM string_to_array(`)
+		c.renderParam(Param{Name: "cursor", Type: "text"})
+		c.w.WriteString(`, ',') as a) `)
 	}
-	c.w.WriteString(` FROM string_to_array(`)
-	c.md.renderParam(c.w, Param{Name: "cursor", Type: "text"})
-	c.w.WriteString(`, ',') as a) `)
 }
 
 func (c *compilerContext) renderWhere(sel *qcode.Select) {
@@ -660,13 +697,13 @@ func (c *compilerContext) renderOp(schema *sdata.DBSchema, ti sdata.DBTableInfo,
 
 	case qcode.OpEqualsTrue:
 		c.w.WriteString(`((VALUES(true)) = `)
-		c.md.renderParam(c.w, Param{Name: ex.Val, Type: "boolean"})
+		c.renderParam(Param{Name: ex.Val, Type: "boolean"})
 		c.w.WriteString(`)`)
 		return
 
 	case qcode.OpNotEqualsTrue:
 		c.w.WriteString(`((VALUES(true)) != `)
-		c.md.renderParam(c.w, Param{Name: ex.Val, Type: "boolean"})
+		c.renderParam(Param{Name: ex.Val, Type: "boolean"})
 		c.w.WriteString(`)`)
 		return
 
@@ -680,15 +717,21 @@ func (c *compilerContext) renderOp(schema *sdata.DBSchema, ti sdata.DBTableInfo,
 
 	case qcode.OpTsQuery:
 		//fmt.Fprintf(w, `(("%s") @@ websearch_to_tsquery('%s'))`, c.ti.TSVCol, val.Val)
-		c.w.WriteString(`((`)
-		colWithTable(c.w, ti.Name, ti.TSVCol.Name)
-		if ti.Schema.DBVersion() >= 110000 {
-			c.w.WriteString(`) @@ websearch_to_tsquery(`)
-		} else {
-			c.w.WriteString(`) @@ to_tsquery(`)
+
+		switch c.md.ct {
+		case "mysql":
+			//MATCH (name) AGAINST ('phone' IN BOOLEAN MODE);
+		default:
+			c.w.WriteString(`((`)
+			colWithTable(c.w, ti.Name, ti.TSVCol.Name)
+			if ti.Schema.DBVersion() >= 110000 {
+				c.w.WriteString(`) @@ websearch_to_tsquery(`)
+			} else {
+				c.w.WriteString(`) @@ to_tsquery(`)
+			}
+			c.renderParam(Param{Name: ex.Val, Type: "text"})
+			c.w.WriteString(`))`)
 		}
-		c.md.renderParam(c.w, Param{Name: ex.Val, Type: "text"})
-		c.w.WriteString(`))`)
 		return
 	}
 
@@ -785,7 +828,7 @@ func (c *compilerContext) renderVal(ex *qcode.Exp, vars map[string]string) {
 		switch {
 		case ok && strings.HasPrefix(val, "sql:"):
 			c.w.WriteString(`(`)
-			c.md.RenderVar(c.w, val[4:])
+			c.renderVar(val[4:])
 			c.w.WriteString(`)`)
 			if ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn {
 				return
@@ -796,7 +839,7 @@ func (c *compilerContext) renderVal(ex *qcode.Exp, vars map[string]string) {
 
 		case ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn:
 			c.w.WriteString(`(ARRAY(SELECT json_array_elements_text(`)
-			c.md.renderParam(c.w, Param{Name: ex.Val, Type: ex.Col.Type, IsArray: true})
+			c.renderParam(Param{Name: ex.Val, Type: ex.Col.Type, IsArray: true})
 			c.w.WriteString(`))`)
 			c.w.WriteString(` :: `)
 			c.w.WriteString(ex.Col.Type)
@@ -804,7 +847,7 @@ func (c *compilerContext) renderVal(ex *qcode.Exp, vars map[string]string) {
 			return
 
 		default:
-			c.md.renderParam(c.w, Param{Name: ex.Val, Type: ex.Col.Type, IsArray: false})
+			c.renderParam(Param{Name: ex.Val, Type: ex.Col.Type, IsArray: false})
 		}
 
 	case qcode.ValRef:
@@ -814,6 +857,8 @@ func (c *compilerContext) renderVal(ex *qcode.Exp, vars map[string]string) {
 		squoted(c.w, ex.Val)
 	}
 
-	c.w.WriteString(` :: `)
-	c.w.WriteString(ex.Col.Type)
+	if c.md.ct != "mysql" {
+		c.w.WriteString(` :: `)
+		c.w.WriteString(ex.Col.Type)
+	}
 }

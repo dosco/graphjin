@@ -149,7 +149,7 @@ func (gj *GraphJin) newSub(c context.Context, s *sub, query string, vars json.Ra
 	}
 
 	if len(s.q.st.md.Params()) != 0 {
-		s.q.st.sql = renderSubWrap(s.q.st)
+		s.q.st.sql = renderSubWrap(s.q.st, gj.schema.Type())
 	}
 
 	go gj.subController(s)
@@ -369,25 +369,41 @@ func (gj *GraphJin) checkUpdates(s *sub, mv mval, start int) {
 	}
 }
 
-func renderSubWrap(st stmt) string {
+func renderSubWrap(st stmt, ct string) string {
 	var w strings.Builder
 
-	w.WriteString(`WITH "_sg_sub" AS (SELECT `)
-	for i, p := range st.md.Params() {
-		if i != 0 {
-			w.WriteString(`, `)
+	switch ct {
+	case "mysql":
+		w.WriteString(`WITH _sg_sub AS (SELECT * FROM JSON_TABLE(?, '$[*]' COLUMNS(`)
+		for i, p := range st.md.Params() {
+			if i != 0 {
+				w.WriteString(`, `)
+			}
+			w.WriteString(p.Name)
+			w.WriteString(` INT PATH '$[`)
+			w.WriteString(strconv.FormatInt(int64(i), 10))
+			w.WriteString(`]' ERROR ON ERROR`)
 		}
-		w.WriteString(`CAST(x->>`)
-		w.WriteString(strconv.FormatInt(int64(i), 10))
-		w.WriteString(` as `)
-		w.WriteString(p.Type)
-		w.WriteString(`) as `)
-		w.WriteString(p.Name)
+		w.WriteString(`)) AS jt`)
+
+	default:
+		w.WriteString(`WITH _sg_sub AS (SELECT `)
+		for i, p := range st.md.Params() {
+			if i != 0 {
+				w.WriteString(`, `)
+			}
+			w.WriteString(`CAST(x->>`)
+			w.WriteString(strconv.FormatInt(int64(i), 10))
+			w.WriteString(` as `)
+			w.WriteString(p.Type)
+			w.WriteString(`) as `)
+			w.WriteString(p.Name)
+		}
+		w.WriteString(` FROM json_array_elements($1::json) AS x`)
 	}
-	w.WriteString(` FROM json_array_elements($1::json) AS x`)
-	w.WriteString(`) SELECT "_sg_sub_data"."__root" FROM "_sg_sub" LEFT OUTER JOIN LATERAL (`)
+	w.WriteString(`) SELECT _sg_sub_data.__root FROM _sg_sub LEFT OUTER JOIN LATERAL (`)
 	w.WriteString(st.sql)
-	w.WriteString(`) AS "_sg_sub_data" ON ('true')`)
+	w.WriteString(`) AS _sg_sub_data ON true`)
 
 	return w.String()
 }

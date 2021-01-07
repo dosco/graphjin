@@ -135,7 +135,7 @@ func (gj *GraphJin) buildMultiStmt(cq *cquery) error {
 		cq.stmts = append(cq.stmts, stmt{role: role, qc: qc})
 		s := &cq.stmts[len(cq.stmts)-1]
 
-		md = gj.pc.CompileQuery(w, qc, md)
+		gj.pc.CompileQuery(w, qc, &md)
 		s.sql = w.String()
 		s.md = md
 
@@ -161,7 +161,6 @@ func (gj *GraphJin) renderUserQuery(md *psql.Metadata, stmts []stmt) (string, er
 	}
 
 	w := &bytes.Buffer{}
-
 	w.WriteString(`SELECT "_sg_auth_info"."role", (CASE "_sg_auth_info"."role" `)
 
 	for _, s := range stmts {

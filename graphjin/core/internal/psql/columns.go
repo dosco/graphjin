@@ -65,19 +65,19 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 				c.renderUnionColumn(sel, csel)
 
 			default:
-				c.w.WriteString(`"__sj_`)
+				c.w.WriteString(`__sj_`)
 				int32String(c.w, csel.ID)
-				c.w.WriteString(`"."json"`)
+				c.w.WriteString(`.json`)
 				alias(c.w, csel.FieldName)
 			}
 
 			// return the cursor for the this child selector as part of the parents json
 			if csel.Paging.Cursor {
-				c.w.WriteString(`, "__sj_`)
+				c.w.WriteString(`, __sj_`)
 				int32String(c.w, csel.ID)
-				c.w.WriteString(`"."cursor" AS "`)
+				c.w.WriteString(`.cursor AS `)
 				c.w.WriteString(csel.FieldName)
-				c.w.WriteString(`_cursor"`)
+				c.w.WriteString(`_cursor`)
 			}
 		}
 		i++
@@ -135,7 +135,7 @@ func (c *compilerContext) renderFunctionSearchRank(sel *qcode.Select, fn qcode.F
 	} else {
 		c.w.WriteString(`, to_tsquery(`)
 	}
-	c.md.renderParam(c.w, Param{Name: arg.Val, Type: "text"})
+	c.renderParam(Param{Name: arg.Val, Type: "text"})
 	c.w.WriteString(`))`)
 }
 
@@ -149,7 +149,7 @@ func (c *compilerContext) renderFunctionSearchHeadline(sel *qcode.Select, fn qco
 	} else {
 		c.w.WriteString(`, to_tsquery(`)
 	}
-	c.md.renderParam(c.w, Param{Name: arg.Val, Type: "text"})
+	c.renderParam(Param{Name: arg.Val, Type: "text"})
 	c.w.WriteString(`))`)
 }
 
@@ -183,4 +183,76 @@ func (c *compilerContext) renderTypename(sel *qcode.Select) {
 	c.w.WriteString(`(`)
 	squoted(c.w, sel.Table)
 	c.w.WriteString(` :: text) AS "__typename"`)
+}
+
+func (c *compilerContext) renderJSONFields(sel *qcode.Select) {
+	i := 0
+	for _, col := range sel.Cols {
+		if col.Base {
+			continue
+		}
+		if i != 0 {
+			c.w.WriteString(", ")
+		}
+		c.renderJSONField(col.FieldName, sel.ID)
+		i++
+	}
+
+	for _, fn := range sel.Funcs {
+		if i != 0 {
+			c.w.WriteString(", ")
+		}
+		c.renderJSONField(fn.FieldName, sel.ID)
+		i++
+	}
+
+	if sel.Typename {
+		if i != 0 {
+			c.w.WriteString(`, `)
+		}
+		c.renderJSONField("__typename", sel.ID)
+		i++
+	}
+
+	for _, cid := range sel.Children {
+		csel := &c.qc.Selects[cid]
+
+		if i != 0 {
+			c.w.WriteString(", ")
+		}
+
+		//TODO: log what and why this is being skipped
+		if csel.SkipRender != qcode.SkipTypeNone && csel.SkipRender != qcode.SkipTypeRemote {
+			c.renderJSONField(csel.FieldName, sel.ID)
+
+			if sel.Paging.Cursor {
+				c.w.WriteString(", ")
+				c.renderJSONField(sel.FieldName, sel.ID)
+			}
+
+		} else {
+			switch csel.Rel.Type {
+			case sdata.RelRemote:
+				c.renderJSONField(csel.Rel.Right.VTable, sel.ID)
+
+			default:
+				c.renderJSONField(csel.FieldName, sel.ID)
+			}
+
+			// return the cursor for the this child selector as part of the parents json
+			if csel.Paging.Cursor {
+				c.w.WriteString(", ")
+				c.renderJSONField(csel.FieldName+`_cursor`, sel.ID)
+			}
+		}
+		i++
+	}
+}
+
+func (c *compilerContext) renderJSONField(name string, selID int32) {
+	squoted(c.w, name)
+	c.w.WriteString(`, __sr_`)
+	int32String(c.w, selID)
+	c.w.WriteString(`.`)
+	c.w.WriteString(name)
 }

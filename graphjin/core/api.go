@@ -209,6 +209,10 @@ func (gj *GraphJin) GraphQLEx(
 		return res, errors.New("use 'core.Subscribe' for subscriptions")
 	}
 
+	if ct.op == qcode.QTMutation && gj.schema.Type() == "mysql" {
+		return res, errors.New("mysql: mutations not supported")
+	}
+
 	// use the chirino/graphql library for introspection queries
 	// disabled when allow list is enforced
 	if !gj.conf.EnforceAllowList && ct.name == "IntrospectionQuery" {

@@ -16,6 +16,7 @@ type aliasKey struct {
 
 type DBSchema struct {
 	ver int
+	typ string
 	t   map[string]DBTableInfo
 	at  map[aliasKey]string
 	rm  map[string][]DBRel
@@ -36,8 +37,7 @@ type DBTableInfo struct {
 	Blocked    bool
 	Schema     *DBSchema
 
-	colMap   map[string]int
-	colIDMap map[int16]int
+	colMap map[string]int
 }
 
 type RelType int
@@ -74,6 +74,7 @@ type DBRel struct {
 func NewDBSchema(info *DBInfo, aliases map[string][]string) (*DBSchema, error) {
 	schema := &DBSchema{
 		ver: info.Version,
+		typ: info.Type,
 		t:   make(map[string]DBTableInfo),
 		at:  make(map[aliasKey]string),
 		rm:  make(map[string][]DBRel),
@@ -119,7 +120,6 @@ func (s *DBSchema) addTableInfo(
 	t DBTable, cols []DBColumn, aliases map[string][]string) error {
 
 	colmap := make(map[string]int, len(cols))
-	colidmap := make(map[int16]int, len(cols))
 
 	singular := flect.Singularize(t.Key)
 	plural := flect.Pluralize(t.Key)
@@ -133,7 +133,6 @@ func (s *DBSchema) addTableInfo(
 		Blocked:  t.Blocked,
 		Schema:   s,
 		colMap:   colmap,
-		colIDMap: colidmap,
 	}
 
 	for i := range cols {
@@ -149,7 +148,6 @@ func (s *DBSchema) addTableInfo(
 		}
 
 		colmap[c.Key] = i
-		colidmap[c.ID] = i
 	}
 
 	ti.IsSingular = true
@@ -224,10 +222,9 @@ func (s *DBSchema) virtualRels(vts []VirtualTable) error {
 }
 
 func (s *DBSchema) firstDegreeRels(t DBTable, cols []DBColumn) error {
-	ct := t.Key
-	cti, ok := s.t[t.Key]
+	cti, ok := s.t[t.Name]
 	if !ok {
-		return fmt.Errorf("invalid foreign key table '%s'", ct)
+		return fmt.Errorf("invalid foreign key table '%s'", t.Name)
 	}
 
 	for i := range cols {
@@ -237,26 +234,22 @@ func (s *DBSchema) firstDegreeRels(t DBTable, cols []DBColumn) error {
 			continue
 		}
 
-		// Foreign key column name
-		ft := strings.ToLower(c.FKeyTable)
-
-		fti, ok := s.t[ft]
+		fti, ok := s.t[c.FKeyTable]
 		if !ok {
-			return fmt.Errorf("invalid foreign key table '%s'", ft)
+			return fmt.Errorf("invalid foreign key table '%s'", c.FKeyTable)
 		}
 
-		childName := ct
-		pn1 := ft
+		pn1 := c.FKeyTable
 		pn2 := getRelName(c.Name)
 
 		// This is an embedded relationship like when a json/jsonb column
 		// is exposed as a table
-		if c.Name == c.FKeyTable && len(c.FKeyColID) == 0 {
+		if c.Name == c.FKeyTable && c.FKeyCol == "" {
 			rel := DBRel{Type: RelEmbedded}
 			rel.Left.Col = cti.PrimaryCol
 			rel.Right.Col = c
 
-			if err := s.SetRel(pn1, ct, rel); err != nil {
+			if err := s.SetRel(pn1, cti.Name, rel); err != nil {
 				return err
 			}
 			if pn2 != fti.Plural && pn2 != fti.Singular {
@@ -265,17 +258,14 @@ func (s *DBSchema) firstDegreeRels(t DBTable, cols []DBColumn) error {
 			continue
 		}
 
-		if len(c.FKeyColID) == 0 {
+		if c.FKeyCol == "" {
 			continue
 		}
 
-		// Foreign key column id
-		fcid := c.FKeyColID[0]
-
-		fc, ok := fti.getColumnByID(fcid)
+		fc, ok := fti.getColumn(c.FKeyCol)
 		if !ok {
-			return fmt.Errorf("invalid foreign key column id '%d' for table '%s'",
-				fcid, fti.Name)
+			return fmt.Errorf("invalid foreign key column '%s.%s'",
+				c.FKeyTable, c.FKeyCol)
 		}
 
 		rel1 := DBRel{}
@@ -283,9 +273,9 @@ func (s *DBSchema) firstDegreeRels(t DBTable, cols []DBColumn) error {
 		// One-to-many relation between current table and the
 		// table in the foreign key
 		switch {
-		case ct == ft:
+		case cti.Name == c.FKeyTable:
 			rel1.Type = RelRecursive
-			rel1.Right.VTable = "_rcte_" + ct
+			rel1.Right.VTable = "_rcte_" + t.Name
 		case fc.UniqueKey:
 			rel1.Type = RelOneToOne
 		default:
@@ -297,14 +287,14 @@ func (s *DBSchema) firstDegreeRels(t DBTable, cols []DBColumn) error {
 		rel1.Right.Ti = fti
 		rel1.Right.Col = fc
 
-		if err := s.SetRel(childName, pn1, rel1); err != nil {
+		if err := s.SetRel(cti.Name, pn1, rel1); err != nil {
 			return err
 		}
 		if pn2 != fti.Plural && pn2 != fti.Singular {
 			s.addAlias(pn2, cti.Name, fti)
 		}
 
-		if ct == ft {
+		if cti.Name == c.FKeyTable {
 			continue
 		}
 
@@ -323,7 +313,7 @@ func (s *DBSchema) firstDegreeRels(t DBTable, cols []DBColumn) error {
 		rel2.Right.Ti = cti
 		rel2.Right.Col = c
 
-		if err := s.SetRel(pn1, childName, rel2); err != nil {
+		if err := s.SetRel(pn1, cti.Name, rel2); err != nil {
 			return err
 		}
 		if pn2 != fti.Plural && pn2 != fti.Singular {
@@ -347,30 +337,24 @@ func (s *DBSchema) secondDegreeRels(t DBTable, cols []DBColumn) error {
 			continue
 		}
 
-		// Foreign key column name
-		ft := strings.ToLower(c.FKeyTable)
-
-		ti, ok := s.t[ft]
+		fti, ok := s.t[c.FKeyTable]
 		if !ok {
-			return fmt.Errorf("invalid foreign key table '%s'", ft)
+			return fmt.Errorf("invalid foreign key table '%s'", c.FKeyTable)
 		}
 
 		// This is an embedded relationship like when a json/jsonb column
 		// is exposed as a table so skip
-		if c.Name == c.FKeyTable && len(c.FKeyColID) == 0 {
+		if c.Name == c.FKeyTable && c.FKeyCol == "" {
 			continue
 		}
 
-		if len(c.FKeyColID) == 0 {
+		if c.FKeyCol == "" {
 			continue
 		}
 
-		// Foreign key column id
-		fcid := c.FKeyColID[0]
-
-		if _, ok := ti.getColumnByID(fcid); !ok {
-			return fmt.Errorf("invalid foreign key column id '%d' for table '%s'",
-				fcid, ti.Name)
+		if _, ok := fti.getColumn(c.FKeyCol); !ok {
+			return fmt.Errorf("invalid foreign key column '%s.%s'",
+				c.FKeyTable, c.FKeyCol)
 		}
 
 		jcols = append(jcols, c)
@@ -417,10 +401,10 @@ func (s *DBSchema) updateSchemaOTMT(
 		return fmt.Errorf("invalid foreign key table '%s'", t1)
 	}
 
-	fc1, ok := fti1.getColumnByID(col1.FKeyColID[0])
+	fc1, ok := fti1.getColumn(col1.FKeyCol)
 	if !ok {
-		return fmt.Errorf("invalid foreign key column id %d for table '%s'",
-			col1.FKeyColID[0], t1)
+		return fmt.Errorf("invalid foreign key column '%s.%s'",
+			t1, col1.FKeyCol)
 	}
 
 	fti2, ok := s.t[t2]
@@ -428,10 +412,10 @@ func (s *DBSchema) updateSchemaOTMT(
 		return fmt.Errorf("invalid foreign key table '%s'", t2)
 	}
 
-	fc2, ok := fti2.getColumnByID(col2.FKeyColID[0])
+	fc2, ok := fti2.getColumn(col2.FKeyCol)
 	if !ok {
-		return fmt.Errorf("invalid foreign key column id %d for table '%s'",
-			col2.FKeyColID[0], t2)
+		return fmt.Errorf("invalid foreign key column id '%s.%s'",
+			t2, col2.FKeyCol)
 	}
 
 	// One-to-many-through relation between 1nd foreign key table and the
@@ -596,22 +580,6 @@ func (ti *DBTableInfo) GetColumn(name string) (DBColumn, error) {
 	return c, fmt.Errorf("column: '%s.%s' not found", ti.Name, name)
 }
 
-func (ti *DBTableInfo) getColumnByID(id int16) (DBColumn, bool) {
-	var c DBColumn
-	if i, ok := ti.colIDMap[id]; ok {
-		return ti.Columns[i], true
-	}
-	return c, false
-}
-
-func (ti *DBTableInfo) GetColumnByID(id int16) (DBColumn, error) {
-	c, ok := ti.getColumnByID(id)
-	if ok {
-		return c, nil
-	}
-	return c, fmt.Errorf("column: '%s.%d'  not found", ti.Name, id)
-}
-
 func (ti *DBTableInfo) GetColumnB(name string) (DBColumn, error) {
 	c, err := ti.GetColumn(name)
 	if err != nil {
@@ -647,6 +615,10 @@ func getRelName(colName string) string {
 	}
 
 	return colName
+}
+
+func (s *DBSchema) Type() string {
+	return s.typ
 }
 
 func (s *DBSchema) DBVersion() int {

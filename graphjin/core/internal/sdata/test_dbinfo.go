@@ -45,16 +45,16 @@ func GetTestDBInfo() *DBInfo {
 			DBColumn{ID: 2, Name: "name", Type: "character varying", NotNull: false, PrimaryKey: false, UniqueKey: false},
 			DBColumn{ID: 3, Name: "description", Type: "text", NotNull: false, PrimaryKey: false, UniqueKey: false},
 			DBColumn{ID: 4, Name: "price", Type: "numeric(7,2)", NotNull: false, PrimaryKey: false, UniqueKey: false},
-			DBColumn{ID: 5, Name: "user_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "users", FKeyColID: []int16{1}},
+			DBColumn{ID: 5, Name: "user_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "users", FKeyCol: "id"},
 			DBColumn{ID: 6, Name: "created_at", Type: "timestamp without time zone", NotNull: true, PrimaryKey: false, UniqueKey: false},
 			DBColumn{ID: 7, Name: "updated_at", Type: "timestamp without time zone", NotNull: true, PrimaryKey: false, UniqueKey: false},
 			DBColumn{ID: 8, Name: "tsv", Type: "tsvector", NotNull: false, PrimaryKey: false, UniqueKey: false},
-			DBColumn{ID: 9, Name: "tags", Type: "text[]", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "tags", FKeyColID: []int16{3}, Array: true},
-			DBColumn{ID: 9, Name: "tag_count", Type: "json", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "tag_count", FKeyColID: []int16{}}},
+			DBColumn{ID: 9, Name: "tags", Type: "text[]", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "tags", FKeyCol: "slug", Array: true},
+			DBColumn{ID: 9, Name: "tag_count", Type: "json", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "tag_count", FKeyCol: ""}},
 		[]DBColumn{
 			DBColumn{ID: 1, Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
-			DBColumn{ID: 2, Name: "customer_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "customers", FKeyColID: []int16{1}},
-			DBColumn{ID: 3, Name: "product_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "products", FKeyColID: []int16{1}},
+			DBColumn{ID: 2, Name: "customer_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "customers", FKeyCol: "id"},
+			DBColumn{ID: 3, Name: "product_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "products", FKeyCol: "id"},
 			DBColumn{ID: 4, Name: "sale_type", Type: "character varying", NotNull: false, PrimaryKey: false, UniqueKey: false},
 			DBColumn{ID: 5, Name: "quantity", Type: "integer", NotNull: false, PrimaryKey: false, UniqueKey: false},
 			DBColumn{ID: 6, Name: "due_date", Type: "timestamp without time zone", NotNull: false, PrimaryKey: false, UniqueKey: false},
@@ -64,7 +64,7 @@ func GetTestDBInfo() *DBInfo {
 			DBColumn{ID: 2, Name: "name", Type: "text", NotNull: false, PrimaryKey: false, UniqueKey: false},
 			DBColumn{ID: 3, Name: "slug", Type: "text", NotNull: false, PrimaryKey: false, UniqueKey: false}},
 		[]DBColumn{
-			DBColumn{ID: 1, Name: "tag_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "tags", FKeyColID: []int16{1}},
+			DBColumn{ID: 1, Name: "tag_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "tags", FKeyCol: "id"},
 			DBColumn{ID: 2, Name: "count", Type: "int", NotNull: false, PrimaryKey: false, UniqueKey: false}},
 		[]DBColumn{
 			DBColumn{ID: 1, Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
@@ -73,9 +73,9 @@ func GetTestDBInfo() *DBInfo {
 			DBColumn{ID: 2, Name: "subject_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false}},
 		[]DBColumn{
 			DBColumn{ID: 1, Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
-			DBColumn{ID: 2, Name: "product_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "products", FKeyColID: []int16{1}},
-			DBColumn{ID: 2, Name: "commenter_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "users", FKeyColID: []int16{1}},
-			DBColumn{ID: 2, Name: "reply_to_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeyTable: "comments", FKeyColID: []int16{1}},
+			DBColumn{ID: 2, Name: "product_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "products", FKeyCol: "id"},
+			DBColumn{ID: 2, Name: "commenter_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "users", FKeyCol: "id"},
+			DBColumn{ID: 2, Name: "reply_to_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "comments", FKeyCol: "id"},
 			DBColumn{ID: 3, Name: "body", Type: "character varying", NotNull: false, PrimaryKey: false, UniqueKey: false}},
 	}
 

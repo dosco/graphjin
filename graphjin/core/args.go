@@ -88,9 +88,11 @@ func (gj *GraphJin) argList(c context.Context, md psql.Metadata, vars []byte, rc
 				}
 				vl[i] = parseVarVal(v)
 
-			} else if v, ok := rc.Vars[p.Name]; ok {
-				if fn, ok := v.(func() string); ok {
-					vl[i] = fn()
+			} else if rc != nil {
+				if v, ok := rc.Vars[p.Name]; ok {
+					if fn, ok := v.(func() string); ok {
+						vl[i] = fn()
+					}
 				}
 
 			} else {
