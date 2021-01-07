@@ -840,6 +840,9 @@ func (co *Compiler) compileArgID(sel *Select, arg *graph.Arg) error {
 }
 
 func (co *Compiler) compileArgSearch(sel *Select, arg *graph.Arg) error {
+	if co.s.Type() == "mysql" {
+		return fmt.Errorf("mysql: search not supported")
+	}
 	if sel.Ti.TSVCol.Name == "" {
 		return fmt.Errorf("no tsv column defined for %s", sel.Table)
 	}

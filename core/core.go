@@ -63,25 +63,18 @@ type qres struct {
 
 func (gj *GraphJin) initSchema() error {
 	var err error
-	var schema string
-
-	if gj.conf.DBSchema == "" {
-		schema = "public"
-	} else {
-		schema = gj.conf.DBSchema
-	}
 
 	// If gj.di is not null then it's probably set
 	// for tests
 	if gj.dbinfo == nil {
-		gj.dbinfo, err = sdata.GetDBInfo(gj.db, schema, gj.conf.Blocklist)
+		gj.dbinfo, err = sdata.GetDBInfo(gj.db, gj.conf.DBType, gj.conf.Blocklist)
 		if err != nil {
 			return err
 		}
 	}
 
 	if len(gj.dbinfo.Tables) == 0 {
-		return fmt.Errorf("no tables found in database (schema: %s)", schema)
+		return fmt.Errorf("no tables found in database")
 	}
 
 	if err = addTables(gj.conf, gj.dbinfo); err != nil {

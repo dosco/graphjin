@@ -55,6 +55,11 @@ func initConf(servConfig *ServConfig) (*Config, error) {
 		c.DB.Schema = "public"
 	}
 
+	// copy over db_type from database.type
+	if c.DBType == "" {
+		c.DBType = c.DB.Type
+	}
+
 	// Auths: validate and sanitize
 	am := make(map[string]struct{})
 
@@ -113,9 +118,57 @@ func initConf(servConfig *ServConfig) (*Config, error) {
 	return c, nil
 }
 
+type dbConf struct {
+	driverName string
+	connString string
+}
+
 func initDB(servConfig *ServConfig, useDB, useTelemetry bool) (*sql.DB, error) {
 	var db *sql.DB
+	var dc *dbConf
 	var err error
+
+	switch servConfig.conf.DBType {
+	case "mysql":
+		dc, err = initMysql(servConfig, useDB, useTelemetry)
+	default:
+		dc, err = initPostgres(servConfig, useDB, useTelemetry)
+	}
+
+	if useTelemetry && servConfig.conf.telemetryEnabled() {
+		dc.driverName, err = initTelemetry(servConfig, db, dc.driverName)
+		if err != nil {
+			return nil, err
+		}
+
+		var interval time.Duration
+
+		if servConfig.conf.Telemetry.Interval != nil {
+			interval = *servConfig.conf.Telemetry.Interval
+		} else {
+			interval = 5 * time.Second
+		}
+
+		defer ocsql.RecordStats(db, interval)()
+	}
+
+	for i := 1; i < 10; i++ {
+		db, err = sql.Open(dc.driverName, dc.connString)
+		if err != nil {
+			continue
+		}
+
+		time.Sleep(time.Duration(i*100) * time.Millisecond)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("unable to open db connection: %v", err)
+	}
+
+	return db, nil
+}
+
+func initPostgres(servConfig *ServConfig, useDB, useTelemetry bool) (*dbConf, error) {
 	c := servConfig.conf
 
 	config, _ := pgx.ParseConfig("")
@@ -208,57 +261,42 @@ func initDB(servConfig *ServConfig, useDB, useTelemetry bool) (*sql.DB, error) {
 	// 	config.MaxConns = conf.DB.PoolSize
 	// }
 
-	connString := stdlib.RegisterConnConfig(config)
-	driverName := "pgx"
-	// if db = stdlib.OpenDB(*config); db == nil {
-	// 	return errors.New("failed to open db")
-	// }
+	return &dbConf{"pgx", stdlib.RegisterConnConfig(config)}, nil
+}
 
-	if useTelemetry && servConfig.conf.telemetryEnabled() {
-		opts := ocsql.TraceOptions{
-			AllowRoot:    true,
-			Ping:         true,
-			RowsNext:     true,
-			RowsClose:    true,
-			RowsAffected: true,
-			LastInsertID: true,
-			Query:        servConfig.conf.Telemetry.Tracing.IncludeQuery,
-			QueryParams:  servConfig.conf.Telemetry.Tracing.IncludeParams,
-		}
-		opt := ocsql.WithOptions(opts)
-		name := ocsql.WithInstanceName(servConfig.conf.AppName)
+func initMysql(servConfig *ServConfig, useDB, useTelemetry bool) (*dbConf, error) {
+	c := servConfig.conf
+	connString := fmt.Sprintf("%s:%s@tcp(%s:%d)", c.DB.User, c.DB.Password, c.DB.Host, c.DB.Port)
 
-		driverName, err = ocsql.Register(driverName, opt, name)
-		if err != nil {
-			return nil, fmt.Errorf("unable to register ocsql driver: %v", err)
-		}
-		ocsql.RegisterAllViews()
-
-		var interval time.Duration
-
-		if servConfig.conf.Telemetry.Interval != nil {
-			interval = *servConfig.conf.Telemetry.Interval
-		} else {
-			interval = 5 * time.Second
-		}
-
-		defer ocsql.RecordStats(db, interval)()
-
-		servConfig.log.Println("INF OpenCensus telemetry enabled")
+	if useDB {
+		connString += "/" + c.DB.DBName
 	}
 
-	for i := 1; i < 10; i++ {
-		db, err = sql.Open(driverName, connString)
-		if err != nil {
-			continue
-		}
+	return &dbConf{"mysql", connString}, nil
+}
 
-		time.Sleep(time.Duration(i*100) * time.Millisecond)
+func initTelemetry(servConfig *ServConfig, db *sql.DB, driverName string) (string, error) {
+	var err error
+
+	opts := ocsql.TraceOptions{
+		AllowRoot:    true,
+		Ping:         true,
+		RowsNext:     true,
+		RowsClose:    true,
+		RowsAffected: true,
+		LastInsertID: true,
+		Query:        servConfig.conf.Telemetry.Tracing.IncludeQuery,
+		QueryParams:  servConfig.conf.Telemetry.Tracing.IncludeParams,
 	}
+	opt := ocsql.WithOptions(opts)
+	name := ocsql.WithInstanceName(servConfig.conf.AppName)
 
+	driverName, err = ocsql.Register(driverName, opt, name)
 	if err != nil {
-		return nil, fmt.Errorf("unable to open db connection: %v", err)
+		return "", fmt.Errorf("unable to register ocsql driver: %v", err)
 	}
+	ocsql.RegisterAllViews()
 
-	return db, nil
+	servConfig.log.Println("INF OpenCensus telemetry enabled")
+	return driverName, nil
 }
