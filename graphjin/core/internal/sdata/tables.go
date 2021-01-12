@@ -184,7 +184,7 @@ func GetColumns(db *sql.DB, dbtype string, tables []string) (
 			return nil, err
 		}
 
-		v, _ := cmap[(c.Table + c.Name)]
+		v := cmap[(c.Table + c.Name)]
 		if v.Key == "" {
 			v = c
 			v.Key = strings.ToLower(c.Name)
@@ -301,17 +301,17 @@ func newColMap(tables []DBTable, columns [][]DBColumn) map[string]*DBColumn {
 	return cm
 }
 
-func toList(s []string) string {
-	var sb strings.Builder
-	for i := range s {
-		if i != 0 {
-			sb.WriteString(",'" + s[i] + "'")
-		} else {
-			sb.WriteString("'" + s[i] + "'")
-		}
-	}
-	return sb.String()
-}
+// func toList(s []string) string {
+// 	var sb strings.Builder
+// 	for i := range s {
+// 		if i != 0 {
+// 			sb.WriteString(",'" + s[i] + "'")
+// 		} else {
+// 			sb.WriteString("'" + s[i] + "'")
+// 		}
+// 	}
+// 	return sb.String()
+// }
 
 func isInList(val string, s []string) bool {
 	for _, v := range s {

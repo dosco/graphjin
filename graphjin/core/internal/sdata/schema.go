@@ -212,7 +212,7 @@ func (s *DBSchema) virtualRels(vts []VirtualTable) error {
 			rel.Right.Ti = t
 			rel.Right.Col = rcol
 
-			if err := s.SetRel(vt.Name, t.Name, rel); err != nil {
+			if err := s.SetRel(vt.Name, t.Name, rel, false); err != nil {
 				return err
 			}
 		}
@@ -249,11 +249,8 @@ func (s *DBSchema) firstDegreeRels(t DBTable, cols []DBColumn) error {
 			rel.Left.Col = cti.PrimaryCol
 			rel.Right.Col = c
 
-			if err := s.SetRel(pn1, cti.Name, rel); err != nil {
+			if err := s.SetRel(pn2, cti.Name, rel, true); err != nil {
 				return err
-			}
-			if pn2 != fti.Plural && pn2 != fti.Singular {
-				s.addAlias(pn2, cti.Name, fti)
 			}
 			continue
 		}
@@ -287,11 +284,8 @@ func (s *DBSchema) firstDegreeRels(t DBTable, cols []DBColumn) error {
 		rel1.Right.Ti = fti
 		rel1.Right.Col = fc
 
-		if err := s.SetRel(cti.Name, pn1, rel1); err != nil {
+		if err := s.SetRel(cti.Name, pn1, rel1, false); err != nil {
 			return err
-		}
-		if pn2 != fti.Plural && pn2 != fti.Singular {
-			s.addAlias(pn2, cti.Name, fti)
 		}
 
 		if cti.Name == c.FKeyTable {
@@ -313,11 +307,11 @@ func (s *DBSchema) firstDegreeRels(t DBTable, cols []DBColumn) error {
 		rel2.Right.Ti = cti
 		rel2.Right.Col = c
 
-		if err := s.SetRel(pn1, cti.Name, rel2); err != nil {
+		if err := s.SetRel(pn1, cti.Name, rel2, false); err != nil {
 			return err
 		}
-		if pn2 != fti.Plural && pn2 != fti.Singular {
-			s.addAlias(pn2, cti.Name, fti)
+		if err := s.SetRel(pn2, cti.Name, rel2, true); err != nil {
+			return err
 		}
 	}
 
@@ -386,36 +380,36 @@ func (s *DBSchema) secondDegreeRels(t DBTable, cols []DBColumn) error {
 func (s *DBSchema) updateSchemaOTMT(
 	ti DBTableInfo, col1, col2 DBColumn) error {
 
-	t1 := strings.ToLower(col1.FKeyTable)
-	t2 := strings.ToLower(col2.FKeyTable)
+	ft1 := strings.ToLower(col1.FKeyTable)
+	ft2 := strings.ToLower(col2.FKeyTable)
 
-	if t1 == t2 {
+	if ft1 == ft2 {
 		return nil
 	}
 
-	childName := getRelName(col1.Name)
-	pn1 := t2
+	cn1 := getRelName(col1.Name)
+	cn2 := getRelName(col2.Name)
 
-	fti1, ok := s.t[t1]
+	fti1, ok := s.t[ft1]
 	if !ok {
-		return fmt.Errorf("invalid foreign key table '%s'", t1)
+		return fmt.Errorf("invalid foreign key table '%s'", ft1)
 	}
 
 	fc1, ok := fti1.getColumn(col1.FKeyCol)
 	if !ok {
 		return fmt.Errorf("invalid foreign key column '%s.%s'",
-			t1, col1.FKeyCol)
+			ft1, col1.FKeyCol)
 	}
 
-	fti2, ok := s.t[t2]
+	fti2, ok := s.t[ft2]
 	if !ok {
-		return fmt.Errorf("invalid foreign key table '%s'", t2)
+		return fmt.Errorf("invalid foreign key table '%s'", ft2)
 	}
 
 	fc2, ok := fti2.getColumn(col2.FKeyCol)
 	if !ok {
 		return fmt.Errorf("invalid foreign key column id '%s.%s'",
-			t2, col2.FKeyCol)
+			ft2, col2.FKeyCol)
 	}
 
 	// One-to-many-through relation between 1nd foreign key table and the
@@ -424,10 +418,15 @@ func (s *DBSchema) updateSchemaOTMT(
 	rel1.Through.ColL = col1
 	rel1.Through.ColR = col2
 
+	rel1.Left.Ti = fti1
 	rel1.Left.Col = fc1
+	rel1.Right.Ti = fti2
 	rel1.Right.Col = fc2
 
-	if err := s.SetRel(childName, pn1, rel1); err != nil {
+	if err := s.SetRel(ft1, ft2, rel1, false); err != nil {
+		return err
+	}
+	if err := s.SetRel(cn1, cn2, rel1, true); err != nil {
 		return err
 	}
 
@@ -437,27 +436,36 @@ func (s *DBSchema) updateSchemaOTMT(
 	rel2.Through.ColL = col2
 	rel2.Through.ColR = col1
 
+	rel2.Left.Ti = fti2
 	rel2.Left.Col = fc2
+	rel2.Right.Ti = fti1
 	rel2.Right.Col = fc1
 
-	if err := s.SetRel(pn1, childName, rel2); err != nil {
+	if err := s.SetRel(ft2, ft1, rel2, false); err != nil {
+		return err
+	}
+	if err := s.SetRel(cn2, cn1, rel2, true); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (s *DBSchema) addAlias(name, parent string, ti DBTableInfo) {
-	ns := strings.ToLower(flect.Singularize(name))
-	np := strings.ToLower(flect.Pluralize(name))
+// func (s *DBSchema) addAlias(name, parent string, ti DBTableInfo) {
+// 	if name == ti.Plural || name == ti.Singular {
+// 		return
+// 	}
 
-	if ns != np {
-		s.at[aliasKey{ns, parent}] = ti.Singular
-		s.at[aliasKey{np, parent}] = ti.Plural
-	} else {
-		s.at[aliasKey{np, parent}] = ti.Plural
-	}
-}
+// 	ns := strings.ToLower(flect.Singularize(name))
+// 	np := strings.ToLower(flect.Pluralize(name))
+
+// 	if ns != np {
+// 		s.at[aliasKey{ns, parent}] = ti.Singular
+// 		s.at[aliasKey{np, parent}] = ti.Plural
+// 	} else {
+// 		s.at[aliasKey{np, parent}] = ti.Plural
+// 	}
+// }
 
 func (s *DBSchema) GetTableNames() []string {
 	var names []string
@@ -497,15 +505,14 @@ func (s *DBSchema) getTableInfo(name, parent string, blocking bool) (DBTableInfo
 			t, ok := s.t[at]
 			if ok {
 				if blocking && t.Blocked {
-					return t, fmt.Errorf("table: '%s' (%s, %s) blocked", t.Name, name, parent)
+					return t, fmt.Errorf("table: '%s' blocked (%s, %s)", t.Name, name, parent)
 				}
 				t.IsAlias = true
 				return t, nil
 			}
 		}
 	}
-
-	return t, fmt.Errorf("table: '%s' not found", name)
+	return t, fmt.Errorf("table: '%s' not found (%s)", name, parent)
 }
 
 func (s *DBSchema) GetTableInfo(name, parent string) (DBTableInfo, error) {
@@ -517,7 +524,7 @@ func (s *DBSchema) GetTableInfoB(name, parent string) (DBTableInfo, error) {
 
 }
 
-func (s *DBSchema) SetRel(child, parent string, rel DBRel) error {
+func (s *DBSchema) SetRel(child, parent string, rel DBRel, alias bool) error {
 	// if ok, err := s.relExists(child, parent); ok {
 	// 	return nil
 	// } else if err != nil {
@@ -532,9 +539,21 @@ func (s *DBSchema) SetRel(child, parent string, rel DBRel) error {
 
 	s.rm[(sc + sp)] = append(s.rm[(sc+sp)], rel)
 	s.rm[(sc + pp)] = append(s.rm[(sc+pp)], rel)
-
 	s.rm[(pc + sp)] = append(s.rm[(pc+sp)], rel)
 	s.rm[(pc + pp)] = append(s.rm[(pc+pp)], rel)
+
+	// Todo: Maybe a graph ds would be better
+	// s.rm[(sp + sc)] = append(s.rm[(sp+sc)], rel)
+	// s.rm[(pp + sc)] = append(s.rm[(pp+sc)], rel)
+	// s.rm[(sp + pc)] = append(s.rm[(sp+pc)], rel)
+	// s.rm[(pp + pc)] = append(s.rm[(pp+pc)], rel)
+
+	if alias && (sc != rel.Left.Ti.Singular || pc != rel.Left.Ti.Plural) {
+		s.at[aliasKey{sc, sp}] = rel.Left.Ti.Singular
+		s.at[aliasKey{sc, pp}] = rel.Left.Ti.Singular
+		s.at[aliasKey{pc, sp}] = rel.Left.Ti.Plural
+		s.at[aliasKey{pc, pp}] = rel.Left.Ti.Plural
+	}
 
 	return nil
 }

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/dosco/graphjin/jsn"
+	"github.com/dosco/graphjin/internal/jsn"
 )
 
 // nolint: errcheck

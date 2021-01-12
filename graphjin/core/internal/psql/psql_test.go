@@ -43,7 +43,7 @@ func TestMain(m *testing.M) {
 	remoteVal.Left.Col = t.PrimaryCol
 	remoteVal.Right.VTable = fmt.Sprintf("__%s_%s", t.Name, t.PrimaryCol.Name)
 
-	if err := schema.SetRel("payments", "customers", remoteVal); err != nil {
+	if err := schema.SetRel("payments", "customers", remoteVal, true); err != nil {
 		log.Fatal(err)
 	}
 

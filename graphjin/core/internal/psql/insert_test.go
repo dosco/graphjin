@@ -319,5 +319,4 @@ func TestCompileInsert(t *testing.T) {
 	t.Run("nestedInsertOneToOneWithConnect", nestedInsertOneToOneWithConnect)
 	t.Run("nestedInsertOneToOneWithConnectArray", nestedInsertOneToOneWithConnectArray)
 	t.Run("nestedInsertRecursive", nestedInsertRecursive)
-
 }

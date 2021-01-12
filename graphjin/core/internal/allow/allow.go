@@ -13,7 +13,7 @@ import (
 	"text/scanner"
 
 	"github.com/chirino/graphql/schema"
-	"github.com/dosco/graphjin/jsn"
+	"github.com/dosco/graphjin/internal/jsn"
 )
 
 const (

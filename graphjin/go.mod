@@ -16,6 +16,7 @@ require (
 	github.com/aws/aws-sdk-go v1.34.30 // indirect
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
 	github.com/brianvoe/gofakeit/v5 v5.9.3
+	github.com/brianvoe/gofakeit/v6 v6.0.0
 	github.com/census-instrumentation/opencensus-proto v0.3.0 // indirect
 	github.com/chirino/graphql v0.0.0-20200723175208-cec7bf430a98
 	github.com/daaku/go.zipexe v1.0.1 // indirect

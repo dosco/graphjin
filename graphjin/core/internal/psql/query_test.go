@@ -417,6 +417,7 @@ func withFragment3(t *testing.T) {
 	
 	fragment userFields2 on user {
 		full_name
+		...userFields1
 	}
 
 	query {
@@ -424,7 +425,6 @@ func withFragment3(t *testing.T) {
 			...userFields2
 	
 			avatar
-			...userFields1
 		}
 	}`
 

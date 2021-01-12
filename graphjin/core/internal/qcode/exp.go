@@ -279,9 +279,9 @@ func setWhereColName(ti sdata.DBTableInfo, ex *Exp, node *graph.Node) error {
 		prev := ti.Name
 		for i := 0; i < len(list)-1; i++ {
 			curr := list[i]
-			if at, ok := ti.Schema.GetAliasTable(list[i], prev); ok {
-				curr = at
-			}
+			// if at, ok := ti.Schema.GetAliasTable(list[i], prev); ok {
+			// 	curr = at
+			// }
 			if rel, err := ti.Schema.GetRel(curr, prev, ""); err == nil {
 				ex.Rels = append(ex.Rels, rel)
 				prev = curr

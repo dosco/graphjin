@@ -65,7 +65,7 @@ func (gj *GraphJin) initRemote(rc ResolverConfig) error {
 	val.Left.Col = col
 	val.Right.VTable = idk
 
-	if err := gj.schema.SetRel(rc.Name, rc.Table, val); err != nil {
+	if err := gj.schema.SetRel(rc.Name, rc.Table, val, false); err != nil {
 		return err
 	}
 
