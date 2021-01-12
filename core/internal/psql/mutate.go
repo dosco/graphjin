@@ -77,6 +77,7 @@ func (c *compilerContext) renderInsertUpdateColumns(m qcode.Mutate, values bool)
 		i++
 
 		if values {
+			// v will be a blank strings unless the value is from a preset
 			v := col.Value
 
 			if len(v) > 1 && v[0] == '$' {

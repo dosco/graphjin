@@ -6,7 +6,7 @@ import (
 
 	"github.com/dosco/graphjin/core/internal/crypto"
 	"github.com/dosco/graphjin/core/internal/qcode"
-	"github.com/dosco/graphjin/jsn"
+	"github.com/dosco/graphjin/internal/jsn"
 )
 
 type cursors struct {

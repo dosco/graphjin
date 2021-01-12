@@ -393,6 +393,8 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 			}
 		}
 
+		co.setLimit(tr, qc, sel)
+
 		if err := co.compileArgs(qc, sel, field.Args, role); err != nil {
 			return err
 		}
@@ -419,8 +421,6 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 				co.addSeekPredicate(sel)
 			}
 		}
-
-		co.setLimit(tr, qc, sel)
 
 		if err := co.validateSelect(sel); err != nil {
 			return err
@@ -482,9 +482,9 @@ func (co *Compiler) addRelInfo(field *graph.Field, qc *QCode, sel *Select) error
 		return nil
 	}
 
-	if alias, ok := co.s.GetAliasTable(child, parent); ok {
-		child = alias
-	}
+	// if alias, ok := co.s.GetAliasTable(child, parent); ok {
+	// 	child = alias
+	// }
 
 	if parent != "" {
 		if sel.Rel, err = co.s.GetRel(child, parent, through); err != nil {
@@ -501,6 +501,10 @@ func (co *Compiler) addRelInfo(field *graph.Field, qc *QCode, sel *Select) error
 		qc.Remotes++
 		return nil
 	}
+
+	// if alias, ok := co.s.GetAliasTable(child, parent); ok && alias != "" {
+	// 	child = alias
+	// }
 
 	if sel.Ti, err = co.s.GetTableInfoB(child, parent); err != nil {
 		return err

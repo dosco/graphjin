@@ -110,7 +110,7 @@ func (gj *GraphJin) initConfig() error {
 		if !gj.abacEnabled {
 			gj.log.Printf("WRN attribute based access control disabled: no custom roles (with 'match' defined)")
 		}
-	} else {
+	} else if len(gj.roles) > 2 {
 		gj.log.Printf("INF attribute based access control disabled: roles_query not set")
 	}
 
@@ -164,6 +164,9 @@ func addTables(c *Config, di *sdata.DBInfo) error {
 
 func addJsonTable(di *sdata.DBInfo, cols []Column, t Table) error {
 	// This is for jsonb columns that want to be tables.
+	if t.Table == "" {
+		return fmt.Errorf("json table: set the 'table' for column '%s'", t.Name)
+	}
 	bc, err := di.GetColumn(t.Table, t.Name)
 	if err != nil {
 		return fmt.Errorf("json table: %w", err)

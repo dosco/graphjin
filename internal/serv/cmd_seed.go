@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/brianvoe/gofakeit/v5"
+	"github.com/brianvoe/gofakeit/v6"
 	"github.com/dop251/goja"
 	"github.com/dosco/graphjin/core"
 	"github.com/gosimple/slug"

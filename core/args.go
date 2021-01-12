@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/dosco/graphjin/core/internal/psql"
-	"github.com/dosco/graphjin/jsn"
+	"github.com/dosco/graphjin/internal/jsn"
 )
 
 // argList function is used to create a list of arguments to pass

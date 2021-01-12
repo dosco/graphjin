@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"github.com/dosco/graphjin/core/internal/qcode"
-	"github.com/dosco/graphjin/jsn"
+	"github.com/dosco/graphjin/internal/jsn"
 )
 
 func (c *scontext) execRemoteJoin(res qres) (qres, error) {

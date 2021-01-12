@@ -1,74 +1,136 @@
-package psql_test
+package core_test
 
+/*
 import (
+	"context"
 	"encoding/json"
-	"testing"
+	"fmt"
+
+	"github.com/dosco/graphjin/core"
 )
 
-func simpleInsert(t *testing.T) {
+func Example_insert() {
 	gql := `mutation {
 		user(insert: $data) {
 			id
+			email
 		}
 	}`
 
-	vars := map[string]json.RawMessage{
-		"data": json.RawMessage(`{"email": "reannagreenholt@orn.com", "full_name": "Flo Barton"}`),
-	}
-
-	compileGQLToPSQL(t, gql, vars, "user")
-}
-
-func singleInsert(t *testing.T) {
-	gql := `mutation {
-		product(id: $id, insert: $insert) {
-			id
-			name
+	vars := json.RawMessage(`{
+		"data": {
+			"id": 1001,
+			"email": "user1001@test.com",
+			"full_name": "User 1001",
+			"stripe_id": "payment_id_1001",
+			"category_counts": [{"category_id": 1, "count": 400},{"category_id": 2, "count": 600}]
 		}
-	}`
+	}`)
 
-	vars := map[string]json.RawMessage{
-		"insert": json.RawMessage(` { "name": "my_name", "price": 6.95, "description": "my_desc", "user_id": 5 }`),
+	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
 	}
 
-	compileGQLToPSQL(t, gql, vars, "anon")
-}
-
-func bulkInsert(t *testing.T) {
-	gql := `mutation {
-		product(name: "test", id: $id, insert: $insert) {
-			id
-			name
-		}
-	}`
-
-	vars := map[string]json.RawMessage{
-		"insert": json.RawMessage(` [{ "name": "my_name", "description": "my_desc"  }]`),
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
+	res, err := gj.GraphQL(ctx, gql, vars)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
 	}
-
-	compileGQLToPSQL(t, gql, vars, "anon")
+	// Output: {"user": {"id": 1001, "email": "user1001@test.com"}}
 }
 
-func simpleInsertWithPresets(t *testing.T) {
+func Example_insertWithPresets() {
 	gql := `mutation {
 		product(insert: $data) {
 			id
+			name
+			user {
+				id
+				email
+			}
 		}
 	}`
 
-	vars := map[string]json.RawMessage{
-		"data": json.RawMessage(`{"name": "Tomato", "price": 5.76}`),
+	vars := json.RawMessage(`{
+		"data": {
+			"id": 2001,
+			"name": "Product 2001",
+			"description": "Description for product 2001",
+			"price": 2011.50,
+			"tags": ["Tag 1", "Tag 2"],
+			"category_ids": [1, 2, 3, 4, 5]
+		}
+	}`)
+
+	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf.AddRoleTable("user", "products", core.Insert{
+		Presets: map[string]string{"owner_id": "$user_id"},
+	})
+
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
 	}
 
-	compileGQLToPSQL(t, gql, vars, "user")
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
+	res, err := gj.GraphQL(ctx, gql, vars)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+	// Output: {"product": {"id": 2001, "name": "Product 2001", "user": {"id": 3, "email": "user3@test.com"}}}
 }
 
-func nestedInsertManyToMany(t *testing.T) {
+func Example_bulkInsert() {
+	gql := `mutation {
+		users(insert: $data) {
+			id
+			email
+		}
+	}`
+
+	vars := json.RawMessage(`{
+		"data": [{
+			"id": 1002
+			"email": "user1002@test.com",
+			"full_name": "User 1002",
+			"stripe_id": "payment_id_1002",
+			"category_counts": [{"category_id": 1, "count": 400},{"category_id": 2, "count": 600}]
+		},
+		{
+			"id": 1003,
+			"email": "user1003@test.com",
+			"full_name": "User 1003",
+			"stripe_id": "payment_id_1003",
+			"category_counts": [{"category_id": 2, "count": 400},{"category_id": 3, "count": 600}]
+		}]
+	}`)
+
+	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
+	res, err := gj.GraphQL(ctx, gql, vars)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+	// Output: {"users": [{"id": 1002, "email": "user1002@test.com"}, {"id": 1003, "email": "user1003@test.com"}]}
+}
+
+func Example_insertIntoMultipleRelatedTables1() {
 	gql := `mutation {
 		purchase(insert: $data) {
-			sale_type
 			quantity
-			due_date
 			customer {
 				id
 				full_name
@@ -82,24 +144,43 @@ func nestedInsertManyToMany(t *testing.T) {
 		}
 	}`
 
-	vars := map[string]json.RawMessage{
-		"data": json.RawMessage(` {
-			"sale_type": "bought",
+	vars := json.RawMessage(`{
+		"data": {
+			"id": 3001,
 			"quantity": 5,
-			"due_date": "now",
 			"customer": {
-				"email": "thedude@rug.com",
-				"full_name": "The Dude"
+				"id": 1004,
+				"email": "user1004@test.com",
+				"full_name": "User 1004",
+				"stripe_id": "payment_id_1004",
+				"category_counts": [{"category_id": 1, "count": 400},{"category_id": 2, "count": 600}]
 			},
 			"product": {
-				"name": "Apple",
-				"price": 1.25
+				"id": 2002,
+				"name": "Product 2002",
+				"description": "Description for product 2002",
+				"price": 2012.50,
+				"tags": ["Tag 1", "Tag 2"],
+				"category_ids": [1, 2, 3, 4, 5],
+				"owner_id": 3
 			}
 		}
-	`),
+	}`)
+
+	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
 	}
 
-	compileGQLToPSQL(t, gql, vars, "admin")
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
+	res, err := gj.GraphQL(ctx, gql, vars)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+	// Output: {"users": [{"id": 1002, "email": "user1002@test.com"}, {"id": 1003, "email": "user1003@test.com"}]})
 }
 
 func nestedInsertOneToMany(t *testing.T) {
@@ -306,17 +387,4 @@ func nestedInsertRecursive(t *testing.T) {
 	compileGQLToPSQL(t, gql, vars, "user")
 }
 
-func TestCompileInsert(t *testing.T) {
-	t.Run("simpleInsert", simpleInsert)
-	t.Run("singleInsert", singleInsert)
-	t.Run("bulkInsert", bulkInsert)
-	t.Run("simpleInsertWithPresets", simpleInsertWithPresets)
-	t.Run("nestedInsertManyToMany", nestedInsertManyToMany)
-	t.Run("nestedInsertOneToMany", nestedInsertOneToMany)
-	t.Run("nestedInsertOneToOne", nestedInsertOneToOne)
-	t.Run("nestedInsertOneToManyWithConnect", nestedInsertOneToManyWithConnect)
-	t.Run("nestedInsertOneToOneWithConnectReverse", nestedInsertOneToOneWithConnectReverse)
-	t.Run("nestedInsertOneToOneWithConnect", nestedInsertOneToOneWithConnect)
-	t.Run("nestedInsertOneToOneWithConnectArray", nestedInsertOneToOneWithConnectArray)
-	t.Run("nestedInsertRecursive", nestedInsertRecursive)
-}
+*/

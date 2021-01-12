@@ -462,8 +462,10 @@ func (p *Parser) parseFragmentFields(st *Stack, fields []Field) ([]Field, error)
 				// If this is the top-level, point the parent to the parent of the
 				// previous field.
 				if f.ParentID == -1 {
-					f.ParentID = pid
-					fields[pid].Children = append(fields[pid].Children, f.ID)
+					if pid != -1 {
+						f.ParentID = pid
+						fields[pid].Children = append(fields[pid].Children, f.ID)
+					}
 
 					// Update all the other parents id's by our new place in this new array
 				} else {

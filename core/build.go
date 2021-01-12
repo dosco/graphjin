@@ -79,7 +79,7 @@ func (gj *GraphJin) buildRoleStmt(cq *cquery, role string) error {
 
 	if len(vars) != 0 {
 		if err := json.Unmarshal(vars, &vm); err != nil {
-			return err
+			return fmt.Errorf("variables: %w", err)
 		}
 	}
 
@@ -112,7 +112,7 @@ func (gj *GraphJin) buildMultiStmt(cq *cquery) error {
 
 	if len(vars) != 0 {
 		if err := json.Unmarshal(vars, &vm); err != nil {
-			return err
+			return fmt.Errorf("variables: %w", err)
 		}
 	}
 
