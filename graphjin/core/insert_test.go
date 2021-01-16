@@ -1,6 +1,5 @@
 package core_test
 
-/*
 import (
 	"context"
 	"encoding/json"
@@ -67,9 +66,13 @@ func Example_insertWithPresets() {
 	}`)
 
 	conf := &core.Config{DBType: dbType, DisableAllowList: true}
-	conf.AddRoleTable("user", "products", core.Insert{
+	err := conf.AddRoleTable("user", "products", core.Insert{
 		Presets: map[string]string{"owner_id": "$user_id"},
 	})
+
+	if err != nil {
+		panic(err)
+	}
 
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
@@ -96,7 +99,7 @@ func Example_bulkInsert() {
 
 	vars := json.RawMessage(`{
 		"data": [{
-			"id": 1002
+			"id": 1002,
 			"email": "user1002@test.com",
 			"full_name": "User 1002",
 			"stripe_id": "payment_id_1002",
@@ -180,10 +183,10 @@ func Example_insertIntoMultipleRelatedTables1() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"users": [{"id": 1002, "email": "user1002@test.com"}, {"id": 1003, "email": "user1003@test.com"}]})
+	// Output: {"purchase": {"product": {"id": 2002, "name": "Product 2002", "price": 2012.50}, "customer": {"id": 1004, "email": "user1004@test.com", "full_name": "User 1004"}, "quantity": 5}}
 }
 
-func nestedInsertOneToMany(t *testing.T) {
+func Example_insertIntoMultipleRelatedTables2() {
 	gql := `mutation {
 		user(insert: $data) {
 			id
@@ -197,30 +200,47 @@ func nestedInsertOneToMany(t *testing.T) {
 		}
 	}`
 
-	vars := map[string]json.RawMessage{
-		"data": json.RawMessage(`{
-			"email": "thedude@rug.com",
-			"full_name": "The Dude",
-			"created_at": "now",
-			"updated_at": "now",
+	vars := json.RawMessage(`{
+		"data": {
+			"id": 1005,
+			"email": "user1005@test.com",
+			"full_name": "User 1005",
+			"stripe_id": "payment_id_1005",
+			"category_counts": [{"category_id": 1, "count": 400},{"category_id": 2, "count": 600}],
 			"product": {
-				"name": "Apple",
-				"price": 1.25,
-				"created_at": "now",
-				"updated_at": "now"
+				"id": 2003,
+				"name": "Product 2003",
+				"description": "Description for product 2003",
+				"price": 2013.50,
+				"tags": ["Tag 1", "Tag 2"],
+				"category_ids": [1, 2, 3, 4, 5],
+				"owner_id": 3
 			}
-		}`),
+		}
+	}`)
+
+	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
 	}
 
-	compileGQLToPSQL(t, gql, vars, "admin")
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
+	res, err := gj.GraphQL(ctx, gql, vars)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+	// Output: {"user": {"id": 1005, "email": "user1005@test.com", "product": {"id": 2003, "name": "Product 2003", "price": 2013.50}, "full_name": "User 1005"}}
 }
 
-func nestedInsertOneToOne(t *testing.T) {
+func Example_insertIntoMultipleRelatedTables3() {
 	gql := `mutation {
 		product(insert: $data) {
 			id
 			name
-			user {
+			owner {
 				id
 				full_name
 				email
@@ -228,63 +248,46 @@ func nestedInsertOneToOne(t *testing.T) {
 		}
 	}`
 
-	vars := map[string]json.RawMessage{
-		"data": json.RawMessage(`{
-			"name": "Apple",
-			"price": 1.25,
-			"created_at": "now",
-			"updated_at": "now",
-			"user": {
-				"email": "thedude@rug.com",
-				"full_name": "The Dude",
-				"created_at": "now",
-				"updated_at": "now"
-			}
-		}`),
-	}
-
-	compileGQLToPSQL(t, gql, vars, "admin")
-}
-
-func nestedInsertOneToManyWithConnect(t *testing.T) {
-	gql := `mutation {
-		user(insert: $data) {
-			id
-			full_name
-			email
-			product {
-				id
-				name
-				price
+	vars := json.RawMessage(`{
+		"data": {
+			"id": 2004,
+			"name": "Product 2004",
+			"description": "Description for product 2004",
+			"price": 2014.50,
+			"tags": ["Tag 1", "Tag 2"],
+			"category_ids": [1, 2, 3, 4, 5],
+			"owner": {
+				"id": 1006,
+				"email": "user1006@test.com",
+				"full_name": "User 1006",
+				"stripe_id": "payment_id_1006",
+				"category_counts": [{"category_id": 1, "count": 400},{"category_id": 2, "count": 600}]
 			}
 		}
-	}`
+	}`)
 
-	vars := map[string]json.RawMessage{
-		"data": json.RawMessage(`{
-			"email": "thedude@rug.com",
-			"full_name": "The Dude",
-			"created_at": "now",
-			"updated_at": "now",
-			"product": {
-				"connect": { "id": 5 }
-			}
-		}`),
+	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
 	}
 
-	compileGQLToPSQL(t, gql, vars, "admin")
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
+	res, err := gj.GraphQL(ctx, gql, vars)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+	// Output: {"product": {"id": 2004, "name": "Product 2004", "owner": {"id": 1006, "email": "user1006@test.com", "full_name": "User 1006"}}}
 }
 
-func nestedInsertOneToOneWithConnect(t *testing.T) {
+func Example_insertIntoTableAndConnectToRelatedTables() {
 	gql := `mutation {
 		product(insert: $data) {
 			id
 			name
-			tags {
-				id
-				name
-			}
-			user {
+			owner {
 				id
 				full_name
 				email
@@ -292,99 +295,151 @@ func nestedInsertOneToOneWithConnect(t *testing.T) {
 		}
 	}`
 
-	vars := map[string]json.RawMessage{
-		"data": json.RawMessage(`{
-			"name": "Apple",
-			"price": 1.25,
-			"created_at": "now",
-			"updated_at": "now",
-			"user": {
-				"connect": { "id": 5 }
+	vars := json.RawMessage(`{
+		"data": {
+			"id": 2005,
+			"name": "Product 2005",
+			"description": "Description for product 2005",
+			"price": 2015.50,
+			"tags": ["Tag 1", "Tag 2"],
+			"category_ids": [1, 2, 3, 4, 5],
+			"owner": {
+				"connect": { "id": 6 }
 			}
-		}`),
+		}
+	}`)
+
+	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
 	}
 
-	compileGQLToPSQL(t, gql, vars, "admin")
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
+	res, err := gj.GraphQL(ctx, gql, vars)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+	// Output: {"product": {"id": 2005, "name": "Product 2005", "owner": {"id": 6, "email": "user6@test.com", "full_name": "User 6"}}}
 }
 
-func nestedInsertOneToOneWithConnectReverse(t *testing.T) {
+func Example_insertIntoTableAndConnectToRelatedTableWithArrayColumn() {
 	gql := `mutation {
-		comment(insert: $data) {
+		product(insert: $data) {
 			id
-			product {
+			name
+			categories {
 				id
 				name
 			}
 		}
 	}`
 
-	vars := map[string]json.RawMessage{
-		"data": json.RawMessage(`{
-			"body": "a comment",
-			"created_at": "now",
-			"updated_at": "now",
-			"product": {
-				"connect": { "id": 1 }
+	vars := json.RawMessage(`{
+		"data": {
+			"id": 2006,
+			"name": "Product 2006",
+			"description": "Description for product 2006",
+			"price": 2016.50,
+			"tags": ["Tag 1", "Tag 2"],
+			"categories": {
+				"connect": { "id": [1, 2, 3, 4, 5] }
 			}
-		}`),
+		}
+	}`)
+
+	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf.Tables = []core.Table{
+		{Name: "products", Columns: []core.Column{{Name: "category_ids", ForeignKey: "categories.id"}}},
 	}
 
-	compileGQLToPSQL(t, gql, vars, "admin")
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
+	res, err := gj.GraphQL(ctx, gql, vars)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+	// Output: {"product": {"id": 2006, "name": "Product 2006", "categories": [{"id": 1, "name": "Category 1"}, {"id": 2, "name": "Category 2"}, {"id": 3, "name": "Category 3"}, {"id": 4, "name": "Category 4"}, {"id": 5, "name": "Category 5"}]}}
 }
 
-func nestedInsertOneToOneWithConnectArray(t *testing.T) {
+func Example_insertIntoRecursiveRelationship() {
 	gql := `mutation {
-		product(insert: $data) {
+		comments(insert: $data, where: { id: { in: [5001, 5002] }}) {
 			id
-			name
-			user {
-				id
-				full_name
-				email
-			}
+			reply_to_id
 		}
 	}`
 
-	vars := map[string]json.RawMessage{
-		"data": json.RawMessage(`{
-			"name": "Apple",
-			"price": 1.25,
+	vars := json.RawMessage(`{
+		"data": {
+			"id": 5001,
+			"body": "Comment body 5001",
 			"created_at": "now",
-			"updated_at": "now",
-			"user": {
-				"connect": { "id": [1,2] }
-			}
-		}`),
-	}
-
-	compileGQLToPSQL(t, gql, vars, "admin")
-}
-
-func nestedInsertRecursive(t *testing.T) {
-	gql := `mutation {
-		comments(insert: $data) {
-			id
-			comments(find: "children") {
-				id
-				body
-			}
-		}
-	}`
-
-	vars := map[string]json.RawMessage{
-		"data": json.RawMessage(`{
-			"id": 1002,
-			"body": "hello 2",
-			"created_at": "now",
-			"updated_at": "now",
 			"comment": {
 				"find": "children",
-				"connect":{ "id": 5 }
+				"id": 5002,
+				"body": "Comment body 5002",
+				"created_at": "now"	
 			}
-		}`),
+		}
+	}`)
+
+	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
 	}
 
-	compileGQLToPSQL(t, gql, vars, "user")
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
+	res, err := gj.GraphQL(ctx, gql, vars)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+	// Output: {"comments": [{"id": 5001, "reply_to_id": null}, {"id": 5002, "reply_to_id": 5001}]}
 }
 
-*/
+func Example_insertIntoRecursiveRelationshipAndConnectTable() {
+	gql := `mutation {
+		comments(insert: $data, where: { id: { in: [5, 5003] }}) {
+			id
+			reply_to_id
+		}
+	}`
+
+	vars := json.RawMessage(`{
+		"data": {
+			"id": 5003,
+			"body": "Comment body 5003",
+			"created_at": "now",
+			"comment": {
+				"find": "children",
+				"connect": { "id": 5 }
+			}
+		}
+	}`)
+
+	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
+	res, err := gj.GraphQL(ctx, gql, vars)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+	// Output: {"comments": [{"id": 5003, "reply_to_id": null}, {"id": 5, "reply_to_id": 5003}]}
+}

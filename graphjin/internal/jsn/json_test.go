@@ -639,5 +639,5 @@ func BenchmarkTest(b *testing.B) {
 		buf.Reset()
 	}
 
-	fmt.Println(">", test)
+	fmt.Println(test)
 }

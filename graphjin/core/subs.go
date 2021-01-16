@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/dosco/graphjin/core/internal/qcode"
@@ -27,10 +26,6 @@ type sub struct {
 	name string
 	role string
 	q    *cquery
-	// count of db polling go routines in flight
-	ops int64
-	// index of cursor value in the arguments array
-	cindx int
 
 	add  chan *Member
 	del  chan *Member
@@ -50,6 +45,8 @@ type mval struct {
 type minfo struct {
 	dh     [sha256.Size]byte
 	values []interface{}
+	// index of cursor value in the arguments array
+	cindx int
 }
 
 type mmsg struct {
@@ -64,6 +61,8 @@ type Member struct {
 	done   bool
 	id     xid.ID
 	vl     []interface{}
+	// index of cursor value in the arguments array
+	cindx int
 }
 
 func (gj *GraphJin) Subscribe(c context.Context, query string, vars json.RawMessage) (*Member, error) {
@@ -123,12 +122,12 @@ func (gj *GraphJin) SubscribeEx(
 	if err != nil {
 		return nil, err
 	}
-	s.cindx = args.cindx
 
 	m := &Member{
 		Result: make(chan *Result, 10),
 		sub:    s,
 		vl:     args.values,
+		cindx:  args.cindx,
 	}
 	s.add <- m
 
@@ -199,8 +198,8 @@ func (s *sub) addMember(m *Member) error {
 	}
 
 	m.id = xid.New()
-	mi := minfo{}
-	if s.cindx != -1 {
+	mi := minfo{cindx: m.cindx}
+	if mi.cindx != -1 {
 		mi.values = m.vl
 	}
 
@@ -240,8 +239,8 @@ func (s *sub) updateMember(msg mmsg) error {
 	// if cindex is not -1 then this query contains
 	// a cursor that must be updated with the new
 	// cursor value so subscriptions can paginate.
-	if s.cindx != -1 && msg.cursor != "" {
-		s.mi[i].values[s.cindx] = msg.cursor
+	if s.mi[i].cindx != -1 && msg.cursor != "" {
+		s.mi[i].values[s.mi[i].cindx] = msg.cursor
 
 		// values is a pre-generated json value that
 		// must be re-created.
@@ -256,7 +255,7 @@ func (s *sub) updateMember(msg mmsg) error {
 
 func (s *sub) fanOutJobs(gj *GraphJin) {
 	switch {
-	case s.ops != 0 || len(s.ids) == 0:
+	case len(s.ids) == 0:
 		return
 
 	case len(s.ids) <= maxMembersPerWorker:
@@ -274,8 +273,6 @@ func (s *sub) fanOutJobs(gj *GraphJin) {
 func (gj *GraphJin) checkUpdates(s *sub, mv mval, start int) {
 	// Do not use the `mval` embedded inside sub since
 	// its not thread safe use the copy `mv mval`.
-	atomic.AddInt64(&s.ops, 1)
-	defer atomic.AddInt64(&s.ops, -1)
 
 	// random wait to prevent multiple queries hitting the db
 	// at the same time.
@@ -331,7 +328,7 @@ func (gj *GraphJin) checkUpdates(s *sub, mv mval, start int) {
 
 		// we're expecting a cursor but the cursor was null
 		// so we skip this one.
-		if s.cindx != -1 && cur.value == "" {
+		if mv.mi[j].cindx != -1 && cur.value == "" {
 			continue
 		}
 

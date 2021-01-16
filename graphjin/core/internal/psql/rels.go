@@ -76,7 +76,7 @@ func (c *compilerContext) renderRel(
 	case sdata.RelRecursive:
 		if v, ok := args["find"]; ok {
 			switch v.Val {
-			case "parents":
+			case "parents", "parent":
 				// Ensure fk is not null
 				colWithTable(c.w, rel.Right.VTable, rel.Left.Col.Name)
 				c.w.WriteString(` IS NOT NULL) AND (`)

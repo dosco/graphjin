@@ -428,8 +428,7 @@ func (c *compilerContext) renderRecursiveBaseSelect(sel *qcode.Select) {
 	c.renderFrom(psel)
 	c.w.WriteString(`, `)
 	quoted(c.w, sel.Rel.Right.VTable)
-	c.w.WriteString(` WHERE `)
-	c.renderRel(sel.Ti, sel.Rel, sel.ParentID, sel.ArgMap)
+	c.renderWhere(sel)
 }
 
 func (c *compilerContext) renderFrom(sel *qcode.Select) {

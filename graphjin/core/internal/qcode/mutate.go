@@ -42,25 +42,24 @@ var updateTypes = map[string]MType{
 }
 
 type Mutate struct {
-	ID    int32
-	Type  MType
-	CType uint8
-	Key   string
-	Path  []string
-	Val   json.RawMessage
-	Data  map[string]json.RawMessage
-	Array bool
-
-	Cols   []MColumn
-	RCols  []MRColumn
-	Tables []MTable
-	Ti     sdata.DBTableInfo
-	RelCP  sdata.DBRel
-	RelPC  sdata.DBRel
-	Items  []Mutate
-	Multi  bool
-	MID    int32
-	render bool
+	ID       int32
+	ParentID int32
+	//Children  []int32
+	DependsOn map[int32]struct{}
+	Type      MType
+	CType     uint8
+	Key       string
+	Path      []string
+	Val       json.RawMessage
+	Data      map[string]json.RawMessage
+	Array     bool
+	Cols      []MColumn
+	RCols     []MRColumn
+	Ti        sdata.DBTableInfo
+	Rel       sdata.DBRel
+	Multi     bool
+	items     []Mutate
+	render    bool
 }
 
 type MColumn struct {
@@ -70,9 +69,8 @@ type MColumn struct {
 }
 
 type MRColumn struct {
-	Col   sdata.DBColumn
-	VCol  sdata.DBColumn
-	CType uint8
+	Col  sdata.DBColumn
+	VCol sdata.DBColumn
 }
 
 type MTable struct {
@@ -81,12 +79,12 @@ type MTable struct {
 }
 
 func (co *Compiler) compileMutation(qc *QCode, op *graph.Operation, role string) error {
+	var err error
 	var ok bool
+	var whereReq bool
 
 	sel := &qc.Selects[0]
-	m := Mutate{Key: sel.Table, Ti: sel.Ti}
-
-	var whereReq bool
+	m := Mutate{ParentID: -1, Key: sel.Table, Ti: sel.Ti}
 
 	switch qc.SType {
 	case QTInsert:
@@ -118,7 +116,14 @@ func (co *Compiler) compileMutation(qc *QCode, op *graph.Operation, role string)
 		return fmt.Errorf("variable not defined: %s", qc.ActionVar)
 	}
 
-	tm := make(map[string]int32)
+	if m.Data, m.Array, err = jsn.Tree(m.Val); err != nil {
+		return err
+	}
+
+	mutates := []Mutate{}
+	mmap := map[int32]int32{-1: -1}
+	mids := map[string][]int32{}
+
 	st := util.NewStackInf()
 	st.Push(m)
 
@@ -128,26 +133,71 @@ func (co *Compiler) compileMutation(qc *QCode, op *graph.Operation, role string)
 		}
 
 		intf := st.Pop()
+		item, ok := intf.(Mutate)
 
-		if item, ok := intf.(Mutate); ok && item.render {
-			if item.RelPC.Type != sdata.RelOneToOne {
-				item.MID = tm[item.Ti.Name]
-				tm[item.Ti.Name]++
+		if ok && item.render {
+			id := int32(len(mutates))
+			mmap[item.ID] = id
+			mutates = append(mutates, item)
+
+			if item.Type != MTNone {
+				mids[item.Ti.Name] = append(mids[item.Ti.Name], id)
 			}
-			qc.Mutates = append(qc.Mutates, item)
-
-		} else if err := co.newMutate(st, item, role); err != nil {
+			continue
+		}
+		if err := co.newMutate(item, m.Type, st); err != nil {
 			return err
 		}
 	}
+	qc.MUnions = mids
 
-	for i, v := range qc.Mutates {
-		if c, ok := tm[v.Ti.Name]; ok && c > 1 {
-			qc.Mutates[i].Multi = true
+	for i := range mutates {
+		m1 := &mutates[i]
+		err := co.addTablesAndColumns(m1, co.getRole(role, m1.Key))
+		if err != nil {
+			return err
+		}
+
+		// Re-id all items to make array access easy.
+		m1.ID = mmap[m1.ID]
+		m1.ParentID = mmap[m1.ParentID]
+
+		for id := range m1.DependsOn {
+			delete(m1.DependsOn, id)
+			nid := mmap[id]
+			if mutates[nid].Type != MTNone {
+				m1.DependsOn[nid] = struct{}{}
+			}
+		}
+
+		if len(mids[m1.Ti.Name]) > 1 {
+			m1.Multi = true
+		}
+
+		if m1.Type == MTNone {
+			for n := range m1.items {
+				m2 := &m1.items[n]
+				m2.ID = mmap[m2.ID]
+				m2.ParentID = mmap[m2.ParentID]
+			}
 		}
 	}
 
-	qc.MCounts = tm
+	for i := range mutates {
+		m1 := &mutates[i]
+		if m1.Type != MTNone {
+			continue
+		}
+
+		for n := range m1.items {
+			m2 := &m1.items[n]
+			if m2.Rel.Type == sdata.RelOneToMany {
+				p := &mutates[m1.ParentID]
+				p.DependsOn[m2.ID] = struct{}{}
+			}
+		}
+	}
+	qc.Mutates = mutates
 
 	return nil
 }
@@ -155,19 +205,12 @@ func (co *Compiler) compileMutation(qc *QCode, op *graph.Operation, role string)
 // TODO: Handle cases where a column name matches the child table name
 // the child path needs to be exluded in the json sent to insert or update
 
-func (co *Compiler) newMutate(st *util.StackInf, m Mutate, role string) error {
-	var err error
-	tr := co.getRole(role, m.Key)
+func (co *Compiler) newMutate(m Mutate, mt MType, st *util.StackInf) error {
+	var m1 Mutate
 
-	if m.Data == nil {
-		if m.Data, m.Array, err = jsn.Tree(m.Val); err != nil {
-			return err
-		}
-	}
-
-	id := m.ID + 1
-	m.Items = make([]Mutate, 0, len(m.Data))
+	m.items = make([]Mutate, 0, len(m.Data))
 	m.render = true
+	id := m.ID
 
 	for k, v := range m.Data {
 		if v[0] != '{' && v[0] != '[' {
@@ -175,65 +218,64 @@ func (co *Compiler) newMutate(st *util.StackInf, m Mutate, role string) error {
 		}
 
 		// Get child-to-parent relationship
-		relCP, err := co.s.GetRel(k, m.Key, "")
+		rel, err := co.s.GetRel(k, m.Key, "")
 		if err != nil {
 			var ty MType
 			var ok bool
 
-			switch m.Type {
+			switch mt {
 			case MTInsert:
 				ty, ok = insertTypes[k]
 			case MTUpdate:
 				ty, ok = updateTypes[k]
 			}
 
-			if ty != MTKeyword {
-				if ok {
-					m1 := m
-					m1.Type = ty
-					m1.ID = id
-					m1.Val = v
+			if ok && ty != MTKeyword {
+				id++
 
-					m.Items = append(m.Items, m1)
-					m.Type = MTNone
-					m.render = false
-					id++
-
-				} else if _, err := m.Ti.GetColumn(k); err != nil {
-					return err
+				m1 = Mutate{
+					ID:       id,
+					ParentID: m.ParentID,
+					Type:     ty,
+					Key:      k,
+					Val:      v,
+					Path:     append(m.Path, k),
+					Ti:       m.Ti,
+					Rel:      m.Rel,
+					render:   true,
 				}
+				m.Type = MTNone
+
+			} else if _, err := m.Ti.GetColumn(k); err != nil {
+				return err
+			} else {
+				continue
 			}
 
 			// Get parent-to-child relationship
-		} else if relPC, err := co.s.GetRel(m.Key, k, ""); err == nil {
+		} else {
 			ti, err := co.s.GetTableInfo(k, m.Key)
 			if err != nil {
 				return err
 			}
 
-			m1 := Mutate{
-				ID:    id,
-				Type:  m.Type,
-				Key:   k,
-				Val:   v,
-				Path:  append(m.Path, k),
-				Ti:    ti,
-				RelCP: relCP,
-				RelPC: relPC,
-			}
-
-			if m1, err = processDirectives(m1); err != nil {
-				return err
-			}
-
-			m.Items = append(m.Items, m1)
 			id++
+			m1 = Mutate{
+				ID:       id,
+				ParentID: m.ID,
+				Type:     m.Type,
+				Key:      k,
+				Val:      v,
+				Path:     append(m.Path, k),
+				Ti:       ti,
+				Rel:      rel,
+			}
 		}
-	}
 
-	// Add columns, relationship columns and tables needed.
-	if m, err = addTablesAndColumns(m, tr); err != nil {
-		return err
+		if err = processDirectives(&m1); err != nil {
+			return err
+		}
+		m.items = append(m.items, m1)
 	}
 
 	// For inserts order the children according to
@@ -243,56 +285,50 @@ func (co *Compiler) newMutate(st *util.StackInf, m Mutate, role string) error {
 
 	// For updates the order defined in the query must be
 	// the order used.
+
 	switch m.Type {
 	case MTInsert:
-		for _, v := range m.Items {
-			if v.RelPC.Type == sdata.RelOneToMany {
+		for _, v := range m.items {
+			if v.Rel.Type == sdata.RelOneToOne {
 				st.Push(v)
 			}
 		}
 		st.Push(m)
-		for _, v := range m.Items {
-			if v.RelPC.Type == sdata.RelOneToOne {
+		for _, v := range m.items {
+			if v.Rel.Type == sdata.RelOneToMany {
 				st.Push(v)
 			}
 		}
 
 	case MTUpdate:
-		for _, v := range m.Items {
-			if !(v.CType != 0 && v.RelPC.Type == sdata.RelOneToOne) {
-				st.Push(v)
-			}
+		for _, v := range m.items {
+			st.Push(v)
 		}
 		st.Push(m)
-		for _, v := range m.Items {
-			if v.CType != 0 && v.RelPC.Type == sdata.RelOneToOne {
-				st.Push(v)
-			}
-		}
 
 	case MTUpsert:
 		st.Push(m)
 
 	case MTNone:
-		for _, v := range m.Items {
+		for _, v := range m.items {
 			st.Push(v)
 		}
+		st.Push(m)
 	}
 
 	return nil
 }
 
-func processDirectives(m Mutate) (Mutate, error) {
+func processDirectives(m *Mutate) error {
 	var err error
-	v := m.Val
 
-	if v[0] != '{' {
-		return m, nil
+	if m.Val[0] != '{' {
+		return nil
 	}
 
-	m.Data, m.Array, err = jsn.Tree(v)
+	m.Data, m.Array, err = jsn.Tree(m.Val)
 	if err != nil {
-		return m, err
+		return err
 	}
 
 	if v1, ok := m.Data["connect"]; ok && (v1[0] == '{' || v1[0] == '[') {
@@ -302,99 +338,87 @@ func processDirectives(m Mutate) (Mutate, error) {
 		m.CType |= CTDisconnect
 	}
 
-	if m.RelPC.Type == sdata.RelRecursive {
+	if m.Rel.Type == sdata.RelRecursive {
 		var find string
 
 		if v1, ok := m.Data["find"]; !ok {
-			return m, fmt.Errorf("required: 'find' needed for recursive mutations")
+			find = `"child"`
 		} else {
 			find = string(v1)
 		}
 
 		switch find {
-		case `"children"`:
-			m.RelPC.Type = sdata.RelOneToMany
-			m.RelCP.Type = sdata.RelOneToOne
-			m.RelPC = flipRel(m.RelPC)
+		case `"child"`, `"children"`:
+			m.Rel.Type = sdata.RelOneToOne
 
 		case `"parent"`, `"parents"`:
-			m.RelPC.Type = sdata.RelOneToOne
-			m.RelCP.Type = sdata.RelOneToMany
-			m.RelCP = flipRel(m.RelCP)
+			m.Rel.Type = sdata.RelOneToMany
+			m.Rel = flipRel(m.Rel)
+
 		}
 	}
-	return m, nil
+
+	return nil
 }
 
-func addTablesAndColumns(m Mutate, tr trval) (Mutate, error) {
+func (co *Compiler) addTablesAndColumns(m *Mutate, tr trval) error {
 	var err error
+
+	m.DependsOn = make(map[int32]struct{})
 	cm := make(map[string]struct{})
 
 	switch m.Type {
 	case MTInsert:
 		// Render columns and values needed to connect current table and the parent table
-		if m.RelCP.Type == sdata.RelOneToOne {
-			m.Tables = append(m.Tables, MTable{Ti: m.RelPC.Left.Ti, CType: m.CType})
+		// TODO: check if needed
+		if m.Rel.Type == sdata.RelOneToOne {
+			m.DependsOn[m.ParentID] = struct{}{}
 			m.RCols = append(m.RCols, MRColumn{
-				Col:  m.RelCP.Left.Col,
-				VCol: m.RelCP.Right.Col,
+				Col:  m.Rel.Left.Col,
+				VCol: m.Rel.Right.Col,
 			})
-			cm[m.RelCP.Left.Col.Name] = struct{}{}
+			cm[m.Rel.Left.Col.Name] = struct{}{}
 		}
-		// Render columns and values needed to connect parent level with it's children
-		// this is for when the parent actually depends on the child level
-		// the order of the table rendering if handled upstream
-		if len(m.Items) == 0 {
-			// TODO: Commenting this out since I suspect this code path is not required
-			// if m.RelPC.Type == sdata.RelOneToMany {
-			// 	m.Tables = append(m.Tables, MTable{Ti: m.RelPC.Left.Ti})
-			// 	m.RCols = append(m.RCols, MRColumn{
-			// 		Col:  m.RelCP.Right.Col,
-			// 		VCol: m.RelCP.Left.Col,
-			// 	})
-			// 	cm[m.RelCP.Right.Col.Name] = struct{}{}
-			// }
-		} else {
-			// Render columns and values needed by the children of the current level
-			// Render child foreign key columns if child-to-parent
-			// relationship is one-to-many
-			for _, v := range m.Items {
-				if v.RelCP.Type == sdata.RelOneToMany {
-					m.Tables = append(m.Tables, MTable{Ti: v.RelCP.Left.Ti, CType: v.CType})
-					m.RCols = append(m.RCols, MRColumn{
-						Col:   v.RelCP.Right.Col,
-						VCol:  v.RelCP.Left.Col,
-						CType: v.CType,
-					})
-					cm[v.RelCP.Right.Col.Name] = struct{}{}
+
+		// Render columns and values needed by the children of the current level
+		// Render child foreign key columns if child-to-parent
+		// relationship is one-to-many
+		for _, v := range m.items {
+			if v.Rel.Type == sdata.RelOneToMany {
+				if v.Type != MTNone {
+					m.DependsOn[v.ID] = struct{}{}
 				}
+				m.RCols = append(m.RCols, MRColumn{
+					Col:  v.Rel.Right.Col,
+					VCol: v.Rel.Left.Col,
+				})
+				cm[v.Rel.Right.Col.Name] = struct{}{}
 			}
 		}
 
 	case MTUpdate:
-		// Render tables needed to set values if child-to-parent
-		// relationship is one-to-many
-		for _, v := range m.Items {
-			if v.CType != 0 && v.RelCP.Type == sdata.RelOneToMany {
-				m.Tables = append(m.Tables, MTable{Ti: v.RelCP.Left.Ti, CType: v.CType})
-				m.RCols = append(m.RCols, MRColumn{
-					Col:   v.RelCP.Right.Col,
-					VCol:  v.RelCP.Left.Col,
-					CType: v.CType,
-				})
-				cm[v.RelCP.Right.Col.Name] = struct{}{}
-			}
+		if m.Rel.Type == sdata.RelOneToOne {
+			m.DependsOn[m.ParentID] = struct{}{}
+			m.RCols = append(m.RCols, MRColumn{
+				Col:  m.Rel.Left.Col,
+				VCol: m.Rel.Right.Col,
+			})
+			cm[m.Rel.Left.Col.Name] = struct{}{}
+		}
+
+	default:
+		if m.Type != MTNone && m.Rel.Type == sdata.RelOneToOne {
+			m.DependsOn[m.ParentID] = struct{}{}
 		}
 	}
-
 	if m.Cols, err = getColumnsFromJSON(m, tr, cm); err != nil {
-		return m, err
+		return err
 	}
 
-	return m, nil
+	return nil
 }
 
-func getColumnsFromJSON(m Mutate, tr trval, cm map[string]struct{}) ([]MColumn, error) {
+func getColumnsFromJSON(m *Mutate, tr trval, cm map[string]struct{}) ([]MColumn, error) {
 	var cols []MColumn
 
 	for k, v := range tr.getPresets(m.Type) {
