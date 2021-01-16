@@ -3,10 +3,8 @@ package psql_test
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/dosco/graphjin/core/internal/psql"
@@ -14,16 +12,9 @@ import (
 	"github.com/dosco/graphjin/core/internal/sdata"
 )
 
-const (
-	errNotExpected = "Generated SQL did not match what was expected"
-	headerMarker   = "=== RUN"
-	commentMarker  = "---"
-)
-
 var (
 	qcompile *qcode.Compiler
 	pcompile *psql.Compiler
-	expected map[string][]string
 )
 
 func TestMain(m *testing.M) {
@@ -156,106 +147,31 @@ func TestMain(m *testing.M) {
 		Vars: vars,
 	})
 
-	expected = make(map[string][]string)
-
-	b, err := ioutil.ReadFile("tests.sql")
-	if err != nil {
-		log.Fatal(err)
-	}
-	text := string(b)
-	lines := strings.Split(text, "\n")
-
-	var h string
-
-	for _, v := range lines {
-		switch {
-		case strings.HasPrefix(v, headerMarker):
-			h = strings.TrimSpace(v[len(headerMarker):])
-
-		case strings.HasPrefix(v, commentMarker):
-			break
-
-		default:
-			v := strings.TrimSpace(v)
-			if v != "" {
-				expected[h] = append(expected[h], v)
-			}
-		}
-	}
 	os.Exit(m.Run())
 }
 
 func compileGQLToPSQL(t *testing.T, gql string, vars qcode.Variables, role string) {
 	if err := _compileGQLToPSQL(t, gql, vars, role); err != nil {
-		t.Fatal(err)
+		t.Error(err)
 	}
 }
 
 func compileGQLToPSQLExpectErr(t *testing.T, gql string, vars qcode.Variables, role string) {
 	if err := _compileGQLToPSQL(t, gql, vars, role); err == nil {
-		t.Fatal(errors.New("we were expecting an error"))
+		t.Error(errors.New("we were expecting an error"))
 	}
 }
 
 func _compileGQLToPSQL(t *testing.T, gql string, vars qcode.Variables, role string) error {
-	generateTestFile := false
-
-	if generateTestFile {
-		var sqlStmts []string
-
-		for i := 0; i < 100; i++ {
-			qc, err := qcompile.Compile([]byte(gql), vars, role)
-			if err != nil {
-				return err
-			}
-
-			_, sqlB, err := pcompile.CompileEx(qc)
-			if err != nil {
-				return err
-			}
-
-			sql := string(sqlB)
-
-			match := false
-			for _, s := range sqlStmts {
-				if sql == s {
-					match = true
-					break
-				}
-			}
-
-			if !match {
-				s := string(sql)
-				sqlStmts = append(sqlStmts, s)
-				fmt.Println(s)
-			}
-		}
-
-		return nil
-	}
-
 	for i := 0; i < 200; i++ {
 		qc, err := qcompile.Compile([]byte(gql), vars, role)
 		if err != nil {
 			return err
 		}
 
-		_, sqlStmt, err := pcompile.CompileEx(qc)
+		_, _, err = pcompile.CompileEx(qc)
 		if err != nil {
 			return err
-		}
-
-		failed := true
-
-		for _, sql := range expected[t.Name()] {
-			if string(sqlStmt) == sql {
-				failed = false
-			}
-		}
-
-		if failed {
-			fmt.Println(string(sqlStmt))
-			t.Fatal(errNotExpected)
 		}
 	}
 

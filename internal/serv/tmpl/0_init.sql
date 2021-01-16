@@ -4,8 +4,8 @@ CREATE TABLE public.users (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   full_name  text,
   email      text UNIQUE NOT NULL CHECK (length(email) < 255),
-  created_at timestamptz NOT NULL NOT NULL DEFAULT NOW(),
-  updated_at timestamptz NOT NULL NOT NULL DEFAULT NOW()
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  updated_at timestamptz 
 );
 
 ---- create above / drop below ----

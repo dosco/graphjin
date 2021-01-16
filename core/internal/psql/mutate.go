@@ -5,7 +5,6 @@ package psql
 import (
 	"bytes"
 	"encoding/json"
-	"strconv"
 	"strings"
 
 	"github.com/dosco/graphjin/core/internal/qcode"
@@ -43,25 +42,32 @@ func (co *Compiler) compileMutation(
 		return
 	}
 
-	c.renderMultiUnionStmt()
+	c.renderUnionStmt()
 	co.CompileQuery(w, qc, c.md)
 }
 
-func (c *compilerContext) renderMultiUnionStmt() {
-	for k, n := range c.qc.MCounts {
-		if n == 1 {
+func (c *compilerContext) renderUnionStmt() {
+	for k, cids := range c.qc.MUnions {
+		if len(cids) < 2 {
 			continue
 		}
 		c.w.WriteString(`, `)
 		quoted(c.w, k)
 		c.w.WriteString(` AS (`)
 
-		for i := int32(0); i < n; i++ {
+		i := 0
+		for _, id := range cids {
+			m := c.qc.Mutates[id]
+			if m.Rel.Type == sdata.RelOneToMany &&
+				(m.Type == qcode.MTConnect || m.Type == qcode.MTDisconnect) {
+				continue
+			}
 			if i != 0 {
 				c.w.WriteString(` UNION ALL `)
 			}
 			c.w.WriteString(`SELECT * FROM `)
-			renderNameWithSuffix(c.w, k, strconv.Itoa(int(i)))
+			c.renderCteName(m)
+			i++
 		}
 
 		c.w.WriteString(`)`)
@@ -113,22 +119,22 @@ func (c *compilerContext) renderInsertUpdateColumns(m qcode.Mutate, values bool)
 	return i
 }
 
-func (c *compilerContext) renderNestedInsertUpdateRelColumns(m qcode.Mutate, values bool, n int) {
+func (c *compilerContext) renderNestedRelColumns(m qcode.Mutate, values bool, prefix bool, n int) {
 	for i, col := range m.RCols {
 		if n != 0 || i != 0 {
 			c.w.WriteString(`, `)
 		}
 		if values {
-			if (col.CType & qcode.CTConnect) != 0 {
-				c.w.WriteString(`"_x_`)
-				c.w.WriteString(col.VCol.Table)
-				c.w.WriteString(`".`)
+			if col.Col.Array {
+				c.w.WriteString(`ARRAY(SELECT `)
 				quoted(c.w, col.VCol.Name)
-
-			} else if (col.CType & qcode.CTDisconnect) != 0 {
-				c.w.WriteString(`NULL`)
-
+				c.w.WriteString(` FROM `)
+				quoted(c.w, col.VCol.Table)
+				c.w.WriteString(`)`)
 			} else {
+				if prefix {
+					c.w.WriteString(`_x_`)
+				}
 				colWithTable(c.w, col.VCol.Table, col.VCol.Name)
 			}
 		} else {
@@ -137,20 +143,22 @@ func (c *compilerContext) renderNestedInsertUpdateRelColumns(m qcode.Mutate, val
 	}
 }
 
-func (c *compilerContext) renderNestedInsertUpdateRelTables(m qcode.Mutate) {
-	for _, t := range m.Tables {
+func (c *compilerContext) renderNestedRelTables(m qcode.Mutate, prefix bool) {
+	for id := range m.DependsOn {
+		d := c.qc.Mutates[id]
 		c.w.WriteString(`, `)
-		if (t.CType & qcode.CTConnect) != 0 {
-			c.w.WriteString(`"_x_`)
-			c.w.WriteString(t.Ti.Name)
-			c.w.WriteString(`"`)
 
-		} else if (t.CType & qcode.CTDisconnect) != 0 {
-			// do nothing
-
+		if d.Multi {
+			c.renderCteNameWithID(d)
 		} else {
-			quoted(c.w, t.Ti.Name)
+			quoted(c.w, d.Ti.Name)
 		}
+		if prefix {
+			c.w.WriteString(` _x_`)
+		} else {
+			c.w.WriteString(` `)
+		}
+		quoted(c.w, d.Ti.Name)
 	}
 }
 
@@ -209,148 +217,158 @@ func (c *compilerContext) renderDelete() {
 	c.w.WriteString(`.*) `)
 }
 
-func (c *compilerContext) renderConnectStmt(m qcode.Mutate) {
-	rel := m.RelPC
-
+func (c *compilerContext) renderOneToManyConnectStmt(m qcode.Mutate) {
 	// Render only for parent-to-child relationship of one-to-one
 	// For this to work the json child needs to found first so it's primary key
 	// can be set in the related column on the parent object.
 	// Eg. Create product and connect a user to it.
-	if rel.Type == sdata.RelOneToOne {
-		c.w.WriteString(`, "_x_`)
-		c.w.WriteString(m.Ti.Name)
-		c.w.WriteString(`" AS (SELECT `)
+	c.renderCteName(m)
+	c.w.WriteString(` AS (SELECT `)
 
-		if rel.Left.Col.Array {
-			c.w.WriteString(`array_agg(DISTINCT `)
-			quoted(c.w, rel.Right.Col.Name)
-			c.w.WriteString(`) AS `)
-			quoted(c.w, rel.Right.Col.Name)
-		} else {
-			quoted(c.w, rel.Right.Col.Name)
-		}
-
-		c.w.WriteString(` FROM "_sg_input" i,`)
-		quoted(c.w, m.Ti.Name)
-
-		c.w.WriteString(` WHERE `)
-		c.renderWhereFromJSON(m, "connect")
-		c.w.WriteString(` LIMIT 1)`)
+	rel := m.Rel
+	if rel.Right.Col.Array {
+		c.w.WriteString(`array_agg(DISTINCT `)
+		quoted(c.w, rel.Left.Col.Name)
+		c.w.WriteString(`) AS `)
+		quoted(c.w, rel.Left.Col.Name)
+	} else {
+		quoted(c.w, rel.Left.Col.Name)
 	}
 
-	if rel.Type == sdata.RelOneToMany {
-		c.w.WriteString(`, `)
-		if m.Multi {
-			renderCteNameWithSuffix(c.w, m, strconv.Itoa(int(m.MID)))
-		} else {
-			renderCteName(c.w, m)
-		}
+	c.w.WriteString(` FROM _sg_input i, `)
+	quoted(c.w, m.Ti.Name)
 
-		c.w.WriteString(` AS ( UPDATE `)
-		quoted(c.w, m.Ti.Name)
-		c.w.WriteString(` SET `)
-		quoted(c.w, m.RelPC.Right.Col.Name)
-		c.w.WriteString(` = `)
-
-		// When setting the id of the connected table in a one-to-many setting
-		// we always overwrite the value including for array columns
-		if m.Multi {
-			colWithTableID(c.w, m.RelPC.Left.Col.Table, (m.MID - 1), m.RelPC.Left.Col.Name)
-		} else {
-			colWithTable(c.w, m.RelPC.Left.Col.Table, m.RelPC.Left.Col.Name)
-		}
-
-		c.w.WriteString(`FROM "_sg_input" i,`)
-		if m.Multi {
-			renderCteNameWithSuffix(c.w, m, strconv.Itoa(int(m.MID-1)))
-		} else {
-			quoted(c.w, m.RelPC.Left.Col.Table)
-		}
-		c.w.WriteString(` WHERE`)
-		c.renderWhereFromJSON(m, "connect")
-
-		c.w.WriteString(` RETURNING `)
-		quoted(c.w, m.Ti.Name)
-		c.w.WriteString(`.*)`)
-	}
+	c.w.WriteString(` WHERE `)
+	c.renderWhereFromJSON(m)
+	c.w.WriteString(` LIMIT 1)`)
 }
 
-func (c *compilerContext) renderDisconnectStmt(m qcode.Mutate) {
-	rel := m.RelPC
+func (c *compilerContext) renderOneToOneConnectStmt(m qcode.Mutate) {
+	c.w.WriteString(`, `)
+	c.renderCteName(m)
+	c.w.WriteString(` AS ( UPDATE `)
 
+	quoted(c.w, m.Ti.Name)
+	c.w.WriteString(` SET `)
+	quoted(c.w, m.Rel.Left.Col.Name)
+	c.w.WriteString(` = _x_`)
+	colWithTable(c.w, m.Rel.Right.Col.Table, m.Rel.Right.Col.Name)
+
+	c.w.WriteString(` FROM _sg_input i`)
+	c.renderNestedRelTables(m, true)
+
+	c.w.WriteString(` WHERE `)
+	c.renderWhereFromJSON(m)
+
+	c.w.WriteString(` RETURNING `)
+	quoted(c.w, m.Ti.Name)
+	c.w.WriteString(`.*)`)
+}
+
+func (c *compilerContext) renderOneToManyDisconnectStmt(m qcode.Mutate) {
+	c.renderCteName(m)
+	c.w.WriteString(` AS (`)
+
+	rel := m.Rel
+	if rel.Left.Col.Array {
+		c.w.WriteString(`SELECT * FROM (VALUES(NULL::"`)
+		c.w.WriteString(rel.Left.Col.Type)
+		c.w.WriteString(`")) AS LOOKUP(`)
+		quoted(c.w, rel.Left.Col.Name)
+		c.w.WriteString(`))`)
+	} else {
+		c.w.WriteString(`SELECT `)
+		quoted(c.w, rel.Left.Col.Name)
+	}
+
+	c.w.WriteString(` FROM _sg_input i,`)
+	quoted(c.w, m.Ti.Name)
+
+	c.w.WriteString(` WHERE `)
+	c.renderWhereFromJSON(m)
+	c.w.WriteString(` LIMIT 1))`)
+
+	// 	c.w.WriteString(` FROM _sg_input i,`)
+	// 	quoted(c.w, m.Ti.Name)
+
+	// 	c.w.WriteString(` WHERE `)
+	// 	c.renderWhereFromJSON(m)
+	// 	c.w.WriteString(` LIMIT 1))`)
+	// }
+}
+
+func (c *compilerContext) renderOneToOneDisconnectStmt(m qcode.Mutate) {
 	// Render only for parent-to-child relationship of one-to-one
 	// For this to work the child needs to found first so it's
 	// null value can beset in the related column on the parent object.
 	// Eg. Update product and diconnect the user from it.
-	if rel.Type == sdata.RelOneToOne {
-		c.w.WriteString(`, "_x_`)
-		c.w.WriteString(m.Ti.Name)
-		c.w.WriteString(`" AS (`)
+	c.w.WriteString(`, `)
+	c.renderCteName(m)
+	c.w.WriteString(` AS ( UPDATE `)
 
-		if rel.Right.Col.Array {
-			c.w.WriteString(`SELECT `)
-			quoted(c.w, rel.Right.Col.Name)
-			c.w.WriteString(` FROM "_sg_input" i,`)
-			quoted(c.w, m.Ti.Name)
-			c.w.WriteString(` WHERE `)
-			c.renderWhereFromJSON(m, "disconnect")
-			c.w.WriteString(` LIMIT 1))`)
+	quoted(c.w, m.Ti.Name)
+	c.w.WriteString(` SET `)
+	quoted(c.w, m.Rel.Left.Col.Name)
+	c.w.WriteString(` = `)
 
-		} else {
-			c.w.WriteString(`SELECT * FROM (VALUES(NULL::"`)
-			c.w.WriteString(rel.Right.Col.Type)
-			c.w.WriteString(`")) AS LOOKUP(`)
-			quoted(c.w, rel.Right.Col.Name)
-			c.w.WriteString(`))`)
-		}
+	if m.Rel.Left.Col.Array {
+		c.w.WriteString(` array_remove(`)
+		quoted(c.w, m.Rel.Left.Col.Name)
+		c.w.WriteString(`, _x_`)
+		colWithTable(c.w, m.Rel.Right.Col.Table, m.Rel.Right.Col.Name)
+		c.w.WriteString(`)`)
+	} else {
+		c.w.WriteString(` NULL`)
 	}
 
-	if rel.Type == sdata.RelOneToMany {
-		c.w.WriteString(`, `)
-		if m.Multi {
-			renderCteNameWithSuffix(c.w, m, strconv.Itoa(int(m.MID-1)))
-			c.w.WriteString(` `)
-			quoted(c.w, m.Ti.Name)
-		} else {
-			quoted(c.w, m.Ti.Name)
-		}
+	c.w.WriteString(` FROM _sg_input i`)
+	c.renderNestedRelTables(m, true)
 
-		c.w.WriteString(` AS ( UPDATE `)
-		quoted(c.w, m.Ti.Name)
-		c.w.WriteString(` SET `)
-		quoted(c.w, m.RelPC.Right.Col.Name)
-		c.w.WriteString(` = `)
+	c.w.WriteString(` WHERE ((`)
+	colWithTable(c.w, m.Rel.Left.Col.Table, m.Rel.Left.Col.Name)
+	c.w.WriteString(`) = (_x_`)
+	colWithTable(c.w, m.Rel.Right.Col.Table, m.Rel.Right.Col.Name)
+	c.w.WriteString(`)`)
 
-		if m.RelPC.Right.Col.Array {
-			c.w.WriteString(` array_remove(`)
-			quoted(c.w, m.RelPC.Right.Col.Name)
-			c.w.WriteString(`, `)
-			colWithTable(c.w, m.RelPC.Left.Col.Table, m.RelPC.Left.Col.Name)
-			c.w.WriteString(`)`)
-
-		} else {
-			c.w.WriteString(` NULL`)
-		}
-
-		c.w.WriteString(`FROM "_sg_input" i,`)
-		if m.Multi {
-			renderCteNameWithSuffix(c.w, m, strconv.Itoa(int(m.MID-1)))
-			c.w.WriteString(` `)
-			quoted(c.w, m.RelPC.Left.Col.Table)
-		} else {
-			quoted(c.w, m.RelPC.Left.Col.Table)
-		}
-		c.w.WriteString(` WHERE`)
-		c.renderWhereFromJSON(m, "disconnect")
-
-		c.w.WriteString(` RETURNING `)
-		quoted(c.w, m.Ti.Name)
-		c.w.WriteString(`.*)`)
+	if m.Rel.Type == sdata.RelOneToOne {
+		c.w.WriteString(` AND `)
+		c.renderWhereFromJSON(m)
 	}
+	c.w.WriteString(`)`)
 
+	c.w.WriteString(` RETURNING `)
+	quoted(c.w, m.Ti.Name)
+	c.w.WriteString(`.*)`)
 }
 
-func (c *compilerContext) renderWhereFromJSON(m qcode.Mutate, key string) {
+func (c *compilerContext) renderOneToManyModifiers(m qcode.Mutate) {
+	renderPrefix := func(i int) {
+		if i == 0 {
+			c.w.WriteString(`WITH `)
+		} else {
+			c.w.WriteString(`, `)
+		}
+	}
+
+	i := 0
+	for id := range m.DependsOn {
+		m1 := c.qc.Mutates[id]
+		switch m1.Type {
+		case qcode.MTConnect:
+			renderPrefix(i)
+			c.renderOneToManyConnectStmt(m1)
+		case qcode.MTDisconnect:
+			renderPrefix(i)
+			c.renderOneToManyDisconnectStmt(m1)
+			i++
+		}
+		if i != 0 {
+			c.w.WriteString(` `)
+		}
+	}
+}
+
+func (c *compilerContext) renderWhereFromJSON(m qcode.Mutate) {
 	var kv map[string]json.RawMessage
 
 	//TODO: Move this json parsing into qcode
@@ -381,12 +399,12 @@ func (c *compilerContext) renderWhereFromJSON(m qcode.Mutate, key string) {
 			c.w.WriteString(col.Type)
 
 			c.w.WriteString(` AS list from json_array_elements_text(`)
-			renderPathJSON(c.w, m, key, k)
+			renderPathJSON(c.w, m, k)
 			c.w.WriteString(`::json) AS a))`)
 
 		} else if col.Array {
 			c.w.WriteString(`(`)
-			renderPathJSON(c.w, m, key, k)
+			renderPathJSON(c.w, m, k)
 			c.w.WriteString(`)::`)
 			c.w.WriteString(col.Type)
 
@@ -397,7 +415,7 @@ func (c *compilerContext) renderWhereFromJSON(m qcode.Mutate, key string) {
 		} else {
 			colWithTable(c.w, m.Ti.Name, k)
 			c.w.WriteString(` = (`)
-			renderPathJSON(c.w, m, key, k)
+			renderPathJSON(c.w, m, k)
 			c.w.WriteString(`)::`)
 			c.w.WriteString(col.Type)
 		}
@@ -405,36 +423,26 @@ func (c *compilerContext) renderWhereFromJSON(m qcode.Mutate, key string) {
 	}
 }
 
-func renderPathJSON(w *bytes.Buffer, m qcode.Mutate, key1, key2 string) {
+func (c *compilerContext) renderCteName(m qcode.Mutate) {
+	if m.Multi {
+		c.renderCteNameWithID(m)
+	} else {
+		c.w.WriteString(m.Ti.Name)
+	}
+}
+
+func (c *compilerContext) renderCteNameWithID(m qcode.Mutate) {
+	c.w.WriteString(m.Ti.Name)
+	c.w.WriteString(`_`)
+	int32String(c.w, m.ID)
+}
+
+func renderPathJSON(w *bytes.Buffer, m qcode.Mutate, k string) {
 	w.WriteString(`(i.j->`)
 	joinPath(w, m.Path)
-	w.WriteString(`->'`)
-	w.WriteString(key1)
-	w.WriteString(`'->>'`)
-	w.WriteString(key2)
+	w.WriteString(`->>'`)
+	w.WriteString(k)
 	w.WriteString(`')`)
-}
-
-func renderCteName(w *bytes.Buffer, m qcode.Mutate) {
-	w.WriteString(`"`)
-	w.WriteString(m.Ti.Name)
-	w.WriteString(`"`)
-}
-
-func renderCteNameWithSuffix(w *bytes.Buffer, m qcode.Mutate, suffix string) {
-	w.WriteString(`"`)
-	w.WriteString(m.Ti.Name)
-	w.WriteString(`_`)
-	w.WriteString(suffix)
-	w.WriteString(`"`)
-}
-
-func renderNameWithSuffix(w *bytes.Buffer, name string, suffix string) {
-	w.WriteString(`"`)
-	w.WriteString(name)
-	w.WriteString(`_`)
-	w.WriteString(suffix)
-	w.WriteString(`"`)
 }
 
 func joinPath(w *bytes.Buffer, path []string) {

@@ -128,10 +128,10 @@ func newExp(ti sdata.DBTableInfo, st *util.StackInf, av aexp, usePool bool) (*Ex
 	case "lt", "lesser_than":
 		ex.Op = OpLesserThan
 		ex.Val = node.Val
-	case "gte", "greater_or_equals":
+	case "gte", "gteq", "greater_or_equals":
 		ex.Op = OpGreaterOrEquals
 		ex.Val = node.Val
-	case "lte", "lesser_or_equals":
+	case "lte", "lteq", "lesser_or_equals":
 		ex.Op = OpLesserOrEquals
 		ex.Val = node.Val
 	case "in":

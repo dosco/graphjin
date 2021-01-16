@@ -463,8 +463,8 @@ func Example_queryManyToManyViaJoinTable2() {
 }
 
 func Example_queryWithAggregation() {
-	gql := `query(where: { id: { lteq: 100 } }) {
-		products {
+	gql := `query {
+		products(where: { id: { lteq: 100 } }) {
 			count_id
 		}
 	}`
@@ -828,34 +828,6 @@ func Example_queryWithSkipAndIncludeDirectives() {
 	// Output: {"users": [], "products": [{"id": 1, "name": "Product 1"}, {"id": 2, "name": "Product 2"}]}
 }
 
-/*
-func Example_subscription() {
-	gql := `subscription test {
-		user(id: $id) {
-			id
-			email
-		}
-	}`
-
-	vars := json.RawMessage(`{ "id": 3 }`)
-
-	conf := &core.Config{DBType: dbType, DisableAllowList: true, PollDuration: 1}
-	gj, err := core.NewGraphJin(conf, db)
-	if err != nil {
-		panic(err)
-	}
-
-	m, err := gj.Subscribe(context.Background(), gql, vars)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	msg := <-m.Result
-	fmt.Println(string(msg.Data))
-	// Output: {"user": {"id": 3, "email": "user3@test.com"}}
-}
-*/
-
 func Example_queryWithRemoteAPIJoin() {
 	gql := `query {
 		users {
@@ -990,13 +962,16 @@ func Example_queryWithNestedRelationship1() {
 	gql := `query {
 		reply : comment(id: $id) {
 			id
-			comments(find: "parents") {
+			comments(
+				where: { id: { lt: 50 } }, 
+				limit: 5,
+				find: "parents") {
 				id
 			}
 		}
 	}`
 
-	vars := json.RawMessage(`{"id": 5}`)
+	vars := json.RawMessage(`{"id": 50 }`)
 
 	conf := &core.Config{DBType: dbType, DisableAllowList: true}
 	gj, err := core.NewGraphJin(conf, db)
@@ -1010,7 +985,7 @@ func Example_queryWithNestedRelationship1() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"reply": {"id": 5, "comments": [{"id": 4}, {"id": 3}, {"id": 2}, {"id": 1}]}}
+	// Output: {"reply": {"id": 50, "comments": [{"id": 49}, {"id": 48}, {"id": 47}, {"id": 46}, {"id": 45}]}}
 }
 
 func Example_queryWithNestedRelationship2() {

@@ -2,20 +2,19 @@
 package psql
 
 import (
-	"strconv"
-
 	"github.com/dosco/graphjin/core/internal/qcode"
+	"github.com/dosco/graphjin/core/internal/sdata"
 )
 
 func (c *compilerContext) renderInsert() {
 	for _, m := range c.qc.Mutates {
-		switch m.Type {
-		case qcode.MTInsert:
+		switch {
+		case m.Type == qcode.MTInsert:
 			c.renderInsertStmt(m, false)
-		case qcode.MTUpsert:
+		case m.Type == qcode.MTUpsert:
 			c.renderInsertStmt(m, true)
-		case qcode.MTConnect:
-			c.renderConnectStmt(m)
+		case m.Rel.Type == sdata.RelOneToOne && m.Type == qcode.MTConnect:
+			c.renderOneToOneConnectStmt(m)
 		}
 	}
 	c.w.WriteString(` `)
@@ -23,27 +22,25 @@ func (c *compilerContext) renderInsert() {
 
 func (c *compilerContext) renderInsertStmt(m qcode.Mutate, embedded bool) {
 	c.w.WriteString(`, `)
-	if m.Multi {
-		renderCteNameWithSuffix(c.w, m, strconv.Itoa(int(m.MID)))
-	} else {
-		renderCteName(c.w, m)
-	}
+	c.renderCteName(m)
 	c.w.WriteString(` AS (`)
+
+	c.renderOneToManyModifiers(m)
 
 	c.w.WriteString(`INSERT INTO `)
 	quoted(c.w, m.Ti.Name)
 
 	c.w.WriteString(` (`)
 	n := c.renderInsertUpdateColumns(m, false)
-	c.renderNestedInsertUpdateRelColumns(m, false, n)
+	c.renderNestedRelColumns(m, false, false, n)
 	c.w.WriteString(`)`)
 
 	c.w.WriteString(` SELECT `)
 	n = c.renderInsertUpdateColumns(m, true)
-	c.renderNestedInsertUpdateRelColumns(m, true, n)
+	c.renderNestedRelColumns(m, true, false, n)
 
-	c.w.WriteString(` FROM "_sg_input" i`)
-	c.renderNestedInsertUpdateRelTables(m)
+	c.w.WriteString(` FROM _sg_input i`)
+	c.renderNestedRelTables(m, false)
 
 	if m.Array {
 		c.w.WriteString(`, json_populate_recordset`)

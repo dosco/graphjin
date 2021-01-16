@@ -57,6 +57,7 @@ const (
 type DBRel struct {
 	Type    RelType
 	Through struct {
+		Ti   DBTableInfo
 		ColL DBColumn
 		ColR DBColumn
 	}
@@ -415,6 +416,7 @@ func (s *DBSchema) updateSchemaOTMT(
 	// One-to-many-through relation between 1nd foreign key table and the
 	// 2nd foreign key table
 	rel1 := DBRel{Type: RelOneToManyThrough}
+	rel1.Through.Ti = ti
 	rel1.Through.ColL = col1
 	rel1.Through.ColR = col2
 
@@ -433,6 +435,7 @@ func (s *DBSchema) updateSchemaOTMT(
 	// One-to-many-through relation between 2nd foreign key table and the
 	// 1nd foreign key table
 	rel2 := DBRel{Type: RelOneToManyThrough}
+	rel1.Through.Ti = ti
 	rel2.Through.ColL = col2
 	rel2.Through.ColR = col1
 

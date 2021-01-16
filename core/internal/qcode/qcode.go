@@ -56,7 +56,7 @@ type QCode struct {
 	Roots     []int32
 	rootsA    [5]int32
 	Mutates   []Mutate
-	MCounts   map[string]int32
+	MUnions   map[string][]int32
 	Schema    *sdata.DBSchema
 	Remotes   int32
 }
