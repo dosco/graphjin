@@ -992,7 +992,7 @@ func (co *Compiler) compileArgLimit(sel *Select, arg *graph.Arg) error {
 
 	switch node.Type {
 	case graph.NodeNum:
-		if n, err := strconv.Atoi(node.Val); err != nil {
+		if n, err := strconv.ParseInt(node.Val, 10, 32); err != nil {
 			return err
 		} else {
 			sel.Paging.Limit = int32(n)
@@ -1013,7 +1013,7 @@ func (co *Compiler) compileArgOffset(sel *Select, arg *graph.Arg) error {
 
 	switch node.Type {
 	case graph.NodeNum:
-		if n, err := strconv.Atoi(node.Val); err != nil {
+		if n, err := strconv.ParseInt(node.Val, 10, 32); err != nil {
 			return err
 		} else {
 			sel.Paging.Offset = int32(n)
