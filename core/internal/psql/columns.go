@@ -192,7 +192,14 @@ func (c *compilerContext) renderBaseColumns(sel *qcode.Select) {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
-		colWithTable(c.w, sel.Table, col.Col.Name)
+		if col.Col.Array && c.md.ct == "mysql" {
+			c.w.WriteString(`CAST(`)
+			colWithTable(c.w, sel.Table, col.Col.Name)
+			c.w.WriteString(` AS JSON) AS `)
+			c.w.WriteString(col.Col.Name)
+		} else {
+			colWithTable(c.w, sel.Table, col.Col.Name)
+		}
 		i++
 	}
 	for _, fn := range sel.Funcs {

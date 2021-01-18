@@ -363,7 +363,7 @@ func Example_queryParentAndChildrenViaArrayColumn() {
 
 	conf := &core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 2}
 	conf.Tables = []core.Table{
-		{Name: "products", Columns: []core.Column{{Name: "category_ids", ForeignKey: "categories.id"}}},
+		{Name: "products", Columns: []core.Column{{Name: "category_ids", ForeignKey: "categories.id", Array: true}}},
 	}
 
 	gj, err := core.NewGraphJin(conf, db)
