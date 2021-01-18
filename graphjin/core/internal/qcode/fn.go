@@ -15,25 +15,17 @@ func (co *Compiler) isFunction(sel *Select, fname string) (Function, bool, error
 	switch {
 	case fname == "search_rank":
 		fn.Name = "search_rank"
-		fn.Col = sel.Ti.TSVCol
 
-		if fn.Col.Name == "" {
-			return fn, false, fmt.Errorf("no tsvector column found: %s", fname)
-		}
 		if _, ok := sel.ArgMap["search"]; !ok {
-			return fn, false, fmt.Errorf("not a search query: %s", fname)
+			return fn, false, fmt.Errorf("no search defined: %s", fname)
 		}
 
 	case strings.HasPrefix(fname, "search_headline_"):
 		fn.Name = "search_headline"
-		fn.Col = sel.Ti.TSVCol
 		cn = fname[16:]
 
-		if fn.Col.Name == "" {
-			return fn, false, fmt.Errorf("no tsvector column found: %s", fname)
-		}
 		if _, ok := sel.ArgMap["search"]; !ok {
-			return fn, false, fmt.Errorf("not a search query: %s", fname)
+			return fn, false, fmt.Errorf("no search defined: %s", fname)
 		}
 
 	case fname == "__typename":

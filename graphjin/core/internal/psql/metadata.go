@@ -49,18 +49,18 @@ func (c *compilerContext) renderVar(vv string) {
 // nolint: errcheck
 func (c *compilerContext) renderParam(p Param) {
 	var id int
-	var ok bool
+	//var ok bool
 
 	md := c.md
-	if id, ok = md.pindex[p.Name]; !ok {
-		md.params = append(c.md.params, p)
-		id = len(c.md.params)
+	//if id, ok = md.pindex[p.Name]; !ok {
+	md.params = append(c.md.params, p)
+	id = len(c.md.params)
 
-		if md.pindex == nil {
-			md.pindex = make(map[string]int)
-		}
-		md.pindex[p.Name] = id
-	}
+	// if md.pindex == nil {
+	// 	md.pindex = make(map[string]int)
+	// }
+	// md.pindex[p.Name] = id
+	//}
 
 	if md.poll {
 		_, _ = c.w.WriteString(`_sg_sub.`)

@@ -26,7 +26,7 @@ type Metadata struct {
 	ct     string
 	poll   bool
 	params []Param
-	pindex map[string]int
+	//pindex map[string]int
 }
 
 type compilerContext struct {
@@ -165,12 +165,7 @@ func (co *Compiler) CompileQuery(
 	// This helps multi-root work as well as return a null json value when
 	// there are no rows found.
 
-	switch c.md.ct {
-	case "mysql":
-		c.w.WriteString(`) AS __root FROM (VALUES ROW(true)) AS __root_x`)
-	default:
-		c.w.WriteString(`) AS __root FROM (VALUES(true)) AS __root_x`)
-	}
+	c.w.WriteString(`) AS __root FROM ((SELECT true)) AS __root_x`)
 	c.renderQuery(st, true)
 }
 
@@ -231,12 +226,14 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 	}
 	switch c.md.ct {
 	case "mysql":
-		c.w.WriteString(`SELECT coalesce(json_arrayagg(__sj_`)
+		c.w.WriteString(`SELECT CAST(COALESCE(json_arrayagg(__sj_`)
+		int32String(c.w, sel.ID)
+		c.w.WriteString(`.json), '[]') AS JSON) AS json`)
 	default:
-		c.w.WriteString(`SELECT coalesce(jsonb_agg(__sj_`)
+		c.w.WriteString(`SELECT COALESCE(jsonb_agg(__sj_`)
+		int32String(c.w, sel.ID)
+		c.w.WriteString(`.json), '[]') AS json`)
 	}
-	int32String(c.w, sel.ID)
-	c.w.WriteString(`.json), '[]') as json`)
 
 	// Build the cursor value string
 	if sel.Paging.Cursor {
@@ -322,7 +319,7 @@ func (c *compilerContext) renderLateralJoin() {
 
 func (c *compilerContext) renderLateralJoinClose(sel *qcode.Select) {
 	c.w.WriteString(`)`)
-	aliasWithID(c.w, "__sj", sel.ID)
+	aliasWithID(c.w, `__sj`, sel.ID)
 	c.w.WriteString(` ON true`)
 }
 
@@ -333,9 +330,9 @@ func (c *compilerContext) renderJoinTables(rel sdata.DBRel) {
 }
 
 func (c *compilerContext) renderJoin(rel sdata.DBRel) {
-	c.w.WriteString(` LEFT OUTER JOIN "`)
+	c.w.WriteString(` LEFT OUTER JOIN `)
 	c.w.WriteString(rel.Through.ColL.Table)
-	c.w.WriteString(`" ON ((`)
+	c.w.WriteString(` ON ((`)
 	switch {
 	case !rel.Left.Col.Array && rel.Through.ColL.Array:
 		colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
@@ -438,9 +435,8 @@ func (c *compilerContext) renderFrom(sel *qcode.Select) {
 	case sdata.RelEmbedded:
 		// jsonb_to_recordset('[{"a":1,"b":[1,2,3],"c":"bar"}, {"a":2,"b":[1,2,3],"c":"bar"}]') as x(a int, b text, d text);
 
-		c.w.WriteString(`"`)
 		c.w.WriteString(sel.Rel.Left.Col.Table)
-		c.w.WriteString(`", `)
+		c.w.WriteString(`, `)
 
 		c.w.WriteString(sel.Ti.Type)
 		c.w.WriteString(`_to_recordset(`)
@@ -463,7 +459,12 @@ func (c *compilerContext) renderFrom(sel *qcode.Select) {
 	case sdata.RelRecursive:
 		c.w.WriteString(`(SELECT * FROM `)
 		quoted(c.w, sel.Rel.Right.VTable)
-		c.w.WriteString(` OFFSET 1) `)
+		switch c.md.ct {
+		case "mysql":
+			c.w.WriteString(` LIMIT 1, 18446744073709551610) `)
+		default:
+			c.w.WriteString(` OFFSET 1) `)
+		}
 		quoted(c.w, sel.Table)
 
 	default:
@@ -486,14 +487,14 @@ func (c *compilerContext) renderCursorCTE(sel *qcode.Select) {
 			if i != 0 {
 				c.w.WriteString(`, `)
 			}
-			c.w.WriteString(`SUBSTRING_INDEX(SUBSTRING_INDEX(a.column_0, ',', `)
+			c.w.WriteString(`SUBSTRING_INDEX(SUBSTRING_INDEX(a.i, ',', `)
 			int32String(c.w, int32(i+1))
 			c.w.WriteString(`), ',', -1) AS `)
 			quoted(c.w, ob.Col.Name)
 		}
-		c.w.WriteString(` FROM (VALUES ROW(`)
+		c.w.WriteString(` FROM ((SELECT `)
 		c.renderParam(Param{Name: "cursor", Type: "text"})
-		c.w.WriteString(`)) as a) `)
+		c.w.WriteString(` AS i)) as a) `)
 
 	default:
 		for i, ob := range sel.OrderBy {
@@ -632,6 +633,10 @@ func (c *compilerContext) renderOp(schema *sdata.DBSchema, ti sdata.DBTableInfo,
 		return
 	}
 
+	if c.renderValPrefix(ti, ex, c.vars) {
+		return
+	}
+
 	if ex.Col.Name != "" {
 		c.w.WriteString(`((`)
 		if ex.Type == qcode.ValRef && ex.Op == qcode.OpIsNull {
@@ -715,30 +720,47 @@ func (c *compilerContext) renderOp(schema *sdata.DBSchema, ti sdata.DBTableInfo,
 		return
 
 	case qcode.OpTsQuery:
-		//fmt.Fprintf(w, `(("%s") @@ websearch_to_tsquery('%s'))`, c.ti.TSVCol, val.Val)
-
 		switch c.md.ct {
 		case "mysql":
 			//MATCH (name) AGAINST ('phone' IN BOOLEAN MODE);
-		default:
-			c.w.WriteString(`((`)
-			colWithTable(c.w, ti.Name, ti.TSVCol.Name)
-			if ti.Schema.DBVersion() >= 110000 {
-				c.w.WriteString(`) @@ websearch_to_tsquery(`)
-			} else {
-				c.w.WriteString(`) @@ to_tsquery(`)
+			c.w.WriteString(`(MATCH(`)
+			for i, col := range ti.FullText {
+				if i != 0 {
+					c.w.WriteString(`, `)
+				}
+				colWithTable(c.w, ti.Name, col.Name)
 			}
+			c.w.WriteString(`) AGAINST (`)
 			c.renderParam(Param{Name: ex.Val, Type: "text"})
-			c.w.WriteString(`))`)
+			c.w.WriteString(` IN NATURAL LANGUAGE MODE))`)
+
+		default:
+			//fmt.Fprintf(w, `(("%s") @@ websearch_to_tsquery('%s'))`, c.ti.TSVCol, val.Val)
+			c.w.WriteString(`((`)
+			for i, col := range ti.FullText {
+				if i != 0 {
+					c.w.WriteString(` OR (`)
+				}
+				colWithTable(c.w, ti.Name, col.Name)
+				if ti.Schema.DBVersion() >= 110000 {
+					c.w.WriteString(`) @@ websearch_to_tsquery(`)
+				} else {
+					c.w.WriteString(`) @@ to_tsquery(`)
+				}
+				c.renderParam(Param{Name: ex.Val, Type: "text"})
+				c.w.WriteString(`)`)
+			}
+			c.w.WriteString(`)`)
 		}
 		return
 	}
+	c.w.WriteString(` `)
 
 	switch {
 	case ex.Type == qcode.ValList:
 		c.renderList(ex)
 	default:
-		c.renderVal(ex, c.vars)
+		c.renderValSuffix(ti, ex, c.vars)
 	}
 
 	c.w.WriteString(`)`)
@@ -801,7 +823,7 @@ func (c *compilerContext) renderDistinctOn(sel *qcode.Select) {
 }
 
 func (c *compilerContext) renderList(ex *qcode.Exp) {
-	c.w.WriteString(` (ARRAY[`)
+	c.w.WriteString(`(ARRAY[`)
 	for i := range ex.ListVal {
 		if i != 0 {
 			c.w.WriteString(`, `)
@@ -818,36 +840,40 @@ func (c *compilerContext) renderList(ex *qcode.Exp) {
 	c.w.WriteString(`])`)
 }
 
-func (c *compilerContext) renderVal(ex *qcode.Exp, vars map[string]string) {
-	c.w.WriteString(` `)
+func (c *compilerContext) renderValPrefix(ti sdata.DBTableInfo, ex *qcode.Exp, vars map[string]string) bool {
+	if ex.Type == qcode.ValVar {
+		return c.renderValVarPrefix(ti, ex, vars)
+	}
+	return false
+}
 
+func (c *compilerContext) renderValVarPrefix(ti sdata.DBTableInfo, ex *qcode.Exp, vars map[string]string) bool {
+	val, isVal := vars[ex.Val]
+	if isVal && strings.HasPrefix(val, "sql:") {
+		val = `(` + val[4:] + `)`
+	}
+
+	if ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn {
+		if c.md.ct == "mysql" {
+			c.w.WriteString(`JSON_CONTAINS(`)
+			if isVal {
+				squoted(c.w, val)
+			} else {
+				c.renderParam(Param{Name: ex.Val, Type: ex.Col.Type, IsArray: true})
+			}
+			c.w.WriteString(`, CAST(`)
+			colWithTable(c.w, ti.Name, ex.Col.Name)
+			c.w.WriteString(` AS JSON), '$')`)
+			return true
+		}
+	}
+	return false
+}
+
+func (c *compilerContext) renderValSuffix(ti sdata.DBTableInfo, ex *qcode.Exp, vars map[string]string) {
 	switch ex.Type {
 	case qcode.ValVar:
-		val, ok := vars[ex.Val]
-		switch {
-		case ok && strings.HasPrefix(val, "sql:"):
-			c.w.WriteString(`(`)
-			c.renderVar(val[4:])
-			c.w.WriteString(`)`)
-			if ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn {
-				return
-			}
-
-		case ok:
-			squoted(c.w, val)
-
-		case ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn:
-			c.w.WriteString(`(ARRAY(SELECT json_array_elements_text(`)
-			c.renderParam(Param{Name: ex.Val, Type: ex.Col.Type, IsArray: true})
-			c.w.WriteString(`))`)
-			c.w.WriteString(` :: `)
-			c.w.WriteString(ex.Col.Type)
-			c.w.WriteString(`[])`)
-			return
-
-		default:
-			c.renderParam(Param{Name: ex.Val, Type: ex.Col.Type, IsArray: false})
-		}
+		c.renderValVarSuffix(ti, ex, vars)
 
 	case qcode.ValRef:
 		colWithTable(c.w, ex.Table, ex.Col.Name)
@@ -855,9 +881,32 @@ func (c *compilerContext) renderVal(ex *qcode.Exp, vars map[string]string) {
 	default:
 		squoted(c.w, ex.Val)
 	}
+}
 
-	if c.md.ct != "mysql" {
+func (c *compilerContext) renderValVarSuffix(ti sdata.DBTableInfo, ex *qcode.Exp, vars map[string]string) {
+	val, isVal := vars[ex.Val]
+	if isVal && strings.HasPrefix(val, "sql:") {
+		val = `(` + val[4:] + `)`
+	}
+
+	switch ex.Op {
+	case qcode.OpIn, qcode.OpNotIn:
+		c.w.WriteString(`(ARRAY(SELECT json_array_elements_text(`)
+		if isVal {
+			squoted(c.w, val)
+		} else {
+			c.renderParam(Param{Name: ex.Val, Type: ex.Col.Type, IsArray: true})
+		}
+		c.w.WriteString(`))`)
 		c.w.WriteString(` :: `)
 		c.w.WriteString(ex.Col.Type)
+		c.w.WriteString(`[])`)
+
+	default:
+		if isVal {
+			squoted(c.w, val)
+		} else {
+			c.renderParam(Param{Name: ex.Val, Type: ex.Col.Type, IsArray: false})
+		}
 	}
 }

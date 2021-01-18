@@ -98,9 +98,9 @@ func (c *compilerContext) renderUnionColumn(sel, csel *qcode.Select) {
 		if usel.SkipRender == qcode.SkipTypeUserNeeded {
 			c.w.WriteString(`NULL `)
 		} else {
-			c.w.WriteString(`"__sj_`)
+			c.w.WriteString(`__sj_`)
 			int32String(c.w, usel.ID)
-			c.w.WriteString(`"."json" `)
+			c.w.WriteString(`.json `)
 		}
 	}
 	c.w.WriteString(`END)`)
@@ -125,30 +125,55 @@ func (c *compilerContext) renderFunction(sel *qcode.Select, fn qcode.Function) {
 }
 
 func (c *compilerContext) renderFunctionSearchRank(sel *qcode.Select, fn qcode.Function) {
-	cn := sel.Ti.TSVCol.Name
-	arg := sel.ArgMap["search"]
+	if c.md.ct == "mysql" {
+		c.w.WriteString(`0`)
+		return
+	}
 
 	c.w.WriteString(`ts_rank(`)
-	colWithTable(c.w, sel.Table, cn)
+	for i, col := range sel.Ti.FullText {
+		if i != 0 {
+			c.w.WriteString(` || `)
+		}
+		colWithTable(c.w, sel.Table, col.Name)
+	}
 	if sel.Ti.Schema.DBVersion() >= 110000 {
 		c.w.WriteString(`, websearch_to_tsquery(`)
 	} else {
 		c.w.WriteString(`, to_tsquery(`)
 	}
+	arg := sel.ArgMap["search"]
 	c.renderParam(Param{Name: arg.Val, Type: "text"})
 	c.w.WriteString(`))`)
 }
 
 func (c *compilerContext) renderFunctionSearchHeadline(sel *qcode.Select, fn qcode.Function) {
-	arg := sel.ArgMap["search"]
+	if c.md.ct == "mysql" {
+		c.w.WriteString(`''`)
+		return
+	}
+
+	hasIndex := false
+	for _, col := range sel.Ti.FullText {
+		if col.Key == fn.Col.Key {
+			hasIndex = true
+		}
+	}
 
 	c.w.WriteString(`ts_headline(`)
-	colWithTable(c.w, sel.Table, fn.Col.Name)
+	if hasIndex {
+		colWithTable(c.w, sel.Table, fn.Col.Name)
+	} else {
+		c.w.WriteString(`to_tsvector(`)
+		colWithTable(c.w, sel.Table, fn.Col.Name)
+		c.w.WriteString(`)`)
+	}
 	if sel.Ti.Schema.DBVersion() >= 110000 {
 		c.w.WriteString(`, websearch_to_tsquery(`)
 	} else {
 		c.w.WriteString(`, to_tsquery(`)
 	}
+	arg := sel.ArgMap["search"]
 	c.renderParam(Param{Name: arg.Val, Type: "text"})
 	c.w.WriteString(`))`)
 }

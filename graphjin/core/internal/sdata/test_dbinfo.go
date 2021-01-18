@@ -48,7 +48,7 @@ func GetTestDBInfo() *DBInfo {
 			DBColumn{ID: 5, Name: "user_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "users", FKeyCol: "id"},
 			DBColumn{ID: 6, Name: "created_at", Type: "timestamp without time zone", NotNull: true, PrimaryKey: false, UniqueKey: false},
 			DBColumn{ID: 7, Name: "updated_at", Type: "timestamp without time zone", NotNull: true, PrimaryKey: false, UniqueKey: false},
-			DBColumn{ID: 8, Name: "tsv", Type: "tsvector", NotNull: false, PrimaryKey: false, UniqueKey: false},
+			DBColumn{ID: 8, Name: "tsv", Type: "tsvector", NotNull: false, PrimaryKey: false, UniqueKey: false, FullText: true},
 			DBColumn{ID: 9, Name: "tags", Type: "text[]", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "tags", FKeyCol: "slug", Array: true},
 			DBColumn{ID: 9, Name: "tag_count", Type: "json", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "tag_count", FKeyCol: ""}},
 		[]DBColumn{
@@ -68,7 +68,7 @@ func GetTestDBInfo() *DBInfo {
 			DBColumn{ID: 2, Name: "count", Type: "int", NotNull: false, PrimaryKey: false, UniqueKey: false}},
 		[]DBColumn{
 			DBColumn{ID: 1, Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
-			DBColumn{ID: 2, Name: "key", Type: "text", NotNull: false, PrimaryKey: false, UniqueKey: false},
+			DBColumn{ID: 2, Name: "verb", Type: "text", NotNull: false, PrimaryKey: false, UniqueKey: false},
 			DBColumn{ID: 2, Name: "subject_type", Type: "text", NotNull: false, PrimaryKey: false, UniqueKey: false},
 			DBColumn{ID: 2, Name: "subject_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false}},
 		[]DBColumn{

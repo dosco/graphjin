@@ -31,7 +31,7 @@ type DBTableInfo struct {
 	IsAlias    bool
 	Columns    []DBColumn
 	PrimaryCol DBColumn
-	TSVCol     DBColumn
+	FullText   []DBColumn
 	Singular   string
 	Plural     string
 	Blocked    bool
@@ -141,8 +141,8 @@ func (s *DBSchema) addTableInfo(
 		c.Table = t.Name
 
 		switch {
-		case c.Type == "tsvector":
-			ti.TSVCol = cols[i]
+		case c.FullText:
+			ti.FullText = append(ti.FullText, cols[i])
 
 		case c.PrimaryKey:
 			ti.PrimaryCol = cols[i]

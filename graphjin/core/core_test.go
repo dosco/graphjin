@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"database/sql"
+	"flag"
 	"fmt"
 	"os"
 	"testing"
@@ -20,11 +21,18 @@ type dbinfo struct {
 }
 
 var (
-	dbType string
-	db     *sql.DB
+	dbParam string
+	dbType  string
+	db      *sql.DB
 )
 
+func init() {
+	flag.StringVar(&dbParam, "db", "", "database type")
+}
+
 func TestMain(m *testing.M) {
+	flag.Parse()
+
 	dbinfoList := []dbinfo{
 		{
 			name:    "postgres",
@@ -48,9 +56,20 @@ func TestMain(m *testing.M) {
 	}
 
 	for _, v := range dbinfoList {
-		if v.disable {
+		disable := v.disable
+
+		if dbParam != "" {
+			if dbParam != v.name {
+				continue
+			} else {
+				disable = false
+			}
+		}
+
+		if disable {
 			continue
 		}
+
 		con, err := gnomock.Start(v.preset)
 		if err != nil {
 			panic(err)
