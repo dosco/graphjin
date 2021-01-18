@@ -59,7 +59,7 @@ func Example_insertWithPresets() {
 			"id": 2001,
 			"name": "Product 2001",
 			"description": "Description for product 2001",
-			"price": 2011.50,
+			"price": 2011.5,
 			"tags": ["Tag 1", "Tag 2"],
 			"category_ids": [1, 2, 3, 4, 5]
 		}
@@ -162,7 +162,7 @@ func Example_insertIntoMultipleRelatedTables1() {
 				"id": 2002,
 				"name": "Product 2002",
 				"description": "Description for product 2002",
-				"price": 2012.50,
+				"price": 2012.5,
 				"tags": ["Tag 1", "Tag 2"],
 				"category_ids": [1, 2, 3, 4, 5],
 				"owner_id": 3
@@ -183,7 +183,7 @@ func Example_insertIntoMultipleRelatedTables1() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"purchase": {"product": {"id": 2002, "name": "Product 2002", "price": 2012.50}, "customer": {"id": 1004, "email": "user1004@test.com", "full_name": "User 1004"}, "quantity": 5}}
+	// Output: {"purchase": {"product": {"id": 2002, "name": "Product 2002", "price": 2012.5}, "customer": {"id": 1004, "email": "user1004@test.com", "full_name": "User 1004"}, "quantity": 5}}
 }
 
 func Example_insertIntoMultipleRelatedTables2() {
@@ -211,7 +211,7 @@ func Example_insertIntoMultipleRelatedTables2() {
 				"id": 2003,
 				"name": "Product 2003",
 				"description": "Description for product 2003",
-				"price": 2013.50,
+				"price": 2013.5,
 				"tags": ["Tag 1", "Tag 2"],
 				"category_ids": [1, 2, 3, 4, 5],
 				"owner_id": 3
@@ -232,7 +232,7 @@ func Example_insertIntoMultipleRelatedTables2() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"user": {"id": 1005, "email": "user1005@test.com", "product": {"id": 2003, "name": "Product 2003", "price": 2013.50}, "full_name": "User 1005"}}
+	// Output: {"user": {"id": 1005, "email": "user1005@test.com", "product": {"id": 2003, "name": "Product 2003", "price": 2013.5}, "full_name": "User 1005"}}
 }
 
 func Example_insertIntoMultipleRelatedTables3() {
@@ -253,7 +253,7 @@ func Example_insertIntoMultipleRelatedTables3() {
 			"id": 2004,
 			"name": "Product 2004",
 			"description": "Description for product 2004",
-			"price": 2014.50,
+			"price": 2014.5,
 			"tags": ["Tag 1", "Tag 2"],
 			"category_ids": [1, 2, 3, 4, 5],
 			"owner": {
@@ -300,7 +300,7 @@ func Example_insertIntoTableAndConnectToRelatedTables() {
 			"id": 2005,
 			"name": "Product 2005",
 			"description": "Description for product 2005",
-			"price": 2015.50,
+			"price": 2015.5,
 			"tags": ["Tag 1", "Tag 2"],
 			"category_ids": [1, 2, 3, 4, 5],
 			"owner": {
@@ -342,7 +342,7 @@ func Example_insertIntoTableAndConnectToRelatedTableWithArrayColumn() {
 			"id": 2006,
 			"name": "Product 2006",
 			"description": "Description for product 2006",
-			"price": 2016.50,
+			"price": 2016.5,
 			"tags": ["Tag 1", "Tag 2"],
 			"categories": {
 				"connect": { "id": [1, 2, 3, 4, 5] }

@@ -101,7 +101,7 @@ wanted it in. All this without you writing any code or SQL.
             "id": 5,
             "email": "jordanecruickshank@ferry.io"
           },
-          "created_at": "2020-05-13T13:51:21.729501+00:00"
+          "created_at": "2020-05-13T13:51:21.729501"
         },
         ...
       ],

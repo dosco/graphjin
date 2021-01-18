@@ -52,6 +52,7 @@ require (
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/spf13/viper v1.7.1
+	github.com/stretchr/testify v1.5.1
 	go.opencensus.io v0.22.4
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.16.0

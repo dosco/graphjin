@@ -102,8 +102,6 @@ type DBTable struct {
 }
 
 func GetTables(db *sql.DB) ([]DBTable, error) {
-	//	t.table_schema NOT IN ('information_schema', 'pg_catalog')
-
 	sqlStmt := `
 SELECT
 	t.table_name as "name",
@@ -144,6 +142,7 @@ type DBColumn struct {
 	NotNull    bool
 	PrimaryKey bool
 	UniqueKey  bool
+	FullText   bool
 	FKeySchema string
 	FKeyTable  string
 	FKeyCol    string
@@ -179,7 +178,8 @@ func GetColumns(db *sql.DB, dbtype string, tables []string) (
 	for rows.Next() {
 		var c DBColumn
 
-		err = rows.Scan(&c.Table, &c.Name, &c.Type, &c.NotNull, &c.Array, &c.PrimaryKey, &c.UniqueKey, &c.FKeySchema, &c.FKeyTable, &c.FKeyCol)
+		err = rows.Scan(&c.Table, &c.Name, &c.Type, &c.NotNull, &c.PrimaryKey, &c.UniqueKey, &c.Array, &c.FullText, &c.FKeySchema, &c.FKeyTable, &c.FKeyCol)
+
 		if err != nil {
 			return nil, err
 		}
@@ -188,6 +188,9 @@ func GetColumns(db *sql.DB, dbtype string, tables []string) (
 		if v.Key == "" {
 			v = c
 			v.Key = strings.ToLower(c.Name)
+		}
+		if c.Type != "" {
+			v.Type = c.Type
 		}
 		if c.PrimaryKey {
 			v.PrimaryKey = true
@@ -201,6 +204,9 @@ func GetColumns(db *sql.DB, dbtype string, tables []string) (
 		}
 		if c.Array {
 			v.Array = true
+		}
+		if c.FullText {
+			v.FullText = true
 		}
 		if c.FKeyTable != "" {
 			v.FKeyTable = c.FKeyTable

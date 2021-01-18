@@ -61,32 +61,6 @@ func Example_queryWithUser() {
 	// Output: {"product": {"id": 3, "user": {"id": 3}}}
 }
 
-func Example_queryWithVariableLimit() {
-	gql := `query {
-		products(limit: $limit) {
-			id
-		}
-	}`
-
-	vars := json.RawMessage(`{
-		"limit": 10
-	}`)
-
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
-	gj, err := core.NewGraphJin(conf, db)
-	if err != nil {
-		panic(err)
-	}
-
-	res, err := gj.GraphQL(context.Background(), gql, vars)
-	if err != nil {
-		fmt.Println(err)
-	} else {
-		fmt.Println(string(res.Data))
-	}
-	// Output: {"products": [{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}, {"id": 6}, {"id": 7}, {"id": 8}, {"id": 9}, {"id": 10}]}
-}
-
 func Example_queryWithLimitOffsetOrderByDistinctAndWhere() {
 	gql := `query {
 		proDUcts(
@@ -122,7 +96,7 @@ func Example_queryWithLimitOffsetOrderByDistinctAndWhere() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"products": [{"id": 99, "name": "Product 99", "price": 109.50}, {"id": 98, "name": "Product 98", "price": 108.50}, {"id": 97, "name": "Product 97", "price": 107.50}, {"id": 96, "name": "Product 96", "price": 106.50}, {"id": 95, "name": "Product 95", "price": 105.50}]}
+	// Output: {"products": [{"id": 99, "name": "Product 99", "price": 109.5}, {"id": 98, "name": "Product 98", "price": 108.5}, {"id": 97, "name": "Product 97", "price": 107.5}, {"id": 96, "name": "Product 96", "price": 106.5}, {"id": 95, "name": "Product 95", "price": 105.5}]}
 }
 
 func Example_queryWithWhereIn() {
@@ -177,7 +151,7 @@ func Example_queryWithWhereNotIsNullAndGreaterThan() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"product": {"id": 1, "name": "Product 1", "price": 11.50}}
+	// Output: {"product": {"id": 1, "name": "Product 1", "price": 11.5}}
 }
 
 func Example_queryWithWhereGreaterThanOrLesserThan() {
@@ -208,7 +182,7 @@ func Example_queryWithWhereGreaterThanOrLesserThan() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"products": [{"id": 1, "name": "Product 1", "price": 11.50}, {"id": 2, "name": "Product 2", "price": 12.50}, {"id": 3, "name": "Product 3", "price": 13.50}]}
+	// Output: {"products": [{"id": 1, "name": "Product 1", "price": 11.5}, {"id": 2, "name": "Product 2", "price": 12.5}, {"id": 3, "name": "Product 3", "price": 13.5}]}
 }
 
 func Example_queryWithWhereOnRelatedTable() {
@@ -291,16 +265,14 @@ func Example_queryByID() {
 
 func Example_queryBySearch() {
 	gql := `query {
-		products(search: $query) {
+		products(search: $query, limit: 5) {
 			id
 			name
-			search_rank
-			search_headline_description
 		}
 	}`
 
 	vars := json.RawMessage(`{
-		"query": "Product 3"
+		"query": "\"Product 3\""
 	}`)
 
 	conf := &core.Config{DBType: dbType, DisableAllowList: true}
@@ -315,12 +287,12 @@ func Example_queryBySearch() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"products": [{"id": 3, "name": "Product 3", "search_rank": 0.33442792, "search_headline_description": "Description for <b>product</b> <b>3</b>"}]}
+	// Output: {"products": [{"id": 3, "name": "Product 3"}]}
 }
 
 func Example_queryParentsWithChildren() {
 	gql := `query {
-		users(limit: 2) {
+		users(order_by: { id: asc }, limit: 2) {
 			email
 			products {
 				name
@@ -341,7 +313,7 @@ func Example_queryParentsWithChildren() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"users": [{"email": "user1@test.com", "products": [{"name": "Product 1", "price": 11.50}]}, {"email": "user2@test.com", "products": [{"name": "Product 2", "price": 12.50}]}]}
+	// Output: {"users": [{"email": "user1@test.com", "products": [{"name": "Product 1", "price": 11.5}]}, {"email": "user2@test.com", "products": [{"name": "Product 2", "price": 12.5}]}]}
 }
 
 func Example_queryChildrenWithParent() {
@@ -367,7 +339,7 @@ func Example_queryChildrenWithParent() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"products": [{"name": "Product 1", "price": 11.50, "users": [{"email": "user1@test.com"}]}, {"name": "Product 2", "price": 12.50, "users": [{"email": "user2@test.com"}]}]}
+	// Output: {"products": [{"name": "Product 1", "price": 11.5, "users": [{"email": "user1@test.com"}]}, {"name": "Product 2", "price": 12.5, "users": [{"email": "user2@test.com"}]}]}
 }
 
 func Example_queryParentAndChildrenViaArrayColumn() {
@@ -405,7 +377,7 @@ func Example_queryParentAndChildrenViaArrayColumn() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"products": [{"name": "Product 1", "price": 11.50, "categories": [{"id": 1, "name": "Category 1"}, {"id": 2, "name": "Category 2"}]}, {"name": "Product 2", "price": 12.50, "categories": [{"id": 1, "name": "Category 1"}, {"id": 2, "name": "Category 2"}]}], "categories": [{"name": "Category 1", "product": {"name": "Product 1"}}, {"name": "Category 2", "product": {"name": "Product 1"}}]}
+	// Output: {"products": [{"name": "Product 1", "price": 11.5, "categories": [{"id": 1, "name": "Category 1"}, {"id": 2, "name": "Category 2"}]}, {"name": "Product 2", "price": 12.5, "categories": [{"id": 1, "name": "Category 1"}, {"id": 2, "name": "Category 2"}]}], "categories": [{"name": "Category 1", "product": {"name": "Product 1"}}, {"name": "Category 2", "product": {"name": "Product 1"}}]}
 }
 
 func Example_queryManyToManyViaJoinTable1() {
@@ -545,7 +517,7 @@ func Example_queryWithFunctionsBlocked() {
 func Example_queryWithFunctionsWithWhere() {
 	gql := `query {
 		products(where: { id: { lesser_or_equals: 100 } }) {
-			sum_price
+			max_price
 		}
 	}`
 
@@ -561,7 +533,7 @@ func Example_queryWithFunctionsWithWhere() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"products": [{"sum_price": 6100.00}]}
+	// Output: {"products": [{"max_price": 110.5}]}
 }
 
 func Example_queryWithSyntheticTables() {
@@ -618,21 +590,23 @@ func Example_queryWithVariables() {
 
 func Example_queryWithMultipleTopLevelTables() {
 	gql := `query {
-		product {
+		product(id: $id) {
 			id
 			name
 			customer {
 				email
 			}
 		}
-		user {
+		user(id: $id) {
 			id
 			email
 		}
-		purchase {
+		purchase(id: $id) {
 			id
 		}
 	}`
+
+	vars := json.RawMessage(`{ "id": 1 }`)
 
 	conf := &core.Config{DBType: dbType, DisableAllowList: true}
 	gj, err := core.NewGraphJin(conf, db)
@@ -640,7 +614,7 @@ func Example_queryWithMultipleTopLevelTables() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, nil)
+	res, err := gj.GraphQL(context.Background(), gql, vars)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -659,7 +633,7 @@ func Example_queryWithFragments1() {
 	query {
 		users {
 			...userFields2
-			created_at
+			stripe_id
 			...userFields1
 		}
 	}
@@ -680,7 +654,7 @@ func Example_queryWithFragments1() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"users": [{"id": 1, "email": "user1@test.com", "full_name": "User 1", "created_at": "2021-01-09T16:37:01.15627"}, {"id": 2, "email": "user2@test.com", "full_name": "User 2", "created_at": "2021-01-09T16:37:01.15627"}]}
+	// Output: {"users": [{"id": 1, "email": "user1@test.com", "full_name": "User 1", "stripe_id": "payment_id_1001"}, {"id": 2, "email": "user2@test.com", "full_name": "User 2", "stripe_id": "payment_id_1002"}]}
 }
 
 func Example_queryWithFragments2() {
@@ -689,7 +663,7 @@ func Example_queryWithFragments2() {
 		users {
 			...userFields2
 
-			created_at
+			stripe_id
 			...userFields1
 		}
 	}
@@ -715,7 +689,7 @@ func Example_queryWithFragments2() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"users": [{"id": 1, "email": "user1@test.com", "full_name": "User 1", "created_at": "2021-01-09T16:37:01.15627"}, {"id": 2, "email": "user2@test.com", "full_name": "User 2", "created_at": "2021-01-09T16:37:01.15627"}]}
+	// Output: {"users": [{"id": 1, "email": "user1@test.com", "full_name": "User 1", "stripe_id": "payment_id_1001"}, {"id": 2, "email": "user2@test.com", "full_name": "User 2", "stripe_id": "payment_id_1002"}]}
 }
 
 func Example_queryWithFragments3() {
@@ -734,7 +708,7 @@ func Example_queryWithFragments3() {
 	query {
 		users {
 			...userFields2
-			created_at
+			stripe_id
 		}
 	}`
 
@@ -750,7 +724,7 @@ func Example_queryWithFragments3() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"users": [{"id": 1, "email": "user1@test.com", "full_name": "User 1", "created_at": "2021-01-09T16:37:01.15627"}, {"id": 2, "email": "user2@test.com", "full_name": "User 2", "created_at": "2021-01-09T16:37:01.15627"}]}
+	// Output: {"users": [{"id": 1, "email": "user1@test.com", "full_name": "User 1", "stripe_id": "payment_id_1001"}, {"id": 2, "email": "user2@test.com", "full_name": "User 2", "stripe_id": "payment_id_1002"}]}
 }
 
 func Example_queryWithUnionForPolymorphicRelationships() {
@@ -766,7 +740,7 @@ func Example_queryWithUnionForPolymorphicRelationships() {
 	query {
 		notifications {
 			id
-			key
+			verb
 			subjects {
 				...on users {
 					...userFields
@@ -796,7 +770,7 @@ func Example_queryWithUnionForPolymorphicRelationships() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"notifications": [{"id": 1, "key": "Joined", "subjects": [{"email": "user1@test.com"}]}, {"id": 2, "key": "Bought", "subjects": [{"name": "Product 2"}]}]}
+	// Output: {"notifications": [{"id": 1, "verb": "Joined", "subjects": [{"email": "user1@test.com"}]}, {"id": 2, "verb": "Bought", "subjects": [{"name": "Product 2"}]}]}
 }
 
 func Example_queryWithSkipAndIncludeDirectives() {
@@ -958,7 +932,7 @@ func Example_queryWithJsonColumn() {
 	// Output: {"user": {"id": 1, "category_counts": [{"count": 400, "category": {"name": "Category 1"}}, {"count": 600, "category": {"name": "Category 2"}}]}}
 }
 
-func Example_queryWithNestedRelationship1() {
+func Example_queryWithRecursiveRelationship1() {
 	gql := `query {
 		reply : comment(id: $id) {
 			id
@@ -988,7 +962,7 @@ func Example_queryWithNestedRelationship1() {
 	// Output: {"reply": {"id": 50, "comments": [{"id": 49}, {"id": 48}, {"id": 47}, {"id": 46}, {"id": 45}]}}
 }
 
-func Example_queryWithNestedRelationship2() {
+func Example_queryWithRecursiveRelationship2() {
 	gql := `query {
 		comment(id: $id) {
 			id

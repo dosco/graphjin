@@ -339,9 +339,9 @@ func (gj *GraphJin) initGraphQLEgine() error {
 			})
 		}
 
-		if ti.TSVCol.Name != "" {
+		if len(ti.FullText) == 0 {
 			args = append(args, &schema.InputValue{
-				Desc: schema.Description{Text: "Performs full text search using a TSV index"},
+				Desc: schema.Description{Text: "Performs a full text search"},
 				Name: "search",
 				Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
 			})

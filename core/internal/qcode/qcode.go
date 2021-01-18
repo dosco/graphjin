@@ -844,11 +844,13 @@ func (co *Compiler) compileArgID(sel *Select, arg *graph.Arg) error {
 }
 
 func (co *Compiler) compileArgSearch(sel *Select, arg *graph.Arg) error {
-	if co.s.Type() == "mysql" {
-		return fmt.Errorf("mysql: search not supported")
-	}
-	if sel.Ti.TSVCol.Name == "" {
-		return fmt.Errorf("no tsv column defined for %s", sel.Table)
+	if len(sel.Ti.FullText) == 0 {
+		switch co.s.Type() {
+		case "mysql":
+			return fmt.Errorf("no fulltext indexes defined for table '%s'", sel.Table)
+		default:
+			return fmt.Errorf("no tsvector column defined on table '%s'", sel.Table)
+		}
 	}
 
 	if arg.Val.Type != graph.NodeVar {
@@ -966,15 +968,25 @@ func (co *Compiler) compileArgDistinctOn(sel *Select, arg *graph.Arg) error {
 
 	if node.Type == graph.NodeStr {
 		if col, err := sel.Ti.GetColumn(node.Val); err == nil {
-			sel.DistinctOn = append(sel.DistinctOn, col)
+			switch co.s.Type() {
+			case "mysql":
+				sel.OrderBy = append(sel.OrderBy, OrderBy{Order: OrderAsc, Col: col})
+			default:
+				sel.DistinctOn = append(sel.DistinctOn, col)
+			}
 		} else {
 			return err
 		}
 	}
 
-	for _, node := range node.Children {
-		if col, err := sel.Ti.GetColumn(node.Val); err == nil {
-			sel.DistinctOn = append(sel.DistinctOn, col)
+	for _, cn := range node.Children {
+		if col, err := sel.Ti.GetColumn(cn.Val); err == nil {
+			switch co.s.Type() {
+			case "mysql":
+				sel.OrderBy = append(sel.OrderBy, OrderBy{Order: OrderAsc, Col: col})
+			default:
+				sel.DistinctOn = append(sel.DistinctOn, col)
+			}
 		} else {
 			return err
 		}
@@ -999,6 +1011,9 @@ func (co *Compiler) compileArgLimit(sel *Select, arg *graph.Arg) error {
 		}
 
 	case graph.NodeVar:
+		if co.s.Type() == "mysql" {
+			return dbArgErr("limit", "number", "mysql")
+		}
 		sel.Paging.LimitVar = node.Val
 	}
 	return nil
@@ -1020,6 +1035,9 @@ func (co *Compiler) compileArgOffset(sel *Select, arg *graph.Arg) error {
 		}
 
 	case graph.NodeVar:
+		if co.s.Type() == "mysql" {
+			return dbArgErr("limit", "number", "mysql")
+		}
 		sel.Paging.OffsetVar = node.Val
 	}
 	return nil
@@ -1134,20 +1152,6 @@ func compileFilter(ti sdata.DBTableInfo, filter []string) (*Exp, bool, error) {
 	return fl, needsUser, nil
 }
 
-// func isQueryBlocked(qc *QCode, k string, tr trval) error {
-// 	switch {
-// 	case qc.Type == QTQuery && tr.query.block:
-// 		return fmt.Errorf("query blocked: %s", k)
-
-// 	case qc.SType == QTUpsert && tr.insert.block || tr.update.block:
-// 		return fmt.Errorf("upsert blocked: %s", k)
-
-// 	case qc.SType == QTDelete && tr.delete.block:
-// 		return fmt.Errorf("delete blocked: %s", k)
-// 	}
-// 	return nil
-// }
-
 func buildPath(a []string) string {
 	switch len(a) {
 	case 0:
@@ -1231,6 +1235,10 @@ func (t ExpOp) String() string {
 
 func argErr(name, ty string) error {
 	return fmt.Errorf("value for argument '%s' must be a %s", name, ty)
+}
+
+func dbArgErr(name, ty, db string) error {
+	return fmt.Errorf("%s: value for argument '%s' must be a %s", db, name, ty)
 }
 
 // func freeNodes(op *graph.Operation) {
