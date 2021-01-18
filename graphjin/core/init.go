@@ -135,11 +135,16 @@ func addTables(c *Config, di *sdata.DBInfo) error {
 
 	for _, t := range c.Tables {
 		for _, c := range t.Columns {
-			if !c.Primary {
+			if t.Type == "polymorphic" || t.Type == "json" {
 				continue
 			}
 			if c1, err := di.GetColumn(t.Name, c.Name); err == nil {
-				c1.PrimaryKey = true
+				if c.Primary {
+					c1.PrimaryKey = true
+				}
+				if c.Array {
+					c1.Array = true
+				}
 			} else {
 				return fmt.Errorf("config: set primary key: (%s) %w", t.Name, err)
 			}

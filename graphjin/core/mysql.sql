@@ -129,7 +129,7 @@ SELECT
   CONCAT('Product ', i), 
   CONCAT('Description for product ', i),
   (SELECT GROUP_CONCAT(CONCAT('Tag ', i) ORDER BY i ASC SEPARATOR ',') FROM seq100 WHERE i <= 5),
-  (SELECT GROUP_CONCAT(i ORDER BY i ASC SEPARATOR ',') FROM seq100 WHERE i <= 5),
+  (SELECT JSON_ARRAYAGG(i) FROM seq100 WHERE i <= 5),
   (i + 10.5),
   i,
   '2021-01-09 16:37:01'

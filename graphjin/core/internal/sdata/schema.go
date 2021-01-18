@@ -54,22 +54,28 @@ const (
 	RelSkip
 )
 
+type DBRelThrough struct {
+	Ti   DBTableInfo
+	ColL DBColumn
+	ColR DBColumn
+}
+
+type DBRelLeft struct {
+	Ti  DBTableInfo
+	Col DBColumn
+}
+
+type DBRelRight struct {
+	VTable string
+	Ti     DBTableInfo
+	Col    DBColumn
+}
+
 type DBRel struct {
 	Type    RelType
-	Through struct {
-		Ti   DBTableInfo
-		ColL DBColumn
-		ColR DBColumn
-	}
-	Left struct {
-		Ti  DBTableInfo
-		Col DBColumn
-	}
-	Right struct {
-		VTable string
-		Ti     DBTableInfo
-		Col    DBColumn
-	}
+	Through DBRelThrough
+	Left    DBRelLeft
+	Right   DBRelRight
 }
 
 func NewDBSchema(info *DBInfo, aliases map[string][]string) (*DBSchema, error) {

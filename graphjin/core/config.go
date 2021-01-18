@@ -117,6 +117,7 @@ type Column struct {
 	Name       string
 	Type       string
 	Primary    bool
+	Array      bool
 	ForeignKey string `mapstructure:"related_to"`
 }
 
