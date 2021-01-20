@@ -31,6 +31,7 @@ func cmdDBSeed(servConf *ServConfig) func(*cobra.Command, []string) {
 		}
 		servConf.conf.Production = false
 		servConf.conf.DefaultBlock = false
+		servConf.conf.DisableAllowList = true
 
 		servConf.db, err = initDB(servConf, true, false)
 		if err != nil {

@@ -176,6 +176,7 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 	// if c.gj.conf.EnableTracing {
 	// 	stime = time.Now()
 	// }
+
 	row := conn.QueryRowContext(c, cq.st.sql, args.values...)
 	if cq.roleArg {
 		err = row.Scan(&res.role, &res.data)
