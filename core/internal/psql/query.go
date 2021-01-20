@@ -343,6 +343,7 @@ func (c *compilerContext) renderJoin(rel sdata.DBRel) {
 		colWithTable(c.w, rel.Through.ColL.Table, rel.Through.ColL.Name)
 		c.w.WriteString(`) = any (`)
 		colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
+
 	default:
 		colWithTable(c.w, rel.Through.ColL.Table, rel.Through.ColL.Name)
 		c.w.WriteString(`) = (`)

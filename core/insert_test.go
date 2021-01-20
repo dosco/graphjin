@@ -408,7 +408,7 @@ func Example_insertIntoRecursiveRelationship() {
 	// Output: {"comments": [{"id": 5001, "reply_to_id": null}, {"id": 5002, "reply_to_id": 5001}]}
 }
 
-func Example_insertIntoRecursiveRelationshipAndConnectTable() {
+func Example_insertIntoRecursiveRelationshipAndConnectTable1() {
 	gql := `mutation {
 		comments(insert: $data, where: { id: { in: [5, 5003] }}) {
 			id
@@ -442,4 +442,54 @@ func Example_insertIntoRecursiveRelationshipAndConnectTable() {
 		fmt.Println(string(res.Data))
 	}
 	// Output: {"comments": [{"id": 5003, "reply_to_id": null}, {"id": 5, "reply_to_id": 5003}]}
+}
+
+func Example_insertIntoRecursiveRelationshipAndConnectTable2() {
+	gql := `mutation {
+  	comment(insert: $data) {
+			id
+			product {
+				id
+			}
+			user {
+				id
+			}
+			comments(find: "children") {
+				id
+			}
+  	}
+  }`
+
+	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	vars := json.RawMessage(`{
+			"data": {
+				"id":  5004,
+				"body": "Comment body 5004",
+				"created_at": "now",
+				"comment": {
+					"connect": { "id": 6 },
+					"find": "children"
+				},
+				"product": {
+					"connect": { "id": 26 }
+				},
+				"user":{
+					"connect":{ "id": 3 }
+				}
+			}
+		}`)
+
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 50)
+	res, err := gj.GraphQL(ctx, gql, vars)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+	// Output: {"comment": {"id": 5004, "user": {"id": 3}, "product": {"id": 26}, "comments": [{"id": 6}]}}
 }

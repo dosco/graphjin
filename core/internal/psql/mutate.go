@@ -147,7 +147,6 @@ func (c *compilerContext) renderNestedRelTables(m qcode.Mutate, prefix bool) {
 	for id := range m.DependsOn {
 		d := c.qc.Mutates[id]
 		c.w.WriteString(`, `)
-
 		if d.Multi {
 			c.renderCteNameWithID(d)
 		} else {
@@ -353,10 +352,12 @@ func (c *compilerContext) renderOneToManyModifiers(m qcode.Mutate) {
 	i := 0
 	for id := range m.DependsOn {
 		m1 := c.qc.Mutates[id]
+
 		switch m1.Type {
 		case qcode.MTConnect:
 			renderPrefix(i)
 			c.renderOneToManyConnectStmt(m1)
+			i++
 		case qcode.MTDisconnect:
 			renderPrefix(i)
 			c.renderOneToManyDisconnectStmt(m1)
