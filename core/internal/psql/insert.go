@@ -28,7 +28,7 @@ func (c *compilerContext) renderInsertStmt(m qcode.Mutate, embedded bool) {
 	c.renderOneToManyModifiers(m)
 
 	c.w.WriteString(`INSERT INTO `)
-	quoted(c.w, m.Ti.Name)
+	c.quoted(m.Ti.Name)
 
 	c.w.WriteString(` (`)
 	n := c.renderInsertUpdateColumns(m, false)

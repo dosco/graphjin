@@ -109,12 +109,17 @@ func parseVarVal(v json.RawMessage) interface{} {
 	case '[', '{':
 		return v
 
+	case '"':
+		return string(v[1 : len(v)-1])
+
+	case 't', 'T':
+		return true
+
+	case 'f', 'F':
+		return false
+
 	default:
-		if v[0] == '"' {
-			return string(v[1 : len(v)-1])
-		} else {
-			return string(v)
-		}
+		return string(v)
 	}
 }
 

@@ -73,42 +73,40 @@ func nestedUpdateManyToMany(t *testing.T) {
 	compileGQLToPSQL(t, gql, vars, "admin")
 }
 
-/*
-func nestedUpdateOneToMany(t *testing.T) {
-	gql := `mutation {
-		user(update: $data, where: { id: { eq: 8 } }) {
-			id
-			full_name
-			email
-			product {
-				id
-				name
-				price
-			}
-		}
-	}`
+// func nestedUpdateOneToMany(t *testing.T) {
+// 	gql := `mutation {
+// 		user(update: $data, where: { id: { eq: 8 } }) {
+// 			id
+// 			full_name
+// 			email
+// 			product {
+// 				id
+// 				name
+// 				price
+// 			}
+// 		}
+// 	}`
 
-	vars := map[string]json.RawMessage{
-		"data": json.RawMessage(`{
-			"email": "thedude@rug.com",
-			"full_name": "The Dude",
-			"created_at": "now",
-			"updated_at": "now",
-			"product": {
-				"where": {
-					"id": 2
-				},
-				"name": "Apple",
-				"price": 1.25,
-				"created_at": "now",
-				"updated_at": "now"
-			}
-		}`),
-	}
+// 	vars := map[string]json.RawMessage{
+// 		"data": json.RawMessage(`{
+// 			"email": "thedude@rug.com",
+// 			"full_name": "The Dude",
+// 			"created_at": "now",
+// 			"updated_at": "now",
+// 			"product": {
+// 				"where": {
+// 					"id": 2
+// 				},
+// 				"name": "Apple",
+// 				"price": 1.25,
+// 				"created_at": "now",
+// 				"updated_at": "now"
+// 			}
+// 		}`),
+// 	}
 
-	compileGQLToPSQL(t, gql, vars, "admin")
-}
-*/
+// 	compileGQLToPSQL(t, gql, vars, "admin")
+// }
 
 func nestedUpdateOneToOne(t *testing.T) {
 	gql := `mutation {
@@ -215,36 +213,28 @@ func nestedUpdateOneToOneWithDisconnect(t *testing.T) {
 	compileGQLToPSQL(t, gql, vars, "admin")
 }
 
-// func nestedUpdateOneToOneWithDisconnectArray(t *testing.T) {
-// 	gql := `mutation {
-// 		product(update: $data, id: 2) {
-// 			id
-// 			name
-// 			user_id
-// 		}
-// 	}`
+func nestedUpdateOneToOneWithDisconnectArray(t *testing.T) {
+	gql := `mutation {
+		product(update: $data, id: $id) {
+			id
+			name
+			user_id
+		}
+	}`
 
-// 	sql := `WITH "_sg_input" AS (SELECT $1 :: json AS j), "users" AS (SELECT * FROM (VALUES(NULL::bigint)) AS LOOKUP("id")), "products" AS (UPDATE "products" SET ("name", "price", "user_id") = (SELECT "t"."name", "t"."price", "users"."id" FROM "_sg_input" i, "users", json_populate_record(NULL::products, i.j) t) WHERE (("products"."id") = 2) RETURNING "products".*) SELECT json_object_agg('product', json_0) FROM (SELECT row_to_json((SELECT "json_row_0" FROM (SELECT "products_0"."id" AS "id", "products_0"."name" AS "name", "products_0"."user_id" AS "user_id") AS "json_row_0")) AS "json_0" FROM (SELECT "products"."id", "products"."name", "products"."user_id" FROM "products" LIMIT ('1') :: integer) AS "products_0" LIMIT ('1') :: integer) AS "sel_0"`
+	vars := map[string]json.RawMessage{
+		"id": json.RawMessage(`1`),
+		"data": json.RawMessage(`{
+			"name": "Apple",
+			"price": 1.25,
+			"user": {
+				"disconnect": { "id": 5 }
+			}
+		}`),
+	}
 
-// 	vars := map[string]json.RawMessage{
-// 		"data": json.RawMessage(`{
-// 			"name": "Apple",
-// 			"price": 1.25,
-// 			"user": {
-// 				"disconnect": { "id": 5 }
-// 			}
-// 		}`),
-// 	}
-
-// 	resSQL, err := compileGQLToPSQL(gql, vars, "admin")
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-
-// 	if string(resSQL) != sql {
-// 		t.Fatal(errNotExpected)
-// 	}
-// }
+	compileGQLToPSQL(t, gql, vars, "admin")
+}
 
 func nestedUpdateRecursive(t *testing.T) {
 	gql := `mutation {
@@ -283,7 +273,7 @@ func TestCompileUpdate(t *testing.T) {
 	t.Run("nestedUpdateOneToManyWithConnect", nestedUpdateOneToManyWithConnect)
 	t.Run("nestedUpdateOneToOneWithConnect", nestedUpdateOneToOneWithConnect)
 	t.Run("nestedUpdateOneToOneWithDisconnect", nestedUpdateOneToOneWithDisconnect)
-	//t.Run("nestedUpdateOneToOneWithDisconnectArray", nestedUpdateOneToOneWithDisconnectArray)
+	t.Run("nestedUpdateOneToOneWithDisconnectArray", nestedUpdateOneToOneWithDisconnectArray)
 	t.Run("nestedUpdateRecursive", nestedUpdateRecursive)
 
 }

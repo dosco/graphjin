@@ -69,7 +69,6 @@ query {
     id
     email
     picture: avatar
-    password
     full_name
     products(limit: 2, where: { price: { gt: 10 } }) {
       id

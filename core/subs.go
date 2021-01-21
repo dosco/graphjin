@@ -381,7 +381,7 @@ func renderSubWrap(st stmt, ct string) string {
 			w.WriteString(strconv.FormatInt(int64(i), 10))
 			w.WriteString(`]' ERROR ON ERROR`)
 		}
-		w.WriteString(`)) AS jt`)
+		w.WriteString(`)) AS _gj_jt`)
 
 	default:
 		w.WriteString(`WITH _sg_sub AS (SELECT `)

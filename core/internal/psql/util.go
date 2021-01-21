@@ -5,9 +5,9 @@ import (
 	"strconv"
 )
 
-func alias(w *bytes.Buffer, alias string) {
-	w.WriteString(` AS `)
-	w.WriteString(alias)
+func (c *compilerContext) alias(alias string) {
+	c.w.WriteString(` AS `)
+	c.quoted(alias)
 }
 
 func aliasWithID(w *bytes.Buffer, alias string, id int32) {
@@ -33,16 +33,23 @@ func colWithTableID(w *bytes.Buffer, table string, id int32, col string) {
 	w.WriteString(col)
 }
 
-func quoted(w *bytes.Buffer, identifier string) {
-	// w.WriteString(`"`)
-	w.WriteString(identifier)
-	// w.WriteString(`"`)
+func (c *compilerContext) quoted(identifier string) {
+	switch c.md.ct {
+	case "mysql":
+		c.w.WriteByte('`')
+		c.w.WriteString(identifier)
+		c.w.WriteByte('`')
+	default:
+		c.w.WriteByte('"')
+		c.w.WriteString(identifier)
+		c.w.WriteByte('"')
+	}
 }
 
-func squoted(w *bytes.Buffer, identifier string) {
-	w.WriteString(`'`)
-	w.WriteString(identifier)
-	w.WriteString(`'`)
+func (c *compilerContext) squoted(identifier string) {
+	c.w.WriteByte('\'')
+	c.w.WriteString(identifier)
+	c.w.WriteByte('\'')
 }
 
 func int32String(w *bytes.Buffer, val int32) {
