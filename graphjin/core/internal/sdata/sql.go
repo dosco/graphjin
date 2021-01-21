@@ -119,5 +119,6 @@ JOIN
 	AND kcu.table_name = tc.table_name
   	AND kcu.constraint_name = tc.constraint_name
 WHERE
-	kcu.table_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys');
+	kcu.constraint_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')
+	OR kcu.table_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys');
 `

@@ -62,7 +62,18 @@ type qres struct {
 }
 
 func (gj *GraphJin) initSchema() error {
+	if err := gj._initSchema(); err != nil {
+		return fmt.Errorf("%s: %w", gj.conf.DBType, err)
+	}
+	return nil
+}
+
+func (gj *GraphJin) _initSchema() error {
 	var err error
+
+	if gj.conf.DBType == "" {
+		gj.conf.DBType = "postgres"
+	}
 
 	// If gj.di is not null then it's probably set
 	// for tests

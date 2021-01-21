@@ -61,8 +61,8 @@ func initConf(servConfig *ServConfig) (*Config, error) {
 	}
 
 	// copy over db_type from database.type
-	if c.DBType == "" {
-		c.DBType = c.DB.Type
+	if c.Core.DBType == "" {
+		c.Core.DBType = c.DB.Type
 	}
 
 	// Auths: validate and sanitize

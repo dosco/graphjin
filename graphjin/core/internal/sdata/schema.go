@@ -231,7 +231,7 @@ func (s *DBSchema) virtualRels(vts []VirtualTable) error {
 func (s *DBSchema) firstDegreeRels(t DBTable, cols []DBColumn) error {
 	cti, ok := s.t[t.Name]
 	if !ok {
-		return fmt.Errorf("invalid foreign key table '%s'", t.Name)
+		return fmt.Errorf("table not found '%s'", t.Name)
 	}
 
 	for i := range cols {
@@ -330,7 +330,7 @@ func (s *DBSchema) secondDegreeRels(t DBTable, cols []DBColumn) error {
 	ct := t.Key
 	cti, ok := s.t[ct]
 	if !ok {
-		return fmt.Errorf("invalid foreign key table '%s'", ct)
+		return fmt.Errorf("table not found: %s", ct)
 	}
 
 	for _, c := range cols {
@@ -340,7 +340,7 @@ func (s *DBSchema) secondDegreeRels(t DBTable, cols []DBColumn) error {
 
 		fti, ok := s.t[c.FKeyTable]
 		if !ok {
-			return fmt.Errorf("invalid foreign key table '%s'", c.FKeyTable)
+			return fmt.Errorf("foreign key table not found: %s", c.FKeyTable)
 		}
 
 		// This is an embedded relationship like when a json/jsonb column
@@ -354,7 +354,7 @@ func (s *DBSchema) secondDegreeRels(t DBTable, cols []DBColumn) error {
 		}
 
 		if _, ok := fti.getColumn(c.FKeyCol); !ok {
-			return fmt.Errorf("invalid foreign key column '%s.%s'",
+			return fmt.Errorf("foreign key column not found: %s.%s",
 				c.FKeyTable, c.FKeyCol)
 		}
 
@@ -399,23 +399,23 @@ func (s *DBSchema) updateSchemaOTMT(
 
 	fti1, ok := s.t[ft1]
 	if !ok {
-		return fmt.Errorf("invalid foreign key table '%s'", ft1)
+		return fmt.Errorf("foreign key table not found: %s", ft1)
 	}
 
 	fc1, ok := fti1.getColumn(col1.FKeyCol)
 	if !ok {
-		return fmt.Errorf("invalid foreign key column '%s.%s'",
+		return fmt.Errorf("foreign key column not found: %s.%s",
 			ft1, col1.FKeyCol)
 	}
 
 	fti2, ok := s.t[ft2]
 	if !ok {
-		return fmt.Errorf("invalid foreign key table '%s'", ft2)
+		return fmt.Errorf("foreign key table not found: %s", ft2)
 	}
 
 	fc2, ok := fti2.getColumn(col2.FKeyCol)
 	if !ok {
-		return fmt.Errorf("invalid foreign key column id '%s.%s'",
+		return fmt.Errorf("foreign key column not found: %s.%s",
 			ft2, col2.FKeyCol)
 	}
 
@@ -514,14 +514,14 @@ func (s *DBSchema) getTableInfo(name, parent string, blocking bool) (DBTableInfo
 			t, ok := s.t[at]
 			if ok {
 				if blocking && t.Blocked {
-					return t, fmt.Errorf("table: '%s' blocked (%s, %s)", t.Name, name, parent)
+					return t, fmt.Errorf("table blocked: %s (alias: %s, parent: %s)", t.Name, name, parent)
 				}
 				t.IsAlias = true
 				return t, nil
 			}
 		}
 	}
-	return t, fmt.Errorf("table: '%s' not found (%s)", name, parent)
+	return t, fmt.Errorf("table not found: %s (parent: %s)", name, parent)
 }
 
 func (s *DBSchema) GetTableInfo(name, parent string) (DBTableInfo, error) {
