@@ -52,7 +52,7 @@ func (c *compilerContext) renderUnionStmt() {
 			continue
 		}
 		c.w.WriteString(`, `)
-		quoted(c.w, k)
+		c.quoted(k)
 		c.w.WriteString(` AS (`)
 
 		i := 0
@@ -87,7 +87,7 @@ func (c *compilerContext) renderInsertUpdateColumns(m qcode.Mutate, values bool)
 			v := col.Value
 
 			if len(v) > 1 && v[0] == '$' {
-				if v1, ok := c.vars[v[1:]]; ok {
+				if v1, ok := c.svars[v[1:]]; ok {
 					v = v1
 				}
 			}
@@ -102,7 +102,7 @@ func (c *compilerContext) renderInsertUpdateColumns(m qcode.Mutate, values bool)
 				c.w.WriteString(`)`)
 
 			case v != "":
-				squoted(c.w, v)
+				c.squoted(v)
 
 			default:
 				colWithTable(c.w, "t", col.FieldName)
@@ -113,7 +113,7 @@ func (c *compilerContext) renderInsertUpdateColumns(m qcode.Mutate, values bool)
 			c.w.WriteString(col.Col.Type)
 
 		} else {
-			quoted(c.w, col.Col.Name)
+			c.quoted(col.Col.Name)
 		}
 	}
 	return i
@@ -127,9 +127,9 @@ func (c *compilerContext) renderNestedRelColumns(m qcode.Mutate, values bool, pr
 		if values {
 			if col.Col.Array {
 				c.w.WriteString(`ARRAY(SELECT `)
-				quoted(c.w, col.VCol.Name)
+				c.quoted(col.VCol.Name)
 				c.w.WriteString(` FROM `)
-				quoted(c.w, col.VCol.Table)
+				c.quoted(col.VCol.Table)
 				c.w.WriteString(`)`)
 			} else {
 				if prefix {
@@ -138,7 +138,7 @@ func (c *compilerContext) renderNestedRelColumns(m qcode.Mutate, values bool, pr
 				colWithTable(c.w, col.VCol.Table, col.VCol.Name)
 			}
 		} else {
-			quoted(c.w, col.Col.Name)
+			c.quoted(col.Col.Name)
 		}
 	}
 }
@@ -150,14 +150,15 @@ func (c *compilerContext) renderNestedRelTables(m qcode.Mutate, prefix bool) {
 		if d.Multi {
 			c.renderCteNameWithID(d)
 		} else {
-			quoted(c.w, d.Ti.Name)
+			c.quoted(d.Ti.Name)
 		}
 		if prefix {
 			c.w.WriteString(` _x_`)
+			c.w.WriteString(d.Ti.Name)
 		} else {
 			c.w.WriteString(` `)
+			c.quoted(d.Ti.Name)
 		}
-		quoted(c.w, d.Ti.Name)
 	}
 }
 
@@ -204,15 +205,15 @@ func (c *compilerContext) renderDelete() {
 	sel := c.qc.Selects[0]
 
 	c.w.WriteString(`WITH `)
-	quoted(c.w, sel.Table)
+	c.quoted(sel.Table)
 
 	c.w.WriteString(` AS (DELETE FROM `)
-	quoted(c.w, sel.Table)
+	c.quoted(sel.Table)
 	c.w.WriteString(` WHERE `)
 	c.renderExp(c.qc.Schema, sel.Ti, sel.Where.Exp, false)
 
 	c.w.WriteString(` RETURNING `)
-	quoted(c.w, sel.Table)
+	c.quoted(sel.Table)
 	c.w.WriteString(`.*) `)
 }
 
@@ -227,15 +228,15 @@ func (c *compilerContext) renderOneToManyConnectStmt(m qcode.Mutate) {
 	rel := m.Rel
 	if rel.Right.Col.Array {
 		c.w.WriteString(`array_agg(DISTINCT `)
-		quoted(c.w, rel.Left.Col.Name)
+		c.quoted(rel.Left.Col.Name)
 		c.w.WriteString(`) AS `)
-		quoted(c.w, rel.Left.Col.Name)
+		c.quoted(rel.Left.Col.Name)
 	} else {
-		quoted(c.w, rel.Left.Col.Name)
+		c.quoted(rel.Left.Col.Name)
 	}
 
 	c.w.WriteString(` FROM _sg_input i, `)
-	quoted(c.w, m.Ti.Name)
+	c.quoted(m.Ti.Name)
 
 	c.w.WriteString(` WHERE `)
 	c.renderWhereFromJSON(m)
@@ -247,9 +248,9 @@ func (c *compilerContext) renderOneToOneConnectStmt(m qcode.Mutate) {
 	c.renderCteName(m)
 	c.w.WriteString(` AS ( UPDATE `)
 
-	quoted(c.w, m.Ti.Name)
+	c.quoted(m.Ti.Name)
 	c.w.WriteString(` SET `)
-	quoted(c.w, m.Rel.Left.Col.Name)
+	c.quoted(m.Rel.Left.Col.Name)
 	c.w.WriteString(` = _x_`)
 	colWithTable(c.w, m.Rel.Right.Col.Table, m.Rel.Right.Col.Name)
 
@@ -260,7 +261,7 @@ func (c *compilerContext) renderOneToOneConnectStmt(m qcode.Mutate) {
 	c.renderWhereFromJSON(m)
 
 	c.w.WriteString(` RETURNING `)
-	quoted(c.w, m.Ti.Name)
+	c.quoted(m.Ti.Name)
 	c.w.WriteString(`.*)`)
 }
 
@@ -270,30 +271,18 @@ func (c *compilerContext) renderOneToManyDisconnectStmt(m qcode.Mutate) {
 
 	rel := m.Rel
 	if rel.Left.Col.Array {
-		c.w.WriteString(`SELECT * FROM (VALUES(NULL::"`)
-		c.w.WriteString(rel.Left.Col.Type)
-		c.w.WriteString(`")) AS LOOKUP(`)
-		quoted(c.w, rel.Left.Col.Name)
-		c.w.WriteString(`))`)
+		c.w.WriteString(`SELECT NULL AS `)
+		c.quoted(rel.Left.Col.Name)
 	} else {
 		c.w.WriteString(`SELECT `)
-		quoted(c.w, rel.Left.Col.Name)
+		c.quoted(rel.Left.Col.Name)
+		c.w.WriteString(` FROM _sg_input i,`)
+		c.quoted(m.Ti.Name)
+		c.w.WriteString(` WHERE `)
+		c.renderWhereFromJSON(m)
 	}
 
-	c.w.WriteString(` FROM _sg_input i,`)
-	quoted(c.w, m.Ti.Name)
-
-	c.w.WriteString(` WHERE `)
-	c.renderWhereFromJSON(m)
 	c.w.WriteString(` LIMIT 1))`)
-
-	// 	c.w.WriteString(` FROM _sg_input i,`)
-	// 	quoted(c.w, m.Ti.Name)
-
-	// 	c.w.WriteString(` WHERE `)
-	// 	c.renderWhereFromJSON(m)
-	// 	c.w.WriteString(` LIMIT 1))`)
-	// }
 }
 
 func (c *compilerContext) renderOneToOneDisconnectStmt(m qcode.Mutate) {
@@ -305,14 +294,14 @@ func (c *compilerContext) renderOneToOneDisconnectStmt(m qcode.Mutate) {
 	c.renderCteName(m)
 	c.w.WriteString(` AS ( UPDATE `)
 
-	quoted(c.w, m.Ti.Name)
+	c.quoted(m.Ti.Name)
 	c.w.WriteString(` SET `)
-	quoted(c.w, m.Rel.Left.Col.Name)
+	c.quoted(m.Rel.Left.Col.Name)
 	c.w.WriteString(` = `)
 
 	if m.Rel.Left.Col.Array {
 		c.w.WriteString(` array_remove(`)
-		quoted(c.w, m.Rel.Left.Col.Name)
+		c.quoted(m.Rel.Left.Col.Name)
 		c.w.WriteString(`, _x_`)
 		colWithTable(c.w, m.Rel.Right.Col.Table, m.Rel.Right.Col.Name)
 		c.w.WriteString(`)`)
@@ -336,7 +325,7 @@ func (c *compilerContext) renderOneToOneDisconnectStmt(m qcode.Mutate) {
 	c.w.WriteString(`)`)
 
 	c.w.WriteString(` RETURNING `)
-	quoted(c.w, m.Ti.Name)
+	c.quoted(m.Ti.Name)
 	c.w.WriteString(`.*)`)
 }
 

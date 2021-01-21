@@ -15,7 +15,7 @@ func (c *compilerContext) renderColumns(sel *qcode.Select) {
 			c.w.WriteString(", ")
 		}
 		colWithTableID(c.w, sel.Table, sel.ID, col.Col.Name)
-		alias(c.w, col.FieldName)
+		c.alias(col.FieldName)
 		i++
 	}
 	for _, fn := range sel.Funcs {
@@ -23,7 +23,7 @@ func (c *compilerContext) renderColumns(sel *qcode.Select) {
 			c.w.WriteString(", ")
 		}
 		colWithTableID(c.w, sel.Table, sel.ID, fn.FieldName)
-		alias(c.w, fn.FieldName)
+		c.alias(fn.FieldName)
 		i++
 	}
 	if sel.Typename {
@@ -49,11 +49,11 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 		//TODO: log what and why this is being skipped
 		if csel.SkipRender != qcode.SkipTypeNone && csel.SkipRender != qcode.SkipTypeRemote {
 			c.w.WriteString(`NULL`)
-			alias(c.w, csel.FieldName)
+			c.alias(csel.FieldName)
 
 			if sel.Paging.Cursor {
 				c.w.WriteString(`, NULL`)
-				alias(c.w, sel.FieldName)
+				c.alias(sel.FieldName)
 			}
 
 		} else {
@@ -68,7 +68,7 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 				c.w.WriteString(`__sj_`)
 				int32String(c.w, csel.ID)
 				c.w.WriteString(`.json`)
-				alias(c.w, csel.FieldName)
+				c.alias(csel.FieldName)
 			}
 
 			// return the cursor for the this child selector as part of the parents json
@@ -92,7 +92,7 @@ func (c *compilerContext) renderUnionColumn(sel, csel *qcode.Select) {
 		c.w.WriteString(`WHEN `)
 		colWithTableID(c.w, sel.Table, sel.ID, csel.Rel.Right.VTable)
 		c.w.WriteString(` = `)
-		squoted(c.w, usel.Table)
+		c.squoted(usel.Table)
 		c.w.WriteString(` THEN `)
 
 		if usel.SkipRender == qcode.SkipTypeUserNeeded {
@@ -104,12 +104,12 @@ func (c *compilerContext) renderUnionColumn(sel, csel *qcode.Select) {
 		}
 	}
 	c.w.WriteString(`END)`)
-	alias(c.w, csel.FieldName)
+	c.alias(csel.FieldName)
 }
 
 func (c *compilerContext) renderRemoteRelColumns(sel, csel *qcode.Select) {
 	colWithTableID(c.w, sel.Table, sel.ID, csel.Rel.Left.Col.Name)
-	alias(c.w, csel.Rel.Right.VTable)
+	c.alias(csel.Rel.Right.VTable)
 }
 
 func (c *compilerContext) renderFunction(sel *qcode.Select, fn qcode.Function) {
@@ -121,7 +121,7 @@ func (c *compilerContext) renderFunction(sel *qcode.Select, fn qcode.Function) {
 	default:
 		c.renderOtherFunction(sel, fn)
 	}
-	alias(c.w, fn.FieldName)
+	c.alias(fn.FieldName)
 }
 
 func (c *compilerContext) renderFunctionSearchRank(sel *qcode.Select, fn qcode.Function) {
@@ -213,7 +213,7 @@ func (c *compilerContext) renderBaseColumns(sel *qcode.Select) {
 
 func (c *compilerContext) renderTypename(sel *qcode.Select) {
 	c.w.WriteString(`(`)
-	squoted(c.w, sel.Table)
+	c.squoted(sel.Table)
 	c.w.WriteString(` :: text) AS "__typename"`)
 }
 
@@ -282,7 +282,7 @@ func (c *compilerContext) renderJSONFields(sel *qcode.Select) {
 }
 
 func (c *compilerContext) renderJSONField(name string, selID int32) {
-	squoted(c.w, name)
+	c.squoted(name)
 	c.w.WriteString(`, __sr_`)
 	int32String(c.w, selID)
 	c.w.WriteString(`.`)

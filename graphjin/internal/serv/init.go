@@ -13,12 +13,17 @@ import (
 	"time"
 
 	"contrib.go.opencensus.io/integrations/ocsql"
+
+	// postgres drivers
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/stdlib"
+
+	// mysql drivers
+	_ "github.com/go-sql-driver/mysql"
 )
 
 const (
-	PEM_SIG = "--BEGIN "
+	pemSig = "--BEGIN "
 )
 
 func initConf(servConfig *ServConfig) (*Config, error) {
@@ -203,7 +208,7 @@ func initPostgres(servConfig *ServConfig, useDB, useTelemetry bool) (*dbConf, er
 		var pem []byte
 		var err error
 
-		if strings.Contains(c.DB.ServerCert, PEM_SIG) {
+		if strings.Contains(c.DB.ServerCert, pemSig) {
 			pem = []byte(c.DB.ServerCert)
 		} else {
 			pem, err = ioutil.ReadFile(c.relPath(c.DB.ServerCert))
@@ -220,7 +225,7 @@ func initPostgres(servConfig *ServConfig, useDB, useTelemetry bool) (*dbConf, er
 		clientCert := make([]tls.Certificate, 0, 1)
 		var certs tls.Certificate
 
-		if strings.Contains(c.DB.ClientCert, PEM_SIG) {
+		if strings.Contains(c.DB.ClientCert, pemSig) {
 			certs, err = tls.X509KeyPair([]byte(c.DB.ClientCert), []byte(c.DB.ClientKey))
 		} else {
 			certs, err = tls.LoadX509KeyPair(c.relPath(c.DB.ClientCert), c.relPath(c.DB.ClientKey))

@@ -44,11 +44,11 @@ type Config struct {
 }
 
 type Compiler struct {
-	vars map[string]string
+	svars map[string]string
 }
 
 func NewCompiler(conf Config) *Compiler {
-	return &Compiler{vars: conf.Vars}
+	return &Compiler{svars: conf.Vars}
 }
 
 func (co *Compiler) CompileEx(qc *qcode.QCode) (Metadata, []byte, error) {
@@ -152,15 +152,6 @@ func (co *Compiler) CompileQuery(
 		}
 		i++
 	}
-
-	// if len(qc.Roots) == 1 {
-	// 	c.w.WriteString(`) AS "__root" FROM (`)
-	// 	c.renderQuery(st, false)
-	// 	c.w.WriteString(`) AS "__sj_0"`)
-	// } else {
-	// 	c.w.WriteString(`) AS "__root" FROM (VALUES(true)) AS "__root_x"`)
-	// 	c.renderQuery(st, true)
-	// }
 
 	// This helps multi-root work as well as return a null json value when
 	// there are no rows found.
@@ -403,7 +394,7 @@ func (c *compilerContext) renderLimit(sel *qcode.Select) {
 
 func (c *compilerContext) renderRecursiveCTE(sel *qcode.Select) {
 	c.w.WriteString(`WITH RECURSIVE `)
-	quoted(c.w, sel.Rel.Right.VTable)
+	c.quoted(sel.Rel.Right.VTable)
 	c.w.WriteString(` AS (`)
 	c.renderRecursiveBaseSelect(sel)
 	c.w.WriteString(`) `)
@@ -425,7 +416,7 @@ func (c *compilerContext) renderRecursiveBaseSelect(sel *qcode.Select) {
 	c.renderBaseColumns(sel)
 	c.renderFrom(psel)
 	c.w.WriteString(`, `)
-	quoted(c.w, sel.Rel.Right.VTable)
+	c.quoted(sel.Rel.Right.VTable)
 	c.renderWhere(sel)
 }
 
@@ -434,47 +425,74 @@ func (c *compilerContext) renderFrom(sel *qcode.Select) {
 
 	switch sel.Rel.Type {
 	case sdata.RelEmbedded:
-		// jsonb_to_recordset('[{"a":1,"b":[1,2,3],"c":"bar"}, {"a":2,"b":[1,2,3],"c":"bar"}]') as x(a int, b text, d text);
-
 		c.w.WriteString(sel.Rel.Left.Col.Table)
 		c.w.WriteString(`, `)
 
-		c.w.WriteString(sel.Ti.Type)
-		c.w.WriteString(`_to_recordset(`)
-		colWithTable(c.w, sel.Rel.Left.Col.Table, sel.Rel.Right.Col.Name)
-		c.w.WriteString(`) AS `)
-
-		quoted(c.w, sel.Table)
-
-		c.w.WriteString(`(`)
-		for i, col := range sel.Ti.Columns {
-			if i != 0 {
-				c.w.WriteString(`, `)
-			}
-			c.w.WriteString(col.Name)
-			c.w.WriteString(` `)
-			c.w.WriteString(col.Type)
+		switch c.md.ct {
+		case "mysql":
+			c.renderJSONTable(sel)
+		default:
+			c.renderRecordSet(sel)
 		}
-		c.w.WriteString(`)`)
 
 	case sdata.RelRecursive:
 		c.w.WriteString(`(SELECT * FROM `)
-		quoted(c.w, sel.Rel.Right.VTable)
+		c.quoted(sel.Rel.Right.VTable)
 		switch c.md.ct {
 		case "mysql":
 			c.w.WriteString(` LIMIT 1, 18446744073709551610) `)
 		default:
 			c.w.WriteString(` OFFSET 1) `)
 		}
-		quoted(c.w, sel.Table)
+		c.quoted(sel.Table)
 
 	default:
-		quoted(c.w, sel.Table)
+		c.quoted(sel.Table)
 	}
 
 	if sel.Paging.Cursor {
 		c.w.WriteString(`, __cur`)
 	}
+}
+
+func (c *compilerContext) renderJSONTable(sel *qcode.Select) {
+	c.w.WriteString(`JSON_TABLE(`)
+	colWithTable(c.w, sel.Rel.Left.Col.Table, sel.Rel.Right.Col.Name)
+	c.w.WriteString(`, "$[*]" COLUMNS(`)
+
+	for i, col := range sel.Ti.Columns {
+		if i != 0 {
+			c.w.WriteString(`, `)
+		}
+		c.w.WriteString(col.Name)
+		c.w.WriteString(` `)
+		c.w.WriteString(col.Type)
+		c.w.WriteString(` PATH "$.`)
+		c.w.WriteString(col.Name)
+		c.w.WriteString(`" ERROR ON ERROR`)
+	}
+	c.w.WriteString(`)) AS`)
+	c.quoted(sel.Table)
+}
+
+func (c *compilerContext) renderRecordSet(sel *qcode.Select) {
+	// jsonb_to_recordset('[{"a":1,"b":[1,2,3],"c":"bar"}, {"a":2,"b":[1,2,3],"c":"bar"}]') as x(a int, b text, d text);
+	c.w.WriteString(sel.Ti.Type)
+	c.w.WriteString(`_to_recordset(`)
+	colWithTable(c.w, sel.Rel.Left.Col.Table, sel.Rel.Right.Col.Name)
+	c.w.WriteString(`) AS `)
+	c.quoted(sel.Table)
+
+	c.w.WriteString(`(`)
+	for i, col := range sel.Ti.Columns {
+		if i != 0 {
+			c.w.WriteString(`, `)
+		}
+		c.w.WriteString(col.Name)
+		c.w.WriteString(` `)
+		c.w.WriteString(col.Type)
+	}
+	c.w.WriteString(`)`)
 }
 
 func (c *compilerContext) renderCursorCTE(sel *qcode.Select) {
@@ -491,7 +509,7 @@ func (c *compilerContext) renderCursorCTE(sel *qcode.Select) {
 			c.w.WriteString(`SUBSTRING_INDEX(SUBSTRING_INDEX(a.i, ',', `)
 			int32String(c.w, int32(i+1))
 			c.w.WriteString(`), ',', -1) AS `)
-			quoted(c.w, ob.Col.Name)
+			c.quoted(ob.Col.Name)
 		}
 		c.w.WriteString(` FROM ((SELECT `)
 		c.renderParam(Param{Name: "cursor", Type: "text"})
@@ -507,7 +525,7 @@ func (c *compilerContext) renderCursorCTE(sel *qcode.Select) {
 			c.w.WriteString(`] :: `)
 			c.w.WriteString(ob.Col.Type)
 			c.w.WriteString(` as `)
-			quoted(c.w, ob.Col.Name)
+			c.quoted(ob.Col.Name)
 		}
 		c.w.WriteString(` FROM string_to_array(`)
 		c.renderParam(Param{Name: "cursor", Type: "text"})
@@ -634,7 +652,7 @@ func (c *compilerContext) renderOp(schema *sdata.DBSchema, ti sdata.DBTableInfo,
 		return
 	}
 
-	if c.renderValPrefix(ti, ex, c.vars) {
+	if c.renderValPrefix(ti, ex) {
 		return
 	}
 
@@ -701,15 +719,15 @@ func (c *compilerContext) renderOp(schema *sdata.DBSchema, ti sdata.DBTableInfo,
 		c.w.WriteString(`?&`)
 
 	case qcode.OpEqualsTrue:
-		c.w.WriteString(`((VALUES(true)) = `)
+		c.w.WriteString(`(`)
 		c.renderParam(Param{Name: ex.Val, Type: "boolean"})
-		c.w.WriteString(`)`)
+		c.w.WriteString(` IS TRUE)`)
 		return
 
 	case qcode.OpNotEqualsTrue:
-		c.w.WriteString(`((VALUES(true)) != `)
+		c.w.WriteString(`(`)
 		c.renderParam(Param{Name: ex.Val, Type: "boolean"})
-		c.w.WriteString(`)`)
+		c.w.WriteString(` IS NOT TRUE)`)
 		return
 
 	case qcode.OpIsNull:
@@ -761,7 +779,7 @@ func (c *compilerContext) renderOp(schema *sdata.DBSchema, ti sdata.DBTableInfo,
 	case ex.Type == qcode.ValList:
 		c.renderList(ex)
 	default:
-		c.renderValSuffix(ti, ex, c.vars)
+		c.renderVal(ti, ex)
 	}
 
 	c.w.WriteString(`)`)
@@ -841,15 +859,16 @@ func (c *compilerContext) renderList(ex *qcode.Exp) {
 	c.w.WriteString(`])`)
 }
 
-func (c *compilerContext) renderValPrefix(ti sdata.DBTableInfo, ex *qcode.Exp, vars map[string]string) bool {
+func (c *compilerContext) renderValPrefix(ti sdata.DBTableInfo, ex *qcode.Exp) bool {
 	if ex.Type == qcode.ValVar {
-		return c.renderValVarPrefix(ti, ex, vars)
+		return c.renderValVarPrefix(ti, ex)
 	}
 	return false
 }
 
-func (c *compilerContext) renderValVarPrefix(ti sdata.DBTableInfo, ex *qcode.Exp, vars map[string]string) bool {
-	val, isVal := vars[ex.Val]
+func (c *compilerContext) renderValVarPrefix(ti sdata.DBTableInfo, ex *qcode.Exp) bool {
+	val, isVal := c.svars[ex.Val]
+
 	if isVal && strings.HasPrefix(val, "sql:") {
 		val = `(` + val[4:] + `)`
 	}
@@ -858,7 +877,7 @@ func (c *compilerContext) renderValVarPrefix(ti sdata.DBTableInfo, ex *qcode.Exp
 		if c.md.ct == "mysql" {
 			c.w.WriteString(`JSON_CONTAINS(`)
 			if isVal {
-				squoted(c.w, val)
+				c.squoted(val)
 			} else {
 				c.renderParam(Param{Name: ex.Val, Type: ex.Col.Type, IsArray: true})
 			}
@@ -871,21 +890,22 @@ func (c *compilerContext) renderValVarPrefix(ti sdata.DBTableInfo, ex *qcode.Exp
 	return false
 }
 
-func (c *compilerContext) renderValSuffix(ti sdata.DBTableInfo, ex *qcode.Exp, vars map[string]string) {
+func (c *compilerContext) renderVal(ti sdata.DBTableInfo, ex *qcode.Exp) {
 	switch ex.Type {
 	case qcode.ValVar:
-		c.renderValVarSuffix(ti, ex, vars)
+		c.renderValVar(ti, ex)
 
 	case qcode.ValRef:
 		colWithTable(c.w, ex.Table, ex.Col.Name)
 
 	default:
-		squoted(c.w, ex.Val)
+		c.squoted(ex.Val)
 	}
 }
 
-func (c *compilerContext) renderValVarSuffix(ti sdata.DBTableInfo, ex *qcode.Exp, vars map[string]string) {
-	val, isVal := vars[ex.Val]
+func (c *compilerContext) renderValVar(ti sdata.DBTableInfo, ex *qcode.Exp) {
+	val, isVal := c.svars[ex.Val]
+
 	if isVal && strings.HasPrefix(val, "sql:") {
 		val = `(` + val[4:] + `)`
 	}
@@ -894,7 +914,7 @@ func (c *compilerContext) renderValVarSuffix(ti sdata.DBTableInfo, ex *qcode.Exp
 	case qcode.OpIn, qcode.OpNotIn:
 		c.w.WriteString(`(ARRAY(SELECT json_array_elements_text(`)
 		if isVal {
-			squoted(c.w, val)
+			c.squoted(val)
 		} else {
 			c.renderParam(Param{Name: ex.Val, Type: ex.Col.Type, IsArray: true})
 		}
@@ -905,7 +925,7 @@ func (c *compilerContext) renderValVarSuffix(ti sdata.DBTableInfo, ex *qcode.Exp
 
 	default:
 		if isVal {
-			squoted(c.w, val)
+			c.squoted(val)
 		} else {
 			c.renderParam(Param{Name: ex.Val, Type: ex.Col.Type, IsArray: false})
 		}

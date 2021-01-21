@@ -16,6 +16,7 @@ func Example_query() {
 			id
 			user {
 				id
+				fullName: full_name
 			}
 		}
 	}`
@@ -32,7 +33,7 @@ func Example_query() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"product": {"id": 1, "user": {"id": 1}}}
+	// Output: {"product": {"id": 1, "user": {"id": 1, "fullName": "User 1"}}}
 }
 
 func Example_queryWithUser() {
@@ -343,6 +344,24 @@ func Example_queryChildrenWithParent() {
 }
 
 func Example_queryParentAndChildrenViaArrayColumn() {
+	// gql := `
+	// query {
+	// 	products {
+	// 		name
+	// 		price
+	// 		categories {
+	// 			id
+	// 			name
+	// 		}
+	// 	}
+	// 	categories {
+	// 		name
+	// 		product {
+	// 			name
+	// 		}
+	// 	}
+	// }`
+
 	gql := `
 	query {
 		products {
@@ -350,12 +369,6 @@ func Example_queryParentAndChildrenViaArrayColumn() {
 			price
 			categories {
 				id
-				name
-			}
-		}
-		categories {
-			name
-			product {
 				name
 			}
 		}
@@ -377,7 +390,7 @@ func Example_queryParentAndChildrenViaArrayColumn() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"products": [{"name": "Product 1", "price": 11.5, "categories": [{"id": 1, "name": "Category 1"}, {"id": 2, "name": "Category 2"}]}, {"name": "Product 2", "price": 12.5, "categories": [{"id": 1, "name": "Category 1"}, {"id": 2, "name": "Category 2"}]}], "categories": [{"name": "Category 1", "product": {"name": "Product 1"}}, {"name": "Category 2", "product": {"name": "Product 1"}}]}
+	// Output: {"products": [{"name": "Product 1", "price": 11.5, "categories": [{"id": 1, "name": "Category 1"}, {"id": 2, "name": "Category 2"}]}, {"name": "Product 2", "price": 12.5, "categories": [{"id": 1, "name": "Category 1"}, {"id": 2, "name": "Category 2"}]}]}
 }
 
 func Example_queryManyToManyViaJoinTable1() {

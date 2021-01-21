@@ -29,7 +29,7 @@ func (c *compilerContext) renderUpdateStmt(m qcode.Mutate) {
 	c.renderOneToManyModifiers(m)
 
 	c.w.WriteString(`UPDATE `)
-	quoted(c.w, m.Ti.Name)
+	c.quoted(m.Ti.Name)
 
 	c.w.WriteString(` SET (`)
 	n := c.renderInsertUpdateColumns(m, false)
@@ -68,7 +68,7 @@ func (c *compilerContext) renderUpdateStmt(m qcode.Mutate) {
 		rel := m.Rel
 
 		c.w.WriteString(`FROM `)
-		quoted(c.w, rel.Right.Col.Table)
+		c.quoted(rel.Right.Col.Table)
 
 		c.w.WriteString(` WHERE ((`)
 		colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
@@ -84,6 +84,6 @@ func (c *compilerContext) renderUpdateStmt(m qcode.Mutate) {
 	}
 
 	c.w.WriteString(` RETURNING `)
-	quoted(c.w, m.Ti.Name)
+	c.quoted(m.Ti.Name)
 	c.w.WriteString(`.*)`)
 }
