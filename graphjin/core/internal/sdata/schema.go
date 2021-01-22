@@ -231,7 +231,7 @@ func (s *DBSchema) virtualRels(vts []VirtualTable) error {
 func (s *DBSchema) firstDegreeRels(t DBTable, cols []DBColumn) error {
 	cti, ok := s.t[t.Name]
 	if !ok {
-		return fmt.Errorf("table not found '%s'", t.Name)
+		return fmt.Errorf("table not found %s", t.Name)
 	}
 
 	for i := range cols {
@@ -268,7 +268,7 @@ func (s *DBSchema) firstDegreeRels(t DBTable, cols []DBColumn) error {
 
 		fc, ok := fti.getColumn(c.FKeyCol)
 		if !ok {
-			return fmt.Errorf("invalid foreign key column '%s.%s'",
+			return fmt.Errorf("foreign key column '%s.%s'",
 				c.FKeyTable, c.FKeyCol)
 		}
 

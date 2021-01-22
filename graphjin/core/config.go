@@ -78,9 +78,6 @@ type Config struct {
 	// to the engine (eg. sheep: sheep)
 	Inflections []string `mapstructure:"inflections"`
 
-	// Database schema name. Defaults to 'public'
-	DBSchema string `mapstructure:"db_schema"`
-
 	// Database type name. Defaults to 'postgres' (options: mysql, postgres)
 	DBType string `mapstructure:"db_type"`
 

@@ -102,19 +102,9 @@ type DBTable struct {
 }
 
 func GetTables(db *sql.DB) ([]DBTable, error) {
-	sqlStmt := `
-SELECT
-	t.table_name as "name",
-	t.table_type as "type"
-FROM 
-	information_schema.tables t
-WHERE
-	t.table_schema NOT IN ('information_schema', 'pg_catalog')
-	AND t.table_name NOT IN ('schema_version');`
-
 	var tables []DBTable
 
-	rows, err := db.Query(sqlStmt)
+	rows, err := db.Query(getTablesStmt)
 	if err != nil {
 		return nil, fmt.Errorf("Error fetching tables: %s", err)
 	}
@@ -162,9 +152,9 @@ func GetColumns(db *sql.DB, dbtype string, tables []string) (
 
 	switch dbtype {
 	case "mysql":
-		sqlStmt = mysqlColumnInfo
+		sqlStmt = mysqlColumnsStmt
 	default:
-		sqlStmt = postgresColumnInfo
+		sqlStmt = postgresColumnsStmt
 	}
 
 	rows, err := db.Query(sqlStmt)

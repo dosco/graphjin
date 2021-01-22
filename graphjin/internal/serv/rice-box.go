@@ -12,9 +12,9 @@ func init() {
 	// define files
 	file2 := &embedded.EmbeddedFile{
 		Filename:    "0_init.sql",
-		FileModTime: time.Unix(1610524962, 0),
+		FileModTime: time.Unix(1611303610, 0),
 
-		Content: string("-- Write your migrate up statements here\n\nCREATE TABLE public.users (\n  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,\n  full_name  text,\n  email      text UNIQUE NOT NULL CHECK (length(email) < 255),\n  created_at timestamptz NOT NULL DEFAULT NOW(),\n  updated_at timestamptz \n);\n\n---- create above / drop below ----\n\n-- Write your down migrate statements here. If this migration is irreversible\n-- then delete the separator line above.\n\nDROP TABLE public.users\n\n"),
+		Content: string("-- Write your migrate up statements here\n\nCREATE TABLE users (\n  id BIGINT NOT NULL PRIMARY KEY, \n  full_name VARCHAR(255) NOT NULL,\n  email VARCHAR(255) NOT NULL,\n  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  updated_at TIMESTAMP,\n  UNIQUE (email)\n);\n\n---- create above / drop below ----\n\n-- Write your down migrate statements here. If this migration is irreversible\n-- then delete the separator line above.\n\nDROP TABLE users\n\n"),
 	}
 	file3 := &embedded.EmbeddedFile{
 		Filename:    "Dockerfile",
@@ -48,9 +48,9 @@ func init() {
 	}
 	file8 := &embedded.EmbeddedFile{
 		Filename:    "seed.js",
-		FileModTime: time.Unix(1608879028, 0),
+		FileModTime: time.Unix(1611303630, 0),
 
-		Content: string("// Example script to seed database\n\nvar users = [];\n\nfor (i = 0; i < 10; i++) {\n\tvar data = {\n\t\tfull_name: fake.name(),\n\t\temail:     fake.email()\n\t}\n\n\tvar res = graphql(\" \\\n\tmutation { \\\n\t\tuser(insert: $data) { \\\n\t\t\tid \\\n\t\t} \\\n\t}\", { data: data })\n\n\tusers.push(res.user)\n}"),
+		Content: string("// Example script to seed database\n\nvar users = [];\n\nfor (i = 0; i < 10; i++) {\n  var data = {\n    id: i,\n    full_name: fake.name(),\n    email: fake.email(),\n  };\n\n  var res = graphql(\" \\\n\tmutation { \\\n\t\tuser(insert: $data) { \\\n\t\t\tid \\\n\t\t} \\\n\t}\", {\n    data: data,\n  });\n\n  users.push(res.user);\n}\n"),
 	}
 
 	// define dirs

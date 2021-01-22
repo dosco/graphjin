@@ -33,6 +33,10 @@ func cmdDBSeed(servConf *ServConfig) func(*cobra.Command, []string) {
 		servConf.conf.DefaultBlock = false
 		servConf.conf.DisableAllowList = true
 
+		if servConf.conf.DB.Type == "mysql" {
+			servConf.log.Fatalf("ERR seed scripts not support with MySQL")
+		}
+
 		servConf.db, err = initDB(servConf, true, false)
 		if err != nil {
 			servConf.log.Fatalf("ERR failed to connect to database: %s", err)

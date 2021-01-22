@@ -50,16 +50,6 @@ func initConf(servConfig *ServConfig) (*Config, error) {
 		servConfig.logLevel = LogLevelNone
 	}
 
-	// copy over db_schema from the core config
-	if c.DB.Schema == "" {
-		c.DB.Schema = c.DBSchema
-	}
-
-	// set default database schema
-	if c.DB.Schema == "" {
-		c.DB.Schema = "public"
-	}
-
 	// copy over db_type from database.type
 	if c.Core.DBType == "" {
 		c.Core.DBType = c.DB.Type
@@ -271,10 +261,10 @@ func initPostgres(servConfig *ServConfig, useDB, useTelemetry bool) (*dbConf, er
 
 func initMysql(servConfig *ServConfig, useDB, useTelemetry bool) (*dbConf, error) {
 	c := servConfig.conf
-	connString := fmt.Sprintf("%s:%s@tcp(%s:%d)", c.DB.User, c.DB.Password, c.DB.Host, c.DB.Port)
+	connString := fmt.Sprintf("%s:%s@tcp(%s:%d)/", c.DB.User, c.DB.Password, c.DB.Host, c.DB.Port)
 
 	if useDB {
-		connString += "/" + c.DB.DBName
+		connString += c.DB.DBName
 	}
 
 	return &dbConf{"mysql", connString}, nil

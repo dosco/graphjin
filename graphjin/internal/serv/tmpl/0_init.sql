@@ -1,11 +1,12 @@
 -- Write your migrate up statements here
 
-CREATE TABLE public.users (
-  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  full_name  text,
-  email      text UNIQUE NOT NULL CHECK (length(email) < 255),
-  created_at timestamptz NOT NULL DEFAULT NOW(),
-  updated_at timestamptz 
+CREATE TABLE users (
+  id BIGINT NOT NULL PRIMARY KEY, 
+  full_name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP,
+  UNIQUE (email)
 );
 
 ---- create above / drop below ----
@@ -13,5 +14,5 @@ CREATE TABLE public.users (
 -- Write your down migrate statements here. If this migration is irreversible
 -- then delete the separator line above.
 
-DROP TABLE public.users
+DROP TABLE users
 
