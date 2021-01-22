@@ -1,6 +1,22 @@
 package sdata
 
-const postgresColumnInfo = `
+import "strings"
+
+var ignoreTables []string = []string{
+	"information_schema", "performance_schema", "pg_catalog", "mysql", "sys"}
+
+var getTablesStmt string = `
+SELECT
+	t.table_name as "name",
+	t.table_type as "type"
+FROM 
+	information_schema.tables t
+WHERE
+	t.table_schema NOT IN (` + getIgnoreTables() + `)
+	AND t.table_name NOT IN ('schema_version');
+`
+
+var postgresColumnsStmt string = `
 SELECT 
 	col.table_name as table,
 	col.column_name as name,
@@ -51,10 +67,10 @@ LEFT JOIN
 	information_schema.constraint_column_usage ccu ON tc.constraint_schema = ccu.constraint_schema
 		AND tc.constraint_name = ccu.constraint_name
 WHERE 
-	col.table_schema NOT IN ('information_schema', 'pg_catalog');
+	col.table_schema NOT IN (` + getIgnoreTables() + `);
 `
 
-const mysqlColumnInfo = `
+var mysqlColumnsStmt string = `
 SELECT 
 	col.table_name as "table",
 	col.column_name as "column",
@@ -83,7 +99,7 @@ LEFT JOIN information_schema.statistics stat ON col.table_schema = stat.table_sc
   AND col.column_name = stat.column_name
   AND stat.index_type = 'FULLTEXT'
 WHERE
-	col.table_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')
+	col.table_schema NOT IN (` + getIgnoreTables() + `)
 UNION 
 SELECT 
 	kcu.table_name as "table",
@@ -119,6 +135,9 @@ JOIN
 	AND kcu.table_name = tc.table_name
   	AND kcu.constraint_name = tc.constraint_name
 WHERE
-	kcu.constraint_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')
-	OR kcu.table_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys');
+	kcu.constraint_schema NOT IN (` + getIgnoreTables() + `);
 `
+
+func getIgnoreTables() string {
+	return "'" + strings.Join(ignoreTables, "', '") + "'"
+}

@@ -25,19 +25,23 @@ var newMigrationText = `-- Write your migrate up statements here
 func cmdDBSetup(servConf *ServConfig) func(*cobra.Command, []string) {
 	return func(cmd *cobra.Command, args []string) {
 		initConfOnce(servConf)
+
+		if servConf.conf.DB.Type == "mysql" {
+			servConf.log.Fatalf("ERR database setup not support with MySQL")
+		}
+
 		cmdDBCreate(servConf)(cmd, []string{})
 		cmdDBMigrate(servConf)(cmd, []string{"up"})
 
 		sfile := path.Join(servConf.conf.cpath, servConf.conf.SeedFile)
 		_, err := os.Stat(sfile)
-
 		if err == nil {
 			cmdDBSeed(servConf)(cmd, []string{})
 			return
 		}
 
 		if !os.IsNotExist(err) {
-			servConf.log.Fatalf("ERR unable to check if '%s' exists: %s", sfile, err)
+			servConf.log.Fatalf("ERR unable to check if '%s' exists: %s", sfile, err.Error())
 		}
 
 		servConf.log.Printf("WRN failed to read seed file '%s'", sfile)
@@ -63,6 +67,10 @@ func cmdDBCreate(servConf *ServConfig) func(*cobra.Command, []string) {
 		var err error
 
 		initConfOnce(servConf)
+
+		if servConf.conf.DB.Type == "mysql" {
+			servConf.log.Fatalf("ERR database creation not support with MySQL")
+		}
 
 		if db, err = initDB(servConf, false, false); err != nil {
 			servConf.log.Fatalf("ERR failed to connect to database: %s", err)
@@ -109,7 +117,7 @@ func cmdDBDrop(servConf *ServConfig) func(*cobra.Command, []string) {
 			servConf.log.Fatalf("ERR failed to drop database: %s", err)
 		}
 
-		servConf.log.Printf("INF dropped database '%s'", servConf.conf.DB.DBName)
+		servConf.log.Printf("INF database dropped: %s", servConf.conf.DB.DBName)
 	}
 }
 
@@ -158,6 +166,10 @@ func cmdDBMigrate(servConf *ServConfig) func(*cobra.Command, []string) {
 		initConfOnce(servConf)
 		dest := args[0]
 
+		if servConf.conf.DB.Type == "mysql" {
+			servConf.log.Fatalf("ERR migration not support with MySQL")
+		}
+
 		conn, err := initDB(servConf, true, false)
 		if err != nil {
 			servConf.log.Fatalf("ERR failed to connect to database: %s", err)
@@ -185,8 +197,7 @@ func cmdDBMigrate(servConf *ServConfig) func(*cobra.Command, []string) {
 				time.Now().Format("2006-01-02 15:04:05"), name, direction, sql)
 		}
 
-		var currentVersion int32
-		currentVersion, err = m.GetCurrentVersion()
+		currentVersion, err := m.GetCurrentVersion()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Unable to get current version:\n  %v\n", err)
 			os.Exit(1)

@@ -3,17 +3,20 @@
 var users = [];
 
 for (i = 0; i < 10; i++) {
-	var data = {
-		full_name: fake.name(),
-		email:     fake.email()
-	}
+  var data = {
+    id: i,
+    full_name: fake.name(),
+    email: fake.email(),
+  };
 
-	var res = graphql(" \
+  var res = graphql(" \
 	mutation { \
 		user(insert: $data) { \
 			id \
 		} \
-	}", { data: data })
+	}", {
+    data: data,
+  });
 
-	users.push(res.user)
+  users.push(res.user);
 }
