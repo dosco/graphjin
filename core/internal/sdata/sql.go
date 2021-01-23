@@ -18,34 +18,6 @@ ORDER BY
 	r.routine_name, p.ordinal_position;
 `
 
-// const postgresTablesStmt = `
-// SELECT
-// 	t.table_name as "name",
-// 	t.table_type as "type"
-// FROM
-// 	information_schema.tables t
-// WHERE
-// 	t.table_schema NOT IN (` + ignoreTables + `)
-// 	AND t.table_name NOT IN ('schema_version')
-// UNION
-// SELECT
-// 	t.matviewname as "name",
-// 	'VIEW' as "type"
-// FROM
-// 	pg_catalog.pg_matviews t;
-// `
-
-// var mysqlTablesStmt string = `
-// SELECT
-// 	t.table_name as "name",
-// 	t.table_type as "type"
-// FROM
-// 	information_schema.tables t
-// WHERE
-// 	t.table_schema NOT IN (` + ignoreTables + `)
-// 	AND t.table_name NOT IN ('schema_version');
-// `
-
 const postgresColumnsStmt = `
 SELECT  
 	n.nspname as "schema",
