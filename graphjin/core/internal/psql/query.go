@@ -26,7 +26,7 @@ type Metadata struct {
 	ct     string
 	poll   bool
 	params []Param
-	//pindex map[string]int
+	pindex map[string]int
 }
 
 type compilerContext struct {
@@ -867,20 +867,10 @@ func (c *compilerContext) renderValPrefix(ti sdata.DBTableInfo, ex *qcode.Exp) b
 }
 
 func (c *compilerContext) renderValVarPrefix(ti sdata.DBTableInfo, ex *qcode.Exp) bool {
-	val, isVal := c.svars[ex.Val]
-
-	if isVal && strings.HasPrefix(val, "sql:") {
-		val = `(` + val[4:] + `)`
-	}
-
 	if ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn {
 		if c.md.ct == "mysql" {
 			c.w.WriteString(`JSON_CONTAINS(`)
-			if isVal {
-				c.squoted(val)
-			} else {
-				c.renderParam(Param{Name: ex.Val, Type: ex.Col.Type, IsArray: true})
-			}
+			c.renderParam(Param{Name: ex.Val, Type: ex.Col.Type, IsArray: true})
 			c.w.WriteString(`, CAST(`)
 			colWithTable(c.w, ti.Name, ex.Col.Name)
 			c.w.WriteString(` AS JSON), '$')`)
@@ -906,28 +896,26 @@ func (c *compilerContext) renderVal(ti sdata.DBTableInfo, ex *qcode.Exp) {
 func (c *compilerContext) renderValVar(ti sdata.DBTableInfo, ex *qcode.Exp) {
 	val, isVal := c.svars[ex.Val]
 
-	if isVal && strings.HasPrefix(val, "sql:") {
-		val = `(` + val[4:] + `)`
-	}
+	switch {
+	case isVal && strings.HasPrefix(val, "sql:"):
+		c.w.WriteString(`(`)
+		c.md.RenderVar(c.w, val[4:])
+		c.w.WriteString(`)`)
 
-	switch ex.Op {
-	case qcode.OpIn, qcode.OpNotIn:
+	case isVal:
+		c.w.WriteString(`'`)
+		c.md.RenderVar(c.w, val)
+		c.w.WriteString(`'`)
+
+	case ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn:
 		c.w.WriteString(`(ARRAY(SELECT json_array_elements_text(`)
-		if isVal {
-			c.squoted(val)
-		} else {
-			c.renderParam(Param{Name: ex.Val, Type: ex.Col.Type, IsArray: true})
-		}
+		c.renderParam(Param{Name: ex.Val, Type: ex.Col.Type, IsArray: true})
 		c.w.WriteString(`))`)
 		c.w.WriteString(` :: `)
 		c.w.WriteString(ex.Col.Type)
 		c.w.WriteString(`[])`)
 
 	default:
-		if isVal {
-			c.squoted(val)
-		} else {
-			c.renderParam(Param{Name: ex.Val, Type: ex.Col.Type, IsArray: false})
-		}
+		c.renderParam(Param{Name: ex.Val, Type: ex.Col.Type, IsArray: false})
 	}
 }

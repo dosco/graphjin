@@ -1,77 +1,107 @@
 package sdata
 
-import "strings"
-
-var ignoreTables []string = []string{
-	"information_schema", "performance_schema", "pg_catalog", "mysql", "sys"}
-
-var getTablesStmt string = `
-SELECT
-	t.table_name as "name",
-	t.table_type as "type"
+const functionsStmt = `
+SELECT 
+	r.routine_name as func_name, 
+	p.specific_name as func_id,
+	p.data_type as func_type, 
+	p.parameter_name as param_name,
+	p.ordinal_position	as param_id
 FROM 
-	information_schema.tables t
-WHERE
-	t.table_schema NOT IN (` + getIgnoreTables() + `)
-	AND t.table_name NOT IN ('schema_version');
+	information_schema.routines r
+RIGHT JOIN 
+	information_schema.parameters p
+	ON (r.specific_name = p.specific_name and p.ordinal_position IS NOT NULL)	
+WHERE 
+	p.specific_schema NOT IN ('information_schema', 'performance_schema', 'pg_catalog', 'mysql', 'sys')
+ORDER BY 
+	r.routine_name, p.ordinal_position;
 `
 
-var postgresColumnsStmt string = `
-SELECT 
-	col.table_name as table,
-	col.column_name as name,
-	col.data_type as "type",
-	(CASE
-		WHEN col.is_nullable = 'YES' THEN TRUE  
-		ELSE FALSE
-	END) AS not_null,
-	(CASE
-		WHEN tc.constraint_type = 'PRIMARY KEY' THEN TRUE  
-		ELSE FALSE
-	END) AS primary_key,
+// const postgresTablesStmt = `
+// SELECT
+// 	t.table_name as "name",
+// 	t.table_type as "type"
+// FROM
+// 	information_schema.tables t
+// WHERE
+// 	t.table_schema NOT IN (` + ignoreTables + `)
+// 	AND t.table_name NOT IN ('schema_version')
+// UNION
+// SELECT
+// 	t.matviewname as "name",
+// 	'VIEW' as "type"
+// FROM
+// 	pg_catalog.pg_matviews t;
+// `
+
+// var mysqlTablesStmt string = `
+// SELECT
+// 	t.table_name as "name",
+// 	t.table_type as "type"
+// FROM
+// 	information_schema.tables t
+// WHERE
+// 	t.table_schema NOT IN (` + ignoreTables + `)
+// 	AND t.table_name NOT IN ('schema_version');
+// `
+
+const postgresColumnsStmt = `
+SELECT  
+	n.nspname as "schema",
+	c.relname as "table",
+	f.attname AS "column",  
+	pg_catalog.format_type(f.atttypid,f.atttypmod) AS "type",  
+	f.attnotnull AS not_null,  
 	(CASE  
-		WHEN tc.constraint_type = 'UNIQUE' THEN TRUE
-		ELSE FALSE
+		WHEN co.contype = ('p'::char) THEN true  
+		ELSE false 
+	END) AS primary_key,  
+	(CASE  
+		WHEN co.contype = ('u'::char) THEN true  
+		ELSE false
 	END) AS unique_key,
 	(CASE
-		WHEN col.data_type = 'ARRAY' THEN TRUE  
-		ELSE FALSE
+		WHEN f.attndims != 0 THEN true
+		WHEN right(pg_catalog.format_type(f.atttypid,f.atttypmod), 2) = '[]' THEN true
+		ELSE false
 	END) AS is_array,
 	(CASE
-		WHEN col.data_type = 'tsvector' THEN TRUE  
+		WHEN pg_catalog.format_type(f.atttypid,f.atttypmod) = 'tsvector' THEN TRUE  
 		ELSE FALSE
 	END) AS full_text,
 	(CASE
-		WHEN tc.constraint_type = 'FOREIGN KEY' THEN ccu.table_schema
-		ELSE ''
+		WHEN co.contype = ('f'::char) 
+		THEN (SELECT n.nspname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.oid = co.confrelid)
+		ELSE ''::text
 	END) AS foreignkey_schema,
 	(CASE
-		WHEN tc.constraint_type = 'FOREIGN KEY' THEN ccu.table_name
-		ELSE ''
+		WHEN co.contype = ('f'::char) 
+		THEN (SELECT relname FROM pg_class WHERE oid = co.confrelid)
+		ELSE ''::text
 	END) AS foreignkey_table,
 	(CASE
-		WHEN tc.constraint_type = 'FOREIGN KEY' THEN ccu.column_name
-		ELSE ''
+		WHEN co.contype = ('f'::char) 
+		THEN (SELECT f.attname FROM pg_attribute f WHERE f.attnum = co.confkey[1] and f.attrelid = co.confrelid)
+		ELSE ''::text
 	END) AS foreignkey_column
 FROM 
-	information_schema.columns col
-LEFT JOIN 
-	information_schema.key_column_usage kcu ON col.table_schema = kcu.table_schema
-		AND col.table_name = kcu.table_name
- 		AND col.column_name = kcu.column_name
-LEFT JOIN 
-	information_schema.table_constraints tc ON kcu.table_schema = tc.table_schema
-		AND kcu.table_name = tc.table_name
-    AND kcu.constraint_name = tc.constraint_name
-LEFT JOIN 
-	information_schema.constraint_column_usage ccu ON tc.constraint_schema = ccu.constraint_schema
-		AND tc.constraint_name = ccu.constraint_name
+	pg_attribute f
+	JOIN pg_class c ON c.oid = f.attrelid  
+	LEFT JOIN pg_attrdef d ON d.adrelid = c.oid AND d.adnum = f.attnum  
+	LEFT JOIN pg_namespace n ON n.oid = c.relnamespace  
+	LEFT JOIN pg_constraint co ON co.conrelid = c.oid AND f.attnum = ANY (co.conkey) 
+	LEFT JOIN pg_class AS c1 ON co.confrelid = c1.oid 
 WHERE 
-	col.table_schema NOT IN (` + getIgnoreTables() + `);
+	c.relkind IN ('r', 'v', 'm', 'f')
+	AND n.nspname NOT IN ('information_schema', 'pg_catalog') 
+	AND f.attnum > 0
+	AND f.attisdropped = false;
 `
 
-var mysqlColumnsStmt string = `
+const mysqlColumnsStmt = `
 SELECT 
+	col.table_schema as "schema",
 	col.table_name as "table",
 	col.column_name as "column",
 	col.data_type as "type",
@@ -99,9 +129,10 @@ LEFT JOIN information_schema.statistics stat ON col.table_schema = stat.table_sc
   AND col.column_name = stat.column_name
   AND stat.index_type = 'FULLTEXT'
 WHERE
-	col.table_schema NOT IN (` + getIgnoreTables() + `)
+	col.table_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')
 UNION 
-SELECT 
+SELECT
+	kcu.table_schema as "schema",
 	kcu.table_name as "table",
 	kcu.column_name as "column",
 	'' as "type",
@@ -135,9 +166,5 @@ JOIN
 	AND kcu.table_name = tc.table_name
   	AND kcu.constraint_name = tc.constraint_name
 WHERE
-	kcu.constraint_schema NOT IN (` + getIgnoreTables() + `);
+	kcu.constraint_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys');
 `
-
-func getIgnoreTables() string {
-	return "'" + strings.Join(ignoreTables, "', '") + "'"
-}

@@ -68,6 +68,17 @@ CREATE TABLE comments (
   updated_at TIMESTAMPTZ
 );
 
+CREATE MATERIALIZED VIEW 
+  hot_products
+AS (
+  SELECT 
+      id as product_id
+  FROM
+      products
+  WHERE
+      id > 50
+);
+
 -- CREATE TABLE chats (
 --   id BIGSERIAL PRIMARY KEY,
 --   body TEXT,
@@ -153,3 +164,6 @@ SELECT
   '2021-01-09 16:37:01'
 FROM 
   GENERATE_SERIES(1, 100) i;
+
+-- refresh view hot_products
+REFRESH MATERIALIZED VIEW hot_products;
