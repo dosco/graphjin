@@ -103,37 +103,6 @@ type DBTable struct {
 	Blocked bool
 }
 
-// func GetTables(db *sql.DB, dbtype string) ([]DBTable, error) {
-// 	var tables []DBTable
-
-// 	var sqlStmt string
-
-// 	switch dbtype {
-// 	case "mysql":
-// 		sqlStmt = mysqlTablesStmt
-// 	default:
-// 		sqlStmt = postgresTablesStmt
-// 	}
-
-// 	rows, err := db.Query(sqlStmt)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("Error fetching tables: %s", err)
-// 	}
-// 	defer rows.Close()
-
-// 	for i := 0; rows.Next(); i++ {
-// 		t := DBTable{ID: i}
-// 		err = rows.Scan(&t.Name, &t.Type)
-// 		if err != nil {
-// 			return nil, err
-// 		}
-// 		t.Key = strings.ToLower(t.Name)
-// 		tables = append(tables, t)
-// 	}
-
-// 	return tables, nil
-// }
-
 type DBColumn struct {
 	Name       string
 	Key        string

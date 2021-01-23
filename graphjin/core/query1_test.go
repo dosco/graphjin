@@ -772,6 +772,7 @@ func Example_queryWithUnionForPolymorphicRelationships() {
 	conf := &core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 2}
 	conf.Tables = []core.Table{{
 		Name:    "subject",
+		Type:    "polymorphic",
 		Columns: []core.Column{{Name: "subject_id", ForeignKey: "subject_type.id"}},
 	}}
 
