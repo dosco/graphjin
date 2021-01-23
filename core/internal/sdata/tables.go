@@ -37,31 +37,36 @@ func GetDBInfo(db *sql.DB, dbtype string, blockList []string) (*DBInfo, error) {
 		return nil, err
 	}
 
-	di.Tables, err = GetTables(db)
+	cols, err := GetColumns(db, dbtype)
 	if err != nil {
 		return nil, err
 	}
 
-	var tables []string
+	tm := make(map[string][]DBColumn)
 
-	for i, t := range di.Tables {
-		di.Tables[i].Blocked = isInList(t.Name, blockList)
-		tables = append(tables, t.Name)
-	}
-
-	cols, err := GetColumns(db, dbtype, tables)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, t := range tables {
-		c := cols[t]
-		for i := range c {
-			c[i].Blocked = isInList(c[i].Name, blockList)
+	for _, v := range cols {
+		v.Blocked = isInList(v.Name, blockList)
+		if _, ok := tm[v.Table]; !ok {
+			di.Tables = append(di.Tables, DBTable{
+				Name:    v.Table,
+				Key:     strings.ToLower(v.Table),
+				Schema:  v.Schema,
+				Blocked: isInList(v.Table, blockList),
+			})
 		}
-		di.Columns = append(di.Columns, c)
+		tm[v.Table] = append(tm[v.Table], v)
 	}
-	di.colMap = newColMap(di.Tables, di.Columns)
+
+	di.colMap = make(map[string]*DBColumn)
+
+	for _, t := range di.Tables {
+		tc := tm[t.Name]
+		di.Columns = append(di.Columns, tc)
+
+		for i, c := range tc {
+			di.colMap[(c.Table + c.Name)] = &tc[i]
+		}
+	}
 
 	di.Functions, err = GetFunctions(db, blockList)
 	if err != nil {
@@ -72,16 +77,13 @@ func GetDBInfo(db *sql.DB, dbtype string, blockList []string) (*DBInfo, error) {
 }
 
 func (di *DBInfo) AddTable(t DBTable, cols []DBColumn) {
-	t.ID = di.Tables[len(di.Tables)-1].ID
-
 	di.Tables = append(di.Tables, t)
+	di.Columns = append(di.Columns, cols)
 
 	for i := range cols {
-		cols[i].ID = int16(i)
 		c := &cols[i]
 		di.colMap[(t.Key + c.Key)] = c
 	}
-	di.Columns = append(di.Columns, cols)
 }
 
 func (di *DBInfo) GetColumn(table, column string) (*DBColumn, error) {
@@ -94,37 +96,45 @@ func (di *DBInfo) GetColumn(table, column string) (*DBColumn, error) {
 }
 
 type DBTable struct {
-	ID      int
 	Name    string
 	Key     string
 	Type    string
+	Schema  string
 	Blocked bool
 }
 
-func GetTables(db *sql.DB) ([]DBTable, error) {
-	var tables []DBTable
+// func GetTables(db *sql.DB, dbtype string) ([]DBTable, error) {
+// 	var tables []DBTable
 
-	rows, err := db.Query(getTablesStmt)
-	if err != nil {
-		return nil, fmt.Errorf("Error fetching tables: %s", err)
-	}
-	defer rows.Close()
+// 	var sqlStmt string
 
-	for i := 0; rows.Next(); i++ {
-		t := DBTable{ID: i}
-		err = rows.Scan(&t.Name, &t.Type)
-		if err != nil {
-			return nil, err
-		}
-		t.Key = strings.ToLower(t.Name)
-		tables = append(tables, t)
-	}
+// 	switch dbtype {
+// 	case "mysql":
+// 		sqlStmt = mysqlTablesStmt
+// 	default:
+// 		sqlStmt = postgresTablesStmt
+// 	}
 
-	return tables, nil
-}
+// 	rows, err := db.Query(sqlStmt)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("Error fetching tables: %s", err)
+// 	}
+// 	defer rows.Close()
+
+// 	for i := 0; rows.Next(); i++ {
+// 		t := DBTable{ID: i}
+// 		err = rows.Scan(&t.Name, &t.Type)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 		t.Key = strings.ToLower(t.Name)
+// 		tables = append(tables, t)
+// 	}
+
+// 	return tables, nil
+// }
 
 type DBColumn struct {
-	ID         int16
 	Name       string
 	Key        string
 	Type       string
@@ -138,16 +148,10 @@ type DBColumn struct {
 	FKeyCol    string
 	Blocked    bool
 	Table      string
+	Schema     string
 }
 
-func GetColumns(db *sql.DB, dbtype string, tables []string) (
-	map[string][]DBColumn, error) {
-	cols := make(map[string][]DBColumn, len(tables))
-
-	if len(tables) == 0 {
-		return cols, nil
-	}
-
+func GetColumns(db *sql.DB, dbtype string) (map[string]DBColumn, error) {
 	var sqlStmt string
 
 	switch dbtype {
@@ -168,7 +172,7 @@ func GetColumns(db *sql.DB, dbtype string, tables []string) (
 	for rows.Next() {
 		var c DBColumn
 
-		err = rows.Scan(&c.Table, &c.Name, &c.Type, &c.NotNull, &c.PrimaryKey, &c.UniqueKey, &c.Array, &c.FullText, &c.FKeySchema, &c.FKeyTable, &c.FKeyCol)
+		err = rows.Scan(&c.Schema, &c.Table, &c.Name, &c.Type, &c.NotNull, &c.PrimaryKey, &c.UniqueKey, &c.Array, &c.FullText, &c.FKeySchema, &c.FKeyTable, &c.FKeyCol)
 
 		if err != nil {
 			return nil, err
@@ -210,11 +214,7 @@ func GetColumns(db *sql.DB, dbtype string, tables []string) (
 		cmap[(c.Table + c.Name)] = v
 	}
 
-	for _, v := range cmap {
-		cols[v.Table] = append(cols[v.Table], v)
-	}
-
-	return cols, nil
+	return cmap, nil
 }
 
 type DBFunction struct {
@@ -229,24 +229,7 @@ type DBFuncParam struct {
 }
 
 func GetFunctions(db *sql.DB, blockList []string) ([]DBFunction, error) {
-	sqlStmt := `
-SELECT 
-	r.routine_name as func_name, 
-	p.specific_name as func_id,
-	p.data_type as func_type, 
-	p.parameter_name as param_name,
-	p.ordinal_position	as param_id
-FROM 
-	information_schema.routines r
-RIGHT JOIN 
-	information_schema.parameters p
-	ON (r.specific_name = p.specific_name and p.ordinal_position IS NOT NULL)	
-WHERE 
-	p.specific_schema NOT IN ('information_schema', 'pg_catalog')
-ORDER BY 
-	r.routine_name, p.ordinal_position;`
-
-	rows, err := db.Query(sqlStmt)
+	rows, err := db.Query(functionsStmt)
 	if err != nil {
 		return nil, fmt.Errorf("Error fetching functions: %s", err)
 	}
@@ -284,30 +267,6 @@ ORDER BY
 
 	return funcs, nil
 }
-
-func newColMap(tables []DBTable, columns [][]DBColumn) map[string]*DBColumn {
-	cm := make(map[string]*DBColumn, len(tables))
-
-	for i, t := range tables {
-		for n, c := range columns[i] {
-			cm[(t.Name + c.Name)] = &columns[i][n]
-		}
-	}
-
-	return cm
-}
-
-// func toList(s []string) string {
-// 	var sb strings.Builder
-// 	for i := range s {
-// 		if i != 0 {
-// 			sb.WriteString(",'" + s[i] + "'")
-// 		} else {
-// 			sb.WriteString("'" + s[i] + "'")
-// 		}
-// 	}
-// 	return sb.String()
-// }
 
 func isInList(val string, s []string) bool {
 	for _, v := range s {

@@ -184,9 +184,10 @@ func addJsonTable(di *sdata.DBInfo, cols []Column, t Table) error {
 	}
 
 	table := sdata.DBTable{
-		Name: t.Name,
-		Key:  strings.ToLower(t.Name),
-		Type: bc.Type,
+		Name:   t.Name,
+		Key:    strings.ToLower(t.Name),
+		Type:   bc.Type,
+		Schema: bc.Schema,
 	}
 
 	columns := make([]sdata.DBColumn, 0, len(cols))
@@ -194,9 +195,11 @@ func addJsonTable(di *sdata.DBInfo, cols []Column, t Table) error {
 	for i := range cols {
 		c := cols[i]
 		columns = append(columns, sdata.DBColumn{
-			Name: c.Name,
-			Key:  strings.ToLower(c.Name),
-			Type: c.Type,
+			Name:   c.Name,
+			Key:    strings.ToLower(c.Name),
+			Type:   c.Type,
+			Table:  t.Name,
+			Schema: bc.Schema,
 		})
 	}
 

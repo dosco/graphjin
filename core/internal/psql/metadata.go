@@ -49,31 +49,35 @@ func (c *compilerContext) renderVar(vv string) {
 // nolint: errcheck
 func (c *compilerContext) renderParam(p Param) {
 	var id int
-	//var ok bool
+	var ok bool
 
-	md := c.md
-	//if id, ok = md.pindex[p.Name]; !ok {
-	md.params = append(c.md.params, p)
-	id = len(c.md.params)
+	switch c.md.ct {
+	case "mysql":
+		c.md.params = append(c.md.params, p)
+	default:
+		id, ok = c.md.pindex[p.Name]
+		if !ok {
+			c.md.params = append(c.md.params, p)
+			id = len(c.md.params)
+			if c.md.pindex == nil {
+				c.md.pindex = make(map[string]int)
+			}
+			c.md.pindex[p.Name] = id
+		}
+	}
 
-	// if md.pindex == nil {
-	// 	md.pindex = make(map[string]int)
-	// }
-	// md.pindex[p.Name] = id
-	//}
-
-	if md.poll {
+	if c.md.poll {
 		_, _ = c.w.WriteString(`_sg_sub.`)
 		c.quoted(p.Name)
+		return
+	}
 
-	} else {
-		switch c.md.ct {
-		case "mysql":
-			c.w.WriteString(`?`)
-		default:
-			c.w.WriteString(`$`)
-			int32String(c.w, int32(id))
-		}
+	switch c.md.ct {
+	case "mysql":
+		c.w.WriteString(`?`)
+	default:
+		c.w.WriteString(`$`)
+		int32String(c.w, int32(id))
 	}
 }
 

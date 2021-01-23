@@ -77,6 +77,17 @@ CREATE TABLE comments (
   FOREIGN KEY (reply_to_id) REFERENCES comments(id)
 );
 
+CREATE VIEW 
+  hot_products
+AS (
+  SELECT 
+      id as product_id 
+  FROM
+      products
+  WHERE
+      id > 50
+);
+
 -- CREATE TABLE chats (
 --   id BIGINT NOT NULL PRIMARY KEY,
 --   body VARCHAR(255),

@@ -75,7 +75,7 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 			if csel.Paging.Cursor {
 				c.w.WriteString(`, __sj_`)
 				int32String(c.w, csel.ID)
-				c.w.WriteString(`.cursor AS `)
+				c.w.WriteString(`.__cursor AS `)
 				c.w.WriteString(csel.FieldName)
 				c.w.WriteString(`_cursor`)
 			}
@@ -255,11 +255,11 @@ func (c *compilerContext) renderJSONFields(sel *qcode.Select) {
 
 		//TODO: log what and why this is being skipped
 		if csel.SkipRender != qcode.SkipTypeNone && csel.SkipRender != qcode.SkipTypeRemote {
-			c.renderJSONField(csel.FieldName, sel.ID)
+			c.renderJSONNullField(csel.FieldName)
 
 			if sel.Paging.Cursor {
 				c.w.WriteString(", ")
-				c.renderJSONField(sel.FieldName, sel.ID)
+				c.renderJSONNullField(sel.FieldName + `_cursor`)
 			}
 
 		} else {
@@ -287,4 +287,9 @@ func (c *compilerContext) renderJSONField(name string, selID int32) {
 	int32String(c.w, selID)
 	c.w.WriteString(`.`)
 	c.w.WriteString(name)
+}
+
+func (c *compilerContext) renderJSONNullField(name string) {
+	c.squoted(name)
+	c.w.WriteString(`, NULL`)
 }

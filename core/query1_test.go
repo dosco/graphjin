@@ -375,8 +375,12 @@ func Example_queryParentAndChildrenViaArrayColumn() {
 	}`
 
 	conf := &core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 2}
-	conf.Tables = []core.Table{
-		{Name: "products", Columns: []core.Column{{Name: "category_ids", ForeignKey: "categories.id", Array: true}}},
+	conf.Tables = []core.Table{{
+		Name: "products",
+		Columns: []core.Column{
+			{Name: "category_ids", ForeignKey: "categories.id", Array: true},
+		},
+	},
 	}
 
 	gj, err := core.NewGraphJin(conf, db)
@@ -768,7 +772,6 @@ func Example_queryWithUnionForPolymorphicRelationships() {
 	conf := &core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 2}
 	conf.Tables = []core.Table{{
 		Name:    "subject",
-		Type:    "polymorphic",
 		Columns: []core.Column{{Name: "subject_id", ForeignKey: "subject_type.id"}},
 	}}
 
@@ -943,6 +946,40 @@ func Example_queryWithJsonColumn() {
 		fmt.Println(string(res.Data))
 	}
 	// Output: {"user": {"id": 1, "category_counts": [{"count": 400, "category": {"name": "Category 1"}}, {"count": 600, "category": {"name": "Category 2"}}]}}
+}
+
+func Example_queryWithView() {
+	gql := `query {
+		hot_products(limit: 3) {
+			product {
+				id
+				name
+			}
+		}
+	}`
+
+	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf.Tables = []core.Table{
+		{
+			Name: "hot_products",
+			Columns: []core.Column{
+				{Name: "product_id", Type: "int", ForeignKey: "products.id"},
+			},
+		},
+	}
+
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+	// Output: {"hot_products": [{"product": {"id": 51, "name": "Product 51"}}, {"product": {"id": 52, "name": "Product 52"}}, {"product": {"id": 53, "name": "Product 53"}}]}
 }
 
 func Example_queryWithRecursiveRelationship1() {
