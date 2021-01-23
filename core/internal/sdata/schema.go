@@ -195,7 +195,6 @@ func (s *DBSchema) virtualRels(vts []VirtualTable) error {
 			}
 
 			nt := DBTable{
-				ID:   -1,
 				Name: vt.Name,
 				Key:  strings.ToLower(vt.Name),
 				Type: "virtual",
