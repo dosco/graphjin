@@ -60,7 +60,6 @@ func initConf(servConfig *ServConfig) (*Config, error) {
 
 	for i := 0; i < len(c.Auths); i++ {
 		a := &c.Auths[i]
-		a.Name = sanitize(a.Name)
 
 		if _, ok := am[a.Name]; ok {
 			c.Auths = append(c.Auths[:i], c.Auths[i+1:]...)
@@ -74,8 +73,6 @@ func initConf(servConfig *ServConfig) (*Config, error) {
 
 	for i := 0; i < len(c.Actions); i++ {
 		a := &c.Actions[i]
-		a.Name = sanitize(a.Name)
-		a.AuthName = sanitize(a.AuthName)
 
 		if _, ok := axm[a.Name]; ok {
 			c.Actions = append(c.Actions[:i], c.Actions[i+1:]...)
@@ -92,12 +89,16 @@ func initConf(servConfig *ServConfig) (*Config, error) {
 	var anonFound bool
 
 	for _, r := range c.Roles {
-		if sanitize(r.Name) == "anon" {
+		if r.Name == "anon" {
 			anonFound = true
 		}
 	}
 
-	if !anonFound {
+	if c.Auth.Type == "" || c.Auth.Type == "none" {
+		c.DefaultBlock = false
+	}
+
+	if !anonFound && c.DefaultBlock {
 		servConfig.log.Printf("WRN unauthenticated requests will be blocked. no role 'anon' defined")
 		c.AuthFailBlock = false
 	}
