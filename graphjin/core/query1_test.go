@@ -188,14 +188,14 @@ func Example_queryWithWhereGreaterThanOrLesserThan() {
 
 func Example_queryWithWhereOnRelatedTable() {
 	gql := `query {
-			product(where: { comment: { user: { email: { eq: $email } } } }) {
-			 id
-		 }
+		product(where: { user: { id: { eq: $user_id } } } ) {
+			id
+			user {
+				id
+				email
+			}
+		}
 	}`
-
-	vars := json.RawMessage(`{
-		"email": "user10@test.com"
-	}`)
 
 	conf := &core.Config{DBType: dbType, DisableAllowList: true}
 	gj, err := core.NewGraphJin(conf, db)
@@ -203,13 +203,14 @@ func Example_queryWithWhereOnRelatedTable() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, vars)
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 4)
+	res, err := gj.GraphQL(ctx, gql, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"product": {"id": 10}}
+	// Output: {"product": {"id": 4, "user": {"id": 4, "email": "user4@test.com"}}}
 }
 
 func Example_queryWithAlternateFieldNames() {

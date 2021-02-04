@@ -176,7 +176,7 @@ func (gj *GraphJin) renderUserQuery(md *psql.Metadata, stmts []stmt) (string, er
 	}
 
 	w.WriteString(`END) as "__root" FROM (SELECT (CASE WHEN EXISTS (`)
-	md.RenderVar(w, gj.conf.RolesQuery)
+	gj.pc.RenderVar(w, md, gj.conf.RolesQuery)
 	w.WriteString(`) THEN `)
 
 	w.WriteString(`(SELECT (CASE`)
@@ -192,7 +192,7 @@ func (gj *GraphJin) renderUserQuery(md *psql.Metadata, stmts []stmt) (string, er
 	}
 
 	w.WriteString(` ELSE 'user' END) FROM (`)
-	md.RenderVar(w, gj.conf.RolesQuery)
+	gj.pc.RenderVar(w, md, gj.conf.RolesQuery)
 	w.WriteString(`) AS "_sg_auth_roles_query" LIMIT 1) `)
 	w.WriteString(`ELSE 'anon' END) FROM (VALUES (1)) AS "_sg_auth_filler") AS "_sg_auth_info"(role) LIMIT 1 `)
 

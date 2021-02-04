@@ -9,7 +9,7 @@ import (
 	"github.com/dosco/graphjin/core/internal/util"
 )
 
-func (co *Compiler) compileArgObj(ti sdata.DBTableInfo, st *util.StackInf, arg *graph.Arg) (*Exp, bool, error) {
+func (co *Compiler) compileArgObj(ti sdata.TInfo, st *util.StackInf, arg *graph.Arg) (*Exp, bool, error) {
 	if arg.Val.Type != graph.NodeObj {
 		return nil, false, fmt.Errorf("expecting an object")
 	}
@@ -23,7 +23,7 @@ type aexp struct {
 }
 
 func (co *Compiler) compileArgNode(
-	ti sdata.DBTableInfo,
+	ti sdata.TInfo,
 	st *util.StackInf,
 	node *graph.Node,
 	usePool bool) (*Exp, bool, error) {
@@ -55,7 +55,7 @@ func (co *Compiler) compileArgNode(
 			continue
 		}
 
-		ex, err := newExp(ti, st, av, usePool)
+		ex, err := newExp(co.s, ti, st, av, usePool)
 		if err != nil {
 			return nil, needsUser, err
 		}
@@ -78,7 +78,7 @@ func (co *Compiler) compileArgNode(
 	return root, needsUser, nil
 }
 
-func newExp(ti sdata.DBTableInfo, st *util.StackInf, av aexp, usePool bool) (*Exp, error) {
+func newExp(s *sdata.DBSchema, ti sdata.TInfo, st *util.StackInf, av aexp, usePool bool) (*Exp, error) {
 	node := av.node
 	name := node.Name
 
@@ -218,7 +218,7 @@ func newExp(ti sdata.DBTableInfo, st *util.StackInf, av aexp, usePool bool) (*Ex
 			return nil, fmt.Errorf("[Where] invalid values for: %s", name)
 		}
 
-		if err := setWhereColName(ti, ex, node); err != nil {
+		if err := setWhereColName(s, ti, ex, node); err != nil {
 			return nil, err
 		}
 	}
@@ -247,7 +247,7 @@ func setListVal(ex *Exp, node *graph.Node) {
 
 }
 
-func setWhereColName(ti sdata.DBTableInfo, ex *Exp, node *graph.Node) error {
+func setWhereColName(s *sdata.DBSchema, ti sdata.TInfo, ex *Exp, node *graph.Node) error {
 	var list []string
 
 	for n := node.Parent; n != nil; n = n.Parent {
@@ -279,15 +279,17 @@ func setWhereColName(ti sdata.DBTableInfo, ex *Exp, node *graph.Node) error {
 		prev := ti.Name
 		for i := 0; i < len(list)-1; i++ {
 			curr := list[i]
-			// if at, ok := ti.Schema.GetAliasTable(list[i], prev); ok {
-			// 	curr = at
-			// }
-			if rel, err := ti.Schema.GetRel(curr, prev, ""); err == nil {
-				ex.Rels = append(ex.Rels, rel)
-				prev = curr
-			} else {
+
+			if curr == ti.Name || curr == ti.Plural {
+				return fmt.Errorf("selector table not allowed in where: %s", ti.Name)
+			}
+
+			paths, err := s.FindPath(ti.Schema, curr, ti.Schema, prev)
+			if err != nil {
 				return err
 			}
+			ex.Rels = append(ex.Rels, sdata.PathToRel(paths[0]))
+			prev = curr
 		}
 		rel := ex.Rels[len(ex.Rels)-1]
 		if col, err := rel.Left.Ti.GetColumn(list[len(list)-1]); err == nil {

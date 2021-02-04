@@ -34,7 +34,7 @@ func colWithTableID(w *bytes.Buffer, table string, id int32, col string) {
 }
 
 func (c *compilerContext) quoted(identifier string) {
-	switch c.md.ct {
+	switch c.ct {
 	case "mysql":
 		c.w.WriteByte('`')
 		c.w.WriteString(identifier)

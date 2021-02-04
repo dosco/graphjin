@@ -61,18 +61,14 @@ func (gj *GraphJin) initGraphQLEgine() error {
 	//validGraphQLIdentifierRegex := regexp.MustCompile(`^[A-Za-z_][A-Za-z_0-9]*$`)
 
 	scalarExpressionTypesNeeded := map[string]bool{}
-	tableNames := sc.GetTableNames()
+	tables := sc.GetTableNames()
 
 	var funcs []sdata.DBFunction
 	for _, f := range sc.GetFunctions() {
 		funcs = append(funcs, f)
 	}
 
-	for _, table := range tableNames {
-		ti, err := sc.GetTableInfo(table, "")
-		if err != nil {
-			return err
-		}
+	for _, ti := range tables {
 		if ti.Blocked {
 			continue
 		}
@@ -104,18 +100,17 @@ func (gj *GraphJin) initGraphQLEgine() error {
 		}
 		engineSchema.Types[orderByType.Name] = orderByType
 
-		for _, t := range tableNames {
-			if _, err := sc.GetRel(t, ti.Name, ""); err != nil {
+		for _, t := range tables {
+			var ti1 sdata.TInfo
+			if path, err := sc.FindPath("", t.Name, "", ti.Name); err == nil {
+				ti1 = path[0].LTi
+			} else {
 				continue
-			}
-			ti1, err := sc.GetTableInfo(t, "")
-			if err != nil {
-				return err
 			}
 			if ti1.Blocked {
 				continue
 			}
-			singularName := ti1.Singular
+			singularName := ti1.DBTable.Singular
 			pluralName := ti1.Plural
 
 			outputType.Fields = append(outputType.Fields, &schema.Field{
@@ -129,45 +124,45 @@ func (gj *GraphJin) initGraphQLEgine() error {
 			})
 		}
 
-		for _, t := range sc.GetAliases(table) {
-			ti1, err := sc.GetTableInfo(t, table)
-			if err != nil {
-				return err
-			}
-			if ti1.Blocked {
-				continue
-			}
+		// for _, t := range sc.GetAliases(table) {
+		// 	ti1, err := sc.GetTableInfo(t, table)
+		// 	if err != nil {
+		// 		return err
+		// 	}
+		// 	if ti1.Blocked {
+		// 		continue
+		// 	}
 
-			if ti1.IsSingular {
-				outputType := &schema.Object{
-					Name:   t + "Output",
-					Fields: schema.FieldList{},
-				}
-				engineSchema.Types[outputType.Name] = outputType
+		// 	if ti1.IsSingular {
+		// 		outputType := &schema.Object{
+		// 			Name:   t + "Output",
+		// 			Fields: schema.FieldList{},
+		// 		}
+		// 		engineSchema.Types[outputType.Name] = outputType
 
-				inputType := &schema.InputObject{
-					Name:   t + "Input",
-					Fields: schema.InputValueList{},
-				}
-				engineSchema.Types[inputType.Name] = inputType
+		// 		inputType := &schema.InputObject{
+		// 			Name:   t + "Input",
+		// 			Fields: schema.InputValueList{},
+		// 		}
+		// 		engineSchema.Types[inputType.Name] = inputType
 
-				orderByType := &schema.InputObject{
-					Name:   t + "OrderBy",
-					Fields: schema.InputValueList{},
-				}
-				engineSchema.Types[orderByType.Name] = orderByType
+		// 		orderByType := &schema.InputObject{
+		// 			Name:   t + "OrderBy",
+		// 			Fields: schema.InputValueList{},
+		// 		}
+		// 		engineSchema.Types[orderByType.Name] = orderByType
 
-				outputType.Fields = append(outputType.Fields, &schema.Field{
-					Name: t,
-					Type: &schema.TypeName{Name: t + "Output"},
-				})
-			} else {
-				outputType.Fields = append(outputType.Fields, &schema.Field{
-					Name: t,
-					Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: ti1.Singular + "Output"}}}},
-				})
-			}
-		}
+		// 		outputType.Fields = append(outputType.Fields, &schema.Field{
+		// 			Name: t,
+		// 			Type: &schema.TypeName{Name: t + "Output"},
+		// 		})
+		// 	} else {
+		// 		outputType.Fields = append(outputType.Fields, &schema.Field{
+		// 			Name: t,
+		// 			Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: ti1.Singular + "Output"}}}},
+		// 		})
+		// 	}
+		// }
 
 		expressionTypeName := singularName + "Expression"
 		expressionType := &schema.InputObject{

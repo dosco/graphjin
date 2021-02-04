@@ -8,9 +8,6 @@ import (
 func (c *compilerContext) renderColumns(sel *qcode.Select) {
 	i := 0
 	for _, col := range sel.Cols {
-		if col.Base {
-			continue
-		}
 		if i != 0 {
 			c.w.WriteString(", ")
 		}
@@ -42,12 +39,16 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 	for _, cid := range sel.Children {
 		csel := &c.qc.Selects[cid]
 
+		if csel.SkipRender == qcode.SkipTypeRemote {
+			continue
+		}
+
 		if i != 0 {
 			c.w.WriteString(", ")
 		}
 
 		//TODO: log what and why this is being skipped
-		if csel.SkipRender != qcode.SkipTypeNone && csel.SkipRender != qcode.SkipTypeRemote {
+		if csel.SkipRender != qcode.SkipTypeNone {
 			c.w.WriteString(`NULL`)
 			c.alias(csel.FieldName)
 
@@ -58,9 +59,6 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 
 		} else {
 			switch csel.Rel.Type {
-			case sdata.RelRemote:
-				c.renderRemoteRelColumns(sel, csel)
-
 			case sdata.RelPolymorphic:
 				c.renderUnionColumn(sel, csel)
 
@@ -90,7 +88,7 @@ func (c *compilerContext) renderUnionColumn(sel, csel *qcode.Select) {
 		usel := &c.qc.Selects[cid]
 
 		c.w.WriteString(`WHEN `)
-		colWithTableID(c.w, sel.Table, sel.ID, csel.Rel.Right.VTable)
+		colWithTableID(c.w, sel.Table, sel.ID, csel.Rel.Right.Col.Name)
 		c.w.WriteString(` = `)
 		c.squoted(usel.Table)
 		c.w.WriteString(` THEN `)
@@ -107,11 +105,6 @@ func (c *compilerContext) renderUnionColumn(sel, csel *qcode.Select) {
 	c.alias(csel.FieldName)
 }
 
-func (c *compilerContext) renderRemoteRelColumns(sel, csel *qcode.Select) {
-	colWithTableID(c.w, sel.Table, sel.ID, csel.Rel.Left.Col.Name)
-	c.alias(csel.Rel.Right.VTable)
-}
-
 func (c *compilerContext) renderFunction(sel *qcode.Select, fn qcode.Function) {
 	switch fn.Name {
 	case "search_rank":
@@ -125,7 +118,7 @@ func (c *compilerContext) renderFunction(sel *qcode.Select, fn qcode.Function) {
 }
 
 func (c *compilerContext) renderFunctionSearchRank(sel *qcode.Select, fn qcode.Function) {
-	if c.md.ct == "mysql" {
+	if c.ct == "mysql" {
 		c.w.WriteString(`0`)
 		return
 	}
@@ -137,7 +130,7 @@ func (c *compilerContext) renderFunctionSearchRank(sel *qcode.Select, fn qcode.F
 		}
 		colWithTable(c.w, sel.Table, col.Name)
 	}
-	if sel.Ti.Schema.DBVersion() >= 110000 {
+	if c.cv >= 110000 {
 		c.w.WriteString(`, websearch_to_tsquery(`)
 	} else {
 		c.w.WriteString(`, to_tsquery(`)
@@ -148,7 +141,7 @@ func (c *compilerContext) renderFunctionSearchRank(sel *qcode.Select, fn qcode.F
 }
 
 func (c *compilerContext) renderFunctionSearchHeadline(sel *qcode.Select, fn qcode.Function) {
-	if c.md.ct == "mysql" {
+	if c.ct == "mysql" {
 		c.w.WriteString(`''`)
 		return
 	}
@@ -168,7 +161,7 @@ func (c *compilerContext) renderFunctionSearchHeadline(sel *qcode.Select, fn qco
 		colWithTable(c.w, sel.Table, fn.Col.Name)
 		c.w.WriteString(`)`)
 	}
-	if sel.Ti.Schema.DBVersion() >= 110000 {
+	if c.cv >= 110000 {
 		c.w.WriteString(`, websearch_to_tsquery(`)
 	} else {
 		c.w.WriteString(`, to_tsquery(`)
@@ -188,11 +181,11 @@ func (c *compilerContext) renderOtherFunction(sel *qcode.Select, fn qcode.Functi
 func (c *compilerContext) renderBaseColumns(sel *qcode.Select) {
 	i := 0
 
-	for _, col := range sel.Cols {
+	for _, col := range sel.BCols {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
-		if col.Col.Array && c.md.ct == "mysql" {
+		if col.Col.Array && c.ct == "mysql" {
 			c.w.WriteString(`CAST(`)
 			colWithTable(c.w, sel.Table, col.Col.Name)
 			c.w.WriteString(` AS JSON) AS `)
@@ -220,16 +213,12 @@ func (c *compilerContext) renderTypename(sel *qcode.Select) {
 func (c *compilerContext) renderJSONFields(sel *qcode.Select) {
 	i := 0
 	for _, col := range sel.Cols {
-		if col.Base {
-			continue
-		}
 		if i != 0 {
 			c.w.WriteString(", ")
 		}
 		c.renderJSONField(col.FieldName, sel.ID)
 		i++
 	}
-
 	for _, fn := range sel.Funcs {
 		if i != 0 {
 			c.w.WriteString(", ")
@@ -249,12 +238,16 @@ func (c *compilerContext) renderJSONFields(sel *qcode.Select) {
 	for _, cid := range sel.Children {
 		csel := &c.qc.Selects[cid]
 
+		if csel.SkipRender == qcode.SkipTypeRemote {
+			continue
+		}
+
 		if i != 0 {
 			c.w.WriteString(", ")
 		}
 
 		//TODO: log what and why this is being skipped
-		if csel.SkipRender != qcode.SkipTypeNone && csel.SkipRender != qcode.SkipTypeRemote {
+		if csel.SkipRender != qcode.SkipTypeNone {
 			c.renderJSONNullField(csel.FieldName)
 
 			if sel.Paging.Cursor {
@@ -263,13 +256,7 @@ func (c *compilerContext) renderJSONFields(sel *qcode.Select) {
 			}
 
 		} else {
-			switch csel.Rel.Type {
-			case sdata.RelRemote:
-				c.renderJSONField(csel.Rel.Right.VTable, sel.ID)
-
-			default:
-				c.renderJSONField(csel.FieldName, sel.ID)
-			}
+			c.renderJSONField(csel.FieldName, sel.ID)
 
 			// return the cursor for the this child selector as part of the parents json
 			if csel.Paging.Cursor {

@@ -22,12 +22,13 @@ func singleUpdate(t *testing.T) {
 
 func simpleUpdateWithPresets(t *testing.T) {
 	gql := `mutation {
-		product(update: $data) {
+		product(update: $data id: $id) {
 			id
 		}
 	}`
 
 	vars := map[string]json.RawMessage{
+		"id":   json.RawMessage(`1`),
 		"data": json.RawMessage(`{"name": "Apple", "price": 1.25}`),
 	}
 

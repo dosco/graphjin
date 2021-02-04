@@ -39,7 +39,7 @@ func (gj *GraphJin) prepareRoleStmt() error {
 	w := &bytes.Buffer{}
 
 	io.WriteString(w, `SELECT (CASE WHEN EXISTS (`)
-	gj.roleStmtMD.RenderVar(w, gj.conf.RolesQuery)
+	gj.pc.RenderVar(w, &gj.roleStmtMD, gj.conf.RolesQuery)
 	io.WriteString(w, `) THEN `)
 
 	io.WriteString(w, `(SELECT (CASE`)
@@ -55,7 +55,7 @@ func (gj *GraphJin) prepareRoleStmt() error {
 	}
 
 	io.WriteString(w, ` ELSE 'user' END) FROM (`)
-	gj.roleStmtMD.RenderVar(w, gj.conf.RolesQuery)
+	gj.pc.RenderVar(w, &gj.roleStmtMD, gj.conf.RolesQuery)
 	io.WriteString(w, `) AS "_sg_auth_roles_query" LIMIT 1) `)
 	io.WriteString(w, `ELSE 'anon' END) FROM (VALUES (1)) AS "_sg_auth_filler" LIMIT 1; `)
 

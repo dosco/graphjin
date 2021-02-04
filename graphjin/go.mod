@@ -9,13 +9,11 @@ require (
 	contrib.go.opencensus.io/exporter/stackdriver v0.13.4
 	contrib.go.opencensus.io/exporter/zipkin v0.1.2
 	contrib.go.opencensus.io/integrations/ocsql v0.1.6
-	github.com/DATA-DOG/go-sqlmock v1.5.0
 	github.com/GeertJohan/go.rice v1.0.0
 	github.com/NYTimes/gziphandler v1.1.1
 	github.com/adjust/gorails v0.0.0-20171013043634-2786ed0c03d3
 	github.com/aws/aws-sdk-go v1.34.30 // indirect
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
-	github.com/brianvoe/gofakeit/v5 v5.9.3
 	github.com/brianvoe/gofakeit/v6 v6.0.0
 	github.com/census-instrumentation/opencensus-proto v0.3.0 // indirect
 	github.com/chirino/graphql v0.0.0-20200723175208-cec7bf430a98
@@ -29,10 +27,10 @@ require (
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
 	github.com/go-sql-driver/mysql v1.5.0
 	github.com/gobuffalo/flect v0.2.2
+	github.com/gopherjs/gopherjs v0.0.0-20190430165422-3e4dfb77656c // indirect
 	github.com/gorilla/websocket v1.4.2
 	github.com/gosimple/slug v1.9.0
 	github.com/jackc/pgproto3/v2 v2.0.4 // indirect
-	github.com/jackc/pgtype v1.4.2
 	github.com/jackc/pgx/v4 v4.8.1
 	github.com/magiconair/properties v1.8.4 // indirect
 	github.com/mitchellh/mapstructure v1.3.3
@@ -50,7 +48,6 @@ require (
 	github.com/spf13/cast v1.3.1 // indirect
 	github.com/spf13/cobra v1.0.0
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
-	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/spf13/viper v1.7.1
 	github.com/stretchr/testify v1.5.1
 	go.opencensus.io v0.22.4
@@ -59,6 +56,7 @@ require (
 	golang.org/x/crypto v0.0.0-20200820211705-5c72a883971a
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e
 	golang.org/x/tools v0.0.0-20201201035011-dcde6b0efb07 // indirect
+	gonum.org/v1/gonum v0.8.2
 	google.golang.org/api v0.32.0 // indirect
 	google.golang.org/genproto v0.0.0-20200923140941-5646d36feee1 // indirect
 	google.golang.org/grpc v1.32.0 // indirect

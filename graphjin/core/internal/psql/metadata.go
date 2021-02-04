@@ -5,8 +5,9 @@ import (
 	"strings"
 )
 
-func (md *Metadata) RenderVar(w *bytes.Buffer, vv string) {
-	(&compilerContext{md: md, w: w}).renderVar(vv)
+func (c *Compiler) RenderVar(w *bytes.Buffer, md *Metadata, vv string) {
+	cc := &compilerContext{md: md, w: w, Compiler: c}
+	cc.renderVar(vv)
 }
 
 // nolint: errcheck
@@ -51,7 +52,7 @@ func (c *compilerContext) renderParam(p Param) {
 	var id int
 	var ok bool
 
-	switch c.md.ct {
+	switch c.ct {
 	case "mysql":
 		c.md.params = append(c.md.params, p)
 	default:
@@ -72,7 +73,7 @@ func (c *compilerContext) renderParam(p Param) {
 		return
 	}
 
-	switch c.md.ct {
+	switch c.ct {
 	case "mysql":
 		c.w.WriteString(`?`)
 	default:

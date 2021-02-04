@@ -63,7 +63,6 @@ FROM
 	LEFT JOIN pg_attrdef d ON d.adrelid = c.oid AND d.adnum = f.attnum  
 	LEFT JOIN pg_namespace n ON n.oid = c.relnamespace  
 	LEFT JOIN pg_constraint co ON co.conrelid = c.oid AND f.attnum = ANY (co.conkey) 
-	LEFT JOIN pg_class AS c1 ON co.confrelid = c1.oid 
 WHERE 
 	c.relkind IN ('r', 'v', 'm', 'f')
 	AND n.nspname NOT IN ('information_schema', 'pg_catalog') 

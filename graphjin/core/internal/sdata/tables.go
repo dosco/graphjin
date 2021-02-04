@@ -5,16 +5,32 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/gobuffalo/flect"
 )
 
 type DBInfo struct {
 	Version   int
 	Type      string
 	Tables    []DBTable
-	Columns   [][]DBColumn
 	Functions []DBFunction
 	VTables   []VirtualTable
 	colMap    map[string]*DBColumn
+	tableMap  map[string]*DBTable
+}
+
+type DBTable struct {
+	Schema       string
+	Name         string
+	Type         string
+	Columns      []DBColumn
+	PrimaryCol   DBColumn
+	SecondaryCol DBColumn
+	FullText     []DBColumn
+	Singular     string
+	Plural       string
+	Blocked      bool
+	colMap       map[string]int
 }
 
 type VirtualTable struct {
@@ -24,83 +40,128 @@ type VirtualTable struct {
 	FKeyColumn string
 }
 
+type st struct {
+	schema, table string
+}
+
 func GetDBInfo(db *sql.DB, dbtype string, blockList []string) (*DBInfo, error) {
-	var err error
-
-	di := &DBInfo{Type: dbtype}
-	version := "110000"
-
+	var version string
 	_ = db.QueryRow(`SHOW server_version_num`).Scan(&version)
 
-	di.Version, err = strconv.Atoi(version)
+	cols, err := DiscoverColumns(db, dbtype, blockList)
 	if err != nil {
 		return nil, err
 	}
 
-	cols, err := GetColumns(db, dbtype)
+	funcs, err := DiscoverFunctions(db, blockList)
 	if err != nil {
 		return nil, err
 	}
 
-	tm := make(map[string][]DBColumn)
-
-	for _, v := range cols {
-		v.Blocked = isInList(v.Name, blockList)
-		if _, ok := tm[v.Table]; !ok {
-			di.Tables = append(di.Tables, DBTable{
-				Name:    v.Table,
-				Key:     strings.ToLower(v.Table),
-				Schema:  v.Schema,
-				Blocked: isInList(v.Table, blockList),
-			})
-		}
-		tm[v.Table] = append(tm[v.Table], v)
-	}
-
-	di.colMap = make(map[string]*DBColumn)
-
-	for _, t := range di.Tables {
-		tc := tm[t.Name]
-		di.Columns = append(di.Columns, tc)
-
-		for i, c := range tc {
-			di.colMap[(c.Table + c.Name)] = &tc[i]
-		}
-	}
-
-	di.Functions, err = GetFunctions(db, blockList)
-	if err != nil {
-		return nil, err
-	}
+	di := NewDBInfo(dbtype, version, cols, funcs, blockList)
 
 	return di, nil
 }
 
-func (di *DBInfo) AddTable(t DBTable, cols []DBColumn) {
-	di.Tables = append(di.Tables, t)
-	di.Columns = append(di.Columns, cols)
+func NewDBInfo(
+	dbtype string,
+	version string,
+	cols []DBColumn,
+	funcs []DBFunction,
+	blockList []string) *DBInfo {
+
+	di := &DBInfo{
+		Type:      dbtype,
+		Functions: funcs,
+		colMap:    make(map[string]*DBColumn),
+		tableMap:  make(map[string]*DBTable),
+	}
+
+	if version == "" {
+		version = "110000"
+	}
+
+	di.Version, _ = strconv.Atoi(version)
+
+	tm := make(map[st][]DBColumn)
+	for i := range cols {
+		c := cols[i]
+		c.Key = strings.ToLower(c.Name)
+		di.colMap[(c.Schema + ":" + c.Table + ":" + c.Name)] = &c
+
+		k1 := st{c.Schema, c.Table}
+		tm[k1] = append(tm[k1], c)
+	}
+
+	for k, tcols := range tm {
+		ti := NewDBTable(k.schema, k.table, "", tcols)
+		ti.Blocked = isInList(ti.Name, blockList)
+		di.AddTable(ti)
+	}
+	return di
+}
+
+func NewDBTable(schema, name, _type string, cols []DBColumn) DBTable {
+	key := strings.ToLower(name)
+	singular := flect.Singularize(key)
+	plural := flect.Pluralize(key)
+
+	ti := DBTable{
+		Schema:   schema,
+		Name:     name,
+		Type:     _type,
+		Columns:  cols,
+		Singular: singular,
+		Plural:   plural,
+		colMap:   make(map[string]int, len(cols)),
+	}
 
 	for i := range cols {
 		c := &cols[i]
-		di.colMap[(t.Key + c.Key)] = c
+
+		switch {
+		case c.FullText:
+			ti.FullText = append(ti.FullText, cols[i])
+
+		case c.PrimaryKey:
+			ti.PrimaryCol = cols[i]
+		}
+		ti.colMap[c.Key] = i
+	}
+	return ti
+}
+
+func (di *DBInfo) AddTable(t DBTable) {
+	for i, c := range t.Columns {
+		di.colMap[(c.Schema + ":" + c.Table + ":" + c.Name)] = &t.Columns[i]
+		di.colMap[(":" + c.Table + ":" + c.Name)] = &t.Columns[i]
+	}
+
+	di.Tables = append(di.Tables, t)
+	di.tableMap[(t.Schema + ":" + t.Name)] = &t
+
+	k := (":" + t.Name)
+	if _, ok := di.tableMap[k]; !ok {
+		di.tableMap[k] = &t
 	}
 }
 
-func (di *DBInfo) GetColumn(table, column string) (*DBColumn, error) {
-	c, ok := di.colMap[(table + column)]
+func (di *DBInfo) GetColumn(schema, table, column string) (*DBColumn, error) {
+	c, ok := di.colMap[(schema + ":" + table + ":" + column)]
 	if !ok {
-		return nil, fmt.Errorf("column: '%s.%s' not found", table, column)
+		return nil, fmt.Errorf("column: '%s.%s.%s' not found", schema, table, column)
 	}
 
 	return c, nil
 }
 
-type DBTable struct {
-	Name    string
-	Key     string
-	Type    string
-	Schema  string
-	Blocked bool
+func (di *DBInfo) GetTable(schema, table string) (*DBTable, error) {
+	t, ok := di.tableMap[(schema + ":" + table)]
+	if !ok {
+		return nil, fmt.Errorf("table: '%s.%s' not found", schema, table)
+	}
+
+	return t, nil
 }
 
 type DBColumn struct {
@@ -120,7 +181,7 @@ type DBColumn struct {
 	Schema     string
 }
 
-func GetColumns(db *sql.DB, dbtype string) (map[string]DBColumn, error) {
+func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn, error) {
 	var sqlStmt string
 
 	switch dbtype {
@@ -147,10 +208,11 @@ func GetColumns(db *sql.DB, dbtype string) (map[string]DBColumn, error) {
 			return nil, err
 		}
 
-		v := cmap[(c.Table + c.Name)]
+		k := (c.Schema + ":" + c.Table + ":" + c.Name)
+		v := cmap[k]
 		if v.Key == "" {
 			v = c
-			v.Key = strings.ToLower(c.Name)
+			v.Blocked = isInList(v.Key, blockList)
 		}
 		if c.Type != "" {
 			v.Type = c.Type
@@ -171,19 +233,24 @@ func GetColumns(db *sql.DB, dbtype string) (map[string]DBColumn, error) {
 		if c.FullText {
 			v.FullText = true
 		}
-		if c.FKeyTable != "" {
-			v.FKeyTable = c.FKeyTable
-		}
 		if c.FKeySchema != "" {
 			v.FKeySchema = c.FKeySchema
+		}
+		if c.FKeyTable != "" {
+			v.FKeyTable = c.FKeyTable
 		}
 		if c.FKeyCol != "" {
 			v.FKeyCol = c.FKeyCol
 		}
-		cmap[(c.Table + c.Name)] = v
+		cmap[k] = v
 	}
 
-	return cmap, nil
+	var cols []DBColumn
+	for _, c := range cmap {
+		cols = append(cols, c)
+	}
+
+	return cols, nil
 }
 
 type DBFunction struct {
@@ -197,7 +264,7 @@ type DBFuncParam struct {
 	Type string
 }
 
-func GetFunctions(db *sql.DB, blockList []string) ([]DBFunction, error) {
+func DiscoverFunctions(db *sql.DB, blockList []string) ([]DBFunction, error) {
 	rows, err := db.Query(functionsStmt)
 	if err != nil {
 		return nil, fmt.Errorf("Error fetching functions: %s", err)

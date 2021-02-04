@@ -61,6 +61,32 @@ type qres struct {
 	role string
 }
 
+func (gj *GraphJin) initDiscover() error {
+	if err := gj._initDiscover(); err != nil {
+		return fmt.Errorf("%s: %w", gj.conf.DBType, err)
+	}
+	return nil
+}
+
+func (gj *GraphJin) _initDiscover() error {
+	var err error
+
+	if gj.conf.DBType == "" {
+		gj.conf.DBType = "postgres"
+	}
+
+	// If gj.dbinfo is not null then it's probably set
+	// for tests
+	if gj.dbinfo == nil {
+		gj.dbinfo, err = sdata.GetDBInfo(
+			gj.db,
+			gj.conf.DBType,
+			gj.conf.Blocklist)
+	}
+
+	return err
+}
+
 func (gj *GraphJin) initSchema() error {
 	if err := gj._initSchema(); err != nil {
 		return fmt.Errorf("%s: %w", gj.conf.DBType, err)
@@ -71,28 +97,15 @@ func (gj *GraphJin) initSchema() error {
 func (gj *GraphJin) _initSchema() error {
 	var err error
 
-	if gj.conf.DBType == "" {
-		gj.conf.DBType = "postgres"
-	}
-
-	// If gj.di is not null then it's probably set
-	// for tests
-	if gj.dbinfo == nil {
-		gj.dbinfo, err = sdata.GetDBInfo(gj.db, gj.conf.DBType, gj.conf.Blocklist)
-		if err != nil {
-			return err
-		}
-	}
-
 	if len(gj.dbinfo.Tables) == 0 {
 		return fmt.Errorf("no tables found in database")
 	}
 
-	if err = addTables(gj.conf, gj.dbinfo); err != nil {
+	if err := addTables(gj.conf, gj.dbinfo); err != nil {
 		return err
 	}
 
-	if err = addForeignKeys(gj.conf, gj.dbinfo); err != nil {
+	if err := addForeignKeys(gj.conf, gj.dbinfo); err != nil {
 		return err
 	}
 
@@ -121,7 +134,11 @@ func (gj *GraphJin) initCompilers() error {
 		return err
 	}
 
-	gj.pc = psql.NewCompiler(psql.Config{Vars: gj.conf.Vars})
+	gj.pc = psql.NewCompiler(psql.Config{
+		Vars:      gj.conf.Vars,
+		DBType:    gj.schema.Type(),
+		DBVersion: gj.schema.DBVersion(),
+	})
 	return nil
 }
 

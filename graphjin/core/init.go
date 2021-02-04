@@ -130,33 +130,19 @@ func getDBTableAliases(c *Config) map[string][]string {
 	return m
 }
 
-func addTables(c *Config, di *sdata.DBInfo) error {
+func addTables(conf *Config, di *sdata.DBInfo) error {
 	var err error
 
-	for _, t := range c.Tables {
-		for _, c := range t.Columns {
-			if t.Type == "polymorphic" || t.Type == "json" {
-				continue
-			}
-			if c1, err := di.GetColumn(t.Name, c.Name); err == nil {
-				if c.Primary {
-					c1.PrimaryKey = true
-				}
-				if c.Array {
-					c1.Array = true
-				}
-			} else {
-				return fmt.Errorf("config: set primary key: (%s) %w", t.Name, err)
-			}
-			break
-		}
-
+	for _, t := range conf.Tables {
 		switch t.Type {
 		case "json", "jsonb":
-			err = addJsonTable(di, t.Columns, t)
+			err = addJsonTable(conf, di, t)
 
 		case "polymorphic":
-			err = addVirtualTable(di, t.Columns, t)
+			err = addVirtualTable(conf, di, t)
+
+		default:
+			err = updateTable(conf, di, t)
 		}
 
 		if err != nil {
@@ -167,12 +153,34 @@ func addTables(c *Config, di *sdata.DBInfo) error {
 	return nil
 }
 
-func addJsonTable(di *sdata.DBInfo, cols []Column, t Table) error {
-	// This is for jsonb columns that want to be tables.
+func updateTable(conf *Config, di *sdata.DBInfo, t Table) error {
+	for _, c := range t.Columns {
+		if c1, err := di.GetColumn(t.Schema, t.Name, c.Name); err == nil {
+			if c.Primary {
+				c1.PrimaryKey = true
+			}
+			if c.Array {
+				c1.Array = true
+			}
+		} else {
+			return fmt.Errorf("table: %s.%s: %w", t.Schema, t.Name, err)
+		}
+	}
+	return nil
+}
+
+func addJsonTable(conf *Config, di *sdata.DBInfo, t Table) error {
+	// This is for jsonb column that want to be a table.
 	if t.Table == "" {
 		return fmt.Errorf("json table: set the 'table' for column '%s'", t.Name)
 	}
-	bc, err := di.GetColumn(t.Table, t.Name)
+
+	bc, err := di.GetColumn(t.Schema, t.Table, t.Name)
+	if err != nil {
+		return fmt.Errorf("json table: %w", err)
+	}
+
+	bt, err := di.GetTable(bc.Schema, bc.Table)
 	if err != nil {
 		return fmt.Errorf("json table: %w", err)
 	}
@@ -183,43 +191,49 @@ func addJsonTable(di *sdata.DBInfo, cols []Column, t Table) error {
 			t.Name, t.Table, bc.Type)
 	}
 
-	table := sdata.DBTable{
-		Name:   t.Name,
-		Key:    strings.ToLower(t.Name),
-		Type:   bc.Type,
-		Schema: bc.Schema,
-	}
+	columns := make([]sdata.DBColumn, 0, len(t.Columns))
 
-	columns := make([]sdata.DBColumn, 0, len(cols))
-
-	for i := range cols {
-		c := cols[i]
+	for i := range t.Columns {
+		c := t.Columns[i]
 		columns = append(columns, sdata.DBColumn{
+			Schema: bc.Schema,
+			Table:  t.Name,
 			Name:   c.Name,
 			Key:    strings.ToLower(c.Name),
 			Type:   c.Type,
-			Table:  t.Name,
-			Schema: bc.Schema,
 		})
+		if c.Type == "" {
+			return fmt.Errorf("json table: type parameter missing for column: %s.%s'",
+				t.Name, c.Name)
+		}
 	}
 
-	bc.FKeyTable = t.Name
-	di.AddTable(table, columns)
+	col1 := sdata.DBColumn{
+		PrimaryKey: true,
+		Schema:     bc.Schema,
+		Table:      bc.Table,
+		Name:       bc.Name,
+		Key:        bc.Key,
+		Type:       bc.Type,
+	}
+
+	nt := sdata.NewDBTable(bc.Schema, t.Name, bc.Type, columns)
+	nt.PrimaryCol = col1
+	nt.SecondaryCol = bt.PrimaryCol
+	di.AddTable(nt)
 
 	return nil
 }
 
-func addVirtualTable(di *sdata.DBInfo, cols []Column, t Table) error {
-	if len(cols) == 0 {
+func addVirtualTable(conf *Config, di *sdata.DBInfo, t Table) error {
+	if len(t.Columns) == 0 {
 		return fmt.Errorf("polymorphic table: no id column specified")
 	}
-
-	c := cols[0]
+	c := t.Columns[0]
 
 	if c.ForeignKey == "" {
 		return fmt.Errorf("polymorphic table: no 'related_to' specified on id column")
 	}
-
 	s := strings.SplitN(c.ForeignKey, ".", 2)
 
 	if len(s) != 2 {
@@ -236,8 +250,8 @@ func addVirtualTable(di *sdata.DBInfo, cols []Column, t Table) error {
 	return nil
 }
 
-func addForeignKeys(c *Config, di *sdata.DBInfo) error {
-	for _, t := range c.Tables {
+func addForeignKeys(conf *Config, di *sdata.DBInfo) error {
+	for _, t := range conf.Tables {
 		if t.Type == "polymorphic" {
 			continue
 		}
@@ -245,7 +259,7 @@ func addForeignKeys(c *Config, di *sdata.DBInfo) error {
 			if c.ForeignKey == "" {
 				continue
 			}
-			if err := addForeignKey(di, c, t); err != nil {
+			if err := addForeignKey(conf, di, c, t); err != nil {
 				return err
 			}
 		}
@@ -253,42 +267,43 @@ func addForeignKeys(c *Config, di *sdata.DBInfo) error {
 	return nil
 }
 
-func addForeignKey(di *sdata.DBInfo, c Column, t Table) error {
-	tn := t.Name
-	c1, err := di.GetColumn(tn, c.Name)
+func addForeignKey(conf *Config, di *sdata.DBInfo, c Column, t Table) error {
+	c1, err := di.GetColumn(t.Schema, t.Name, c.Name)
 	if err != nil {
-		return fmt.Errorf("config: foreign keys: %w", err)
+		return fmt.Errorf("config: add foreign key: %w", err)
 	}
 
 	v := strings.SplitN(c.ForeignKey, ".", 2)
 	if len(v) != 2 {
 		return fmt.Errorf(
 			"config: invalid foreign key defined for table '%s' and column '%s': %s",
-			tn, c.Name, c.ForeignKey)
+			t.Name, c.Name, c.ForeignKey)
 	}
 
 	// check if it's a polymorphic foreign key
-	if _, err := di.GetColumn(tn, v[0]); err == nil {
-		c2, err := di.GetColumn(tn, v[1])
+	if _, err := di.GetColumn(t.Schema, t.Name, v[0]); err == nil {
+		c2, err := di.GetColumn(t.Schema, t.Name, v[1])
 		if err != nil {
 			return fmt.Errorf(
 				"config: invalid column '%s' for polymorphic relationship on table '%s' and column '%s'",
-				v[1], tn, c.Name)
+				v[1], t.Name, c.Name)
 		}
 
+		c1.FKeySchema = t.Schema
 		c1.FKeyTable = v[0]
 		c1.FKeyCol = c2.Name
 		return nil
 	}
 
 	fkt, fkc := v[0], v[1]
-	c3, err := di.GetColumn(fkt, fkc)
+	c3, err := di.GetColumn(t.Schema, fkt, fkc)
 	if err != nil {
 		return fmt.Errorf(
 			"config: foreign key for table '%s' and column '%s' points to unknown table '%s' and column '%s'",
 			t.Name, c.Name, v[0], v[1])
 	}
 
+	c1.FKeySchema = t.Schema
 	c1.FKeyTable = fkt
 	c1.FKeyCol = c3.Name
 
@@ -368,7 +383,7 @@ func addRole(qc *qcode.Compiler, r Role, t RoleTable, defaultBlock bool) error {
 		}
 	}
 
-	return qc.AddRole(r.Name, t.Name, qcode.TRConfig{
+	return qc.AddRole(r.Name, t.Schema, t.Name, qcode.TRConfig{
 		Query:  query,
 		Insert: insert,
 		Update: update,

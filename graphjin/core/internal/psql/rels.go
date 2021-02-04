@@ -6,7 +6,7 @@ import (
 )
 
 func (c *compilerContext) renderRel(
-	ti sdata.DBTableInfo,
+	ti sdata.TInfo,
 	rel sdata.DBRel,
 	pid int32,
 	args map[string]qcode.Arg) {
@@ -38,82 +38,62 @@ func (c *compilerContext) renderRel(
 			colWithTableID(c.w, rel.Right.Col.Table, pid, rel.Right.Col.Name)
 		}
 
-	case sdata.RelOneToManyThrough:
-		// This requires the through table to be joined onto this select
-		// this where clause is the right side of the clause the left side
-		// of it is on the ON clause for the though table join.
-
-		switch {
-		case !rel.Right.Col.Array && rel.Through.ColR.Array:
-			colWithTableID(c.w, rel.Right.Col.Table, pid, rel.Right.Col.Name)
-			c.w.WriteString(`) = any (`)
-			c.renderRelArrayRight(&ti, "", -1, rel.Through.ColR, rel.Right.Col.Type)
-
-		case rel.Right.Col.Array && !rel.Through.ColR.Array:
-			colWithTable(c.w, rel.Through.ColR.Table, rel.Through.ColR.Name)
-			c.w.WriteString(`) = any (`)
-			c.renderRelArrayRight(&ti, "", -1, rel.Right.Col, rel.Through.ColR.Type)
-		default:
-			colWithTableID(c.w, rel.Right.Col.Table, pid, rel.Right.Col.Name)
-			c.w.WriteString(`) = (`)
-			colWithTable(c.w, rel.Through.ColR.Table, rel.Through.ColR.Name)
-		}
-
 	case sdata.RelEmbedded:
-		colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
+		colWithTable(c.w, rel.Right.Col.Table, rel.Right.Col.Name)
 		c.w.WriteString(`) = (`)
-		colWithTableID(c.w, rel.Left.Col.Table, pid, rel.Left.Col.Name)
+		colWithTableID(c.w, rel.Right.Col.Table, pid, rel.Right.Col.Name)
 
 	case sdata.RelPolymorphic:
-		colWithTable(c.w, ti.Name, rel.Right.Col.Name)
+		colWithTable(c.w, ti.Name, rel.Left.Col.Name)
 		c.w.WriteString(`) = (`)
 		colWithTableID(c.w, rel.Left.Col.Table, pid, rel.Left.Col.Name)
 		c.w.WriteString(`) AND (`)
-		colWithTableID(c.w, rel.Left.Col.Table, pid, rel.Right.VTable)
+		colWithTableID(c.w, rel.Left.Col.Table, pid, rel.Right.Col.Name)
 		c.w.WriteString(`) = (`)
 		c.squoted(ti.Name)
 
 	case sdata.RelRecursive:
+		rcte := "_rcte_" + rel.Right.Ti.Name
 		if v, ok := args["find"]; ok {
 			switch v.Val {
 			case "parents", "parent":
 				// Ensure fk is not null
-				colWithTable(c.w, rel.Right.VTable, rel.Left.Col.Name)
+				colWithTable(c.w, rcte, rel.Left.Col.Name)
 				c.w.WriteString(` IS NOT NULL) AND (`)
 
 				switch {
 				case !rel.Left.Col.Array && rel.Right.Col.Array:
 					// Ensure it's not a loop
-					colWithTable(c.w, rel.Right.VTable, rel.Left.Col.Name)
+					colWithTable(c.w, rcte, rel.Left.Col.Name)
 					c.w.WriteString(`) != any (`)
-					c.renderRelArrayRight(&ti, rel.Right.VTable, -1, rel.Right.Col, rel.Left.Col.Type)
+					c.renderRelArrayRight(&ti, rcte, -1, rel.Right.Col, rel.Left.Col.Type)
 					c.w.WriteString(`) AND (`)
 					// Recursive relationship
-					colWithTable(c.w, rel.Right.VTable, rel.Left.Col.Name)
+					colWithTable(c.w, rcte, rel.Left.Col.Name)
 					c.w.WriteString(`) = any (`)
 					c.renderRelArrayRight(&ti, rel.Left.Col.Table, -1, rel.Right.Col, rel.Left.Col.Type)
 
 				case rel.Left.Col.Array && !rel.Right.Col.Array:
 					// Ensure it's not a loop
-					colWithTable(c.w, rel.Right.VTable, rel.Right.Col.Name)
+					colWithTable(c.w, rcte, rel.Right.Col.Name)
 					c.w.WriteString(`) != any (`)
-					c.renderRelArrayRight(&ti, rel.Right.VTable, -1, rel.Left.Col, rel.Right.Col.Type)
+					c.renderRelArrayRight(&ti, rcte, -1, rel.Left.Col, rel.Right.Col.Type)
 					c.w.WriteString(`) AND (`)
 					// Recursive relationship
 					colWithTable(c.w, rel.Left.Col.Table, rel.Right.Col.Name)
 					c.w.WriteString(`) = any (`)
-					c.renderRelArrayRight(&ti, rel.Right.VTable, -1, rel.Left.Col, rel.Right.Col.Type)
+					c.renderRelArrayRight(&ti, rcte, -1, rel.Left.Col, rel.Right.Col.Type)
 
 				default:
 					// Ensure it's not a loop
-					colWithTable(c.w, rel.Right.VTable, rel.Left.Col.Name)
+					colWithTable(c.w, rcte, rel.Left.Col.Name)
 					c.w.WriteString(`) != (`)
-					colWithTable(c.w, rel.Right.VTable, rel.Right.Col.Name)
+					colWithTable(c.w, rcte, rel.Right.Col.Name)
 					c.w.WriteString(`) AND (`)
 					// Recursive relationship
 					colWithTable(c.w, rel.Left.Col.Table, rel.Right.Col.Name)
 					c.w.WriteString(`) = (`)
-					colWithTable(c.w, rel.Right.VTable, rel.Left.Col.Name)
+					colWithTable(c.w, rcte, rel.Left.Col.Name)
 				}
 
 			default:
@@ -131,7 +111,7 @@ func (c *compilerContext) renderRel(
 					// Recursive relationship
 					colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
 					c.w.WriteString(`) = any (`)
-					c.renderRelArrayRight(&ti, rel.Right.VTable, -1, rel.Right.Col, rel.Left.Col.Type)
+					c.renderRelArrayRight(&ti, rcte, -1, rel.Right.Col, rel.Left.Col.Type)
 
 				case rel.Left.Col.Array && !rel.Right.Col.Array:
 					// Ensure it's not a loop
@@ -140,7 +120,7 @@ func (c *compilerContext) renderRel(
 					c.renderRelArrayRight(&ti, "", -1, rel.Left.Col, rel.Right.Col.Type)
 					c.w.WriteString(`) AND (`)
 					// Recursive relationship
-					colWithTable(c.w, rel.Right.VTable, rel.Right.Col.Name)
+					colWithTable(c.w, rcte, rel.Right.Col.Name)
 					c.w.WriteString(`) = any (`)
 					c.renderRelArrayRight(&ti, "", -1, rel.Left.Col, rel.Right.Col.Type)
 
@@ -153,7 +133,7 @@ func (c *compilerContext) renderRel(
 					// Recursive relationship
 					colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
 					c.w.WriteString(`) = (`)
-					colWithTable(c.w, rel.Right.VTable, rel.Right.Col.Name)
+					colWithTable(c.w, rcte, rel.Right.Col.Name)
 				}
 			}
 		}
@@ -163,14 +143,14 @@ func (c *compilerContext) renderRel(
 }
 
 func (c *compilerContext) renderRelArrayRight(
-	ti *sdata.DBTableInfo,
+	ti *sdata.TInfo,
 	table string, pid int32, col sdata.DBColumn, ty string) {
 	colTable := col.Table
 	if table != "" {
 		colTable = table
 	}
 
-	switch c.md.ct {
+	switch c.ct {
 	case "mysql":
 		c.w.WriteString(`(SELECT * FROM JSON_TABLE(`)
 		if pid == -1 {
