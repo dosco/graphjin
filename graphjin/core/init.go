@@ -27,15 +27,12 @@ func (gj *GraphJin) initConfig() error {
 
 	for i := 0; i < len(c.Tables); i++ {
 		t := &c.Tables[i]
-		// t.Name = flect.Pluralize(strings.ToLower(t.Name))
 
 		if _, ok := tm[t.Name]; ok {
 			gj.conf.Tables = append(c.Tables[:i], c.Tables[i+1:]...)
 			gj.log.Printf("WRN duplicate table found: %s", t.Name)
 		}
 		tm[t.Name] = struct{}{}
-
-		t.Table = flect.Pluralize(strings.ToLower(t.Table))
 	}
 
 	for k, v := range c.Vars {

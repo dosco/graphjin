@@ -101,8 +101,8 @@ debug: false
 # SG_AUTH_JWT_PUBLIC_KEY_FILE
 
 auth:
-  # Can be 'rails', 'jwt' or 'header'
-  type: rails
+  # Can be 'none', 'rails', 'jwt' or 'header'
+  type: none
   cookie: _{{- .AppNameSlug -}}_session
 
   # Comment this out if you want to disable setting
@@ -164,7 +164,7 @@ database:
   dbname: {{ .AppNameSlug -}}_development
   user: postgres
   password: postgres
-
+  
   #schema: "public"
   #pool_size: 10
   #max_retries: 0
@@ -244,11 +244,14 @@ tables:
 #roles_query: "SELECT * FROM users WHERE id = $user_id:bigint"
 
 roles:
-  - name: anon
-    tables:
-      - name: users
-        query:
-          limit: 10
+  # if `auth.type` is set to a valid auth type then
+  # all tables are blocked for the anon role unless
+  # added to the role like below.
+  # - name: anon
+  #   tables:
+  #     - name: users
+  #       query:
+  #         limit: 10
 
   - name: user
     tables:

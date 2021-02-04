@@ -117,10 +117,6 @@ func isDev() bool {
 	return strings.HasPrefix(os.Getenv("GO_ENV"), "dev")
 }
 
-func sanitize(value string) string {
-	return strings.ToLower(strings.TrimSpace(value))
-}
-
 // Get path relative to cwd
 func relpath(p string) string {
 	cwd, err := os.Getwd()

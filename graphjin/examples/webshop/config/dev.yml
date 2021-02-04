@@ -101,8 +101,8 @@ debug: true
 # SG_AUTH_JWT_PUBLIC_KEY_FILE
 
 auth:
-  # Can be 'rails', 'jwt' or 'header'
-  type: rails
+  # Can be 'none', 'rails', 'jwt' or 'header'
+  type: none
   cookie: _webshop_session
 
   # Comment this out if you want to disable setting
@@ -213,21 +213,21 @@ actions:
     sql: REFRESH MATERIALIZED VIEW CONCURRENTLY "leaderboard_users"
     auth_name: from_taskqueue
 
-# resolvers:
-#   - name: payments
-#     type: remote_api
-#     table: customers
-#     column: stripe_id
-#     json_path: data
-#     debug: false
-#     url: http://payments/payments/$id
-#     pass_headers:
-#       - cookie
-#     set_headers:
-#       - name: Host
-#         value: 0.0.0.0
-      # - name: Authorization
-      #   value: Bearer <stripe_api_key
+resolvers:
+  - name: payments
+    type: remote_api
+    table: customers
+    column: stripe_id
+    json_path: data
+    debug: false
+    url: http://payments/payments/$id
+    pass_headers:
+      - cookie
+    set_headers:
+      - name: Host
+        value: 0.0.0.0
+      - name: Authorization
+        value: Bearer <stripe_api_key
 
 tables:
   - # You can create new fields that have a
@@ -249,10 +249,10 @@ tables:
       - name: subject_id
         related_to: subject_type.id
 
-  # - name: chats
-  #   columns:
-  #     - name: reply_to_id
-  #       related_to: chats.id
+  - name: chats
+    columns:
+      - name: reply_to_id
+        related_to: chats.id
 
   - name: category_counts
     table: users
@@ -267,15 +267,18 @@ tables:
 #roles_query: "SELECT * FROM users WHERE id = $user_id:bigint"
 
 roles:
-  - name: anon
-    tables:
-      - name: users
-      - name: products
-      - name: categories
-      - name: deals
-      - name: purchases
-      # - name: customers
-      - name: notifications
+  # if `auth.type` is set to a valid auth type then
+  # all tables are blocked for the anon role unless
+  # added to the role like below.
+  # - name: anon
+  #   tables:
+  #     - name: users
+  #     - name: products
+  #     - name: categories
+  #     - name: deals
+  #     - name: purchases
+  #     - name: customers
+  #     - name: notifications
 
   - name: user
     tables:
@@ -283,30 +286,30 @@ roles:
         query:
           filters: ["{ id: { _eq: $user_id } }"]
 
-      # - name: products
-      #   query:
-      #     limit: 50
-      #   insert:
-      #     presets:
-      #       - user_id: "$user_id"
-      #       - created_at: "now"
-      #       - updated_at: "now"
-      #   update:
-      #     filters: ["{ user_id: { eq: $user_id } }"]
-      #     columns:
-      #       - id
-      #       - name
-      #     presets:
-      #       - updated_at: "now"
+      - name: products
+        query:
+          limit: 50
+        insert:
+          presets:
+            - user_id: "$user_id"
+            - created_at: "now"
+            - updated_at: "now"
+        update:
+          filters: ["{ user_id: { eq: $user_id } }"]
+          columns:
+            - id
+            - name
+          presets:
+            - updated_at: "now"
 
-      # - name: customers
-      #   insert:
-      #     presets:
-      #       - created_at: "now"
-      #       - updated_at: "now"
-      #   update:
-      #     presets:
-      #       - updated_at: "now"
+      - name: customers
+        insert:
+          presets:
+            - created_at: "now"
+            - updated_at: "now"
+        update:
+          presets:
+            - updated_at: "now"
 
       - name: purchases
         insert:
