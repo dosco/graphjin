@@ -195,7 +195,7 @@ func (s *DBSchema) Find(schema, name string) (TInfo, error) {
 	var t TInfo
 	v, ok := s.ni[(schema + ":" + name)]
 	if !ok {
-		return t, fmt.Errorf("find: table not found: %s.%s", schema, name)
+		return t, fmt.Errorf("table not found: %s.%s", schema, name)
 	}
 	n := s.tables[v.id]
 

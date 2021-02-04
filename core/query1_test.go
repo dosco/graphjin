@@ -562,7 +562,7 @@ func Example_queryWithSyntheticTables() {
 	}`
 
 	conf := &core.Config{DBType: dbType, DisableAllowList: true}
-	conf.Tables = []core.Table{{Name: "me", Table: "user"}}
+	conf.Tables = []core.Table{{Name: "me", Table: "users"}}
 
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {

@@ -22,17 +22,14 @@ func (gj *GraphJin) initConfig() error {
 		flect.AddSingular(kv[1], kv[0])
 	}
 
-	// Tables: Validate and sanitize
 	tm := make(map[string]struct{})
 
-	for i := 0; i < len(c.Tables); i++ {
-		t := &c.Tables[i]
-
-		if _, ok := tm[t.Name]; ok {
-			gj.conf.Tables = append(c.Tables[:i], c.Tables[i+1:]...)
-			gj.log.Printf("WRN duplicate table found: %s", t.Name)
+	for _, t := range c.Tables {
+		k := strings.ToLower(t.Name)
+		if _, ok := tm[k]; ok {
+			return fmt.Errorf("duplicate table found: %s", t.Name)
 		}
-		tm[t.Name] = struct{}{}
+		tm[k] = struct{}{}
 	}
 
 	for k, v := range c.Vars {
@@ -47,13 +44,10 @@ func (gj *GraphJin) initConfig() error {
 
 	gj.roles = make(map[string]*Role)
 
-	for i := 0; i < len(c.Roles); i++ {
-		role := &c.Roles[i]
-		role.Name = sanitize(role.Name)
-
-		if _, ok := gj.roles[role.Name]; ok {
-			c.Roles = append(c.Roles[:i], c.Roles[i+1:]...)
-			gj.log.Printf("WRN duplicate role found: %s", role.Name)
+	for i, role := range c.Roles {
+		k := strings.ToLower(role.Name)
+		if _, ok := gj.roles[k]; ok {
+			return fmt.Errorf("duplicate role found: %s", role.Name)
 		}
 
 		role.Match = sanitize(role.Match)
@@ -63,7 +57,7 @@ func (gj *GraphJin) initConfig() error {
 			role.tm[table.Name] = &role.Tables[n]
 		}
 
-		gj.roles[role.Name] = role
+		gj.roles[k] = &c.Roles[i]
 	}
 
 	// If user role not defined then create it
