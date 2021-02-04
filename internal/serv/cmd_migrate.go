@@ -152,7 +152,7 @@ func cmdDBNew(servConf *ServConfig) func(*cobra.Command, []string) {
 			servConf.log.Fatalf("ERR %s", err)
 		}
 
-		servConf.log.Printf("INR created migration '%s'", mpath)
+		servConf.log.Printf("INF created migration '%s'", mpath)
 	}
 }
 

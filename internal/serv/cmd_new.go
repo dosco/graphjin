@@ -105,7 +105,7 @@ func cmdNew(servConf *ServConfig) func(*cobra.Command, []string) {
 			}
 		})
 
-		servConf.log.Printf("INR app '%s' initialized", name)
+		servConf.log.Printf("INF app '%s' initialized", name)
 	}
 }
 
@@ -151,5 +151,5 @@ func ifNotExists(servConf ServConfig, filePath string, doFn func(string) error) 
 		servConf.log.Fatalf("ERR unable to create '%s'", filePath)
 	}
 
-	servConf.log.Printf("INR created '%s'", filePath)
+	servConf.log.Printf("INF created '%s'", filePath)
 }
