@@ -3,5 +3,12 @@ fragment User on users {
   email
   full_name
   created_at
+  category_counts {
+    category {
+      id
+      name
+    }
+    count
+  }
 }
 

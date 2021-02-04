@@ -54,7 +54,7 @@ type Mutate struct {
 	Array     bool
 	Cols      []MColumn
 	RCols     []MRColumn
-	Ti        sdata.DBTableInfo
+	Ti        sdata.TInfo
 	Rel       sdata.DBRel
 	Multi     bool
 	children  []int32
@@ -73,7 +73,7 @@ type MRColumn struct {
 }
 
 type MTable struct {
-	Ti    sdata.DBTableInfo
+	Ti    sdata.DBTable
 	CType uint8
 }
 
@@ -214,7 +214,9 @@ func (co *Compiler) newMutate(ms *mState, m Mutate, role string) error {
 		}
 
 		// Get child-to-parent relationship
-		rel, err := co.s.GetRel(k, m.Key, "")
+		// rel, err := co.s.GetRel(k, m.Key, "")
+
+		paths, err := co.s.FindPath(m.Ti.Schema, k, m.Ti.Schema, m.Key)
 		if err != nil {
 			var ty MType
 			var ok bool
@@ -248,10 +250,8 @@ func (co *Compiler) newMutate(ms *mState, m Mutate, role string) error {
 
 			// Get parent-to-child relationship
 		} else {
-			ti, err := co.s.GetTableInfo(k, m.Key)
-			if err != nil {
-				return err
-			}
+			rel := sdata.PathToRel(paths[0])
+			ti := rel.Left.Ti
 
 			m1 = Mutate{
 				ID:       ms.id,

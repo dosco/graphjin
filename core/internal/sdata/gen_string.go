@@ -11,17 +11,16 @@ func _() {
 	_ = x[RelNone-0]
 	_ = x[RelOneToOne-1]
 	_ = x[RelOneToMany-2]
-	_ = x[RelOneToManyThrough-3]
-	_ = x[RelPolymorphic-4]
-	_ = x[RelRecursive-5]
-	_ = x[RelEmbedded-6]
-	_ = x[RelRemote-7]
-	_ = x[RelSkip-8]
+	_ = x[RelPolymorphic-3]
+	_ = x[RelRecursive-4]
+	_ = x[RelEmbedded-5]
+	_ = x[RelRemote-6]
+	_ = x[RelSkip-7]
 }
 
-const _RelType_name = "RelNoneRelOneToOneRelOneToManyRelOneToManyThroughRelPolymorphicRelRecursiveRelEmbeddedRelRemoteRelSkip"
+const _RelType_name = "RelNoneRelOneToOneRelOneToManyRelPolymorphicRelRecursiveRelEmbeddedRelRemoteRelSkip"
 
-var _RelType_index = [...]uint8{0, 7, 18, 30, 49, 63, 75, 86, 95, 102}
+var _RelType_index = [...]uint8{0, 7, 18, 30, 44, 56, 67, 76, 83}
 
 func (i RelType) String() string {
 	if i < 0 || i >= RelType(len(_RelType_index)-1) {

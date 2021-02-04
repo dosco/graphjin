@@ -39,16 +39,19 @@ type compilerContext struct {
 type Variables map[string]json.RawMessage
 
 type Config struct {
-	Vars map[string]string
-	Type string
+	Vars      map[string]string
+	DBType    string
+	DBVersion int
 }
 
 type Compiler struct {
 	svars map[string]string
+	ct    string // db type
+	cv    int    // db version
 }
 
 func NewCompiler(conf Config) *Compiler {
-	return &Compiler{svars: conf.Vars}
+	return &Compiler{svars: conf.Vars, ct: conf.DBType, cv: conf.DBVersion}
 }
 
 func (co *Compiler) CompileEx(qc *qcode.QCode) (Metadata, []byte, error) {
@@ -106,7 +109,7 @@ func (co *Compiler) CompileQuery(
 	}
 
 	i := 0
-	switch c.md.ct {
+	switch c.ct {
 	case "mysql":
 		c.w.WriteString(`SELECT json_object(`)
 	default:
@@ -215,7 +218,7 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 	if sel.Singular {
 		return
 	}
-	switch c.md.ct {
+	switch c.ct {
 	case "mysql":
 		c.w.WriteString(`SELECT CAST(COALESCE(json_arrayagg(__sj_`)
 		int32String(c.w, sel.ID)
@@ -241,7 +244,7 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 }
 
 func (c *compilerContext) renderSelect(sel *qcode.Select) {
-	switch c.md.ct {
+	switch c.ct {
 	case "mysql":
 		c.w.WriteString(`SELECT json_object(`)
 		c.renderJSONFields(sel)
@@ -314,32 +317,24 @@ func (c *compilerContext) renderLateralJoinClose(sel *qcode.Select) {
 	c.w.WriteString(` ON true`)
 }
 
-func (c *compilerContext) renderJoinTables(rel sdata.DBRel) {
-	if rel.Type == sdata.RelOneToManyThrough {
-		c.renderJoin(rel)
+func (c *compilerContext) renderJoinTables(sel *qcode.Select) {
+	var pid int32
+	for i, rel := range sel.Joins {
+		if i == 0 {
+			pid = sel.ParentID
+		} else {
+			pid = -1
+		}
+
+		c.renderJoin(rel, pid)
 	}
 }
 
-func (c *compilerContext) renderJoin(rel sdata.DBRel) {
+func (c *compilerContext) renderJoin(rel sdata.DBRel, pid int32) {
 	c.w.WriteString(` LEFT OUTER JOIN `)
-	c.w.WriteString(rel.Through.ColL.Table)
+	c.w.WriteString(rel.Left.Ti.Name)
 	c.w.WriteString(` ON ((`)
-	switch {
-	case !rel.Left.Col.Array && rel.Through.ColL.Array:
-		colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
-		c.w.WriteString(`) = any (`)
-		colWithTable(c.w, rel.Through.ColL.Table, rel.Through.ColL.Name)
-
-	case rel.Left.Col.Array && !rel.Through.ColL.Array:
-		colWithTable(c.w, rel.Through.ColL.Table, rel.Through.ColL.Name)
-		c.w.WriteString(`) = any (`)
-		colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
-
-	default:
-		colWithTable(c.w, rel.Through.ColL.Table, rel.Through.ColL.Name)
-		c.w.WriteString(`) = (`)
-		colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
-	}
+	c.renderRel(rel.Left.Ti, rel, pid, nil)
 	c.w.WriteString(`))`)
 }
 
@@ -349,7 +344,7 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select) {
 	c.renderDistinctOn(sel)
 	c.renderBaseColumns(sel)
 	c.renderFrom(sel)
-	c.renderJoinTables(sel.Rel)
+	c.renderJoinTables(sel)
 
 	// Recursive base selects have no where clauses
 	if sel.Rel.Type != sdata.RelRecursive {
@@ -394,7 +389,7 @@ func (c *compilerContext) renderLimit(sel *qcode.Select) {
 
 func (c *compilerContext) renderRecursiveCTE(sel *qcode.Select) {
 	c.w.WriteString(`WITH RECURSIVE `)
-	c.quoted(sel.Rel.Right.VTable)
+	c.quoted("_rcte_" + sel.Rel.Right.Ti.Name)
 	c.w.WriteString(` AS (`)
 	c.renderRecursiveBaseSelect(sel)
 	c.w.WriteString(`) `)
@@ -416,7 +411,7 @@ func (c *compilerContext) renderRecursiveBaseSelect(sel *qcode.Select) {
 	c.renderBaseColumns(sel)
 	c.renderFrom(psel)
 	c.w.WriteString(`, `)
-	c.quoted(sel.Rel.Right.VTable)
+	c.quoted("_rcte_" + sel.Rel.Right.Ti.Name)
 	c.renderWhere(sel)
 }
 
@@ -428,7 +423,7 @@ func (c *compilerContext) renderFrom(sel *qcode.Select) {
 		c.w.WriteString(sel.Rel.Left.Col.Table)
 		c.w.WriteString(`, `)
 
-		switch c.md.ct {
+		switch c.ct {
 		case "mysql":
 			c.renderJSONTable(sel)
 		default:
@@ -437,8 +432,8 @@ func (c *compilerContext) renderFrom(sel *qcode.Select) {
 
 	case sdata.RelRecursive:
 		c.w.WriteString(`(SELECT * FROM `)
-		c.quoted(sel.Rel.Right.VTable)
-		switch c.md.ct {
+		c.quoted("_rcte_" + sel.Rel.Right.Ti.Name)
+		switch c.ct {
 		case "mysql":
 			c.w.WriteString(` LIMIT 1, 18446744073709551610) `)
 		default:
@@ -457,7 +452,7 @@ func (c *compilerContext) renderFrom(sel *qcode.Select) {
 
 func (c *compilerContext) renderJSONTable(sel *qcode.Select) {
 	c.w.WriteString(`JSON_TABLE(`)
-	colWithTable(c.w, sel.Rel.Left.Col.Table, sel.Rel.Right.Col.Name)
+	colWithTable(c.w, sel.Rel.Left.Col.Table, sel.Rel.Left.Col.Name)
 	c.w.WriteString(`, "$[*]" COLUMNS(`)
 
 	for i, col := range sel.Ti.Columns {
@@ -479,7 +474,7 @@ func (c *compilerContext) renderRecordSet(sel *qcode.Select) {
 	// jsonb_to_recordset('[{"a":1,"b":[1,2,3],"c":"bar"}, {"a":2,"b":[1,2,3],"c":"bar"}]') as x(a int, b text, d text);
 	c.w.WriteString(sel.Ti.Type)
 	c.w.WriteString(`_to_recordset(`)
-	colWithTable(c.w, sel.Rel.Left.Col.Table, sel.Rel.Right.Col.Name)
+	colWithTable(c.w, sel.Rel.Left.Col.Table, sel.Rel.Left.Col.Name)
 	c.w.WriteString(`) AS `)
 	c.quoted(sel.Table)
 
@@ -500,7 +495,7 @@ func (c *compilerContext) renderCursorCTE(sel *qcode.Select) {
 		return
 	}
 	c.w.WriteString(`WITH __cur AS (SELECT `)
-	switch c.md.ct {
+	switch c.ct {
 	case "mysql":
 		for i, ob := range sel.OrderBy {
 			if i != 0 {
@@ -543,9 +538,13 @@ func (c *compilerContext) renderWhere(sel *qcode.Select) {
 	var pid int32
 
 	if sel.Type == qcode.SelTypeMember {
-		pid = sel.UParentID
+		pid = c.qc.Selects[sel.ParentID].ParentID
 	} else {
 		pid = sel.ParentID
+	}
+
+	if len(sel.Joins) != 0 {
+		pid = -1
 	}
 
 	c.renderRel(sel.Ti, sel.Rel, pid, sel.ArgMap)
@@ -560,7 +559,7 @@ func (c *compilerContext) renderWhere(sel *qcode.Select) {
 	c.w.WriteString(`)`)
 }
 
-func (c *compilerContext) renderExp(schema *sdata.DBSchema, ti sdata.DBTableInfo, ex *qcode.Exp, skipNested bool) {
+func (c *compilerContext) renderExp(schema *sdata.DBSchema, ti sdata.TInfo, ex *qcode.Exp, skipNested bool) {
 	st := util.NewStackInf()
 	st.Push(ex)
 
@@ -570,7 +569,6 @@ func (c *compilerContext) renderExp(schema *sdata.DBSchema, ti sdata.DBTableInfo
 		}
 
 		intf := st.Pop()
-
 		switch val := intf.(type) {
 		case int32:
 			switch val {
@@ -623,31 +621,27 @@ func (c *compilerContext) renderExp(schema *sdata.DBSchema, ti sdata.DBTableInfo
 }
 
 func (c *compilerContext) renderNestedWhere(
-	schema *sdata.DBSchema, ti sdata.DBTableInfo, ex *qcode.Exp) {
-	for i, rel := range ex.Rels {
-		if i != 0 {
-			c.w.WriteString(` AND `)
-		}
+	schema *sdata.DBSchema, ti sdata.TInfo, ex *qcode.Exp) {
+	firstRel := ex.Rels[0]
+	c.w.WriteString(`EXISTS (SELECT 1 FROM `)
+	c.w.WriteString(firstRel.Left.Col.Table)
 
-		c.w.WriteString(`EXISTS (SELECT 1 FROM `)
-		c.w.WriteString(rel.Left.Col.Table)
-		c.renderJoinTables(rel)
-		c.w.WriteString(` WHERE `)
-		c.renderRel(ti, rel, -1, nil)
-
-		if i == len(ex.Rels)-1 {
-			c.w.WriteString(` AND (`)
-			c.renderExp(schema, rel.Left.Ti, ex, true)
-			c.w.WriteString(`)`)
+	if len(ex.Rels) > 1 {
+		for _, rel := range ex.Rels[1:(len(ex.Rels) - 1)] {
+			c.renderJoin(rel, -1)
 		}
 	}
 
-	for i := 0; i < len(ex.Rels); i++ {
-		c.w.WriteString(`)`)
-	}
+	c.w.WriteString(` WHERE `)
+	lastRel := ex.Rels[(len(ex.Rels) - 1)]
+	c.renderExp(schema, lastRel.Left.Ti, ex, true)
+
+	c.w.WriteString(` AND (`)
+	c.renderRel(ti, firstRel, -1, nil)
+	c.w.WriteString(`))`)
 }
 
-func (c *compilerContext) renderOp(schema *sdata.DBSchema, ti sdata.DBTableInfo, ex *qcode.Exp) {
+func (c *compilerContext) renderOp(schema *sdata.DBSchema, ti sdata.TInfo, ex *qcode.Exp) {
 	if ex.Op == qcode.OpNop {
 		return
 	}
@@ -739,7 +733,7 @@ func (c *compilerContext) renderOp(schema *sdata.DBSchema, ti sdata.DBTableInfo,
 		return
 
 	case qcode.OpTsQuery:
-		switch c.md.ct {
+		switch c.ct {
 		case "mysql":
 			//MATCH (name) AGAINST ('phone' IN BOOLEAN MODE);
 			c.w.WriteString(`(MATCH(`)
@@ -761,7 +755,7 @@ func (c *compilerContext) renderOp(schema *sdata.DBSchema, ti sdata.DBTableInfo,
 					c.w.WriteString(` OR (`)
 				}
 				colWithTable(c.w, ti.Name, col.Name)
-				if ti.Schema.DBVersion() >= 110000 {
+				if c.cv >= 110000 {
 					c.w.WriteString(`) @@ websearch_to_tsquery(`)
 				} else {
 					c.w.WriteString(`) @@ to_tsquery(`)
@@ -791,7 +785,7 @@ func (c *compilerContext) renderGroupBy(sel *qcode.Select) {
 	}
 	c.w.WriteString(` GROUP BY `)
 
-	for i, col := range sel.Cols {
+	for i, col := range sel.BCols {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
@@ -859,16 +853,16 @@ func (c *compilerContext) renderList(ex *qcode.Exp) {
 	c.w.WriteString(`])`)
 }
 
-func (c *compilerContext) renderValPrefix(ti sdata.DBTableInfo, ex *qcode.Exp) bool {
+func (c *compilerContext) renderValPrefix(ti sdata.TInfo, ex *qcode.Exp) bool {
 	if ex.Type == qcode.ValVar {
 		return c.renderValVarPrefix(ti, ex)
 	}
 	return false
 }
 
-func (c *compilerContext) renderValVarPrefix(ti sdata.DBTableInfo, ex *qcode.Exp) bool {
+func (c *compilerContext) renderValVarPrefix(ti sdata.TInfo, ex *qcode.Exp) bool {
 	if ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn {
-		if c.md.ct == "mysql" {
+		if c.ct == "mysql" {
 			c.w.WriteString(`JSON_CONTAINS(`)
 			c.renderParam(Param{Name: ex.Val, Type: ex.Col.Type, IsArray: true})
 			c.w.WriteString(`, CAST(`)
@@ -880,7 +874,7 @@ func (c *compilerContext) renderValVarPrefix(ti sdata.DBTableInfo, ex *qcode.Exp
 	return false
 }
 
-func (c *compilerContext) renderVal(ti sdata.DBTableInfo, ex *qcode.Exp) {
+func (c *compilerContext) renderVal(ti sdata.TInfo, ex *qcode.Exp) {
 	switch ex.Type {
 	case qcode.ValVar:
 		c.renderValVar(ti, ex)
@@ -893,18 +887,18 @@ func (c *compilerContext) renderVal(ti sdata.DBTableInfo, ex *qcode.Exp) {
 	}
 }
 
-func (c *compilerContext) renderValVar(ti sdata.DBTableInfo, ex *qcode.Exp) {
+func (c *compilerContext) renderValVar(ti sdata.TInfo, ex *qcode.Exp) {
 	val, isVal := c.svars[ex.Val]
 
 	switch {
 	case isVal && strings.HasPrefix(val, "sql:"):
 		c.w.WriteString(`(`)
-		c.md.RenderVar(c.w, val[4:])
+		c.renderVar(val[4:])
 		c.w.WriteString(`)`)
 
 	case isVal:
 		c.w.WriteString(`'`)
-		c.md.RenderVar(c.w, val)
+		c.renderVar(val)
 		c.w.WriteString(`'`)
 
 	case ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn:

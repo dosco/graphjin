@@ -2,6 +2,7 @@ package qcode
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/dosco/graphjin/core/internal/graph"
 	"github.com/dosco/graphjin/core/internal/sdata"
@@ -9,26 +10,25 @@ import (
 )
 
 func (co *Compiler) compileColumns(
-	field *graph.Field,
-	op *graph.Operation,
 	st *util.StackInt32,
+	op *graph.Operation,
 	qc *QCode,
 	sel *Select,
+	field graph.Field,
 	tr trval) error {
 
 	sel.Cols = make([]Column, 0, len(field.Children))
+	sel.BCols = make([]Column, 0, len(field.Children))
 
-	//if sel.Rel.Type != sdata.RelRemote {
-	if err := co.compileChildColumns(field, op, st, qc, sel, tr); err != nil {
+	if err := co.compileChildColumns(st, op, qc, sel, field, tr); err != nil {
 		return err
 	}
-	//}
 
 	if err := validateSelector(qc, sel, tr); err != nil {
 		return err
 	}
 
-	if err := co.addRelColumns(qc, sel); err != nil {
+	if err := co.addColumns(qc, sel); err != nil {
 		return err
 	}
 
@@ -37,11 +37,11 @@ func (co *Compiler) compileColumns(
 }
 
 func (co *Compiler) compileChildColumns(
-	field *graph.Field,
-	op *graph.Operation,
 	st *util.StackInt32,
+	op *graph.Operation,
 	qc *QCode,
 	sel *Select,
+	field graph.Field,
 	tr trval) error {
 
 	aggExist := false
@@ -56,8 +56,10 @@ func (co *Compiler) compileChildColumns(
 			fname = f.Name
 		}
 
+		// these are all remote fields we use
+		// these later to strip the response json
 		if sel.Rel.Type == sdata.RelRemote {
-			sel.addFieldCol(fname)
+			sel.Cols = append(sel.Cols, Column{FieldName: fname})
 			continue
 		}
 
@@ -78,7 +80,7 @@ func (co *Compiler) compileChildColumns(
 		// not a function
 		if fn.Name == "" {
 			if dbc, err := sel.Ti.GetColumnB(f.Name); err == nil {
-				sel.addCol(Column{Col: dbc, FieldName: fname})
+				sel.addCol(Column{Col: dbc, FieldName: fname}, false)
 			} else {
 				return err
 			}
@@ -88,7 +90,7 @@ func (co *Compiler) compileChildColumns(
 				aggExist = true
 			}
 			fn.FieldName = fname
-			sel.Funcs = append(sel.Funcs, fn)
+			sel.addFunc(fn)
 		}
 	}
 
@@ -101,14 +103,23 @@ func (co *Compiler) compileChildColumns(
 
 func (co *Compiler) addOrderByColumns(sel *Select) {
 	for _, ob := range sel.OrderBy {
-		sel.addCol(Column{Col: ob.Col, Base: true})
+		sel.addCol(Column{Col: ob.Col}, true)
 	}
 }
 
-func (co *Compiler) addRelColumns(qc *QCode, sel *Select) error {
-	var psel *Select
+func (co *Compiler) addColumns(qc *QCode, sel *Select) error {
+	var rel sdata.DBRel
 
-	rel := sel.Rel
+	if len(sel.Joins) == 0 {
+		rel = sel.Rel
+	} else {
+		rel = sel.Joins[0]
+	}
+	return co.addRelColumns(qc, sel, rel)
+}
+
+func (co *Compiler) addRelColumns(qc *QCode, sel *Select, rel sdata.DBRel) error {
+	var psel *Select
 
 	if sel.ParentID != -1 {
 		psel = &qc.Selects[sel.ParentID]
@@ -119,32 +130,23 @@ func (co *Compiler) addRelColumns(qc *QCode, sel *Select) error {
 		return nil
 
 	case sdata.RelOneToOne, sdata.RelOneToMany:
-		psel.addCol(Column{Col: rel.Right.Col, Base: true})
-
-	case sdata.RelOneToManyThrough:
-		psel.addCol(Column{Col: rel.Left.Col, Base: true})
+		psel.addCol(Column{Col: rel.Right.Col}, true)
 
 	case sdata.RelEmbedded:
-		psel.addCol(Column{Col: rel.Left.Col, Base: true})
+		psel.addCol(Column{Col: rel.Right.Col}, true)
 
 	case sdata.RelRemote:
-		psel.addCol(Column{Col: rel.Left.Col, Base: true})
+		psel.addCol(Column{Col: rel.Right.Col, FieldName: rel.Left.Col.Name}, false)
 		sel.SkipRender = SkipTypeRemote
 
 	case sdata.RelPolymorphic:
-		psel.addCol(Column{Col: rel.Left.Col, Base: true})
-
-		if v, err := rel.Left.Ti.GetColumn(rel.Right.VTable); err == nil {
-			psel.addCol(Column{Col: v, Base: true})
-		} else {
-			return err
-		}
+		psel.addCol(Column{Col: rel.Left.Col}, true)
+		psel.addCol(Column{Col: rel.Right.Col}, true)
 
 	case sdata.RelRecursive:
-		sel.addCol(Column{Col: rel.Left.Col, Base: true})
-		sel.addCol(Column{Col: rel.Right.Col, Base: true})
+		sel.addCol(Column{Col: rel.Left.Col}, true)
+		sel.addCol(Column{Col: rel.Right.Col}, true)
 	}
-
 	return nil
 }
 
@@ -154,7 +156,7 @@ func (co *Compiler) orderByIDCol(sel *Select) error {
 		return fmt.Errorf("table requires primary key: %s", sel.Ti.Name)
 	}
 
-	sel.addCol(Column{Col: idCol, Base: true})
+	sel.addCol(Column{Col: idCol}, true)
 
 	for _, ob := range sel.OrderBy {
 		if ob.Col.Name == idCol.Name {
@@ -171,18 +173,6 @@ func validateSelector(qc *QCode, sel *Select, tr trval) error {
 		if !tr.columnAllowed(qc, col.Col.Name) {
 			return fmt.Errorf("column blocked: %s (%s)", col.Col.Name, tr.role)
 		}
-
-		// if _, ok := sel.ColMap[col.FieldName]; ok {
-		// 	return fmt.Errorf("duplicate field: %s", col.FieldName)
-		// }
-		// sel.ColMap[col.FieldName] = struct{}{}
-
-		// if col.FieldName != col.Col.Name {
-		// 	if _, ok := sel.ColMap[col.Col.Name]; ok {
-		// 		return fmt.Errorf("duplicate column: %s", col.Col.Name)
-		// 	}
-		// 	sel.ColMap[col.Col.Name] = struct{}{}
-		// }
 	}
 
 	if len(sel.Funcs) != 0 && tr.isFuncsBlocked() {
@@ -191,52 +181,54 @@ func validateSelector(qc *QCode, sel *Select, tr trval) error {
 
 	for _, fn := range sel.Funcs {
 		var blocked bool
-		var fnID string
 
 		if fn.Col.Name != "" {
 			blocked = !tr.columnAllowed(qc, fn.Col.Name)
-			fnID = (fn.Name + fn.Col.Name)
 		} else {
 			blocked = !tr.columnAllowed(qc, fn.Name)
-			fnID = fn.Name
 		}
 
 		if blocked {
 			return fmt.Errorf("column blocked: %s (%s)", fn.Name, tr.role)
 		}
-
-		if fn.FieldName != "" {
-			if _, ok := sel.ColMap[fn.FieldName]; ok {
-				return fmt.Errorf("duplicate field: %s", fn.FieldName)
-			}
-			sel.ColMap[fn.FieldName] = -1
-		}
-
-		if fn.FieldName != fnID {
-			if _, ok := sel.ColMap[fnID]; ok {
-				return fmt.Errorf("duplicate function: %s(%s)", fn.Name, fn.Col.Name)
-			}
-			sel.ColMap[fnID] = -1
-		}
 	}
 	return nil
 }
 
-func (sel *Select) addCol(col Column) {
-	if i, ok := sel.ColMap[col.Col.Name]; ok {
-		// Replace column if re-added as not base only.
-		if i != -1 && !col.Base {
-			sel.Cols[i] = col
-		}
+func (sel *Select) addCol(col Column, baseOnly bool) {
+	if sel.bcolExists(col.Col.Name) == -1 {
+		sel.BCols = append(sel.BCols, col)
+	}
 
-	} else {
-		// Else its new and just add it to the map and columns
+	if baseOnly {
+		return
+	}
+
+	if sel.colExists(col.FieldName) == -1 {
 		sel.Cols = append(sel.Cols, col)
-		sel.ColMap[col.Col.Name] = len(sel.Cols) - 1
 	}
 }
 
-func (sel *Select) addFieldCol(name string) {
-	sel.Cols = append(sel.Cols, Column{FieldName: name})
-	sel.ColMap[name] = len(sel.Cols) - 1
+func (sel *Select) colExists(name string) int {
+	for i, c := range sel.Cols {
+		if strings.EqualFold(c.FieldName, name) {
+			return i
+		}
+	}
+	return -1
+}
+
+func (sel *Select) bcolExists(name string) int {
+	for i, c := range sel.BCols {
+		if strings.EqualFold(c.Col.Name, name) {
+			return i
+		}
+	}
+	return -1
+}
+
+func (sel *Select) addFunc(fn Function) {
+	if sel.colExists(fn.FieldName) == -1 {
+		sel.Funcs = append(sel.Funcs, fn)
+	}
 }

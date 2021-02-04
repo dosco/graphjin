@@ -47,6 +47,11 @@ const (
 	SkipTypeRemote
 )
 
+type ColKey struct {
+	Name string
+	Base bool
+}
+
 type QCode struct {
 	Type      QType
 	SType     QType
@@ -64,14 +69,13 @@ type QCode struct {
 type Select struct {
 	ID         int32
 	ParentID   int32
-	UParentID  int32
 	Type       SelType
 	Singular   bool
 	Typename   bool
 	Table      string
 	FieldName  string
 	Cols       []Column
-	ColMap     map[string]int
+	BCols      []Column
 	ArgMap     map[string]Arg
 	Funcs      []Function
 	Where      Filter
@@ -81,8 +85,9 @@ type Select struct {
 	Paging     Paging
 	Children   []int32
 	SkipRender SkipType
-	Ti         sdata.DBTableInfo
+	Ti         sdata.TInfo
 	Rel        sdata.DBRel
+	Joins      []sdata.DBRel
 	order      Order
 	through    string
 }
@@ -90,7 +95,6 @@ type Select struct {
 type Column struct {
 	Col       sdata.DBColumn
 	FieldName string
-	Base      bool
 }
 
 type Function struct {
@@ -342,7 +346,7 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 		fid := val & 0xFFFF
 		parentID := (val >> 16) & 0xFFFF
 
-		field := &op.Fields[fid]
+		field := op.Fields[fid]
 
 		// A keyword is a cursor field at the top-level
 		// For example posts_cursor in the root
@@ -357,7 +361,6 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 		s1 := Select{
 			ID:       id,
 			ParentID: parentID,
-			ColMap:   make(map[string]int, len(field.Children)),
 		}
 		sel := &s1
 
@@ -373,17 +376,11 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 			return err
 		}
 
-		if err := co.addRelInfo(field, qc, sel); err != nil {
+		if err := co.addRelInfo(op, qc, sel, field); err != nil {
 			return err
 		}
 
-		var tr trval
-
-		if sel.Ti.IsAlias {
-			tr = co.getRole(role, sel.Ti.Name)
-		} else {
-			tr = co.getRole(role, field.Name)
-		}
+		tr := co.getRole(role, field.Name)
 
 		if tr.isSkipped(qc.Type) {
 			sel.SkipRender = SkipTypeUserNeeded
@@ -399,7 +396,7 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 			return err
 		}
 
-		if err := co.compileColumns(field, op, st, qc, sel, tr); err != nil {
+		if err := co.compileColumns(st, op, qc, sel, field, tr); err != nil {
 			return err
 		}
 
@@ -437,21 +434,21 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 	return nil
 }
 
-func (co *Compiler) addRelInfo(field *graph.Field, qc *QCode, sel *Select) error {
+func (co *Compiler) addRelInfo(
+	op *graph.Operation, qc *QCode, sel *Select, field graph.Field) error {
 	var psel *Select
-	var parent string
+	var childF, parentF graph.Field
 	var sinset bool
 	var err error
 
-	child := field.Name
-	through := sel.through
+	childF = field
 
 	if sel.ParentID == -1 {
 		qc.Roots = append(qc.Roots, sel.ID)
 	} else {
 		psel = &qc.Selects[sel.ParentID]
 		psel.Children = append(psel.Children, sel.ID)
-		parent = psel.Table
+		parentF = op.Fields[field.ParentID]
 	}
 
 	switch field.Type {
@@ -468,12 +465,9 @@ func (co *Compiler) addRelInfo(field *graph.Field, qc *QCode, sel *Select) error
 		// }
 		sel.Type = SelTypeMember
 		sel.Singular = psel.Singular
-		sel.UParentID = psel.ParentID
 
-		ppsel := qc.Selects[sel.UParentID]
-		child = psel.Table
-		parent = ppsel.Table
-		through = ""
+		childF = parentF
+		parentF = op.Fields[int(parentF.ParentID)]
 		sinset = true
 	}
 
@@ -482,37 +476,43 @@ func (co *Compiler) addRelInfo(field *graph.Field, qc *QCode, sel *Select) error
 		return nil
 	}
 
-	// if alias, ok := co.s.GetAliasTable(child, parent); ok {
-	// 	child = alias
-	// }
-
-	if parent != "" {
-		if sel.Rel, err = co.s.GetRel(child, parent, through); err != nil {
+	if sel.ParentID != -1 {
+		paths, err := co.s.FindPath("", childF.Name, "", parentF.Name)
+		if err != nil {
 			return err
+		}
+		if len(paths) == 0 {
+			return fmt.Errorf("no relationship found: %s -> %s", childF.Name, parentF.Name)
+		}
+		sel.Rel = sdata.PathToRel(paths[0])
+
+		for _, p := range paths[1:] {
+			sel.Joins = append(sel.Joins, sdata.PathToRel(p))
 		}
 	}
 
-	if field.Type == graph.FieldMember {
-		child = field.Name
+	if sel.ParentID == -1 || sel.Rel.Type == sdata.RelPolymorphic {
+		if sel.Ti, err = co.s.Find("", field.Name); err != nil {
+			return err
+		}
+	} else {
+		sel.Ti = sel.Rel.Left.Ti
 	}
 
+	if sel.Ti.Blocked {
+		return fmt.Errorf("table: '%t' (%s) blocked", sel.Ti.Blocked, field.Name)
+	}
+
+	sel.Table = sel.Ti.Name
+
 	if sel.Rel.Type == sdata.RelRemote {
-		sel.Table = child
+		sel.Table = field.Name
 		qc.Remotes++
 		return nil
 	}
 
-	// if alias, ok := co.s.GetAliasTable(child, parent); ok && alias != "" {
-	// 	child = alias
-	// }
-
-	if sel.Ti, err = co.s.GetTableInfoB(child, parent); err != nil {
-		return err
-	}
-	sel.Table = sel.Ti.Name
-
 	if !sinset {
-		sel.Singular = (sel.Ti.IsSingular)
+		sel.Singular = sel.Ti.IsSingular
 	}
 	return nil
 }
@@ -870,7 +870,7 @@ func (co *Compiler) compileArgSearch(sel *Select, arg *graph.Arg) error {
 	return nil
 }
 
-func (co *Compiler) compileArgWhere(ti sdata.DBTableInfo, sel *Select, arg *graph.Arg, role string) error {
+func (co *Compiler) compileArgWhere(ti sdata.TInfo, sel *Select, arg *graph.Arg, role string) error {
 	st := util.NewStackInf()
 	var err error
 
@@ -1091,7 +1091,7 @@ func setFilter(sel *Select, fil *Exp) {
 	}
 }
 
-func setOrderByColName(ti sdata.DBTableInfo, ob *OrderBy, node *graph.Node) error {
+func setOrderByColName(ti sdata.TInfo, ob *OrderBy, node *graph.Node) error {
 	var list []string
 
 	for n := node; n != nil; n = n.Parent {
@@ -1109,11 +1109,11 @@ func setOrderByColName(ti sdata.DBTableInfo, ob *OrderBy, node *graph.Node) erro
 	return nil
 }
 
-func compileFilter(ti sdata.DBTableInfo, filter []string) (*Exp, bool, error) {
+func compileFilter(s *sdata.DBSchema, ti sdata.TInfo, filter []string) (*Exp, bool, error) {
 	var fl *Exp
 	var needsUser bool
 
-	co := &Compiler{}
+	co := &Compiler{s: s}
 	st := util.NewStackInf()
 
 	if len(filter) == 0 {

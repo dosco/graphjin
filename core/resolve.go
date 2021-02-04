@@ -40,7 +40,7 @@ func (gj *GraphJin) initRemote(rc ResolverConfig) error {
 	// remote reques
 	var col sdata.DBColumn
 
-	ti, err := gj.schema.GetTableInfo(rc.Table, "")
+	ti, err := gj.dbinfo.GetTable(rc.Schema, rc.Table)
 	if err != nil {
 		return err
 	}
@@ -58,16 +58,20 @@ func (gj *GraphJin) initRemote(rc ResolverConfig) error {
 	}
 
 	idk := fmt.Sprintf("__%s_%s", rc.Name, col.Name)
-
-	// Register a relationship between the remote data
-	// and the database table
-	val := sdata.DBRel{Type: sdata.RelRemote}
-	val.Left.Col = col
-	val.Right.VTable = idk
-
-	if err := gj.schema.SetRel(rc.Name, rc.Table, val, false); err != nil {
-		return err
+	col1 := sdata.DBColumn{
+		PrimaryKey: true,
+		Schema:     ti.Schema,
+		Table:      rc.Name,
+		Name:       idk,
+		Type:       col.Type,
+		FKeySchema: col.Schema,
+		FKeyTable:  col.Table,
+		FKeyCol:    col.Name,
 	}
+
+	nt := sdata.NewDBTable(ti.Schema, rc.Name, "remote", nil)
+	nt.PrimaryCol = col1
+	gj.dbinfo.AddTable(nt)
 
 	// The function thats called to resolve this remote
 	// data request

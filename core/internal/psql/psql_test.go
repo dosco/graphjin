@@ -2,7 +2,6 @@ package psql_test
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"os"
 	"testing"
@@ -25,25 +24,12 @@ func TestMain(m *testing.M) {
 		log.Fatal(err)
 	}
 
-	t, err := schema.GetTableInfo("customers", "")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	remoteVal := sdata.DBRel{Type: sdata.RelRemote}
-	remoteVal.Left.Col = t.PrimaryCol
-	remoteVal.Right.VTable = fmt.Sprintf("__%s_%s", t.Name, t.PrimaryCol.Name)
-
-	if err := schema.SetRel("payments", "customers", remoteVal, true); err != nil {
-		log.Fatal(err)
-	}
-
 	qcompile, err = qcode.NewCompiler(schema, qcode.Config{})
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	err = qcompile.AddRole("user", "product", qcode.TRConfig{
+	err = qcompile.AddRole("user", "public", "product", qcode.TRConfig{
 		Query: qcode.QueryConfig{
 			Columns: []string{"id", "name", "price", "users", "customers"},
 			Filters: []string{
@@ -74,7 +60,7 @@ func TestMain(m *testing.M) {
 		log.Fatal(err)
 	}
 
-	err = qcompile.AddRole("anon", "product", qcode.TRConfig{
+	err = qcompile.AddRole("anon", "public", "product", qcode.TRConfig{
 		Query: qcode.QueryConfig{
 			Columns: []string{"id", "name"},
 		},
@@ -83,7 +69,7 @@ func TestMain(m *testing.M) {
 		log.Fatal(err)
 	}
 
-	err = qcompile.AddRole("anon1", "product", qcode.TRConfig{
+	err = qcompile.AddRole("anon1", "public", "product", qcode.TRConfig{
 		Query: qcode.QueryConfig{
 			Columns:          []string{"id", "name", "price"},
 			DisableFunctions: true,
@@ -93,7 +79,7 @@ func TestMain(m *testing.M) {
 		log.Fatal(err)
 	}
 
-	err = qcompile.AddRole("user", "users", qcode.TRConfig{
+	err = qcompile.AddRole("user", "public", "users", qcode.TRConfig{
 		Query: qcode.QueryConfig{
 			Columns: []string{"id", "full_name", "avatar", "email", "products"},
 		},
@@ -102,7 +88,7 @@ func TestMain(m *testing.M) {
 		log.Fatal(err)
 	}
 
-	err = qcompile.AddRole("bad_dude", "users", qcode.TRConfig{
+	err = qcompile.AddRole("bad_dude", "public", "users", qcode.TRConfig{
 		Query: qcode.QueryConfig{
 			Filters:          []string{"false"},
 			DisableFunctions: true,
@@ -116,19 +102,19 @@ func TestMain(m *testing.M) {
 		log.Fatal(err)
 	}
 
-	err = qcompile.AddRole("user", "mes", qcode.TRConfig{
-		Query: qcode.QueryConfig{
-			Columns: []string{"id", "full_name", "avatar", "email"},
-			Filters: []string{
-				"{ id: { eq: $user_id } }",
-			},
-		},
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
+	// err = qcompile.AddRole("user", "", "mes", qcode.TRConfig{
+	// 	Query: qcode.QueryConfig{
+	// 		Columns: []string{"id", "full_name", "avatar", "email"},
+	// 		Filters: []string{
+	// 			"{ id: { eq: $user_id } }",
+	// 		},
+	// 	},
+	// })
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
-	err = qcompile.AddRole("user", "customers", qcode.TRConfig{
+	err = qcompile.AddRole("user", "public", "customers", qcode.TRConfig{
 		Query: qcode.QueryConfig{
 			Columns: []string{"id", "email", "full_name", "products"},
 		},

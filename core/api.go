@@ -120,11 +120,15 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo) (*GraphJin, err
 		return nil, err
 	}
 
-	if err := gj.initSchema(); err != nil {
+	if err := gj.initDiscover(); err != nil {
 		return nil, err
 	}
 
 	if err := gj.initResolvers(); err != nil {
+		return nil, err
+	}
+
+	if err := gj.initSchema(); err != nil {
 		return nil, err
 	}
 
@@ -215,15 +219,15 @@ func (gj *GraphJin) GraphQLEx(
 
 	// use the chirino/graphql library for introspection queries
 	// disabled when allow list is enforced
-	if !gj.conf.EnforceAllowList && ct.name == "IntrospectionQuery" {
-		r := gj.ge.ServeGraphQL(&graphql.Request{Query: query})
-		res.Data = r.Data
+	// if !gj.conf.EnforceAllowList && ct.name == "IntrospectionQuery" {
+	// 	r := gj.ge.ServeGraphQL(&graphql.Request{Query: query})
+	// 	res.Data = r.Data
 
-		if r.Error() != nil {
-			res.Error = r.Error().Error()
-		}
-		return res, r.Error()
-	}
+	// 	if r.Error() != nil {
+	// 		res.Error = r.Error().Error()
+	// 	}
+	// 	return res, r.Error()
+	// }
 
 	var role string
 

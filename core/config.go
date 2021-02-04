@@ -103,6 +103,7 @@ type Config struct {
 // Table struct defines a database table
 type Table struct {
 	Name      string
+	Schema    string
 	Table     string
 	Type      string
 	Blocklist []string
@@ -129,6 +130,7 @@ type Role struct {
 // RoleTable struct contains role specific access control values for a database table
 type RoleTable struct {
 	Name     string
+	Schema   string
 	ReadOnly bool `mapstructure:"read_only"`
 
 	Query  *Query
@@ -245,6 +247,7 @@ type ResolverProps map[string]interface{}
 type ResolverConfig struct {
 	Name      string
 	Type      string
+	Schema    string
 	Table     string
 	Column    string
 	StripPath string        `mapstructure:"strip_path"`
