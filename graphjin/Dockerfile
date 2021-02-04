@@ -8,7 +8,7 @@ RUN yarn build
 
 
 # stage: 2
-FROM golang:1.16-rc as go-build
+FROM golang:1.16-rc-alpine as go-build
 RUN apk update && \
     apk add --no-cache make && \
     apk add --no-cache git && \
