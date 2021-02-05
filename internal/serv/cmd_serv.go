@@ -25,6 +25,8 @@ func cmdServ(servConf *ServConfig) func(*cobra.Command, []string) {
 			fatalInProd(servConf, err, "failed to connect to database")
 		}
 
+		servConf.zlog = newLogger(servConf)
+
 		gj, err = core.NewGraphJin(&servConf.conf.Core, servConf.db)
 		if err != nil {
 			fatalInProd(servConf, err, "failed to initialize")

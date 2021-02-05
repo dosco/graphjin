@@ -3,12 +3,12 @@ package serv
 import (
 	"database/sql"
 	"fmt"
-	_log "log"
 	"os"
 	"runtime"
 
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 //go:generate rice embed-go
@@ -26,18 +26,17 @@ var (
 )
 
 type ServConfig struct {
-	log      *_log.Logger // logger
-	zlog     *zap.Logger  // fast logger
-	logLevel int          // log level
-	conf     *Config      // parsed config
-	confPath string       // path to the config file
-	db       *sql.DB      // database connection pool
+	log      *zap.SugaredLogger // logger
+	zlog     *zap.Logger        // faster logger
+	logLevel int                // log level
+	conf     *Config            // parsed config
+	confPath string             // path to config
+	db       *sql.DB            // database connection pool
 }
 
 func Cmd() {
 	servConf := new(ServConfig)
-	servConf.log = _log.New(os.Stdout, "", 0)
-	servConf.zlog = zap.NewExample()
+	servConf.log = newLogger(nil).Sugar()
 
 	rootCmd := &cobra.Command{
 		Use:   "graphjin",
@@ -147,7 +146,7 @@ e.g. db:migrate -+1
 		"path", "./config", "path to config files")
 
 	if err := rootCmd.Execute(); err != nil {
-		servConf.log.Fatalf("ERR %s", err)
+		servConf.log.Fatalf("Error: %s", err)
 	}
 }
 
@@ -187,4 +186,25 @@ Copyright 2020, Vikram Rangnekar
 		lastCommitTime,
 		gitBranch,
 		runtime.Version())
+}
+
+func newLogger(sc *ServConfig) *zap.Logger {
+	econf := zapcore.EncoderConfig{
+		MessageKey:     "msg",
+		LevelKey:       "level",
+		NameKey:        "logger",
+		EncodeLevel:    zapcore.LowercaseLevelEncoder,
+		EncodeTime:     zapcore.ISO8601TimeEncoder,
+		EncodeDuration: zapcore.StringDurationEncoder,
+	}
+
+	var core zapcore.Core
+
+	if sc != nil && sc.conf.LogFormat == "json" {
+		core = zapcore.NewCore(zapcore.NewJSONEncoder(econf), os.Stdout, zap.DebugLevel)
+	} else {
+		econf.EncodeLevel = zapcore.CapitalColorLevelEncoder
+		core = zapcore.NewCore(zapcore.NewConsoleEncoder(econf), os.Stdout, zap.DebugLevel)
+	}
+	return zap.New(core)
 }

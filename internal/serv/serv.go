@@ -34,9 +34,9 @@ func initWatcher(sc *ServConfig) {
 	}
 
 	go func() {
-		err := Do(sc, sc.log.Printf, d)
+		err := Do(sc, sc.log.Infof, d)
 		if err != nil {
-			sc.log.Fatalf("ERR %s", err)
+			sc.log.Fatalf("Error in config file wacher: %s", err)
 		}
 	}()
 }
@@ -70,7 +70,7 @@ func startHTTP(sc *ServConfig) {
 
 	routes, err := routeHandler(sc)
 	if err != nil {
-		sc.log.Fatalf("ERR %s", err)
+		sc.log.Fatalf("Error setting up API routes: %s", err)
 	}
 
 	srv := &http.Server{
@@ -92,7 +92,7 @@ func startHTTP(sc *ServConfig) {
 		<-sigint
 
 		if err := srv.Shutdown(context.Background()); err != nil {
-			sc.log.Fatalln("INF shutdown signal received")
+			sc.log.Warn("Shutdown signal received")
 		}
 		close(idleConnsClosed)
 	}()
@@ -102,14 +102,14 @@ func startHTTP(sc *ServConfig) {
 			sc.conf.closeFn()
 		}
 		sc.db.Close()
-		sc.log.Fatalln("INF shutdown complete")
+		sc.log.Info("Shutdown complete")
 	})
 
-	sc.log.Printf("INF GraphJin started, version: %s, git-branch: %s, host-port: %s, app-name: %s, env: %s\n",
+	sc.log.Infof("GraphJin started, version: %s, git-branch: %s, host-port: %s, app-name: %s, env: %s\n",
 		version, gitBranch, sc.conf.hostPort, appName, env)
 
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-		sc.log.Fatalln("INF server closed")
+		sc.log.Fatal("Server stopped")
 	}
 
 	<-idleConnsClosed

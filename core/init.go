@@ -99,10 +99,10 @@ func (gj *GraphJin) initConfig() error {
 		gj.abacEnabled = (n > 2)
 
 		if !gj.abacEnabled {
-			gj.log.Printf("WRN attribute based access control disabled: no custom roles (with 'match' defined)")
+			gj.log.Printf("Role based access control disabled: no custom roles found")
 		}
 	} else if len(gj.roles) > 2 {
-		gj.log.Printf("INF attribute based access control disabled: roles_query not set")
+		gj.log.Printf("Role based access control disabled: roles_query not set")
 	}
 
 	return nil

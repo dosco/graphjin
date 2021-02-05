@@ -35,6 +35,7 @@ type Serv struct {
 	AppName        string `mapstructure:"app_name"`
 	Production     bool
 	LogLevel       string `mapstructure:"log_level"`
+	LogFormat      string `mapstructure:"log_format"`
 	HostPort       string `mapstructure:"host_port"`
 	Host           string
 	Port           string

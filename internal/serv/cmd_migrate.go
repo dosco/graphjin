@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/dosco/graphjin/internal/serv/internal/migrate"
 	"github.com/spf13/cobra"
@@ -27,7 +26,7 @@ func cmdDBSetup(servConf *ServConfig) func(*cobra.Command, []string) {
 		initConfOnce(servConf)
 
 		if servConf.conf.DB.Type == "mysql" {
-			servConf.log.Fatalf("ERR database setup not support with MySQL")
+			servConf.log.Fatal("Database setup not support with MySQL")
 		}
 
 		cmdDBCreate(servConf)(cmd, []string{})
@@ -35,16 +34,12 @@ func cmdDBSetup(servConf *ServConfig) func(*cobra.Command, []string) {
 
 		sfile := path.Join(servConf.conf.cpath, servConf.conf.SeedFile)
 		_, err := os.Stat(sfile)
+
 		if err == nil {
 			cmdDBSeed(servConf)(cmd, []string{})
-			return
+		} else {
+			servConf.log.Warn("Unable to read seed file: %s", sfile)
 		}
-
-		if !os.IsNotExist(err) {
-			servConf.log.Fatalf("ERR unable to check if '%s' exists: %s", sfile, err.Error())
-		}
-
-		servConf.log.Printf("WRN failed to read seed file '%s'", sfile)
 	}
 }
 
@@ -53,7 +48,7 @@ func cmdDBReset(servConf *ServConfig) func(*cobra.Command, []string) {
 		initConfOnce(servConf)
 
 		if servConf.conf.Production {
-			servConf.log.Fatalln("ERR db:reset does not work in production")
+			servConf.log.Fatal("Command db:reset does not work in production")
 		}
 
 		cmdDBDrop(servConf)(cmd, []string{})
@@ -69,11 +64,11 @@ func cmdDBCreate(servConf *ServConfig) func(*cobra.Command, []string) {
 		initConfOnce(servConf)
 
 		if servConf.conf.DB.Type == "mysql" {
-			servConf.log.Fatalf("ERR database creation not support with MySQL")
+			servConf.log.Fatalf("Database creation not support with MySQL")
 		}
 
 		if db, err = initDB(servConf, false, false); err != nil {
-			servConf.log.Fatalf("ERR failed to connect to database: %s", err)
+			servConf.log.Fatalf("Failed to connect to database: %s", err)
 		}
 		defer db.Close()
 
@@ -85,18 +80,19 @@ func cmdDBCreate(servConf *ServConfig) func(*cobra.Command, []string) {
 			Scan(&dbExists)
 
 		if err != nil && err != sql.ErrNoRows {
-			servConf.log.Fatalf("ERR failed checking if database exists: %s", err)
+			servConf.log.Fatalf("Error checking if database exists: %s", err)
 		}
 
 		if dbExists {
-			servConf.log.Printf("INF database exists: %s", dbName)
+			servConf.log.Infof("Database exists: %s", dbName)
 			return
 		}
 
 		if _, err = db.Exec(`CREATE DATABASE "` + dbName + `"`); err != nil {
-			servConf.log.Fatalf("ERR failed to create database: %s", err)
+			servConf.log.Fatalf("Failed to create database: %s", err)
 		}
-		servConf.log.Printf("INF created database: %s", dbName)
+
+		servConf.log.Infof("Created database: %s", dbName)
 	}
 }
 
@@ -106,7 +102,7 @@ func cmdDBDrop(servConf *ServConfig) func(*cobra.Command, []string) {
 
 		db, err := initDB(servConf, false, false)
 		if err != nil {
-			servConf.log.Fatalf("ERR failed to connect to database: %s", err)
+			servConf.log.Fatalf("Failed to connect to database: %s", err)
 		}
 		defer db.Close()
 
@@ -114,10 +110,10 @@ func cmdDBDrop(servConf *ServConfig) func(*cobra.Command, []string) {
 
 		_, err = db.Exec(sql)
 		if err != nil {
-			servConf.log.Fatalf("ERR failed to drop database: %s", err)
+			servConf.log.Fatalf("Failed to drop database: %s", err)
 		}
 
-		servConf.log.Printf("INF database dropped: %s", servConf.conf.DB.DBName)
+		servConf.log.Infof("Database dropped: %s", servConf.conf.DB.DBName)
 	}
 }
 
@@ -134,7 +130,7 @@ func cmdDBNew(servConf *ServConfig) func(*cobra.Command, []string) {
 
 		m, err := migrate.FindMigrations(migrationsPath)
 		if err != nil {
-			servConf.log.Fatalf("ERR error loading migrations: %s", err)
+			servConf.log.Fatalf("Error loading migrations: %s", err)
 		}
 
 		mname := fmt.Sprintf("%d_%s.sql", len(m), name)
@@ -143,16 +139,16 @@ func cmdDBNew(servConf *ServConfig) func(*cobra.Command, []string) {
 		mpath := filepath.Join(migrationsPath, mname)
 		mfile, err := os.OpenFile(mpath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 		if err != nil {
-			servConf.log.Fatalf("ERR %s", err)
+			servConf.log.Fatalf("Error creating migration file: %s", err)
 		}
 		defer mfile.Close()
 
 		_, err = mfile.WriteString(newMigrationText)
 		if err != nil {
-			servConf.log.Fatalf("ERR %s", err)
+			servConf.log.Fatalf("Error creating migration file: %s", err)
 		}
 
-		servConf.log.Printf("INF created migration '%s'", mpath)
+		servConf.log.Infof("Migration file created: %s", mpath)
 	}
 }
 
@@ -167,47 +163,46 @@ func cmdDBMigrate(servConf *ServConfig) func(*cobra.Command, []string) {
 		dest := args[0]
 
 		if servConf.conf.DB.Type == "mysql" {
-			servConf.log.Fatalf("ERR migration not support with MySQL")
+			servConf.log.Fatal("Migrations not support with MySQL")
 		}
 
 		conn, err := initDB(servConf, true, false)
 		if err != nil {
-			servConf.log.Fatalf("ERR failed to connect to database: %s", err)
+			servConf.log.Fatalf("Failed to connect to database: %s", err)
 		}
 		defer conn.Close()
 
 		m, err := migrate.NewMigrator(conn, "schema_version")
 		if err != nil {
-			servConf.log.Fatalf("ERR failed to initializing migrator: %s", err)
+			servConf.log.Fatalf("Error initializing migrations: %s", err)
 		}
 
 		m.Data = getMigrationVars(servConf)
 
 		err = m.LoadMigrations(servConf.conf.relPath(servConf.conf.MigrationsPath))
 		if err != nil {
-			servConf.log.Fatalf("ERR failed to load migrations: %s", err)
+			servConf.log.Fatalf("Failed to load migrations: %s", err)
 		}
 
 		if len(m.Migrations) == 0 {
-			servConf.log.Fatalf("ERR no migrations found")
+			servConf.log.Fatalf("No migrations found")
 		}
 
 		m.OnStart = func(sequence int32, name, direction, sql string) {
-			servConf.log.Printf("INF %s executing %s %s\n%s\n\n",
-				time.Now().Format("2006-01-02 15:04:05"), name, direction, sql)
+			servConf.log.Infof("Executing migration: %s, %s, %s", name, direction, sql)
 		}
 
 		currentVersion, err := m.GetCurrentVersion()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Unable to get current version:\n  %v\n", err)
-			os.Exit(1)
+			servConf.log.Fatalf("Failed fetching current migrations version: %s", err)
+			servConf.log.Fatalf("Unable to get current migration version:\n  %v\n", err)
 		}
 
 		mustParseDestination := func(d string) int32 {
 			var n int64
 			n, err = strconv.ParseInt(d, 10, 32)
 			if err != nil {
-				servConf.log.Fatalf("ERR invalid destination: %s", err)
+				servConf.log.Fatalf("Invalid migration version: %s", err)
 			}
 			return int32(n)
 		}
@@ -236,7 +231,7 @@ func cmdDBMigrate(servConf *ServConfig) func(*cobra.Command, []string) {
 		}
 
 		if err != nil {
-			servConf.log.Fatalf("ERR %s", err)
+			servConf.log.Fatalf("Error with migrations: %s", err)
 
 			// if err, ok := err.(m.MigrationPgError); ok {
 			// 	if err.Detail != "" {
@@ -255,7 +250,7 @@ func cmdDBMigrate(servConf *ServConfig) func(*cobra.Command, []string) {
 			// }
 		}
 
-		servConf.log.Println("INF migration done")
+		servConf.log.Info("Migrations completed")
 	}
 }
 
@@ -265,29 +260,29 @@ func cmdDBStatus(servConf *ServConfig) func(*cobra.Command, []string) {
 
 		db, err := initDB(servConf, true, false)
 		if err != nil {
-			servConf.log.Fatalf("ERR failed to connect to database: %s", err)
+			servConf.log.Fatalf("Failed to connect to database: %s", err)
 		}
 		defer db.Close()
 
 		m, err := migrate.NewMigrator(db, "schema_version")
 		if err != nil {
-			servConf.log.Fatalf("ERR failed to initialize migrator: %s", err)
+			servConf.log.Fatalf("Error initializing migrations: %s", err)
 		}
 
 		m.Data = getMigrationVars(servConf)
 
 		err = m.LoadMigrations(servConf.conf.relPath(servConf.conf.MigrationsPath))
 		if err != nil {
-			servConf.log.Fatalf("ERR failed to load migrations: %s", err)
+			servConf.log.Fatalf("Failed to load migrations: %s", err)
 		}
 
 		if len(m.Migrations) == 0 {
-			servConf.log.Fatalf("ERR no migrations found")
+			servConf.log.Fatal("No migrations found")
 		}
 
 		mver, err := m.GetCurrentVersion()
 		if err != nil {
-			servConf.log.Fatalf("ERR failed to retrieve migration: %s", err)
+			servConf.log.Fatalf("Failed to retrieve current migration version: %s", err)
 		}
 
 		var status string
@@ -298,7 +293,7 @@ func cmdDBStatus(servConf *ServConfig) func(*cobra.Command, []string) {
 			status = "migration(s) pending"
 		}
 
-		servConf.log.Printf("INF status: %s, version: %d of %d, host: %s, database: %s",
+		servConf.log.Infof("Status: %s, version: %d of %d, host: %s, database: %s",
 			status, mver, len(m.Migrations), servConf.conf.DB.Host, servConf.conf.DB.DBName)
 	}
 }
@@ -353,6 +348,6 @@ func initConfOnce(servConf *ServConfig) {
 
 	servConf.conf, err = initConf(servConf)
 	if err != nil {
-		servConf.log.Fatalf("ERR failed to read config: %s", err)
+		servConf.log.Fatalf("Failed to read config: %s", err)
 	}
 }

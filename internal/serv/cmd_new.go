@@ -105,7 +105,7 @@ func cmdNew(servConf *ServConfig) func(*cobra.Command, []string) {
 			}
 		})
 
-		servConf.log.Printf("INF app '%s' initialized", name)
+		servConf.log.Infof("App initialized: %s", name)
 	}
 }
 
@@ -138,18 +138,18 @@ func ifNotExists(servConf ServConfig, filePath string, doFn func(string) error) 
 	_, err := os.Stat(filePath)
 
 	if err == nil {
-		servConf.log.Printf("ERR create skipped '%s' exists", filePath)
+		servConf.log.Infof("Create skipped file exists: %s", filePath)
 		return
 	}
 
 	if !os.IsNotExist(err) {
-		servConf.log.Fatalf("ERR unable to check if '%s' exists", filePath)
+		servConf.log.Fatalf("Error checking if file exists: %s", filePath)
 	}
 
 	err = doFn(filePath)
 	if err != nil {
-		servConf.log.Fatalf("ERR unable to create '%s'", filePath)
+		servConf.log.Fatalf("Unable to create: %s", filePath)
 	}
 
-	servConf.log.Printf("INF created '%s'", filePath)
+	servConf.log.Infof("Created: %s", filePath)
 }
