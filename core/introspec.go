@@ -170,15 +170,15 @@ func (gj *GraphJin) initGraphQLEgine() error {
 			Fields: schema.InputValueList{
 				&schema.InputValue{
 					Name: "and",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: expressionTypeName}},
+					Type: &schema.TypeName{Name: expressionTypeName},
 				},
 				&schema.InputValue{
 					Name: "or",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: expressionTypeName}},
+					Type: &schema.TypeName{Name: expressionTypeName},
 				},
 				&schema.InputValue{
 					Name: "not",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: expressionTypeName}},
+					Type: &schema.TypeName{Name: expressionTypeName},
 				},
 			},
 		}
@@ -283,32 +283,32 @@ func (gj *GraphJin) initGraphQLEgine() error {
 			&schema.InputValue{
 				Desc: schema.Description{Text: "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit your needs."},
 				Name: "order_by",
-				Type: &schema.NonNull{OfType: &schema.TypeName{Name: orderByType.Name}},
+				Type: &schema.TypeName{Name: orderByType.Name},
 			},
 			&schema.InputValue{
 				Desc: schema.Description{Text: ""},
 				Name: "where",
-				Type: &schema.NonNull{OfType: &schema.TypeName{Name: expressionType.Name}},
+				Type: &schema.TypeName{Name: expressionType.Name},
 			},
 			&schema.InputValue{
 				Desc: schema.Description{Text: ""},
 				Name: "limit",
-				Type: &schema.NonNull{OfType: &schema.TypeName{Name: "Int"}},
+				Type: &schema.TypeName{Name: "Int"},
 			},
 			&schema.InputValue{
 				Desc: schema.Description{Text: ""},
 				Name: "offset",
-				Type: &schema.NonNull{OfType: &schema.TypeName{Name: "Int"}},
+				Type: &schema.TypeName{Name: "Int"},
 			},
 			&schema.InputValue{
 				Desc: schema.Description{Text: ""},
 				Name: "first",
-				Type: &schema.NonNull{OfType: &schema.TypeName{Name: "Int"}},
+				Type: &schema.TypeName{Name: "Int"},
 			},
 			&schema.InputValue{
 				Desc: schema.Description{Text: ""},
 				Name: "last",
-				Type: &schema.NonNull{OfType: &schema.TypeName{Name: "Int"}},
+				Type: &schema.TypeName{Name: "Int"},
 			},
 			&schema.InputValue{
 				Desc: schema.Description{Text: ""},
