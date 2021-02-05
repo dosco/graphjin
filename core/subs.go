@@ -169,7 +169,7 @@ func (gj *GraphJin) subController(s *sub) {
 		select {
 		case m := <-s.add:
 			if err := s.addMember(m); err != nil {
-				gj.log.Printf("ERR %s", err)
+				gj.log.Printf("Subscription Error: %s", err)
 				return
 			}
 
@@ -181,7 +181,7 @@ func (gj *GraphJin) subController(s *sub) {
 
 		case msg := <-s.updt:
 			if err := s.updateMember(msg); err != nil {
-				gj.log.Printf("ERR %s", err)
+				gj.log.Printf("Subscription Error: %s", err)
 				return
 			}
 
@@ -300,7 +300,7 @@ func (gj *GraphJin) checkUpdates(s *sub, mv mval, start int) {
 	}
 
 	if err != nil {
-		gj.log.Printf("ERR %s", err)
+		gj.log.Printf("Subscription Error: %s", err)
 		return
 	}
 
@@ -309,7 +309,7 @@ func (gj *GraphJin) checkUpdates(s *sub, mv mval, start int) {
 
 	for rows.Next() {
 		if err := rows.Scan(&js); err != nil {
-			gj.log.Printf("ERR %s", err)
+			gj.log.Printf("Subscription Error: %s", err)
 			return
 		}
 		j := start + i
@@ -322,7 +322,7 @@ func (gj *GraphJin) checkUpdates(s *sub, mv mval, start int) {
 
 		cur, err := gj.encryptCursor(s.q.st.qc, js)
 		if err != nil {
-			gj.log.Printf("ERR %s", err)
+			gj.log.Printf("Subscription Error: %s", err)
 			return
 		}
 

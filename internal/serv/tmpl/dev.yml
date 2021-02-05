@@ -2,10 +2,13 @@ app_name: "{{- .AppName }} Development"
 host_port: 0.0.0.0:8080
 web_ui: true
 
-# debug, error, warn, info
+# Log levels: debug, error, warn, info
 log_level: "info"
 
-# enable or disable http compression (uses gzip)
+# Log formats: json, plain 
+log_format: "plain"
+
+# Enable or disable http compression (uses gzip)
 http_compress: true
 
 # When production mode is 'true' only queries 

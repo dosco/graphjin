@@ -46,25 +46,25 @@ func enableObservability(servConf *ServConfig, mux *http.ServeMux) (func(), erro
 		ex, err1 := prometheus.NewExporter(prometheus.Options{Namespace: servConf.conf.Telemetry.Metrics.Namespace})
 		if err == nil {
 			mux.Handle(ep, ex)
-			servConf.log.Printf("INF Prometheus exporter listening on: %s", ep)
+			servConf.log.Infof("Prometheus exporter listening on: %s", ep)
 		}
 		mex, err = view.Exporter(ex), err1
 
 	case "stackdriver":
 		mex, err = stackdriver.NewExporter(stackdriver.Options{ProjectID: servConf.conf.Telemetry.Metrics.Key})
 		if err == nil {
-			servConf.log.Println("INF Google Stackdriver exporter initialized")
+			servConf.log.Info("Google Stackdriver exporter initialized")
 		}
 
 	case "":
-		servConf.log.Println("WRN OpenCensus: no metrics exporter defined")
+		servConf.log.Warn("OpenCensus: no metrics exporter defined")
 
 	default:
 		err = fmt.Errorf("invalid metrics exporter")
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("ERR OpenCensus: %s: %v", servConf.conf.Telemetry.Metrics, err)
+		return nil, fmt.Errorf("OpenCensus: %s: %s", servConf.conf.Telemetry.Metrics, err)
 	}
 
 	if mex != nil {
@@ -78,7 +78,7 @@ func enableObservability(servConf *ServConfig, mux *http.ServeMux) (func(), erro
 		ex, err1 := aws.NewExporter(aws.WithVersion("latest"))
 		if err == nil {
 			tCloseFn = func() { ex.Flush() }
-			servConf.log.Println("INF Amazon X-Ray exporter initialized")
+			servConf.log.Info("Amazon X-Ray exporter initialized")
 		}
 		tex, err = trace.Exporter(ex), err1
 
@@ -96,15 +96,14 @@ func enableObservability(servConf *ServConfig, mux *http.ServeMux) (func(), erro
 		tex = zipkin.NewExporter(re, lep)
 
 	case "":
-		servConf.log.Println("WRN OpenCensus: no traceing exporter defined")
+		servConf.log.Warn("OpenCensus: no traceing exporter defined")
 
 	default:
 		err = fmt.Errorf("invalid tracing exporter")
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("ERR OpenCensus: %s: %v",
-			servConf.conf.Telemetry.Tracing.Exporter,
+		return nil, fmt.Errorf("OpenCensus: %s: %v", servConf.conf.Telemetry.Tracing.Exporter,
 			err)
 	}
 

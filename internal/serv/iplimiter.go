@@ -6,6 +6,8 @@ import (
 	"time"
 
 	cache "github.com/go-pkgz/expirable-cache"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"golang.org/x/time/rate"
 )
 
@@ -38,9 +40,12 @@ func rateLimiter(sc *ServConfig, h http.Handler) http.Handler {
 		}
 
 		if ip == "" {
-			if ip, _, err = net.SplitHostPort(r.RemoteAddr); err != nil {
-				sc.log.Fatalf("rate limiter: %s", err)
-			}
+			ip, _, err = net.SplitHostPort(r.RemoteAddr)
+		}
+
+		if err != nil {
+			sc.zlog.Error("Rate limiter (Remote IP)", []zapcore.Field{zap.Error(err)}...)
+			return
 		}
 
 		if !getIPLimiter(ip).Allow() {

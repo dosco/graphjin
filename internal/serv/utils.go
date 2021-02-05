@@ -104,9 +104,9 @@ func fatalInProd(servConf *ServConfig, err error, msg string) {
 	var wg sync.WaitGroup
 
 	if isDev() {
-		servConf.log.Printf("ERR %s: %s", msg, err)
+		servConf.log.Errorf("%s: %s", msg, err)
 	} else {
-		servConf.log.Fatalf("ERR %s: %s", msg, err)
+		servConf.log.Fatalf("%s: %s", msg, err)
 	}
 
 	wg.Add(1)
@@ -118,15 +118,15 @@ func isDev() bool {
 }
 
 // Get path relative to cwd
-func relpath(p string) string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return p
-	}
+// func relpath(p string) string {
+// 	cwd, err := os.Getwd()
+// 	if err != nil {
+// 		return p
+// 	}
 
-	if strings.HasPrefix(p, cwd) {
-		return "./" + strings.TrimLeft(p[len(cwd):], "/")
-	}
+// 	if strings.HasPrefix(p, cwd) {
+// 		return "./" + strings.TrimLeft(p[len(cwd):], "/")
+// 	}
 
-	return p
-}
+// 	return p
+// }
