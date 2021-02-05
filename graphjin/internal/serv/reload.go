@@ -26,8 +26,8 @@
 package serv
 
 import (
-	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -108,7 +108,12 @@ func Do(servConf *ServConfig, log func(string, ...interface{}), additional ...di
 				// Ensure that we use the correct events, as they are not uniform across
 				// platforms. See https://github.com/fsnotify/fsnotify/issues/74
 
-				if servConf.conf != nil && strings.HasSuffix(event.Name, "/allow.list") {
+				if servConf.conf == nil {
+					continue
+				}
+
+				ext := path.Ext(event.Name)
+				if ext != ".json" && ext != ".toml" && ext != ".yaml" && ext != ".yml" {
 					continue
 				}
 
@@ -116,7 +121,7 @@ func Do(servConf *ServConfig, log func(string, ...interface{}), additional ...di
 					continue
 				}
 
-				log("INF Reloading, file changed detected: %s", event)
+				log("INF Reloading, config file changed: %s", event.Name)
 
 				var trigger bool
 				switch runtime.GOOS {
@@ -155,15 +160,15 @@ func Do(servConf *ServConfig, log func(string, ...interface{}), additional ...di
 		}
 	}
 
-	add := ""
-	if len(additional) > 0 {
-		reldirs := make([]string, len(dirs)-1)
-		for i := range dirs[1:] {
-			reldirs[i] = relpath(dirs[i+1])
-		}
-		add = fmt.Sprintf(" (additional dirs: %s)", strings.Join(reldirs, ", "))
-	}
-	log("restarting %q when it changes%s", relpath(binSelf), add)
+	// add := ""
+	// if len(additional) > 0 {
+	// 	reldirs := make([]string, len(dirs)-1)
+	// 	for i := range dirs[1:] {
+	// 		reldirs[i] = relpath(dirs[i+1])
+	// 	}
+	// 	add = fmt.Sprintf(" (additional dirs: %s)", strings.Join(reldirs, ", "))
+	// }
+	log("Config changed restarting")
 	<-done
 	return nil
 }
@@ -173,7 +178,7 @@ func ReExec(servConf *ServConfig) func() {
 	return func() {
 		err := syscall.Exec(binSelf, append([]string{binSelf}, os.Args[1:]...), os.Environ())
 		if err != nil {
-			servConf.log.Fatalf("ERR cannot restart: %s", err)
+			servConf.log.Fatalf("Cannot restart: %s", err)
 		}
 	}
 }

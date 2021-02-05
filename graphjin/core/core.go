@@ -356,7 +356,7 @@ func (r *Result) SQL() string {
 func (c *scontext) debugLog(st *stmt) {
 	for _, sel := range st.qc.Selects {
 		if sel.SkipRender == qcode.SkipTypeUserNeeded {
-			c.gj.log.Printf("INF field '%s' skipped as it requires $user_id", sel.FieldName)
+			c.gj.log.Printf("Field skipped: %s, Requires $user_id", sel.FieldName)
 		}
 	}
 }

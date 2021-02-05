@@ -62,8 +62,7 @@ func initConf(servConfig *ServConfig) (*Config, error) {
 		a := &c.Auths[i]
 
 		if _, ok := am[a.Name]; ok {
-			c.Auths = append(c.Auths[:i], c.Auths[i+1:]...)
-			servConfig.log.Printf("WRN duplicate auth found: %s", a.Name)
+			return nil, fmt.Errorf("Duplicate auth found: %s", a.Name)
 		}
 		am[a.Name] = struct{}{}
 	}
@@ -75,13 +74,11 @@ func initConf(servConfig *ServConfig) (*Config, error) {
 		a := &c.Actions[i]
 
 		if _, ok := axm[a.Name]; ok {
-			c.Actions = append(c.Actions[:i], c.Actions[i+1:]...)
-			servConfig.log.Printf("WRN duplicate action found: %s", a.Name)
+			return nil, fmt.Errorf("Duplicate action found: %s", a.Name)
 		}
 
 		if _, ok := am[a.AuthName]; !ok {
-			c.Actions = append(c.Actions[:i], c.Actions[i+1:]...)
-			servConfig.log.Printf("WRN invalid auth_name '%s' for auth: %s", a.AuthName, a.Name)
+			return nil, fmt.Errorf("Invalid auth name: %s, For auth: %s", a.AuthName, a.Name)
 		}
 		axm[a.Name] = struct{}{}
 	}
@@ -99,7 +96,7 @@ func initConf(servConfig *ServConfig) (*Config, error) {
 	}
 
 	if !anonFound && c.DefaultBlock {
-		servConfig.log.Printf("WRN unauthenticated requests will be blocked. no role 'anon' defined")
+		servConfig.log.Warn("Unauthenticated requests will be blocked. no role 'anon' defined")
 		c.AuthFailBlock = false
 	}
 
@@ -293,6 +290,6 @@ func initTelemetry(servConfig *ServConfig, db *sql.DB, driverName string) (strin
 	}
 	ocsql.RegisterAllViews()
 
-	servConfig.log.Println("INF OpenCensus telemetry enabled")
+	servConfig.log.Info("OpenCensus telemetry enabled")
 	return driverName, nil
 }

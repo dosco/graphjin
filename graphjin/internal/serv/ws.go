@@ -3,12 +3,15 @@ package serv
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/dosco/graphjin/core"
 	"github.com/dosco/graphjin/internal/serv/internal/auth"
 	ws "github.com/gorilla/websocket"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 type gqlWsReq struct {
@@ -83,12 +86,12 @@ func apiV1Ws(servConf *ServConfig, w http.ResponseWriter, r *http.Request) {
 
 	for {
 		if _, b, err = conn.ReadMessage(); err != nil {
-			servConf.log.Println(err)
+			servConf.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
 			break
 		}
 
 		if err = json.Unmarshal(b, &msg); err != nil {
-			servConf.log.Println(err)
+			servConf.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
 			continue
 		}
 
@@ -100,7 +103,7 @@ func apiV1Ws(servConf *ServConfig, w http.ResponseWriter, r *http.Request) {
 			d.UseNumber()
 
 			if err = d.Decode(&initReq); err != nil {
-				servConf.log.Println(err)
+				servConf.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
 				break
 			}
 
@@ -141,7 +144,11 @@ func apiV1Ws(servConf *ServConfig, w http.ResponseWriter, r *http.Request) {
 			run = false
 
 		default:
-			servConf.log.Println("subscription: unknown type: ", msg.Type)
+			fields := []zapcore.Field{
+				zap.String("msg_type", msg.Type),
+				zap.Error(errors.New("unknown message type")),
+			}
+			servConf.zlog.Error("Subscription Error", fields...)
 		}
 
 		if err != nil {
@@ -151,7 +158,7 @@ func apiV1Ws(servConf *ServConfig, w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		servConf.log.Printf("ERR %s", err)
+		servConf.zlog.Error("Subscription Error", []zapcore.Field{zap.Error(err)}...)
 	}
 
 	m.Unsubscribe()
@@ -195,7 +202,7 @@ func waitForData(servConf *ServConfig, done chan bool, conn *ws.Conn, m *core.Me
 	}
 
 	if err != nil && isDev() {
-		servConf.log.Printf("ERR %s", err)
+		servConf.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
 	}
 }
 

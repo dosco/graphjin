@@ -69,6 +69,9 @@ func newViper(configPath, configFile string) *viper.Viper {
 	vi.SetDefault("auth_fail_block", false)
 	vi.SetDefault("seed_file", "seed.js")
 
+	vi.SetDefault("log_level", "info")
+	vi.SetDefault("log_format", "json")
+
 	vi.SetDefault("default_block", true)
 
 	vi.SetDefault("database.type", "postgres")

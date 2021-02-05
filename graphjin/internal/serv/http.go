@@ -19,8 +19,7 @@ import (
 )
 
 const (
-	maxReadBytes       = 100000 // 100Kb
-	introspectionQuery = "IntrospectionQuery"
+	maxReadBytes = 100000 // 100Kb
 )
 
 var (
@@ -40,7 +39,7 @@ type errorResp struct {
 func apiV1Handler(servConf *ServConfig) http.Handler {
 	h, err := auth.WithAuth(http.HandlerFunc(apiV1(servConf)), &servConf.conf.Auth)
 	if err != nil {
-		servConf.log.Fatalf("ERR %s", err)
+		servConf.log.Fatalf("Error initializing auth: %s", err)
 	}
 
 	if len(servConf.conf.AllowedOrigins) != 0 {
@@ -96,16 +95,7 @@ func apiV1(servConf *ServConfig) func(http.ResponseWriter, *http.Request) {
 			}
 		}
 
-		doLog := true
 		res, err := gj.GraphQLEx(ct, req.Query, req.Vars, &rc)
-
-		if !servConf.conf.Production && res.QueryName() == introspectionQuery {
-			doLog = false
-		}
-
-		if doLog && servConf.logLevel >= LogLevelDebug {
-			servConf.log.Printf("DBG query %s: %s", res.QueryName(), res.SQL())
-		}
 
 		if err == nil {
 			if servConf.conf.CacheControl != "" && res.Operation() == core.OpQuery {
@@ -136,29 +126,29 @@ func apiV1(servConf *ServConfig) func(http.ResponseWriter, *http.Request) {
 			ochttp.SetRoute(ct, apiRoute)
 		}
 
-		if doLog && servConf.logLevel >= LogLevelInfo {
+		if servConf.logLevel >= LogLevelInfo {
 			reqLog(servConf, res, err)
 		}
 	}
 }
 
 func reqLog(servConf *ServConfig, res *core.Result, err error) {
-	var msg string
-
 	fields := []zapcore.Field{
 		zap.String("op", res.OperationName()),
 		zap.String("name", res.QueryName()),
 		zap.String("role", res.Role()),
 	}
 
-	if err != nil {
-		msg = "error"
-		fields = append(fields, zap.Error(err))
-	} else {
-		msg = "success"
+	if servConf.logLevel >= LogLevelDebug {
+		fields = append(fields, zap.String("sql", res.SQL()))
 	}
 
-	servConf.zlog.Info(msg, fields...)
+	if err != nil {
+		fields = append(fields, zap.Error(err))
+		servConf.zlog.Error("Query Failed", fields...)
+	} else {
+		servConf.zlog.Info("Query", fields...)
+	}
 }
 
 //nolint: errcheck

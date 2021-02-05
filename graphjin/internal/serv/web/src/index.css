@@ -6,7 +6,7 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #09141b;
+  background-color: #08151d;
 }
 
 code {
@@ -15,5 +15,5 @@ code {
 }
 
 .playground > div:nth-child(2) {
-  height: calc(100vh - 131px);
+  height: calc(100vh - 105px);
 }
