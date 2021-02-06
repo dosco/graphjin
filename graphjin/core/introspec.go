@@ -33,13 +33,13 @@ func (gj *GraphJin) initGraphQLEgine() error {
 		return err
 	}
 
-	gqltype := func(col sdata.DBColumn) schema.Type {
+	gqltype := func(col sdata.DBColumn, reflect bool) schema.Type {
 		typeName := typeMap[strings.ToLower(col.Type)]
 		if typeName == "" {
 			typeName = "String"
 		}
 		var t schema.Type = &schema.TypeName{Name: typeName}
-		if col.NotNull {
+		if col.NotNull && reflect {
 			t = &schema.NonNull{OfType: t}
 		}
 		return t
@@ -190,7 +190,7 @@ func (gj *GraphJin) initGraphQLEgine() error {
 				continue
 			}
 
-			colType := gqltype(col)
+			colType := gqltype(col, true)
 			nullableColType := ""
 			if x, ok := colType.(*schema.NonNull); ok {
 				nullableColType = x.OfType.(*schema.TypeName).Name
@@ -323,14 +323,10 @@ func (gj *GraphJin) initGraphQLEgine() error {
 		}
 
 		if ti.PrimaryCol.Name != "" {
-			t := gqltype(ti.PrimaryCol)
-			if _, ok := t.(*schema.NonNull); !ok {
-				t = &schema.NonNull{OfType: t}
-			}
 			args = append(args, &schema.InputValue{
 				Desc: schema.Description{Text: "Finds the record by the primary key"},
 				Name: "id",
-				Type: t,
+				Type: gqltype(ti.PrimaryCol, false),
 			})
 		}
 
@@ -338,7 +334,7 @@ func (gj *GraphJin) initGraphQLEgine() error {
 			args = append(args, &schema.InputValue{
 				Desc: schema.Description{Text: "Performs a full text search"},
 				Name: "search",
-				Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
+				Type: &schema.TypeName{Name: "String"},
 			})
 		}
 
