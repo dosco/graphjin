@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/dosco/graphjin/core/internal/graph"
 	"github.com/dosco/graphjin/core/internal/sdata"
@@ -119,24 +118,11 @@ type Exp struct {
 	ListVal   []string
 	Children  []*Exp
 	childrenA [5]*Exp
-	internal  bool
-	doFree    bool
+	Path      []string
 }
 
 type Arg struct {
 	Val string
-}
-
-var zeroExp = Exp{doFree: true}
-
-func (ex *Exp) Reset() {
-	*ex = zeroExp
-}
-
-func (ex *Exp) Free() {
-	if !ex.doFree {
-		expPool.Put(ex)
-	}
 }
 
 type OrderBy struct {
@@ -240,18 +226,7 @@ type Compiler struct {
 	tr map[string]trval
 }
 
-var expPool = sync.Pool{
-	New: func() interface{} { return &Exp{doFree: true} },
-}
-
 func NewCompiler(s *sdata.DBSchema, c Config) (*Compiler, error) {
-	seedExp := [100]Exp{}
-
-	for i := range seedExp {
-		seedExp[i].doFree = true
-		expPool.Put(&seedExp[i])
-	}
-
 	c.defTrv.query.block = c.DefaultBlock
 	c.defTrv.insert.block = c.DefaultBlock
 	c.defTrv.update.block = c.DefaultBlock
@@ -259,14 +234,6 @@ func NewCompiler(s *sdata.DBSchema, c Config) (*Compiler, error) {
 	c.defTrv.delete.block = c.DefaultBlock
 
 	return &Compiler{c: c, s: s, tr: make(map[string]trval)}, nil
-}
-
-func NewFilter() *Exp {
-	ex := expPool.Get().(*Exp)
-	ex.Reset()
-	ex.internal = true
-
-	return ex
 }
 
 type Variables map[string]json.RawMessage
@@ -401,7 +368,7 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 		}
 
 		// Order is important AddFilters must come after compileArgs
-		if un := addFilters(qc, sel, tr); un && role == "anon" {
+		if un := addFilters(qc, &sel.Where, tr); un && role == "anon" {
 			sel.SkipRender = SkipTypeUserNeeded
 		}
 
@@ -546,21 +513,21 @@ func (co *Compiler) addSeekPredicate(sel *Select) {
 	obLen := len(sel.OrderBy)
 
 	if obLen != 0 {
-		isnull := NewFilter()
+		isnull := newExp()
 		isnull.Op = OpIsNull
 		isnull.Type = ValRef
 		isnull.Table = "__cur"
 		isnull.Col = sel.OrderBy[0].Col
 		isnull.Val = "true"
 
-		or = NewFilter()
+		or = newExp()
 		or.Op = OpOr
 		or.Children = append(or.Children, isnull)
 	}
 
 	for i := 0; i < obLen; i++ {
 		if i != 0 {
-			and = NewFilter()
+			and = newExp()
 			and.Op = OpAnd
 		}
 
@@ -569,7 +536,7 @@ func (co *Compiler) addSeekPredicate(sel *Select) {
 				break
 			}
 
-			f := NewFilter()
+			f := newExp()
 			f.Type = ValRef
 			f.Table = "__cur"
 			f.Col = ob.Col
@@ -596,17 +563,17 @@ func (co *Compiler) addSeekPredicate(sel *Select) {
 		}
 	}
 
-	setFilter(sel, or)
+	setFilter(&sel.Where, or)
 }
 
-func addFilters(qc *QCode, sel *Select, tr trval) bool {
-	if fil, userNeeded := tr.filter(qc.SType); fil != nil {
+func addFilters(qc *QCode, where *Filter, trv trval) bool {
+	if fil, userNeeded := trv.filter(qc.SType); fil != nil {
 		switch fil.Op {
 		case OpNop:
 		case OpFalse:
-			sel.Where.Exp = fil
+			where.Exp = fil
 		default:
-			setFilter(sel, fil)
+			setFilter(where, fil)
 		}
 		return userNeeded
 	}
@@ -756,14 +723,11 @@ func (co *Compiler) compileDirectiveSkip(sel *Select, d *graph.Directive) error 
 		return argErr("if", "variable")
 	}
 
-	ex := expPool.Get().(*Exp)
-	ex.Reset()
-
-	ex.Op = OpNotEqualsTrue
+	ex := newExpOp(OpNotEqualsTrue)
 	ex.Type = ValVar
 	ex.Val = arg.Val.Val
 
-	setFilter(sel, ex)
+	setFilter(&sel.Where, ex)
 	return nil
 }
 
@@ -777,14 +741,11 @@ func (co *Compiler) compileDirectiveInclude(sel *Select, d *graph.Directive) err
 		return argErr("if", "variable")
 	}
 
-	ex := expPool.Get().(*Exp)
-	ex.Reset()
-
-	ex.Op = OpEqualsTrue
+	ex := newExpOp(OpEqualsTrue)
 	ex.Type = ValVar
 	ex.Val = arg.Val.Val
 
-	setFilter(sel, ex)
+	setFilter(&sel.Where, ex)
 	return nil
 }
 
@@ -831,10 +792,7 @@ func (co *Compiler) compileArgID(sel *Select, arg *graph.Arg) error {
 		return argErr("id", "variable")
 	}
 
-	ex := expPool.Get().(*Exp)
-	ex.Reset()
-
-	ex.Op = OpEquals
+	ex := newExpOp(OpEquals)
 	ex.Type = ValVar
 	ex.Val = arg.Val.Val
 	ex.Col = sel.Ti.PrimaryCol
@@ -857,16 +815,12 @@ func (co *Compiler) compileArgSearch(sel *Select, arg *graph.Arg) error {
 		return argErr("search", "variable")
 	}
 
-	ex := expPool.Get().(*Exp)
-	ex.Reset()
-
-	ex.Op = OpTsQuery
+	ex := newExpOp(OpTsQuery)
 	ex.Type = ValVar
 	ex.Val = arg.Val.Val
 
 	sel.addArg(arg)
-	setFilter(sel, ex)
-
+	setFilter(&sel.Where, ex)
 	return nil
 }
 
@@ -882,7 +836,7 @@ func (co *Compiler) compileArgWhere(ti sdata.TInfo, sel *Select, arg *graph.Arg,
 	if nu && role == "anon" {
 		sel.SkipRender = SkipTypeUserNeeded
 	}
-	setFilter(sel, ex)
+	setFilter(&sel.Where, ex)
 	return nil
 }
 
@@ -1070,24 +1024,20 @@ func (co *Compiler) compileArgAfterBefore(sel *Select, arg *graph.Arg, pt Paging
 	return nil
 }
 
-func setFilter(sel *Select, fil *Exp) {
-	if sel.Where.Exp != nil {
-		ow := sel.Where.Exp
+func setFilter(where *Filter, fil *Exp) {
+	if where.Exp != nil {
+		// save exiting exp pointer (could be a common one from filter config)
+		ow := where.Exp
 
-		if sel.Where.Op != OpAnd || !sel.Where.doFree {
-			sel.Where.Exp = expPool.Get().(*Exp)
-			sel.Where.Reset()
-			sel.Where.Op = OpAnd
-			sel.Where.Children = sel.Where.childrenA[:2]
-			sel.Where.Children[0] = fil
-			sel.Where.Children[1] = ow
-
-		} else {
-			sel.Where.Children = append(sel.Where.Children, fil)
-		}
+		// add a new `and` exp and hook the above saved exp pointer a child
+		// we don't want to modify an exp object thats common (from filter config)
+		where.Exp = newExpOp(OpAnd)
+		where.Children = where.childrenA[:2]
+		where.Children[0] = fil
+		where.Children[1] = ow
 
 	} else {
-		sel.Where.Exp = fil
+		where.Exp = fil
 	}
 }
 
@@ -1109,7 +1059,7 @@ func setOrderByColName(ti sdata.TInfo, ob *OrderBy, node *graph.Node) error {
 	return nil
 }
 
-func compileFilter(s *sdata.DBSchema, ti sdata.TInfo, filter []string) (*Exp, bool, error) {
+func compileFilter(s *sdata.DBSchema, ti sdata.TInfo, filter []string, isJSON bool) (*Exp, bool, error) {
 	var fl *Exp
 	var needsUser bool
 
@@ -1117,23 +1067,24 @@ func compileFilter(s *sdata.DBSchema, ti sdata.TInfo, filter []string) (*Exp, bo
 	st := util.NewStackInf()
 
 	if len(filter) == 0 {
-		return &Exp{Op: OpNop, doFree: false}, false, nil
+		return newExp(), false, nil
 	}
 
 	for _, v := range filter {
 		if v == "false" {
-			return &Exp{Op: OpFalse, doFree: false}, false, nil
+			return newExpOp(OpFalse), false, nil
 		}
 
-		node, err := graph.ParseArgValue(v)
+		node, err := graph.ParseArgValue(v, isJSON)
 		if err != nil {
 			return nil, false, err
 		}
 
-		f, nu, err := co.compileArgNode(ti, st, node, false)
+		f, nu, err := co.compileArgNode(ti, st, node, isJSON)
 		if err != nil {
 			return nil, false, err
 		}
+
 		if nu {
 			needsUser = true
 		}
@@ -1145,9 +1096,9 @@ func compileFilter(s *sdata.DBSchema, ti sdata.TInfo, filter []string) (*Exp, bo
 		if fl == nil {
 			fl = f
 		} else {
-			fl = &Exp{Op: OpAnd, Children: []*Exp{fl, f}, doFree: false}
+			fl = newExpOp(OpAnd)
+			fl.Children = append(fl.Children, f)
 		}
-
 	}
 	return fl, needsUser, nil
 }
@@ -1241,84 +1192,9 @@ func dbArgErr(name, ty, db string) error {
 	return fmt.Errorf("%s: value for argument '%s' must be a %s", db, name, ty)
 }
 
-// func freeNodes(op *graph.Operation) {
-// 	var st *util.StackInf
-// 	fm := make(map[*graph.Node]struct{})
-
-// 	for i := range op.Args {
-// 		arg := op.Args[i]
-
-// 		for i := range arg.Val.Children {
-// 			if st == nil {
-// 				st = util.NewStackInf()
-// 			}
-// 			c := arg.Val.Children[i]
-// 			if _, ok := fm[c]; !ok {
-// 				st.Push(c)
-// 			}
-// 		}
-
-// 		if _, ok := fm[arg.Val]; !ok {
-// 			arg.Val.Free()
-// 			fm[arg.Val] = struct{}{}
-// 		}
-// 	}
-
-// 	for i := range op.Fields {
-// 		f := op.Fields[i]
-
-// 		for j := range f.Args {
-// 			arg := f.Args[j]
-
-// 			for k := range arg.Val.Children {
-// 				if st == nil {
-// 					st = util.NewStackInf()
-// 				}
-// 				c := arg.Val.Children[k]
-// 				if _, ok := fm[c]; !ok {
-// 					st.Push(c)
-// 				}
-// 			}
-
-// 			if _, ok := fm[arg.Val]; !ok {
-// 				arg.Val.Free()
-// 				fm[arg.Val] = struct{}{}
-// 			}
-// 		}
-// 	}
-
-// 	if st == nil {
-// 		return
-// 	}
-
-// 	for {
-// 		if st.Len() == 0 {
-// 			break
-// 		}
-// 		intf := st.Pop()
-// 		node, ok := intf.(*graph.Node)
-// 		if !ok || node == nil {
-// 			continue
-// 		}
-
-// 		for i := range node.Children {
-// 			st.Push(node.Children[i])
-// 		}
-
-// 		if _, ok := fm[node]; !ok {
-// 			node.Free()
-// 			fm[node] = struct{}{}
-// 		}
-// 	}
-// }
-
 func (sel *Select) addArg(arg *graph.Arg) {
 	if sel.ArgMap == nil {
 		sel.ArgMap = make(map[string]Arg)
 	}
 	sel.ArgMap[arg.Name] = Arg{Val: arg.Val.Val}
-}
-
-func (ex *Exp) IsFromQuery() bool {
-	return !ex.internal
 }

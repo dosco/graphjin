@@ -22,6 +22,8 @@ func (c *compilerContext) renderUpdate() {
 }
 
 func (c *compilerContext) renderUpdateStmt(m qcode.Mutate) {
+	sel := c.qc.Selects[0]
+
 	c.w.WriteString(`, `)
 	c.renderCteName(m)
 	c.w.WriteString(` AS (`)
@@ -50,35 +52,44 @@ func (c *compilerContext) renderUpdateStmt(m qcode.Mutate) {
 
 	c.w.WriteString(`(NULL::"`)
 	c.w.WriteString(m.Ti.Name)
-
-	if len(m.Path) == 0 {
-		c.w.WriteString(`", i.j) t)`)
-	} else {
-		c.w.WriteString(`", i.j->`)
-		joinPath(c.w, m.Path)
-		c.w.WriteString(`) t) `)
-	}
+	joinPath(c.w, `", i.j`, m.Path)
+	c.w.WriteString(`) t)`)
+	// inner select ended
 
 	if m.ParentID == -1 {
 		c.w.WriteString(` WHERE `)
-		c.renderExp(c.qc.Schema, m.Ti, c.qc.Selects[0].Where.Exp, false)
+		c.renderExp(m.Ti, sel.Where.Exp, false)
 	} else {
 		// Render sql to set id values if child-to-parent
 		// relationship is one-to-one
 		rel := m.Rel
 
-		c.w.WriteString(`FROM `)
-		c.quoted(rel.Right.Col.Table)
+		c.w.WriteString(` FROM _sg_input i`)
+		// c.quoted(rel.Right.Col.Table)
+		// c.w.WriteString(` _x_`)
+		// c.w.WriteString(rel.Right.Col.Table)
+		c.renderNestedRelTables(m, true)
+
+		if m.Array {
+			c.w.WriteString(`, json_populate_recordset`)
+		} else {
+			c.w.WriteString(`, json_populate_record`)
+		}
+
+		c.w.WriteString(`(NULL::"`)
+		c.w.WriteString(m.Ti.Name)
+		joinPath(c.w, `", i.j`, m.Path)
+		c.w.WriteString(`) t`)
 
 		c.w.WriteString(` WHERE ((`)
 		colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
-		c.w.WriteString(`) = (`)
+		c.w.WriteString(`) = (_x_`)
 		colWithTable(c.w, rel.Right.Col.Table, rel.Right.Col.Name)
 		c.w.WriteString(`)`)
 
 		if m.Rel.Type == sdata.RelOneToOne {
 			c.w.WriteString(` AND `)
-			c.renderWhereFromJSON(m)
+			c.renderExpPath(m.Ti, m.Where.Exp, false, append(m.Path, "where"))
 		}
 		c.w.WriteString(`)`)
 	}

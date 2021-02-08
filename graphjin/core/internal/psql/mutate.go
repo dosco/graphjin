@@ -4,7 +4,6 @@ package psql
 
 import (
 	"bytes"
-	"encoding/json"
 	"strings"
 
 	"github.com/dosco/graphjin/core/internal/qcode"
@@ -197,7 +196,7 @@ func (c *compilerContext) renderUpsert() {
 	}
 
 	c.w.WriteString(` WHERE `)
-	c.renderExp(c.qc.Schema, m.Ti, c.qc.Selects[0].Where.Exp, false)
+	c.renderExp(m.Ti, sel.Where.Exp, false)
 	c.w.WriteString(` RETURNING *) `)
 }
 
@@ -210,7 +209,7 @@ func (c *compilerContext) renderDelete() {
 	c.w.WriteString(` AS (DELETE FROM `)
 	c.quoted(sel.Table)
 	c.w.WriteString(` WHERE `)
-	c.renderExp(c.qc.Schema, sel.Ti, sel.Where.Exp, false)
+	c.renderExp(sel.Ti, sel.Where.Exp, false)
 
 	c.w.WriteString(` RETURNING `)
 	c.quoted(sel.Table)
@@ -239,7 +238,7 @@ func (c *compilerContext) renderOneToManyConnectStmt(m qcode.Mutate) {
 	c.quoted(m.Ti.Name)
 
 	c.w.WriteString(` WHERE `)
-	c.renderWhereFromJSON(m)
+	c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
 	c.w.WriteString(` LIMIT 1)`)
 }
 
@@ -258,7 +257,7 @@ func (c *compilerContext) renderOneToOneConnectStmt(m qcode.Mutate) {
 	c.renderNestedRelTables(m, true)
 
 	c.w.WriteString(` WHERE `)
-	c.renderWhereFromJSON(m)
+	c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
 
 	c.w.WriteString(` RETURNING `)
 	c.quoted(m.Ti.Name)
@@ -276,10 +275,12 @@ func (c *compilerContext) renderOneToManyDisconnectStmt(m qcode.Mutate) {
 	} else {
 		c.w.WriteString(`SELECT `)
 		c.quoted(rel.Left.Col.Name)
-		c.w.WriteString(` FROM _sg_input i,`)
+
+		c.w.WriteString(` FROM _sg_input i, `)
 		c.quoted(m.Ti.Name)
+
 		c.w.WriteString(` WHERE `)
-		c.renderWhereFromJSON(m)
+		c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
 	}
 
 	c.w.WriteString(` LIMIT 1))`)
@@ -320,7 +321,7 @@ func (c *compilerContext) renderOneToOneDisconnectStmt(m qcode.Mutate) {
 
 	if m.Rel.Type == sdata.RelOneToOne {
 		c.w.WriteString(` AND `)
-		c.renderWhereFromJSON(m)
+		c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
 	}
 	c.w.WriteString(`)`)
 
@@ -358,61 +359,6 @@ func (c *compilerContext) renderOneToManyModifiers(m qcode.Mutate) {
 	}
 }
 
-func (c *compilerContext) renderWhereFromJSON(m qcode.Mutate) {
-	var kv map[string]json.RawMessage
-
-	//TODO: Move this json parsing into qcode
-	if err := json.Unmarshal(m.Val, &kv); err != nil {
-		return
-	}
-
-	i := 0
-	for k, v := range kv {
-		col, err := m.Ti.GetColumn(k)
-		if err != nil {
-			continue
-		}
-		if i != 0 {
-			c.w.WriteString(` AND `)
-		}
-
-		if v[0] == '[' {
-			colWithTable(c.w, col.Table, col.Name)
-
-			if col.Array {
-				c.w.WriteString(` && `)
-			} else {
-				c.w.WriteString(` = `)
-			}
-
-			c.w.WriteString(`ANY((select a::`)
-			c.w.WriteString(col.Type)
-
-			c.w.WriteString(` AS list from json_array_elements_text(`)
-			renderPathJSON(c.w, m, k)
-			c.w.WriteString(`::json) AS a))`)
-
-		} else if col.Array {
-			c.w.WriteString(`(`)
-			renderPathJSON(c.w, m, k)
-			c.w.WriteString(`)::`)
-			c.w.WriteString(col.Type)
-
-			c.w.WriteString(` = ANY(`)
-			colWithTable(c.w, m.Ti.Name, k)
-			c.w.WriteString(`)`)
-
-		} else {
-			colWithTable(c.w, m.Ti.Name, k)
-			c.w.WriteString(` = (`)
-			renderPathJSON(c.w, m, k)
-			c.w.WriteString(`)::`)
-			c.w.WriteString(col.Type)
-		}
-		i++
-	}
-}
-
 func (c *compilerContext) renderCteName(m qcode.Mutate) {
 	if m.Multi {
 		c.renderCteNameWithID(m)
@@ -427,19 +373,10 @@ func (c *compilerContext) renderCteNameWithID(m qcode.Mutate) {
 	int32String(c.w, m.ID)
 }
 
-func renderPathJSON(w *bytes.Buffer, m qcode.Mutate, k string) {
-	w.WriteString(`(i.j->`)
-	joinPath(w, m.Path)
-	w.WriteString(`->>'`)
-	w.WriteString(k)
-	w.WriteString(`')`)
-}
-
-func joinPath(w *bytes.Buffer, path []string) {
+func joinPath(w *bytes.Buffer, prefix string, path []string) {
+	w.WriteString(prefix)
 	for i := range path {
-		if i != 0 {
-			w.WriteString(`->`)
-		}
+		w.WriteString(`->`)
 		w.WriteString(`'`)
 		w.WriteString(path[i])
 		w.WriteString(`'`)

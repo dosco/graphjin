@@ -7,7 +7,7 @@ import (
 )
 
 func simpleQuery(t *testing.T) {
-	gql := `subscription {
+	gql := `query {
 		product {
 			id
 			user {

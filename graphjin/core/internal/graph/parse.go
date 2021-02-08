@@ -107,6 +107,7 @@ type Parser struct {
 	input     []byte // the string being scanned
 	pos       int
 	items     []item
+	json      bool
 	err       error
 }
 
@@ -116,7 +117,7 @@ func Parse(gql []byte, fetchFrag func(name string) (string, error)) (Operation, 
 	var err error
 
 	if len(gql) == 0 {
-		return op, errors.New("blank query")
+		return op, errors.New("empty query")
 	}
 
 	if l, err = lex(gql); err != nil {
@@ -277,7 +278,11 @@ func (p *Parser) parseOpTypeAndArgs(op *Operation) error {
 	return nil
 }
 
-func ParseArgValue(argVal string) (*Node, error) {
+func ParseArgValue(argVal string, json bool) (*Node, error) {
+	if argVal == "" {
+		return nil, errors.New("empty value")
+	}
+
 	l, err := lex([]byte(argVal))
 	if err != nil {
 		return nil, err
@@ -287,6 +292,7 @@ func ParseArgValue(argVal string) (*Node, error) {
 		input: l.input,
 		pos:   -1,
 		items: l.items,
+		json:  json,
 	}
 	return p.parseValue()
 }
@@ -545,6 +551,13 @@ func (p *Parser) parseOpParams(args []Arg) ([]Arg, error) {
 func (p *Parser) parseArgs(args []Arg) ([]Arg, error) {
 	var err error
 
+	var argNameTypes []MType
+	if p.json {
+		argNameTypes = []MType{itemName, itemStringVal}
+	} else {
+		argNameTypes = []MType{itemName}
+	}
+
 	for {
 		if len(args) >= maxArgs {
 			return nil, fmt.Errorf("too many args (max %d)", maxArgs)
@@ -555,7 +568,7 @@ func (p *Parser) parseArgs(args []Arg) ([]Arg, error) {
 			break
 		}
 
-		if !p.peek(itemName) {
+		if !p.peek(argNameTypes...) {
 			return nil, fmt.Errorf("expecting an argument name got: %s", p.peekNext())
 		}
 		args = append(args, Arg{Name: p.val(p.next())})
@@ -634,13 +647,20 @@ func (p *Parser) parseObj() (*Node, error) {
 	parent := nodePool.Get().(*Node)
 	parent.Reset()
 
+	var argNameTypes []MType
+	if p.json {
+		argNameTypes = []MType{itemName, itemStringVal}
+	} else {
+		argNameTypes = []MType{itemName}
+	}
+
 	for {
 		if p.peek(itemEOF, itemObjClose) {
 			p.ignore()
 			break
 		}
 
-		if !p.peek(itemName) {
+		if !p.peek(argNameTypes...) {
 			return nil, errors.New("expecting an argument name")
 		}
 		nodeName := p.val(p.next())

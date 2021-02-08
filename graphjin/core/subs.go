@@ -391,7 +391,7 @@ func renderSubWrap(st stmt, ct string) string {
 			}
 			w.WriteString(`CAST(x->>`)
 			w.WriteString(strconv.FormatInt(int64(i), 10))
-			w.WriteString(` as `)
+			w.WriteString(` AS `)
 			w.WriteString(p.Type)
 			w.WriteString(`) as `)
 			w.WriteString(p.Name)

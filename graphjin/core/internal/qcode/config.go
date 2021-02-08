@@ -110,7 +110,7 @@ func (co *Compiler) AddRole(role, schema, table string, trc TRConfig) error {
 	trv := trval{role: role}
 
 	// query config
-	trv.query.fil, trv.query.filNU, err = compileFilter(co.s, ti, trc.Query.Filters)
+	trv.query.fil, trv.query.filNU, err = compileFilter(co.s, ti, trc.Query.Filters, false)
 	if err != nil {
 		return err
 	}
@@ -128,7 +128,7 @@ func (co *Compiler) AddRole(role, schema, table string, trc TRConfig) error {
 	trv.insert.block = trc.Insert.Block
 
 	// update config
-	trv.update.fil, trv.update.filNU, err = compileFilter(co.s, ti, trc.Update.Filters)
+	trv.update.fil, trv.update.filNU, err = compileFilter(co.s, ti, trc.Update.Filters, false)
 	if err != nil {
 		return err
 	}
@@ -137,7 +137,7 @@ func (co *Compiler) AddRole(role, schema, table string, trc TRConfig) error {
 	trv.update.block = trc.Update.Block
 
 	// upsert config
-	trv.upsert.fil, trv.update.filNU, err = compileFilter(co.s, ti, trc.Upsert.Filters)
+	trv.upsert.fil, trv.update.filNU, err = compileFilter(co.s, ti, trc.Upsert.Filters, false)
 	if err != nil {
 		return err
 	}
@@ -146,7 +146,7 @@ func (co *Compiler) AddRole(role, schema, table string, trc TRConfig) error {
 	trv.upsert.block = trc.Upsert.Block
 
 	// delete config
-	trv.delete.fil, trv.delete.filNU, err = compileFilter(co.s, ti, trc.Delete.Filters)
+	trv.delete.fil, trv.delete.filNU, err = compileFilter(co.s, ti, trc.Delete.Filters, false)
 	if err != nil {
 		return err
 	}

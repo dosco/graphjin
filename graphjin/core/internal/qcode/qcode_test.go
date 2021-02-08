@@ -250,7 +250,7 @@ var gql = []byte(`
 		distinct: [ price ]
 
 		# only items with an id >= 30 and < 30 are returned
-		where: { id: { AND: { greater_or_equals: 20, lt: 28 } } }) {
+		where: { id: { greater_or_equals: 20, lt: 28 } }) {
 		id
 		name
 		price
@@ -274,8 +274,7 @@ query {
 }
 
 fragment userFields2 on user {
-	first_name
-	last_name
+	full_name
 	__typename
 }`)
 
