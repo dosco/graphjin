@@ -24,10 +24,10 @@ const (
 	MTKeyword
 )
 
-const (
-	CTConnect uint8 = 1 << iota
-	CTDisconnect
-)
+// const (
+// 	CTConnect uint8 = 1 << iota
+// 	CTDisconnect
+// )
 
 var insertTypes = map[string]MType{
 	"connect": MTConnect,
@@ -46,19 +46,20 @@ type Mutate struct {
 	ParentID  int32
 	DependsOn map[int32]struct{}
 	Type      MType
-	CType     uint8
-	Key       string
-	Path      []string
-	Val       json.RawMessage
-	Data      map[string]json.RawMessage
-	Array     bool
-	Cols      []MColumn
-	RCols     []MRColumn
-	Ti        sdata.TInfo
-	Rel       sdata.DBRel
-	Multi     bool
-	children  []int32
-	render    bool
+	// CType     uint8
+	Key      string
+	Path     []string
+	Val      json.RawMessage
+	Data     map[string]json.RawMessage
+	Array    bool
+	Cols     []MColumn
+	RCols    []MRColumn
+	Ti       sdata.TInfo
+	Rel      sdata.DBRel
+	Where    Filter
+	Multi    bool
+	children []int32
+	render   bool
 }
 
 type MColumn struct {
@@ -73,12 +74,13 @@ type MRColumn struct {
 }
 
 type MTable struct {
-	Ti    sdata.DBTable
-	CType uint8
+	Ti sdata.DBTable
+	// CType uint8
 }
 
 type mState struct {
 	st *util.StackInf
+	qc *QCode
 	mt MType
 	id int32
 }
@@ -131,7 +133,7 @@ func (co *Compiler) compileMutation(qc *QCode, op *graph.Operation, role string)
 
 	st := util.NewStackInf()
 	st.Push(m)
-	ms := mState{st: st, mt: m.Type, id: (m.ID + 1)}
+	ms := mState{st: st, qc: qc, mt: m.Type, id: (m.ID + 1)}
 
 	for {
 		if st.Len() == 0 {
@@ -207,6 +209,7 @@ func (co *Compiler) compileMutation(qc *QCode, op *graph.Operation, role string)
 func (co *Compiler) newMutate(ms *mState, m Mutate, role string) error {
 	var m1 Mutate
 	items := make([]Mutate, 0, len(m.Data))
+	trv := co.getRole(role, m.Key)
 
 	for k, v := range m.Data {
 		if v[0] != '{' && v[0] != '[' {
@@ -215,7 +218,6 @@ func (co *Compiler) newMutate(ms *mState, m Mutate, role string) error {
 
 		// Get child-to-parent relationship
 		// rel, err := co.s.GetRel(k, m.Key, "")
-
 		paths, err := co.s.FindPath(m.Ti.Schema, k, m.Ti.Schema, m.Key)
 		if err != nil {
 			var ty MType
@@ -242,13 +244,15 @@ func (co *Compiler) newMutate(ms *mState, m Mutate, role string) error {
 				}
 				m.Type = MTNone
 
+			} else if ok && ty == MTKeyword {
+				continue
 			} else if _, err := m.Ti.GetColumn(k); err != nil {
 				return err
 			} else {
+				// valid column so return
 				continue
 			}
 
-			// Get parent-to-child relationship
 		} else {
 			rel := sdata.PathToRel(paths[0])
 			ti := rel.Left.Ti
@@ -265,7 +269,7 @@ func (co *Compiler) newMutate(ms *mState, m Mutate, role string) error {
 			}
 		}
 
-		if err = processDirectives(ms, &m1); err != nil {
+		if err = co.processDirectives(ms, &m1, trv); err != nil {
 			return err
 		}
 
@@ -274,7 +278,7 @@ func (co *Compiler) newMutate(ms *mState, m Mutate, role string) error {
 		ms.id++
 	}
 
-	err := co.addTablesAndColumns(&m, items, co.getRole(role, m.Key))
+	err := co.addTablesAndColumns(&m, items, trv)
 	if err != nil {
 		return err
 	}
@@ -321,7 +325,7 @@ func (co *Compiler) newMutate(ms *mState, m Mutate, role string) error {
 	return nil
 }
 
-func processDirectives(ms *mState, m *Mutate) error {
+func (co *Compiler) processDirectives(ms *mState, m *Mutate, trv trval) error {
 	var err error
 
 	if m.Val[0] != '{' {
@@ -333,11 +337,34 @@ func processDirectives(ms *mState, m *Mutate) error {
 		return err
 	}
 
-	if v1, ok := m.Data["connect"]; ok && (v1[0] == '{' || v1[0] == '[') {
-		m.CType |= CTConnect
+	var filterVal string
+
+	if m.Type == MTConnect || m.Type == MTDisconnect {
+		filterVal = string(m.Val)
 	}
-	if v1, ok := m.Data["disconnect"]; ok && (v1[0] == '{' || v1[0] == '[') {
-		m.CType |= CTDisconnect
+
+	if m.Type == MTUpdate && m.Rel.Type == sdata.RelOneToOne {
+		_, connect := m.Data["connect"]
+		_, disconnect := m.Data["disconnect"]
+
+		if v, ok := m.Data["where"]; ok {
+			filterVal = string(v)
+		} else if !connect && !disconnect {
+			return errors.New("missing argument: where")
+		}
+	}
+
+	if filterVal != "" {
+		m.Where.Exp, _, err = compileFilter(
+			co.s,
+			m.Ti,
+			[]string{filterVal},
+			true)
+
+		if err != nil {
+			return err
+		}
+		addFilters(ms.qc, &m.Where, trv)
 	}
 
 	if m.Rel.Type == sdata.RelRecursive {
@@ -369,7 +396,7 @@ func processDirectives(ms *mState, m *Mutate) error {
 	return nil
 }
 
-func (co *Compiler) addTablesAndColumns(m *Mutate, items []Mutate, tr trval) error {
+func (co *Compiler) addTablesAndColumns(m *Mutate, items []Mutate, trv trval) error {
 	var err error
 	cm := make(map[string]struct{})
 
@@ -405,13 +432,17 @@ func (co *Compiler) addTablesAndColumns(m *Mutate, items []Mutate, tr trval) err
 		}
 
 	case MTUpdate:
-		if m.Rel.Type == sdata.RelOneToOne {
+		if m.Rel.Type == sdata.RelOneToMany {
 			m.DependsOn[m.ParentID] = struct{}{}
 			m.RCols = append(m.RCols, MRColumn{
 				Col:  m.Rel.Left.Col,
 				VCol: m.Rel.Right.Col,
 			})
 			cm[m.Rel.Left.Col.Name] = struct{}{}
+		}
+
+		if m.Rel.Type == sdata.RelOneToOne {
+			m.DependsOn[m.ParentID] = struct{}{}
 		}
 
 	default:
@@ -429,17 +460,17 @@ func (co *Compiler) addTablesAndColumns(m *Mutate, items []Mutate, tr trval) err
 		}
 	}
 
-	if m.Cols, err = getColumnsFromJSON(m, tr, cm); err != nil {
+	if m.Cols, err = getColumnsFromJSON(m, trv, cm); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func getColumnsFromJSON(m *Mutate, tr trval, cm map[string]struct{}) ([]MColumn, error) {
+func getColumnsFromJSON(m *Mutate, trv trval, cm map[string]struct{}) ([]MColumn, error) {
 	var cols []MColumn
 
-	for k, v := range tr.getPresets(m.Type) {
+	for k, v := range trv.getPresets(m.Type) {
 		if _, ok := cm[k]; ok {
 			continue
 		}
