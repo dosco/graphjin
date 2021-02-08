@@ -14,19 +14,27 @@ func (co *Compiler) compileArgObj(ti sdata.TInfo, st *util.StackInf, arg *graph.
 		return nil, false, fmt.Errorf("expecting an object")
 	}
 
-	return co.compileArgNode(ti, st, arg.Val, true)
+	return co.compileArgNode(ti, st, arg.Val, false)
+}
+
+type aexpst struct {
+	co       *Compiler
+	st       *util.StackInf
+	ti       sdata.TInfo
+	savePath bool
 }
 
 type aexp struct {
 	exp  *Exp
 	node *graph.Node
+	path []string
 }
 
 func (co *Compiler) compileArgNode(
 	ti sdata.TInfo,
 	st *util.StackInf,
 	node *graph.Node,
-	usePool bool) (*Exp, bool, error) {
+	savePath bool) (*Exp, bool, error) {
 
 	var root *Exp
 	var needsUser bool
@@ -35,7 +43,8 @@ func (co *Compiler) compileArgNode(
 		return nil, false, errors.New("invalid argument value")
 	}
 
-	pushChild(st, nil, node)
+	ast := &aexpst{co: co, st: st, ti: ti, savePath: savePath}
+	ast.pushChildren(nil, node)
 
 	for {
 		if st.Len() == 0 {
@@ -51,11 +60,11 @@ func (co *Compiler) compileArgNode(
 
 		// Objects inside a list
 		if av.node.Name == "" {
-			pushChildren(st, av.exp, av.node)
+			ast.pushChildren(av.exp, av.node)
 			continue
 		}
 
-		ex, err := newExp(co.s, ti, st, av, usePool)
+		ex, err := ast.parseNode(av)
 		if err != nil {
 			return nil, needsUser, err
 		}
@@ -78,7 +87,21 @@ func (co *Compiler) compileArgNode(
 	return root, needsUser, nil
 }
 
-func newExp(s *sdata.DBSchema, ti sdata.TInfo, st *util.StackInf, av aexp, usePool bool) (*Exp, error) {
+func newExp() *Exp {
+	ex := &Exp{Op: OpNop}
+	ex.Children = ex.childrenA[:0]
+	return ex
+}
+
+func newExpOp(op ExpOp) *Exp {
+	ex := newExp()
+	ex.Op = op
+	return ex
+}
+
+func (ast *aexpst) parseNode(av aexp) (*Exp, error) {
+	var err error
+
 	node := av.node
 	name := node.Name
 
@@ -86,16 +109,10 @@ func newExp(s *sdata.DBSchema, ti sdata.TInfo, st *util.StackInf, av aexp, usePo
 		name = name[1:]
 	}
 
-	var ex *Exp
-
-	if usePool {
-		ex = expPool.Get().(*Exp)
-		ex.Reset()
-	} else {
-		ex = &Exp{doFree: false, internal: true}
+	ex := newExp()
+	if ast.savePath {
+		ex.Path = append(av.path, node.Name)
 	}
-
-	ex.Children = ex.childrenA[:0]
 
 	switch name {
 	case "and":
@@ -103,19 +120,19 @@ func newExp(s *sdata.DBSchema, ti sdata.TInfo, st *util.StackInf, av aexp, usePo
 			return nil, errors.New("missing expression after 'AND' operator")
 		}
 		ex.Op = OpAnd
-		pushChildren(st, ex, node)
+		ast.pushChildren(ex, node)
 	case "or":
 		if len(node.Children) == 0 {
 			return nil, errors.New("missing expression after 'OR' operator")
 		}
 		ex.Op = OpOr
-		pushChildren(st, ex, node)
+		ast.pushChildren(ex, node)
 	case "not":
 		if len(node.Children) == 0 {
 			return nil, errors.New("missing expression after 'NOT' operator")
 		}
 		ex.Op = OpNot
-		pushChild(st, ex, node)
+		ast.pushChildren(ex, node)
 	case "eq", "equals":
 		ex.Op = OpEquals
 		ex.Val = node.Val
@@ -195,35 +212,54 @@ func newExp(s *sdata.DBSchema, ti sdata.TInfo, st *util.StackInf, av aexp, usePo
 		ex.Op = OpDistinct
 		ex.Val = node.Val
 	default:
-		if len(node.Children) == 0 {
-			return nil, fmt.Errorf("[Where] invalid operation: %s", name)
+		if node.Type == graph.NodeObj {
+			if len(node.Children) == 0 {
+				return nil, fmt.Errorf("[Where] invalid operation: %s", name)
+			}
+			ast.pushChildren(av.exp, node)
+			return nil, nil // skip node
 		}
-		pushChildren(st, av.exp, node)
-		return nil, nil // skip node
+
+		// Support existing { column: <value> } format
+		switch node.Type {
+		case graph.NodeList:
+			ex.Op = OpIn
+			ex.Type = ValList
+			setListVal(ex, node)
+
+		default:
+			ex.Op = OpEquals
+			ex.Val = node.Val
+		}
 	}
 
 	if ex.Op != OpAnd && ex.Op != OpOr && ex.Op != OpNot {
-		switch node.Type {
-		case graph.NodeStr:
-			ex.Type = ValStr
-		case graph.NodeNum:
-			ex.Type = ValNum
-		case graph.NodeBool:
-			ex.Type = ValBool
-		case graph.NodeList:
-			ex.Type = ValList
-		case graph.NodeVar:
-			ex.Type = ValVar
-		default:
-			return nil, fmt.Errorf("[Where] invalid values for: %s", name)
+		if ex.Type, err = getExpType(node); err != nil {
+			return nil, err
 		}
-
-		if err := setWhereColName(s, ti, ex, node); err != nil {
+		if err := setExpColName(ast.co.s, ast.ti, ex, node); err != nil {
 			return nil, err
 		}
 	}
 
 	return ex, nil
+}
+
+func getExpType(node *graph.Node) (ValType, error) {
+	switch node.Type {
+	case graph.NodeStr:
+		return ValStr, nil
+	case graph.NodeNum:
+		return ValNum, nil
+	case graph.NodeBool:
+		return ValBool, nil
+	case graph.NodeList:
+		return ValList, nil
+	case graph.NodeVar:
+		return ValVar, nil
+	default:
+		return ValNone, fmt.Errorf("[Where] invalid values for: %s", node.Name)
+	}
 }
 
 func setListVal(ex *Exp, node *graph.Node) {
@@ -244,10 +280,9 @@ func setListVal(ex *Exp, node *graph.Node) {
 	for i := range node.Children {
 		ex.ListVal = append(ex.ListVal, node.Children[i].Val)
 	}
-
 }
 
-func setWhereColName(s *sdata.DBSchema, ti sdata.TInfo, ex *Exp, node *graph.Node) error {
+func setExpColName(s *sdata.DBSchema, ti sdata.TInfo, ex *Exp, node *graph.Node) error {
 	var list []string
 
 	for n := node.Parent; n != nil; n = n.Parent {
@@ -266,7 +301,11 @@ func setWhereColName(s *sdata.DBSchema, ti sdata.TInfo, ex *Exp, node *graph.Nod
 
 	switch len(list) {
 	case 0:
-		return fmt.Errorf("invalid where clause")
+		if col, err := ti.GetColumn(node.Name); err == nil {
+			ex.Col = col
+		} else {
+			return err
+		}
 
 	case 1:
 		if col, err := ti.GetColumn(list[0]); err == nil {
@@ -302,12 +341,18 @@ func setWhereColName(s *sdata.DBSchema, ti sdata.TInfo, ex *Exp, node *graph.Nod
 	return nil
 }
 
-func pushChildren(st *util.StackInf, exp *Exp, node *graph.Node) {
-	for i := range node.Children {
-		st.Push(aexp{exp: exp, node: node.Children[i]})
-	}
-}
+func (ast *aexpst) pushChildren(exp *Exp, node *graph.Node) {
+	var path []string
 
-func pushChild(st *util.StackInf, exp *Exp, node *graph.Node) {
-	st.Push(aexp{exp: exp, node: node.Children[0]})
+	if ast.savePath && node.Name != "" {
+		if exp != nil {
+			path = append(exp.Path, node.Name)
+		} else {
+			path = append(path, node.Name)
+		}
+	}
+
+	for i := range node.Children {
+		ast.st.Push(aexp{exp: exp, node: node.Children[i], path: path})
+	}
 }

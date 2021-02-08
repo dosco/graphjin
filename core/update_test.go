@@ -118,3 +118,40 @@ func Example_updateTableAndConnectToRelatedTables() {
 	}
 	// Output: {"user": {"products": [{"id": 99}], "full_name": "Updated user 100"}}
 }
+
+func Example_updateTableAndRelatedTable() {
+	gql := `mutation {
+		user(id: $id, update: $data) {
+			full_name
+			products {
+				id
+			}
+		}
+	}`
+
+	vars := json.RawMessage(`{
+		"id": 90,
+		"data": {
+			"full_name": "Updated user 90",
+			"products": {
+				"where": { "id": { "gt": 1 } },
+				"name": "Updated Product 90"
+			}
+		}
+	}`)
+
+	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
+	res, err := gj.GraphQL(ctx, gql, vars)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+	// Output: {"user": {"products": [{"id": 90}], "full_name": "Updated user 90"}}
+}

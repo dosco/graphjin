@@ -595,6 +595,9 @@ Or it's reverse, update a user first and then his product
     "email": "newemail@me.com",
     "full_name": "The Dude",
     "product": {
+      "where": {
+        "slug": { "eq": "yellow-fruit" }
+      },
       "name": "Banana",
       "price": 1.25
     }
