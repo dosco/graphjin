@@ -69,7 +69,8 @@ func (gj *GraphJin) initRemote(rc ResolverConfig) error {
 		FKeyCol:    col.Name,
 	}
 
-	nt := sdata.NewDBTable(ti.Schema, rc.Name, "remote", nil)
+	nt := sdata.NewDBTable(ti.Schema,
+		rc.Name, "remote", nil, gj.conf.DisableInflection)
 	nt.PrimaryCol = col1
 	gj.dbinfo.AddTable(nt)
 

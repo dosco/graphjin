@@ -405,7 +405,6 @@ func (co *Compiler) addRelInfo(
 	op *graph.Operation, qc *QCode, sel *Select, field graph.Field) error {
 	var psel *Select
 	var childF, parentF graph.Field
-	var sinset bool
 	var err error
 
 	childF = field
@@ -435,7 +434,6 @@ func (co *Compiler) addRelInfo(
 
 		childF = parentF
 		parentF = op.Fields[int(parentF.ParentID)]
-		sinset = true
 	}
 
 	if sel.Rel.Type == sdata.RelSkip {
@@ -478,10 +476,25 @@ func (co *Compiler) addRelInfo(
 		return nil
 	}
 
-	if !sinset {
+	sel.Singular = co.setSingular(sel)
+	return nil
+}
+
+func (co *Compiler) setSingular(sel *Select) bool {
+	if sel.Singular {
+		return true
+	}
+
+	if !co.c.DisableInflection {
 		sel.Singular = sel.Ti.IsSingular
 	}
-	return nil
+
+	if (sel.Rel.Type == sdata.RelOneToMany && !sel.Rel.Right.Col.Array) ||
+		sel.Rel.Type == sdata.RelPolymorphic {
+		sel.Singular = true
+	}
+
+	return sel.Singular
 }
 
 func (co *Compiler) setLimit(tr trval, qc *QCode, sel *Select) {
@@ -599,6 +612,9 @@ func (co *Compiler) compileDirectives(qc *QCode, sel *Select, dirs []graph.Direc
 
 		case "through":
 			err = co.compileDirectiveThrough(sel, d)
+
+		case "object":
+			sel.Singular = true
 		}
 
 		if err != nil {
@@ -780,24 +796,39 @@ func (co *Compiler) compileArgFind(sel *Select, arg *graph.Arg) error {
 }
 
 func (co *Compiler) compileArgID(sel *Select, arg *graph.Arg) error {
+	node := arg.Val
+
 	if sel.ParentID != -1 {
 		return fmt.Errorf("argument 'id' can only be specified at the query root")
+	}
+
+	if node.Type != graph.NodeNum && node.Type != graph.NodeVar {
+		return argErr("limit", "number or variable")
 	}
 
 	if sel.Ti.PrimaryCol.Name == "" {
 		return fmt.Errorf("no primary key column defined for %s", sel.Table)
 	}
 
-	if arg.Val.Type != graph.NodeVar {
-		return argErr("id", "variable")
-	}
-
 	ex := newExpOp(OpEquals)
-	ex.Type = ValVar
-	ex.Val = arg.Val.Val
 	ex.Col = sel.Ti.PrimaryCol
 
+	switch node.Type {
+	case graph.NodeNum:
+		if _, err := strconv.ParseInt(node.Val, 10, 32); err != nil {
+			return err
+		} else {
+			ex.Type = ValNum
+			ex.Val = node.Val
+		}
+
+	case graph.NodeVar:
+		ex.Type = ValVar
+		ex.Val = node.Val
+	}
+
 	sel.Where.Exp = ex
+	sel.Singular = true
 	return nil
 }
 

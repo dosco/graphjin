@@ -12,9 +12,9 @@ import (
 
 func Example_query() {
 	gql := `query {
-		product {
+		products(limit: 3) {
 			id
-			user {
+			owner {
 				id
 				fullName: full_name
 			}
@@ -33,14 +33,14 @@ func Example_query() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"product": {"id": 1, "user": {"id": 1, "fullName": "User 1"}}}
+	// Output: {"products": [{"id": 1, "owner": {"id": 1, "fullName": "User 1"}}, {"id": 2, "owner": {"id": 2, "fullName": "User 2"}}, {"id": 3, "owner": {"id": 3, "fullName": "User 3"}}]}
 }
 
 func Example_queryWithUser() {
 	gql := `query {
-		product(where: { owner_id: { eq: $user_id } }) {
+		products(where: { owner_id: { eq: $user_id } }) {
 			id
-			user {
+			owner {
 				id
 			}
 		}
@@ -52,14 +52,14 @@ func Example_queryWithUser() {
 		panic(err)
 	}
 
-	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 31)
 	res, err := gj.GraphQL(ctx, gql, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"product": {"id": 3, "user": {"id": 3}}}
+	// Output: {"products": [{"id": 31, "owner": {"id": 31}}]}
 }
 
 func Example_queryWithLimitOffsetOrderByDistinctAndWhere() {
@@ -128,12 +128,14 @@ func Example_queryWithWhereIn() {
 
 func Example_queryWithWhereNotIsNullAndGreaterThan() {
 	gql := `query {
-		product(
+		products(
 			where: {
 				and: [
 					{ not: { id: { is_null: true } } },
 					{ price: { gt: 10 } },
-				] } ) {
+				] 
+			} 
+			limit: 3) {
 			id
 			name
 			price
@@ -152,7 +154,7 @@ func Example_queryWithWhereNotIsNullAndGreaterThan() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"product": {"id": 1, "name": "Product 1", "price": 11.5}}
+	// Output: {"products": [{"id": 1, "name": "Product 1", "price": 11.5}, {"id": 2, "name": "Product 2", "price": 12.5}, {"id": 3, "name": "Product 3", "price": 13.5}]}
 }
 
 func Example_queryWithWhereGreaterThanOrLesserThan() {
@@ -188,9 +190,9 @@ func Example_queryWithWhereGreaterThanOrLesserThan() {
 
 func Example_queryWithWhereOnRelatedTable() {
 	gql := `query {
-		product(where: { user: { id: { eq: $user_id } } } ) {
+		products(where: { users: { id: { eq: $user_id } } } ) {
 			id
-			user {
+			owner {
 				id
 				email
 			}
@@ -210,17 +212,17 @@ func Example_queryWithWhereOnRelatedTable() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"product": {"id": 4, "user": {"id": 4, "email": "user4@test.com"}}}
+	// Output: {"products": [{"id": 4, "owner": {"id": 4, "email": "user4@test.com"}}]}
 }
 
 func Example_queryWithAlternateFieldNames() {
 	gql := `query {
-			comments(limit: 2) {
-			 id
-			 commenter {
-				 email
-			 }
-		 }
+		comments(limit: 2) {
+			id
+			commenter {
+				email
+			}
+		}
 	}`
 
 	conf := &core.Config{DBType: dbType, DisableAllowList: true}
@@ -240,7 +242,7 @@ func Example_queryWithAlternateFieldNames() {
 
 func Example_queryByID() {
 	gql := `query {
-		product(id: $id) {
+		products(id: $id) {
 			id
 			name
 		}
@@ -262,7 +264,7 @@ func Example_queryByID() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"product": {"id": 2, "name": "Product 2"}}
+	// Output: {"products": {"id": 2, "name": "Product 2"}}
 }
 
 func Example_queryBySearch() {
@@ -323,7 +325,7 @@ func Example_queryChildrenWithParent() {
 		products(limit: 2) {
 			name
 			price
-			users {
+			owner {
 				email
 			}
 		}
@@ -341,35 +343,23 @@ func Example_queryChildrenWithParent() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"products": [{"name": "Product 1", "price": 11.5, "users": [{"email": "user1@test.com"}]}, {"name": "Product 2", "price": 12.5, "users": [{"email": "user2@test.com"}]}]}
+	// Output: {"products": [{"name": "Product 1", "owner": {"email": "user1@test.com"}, "price": 11.5}, {"name": "Product 2", "owner": {"email": "user2@test.com"}, "price": 12.5}]}
 }
 
 func Example_queryParentAndChildrenViaArrayColumn() {
-	// gql := `
-	// query {
-	// 	products {
-	// 		name
-	// 		price
-	// 		categories {
-	// 			id
-	// 			name
-	// 		}
-	// 	}
-	// 	categories {
-	// 		name
-	// 		product {
-	// 			name
-	// 		}
-	// 	}
-	// }`
-
 	gql := `
 	query {
-		products {
+		products(limit: 2) {
 			name
 			price
 			categories {
 				id
+				name
+			}
+		}
+		categories {
+			name
+			products {
 				name
 			}
 		}
@@ -395,14 +385,14 @@ func Example_queryParentAndChildrenViaArrayColumn() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"products": [{"name": "Product 1", "price": 11.5, "categories": [{"id": 1, "name": "Category 1"}, {"id": 2, "name": "Category 2"}]}, {"name": "Product 2", "price": 12.5, "categories": [{"id": 1, "name": "Category 1"}, {"id": 2, "name": "Category 2"}]}]}
+	// Output: {"products": [{"name": "Product 1", "price": 11.5, "categories": [{"id": 1, "name": "Category 1"}, {"id": 2, "name": "Category 2"}]}, {"name": "Product 2", "price": 12.5, "categories": [{"id": 1, "name": "Category 1"}, {"id": 2, "name": "Category 2"}]}], "categories": [{"name": "Category 1", "products": [{"name": "Product 1"}, {"name": "Product 2"}]}, {"name": "Category 2", "products": [{"name": "Product 1"}, {"name": "Product 2"}]}]}
 }
 
 func Example_queryManyToManyViaJoinTable1() {
 	gql := `query {
-		product {
+		products(limit: 2) {
 			name
-			customers {
+			customer {
 				email
 			}
 			owner {
@@ -423,7 +413,7 @@ func Example_queryManyToManyViaJoinTable1() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"product": {"name": "Product 1", "owner": {"email": "user1@test.com"}, "customers": [{"email": "user2@test.com"}]}}
+	// Output: {"products": [{"name": "Product 1", "owner": {"email": "user1@test.com"}, "customer": {"email": "user2@test.com"}}, {"name": "Product 2", "owner": {"email": "user2@test.com"}, "customer": {"email": "user3@test.com"}}]}
 }
 
 func Example_queryManyToManyViaJoinTable2() {
@@ -556,20 +546,28 @@ func Example_queryWithFunctionsWithWhere() {
 
 func Example_queryWithSyntheticTables() {
 	gql := `query {
-		me {
+		me @object {
 			email
 		}
 	}`
 
 	conf := &core.Config{DBType: dbType, DisableAllowList: true}
 	conf.Tables = []core.Table{{Name: "me", Table: "users"}}
+	err := conf.AddRoleTable("user", "me", core.Query{
+		Filters: []string{`{ id: $user_id }`},
+		Limit:   1,
+	})
+	if err != nil {
+		panic(err)
+	}
 
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, nil)
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 1)
+	res, err := gj.GraphQL(ctx, gql, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -580,7 +578,7 @@ func Example_queryWithSyntheticTables() {
 
 func Example_queryWithVariables() {
 	gql := `query {
-		product(id: $product_id, where: { price: { gt: $product_price } }) {
+		products(id: $product_id, where: { price: { gt: $product_price } }) {
 			id
 			name
 		}
@@ -602,24 +600,24 @@ func Example_queryWithVariables() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"product": {"id": 70, "name": "Product 70"}}
+	// Output: {"products": {"id": 70, "name": "Product 70"}}
 
 }
 
 func Example_queryWithMultipleTopLevelTables() {
 	gql := `query {
-		product(id: $id) {
+		products(id: $id) {
 			id
 			name
 			customer {
 				email
 			}
 		}
-		user(id: $id) {
+		users(id: $id) {
 			id
 			email
 		}
-		purchase(id: $id) {
+		purchases(id: $id) {
 			id
 		}
 	}`
@@ -638,7 +636,7 @@ func Example_queryWithMultipleTopLevelTables() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"user": {"id": 1, "email": "user1@test.com"}, "product": {"id": 1, "name": "Product 1", "customer": {"email": "user2@test.com"}}, "purchase": {"id": 1}}
+	// Output: {"users": {"id": 1, "email": "user1@test.com"}, "products": {"id": 1, "name": "Product 1", "customer": {"email": "user2@test.com"}}, "purchases": {"id": 1}}
 }
 
 func Example_queryWithFragments1() {
@@ -759,7 +757,7 @@ func Example_queryWithUnionForPolymorphicRelationships() {
 		notifications {
 			id
 			verb
-			subjects {
+			subject {
 				...on users {
 					...userFields
 				}
@@ -788,7 +786,7 @@ func Example_queryWithUnionForPolymorphicRelationships() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"notifications": [{"id": 1, "verb": "Joined", "subjects": [{"email": "user1@test.com"}]}, {"id": 2, "verb": "Bought", "subjects": [{"name": "Product 2"}]}]}
+	// Output: {"notifications": [{"id": 1, "verb": "Joined", "subject": {"email": "user1@test.com"}}, {"id": 2, "verb": "Bought", "subject": {"name": "Product 2"}}]}
 }
 
 func Example_queryWithSkipAndIncludeDirectives() {
@@ -912,7 +910,7 @@ func Example_queryWithCursorPagination() {
 
 func Example_queryWithJsonColumn() {
 	gql := `query {
-		user {
+		users(id: 1) {
 			id
 			category_counts {
 				count
@@ -947,7 +945,7 @@ func Example_queryWithJsonColumn() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"user": {"id": 1, "category_counts": [{"count": 400, "category": {"name": "Category 1"}}, {"count": 600, "category": {"name": "Category 2"}}]}}
+	// Output: {"users": {"id": 1, "category_counts": [{"count": 400, "category": {"name": "Category 1"}}, {"count": 600, "category": {"name": "Category 2"}}]}}
 }
 
 func Example_queryWithView() {
@@ -986,7 +984,7 @@ func Example_queryWithView() {
 
 func Example_queryWithRecursiveRelationship1() {
 	gql := `query {
-		reply : comment(id: $id) {
+		reply : comments(id: $id) {
 			id
 			comments(
 				where: { id: { lt: 50 } }, 
@@ -1016,7 +1014,7 @@ func Example_queryWithRecursiveRelationship1() {
 
 func Example_queryWithRecursiveRelationship2() {
 	gql := `query {
-		comment(id: $id) {
+		comments(id: 95) {
 			id
 			replies: comments(find: "children") {
 				id
@@ -1024,26 +1022,24 @@ func Example_queryWithRecursiveRelationship2() {
 		}
 	}`
 
-	vars := json.RawMessage(`{"id": 95}`)
-
 	conf := &core.Config{DBType: dbType, DisableAllowList: true}
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, vars)
+	res, err := gj.GraphQL(context.Background(), gql, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"comment": {"id": 95, "replies": [{"id": 96}, {"id": 97}, {"id": 98}, {"id": 99}, {"id": 100}]}}
+	// Output: {"comments": {"id": 95, "replies": [{"id": 96}, {"id": 97}, {"id": 98}, {"id": 99}, {"id": 100}]}}
 }
 
 func Example_queryWithSkippingAuthRequiredSelectors() {
 	gql := `query {
-		product {
+		products(limit: 2) {
 			id
 			name
 			user(where: { id: { eq: $user_id } }) {
@@ -1065,7 +1061,7 @@ func Example_queryWithSkippingAuthRequiredSelectors() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"product": {"id": 1, "name": "Product 1", "user": null}}
+	// Output: {"products": [{"id": 1, "name": "Product 1", "user": null}, {"id": 2, "name": "Product 2", "user": null}]}
 }
 
 func Example_blockQueryWithRoles() {

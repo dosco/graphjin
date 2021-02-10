@@ -8,11 +8,12 @@ import (
 )
 
 type Config struct {
-	Vars            map[string]string
-	FragmentFetcher func(name string) (string, error)
-	DefaultBlock    bool
-	DefaultLimit    int
-	defTrv          trval
+	Vars              map[string]string
+	FragmentFetcher   func(name string) (string, error)
+	DefaultBlock      bool
+	DefaultLimit      int
+	defTrv            trval
+	DisableInflection bool
 }
 
 type TRConfig struct {
@@ -153,11 +154,14 @@ func (co *Compiler) AddRole(role, schema, table string, trc TRConfig) error {
 	trv.delete.cols = makeSet(trc.Delete.Columns)
 	trv.delete.block = trc.Delete.Block
 
-	singular := flect.Singularize(table)
-	plural := flect.Pluralize(table)
-
-	co.tr[(role + singular)] = trv
-	co.tr[(role + plural)] = trv
+	if co.c.DisableInflection {
+		co.tr[(role + table)] = trv
+	} else {
+		singular := flect.Singularize(table)
+		plural := flect.Pluralize(table)
+		co.tr[(role + singular)] = trv
+		co.tr[(role + plural)] = trv
+	}
 
 	return nil
 }

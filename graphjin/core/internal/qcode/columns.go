@@ -79,10 +79,15 @@ func (co *Compiler) compileChildColumns(
 
 		// not a function
 		if fn.Name == "" {
-			if dbc, err := sel.Ti.GetColumnB(f.Name); err == nil {
+			dbc, err := sel.Ti.GetColumn(f.Name)
+			if err == nil {
 				sel.addCol(Column{Col: dbc, FieldName: fname}, false)
 			} else {
 				return err
+			}
+			if dbc.Blocked {
+				return fmt.Errorf("column: '%s.%s.%s' blocked",
+					dbc.Schema, dbc.Table, dbc.Name)
 			}
 			// is a function
 		} else {
@@ -152,6 +157,7 @@ func (co *Compiler) addRelColumns(qc *QCode, sel *Select, rel sdata.DBRel) error
 
 func (co *Compiler) orderByIDCol(sel *Select) error {
 	idCol := sel.Ti.PrimaryCol
+
 	if idCol.Name == "" {
 		return fmt.Errorf("table requires primary key: %s", sel.Ti.Name)
 	}
