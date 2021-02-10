@@ -10,7 +10,7 @@ import (
 
 func Example_update() {
 	gql := `mutation {
-		product(id: $id, update: $data) {
+		products(id: $id, update: $data) {
 			id
 			name
 		}
@@ -37,12 +37,12 @@ func Example_update() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"product": {"id": 100, "name": "Updated Product 100"}}
+	// Output: {"products": {"id": 100, "name": "Updated Product 100"}}
 }
 
 func Example_updateMultipleRelatedTables1() {
 	gql := `mutation {
-		purchase(id: $id, update: $data) {
+		purchases(id: $id, update: $data) {
 			quantity
 			customer {
 				full_name
@@ -79,12 +79,12 @@ func Example_updateMultipleRelatedTables1() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"purchase": {"product": {"description": "Updated product related to purchase 100"}, "customer": {"full_name": "Updated user related to purchase 100"}, "quantity": 6}}
+	// Output: {"purchases": {"product": {"description": "Updated product related to purchase 100"}, "customer": {"full_name": "Updated user related to purchase 100"}, "quantity": 6}}
 }
 
 func Example_updateTableAndConnectToRelatedTables() {
 	gql := `mutation {
-		user(id: $id, update: $data) {
+		users(id: $id, update: $data) {
 			full_name
 			products {
 				id
@@ -96,7 +96,7 @@ func Example_updateTableAndConnectToRelatedTables() {
 		"id": 100,
 		"data": {
 			"full_name": "Updated user 100",
-			"product": {
+			"products": {
 				"connect": { "id": 99 },
 				"disconnect": { "id": 100 }
 			}
@@ -116,12 +116,12 @@ func Example_updateTableAndConnectToRelatedTables() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"user": {"products": [{"id": 99}], "full_name": "Updated user 100"}}
+	// Output: {"users": {"products": [{"id": 99}], "full_name": "Updated user 100"}}
 }
 
 func Example_updateTableAndRelatedTable() {
 	gql := `mutation {
-		user(id: $id, update: $data) {
+		users(id: $id, update: $data) {
 			full_name
 			products {
 				id
@@ -153,5 +153,5 @@ func Example_updateTableAndRelatedTable() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"user": {"products": [{"id": 90}], "full_name": "Updated user 90"}}
+	// Output: {"users": {"products": [{"id": 90}], "full_name": "Updated user 90"}}
 }

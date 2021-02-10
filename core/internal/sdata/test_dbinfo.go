@@ -77,7 +77,7 @@ func GetTestDBInfo() *DBInfo {
 		FKeyColumn: "id"},
 	}
 
-	di := NewDBInfo("", "", cols, nil, nil)
+	di := NewDBInfo("", "", cols, nil, nil, false)
 	di.VTables = vt
 	return di
 }
@@ -87,5 +87,5 @@ func GetTestSchema() (*DBSchema, error) {
 		"users": {"mes"},
 	}
 
-	return NewDBSchema(GetTestDBInfo(), aliases)
+	return NewDBSchema(GetTestDBInfo(), aliases, false)
 }

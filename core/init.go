@@ -13,13 +13,10 @@ import (
 func (gj *GraphJin) initConfig() error {
 	c := gj.conf
 
-	for _, v := range c.Inflections {
-		kv := strings.SplitN(v, ":", 2)
-		if kv[0] == "" || kv[1] == "" {
-			return fmt.Errorf("inflections: should be an array of singular:plural values: %s", v)
+	if !gj.conf.DisableInflection {
+		if err := initInflection(c); err != nil {
+			return err
 		}
-		flect.AddPlural(kv[0], kv[1])
-		flect.AddSingular(kv[1], kv[0])
 	}
 
 	tm := make(map[string]struct{})
@@ -108,6 +105,18 @@ func (gj *GraphJin) initConfig() error {
 	return nil
 }
 
+func initInflection(c *Config) error {
+	for _, v := range c.Inflections {
+		kv := strings.SplitN(v, ":", 2)
+		if kv[0] == "" || kv[1] == "" {
+			return fmt.Errorf("inflections: should be an array of singular:plural values: %s", v)
+		}
+		flect.AddPlural(kv[0], kv[1])
+		flect.AddSingular(kv[1], kv[0])
+	}
+	return nil
+}
+
 func getDBTableAliases(c *Config) map[string][]string {
 	m := make(map[string][]string, len(c.Tables))
 
@@ -139,24 +148,33 @@ func addTables(conf *Config, di *sdata.DBInfo) error {
 		if err != nil {
 			return err
 		}
-
 	}
+
 	return nil
 }
 
 func updateTable(conf *Config, di *sdata.DBInfo, t Table) error {
 	for _, c := range t.Columns {
-		if c1, err := di.GetColumn(t.Schema, t.Name, c.Name); err == nil {
-			if c.Primary {
-				c1.PrimaryKey = true
-			}
-			if c.Array {
-				c1.Array = true
-			}
-		} else {
+		t1, err := di.GetTable(t.Schema, t.Name)
+		if err != nil {
 			return fmt.Errorf("table: %s.%s: %w", t.Schema, t.Name, err)
 		}
+
+		c1, err := di.GetColumn(t.Schema, t.Name, c.Name)
+		if err != nil {
+			return err
+		}
+
+		if c.Primary {
+			c1.PrimaryKey = true
+			t1.PrimaryCol = *c1
+		}
+
+		if c.Array {
+			c1.Array = true
+		}
 	}
+
 	return nil
 }
 
@@ -208,7 +226,8 @@ func addJsonTable(conf *Config, di *sdata.DBInfo, t Table) error {
 		Type:       bc.Type,
 	}
 
-	nt := sdata.NewDBTable(bc.Schema, t.Name, bc.Type, columns)
+	nt := sdata.NewDBTable(bc.Schema,
+		t.Name, bc.Type, columns, conf.DisableInflection)
 	nt.PrimaryCol = col1
 	nt.SecondaryCol = bt.PrimaryCol
 	di.AddTable(nt)

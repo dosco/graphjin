@@ -26,6 +26,7 @@ type DBSchema struct {
 	re     map[int64]TEdge               // recursive edges
 	rg     *simple.WeightedDirectedGraph // relationship graph
 	sp     path.AllShortest              // graph shortest paths
+	di     bool
 }
 
 type RelType int
@@ -65,7 +66,10 @@ type DBRel struct {
 	Right   DBRelRight
 }
 
-func NewDBSchema(info *DBInfo, aliases map[string][]string) (*DBSchema, error) {
+func NewDBSchema(
+	info *DBInfo,
+	aliases map[string][]string,
+	disableInflection bool) (*DBSchema, error) {
 	schema := &DBSchema{
 		ver: info.Version,
 		typ: info.Type,
@@ -74,13 +78,13 @@ func NewDBSchema(info *DBInfo, aliases map[string][]string) (*DBSchema, error) {
 		ni:  make(map[string]nodeInfo),
 		re:  make(map[int64]TEdge),
 		rg:  simple.NewWeightedDirectedGraph(3, -1),
+		di:  disableInflection,
 	}
 
 	var nids []int64
 
 	for _, t := range info.Tables {
 		nids = append(nids, schema.addNode(t))
-
 	}
 
 	for _, nid := range nids {
@@ -178,6 +182,8 @@ func (s *DBSchema) addRemoteRel(t DBTable) error {
 }
 
 func (s *DBSchema) addColumnRels(t DBTable) error {
+	var err error
+
 	for i := range t.Columns {
 		c := t.Columns[i]
 
@@ -215,7 +221,7 @@ func (s *DBSchema) addColumnRels(t DBTable) error {
 			rt = RelOneToMany
 		}
 
-		if err := s.addEdge(t, c, ft, fc, rt); err != nil {
+		if err = s.addEdge(t, c, ft, fc, rt); err != nil {
 			return err
 		}
 	}
@@ -252,10 +258,13 @@ func (s *DBSchema) addVirtual(vt VirtualTable) error {
 		pt := DBTable{
 			Name:       vt.Name,
 			Schema:     t.Schema,
-			Singular:   flect.Singularize(key),
-			Plural:     flect.Pluralize(key),
 			Type:       "virtual",
 			PrimaryCol: col1,
+		}
+
+		if !s.di {
+			pt.Singular = flect.Singularize(key)
+			pt.Plural = flect.Pluralize(key)
 		}
 		s.addNode(pt)
 	}
@@ -281,17 +290,6 @@ func (ti *DBTable) GetColumn(name string) (DBColumn, error) {
 		return c, nil
 	}
 	return c, fmt.Errorf("column: '%s.%s' not found", ti.Name, name)
-}
-
-func (ti *DBTable) GetColumnB(name string) (DBColumn, error) {
-	c, err := ti.GetColumn(name)
-	if err != nil {
-		return c, err
-	}
-	if c.Blocked {
-		return c, fmt.Errorf("column: '%s.%s' blocked", ti.Name, name)
-	}
-	return c, nil
 }
 
 func (s *DBSchema) GetFunctions() map[string]DBFunction {

@@ -18,8 +18,16 @@ type TEdge struct {
 
 func (s *DBSchema) addNode(t DBTable) int64 {
 	s.tables = append(s.tables, t)
-
 	n := s.rg.NewNode()
+
+	if s.di {
+		s.ni[(t.Schema + ":" + t.Name)] = nodeInfo{id: n.ID()}
+		s.ni[(":" + t.Name)] = nodeInfo{id: n.ID()}
+
+		s.rg.AddNode(n)
+		return n.ID()
+	}
+
 	sn := nodeInfo{id: n.ID(), singular: true}
 	pn := nodeInfo{id: n.ID(), singular: false}
 
@@ -43,6 +51,16 @@ func (s *DBSchema) addAliases(t DBTable, nodeID int64, aliases []string) {
 	pn := nodeInfo{id: nodeID, singular: false}
 
 	for _, al := range aliases {
+		if s.di {
+			if _, ok := s.ni[(":" + al)]; !ok {
+				s.ni[(":" + al)] = nodeInfo{id: nodeID}
+			}
+			if _, ok := s.ni[(t.Schema + ":" + al)]; !ok {
+				s.ni[(":" + al)] = nodeInfo{id: nodeID}
+			}
+			continue
+		}
+
 		sk := flect.Singularize(al)
 		pk := flect.Pluralize(al)
 
@@ -70,8 +88,34 @@ type nodeKey struct {
 	singular           bool
 }
 
-// public.product.owner_id -> public.user.id
 func (s *DBSchema) addEdge(
+	lti DBTable, lcol DBColumn,
+	rti DBTable, rcol DBColumn,
+	rt RelType) error {
+
+	// if s.di {
+	// 	return s.addEdge2(lti, lcol, rti, rcol, rt)
+	// } else {
+	// 	return s.addEdge1(lti, lcol, rti, rcol, rt)
+	// }
+
+	return s.addEdge1(lti, lcol, rti, rcol, rt)
+}
+
+// Building the graph
+// 1. AddNode is used to add tables nodes to the graph
+// 2. addEdge creates relationships between schema:table -> fk_schema:fk_table
+// 3. addEdge creates relationships between fk_schema:fk_table:column_name -> schema:table
+// 4. addEdge creates relationships between :fk_table:column_name -> schema:table
+// 5. addEdge creates relationships between :column_name -> schema:table
+//
+// Note 1: `_id` or `id_` is stripped from the column name to use as a graph key
+// in the case where that then matches a real table name will result in conflict.
+//
+// Note 2: recursive relationships are kept outside the graph in `s.re`
+// Eg. public.product.owner_id -> public.user.id
+
+func (s *DBSchema) addEdge1(
 	lti DBTable, lcol DBColumn,
 	rti DBTable, rcol DBColumn,
 	rt RelType) error {
@@ -134,57 +178,123 @@ func (s *DBSchema) addEdge(
 		return nil
 	}
 
-	relT1 := flect.Singularize(relT)
-	relT2 := flect.Pluralize(relT)
+	var alts []nodeKey
 
-	alts := []nodeKey{
-		{lti.Schema, lti.Singular, relT1, true},
-		{lti.Schema, lti.Singular, relT2, false},
-		{lti.Schema, lti.Plural, relT1, true},
-		{lti.Schema, lti.Plural, relT2, false},
+	if s.di {
+		alts = []nodeKey{
+			{lti.Schema, lti.Name, relT, false},
+		}
+	} else {
+		relT1 := flect.Singularize(relT)
+		relT2 := flect.Pluralize(relT)
+
+		alts = []nodeKey{
+			{lti.Schema, lti.Singular, relT1, true},
+			{lti.Schema, lti.Singular, relT2, false},
+			{lti.Schema, lti.Plural, relT1, true},
+			{lti.Schema, lti.Plural, relT2, false},
+		}
 	}
 
 	// register alternate right nodes
 	for _, v := range alts {
-		rn = s.rg.NewNode()
-		n := nodeInfo{id: rn.ID(), singular: v.singular}
-
-		k1 := (v.scheme + ":" + v.table + ":" + v.col)
-		k2 := (":" + v.table + ":" + v.col)
-		k3 := (":" + v.col)
-
-		s.ni[k1] = n
-
-		if _, ok := s.ni[k2]; !ok {
-			s.ni[k2] = n
-		}
-
-		if _, ok := s.ni[k3]; !ok {
-			s.ni[k3] = n
-		}
-
-		s.rg.AddNode(rn)
-
-		e := TEdge{
-			Type: rt,
-			LT:   lti, RT: rti,
-			L: lcol, R: rcol,
-			WeightedEdge: s.rg.NewWeightedEdge(ln, rn, 2.0),
-		}
-		s.rg.SetWeightedEdge(e)
-
-		if rt2 != RelNone {
-			e := TEdge{
-				Type: rt2,
-				LT:   rti, RT: lti,
-				L: rcol, R: lcol,
-				WeightedEdge: s.rg.NewWeightedEdge(rn, ln, 2.0),
-			}
-			s.rg.SetWeightedEdge(e)
-		}
+		s.addAltEdge1(v, ln, lti, rti, lcol, rcol, rt, rt2)
 	}
 	return nil
 }
+
+func (s *DBSchema) addAltEdge1(
+	v nodeKey,
+	ln graph.Node,
+	lti, rti DBTable,
+	lcol, rcol DBColumn,
+	rt, rt2 RelType) {
+
+	rn := s.rg.NewNode()
+	n := nodeInfo{id: rn.ID(), singular: v.singular}
+
+	k1 := (v.scheme + ":" + v.table + ":" + v.col)
+	k2 := (":" + v.table + ":" + v.col)
+	k3 := (":" + v.col)
+
+	s.ni[k1] = n
+
+	if _, ok := s.ni[k2]; !ok {
+		s.ni[k2] = n
+	}
+
+	if _, ok := s.ni[k3]; !ok {
+		s.ni[k3] = n
+	}
+
+	s.rg.AddNode(rn)
+
+	e := TEdge{
+		Type: rt,
+		LT:   lti, RT: rti,
+		L: lcol, R: rcol,
+		WeightedEdge: s.rg.NewWeightedEdge(ln, rn, 2.0),
+	}
+	s.rg.SetWeightedEdge(e)
+
+	if rt2 != RelNone {
+		e := TEdge{
+			Type: rt2,
+			LT:   rti, RT: lti,
+			L: rcol, R: lcol,
+			WeightedEdge: s.rg.NewWeightedEdge(rn, ln, 2.0),
+		}
+		s.rg.SetWeightedEdge(e)
+	}
+}
+
+/*
+func (s *DBSchema) addAltEdge2(
+	v nodeKey,
+	ln, rn graph.Node,
+	lti, rti DBTable,
+	lcol, rcol DBColumn,
+	rt, rt2 RelType) {
+	rn = s.rg.NewNode()
+	n := nodeInfo{id: rn.ID(), singular: v.singular}
+
+	k3 := (v.scheme + ":" + v.table + ":" + v.col)
+	k4 := (":" + v.table + ":" + v.col)
+	// k3 := (":" + v.col)
+
+	if _, ok := s.ni[k3]; !ok {
+		s.ni[k3] = n
+	}
+
+	if _, ok := s.ni[k4]; !ok {
+		s.ni[k4] = n
+	}
+
+	// if _, ok := s.ni[k3]; !ok {
+	// 	s.ni[k3] = n
+	// }
+
+	s.rg.AddNode(rn)
+
+	e := TEdge{
+		Type: rt,
+		LT:   lti, RT: rti,
+		L: lcol, R: rcol,
+		WeightedEdge: s.rg.NewWeightedEdge(ln, rn, 2.0),
+	}
+	s.rg.SetWeightedEdge(e)
+
+	if rt2 != RelNone {
+		e := TEdge{
+			Type: rt2,
+			LT:   rti, RT: lti,
+			L: rcol, R: lcol,
+			WeightedEdge: s.rg.NewWeightedEdge(rn, ln, 2.0),
+		}
+		s.rg.SetWeightedEdge(e)
+	}
+}
+*/
 
 type TInfo struct {
 	IsSingular bool
@@ -194,7 +304,9 @@ type TInfo struct {
 func (s *DBSchema) Find(schema, name string) (TInfo, error) {
 	var t TInfo
 	v, ok := s.ni[(schema + ":" + name)]
-	if !ok {
+
+	// real tables are the first n graph nodes.
+	if !ok || int(v.id) >= len(s.tables) {
 		return t, fmt.Errorf("table not found: %s.%s", schema, name)
 	}
 	n := s.tables[v.id]

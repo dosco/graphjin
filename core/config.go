@@ -78,6 +78,10 @@ type Config struct {
 	// to the engine (eg. sheep: sheep)
 	Inflections []string `mapstructure:"inflections"`
 
+	// Disable inflections. Inflections are deprecated and will be
+	// removed in next major version.
+	DisableInflection bool `mapstructure:"disable_inflection"`
+
 	// Database type name. Defaults to 'postgres' (options: mysql, postgres)
 	DBType string `mapstructure:"db_type"`
 

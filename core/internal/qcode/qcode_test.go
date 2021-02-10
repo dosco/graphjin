@@ -14,7 +14,7 @@ var dbs *sdata.DBSchema
 func init() {
 	var err error
 
-	dbs, err = sdata.NewDBSchema(sdata.GetTestDBInfo(), nil)
+	dbs, err = sdata.NewDBSchema(sdata.GetTestDBInfo(), nil, false)
 	if err != nil {
 		panic(err)
 	}
@@ -32,13 +32,13 @@ func TestCompile1(t *testing.T) {
 	}
 
 	_, err = qc.Compile([]byte(`
-	query { product(id: 15) {
+	query { products(id: 15) {
 			id
 			name
 		} }`), nil, "user")
 
-	if err == nil {
-		t.Fatal(errors.New("this should be an error id must be a variable"))
+	if err != nil {
+		t.Fatal(errors.New("this should not be an error id can be a number"))
 	}
 }
 

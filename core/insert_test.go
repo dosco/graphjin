@@ -10,7 +10,7 @@ import (
 
 func Example_insert() {
 	gql := `mutation {
-		user(insert: $data) {
+		users(insert: $data) {
 			id
 			email
 		}
@@ -39,15 +39,15 @@ func Example_insert() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"user": {"id": 1001, "email": "user1001@test.com"}}
+	// Output: {"users": [{"id": 1001, "email": "user1001@test.com"}]}
 }
 
 func Example_insertWithPresets() {
 	gql := `mutation {
-		product(insert: $data) {
+		products(insert: $data) {
 			id
 			name
-			user {
+			owner {
 				id
 				email
 			}
@@ -86,7 +86,7 @@ func Example_insertWithPresets() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"product": {"id": 2001, "name": "Product 2001", "user": {"id": 3, "email": "user3@test.com"}}}
+	// Output: {"products": [{"id": 2001, "name": "Product 2001", "owner": {"id": 3, "email": "user3@test.com"}}]}
 }
 
 func Example_bulkInsert() {
@@ -132,7 +132,7 @@ func Example_bulkInsert() {
 
 func Example_insertIntoMultipleRelatedTables1() {
 	gql := `mutation {
-		purchase(insert: $data) {
+		purchases(insert: $data) {
 			quantity
 			customer {
 				id
@@ -183,16 +183,16 @@ func Example_insertIntoMultipleRelatedTables1() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"purchase": {"product": {"id": 2002, "name": "Product 2002", "price": 2012.5}, "customer": {"id": 1004, "email": "user1004@test.com", "full_name": "User 1004"}, "quantity": 5}}
+	// Output: {"purchases": [{"product": {"id": 2002, "name": "Product 2002", "price": 2012.5}, "customer": {"id": 1004, "email": "user1004@test.com", "full_name": "User 1004"}, "quantity": 5}]}
 }
 
 func Example_insertIntoMultipleRelatedTables2() {
 	gql := `mutation {
-		user(insert: $data) {
+		users(insert: $data) {
 			id
 			full_name
 			email
-			product {
+			products {
 				id
 				name
 				price
@@ -207,7 +207,7 @@ func Example_insertIntoMultipleRelatedTables2() {
 			"full_name": "User 1005",
 			"stripe_id": "payment_id_1005",
 			"category_counts": [{"category_id": 1, "count": 400},{"category_id": 2, "count": 600}],
-			"product": {
+			"products": {
 				"id": 2003,
 				"name": "Product 2003",
 				"description": "Description for product 2003",
@@ -232,12 +232,12 @@ func Example_insertIntoMultipleRelatedTables2() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"user": {"id": 1005, "email": "user1005@test.com", "product": {"id": 2003, "name": "Product 2003", "price": 2013.5}, "full_name": "User 1005"}}
+	// Output: {"users": [{"id": 1005, "email": "user1005@test.com", "products": [{"id": 2003, "name": "Product 2003", "price": 2013.5}], "full_name": "User 1005"}]}
 }
 
 func Example_insertIntoMultipleRelatedTables3() {
 	gql := `mutation {
-		product(insert: $data) {
+		products(insert: $data) {
 			id
 			name
 			owner {
@@ -279,12 +279,12 @@ func Example_insertIntoMultipleRelatedTables3() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"product": {"id": 2004, "name": "Product 2004", "owner": {"id": 1006, "email": "user1006@test.com", "full_name": "User 1006"}}}
+	// Output: {"products": [{"id": 2004, "name": "Product 2004", "owner": {"id": 1006, "email": "user1006@test.com", "full_name": "User 1006"}}]}
 }
 
 func Example_insertIntoTableAndConnectToRelatedTables() {
 	gql := `mutation {
-		product(insert: $data) {
+		products(insert: $data) {
 			id
 			name
 			owner {
@@ -322,12 +322,12 @@ func Example_insertIntoTableAndConnectToRelatedTables() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"product": {"id": 2005, "name": "Product 2005", "owner": {"id": 6, "email": "user6@test.com", "full_name": "User 6"}}}
+	// Output: {"products": [{"id": 2005, "name": "Product 2005", "owner": {"id": 6, "email": "user6@test.com", "full_name": "User 6"}}]}
 }
 
 func Example_insertIntoTableAndConnectToRelatedTableWithArrayColumn() {
 	gql := `mutation {
-		product(insert: $data) {
+		products(insert: $data) {
 			id
 			name
 			categories {
@@ -367,7 +367,7 @@ func Example_insertIntoTableAndConnectToRelatedTableWithArrayColumn() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"product": {"id": 2006, "name": "Product 2006", "categories": [{"id": 1, "name": "Category 1"}, {"id": 2, "name": "Category 2"}, {"id": 3, "name": "Category 3"}, {"id": 4, "name": "Category 4"}, {"id": 5, "name": "Category 5"}]}}
+	// Output: {"products": [{"id": 2006, "name": "Product 2006", "categories": [{"id": 1, "name": "Category 1"}, {"id": 2, "name": "Category 2"}, {"id": 3, "name": "Category 3"}, {"id": 4, "name": "Category 4"}, {"id": 5, "name": "Category 5"}]}]}
 }
 
 func Example_insertIntoRecursiveRelationship() {
@@ -383,7 +383,7 @@ func Example_insertIntoRecursiveRelationship() {
 			"id": 5001,
 			"body": "Comment body 5001",
 			"created_at": "now",
-			"comment": {
+			"comments": {
 				"find": "children",
 				"id": 5002,
 				"body": "Comment body 5002",
@@ -421,7 +421,7 @@ func Example_insertIntoRecursiveRelationshipAndConnectTable1() {
 			"id": 5003,
 			"body": "Comment body 5003",
 			"created_at": "now",
-			"comment": {
+			"comments": {
 				"find": "children",
 				"connect": { "id": 5 }
 			}
@@ -446,12 +446,12 @@ func Example_insertIntoRecursiveRelationshipAndConnectTable1() {
 
 func Example_insertIntoRecursiveRelationshipAndConnectTable2() {
 	gql := `mutation {
-  	comment(insert: $data) {
+  	comments(insert: $data) @object {
 			id
 			product {
 				id
 			}
-			user {
+			commenter {
 				id
 			}
 			comments(find: "children") {
@@ -471,14 +471,14 @@ func Example_insertIntoRecursiveRelationshipAndConnectTable2() {
 				"id":  5004,
 				"body": "Comment body 5004",
 				"created_at": "now",
-				"comment": {
+				"comments": {
 					"connect": { "id": 6 },
 					"find": "children"
 				},
 				"product": {
 					"connect": { "id": 26 }
 				},
-				"user":{
+				"commenter":{
 					"connect":{ "id": 3 }
 				}
 			}
@@ -491,5 +491,5 @@ func Example_insertIntoRecursiveRelationshipAndConnectTable2() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"comment": {"id": 5004, "user": {"id": 3}, "product": {"id": 26}, "comments": [{"id": 6}]}}
+	// Output: {"comments": {"id": 5004, "product": {"id": 26}, "comments": [{"id": 6}], "commenter": {"id": 3}}}
 }

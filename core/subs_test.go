@@ -13,7 +13,7 @@ import (
 
 func Example_subscription() {
 	gql := `subscription test {
-		user(id: $id) {
+		users(id: $id) {
 			id
 			email
 			phone
@@ -46,21 +46,21 @@ func Example_subscription() {
 	}
 
 	// Output:
-	// {"user": {"id": 3, "email": "user3@test.com", "phone": null}}
-	// {"user": {"id": 3, "email": "user3@test.com", "phone": "650-447-0000"}}
-	// {"user": {"id": 3, "email": "user3@test.com", "phone": "650-447-0001"}}
-	// {"user": {"id": 3, "email": "user3@test.com", "phone": "650-447-0002"}}
-	// {"user": {"id": 3, "email": "user3@test.com", "phone": "650-447-0003"}}
-	// {"user": {"id": 3, "email": "user3@test.com", "phone": "650-447-0004"}}
-	// {"user": {"id": 3, "email": "user3@test.com", "phone": "650-447-0005"}}
-	// {"user": {"id": 3, "email": "user3@test.com", "phone": "650-447-0006"}}
-	// {"user": {"id": 3, "email": "user3@test.com", "phone": "650-447-0007"}}
-	// {"user": {"id": 3, "email": "user3@test.com", "phone": "650-447-0008"}}
+	// {"users": {"id": 3, "email": "user3@test.com", "phone": null}}
+	// {"users": {"id": 3, "email": "user3@test.com", "phone": "650-447-0000"}}
+	// {"users": {"id": 3, "email": "user3@test.com", "phone": "650-447-0001"}}
+	// {"users": {"id": 3, "email": "user3@test.com", "phone": "650-447-0002"}}
+	// {"users": {"id": 3, "email": "user3@test.com", "phone": "650-447-0003"}}
+	// {"users": {"id": 3, "email": "user3@test.com", "phone": "650-447-0004"}}
+	// {"users": {"id": 3, "email": "user3@test.com", "phone": "650-447-0005"}}
+	// {"users": {"id": 3, "email": "user3@test.com", "phone": "650-447-0006"}}
+	// {"users": {"id": 3, "email": "user3@test.com", "phone": "650-447-0007"}}
+	// {"users": {"id": 3, "email": "user3@test.com", "phone": "650-447-0008"}}
 }
 
 func TestSubscription(t *testing.T) {
 	gql := `subscription test {
-		user(where: { or: { id: { eq: $id }, id: { eq: $id2 } } }) {
+		users(where: { or: { id: { eq: $id }, id: { eq: $id2 } } }) @object {
 			id
 			email
 		}
@@ -85,7 +85,7 @@ func TestSubscription(t *testing.T) {
 				return
 			}
 			msg := <-m.Result
-			exp := fmt.Sprintf(`{"user": {"id": %d, "email": "user%d@test.com"}}`, id, id)
+			exp := fmt.Sprintf(`{"users": {"id": %d, "email": "user%d@test.com"}}`, id, id)
 			val := string(msg.Data)
 
 			if val != exp {

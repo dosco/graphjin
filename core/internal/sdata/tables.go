@@ -15,8 +15,8 @@ type DBInfo struct {
 	Tables    []DBTable
 	Functions []DBFunction
 	VTables   []VirtualTable
-	colMap    map[string]*DBColumn
-	tableMap  map[string]*DBTable
+	colMap    map[string]int
+	tableMap  map[string]int
 }
 
 type DBTable struct {
@@ -44,7 +44,11 @@ type st struct {
 	schema, table string
 }
 
-func GetDBInfo(db *sql.DB, dbtype string, blockList []string) (*DBInfo, error) {
+func GetDBInfo(
+	db *sql.DB,
+	dbtype string,
+	blockList []string,
+	disableInflection bool) (*DBInfo, error) {
 	var version string
 	_ = db.QueryRow(`SHOW server_version_num`).Scan(&version)
 
@@ -58,7 +62,12 @@ func GetDBInfo(db *sql.DB, dbtype string, blockList []string) (*DBInfo, error) {
 		return nil, err
 	}
 
-	di := NewDBInfo(dbtype, version, cols, funcs, blockList)
+	di := NewDBInfo(dbtype,
+		version,
+		cols,
+		funcs,
+		blockList,
+		disableInflection)
 
 	return di, nil
 }
@@ -68,13 +77,14 @@ func NewDBInfo(
 	version string,
 	cols []DBColumn,
 	funcs []DBFunction,
-	blockList []string) *DBInfo {
+	blockList []string,
+	disableInflection bool) *DBInfo {
 
 	di := &DBInfo{
 		Type:      dbtype,
 		Functions: funcs,
-		colMap:    make(map[string]*DBColumn),
-		tableMap:  make(map[string]*DBTable),
+		colMap:    make(map[string]int),
+		tableMap:  make(map[string]int),
 	}
 
 	if version == "" {
@@ -87,33 +97,34 @@ func NewDBInfo(
 	for i := range cols {
 		c := cols[i]
 		c.Key = strings.ToLower(c.Name)
-		di.colMap[(c.Schema + ":" + c.Table + ":" + c.Name)] = &c
+		di.colMap[(c.Schema + ":" + c.Table + ":" + c.Name)] = i
 
 		k1 := st{c.Schema, c.Table}
 		tm[k1] = append(tm[k1], c)
 	}
 
 	for k, tcols := range tm {
-		ti := NewDBTable(k.schema, k.table, "", tcols)
+		ti := NewDBTable(k.schema, k.table, "", tcols, disableInflection)
 		ti.Blocked = isInList(ti.Name, blockList)
 		di.AddTable(ti)
 	}
+
 	return di
 }
 
-func NewDBTable(schema, name, _type string, cols []DBColumn) DBTable {
-	key := strings.ToLower(name)
-	singular := flect.Singularize(key)
-	plural := flect.Pluralize(key)
-
+func NewDBTable(schema, name, _type string, cols []DBColumn, di bool) DBTable {
 	ti := DBTable{
-		Schema:   schema,
-		Name:     name,
-		Type:     _type,
-		Columns:  cols,
-		Singular: singular,
-		Plural:   plural,
-		colMap:   make(map[string]int, len(cols)),
+		Schema:  schema,
+		Name:    name,
+		Type:    _type,
+		Columns: cols,
+		colMap:  make(map[string]int, len(cols)),
+	}
+
+	if !di {
+		key := strings.ToLower(name)
+		ti.Singular = flect.Singularize(key)
+		ti.Plural = flect.Pluralize(key)
 	}
 
 	for i := range cols {
@@ -133,35 +144,41 @@ func NewDBTable(schema, name, _type string, cols []DBColumn) DBTable {
 
 func (di *DBInfo) AddTable(t DBTable) {
 	for i, c := range t.Columns {
-		di.colMap[(c.Schema + ":" + c.Table + ":" + c.Name)] = &t.Columns[i]
-		di.colMap[(":" + c.Table + ":" + c.Name)] = &t.Columns[i]
+		di.colMap[(c.Schema + ":" + c.Table + ":" + c.Name)] = i
+		di.colMap[(":" + c.Table + ":" + c.Name)] = i
 	}
 
+	i := len(di.Tables)
 	di.Tables = append(di.Tables, t)
-	di.tableMap[(t.Schema + ":" + t.Name)] = &t
+	di.tableMap[(t.Schema + ":" + t.Name)] = i
 
 	k := (":" + t.Name)
 	if _, ok := di.tableMap[k]; !ok {
-		di.tableMap[k] = &t
+		di.tableMap[k] = i
 	}
 }
 
 func (di *DBInfo) GetColumn(schema, table, column string) (*DBColumn, error) {
-	c, ok := di.colMap[(schema + ":" + table + ":" + column)]
+	t, err := di.GetTable(schema, table)
+	if err != nil {
+		return nil, err
+	}
+
+	cid, ok := t.colMap[column]
 	if !ok {
 		return nil, fmt.Errorf("column: '%s.%s.%s' not found", schema, table, column)
 	}
 
-	return c, nil
+	return &t.Columns[cid], nil
 }
 
 func (di *DBInfo) GetTable(schema, table string) (*DBTable, error) {
-	t, ok := di.tableMap[(schema + ":" + table)]
+	tid, ok := di.tableMap[(schema + ":" + table)]
 	if !ok {
 		return nil, fmt.Errorf("table: '%s.%s' not found", schema, table)
 	}
 
-	return t, nil
+	return &di.Tables[tid], nil
 }
 
 type DBColumn struct {
