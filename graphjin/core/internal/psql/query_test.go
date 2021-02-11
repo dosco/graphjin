@@ -8,7 +8,7 @@ import (
 
 func simpleQuery(t *testing.T) {
 	gql := `query {
-		product {
+		products {
 			id
 			user {
 				id
@@ -128,7 +128,7 @@ func withWhereMultiOr(t *testing.T) {
 
 func withNestedWhere(t *testing.T) {
 	gql := `query {
-			product(where: { comment: { user: { email: { eq: $email } } } }) {
+			products(where: { comments: { users: { email: { eq: $email } } } }) {
 			 id
 		 }
 	}`
@@ -155,7 +155,7 @@ func withAlternateName(t *testing.T) {
 
 func fetchByID(t *testing.T) {
 	gql := `query {
-		product(id: $id) {
+		products(id: $id) {
 			id
 			name
 		}
@@ -208,7 +208,7 @@ func oneToManyReverse(t *testing.T) {
 func oneToManyArray(t *testing.T) {
 	gql := `
 	query {
-		product {
+		products {
 			name
 			price
 			tags {
@@ -311,7 +311,7 @@ func syntheticTables(t *testing.T) {
 
 func queryWithVariables(t *testing.T) {
 	gql := `query {
-		product(id: $PRODUCT_ID, where: { price: { eq: $PRODUCT_PRICE } }) {
+		products(id: $PRODUCT_ID, where: { price: { eq: $PRODUCT_PRICE } }) {
 			id
 			name
 		}
@@ -339,21 +339,18 @@ func withWhereOnRelations(t *testing.T) {
 
 func multiRoot(t *testing.T) {
 	gql := `query {
-		product {
+		products {
 			id
 			name
 			customer {
 				email
 			}
-			customers {
-				email
-			}
 		}
-		user {
+		users {
 			id
 			email
 		}
-		customer {
+		customers {
 			id
 		}
 	}`
@@ -471,7 +468,7 @@ func withPolymorphicUnion(t *testing.T) {
 	query {
 		notifications {
 			id
-			subjects {
+			subject {
 				...on users {
 					...userFields
 				}
@@ -502,7 +499,7 @@ func withSkipAndIncludeDirectives(t *testing.T) {
 
 func subscription(t *testing.T) {
 	gql := `subscription test {
-		user(id: $id) {
+		users(id: $id) {
 			id
 			email
 		}
@@ -580,7 +577,7 @@ func jsonColumnAsTable(t *testing.T) {
 
 func recursiveTableParents(t *testing.T) {
 	gql := `query {
-		reply : comment(id: $id) {
+		reply : comments(id: $id) {
 			id
 			comments(find: "parents") {
 				id
@@ -597,7 +594,7 @@ func recursiveTableParents(t *testing.T) {
 
 func recursiveTableChildren(t *testing.T) {
 	gql := `query {
-		comment(id: $id) {
+		comments(id: $id) {
 			id
 			replies: comments(find: "children") {
 				id
@@ -629,7 +626,7 @@ func nullForAuthRequiredInAnon(t *testing.T) {
 
 func blockedQuery(t *testing.T) {
 	gql := `query {
-		user(id: $id, where: { id: { gt: 3 } }) {
+		users(id: $id, where: { id: { gt: 3 } }) {
 			id
 			full_name
 			email

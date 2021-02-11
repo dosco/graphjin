@@ -108,7 +108,6 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo) (*GraphJin, err
 	if conf == nil {
 		conf = &Config{Debug: true, DisableAllowList: true}
 	}
-	// conf.DisableInflection = true
 
 	gj := &GraphJin{
 		conf:   conf,

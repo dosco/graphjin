@@ -7,7 +7,7 @@ import (
 
 func simpleInsert(t *testing.T) {
 	gql := `mutation {
-		user(insert: $data) {
+		users(insert: $data) {
 			id
 		}
 	}`
@@ -21,7 +21,7 @@ func simpleInsert(t *testing.T) {
 
 func singleInsert(t *testing.T) {
 	gql := `mutation {
-		product(id: $id, insert: $insert) {
+		products(id: $id, insert: $insert) {
 			id
 			name
 		}
@@ -36,7 +36,7 @@ func singleInsert(t *testing.T) {
 
 func bulkInsert(t *testing.T) {
 	gql := `mutation {
-		product(name: "test", id: $id, insert: $insert) {
+		products(name: "test", id: $id, insert: $insert) {
 			id
 			name
 		}
@@ -51,7 +51,7 @@ func bulkInsert(t *testing.T) {
 
 func simpleInsertWithPresets(t *testing.T) {
 	gql := `mutation {
-		product(insert: $data) {
+		products(insert: $data) {
 			id
 		}
 	}`
@@ -65,7 +65,7 @@ func simpleInsertWithPresets(t *testing.T) {
 
 func nestedInsertManyToMany(t *testing.T) {
 	gql := `mutation {
-		purchase(insert: $data) {
+		purchases(insert: $data) {
 			sale_type
 			quantity
 			due_date
@@ -104,11 +104,11 @@ func nestedInsertManyToMany(t *testing.T) {
 
 func nestedInsertOneToMany(t *testing.T) {
 	gql := `mutation {
-		user(insert: $data) {
+		users(insert: $data) {
 			id
 			full_name
 			email
-			product {
+			products {
 				id
 				name
 				price
@@ -122,7 +122,7 @@ func nestedInsertOneToMany(t *testing.T) {
 			"full_name": "The Dude",
 			"created_at": "now",
 			"updated_at": "now",
-			"product": {
+			"products": {
 				"name": "Apple",
 				"price": 1.25,
 				"created_at": "now",
@@ -136,7 +136,7 @@ func nestedInsertOneToMany(t *testing.T) {
 
 func nestedInsertOneToOne(t *testing.T) {
 	gql := `mutation {
-		product(insert: $data) {
+		products(insert: $data) {
 			id
 			name
 			user {
@@ -167,11 +167,11 @@ func nestedInsertOneToOne(t *testing.T) {
 
 func nestedInsertOneToManyWithConnect(t *testing.T) {
 	gql := `mutation {
-		user(insert: $data) {
+		users(insert: $data) {
 			id
 			full_name
 			email
-			product {
+			products {
 				id
 				name
 				price
@@ -185,7 +185,7 @@ func nestedInsertOneToManyWithConnect(t *testing.T) {
 			"full_name": "The Dude",
 			"created_at": "now",
 			"updated_at": "now",
-			"product": {
+			"products": {
 				"connect": { "id": 5 }
 			}
 		}`),
@@ -196,7 +196,7 @@ func nestedInsertOneToManyWithConnect(t *testing.T) {
 
 func nestedInsertOneToOneWithConnect(t *testing.T) {
 	gql := `mutation {
-		product(insert: $data) {
+		products(insert: $data) {
 			id
 			name
 			tags {
@@ -228,7 +228,7 @@ func nestedInsertOneToOneWithConnect(t *testing.T) {
 
 func nestedInsertOneToOneWithConnectReverse(t *testing.T) {
 	gql := `mutation {
-		comment(insert: $data) {
+		comments(insert: $data) {
 			id
 			product {
 				id
@@ -253,7 +253,7 @@ func nestedInsertOneToOneWithConnectReverse(t *testing.T) {
 
 func nestedInsertOneToOneWithConnectArray(t *testing.T) {
 	gql := `mutation {
-		product(insert: $data) {
+		products(insert: $data) {
 			id
 			name
 			user {
@@ -296,7 +296,7 @@ func nestedInsertRecursive(t *testing.T) {
 			"body": "hello 2",
 			"created_at": "now",
 			"updated_at": "now",
-			"comment": {
+			"comments": {
 				"find": "children",
 				"connect":{ "id": 5 }
 			}

@@ -101,6 +101,7 @@ LEFT JOIN information_schema.statistics stat ON col.table_schema = stat.table_sc
   AND stat.index_type = 'FULLTEXT'
 WHERE
 	col.table_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')
+	and c.relname != "schema_version"
 UNION 
 SELECT
 	kcu.table_schema as "schema",

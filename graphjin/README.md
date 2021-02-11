@@ -1,6 +1,6 @@
 <img src="docs/website/static/img/graphjin-logo.svg" width="80" />
 
-# GraphJin - Fetch data with GraphQL
+# GraphJin - Build APIs in 5 minutes
 
 [![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=flat-square&logo=appveyor)](https://pkg.go.dev/github.com/dosco/graphjin/core?tab=doc)
 [![GoReport](https://goreportcard.com/badge/github.com/gojp/goreportcard?style=flat-square)](https://goreportcard.com/report/github.com/dosco/graphjin)

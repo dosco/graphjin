@@ -71,15 +71,6 @@ default_limit: 20
 # Note: This will not work with subscriptions
 set_user_id: false 
 
-# inflections:
-#   - person:people
-#   - sheep:sheep
-
-# The ability to use inflection with tables namesto decide 
-# if the response should be an array or object has been
-# deprecated and will be removed in the next major version
-disable_inflection: true
-
 # open opencensus tracing and metrics
 # telemetry:
 #   debug: true

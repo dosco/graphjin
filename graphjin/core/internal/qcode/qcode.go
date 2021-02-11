@@ -485,7 +485,7 @@ func (co *Compiler) setSingular(sel *Select) bool {
 		return true
 	}
 
-	if !co.c.DisableInflection {
+	if co.c.EnableInflection {
 		sel.Singular = sel.Ti.IsSingular
 	}
 

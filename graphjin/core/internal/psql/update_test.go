@@ -7,7 +7,7 @@ import (
 
 func singleUpdate(t *testing.T) {
 	gql := `mutation {
-		product(id: $id, update: $update, where: { id: { eq: 1 } }) {
+		products(id: $id, update: $update, where: { id: { eq: 1 } }) {
 			id
 			name
 		}
@@ -22,7 +22,7 @@ func singleUpdate(t *testing.T) {
 
 func simpleUpdateWithPresets(t *testing.T) {
 	gql := `mutation {
-		product(update: $data id: $id) {
+		products(update: $data id: $id) {
 			id
 		}
 	}`
@@ -37,7 +37,7 @@ func simpleUpdateWithPresets(t *testing.T) {
 
 func nestedUpdateManyToMany(t *testing.T) {
 	gql := `mutation {
-		purchase(update: $data, id: $id) {
+		purchases(update: $data, id: $id) {
 			sale_type
 			quantity
 			due_date
@@ -111,10 +111,10 @@ func nestedUpdateManyToMany(t *testing.T) {
 
 func nestedUpdateOneToOne(t *testing.T) {
 	gql := `mutation {
-		product(update: $data, id: $id) {
+		products(update: $data, id: $id) {
 			id
 			name
-			user {
+			users {
 				id
 				full_name
 				email
@@ -128,7 +128,7 @@ func nestedUpdateOneToOne(t *testing.T) {
 			"price": 1.25,
 			"created_at": "now",
 			"updated_at": "now",
-			"user": {
+			"users": {
 				"email": "thedude@rug.com"
 			}
 		}`),
@@ -140,11 +140,11 @@ func nestedUpdateOneToOne(t *testing.T) {
 
 func nestedUpdateOneToManyWithConnect(t *testing.T) {
 	gql := `mutation {
-		user(update: $data, id: $id) {
+		users(update: $data, id: $id) {
 			id
 			full_name
 			email
-			product {
+			products {
 				id
 				name
 				price
@@ -158,7 +158,7 @@ func nestedUpdateOneToManyWithConnect(t *testing.T) {
 			"full_name": "The Dude",
 			"created_at": "now",
 			"updated_at": "now",
-			"product": {
+			"products": {
 				"connect": { "id": 7 }
 			}
 		}`),
@@ -169,10 +169,10 @@ func nestedUpdateOneToManyWithConnect(t *testing.T) {
 
 func nestedUpdateOneToOneWithConnect(t *testing.T) {
 	gql := `mutation {
-		product(update: $data, id: $product_id) {
+		products(update: $data, id: $product_id) {
 			id
 			name
-			user {
+			users {
 				id
 				full_name
 				email
@@ -195,7 +195,7 @@ func nestedUpdateOneToOneWithConnect(t *testing.T) {
 
 func nestedUpdateOneToOneWithDisconnect(t *testing.T) {
 	gql := `mutation {
-		product(update: $data, id: $id) {
+		products(update: $data, id: $id) {
 			id
 			name
 			user_id
@@ -205,7 +205,7 @@ func nestedUpdateOneToOneWithDisconnect(t *testing.T) {
 		"data": json.RawMessage(`{
 			"name": "Apple",
 			"price": 1.25,
-			"user": {
+			"users": {
 				"disconnect": { "id": 5 }
 			}
 		}`),
@@ -216,7 +216,7 @@ func nestedUpdateOneToOneWithDisconnect(t *testing.T) {
 
 func nestedUpdateOneToOneWithDisconnectArray(t *testing.T) {
 	gql := `mutation {
-		product(update: $data, id: $id) {
+		products(update: $data, id: $id) {
 			id
 			name
 			user_id
@@ -228,7 +228,7 @@ func nestedUpdateOneToOneWithDisconnectArray(t *testing.T) {
 		"data": json.RawMessage(`{
 			"name": "Apple",
 			"price": 1.25,
-			"user": {
+			"users": {
 				"disconnect": { "id": 5 }
 			}
 		}`),
@@ -255,7 +255,7 @@ func nestedUpdateRecursive(t *testing.T) {
 			"body": "hello 2",
 			"created_at": "now",
 			"updated_at": "now",
-			"comment": {
+			"comments": {
 				"find": "children",
 				"connect":{ "id": 5 }
 			}

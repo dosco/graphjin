@@ -48,7 +48,7 @@ func GetDBInfo(
 	db *sql.DB,
 	dbtype string,
 	blockList []string,
-	disableInflection bool) (*DBInfo, error) {
+	enableInflection bool) (*DBInfo, error) {
 	var version string
 	_ = db.QueryRow(`SHOW server_version_num`).Scan(&version)
 
@@ -67,7 +67,7 @@ func GetDBInfo(
 		cols,
 		funcs,
 		blockList,
-		disableInflection)
+		enableInflection)
 
 	return di, nil
 }
@@ -78,7 +78,7 @@ func NewDBInfo(
 	cols []DBColumn,
 	funcs []DBFunction,
 	blockList []string,
-	disableInflection bool) *DBInfo {
+	enableInflection bool) *DBInfo {
 
 	di := &DBInfo{
 		Type:      dbtype,
@@ -104,7 +104,7 @@ func NewDBInfo(
 	}
 
 	for k, tcols := range tm {
-		ti := NewDBTable(k.schema, k.table, "", tcols, disableInflection)
+		ti := NewDBTable(k.schema, k.table, "", tcols, enableInflection)
 		ti.Blocked = isInList(ti.Name, blockList)
 		di.AddTable(ti)
 	}
@@ -112,7 +112,7 @@ func NewDBInfo(
 	return di
 }
 
-func NewDBTable(schema, name, _type string, cols []DBColumn, di bool) DBTable {
+func NewDBTable(schema, name, _type string, cols []DBColumn, ei bool) DBTable {
 	ti := DBTable{
 		Schema:  schema,
 		Name:    name,
@@ -121,7 +121,7 @@ func NewDBTable(schema, name, _type string, cols []DBColumn, di bool) DBTable {
 		colMap:  make(map[string]int, len(cols)),
 	}
 
-	if !di {
+	if ei {
 		key := strings.ToLower(name)
 		ti.Singular = flect.Singularize(key)
 		ti.Plural = flect.Pluralize(key)
