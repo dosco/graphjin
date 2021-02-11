@@ -82,7 +82,7 @@ func (gj *GraphJin) _initDiscover() error {
 			gj.db,
 			gj.conf.DBType,
 			gj.conf.Blocklist,
-			gj.conf.DisableInflection)
+			gj.conf.EnableInflection)
 	}
 
 	return err
@@ -111,7 +111,7 @@ func (gj *GraphJin) _initSchema() error {
 	}
 
 	gj.schema, err = sdata.NewDBSchema(gj.dbinfo,
-		getDBTableAliases(gj.conf), gj.conf.DisableInflection)
+		getDBTableAliases(gj.conf), gj.conf.EnableInflection)
 	return err
 }
 
@@ -119,9 +119,9 @@ func (gj *GraphJin) initCompilers() error {
 	var err error
 
 	qcc := qcode.Config{
-		DefaultBlock:      gj.conf.DefaultBlock,
-		DefaultLimit:      gj.conf.DefaultLimit,
-		DisableInflection: gj.conf.DisableInflection,
+		DefaultBlock:     gj.conf.DefaultBlock,
+		DefaultLimit:     gj.conf.DefaultLimit,
+		EnableInflection: gj.conf.EnableInflection,
 	}
 
 	if gj.allowList != nil && gj.conf.EnforceAllowList {

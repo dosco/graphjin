@@ -29,7 +29,7 @@ func TestMain(m *testing.M) {
 		log.Fatal(err)
 	}
 
-	err = qcompile.AddRole("user", "public", "product", qcode.TRConfig{
+	err = qcompile.AddRole("user", "public", "products", qcode.TRConfig{
 		Query: qcode.QueryConfig{
 			Columns: []string{"id", "name", "price", "users", "customers"},
 			Filters: []string{
@@ -60,7 +60,7 @@ func TestMain(m *testing.M) {
 		log.Fatal(err)
 	}
 
-	err = qcompile.AddRole("anon", "public", "product", qcode.TRConfig{
+	err = qcompile.AddRole("anon", "public", "products", qcode.TRConfig{
 		Query: qcode.QueryConfig{
 			Columns: []string{"id", "name"},
 		},
@@ -69,7 +69,7 @@ func TestMain(m *testing.M) {
 		log.Fatal(err)
 	}
 
-	err = qcompile.AddRole("anon1", "public", "product", qcode.TRConfig{
+	err = qcompile.AddRole("anon1", "public", "products", qcode.TRConfig{
 		Query: qcode.QueryConfig{
 			Columns:          []string{"id", "name", "price"},
 			DisableFunctions: true,

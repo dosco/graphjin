@@ -84,7 +84,7 @@ func GetTestDBInfo() *DBInfo {
 
 func GetTestSchema() (*DBSchema, error) {
 	aliases := map[string][]string{
-		"users": {"mes"},
+		"users": {"me"},
 	}
 
 	return NewDBSchema(GetTestDBInfo(), aliases, false)

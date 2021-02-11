@@ -13,7 +13,7 @@ import (
 func (gj *GraphJin) initConfig() error {
 	c := gj.conf
 
-	if !gj.conf.DisableInflection {
+	if gj.conf.EnableInflection {
 		if err := initInflection(c); err != nil {
 			return err
 		}
@@ -227,7 +227,7 @@ func addJsonTable(conf *Config, di *sdata.DBInfo, t Table) error {
 	}
 
 	nt := sdata.NewDBTable(bc.Schema,
-		t.Name, bc.Type, columns, conf.DisableInflection)
+		t.Name, bc.Type, columns, conf.EnableInflection)
 	nt.PrimaryCol = col1
 	nt.SecondaryCol = bt.PrimaryCol
 	di.AddTable(nt)

@@ -20,7 +20,7 @@ func (s *DBSchema) addNode(t DBTable) int64 {
 	s.tables = append(s.tables, t)
 	n := s.rg.NewNode()
 
-	if s.di {
+	if !s.ei {
 		s.ni[(t.Schema + ":" + t.Name)] = nodeInfo{id: n.ID()}
 		s.ni[(":" + t.Name)] = nodeInfo{id: n.ID()}
 
@@ -51,7 +51,7 @@ func (s *DBSchema) addAliases(t DBTable, nodeID int64, aliases []string) {
 	pn := nodeInfo{id: nodeID, singular: false}
 
 	for _, al := range aliases {
-		if s.di {
+		if !s.ei {
 			if _, ok := s.ni[(":" + al)]; !ok {
 				s.ni[(":" + al)] = nodeInfo{id: nodeID}
 			}
@@ -84,7 +84,7 @@ func (s *DBSchema) addAliases(t DBTable, nodeID int64, aliases []string) {
 }
 
 type nodeKey struct {
-	scheme, table, col string
+	schema, table, col string
 	singular           bool
 }
 
@@ -92,12 +92,6 @@ func (s *DBSchema) addEdge(
 	lti DBTable, lcol DBColumn,
 	rti DBTable, rcol DBColumn,
 	rt RelType) error {
-
-	// if s.di {
-	// 	return s.addEdge2(lti, lcol, rti, rcol, rt)
-	// } else {
-	// 	return s.addEdge1(lti, lcol, rti, rcol, rt)
-	// }
 
 	return s.addEdge1(lti, lcol, rti, rcol, rt)
 }
@@ -180,11 +174,7 @@ func (s *DBSchema) addEdge1(
 
 	var alts []nodeKey
 
-	if s.di {
-		alts = []nodeKey{
-			{lti.Schema, lti.Name, relT, false},
-		}
-	} else {
+	if s.ei {
 		relT1 := flect.Singularize(relT)
 		relT2 := flect.Pluralize(relT)
 
@@ -193,6 +183,10 @@ func (s *DBSchema) addEdge1(
 			{lti.Schema, lti.Singular, relT2, false},
 			{lti.Schema, lti.Plural, relT1, true},
 			{lti.Schema, lti.Plural, relT2, false},
+		}
+	} else {
+		alts = []nodeKey{
+			{lti.Schema, lti.Name, relT, false},
 		}
 	}
 
@@ -213,7 +207,7 @@ func (s *DBSchema) addAltEdge1(
 	rn := s.rg.NewNode()
 	n := nodeInfo{id: rn.ID(), singular: v.singular}
 
-	k1 := (v.scheme + ":" + v.table + ":" + v.col)
+	k1 := (v.schema + ":" + v.table + ":" + v.col)
 	k2 := (":" + v.table + ":" + v.col)
 	k3 := (":" + v.col)
 
@@ -247,54 +241,6 @@ func (s *DBSchema) addAltEdge1(
 		s.rg.SetWeightedEdge(e)
 	}
 }
-
-/*
-func (s *DBSchema) addAltEdge2(
-	v nodeKey,
-	ln, rn graph.Node,
-	lti, rti DBTable,
-	lcol, rcol DBColumn,
-	rt, rt2 RelType) {
-	rn = s.rg.NewNode()
-	n := nodeInfo{id: rn.ID(), singular: v.singular}
-
-	k3 := (v.scheme + ":" + v.table + ":" + v.col)
-	k4 := (":" + v.table + ":" + v.col)
-	// k3 := (":" + v.col)
-
-	if _, ok := s.ni[k3]; !ok {
-		s.ni[k3] = n
-	}
-
-	if _, ok := s.ni[k4]; !ok {
-		s.ni[k4] = n
-	}
-
-	// if _, ok := s.ni[k3]; !ok {
-	// 	s.ni[k3] = n
-	// }
-
-	s.rg.AddNode(rn)
-
-	e := TEdge{
-		Type: rt,
-		LT:   lti, RT: rti,
-		L: lcol, R: rcol,
-		WeightedEdge: s.rg.NewWeightedEdge(ln, rn, 2.0),
-	}
-	s.rg.SetWeightedEdge(e)
-
-	if rt2 != RelNone {
-		e := TEdge{
-			Type: rt2,
-			LT:   rti, RT: lti,
-			L: rcol, R: lcol,
-			WeightedEdge: s.rg.NewWeightedEdge(rn, ln, 2.0),
-		}
-		s.rg.SetWeightedEdge(e)
-	}
-}
-*/
 
 type TInfo struct {
 	IsSingular bool

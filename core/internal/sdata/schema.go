@@ -26,7 +26,7 @@ type DBSchema struct {
 	re     map[int64]TEdge               // recursive edges
 	rg     *simple.WeightedDirectedGraph // relationship graph
 	sp     path.AllShortest              // graph shortest paths
-	di     bool
+	ei     bool
 }
 
 type RelType int
@@ -69,7 +69,8 @@ type DBRel struct {
 func NewDBSchema(
 	info *DBInfo,
 	aliases map[string][]string,
-	disableInflection bool) (*DBSchema, error) {
+	enableInflection bool) (*DBSchema, error) {
+
 	schema := &DBSchema{
 		ver: info.Version,
 		typ: info.Type,
@@ -78,7 +79,7 @@ func NewDBSchema(
 		ni:  make(map[string]nodeInfo),
 		re:  make(map[int64]TEdge),
 		rg:  simple.NewWeightedDirectedGraph(3, -1),
-		di:  disableInflection,
+		ei:  enableInflection,
 	}
 
 	var nids []int64
@@ -262,7 +263,7 @@ func (s *DBSchema) addVirtual(vt VirtualTable) error {
 			PrimaryCol: col1,
 		}
 
-		if !s.di {
+		if s.ei {
 			pt.Singular = flect.Singularize(key)
 			pt.Plural = flect.Pluralize(key)
 		}

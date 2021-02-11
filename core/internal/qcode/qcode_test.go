@@ -22,7 +22,7 @@ func init() {
 
 func TestCompile1(t *testing.T) {
 	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
-	err := qc.AddRole("user", "public", "product", qcode.TRConfig{
+	err := qc.AddRole("user", "public", "products", qcode.TRConfig{
 		Query: qcode.QueryConfig{
 			Columns: []string{"id", "Name"},
 		},
@@ -44,7 +44,7 @@ func TestCompile1(t *testing.T) {
 
 func TestCompile2(t *testing.T) {
 	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
-	err := qc.AddRole("user", "public", "product", qcode.TRConfig{
+	err := qc.AddRole("user", "public", "products", qcode.TRConfig{
 		Query: qcode.QueryConfig{
 			Columns: []string{"ID"},
 		},
@@ -66,7 +66,7 @@ func TestCompile2(t *testing.T) {
 
 func TestCompile3(t *testing.T) {
 	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
-	err := qc.AddRole("user", "public", "product", qcode.TRConfig{
+	err := qc.AddRole("user", "public", "products", qcode.TRConfig{
 		Query: qcode.QueryConfig{
 			Columns: []string{"ID"},
 		},
@@ -81,7 +81,7 @@ func TestCompile3(t *testing.T) {
 
 	_, err = qc.Compile([]byte(`
 	mutation {
-		product(insert: $data) {
+		products(insert: $data) {
 			id
 			name
 		}

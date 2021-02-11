@@ -7,7 +7,7 @@ import (
 
 func singleUpsert(t *testing.T) {
 	gql := `mutation {
-		product(upsert: $upsert, where: { id: { eq: 1} }) {
+		products(upsert: $upsert, where: { id: { eq: 1} }) {
 			id
 			name
 		}
@@ -22,7 +22,7 @@ func singleUpsert(t *testing.T) {
 
 func singleUpsertWhere(t *testing.T) {
 	gql := `mutation {
-		product(upsert: $upsert, where: { price : { gt: 3 } }) {
+		products(upsert: $upsert, where: { price : { gt: 3 } }) {
 			id
 			name
 		}
@@ -52,7 +52,7 @@ func singleUpsertWhere(t *testing.T) {
 
 func delete(t *testing.T) {
 	gql := `mutation {
-		product(delete: true, where: { id: { eq: 1 } }) {
+		products(delete: true, where: { id: { eq: 1 } }) {
 			id
 			name
 		}
