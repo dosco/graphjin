@@ -51,6 +51,8 @@ func (s *DBSchema) addAliases(t DBTable, nodeID int64, aliases []string) {
 	pn := nodeInfo{id: nodeID, singular: false}
 
 	for _, al := range aliases {
+		s.al[al] = nodeInfo{id: nodeID}
+
 		if !s.ei {
 			if _, ok := s.ni[(":" + al)]; !ok {
 				s.ni[(":" + al)] = nodeInfo{id: nodeID}
@@ -80,7 +82,15 @@ func (s *DBSchema) addAliases(t DBTable, nodeID int64, aliases []string) {
 			s.ni[(t.Schema + ":" + pk)] = pn
 		}
 	}
+}
 
+func (s *DBSchema) GetAliases() map[string]DBTable {
+	ts := make(map[string]DBTable)
+
+	for name, n := range s.al {
+		ts[name] = s.tables[int(n.id)]
+	}
+	return ts
 }
 
 type nodeKey struct {
