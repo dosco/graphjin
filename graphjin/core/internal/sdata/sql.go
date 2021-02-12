@@ -66,6 +66,7 @@ FROM
 WHERE 
 	c.relkind IN ('r', 'v', 'm', 'f')
 	AND n.nspname NOT IN ('information_schema', 'pg_catalog') 
+	AND c.relname != 'schema_version'
 	AND f.attnum > 0
 	AND f.attisdropped = false;
 `
@@ -101,7 +102,6 @@ LEFT JOIN information_schema.statistics stat ON col.table_schema = stat.table_sc
   AND stat.index_type = 'FULLTEXT'
 WHERE
 	col.table_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')
-	and c.relname != "schema_version"
 UNION 
 SELECT
 	kcu.table_schema as "schema",

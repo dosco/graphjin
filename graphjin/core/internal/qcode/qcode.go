@@ -802,8 +802,10 @@ func (co *Compiler) compileArgID(sel *Select, arg *graph.Arg) error {
 		return fmt.Errorf("argument 'id' can only be specified at the query root")
 	}
 
-	if node.Type != graph.NodeNum && node.Type != graph.NodeVar {
-		return argErr("limit", "number or variable")
+	if node.Type != graph.NodeNum &&
+		node.Type != graph.NodeStr &&
+		node.Type != graph.NodeVar {
+		return argErr("id", "number, string or variable")
 	}
 
 	if sel.Ti.PrimaryCol.Name == "" {
@@ -821,6 +823,10 @@ func (co *Compiler) compileArgID(sel *Select, arg *graph.Arg) error {
 			ex.Type = ValNum
 			ex.Val = node.Val
 		}
+
+	case graph.NodeStr:
+		ex.Type = ValStr
+		ex.Val = node.Val
 
 	case graph.NodeVar:
 		ex.Type = ValVar

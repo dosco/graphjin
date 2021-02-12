@@ -24,382 +24,373 @@ var typeMap map[string]string = map[string]string{
 	"boolean":          "Boolean",
 }
 
+type intro struct {
+	*schema.Schema
+	*sdata.DBSchema
+	query        *schema.Object
+	mutation     *schema.Object
+	subscription *schema.Object
+	exptNeeded   map[string]bool
+}
+
 func (gj *GraphJin) initGraphQLEgine() error {
 	engine := graphql.New()
-	engineSchema := engine.Schema
-	sc := gj.schema
+	in := &intro{
+		Schema:       engine.Schema,
+		DBSchema:     gj.schema,
+		query:        &schema.Object{Name: "Query", Fields: schema.FieldList{}},
+		mutation:     &schema.Object{Name: "Mutation", Fields: schema.FieldList{}},
+		subscription: &schema.Object{Name: "Subscribe", Fields: schema.FieldList{}},
+		exptNeeded:   map[string]bool{},
+	}
 
-	if err := engineSchema.Parse(`enum OrderDirection { asc desc }`); err != nil {
+	if err := in.Parse(`enum OrderDirection { asc desc }`); err != nil {
 		return err
 	}
 
-	gqltype := func(col sdata.DBColumn, reflect bool) schema.Type {
-		typeName := typeMap[strings.ToLower(col.Type)]
-		if typeName == "" {
-			typeName = "String"
+	in.Types[in.query.Name] = in.query
+	in.Types[in.mutation.Name] = in.mutation
+	in.Types[in.subscription.Name] = in.subscription
+
+	in.EntryPoints[schema.Query] = in.query
+	in.EntryPoints[schema.Mutation] = in.mutation
+	in.EntryPoints[schema.Subscription] = in.subscription
+
+	if err := in.addTables(); err != nil {
+		return err
+	}
+	in.addExpressions()
+
+	if err := in.ResolveTypes(); err != nil {
+		return err
+	}
+
+	engine.Resolver = resolvers.Func(revolverFunc)
+	gj.ge = engine
+	return nil
+}
+
+func revolverFunc(request *resolvers.ResolveRequest, next resolvers.Resolution) resolvers.Resolution {
+	resolver := resolvers.MetadataResolver.Resolve(request, next)
+	if resolver != nil {
+		return resolver
+	}
+	resolver = resolvers.MethodResolver.Resolve(request, next) // needed by the MetadataResolver
+	if resolver != nil {
+		return resolver
+	}
+
+	return nil
+}
+
+func (in *intro) addTables() error {
+	for _, t := range in.GetTables() {
+		if err := in.addTable(t.Name, t); err != nil {
+			return err
 		}
-		var t schema.Type = &schema.TypeName{Name: typeName}
-		if col.NotNull && reflect {
-			t = &schema.NonNull{OfType: t}
+	}
+
+	for name, t := range in.GetAliases() {
+		if err := in.addTable(name, t); err != nil {
+			return err
 		}
-		return t
+	}
+	return nil
+}
+
+func (in *intro) addTable(name string, ti sdata.DBTable) error {
+	if ti.Blocked {
+		return nil
 	}
 
-	query := &schema.Object{
-		Name:   "Query",
-		Fields: schema.FieldList{},
+	// outputType
+	ot := &schema.Object{
+		Name: name + "Output", Fields: schema.FieldList{},
 	}
-	mutation := &schema.Object{
-		Name:   "Mutation",
-		Fields: schema.FieldList{},
+	in.Types[ot.Name] = ot
+
+	// inputType
+	it := &schema.InputObject{
+		Name: name + "Input", Fields: schema.InputValueList{},
 	}
-	engineSchema.Types[query.Name] = query
-	engineSchema.Types[mutation.Name] = mutation
-	engineSchema.EntryPoints[schema.Query] = query
-	engineSchema.EntryPoints[schema.Mutation] = mutation
+	in.Types[it.Name] = it
 
-	//validGraphQLIdentifierRegex := regexp.MustCompile(`^[A-Za-z_][A-Za-z_0-9]*$`)
+	// orderByType
+	obt := &schema.InputObject{
+		Name: name + "OrderBy", Fields: schema.InputValueList{},
+	}
+	in.Types[obt.Name] = obt
 
-	scalarExpressionTypesNeeded := map[string]bool{}
-	tables := sc.GetTableNames()
+	ot.Fields = append(ot.Fields, &schema.Field{
+		Name: name,
+		Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: name + "Output"}}}},
+	})
 
-	var funcs []sdata.DBFunction
-	for _, f := range sc.GetFunctions() {
-		funcs = append(funcs, f)
+	// expressionType
+	exptName := name + "Expression"
+	expt := &schema.InputObject{
+		Name: exptName,
+		Fields: schema.InputValueList{
+			&schema.InputValue{
+				Name: "and",
+				Type: &schema.TypeName{Name: exptName},
+			},
+			&schema.InputValue{
+				Name: "or",
+				Type: &schema.TypeName{Name: exptName},
+			},
+			&schema.InputValue{
+				Name: "not",
+				Type: &schema.TypeName{Name: exptName},
+			},
+		},
+	}
+	in.Types[expt.Name] = expt
+
+	for _, col := range ti.Columns {
+		in.addColumn(name, ti, col, it, obt, expt, ot)
+
+		if col.FKeyTable != "" && col.FKeyCol != "" {
+			name := getRelName(col.Name)
+
+			ti, err := in.Find(col.FKeySchema, col.FKeyTable)
+			if err != nil {
+				return err
+			}
+			if ti.Blocked {
+				continue
+			}
+			ot.Fields = append(ot.Fields, &schema.Field{
+				Name: name,
+				Type: &schema.TypeName{Name: ti.Name + "Output"},
+			})
+		}
 	}
 
-	for _, ti := range tables {
-		if ti.Blocked {
+	return nil
+}
+
+func (in *intro) addColumn(
+	name string,
+	ti sdata.DBTable, col sdata.DBColumn,
+	it, obt, expt *schema.InputObject, ot *schema.Object) {
+
+	colName := col.Name
+	if col.Blocked {
+		return
+	}
+
+	colType, typeName := getGQLType(col)
+
+	ot.Fields = append(ot.Fields, &schema.Field{
+		Name: colName,
+		Type: colType,
+	})
+
+	for _, f := range in.GetFunctions() {
+		if col.Type != f.Params[0].Type {
 			continue
 		}
 
-		singularName := ti.Singular
-		// if !validGraphQLIdentifierRegex.MatchString(singularName) {
-		// 	return errors.New("table name is not a valid GraphQL identifier: " + singularName)
-		// }
-		pluralName := ti.Plural
-		// if !validGraphQLIdentifierRegex.MatchString(pluralName) {
-		// 	return errors.New("table name is not a valid GraphQL identifier: " + pluralName)
-		// }
+		ot.Fields = append(ot.Fields, &schema.Field{
+			Name: f.Name + "_" + colName,
+			Type: colType,
+		})
 
-		outputType := &schema.Object{
-			Name:   singularName + "Output",
-			Fields: schema.FieldList{},
-		}
-		engineSchema.Types[outputType.Name] = outputType
-
-		inputType := &schema.InputObject{
-			Name:   singularName + "Input",
-			Fields: schema.InputValueList{},
-		}
-		engineSchema.Types[inputType.Name] = inputType
-
-		orderByType := &schema.InputObject{
-			Name:   singularName + "OrderBy",
-			Fields: schema.InputValueList{},
-		}
-		engineSchema.Types[orderByType.Name] = orderByType
-
-		for _, t := range tables {
-			var ti1 sdata.TInfo
-			if path, err := sc.FindPath("", t.Name, "", ti.Name); err == nil {
-				ti1 = path[0].LTi
-			} else {
-				continue
-			}
-			if ti1.Blocked {
-				continue
-			}
-			singularName := ti1.DBTable.Singular
-			pluralName := ti1.Plural
-
-			outputType.Fields = append(outputType.Fields, &schema.Field{
-				Name: singularName,
-				Type: &schema.TypeName{Name: singularName + "Output"},
-			})
-
-			outputType.Fields = append(outputType.Fields, &schema.Field{
-				Name: pluralName,
-				Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: singularName + "Output"}}}},
-			})
-		}
-
-		// for _, t := range sc.GetAliases(table) {
-		// 	ti1, err := sc.GetTableInfo(t, table)
-		// 	if err != nil {
-		// 		return err
-		// 	}
-		// 	if ti1.Blocked {
-		// 		continue
-		// 	}
-
-		// 	if ti1.IsSingular {
-		// 		outputType := &schema.Object{
-		// 			Name:   t + "Output",
-		// 			Fields: schema.FieldList{},
-		// 		}
-		// 		engineSchema.Types[outputType.Name] = outputType
-
-		// 		inputType := &schema.InputObject{
-		// 			Name:   t + "Input",
-		// 			Fields: schema.InputValueList{},
-		// 		}
-		// 		engineSchema.Types[inputType.Name] = inputType
-
-		// 		orderByType := &schema.InputObject{
-		// 			Name:   t + "OrderBy",
-		// 			Fields: schema.InputValueList{},
-		// 		}
-		// 		engineSchema.Types[orderByType.Name] = orderByType
-
-		// 		outputType.Fields = append(outputType.Fields, &schema.Field{
-		// 			Name: t,
-		// 			Type: &schema.TypeName{Name: t + "Output"},
-		// 		})
-		// 	} else {
-		// 		outputType.Fields = append(outputType.Fields, &schema.Field{
-		// 			Name: t,
-		// 			Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: ti1.Singular + "Output"}}}},
-		// 		})
-		// 	}
-		// }
-
-		expressionTypeName := singularName + "Expression"
-		expressionType := &schema.InputObject{
-			Name: expressionTypeName,
-			Fields: schema.InputValueList{
-				&schema.InputValue{
-					Name: "and",
-					Type: &schema.TypeName{Name: expressionTypeName},
-				},
-				&schema.InputValue{
-					Name: "or",
-					Type: &schema.TypeName{Name: expressionTypeName},
-				},
-				&schema.InputValue{
-					Name: "not",
-					Type: &schema.TypeName{Name: expressionTypeName},
-				},
-			},
-		}
-		engineSchema.Types[expressionType.Name] = expressionType
-
-		for _, col := range ti.Columns {
-			colName := col.Name
-			if col.Blocked {
-				continue
-			}
-
-			colType := gqltype(col, true)
-			nullableColType := ""
-			if x, ok := colType.(*schema.NonNull); ok {
-				nullableColType = x.OfType.(*schema.TypeName).Name
-			} else {
-				nullableColType = colType.(*schema.TypeName).Name
-			}
-
-			outputType.Fields = append(outputType.Fields, &schema.Field{
-				Name: colName,
+		// If it's a numeric type...
+		if typeName == "Float" || typeName == "Int" {
+			ot.Fields = append(ot.Fields, &schema.Field{
+				Name: "avg_" + colName,
 				Type: colType,
 			})
-
-			for _, f := range funcs {
-				if col.Type != f.Params[0].Type {
-					continue
-				}
-				outputType.Fields = append(outputType.Fields, &schema.Field{
-					Name: f.Name + "_" + colName,
-					Type: colType,
-				})
-			}
-
-			// If it's a numeric type...
-			if nullableColType == "Float" || nullableColType == "Int" {
-				outputType.Fields = append(outputType.Fields, &schema.Field{
-					Name: "avg_" + colName,
-					Type: colType,
-				})
-				outputType.Fields = append(outputType.Fields, &schema.Field{
-					Name: "count_" + colName,
-					Type: colType,
-				})
-				outputType.Fields = append(outputType.Fields, &schema.Field{
-					Name: "max_" + colName,
-					Type: colType,
-				})
-				outputType.Fields = append(outputType.Fields, &schema.Field{
-					Name: "min_" + colName,
-					Type: colType,
-				})
-				outputType.Fields = append(outputType.Fields, &schema.Field{
-					Name: "stddev_" + colName,
-					Type: colType,
-				})
-				outputType.Fields = append(outputType.Fields, &schema.Field{
-					Name: "stddev_pop_" + colName,
-					Type: colType,
-				})
-				outputType.Fields = append(outputType.Fields, &schema.Field{
-					Name: "stddev_samp_" + colName,
-					Type: colType,
-				})
-				outputType.Fields = append(outputType.Fields, &schema.Field{
-					Name: "variance_" + colName,
-					Type: colType,
-				})
-				outputType.Fields = append(outputType.Fields, &schema.Field{
-					Name: "var_pop_" + colName,
-					Type: colType,
-				})
-				outputType.Fields = append(outputType.Fields, &schema.Field{
-					Name: "var_samp_" + colName,
-					Type: colType,
-				})
-			}
-
-			inputType.Fields = append(inputType.Fields, &schema.InputValue{
-				Name: colName,
+			ot.Fields = append(ot.Fields, &schema.Field{
+				Name: "count_" + colName,
 				Type: colType,
 			})
-			orderByType.Fields = append(orderByType.Fields, &schema.InputValue{
-				Name: colName,
-				Type: &schema.NonNull{OfType: &schema.TypeName{Name: "OrderDirection"}},
+			ot.Fields = append(ot.Fields, &schema.Field{
+				Name: "max_" + colName,
+				Type: colType,
 			})
-
-			scalarExpressionTypesNeeded[nullableColType] = true
-
-			expressionType.Fields = append(expressionType.Fields, &schema.InputValue{
-				Name: colName,
-				Type: &schema.NonNull{OfType: &schema.TypeName{Name: nullableColType + "Expression"}},
+			ot.Fields = append(ot.Fields, &schema.Field{
+				Name: "min_" + colName,
+				Type: colType,
 			})
-		}
-
-		outputTypeName := &schema.TypeName{Name: outputType.Name}
-		inputTypeName := &schema.TypeName{Name: inputType.Name}
-		pluralOutputTypeName := &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: outputType.Name}}}}
-		pluralInputTypeName := &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: inputType.Name}}}}
-
-		args := schema.InputValueList{
-			&schema.InputValue{
-				Desc: schema.Description{Text: "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit your needs."},
-				Name: "order_by",
-				Type: &schema.TypeName{Name: orderByType.Name},
-			},
-			&schema.InputValue{
-				Desc: schema.Description{Text: ""},
-				Name: "where",
-				Type: &schema.TypeName{Name: expressionType.Name},
-			},
-			&schema.InputValue{
-				Desc: schema.Description{Text: ""},
-				Name: "limit",
-				Type: &schema.TypeName{Name: "Int"},
-			},
-			&schema.InputValue{
-				Desc: schema.Description{Text: ""},
-				Name: "offset",
-				Type: &schema.TypeName{Name: "Int"},
-			},
-			&schema.InputValue{
-				Desc: schema.Description{Text: ""},
-				Name: "first",
-				Type: &schema.TypeName{Name: "Int"},
-			},
-			&schema.InputValue{
-				Desc: schema.Description{Text: ""},
-				Name: "last",
-				Type: &schema.TypeName{Name: "Int"},
-			},
-			&schema.InputValue{
-				Desc: schema.Description{Text: ""},
-				Name: "before",
-				Type: &schema.TypeName{Name: "String"},
-			},
-			&schema.InputValue{
-				Desc: schema.Description{Text: ""},
-				Name: "after",
-				Type: &schema.TypeName{Name: "String"},
-			},
-		}
-
-		if ti.PrimaryCol.Name != "" {
-			args = append(args, &schema.InputValue{
-				Desc: schema.Description{Text: "Finds the record by the primary key"},
-				Name: "id",
-				Type: gqltype(ti.PrimaryCol, false),
+			ot.Fields = append(ot.Fields, &schema.Field{
+				Name: "stddev_" + colName,
+				Type: colType,
+			})
+			ot.Fields = append(ot.Fields, &schema.Field{
+				Name: "stddev_pop_" + colName,
+				Type: colType,
+			})
+			ot.Fields = append(ot.Fields, &schema.Field{
+				Name: "stddev_samp_" + colName,
+				Type: colType,
+			})
+			ot.Fields = append(ot.Fields, &schema.Field{
+				Name: "variance_" + colName,
+				Type: colType,
+			})
+			ot.Fields = append(ot.Fields, &schema.Field{
+				Name: "var_pop_" + colName,
+				Type: colType,
+			})
+			ot.Fields = append(ot.Fields, &schema.Field{
+				Name: "var_samp_" + colName,
+				Type: colType,
 			})
 		}
+	}
 
-		if len(ti.FullText) == 0 {
-			args = append(args, &schema.InputValue{
-				Desc: schema.Description{Text: "Performs a full text search"},
-				Name: "search",
-				Type: &schema.TypeName{Name: "String"},
-			})
-		}
+	in.addArgs(name, ti, col, it, obt, expt, ot)
 
-		query.Fields = append(query.Fields, &schema.Field{
+	it.Fields = append(it.Fields, &schema.InputValue{
+		Name: colName,
+		Type: colType,
+	})
+	obt.Fields = append(obt.Fields, &schema.InputValue{
+		Name: colName,
+		Type: &schema.NonNull{OfType: &schema.TypeName{Name: "OrderDirection"}},
+	})
+
+	in.exptNeeded[typeName] = true
+
+	expt.Fields = append(expt.Fields, &schema.InputValue{
+		Name: colName,
+		Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName + "Expression"}},
+	})
+}
+
+func (in *intro) addArgs(
+	name string,
+	ti sdata.DBTable, col sdata.DBColumn,
+	it, obt, expt *schema.InputObject, ot *schema.Object) {
+
+	otName := &schema.TypeName{Name: ot.Name}
+	itName := &schema.TypeName{Name: it.Name}
+
+	potName := &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: ot.Name}}}}
+	pitName := &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: it.Name}}}}
+
+	args := schema.InputValueList{
+		&schema.InputValue{
+			Desc: schema.Description{Text: "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit your needs."},
+			Name: "order_by",
+			Type: &schema.TypeName{Name: obt.Name},
+		},
+		&schema.InputValue{
 			Desc: schema.Description{Text: ""},
-			Name: singularName,
-			Type: outputTypeName,
-			Args: args,
-		})
-		query.Fields = append(query.Fields, &schema.Field{
+			Name: "where",
+			Type: &schema.TypeName{Name: expt.Name},
+		},
+		&schema.InputValue{
 			Desc: schema.Description{Text: ""},
-			Name: pluralName,
-			Type: pluralOutputTypeName,
-			Args: args,
-		})
+			Name: "limit",
+			Type: &schema.TypeName{Name: "Int"},
+		},
+		&schema.InputValue{
+			Desc: schema.Description{Text: ""},
+			Name: "offset",
+			Type: &schema.TypeName{Name: "Int"},
+		},
+		&schema.InputValue{
+			Desc: schema.Description{Text: ""},
+			Name: "first",
+			Type: &schema.TypeName{Name: "Int"},
+		},
+		&schema.InputValue{
+			Desc: schema.Description{Text: ""},
+			Name: "last",
+			Type: &schema.TypeName{Name: "Int"},
+		},
+		&schema.InputValue{
+			Desc: schema.Description{Text: ""},
+			Name: "before",
+			Type: &schema.TypeName{Name: "String"},
+		},
+		&schema.InputValue{
+			Desc: schema.Description{Text: ""},
+			Name: "after",
+			Type: &schema.TypeName{Name: "String"},
+		},
+	}
 
-		mutationArgs := append(args, schema.InputValueList{
-			&schema.InputValue{
-				Desc: schema.Description{Text: ""},
-				Name: "insert",
-				Type: inputTypeName,
-			},
-			&schema.InputValue{
-				Desc: schema.Description{Text: ""},
-				Name: "update",
-				Type: inputTypeName,
-			},
-
-			&schema.InputValue{
-				Desc: schema.Description{Text: ""},
-				Name: "upsert",
-				Type: inputTypeName,
-			},
-		}...)
-
-		mutation.Fields = append(mutation.Fields, &schema.Field{
-			Name: singularName,
-			Args: mutationArgs,
-			Type: outputType,
-		})
-		mutation.Fields = append(mutation.Fields, &schema.Field{
-			Name: pluralName,
-			Args: append(mutationArgs, schema.InputValueList{
-				&schema.InputValue{
-					Desc: schema.Description{Text: ""},
-					Name: "inserts",
-					Type: pluralInputTypeName,
-				},
-				&schema.InputValue{
-					Desc: schema.Description{Text: ""},
-					Name: "updates",
-					Type: pluralInputTypeName,
-				},
-				&schema.InputValue{
-					Desc: schema.Description{Text: ""},
-					Name: "upserts",
-					Type: pluralInputTypeName,
-				},
-			}...),
-			Type: outputType,
+	if ti.PrimaryCol.Name != "" {
+		colType, _ := getGQLType(col)
+		args = append(args, &schema.InputValue{
+			Desc: schema.Description{Text: "Finds the record by the primary key"},
+			Name: "id",
+			Type: colType,
 		})
 	}
 
-	for typeName := range scalarExpressionTypesNeeded {
-		expressionType := &schema.InputObject{
+	if len(ti.FullText) == 0 {
+		args = append(args, &schema.InputValue{
+			Desc: schema.Description{Text: "Performs a full text search"},
+			Name: "search",
+			Type: &schema.TypeName{Name: "String"},
+		})
+	}
+
+	in.query.Fields = append(in.query.Fields, &schema.Field{
+		Desc: schema.Description{Text: ""},
+		Name: name,
+		Type: otName,
+		Args: args,
+	})
+	in.query.Fields = append(in.query.Fields, &schema.Field{
+		Desc: schema.Description{Text: ""},
+		Name: name,
+		Type: potName,
+		Args: args,
+	})
+
+	in.subscription.Fields = append(in.subscription.Fields, &schema.Field{
+		Desc: schema.Description{Text: ""},
+		Name: name,
+		Type: otName,
+		Args: args,
+	})
+	in.subscription.Fields = append(in.subscription.Fields, &schema.Field{
+		Desc: schema.Description{Text: ""},
+		Name: name,
+		Type: potName,
+		Args: args,
+	})
+
+	mutationArgs := append(args, schema.InputValueList{
+		&schema.InputValue{
+			Desc: schema.Description{Text: ""},
+			Name: "insert",
+			Type: pitName,
+		},
+		&schema.InputValue{
+			Desc: schema.Description{Text: ""},
+			Name: "update",
+			Type: itName,
+		},
+		&schema.InputValue{
+			Desc: schema.Description{Text: ""},
+			Name: "upsert",
+			Type: itName,
+		},
+		&schema.InputValue{
+			Desc: schema.Description{Text: ""},
+			Name: "delete",
+			Type: &schema.NonNull{OfType: &schema.TypeName{Name: "Boolean"}},
+		},
+	}...)
+	in.mutation.Fields = append(in.mutation.Fields, &schema.Field{
+		Name: name,
+		Args: mutationArgs,
+		Type: ot,
+	})
+}
+
+func (in *intro) addExpressions() {
+	// scalarExpressionTypesNeeded
+	for typeName := range in.exptNeeded {
+		ext := &schema.InputObject{
 			Name: typeName + "Expression",
 			Fields: schema.InputValueList{
 				&schema.InputValue{
@@ -462,7 +453,6 @@ func (gj *GraphJin) initGraphQLEgine() error {
 					Name: "not_in",
 					Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}}}},
 				},
-
 				&schema.InputValue{
 					Name: "like",
 					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
@@ -549,26 +539,53 @@ func (gj *GraphJin) initGraphQLEgine() error {
 				},
 			},
 		}
-		engineSchema.Types[expressionType.Name] = expressionType
+		in.Types[ext.Name] = ext
+	}
+}
+
+func getGQLType(col sdata.DBColumn) (schema.Type, string) {
+	var typeName string
+	var ok bool
+
+	k := strings.ToLower(col.Type)
+	if i := strings.IndexAny(k, "(["); i != -1 {
+		k = k[:i]
 	}
 
-	if err := engineSchema.ResolveTypes(); err != nil {
-		return err
+	if col.PrimaryKey {
+		typeName = "ID"
+	} else if typeName = typeMap[k]; !ok {
+		typeName = "String"
 	}
 
-	engine.Resolver = resolvers.Func(func(request *resolvers.ResolveRequest, next resolvers.Resolution) resolvers.Resolution {
-		resolver := resolvers.MetadataResolver.Resolve(request, next)
-		if resolver != nil {
-			return resolver
-		}
-		resolver = resolvers.MethodResolver.Resolve(request, next) // needed by the MetadataResolver
-		if resolver != nil {
-			return resolver
-		}
+	var t schema.Type = &schema.TypeName{Name: typeName}
+	if col.Array {
+		t = &schema.List{OfType: t}
+	}
+	if col.NotNull {
+		t = &schema.NonNull{OfType: t}
+	}
+	return t, typeName
+}
 
-		return nil
-	})
+func getRelName(colName string) string {
+	cn := strings.ToLower(colName)
 
-	gj.ge = engine
-	return nil
+	if strings.HasSuffix(cn, "_id") {
+		return colName[:len(colName)-3]
+	}
+
+	if strings.HasSuffix(cn, "_ids") {
+		return colName[:len(colName)-4]
+	}
+
+	if strings.HasPrefix(cn, "id_") {
+		return colName[3:]
+	}
+
+	if strings.HasPrefix(cn, "ids_") {
+		return colName[4:]
+	}
+
+	return ""
 }

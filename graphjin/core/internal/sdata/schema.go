@@ -22,6 +22,7 @@ type DBSchema struct {
 	tables []DBTable                     // tables
 	vt     map[string]VirtualTable       // for polymorphic relationships
 	fm     map[string]DBFunction         // db functions
+	al     map[string]nodeInfo           // aliases
 	ni     map[string]nodeInfo           // info on nodes
 	re     map[int64]TEdge               // recursive edges
 	rg     *simple.WeightedDirectedGraph // relationship graph
@@ -76,6 +77,7 @@ func NewDBSchema(
 		typ: info.Type,
 		vt:  make(map[string]VirtualTable),
 		fm:  make(map[string]DBFunction),
+		al:  make(map[string]nodeInfo),
 		ni:  make(map[string]nodeInfo),
 		re:  make(map[int64]TEdge),
 		rg:  simple.NewWeightedDirectedGraph(3, -1),
@@ -273,7 +275,7 @@ func (s *DBSchema) addVirtual(vt VirtualTable) error {
 	return nil
 }
 
-func (s *DBSchema) GetTableNames() []DBTable {
+func (s *DBSchema) GetTables() []DBTable {
 	return s.tables
 }
 
