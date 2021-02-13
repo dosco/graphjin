@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/chirino/graphql"
@@ -24,6 +25,83 @@ var typeMap map[string]string = map[string]string{
 	"boolean":          "Boolean",
 }
 
+type expInfo struct {
+	name, vtype string
+	list        bool
+	desc, db    string
+}
+
+const (
+	likeDesc = "Value matching pattern where '%' represents zero or more characters and '_' represents a single character. Eg. '_r%' finds values having 'r' in second position"
+
+	notLikeDesc = "Value not matching pattern where '%' represents zero or more characters and '_' represents a single character. Eg. '_r%' finds values not having 'r' in second position"
+
+	iLikeDesc = "Value matching (case-insensitive) pattern where '%' represents zero or more characters and '_' represents a single character. Eg. '_r%' finds values having 'r' in second position"
+
+	notILikeDesc = "Value not matching (case-insensitive) pattern where '%' represents zero or more characters and '_' represents a single character. Eg. '_r%' finds values not having 'r' in second position"
+
+	similarDesc = "Value matching regex pattern. Similar to the 'like' operator but with support for regex. Pattern must match entire value."
+
+	notSimilarDesc = "Value not matching regex pattern. Similar to the 'like' operator but with support for regex. Pattern must not match entire value."
+)
+
+var expList []expInfo = []expInfo{
+	{"eq", "", false, "Equals value", ""},
+	{"equals", "", false, "Equals value", ""},
+	{"neq", "", false, "Does not equal value", ""},
+	{"not_equals", "", false, "Does not equal value", ""},
+	{"gt", "", false, "Is greater than value", ""},
+	{"greater_than", "", false, "Is greater than value", ""},
+	{"lt", "", false, "Is lesser than value", ""},
+	{"lesser_than", "", false, "Is lesser than value", ""},
+	{"gte", "", false, "Is greater than or equals value", ""},
+	{"greater_or_equals", "", false, "Is greater than or equals value", ""},
+	{"lte", "", false, "Is lesser than or equals value", ""},
+	{"lesser_or_equals", "", false, "Is lesser than or equals value", ""},
+	{"in", "", true, "Is in list of values", ""},
+	{"nin", "", true, "Is not in list of values", ""},
+	{"not_in", "", true, "Is not in list of values", ""},
+	{"like", "String", false, likeDesc, ""},
+	{"nlike", "String", false, notLikeDesc, ""},
+	{"not_like", "String", false, notLikeDesc, ""},
+	{"ilike", "String", false, iLikeDesc, ""},
+	{"nilike", "String", false, notILikeDesc, ""},
+	{"not_ilike", "String", false, notILikeDesc, ""},
+	{"similar", "String", false, similarDesc, ""},
+	{"nsimilar", "String", false, notSimilarDesc, ""},
+	{"not_similar", "String", false, notSimilarDesc, ""},
+	{"regex", "String", false, "Value matches regex pattern", ""},
+	{"nregex", "String", false, "Value not matching regex pattern", ""},
+	{"not_regex", "String", false, "Value not matching regex pattern", ""},
+	{"iregex", "String", false, "Value matches (case-insensitive) regex pattern", ""},
+	{"niregex", "String", false, "Value not matching (case-insensitive) regex pattern", ""},
+	{"not_iregex", "String", false, "Value not matching (case-insensitive) regex pattern", ""},
+	{"has_key", "", false, "JSON value contains this key", ""},
+	{"has_key_any", "", true, "JSON value contains any of these keys", ""},
+	{"has_key_all", "", true, "JSON value contains all of these keys", ""},
+	{"contains", "", false, "JSON value matches any of they key/value pairs", ""},
+	{"contained_in", "", false, "JSON value contains all of they key/value pairs", ""},
+	{"is_null", "Boolean", false, "Is value null (true) or not null (false)", ""},
+}
+
+type funcInfo struct {
+	name, desc, db string
+}
+
+var countFunc = funcInfo{"count", "Count the number of rows", ""}
+
+var numericFuncList []funcInfo = []funcInfo{
+	{"avg", "Calculate an average %s", ""},
+	{"max", "Find the maximum %s", ""},
+	{"min", "Find the minimum %s", ""},
+	{"stddev", "Calculate the standard deviation of %s values", ""},
+	{"stddev_pop", "Calculate the population standard deviation of %s values", ""},
+	{"stddev_samp", "Calculate the sample standard deviation of %s values", ""},
+	{"variance", "Calculate the sample variance of %s values", ""},
+	{"var_samp", "Calculate the sample variance of %s values", ""},
+	{"var_pop", "Calculate the population sample variance of %s values", ""},
+}
+
 type intro struct {
 	*schema.Schema
 	*sdata.DBSchema
@@ -44,10 +122,6 @@ func (gj *GraphJin) initGraphQLEgine() error {
 		exptNeeded:   map[string]bool{},
 	}
 
-	if err := in.Parse(`enum OrderDirection { asc desc }`); err != nil {
-		return err
-	}
-
 	in.Types[in.query.Name] = in.query
 	in.Types[in.mutation.Name] = in.mutation
 	in.Types[in.subscription.Name] = in.subscription
@@ -55,6 +129,21 @@ func (gj *GraphJin) initGraphQLEgine() error {
 	in.EntryPoints[schema.Query] = in.query
 	in.EntryPoints[schema.Mutation] = in.mutation
 	in.EntryPoints[schema.Subscription] = in.subscription
+
+	in.Types["OrderDirection"] = &schema.Enum{Name: "OrderDirection", Values: []*schema.EnumValue{
+		{
+			Name: "asc",
+			Desc: schema.NewDescription("Ascending"),
+		}, {
+			Name: "desc",
+			Desc: schema.NewDescription("Descending"),
+		},
+	}}
+
+	in.Types["Cursor"] = &schema.Scalar{
+		Name: "Cursor",
+		Desc: schema.NewDescription("A cursor is an encoded string use for pagination"),
+	}
 
 	if err := in.addTables(); err != nil {
 		return err
@@ -95,7 +184,30 @@ func (in *intro) addTables() error {
 			return err
 		}
 	}
+
+	for _, t := range in.GetCustomTables() {
+		if err := in.addTable(t.Name, t); err != nil {
+			return err
+		}
+		desc := fmt.Sprintf(
+			"Table '%s' is a custom resolved table no column information is available",
+			t.Name,
+		)
+		in.addToTable(t.PrimaryCol.FKeyTable, desc, t)
+	}
+
 	return nil
+}
+
+func (in *intro) addToTable(name, desc string, ti sdata.DBTable) {
+	k := name + "Output"
+	var ot *schema.Object = in.Types[k].(*schema.Object)
+
+	ot.Fields = append(ot.Fields, &schema.Field{
+		Name: ti.Name,
+		Type: &schema.TypeName{Name: ti.Name + "Output"},
+		Desc: schema.NewDescription(desc),
+	})
 }
 
 func (in *intro) addTable(name string, ti sdata.DBTable) error {
@@ -187,56 +299,35 @@ func (in *intro) addColumn(
 		Type: colType,
 	})
 
-	for _, f := range in.GetFunctions() {
-		if col.Type != f.Params[0].Type {
-			continue
-		}
-
+	if col.PrimaryKey {
 		ot.Fields = append(ot.Fields, &schema.Field{
-			Name: f.Name + "_" + colName,
+			Name: countFunc.name + "_" + colName,
 			Type: colType,
+			Desc: schema.NewDescription(countFunc.desc),
 		})
+	}
 
+	// No functions on foreign key columns
+	if col.FKeyCol == "" {
 		// If it's a numeric type...
 		if typeName == "Float" || typeName == "Int" {
+			for _, v := range numericFuncList {
+				desc := fmt.Sprintf(v.desc, colName)
+				ot.Fields = append(ot.Fields, &schema.Field{
+					Name: v.name + "_" + colName,
+					Type: colType,
+					Desc: schema.NewDescription(desc),
+				})
+			}
+		}
+
+		for _, f := range in.GetFunctions() {
+			if col.Type != f.Params[0].Type {
+				continue
+			}
+
 			ot.Fields = append(ot.Fields, &schema.Field{
-				Name: "avg_" + colName,
-				Type: colType,
-			})
-			ot.Fields = append(ot.Fields, &schema.Field{
-				Name: "count_" + colName,
-				Type: colType,
-			})
-			ot.Fields = append(ot.Fields, &schema.Field{
-				Name: "max_" + colName,
-				Type: colType,
-			})
-			ot.Fields = append(ot.Fields, &schema.Field{
-				Name: "min_" + colName,
-				Type: colType,
-			})
-			ot.Fields = append(ot.Fields, &schema.Field{
-				Name: "stddev_" + colName,
-				Type: colType,
-			})
-			ot.Fields = append(ot.Fields, &schema.Field{
-				Name: "stddev_pop_" + colName,
-				Type: colType,
-			})
-			ot.Fields = append(ot.Fields, &schema.Field{
-				Name: "stddev_samp_" + colName,
-				Type: colType,
-			})
-			ot.Fields = append(ot.Fields, &schema.Field{
-				Name: "variance_" + colName,
-				Type: colType,
-			})
-			ot.Fields = append(ot.Fields, &schema.Field{
-				Name: "var_pop_" + colName,
-				Type: colType,
-			})
-			ot.Fields = append(ot.Fields, &schema.Field{
-				Name: "var_samp_" + colName,
+				Name: f.Name + "_" + colName,
 				Type: colType,
 			})
 		}
@@ -274,51 +365,51 @@ func (in *intro) addArgs(
 
 	args := schema.InputValueList{
 		&schema.InputValue{
-			Desc: schema.Description{Text: "To sort or ordering results just use the order_by argument. This can be combined with where, search, etc to build complex queries to fit your needs."},
+			Desc: schema.NewDescription("Sort or order results. Use key 'asc' for ascending and 'desc' for descending"),
 			Name: "order_by",
 			Type: &schema.TypeName{Name: obt.Name},
 		},
 		&schema.InputValue{
-			Desc: schema.Description{Text: ""},
+			Desc: schema.NewDescription("Filter results based on column values or values of columns in related tables"),
 			Name: "where",
 			Type: &schema.TypeName{Name: expt.Name},
 		},
 		&schema.InputValue{
-			Desc: schema.Description{Text: ""},
+			Desc: schema.NewDescription("Limit the number of returned rows"),
 			Name: "limit",
 			Type: &schema.TypeName{Name: "Int"},
 		},
 		&schema.InputValue{
-			Desc: schema.Description{Text: ""},
+			Desc: schema.NewDescription("Offset the number of returned rows (Not efficient for pagination, please use a cursor for that)"),
 			Name: "offset",
 			Type: &schema.TypeName{Name: "Int"},
 		},
 		&schema.InputValue{
-			Desc: schema.Description{Text: ""},
+			Desc: schema.NewDescription("Number of rows to return from the top. Combine with 'after' or 'before' arguments for cursor pagination"),
 			Name: "first",
 			Type: &schema.TypeName{Name: "Int"},
 		},
 		&schema.InputValue{
-			Desc: schema.Description{Text: ""},
+			Desc: schema.NewDescription("Number of rows to return from the bottom. Combine with 'after' or 'before' arguments for cursor pagination"),
 			Name: "last",
 			Type: &schema.TypeName{Name: "Int"},
 		},
 		&schema.InputValue{
-			Desc: schema.Description{Text: ""},
+			Desc: schema.NewDescription("Pass the cursor to this argument for backward pagination"),
 			Name: "before",
-			Type: &schema.TypeName{Name: "String"},
+			Type: &schema.TypeName{Name: "Cursor"},
 		},
 		&schema.InputValue{
-			Desc: schema.Description{Text: ""},
+			Desc: schema.NewDescription("Pass the cursor to this argument for forward pagination"),
 			Name: "after",
-			Type: &schema.TypeName{Name: "String"},
+			Type: &schema.TypeName{Name: "Cursor"},
 		},
 	}
 
 	if ti.PrimaryCol.Name != "" {
 		colType, _ := getGQLType(col)
 		args = append(args, &schema.InputValue{
-			Desc: schema.Description{Text: "Finds the record by the primary key"},
+			Desc: schema.NewDescription("Finds the record by the primary key"),
 			Name: "id",
 			Type: colType,
 		})
@@ -326,33 +417,33 @@ func (in *intro) addArgs(
 
 	if len(ti.FullText) == 0 {
 		args = append(args, &schema.InputValue{
-			Desc: schema.Description{Text: "Performs a full text search"},
+			Desc: schema.NewDescription("Performs a full text search"),
 			Name: "search",
 			Type: &schema.TypeName{Name: "String"},
 		})
 	}
 
 	in.query.Fields = append(in.query.Fields, &schema.Field{
-		Desc: schema.Description{Text: ""},
+		//Desc: schema.NewDescription(""),
 		Name: name,
 		Type: otName,
 		Args: args,
 	})
 	in.query.Fields = append(in.query.Fields, &schema.Field{
-		Desc: schema.Description{Text: ""},
+		//Desc: schema.NewDescription(""),
 		Name: name,
 		Type: potName,
 		Args: args,
 	})
 
 	in.subscription.Fields = append(in.subscription.Fields, &schema.Field{
-		Desc: schema.Description{Text: ""},
+		//Desc: schema.NewDescription(""),
 		Name: name,
 		Type: otName,
 		Args: args,
 	})
 	in.subscription.Fields = append(in.subscription.Fields, &schema.Field{
-		Desc: schema.Description{Text: ""},
+		//Desc: schema.NewDescription(""),
 		Name: name,
 		Type: potName,
 		Args: args,
@@ -360,22 +451,22 @@ func (in *intro) addArgs(
 
 	mutationArgs := append(args, schema.InputValueList{
 		&schema.InputValue{
-			Desc: schema.Description{Text: ""},
+			Desc: schema.NewDescription(fmt.Sprintf("Insert row into table %s", name)),
 			Name: "insert",
 			Type: pitName,
 		},
 		&schema.InputValue{
-			Desc: schema.Description{Text: ""},
+			Desc: schema.NewDescription(fmt.Sprintf("Update row in table %s", name)),
 			Name: "update",
 			Type: itName,
 		},
 		&schema.InputValue{
-			Desc: schema.Description{Text: ""},
+			Desc: schema.NewDescription(fmt.Sprintf("Update or Insert row in table %s", name)),
 			Name: "upsert",
 			Type: itName,
 		},
 		&schema.InputValue{
-			Desc: schema.Description{Text: ""},
+			Desc: schema.NewDescription(fmt.Sprintf("Delete row from table %s", name)),
 			Name: "delete",
 			Type: &schema.NonNull{OfType: &schema.TypeName{Name: "Boolean"}},
 		},
@@ -390,154 +481,27 @@ func (in *intro) addArgs(
 func (in *intro) addExpressions() {
 	// scalarExpressionTypesNeeded
 	for typeName := range in.exptNeeded {
+		var fields schema.InputValueList
+
+		for _, v := range expList {
+			vtype := v.vtype
+			if v.vtype == "" {
+				vtype = typeName
+			}
+			iv := &schema.InputValue{
+				Name: v.name,
+				Desc: schema.NewDescription(v.desc),
+				Type: &schema.NonNull{OfType: &schema.TypeName{Name: vtype}},
+			}
+			if v.list {
+				iv.Type = &schema.NonNull{OfType: &schema.List{OfType: iv.Type}}
+			}
+			fields = append(fields, iv)
+		}
+
 		ext := &schema.InputObject{
-			Name: typeName + "Expression",
-			Fields: schema.InputValueList{
-				&schema.InputValue{
-					Name: "eq",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
-				},
-				&schema.InputValue{
-					Name: "equals",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
-				},
-				&schema.InputValue{
-					Name: "neq",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
-				},
-				&schema.InputValue{
-					Name: "not_equals",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
-				},
-				&schema.InputValue{
-					Name: "gt",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
-				},
-				&schema.InputValue{
-					Name: "greater_than",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
-				},
-				&schema.InputValue{
-					Name: "lt",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
-				},
-				&schema.InputValue{
-					Name: "lesser_than",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
-				},
-				&schema.InputValue{
-					Name: "gte",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
-				},
-				&schema.InputValue{
-					Name: "greater_or_equals",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
-				},
-				&schema.InputValue{
-					Name: "lte",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
-				},
-				&schema.InputValue{
-					Name: "lesser_or_equals",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
-				},
-				&schema.InputValue{
-					Name: "in",
-					Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}}}},
-				},
-				&schema.InputValue{
-					Name: "nin",
-					Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}}}},
-				},
-				&schema.InputValue{
-					Name: "not_in",
-					Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}}}},
-				},
-				&schema.InputValue{
-					Name: "like",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
-				},
-				&schema.InputValue{
-					Name: "nlike",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
-				},
-				&schema.InputValue{
-					Name: "not_like",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
-				},
-				&schema.InputValue{
-					Name: "ilike",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
-				},
-				&schema.InputValue{
-					Name: "nilike",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
-				},
-				&schema.InputValue{
-					Name: "not_ilike",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
-				},
-				&schema.InputValue{
-					Name: "similar",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
-				},
-				&schema.InputValue{
-					Name: "nsimilar",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
-				},
-				&schema.InputValue{
-					Name: "not_similar",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
-				},
-				&schema.InputValue{
-					Name: "regex",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
-				},
-				&schema.InputValue{
-					Name: "nregex",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
-				},
-				&schema.InputValue{
-					Name: "not_regex",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
-				},
-				&schema.InputValue{
-					Name: "iregex",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
-				},
-				&schema.InputValue{
-					Name: "niregex",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
-				},
-				&schema.InputValue{
-					Name: "not_iregex",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
-				},
-				&schema.InputValue{
-					Name: "has_key",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}},
-				},
-				&schema.InputValue{
-					Name: "has_key_any",
-					Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}}}},
-				},
-				&schema.InputValue{
-					Name: "has_key_all",
-					Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}}}},
-				},
-				&schema.InputValue{
-					Name: "contains",
-					Type: &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: typeName}}}},
-				},
-				&schema.InputValue{
-					Name: "contained_in",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "String"}},
-				},
-				&schema.InputValue{
-					Name: "is_null",
-					Type: &schema.NonNull{OfType: &schema.TypeName{Name: "Boolean"}},
-				},
-			},
+			Name:   typeName + "Expression",
+			Fields: fields,
 		}
 		in.Types[ext.Name] = ext
 	}
@@ -554,7 +518,7 @@ func getGQLType(col sdata.DBColumn) (schema.Type, string) {
 
 	if col.PrimaryKey {
 		typeName = "ID"
-	} else if typeName = typeMap[k]; !ok {
+	} else if typeName, ok = typeMap[k]; !ok {
 		typeName = "String"
 	}
 
