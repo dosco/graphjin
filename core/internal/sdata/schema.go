@@ -20,6 +20,7 @@ type DBSchema struct {
 	ver    int
 	typ    string                        // db type
 	tables []DBTable                     // tables
+	custom []DBTable                     // custom resolver tables
 	vt     map[string]VirtualTable       // for polymorphic relationships
 	fm     map[string]DBFunction         // db functions
 	al     map[string]nodeInfo           // aliases
@@ -181,6 +182,7 @@ func (s *DBSchema) addRemoteRel(t DBTable) error {
 		return err
 	}
 
+	s.custom = append(s.custom, t)
 	return s.addEdge(t, t.PrimaryCol, pt.DBTable, pc, RelRemote)
 }
 
@@ -277,6 +279,10 @@ func (s *DBSchema) addVirtual(vt VirtualTable) error {
 
 func (s *DBSchema) GetTables() []DBTable {
 	return s.tables
+}
+
+func (s *DBSchema) GetCustomTables() []DBTable {
+	return s.custom
 }
 
 func (ti *DBTable) getColumn(name string) (DBColumn, bool) {
