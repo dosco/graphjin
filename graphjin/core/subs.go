@@ -65,12 +65,8 @@ type Member struct {
 	cindx int
 }
 
-func (gj *GraphJin) Subscribe(c context.Context, query string, vars json.RawMessage) (*Member, error) {
-	return gj.SubscribeEx(c, query, vars, nil)
-}
-
 // GraphQLEx is the extended version of the Subscribe function allowing for request specific config.
-func (gj *GraphJin) SubscribeEx(
+func (gj *GraphJin) Subscribe(
 	c context.Context,
 	query string,
 	vars json.RawMessage,

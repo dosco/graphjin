@@ -31,7 +31,7 @@ func Example_update() {
 	}
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
-	res, err := gj.GraphQL(ctx, gql, vars)
+	res, err := gj.GraphQL(ctx, gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -73,7 +73,7 @@ func Example_updateMultipleRelatedTables1() {
 	}
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
-	res, err := gj.GraphQL(ctx, gql, vars)
+	res, err := gj.GraphQL(ctx, gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -110,7 +110,7 @@ func Example_updateTableAndConnectToRelatedTables() {
 	}
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
-	res, err := gj.GraphQL(ctx, gql, vars)
+	res, err := gj.GraphQL(ctx, gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -147,7 +147,7 @@ func Example_updateTableAndRelatedTable() {
 	}
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
-	res, err := gj.GraphQL(ctx, gql, vars)
+	res, err := gj.GraphQL(ctx, gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {

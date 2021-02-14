@@ -132,7 +132,7 @@ func apiV1Ws(servConf *ServConfig, w http.ResponseWriter, r *http.Request) {
 			if run {
 				continue
 			}
-			m, err = gj.Subscribe(ctx, msg.Payload.Query, msg.Payload.Vars)
+			m, err = gj.Subscribe(ctx, msg.Payload.Query, msg.Payload.Vars, nil)
 			if err == nil {
 				go waitForData(servConf, done, conn, m)
 				run = true

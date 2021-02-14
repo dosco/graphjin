@@ -28,7 +28,7 @@ func Example_subscription() {
 		panic(err)
 	}
 
-	m, err := gj.Subscribe(context.Background(), gql, vars)
+	m, err := gj.Subscribe(context.Background(), gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -79,7 +79,7 @@ func TestSubscription(t *testing.T) {
 		go func(n int) {
 			id := (rand.Intn(100-1) + 1)
 			vars := json.RawMessage(fmt.Sprintf(`{ "id": %d, "id2": %d }`, n, id))
-			m, err := gj.Subscribe(context.Background(), gql, vars)
+			m, err := gj.Subscribe(context.Background(), gql, vars, nil)
 			if err != nil {
 				fmt.Println(err)
 				return

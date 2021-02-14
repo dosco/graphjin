@@ -14,6 +14,7 @@ type Config struct {
 	DefaultLimit     int
 	defTrv           trval
 	EnableInflection bool
+	DBSchema         string
 }
 
 type TRConfig struct {

@@ -227,6 +227,10 @@ type Compiler struct {
 }
 
 func NewCompiler(s *sdata.DBSchema, c Config) (*Compiler, error) {
+	if c.DBSchema == "" {
+		c.DBSchema = "public"
+	}
+
 	c.defTrv.query.block = c.DefaultBlock
 	c.defTrv.insert.block = c.DefaultBlock
 	c.defTrv.update.block = c.DefaultBlock
@@ -442,7 +446,7 @@ func (co *Compiler) addRelInfo(
 	}
 
 	if sel.ParentID != -1 {
-		paths, err := co.s.FindPath("", childF.Name, "", parentF.Name)
+		paths, err := co.s.FindPath(co.c.DBSchema, childF.Name, co.c.DBSchema, parentF.Name)
 		if err != nil {
 			return err
 		}
