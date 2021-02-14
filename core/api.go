@@ -183,12 +183,7 @@ type ReqConfig struct {
 //
 // In developer mode all names queries are saved into a file `allow.list` and in production mode only
 // queries from this file can be run.
-func (gj *GraphJin) GraphQL(c context.Context, query string, vars json.RawMessage) (*Result, error) {
-	return gj.GraphQLEx(c, query, vars, nil)
-}
-
-// GraphQLEx is the extended version of the GraphQL function allowing for request specific config.
-func (gj *GraphJin) GraphQLEx(
+func (gj *GraphJin) GraphQL(
 	c context.Context,
 	query string,
 	vars json.RawMessage,

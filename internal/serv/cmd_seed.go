@@ -116,7 +116,7 @@ func graphQLFunc(servConf *ServConfig, gj *core.GraphJin, query string, data int
 		servConf.log.Fatalf("Failed parsing seed query variables: %s", err)
 	}
 
-	res, err := gj.GraphQL(ct, query, vars)
+	res, err := gj.GraphQL(ct, query, vars, nil)
 	if err != nil {
 		servConf.log.Fatalf("Seed query failed: %s", err)
 	}

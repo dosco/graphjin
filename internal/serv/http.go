@@ -95,7 +95,7 @@ func apiV1(servConf *ServConfig) func(http.ResponseWriter, *http.Request) {
 			}
 		}
 
-		res, err := gj.GraphQLEx(ct, req.Query, req.Vars, &rc)
+		res, err := gj.GraphQL(ct, req.Query, req.Vars, &rc)
 
 		if err == nil {
 			if servConf.conf.CacheControl != "" && res.Operation() == core.OpQuery {

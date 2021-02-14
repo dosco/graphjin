@@ -33,7 +33,7 @@ func Example_insert() {
 	}
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
-	res, err := gj.GraphQL(ctx, gql, vars)
+	res, err := gj.GraphQL(ctx, gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -80,7 +80,7 @@ func Example_insertWithPresets() {
 	}
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
-	res, err := gj.GraphQL(ctx, gql, vars)
+	res, err := gj.GraphQL(ctx, gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -121,7 +121,7 @@ func Example_bulkInsert() {
 	}
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
-	res, err := gj.GraphQL(ctx, gql, vars)
+	res, err := gj.GraphQL(ctx, gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -177,7 +177,7 @@ func Example_insertIntoMultipleRelatedTables1() {
 	}
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
-	res, err := gj.GraphQL(ctx, gql, vars)
+	res, err := gj.GraphQL(ctx, gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -226,7 +226,7 @@ func Example_insertIntoMultipleRelatedTables2() {
 	}
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
-	res, err := gj.GraphQL(ctx, gql, vars)
+	res, err := gj.GraphQL(ctx, gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -273,7 +273,7 @@ func Example_insertIntoMultipleRelatedTables3() {
 	}
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
-	res, err := gj.GraphQL(ctx, gql, vars)
+	res, err := gj.GraphQL(ctx, gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -316,7 +316,7 @@ func Example_insertIntoTableAndConnectToRelatedTables() {
 	}
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
-	res, err := gj.GraphQL(ctx, gql, vars)
+	res, err := gj.GraphQL(ctx, gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -361,7 +361,7 @@ func Example_insertIntoTableAndConnectToRelatedTableWithArrayColumn() {
 	}
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
-	res, err := gj.GraphQL(ctx, gql, vars)
+	res, err := gj.GraphQL(ctx, gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -399,7 +399,7 @@ func Example_insertIntoRecursiveRelationship() {
 	}
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
-	res, err := gj.GraphQL(ctx, gql, vars)
+	res, err := gj.GraphQL(ctx, gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -435,7 +435,7 @@ func Example_insertIntoRecursiveRelationshipAndConnectTable1() {
 	}
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
-	res, err := gj.GraphQL(ctx, gql, vars)
+	res, err := gj.GraphQL(ctx, gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -485,7 +485,7 @@ func Example_insertIntoRecursiveRelationshipAndConnectTable2() {
 		}`)
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 50)
-	res, err := gj.GraphQL(ctx, gql, vars)
+	res, err := gj.GraphQL(ctx, gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {

@@ -75,6 +75,15 @@ func (gj *GraphJin) _initDiscover() error {
 		gj.conf.DBType = "postgres"
 	}
 
+	if gj.conf.DBSchema == "" {
+		switch gj.conf.DBType {
+		case "postgres":
+			gj.conf.DBSchema = "public"
+		case "mysql":
+			return fmt.Errorf("please set DBSchema (db_schema) to database name")
+		}
+	}
+
 	// If gj.dbinfo is not null then it's probably set
 	// for tests
 	if gj.dbinfo == nil {
@@ -122,6 +131,7 @@ func (gj *GraphJin) initCompilers() error {
 		DefaultBlock:     gj.conf.DefaultBlock,
 		DefaultLimit:     gj.conf.DefaultLimit,
 		EnableInflection: gj.conf.EnableInflection,
+		DBSchema:         gj.conf.DBSchema,
 	}
 
 	if gj.allowList != nil && gj.conf.EnforceAllowList {

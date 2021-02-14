@@ -27,7 +27,7 @@ func Example_query() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, nil)
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -53,7 +53,7 @@ func Example_queryWithUser() {
 	}
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 31)
-	res, err := gj.GraphQL(ctx, gql, nil)
+	res, err := gj.GraphQL(ctx, gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -91,7 +91,7 @@ func Example_queryWithLimitOffsetOrderByDistinctAndWhere() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, nil)
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -117,7 +117,7 @@ func Example_queryWithWhereIn() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, vars)
+	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -148,7 +148,7 @@ func Example_queryWithWhereNotIsNullAndGreaterThan() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, nil)
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -179,7 +179,7 @@ func Example_queryWithWhereGreaterThanOrLesserThan() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, nil)
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -206,7 +206,7 @@ func Example_queryWithWhereOnRelatedTable() {
 	}
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 4)
-	res, err := gj.GraphQL(ctx, gql, nil)
+	res, err := gj.GraphQL(ctx, gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -231,7 +231,7 @@ func Example_queryWithAlternateFieldNames() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, nil)
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -258,7 +258,7 @@ func Example_queryByID() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, vars)
+	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -285,7 +285,7 @@ func Example_queryBySearch() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, vars)
+	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -311,7 +311,7 @@ func Example_queryParentsWithChildren() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, nil)
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -337,7 +337,7 @@ func Example_queryChildrenWithParent() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, nil)
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -379,7 +379,7 @@ func Example_queryParentAndChildrenViaArrayColumn() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, nil)
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -407,7 +407,7 @@ func Example_queryManyToManyViaJoinTable1() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, nil)
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -433,7 +433,7 @@ func Example_queryManyToManyViaJoinTable2() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, nil)
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -455,7 +455,7 @@ func Example_queryWithAggregation() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, nil)
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -484,7 +484,7 @@ func Example_queryWithAggregationBlockedColumn() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, nil)
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -513,7 +513,7 @@ func Example_queryWithFunctionsBlocked() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, nil)
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -535,7 +535,7 @@ func Example_queryWithFunctionsWithWhere() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, nil)
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -567,7 +567,7 @@ func Example_queryWithSyntheticTables() {
 	}
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 1)
-	res, err := gj.GraphQL(ctx, gql, nil)
+	res, err := gj.GraphQL(ctx, gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -594,7 +594,7 @@ func Example_queryWithVariables() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, vars)
+	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -630,7 +630,7 @@ func Example_queryWithMultipleTopLevelTables() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, vars)
+	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -664,7 +664,7 @@ func Example_queryWithFragments1() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, nil)
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -699,7 +699,7 @@ func Example_queryWithFragments2() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, nil)
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -734,7 +734,7 @@ func Example_queryWithFragments3() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, nil)
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -780,7 +780,7 @@ func Example_queryWithUnionForPolymorphicRelationships() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, nil)
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -809,7 +809,7 @@ func Example_queryWithSkipAndIncludeDirectives() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, vars)
+	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -853,7 +853,7 @@ func Example_queryWithRemoteAPIJoin() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, nil)
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -882,7 +882,7 @@ func Example_queryWithCursorPagination() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, vars)
+	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -939,7 +939,7 @@ func Example_queryWithJsonColumn() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, nil)
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -973,7 +973,7 @@ func Example_queryWithView() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, nil)
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -1003,7 +1003,7 @@ func Example_queryWithRecursiveRelationship1() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, vars)
+	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -1028,7 +1028,7 @@ func Example_queryWithRecursiveRelationship2() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, nil)
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -1055,7 +1055,7 @@ func Example_queryWithSkippingAuthRequiredSelectors() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, nil)
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -1088,7 +1088,7 @@ func Example_blockQueryWithRoles() {
 	}
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 50)
-	res, err := gj.GraphQL(ctx, gql, nil)
+	res, err := gj.GraphQL(ctx, gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
