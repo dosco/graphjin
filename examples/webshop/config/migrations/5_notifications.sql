@@ -6,8 +6,8 @@ CREATE TABLE notifications (
     subject_type character varying,
     subject_id bigint,
     user_id bigint REFERENCES users(id),
-    created_at timestamp without time zone NOT NULL,
-    updated_at timestamp without time zone NOT NULL
+    created_at timestamp without time zone NOT NULL DEFAULT NOW(),
+    updated_at timestamp without time zone NOT NULL DEFAULT NOW()
 );
 
 -- Indices -------------------------------------------------------

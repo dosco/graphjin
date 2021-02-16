@@ -6,8 +6,8 @@ CREATE TABLE purchases (
     product_id bigint REFERENCES products(id),
     quantity integer,
     returned_at timestamp without time zone,
-    created_at timestamp without time zone NOT NULL,
-    updated_at timestamp without time zone NOT NULL
+    created_at timestamp without time zone NOT NULL DEFAULT NOW(),
+    updated_at timestamp without time zone NOT NULL DEFAULT NOW()
 );
 
 -- Indices -------------------------------------------------------

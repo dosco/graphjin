@@ -11,8 +11,8 @@ CREATE TABLE users (
     reset_password_sent_at timestamp without time zone,
     remember_created_at timestamp without time zone,
     category_counts jsonb,
-    created_at timestamp without time zone NOT NULL,
-    updated_at timestamp without time zone NOT NULL
+    created_at timestamp without time zone NOT NULL DEFAULT NOW(),
+    updated_at timestamp without time zone NOT NULL DEFAULT NOW()
 );
 
 -- Indices -------------------------------------------------------

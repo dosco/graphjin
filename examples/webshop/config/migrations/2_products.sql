@@ -16,8 +16,8 @@ CREATE TABLE products (
 
     price           numeric(7,2),
     user_id         bigint REFERENCES users(id),
-    created_at timestamp without time zone NOT NULL,
-    updated_at timestamp without time zone NOT NULL
+    created_at timestamp without time zone NOT NULL DEFAULT NOW(),
+    updated_at timestamp without time zone NOT NULL DEFAULT NOW()
 );
 
 -- Indices -------------------------------------------------------

@@ -6,8 +6,8 @@ CREATE TABLE categories (
   name          text NOT NULL           CHECK (length(name) < 100),
   description   text                    CHECK (length(description) < 300),
 
-  created_at timestamp without time zone NOT NULL,
-  updated_at timestamp without time zone NOT NULL
+  created_at timestamp without time zone NOT NULL DEFAULT NOW(),
+  updated_at timestamp without time zone NOT NULL DEFAULT NOW()
 );
 
 ---- create above / drop below ----

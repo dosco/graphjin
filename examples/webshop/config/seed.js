@@ -10,9 +10,6 @@ var purchase_count = 100;
 var notifications_count = 100;
 var comments_count = 100;
 
-// ---- add users
-
-var users = [];
 
 for (i = 0; i < 3; i++) {
   var data = {
@@ -21,23 +18,21 @@ for (i = 0; i < 3; i++) {
     phone: fake.phone(),
     email: "user" + i + "@demo.com",
     password: pwd,
-    password_confirmation: pwd,
-    created_at: "now",
-    updated_at: "now",
+    password_confirmation: pwd
   };
 
   var res = graphql(
-    " \
-	mutation { \
-		user(insert: $data) { \
-			id \
-		} \
-	}",
-    { data: data },
-    { user_id: -1 }
+      " \
+      mutation { \
+          users(insert: $data) { \
+              id \
+          } \
+      }",
+      { data: data },
+      { user_id: -1 }
   );
 
-  users.push(res.user);
+  users.push(res.users);
 }
 
 // more fake users with random email id's
@@ -48,24 +43,23 @@ for (i = 0; i < user_count; i++) {
     phone: fake.phone(),
     email: "user_" + i + "_" + fake.email(),
     password: pwd,
-    password_confirmation: pwd,
-    created_at: "now",
-    updated_at: "now",
+    password_confirmation: pwd
   };
 
   var res = graphql(
-    " \
-	mutation { \
-		user(insert: $data) { \
-			id \
-		} \
-	}",
-    { data: data },
-    { user_id: -1 }
+      " \
+      mutation { \
+          users(insert: $data) { \
+              id \
+          } \
+      }",
+      { data: data },
+      { user_id: -1 }
   );
 
-  users.push(res.user);
+  users.push(res.users);
 }
+
 
 // ---- add customers
 
@@ -84,14 +78,14 @@ for (i = 0; i < customer_count; i++) {
   };
 
   var res = graphql(
-    " \
-	mutation { \
-		customer(insert: $data) { \
-			id \
-		} \
-	}",
-    { data: data },
-    { user_id: u.id }
+      " \
+      mutation { \
+          customers(insert: $data) { \
+              id \
+          } \
+      }",
+      { data: data },
+      { user_id: u.id }
   );
 
   customers.push(res.customer);
@@ -103,29 +97,25 @@ var categories = [
   {
     id: 1,
     name: "Beers",
-    description: "Liquid Bread",
-    created_at: "now",
-    updated_at: "now",
+    description: "Liquid Bread"
   },
   {
     id: 2,
     name: "Alcohol",
-    description: "Bad for you!",
-    created_at: "now",
-    updated_at: "now",
+    description: "Bad for you!"
   },
 ];
 
 // ---- add those sections using bulk insert
 
 var res = graphql(
-  " \
-mutation { \
-  categories(insert: $categories) { \
-    id \
-  } \
-}",
-  { categories: categories, user_id: 1 }
+    " \
+  mutation { \
+    categories(insert: $categories) { \
+      id \
+    } \
+  }",
+    { categories: categories, user_id: 1 }
 );
 
 // ---- add products
@@ -137,34 +127,34 @@ for (i = 0; i < product_count; i++) {
   var u = users[Math.floor(Math.random() * user_count)];
 
   // categories needs connecting since they are
-  // a related to items in a diffent table
+  // a related to items in a different table
   // while tags can just be anything.
 
   var tag_list = fake.hipster_sentence(5);
   var tags = tag_list.substring(0, tag_list.length - 1).split(" ");
 
   var data = {
-    name: fake.beer_name(),
-    description: desc,
-    price: Math.random() * 19.0,
-    tags: tags,
-    categories: {
-      connect: { id: [1, 2] },
-    },
+    "name": fake.beer_name(),
+    "description": desc,
+    "price": fake.price(),
+    "category_ids":[1,2,3],
+    "user_id": u.id
   };
 
+
+
   var res = graphql(
-    " \
-  mutation { \
-  	product(insert: $data) { \
-  		id \
-  	} \
-  }",
-    { data: data },
-    { user_id: u.id }
+      " \
+    mutation { \
+        products(insert: $data) { \
+            id \
+        } \
+    }",
+      { data: data }
+
   );
 
-  products.push(res.product);
+  products.push(res.products);
 }
 
 // ---- add purchases (joining customers with products)
@@ -186,17 +176,17 @@ for (i = 0; i < purchase_count; i++) {
   };
 
   var res = graphql(
-    " \
-  mutation { \
-  	purchase(insert: $data) { \
-  		id \
-  	} \
-  }",
-    { data: data },
-    { user_id: u.id }
+      " \
+    mutation { \
+        purchases(insert: $data) { \
+            id \
+        } \
+    }",
+      { data: data },
+      { user_id: u.id }
   );
 
-  purchases.push(res.purchase);
+  purchases.push(res.purchases);
 }
 
 // ---- add notifications
@@ -230,17 +220,17 @@ for (i = 0; i < notifications_count; i++) {
   };
 
   var res = graphql(
-    " \
-  mutation { \
-  	notification(insert: $data) { \
-  		id \
-  	} \
-  }",
-    { data: data },
-    { user_id: u.id }
+      " \
+    mutation { \
+        notifications(insert: $data) { \
+            id \
+        } \
+    }",
+      { data: data },
+      { user_id: u.id }
   );
 
-  notifications.push(res.notification);
+  notifications.push(res.notifications);
 }
 
 // ---- add comments
@@ -248,19 +238,13 @@ for (i = 0; i < notifications_count; i++) {
 var comments = [];
 
 for (i = 0; i < comments_count; i++) {
-  var u = users[Math.floor(Math.random() * user_count)];
-  var p = products[Math.floor(Math.random() * product_count)];
+  var userId = Math.floor(Math.random() * user_count) + 1; // no id of 0
+  var productId = Math.floor(Math.random() * product_count) + 1;
 
   var data = {
     body: fake.sentence(10),
-    created_at: "now",
-    updated_at: "now",
-    user: {
-      connect: { id: u.id },
-    },
-    product: {
-      connect: { id: p.id },
-    },
+    product_id: productId,
+    user_id: userId
   };
 
   if (comments.length !== 0) {
@@ -271,18 +255,17 @@ for (i = 0; i < comments_count; i++) {
     };
   }
 
-  console.log(data);
 
   var res = graphql(
-    " \
-  mutation { \
-  	comment(insert: $data) { \
-  		id \
-  	} \
-  }",
-    { data: data },
-    { user_id: u.id }
+      " \
+    mutation { \
+        comments(insert: $data) { \
+            id \
+        } \
+    }",
+      { data: data }
   );
 
-  comments.push(res.comment);
 }
+
+

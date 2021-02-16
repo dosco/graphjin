@@ -6,8 +6,8 @@ CREATE TABLE chats (
 
     reply_to_id     bigint[],
 
-    created_at timestamp without time zone NOT NULL,
-    updated_at timestamp without time zone NOT NULL
+    created_at timestamp without time zone NOT NULL DEFAULT NOW(),
+    updated_at timestamp without time zone NOT NULL DEFAULT NOW()
 );
 
 ---- create above / drop below ----
