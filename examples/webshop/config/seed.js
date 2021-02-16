@@ -10,7 +10,6 @@ var purchase_count = 100;
 var notifications_count = 100;
 var comments_count = 100;
 
-
 for (i = 0; i < 3; i++) {
   var data = {
     full_name: fake.name(),
@@ -18,18 +17,18 @@ for (i = 0; i < 3; i++) {
     phone: fake.phone(),
     email: "user" + i + "@demo.com",
     password: pwd,
-    password_confirmation: pwd
+    password_confirmation: pwd,
   };
 
   var res = graphql(
-      " \
+    " \
       mutation { \
           users(insert: $data) { \
               id \
           } \
       }",
-      { data: data },
-      { user_id: -1 }
+    { data: data },
+    { user_id: -1 }
   );
 
   users.push(res.users);
@@ -43,23 +42,22 @@ for (i = 0; i < user_count; i++) {
     phone: fake.phone(),
     email: "user_" + i + "_" + fake.email(),
     password: pwd,
-    password_confirmation: pwd
+    password_confirmation: pwd,
   };
 
   var res = graphql(
-      " \
+    " \
       mutation { \
           users(insert: $data) { \
               id \
           } \
       }",
-      { data: data },
-      { user_id: -1 }
+    { data: data },
+    { user_id: -1 }
   );
 
   users.push(res.users);
 }
-
 
 // ---- add customers
 
@@ -78,14 +76,14 @@ for (i = 0; i < customer_count; i++) {
   };
 
   var res = graphql(
-      " \
+    " \
       mutation { \
           customers(insert: $data) { \
               id \
           } \
       }",
-      { data: data },
-      { user_id: u.id }
+    { data: data },
+    { user_id: u.id }
   );
 
   customers.push(res.customer);
@@ -97,25 +95,25 @@ var categories = [
   {
     id: 1,
     name: "Beers",
-    description: "Liquid Bread"
+    description: "Liquid Bread",
   },
   {
     id: 2,
     name: "Alcohol",
-    description: "Bad for you!"
+    description: "Bad for you!",
   },
 ];
 
 // ---- add those sections using bulk insert
 
 var res = graphql(
-    " \
+  " \
   mutation { \
     categories(insert: $categories) { \
       id \
     } \
   }",
-    { categories: categories, user_id: 1 }
+  { categories: categories, user_id: 1 }
 );
 
 // ---- add products
@@ -134,24 +132,21 @@ for (i = 0; i < product_count; i++) {
   var tags = tag_list.substring(0, tag_list.length - 1).split(" ");
 
   var data = {
-    "name": fake.beer_name(),
-    "description": desc,
-    "price": fake.price(),
-    "category_ids":[1,2,3],
-    "user_id": u.id
+    name: fake.beer_name(),
+    description: desc,
+    price: fake.price(),
+    category_ids: [1, 2, 3],
+    user_id: u.id,
   };
 
-
-
   var res = graphql(
-      " \
+    " \
     mutation { \
         products(insert: $data) { \
             id \
         } \
     }",
-      { data: data }
-
+    { data: data }
   );
 
   products.push(res.products);
@@ -176,14 +171,14 @@ for (i = 0; i < purchase_count; i++) {
   };
 
   var res = graphql(
-      " \
+    " \
     mutation { \
         purchases(insert: $data) { \
             id \
         } \
     }",
-      { data: data },
-      { user_id: u.id }
+    { data: data },
+    { user_id: u.id }
   );
 
   purchases.push(res.purchases);
@@ -220,14 +215,14 @@ for (i = 0; i < notifications_count; i++) {
   };
 
   var res = graphql(
-      " \
+    " \
     mutation { \
         notifications(insert: $data) { \
             id \
         } \
     }",
-      { data: data },
-      { user_id: u.id }
+    { data: data },
+    { user_id: u.id }
   );
 
   notifications.push(res.notifications);
@@ -244,7 +239,7 @@ for (i = 0; i < comments_count; i++) {
   var data = {
     body: fake.sentence(10),
     product_id: productId,
-    user_id: userId
+    user_id: userId,
   };
 
   if (comments.length !== 0) {
@@ -255,17 +250,13 @@ for (i = 0; i < comments_count; i++) {
     };
   }
 
-
   var res = graphql(
-      " \
+    " \
     mutation { \
         comments(insert: $data) { \
             id \
         } \
     }",
-      { data: data }
+    { data: data }
   );
-
 }
-
-
