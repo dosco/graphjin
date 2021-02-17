@@ -189,7 +189,7 @@ func cmdDBMigrate(servConf *ServConfig) func(*cobra.Command, []string) {
 		}
 
 		m.OnStart = func(sequence int32, name, direction, sql string) {
-			servConf.log.Infof("Executing migration: %s, %s, %s", name, direction, sql)
+			servConf.log.Infof("Executing migration: %s, %s\n%s", name, direction, sql)
 		}
 
 		currentVersion, err := m.GetCurrentVersion()

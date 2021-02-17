@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-
-	"github.com/gobuffalo/flect"
 )
 
 type DBInfo struct {
@@ -27,8 +25,6 @@ type DBTable struct {
 	PrimaryCol   DBColumn
 	SecondaryCol DBColumn
 	FullText     []DBColumn
-	Singular     string
-	Plural       string
 	Blocked      bool
 	colMap       map[string]int
 }
@@ -47,8 +43,7 @@ type st struct {
 func GetDBInfo(
 	db *sql.DB,
 	dbtype string,
-	blockList []string,
-	enableInflection bool) (*DBInfo, error) {
+	blockList []string) (*DBInfo, error) {
 	var version string
 	_ = db.QueryRow(`SHOW server_version_num`).Scan(&version)
 
@@ -66,8 +61,7 @@ func GetDBInfo(
 		version,
 		cols,
 		funcs,
-		blockList,
-		enableInflection)
+		blockList)
 
 	return di, nil
 }
@@ -77,8 +71,7 @@ func NewDBInfo(
 	version string,
 	cols []DBColumn,
 	funcs []DBFunction,
-	blockList []string,
-	enableInflection bool) *DBInfo {
+	blockList []string) *DBInfo {
 
 	di := &DBInfo{
 		Type:      dbtype,
@@ -104,7 +97,7 @@ func NewDBInfo(
 	}
 
 	for k, tcols := range tm {
-		ti := NewDBTable(k.schema, k.table, "", tcols, enableInflection)
+		ti := NewDBTable(k.schema, k.table, "", tcols)
 		ti.Blocked = isInList(ti.Name, blockList)
 		di.AddTable(ti)
 	}
@@ -112,19 +105,13 @@ func NewDBInfo(
 	return di
 }
 
-func NewDBTable(schema, name, _type string, cols []DBColumn, ei bool) DBTable {
+func NewDBTable(schema, name, _type string, cols []DBColumn) DBTable {
 	ti := DBTable{
 		Schema:  schema,
 		Name:    name,
 		Type:    _type,
 		Columns: cols,
 		colMap:  make(map[string]int, len(cols)),
-	}
-
-	if ei {
-		key := strings.ToLower(name)
-		ti.Singular = flect.Singularize(key)
-		ti.Plural = flect.Pluralize(key)
 	}
 
 	for i := range cols {

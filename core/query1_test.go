@@ -190,7 +190,7 @@ func Example_queryWithWhereGreaterThanOrLesserThan() {
 
 func Example_queryWithWhereOnRelatedTable() {
 	gql := `query {
-		products(where: { users: { id: { eq: $user_id } } } ) {
+		products(where: { owner: { id: { eq: $user_id } } } ) {
 			id
 			owner {
 				id
@@ -1034,6 +1034,7 @@ func Example_queryWithRecursiveRelationship2() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
+
 	// Output: {"comments": {"id": 95, "replies": [{"id": 96}, {"id": 97}, {"id": 98}, {"id": 99}, {"id": 100}]}}
 }
 
@@ -1042,7 +1043,7 @@ func Example_queryWithSkippingAuthRequiredSelectors() {
 		products(limit: 2) {
 			id
 			name
-			user(where: { id: { eq: $user_id } }) {
+			owner(where: { id: { eq: $user_id } }) {
 				id
 				email
 			}
@@ -1061,7 +1062,7 @@ func Example_queryWithSkippingAuthRequiredSelectors() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"products": [{"id": 1, "name": "Product 1", "user": null}, {"id": 2, "name": "Product 2", "user": null}]}
+	// Output: {"products": [{"id": 1, "name": "Product 1", "owner": null}, {"id": 2, "name": "Product 2", "owner": null}]}
 }
 
 func Example_blockQueryWithRoles() {

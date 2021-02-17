@@ -3,6 +3,7 @@ package core_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/dosco/graphjin/core"
@@ -42,7 +43,6 @@ func queryWithVariableLimit(t *testing.T) {
 	}
 }
 
-/*
 var benchGQL = `query {
 	products(
 		# returns only 30 items
@@ -59,18 +59,18 @@ var benchGQL = `query {
 		id
 		NAME
 		price
-		users {
+		owner {
 			full_name
 			picture : avatar
 			email
-			category_counts {
+			category_counts(limit: 2) {
 				count
 				category {
 					name
 				}
 			}
 		}
-		categories {
+		category(limit: 2) {
 			id
 			name
 		}
@@ -96,24 +96,23 @@ func Example_veryComplexQuery() {
 	}
 
 	vars := json.RawMessage(`{
-		"limit": 10
+		"limit": 1
 	}`)
 
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
-		fmt.Println(">", err)
+		fmt.Println(err)
 		return
 	}
 
 	res, err := gj.GraphQL(context.Background(), benchGQL, vars, nil)
-	fmt.Println(res.SQL())
 	if err != nil {
-		fmt.Println(">", err)
+		fmt.Println(err)
 		return
 	}
 
 	fmt.Println(string(res.Data))
-	// Output: blah
+	// Output: {"products": [{"id": 27, "name": "Product 27", "owner": {"email": "user27@test.com", "picture": null, "full_name": "User 27", "category_counts": [{"count": 400, "category": {"name": "Category 1"}}, {"count": 600, "category": {"name": "Category 2"}}]}, "price": 37.5, "category": [{"id": 1, "name": "Category 1"}, {"id": 2, "name": "Category 2"}]}]}
 }
 
 var resultJSON json.RawMessage
@@ -122,13 +121,13 @@ func BenchmarkCompile(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for n := 0; n < b.N; n++ {
-		vars := json.RawMessage(`{
-			"limit": 10
-		}`)
+	vars := json.RawMessage(`{
+		"limit": 10
+	}`)
 
-		conf := &core.Config{DBType: dbType, DisableAllowList: true}
-		conf.Tables = []core.Table{{
+	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf.Tables = []core.Table{
+		{
 			Name:  "category_counts",
 			Table: "users",
 			Type:  "json",
@@ -136,13 +135,19 @@ func BenchmarkCompile(b *testing.B) {
 				{Name: "category_id", Type: "int", ForeignKey: "categories.id"},
 				{Name: "count", Type: "int"},
 			},
-		}}
+		},
+		{
+			Name:    "products",
+			Columns: []core.Column{{Name: "category_ids", ForeignKey: "categories.id"}},
+		},
+	}
 
-		gj, err := core.NewGraphJin(conf, db)
-		if err != nil {
-			b.Error(err)
-		}
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		b.Error(err)
+	}
 
+	for n := 0; n < b.N; n++ {
 		res, err := gj.GraphQL(context.Background(), benchGQL, vars, nil)
 		if err != nil {
 			b.Fatal(err)
@@ -151,4 +156,3 @@ func BenchmarkCompile(b *testing.B) {
 		resultJSON = res.Data
 	}
 }
-*/

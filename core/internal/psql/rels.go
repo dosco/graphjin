@@ -6,7 +6,7 @@ import (
 )
 
 func (c *compilerContext) renderRel(
-	ti sdata.TInfo,
+	ti sdata.DBTable,
 	rel sdata.DBRel,
 	pid int32,
 	args map[string]qcode.Arg) {
@@ -25,12 +25,12 @@ func (c *compilerContext) renderRel(
 		case !rel.Left.Col.Array && rel.Right.Col.Array:
 			colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
 			c.w.WriteString(`) = any (`)
-			c.renderRelArrayRight(&ti, "", pid, rel.Right.Col, rel.Left.Col.Type)
+			c.renderRelArrayRight(ti, "", pid, rel.Right.Col, rel.Left.Col.Type)
 
 		case rel.Left.Col.Array && !rel.Right.Col.Array:
 			colWithTableID(c.w, rel.Right.Col.Table, pid, rel.Right.Col.Name)
 			c.w.WriteString(`) = any (`)
-			c.renderRelArrayRight(&ti, "", -1, rel.Left.Col, rel.Right.Col.Type)
+			c.renderRelArrayRight(ti, "", -1, rel.Left.Col, rel.Right.Col.Type)
 
 		default:
 			colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
@@ -66,23 +66,23 @@ func (c *compilerContext) renderRel(
 					// Ensure it's not a loop
 					colWithTable(c.w, rcte, rel.Left.Col.Name)
 					c.w.WriteString(`) != any (`)
-					c.renderRelArrayRight(&ti, rcte, -1, rel.Right.Col, rel.Left.Col.Type)
+					c.renderRelArrayRight(ti, rcte, -1, rel.Right.Col, rel.Left.Col.Type)
 					c.w.WriteString(`) AND (`)
 					// Recursive relationship
 					colWithTable(c.w, rcte, rel.Left.Col.Name)
 					c.w.WriteString(`) = any (`)
-					c.renderRelArrayRight(&ti, rel.Left.Col.Table, -1, rel.Right.Col, rel.Left.Col.Type)
+					c.renderRelArrayRight(ti, rel.Left.Col.Table, -1, rel.Right.Col, rel.Left.Col.Type)
 
 				case rel.Left.Col.Array && !rel.Right.Col.Array:
 					// Ensure it's not a loop
 					colWithTable(c.w, rcte, rel.Right.Col.Name)
 					c.w.WriteString(`) != any (`)
-					c.renderRelArrayRight(&ti, rcte, -1, rel.Left.Col, rel.Right.Col.Type)
+					c.renderRelArrayRight(ti, rcte, -1, rel.Left.Col, rel.Right.Col.Type)
 					c.w.WriteString(`) AND (`)
 					// Recursive relationship
 					colWithTable(c.w, rel.Left.Col.Table, rel.Right.Col.Name)
 					c.w.WriteString(`) = any (`)
-					c.renderRelArrayRight(&ti, rcte, -1, rel.Left.Col, rel.Right.Col.Type)
+					c.renderRelArrayRight(ti, rcte, -1, rel.Left.Col, rel.Right.Col.Type)
 
 				default:
 					// Ensure it's not a loop
@@ -106,23 +106,23 @@ func (c *compilerContext) renderRel(
 					// Ensure it's not a loop
 					colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
 					c.w.WriteString(`) != any (`)
-					c.renderRelArrayRight(&ti, "", -1, rel.Right.Col, rel.Left.Col.Type)
+					c.renderRelArrayRight(ti, "", -1, rel.Right.Col, rel.Left.Col.Type)
 					c.w.WriteString(`) AND (`)
 					// Recursive relationship
 					colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
 					c.w.WriteString(`) = any (`)
-					c.renderRelArrayRight(&ti, rcte, -1, rel.Right.Col, rel.Left.Col.Type)
+					c.renderRelArrayRight(ti, rcte, -1, rel.Right.Col, rel.Left.Col.Type)
 
 				case rel.Left.Col.Array && !rel.Right.Col.Array:
 					// Ensure it's not a loop
 					colWithTable(c.w, rel.Right.Col.Table, rel.Right.Col.Name)
 					c.w.WriteString(`) != any (`)
-					c.renderRelArrayRight(&ti, "", -1, rel.Left.Col, rel.Right.Col.Type)
+					c.renderRelArrayRight(ti, "", -1, rel.Left.Col, rel.Right.Col.Type)
 					c.w.WriteString(`) AND (`)
 					// Recursive relationship
 					colWithTable(c.w, rcte, rel.Right.Col.Name)
 					c.w.WriteString(`) = any (`)
-					c.renderRelArrayRight(&ti, "", -1, rel.Left.Col, rel.Right.Col.Type)
+					c.renderRelArrayRight(ti, "", -1, rel.Left.Col, rel.Right.Col.Type)
 
 				default:
 					// Ensure it's not a loop
@@ -143,7 +143,7 @@ func (c *compilerContext) renderRel(
 }
 
 func (c *compilerContext) renderRelArrayRight(
-	ti *sdata.TInfo,
+	ti sdata.DBTable,
 	table string, pid int32, col sdata.DBColumn, ty string) {
 	colTable := col.Table
 	if table != "" {

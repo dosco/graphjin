@@ -6,29 +6,33 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gobuffalo/flect"
+	"gonum.org/v1/gonum/graph/multi"
 	"gonum.org/v1/gonum/graph/path"
-	"gonum.org/v1/gonum/graph/simple"
 )
 
+type edgeInfo struct {
+	nodeID  int64
+	edgeIDs []int64
+}
+
 type nodeInfo struct {
-	id       int64
-	singular bool
+	nodeID int64
 }
 
 type DBSchema struct {
 	ver    int
-	typ    string                        // db type
-	tables []DBTable                     // tables
-	custom []DBTable                     // custom resolver tables
-	vt     map[string]VirtualTable       // for polymorphic relationships
-	fm     map[string]DBFunction         // db functions
-	al     map[string]nodeInfo           // aliases
-	ni     map[string]nodeInfo           // info on nodes
-	re     map[int64]TEdge               // recursive edges
-	rg     *simple.WeightedDirectedGraph // relationship graph
-	sp     path.AllShortest              // graph shortest paths
-	ei     bool
+	typ    string                       // db type
+	schema string                       // db schema
+	tables []DBTable                    // tables
+	custom []DBTable                    // custom resolver tables
+	vt     map[string]VirtualTable      // for polymorphic relationships
+	fm     map[string]DBFunction        // db functions
+	tindex map[string]nodeInfo          //table index
+	al     map[string]edgeInfo          // aliases
+	ei     map[string][]edgeInfo        // info on nodes
+	re     map[int64]TEdge              // recursive edges
+	rg     *multi.WeightedDirectedGraph // relationship graph
+	sp     path.AllShortest             // graph shortest paths
 }
 
 type RelType int
@@ -51,13 +55,13 @@ type DBRelThrough struct {
 }
 
 type DBRelLeft struct {
-	Ti  TInfo
+	Ti  DBTable
 	Col DBColumn
 }
 
 type DBRelRight struct {
 	VTable string
-	Ti     TInfo
+	Ti     DBTable
 	Col    DBColumn
 }
 
@@ -69,21 +73,32 @@ type DBRel struct {
 }
 
 func NewDBSchema(
+	defaultSchema string,
 	info *DBInfo,
-	aliases map[string][]string,
-	enableInflection bool) (*DBSchema, error) {
+	aliases map[string][]string) (*DBSchema, error) {
 
 	schema := &DBSchema{
-		ver: info.Version,
-		typ: info.Type,
-		vt:  make(map[string]VirtualTable),
-		fm:  make(map[string]DBFunction),
-		al:  make(map[string]nodeInfo),
-		ni:  make(map[string]nodeInfo),
-		re:  make(map[int64]TEdge),
-		rg:  simple.NewWeightedDirectedGraph(3, -1),
-		ei:  enableInflection,
+		ver:    info.Version,
+		typ:    info.Type,
+		schema: defaultSchema,
+		vt:     make(map[string]VirtualTable),
+		tindex: make(map[string]nodeInfo),
+		al:     make(map[string]edgeInfo),
+		ei:     make(map[string][]edgeInfo),
+		re:     make(map[int64]TEdge),
+		rg:     multi.NewWeightedDirectedGraph(),
 	}
+
+	// schema.rg.EdgeWeightFunc = func(e graph.WeightedLines) float64 {
+	// 	var min float64 = 10
+	// 	for e.Next() {
+	// 		l := e.WeightedLine()
+	// 		if l.Weight() < min {
+	// 			min = l.Weight()
+	// 		}
+	// 	}
+	// 	return min
+	// }
 
 	var nids []int64
 
@@ -115,13 +130,13 @@ func NewDBSchema(
 		}
 	}
 
-	// schema.sp = path.DijkstraAllPaths(schema.rg)
+	schema.sp = path.DijkstraAllPaths(schema.rg)
 
-	var ok bool
-	schema.sp, ok = path.FloydWarshall(schema.rg)
-	if !ok {
-		return nil, fmt.Errorf("schema: cycle detected in relationship graph")
-	}
+	// var ok bool
+	// schema.sp, ok = path.FloydWarshall(schema.rg)
+	// if !ok {
+	// 	return nil, fmt.Errorf("schema: cycle detected in relationship graph")
+	// }
 	return schema, nil
 }
 
@@ -154,7 +169,7 @@ func (s *DBSchema) addJsonRel(t DBTable) error {
 		return err
 	}
 
-	return s.addEdge(t, t.PrimaryCol, st.DBTable, sc, RelEmbedded)
+	return s.addToGraph(t, t.PrimaryCol, st, sc, RelEmbedded)
 }
 
 func (s *DBSchema) addPolymorphicRel(t DBTable) error {
@@ -168,7 +183,7 @@ func (s *DBSchema) addPolymorphicRel(t DBTable) error {
 		return err
 	}
 
-	return s.addEdge(t, t.PrimaryCol, pt.DBTable, pc, RelPolymorphic)
+	return s.addToGraph(t, t.PrimaryCol, pt, pc, RelPolymorphic)
 }
 
 func (s *DBSchema) addRemoteRel(t DBTable) error {
@@ -183,7 +198,7 @@ func (s *DBSchema) addRemoteRel(t DBTable) error {
 	}
 
 	s.custom = append(s.custom, t)
-	return s.addEdge(t, t.PrimaryCol, pt.DBTable, pc, RelRemote)
+	return s.addToGraph(t, t.PrimaryCol, pt, pc, RelRemote)
 }
 
 func (s *DBSchema) addColumnRels(t DBTable) error {
@@ -200,11 +215,11 @@ func (s *DBSchema) addColumnRels(t DBTable) error {
 			c.FKeySchema = t.Schema
 		}
 
-		v, ok := s.ni[(c.FKeySchema + ":" + c.FKeyTable)]
+		v, ok := s.tindex[(c.FKeySchema + ":" + c.FKeyTable)]
 		if !ok {
 			return fmt.Errorf("foreign key table not found: %s.%s", c.FKeySchema, c.FKeyTable)
 		}
-		ft := s.tables[v.id]
+		ft := s.tables[v.nodeID]
 
 		if c.FKeyCol == "" {
 			continue
@@ -226,7 +241,7 @@ func (s *DBSchema) addColumnRels(t DBTable) error {
 			rt = RelOneToMany
 		}
 
-		if err = s.addEdge(t, c, ft, fc, rt); err != nil {
+		if err = s.addToGraph(t, c, ft, fc, rt); err != nil {
 			return err
 		}
 	}
@@ -258,18 +273,11 @@ func (s *DBSchema) addVirtual(vt VirtualTable) error {
 			FKeyCol:    typeCol.Name,
 		}
 
-		key := strings.ToLower(vt.Name)
-
 		pt := DBTable{
 			Name:       vt.Name,
 			Schema:     t.Schema,
 			Type:       "virtual",
 			PrimaryCol: col1,
-		}
-
-		if s.ei {
-			pt.Singular = flect.Singularize(key)
-			pt.Plural = flect.Pluralize(key)
 		}
 		s.addNode(pt)
 	}
@@ -324,7 +332,7 @@ func getRelName(colName string) string {
 		return colName[4:]
 	}
 
-	return ""
+	return cn
 }
 
 func (s *DBSchema) Type() string {

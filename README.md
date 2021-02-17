@@ -109,15 +109,19 @@ This compiler is what sits at the heart of GraphJin, with layers of useful funct
 
 ## Documentation
 
-[graphjin.com](https://graphjin.com)
+[Get Started](https://graphjin.com/docs/start)
+
+[Build APIs in 5 minutes with GraphJin](https://dev.to/dosco/build-high-performance-graphql-apis-in-5-minutes-with-graphjin-261o)
+
+[GraphQL vs REST](https://dev.to/dosco/rest-vs-graphql-building-startups-in-2021-3k73)
 
 ## Reach out
 
 We're happy to help you leverage GraphJin reach out if you have questions
 
-[Twitter](https://twitter.com/dosco)
+[twitter/dosco](https://twitter.com/dosco)
 
-[Chat](https://discord.gg/6pSWCTZ)
+[discord/graphjin](https://discord.gg/6pSWCTZ) (Chat)
 
 ## Production use
 

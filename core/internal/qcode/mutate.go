@@ -54,7 +54,7 @@ type Mutate struct {
 	Array    bool
 	Cols     []MColumn
 	RCols    []MRColumn
-	Ti       sdata.TInfo
+	Ti       sdata.DBTable
 	Rel      sdata.DBRel
 	Where    Filter
 	Multi    bool
@@ -218,7 +218,7 @@ func (co *Compiler) newMutate(ms *mState, m Mutate, role string) error {
 
 		// Get child-to-parent relationship
 		// rel, err := co.s.GetRel(k, m.Key, "")
-		paths, err := co.s.FindPath(m.Ti.Schema, k, m.Ti.Schema, m.Key)
+		paths, err := co.s.FindPath(k, m.Key)
 		if err != nil {
 			var ty MType
 			var ok bool

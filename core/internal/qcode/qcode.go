@@ -11,6 +11,7 @@ import (
 	"github.com/dosco/graphjin/core/internal/graph"
 	"github.com/dosco/graphjin/core/internal/sdata"
 	"github.com/dosco/graphjin/core/internal/util"
+	"github.com/gobuffalo/flect"
 )
 
 const (
@@ -84,7 +85,7 @@ type Select struct {
 	Paging     Paging
 	Children   []int32
 	SkipRender SkipType
-	Ti         sdata.TInfo
+	Ti         sdata.DBTable
 	Rel        sdata.DBRel
 	Joins      []sdata.DBRel
 	order      Order
@@ -446,7 +447,7 @@ func (co *Compiler) addRelInfo(
 	}
 
 	if sel.ParentID != -1 {
-		paths, err := co.s.FindPath(co.c.DBSchema, childF.Name, co.c.DBSchema, parentF.Name)
+		paths, err := co.s.FindPath(childF.Name, parentF.Name)
 		if err != nil {
 			return err
 		}
@@ -461,7 +462,8 @@ func (co *Compiler) addRelInfo(
 	}
 
 	if sel.ParentID == -1 || sel.Rel.Type == sdata.RelPolymorphic {
-		if sel.Ti, err = co.s.Find("", field.Name); err != nil {
+		schema := co.c.DBSchema
+		if sel.Ti, err = co.s.Find(schema, field.Name); err != nil {
 			return err
 		}
 	} else {
@@ -480,17 +482,17 @@ func (co *Compiler) addRelInfo(
 		return nil
 	}
 
-	sel.Singular = co.setSingular(sel)
+	sel.Singular = co.setSingular(field.Name, sel)
 	return nil
 }
 
-func (co *Compiler) setSingular(sel *Select) bool {
+func (co *Compiler) setSingular(fieldName string, sel *Select) bool {
 	if sel.Singular {
 		return true
 	}
 
 	if co.c.EnableInflection {
-		sel.Singular = sel.Ti.IsSingular
+		sel.Singular = (flect.Singularize(fieldName) == fieldName)
 	}
 
 	if (sel.Rel.Type == sdata.RelOneToMany && !sel.Rel.Right.Col.Array) ||
@@ -865,7 +867,7 @@ func (co *Compiler) compileArgSearch(sel *Select, arg *graph.Arg) error {
 	return nil
 }
 
-func (co *Compiler) compileArgWhere(ti sdata.TInfo, sel *Select, arg *graph.Arg, role string) error {
+func (co *Compiler) compileArgWhere(ti sdata.DBTable, sel *Select, arg *graph.Arg, role string) error {
 	st := util.NewStackInf()
 	var err error
 
@@ -1082,7 +1084,7 @@ func setFilter(where *Filter, fil *Exp) {
 	}
 }
 
-func setOrderByColName(ti sdata.TInfo, ob *OrderBy, node *graph.Node) error {
+func setOrderByColName(ti sdata.DBTable, ob *OrderBy, node *graph.Node) error {
 	var list []string
 
 	for n := node; n != nil; n = n.Parent {
@@ -1100,7 +1102,7 @@ func setOrderByColName(ti sdata.TInfo, ob *OrderBy, node *graph.Node) error {
 	return nil
 }
 
-func compileFilter(s *sdata.DBSchema, ti sdata.TInfo, filter []string, isJSON bool) (*Exp, bool, error) {
+func compileFilter(s *sdata.DBSchema, ti sdata.DBTable, filter []string, isJSON bool) (*Exp, bool, error) {
 	var fl *Exp
 	var needsUser bool
 
