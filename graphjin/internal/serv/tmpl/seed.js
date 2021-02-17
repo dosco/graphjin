@@ -11,7 +11,7 @@ for (i = 0; i < 10; i++) {
 
   var res = graphql(" \
 	mutation { \
-		user(insert: $data) { \
+		users(insert: $data) { \
 			id \
 		} \
 	}", {

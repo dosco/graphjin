@@ -10,16 +10,16 @@ import (
 
 type expContext struct {
 	*compilerContext
-	ti         sdata.TInfo
+	ti         sdata.DBTable
 	prefixPath []string
 	skipNested bool
 }
 
-func (c *compilerContext) renderExp(ti sdata.TInfo, ex *qcode.Exp, skipNested bool) {
+func (c *compilerContext) renderExp(ti sdata.DBTable, ex *qcode.Exp, skipNested bool) {
 	c.renderExpPath(ti, ex, skipNested, nil)
 }
 
-func (c *compilerContext) renderExpPath(ti sdata.TInfo, ex *qcode.Exp, skipNested bool, prefixPath []string) {
+func (c *compilerContext) renderExpPath(ti sdata.DBTable, ex *qcode.Exp, skipNested bool, prefixPath []string) {
 	ec := expContext{
 		compilerContext: c,
 		ti:              ti,

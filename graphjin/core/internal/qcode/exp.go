@@ -9,7 +9,7 @@ import (
 	"github.com/dosco/graphjin/core/internal/util"
 )
 
-func (co *Compiler) compileArgObj(ti sdata.TInfo, st *util.StackInf, arg *graph.Arg) (*Exp, bool, error) {
+func (co *Compiler) compileArgObj(ti sdata.DBTable, st *util.StackInf, arg *graph.Arg) (*Exp, bool, error) {
 	if arg.Val.Type != graph.NodeObj {
 		return nil, false, fmt.Errorf("expecting an object")
 	}
@@ -20,7 +20,7 @@ func (co *Compiler) compileArgObj(ti sdata.TInfo, st *util.StackInf, arg *graph.
 type aexpst struct {
 	co       *Compiler
 	st       *util.StackInf
-	ti       sdata.TInfo
+	ti       sdata.DBTable
 	savePath bool
 }
 
@@ -31,7 +31,7 @@ type aexp struct {
 }
 
 func (co *Compiler) compileArgNode(
-	ti sdata.TInfo,
+	ti sdata.DBTable,
 	st *util.StackInf,
 	node *graph.Node,
 	savePath bool) (*Exp, bool, error) {
@@ -282,7 +282,7 @@ func setListVal(ex *Exp, node *graph.Node) {
 	}
 }
 
-func setExpColName(s *sdata.DBSchema, ti sdata.TInfo, ex *Exp, node *graph.Node) error {
+func setExpColName(s *sdata.DBSchema, ti sdata.DBTable, ex *Exp, node *graph.Node) error {
 	var list []string
 
 	for n := node.Parent; n != nil; n = n.Parent {
@@ -319,11 +319,12 @@ func setExpColName(s *sdata.DBSchema, ti sdata.TInfo, ex *Exp, node *graph.Node)
 		for i := 0; i < len(list)-1; i++ {
 			curr := list[i]
 
-			if curr == ti.Name || curr == ti.Plural {
-				return fmt.Errorf("selector table not allowed in where: %s", ti.Name)
+			if curr == ti.Name {
+				continue
+				// return fmt.Errorf("selector table not allowed in where: %s", ti.Name)
 			}
 
-			paths, err := s.FindPath(ti.Schema, curr, ti.Schema, prev)
+			paths, err := s.FindPath(curr, prev)
 			if err != nil {
 				return err
 			}

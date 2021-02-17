@@ -29,7 +29,7 @@ for (i = 0; i < 3; i++) {
   var res = graphql(
     " \
 	mutation { \
-		user(insert: $data) { \
+		users(insert: $data) { \
 			id \
 		} \
 	}",
@@ -56,7 +56,7 @@ for (i = 0; i < user_count; i++) {
   var res = graphql(
     " \
 	mutation { \
-		user(insert: $data) { \
+		users(insert: $data) { \
 			id \
 		} \
 	}",
@@ -86,7 +86,7 @@ for (i = 0; i < customer_count; i++) {
   var res = graphql(
     " \
 	mutation { \
-		customer(insert: $data) { \
+		customers(insert: $data) { \
 			id \
 		} \
 	}",
@@ -156,7 +156,7 @@ for (i = 0; i < product_count; i++) {
   var res = graphql(
     " \
   mutation { \
-  	product(insert: $data) { \
+  	products(insert: $data) { \
   		id \
   	} \
   }",
@@ -188,7 +188,7 @@ for (i = 0; i < purchase_count; i++) {
   var res = graphql(
     " \
   mutation { \
-  	purchase(insert: $data) { \
+  	purchases(insert: $data) { \
   		id \
   	} \
   }",
@@ -232,7 +232,7 @@ for (i = 0; i < notifications_count; i++) {
   var res = graphql(
     " \
   mutation { \
-  	notification(insert: $data) { \
+  	notifications(insert: $data) { \
   		id \
   	} \
   }",
@@ -276,7 +276,7 @@ for (i = 0; i < comments_count; i++) {
   var res = graphql(
     " \
   mutation { \
-  	comment(insert: $data) { \
+  	comments(insert: $data) { \
   		id \
   	} \
   }",

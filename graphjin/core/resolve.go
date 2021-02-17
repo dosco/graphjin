@@ -70,7 +70,7 @@ func (gj *GraphJin) initRemote(rc ResolverConfig) error {
 	}
 
 	nt := sdata.NewDBTable(ti.Schema,
-		rc.Name, "remote", nil, gj.conf.EnableInflection)
+		rc.Name, "remote", nil)
 	nt.PrimaryCol = col1
 	gj.dbinfo.AddTable(nt)
 

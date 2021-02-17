@@ -218,7 +218,7 @@ func oneToManyArray(t *testing.T) {
 		}
 		tags {
 			name
-			product {
+			products {
 				name
 			}
 		}

@@ -2,9 +2,10 @@ package sdata
 
 import (
 	"fmt"
+	"strings"
 
-	"github.com/gobuffalo/flect"
 	"gonum.org/v1/gonum/graph"
+	"gonum.org/v1/gonum/graph/path"
 )
 
 type TEdge struct {
@@ -13,73 +14,22 @@ type TEdge struct {
 	LT, RT DBTable
 	L, R   DBColumn
 
-	graph.WeightedEdge
+	graph.WeightedLine
 }
 
 func (s *DBSchema) addNode(t DBTable) int64 {
 	s.tables = append(s.tables, t)
 	n := s.rg.NewNode()
 
-	if !s.ei {
-		s.ni[(t.Schema + ":" + t.Name)] = nodeInfo{id: n.ID()}
-		s.ni[(":" + t.Name)] = nodeInfo{id: n.ID()}
-
-		s.rg.AddNode(n)
-		return n.ID()
-	}
-
-	sn := nodeInfo{id: n.ID(), singular: true}
-	pn := nodeInfo{id: n.ID(), singular: false}
-
-	s.ni[(t.Schema + ":" + t.Singular)] = sn
-	s.ni[(t.Schema + ":" + t.Plural)] = pn
-
-	if _, ok := s.ni[(":" + t.Singular)]; !ok {
-		s.ni[(":" + t.Singular)] = sn
-	}
-
-	if _, ok := s.ni[(":" + t.Plural)]; !ok {
-		s.ni[(":" + t.Plural)] = pn
-	}
-
+	s.tindex[(t.Schema + ":" + t.Name)] = nodeInfo{n.ID()}
 	s.rg.AddNode(n)
 	return n.ID()
 }
 
 func (s *DBSchema) addAliases(t DBTable, nodeID int64, aliases []string) {
-	sn := nodeInfo{id: nodeID, singular: true}
-	pn := nodeInfo{id: nodeID, singular: false}
-
 	for _, al := range aliases {
-		s.al[al] = nodeInfo{id: nodeID}
-
-		if !s.ei {
-			if _, ok := s.ni[(":" + al)]; !ok {
-				s.ni[(":" + al)] = nodeInfo{id: nodeID}
-			}
-			if _, ok := s.ni[(t.Schema + ":" + al)]; !ok {
-				s.ni[(":" + al)] = nodeInfo{id: nodeID}
-			}
-			continue
-		}
-
-		sk := flect.Singularize(al)
-		pk := flect.Pluralize(al)
-
-		if _, ok := s.ni[(":" + sk)]; !ok {
-			s.ni[(":" + sk)] = sn
-		}
-
-		if _, ok := s.ni[(":" + pk)]; !ok {
-			s.ni[(":" + pk)] = pn
-		}
-
-		if _, ok := s.ni[(t.Schema + ":" + sk)]; !ok {
-			s.ni[(t.Schema + ":" + sk)] = sn
-		}
-
-		if _, ok := s.ni[(t.Schema + ":" + pk)]; !ok {
-			s.ni[(t.Schema + ":" + pk)] = pn
+		if _, ok := s.ei[(t.Schema + ":" + al)]; !ok {
+			s.tindex[(t.Schema + ":" + al)] = nodeInfo{nodeID}
 		}
 	}
 }
@@ -88,22 +38,9 @@ func (s *DBSchema) GetAliases() map[string]DBTable {
 	ts := make(map[string]DBTable)
 
 	for name, n := range s.al {
-		ts[name] = s.tables[int(n.id)]
+		ts[name] = s.tables[int(n.nodeID)]
 	}
 	return ts
-}
-
-type nodeKey struct {
-	schema, table, col string
-	singular           bool
-}
-
-func (s *DBSchema) addEdge(
-	lti DBTable, lcol DBColumn,
-	rti DBTable, rcol DBColumn,
-	rt RelType) error {
-
-	return s.addEdge1(lti, lcol, rti, rcol, rt)
 }
 
 // Building the graph
@@ -119,236 +56,309 @@ func (s *DBSchema) addEdge(
 // Note 2: recursive relationships are kept outside the graph in `s.re`
 // Eg. public.product.owner_id -> public.user.id
 
-func (s *DBSchema) addEdge1(
+func (s *DBSchema) addToGraph(
 	lti DBTable, lcol DBColumn,
 	rti DBTable, rcol DBColumn,
 	rt RelType) error {
 
+	var rt2 RelType
+
 	k1 := (lti.Schema + ":" + lti.Name)
 	k2 := (rti.Schema + ":" + rti.Name)
 
-	fn, ok := s.ni[k1]
+	fn, ok := s.tindex[k1]
 	if !ok {
 		return fmt.Errorf("addEdge: unknown node: %s", k1)
 	}
 
-	tn, ok := s.ni[k2]
+	tn, ok := s.tindex[k2]
 	if !ok {
 		return fmt.Errorf("addEdge: unknown node: %s", k2)
 	}
 
-	ln := s.rg.Node(fn.id)
-	rn := s.rg.Node(tn.id)
+	ln := s.rg.Node(fn.nodeID)
+	rn := s.rg.Node(tn.nodeID)
 
-	if rt == RelRecursive {
-		s.re[ln.ID()] = TEdge{
-			Type: rt,
-			LT:   lti, RT: rti,
-			L: lcol, R: rcol,
-			WeightedEdge: s.rg.NewWeightedEdge(ln, rn, 1.0),
-		}
-		return nil
-	}
-
-	e := TEdge{
-		Type: rt,
-		LT:   lti, RT: rti,
-		L: lcol, R: rcol,
-		WeightedEdge: s.rg.NewWeightedEdge(ln, rn, 1.0),
-	}
-	s.rg.SetWeightedEdge(e)
-
-	var rt2 RelType
+	weight := 0.2
+	relT := getRelName(lcol.Name)
 
 	switch rt {
 	case RelOneToOne:
 		rt2 = RelOneToMany
 	case RelOneToMany:
 		rt2 = RelOneToOne
+	case RelPolymorphic:
+		rt2 = rt
+		relT = rti.Name
+	case RelEmbedded:
+		rt2 = rt
+		relT = rti.Name
+		weight = 0.1
+	case RelRecursive:
+		weight = 0.1
+	case RelRemote:
+		weight = 0.4
+		relT = rti.Name
 	default:
 		return nil
 	}
 
-	e = TEdge{
-		Type: rt2,
-		LT:   rti, RT: lti,
-		L: rcol, R: lcol,
-		WeightedEdge: s.rg.NewWeightedEdge(rn, ln, 1.0),
-	}
-	s.rg.SetWeightedEdge(e)
-
-	relT := getRelName(lcol.Name)
-	if relT == "" {
-		return nil
-	}
-
-	var alts []nodeKey
-
-	if s.ei {
-		relT1 := flect.Singularize(relT)
-		relT2 := flect.Pluralize(relT)
-
-		alts = []nodeKey{
-			{lti.Schema, lti.Singular, relT1, true},
-			{lti.Schema, lti.Singular, relT2, false},
-			{lti.Schema, lti.Plural, relT1, true},
-			{lti.Schema, lti.Plural, relT2, false},
-		}
-	} else {
-		alts = []nodeKey{
-			{lti.Schema, lti.Name, relT, false},
-		}
-	}
-
-	// register alternate right nodes
-	for _, v := range alts {
-		s.addAltEdge1(v, ln, lti, rti, lcol, rcol, rt, rt2)
-	}
-	return nil
-}
-
-func (s *DBSchema) addAltEdge1(
-	v nodeKey,
-	ln graph.Node,
-	lti, rti DBTable,
-	lcol, rcol DBColumn,
-	rt, rt2 RelType) {
-
-	rn := s.rg.NewNode()
-	n := nodeInfo{id: rn.ID(), singular: v.singular}
-
-	k1 := (v.schema + ":" + v.table + ":" + v.col)
-	k2 := (":" + v.table + ":" + v.col)
-	k3 := (":" + v.col)
-
-	s.ni[k1] = n
-
-	if _, ok := s.ni[k2]; !ok {
-		s.ni[k2] = n
-	}
-
-	if _, ok := s.ni[k3]; !ok {
-		s.ni[k3] = n
-	}
-
-	s.rg.AddNode(rn)
-
-	e := TEdge{
+	// Add edge from table -> foreign key table
+	e1 := TEdge{
 		Type: rt,
 		LT:   lti, RT: rti,
 		L: lcol, R: rcol,
-		WeightedEdge: s.rg.NewWeightedEdge(ln, rn, 2.0),
+		WeightedLine: s.rg.NewWeightedLine(ln, rn, weight),
 	}
-	s.rg.SetWeightedEdge(e)
 
-	if rt2 != RelNone {
-		e := TEdge{
-			Type: rt2,
-			LT:   rti, RT: lti,
-			L: rcol, R: lcol,
-			WeightedEdge: s.rg.NewWeightedEdge(rn, ln, 2.0),
+	if rt == RelRecursive {
+		s.re[ln.ID()] = e1
+		return nil
+	}
+	s.addEdge(lti.Name, e1, false)
+
+	// Add reverse edge from parent table -> column_name
+	e2 := TEdge{
+		Type: rt2,
+		LT:   rti, RT: lti,
+		L: rcol, R: lcol,
+		WeightedLine: s.rg.NewWeightedLine(rn, ln, weight),
+	}
+	s.addEdge(rti.Name, e2, false)
+	s.addEdge(relT, e2, false)
+
+	// fmt.Printf("1. (%s, %d) %s.%s (%d) -> %s.%s (%d) == %s\n", lti.Name, e1.ID(), lti.Name, lcol.Name, ln.ID(), rti.Name, rcol.Name, rn.ID(), rt.String())
+	// fmt.Printf("2. (%s, %d) %s.%s (%d) -> %s.%s (%d) == %s\n", rti.Name, e2.ID(), rti.Name, rcol.Name, rn.ID(), lti.Name, lcol.Name, ln.ID(), rt2.String())
+	// fmt.Printf("3. (%s, %d) %s.%s (%d) -> %s.%s (%d) == %s\n", relT, e2.ID(), rti.Name, rcol.Name, rn.ID(), lti.Name, lcol.Name, ln.ID(), rt2.String())
+	// fmt.Println("-----")
+	return nil
+}
+
+func (s *DBSchema) addEdge(name string, edge TEdge, singular bool) {
+	edgeID := edge.WeightedLine.ID()
+	ei1 := edgeInfo{nodeID: edge.From().ID(), edgeIDs: []int64{edgeID}}
+	ei2 := edgeInfo{nodeID: edge.To().ID(), edgeIDs: []int64{edgeID}}
+
+	k1 := strings.ToLower(name)
+	k2 := strings.ToLower(edge.RT.Name)
+
+	s.addEdgeInfo(k1, ei1)
+	s.addEdgeInfo(k2, ei2)
+
+	s.rg.SetWeightedLine(edge)
+}
+
+func (s *DBSchema) addEdgeInfo(k string, ei edgeInfo) {
+	if _, ok := s.ei[k]; ok {
+		for i, v := range s.ei[k] {
+			if v.nodeID != ei.nodeID {
+				continue
+			}
+			for _, eid := range v.edgeIDs {
+				if eid == ei.edgeIDs[0] {
+					return
+				}
+			}
+			s.ei[k][i].edgeIDs = append(s.ei[k][i].edgeIDs, ei.edgeIDs[0])
+			return
 		}
-		s.rg.SetWeightedEdge(e)
 	}
+	s.ei[k] = append(s.ei[k], ei)
 }
 
-type TInfo struct {
-	IsSingular bool
-	DBTable
-}
+func (s *DBSchema) Find(schema, name string) (DBTable, error) {
+	var t DBTable
 
-func (s *DBSchema) Find(schema, name string) (TInfo, error) {
-	var t TInfo
-	v, ok := s.ni[(schema + ":" + name)]
+	if schema == "" {
+		schema = s.schema
+	}
 
-	// real tables are the first n graph nodes.
-	if !ok || int(v.id) >= len(s.tables) {
+	v, ok := s.tindex[(schema + ":" + name)]
+	if !ok {
 		return t, fmt.Errorf("table not found: %s.%s", schema, name)
 	}
-	n := s.tables[v.id]
 
-	t.IsSingular = v.singular
-	t.DBTable = n
-	return t, nil
+	return s.tables[v.nodeID], nil
 }
 
 type TPath struct {
 	Rel RelType
-	LTi TInfo
-	L   DBColumn
-	RTi TInfo
-	R   DBColumn
+	LT  DBTable
+	LC  DBColumn
+	RT  DBTable
+	RC  DBColumn
 }
 
-func (s *DBSchema) FindPath(s1, from, s2, to string) ([]TPath, error) {
-	f, ok := s.ni[(s2 + ":" + to + ":" + from)]
+func (s *DBSchema) FindPath(from, to string) ([]TPath, error) {
+	fl, ok := s.ei[from]
 	if !ok {
-		f, ok = s.ni[(s1 + ":" + from)]
+		return nil, fmt.Errorf("edge not found: %s", from)
 	}
+
+	tl, ok := s.ei[to]
 	if !ok {
-		return nil, fmt.Errorf("table not found: %s.%s", s1, from)
+		return nil, fmt.Errorf("edge not found: %s", to)
 	}
 
-	t, ok := s.ni[(s1 + ":" + from + ":" + to)]
-	if !ok {
-		t, ok = s.ni[(s2 + ":" + to)]
-	}
-	if !ok {
-		return nil, fmt.Errorf("table not found: %s.%s", s2, to)
-	}
+	if from == to {
+		var edge TEdge
+		var ok bool
 
-	// fmt.Printf("> %s.%s (%d) -> %s.%s (%d)\n",
-	// 	s1, from, f.id,
-	// 	s2, to, t.id)
-
-	nodes, _, _ := s.sp.Between(f.id, t.id)
-	//fmt.Printf("> weight: %f, unique: %t, nodes: %d\n", w, u, len(nodes))
-
-	if len(nodes) == 0 {
-		return nil, fmt.Errorf("no relationship found: %s.%s -> %s.%s", s1, from, s2, to)
-	}
-
-	if len(nodes) == 1 {
-		edge, ok := s.re[nodes[0].ID()]
-		if !ok {
-			return nil, fmt.Errorf("no recursive relationship found: %s.%s", s1, from)
+		for _, v := range fl {
+			if edge, ok = s.re[v.nodeID]; ok {
+				break
+			}
 		}
+		if !ok {
+			return nil, fmt.Errorf("no recursive relationship found: %s", from)
+		}
+
 		return []TPath{{
 			Rel: edge.Type,
-			LTi: TInfo{IsSingular: f.singular, DBTable: edge.LT},
-			L:   edge.L,
-			RTi: TInfo{IsSingular: t.singular, DBTable: edge.RT},
-			R:   edge.R,
+			LT:  edge.LT,
+			LC:  edge.L,
+			RT:  edge.RT,
+			RC:  edge.R,
 		}}, nil
 	}
 
+	res := s.between(fl, tl)
+	if len(res.edges) == 0 {
+		return nil, fmt.Errorf("no relationship found: %s -> %s", from, to)
+	}
+
+	// fmt.Printf("> %s (%d) -> %s (%d)\n",
+	// 	from, res.from.nodeID,
+	// 	to, res.to.nodeID)
+
 	path := []TPath{}
-	for i := 1; i < len(nodes); i++ {
-		fn := nodes[i-1]
-		tn := nodes[i]
-
-		//var e graph.Line
-		e := s.rg.WeightedEdge(fn.ID(), tn.ID())
-		if e == nil {
-			return nil, fmt.Errorf("invalid edge: %d -> %d", fn.ID(), tn.ID())
-		}
-		edge := e.(TEdge)
-
+	for _, edge := range res.edges {
 		path = append(path, TPath{
 			Rel: edge.Type,
-			LTi: TInfo{IsSingular: f.singular, DBTable: edge.LT},
-			L:   edge.L,
-			RTi: TInfo{IsSingular: t.singular, DBTable: edge.RT},
-			R:   edge.R,
+			LT:  edge.LT,
+			LC:  edge.L,
+			RT:  edge.RT,
+			RC:  edge.R,
 		})
 	}
 	return path, nil
 }
 
+type graphResult struct {
+	from, to edgeInfo
+	edges    []TEdge
+}
+
+func (s *DBSchema) between(from, to []edgeInfo) graphResult {
+	var res graphResult
+
+	for _, f := range from {
+		for _, t := range to {
+			if res, ok := s.pickPath(f, t); ok {
+				return res
+			}
+		}
+	}
+	return res
+}
+
+func (s *DBSchema) pickPath(f, t edgeInfo) (graphResult, bool) {
+	var res graphResult
+
+	fn := s.rg.Node(f.nodeID)
+	tn := s.rg.Node(t.nodeID)
+	paths := path.YenKShortestPaths(s.rg, 5, fn, tn)
+
+	for _, nodes := range paths {
+		// fmt.Printf("> %d -> %d, nodes: %d\n", f.nodeID, t.nodeID, len(nodes))
+
+		switch {
+		case len(nodes) == 2:
+			lines := s.rg.WeightedLines(nodes[0].ID(), nodes[1].ID())
+			if v := pickLine(lines, f); v != nil {
+				e := v.(TEdge)
+				return graphResult{f, t, []TEdge{e}}, true
+			}
+
+		case len(nodes) > 2:
+			res := graphResult{from: f, to: t}
+			ln := len(nodes)
+
+			var ff, lf bool
+
+			for i := 1; i < ln; i++ {
+				fn := nodes[i-1]
+				tn := nodes[i]
+				lines := s.rg.WeightedLines(fn.ID(), tn.ID())
+				// printLines(lines)
+
+				switch i {
+				case 1:
+					if v := pickLine(lines, f); v != nil {
+						e := v.(TEdge)
+						res.edges = append(res.edges, e)
+						ff = true
+					}
+				case (ln - 1):
+					if v := pickLine(lines, t); v != nil {
+						e := v.(TEdge)
+						res.edges = append(res.edges, e)
+						lf = true
+					}
+				default:
+					line := minWeightedLine(lines)
+					e := line.(TEdge)
+					res.edges = append(res.edges, e)
+				}
+
+				if ff && lf {
+					return res, true
+				}
+			}
+		}
+	}
+
+	return res, false
+}
+
+func pickLine(lines graph.WeightedLines, ei edgeInfo) graph.WeightedLine {
+	for lines.Next() {
+		l := lines.WeightedLine()
+		for _, eid := range ei.edgeIDs {
+			if l.ID() == eid {
+				return l
+			}
+		}
+	}
+	return nil
+}
+
 func PathToRel(p TPath) DBRel {
 	return DBRel{
 		Type:  p.Rel,
-		Left:  DBRelLeft{Ti: p.LTi, Col: p.L},
-		Right: DBRelRight{Ti: p.RTi, Col: p.R},
+		Left:  DBRelLeft{Ti: p.LT, Col: p.LC},
+		Right: DBRelRight{Ti: p.RT, Col: p.RC},
 	}
 }
+
+func minWeightedLine(e graph.WeightedLines) graph.WeightedLine {
+	var min float64 = 10
+	var line graph.WeightedLine
+
+	for e.Next() {
+		l := e.WeightedLine()
+		if l.Weight() < min {
+			min = l.Weight()
+			line = l
+		}
+	}
+	return line
+}
+
+// func printLines(lines graph.WeightedLines) {
+// 	for lines.Next() {
+// 		e := (lines.WeightedLine()).(TEdge)
+// 		fmt.Printf("- (%d) %d -> %d\n", e.ID(), e.From().ID(), e.To().ID())
+// 	}
+// 	lines.Reset()
+// }

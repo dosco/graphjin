@@ -90,8 +90,7 @@ func (gj *GraphJin) _initDiscover() error {
 		gj.dbinfo, err = sdata.GetDBInfo(
 			gj.db,
 			gj.conf.DBType,
-			gj.conf.Blocklist,
-			gj.conf.EnableInflection)
+			gj.conf.Blocklist)
 	}
 
 	return err
@@ -119,8 +118,11 @@ func (gj *GraphJin) _initSchema() error {
 		return err
 	}
 
-	gj.schema, err = sdata.NewDBSchema(gj.dbinfo,
-		getDBTableAliases(gj.conf), gj.conf.EnableInflection)
+	gj.schema, err = sdata.NewDBSchema(
+		gj.conf.DBSchema,
+		gj.dbinfo,
+		getDBTableAliases(gj.conf))
+
 	return err
 }
 
