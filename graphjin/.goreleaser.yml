@@ -18,6 +18,10 @@ builds:
       - amd64
       - arm
       - arm64
+
+git:
+  short_hash: true
+
 archives:
   - replacements:
       darwin: Darwin
@@ -28,10 +32,37 @@ archives:
 checksum:
   name_template: 'checksums.txt'
 snapshot:
-  name_template: "{{ .Tag }}-next"
+  name_template: "{{ .Tag }}-snapshot"
 changelog:
   sort: asc
   filters:
     exclude:
       - '^docs:'
       - '^test:'
+      - Merge pull request
+      - Merge branch
+      - go mod tidy
+nfpms:
+  - homepage: https://graphjin.com
+    description: Build APIs in 5 minutes. An automagical GraphQL to SQL compiler. 
+    license: Apache 2
+    maintainer: Vikram Rangnekar <twitter.com/dosco>
+    formats:
+    - deb
+    - rpm
+brews:
+  - tap:
+      owner: dosco
+      name: graphjin
+    homepage: https://graphjin.com
+    description: Build APIs in 5 minutes. An automagical GraphQL to SQL compiler. 
+    license: Apache 2
+    skip_upload: auto
+scoop:
+  bucket:
+    owner: dosco
+    name: graphjin
+  commit_msg_template: "Scoop update for {{ .ProjectName }} version {{ .Tag }}"
+  homepage: https://graphjin.com
+  description: Build APIs in 5 minutes. An automagical GraphQL to SQL compiler..
+  license: Apache 2
