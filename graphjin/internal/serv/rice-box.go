@@ -48,9 +48,9 @@ func init() {
 	}
 	file8 := &embedded.EmbeddedFile{
 		Filename:    "seed.js",
-		FileModTime: time.Unix(1613541492, 0),
+		FileModTime: time.Unix(1613573361, 0),
 
-		Content: string("// Example script to seed database\n\nvar users = [];\n\nfor (i = 0; i < 10; i++) {\n  var data = {\n    id: i,\n    full_name: fake.name(),\n    email: fake.email(),\n  };\n\n  var res = graphql(\" \\\n\tmutation { \\\n\t\tusers(insert: $data) { \\\n\t\t\tid \\\n\t\t} \\\n\t}\", {\n    data: data,\n  });\n\n  users.push(res.user);\n}\n"),
+		Content: string("// Example script to seed database\n\nvar users = [];\n\nfor (i = 0; i < 10; i++) {\n  var data = {\n    id: i,\n    full_name: fake.name(),\n    email: fake.email(),\n    created_at: \"now\",\n  };\n\n  var res = graphql(\" \\\n\tmutation { \\\n\t\tusers(insert: $data) { \\\n\t\t\tid \\\n\t\t} \\\n\t}\", {\n    data: data,\n  });\n\n  users = users.concat(res.users);\n}\n"),
 	}
 
 	// define dirs

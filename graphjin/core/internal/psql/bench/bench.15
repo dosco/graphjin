@@ -1,0 +1,7 @@
+goos: darwin
+goarch: amd64
+pkg: github.com/dosco/graphjin/core/internal/psql
+BenchmarkCompile-16            	   14418	     82653 ns/op	   64970 B/op	     714 allocs/op
+BenchmarkCompileParallel-16    	   28317	     42430 ns/op	   65028 B/op	     714 allocs/op
+PASS
+ok  	github.com/dosco/graphjin/core/internal/psql	3.764s

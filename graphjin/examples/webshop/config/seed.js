@@ -37,7 +37,7 @@ for (i = 0; i < 3; i++) {
     { user_id: -1 }
   );
 
-  users.push(res.user);
+  users = users.concat(res.users);
 }
 
 // more fake users with random email id's
@@ -64,7 +64,7 @@ for (i = 0; i < user_count; i++) {
     { user_id: -1 }
   );
 
-  users.push(res.user);
+  users = users.concat(res.users);
 }
 
 // ---- add customers
@@ -94,7 +94,7 @@ for (i = 0; i < customer_count; i++) {
     { user_id: u.id }
   );
 
-  customers.push(res.customer);
+  customers = customers.concat(res.customers);
 }
 
 // ---- define some sections
@@ -164,7 +164,7 @@ for (i = 0; i < product_count; i++) {
     { user_id: u.id }
   );
 
-  products.push(res.product);
+  products = products.concat(res.products);
 }
 
 // ---- add purchases (joining customers with products)
@@ -196,7 +196,7 @@ for (i = 0; i < purchase_count; i++) {
     { user_id: u.id }
   );
 
-  purchases.push(res.purchase);
+  purchases = purchases.concat(res.purchases);
 }
 
 // ---- add notifications
@@ -240,7 +240,7 @@ for (i = 0; i < notifications_count; i++) {
     { user_id: u.id }
   );
 
-  notifications.push(res.notification);
+  notifications = notifications.concat(res.notifications);
 }
 
 // ---- add comments
@@ -265,13 +265,11 @@ for (i = 0; i < comments_count; i++) {
 
   if (comments.length !== 0) {
     var c = comments[Math.floor(Math.random() * comments.length)];
-    data["comment"] = {
+    data["comments"] = {
       find: "children",
       connect: { id: c.id },
     };
   }
-
-  console.log(data);
 
   var res = graphql(
     " \
@@ -284,5 +282,5 @@ for (i = 0; i < comments_count; i++) {
     { user_id: u.id }
   );
 
-  comments.push(res.comment);
+  comments = comments.concat(res.comments);
 }

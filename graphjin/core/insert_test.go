@@ -26,7 +26,7 @@ func Example_insert() {
 		}
 	}`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := &core.Config{DBType: dbType, DBSchema: dbSchema, DisableAllowList: true}
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -65,7 +65,7 @@ func Example_insertWithPresets() {
 		}
 	}`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := &core.Config{DBType: dbType, DBSchema: dbSchema, DisableAllowList: true}
 	err := conf.AddRoleTable("user", "products", core.Insert{
 		Presets: map[string]string{"owner_id": "$user_id"},
 	})
@@ -114,7 +114,7 @@ func Example_bulkInsert() {
 		}]
 	}`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := &core.Config{DBType: dbType, DBSchema: dbSchema, DisableAllowList: true}
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -170,7 +170,7 @@ func Example_insertIntoMultipleRelatedTables1() {
 		}
 	}`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := &core.Config{DBType: dbType, DBSchema: dbSchema, DisableAllowList: true}
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -219,7 +219,7 @@ func Example_insertIntoMultipleRelatedTables2() {
 		}
 	}`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := &core.Config{DBType: dbType, DBSchema: dbSchema, DisableAllowList: true}
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -266,7 +266,7 @@ func Example_insertIntoMultipleRelatedTables3() {
 		}
 	}`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := &core.Config{DBType: dbType, DBSchema: dbSchema, DisableAllowList: true}
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -309,7 +309,7 @@ func Example_insertIntoTableAndConnectToRelatedTables() {
 		}
 	}`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := &core.Config{DBType: dbType, DBSchema: dbSchema, DisableAllowList: true}
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -350,7 +350,7 @@ func Example_insertIntoTableAndConnectToRelatedTableWithArrayColumn() {
 		}
 	}`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := &core.Config{DBType: dbType, DBSchema: dbSchema, DisableAllowList: true}
 	conf.Tables = []core.Table{
 		{Name: "products", Columns: []core.Column{{Name: "category_ids", ForeignKey: "categories.id"}}},
 	}
@@ -392,7 +392,7 @@ func Example_insertIntoRecursiveRelationship() {
 		}
 	}`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := &core.Config{DBType: dbType, DBSchema: dbSchema, DisableAllowList: true}
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -428,7 +428,7 @@ func Example_insertIntoRecursiveRelationshipAndConnectTable1() {
 		}
 	}`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := &core.Config{DBType: dbType, DBSchema: dbSchema, DisableAllowList: true}
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -460,7 +460,7 @@ func Example_insertIntoRecursiveRelationshipAndConnectTable2() {
   	}
   }`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := &core.Config{DBType: dbType, DBSchema: dbSchema, DisableAllowList: true}
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)

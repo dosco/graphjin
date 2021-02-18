@@ -30,6 +30,7 @@ func (s *DBSchema) addAliases(t DBTable, nodeID int64, aliases []string) {
 	for _, al := range aliases {
 		if _, ok := s.ei[(t.Schema + ":" + al)]; !ok {
 			s.tindex[(t.Schema + ":" + al)] = nodeInfo{nodeID}
+			s.ai[al] = nodeInfo{nodeID}
 		}
 	}
 }
@@ -37,7 +38,7 @@ func (s *DBSchema) addAliases(t DBTable, nodeID int64, aliases []string) {
 func (s *DBSchema) GetAliases() map[string]DBTable {
 	ts := make(map[string]DBTable)
 
-	for name, n := range s.al {
+	for name, n := range s.ai {
 		ts[name] = s.tables[int(n.nodeID)]
 	}
 	return ts
@@ -145,7 +146,8 @@ func (s *DBSchema) addEdge(name string, edge TEdge, singular bool) {
 	s.addEdgeInfo(k1, ei1)
 	s.addEdgeInfo(k2, ei2)
 
-	s.rg.SetWeightedLine(edge)
+	s.ae[edge.ID()] = edge
+	s.rg.SetWeightedLine(edge.WeightedLine)
 }
 
 func (s *DBSchema) addEdgeInfo(k string, ei edgeInfo) {
@@ -232,7 +234,8 @@ func (s *DBSchema) FindPath(from, to string) ([]TPath, error) {
 	// 	to, res.to.nodeID)
 
 	path := []TPath{}
-	for _, edge := range res.edges {
+	for _, eid := range res.edges {
+		edge := s.ae[eid]
 		path = append(path, TPath{
 			Rel: edge.Type,
 			LT:  edge.LT,
@@ -246,7 +249,7 @@ func (s *DBSchema) FindPath(from, to string) ([]TPath, error) {
 
 type graphResult struct {
 	from, to edgeInfo
-	edges    []TEdge
+	edges    []int64
 }
 
 func (s *DBSchema) between(from, to []edgeInfo) graphResult {
@@ -276,8 +279,7 @@ func (s *DBSchema) pickPath(f, t edgeInfo) (graphResult, bool) {
 		case len(nodes) == 2:
 			lines := s.rg.WeightedLines(nodes[0].ID(), nodes[1].ID())
 			if v := pickLine(lines, f); v != nil {
-				e := v.(TEdge)
-				return graphResult{f, t, []TEdge{e}}, true
+				return graphResult{f, t, []int64{v.ID()}}, true
 			}
 
 		case len(nodes) > 2:
@@ -295,20 +297,17 @@ func (s *DBSchema) pickPath(f, t edgeInfo) (graphResult, bool) {
 				switch i {
 				case 1:
 					if v := pickLine(lines, f); v != nil {
-						e := v.(TEdge)
-						res.edges = append(res.edges, e)
+						res.edges = append(res.edges, v.ID())
 						ff = true
 					}
 				case (ln - 1):
 					if v := pickLine(lines, t); v != nil {
-						e := v.(TEdge)
-						res.edges = append(res.edges, e)
+						res.edges = append(res.edges, v.ID())
 						lf = true
 					}
 				default:
 					line := minWeightedLine(lines)
-					e := line.(TEdge)
-					res.edges = append(res.edges, e)
+					res.edges = append(res.edges, line.ID())
 				}
 
 				if ff && lf {

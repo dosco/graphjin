@@ -7,6 +7,7 @@ for (i = 0; i < 10; i++) {
     id: i,
     full_name: fake.name(),
     email: fake.email(),
+    created_at: "now",
   };
 
   var res = graphql(" \
@@ -18,5 +19,5 @@ for (i = 0; i < 10; i++) {
     data: data,
   });
 
-  users.push(res.user);
+  users = users.concat(res.users);
 }

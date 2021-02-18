@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"gonum.org/v1/gonum/graph/multi"
-	"gonum.org/v1/gonum/graph/path"
 )
 
 type edgeInfo struct {
@@ -27,12 +26,12 @@ type DBSchema struct {
 	custom []DBTable                    // custom resolver tables
 	vt     map[string]VirtualTable      // for polymorphic relationships
 	fm     map[string]DBFunction        // db functions
-	tindex map[string]nodeInfo          //table index
-	al     map[string]edgeInfo          // aliases
-	ei     map[string][]edgeInfo        // info on nodes
+	tindex map[string]nodeInfo          // table index
+	ai     map[string]nodeInfo          // table alias index
 	re     map[int64]TEdge              // recursive edges
+	ae     map[int64]TEdge              // all other edges
+	ei     map[string][]edgeInfo        // edges index
 	rg     *multi.WeightedDirectedGraph // relationship graph
-	sp     path.AllShortest             // graph shortest paths
 }
 
 type RelType int
@@ -83,9 +82,10 @@ func NewDBSchema(
 		schema: defaultSchema,
 		vt:     make(map[string]VirtualTable),
 		tindex: make(map[string]nodeInfo),
-		al:     make(map[string]edgeInfo),
-		ei:     make(map[string][]edgeInfo),
+		ai:     make(map[string]nodeInfo),
 		re:     make(map[int64]TEdge),
+		ae:     make(map[int64]TEdge),
+		ei:     make(map[string][]edgeInfo),
 		rg:     multi.NewWeightedDirectedGraph(),
 	}
 
@@ -130,13 +130,6 @@ func NewDBSchema(
 		}
 	}
 
-	schema.sp = path.DijkstraAllPaths(schema.rg)
-
-	// var ok bool
-	// schema.sp, ok = path.FloydWarshall(schema.rg)
-	// if !ok {
-	// 	return nil, fmt.Errorf("schema: cycle detected in relationship graph")
-	// }
 	return schema, nil
 }
 
