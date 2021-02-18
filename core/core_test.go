@@ -21,9 +21,10 @@ type dbinfo struct {
 }
 
 var (
-	dbParam string
-	dbType  string
-	db      *sql.DB
+	dbParam  string
+	dbType   string
+	dbSchema string
+	db       *sql.DB
 )
 
 func init() {
@@ -81,6 +82,10 @@ func TestMain(m *testing.M) {
 			panic(err)
 		}
 		dbType = v.name
+
+		if dbType == "mysql" {
+			dbSchema = "db"
+		}
 
 		if res := m.Run(); res != 0 {
 			os.Exit(res)

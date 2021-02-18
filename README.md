@@ -2,11 +2,11 @@
 
 # GraphJin - Build APIs in 5 minutes
 
-[![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=flat-square&logo=appveyor)](https://pkg.go.dev/github.com/dosco/graphjin/core?tab=doc)
-[![GoReport](https://goreportcard.com/badge/github.com/gojp/goreportcard?style=flat-square)](https://goreportcard.com/report/github.com/dosco/graphjin)
-[![Apache 2.0](https://img.shields.io/github/license/dosco/graphjin.svg?style=flat-square)](https://github.com/dosco/graphjin/blob/master/LICENSE)
-[![Docker build](https://img.shields.io/docker/cloud/build/dosco/graphjin.svg?style=flat-square)](https://hub.docker.com/r/dosco/graphjin/builds)
-[![Discord Chat](https://img.shields.io/discord/628796009539043348.svg?style=flat-square&logo=appveyor)](https://discord.gg/6pSWCTZ)
+[![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=for-the-badge&logo=appveyor&logo=appveyor)](https://pkg.go.dev/github.com/dosco/graphjin/core?tab=doc)
+[![GoReport](https://goreportcard.com/badge/github.com/gojp/goreportcard?style=for-the-badge)](https://goreportcard.com/report/github.com/dosco/graphjin)
+[![Apache 2.0](https://img.shields.io/github/license/dosco/graphjin.svg?style=for-the-badge)](https://github.com/dosco/graphjin/blob/master/LICENSE)
+[![Docker build](https://img.shields.io/docker/cloud/build/dosco/graphjin.svg?style=for-the-badge)](https://hub.docker.com/r/dosco/graphjin/builds)
+[![Discord Chat](https://img.shields.io/discord/628796009539043348.svg?style=for-the-badge&logo=appveyor)](https://discord.gg/6pSWCTZ)
 
 GraphJin gives you a high performance GraphQL API without you having to write any code. GraphQL is automagically compiled into an efficient SQL query. Use it either as a library or a standalone service.
 
@@ -114,6 +114,8 @@ This compiler is what sits at the heart of GraphJin, with layers of useful funct
 [Build APIs in 5 minutes with GraphJin](https://dev.to/dosco/build-high-performance-graphql-apis-in-5-minutes-with-graphjin-261o)
 
 [GraphQL vs REST](https://dev.to/dosco/rest-vs-graphql-building-startups-in-2021-3k73)
+
+[GraphQL Examples](https://pkg.go.dev/github.com/dosco/graphjin/core#pkg-examples)
 
 ## Reach out
 

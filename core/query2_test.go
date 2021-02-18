@@ -25,7 +25,7 @@ func queryWithVariableLimit(t *testing.T) {
 		"limit": 10
 	}`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := &core.Config{DBType: dbType, DBSchema: dbSchema, DisableAllowList: true}
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		t.Error(err)
@@ -78,7 +78,7 @@ var benchGQL = `query {
 }`
 
 func Example_veryComplexQuery() {
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := &core.Config{DBType: dbType, DBSchema: dbSchema, DisableAllowList: true}
 	conf.Tables = []core.Table{
 		{
 			Name:  "category_counts",
@@ -125,7 +125,7 @@ func BenchmarkCompile(b *testing.B) {
 		"limit": 10
 	}`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := &core.Config{DBType: dbType, DBSchema: dbSchema, DisableAllowList: true}
 	conf.Tables = []core.Table{
 		{
 			Name:  "category_counts",

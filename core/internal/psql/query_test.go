@@ -713,6 +713,8 @@ var benchGQL = []byte(`query {
 	}
 }`)
 
+var result []byte
+
 func BenchmarkCompile(b *testing.B) {
 	var w bytes.Buffer
 
@@ -731,6 +733,7 @@ func BenchmarkCompile(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
+		result = w.Bytes()
 	}
 }
 
@@ -752,6 +755,7 @@ func BenchmarkCompileParallel(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
+			result = w.Bytes()
 		}
 	})
 }
