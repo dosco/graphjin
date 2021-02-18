@@ -12,12 +12,7 @@ endif
 export GO111MODULE := on
 
 # Build-time Go variables
-version        = github.com/dosco/graphjin/internal/serv.version
-gitBranch      = github.com/dosco/graphjin/internal/serv.gitBranch
-lastCommitSHA  = github.com/dosco/graphjin/internal/serv.lastCommitSHA
-lastCommitTime = github.com/dosco/graphjin/internal/serv.lastCommitTime
-
-BUILD_FLAGS ?= -ldflags '-s -w -X ${lastCommitSHA}=${BUILD} -X "${lastCommitTime}=${BUILD_DATE}" -X "${version}=${BUILD_VERSION}" -X ${gitBranch}=${BUILD_BRANCH}'
+BUILD_FLAGS ?= -ldflags '-s -w -X "main.version=${BUILD_VERSION}" -X "main.commit=${BUILD}" -X "main.date=${BUILD_DATE}"'
 
 .PHONY: all build gen clean test run lint changlog release version help $(PLATFORMS)
 

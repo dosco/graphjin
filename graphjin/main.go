@@ -5,11 +5,10 @@ For documentation, visit https://graphjin.com
 
 Commit SHA-1          : 75ff551
 Commit timestamp      : 2020-04-13 00:43:18 -0400
-Branch                : master
 Go version            : go1.14
 
 Licensed under the Apache Public License 2.0
-Copyright 2020, Vikram Rangnekar
+Copyright 2021, Vikram Rangnekar
 
 Usage:
   graphjin [command]
@@ -40,6 +39,18 @@ package main
 
 import "github.com/dosco/graphjin/internal/serv"
 
+var (
+	// These variables are set using -ldflags
+	version string
+	commit  string
+	date    string
+)
+
 func main() {
-	serv.Cmd()
+	serv.Cmd(serv.BuildInfo{
+		Version: version,
+		Commit:  commit,
+		Date:    date,
+	})
+
 }
