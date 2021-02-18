@@ -19,8 +19,8 @@ builds:
       - arm
       - arm64
 
-git:
-  short_hash: true
+signs:
+  - artifacts: checksum
 
 archives:
   - replacements:
@@ -29,10 +29,13 @@ archives:
       windows: Windows
       386: i386
       amd64: x86_64
+
 checksum:
   name_template: 'checksums.txt'
+
 snapshot:
   name_template: "{{ .Tag }}-snapshot"
+
 changelog:
   sort: asc
   filters:
@@ -42,6 +45,7 @@ changelog:
       - Merge pull request
       - Merge branch
       - go mod tidy
+
 nfpms:
   - homepage: https://graphjin.com
     description: Build APIs in 5 minutes. An automagical GraphQL to SQL compiler. 
@@ -50,6 +54,7 @@ nfpms:
     formats:
     - deb
     - rpm
+
 brews:
   - tap:
       owner: dosco
@@ -58,6 +63,7 @@ brews:
     description: Build APIs in 5 minutes. An automagical GraphQL to SQL compiler. 
     license: Apache 2
     skip_upload: auto
+
 scoop:
   bucket:
     owner: dosco
