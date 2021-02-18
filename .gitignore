@@ -39,4 +39,5 @@ release
 *-fuzz.zip
 *.test
 .firebase
+/dist
 

@@ -17,13 +17,7 @@ const (
 	serverName = "GraphJin"
 )
 
-var (
-	// These variables are set using -ldflags
-	version        string
-	gitBranch      string
-	lastCommitSHA  string
-	lastCommitTime string
-)
+var buildInfo BuildInfo
 
 type ServConfig struct {
 	log      *zap.SugaredLogger // logger
@@ -34,7 +28,14 @@ type ServConfig struct {
 	db       *sql.DB            // database connection pool
 }
 
-func Cmd() {
+type BuildInfo struct {
+	Version string
+	Commit  string
+	Date    string
+}
+
+func Cmd(bi BuildInfo) {
+	buildInfo = bi
 	servConf := new(ServConfig)
 	servConf.log = newLogger(nil).Sugar()
 
@@ -155,7 +156,7 @@ func cmdVersion(cmd *cobra.Command, args []string) {
 }
 
 func BuildDetails() string {
-	if version == "" {
+	if buildInfo.Version == "" {
 		return `
 GraphJin (unknown version)
 For documentation, visit https://graphjin.com
@@ -165,7 +166,7 @@ To build with version information please use the Makefile
 > cd graphjin && make install
 
 Licensed under the Apache Public License 2.0
-Copyright 2020, Vikram Rangnekar
+Copyright 2021, Vikram Rangnekar
 `
 	}
 
@@ -175,16 +176,14 @@ For documentation, visit https://graphjin.com
 
 Commit SHA-1          : %v
 Commit timestamp      : %v
-Branch                : %v
 Go version            : %v
 
 Licensed under the Apache Public License 2.0
-Copyright 2020, Vikram Rangnekar
+Copyright 2021, Vikram Rangnekar
 `,
-		version,
-		lastCommitSHA,
-		lastCommitTime,
-		gitBranch,
+		buildInfo.Version,
+		buildInfo.Commit,
+		buildInfo.Date,
 		runtime.Version())
 }
 

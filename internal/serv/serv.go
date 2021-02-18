@@ -105,8 +105,8 @@ func startHTTP(sc *ServConfig) {
 		sc.log.Info("Shutdown complete")
 	})
 
-	sc.log.Infof("GraphJin started, version: %s, git-branch: %s, host-port: %s, app-name: %s, env: %s\n",
-		version, gitBranch, sc.conf.hostPort, appName, env)
+	sc.log.Infof("GraphJin started, version: %s, host-port: %s, app-name: %s, env: %s\n",
+		buildInfo.Version, sc.conf.hostPort, appName, env)
 
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		sc.log.Fatal("Server stopped")
