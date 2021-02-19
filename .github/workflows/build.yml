@@ -36,11 +36,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
                    
-      - name: Lint
-        run: make lint
+      - name: Run Linter
+        uses: golangci/golangci-lint-action@v1
+        with:
+          version: v1.37
+          args: --timeout=10m
         
-      - name: Test
-        run: make test
+      - name: Run Tests
+        run: go test ./...
    
       - name: Snapcraft Login
         if: success() && startsWith(github.ref, 'refs/tags/v')
