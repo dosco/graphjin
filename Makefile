@@ -44,7 +44,7 @@ changelog: $(GITCHGLOG)
 	@git-chglog $(ARGS)
 
 $(GOLANGCILINT):
-	@GO111MODULE=off curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b $(GOPATH)/bin v1.25.1
+	@GO111MODULE=off curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b $(GOPATH)/bin v1.37.0
 
 lint: $(GOLANGCILINT)
 	@golangci-lint run ./... --skip-dirs-use-default

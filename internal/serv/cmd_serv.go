@@ -32,10 +32,6 @@ func cmdServ(servConf *ServConfig) func(*cobra.Command, []string) {
 			fatalInProd(servConf, err, "failed to initialize")
 		}
 
-		if servConf.conf.DB.Type == "mysql" {
-			servConf.conf.DBSchema = servConf.conf.DB.DBName
-		}
-
 		startHTTP(servConf)
 	}
 }

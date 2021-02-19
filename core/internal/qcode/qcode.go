@@ -846,7 +846,7 @@ func (co *Compiler) compileArgID(sel *Select, arg *graph.Arg) error {
 
 func (co *Compiler) compileArgSearch(sel *Select, arg *graph.Arg) error {
 	if len(sel.Ti.FullText) == 0 {
-		switch co.s.Type() {
+		switch co.s.DBType() {
 		case "mysql":
 			return fmt.Errorf("no fulltext indexes defined for table '%s'", sel.Table)
 		default:
@@ -965,7 +965,7 @@ func (co *Compiler) compileArgDistinctOn(sel *Select, arg *graph.Arg) error {
 
 	if node.Type == graph.NodeStr {
 		if col, err := sel.Ti.GetColumn(node.Val); err == nil {
-			switch co.s.Type() {
+			switch co.s.DBType() {
 			case "mysql":
 				sel.OrderBy = append(sel.OrderBy, OrderBy{Order: OrderAsc, Col: col})
 			default:
@@ -978,7 +978,7 @@ func (co *Compiler) compileArgDistinctOn(sel *Select, arg *graph.Arg) error {
 
 	for _, cn := range node.Children {
 		if col, err := sel.Ti.GetColumn(cn.Val); err == nil {
-			switch co.s.Type() {
+			switch co.s.DBType() {
 			case "mysql":
 				sel.OrderBy = append(sel.OrderBy, OrderBy{Order: OrderAsc, Col: col})
 			default:
@@ -1008,7 +1008,7 @@ func (co *Compiler) compileArgLimit(sel *Select, arg *graph.Arg) error {
 		}
 
 	case graph.NodeVar:
-		if co.s.Type() == "mysql" {
+		if co.s.DBType() == "mysql" {
 			return dbArgErr("limit", "number", "mysql")
 		}
 		sel.Paging.LimitVar = node.Val
@@ -1032,7 +1032,7 @@ func (co *Compiler) compileArgOffset(sel *Select, arg *graph.Arg) error {
 		}
 
 	case graph.NodeVar:
-		if co.s.Type() == "mysql" {
+		if co.s.DBType() == "mysql" {
 			return dbArgErr("limit", "number", "mysql")
 		}
 		sel.Paging.OffsetVar = node.Val

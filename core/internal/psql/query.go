@@ -96,7 +96,7 @@ func (co *Compiler) CompileQuery(
 		md.poll = true
 	}
 
-	md.ct = qc.Schema.Type()
+	md.ct = qc.Schema.DBType()
 
 	st := NewIntStack()
 	c := &compilerContext{
