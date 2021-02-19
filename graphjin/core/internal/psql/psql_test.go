@@ -24,7 +24,7 @@ func TestMain(m *testing.M) {
 		log.Fatal(err)
 	}
 
-	qcompile, err = qcode.NewCompiler(schema, qcode.Config{DBSchema: "public"})
+	qcompile, err = qcode.NewCompiler(schema, qcode.Config{DBSchema: schema.DBSchema()})
 	if err != nil {
 		log.Fatal(err)
 	}

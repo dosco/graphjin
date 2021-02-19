@@ -19,9 +19,10 @@ type nodeInfo struct {
 }
 
 type DBSchema struct {
-	ver    int
 	typ    string                       // db type
+	ver    int                          // db version
 	schema string                       // db schema
+	name   string                       // db name
 	tables []DBTable                    // tables
 	custom []DBTable                    // custom resolver tables
 	vt     map[string]VirtualTable      // for polymorphic relationships
@@ -72,14 +73,14 @@ type DBRel struct {
 }
 
 func NewDBSchema(
-	defaultSchema string,
 	info *DBInfo,
 	aliases map[string][]string) (*DBSchema, error) {
 
 	schema := &DBSchema{
-		ver:    info.Version,
 		typ:    info.Type,
-		schema: defaultSchema,
+		ver:    info.Version,
+		schema: info.Schema,
+		name:   info.Name,
 		vt:     make(map[string]VirtualTable),
 		tindex: make(map[string]nodeInfo),
 		ai:     make(map[string]nodeInfo),
@@ -328,10 +329,18 @@ func getRelName(colName string) string {
 	return cn
 }
 
-func (s *DBSchema) Type() string {
+func (s *DBSchema) DBType() string {
 	return s.typ
 }
 
 func (s *DBSchema) DBVersion() int {
 	return s.ver
+}
+
+func (s *DBSchema) DBSchema() string {
+	return s.schema
+}
+
+func (s *DBSchema) DBName() string {
+	return s.name
 }

@@ -208,7 +208,7 @@ func (gj *GraphJin) GraphQL(
 		return res, errors.New("use 'core.Subscribe' for subscriptions")
 	}
 
-	if ct.op == qcode.QTMutation && gj.schema.Type() == "mysql" {
+	if ct.op == qcode.QTMutation && gj.schema.DBType() == "mysql" {
 		return res, errors.New("mysql: mutations not supported")
 	}
 

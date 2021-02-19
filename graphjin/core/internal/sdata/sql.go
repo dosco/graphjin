@@ -18,6 +18,13 @@ ORDER BY
 	r.routine_name, p.ordinal_position;
 `
 
+const postgresInfo = `
+SELECT 
+	CAST(current_setting('server_version_num') AS integer) as db_version,
+	current_schema() as db_schema,
+	current_database() as db_name;
+`
+
 const postgresColumnsStmt = `
 SELECT  
 	n.nspname as "schema",
@@ -69,6 +76,16 @@ WHERE
 	AND c.relname != 'schema_version'
 	AND f.attnum > 0
 	AND f.attisdropped = false;
+`
+
+const mysqlInfo = `
+SELECT 
+		a.c as db_version, 
+    b.c as db_schema, 
+    b.c as db_name 
+FROM 
+	(SELECT CONVERT(REPLACE(VERSION(), '.', ''), SIGNED INTEGER) as c) as a, 
+    (SELECT DATABASE() as c) as b;
 `
 
 const mysqlColumnsStmt = `

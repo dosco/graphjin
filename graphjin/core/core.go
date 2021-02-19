@@ -75,15 +75,6 @@ func (gj *GraphJin) _initDiscover() error {
 		gj.conf.DBType = "postgres"
 	}
 
-	if gj.conf.DBSchema == "" {
-		switch gj.conf.DBType {
-		case "postgres":
-			gj.conf.DBSchema = "public"
-		case "mysql":
-			return fmt.Errorf("please set DBSchema (db_schema) to database name")
-		}
-	}
-
 	// If gj.dbinfo is not null then it's probably set
 	// for tests
 	if gj.dbinfo == nil {
@@ -119,7 +110,6 @@ func (gj *GraphJin) _initSchema() error {
 	}
 
 	gj.schema, err = sdata.NewDBSchema(
-		gj.conf.DBSchema,
 		gj.dbinfo,
 		getDBTableAliases(gj.conf))
 
@@ -133,7 +123,7 @@ func (gj *GraphJin) initCompilers() error {
 		DefaultBlock:     gj.conf.DefaultBlock,
 		DefaultLimit:     gj.conf.DefaultLimit,
 		EnableInflection: gj.conf.EnableInflection,
-		DBSchema:         gj.conf.DBSchema,
+		DBSchema:         gj.schema.DBSchema(),
 	}
 
 	if gj.allowList != nil && gj.conf.EnforceAllowList {
@@ -151,7 +141,7 @@ func (gj *GraphJin) initCompilers() error {
 
 	gj.pc = psql.NewCompiler(psql.Config{
 		Vars:      gj.conf.Vars,
-		DBType:    gj.schema.Type(),
+		DBType:    gj.schema.DBType(),
 		DBVersion: gj.schema.DBVersion(),
 	})
 	return nil

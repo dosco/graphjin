@@ -85,10 +85,6 @@ type Config struct {
 	// Database type name. Defaults to 'postgres' (options: mysql, postgres)
 	DBType string `mapstructure:"db_type"`
 
-	// Database schema name. Defaults to 'public' for postgres and
-	// database name for mysql
-	DBSchema string `mapstructure:"db_schema"`
-
 	// Log warnings and other debug information
 	Debug bool
 

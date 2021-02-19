@@ -3,13 +3,14 @@ package sdata
 import (
 	"database/sql"
 	"fmt"
-	"strconv"
 	"strings"
 )
 
 type DBInfo struct {
-	Version   int
 	Type      string
+	Version   int
+	Schema    string
+	Name      string
 	Tables    []DBTable
 	Functions []DBFunction
 	VTables   []VirtualTable
@@ -42,12 +43,25 @@ type st struct {
 
 func GetDBInfo(
 	db *sql.DB,
-	dbtype string,
+	dbType string,
 	blockList []string) (*DBInfo, error) {
-	var version string
-	_ = db.QueryRow(`SHOW server_version_num`).Scan(&version)
 
-	cols, err := DiscoverColumns(db, dbtype, blockList)
+	var dbVersion int
+	var dbSchema, dbName string
+	var row *sql.Row
+
+	switch dbType {
+	case "mysql":
+		row = db.QueryRow(mysqlInfo)
+	default:
+		row = db.QueryRow(postgresInfo)
+	}
+
+	if err := row.Scan(&dbVersion, &dbSchema, &dbName); err != nil {
+		return nil, err
+	}
+
+	cols, err := DiscoverColumns(db, dbType, blockList)
 	if err != nil {
 		return nil, err
 	}
@@ -57,8 +71,11 @@ func GetDBInfo(
 		return nil, err
 	}
 
-	di := NewDBInfo(dbtype,
-		version,
+	di := NewDBInfo(
+		dbType,
+		dbVersion,
+		dbSchema,
+		dbName,
 		cols,
 		funcs,
 		blockList)
@@ -67,24 +84,23 @@ func GetDBInfo(
 }
 
 func NewDBInfo(
-	dbtype string,
-	version string,
+	dbType string,
+	dbVersion int,
+	dbSchema string,
+	dbName string,
 	cols []DBColumn,
 	funcs []DBFunction,
 	blockList []string) *DBInfo {
 
 	di := &DBInfo{
-		Type:      dbtype,
+		Type:      dbType,
+		Version:   dbVersion,
+		Schema:    dbSchema,
+		Name:      dbName,
 		Functions: funcs,
 		colMap:    make(map[string]int),
 		tableMap:  make(map[string]int),
 	}
-
-	if version == "" {
-		version = "110000"
-	}
-
-	di.Version, _ = strconv.Atoi(version)
 
 	tm := make(map[st][]DBColumn)
 	for i := range cols {

@@ -172,7 +172,7 @@ func (s *DBSchema) Find(schema, name string) (DBTable, error) {
 	var t DBTable
 
 	if schema == "" {
-		schema = s.schema
+		schema = s.DBSchema()
 	}
 
 	v, ok := s.tindex[(schema + ":" + name)]
