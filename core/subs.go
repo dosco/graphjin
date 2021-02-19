@@ -144,7 +144,7 @@ func (gj *GraphJin) newSub(c context.Context, s *sub, query string, vars json.Ra
 	}
 
 	if len(s.q.st.md.Params()) != 0 {
-		s.q.st.sql = renderSubWrap(s.q.st, gj.schema.Type())
+		s.q.st.sql = renderSubWrap(s.q.st, gj.schema.DBType())
 	}
 
 	go gj.subController(s)

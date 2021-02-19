@@ -2,9 +2,7 @@
 # Make sure to check the documentation at http://goreleaser.com
 before:
   hooks:
-    # You may remove this if you don't use go modules.
     - go mod download
-    # you may remove this if you don't need go generate
     - go generate ./...
 builds:
   - env:
@@ -73,3 +71,12 @@ scoop:
   homepage: https://graphjin.com
   description: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler."
   license: "Apache 2"
+
+snapcrafts:
+  - name_template: '{{ .ProjectName }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
+    summary: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler"
+    description: |
+      GraphJin gives you a high performance GraphQL API without you having to write any code. GraphQL is automagically compiled into an efficient SQL query. Use it either as a library or a standalone service.
+    grade: stable
+    confinement: classic
+    publish: true
