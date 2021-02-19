@@ -37,7 +37,7 @@ jobs:
             ${{ runner.os }}-go-
                    
       - name: Run Linter
-        uses: golangci/golangci-lint-action@v1
+        uses: golangci/golangci-lint-action@v2
         with:
           version: v1.37
           args: --timeout=10m
