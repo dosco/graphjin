@@ -50,7 +50,7 @@ jobs:
           snapcraft login --with <(echo "$SNAPCRAFT_LOGIN")
           
       - name: Import GPG key
-        if: success() && && startsWith(github.ref, 'refs/tags/v')
+        if: success() && startsWith(github.ref, 'refs/tags/v')
         id: import_gpg
         uses: crazy-max/ghaction-import-gpg@v3
         with:
