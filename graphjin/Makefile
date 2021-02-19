@@ -14,39 +14,27 @@ export GO111MODULE := on
 # Build-time Go variables
 BUILD_FLAGS ?= -ldflags '-s -w -X "main.version=${BUILD_VERSION}" -X "main.commit=${BUILD}" -X "main.date=${BUILD_DATE}"'
 
-.PHONY: all build gen clean test run lint changlog release version help $(PLATFORMS)
+.PHONY: all download-tools build gen clean test run lint changlog release version help $(PLATFORMS)
 
 test:
 	@go test -v -short -race ./...
 
 BIN_DIR := $(GOPATH)/bin
-GORICE := $(BIN_DIR)/rice
-GOSTRINGER := $(BIN_DIR)/stringer
-GOLANGCILINT := $(BIN_DIR)/golangci-lint
-GITCHGLOG := $(BIN_DIR)/git-chglog
 WEB_BUILD_DIR := ./internal/serv/web/build/manifest.json
 
-$(GORICE):
-	@GO111MODULE=off go get -u github.com/GeertJohan/go.rice/rice
-
-$(GOSTRINGER):
-	@GO111MODULE=off go get -u golang.org/x/tools/cmd/stringer
+download-tools:
+	@echo Installing tools from tools.go
+	@cat tools.go | grep _ | awk -F'"' '{print $$2}' | xargs -tI % go install %
 
 $(WEB_BUILD_DIR):
 	@echo "First install Yarn and create a build of the web UI then re-run make install"
 	@echo "Run this command: yarn --cwd internal/serv/web/ build"
 	@exit 1
 
-$(GITCHGLOG):
-	@GO111MODULE=off go get -u github.com/git-chglog/git-chglog/cmd/git-chglog
-
-changelog: $(GITCHGLOG)
+changelog: download-tools
 	@git-chglog $(ARGS)
 
-$(GOLANGCILINT):
-	@GO111MODULE=off curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b $(GOPATH)/bin v1.37.0
-
-lint: $(GOLANGCILINT)
+lint: download-tools
 	@golangci-lint run ./... --skip-dirs-use-default
 
 BINARY := graphjin
@@ -64,7 +52,7 @@ all: lint test $(BINARY)
 
 build: $(BINARY)
 
-gen: $(GOSTRINGER) $(GORICE) $(WEB_BUILD_DIR)
+gen: download-tools
 	@go generate ./...
 
 $(BINARY): clean
