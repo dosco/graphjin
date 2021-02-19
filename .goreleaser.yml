@@ -21,6 +21,7 @@ builds:
 
 signs:
   - artifacts: checksum
+    args: ["--batch", "-u", "{{ .Env.GPG_FINGERPRINT }}", "--output", "${signature}", "--detach-sign", "${artifact}"]
 
 archives:
   - replacements:
@@ -48,8 +49,8 @@ changelog:
 
 nfpms:
   - homepage: https://graphjin.com
-    description: Build APIs in 5 minutes. An automagical GraphQL to SQL compiler. 
-    license: Apache 2
+    description: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler."
+    license: "Apache 2"
     maintainer: Vikram Rangnekar <twitter.com/dosco>
     formats:
     - deb
@@ -60,8 +61,8 @@ brews:
       owner: dosco
       name: graphjin
     homepage: https://graphjin.com
-    description: Build APIs in 5 minutes. An automagical GraphQL to SQL compiler. 
-    license: Apache 2
+    description: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler." 
+    license: "Apache 2"
     skip_upload: auto
 
 scoop:
@@ -70,5 +71,5 @@ scoop:
     name: graphjin
   commit_msg_template: "Scoop update for {{ .ProjectName }} version {{ .Tag }}"
   homepage: https://graphjin.com
-  description: Build APIs in 5 minutes. An automagical GraphQL to SQL compiler..
-  license: Apache 2
+  description: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler."
+  license: "Apache 2"
