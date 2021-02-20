@@ -47,7 +47,7 @@ changelog:
 nfpms:
   - homepage: https://graphjin.com
     description: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler."
-    license: "Apache 2"
+    license: Apache-2.0
     maintainer: Vikram Rangnekar <twitter.com/dosco>
     formats:
     - deb
@@ -59,7 +59,7 @@ brews:
       name: graphjin
     homepage: https://graphjin.com
     description: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler." 
-    license: "Apache 2"
+    license: Apache-2.0
     skip_upload: auto
 
 scoop:
@@ -69,7 +69,7 @@ scoop:
   commit_msg_template: "Scoop update for {{ .ProjectName }} version {{ .Tag }}"
   homepage: https://graphjin.com
   description: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler."
-  license: "Apache 2"
+  license: Apache-2.0
 
 snapcrafts:
   - name_template: '{{ .ProjectName }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
@@ -79,3 +79,6 @@ snapcrafts:
     grade: stable
     confinement: classic
     publish: true
+    license: Apache-2.0
+    replacements:
+      darwin: macOS
