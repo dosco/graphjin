@@ -82,3 +82,4 @@ snapcrafts:
     license: Apache-2.0
     replacements:
       darwin: macOS
+      amd64: x86_64
