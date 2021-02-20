@@ -1,4 +1,11 @@
 # Make sure to check the documentation at http://goreleaser.com
+
+# Snapcraft credentials
+# snapcraft export-login --snaps=graphjin --channels=stable --acls=package_access,package_push,package_update,package_release credential
+
+# GPG Key
+# gpg --armor --export-secret-key <email> | pbcop
+
 before:
   hooks:
     - go mod download
@@ -76,10 +83,14 @@ snapcrafts:
     summary: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler"
     description: |
       GraphJin gives you a high performance GraphQL API without you having to write any code. GraphQL is automagically compiled into an efficient SQL query. Use it either as a library or a standalone service.
-    grade: stable
-    confinement: classic
-    publish: true
-    license: Apache-2.0
     replacements:
       darwin: macOS
       amd64: x86_64
+    apps:
+      graphjin:
+        plugs: ["home", "network", "network-bind"]
+    grade: stable
+    confinement: strict
+    publish: true
+    license: Apache-2.0
+    base: core18
