@@ -51,6 +51,7 @@ require (
 	golang.org/x/crypto v0.0.0-20201208171446-5f87f3452ae9
 	golang.org/x/lint v0.0.0-20200302205851-738671d3881b
 	golang.org/x/perf v0.0.0-20201207232921-bdcc6220ee90
+	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e
 	golang.org/x/tools v0.1.0
 	gonum.org/v1/gonum v0.8.2
