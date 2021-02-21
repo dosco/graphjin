@@ -4,6 +4,12 @@ object-assign
 @license MIT
 */
 
+/*!
+ * github-buttons v2.14.2
+ * (c) 2021 なつき
+ * @license BSD-2-Clause
+ */
+
 /*! https://mths.be/punycode v1.4.1 by @mathias */
 
 /** @license React v0.19.1
