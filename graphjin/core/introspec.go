@@ -199,16 +199,16 @@ func (in *intro) addTables() error {
 	return nil
 }
 
-func (in *intro) addToTable(name, desc string, ti sdata.DBTable) {
-	k := name + "Output"
-	var ot *schema.Object = in.Types[k].(*schema.Object)
+// func (in *intro) addToTable(name, desc string, ti sdata.DBTable) {
+// 	k := name + "Output"
+// 	var ot *schema.Object = in.Types[k].(*schema.Object)
 
-	ot.Fields = append(ot.Fields, &schema.Field{
-		Name: ti.Name,
-		Type: &schema.TypeName{Name: ti.Name + "Output"},
-		Desc: schema.NewDescription(desc),
-	})
-}
+// 	ot.Fields = append(ot.Fields, &schema.Field{
+// 		Name: ti.Name,
+// 		Type: &schema.TypeName{Name: ti.Name + "Output"},
+// 		Desc: schema.NewDescription(desc),
+// 	})
+// }
 
 func (in *intro) addTable(name string, ti sdata.DBTable) error {
 	if ti.Blocked {
