@@ -1,15 +1,14 @@
 {
   "name": "web",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "dependencies": {
-    "apollo-link-ws": "^1.0.8",
-    "graphql": "^14.1.1",
-    "graphql-playground-react": "^1.7.22",
+    "graphiql": "^1.4.0",
+    "graphiql-explorer": "^0.6.2",
+    "graphql": "experimental-stream-defer",
     "react": "^16.13.0",
-    "react-dom": "^16.11.0",
-    "react-scripts": "3.4.1",
-    "subscriptions-transport-ws": "^0.9.14"
+    "react-dom": "^16.13.0",
+    "react-scripts": "3.4.1"
   },
   "scripts": {
     "start": "PORT=3001 react-scripts start",
@@ -26,10 +25,5 @@
     "not dead",
     "not ie <= 11",
     "not op_mini all"
-  ],
-  "resolutions": {
-    "apollo-link-ws": "^1.0.8",
-    "graphql": "^14.1.1",
-    "subscriptions-transport-ws": "^0.9.14"
-  }
+  ]
 }

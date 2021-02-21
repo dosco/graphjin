@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+
+	"golang.org/x/sync/errgroup"
 )
 
 type DBInfo struct {
@@ -48,26 +50,39 @@ func GetDBInfo(
 
 	var dbVersion int
 	var dbSchema, dbName string
-	var row *sql.Row
+	var cols []DBColumn
+	var funcs []DBFunction
 
-	switch dbType {
-	case "mysql":
-		row = db.QueryRow(mysqlInfo)
-	default:
-		row = db.QueryRow(postgresInfo)
-	}
+	g := errgroup.Group{}
 
-	if err := row.Scan(&dbVersion, &dbSchema, &dbName); err != nil {
-		return nil, err
-	}
+	g.Go(func() error {
+		var row *sql.Row
+		switch dbType {
+		case "mysql":
+			row = db.QueryRow(mysqlInfo)
+		default:
+			row = db.QueryRow(postgresInfo)
+		}
 
-	cols, err := DiscoverColumns(db, dbType, blockList)
-	if err != nil {
-		return nil, err
-	}
+		if err := row.Scan(&dbVersion, &dbSchema, &dbName); err != nil {
+			return err
+		}
+		return nil
+	})
 
-	funcs, err := DiscoverFunctions(db, blockList)
-	if err != nil {
+	g.Go(func() error {
+		var err error
+		if cols, err = DiscoverColumns(db, dbType, blockList); err != nil {
+			return err
+		}
+
+		if funcs, err = DiscoverFunctions(db, blockList); err != nil {
+			return err
+		}
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
 		return nil, err
 	}
 

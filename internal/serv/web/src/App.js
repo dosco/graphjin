@@ -1,67 +1,100 @@
-import React, { Component } from "react";
-import { Provider } from "react-redux";
-import { Playground, store } from "graphql-playground-react";
+import React, { useEffect, useState } from "react";
+import GraphiQL from "graphiql";
+import GraphiQLExplorer from "graphiql-explorer";
+import { createGraphiQLFetcher } from "@graphiql/toolkit";
+import { buildClientSchema, getIntrospectionQuery } from "graphql";
 
-import "./index.css";
+import "graphiql/graphiql.min.css";
 
-const fetch = window.fetch;
-window.fetch = function () {
-  arguments[1].credentials = "include";
-  return Promise.resolve(fetch.apply(global, arguments));
-};
+const url = `http://${window.location.host}/api/v1/graphql`;
+const subscriptionUrl = `ws://${window.location.host}/api/v1/graphql`;
 
-class App extends Component {
-  render() {
-    return (
-      <div>
-        <header
-          style={{
-            color: "white",
-            letterSpacing: "0.15rem",
-            paddingTop: "10px",
-          }}
-        >
-          <div
-            style={{
-              textDecoration: "none",
-              margin: "0px",
-              fontSize: "16px",
-              fontWeight: "600",
-              textTransform: "uppercase",
-              marginLeft: "10px",
-            }}
-          >
-            GraphJin
-          </div>
-        </header>
+const fetcher = createGraphiQLFetcher({
+  url,
+  subscriptionUrl,
+});
 
-        <Provider store={store}>
-          <Playground
-            title="Hello"
-            endpoint="http://localhost:8080/api/v1/graphql"
-            settings={{
-              "general.betaUpdates": true,
-              "editor.reuseHeaders": true,
-              "editor.theme": "dark",
-              "prettier.useTabs": true,
-              "tracing.hideTracingResponse": true,
-              "tracing.tracingSupported": false,
-            }}
-            codeTheme={
-              {
-                // editorBackground: "black",
-                // resultBackground: "black",
-                // rightDrawerBackground: "#141823",
-              }
-            }
-          />
-        </Provider>
-      </div>
-    );
+const defaultQuery = `
+# Use this editor to build and test your GraphQL queries
+# Set a query name if you want the query saved to the 
+# allow list to use in production
+
+query {
+  users(id: "3") {
+    id
+    full_name
+    email
   }
 }
+`;
 
-// 'schema.polling.enable': false,
-// 'request.credentials': 'include',
+const App = () => {
+  const [schema, setSchema] = useState(null);
+  const [query, setQuery] = useState(defaultQuery);
+  const [explorerOpen, setExplorerOpen] = useState(true);
+
+  let graphiql = React.createRef();
+
+  useEffect(() => {
+    (async function () {
+      let introspect = fetcher({ query: getIntrospectionQuery() });
+      let res = await introspect.next();
+      setSchema(buildClientSchema(res.value.data));
+    })();
+  }, []);
+
+  const handleEditQuery = (query) => {
+    setQuery(query);
+    console.log(">", query);
+  };
+
+  const handleToggleExplorer = () => setExplorerOpen(!explorerOpen);
+
+  return (
+    <div className="graphiql-container">
+      <GraphiQLExplorer
+        schema={schema}
+        query={query}
+        onEdit={handleEditQuery}
+        onRunOperation={(operationName) =>
+          graphiql.handleRunQuery(operationName)
+        }
+        explorerIsOpen={explorerOpen}
+        onToggleExplorer={handleToggleExplorer}
+      />
+      <GraphiQL
+        ref={(ref) => (graphiql = ref)}
+        fetcher={fetcher}
+        defaultSecondaryEditorOpen={true}
+        headerEditorEnabled={true}
+        shouldPersistHeaders={true}
+        query={query}
+        onEditQuery={handleEditQuery}
+      >
+        <GraphiQL.Logo>
+          <div style={{ letterSpacing: "3px" }}>GRAPHJIN</div>
+        </GraphiQL.Logo>
+
+        <GraphiQL.Toolbar>
+          <GraphiQL.Button
+            onClick={() => graphiql.handlePrettifyQuery()}
+            label="Prettify"
+            title="Prettify Query (Shift-Ctrl-P)"
+          />
+          <GraphiQL.Button
+            onClick={() => graphiql.handleToggleHistory()}
+            label="History"
+            title="Show History"
+          />
+          <GraphiQL.Button
+            onClick={handleToggleExplorer}
+            label="Explorer"
+            title="Toggle Explorer"
+          />
+        </GraphiQL.Toolbar>
+      </GraphiQL>
+    </div>
+  );
+};
 
 export default App;
