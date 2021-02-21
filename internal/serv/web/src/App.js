@@ -3,6 +3,7 @@ import GraphiQL from "graphiql";
 import GraphiQLExplorer from "graphiql-explorer";
 import { createGraphiQLFetcher } from "@graphiql/toolkit";
 import { buildClientSchema, getIntrospectionQuery } from "graphql";
+import GitHubButton from "react-github-btn";
 
 import "graphiql/graphiql.min.css";
 
@@ -13,6 +14,11 @@ const fetcher = createGraphiQLFetcher({
   url,
   subscriptionUrl,
 });
+
+const openLink = (url) => {
+  console.log("hello");
+  window.open(url, "_blank");
+};
 
 const defaultQuery = `
 # Use this editor to build and test your GraphQL queries
@@ -72,7 +78,33 @@ const App = () => {
         onEditQuery={handleEditQuery}
       >
         <GraphiQL.Logo>
-          <div style={{ letterSpacing: "3px" }}>GRAPHJIN</div>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              padding: "2px 0",
+            }}
+          >
+            <div
+              style={{
+                letterSpacing: "3px",
+                paddingBottom: "3px",
+                marginRight: "5px",
+              }}
+            >
+              GRAPHJIN
+            </div>
+            <GitHubButton
+              href="https://github.com/dosco/graphjin"
+              data-color-scheme="no-preference: dark; light: light; dark: dark;"
+              data-size="large"
+              data-show-count="true"
+              aria-label="Star dosco/graphjin on GitHub"
+            >
+              Star
+            </GitHubButton>
+          </div>
         </GraphiQL.Logo>
 
         <GraphiQL.Toolbar>
@@ -91,6 +123,33 @@ const App = () => {
             label="Explorer"
             title="Toggle Explorer"
           />
+          <GraphiQL.Menu label="❤️ GraphJin" title="Support the project">
+            <GraphiQL.MenuItem
+              onSelect={() =>
+                openLink(
+                  "https://twitter.com/share?text=Build%20APIs%20in%205%20minutes%20with%20GraphJin.%20An%20automagical%20GraphQL%20to%20SQL%20compiler&url=https://github.com/dosco/graphjin"
+                )
+              }
+              label="Share on Twitter"
+              title="Share on Twitter"
+            />
+            <GraphiQL.MenuItem
+              onSelect={() => openLink("https://github.com/sponsors/dosco")}
+              label="Sponsor on GitHub"
+              title="Sponsor on GitHub"
+            />
+          </GraphiQL.Menu>
+          {/* <div style={{ marginLeft: "20px" }}>
+            <GitHubButton
+              href="https://github.com/dosco/graphjin"
+              data-color-scheme="no-preference: dark; light: light; dark: dark;"
+              data-size="large"
+              data-show-count="true"
+              aria-label="Star dosco/graphjin on GitHub"
+            >
+              Star
+            </GitHubButton>
+          </div> */}
         </GraphiQL.Toolbar>
       </GraphiQL>
     </div>
