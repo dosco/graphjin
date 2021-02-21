@@ -109,7 +109,9 @@ This compiler is what sits at the heart of GraphJin, with layers of useful funct
 
 ## Documentation
 
-[Get Started](https://graphjin.com/docs/start)
+[Quick Start](https://github.com/dosco/graphjin/wiki/Quick-Start)
+
+[Documentation](https://github.com/dosco/graphjin/wiki)
 
 [Build APIs in 5 minutes with GraphJin](https://dev.to/dosco/build-high-performance-graphql-apis-in-5-minutes-with-graphjin-261o)
 
