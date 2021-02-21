@@ -8,8 +8,19 @@ on:
      branches: [ master ]
 
 jobs:
+  linter:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v2
+        with:
+          version: v1.37
+          args: --timeout=10m
       
-  goreleaser:
+  releaser:
+    needs: linter
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -35,12 +46,6 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
-                   
-      - name: Run Linter
-        uses: golangci/golangci-lint-action@v2
-        with:
-          version: v1.37
-          args: --timeout=10m
         
       - name: Run Tests
         run: go test ./...
