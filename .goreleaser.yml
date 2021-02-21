@@ -63,7 +63,8 @@ nfpms:
 brews:
   - tap:
       owner: dosco
-      name: graphjin
+      name: homebrew-graphjin
+    folder: Formula
     homepage: https://graphjin.com
     description: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler." 
     license: Apache-2.0
