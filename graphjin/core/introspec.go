@@ -185,16 +185,16 @@ func (in *intro) addTables() error {
 		}
 	}
 
-	for _, t := range in.GetCustomTables() {
-		if err := in.addTable(t.Name, t); err != nil {
-			return err
-		}
-		desc := fmt.Sprintf(
-			"Table '%s' is a custom resolved table no column information is available",
-			t.Name,
-		)
-		in.addToTable(t.PrimaryCol.FKeyTable, desc, t)
-	}
+	// for _, t := range in.GetCustomTables() {
+	// 	if err := in.addTable(t.Name, t); err != nil {
+	// 		return err
+	// 	}
+	// 	desc := fmt.Sprintf(
+	// 		"Table '%s' is a custom resolved table no column information is available",
+	// 		t.Name,
+	// 	)
+	// 	in.addToTable(t.PrimaryCol.FKeyTable, desc, t)
+	// }
 
 	return nil
 }
@@ -212,6 +212,10 @@ func (in *intro) addToTable(name, desc string, ti sdata.DBTable) {
 
 func (in *intro) addTable(name string, ti sdata.DBTable) error {
 	if ti.Blocked {
+		return nil
+	}
+
+	if len(ti.Columns) == 0 {
 		return nil
 	}
 

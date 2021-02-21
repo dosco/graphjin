@@ -47,7 +47,7 @@ var upgrader = ws.Upgrader{
 	ReadBufferSize:    1024,
 	WriteBufferSize:   1024,
 	HandshakeTimeout:  10 * time.Second,
-	Subprotocols:      []string{"graphql-ws"},
+	Subprotocols:      []string{"graphql-ws", "graphql-transport-ws"},
 	CheckOrigin:       func(r *http.Request) bool { return true },
 }
 
@@ -65,12 +65,11 @@ func init() {
 	}
 }
 
-func apiV1Ws(servConf *ServConfig, w http.ResponseWriter, r *http.Request) {
+func (sc *ServConfig) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 	var m *core.Member
 	var run bool
 
 	ctx := r.Context()
-
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		renderErr(w, err)
@@ -86,12 +85,12 @@ func apiV1Ws(servConf *ServConfig, w http.ResponseWriter, r *http.Request) {
 
 	for {
 		if _, b, err = conn.ReadMessage(); err != nil {
-			servConf.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
+			sc.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
 			break
 		}
 
 		if err = json.Unmarshal(b, &msg); err != nil {
-			servConf.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
+			sc.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
 			continue
 		}
 
@@ -103,7 +102,7 @@ func apiV1Ws(servConf *ServConfig, w http.ResponseWriter, r *http.Request) {
 			d.UseNumber()
 
 			if err = d.Decode(&initReq); err != nil {
-				servConf.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
+				sc.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
 				break
 			}
 
@@ -112,7 +111,7 @@ func apiV1Ws(servConf *ServConfig, w http.ResponseWriter, r *http.Request) {
 				err = conn.WritePreparedMessage(initMsg)
 			}
 
-			handler, _ := auth.WithAuth(http.HandlerFunc(hfn), &servConf.conf.Auth)
+			handler, _ := auth.WithAuth(http.HandlerFunc(hfn), &sc.conf.Auth)
 
 			if err != nil {
 				break
@@ -128,13 +127,13 @@ func apiV1Ws(servConf *ServConfig, w http.ResponseWriter, r *http.Request) {
 			}
 			handler.ServeHTTP(w, r)
 
-		case "start":
+		case "start", "subscribe":
 			if run {
 				continue
 			}
 			m, err = gj.Subscribe(ctx, msg.Payload.Query, msg.Payload.Vars, nil)
 			if err == nil {
-				go waitForData(servConf, done, conn, m)
+				go sc.waitForData(done, conn, m, msg)
 				run = true
 			}
 
@@ -148,7 +147,7 @@ func apiV1Ws(servConf *ServConfig, w http.ResponseWriter, r *http.Request) {
 				zap.String("msg_type", msg.Type),
 				zap.Error(errors.New("unknown message type")),
 			}
-			servConf.zlog.Error("Subscription Error", fields...)
+			sc.zlog.Error("Subscription Error", fields...)
 		}
 
 		if err != nil {
@@ -158,22 +157,29 @@ func apiV1Ws(servConf *ServConfig, w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		servConf.zlog.Error("Subscription Error", []zapcore.Field{zap.Error(err)}...)
+		sc.zlog.Error("Subscription Error", []zapcore.Field{zap.Error(err)}...)
 	}
 
 	m.Unsubscribe()
 }
 
-func waitForData(servConf *ServConfig, done chan bool, conn *ws.Conn, m *core.Member) {
+func (sc *ServConfig) waitForData(done chan bool, conn *ws.Conn, m *core.Member, req gqlWsReq) {
 	var buf bytes.Buffer
+	var ptype string
 	var err error
+
+	if req.Type == "subscribe" {
+		ptype = "next"
+	} else {
+		ptype = "data"
+	}
 
 	enc := json.NewEncoder(&buf)
 
 	for {
 		select {
 		case v := <-m.Result:
-			res := gqlWsResp{ID: "1", Type: "data"}
+			res := gqlWsResp{ID: req.ID, Type: ptype}
 			res.Payload.Data = v.Data
 
 			if v.Error != "" {
@@ -202,7 +208,7 @@ func waitForData(servConf *ServConfig, done chan bool, conn *ws.Conn, m *core.Me
 	}
 
 	if err != nil && isDev() {
-		servConf.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
+		sc.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
 	}
 }
 

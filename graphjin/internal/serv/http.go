@@ -36,17 +36,17 @@ type errorResp struct {
 	Error string `json:"error"`
 }
 
-func apiV1Handler(servConf *ServConfig) http.Handler {
-	h, err := auth.WithAuth(http.HandlerFunc(apiV1(servConf)), &servConf.conf.Auth)
+func apiV1Handler(sc *ServConfig) http.Handler {
+	h, err := auth.WithAuth(http.HandlerFunc(sc.apiV1()), &sc.conf.Auth)
 	if err != nil {
-		servConf.log.Fatalf("Error initializing auth: %s", err)
+		sc.log.Fatalf("Error initializing auth: %s", err)
 	}
 
-	if len(servConf.conf.AllowedOrigins) != 0 {
+	if len(sc.conf.AllowedOrigins) != 0 {
 		c := cors.New(cors.Options{
-			AllowedOrigins:   servConf.conf.AllowedOrigins,
+			AllowedOrigins:   sc.conf.AllowedOrigins,
 			AllowCredentials: true,
-			Debug:            servConf.conf.DebugCORS,
+			Debug:            sc.conf.DebugCORS,
 		})
 		return c.Handler(h)
 	}
@@ -54,10 +54,10 @@ func apiV1Handler(servConf *ServConfig) http.Handler {
 	return h
 }
 
-func apiV1(servConf *ServConfig) func(http.ResponseWriter, *http.Request) {
+func (sc *ServConfig) apiV1() func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if websocket.IsWebSocketUpgrade(r) {
-			apiV1Ws(servConf, w, r)
+			sc.apiV1Ws(w, r)
 			return
 		}
 
@@ -65,7 +65,7 @@ func apiV1(servConf *ServConfig) func(http.ResponseWriter, *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
 		//nolint: errcheck
-		if servConf.conf.AuthFailBlock && !auth.IsAuth(ct) {
+		if sc.conf.AuthFailBlock && !auth.IsAuth(ct) {
 			renderErr(w, errUnauthorized)
 			return
 		}
@@ -86,7 +86,7 @@ func apiV1(servConf *ServConfig) func(http.ResponseWriter, *http.Request) {
 
 		rc := core.ReqConfig{Vars: make(map[string]interface{})}
 
-		for k, v := range servConf.conf.HeaderVars {
+		for k, v := range sc.conf.HeaderVars {
 			rc.Vars[k] = func() string {
 				if v1, ok := r.Header[v]; ok {
 					return v1[0]
@@ -98,8 +98,8 @@ func apiV1(servConf *ServConfig) func(http.ResponseWriter, *http.Request) {
 		res, err := gj.GraphQL(ct, req.Query, req.Vars, &rc)
 
 		if err == nil {
-			if servConf.conf.CacheControl != "" && res.Operation() == core.OpQuery {
-				w.Header().Set("Cache-Control", servConf.conf.CacheControl)
+			if sc.conf.CacheControl != "" && res.Operation() == core.OpQuery {
+				w.Header().Set("Cache-Control", sc.conf.CacheControl)
 			}
 
 			//nolint: errcheck
@@ -110,7 +110,7 @@ func apiV1(servConf *ServConfig) func(http.ResponseWriter, *http.Request) {
 			renderErr(w, err)
 		}
 
-		if servConf.conf.telemetryEnabled() {
+		if sc.conf.telemetryEnabled() {
 			span := trace.FromContext(ct)
 
 			span.AddAttributes(
@@ -126,28 +126,28 @@ func apiV1(servConf *ServConfig) func(http.ResponseWriter, *http.Request) {
 			ochttp.SetRoute(ct, apiRoute)
 		}
 
-		if servConf.logLevel >= LogLevelInfo {
-			reqLog(servConf, res, err)
+		if sc.logLevel >= LogLevelInfo {
+			sc.reqLog(res, err)
 		}
 	}
 }
 
-func reqLog(servConf *ServConfig, res *core.Result, err error) {
+func (sc *ServConfig) reqLog(res *core.Result, err error) {
 	fields := []zapcore.Field{
 		zap.String("op", res.OperationName()),
 		zap.String("name", res.QueryName()),
 		zap.String("role", res.Role()),
 	}
 
-	if servConf.logLevel >= LogLevelDebug {
+	if sc.logLevel >= LogLevelDebug {
 		fields = append(fields, zap.String("sql", res.SQL()))
 	}
 
 	if err != nil {
 		fields = append(fields, zap.Error(err))
-		servConf.zlog.Error("Query Failed", fields...)
+		sc.zlog.Error("Query Failed", fields...)
 	} else {
-		servConf.zlog.Info("Query", fields...)
+		sc.zlog.Info("Query", fields...)
 	}
 }
 

@@ -86,8 +86,8 @@ set_user_id: false
 # ip_header sets the header that contains the client ip.
 # https://en.wikipedia.org/wiki/Token_bucket
 rate_limiter:
-  rate: 2
-  bucket: 3
+  rate: 100
+  bucket: 20
   ip_header: X-Forwarded-For
 
 # Enable additional debugging logs
