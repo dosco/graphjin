@@ -19,7 +19,7 @@ brew install dosco/graphjin/graphjin
 
 Ubuntu (Snap)
 ```
-sudo snap install --classic goreleaser
+sudo snap install --classic graphjin
 ```
 
 Go Install
