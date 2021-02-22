@@ -10,10 +10,26 @@
 
 GraphJin gives you a high performance GraphQL API without you having to write any code. GraphQL is automagically compiled into an efficient SQL query. Use it either as a library or a standalone service.
 
-## Using it as a service
+## 1. Quick Install
+
+Mac (Homebrew)
+```
+brew install dosco/graphjin/graphjin
+```
+
+Ubuntu (Snap)
+```
+sudo snap install --classic goreleaser
+```
+
+Go Install
+```
+go get github.com/dosco/graphjin
+```
+
+## 2. Create New API
 
 ```bash
-go get github.com/dosco/graphjin
 graphjin new <app_name>
 
 cd <app_name>
