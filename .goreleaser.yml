@@ -73,7 +73,7 @@ brews:
 scoop:
   bucket:
     owner: dosco
-    name: graphjin
+    name: graphjin-scoop
   commit_msg_template: "Scoop update for {{ .ProjectName }} version {{ .Tag }}"
   homepage: https://graphjin.com
   description: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler."
