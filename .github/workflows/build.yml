@@ -4,8 +4,11 @@ on:
   push:
     branches: [ master ]
     tags: [ 'v*' ]
+    paths-ignore: ['**.md', 'docs/**']
+
   pull_request:
      branches: [ master ]
+     paths-ignore: ['**.md', 'docs/**']
 
 jobs:
   linter:
