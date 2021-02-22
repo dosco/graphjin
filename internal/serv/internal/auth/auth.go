@@ -6,6 +6,8 @@ import (
 	"net/http"
 
 	"github.com/dosco/graphjin/core"
+
+	"github.com/dosco/graphjin/internal/serv/internal/auth/provider"
 )
 
 // Auth struct contains authentication related config values used by the GraphJin service
@@ -28,13 +30,7 @@ type Auth struct {
 		AuthSalt      string `mapstructure:"auth_salt"`
 	}
 
-	JWT struct {
-		Provider   string
-		Secret     string
-		PubKeyFile string `mapstructure:"public_key_file"`
-		PubKeyType string `mapstructure:"public_key_type"`
-		Audience   string `mapstructure:"audience"`
-	}
+	JWT provider.JWTConfig
 
 	Header struct {
 		Name   string

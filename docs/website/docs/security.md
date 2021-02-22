@@ -100,6 +100,8 @@ auth:
     secret: abc335bfcfdb04e50db5bb0a4d67ab9
     public_key_file: /secrets/public_key.pem
     public_key_type: ecdsa #rsa
+    issuer: https://my-domain.auth0.com
+    audience: my_client_id
 ```
 
 For JWT tokens we currently support tokens from a provider like Auth0 or if you have a custom solution then we look for the `user_id` in the `subject` claim of of the `id token`. If you pick Auth0 then we derive two variables from the token `user_id` and `user_id_provider` for to use in your filters.
@@ -107,6 +109,10 @@ For JWT tokens we currently support tokens from a provider like Auth0 or if you 
 We can get the JWT token either from the `authorization` header where we expect it to be a `bearer` token or if `cookie` is specified then we look there.
 
 For validation a `secret` or a public key (ecdsa or rsa) is required. When using public keys they have to be in a PEM format file.
+
+Setting `issuer` is recommended but not required. When specified it's going to be compared against the `iss` claim of the JWT token.
+
+Also `audience` is recommended but not required. When specified it's going to be compared against the `aud` claim of the JWT token. The `aud` claim usually identifies the intended recipient of the token. For Auth0 is the client_id, for other provider could be the domain URL.
 
 ### Firebase Auth
 
@@ -120,6 +126,8 @@ auth:
 ```
 
 Firebase auth also uses JWT the keys are auto-fetched from Google and used according to their documentation mechanism. The `audience` config value needs to be set to your project id and everything else is taken care for you.
+
+Setting `issuer` is not required for Firebase, it's going to be automatically defined using the `audience` as "https://securetoken.google.com/<audience>".
 
 ### HTTP Headers
 
