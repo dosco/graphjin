@@ -23,7 +23,6 @@ sudo snap install --classic graphjin
 ```
 
 Debian and Redhat ([releases](https://github.com/dosco/graphjin/releases))
-
 ```
 Download the .deb or .rpm from the releases page and install with dpkg -i and rpm -i respectively.
 ```
