@@ -16,7 +16,6 @@ const fetcher = createGraphiQLFetcher({
 });
 
 const openLink = (url) => {
-  console.log("hello");
   window.open(url, "_blank");
 };
 
@@ -51,7 +50,6 @@ const App = () => {
 
   const handleEditQuery = (query) => {
     setQuery(query);
-    console.log(">", query);
   };
 
   const handleToggleExplorer = () => setExplorerOpen(!explorerOpen);
