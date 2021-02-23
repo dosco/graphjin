@@ -345,14 +345,14 @@ func (in *intro) addColumn(
 	})
 	obt.Fields = append(obt.Fields, &schema.InputValue{
 		Name: colName,
-		Type: &schema.NonNull{OfType: &schema.TypeName{Name: "OrderDirection"}},
+		Type: &schema.TypeName{Name: "OrderDirection"},
 	})
 
 	in.exptNeeded[typeName] = true
 
 	expt.Fields = append(expt.Fields, &schema.InputValue{
 		Name: colName,
-		Type: &schema.NonNull{OfType: &schema.TypeName{Name: typeName + "Expression"}},
+		Type: &schema.TypeName{Name: typeName + "Expression"},
 	})
 }
 
@@ -364,8 +364,8 @@ func (in *intro) addArgs(
 	otName := &schema.TypeName{Name: ot.Name}
 	itName := &schema.TypeName{Name: it.Name}
 
-	potName := &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: ot.Name}}}}
-	pitName := &schema.NonNull{OfType: &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: it.Name}}}}
+	potName := &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: ot.Name}}}
+	pitName := &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: it.Name}}}
 
 	args := schema.InputValueList{
 		&schema.InputValue{
@@ -495,10 +495,10 @@ func (in *intro) addExpressions() {
 			iv := &schema.InputValue{
 				Name: v.name,
 				Desc: schema.NewDescription(v.desc),
-				Type: &schema.NonNull{OfType: &schema.TypeName{Name: vtype}},
+				Type: &schema.TypeName{Name: vtype},
 			}
 			if v.list {
-				iv.Type = &schema.NonNull{OfType: &schema.List{OfType: iv.Type}}
+				iv.Type = &schema.List{OfType: iv.Type}
 			}
 			fields = append(fields, iv)
 		}
