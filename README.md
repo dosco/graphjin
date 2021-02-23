@@ -42,56 +42,6 @@ docker-compose run api db:setup
 docker-compose up
 ```
 
-## Using it in your own code
-
-```console
-go get github.com/dosco/graphjin/core
-```
-
-```golang
-package main
-
-import (
-  "context"
-  "database/sql"
-  "fmt"
-  "log"
-
-  "github.com/dosco/graphjin/core"
-  _ "github.com/jackc/pgx/v4/stdlib"
-)
-
-func main() {
-  db, err := sql.Open("pgx", "postgres://postgres:@localhost:5432/example_db")
-  if err != nil {
-    log.Fatal(err)
-  }
-
-  sg, err := core.NewGraphJin(nil, db)
-  if err != nil {
-    log.Fatal(err)
-  }
-
-  query := `
-    query {
-      posts {
-      id
-      title
-    }
-  }`
-
-  ctx := context.Background()
-  ctx = context.WithValue(ctx, core.UserIDKey, 1)
-
-  res, err := sg.GraphQL(ctx, query, nil)
-  if err != nil {
-    log.Fatal(err)
-  }
-
-  fmt.Println(string(res.Data))
-}
-```
-
 ## About GraphJin
 
 After working on several products through my career I found that we spend way too much time on building API backends. Most APIs also need constant updating, and this costs time and money.
@@ -148,6 +98,57 @@ With GraphJin your web and mobile developers can start building instantly. All t
 [GraphQL vs REST](https://dev.to/dosco/rest-vs-graphql-building-startups-in-2021-3k73)
 
 [GraphQL Examples](https://pkg.go.dev/github.com/dosco/graphjin/core#pkg-examples)
+
+
+## Using it in your own code
+
+```console
+go get github.com/dosco/graphjin/core
+```
+
+```golang
+package main
+
+import (
+  "context"
+  "database/sql"
+  "fmt"
+  "log"
+
+  "github.com/dosco/graphjin/core"
+  _ "github.com/jackc/pgx/v4/stdlib"
+)
+
+func main() {
+  db, err := sql.Open("pgx", "postgres://postgres:@localhost:5432/example_db")
+  if err != nil {
+    log.Fatal(err)
+  }
+
+  sg, err := core.NewGraphJin(nil, db)
+  if err != nil {
+    log.Fatal(err)
+  }
+
+  query := `
+    query {
+      posts {
+      id
+      title
+    }
+  }`
+
+  ctx := context.Background()
+  ctx = context.WithValue(ctx, core.UserIDKey, 1)
+
+  res, err := sg.GraphQL(ctx, query, nil)
+  if err != nil {
+    log.Fatal(err)
+  }
+
+  fmt.Println(string(res.Data))
+}
+```
 
 ## Reach out
 
