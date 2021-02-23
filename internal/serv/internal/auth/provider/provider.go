@@ -11,12 +11,15 @@ import (
 // JWTConfig struct contains JWT authentication related config values used by
 // the GraphJin service
 type JWTConfig struct {
-	Provider   string
-	Secret     string
-	PubKeyFile string `mapstructure:"public_key_file"`
-	PubKeyType string `mapstructure:"public_key_type"`
-	Audience   string `mapstructure:"audience"`
-	Issuer     string `mapstructure:"issuer"` //like "http://my-domain.auth0.com"
+	Provider       string
+	Secret         string
+	PubKeyFile     string `mapstructure:"public_key_file"`
+	PubKeyType     string `mapstructure:"public_key_type"`
+	Audience       string `mapstructure:"audience"`
+	Issuer         string `mapstructure:"issuer"`           //like "http://my-domain.auth0.com"
+	JWKSURL        string `mapstructure:"jwks_url"`         //URL of the JWKS endpoint, like "https://YOUR_DOMAIN/.well-known/jwks.json"
+	JWKSRefresh    int    `mapstructure:"jwks_refresh"`     //static minutes interval between refreshes, overriding the adaptive token refreshing
+	JWKSMinRefresh int    `mapstructure:"jwks_min_refresh"` //minutes fallback value when tokens are refreshed, default to 60 minutes
 }
 
 // JWTProvider is the interface to define providers for doing JWT
@@ -34,6 +37,8 @@ func NewProvider(config JWTConfig) (JWTProvider, error) {
 		return NewAuth0Provider(config)
 	case "firebase":
 		return NewFirebaseProvider(config)
+	case "jwks":
+		return NewJWKSProvider(config)
 	default:
 		return NewGenericProvider(config)
 	}

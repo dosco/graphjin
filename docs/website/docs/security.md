@@ -95,7 +95,7 @@ auth:
   type: jwt
 
   jwt:
-    # valid providers are auth0, firebase and none
+    # valid providers are auth0, firebase, jwks and none
     provider: auth0
     secret: abc335bfcfdb04e50db5bb0a4d67ab9
     public_key_file: /secrets/public_key.pem
@@ -128,6 +128,33 @@ auth:
 Firebase auth also uses JWT the keys are auto-fetched from Google and used according to their documentation mechanism. The `audience` config value needs to be set to your project id and everything else is taken care for you.
 
 Setting `issuer` is not required for Firebase, it's going to be automatically defined using the `audience` as "https://securetoken.google.com/<audience>".
+
+### JWKS Auth
+
+```yaml
+auth:
+  type: jwt
+
+  jwt:
+    provider: jwks
+    issuer: https://accounts.google.com
+    audience: 1234987819200.apps.googleusercontent.com
+    jwks_url: https://www.googleapis.com/oauth2/v3/certs
+    jwks_min_refresh: 30
+```
+
+The JWKS provider downloads and keeps track of keys which are automatically refreshed from a JWKS endpoint, like "https://YOUR_DOMAIN/.well-known/jwks.json".
+
+Interval between refreshes could be calculated in two ways:
+
+1) You can set an explicit refresh interval in minutes by using `jwks_refresh`. In this mode, it doesn't matter what the HTTP response says in its Cache-Control or Expires headers.
+2) If `jwks_refresh` is not defined, then the time to refresh is automatically calculated based on the key's Cache-Control or Expires headers. You could define an absolute minimum interval before refreshes in minutes with `jwks_min_refresh`. This value is used as a fallback value when tokens are refreshed, if unspecified, the minimum refresh interval is 60 minutes.
+
+We can get the JWT token either from the `authorization` header where we expect it to be a `bearer` token or if `cookie` is specified then we look there.
+
+Setting `issuer` is recommended but not required. When specified it's going to be compared against the `iss` claim of the JWT token.
+
+Also `audience` is recommended but not required. When specified it's going to be compared against the `aud` claim of the JWT token. The `aud` claim usually identifies the intended recipient of the token. For Auth0 is the client_id, for other provider could be the domain URL.
 
 ### HTTP Headers
 
