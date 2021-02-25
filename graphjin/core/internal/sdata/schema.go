@@ -255,10 +255,10 @@ func (s *DBSchema) addVirtual(vt VirtualTable) error {
 		}
 
 		col1 := DBColumn{
+			ID:         -1,
 			Schema:     t.Schema,
 			Table:      t.Name,
 			Name:       vt.FKeyColumn,
-			Key:        strings.ToLower(vt.FKeyColumn),
 			Type:       idCol.Type,
 			FKeySchema: typeCol.Schema,
 			FKeyTable:  typeCol.Table,

@@ -340,7 +340,7 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select) {
 	c.renderCursorCTE(sel)
 	c.w.WriteString(`SELECT `)
 	c.renderDistinctOn(sel)
-	c.renderBaseColumns(sel)
+	c.renderBaseColumns(sel, false)
 	c.renderFrom(sel)
 	c.renderJoinTables(sel)
 
@@ -397,7 +397,7 @@ func (c *compilerContext) renderRecursiveBaseSelect(sel *qcode.Select) {
 	psel := &c.qc.Selects[sel.ParentID]
 
 	c.w.WriteString(`(SELECT `)
-	c.renderBaseColumns(sel)
+	c.renderBaseColumns(sel, true)
 	c.renderFrom(psel)
 	c.w.WriteString(` WHERE (`)
 	colWithTable(c.w, sel.Table, sel.Ti.PrimaryCol.Name)
@@ -406,7 +406,7 @@ func (c *compilerContext) renderRecursiveBaseSelect(sel *qcode.Select) {
 	c.w.WriteString(`) LIMIT 1) UNION ALL `)
 
 	c.w.WriteString(`SELECT `)
-	c.renderBaseColumns(sel)
+	c.renderBaseColumns(sel, true)
 	c.renderFrom(psel)
 	c.w.WriteString(`, `)
 	c.quoted("_rcte_" + sel.Rel.Right.Ti.Name)

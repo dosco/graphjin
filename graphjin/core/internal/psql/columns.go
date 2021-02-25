@@ -148,7 +148,7 @@ func (c *compilerContext) renderFunctionSearchHeadline(sel *qcode.Select, fn qco
 
 	hasIndex := false
 	for _, col := range sel.Ti.FullText {
-		if col.Key == fn.Col.Key {
+		if col.ID == fn.Col.ID {
 			hasIndex = true
 		}
 	}
@@ -178,7 +178,7 @@ func (c *compilerContext) renderOtherFunction(sel *qcode.Select, fn qcode.Functi
 	_, _ = c.w.WriteString(`)`)
 }
 
-func (c *compilerContext) renderBaseColumns(sel *qcode.Select) {
+func (c *compilerContext) renderBaseColumns(sel *qcode.Select, skipFuncs bool) {
 	i := 0
 
 	for _, col := range sel.BCols {
@@ -194,6 +194,9 @@ func (c *compilerContext) renderBaseColumns(sel *qcode.Select) {
 			colWithTable(c.w, sel.Table, col.Col.Name)
 		}
 		i++
+	}
+	if skipFuncs {
+		return
 	}
 	for _, fn := range sel.Funcs {
 		if i != 0 {

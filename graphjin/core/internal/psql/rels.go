@@ -188,5 +188,4 @@ func (c *compilerContext) renderRelArrayRight(
 			colWithTableID(c.w, colTable, pid, col.Name)
 		}
 	}
-
 }
