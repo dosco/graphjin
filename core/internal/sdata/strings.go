@@ -7,7 +7,12 @@ func (ti *DBTable) String() string {
 }
 
 func (col DBColumn) String() string {
-	return col.Schema + "." + col.Table + "." + col.Name
+	if col.FKeyCol != "" {
+		return fmt.Sprintf("%s.%s.%s -FK-> %s.%s.%s",
+			col.Schema, col.Table, col.Name, col.FKeySchema, col.FKeyTable, col.Name)
+	} else {
+		return fmt.Sprintf("%s.%s.%s", col.Schema, col.Table, col.Name)
+	}
 }
 
 func (re *DBRel) String() string {

@@ -205,10 +205,10 @@ func addJsonTable(conf *Config, di *sdata.DBInfo, t Table) error {
 	for i := range t.Columns {
 		c := t.Columns[i]
 		columns = append(columns, sdata.DBColumn{
+			ID:     c.ID,
 			Schema: bc.Schema,
 			Table:  t.Name,
 			Name:   c.Name,
-			Key:    strings.ToLower(c.Name),
 			Type:   c.Type,
 		})
 		if c.Type == "" {
@@ -218,11 +218,11 @@ func addJsonTable(conf *Config, di *sdata.DBInfo, t Table) error {
 	}
 
 	col1 := sdata.DBColumn{
+		ID:         bc.ID,
 		PrimaryKey: true,
 		Schema:     bc.Schema,
 		Table:      bc.Table,
 		Name:       bc.Name,
-		Key:        bc.Key,
 		Type:       bc.Type,
 	}
 

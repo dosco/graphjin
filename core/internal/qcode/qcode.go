@@ -482,13 +482,13 @@ func (co *Compiler) addRelInfo(
 		return nil
 	}
 
-	sel.Singular = co.setSingular(field.Name, sel)
+	co.setSingular(field.Name, sel)
 	return nil
 }
 
-func (co *Compiler) setSingular(fieldName string, sel *Select) bool {
+func (co *Compiler) setSingular(fieldName string, sel *Select) {
 	if sel.Singular {
-		return true
+		return
 	}
 
 	if co.c.EnableInflection {
@@ -498,9 +498,18 @@ func (co *Compiler) setSingular(fieldName string, sel *Select) bool {
 	if (sel.Rel.Type == sdata.RelOneToMany && !sel.Rel.Right.Col.Array) ||
 		sel.Rel.Type == sdata.RelPolymorphic {
 		sel.Singular = true
+		return
 	}
 
-	return sel.Singular
+	if len(sel.Joins) == 0 {
+		return
+	}
+	lj := sel.Joins[(len(sel.Joins) - 1)]
+
+	if (lj.Type == sdata.RelOneToMany && !lj.Right.Col.Array) ||
+		lj.Type == sdata.RelPolymorphic {
+		sel.Singular = true
+	}
 }
 
 func (co *Compiler) setLimit(tr trval, qc *QCode, sel *Select) {

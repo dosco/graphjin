@@ -116,6 +116,7 @@ type Table struct {
 
 // Column struct defines a database column
 type Column struct {
+	ID         int32
 	Name       string
 	Type       string
 	Primary    bool

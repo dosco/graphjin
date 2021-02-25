@@ -120,7 +120,6 @@ func NewDBInfo(
 	tm := make(map[st][]DBColumn)
 	for i := range cols {
 		c := cols[i]
-		c.Key = strings.ToLower(c.Name)
 		di.colMap[(c.Schema + ":" + c.Table + ":" + c.Name)] = i
 
 		k1 := st{c.Schema, c.Table}
@@ -155,7 +154,7 @@ func NewDBTable(schema, name, _type string, cols []DBColumn) DBTable {
 		case c.PrimaryKey:
 			ti.PrimaryCol = cols[i]
 		}
-		ti.colMap[c.Key] = i
+		ti.colMap[strings.ToLower(c.Name)] = i
 	}
 	return ti
 }
@@ -200,8 +199,8 @@ func (di *DBInfo) GetTable(schema, table string) (*DBTable, error) {
 }
 
 type DBColumn struct {
+	ID         int32
 	Name       string
-	Key        string
 	Type       string
 	Array      bool
 	NotNull    bool
@@ -244,10 +243,11 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 		}
 
 		k := (c.Schema + ":" + c.Table + ":" + c.Name)
-		v := cmap[k]
-		if v.Key == "" {
+		v, ok := cmap[k]
+		if !ok {
 			v = c
-			v.Blocked = isInList(v.Key, blockList)
+			v.ID = int32(len(cmap))
+			v.Blocked = isInList(v.Name, blockList)
 		}
 		if c.Type != "" {
 			v.Type = c.Type
