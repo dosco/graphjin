@@ -290,7 +290,11 @@ func (c *compilerContext) renderSelect(sel *qcode.Select) {
 	}
 
 	c.w.WriteString(` FROM (`)
-	c.renderBaseSelect(sel)
+	if sel.Rel.Type == sdata.RelRecursive {
+		c.renderRecursiveBaseSelect(sel)
+	} else {
+		c.renderBaseSelect(sel)
+	}
 	c.w.WriteString(`)`)
 	aliasWithID(c.w, sel.Table, sel.ID)
 }
@@ -340,17 +344,32 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select) {
 	c.renderCursorCTE(sel)
 	c.w.WriteString(`SELECT `)
 	c.renderDistinctOn(sel)
-	c.renderBaseColumns(sel, false)
+	n := c.renderBaseColumns(sel)
+	c.renderFunctions(sel, n)
 	c.renderFrom(sel)
 	c.renderJoinTables(sel)
-
-	// Recursive base selects have no where clauses
-	if sel.Rel.Type != sdata.RelRecursive {
-		c.renderWhere(sel)
-	}
-
+	c.renderWhere(sel)
 	c.renderGroupBy(sel)
 	c.renderOrderBy(sel)
+	c.renderLimit(sel)
+}
+
+func (c *compilerContext) renderRecursiveBaseSelect(sel *qcode.Select) {
+	c.renderCursorCTE(sel)
+	c.w.WriteString(`SELECT `)
+	c.renderDistinctOn(sel)
+	c.renderRecursiveBaseColumns(sel)
+	c.w.WriteString(` FROM (SELECT * FROM `)
+	c.quoted("_rcte_" + sel.Rel.Right.Ti.Name)
+	switch c.ct {
+	case "mysql":
+		c.w.WriteString(` LIMIT 1, 18446744073709551610`)
+	default:
+		c.w.WriteString(` OFFSET 1`)
+	}
+	c.w.WriteString(`) `)
+	c.quoted(sel.Table)
+	c.renderRecursiveGroupBy(sel)
 	c.renderLimit(sel)
 }
 
@@ -389,15 +408,15 @@ func (c *compilerContext) renderRecursiveCTE(sel *qcode.Select) {
 	c.w.WriteString(`WITH RECURSIVE `)
 	c.quoted("_rcte_" + sel.Rel.Right.Ti.Name)
 	c.w.WriteString(` AS (`)
-	c.renderRecursiveBaseSelect(sel)
+	c.renderRecursiveSelect(sel)
 	c.w.WriteString(`) `)
 }
 
-func (c *compilerContext) renderRecursiveBaseSelect(sel *qcode.Select) {
+func (c *compilerContext) renderRecursiveSelect(sel *qcode.Select) {
 	psel := &c.qc.Selects[sel.ParentID]
 
 	c.w.WriteString(`(SELECT `)
-	c.renderBaseColumns(sel, true)
+	c.renderBaseColumns(sel)
 	c.renderFrom(psel)
 	c.w.WriteString(` WHERE (`)
 	colWithTable(c.w, sel.Table, sel.Ti.PrimaryCol.Name)
@@ -406,7 +425,7 @@ func (c *compilerContext) renderRecursiveBaseSelect(sel *qcode.Select) {
 	c.w.WriteString(`) LIMIT 1) UNION ALL `)
 
 	c.w.WriteString(`SELECT `)
-	c.renderBaseColumns(sel, true)
+	c.renderBaseColumns(sel)
 	c.renderFrom(psel)
 	c.w.WriteString(`, `)
 	c.quoted("_rcte_" + sel.Rel.Right.Ti.Name)
@@ -427,17 +446,6 @@ func (c *compilerContext) renderFrom(sel *qcode.Select) {
 		default:
 			c.renderRecordSet(sel)
 		}
-
-	case sdata.RelRecursive:
-		c.w.WriteString(`(SELECT * FROM `)
-		c.quoted("_rcte_" + sel.Rel.Right.Ti.Name)
-		switch c.ct {
-		case "mysql":
-			c.w.WriteString(` LIMIT 1, 18446744073709551610) `)
-		default:
-			c.w.WriteString(` OFFSET 1) `)
-		}
-		c.quoted(sel.Table)
 
 	default:
 		c.quoted(sel.Table)
@@ -564,6 +572,20 @@ func (c *compilerContext) renderGroupBy(sel *qcode.Select) {
 	c.w.WriteString(` GROUP BY `)
 
 	for i, col := range sel.BCols {
+		if i != 0 {
+			c.w.WriteString(`, `)
+		}
+		colWithTable(c.w, sel.Table, col.Col.Name)
+	}
+}
+
+func (c *compilerContext) renderRecursiveGroupBy(sel *qcode.Select) {
+	if !sel.GroupCols {
+		return
+	}
+	c.w.WriteString(` GROUP BY `)
+
+	for i, col := range sel.Cols {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}

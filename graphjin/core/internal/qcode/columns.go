@@ -99,7 +99,7 @@ func (co *Compiler) compileChildColumns(
 		}
 	}
 
-	if aggExist && (len(sel.Cols) != 0 || sel.Rel.Type == sdata.RelRecursive) {
+	if aggExist && len(sel.Cols) != 0 {
 		sel.GroupCols = true
 	}
 
