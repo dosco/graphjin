@@ -211,17 +211,16 @@ func (s *DBSchema) FindPath(from, to string) ([]TPath, error) {
 				break
 			}
 		}
-		if !ok {
-			return nil, fmt.Errorf("no recursive relationship found: %s", from)
+		if ok {
+			return []TPath{{
+				Rel: edge.Type,
+				LT:  edge.LT,
+				LC:  edge.L,
+				RT:  edge.RT,
+				RC:  edge.R,
+			}}, nil
+			// return nil, fmt.Errorf("no recursive relationship found: %s", from)
 		}
-
-		return []TPath{{
-			Rel: edge.Type,
-			LT:  edge.LT,
-			LC:  edge.L,
-			RT:  edge.RT,
-			RC:  edge.R,
-		}}, nil
 	}
 
 	res := s.between(fl, tl)

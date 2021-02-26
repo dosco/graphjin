@@ -13,7 +13,7 @@ body {
 }
 
 .graphiql-container .historyPaneWrap {
-  border-left: 1px solid #ccc;
+  border-left: 1px solid #ccc !important;
 }
 
 #root {

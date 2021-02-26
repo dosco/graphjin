@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"regexp"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/dosco/graphjin/core"
 )
@@ -56,6 +58,62 @@ func Example_subscription() {
 	// {"users": {"id": 3, "email": "user3@test.com", "phone": "650-447-0006"}}
 	// {"users": {"id": 3, "email": "user3@test.com", "phone": "650-447-0007"}}
 	// {"users": {"id": 3, "email": "user3@test.com", "phone": "650-447-0008"}}
+}
+
+func Example_subscriptionWithCursor() {
+	gql := `subscription test {
+		chats(first: 1, after: $cursor) {
+			id
+			body
+		}
+	}`
+
+	vars := json.RawMessage(`{ "id": 3 }`)
+
+	conf := &core.Config{DBType: dbType, DisableAllowList: true, PollDuration: 1}
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	m, err := gj.Subscribe(context.Background(), gql, vars, nil)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	go func() {
+		for i := 6; i < 20; i++ {
+			// insert a new chat message
+			q := fmt.Sprintf(`INSERT INTO chats (id, body) VALUES (%d, 'New chat message %d')`, i, i)
+			_, err := db.Exec(q)
+			if err != nil {
+				panic(err)
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+	}()
+
+	re, _ := regexp.Compile(`cursor\"\:\"([^\s\"]+)`)
+
+	for i := 0; i < 10; i++ {
+		msg := <-m.Result
+		// replace cursor value to make test work since it's encrypted
+		v := re.ReplaceAllString(string(msg.Data), "cursor_was_here")
+		fmt.Println(v)
+	}
+
+	// Output:
+	// {"chats": [{"id": 1, "body": "This is chat message number 1"}], "chats_cursor_was_here"}
+	// {"chats": [{"id": 2, "body": "This is chat message number 2"}], "chats_cursor_was_here"}
+	// {"chats": [{"id": 3, "body": "This is chat message number 3"}], "chats_cursor_was_here"}
+	// {"chats": [{"id": 4, "body": "This is chat message number 4"}], "chats_cursor_was_here"}
+	// {"chats": [{"id": 5, "body": "This is chat message number 5"}], "chats_cursor_was_here"}
+	// {"chats": [{"id": 6, "body": "New chat message 6"}], "chats_cursor_was_here"}
+	// {"chats": [{"id": 7, "body": "New chat message 7"}], "chats_cursor_was_here"}
+	// {"chats": [{"id": 8, "body": "New chat message 8"}], "chats_cursor_was_here"}
+	// {"chats": [{"id": 9, "body": "New chat message 9"}], "chats_cursor_was_here"}
+	// {"chats": [{"id": 10, "body": "New chat message 10"}], "chats_cursor_was_here"}
 }
 
 func TestSubscription(t *testing.T) {

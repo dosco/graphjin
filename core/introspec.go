@@ -555,5 +555,5 @@ func getRelName(colName string) string {
 		return colName[4:]
 	}
 
-	return ""
+	return cn
 }

@@ -183,9 +183,6 @@ func (c *compilerContext) renderQuery(st *IntStack, multi bool) {
 				if sel.Rel.Type != sdata.RelNone || multi {
 					c.renderLateralJoin()
 				}
-				if sel.Rel.Type == sdata.RelRecursive {
-					c.renderRecursiveCTE(sel)
-				}
 				c.renderPluralSelect(sel)
 				c.renderSelect(sel)
 			}
@@ -355,12 +352,12 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select) {
 }
 
 func (c *compilerContext) renderRecursiveBaseSelect(sel *qcode.Select) {
-	c.renderCursorCTE(sel)
+	c.renderRecursiveCTE(sel)
 	c.w.WriteString(`SELECT `)
 	c.renderDistinctOn(sel)
 	c.renderRecursiveBaseColumns(sel)
 	c.w.WriteString(` FROM (SELECT * FROM `)
-	c.quoted("_rcte_" + sel.Rel.Right.Ti.Name)
+	c.quoted("__rcte_" + sel.Table)
 	switch c.ct {
 	case "mysql":
 		c.w.WriteString(` LIMIT 1, 18446744073709551610`)
@@ -406,8 +403,9 @@ func (c *compilerContext) renderLimit(sel *qcode.Select) {
 
 func (c *compilerContext) renderRecursiveCTE(sel *qcode.Select) {
 	c.w.WriteString(`WITH RECURSIVE `)
-	c.quoted("_rcte_" + sel.Rel.Right.Ti.Name)
+	c.quoted("__rcte_" + sel.Table)
 	c.w.WriteString(` AS (`)
+	c.renderCursorCTE(sel)
 	c.renderRecursiveSelect(sel)
 	c.w.WriteString(`) `)
 }
@@ -426,9 +424,9 @@ func (c *compilerContext) renderRecursiveSelect(sel *qcode.Select) {
 
 	c.w.WriteString(`SELECT `)
 	c.renderBaseColumns(sel)
-	c.renderFrom(psel)
+	c.renderFrom(sel)
 	c.w.WriteString(`, `)
-	c.quoted("_rcte_" + sel.Rel.Right.Ti.Name)
+	c.quoted("__rcte_" + sel.Rel.Right.Ti.Name)
 	c.renderWhere(sel)
 }
 
