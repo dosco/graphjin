@@ -47,12 +47,6 @@ const (
 	RelSkip
 )
 
-type DBRelThrough struct {
-	Ti   DBTable
-	ColL DBColumn
-	ColR DBColumn
-}
-
 type DBRelLeft struct {
 	Ti  DBTable
 	Col DBColumn
@@ -65,10 +59,9 @@ type DBRelRight struct {
 }
 
 type DBRel struct {
-	Type    RelType
-	Through DBRelThrough
-	Left    DBRelLeft
-	Right   DBRelRight
+	Type  RelType
+	Left  DBRelLeft
+	Right DBRelRight
 }
 
 func NewDBSchema(

@@ -495,20 +495,14 @@ func (co *Compiler) setSingular(fieldName string, sel *Select) {
 		sel.Singular = (flect.Singularize(fieldName) == fieldName)
 	}
 
+	if len(sel.Joins) != 0 {
+		return
+	}
+
 	if (sel.Rel.Type == sdata.RelOneToMany && !sel.Rel.Right.Col.Array) ||
 		sel.Rel.Type == sdata.RelPolymorphic {
 		sel.Singular = true
 		return
-	}
-
-	if len(sel.Joins) == 0 {
-		return
-	}
-	lj := sel.Joins[(len(sel.Joins) - 1)]
-
-	if (lj.Type == sdata.RelOneToMany && !lj.Right.Col.Array) ||
-		lj.Type == sdata.RelPolymorphic {
-		sel.Singular = true
 	}
 }
 

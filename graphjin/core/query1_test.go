@@ -413,7 +413,7 @@ func Example_queryManyToManyViaJoinTable1() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"products": [{"name": "Product 1", "owner": {"email": "user1@test.com"}, "customer": {"email": "user2@test.com"}}, {"name": "Product 2", "owner": {"email": "user2@test.com"}, "customer": {"email": "user3@test.com"}}]}
+	// Output: {"products": [{"name": "Product 1", "owner": {"email": "user1@test.com"}, "customer": [{"email": "user2@test.com"}]}, {"name": "Product 2", "owner": {"email": "user2@test.com"}, "customer": [{"email": "user3@test.com"}]}]}
 }
 
 func Example_queryManyToManyViaJoinTable2() {
@@ -636,7 +636,7 @@ func Example_queryWithMultipleTopLevelTables() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"users": {"id": 1, "email": "user1@test.com"}, "products": {"id": 1, "name": "Product 1", "customer": {"email": "user2@test.com"}}, "purchases": {"id": 1}}
+	// Output: {"users": {"id": 1, "email": "user1@test.com"}, "products": {"id": 1, "name": "Product 1", "customer": [{"email": "user2@test.com"}]}, "purchases": {"id": 1}}
 }
 
 func Example_queryWithFragments1() {
@@ -1036,6 +1036,32 @@ func Example_queryWithRecursiveRelationship2() {
 	}
 
 	// Output: {"comments": {"id": 95, "replies": [{"id": 96}, {"id": 97}, {"id": 98}, {"id": 99}, {"id": 100}]}}
+}
+
+func Example_queryWithRecursiveRelationshipAndAggregations() {
+	gql := `query {
+		comments(id: 95) {
+			id
+			replies: comments(find: "children") {
+				count_id
+			}
+		}
+	}`
+
+	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+
+	// Output: {"comments": {"id": 95, "replies": [{"count_id": 5}]}}
 }
 
 func Example_queryWithSkippingAuthRequiredSelectors() {

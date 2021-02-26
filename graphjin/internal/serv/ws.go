@@ -82,7 +82,6 @@ func (sc *ServConfig) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 	var b []byte
 
 	done := make(chan bool)
-
 	for {
 		if _, b, err = conn.ReadMessage(); err != nil {
 			sc.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
@@ -161,6 +160,7 @@ func (sc *ServConfig) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 	}
 
 	m.Unsubscribe()
+	done <- true
 }
 
 func (sc *ServConfig) waitForData(done chan bool, conn *ws.Conn, m *core.Member, req gqlWsReq) {

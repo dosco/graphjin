@@ -68,6 +68,14 @@ CREATE TABLE comments (
   updated_at TIMESTAMPTZ
 );
 
+CREATE TABLE chats (
+  id BIGSERIAL PRIMARY KEY,
+  body text,
+  reply_to_id  BIGINT REFERENCES chats(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ
+);
+
 CREATE MATERIALIZED VIEW 
   hot_products
 AS (
@@ -139,6 +147,19 @@ SELECT
 FROM 
   GENERATE_SERIES(1, 100) i;
 
+-- insert notifications
+INSERT INTO 
+  notifications (id, verb, subject_type, subject_id, user_id, created_at)
+SELECT 
+  i, 
+  (CASE WHEN ((i % 2) = 0) THEN 'Bought' ELSE 'Joined' END),
+  (CASE WHEN ((i % 2) = 0) THEN 'products' ELSE 'users' END),
+  i,
+  (CASE WHEN i >= 2 THEN i - 1 ELSE NULL END),
+  '2021-01-09 16:37:01'
+FROM 
+  GENERATE_SERIES(1, 100) i;
+
 -- insert comments
 INSERT INTO 
   comments (id, body, product_id, commenter_id, reply_to_id, created_at)
@@ -152,18 +173,15 @@ SELECT
 FROM 
   GENERATE_SERIES(1, 100) i;
 
--- insert notifications
+-- insert chats
 INSERT INTO 
-  notifications (id, verb, subject_type, subject_id, user_id, created_at)
+  chats (id, body, created_at)
 SELECT 
   i, 
-  (CASE WHEN ((i % 2) = 0) THEN 'Bought' ELSE 'Joined' END),
-  (CASE WHEN ((i % 2) = 0) THEN 'products' ELSE 'users' END),
-  i,
-  (CASE WHEN i >= 2 THEN i - 1 ELSE NULL END),
+  'This is chat message number ' || i,
   '2021-01-09 16:37:01'
 FROM 
-  GENERATE_SERIES(1, 100) i;
+  GENERATE_SERIES(1, 5) i;
 
 -- refresh view hot_products
 REFRESH MATERIALIZED VIEW hot_products;

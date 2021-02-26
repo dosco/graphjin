@@ -77,6 +77,15 @@ CREATE TABLE comments (
   FOREIGN KEY (reply_to_id) REFERENCES comments(id)
 );
 
+CREATE TABLE chats (
+  id BIGINT NOT NULL PRIMARY KEY,
+  body VARCHAR(500),
+  reply_to_id  BIGINT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP,
+  FOREIGN KEY (reply_to_id) REFERENCES chats(id)
+);
+
 CREATE VIEW 
   hot_products
 AS (
@@ -159,6 +168,19 @@ SELECT
 FROM 
   seq100;
 
+-- insert notifications
+INSERT INTO 
+  notifications (id, verb, subject_type, subject_id, user_id, created_at)
+SELECT 
+  i, 
+  (CASE WHEN ((i % 2) = 0) THEN 'Bought' ELSE 'Joined' END),
+  (CASE WHEN ((i % 2) = 0) THEN 'products' ELSE 'users' END),
+  i,
+  (CASE WHEN i >= 2 THEN i - 1 ELSE NULL END),
+  '2021-01-09 16:37:01'
+FROM 
+  seq100;
+
 -- insert comments
 INSERT INTO 
   comments (id, body, product_id, commenter_id, reply_to_id, created_at)
@@ -172,15 +194,14 @@ SELECT
 FROM 
   seq100;
 
--- insert notifications
+-- insert chats
 INSERT INTO 
-  notifications (id, verb, subject_type, subject_id, user_id, created_at)
+  chats (id, body, created_at)
 SELECT 
   i, 
-  (CASE WHEN ((i % 2) = 0) THEN 'Bought' ELSE 'Joined' END),
-  (CASE WHEN ((i % 2) = 0) THEN 'products' ELSE 'users' END),
-  i,
-  (CASE WHEN i >= 2 THEN i - 1 ELSE NULL END),
+  CONCAT('This is chat message number ', i),
   '2021-01-09 16:37:01'
 FROM 
-  seq100;
+  seq100
+LIMIT 
+  5;

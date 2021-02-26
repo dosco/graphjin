@@ -71,7 +71,7 @@ func (gj *GraphJin) argList(c context.Context, md psql.Metadata, vars []byte, rc
 				if err != nil {
 					return ar, err
 				}
-				vl[i] = v1
+				vl[i] = string(v1)
 			} else {
 				vl[i] = nil
 			}

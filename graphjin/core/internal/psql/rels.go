@@ -53,7 +53,7 @@ func (c *compilerContext) renderRel(
 		c.squoted(ti.Name)
 
 	case sdata.RelRecursive:
-		rcte := "_rcte_" + rel.Right.Ti.Name
+		rcte := "__rcte_" + rel.Right.Ti.Name
 		if v, ok := args["find"]; ok {
 			switch v.Val {
 			case "parents", "parent":
