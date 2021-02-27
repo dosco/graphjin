@@ -152,34 +152,19 @@ func (c *compilerContext) renderRelArrayRight(
 
 	switch c.ct {
 	case "mysql":
-		c.w.WriteString(`(SELECT * FROM JSON_TABLE(`)
+		c.w.WriteString(`SELECT _gj_jt.* FROM `)
+		c.w.WriteString(`(SELECT CAST(`)
 		if pid == -1 {
 			colWithTable(c.w, colTable, col.Name)
 		} else {
 			colWithTableID(c.w, colTable, pid, col.Name)
 		}
-
-		// c.w.WriteString(`(SELECT * FROM `)
-		// c.w.WriteString(colTable)
-
-		// c.w.WriteString(`AS _gt_pt, JSON_TABLE(`)
-		// colWithTable(c.w, `_gj_pt`, col.Name)
-
-		c.w.WriteString(`, "$[*]" COLUMNS(`)
+		c.w.WriteString(` AS JSON) as ids) j, `)
+		c.w.WriteString(`JSON_TABLE(j.ids, "$[*]" COLUMNS(`)
 		c.w.WriteString(col.Name)
 		c.w.WriteString(` `)
 		c.w.WriteString(ty)
-		c.w.WriteString(` PATH "$" ERROR ON ERROR)) AS _gj_jt)`)
-
-		// c.w.WriteString(` PATH "$" ERROR ON ERROR)) AS _gj_jt) WHERE `)
-
-		// colWithTable(c.w, `_gj_pt`, ti.PrimaryCol.Name)
-		// c.w.WriteString(` = `)
-		// if pid == -1 {
-		// 	colWithTable(c.w, colTable, ti.PrimaryCol.Name)
-		// } else {
-		// 	colWithTableID(c.w, colTable, pid, ti.PrimaryCol.Name)
-		// }
+		c.w.WriteString(` PATH "$" ERROR ON ERROR)) AS _gj_jt`)
 
 	default:
 		if pid == -1 {

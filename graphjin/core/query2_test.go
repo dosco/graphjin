@@ -46,7 +46,7 @@ func queryWithVariableLimit(t *testing.T) {
 var benchGQL = `query {
 	products(
 		# returns only 30 items
-		limit: $limit,
+		limit: 1,
 
 		# starts from item 10, commented out for now
 		# offset: 10,
@@ -95,17 +95,13 @@ func Example_veryComplexQuery() {
 		},
 	}
 
-	vars := json.RawMessage(`{
-		"limit": 1
-	}`)
-
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	res, err := gj.GraphQL(context.Background(), benchGQL, vars, nil)
+	res, err := gj.GraphQL(context.Background(), benchGQL, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 		return
