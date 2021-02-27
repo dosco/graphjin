@@ -68,7 +68,7 @@ func (c *compilerContext) renderParam(p Param) {
 	}
 
 	if c.md.poll {
-		_, _ = c.w.WriteString(`_sg_sub.`)
+		_, _ = c.w.WriteString(`_gj_sub.`)
 		c.quoted(p.Name)
 		return
 	}

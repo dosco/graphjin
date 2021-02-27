@@ -367,20 +367,20 @@ func renderSubWrap(st stmt, ct string) string {
 
 	switch ct {
 	case "mysql":
-		w.WriteString(`WITH _sg_sub AS (SELECT * FROM JSON_TABLE(?, '$[*]' COLUMNS(`)
+		w.WriteString(`WITH _gj_sub AS (SELECT * FROM JSON_TABLE(?, "$[*]" COLUMNS(`)
 		for i, p := range st.md.Params() {
 			if i != 0 {
 				w.WriteString(`, `)
 			}
-			w.WriteString(p.Name)
-			w.WriteString(` INT PATH '$[`)
+			w.WriteString("`" + p.Name + "`")
+			w.WriteString(` INT PATH "$[`)
 			w.WriteString(strconv.FormatInt(int64(i), 10))
-			w.WriteString(`]' ERROR ON ERROR`)
+			w.WriteString(`]" ERROR ON ERROR`)
 		}
 		w.WriteString(`)) AS _gj_jt`)
 
 	default:
-		w.WriteString(`WITH _sg_sub AS (SELECT `)
+		w.WriteString(`WITH _gj_sub AS (SELECT `)
 		for i, p := range st.md.Params() {
 			if i != 0 {
 				w.WriteString(`, `)
@@ -394,9 +394,9 @@ func renderSubWrap(st stmt, ct string) string {
 		}
 		w.WriteString(` FROM json_array_elements($1::json) AS x`)
 	}
-	w.WriteString(`) SELECT _sg_sub_data.__root FROM _sg_sub LEFT OUTER JOIN LATERAL (`)
+	w.WriteString(`) SELECT _gj_sub_data.__root FROM _gj_sub LEFT OUTER JOIN LATERAL (`)
 	w.WriteString(st.sql)
-	w.WriteString(`) AS _sg_sub_data ON true`)
+	w.WriteString(`) AS _gj_sub_data ON true`)
 
 	return w.String()
 }

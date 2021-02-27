@@ -185,14 +185,7 @@ func (c *compilerContext) renderBaseColumns(sel *qcode.Select) int {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
-		if col.Col.Array && c.ct == "mysql" {
-			c.w.WriteString(`CAST(`)
-			colWithTable(c.w, sel.Table, col.Col.Name)
-			c.w.WriteString(` AS JSON) AS `)
-			c.w.WriteString(col.Col.Name)
-		} else {
-			colWithTable(c.w, sel.Table, col.Col.Name)
-		}
+		colWithTable(c.w, sel.Table, col.Col.Name)
 		i++
 	}
 	return i
