@@ -50,8 +50,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
         
-      - name: Run Tests
-        run: go test ./...
+      - name: Run Postgres Tests
+        run: go test -v ./...
+        
+      - name: Run MySQL Tests
+        run: "go test -v -db=mysql -run=Example_query|Example_sub ./..."
    
       - name: Snapcraft Login
         if: success() && startsWith(github.ref, 'refs/tags/v')
