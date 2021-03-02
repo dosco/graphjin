@@ -95,6 +95,7 @@ type GraphJin struct {
 	pc          *psql.Compiler
 	ge          *graphql.Engine
 	subs        sync.Map
+	prod        bool
 }
 
 // NewGraphJin creates the GraphJin struct, this involves querying the database to learn its
@@ -114,6 +115,7 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo) (*GraphJin, err
 		db:     db,
 		dbinfo: dbinfo,
 		log:    _log.New(os.Stdout, "", 0),
+		prod:   conf.Production || os.Getenv("GO_ENV") == "production",
 	}
 
 	if err := gj.initConfig(); err != nil {
@@ -214,7 +216,7 @@ func (gj *GraphJin) GraphQL(
 
 	// use the chirino/graphql library for introspection queries
 	// disabled when allow list is enforced
-	if !gj.conf.EnforceAllowList && ct.name == "IntrospectionQuery" {
+	if !gj.prod && ct.name == "IntrospectionQuery" {
 		r := gj.ge.ServeGraphQL(&graphql.Request{Query: query})
 		res.Data = r.Data
 

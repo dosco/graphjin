@@ -23,10 +23,6 @@ type Config struct {
 	// even in production. (Warning possible security concern)
 	DisableAllowList bool `mapstructure:"disable_allow_list"`
 
-	// EnforceAllowList (aka production mode) when set to true ensures
-	// only queries saved to the allow list folders can be used.
-	EnforceAllowList bool `mapstructure:"enforce_allow_list"`
-
 	// AllowListFile if the path to allow list file if not set the
 	// path is assumed to be the same as the config path (allow.list)
 	AllowListFile string `mapstructure:"allow_list_file"`
@@ -100,6 +96,10 @@ type Config struct {
 	// limit is not defined in the query or the table role config.
 	// Default to 20
 	DefaultLimit int `mapstructure:"default_limit"`
+
+	// Enable production mode. This defaults to true if GO_ENV is set to
+	// "production". When this is true the allow list is enforced.
+	Production bool
 
 	rtmap map[string]resFn
 }

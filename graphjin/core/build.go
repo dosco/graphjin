@@ -23,7 +23,7 @@ func (gj *GraphJin) compileQuery(cq *cquery, role string) error {
 
 	// In production mode enforce the allow list and
 	// compile and cache the result else compile each time
-	if gj.allowList != nil && gj.conf.EnforceAllowList {
+	if gj.allowList != nil && gj.prod {
 		if cq1, ok := gj.queries[(cq.q.name + role)]; ok {
 			cq.q = cq1.q
 		} else {

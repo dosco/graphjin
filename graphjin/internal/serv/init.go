@@ -104,10 +104,6 @@ func initConf(servConfig *ServConfig) (*Config, error) {
 		c.AllowListFile = c.relPath("./allow.list")
 	}
 
-	if c.Production {
-		c.EnforceAllowList = true
-	}
-
 	return c, nil
 }
 
