@@ -117,7 +117,7 @@ func Do(servConf *ServConfig, log func(string, ...interface{}), additional ...di
 					continue
 				}
 
-				if servConf.conf.Production {
+				if servConf.conf.Serv.Production {
 					continue
 				}
 
