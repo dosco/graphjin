@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/dosco/graphjin/core"
@@ -32,6 +35,9 @@ func queryWithVariableLimit(t *testing.T) {
 	}
 
 	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
+	if err != nil {
+		t.Error(err)
+	}
 
 	switch dbType {
 	case "mysql":
@@ -41,6 +47,65 @@ func queryWithVariableLimit(t *testing.T) {
 		got := string(res.Data)
 		assert.Equal(t, got, exp, "should equal")
 	}
+}
+
+func TestAllowList(t *testing.T) {
+	gql1 := `query getProducts {
+		products(id: 2) {
+			id
+		}
+	}`
+
+	gql2 := `query getProducts {
+		products(id: 3) {
+			id
+			name
+		}
+	}`
+
+	dir, fname, err := createTempAllowList()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	conf1 := &core.Config{DBType: dbType, AllowListFile: fname}
+	gj1, err := core.NewGraphJin(conf1, db)
+	if err != nil {
+		t.Error(err)
+	}
+
+	_, err = gj1.GraphQL(context.Background(), gql1, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	conf2 := &core.Config{DBType: dbType, AllowListFile: fname, Production: true}
+	gj2, err := core.NewGraphJin(conf2, db)
+	if err != nil {
+		t.Error(err)
+	}
+
+	res, err := gj2.GraphQL(context.Background(), gql2, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	exp := `{"products": {"id": 2}}`
+	got := string(res.Data)
+	assert.Equal(t, got, exp, "should equal")
+}
+
+func createTempAllowList() (string, string, error) {
+	content := []byte("")
+	dir, err := ioutil.TempDir("", "test")
+	if err != nil {
+		return "", "", err
+	}
+
+	tmpfn := filepath.Join(dir, "allow.list")
+	err = ioutil.WriteFile(tmpfn, content, 0666)
+	return dir, tmpfn, err
 }
 
 var benchGQL = `query {

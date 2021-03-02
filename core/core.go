@@ -126,7 +126,7 @@ func (gj *GraphJin) initCompilers() error {
 		DBSchema:         gj.schema.DBSchema(),
 	}
 
-	if gj.allowList != nil && gj.conf.EnforceAllowList {
+	if gj.allowList != nil && gj.prod {
 		qcc.FragmentFetcher = gj.allowList.FragmentFetcher()
 	}
 
@@ -230,7 +230,7 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 
 	res.data = cur.data
 
-	if c.gj.allowList != nil {
+	if c.gj.allowList != nil && !c.gj.prod {
 		if err := c.gj.allowList.Set(vars, query); err != nil {
 			return res, err
 		}

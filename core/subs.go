@@ -80,7 +80,7 @@ func (gj *GraphJin) Subscribe(
 	}
 
 	if name == "" {
-		if gj.allowList != nil && gj.conf.EnforceAllowList {
+		if gj.allowList != nil && gj.prod {
 			return nil, errors.New("subscription: query name is required")
 		} else {
 			h := sha256.Sum256([]byte(query))
@@ -141,6 +141,12 @@ func (gj *GraphJin) newSub(c context.Context, s *sub, query string, vars json.Ra
 
 	if err := gj.compileQuery(s.q, s.role); err != nil {
 		return err
+	}
+
+	if gj.allowList != nil && !gj.prod {
+		if err := gj.allowList.Set(vars, query); err != nil {
+			return err
+		}
 	}
 
 	if len(s.q.st.md.Params()) != 0 {
