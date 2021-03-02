@@ -47,7 +47,7 @@ func cmdDBReset(servConf *ServConfig) func(*cobra.Command, []string) {
 	return func(cmd *cobra.Command, args []string) {
 		initConfOnce(servConf)
 
-		if servConf.conf.Production {
+		if servConf.conf.Serv.Production {
 			servConf.log.Fatal("Command db:reset does not work in production")
 		}
 

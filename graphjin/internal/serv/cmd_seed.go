@@ -29,7 +29,7 @@ func cmdDBSeed(servConf *ServConfig) func(*cobra.Command, []string) {
 		if servConf.conf, err = initConf(servConf); err != nil {
 			servConf.log.Fatalf("Failed to read config: %s", err)
 		}
-		servConf.conf.Production = false
+		servConf.conf.Serv.Production = false
 		servConf.conf.DefaultBlock = false
 		servConf.conf.DisableAllowList = true
 

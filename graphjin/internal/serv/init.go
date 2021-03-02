@@ -104,6 +104,8 @@ func initConf(servConfig *ServConfig) (*Config, error) {
 		c.AllowListFile = c.relPath("./allow.list")
 	}
 
+	c.Core.Production = c.Serv.Production
+
 	return c, nil
 }
 
