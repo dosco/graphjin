@@ -45,6 +45,7 @@ require (
 	github.com/spf13/cobra v1.1.3
 	github.com/spf13/viper v1.7.1
 	github.com/stretchr/testify v1.7.0
+	github.com/tj/assert v0.0.3
 	go.opencensus.io v0.22.5
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.16.0
@@ -54,7 +55,6 @@ require (
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e
 	golang.org/x/tools v0.1.0
-	gonum.org/v1/gonum v0.8.2
 )
 
 go 1.14

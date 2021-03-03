@@ -324,7 +324,7 @@ func setExpColName(s *sdata.DBSchema, ti sdata.DBTable, ex *Exp, node *graph.Nod
 				// return fmt.Errorf("selector table not allowed in where: %s", ti.Name)
 			}
 
-			paths, err := s.FindPath(curr, prev)
+			paths, err := s.FindPath(curr, prev, "")
 			if err != nil {
 				return err
 			}
