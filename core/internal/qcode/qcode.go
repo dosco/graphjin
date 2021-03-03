@@ -447,7 +447,7 @@ func (co *Compiler) addRelInfo(
 	}
 
 	if sel.ParentID != -1 {
-		paths, err := co.s.FindPath(childF.Name, parentF.Name)
+		paths, err := co.s.FindPath(childF.Name, parentF.Name, sel.through)
 		if err != nil {
 			return err
 		}

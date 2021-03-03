@@ -218,7 +218,7 @@ func (co *Compiler) newMutate(ms *mState, m Mutate, role string) error {
 
 		// Get child-to-parent relationship
 		// rel, err := co.s.GetRel(k, m.Key, "")
-		paths, err := co.s.FindPath(k, m.Key)
+		paths, err := co.s.FindPath(k, m.Key, "")
 		if err != nil {
 			var ty MType
 			var ok bool

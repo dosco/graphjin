@@ -6,32 +6,32 @@ import (
 	"fmt"
 	"strings"
 
-	"gonum.org/v1/gonum/graph/multi"
+	"github.com/dosco/graphjin/core/internal/util"
 )
 
 type edgeInfo struct {
-	nodeID  int64
-	edgeIDs []int64
+	nodeID  int32
+	edgeIDs []int32
 }
 
 type nodeInfo struct {
-	nodeID int64
+	nodeID int32
 }
 
 type DBSchema struct {
-	typ    string                       // db type
-	ver    int                          // db version
-	schema string                       // db schema
-	name   string                       // db name
-	tables []DBTable                    // tables
-	vt     map[string]VirtualTable      // for polymorphic relationships
-	fm     map[string]DBFunction        // db functions
-	tindex map[string]nodeInfo          // table index
-	ai     map[string]nodeInfo          // table alias index
-	re     map[int64]TEdge              // recursive edges
-	ae     map[int64]TEdge              // all other edges
-	ei     map[string][]edgeInfo        // edges index
-	rg     *multi.WeightedDirectedGraph // relationship graph
+	typ    string                  // db type
+	ver    int                     // db version
+	schema string                  // db schema
+	name   string                  // db name
+	tables []DBTable               // tables
+	vt     map[string]VirtualTable // for polymorphic relationships
+	fm     map[string]DBFunction   // db functions
+	tindex map[string]nodeInfo     // table index
+	ai     map[string]nodeInfo     // table alias index
+	re     map[int32]TEdge         // recursive edges
+	ae     map[int32]TEdge         // all other edges
+	ei     map[string][]edgeInfo   // edges index
+	rg     *util.Graph             // relationship graph
 }
 
 type RelType int
@@ -76,10 +76,10 @@ func NewDBSchema(
 		vt:     make(map[string]VirtualTable),
 		tindex: make(map[string]nodeInfo),
 		ai:     make(map[string]nodeInfo),
-		re:     make(map[int64]TEdge),
-		ae:     make(map[int64]TEdge),
+		re:     make(map[int32]TEdge),
+		ae:     make(map[int32]TEdge),
 		ei:     make(map[string][]edgeInfo),
-		rg:     multi.NewWeightedDirectedGraph(),
+		rg:     util.NewGraph(),
 	}
 
 	// schema.rg.EdgeWeightFunc = func(e graph.WeightedLines) float64 {
@@ -93,7 +93,7 @@ func NewDBSchema(
 	// 	return min
 	// }
 
-	var nids []int64
+	var nids []int32
 
 	for _, t := range info.Tables {
 		nids = append(nids, schema.addNode(t))
