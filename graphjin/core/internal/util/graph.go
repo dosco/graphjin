@@ -73,7 +73,7 @@ func (g *Graph) AllPaths(from, to int32) [][]int32 {
 		}
 
 		for _, e := range g.graph[node] {
-			if _, ok := p.visited[e]; ok /*&& e != to*/ {
+			if _, ok := p.visited[e]; ok && e != to {
 				continue
 			}
 
