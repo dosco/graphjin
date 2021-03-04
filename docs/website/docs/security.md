@@ -154,6 +154,30 @@ In addition to the default auth configuration you can create additional named au
 with features like `actions`. For example while your main GraphQL endpoint uses JWT for authentication you may want to use a header value to ensure your actions can only be called by clients having access to a shared secret
 or security header.
 
+### Testing Subscription Authentication
+
+Sending HTTP headers is not allowed over WebSocket, so it has to be done during the `connection_init` message over WebSocket sending the headers inside the JSON payload of the message.
+
+If you want to test the Authentication of the subscriptions with an standard client that is not able to pass the headers over WebSocket, you could set the `subs_creds_in_vars` param inside the `auth` block of the config file and define the headers inside the variables of the subscription.
+
+```yml
+auth:
+  # Useful for quickly debugging subscriptions WebSocket authorization.
+  # Disable in production
+  subs_creds_in_vars: true
+```
+
+Variables:
+
+```json
+{
+  "example-var": 20,
+  "X-User-ID": "1",
+  "X-User-ID-Provider": "testing-provider",
+  "X-User-Role": "testing-role"
+}
+```
+
 ## Actions
 
 Actions is a very useful feature that is currently work in progress. For now the best use case for actions is to
