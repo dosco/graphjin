@@ -109,6 +109,10 @@ auth:
   # Disable in production
   creds_in_header: true
 
+  # Useful for quickly debugging subscriptions WebSocket authorization.
+  # Disable in production
+  # subs_creds_in_vars: true
+
   rails:
     # Rails version this is used for reading the
     # various cookies formats.

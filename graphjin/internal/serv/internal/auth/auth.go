@@ -10,10 +10,11 @@ import (
 
 // Auth struct contains authentication related config values used by the GraphJin service
 type Auth struct {
-	Name          string
-	Type          string
-	Cookie        string
-	CredsInHeader bool `mapstructure:"creds_in_header"`
+	Name            string
+	Type            string
+	Cookie          string
+	CredsInHeader   bool `mapstructure:"creds_in_header"`
+	SubsCredsInVars bool `mapstructure:"subs_creds_in_vars"`
 
 	Rails struct {
 		Version       string

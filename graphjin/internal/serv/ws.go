@@ -2,6 +2,7 @@ package serv
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -130,6 +131,28 @@ func (sc *ServConfig) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 			if run {
 				continue
 			}
+
+			if sc.conf.Serv.Auth.SubsCredsInVars {
+				type authHeaders struct {
+					UserIDProvider string `json:"X-User-ID-Provider"`
+					UserID         string `json:"X-User-ID"`
+					UserRole       string `json:"X-User-Role"`
+				}
+				var x authHeaders
+				if err = json.Unmarshal(msg.Payload.Vars, &x); err == nil {
+					if x.UserIDProvider != "" {
+						ctx = context.WithValue(ctx, core.UserIDProviderKey, x.UserIDProvider)
+					}
+					if x.UserID != "" {
+						ctx = context.WithValue(ctx, core.UserIDKey, x.UserID)
+					}
+					if x.UserRole != "" {
+						ctx = context.WithValue(ctx, core.UserRoleKey, x.UserRole)
+					}
+
+				}
+			}
+
 			m, err = gj.Subscribe(ctx, msg.Payload.Query, msg.Payload.Vars, nil)
 			if err == nil {
 				go sc.waitForData(done, conn, m, msg)
