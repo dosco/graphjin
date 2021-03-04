@@ -73,9 +73,10 @@ func (g *Graph) AllPaths(from, to int32) [][]int32 {
 		}
 
 		for _, e := range g.graph[node] {
-			if _, ok := p.visited[e]; ok {
+			if _, ok := p.visited[e]; ok /*&& e != to*/ {
 				continue
 			}
+
 			if _, ok := visited[[2]int32{node, e}]; !ok {
 				// We calculate cost so far and add in the weight (cost) of this edge.
 				p1 := path{
