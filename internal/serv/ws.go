@@ -173,7 +173,7 @@ func (sc *ServConfig) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err != nil {
-			err = sendError(conn, err)
+			err = sendError(conn, err, msg.ID)
 			break
 		}
 	}
@@ -225,7 +225,7 @@ func (sc *ServConfig) waitForData(done chan bool, conn *ws.Conn, m *core.Member,
 		}
 
 		if err != nil {
-			err = sendError(conn, err)
+			err = sendError(conn, err, req.ID)
 			break
 		}
 	}
@@ -235,8 +235,8 @@ func (sc *ServConfig) waitForData(done chan bool, conn *ws.Conn, m *core.Member,
 	}
 }
 
-func sendError(conn *ws.Conn, err error) error {
-	res := gqlWsError{ID: "1", Type: "error"}
+func sendError(conn *ws.Conn, err error, id string) error {
+	res := gqlWsError{ID: id, Type: "error"}
 	res.Payload.Error = err.Error()
 
 	msg, err := json.Marshal(res)

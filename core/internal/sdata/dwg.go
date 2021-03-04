@@ -1,10 +1,18 @@
 package sdata
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/dosco/graphjin/core/internal/util"
+)
+
+var (
+	ErrFromEdgeNotFound   = errors.New("from edge not found")
+	ErrToEdgeNotFound     = errors.New("to edge not found")
+	ErrPathNotFound       = errors.New("path not found")
+	ErrThoughNodeNotFound = errors.New("though node not found")
 )
 
 type TEdge struct {
@@ -51,9 +59,6 @@ func (s *DBSchema) GetAliases() map[string]DBTable {
 //
 // Note 1: `_id` or `id_` is stripped from the column name to use as a graph key
 // in the case where that then matches a real table name will result in conflict.
-//
-// Note 2: recursive relationships are kept outside the graph in `s.re`
-// Eg. public.product.owner_id -> public.user.id
 
 func (s *DBSchema) addToGraph(
 	lti DBTable, lcol DBColumn,
@@ -112,10 +117,6 @@ func (s *DBSchema) addToGraph(
 		L: lcol, R: rcol,
 	}
 
-	// if rt == RelRecursive {
-	// 	s.re[ln.ID()] = e1
-	// 	return nil
-	// }
 	if err := s.addEdge(lti.Name, e1, false); err != nil {
 		return err
 	}
@@ -135,8 +136,6 @@ func (s *DBSchema) addToGraph(
 	if err := s.addEdge(relT, e2, false); err != nil {
 		return err
 	}
-
-	// fmt.Println(">>", relT, "->", e2.RT.Name)
 
 	// fmt.Printf("1. (%s, %d) %s.%s (%d) -> %s.%s (%d) == %s\n", lti.Name, e1.ID(), lti.Name, lcol.Name, ln.ID(), rti.Name, rcol.Name, rn.ID(), rt.String())
 	// fmt.Printf("2. (%s, %d) %s.%s (%d) -> %s.%s (%d) == %s\n", rti.Name, e2.ID(), rti.Name, rcol.Name, rn.ID(), lti.Name, lcol.Name, ln.ID(), rt2.String())
@@ -208,44 +207,23 @@ type TPath struct {
 func (s *DBSchema) FindPath(from, to, through string) ([]TPath, error) {
 	fl, ok := s.ei[from]
 	if !ok {
-		return nil, fmt.Errorf("edge not found: %s", from)
+		return nil, ErrFromEdgeNotFound
 	}
 
 	tl, ok := s.ei[to]
 	if !ok {
-		return nil, fmt.Errorf("edge not found: %s", to)
+		return nil, ErrToEdgeNotFound
 	}
-
-	// if from == to {
-	// 	var edge TEdge
-	// 	var ok bool
-
-	// 	for _, v := range fl {
-	// 		if edge, ok = s.re[v.nodeID]; ok {
-	// 			break
-	// 		}
-	// 	}
-	// 	if ok {
-	// 		return []TPath{{
-	// 			Rel: edge.Type,
-	// 			LT:  edge.LT,
-	// 			LC:  edge.L,
-	// 			RT:  edge.RT,
-	// 			RC:  edge.R,
-	// 		}}, nil
-	// 		// return nil, fmt.Errorf("no recursive relationship found: %s", from)
-	// 	}
-	// }
 
 	if through != "" {
 		if _, ok := s.tindex[(s.DBSchema() + ":" + through)]; !ok {
-			return nil, fmt.Errorf("through table not found: %s.%s", s.DBSchema(), through)
+			return nil, ErrThoughNodeNotFound
 		}
 	}
 
 	res := s.between(fl, tl, through)
 	if len(res.edges) == 0 {
-		return nil, fmt.Errorf("no relationship found: %s -> %s", from, to)
+		return nil, ErrPathNotFound
 	}
 
 	// fmt.Printf("> %s (%d) -> %s (%d)\n",
@@ -292,7 +270,6 @@ func (s *DBSchema) pickPath(f, t edgeInfo, through string) (graphResult, bool) {
 	paths := s.rg.AllPaths(fn, tn)
 
 	for _, nodes := range paths {
-		// fmt.Printf("2> %d -> %d, nodes: %d\n", f.nodeID, t.nodeID, len(nodes))
 		ln := len(nodes)
 
 		switch {

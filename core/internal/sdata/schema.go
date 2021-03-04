@@ -82,17 +82,6 @@ func NewDBSchema(
 		rg:     util.NewGraph(),
 	}
 
-	// schema.rg.EdgeWeightFunc = func(e graph.WeightedLines) float64 {
-	// 	var min float64 = 10
-	// 	for e.Next() {
-	// 		l := e.WeightedLine()
-	// 		if l.Weight() < min {
-	// 			min = l.Weight()
-	// 		}
-	// 	}
-	// 	return min
-	// }
-
 	var nids []int32
 
 	for _, t := range info.Tables {

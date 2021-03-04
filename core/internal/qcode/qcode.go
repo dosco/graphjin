@@ -449,10 +449,7 @@ func (co *Compiler) addRelInfo(
 	if sel.ParentID != -1 {
 		paths, err := co.s.FindPath(childF.Name, parentF.Name, sel.through)
 		if err != nil {
-			return err
-		}
-		if len(paths) == 0 {
-			return fmt.Errorf("no relationship found: %s -> %s", childF.Name, parentF.Name)
+			return graphError(err, childF.Name, parentF.Name, sel.through)
 		}
 		sel.Rel = sdata.PathToRel(paths[0])
 

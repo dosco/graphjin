@@ -326,7 +326,7 @@ func setExpColName(s *sdata.DBSchema, ti sdata.DBTable, ex *Exp, node *graph.Nod
 
 			paths, err := s.FindPath(curr, prev, "")
 			if err != nil {
-				return err
+				return graphError(err, curr, prev, "")
 			}
 			ex.Rels = append(ex.Rels, sdata.PathToRel(paths[0]))
 			prev = curr

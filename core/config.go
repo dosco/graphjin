@@ -84,9 +84,6 @@ type Config struct {
 	// Log warnings and other debug information
 	Debug bool
 
-	// Useful for quickly debugging. Please set to false in production
-	CredsInVars bool `mapstructure:"creds_in_vars"`
-
 	// Subscriptions poll the database to query for updates
 	// this sets the duration (in seconds) between requests.
 	// Defaults to 5 seconds
