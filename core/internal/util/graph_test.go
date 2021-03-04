@@ -45,7 +45,12 @@ func TestGraph(t *testing.T) {
 	})
 
 	paths = g.AllPaths(b, b)
-	assert.ElementsMatch(t, paths, [][]int32{{1, 1}})
+	assert.ElementsMatch(t, paths, [][]int32{
+		{1, 1},
+		{1, 0, 1},
+		{1, 0, 2, 1},
+		{1, 0, 3, 2, 1},
+	})
 
 	edges := g.GetEdges(b, b)
 	assert.ElementsMatch(t, edges, []util.Edge{{13, 2}})

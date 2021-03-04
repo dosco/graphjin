@@ -215,14 +215,11 @@ func (s *DBSchema) FindPath(from, to, through string) ([]TPath, error) {
 		return nil, ErrToEdgeNotFound
 	}
 
-	if through != "" {
-		if _, ok := s.tindex[(s.DBSchema() + ":" + through)]; !ok {
-			return nil, ErrThoughNodeNotFound
-		}
+	res, err := s.between(fl, tl, through)
+	if err != nil {
+		return nil, err
 	}
-
-	res := s.between(fl, tl, through)
-	if len(res.edges) == 0 {
+	if res == nil {
 		return nil, ErrPathNotFound
 	}
 
@@ -249,87 +246,84 @@ type graphResult struct {
 	edges    []int32
 }
 
-func (s *DBSchema) between(from, to []edgeInfo, through string) graphResult {
-	var res graphResult
-
+func (s *DBSchema) between(from, to []edgeInfo, through string) (*graphResult, error) {
 	for _, f := range from {
 		for _, t := range to {
-			if res, ok := s.pickPath(f, t, through); ok {
-				return res
+			res, err := s.pickPath(f, t, through)
+			if err != nil {
+				return nil, err
+			}
+			if res != nil {
+				return res, nil
 			}
 		}
 	}
-	return res
+	return nil, nil
 }
 
-func (s *DBSchema) pickPath(f, t edgeInfo, through string) (graphResult, bool) {
-	var res graphResult
-
+func (s *DBSchema) pickPath(f, t edgeInfo, through string) (*graphResult, error) {
 	fn := f.nodeID
 	tn := t.nodeID
 	paths := s.rg.AllPaths(fn, tn)
 
+	if through != "" {
+		var npaths [][]int32
+		v, ok := s.tindex[(s.DBSchema() + ":" + through)]
+		if !ok {
+			return nil, ErrThoughNodeNotFound
+		}
+		for i := range paths {
+			for j := range paths[i] {
+				if paths[i][j] == v.nodeID {
+					npaths = append(npaths, paths[i])
+				}
+			}
+		}
+		paths = npaths
+	}
+
 	for _, nodes := range paths {
+		var ff, lf bool
+		res := &graphResult{from: f, to: t}
 		ln := len(nodes)
 
-		switch {
-		// case 0:
-		// 	return res, false
-
-		case ln == 1:
-			// lines := s.rg.GetEdges(nodes[0], nodes[0])
-		// lines.Next()
-		// res.edges = append(res.edges, lines.WeightedLine().ID())
-
-		case ln == 2:
+		if ln == 2 {
 			lines := s.rg.GetEdges(nodes[0], nodes[1])
 			if v := pickLine(lines, f); v != nil {
-				return graphResult{f, t, []int32{v.ID}}, true
+				res.edges = append(res.edges, v.ID)
+				return res, nil
+			}
+		}
+
+		for i := 1; i < ln; i++ {
+			fn := nodes[i-1]
+			tn := nodes[i]
+			lines := s.rg.GetEdges(fn, tn)
+			// printLines(lines)
+
+			switch i {
+			case 1:
+				if v := pickLine(lines, f); v != nil {
+					res.edges = append(res.edges, v.ID)
+					ff = true
+				}
+			case (ln - 1):
+				if v := pickLine(lines, t); v != nil {
+					res.edges = append(res.edges, v.ID)
+					lf = true
+				}
+			default:
+				v := minWeightedLine(lines)
+				res.edges = append(res.edges, v.ID)
 			}
 
-		case ln > 2:
-			res := graphResult{from: f, to: t}
-			ln := len(nodes)
-
-			var ff, lf bool
-
-			for i := 1; i < ln; i++ {
-				fn := nodes[i-1]
-				tn := nodes[i]
-				lines := s.rg.GetEdges(fn, tn)
-				// printLines(lines)
-
-				if through != "" {
-					if v := pickLineByName(lines, through, s.ae); v != nil {
-						res.edges = append(res.edges, v.ID)
-						continue
-					}
-				}
-
-				switch i {
-				case 1:
-					if v := pickLine(lines, f); v != nil {
-						res.edges = append(res.edges, v.ID)
-						ff = true
-					}
-				case (ln - 1):
-					if v := pickLine(lines, t); v != nil {
-						res.edges = append(res.edges, v.ID)
-						lf = true
-					}
-				default:
-					v := minWeightedLine(lines)
-					res.edges = append(res.edges, v.ID)
-				}
-
-				if ff && lf {
-					return res, true
-				}
+			if ff && lf {
+				return res, nil
 			}
 		}
 	}
 
-	return res, false
+	return nil, nil
 }
 
 func pickLine(lines []util.Edge, ei edgeInfo) *util.Edge {
@@ -338,16 +332,6 @@ func pickLine(lines []util.Edge, ei edgeInfo) *util.Edge {
 			if v.ID == eid {
 				return &v
 			}
-		}
-	}
-	return nil
-}
-
-func pickLineByName(lines []util.Edge, table string, ae map[int32]TEdge) *util.Edge {
-	for _, v := range lines {
-		e := ae[v.ID]
-		if e.LT.Name == table || e.RT.Name == table {
-			return &v
 		}
 	}
 	return nil
