@@ -18,16 +18,18 @@ type resItem struct {
 func (gj *GraphJin) initResolvers() error {
 	gj.rmap = make(map[string]resItem)
 
-	err := gj.conf.SetResolver("remote_api", func(v ResolverProps) (Resolver, error) {
-		return newRemoteAPI(v)
-	})
+	rtmap := map[string]resFn{
+		"remote_api": func(v ResolverProps) (Resolver, error) {
+			return newRemoteAPI(v)
+		},
+	}
 
-	if err != nil {
-		return err
+	for name, fn := range gj.conf.rtmap {
+		rtmap[name] = fn
 	}
 
 	for _, r := range gj.conf.Resolvers {
-		if err := gj.initRemote(r); err != nil {
+		if err := gj.initRemote(r, rtmap); err != nil {
 			return fmt.Errorf("resolvers: %w", err)
 		}
 	}
@@ -35,7 +37,7 @@ func (gj *GraphJin) initResolvers() error {
 	return nil
 }
 
-func (gj *GraphJin) initRemote(rc ResolverConfig) error {
+func (gj *GraphJin) initRemote(rc ResolverConfig, rtmap map[string]resFn) error {
 	// Defines the table column to be used as an id in the
 	// remote reques
 	var col sdata.DBColumn
@@ -78,7 +80,7 @@ func (gj *GraphJin) initRemote(rc ResolverConfig) error {
 	// data request
 	var fn Resolver
 
-	if v, ok := gj.conf.rtmap[rc.Type]; ok {
+	if v, ok := rtmap[rc.Type]; ok {
 		fn, err = v(rc.Props)
 	} else {
 		err = fmt.Errorf("unknown resolver type: %s", rc.Type)
