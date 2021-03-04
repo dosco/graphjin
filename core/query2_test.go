@@ -108,6 +108,37 @@ func createTempAllowList() (string, string, error) {
 	return dir, tmpfn, err
 }
 
+func TestConfigReuse(t *testing.T) {
+	gql := `query {
+		products(id: 2) {
+			id
+		}
+	}`
+
+	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	gj1, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		t.Error(err)
+	}
+
+	res1, err := gj1.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	gj2, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		t.Error(err)
+	}
+
+	res2, err := gj2.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	assert.Equal(t, res1.Data, res2.Data, "should equal")
+}
+
 var benchGQL = `query {
 	products(
 		# returns only 30 items
