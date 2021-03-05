@@ -286,9 +286,9 @@ roles:
 
   - name: user
     tables:
-      # - name: me
-      #   query:
-      #     filters: ["{ id: { _eq: $user_id } }"]
+      - name: me
+        query:
+          filters: ["{ id: { _eq: $user_id } }"]
 
       - name: products
         query:
@@ -329,3 +329,9 @@ roles:
           presets:
             - created_at: "now"
             - updated_at: "now"
+
+  - name: admin
+    tables:
+      - name: me
+        query:
+          filters: ["{ id: { _eq: 3 } }"]

@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/dosco/graphjin/core/internal/psql"
@@ -44,8 +43,10 @@ func (gj *GraphJin) argList(c context.Context, md psql.Metadata, vars []byte, rc
 					vl[i] = v1
 				case int:
 					vl[i] = v1
+				case float64:
+					vl[i] = int(v1)
 				default:
-					return ar, errors.New("user_id must be an integer or a string")
+					return ar, fmt.Errorf("user_id must be an integer or a string: %T", v)
 				}
 			} else {
 				return ar, argErr(p)
@@ -137,8 +138,10 @@ func (gj *GraphJin) roleQueryArgList(c context.Context) (args, error) {
 					vl[i] = v1
 				case int:
 					vl[i] = v1
+				case float64:
+					vl[i] = int(v1)
 				default:
-					return ar, errors.New("user_id must be an integer or a string")
+					return ar, fmt.Errorf("user_id must be an integer or a string: %T", v)
 				}
 			} else {
 				return ar, argErr(p)

@@ -139,6 +139,22 @@ func TestConfigReuse(t *testing.T) {
 	assert.Equal(t, res1.Data, res2.Data, "should equal")
 }
 
+func TestConfigRoleManagement(t *testing.T) {
+	conf := &core.Config{}
+	err := conf.AddRoleTable("test1", "products", core.Query{
+		Columns: []string{"id", "name"},
+	})
+	if err != nil {
+		panic(err)
+	}
+	assert.NotEmpty(t, conf.Roles)
+
+	if err := conf.RemoveRoleTable("test1", "products"); err != nil {
+		panic(err)
+	}
+	assert.Empty(t, conf.Roles)
+}
+
 var benchGQL = `query {
 	products(
 		# returns only 30 items

@@ -308,6 +308,39 @@ func (c *Config) AddRoleTable(role, table string, conf interface{}) error {
 	return nil
 }
 
+func (c *Config) RemoveRoleTable(role, table string) error {
+	ri := -1
+
+	for i := range c.Roles {
+		if strings.EqualFold(c.Roles[i].Name, role) {
+			ri = i
+			break
+		}
+	}
+	if ri == -1 {
+		return fmt.Errorf("role not found: %s", role)
+	}
+
+	tables := c.Roles[ri].Tables
+	ti := -1
+
+	for i, t := range tables {
+		if strings.EqualFold(t.Name, table) {
+			ti = i
+			break
+		}
+	}
+	if ti == -1 {
+		return fmt.Errorf("table not found: %s", table)
+	}
+
+	c.Roles[ri].Tables = append(tables[:ti], tables[ti+1:]...)
+	if len(c.Roles[ri].Tables) == 0 {
+		c.Roles = append(c.Roles[:ri], c.Roles[ri+1:]...)
+	}
+	return nil
+}
+
 func (c *Config) SetResolver(name string, fn resFn) error {
 	if c.rtmap == nil {
 		c.rtmap = make(map[string]resFn)

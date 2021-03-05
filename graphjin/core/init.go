@@ -82,24 +82,10 @@ func (gj *GraphJin) initConfig() error {
 			return fmt.Errorf("roles_query: invalid character (%s) at %d",
 				c.RolesQuery[:n+1], n+1)
 		}
-		n := 0
-		for k, v := range gj.roles {
-			if k == "user" || k == "anon" {
-				n++
-			} else if v.Match != "" {
-				n++
-			}
-		}
 
 		// More than 2 roles tell us that custom roles have been added
 		// hence ABAC is handled
-		gj.abacEnabled = (n > 2)
-
-		if !gj.abacEnabled {
-			gj.log.Printf("Role based access control disabled: no custom roles found")
-		}
-	} else if len(gj.roles) > 2 {
-		gj.log.Printf("Role based access control disabled: roles_query not set")
+		gj.abacEnabled = (len(gj.roles) > 2)
 	}
 
 	return nil
