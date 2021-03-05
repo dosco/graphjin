@@ -74,6 +74,7 @@ func NewDBSchema(
 		schema: info.Schema,
 		name:   info.Name,
 		vt:     make(map[string]VirtualTable),
+		fm:     make(map[string]DBFunction),
 		tindex: make(map[string]nodeInfo),
 		ai:     make(map[string]nodeInfo),
 		re:     make(map[int32]TEdge),
