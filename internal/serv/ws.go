@@ -134,22 +134,22 @@ func (sc *ServConfig) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 
 			if sc.conf.Serv.Auth.SubsCredsInVars {
 				type authHeaders struct {
-					UserIDProvider string `json:"X-User-ID-Provider"`
-					UserID         string `json:"X-User-ID"`
-					UserRole       string `json:"X-User-Role"`
+					UserIDProvider string      `json:"X-User-ID-Provider"`
+					UserRole       string      `json:"X-User-Role"`
+					UserID         interface{} `json:"X-User-ID"`
 				}
 				var x authHeaders
-				if err = json.Unmarshal(msg.Payload.Vars, &x); err == nil {
-					if x.UserIDProvider != "" {
-						ctx = context.WithValue(ctx, core.UserIDProviderKey, x.UserIDProvider)
-					}
-					if x.UserID != "" {
-						ctx = context.WithValue(ctx, core.UserIDKey, x.UserID)
-					}
-					if x.UserRole != "" {
-						ctx = context.WithValue(ctx, core.UserRoleKey, x.UserRole)
-					}
-
+				if err = json.Unmarshal(msg.Payload.Vars, &x); err != nil {
+					break
+				}
+				if x.UserIDProvider != "" {
+					ctx = context.WithValue(ctx, core.UserIDProviderKey, x.UserIDProvider)
+				}
+				if x.UserRole != "" {
+					ctx = context.WithValue(ctx, core.UserRoleKey, x.UserRole)
+				}
+				if x.UserID != nil {
+					ctx = context.WithValue(ctx, core.UserIDKey, x.UserID)
 				}
 			}
 

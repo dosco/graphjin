@@ -187,7 +187,7 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 	if v := c.Value(UserRoleKey); v != nil {
 		res.role = v.(string)
 
-	} else if c.gj.abacEnabled && c.op == qcode.QTMutation {
+	} else if c.gj.abacEnabled {
 		res.role, err = c.executeRoleQuery(conn)
 	}
 

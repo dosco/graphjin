@@ -90,7 +90,9 @@ func (gj *GraphJin) Subscribe(
 
 	var role string
 
-	if v := c.Value(UserIDKey); v != nil {
+	if v, ok := c.Value(UserRoleKey).(string); ok {
+		role = v
+	} else if c.Value(UserIDKey) != nil {
 		role = "user"
 	} else {
 		role = "anon"

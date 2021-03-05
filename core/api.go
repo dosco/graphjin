@@ -228,7 +228,9 @@ func (gj *GraphJin) GraphQL(
 
 	var role string
 
-	if keyExists(c, UserIDKey) {
+	if v, ok := c.Value(UserRoleKey).(string); ok {
+		role = v
+	} else if c.Value(UserIDKey) != nil {
 		role = "user"
 	} else {
 		role = "anon"
