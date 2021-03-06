@@ -530,9 +530,9 @@ func getGQLType(col sdata.DBColumn) (schema.Type, string) {
 	if col.Array {
 		t = &schema.List{OfType: t}
 	}
-	if col.NotNull {
-		t = &schema.NonNull{OfType: t}
-	}
+	// if col.NotNull {
+	// 	t = &schema.NonNull{OfType: t}
+	// }
 	return t, typeName
 }
 

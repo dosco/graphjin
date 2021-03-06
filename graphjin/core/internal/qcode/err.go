@@ -6,7 +6,7 @@ import (
 	"github.com/dosco/graphjin/core/internal/sdata"
 )
 
-func graphError(err error, to, from, through string) error {
+func graphError(err error, from, to, through string) error {
 	switch err {
 	case sdata.ErrFromEdgeNotFound:
 		return fmt.Errorf("table not found: %s", from)

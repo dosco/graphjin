@@ -1,7 +1,6 @@
 package qcode
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/gobuffalo/flect"
@@ -155,26 +154,39 @@ func (co *Compiler) AddRole(role, schema, table string, trc TRConfig) error {
 	trv.delete.cols = makeSet(trc.Delete.Columns)
 	trv.delete.block = trc.Delete.Block
 
+	if schema == "" {
+		schema = co.s.DBSchema()
+	}
+
 	if co.c.EnableInflection {
 		singular := flect.Singularize(table)
 		plural := flect.Pluralize(table)
-		co.tr[(role + singular)] = trv
-		co.tr[(role + plural)] = trv
+		co.tr[(role + ":" + schema + ":" + singular)] = trv
+		co.tr[(role + ":" + schema + ":" + plural)] = trv
 	} else {
-		co.tr[(role + table)] = trv
+		co.tr[(role + ":" + schema + ":" + table)] = trv
 	}
 
 	return nil
 }
 
-func (co *Compiler) getRole(role, field string) trval {
-	var tr trval
-	var ok bool
+func (co *Compiler) getRole(role, schema, table, field string) trval {
+	var k string
+
+	if co.s.IsAlias(schema, field) {
+		k = (role + ":" + schema + ":" + field)
+	} else {
+		k = (role + ":" + schema + ":" + table)
+	}
 
 	// For anon roles when a trval is not found return the default trval
-	if tr, ok = co.tr[(role + field)]; !ok && role != "anon" {
+	tr, ok := co.tr[k]
+	if ok {
+		return tr
+	}
+	if role != "anon" {
 		tr.role = role
-	} else if !ok {
+	} else {
 		tr = co.c.defTrv
 		tr.role = role
 	}
@@ -226,29 +238,20 @@ func (trv *trval) limit(qt QType) int32 {
 	return 0
 }
 
-func (trv *trval) isBlocked(qt QType, name string) error {
-	var blocked bool
-
+func (trv *trval) isBlocked(qt QType) bool {
 	switch qt {
 	case QTQuery:
-		blocked = trv.query.block
+		return trv.query.block
 	case QTInsert:
-		blocked = trv.insert.block
+		return trv.insert.block
 	case QTUpdate:
-		blocked = trv.update.block
+		return trv.update.block
 	case QTUpsert:
-		blocked = trv.upsert.block
+		return trv.upsert.block
 	case QTDelete:
-		blocked = trv.delete.block
+		return trv.delete.block
 	}
-	if blocked {
-		return fmt.Errorf("%s blocked: %s (%s)", qt, name, trv.role)
-	}
-	return nil
-}
-
-func (trv *trval) isSkipped(qt QType) bool {
-	return qt == QTQuery && trv.query.block
+	return false
 }
 
 func (trv *trval) isFuncsBlocked() bool {

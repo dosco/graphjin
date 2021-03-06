@@ -18,8 +18,7 @@ var (
 type TEdge struct {
 	From, To, Weight int32
 
-	Type RelType
-
+	Type   RelType
 	LT, RT DBTable
 	L, R   DBColumn
 }
@@ -34,10 +33,9 @@ func (s *DBSchema) addNode(t DBTable) int32 {
 
 func (s *DBSchema) addAliases(t DBTable, nodeID int32, aliases []string) {
 	for _, al := range aliases {
-		if _, ok := s.ei[(t.Schema + ":" + al)]; !ok {
-			s.tindex[(t.Schema + ":" + al)] = nodeInfo{nodeID}
-			s.ai[al] = nodeInfo{nodeID}
-		}
+		k := (t.Schema + ":" + al)
+		s.tindex[k] = nodeInfo{nodeID}
+		s.ai[k] = nodeInfo{nodeID}
 	}
 }
 
@@ -48,6 +46,11 @@ func (s *DBSchema) GetAliases() map[string]DBTable {
 		ts[name] = s.tables[int(n.nodeID)]
 	}
 	return ts
+}
+
+func (s *DBSchema) IsAlias(schema, name string) bool {
+	_, ok := s.ai[(schema + ":" + name)]
+	return ok
 }
 
 // Building the graph
@@ -117,7 +120,7 @@ func (s *DBSchema) addToGraph(
 		L: lcol, R: rcol,
 	}
 
-	if err := s.addEdge(lti.Name, e1, false); err != nil {
+	if err := s.addEdge(lti.Name, e1); err != nil {
 		return err
 	}
 
@@ -130,10 +133,10 @@ func (s *DBSchema) addToGraph(
 		LT:     rti, RT: lti,
 		L: rcol, R: lcol,
 	}
-	if err := s.addEdge(rti.Name, e2, false); err != nil {
+	if err := s.addEdge(rti.Name, e2); err != nil {
 		return err
 	}
-	if err := s.addEdge(relT, e2, false); err != nil {
+	if err := s.addEdge(relT, e2); err != nil {
 		return err
 	}
 
@@ -144,7 +147,7 @@ func (s *DBSchema) addToGraph(
 	return nil
 }
 
-func (s *DBSchema) addEdge(name string, edge TEdge, singular bool) error {
+func (s *DBSchema) addEdge(name string, edge TEdge) error {
 	edgeID, err := s.rg.AddEdge(edge.From, edge.To, edge.Weight)
 	if err != nil {
 		return err
