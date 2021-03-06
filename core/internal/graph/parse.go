@@ -521,12 +521,11 @@ func (p *Parser) parseField(f *Field) error {
 		}
 	}
 
-	if p.peek(itemDirective) {
+	for p.peek(itemDirective) {
 		p.ignore()
 		if f.Directives, err = p.parseDirective(f.Directives); err != nil {
 			return err
 		}
-
 	}
 
 	return nil

@@ -28,9 +28,8 @@ type DBSchema struct {
 	fm     map[string]DBFunction   // db functions
 	tindex map[string]nodeInfo     // table index
 	ai     map[string]nodeInfo     // table alias index
-	re     map[int32]TEdge         // recursive edges
-	ae     map[int32]TEdge         // all other edges
 	ei     map[string][]edgeInfo   // edges index
+	ae     map[int32]TEdge         // all edges
 	rg     *util.Graph             // relationship graph
 }
 
@@ -77,21 +76,14 @@ func NewDBSchema(
 		fm:     make(map[string]DBFunction),
 		tindex: make(map[string]nodeInfo),
 		ai:     make(map[string]nodeInfo),
-		re:     make(map[int32]TEdge),
-		ae:     make(map[int32]TEdge),
 		ei:     make(map[string][]edgeInfo),
+		ae:     make(map[int32]TEdge),
 		rg:     util.NewGraph(),
 	}
 
-	var nids []int32
-
 	for _, t := range info.Tables {
-		nids = append(nids, schema.addNode(t))
-	}
-
-	for _, nid := range nids {
-		t := schema.tables[nid]
-		schema.addAliases(t, nid, aliases[strings.ToLower(t.Name)])
+		nid := schema.addNode(t)
+		schema.addAliases(schema.tables[nid], nid, aliases[t.Name])
 	}
 
 	for _, t := range info.VTables {
@@ -104,6 +96,17 @@ func NewDBSchema(
 		err := schema.addRels(t)
 		if err != nil {
 			return nil, err
+		}
+
+		// Add aliases to edge index by duplicating
+		// table nodes
+		for _, alias := range aliases[t.Name] {
+			if _, ok := schema.ei[alias]; ok {
+				continue
+			}
+			if e, ok := schema.ei[t.Name]; ok {
+				schema.ei[alias] = e
+			}
 		}
 	}
 

@@ -209,7 +209,7 @@ func (co *Compiler) compileMutation(qc *QCode, op *graph.Operation, role string)
 func (co *Compiler) newMutate(ms *mState, m Mutate, role string) error {
 	var m1 Mutate
 	items := make([]Mutate, 0, len(m.Data))
-	trv := co.getRole(role, m.Key)
+	trv := co.getRole(role, m.Ti.Schema, m.Ti.Name, m.Key)
 
 	for k, v := range m.Data {
 		if v[0] != '{' && v[0] != '[' {

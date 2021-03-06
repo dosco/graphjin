@@ -352,14 +352,9 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 			return err
 		}
 
-		tr := co.getRole(role, field.Name)
-
-		if tr.isSkipped(qc.Type) {
-			sel.SkipRender = SkipTypeUserNeeded
-		} else {
-			if err := tr.isBlocked(qc.SType, field.Name); err != nil {
-				return err
-			}
+		tr, err := co.setSelectorRole(role, field.Name, qc, sel)
+		if err != nil {
+			return err
 		}
 
 		co.setLimit(tr, qc, sel)
@@ -373,7 +368,7 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 		}
 
 		// Order is important AddFilters must come after compileArgs
-		if un := addFilters(qc, &sel.Where, tr); un && role == "anon" {
+		if userNeeded := addFilters(qc, &sel.Where, tr); userNeeded && role == "anon" {
 			sel.SkipRender = SkipTypeUserNeeded
 		}
 
@@ -503,7 +498,22 @@ func (co *Compiler) setSingular(fieldName string, sel *Select) {
 	}
 }
 
+func (co *Compiler) setSelectorRole(role, fieldName string, qc *QCode, sel *Select) (trval, error) {
+	tr := co.getRole(role, sel.Ti.Schema, sel.Ti.Name, fieldName)
+
+	if tr.isBlocked(qc.SType) {
+		if qc.SType != QTQuery {
+			return tr, fmt.Errorf("%s blocked: %s (role: %s)", qc.SType, fieldName, role)
+		}
+		sel.SkipRender = SkipTypeUserNeeded
+	}
+	return tr, nil
+}
+
 func (co *Compiler) setLimit(tr trval, qc *QCode, sel *Select) {
+	if sel.Paging.Limit != 0 {
+		return
+	}
 	// Use limit from table role config
 	if l := tr.limit(qc.Type); l != 0 {
 		sel.Paging.Limit = l
@@ -621,6 +631,7 @@ func (co *Compiler) compileDirectives(qc *QCode, sel *Select, dirs []graph.Direc
 
 		case "object":
 			sel.Singular = true
+			sel.Paging.Limit = 1
 		}
 
 		if err != nil {
