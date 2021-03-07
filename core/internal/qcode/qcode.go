@@ -1147,13 +1147,18 @@ func compileFilter(s *sdata.DBSchema, ti sdata.DBTable, filter []string, isJSON 
 		// returning a nil 'f' this needs to be fixed
 
 		// TODO: Invalid where clauses such as missing op (eg. eq) also fail silently
+
 		if fl == nil {
-			fl = f
-		} else {
-			fl = newExpOp(OpAnd)
-			fl.Children = append(fl.Children, f)
+			if len(filter) == 1 {
+				fl = f
+				continue
+			} else {
+				fl = newExpOp(OpAnd)
+			}
 		}
+		fl.Children = append(fl.Children, f)
 	}
+
 	return fl, needsUser, nil
 }
 

@@ -252,11 +252,9 @@ type graphResult struct {
 func (s *DBSchema) between(from, to []edgeInfo, through string) (*graphResult, error) {
 	for _, f := range from {
 		for _, t := range to {
-			res, err := s.pickPath(f, t, through)
-			if err != nil {
+			if res, err := s.pickPath(f, t, through); err != nil {
 				return nil, err
-			}
-			if res != nil {
+			} else if res != nil {
 				return res, nil
 			}
 		}
@@ -265,24 +263,16 @@ func (s *DBSchema) between(from, to []edgeInfo, through string) (*graphResult, e
 }
 
 func (s *DBSchema) pickPath(f, t edgeInfo, through string) (*graphResult, error) {
+	var err error
+
 	fn := f.nodeID
 	tn := t.nodeID
 	paths := s.rg.AllPaths(fn, tn)
 
 	if through != "" {
-		var npaths [][]int32
-		v, ok := s.tindex[(s.DBSchema() + ":" + through)]
-		if !ok {
-			return nil, ErrThoughNodeNotFound
+		if paths, err = s.pickThroughPath(paths, through); err != nil {
+			return nil, err
 		}
-		for i := range paths {
-			for j := range paths[i] {
-				if paths[i][j] == v.nodeID {
-					npaths = append(npaths, paths[i])
-				}
-			}
-		}
-		paths = npaths
 	}
 
 	for _, nodes := range paths {
@@ -302,7 +292,7 @@ func (s *DBSchema) pickPath(f, t edgeInfo, through string) (*graphResult, error)
 			fn := nodes[i-1]
 			tn := nodes[i]
 			lines := s.rg.GetEdges(fn, tn)
-			// printLines(lines)
+			// s.printLines(lines)
 
 			switch i {
 			case 1:
@@ -327,6 +317,23 @@ func (s *DBSchema) pickPath(f, t edgeInfo, through string) (*graphResult, error)
 	}
 
 	return nil, nil
+}
+
+func (s *DBSchema) pickThroughPath(paths [][]int32, through string) ([][]int32, error) {
+	var npaths [][]int32
+	v, ok := s.tindex[(s.DBSchema() + ":" + through)]
+	if !ok {
+		return nil, ErrThoughNodeNotFound
+	}
+
+	for i := range paths {
+		for j := range paths[i] {
+			if paths[i][j] == v.nodeID {
+				npaths = append(npaths, paths[i])
+			}
+		}
+	}
+	return npaths, nil
 }
 
 func pickLine(lines []util.Edge, ei edgeInfo) *util.Edge {
@@ -361,11 +368,12 @@ func minWeightedLine(lines []util.Edge) *util.Edge {
 	return line
 }
 
-// func printLines(lines []util.Edge) {
+// func (s *DBSchema) printLines(lines []util.Edge) {
 // 	for _, v := range lines {
-// 	for lines.Next() {
-// 		e := (lines.WeightedLine()).(TEdge)
-// 		fmt.Printf("- (%d) %d -> %d\n", e.ID(), e.From().ID(), e.To().ID())
+// 		e := s.ae[v.ID]
+// 		f := s.tables[e.From]
+// 		t := s.tables[e.To]
+// 		fmt.Printf("- (%d) %s %d -> %s %d\n", v.ID, f.Name, e.From, t.Name, e.To)
 // 	}
-// 	lines.Reset()
+// 	fmt.Println("---")
 // }

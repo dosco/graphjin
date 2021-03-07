@@ -98,6 +98,12 @@ func (gj *GraphJin) Subscribe(
 		role = "anon"
 	}
 
+	if role == "user" && gj.abacEnabled {
+		if role, err = gj.executeRoleQuery(c, nil); err != nil {
+			return nil, err
+		}
+	}
+
 	v, _ := gj.subs.LoadOrStore((name + role), &sub{
 		name: name,
 		role: role,
