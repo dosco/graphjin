@@ -147,6 +147,30 @@ func (gj *GraphJin) initCompilers() error {
 	return nil
 }
 
+func (gj *GraphJin) executeRoleQuery(c context.Context, conn *sql.Conn) (string, error) {
+	var role string
+	var ar args
+	var err error
+
+	if conn == nil {
+		if conn, err = gj.db.Conn(c); err != nil {
+			return role, err
+		}
+		defer conn.Close()
+	}
+
+	if c.Value(UserIDKey) == nil {
+		return "anon", nil
+	}
+
+	if ar, err = gj.roleQueryArgList(c); err != nil {
+		return "", err
+	}
+
+	err = conn.QueryRowContext(c, gj.roleStmt, ar.values...).Scan(&role)
+	return role, err
+}
+
 func (c *scontext) execQuery(query string, vars []byte, role string) (qres, error) {
 	res, err := c.resolveSQL(query, vars, role)
 	if err != nil {
@@ -188,7 +212,7 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 		res.role = v.(string)
 
 	} else if c.gj.abacEnabled {
-		res.role, err = c.executeRoleQuery(conn)
+		res.role, err = c.gj.executeRoleQuery(c, conn)
 	}
 
 	if err != nil {
@@ -243,23 +267,6 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 	// }
 
 	return res, nil
-}
-
-func (c *scontext) executeRoleQuery(conn *sql.Conn) (string, error) {
-	var role string
-	var ar args
-	var err error
-
-	if c.Value(UserIDKey) == nil {
-		return "anon", nil
-	}
-
-	if ar, err = c.gj.roleQueryArgList(c); err != nil {
-		return "", err
-	}
-
-	err = conn.QueryRowContext(c, c.gj.roleStmt, ar.values...).Scan(&role)
-	return role, err
 }
 
 func (c *scontext) setLocalUserID(conn *sql.Conn) error {
@@ -355,7 +362,7 @@ func (r *Result) SQL() string {
 func (c *scontext) debugLog(st *stmt) {
 	for _, sel := range st.qc.Selects {
 		if sel.SkipRender == qcode.SkipTypeUserNeeded {
-			c.gj.log.Printf("Field skipped: %s, Requires $user_id or table not added to anon role", sel.FieldName)
+			c.gj.log.Printf("Field skipped, requires $user_id or table not added to anon role: %s", sel.FieldName)
 		}
 	}
 }

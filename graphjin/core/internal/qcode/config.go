@@ -181,16 +181,11 @@ func (co *Compiler) getRole(role, schema, table, field string) trval {
 
 	// For anon roles when a trval is not found return the default trval
 	tr, ok := co.tr[k]
-	if ok {
-		return tr
-	}
-	if role != "anon" {
-		tr.role = role
-	} else {
-		tr = co.c.defTrv
-		tr.role = role
-	}
+	tr.role = role
 
+	if !ok && role == "anon" {
+		return co.c.defTrv
+	}
 	return tr
 }
 
