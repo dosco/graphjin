@@ -1,6 +1,8 @@
 package qcode
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestGetQType(t *testing.T) {
 	type args struct {
@@ -32,9 +34,19 @@ func TestGetQType(t *testing.T) {
 			want: want{QTQuery, "getStuff"},
 		},
 		ts{
+			name: "fragment last, query with name",
+			args: args{gql: `query getStuff { query mutation(id: "query \"test1 '{") { id } subscription }fragment User on users { id name }`},
+			want: want{QTQuery, "getStuff"},
+		},
+		ts{
 			name: "mutation",
 			args: args{gql: `mutation { query mutation(id: "query {") { id } subscription }`},
 			want: want{QTMutation, ""},
+		},
+		ts{
+			name: "subscription",
+			args: args{gql: `subscription { query mutation(id: "query {") { id } subscription }`},
+			want: want{QTSubscription, ""},
 		},
 		ts{
 			name: "default query",
@@ -43,13 +55,60 @@ func TestGetQType(t *testing.T) {
 		},
 		ts{
 			name: "default query with comment",
-			args: args{gql: `# mutation is good 
+			args: args{gql: `# mutation is good
 				query { query mutation(id: "query") { id } subscription }`},
 			want: want{QTQuery, ""},
 		},
 		ts{
 			name: "failed query with comment",
 			args: args{gql: `# query is good query { query mutation(id: "query {{") { id } subscription }`},
+			want: want{QTUnknown, ""},
+		},
+		// tests without space after the op type
+		ts{
+			name: "query without space",
+			args: args{gql: `query{ query mutation(id: "query {") { id } subscription }`},
+			want: want{QTQuery, ""},
+		},
+		ts{
+			name: "query with name, without space",
+			args: args{gql: `query getStuff{ query mutation(id: "query \"test1 '{") { id } subscription }`},
+			want: want{QTQuery, "getStuff"},
+		},
+		ts{
+			name: "fragment first, query with name, without space",
+			args: args{gql: `fragment User on users { id name } query getStuff{ query mutation(id: "query \"test1 '{") { id } subscription }`},
+			want: want{QTQuery, "getStuff"},
+		},
+		ts{
+			name: "fragment last, query with name, without space",
+			args: args{gql: `query getStuff{ query mutation(id: "query \"test1 '{") { id } subscription }fragment User on users { id name }`},
+			want: want{QTQuery, "getStuff"},
+		},
+		ts{
+			name: "mutation without space",
+			args: args{gql: `mutation{ query mutation(id: "query {") { id } subscription }`},
+			want: want{QTMutation, ""},
+		},
+		ts{
+			name: "subscription without space",
+			args: args{gql: `subscription{ query mutation(id: "query {") { id } subscription }`},
+			want: want{QTSubscription, ""},
+		},
+		ts{
+			name: "default query without space",
+			args: args{gql: `{ query mutation(id: "query {") { id } subscription }`},
+			want: want{QTQuery, ""},
+		},
+		ts{
+			name: "default query with comment without space",
+			args: args{gql: `# mutation is good
+				query{ query mutation(id: "query") { id } subscription }`},
+			want: want{QTQuery, ""},
+		},
+		ts{
+			name: "failed query with comment, without space",
+			args: args{gql: `# query is good query{ query mutation(id: "query {{") { id } subscription }`},
 			want: want{QTUnknown, ""},
 		},
 	}
