@@ -163,6 +163,11 @@ func (sc *ServConfig) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 			done <- true
 			run = false
 
+		case "connection_terminate":
+			m.Unsubscribe()
+			done <- true
+			return
+
 		default:
 			fields := []zapcore.Field{
 				zap.String("msg_type", msg.Type),
