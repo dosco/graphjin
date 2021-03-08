@@ -174,7 +174,7 @@ func TestSubscription(t *testing.T) {
 
 	w := sync.WaitGroup{}
 
-	for i := 101; i < 8128; i++ {
+	for i := 101; i < 5000; i++ {
 		w.Add(1)
 		go func(n int) {
 			id := (rand.Intn(100-1) + 1)

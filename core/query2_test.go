@@ -11,6 +11,7 @@ import (
 
 	"github.com/dosco/graphjin/core"
 	"github.com/stretchr/testify/assert"
+	"golang.org/x/sync/errgroup"
 )
 
 func TestQuery(t *testing.T) {
@@ -153,6 +154,59 @@ func TestConfigRoleManagement(t *testing.T) {
 		panic(err)
 	}
 	assert.Empty(t, conf.Roles)
+}
+
+func TestParallelRuns(t *testing.T) {
+	gql := `query {
+		me {
+			id
+			email
+			products {
+				id
+			}
+		}
+	}`
+
+	// TODO: introspection engine has race condition in dev
+	// mode.
+	conf := &core.Config{Production: true, DisableAllowList: true,
+		Tables: []core.Table{
+			{Name: "me", Table: "users"},
+		},
+	}
+
+	err := conf.AddRoleTable("user", "me", core.Query{
+		Filters: []string{"{ id: { eq: $user_id } }"},
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	g := errgroup.Group{}
+
+	for i := 0; i < 10; i++ {
+		x := i
+		g.Go(func() error {
+			for n := 0; n < 10; n++ {
+				gj, err := core.NewGraphJin(conf, db)
+				if err != nil {
+					return fmt.Errorf("%d: %w", x, err)
+				}
+
+				ctx := context.WithValue(context.Background(), core.UserIDKey, x)
+				_, err = gj.GraphQL(ctx, gql, nil, nil)
+				if err != nil {
+					return fmt.Errorf("%d: %w", x, err)
+				}
+				// fmt.Println(x, ">", string(res.Data))
+			}
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		t.Error(err)
+	}
 }
 
 var benchGQL = `query {

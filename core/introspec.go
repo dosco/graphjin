@@ -112,6 +112,10 @@ type intro struct {
 }
 
 func (gj *GraphJin) initGraphQLEgine() error {
+	if gj.prod {
+		return nil
+	}
+
 	engine := graphql.New()
 	in := &intro{
 		Schema:       engine.Schema,

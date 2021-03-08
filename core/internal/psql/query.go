@@ -70,6 +70,8 @@ func (co *Compiler) Compile(w *bytes.Buffer, qc *qcode.QCode) (Metadata, error) 
 		return md, fmt.Errorf("qcode is nil")
 	}
 
+	w.WriteString(`/* action='` + qc.Name + `',controller='graphql',framework='graphjin' */ `)
+
 	switch qc.Type {
 	case qcode.QTQuery:
 		co.CompileQuery(w, qc, &md)

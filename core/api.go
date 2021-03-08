@@ -81,6 +81,7 @@ type GraphJin struct {
 	conf        *Config
 	db          *sql.DB
 	log         *_log.Logger
+	dbtype      string
 	dbinfo      *sdata.DBInfo
 	schema      *sdata.DBSchema
 	allowList   *allow.List
