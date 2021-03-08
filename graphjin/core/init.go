@@ -63,7 +63,6 @@ func (gj *GraphJin) initConfig() error {
 			Name: "user",
 			tm:   make(map[string]*RoleTable),
 		}
-		c.Roles = append(c.Roles, ur)
 		gj.roles["user"] = &ur
 	}
 
@@ -73,7 +72,6 @@ func (gj *GraphJin) initConfig() error {
 			Name: "anon",
 			tm:   make(map[string]*RoleTable),
 		}
-		c.Roles = append(c.Roles, ur)
 		gj.roles["anon"] = &ur
 	}
 

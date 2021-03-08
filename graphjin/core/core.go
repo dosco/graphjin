@@ -62,8 +62,14 @@ type qres struct {
 }
 
 func (gj *GraphJin) initDiscover() error {
+	if gj.conf.DBType == "" {
+		gj.dbtype = "postgres"
+	} else {
+		gj.dbtype = gj.conf.DBType
+	}
+
 	if err := gj._initDiscover(); err != nil {
-		return fmt.Errorf("%s: %w", gj.conf.DBType, err)
+		return fmt.Errorf("%s: %w", gj.dbtype, err)
 	}
 	return nil
 }
@@ -71,16 +77,12 @@ func (gj *GraphJin) initDiscover() error {
 func (gj *GraphJin) _initDiscover() error {
 	var err error
 
-	if gj.conf.DBType == "" {
-		gj.conf.DBType = "postgres"
-	}
-
 	// If gj.dbinfo is not null then it's probably set
 	// for tests
 	if gj.dbinfo == nil {
 		gj.dbinfo, err = sdata.GetDBInfo(
 			gj.db,
-			gj.conf.DBType,
+			gj.dbtype,
 			gj.conf.Blocklist)
 	}
 
@@ -89,7 +91,7 @@ func (gj *GraphJin) _initDiscover() error {
 
 func (gj *GraphJin) initSchema() error {
 	if err := gj._initSchema(); err != nil {
-		return fmt.Errorf("%s: %w", gj.conf.DBType, err)
+		return fmt.Errorf("%s: %w", gj.dbtype, err)
 	}
 	return nil
 }

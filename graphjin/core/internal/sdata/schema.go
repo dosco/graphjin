@@ -97,14 +97,15 @@ func NewDBSchema(
 		if err != nil {
 			return nil, err
 		}
+	}
 
-		// Add aliases to edge index by duplicating
-		// table nodes
-		for _, alias := range aliases[t.Name] {
+	// Add aliases to edge index by duplicating
+	for t, al := range aliases {
+		for _, alias := range al {
 			if _, ok := schema.ei[alias]; ok {
 				continue
 			}
-			if e, ok := schema.ei[t.Name]; ok {
+			if e, ok := schema.ei[t]; ok {
 				schema.ei[alias] = e
 			}
 		}

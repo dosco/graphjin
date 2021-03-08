@@ -55,6 +55,7 @@ type ColKey struct {
 type QCode struct {
 	Type      QType
 	SType     QType
+	Name      string
 	ActionVar string
 	Selects   []Select
 	Vars      Variables
@@ -246,13 +247,13 @@ type Variables map[string]json.RawMessage
 func (co *Compiler) Compile(query []byte, vars Variables, role string) (*QCode, error) {
 	var err error
 
-	qc := QCode{SType: QTQuery, Schema: co.s, Vars: vars}
-	qc.Roots = qc.rootsA[:0]
-
 	op, err := graph.Parse(query, co.c.FragmentFetcher)
 	if err != nil {
 		return nil, err
 	}
+
+	qc := QCode{Name: op.Name, SType: QTQuery, Schema: co.s, Vars: vars}
+	qc.Roots = qc.rootsA[:0]
 
 	switch op.Type {
 	case graph.OpQuery:

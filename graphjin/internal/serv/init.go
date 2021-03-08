@@ -144,11 +144,9 @@ func initDB(servConfig *ServConfig, useDB, useTelemetry bool) (*sql.DB, error) {
 	}
 
 	for i := 1; i < 10; i++ {
-		db, err = sql.Open(dc.driverName, dc.connString)
-		if err != nil {
-			continue
+		if db, err = sql.Open(dc.driverName, dc.connString); err == nil {
+			break
 		}
-
 		time.Sleep(time.Duration(i*100) * time.Millisecond)
 	}
 
@@ -156,6 +154,7 @@ func initDB(servConfig *ServConfig, useDB, useTelemetry bool) (*sql.DB, error) {
 		return nil, fmt.Errorf("unable to open db connection: %v", err)
 	}
 
+	db.SetMaxIdleConns(100)
 	return db, nil
 }
 
