@@ -26,7 +26,25 @@ func GetQType(gql string) (QType, string) {
 			continue
 
 		case b == '{':
-			switch tok {
+			t := tok
+			if s != -1 {
+				if t == "" {
+					t = gql[s:i]
+				} else {
+					n := gql[s:i]
+					if (bc % 2) == 0 {
+						switch t {
+						case "query":
+							return QTQuery, n
+						case "mutation":
+							return QTMutation, n
+						case "subscription":
+							return QTSubscription, n
+						}
+					}
+				}
+			}
+			switch t {
 			case "", "query":
 				return QTQuery, ""
 			case "mutation":

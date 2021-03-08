@@ -139,17 +139,16 @@ func (sc *ServConfig) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 					UserID         interface{} `json:"X-User-ID"`
 				}
 				var x authHeaders
-				if err = json.Unmarshal(msg.Payload.Vars, &x); err != nil {
-					break
-				}
-				if x.UserIDProvider != "" {
-					ctx = context.WithValue(ctx, core.UserIDProviderKey, x.UserIDProvider)
-				}
-				if x.UserRole != "" {
-					ctx = context.WithValue(ctx, core.UserRoleKey, x.UserRole)
-				}
-				if x.UserID != nil {
-					ctx = context.WithValue(ctx, core.UserIDKey, x.UserID)
+				if err = json.Unmarshal(msg.Payload.Vars, &x); err == nil {
+					if x.UserIDProvider != "" {
+						ctx = context.WithValue(ctx, core.UserIDProviderKey, x.UserIDProvider)
+					}
+					if x.UserRole != "" {
+						ctx = context.WithValue(ctx, core.UserRoleKey, x.UserRole)
+					}
+					if x.UserID != nil {
+						ctx = context.WithValue(ctx, core.UserIDKey, x.UserID)
+					}
 				}
 			}
 
@@ -163,6 +162,11 @@ func (sc *ServConfig) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 			m.Unsubscribe()
 			done <- true
 			run = false
+
+		case "connection_terminate":
+			m.Unsubscribe()
+			done <- true
+			return
 
 		default:
 			fields := []zapcore.Field{
