@@ -88,7 +88,7 @@ func (c *compilerContext) renderUnionColumn(sel, csel *qcode.Select) {
 		usel := &c.qc.Selects[cid]
 
 		c.w.WriteString(`WHEN `)
-		colWithTableID(c.w, sel.Table, sel.ID, csel.Rel.Right.Col.Name)
+		colWithTableID(c.w, sel.Table, sel.ID, csel.Rel.Left.Col.FKeyCol)
 		c.w.WriteString(` = `)
 		c.squoted(usel.Table)
 		c.w.WriteString(` THEN `)

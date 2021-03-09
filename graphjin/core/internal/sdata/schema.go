@@ -158,7 +158,12 @@ func (s *DBSchema) addPolymorphicRel(t DBTable) error {
 		return err
 	}
 
-	pc, err := pt.GetColumn(t.PrimaryCol.FKeyCol)
+	// pc, err := pt.GetColumn(t.PrimaryCol.FKeyCol)
+	// if err != nil {
+	// 	return err
+	// }
+
+	pc, err := pt.GetColumn(t.SecondaryCol.Name)
 	if err != nil {
 		return err
 	}
@@ -245,18 +250,31 @@ func (s *DBSchema) addVirtual(vt VirtualTable) error {
 			ID:         -1,
 			Schema:     t.Schema,
 			Table:      t.Name,
-			Name:       vt.FKeyColumn,
+			Name:       idCol.Name,
 			Type:       idCol.Type,
 			FKeySchema: typeCol.Schema,
 			FKeyTable:  typeCol.Table,
 			FKeyCol:    typeCol.Name,
 		}
 
+		fIDCol, ok := t.getColumn(vt.FKeyColumn)
+		if !ok {
+			continue
+		}
+
+		col2 := DBColumn{
+			ID:     -1,
+			Schema: t.Schema,
+			Table:  t.Name,
+			Name:   fIDCol.Name,
+		}
+
 		pt := DBTable{
-			Name:       vt.Name,
-			Schema:     t.Schema,
-			Type:       "virtual",
-			PrimaryCol: col1,
+			Name:         vt.Name,
+			Schema:       t.Schema,
+			Type:         "virtual",
+			PrimaryCol:   col1,
+			SecondaryCol: col2,
 		}
 		s.addNode(pt)
 	}

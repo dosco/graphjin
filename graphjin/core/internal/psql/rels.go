@@ -44,11 +44,11 @@ func (c *compilerContext) renderRel(
 		colWithTableID(c.w, rel.Right.Col.Table, pid, rel.Right.Col.Name)
 
 	case sdata.RelPolymorphic:
-		colWithTable(c.w, ti.Name, rel.Left.Col.Name)
+		colWithTable(c.w, ti.Name, rel.Right.Col.Name)
 		c.w.WriteString(`) = (`)
 		colWithTableID(c.w, rel.Left.Col.Table, pid, rel.Left.Col.Name)
 		c.w.WriteString(`) AND (`)
-		colWithTableID(c.w, rel.Left.Col.Table, pid, rel.Right.Col.Name)
+		colWithTableID(c.w, rel.Left.Col.Table, pid, rel.Left.Col.FKeyCol)
 		c.w.WriteString(`) = (`)
 		c.squoted(ti.Name)
 

@@ -173,7 +173,7 @@ func (co *Compiler) AddRole(role, schema, table string, trc TRConfig) error {
 func (co *Compiler) getRole(role, schema, table, field string) trval {
 	var k string
 
-	if co.s.IsAlias(schema, field) {
+	if co.s.IsAlias(field) {
 		k = (role + ":" + schema + ":" + field)
 	} else {
 		k = (role + ":" + schema + ":" + table)

@@ -43,14 +43,14 @@ func (gj *GraphJin) prepareRoleStmt() error {
 	io.WriteString(w, `) THEN `)
 
 	io.WriteString(w, `(SELECT (CASE`)
-	for _, role := range gj.conf.Roles {
+	for roleName, role := range gj.roles {
 		if role.Match == "" {
 			continue
 		}
 		io.WriteString(w, ` WHEN `)
 		io.WriteString(w, role.Match)
 		io.WriteString(w, ` THEN '`)
-		io.WriteString(w, role.Name)
+		io.WriteString(w, roleName)
 		io.WriteString(w, `'`)
 	}
 
@@ -100,15 +100,8 @@ func (gj *GraphJin) initAllowList() error {
 			vars:  []byte(v.Vars),
 		}
 
-		switch q.op {
-		case qcode.QTQuery, qcode.QTSubscription:
-			gj.queries[(v.Name + "user")] = &cquery{q: q}
-			gj.queries[(v.Name + "anon")] = &cquery{q: q}
-
-		case qcode.QTMutation:
-			for _, role := range gj.conf.Roles {
-				gj.queries[(v.Name + role.Name)] = &cquery{q: q}
-			}
+		for roleName := range gj.roles {
+			gj.queries[(v.Name + roleName)] = &cquery{q: q}
 		}
 	}
 
