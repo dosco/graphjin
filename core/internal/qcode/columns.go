@@ -145,8 +145,11 @@ func (co *Compiler) addRelColumns(qc *QCode, sel *Select, rel sdata.DBRel) error
 		sel.SkipRender = SkipTypeRemote
 
 	case sdata.RelPolymorphic:
+		typeCol := rel.Left.Col
+		typeCol.Name = rel.Left.Col.FKeyCol
+
 		psel.addCol(Column{Col: rel.Left.Col}, true)
-		psel.addCol(Column{Col: rel.Right.Col}, true)
+		psel.addCol(Column{Col: typeCol}, true)
 
 	case sdata.RelRecursive:
 		sel.addCol(Column{Col: rel.Left.Col}, true)

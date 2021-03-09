@@ -33,9 +33,8 @@ func (s *DBSchema) addNode(t DBTable) int32 {
 
 func (s *DBSchema) addAliases(t DBTable, nodeID int32, aliases []string) {
 	for _, al := range aliases {
-		k := (t.Schema + ":" + al)
-		s.tindex[k] = nodeInfo{nodeID}
-		s.ai[k] = nodeInfo{nodeID}
+		s.tindex[(t.Schema + ":" + al)] = nodeInfo{nodeID}
+		s.ai[al] = nodeInfo{nodeID}
 	}
 }
 
@@ -48,8 +47,8 @@ func (s *DBSchema) GetAliases() map[string]DBTable {
 	return ts
 }
 
-func (s *DBSchema) IsAlias(schema, name string) bool {
-	_, ok := s.ai[(schema + ":" + name)]
+func (s *DBSchema) IsAlias(name string) bool {
+	_, ok := s.ai[name]
 	return ok
 }
 
