@@ -149,7 +149,7 @@ func (gj *GraphJin) initCompilers() error {
 	return nil
 }
 
-func (gj *GraphJin) executeRoleQuery(c context.Context, conn *sql.Conn) (string, error) {
+func (gj *GraphJin) executeRoleQuery(c context.Context, conn *sql.Conn, md psql.Metadata, vars []byte, rc *ReqConfig) (string, error) {
 	var role string
 	var ar args
 	var err error
@@ -165,7 +165,7 @@ func (gj *GraphJin) executeRoleQuery(c context.Context, conn *sql.Conn) (string,
 		return "anon", nil
 	}
 
-	if ar, err = gj.roleQueryArgList(c); err != nil {
+	if ar, err = gj.argList(c, md, vars, rc); err != nil {
 		return "", err
 	}
 
@@ -214,7 +214,7 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 		res.role = v.(string)
 
 	} else if c.gj.abacEnabled {
-		res.role, err = c.gj.executeRoleQuery(c, conn)
+		res.role, err = c.gj.executeRoleQuery(c, conn, c.gj.roleStmtMD, vars, c.rc)
 	}
 
 	if err != nil {

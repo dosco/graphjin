@@ -124,48 +124,6 @@ func parseVarVal(v json.RawMessage) interface{} {
 	}
 }
 
-func (gj *GraphJin) roleQueryArgList(c context.Context) (args, error) {
-	ar := args{cindx: -1}
-	params := gj.roleStmtMD.Params()
-	vl := make([]interface{}, len(params))
-
-	for i, p := range params {
-		switch p.Name {
-		case "user_id":
-			if v := c.Value(UserIDKey); v != nil {
-				switch v1 := v.(type) {
-				case string:
-					vl[i] = v1
-				case int:
-					vl[i] = v1
-				case float64:
-					vl[i] = int(v1)
-				default:
-					return ar, fmt.Errorf("user_id must be an integer or a string: %T", v)
-				}
-			} else {
-				return ar, argErr(p)
-			}
-
-		case "user_id_provider":
-			if v := c.Value(UserIDProviderKey); v != nil {
-				vl[i] = v.(string)
-			} else {
-				return ar, argErr(p)
-			}
-
-		case "user_role":
-			if v := c.Value(UserRoleKey); v != nil {
-				vl[i] = v.(string)
-			} else {
-				return ar, argErr(p)
-			}
-		}
-	}
-	ar.values = vl
-	return ar, nil
-}
-
 func argErr(p psql.Param) error {
 	return fmt.Errorf("required variable '%s' of type '%s' must be set", p.Name, p.Type)
 }
