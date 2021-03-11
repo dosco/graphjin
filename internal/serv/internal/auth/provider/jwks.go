@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	jwt "github.com/dgrijalva/jwt-go"
@@ -13,8 +14,10 @@ import (
 )
 
 type keychainCache struct {
-	jwksURL  string
-	keyCache *jwk.AutoRefresh //local in-memory cache to store keys
+	jwksURL     string
+	keyCache    *jwk.AutoRefresh //local in-memory cache to store keys
+	lastRefresh int64
+	semaphore   int32
 }
 
 func newKeychainCache(jwksURL string, refreshInterval, minRefreshInterval int) *keychainCache {
@@ -45,6 +48,39 @@ func (k *keychainCache) getKey(kid string) (interface{}, error) {
 		}
 		return rawkey, nil
 	}
+
+	now := time.Now().UTC()
+	t := atomic.LoadInt64(&k.lastRefresh)
+	last := time.Unix(t, 0).UTC()
+	elapsed := now.Sub(last)
+	// only 1 refresh per minute, may be this has to be a config param
+	if elapsed > time.Duration(time.Minute*1) {
+		s := atomic.CompareAndSwapInt32(&k.semaphore, 0, 1)
+		if s {
+			// try to refresh
+			defer atomic.StoreInt32(&k.semaphore, 0)
+			set, err = k.keyCache.Refresh(context.TODO(), k.jwksURL)
+			if err != nil {
+				return nil, fmt.Errorf("failed to refresh JWKS: %w", err)
+			}
+			atomic.StoreInt64(&k.lastRefresh, now.Unix())
+		} else {
+			// retry to fetch
+			set, err = k.keyCache.Fetch(context.TODO(), k.jwksURL)
+			if err != nil {
+				return nil, fmt.Errorf("failed to fetch JWKS: %w", err)
+			}
+		}
+		if key, found := set.LookupKeyID(kid); found {
+			var rawkey interface{}
+			err := key.Raw(&rawkey)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create key: %w", err)
+			}
+			return rawkey, nil
+		}
+	}
+
 	return nil, errors.New("key not found")
 }
 
