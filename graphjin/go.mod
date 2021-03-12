@@ -32,6 +32,7 @@ require (
 	github.com/gosimple/slug v1.9.0
 	github.com/jackc/pgproto3/v2 v2.0.4 // indirect
 	github.com/jackc/pgx/v4 v4.8.1
+	github.com/lestrrat-go/jwx v1.1.3
 	github.com/mitchellh/mapstructure v1.4.0
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/openzipkin/zipkin-go v0.2.4
@@ -49,7 +50,7 @@ require (
 	go.opencensus.io v0.22.5
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.16.0
-	golang.org/x/crypto v0.0.0-20201208171446-5f87f3452ae9
+	golang.org/x/crypto v0.0.0-20201217014255-9d1352758620
 	golang.org/x/lint v0.0.0-20200302205851-738671d3881b
 	golang.org/x/perf v0.0.0-20201207232921-bdcc6220ee90
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
