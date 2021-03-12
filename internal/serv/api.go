@@ -102,37 +102,37 @@ type Serv struct {
 	} `mapstructure:"rate_limiter"`
 }
 
-// Auth struct contains authentication related config values used by the GraphJin service
-type Auth struct {
-	Name          string
-	Type          string
-	Cookie        string
-	CredsInHeader bool `mapstructure:"creds_in_header"`
-	Rails         struct {
-		Version       string
-		SecretKeyBase string `mapstructure:"secret_key_base"`
-		URL           string
-		Password      string
-		MaxIdle       int `mapstructure:"max_idle"`
-		MaxActive     int `mapstructure:"max_active"`
-		Salt          string
-		SignSalt      string `mapstructure:"sign_salt"`
-		AuthSalt      string `mapstructure:"auth_salt"`
-	}
+// // Auth struct contains authentication related config values used by the GraphJin service
+// type Auth struct {
+// 	Name          string
+// 	Type          string
+// 	Cookie        string
+// 	CredsInHeader bool `mapstructure:"creds_in_header"`
+// 	Rails         struct {
+// 		Version       string
+// 		SecretKeyBase string `mapstructure:"secret_key_base"`
+// 		URL           string
+// 		Password      string
+// 		MaxIdle       int `mapstructure:"max_idle"`
+// 		MaxActive     int `mapstructure:"max_active"`
+// 		Salt          string
+// 		SignSalt      string `mapstructure:"sign_salt"`
+// 		AuthSalt      string `mapstructure:"auth_salt"`
+// 	}
 
-	JWT struct {
-		Provider   string
-		Secret     string
-		PubKeyFile string `mapstructure:"public_key_file"`
-		PubKeyType string `mapstructure:"public_key_type"`
-	}
+// 	JWT struct {
+// 		Provider   string
+// 		Secret     string
+// 		PubKeyFile string `mapstructure:"public_key_file"`
+// 		PubKeyType string `mapstructure:"public_key_type"`
+// 	}
 
-	Header struct {
-		Name   string
-		Value  string
-		Exists bool
-	}
-}
+// 	Header struct {
+// 		Name   string
+// 		Value  string
+// 		Exists bool
+// 	}
+// }
 
 // Action struct contains config values for a GraphJin service action
 type Action struct {
