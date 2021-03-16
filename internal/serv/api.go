@@ -47,6 +47,7 @@ type Serv struct {
 	SeedFile       string   `mapstructure:"seed_file"`
 	MigrationsPath string   `mapstructure:"migrations_path"`
 	AllowedOrigins []string `mapstructure:"cors_allowed_origins"`
+	AllowedHeaders []string `mapstructure:"cors_allowed_headers"`
 	DebugCORS      bool     `mapstructure:"cors_debug"`
 	APIPath        string   `mapstructure:"api_path"`
 	CacheControl   string   `mapstructure:"cache_control"`
