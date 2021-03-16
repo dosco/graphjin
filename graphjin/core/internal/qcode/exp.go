@@ -284,11 +284,12 @@ func setListVal(ex *Exp, node *graph.Node) {
 
 func setExpColName(s *sdata.DBSchema, ti sdata.DBTable, ex *Exp, node *graph.Node) error {
 	var list []string
+	var err error
 
-	for n := node.Parent; n != nil; n = n.Parent {
-		if n.Type != graph.NodeObj {
-			continue
-		}
+	for n := node; n != nil; n = n.Parent {
+		// if n.Type != graph.NodeObj {
+		// 	continue
+		// }
 		if n.Name != "" {
 			k := n.Name
 			if k == "and" || k == "or" || k == "not" ||
@@ -300,46 +301,62 @@ func setExpColName(s *sdata.DBSchema, ti sdata.DBTable, ex *Exp, node *graph.Nod
 	}
 
 	switch len(list) {
-	case 0:
+	case 1:
 		if col, err := ti.GetColumn(node.Name); err == nil {
 			ex.Col = col
 		} else {
 			return err
 		}
 
-	case 1:
+	case 2:
 		if col, err := ti.GetColumn(list[0]); err == nil {
 			ex.Col = col
-		} else {
-			return err
+			return nil
 		}
+		fallthrough
 
 	default:
-		prev := ti.Name
+		var prev, curr string
+		prev = ti.Name
+
 		for i := 0; i < len(list)-1; i++ {
-			curr := list[i]
+			curr = list[i]
 
 			if curr == ti.Name {
 				continue
 				// return fmt.Errorf("selector table not allowed in where: %s", ti.Name)
 			}
 
-			paths, err := s.FindPath(curr, prev, "")
-			if err != nil {
-				return graphError(err, curr, prev, "")
+			var paths []sdata.TPath
+			paths, err = s.FindPath(curr, prev, "")
+			if err == nil {
+				ex.Rels = append(ex.Rels, sdata.PathToRel(paths[0]))
+				prev = curr
+			} else {
+				break
 			}
-			ex.Rels = append(ex.Rels, sdata.PathToRel(paths[0]))
-			prev = curr
+
+			// return graphError(err, curr, prev, "")
 		}
+
+		if len(ex.Rels) == 0 {
+			return graphError(err, curr, prev, "")
+		}
+
 		rel := ex.Rels[len(ex.Rels)-1]
-		if col, err := rel.Left.Ti.GetColumn(list[len(list)-1]); err == nil {
-			ex.Col = col
-		} else {
-			return err
+
+		for i := len(list) - 1; i > 0; i-- {
+			var col sdata.DBColumn
+			cn := list[i]
+
+			if col, err = rel.Left.Ti.GetColumn(cn); err == nil {
+				ex.Col = col
+				break
+			}
 		}
 	}
 
-	return nil
+	return err
 }
 
 func (ast *aexpst) pushChildren(exp *Exp, node *graph.Node) {
