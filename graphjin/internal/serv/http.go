@@ -43,8 +43,13 @@ func apiV1Handler(sc *ServConfig) http.Handler {
 	}
 
 	if len(sc.conf.AllowedOrigins) != 0 {
+		allowedHeaders := []string{"Origin", "Accept", "Content-Type", "X-Requested-With", "Authorization"}
+		if len(sc.conf.AllowedHeaders) != 0 {
+			allowedHeaders = sc.conf.AllowedHeaders
+		}
 		c := cors.New(cors.Options{
 			AllowedOrigins:   sc.conf.AllowedOrigins,
+			AllowedHeaders:   allowedHeaders,
 			AllowCredentials: true,
 			Debug:            sc.conf.DebugCORS,
 		})

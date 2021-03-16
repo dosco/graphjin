@@ -46,6 +46,13 @@ secret_key: supercalifajalistics
 # characters (i.e.: http://*.domain.com).
 cors_allowed_origins: ["*"]
 
+# CORS: A list of headers the client is allowed to use with cross-domain
+# requests. If the special "*" value is present in the list, all headers will be
+# allowed. Default value is ["Origin", "Accept", "Content-Type",
+# "X-Requested-With", "Authorization"]. Even if the list is empty, the "Origin"
+# is always appended to the list.
+cors_allowed_headers: []
+
 # Debug Cross Origin Resource Sharing requests
 cors_debug: false
 
