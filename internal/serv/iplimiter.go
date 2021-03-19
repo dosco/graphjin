@@ -17,10 +17,10 @@ func init() {
 	ipCache, _ = cache.NewCache(cache.MaxKeys(10), cache.TTL(time.Minute*5))
 }
 
-func getIPLimiter(ip string) *rate.Limiter {
+func getIPLimiter(ip string, limit float64, bucket int) *rate.Limiter {
 	v, exists := ipCache.Get(ip)
 	if !exists {
-		limiter := rate.NewLimiter(1, 3)
+		limiter := rate.NewLimiter(rate.Limit(limit), bucket)
 		ipCache.Set(ip, limiter, 0)
 		return limiter
 	}
@@ -48,7 +48,7 @@ func rateLimiter(sc *ServConfig, h http.Handler) http.Handler {
 			return
 		}
 
-		if !getIPLimiter(ip).Allow() {
+		if !getIPLimiter(ip, sc.conf.RateLimiter.Rate, sc.conf.RateLimiter.Bucket).Allow() {
 			http.Error(w, "429 Too Many Requests", http.StatusTooManyRequests)
 			return
 		}
