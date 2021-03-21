@@ -130,6 +130,18 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 		c.w.WriteString(`) `)
 	}
 
+	op := ex.Op
+	if op == qcode.OpAutoEq {
+		switch {
+		case ex.Col.Array && ex.Type == qcode.ValList:
+			op = qcode.OpContainedIn
+		case ex.Col.Array:
+			op = qcode.OpContains
+		case ex.Type == qcode.ValList:
+			op = qcode.OpIn
+		}
+	}
+
 	switch ex.Op {
 	case qcode.OpEquals:
 		c.w.WriteString(`=`)

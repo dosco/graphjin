@@ -92,10 +92,10 @@ set_user_id: false
 # Bucket a burst of at most 'bucket' number of events.
 # ip_header sets the header that contains the client ip.
 # https://en.wikipedia.org/wiki/Token_bucket
-rate_limiter:
-  rate: 100
-  bucket: 20
-  ip_header: X-Forwarded-For
+# rate_limiter:
+#   rate: 100
+#   bucket: 20
+#   ip_header: X-Forwarded-For
 
 # Enable additional debugging logs
 debug: true

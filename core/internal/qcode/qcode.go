@@ -187,6 +187,7 @@ const (
 	OpDistinct
 	OpEqualsTrue
 	OpNotEqualsTrue
+	OpAutoEq
 )
 
 type ValType int8
