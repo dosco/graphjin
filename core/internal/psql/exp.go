@@ -142,7 +142,7 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 		}
 	}
 
-	switch ex.Op {
+	switch op {
 	case qcode.OpEquals:
 		c.w.WriteString(`=`)
 	case qcode.OpNotEquals:
