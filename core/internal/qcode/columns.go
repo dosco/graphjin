@@ -118,7 +118,7 @@ func (co *Compiler) addColumns(qc *QCode, sel *Select) error {
 	if len(sel.Joins) == 0 {
 		rel = sel.Rel
 	} else {
-		rel = sel.Joins[0]
+		rel = sel.Joins[0].Rel
 	}
 	return co.addRelColumns(qc, sel, rel)
 }

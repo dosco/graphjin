@@ -16,7 +16,7 @@ func (co *Compiler) isFunction(sel *Select, fname string) (Function, bool, error
 	case fname == "search_rank":
 		fn.Name = "search_rank"
 
-		if _, ok := sel.ArgMap["search"]; !ok {
+		if _, ok := sel.Args["search"]; !ok {
 			return fn, false, fmt.Errorf("no search defined: %s", fname)
 		}
 
@@ -24,7 +24,7 @@ func (co *Compiler) isFunction(sel *Select, fname string) (Function, bool, error
 		fn.Name = "search_headline"
 		cn = fname[16:]
 
-		if _, ok := sel.ArgMap["search"]; !ok {
+		if _, ok := sel.Args["search"]; !ok {
 			return fn, false, fmt.Errorf("no search defined: %s", fname)
 		}
 

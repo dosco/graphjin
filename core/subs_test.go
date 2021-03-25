@@ -66,7 +66,6 @@ func Example_subscription() {
 }
 
 func Example_subscriptionWithCursor() {
-
 	// query to fetch existing chat messages
 	gql1 := `query {
 		chats(first: 3, after: $cursor) {

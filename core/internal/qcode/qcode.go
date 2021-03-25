@@ -77,7 +77,7 @@ type Select struct {
 	FieldName  string
 	Cols       []Column
 	BCols      []Column
-	ArgMap     map[string]Arg
+	Args       map[string]Arg
 	Funcs      []Function
 	Where      Filter
 	OrderBy    []OrderBy
@@ -88,7 +88,7 @@ type Select struct {
 	SkipRender SkipType
 	Ti         sdata.DBTable
 	Rel        sdata.DBRel
-	Joins      []sdata.DBRel
+	Joins      []Join
 	order      Order
 	through    string
 }
@@ -109,18 +109,47 @@ type Filter struct {
 	*Exp
 }
 
+// type Exp struct {
+// 	Op        ExpOp
+// 	Table     string
+// 	Rels      []sdata.DBRel
+// 	Col       sdata.DBColumn
+// 	Type      ValType
+// 	Val       string
+// 	ValCol    sdata.DBColumn
+// 	ListType  ValType
+// 	ListVal   []string
+// 	Children  []*Exp
+// 	childrenA [5]*Exp
+// 	Path      []string
+// }
+
 type Exp struct {
-	Op        ExpOp
-	Table     string
-	Rels      []sdata.DBRel
-	Col       sdata.DBColumn
-	Type      ValType
-	Val       string
-	ListType  ValType
-	ListVal   []string
+	Op    ExpOp
+	Joins []Join
+
+	Left struct {
+		ID    int32
+		Table string
+		Col   sdata.DBColumn
+	}
+	Right struct {
+		ValType  ValType
+		Val      string
+		ID       int32
+		Table    string
+		Col      sdata.DBColumn
+		ListType ValType
+		ListVal  []string
+		Path     []string
+	}
 	Children  []*Exp
 	childrenA [5]*Exp
-	Path      []string
+}
+
+type Join struct {
+	Filter *Exp
+	Rel    sdata.DBRel
 }
 
 type Arg struct {
@@ -181,13 +210,13 @@ const (
 	OpHasKeyAny
 	OpHasKeyAll
 	OpIsNull
+	OpIsNotNull
 	OpTsQuery
 	OpFalse
 	OpNotDistinct
 	OpDistinct
 	OpEqualsTrue
 	OpNotEqualsTrue
-	OpAutoEq
 )
 
 type ValType int8
@@ -199,7 +228,6 @@ const (
 	ValList
 	ValVar
 	ValNone
-	ValRef
 )
 
 type AggregrateOp int8
@@ -388,6 +416,10 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 			}
 		}
 
+		// Compute and set the relevant where clause required to join
+		// this table with its parent
+		co.setRelFilters(qc, sel)
+
 		if err := co.validateSelect(sel); err != nil {
 			return err
 		}
@@ -450,8 +482,15 @@ func (co *Compiler) addRelInfo(
 		}
 		sel.Rel = sdata.PathToRel(paths[0])
 
-		for _, p := range paths[1:] {
-			sel.Joins = append(sel.Joins, sdata.PathToRel(p))
+		for i, p := range paths[1:] {
+			rel := sdata.PathToRel(p)
+			var pid int32
+			if i == 0 {
+				pid = sel.ParentID
+			} else {
+				pid = -1
+			}
+			sel.Joins = append(sel.Joins, Join{Rel: rel, Filter: buildFilter(rel, pid)})
 		}
 	}
 
@@ -478,6 +517,168 @@ func (co *Compiler) addRelInfo(
 
 	co.setSingular(field.Name, sel)
 	return nil
+}
+
+func (co *Compiler) setRelFilters(qc *QCode, sel *Select) {
+	rel := sel.Rel
+	pid := sel.ParentID
+
+	if len(sel.Joins) != 0 {
+		pid = -1
+	}
+
+	switch rel.Type {
+	case sdata.RelOneToOne, sdata.RelOneToMany:
+		setFilter(&sel.Where, buildFilter(rel, pid))
+
+	case sdata.RelEmbedded:
+		setFilter(&sel.Where, buildFilter(rel, pid))
+
+	case sdata.RelPolymorphic:
+		pid = qc.Selects[sel.ParentID].ParentID
+		ex := newExpOp(OpAnd)
+
+		ex1 := newExpOp(OpEquals)
+		ex1.Left.Table = sel.Ti.Name
+		ex1.Left.Col = rel.Right.Col
+		ex1.Right.ID = pid
+		ex1.Right.Col = rel.Left.Col
+
+		ex2 := newExpOp(OpEquals)
+		ex2.Left.ID = pid
+		ex2.Left.Col.Table = rel.Left.Col.Table
+		ex2.Left.Col.Name = rel.Left.Col.FKeyCol
+		ex2.Right.ValType = ValStr
+		ex2.Right.Val = sel.Ti.Name
+
+		ex.Children = []*Exp{ex1, ex2}
+		setFilter(&sel.Where, ex)
+
+	case sdata.RelRecursive:
+		rcte := "__rcte_" + rel.Right.Ti.Name
+		ex := newExpOp(OpAnd)
+		ex1 := newExpOp(OpIsNotNull)
+		ex2 := newExp()
+		ex3 := newExp()
+
+		v := sel.Args["find"]
+		switch v.Val {
+		case "parents", "parent":
+			ex1.Left.Table = rcte
+			ex1.Left.Col = rel.Left.Col
+			switch {
+			case !rel.Left.Col.Array && rel.Right.Col.Array:
+				ex2.Op = OpNotIn
+				ex2.Left.Table = rcte
+				ex2.Left.Col = rel.Left.Col
+				ex2.Right.Table = rcte
+				ex2.Right.Col = rel.Right.Col
+
+				ex3.Op = OpIn
+				ex3.Left.Table = rcte
+				ex3.Left.Col = rel.Left.Col
+				ex3.Right.Col = rel.Right.Col
+
+			case rel.Left.Col.Array && !rel.Right.Col.Array:
+				ex2.Op = OpNotIn
+				ex2.Left.Table = rcte
+				ex2.Left.Col = rel.Right.Col
+				ex2.Right.Table = rcte
+				ex2.Right.Col = rel.Left.Col
+
+				ex3.Op = OpIn
+				ex3.Left.Col = rel.Right.Col
+				ex3.Right.Table = rcte
+				ex3.Right.Col = rel.Left.Col
+
+			default:
+				ex2.Op = OpNotEquals
+				ex2.Left.Table = rcte
+				ex2.Left.Col = rel.Left.Col
+				ex2.Right.Table = rcte
+				ex2.Right.Col = rel.Right.Col
+
+				ex3.Op = OpEquals
+				ex3.Left.Col = rel.Right.Col
+				ex3.Right.Table = rcte
+				ex3.Right.Col = rel.Left.Col
+			}
+
+		default:
+			ex1.Left.Col = rel.Left.Col
+			switch {
+			case !rel.Left.Col.Array && rel.Right.Col.Array:
+				ex2.Op = OpNotIn
+				ex2.Left.Col = rel.Left.Col
+				ex2.Right.Col = rel.Right.Col
+
+				ex3.Op = OpIn
+				ex3.Left.Col = rel.Left.Col
+				ex3.Right.Table = rcte
+				ex3.Right.Col = rel.Right.Col
+
+			case rel.Left.Col.Array && !rel.Right.Col.Array:
+				ex2.Op = OpNotIn
+				ex2.Left.Col = rel.Right.Col
+				ex2.Right.Col = rel.Left.Col
+
+				ex3.Op = OpIn
+				ex3.Left.Table = rcte
+				ex3.Left.Col = rel.Right.Col
+				ex3.Right.Col = rel.Left.Col
+
+			default:
+				ex2.Op = OpNotEquals
+				ex2.Left.Col = rel.Left.Col
+				ex2.Right.Col = rel.Right.Col
+
+				ex3.Op = OpEquals
+				ex3.Left.Col = rel.Left.Col
+				ex3.Right.Table = rcte
+				ex3.Right.Col = rel.Right.Col
+			}
+		}
+
+		ex.Children = []*Exp{ex1, ex2, ex3}
+		setFilter(&sel.Where, ex)
+	}
+}
+
+func buildFilter(rel sdata.DBRel, pid int32) *Exp {
+	switch rel.Type {
+	case sdata.RelOneToOne, sdata.RelOneToMany:
+		ex := newExp()
+		switch {
+		case !rel.Left.Col.Array && rel.Right.Col.Array:
+			ex.Op = OpIn
+			ex.Left.Col = rel.Left.Col
+			ex.Right.ID = pid
+			ex.Right.Col = rel.Right.Col
+
+		case rel.Left.Col.Array && !rel.Right.Col.Array:
+			ex.Op = OpIn
+			ex.Left.ID = pid
+			ex.Left.Col = rel.Right.Col
+			ex.Right.Col = rel.Left.Col
+
+		default:
+			ex.Op = OpEquals
+			ex.Left.Col = rel.Left.Col
+			ex.Right.ID = pid
+			ex.Right.Col = rel.Right.Col
+		}
+		return ex
+
+	case sdata.RelEmbedded:
+		ex := newExpOp(OpEquals)
+		ex.Left.Col = rel.Right.Col
+		ex.Right.ID = pid
+		ex.Right.Col = rel.Right.Col
+		return ex
+
+	default:
+		return nil
+	}
 }
 
 func (co *Compiler) setSingular(fieldName string, sel *Select) {
@@ -544,22 +745,18 @@ func (co *Compiler) addSeekPredicate(sel *Select) {
 	obLen := len(sel.OrderBy)
 
 	if obLen != 0 {
-		isnull := newExp()
-		isnull.Op = OpIsNull
-		isnull.Type = ValRef
-		isnull.Table = "__cur"
-		isnull.Col = sel.OrderBy[0].Col
-		isnull.Val = "true"
+		or = newExpOp(OpOr)
 
-		or = newExp()
-		or.Op = OpOr
-		or.Children = append(or.Children, isnull)
+		isnull := newExpOp(OpIsNull)
+		isnull.Left.Table = "__cur"
+		isnull.Left.Col = sel.OrderBy[0].Col
+
+		or.Children = []*Exp{isnull}
 	}
 
 	for i := 0; i < obLen; i++ {
 		if i != 0 {
-			and = newExp()
-			and.Op = OpAnd
+			and = newExpOp(OpAnd)
 		}
 
 		for n, ob := range sel.OrderBy {
@@ -568,10 +765,9 @@ func (co *Compiler) addSeekPredicate(sel *Select) {
 			}
 
 			f := newExp()
-			f.Type = ValRef
-			f.Table = "__cur"
-			f.Col = ob.Col
-			f.Val = ob.Col.Name
+			f.Left.Col = ob.Col
+			f.Right.Table = "__cur"
+			f.Right.Col = ob.Col
 
 			switch {
 			case i > 0 && n != i:
@@ -698,7 +894,7 @@ func (co *Compiler) compileArgs(qc *QCode, sel *Select, args []graph.Arg, role s
 
 func (co *Compiler) validateSelect(sel *Select) error {
 	if sel.Rel.Type == sdata.RelRecursive {
-		v, ok := sel.ArgMap["find"]
+		v, ok := sel.Args["find"]
 		if !ok {
 			return fmt.Errorf("arguments: 'find' needed for recursive queries")
 		}
@@ -759,8 +955,8 @@ func (co *Compiler) compileDirectiveSkip(sel *Select, d *graph.Directive) error 
 	}
 
 	ex := newExpOp(OpNotEqualsTrue)
-	ex.Type = ValVar
-	ex.Val = arg.Val.Val
+	ex.Right.ValType = ValVar
+	ex.Right.Val = arg.Val.Val
 
 	setFilter(&sel.Where, ex)
 	return nil
@@ -777,8 +973,8 @@ func (co *Compiler) compileDirectiveInclude(sel *Select, d *graph.Directive) err
 	}
 
 	ex := newExpOp(OpEqualsTrue)
-	ex.Type = ValVar
-	ex.Val = arg.Val.Val
+	ex.Right.ValType = ValVar
+	ex.Right.Val = arg.Val.Val
 
 	setFilter(&sel.Where, ex)
 	return nil
@@ -832,24 +1028,24 @@ func (co *Compiler) compileArgID(sel *Select, arg *graph.Arg) error {
 	}
 
 	ex := newExpOp(OpEquals)
-	ex.Col = sel.Ti.PrimaryCol
+	ex.Left.Col = sel.Ti.PrimaryCol
 
 	switch node.Type {
 	case graph.NodeNum:
 		if _, err := strconv.ParseInt(node.Val, 10, 32); err != nil {
 			return err
 		} else {
-			ex.Type = ValNum
-			ex.Val = node.Val
+			ex.Right.ValType = ValNum
+			ex.Right.Val = node.Val
 		}
 
 	case graph.NodeStr:
-		ex.Type = ValStr
-		ex.Val = node.Val
+		ex.Right.ValType = ValStr
+		ex.Right.Val = node.Val
 
 	case graph.NodeVar:
-		ex.Type = ValVar
-		ex.Val = node.Val
+		ex.Right.ValType = ValVar
+		ex.Right.Val = node.Val
 	}
 
 	sel.Where.Exp = ex
@@ -872,8 +1068,8 @@ func (co *Compiler) compileArgSearch(sel *Select, arg *graph.Arg) error {
 	}
 
 	ex := newExpOp(OpTsQuery)
-	ex.Type = ValVar
-	ex.Val = arg.Val.Val
+	ex.Right.ValType = ValVar
+	ex.Right.Val = arg.Val.Val
 
 	sel.addArg(arg)
 	setFilter(&sel.Where, ex)
@@ -1254,8 +1450,8 @@ func dbArgErr(name, ty, db string) error {
 }
 
 func (sel *Select) addArg(arg *graph.Arg) {
-	if sel.ArgMap == nil {
-		sel.ArgMap = make(map[string]Arg)
+	if sel.Args == nil {
+		sel.Args = make(map[string]Arg)
 	}
-	sel.ArgMap[arg.Name] = Arg{Val: arg.Val.Val}
+	sel.Args[arg.Name] = Arg{Val: arg.Val.Val}
 }

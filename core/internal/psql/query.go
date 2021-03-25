@@ -319,23 +319,16 @@ func (c *compilerContext) renderLateralJoinClose(sel *qcode.Select) {
 }
 
 func (c *compilerContext) renderJoinTables(sel *qcode.Select) {
-	var pid int32
-	for i, rel := range sel.Joins {
-		if i == 0 {
-			pid = sel.ParentID
-		} else {
-			pid = -1
-		}
-
-		c.renderJoin(rel, pid)
+	for _, join := range sel.Joins {
+		c.renderJoin(join)
 	}
 }
 
-func (c *compilerContext) renderJoin(rel sdata.DBRel, pid int32) {
+func (c *compilerContext) renderJoin(join qcode.Join) {
 	c.w.WriteString(` LEFT OUTER JOIN `)
-	c.w.WriteString(rel.Left.Ti.Name)
+	c.w.WriteString(join.Rel.Left.Ti.Name)
 	c.w.WriteString(` ON ((`)
-	c.renderRel(rel.Left.Ti, rel, pid, nil)
+	c.renderExp(join.Rel.Left.Ti, join.Filter, false)
 	c.w.WriteString(`))`)
 }
 
@@ -539,30 +532,8 @@ func (c *compilerContext) renderWhere(sel *qcode.Select) {
 		return
 	}
 
-	c.w.WriteString(` WHERE (`)
-
-	var pid int32
-
-	if sel.Type == qcode.SelTypeMember {
-		pid = c.qc.Selects[sel.ParentID].ParentID
-	} else {
-		pid = sel.ParentID
-	}
-
-	if len(sel.Joins) != 0 {
-		pid = -1
-	}
-
-	c.renderRel(sel.Ti, sel.Rel, pid, sel.ArgMap)
-
-	if sel.Where.Exp != nil {
-		if sel.Rel.Type != sdata.RelNone {
-			c.w.WriteString(` AND `)
-		}
-		c.renderExp(sel.Ti, sel.Where.Exp, false)
-	}
-
-	c.w.WriteString(`)`)
+	c.w.WriteString(` WHERE `)
+	c.renderExp(sel.Ti, sel.Where.Exp, false)
 }
 
 func (c *compilerContext) renderGroupBy(sel *qcode.Select) {

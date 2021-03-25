@@ -73,7 +73,7 @@ func (co *Compiler) compileArgNode(
 			continue
 		}
 
-		if ex.Type == ValVar && ex.Val == "user_id" {
+		if ex.Right.ValType == ValVar && ex.Right.Val == "user_id" {
 			needsUser = true
 		}
 
@@ -89,6 +89,8 @@ func (co *Compiler) compileArgNode(
 
 func newExp() *Exp {
 	ex := &Exp{Op: OpNop}
+	ex.Left.ID = -1
+	ex.Right.ID = -1
 	ex.Children = ex.childrenA[:0]
 	return ex
 }
@@ -111,7 +113,7 @@ func (ast *aexpst) parseNode(av aexp) (*Exp, error) {
 
 	ex := newExp()
 	if ast.savePath {
-		ex.Path = append(av.path, node.Name)
+		ex.Right.Path = append(av.path, node.Name)
 	}
 
 	switch name {
@@ -135,22 +137,22 @@ func (ast *aexpst) parseNode(av aexp) (*Exp, error) {
 		ast.pushChildren(ex, node)
 	case "eq", "equals":
 		ex.Op = OpEquals
-		ex.Val = node.Val
+		ex.Right.Val = node.Val
 	case "neq", "not_equals":
 		ex.Op = OpNotEquals
-		ex.Val = node.Val
+		ex.Right.Val = node.Val
 	case "gt", "greater_than":
 		ex.Op = OpGreaterThan
-		ex.Val = node.Val
+		ex.Right.Val = node.Val
 	case "lt", "lesser_than":
 		ex.Op = OpLesserThan
-		ex.Val = node.Val
+		ex.Right.Val = node.Val
 	case "gte", "gteq", "greater_or_equals":
 		ex.Op = OpGreaterOrEquals
-		ex.Val = node.Val
+		ex.Right.Val = node.Val
 	case "lte", "lteq", "lesser_or_equals":
 		ex.Op = OpLesserOrEquals
-		ex.Val = node.Val
+		ex.Right.Val = node.Val
 	case "in":
 		ex.Op = OpIn
 		setListVal(ex, node)
@@ -159,58 +161,58 @@ func (ast *aexpst) parseNode(av aexp) (*Exp, error) {
 		setListVal(ex, node)
 	case "like":
 		ex.Op = OpLike
-		ex.Val = node.Val
+		ex.Right.Val = node.Val
 	case "nlike", "not_like":
 		ex.Op = OpNotLike
-		ex.Val = node.Val
+		ex.Right.Val = node.Val
 	case "ilike":
 		ex.Op = OpILike
-		ex.Val = node.Val
+		ex.Right.Val = node.Val
 	case "nilike", "not_ilike":
 		ex.Op = OpNotILike
-		ex.Val = node.Val
+		ex.Right.Val = node.Val
 	case "similar":
 		ex.Op = OpSimilar
-		ex.Val = node.Val
+		ex.Right.Val = node.Val
 	case "nsimilar", "not_similar":
 		ex.Op = OpNotSimilar
-		ex.Val = node.Val
+		ex.Right.Val = node.Val
 	case "regex":
 		ex.Op = OpRegex
-		ex.Val = node.Val
+		ex.Right.Val = node.Val
 	case "nregex", "not_regex":
 		ex.Op = OpNotRegex
-		ex.Val = node.Val
+		ex.Right.Val = node.Val
 	case "iregex":
 		ex.Op = OpIRegex
-		ex.Val = node.Val
+		ex.Right.Val = node.Val
 	case "niregex", "not_iregex":
 		ex.Op = OpNotIRegex
-		ex.Val = node.Val
+		ex.Right.Val = node.Val
 	case "contains":
 		ex.Op = OpContains
-		ex.Val = node.Val
+		ex.Right.Val = node.Val
 	case "contained_in":
 		ex.Op = OpContainedIn
-		ex.Val = node.Val
+		ex.Right.Val = node.Val
 	case "has_key":
 		ex.Op = OpHasKey
-		ex.Val = node.Val
+		ex.Right.Val = node.Val
 	case "has_key_any":
 		ex.Op = OpHasKeyAny
-		ex.Val = node.Val
+		ex.Right.Val = node.Val
 	case "has_key_all":
 		ex.Op = OpHasKeyAll
-		ex.Val = node.Val
+		ex.Right.Val = node.Val
 	case "is_null":
 		ex.Op = OpIsNull
-		ex.Val = node.Val
+		ex.Right.Val = node.Val
 	case "null_eq", "ndis", "not_distinct":
 		ex.Op = OpNotDistinct
-		ex.Val = node.Val
+		ex.Right.Val = node.Val
 	case "null_neq", "dis", "distinct":
 		ex.Op = OpDistinct
-		ex.Val = node.Val
+		ex.Right.Val = node.Val
 	default:
 		if node.Type == graph.NodeObj {
 			if len(node.Children) == 0 {
@@ -224,17 +226,17 @@ func (ast *aexpst) parseNode(av aexp) (*Exp, error) {
 		switch node.Type {
 		case graph.NodeList:
 			ex.Op = OpIn
-			ex.Type = ValList
+			ex.Right.ValType = ValList
 			setListVal(ex, node)
 
 		default:
 			ex.Op = OpEquals
-			ex.Val = node.Val
+			ex.Right.Val = node.Val
 		}
 	}
 
 	if ex.Op != OpAnd && ex.Op != OpOr && ex.Op != OpNot {
-		if ex.Type, err = getExpType(node); err != nil {
+		if ex.Right.ValType, err = getExpType(node); err != nil {
 			return nil, err
 		}
 		if err := setExpColName(ast.co.s, ast.ti, ex, node); err != nil {
@@ -266,19 +268,19 @@ func setListVal(ex *Exp, node *graph.Node) {
 	if len(node.Children) != 0 {
 		switch node.Children[0].Type {
 		case graph.NodeStr:
-			ex.ListType = ValStr
+			ex.Right.ListType = ValStr
 		case graph.NodeNum:
-			ex.ListType = ValNum
+			ex.Right.ListType = ValNum
 		case graph.NodeBool:
-			ex.ListType = ValBool
+			ex.Right.ListType = ValBool
 		}
 	} else {
-		ex.Val = node.Val
+		ex.Right.Val = node.Val
 		return
 	}
 
 	for i := range node.Children {
-		ex.ListVal = append(ex.ListVal, node.Children[i].Val)
+		ex.Right.ListVal = append(ex.Right.ListVal, node.Children[i].Val)
 	}
 }
 
@@ -303,14 +305,14 @@ func setExpColName(s *sdata.DBSchema, ti sdata.DBTable, ex *Exp, node *graph.Nod
 	switch len(list) {
 	case 1:
 		if col, err := ti.GetColumn(node.Name); err == nil {
-			ex.Col = col
+			ex.Left.Col = col
 		} else {
 			return err
 		}
 
 	case 2:
 		if col, err := ti.GetColumn(list[0]); err == nil {
-			ex.Col = col
+			ex.Left.Col = col
 			return nil
 		}
 		fallthrough
@@ -330,7 +332,8 @@ func setExpColName(s *sdata.DBSchema, ti sdata.DBTable, ex *Exp, node *graph.Nod
 			var paths []sdata.TPath
 			paths, err = s.FindPath(curr, prev, "")
 			if err == nil {
-				ex.Rels = append(ex.Rels, sdata.PathToRel(paths[0]))
+				rel := sdata.PathToRel(paths[0])
+				ex.Joins = append(ex.Joins, Join{Rel: rel, Filter: buildFilter(rel, -1)})
 				prev = curr
 			} else {
 				break
@@ -339,18 +342,18 @@ func setExpColName(s *sdata.DBSchema, ti sdata.DBTable, ex *Exp, node *graph.Nod
 			// return graphError(err, curr, prev, "")
 		}
 
-		if len(ex.Rels) == 0 {
+		if len(ex.Joins) == 0 {
 			return graphError(err, curr, prev, "")
 		}
 
-		rel := ex.Rels[len(ex.Rels)-1]
+		join := ex.Joins[len(ex.Joins)-1]
 
 		for i := len(list) - 1; i > 0; i-- {
 			var col sdata.DBColumn
 			cn := list[i]
 
-			if col, err = rel.Left.Ti.GetColumn(cn); err == nil {
-				ex.Col = col
+			if col, err = join.Rel.Left.Ti.GetColumn(cn); err == nil {
+				ex.Left.Col = col
 				break
 			}
 		}
@@ -364,7 +367,7 @@ func (ast *aexpst) pushChildren(exp *Exp, node *graph.Node) {
 
 	if ast.savePath && node.Name != "" {
 		if exp != nil {
-			path = append(exp.Path, node.Name)
+			path = append(exp.Right.Path, node.Name)
 		} else {
 			path = append(path, node.Name)
 		}

@@ -81,7 +81,7 @@ func (c *expContext) render(ex *qcode.Exp) {
 				st.Push(qcode.OpNot)
 
 			default:
-				if !c.skipNested && len(val.Rels) != 0 {
+				if !c.skipNested && len(val.Joins) != 0 {
 					c.renderNestedExp(val)
 				} else {
 					c.renderOp(val)
@@ -92,22 +92,23 @@ func (c *expContext) render(ex *qcode.Exp) {
 }
 
 func (c *expContext) renderNestedExp(ex *qcode.Exp) {
-	firstRel := ex.Rels[0]
+	firstJoin := ex.Joins[0]
 	c.w.WriteString(`EXISTS (SELECT 1 FROM `)
-	c.w.WriteString(firstRel.Left.Col.Table)
+	c.w.WriteString(firstJoin.Rel.Left.Col.Table)
 
-	if len(ex.Rels) > 1 {
-		for _, rel := range ex.Rels[1:(len(ex.Rels) - 1)] {
-			c.renderJoin(rel, -1)
+	if len(ex.Joins) > 1 {
+		for _, rel := range ex.Joins[1:(len(ex.Joins) - 1)] {
+			c.renderJoin(rel)
 		}
 	}
 
 	c.w.WriteString(` WHERE `)
-	lastRel := ex.Rels[(len(ex.Rels) - 1)]
-	c.renderExp(lastRel.Left.Ti, ex, true)
+	lastJoin := ex.Joins[(len(ex.Joins) - 1)]
+	c.renderExp(lastJoin.Rel.Left.Ti, ex, true)
 
 	c.w.WriteString(` AND (`)
-	c.renderRel(c.ti, firstRel, -1, nil)
+
+	c.renderExp(firstJoin.Rel.Left.Ti, firstJoin.Filter, false)
 	c.w.WriteString(`))`)
 }
 
@@ -120,29 +121,24 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 		return
 	}
 
-	if ex.Col.Name != "" {
-		c.w.WriteString(`((`)
-		if ex.Type == qcode.ValRef && ex.Op == qcode.OpIsNull {
-			colWithTable(c.w, ex.Table, ex.Col.Name)
+	if ex.Left.Col.Name != "" {
+		var table string
+		if ex.Left.Table == "" {
+			table = ex.Left.Col.Table
 		} else {
-			colWithTable(c.w, c.ti.Name, ex.Col.Name)
+			table = ex.Left.Table
+		}
+
+		c.w.WriteString(`((`)
+		if ex.Left.ID == -1 {
+			colWithTable(c.w, table, ex.Left.Col.Name)
+		} else {
+			colWithTableID(c.w, table, ex.Left.ID, ex.Left.Col.Name)
 		}
 		c.w.WriteString(`) `)
 	}
 
-	op := ex.Op
-	if op == qcode.OpAutoEq {
-		switch {
-		case ex.Col.Array && ex.Type == qcode.ValList:
-			op = qcode.OpContainedIn
-		case ex.Col.Array:
-			op = qcode.OpContains
-		case ex.Type == qcode.ValList:
-			op = qcode.OpIn
-		}
-	}
-
-	switch op {
+	switch ex.Op {
 	case qcode.OpEquals:
 		c.w.WriteString(`=`)
 	case qcode.OpNotEquals:
@@ -196,18 +192,26 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 
 	case qcode.OpEqualsTrue:
 		c.w.WriteString(`(`)
-		c.renderParam(Param{Name: ex.Val, Type: "boolean"})
+		c.renderParam(Param{Name: ex.Right.Val, Type: "boolean"})
 		c.w.WriteString(` IS TRUE)`)
 		return
 
 	case qcode.OpNotEqualsTrue:
 		c.w.WriteString(`(`)
-		c.renderParam(Param{Name: ex.Val, Type: "boolean"})
+		c.renderParam(Param{Name: ex.Right.Val, Type: "boolean"})
 		c.w.WriteString(` IS NOT TRUE)`)
 		return
 
 	case qcode.OpIsNull:
-		if strings.EqualFold(ex.Val, "true") {
+		if strings.EqualFold(ex.Right.Val, "false") {
+			c.w.WriteString(`IS NOT NULL)`)
+		} else {
+			c.w.WriteString(`IS NULL)`)
+		}
+		return
+
+	case qcode.OpIsNotNull:
+		if strings.EqualFold(ex.Right.Val, "false") {
 			c.w.WriteString(`IS NULL)`)
 		} else {
 			c.w.WriteString(`IS NOT NULL)`)
@@ -226,7 +230,7 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 				colWithTable(c.w, c.ti.Name, col.Name)
 			}
 			c.w.WriteString(`) AGAINST (`)
-			c.renderParam(Param{Name: ex.Val, Type: "text"})
+			c.renderParam(Param{Name: ex.Right.Val, Type: "text"})
 			c.w.WriteString(` IN NATURAL LANGUAGE MODE))`)
 
 		default:
@@ -242,7 +246,7 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 				} else {
 					c.w.WriteString(`) @@ to_tsquery(`)
 				}
-				c.renderParam(Param{Name: ex.Val, Type: "text"})
+				c.renderParam(Param{Name: ex.Right.Val, Type: "text"})
 				c.w.WriteString(`)`)
 			}
 			c.w.WriteString(`)`)
@@ -252,7 +256,7 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 	c.w.WriteString(` `)
 
 	switch {
-	case ex.Type == qcode.ValList:
+	case ex.Right.ValType == qcode.ValList:
 		c.renderList(ex)
 	default:
 		c.renderVal(ex)
@@ -261,7 +265,7 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 }
 
 func (c *expContext) renderValPrefix(ex *qcode.Exp) bool {
-	if ex.Type == qcode.ValVar {
+	if ex.Right.ValType == qcode.ValVar {
 		return c.renderValVarPrefix(ex)
 	}
 	return false
@@ -271,9 +275,9 @@ func (c *expContext) renderValVarPrefix(ex *qcode.Exp) bool {
 	if ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn {
 		if c.ct == "mysql" {
 			c.w.WriteString(`JSON_CONTAINS(`)
-			c.renderParam(Param{Name: ex.Val, Type: ex.Col.Type, IsArray: true})
+			c.renderParam(Param{Name: ex.Right.Val, Type: ex.Left.Col.Type, IsArray: true})
 			c.w.WriteString(`, CAST(`)
-			colWithTable(c.w, c.ti.Name, ex.Col.Name)
+			colWithTable(c.w, c.ti.Name, ex.Left.Col.Name)
 			c.w.WriteString(` AS JSON), '$')`)
 			return true
 		}
@@ -282,20 +286,44 @@ func (c *expContext) renderValVarPrefix(ex *qcode.Exp) bool {
 }
 
 func (c *expContext) renderVal(ex *qcode.Exp) {
-	switch ex.Type {
+	if ex.Right.Col.Name != "" {
+		var table string
+		if ex.Right.Table == "" {
+			table = ex.Right.Col.Table
+		} else {
+			table = ex.Right.Table
+		}
+
+		pid := ex.Right.ID
+		if ex.Right.ID != -1 {
+			pid = ex.Right.ID
+		}
+
+		c.w.WriteString(`(`)
+		if ex.Right.Col.Array {
+			c.renderValArrayColumn(ex, table, pid)
+		} else {
+			if pid == -1 {
+				colWithTable(c.w, table, ex.Right.Col.Name)
+			} else {
+				colWithTableID(c.w, table, pid, ex.Right.Col.Name)
+			}
+		}
+		c.w.WriteString(`)`)
+		return
+	}
+
+	switch ex.Right.ValType {
 	case qcode.ValVar:
 		c.renderValVar(ex)
 
-	case qcode.ValRef:
-		colWithTable(c.w, ex.Table, ex.Col.Name)
-
 	default:
-		if len(ex.Path) == 0 {
-			c.squoted(ex.Val)
+		if len(ex.Right.Path) == 0 {
+			c.squoted(ex.Right.Val)
 			return
 		}
 
-		path := append(c.prefixPath, ex.Path...)
+		path := append(c.prefixPath, ex.Right.Path...)
 		j := (len(path) - 1)
 
 		c.w.WriteString(`CAST(i.j`)
@@ -306,13 +334,13 @@ func (c *expContext) renderVal(ex *qcode.Exp) {
 		c.w.WriteString(`->>`)
 		c.squoted(path[j])
 		c.w.WriteString(` AS `)
-		c.w.WriteString(ex.Col.Type)
+		c.w.WriteString(ex.Left.Col.Type)
 		c.w.WriteString(`)`)
 	}
 }
 
 func (c *expContext) renderValVar(ex *qcode.Exp) {
-	val, isVal := c.svars[ex.Val]
+	val, isVal := c.svars[ex.Right.Val]
 
 	switch {
 	case isVal && strings.HasPrefix(val, "sql:"):
@@ -327,31 +355,58 @@ func (c *expContext) renderValVar(ex *qcode.Exp) {
 
 	case ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn:
 		c.w.WriteString(`(ARRAY(SELECT json_array_elements_text(`)
-		c.renderParam(Param{Name: ex.Val, Type: ex.Col.Type, IsArray: true})
+		c.renderParam(Param{Name: ex.Right.Val, Type: ex.Left.Col.Type, IsArray: true})
 		c.w.WriteString(`))`)
 		c.w.WriteString(` :: `)
-		c.w.WriteString(ex.Col.Type)
+		c.w.WriteString(ex.Left.Col.Type)
 		c.w.WriteString(`[])`)
 
 	default:
-		c.renderParam(Param{Name: ex.Val, Type: ex.Col.Type, IsArray: false})
+		c.renderParam(Param{Name: ex.Right.Val, Type: ex.Left.Col.Type, IsArray: false})
 	}
 }
 
 func (c *expContext) renderList(ex *qcode.Exp) {
 	c.w.WriteString(`(ARRAY[`)
-	for i := range ex.ListVal {
+	for i := range ex.Right.ListVal {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
-		switch ex.ListType {
+		switch ex.Right.ListType {
 		case qcode.ValBool, qcode.ValNum:
-			c.w.WriteString(ex.ListVal[i])
+			c.w.WriteString(ex.Right.ListVal[i])
 		case qcode.ValStr:
 			c.w.WriteString(`'`)
-			c.w.WriteString(ex.ListVal[i])
+			c.w.WriteString(ex.Right.ListVal[i])
 			c.w.WriteString(`'`)
 		}
 	}
 	c.w.WriteString(`])`)
+}
+
+func (c *compilerContext) renderValArrayColumn(ex *qcode.Exp, table string, pid int32) {
+	col := ex.Right.Col
+	switch c.ct {
+	case "mysql":
+		c.w.WriteString(`SELECT _gj_jt.* FROM `)
+		c.w.WriteString(`(SELECT CAST(`)
+		if pid == -1 {
+			colWithTable(c.w, table, col.Name)
+		} else {
+			colWithTableID(c.w, table, pid, col.Name)
+		}
+		c.w.WriteString(` AS JSON) as ids) j, `)
+		c.w.WriteString(`JSON_TABLE(j.ids, "$[*]" COLUMNS(`)
+		c.w.WriteString(col.Name)
+		c.w.WriteString(` `)
+		c.w.WriteString(ex.Left.Col.Type)
+		c.w.WriteString(` PATH "$" ERROR ON ERROR)) AS _gj_jt`)
+
+	default:
+		if pid == -1 {
+			colWithTable(c.w, table, col.Name)
+		} else {
+			colWithTableID(c.w, table, pid, col.Name)
+		}
+	}
 }
