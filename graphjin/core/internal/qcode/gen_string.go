@@ -142,12 +142,11 @@ func _() {
 	_ = x[ValList-4]
 	_ = x[ValVar-5]
 	_ = x[ValNone-6]
-	_ = x[ValRef-7]
 }
 
-const _ValType_name = "ValStrValNumValBoolValListValVarValNoneValRef"
+const _ValType_name = "ValStrValNumValBoolValListValVarValNone"
 
-var _ValType_index = [...]uint8{0, 6, 12, 19, 26, 32, 39, 45}
+var _ValType_index = [...]uint8{0, 6, 12, 19, 26, 32, 39}
 
 func (i ValType) String() string {
 	i -= 1
