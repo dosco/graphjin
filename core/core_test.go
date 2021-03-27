@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/orlangure/gnomock"
+	"github.com/orlangure/gnomock/preset/cockroachdb"
+	"github.com/orlangure/gnomock/preset/mssql"
 	"github.com/orlangure/gnomock/preset/mysql"
 	"github.com/orlangure/gnomock/preset/postgres"
 )
@@ -42,7 +44,18 @@ func TestMain(m *testing.M) {
 				postgres.WithUser("tester", "tester"),
 				postgres.WithDatabase("db"),
 				postgres.WithQueriesFile("./postgres.sql"),
-			)},
+			),
+		},
+		{
+			disable: true,
+			name:    "cockroach",
+			driver:  "postgres",
+			connstr: "postgres://root:@%s/db?sslmode=disable",
+			preset: cockroachdb.Preset(
+				cockroachdb.WithDatabase("db"),
+				cockroachdb.WithQueriesFile("./cockroach.sql"),
+			),
+		},
 		{
 			disable: true,
 			name:    "mysql",
@@ -52,7 +65,20 @@ func TestMain(m *testing.M) {
 				mysql.WithUser("user", "user"),
 				mysql.WithDatabase("db"),
 				mysql.WithQueriesFile("./mysql.sql"),
-			)},
+			),
+		},
+		{
+			disable: true,
+			name:    "mssql",
+			driver:  "sqlserver",
+			connstr: "sqlserver://sa:password@%s?database=db",
+			preset: mssql.Preset(
+				mssql.WithLicense(true),
+				mssql.WithAdminPassword("password"),
+				mssql.WithDatabase("db"),
+				mssql.WithQueriesFile("./mysql.sql"),
+			),
+		},
 	}
 
 	for _, v := range dbinfoList {
@@ -74,7 +100,11 @@ func TestMain(m *testing.M) {
 		if err != nil {
 			panic(err)
 		}
-		defer func() { _ = gnomock.Stop(con) }()
+		defer func() {
+			if err := gnomock.Stop(con); err != nil {
+				panic(err)
+			}
+		}()
 
 		db, err = sql.Open(v.driver, fmt.Sprintf(v.connstr, con.DefaultAddress()))
 		if err != nil {

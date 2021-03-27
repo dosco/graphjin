@@ -26,13 +26,14 @@ for (i = 0; i < 3; i++) {
     updated_at: "now",
   };
 
-  var res = graphql(
-    " \
-	mutation { \
-		users(insert: $data) { \
-			id \
-		} \
-	}",
+  var q = `
+	mutation {
+		users(insert: $data) {
+			id
+		}
+	}`
+
+  var res = graphql(q,
     { data: data },
     { user_id: -1 }
   );
@@ -53,13 +54,14 @@ for (i = 0; i < user_count; i++) {
     updated_at: "now",
   };
 
-  var res = graphql(
-    " \
-	mutation { \
-		users(insert: $data) { \
-			id \
-		} \
-	}",
+  var q = `
+	mutation {
+		users(insert: $data) {
+			id
+		}
+	}`
+
+  var res = graphql(q,
     { data: data },
     { user_id: -1 }
   );
@@ -83,13 +85,13 @@ for (i = 0; i < customer_count; i++) {
     password_confirmation: pwd,
   };
 
-  var res = graphql(
-    " \
-	mutation { \
-		customers(insert: $data) { \
-			id \
-		} \
-	}",
+  var q = `mutation {
+		customers(insert: $data) {
+			id
+		}
+	}`
+
+  var res = graphql(q,
     { data: data },
     { user_id: u.id }
   );
@@ -118,13 +120,13 @@ var categories = [
 
 // ---- add those sections using bulk insert
 
-var res = graphql(
-  " \
-mutation { \
-  categories(insert: $categories) { \
-    id \
-  } \
-}",
+var q = `mutation {
+  categories(insert: $categories) {
+    id
+  } 
+}
+`
+var res = graphql(q,
   { categories: categories, user_id: 1 }
 );
 
@@ -153,13 +155,13 @@ for (i = 0; i < product_count; i++) {
     },
   };
 
-  var res = graphql(
-    " \
-  mutation { \
-  	products(insert: $data) { \
-  		id \
-  	} \
-  }",
+  var  q = `mutation {
+  	products(insert: $data) {
+  		id
+  	}
+  }`
+
+  var res = graphql(q,
     { data: data },
     { user_id: u.id }
   );
@@ -185,13 +187,13 @@ for (i = 0; i < purchase_count; i++) {
     },
   };
 
-  var res = graphql(
-    " \
-  mutation { \
-  	purchases(insert: $data) { \
-  		id \
-  	} \
-  }",
+  var q = `mutation {
+  	purchases(insert: $data) {
+  		id
+  	}
+  }`
+
+  var res = graphql(q,
     { data: data },
     { user_id: u.id }
   );
@@ -229,13 +231,13 @@ for (i = 0; i < notifications_count; i++) {
     },
   };
 
-  var res = graphql(
-    " \
-  mutation { \
-  	notifications(insert: $data) { \
-  		id \
-  	} \
-  }",
+  var q = `mutation {
+  	notifications(insert: $data) {
+  		id
+  	}
+  }`
+
+  var res = graphql(q,
     { data: data },
     { user_id: u.id }
   );
@@ -271,13 +273,13 @@ for (i = 0; i < comments_count; i++) {
     };
   }
 
-  var res = graphql(
-    " \
-  mutation { \
-  	comments(insert: $data) { \
-  		id \
-  	} \
-  }",
+  var q =`  mutation {
+  	comments(insert: $data) {
+  		id
+  	} 
+  }`
+
+  var res = graphql(q,
     { data: data },
     { user_id: u.id }
   );

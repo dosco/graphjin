@@ -2,7 +2,9 @@ package serv
 
 import (
 	"context"
+	"embed"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/signal"
@@ -10,13 +12,15 @@ import (
 	"strings"
 	"time"
 
-	rice "github.com/GeertJohan/go.rice"
 	"github.com/NYTimes/gziphandler"
 	"github.com/dosco/graphjin/internal/serv/internal/auth"
 	"go.opencensus.io/plugin/ochttp"
 )
 
 var (
+	//go:embed web/build
+	webBuild embed.FS
+
 	apiRoute string = "/api/v1/graphql"
 )
 
@@ -145,7 +149,11 @@ func routeHandler(sc *ServConfig) (http.Handler, error) {
 	}
 
 	if sc.conf.WebUI {
-		routes["/"] = http.FileServer(rice.MustFindBox("./web/build").HTTPBox())
+		webRoot, err := fs.Sub(webBuild, "web/build")
+		if err != nil {
+			return nil, err
+		}
+		routes["/"] = http.FileServer(http.FS(webRoot))
 	}
 
 	if sc.conf.HTTPGZip {

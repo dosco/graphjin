@@ -14,15 +14,13 @@ require (
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
 	github.com/brianvoe/gofakeit/v6 v6.0.0
 	github.com/chirino/graphql v0.0.0-20200723175208-cec7bf430a98
-	github.com/daaku/go.zipexe v1.0.1 // indirect
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
-	github.com/dlclark/regexp2 v1.2.1 // indirect
-	github.com/dop251/goja v0.0.0-20200912112403-81ddb8a7cc41
+	github.com/dop251/goja v0.0.0-20210322220816-6fc852574a34
+	github.com/evanw/esbuild v0.10.2
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/garyburd/redigo v1.6.2
 	github.com/git-chglog/git-chglog v0.10.0
 	github.com/go-pkgz/expirable-cache v0.0.3
-	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
 	github.com/go-sql-driver/mysql v1.5.0
 	github.com/gobuffalo/flect v0.2.2
 	github.com/golangci/golangci-lint v1.37.0
@@ -36,7 +34,7 @@ require (
 	github.com/mitchellh/mapstructure v1.4.0
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/openzipkin/zipkin-go v0.2.4
-	github.com/orlangure/gnomock v0.10.1
+	github.com/orlangure/gnomock v0.12.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/common v0.14.0 // indirect
 	github.com/prometheus/procfs v0.2.0 // indirect
@@ -58,4 +56,4 @@ require (
 	golang.org/x/tools v0.1.0
 )
 
-go 1.14
+go 1.16

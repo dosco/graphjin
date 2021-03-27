@@ -2,13 +2,13 @@ package serv
 
 import (
 	"bytes"
+	"embed"
 	"io/ioutil"
 	"os"
 	"path"
 	"strings"
 	"text/template"
 
-	rice "github.com/GeertJohan/go.rice"
 	"github.com/spf13/cobra"
 )
 
@@ -109,25 +109,31 @@ func cmdNew(servConf *ServConfig) func(*cobra.Command, []string) {
 	}
 }
 
+//go:embed tmpl
+var tmpl embed.FS
+
 type Templ struct {
-	*rice.Box
-	data map[string]string
+	values map[string]string
 }
 
-func newTempl(data map[string]string) *Templ {
-	return &Templ{rice.MustFindBox("./tmpl"), data}
+func newTempl(values map[string]string) *Templ {
+	return &Templ{values}
 }
 
 func (t *Templ) get(name string) ([]byte, error) {
-	v := t.MustString(name)
-	b := bytes.Buffer{}
-
-	tmpl, err := template.New(name).Parse(v)
+	v, err := tmpl.ReadFile("tmpl/" + name)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := tmpl.Execute(&b, t.data); err != nil {
+	b := bytes.Buffer{}
+
+	tmpl, err := template.New(name).Parse(string(v))
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tmpl.Execute(&b, t.values); err != nil {
 		return nil, err
 	}
 

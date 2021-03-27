@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -16,6 +17,7 @@ import (
 	"github.com/brianvoe/gofakeit/v6"
 	"github.com/dop251/goja"
 	"github.com/dosco/graphjin/core"
+	esb "github.com/evanw/esbuild/pkg/api"
 	"github.com/gosimple/slug"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/stdlib"
@@ -42,51 +44,74 @@ func cmdDBSeed(servConf *ServConfig) func(*cobra.Command, []string) {
 			servConf.log.Fatalf("Failed to connect to database: %s", err)
 		}
 
+		servConf.conf.Core.Blocklist = nil
 		sfile := path.Join(servConf.conf.cpath, servConf.conf.SeedFile)
 
-		b, err := ioutil.ReadFile(sfile)
-		if err != nil {
-			servConf.log.Fatalf("Failed to read seed file %s: %s", sfile, err)
-		}
-
-		servConf.conf.Core.Blocklist = nil
-
-		gj, err = core.NewGraphJin(&servConf.conf.Core, servConf.db)
-		if err != nil {
-			servConf.log.Fatalf("GraphJin failed to initialize: %s", err)
-		}
-
-		graphQLFn := func(query string, data interface{}, opt map[string]string) map[string]interface{} {
-			return graphQLFunc(servConf, gj, query, data, opt)
-		}
-
-		importCSVFn := func(table, filename string, sep string) int64 {
-			return importCSV(servConf, table, filename, sep)
-		}
-
-		vm := goja.New()
-		vm.Set("graphql", graphQLFn)
-		vm.Set("import_csv", importCSVFn)
-
-		console := vm.NewObject()
-		console.Set("log", logFunc) //nolint: errcheck
-		vm.Set("console", console)
-
-		fake := vm.NewObject()
-		setFakeFuncs(fake)
-		vm.Set("fake", fake)
-
-		util := vm.NewObject()
-		setUtilFuncs(util)
-		vm.Set("util", util)
-
-		_, err = vm.RunScript("seed.js", string(b))
-		if err != nil {
-			servConf.log.Fatalf("Failed to execute seed script: %s", err)
+		if err := compileAndRunJS(servConf, sfile); err != nil {
+			servConf.log.Fatalf("Failed to execute seed file %s: %s", sfile, err)
 		}
 
 		servConf.log.Infof("Seed script completed")
 	}
+}
+
+func compileAndRunJS(servConf *ServConfig, sfile string) error {
+	b, err := ioutil.ReadFile(sfile)
+	if err != nil {
+		return fmt.Errorf("Failed to read seed file %s: %s", sfile, err)
+	}
+
+	gj, err := core.NewGraphJin(&servConf.conf.Core, servConf.db)
+	if err != nil {
+		return err
+	}
+
+	graphQLFn := func(query string, data interface{}, opt map[string]string) map[string]interface{} {
+		return graphQLFunc(servConf, gj, query, data, opt)
+	}
+
+	importCSVFn := func(table, filename string, sep string) int64 {
+		return importCSV(servConf, table, filename, sep)
+	}
+
+	vm := goja.New()
+	if err := vm.Set("graphql", graphQLFn); err != nil {
+		return err
+	}
+
+	if err := vm.Set("import_csv", importCSVFn); err != nil {
+		return err
+	}
+
+	console := vm.NewObject()
+	console.Set("log", logFunc) //nolint: errcheck
+	if err := vm.Set("console", console); err != nil {
+		return err
+	}
+
+	fake := vm.NewObject()
+	setFakeFuncs(fake)
+	if err := vm.Set("fake", fake); err != nil {
+		return err
+	}
+
+	util := vm.NewObject()
+	setUtilFuncs(util)
+	if err := vm.Set("util", util); err != nil {
+		return err
+	}
+
+	es5 := esb.Transform(string(b), esb.TransformOptions{
+		Loader: esb.LoaderJS,
+		Target: esb.ES5,
+	})
+
+	if len(es5.Errors) != 0 {
+		return errors.New(es5.Errors[0].Text)
+	}
+
+	_, err = vm.RunScript(servConf.conf.SeedFile, string(es5.Code))
+	return err
 }
 
 // func runFunc(call goja.FunctionCall) {
