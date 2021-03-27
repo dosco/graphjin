@@ -62,9 +62,12 @@ type qres struct {
 }
 
 func (gj *GraphJin) initDiscover() error {
-	if gj.conf.DBType == "" {
+	switch gj.conf.DBType {
+	case "":
 		gj.dbtype = "postgres"
-	} else {
+	case "mssql":
+		gj.dbtype = "mysql"
+	default:
 		gj.dbtype = gj.conf.DBType
 	}
 

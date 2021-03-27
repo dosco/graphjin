@@ -11,8 +11,6 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-//go:generate rice embed-go
-
 const (
 	serverName = "GraphJin"
 )

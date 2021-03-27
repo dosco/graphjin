@@ -10,12 +10,14 @@ for (i = 0; i < 10; i++) {
     created_at: "now",
   };
 
-  var res = graphql(" \
-	mutation { \
-		users(insert: $data) { \
-			id \
-		} \
-	}", {
+  var q = `
+  mutation {
+		users(insert: $data) {
+			id
+		}
+	}`
+
+  var res = graphql(q, {
     data: data,
   });
 
