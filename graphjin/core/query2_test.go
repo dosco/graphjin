@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/dosco/graphjin/core"
@@ -64,13 +63,13 @@ func TestAllowList(t *testing.T) {
 		}
 	}`
 
-	dir, fname, err := createTempAllowList()
+	dir, err := ioutil.TempDir("", "test")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(dir)
 
-	conf1 := &core.Config{DBType: dbType, AllowListFile: fname}
+	conf1 := &core.Config{DBType: dbType, AllowListPath: dir}
 	gj1, err := core.NewGraphJin(conf1, db)
 	if err != nil {
 		t.Error(err)
@@ -81,7 +80,7 @@ func TestAllowList(t *testing.T) {
 		t.Error(err)
 	}
 
-	conf2 := &core.Config{DBType: dbType, AllowListFile: fname, Production: true}
+	conf2 := &core.Config{DBType: dbType, AllowListPath: dir, Production: true}
 	gj2, err := core.NewGraphJin(conf2, db)
 	if err != nil {
 		t.Error(err)
@@ -95,18 +94,6 @@ func TestAllowList(t *testing.T) {
 	exp := `{"products": {"id": 2}}`
 	got := string(res.Data)
 	assert.Equal(t, got, exp, "should equal")
-}
-
-func createTempAllowList() (string, string, error) {
-	content := []byte("")
-	dir, err := ioutil.TempDir("", "test")
-	if err != nil {
-		return "", "", err
-	}
-
-	tmpfn := filepath.Join(dir, "allow.list")
-	err = ioutil.WriteFile(tmpfn, content, 0666)
-	return dir, tmpfn, err
 }
 
 func TestConfigReuse(t *testing.T) {

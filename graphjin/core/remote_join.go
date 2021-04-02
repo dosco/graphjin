@@ -10,15 +10,14 @@ import (
 	"github.com/dosco/graphjin/internal/jsn"
 )
 
-func (c *scontext) execRemoteJoin(res qres) (qres, error) {
+func (c *scontext) execRemoteJoin(res queryResp) (queryResp, error) {
 	var err error
-
-	sel := res.q.st.qc.Selects
+	sel := res.qc.st.qc.Selects
 
 	// fetch the field name used within the db response json
 	// that are used to mark insertion points and the mapping between
 	// those field names and their select objects
-	fids, sfmap, err := c.parentFieldIds(sel, res.q.st.qc.Remotes)
+	fids, sfmap, err := c.parentFieldIds(sel, res.qc.st.qc.Remotes)
 	if err != nil {
 		return res, err
 	}

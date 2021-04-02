@@ -1,0 +1,24 @@
+name: createCommentAndProduct
+query: |-
+    mutation createCommentAndProduct {
+      comment(insert: $data) {
+        id
+        product {
+          id
+          name
+        }
+      }
+    }
+vars: |-
+    {
+      "data": {
+        "body": "",
+        "created_at": "",
+        "updated_at": "",
+        "product": {
+          "connect": {
+            "id": 0.0
+          }
+        }
+      }
+    }

@@ -3,12 +3,18 @@ package core
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/dosco/graphjin/core/internal/psql"
 	"github.com/dosco/graphjin/core/internal/qcode"
 )
+
+type queryComp struct {
+	sync.Once
+	qr queryReq
+	st stmt
+}
 
 type stmt struct {
 	role *Role
@@ -17,79 +23,96 @@ type stmt struct {
 	sql  string
 }
 
-func (gj *GraphJin) compileQuery(cq *cquery, role string) error {
+func (gj *GraphJin) compileQuery(qr queryReq, role string) (*queryComp, error) {
+	var qc *queryComp
 	var err error
+	var ok bool
+
+	var vm map[string]json.RawMessage
+
+	if len(qr.vars) != 0 {
+		if err := json.Unmarshal(qr.vars, &vm); err != nil {
+			return nil, fmt.Errorf("variables: %w", err)
+		}
+	}
+
+	if gj.allowList == nil || !gj.prod {
+		st, err := gj.compileQueryRole(qr, vm, role)
+		if err != nil {
+			return nil, err
+		}
+		return &queryComp{qr: qr, st: st}, nil
+	}
 
 	// In production mode enforce the allow list and
 	// compile and cache the result else compile each time
-	if gj.allowList != nil && gj.prod {
-		if cq1, ok := gj.queries[(cq.q.name + role)]; ok {
-			cq.q = cq1.q
-		} else {
-			return errNotFound
-		}
+	if qc, ok = gj.queries[(qr.name + role)]; !ok {
+		return nil, errNotFound
+	}
+	ov := qc.qr.order[0]
 
-		if cq.st.sql == "" {
-			cq.Do(func() {
-				err = gj.compileQueryFn(cq, role)
-			})
+	// If order variable is set
+	if ov != "" {
+		if qc, err = gj.orderQuery(ov, qc, vm, role); err != nil {
+			return nil, err
 		}
+	}
 
+	if qc.st.sql == "" {
+		qc.Do(func() {
+			qc.st, err = gj.compileQueryRole(qc.qr, vm, role)
+		})
+	}
+
+	return qc, err
+}
+
+func (gj *GraphJin) orderQuery(
+	ov string,
+	qc *queryComp,
+	vm map[string]json.RawMessage, role string) (*queryComp, error) {
+
+	var oval string
+
+	v, ok := vm[ov]
+	if !ok || v[0] != '"' || len(v) == 2 {
+		return nil, fmt.Errorf("required variable not set: %s", ov)
+	}
+	oval = string(v[1:(len(v) - 1)])
+
+	if qc, ok := gj.queries[(qc.qr.name + role + oval)]; ok {
+		return qc, nil
 	} else {
-		err = gj.compileQueryFn(cq, role)
+		return nil, fmt.Errorf("invalid value for variable (%s): %s", ov, oval)
 	}
-
-	return err
 }
 
-func (gj *GraphJin) compileQueryFn(cq *cquery, role string) error {
+func (gj *GraphJin) compileQueryRole(
+	qr queryReq,
+	vm map[string]json.RawMessage, role string) (stmt, error) {
+
+	var st stmt
 	var err error
+	var ok bool
 
-	switch cq.q.op {
-	case qcode.QTQuery, qcode.QTSubscription, qcode.QTMutation:
-		err = gj.buildRoleStmt(cq, role)
-
-	default:
-		err = errors.New("unknown query")
+	if st.role, ok = gj.roles[role]; !ok {
+		return st, fmt.Errorf(`roles '%s' not defined in c.gj.config`, role)
 	}
 
-	cq.roleArg = (len(cq.stmts) > 0)
-	return err
-}
-
-func (gj *GraphJin) buildRoleStmt(cq *cquery, role string) error {
-	query := cq.q.query
-	vars := cq.q.vars
-
-	ro, ok := gj.roles[role]
-	if !ok {
-		return fmt.Errorf(`roles '%s' not defined in c.gj.config`, role)
+	if qr.order[0] != "" {
+		vm[qr.order[0]] = json.RawMessage(qr.order[1])
 	}
 
-	var vm map[string]json.RawMessage
-	var err error
-
-	if len(vars) != 0 {
-		if err := json.Unmarshal(vars, &vm); err != nil {
-			return fmt.Errorf("variables: %w", err)
-		}
-	}
-
-	qc, err := gj.qc.Compile(query, vm, ro.Name)
-	if err != nil {
-		return err
+	if st.qc, err = gj.qc.Compile(qr.query, vm, st.role.Name); err != nil {
+		return st, err
 	}
 
 	var w bytes.Buffer
 
-	cq.st.md, err = gj.pc.Compile(&w, qc)
-	if err != nil {
-		return err
+	if st.md, err = gj.pc.Compile(&w, st.qc); err != nil {
+		return st, err
 	}
 
-	cq.st.role = ro
-	cq.st.qc = qc
-	cq.st.sql = w.String()
-
-	return nil
+	st.sql = w.String()
+	return st, nil
 }

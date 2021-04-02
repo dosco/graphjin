@@ -1,0 +1,14 @@
+name: getChats
+query: |-
+    query getChats {
+      chats(id: $id) {
+        id
+        chats(find: "children") {
+          id
+        }
+      }
+    }
+vars: |-
+    {
+      "id": 0.0
+    }

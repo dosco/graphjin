@@ -22,7 +22,7 @@ func (gj *GraphJin) initConfig() error {
 	tm := make(map[string]struct{})
 
 	for _, t := range c.Tables {
-		k := strings.ToLower(t.Name)
+		k := strings.ToLower(t.Schema + t.Name)
 		if _, ok := tm[k]; ok {
 			return fmt.Errorf("duplicate table found: %s", t.Name)
 		}
@@ -50,8 +50,8 @@ func (gj *GraphJin) initConfig() error {
 		role.Match = sanitize(role.Match)
 		role.tm = make(map[string]*RoleTable)
 
-		for n, table := range role.Tables {
-			role.tm[table.Name] = &role.Tables[n]
+		for n, t := range role.Tables {
+			role.tm[t.Schema+t.Name] = &role.Tables[n]
 		}
 
 		gj.roles[k] = &c.Roles[i]
@@ -101,6 +101,22 @@ func initInflection(c *Config) error {
 	return nil
 }
 
+func addTableInfo(c *Config, t Table) error {
+	obm := map[string][][2]string{}
+
+	for k, ob := range t.OrderBy {
+		for _, v := range ob {
+			vals := strings.SplitN(v, " ", 2)
+			obm[k] = append(obm[k], [2]string{vals[0], vals[1]})
+		}
+	}
+	if c.tmap == nil {
+		c.tmap = make(map[string]qcode.TConfig)
+	}
+	c.tmap[(t.Schema + t.Name)] = qcode.TConfig{OrderBy: obm}
+	return nil
+}
+
 func getDBTableAliases(c *Config) map[string][]string {
 	m := make(map[string][]string, len(c.Tables))
 
@@ -118,6 +134,10 @@ func addTables(conf *Config, di *sdata.DBInfo) error {
 	var err error
 
 	for _, t := range conf.Tables {
+		// skip aliases
+		if t.Table != "" && t.Type == "" {
+			continue
+		}
 		switch t.Type {
 		case "json", "jsonb":
 			err = addJsonTable(conf, di, t)
@@ -138,12 +158,12 @@ func addTables(conf *Config, di *sdata.DBInfo) error {
 }
 
 func updateTable(conf *Config, di *sdata.DBInfo, t Table) error {
-	for _, c := range t.Columns {
-		t1, err := di.GetTable(t.Schema, t.Name)
-		if err != nil {
-			return fmt.Errorf("table: %s.%s: %w", t.Schema, t.Name, err)
-		}
+	t1, err := di.GetTable(t.Schema, t.Name)
+	if err != nil {
+		return fmt.Errorf("table: %w", err)
+	}
 
+	for _, c := range t.Columns {
 		c1, err := di.GetColumn(t.Schema, t.Name, c.Name)
 		if err != nil {
 			return err
@@ -227,17 +247,17 @@ func addVirtualTable(conf *Config, di *sdata.DBInfo, t Table) error {
 	if c.ForeignKey == "" {
 		return fmt.Errorf("polymorphic table: no 'related_to' specified on id column")
 	}
-	s := strings.SplitN(c.ForeignKey, ".", 2)
 
-	if len(s) != 2 {
+	s, ok := c.getFK(di.Schema)
+	if !ok {
 		return fmt.Errorf("polymorphic table: foreign key must be <type column>.<foreign key column>")
 	}
 
 	di.VTables = append(di.VTables, sdata.VirtualTable{
 		Name:       t.Name,
 		IDColumn:   c.Name,
-		TypeColumn: s[0],
-		FKeyColumn: s[1],
+		TypeColumn: s[1],
+		FKeyColumn: s[2],
 	})
 
 	return nil
@@ -266,37 +286,37 @@ func addForeignKey(conf *Config, di *sdata.DBInfo, c Column, t Table) error {
 		return fmt.Errorf("config: add foreign key: %w", err)
 	}
 
-	v := strings.SplitN(c.ForeignKey, ".", 2)
-	if len(v) != 2 {
+	v, ok := c.getFK(di.Schema)
+	if !ok {
 		return fmt.Errorf(
 			"config: invalid foreign key defined for table '%s' and column '%s': %s",
 			t.Name, c.Name, c.ForeignKey)
 	}
 
 	// check if it's a polymorphic foreign key
-	if _, err := di.GetColumn(t.Schema, t.Name, v[0]); err == nil {
-		c2, err := di.GetColumn(t.Schema, t.Name, v[1])
+	if _, err := di.GetColumn(t.Schema, t.Name, v[1]); err == nil {
+		c2, err := di.GetColumn(t.Schema, t.Name, v[2])
 		if err != nil {
 			return fmt.Errorf(
 				"config: invalid column '%s' for polymorphic relationship on table '%s' and column '%s'",
-				v[1], t.Name, c.Name)
+				v[2], t.Name, c.Name)
 		}
 
 		c1.FKeySchema = t.Schema
-		c1.FKeyTable = v[0]
+		c1.FKeyTable = v[1]
 		c1.FKeyCol = c2.Name
 		return nil
 	}
 
-	fkt, fkc := v[0], v[1]
-	c3, err := di.GetColumn(t.Schema, fkt, fkc)
+	fks, fkt, fkc := v[0], v[1], v[2]
+	c3, err := di.GetColumn(fks, fkt, fkc)
 	if err != nil {
 		return fmt.Errorf(
-			"config: foreign key for table '%s' and column '%s' points to unknown table '%s' and column '%s'",
-			t.Name, c.Name, v[0], v[1])
+			"config: foreign key for table '%s' and column '%s' points to unknown table '%s.%s' and column '%s'",
+			t.Name, c.Name, fks, fkt, fkc)
 	}
 
-	c1.FKeySchema = t.Schema
+	c1.FKeySchema = fks
 	c1.FKeyTable = fkt
 	c1.FKeyCol = c3.Name
 
@@ -385,8 +405,24 @@ func addRole(qc *qcode.Compiler, r Role, t RoleTable, defaultBlock bool) error {
 	})
 }
 
-func (r *Role) GetTable(name string) *RoleTable {
+func (r *Role) GetTable(schema, name string) *RoleTable {
 	return r.tm[name]
+}
+
+func (c *Column) getFK(defaultSchema string) ([3]string, bool) {
+	var ret [3]string
+	var ok bool
+
+	v := strings.SplitN(c.ForeignKey, ".", 3)
+	if len(v) == 2 {
+		ret = [3]string{defaultSchema, v[0], v[1]}
+		ok = true
+	}
+	if len(v) == 3 {
+		ret = [3]string{v[0], v[1], v[2]}
+		ok = true
+	}
+	return ret, ok
 }
 
 func sanitize(value string) string {

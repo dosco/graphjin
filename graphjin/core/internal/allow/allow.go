@@ -9,8 +9,11 @@ import (
 	"log"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"text/scanner"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/chirino/graphql/schema"
 	"github.com/dosco/graphjin/internal/jsn"
@@ -24,12 +27,20 @@ const (
 )
 
 type Item struct {
-	Name    string
-	Comment string
-	key     string
-	Query   string
-	Vars    string
-	frags   []Frag
+	Name     string
+	Comment  string `yaml:",omitempty"`
+	key      string
+	Query    string
+	Vars     string   `yaml:",omitempty"`
+	Metadata Metadata `yaml:",inline,omitempty"`
+	frags    []Frag
+}
+
+type Metadata struct {
+	Order struct {
+		Var    string   `yaml:"var,omitempty"`
+		Values []string `yaml:"values,omitempty"`
+	} `yaml:",omitempty"`
 }
 
 type Frag struct {
@@ -38,9 +49,7 @@ type Frag struct {
 }
 
 type List struct {
-	saveChan   chan Item
-	pathExists bool
-
+	saveChan     chan Item
 	filepath     string
 	queryPath    string
 	fragmentPath string
@@ -50,31 +59,27 @@ type Config struct {
 	Log *log.Logger
 }
 
-func New(filename string, conf Config) (*List, error) {
+func New(cpath string, conf Config) (*List, error) {
 	var err error
 	var ap string
-	var mig bool
 
 	al := List{saveChan: make(chan Item)}
 
-	if err := al.setFilePath(filename); err != nil {
-		return nil, err
-	}
-
-	if al.filepath == "" {
-		ap = path.Dir(filename)
+	if cpath == "" {
+		ap = "./config"
 	} else {
-		ap = path.Dir(al.filepath)
-		mig = true
+		ap = cpath
 	}
 
 	al.queryPath = path.Join(ap, "queries")
 	al.fragmentPath = path.Join(ap, "fragments")
 
-	if mig {
-		if err := al.migrate(); err != nil {
-			return nil, err
-		}
+	if err := os.MkdirAll(al.queryPath, os.ModePerm); err != nil {
+		return nil, err
+	}
+
+	if err := os.MkdirAll(al.fragmentPath, os.ModePerm); err != nil {
+		return nil, err
 	}
 
 	go func() {
@@ -94,55 +99,28 @@ func New(filename string, conf Config) (*List, error) {
 	return &al, nil
 }
 
-func (al *List) Set(vars []byte, query string) error {
+func (al *List) Set(vars []byte, query string, md Metadata) error {
 	if al.saveChan == nil {
-		return errors.New("allow.list is read-only")
+		return errors.New("allow list is read-only")
 	}
 
 	if query == "" {
 		return errors.New("empty query")
 	}
 
-	items, err := parse(query)
+	item, err := parseQuery(query)
 	if err != nil {
 		return err
 	}
 
-	if len(items) != 0 {
-		items[0].Vars = string(vars)
-		al.saveChan <- items[0]
-	}
-
+	item.Vars = string(vars)
+	item.Metadata = md
+	al.saveChan <- item
 	return nil
-}
-
-func (al *List) loadFile() ([]Item, error) {
-	b, err := ioutil.ReadFile(al.filepath)
-	if err != nil {
-		return nil, err
-	}
-
-	return parse(string(b))
 }
 
 func (al *List) Load() ([]Item, error) {
 	var items []Item
-
-	if _, err := os.Stat(al.queryPath); os.IsNotExist(err) {
-		if err := os.Mkdir(al.queryPath, os.ModePerm); err != nil {
-			return nil, err
-		}
-	} else if err != nil {
-		return nil, err
-	}
-
-	if _, err := os.Stat(al.fragmentPath); os.IsNotExist(err) {
-		if err := os.Mkdir(al.fragmentPath, os.ModePerm); err != nil {
-			return nil, err
-		}
-	} else if err != nil {
-		return nil, err
-	}
 
 	files, err := ioutil.ReadDir(al.queryPath)
 	if err != nil {
@@ -150,50 +128,61 @@ func (al *List) Load() ([]Item, error) {
 	}
 
 	for _, f := range files {
-		fn := path.Join(al.queryPath, f.Name())
-		b, err := ioutil.ReadFile(fn)
-		if err != nil {
-			return nil, fmt.Errorf("allow list: %w", err)
+		var item Item
+		var mi bool
+
+		fn := f.Name()
+		fn = strings.TrimSuffix(fn, filepath.Ext(fn))
+
+		// migrate if old file exists
+		oldFile := path.Join(al.queryPath, fn)
+		if _, err := os.Stat(oldFile); !os.IsNotExist(err) {
+			b, err := ioutil.ReadFile(oldFile)
+			if err != nil {
+				return nil, err
+			}
+
+			item, err = parseQuery(string(b))
+			if err != nil {
+				return nil, err
+			}
+			mi = true
 		}
-		item, err := parse(string(b))
-		if err != nil {
-			return nil, err
+
+		newFile := path.Join(al.queryPath, (fn + ".yaml"))
+		if mi {
+			b, err := yaml.Marshal(&item)
+			if err != nil {
+				return nil, err
+			}
+			if err := ioutil.WriteFile(newFile, b, 0644); err != nil {
+				return nil, err
+			}
+
+		} else {
+			b, err := ioutil.ReadFile(newFile)
+			if err != nil {
+				return nil, err
+			}
+			if err := yaml.Unmarshal(b, &item); err != nil {
+				return nil, err
+			}
 		}
-		items = append(items, item[0])
+
+		items = append(items, item)
 	}
 
 	return items, nil
 }
 
-func (al *List) FragmentFetcher() func(name string) (string, error) {
-	return func(name string) (string, error) {
-		v, err := ioutil.ReadFile(path.Join(al.fragmentPath, name))
-		return string(v), err
-	}
-}
-
-func (al *List) GetQuery(name string) (Item, error) {
-	v, err := ioutil.ReadFile(path.Join(al.queryPath, name))
-	if err == nil {
-		return Item{}, err
-	}
-
-	items, err := parse(string(v))
-	if err != nil {
-		return Item{}, err
-	}
-	return items[0], nil
-}
-
-func parse(b string) ([]Item, error) {
-	var items []Item
-
+func parseQuery(b string) (Item, error) {
 	var s scanner.Scanner
 	s.Init(strings.NewReader(b))
 	s.Mode ^= scanner.SkipComments
 
 	var op, sp scanner.Position
 	var item Item
+	var err error
 
 	st := expComment
 
@@ -203,76 +192,70 @@ func parse(b string) ([]Item, error) {
 		switch {
 		case strings.HasPrefix(txt, "/*"):
 			v := b[sp.Offset:s.Pos().Offset]
-
-			if st == expQuery {
-				item.Query = strings.TrimSpace(v[:strings.LastIndexByte(v, '}')+1])
-				items = append(items, item)
-			}
-
-			if st == expFrag {
-				f := Frag{Value: strings.TrimSpace(v[:strings.LastIndexByte(v, '}')+1])}
-				f.Name = QueryName(f.Value)
-				item.frags = append(item.frags, f)
-				items = append(items, item)
-			}
-
-			item = Item{}
+			item, err = setValue(st, v, item)
 			sp = s.Pos()
 
 		case strings.HasPrefix(txt, "variables"):
+			v := b[sp.Offset:s.Pos().Offset]
+			item, err = setValue(st, v, item)
 			sp = s.Pos()
 			st = expVar
 
 		case isGraphQL(txt):
-			if st == expVar {
-				v := b[sp.Offset:s.Pos().Offset]
-				item.Vars = strings.TrimSpace(v[:strings.LastIndexByte(v, '}')+1])
-			}
+			v := b[sp.Offset:s.Pos().Offset]
+			item, err = setValue(st, v, item)
 			sp = op
 			st = expQuery
 
 		case strings.HasPrefix(txt, "fragment"):
 			v := b[sp.Offset:s.Pos().Offset]
-
-			if st == expVar {
-				item.Vars = strings.TrimSpace(v[:strings.LastIndexByte(v, '}')+1])
-			}
-
-			if st == expQuery {
-				item.Query = strings.TrimSpace(v[:strings.LastIndexByte(v, '}')+1])
-			}
-
-			if st == expFrag {
-				f := Frag{Value: strings.TrimSpace(v[:strings.LastIndexByte(v, '}')+1])}
-				f.Name = QueryName(f.Value)
-				item.frags = append(item.frags, f)
-			}
-
+			item, err = setValue(st, v, item)
 			sp = op
 			st = expFrag
 		}
+
+		if err != nil {
+			return item, err
+		}
+
 		op = s.Pos()
 	}
-	v := b[sp.Offset:s.Pos().Offset]
 
-	if st == expQuery {
-		item.Query = strings.TrimSpace(v[:strings.LastIndexByte(v, '}')+1])
-		items = append(items, item)
+	if st == expQuery || st == expFrag {
+		v := b[sp.Offset:s.Pos().Offset]
+		item, err = setValue(st, v, item)
 	}
 
-	if st == expFrag {
-		f := Frag{Value: strings.TrimSpace(v[:strings.LastIndexByte(v, '}')+1])}
+	if err != nil {
+		return item, err
+	}
+
+	item.Name = QueryName(item.Query)
+	item.key = strings.ToLower(item.Name)
+	return item, nil
+}
+
+func setValue(st int, v string, item Item) (Item, error) {
+	val := func() string {
+		return strings.TrimSpace(v[:strings.LastIndexByte(v, '}')+1])
+	}
+	switch st {
+	case expComment:
+		item.Comment = val()
+
+	case expVar:
+		item.Vars = val()
+
+	case expQuery:
+		item.Query = val()
+
+	case expFrag:
+		f := Frag{Value: val()}
 		f.Name = QueryName(f.Value)
 		item.frags = append(item.frags, f)
-		items = append(items, item)
 	}
 
-	for i := range items {
-		items[i].Name = QueryName(items[i].Query)
-		items[i].key = strings.ToLower(items[i].Name)
-	}
-
-	return items, nil
+	return item, nil
 }
 
 func (al *List) save(item Item) error {
@@ -302,97 +285,66 @@ func (al *List) save(item Item) error {
 	return nil
 }
 
-func (al *List) migrate() error {
-	list, err := al.loadFile()
+func (al *List) saveItem(item Item, ap string, ow bool) error {
+	var err error
+
+	if item.Vars != "" {
+		var buf bytes.Buffer
+
+		if err := jsn.Clear(&buf, []byte(item.Vars)); err != nil {
+			return err
+		}
+
+		vj := json.RawMessage(buf.Bytes())
+		if vj, err = json.MarshalIndent(vj, "", "  "); err != nil {
+			return err
+		}
+		item.Vars = string(vj)
+	}
+
+	b, err := yaml.Marshal(&item)
 	if err != nil {
 		return err
 	}
 
-	ap, err := al.makeDir()
-	if err != nil {
+	fn := path.Join(al.queryPath, (item.Name + ".yaml"))
+	if err := ioutil.WriteFile(fn, b, 0644); err != nil {
 		return err
 	}
 
-	for _, v := range list {
-		if err := al.saveItem(v, ap, false); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (al *List) saveItem(v Item, ap string, ow bool) error {
-	fn := path.Join(al.queryPath, v.Name)
-	oq := true
-
-	if !ow {
-		if _, err := os.Stat(fn); err != nil && !os.IsNotExist(err) {
-			return err
-		} else if err == nil {
-			oq = false
-		}
-	}
-
-	if oq {
-		f, err := os.Create(fn)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-
-		if v.Vars != "" {
-			var buf bytes.Buffer
-
-			if err := jsn.Clear(&buf, []byte(v.Vars)); err != nil {
-				return err
-			}
-			vj := json.RawMessage(buf.Bytes())
-
-			if vj, err = json.MarshalIndent(vj, "", "  "); err != nil {
-				return err
-			}
-			v.Vars = string(vj)
-		}
-
-		if v.Vars != "" {
-			_, err = f.WriteString(fmt.Sprintf("variables %s\n\n", v.Vars))
-			if err != nil {
-				return err
-			}
-		}
-
-		_, err = f.WriteString(fmt.Sprintf("%s\n\n", v.Query))
-		if err != nil {
-			return err
-		}
-	}
-
-	for _, fv := range v.frags {
+	for _, fv := range item.frags {
 		fn := path.Join(al.fragmentPath, fv.Name)
-		of := true
+		b := []byte(fv.Value)
 
-		if !ow {
-			if _, err := os.Stat(fn); err != nil && !os.IsNotExist(err) {
-				return err
-			} else if err == nil {
-				of = false
-			}
-		}
-
-		if of {
-			f, err := os.Create(fn)
-			if err != nil {
-				return err
-			}
-			defer f.Close()
-
-			_, err = f.WriteString(fmt.Sprintf("%s\n\n", fv.Value))
-			if err != nil {
-				return err
-			}
+		if err := ioutil.WriteFile(fn, b, 0644); err != nil {
+			return err
 		}
 	}
 
 	return nil
 }
+
+func (al *List) FragmentFetcher() func(name string) (string, error) {
+	return func(name string) (string, error) {
+		v, err := ioutil.ReadFile(path.Join(al.fragmentPath, name))
+		return string(v), err
+	}
+}
+
+// func (al *List) GetQuery(name string) (Item, error) {
+// 	var item Item
+// 	var err error
+
+// 	b, err := ioutil.ReadFile(path.Join(al.queryPath, (name + ".yaml")))
+// 	if err == nil {
+// 		return item, err
+// 	}
+
+// 	return parseYAML(b)
+// }
+
+// func parseYAML(b []byte) (Item, error) {
+// 	var item Item
+// 	err := yaml.Unmarshal(b, &item)
+// 	return item, err
+// }

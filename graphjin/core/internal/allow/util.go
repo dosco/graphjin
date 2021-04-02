@@ -1,59 +1,8 @@
 package allow
 
 import (
-	"os"
-	"path"
 	"strings"
 )
-
-func (al *List) makeDir() (string, error) {
-	ap := path.Dir(al.filepath)
-	if al.pathExists {
-		return ap, nil
-	}
-	if err := os.MkdirAll(path.Join(ap, "queries"), os.ModePerm); err != nil {
-		return ap, err
-	}
-	if err := os.MkdirAll(path.Join(ap, "fragments"), os.ModePerm); err != nil {
-		return ap, err
-	}
-	al.pathExists = true
-	return ap, nil
-}
-
-func (al *List) setFilePath(filename string) error {
-	if filename != "" {
-		fp := filename
-
-		if _, err := os.Stat(fp); err == nil {
-			al.filepath = fp
-		} else if !os.IsNotExist(err) {
-			return err
-		}
-	}
-
-	if al.filepath == "" {
-		fp := "./allow.list"
-
-		if _, err := os.Stat(fp); err == nil {
-			al.filepath = fp
-		} else if !os.IsNotExist(err) {
-			return err
-		}
-	}
-
-	if al.filepath == "" {
-		fp := "./config/allow.list"
-
-		if _, err := os.Stat(fp); err == nil {
-			al.filepath = fp
-		} else if !os.IsNotExist(err) {
-			return err
-		}
-	}
-
-	return nil
-}
 
 func QueryName(b string) string {
 	state, s := 0, 0

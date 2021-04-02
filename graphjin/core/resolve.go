@@ -7,7 +7,7 @@ import (
 	"github.com/dosco/graphjin/core/internal/sdata"
 )
 
-type resFn func(v ResolverProps) (Resolver, error)
+type refunc func(v ResolverProps) (Resolver, error)
 
 type resItem struct {
 	IDField []byte
@@ -18,7 +18,7 @@ type resItem struct {
 func (gj *GraphJin) initResolvers() error {
 	gj.rmap = make(map[string]resItem)
 
-	rtmap := map[string]resFn{
+	rtmap := map[string]refunc{
 		"remote_api": func(v ResolverProps) (Resolver, error) {
 			return newRemoteAPI(v)
 		},
@@ -28,7 +28,11 @@ func (gj *GraphJin) initResolvers() error {
 		rtmap[name] = fn
 	}
 
-	for _, r := range gj.conf.Resolvers {
+	for i, r := range gj.conf.Resolvers {
+		if r.Schema == "" {
+			gj.conf.Resolvers[i].Schema = gj.dbinfo.Schema
+			r.Schema = gj.dbinfo.Schema
+		}
 		if err := gj.initRemote(r, rtmap); err != nil {
 			return fmt.Errorf("resolvers: %w", err)
 		}
@@ -37,7 +41,7 @@ func (gj *GraphJin) initResolvers() error {
 	return nil
 }
 
-func (gj *GraphJin) initRemote(rc ResolverConfig, rtmap map[string]resFn) error {
+func (gj *GraphJin) initRemote(rc ResolverConfig, rtmap map[string]refunc) error {
 	// Defines the table column to be used as an id in the
 	// remote reques
 	var col sdata.DBColumn
@@ -62,7 +66,7 @@ func (gj *GraphJin) initRemote(rc ResolverConfig, rtmap map[string]resFn) error 
 	idk := fmt.Sprintf("__%s_%s", rc.Name, col.Name)
 	col1 := sdata.DBColumn{
 		PrimaryKey: true,
-		Schema:     ti.Schema,
+		Schema:     rc.Schema,
 		Table:      rc.Name,
 		Name:       idk,
 		Type:       col.Type,
@@ -71,9 +75,9 @@ func (gj *GraphJin) initRemote(rc ResolverConfig, rtmap map[string]resFn) error 
 		FKeyCol:    col.Name,
 	}
 
-	nt := sdata.NewDBTable(ti.Schema,
-		rc.Name, "remote", nil)
+	nt := sdata.NewDBTable(rc.Schema, rc.Name, "remote", nil)
 	nt.PrimaryCol = col1
+
 	gj.dbinfo.AddTable(nt)
 
 	// The function thats called to resolve this remote
