@@ -8,6 +8,7 @@ import (
 	"github.com/chirino/graphql/resolvers"
 	"github.com/chirino/graphql/schema"
 	"github.com/dosco/graphjin/core/internal/sdata"
+	"github.com/gobuffalo/flect"
 )
 
 var typeMap map[string]string = map[string]string{
@@ -29,6 +30,16 @@ type expInfo struct {
 	name, vtype string
 	list        bool
 	desc, db    string
+}
+
+type inflectData struct {
+	enabled     bool // Is inflection enabled
+	singularize bool // Should we singularize the current word
+}
+
+var inflection inflectData = inflectData{
+	enabled:     false,
+	singularize: false,
 }
 
 const (
@@ -149,6 +160,8 @@ func (gj *GraphJin) initGraphQLEgine() error {
 		Desc: schema.NewDescription("A cursor is an encoded string use for pagination"),
 	}
 
+	inflection.enabled = gj.conf.EnableInflection
+
 	if err := in.addTables(); err != nil {
 		return err
 	}
@@ -181,6 +194,16 @@ func (in *intro) addTables() error {
 		if err := in.addTable(t.Name, t); err != nil {
 			return err
 		}
+
+		if inflection.enabled {
+			inflection.singularize = true
+
+			if err := in.addTable(t.Name, t); err != nil {
+				return err
+			}
+		}
+
+		inflection.singularize = false
 	}
 
 	for name, t := range in.GetAliases() {
@@ -221,6 +244,10 @@ func (in *intro) addTable(name string, ti sdata.DBTable) error {
 
 	if len(ti.Columns) == 0 {
 		return nil
+	}
+
+	if inflection.enabled && inflection.singularize {
+		name = flect.Singularize(name)
 	}
 
 	// outputType
@@ -414,7 +441,7 @@ func (in *intro) addArgs(
 		},
 	}
 
-	if ti.PrimaryCol.Name != "" {
+	if ti.PrimaryCol.Name != "" && inflection.enabled && inflection.singularize {
 		colType, _ := getGQLType(col)
 		args = append(args, &schema.InputValue{
 			Desc: schema.NewDescription("Finds the record by the primary key"),
@@ -431,31 +458,35 @@ func (in *intro) addArgs(
 		})
 	}
 
-	in.query.Fields = append(in.query.Fields, &schema.Field{
-		//Desc: schema.NewDescription(""),
-		Name: name,
-		Type: otName,
-		Args: args,
-	})
-	in.query.Fields = append(in.query.Fields, &schema.Field{
-		//Desc: schema.NewDescription(""),
-		Name: name,
-		Type: potName,
-		Args: args,
-	})
+	if inflection.enabled && inflection.singularize {
+		in.query.Fields = append(in.query.Fields, &schema.Field{
+			//Desc: schema.NewDescription(""),
+			Name: name,
+			Type: otName,
+			Args: args,
+		})
 
-	in.subscription.Fields = append(in.subscription.Fields, &schema.Field{
-		//Desc: schema.NewDescription(""),
-		Name: name,
-		Type: otName,
-		Args: args,
-	})
-	in.subscription.Fields = append(in.subscription.Fields, &schema.Field{
-		//Desc: schema.NewDescription(""),
-		Name: name,
-		Type: potName,
-		Args: args,
-	})
+		in.subscription.Fields = append(in.subscription.Fields, &schema.Field{
+			//Desc: schema.NewDescription(""),
+			Name: name,
+			Type: otName,
+			Args: args,
+		})
+	} else {
+		in.query.Fields = append(in.query.Fields, &schema.Field{
+			//Desc: schema.NewDescription(""),
+			Name: name,
+			Type: potName,
+			Args: args,
+		})
+
+		in.subscription.Fields = append(in.subscription.Fields, &schema.Field{
+			//Desc: schema.NewDescription(""),
+			Name: name,
+			Type: potName,
+			Args: args,
+		})
+	}
 
 	mutationArgs := append(args, schema.InputValueList{
 		&schema.InputValue{

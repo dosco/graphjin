@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/dosco/graphjin/core/internal/util"
+	"github.com/gobuffalo/flect"
 )
 
 var (
@@ -189,6 +190,7 @@ func (s *DBSchema) Find(schema, name string) (DBTable, error) {
 	if schema == "" {
 		schema = s.DBSchema()
 	}
+	name = flect.Pluralize(name)
 
 	v, ok := s.tindex[(schema + ":" + name)]
 	if !ok {
@@ -207,6 +209,8 @@ type TPath struct {
 }
 
 func (s *DBSchema) FindPath(from, to, through string) ([]TPath, error) {
+	from = flect.Pluralize(from)
+	to = flect.Pluralize(to)
 	fl, ok := s.ei[from]
 	if !ok {
 		return nil, ErrFromEdgeNotFound
