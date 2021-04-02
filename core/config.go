@@ -23,10 +23,9 @@ type Config struct {
 	// even in production. (Warning possible security concern)
 	DisableAllowList bool `mapstructure:"disable_allow_list"`
 
-	// AllowListFile if the path to allow list file if not set the
-	// path is assumed to be the same as the config path (allow.list)
-	AllowListFile string `mapstructure:"allow_list_file"`
-
+	// AllowListPath if the path to allow list file if not set the
+	// path is assumed to be the same as the config path
+	AllowListPath string `mapstructure:"allow_list_path"`
 	// SetUserID forces the database session variable `user.id` to
 	// be set to the user id. This variables can be used by triggers
 	// or other database functions
@@ -98,7 +97,9 @@ type Config struct {
 	// "production". When this is true the allow list is enforced.
 	Production bool
 
-	rtmap map[string]resFn
+	rtmap map[string]refunc
+	tmap  map[string]qcode.TConfig
+	cpath string
 }
 
 // Table struct defines a database table
@@ -109,6 +110,7 @@ type Table struct {
 	Type      string
 	Blocklist []string
 	Columns   []Column
+	OrderBy   map[string][]string `mapstructure:"order_by"`
 }
 
 // Column struct defines a database column
@@ -341,9 +343,9 @@ func (c *Config) RemoveRoleTable(role, table string) error {
 	return nil
 }
 
-func (c *Config) SetResolver(name string, fn resFn) error {
+func (c *Config) SetResolver(name string, fn refunc) error {
 	if c.rtmap == nil {
-		c.rtmap = make(map[string]resFn)
+		c.rtmap = make(map[string]refunc)
 	}
 	if _, ok := c.rtmap[name]; ok {
 		return fmt.Errorf("resolver defined: %s", name)
@@ -381,14 +383,12 @@ func ReadInConfig(configFile string) (*Config, error) {
 		}
 	}
 
-	c := &Config{}
+	c := &Config{
+		cpath: path.Dir(vi.ConfigFileUsed()),
+	}
 
 	if err := vi.Unmarshal(&c); err != nil {
 		return nil, fmt.Errorf("failed to decode config, %v", err)
-	}
-
-	if c.AllowListFile == "" {
-		c.AllowListFile = path.Join(cp, "allow.list")
 	}
 
 	return c, nil

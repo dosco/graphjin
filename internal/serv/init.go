@@ -100,12 +100,7 @@ func initConf(servConfig *ServConfig) (*Config, error) {
 		c.AuthFailBlock = false
 	}
 
-	if c.AllowListFile == "" {
-		c.AllowListFile = c.relPath("./allow.list")
-	}
-
 	c.Core.Production = c.Serv.Production
-
 	return c, nil
 }
 

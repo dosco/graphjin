@@ -13,9 +13,7 @@ http_compress: true
 
 # When production mode is 'true' only queries
 # from the allow list are permitted.
-# When it's 'false' all queries are saved to the
-# the allow list in ./config/allow.list
-production: false
+production: true
 
 # Throw a 401 on auth failure for queries that need auth
 auth_fail_block: false
@@ -253,6 +251,9 @@ tables:
     columns:
       - name: category_ids
         related_to: categories.id
+    order_by:
+      price_and_id: [ "price desc", "id asc" ]
+      just_id: [ "id asc" ]
 
   - name: subject
     type: polymorphic

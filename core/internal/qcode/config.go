@@ -8,12 +8,17 @@ import (
 
 type Config struct {
 	Vars             map[string]string
+	TConfig          map[string]TConfig
 	FragmentFetcher  func(name string) (string, error)
 	DefaultBlock     bool
 	DefaultLimit     int
-	defTrv           trval
 	EnableInflection bool
 	DBSchema         string
+	defTrv           trval
+}
+
+type TConfig struct {
+	OrderBy map[string][][2]string
 }
 
 type TRConfig struct {
@@ -187,6 +192,10 @@ func (co *Compiler) getRole(role, schema, table, field string) trval {
 		return co.c.defTrv
 	}
 	return tr
+}
+
+func (co *Compiler) getTConfig(schema, name string) TConfig {
+	return co.c.TConfig[(schema + name)]
 }
 
 func (trv *trval) filter(qt QType) (*Exp, bool) {

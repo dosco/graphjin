@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dosco/graphjin/core/internal/allow"
 	"github.com/dosco/graphjin/core/internal/graph"
 	"github.com/dosco/graphjin/core/internal/sdata"
 	"github.com/dosco/graphjin/core/internal/util"
@@ -65,6 +66,7 @@ type QCode struct {
 	MUnions   map[string][]int32
 	Schema    *sdata.DBSchema
 	Remotes   int32
+	Metadata  allow.Metadata
 }
 
 type Select struct {
@@ -91,6 +93,11 @@ type Select struct {
 	Joins      []Join
 	order      Order
 	through    string
+	tc         TConfig
+}
+
+type TableInfo struct {
+	sdata.DBTable
 }
 
 type Column struct {
@@ -508,6 +515,7 @@ func (co *Compiler) addRelInfo(
 	}
 
 	sel.Table = sel.Ti.Name
+	sel.tc = co.getTConfig(sel.Ti.Schema, sel.Ti.Name)
 
 	if sel.Rel.Type == sdata.RelRemote {
 		sel.Table = field.Name
@@ -857,7 +865,7 @@ func (co *Compiler) compileArgs(qc *QCode, sel *Select, args []graph.Arg, role s
 			err = co.compileArgWhere(sel.Ti, sel, arg, role)
 
 		case "orderby", "order_by", "order":
-			err = co.compileArgOrderBy(sel, arg)
+			err = co.compileArgOrderBy(qc, sel, arg)
 
 		case "distinct_on", "distinct":
 			err = co.compileArgDistinctOn(sel, arg)
@@ -1092,9 +1100,12 @@ func (co *Compiler) compileArgWhere(ti sdata.DBTable, sel *Select, arg *graph.Ar
 	return nil
 }
 
-func (co *Compiler) compileArgOrderBy(sel *Select, arg *graph.Arg) error {
-	if arg.Val.Type != graph.NodeObj {
-		return fmt.Errorf("expecting an object")
+func (co *Compiler) compileArgOrderBy(qc *QCode, sel *Select, arg *graph.Arg) error {
+	node := arg.Val
+
+	if node.Type != graph.NodeObj &&
+		node.Type != graph.NodeVar {
+		return argErr("order_by", "object or variable")
 	}
 
 	var cm map[string]struct{}
@@ -1106,10 +1117,23 @@ func (co *Compiler) compileArgOrderBy(sel *Select, arg *graph.Arg) error {
 		}
 	}
 
+	switch node.Type {
+	case graph.NodeObj:
+		return co.compileArgOrderByObj(sel, node, cm)
+
+	case graph.NodeVar:
+		return co.compileArgOrderByVar(qc, sel, node, cm)
+	}
+
+	return nil
+}
+
+func (co *Compiler) compileArgOrderByObj(sel *Select, node *graph.Node, cm map[string]struct{}) error {
+	var err error
 	st := util.NewStackInf()
 
-	for i := range arg.Val.Children {
-		st.Push(arg.Val.Children[i])
+	for i := range node.Children {
+		st.Push(node.Children[i])
 	}
 
 	obList := make([]OrderBy, 0, 2)
@@ -1126,27 +1150,13 @@ func (co *Compiler) compileArgOrderBy(sel *Select, arg *graph.Arg) error {
 			return fmt.Errorf("17: unexpected value %v (%t)", intf, intf)
 		}
 
-		if node.Type != graph.NodeStr && node.Type != graph.NodeVar {
-			return fmt.Errorf("expecting a string or variable")
+		if node.Type != graph.NodeStr {
+			return fmt.Errorf("expecting a string")
 		}
 
 		ob := OrderBy{}
-
-		switch node.Val {
-		case "asc":
-			ob.Order = OrderAsc
-		case "desc":
-			ob.Order = OrderDesc
-		case "asc_nulls_first":
-			ob.Order = OrderAscNullsFirst
-		case "desc_nulls_first":
-			ob.Order = OrderDescNullsFirst
-		case "asc_nulls_last":
-			ob.Order = OrderAscNullsLast
-		case "desc_nulls_last":
-			ob.Order = OrderDescNullsLast
-		default:
-			return fmt.Errorf("valid values include asc, desc, asc_nulls_first and desc_nulls_first")
+		if ob.Order, err = toOrder(node.Val); err != nil {
+			return err
 		}
 
 		if err := setOrderByColName(sel.Ti, &ob, node); err != nil {
@@ -1161,8 +1171,64 @@ func (co *Compiler) compileArgOrderBy(sel *Select, arg *graph.Arg) error {
 	for i := len(obList) - 1; i >= 0; i-- {
 		sel.OrderBy = append(sel.OrderBy, obList[i])
 	}
-
 	return nil
+}
+
+func (co *Compiler) compileArgOrderByVar(qc *QCode, sel *Select, node *graph.Node, cm map[string]struct{}) error {
+	obList := make([]OrderBy, 0, 2)
+	k := string(qc.Vars[node.Val])
+	if k[0] != '"' {
+		return fmt.Errorf("Order by variable must be a string: %s", k)
+	}
+	k = k[1:(len(k) - 1)]
+
+	values, ok := sel.tc.OrderBy[k]
+	if !ok {
+		return fmt.Errorf("Order by not found: %s", k)
+	}
+
+	var mval []string
+	for k := range sel.tc.OrderBy {
+		mval = append(mval, k)
+	}
+	qc.Metadata.Order.Var = node.Val
+	qc.Metadata.Order.Values = mval
+
+	for _, v := range values {
+		ob := OrderBy{}
+		ob.Order, _ = toOrder(v[1])
+
+		col, err := sel.Ti.GetColumn(v[0])
+		if err != nil {
+			return err
+		}
+		ob.Col = col
+		if _, ok := cm[ob.Col.Name]; ok {
+			return fmt.Errorf("duplicate column in order by: %s", ob.Col.Name)
+		}
+		obList = append(obList, ob)
+	}
+	sel.OrderBy = obList
+	return nil
+}
+
+func toOrder(val string) (Order, error) {
+	switch val {
+	case "asc":
+		return OrderAsc, nil
+	case "desc":
+		return OrderDesc, nil
+	case "asc_nulls_first":
+		return OrderAscNullsFirst, nil
+	case "desc_nulls_first":
+		return OrderDescNullsFirst, nil
+	case "asc_nulls_last":
+		return OrderAscNullsLast, nil
+	case "desc_nulls_last":
+		return OrderDescNullsLast, nil
+	default:
+		return OrderAsc, fmt.Errorf("valid values include asc, desc, asc_nulls_first and desc_nulls_first")
+	}
 }
 
 func (co *Compiler) compileArgDistinctOn(sel *Select, arg *graph.Arg) error {

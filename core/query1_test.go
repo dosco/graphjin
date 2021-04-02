@@ -62,6 +62,54 @@ func Example_queryWithUser() {
 	// Output: {"products": [{"id": 31, "owner": {"id": 31}}]}
 }
 
+func Example_queryWithDynamicOrderBy() {
+	gql := `query getProducts {
+		products(order_by: $order, where: { id: { lt: 6 } }, limit: 5) {
+			id
+			price
+		}
+	}`
+
+	conf := &core.Config{
+		DBType:           dbType,
+		DisableAllowList: true,
+		Tables: []core.Table{{
+			Name: "products",
+			OrderBy: map[string][]string{
+				"price_and_id": {"price desc", "id asc"},
+				"just_id":      {"id asc"},
+			},
+		}},
+	}
+
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	vars1 := json.RawMessage(`{ "order": "price_and_id" }`)
+
+	res1, err1 := gj.GraphQL(context.Background(), gql, vars1, nil)
+	if err != nil {
+		fmt.Println(err1)
+	} else {
+		fmt.Println(string(res1.Data))
+	}
+
+	vars2 := json.RawMessage(`{ "order": "just_id" }`)
+
+	res2, err2 := gj.GraphQL(context.Background(), gql, vars2, nil)
+	if err != nil {
+		fmt.Println(err2)
+	} else {
+		fmt.Println(string(res2.Data))
+	}
+
+	// Output:
+	// {"products": [{"id": 5, "price": 15.5}, {"id": 4, "price": 14.5}, {"id": 3, "price": 13.5}, {"id": 2, "price": 12.5}, {"id": 1, "price": 11.5}]}
+	// {"products": [{"id": 1, "price": 11.5}, {"id": 2, "price": 12.5}, {"id": 3, "price": 13.5}, {"id": 4, "price": 14.5}, {"id": 5, "price": 15.5}]}
+}
+
 func Example_queryWithLimitOffsetOrderByDistinctAndWhere() {
 	gql := `query {
 		proDUcts(

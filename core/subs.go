@@ -25,7 +25,7 @@ const (
 type sub struct {
 	name string
 	role string
-	q    *cquery
+	qc   *queryComp
 
 	add  chan *Member
 	del  chan *Member
@@ -122,7 +122,7 @@ func (gj *GraphJin) Subscribe(
 		return nil, err
 	}
 
-	args, err := gj.argList(c, s.q.st.md, vars, rc)
+	args, err := gj.argList(c, s.qc.st.md, vars, rc)
 	if err != nil {
 		return nil, err
 	}
@@ -139,26 +139,27 @@ func (gj *GraphJin) Subscribe(
 }
 
 func (gj *GraphJin) newSub(c context.Context, s *sub, query string, vars json.RawMessage) error {
-	rq := rquery{
+	var err error
+
+	qr := queryReq{
 		op:    qcode.QTSubscription,
 		name:  s.name,
 		query: []byte(query),
 		vars:  vars,
 	}
-	s.q = &cquery{q: rq}
 
-	if err := gj.compileQuery(s.q, s.role); err != nil {
+	if s.qc, err = gj.compileQuery(qr, s.role); err != nil {
 		return err
 	}
 
 	if gj.allowList != nil && !gj.prod {
-		if err := gj.allowList.Set(vars, query); err != nil {
+		if err := gj.allowList.Set(vars, query, s.qc.st.qc.Metadata); err != nil {
 			return err
 		}
 	}
 
-	if len(s.q.st.md.Params()) != 0 {
-		s.q.st.sql = renderSubWrap(s.q.st, gj.schema.DBType())
+	if len(s.qc.st.md.Params()) != 0 {
+		s.qc.st.sql = renderSubWrap(s.qc.st, gj.schema.DBType())
 	}
 
 	go gj.subController(s)
@@ -296,7 +297,7 @@ func (gj *GraphJin) checkUpdates(s *sub, mv mval, start int) {
 	var rows *sql.Rows
 	var err error
 
-	hasParams := len(s.q.st.md.Params()) != 0
+	hasParams := len(s.qc.st.md.Params()) != 0
 	c := context.Background()
 
 	// when params are not available we use a more optimized
@@ -304,9 +305,9 @@ func (gj *GraphJin) checkUpdates(s *sub, mv mval, start int) {
 	// more details on this optimization are towards the end
 	// of the function
 	if hasParams {
-		rows, err = gj.db.QueryContext(c, s.q.st.sql, renderJSONArray(mv.params[start:end]))
+		rows, err = gj.db.QueryContext(c, s.qc.st.sql, renderJSONArray(mv.params[start:end]))
 	} else {
-		rows, err = gj.db.QueryContext(c, s.q.st.sql)
+		rows, err = gj.db.QueryContext(c, s.qc.st.sql)
 	}
 
 	if err != nil {
@@ -330,7 +331,7 @@ func (gj *GraphJin) checkUpdates(s *sub, mv mval, start int) {
 			continue
 		}
 
-		cur, err := gj.encryptCursor(s.q.st.qc, js)
+		cur, err := gj.encryptCursor(s.qc.st.qc, js)
 		if err != nil {
 			gj.log.Printf("Subscription Error: %s", err)
 			return
@@ -347,8 +348,8 @@ func (gj *GraphJin) checkUpdates(s *sub, mv mval, start int) {
 		res := &Result{
 			op:   qcode.QTQuery,
 			name: s.name,
-			sql:  s.q.st.sql,
-			role: s.q.st.role.Name,
+			sql:  s.qc.st.sql,
+			role: s.qc.st.role.Name,
 			Data: cur.data,
 		}
 

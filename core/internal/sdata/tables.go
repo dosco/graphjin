@@ -162,17 +162,11 @@ func NewDBTable(schema, name, _type string, cols []DBColumn) DBTable {
 func (di *DBInfo) AddTable(t DBTable) {
 	for i, c := range t.Columns {
 		di.colMap[(c.Schema + ":" + c.Table + ":" + c.Name)] = i
-		di.colMap[(":" + c.Table + ":" + c.Name)] = i
 	}
 
 	i := len(di.Tables)
 	di.Tables = append(di.Tables, t)
 	di.tableMap[(t.Schema + ":" + t.Name)] = i
-
-	k := (":" + t.Name)
-	if _, ok := di.tableMap[k]; !ok {
-		di.tableMap[k] = i
-	}
 }
 
 func (di *DBInfo) GetColumn(schema, table, column string) (*DBColumn, error) {

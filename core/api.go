@@ -86,7 +86,7 @@ type GraphJin struct {
 	schema      *sdata.DBSchema
 	allowList   *allow.List
 	encKey      [32]byte
-	queries     map[string]*cquery
+	queries     map[string]*queryComp
 	roles       map[string]*Role
 	roleStmt    string
 	roleStmtMD  psql.Metadata
@@ -118,6 +118,8 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo) (*GraphJin, err
 		log:    _log.New(os.Stdout, "", 0),
 		prod:   conf.Production || os.Getenv("GO_ENV") == "production",
 	}
+
+	//order matters, do not re-order the initializers
 
 	if err := gj.initConfig(); err != nil {
 		return nil, err
@@ -243,8 +245,8 @@ func (gj *GraphJin) GraphQL(
 		res.Error = err.Error()
 	}
 
-	if qr.q != nil {
-		res.sql = qr.q.st.sql
+	if qr.qc != nil {
+		res.sql = qr.qc.st.sql
 	}
 
 	res.Data = json.RawMessage(qr.data)

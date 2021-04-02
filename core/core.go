@@ -55,8 +55,8 @@ type scontext struct {
 	name string
 }
 
-type qres struct {
-	q    *cquery
+type queryResp struct {
+	qc   *queryComp
 	data []byte
 	role string
 }
@@ -106,6 +106,20 @@ func (gj *GraphJin) _initSchema() error {
 		return fmt.Errorf("no tables found in database")
 	}
 
+	for i, t := range gj.conf.Tables {
+		if t.Schema == "" {
+			gj.conf.Tables[i].Schema = gj.dbinfo.Schema
+			t.Schema = gj.dbinfo.Schema
+		}
+		// skip aliases
+		if t.Table != "" && t.Type == "" {
+			continue
+		}
+		if err := addTableInfo(gj.conf, t); err != nil {
+			return err
+		}
+	}
+
 	if err := addTables(gj.conf, gj.dbinfo); err != nil {
 		return err
 	}
@@ -125,6 +139,7 @@ func (gj *GraphJin) initCompilers() error {
 	var err error
 
 	qcc := qcode.Config{
+		TConfig:          gj.conf.tmap,
 		DefaultBlock:     gj.conf.DefaultBlock,
 		DefaultLimit:     gj.conf.DefaultLimit,
 		EnableInflection: gj.conf.EnableInflection,
@@ -176,29 +191,28 @@ func (gj *GraphJin) executeRoleQuery(c context.Context, conn *sql.Conn, md psql.
 	return role, err
 }
 
-func (c *scontext) execQuery(query string, vars []byte, role string) (qres, error) {
+func (c *scontext) execQuery(query string, vars []byte, role string) (queryResp, error) {
 	res, err := c.resolveSQL(query, vars, role)
 	if err != nil {
 		return res, err
 	}
 
 	if c.gj.conf.Debug {
-		c.debugLog(&res.q.st)
+		c.debugLog(&res.qc.st)
 	}
 
-	if len(res.data) == 0 || res.q.st.qc.Remotes == 0 {
+	if len(res.data) == 0 || res.qc.st.qc.Remotes == 0 {
 		return res, nil
 	}
 
 	return c.execRemoteJoin(res)
 }
 
-func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, error) {
-	var res qres
+func (c *scontext) resolveSQL(query string, vars []byte, role string) (queryResp, error) {
+	var res queryResp
+	var err error
 
-	rq := rquery{op: c.op, name: c.name, query: []byte(query), vars: vars}
-	cq := &cquery{q: rq}
-	res.q = cq
+	qr := queryReq{op: c.op, name: c.name, query: []byte(query), vars: vars}
 	res.role = role
 
 	conn, err := c.gj.db.Conn(c)
@@ -224,11 +238,11 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 		return res, err
 	}
 
-	if err = c.gj.compileQuery(cq, res.role); err != nil {
+	if res.qc, err = c.gj.compileQuery(qr, res.role); err != nil {
 		return res, err
 	}
 
-	args, err := c.gj.argList(c, cq.st.md, vars, c.rc)
+	args, err := c.gj.argList(c, res.qc.st.md, vars, c.rc)
 	if err != nil {
 		return res, err
 	}
@@ -239,20 +253,15 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 	// 	stime = time.Now()
 	// }
 
-	row := conn.QueryRowContext(c, cq.st.sql, args.values...)
-	if cq.roleArg {
-		err = row.Scan(&res.role, &res.data)
-	} else {
-		err = row.Scan(&res.data)
-	}
+	row := conn.QueryRowContext(c, res.qc.st.sql, args.values...)
 
-	if err == sql.ErrNoRows {
+	if err := row.Scan(&res.data); err == sql.ErrNoRows {
 		return res, err
 	} else if err != nil {
 		return res, err
 	}
 
-	cur, err := c.gj.encryptCursor(cq.st.qc, res.data)
+	cur, err := c.gj.encryptCursor(res.qc.st.qc, res.data)
 	if err != nil {
 		return res, err
 	}
@@ -260,7 +269,8 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (qres, err
 	res.data = cur.data
 
 	if c.gj.allowList != nil && !c.gj.prod {
-		if err := c.gj.allowList.Set(vars, query); err != nil {
+		err := c.gj.allowList.Set(vars, query, res.qc.st.qc.Metadata)
+		if err != nil {
 			return res, err
 		}
 	}

@@ -148,7 +148,7 @@ func TestParse1(t *testing.T) {
 		}
 	}`
 
-	_, err := parse(al)
+	_, err := parseQuery(al)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +234,7 @@ func TestParse2(t *testing.T) {
 		}
 	}`
 
-	_, err := parse(al)
+	_, err := parseQuery(al)
 	if err != nil {
 		t.Fatal(err)
 	}
