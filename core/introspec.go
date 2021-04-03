@@ -457,7 +457,7 @@ func (in *intro) addArgs(
 	}
 
 	if ti.PrimaryCol.Name != "" && singular {
-		colType, _ := getGQLType(col)
+		colType, _ := getGQLType(ti.PrimaryCol)
 		args = append(args, &schema.InputValue{
 			Desc: schema.NewDescription("Finds the record by the primary key"),
 			Name: "id",

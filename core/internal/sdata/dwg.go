@@ -190,7 +190,7 @@ func (s *DBSchema) Find(schema, name string) (DBTable, error) {
 		schema = s.DBSchema()
 	}
 
-	name = strings.Replace(name, s.SingularSuffix.Lower, "", len(name) - len(s.SingularSuffix.Lower))
+	name = strings.TrimSuffix(name, s.SingularSuffix.Lower)
 
 	v, ok := s.tindex[(schema + ":" + name)]
 	if !ok {
@@ -209,8 +209,8 @@ type TPath struct {
 }
 
 func (s *DBSchema) FindPath(from, to, through string) ([]TPath, error) {
-	from = strings.Replace(from, s.SingularSuffix.Lower, "", len(from) - len(s.SingularSuffix.Lower))
-	to = strings.Replace(to, s.SingularSuffix.Lower, "", len(from) - len(s.SingularSuffix.Lower))
+	from = strings.TrimSuffix(from, s.SingularSuffix.Lower)
+	to = strings.TrimSuffix(to, s.SingularSuffix.Lower)
 
 	fl, ok := s.ei[from]
 	if !ok {
