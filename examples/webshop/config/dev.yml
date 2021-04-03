@@ -13,7 +13,7 @@ http_compress: true
 
 # When production mode is 'true' only queries
 # from the allow list are permitted.
-production: true
+production: false
 
 # Throw a 401 on auth failure for queries that need auth
 auth_fail_block: false
