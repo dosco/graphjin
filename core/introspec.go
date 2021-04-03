@@ -153,6 +153,7 @@ func (gj *GraphJin) initGraphQLEgine() error {
 		return err
 	}
 	in.addExpressions()
+	in.addDirectives()
 
 	if err := in.ResolveTypes(); err != nil {
 		return err
@@ -290,6 +291,27 @@ func (in *intro) addTable(name string, ti sdata.DBTable) error {
 	return nil
 }
 
+func (in *intro) addDirectives() {
+	in.DeclaredDirectives["object"] = &schema.DirectiveDecl{
+		Name: "object",
+		Desc: schema.NewDescription("Directs the executor to change the return type from a list to a object. All but the first entry of the list will be truncated"),
+		Locs: []string{"FIELD"},
+	}
+
+	in.DeclaredDirectives["through"] = &schema.DirectiveDecl{
+		Name: "through",
+		Desc: schema.NewDescription("Directs the executor to use the specified table as a join-table to connect this field and it's parent"),
+		Locs: []string{"FIELD"},
+		Args: schema.InputValueList{
+			{
+				Name: "table",
+				Desc: schema.NewDescription("Table name"),
+				Type: &schema.TypeName{Name: "String"},
+			},
+		},
+	}
+}
+
 func (in *intro) addColumn(
 	name string,
 	ti sdata.DBTable, col sdata.DBColumn,
@@ -365,7 +387,6 @@ func (in *intro) addArgs(
 	ti sdata.DBTable, col sdata.DBColumn,
 	it, obt, expt *schema.InputObject, ot *schema.Object) {
 
-	otName := &schema.TypeName{Name: ot.Name}
 	itName := &schema.TypeName{Name: it.Name}
 
 	potName := &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: ot.Name}}}
@@ -441,12 +462,6 @@ func (in *intro) addArgs(
 	in.subscription.Fields = append(in.subscription.Fields, &schema.Field{
 		//Desc: schema.NewDescription(""),
 		Name: name,
-		Type: otName,
-		Args: args,
-	})
-	in.subscription.Fields = append(in.subscription.Fields, &schema.Field{
-		//Desc: schema.NewDescription(""),
-		Name: name,
 		Type: potName,
 		Args: args,
 	})
@@ -476,7 +491,7 @@ func (in *intro) addArgs(
 	in.mutation.Fields = append(in.mutation.Fields, &schema.Field{
 		Name: name,
 		Args: mutationArgs,
-		Type: ot,
+		Type: potName,
 	})
 }
 
