@@ -111,6 +111,10 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo) (*GraphJin, err
 		conf = &Config{Debug: true, DisableAllowList: true}
 	}
 
+	if conf.SingularSuffix == "" {
+		conf.SingularSuffix = "_ById"
+	}
+
 	gj := &GraphJin{
 		conf:   conf,
 		db:     db,

@@ -15,8 +15,6 @@ var (
 	ErrThoughNodeNotFound = errors.New("though node not found")
 )
 
-var InflectionTranslate = map[string]string {}
-
 type TEdge struct {
 	From, To, Weight int32
 
@@ -191,9 +189,8 @@ func (s *DBSchema) Find(schema, name string) (DBTable, error) {
 	if schema == "" {
 		schema = s.DBSchema()
 	}
-	if val, ok := InflectionTranslate[name]; ok {
-		name = val
-	}
+
+	name = strings.Replace(name, s.SingularSuffix.Lower, "", len(name) - len(s.SingularSuffix.Lower))
 
 	v, ok := s.tindex[(schema + ":" + name)]
 	if !ok {
@@ -212,13 +209,8 @@ type TPath struct {
 }
 
 func (s *DBSchema) FindPath(from, to, through string) ([]TPath, error) {
-	if val, ok := InflectionTranslate[from]; ok {
-		from = val
-	}
-
-	if val, ok := InflectionTranslate[to]; ok {
-		to = val
-	}
+	from = strings.Replace(from, s.SingularSuffix.Lower, "", len(from) - len(s.SingularSuffix.Lower))
+	to = strings.Replace(to, s.SingularSuffix.Lower, "", len(from) - len(s.SingularSuffix.Lower))
 
 	fl, ok := s.ei[from]
 	if !ok {
