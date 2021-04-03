@@ -434,12 +434,6 @@ func (in *intro) addArgs(
 	in.query.Fields = append(in.query.Fields, &schema.Field{
 		//Desc: schema.NewDescription(""),
 		Name: name,
-		Type: otName,
-		Args: args,
-	})
-	in.query.Fields = append(in.query.Fields, &schema.Field{
-		//Desc: schema.NewDescription(""),
-		Name: name,
 		Type: potName,
 		Args: args,
 	})
