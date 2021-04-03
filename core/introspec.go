@@ -196,7 +196,7 @@ func (in *intro) addTables() error {
 			return err
 		}
 
-		if inflection.enabled {
+		if inflection.enabled && flect.Singularize(t.Name) != t.Name {
 			inflection.singularize = true
 
 			if err := in.addTable(t.Name, t); err != nil {
@@ -248,7 +248,10 @@ func (in *intro) addTable(name string, ti sdata.DBTable) error {
 	}
 
 	if inflection.enabled && inflection.singularize {
-		name = flect.Singularize(name)
+		sName := flect.Singularize(name)
+
+		sdata.InflectionTranslate[sName] = name
+		name = sName
 	}
 
 	// outputType
@@ -414,6 +417,7 @@ func (in *intro) addArgs(
 	ti sdata.DBTable, col sdata.DBColumn,
 	it, obt, expt *schema.InputObject, ot *schema.Object) {
 
+	otName := &schema.TypeName{Name: ot.Name}
 	itName := &schema.TypeName{Name: it.Name}
 
 	potName := &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: ot.Name}}}

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/dosco/graphjin/core/internal/util"
-	"github.com/gobuffalo/flect"
 )
 
 var (
@@ -15,6 +14,8 @@ var (
 	ErrPathNotFound       = errors.New("path not found")
 	ErrThoughNodeNotFound = errors.New("though node not found")
 )
+
+var InflectionTranslate = map[string]string {}
 
 type TEdge struct {
 	From, To, Weight int32
@@ -190,7 +191,9 @@ func (s *DBSchema) Find(schema, name string) (DBTable, error) {
 	if schema == "" {
 		schema = s.DBSchema()
 	}
-	name = flect.Pluralize(name)
+	if val, ok := InflectionTranslate[name]; ok {
+		name = val
+	}
 
 	v, ok := s.tindex[(schema + ":" + name)]
 	if !ok {
@@ -209,8 +212,14 @@ type TPath struct {
 }
 
 func (s *DBSchema) FindPath(from, to, through string) ([]TPath, error) {
-	from = flect.Pluralize(from)
-	to = flect.Pluralize(to)
+	if val, ok := InflectionTranslate[from]; ok {
+		from = val
+	}
+
+	if val, ok := InflectionTranslate[to]; ok {
+		to = val
+	}
+
 	fl, ok := s.ei[from]
 	if !ok {
 		return nil, ErrFromEdgeNotFound
