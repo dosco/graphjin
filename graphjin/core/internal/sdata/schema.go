@@ -18,19 +18,25 @@ type nodeInfo struct {
 	nodeID int32
 }
 
+type SingularInfo struct {
+	Value string // Suffix value defined by the user
+	Lower string // Lower-cased suffix used for treatment inside our code
+}
+
 type DBSchema struct {
-	typ    string                  // db type
-	ver    int                     // db version
-	schema string                  // db schema
-	name   string                  // db name
-	tables []DBTable               // tables
-	vt     map[string]VirtualTable // for polymorphic relationships
-	fm     map[string]DBFunction   // db functions
-	tindex map[string]nodeInfo     // table index
-	ai     map[string]nodeInfo     // table alias index
-	ei     map[string][]edgeInfo   // edges index
-	ae     map[int32]TEdge         // all edges
-	rg     *util.Graph             // relationship graph
+	typ            string                  // db type
+	ver            int                     // db version
+	schema         string                  // db schema
+	name           string                  // db name
+	tables         []DBTable               // tables
+	SingularSuffix SingularInfo            // singular suffix
+	vt             map[string]VirtualTable // for polymorphic relationships
+	fm             map[string]DBFunction   // db functions
+	tindex         map[string]nodeInfo     // table index
+	ai             map[string]nodeInfo     // table alias index
+	ei             map[string][]edgeInfo   // edges index
+	ae             map[int32]TEdge         // all edges
+	rg             *util.Graph             // relationship graph
 }
 
 type RelType int

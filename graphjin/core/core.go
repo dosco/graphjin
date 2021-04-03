@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dosco/graphjin/core/internal/psql"
@@ -131,6 +132,8 @@ func (gj *GraphJin) _initSchema() error {
 	gj.schema, err = sdata.NewDBSchema(
 		gj.dbinfo,
 		getDBTableAliases(gj.conf))
+
+	gj.schema.SingularSuffix = sdata.SingularInfo{Value: gj.conf.SingularSuffix, Lower: strings.ToLower(gj.conf.SingularSuffix)}
 
 	return err
 }

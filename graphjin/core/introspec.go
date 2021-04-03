@@ -179,13 +179,17 @@ func revolverFunc(request *resolvers.ResolveRequest, next resolvers.Resolution) 
 
 func (in *intro) addTables() error {
 	for _, t := range in.GetTables() {
-		if err := in.addTable(t.Name, t); err != nil {
+		if err := in.addTable(t.Name, t, false); err != nil {
+			return err
+		}
+
+		if err := in.addTable(t.Name, t, true); err != nil {
 			return err
 		}
 	}
 
 	for name, t := range in.GetAliases() {
-		if err := in.addTable(name, t); err != nil {
+		if err := in.addTable(name, t, false); err != nil {
 			return err
 		}
 	}
@@ -215,13 +219,17 @@ func (in *intro) addTables() error {
 // 	})
 // }
 
-func (in *intro) addTable(name string, ti sdata.DBTable) error {
+func (in *intro) addTable(name string, ti sdata.DBTable, singular bool) error {
 	if ti.Blocked {
 		return nil
 	}
 
 	if len(ti.Columns) == 0 {
 		return nil
+	}
+
+	if singular {
+		name = name + in.SingularSuffix.Value
 	}
 
 	// outputType
@@ -269,7 +277,7 @@ func (in *intro) addTable(name string, ti sdata.DBTable) error {
 	in.Types[expt.Name] = expt
 
 	for _, col := range ti.Columns {
-		in.addColumn(name, ti, col, it, obt, expt, ot)
+		in.addColumn(name, ti, col, it, obt, expt, ot, singular)
 
 		if col.FKeyTable != "" && col.FKeyCol != "" {
 			name := getRelName(col.Name)
@@ -315,7 +323,7 @@ func (in *intro) addDirectives() {
 func (in *intro) addColumn(
 	name string,
 	ti sdata.DBTable, col sdata.DBColumn,
-	it, obt, expt *schema.InputObject, ot *schema.Object) {
+	it, obt, expt *schema.InputObject, ot *schema.Object, singular bool) {
 
 	colName := col.Name
 	if col.Blocked {
@@ -363,7 +371,7 @@ func (in *intro) addColumn(
 		}
 	}
 
-	in.addArgs(name, ti, col, it, obt, expt, ot)
+	in.addArgs(name, ti, col, it, obt, expt, ot, singular)
 
 	it.Fields = append(it.Fields, &schema.InputValue{
 		Name: colName,
@@ -385,58 +393,71 @@ func (in *intro) addColumn(
 func (in *intro) addArgs(
 	name string,
 	ti sdata.DBTable, col sdata.DBColumn,
-	it, obt, expt *schema.InputObject, ot *schema.Object) {
+	it, obt, expt *schema.InputObject, ot *schema.Object, singular bool) {
 
+	otName := &schema.TypeName{Name: ot.Name}
 	itName := &schema.TypeName{Name: it.Name}
 
 	potName := &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: ot.Name}}}
 	pitName := &schema.List{OfType: &schema.NonNull{OfType: &schema.TypeName{Name: it.Name}}}
 
-	args := schema.InputValueList{
-		&schema.InputValue{
-			Desc: schema.NewDescription("Sort or order results. Use key 'asc' for ascending and 'desc' for descending"),
-			Name: "order_by",
-			Type: &schema.TypeName{Name: obt.Name},
-		},
-		&schema.InputValue{
-			Desc: schema.NewDescription("Filter results based on column values or values of columns in related tables"),
-			Name: "where",
-			Type: &schema.TypeName{Name: expt.Name},
-		},
-		&schema.InputValue{
-			Desc: schema.NewDescription("Limit the number of returned rows"),
-			Name: "limit",
-			Type: &schema.TypeName{Name: "Int"},
-		},
-		&schema.InputValue{
-			Desc: schema.NewDescription("Offset the number of returned rows (Not efficient for pagination, please use a cursor for that)"),
-			Name: "offset",
-			Type: &schema.TypeName{Name: "Int"},
-		},
-		&schema.InputValue{
-			Desc: schema.NewDescription("Number of rows to return from the top. Combine with 'after' or 'before' arguments for cursor pagination"),
-			Name: "first",
-			Type: &schema.TypeName{Name: "Int"},
-		},
-		&schema.InputValue{
-			Desc: schema.NewDescription("Number of rows to return from the bottom. Combine with 'after' or 'before' arguments for cursor pagination"),
-			Name: "last",
-			Type: &schema.TypeName{Name: "Int"},
-		},
-		&schema.InputValue{
-			Desc: schema.NewDescription("Pass the cursor to this argument for backward pagination"),
-			Name: "before",
-			Type: &schema.TypeName{Name: "Cursor"},
-		},
-		&schema.InputValue{
-			Desc: schema.NewDescription("Pass the cursor to this argument for forward pagination"),
-			Name: "after",
-			Type: &schema.TypeName{Name: "Cursor"},
-		},
+	var args schema.InputValueList
+
+	if !singular {
+		args = schema.InputValueList{
+			&schema.InputValue{
+				Desc: schema.NewDescription("Sort or order results. Use key 'asc' for ascending and 'desc' for descending"),
+				Name: "order_by",
+				Type: &schema.TypeName{Name: obt.Name},
+			},
+			&schema.InputValue{
+				Desc: schema.NewDescription("Filter results based on column values or values of columns in related tables"),
+				Name: "where",
+				Type: &schema.TypeName{Name: expt.Name},
+			},
+			&schema.InputValue{
+				Desc: schema.NewDescription("Limit the number of returned rows"),
+				Name: "limit",
+				Type: &schema.TypeName{Name: "Int"},
+			},
+			&schema.InputValue{
+				Desc: schema.NewDescription("Offset the number of returned rows (Not efficient for pagination, please use a cursor for that)"),
+				Name: "offset",
+				Type: &schema.TypeName{Name: "Int"},
+			},
+			&schema.InputValue{
+				Desc: schema.NewDescription("Number of rows to return from the top. Combine with 'after' or 'before' arguments for cursor pagination"),
+				Name: "first",
+				Type: &schema.TypeName{Name: "Int"},
+			},
+			&schema.InputValue{
+				Desc: schema.NewDescription("Number of rows to return from the bottom. Combine with 'after' or 'before' arguments for cursor pagination"),
+				Name: "last",
+				Type: &schema.TypeName{Name: "Int"},
+			},
+			&schema.InputValue{
+				Desc: schema.NewDescription("Pass the cursor to this argument for backward pagination"),
+				Name: "before",
+				Type: &schema.TypeName{Name: "Cursor"},
+			},
+			&schema.InputValue{
+				Desc: schema.NewDescription("Pass the cursor to this argument for forward pagination"),
+				Name: "after",
+				Type: &schema.TypeName{Name: "Cursor"},
+			},
+		}
+
+		if len(ti.FullText) == 0 {
+			args = append(args, &schema.InputValue{
+				Desc: schema.NewDescription("Performs a full text search"),
+				Name: "search",
+				Type: &schema.TypeName{Name: "String"},
+			})
+		}
 	}
 
-	if ti.PrimaryCol.Name != "" {
-		colType, _ := getGQLType(col)
+	if ti.PrimaryCol.Name != "" && singular {
+		colType, _ := getGQLType(ti.PrimaryCol)
 		args = append(args, &schema.InputValue{
 			Desc: schema.NewDescription("Finds the record by the primary key"),
 			Name: "id",
@@ -444,27 +465,35 @@ func (in *intro) addArgs(
 		})
 	}
 
-	if len(ti.FullText) == 0 {
-		args = append(args, &schema.InputValue{
-			Desc: schema.NewDescription("Performs a full text search"),
-			Name: "search",
-			Type: &schema.TypeName{Name: "String"},
+	if singular {
+		in.query.Fields = append(in.query.Fields, &schema.Field{
+			//Desc: schema.NewDescription(""),
+			Name: name,
+			Type: otName,
+			Args: args,
+		})
+
+		in.subscription.Fields = append(in.subscription.Fields, &schema.Field{
+			//Desc: schema.NewDescription(""),
+			Name: name,
+			Type: otName,
+			Args: args,
+		})
+	} else {
+		in.query.Fields = append(in.query.Fields, &schema.Field{
+			//Desc: schema.NewDescription(""),
+			Name: name,
+			Type: potName,
+			Args: args,
+		})
+
+		in.subscription.Fields = append(in.subscription.Fields, &schema.Field{
+			//Desc: schema.NewDescription(""),
+			Name: name,
+			Type: potName,
+			Args: args,
 		})
 	}
-
-	in.query.Fields = append(in.query.Fields, &schema.Field{
-		//Desc: schema.NewDescription(""),
-		Name: name,
-		Type: potName,
-		Args: args,
-	})
-
-	in.subscription.Fields = append(in.subscription.Fields, &schema.Field{
-		//Desc: schema.NewDescription(""),
-		Name: name,
-		Type: potName,
-		Args: args,
-	})
 
 	mutationArgs := append(args, schema.InputValueList{
 		&schema.InputValue{
