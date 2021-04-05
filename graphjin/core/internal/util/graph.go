@@ -95,3 +95,7 @@ func (g *Graph) AllPaths(from, to int32) [][]int32 {
 
 	return paths
 }
+
+func (g *Graph) Connections(n int32) []int32 {
+	return g.graph[n]
+}

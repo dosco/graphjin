@@ -194,17 +194,6 @@ func (in *intro) addTables() error {
 		}
 	}
 
-	// for _, t := range in.GetCustomTables() {
-	// 	if err := in.addTable(t.Name, t); err != nil {
-	// 		return err
-	// 	}
-	// 	desc := fmt.Sprintf(
-	// 		"Table '%s' is a custom resolved table no column information is available",
-	// 		t.Name,
-	// 	)
-	// 	in.addToTable(t.PrimaryCol.FKeyTable, desc, t)
-	// }
-
 	return nil
 }
 
@@ -278,22 +267,30 @@ func (in *intro) addTable(name string, ti sdata.DBTable, singular bool) error {
 
 	for _, col := range ti.Columns {
 		in.addColumn(name, ti, col, it, obt, expt, ot, singular)
+	}
 
-		if col.FKeyTable != "" && col.FKeyCol != "" {
-			name := getRelName(col.Name)
+	relTables1, err := in.GetFirstDegree(ti.Schema, ti.Name)
+	if err != nil {
+		return err
+	}
 
-			ti, err := in.Find(col.FKeySchema, col.FKeyTable)
-			if err != nil {
-				return err
-			}
-			if ti.Blocked {
-				continue
-			}
-			ot.Fields = append(ot.Fields, &schema.Field{
-				Name: name,
-				Type: &schema.TypeName{Name: ti.Name + "Output"},
-			})
-		}
+	for k, t := range relTables1 {
+		ot.Fields = append(ot.Fields, &schema.Field{
+			Name: k,
+			Type: &schema.TypeName{Name: t.Name + "Output"},
+		})
+	}
+
+	relTables2, err := in.GetSecondDegree(ti.Schema, ti.Name)
+	if err != nil {
+		return err
+	}
+
+	for k, t := range relTables2 {
+		ot.Fields = append(ot.Fields, &schema.Field{
+			Name: k,
+			Type: &schema.TypeName{Name: t.Name + "Output"},
+		})
 	}
 
 	return nil
@@ -576,26 +573,4 @@ func getGQLType(col sdata.DBColumn) (schema.Type, string) {
 	// 	t = &schema.NonNull{OfType: t}
 	// }
 	return t, typeName
-}
-
-func getRelName(colName string) string {
-	cn := strings.ToLower(colName)
-
-	if strings.HasSuffix(cn, "_id") {
-		return colName[:len(colName)-3]
-	}
-
-	if strings.HasSuffix(cn, "_ids") {
-		return colName[:len(colName)-4]
-	}
-
-	if strings.HasPrefix(cn, "id_") {
-		return colName[3:]
-	}
-
-	if strings.HasPrefix(cn, "ids_") {
-		return colName[4:]
-	}
-
-	return cn
 }
