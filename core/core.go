@@ -133,7 +133,15 @@ func (gj *GraphJin) _initSchema() error {
 		gj.dbinfo,
 		getDBTableAliases(gj.conf))
 
-	gj.schema.SingularSuffix = sdata.SingularInfo{Value: gj.conf.SingularSuffix, Lower: strings.ToLower(gj.conf.SingularSuffix)}
+	ssufx := gj.conf.SingularSuffix
+	if ssufx == "" {
+		ssufx = "ByID"
+	}
+
+	gj.schema.SingularSuffix = sdata.SingularInfo{
+		Value: ssufx,
+		Lower: strings.ToLower(ssufx),
+	}
 
 	return err
 }

@@ -21,6 +21,7 @@ type TEdge struct {
 	Type   RelType
 	LT, RT DBTable
 	L, R   DBColumn
+	name   string
 }
 
 func (s *DBSchema) addNode(t DBTable) int32 {
@@ -119,7 +120,7 @@ func (s *DBSchema) addToGraph(
 		L: lcol, R: rcol,
 	}
 
-	if err := s.addEdge(lti.Name, e1); err != nil {
+	if err := s.addEdge(lti.Name, e1, false); err != nil {
 		return err
 	}
 
@@ -132,11 +133,14 @@ func (s *DBSchema) addToGraph(
 		LT:     rti, RT: lti,
 		L: rcol, R: lcol,
 	}
-	if err := s.addEdge(rti.Name, e2); err != nil {
+	if err := s.addEdge(relT, e2, true); err != nil {
 		return err
 	}
-	if err := s.addEdge(relT, e2); err != nil {
-		return err
+
+	if rti.Name != relT {
+		if err := s.addEdge(rti.Name, e2, false); err != nil {
+			return err
+		}
 	}
 
 	// fmt.Printf("1. (%s, %d) %s.%s (%d) -> %s.%s (%d) == %s\n", lti.Name, e1.ID(), lti.Name, lcol.Name, ln.ID(), rti.Name, rcol.Name, rn.ID(), rt.String())
@@ -146,7 +150,7 @@ func (s *DBSchema) addToGraph(
 	return nil
 }
 
-func (s *DBSchema) addEdge(name string, edge TEdge) error {
+func (s *DBSchema) addEdge(name string, edge TEdge, inSchema bool) error {
 	edgeID, err := s.rg.AddEdge(edge.From, edge.To, edge.Weight)
 	if err != nil {
 		return err
@@ -161,6 +165,9 @@ func (s *DBSchema) addEdge(name string, edge TEdge) error {
 	s.addEdgeInfo(k1, ei1)
 	s.addEdgeInfo(k2, ei2)
 
+	if inSchema {
+		edge.name = k1
+	}
 	s.ae[edgeID] = edge
 	return nil
 }

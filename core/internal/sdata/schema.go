@@ -292,6 +292,54 @@ func (s *DBSchema) GetTables() []DBTable {
 	return s.tables
 }
 
+func (s *DBSchema) GetFirstDegree(schema, table string) (map[string]DBTable, error) {
+	v, ok := s.tindex[(schema + ":" + table)]
+	if !ok {
+		return nil, fmt.Errorf("table not found: %s.%s", schema, table)
+	}
+
+	nodes := s.rg.Connections(v.nodeID)
+	ret := make(map[string]DBTable)
+
+	for _, id := range nodes {
+		edges := s.rg.GetEdges(id, v.nodeID)
+		for _, e := range edges {
+			e1 := s.ae[e.ID]
+			if e1.name != "" {
+				ret[e1.name] = e1.LT
+				ret[(e1.name + s.SingularSuffix.Value)] = e1.LT
+			}
+		}
+	}
+	return ret, nil
+}
+
+func (s *DBSchema) GetSecondDegree(schema, table string) (map[string]DBTable, error) {
+	v, ok := s.tindex[(schema + ":" + table)]
+	if !ok {
+		return nil, fmt.Errorf("table not found: %s.%s", schema, table)
+	}
+
+	nodes := s.rg.Connections(v.nodeID)
+	ret := make(map[string]DBTable)
+
+	for _, id := range nodes {
+		nodes1 := s.rg.Connections(id)
+
+		for _, id1 := range nodes1 {
+			edges := s.rg.GetEdges(id1, id)
+			for _, e := range edges {
+				e1 := s.ae[e.ID]
+				if e1.name != "" {
+					ret[e1.name] = e1.LT
+					ret[(e1.name + s.SingularSuffix.Value)] = e1.LT
+				}
+			}
+		}
+	}
+	return ret, nil
+}
+
 func (ti *DBTable) getColumn(name string) (DBColumn, bool) {
 	var c DBColumn
 	if i, ok := ti.colMap[name]; ok {
