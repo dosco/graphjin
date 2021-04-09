@@ -58,7 +58,6 @@ cors_debug: false
 # api_path: "/data"
 
 # Cache-Control header can help cache queries if your CDN supports cache-control 
-# on POST requests (does not work with not mutations) 
 # cache_control: "public, max-age=300, s-maxage=600"
 
 # Subscriptions poll the database to query for updates

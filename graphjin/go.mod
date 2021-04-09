@@ -19,6 +19,8 @@ require (
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/garyburd/redigo v1.6.2
 	github.com/git-chglog/git-chglog v0.10.0
+	github.com/go-http-utils/fresh v0.0.0-20161124030543-7231e26a4b27
+	github.com/go-http-utils/headers v0.0.0-20181008091004-fed159eddc2a
 	github.com/go-pkgz/expirable-cache v0.0.3
 	github.com/go-sql-driver/mysql v1.5.0
 	github.com/gobuffalo/flect v0.2.2
@@ -27,7 +29,7 @@ require (
 	github.com/goreleaser/goreleaser v0.157.0
 	github.com/gorilla/websocket v1.4.2
 	github.com/gosimple/slug v1.9.0
-	github.com/hashicorp/golang-lru v0.5.4 // indirect
+	github.com/hashicorp/golang-lru v0.5.4
 	github.com/jackc/pgproto3/v2 v2.0.4 // indirect
 	github.com/jackc/pgx/v4 v4.8.1
 	github.com/lestrrat-go/jwx v1.1.3
