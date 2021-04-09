@@ -76,6 +76,7 @@ With GraphJin your web and mobile developers can start building instantly. All t
 - Role and Attribute-based access control
 - Opaque cursor-based efficient pagination
 - Full-text search and aggregations
+- Automatic persisted queries
 - JWT tokens supported (Auth0, JWKS, Firebase, etc)
 - Join database queries with remote REST APIs
 - Also works with existing Ruby-On-Rails apps
