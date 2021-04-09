@@ -26,14 +26,24 @@ var (
 	errUnauthorized = errors.New("not authorized")
 )
 
+type extensions struct {
+	Persisted apqExt `json:"persistedQuery"`
+}
+
+type apqExt struct {
+	Version    int    `json:"version"`
+	Sha256Hash string `json:"sha256Hash"`
+}
+
 type gqlReq struct {
 	OpName string          `json:"operationName"`
 	Query  string          `json:"query"`
 	Vars   json.RawMessage `json:"variables"`
+	Ext    extensions      `json:"extensions"`
 }
 
 type errorResp struct {
-	Error string `json:"error"`
+	Errors []string `json:"errors"`
 }
 
 func apiV1Handler(sc *ServConfig) http.Handler {
@@ -61,6 +71,8 @@ func apiV1Handler(sc *ServConfig) http.Handler {
 
 func (sc *ServConfig) apiV1() func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
+		var err error
+
 		if websocket.IsWebSocketUpgrade(r) {
 			sc.apiV1Ws(w, r)
 			return
@@ -75,16 +87,29 @@ func (sc *ServConfig) apiV1() func(http.ResponseWriter, *http.Request) {
 			return
 		}
 
-		b, err := ioutil.ReadAll(io.LimitReader(r.Body, maxReadBytes))
-		if err != nil {
-			renderErr(w, err)
-			return
-		}
-		defer r.Body.Close()
-
 		req := gqlReq{}
 
-		if err = json.Unmarshal(b, &req); err != nil {
+		switch r.Method {
+		case "POST":
+			var b []byte
+			b, err = ioutil.ReadAll(io.LimitReader(r.Body, maxReadBytes))
+			if err == nil {
+				defer r.Body.Close()
+				err = json.Unmarshal(b, &req)
+			}
+
+		case "GET":
+			q := r.URL.Query()
+			req.Query = q.Get("query")
+			req.OpName = q.Get("operationName")
+			req.Vars = json.RawMessage(q.Get("variables"))
+
+			if ext := q.Get("extensions"); ext != "" {
+				err = json.Unmarshal([]byte(ext), &req.Ext)
+			}
+		}
+
+		if err != nil {
 			renderErr(w, err)
 			return
 		}
@@ -100,19 +125,26 @@ func (sc *ServConfig) apiV1() func(http.ResponseWriter, *http.Request) {
 			}
 		}
 
-		res, err := gj.GraphQL(ct, req.Query, req.Vars, &rc)
-
-		if err == nil {
-			if sc.conf.CacheControl != "" && res.Operation() == core.OpQuery {
-				w.Header().Set("Cache-Control", sc.conf.CacheControl)
-			}
-
-			//nolint: errcheck
-			err = json.NewEncoder(w).Encode(res)
+		switch {
+		case gj.IsProd():
+			rc.APQKey = req.OpName
+		case req.apqEnabled():
+			rc.APQKey = (req.OpName + req.Ext.Persisted.Sha256Hash)
+			fmt.Println("!!!!!!", rc.APQKey)
 		}
 
-		if err != nil {
+		res, err := gj.GraphQL(ct, req.Query, req.Vars, &rc)
+
+		if err == nil &&
+			r.Method == "GET" &&
+			sc.conf.CacheControl != "" &&
+			res.Operation() == core.OpQuery {
+			w.Header().Set("Cache-Control", sc.conf.CacheControl)
+		}
+
+		if err := json.NewEncoder(w).Encode(res); err != nil {
 			renderErr(w, err)
+			return
 		}
 
 		if sc.conf.telemetryEnabled() {
@@ -123,11 +155,9 @@ func (sc *ServConfig) apiV1() func(http.ResponseWriter, *http.Request) {
 				trace.StringAttribute("query_name", res.QueryName()),
 				trace.StringAttribute("role", res.Role()),
 			)
-
 			if err != nil {
 				span.AddAttributes(trace.StringAttribute("error", err.Error()))
 			}
-
 			ochttp.SetRoute(ct, apiRoute)
 		}
 
@@ -156,13 +186,17 @@ func (sc *ServConfig) reqLog(res *core.Result, err error) {
 	}
 }
 
+func (r gqlReq) apqEnabled() bool {
+	return r.Ext.Persisted.Sha256Hash != ""
+}
+
 //nolint: errcheck
 func renderErr(w http.ResponseWriter, err error) {
 	if err == errUnauthorized {
 		w.WriteHeader(http.StatusUnauthorized)
 	}
 
-	err1 := json.NewEncoder(w).Encode(errorResp{err.Error()})
+	err1 := json.NewEncoder(w).Encode(errorResp{[]string{err.Error()}})
 	if err1 != nil {
 		panic(fmt.Errorf("%s: %w", err, err1))
 	}

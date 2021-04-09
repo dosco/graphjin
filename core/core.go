@@ -202,8 +202,8 @@ func (gj *GraphJin) executeRoleQuery(c context.Context, conn *sql.Conn, md psql.
 	return role, err
 }
 
-func (c *scontext) execQuery(query string, vars []byte, role string) (queryResp, error) {
-	res, err := c.resolveSQL(query, vars, role)
+func (c *scontext) execQuery(qr queryReq, role string) (queryResp, error) {
+	res, err := c.resolveSQL(qr, role)
 	if err != nil {
 		return res, err
 	}
@@ -219,11 +219,10 @@ func (c *scontext) execQuery(query string, vars []byte, role string) (queryResp,
 	return c.execRemoteJoin(res)
 }
 
-func (c *scontext) resolveSQL(query string, vars []byte, role string) (queryResp, error) {
+func (c *scontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 	var res queryResp
 	var err error
 
-	qr := queryReq{op: c.op, name: c.name, query: []byte(query), vars: vars}
 	res.role = role
 
 	conn, err := c.gj.db.Conn(c)
@@ -242,7 +241,7 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (queryResp
 		res.role = v.(string)
 
 	} else if c.gj.abacEnabled {
-		res.role, err = c.gj.executeRoleQuery(c, conn, c.gj.roleStmtMD, vars, c.rc)
+		res.role, err = c.gj.executeRoleQuery(c, conn, c.gj.roleStmtMD, qr.vars, c.rc)
 	}
 
 	if err != nil {
@@ -253,7 +252,7 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (queryResp
 		return res, err
 	}
 
-	args, err := c.gj.argList(c, res.qc.st.md, vars, c.rc)
+	args, err := c.gj.argList(c, res.qc.st.md, qr.vars, c.rc)
 	if err != nil {
 		return res, err
 	}
@@ -279,11 +278,15 @@ func (c *scontext) resolveSQL(query string, vars []byte, role string) (queryResp
 
 	res.data = cur.data
 
-	if c.gj.allowList != nil && !c.gj.prod {
-		err := c.gj.allowList.Set(vars, query, res.qc.st.qc.Metadata)
+	if !c.gj.prod && c.gj.allowList != nil {
+		err := c.gj.allowList.Set(qr.vars, string(qr.query), res.qc.st.qc.Metadata)
 		if err != nil {
 			return res, err
 		}
+	}
+
+	if !c.gj.prod && c.rc != nil && c.rc.APQKey != "" {
+		c.gj.apq.Set(c.rc.APQKey, apqInfo{op: qr.op, name: qr.name, query: string(qr.query)})
 	}
 
 	// if c.gj.conf.EnableTracing {

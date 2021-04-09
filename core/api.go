@@ -86,6 +86,7 @@ type GraphJin struct {
 	schema      *sdata.DBSchema
 	allowList   *allow.List
 	encKey      [32]byte
+	apq         APQCache
 	queries     map[string]*queryComp
 	roles       map[string]*Role
 	roleStmt    string
@@ -117,6 +118,10 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo) (*GraphJin, err
 		dbinfo: dbinfo,
 		log:    _log.New(os.Stdout, "", 0),
 		prod:   conf.Production || os.Getenv("GO_ENV") == "production",
+	}
+
+	if err := gj.initAPQCache(); err != nil {
+		return nil, err
 	}
 
 	//order matters, do not re-order the initializers
@@ -164,6 +169,10 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo) (*GraphJin, err
 	return gj, nil
 }
 
+type Error struct {
+	Message string `json:"message"`
+}
+
 // Result struct contains the output of the GraphQL function this includes resulting json from the
 // database query and any error information
 type Result struct {
@@ -172,14 +181,15 @@ type Result struct {
 	sql  string
 	role string
 
-	Error      string          `json:"message,omitempty"`
+	Errors     []Error         `json:"errors,omitempty"`
 	Data       json.RawMessage `json:"data,omitempty"`
 	Extensions *extensions     `json:"extensions,omitempty"`
 }
 
 // ReqConfig is used to pass request specific config values to the GraphQLEx and SubscribeEx functions. Dynamic variables can be set here.
 type ReqConfig struct {
-	Vars map[string]interface{}
+	APQKey string
+	Vars   map[string]interface{}
 }
 
 // GraphQL function is called on the GraphJin struct to convert the provided GraphQL query into an
@@ -194,19 +204,36 @@ func (gj *GraphJin) GraphQL(
 	vars json.RawMessage,
 	rc *ReqConfig) (*Result, error) {
 
-	op, name := qcode.GetQType(query)
+	var err error
 
 	ct := scontext{
 		Context: c,
 		gj:      gj,
-		op:      op,
 		rc:      rc,
-		name:    name,
+	}
+
+	if rc != nil && rc.APQKey != "" && query == "" {
+		if v, ok := gj.apq.Get(rc.APQKey); ok {
+			if v.query != "" {
+				query = v.query
+			}
+			ct.op = v.op
+			ct.name = v.name
+		} else {
+			err = errors.New("PersistedQueryNotFound")
+		}
+	} else {
+		ct.op, ct.name = qcode.GetQType(query)
 	}
 
 	res := &Result{
 		op:   ct.op,
 		name: ct.name,
+	}
+
+	if err != nil {
+		res.Errors = []Error{{Message: err.Error()}}
+		return res, err
 	}
 
 	if ct.op == qcode.QTSubscription {
@@ -224,7 +251,7 @@ func (gj *GraphJin) GraphQL(
 		res.Data = r.Data
 
 		if r.Error() != nil {
-			res.Error = r.Error().Error()
+			res.Errors = []Error{{Message: r.Error().Error()}}
 		}
 		return res, r.Error()
 	}
@@ -239,20 +266,30 @@ func (gj *GraphJin) GraphQL(
 		role = "anon"
 	}
 
-	qr, err := ct.execQuery(query, vars, role)
+	qreq := queryReq{
+		op:    ct.op,
+		name:  ct.name,
+		query: []byte(query),
+		vars:  vars,
+	}
+	qres, err := ct.execQuery(qreq, role)
 
 	if err != nil {
-		res.Error = err.Error()
+		res.Errors = []Error{{Message: err.Error()}}
 	}
 
-	if qr.qc != nil {
-		res.sql = qr.qc.st.sql
+	if qres.qc != nil {
+		res.sql = qres.qc.st.sql
 	}
 
-	res.Data = json.RawMessage(qr.data)
-	res.role = qr.role
+	res.Data = json.RawMessage(qres.data)
+	res.role = qres.role
 
 	return res, err
+}
+
+func (gj *GraphJin) IsProd() bool {
+	return gj.prod
 }
 
 // Operation function return the operation type and name from the query.

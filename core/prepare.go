@@ -112,6 +112,9 @@ func (gj *GraphJin) initAllowList() error {
 			}
 			gj.queries[v.key] = qc
 		}
+
+		op, _ := qcode.GetQType(item.Query)
+		gj.apq.Set(item.Name, apqInfo{op: op, name: item.Name})
 	}
 
 	return nil
