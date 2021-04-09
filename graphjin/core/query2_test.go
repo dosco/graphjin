@@ -45,8 +45,40 @@ func queryWithVariableLimit(t *testing.T) {
 	default:
 		exp := `{"products": [{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}, {"id": 6}, {"id": 7}, {"id": 8}, {"id": 9}, {"id": 10}]}`
 		got := string(res.Data)
-		assert.Equal(t, got, exp, "should equal")
+		assert.Equal(t, exp, got, "should equal")
 	}
+}
+
+func TestAPQ(t *testing.T) {
+	gql := `query getProducts {
+		products(id: 2) {
+			id
+		}
+	}`
+
+	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		t.Error(err)
+	}
+
+	_, err = gj.GraphQL(context.Background(), gql, nil, &core.ReqConfig{
+		APQKey: "getProducts",
+	})
+	if err != nil {
+		t.Error(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), "", nil, &core.ReqConfig{
+		APQKey: "getProducts",
+	})
+	if err != nil {
+		t.Error(err)
+	}
+
+	exp := `{"products": {"id": 2}}`
+	got := string(res.Data)
+	assert.Equal(t, exp, got, "should equal")
 }
 
 func TestAllowList(t *testing.T) {
@@ -93,7 +125,7 @@ func TestAllowList(t *testing.T) {
 
 	exp := `{"products": {"id": 2}}`
 	got := string(res.Data)
-	assert.Equal(t, got, exp, "should equal")
+	assert.Equal(t, exp, got, "should equal")
 }
 
 func TestConfigReuse(t *testing.T) {

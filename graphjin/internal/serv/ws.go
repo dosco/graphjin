@@ -25,16 +25,8 @@ type gqlWsResp struct {
 	ID      string `json:"id"`
 	Type    string `json:"type"`
 	Payload struct {
-		Data   json.RawMessage `json:"data"`
-		Errors []string        `json:"errors,omitempty"`
-	} `json:"payload"`
-}
-
-type gqlWsError struct {
-	ID      string `json:"id"`
-	Type    string `json:"type"`
-	Payload struct {
-		Error string `json:"error"`
+		Data   json.RawMessage `json:"data,omitempty"`
+		Errors []core.Error    `json:"errors,omitempty"`
 	} `json:"payload"`
 }
 
@@ -209,8 +201,8 @@ func (sc *ServConfig) waitForData(done chan bool, conn *ws.Conn, m *core.Member,
 			res := gqlWsResp{ID: req.ID, Type: ptype}
 			res.Payload.Data = v.Data
 
-			if v.Error != "" {
-				res.Payload.Errors = []string{v.Error}
+			if len(v.Errors) != 0 {
+				res.Payload.Errors = v.Errors
 			}
 
 			if err = enc.Encode(res); err != nil {
@@ -240,8 +232,8 @@ func (sc *ServConfig) waitForData(done chan bool, conn *ws.Conn, m *core.Member,
 }
 
 func sendError(conn *ws.Conn, err error, id string) error {
-	res := gqlWsError{ID: id, Type: "error"}
-	res.Payload.Error = err.Error()
+	res := gqlWsResp{ID: id, Type: "error"}
+	res.Payload.Errors = []core.Error{{Message: err.Error()}}
 
 	msg, err := json.Marshal(res)
 	if err != nil {

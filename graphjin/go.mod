@@ -27,6 +27,7 @@ require (
 	github.com/goreleaser/goreleaser v0.157.0
 	github.com/gorilla/websocket v1.4.2
 	github.com/gosimple/slug v1.9.0
+	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/jackc/pgproto3/v2 v2.0.4 // indirect
 	github.com/jackc/pgx/v4 v4.8.1
 	github.com/lestrrat-go/jwx v1.1.3
