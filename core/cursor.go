@@ -46,7 +46,7 @@ func (gj *GraphJin) encryptCursor(qc *qcode.QCode, data []byte) (cursors, error)
 				cur.value = string(val)
 			}
 
-			v, err := crypto.Encrypt(val, &gj.encKey)
+			v, err := crypto.Encrypt(val, &gj.encKey, true)
 			if err != nil {
 				return cur, err
 			}

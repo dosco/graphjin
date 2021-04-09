@@ -63,9 +63,10 @@ func apiV1Handler(sc *ServConfig) http.Handler {
 			AllowCredentials: true,
 			Debug:            sc.conf.DebugCORS,
 		})
-		return c.Handler(h)
+		h = c.Handler(h)
 	}
 
+	h = ETagHandler(h, false)
 	return h
 }
 
@@ -130,7 +131,6 @@ func (sc *ServConfig) apiV1() func(http.ResponseWriter, *http.Request) {
 			rc.APQKey = req.OpName
 		case req.apqEnabled():
 			rc.APQKey = (req.OpName + req.Ext.Persisted.Sha256Hash)
-			fmt.Println("!!!!!!", rc.APQKey)
 		}
 
 		res, err := gj.GraphQL(ct, req.Query, req.Vars, &rc)
