@@ -62,9 +62,9 @@ jobs:
       - name: Snapcraft Login
         if: success() && startsWith(github.ref, 'refs/tags/v')
         env:
-          SNAPCRAFT_LOGIN: ${{ secrets.SNAPCRAFT_LOGIN }}
+          SNAPCRAFT_CREDS: ${{ secrets.SNAPCRAFT_LOGIN }}
         run: |
-          echo "$SNAPCRAFT_LOGIN" | snapcraft login --with -
+          snapcraft login --with <(echo "$SNAPCRAFT_CREDS")
           
       - name: Import GPG key
         if: success() && startsWith(github.ref, 'refs/tags/v')
