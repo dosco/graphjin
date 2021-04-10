@@ -7,7 +7,7 @@ rules:
   - name: run
     match: \.go$
     ignore: web|examples|docs|_test\.go$
-    command: sops --config ./config exec-env "./config/prod.secrets.yml" "go run *.go serv"
+    command: sops --config ./config exec-env "./config/prod.secrets.yml" "go run main.go serv"
   - name: test
     match: _test\.go$
     command: go test -cover {PKG}

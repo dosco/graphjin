@@ -51,6 +51,7 @@ func getKey(config JWTConfig) (interface{}, error) {
 	switch {
 	case secret != "":
 		key = []byte(secret)
+
 	case publicKeyFile != "":
 		kd, err := ioutil.ReadFile(publicKeyFile)
 		if err != nil {
