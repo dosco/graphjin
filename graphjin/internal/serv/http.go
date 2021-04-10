@@ -10,6 +10,7 @@ import (
 
 	"github.com/dosco/graphjin/core"
 	"github.com/dosco/graphjin/internal/serv/internal/auth"
+	"github.com/dosco/graphjin/internal/serv/internal/etags"
 	"github.com/gorilla/websocket"
 	"github.com/rs/cors"
 	"go.opencensus.io/plugin/ochttp"
@@ -53,10 +54,13 @@ func apiV1Handler(sc *ServConfig) http.Handler {
 	}
 
 	if len(sc.conf.AllowedOrigins) != 0 {
-		allowedHeaders := []string{"Origin", "Accept", "Content-Type", "X-Requested-With", "Authorization"}
+		allowedHeaders := []string{
+			"Origin", "Accept", "Content-Type", "X-Requested-With", "Authorization"}
+
 		if len(sc.conf.AllowedHeaders) != 0 {
 			allowedHeaders = sc.conf.AllowedHeaders
 		}
+
 		c := cors.New(cors.Options{
 			AllowedOrigins:   sc.conf.AllowedOrigins,
 			AllowedHeaders:   allowedHeaders,
@@ -66,7 +70,7 @@ func apiV1Handler(sc *ServConfig) http.Handler {
 		h = c.Handler(h)
 	}
 
-	h = ETagHandler(h, false)
+	h = etags.Handler(h, false)
 	return h
 }
 

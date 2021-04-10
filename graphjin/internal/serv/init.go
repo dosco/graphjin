@@ -55,11 +55,21 @@ func initConf(servConfig *ServConfig) (*Config, error) {
 		c.Core.DBType = c.DB.Type
 	}
 
+	if c.Serv.Production {
+		c.Auth.CredsInHeader = false
+		c.Auth.SubsCredsInVars = false
+	}
+
 	// Auths: validate and sanitize
 	am := make(map[string]struct{})
 
 	for i := 0; i < len(c.Auths); i++ {
 		a := &c.Auths[i]
+
+		if c.Serv.Production {
+			a.CredsInHeader = false
+			a.SubsCredsInVars = false
+		}
 
 		if _, ok := am[a.Name]; ok {
 			return nil, fmt.Errorf("Duplicate auth found: %s", a.Name)
