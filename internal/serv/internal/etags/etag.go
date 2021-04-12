@@ -46,6 +46,12 @@ func writeRaw(res http.ResponseWriter, hw hashWriter) {
 // Handler wraps the http.Handler h with ETag support.
 func Handler(h http.Handler, weak bool) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		// Skip if websocket
+		if req.Header.Get("Sec-WebSocket-Key") != "" {
+			h.ServeHTTP(res, req)
+			return
+		}
+
 		hw := hashWriter{rw: res, hash: sha1.New(), buf: bytes.NewBuffer(nil)}
 		h.ServeHTTP(&hw, req)
 
