@@ -109,6 +109,7 @@ type Function struct {
 	Name      string
 	Col       sdata.DBColumn
 	FieldName string
+	Alias     string
 	skip      bool
 }
 

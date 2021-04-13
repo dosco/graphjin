@@ -88,9 +88,9 @@ type funcInfo struct {
 	name, desc, db string
 }
 
-var countFunc = funcInfo{"count", "Count the number of rows", ""}
+var funcCount = funcInfo{"count", "Count the number of rows", ""}
 
-var numericFuncList []funcInfo = []funcInfo{
+var funcListNum []funcInfo = []funcInfo{
 	{"avg", "Calculate an average %s", ""},
 	{"max", "Find the maximum %s", ""},
 	{"min", "Find the minimum %s", ""},
@@ -100,6 +100,12 @@ var numericFuncList []funcInfo = []funcInfo{
 	{"variance", "Calculate the sample variance of %s values", ""},
 	{"var_samp", "Calculate the sample variance of %s values", ""},
 	{"var_pop", "Calculate the population sample variance of %s values", ""},
+}
+
+var funcListString []funcInfo = []funcInfo{
+	{"length", "Calculate the length of %s", ""},
+	{"lower", "Convert %s to lowercase", ""},
+	{"upper", "Convert %s to uppercase", ""},
 }
 
 type intro struct {
@@ -336,9 +342,9 @@ func (in *intro) addColumn(
 
 	if col.PrimaryKey {
 		ot.Fields = append(ot.Fields, &schema.Field{
-			Name: countFunc.name + "_" + colName,
+			Name: funcCount.name + "_" + colName,
 			Type: colType,
-			Desc: schema.NewDescription(countFunc.desc),
+			Desc: schema.NewDescription(funcCount.desc),
 		})
 	}
 
@@ -346,7 +352,18 @@ func (in *intro) addColumn(
 	if col.FKeyCol == "" {
 		// If it's a numeric type...
 		if typeName == "Float" || typeName == "Int" {
-			for _, v := range numericFuncList {
+			for _, v := range funcListNum {
+				desc := fmt.Sprintf(v.desc, colName)
+				ot.Fields = append(ot.Fields, &schema.Field{
+					Name: v.name + "_" + colName,
+					Type: colType,
+					Desc: schema.NewDescription(desc),
+				})
+			}
+		}
+
+		if typeName == "String" {
+			for _, v := range funcListString {
 				desc := fmt.Sprintf(v.desc, colName)
 				ot.Fields = append(ot.Fields, &schema.Field{
 					Name: v.name + "_" + colName,

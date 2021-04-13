@@ -154,7 +154,7 @@ func ifNotExists(servConf ServConfig, filePath string, doFn func(string) error) 
 
 	err = doFn(filePath)
 	if err != nil {
-		servConf.log.Fatalf("Unable to create: %s", filePath)
+		servConf.log.Fatalf("%s: %s", err, filePath)
 	}
 
 	servConf.log.Infof("Created: %s", filePath)

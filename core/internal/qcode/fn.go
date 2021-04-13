@@ -5,12 +5,29 @@ import (
 	"strings"
 )
 
-func (co *Compiler) isFunction(sel *Select, fname string) (Function, bool, error) {
+var stdFuncs = []string{
+	"avg_",
+	"count_",
+	"max_",
+	"min_",
+	"sum_",
+	"stddev_",
+	"stddev_pop_",
+	"stddev_samp_",
+	"variance_",
+	"var_pop_",
+	"var_samp_",
+	"length_",
+	"lower_",
+	"length_",
+}
+
+func (co *Compiler) isFunction(sel *Select, fname, alias string) (Function, bool, error) {
 	var cn string
 	var agg bool
 	var err error
 
-	fn := Function{FieldName: fname}
+	fn := Function{FieldName: fname, Alias: alias}
 
 	switch {
 	case fname == "search_rank":
@@ -52,29 +69,10 @@ func (co *Compiler) isFunction(sel *Select, fname string) (Function, bool, error
 }
 
 func (co *Compiler) funcPrefixLen(col string) int {
-	switch {
-	case strings.HasPrefix(col, "avg_"):
-		return 4
-	case strings.HasPrefix(col, "count_"):
-		return 6
-	case strings.HasPrefix(col, "max_"):
-		return 4
-	case strings.HasPrefix(col, "min_"):
-		return 4
-	case strings.HasPrefix(col, "sum_"):
-		return 4
-	case strings.HasPrefix(col, "stddev_"):
-		return 7
-	case strings.HasPrefix(col, "stddev_pop_"):
-		return 11
-	case strings.HasPrefix(col, "stddev_samp_"):
-		return 12
-	case strings.HasPrefix(col, "variance_"):
-		return 9
-	case strings.HasPrefix(col, "var_pop_"):
-		return 8
-	case strings.HasPrefix(col, "var_samp_"):
-		return 9
+	for _, v := range stdFuncs {
+		if strings.HasPrefix(col, v) {
+			return len(v)
+		}
 	}
 	fnLen := len(col)
 
