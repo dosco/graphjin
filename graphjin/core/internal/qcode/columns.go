@@ -69,7 +69,7 @@ func (co *Compiler) compileChildColumns(
 			continue
 		}
 
-		fn, agg, err := co.isFunction(sel, f.Name)
+		fn, agg, err := co.isFunction(sel, f.Name, f.Alias)
 		if err != nil {
 			return err
 		}
@@ -94,7 +94,6 @@ func (co *Compiler) compileChildColumns(
 			if agg {
 				aggExist = true
 			}
-			fn.FieldName = fname
 			sel.addFunc(fn)
 		}
 	}
@@ -120,8 +119,19 @@ func (co *Compiler) addColumns(qc *QCode, sel *Select) error {
 	} else {
 		rel = sel.Joins[0].Rel
 	}
-	return co.addRelColumns(qc, sel, rel)
+	if err := co.addRelColumns(qc, sel, rel); err != nil {
+		return err
+	}
+
+	//co.addFuncColumns(qc, sel)
+	return nil
 }
+
+// func (co *Compiler) addFuncColumns(qc *QCode, sel *Select) {
+// 	for _, fn := range sel.Funcs {
+// 		sel.addCol(Column{Col: fn.Col}, true)
+// 	}
+// }
 
 func (co *Compiler) addRelColumns(qc *QCode, sel *Select, rel sdata.DBRel) error {
 	var psel *Select

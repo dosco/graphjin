@@ -20,7 +20,11 @@ func (c *compilerContext) renderColumns(sel *qcode.Select) {
 			c.w.WriteString(", ")
 		}
 		colWithTableID(c.w, sel.Table, sel.ID, fn.FieldName)
-		c.alias(fn.FieldName)
+		if fn.Alias != "" {
+			c.alias(fn.Alias)
+		} else {
+			c.alias(fn.FieldName)
+		}
 		i++
 	}
 	if sel.Typename {
