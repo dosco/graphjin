@@ -20,7 +20,7 @@ test:
 	@go test -v -short -race ./...
 
 BIN_DIR := $(GOPATH)/bin
-WEB_BUILD_DIR := ./internal/serv/web/build/manifest.json
+WEB_BUILD_DIR := ./serv/web/build/manifest.json
 
 download-tools:
 	@echo Installing tools from tools.go
@@ -28,7 +28,7 @@ download-tools:
 
 $(WEB_BUILD_DIR):
 	@echo "First install Yarn and create a build of the web UI then re-run make install"
-	@echo "Run this command: yarn --cwd internal/serv/web/ build"
+	@echo "Run this command: yarn --cwd serv/web/ build"
 	@exit 1
 
 changelog: download-tools

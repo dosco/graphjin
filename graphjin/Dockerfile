@@ -1,7 +1,7 @@
 # stage: 1
 FROM node:latest as react-build
 WORKDIR /web
-COPY /internal/serv/web/ ./
+COPY /serv/web/ ./
 RUN yarn
 RUN yarn build
 
@@ -23,8 +23,8 @@ RUN chmod 755 /usr/local/bin/sops
 WORKDIR /app
 COPY . /app
 
-RUN mkdir -p /app/internal/serv/web/build
-COPY --from=react-build /web/build/ ./internal/serv/web/build
+RUN mkdir -p /app/serv/web/build
+COPY --from=react-build /web/build/ ./serv/web/build
 
 RUN go mod vendor
 RUN make build
