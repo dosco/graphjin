@@ -1,69 +1,63 @@
-package serv
+package cmd
 
 import (
 	"database/sql"
 	"fmt"
 	"os"
+	"path"
+	"path/filepath"
 	"runtime"
+	"strings"
+	"sync"
 
+	"github.com/dosco/graphjin/internal/util"
+	"github.com/dosco/graphjin/serv"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
-const (
-	serverName = "GraphJin"
+var (
+	bi    serv.BuildInfo
+	log   *zap.SugaredLogger
+	db    *sql.DB
+	conf  *serv.Config
+	cpath string
 )
 
-var buildInfo BuildInfo
-
-type ServConfig struct {
-	log      *zap.SugaredLogger // logger
-	zlog     *zap.Logger        // faster logger
-	logLevel int                // log level
-	conf     *Config            // parsed config
-	confPath string             // path to config
-	db       *sql.DB            // database connection pool
-}
-
-type BuildInfo struct {
-	Version string
-	Commit  string
-	Date    string
-}
-
-func Cmd(bi BuildInfo) {
-	buildInfo = bi
-	servConf := new(ServConfig)
-	servConf.log = newLogger(nil).Sugar()
+func Cmd() {
+	bi = serv.GetBuildInfo()
+	log = util.NewLogger(false).Sugar()
 
 	rootCmd := &cobra.Command{
 		Use:   "graphjin",
 		Short: BuildDetails(),
 	}
 
+	rootCmd.PersistentFlags().StringVar(&cpath,
+		"path", "./config", "path to config files")
+
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "serv",
 		Short: "Run the graphjin service",
-		Run:   cmdServ(servConf),
+		Run:   cmdServ(),
 	})
 
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "db:create",
 		Short: "Create database",
-		Run:   cmdDBCreate(servConf),
+		Run:   cmdDBCreate(),
 	})
 
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "db:drop",
 		Short: "Drop database",
-		Run:   cmdDBDrop(servConf),
+		Run:   cmdDBDrop(),
 	})
 
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "db:seed",
 		Short: "Run the seed script to seed the database",
-		Run:   cmdDBSeed(servConf),
+		Run:   cmdDBSeed(),
 	})
 
 	rootCmd.AddCommand(&cobra.Command{
@@ -71,61 +65,61 @@ func Cmd(bi BuildInfo) {
 		Short: "Migrate the database",
 		Long: `Migrate the database to destination migration version.
 
-Destination migration version can be one of the following value types:
+		Destination migration version can be one of the following value types:
 
-Migrate to the most recent migration. 
-e.g. db:migrate up
+		Migrate to the most recent migration.
+		e.g. db:migrate up
 
-Rollback the most recent migration. 
-e.g. db:migrate down
+		Rollback the most recent migration.
+		e.g. db:migrate down
 
-Migrate to a specific migration.
-e.g. db:migrate 42
+		Migrate to a specific migration.
+		e.g. db:migrate 42
 
-Migrate forward N steps.
-e.g. db:migrate +3
+		Migrate forward N steps.
+		e.g. db:migrate +3
 
-Migrate backward N steps.
-e.g. db:migrate -2
+		Migrate backward N steps.
+		e.g. db:migrate -2
 
-Redo previous N steps (migrate backward N steps then forward N steps).
-e.g. db:migrate -+1
-	`,
-		Run: cmdDBMigrate(servConf),
+		Redo previous N steps (migrate backward N steps then forward N steps).
+		e.g. db:migrate -+1
+			`,
+		Run: cmdDBMigrate(),
 	})
 
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "db:status",
 		Short: "Print current migration status",
-		Run:   cmdDBStatus(servConf),
+		Run:   cmdDBStatus(),
 	})
 
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "db:new NAME",
 		Short: "Generate a new migration",
 		Long:  "Generate a new migration with the next sequence number and provided name",
-		Run:   cmdDBNew(servConf),
+		Run:   cmdDBNew(),
 	})
 
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "db:setup",
 		Short: "Setup database",
 		Long:  "This command will create, migrate and seed the database",
-		Run:   cmdDBSetup(servConf),
+		Run:   cmdDBSetup(),
 	})
 
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "db:reset",
 		Short: "Reset database",
 		Long:  "This command will drop, create, migrate and seed the database (won't run in production)",
-		Run:   cmdDBReset(servConf),
+		Run:   cmdDBReset(),
 	})
 
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "new APP-NAME",
 		Short: "Create a new application",
 		Long:  "Generate all the required files to start on a new GraphJin app",
-		Run:   cmdNew(servConf),
+		Run:   cmdNew(),
 	})
 
 	// rootCmd.AddCommand(&cobra.Command{
@@ -141,12 +135,10 @@ e.g. db:migrate -+1
 		Run:   cmdVersion,
 	})
 
-	rootCmd.PersistentFlags().StringVar(&servConf.confPath,
-		"path", "./config", "path to config files")
-
 	if err := rootCmd.Execute(); err != nil {
-		servConf.log.Fatalf("Error: %s", err)
+		log.Fatalf("Error: %s", err)
 	}
+
 }
 
 func cmdVersion(cmd *cobra.Command, args []string) {
@@ -154,7 +146,7 @@ func cmdVersion(cmd *cobra.Command, args []string) {
 }
 
 func BuildDetails() string {
-	if buildInfo.Version == "" {
+	if bi.Version == "" {
 		return `
 GraphJin (unknown version)
 For documentation, visit https://graphjin.com
@@ -179,29 +171,75 @@ Go version            : %v
 Licensed under the Apache Public License 2.0
 Copyright 2021, Vikram Rangnekar
 `,
-		buildInfo.Version,
-		buildInfo.Commit,
-		buildInfo.Date,
+		bi.Version,
+		bi.Commit,
+		bi.Date,
 		runtime.Version())
 }
 
-func newLogger(sc *ServConfig) *zap.Logger {
-	econf := zapcore.EncoderConfig{
-		MessageKey:     "msg",
-		LevelKey:       "level",
-		NameKey:        "logger",
-		EncodeLevel:    zapcore.LowercaseLevelEncoder,
-		EncodeTime:     zapcore.ISO8601TimeEncoder,
-		EncodeDuration: zapcore.StringDurationEncoder,
+func initCmd(cpath string) {
+	var s *serv.Service
+	var err error
+
+	if conf != nil {
+		return
 	}
 
-	var core zapcore.Core
+	cp, err := filepath.Abs(cpath)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	if sc != nil && sc.conf.LogFormat == "json" {
-		core = zapcore.NewCore(zapcore.NewJSONEncoder(econf), os.Stdout, zap.DebugLevel)
+	if conf, err = serv.ReadInConfig(path.Join(cp, GetConfigName())); err != nil {
+		log.Fatal(err)
+	}
+
+	if s, err = serv.NewService(conf); err != nil {
+		log.Fatal(err)
+	}
+
+	if db, err = s.NewDB(); err != nil {
+		log.Fatalf("Failed to connect to database: %s", err)
+	}
+}
+
+func GetConfigName() string {
+	if os.Getenv("GO_ENV") == "" {
+		return "dev"
+	}
+
+	ge := strings.ToLower(os.Getenv("GO_ENV"))
+
+	switch {
+	case strings.HasPrefix(ge, "pro"):
+		return "prod"
+
+	case strings.HasPrefix(ge, "sta"):
+		return "stage"
+
+	case strings.HasPrefix(ge, "tes"):
+		return "test"
+
+	case strings.HasPrefix(ge, "dev"):
+		return "dev"
+	}
+
+	return ge
+}
+
+func fatalInProd(err error) {
+	var wg sync.WaitGroup
+
+	if isDev() {
+		log.Error(err)
 	} else {
-		econf.EncodeLevel = zapcore.CapitalColorLevelEncoder
-		core = zapcore.NewCore(zapcore.NewConsoleEncoder(econf), os.Stdout, zap.DebugLevel)
+		log.Fatal(err)
 	}
-	return zap.New(core)
+
+	wg.Add(1)
+	wg.Wait()
+}
+
+func isDev() bool {
+	return strings.HasPrefix(os.Getenv("GO_ENV"), "dev")
 }

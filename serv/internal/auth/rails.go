@@ -10,7 +10,7 @@ import (
 
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/dosco/graphjin/core"
-	"github.com/dosco/graphjin/internal/serv/internal/rails"
+	"github.com/dosco/graphjin/serv/internal/rails"
 	"github.com/garyburd/redigo/redis"
 )
 

@@ -28,13 +28,13 @@ func getIPLimiter(ip string, limit float64, bucket int) *rate.Limiter {
 	return v.(*rate.Limiter)
 }
 
-func rateLimiter(sc *ServConfig, h http.Handler) http.Handler {
+func rateLimiter(s *Service, h http.Handler) http.Handler {
 	fn := func(w http.ResponseWriter, r *http.Request) {
 		var ip string
 		var err error
 
-		if sc.conf.RateLimiter.IPHeader != "" {
-			ip = r.Header.Get(sc.conf.RateLimiter.IPHeader)
+		if s.conf.RateLimiter.IPHeader != "" {
+			ip = r.Header.Get(s.conf.RateLimiter.IPHeader)
 		} else {
 			ip = r.Header.Get("X-Remote-Address")
 		}
@@ -44,11 +44,11 @@ func rateLimiter(sc *ServConfig, h http.Handler) http.Handler {
 		}
 
 		if err != nil {
-			sc.zlog.Error("Rate limiter (Remote IP)", []zapcore.Field{zap.Error(err)}...)
+			s.zlog.Error("Rate limiter (Remote IP)", []zapcore.Field{zap.Error(err)}...)
 			return
 		}
 
-		if !getIPLimiter(ip, sc.conf.RateLimiter.Rate, sc.conf.RateLimiter.Bucket).Allow() {
+		if !getIPLimiter(ip, s.conf.RateLimiter.Rate, s.conf.RateLimiter.Bucket).Allow() {
 			http.Error(w, "429 Too Many Requests", http.StatusTooManyRequests)
 			return
 		}

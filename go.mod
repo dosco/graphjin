@@ -10,6 +10,7 @@ require (
 	contrib.go.opencensus.io/integrations/ocsql v0.1.7
 	github.com/NYTimes/gziphandler v1.1.1
 	github.com/adjust/gorails v0.0.0-20171013043634-2786ed0c03d3
+	github.com/apex/log v1.9.0
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
 	github.com/brianvoe/gofakeit/v6 v6.0.0
 	github.com/chirino/graphql v0.0.0-20200723175208-cec7bf430a98
@@ -19,7 +20,6 @@ require (
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/garyburd/redigo v1.6.2
 	github.com/git-chglog/git-chglog v0.10.0
-	github.com/go-http-utils/fresh v0.0.0-20161124030543-7231e26a4b27
 	github.com/go-http-utils/headers v0.0.0-20181008091004-fed159eddc2a
 	github.com/go-pkgz/expirable-cache v0.0.3
 	github.com/go-sql-driver/mysql v1.5.0

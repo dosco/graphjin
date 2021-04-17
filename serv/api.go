@@ -1,20 +1,17 @@
 package serv
 
 import (
+	"database/sql"
+	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/dosco/graphjin/core"
-	"github.com/dosco/graphjin/internal/serv/internal/auth"
+	"github.com/dosco/graphjin/internal/util"
+	"github.com/dosco/graphjin/serv/internal/auth"
+	"go.uber.org/zap"
 
 	"github.com/spf13/viper"
-)
-
-const (
-	LogLevelNone int = iota
-	LogLevelInfo
-	LogLevelWarn
-	LogLevelError
-	LogLevelDebug
 )
 
 type Core = core.Config
@@ -108,4 +105,64 @@ type Action struct {
 	Name     string
 	SQL      string
 	AuthName string `mapstructure:"auth_name"`
+}
+
+type Service struct {
+	log      *zap.SugaredLogger // logger
+	zlog     *zap.Logger        // faster logger
+	logLevel int                // log level
+	conf     *Config            // parsed config
+	db       *sql.DB            // database connection pool
+	gj       *core.GraphJin
+}
+
+func NewService(conf *Config) (*Service, error) {
+	zlog := util.NewLogger(conf.LogFormat == "json")
+	log := zlog.Sugar()
+
+	if err := initConfig(conf, log); err != nil {
+		return nil, err
+	}
+
+	s := &Service{conf: conf, log: log, zlog: zlog}
+	initLogLevel(s)
+	validateConf(s)
+
+	if s.conf != nil && s.conf.WatchAndReload {
+		initWatcher(s)
+	}
+
+	return s, nil
+}
+
+func (s *Service) init() error {
+	var db *sql.DB
+	var err error
+
+	if db, err = s.newDB(true, true); err != nil {
+		return fmt.Errorf("Failed to connect to database: %w", err)
+	}
+
+	s.gj, err = core.NewGraphJin(&s.conf.Core, db)
+	if err != nil {
+		return fmt.Errorf("Failed to initialize: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Service) Start() error {
+	if err := s.init(); err != nil {
+		return err
+	}
+	startHTTP(s)
+	return nil
+}
+
+func (s *Service) Attach(mux *http.ServeMux) error {
+	if err := s.init(); err != nil {
+		return err
+	}
+	_, err := routeHandler(s, mux)
+	return err
 }

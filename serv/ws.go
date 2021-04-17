@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/dosco/graphjin/core"
-	"github.com/dosco/graphjin/internal/serv/internal/auth"
+	"github.com/dosco/graphjin/serv/internal/auth"
 	ws "github.com/gorilla/websocket"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -58,7 +58,7 @@ func init() {
 	}
 }
 
-func (sc *ServConfig) apiV1Ws(w http.ResponseWriter, r *http.Request) {
+func (s *Service) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 	var m *core.Member
 	var run bool
 
@@ -77,12 +77,12 @@ func (sc *ServConfig) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 	done := make(chan bool)
 	for {
 		if _, b, err = conn.ReadMessage(); err != nil {
-			sc.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
+			s.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
 			break
 		}
 
 		if err = json.Unmarshal(b, &msg); err != nil {
-			sc.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
+			s.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
 			continue
 		}
 
@@ -94,7 +94,7 @@ func (sc *ServConfig) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 			d.UseNumber()
 
 			if err = d.Decode(&initReq); err != nil {
-				sc.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
+				s.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
 				break
 			}
 
@@ -103,7 +103,7 @@ func (sc *ServConfig) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 				err = conn.WritePreparedMessage(initMsg)
 			}
 
-			handler, _ := auth.WithAuth(http.HandlerFunc(hfn), &sc.conf.Auth)
+			handler, _ := auth.WithAuth(http.HandlerFunc(hfn), &s.conf.Auth)
 
 			if err != nil {
 				break
@@ -124,7 +124,7 @@ func (sc *ServConfig) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			if sc.conf.Serv.Auth.SubsCredsInVars {
+			if s.conf.Serv.Auth.SubsCredsInVars {
 				type authHeaders struct {
 					UserIDProvider string      `json:"X-User-ID-Provider"`
 					UserRole       string      `json:"X-User-Role"`
@@ -144,9 +144,9 @@ func (sc *ServConfig) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			m, err = gj.Subscribe(ctx, msg.Payload.Query, msg.Payload.Vars, nil)
+			m, err = s.gj.Subscribe(ctx, msg.Payload.Query, msg.Payload.Vars, nil)
 			if err == nil {
-				go sc.waitForData(done, conn, m, msg)
+				go s.waitForData(done, conn, m, msg)
 				run = true
 			}
 
@@ -165,7 +165,7 @@ func (sc *ServConfig) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 				zap.String("msg_type", msg.Type),
 				zap.Error(errors.New("unknown message type")),
 			}
-			sc.zlog.Error("Subscription Error", fields...)
+			s.zlog.Error("Subscription Error", fields...)
 		}
 
 		if err != nil {
@@ -175,14 +175,14 @@ func (sc *ServConfig) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		sc.zlog.Error("Subscription Error", []zapcore.Field{zap.Error(err)}...)
+		s.zlog.Error("Subscription Error", []zapcore.Field{zap.Error(err)}...)
 	}
 
 	m.Unsubscribe()
 	done <- true
 }
 
-func (sc *ServConfig) waitForData(done chan bool, conn *ws.Conn, m *core.Member, req gqlWsReq) {
+func (s *Service) waitForData(done chan bool, conn *ws.Conn, m *core.Member, req gqlWsReq) {
 	var buf bytes.Buffer
 	var ptype string
 	var err error
@@ -227,7 +227,7 @@ func (sc *ServConfig) waitForData(done chan bool, conn *ws.Conn, m *core.Member,
 	}
 
 	if err != nil && isDev() {
-		sc.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
+		s.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
 	}
 }
 

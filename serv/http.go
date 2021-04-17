@@ -9,8 +9,8 @@ import (
 	"net/http"
 
 	"github.com/dosco/graphjin/core"
-	"github.com/dosco/graphjin/internal/serv/internal/auth"
-	"github.com/dosco/graphjin/internal/serv/internal/etags"
+	"github.com/dosco/graphjin/serv/internal/auth"
+	"github.com/dosco/graphjin/serv/internal/etags"
 	"github.com/gorilla/websocket"
 	"github.com/rs/cors"
 	"go.opencensus.io/plugin/ochttp"
@@ -47,25 +47,25 @@ type errorResp struct {
 	Errors []string `json:"errors"`
 }
 
-func apiV1Handler(sc *ServConfig) http.Handler {
-	h, err := auth.WithAuth(http.HandlerFunc(sc.apiV1()), &sc.conf.Auth)
+func apiV1Handler(s *Service) http.Handler {
+	h, err := auth.WithAuth(http.HandlerFunc(s.apiV1()), &s.conf.Auth)
 	if err != nil {
-		sc.log.Fatalf("Error initializing auth: %s", err)
+		s.log.Fatalf("Error initializing auth: %s", err)
 	}
 
-	if len(sc.conf.AllowedOrigins) != 0 {
+	if len(s.conf.AllowedOrigins) != 0 {
 		allowedHeaders := []string{
 			"Origin", "Accept", "Content-Type", "X-Requested-With", "Authorization"}
 
-		if len(sc.conf.AllowedHeaders) != 0 {
-			allowedHeaders = sc.conf.AllowedHeaders
+		if len(s.conf.AllowedHeaders) != 0 {
+			allowedHeaders = s.conf.AllowedHeaders
 		}
 
 		c := cors.New(cors.Options{
-			AllowedOrigins:   sc.conf.AllowedOrigins,
+			AllowedOrigins:   s.conf.AllowedOrigins,
 			AllowedHeaders:   allowedHeaders,
 			AllowCredentials: true,
-			Debug:            sc.conf.DebugCORS,
+			Debug:            s.conf.DebugCORS,
 		})
 		h = c.Handler(h)
 	}
@@ -74,12 +74,12 @@ func apiV1Handler(sc *ServConfig) http.Handler {
 	return h
 }
 
-func (sc *ServConfig) apiV1() func(http.ResponseWriter, *http.Request) {
+func (s *Service) apiV1() func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var err error
 
 		if websocket.IsWebSocketUpgrade(r) {
-			sc.apiV1Ws(w, r)
+			s.apiV1Ws(w, r)
 			return
 		}
 
@@ -87,7 +87,7 @@ func (sc *ServConfig) apiV1() func(http.ResponseWriter, *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
 		//nolint: errcheck
-		if sc.conf.AuthFailBlock && !auth.IsAuth(ct) {
+		if s.conf.AuthFailBlock && !auth.IsAuth(ct) {
 			renderErr(w, errUnauthorized)
 			return
 		}
@@ -121,7 +121,7 @@ func (sc *ServConfig) apiV1() func(http.ResponseWriter, *http.Request) {
 
 		rc := core.ReqConfig{Vars: make(map[string]interface{})}
 
-		for k, v := range sc.conf.HeaderVars {
+		for k, v := range s.conf.HeaderVars {
 			rc.Vars[k] = func() string {
 				if v1, ok := r.Header[v]; ok {
 					return v1[0]
@@ -131,19 +131,19 @@ func (sc *ServConfig) apiV1() func(http.ResponseWriter, *http.Request) {
 		}
 
 		switch {
-		case gj.IsProd():
+		case s.gj.IsProd():
 			rc.APQKey = req.OpName
 		case req.apqEnabled():
 			rc.APQKey = (req.OpName + req.Ext.Persisted.Sha256Hash)
 		}
 
-		res, err := gj.GraphQL(ct, req.Query, req.Vars, &rc)
+		res, err := s.gj.GraphQL(ct, req.Query, req.Vars, &rc)
 
 		if err == nil &&
 			r.Method == "GET" &&
-			sc.conf.CacheControl != "" &&
+			s.conf.CacheControl != "" &&
 			res.Operation() == core.OpQuery {
-			w.Header().Set("Cache-Control", sc.conf.CacheControl)
+			w.Header().Set("Cache-Control", s.conf.CacheControl)
 		}
 
 		if err := json.NewEncoder(w).Encode(res); err != nil {
@@ -151,7 +151,7 @@ func (sc *ServConfig) apiV1() func(http.ResponseWriter, *http.Request) {
 			return
 		}
 
-		if sc.conf.telemetryEnabled() {
+		if s.conf.telemetryEnabled() {
 			span := trace.FromContext(ct)
 
 			span.AddAttributes(
@@ -165,28 +165,28 @@ func (sc *ServConfig) apiV1() func(http.ResponseWriter, *http.Request) {
 			ochttp.SetRoute(ct, apiRoute)
 		}
 
-		if sc.logLevel >= LogLevelInfo {
-			sc.reqLog(res, err)
+		if s.logLevel >= logLevelInfo {
+			s.reqLog(res, err)
 		}
 	}
 }
 
-func (sc *ServConfig) reqLog(res *core.Result, err error) {
+func (s *Service) reqLog(res *core.Result, err error) {
 	fields := []zapcore.Field{
 		zap.String("op", res.OperationName()),
 		zap.String("name", res.QueryName()),
 		zap.String("role", res.Role()),
 	}
 
-	if sc.logLevel >= LogLevelDebug {
+	if s.logLevel >= logLevelDebug {
 		fields = append(fields, zap.String("sql", res.SQL()))
 	}
 
 	if err != nil {
 		fields = append(fields, zap.Error(err))
-		sc.zlog.Error("Query Failed", fields...)
+		s.zlog.Error("Query Failed", fields...)
 	} else {
-		sc.zlog.Info("Query", fields...)
+		s.zlog.Info("Query", fields...)
 	}
 }
 

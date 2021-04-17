@@ -5,7 +5,7 @@ import (
 
 	jwt "github.com/dgrijalva/jwt-go"
 
-	"github.com/dosco/graphjin/internal/serv/internal/auth/provider"
+	"github.com/dosco/graphjin/serv/internal/auth/provider"
 )
 
 const (
