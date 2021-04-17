@@ -74,7 +74,7 @@ With GraphJin your web and mobile developers can start building instantly. All t
 - Build infinite scroll, feeds, nested comments, etc
 - Auto learns database tables and relationships
 - Role and Attribute-based access control
-- Opaque cursor-based efficient pagination
+- Cursor-based efficient pagination
 - Full-text search and aggregations
 - Automatic persisted queries
 - JWT tokens supported (Auth0, JWKS, Firebase, etc)
@@ -108,6 +108,8 @@ With GraphJin your web and mobile developers can start building instantly. All t
 
 
 ## Using it in your own code
+
+You can use GraphJin as a library within your own code. The [serv](https://pkg.go.dev/github.com/dosco/graphjin/serv) package exposes the entirely GraphJin standlone service as a library while the [core](https://pkg.go.dev/github.com/dosco/graphjin/core) package exposes just the GraphJin compiler. The [Go docs](https://pkg.go.dev/github.com/dosco/graphjin/core#pkg-examples) are filled with examples on how to use GraphJin within your own apps as a sort of alternative to using ORM packages. GraphJin allows you to use GraphQL and the full power of GraphJin to access your data instead of a limiting ORM.
 
 ```console
 go get github.com/dosco/graphjin/core
