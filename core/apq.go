@@ -11,12 +11,12 @@ type apqInfo struct {
 	query string
 }
 
-type APQCache struct {
+type apqCache struct {
 	lruCache    *lru.Cache
 	staticCache map[string]apqInfo
 }
 
-func (gj *GraphJin) initAPQCache() error {
+func (gj *GraphJin) initapqCache() error {
 	var err error
 	if gj.prod {
 		gj.apq.staticCache = make(map[string]apqInfo)
@@ -26,7 +26,7 @@ func (gj *GraphJin) initAPQCache() error {
 	return err
 }
 
-func (c APQCache) Get(key string) (apqInfo, bool) {
+func (c apqCache) Get(key string) (apqInfo, bool) {
 	if c.staticCache != nil {
 		v, ok := c.staticCache[key]
 		return v, ok
@@ -39,7 +39,7 @@ func (c APQCache) Get(key string) (apqInfo, bool) {
 	}
 }
 
-func (c APQCache) Set(key string, val apqInfo) {
+func (c apqCache) Set(key string, val apqInfo) {
 	if c.staticCache != nil {
 		c.staticCache[key] = val
 	} else {

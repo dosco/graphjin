@@ -5,9 +5,171 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/dosco/graphjin/core"
+	"github.com/dosco/graphjin/serv/internal/auth"
 	"github.com/spf13/viper"
 )
+
+type Core = core.Config
+type Auth = auth.Auth
+
+// Config struct holds the GraphJin service config values
+type Config struct {
+	// Core holds config values for the GraphJin compiler
+	Core `mapstructure:",squash"`
+
+	// Serv holds config values for the GraphJin Service
+	Serv `mapstructure:",squash"`
+
+	closeFn  func()
+	hostPort string
+	cpath    string
+	vi       *viper.Viper
+}
+
+// Serv struct contains config values used by the GraphJin service
+type Serv struct {
+	// AppName is the name of your application used in log and debug messages
+	AppName string `mapstructure:"app_name"`
+
+	// Production when set to true runs the service with production level
+	// security and other defaults. For example allow lists are enforced.
+	Production bool
+
+	// LogLevel can be debug, error, warn, info
+	LogLevel string `mapstructure:"log_level"`
+
+	// LogFormat can be json or simple
+	LogFormat string `mapstructure:"log_format"`
+
+	// HostPost to run the service on. Example localhost:8080
+	HostPort string `mapstructure:"host_port"`
+
+	// Host to run the service on
+	Host string
+
+	// Port to run the service on
+	Port string
+
+	// HTTPGZip enables HTTP compresssion
+	HTTPGZip bool `mapstructure:"http_compress"`
+
+	// Enable the web UI. Disabled in production
+	WebUI bool `mapstructure:"web_ui"`
+
+	// EnableTracing enables OpenTrace request tracing
+	EnableTracing bool `mapstructure:"enable_tracing"`
+
+	// WatchAndReload enables reloading the service on config changes
+	WatchAndReload bool `mapstructure:"reload_on_config_change"`
+
+	// AuthFailBlock when enabled blocks requests with a 401 on auth failure
+	AuthFailBlock bool `mapstructure:"auth_fail_block"`
+
+	// SeedFile is the path to the database seeding script
+	SeedFile string `mapstructure:"seed_file"`
+
+	// MigrationsPath is the path to the database migration files
+	MigrationsPath string `mapstructure:"migrations_path"`
+
+	// AllowedOrigins sets the HTTP CORS Access-Control-Allow-Origin header
+	AllowedOrigins []string `mapstructure:"cors_allowed_origins"`
+
+	// AllowedHeaders sets the HTTP CORS Access-Control-Allow-Headers header
+	AllowedHeaders []string `mapstructure:"cors_allowed_headers"`
+
+	// DebugCORS enables debug logs for cors
+	DebugCORS bool `mapstructure:"cors_debug"`
+
+	// APIPath change the suffix of the api path. Defaults to /v1/graphql
+	APIPath string `mapstructure:"api_path"`
+
+	// CacheControl sets the HTTP Cache-Control header
+	CacheControl string `mapstructure:"cache_control"`
+
+	// Telemetry struct contains OpenCensus metrics and tracing related config
+	Telemetry struct {
+		// Debug enables debug logging for metrics and tracing data.
+		Debug bool
+
+		// Interval to send out metrics and tracing data
+		Interval *time.Duration
+
+		Metrics struct {
+			// Exporter is the name of the metrics exporter to use. Example: prometheus
+			Exporter string
+
+			// Endpoint to send the data to.
+			Endpoint string
+
+			// Namespace is set based on your exporter configration
+			Namespace string
+
+			// Key is set based on your exporter configuration
+			Key string
+		}
+
+		Tracing struct {
+			// Exporter is the name of the tracing exporter to use. Example: zipkin
+			Exporter string
+
+			// Endpoint to send the data to. Example: http://zipkin:9411/api/v2/spans
+			Endpoint string
+
+			// Sample sets how many requests to sample for tracing: Example: 0.6
+			Sample string
+
+			// IncludeQuery when set the GraphQL query is included in the tracing data
+			IncludeQuery bool `mapstructure:"include_query"`
+
+			// IncludeParams when set variables used with the query are included in the
+			// tracing data
+			IncludeParams bool `mapstructure:"include_params"`
+		}
+	}
+
+	// Auth set the default auth used by the service
+	Auth Auth
+
+	// Auths sets multiple auths to be used by actions
+	Auths []Auth
+
+	// DB struct contains db config
+	DB struct {
+		Type        string
+		Host        string
+		Port        uint16
+		DBName      string
+		User        string
+		Password    string
+		Schema      string
+		PoolSize    int32         `mapstructure:"pool_size"`
+		MaxRetries  int           `mapstructure:"max_retries"`
+		PingTimeout time.Duration `mapstructure:"ping_timeout"`
+		EnableTLS   bool          `mapstructure:"enable_tls"`
+		ServerName  string        `mapstructure:"server_name"`
+		ServerCert  string        `mapstructure:"server_cert"`
+		ClientCert  string        `mapstructure:"client_cert"`
+		ClientKey   string        `mapstructure:"client_key"`
+	} `mapstructure:"database"`
+
+	Actions []Action
+
+	RateLimiter struct {
+		Rate     float64
+		Bucket   int
+		IPHeader string `mapstructure:"ip_header"`
+	} `mapstructure:"rate_limiter"`
+}
+
+// Action struct contains config values for a GraphJin service action
+type Action struct {
+	Name     string
+	SQL      string
+	AuthName string `mapstructure:"auth_name"`
+}
 
 // ReadInConfig function reads in the config file for the environment specified in the GO_ENV
 // environment variable. This is the best way to create a new GraphJin config.

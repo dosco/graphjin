@@ -1,4 +1,4 @@
-// Package core provides the primary API to include and use GraphJin with your own code.
+// Package core provides an API to include and use the GraphJin compiler with your own code.
 // For detailed documentation visit https://graphjin.com
 //
 // Example usage:
@@ -86,7 +86,7 @@ type GraphJin struct {
 	schema      *sdata.DBSchema
 	allowList   *allow.List
 	encKey      [32]byte
-	apq         APQCache
+	apq         apqCache
 	queries     map[string]*queryComp
 	roles       map[string]*Role
 	roleStmt    string
@@ -120,7 +120,7 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo) (*GraphJin, err
 		prod:   conf.Production || os.Getenv("GO_ENV") == "production",
 	}
 
-	if err := gj.initAPQCache(); err != nil {
+	if err := gj.initapqCache(); err != nil {
 		return nil, err
 	}
 
