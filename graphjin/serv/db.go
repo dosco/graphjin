@@ -7,140 +7,58 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"path"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"contrib.go.opencensus.io/integrations/ocsql"
-
-	// postgres drivers
+	"github.com/apex/log"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/stdlib"
-
-	// mysql drivers
-	_ "github.com/go-sql-driver/mysql"
 )
 
 const (
 	pemSig = "--BEGIN "
 )
 
-func initConf(servConfig *ServConfig) (*Config, error) {
-	cp, err := filepath.Abs(servConfig.confPath)
-	if err != nil {
-		return nil, err
-	}
-
-	c, err := ReadInConfig(path.Join(cp, GetConfigName()))
-	if err != nil {
-		return nil, err
-	}
-
-	switch c.LogLevel {
-	case "debug":
-		servConfig.logLevel = LogLevelDebug
-	case "error":
-		servConfig.logLevel = LogLevelError
-	case "warn":
-		servConfig.logLevel = LogLevelWarn
-	case "info":
-		servConfig.logLevel = LogLevelInfo
-	default:
-		servConfig.logLevel = LogLevelNone
-	}
-
-	// copy over db_type from database.type
-	if c.Core.DBType == "" {
-		c.Core.DBType = c.DB.Type
-	}
-
-	if c.Serv.Production {
-		c.Auth.CredsInHeader = false
-		c.Auth.SubsCredsInVars = false
-	}
-
-	// Auths: validate and sanitize
-	am := make(map[string]struct{})
-
-	for i := 0; i < len(c.Auths); i++ {
-		a := &c.Auths[i]
-
-		if c.Serv.Production {
-			a.CredsInHeader = false
-			a.SubsCredsInVars = false
-		}
-
-		if _, ok := am[a.Name]; ok {
-			return nil, fmt.Errorf("Duplicate auth found: %s", a.Name)
-		}
-		am[a.Name] = struct{}{}
-	}
-
-	// Actions: validate and sanitize
-	axm := make(map[string]struct{})
-
-	for i := 0; i < len(c.Actions); i++ {
-		a := &c.Actions[i]
-
-		if _, ok := axm[a.Name]; ok {
-			return nil, fmt.Errorf("Duplicate action found: %s", a.Name)
-		}
-
-		if _, ok := am[a.AuthName]; !ok {
-			return nil, fmt.Errorf("Invalid auth name: %s, For auth: %s", a.AuthName, a.Name)
-		}
-		axm[a.Name] = struct{}{}
-	}
-
-	var anonFound bool
-
-	for _, r := range c.Roles {
-		if r.Name == "anon" {
-			anonFound = true
-		}
-	}
-
-	if c.Auth.Type == "" || c.Auth.Type == "none" {
-		c.DefaultBlock = false
-	}
-
-	if !anonFound && c.DefaultBlock {
-		servConfig.log.Warn("Unauthenticated requests will be blocked. no role 'anon' defined")
-		c.AuthFailBlock = false
-	}
-
-	c.Core.Production = c.Serv.Production
-	return c, nil
-}
+const (
+	logLevelNone int = iota
+	logLevelInfo
+	logLevelWarn
+	logLevelError
+	logLevelDebug
+)
 
 type dbConf struct {
 	driverName string
 	connString string
 }
 
-func initDB(servConfig *ServConfig, useDB, useTelemetry bool) (*sql.DB, error) {
+func (s *Service) NewDB() (*sql.DB, error) {
+	return s.newDB(false, false)
+}
+
+func (s *Service) newDB(useDB, useTelemetry bool) (*sql.DB, error) {
 	var db *sql.DB
 	var dc *dbConf
 	var err error
 
-	switch servConfig.conf.DBType {
+	switch s.conf.DBType {
 	case "mysql":
-		dc, err = initMysql(servConfig, useDB, useTelemetry)
+		dc, err = initMysql(s.conf, useDB, useTelemetry)
 	default:
-		dc, err = initPostgres(servConfig, useDB, useTelemetry)
+		dc, err = initPostgres(s.conf, useDB, useTelemetry)
 	}
 
-	if useTelemetry && servConfig.conf.telemetryEnabled() {
-		dc.driverName, err = initTelemetry(servConfig, db, dc.driverName)
+	if useTelemetry && s.conf.telemetryEnabled() {
+		dc.driverName, err = initTelemetry(s.conf, db, dc.driverName)
 		if err != nil {
 			return nil, err
 		}
 
 		var interval time.Duration
 
-		if servConfig.conf.Telemetry.Interval != nil {
-			interval = *servConfig.conf.Telemetry.Interval
+		if s.conf.Telemetry.Interval != nil {
+			interval = *s.conf.Telemetry.Interval
 		} else {
 			interval = 5 * time.Second
 		}
@@ -163,9 +81,7 @@ func initDB(servConfig *ServConfig, useDB, useTelemetry bool) (*sql.DB, error) {
 	return db, nil
 }
 
-func initPostgres(servConfig *ServConfig, useDB, useTelemetry bool) (*dbConf, error) {
-	c := servConfig.conf
-
+func initPostgres(c *Config, useDB, useTelemetry bool) (*dbConf, error) {
 	config, _ := pgx.ParseConfig("")
 	config.Host = c.DB.Host
 	config.Port = c.DB.Port
@@ -201,7 +117,7 @@ func initPostgres(servConfig *ServConfig, useDB, useTelemetry bool) (*dbConf, er
 		if strings.Contains(c.DB.ServerCert, pemSig) {
 			pem = []byte(c.DB.ServerCert)
 		} else {
-			pem, err = ioutil.ReadFile(c.relPath(c.DB.ServerCert))
+			pem, err = ioutil.ReadFile(c.RelPath(c.DB.ServerCert))
 		}
 
 		if err != nil {
@@ -218,7 +134,7 @@ func initPostgres(servConfig *ServConfig, useDB, useTelemetry bool) (*dbConf, er
 		if strings.Contains(c.DB.ClientCert, pemSig) {
 			certs, err = tls.X509KeyPair([]byte(c.DB.ClientCert), []byte(c.DB.ClientKey))
 		} else {
-			certs, err = tls.LoadX509KeyPair(c.relPath(c.DB.ClientCert), c.relPath(c.DB.ClientKey))
+			certs, err = tls.LoadX509KeyPair(c.RelPath(c.DB.ClientCert), c.RelPath(c.DB.ClientKey))
 		}
 
 		if err != nil {
@@ -259,8 +175,7 @@ func initPostgres(servConfig *ServConfig, useDB, useTelemetry bool) (*dbConf, er
 	return &dbConf{"pgx", stdlib.RegisterConnConfig(config)}, nil
 }
 
-func initMysql(servConfig *ServConfig, useDB, useTelemetry bool) (*dbConf, error) {
-	c := servConfig.conf
+func initMysql(c *Config, useDB, useTelemetry bool) (*dbConf, error) {
 	connString := fmt.Sprintf("%s:%s@tcp(%s:%d)/", c.DB.User, c.DB.Password, c.DB.Host, c.DB.Port)
 
 	if useDB {
@@ -270,7 +185,7 @@ func initMysql(servConfig *ServConfig, useDB, useTelemetry bool) (*dbConf, error
 	return &dbConf{"mysql", connString}, nil
 }
 
-func initTelemetry(servConfig *ServConfig, db *sql.DB, driverName string) (string, error) {
+func initTelemetry(c *Config, db *sql.DB, driverName string) (string, error) {
 	var err error
 
 	opts := ocsql.TraceOptions{
@@ -280,11 +195,11 @@ func initTelemetry(servConfig *ServConfig, db *sql.DB, driverName string) (strin
 		RowsClose:    true,
 		RowsAffected: true,
 		LastInsertID: true,
-		Query:        servConfig.conf.Telemetry.Tracing.IncludeQuery,
-		QueryParams:  servConfig.conf.Telemetry.Tracing.IncludeParams,
+		Query:        c.Telemetry.Tracing.IncludeQuery,
+		QueryParams:  c.Telemetry.Tracing.IncludeParams,
 	}
 	opt := ocsql.WithOptions(opts)
-	name := ocsql.WithInstanceName(servConfig.conf.AppName)
+	name := ocsql.WithInstanceName(c.AppName)
 
 	driverName, err = ocsql.Register(driverName, opt, name)
 	if err != nil {
@@ -292,6 +207,6 @@ func initTelemetry(servConfig *ServConfig, db *sql.DB, driverName string) (strin
 	}
 	ocsql.RegisterAllViews()
 
-	servConfig.log.Info("OpenCensus telemetry enabled")
+	log.Info("OpenCensus telemetry enabled")
 	return driverName, nil
 }

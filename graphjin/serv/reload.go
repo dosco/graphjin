@@ -1,28 +1,3 @@
-// Package reload offers lightweight automatic reloading of running processes.
-//
-// After initialisation with reload.Do() any changes to the binary will
-// restart the process.
-//
-// Example:
-//
-//    go func() {
-//        err := reload.Do(log.Printf)
-//        if err != nil {
-//            panic(err)
-//        }
-//    }()
-//
-// A list of additional directories to watch can be added:
-//
-//    go func() {
-//        err := reload.Do(log.Printf, reload.Dir("tpl", reloadTpl)
-//        if err != nil {
-//            panic(err)
-//        }
-//    }()
-//
-// Note that this package won't prevent race conditions (e.g. when assigning to
-// a global templates variable). You'll need to use sync.RWMutex yourself.
 package serv
 
 import (
@@ -49,8 +24,8 @@ type dir struct {
 // non-recursively.
 //
 // The second argument is the callback that to run when the directory changes.
-// Use reload.ReExec(servConf) to restart the process.
-func Dir(path string, cb func()) dir { return dir{path, cb} } // nolint: golint
+// Use reload.ReExec(s) to restart the process.
+func watchDir(path string, cb func()) dir { return dir{path, cb} } // nolint: golint
 
 // Do reload the current process when its binary changes.
 //
@@ -59,7 +34,7 @@ func Dir(path string, cb func()) dir { return dir{path, cb} } // nolint: golint
 //
 // The error return will only return initialisation errors. Once initialized it
 // will use the log function to print errors, rather than return.
-func Do(servConf *ServConfig, log func(string, ...interface{}), additional ...dir) error {
+func do(s *Service, log func(string, ...interface{}), additional ...dir) error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return errors.Wrap(err, "cannot setup watcher")
@@ -108,7 +83,7 @@ func Do(servConf *ServConfig, log func(string, ...interface{}), additional ...di
 				// Ensure that we use the correct events, as they are not uniform across
 				// platforms. See https://github.com/fsnotify/fsnotify/issues/74
 
-				if servConf.conf == nil {
+				if s.conf == nil {
 					continue
 				}
 
@@ -117,7 +92,7 @@ func Do(servConf *ServConfig, log func(string, ...interface{}), additional ...di
 					continue
 				}
 
-				if servConf.conf.Serv.Production {
+				if s.conf.Serv.Production {
 					continue
 				}
 
@@ -141,7 +116,7 @@ func Do(servConf *ServConfig, log func(string, ...interface{}), additional ...di
 				if event.Name == binSelf {
 					// Wait for writes to finish.
 					time.Sleep(100 * time.Millisecond)
-					ReExec(servConf)()
+					reExec(s)()
 				}
 
 				for _, a := range additional {
@@ -160,25 +135,17 @@ func Do(servConf *ServConfig, log func(string, ...interface{}), additional ...di
 		}
 	}
 
-	// add := ""
-	// if len(additional) > 0 {
-	// 	reldirs := make([]string, len(dirs)-1)
-	// 	for i := range dirs[1:] {
-	// 		reldirs[i] = relpath(dirs[i+1])
-	// 	}
-	// 	add = fmt.Sprintf(" (additional dirs: %s)", strings.Join(reldirs, ", "))
-	// }
 	log("Config changed restarting")
 	<-done
 	return nil
 }
 
 // Exec replaces the current process with a new copy of itself.
-func ReExec(servConf *ServConfig) func() {
+func reExec(s *Service) func() {
 	return func() {
 		err := syscall.Exec(binSelf, append([]string{binSelf}, os.Args[1:]...), os.Environ())
 		if err != nil {
-			servConf.log.Fatalf("Cannot restart: %s", err)
+			s.log.Fatalf("Cannot restart: %s", err)
 		}
 	}
 }

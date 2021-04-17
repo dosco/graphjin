@@ -9,7 +9,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/dosco/graphjin/internal/jsn"
 )
@@ -98,19 +97,6 @@ func whitespace(b byte) bool {
 
 func alphanum(b byte) bool {
 	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
-}
-
-func fatalInProd(servConf *ServConfig, err error, msg string) {
-	var wg sync.WaitGroup
-
-	if isDev() {
-		servConf.log.Errorf("%s: %s", msg, err)
-	} else {
-		servConf.log.Fatalf("%s: %s", msg, err)
-	}
-
-	wg.Add(1)
-	wg.Wait()
 }
 
 func isDev() bool {

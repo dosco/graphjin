@@ -1,4 +1,4 @@
-package serv
+package cmd
 
 import (
 	"bytes"
@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func cmdNew(servConf *ServConfig) func(*cobra.Command, []string) {
+func cmdNew() func(*cobra.Command, []string) {
 	return func(cmd *cobra.Command, args []string) {
 		if len(args) != 1 {
 			cmd.Help() //nolint: errcheck
@@ -29,11 +29,11 @@ func cmdNew(servConf *ServConfig) func(*cobra.Command, []string) {
 		name := args[0]
 		appPath := path.Join("./", name)
 
-		ifNotExists(*servConf, appPath, func(p string) error {
+		ifNotExists(appPath, func(p string) error {
 			return os.Mkdir(p, os.ModePerm)
 		})
 
-		ifNotExists(*servConf, path.Join(appPath, "Dockerfile"), func(p string) error {
+		ifNotExists(path.Join(appPath, "Dockerfile"), func(p string) error {
 			if v, err := tmpl.get("Dockerfile"); err == nil {
 				return ioutil.WriteFile(p, v, 0644)
 			} else {
@@ -41,7 +41,7 @@ func cmdNew(servConf *ServConfig) func(*cobra.Command, []string) {
 			}
 		})
 
-		ifNotExists(*servConf, path.Join(appPath, "docker-compose.yml"), func(p string) error {
+		ifNotExists(path.Join(appPath, "docker-compose.yml"), func(p string) error {
 			if v, err := tmpl.get("docker-compose.yml"); err == nil {
 				return ioutil.WriteFile(p, v, 0644)
 			} else {
@@ -49,7 +49,7 @@ func cmdNew(servConf *ServConfig) func(*cobra.Command, []string) {
 			}
 		})
 
-		ifNotExists(*servConf, path.Join(appPath, "cloudbuild.yaml"), func(p string) error {
+		ifNotExists(path.Join(appPath, "cloudbuild.yaml"), func(p string) error {
 			if v, err := tmpl.get("cloudbuild.yaml"); err == nil {
 				return ioutil.WriteFile(p, v, 0644)
 			} else {
@@ -61,11 +61,11 @@ func cmdNew(servConf *ServConfig) func(*cobra.Command, []string) {
 
 		appConfigPath := path.Join(appPath, "config")
 
-		ifNotExists(*servConf, appConfigPath, func(p string) error {
+		ifNotExists(appConfigPath, func(p string) error {
 			return os.Mkdir(p, os.ModePerm)
 		})
 
-		ifNotExists(*servConf, path.Join(appConfigPath, "dev.yml"), func(p string) error {
+		ifNotExists(path.Join(appConfigPath, "dev.yml"), func(p string) error {
 			if v, err := tmpl.get("dev.yml"); err == nil {
 				return ioutil.WriteFile(p, v, 0644)
 			} else {
@@ -73,7 +73,7 @@ func cmdNew(servConf *ServConfig) func(*cobra.Command, []string) {
 			}
 		})
 
-		ifNotExists(*servConf, path.Join(appConfigPath, "prod.yml"), func(p string) error {
+		ifNotExists(path.Join(appConfigPath, "prod.yml"), func(p string) error {
 			if v, err := tmpl.get("prod.yml"); err == nil {
 				return ioutil.WriteFile(p, v, 0644)
 			} else {
@@ -81,7 +81,7 @@ func cmdNew(servConf *ServConfig) func(*cobra.Command, []string) {
 			}
 		})
 
-		ifNotExists(*servConf, path.Join(appConfigPath, "seed.js"), func(p string) error {
+		ifNotExists(path.Join(appConfigPath, "seed.js"), func(p string) error {
 			if v, err := tmpl.get("seed.js"); err == nil {
 				return ioutil.WriteFile(p, v, 0644)
 			} else {
@@ -93,11 +93,11 @@ func cmdNew(servConf *ServConfig) func(*cobra.Command, []string) {
 
 		appMigrationsPath := path.Join(appConfigPath, "migrations")
 
-		ifNotExists(*servConf, appMigrationsPath, func(p string) error {
+		ifNotExists(appMigrationsPath, func(p string) error {
 			return os.Mkdir(p, os.ModePerm)
 		})
 
-		ifNotExists(*servConf, path.Join(appMigrationsPath, "0_init.sql"), func(p string) error {
+		ifNotExists(path.Join(appMigrationsPath, "0_init.sql"), func(p string) error {
 			if v, err := tmpl.get("0_init.sql"); err == nil {
 				return ioutil.WriteFile(p, v, 0644)
 			} else {
@@ -105,7 +105,7 @@ func cmdNew(servConf *ServConfig) func(*cobra.Command, []string) {
 			}
 		})
 
-		servConf.log.Infof("App initialized: %s", name)
+		log.Infof("App initialized: %s", name)
 	}
 }
 
@@ -140,22 +140,22 @@ func (t *Templ) get(name string) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-func ifNotExists(servConf ServConfig, filePath string, doFn func(string) error) {
+func ifNotExists(filePath string, doFn func(string) error) {
 	_, err := os.Stat(filePath)
 
 	if err == nil {
-		servConf.log.Infof("Create skipped file exists: %s", filePath)
+		log.Infof("Create skipped file exists: %s", filePath)
 		return
 	}
 
 	if !os.IsNotExist(err) {
-		servConf.log.Fatalf("Error checking if file exists: %s", filePath)
+		log.Fatalf("Error checking if file exists: %s", filePath)
 	}
 
 	err = doFn(filePath)
 	if err != nil {
-		servConf.log.Fatalf("%s: %s", err, filePath)
+		log.Fatalf("%s: %s", err, filePath)
 	}
 
-	servConf.log.Infof("Created: %s", filePath)
+	log.Infof("Created: %s", filePath)
 }

@@ -13,8 +13,19 @@ import (
 	"time"
 
 	"github.com/NYTimes/gziphandler"
-	"github.com/dosco/graphjin/internal/serv/internal/auth"
+	"github.com/dosco/graphjin/serv/internal/auth"
 	"go.opencensus.io/plugin/ochttp"
+)
+
+const (
+	serverName = "GraphJin"
+)
+
+var (
+	// These variables are set using -ldflags
+	version string
+	commit  string
+	date    string
 )
 
 var (
@@ -24,68 +35,65 @@ var (
 	apiRoute string = "/api/v1/graphql"
 )
 
-func initWatcher(sc *ServConfig) {
-	cpath := sc.conf.cpath
-	if sc.conf != nil && !sc.conf.WatchAndReload {
-		return
-	}
+func initWatcher(s *Service) {
+	cpath := s.conf.cpath
 
 	var d dir
 	if cpath == "" || cpath == "./" {
-		d = Dir("./config", ReExec(sc))
+		d = watchDir("./config", reExec(s))
 	} else {
-		d = Dir(cpath, ReExec(sc))
+		d = watchDir(cpath, reExec(s))
 	}
 
 	go func() {
-		err := Do(sc, sc.log.Infof, d)
+		err := do(s, s.log.Infof, d)
 		if err != nil {
-			sc.log.Fatalf("Error in config file wacher: %s", err)
+			s.log.Fatalf("Error in config file wacher: %s", err)
 		}
 	}()
 }
 
-func startHTTP(sc *ServConfig) {
+func startHTTP(s *Service) {
 	var appName string
 
 	defaultHP := "0.0.0.0:8080"
 	env := os.Getenv("GO_ENV")
 
-	if sc.conf != nil {
-		appName = sc.conf.AppName
-		hp := strings.SplitN(sc.conf.HostPort, ":", 2)
+	if s.conf != nil {
+		appName = s.conf.AppName
+		hp := strings.SplitN(s.conf.HostPort, ":", 2)
 
 		if len(hp) == 2 {
-			if sc.conf.Host != "" {
-				hp[0] = sc.conf.Host
+			if s.conf.Host != "" {
+				hp[0] = s.conf.Host
 			}
 
-			if sc.conf.Port != "" {
-				hp[1] = sc.conf.Port
+			if s.conf.Port != "" {
+				hp[1] = s.conf.Port
 			}
 
-			sc.conf.hostPort = fmt.Sprintf("%s:%s", hp[0], hp[1])
+			s.conf.hostPort = fmt.Sprintf("%s:%s", hp[0], hp[1])
 		}
 	}
 
-	if sc.conf.hostPort == "" {
-		sc.conf.hostPort = defaultHP
+	if s.conf.hostPort == "" {
+		s.conf.hostPort = defaultHP
 	}
 
-	routes, err := routeHandler(sc)
+	routes, err := routeHandler(s, http.NewServeMux())
 	if err != nil {
-		sc.log.Fatalf("Error setting up API routes: %s", err)
+		s.log.Fatalf("Error setting up API routes: %s", err)
 	}
 
 	srv := &http.Server{
-		Addr:           sc.conf.hostPort,
+		Addr:           s.conf.hostPort,
 		Handler:        routes,
 		ReadTimeout:    5 * time.Second,
 		WriteTimeout:   10 * time.Second,
 		MaxHeaderBytes: 1 << 20,
 	}
 
-	if sc.conf.telemetryEnabled() {
+	if s.conf.telemetryEnabled() {
 		srv.Handler = &ochttp.Handler{Handler: routes}
 	}
 
@@ -96,59 +104,58 @@ func startHTTP(sc *ServConfig) {
 		<-sigint
 
 		if err := srv.Shutdown(context.Background()); err != nil {
-			sc.log.Warn("Shutdown signal received")
+			s.log.Warn("Shutdown signal received")
 		}
 		close(idleConnsClosed)
 	}()
 
 	srv.RegisterOnShutdown(func() {
-		if sc.conf.closeFn != nil {
-			sc.conf.closeFn()
+		if s.conf.closeFn != nil {
+			s.conf.closeFn()
 		}
-		sc.db.Close()
-		sc.log.Info("Shutdown complete")
+		s.db.Close()
+		s.log.Info("Shutdown complete")
 	})
 
-	sc.log.Infof("GraphJin started, version: %s, host-port: %s, app-name: %s, env: %s\n",
-		buildInfo.Version, sc.conf.hostPort, appName, env)
+	s.log.Infof("GraphJin started, version: %s, host-port: %s, app-name: %s, env: %s\n",
+		version, s.conf.hostPort, appName, env)
 
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-		sc.log.Fatal("Server stopped")
+		s.log.Fatal("Server stopped")
 	}
 
 	<-idleConnsClosed
 }
 
-func routeHandler(sc *ServConfig) (http.Handler, error) {
+func routeHandler(s *Service, mux *http.ServeMux) (http.Handler, error) {
 	var err error
-	mux := http.NewServeMux()
 
-	if sc.conf == nil {
+	if s.conf == nil {
 		return mux, nil
 	}
 
-	if sc.conf.APIPath != "" {
-		apiRoute = path.Join("/", sc.conf.APIPath, "/v1/graphql")
+	if s.conf.APIPath != "" {
+		apiRoute = path.Join("/", s.conf.APIPath, "/v1/graphql")
 	}
 
 	// Main GraphQL API handler
-	apiHandler := apiV1Handler(sc)
+	apiHandler := apiV1Handler(s)
 
 	// API rate limiter
-	if sc.conf.rateLimiterEnable() {
-		apiHandler = rateLimiter(sc, apiHandler)
+	if s.conf.rateLimiterEnable() {
+		apiHandler = rateLimiter(s, apiHandler)
 	}
 
 	routes := map[string]http.Handler{
-		"/health": http.HandlerFunc(health(sc)),
+		"/health": http.HandlerFunc(health(s)),
 		apiRoute:  apiHandler,
 	}
 
-	if err := setActionRoutes(sc, routes); err != nil {
+	if err := setActionRoutes(s, routes); err != nil {
 		return nil, err
 	}
 
-	if sc.conf.WebUI {
+	if s.conf.WebUI {
 		webRoot, err := fs.Sub(webBuild, "web/build")
 		if err != nil {
 			return nil, err
@@ -156,7 +163,7 @@ func routeHandler(sc *ServConfig) (http.Handler, error) {
 		routes["/"] = http.FileServer(http.FS(webRoot))
 	}
 
-	if sc.conf.HTTPGZip {
+	if s.conf.HTTPGZip {
 		gz := gziphandler.MustNewGzipLevelHandler(6)
 		for k, v := range routes {
 			routes[k] = gz(v)
@@ -167,8 +174,8 @@ func routeHandler(sc *ServConfig) (http.Handler, error) {
 		mux.Handle(k, v)
 	}
 
-	if sc.conf.telemetryEnabled() {
-		sc.conf.closeFn, err = enableObservability(sc, mux)
+	if s.conf.telemetryEnabled() {
+		s.conf.closeFn, err = enableObservability(s, mux)
 		if err != nil {
 			return nil, err
 		}
@@ -185,26 +192,26 @@ func setServerHeader(h http.Handler) http.Handler {
 	return http.HandlerFunc(fn)
 }
 
-func setActionRoutes(sc *ServConfig, routes map[string]http.Handler) error {
+func setActionRoutes(s *Service, routes map[string]http.Handler) error {
 	var err error
 
-	for _, a := range sc.conf.Actions {
+	for _, a := range s.conf.Actions {
 		var fn http.Handler
 
-		fn, err = newAction(sc, &a)
+		fn, err = newAction(s, &a)
 		if err != nil {
 			break
 		}
 
 		p := fmt.Sprintf("/api/v1/actions/%s", strings.ToLower(a.Name))
 
-		if ac := findAuth(sc, a.AuthName); ac != nil {
+		if ac := findAuth(s, a.AuthName); ac != nil {
 			routes[p], err = auth.WithAuth(fn, ac)
 		} else {
 			routes[p] = fn
 		}
 
-		if sc.conf.telemetryEnabled() {
+		if s.conf.telemetryEnabled() {
 			routes[p] = ochttp.WithRouteTag(routes[p], p)
 		}
 
@@ -215,11 +222,25 @@ func setActionRoutes(sc *ServConfig, routes map[string]http.Handler) error {
 	return nil
 }
 
-func findAuth(sc *ServConfig, name string) *auth.Auth {
-	for _, a := range sc.conf.Auths {
+func findAuth(s *Service, name string) *auth.Auth {
+	for _, a := range s.conf.Auths {
 		if strings.EqualFold(a.Name, name) {
 			return &a
 		}
 	}
 	return nil
+}
+
+type BuildInfo struct {
+	Version string
+	Commit  string
+	Date    string
+}
+
+func GetBuildInfo() BuildInfo {
+	return BuildInfo{
+		Version: version,
+		Commit:  commit,
+		Date:    date,
+	}
 }

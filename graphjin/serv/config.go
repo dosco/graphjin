@@ -2,7 +2,6 @@ package serv
 
 import (
 	"fmt"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -94,35 +93,11 @@ func newViper(configPath, configFile string) *viper.Viper {
 	return vi
 }
 
-func GetConfigName() string {
-	if os.Getenv("GO_ENV") == "" {
-		return "dev"
-	}
-
-	ge := strings.ToLower(os.Getenv("GO_ENV"))
-
-	switch {
-	case strings.HasPrefix(ge, "pro"):
-		return "prod"
-
-	case strings.HasPrefix(ge, "sta"):
-		return "stage"
-
-	case strings.HasPrefix(ge, "tes"):
-		return "test"
-
-	case strings.HasPrefix(ge, "dev"):
-		return "dev"
-	}
-
-	return ge
-}
-
 func (c *Config) telemetryEnabled() bool {
 	return c.Telemetry.Debug || c.Telemetry.Metrics.Exporter != "" || c.Telemetry.Tracing.Exporter != ""
 }
 
-func (c *Config) relPath(p string) string {
+func (c *Config) RelPath(p string) string {
 	if filepath.IsAbs(p) {
 		return p
 	}

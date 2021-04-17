@@ -7,7 +7,7 @@ import (
 
 	"github.com/dosco/graphjin/core"
 
-	"github.com/dosco/graphjin/internal/serv/internal/auth/provider"
+	"github.com/dosco/graphjin/serv/internal/auth/provider"
 )
 
 // Auth struct contains authentication related config values used by the GraphJin service

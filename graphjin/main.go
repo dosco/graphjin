@@ -37,20 +37,10 @@ Use "graphjin [command] --help" for more information about a command.
 
 package main
 
-import "github.com/dosco/graphjin/internal/serv"
-
-var (
-	// These variables are set using -ldflags
-	version string
-	commit  string
-	date    string
+import (
+	"github.com/dosco/graphjin/internal/cmd"
 )
 
 func main() {
-	serv.Cmd(serv.BuildInfo{
-		Version: version,
-		Commit:  commit,
-		Date:    date,
-	})
-
+	cmd.Cmd()
 }

@@ -1,7 +1,8 @@
-package serv
+package cmd
 
 import (
 	"context"
+	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -24,54 +25,46 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func cmdDBSeed(servConf *ServConfig) func(*cobra.Command, []string) {
+func cmdDBSeed() func(*cobra.Command, []string) {
 	return func(cmd *cobra.Command, args []string) {
-		var err error
+		initCmd(cpath)
 
-		if servConf.conf, err = initConf(servConf); err != nil {
-			servConf.log.Fatalf("Failed to read config: %s", err)
-		}
-		servConf.conf.Serv.Production = false
-		servConf.conf.DefaultBlock = false
-		servConf.conf.DisableAllowList = true
-
-		if servConf.conf.DB.Type == "mysql" {
-			servConf.log.Fatalf("Seed scripts not support with MySQL")
+		if conf.DB.Type == "mysql" {
+			log.Fatalf("Seed scripts not support with MySQL")
 		}
 
-		servConf.db, err = initDB(servConf, true, false)
-		if err != nil {
-			servConf.log.Fatalf("Failed to connect to database: %s", err)
+		conf.Serv.Production = false
+		conf.DefaultBlock = false
+		conf.DisableAllowList = true
+
+		conf.Core.Blocklist = nil
+		sfile := path.Join(cpath, conf.SeedFile)
+
+		if err := compileAndRunJS(sfile, db); err != nil {
+			log.Fatalf("Failed to execute seed file %s: %s", sfile, err)
 		}
 
-		servConf.conf.Core.Blocklist = nil
-		sfile := path.Join(servConf.conf.cpath, servConf.conf.SeedFile)
-
-		if err := compileAndRunJS(servConf, sfile); err != nil {
-			servConf.log.Fatalf("Failed to execute seed file %s: %s", sfile, err)
-		}
-
-		servConf.log.Infof("Seed script completed")
+		log.Infof("Seed script completed")
 	}
 }
 
-func compileAndRunJS(servConf *ServConfig, sfile string) error {
+func compileAndRunJS(sfile string, db *sql.DB) error {
 	b, err := ioutil.ReadFile(sfile)
 	if err != nil {
 		return fmt.Errorf("Failed to read seed file %s: %s", sfile, err)
 	}
 
-	gj, err := core.NewGraphJin(&servConf.conf.Core, servConf.db)
+	gj, err := core.NewGraphJin(&conf.Core, db)
 	if err != nil {
 		return err
 	}
 
 	graphQLFn := func(query string, data interface{}, opt map[string]string) map[string]interface{} {
-		return graphQLFunc(servConf, gj, query, data, opt)
+		return graphQLFunc(gj, query, data, opt)
 	}
 
 	importCSVFn := func(table, filename string, sep string) int64 {
-		return importCSV(servConf, table, filename, sep)
+		return importCSV(table, filename, sep, db)
 	}
 
 	vm := goja.New()
@@ -110,12 +103,12 @@ func compileAndRunJS(servConf *ServConfig, sfile string) error {
 		return errors.New(es5.Errors[0].Text)
 	}
 
-	_, err = vm.RunScript(servConf.conf.SeedFile, string(es5.Code))
+	_, err = vm.RunScript(conf.SeedFile, string(es5.Code))
 	return err
 }
 
 // func runFunc(call goja.FunctionCall) {
-func graphQLFunc(servConf *ServConfig, gj *core.GraphJin, query string, data interface{}, opt map[string]string) map[string]interface{} {
+func graphQLFunc(gj *core.GraphJin, query string, data interface{}, opt map[string]string) map[string]interface{} {
 	ct := context.Background()
 
 	if v, ok := opt["user_id"]; ok && v != "" {
@@ -130,26 +123,26 @@ func graphQLFunc(servConf *ServConfig, gj *core.GraphJin, query string, data int
 	// 	role = "user"
 	// }
 
-	if servConf.conf.Debug {
-		servConf.log.Debugf("Seed query: %s", query)
+	if conf.Debug {
+		log.Debugf("Seed query: %s", query)
 	}
 
 	var vars []byte
 	var err error
 
 	if vars, err = json.Marshal(data); err != nil {
-		servConf.log.Fatalf("Failed parsing seed query variables: %s", err)
+		log.Fatalf("Failed parsing seed query variables: %s", err)
 	}
 
 	res, err := gj.GraphQL(ct, query, vars, nil)
 	if err != nil {
-		servConf.log.Fatalf("Seed query failed: %s", err)
+		log.Fatalf("Seed query failed: %s", err)
 	}
 
 	val := make(map[string]interface{})
 
 	if err = json.Unmarshal(res.Data, &val); err != nil {
-		servConf.log.Fatalf("Seed query failed: %s", err)
+		log.Fatalf("Seed query failed: %s", err)
 	}
 
 	return val
@@ -231,11 +224,11 @@ func (c *csvSource) Err() error {
 	return nil
 }
 
-func importCSV(servConf *ServConfig, table, filename string, sep string) int64 {
-	servConf.log.Infof("Seeding table: %s, From file: %s", table, filename)
+func importCSV(table, filename string, sep string, db *sql.DB) int64 {
+	log.Infof("Seeding table: %s, From file: %s", table, filename)
 
 	if filename[0] != '/' && filename[0] != '.' {
-		filename = path.Join(servConf.confPath, filename)
+		filename = path.Join(cpath, filename)
 	}
 
 	var sepRune rune
@@ -246,7 +239,7 @@ func importCSV(servConf *ServConfig, table, filename string, sep string) int64 {
 
 	s, err := NewCSVSource(filename, sepRune)
 	if err != nil {
-		servConf.log.Fatalf("Error reading CSV file: %s", err)
+		log.Fatalf("Error reading CSV file: %s", err)
 	}
 
 	var cols []string
@@ -256,12 +249,12 @@ func importCSV(servConf *ServConfig, table, filename string, sep string) int64 {
 		cols = append(cols, c.(string))
 	}
 
-	conn, err := stdlib.AcquireConn(servConf.db)
+	conn, err := stdlib.AcquireConn(db)
 	if err != nil {
-		servConf.log.Fatalf("Error connecting to database: %s", err)
+		log.Fatalf("Error connecting to database: %s", err)
 	}
 	//nolint: errcheck
-	defer stdlib.ReleaseConn(servConf.db, conn)
+	defer stdlib.ReleaseConn(db, conn)
 
 	n, err := conn.CopyFrom(
 		context.Background(),
@@ -271,7 +264,7 @@ func importCSV(servConf *ServConfig, table, filename string, sep string) int64 {
 
 	if err != nil {
 		err = fmt.Errorf("%w (line no %d)", err, s.i)
-		servConf.log.Fatalf("Error with copy-from: %s", err)
+		log.Fatalf("Error with copy-from: %s", err)
 	}
 
 	return n
