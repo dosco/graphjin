@@ -156,4 +156,34 @@ spec:
           image: docker.io/dosco/graphjin:latest
           ports:
             - containerPort: 8080
+          env:
+            - name: GO_ENV
+              value: dev
+          volumeMounts:
+            - name: config
+              mountPath: /config/dev.yaml
+              subPath: dev.yaml
+              readOnly: true
+      volumes:
+        - name: config
+          secret:
+            secretName: graphjin-config
+            items:
+            - key: dev.yaml
+              path: dev.yaml
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: graphjin-config
+stringData:
+  dev.yaml: |
+    database:
+      type: postgres
+      host: db
+      port: 5432
+      dbname: app_development
+      user: postgres
+      password: postgres
 ```
