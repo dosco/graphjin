@@ -10,31 +10,73 @@ import (
 	"github.com/dosco/graphjin/serv/internal/auth/provider"
 )
 
+type JWTConfig = provider.JWTConfig
+
 // Auth struct contains authentication related config values used by the GraphJin service
 type Auth struct {
-	Name            string
-	Type            string
-	Cookie          string
-	CredsInHeader   bool `mapstructure:"creds_in_header"`
+	// Name is a friendly name for this auth config
+	Name string
+	// Type can be rails, jwt or header
+	Type string
+
+	// Cookie is the name of the cookie used
+	Cookie string
+
+	// CredsInHeader is used in dev only to allow for credentials
+	// in header values. Example: The X-User-ID HTTP header can be used to
+	// set the user id.
+	CredsInHeader bool `mapstructure:"creds_in_header"`
+
+	// SubsCredsInVars is used in dev only to allow for credentials
+	// in websocket variable. Example: The user_id websocket variable can be used to
+	// set the user id.
 	SubsCredsInVars bool `mapstructure:"subs_creds_in_vars"`
 
+	// Rails cookie authentication
 	Rails struct {
-		Version       string
+		// Rails version is needed to decode the cookie correctly.
+		// Can be 5.2 or 6
+		Version string
+
+		// SecretKeyBase is the cookie encryption key used in your Rails config
 		SecretKeyBase string `mapstructure:"secret_key_base"`
-		URL           string
-		Password      string
-		MaxIdle       int `mapstructure:"max_idle"`
-		MaxActive     int `mapstructure:"max_active"`
-		Salt          string
-		SignSalt      string `mapstructure:"sign_salt"`
-		AuthSalt      string `mapstructure:"auth_salt"`
+
+		// URL is used for Rails cookie store based auth.
+		// Example: redis://redis-host:6379 or memcache://memcache-host
+		URL string
+
+		// Password is set if needed by Redis or Memcache
+		Password string
+
+		// MaxIdle maximum idle time for the connection
+		MaxIdle int `mapstructure:"max_idle"`
+
+		// MaxActive maximum active time for the connection
+		MaxActive int `mapstructure:"max_active"`
+
+		// Salt value is from your Rails 5.2 and below auth config
+		Salt string
+
+		// SignSalt value is from your Rails 5.2 and below auth config
+		SignSalt string `mapstructure:"sign_salt"`
+
+		// AuthSalt value is from your Rails 5.2 and below auth config
+		AuthSalt string `mapstructure:"auth_salt"`
 	}
 
-	JWT provider.JWTConfig
+	// JWT  authentication
+	JWT JWTConfig
 
+	// Header authentication
 	Header struct {
-		Name   string
-		Value  string
+		// Name of the HTTP header
+		Name string
+
+		// Value if set must match expected value (optional)
+		Value string
+
+		// Exists if set to true then the header must exist
+		// this is an alternative to using value
 		Exists bool
 	}
 }

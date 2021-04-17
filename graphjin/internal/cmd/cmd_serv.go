@@ -9,7 +9,7 @@ func cmdServ() func(*cobra.Command, []string) {
 	return func(cmd *cobra.Command, args []string) {
 		initCmd(cpath)
 
-		s, err := serv.NewService(conf)
+		s, err := serv.NewGraphJinService(conf)
 		if err != nil {
 			fatalInProd(err)
 		}

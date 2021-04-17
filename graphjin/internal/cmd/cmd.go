@@ -194,7 +194,7 @@ func initCmd(cpath string) {
 		log.Fatal(err)
 	}
 
-	if s, err = serv.NewService(conf); err != nil {
+	if s, err = serv.NewGraphJinService(conf); err != nil {
 		log.Fatal(err)
 	}
 

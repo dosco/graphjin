@@ -1,111 +1,47 @@
+// Package serv provides an API to include and use the GraphJin service with your own code.
+// For detailed documentation visit https://graphjin.com
+//
+// Example usage:
+/*
+	package main
+
+	import (
+		"database/sql"
+		"fmt"
+		"time"
+		"github.com/dosco/graphjin/core"
+		_ "github.com/jackc/pgx/v4/stdlib"
+	)
+
+	func main() {
+		conf := serv.Config{ AppName: "Test App" }
+		conf.DB.Host := "127.0.0.1"
+		conf.DB.Port := 5432
+		conf.DB.DBName := "test_db"
+		conf.DB.User := "postgres"
+		conf.DB.Password := "postgres"
+
+		gjs, err := serv.NewGraphJinService(conf)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+	 	if err := gjs.Start(); err != nil {
+			log.Fatal(err)
+		}
+	}
+*/
 package serv
 
 import (
 	"database/sql"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/dosco/graphjin/core"
 	"github.com/dosco/graphjin/internal/util"
-	"github.com/dosco/graphjin/serv/internal/auth"
 	"go.uber.org/zap"
-
-	"github.com/spf13/viper"
 )
-
-type Core = core.Config
-
-// Config struct holds the GraphJin config values
-type Config struct {
-	Core `mapstructure:",squash"`
-	Serv `mapstructure:",squash"`
-
-	closeFn  func()
-	hostPort string
-	cpath    string
-	vi       *viper.Viper
-}
-
-// Serv struct contains config values used by the GraphJin service
-type Serv struct {
-	AppName        string `mapstructure:"app_name"`
-	Production     bool
-	LogLevel       string `mapstructure:"log_level"`
-	LogFormat      string `mapstructure:"log_format"`
-	HostPort       string `mapstructure:"host_port"`
-	Host           string
-	Port           string
-	HTTPGZip       bool     `mapstructure:"http_compress"`
-	WebUI          bool     `mapstructure:"web_ui"`
-	EnableTracing  bool     `mapstructure:"enable_tracing"`
-	WatchAndReload bool     `mapstructure:"reload_on_config_change"`
-	AuthFailBlock  bool     `mapstructure:"auth_fail_block"`
-	SeedFile       string   `mapstructure:"seed_file"`
-	MigrationsPath string   `mapstructure:"migrations_path"`
-	AllowedOrigins []string `mapstructure:"cors_allowed_origins"`
-	AllowedHeaders []string `mapstructure:"cors_allowed_headers"`
-	DebugCORS      bool     `mapstructure:"cors_debug"`
-	APIPath        string   `mapstructure:"api_path"`
-	CacheControl   string   `mapstructure:"cache_control"`
-
-	// Telemetry struct contains OpenCensus metrics and tracing related config
-	Telemetry struct {
-		Debug    bool
-		Interval *time.Duration
-		Metrics  struct {
-			Exporter  string
-			Endpoint  string
-			Namespace string
-			Key       string
-		}
-
-		Tracing struct {
-			Exporter      string
-			Endpoint      string
-			Sample        string
-			IncludeQuery  bool `mapstructure:"include_query"`
-			IncludeParams bool `mapstructure:"include_params"`
-		}
-	}
-
-	Auth  auth.Auth
-	Auths []auth.Auth
-
-	// DB struct contains db config
-	DB struct {
-		Type        string
-		Host        string
-		Port        uint16
-		DBName      string
-		User        string
-		Password    string
-		Schema      string
-		PoolSize    int32         `mapstructure:"pool_size"`
-		MaxRetries  int           `mapstructure:"max_retries"`
-		PingTimeout time.Duration `mapstructure:"ping_timeout"`
-		EnableTLS   bool          `mapstructure:"enable_tls"`
-		ServerName  string        `mapstructure:"server_name"`
-		ServerCert  string        `mapstructure:"server_cert"`
-		ClientCert  string        `mapstructure:"client_cert"`
-		ClientKey   string        `mapstructure:"client_key"`
-	} `mapstructure:"database"`
-
-	Actions []Action
-
-	RateLimiter struct {
-		Rate     float64
-		Bucket   int
-		IPHeader string `mapstructure:"ip_header"`
-	} `mapstructure:"rate_limiter"`
-}
-
-// Action struct contains config values for a GraphJin service action
-type Action struct {
-	Name     string
-	SQL      string
-	AuthName string `mapstructure:"auth_name"`
-}
 
 type Service struct {
 	log      *zap.SugaredLogger // logger
@@ -116,7 +52,11 @@ type Service struct {
 	gj       *core.GraphJin
 }
 
-func NewService(conf *Config) (*Service, error) {
+func NewGraphJinService(conf *Config) (*Service, error) {
+	if conf == nil {
+		conf = &Config{Core: Core{Debug: true}}
+	}
+
 	zlog := util.NewLogger(conf.LogFormat == "json")
 	log := zlog.Sugar()
 
