@@ -76,14 +76,13 @@ func NewGraphJinService(conf *Config) (*Service, error) {
 }
 
 func (s *Service) init() error {
-	var db *sql.DB
 	var err error
 
-	if db, err = s.newDB(true, true); err != nil {
+	if s.db, err = s.newDB(true, true); err != nil {
 		return fmt.Errorf("Failed to connect to database: %w", err)
 	}
 
-	s.gj, err = core.NewGraphJin(&s.conf.Core, db)
+	s.gj, err = core.NewGraphJin(&s.conf.Core, s.db)
 	if err != nil {
 		return fmt.Errorf("Failed to initialize: %w", err)
 	}
