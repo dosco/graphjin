@@ -12,7 +12,7 @@ endif
 export GO111MODULE := on
 
 # Build-time Go variables
-BUILD_FLAGS ?= -ldflags '-s -w -X "serv.version=${BUILD_VERSION}" -X "serv.commit=${BUILD}" -X "serv.date=${BUILD_DATE}"'
+BUILD_FLAGS ?= -ldflags '-s -w -X "github.com/dosco/graphjin/serv.version=${BUILD_VERSION}" -X "github.com/dosco/graphjin/serv.commit=${BUILD}" -X "github.com/dosco/graphjin/serv.date=${BUILD_DATE}"'
 
 .PHONY: all download-tools build gen clean test run lint changlog release version help $(PLATFORMS)
 
