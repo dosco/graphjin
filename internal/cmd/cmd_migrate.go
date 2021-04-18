@@ -29,6 +29,7 @@ func cmdDBMigrate() func(*cobra.Command, []string) {
 		dest := args[0]
 
 		initCmd(cpath)
+		initDB(true)
 
 		if conf.DB.Type == "mysql" {
 			log.Fatal("Migrations not support with MySQL")
@@ -120,6 +121,7 @@ func cmdDBMigrate() func(*cobra.Command, []string) {
 func cmdDBStatus() func(*cobra.Command, []string) {
 	return func(cmd *cobra.Command, args []string) {
 		initCmd(cpath)
+		initDB(true)
 
 		if conf.DB.Type == "mysql" {
 			log.Fatal("Migrations not support with MySQL")

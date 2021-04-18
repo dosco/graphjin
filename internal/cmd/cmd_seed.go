@@ -28,6 +28,7 @@ import (
 func cmdDBSeed() func(*cobra.Command, []string) {
 	return func(cmd *cobra.Command, args []string) {
 		initCmd(cpath)
+		initDB(true)
 
 		if conf.DB.Type == "mysql" {
 			log.Fatalf("Seed scripts not support with MySQL")
