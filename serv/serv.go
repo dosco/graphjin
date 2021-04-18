@@ -113,7 +113,9 @@ func startHTTP(s *Service) {
 		if s.conf.closeFn != nil {
 			s.conf.closeFn()
 		}
-		s.db.Close()
+		if s.db != nil {
+			s.db.Close()
+		}
 		s.log.Info("Shutdown complete")
 	})
 
