@@ -49,6 +49,7 @@ func cmdDBReset() func(*cobra.Command, []string) {
 func cmdDBCreate() func(*cobra.Command, []string) {
 	return func(cmd *cobra.Command, args []string) {
 		initCmd(cpath)
+		initDB(false)
 
 		if conf.DB.Type == "mysql" {
 			log.Fatalf("Database creation not support with MySQL")
@@ -81,6 +82,7 @@ func cmdDBCreate() func(*cobra.Command, []string) {
 func cmdDBDrop() func(*cobra.Command, []string) {
 	return func(cmd *cobra.Command, args []string) {
 		initCmd(cpath)
+		initDB(false)
 
 		sql := fmt.Sprintf(`DROP DATABASE IF EXISTS "%s"`, conf.DB.DBName)
 
@@ -100,6 +102,7 @@ func cmdDBNew() func(*cobra.Command, []string) {
 		}
 
 		initCmd(cpath)
+		initDB(false)
 
 		name := args[0]
 		migrationsPath := conf.RelPath(conf.MigrationsPath)

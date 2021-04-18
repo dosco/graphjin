@@ -17,11 +17,13 @@ import (
 )
 
 var (
-	bi    serv.BuildInfo
-	log   *zap.SugaredLogger
-	db    *sql.DB
-	conf  *serv.Config
-	cpath string
+	s      *serv.Service
+	bi     serv.BuildInfo
+	log    *zap.SugaredLogger
+	db     *sql.DB
+	dbUsed bool
+	conf   *serv.Config
+	cpath  string
 )
 
 func Cmd() {
@@ -178,13 +180,9 @@ Copyright 2021, Vikram Rangnekar
 }
 
 func initCmd(cpath string) {
-	var s *serv.Service
-	var err error
-
 	if conf != nil {
 		return
 	}
-
 	cp, err := filepath.Abs(cpath)
 	if err != nil {
 		log.Fatal(err)
@@ -197,10 +195,19 @@ func initCmd(cpath string) {
 	if s, err = serv.NewGraphJinService(conf); err != nil {
 		log.Fatal(err)
 	}
+}
 
-	if db, err = s.NewDB(); err != nil {
+func initDB(useDB bool) {
+	var err error
+
+	if db != nil && useDB == dbUsed {
+		return
+	}
+
+	if db, err = s.NewDB(useDB); err != nil {
 		log.Fatalf("Failed to connect to database: %s", err)
 	}
+	dbUsed = useDB
 }
 
 func GetConfigName() string {
