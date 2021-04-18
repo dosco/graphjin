@@ -33,8 +33,8 @@ type dbConf struct {
 	connString string
 }
 
-func (s *Service) NewDB() (*sql.DB, error) {
-	return s.newDB(false, false)
+func (s *Service) NewDB(useDB bool) (*sql.DB, error) {
+	return s.newDB(useDB, false)
 }
 
 func (s *Service) newDB(useDB, useTelemetry bool) (*sql.DB, error) {
