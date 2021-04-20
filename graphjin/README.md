@@ -2,7 +2,7 @@
 
 # GraphJin - Build APIs in 5 minutes
 
-[![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=for-the-badge&logo=appveyor&logo=appveyor)](https://pkg.go.dev/github.com/dosco/graphjin/core?tab=doc)
+[![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=for-the-badge&logo=appveyor&logo=appveyor)](https://pkg.go.dev/github.com/dosco/graphjin)
 [![GoReport](https://goreportcard.com/badge/github.com/gojp/goreportcard?style=for-the-badge)](https://goreportcard.com/report/github.com/dosco/graphjin)
 [![Apache 2.0](https://img.shields.io/github/license/dosco/graphjin.svg?style=for-the-badge)](https://github.com/dosco/graphjin/blob/master/LICENSE)
 [![Docker build](https://img.shields.io/docker/cloud/build/dosco/graphjin.svg?style=for-the-badge)](https://hub.docker.com/r/dosco/graphjin/builds)
