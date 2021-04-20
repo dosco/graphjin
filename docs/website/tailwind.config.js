@@ -1,15 +1,11 @@
 module.exports = {
-  corePlugins: {
-    preflight: false,
-  },
+  purge: ['layouts/**/*.html'],
+  darkMode: false, // or 'media' or 'class'
   theme: {
-    extend: {
-      screens: {
-        dark: { raw: "(prefers-color-scheme: dark)" },
-        // => @media (prefers-color-scheme: dark) { ... }
-      },
-    },
+    extend: {},
   },
-  variants: {},
-  plugins: [require("@tailwindcss/typography")],
-};
+  variants: {
+    extend: {},
+  },
+  plugins: [],
+}
