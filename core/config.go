@@ -401,7 +401,7 @@ func ReadInConfig(configFile string) (*Config, error) {
 func newViper(configPath, configFile string) *viper.Viper {
 	vi := viper.New()
 
-	vi.SetEnvPrefix("SG")
+	vi.SetEnvPrefix("GJ")
 	vi.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	vi.AutomaticEnv()
 
