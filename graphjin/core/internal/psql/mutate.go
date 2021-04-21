@@ -104,7 +104,7 @@ func (c *compilerContext) renderInsertUpdateColumns(m qcode.Mutate, values bool)
 				c.squoted(v)
 
 			default:
-				colWithTable(c.w, "t", col.FieldName)
+				c.colWithTable("t", col.FieldName)
 				continue
 			}
 
@@ -132,9 +132,10 @@ func (c *compilerContext) renderNestedRelColumns(m qcode.Mutate, values bool, pr
 				c.w.WriteString(`)`)
 			} else {
 				if prefix {
-					c.w.WriteString(`_x_`)
+					c.colWithTable(("_x_" + col.VCol.Table), col.VCol.Name)
+				} else {
+					c.colWithTable(col.VCol.Table, col.VCol.Name)
 				}
-				colWithTable(c.w, col.VCol.Table, col.VCol.Name)
 			}
 		} else {
 			c.quoted(col.Col.Name)
@@ -250,8 +251,8 @@ func (c *compilerContext) renderOneToOneConnectStmt(m qcode.Mutate) {
 	c.quoted(m.Ti.Name)
 	c.w.WriteString(` SET `)
 	c.quoted(m.Rel.Left.Col.Name)
-	c.w.WriteString(` = _x_`)
-	colWithTable(c.w, m.Rel.Right.Col.Table, m.Rel.Right.Col.Name)
+	c.w.WriteString(` = `)
+	c.colWithTable(("_x_" + m.Rel.Right.Col.Table), m.Rel.Right.Col.Name)
 
 	c.w.WriteString(` FROM _sg_input i`)
 	c.renderNestedRelTables(m, true)
@@ -303,8 +304,8 @@ func (c *compilerContext) renderOneToOneDisconnectStmt(m qcode.Mutate) {
 	if m.Rel.Left.Col.Array {
 		c.w.WriteString(` array_remove(`)
 		c.quoted(m.Rel.Left.Col.Name)
-		c.w.WriteString(`, _x_`)
-		colWithTable(c.w, m.Rel.Right.Col.Table, m.Rel.Right.Col.Name)
+		c.w.WriteString(`, `)
+		c.colWithTable(("_x_" + m.Rel.Right.Col.Table), m.Rel.Right.Col.Name)
 		c.w.WriteString(`)`)
 	} else {
 		c.w.WriteString(` NULL`)
@@ -314,9 +315,9 @@ func (c *compilerContext) renderOneToOneDisconnectStmt(m qcode.Mutate) {
 	c.renderNestedRelTables(m, true)
 
 	c.w.WriteString(` WHERE ((`)
-	colWithTable(c.w, m.Rel.Left.Col.Table, m.Rel.Left.Col.Name)
-	c.w.WriteString(`) = (_x_`)
-	colWithTable(c.w, m.Rel.Right.Col.Table, m.Rel.Right.Col.Name)
+	c.colWithTable(m.Rel.Left.Col.Table, m.Rel.Left.Col.Name)
+	c.w.WriteString(`) = (`)
+	c.colWithTable(("_x_" + m.Rel.Right.Col.Table), m.Rel.Right.Col.Name)
 	c.w.WriteString(`)`)
 
 	if m.Rel.Type == sdata.RelOneToOne {

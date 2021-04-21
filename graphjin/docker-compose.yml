@@ -22,6 +22,9 @@ services:
       target: go-build
     environment:
       GO_ENV: "development"
+      GJ_DATABASE_HOST: db
+      GJ_DATABASE_USER: postgres
+      GJ_DATABASE_PASSWORD: postgres
       CGO_ENABLED: 0
       PORT: 8080
     ports:

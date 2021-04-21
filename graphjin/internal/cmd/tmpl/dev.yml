@@ -98,10 +98,10 @@ set_user_id: false
 debug: false
 
 # Auth related environment Variables
-# SG_AUTH_RAILS_COOKIE_SECRET_KEY_BASE
-# SG_AUTH_RAILS_REDIS_URL
-# SG_AUTH_RAILS_REDIS_PASSWORD
-# SG_AUTH_JWT_PUBLIC_KEY_FILE
+# GJ_AUTH_RAILS_COOKIE_SECRET_KEY_BASE
+# GJ_AUTH_RAILS_REDIS_URL
+# GJ_AUTH_RAILS_REDIS_PASSWORD
+# GJ_AUTH_JWT_PUBLIC_KEY_FILE
 
 auth:
   # Can be 'none', 'rails', 'jwt' or 'header'
@@ -159,10 +159,10 @@ auths:
       exists: true
 
 # Postgres related environment Variables
-# SG_DATABASE_HOST
-# SG_DATABASE_PORT
-# SG_DATABASE_USER
-# SG_DATABASE_PASSWORD
+# GJ_DATABASE_HOST
+# GJ_DATABASE_PORT
+# GJ_DATABASE_USER
+# GJ_DATABASE_PASSWORD
 
 database:
   type: postgres

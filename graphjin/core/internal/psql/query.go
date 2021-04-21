@@ -412,7 +412,7 @@ func (c *compilerContext) renderRecursiveSelect(sel *qcode.Select) {
 	c.renderBaseColumns(sel)
 	c.renderFrom(psel)
 	c.w.WriteString(` WHERE (`)
-	colWithTable(c.w, sel.Table, sel.Ti.PrimaryCol.Name)
+	c.colWithTable(sel.Table, sel.Ti.PrimaryCol.Name)
 	c.w.WriteString(`) = (`)
 	colWithTableID(c.w, psel.Table, psel.ID, sel.Ti.PrimaryCol.Name)
 	c.w.WriteString(`) LIMIT 1) UNION ALL `)
@@ -451,7 +451,7 @@ func (c *compilerContext) renderFrom(sel *qcode.Select) {
 
 func (c *compilerContext) renderJSONTable(sel *qcode.Select) {
 	c.w.WriteString(`JSON_TABLE(`)
-	colWithTable(c.w, sel.Rel.Left.Col.Table, sel.Rel.Left.Col.Name)
+	c.colWithTable(sel.Rel.Left.Col.Table, sel.Rel.Left.Col.Name)
 	c.w.WriteString(`, "$[*]" COLUMNS(`)
 
 	for i, col := range sel.Ti.Columns {
@@ -473,7 +473,7 @@ func (c *compilerContext) renderRecordSet(sel *qcode.Select) {
 	// jsonb_to_recordset('[{"a":1,"b":[1,2,3],"c":"bar"}, {"a":2,"b":[1,2,3],"c":"bar"}]') as x(a int, b text, d text);
 	c.w.WriteString(sel.Ti.Type)
 	c.w.WriteString(`_to_recordset(`)
-	colWithTable(c.w, sel.Rel.Left.Col.Table, sel.Rel.Left.Col.Name)
+	c.colWithTable(sel.Rel.Left.Col.Table, sel.Rel.Left.Col.Name)
 	c.w.WriteString(`) AS `)
 	c.quoted(sel.Table)
 
@@ -546,7 +546,7 @@ func (c *compilerContext) renderGroupBy(sel *qcode.Select) {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
-		colWithTable(c.w, sel.Table, col.Col.Name)
+		c.colWithTable(sel.Table, col.Col.Name)
 	}
 }
 
@@ -560,7 +560,7 @@ func (c *compilerContext) renderRecursiveGroupBy(sel *qcode.Select) {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
-		colWithTable(c.w, sel.Table, col.Col.Name)
+		c.colWithTable(sel.Table, col.Col.Name)
 	}
 }
 
@@ -573,7 +573,7 @@ func (c *compilerContext) renderOrderBy(sel *qcode.Select) {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
-		colWithTable(c.w, sel.Table, col.Col.Name)
+		c.colWithTable(sel.Table, col.Col.Name)
 
 		switch col.Order {
 		case qcode.OrderAsc:
@@ -601,7 +601,7 @@ func (c *compilerContext) renderDistinctOn(sel *qcode.Select) {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
-		colWithTable(c.w, sel.Table, col.Name)
+		c.colWithTable(sel.Table, col.Name)
 	}
 	c.w.WriteString(`) `)
 }

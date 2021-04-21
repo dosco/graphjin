@@ -17,12 +17,6 @@ func aliasWithID(w *bytes.Buffer, alias string, id int32) {
 	int32String(w, id)
 }
 
-func colWithTable(w *bytes.Buffer, table, col string) {
-	w.WriteString(table)
-	w.WriteString(`.`)
-	w.WriteString(col)
-}
-
 func colWithTableID(w *bytes.Buffer, table string, id int32, col string) {
 	w.WriteString(table)
 	if id >= 0 {
@@ -31,6 +25,12 @@ func colWithTableID(w *bytes.Buffer, table string, id int32, col string) {
 	}
 	w.WriteString(`.`)
 	w.WriteString(col)
+}
+
+func (c *compilerContext) colWithTable(table, col string) {
+	c.quoted(table)
+	c.w.WriteString(`.`)
+	c.w.WriteString(col)
 }
 
 func (c *compilerContext) quoted(identifier string) {

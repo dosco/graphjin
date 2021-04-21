@@ -14,6 +14,9 @@ services:
     image: dosco/graphjin:latest
     environment:
       GO_ENV: "development"
+      GJ_DATABASE_HOST: "db"
+      GJ_DATABASE_USER: "postgres"
+      GJ_DATABASE_PASSWORD: "postgres"
     volumes:
       - ./config:/config
       - ./keys:/keys/

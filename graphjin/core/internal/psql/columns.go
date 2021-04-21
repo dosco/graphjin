@@ -132,7 +132,7 @@ func (c *compilerContext) renderFunctionSearchRank(sel *qcode.Select, fn qcode.F
 		if i != 0 {
 			c.w.WriteString(` || `)
 		}
-		colWithTable(c.w, sel.Table, col.Name)
+		c.colWithTable(sel.Table, col.Name)
 	}
 	if c.cv >= 110000 {
 		c.w.WriteString(`, websearch_to_tsquery(`)
@@ -159,10 +159,10 @@ func (c *compilerContext) renderFunctionSearchHeadline(sel *qcode.Select, fn qco
 
 	c.w.WriteString(`ts_headline(`)
 	if hasIndex {
-		colWithTable(c.w, sel.Table, fn.Col.Name)
+		c.colWithTable(sel.Table, fn.Col.Name)
 	} else {
 		c.w.WriteString(`to_tsvector(`)
-		colWithTable(c.w, sel.Table, fn.Col.Name)
+		c.colWithTable(sel.Table, fn.Col.Name)
 		c.w.WriteString(`)`)
 	}
 	if c.cv >= 110000 {
@@ -178,7 +178,7 @@ func (c *compilerContext) renderFunctionSearchHeadline(sel *qcode.Select, fn qco
 func (c *compilerContext) renderOtherFunction(sel *qcode.Select, fn qcode.Function) {
 	c.w.WriteString(fn.Name)
 	c.w.WriteString(`(`)
-	colWithTable(c.w, sel.Table, fn.Col.Name)
+	c.colWithTable(sel.Table, fn.Col.Name)
 	_, _ = c.w.WriteString(`)`)
 }
 
@@ -189,7 +189,7 @@ func (c *compilerContext) renderBaseColumns(sel *qcode.Select) int {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
-		colWithTable(c.w, sel.Table, col.Col.Name)
+		c.colWithTable(sel.Table, col.Col.Name)
 		i++
 	}
 	return i
@@ -214,11 +214,11 @@ func (c *compilerContext) renderRecursiveBaseColumns(sel *qcode.Select) {
 		}
 		if col.Col.Array && c.ct == "mysql" {
 			c.w.WriteString(`CAST(`)
-			colWithTable(c.w, sel.Table, col.Col.Name)
+			c.colWithTable(sel.Table, col.Col.Name)
 			c.w.WriteString(` AS JSON) AS `)
 			c.w.WriteString(col.Col.Name)
 		} else {
-			colWithTable(c.w, sel.Table, col.Col.Name)
+			c.colWithTable(sel.Table, col.Col.Name)
 		}
 		i++
 	}
