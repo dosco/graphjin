@@ -31,7 +31,7 @@ steps:
         "--platform",
         "managed",
         "--update-env-vars",
-        "GO_ENV=production,SG_DATABASE_HOST=/cloudsql/$PROJECT_ID:$REGION:webshop_production,SECRETS_FILE=prod.secrets.yml",
+        "GO_ENV=production,GJ_DATABASE_HOST=/cloudsql/$PROJECT_ID:$REGION:webshop_production,SECRETS_FILE=prod.secrets.yml",
         "--port",
         "8080",
         "--service-account",

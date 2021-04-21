@@ -131,7 +131,7 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 
 		c.w.WriteString(`((`)
 		if ex.Left.ID == -1 {
-			colWithTable(c.w, table, ex.Left.Col.Name)
+			c.colWithTable(table, ex.Left.Col.Name)
 		} else {
 			colWithTableID(c.w, table, ex.Left.ID, ex.Left.Col.Name)
 		}
@@ -227,7 +227,7 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 				if i != 0 {
 					c.w.WriteString(`, `)
 				}
-				colWithTable(c.w, c.ti.Name, col.Name)
+				c.colWithTable(c.ti.Name, col.Name)
 			}
 			c.w.WriteString(`) AGAINST (`)
 			c.renderParam(Param{Name: ex.Right.Val, Type: "text"})
@@ -240,7 +240,7 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 				if i != 0 {
 					c.w.WriteString(` OR (`)
 				}
-				colWithTable(c.w, c.ti.Name, col.Name)
+				c.colWithTable(c.ti.Name, col.Name)
 				if c.cv >= 110000 {
 					c.w.WriteString(`) @@ websearch_to_tsquery(`)
 				} else {
@@ -277,7 +277,7 @@ func (c *expContext) renderValVarPrefix(ex *qcode.Exp) bool {
 			c.w.WriteString(`JSON_CONTAINS(`)
 			c.renderParam(Param{Name: ex.Right.Val, Type: ex.Left.Col.Type, IsArray: true})
 			c.w.WriteString(`, CAST(`)
-			colWithTable(c.w, c.ti.Name, ex.Left.Col.Name)
+			c.colWithTable(c.ti.Name, ex.Left.Col.Name)
 			c.w.WriteString(` AS JSON), '$')`)
 			return true
 		}
@@ -304,7 +304,7 @@ func (c *expContext) renderVal(ex *qcode.Exp) {
 			c.renderValArrayColumn(ex, table, pid)
 		} else {
 			if pid == -1 {
-				colWithTable(c.w, table, ex.Right.Col.Name)
+				c.colWithTable(table, ex.Right.Col.Name)
 			} else {
 				colWithTableID(c.w, table, pid, ex.Right.Col.Name)
 			}
@@ -391,7 +391,7 @@ func (c *compilerContext) renderValArrayColumn(ex *qcode.Exp, table string, pid 
 		c.w.WriteString(`SELECT _gj_jt.* FROM `)
 		c.w.WriteString(`(SELECT CAST(`)
 		if pid == -1 {
-			colWithTable(c.w, table, col.Name)
+			c.colWithTable(table, col.Name)
 		} else {
 			colWithTableID(c.w, table, pid, col.Name)
 		}
@@ -404,7 +404,7 @@ func (c *compilerContext) renderValArrayColumn(ex *qcode.Exp, table string, pid 
 
 	default:
 		if pid == -1 {
-			colWithTable(c.w, table, col.Name)
+			c.colWithTable(table, col.Name)
 		} else {
 			colWithTableID(c.w, table, pid, col.Name)
 		}

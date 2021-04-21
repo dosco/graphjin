@@ -82,9 +82,9 @@ func (c *compilerContext) renderUpdateStmt(m qcode.Mutate) {
 		c.w.WriteString(`) t`)
 
 		c.w.WriteString(` WHERE ((`)
-		colWithTable(c.w, rel.Left.Col.Table, rel.Left.Col.Name)
-		c.w.WriteString(`) = (_x_`)
-		colWithTable(c.w, rel.Right.Col.Table, rel.Right.Col.Name)
+		c.colWithTable(rel.Left.Col.Table, rel.Left.Col.Name)
+		c.w.WriteString(`) = (`)
+		c.colWithTable(("_x_" + rel.Right.Col.Table), rel.Right.Col.Name)
 		c.w.WriteString(`)`)
 
 		if m.Rel.Type == sdata.RelOneToOne {

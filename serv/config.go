@@ -2,6 +2,7 @@ package serv
 
 import (
 	"fmt"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -174,6 +175,15 @@ type Action struct {
 // ReadInConfig function reads in the config file for the environment specified in the GO_ENV
 // environment variable. This is the best way to create a new GraphJin config.
 func ReadInConfig(configFile string) (*Config, error) {
+	// migrate old sg var prefixes to new gj prefixes
+	for _, e := range os.Environ() {
+		if !strings.HasPrefix(e, "SG_") {
+			continue
+		}
+		v := strings.SplitN(e, "=", 2)
+		os.Setenv(("GJ_" + v[0][3:]), v[1])
+	}
+
 	cpath := path.Dir(configFile)
 	cfile := path.Base(configFile)
 	vi := newViper(cpath, cfile)
@@ -216,7 +226,7 @@ func ReadInConfig(configFile string) (*Config, error) {
 func newViper(configPath, configFile string) *viper.Viper {
 	vi := viper.New()
 
-	vi.SetEnvPrefix("SG")
+	vi.SetEnvPrefix("GJ")
 	vi.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	vi.AutomaticEnv()
 
@@ -239,6 +249,7 @@ func newViper(configPath, configFile string) *viper.Viper {
 	vi.SetDefault("database.host", "localhost")
 	vi.SetDefault("database.port", 5432)
 	vi.SetDefault("database.user", "postgres")
+	vi.SetDefault("database.password", "")
 	vi.SetDefault("database.schema", "public")
 
 	vi.SetDefault("env", "development")
