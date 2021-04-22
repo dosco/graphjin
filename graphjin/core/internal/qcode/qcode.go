@@ -67,6 +67,7 @@ type QCode struct {
 	Schema    *sdata.DBSchema
 	Remotes   int32
 	Metadata  allow.Metadata
+	Cache     Cache
 }
 
 type Select struct {
@@ -185,6 +186,10 @@ type Paging struct {
 	Offset    int32
 	Cursor    bool
 	NoLimit   bool
+}
+
+type Cache struct {
+	Header string
 }
 
 type ExpOp int8
@@ -830,7 +835,10 @@ func (co *Compiler) compileDirectives(qc *QCode, sel *Select, dirs []graph.Direc
 		case "include":
 			err = co.compileDirectiveInclude(sel, d)
 
-		case "not_related":
+		case "cacheControl":
+			err = co.compileDirectiveCacheControl(qc, d)
+
+		case "notRelated", "not_related":
 			err = co.compileDirectiveNotRelated(sel, d)
 
 		case "through":
@@ -839,6 +847,7 @@ func (co *Compiler) compileDirectives(qc *QCode, sel *Select, dirs []graph.Direc
 		case "object":
 			sel.Singular = true
 			sel.Paging.Limit = 1
+
 		}
 
 		if err != nil {
@@ -968,6 +977,45 @@ func (co *Compiler) compileDirectiveSkip(sel *Select, d *graph.Directive) error 
 	ex.Right.Val = arg.Val.Val
 
 	setFilter(&sel.Where, ex)
+	return nil
+}
+
+func (co *Compiler) compileDirectiveCacheControl(qc *QCode, d *graph.Directive) error {
+	if len(d.Args) == 0 || d.Args[0].Name != "maxAge" {
+		return fmt.Errorf("@cacheControl: required argument 'maxAge' missing")
+	}
+
+	var maxAge string
+	var scope string
+
+	for _, arg := range d.Args {
+		switch d.Args[0].Name {
+		case "maxAge":
+			if arg.Val.Type != graph.NodeNum {
+				return argErr("maxAge", "number")
+			}
+			maxAge = arg.Val.Val
+		case "scope":
+			if arg.Val.Type != graph.NodeStr {
+				return argErr("scope", "string")
+			}
+			scope = arg.Val.Val
+		default:
+			return fmt.Errorf("@cacheControl: invalid argument: %s", d.Args[0].Name)
+		}
+	}
+
+	var hdr []string
+
+	if maxAge != "" {
+		hdr = []string{"max-age=" + maxAge}
+	}
+
+	if scope != "" {
+		hdr = append(hdr, scope)
+	}
+
+	qc.Cache.Header = strings.Join(hdr, " ")
 	return nil
 }
 
