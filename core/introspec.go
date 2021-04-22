@@ -321,6 +321,30 @@ func (in *intro) addDirectives() {
 			},
 		},
 	}
+
+	in.DeclaredDirectives["notRelated"] = &schema.DirectiveDecl{
+		Name: "notRelated",
+		Desc: schema.NewDescription("Directs the executor to treat this selector as if it were the top-level selector with no relation to its parent"),
+		Locs: []string{"FIELD"},
+	}
+
+	in.DeclaredDirectives["cacheControl"] = &schema.DirectiveDecl{
+		Name: "cacheControl",
+		Desc: schema.NewDescription("Directs the executor to set the cache-control header when GET (APQ) requests are used for the query"),
+		Locs: []string{"FIELD"},
+		Args: schema.InputValueList{
+			{
+				Name: "maxAge",
+				Desc: schema.NewDescription("The maximum amount of time (in seconds) a resource is considered fresh"),
+				Type: &schema.TypeName{Name: "Int"},
+			},
+			{
+				Name: "scope",
+				Desc: schema.NewDescription("Set to 'public' when any cache can store the data and 'private' when only the browser cache should"),
+				Type: &schema.TypeName{Name: "String"},
+			},
+		},
+	}
 }
 
 func (in *intro) addColumn(

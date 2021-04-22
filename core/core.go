@@ -345,6 +345,10 @@ func (r *Result) SQL() string {
 	return r.sql
 }
 
+func (r *Result) CacheControl() string {
+	return r.cacheControl
+}
+
 // func (c *scontext) addTrace(sel []qcode.Select, id int32, st time.Time) {
 // 	et := time.Now()
 // 	du := et.Sub(st)

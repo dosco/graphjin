@@ -139,11 +139,14 @@ func (s *Service) apiV1() func(http.ResponseWriter, *http.Request) {
 
 		res, err := s.gj.GraphQL(ct, req.Query, req.Vars, &rc)
 
-		if err == nil &&
-			r.Method == "GET" &&
-			s.conf.CacheControl != "" &&
-			res.Operation() == core.OpQuery {
-			w.Header().Set("Cache-Control", s.conf.CacheControl)
+		if err == nil && r.Method == "GET" && res.Operation() == core.OpQuery {
+			switch {
+			case res.CacheControl() != "":
+				w.Header().Set("Cache-Control", res.CacheControl())
+
+			case s.conf.CacheControl != "":
+				w.Header().Set("Cache-Control", s.conf.CacheControl)
+			}
 		}
 
 		if err := json.NewEncoder(w).Encode(res); err != nil {

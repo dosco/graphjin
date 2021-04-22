@@ -176,10 +176,11 @@ type Error struct {
 // Result struct contains the output of the GraphQL function this includes resulting json from the
 // database query and any error information
 type Result struct {
-	op   qcode.QType
-	name string
-	sql  string
-	role string
+	op           qcode.QType
+	name         string
+	sql          string
+	role         string
+	cacheControl string
 
 	Errors     []Error         `json:"errors,omitempty"`
 	Data       json.RawMessage `json:"data,omitempty"`
@@ -280,6 +281,7 @@ func (gj *GraphJin) GraphQL(
 
 	if qres.qc != nil {
 		res.sql = qres.qc.st.sql
+		res.cacheControl = qres.qc.st.qc.Cache.Header
 	}
 
 	res.Data = json.RawMessage(qres.data)
