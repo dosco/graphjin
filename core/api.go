@@ -281,7 +281,9 @@ func (gj *GraphJin) GraphQL(
 
 	if qres.qc != nil {
 		res.sql = qres.qc.st.sql
-		res.cacheControl = qres.qc.st.qc.Cache.Header
+		if qres.qc.st.qc != nil {
+			res.cacheControl = qres.qc.st.qc.Cache.Header
+		}
 	}
 
 	res.Data = json.RawMessage(qres.data)
