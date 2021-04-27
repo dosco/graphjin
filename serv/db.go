@@ -87,6 +87,7 @@ func initPostgres(c *Config, useDB, useTelemetry bool) (*dbConf, error) {
 	config.Port = c.DB.Port
 	config.User = c.DB.User
 	config.Password = c.DB.Password
+
 	config.RuntimeParams = map[string]string{
 		"application_name": c.AppName,
 		"search_path":      c.DB.Schema,

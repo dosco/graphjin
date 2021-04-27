@@ -125,7 +125,7 @@ func (c *compilerContext) renderNestedRelColumns(m qcode.Mutate, values bool, pr
 		}
 		if values {
 			if col.Col.Array {
-				c.w.WriteString(`ARRAY(SELECT `)
+				c.w.WriteString(`(SELECT `)
 				c.quoted(col.VCol.Name)
 				c.w.WriteString(` FROM `)
 				c.quoted(col.VCol.Table)

@@ -185,6 +185,10 @@ func (s *Service) reqLog(res *core.Result, err error) {
 		fields = append(fields, zap.String("sql", res.SQL()))
 	}
 
+	if s.conf.Debug {
+		s.log.Info(res.SQL())
+	}
+
 	if err != nil {
 		fields = append(fields, zap.Error(err))
 		s.zlog.Error("Query Failed", fields...)
