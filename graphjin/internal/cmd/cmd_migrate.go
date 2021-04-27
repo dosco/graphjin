@@ -51,8 +51,10 @@ func cmdDBMigrate() func(*cobra.Command, []string) {
 			log.Fatalf("No migrations found")
 		}
 
-		m.OnStart = func(sequence int32, name, direction, sql string) {
-			log.Infof("Executing migration: %s, %s\n%s", name, direction, sql)
+		if conf.Debug {
+			m.OnStart = func(sequence int32, name, direction, sql string) {
+				log.Infof("Executing migration: %s, %s\n%s", name, direction, sql)
+			}
 		}
 
 		currentVersion, err := m.GetCurrentVersion()
