@@ -62,6 +62,9 @@ func (c *expContext) render(ex *qcode.Exp) {
 			}
 
 		case *qcode.Exp:
+			if val == nil {
+				return
+			}
 			switch val.Op {
 			case qcode.OpFalse:
 				st.Push(val.Op)
