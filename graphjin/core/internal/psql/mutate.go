@@ -119,13 +119,26 @@ func (c *compilerContext) renderInsertUpdateColumns(m qcode.Mutate, values bool)
 }
 
 func (c *compilerContext) renderNestedRelColumns(m qcode.Mutate, values bool, prefix bool, n int) {
+	willBeArray := false
+	for id := range m.DependsOn {
+		m1 := c.qc.Mutates[id]
+
+		if m1.Type == qcode.MTConnect || m1.Type == qcode.MTDisconnect {
+			willBeArray = true
+		}
+	}
 	for i, col := range m.RCols {
+
 		if n != 0 || i != 0 {
 			c.w.WriteString(`, `)
 		}
 		if values {
 			if col.Col.Array {
-				c.w.WriteString(`(SELECT `)
+				if !willBeArray {
+					c.w.WriteString(`ARRAY(SELECT `)
+				} else {
+					c.w.WriteString(`(SELECT `)
+				}
 				c.quoted(col.VCol.Name)
 				c.w.WriteString(` FROM `)
 				c.quoted(col.VCol.Table)
@@ -227,7 +240,7 @@ func (c *compilerContext) renderOneToManyConnectStmt(m qcode.Mutate) {
 
 	rel := m.Rel
 	if rel.Right.Col.Array {
-		c.w.WriteString(`array_agg(DISTINCT `)
+		c.w.WriteString(`ARRAY_AGG(DISTINCT `)
 		c.quoted(rel.Left.Col.Name)
 		c.w.WriteString(`) AS `)
 		c.quoted(rel.Left.Col.Name)
