@@ -47,7 +47,7 @@ type resolver struct {
 	Duration    time.Duration `json:"duration"`
 }
 
-type scontext struct {
+type gcontext struct {
 	context.Context
 
 	gj   *GraphJin
@@ -202,7 +202,7 @@ func (gj *GraphJin) executeRoleQuery(c context.Context, conn *sql.Conn, md psql.
 	return role, err
 }
 
-func (c *scontext) execQuery(qr queryReq, role string) (queryResp, error) {
+func (c *gcontext) execQuery(qr queryReq, role string) (queryResp, error) {
 	res, err := c.resolveSQL(qr, role)
 	if err != nil {
 		return res, err
@@ -219,7 +219,7 @@ func (c *scontext) execQuery(qr queryReq, role string) (queryResp, error) {
 	return c.execRemoteJoin(res)
 }
 
-func (c *scontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
+func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 	var res queryResp
 	var err error
 
@@ -298,7 +298,7 @@ func (c *scontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 	return res, nil
 }
 
-func (c *scontext) setLocalUserID(conn *sql.Conn) error {
+func (c *gcontext) setLocalUserID(conn *sql.Conn) error {
 	var err error
 
 	if v := c.Value(UserIDKey); v == nil {
@@ -349,7 +349,7 @@ func (r *Result) CacheControl() string {
 	return r.cacheControl
 }
 
-// func (c *scontext) addTrace(sel []qcode.Select, id int32, st time.Time) {
+// func (c *gcontext) addTrace(sel []qcode.Select, id int32, st time.Time) {
 // 	et := time.Now()
 // 	du := et.Sub(st)
 
@@ -392,7 +392,7 @@ func (r *Result) CacheControl() string {
 // 		append(c.res.Extensions.Tracing.Execution.Resolvers, tr)
 // }
 
-func (c *scontext) debugLog(st *stmt) {
+func (c *gcontext) debugLog(st *stmt) {
 	for _, sel := range st.qc.Selects {
 		if sel.SkipRender == qcode.SkipTypeUserNeeded {
 			c.gj.log.Printf("Field skipped, requires $user_id or table not added to anon role: %s", sel.FieldName)

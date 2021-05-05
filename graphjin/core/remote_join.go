@@ -10,7 +10,7 @@ import (
 	"github.com/dosco/graphjin/internal/jsn"
 )
 
-func (c *scontext) execRemoteJoin(res queryResp) (queryResp, error) {
+func (c *gcontext) execRemoteJoin(res queryResp) (queryResp, error) {
 	var err error
 	sel := res.qc.st.qc.Selects
 
@@ -47,7 +47,7 @@ func (c *scontext) execRemoteJoin(res queryResp) (queryResp, error) {
 	return res, nil
 }
 
-func (c *scontext) resolveRemotes(
+func (c *gcontext) resolveRemotes(
 	from []jsn.Field,
 	sel []qcode.Select,
 	sfmap map[string]*qcode.Select) ([]jsn.Field, error) {
@@ -118,7 +118,7 @@ func (c *scontext) resolveRemotes(
 	return to, cerr
 }
 
-func (c *scontext) parentFieldIds(sel []qcode.Select, remotes int32) (
+func (c *gcontext) parentFieldIds(sel []qcode.Select, remotes int32) (
 	[][]byte, map[string]*qcode.Select, error) {
 
 	// list of keys (and it's related value) to extract from

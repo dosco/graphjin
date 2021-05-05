@@ -207,7 +207,7 @@ func (gj *GraphJin) GraphQL(
 
 	var err error
 
-	ct := scontext{
+	ct := gcontext{
 		Context: c,
 		gj:      gj,
 		rc:      rc,
