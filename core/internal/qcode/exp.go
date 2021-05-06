@@ -116,6 +116,8 @@ func (ast *aexpst) parseNode(av aexp) (*Exp, error) {
 		ex.Right.Path = append(av.path, node.Name)
 	}
 
+	guess := false
+
 	switch name {
 	case "and":
 		if len(node.Children) == 0 {
@@ -191,10 +193,10 @@ func (ast *aexpst) parseNode(av aexp) (*Exp, error) {
 		ex.Right.Val = node.Val
 	case "contains":
 		ex.Op = OpContains
-		ex.Right.Val = node.Val
+		setListVal(ex, node)
 	case "contained_in":
 		ex.Op = OpContainedIn
-		ex.Right.Val = node.Val
+		setListVal(ex, node)
 	case "has_key":
 		ex.Op = OpHasKey
 		ex.Right.Val = node.Val
@@ -226,22 +228,28 @@ func (ast *aexpst) parseNode(av aexp) (*Exp, error) {
 		switch node.Type {
 		case graph.NodeList:
 			ex.Op = OpIn
-			ex.Right.ValType = ValList
 			setListVal(ex, node)
-
 		default:
 			ex.Op = OpEquals
 			ex.Right.Val = node.Val
 		}
+		guess = true
 	}
 
 	if ex.Op != OpAnd && ex.Op != OpOr && ex.Op != OpNot {
-		if ex.Right.ValType, err = getExpType(node); err != nil {
-			return nil, err
+		if ex.Right.ValType != ValList {
+			if ex.Right.ValType, err = getExpType(node); err != nil {
+				return nil, err
+			}
 		}
 		if err := setExpColName(ast.co.s, ast.ti, ex, node); err != nil {
 			return nil, err
 		}
+	}
+
+	if guess && ex.Left.Col.Array {
+		ex.Op = OpContains
+		setListVal(ex, node)
 	}
 
 	return ex, nil
@@ -265,22 +273,33 @@ func getExpType(node *graph.Node) (ValType, error) {
 }
 
 func setListVal(ex *Exp, node *graph.Node) {
+	var t graph.ParserType
+
 	if len(node.Children) != 0 {
-		switch node.Children[0].Type {
-		case graph.NodeStr:
-			ex.Right.ListType = ValStr
-		case graph.NodeNum:
-			ex.Right.ListType = ValNum
-		case graph.NodeBool:
-			ex.Right.ListType = ValBool
-		}
+		t = node.Children[0].Type
 	} else {
+		t = node.Type
+	}
+
+	switch t {
+	case graph.NodeStr:
+		ex.Right.ListType = ValStr
+	case graph.NodeNum:
+		ex.Right.ListType = ValNum
+	case graph.NodeBool:
+		ex.Right.ListType = ValBool
+	default:
 		ex.Right.Val = node.Val
 		return
 	}
 
 	for i := range node.Children {
 		ex.Right.ListVal = append(ex.Right.ListVal, node.Children[i].Val)
+	}
+
+	if len(node.Children) == 0 {
+		ex.Right.ValType = ValList
+		ex.Right.ListVal = append(ex.Right.ListVal, node.Val)
 	}
 }
 

@@ -118,23 +118,23 @@ func (c *compilerContext) renderInsertUpdateColumns(m qcode.Mutate, values bool)
 	return i
 }
 
-func (c *compilerContext) renderNestedRelColumns(m qcode.Mutate, values bool, prefix bool, n int) {
-	willBeArray := false
-	for id := range m.DependsOn {
-		m1 := c.qc.Mutates[id]
+func (c *compilerContext) willBeArray(index int) bool {
+	m1 := c.qc.Mutates[index]
 
-		if m1.Type == qcode.MTConnect || m1.Type == qcode.MTDisconnect {
-			willBeArray = true
-		}
+	if m1.Type == qcode.MTConnect || m1.Type == qcode.MTDisconnect {
+		return true
 	}
-	for i, col := range m.RCols {
+	return false
+}
 
+func (c *compilerContext) renderNestedRelColumns(m qcode.Mutate, values bool, prefix bool, n int) {
+	for i, col := range m.RCols {
 		if n != 0 || i != 0 {
 			c.w.WriteString(`, `)
 		}
 		if values {
 			if col.Col.Array {
-				if !willBeArray {
+				if !c.willBeArray(i) {
 					c.w.WriteString(`ARRAY(SELECT `)
 				} else {
 					c.w.WriteString(`(SELECT `)
