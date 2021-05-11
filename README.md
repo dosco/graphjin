@@ -1,4 +1,4 @@
-<img src="docs/website/static/img/graphjin-logo.svg" width="80" />
+<img src="graphjin-logo.svg" width="80" />
 
 # GraphJin - Build APIs in 5 minutes
 
