@@ -10,7 +10,6 @@ require (
 	contrib.go.opencensus.io/integrations/ocsql v0.1.7
 	github.com/NYTimes/gziphandler v1.1.1
 	github.com/adjust/gorails v0.0.0-20171013043634-2786ed0c03d3
-	github.com/apex/log v1.9.0
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
 	github.com/brianvoe/gofakeit/v6 v6.0.0
 	github.com/chirino/graphql v0.0.0-20200723175208-cec7bf430a98
