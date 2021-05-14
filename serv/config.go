@@ -128,6 +128,10 @@ type Serv struct {
 			// IncludeParams when set variables used with the query are included in the
 			// tracing data
 			IncludeParams bool `mapstructure:"include_params"`
+
+			// ExcludeHealthCheck when set health check tracing is excluded from the
+			// tracing data
+			ExcludeHealthCheck bool `mapstructure:"exclude_health_check"`
 		}
 	}
 
