@@ -82,17 +82,32 @@ func (s *Service) newDB(useDB, useTelemetry bool) (*sql.DB, error) {
 
 func (s *Service) initTelemetry(driverName string) (string, error) {
 	var err error
+	var opts ocsql.TraceOptions
 
-	opts := ocsql.TraceOptions{
-		AllowRoot:    true,
-		Ping:         true,
-		RowsNext:     true,
-		RowsClose:    true,
-		RowsAffected: true,
-		LastInsertID: true,
-		Query:        s.conf.Telemetry.Tracing.IncludeQuery,
-		QueryParams:  s.conf.Telemetry.Tracing.IncludeParams,
+	if s.conf.Serv.Telemetry.Tracing.ExcludeHealthCheck {
+		opts = ocsql.TraceOptions{
+			AllowRoot:    true,
+			Ping:         false,
+			RowsNext:     true,
+			RowsClose:    true,
+			RowsAffected: true,
+			LastInsertID: true,
+			Query:        s.conf.Telemetry.Tracing.IncludeQuery,
+			QueryParams:  s.conf.Telemetry.Tracing.IncludeParams,
+		}
+	} else {
+		opts = ocsql.TraceOptions{
+			AllowRoot:    true,
+			Ping:         true,
+			RowsNext:     true,
+			RowsClose:    true,
+			RowsAffected: true,
+			LastInsertID: true,
+			Query:        s.conf.Telemetry.Tracing.IncludeQuery,
+			QueryParams:  s.conf.Telemetry.Tracing.IncludeParams,
+		}
 	}
+
 	opt := ocsql.WithOptions(opts)
 	name := ocsql.WithInstanceName(s.conf.AppName)
 
