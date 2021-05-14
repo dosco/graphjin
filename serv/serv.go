@@ -53,6 +53,16 @@ func initWatcher(s *Service) {
 	}()
 }
 
+func isHealthEndpoint(r *http.Request) bool {
+	healthEndPointPaths := []string{"/health", "/metrics"}
+	for _, healthEndPointPath := range healthEndPointPaths {
+		if r.URL.Path == healthEndPointPath {
+			return true
+		}
+	}
+	return false
+}
+
 func startHTTP(s *Service) {
 	var appName string
 
@@ -94,7 +104,14 @@ func startHTTP(s *Service) {
 	}
 
 	if s.conf.telemetryEnabled() {
-		srv.Handler = &ochttp.Handler{Handler: routes}
+		if s.conf.Serv.Telemetry.Tracing.ExcludeHealthCheck {
+			srv.Handler = &ochttp.Handler{
+				Handler:          routes,
+				IsHealthEndpoint: isHealthEndpoint,
+			}
+		} else {
+			srv.Handler = &ochttp.Handler{Handler: routes}
+		}
 	}
 
 	idleConnsClosed := make(chan struct{})
