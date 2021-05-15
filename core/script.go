@@ -53,7 +53,7 @@ func (c *gcontext) scriptCallReq(vars []byte) (_ []byte, err error) {
 	}
 
 	rj := make(map[string]interface{})
-	if vars != nil && len(vars) != 0 {
+	if len(vars) != 0 {
 		if err := json.Unmarshal(vars, &rj); err != nil {
 			return nil, err
 		}
@@ -83,7 +83,7 @@ func (c *gcontext) scriptCallResp(data []byte) (_ []byte, err error) {
 	}
 
 	rj := make(map[string]interface{})
-	if data != nil && len(data) != 0 {
+	if len(data) != 0 {
 		if err := json.Unmarshal(data, &rj); err != nil {
 			return nil, err
 		}
