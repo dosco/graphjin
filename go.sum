@@ -950,8 +950,8 @@ github.com/openzipkin/zipkin-go v0.2.1/go.mod h1:NaW6tEwdmWMaCDZzg8sh+IBNOxHMPnh
 github.com/openzipkin/zipkin-go v0.2.2/go.mod h1:NaW6tEwdmWMaCDZzg8sh+IBNOxHMPnhQw8ySjnjRyN4=
 github.com/openzipkin/zipkin-go v0.2.4 h1:U5TVrlsR1jPV1oJp7XqkC1XDk32tSZGwQIIywTQvQhc=
 github.com/openzipkin/zipkin-go v0.2.4/go.mod h1:KpXfKdgRDnnhsxw4pNIH9Md5lyFqKUa4YDFlwRYAMyE=
-github.com/orlangure/gnomock v0.12.0 h1:qlQ2iO0Edm73YfIWXqEm+iU4rE6iUx219G9A8u1/wzU=
-github.com/orlangure/gnomock v0.12.0/go.mod h1:hTsIl+VEiqfXVkeXxsT6RM/Ed6zlsp31VDc75+aKrgw=
+github.com/orlangure/gnomock v0.12.1 h1:7zUGo31TDNDpvm4jEcsbQ62lfW3GOnBtUSy0iu85Hdc=
+github.com/orlangure/gnomock v0.12.1/go.mod h1:hTsIl+VEiqfXVkeXxsT6RM/Ed6zlsp31VDc75+aKrgw=
 github.com/pact-foundation/pact-go v1.0.4/go.mod h1:uExwJY4kCzNPcHRj+hCR/HBbOOIwwtUjcrb0b5/5kLM=
 github.com/pascaldekloe/goe v0.0.0-20180627143212-57f6aae5913c/go.mod h1:lzWF7FIEvWOWxwDKqyGYQf6ZUaNfKdP144TG7ZOy1lc=
 github.com/pborman/uuid v1.2.0/go.mod h1:X/NO0urCmaxf9VXbdlT7C2Yzkj2IKimNn4k+gtPdI/k=
