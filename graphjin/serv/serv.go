@@ -36,7 +36,7 @@ var (
 )
 
 func initWatcher(s *Service) {
-	cpath := s.conf.cpath
+	cpath := s.conf.Serv.ConfigPath
 
 	var d dir
 	if cpath == "" || cpath == "./" {

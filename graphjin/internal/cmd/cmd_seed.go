@@ -1,11 +1,11 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -18,10 +18,10 @@ import (
 	"github.com/brianvoe/gofakeit/v6"
 	"github.com/dop251/goja"
 	"github.com/dosco/graphjin/core"
-	esb "github.com/evanw/esbuild/pkg/api"
 	"github.com/gosimple/slug"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/stdlib"
+	babel "github.com/jvatic/goja-babel"
 	"github.com/spf13/cobra"
 )
 
@@ -95,16 +95,77 @@ func compileAndRunJS(sfile string, db *sql.DB) error {
 		return err
 	}
 
-	es5 := esb.Transform(string(b), esb.TransformOptions{
-		Loader: esb.LoaderJS,
-		Target: esb.ES5,
-	})
+	babelOptions := map[string]interface{}{
+		"plugins": []string{
+			"proposal-async-generator-functions",
+			"proposal-class-properties",
+			"proposal-dynamic-import",
+			"proposal-json-strings",
+			"proposal-nullish-coalescing-operator",
+			"proposal-numeric-separator",
+			"proposal-object-rest-spread",
+			"proposal-optional-catch-binding",
+			"proposal-optional-chaining",
+			"proposal-private-methods",
+			"proposal-unicode-property-regex",
+			"syntax-async-generators",
+			"syntax-class-properties",
+			// "syntax-dynamic-import",
+			// "syntax-json-strings",
+			// "syntax-nullish-coalescing-operator",
+			// "syntax-numeric-separator",
+			"syntax-object-rest-spread",
+			"syntax-optional-catch-binding",
+			// "syntax-optional-chaining",
+			"syntax-top-level-await",
+			"transform-arrow-functions",
+			"transform-async-to-generator",
+			"transform-block-scoped-functions",
+			"transform-block-scoping",
+			"transform-classes",
+			"transform-computed-properties",
+			"transform-destructuring",
+			"transform-dotall-regex",
+			"transform-duplicate-keys",
+			"transform-exponentiation-operator",
+			"transform-for-of",
+			"transform-function-name",
+			"transform-literals",
+			"transform-member-expression-literals",
+			// "transform-modules-amd",
+			"transform-modules-commonjs",
+			// "transform-modules-systemjs",
+			// "transform-modules-umd",
+			"transform-named-capturing-groups-regex",
+			"transform-new-target",
+			"transform-object-super",
+			"transform-parameters",
+			"transform-property-literals",
+			"transform-regenerator",
+			"transform-reserved-words",
+			"transform-shorthand-properties",
+			"transform-spread",
+			"transform-sticky-regex",
+			"transform-template-literals",
+			"transform-typeof-symbol",
+			"transform-unicode-escapes",
+			"transform-unicode-regex",
+		},
 
-	if len(es5.Errors) != 0 {
-		return errors.New(es5.Errors[0].Text)
+		"retainLines": true,
 	}
 
-	_, err = vm.RunScript(conf.SeedFile, string(es5.Code))
+	es5, err := babel.Transform(bytes.NewReader(b), babelOptions)
+	if err != nil {
+		return err
+	}
+
+	es5Code := new(strings.Builder)
+	if _, err := io.Copy(es5Code, es5); err != nil {
+		return err
+	}
+
+	_, err = vm.RunScript(conf.SeedFile, es5Code.String())
 	return err
 }
 

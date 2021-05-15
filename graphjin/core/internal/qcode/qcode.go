@@ -66,6 +66,7 @@ type QCode struct {
 	MUnions   map[string][]int32
 	Schema    *sdata.DBSchema
 	Remotes   int32
+	Script    string
 	Metadata  allow.Metadata
 	Cache     Cache
 }
@@ -838,6 +839,9 @@ func (co *Compiler) compileDirectives(qc *QCode, sel *Select, dirs []graph.Direc
 		case "cacheControl":
 			err = co.compileDirectiveCacheControl(qc, d)
 
+		case "script":
+			err = co.compileDirectiveScript(qc, d)
+
 		case "notRelated", "not_related":
 			err = co.compileDirectiveNotRelated(sel, d)
 
@@ -847,7 +851,6 @@ func (co *Compiler) compileDirectives(qc *QCode, sel *Select, dirs []graph.Direc
 		case "object":
 			sel.Singular = true
 			sel.Paging.Limit = 1
-
 		}
 
 		if err != nil {
@@ -1016,6 +1019,19 @@ func (co *Compiler) compileDirectiveCacheControl(qc *QCode, d *graph.Directive) 
 	}
 
 	qc.Cache.Header = strings.Join(hdr, " ")
+	return nil
+}
+
+func (co *Compiler) compileDirectiveScript(qc *QCode, d *graph.Directive) error {
+	if len(d.Args) == 0 || d.Args[0].Name != "name" {
+		return fmt.Errorf("@script: required argument 'name' missing")
+	}
+
+	if d.Args[0].Val.Type != graph.NodeStr {
+		return argErr("name", "string")
+	}
+
+	qc.Script = d.Args[0].Val.Val
 	return nil
 }
 

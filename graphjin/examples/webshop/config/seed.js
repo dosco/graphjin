@@ -1,21 +1,19 @@
 // Example script to seed database
 
-var users = [];
-var pwd = "12345";
-
-var user_count = 3;
-var customer_count = 100;
-var product_count = 50;
-var purchase_count = 100;
-var notifications_count = 100;
-var comments_count = 100;
+let user_count = 3;
+let customer_count = 100;
+let product_count = 50;
+let purchase_count = 100;
+let notifications_count = 100;
+let comments_count = 100;
 
 // ---- add users
 
-var users = [];
+let users = [];
+let pwd = "12345";
 
-for (i = 0; i < 3; i++) {
-  var data = {
+for (let i = 0; i < 3; i++) {
+  let data = {
     full_name: fake.name(),
     avatar: fake.avatar_url(),
     phone: fake.phone(),
@@ -26,14 +24,14 @@ for (i = 0; i < 3; i++) {
     updated_at: "now",
   };
 
-  var q = `
+  let q = `
 	mutation {
 		users(insert: $data) {
 			id
 		}
 	}`
 
-  var res = graphql(q,
+  let res = graphql(q,
     { data: data },
     { user_id: -1 }
   );
@@ -42,8 +40,8 @@ for (i = 0; i < 3; i++) {
 }
 
 // more fake users with random email id's
-for (i = 0; i < user_count; i++) {
-  var data = {
+for (let i = 0; i < user_count; i++) {
+  let data = {
     full_name: fake.name(),
     avatar: fake.avatar_url(),
     phone: fake.phone(),
@@ -54,14 +52,14 @@ for (i = 0; i < user_count; i++) {
     updated_at: "now",
   };
 
-  var q = `
+  let q = `
 	mutation {
 		users(insert: $data) {
 			id
 		}
 	}`
 
-  var res = graphql(q,
+  let res = graphql(q,
     { data: data },
     { user_id: -1 }
   );
@@ -71,12 +69,12 @@ for (i = 0; i < user_count; i++) {
 
 // ---- add customers
 
-var customers = [];
+let customers = [];
 
 // we also need customers
-for (i = 0; i < customer_count; i++) {
-  var u = users[Math.floor(Math.random() * user_count)];
-  var data = {
+for (let i = 0; i < customer_count; i++) {
+  let u = users[Math.floor(Math.random() * user_count)];
+  let data = {
     stripe_id: "ch_" + Math.floor(Math.random() * 100),
     full_name: fake.name(),
     phone: fake.phone(),
@@ -85,13 +83,13 @@ for (i = 0; i < customer_count; i++) {
     password_confirmation: pwd,
   };
 
-  var q = `mutation {
+  let q = `mutation {
 		customers(insert: $data) {
 			id
 		}
 	}`
 
-  var res = graphql(q,
+  let res = graphql(q,
     { data: data },
     { user_id: u.id }
   );
@@ -101,7 +99,7 @@ for (i = 0; i < customer_count; i++) {
 
 // ---- define some sections
 
-var categories = [
+let categories = [
   {
     id: 1,
     name: "Beers",
@@ -120,32 +118,32 @@ var categories = [
 
 // ---- add those sections using bulk insert
 
-var q = `mutation {
+let q = `mutation {
   categories(insert: $categories) {
     id
   } 
 }
 `
-var res = graphql(q,
+let res = graphql(q,
   { categories: categories, user_id: 1 }
 );
 
 // ---- add products
 
-var products = [];
+let products = [];
 
-for (i = 0; i < product_count; i++) {
-  var desc = [fake.beer_style(), fake.beer_hop(), fake.beer_malt()].join(", ");
-  var u = users[Math.floor(Math.random() * user_count)];
+for (let i = 0; i < product_count; i++) {
+  let desc = [fake.beer_style(), fake.beer_hop(), fake.beer_malt()].join(", ");
+  let u = users[Math.floor(Math.random() * user_count)];
 
   // categories needs connecting since they are
   // a related to items in a diffent table
   // while tags can just be anything.
 
-  var tag_list = fake.hipster_sentence(5);
-  var tags = tag_list.substring(0, tag_list.length - 1).split(" ");
+  let tag_list = fake.hipster_sentence(5);
+  let tags = tag_list.substring(0, tag_list.length - 1).split(" ");
 
-  var data = {
+  let data = {
     name: fake.beer_name(),
     description: desc,
     price: Math.random() * 19.0,
@@ -155,13 +153,13 @@ for (i = 0; i < product_count; i++) {
     },
   };
 
-  var  q = `mutation {
+  let  q = `mutation {
   	products(insert: $data) {
   		id
   	}
   }`
 
-  var res = graphql(q,
+  let res = graphql(q,
     { data: data },
     { user_id: u.id }
   );
@@ -171,13 +169,13 @@ for (i = 0; i < product_count; i++) {
 
 // ---- add purchases (joining customers with products)
 
-var purchases = [];
+let purchases = [];
 
-for (i = 0; i < purchase_count; i++) {
-  var u = users[Math.floor(Math.random() * user_count)];
-  var p = products[Math.floor(Math.random() * product_count)];
+for (let i = 0; i < purchase_count; i++) {
+  let u = users[Math.floor(Math.random() * user_count)];
+  let p = products[Math.floor(Math.random() * product_count)];
 
-  var data = {
+  let data = {
     quantity: Math.floor(Math.random() * 10),
     customers: {
       connect: { id: u.id },
@@ -187,13 +185,13 @@ for (i = 0; i < purchase_count; i++) {
     },
   };
 
-  var q = `mutation {
+  let q = `mutation {
   	purchases(insert: $data) {
   		id
   	}
   }`
 
-  var res = graphql(q,
+  let res = graphql(q,
     { data: data },
     { user_id: u.id }
   );
@@ -203,16 +201,16 @@ for (i = 0; i < purchase_count; i++) {
 
 // ---- add notifications
 
-var notifications = [];
+let notifications = [];
 
-for (i = 0; i < notifications_count; i++) {
-  var u = users[Math.floor(Math.random() * user_count)];
-  var p = products[Math.floor(Math.random() * product_count)];
-  var keys = ["liked", "joined"];
-  var k = keys[Math.floor(Math.random() * keys.length)];
+for (let i = 0; i < notifications_count; i++) {
+  let u = users[Math.floor(Math.random() * user_count)];
+  let p = products[Math.floor(Math.random() * product_count)];
+  let keys = ["liked", "joined"];
+  let k = keys[Math.floor(Math.random() * keys.length)];
 
-  var subject_id = 0;
-  var subject_type = "";
+  let subject_id = 0;
+  let subject_type = "";
 
   if (k == "liked") {
     subject_type = "products";
@@ -222,7 +220,7 @@ for (i = 0; i < notifications_count; i++) {
     subject_id = Math.floor(Math.random() * user_count);
   }
 
-  var data = {
+  let data = {
     key: k,
     subject_type: subject_type,
     subject_id: subject_id,
@@ -231,13 +229,13 @@ for (i = 0; i < notifications_count; i++) {
     },
   };
 
-  var q = `mutation {
+  let q = `mutation {
   	notifications(insert: $data) {
   		id
   	}
   }`
 
-  var res = graphql(q,
+  let res = graphql(q,
     { data: data },
     { user_id: u.id }
   );
@@ -247,13 +245,13 @@ for (i = 0; i < notifications_count; i++) {
 
 // ---- add comments
 
-var comments = [];
+let comments = [];
 
-for (i = 0; i < comments_count; i++) {
-  var u = users[Math.floor(Math.random() * user_count)];
-  var p = products[Math.floor(Math.random() * product_count)];
+for (let i = 0; i < comments_count; i++) {
+  let u = users[Math.floor(Math.random() * user_count)];
+  let p = products[Math.floor(Math.random() * product_count)];
 
-  var data = {
+  let data = {
     body: fake.sentence(10),
     created_at: "now",
     updated_at: "now",
@@ -266,20 +264,20 @@ for (i = 0; i < comments_count; i++) {
   };
 
   if (comments.length !== 0) {
-    var c = comments[Math.floor(Math.random() * comments.length)];
+    let c = comments[Math.floor(Math.random() * comments.length)];
     data["comments"] = {
       find: "children",
       connect: { id: c.id },
     };
   }
 
-  var q =`  mutation {
+  let q =`  mutation {
   	comments(insert: $data) {
   		id
   	} 
   }`
 
-  var res = graphql(q,
+  let res = graphql(q,
     { data: data },
     { user_id: u.id }
   );
