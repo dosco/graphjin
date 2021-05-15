@@ -59,19 +59,19 @@ func (gj *GraphJin) prepareRoleStmt() error {
 
 func (gj *GraphJin) initAllowList() error {
 	var err error
-	var cpath string
+	var ConfigPath string
 
 	if gj.conf.DisableAllowList {
 		return nil
 	}
 
 	if gj.conf.AllowListPath != "" {
-		cpath = gj.conf.AllowListPath
+		ConfigPath = gj.conf.AllowListPath
 	} else {
-		cpath = gj.conf.cpath
+		ConfigPath = gj.conf.ConfigPath
 	}
 
-	gj.allowList, err = allow.New(cpath, allow.Config{
+	gj.allowList, err = allow.New(ConfigPath, allow.Config{
 		Log: gj.log,
 	})
 

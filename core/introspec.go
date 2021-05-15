@@ -322,6 +322,19 @@ func (in *intro) addDirectives() {
 		},
 	}
 
+	in.DeclaredDirectives["script"] = &schema.DirectiveDecl{
+		Name: "script",
+		Desc: schema.NewDescription("Script the executor to use run specified script against this GraphQL request"),
+		Locs: []string{"FIELD"},
+		Args: schema.InputValueList{
+			{
+				Name: "name",
+				Desc: schema.NewDescription("Script name"),
+				Type: &schema.TypeName{Name: "String"},
+			},
+		},
+	}
+
 	in.DeclaredDirectives["notRelated"] = &schema.DirectiveDecl{
 		Name: "notRelated",
 		Desc: schema.NewDescription("Directs the executor to treat this selector as if it were the top-level selector with no relation to its parent"),

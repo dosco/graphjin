@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
+	"path"
 
 	"github.com/dosco/graphjin/core"
 )
@@ -994,6 +997,52 @@ func Example_queryWithJsonColumn() {
 		fmt.Println(string(res.Data))
 	}
 	// Output: {"users": {"id": 1, "category_counts": [{"count": 400, "category": {"name": "Category 1"}}, {"count": 600, "category": {"name": "Category 2"}}]}}
+}
+
+func Example_queryWithScriptDirective() {
+	gql := `query {
+		usersById(id: $id) @script(name: "test.js") {
+			id
+			email
+		}
+	}`
+
+	script := `
+	function request(vars) {
+		return { id: 2 };
+	}
+	
+	function response(json) {
+		json.usersbyid.email = "u...@test.com";
+		return json;
+	}
+	`
+
+	dir, err := ioutil.TempDir("", "test")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(dir)
+
+	err = ioutil.WriteFile(path.Join(dir, "test.js"), []byte(script), 0644)
+	if err != nil {
+		panic(err)
+	}
+
+	conf := &core.Config{DBType: dbType, DisableAllowList: true, ScriptPath: dir}
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+
+	// Output: {"usersbyid":{"email":"u...@test.com","id":2}}
 }
 
 func Example_queryWithView() {

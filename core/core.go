@@ -53,6 +53,7 @@ type gcontext struct {
 	gj   *GraphJin
 	op   qcode.QType
 	rc   *ReqConfig
+	sc   *script
 	name string
 }
 
@@ -212,11 +213,23 @@ func (c *gcontext) execQuery(qr queryReq, role string) (queryResp, error) {
 		c.debugLog(&res.qc.st)
 	}
 
-	if len(res.data) == 0 || res.qc.st.qc.Remotes == 0 {
+	qc := res.qc.st.qc
+
+	if len(res.data) == 0 {
 		return res, nil
 	}
 
-	return c.execRemoteJoin(res)
+	if qc.Remotes != 0 {
+		if res, err = c.execRemoteJoin(res); err != nil {
+			return res, err
+		}
+	}
+
+	if c.sc != nil && c.sc.RespFunc != nil {
+		res.data, err = c.scriptCallResp(res.data)
+	}
+
+	return res, err
 }
 
 func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
@@ -250,6 +263,21 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 
 	if res.qc, err = c.gj.compileQuery(qr, res.role); err != nil {
 		return res, err
+	}
+
+	scriptName := res.qc.st.qc.Script
+
+	if scriptName != "" {
+		if err := c.loadScript(scriptName); err != nil {
+			return res, err
+		}
+	}
+
+	if c.sc != nil && c.sc.ReqFunc != nil {
+		qr.vars, err = c.scriptCallReq(qr.vars)
+		if err != nil {
+			return res, err
+		}
 	}
 
 	args, err := c.gj.argList(c, res.qc.st.md, qr.vars, c.rc)

@@ -1,23 +1,23 @@
 // Example script to seed database
 
-var users = [];
+let users = [];
 
 for (i = 0; i < 10; i++) {
-  var data = {
+  let data = {
     id: i,
     full_name: fake.name(),
     email: fake.email(),
     created_at: "now",
   };
 
-  var q = `
+  let q = `
   mutation {
 		users(insert: $data) {
 			id
 		}
 	}`
 
-  var res = graphql(q, {
+  let res = graphql(q, {
     data: data,
   });
 

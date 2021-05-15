@@ -54,6 +54,7 @@ import (
 	"sync"
 
 	"github.com/chirino/graphql"
+	"github.com/dop251/goja"
 	"github.com/dosco/graphjin/core/internal/allow"
 	"github.com/dosco/graphjin/core/internal/crypto"
 	"github.com/dosco/graphjin/core/internal/psql"
@@ -97,7 +98,15 @@ type GraphJin struct {
 	pc          *psql.Compiler
 	ge          *graphql.Engine
 	subs        sync.Map
+	scripts     sync.Map
 	prod        bool
+}
+
+type script struct {
+	ReqFunc  reqFunc
+	RespFunc respFunc
+	vm       *goja.Runtime
+	Once
 }
 
 // NewGraphJin creates the GraphJin struct, this involves querying the database to learn its
@@ -155,6 +164,10 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo) (*GraphJin, err
 	}
 
 	if err := gj.prepareRoleStmt(); err != nil {
+		return nil, err
+	}
+
+	if err := gj.initScripting(); err != nil {
 		return nil, err
 	}
 

@@ -23,9 +23,18 @@ type Config struct {
 	// even in production. (Warning possible security concern)
 	DisableAllowList bool `mapstructure:"disable_allow_list"`
 
-	// AllowListPath if the path to allow list file if not set the
+	// ConfigPath is the default path to find all configuration
+	// files and scripts under
+	ConfigPath string `mapstructure:"config_path"`
+
+	// AllowListPath if the path to the allow list is not set the
 	// path is assumed to be the same as the config path
 	AllowListPath string `mapstructure:"allow_list_path"`
+
+	// ScriptPath if the path to the script files if not set the
+	// path is assumed to be the same as the config path
+	ScriptPath string `mapstructure:"script_path"`
+
 	// SetUserID forces the database session variable `user.id` to
 	// be set to the user id. This variables can be used by triggers
 	// or other database functions
@@ -103,7 +112,6 @@ type Config struct {
 
 	rtmap map[string]refunc
 	tmap  map[string]qcode.TConfig
-	cpath string
 }
 
 // Table struct defines a database table
@@ -388,7 +396,7 @@ func ReadInConfig(configFile string) (*Config, error) {
 	}
 
 	c := &Config{
-		cpath: path.Dir(vi.ConfigFileUsed()),
+		ConfigPath: path.Dir(vi.ConfigFileUsed()),
 	}
 
 	if err := vi.Unmarshal(&c); err != nil {

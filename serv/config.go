@@ -18,6 +18,7 @@ type Auth = auth.Auth
 
 // Config struct holds the GraphJin service config values
 type Config struct {
+
 	// Core holds config values for the GraphJin compiler
 	Core `mapstructure:",squash"`
 
@@ -26,7 +27,6 @@ type Config struct {
 
 	closeFn  func()
 	hostPort string
-	cpath    string
 	vi       *viper.Viper
 }
 
@@ -38,6 +38,10 @@ type Serv struct {
 	// Production when set to true runs the service with production level
 	// security and other defaults. For example allow lists are enforced.
 	Production bool
+
+	// ConfigPath is the default path to find all configuration
+	// files and scripts under
+	ConfigPath string `mapstructure:"config_path"`
 
 	// LogLevel can be debug, error, warn, info
 	LogLevel string `mapstructure:"log_level"`
@@ -218,7 +222,9 @@ func ReadInConfig(configFile string) (*Config, error) {
 		}
 	}
 
-	c := &Config{cpath: cpath, vi: vi}
+	c := &Config{vi: vi}
+	c.Serv.ConfigPath = cpath
+	c.Core.ConfigPath = cpath
 
 	if err := vi.Unmarshal(&c); err != nil {
 		return nil, fmt.Errorf("failed to decode config, %v", err)
@@ -279,7 +285,7 @@ func (c *Config) RelPath(p string) string {
 		return p
 	}
 
-	return path.Join(c.cpath, p)
+	return path.Join(c.Serv.ConfigPath, p)
 }
 
 func (c *Config) rateLimiterEnable() bool {
