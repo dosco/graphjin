@@ -335,6 +335,10 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 		}
 	}
 
+	if err := co.compileOpDirectives(qc, op.Directives); err != nil {
+		return err
+	}
+
 	qc.Selects = make([]Select, 0, 5)
 	st := util.NewStackInt32()
 
@@ -823,6 +827,27 @@ func addFilters(qc *QCode, where *Filter, trv trval) bool {
 	return false
 }
 
+func (co *Compiler) compileOpDirectives(qc *QCode, dirs []graph.Directive) error {
+	var err error
+
+	for i := range dirs {
+		d := &dirs[i]
+
+		switch d.Name {
+		case "cacheControl":
+			err = co.compileDirectiveCacheControl(qc, d)
+
+		case "script":
+			err = co.compileDirectiveScript(qc, d)
+		}
+
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (co *Compiler) compileDirectives(qc *QCode, sel *Select, dirs []graph.Directive) error {
 	var err error
 
@@ -835,12 +860,6 @@ func (co *Compiler) compileDirectives(qc *QCode, sel *Select, dirs []graph.Direc
 
 		case "include":
 			err = co.compileDirectiveInclude(sel, d)
-
-		case "cacheControl":
-			err = co.compileDirectiveCacheControl(qc, d)
-
-		case "script":
-			err = co.compileDirectiveScript(qc, d)
 
 		case "notRelated", "not_related":
 			err = co.compileDirectiveNotRelated(sel, d)

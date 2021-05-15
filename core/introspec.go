@@ -325,7 +325,7 @@ func (in *intro) addDirectives() {
 	in.DeclaredDirectives["script"] = &schema.DirectiveDecl{
 		Name: "script",
 		Desc: schema.NewDescription("Script the executor to use run specified script against this GraphQL request"),
-		Locs: []string{"FIELD"},
+		Locs: []string{"QUERY", "MUTATION", "SUBSCRIPTION"},
 		Args: schema.InputValueList{
 			{
 				Name: "name",
@@ -344,7 +344,7 @@ func (in *intro) addDirectives() {
 	in.DeclaredDirectives["cacheControl"] = &schema.DirectiveDecl{
 		Name: "cacheControl",
 		Desc: schema.NewDescription("Directs the executor to set the cache-control header when GET (APQ) requests are used for the query"),
-		Locs: []string{"FIELD"},
+		Locs: []string{"QUERY", "MUTATION", "SUBSCRIPTION"},
 		Args: schema.InputValueList{
 			{
 				Name: "maxAge",
