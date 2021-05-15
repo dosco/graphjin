@@ -42,12 +42,13 @@ const (
 )
 
 type Operation struct {
-	Type    ParserType
-	Name    string
-	Args    []Arg
-	argsA   [10]Arg
-	Fields  []Field
-	fieldsA [10]Field
+	Type       ParserType
+	Name       string
+	Args       []Arg
+	argsA      [10]Arg
+	Directives []Directive
+	Fields     []Field
+	fieldsA    [10]Field
 }
 
 type Fragment struct {
@@ -264,6 +265,13 @@ func (p *Parser) parseOpTypeAndArgs(op *Operation) error {
 
 	if p.peek(itemName) {
 		op.Name = p.val(p.next())
+	}
+
+	for p.peek(itemDirective) {
+		p.ignore()
+		if op.Directives, err = p.parseDirective(op.Directives); err != nil {
+			return err
+		}
 	}
 
 	if p.peek(itemArgsOpen) {

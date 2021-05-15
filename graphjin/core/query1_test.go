@@ -1000,8 +1000,8 @@ func Example_queryWithJsonColumn() {
 }
 
 func Example_queryWithScriptDirective() {
-	gql := `query {
-		usersById(id: $id) @script(name: "test.js") {
+	gql := `query @script(name: "test.js") {
+		usersById(id: $id)  {
 			id
 			email
 		}
