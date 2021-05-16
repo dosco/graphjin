@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
-	"os"
 	"testing"
 
 	"github.com/orlangure/gnomock"
@@ -74,9 +73,10 @@ func TestMain(m *testing.M) {
 			connstr: "sqlserver://sa:password@%s?database=db",
 			preset: mssql.Preset(
 				mssql.WithLicense(true),
-				mssql.WithAdminPassword("password"),
+				mssql.WithVersion("2019-latest"),
+				mssql.WithAdminPassword("YourStrong!Passw0rd"),
 				mssql.WithDatabase("db"),
-				mssql.WithQueriesFile("./mysql.sql"),
+				mssql.WithQueriesFile("./mssql.sql"),
 			),
 		},
 	}
@@ -113,8 +113,8 @@ func TestMain(m *testing.M) {
 		db.SetMaxIdleConns(100)
 		dbType = v.name
 
-		if res := m.Run(); res != 0 {
-			os.Exit(res)
-		}
+		// if res := m.Run(); res != 0 {
+		// 	os.Exit(res)
+		// }
 	}
 }
