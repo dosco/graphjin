@@ -71,6 +71,7 @@ With GraphJin your web and mobile developers can start building instantly. All t
 - Works with Postgres, MySQL8 and Yugabyte DB
 - Complex nested queries and mutations
 - Realtime updates with subscriptions
+- Add custom business logic in Javascript
 - Build infinite scroll, feeds, nested comments, etc
 - Auto learns database tables and relationships
 - Role and Attribute-based access control
