@@ -53,12 +53,18 @@ func (g *Graph) GetEdges(from, to int32) []Edge {
 
 func (g *Graph) AllPaths(from, to int32) [][]int32 {
 	var paths [][]int32
+	var limit int
 
 	h := newHeap()
 	h.push(path{weight: 0, nodes: []int32{from}})
 	visited := make(map[[2]int32]struct{})
 
 	for len(*h.paths) > 0 {
+		if limit > 3000 {
+			return paths
+		}
+		limit++
+
 		// Find the nearest unvisited node
 		p := h.pop()
 		node := p.nodes[len(p.nodes)-1]
@@ -68,6 +74,11 @@ func (g *Graph) AllPaths(from, to int32) [][]int32 {
 		}
 
 		if node == to && len(p.nodes) > 1 {
+			for _, v := range paths {
+				if equals(v, p.nodes) {
+					return paths
+				}
+			}
 			paths = append(paths, p.nodes)
 			continue
 		}
@@ -92,10 +103,21 @@ func (g *Graph) AllPaths(from, to int32) [][]int32 {
 			}
 		}
 	}
-
 	return paths
 }
 
 func (g *Graph) Connections(n int32) []int32 {
 	return g.graph[n]
+}
+
+func equals(a, b []int32) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, v := range a {
+		if v != b[i] {
+			return false
+		}
+	}
+	return true
 }
