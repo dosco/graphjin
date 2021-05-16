@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
 	"strconv"
 	"strings"
 
@@ -118,21 +119,6 @@ type Function struct {
 type Filter struct {
 	*Exp
 }
-
-// type Exp struct {
-// 	Op        ExpOp
-// 	Table     string
-// 	Rels      []sdata.DBRel
-// 	Col       sdata.DBColumn
-// 	Type      ValType
-// 	Val       string
-// 	ValCol    sdata.DBColumn
-// 	ListType  ValType
-// 	ListVal   []string
-// 	Children  []*Exp
-// 	childrenA [5]*Exp
-// 	Path      []string
-// }
 
 type Exp struct {
 	Op    ExpOp
@@ -1042,15 +1028,26 @@ func (co *Compiler) compileDirectiveCacheControl(qc *QCode, d *graph.Directive) 
 }
 
 func (co *Compiler) compileDirectiveScript(qc *QCode, d *graph.Directive) error {
-	if len(d.Args) == 0 || d.Args[0].Name != "name" {
+	if len(d.Args) != 0 && d.Args[0].Name == "name" {
+		if d.Args[0].Val.Type != graph.NodeStr {
+			return argErr("name", "string")
+		}
+		qc.Script = d.Args[0].Val.Val
+
+	}
+
+	if qc.Script == "" {
+		qc.Script = qc.Name
+	}
+
+	if qc.Script == "" {
 		return fmt.Errorf("@script: required argument 'name' missing")
 	}
 
-	if d.Args[0].Val.Type != graph.NodeStr {
-		return argErr("name", "string")
+	if path.Ext(qc.Script) == "" {
+		qc.Script += ".js"
 	}
 
-	qc.Script = d.Args[0].Val.Val
 	return nil
 }
 

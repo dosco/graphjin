@@ -105,6 +105,14 @@ func cmdNew() func(*cobra.Command, []string) {
 			}
 		})
 
+		// Create folder to hold scripts
+
+		scriptsPath := path.Join(appConfigPath, "scripts")
+
+		ifNotExists(scriptsPath, func(p string) error {
+			return os.Mkdir(p, os.ModePerm)
+		})
+
 		log.Infof("App initialized: %s", name)
 	}
 }
