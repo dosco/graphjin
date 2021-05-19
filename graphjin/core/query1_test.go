@@ -1041,8 +1041,50 @@ func Example_queryWithScriptDirective() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-
 	// Output: {"usersbyid":{"email":"u...@test.com","id":2}}
+}
+
+func Example_queryWithScriptDirectiveUsingGraphQL() {
+	gql := `query @script(name: "test.js") {
+		usersById(id: 2)  {
+			id
+			email
+		}
+	}`
+
+	script := `
+	function response(json) {
+		let val = graphql('query { users(id: 1) { id email } }')
+		json.usersbyid.email = val.users.email
+		return json;
+	}
+	`
+
+	dir, err := ioutil.TempDir("", "test")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(dir)
+
+	err = ioutil.WriteFile(path.Join(dir, "test.js"), []byte(script), 0644)
+	if err != nil {
+		panic(err)
+	}
+
+	conf := &core.Config{DBType: dbType, DisableAllowList: true, ScriptPath: dir}
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+
+	// Output: {"usersbyid":{"email":"user1@test.com","id":2}}
 }
 
 func Example_queryWithView() {

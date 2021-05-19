@@ -11,11 +11,13 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
+	"github.com/dop251/goja/parser"
+	"github.com/dosco/graphjin/core/internal/qcode"
 	babel "github.com/jvatic/goja-babel"
 )
 
-type reqFunc func(map[string]interface{}) map[string]interface{}
-type respFunc func(map[string]interface{}) map[string]interface{}
+type reqFunc func(map[string]interface{}, string, interface{}) map[string]interface{}
+type respFunc func(map[string]interface{}, string, interface{}) map[string]interface{}
 
 func (gj *GraphJin) initScripting() error {
 	if err := babel.Init(5); err != nil {
@@ -47,7 +49,7 @@ func (c *gcontext) loadScript(name string) error {
 	return nil
 }
 
-func (c *gcontext) scriptCallReq(vars []byte) (_ []byte, err error) {
+func (c *gcontext) scriptCallReq(vars []byte, role string) (_ []byte, err error) {
 	if c.sc.ReqFunc == nil {
 		return vars, nil
 	}
@@ -69,7 +71,16 @@ func (c *gcontext) scriptCallReq(vars []byte) (_ []byte, err error) {
 		}
 	}()
 
-	val := c.sc.ReqFunc(rj)
+	if err := c.sc.vm.Set("graphql", c.newGraphQLFunc(role)); err != nil {
+		return nil, err
+	}
+
+	var userID interface{}
+	if v := c.Value(UserIDKey); v == nil {
+		userID = v
+	}
+
+	val := c.sc.ReqFunc(rj, role, userID)
 	if val == nil {
 		return vars, nil
 	}
@@ -77,7 +88,7 @@ func (c *gcontext) scriptCallReq(vars []byte) (_ []byte, err error) {
 	return json.Marshal(val)
 }
 
-func (c *gcontext) scriptCallResp(data []byte) (_ []byte, err error) {
+func (c *gcontext) scriptCallResp(data []byte, role string) (_ []byte, err error) {
 	if c.sc.RespFunc == nil {
 		return data, nil
 	}
@@ -93,13 +104,22 @@ func (c *gcontext) scriptCallResp(data []byte) (_ []byte, err error) {
 		c.sc.vm.Interrupt("halt")
 	})
 
+	if err := c.sc.vm.Set("graphql", c.newGraphQLFunc(role)); err != nil {
+		return nil, err
+	}
+
+	var userID interface{}
+	if v := c.Value(UserIDKey); v == nil {
+		userID = v
+	}
+
 	defer func() {
 		if err1 := recover(); err1 != nil {
 			err = fmt.Errorf("script: %w", err1)
 		}
 	}()
 
-	val := c.sc.RespFunc(rj)
+	val := c.sc.RespFunc(rj, role, userID)
 	if val == nil {
 		return data, nil
 	}
@@ -136,46 +156,124 @@ func (c *gcontext) scriptInit(s *script, name string) error {
 		return err
 	}
 
-	s.vm = goja.New()
+	var vm *goja.Runtime
 
-	console := s.vm.NewObject()
-	console.Set("log", logFunc) //nolint: errcheck
-	if err := s.vm.Set("console", console); err != nil {
-		return err
+	if s.vm != nil {
+		s.vm.ClearInterrupt()
+
+	} else {
+		vm = goja.New()
+
+		vm.SetParserOptions(parser.WithDisableSourceMaps)
+
+		exports := vm.NewObject()
+		vm.Set("exports", exports) //nolint: errcheck
+
+		module := vm.NewObject()
+		_ = module.Set("exports", exports)
+		vm.Set("module", module) //nolint: errcheck
+
+		env := make(map[string]string, len(os.Environ()))
+		for _, e := range os.Environ() {
+			if strings.HasPrefix(e, "SG_") || strings.HasPrefix(e, "GJ_") {
+				continue
+			}
+			v := strings.SplitN(e, "=", 2)
+			env[v[0]] = v[1]
+		}
+		vm.Set("__ENV", env)                //nolint: errcheck
+		vm.Set("global", vm.GlobalObject()) //nolint: errcheck
+
+		console := vm.NewObject()
+		console.Set("log", logFunc) //nolint: errcheck
+		vm.Set("console", console)  //nolint: errcheck
 	}
 
 	time.AfterFunc(500*time.Millisecond, func() {
-		s.vm.Interrupt("halt")
+		vm.Interrupt("halt")
 	})
 
-	if _, err = s.vm.RunProgram(ast); err != nil {
+	if _, err = vm.RunProgram(ast); err != nil {
 		return err
 	}
 
-	req := s.vm.Get("request")
+	req := vm.Get("request")
 
 	if req != nil {
 		if _, ok := goja.AssertFunction(req); !ok {
 			return fmt.Errorf("script: function 'request' not found")
 		}
 
-		if err := s.vm.ExportTo(req, &s.ReqFunc); err != nil {
+		if err := vm.ExportTo(req, &s.ReqFunc); err != nil {
 			return err
 		}
 	}
 
-	resp := s.vm.Get("response")
+	resp := vm.Get("response")
 
 	if resp != nil {
 		if _, ok := goja.AssertFunction(resp); !ok {
 			return fmt.Errorf("script: function 'response' not found")
 		}
 
-		if err := s.vm.ExportTo(resp, &s.RespFunc); err != nil {
+		if err := vm.ExportTo(resp, &s.RespFunc); err != nil {
 			return err
 		}
 	}
+
+	s.vm = vm
 	return nil
+}
+
+func (c *gcontext) newGraphQLFunc(role string) func(string, map[string]interface{}, map[string]string) map[string]interface{} {
+
+	return func(
+		query string,
+		vars map[string]interface{},
+		opt map[string]string) map[string]interface{} {
+		var err error
+
+		op, name := qcode.GetQType(query)
+
+		qreq := queryReq{
+			op:    op,
+			name:  name,
+			query: []byte(query),
+		}
+
+		ct := gcontext{
+			Context: c.Context,
+			gj:      c.gj,
+			op:      c.op,
+			rc:      c.rc,
+		}
+
+		if len(vars) != 0 {
+			if qreq.vars, err = json.Marshal(vars); err != nil {
+				panic(fmt.Errorf("variables: %s", err))
+			}
+		}
+
+		var r1 string
+
+		if v, ok := opt["role"]; ok && len(v) != 0 {
+			r1 = v
+		} else {
+			r1 = role
+		}
+
+		qres, err := ct.execQuery(qreq, r1)
+		if err != nil {
+			panic(err)
+		}
+
+		jres := make(map[string]interface{})
+		if err = json.Unmarshal(qres.data, &jres); err != nil {
+			panic(fmt.Errorf("json: %s", err))
+		}
+
+		return jres
+	}
 }
 
 func logFunc(args ...interface{}) {

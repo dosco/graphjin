@@ -226,7 +226,7 @@ func (c *gcontext) execQuery(qr queryReq, role string) (queryResp, error) {
 	}
 
 	if c.sc != nil && c.sc.RespFunc != nil {
-		res.data, err = c.scriptCallResp(res.data)
+		res.data, err = c.scriptCallResp(res.data, res.role)
 	}
 
 	return res, err
@@ -274,7 +274,7 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 	}
 
 	if c.sc != nil && c.sc.ReqFunc != nil {
-		qr.vars, err = c.scriptCallReq(qr.vars)
+		qr.vars, err = c.scriptCallReq(qr.vars, res.qc.st.role.Name)
 		if err != nil {
 			return res, err
 		}
