@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/orlangure/gnomock"
@@ -113,8 +114,8 @@ func TestMain(m *testing.M) {
 		db.SetMaxIdleConns(100)
 		dbType = v.name
 
-		// if res := m.Run(); res != 0 {
-		// 	os.Exit(res)
-		// }
+		if res := m.Run(); res != 0 {
+			os.Exit(res)
+		}
 	}
 }
