@@ -111,6 +111,7 @@ var funcListString []funcInfo = []funcInfo{
 type intro struct {
 	*schema.Schema
 	*sdata.DBSchema
+	gj           *GraphJin
 	query        *schema.Object
 	mutation     *schema.Object
 	subscription *schema.Object
@@ -126,6 +127,7 @@ func (gj *GraphJin) initGraphQLEgine() error {
 	in := &intro{
 		Schema:       engine.Schema,
 		DBSchema:     gj.schema,
+		gj:           gj,
 		query:        &schema.Object{Name: "Query", Fields: schema.FieldList{}},
 		mutation:     &schema.Object{Name: "Mutation", Fields: schema.FieldList{}},
 		subscription: &schema.Object{Name: "Subscribe", Fields: schema.FieldList{}},
@@ -281,6 +283,9 @@ func (in *intro) addTable(name string, ti sdata.DBTable, singular bool) error {
 	}
 
 	for k, t := range relTables1 {
+		if t.Blocked {
+			continue
+		}
 		ot.Fields = append(ot.Fields, &schema.Field{
 			Name: k,
 			Type: &schema.TypeName{Name: t.Name + "Output"},
@@ -293,6 +298,9 @@ func (in *intro) addTable(name string, ti sdata.DBTable, singular bool) error {
 	}
 
 	for k, t := range relTables2 {
+		if t.Blocked {
+			continue
+		}
 		ot.Fields = append(ot.Fields, &schema.Field{
 			Name: k,
 			Type: &schema.TypeName{Name: t.Name + "Output"},
@@ -377,7 +385,7 @@ func (in *intro) addColumn(
 		Type: colType,
 	})
 
-	if col.PrimaryKey {
+	if col.PrimaryKey && !in.gj.conf.DisableAgg {
 		ot.Fields = append(ot.Fields, &schema.Field{
 			Name: funcCount.name + "_" + colName,
 			Type: colType,
@@ -388,14 +396,17 @@ func (in *intro) addColumn(
 	// No functions on foreign key columns
 	if col.FKeyCol == "" {
 		// If it's a numeric type...
-		if typeName == "Float" || typeName == "Int" {
-			for _, v := range funcListNum {
-				desc := fmt.Sprintf(v.desc, colName)
-				ot.Fields = append(ot.Fields, &schema.Field{
-					Name: v.name + "_" + colName,
-					Type: colType,
-					Desc: schema.NewDescription(desc),
-				})
+
+		if !in.gj.conf.DisableAgg {
+			if typeName == "Float" || typeName == "Int" {
+				for _, v := range funcListNum {
+					desc := fmt.Sprintf(v.desc, colName)
+					ot.Fields = append(ot.Fields, &schema.Field{
+						Name: v.name + "_" + colName,
+						Type: colType,
+						Desc: schema.NewDescription(desc),
+					})
+				}
 			}
 		}
 

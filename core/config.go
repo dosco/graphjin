@@ -106,6 +106,9 @@ type Config struct {
 	// Default to 20
 	DefaultLimit int `mapstructure:"default_limit"`
 
+	// DisableAgg disables all aggregation functions like count, sum, etc
+	DisableAgg bool `mapstructure:"disable_agg_functions"`
+
 	// Enable production mode. This defaults to true if GO_ENV is set to
 	// "production". When this is true the allow list is enforced.
 	Production bool

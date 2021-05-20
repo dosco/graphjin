@@ -154,6 +154,7 @@ func (gj *GraphJin) initCompilers() error {
 		TConfig:          gj.conf.tmap,
 		DefaultBlock:     gj.conf.DefaultBlock,
 		DefaultLimit:     gj.conf.DefaultLimit,
+		DisableAgg:       gj.conf.DisableAgg,
 		EnableInflection: gj.conf.EnableInflection,
 		DBSchema:         gj.schema.DBSchema(),
 	}
