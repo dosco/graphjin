@@ -12,6 +12,7 @@ type Config struct {
 	FragmentFetcher  func(name string) (string, error)
 	DefaultBlock     bool
 	DefaultLimit     int
+	DisableAgg       bool
 	EnableInflection bool
 	DBSchema         string
 	defTrv           trval
