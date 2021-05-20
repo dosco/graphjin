@@ -71,7 +71,7 @@ cors_debug: false
 default_limit: 20
 
 # DisableAgg disables all aggregation functions like count, sum, etc
-disable_agg_functions: true
+disable_agg_functions: false
 
 # Set session variable "user.id" to the user id
 # Enable this if you need the user id in triggers, etc
