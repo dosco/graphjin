@@ -61,9 +61,10 @@ func (c *gcontext) scriptCallReq(vars []byte, role string) (_ []byte, err error)
 		}
 	}
 
-	time.AfterFunc(500*time.Millisecond, func() {
+	timer := time.AfterFunc(500*time.Millisecond, func() {
 		c.sc.vm.Interrupt("halt")
 	})
+	defer timer.Stop()
 
 	defer func() {
 		if err1 := recover(); err1 != nil {
@@ -100,9 +101,10 @@ func (c *gcontext) scriptCallResp(data []byte, role string) (_ []byte, err error
 		}
 	}
 
-	time.AfterFunc(500*time.Millisecond, func() {
+	timer := time.AfterFunc(500*time.Millisecond, func() {
 		c.sc.vm.Interrupt("halt")
 	})
+	defer timer.Stop()
 
 	if err := c.sc.vm.Set("graphql", c.newGraphQLFunc(role)); err != nil {
 		return nil, err
@@ -187,11 +189,18 @@ func (c *gcontext) scriptInit(s *script, name string) error {
 		console := vm.NewObject()
 		console.Set("log", logFunc) //nolint: errcheck
 		vm.Set("console", console)  //nolint: errcheck
+
+		http := vm.NewObject()
+		http.Set("get", c.httpGetFunc)   //nolint: errcheck
+		http.Set("post", c.httpPostFunc) //nolint: errcheck
+		http.Set("request", c.httpFunc)  //nolint: errcheck
+		vm.Set("http", http)             //nolint: errcheck
 	}
 
-	time.AfterFunc(500*time.Millisecond, func() {
+	timer := time.AfterFunc(500*time.Millisecond, func() {
 		vm.Interrupt("halt")
 	})
+	defer timer.Stop()
 
 	if _, err = vm.RunProgram(ast); err != nil {
 		return err
