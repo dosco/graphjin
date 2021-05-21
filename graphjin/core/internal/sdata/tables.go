@@ -3,6 +3,7 @@ package sdata
 import (
 	"database/sql"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"golang.org/x/sync/errgroup"
@@ -335,7 +336,8 @@ func DiscoverFunctions(db *sql.DB, blockList []string) ([]DBFunction, error) {
 
 func isInList(val string, s []string) bool {
 	for _, v := range s {
-		if strings.EqualFold(v, val) {
+		regex := fmt.Sprintf("^%s$", v)
+		if matched, _ := regexp.MatchString(regex, val); matched {
 			return true
 		}
 	}
