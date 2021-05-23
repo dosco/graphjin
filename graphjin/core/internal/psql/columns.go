@@ -250,7 +250,11 @@ func (c *compilerContext) renderJSONFields(sel *qcode.Select) {
 		if i != 0 {
 			c.w.WriteString(", ")
 		}
-		c.renderJSONField(fn.FieldName, sel.ID)
+		if fn.Alias != "" {
+			c.renderJSONField(fn.Alias, sel.ID)
+		} else {
+			c.renderJSONField(fn.FieldName, sel.ID)
+		}
 		i++
 	}
 
