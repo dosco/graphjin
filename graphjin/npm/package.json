@@ -1,6 +1,6 @@
 {
   "name": "graphjin",
-  "version": "0.16.64",
+  "version": "0.16.65",
   "description": "GraphJin - Build APIs in 5 minutes with GraphQL. An instant GraphQL to SQL compiler.",
   "main": "index.js",
   "directories": {
@@ -31,5 +31,8 @@
     "name": "graphjin",
     "path": "./bin",
     "url": "https://github.com/dosco/graphjin/releases/download/v{{version}}/graphjin_{{version}}_{{platform}}_{{arch}}.tar.gz"
+  },
+  "dependencies": {
+    "go-npm": "^0.1.9"
   }
 }
