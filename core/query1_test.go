@@ -1314,6 +1314,7 @@ func Example_blockQueryWithRoles() {
 func Example_queryWithCamelToSnakeCase() {
 	gql := `query {
 		hotProducts(where: { productID: { eq: 55 } }) {
+			countryCode
 			countProductID
 		}
 	}`
@@ -1330,5 +1331,5 @@ func Example_queryWithCamelToSnakeCase() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"hotProducts": [{"countProductID": 1}]}
+	// Output: {"hotProducts": [{"countryCode": "US", "countProductID": 1}]}
 }

@@ -3,17 +3,9 @@ package qcode
 import (
 	"fmt"
 	"strings"
-
-	"github.com/dosco/graphjin/core/internal/util"
 )
 
-func init() {
-	for _, v := range stdFuncSK {
-		stdFuncCK = append(stdFuncCK, util.ToCamel(v[:len(v)-1]))
-	}
-}
-
-var stdFuncSK = []string{
+var stdFuncs = []string{
 	"avg_",
 	"count_",
 	"max_",
@@ -30,8 +22,6 @@ var stdFuncSK = []string{
 	"length_",
 }
 
-var stdFuncCK = []string{}
-
 func (co *Compiler) isFunction(sel *Select, fname, alias string) (Function, bool, error) {
 	var cn string
 	var agg bool
@@ -40,14 +30,14 @@ func (co *Compiler) isFunction(sel *Select, fname, alias string) (Function, bool
 	fn := Function{FieldName: fname, Alias: alias}
 
 	switch {
-	case fname == "search_rank" || fname == "searchRank":
+	case fname == "search_rank":
 		fn.Name = "search_rank"
 
 		if _, ok := sel.Args["search"]; !ok {
 			return fn, false, fmt.Errorf("no search defined: %s", fname)
 		}
 
-	case strings.HasPrefix(fname, "search_headline_") || strings.HasPrefix(fname, "searchHeadline"):
+	case strings.HasPrefix(fname, "search_headline_"):
 		fn.Name = "search_headline"
 		cn = fname[16:]
 
@@ -59,19 +49,14 @@ func (co *Compiler) isFunction(sel *Select, fname, alias string) (Function, bool
 		sel.Typename = true
 		fn.skip = true
 
-	case strings.HasSuffix(fname, "_cursor") || strings.HasSuffix(fname, "Cursor"):
+	case strings.HasSuffix(fname, "_cursor"):
 		fn.skip = true
 
 	default:
-		n, trimSuffix := co.funcPrefixLen(fname)
+		n := co.funcPrefixLen(fname)
 		if n != 0 {
-			if trimSuffix {
-				fn.Name = fname[:(n - 1)]
-				cn = fname[n:]
-			} else {
-				fn.Name = fname[:n]
-				cn = fname[n+1:]
-			}
+			cn = fname[n:]
+			fn.Name = fname[:(n - 1)]
 			agg = true
 		}
 	}
@@ -83,23 +68,11 @@ func (co *Compiler) isFunction(sel *Select, fname, alias string) (Function, bool
 	return fn, agg, err
 }
 
-func (co *Compiler) funcPrefixLen(col string) (int, bool) {
-	if co.c.EnableCamelcase {
-		return co._funcPrefixLen(col, stdFuncCK, false)
-	} else {
-		return co._funcPrefixLen(col, stdFuncSK, true)
-	}
-}
-
-func (co *Compiler) _funcPrefixLen(col string, stdFuncs []string, hasSuffix bool) (int, bool) {
-	if co.c.DisableFuncs {
-		return 0, false
-	}
-
+func (co *Compiler) funcPrefixLen(col string) int {
 	if !co.c.DisableAgg {
 		for _, v := range stdFuncs {
 			if strings.HasPrefix(col, v) {
-				return len(v), hasSuffix
+				return len(v)
 			}
 		}
 	}
@@ -107,14 +80,10 @@ func (co *Compiler) _funcPrefixLen(col string, stdFuncs []string, hasSuffix bool
 
 	for k := range co.s.GetFunctions() {
 		kLen := len(k)
-		isFunc := kLen < fnLen && k[0] == col[0] && strings.HasPrefix(col, k)
-		if isFunc && hasSuffix && col[kLen] == '_' {
-			return kLen + 1, hasSuffix
-		}
-		if isFunc && !hasSuffix {
-			return kLen, hasSuffix
+		if kLen < fnLen && k[0] == col[0] && strings.HasPrefix(col, k) && col[kLen] == '_' {
+			return kLen + 1
 		}
 	}
 
-	return 0, false
+	return 0
 }
