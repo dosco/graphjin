@@ -40,4 +40,7 @@ release
 *.test
 .firebase
 /dist
+.idea
+node_modules
+bin
 
