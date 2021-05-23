@@ -28,6 +28,7 @@ CREATE TABLE products (
   name varchar(255),
   description varchar(255),
   tags varchar(255),
+  country_code varchar(3),
   price float,
   owner_id bigint,
   category_ids varchar(255) NOT NULL,
@@ -93,7 +94,7 @@ CREATE TABLE chats (
 
 CREATE VIEW hot_products
 AS
-SELECT id AS product_id
+SELECT id AS product_id, country_code
 FROM products
 WHERE id > 50;
 
@@ -138,7 +139,7 @@ SELECT
 FROM seq100
 LIMIT 5;
 
-INSERT INTO products (id, name, description, tags, category_ids, price, owner_id, created_at)
+INSERT INTO products (id, name, description, tags, country_code, category_ids, price, owner_id, created_at)
 SELECT
   i,
   concat(
@@ -157,6 +158,7 @@ SELECT
     FROM seq100
     WHERE i <= 5
   ),
+  'US',
   (
     SELECT json_merge_preserve('[]', concat(
       '[',
