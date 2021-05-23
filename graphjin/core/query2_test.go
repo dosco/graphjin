@@ -242,7 +242,7 @@ var benchGQL = `query {
 		# only items with an id >= 30 and < 30 are returned
 		where: { id: { and: { greater_or_equals: 20, lt: 28 } } }) {
 		id
-		NAME
+		name
 		price
 		owner {
 			full_name

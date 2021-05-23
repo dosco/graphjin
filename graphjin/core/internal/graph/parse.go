@@ -514,12 +514,12 @@ func (p *Parser) parseField(f *Field) error {
 
 		if p.peek(itemName) {
 			f.Alias = p.val(v)
-			f.Name = p.vall(p.next())
+			f.Name = p.val(p.next())
 		} else {
 			return errors.New("expecting an aliased field name")
 		}
 	} else {
-		f.Name = p.vall(v)
+		f.Name = p.val(v)
 	}
 
 	if p.peek(itemArgsOpen) {

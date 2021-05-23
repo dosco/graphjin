@@ -242,7 +242,7 @@ func (ast *aexpst) parseNode(av aexp) (*Exp, error) {
 				return nil, err
 			}
 		}
-		if err := setExpColName(ast.co.s, ast.ti, ex, node); err != nil {
+		if err := ast.setExpColName(ex, node); err != nil {
 			return nil, err
 		}
 	}
@@ -303,9 +303,12 @@ func setListVal(ex *Exp, node *graph.Node) {
 	}
 }
 
-func setExpColName(s *sdata.DBSchema, ti sdata.DBTable, ex *Exp, node *graph.Node) error {
+func (ast *aexpst) setExpColName(ex *Exp, node *graph.Node) error {
 	var list []string
 	var err error
+
+	s := ast.co.s
+	ti := ast.ti
 
 	for n := node; n != nil; n = n.Parent {
 		// if n.Type != graph.NodeObj {
@@ -321,16 +324,28 @@ func setExpColName(s *sdata.DBSchema, ti sdata.DBTable, ex *Exp, node *graph.Nod
 		}
 	}
 
+	var nn string
+
 	switch len(list) {
 	case 1:
-		if col, err := ti.GetColumn(node.Name); err == nil {
+		if ast.co.c.EnableCamelcase {
+			nn = util.ToSnake(node.Name)
+		} else {
+			nn = node.Name
+		}
+		if col, err := ti.GetColumn(nn); err == nil {
 			ex.Left.Col = col
 		} else {
 			return err
 		}
 
 	case 2:
-		if col, err := ti.GetColumn(list[0]); err == nil {
+		if ast.co.c.EnableCamelcase {
+			nn = util.ToSnake(list[0])
+		} else {
+			nn = list[0]
+		}
+		if col, err := ti.GetColumn(nn); err == nil {
 			ex.Left.Col = col
 			return nil
 		}
@@ -341,7 +356,11 @@ func setExpColName(s *sdata.DBSchema, ti sdata.DBTable, ex *Exp, node *graph.Nod
 		prev = ti.Name
 
 		for i := 0; i < len(list)-1; i++ {
-			curr = list[i]
+			if ast.co.c.EnableCamelcase {
+				curr = util.ToSnake(list[i])
+			} else {
+				curr = list[i]
+			}
 
 			if curr == ti.Name {
 				continue

@@ -50,6 +50,13 @@ func (co *Compiler) compileChildColumns(
 		var fname string
 		f := op.Fields[cid]
 
+		if co.c.EnableCamelcase {
+			if f.Alias == "" {
+				f.Alias = f.Name
+			}
+			f.Name = util.ToSnake(f.Name)
+		}
+
 		if f.Alias != "" {
 			fname = f.Alias
 		} else {

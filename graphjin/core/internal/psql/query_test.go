@@ -35,7 +35,7 @@ func withVariableLimit(t *testing.T) {
 
 func withComplexArgs(t *testing.T) {
 	gql := `query {
-		proDUcts(
+		products(
 			# returns only 30 items
 			limit: 30,
 
@@ -51,7 +51,7 @@ func withComplexArgs(t *testing.T) {
 			# only items with an id >= 20 and < 28 are returned
 			where: { id: { and: { greater_or_equals: 20, lt: 28 } } }) {
 			id
-			NAME
+			name
 			price
 		}
 	}`
@@ -542,11 +542,11 @@ func subscription(t *testing.T) {
 
 func withCursor(t *testing.T) {
 	gql := `query {
-		Products(
+		products(
 			first: 20
 			after: $cursor
 			order_by: { price: desc }) {
-			Name
+			name
 		}
 		products_cursor
 	}`
@@ -691,7 +691,7 @@ func TestCompileQuery(t *testing.T) {
 }
 
 var benchGQL = []byte(`query {
-	proDUcts(
+	products(
 		# returns only 30 items
 		limit: 30,
 
@@ -704,7 +704,7 @@ var benchGQL = []byte(`query {
 		# only items with an id >= 30 and < 30 are returned
 		where: { id: { and: { greater_or_equals: 20, lt: 28 } } }) {
 		id
-		NAME
+		name
 		price
 		user {
 			full_name

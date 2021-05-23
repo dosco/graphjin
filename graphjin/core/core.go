@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/dosco/graphjin/core/internal/psql"
@@ -138,11 +137,7 @@ func (gj *GraphJin) _initSchema() error {
 	if ssufx == "" {
 		ssufx = "ByID"
 	}
-
-	gj.schema.SingularSuffix = sdata.SingularInfo{
-		Value: ssufx,
-		Lower: strings.ToLower(ssufx),
-	}
+	gj.schema.SingularSuffix = ssufx
 
 	return err
 }
@@ -155,6 +150,8 @@ func (gj *GraphJin) initCompilers() error {
 		DefaultBlock:     gj.conf.DefaultBlock,
 		DefaultLimit:     gj.conf.DefaultLimit,
 		DisableAgg:       gj.conf.DisableAgg,
+		DisableFuncs:     gj.conf.DisableFuncs,
+		EnableCamelcase:  gj.conf.EnableCamelcase,
 		EnableInflection: gj.conf.EnableInflection,
 		DBSchema:         gj.schema.DBSchema(),
 	}

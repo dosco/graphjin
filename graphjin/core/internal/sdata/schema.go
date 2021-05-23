@@ -18,18 +18,13 @@ type nodeInfo struct {
 	nodeID int32
 }
 
-type SingularInfo struct {
-	Value string // Suffix value defined by the user
-	Lower string // Lower-cased suffix used for treatment inside our code
-}
-
 type DBSchema struct {
 	typ            string                  // db type
 	ver            int                     // db version
 	schema         string                  // db schema
 	name           string                  // db name
 	tables         []DBTable               // tables
-	SingularSuffix SingularInfo            // singular suffix
+	SingularSuffix string                  // singular suffix
 	vt             map[string]VirtualTable // for polymorphic relationships
 	fm             map[string]DBFunction   // db functions
 	tindex         map[string]nodeInfo     // table index
@@ -307,7 +302,7 @@ func (s *DBSchema) GetFirstDegree(schema, table string) (map[string]DBTable, err
 			e1 := s.ae[e.ID]
 			if e1.name != "" {
 				ret[e1.name] = e1.LT
-				ret[(e1.name + s.SingularSuffix.Value)] = e1.LT
+				ret[(e1.name + s.SingularSuffix)] = e1.LT
 			}
 		}
 	}
@@ -332,7 +327,7 @@ func (s *DBSchema) GetSecondDegree(schema, table string) (map[string]DBTable, er
 				e1 := s.ae[e.ID]
 				if e1.name != "" {
 					ret[e1.name] = e1.LT
-					ret[(e1.name + s.SingularSuffix.Value)] = e1.LT
+					ret[(e1.name + s.SingularSuffix)] = e1.LT
 				}
 			}
 		}
