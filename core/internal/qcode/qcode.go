@@ -370,6 +370,13 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 		}
 		sel := &s1
 
+		if co.c.EnableCamelcase {
+			if field.Alias == "" {
+				field.Alias = field.Name
+			}
+			field.Name = util.ToSnake(field.Name)
+		}
+
 		if field.Alias != "" {
 			sel.FieldName = field.Alias
 		} else {

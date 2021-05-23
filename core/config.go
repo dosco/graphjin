@@ -87,7 +87,7 @@ type Config struct {
 	EnableInflection bool `mapstructure:"enable_inflection"`
 
 	// Customize singular suffix
-	// By default is set to "ById"
+	// By default is set to "ByID"
 	SingularSuffix string `mapstructure:"singular_suffix"`
 
 	// Database type name. Defaults to 'postgres' (options: mysql, postgres)
@@ -108,6 +108,13 @@ type Config struct {
 
 	// DisableAgg disables all aggregation functions like count, sum, etc
 	DisableAgg bool `mapstructure:"disable_agg_functions"`
+
+	// DisableFuncs disables all functions like count, length,  etc
+	DisableFuncs bool `mapstructure:"disable_functions"`
+
+	// EnableCamelcase converts all camel case terms in GraphQL to snake case
+	// in SQL
+	EnableCamelcase bool `mapstructure:"enable_camelcase"`
 
 	// Enable production mode. This defaults to true if GO_ENV is set to
 	// "production". When this is true the allow list is enforced.

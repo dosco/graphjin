@@ -13,6 +13,8 @@ type Config struct {
 	DefaultBlock     bool
 	DefaultLimit     int
 	DisableAgg       bool
+	DisableFuncs     bool
+	EnableCamelcase  bool
 	EnableInflection bool
 	DBSchema         string
 	defTrv           trval

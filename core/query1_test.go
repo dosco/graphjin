@@ -116,7 +116,7 @@ func Example_queryWithDynamicOrderBy() {
 
 func Example_queryWithLimitOffsetOrderByDistinctAndWhere() {
 	gql := `query {
-		proDUcts(
+		products(
 			# returns only 5 items
 			limit: 5,
 
@@ -132,7 +132,7 @@ func Example_queryWithLimitOffsetOrderByDistinctAndWhere() {
 			# only items with an id >= 50 and < 100 are returned
 			where: { id: { and: { greater_or_equals: 50, lt: 100 } } }) {
 			id
-			NAME
+			name
 			price
 		}
 	}`
@@ -916,12 +916,12 @@ func Example_queryWithRemoteAPIJoin() {
 
 func Example_queryWithCursorPagination() {
 	gql := `query {
-		Products(
+		products(
 			where: { id: { lesser_or_equals: 100 } }
 			first: 3
 			after: $cursor
 			order_by: { price: desc }) {
-			Name
+			name
 		}
 		products_cursor
 	}`
@@ -1002,7 +1002,7 @@ func Example_queryWithJsonColumn() {
 
 func Example_queryWithScriptDirective() {
 	gql := `query @script(name: "test.js") {
-		usersById(id: $id)  {
+		usersByID(id: $id)  {
 			id
 			email
 		}
@@ -1014,7 +1014,7 @@ func Example_queryWithScriptDirective() {
 	}
 	
 	function response(json) {
-		json.usersbyid.email = "u...@test.com";
+		json.usersByID.email = "u...@test.com";
 		return json;
 	}
 	`
@@ -1042,12 +1042,12 @@ func Example_queryWithScriptDirective() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"usersbyid":{"email":"u...@test.com","id":2}}
+	// Output: {"usersByID":{"email":"u...@test.com","id":2}}
 }
 
 func Example_queryWithScriptDirectiveUsingGraphQL() {
 	gql := `query @script(name: "test.js") {
-		usersById(id: 2)  {
+		usersByID(id: 2)  {
 			id
 			email
 		}
@@ -1056,7 +1056,7 @@ func Example_queryWithScriptDirectiveUsingGraphQL() {
 	script := `
 	function response(json) {
 		let val = graphql('query { users(id: 1) { id email } }')
-		json.usersbyid.email = val.users.email
+		json.usersByID.email = val.users.email
 		return json;
 	}
 	`
@@ -1085,7 +1085,7 @@ func Example_queryWithScriptDirectiveUsingGraphQL() {
 		fmt.Println(string(res.Data))
 	}
 
-	// Output: {"usersbyid":{"email":"user1@test.com","id":2}}
+	// Output: {"usersByID":{"email":"user1@test.com","id":2}}
 }
 
 func Example_queryWithScriptDirectiveUsingHttp() {
@@ -1095,7 +1095,7 @@ func Example_queryWithScriptDirectiveUsingHttp() {
 	defer ts.Close()
 
 	gql := `query @script(name: "test.js") {
-		usersById(id: 2)  {
+		usersByID(id: 2)  {
 			id
 			email
 		}
@@ -1309,4 +1309,26 @@ func Example_blockQueryWithRoles() {
 		fmt.Println(string(res.Data))
 	}
 	// Output: {"users": null}
+}
+
+func Example_queryWithCamelToSnakeCase() {
+	gql := `query {
+		hotProducts(where: { productID: { eq: 55 } }) {
+			countProductID
+		}
+	}`
+
+	conf := &core.Config{DBType: dbType, DisableAllowList: true, EnableCamelcase: true}
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+	// Output: {"hotProducts": [{"countProductID": 1}]}
 }
