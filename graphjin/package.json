@@ -1,6 +1,6 @@
 {
   "name": "graphjin",
-  "version": "0.16.65",
+  "version": "0.16.68",
   "description": "GraphJin - Build APIs in 5 minutes with GraphQL. An instant GraphQL to SQL compiler.",
   "main": "index.js",
   "directories": {
