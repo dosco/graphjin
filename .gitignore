@@ -43,4 +43,6 @@ release
 .idea
 node_modules
 bin
+./package-lock.json
+
 

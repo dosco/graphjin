@@ -17,7 +17,7 @@ BUILD_FLAGS ?= -ldflags '-s -w -X "github.com/dosco/graphjin/serv.version=${BUIL
 .PHONY: all download-tools build gen clean test run lint changlog release version help $(PLATFORMS)
 
 test:
-	@go test -v -short -race ./...
+	@go test -v -short -race ./... && test -v -short -race -db=mysql -run=Example_query ./...
 
 BIN_DIR := $(GOPATH)/bin
 WEB_BUILD_DIR := ./serv/web/build/manifest.json
