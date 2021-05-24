@@ -94,14 +94,9 @@ jobs:
         run: |
           sudo apt-get install jq
           jq '.version = $newVal' --arg newVal '${GITHUB_REF/refs\/tags\//}' package.json > tmp.$$.json && mv tmp.$$.json package.json
+      - uses: fregante/setup-git-user@v1
       - name: Commit updated package.json
         run: |
-          git config --global user.email '832235+dosco@users.noreply.github.com'
-          git commit -am "Updating version in package.json to ${GITHUB_REF/refs\/tags\//}"
-          git push
-      - name: Commit updated package.json
-        run: |
-          git config --global user.email '832235+dosco@users.noreply.github.com'
           git commit -am "Updating version in package.json to ${GITHUB_REF/refs\/tags\//}"
           git push
       - uses: JS-DevTools/npm-publish@v1
