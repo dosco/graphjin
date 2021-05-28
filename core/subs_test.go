@@ -135,7 +135,7 @@ func Example_subscriptionWithCursor() {
 		}
 	}()
 
-	for i := 0; i < 15; i++ {
+	for i := 0; i < 19; i++ {
 		msg := <-m2.Result
 		// replace cursor value to make test work since it's encrypted
 		v2 := cursorRegex.ReplaceAllString(string(msg.Data), "cursor_was_here")
@@ -158,6 +158,10 @@ func Example_subscriptionWithCursor() {
 	// {"chats": [{"id": 13, "body": "New chat message 13"}], "chats_cursor_was_here"}
 	// {"chats": [{"id": 14, "body": "New chat message 14"}], "chats_cursor_was_here"}
 	// {"chats": [{"id": 15, "body": "New chat message 15"}], "chats_cursor_was_here"}
+	// {"chats": [{"id": 16, "body": "New chat message 16"}], "chats_cursor_was_here"}
+	// {"chats": [{"id": 17, "body": "New chat message 17"}], "chats_cursor_was_here"}
+	// {"chats": [{"id": 18, "body": "New chat message 18"}], "chats_cursor_was_here"}
+	// {"chats": [{"id": 19, "body": "New chat message 19"}], "chats_cursor_was_here"}
 }
 
 func TestSubscription(t *testing.T) {

@@ -1316,10 +1316,22 @@ func Example_queryWithCamelToSnakeCase() {
 		hotProducts(where: { productID: { eq: 55 } }) {
 			countryCode
 			countProductID
+			products {
+				id
+			}
 		}
 	}`
 
 	conf := &core.Config{DBType: dbType, DisableAllowList: true, EnableCamelcase: true}
+	conf.Tables = []core.Table{
+		{
+			Name: "hot_products",
+			Columns: []core.Column{
+				{Name: "product_id", Type: "int", ForeignKey: "products.id"},
+			},
+		},
+	}
+
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -1331,5 +1343,5 @@ func Example_queryWithCamelToSnakeCase() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"hotProducts": [{"countryCode": "US", "countProductID": 1}]}
+	// Output: {"hotProducts": [{"products": {"id": 55}, "countryCode": "US", "countProductID": 1}]}
 }

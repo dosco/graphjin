@@ -487,6 +487,9 @@ func (co *Compiler) addRelInfo(
 	}
 
 	if sel.ParentID != -1 {
+		if co.c.EnableCamelcase {
+			parentF.Name = util.ToSnake(parentF.Name)
+		}
 		paths, err := co.s.FindPath(childF.Name, parentF.Name, sel.through)
 		if err != nil {
 			return graphError(err, childF.Name, parentF.Name, sel.through)
@@ -1176,7 +1179,7 @@ func (co *Compiler) compileArgWhere(ti sdata.DBTable, sel *Select, arg *graph.Ar
 	st := util.NewStackInf()
 	var err error
 
-	ex, nu, err := co.compileArgObj(ti, st, arg)
+	ex, nu, err := co.compileArgObj(sel.FieldName, ti, st, arg)
 	if err != nil {
 		return err
 	}
@@ -1486,7 +1489,7 @@ func compileFilter(s *sdata.DBSchema, ti sdata.DBTable, filter []string, isJSON 
 			return nil, false, err
 		}
 
-		f, nu, err := co.compileArgNode(ti, st, node, isJSON)
+		f, nu, err := co.compileArgNode("", ti, st, node, isJSON)
 		if err != nil {
 			return nil, false, err
 		}

@@ -9,18 +9,19 @@ import (
 	"github.com/dosco/graphjin/core/internal/util"
 )
 
-func (co *Compiler) compileArgObj(ti sdata.DBTable, st *util.StackInf, arg *graph.Arg) (*Exp, bool, error) {
+func (co *Compiler) compileArgObj(edge string, ti sdata.DBTable, st *util.StackInf, arg *graph.Arg) (*Exp, bool, error) {
 	if arg.Val.Type != graph.NodeObj {
 		return nil, false, fmt.Errorf("expecting an object")
 	}
 
-	return co.compileArgNode(ti, st, arg.Val, false)
+	return co.compileArgNode(edge, ti, st, arg.Val, false)
 }
 
 type aexpst struct {
 	co       *Compiler
 	st       *util.StackInf
 	ti       sdata.DBTable
+	edge     string
 	savePath bool
 }
 
@@ -31,6 +32,7 @@ type aexp struct {
 }
 
 func (co *Compiler) compileArgNode(
+	edge string,
 	ti sdata.DBTable,
 	st *util.StackInf,
 	node *graph.Node,
@@ -43,7 +45,12 @@ func (co *Compiler) compileArgNode(
 		return nil, false, errors.New("invalid argument value")
 	}
 
-	ast := &aexpst{co: co, st: st, ti: ti, savePath: savePath}
+	ast := &aexpst{co: co,
+		st:       st,
+		ti:       ti,
+		edge:     edge,
+		savePath: savePath,
+	}
 	ast.pushChildren(nil, node)
 
 	for {
@@ -353,7 +360,11 @@ func (ast *aexpst) setExpColName(ex *Exp, node *graph.Node) error {
 
 	default:
 		var prev, curr string
-		prev = ti.Name
+		if ast.edge == "" {
+			prev = ti.Name
+		} else {
+			prev = ast.edge
+		}
 
 		for i := 0; i < len(list)-1; i++ {
 			if ast.co.c.EnableCamelcase {
