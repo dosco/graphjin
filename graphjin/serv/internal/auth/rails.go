@@ -14,7 +14,7 @@ import (
 	"github.com/garyburd/redigo/redis"
 )
 
-func RailsHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
+func RailsHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
 	ru := ac.Rails.URL
 
 	if strings.HasPrefix(ru, "memcache:") {
@@ -28,7 +28,7 @@ func RailsHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 	return RailsCookieHandler(ac, next)
 }
 
-func RailsRedisHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
+func RailsRedisHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
 	cookie := ac.Cookie
 
 	if len(cookie) == 0 {
@@ -59,32 +59,29 @@ func RailsRedisHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 		},
 	}
 
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) (context.Context, error) {
 		ck, err := r.Cookie(cookie)
 		if err != nil {
-			next.ServeHTTP(w, r)
-			return
+			return nil, err
 		}
 
 		key := fmt.Sprintf("session:%s", ck.Value)
 		sessionData, err := redis.Bytes(rp.Get().Do("GET", key))
 		if err != nil {
-			next.ServeHTTP(w, r)
-			return
+			return nil, err
 		}
 
 		userID, err := rails.ParseCookie(string(sessionData))
 		if err != nil {
-			next.ServeHTTP(w, r)
-			return
+			return nil, err
 		}
 
 		ctx := context.WithValue(r.Context(), core.UserIDKey, userID)
-		next.ServeHTTP(w, r.WithContext(ctx))
+		return ctx, nil
 	}, nil
 }
 
-func RailsMemcacheHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
+func RailsMemcacheHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
 	cookie := ac.Cookie
 
 	if len(cookie) == 0 {
@@ -102,32 +99,29 @@ func RailsMemcacheHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error)
 
 	mc := memcache.New(rURL.Host)
 
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) (context.Context, error) {
 		ck, err := r.Cookie(cookie)
 		if err != nil {
-			next.ServeHTTP(w, r)
-			return
+			return nil, err
 		}
 
 		key := fmt.Sprintf("session:%s", ck.Value)
 		item, err := mc.Get(key)
 		if err != nil {
-			next.ServeHTTP(w, r)
-			return
+			return nil, err
 		}
 
 		userID, err := rails.ParseCookie(string(item.Value))
 		if err != nil {
-			next.ServeHTTP(w, r)
-			return
+			return nil, err
 		}
 
 		ctx := context.WithValue(r.Context(), core.UserIDKey, userID)
-		next.ServeHTTP(w, r.WithContext(ctx))
+		return ctx, nil
 	}, nil
 }
 
-func RailsCookieHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
+func RailsCookieHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
 	cookie := ac.Cookie
 	if len(cookie) == 0 {
 		return nil, fmt.Errorf("no auth.cookie defined")
@@ -138,23 +132,20 @@ func RailsCookieHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 		return nil, err
 	}
 
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) (context.Context, error) {
 		ck, err := r.Cookie(cookie)
-		if err != nil || len(ck.Value) == 0 {
-			// logger.Warn().Err(err).Msg("rails cookie missing")
-			next.ServeHTTP(w, r)
-			return
+		if err != nil {
+			return nil, err
 		}
 
 		userID, err := ra.ParseCookie(ck.Value)
 		if err != nil {
-			// logger.Warn().Err(err).Msg("failed to parse rails cookie")
-			next.ServeHTTP(w, r)
-			return
+			return nil, err
 		}
 
 		ctx := context.WithValue(r.Context(), core.UserIDKey, userID)
-		next.ServeHTTP(w, r.WithContext(ctx))
+		return ctx, nil
+
 	}, nil
 }
 

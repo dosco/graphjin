@@ -38,7 +38,7 @@ func newKeychainCache(jwksURL string, refreshInterval, minRefreshInterval int) *
 func (k *keychainCache) getKey(kid string) (interface{}, error) {
 	set, err := k.keyCache.Fetch(context.TODO(), k.jwksURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch JWKS: %w", err)
+		return nil, fmt.Errorf("failed to fetch jwks: %w", err)
 	}
 	if key, found := set.LookupKeyID(kid); found {
 		var rawkey interface{}
@@ -61,14 +61,14 @@ func (k *keychainCache) getKey(kid string) (interface{}, error) {
 			defer atomic.StoreInt32(&k.semaphore, 0)
 			set, err = k.keyCache.Refresh(context.TODO(), k.jwksURL)
 			if err != nil {
-				return nil, fmt.Errorf("failed to refresh JWKS: %w", err)
+				return nil, fmt.Errorf("failed to refresh jwks: %w", err)
 			}
 			atomic.StoreInt64(&k.lastRefresh, now.Unix())
 		} else {
 			// retry to fetch
 			set, err = k.keyCache.Fetch(context.TODO(), k.jwksURL)
 			if err != nil {
-				return nil, fmt.Errorf("failed to fetch JWKS: %w", err)
+				return nil, fmt.Errorf("failed to fetch jwks: %w", err)
 			}
 		}
 		if key, found := set.LookupKeyID(kid); found {

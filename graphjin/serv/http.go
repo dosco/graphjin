@@ -48,7 +48,13 @@ type errorResp struct {
 }
 
 func apiV1Handler(s *Service) http.Handler {
-	h, err := auth.WithAuth(http.HandlerFunc(s.apiV1()), &s.conf.Auth)
+	var zlog *zap.Logger
+
+	if s.conf.Debug {
+		zlog = s.zlog
+	}
+
+	h, err := auth.WithAuth(http.HandlerFunc(s.apiV1()), &s.conf.Auth, zlog)
 	if err != nil {
 		s.log.Fatalf("Error initializing auth: %s", err)
 	}

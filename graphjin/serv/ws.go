@@ -61,6 +61,11 @@ func init() {
 func (s *Service) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 	var m *core.Member
 	var run bool
+	var zlog *zap.Logger
+
+	if s.conf.Debug {
+		zlog = s.zlog
+	}
 
 	ctx := r.Context()
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -103,7 +108,7 @@ func (s *Service) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 				err = conn.WritePreparedMessage(initMsg)
 			}
 
-			handler, _ := auth.WithAuth(http.HandlerFunc(hfn), &s.conf.Auth)
+			handler, _ := auth.WithAuth(http.HandlerFunc(hfn), &s.conf.Auth, zlog)
 
 			if err != nil {
 				break

@@ -15,6 +15,7 @@ import (
 	"github.com/NYTimes/gziphandler"
 	"github.com/dosco/graphjin/serv/internal/auth"
 	"go.opencensus.io/plugin/ochttp"
+	"go.uber.org/zap"
 )
 
 const (
@@ -212,7 +213,12 @@ func setServerHeader(h http.Handler) http.Handler {
 }
 
 func setActionRoutes(s *Service, routes map[string]http.Handler) error {
+	var zlog *zap.Logger
 	var err error
+
+	if s.conf.Debug {
+		zlog = s.zlog
+	}
 
 	for _, a := range s.conf.Actions {
 		var fn http.Handler
@@ -225,7 +231,7 @@ func setActionRoutes(s *Service, routes map[string]http.Handler) error {
 		p := fmt.Sprintf("/api/v1/actions/%s", strings.ToLower(a.Name))
 
 		if ac := findAuth(s, a.AuthName); ac != nil {
-			routes[p], err = auth.WithAuth(fn, ac)
+			routes[p], err = auth.WithAuth(fn, ac, zlog)
 		} else {
 			routes[p] = fn
 		}
