@@ -69,6 +69,9 @@ const (
 	// Name of the authentication provider. Eg. google, github, etc
 	UserIDProviderKey contextkey = iota
 
+	// The raw user id (jwt sub) value
+	UserIDRawKey
+
 	// User ID value for authenticated users
 	UserIDKey
 

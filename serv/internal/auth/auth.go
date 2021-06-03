@@ -2,10 +2,13 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/dosco/graphjin/core"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/dosco/graphjin/serv/internal/auth/provider"
 )
@@ -104,7 +107,9 @@ func SimpleHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 	}, nil
 }
 
-func HeaderHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
+var err401 = errors.New("401 unauthorized")
+
+func HeaderHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
 	hdr := ac.Header
 
 	if hdr.Name == "" {
@@ -115,7 +120,7 @@ func HeaderHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 		return nil, fmt.Errorf("auth '%s': no header.value defined", ac.Name)
 	}
 
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) (context.Context, error) {
 		var fo1 bool
 		value := r.Header.Get(hdr.Name)
 
@@ -128,15 +133,15 @@ func HeaderHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 		}
 
 		if fo1 {
-			http.Error(w, "401 unauthorized", http.StatusUnauthorized)
-			return
+			return nil, err401
 		}
-
-		next.ServeHTTP(w, r)
+		return nil, nil
 	}, nil
 }
 
-func WithAuth(next http.Handler, ac *Auth) (http.Handler, error) {
+type handlerFunc func(w http.ResponseWriter, r *http.Request) (context.Context, error)
+
+func WithAuth(next http.Handler, ac *Auth, log *zap.Logger) (http.Handler, error) {
 	var err error
 
 	if ac.CredsInHeader {
@@ -147,19 +152,41 @@ func WithAuth(next http.Handler, ac *Auth) (http.Handler, error) {
 		return nil, err
 	}
 
+	var h handlerFunc
+
 	switch ac.Type {
 	case "rails":
-		return RailsHandler(ac, next)
+		h, err = RailsHandler(ac, next)
 
 	case "jwt":
-		return JwtHandler(ac, next)
+		h, err = JwtHandler(ac, next)
 
 	case "header":
-		return HeaderHandler(ac, next)
+		h, err = HeaderHandler(ac, next)
 
 	}
 
-	return next, nil
+	if err != nil {
+		return nil, err
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, err := h(w, r)
+		if err == err401 {
+			http.Error(w, "401 unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		if err != nil && log != nil {
+			log.Error("Auth", []zapcore.Field{zap.String("type", ac.Type), zap.Error(err)}...)
+		}
+
+		if ctx != nil {
+			next.ServeHTTP(w, r.WithContext(ctx))
+		} else {
+			next.ServeHTTP(w, r)
+		}
+	}), nil
 }
 
 func IsAuth(ct context.Context) bool {
