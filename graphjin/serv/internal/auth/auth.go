@@ -164,6 +164,8 @@ func WithAuth(next http.Handler, ac *Auth, log *zap.Logger) (http.Handler, error
 	case "header":
 		h, err = HeaderHandler(ac, next)
 
+	default:
+		return next, nil
 	}
 
 	if err != nil {
