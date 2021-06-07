@@ -80,7 +80,10 @@ func (co *Compiler) compileArgNode(
 			continue
 		}
 
-		if ex.Right.ValType == ValVar && ex.Right.Val == "user_id" {
+		if ex.Right.ValType == ValVar &&
+			(ex.Right.Val == "user_id" ||
+				ex.Right.Val == "user_id_raw" ||
+				ex.Right.Val == "user_id_provider") {
 			needsUser = true
 		}
 

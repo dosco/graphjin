@@ -1179,7 +1179,7 @@ func (co *Compiler) compileArgWhere(ti sdata.DBTable, sel *Select, arg *graph.Ar
 	st := util.NewStackInf()
 	var err error
 
-	ex, nu, err := co.compileArgObj(sel.FieldName, ti, st, arg)
+	ex, nu, err := co.compileArgObj(sel.Table, ti, st, arg)
 	if err != nil {
 		return err
 	}
