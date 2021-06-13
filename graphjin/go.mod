@@ -32,6 +32,7 @@ require (
 	github.com/jackc/pgx/v4 v4.8.1
 	github.com/jvatic/goja-babel v0.0.0-20210512011721-9ad52e4ef752
 	github.com/lestrrat-go/jwx v1.1.3
+	github.com/magiclabs/magic-admin-go v0.1.0
 	github.com/magiconair/properties v1.8.5 // indirect
 	github.com/mitchellh/mapstructure v1.4.1
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
