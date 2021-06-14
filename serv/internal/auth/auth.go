@@ -5,18 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/dosco/graphjin/core"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
 	"github.com/dosco/graphjin/serv/internal/auth/provider"
-
-	"github.com/magiclabs/magic-admin-go/token"
-
-	"github.com/magiclabs/magic-admin-go"
-	"github.com/magiclabs/magic-admin-go/client"
 )
 
 type JWTConfig = provider.JWTConfig
@@ -91,7 +85,9 @@ type Auth struct {
 
 	// Magic.link authentication
 	MagicLink struct {
-		Secret string `mapstructure:"secret"`
+		Secret      string
+		Cookie      string
+		CookieHTTPS bool `mapstructure:"cookie_https"`
 	}
 }
 
@@ -115,62 +111,6 @@ func SimpleHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 		}
 
 		next.ServeHTTP(w, r.WithContext(ctx))
-	}, nil
-}
-
-const authBearer = "Bearer"
-
-func MagicLinkHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
-
-	return func(w http.ResponseWriter, r *http.Request) (context.Context, error) {
-		ctx := r.Context()
-		// FIXME, all errors should be returned as valid responses
-		// Currently will mix responses and say something like:
-		// 'Malformed DID token error: illegal base64 data at input byte 120{"data":{"users":null}}'
-
-		if !strings.HasPrefix(r.Header.Get("Authorization"), authBearer) {
-			fmt.Fprintf(w, "Bearer token is required")
-			return nil, fmt.Errorf("401 Bearer token is required")
-		}
-
-		did := r.Header.Get("Authorization")[len(authBearer)+1:]
-		if did == "" {
-			fmt.Fprintf(w, "DID token is required")
-			return nil, fmt.Errorf("401 Bearer token not a DID token")
-		}
-
-		tk, err := token.NewToken(did)
-		if err != nil {
-			fmt.Fprintf(w, "Malformed DID token error: %s", err.Error())
-			return nil, fmt.Errorf("Malformed DID token error: %s", err.Error())
-		}
-
-		if err := tk.Validate(); err != nil {
-			fmt.Fprintf(w, "DID token failed validation: %s", err.Error())
-			return nil, fmt.Errorf("DID token failed validation: %s", err.Error())
-		}
-
-		secret := ac.MagicLink.Secret
-		if secret == "" {
-			return nil, fmt.Errorf("Magic.link config secret is empty, we can't get metadata from user")
-		}
-
-		m := client.New(secret, magic.NewDefaultClient())
-		userInfo, err := m.User.GetMetadataByIssuer(tk.GetIssuer())
-		if err != nil {
-			return nil, fmt.Errorf("Magic.link error: %s", err.Error())
-		}
-
-		if userInfo.Issuer != tk.GetIssuer() {
-			return nil, fmt.Errorf("Unauthorized user login")
-		}
-
-		fmt.Printf("Lets seewhay er have : %#v\n", tk)
-		ctx = context.WithValue(ctx, core.UserIDKey, userInfo.Email)
-
-		next.ServeHTTP(w, r.WithContext(ctx))
-
-		return ctx, nil
 	}, nil
 }
 
@@ -239,18 +179,18 @@ func WithAuth(next http.Handler, ac *Auth, log *zap.Logger) (http.Handler, error
 	}
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %s", ac.Type, err.Error())
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, err := h(w, r)
+		if err != nil && log != nil {
+			log.Error("Auth", []zapcore.Field{zap.String("type", ac.Type), zap.Error(err)}...)
+		}
+
 		if err == err401 {
 			http.Error(w, "401 unauthorized", http.StatusUnauthorized)
 			return
-		}
-
-		if err != nil && log != nil {
-			log.Error("Auth", []zapcore.Field{zap.String("type", ac.Type), zap.Error(err)}...)
 		}
 
 		if ctx != nil {
