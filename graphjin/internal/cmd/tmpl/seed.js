@@ -2,7 +2,7 @@
 
 let users = [];
 
-for (i = 0; i < 10; i++) {
+for (let i = 0; i < 10; i++) {
   let data = {
     id: i,
     full_name: fake.name(),
