@@ -21,9 +21,18 @@ func MagicLinkHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
 		return nil, fmt.Errorf("magiclink config secret not set")
 	}
 
-	cookie := ac.MagicLink.Cookie
+	cookie := ac.Cookie
 	if cookie == "" {
 		return nil, fmt.Errorf("config cookie not set")
+	}
+
+	if ac.CookieExpiry == "" {
+		ac.CookieExpiry = "2h"
+	}
+
+	expiryMinutes, err := time.ParseDuration(ac.CookieExpiry)
+	if err != nil {
+		return nil, fmt.Errorf("config cookie expiry: %s", err.Error())
 	}
 
 	signingKey := []byte(ac.MagicLink.Secret)
@@ -78,7 +87,7 @@ func MagicLinkHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
 		// Create the Claims
 		claims := &jwt.StandardClaims{
 			Issuer:    "self",
-			ExpiresAt: 86400,
+			ExpiresAt: time.Now().Add(expiryMinutes).Unix(),
 			Subject:   userInfo.Email,
 		}
 
@@ -93,14 +102,13 @@ func MagicLinkHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
 			return nil, err
 		}
 
-		exp := time.Now().AddDate(0, 0, 1)
 		domain := webHost.Hostname()
 		ck := http.Cookie{
 			Name:     cookie,
 			Value:    signedJwtToken,
-			Expires:  exp,
+			Expires:  time.Now().Add(expiryMinutes),
 			HttpOnly: true,
-			Secure:   ac.MagicLink.CookieHTTPS,
+			Secure:   ac.CookieHTTPS,
 			Domain:   domain,
 			Path:     "/",
 		}

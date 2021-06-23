@@ -32,9 +32,7 @@ require (
 	github.com/jackc/pgx/v4 v4.8.1
 	github.com/jvatic/goja-babel v0.0.0-20210512011721-9ad52e4ef752
 	github.com/lestrrat-go/jwx v1.1.3
-	github.com/lib/pq v1.10.2 // indirect
 	github.com/magiclabs/magic-admin-go v0.1.0
-	github.com/magiconair/properties v1.8.5 // indirect
 	github.com/mitchellh/mapstructure v1.4.1
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/openzipkin/zipkin-go v0.2.4
@@ -45,21 +43,19 @@ require (
 	github.com/prometheus/statsd_exporter v0.18.0 // indirect
 	github.com/rs/cors v1.7.0
 	github.com/rs/xid v1.3.0
-	github.com/spf13/afero v1.6.0 // indirect
 	github.com/spf13/cobra v1.1.3
-	github.com/spf13/viper v1.7.1
+	github.com/spf13/viper v1.8.0
 	github.com/stretchr/testify v1.7.0
 	github.com/tj/assert v0.0.3
-	go.opencensus.io v0.22.5
-	go.uber.org/zap v1.16.0
+	go.opencensus.io v0.23.0
+	go.uber.org/zap v1.17.0
 	golang.org/x/crypto v0.0.0-20210322153248-0c34fe9e7dc2
-	golang.org/x/lint v0.0.0-20200302205851-738671d3881b
+	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616
 	golang.org/x/perf v0.0.0-20201207232921-bdcc6220ee90
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
-	golang.org/x/sys v0.0.0-20210507161434-a76c4d0a0096 // indirect
 	golang.org/x/text v0.3.6 // indirect
 	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba
-	golang.org/x/tools v0.1.0
+	golang.org/x/tools v0.1.2
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )
 

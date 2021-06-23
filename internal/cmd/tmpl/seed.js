@@ -15,7 +15,7 @@ for (let i = 0; i < 10; i++) {
 		users(insert: $data) {
 			id
 		}
-	}`
+	}`;
 
   let res = graphql(q, {
     data: data,
