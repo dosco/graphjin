@@ -56,7 +56,7 @@ build: $(BINARY)
 gen: download-tools
 	@go generate ./...
 
-$(BINARY): clean
+$(BINARY):
 	@go build $(BUILD_FLAGS) -o $(BINARY) main.go 
 
 clean:
