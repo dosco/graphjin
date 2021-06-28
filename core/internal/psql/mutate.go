@@ -377,7 +377,7 @@ func (c *compilerContext) renderCteName(m qcode.Mutate) {
 	if m.Multi {
 		c.renderCteNameWithID(m)
 	} else {
-		c.w.WriteString(m.Ti.Name)
+		c.quoted(m.Ti.Name)
 	}
 }
 
