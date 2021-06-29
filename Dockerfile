@@ -8,11 +8,10 @@ RUN yarn build
 
 
 # stage: 2
-FROM golang:1.16-alpine as go-build
-RUN apk update && \
-    apk add --no-cache make && \
-    apk add --no-cache git && \
-    apk add --no-cache jq
+FROM golang:1.16-buster as go-build
+RUN apt-get -y update
+RUN apt-get -y upgrade
+RUN apt-get -y install build-essential git-all jq 
 
 RUN GO111MODULE=off go get -u github.com/rafaelsq/wtc
 
