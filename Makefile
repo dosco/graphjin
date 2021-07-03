@@ -14,6 +14,8 @@ export GO111MODULE := on
 # Build-time Go variables
 BUILD_FLAGS ?= -ldflags '-s -w -X "github.com/dosco/graphjin/serv.version=${BUILD_VERSION}" -X "github.com/dosco/graphjin/serv.commit=${BUILD}" -X "github.com/dosco/graphjin/serv.date=${BUILD_DATE}"'
 
+BUILD_TAGS ?= -tags magiclink
+
 .PHONY: all download-tools build gen clean test run lint changlog release version help $(PLATFORMS)
 
 test:
@@ -45,7 +47,7 @@ os = $(word 1, $@)
 
 $(PLATFORMS): lint test 
 	@mkdir -p release
-	@GOOS=$(os) GOARCH=amd64 go build $(BUILD_FLAGS) -o release/$(BINARY)-$(BUILD_VERSION)-$(os)-amd64 main.go
+	@GOOS=$(os) GOARCH=amd64 go build $(BUILD_FLAGS) $(BUILD_TAGS) -o release/$(BINARY)-$(BUILD_VERSION)-$(os)-amd64 main.go
 
 release: windows linux darwin
 

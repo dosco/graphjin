@@ -38,6 +38,7 @@ FROM alpine:latest
 WORKDIR /
 
 RUN apk add --no-cache tzdata
+RUN apk add --no-cache libc6-compat
 RUN mkdir -p /config
 
 COPY --from=go-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
