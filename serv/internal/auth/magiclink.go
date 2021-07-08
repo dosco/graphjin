@@ -51,7 +51,6 @@ func MagicLinkHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
 			}
 
 			ctx = context.WithValue(ctx, core.UserIDKey, claims["sub"])
-			next.ServeHTTP(w, r.WithContext(ctx))
 			return ctx, nil
 		}
 
