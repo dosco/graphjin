@@ -179,8 +179,8 @@ func WithAuth(next http.Handler, ac *Auth, log *zap.Logger) (http.Handler, error
 	case "header":
 		h, err = HeaderHandler(ac, next)
 
-	// case "magiclink":
-	// 	h, err = MagicLinkHandler(ac, next)
+	case "magiclink":
+		h, err = MagicLinkHandler(ac, next)
 
 	default:
 		return next, nil

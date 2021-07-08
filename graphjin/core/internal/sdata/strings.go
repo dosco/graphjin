@@ -7,28 +7,23 @@ func (ti *DBTable) String() string {
 }
 
 func (col DBColumn) String() string {
+	colName := col.Name
+	if col.Array {
+		colName += "[]"
+	}
+
 	if col.FKeyCol != "" {
 		return fmt.Sprintf("%s.%s.%s -FK-> %s.%s.%s",
-			col.Schema, col.Table, col.Name, col.FKeySchema, col.FKeyTable, col.FKeyCol)
+			col.Schema, col.Table, colName, col.FKeySchema, col.FKeyTable, col.FKeyCol)
 	} else {
-		return fmt.Sprintf("%s.%s.%s", col.Schema, col.Table, col.Name)
+		return fmt.Sprintf("%s.%s.%s", col.Schema, col.Table, colName)
 	}
 }
 
 func (re *DBRel) String() string {
-	lc := re.Left.Col.String()
-	if re.Left.Col.Array {
-		lc += "[]"
-	}
-
-	rc := re.Right.Col.String()
-	if re.Right.Col.Array {
-		lc += "[]"
-	}
-
 	return fmt.Sprintf("'%s' --(%s)--> '%s'",
-		lc,
+		re.Left.Col.String(),
 		re.Type,
-		rc)
+		re.Right.Col.String())
 
 }

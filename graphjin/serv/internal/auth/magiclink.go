@@ -1,5 +1,3 @@
-// +build magiclink
-
 package auth
 
 import (

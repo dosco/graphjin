@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NYTimes/gziphandler"
 	"github.com/dosco/graphjin/serv/internal/auth"
+	"github.com/klauspost/compress/gzhttp"
 	"go.opencensus.io/plugin/ochttp"
 	"go.uber.org/zap"
 )
@@ -184,7 +184,11 @@ func routeHandler(s *Service, mux *http.ServeMux) (http.Handler, error) {
 	}
 
 	if s.conf.HTTPGZip {
-		gz := gziphandler.MustNewGzipLevelHandler(6)
+		gz, err := gzhttp.NewWrapper(gzhttp.MinSize(2000), gzhttp.CompressionLevel(6))
+		if err != nil {
+			return nil, err
+		}
+
 		for k, v := range routes {
 			routes[k] = gz(v)
 		}
