@@ -31,6 +31,7 @@ require (
 	github.com/jackc/pgproto3/v2 v2.0.4 // indirect
 	github.com/jackc/pgx/v4 v4.8.1
 	github.com/jvatic/goja-babel v0.0.0-20210512011721-9ad52e4ef752
+	github.com/klauspost/compress v1.13.1 // indirect
 	github.com/lestrrat-go/jwx v1.1.3
 	github.com/magiclabs/magic-admin-go v0.1.0
 	github.com/mitchellh/mapstructure v1.4.1
@@ -43,8 +44,8 @@ require (
 	github.com/prometheus/statsd_exporter v0.18.0 // indirect
 	github.com/rs/cors v1.7.0
 	github.com/rs/xid v1.3.0
-	github.com/spf13/cobra v1.1.3
-	github.com/spf13/viper v1.8.0
+	github.com/spf13/cobra v1.2.1
+	github.com/spf13/viper v1.8.1
 	github.com/stretchr/testify v1.7.0
 	github.com/tj/assert v0.0.3
 	go.opencensus.io v0.23.0
@@ -53,6 +54,7 @@ require (
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616
 	golang.org/x/perf v0.0.0-20201207232921-bdcc6220ee90
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
+	golang.org/x/sys v0.0.0-20210630005230-0f9fa26af87c // indirect
 	golang.org/x/text v0.3.6 // indirect
 	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba
 	golang.org/x/tools v0.1.2
