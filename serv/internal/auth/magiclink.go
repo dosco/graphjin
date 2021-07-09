@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -15,7 +16,7 @@ import (
 	"github.com/magiclabs/magic-admin-go/token"
 )
 
-func MagicLinkHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
+func MagicLinkHandler(ac *Auth, next http.Handler, db *sql.DB) (handlerFunc, error) {
 	secret := ac.MagicLink.Secret
 	if secret == "" {
 		return nil, fmt.Errorf("magiclink config secret not set")
@@ -94,6 +95,27 @@ func MagicLinkHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
 		signedJwtToken, err := token.SignedString(signingKey)
 		if err != nil {
 			return nil, err
+		}
+
+		if ac.MagicLink.AutoUpsertUser != "" {
+			// 1. replace $user_id with $1
+			//if !strings.Contains(ac.MagicLink.AutoUpsertUser, "$user_id") {
+			//	return nil, fmt.Errorf("auto_upsert_user: $user_id variable missing")
+			//}
+
+			// 2, get a database connection (or better, reuse one we have since the DB has limited connections)
+			conn, err := db.Conn(ctx)
+			if err != nil {
+				return nil, err
+			}
+			defer conn.Close()
+
+			// 3. execute the  INSERT INTO...IN CONFLICT DO NOTHING
+			_, err = conn.ExecContext(ctx, ac.MagicLink.AutoUpsertUser, userInfo.Email)
+			if err != nil {
+				return nil, err
+			}
+
 		}
 
 		webHost, err := url.Parse(r.Host)
