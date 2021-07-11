@@ -6,6 +6,7 @@ import (
 
 type Edge struct {
 	ID, Weight int32
+	Name       string
 }
 
 type Graph struct {
@@ -24,7 +25,7 @@ func (g *Graph) AddNode() int32 {
 	return id
 }
 
-func (g *Graph) AddEdge(from, to, weight int32) (int32, error) {
+func (g *Graph) AddEdge(from, to, weight int32, name string) (int32, error) {
 	nl := int32(len(g.graph))
 	if from >= nl {
 		return -1, fmt.Errorf("from node %d does not exist", from)
@@ -39,7 +40,7 @@ func (g *Graph) AddEdge(from, to, weight int32) (int32, error) {
 
 	e := [2]int32{from, to}
 	_, edgeExists := g.edges[e]
-	g.edges[e] = append(g.edges[e], Edge{ID: id, Weight: weight})
+	g.edges[e] = append(g.edges[e], Edge{ID: id, Weight: weight, Name: name})
 
 	if !edgeExists {
 		g.graph[from] = append(g.graph[from], to)

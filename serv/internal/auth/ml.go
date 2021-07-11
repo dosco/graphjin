@@ -1,3 +1,5 @@
+// +build magiclink
+
 package auth
 
 import (
@@ -139,7 +141,6 @@ func MagicLinkHandler(ac *Auth, next http.Handler, db *sql.DB) (handlerFunc, err
 		http.SetCookie(w, &ck)
 
 		ctx = context.WithValue(ctx, core.UserIDKey, userInfo.Email)
-		next.ServeHTTP(w, r.WithContext(ctx))
 		return ctx, nil
 	}, nil
 }
