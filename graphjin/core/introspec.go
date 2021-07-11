@@ -288,12 +288,16 @@ func (in *intro) addTable(name string, ti sdata.DBTable, singular bool) error {
 	}
 
 	for k, t := range relTables1 {
+		k1 := t.Name + "Output"
+		if _, ok := in.Types[k1]; !ok {
+			continue
+		}
 		if t.Blocked {
 			continue
 		}
 		ot.Fields = append(ot.Fields, &schema.Field{
 			Name: k,
-			Type: &schema.TypeName{Name: t.Name + "Output"},
+			Type: &schema.TypeName{Name: k1},
 		})
 	}
 
@@ -303,12 +307,16 @@ func (in *intro) addTable(name string, ti sdata.DBTable, singular bool) error {
 	}
 
 	for k, t := range relTables2 {
+		k1 := t.Name + "Output"
+		if _, ok := in.Types[k1]; !ok {
+			continue
+		}
 		if t.Blocked {
 			continue
 		}
 		ot.Fields = append(ot.Fields, &schema.Field{
 			Name: k,
-			Type: &schema.TypeName{Name: t.Name + "Output"},
+			Type: &schema.TypeName{Name: k1},
 		})
 	}
 

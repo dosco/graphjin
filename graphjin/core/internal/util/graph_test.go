@@ -19,21 +19,21 @@ func TestGraph(t *testing.T) {
 	f := g.AddNode() // 5
 	h := g.AddNode() // 6
 
-	g.AddEdge(a, b, 1)
-	g.AddEdge(b, a, 2)
-	g.AddEdge(a, c, 1)
-	g.AddEdge(d, c, 4)
-	g.AddEdge(c, b, 1)
+	g.AddEdge(a, b, 1, "test")
+	g.AddEdge(b, a, 2, "test")
+	g.AddEdge(a, c, 1, "test")
+	g.AddEdge(d, c, 4, "test")
+	g.AddEdge(c, b, 1, "test")
 
-	g.AddEdge(h, f, 1)
-	g.AddEdge(f, e, 1)
-	g.AddEdge(e, d, 1)
-	g.AddEdge(h, d, 1)
-	g.AddEdge(h, b, 1)
-	g.AddEdge(c, a, 3)
-	g.AddEdge(a, d, 1)
-	g.AddEdge(d, c, 1)
-	g.AddEdge(b, b, 2)
+	g.AddEdge(h, f, 1, "test")
+	g.AddEdge(f, e, 1, "test")
+	g.AddEdge(e, d, 1, "test")
+	g.AddEdge(h, d, 1, "test")
+	g.AddEdge(h, b, 1, "test")
+	g.AddEdge(c, a, 3, "test")
+	g.AddEdge(a, d, 1, "test")
+	g.AddEdge(d, c, 1, "test")
+	g.AddEdge(b, b, 2, "test")
 
 	paths := g.AllPaths(h, a)
 	assert.ElementsMatch(t, paths, [][]int32{
@@ -53,5 +53,5 @@ func TestGraph(t *testing.T) {
 	})
 
 	edges := g.GetEdges(b, b)
-	assert.ElementsMatch(t, edges, []util.Edge{{13, 2}})
+	assert.ElementsMatch(t, edges, []util.Edge{{13, 2, "test"}})
 }

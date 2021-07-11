@@ -599,7 +599,7 @@ func (p *Parser) parseDirective(dirs []Directive) ([]Directive, error) {
 	var d Directive
 
 	if p.peek(itemName) {
-		d.Name = p.vall(p.next())
+		d.Name = p.val(p.next())
 	} else {
 		return nil, fmt.Errorf("expecting directive name after @ symbol got: %s", p.peekNext())
 	}
