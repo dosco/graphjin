@@ -483,10 +483,8 @@ func (co *Compiler) addRelInfo(
 
 	if sel.Rel.Type == sdata.RelSkip {
 		sel.Rel.Type = sdata.RelNone
-		return nil
-	}
 
-	if sel.ParentID != -1 {
+	} else if sel.ParentID != -1 {
 		if co.c.EnableCamelcase {
 			parentF.Name = util.ToSnake(parentF.Name)
 		}
@@ -508,7 +506,9 @@ func (co *Compiler) addRelInfo(
 		}
 	}
 
-	if sel.ParentID == -1 || sel.Rel.Type == sdata.RelPolymorphic {
+	if sel.ParentID == -1 ||
+		sel.Rel.Type == sdata.RelPolymorphic ||
+		sel.Rel.Type == sdata.RelNone {
 		schema := co.c.DBSchema
 		if sel.Ti, err = co.s.Find(schema, field.Name); err != nil {
 			return err
@@ -1085,15 +1085,18 @@ func (co *Compiler) compileDirectiveNotRelated(sel *Select, d *graph.Directive) 
 }
 
 func (co *Compiler) compileDirectiveThrough(sel *Select, d *graph.Directive) error {
-	if len(d.Args) == 0 || d.Args[0].Name != "table" {
-		return fmt.Errorf("@through: required argument 'table' missing")
+	if len(d.Args) == 0 {
+		return fmt.Errorf("@through: required argument 'table' or 'column'")
 	}
 	arg := d.Args[0]
 
-	if arg.Val.Type != graph.NodeStr {
-		return argErr("table", "string")
+	if arg.Name == "table" || arg.Name == "column" {
+		if arg.Val.Type != graph.NodeStr {
+			return argErr(arg.Name, "string")
+		}
+		sel.through = arg.Val.Val
 	}
-	sel.through = arg.Val.Val
+
 	return nil
 }
 
@@ -1177,8 +1180,6 @@ func (co *Compiler) compileArgSearch(sel *Select, arg *graph.Arg) error {
 
 func (co *Compiler) compileArgWhere(ti sdata.DBTable, sel *Select, arg *graph.Arg, role string) error {
 	st := util.NewStackInf()
-	var err error
-
 	ex, nu, err := co.compileArgObj(sel.Table, ti, st, arg)
 	if err != nil {
 		return err
