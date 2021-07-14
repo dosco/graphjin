@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -95,7 +96,8 @@ type Auth struct {
 
 	// Magic.link authentication
 	MagicLink struct {
-		Secret string
+		Secret         string
+		AutoUpsertUser string
 	}
 }
 
@@ -156,7 +158,7 @@ func HeaderHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
 
 type handlerFunc func(w http.ResponseWriter, r *http.Request) (context.Context, error)
 
-func WithAuth(next http.Handler, ac *Auth, log *zap.Logger) (http.Handler, error) {
+func WithAuth(next http.Handler, ac *Auth, log *zap.Logger, db *sql.DB) (http.Handler, error) {
 	var err error
 
 	if ac.CredsInHeader {
@@ -180,7 +182,7 @@ func WithAuth(next http.Handler, ac *Auth, log *zap.Logger) (http.Handler, error
 		h, err = HeaderHandler(ac, next)
 
 	case "magiclink":
-		h, err = MagicLinkHandler(ac, next)
+		h, err = MagicLinkHandler(ac, next, db)
 
 	default:
 		return next, nil

@@ -235,7 +235,7 @@ func setActionRoutes(s *Service, routes map[string]http.Handler) error {
 		p := fmt.Sprintf("/api/v1/actions/%s", strings.ToLower(a.Name))
 
 		if ac := findAuth(s, a.AuthName); ac != nil {
-			routes[p], err = auth.WithAuth(fn, ac, zlog)
+			routes[p], err = auth.WithAuth(fn, ac, zlog, s.db)
 		} else {
 			routes[p] = fn
 		}

@@ -54,7 +54,7 @@ func apiV1Handler(s *Service) http.Handler {
 		zlog = s.zlog
 	}
 
-	h, err := auth.WithAuth(http.HandlerFunc(s.apiV1()), &s.conf.Auth, zlog)
+	h, err := auth.WithAuth(http.HandlerFunc(s.apiV1()), &s.conf.Auth, zlog, s.db)
 	if err != nil {
 		s.log.Fatalf("Error initializing auth: %s", err)
 	}
