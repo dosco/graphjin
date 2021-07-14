@@ -131,7 +131,11 @@ func (ast *aexpst) parseNode(av aexp) (*Exp, error) {
 	switch name {
 	case "and":
 		if len(node.Children) == 0 {
-			return nil, errors.New("missing expression after 'AND' operator")
+			return nil, errors.New("missing expression after 'and' operator")
+		}
+		if len(node.Children) == 1 {
+			return nil, fmt.Errorf("expression does not need an 'and' operator: %s",
+				ast.ti.Name)
 		}
 		ex.Op = OpAnd
 		ast.pushChildren(ex, node)
@@ -139,11 +143,15 @@ func (ast *aexpst) parseNode(av aexp) (*Exp, error) {
 		if len(node.Children) == 0 {
 			return nil, errors.New("missing expression after 'OR' operator")
 		}
+		if len(node.Children) == 1 {
+			return nil, fmt.Errorf("expression does not need an 'or' operator: %s",
+				ast.ti.Name)
+		}
 		ex.Op = OpOr
 		ast.pushChildren(ex, node)
 	case "not":
 		if len(node.Children) == 0 {
-			return nil, errors.New("missing expression after 'NOT' operator")
+			return nil, errors.New("missing expression after 'not' operator")
 		}
 		ex.Op = OpNot
 		ast.pushChildren(ex, node)
