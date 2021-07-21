@@ -569,6 +569,9 @@ func (c *compilerContext) renderOrderBy(sel *qcode.Select) {
 		return
 	}
 	c.w.WriteString(` ORDER BY `)
+
+	// Add extra logic if order by contains a exp
+
 	for i, col := range sel.OrderBy {
 		if i != 0 {
 			c.w.WriteString(`, `)

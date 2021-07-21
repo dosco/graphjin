@@ -8,7 +8,7 @@ require (
 	contrib.go.opencensus.io/exporter/stackdriver v0.13.4
 	contrib.go.opencensus.io/exporter/zipkin v0.1.2
 	contrib.go.opencensus.io/integrations/ocsql v0.1.7
-	github.com/NYTimes/gziphandler v1.1.1
+	github.com/NYTimes/gziphandler v1.1.1 // indirect
 	github.com/adjust/gorails v0.0.0-20171013043634-2786ed0c03d3
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
 	github.com/brianvoe/gofakeit/v6 v6.0.0
@@ -31,7 +31,7 @@ require (
 	github.com/jackc/pgproto3/v2 v2.0.4 // indirect
 	github.com/jackc/pgx/v4 v4.8.1
 	github.com/jvatic/goja-babel v0.0.0-20210512011721-9ad52e4ef752
-	github.com/klauspost/compress v1.13.1 // indirect
+	github.com/klauspost/compress v1.13.1
 	github.com/lestrrat-go/jwx v1.1.3
 	github.com/magiclabs/magic-admin-go v0.1.0
 	github.com/mitchellh/mapstructure v1.4.1

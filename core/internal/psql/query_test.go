@@ -59,6 +59,29 @@ func withComplexArgs(t *testing.T) {
 	compileGQLToPSQL(t, gql, nil, "user")
 }
 
+func withNestedOrderBy(t *testing.T) {
+	gql := `query { 
+		products(
+			# returns only 30 items
+			limit: 30,
+
+			# starts from item 10, commented out for now
+			# offset: 10,
+
+			# orders the response items by highest price
+			order_by: { customers: {email : desc}},
+		) {
+			id 
+			name
+			customers {
+				email
+			}
+		}
+	}`
+
+	compileGQLToPSQL(t, gql, nil, "user")
+}
+
 func withWhereIn(t *testing.T) {
 	gql := `query {
 		products(where: { id: { in: $list } }) {
@@ -651,6 +674,7 @@ func TestCompileQuery(t *testing.T) {
 	t.Run("simpleQuery", simpleQuery)
 	t.Run("withVariableLimit", withVariableLimit)
 	t.Run("withComplexArgs", withComplexArgs)
+	t.Run("withNestedOrderBy", withNestedOrderBy)
 	t.Run("withWhereIn", withWhereIn)
 	t.Run("withWhereAndList", withWhereAndList)
 	t.Run("withWhereIsNull", withWhereIsNull)

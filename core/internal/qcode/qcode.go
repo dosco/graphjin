@@ -73,30 +73,31 @@ type QCode struct {
 }
 
 type Select struct {
-	ID         int32
-	ParentID   int32
-	Type       SelType
-	Singular   bool
-	Typename   bool
-	Table      string
-	FieldName  string
-	Cols       []Column
-	BCols      []Column
-	Args       map[string]Arg
-	Funcs      []Function
-	Where      Filter
-	OrderBy    []OrderBy
-	GroupCols  bool
-	DistinctOn []sdata.DBColumn
-	Paging     Paging
-	Children   []int32
-	SkipRender SkipType
-	Ti         sdata.DBTable
-	Rel        sdata.DBRel
-	Joins      []Join
-	order      Order
-	through    string
-	tc         TConfig
+	ID          int32
+	ParentID    int32
+	Type        SelType
+	Singular    bool
+	Typename    bool
+	Table       string
+	FieldName   string
+	Cols        []Column
+	BCols       []Column
+	Args        map[string]Arg
+	Funcs       []Function
+	Where       Filter
+	OrderByTest Filter
+	OrderBy     []OrderBy
+	GroupCols   bool
+	DistinctOn  []sdata.DBColumn
+	Paging      Paging
+	Children    []int32
+	SkipRender  SkipType
+	Ti          sdata.DBTable
+	Rel         sdata.DBRel
+	Joins       []Join
+	order       Order
+	through     string
+	tc          TConfig
 }
 
 type TableInfo struct {
@@ -227,6 +228,7 @@ const (
 	ValBool
 	ValList
 	ValVar
+	ValOrder
 	ValNone
 )
 
@@ -1211,6 +1213,13 @@ func (co *Compiler) compileArgOrderBy(qc *QCode, sel *Select, arg *graph.Arg) er
 
 	switch node.Type {
 	case graph.NodeObj:
+		ex, err := co.compileArgOrderByObjTest(sel, node, cm)
+		if err != nil {
+			return err
+		}
+		setFilter(&sel.OrderByTest, ex)
+
+		fmt.Println(ex)
 		return co.compileArgOrderByObj(sel, node, cm)
 
 	case graph.NodeVar:
@@ -1218,6 +1227,80 @@ func (co *Compiler) compileArgOrderBy(qc *QCode, sel *Select, arg *graph.Arg) er
 	}
 
 	return nil
+}
+
+func (co *Compiler) compileArgOrderByObjTest(sel *Select, node *graph.Node, cm map[string]struct{}) (*Exp, error) {
+	var err error
+	var ex *Exp
+	st := util.NewStackInf()
+
+	for i := range node.Children {
+		st.Push(node.Children[i])
+	}
+
+	// obList := make([]OrderBy, 0, 4)
+
+	ast := &aexpst{co: co,
+		st:   st,
+		ti:   sel.Ti,
+		edge: sel.Ti.Name,
+	}
+	ast.pushChildren(nil, node)
+
+	for {
+		if st.Len() == 0 {
+			break
+		}
+
+		intf := st.Pop()
+		av, ok := intf.(aexp)
+		if !ok {
+			return nil, fmt.Errorf("17: unexpected value %v (%t)", intf, intf)
+		}
+
+		// Objects inside a list
+		if av.node.Name == "" {
+			ast.pushChildren(av.exp, av.node)
+			continue
+		}
+
+		// if node.Type != graph.NodeStr && node.Type != graph.NodeObj {
+		// 	return nil, fmt.Errorf("expecting a string or object")
+		// }
+
+		if av.node.Type != graph.NodeObj {
+			ob := OrderBy{}
+			if ob.Order, err = toOrder(node.Val); err != nil { // sets the asc desc etc
+				return nil, err
+			}
+
+			// Configure query
+			// node.Name
+
+		}
+
+		ex, err = ast.parseNode(av)
+		if err != nil {
+			return nil, err
+		}
+
+		if ex == nil {
+			continue
+		}
+
+		// if err := setOrderByColName(sel.Ti, &ob, node); err != nil {
+		// 	return nil, err
+		// }
+		// if _, ok := cm[ob.Col.Name]; ok {
+		// 	return nil, fmt.Errorf("duplicate column in order by: %s", ob.Col.Name)
+		// }
+		// obList = append(obList, ob)
+	}
+
+	// for i := len(obList) - 1; i >= 0; i-- {
+	// 	sel.OrderBy = append(sel.OrderBy, obList[i])
+	// }
+	return ex, err
 }
 
 func (co *Compiler) compileArgOrderByObj(sel *Select, node *graph.Node, cm map[string]struct{}) error {
@@ -1242,12 +1325,12 @@ func (co *Compiler) compileArgOrderByObj(sel *Select, node *graph.Node, cm map[s
 			return fmt.Errorf("17: unexpected value %v (%t)", intf, intf)
 		}
 
-		if node.Type != graph.NodeStr {
-			return fmt.Errorf("expecting a string")
+		if node.Type != graph.NodeStr && node.Type != graph.NodeObj {
+			return fmt.Errorf("expecting a string or object")
 		}
 
 		ob := OrderBy{}
-		if ob.Order, err = toOrder(node.Val); err != nil {
+		if ob.Order, err = toOrder(node.Val); err != nil { // sets the asc desc etc
 			return err
 		}
 

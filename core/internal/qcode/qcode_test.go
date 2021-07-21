@@ -3,6 +3,7 @@ package qcode_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/dosco/graphjin/core/internal/qcode"
@@ -32,13 +33,16 @@ func TestCompile1(t *testing.T) {
 	}
 
 	_, err = qc.Compile([]byte(`
-	query { products(id: 15) {
+	query { products(
+		where: { customer: { email: { eq: "http" }}}
+		order_by: { customer: { email: desc }}
+		) {
 			id
 			name
 		} }`), nil, "user")
 
 	if err != nil {
-		t.Fatal(errors.New("this should not be an error id can be a number"))
+		t.Fatal(errors.New(fmt.Sprintf("This should note be an error id can be a number, %s", err)))
 	}
 }
 

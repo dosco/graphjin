@@ -141,7 +141,8 @@ func _() {
 	_ = x[ValBool-3]
 	_ = x[ValList-4]
 	_ = x[ValVar-5]
-	_ = x[ValNone-6]
+	_ = x[ValOrder-6]
+	_ = x[ValNone-7]
 }
 
 const _ValType_name = "ValStrValNumValBoolValListValVarValNone"
