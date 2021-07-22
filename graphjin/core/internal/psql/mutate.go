@@ -184,7 +184,7 @@ func (c *compilerContext) renderUpsert() {
 
 	i := 0
 	for _, col := range m.Cols {
-		if !col.Col.UniqueKey || !col.Col.PrimaryKey {
+		if !col.Col.UniqueKey && !col.Col.PrimaryKey {
 			continue
 		}
 		if i != 0 {
