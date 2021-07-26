@@ -19,6 +19,22 @@ func simpleQuery(t *testing.T) {
 	compileGQLToPSQL(t, gql, nil, "user")
 }
 
+func withNestedOrderBy(t *testing.T) {
+	gql := `query {
+		products(
+			where: { and: {customer: { email: { eq: "http" }}, not: { customer: email: { eq: ".com"}  } }}
+			order_by: { customer: { email: desc }}
+		) {
+			id
+			user {
+				id
+			}
+		}
+	}`
+
+	compileGQLToPSQL(t, gql, nil, "user")
+}
+
 func withVariableLimit(t *testing.T) {
 	gql := `query {
 		products(limit: $limit) {
@@ -53,29 +69,6 @@ func withComplexArgs(t *testing.T) {
 			id
 			name
 			price
-		}
-	}`
-
-	compileGQLToPSQL(t, gql, nil, "user")
-}
-
-func withNestedOrderBy(t *testing.T) {
-	gql := `query { 
-		products(
-			# returns only 30 items
-			limit: 30,
-
-			# starts from item 10, commented out for now
-			# offset: 10,
-
-			# orders the response items by highest price
-			order_by: { customers: {email : desc}},
-		) {
-			id 
-			name
-			customers {
-				email
-			}
 		}
 	}`
 

@@ -85,7 +85,11 @@ func (c *expContext) render(ex *qcode.Exp) {
 
 			default:
 				if !c.skipNested && len(val.Joins) != 0 {
-					c.renderNestedExp(val)
+					if !val.OrderBy {
+						c.renderNestedExp(val)
+					} else {
+						c.renderNestedOrderBy(val)
+					}
 				} else {
 					c.renderOp(val)
 				}
@@ -113,6 +117,24 @@ func (c *expContext) renderNestedExp(ex *qcode.Exp) {
 
 	c.renderExp(firstJoin.Rel.Left.Ti, firstJoin.Filter, false)
 	c.w.WriteString(`))`)
+}
+
+func (c *expContext) renderNestedOrderBy(ex *qcode.Exp) {
+	firstJoin := ex.Joins[0]
+	c.w.WriteString(`(SELECT MIN(`)
+	c.w.WriteString(ex.Left.Col.Name)
+	c.w.WriteString(`) FROM `)
+	c.w.WriteString(firstJoin.Rel.Left.Col.Table)
+
+	if len(ex.Joins) > 1 {
+		for _, rel := range ex.Joins[1:(len(ex.Joins) - 1)] {
+			c.renderJoin(rel)
+		}
+	}
+
+	c.w.WriteString(` WHERE `)
+	c.renderExp(firstJoin.Rel.Left.Ti, firstJoin.Filter, false)
+	c.w.WriteString(`)`)
 }
 
 func (c *expContext) renderOp(ex *qcode.Exp) {
