@@ -238,9 +238,9 @@ func (s *DBSchema) FindPath(from, to, through string) ([]TPath, error) {
 		return nil, ErrPathNotFound
 	}
 
-	fmt.Printf("> %s (%d) -> %s (%d)\n",
-		from, res.from.nodeID,
-		to, res.to.nodeID)
+	// fmt.Printf("> %s (%d) -> %s (%d)\n",
+	// 	from, res.from.nodeID,
+	// 	to, res.to.nodeID)
 
 	path := []TPath{}
 	for _, eid := range res.edges {
