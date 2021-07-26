@@ -115,7 +115,7 @@ func Example_queryWithDynamicOrderBy() {
 }
 func Example_queryWithNestedOrderBy() {
 	gql := `query getProducts {
-		products(order_by: { users: { email: desc }, users: { id: desc }, id: desc}, where: { id: { lt: 6 } }, limit: 5) {
+		products(order_by: { customer: { email: desc }, id: desc}, where: { id: { lt: 6 } }, limit: 5) {
 			id
 			price
 		}
@@ -136,7 +136,7 @@ func Example_queryWithNestedOrderBy() {
 	if err != nil {
 		fmt.Println(err1)
 	} else {
-		fmt.Println("res1 data", string(res1.Data))
+		fmt.Println(string(res1.Data))
 	}
 
 	// Output:

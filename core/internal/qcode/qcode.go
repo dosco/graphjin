@@ -1258,8 +1258,8 @@ func (co *Compiler) compileArgOrderByObj(sel *Select, node *graph.Node, cm map[s
 			return fmt.Errorf("17: unexpected value %v (%t)", intf, intf)
 		}
 
-		// Objects inside a list -- there are still childeren
-		if av.node.Val == "" {
+		// If val is empty try nested order by
+		if av.node.Val == "" && node.Type == graph.NodeObj {
 			nested = true
 			ast.pushChildren(av.exp, av.node)
 			continue
