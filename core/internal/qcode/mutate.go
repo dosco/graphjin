@@ -257,6 +257,11 @@ func (co *Compiler) newMutate(ms *mState, m Mutate, role string) error {
 			rel := sdata.PathToRel(paths[0])
 			ti := rel.Left.Ti
 
+			if rel.Type != sdata.RelRecursive &&
+				ms.id == 1 && ti.Name == ms.qc.Selects[0].Ti.Name {
+				return fmt.Errorf("remove json root '%s' from '%s' data", k, ms.qc.SType)
+			}
+
 			m1 = Mutate{
 				ID:       ms.id,
 				ParentID: m.ID,
