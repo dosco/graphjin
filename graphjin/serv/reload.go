@@ -83,7 +83,7 @@ func do(s *Service, log func(string, ...interface{}), additional ...dir) error {
 				// Ensure that we use the correct events, as they are not uniform across
 				// platforms. See https://github.com/fsnotify/fsnotify/issues/74
 
-				if s.conf == nil {
+				if !s.started || s.conf == nil {
 					continue
 				}
 
@@ -96,7 +96,7 @@ func do(s *Service, log func(string, ...interface{}), additional ...dir) error {
 					continue
 				}
 
-				log("INF Reloading, config file changed: %s", event.Name)
+				log("INF reloading, config file changed: %s", event.Name)
 
 				var trigger bool
 				switch runtime.GOOS {
@@ -135,7 +135,6 @@ func do(s *Service, log func(string, ...interface{}), additional ...dir) error {
 		}
 	}
 
-	log("Config changed restarting")
 	<-done
 	return nil
 }

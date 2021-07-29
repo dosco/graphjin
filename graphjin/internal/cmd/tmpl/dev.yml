@@ -85,6 +85,11 @@ default_limit: 20
 # Note: This will not work with subscriptions
 set_user_id: false
 
+# DefaultBlock ensures that in anonymous mode (role 'anon') all tables
+# are blocked from queries and mutations. To open access to tables in
+# anonymous mode they have to be added to the 'anon' role config.
+default_block: false
+
 # open opencensus tracing and metrics
 # telemetry:
 #   debug: true
