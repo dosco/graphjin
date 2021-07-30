@@ -90,7 +90,11 @@ set_user_id: false
 # anonymous mode they have to be added to the 'anon' role config.
 default_block: false
 
-# open opencensus tracing and metrics
+# OpenCensus tracing and metrics: when debug is enabled you will get
+# a debug web ui. More info at https://opencensus.io/zpages/go/ 
+# Rpc Stats: http://<host>/telemetry/rpcz 
+# Trace Spans: http://<host>/telemetry/tracez
+#
 # telemetry:
 #   debug: true
 #   metrics:
