@@ -117,7 +117,7 @@ func (s *Service) initTelemetry(driverName string) (string, error) {
 	}
 	ocsql.RegisterAllViews()
 
-	s.log.Infof("OpenCensus telemetry enabled")
+	s.log.Infof("open-census telemetry enabled")
 	return driverName, nil
 }
 
