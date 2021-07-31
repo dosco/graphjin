@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	maxSelectors = 30
+	maxSelectors = 100
 )
 
 type QType int8
