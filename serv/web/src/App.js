@@ -7,7 +7,7 @@ import GitHubButton from "react-github-btn";
 
 import "graphiql/graphiql.min.css";
 
-const url = `{window.location.protocol}//${window.location.host}/api/v1/graphql`;
+const url = `${window.location.protocol}//${window.location.host}/api/v1/graphql`;
 const subscriptionUrl = `ws://${window.location.host}/api/v1/graphql`;
 
 const fetcher = createGraphiQLFetcher({
