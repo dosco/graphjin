@@ -3,13 +3,9 @@
 package auth
 
 import (
-	"context"
 	"fmt"
-	"net/http"
 
 	jwt "github.com/dgrijalva/jwt-go"
-
-	"github.com/dosco/graphjin/serv/internal/auth/provider"
 )
 
 func validateJWT(tok, aud, iss string, keyFunc jwt.Keyfunc) (jwt.MapClaims, error) {
