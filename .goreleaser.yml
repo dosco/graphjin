@@ -4,7 +4,7 @@
 # snapcraft export-login --snaps=graphjin --channels=stable --acls=package_access,package_push,package_update,package_release credential
 
 # GPG Key
-# gpg --armor --export-secret-key <email> | pbcop
+# gpg --armor --export-secret-key <email> | pbcopy
 
 before:
   hooks:
@@ -25,18 +25,21 @@ builds:
 
 signs:
   - artifacts: checksum
-    args: ["--batch", "-u", "{{ .Env.GPG_FINGERPRINT }}", "--output", "${signature}", "--detach-sign", "${artifact}"]
+    args:
+      [
+        "--batch",
+        "-u",
+        "{{ .Env.GPG_FINGERPRINT }}",
+        "--output",
+        "${signature}",
+        "--detach-sign",
+        "${artifact}",
+      ]
 
 archives:
-  - replacements:
-      darwin: Darwin
-      linux: Linux
-      windows: Windows
-      386: i386
-      amd64: x86_64
 
 checksum:
-  name_template: 'checksums.txt'
+  name_template: "checksums.txt"
 
 snapshot:
   name_template: "{{ .Tag }}-snapshot"
@@ -45,8 +48,8 @@ changelog:
   sort: asc
   filters:
     exclude:
-      - '^docs:'
-      - '^test:'
+      - "^docs:"
+      - "^test:"
       - Merge pull request
       - Merge branch
       - go mod tidy
@@ -55,10 +58,10 @@ nfpms:
   - homepage: https://graphjin.com
     description: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler."
     license: Apache-2.0
-    maintainer: Vikram Rangnekar <twitter.com/dosco>
+    maintainer: Vikram Rangnekar (https://twitter.com/dosco)
     formats:
-    - deb
-    - rpm
+      - deb
+      - rpm
 
 brews:
   - tap:
@@ -66,7 +69,7 @@ brews:
       name: homebrew-graphjin
     folder: Formula
     homepage: https://graphjin.com
-    description: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler." 
+    description: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler."
     license: Apache-2.0
     skip_upload: auto
 
@@ -80,13 +83,10 @@ scoop:
   license: Apache-2.0
 
 snapcrafts:
-  - name_template: '{{ .ProjectName }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
+  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     summary: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler"
     description: |
       GraphJin gives you a high performance GraphQL API without you having to write any code. GraphQL is automagically compiled into an efficient SQL query. Use it either as a library or a standalone service.
-    replacements:
-      darwin: macOS
-      amd64: x86_64
     apps:
       graphjin:
         plugs: ["home", "network", "network-bind"]

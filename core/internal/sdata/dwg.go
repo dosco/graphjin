@@ -21,6 +21,7 @@ type TEdge struct {
 	Type   RelType
 	LT, RT DBTable
 	L, R   DBColumn
+	CName  string
 	name   string
 }
 
@@ -67,9 +68,7 @@ func (s *DBSchema) addToGraph(
 	lti DBTable, lcol DBColumn,
 	rti DBTable, rcol DBColumn,
 	rt RelType) error {
-
 	var rt2 RelType
-
 	k1 := (lti.Schema + ":" + lti.Name)
 	k2 := (rti.Schema + ":" + rti.Name)
 
@@ -86,7 +85,7 @@ func (s *DBSchema) addToGraph(
 	ln := fn.nodeID
 	rn := tn.nodeID
 
-	var weight int32 = 2
+	var weight int32 = 1
 	relT := getRelName(lcol.Name)
 
 	switch rt {
@@ -97,14 +96,15 @@ func (s *DBSchema) addToGraph(
 	case RelPolymorphic:
 		rt2 = rt
 		relT = rti.Name
+		weight = 15
 	case RelEmbedded:
 		rt2 = rt
 		relT = rti.Name
-		weight = 1
+		weight = 5
 	case RelRecursive:
-		weight = 1
+		weight = 10
 	case RelRemote:
-		weight = 4
+		weight = 8
 		relT = rti.Name
 	default:
 		return nil
@@ -118,8 +118,8 @@ func (s *DBSchema) addToGraph(
 		Type:   rt,
 		LT:     lti, RT: rti,
 		L: lcol, R: rcol,
+		CName: lcol.Name,
 	}
-
 	if err := s.addEdge(lti.Name, e1, false); err != nil {
 		return err
 	}
@@ -132,7 +132,9 @@ func (s *DBSchema) addToGraph(
 		Type:   rt2,
 		LT:     rti, RT: lti,
 		L: rcol, R: lcol,
+		CName: lcol.Name,
 	}
+
 	if err := s.addEdge(relT, e2, true); err != nil {
 		return err
 	}
@@ -151,19 +153,19 @@ func (s *DBSchema) addToGraph(
 }
 
 func (s *DBSchema) addEdge(name string, edge TEdge, inSchema bool) error {
-	edgeID, err := s.rg.AddEdge(edge.From, edge.To, edge.Weight)
+	edgeID, err := s.rg.AddEdge(edge.From, edge.To, edge.Weight, edge.CName)
 	if err != nil {
 		return err
 	}
 
 	ei1 := edgeInfo{nodeID: edge.From, edgeIDs: []int32{edgeID}}
-	ei2 := edgeInfo{nodeID: edge.To, edgeIDs: []int32{edgeID}}
+	//ei2 := edgeInfo{nodeID: edge.To, edgeIDs: []int32{edgeID}}
 
 	k1 := strings.ToLower(name)
-	k2 := strings.ToLower(edge.RT.Name)
+	//k2 := strings.ToLower(edge.RT.Name)
 
 	s.addEdgeInfo(k1, ei1)
-	s.addEdgeInfo(k2, ei2)
+	//s.addEdgeInfo(k2, ei2)
 
 	if inSchema {
 		edge.name = k1
@@ -197,7 +199,7 @@ func (s *DBSchema) Find(schema, name string) (DBTable, error) {
 		schema = s.DBSchema()
 	}
 
-	name = strings.TrimSuffix(name, s.SingularSuffix.Lower)
+	name = strings.TrimSuffix(name, s.SingularSuffix)
 
 	v, ok := s.tindex[(schema + ":" + name)]
 	if !ok {
@@ -216,8 +218,8 @@ type TPath struct {
 }
 
 func (s *DBSchema) FindPath(from, to, through string) ([]TPath, error) {
-	from = strings.TrimSuffix(from, s.SingularSuffix.Lower)
-	to = strings.TrimSuffix(to, s.SingularSuffix.Lower)
+	from = strings.TrimSuffix(from, s.SingularSuffix)
+	to = strings.TrimSuffix(to, s.SingularSuffix)
 
 	fl, ok := s.ei[from]
 	if !ok {
@@ -287,42 +289,53 @@ func (s *DBSchema) pickPath(f, t edgeInfo, through string) (*graphResult, error)
 	}
 
 	for _, nodes := range paths {
-		var ff, lf bool
 		res := &graphResult{from: f, to: t}
 		ln := len(nodes)
 
 		if ln == 2 {
 			lines := s.rg.GetEdges(nodes[0], nodes[1])
+			if through != "" {
+				for _, v := range lines {
+					if v.Name == through {
+						res.edges = append(res.edges, v.ID)
+						return res, nil
+					}
+				}
+				return nil, fmt.Errorf("no relationship found through column: %s", through)
+			}
+
 			if v := pickLine(lines, f); v != nil {
 				res.edges = append(res.edges, v.ID)
 				return res, nil
 			}
 		}
 
+	outer:
 		for i := 1; i < ln; i++ {
 			fn := nodes[i-1]
 			tn := nodes[i]
 			lines := s.rg.GetEdges(fn, tn)
-			// s.printLines(lines)
 
-			switch i {
-			case 1:
+			switch {
+			case i == 1:
 				if v := pickLine(lines, f); v != nil {
 					res.edges = append(res.edges, v.ID)
-					ff = true
+				} else {
+					break outer
 				}
-			case (ln - 1):
+
+			case i == (ln - 1):
 				if v := pickLine(lines, t); v != nil {
 					res.edges = append(res.edges, v.ID)
-					lf = true
+				} else {
+					v := minWeightedLine(lines)
+					res.edges = append(res.edges, v.ID)
 				}
+				return res, nil
+
 			default:
 				v := minWeightedLine(lines)
 				res.edges = append(res.edges, v.ID)
-			}
-
-			if ff && lf {
-				return res, nil
 			}
 		}
 	}
@@ -332,6 +345,11 @@ func (s *DBSchema) pickPath(f, t edgeInfo, through string) (*graphResult, error)
 
 func (s *DBSchema) pickThroughPath(paths [][]int32, through string) ([][]int32, error) {
 	var npaths [][]int32
+
+	if len(paths) == 1 && len(paths[0]) == 2 {
+		return paths, nil
+	}
+
 	v, ok := s.tindex[(s.DBSchema() + ":" + through)]
 	if !ok {
 		return nil, ErrThoughNodeNotFound

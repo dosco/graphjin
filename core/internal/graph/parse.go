@@ -42,12 +42,13 @@ const (
 )
 
 type Operation struct {
-	Type    ParserType
-	Name    string
-	Args    []Arg
-	argsA   [10]Arg
-	Fields  []Field
-	fieldsA [10]Field
+	Type       ParserType
+	Name       string
+	Args       []Arg
+	argsA      [10]Arg
+	Directives []Directive
+	Fields     []Field
+	fieldsA    [10]Field
 }
 
 type Fragment struct {
@@ -264,6 +265,13 @@ func (p *Parser) parseOpTypeAndArgs(op *Operation) error {
 
 	if p.peek(itemName) {
 		op.Name = p.val(p.next())
+	}
+
+	for p.peek(itemDirective) {
+		p.ignore()
+		if op.Directives, err = p.parseDirective(op.Directives); err != nil {
+			return err
+		}
 	}
 
 	if p.peek(itemArgsOpen) {
@@ -506,12 +514,12 @@ func (p *Parser) parseField(f *Field) error {
 
 		if p.peek(itemName) {
 			f.Alias = p.val(v)
-			f.Name = p.vall(p.next())
+			f.Name = p.val(p.next())
 		} else {
 			return errors.New("expecting an aliased field name")
 		}
 	} else {
-		f.Name = p.vall(v)
+		f.Name = p.val(v)
 	}
 
 	if p.peek(itemArgsOpen) {
@@ -591,7 +599,7 @@ func (p *Parser) parseDirective(dirs []Directive) ([]Directive, error) {
 	var d Directive
 
 	if p.peek(itemName) {
-		d.Name = p.vall(p.next())
+		d.Name = p.val(p.next())
 	} else {
 		return nil, fmt.Errorf("expecting directive name after @ symbol got: %s", p.peekNext())
 	}

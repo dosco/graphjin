@@ -5,6 +5,7 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,9 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NYTimes/gziphandler"
 	"github.com/dosco/graphjin/serv/internal/auth"
+	"github.com/klauspost/compress/gzhttp"
 	"go.opencensus.io/plugin/ochttp"
+	"go.uber.org/zap"
 )
 
 const (
@@ -36,7 +38,7 @@ var (
 )
 
 func initWatcher(s *Service) {
-	cpath := s.conf.cpath
+	cpath := s.conf.Serv.ConfigPath
 
 	var d dir
 	if cpath == "" || cpath == "./" {
@@ -48,9 +50,19 @@ func initWatcher(s *Service) {
 	go func() {
 		err := do(s, s.log.Infof, d)
 		if err != nil {
-			s.log.Fatalf("Error in config file wacher: %s", err)
+			s.log.Fatalf("error in config file wacher: %s", err)
 		}
 	}()
+}
+
+func isHealthEndpoint(r *http.Request) bool {
+	healthEndPointPaths := []string{"/health", "/metrics"}
+	for _, healthEndPointPath := range healthEndPointPaths {
+		if r.URL.Path == healthEndPointPath {
+			return true
+		}
+	}
+	return false
 }
 
 func startHTTP(s *Service) {
@@ -82,10 +94,10 @@ func startHTTP(s *Service) {
 
 	routes, err := routeHandler(s, http.NewServeMux())
 	if err != nil {
-		s.log.Fatalf("Error setting up API routes: %s", err)
+		s.log.Fatalf("error setting up routes: %s", err)
 	}
 
-	srv := &http.Server{
+	s.srv = &http.Server{
 		Addr:           s.conf.hostPort,
 		Handler:        routes,
 		ReadTimeout:    5 * time.Second,
@@ -94,7 +106,14 @@ func startHTTP(s *Service) {
 	}
 
 	if s.conf.telemetryEnabled() {
-		srv.Handler = &ochttp.Handler{Handler: routes}
+		if s.conf.Serv.Telemetry.Tracing.ExcludeHealthCheck {
+			s.srv.Handler = &ochttp.Handler{
+				Handler:          routes,
+				IsHealthEndpoint: isHealthEndpoint,
+			}
+		} else {
+			s.srv.Handler = &ochttp.Handler{Handler: routes}
+		}
 	}
 
 	idleConnsClosed := make(chan struct{})
@@ -103,27 +122,35 @@ func startHTTP(s *Service) {
 		signal.Notify(sigint, os.Interrupt)
 		<-sigint
 
-		if err := srv.Shutdown(context.Background()); err != nil {
-			s.log.Warn("Shutdown signal received")
+		if err := s.srv.Shutdown(context.Background()); err != nil {
+			s.log.Warn("shutdown signal received")
 		}
 		close(idleConnsClosed)
 	}()
 
-	srv.RegisterOnShutdown(func() {
+	s.srv.RegisterOnShutdown(func() {
 		if s.conf.closeFn != nil {
 			s.conf.closeFn()
 		}
 		if s.db != nil {
 			s.db.Close()
 		}
-		s.log.Info("Shutdown complete")
+		s.log.Info("shutdown complete")
 	})
 
-	s.log.Infof("GraphJin started, version: %s, host-port: %s, app-name: %s, env: %s\n",
+	s.log.Infof("GraphJin started, version: %s, host-port: %s, app-name: %s, env: %s",
 		version, s.conf.hostPort, appName, env)
 
-	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-		s.log.Fatal("Server stopped")
+	l, err := net.Listen("tcp", s.conf.hostPort)
+	if err != nil {
+		s.log.Fatalf("c: %s", err)
+	}
+
+	// signal we are open for business.
+	s.started = true
+
+	if err := s.srv.Serve(l); err != http.ErrServerClosed {
+		s.log.Fatalf("failed to start: %s", err)
 	}
 
 	<-idleConnsClosed
@@ -166,7 +193,11 @@ func routeHandler(s *Service, mux *http.ServeMux) (http.Handler, error) {
 	}
 
 	if s.conf.HTTPGZip {
-		gz := gziphandler.MustNewGzipLevelHandler(6)
+		gz, err := gzhttp.NewWrapper(gzhttp.MinSize(2000), gzhttp.CompressionLevel(6))
+		if err != nil {
+			return nil, err
+		}
+
 		for k, v := range routes {
 			routes[k] = gz(v)
 		}
@@ -195,7 +226,12 @@ func setServerHeader(h http.Handler) http.Handler {
 }
 
 func setActionRoutes(s *Service, routes map[string]http.Handler) error {
+	var zlog *zap.Logger
 	var err error
+
+	if s.conf.Debug {
+		zlog = s.zlog
+	}
 
 	for _, a := range s.conf.Actions {
 		var fn http.Handler
@@ -208,7 +244,7 @@ func setActionRoutes(s *Service, routes map[string]http.Handler) error {
 		p := fmt.Sprintf("/api/v1/actions/%s", strings.ToLower(a.Name))
 
 		if ac := findAuth(s, a.AuthName); ac != nil {
-			routes[p], err = auth.WithAuth(fn, ac)
+			routes[p], err = auth.WithAuth(fn, ac, zlog)
 		} else {
 			routes[p] = fn
 		}

@@ -71,9 +71,6 @@ func getKey(config JWTConfig) (interface{}, error) {
 	secret := config.Secret
 	publicKeyFile := config.PubKeyFile
 	switch {
-	case secret != "":
-		key = []byte(secret)
-
 	case publicKeyFile != "":
 		kd, err := ioutil.ReadFile(publicKeyFile)
 		if err != nil {
@@ -90,6 +87,12 @@ func getKey(config JWTConfig) (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
+		//TODO: Log message informing that a public key will be used
+
+	case secret != "":
+		key = []byte(secret)
+		//TODO: Log message informing that a secret will be used
+
 	}
 	if key == nil {
 		return nil, errors.New("undefined key")

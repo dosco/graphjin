@@ -44,6 +44,7 @@ func TestMain(m *testing.M) {
 				postgres.WithUser("tester", "tester"),
 				postgres.WithDatabase("db"),
 				postgres.WithQueriesFile("./postgres.sql"),
+				postgres.WithVersion("12.5"),
 			),
 		},
 		{
@@ -54,6 +55,7 @@ func TestMain(m *testing.M) {
 			preset: cockroachdb.Preset(
 				cockroachdb.WithDatabase("db"),
 				cockroachdb.WithQueriesFile("./cockroach.sql"),
+				cockroachdb.WithVersion("v20.1.10"),
 			),
 		},
 		{
@@ -65,6 +67,7 @@ func TestMain(m *testing.M) {
 				mysql.WithUser("user", "user"),
 				mysql.WithDatabase("db"),
 				mysql.WithQueriesFile("./mysql.sql"),
+				mysql.WithVersion("8.0.22"),
 			),
 		},
 		{
@@ -74,9 +77,10 @@ func TestMain(m *testing.M) {
 			connstr: "sqlserver://sa:password@%s?database=db",
 			preset: mssql.Preset(
 				mssql.WithLicense(true),
-				mssql.WithAdminPassword("password"),
+				mssql.WithVersion("2019-latest"),
+				mssql.WithAdminPassword("YourStrong!Passw0rd"),
 				mssql.WithDatabase("db"),
-				mssql.WithQueriesFile("./mysql.sql"),
+				mssql.WithQueriesFile("./mssql.sql"),
 			),
 		},
 	}

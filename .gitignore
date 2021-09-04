@@ -40,4 +40,9 @@ release
 *.test
 .firebase
 /dist
+.idea
+node_modules
+bin
+./package-lock.json
+
 

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/dosco/graphjin/core/internal/psql"
@@ -47,12 +46,13 @@ type resolver struct {
 	Duration    time.Duration `json:"duration"`
 }
 
-type scontext struct {
+type gcontext struct {
 	context.Context
 
 	gj   *GraphJin
 	op   qcode.QType
 	rc   *ReqConfig
+	sc   *script
 	name string
 }
 
@@ -137,11 +137,7 @@ func (gj *GraphJin) _initSchema() error {
 	if ssufx == "" {
 		ssufx = "ByID"
 	}
-
-	gj.schema.SingularSuffix = sdata.SingularInfo{
-		Value: ssufx,
-		Lower: strings.ToLower(ssufx),
-	}
+	gj.schema.SingularSuffix = ssufx
 
 	return err
 }
@@ -153,6 +149,9 @@ func (gj *GraphJin) initCompilers() error {
 		TConfig:          gj.conf.tmap,
 		DefaultBlock:     gj.conf.DefaultBlock,
 		DefaultLimit:     gj.conf.DefaultLimit,
+		DisableAgg:       gj.conf.DisableAgg,
+		DisableFuncs:     gj.conf.DisableFuncs,
+		EnableCamelcase:  gj.conf.EnableCamelcase,
 		EnableInflection: gj.conf.EnableInflection,
 		DBSchema:         gj.schema.DBSchema(),
 	}
@@ -202,7 +201,7 @@ func (gj *GraphJin) executeRoleQuery(c context.Context, conn *sql.Conn, md psql.
 	return role, err
 }
 
-func (c *scontext) execQuery(qr queryReq, role string) (queryResp, error) {
+func (c *gcontext) execQuery(qr queryReq, role string) (queryResp, error) {
 	res, err := c.resolveSQL(qr, role)
 	if err != nil {
 		return res, err
@@ -212,14 +211,26 @@ func (c *scontext) execQuery(qr queryReq, role string) (queryResp, error) {
 		c.debugLog(&res.qc.st)
 	}
 
-	if len(res.data) == 0 || res.qc.st.qc.Remotes == 0 {
+	qc := res.qc.st.qc
+
+	if len(res.data) == 0 {
 		return res, nil
 	}
 
-	return c.execRemoteJoin(res)
+	if qc.Remotes != 0 {
+		if res, err = c.execRemoteJoin(res); err != nil {
+			return res, err
+		}
+	}
+
+	if c.sc != nil && c.sc.RespFunc != nil {
+		res.data, err = c.scriptCallResp(res.data, res.role)
+	}
+
+	return res, err
 }
 
-func (c *scontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
+func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 	var res queryResp
 	var err error
 
@@ -250,6 +261,21 @@ func (c *scontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 
 	if res.qc, err = c.gj.compileQuery(qr, res.role); err != nil {
 		return res, err
+	}
+
+	scriptName := res.qc.st.qc.Script
+
+	if scriptName != "" {
+		if err := c.loadScript(scriptName); err != nil {
+			return res, err
+		}
+	}
+
+	if c.sc != nil && c.sc.ReqFunc != nil {
+		qr.vars, err = c.scriptCallReq(qr.vars, res.qc.st.role.Name)
+		if err != nil {
+			return res, err
+		}
 	}
 
 	args, err := c.gj.argList(c, res.qc.st.md, qr.vars, c.rc)
@@ -298,7 +324,7 @@ func (c *scontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 	return res, nil
 }
 
-func (c *scontext) setLocalUserID(conn *sql.Conn) error {
+func (c *gcontext) setLocalUserID(conn *sql.Conn) error {
 	var err error
 
 	if v := c.Value(UserIDKey); v == nil {
@@ -349,7 +375,7 @@ func (r *Result) CacheControl() string {
 	return r.cacheControl
 }
 
-// func (c *scontext) addTrace(sel []qcode.Select, id int32, st time.Time) {
+// func (c *gcontext) addTrace(sel []qcode.Select, id int32, st time.Time) {
 // 	et := time.Now()
 // 	du := et.Sub(st)
 
@@ -392,7 +418,7 @@ func (r *Result) CacheControl() string {
 // 		append(c.res.Extensions.Tracing.Execution.Resolvers, tr)
 // }
 
-func (c *scontext) debugLog(st *stmt) {
+func (c *gcontext) debugLog(st *stmt) {
 	for _, sel := range st.qc.Selects {
 		if sel.SkipRender == qcode.SkipTypeUserNeeded {
 			c.gj.log.Printf("Field skipped, requires $user_id or table not added to anon role: %s", sel.FieldName)

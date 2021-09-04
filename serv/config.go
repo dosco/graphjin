@@ -15,9 +15,11 @@ import (
 
 type Core = core.Config
 type Auth = auth.Auth
+type JWTConfig = auth.JWTConfig
 
 // Config struct holds the GraphJin service config values
 type Config struct {
+
 	// Core holds config values for the GraphJin compiler
 	Core `mapstructure:",squash"`
 
@@ -26,7 +28,6 @@ type Config struct {
 
 	closeFn  func()
 	hostPort string
-	cpath    string
 	vi       *viper.Viper
 }
 
@@ -38,6 +39,10 @@ type Serv struct {
 	// Production when set to true runs the service with production level
 	// security and other defaults. For example allow lists are enforced.
 	Production bool
+
+	// ConfigPath is the default path to find all configuration
+	// files and scripts under
+	ConfigPath string `mapstructure:"config_path"`
 
 	// LogLevel can be debug, error, warn, info
 	LogLevel string `mapstructure:"log_level"`
@@ -91,45 +96,7 @@ type Serv struct {
 	CacheControl string `mapstructure:"cache_control"`
 
 	// Telemetry struct contains OpenCensus metrics and tracing related config
-	Telemetry struct {
-		// Debug enables debug logging for metrics and tracing data.
-		Debug bool
-
-		// Interval to send out metrics and tracing data
-		Interval *time.Duration
-
-		Metrics struct {
-			// Exporter is the name of the metrics exporter to use. Example: prometheus
-			Exporter string
-
-			// Endpoint to send the data to.
-			Endpoint string
-
-			// Namespace is set based on your exporter configration
-			Namespace string
-
-			// Key is set based on your exporter configuration
-			Key string
-		}
-
-		Tracing struct {
-			// Exporter is the name of the tracing exporter to use. Example: zipkin
-			Exporter string
-
-			// Endpoint to send the data to. Example: http://zipkin:9411/api/v2/spans
-			Endpoint string
-
-			// Sample sets how many requests to sample for tracing: Example: 0.6
-			Sample string
-
-			// IncludeQuery when set the GraphQL query is included in the tracing data
-			IncludeQuery bool `mapstructure:"include_query"`
-
-			// IncludeParams when set variables used with the query are included in the
-			// tracing data
-			IncludeParams bool `mapstructure:"include_params"`
-		}
-	}
+	Telemetry Telemetry
 
 	// Auth set the default auth used by the service
 	Auth Auth
@@ -138,31 +105,83 @@ type Serv struct {
 	Auths []Auth
 
 	// DB struct contains db config
-	DB struct {
-		Type        string
-		Host        string
-		Port        uint16
-		DBName      string
-		User        string
-		Password    string
-		Schema      string
-		PoolSize    int32         `mapstructure:"pool_size"`
-		MaxRetries  int           `mapstructure:"max_retries"`
-		PingTimeout time.Duration `mapstructure:"ping_timeout"`
-		EnableTLS   bool          `mapstructure:"enable_tls"`
-		ServerName  string        `mapstructure:"server_name"`
-		ServerCert  string        `mapstructure:"server_cert"`
-		ClientCert  string        `mapstructure:"client_cert"`
-		ClientKey   string        `mapstructure:"client_key"`
-	} `mapstructure:"database"`
+	DB Database `mapstructure:"database"`
 
 	Actions []Action
 
-	RateLimiter struct {
-		Rate     float64
-		Bucket   int
-		IPHeader string `mapstructure:"ip_header"`
-	} `mapstructure:"rate_limiter"`
+	// RateLimiter sets the API rate limits
+	RateLimiter RateLimiter `mapstructure:"rate_limiter"`
+}
+
+// Database config
+type Database struct {
+	Type        string
+	Host        string
+	Port        uint16
+	DBName      string
+	User        string
+	Password    string
+	Schema      string
+	PoolSize    int32         `mapstructure:"pool_size"`
+	MaxRetries  int           `mapstructure:"max_retries"`
+	PingTimeout time.Duration `mapstructure:"ping_timeout"`
+	EnableTLS   bool          `mapstructure:"enable_tls"`
+	ServerName  string        `mapstructure:"server_name"`
+	ServerCert  string        `mapstructure:"server_cert"`
+	ClientCert  string        `mapstructure:"client_cert"`
+	ClientKey   string        `mapstructure:"client_key"`
+}
+
+// RateLimiter sets the API rate limits
+type RateLimiter struct {
+	Rate     float64
+	Bucket   int
+	IPHeader string `mapstructure:"ip_header"`
+}
+
+// Telemetry struct contains OpenCensus metrics and tracing related config
+type Telemetry struct {
+	// Debug enables debug logging for metrics and tracing data.
+	Debug bool
+
+	// Interval to send out metrics and tracing data
+	Interval *time.Duration
+
+	Metrics struct {
+		// Exporter is the name of the metrics exporter to use. Example: prometheus
+		Exporter string
+
+		// Endpoint to send the data to.
+		Endpoint string
+
+		// Namespace is set based on your exporter configration
+		Namespace string
+
+		// Key is set based on your exporter configuration
+		Key string
+	}
+
+	Tracing struct {
+		// Exporter is the name of the tracing exporter to use. Example: zipkin
+		Exporter string
+
+		// Endpoint to send the data to. Example: http://zipkin:9411/api/v2/spans
+		Endpoint string
+
+		// Sample sets how many requests to sample for tracing: Example: 0.6
+		Sample string
+
+		// IncludeQuery when set the GraphQL query is included in the tracing data
+		IncludeQuery bool `mapstructure:"include_query"`
+
+		// IncludeParams when set variables used with the query are included in the
+		// tracing data
+		IncludeParams bool `mapstructure:"include_params"`
+
+		// ExcludeHealthCheck when set health check tracing is excluded from the
+		// tracing data
+		ExcludeHealthCheck bool `mapstructure:"exclude_health_check"`
+	}
 }
 
 // Action struct contains config values for a GraphJin service action
@@ -214,7 +233,9 @@ func ReadInConfig(configFile string) (*Config, error) {
 		}
 	}
 
-	c := &Config{cpath: cpath, vi: vi}
+	c := &Config{vi: vi}
+	c.Serv.ConfigPath = cpath
+	c.Core.ConfigPath = cpath
 
 	if err := vi.Unmarshal(&c); err != nil {
 		return nil, fmt.Errorf("failed to decode config, %v", err)
@@ -275,7 +296,7 @@ func (c *Config) RelPath(p string) string {
 		return p
 	}
 
-	return path.Join(c.cpath, p)
+	return path.Join(c.Serv.ConfigPath, p)
 }
 
 func (c *Config) rateLimiterEnable() bool {

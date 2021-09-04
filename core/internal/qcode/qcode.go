@@ -1,10 +1,11 @@
-//go:generate stringer -type=QType,MType,SelType,SkipType,PagingType,AggregrateOp,ValType -output=./gen_string.go
+//go:generate stringer -linecomment -type=QType,MType,SelType,SkipType,PagingType,AggregrateOp,ValType -output=./gen_string.go
 package qcode
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
 	"strconv"
 	"strings"
 
@@ -16,20 +17,20 @@ import (
 )
 
 const (
-	maxSelectors = 30
+	maxSelectors = 100
 )
 
 type QType int8
 
 const (
-	QTUnknown QType = iota
-	QTQuery
-	QTSubscription
-	QTMutation
-	QTInsert
-	QTUpdate
-	QTDelete
-	QTUpsert
+	QTUnknown      QType = iota // Unknown
+	QTQuery                     // Query
+	QTSubscription              // Subcription
+	QTMutation                  // Mutation
+	QTInsert                    // Insert
+	QTUpdate                    // Update
+	QTDelete                    // Delete
+	QTUpsert                    // Upsert
 )
 
 type SelType int8
@@ -66,6 +67,7 @@ type QCode struct {
 	MUnions   map[string][]int32
 	Schema    *sdata.DBSchema
 	Remotes   int32
+	Script    string
 	Metadata  allow.Metadata
 	Cache     Cache
 }
@@ -117,21 +119,6 @@ type Function struct {
 type Filter struct {
 	*Exp
 }
-
-// type Exp struct {
-// 	Op        ExpOp
-// 	Table     string
-// 	Rels      []sdata.DBRel
-// 	Col       sdata.DBColumn
-// 	Type      ValType
-// 	Val       string
-// 	ValCol    sdata.DBColumn
-// 	ListType  ValType
-// 	ListVal   []string
-// 	Children  []*Exp
-// 	childrenA [5]*Exp
-// 	Path      []string
-// }
 
 type Exp struct {
 	Op    ExpOp
@@ -334,6 +321,10 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 		}
 	}
 
+	if err := co.compileOpDirectives(qc, op.Directives); err != nil {
+		return err
+	}
+
 	qc.Selects = make([]Select, 0, 5)
 	st := util.NewStackInt32()
 
@@ -378,6 +369,13 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 			ParentID: parentID,
 		}
 		sel := &s1
+
+		if co.c.EnableCamelcase {
+			if field.Alias == "" {
+				field.Alias = field.Name
+			}
+			field.Name = util.ToSnake(field.Name)
+		}
 
 		if field.Alias != "" {
 			sel.FieldName = field.Alias
@@ -485,10 +483,11 @@ func (co *Compiler) addRelInfo(
 
 	if sel.Rel.Type == sdata.RelSkip {
 		sel.Rel.Type = sdata.RelNone
-		return nil
-	}
 
-	if sel.ParentID != -1 {
+	} else if sel.ParentID != -1 {
+		if co.c.EnableCamelcase {
+			parentF.Name = util.ToSnake(parentF.Name)
+		}
 		paths, err := co.s.FindPath(childF.Name, parentF.Name, sel.through)
 		if err != nil {
 			return graphError(err, childF.Name, parentF.Name, sel.through)
@@ -507,7 +506,9 @@ func (co *Compiler) addRelInfo(
 		}
 	}
 
-	if sel.ParentID == -1 || sel.Rel.Type == sdata.RelPolymorphic {
+	if sel.ParentID == -1 ||
+		sel.Rel.Type == sdata.RelPolymorphic ||
+		sel.Rel.Type == sdata.RelNone {
 		schema := co.c.DBSchema
 		if sel.Ti, err = co.s.Find(schema, field.Name); err != nil {
 			return err
@@ -822,6 +823,27 @@ func addFilters(qc *QCode, where *Filter, trv trval) bool {
 	return false
 }
 
+func (co *Compiler) compileOpDirectives(qc *QCode, dirs []graph.Directive) error {
+	var err error
+
+	for i := range dirs {
+		d := &dirs[i]
+
+		switch d.Name {
+		case "cacheControl":
+			err = co.compileDirectiveCacheControl(qc, d)
+
+		case "script":
+			err = co.compileDirectiveScript(qc, d)
+		}
+
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (co *Compiler) compileDirectives(qc *QCode, sel *Select, dirs []graph.Directive) error {
 	var err error
 
@@ -835,9 +857,6 @@ func (co *Compiler) compileDirectives(qc *QCode, sel *Select, dirs []graph.Direc
 		case "include":
 			err = co.compileDirectiveInclude(sel, d)
 
-		case "cacheControl":
-			err = co.compileDirectiveCacheControl(qc, d)
-
 		case "notRelated", "not_related":
 			err = co.compileDirectiveNotRelated(sel, d)
 
@@ -847,7 +866,6 @@ func (co *Compiler) compileDirectives(qc *QCode, sel *Select, dirs []graph.Direc
 		case "object":
 			sel.Singular = true
 			sel.Paging.Limit = 1
-
 		}
 
 		if err != nil {
@@ -1019,6 +1037,30 @@ func (co *Compiler) compileDirectiveCacheControl(qc *QCode, d *graph.Directive) 
 	return nil
 }
 
+func (co *Compiler) compileDirectiveScript(qc *QCode, d *graph.Directive) error {
+	if len(d.Args) != 0 && d.Args[0].Name == "name" {
+		if d.Args[0].Val.Type != graph.NodeStr {
+			return argErr("name", "string")
+		}
+		qc.Script = d.Args[0].Val.Val
+
+	}
+
+	if qc.Script == "" {
+		qc.Script = qc.Name
+	}
+
+	if qc.Script == "" {
+		return fmt.Errorf("@script: required argument 'name' missing")
+	}
+
+	if path.Ext(qc.Script) == "" {
+		qc.Script += ".js"
+	}
+
+	return nil
+}
+
 func (co *Compiler) compileDirectiveInclude(sel *Select, d *graph.Directive) error {
 	if len(d.Args) == 0 || d.Args[0].Name != "if" {
 		return fmt.Errorf("@include: required argument 'if' missing")
@@ -1043,15 +1085,18 @@ func (co *Compiler) compileDirectiveNotRelated(sel *Select, d *graph.Directive) 
 }
 
 func (co *Compiler) compileDirectiveThrough(sel *Select, d *graph.Directive) error {
-	if len(d.Args) == 0 || d.Args[0].Name != "table" {
-		return fmt.Errorf("@through: required argument 'table' missing")
+	if len(d.Args) == 0 {
+		return fmt.Errorf("@through: required argument 'table' or 'column'")
 	}
 	arg := d.Args[0]
 
-	if arg.Val.Type != graph.NodeStr {
-		return argErr("table", "string")
+	if arg.Name == "table" || arg.Name == "column" {
+		if arg.Val.Type != graph.NodeStr {
+			return argErr(arg.Name, "string")
+		}
+		sel.through = arg.Val.Val
 	}
-	sel.through = arg.Val.Val
+
 	return nil
 }
 
@@ -1135,9 +1180,7 @@ func (co *Compiler) compileArgSearch(sel *Select, arg *graph.Arg) error {
 
 func (co *Compiler) compileArgWhere(ti sdata.DBTable, sel *Select, arg *graph.Arg, role string) error {
 	st := util.NewStackInf()
-	var err error
-
-	ex, nu, err := co.compileArgObj(ti, st, arg)
+	ex, nu, err := co.compileArgObj(sel.Table, ti, st, arg)
 	if err != nil {
 		return err
 	}
@@ -1447,7 +1490,7 @@ func compileFilter(s *sdata.DBSchema, ti sdata.DBTable, filter []string, isJSON 
 			return nil, false, err
 		}
 
-		f, nu, err := co.compileArgNode(ti, st, node, isJSON)
+		f, nu, err := co.compileArgNode("", ti, st, node, isJSON)
 		if err != nil {
 			return nil, false, err
 		}

@@ -4,8 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
+	"net/http/httptest"
+	"os"
+	"path"
 
 	"github.com/dosco/graphjin/core"
 )
@@ -112,7 +116,7 @@ func Example_queryWithDynamicOrderBy() {
 
 func Example_queryWithLimitOffsetOrderByDistinctAndWhere() {
 	gql := `query {
-		proDUcts(
+		products(
 			# returns only 5 items
 			limit: 5,
 
@@ -128,7 +132,7 @@ func Example_queryWithLimitOffsetOrderByDistinctAndWhere() {
 			# only items with an id >= 50 and < 100 are returned
 			where: { id: { and: { greater_or_equals: 50, lt: 100 } } }) {
 			id
-			NAME
+			name
 			price
 		}
 	}`
@@ -912,12 +916,12 @@ func Example_queryWithRemoteAPIJoin() {
 
 func Example_queryWithCursorPagination() {
 	gql := `query {
-		Products(
+		products(
 			where: { id: { lesser_or_equals: 100 } }
 			first: 3
 			after: $cursor
 			order_by: { price: desc }) {
-			Name
+			name
 		}
 		products_cursor
 	}`
@@ -994,6 +998,141 @@ func Example_queryWithJsonColumn() {
 		fmt.Println(string(res.Data))
 	}
 	// Output: {"users": {"id": 1, "category_counts": [{"count": 400, "category": {"name": "Category 1"}}, {"count": 600, "category": {"name": "Category 2"}}]}}
+}
+
+func Example_queryWithScriptDirective() {
+	gql := `query @script(name: "test.js") {
+		usersByID(id: $id)  {
+			id
+			email
+		}
+	}`
+
+	script := `
+	function request(vars) {
+		return { id: 2 };
+	}
+	
+	function response(json) {
+		json.usersByID.email = "u...@test.com";
+		return json;
+	}
+	`
+
+	dir, err := ioutil.TempDir("", "test")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(dir)
+
+	err = ioutil.WriteFile(path.Join(dir, "test.js"), []byte(script), 0644)
+	if err != nil {
+		panic(err)
+	}
+
+	conf := &core.Config{DBType: dbType, DisableAllowList: true, ScriptPath: dir}
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+	// Output: {"usersByID":{"email":"u...@test.com","id":2}}
+}
+
+func Example_queryWithScriptDirectiveUsingGraphQL() {
+	gql := `query @script(name: "test.js") {
+		usersByID(id: 2)  {
+			id
+			email
+		}
+	}`
+
+	script := `
+	function response(json) {
+		let val = graphql('query { users(id: 1) { id email } }')
+		json.usersByID.email = val.users.email
+		return json;
+	}
+	`
+
+	dir, err := ioutil.TempDir("", "test")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(dir)
+
+	err = ioutil.WriteFile(path.Join(dir, "test.js"), []byte(script), 0644)
+	if err != nil {
+		panic(err)
+	}
+
+	conf := &core.Config{DBType: dbType, DisableAllowList: true, ScriptPath: dir}
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+
+	// Output: {"usersByID":{"email":"user1@test.com","id":2}}
+}
+
+func Example_queryWithScriptDirectiveUsingHttp() {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, `{ "hello": "world" }`)
+	}))
+	defer ts.Close()
+
+	gql := `query @script(name: "test.js") {
+		usersByID(id: 2)  {
+			id
+			email
+		}
+	}`
+
+	script := `
+	function response(json) {
+		let val = http.get("` + ts.URL + `")
+		return JSON.parse(val);
+	}
+	`
+
+	dir, err := ioutil.TempDir("", "test")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(dir)
+
+	err = ioutil.WriteFile(path.Join(dir, "test.js"), []byte(script), 0644)
+	if err != nil {
+		panic(err)
+	}
+
+	conf := &core.Config{DBType: dbType, DisableAllowList: true, ScriptPath: dir}
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+
+	// Output: {"hello":"world"}
 }
 
 func Example_queryWithView() {
@@ -1170,4 +1309,39 @@ func Example_blockQueryWithRoles() {
 		fmt.Println(string(res.Data))
 	}
 	// Output: {"users": null}
+}
+
+func Example_queryWithCamelToSnakeCase() {
+	gql := `query {
+		hotProducts(where: { productID: { eq: 55 } }) {
+			countryCode
+			countProductID
+			products {
+				id
+			}
+		}
+	}`
+
+	conf := &core.Config{DBType: dbType, DisableAllowList: true, EnableCamelcase: true}
+	conf.Tables = []core.Table{
+		{
+			Name: "hot_products",
+			Columns: []core.Column{
+				{Name: "product_id", Type: "int", ForeignKey: "products.id"},
+			},
+		},
+	}
+
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+	// Output: {"hotProducts": [{"products": {"id": 55}, "countryCode": "US", "countProductID": 1}]}
 }

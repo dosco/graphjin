@@ -46,25 +46,25 @@ func enableObservability(s *Service, mux *http.ServeMux) (func(), error) {
 		ex, err1 := prometheus.NewExporter(prometheus.Options{Namespace: s.conf.Telemetry.Metrics.Namespace})
 		if err == nil {
 			mux.Handle(ep, ex)
-			s.log.Infof("Prometheus exporter listening on: %s", ep)
+			s.log.Infof("prometheus exporter listening on: %s", ep)
 		}
 		mex, err = view.Exporter(ex), err1
 
 	case "stackdriver":
 		mex, err = stackdriver.NewExporter(stackdriver.Options{ProjectID: s.conf.Telemetry.Metrics.Key})
 		if err == nil {
-			s.log.Info("Google Stackdriver exporter initialized")
+			s.log.Info("google stackdriver exporter initialized")
 		}
 
 	case "":
-		s.log.Warn("OpenCensus: no metrics exporter defined")
+		s.log.Warn("open-census: no metrics exporter defined")
 
 	default:
 		err = fmt.Errorf("invalid metrics exporter")
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("OpenCensus: %s: %s", s.conf.Telemetry.Metrics, err)
+		return nil, fmt.Errorf("open-census: %s: %s", s.conf.Telemetry.Metrics, err)
 	}
 
 	if mex != nil {
@@ -96,14 +96,14 @@ func enableObservability(s *Service, mux *http.ServeMux) (func(), error) {
 		tex = zipkin.NewExporter(re, lep)
 
 	case "":
-		s.log.Warn("OpenCensus: no traceing exporter defined")
+		s.log.Warn("open-census: no traceing exporter defined")
 
 	default:
 		err = fmt.Errorf("invalid tracing exporter")
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("OpenCensus: %s: %v", s.conf.Telemetry.Tracing.Exporter,
+		return nil, fmt.Errorf("open-census: %s: %v", s.conf.Telemetry.Tracing.Exporter,
 			err)
 	}
 

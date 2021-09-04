@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"contrib.go.opencensus.io/integrations/ocsql"
-	"github.com/apex/log"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/stdlib"
 )
@@ -50,7 +49,7 @@ func (s *Service) newDB(useDB, useTelemetry bool) (*sql.DB, error) {
 	}
 
 	if useTelemetry && s.conf.telemetryEnabled() {
-		dc.driverName, err = initTelemetry(s.conf, db, dc.driverName)
+		dc.driverName, err = s.initTelemetry(dc.driverName)
 		if err != nil {
 			return nil, err
 		}
@@ -79,6 +78,47 @@ func (s *Service) newDB(useDB, useTelemetry bool) (*sql.DB, error) {
 
 	db.SetMaxIdleConns(100)
 	return db, nil
+}
+
+func (s *Service) initTelemetry(driverName string) (string, error) {
+	var err error
+	var opts ocsql.TraceOptions
+
+	if s.conf.Serv.Telemetry.Tracing.ExcludeHealthCheck {
+		opts = ocsql.TraceOptions{
+			AllowRoot:    true,
+			Ping:         false,
+			RowsNext:     true,
+			RowsClose:    true,
+			RowsAffected: true,
+			LastInsertID: true,
+			Query:        s.conf.Telemetry.Tracing.IncludeQuery,
+			QueryParams:  s.conf.Telemetry.Tracing.IncludeParams,
+		}
+	} else {
+		opts = ocsql.TraceOptions{
+			AllowRoot:    true,
+			Ping:         true,
+			RowsNext:     true,
+			RowsClose:    true,
+			RowsAffected: true,
+			LastInsertID: true,
+			Query:        s.conf.Telemetry.Tracing.IncludeQuery,
+			QueryParams:  s.conf.Telemetry.Tracing.IncludeParams,
+		}
+	}
+
+	opt := ocsql.WithOptions(opts)
+	name := ocsql.WithInstanceName(s.conf.AppName)
+
+	driverName, err = ocsql.Register(driverName, opt, name)
+	if err != nil {
+		return "", fmt.Errorf("unable to register ocsql driver: %v", err)
+	}
+	ocsql.RegisterAllViews()
+
+	s.log.Infof("open-census telemetry enabled")
+	return driverName, nil
 }
 
 func initPostgres(c *Config, useDB, useTelemetry bool) (*dbConf, error) {
@@ -184,30 +224,4 @@ func initMysql(c *Config, useDB, useTelemetry bool) (*dbConf, error) {
 	}
 
 	return &dbConf{"mysql", connString}, nil
-}
-
-func initTelemetry(c *Config, db *sql.DB, driverName string) (string, error) {
-	var err error
-
-	opts := ocsql.TraceOptions{
-		AllowRoot:    true,
-		Ping:         true,
-		RowsNext:     true,
-		RowsClose:    true,
-		RowsAffected: true,
-		LastInsertID: true,
-		Query:        c.Telemetry.Tracing.IncludeQuery,
-		QueryParams:  c.Telemetry.Tracing.IncludeParams,
-	}
-	opt := ocsql.WithOptions(opts)
-	name := ocsql.WithInstanceName(c.AppName)
-
-	driverName, err = ocsql.Register(driverName, opt, name)
-	if err != nil {
-		return "", fmt.Errorf("unable to register ocsql driver: %v", err)
-	}
-	ocsql.RegisterAllViews()
-
-	log.Info("OpenCensus telemetry enabled")
-	return driverName, nil
 }

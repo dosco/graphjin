@@ -70,12 +70,31 @@ poll_every_seconds: 5
 # Defaults to 20
 default_limit: 20
 
+# Disables all aggregation functions like count, sum, etc
+# disable_agg_functions: false
+
+# Disables all functions like count, length, etc
+# disable_functions: false
+
+# Enables using camel case terms in GraphQL which are converted 
+# to snake case in SQL
+# enable_camelcase: false
+
 # Set session variable "user.id" to the user id
 # Enable this if you need the user id in triggers, etc
 # Note: This will not work with subscriptions
 set_user_id: false
 
-# open opencensus tracing and metrics
+# DefaultBlock ensures that in anonymous mode (role 'anon') all tables
+# are blocked from queries and mutations. To open access to tables in
+# anonymous mode they have to be added to the 'anon' role config.
+default_block: false
+
+# OpenCensus tracing and metrics: when debug is enabled you will get
+# a debug web ui. More info at https://opencensus.io/zpages/go/ 
+# Rpc Stats: http://<host>/telemetry/rpcz 
+# Trace Spans: http://<host>/telemetry/tracez
+#
 # telemetry:
 #   debug: true
 #   metrics:

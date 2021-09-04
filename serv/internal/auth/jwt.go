@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 
 	jwt "github.com/dgrijalva/jwt-go"
@@ -12,7 +14,7 @@ const (
 	authHeader = "Authorization"
 )
 
-func JwtHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
+func JwtHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
 	jwtProvider, err := provider.NewProvider(ac.JWT)
 	if err != nil {
 		return nil, err
@@ -20,24 +22,25 @@ func JwtHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 
 	cookie := ac.Cookie
 
-	return func(w http.ResponseWriter, r *http.Request) {
-
+	return func(w http.ResponseWriter, r *http.Request) (context.Context, error) {
 		var tok string
 
 		if cookie != "" {
 			ck, err := r.Cookie(cookie)
 			if err != nil {
-				next.ServeHTTP(w, r)
-				return
+				return nil, err
 			}
 			tok = ck.Value
 		} else {
 			ah := r.Header.Get(authHeader)
 			if len(ah) < 10 {
-				next.ServeHTTP(w, r)
-				return
+				return nil, fmt.Errorf("invalid or missing header: %s", authHeader)
 			}
 			tok = ah[7:]
+		}
+
+		if tok == "" {
+			return nil, fmt.Errorf("jwt not found")
 		}
 
 		keyFunc := jwtProvider.KeyFunc()
@@ -45,33 +48,23 @@ func JwtHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
 		token, err := jwt.ParseWithClaims(tok, jwt.MapClaims{}, keyFunc) //jwt.MapClaims is already passed by reference
 
 		if err != nil {
-			next.ServeHTTP(w, r)
-			return
+			return nil, err
 		}
 
 		if claims, ok := token.Claims.(jwt.MapClaims); ok {
 			ctx := r.Context()
 
 			if !jwtProvider.VerifyAudience(claims) {
-				next.ServeHTTP(w, r)
-				return
+				return nil, fmt.Errorf("invalid aud claim")
 			}
 
 			if !jwtProvider.VerifyIssuer(claims) {
-				next.ServeHTTP(w, r)
-				return
+				return nil, fmt.Errorf("invalid iss claim")
 			}
 
 			ctx, err = jwtProvider.SetContextValues(ctx, claims)
-			if err != nil {
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			next.ServeHTTP(w, r.WithContext(ctx))
-			return
+			return ctx, err
 		}
-
-		next.ServeHTTP(w, r)
+		return nil, fmt.Errorf("invalid claims")
 	}, nil
 }

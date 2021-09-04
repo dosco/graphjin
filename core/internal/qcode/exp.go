@@ -9,18 +9,19 @@ import (
 	"github.com/dosco/graphjin/core/internal/util"
 )
 
-func (co *Compiler) compileArgObj(ti sdata.DBTable, st *util.StackInf, arg *graph.Arg) (*Exp, bool, error) {
+func (co *Compiler) compileArgObj(edge string, ti sdata.DBTable, st *util.StackInf, arg *graph.Arg) (*Exp, bool, error) {
 	if arg.Val.Type != graph.NodeObj {
 		return nil, false, fmt.Errorf("expecting an object")
 	}
 
-	return co.compileArgNode(ti, st, arg.Val, false)
+	return co.compileArgNode(edge, ti, st, arg.Val, false)
 }
 
 type aexpst struct {
 	co       *Compiler
 	st       *util.StackInf
 	ti       sdata.DBTable
+	edge     string
 	savePath bool
 }
 
@@ -31,6 +32,7 @@ type aexp struct {
 }
 
 func (co *Compiler) compileArgNode(
+	edge string,
 	ti sdata.DBTable,
 	st *util.StackInf,
 	node *graph.Node,
@@ -43,7 +45,12 @@ func (co *Compiler) compileArgNode(
 		return nil, false, errors.New("invalid argument value")
 	}
 
-	ast := &aexpst{co: co, st: st, ti: ti, savePath: savePath}
+	ast := &aexpst{co: co,
+		st:       st,
+		ti:       ti,
+		edge:     edge,
+		savePath: savePath,
+	}
 	ast.pushChildren(nil, node)
 
 	for {
@@ -73,7 +80,10 @@ func (co *Compiler) compileArgNode(
 			continue
 		}
 
-		if ex.Right.ValType == ValVar && ex.Right.Val == "user_id" {
+		if ex.Right.ValType == ValVar &&
+			(ex.Right.Val == "user_id" ||
+				ex.Right.Val == "user_id_raw" ||
+				ex.Right.Val == "user_id_provider") {
 			needsUser = true
 		}
 
@@ -116,10 +126,16 @@ func (ast *aexpst) parseNode(av aexp) (*Exp, error) {
 		ex.Right.Path = append(av.path, node.Name)
 	}
 
+	guess := false
+
 	switch name {
 	case "and":
 		if len(node.Children) == 0 {
-			return nil, errors.New("missing expression after 'AND' operator")
+			return nil, errors.New("missing expression after 'and' operator")
+		}
+		if len(node.Children) == 1 {
+			return nil, fmt.Errorf("expression does not need an 'and' operator: %s",
+				ast.ti.Name)
 		}
 		ex.Op = OpAnd
 		ast.pushChildren(ex, node)
@@ -127,11 +143,15 @@ func (ast *aexpst) parseNode(av aexp) (*Exp, error) {
 		if len(node.Children) == 0 {
 			return nil, errors.New("missing expression after 'OR' operator")
 		}
+		if len(node.Children) == 1 {
+			return nil, fmt.Errorf("expression does not need an 'or' operator: %s",
+				ast.ti.Name)
+		}
 		ex.Op = OpOr
 		ast.pushChildren(ex, node)
 	case "not":
 		if len(node.Children) == 0 {
-			return nil, errors.New("missing expression after 'NOT' operator")
+			return nil, errors.New("missing expression after 'not' operator")
 		}
 		ex.Op = OpNot
 		ast.pushChildren(ex, node)
@@ -191,10 +211,10 @@ func (ast *aexpst) parseNode(av aexp) (*Exp, error) {
 		ex.Right.Val = node.Val
 	case "contains":
 		ex.Op = OpContains
-		ex.Right.Val = node.Val
+		setListVal(ex, node)
 	case "contained_in":
 		ex.Op = OpContainedIn
-		ex.Right.Val = node.Val
+		setListVal(ex, node)
 	case "has_key":
 		ex.Op = OpHasKey
 		ex.Right.Val = node.Val
@@ -226,22 +246,28 @@ func (ast *aexpst) parseNode(av aexp) (*Exp, error) {
 		switch node.Type {
 		case graph.NodeList:
 			ex.Op = OpIn
-			ex.Right.ValType = ValList
 			setListVal(ex, node)
-
 		default:
 			ex.Op = OpEquals
 			ex.Right.Val = node.Val
 		}
+		guess = true
 	}
 
 	if ex.Op != OpAnd && ex.Op != OpOr && ex.Op != OpNot {
-		if ex.Right.ValType, err = getExpType(node); err != nil {
+		if ex.Right.ValType != ValList {
+			if ex.Right.ValType, err = getExpType(node); err != nil {
+				return nil, err
+			}
+		}
+		if err := ast.setExpColName(ex, node); err != nil {
 			return nil, err
 		}
-		if err := setExpColName(ast.co.s, ast.ti, ex, node); err != nil {
-			return nil, err
-		}
+	}
+
+	if guess && ex.Left.Col.Array {
+		ex.Op = OpContains
+		setListVal(ex, node)
 	}
 
 	return ex, nil
@@ -265,16 +291,22 @@ func getExpType(node *graph.Node) (ValType, error) {
 }
 
 func setListVal(ex *Exp, node *graph.Node) {
+	var t graph.ParserType
+
 	if len(node.Children) != 0 {
-		switch node.Children[0].Type {
-		case graph.NodeStr:
-			ex.Right.ListType = ValStr
-		case graph.NodeNum:
-			ex.Right.ListType = ValNum
-		case graph.NodeBool:
-			ex.Right.ListType = ValBool
-		}
+		t = node.Children[0].Type
 	} else {
+		t = node.Type
+	}
+
+	switch t {
+	case graph.NodeStr:
+		ex.Right.ListType = ValStr
+	case graph.NodeNum:
+		ex.Right.ListType = ValNum
+	case graph.NodeBool:
+		ex.Right.ListType = ValBool
+	default:
 		ex.Right.Val = node.Val
 		return
 	}
@@ -282,11 +314,19 @@ func setListVal(ex *Exp, node *graph.Node) {
 	for i := range node.Children {
 		ex.Right.ListVal = append(ex.Right.ListVal, node.Children[i].Val)
 	}
+
+	if len(node.Children) == 0 {
+		ex.Right.ValType = ValList
+		ex.Right.ListVal = append(ex.Right.ListVal, node.Val)
+	}
 }
 
-func setExpColName(s *sdata.DBSchema, ti sdata.DBTable, ex *Exp, node *graph.Node) error {
+func (ast *aexpst) setExpColName(ex *Exp, node *graph.Node) error {
 	var list []string
 	var err error
+
+	s := ast.co.s
+	ti := ast.ti
 
 	for n := node; n != nil; n = n.Parent {
 		// if n.Type != graph.NodeObj {
@@ -302,16 +342,28 @@ func setExpColName(s *sdata.DBSchema, ti sdata.DBTable, ex *Exp, node *graph.Nod
 		}
 	}
 
+	var nn string
+
 	switch len(list) {
 	case 1:
-		if col, err := ti.GetColumn(node.Name); err == nil {
+		if ast.co.c.EnableCamelcase {
+			nn = util.ToSnake(node.Name)
+		} else {
+			nn = node.Name
+		}
+		if col, err := ti.GetColumn(nn); err == nil {
 			ex.Left.Col = col
 		} else {
 			return err
 		}
 
 	case 2:
-		if col, err := ti.GetColumn(list[0]); err == nil {
+		if ast.co.c.EnableCamelcase {
+			nn = util.ToSnake(list[0])
+		} else {
+			nn = list[0]
+		}
+		if col, err := ti.GetColumn(nn); err == nil {
 			ex.Left.Col = col
 			return nil
 		}
@@ -319,10 +371,18 @@ func setExpColName(s *sdata.DBSchema, ti sdata.DBTable, ex *Exp, node *graph.Nod
 
 	default:
 		var prev, curr string
-		prev = ti.Name
+		if ast.edge == "" {
+			prev = ti.Name
+		} else {
+			prev = ast.edge
+		}
 
 		for i := 0; i < len(list)-1; i++ {
-			curr = list[i]
+			if ast.co.c.EnableCamelcase {
+				curr = util.ToSnake(list[i])
+			} else {
+				curr = list[i]
+			}
 
 			if curr == ti.Name {
 				continue

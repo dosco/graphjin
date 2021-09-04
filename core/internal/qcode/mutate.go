@@ -186,7 +186,7 @@ func (co *Compiler) compileMutation(qc *QCode, op *graph.Operation, role string)
 			m1.Multi = true
 		}
 
-		if m1.Type == MTNone {
+		if m1.Type == MTNone && m1.ParentID != -1 {
 			p := &mutates[m1.ParentID]
 			delete(p.DependsOn, m1.ID)
 
@@ -256,6 +256,11 @@ func (co *Compiler) newMutate(ms *mState, m Mutate, role string) error {
 		} else {
 			rel := sdata.PathToRel(paths[0])
 			ti := rel.Left.Ti
+
+			if rel.Type != sdata.RelRecursive &&
+				ms.id == 1 && ti.Name == ms.qc.Selects[0].Ti.Name {
+				return fmt.Errorf("remove json root '%s' from '%s' data", k, ms.qc.SType)
+			}
 
 			m1 = Mutate{
 				ID:       ms.id,

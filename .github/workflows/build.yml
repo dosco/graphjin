@@ -2,46 +2,46 @@ name: Build
 
 on:
   push:
-    branches: [ master ]
-    tags: [ 'v*' ]
-    paths-ignore: ['**.md', 'docs/**']
+    branches: [master]
+    tags: ["v*"]
+    paths-ignore: ["**.md", "docs/**"]
 
   pull_request:
-     branches: [ master ]
-     paths-ignore: ['**.md', 'docs/**']
+    branches: [master]
+    paths-ignore: ["**.md", "docs/**"]
 
 jobs:
   linter:
     name: lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout
+        uses: actions/checkout@v2
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v2
         with:
           version: v1.37
           args: --timeout=10m
-      
+
   releaser:
     needs: linter
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2.3.4
-        with:
-          fetch-depth: 0
-      
+        uses: actions/checkout@v2
+
       - name: Set up Snapcraft
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           sudo apt-get update
           sudo apt-get -yq --no-install-suggests --no-install-recommends install snapcraft
-      
+
       - name: Set up Go
         uses: actions/setup-go@v2
         with:
-          go-version: '1.16'
-      
+          go-version: "1.16"
+
       - name: Cache Go modules
         uses: actions/cache@v2.1.4
         with:
@@ -49,23 +49,23 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
-        
+
       - name: Run Postgres Tests
         run: go test -v ./...
-        
+
       - name: Run MySQL Tests
         working-directory: ./core
         run: |
           go test -v -db=mysql -run=Example_query
           go test -v -db=mysql -run=Example_sub
-          
+
       - name: Snapcraft Login
         if: success() && startsWith(github.ref, 'refs/tags/v')
         env:
           SNAPCRAFT_CREDS: ${{ secrets.SNAPCRAFT_LOGIN }}
         run: |
           snapcraft login --with <(echo "$SNAPCRAFT_CREDS")
-          
+
       - name: Import GPG key
         if: success() && startsWith(github.ref, 'refs/tags/v')
         id: import_gpg
@@ -73,7 +73,7 @@ jobs:
         with:
           gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.GPG_PASSPHRASE }}
-      
+
       - name: Run GoReleaser
         if: success() && startsWith(github.ref, 'refs/tags/v')
         uses: goreleaser/goreleaser-action@v2
@@ -84,3 +84,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GR_TOKEN }}
           GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
 
+  publish:
+    needs: releaser
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Update version in package.json
+        run: |
+          sudo apt-get install jq
+          jq '.version = $newVal' --arg newVal ${GITHUB_REF/refs\/tags\/v/} package.json > tmp.$$.json && mv tmp.$$.json package.json
+
+      - uses: JS-DevTools/npm-publish@v1
+        with:
+          token: ${{ secrets.NPM_TOKEN }}

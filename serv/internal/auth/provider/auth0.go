@@ -52,11 +52,12 @@ func (p *Auth0Provider) SetContextValues(ctx context.Context, claims jwt.MapClai
 		return ctx, errors.New("undefined claims")
 	}
 	sub, found := claims["sub"].(string)
-	if !found {
-		return ctx, errors.New("subject claim not found")
+	if !found || sub == "" {
+		return ctx, errors.New("sub claim not found")
 	}
-	sp := strings.Split(sub, "|")
+	sp := strings.SplitN(sub, "|", 2)
 	if len(sub) == 2 {
+		ctx = context.WithValue(ctx, core.UserIDRawKey, sub)
 		ctx = context.WithValue(ctx, core.UserIDProviderKey, sp[0])
 		ctx = context.WithValue(ctx, core.UserIDKey, sp[1])
 	} else {

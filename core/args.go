@@ -52,6 +52,13 @@ func (gj *GraphJin) argList(c context.Context, md psql.Metadata, vars []byte, rc
 				return ar, argErr(p)
 			}
 
+		case "user_id_raw":
+			if v := c.Value(UserIDRawKey); v != nil {
+				vl[i] = v.(string)
+			} else {
+				return ar, argErr(p)
+			}
+
 		case "user_id_provider":
 			if v := c.Value(UserIDProviderKey); v != nil {
 				vl[i] = v.(string)

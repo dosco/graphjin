@@ -29,6 +29,7 @@ CREATE TABLE products (
   name VARCHAR(255) ,
   description VARCHAR(255),
   tags  VARCHAR(255),  
+  country_code VARCHAR(3),  
   price FLOAT(7,1),
   owner_id BIGINT,
   category_ids VARCHAR(255) NOT NULL ,
@@ -89,8 +90,9 @@ CREATE TABLE chats (
 CREATE VIEW 
   hot_products
 AS (
-  SELECT 
-      id as product_id 
+  SELECT
+      id as product_id,
+      country_code
   FROM
       products
   WHERE
@@ -143,12 +145,13 @@ LIMIT
 
 -- insert products
 INSERT INTO 
-  products (id, name, description, tags, category_ids, price, owner_id, created_at)
+  products (id, name, description, tags, country_code, category_ids, price, owner_id, created_at)
 SELECT 
   i, 
   CONCAT('Product ', i), 
   CONCAT('Description for product ', i),
   (SELECT GROUP_CONCAT(CONCAT('Tag ', i) ORDER BY i ASC SEPARATOR ',') FROM seq100 WHERE i <= 5),
+  'US',
   (SELECT JSON_ARRAYAGG(i) FROM seq100 WHERE i <= 5),
   (i + 10.5),
   i,

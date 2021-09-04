@@ -69,9 +69,11 @@ func (co *Compiler) isFunction(sel *Select, fname, alias string) (Function, bool
 }
 
 func (co *Compiler) funcPrefixLen(col string) int {
-	for _, v := range stdFuncs {
-		if strings.HasPrefix(col, v) {
-			return len(v)
+	if !co.c.DisableAgg {
+		for _, v := range stdFuncs {
+			if strings.HasPrefix(col, v) {
+				return len(v)
+			}
 		}
 	}
 	fnLen := len(col)

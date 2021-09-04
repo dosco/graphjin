@@ -50,6 +50,8 @@ type Service struct {
 	conf     *Config            // parsed config
 	db       *sql.DB            // database connection pool
 	gj       *core.GraphJin
+	srv      *http.Server
+	started  bool
 }
 
 func NewGraphJinService(conf *Config) (*Service, error) {

@@ -8,6 +8,7 @@ import (
 	"github.com/chirino/graphql/resolvers"
 	"github.com/chirino/graphql/schema"
 	"github.com/dosco/graphjin/core/internal/sdata"
+	"github.com/dosco/graphjin/core/internal/util"
 )
 
 var typeMap map[string]string = map[string]string{
@@ -111,6 +112,7 @@ var funcListString []funcInfo = []funcInfo{
 type intro struct {
 	*schema.Schema
 	*sdata.DBSchema
+	gj           *GraphJin
 	query        *schema.Object
 	mutation     *schema.Object
 	subscription *schema.Object
@@ -126,6 +128,7 @@ func (gj *GraphJin) initGraphQLEgine() error {
 	in := &intro{
 		Schema:       engine.Schema,
 		DBSchema:     gj.schema,
+		gj:           gj,
 		query:        &schema.Object{Name: "Query", Fields: schema.FieldList{}},
 		mutation:     &schema.Object{Name: "Mutation", Fields: schema.FieldList{}},
 		subscription: &schema.Object{Name: "Subscribe", Fields: schema.FieldList{}},
@@ -224,7 +227,11 @@ func (in *intro) addTable(name string, ti sdata.DBTable, singular bool) error {
 	}
 
 	if singular {
-		name = name + in.SingularSuffix.Value
+		name = name + in.SingularSuffix
+	}
+
+	if in.gj.conf.EnableCamelcase {
+		name = util.ToCamel(name)
 	}
 
 	// outputType
@@ -281,9 +288,16 @@ func (in *intro) addTable(name string, ti sdata.DBTable, singular bool) error {
 	}
 
 	for k, t := range relTables1 {
+		k1 := t.Name + "Output"
+		if _, ok := in.Types[k1]; !ok {
+			continue
+		}
+		if t.Blocked {
+			continue
+		}
 		ot.Fields = append(ot.Fields, &schema.Field{
 			Name: k,
-			Type: &schema.TypeName{Name: t.Name + "Output"},
+			Type: &schema.TypeName{Name: k1},
 		})
 	}
 
@@ -293,9 +307,16 @@ func (in *intro) addTable(name string, ti sdata.DBTable, singular bool) error {
 	}
 
 	for k, t := range relTables2 {
+		k1 := t.Name + "Output"
+		if _, ok := in.Types[k1]; !ok {
+			continue
+		}
+		if t.Blocked {
+			continue
+		}
 		ot.Fields = append(ot.Fields, &schema.Field{
 			Name: k,
-			Type: &schema.TypeName{Name: t.Name + "Output"},
+			Type: &schema.TypeName{Name: k1},
 		})
 	}
 
@@ -322,6 +343,19 @@ func (in *intro) addDirectives() {
 		},
 	}
 
+	in.DeclaredDirectives["script"] = &schema.DirectiveDecl{
+		Name: "script",
+		Desc: schema.NewDescription("Script the executor to use run specified script against this GraphQL request"),
+		Locs: []string{"QUERY", "MUTATION", "SUBSCRIPTION"},
+		Args: schema.InputValueList{
+			{
+				Name: "name",
+				Desc: schema.NewDescription("Script name"),
+				Type: &schema.TypeName{Name: "String"},
+			},
+		},
+	}
+
 	in.DeclaredDirectives["notRelated"] = &schema.DirectiveDecl{
 		Name: "notRelated",
 		Desc: schema.NewDescription("Directs the executor to treat this selector as if it were the top-level selector with no relation to its parent"),
@@ -331,7 +365,7 @@ func (in *intro) addDirectives() {
 	in.DeclaredDirectives["cacheControl"] = &schema.DirectiveDecl{
 		Name: "cacheControl",
 		Desc: schema.NewDescription("Directs the executor to set the cache-control header when GET (APQ) requests are used for the query"),
-		Locs: []string{"FIELD"},
+		Locs: []string{"QUERY", "MUTATION", "SUBSCRIPTION"},
 		Args: schema.InputValueList{
 			{
 				Name: "maxAge",
@@ -348,13 +382,17 @@ func (in *intro) addDirectives() {
 }
 
 func (in *intro) addColumn(
-	name string,
+	tableName string,
 	ti sdata.DBTable, col sdata.DBColumn,
 	it, obt, expt *schema.InputObject, ot *schema.Object, singular bool) {
 
 	colName := col.Name
 	if col.Blocked {
 		return
+	}
+
+	if in.gj.conf.EnableCamelcase {
+		colName = util.ToCamel(colName)
 	}
 
 	colType, typeName := getGQLType(col)
@@ -364,52 +402,9 @@ func (in *intro) addColumn(
 		Type: colType,
 	})
 
-	if col.PrimaryKey {
-		ot.Fields = append(ot.Fields, &schema.Field{
-			Name: funcCount.name + "_" + colName,
-			Type: colType,
-			Desc: schema.NewDescription(funcCount.desc),
-		})
-	}
+	in.addFuncs(colName, typeName, colType, ti, col, it, obt, expt, ot, singular)
 
-	// No functions on foreign key columns
-	if col.FKeyCol == "" {
-		// If it's a numeric type...
-		if typeName == "Float" || typeName == "Int" {
-			for _, v := range funcListNum {
-				desc := fmt.Sprintf(v.desc, colName)
-				ot.Fields = append(ot.Fields, &schema.Field{
-					Name: v.name + "_" + colName,
-					Type: colType,
-					Desc: schema.NewDescription(desc),
-				})
-			}
-		}
-
-		if typeName == "String" {
-			for _, v := range funcListString {
-				desc := fmt.Sprintf(v.desc, colName)
-				ot.Fields = append(ot.Fields, &schema.Field{
-					Name: v.name + "_" + colName,
-					Type: colType,
-					Desc: schema.NewDescription(desc),
-				})
-			}
-		}
-
-		for _, f := range in.GetFunctions() {
-			if col.Type != f.Params[0].Type {
-				continue
-			}
-
-			ot.Fields = append(ot.Fields, &schema.Field{
-				Name: f.Name + "_" + colName,
-				Type: colType,
-			})
-		}
-	}
-
-	in.addArgs(name, ti, col, it, obt, expt, ot, singular)
+	in.addArgs(tableName, ti, col, it, obt, expt, ot, singular)
 
 	it.Fields = append(it.Fields, &schema.InputValue{
 		Name: colName,
@@ -426,6 +421,83 @@ func (in *intro) addColumn(
 		Name: colName,
 		Type: &schema.TypeName{Name: typeName + "Expression"},
 	})
+}
+
+func (in *intro) addFuncs(
+	colName string,
+	typeName string,
+	colType schema.Type,
+	ti sdata.DBTable, col sdata.DBColumn,
+	it, obt, expt *schema.InputObject, ot *schema.Object, singular bool) {
+	var fn string
+
+	if in.gj.conf.DisableFuncs {
+		return
+	}
+
+	if col.PrimaryKey && !in.gj.conf.DisableAgg {
+		fn = funcCount.name + "_" + colName
+		if in.gj.conf.EnableCamelcase {
+			fn = util.ToCamel(fn)
+		}
+		ot.Fields = append(ot.Fields, &schema.Field{
+			Name: fn,
+			Type: colType,
+			Desc: schema.NewDescription(funcCount.desc),
+		})
+	}
+
+	// No functions on foreign key columns
+	if col.FKeyCol == "" {
+		// If it's a numeric type...
+
+		if !in.gj.conf.DisableAgg {
+			if typeName == "Float" || typeName == "Int" {
+				for _, v := range funcListNum {
+					fn = funcCount.name + "_" + colName
+					if in.gj.conf.EnableCamelcase {
+						fn = util.ToCamel(fn)
+					}
+					desc := fmt.Sprintf(v.desc, colName)
+					ot.Fields = append(ot.Fields, &schema.Field{
+						Name: fn,
+						Type: colType,
+						Desc: schema.NewDescription(desc),
+					})
+				}
+			}
+		}
+
+		if typeName == "String" {
+			for _, v := range funcListString {
+				fn = funcCount.name + "_" + colName
+				if in.gj.conf.EnableCamelcase {
+					fn = util.ToCamel(fn)
+				}
+				desc := fmt.Sprintf(v.desc, colName)
+				ot.Fields = append(ot.Fields, &schema.Field{
+					Name: fn,
+					Type: colType,
+					Desc: schema.NewDescription(desc),
+				})
+			}
+		}
+
+		for _, f := range in.GetFunctions() {
+			if col.Type != f.Params[0].Type {
+				continue
+			}
+
+			fn = funcCount.name + "_" + colName
+			if in.gj.conf.EnableCamelcase {
+				fn = util.ToCamel(fn)
+			}
+			ot.Fields = append(ot.Fields, &schema.Field{
+				Name: fn,
+				Type: colType,
+			})
+		}
+	}
 }
 
 func (in *intro) addArgs(
