@@ -144,19 +144,13 @@ func initPostgres(c *Config, useDB, useTelemetry bool) (*dbConf, error) {
 		if len(c.DB.ServerCert) == 0 {
 			return nil, errors.New("server_cert is required")
 		}
-		if len(c.DB.ClientCert) == 0 {
-			return nil, errors.New("client_cert is required")
-		}
-		if len(c.DB.ClientKey) == 0 {
-			return nil, errors.New("client_key is required")
-		}
 
 		rootCertPool := x509.NewCertPool()
 		var pem []byte
 		var err error
 
 		if strings.Contains(c.DB.ServerCert, pemSig) {
-			pem = []byte(c.DB.ServerCert)
+			pem = []byte(strings.ReplaceAll(c.DB.ServerCert, `\n`, "\n"))
 		} else {
 			pem, err = ioutil.ReadFile(c.RelPath(c.DB.ServerCert))
 		}
@@ -169,24 +163,35 @@ func initPostgres(c *Config, useDB, useTelemetry bool) (*dbConf, error) {
 			return nil, errors.New("db tls: failed to append pem")
 		}
 
-		clientCert := make([]tls.Certificate, 0, 1)
-		var certs tls.Certificate
-
-		if strings.Contains(c.DB.ClientCert, pemSig) {
-			certs, err = tls.X509KeyPair([]byte(c.DB.ClientCert), []byte(c.DB.ClientKey))
-		} else {
-			certs, err = tls.LoadX509KeyPair(c.RelPath(c.DB.ClientCert), c.RelPath(c.DB.ClientKey))
-		}
-
-		if err != nil {
-			return nil, fmt.Errorf("db tls: %w", err)
-		}
-
-		clientCert = append(clientCert, certs)
 		config.TLSConfig = &tls.Config{
-			RootCAs:      rootCertPool,
-			Certificates: clientCert,
-			ServerName:   c.DB.ServerName,
+			RootCAs:    rootCertPool,
+			ServerName: c.DB.ServerName,
+		}
+
+		if len(c.DB.ClientCert) > 0 {
+			if len(c.DB.ClientKey) == 0 {
+				return nil, errors.New("client_key is required")
+			}
+
+			clientCert := make([]tls.Certificate, 0, 1)
+			var certs tls.Certificate
+
+			if strings.Contains(c.DB.ClientCert, pemSig) {
+				certs, err = tls.X509KeyPair(
+					[]byte(strings.ReplaceAll(c.DB.ClientCert, `\n`, "\n")),
+					[]byte(strings.ReplaceAll(c.DB.ClientKey, `\n`, "\n")),
+				)
+			} else {
+				certs, err = tls.LoadX509KeyPair(c.RelPath(c.DB.ClientCert), c.RelPath(c.DB.ClientKey))
+			}
+
+			if err != nil {
+				return nil, fmt.Errorf("db tls: %w", err)
+			}
+
+			clientCert = append(clientCert, certs)
+
+			config.TLSConfig.Certificates = clientCert
 		}
 	}
 
