@@ -45,6 +45,9 @@ type Config struct {
 	// anonymous mode they have to be added to the 'anon' role config.
 	DefaultBlock bool `mapstructure:"default_block"`
 
+	// Functionality to allow the administrator to require that arguments such as where or Id must be present in all queries.
+	RequiredOperations []string
+
 	// Vars is a map of hardcoded variables that can be leveraged in your
 	// queries (eg. variable admin_id will be $admin_id in the query)
 	Vars map[string]string `mapstructure:"variables"`

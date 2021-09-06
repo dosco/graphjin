@@ -879,8 +879,13 @@ func (co *Compiler) compileDirectives(qc *QCode, sel *Select, dirs []graph.Direc
 func (co *Compiler) compileArgs(qc *QCode, sel *Select, args []graph.Arg, role string) error {
 	var err error
 
+	hasRequiredOps := 0
+
 	for i := range args {
 		arg := &args[i]
+		if (doesRequiredArgExist(arg,co.c.RequiredOperations)) {
+			hasRequiredOps++
+		}
 
 		switch arg.Name {
 		case "id":
@@ -923,6 +928,9 @@ func (co *Compiler) compileArgs(qc *QCode, sel *Select, args []graph.Arg, role s
 		if err != nil {
 			return err
 		}
+	}
+	if hasRequiredOps == 0 && len(co.c.RequiredOperations) > 0 {
+		return fmt.Errorf("arguments: required operations are not present in the query.")
 	}
 
 	return nil
@@ -1613,3 +1621,14 @@ func (sel *Select) addArg(arg *graph.Arg) {
 	}
 	sel.Args[arg.Name] = Arg{Val: arg.Val.Val}
 }
+
+func doesRequiredArgExist(arg *graph.Arg, requiredOperations []string) bool{
+	for _,s := range requiredOperations {
+		if s == arg.Name {
+			return true
+		}
+	}
+	return false
+}
+
+

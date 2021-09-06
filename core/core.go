@@ -154,6 +154,7 @@ func (gj *GraphJin) initCompilers() error {
 		EnableCamelcase:  gj.conf.EnableCamelcase,
 		EnableInflection: gj.conf.EnableInflection,
 		DBSchema:         gj.schema.DBSchema(),
+		RequiredOperations: gj.conf.RequiredOperations,
 	}
 
 	if gj.allowList != nil && gj.prod {

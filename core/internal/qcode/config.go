@@ -18,6 +18,7 @@ type Config struct {
 	EnableInflection bool
 	DBSchema         string
 	defTrv           trval
+	RequiredOperations []string
 }
 
 type TConfig struct {
