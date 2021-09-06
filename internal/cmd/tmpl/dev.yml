@@ -85,7 +85,16 @@ default_limit: 20
 # Note: This will not work with subscriptions
 set_user_id: false
 
-# open opencensus tracing and metrics
+# DefaultBlock ensures that in anonymous mode (role 'anon') all tables
+# are blocked from queries and mutations. To open access to tables in
+# anonymous mode they have to be added to the 'anon' role config.
+default_block: false
+
+# OpenCensus tracing and metrics: when debug is enabled you will get
+# a debug web ui. More info at https://opencensus.io/zpages/go/ 
+# Rpc Stats: http://<host>/telemetry/rpcz 
+# Trace Spans: http://<host>/telemetry/tracez
+#
 # telemetry:
 #   debug: true
 #   metrics:

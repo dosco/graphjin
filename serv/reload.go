@@ -4,7 +4,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -83,7 +82,7 @@ func do(s *Service, log func(string, ...interface{}), additional ...dir) error {
 				// Ensure that we use the correct events, as they are not uniform across
 				// platforms. See https://github.com/fsnotify/fsnotify/issues/74
 
-				if s.conf == nil {
+				if !s.started || s.conf == nil {
 					continue
 				}
 
@@ -96,32 +95,22 @@ func do(s *Service, log func(string, ...interface{}), additional ...dir) error {
 					continue
 				}
 
-				log("INF Reloading, config file changed: %s", event.Name)
-
-				var trigger bool
-				switch runtime.GOOS {
-				case "darwin", "freebsd", "openbsd", "netbsd", "dragonfly":
-					trigger = event.Op&fsnotify.Create == fsnotify.Create
-				case "linux":
-					trigger = event.Op&fsnotify.Write == fsnotify.Write
-				default:
-					trigger = event.Op&fsnotify.Create == fsnotify.Create
-					log("reload: untested GOOS %q; this package may not work correctly", runtime.GOOS)
-				}
-
-				if !trigger {
+				if event.Op != fsnotify.Create && event.Op != fsnotify.Write {
 					continue
 				}
 
+				log("reloading, config file changed: %s", event.Name)
+
 				if event.Name == binSelf {
 					// Wait for writes to finish.
-					time.Sleep(100 * time.Millisecond)
+					log("reloading, config file changed: %s", event.Name)
+					time.Sleep(500 * time.Millisecond)
 					reExec(s)()
 				}
 
 				for _, a := range additional {
 					if strings.HasPrefix(event.Name, a.path) {
-						time.Sleep(100 * time.Millisecond)
+						time.Sleep(500 * time.Millisecond)
 						a.cb()
 					}
 				}
@@ -135,7 +124,6 @@ func do(s *Service, log func(string, ...interface{}), additional ...dir) error {
 		}
 	}
 
-	log("Config changed restarting")
 	<-done
 	return nil
 }
@@ -145,7 +133,7 @@ func reExec(s *Service) func() {
 	return func() {
 		err := syscall.Exec(binSelf, append([]string{binSelf}, os.Args[1:]...), os.Environ())
 		if err != nil {
-			s.log.Fatalf("Cannot restart: %s", err)
+			s.log.Fatalf("cannot restart: %s", err)
 		}
 	}
 }
@@ -153,6 +141,7 @@ func reExec(s *Service) func() {
 // Get location to executable.
 func self() (string, error) {
 	bin := os.Args[0]
+
 	if !filepath.IsAbs(bin) {
 		var err error
 		bin, err = os.Executable()

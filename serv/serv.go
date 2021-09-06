@@ -5,6 +5,7 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -49,7 +50,7 @@ func initWatcher(s *Service) {
 	go func() {
 		err := do(s, s.log.Infof, d)
 		if err != nil {
-			s.log.Fatalf("Error in config file wacher: %s", err)
+			s.log.Fatalf("error in config file wacher: %s", err)
 		}
 	}()
 }
@@ -93,10 +94,10 @@ func startHTTP(s *Service) {
 
 	routes, err := routeHandler(s, http.NewServeMux())
 	if err != nil {
-		s.log.Fatalf("Error setting up API routes: %s", err)
+		s.log.Fatalf("error setting up routes: %s", err)
 	}
 
-	srv := &http.Server{
+	s.srv = &http.Server{
 		Addr:           s.conf.hostPort,
 		Handler:        routes,
 		ReadTimeout:    5 * time.Second,
@@ -106,12 +107,12 @@ func startHTTP(s *Service) {
 
 	if s.conf.telemetryEnabled() {
 		if s.conf.Serv.Telemetry.Tracing.ExcludeHealthCheck {
-			srv.Handler = &ochttp.Handler{
+			s.srv.Handler = &ochttp.Handler{
 				Handler:          routes,
 				IsHealthEndpoint: isHealthEndpoint,
 			}
 		} else {
-			srv.Handler = &ochttp.Handler{Handler: routes}
+			s.srv.Handler = &ochttp.Handler{Handler: routes}
 		}
 	}
 
@@ -121,27 +122,35 @@ func startHTTP(s *Service) {
 		signal.Notify(sigint, os.Interrupt)
 		<-sigint
 
-		if err := srv.Shutdown(context.Background()); err != nil {
-			s.log.Warn("Shutdown signal received")
+		if err := s.srv.Shutdown(context.Background()); err != nil {
+			s.log.Warn("shutdown signal received")
 		}
 		close(idleConnsClosed)
 	}()
 
-	srv.RegisterOnShutdown(func() {
+	s.srv.RegisterOnShutdown(func() {
 		if s.conf.closeFn != nil {
 			s.conf.closeFn()
 		}
 		if s.db != nil {
 			s.db.Close()
 		}
-		s.log.Info("Shutdown complete")
+		s.log.Info("shutdown complete")
 	})
 
-	s.log.Infof("GraphJin started, version: %s, host-port: %s, app-name: %s, env: %s\n",
+	s.log.Infof("GraphJin started, version: %s, host-port: %s, app-name: %s, env: %s",
 		version, s.conf.hostPort, appName, env)
 
-	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-		s.log.Fatal("Server stopped")
+	l, err := net.Listen("tcp", s.conf.hostPort)
+	if err != nil {
+		s.log.Fatalf("c: %s", err)
+	}
+
+	// signal we are open for business.
+	s.started = true
+
+	if err := s.srv.Serve(l); err != http.ErrServerClosed {
+		s.log.Fatalf("failed to start: %s", err)
 	}
 
 	<-idleConnsClosed

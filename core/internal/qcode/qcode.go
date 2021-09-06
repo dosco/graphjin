@@ -1,4 +1,4 @@
-//go:generate stringer -type=QType,MType,SelType,SkipType,PagingType,AggregrateOp,ValType -output=./gen_string.go
+//go:generate stringer -linecomment -type=QType,MType,SelType,SkipType,PagingType,AggregrateOp,ValType -output=./gen_string.go
 package qcode
 
 import (
@@ -17,20 +17,20 @@ import (
 )
 
 const (
-	maxSelectors = 30
+	maxSelectors = 100
 )
 
 type QType int8
 
 const (
-	QTUnknown QType = iota
-	QTQuery
-	QTSubscription
-	QTMutation
-	QTInsert
-	QTUpdate
-	QTDelete
-	QTUpsert
+	QTUnknown      QType = iota // Unknown
+	QTQuery                     // Query
+	QTSubscription              // Subcription
+	QTMutation                  // Mutation
+	QTInsert                    // Insert
+	QTUpdate                    // Update
+	QTDelete                    // Delete
+	QTUpsert                    // Upsert
 )
 
 type SelType int8
