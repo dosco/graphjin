@@ -45,7 +45,7 @@ type Config struct {
 	// anonymous mode they have to be added to the 'anon' role config.
 	DefaultBlock bool `mapstructure:"default_block"`
 
-	// Functionality to allow the administrator to require that arguments such as where or Id must be present in all queries.
+	// Functionality to allow the administrator to require at least one of the arguments defined in the configuration file, such as "orderby", "where", "id", etc. exist.
 	RequiredOperations []string
 
 	// Vars is a map of hardcoded variables that can be leveraged in your
