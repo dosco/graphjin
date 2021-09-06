@@ -3,7 +3,6 @@ package qcode_test
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"testing"
 
 	"github.com/dosco/graphjin/core/internal/qcode"
@@ -42,7 +41,7 @@ func TestCompile1(t *testing.T) {
 		} }`), nil, "user")
 
 	if err != nil {
-		t.Fatal(errors.New(fmt.Sprintf("This should note be an error id can be a number, %s", err)))
+		t.Fatalf("This should note be an error id can be a number, %s", err)
 	}
 }
 
