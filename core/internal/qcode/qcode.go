@@ -1224,7 +1224,6 @@ func (co *Compiler) compileArgOrderBy(qc *QCode, sel *Select, arg *graph.Arg) er
 	switch node.Type {
 	case graph.NodeObj:
 		return co.compileArgOrderByObj(sel, node, cm)
-
 	case graph.NodeVar:
 		return co.compileArgOrderByVar(qc, sel, node, cm)
 	}
@@ -1248,11 +1247,11 @@ func (co *Compiler) compileArgOrderByObj(sel *Select, node *graph.Node, cm map[s
 	ast.pushChildren(nil, node)
 
 	for {
-		if st.Len() == 0 {
+		if ast.st.Len() == 0 {
 			break
 		}
 
-		intf := st.Pop()
+		intf := ast.st.Pop()
 		av, ok := intf.(aexp)
 		if !ok {
 			return fmt.Errorf("17: unexpected value %v (%t)", intf, intf)

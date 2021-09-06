@@ -565,7 +565,7 @@ func (c *compilerContext) renderRecursiveGroupBy(sel *qcode.Select) {
 }
 
 func (c *compilerContext) renderOrderBy(sel *qcode.Select) {
-	if len(sel.OrderByWrapper.OrderBy) == 0 && sel.OrderByWrapper.Exp == nil {
+	if len(sel.OrderByWrapper.OrderBy) == 0 && len(sel.OrderBy) == 0 && sel.OrderByWrapper.Exp == nil {
 		return
 	}
 	c.w.WriteString(` ORDER BY `)
@@ -577,30 +577,8 @@ func (c *compilerContext) renderOrderBy(sel *qcode.Select) {
 		c.w.WriteString(sel.OrderByWrapper.Exp.Order.String())
 	}
 
-	for i, col := range sel.OrderByWrapper.OrderBy {
+	for i, col := range append(sel.OrderByWrapper.OrderBy, sel.OrderBy...) {
 		if i != 0 || sel.OrderByWrapper.Exp != nil {
-			c.w.WriteString(`, `)
-		}
-		c.colWithTable(sel.Table, col.Col.Name)
-
-		switch col.Order {
-		case qcode.OrderAsc:
-			c.w.WriteString(` ASC`)
-		case qcode.OrderDesc:
-			c.w.WriteString(` DESC`)
-		case qcode.OrderAscNullsFirst:
-			c.w.WriteString(` ASC NULLS FIRST`)
-		case qcode.OrderDescNullsFirst:
-			c.w.WriteString(` DESC NULLLS FIRST`)
-		case qcode.OrderAscNullsLast:
-			c.w.WriteString(` ASC NULLS LAST`)
-		case qcode.OrderDescNullsLast:
-			c.w.WriteString(` DESC NULLS LAST`)
-		}
-	}
-
-	for i, col := range sel.OrderBy {
-		if i != 0 {
 			c.w.WriteString(`, `)
 		}
 		c.colWithTable(sel.Table, col.Col.Name)

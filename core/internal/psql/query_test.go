@@ -22,7 +22,7 @@ func simpleQuery(t *testing.T) {
 func withNestedOrderBy(t *testing.T) {
 	gql := `query {
 		products(
-			where: { and: {customer: { email: { eq: "http" }}, not: { customer: email: { eq: ".com"}  } }}
+			where: { and: {customer: { email: { eq: "http" }}, not: { customer: { email: { eq: ".com"}  }}}}
 			order_by: { customer: { email: desc }}
 		) {
 			id
