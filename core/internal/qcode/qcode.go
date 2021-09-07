@@ -400,7 +400,7 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 
 		co.setLimit(tr, qc, sel)
 
-		if err := co.compileArgs(qc, sel, field.Args, role); err != nil {
+		if err := co.compileArgs(qc, sel, field.Args, role, field.ParentID); err != nil {
 			return err
 		}
 
@@ -876,7 +876,7 @@ func (co *Compiler) compileDirectives(qc *QCode, sel *Select, dirs []graph.Direc
 	return nil
 }
 
-func (co *Compiler) compileArgs(qc *QCode, sel *Select, args []graph.Arg, role string) error {
+func (co *Compiler) compileArgs(qc *QCode, sel *Select, args []graph.Arg, role string, parentId int32) error {
 	var err error
 
 	hasRequiredOps := 0
@@ -929,7 +929,7 @@ func (co *Compiler) compileArgs(qc *QCode, sel *Select, args []graph.Arg, role s
 			return err
 		}
 	}
-	if hasRequiredOps == 0 && len(co.c.RequiredOperations) > 0 {
+	if hasRequiredOps == 0 && len(co.c.RequiredOperations) > 0 && parentId == -1 {
 		return fmt.Errorf("arguments: required operations are not present in the query.")
 	}
 
