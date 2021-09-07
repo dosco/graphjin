@@ -120,7 +120,7 @@ func (s *DBSchema) addToGraph(
 		L: lcol, R: rcol,
 		CName: lcol.Name,
 	}
-	if err := s.addEdge(lti.Name, e1, false); err != nil {
+	if err := s.addEdge(lti.Name, e1, true); err != nil {
 		return err
 	}
 
