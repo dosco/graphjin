@@ -7,6 +7,8 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/dosco/graphjin/core"
 	"github.com/dosco/graphjin/serv/internal/auth"
@@ -83,6 +85,7 @@ func apiV1Handler(s *Service) http.Handler {
 func (s *Service) apiV1() func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var err error
+		start := time.Now()
 
 		if websocket.IsWebSocketUpgrade(r) {
 			s.apiV1Ws(w, r)
@@ -174,6 +177,12 @@ func (s *Service) apiV1() func(http.ResponseWriter, *http.Request) {
 			ochttp.SetRoute(ct, apiRoute)
 		}
 
+		elapsed := time.Since(start).Milliseconds()
+
+		if (res != nil) {
+			res.ResponseTime = elapsed
+		}
+
 		if s.logLevel >= logLevelInfo {
 			s.reqLog(res, err)
 		}
@@ -199,6 +208,7 @@ func (s *Service) reqLog(res *core.Result, err error) {
 		fields = append(fields, zap.Error(err))
 		s.zlog.Error("Query Failed", fields...)
 	} else {
+		fields = append(fields, zap.String("responseTime", strconv.FormatInt(res.ResponseTime, 10) + "ms"))
 		s.zlog.Info("Query", fields...)
 	}
 }
