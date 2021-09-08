@@ -77,7 +77,7 @@ func (c *gcontext) scriptCallReq(vars []byte, role string) (_ []byte, err error)
 	}
 
 	var userID interface{}
-	if v := c.Value(UserIDKey); v == nil {
+	if v := c.Value(UserIDKey); v != nil {
 		userID = v
 	}
 
@@ -111,7 +111,7 @@ func (c *gcontext) scriptCallResp(data []byte, role string) (_ []byte, err error
 	}
 
 	var userID interface{}
-	if v := c.Value(UserIDKey); v == nil {
+	if v := c.Value(UserIDKey); v != nil {
 		userID = v
 	}
 
@@ -162,7 +162,7 @@ func (c *gcontext) scriptInit(s *script, name string) error {
 
 	if s.vm != nil {
 		s.vm.ClearInterrupt()
-
+		vm = s.vm
 	} else {
 		vm = goja.New()
 
