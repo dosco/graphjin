@@ -305,7 +305,10 @@ func (in *intro) addRels(name string, ti sdata.DBTable) error {
 		if t.Blocked {
 			continue
 		}
-		ot := in.Types[name + "Output"].(*schema.Object)
+		ot,ok := in.Types[name + "Output"].(*schema.Object)
+		if (!ok) {
+			continue
+		}
 		ot.Fields = append(ot.Fields, &schema.Field{
 			Name: k,
 			Type: &schema.TypeName{Name: k1},
@@ -325,7 +328,10 @@ func (in *intro) addRels(name string, ti sdata.DBTable) error {
 		if t.Blocked {
 			continue
 		}
-		ot := in.Types[name + "Output"].(*schema.Object)
+		ot,ok := in.Types[name + "Output"].(*schema.Object)
+		if (!ok) {
+			continue
+		}
 		ot.Fields = append(ot.Fields, &schema.Field{
 			Name: k,
 			Type: &schema.TypeName{Name: k1},
