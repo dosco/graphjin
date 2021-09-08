@@ -162,7 +162,7 @@ func (c *gcontext) scriptInit(s *script, name string) error {
 
 	if s.vm != nil {
 		s.vm.ClearInterrupt()
-
+		vm = s.vm
 	} else {
 		vm = goja.New()
 
