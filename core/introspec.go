@@ -197,6 +197,12 @@ func (in *intro) addTables() error {
 		}
 	}
 
+	for _,t := range in.GetTables() {
+		if err := in.addRels(t.Name, t); err != nil {
+			return err
+		}
+	}
+
 	for name, t := range in.GetAliases() {
 		if err := in.addTable(name, t, false); err != nil {
 			return err
@@ -282,6 +288,10 @@ func (in *intro) addTable(name string, ti sdata.DBTable, singular bool) error {
 		in.addColumn(name, ti, col, it, obt, expt, ot, singular)
 	}
 
+	return nil
+}
+
+func (in *intro) addRels(name string, ti sdata.DBTable) error {
 	relTables1, err := in.GetFirstDegree(ti.Schema, ti.Name)
 	if err != nil {
 		return err
@@ -293,6 +303,10 @@ func (in *intro) addTable(name string, ti sdata.DBTable, singular bool) error {
 			continue
 		}
 		if t.Blocked {
+			continue
+		}
+		ot,ok := in.Types[name + "Output"].(*schema.Object)
+		if (!ok) {
 			continue
 		}
 		ot.Fields = append(ot.Fields, &schema.Field{
@@ -314,12 +328,15 @@ func (in *intro) addTable(name string, ti sdata.DBTable, singular bool) error {
 		if t.Blocked {
 			continue
 		}
+		ot,ok := in.Types[name + "Output"].(*schema.Object)
+		if (!ok) {
+			continue
+		}
 		ot.Fields = append(ot.Fields, &schema.Field{
 			Name: k,
 			Type: &schema.TypeName{Name: k1},
 		})
 	}
-
 	return nil
 }
 
