@@ -87,9 +87,14 @@ func (co *Compiler) compileArgNode(
 			needsUser = true
 		}
 
-		if root == nil {
+		switch {
+		case root == nil:
 			root = ex
-		} else {
+		case av.exp == nil:
+			tmp := root
+			root = newExpOp(OpAnd)
+			root.Children = []*Exp{tmp, ex}
+		default:
 			av.exp.Children = append(av.exp.Children, ex)
 		}
 	}
@@ -508,8 +513,9 @@ func (ast *aexpst) pushChildren(av aexp, ex *Exp, node *graph.Node) {
 		}
 	}
 
-	if av.exp != nil && len(av.exp.Joins) != 0 {
-		ti = av.exp.Joins[len(av.exp.Joins)-1].Rel.Left.Ti
+	// TODO: Remove ex from av (aexp)
+	if ex != nil && len(ex.Joins) != 0 {
+		ti = ex.Joins[len(ex.Joins)-1].Rel.Left.Ti
 	} else {
 		ti = av.ti
 	}
