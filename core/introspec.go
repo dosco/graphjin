@@ -500,20 +500,20 @@ func (in *intro) addFuncs(
 			}
 		}
 
-		for _, fn := range in.GetFunctions() {
-			fn_name := fn.Name + "_" + colName
-			fn_type,typeName := getGQLTypeFunc(fn.Params[0])
+		for _, f := range in.GetFunctions() {
+			fn := f.Name + "_" + colName
+			fn_type,typeName := getGQLTypeFunc(f.Params[0])
 			_,colTypeName := getGQLType(col, false)
 			if typeName != colTypeName {
 				continue
 			}
 
-			fName := fn.Name + "_" + colName
+			fName := f.Name + "_" + colName
 			if in.gj.conf.EnableCamelcase {
-				fn_name = util.ToCamel(fName)
+				fn = util.ToCamel(fName)
 			}
 			ot.Fields = append(ot.Fields, &schema.Field{
-				Name: fn_name,
+				Name: fn,
 				Type: fn_type,
 			})
 		}
