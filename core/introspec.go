@@ -499,7 +499,15 @@ func (in *intro) addFuncs(
 				})
 			}
 		}
-
+		fn = funcCount.name + "_" + colName
+		if in.gj.conf.EnableCamelcase {
+			fn = util.ToCamel(fn)
+		}
+		ot.Fields = append(ot.Fields, &schema.Field{
+			Name: fn,
+			Type: colType,
+			Desc: schema.NewDescription(funcCount.desc),
+		})
 		for _, f := range in.GetFunctions() {
 			fn := f.Name + "_" + colName
 			fn_type,typeName := getGQLTypeFunc(f.Params[0])
