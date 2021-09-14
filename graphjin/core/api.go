@@ -132,7 +132,7 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo) (*GraphJin, err
 		prod:   conf.Production || os.Getenv("GO_ENV") == "production",
 	}
 
-	if err := gj.initapqCache(); err != nil {
+	if err := gj.initAPQCache(); err != nil {
 		return nil, err
 	}
 
@@ -198,9 +198,9 @@ type Result struct {
 	role         string
 	cacheControl string
 	ResponseTime int64
-	Errors     []Error         `json:"errors,omitempty"`
-	Data       json.RawMessage `json:"data,omitempty"`
-	Extensions *extensions     `json:"extensions,omitempty"`
+	Errors       []Error         `json:"errors,omitempty"`
+	Data         json.RawMessage `json:"data,omitempty"`
+	Extensions   *extensions     `json:"extensions,omitempty"`
 }
 
 // ReqConfig is used to pass request specific config values to the GraphQLEx and SubscribeEx functions. Dynamic variables can be set here.

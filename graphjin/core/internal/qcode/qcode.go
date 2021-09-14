@@ -1,4 +1,4 @@
-//go:generate stringer -linecomment -type=QType,MType,SelType,SkipType,PagingType,AggregrateOp,ValType -output=./gen_string.go
+//go:generate stringer -linecomment -type=QType,MType,SelType,SkipType,PagingType,AggregrateOp,ValType,ExpOp -output=./gen_string.go
 package qcode
 
 import (
@@ -217,6 +217,7 @@ const (
 	OpDistinct
 	OpEqualsTrue
 	OpNotEqualsTrue
+	OpSelectExists
 )
 
 type ValType int8
@@ -1539,64 +1540,6 @@ func buildPath(a []string) string {
 		b.WriteString(s)
 	}
 	return b.String()
-}
-
-func (t ExpOp) String() string {
-	var v string
-
-	switch t {
-	case OpNop:
-		v = "op-nop"
-	case OpAnd:
-		v = "op-and"
-	case OpOr:
-		v = "op-or"
-	case OpNot:
-		v = "op-not"
-	case OpEquals:
-		v = "op-equals"
-	case OpNotEquals:
-		v = "op-not-equals"
-	case OpGreaterOrEquals:
-		v = "op-greater-or-equals"
-	case OpLesserOrEquals:
-		v = "op-lesser-or-equals"
-	case OpGreaterThan:
-		v = "op-greater-than"
-	case OpLesserThan:
-		v = "op-lesser-than"
-	case OpIn:
-		v = "op-in"
-	case OpNotIn:
-		v = "op-not-in"
-	case OpLike:
-		v = "op-like"
-	case OpNotLike:
-		v = "op-not-like"
-	case OpILike:
-		v = "op-i-like"
-	case OpNotILike:
-		v = "op-not-i-like"
-	case OpSimilar:
-		v = "op-similar"
-	case OpNotSimilar:
-		v = "op-not-similar"
-	case OpContains:
-		v = "op-contains"
-	case OpContainedIn:
-		v = "op-contained-in"
-	case OpHasKey:
-		v = "op-has-key"
-	case OpHasKeyAny:
-		v = "op-has-key-any"
-	case OpHasKeyAll:
-		v = "op-has-key-all"
-	case OpIsNull:
-		v = "op-is-null"
-	case OpTsQuery:
-		v = "op-ts-query"
-	}
-	return fmt.Sprintf("<%s>", v)
 }
 
 func argErr(name, ty string) error {

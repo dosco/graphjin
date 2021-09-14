@@ -27,6 +27,7 @@ type aexpst struct {
 
 type aexp struct {
 	exp  *Exp
+	ti   sdata.DBTable
 	node *graph.Node
 	path []string
 }
@@ -38,12 +39,11 @@ func (co *Compiler) compileArgNode(
 	node *graph.Node,
 	savePath bool) (*Exp, bool, error) {
 
-	var root *Exp
-	var needsUser bool
-
 	if node == nil || len(node.Children) == 0 {
 		return nil, false, errors.New("invalid argument value")
 	}
+
+	needsUser := false
 
 	ast := &aexpst{co: co,
 		st:       st,
@@ -51,7 +51,13 @@ func (co *Compiler) compileArgNode(
 		edge:     edge,
 		savePath: savePath,
 	}
-	ast.pushChildren(nil, node)
+
+	var root *Exp
+
+	st.Push(aexp{
+		ti:   ti,
+		node: node,
+	})
 
 	for {
 		if st.Len() == 0 {
@@ -63,12 +69,6 @@ func (co *Compiler) compileArgNode(
 		av, ok := intf.(aexp)
 		if !ok {
 			return nil, needsUser, fmt.Errorf("16: unexpected value %v (%t)", intf, intf)
-		}
-
-		// Objects inside a list
-		if av.node.Name == "" {
-			ast.pushChildren(av.exp, av.node)
-			continue
 		}
 
 		ex, err := ast.parseNode(av)
@@ -87,7 +87,7 @@ func (co *Compiler) compileArgNode(
 			needsUser = true
 		}
 
-		if av.exp == nil {
+		if root == nil {
 			root = ex
 		} else {
 			av.exp.Children = append(av.exp.Children, ex)
@@ -112,49 +112,181 @@ func newExpOp(op ExpOp) *Exp {
 }
 
 func (ast *aexpst) parseNode(av aexp) (*Exp, error) {
+	var ex *Exp
 	var err error
 
 	node := av.node
 	name := node.Name
 
-	if name[0] == '_' {
-		name = name[1:]
+	if name == "" {
+		ast.pushChildren(av, av.exp, av.node)
+		return nil, nil
 	}
 
-	ex := newExp()
+	switch {
+	case av.exp == nil:
+		ex = newExp()
+	case av.exp.Op != OpNop:
+		ex = newExp()
+	default:
+		ex = av.exp
+	}
+
+	// Objects inside a list
+
 	if ast.savePath {
 		ex.Right.Path = append(av.path, node.Name)
 	}
 
-	guess := false
+	if ok, err := ast.processBoolOps(av, ex, node, nil); err != nil {
+		return nil, err
+	} else if ok {
+		return ex, nil
+	}
+
+	switch node.Type {
+	// { column: { op: value } }
+	case graph.NodeObj:
+		if len(node.Children) != 1 {
+			return nil, fmt.Errorf("[Where] invalid operation: %s", name)
+		}
+
+		if ok, err := ast.processNestedTable(av, ex, node); err != nil {
+			return nil, err
+		} else if ok {
+			return ex, nil
+		}
+
+		if _, err := ast.processColumn(av, ex, node); err != nil {
+			return nil, err
+		}
+		vn := node.Children[0]
+
+		if ok, err := ast.processOpAndVal(av, ex, vn); err != nil {
+			return nil, err
+		} else if !ok {
+			if ok, err := ast.processBoolOps(av, ex, vn, node); err != nil {
+				return nil, err
+			} else if ok {
+				return ex, nil
+			}
+			return nil, fmt.Errorf("[Where] unknown operator: %s", name)
+		}
+
+		if ast.savePath {
+			ex.Right.Path = append(ex.Right.Path, vn.Name)
+		}
+
+		if ex.Right.ValType, err = getExpType(vn); err != nil {
+			return nil, err
+		}
+
+	// { column: [value1, value2, value3] }
+	case graph.NodeList:
+		if len(node.Children) == 0 {
+			return nil, fmt.Errorf("[Where] invalid empty list: %s", name)
+		}
+		if _, err := ast.processColumn(av, ex, node); err != nil {
+			return nil, err
+		}
+		setListVal(ex, node)
+		if ex.Left.Col.Array {
+			ex.Op = OpContains
+		} else {
+			ex.Op = OpIn
+		}
+
+	// { column: value }
+	default:
+		if _, err := ast.processColumn(av, ex, node); err != nil {
+			return nil, err
+		}
+		if ex.Left.Col.Array {
+			ex.Op = OpContains
+			setListVal(ex, node)
+		} else {
+			if ex.Right.ValType, err = getExpType(node); err != nil {
+				return nil, err
+			}
+			ex.Op = OpEquals
+			ex.Right.Val = node.Val
+		}
+	}
+
+	return ex, nil
+}
+
+func (ast *aexpst) processBoolOps(av aexp, ex *Exp, node, anode *graph.Node) (bool, error) {
+	var name string
+
+	if node.Name != "" && node.Name[0] == '_' {
+		name = node.Name[1:]
+	} else {
+		name = node.Name
+	}
+
+	// insert attach nodes between the current node and its children
+	if anode != nil {
+		n := *node
+		for i := range n.Children {
+			an := *anode
+			v := n.Children[i]
+			if v.Name == "" && len(v.Children) != 0 {
+				an.Children = []*graph.Node{v.Children[0]}
+			} else {
+				an.Children = []*graph.Node{v}
+			}
+			n.Children[i] = &an
+		}
+		node = &n
+	}
 
 	switch name {
 	case "and":
 		if len(node.Children) == 0 {
-			return nil, errors.New("missing expression after 'and' operator")
+			return false, errors.New("missing expression after 'and' operator")
 		}
 		if len(node.Children) == 1 {
-			return nil, fmt.Errorf("expression does not need an 'and' operator: %s",
-				ast.ti.Name)
+			return false, fmt.Errorf("expression does not need an 'and' operator: %s",
+				av.ti.Name)
 		}
 		ex.Op = OpAnd
-		ast.pushChildren(ex, node)
+		ast.pushChildren(av, ex, node)
+		return true, nil
+
 	case "or":
 		if len(node.Children) == 0 {
-			return nil, errors.New("missing expression after 'OR' operator")
+			return false, errors.New("missing expression after 'OR' operator")
 		}
 		if len(node.Children) == 1 {
-			return nil, fmt.Errorf("expression does not need an 'or' operator: %s",
-				ast.ti.Name)
+			return false, fmt.Errorf("expression does not need an 'or' operator: %s",
+				av.ti.Name)
 		}
 		ex.Op = OpOr
-		ast.pushChildren(ex, node)
+		ast.pushChildren(av, ex, node)
+		return true, nil
+
 	case "not":
 		if len(node.Children) == 0 {
-			return nil, errors.New("missing expression after 'not' operator")
+			return false, errors.New("missing expression after 'not' operator")
 		}
 		ex.Op = OpNot
-		ast.pushChildren(ex, node)
+		ast.pushChildren(av, ex, node)
+		return true, nil
+	}
+	return false, nil
+}
+
+func (ast *aexpst) processOpAndVal(av aexp, ex *Exp, node *graph.Node) (bool, error) {
+	var name string
+
+	if node.Name != "" && node.Name[0] == '_' {
+		name = node.Name[1:]
+	} else {
+		name = node.Name
+	}
+
+	switch name {
 	case "eq", "equals":
 		ex.Op = OpEquals
 		ex.Right.Val = node.Val
@@ -234,43 +366,10 @@ func (ast *aexpst) parseNode(av aexp) (*Exp, error) {
 		ex.Op = OpDistinct
 		ex.Right.Val = node.Val
 	default:
-		if node.Type == graph.NodeObj {
-			if len(node.Children) == 0 {
-				return nil, fmt.Errorf("[Where] invalid operation: %s", name)
-			}
-			ast.pushChildren(av.exp, node)
-			return nil, nil // skip node
-		}
-
-		// Support existing { column: <value> } format
-		switch node.Type {
-		case graph.NodeList:
-			ex.Op = OpIn
-			setListVal(ex, node)
-		default:
-			ex.Op = OpEquals
-			ex.Right.Val = node.Val
-		}
-		guess = true
+		return false, nil
 	}
 
-	if ex.Op != OpAnd && ex.Op != OpOr && ex.Op != OpNot {
-		if ex.Right.ValType != ValList {
-			if ex.Right.ValType, err = getExpType(node); err != nil {
-				return nil, err
-			}
-		}
-		if err := ast.setExpColName(ex, node); err != nil {
-			return nil, err
-		}
-	}
-
-	if guess && ex.Left.Col.Array {
-		ex.Op = OpContains
-		setListVal(ex, node)
-	}
-
-	return ex, nil
+	return true, nil
 }
 
 func getExpType(node *graph.Node) (ValType, error) {
@@ -312,6 +411,7 @@ func setListVal(ex *Exp, node *graph.Node) {
 	}
 
 	for i := range node.Children {
+		ex.Right.ValType = ValList
 		ex.Right.ListVal = append(ex.Right.ListVal, node.Children[i].Val)
 	}
 
@@ -321,119 +421,105 @@ func setListVal(ex *Exp, node *graph.Node) {
 	}
 }
 
-func (ast *aexpst) setExpColName(ex *Exp, node *graph.Node) error {
-	var list []string
+func (ast *aexpst) processColumn(av aexp, ex *Exp, node *graph.Node) (bool, error) {
+	var nn string
+
+	if ast.co.c.EnableCamelcase {
+		nn = util.ToSnake(node.Name)
+	} else {
+		nn = node.Name
+	}
+	col, err := av.ti.GetColumn(nn)
+	if err != nil {
+		return false, err
+	}
+	ex.Left.Col = col
+	return true, err
+}
+
+func (ast *aexpst) processNestedTable(av aexp, ex *Exp, node *graph.Node) (bool, error) {
+	var joins []Join
 	var err error
 
 	s := ast.co.s
-	ti := ast.ti
+	ti := av.ti
 
-	for n := node; n != nil; n = n.Parent {
-		// if n.Type != graph.NodeObj {
-		// 	continue
-		// }
-		if n.Name != "" {
-			k := n.Name
-			if k == "and" || k == "or" || k == "not" ||
-				k == "_and" || k == "_or" || k == "_not" {
-				continue
-			}
-			list = append([]string{k}, list...)
-		}
+	var prev, curr string
+	if ast.edge == "" {
+		prev = ti.Name
+	} else {
+		prev = ast.edge
 	}
 
-	var nn string
-
-	switch len(list) {
-	case 1:
+	var n, ln *graph.Node
+	for n = node; ; {
+		if len(n.Children) != 1 {
+			break
+		}
+		k := n.Name
+		if k == "" || k == "and" || k == "or" || k == "not" ||
+			k == "_and" || k == "_or" || k == "_not" {
+			break
+		}
 		if ast.co.c.EnableCamelcase {
-			nn = util.ToSnake(node.Name)
+			curr = util.ToSnake(k)
 		} else {
-			nn = node.Name
-		}
-		if col, err := ti.GetColumn(nn); err == nil {
-			ex.Left.Col = col
-		} else {
-			return err
+			curr = k
 		}
 
-	case 2:
-		if ast.co.c.EnableCamelcase {
-			nn = util.ToSnake(list[0])
-		} else {
-			nn = list[0]
-		}
-		if col, err := ti.GetColumn(nn); err == nil {
-			ex.Left.Col = col
-			return nil
-		}
-		fallthrough
-
-	default:
-		var prev, curr string
-		if ast.edge == "" {
-			prev = ti.Name
-		} else {
-			prev = ast.edge
+		if curr == ti.Name {
+			continue
+			// return fmt.Errorf("selector table not allowed in where: %s", ti.Name)
 		}
 
-		for i := 0; i < len(list)-1; i++ {
-			if ast.co.c.EnableCamelcase {
-				curr = util.ToSnake(list[i])
-			} else {
-				curr = list[i]
-			}
-
-			if curr == ti.Name {
-				continue
-				// return fmt.Errorf("selector table not allowed in where: %s", ti.Name)
-			}
-
-			var paths []sdata.TPath
-			paths, err = s.FindPath(curr, prev, "")
-			if err == nil {
-				rel := sdata.PathToRel(paths[0])
-				ex.Joins = append(ex.Joins, Join{Rel: rel, Filter: buildFilter(rel, -1)})
-				prev = curr
-			} else {
-				break
-			}
-
-			// return graphError(err, curr, prev, "")
+		var paths []sdata.TPath
+		paths, err = s.FindPath(curr, prev, "")
+		if err != nil {
+			break
 		}
 
-		if len(ex.Joins) == 0 {
-			return graphError(err, curr, prev, "")
-		}
+		rel := sdata.PathToRel(paths[0])
+		fil := buildFilter(rel, -1)
+		joins = append(joins, Join{Rel: rel, Filter: fil})
 
-		join := ex.Joins[len(ex.Joins)-1]
-
-		for i := len(list) - 1; i > 0; i-- {
-			var col sdata.DBColumn
-			cn := list[i]
-
-			if col, err = join.Rel.Left.Ti.GetColumn(cn); err == nil {
-				ex.Left.Col = col
-				break
-			}
-		}
+		prev = curr
+		ln = n
+		n = n.Children[0]
 	}
 
-	return err
+	if len(joins) != 0 {
+		ex.Op = OpSelectExists
+		ex.Joins = joins
+		ast.pushChildren(av, ex, ln)
+		return true, nil
+	}
+	return false, nil
 }
 
-func (ast *aexpst) pushChildren(exp *Exp, node *graph.Node) {
+func (ast *aexpst) pushChildren(av aexp, ex *Exp, node *graph.Node) {
 	var path []string
+	var ti sdata.DBTable
 
 	if ast.savePath && node.Name != "" {
-		if exp != nil {
-			path = append(exp.Right.Path, node.Name)
+		if av.exp != nil {
+			path = append(av.exp.Right.Path, node.Name)
 		} else {
 			path = append(path, node.Name)
 		}
 	}
 
+	if av.exp != nil && len(av.exp.Joins) != 0 {
+		ti = av.exp.Joins[len(av.exp.Joins)-1].Rel.Left.Ti
+	} else {
+		ti = av.ti
+	}
+
 	for i := range node.Children {
-		ast.st.Push(aexp{exp: exp, node: node.Children[i], path: path})
+		ast.st.Push(aexp{
+			exp:  ex,
+			ti:   ti,
+			node: node.Children[i],
+			path: path,
+		})
 	}
 }

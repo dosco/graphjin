@@ -322,6 +322,7 @@ func (s *DBSchema) GetSecondDegree(schema, table string) (map[string]DBTable, er
 		nodes1 := s.rg.Connections(id)
 
 		for _, id1 := range nodes1 {
+
 			edges := s.rg.GetEdges(id1, id)
 			for _, e := range edges {
 				e1 := s.ae[e.ID]

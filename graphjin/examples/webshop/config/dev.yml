@@ -1,5 +1,5 @@
 app_name: "Webshop Development"
-host_port: 0.0.0.0:8080
+host_port: localhost:8080
 web_ui: true
 
 # Log levels: debug, error, warn, info
@@ -174,11 +174,11 @@ auths:
 
 database:
   type: postgres
-  # host: localhost
+  host: localhost
   port: 5432
   dbname: webshop_development
-  # user: postgres
-  # password: postgres
+  user: postgres
+  password: postgres
 
   #schema: "public"
   #pool_size: 10

@@ -83,36 +83,37 @@ func (c *expContext) render(ex *qcode.Exp) {
 				st.Push(val.Children[0])
 				st.Push(qcode.OpNot)
 
-			default:
-				if !c.skipNested && len(val.Joins) != 0 {
-					c.renderNestedExp(val)
-				} else {
-					c.renderOp(val)
+			case qcode.OpSelectExists:
+				if !c.skipNested {
+					c.renderNestedExp(st, val)
 				}
+
+			default:
+				c.renderOp(val)
 			}
 		}
 	}
 }
 
-func (c *expContext) renderNestedExp(ex *qcode.Exp) {
+func (c *expContext) renderNestedExp(st *util.StackInf, ex *qcode.Exp) {
 	firstJoin := ex.Joins[0]
 	c.w.WriteString(`EXISTS (SELECT 1 FROM `)
 	c.w.WriteString(firstJoin.Rel.Left.Col.Table)
 
 	if len(ex.Joins) > 1 {
-		for _, rel := range ex.Joins[1:(len(ex.Joins) - 1)] {
-			c.renderJoin(rel)
+		for i := 1; i < len(ex.Joins); i++ {
+			c.renderJoin(ex.Joins[i])
 		}
 	}
 
 	c.w.WriteString(` WHERE `)
-	lastJoin := ex.Joins[(len(ex.Joins) - 1)]
-	c.renderExp(lastJoin.Rel.Left.Ti, ex, true)
+	c.render(firstJoin.Filter)
 
-	c.w.WriteString(` AND (`)
-
-	c.renderExp(firstJoin.Rel.Left.Ti, firstJoin.Filter, false)
-	c.w.WriteString(`))`)
+	c.w.WriteString(` AND `)
+	st.Push(')')
+	for i := len(ex.Children) - 1; i >= 0; i-- {
+		st.Push(ex.Children[i])
+	}
 }
 
 func (c *expContext) renderOp(ex *qcode.Exp) {
@@ -258,8 +259,8 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 	}
 	c.w.WriteString(` `)
 
-	switch {
-	case ex.Right.ValType == qcode.ValList:
+	switch ex.Right.ValType {
+	case qcode.ValList:
 		c.renderList(ex)
 	default:
 		c.renderVal(ex)
