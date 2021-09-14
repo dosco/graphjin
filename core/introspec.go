@@ -412,7 +412,7 @@ func (in *intro) addColumn(
 		colName = util.ToCamel(colName)
 	}
 
-	colType, typeName := getGQLType(col)
+	colType, typeName := getGQLType(col,true)
 
 	ot.Fields = append(ot.Fields, &schema.Field{
 		Name: colName,
@@ -500,18 +500,21 @@ func (in *intro) addFuncs(
 			}
 		}
 
-		for _, f := range in.GetFunctions() {
-			if col.Type != f.Params[0].Type {
+		for _, fn := range in.GetFunctions() {
+			fn_name := fn.Name + "_" + colName
+			fn_type,typeName := getGQLTypeFunc(fn.Params[0])
+			_,colTypeName := getGQLType(col, false)
+			if typeName != colTypeName {
 				continue
 			}
 
-			fn = funcCount.name + "_" + colName
+			fName := fn.Name + "_" + colName
 			if in.gj.conf.EnableCamelcase {
-				fn = util.ToCamel(fn)
+				fn_name = util.ToCamel(fName)
 			}
 			ot.Fields = append(ot.Fields, &schema.Field{
-				Name: fn,
-				Type: colType,
+				Name: fn_name,
+				Type: fn_type,
 			})
 		}
 	}
@@ -584,7 +587,7 @@ func (in *intro) addArgs(
 	}
 
 	if ti.PrimaryCol.Name != "" && singular {
-		colType, _ := getGQLType(ti.PrimaryCol)
+		colType, _ := getGQLType(ti.PrimaryCol,true)
 		args = append(args, &schema.InputValue{
 			Desc: schema.NewDescription("Finds the record by the primary key"),
 			Name: "id",
@@ -680,7 +683,7 @@ func (in *intro) addExpressions() {
 	}
 }
 
-func getGQLType(col sdata.DBColumn) (schema.Type, string) {
+func getGQLType(col sdata.DBColumn,id bool) (schema.Type, string) {
 	var typeName string
 	var ok bool
 
@@ -689,7 +692,7 @@ func getGQLType(col sdata.DBColumn) (schema.Type, string) {
 		k = k[:i]
 	}
 
-	if col.PrimaryKey {
+	if col.PrimaryKey && id {
 		typeName = "ID"
 	} else if typeName, ok = typeMap[k]; !ok {
 		typeName = "String"
@@ -699,6 +702,26 @@ func getGQLType(col sdata.DBColumn) (schema.Type, string) {
 	if col.Array {
 		t = &schema.List{OfType: t}
 	}
+	// if col.NotNull {
+	// 	t = &schema.NonNull{OfType: t}
+	// }
+	return t, typeName
+}
+
+func getGQLTypeFunc(col sdata.DBFuncParam) (schema.Type, string) {
+	var typeName string
+	var ok bool
+
+	k := strings.ToLower(col.Type)
+	if i := strings.IndexAny(k, "(["); i != -1 {
+		k = k[:i]
+	}
+
+	if typeName, ok = typeMap[k]; !ok {
+		typeName = "String"
+	}
+
+	var t schema.Type = &schema.TypeName{Name: typeName}
 	// if col.NotNull {
 	// 	t = &schema.NonNull{OfType: t}
 	// }
