@@ -242,7 +242,7 @@ func Example_queryWithWhereGreaterThanOrLesserThan() {
 
 func Example_queryWithWhereOnRelatedTable() {
 	gql := `query {
-		products(where: { owner: { id: { eq: $user_id } } } ) {
+		products(where: { owner: { id: { or: [ { eq: $user_id }, { eq: 3 } ] } } }, limit: 2) {
 			id
 			owner {
 				id
@@ -257,14 +257,14 @@ func Example_queryWithWhereOnRelatedTable() {
 		panic(err)
 	}
 
-	ctx := context.WithValue(context.Background(), core.UserIDKey, 4)
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 2)
 	res, err := gj.GraphQL(ctx, gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"products": [{"id": 4, "owner": {"id": 4, "email": "user4@test.com"}}]}
+	// Output: {"products": [{"id": 2, "owner": {"id": 2, "email": "user2@test.com"}}, {"id": 3, "owner": {"id": 3, "email": "user3@test.com"}}]}
 }
 
 func Example_queryWithAlternateFieldNames() {
@@ -887,7 +887,7 @@ func Example_queryWithRemoteAPIJoin() {
 			fmt.Fprintf(w, `{"data":[{"desc":"Payment 1 for %s"},{"desc": "Payment 2 for %s"}]}`,
 				id, id)
 		})
-		log.Fatal(http.ListenAndServe(":12345", nil))
+		log.Fatal(http.ListenAndServe("localhost:12345", nil))
 	}()
 
 	conf := &core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 2}

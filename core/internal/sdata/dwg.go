@@ -388,12 +388,17 @@ func minWeightedLine(lines []util.Edge) *util.Edge {
 	var min int32 = 100
 	var line *util.Edge
 
-	for _, v := range lines {
+	for i, v := range lines {
 		if v.Weight < min {
 			min = v.Weight
-			line = &v
+			line = &lines[i]
 		}
 	}
+
+	if line == nil && len(lines) != 0 {
+		return &lines[0]
+	}
+
 	return line
 }
 

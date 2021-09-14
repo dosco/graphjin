@@ -9,13 +9,13 @@ web_ui: false
 # Log levels: debug, error, warn, info
 log_level: "warn"
 
-# Log formats: json, plain 
+# Log formats: json, plain
 log_format: "json"
 
 # Enable or disable http compression (uses gzip)
 http_compress: true
 
-# When production mode is 'true' only queries 
+# When production mode is 'true' only queries
 # from the allow list are permitted.
 # When it's 'false' all queries are saved to the
 # the allow list in ./config/allow.list
@@ -39,13 +39,13 @@ reload_on_config_change: false
 # Path pointing to where the migrations can be found
 # migrations_path: ./migrations
 
-# Secret key for general encryption operations like 
+# Secret key for general encryption operations like
 # encrypting the cursor data
 # secret_key: supercalifajalistics
 
-# CORS: A list of origins a cross-domain request can be executed from. 
-# If the special * value is present in the list, all origins will be allowed. 
-# An origin may contain a wildcard (*) to replace 0 or more 
+# CORS: A list of origins a cross-domain request can be executed from.
+# If the special * value is present in the list, all origins will be allowed.
+# An origin may contain a wildcard (*) to replace 0 or more
 # characters (i.e.: http://*.domain.com).
 # cors_allowed_origins: ["*"]
 
@@ -62,7 +62,7 @@ reload_on_config_change: false
 # Default API path prefix is /api you can change it if you like
 # api_path: "/data"
 
-# Cache-Control header can help cache queries if your CDN supports cache-control 
+# Cache-Control header can help cache queries if your CDN supports cache-control
 # cache_control: "public, max-age=300, s-maxage=600"
 
 # Subscriptions poll the database to query for updates
@@ -101,7 +101,7 @@ database:
   password: postgres
   #pool_size: 10
   #max_retries: 0
-  #log_level: "debug" 
+  #log_level: "debug"
 
   # database ping timeout is used for db health checking
   ping_timeout: 5m
