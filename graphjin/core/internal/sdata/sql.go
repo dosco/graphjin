@@ -14,6 +14,7 @@ RIGHT JOIN
 	ON (r.specific_name = p.specific_name and p.ordinal_position IS NOT NULL)	
 WHERE 
 	p.specific_schema NOT IN ('information_schema', 'performance_schema', 'pg_catalog', 'mysql', 'sys')
+AND r.external_language NOT IN ('C')
 ORDER BY 
 	r.routine_name, p.ordinal_position;
 `
