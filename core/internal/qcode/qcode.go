@@ -1547,28 +1547,28 @@ func compileFilter(s *sdata.DBSchema, ti sdata.DBTable, filter []string, isJSON 
 	return fl, needsUser, nil
 }
 
-func buildPath(a []string) string {
-	switch len(a) {
-	case 0:
-		return ""
-	case 1:
-		return a[0]
-	}
+// func buildPath(a []string) string {
+// 	switch len(a) {
+// 	case 0:
+// 		return ""
+// 	case 1:
+// 		return a[0]
+// 	}
 
-	n := len(a) - 1
-	for i := 0; i < len(a); i++ {
-		n += len(a[i])
-	}
+// 	n := len(a) - 1
+// 	for i := 0; i < len(a); i++ {
+// 		n += len(a[i])
+// 	}
 
-	var b strings.Builder
-	b.Grow(n)
-	b.WriteString(a[0])
-	for _, s := range a[1:] {
-		b.WriteRune('.')
-		b.WriteString(s)
-	}
-	return b.String()
-}
+// 	var b strings.Builder
+// 	b.Grow(n)
+// 	b.WriteString(a[0])
+// 	for _, s := range a[1:] {
+// 		b.WriteRune('.')
+// 		b.WriteString(s)
+// 	}
+// 	return b.String()
+// }
 
 func argErr(name, ty string) error {
 	return fmt.Errorf("value for argument '%s' must be a %s", name, ty)
