@@ -189,7 +189,7 @@ func (c *compilerContext) renderBaseColumns(sel *qcode.Select) int {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
-		c.colWithTable(sel.Table, col.Col.Name)
+		c.colWithTable(col.Col.Table, col.Col.Name)
 		i++
 	}
 	return i

@@ -34,6 +34,7 @@ func withNestedOrderBy(t *testing.T) {
 
 	compileGQLToPSQL(t, gql, nil, "user")
 }
+
 func withVariableLimit(t *testing.T) {
 	gql := `query {
 		products(limit: $limit) {
