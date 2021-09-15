@@ -133,7 +133,7 @@ func Example_queryWithNestedOrderBy() {
 
 	res1, err1 := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err1 != nil {
-		fmt.Print(res1.SQL())
+		fmt.Println(res1.SQL())
 		fmt.Println(err1)
 	} else {
 		fmt.Println(string(res1.Data))

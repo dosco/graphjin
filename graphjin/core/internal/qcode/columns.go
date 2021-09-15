@@ -121,9 +121,12 @@ func (co *Compiler) addOrderByColumns(sel *Select) {
 func (co *Compiler) addColumns(qc *QCode, sel *Select) error {
 	var rel sdata.DBRel
 
-	if len(sel.Joins) == 0 {
+	switch {
+	case len(sel.Joins) == 0:
 		rel = sel.Rel
-	} else {
+	case sel.Joins[0].Local:
+		return nil
+	default:
 		rel = sel.Joins[0].Rel
 	}
 	if err := co.addRelColumns(qc, sel, rel); err != nil {
@@ -145,6 +148,8 @@ func (co *Compiler) addRelColumns(qc *QCode, sel *Select, rel sdata.DBRel) error
 
 	if sel.ParentID != -1 {
 		psel = &qc.Selects[sel.ParentID]
+	} else {
+		return nil
 	}
 
 	switch rel.Type {

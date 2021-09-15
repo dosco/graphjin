@@ -254,6 +254,9 @@ func (s *DBSchema) FindPath(from, to, through string) ([]TPath, error) {
 			RC:  edge.R,
 		})
 	}
+	if len(path) == 0 {
+		return nil, ErrPathNotFound
+	}
 	return path, nil
 }
 

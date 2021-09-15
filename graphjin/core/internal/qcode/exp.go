@@ -45,7 +45,8 @@ func (co *Compiler) compileArgNode(
 
 	needsUser := false
 
-	ast := &aexpst{co: co,
+	ast := &aexpst{
+		co:       co,
 		st:       st,
 		ti:       ti,
 		edge:     edge,
@@ -71,7 +72,7 @@ func (co *Compiler) compileArgNode(
 			return nil, needsUser, fmt.Errorf("16: unexpected value %v (%t)", intf, intf)
 		}
 
-		ex, err := ast.parseNode(av)
+		ex, err := ast.parseNode(av, av.node)
 		if err != nil {
 			return nil, needsUser, err
 		}
@@ -116,11 +117,10 @@ func newExpOp(op ExpOp) *Exp {
 	return ex
 }
 
-func (ast *aexpst) parseNode(av aexp) (*Exp, error) {
+func (ast *aexpst) parseNode(av aexp, node *graph.Node) (*Exp, error) {
 	var ex *Exp
 	var err error
 
-	node := av.node
 	name := node.Name
 
 	if name == "" {
@@ -477,13 +477,12 @@ func (ast *aexpst) processNestedTable(av aexp, ex *Exp, node *graph.Node) (bool,
 			// return fmt.Errorf("selector table not allowed in where: %s", ti.Name)
 		}
 
-		var paths []sdata.TPath
-		paths, err = s.FindPath(curr, prev, "")
-		if err != nil {
+		var path []sdata.TPath
+		if path, err = s.FindPath(curr, prev, ""); err != nil {
 			break
 		}
 
-		rel := sdata.PathToRel(paths[0])
+		rel := sdata.PathToRel(path[0])
 		fil := buildFilter(rel, -1)
 		joins = append(joins, Join{Rel: rel, Filter: fil})
 
