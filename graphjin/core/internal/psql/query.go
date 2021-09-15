@@ -565,12 +565,19 @@ func (c *compilerContext) renderRecursiveGroupBy(sel *qcode.Select) {
 }
 
 func (c *compilerContext) renderOrderBy(sel *qcode.Select) {
-	if len(sel.OrderBy) == 0 {
+	if len(sel.OrderByWrapper.OrderBy) == 0 && len(sel.OrderBy) == 0 && sel.OrderByWrapper.Exp == nil {
 		return
 	}
 	c.w.WriteString(` ORDER BY `)
-	for i, col := range sel.OrderBy {
-		if i != 0 {
+
+	if sel.OrderByWrapper.Exp != nil {
+		// Add extra logic if order by contains a exp
+		c.renderExp(sel.Ti, sel.OrderByWrapper.Exp, false)
+		c.w.WriteString(` `)
+		c.w.WriteString(sel.OrderByWrapper.Exp.Order.String())
+	}
+	for i, col := range append(sel.OrderByWrapper.OrderBy, sel.OrderBy...) {
+		if i != 0 || sel.OrderByWrapper.Exp != nil {
 			c.w.WriteString(`, `)
 		}
 		c.colWithTable(sel.Table, col.Col.Name)

@@ -113,6 +113,34 @@ func Example_queryWithDynamicOrderBy() {
 	// {"products": [{"id": 5, "price": 15.5}, {"id": 4, "price": 14.5}, {"id": 3, "price": 13.5}, {"id": 2, "price": 12.5}, {"id": 1, "price": 11.5}]}
 	// {"products": [{"id": 1, "price": 11.5}, {"id": 2, "price": 12.5}, {"id": 3, "price": 13.5}, {"id": 4, "price": 14.5}, {"id": 5, "price": 15.5}]}
 }
+func Example_queryWithNestedOrderBy() {
+	gql := `query getProducts {
+				products(order_by: { users: { email: desc }, id: desc}, where: { id: { lt: 6 } }, limit: 5) {
+					id
+					price
+				}
+	       }`
+
+	conf := &core.Config{
+		DBType:           dbType,
+		DisableAllowList: true,
+	}
+
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res1, err1 := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err1 != nil {
+		fmt.Print(res1.SQL())
+		fmt.Println(err1)
+	} else {
+		fmt.Println(string(res1.Data))
+	}
+
+	// Output: {"products": [{"id": 5, "price": 15.5}, {"id": 4, "price": 14.5}, {"id": 3, "price": 13.5}, {"id": 2, "price": 12.5}, {"id": 1, "price": 11.5}]}
+}
 
 func Example_queryWithLimitOffsetOrderByDistinctAndWhere() {
 	gql := `query {

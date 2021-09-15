@@ -73,30 +73,31 @@ type QCode struct {
 }
 
 type Select struct {
-	ID         int32
-	ParentID   int32
-	Type       SelType
-	Singular   bool
-	Typename   bool
-	Table      string
-	FieldName  string
-	Cols       []Column
-	BCols      []Column
-	Args       map[string]Arg
-	Funcs      []Function
-	Where      Filter
-	OrderBy    []OrderBy
-	GroupCols  bool
-	DistinctOn []sdata.DBColumn
-	Paging     Paging
-	Children   []int32
-	SkipRender SkipType
-	Ti         sdata.DBTable
-	Rel        sdata.DBRel
-	Joins      []Join
-	order      Order
-	through    string
-	tc         TConfig
+	ID             int32
+	ParentID       int32
+	Type           SelType
+	Singular       bool
+	Typename       bool
+	Table          string
+	FieldName      string
+	Cols           []Column
+	BCols          []Column
+	Args           map[string]Arg
+	Funcs          []Function
+	Where          Filter
+	OrderBy        []OrderBy
+	OrderByWrapper OrderByWrapper
+	GroupCols      bool
+	DistinctOn     []sdata.DBColumn
+	Paging         Paging
+	Children       []int32
+	SkipRender     SkipType
+	Ti             sdata.DBTable
+	Rel            sdata.DBRel
+	Joins          []Join
+	order          Order
+	through        string
+	tc             TConfig
 }
 
 type TableInfo struct {
@@ -123,6 +124,8 @@ type Filter struct {
 type Exp struct {
 	Op    ExpOp
 	Joins []Join
+	Order
+	OrderBy bool
 
 	Left struct {
 		ID    int32
@@ -150,6 +153,11 @@ type Join struct {
 
 type Arg struct {
 	Val string
+}
+
+type OrderByWrapper struct {
+	Exp     *Exp
+	OrderBy []OrderBy
 }
 
 type OrderBy struct {
@@ -251,6 +259,10 @@ const (
 	OrderDescNullsFirst
 	OrderDescNullsLast
 )
+
+func (o Order) String() string {
+	return []string{"ASC", "DESC", "ASC NULLS FIRST", "ASC NULLS LAST", "DESC NULLLS FIRST", "DESC NULLS LAST"}[o-1]
+}
 
 type Compiler struct {
 	c  Config
@@ -1223,36 +1235,70 @@ func (co *Compiler) compileArgOrderBy(qc *QCode, sel *Select, arg *graph.Arg) er
 
 func (co *Compiler) compileArgOrderByObj(sel *Select, node *graph.Node, cm map[string]struct{}) error {
 	var err error
+	var root *Exp
+	var nested bool
 	st := util.NewStackInf()
-
-	for i := range node.Children {
-		st.Push(node.Children[i])
-	}
 
 	obList := make([]OrderBy, 0, 2)
 
+	ast := &aexpst{co: co,
+		st:   st,
+		ti:   sel.Ti,
+		edge: sel.Ti.Name,
+	}
+	ast.pushChildren(aexp{}, nil, node)
+
 	for {
-		if st.Len() == 0 {
+		if ast.st.Len() == 0 {
 			break
 		}
 
-		intf := st.Pop()
-		node, ok := intf.(*graph.Node)
-
-		if !ok || node == nil {
+		intf := ast.st.Pop()
+		av, ok := intf.(aexp)
+		if !ok {
 			return fmt.Errorf("17: unexpected value %v (%t)", intf, intf)
 		}
 
-		if node.Type != graph.NodeStr {
-			return fmt.Errorf("expecting a string")
+		// If val is empty try nested order by
+		if av.node.Val == "" && node.Type == graph.NodeObj {
+			nested = true
+			ast.pushChildren(av, av.exp, av.node)
+			continue
+		}
+
+		// Oke from here we are building up a exp
+		if nested {
+			var O Order
+			if O, err = toOrder(av.node.Val); err != nil {
+				return err
+			}
+			ex, err := ast.parseNode(av)
+			if err != nil {
+				return err
+			}
+			ex.Order = O
+			ex.OrderBy = true
+
+			if av.exp == nil {
+				root = ex
+			} else {
+				av.exp.Children = append(av.exp.Children, ex)
+			}
+			nested = false
+			continue
+		}
+
+		// Check for type
+		if av.node.Type != graph.NodeStr && av.node.Type != graph.NodeObj {
+			return fmt.Errorf("expecting a string or object")
 		}
 
 		ob := OrderBy{}
-		if ob.Order, err = toOrder(node.Val); err != nil {
+		if ob.Order, err = toOrder(av.node.Val); err != nil { // sets the asc desc etc
 			return err
 		}
 
-		if err := setOrderByColName(sel.Ti, &ob, node); err != nil {
+		if err := setOrderByColName(sel.Ti, &ob, av.node); err != nil {
 			return err
 		}
 		if _, ok := cm[ob.Col.Name]; ok {
@@ -1262,9 +1308,14 @@ func (co *Compiler) compileArgOrderByObj(sel *Select, node *graph.Node, cm map[s
 	}
 
 	for i := len(obList) - 1; i >= 0; i-- {
-		sel.OrderBy = append(sel.OrderBy, obList[i])
+		sel.OrderByWrapper.OrderBy = append(sel.OrderBy, obList[i])
 	}
-	return nil
+
+	if root != nil {
+		sel.OrderByWrapper.Exp = root
+	}
+
+	return err
 }
 
 func (co *Compiler) compileArgOrderByVar(qc *QCode, sel *Select, node *graph.Node, cm map[string]struct{}) error {
