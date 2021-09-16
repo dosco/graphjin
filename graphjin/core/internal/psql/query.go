@@ -325,7 +325,7 @@ func (c *compilerContext) renderJoinTables(sel *qcode.Select) {
 }
 
 func (c *compilerContext) renderJoin(join qcode.Join) {
-	c.w.WriteString(` LEFT OUTER JOIN `)
+	c.w.WriteString(` INNER JOIN `)
 	c.w.WriteString(join.Rel.Left.Ti.Name)
 	c.w.WriteString(` ON ((`)
 	c.renderExp(join.Rel.Left.Ti, join.Filter, false)
@@ -340,6 +340,7 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select) {
 	c.renderFunctions(sel, n)
 	c.renderFrom(sel)
 	c.renderJoinTables(sel)
+	c.renderFromCursor(sel)
 	c.renderWhere(sel)
 	c.renderGroupBy(sel)
 	c.renderOrderBy(sel)
@@ -443,7 +444,9 @@ func (c *compilerContext) renderFrom(sel *qcode.Select) {
 	default:
 		c.quoted(sel.Table)
 	}
+}
 
+func (c *compilerContext) renderFromCursor(sel *qcode.Select) {
 	if sel.Paging.Cursor {
 		c.w.WriteString(`, __cur`)
 	}
