@@ -496,21 +496,34 @@ func (co *Compiler) addRelInfo(
 		if co.c.EnableCamelcase {
 			parentF.Name = util.ToSnake(parentF.Name)
 		}
-		paths, err := co.s.FindPath(childF.Name, parentF.Name, sel.through)
+		path, err := co.s.FindPath(childF.Name, parentF.Name, sel.through)
 		if err != nil {
 			return graphError(err, childF.Name, parentF.Name, sel.through)
 		}
-		sel.Rel = sdata.PathToRel(paths[0])
+		sel.Rel = sdata.PathToRel(path[0])
 
-		for i, p := range paths[1:] {
+		// for _, p := range path {
+		// 	rel := sdata.PathToRel(p)
+		// 	fmt.Println(childF.Name, parentF.Name,
+		// 		"--->>>", rel.Left.Col.Table, rel.Left.Col.Name,
+		// 		"|", rel.Right.Col.Table, rel.Right.Col.Name)
+		// }
+
+		rpath := path[1:]
+
+		for i := len(rpath) - 1; i >= 0; i-- {
+			p := rpath[i]
 			rel := sdata.PathToRel(p)
 			var pid int32
-			if i == 0 {
+			if i == len(rpath)-1 {
 				pid = sel.ParentID
 			} else {
 				pid = -1
 			}
-			sel.Joins = append(sel.Joins, Join{Rel: rel, Filter: buildFilter(rel, pid)})
+			sel.Joins = append(sel.Joins, Join{
+				Rel:    rel,
+				Filter: buildFilter(rel, pid),
+			})
 		}
 	}
 
