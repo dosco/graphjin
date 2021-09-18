@@ -145,15 +145,14 @@ func NewDBTable(schema, name, _type string, cols []DBColumn) DBTable {
 		colMap:  make(map[string]int, len(cols)),
 	}
 
-	for i := range cols {
-		c := &cols[i]
-
+	for i, c := range cols {
 		switch {
 		case c.FullText:
-			ti.FullText = append(ti.FullText, cols[i])
+			ti.FullText = append(ti.FullText, c)
 
 		case c.PrimaryKey:
-			ti.PrimaryCol = cols[i]
+			ti.PrimaryCol = c
+
 		}
 		ti.colMap[strings.ToLower(c.Name)] = i
 	}

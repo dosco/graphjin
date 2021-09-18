@@ -44,5 +44,6 @@ release
 node_modules
 bin
 ./package-lock.json
+config
 
 
