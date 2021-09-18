@@ -482,9 +482,13 @@ func (ast *aexpst) processNestedTable(av aexp, ex *Exp, node *graph.Node) (bool,
 			break
 		}
 
-		rel := sdata.PathToRel(path[0])
-		fil := buildFilter(rel, -1)
-		joins = append(joins, Join{Rel: rel, Filter: fil})
+		for i := len(path) - 1; i >= 0; i-- {
+			rel := sdata.PathToRel(path[i])
+			joins = append(joins, Join{
+				Rel:    rel,
+				Filter: buildFilter(rel, -1),
+			})
+		}
 
 		prev = curr
 		ln = n
