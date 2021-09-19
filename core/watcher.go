@@ -32,6 +32,7 @@ func (g *GraphJin) startDBWatcher() error {
 	}
 
 	ticker := time.NewTicker(ps)
+	defer ticker.Stop()
 
 	for range ticker.C {
 		gj := g.Load().(*graphjin)
