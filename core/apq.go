@@ -16,7 +16,7 @@ type apqCache struct {
 	staticCache map[string]apqInfo
 }
 
-func (gj *GraphJin) initAPQCache() error {
+func (gj *graphjin) initAPQCache() error {
 	var err error
 	if gj.prod {
 		gj.apq.staticCache = make(map[string]apqInfo)

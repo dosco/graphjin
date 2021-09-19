@@ -66,13 +66,14 @@ type Member struct {
 }
 
 // GraphQLEx is the extended version of the Subscribe function allowing for request specific config.
-func (gj *GraphJin) Subscribe(
+func (g *GraphJin) Subscribe(
 	c context.Context,
 	query string,
 	vars json.RawMessage,
 	rc *ReqConfig) (*Member, error) {
 	var err error
 
+	gj := g.Load().(*graphjin)
 	op, name := qcode.GetQType(query)
 
 	if op != qcode.QTSubscription {
@@ -138,7 +139,7 @@ func (gj *GraphJin) Subscribe(
 	return m, nil
 }
 
-func (gj *GraphJin) newSub(c context.Context, s *sub, query string, vars json.RawMessage) error {
+func (gj *graphjin) newSub(c context.Context, s *sub, query string, vars json.RawMessage) error {
 	var err error
 
 	qr := queryReq{
@@ -166,14 +167,14 @@ func (gj *GraphJin) newSub(c context.Context, s *sub, query string, vars json.Ra
 	return nil
 }
 
-func (gj *GraphJin) subController(s *sub) {
+func (gj *graphjin) subController(s *sub) {
 	defer gj.subs.Delete((s.name + s.role))
 	var ps time.Duration
 
-	if gj.conf.PollDuration != 0 {
-		ps = gj.conf.PollDuration * time.Second
-	} else {
+	if gj.conf.PollDuration < 5 {
 		ps = 5 * time.Second
+	} else {
+		ps = gj.conf.PollDuration * time.Second
 	}
 
 	for {
@@ -264,7 +265,7 @@ func (s *sub) updateMember(msg mmsg) error {
 	return nil
 }
 
-func (s *sub) fanOutJobs(gj *GraphJin) {
+func (s *sub) fanOutJobs(gj *graphjin) {
 	switch {
 	case len(s.ids) == 0:
 		return
@@ -281,7 +282,7 @@ func (s *sub) fanOutJobs(gj *GraphJin) {
 	}
 }
 
-func (gj *GraphJin) checkUpdates(s *sub, mv mval, start int) {
+func (gj *graphjin) checkUpdates(s *sub, mv mval, start int) {
 	// Do not use the `mval` embedded inside sub since
 	// its not thread safe use the copy `mv mval`.
 

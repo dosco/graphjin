@@ -19,7 +19,7 @@ import (
 type reqFunc func(map[string]interface{}, string, interface{}) map[string]interface{}
 type respFunc func(map[string]interface{}, string, interface{}) map[string]interface{}
 
-func (gj *GraphJin) initScripting() error {
+func (gj *graphjin) initScripting() error {
 	if err := babel.Init(5); err != nil {
 		return err
 	}

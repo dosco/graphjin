@@ -15,7 +15,7 @@ type resItem struct {
 	Fn      Resolver
 }
 
-func (gj *GraphJin) initResolvers() error {
+func (gj *graphjin) initResolvers() error {
 	gj.rmap = make(map[string]resItem)
 
 	rtmap := map[string]refunc{
@@ -41,7 +41,7 @@ func (gj *GraphJin) initResolvers() error {
 	return nil
 }
 
-func (gj *GraphJin) initRemote(rc ResolverConfig, rtmap map[string]refunc) error {
+func (gj *graphjin) initRemote(rc ResolverConfig, rtmap map[string]refunc) error {
 	// Defines the table column to be used as an id in the
 	// remote reques
 	var col sdata.DBColumn

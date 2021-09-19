@@ -52,6 +52,7 @@ import (
 	_log "log"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"github.com/chirino/graphql"
 	"github.com/dop251/goja"
@@ -81,7 +82,7 @@ const (
 
 // GraphJin struct is an instance of the GraphJin engine it holds all the required information like
 // datase schemas, relationships, etc that the GraphQL to SQL compiler would need to do it's job.
-type GraphJin struct {
+type graphjin struct {
 	conf        *Config
 	db          *sql.DB
 	log         *_log.Logger
@@ -105,6 +106,10 @@ type GraphJin struct {
 	prod        bool
 }
 
+type GraphJin struct {
+	atomic.Value
+}
+
 type script struct {
 	ReqFunc  reqFunc
 	RespFunc respFunc
@@ -115,16 +120,26 @@ type script struct {
 // NewGraphJin creates the GraphJin struct, this involves querying the database to learn its
 // schemas and relationships
 func NewGraphJin(conf *Config, db *sql.DB) (*GraphJin, error) {
-	return newGraphJin(conf, db, nil)
+	gj, err := newGraphJin(conf, db, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	g := &GraphJin{}
+	g.Store(gj)
+	if err := g.initDBWatcher(); err != nil {
+		return nil, err
+	}
+	return g, nil
 }
 
 // newGraphJin helps with writing tests and benchmarks
-func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo) (*GraphJin, error) {
+func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo) (*graphjin, error) {
 	if conf == nil {
 		conf = &Config{Debug: true, DisableAllowList: true}
 	}
 
-	gj := &GraphJin{
+	gj := &graphjin{
 		conf:   conf,
 		db:     db,
 		dbinfo: dbinfo,
@@ -215,13 +230,15 @@ type ReqConfig struct {
 //
 // In developer mode all names queries are saved into a file `allow.list` and in production mode only
 // queries from this file can be run.
-func (gj *GraphJin) GraphQL(
+func (g *GraphJin) GraphQL(
 	c context.Context,
 	query string,
 	vars json.RawMessage,
 	rc *ReqConfig) (*Result, error) {
 
 	var err error
+
+	gj := g.Load().(*graphjin)
 
 	ct := gcontext{
 		Context: c,
@@ -308,7 +325,19 @@ func (gj *GraphJin) GraphQL(
 	return res, err
 }
 
-func (gj *GraphJin) IsProd() bool {
+// Reload does database discover and reinitializes GraphJin.
+func (g *GraphJin) Reload() error {
+	gj := g.Load().(*graphjin)
+	gjNew, err := newGraphJin(gj.conf, gj.db, nil)
+	if err == nil {
+		g.Store(gjNew)
+	}
+	return err
+}
+
+// IsProd return true for production mode or false for development mode
+func (g *GraphJin) IsProd() bool {
+	gj := g.Load().(*graphjin)
 	return gj.prod
 }
 

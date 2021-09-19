@@ -20,7 +20,7 @@ type queryReq struct {
 }
 
 // nolint: errcheck
-func (gj *GraphJin) prepareRoleStmt() error {
+func (gj *graphjin) prepareRoleStmt() error {
 	if !gj.abacEnabled {
 		return nil
 	}
@@ -57,7 +57,7 @@ func (gj *GraphJin) prepareRoleStmt() error {
 	return nil
 }
 
-func (gj *GraphJin) initAllowList() error {
+func (gj *graphjin) initAllowList() error {
 	var err error
 	var ConfigPath string
 
@@ -125,7 +125,7 @@ type queryKey struct {
 	val string
 }
 
-func (gj *GraphJin) getQueryKeys(item allow.Item) []queryKey {
+func (gj *graphjin) getQueryKeys(item allow.Item) []queryKey {
 	var qk []queryKey
 
 	for roleName := range gj.roles {

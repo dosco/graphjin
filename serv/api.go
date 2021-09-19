@@ -47,11 +47,13 @@ type Service struct {
 	log      *zap.SugaredLogger // logger
 	zlog     *zap.Logger        // faster logger
 	logLevel int                // log level
+	binSelf  string             // path to self binary
 	conf     *Config            // parsed config
 	db       *sql.DB            // database connection pool
 	gj       *core.GraphJin
 	srv      *http.Server
-	started  bool
+
+	started bool
 }
 
 func NewGraphJinService(conf *Config) (*Service, error) {
@@ -71,7 +73,7 @@ func NewGraphJinService(conf *Config) (*Service, error) {
 	validateConf(s)
 
 	if s.conf != nil && s.conf.WatchAndReload {
-		initWatcher(s)
+		initConfigWatcher(s)
 	}
 
 	return s, nil

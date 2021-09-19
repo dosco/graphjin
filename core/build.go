@@ -23,7 +23,7 @@ type stmt struct {
 	sql  string
 }
 
-func (gj *GraphJin) compileQuery(qr queryReq, role string) (*queryComp, error) {
+func (gj *graphjin) compileQuery(qr queryReq, role string) (*queryComp, error) {
 	var qc *queryComp
 	var err error
 	var ok bool
@@ -67,7 +67,7 @@ func (gj *GraphJin) compileQuery(qr queryReq, role string) (*queryComp, error) {
 	return qc, err
 }
 
-func (gj *GraphJin) orderQuery(
+func (gj *graphjin) orderQuery(
 	ov string,
 	qc *queryComp,
 	vm map[string]json.RawMessage, role string) (*queryComp, error) {
@@ -87,7 +87,7 @@ func (gj *GraphJin) orderQuery(
 	}
 }
 
-func (gj *GraphJin) compileQueryRole(
+func (gj *graphjin) compileQueryRole(
 	qr queryReq,
 	vm map[string]json.RawMessage, role string) (stmt, error) {
 

@@ -37,7 +37,8 @@ var (
 	apiRoute string = "/api/v1/graphql"
 )
 
-func initWatcher(s *Service) {
+func initConfigWatcher(s *Service) {
+	var err error
 	cpath := s.conf.Serv.ConfigPath
 
 	var d dir
@@ -48,11 +49,12 @@ func initWatcher(s *Service) {
 	}
 
 	go func() {
-		err := do(s, s.log.Infof, d)
-		if err != nil {
-			s.log.Fatalf("error in config file wacher: %s", err)
-		}
+		err = startConfigWatcher(s, d)
 	}()
+
+	if err != nil {
+		s.log.Fatalf("error in config file watcher: %s", err)
+	}
 }
 
 func isHealthEndpoint(r *http.Request) bool {

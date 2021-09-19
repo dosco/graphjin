@@ -10,7 +10,7 @@ import (
 	"github.com/gobuffalo/flect"
 )
 
-func (gj *GraphJin) initConfig() error {
+func (gj *graphjin) initConfig() error {
 	c := gj.conf
 
 	if gj.conf.EnableInflection {

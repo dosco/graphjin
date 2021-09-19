@@ -70,6 +70,10 @@ reload_on_config_change: false
 # Defaults to 5 seconds
 # poll_every_seconds: 5
 
+# Poll the database to detect schema changes. GraphJin is reinitialized
+# when a change is detected. Set to 0 to disable.
+db_schema_poll_every_seconds: 0
+
 # Postgres related environment Variables
 # GJ_DATABASE_HOST
 # GJ_DATABASE_PORT
