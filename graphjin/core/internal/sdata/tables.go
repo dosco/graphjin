@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/mitchellh/hashstructure/v2"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -14,23 +15,24 @@ type DBInfo struct {
 	Version   int
 	Schema    string
 	Name      string
-	Tables    []DBTable
-	Functions []DBFunction
-	VTables   []VirtualTable
-	colMap    map[string]int
-	tableMap  map[string]int
+	Tables    []DBTable      `hash:"set"`
+	Functions []DBFunction   `hash:"set"`
+	VTables   []VirtualTable `hash:"set"`
+	colMap    map[string]int `hash:"-"`
+	tableMap  map[string]int `hash:"-"`
+	hash      uint64         `hash:"-"`
 }
 
 type DBTable struct {
 	Schema       string
 	Name         string
 	Type         string
-	Columns      []DBColumn
+	Columns      []DBColumn `hash:"set"`
 	PrimaryCol   DBColumn
 	SecondaryCol DBColumn
-	FullText     []DBColumn
+	FullText     []DBColumn `hash:"set"`
 	Blocked      bool
-	colMap       map[string]int
+	colMap       map[string]int `hash:"-"`
 }
 
 type VirtualTable struct {
@@ -53,6 +55,7 @@ func GetDBInfo(
 	var dbSchema, dbName string
 	var cols []DBColumn
 	var funcs []DBFunction
+	var err error
 
 	g := errgroup.Group{}
 
@@ -95,6 +98,11 @@ func GetDBInfo(
 		cols,
 		funcs,
 		blockList)
+
+	di.hash, err = hashstructure.Hash(di, hashstructure.FormatV2, nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return di, nil
 }
@@ -331,6 +339,10 @@ func DiscoverFunctions(db *sql.DB, blockList []string) ([]DBFunction, error) {
 	}
 
 	return funcs, nil
+}
+
+func (di *DBInfo) Hash() uint64 {
+	return di.hash
 }
 
 func isInList(val string, s []string) bool {

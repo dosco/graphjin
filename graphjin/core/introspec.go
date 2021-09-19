@@ -112,14 +112,14 @@ var funcListString []funcInfo = []funcInfo{
 type intro struct {
 	*schema.Schema
 	*sdata.DBSchema
-	gj           *GraphJin
+	gj           *graphjin
 	query        *schema.Object
 	mutation     *schema.Object
 	subscription *schema.Object
 	exptNeeded   map[string]bool
 }
 
-func (gj *GraphJin) initGraphQLEgine() error {
+func (gj *graphjin) initGraphQLEgine() error {
 	if gj.prod {
 		return nil
 	}
@@ -197,7 +197,7 @@ func (in *intro) addTables() error {
 		}
 	}
 
-	for _,t := range in.GetTables() {
+	for _, t := range in.GetTables() {
 		if err := in.addRels(t.Name, t); err != nil {
 			return err
 		}
@@ -305,8 +305,8 @@ func (in *intro) addRels(name string, ti sdata.DBTable) error {
 		if t.Blocked {
 			continue
 		}
-		ot,ok := in.Types[name + "Output"].(*schema.Object)
-		if (!ok) {
+		ot, ok := in.Types[name+"Output"].(*schema.Object)
+		if !ok {
 			continue
 		}
 		ot.Fields = append(ot.Fields, &schema.Field{
@@ -328,8 +328,8 @@ func (in *intro) addRels(name string, ti sdata.DBTable) error {
 		if t.Blocked {
 			continue
 		}
-		ot,ok := in.Types[name + "Output"].(*schema.Object)
-		if (!ok) {
+		ot, ok := in.Types[name+"Output"].(*schema.Object)
+		if !ok {
 			continue
 		}
 		ot.Fields = append(ot.Fields, &schema.Field{
@@ -412,7 +412,7 @@ func (in *intro) addColumn(
 		colName = util.ToCamel(colName)
 	}
 
-	colType, typeName := getGQLType(col,true)
+	colType, typeName := getGQLType(col, true)
 
 	ot.Fields = append(ot.Fields, &schema.Field{
 		Name: colName,
@@ -510,8 +510,8 @@ func (in *intro) addFuncs(
 		})
 		for _, f := range in.GetFunctions() {
 			fn := f.Name + "_" + colName
-			fn_type,typeName := getGQLTypeFunc(f.Params[0])
-			_,colTypeName := getGQLType(col, false)
+			fn_type, typeName := getGQLTypeFunc(f.Params[0])
+			_, colTypeName := getGQLType(col, false)
 			if typeName != colTypeName {
 				continue
 			}
@@ -595,7 +595,7 @@ func (in *intro) addArgs(
 	}
 
 	if ti.PrimaryCol.Name != "" && singular {
-		colType, _ := getGQLType(ti.PrimaryCol,true)
+		colType, _ := getGQLType(ti.PrimaryCol, true)
 		args = append(args, &schema.InputValue{
 			Desc: schema.NewDescription("Finds the record by the primary key"),
 			Name: "id",
@@ -691,7 +691,7 @@ func (in *intro) addExpressions() {
 	}
 }
 
-func getGQLType(col sdata.DBColumn,id bool) (schema.Type, string) {
+func getGQLType(col sdata.DBColumn, id bool) (schema.Type, string) {
 	var typeName string
 	var ok bool
 

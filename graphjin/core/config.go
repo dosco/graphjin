@@ -120,6 +120,11 @@ type Config struct {
 	// "production". When this is true the allow list is enforced.
 	Production bool
 
+	// DBSchemaPollDuration sets the duration for polling the database
+	// schema to detect changes to it. GraphJin is reinitialized when a
+	// change is detected
+	DBSchemaPollDuration time.Duration `mapstructure:"db_schema_poll_every_seconds"`
+
 	rtmap map[string]refunc
 	tmap  map[string]qcode.TConfig
 }

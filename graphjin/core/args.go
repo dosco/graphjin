@@ -17,7 +17,7 @@ type args struct {
 	cindx  int // index of cursor arg
 }
 
-func (gj *GraphJin) argList(c context.Context, md psql.Metadata, vars []byte, rc *ReqConfig) (
+func (gj *graphjin) argList(c context.Context, md psql.Metadata, vars []byte, rc *ReqConfig) (
 	args, error) {
 
 	ar := args{cindx: -1}

@@ -14,7 +14,7 @@ type cursors struct {
 	value string
 }
 
-func (gj *GraphJin) encryptCursor(qc *qcode.QCode, data []byte) (cursors, error) {
+func (gj *graphjin) encryptCursor(qc *qcode.QCode, data []byte) (cursors, error) {
 	var keys [][]byte
 	cur := cursors{data: data}
 
@@ -71,7 +71,7 @@ func (gj *GraphJin) encryptCursor(qc *qcode.QCode, data []byte) (cursors, error)
 	return cur, nil
 }
 
-func (gj *GraphJin) decrypt(data string) ([]byte, error) {
+func (gj *graphjin) decrypt(data string) ([]byte, error) {
 	v, err := base64.StdEncoding.DecodeString(data)
 	if err != nil {
 		return nil, err

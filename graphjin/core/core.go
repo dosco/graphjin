@@ -49,7 +49,7 @@ type resolver struct {
 type gcontext struct {
 	context.Context
 
-	gj   *GraphJin
+	gj   *graphjin
 	op   qcode.QType
 	rc   *ReqConfig
 	sc   *script
@@ -62,7 +62,7 @@ type queryResp struct {
 	role string
 }
 
-func (gj *GraphJin) initDiscover() error {
+func (gj *graphjin) initDiscover() error {
 	switch gj.conf.DBType {
 	case "":
 		gj.dbtype = "postgres"
@@ -78,7 +78,7 @@ func (gj *GraphJin) initDiscover() error {
 	return nil
 }
 
-func (gj *GraphJin) _initDiscover() error {
+func (gj *graphjin) _initDiscover() error {
 	var err error
 
 	// If gj.dbinfo is not null then it's probably set
@@ -93,14 +93,14 @@ func (gj *GraphJin) _initDiscover() error {
 	return err
 }
 
-func (gj *GraphJin) initSchema() error {
+func (gj *graphjin) initSchema() error {
 	if err := gj._initSchema(); err != nil {
 		return fmt.Errorf("%s: %w", gj.dbtype, err)
 	}
 	return nil
 }
 
-func (gj *GraphJin) _initSchema() error {
+func (gj *graphjin) _initSchema() error {
 	var err error
 
 	if len(gj.dbinfo.Tables) == 0 {
@@ -142,7 +142,7 @@ func (gj *GraphJin) _initSchema() error {
 	return err
 }
 
-func (gj *GraphJin) initCompilers() error {
+func (gj *graphjin) initCompilers() error {
 	var err error
 
 	qcc := qcode.Config{
@@ -177,7 +177,7 @@ func (gj *GraphJin) initCompilers() error {
 	return nil
 }
 
-func (gj *GraphJin) executeRoleQuery(c context.Context, conn *sql.Conn, md psql.Metadata, vars []byte, rc *ReqConfig) (string, error) {
+func (gj *graphjin) executeRoleQuery(c context.Context, conn *sql.Conn, md psql.Metadata, vars []byte, rc *ReqConfig) (string, error) {
 	var role string
 	var ar args
 	var err error
