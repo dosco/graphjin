@@ -100,8 +100,10 @@ func TestMain(m *testing.M) {
 			continue
 		}
 
-		con, err := gnomock.Start(v.preset,
-			gnomock.WithDebugMode(), gnomock.WithLogWriter(os.Stdout))
+		con, err := gnomock.Start(
+			v.preset,
+			gnomock.WithDebugMode(),
+			gnomock.WithLogWriter(os.Stdout))
 		if err != nil {
 			panic(err)
 		}
