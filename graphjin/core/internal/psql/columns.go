@@ -150,21 +150,8 @@ func (c *compilerContext) renderFunctionSearchHeadline(sel *qcode.Select, fn qco
 		return
 	}
 
-	hasIndex := false
-	for _, col := range sel.Ti.FullText {
-		if col.ID == fn.Col.ID {
-			hasIndex = true
-		}
-	}
-
 	c.w.WriteString(`ts_headline(`)
-	if hasIndex {
-		c.colWithTable(sel.Table, fn.Col.Name)
-	} else {
-		c.w.WriteString(`to_tsvector(`)
-		c.colWithTable(sel.Table, fn.Col.Name)
-		c.w.WriteString(`)`)
-	}
+	c.colWithTable(sel.Table, fn.Col.Name)
 	if c.cv >= 110000 {
 		c.w.WriteString(`, websearch_to_tsquery(`)
 	} else {
