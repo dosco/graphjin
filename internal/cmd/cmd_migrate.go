@@ -62,7 +62,7 @@ func cmdDBMigrate() func(*cobra.Command, []string) {
 			} else {
 				log.Fatalf("Migration direction %s not supported", direction)
 			}
-			log.Infof("%15s %s", action, name)
+			log.Infof("%s %s", action, name)
 
 			if conf.Debug {
 				log.Infof("SQL:\n%s", sql)
@@ -80,13 +80,13 @@ func cmdDBMigrate() func(*cobra.Command, []string) {
 			} else {
 				log.Fatalf("Migration direction %s not supported", direction)
 			}
-			log.Infof("%15s %s (%d ms)", action, name, durationMs)
+			log.Infof("%s %s (%d ms)", action, name, durationMs)
 		}
 
 		m.OnError = func(name string, err error, sql string) {
 			sql = strings.TrimSpace(sql)
 			sql = "> " + strings.ReplaceAll(sql, "\n", "\n> ")
-			log.Infof("Error in %s:\n%s\n\n%s", name, sql, err)
+			log.Infof("Error in %s:\n%s\n%s", name, sql, err)
 		}
 
 		currentVersion, err := m.GetCurrentVersion()
