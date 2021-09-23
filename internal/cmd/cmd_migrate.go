@@ -84,7 +84,9 @@ func cmdDBMigrate() func(*cobra.Command, []string) {
 		}
 
 		m.OnError = func(name string, err error, sql string) {
-			log.Infof("Error in %s:\n%s\n----\n%s", name, sql, err)
+			sql = strings.TrimSpace(sql)
+			sql = "> " + strings.ReplaceAll(sql, "\n", "\n> ")
+			log.Infof("Error in %s:\n%s\n\n%s", name, sql, err)
 		}
 
 		currentVersion, err := m.GetCurrentVersion()
