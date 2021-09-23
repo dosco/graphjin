@@ -334,7 +334,9 @@ func (m *Migrator) MigrateTo(targetVersion int32) (err error) {
 			// if err, ok := err.(pgx.PgError); ok {
 			// 	return MigrationPgError{Sql: sql, PgError: err}
 			// }
-			m.OnError(current.Name, err, sql)
+			if m.OnError != nil {
+				m.OnError(current.Name, err, sql)
+			}
 			return fmt.Errorf("SQL Error")
 		}
 
