@@ -147,7 +147,7 @@ func cmdDBMigrate() func(*cobra.Command, []string) {
 			// }
 		}
 
-		if doneSomething == false {
+		if !doneSomething {
 			log.Infof("Nothing to do")
 		}
 
