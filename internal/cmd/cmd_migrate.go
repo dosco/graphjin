@@ -21,6 +21,8 @@ var newMigrationText = `-- Write your migrate up statements here
 
 func cmdDBMigrate() func(*cobra.Command, []string) {
 	return func(cmd *cobra.Command, args []string) {
+		doneSomething := false
+
 		if len(args) == 0 {
 			cmd.Help() //nolint: errcheck
 			os.Exit(1)
@@ -51,10 +53,38 @@ func cmdDBMigrate() func(*cobra.Command, []string) {
 			log.Fatalf("No migrations found")
 		}
 
-		if conf.Debug {
-			m.OnStart = func(sequence int32, name, direction, sql string) {
-				log.Infof("Executing migration: %s, %s\n%s", name, direction, sql)
+		m.OnStart = func(name, direction, sql string) {
+			var action string
+			if direction == "up" {
+				action = "Migrating: "
+			} else if direction == "down" {
+				action = "Rolling back: "
+			} else {
+				log.Fatalf("Migration direction %s not supported", direction)
 			}
+			log.Infof("%15s %s", action, name)
+
+			if conf.Debug {
+				log.Infof("SQL:\n%s", sql)
+			}
+
+			doneSomething = true
+		}
+
+		m.OnFinish = func(name, direction string, durationMs int64) {
+			var action string
+			if direction == "up" {
+				action = "Migrated:  "
+			} else if direction == "down" {
+				action = "Rolled back:  "
+			} else {
+				log.Fatalf("Migration direction %s not supported", direction)
+			}
+			log.Infof("%15s %s (%d ms)", action, name, durationMs)
+		}
+
+		m.OnError = func(name string, err error, sql string) {
+			log.Infof("Error in %s:\n%s\n----\n%s", name, sql, err)
 		}
 
 		currentVersion, err := m.GetCurrentVersion()
@@ -96,7 +126,7 @@ func cmdDBMigrate() func(*cobra.Command, []string) {
 		}
 
 		if err != nil {
-			log.Fatalf("Error with migrations: %s", err)
+			log.Fatalf("Encountered error: %s", err)
 
 			// if err, ok := err.(m.MigrationPgError); ok {
 			// 	if err.Detail != "" {
@@ -115,7 +145,10 @@ func cmdDBMigrate() func(*cobra.Command, []string) {
 			// }
 		}
 
-		log.Info("Migrations completed")
+		if doneSomething == false {
+			log.Infof("Nothing to do")
+		}
+
 	}
 
 }
