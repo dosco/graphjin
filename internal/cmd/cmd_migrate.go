@@ -128,7 +128,7 @@ func cmdDBMigrate() func(*cobra.Command, []string) {
 		}
 
 		if err != nil {
-			log.Fatalf("Encountered error: %s", err)
+			log.Fatalf("Error with migrations: %s", err)
 
 			// if err, ok := err.(m.MigrationPgError); ok {
 			// 	if err.Detail != "" {
