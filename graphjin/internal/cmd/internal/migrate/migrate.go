@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/pkg/errors"
 )
@@ -68,8 +69,10 @@ type Migrator struct {
 	versionTable string
 	options      *MigratorOptions
 	Migrations   []*Migration
-	OnStart      func(int32, string, string, string) // OnStart is called when a migration is run with the sequence, name, direction, and SQL
-	Data         map[string]interface{}              // Data available to use in migrations
+	OnStart      func(name string, direction string, sql string) // OnStart is called when a migration is being run
+	OnFinish     func(name string, direction string, durationMs int64)
+	OnError      func(name string, err error, sql string)
+	Data         map[string]interface{} // Data available to use in migrations
 }
 
 func NewMigrator(db *sql.DB, versionTable string) (m *Migrator, err error) {
@@ -312,6 +315,8 @@ func (m *Migrator) MigrateTo(targetVersion int32) (err error) {
 
 		ctx := context.Background()
 
+		start := time.Now()
+
 		tx, err := m.db.BeginTx(ctx, nil)
 		if err != nil {
 			return err
@@ -320,7 +325,7 @@ func (m *Migrator) MigrateTo(targetVersion int32) (err error) {
 
 		// Fire on start callback
 		if m.OnStart != nil {
-			m.OnStart(current.Sequence, current.Name, directionName, sql)
+			m.OnStart(current.Name, directionName, sql)
 		}
 
 		// Execute the migration
@@ -329,7 +334,10 @@ func (m *Migrator) MigrateTo(targetVersion int32) (err error) {
 			// if err, ok := err.(pgx.PgError); ok {
 			// 	return MigrationPgError{Sql: sql, PgError: err}
 			// }
-			return err
+			if m.OnError != nil {
+				m.OnError(current.Name, err, sql)
+			}
+			return fmt.Errorf("SQL Error")
 		}
 
 		// Reset all database connection settings. Important to do before updating version as search_path may have been changed.
@@ -348,7 +356,13 @@ func (m *Migrator) MigrateTo(targetVersion int32) (err error) {
 			return err
 		}
 
+		duration := time.Since(start)
+
 		currentVersion = currentVersion + direction
+
+		if m.OnFinish != nil {
+			m.OnFinish(current.Name, directionName, duration.Milliseconds())
+		}
 	}
 
 	return nil
