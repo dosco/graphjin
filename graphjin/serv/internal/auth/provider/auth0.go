@@ -16,6 +16,7 @@ type Auth0Provider struct {
 }
 
 func NewAuth0Provider(config JWTConfig) (*Auth0Provider, error) {
+	config.initFS()
 	key, err := getKey(config)
 	if err != nil {
 		return nil, err

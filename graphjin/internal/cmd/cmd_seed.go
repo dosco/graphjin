@@ -27,7 +27,7 @@ import (
 
 func cmdDBSeed() func(*cobra.Command, []string) {
 	return func(cmd *cobra.Command, args []string) {
-		initCmd(cpath)
+		setup(cpath)
 		initDB(true)
 
 		if conf.DB.Type == "mysql" {
@@ -37,22 +37,23 @@ func cmdDBSeed() func(*cobra.Command, []string) {
 		conf.Serv.Production = false
 		conf.DefaultBlock = false
 		conf.DisableAllowList = true
+		conf.DBSchemaPollDuration = -1
 
 		conf.Core.Blocklist = nil
-		sfile := path.Join(cpath, conf.SeedFile)
+		seed := path.Join(cpath, "seed.js")
 
-		if err := compileAndRunJS(sfile, db); err != nil {
-			log.Fatalf("Failed to execute seed file %s: %s", sfile, err)
+		if err := compileAndRunJS(seed, db); err != nil {
+			log.Fatalf("Failed to execute seed file %s: %s", seed, err)
 		}
 
 		log.Infof("Seed script completed")
 	}
 }
 
-func compileAndRunJS(sfile string, db *sql.DB) error {
-	b, err := ioutil.ReadFile(sfile)
+func compileAndRunJS(seed string, db *sql.DB) error {
+	b, err := ioutil.ReadFile(seed)
 	if err != nil {
-		return fmt.Errorf("Failed to read seed file %s: %s", sfile, err)
+		return fmt.Errorf("Failed to read seed file %s: %s", seed, err)
 	}
 
 	gj, err := core.NewGraphJin(&conf.Core, db)
@@ -165,7 +166,7 @@ func compileAndRunJS(sfile string, db *sql.DB) error {
 		return err
 	}
 
-	_, err = vm.RunScript(conf.SeedFile, es5Code.String())
+	_, err = vm.RunScript("seed.js", es5Code.String())
 	return err
 }
 

@@ -3,9 +3,9 @@ package provider
 import (
 	"context"
 	"errors"
-	"io/ioutil"
 
 	jwt "github.com/dgrijalva/jwt-go"
+	"github.com/spf13/afero"
 )
 
 // JWTConfig struct contains JWT authentication related config values used by
@@ -42,6 +42,9 @@ type JWTConfig struct {
 	// JWKSMinRefresh sets in minutes fallback value when tokens
 	// are refreshed, default to 60 minutes
 	JWKSMinRefresh int `mapstructure:"jwks_min_refresh"`
+
+	// FileSystem
+	fs afero.Fs
 }
 
 // JWTProvider is the interface to define providers for doing JWT
@@ -72,7 +75,7 @@ func getKey(config JWTConfig) (interface{}, error) {
 	publicKeyFile := config.PubKeyFile
 	switch {
 	case publicKeyFile != "":
-		kd, err := ioutil.ReadFile(publicKeyFile)
+		kd, err := afero.ReadFile(config.fs, publicKeyFile)
 		if err != nil {
 			return nil, err
 		}
@@ -98,4 +101,14 @@ func getKey(config JWTConfig) (interface{}, error) {
 		return nil, errors.New("undefined key")
 	}
 	return key, nil
+}
+
+func (c *JWTConfig) initFS() {
+	if c.fs == nil {
+		c.fs = afero.NewBasePathFs(afero.NewOsFs(), "/")
+	}
+}
+
+func (c *JWTConfig) SetFS(fs afero.Fs) {
+	c.fs = fs
 }

@@ -171,10 +171,10 @@ func (gj *graphjin) subController(s *sub) {
 	defer gj.subs.Delete((s.name + s.role))
 	var ps time.Duration
 
-	if gj.conf.PollDuration < 5 {
+	if gj.conf.SubsPollDuration < 5 {
 		ps = 5 * time.Second
 	} else {
-		ps = gj.conf.PollDuration * time.Second
+		ps = gj.conf.SubsPollDuration * time.Second
 	}
 
 	for {

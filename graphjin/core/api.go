@@ -61,6 +61,7 @@ import (
 	"github.com/dosco/graphjin/core/internal/psql"
 	"github.com/dosco/graphjin/core/internal/qcode"
 	"github.com/dosco/graphjin/core/internal/sdata"
+	"github.com/spf13/afero"
 )
 
 type contextkey int
@@ -86,6 +87,7 @@ type graphjin struct {
 	conf        *Config
 	db          *sql.DB
 	log         *_log.Logger
+	fs          afero.Fs
 	dbtype      string
 	dbinfo      *sdata.DBInfo
 	schema      *sdata.DBSchema
@@ -117,16 +119,19 @@ type script struct {
 	Once
 }
 
+type Option func(*graphjin) error
+
 // NewGraphJin creates the GraphJin struct, this involves querying the database to learn its
 // schemas and relationships
-func NewGraphJin(conf *Config, db *sql.DB) (*GraphJin, error) {
-	gj, err := newGraphJin(conf, db, nil)
+func NewGraphJin(conf *Config, db *sql.DB, options ...Option) (*GraphJin, error) {
+	gj, err := newGraphJin(conf, db, nil, options...)
 	if err != nil {
 		return nil, err
 	}
 
 	g := &GraphJin{}
 	g.Store(gj)
+
 	if err := g.initDBWatcher(); err != nil {
 		return nil, err
 	}
@@ -134,7 +139,7 @@ func NewGraphJin(conf *Config, db *sql.DB) (*GraphJin, error) {
 }
 
 // newGraphJin helps with writing tests and benchmarks
-func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo) (*graphjin, error) {
+func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo, options ...Option) (*graphjin, error) {
 	if conf == nil {
 		conf = &Config{Debug: true, DisableAllowList: true}
 	}
@@ -152,8 +157,17 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo) (*graphjin, err
 	}
 
 	//order matters, do not re-order the initializers
-
 	if err := gj.initConfig(); err != nil {
+		return nil, err
+	}
+
+	for _, op := range options {
+		if err := op(gj); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := gj.initFS(); err != nil {
 		return nil, err
 	}
 
@@ -198,6 +212,13 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo) (*graphjin, err
 	}
 
 	return gj, nil
+}
+
+func OptionSetFS(fs afero.Fs) Option {
+	return func(s *graphjin) error {
+		s.fs = fs
+		return nil
+	}
 }
 
 type Error struct {

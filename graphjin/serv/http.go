@@ -49,14 +49,15 @@ type errorResp struct {
 	Errors []string `json:"errors"`
 }
 
-func apiV1Handler(s *Service) http.Handler {
+func apiV1Handler(s1 *Service) http.Handler {
 	var zlog *zap.Logger
+	s := s1.Load().(*service)
 
 	if s.conf.Debug {
 		zlog = s.zlog
 	}
 
-	h, err := auth.WithAuth(http.HandlerFunc(s.apiV1()), &s.conf.Auth, zlog)
+	h, err := auth.WithAuth(s1.apiV1(), &s.conf.Auth, zlog)
 	if err != nil {
 		s.log.Fatalf("Error initializing auth: %s", err)
 	}
@@ -82,9 +83,10 @@ func apiV1Handler(s *Service) http.Handler {
 	return h
 }
 
-func (s *Service) apiV1() func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
+func (s1 *Service) apiV1() http.Handler {
+	h := func(w http.ResponseWriter, r *http.Request) {
 		var err error
+		s := s1.Load().(*service)
 		start := time.Now()
 
 		if websocket.IsWebSocketUpgrade(r) {
@@ -179,7 +181,7 @@ func (s *Service) apiV1() func(http.ResponseWriter, *http.Request) {
 
 		elapsed := time.Since(start).Milliseconds()
 
-		if (res != nil) {
+		if res != nil {
 			res.ResponseTime = elapsed
 		}
 
@@ -187,9 +189,11 @@ func (s *Service) apiV1() func(http.ResponseWriter, *http.Request) {
 			s.reqLog(res, err)
 		}
 	}
+
+	return http.HandlerFunc(h)
 }
 
-func (s *Service) reqLog(res *core.Result, err error) {
+func (s *service) reqLog(res *core.Result, err error) {
 	fields := []zapcore.Field{
 		zap.String("op", res.OperationName()),
 		zap.String("name", res.QueryName()),
@@ -208,7 +212,7 @@ func (s *Service) reqLog(res *core.Result, err error) {
 		fields = append(fields, zap.Error(err))
 		s.zlog.Error("Query Failed", fields...)
 	} else {
-		fields = append(fields, zap.String("responseTime", strconv.FormatInt(res.ResponseTime, 10) + "ms"))
+		fields = append(fields, zap.String("responseTime", strconv.FormatInt(res.ResponseTime, 10)+"ms"))
 		s.zlog.Info("Query", fields...)
 	}
 }

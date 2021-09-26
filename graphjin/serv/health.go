@@ -10,8 +10,9 @@ import (
 
 var healthyResponse = []byte("All's Well")
 
-func health(s *Service) func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
+func healthV1Handler(s1 *Service) http.Handler {
+	h := func(w http.ResponseWriter, r *http.Request) {
+		s := s1.Load().(*service)
 		ct, cancel := context.WithTimeout(r.Context(), s.conf.DB.PingTimeout)
 		defer cancel()
 
@@ -24,4 +25,6 @@ func health(s *Service) func(http.ResponseWriter, *http.Request) {
 
 		_, _ = w.Write(healthyResponse)
 	}
+
+	return http.HandlerFunc(h)
 }

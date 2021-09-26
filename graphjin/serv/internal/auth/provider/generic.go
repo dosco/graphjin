@@ -15,6 +15,7 @@ type GenericProvider struct {
 }
 
 func NewGenericProvider(config JWTConfig) (*GenericProvider, error) {
+	config.initFS()
 	key, err := getKey(config)
 	if err != nil {
 		return nil, err

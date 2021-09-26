@@ -28,10 +28,11 @@ func getIPLimiter(ip string, limit float64, bucket int) *rate.Limiter {
 	return v.(*rate.Limiter)
 }
 
-func rateLimiter(s *Service, h http.Handler) http.Handler {
+func rateLimiter(s1 *Service, h http.Handler) http.Handler {
 	fn := func(w http.ResponseWriter, r *http.Request) {
 		var ip string
 		var err error
+		s := s1.Load().(*service)
 
 		if s.conf.RateLimiter.IPHeader != "" {
 			ip = r.Header.Get(s.conf.RateLimiter.IPHeader)

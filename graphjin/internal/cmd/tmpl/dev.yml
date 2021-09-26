@@ -63,7 +63,7 @@ cors_debug: false
 # Subscriptions poll the database to query for updates
 # this sets the duration (in seconds) between requests.
 # Defaults to 5 seconds
-poll_every_seconds: 5
+subs_poll_every_seconds: 5
 
 # Default limit value to be used on queries and as the max
 # limit on all queries where a limit is defined as a query variable.
@@ -116,9 +116,13 @@ default_block: false
 # Enable additional debugging logs
 debug: false
 
-# Poll the database to detect schema changes. GraphJin is reinitialized
-# when a change is detected. Set to 0 to disable.
-db_schema_poll_every_seconds: 20
+# Hot deploy allows you to deploy config changes
+# instantly without needing to build a new image
+hot_deploy: false
+
+# Admin secret key is the secret used to authorize access
+# to the admin api used by hot deploy and other features
+admin_secret_key: blahblah
 
 # Auth related environment Variables
 # GJ_AUTH_RAILS_COOKIE_SECRET_KEY_BASE

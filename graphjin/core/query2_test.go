@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/dosco/graphjin/core"
+	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/sync/errgroup"
 )
@@ -100,9 +101,10 @@ func TestAllowList(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(dir)
+	fs := afero.NewBasePathFs(afero.NewOsFs(), dir)
 
-	conf1 := &core.Config{DBType: dbType, AllowListPath: dir}
-	gj1, err := core.NewGraphJin(conf1, db)
+	conf1 := &core.Config{DBType: dbType}
+	gj1, err := core.NewGraphJin(conf1, db, core.OptionSetFS(fs))
 	if err != nil {
 		t.Error(err)
 	}
@@ -112,8 +114,8 @@ func TestAllowList(t *testing.T) {
 		t.Error(err)
 	}
 
-	conf2 := &core.Config{DBType: dbType, AllowListPath: dir, Production: true}
-	gj2, err := core.NewGraphJin(conf2, db)
+	conf2 := &core.Config{DBType: dbType, Production: true}
+	gj2, err := core.NewGraphJin(conf2, db, core.OptionSetFS(fs))
 	if err != nil {
 		t.Error(err)
 	}

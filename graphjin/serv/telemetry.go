@@ -19,7 +19,7 @@ import (
 	"go.opencensus.io/zpages"
 )
 
-func enableObservability(s *Service, mux *http.ServeMux) (func(), error) {
+func enableObservability(s *service, mux *http.ServeMux) (func(), error) {
 	// Enable OpenCensus zPages
 	if s.conf.Telemetry.Debug {
 		zpages.Handle(mux, "/telemetry")
@@ -37,10 +37,12 @@ func enableObservability(s *Service, mux *http.ServeMux) (func(), error) {
 	// Set up the metrics exporter
 	switch s.conf.Telemetry.Metrics.Exporter {
 	case "prometheus":
-		ep := "/metrics"
+		var ep string
 
 		if s.conf.Telemetry.Metrics.Endpoint != "" {
 			ep = s.conf.Telemetry.Metrics.Endpoint
+		} else {
+			ep = metricsRoute
 		}
 
 		ex, err1 := prometheus.NewExporter(prometheus.Options{Namespace: s.conf.Telemetry.Metrics.Namespace})
@@ -116,7 +118,7 @@ func enableObservability(s *Service, mux *http.ServeMux) (func(), error) {
 
 		} else {
 			prob := 0.5
-			if v, err := strconv.ParseFloat(sample, 10); err == nil {
+			if v, err := strconv.ParseFloat(sample, 32); err == nil {
 				prob = v
 			}
 			trace.ApplyConfig(trace.Config{DefaultSampler: trace.ProbabilitySampler(prob)})

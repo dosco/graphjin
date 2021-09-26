@@ -11,10 +11,11 @@ import (
 )
 
 type DBInfo struct {
-	Type      string
-	Version   int
-	Schema    string
-	Name      string
+	Type    string
+	Version int
+	Schema  string
+	Name    string
+
 	Tables    []DBTable      `hash:"set"`
 	Functions []DBFunction   `hash:"set"`
 	VTables   []VirtualTable `hash:"set"`
@@ -137,6 +138,9 @@ func NewDBInfo(
 
 	for k, tcols := range tm {
 		ti := NewDBTable(k.schema, k.table, "", tcols)
+		if strings.HasPrefix(ti.Name, "_gj_") {
+			continue
+		}
 		ti.Blocked = isInList(ti.Name, blockList)
 		di.AddTable(ti)
 	}
@@ -249,6 +253,9 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 		if !ok {
 			v = c
 			v.ID = int32(len(cmap))
+			if strings.HasPrefix(v.Table, "_gj_") {
+				continue
+			}
 			v.Blocked = isInList(v.Name, blockList)
 		}
 		if c.Type != "" {

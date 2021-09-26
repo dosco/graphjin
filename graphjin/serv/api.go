@@ -37,79 +37,187 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"path"
+	"path/filepath"
+	"strings"
+	"sync/atomic"
 
 	"github.com/dosco/graphjin/core"
 	"github.com/dosco/graphjin/internal/util"
+	"github.com/spf13/afero"
 	"go.uber.org/zap"
 )
 
 type Service struct {
+	atomic.Value
+	opt   []Option
+	cpath string
+}
+
+type servState int
+
+const (
+	servStarted servState = iota + 1
+	servListening
+)
+
+type service struct {
 	log      *zap.SugaredLogger // logger
 	zlog     *zap.Logger        // faster logger
 	logLevel int                // log level
-	binSelf  string             // path to self binary
 	conf     *Config            // parsed config
 	db       *sql.DB            // database connection pool
 	gj       *core.GraphJin
 	srv      *http.Server
-
-	started bool
+	fs       afero.Fs
+	asec     [32]byte
+	closeFn  func()
+	chash    string
+	state    servState
 }
 
-func NewGraphJinService(conf *Config) (*Service, error) {
+type Option func(*service) error
+
+func NewGraphJinService(conf *Config, options ...Option) (*Service, error) {
+	s, err := newGraphJinService(conf, nil, options...)
+	if err != nil {
+		return nil, err
+	}
+
+	s1 := &Service{opt: options, cpath: conf.Serv.ConfigPath}
+	s1.Store(s)
+
+	if s.conf.WatchAndReload {
+		initConfigWatcher(s1)
+	}
+
+	if s.conf.HotDeploy {
+		initHotDeployWatcher(s1)
+	}
+
+	return s1, nil
+}
+
+func OptionSetFS(fs afero.Fs) Option {
+	return func(s *service) error {
+		s.fs = fs
+		return nil
+	}
+}
+
+func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*service, error) {
+	var err error
 	if conf == nil {
 		conf = &Config{Core: Core{Debug: true}}
 	}
 
 	zlog := util.NewLogger(conf.LogFormat == "json")
-	log := zlog.Sugar()
+	s := &service{
+		conf:  conf,
+		zlog:  zlog,
+		log:   zlog.Sugar(),
+		db:    db,
+		chash: conf.hash,
+	}
 
-	if err := initConfig(conf, log); err != nil {
+	if err := s.initConfig(); err != nil {
 		return nil, err
 	}
 
-	s := &Service{conf: conf, log: log, zlog: zlog}
+	for _, op := range options {
+		if err := op(s); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := s.initFS(); err != nil {
+		return nil, err
+	}
+
 	initLogLevel(s)
 	validateConf(s)
 
-	if s.conf != nil && s.conf.WatchAndReload {
-		initConfigWatcher(s)
+	if err := s.initDB(); err != nil {
+		return nil, err
 	}
 
+	if conf.HotDeploy && db == nil {
+		err = s.hotStart()
+	} else {
+		err = s.normalStart()
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	s.state = servStarted
 	return s, nil
 }
 
-func (s *Service) init() error {
+func (s *service) normalStart() error {
 	var err error
+	s.gj, err = core.NewGraphJin(&s.conf.Core, s.db, core.OptionSetFS(s.fs))
+	return err
+}
 
-	if s.db != nil {
+func (s *service) hotStart() error {
+	ab, err := fetchActiveBundle(s.db)
+	if err != nil {
+		if strings.Contains(err.Error(), "_graphjin.") {
+			return fmt.Errorf("please run 'graphjin init' to setup database for hot-deploy")
+		}
+		return err
+	}
+
+	if ab == nil {
+		return s.normalStart()
+	}
+
+	cf := s.conf.vi.ConfigFileUsed()
+	cf = filepath.Base(strings.TrimSuffix(cf, filepath.Ext(cf)))
+	cf = path.Join("/", cf)
+
+	bfs, err := bundle2Fs(ab.name, ab.hash, cf, ab.bundle)
+	if err != nil {
+		return err
+	}
+	s.conf = bfs.conf
+	s.chash = bfs.conf.hash
+
+	if err := s.initConfig(); err != nil {
+		return err
+	}
+
+	s.gj, err = core.NewGraphJin(&s.conf.Core, s.db, core.OptionSetFS(bfs.fs))
+	return err
+}
+
+func (s1 *Service) Deploy(conf *Config, options ...Option) error {
+	var err error
+	os := s1.Load().(*service)
+
+	if conf == nil {
 		return nil
 	}
 
-	if s.db, err = s.newDB(true, true); err != nil {
-		return fmt.Errorf("Failed to connect to database: %w", err)
-	}
-
-	s.gj, err = core.NewGraphJin(&s.conf.Core, s.db)
+	s, err := newGraphJinService(conf, os.db, options...)
 	if err != nil {
-		return fmt.Errorf("Failed to initialize: %w", err)
+		return err
 	}
+	s.srv = os.srv
+	s.closeFn = os.closeFn
 
+	s1.Store(s)
 	return nil
 }
 
-func (s *Service) Start() error {
-	if err := s.init(); err != nil {
-		return err
-	}
-	startHTTP(s)
+func (s1 *Service) Start() error {
+	startHTTP(s1)
 	return nil
 }
 
-func (s *Service) Attach(mux *http.ServeMux) error {
-	if err := s.init(); err != nil {
-		return err
-	}
-	_, err := routeHandler(s, mux)
+func (s1 *Service) Attach(mux *http.ServeMux) error {
+	_, err := routeHandler(s1, mux)
 	return err
 }
