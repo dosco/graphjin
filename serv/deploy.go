@@ -27,7 +27,7 @@ func (s *service) saveConfig(c context.Context, name, bundle string) error {
 	}
 
 	h := sha1.New()
-	h.Write(zip)
+	_, _ = h.Write(zip)
 	hash := base64.URLEncoding.EncodeToString(h.Sum(nil))
 
 	opt := &sql.TxOptions{Isolation: sql.LevelSerializable}
