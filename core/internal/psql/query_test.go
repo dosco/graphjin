@@ -185,8 +185,6 @@ func searchQuery(t *testing.T) {
 		products(search: $query) {
 			id
 			name
-			search_rank
-			search_headline_description
 		}
 	}`
 

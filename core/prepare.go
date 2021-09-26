@@ -59,21 +59,12 @@ func (gj *graphjin) prepareRoleStmt() error {
 
 func (gj *graphjin) initAllowList() error {
 	var err error
-	var ConfigPath string
 
 	if gj.conf.DisableAllowList {
 		return nil
 	}
 
-	if gj.conf.AllowListPath != "" {
-		ConfigPath = gj.conf.AllowListPath
-	} else {
-		ConfigPath = gj.conf.ConfigPath
-	}
-
-	gj.allowList, err = allow.New(ConfigPath, allow.Config{
-		Log: gj.log,
-	})
+	gj.allowList, err = allow.New(allow.Config{Log: gj.log}, gj.fs)
 
 	if err != nil {
 		return fmt.Errorf("failed to initialize allow list: %w", err)

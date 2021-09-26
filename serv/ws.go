@@ -58,7 +58,7 @@ func init() {
 	}
 }
 
-func (s *Service) apiV1Ws(w http.ResponseWriter, r *http.Request) {
+func (s *service) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 	var m *core.Member
 	var run bool
 	var zlog *zap.Logger
@@ -187,7 +187,7 @@ func (s *Service) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 	done <- true
 }
 
-func (s *Service) waitForData(done chan bool, conn *ws.Conn, m *core.Member, req gqlWsReq) {
+func (s *service) waitForData(done chan bool, conn *ws.Conn, m *core.Member, req gqlWsReq) {
 	var buf bytes.Buffer
 	var ptype string
 	var err error

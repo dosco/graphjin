@@ -30,8 +30,9 @@ func newAction(s *Service, a *Action) (http.Handler, error) {
 	return http.HandlerFunc(httpFn), nil
 }
 
-func newSQLAction(s *Service, a *Action) (actionFn, error) {
+func newSQLAction(s1 *Service, a *Action) (actionFn, error) {
 	fn := func(w http.ResponseWriter, r *http.Request) error {
+		s := s1.Load().(*service)
 		_, err := s.db.ExecContext(r.Context(), a.SQL)
 		return err
 	}

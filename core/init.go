@@ -2,13 +2,36 @@ package core
 
 import (
 	"fmt"
+	"os"
+	"path"
 	"strings"
 	"unicode"
 
 	"github.com/dosco/graphjin/core/internal/qcode"
 	"github.com/dosco/graphjin/core/internal/sdata"
 	"github.com/gobuffalo/flect"
+	"github.com/spf13/afero"
 )
+
+func (gj *graphjin) initFS() error {
+	if gj.fs != nil {
+		return nil
+	}
+
+	var cpath string
+	if gj.conf.ConfigPath == "" {
+		cp, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+		cpath = path.Join(cp, "config")
+	} else {
+		cpath = gj.conf.ConfigPath
+	}
+
+	gj.fs = afero.NewBasePathFs(afero.NewOsFs(), cpath)
+	return nil
+}
 
 func (gj *graphjin) initConfig() error {
 	c := gj.conf

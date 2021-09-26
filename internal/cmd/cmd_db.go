@@ -3,17 +3,59 @@ package cmd
 import (
 	"database/sql"
 	"fmt"
-	"os"
-	"path"
-	"path/filepath"
 
-	"github.com/dosco/graphjin/internal/cmd/internal/migrate"
 	"github.com/spf13/cobra"
 )
 
+func dbCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "db",
+		Short: "Create database",
+	}
+
+	c1 := &cobra.Command{
+		Use:   "create",
+		Short: "Create database",
+		Run:   cmdDBCreate(),
+	}
+	c.AddCommand(c1)
+
+	c2 := &cobra.Command{
+		Use:   "drop",
+		Short: "Drop database",
+		Run:   cmdDBDrop(),
+	}
+	c.AddCommand(c2)
+
+	c3 := &cobra.Command{
+		Use:   "seed",
+		Short: "Run the seed script to seed the database",
+		Run:   cmdDBSeed(),
+	}
+	c.AddCommand(c3)
+
+	c4 := &cobra.Command{
+		Use:   "setup",
+		Short: "Setup database",
+		Long:  "This command will create, migrate and seed the database",
+		Run:   cmdDBSetup(),
+	}
+	c.AddCommand(c4)
+
+	c5 := &cobra.Command{
+		Use:   "reset",
+		Short: "Reset database",
+		Long:  "This command will drop, create, migrate and seed the database (won't run in production)",
+		Run:   cmdDBReset(),
+	}
+	c.AddCommand(c5)
+
+	return c
+}
+
 func cmdDBSetup() func(*cobra.Command, []string) {
 	return func(cmd *cobra.Command, args []string) {
-		initCmd(cpath)
+		setup(cpath)
 
 		if conf.DB.Type == "mysql" {
 			log.Fatal("Database setup not support with MySQL")
@@ -21,21 +63,13 @@ func cmdDBSetup() func(*cobra.Command, []string) {
 
 		cmdDBCreate()(cmd, []string{})
 		cmdDBMigrate()(cmd, []string{"up"})
-
-		sfile := path.Join(cpath, conf.SeedFile)
-		_, err := os.Stat(sfile)
-
-		if err == nil {
-			cmdDBSeed()(cmd, []string{})
-		} else {
-			log.Warn("Unable to read seed file: %s", sfile)
-		}
+		cmdDBSeed()(cmd, []string{})
 	}
 }
 
 func cmdDBReset() func(*cobra.Command, []string) {
 	return func(cmd *cobra.Command, args []string) {
-		initCmd(cpath)
+		setup(cpath)
 
 		if conf.Serv.Production {
 			log.Fatal("Command db:reset does not work in production")
@@ -48,7 +82,7 @@ func cmdDBReset() func(*cobra.Command, []string) {
 
 func cmdDBCreate() func(*cobra.Command, []string) {
 	return func(cmd *cobra.Command, args []string) {
-		initCmd(cpath)
+		setup(cpath)
 		initDB(false)
 
 		if conf.DB.Type == "mysql" {
@@ -81,7 +115,7 @@ func cmdDBCreate() func(*cobra.Command, []string) {
 
 func cmdDBDrop() func(*cobra.Command, []string) {
 	return func(cmd *cobra.Command, args []string) {
-		initCmd(cpath)
+		setup(cpath)
 		initDB(false)
 
 		sql := fmt.Sprintf(`DROP DATABASE IF EXISTS "%s"`, conf.DB.DBName)
@@ -91,42 +125,5 @@ func cmdDBDrop() func(*cobra.Command, []string) {
 		}
 
 		log.Infof("Database dropped: %s", conf.DB.DBName)
-	}
-}
-
-func cmdDBNew() func(*cobra.Command, []string) {
-	return func(cmd *cobra.Command, args []string) {
-		if len(args) != 1 {
-			cmd.Help() //nolint: errcheck
-			os.Exit(1)
-		}
-
-		initCmd(cpath)
-		initDB(false)
-
-		name := args[0]
-		migrationsPath := conf.RelPath(conf.MigrationsPath)
-
-		m, err := migrate.FindMigrations(migrationsPath)
-		if err != nil {
-			log.Fatalf("Error loading migrations: %s", err)
-		}
-
-		mname := fmt.Sprintf("%d_%s.sql", len(m), name)
-
-		// Write new migration
-		mpath := filepath.Join(migrationsPath, mname)
-		mfile, err := os.OpenFile(mpath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-		if err != nil {
-			log.Fatalf("Error creating migration file: %s", err)
-		}
-		defer mfile.Close()
-
-		_, err = mfile.WriteString(newMigrationText)
-		if err != nil {
-			log.Fatalf("Error creating migration file: %s", err)
-		}
-
-		log.Infof("Migration file created: %s", mpath)
 	}
 }

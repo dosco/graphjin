@@ -12,6 +12,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func newCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "new <app-name>",
+		Short: "Create a new application",
+		Long:  "Generate all the required files to start on a new GraphJin app",
+		Run:   cmdNew(),
+	}
+	return c
+}
+
 func cmdNew() func(*cobra.Command, []string) {
 	return func(cmd *cobra.Command, args []string) {
 		if len(args) != 1 {

@@ -3,24 +3,22 @@ package serv
 import (
 	"context"
 	"embed"
-	"fmt"
-	"io/fs"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"path"
 	"strings"
 	"time"
 
 	"github.com/dosco/graphjin/serv/internal/auth"
-	"github.com/klauspost/compress/gzhttp"
 	"go.opencensus.io/plugin/ochttp"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
 	serverName = "GraphJin"
+	defaultHP  = "0.0.0.0:8080"
 )
 
 var (
@@ -28,73 +26,39 @@ var (
 	version string
 	commit  string
 	date    string
-)
 
-var (
 	//go:embed web/build
 	webBuild embed.FS
-
-	apiRoute string = "/api/v1/graphql"
 )
 
-func initConfigWatcher(s *Service) {
-	var err error
-	cpath := s.conf.Serv.ConfigPath
-
-	var d dir
-	if cpath == "" || cpath == "./" {
-		d = watchDir("./config", reExec(s))
-	} else {
-		d = watchDir(cpath, reExec(s))
+func initConfigWatcher(s1 *Service) {
+	s := s1.Load().(*service)
+	if s.conf.Serv.Production {
+		return
 	}
 
 	go func() {
-		err = startConfigWatcher(s, d)
+		err := startConfigWatcher(s1)
+		if err != nil {
+			s.log.Fatalf("error in config file watcher: %s", err)
+		}
 	}()
-
-	if err != nil {
-		s.log.Fatalf("error in config file watcher: %s", err)
-	}
 }
 
-func isHealthEndpoint(r *http.Request) bool {
-	healthEndPointPaths := []string{"/health", "/metrics"}
-	for _, healthEndPointPath := range healthEndPointPaths {
-		if r.URL.Path == healthEndPointPath {
-			return true
+func initHotDeployWatcher(s1 *Service) {
+	s := s1.Load().(*service)
+	go func() {
+		err := startHotDeployWatcher(s1)
+		if err != nil {
+			s.log.Fatalf("error in hot deploy watcher: %s", err)
 		}
-	}
-	return false
+	}()
 }
 
-func startHTTP(s *Service) {
-	var appName string
+func startHTTP(s1 *Service) {
+	s := s1.Load().(*service)
 
-	defaultHP := "0.0.0.0:8080"
-	env := os.Getenv("GO_ENV")
-
-	if s.conf != nil {
-		appName = s.conf.AppName
-		hp := strings.SplitN(s.conf.HostPort, ":", 2)
-
-		if len(hp) == 2 {
-			if s.conf.Host != "" {
-				hp[0] = s.conf.Host
-			}
-
-			if s.conf.Port != "" {
-				hp[1] = s.conf.Port
-			}
-
-			s.conf.hostPort = fmt.Sprintf("%s:%s", hp[0], hp[1])
-		}
-	}
-
-	if s.conf.hostPort == "" {
-		s.conf.hostPort = defaultHP
-	}
-
-	routes, err := routeHandler(s, http.NewServeMux())
+	routes, err := routeHandler(s1, http.NewServeMux())
 	if err != nil {
 		s.log.Fatalf("error setting up routes: %s", err)
 	}
@@ -111,7 +75,7 @@ func startHTTP(s *Service) {
 		if s.conf.Serv.Telemetry.Tracing.ExcludeHealthCheck {
 			s.srv.Handler = &ochttp.Handler{
 				Handler:          routes,
-				IsHealthEndpoint: isHealthEndpoint,
+				IsHealthEndpoint: s.isHealthEndpoint,
 			}
 		} else {
 			s.srv.Handler = &ochttp.Handler{Handler: routes}
@@ -131,8 +95,8 @@ func startHTTP(s *Service) {
 	}()
 
 	s.srv.RegisterOnShutdown(func() {
-		if s.conf.closeFn != nil {
-			s.conf.closeFn()
+		if s.closeFn != nil {
+			s.closeFn()
 		}
 		if s.db != nil {
 			s.db.Close()
@@ -140,8 +104,27 @@ func startHTTP(s *Service) {
 		s.log.Info("shutdown complete")
 	})
 
-	s.log.Infof("GraphJin started, version: %s, host-port: %s, app-name: %s, env: %s",
-		version, s.conf.hostPort, appName, env)
+	ver := version
+	dep := s.conf.name
+
+	if version == "" {
+		ver = "not-set"
+	}
+
+	/*
+		s.log.Infof("GraphJin started, version: %s, host-port: %s, app-name: %s, deployment: %s, env: %s",
+		 	ver, s.conf.hostPort, s.conf.AppName, dep, os.Getenv("GO_ENV"))
+	*/
+
+	fields := []zapcore.Field{
+		zap.String("version", ver),
+		zap.String("host-port", s.conf.hostPort),
+		zap.String("app-name", s.conf.AppName),
+		zap.String("deployment-name", dep),
+		zap.String("env", os.Getenv("GO_ENV")),
+	}
+
+	s.zlog.Info("GraphJin started", fields...)
 
 	l, err := net.Listen("tcp", s.conf.hostPort)
 	if err != nil {
@@ -149,74 +132,12 @@ func startHTTP(s *Service) {
 	}
 
 	// signal we are open for business.
-	s.started = true
+	s.state = servListening
 
 	if err := s.srv.Serve(l); err != http.ErrServerClosed {
 		s.log.Fatalf("failed to start: %s", err)
 	}
-
 	<-idleConnsClosed
-}
-
-func routeHandler(s *Service, mux *http.ServeMux) (http.Handler, error) {
-	var err error
-
-	if s.conf == nil {
-		return mux, nil
-	}
-
-	if s.conf.APIPath != "" {
-		apiRoute = path.Join("/", s.conf.APIPath, "/v1/graphql")
-	}
-
-	// Main GraphQL API handler
-	apiHandler := apiV1Handler(s)
-
-	// API rate limiter
-	if s.conf.rateLimiterEnable() {
-		apiHandler = rateLimiter(s, apiHandler)
-	}
-
-	routes := map[string]http.Handler{
-		"/health": http.HandlerFunc(health(s)),
-		apiRoute:  apiHandler,
-	}
-
-	if err := setActionRoutes(s, routes); err != nil {
-		return nil, err
-	}
-
-	if s.conf.WebUI {
-		webRoot, err := fs.Sub(webBuild, "web/build")
-		if err != nil {
-			return nil, err
-		}
-		routes["/"] = http.FileServer(http.FS(webRoot))
-	}
-
-	if s.conf.HTTPGZip {
-		gz, err := gzhttp.NewWrapper(gzhttp.MinSize(2000), gzhttp.CompressionLevel(6))
-		if err != nil {
-			return nil, err
-		}
-
-		for k, v := range routes {
-			routes[k] = gz(v)
-		}
-	}
-
-	for k, v := range routes {
-		mux.Handle(k, v)
-	}
-
-	if s.conf.telemetryEnabled() {
-		s.conf.closeFn, err = enableObservability(s, mux)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return setServerHeader(mux), nil
 }
 
 func setServerHeader(h http.Handler) http.Handler {
@@ -227,42 +148,7 @@ func setServerHeader(h http.Handler) http.Handler {
 	return http.HandlerFunc(fn)
 }
 
-func setActionRoutes(s *Service, routes map[string]http.Handler) error {
-	var zlog *zap.Logger
-	var err error
-
-	if s.conf.Debug {
-		zlog = s.zlog
-	}
-
-	for _, a := range s.conf.Actions {
-		var fn http.Handler
-
-		fn, err = newAction(s, &a)
-		if err != nil {
-			break
-		}
-
-		p := fmt.Sprintf("/api/v1/actions/%s", strings.ToLower(a.Name))
-
-		if ac := findAuth(s, a.AuthName); ac != nil {
-			routes[p], err = auth.WithAuth(fn, ac, zlog)
-		} else {
-			routes[p] = fn
-		}
-
-		if s.conf.telemetryEnabled() {
-			routes[p] = ochttp.WithRouteTag(routes[p], p)
-		}
-
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func findAuth(s *Service, name string) *auth.Auth {
+func findAuth(s *service, name string) *auth.Auth {
 	for _, a := range s.conf.Auths {
 		if strings.EqualFold(a.Name, name) {
 			return &a

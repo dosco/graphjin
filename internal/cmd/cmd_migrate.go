@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -10,6 +11,53 @@ import (
 	"github.com/dosco/graphjin/serv"
 	"github.com/spf13/cobra"
 )
+
+func migrateCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "migrate",
+		Short: "Migrate the database",
+		Long: `Migrate the database to destination migration version.
+
+		Destination migration version can be one of the following value types:
+
+		Migrate to the most recent migration.
+		e.g. db:migrate up
+
+		Rollback the most recent migration.
+		e.g. db:migrate down
+
+		Migrate to a specific migration.
+		e.g. db:migrate 42
+
+		Migrate forward N steps.
+		e.g. db:migrate +3
+
+		Migrate backward N steps.
+		e.g. db:migrate -2
+
+		Redo previous N steps (migrate backward N steps then forward N steps).
+		e.g. db:migrate -+1
+			`,
+		Run: cmdDBMigrate(),
+	}
+
+	c1 := &cobra.Command{
+		Use:   "new NAME",
+		Short: "Generate a new migration",
+		Long:  "Generate a new migration with the next sequence number and provided name",
+		Run:   cmdMigrateNew(),
+	}
+	c.AddCommand(c1)
+
+	c2 := &cobra.Command{
+		Use:   "status",
+		Short: "Print current migration status",
+		Run:   cmdMigrateStatus(),
+	}
+	c.AddCommand(c2)
+
+	return c
+}
 
 var newMigrationText = `-- Write your migrate up statements here
 
@@ -30,7 +78,7 @@ func cmdDBMigrate() func(*cobra.Command, []string) {
 
 		dest := args[0]
 
-		initCmd(cpath)
+		setup(cpath)
 		initDB(true)
 
 		if conf.DB.Type == "mysql" {
@@ -152,12 +200,11 @@ func cmdDBMigrate() func(*cobra.Command, []string) {
 		}
 
 	}
-
 }
 
-func cmdDBStatus() func(*cobra.Command, []string) {
+func cmdMigrateStatus() func(*cobra.Command, []string) {
 	return func(cmd *cobra.Command, args []string) {
-		initCmd(cpath)
+		setup(cpath)
 		initDB(true)
 
 		if conf.DB.Type == "mysql" {
@@ -195,6 +242,43 @@ func cmdDBStatus() func(*cobra.Command, []string) {
 
 		log.Infof("Status: %s, version: %d of %d, host: %s, database: %s",
 			status, mver, len(m.Migrations), conf.DB.Host, conf.DB.DBName)
+	}
+}
+
+func cmdMigrateNew() func(*cobra.Command, []string) {
+	return func(cmd *cobra.Command, args []string) {
+		if len(args) != 1 {
+			cmd.Help() //nolint: errcheck
+			os.Exit(1)
+		}
+
+		setup(cpath)
+		initDB(false)
+
+		name := args[0]
+		migrationsPath := conf.RelPath(conf.MigrationsPath)
+
+		m, err := migrate.FindMigrations(migrationsPath)
+		if err != nil {
+			log.Fatalf("Error loading migrations: %s", err)
+		}
+
+		mname := fmt.Sprintf("%d_%s.sql", len(m), name)
+
+		// Write new migration
+		mpath := filepath.Join(migrationsPath, mname)
+		mfile, err := os.OpenFile(mpath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if err != nil {
+			log.Fatalf("Error creating migration file: %s", err)
+		}
+		defer mfile.Close()
+
+		_, err = mfile.WriteString(newMigrationText)
+		if err != nil {
+			log.Fatalf("Error creating migration file: %s", err)
+		}
+
+		log.Infof("Migration file created: %s", mpath)
 	}
 }
 

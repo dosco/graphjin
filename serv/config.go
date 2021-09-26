@@ -10,6 +10,7 @@ import (
 
 	"github.com/dosco/graphjin/core"
 	"github.com/dosco/graphjin/serv/internal/auth"
+	"github.com/spf13/afero"
 	"github.com/spf13/viper"
 )
 
@@ -26,9 +27,25 @@ type Config struct {
 	// Serv holds config values for the GraphJin Service
 	Serv `mapstructure:",squash"`
 
-	closeFn  func()
+	// Admin holds config values for adminstrationof GraphJin Service
+	Admin `mapstructure:",squash"`
+
 	hostPort string
+	hash     string
+	name     string
 	vi       *viper.Viper
+}
+
+// Admin struct contains config values used for adminstration of the
+// GraphJin service
+type Admin struct {
+	// HotDeploy enables the ability to hot-deploy a new configuration
+	// to GraphJin.
+	HotDeploy bool `mapstructure:"hot_deploy"`
+
+	// AdminSecret is the secret key used to control access
+	// to the admin api
+	AdminSecretKey string `mapstructure:"admin_secret_key"`
 }
 
 // Serv struct contains config values used by the GraphJin service
@@ -74,9 +91,6 @@ type Serv struct {
 	// AuthFailBlock when enabled blocks requests with a 401 on auth failure
 	AuthFailBlock bool `mapstructure:"auth_fail_block"`
 
-	// SeedFile is the path to the database seeding script
-	SeedFile string `mapstructure:"seed_file"`
-
 	// MigrationsPath is the path to the database migration files
 	MigrationsPath string `mapstructure:"migrations_path"`
 
@@ -88,9 +102,6 @@ type Serv struct {
 
 	// DebugCORS enables debug logs for cors
 	DebugCORS bool `mapstructure:"cors_debug"`
-
-	// APIPath change the suffix of the api path. Defaults to /v1/graphql
-	APIPath string `mapstructure:"api_path"`
 
 	// CacheControl sets the HTTP Cache-Control header
 	CacheControl string `mapstructure:"cache_control"`
@@ -194,6 +205,15 @@ type Action struct {
 // ReadInConfig function reads in the config file for the environment specified in the GO_ENV
 // environment variable. This is the best way to create a new GraphJin config.
 func ReadInConfig(configFile string) (*Config, error) {
+	return readInConfig(configFile, nil)
+}
+
+// ReadInConfigFS is the same as ReadInConfig but it also takes a filesytem as an argument
+func ReadInConfigFS(configFile string, fs afero.Fs) (*Config, error) {
+	return readInConfig(configFile, fs)
+}
+
+func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 	// migrate old sg var prefixes to new gj prefixes
 	for _, e := range os.Environ() {
 		if !strings.HasPrefix(e, "SG_") {
@@ -206,6 +226,9 @@ func ReadInConfig(configFile string) (*Config, error) {
 	cpath := path.Dir(configFile)
 	cfile := path.Base(configFile)
 	vi := newViper(cpath, cfile)
+	if fs != nil {
+		vi.SetFs(fs)
+	}
 
 	if err := vi.ReadInConfig(); err != nil {
 		return nil, err
@@ -215,6 +238,9 @@ func ReadInConfig(configFile string) (*Config, error) {
 
 	if inherits != "" {
 		vi = newViper(cpath, inherits)
+		if fs != nil {
+			vi.SetFs(fs)
+		}
 
 		if err := vi.ReadInConfig(); err != nil {
 			return nil, err
@@ -295,8 +321,15 @@ func (c *Config) RelPath(p string) string {
 	if filepath.IsAbs(p) {
 		return p
 	}
-
 	return path.Join(c.Serv.ConfigPath, p)
+}
+
+func (c *Config) SetHash(hash string) {
+	c.hash = hash
+}
+
+func (c *Config) SetName(name string) {
+	c.name = name
 }
 
 func (c *Config) rateLimiterEnable() bool {
