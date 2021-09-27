@@ -4,7 +4,6 @@ package main
 
 import (
 	_ "github.com/git-chglog/git-chglog/cmd/git-chglog"
-	_ "github.com/golangci/golangci-lint/cmd/golangci-lint"
 	_ "github.com/golangci/golangci-lint/cmd/golangci-lint@v1.42.1"
 	_ "github.com/goreleaser/goreleaser"
 	_ "golang.org/x/perf/cmd/benchstat"
