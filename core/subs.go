@@ -315,6 +315,7 @@ func (gj *graphjin) checkUpdates(s *sub, mv mval, start int) {
 		gj.log.Printf("Subscription Error: %s", err)
 		return
 	}
+	defer rows.Close()
 
 	var js json.RawMessage
 	i := 0

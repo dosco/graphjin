@@ -74,7 +74,7 @@ func Example_queryWithDynamicOrderBy() {
 		}
 	}`
 
-	conf := &core.Config{
+	conf := newConfig(&core.Config{
 		DBType:           dbType,
 		DisableAllowList: true,
 		Tables: []core.Table{{
@@ -84,7 +84,7 @@ func Example_queryWithDynamicOrderBy() {
 				"just_id":      {"id asc"},
 			},
 		}},
-	}
+	})
 
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
@@ -121,10 +121,10 @@ func Example_queryWithNestedOrderBy() {
 				}
 	       }`
 
-	conf := &core.Config{
+	conf := newConfig(&core.Config{
 		DBType:           dbType,
 		DisableAllowList: true,
-	}
+	})
 
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
