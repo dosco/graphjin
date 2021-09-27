@@ -148,6 +148,7 @@ func getAdminParams(tx *sql.Tx) (adminParams, error) {
 	if err != nil {
 		return ap, err
 	}
+	defer rows.Close()
 
 	ap.params = make(map[string]string)
 
