@@ -25,7 +25,7 @@ func Example_query() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -50,7 +50,7 @@ func Example_queryWithUser() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -165,7 +165,7 @@ func Example_queryWithLimitOffsetOrderByDistinctAndWhere() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -191,7 +191,7 @@ func Example_queryWithWhereIn() {
 		"list": [1,2,3]
 	}`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -222,7 +222,7 @@ func Example_queryWithWhereNotIsNullAndGreaterThan() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -253,7 +253,7 @@ func Example_queryWithWhereGreaterThanOrLesserThan() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -279,7 +279,7 @@ func Example_queryWithWhereOnRelatedTable() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -305,7 +305,7 @@ func Example_queryWithAlternateFieldNames() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -332,7 +332,7 @@ func Example_queryByID() {
 		"id": 2
 	}`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -359,7 +359,7 @@ func Example_queryBySearch() {
 		"query": "\"Product 3\""
 	}`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -385,7 +385,7 @@ func Example_queryParentsWithChildren() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -411,7 +411,7 @@ func Example_queryChildrenWithParent() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -445,7 +445,7 @@ func Example_queryParentAndChildrenViaArrayColumn() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 2}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 2})
 	conf.Tables = []core.Table{{
 		Name: "products",
 		Columns: []core.Column{
@@ -481,7 +481,7 @@ func Example_queryManyToManyViaJoinTable1() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -507,7 +507,7 @@ func Example_queryManyToManyViaJoinTable2() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 2}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 2})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -529,7 +529,7 @@ func Example_queryWithAggregation() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -551,7 +551,7 @@ func Example_queryWithAggregationBlockedColumn() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	err := conf.AddRoleTable("anon", "products", core.Query{
 		Columns: []string{"id", "name"},
 	})
@@ -580,7 +580,7 @@ func Example_queryWithFunctionsBlocked() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	err := conf.AddRoleTable("anon", "products", core.Query{
 		DisableFunctions: true,
 	})
@@ -609,7 +609,7 @@ func Example_queryWithFunctionsWithWhere() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -631,7 +631,7 @@ func Example_queryWithSyntheticTables() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	conf.Tables = []core.Table{{Name: "me", Table: "users"}}
 	err := conf.AddRoleTable("user", "me", core.Query{
 		Filters: []string{`{ id: $user_id }`},
@@ -666,7 +666,7 @@ func Example_queryWithVariables() {
 
 	vars := json.RawMessage(`{ "product_id": 70 }`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	conf.Vars = map[string]string{"product_price": "50"}
 
 	gj, err := core.NewGraphJin(conf, db)
@@ -704,7 +704,7 @@ func Example_queryWithMultipleTopLevelTables() {
 
 	vars := json.RawMessage(`{ "id": 1 }`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -738,7 +738,7 @@ func Example_queryWithFragments1() {
 		full_name
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 2}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 2})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -773,7 +773,7 @@ func Example_queryWithFragments2() {
 		full_name
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 2}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 2})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -808,7 +808,7 @@ func Example_queryWithFragments3() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 2}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 2})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -848,7 +848,7 @@ func Example_queryWithUnionForPolymorphicRelationships() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 2}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 2})
 	conf.Tables = []core.Table{{
 		Name:    "subject",
 		Type:    "polymorphic",
@@ -883,7 +883,7 @@ func Example_queryWithSkipAndIncludeDirectives() {
 
 	vars := json.RawMessage(`{ "test": true }`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -918,7 +918,7 @@ func Example_queryWithRemoteAPIJoin() {
 		log.Fatal(http.ListenAndServe("localhost:12345", nil))
 	}()
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 2}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 2})
 	conf.Resolvers = []core.ResolverConfig{{
 		Name:      "payments",
 		Type:      "remote_api",
@@ -956,7 +956,7 @@ func Example_queryWithCursorPagination() {
 
 	vars := json.RawMessage(`{"cursor": null}`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -1001,7 +1001,7 @@ func Example_queryWithJsonColumn() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	conf.Tables = []core.Table{
 		{
 			Name:  "category_counts",
@@ -1058,7 +1058,7 @@ func Example_queryWithScriptDirective() {
 		panic(err)
 	}
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true, ScriptPath: dir}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, ScriptPath: dir})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -1100,7 +1100,7 @@ func Example_queryWithScriptDirectiveUsingGraphQL() {
 		panic(err)
 	}
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true, ScriptPath: dir}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, ScriptPath: dir})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -1147,7 +1147,7 @@ func Example_queryWithScriptDirectiveUsingHttp() {
 		panic(err)
 	}
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true, ScriptPath: dir}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, ScriptPath: dir})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -1173,7 +1173,7 @@ func Example_queryWithView() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	conf.Tables = []core.Table{
 		{
 			Name: "hot_products",
@@ -1212,7 +1212,7 @@ func Example_queryWithRecursiveRelationship1() {
 
 	vars := json.RawMessage(`{"id": 50 }`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -1237,7 +1237,7 @@ func Example_queryWithRecursiveRelationship2() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -1263,7 +1263,7 @@ func Example_queryWithRecursiveRelationshipAndAggregations() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -1291,7 +1291,7 @@ func Example_queryWithSkippingAuthRequiredSelectors() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -1315,7 +1315,7 @@ func Example_blockQueryWithRoles() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	conf.RolesQuery = `SELECT * FROM users WHERE id = $user_id`
 	conf.Roles = []core.Role{{Name: "disabled_user", Match: "disabled = true"}}
 
@@ -1350,7 +1350,7 @@ func Example_queryWithCamelToSnakeCase() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true, EnableCamelcase: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, EnableCamelcase: true})
 	conf.Tables = []core.Table{
 		{
 			Name: "hot_products",

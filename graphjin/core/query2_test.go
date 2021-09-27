@@ -29,7 +29,7 @@ func queryWithVariableLimit(t *testing.T) {
 		"limit": 10
 	}`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		t.Error(err)
@@ -57,7 +57,7 @@ func TestAPQ(t *testing.T) {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		t.Error(err)
@@ -103,7 +103,7 @@ func TestAllowList(t *testing.T) {
 	defer os.RemoveAll(dir)
 	fs := afero.NewBasePathFs(afero.NewOsFs(), dir)
 
-	conf1 := &core.Config{DBType: dbType}
+	conf1 := newConfig(&core.Config{DBType: dbType})
 	gj1, err := core.NewGraphJin(conf1, db, core.OptionSetFS(fs))
 	if err != nil {
 		t.Error(err)
@@ -114,7 +114,7 @@ func TestAllowList(t *testing.T) {
 		t.Error(err)
 	}
 
-	conf2 := &core.Config{DBType: dbType, Production: true}
+	conf2 := newConfig(&core.Config{DBType: dbType, Production: true})
 	gj2, err := core.NewGraphJin(conf2, db, core.OptionSetFS(fs))
 	if err != nil {
 		t.Error(err)
@@ -137,7 +137,7 @@ func TestConfigReuse(t *testing.T) {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj1, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		t.Error(err)
@@ -265,7 +265,7 @@ var benchGQL = `query {
 }`
 
 func Example_veryComplexQuery() {
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	conf.Tables = []core.Table{
 		{
 			Name:  "category_counts",
@@ -308,7 +308,7 @@ func BenchmarkCompile(b *testing.B) {
 		"limit": 10
 	}`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	conf.Tables = []core.Table{
 		{
 			Name:  "category_counts",

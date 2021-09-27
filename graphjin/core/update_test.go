@@ -24,7 +24,7 @@ func Example_update() {
 		} 
 	}`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -66,7 +66,7 @@ func Example_updateMultipleRelatedTables1() {
 		}
 	}`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -103,7 +103,7 @@ func Example_updateTableAndConnectToRelatedTables() {
 		}
 	}`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -140,7 +140,7 @@ func Example_updateTableAndRelatedTable() {
 		}
 	}`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
