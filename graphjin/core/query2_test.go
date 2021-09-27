@@ -162,7 +162,8 @@ func TestConfigReuse(t *testing.T) {
 }
 
 func TestConfigRoleManagement(t *testing.T) {
-	conf := &core.Config{}
+	conf := newConfig(&core.Config{})
+
 	err := conf.AddRoleTable("test1", "products", core.Query{
 		Columns: []string{"id", "name"},
 	})
@@ -190,11 +191,11 @@ func TestParallelRuns(t *testing.T) {
 
 	// TODO: introspection engine has race condition in dev
 	// mode.
-	conf := &core.Config{Production: true, DisableAllowList: true,
+	conf := newConfig(&core.Config{Production: true, DisableAllowList: true,
 		Tables: []core.Table{
 			{Name: "me", Table: "users"},
 		},
-	}
+	})
 
 	err := conf.AddRoleTable("user", "me", core.Query{
 		Filters: []string{"{ id: { eq: $user_id } }"},
