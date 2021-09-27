@@ -30,7 +30,7 @@ func Example_subscription() {
 
 	vars := json.RawMessage(`{ "id": 3 }`)
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true, SubsPollDuration: 1}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, SubsPollDuration: 1})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -83,7 +83,7 @@ func Example_subscriptionWithCursor() {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true, SubsPollDuration: 1}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, SubsPollDuration: 1})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -172,7 +172,7 @@ func TestSubscription(t *testing.T) {
 		}
 	}`
 
-	conf := &core.Config{DBType: dbType, DisableAllowList: true, SubsPollDuration: 1}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, SubsPollDuration: 1})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)

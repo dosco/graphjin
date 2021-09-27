@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/dosco/graphjin/core"
 	"github.com/orlangure/gnomock"
 	"github.com/orlangure/gnomock/preset/cockroachdb"
 	"github.com/orlangure/gnomock/preset/mssql"
@@ -102,7 +103,6 @@ func TestMain(m *testing.M) {
 
 		con, err := gnomock.Start(
 			v.preset,
-			gnomock.WithDebugMode(),
 			gnomock.WithLogWriter(os.Stdout))
 		if err != nil {
 			panic(err)
@@ -124,4 +124,9 @@ func TestMain(m *testing.M) {
 			os.Exit(res)
 		}
 	}
+}
+
+func newConfig(c *core.Config) *core.Config {
+	c.DBSchemaPollDuration = -1
+	return c
 }
