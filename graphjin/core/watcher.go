@@ -10,7 +10,7 @@ func (g *GraphJin) initDBWatcher() error {
 	gj := g.Load().(*graphjin)
 
 	// no schema polling in production unless allowlist is disabled
-	if g.IsProd() && !gj.conf.DisableAllowList {
+	if gj.prod && !gj.conf.DisableAllowList {
 		return nil
 	}
 

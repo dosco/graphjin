@@ -35,8 +35,10 @@ package serv
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -62,23 +64,29 @@ const (
 )
 
 type service struct {
-	log      *zap.SugaredLogger // logger
-	zlog     *zap.Logger        // faster logger
-	logLevel int                // log level
-	conf     *Config            // parsed config
-	db       *sql.DB            // database connection pool
-	gj       *core.GraphJin
-	srv      *http.Server
-	fs       afero.Fs
-	asec     [32]byte
-	closeFn  func()
-	chash    string
-	state    servState
+	log          *zap.SugaredLogger // logger
+	zlog         *zap.Logger        // faster logger
+	logLevel     int                // log level
+	conf         *Config            // parsed config
+	db           *sql.DB            // database connection pool
+	gj           *core.GraphJin
+	srv          *http.Server
+	fs           afero.Fs
+	asec         [32]byte
+	closeFn      func()
+	chash        string
+	state        servState
+	prod         bool
+	deployActive bool
 }
 
 type Option func(*service) error
 
 func NewGraphJinService(conf *Config, options ...Option) (*Service, error) {
+	if conf.dirty {
+		return nil, errors.New("do not re-use config object")
+	}
+
 	s, err := newGraphJinService(conf, nil, options...)
 	if err != nil {
 		return nil, err
@@ -105,6 +113,13 @@ func OptionSetFS(fs afero.Fs) Option {
 	}
 }
 
+func OptionDeployActive() Option {
+	return func(s *service) error {
+		s.deployActive = true
+		return nil
+	}
+}
+
 func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*service, error) {
 	var err error
 	if conf == nil {
@@ -112,12 +127,16 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*service, 
 	}
 
 	zlog := util.NewLogger(conf.LogFormat == "json")
+	prod := conf.Serv.Production || os.Getenv("GO_ENV") == "production"
+
 	s := &service{
-		conf:  conf,
-		zlog:  zlog,
-		log:   zlog.Sugar(),
-		db:    db,
-		chash: conf.hash,
+		conf:         conf,
+		zlog:         zlog,
+		log:          zlog.Sugar(),
+		db:           db,
+		chash:        conf.hash,
+		prod:         prod,
+		deployActive: prod && conf.HotDeploy && db == nil,
 	}
 
 	if err := s.initConfig(); err != nil {
@@ -141,7 +160,7 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*service, 
 		return nil, err
 	}
 
-	if conf.HotDeploy && db == nil {
+	if s.deployActive {
 		err = s.hotStart()
 	} else {
 		err = s.normalStart()

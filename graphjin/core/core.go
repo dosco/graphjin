@@ -107,10 +107,11 @@ func (gj *graphjin) _initSchema() error {
 		return fmt.Errorf("no tables found in database")
 	}
 
+	schema := gj.dbinfo.Schema
 	for i, t := range gj.conf.Tables {
 		if t.Schema == "" {
-			gj.conf.Tables[i].Schema = gj.dbinfo.Schema
-			t.Schema = gj.dbinfo.Schema
+			gj.conf.Tables[i].Schema = schema
+			t.Schema = schema
 		}
 		// skip aliases
 		if t.Table != "" && t.Type == "" {

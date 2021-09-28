@@ -44,11 +44,7 @@ const (
 	itemError MType = iota // error occurred; value is text of error
 	itemEOF
 	itemName
-	itemQuery
-	itemMutation
-	itemFragment
 	itemOn
-	itemSub
 	itemPunctuator
 	itemArgsOpen
 	itemArgsClose
@@ -301,14 +297,6 @@ func lexName(l *lexer) stateFn {
 			val := l.current()
 
 			switch {
-			case equals(val, queryToken):
-				l.emitL(itemQuery)
-			case equals(val, fragmentToken):
-				l.emitL(itemFragment)
-			case equals(val, mutationToken):
-				l.emitL(itemMutation)
-			case equals(val, subscriptionToken):
-				l.emitL(itemSub)
 			case equals(val, onToken):
 				l.emitL(itemOn)
 			case equals(val, trueToken):
@@ -417,12 +405,6 @@ func (i item) String() string {
 		v = "error"
 	case itemName:
 		v = "name"
-	case itemQuery:
-		v = "query"
-	case itemMutation:
-		v = "mutation"
-	case itemSub:
-		v = "subscription"
 	case itemPunctuator:
 		v = "punctuator"
 	case itemDirective:

@@ -33,6 +33,7 @@ type Config struct {
 	hostPort string
 	hash     string
 	name     string
+	dirty    bool
 	vi       *viper.Viper
 }
 

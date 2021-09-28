@@ -138,27 +138,30 @@ func TestConfigReuse(t *testing.T) {
 	}`
 
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
-	gj1, err := core.NewGraphJin(conf, db)
-	if err != nil {
-		t.Error(err)
+	for i := 0; i < 50; i++ {
+		gj1, err := core.NewGraphJin(conf, db)
+		if err != nil {
+			t.Error(err)
+		}
+
+		res1, err := gj1.GraphQL(context.Background(), gql, nil, nil)
+		if err != nil {
+			t.Error(err)
+		}
+
+		gj2, err := core.NewGraphJin(conf, db)
+		if err != nil {
+			t.Error(err)
+		}
+
+		res2, err := gj2.GraphQL(context.Background(), gql, nil, nil)
+		if err != nil {
+			t.Error(err)
+		}
+
+		assert.Equal(t, res1.Data, res2.Data, "should equal")
 	}
 
-	res1, err := gj1.GraphQL(context.Background(), gql, nil, nil)
-	if err != nil {
-		t.Error(err)
-	}
-
-	gj2, err := core.NewGraphJin(conf, db)
-	if err != nil {
-		t.Error(err)
-	}
-
-	res2, err := gj2.GraphQL(context.Background(), gql, nil, nil)
-	if err != nil {
-		t.Error(err)
-	}
-
-	assert.Equal(t, res1.Data, res2.Data, "should equal")
 }
 
 func TestConfigRoleManagement(t *testing.T) {
@@ -189,27 +192,27 @@ func TestParallelRuns(t *testing.T) {
 		}
 	}`
 
-	// TODO: introspection engine has race condition in dev
-	// mode.
-	conf := newConfig(&core.Config{Production: true, DisableAllowList: true,
-		Tables: []core.Table{
-			{Name: "me", Table: "users"},
-		},
-	})
-
-	err := conf.AddRoleTable("user", "me", core.Query{
-		Filters: []string{"{ id: { eq: $user_id } }"},
-	})
-	if err != nil {
-		panic(err)
-	}
-
 	g := errgroup.Group{}
 
 	for i := 0; i < 10; i++ {
 		x := i
 		g.Go(func() error {
 			for n := 0; n < 10; n++ {
+				conf := newConfig(&core.Config{
+					Production:       true,
+					DisableAllowList: true,
+					Tables: []core.Table{
+						{Name: "me", Table: "users"},
+					},
+				})
+
+				err := conf.AddRoleTable("user", "me", core.Query{
+					Filters: []string{"{ id: { eq: $user_id } }"},
+				})
+				if err != nil {
+					return err
+				}
+
 				gj, err := core.NewGraphJin(conf, db)
 				if err != nil {
 					return fmt.Errorf("%d: %w", x, err)

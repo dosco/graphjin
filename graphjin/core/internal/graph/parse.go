@@ -2,6 +2,7 @@
 package graph
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"sync"
@@ -142,14 +143,16 @@ func Parse(gql []byte, fetchFrag func(name string) (string, error)) (Operation, 
 			break
 		}
 
-		if p.peek(itemFragment) && p.fetchFrag == nil {
+		if p.peekVal(fragmentToken) && p.fetchFrag == nil {
 			p.ignore()
 			if _, err := p.parseFragment(); err != nil {
 				return op, err
 			}
 
 		} else {
-			if !qf && p.peek(itemQuery, itemMutation, itemSub, itemObjOpen) {
+			if !qf &&
+				(p.peekVal(queryToken, mutationToken, fragmentToken, subscriptionToken) ||
+					p.peek(itemObjOpen)) {
 				s = p.pos
 				qf = true
 			}
@@ -217,7 +220,7 @@ func (p *Parser) parseOp() (Operation, error) {
 	var typeSet bool
 	var op Operation
 
-	if p.peek(itemQuery, itemMutation, itemSub) {
+	if p.peekVal(queryToken, mutationToken, subscriptionToken) {
 		if err = p.parseOpTypeAndArgs(&op); err != nil {
 			return op, fmt.Errorf("%s: %v", op.Type, err)
 		}
@@ -231,7 +234,7 @@ func (p *Parser) parseOp() (Operation, error) {
 		}
 
 		for {
-			if p.peek(itemEOF, itemFragment) {
+			if p.peek(itemEOF) || p.peekVal(fragmentToken) {
 				p.ignore()
 				break
 			}
@@ -250,12 +253,12 @@ func (p *Parser) parseOp() (Operation, error) {
 func (p *Parser) parseOpTypeAndArgs(op *Operation) error {
 	item := p.next()
 
-	switch item._type {
-	case itemQuery:
+	switch {
+	case bytes.Equal(item.val, queryToken):
 		op.Type = OpQuery
-	case itemMutation:
+	case bytes.Equal(item.val, mutationToken):
 		op.Type = OpMutate
-	case itemSub:
+	case bytes.Equal(item.val, subscriptionToken):
 		op.Type = OpSub
 	}
 
@@ -322,7 +325,7 @@ func ParseFragment(fragment string, fetchFrag func(name string) (string, error))
 		items:     l.items,
 	}
 
-	if p.peek(itemFragment) {
+	if p.peekVal(fragmentToken) {
 		p.ignore()
 		f, err = p.parseFragment()
 	}
@@ -752,6 +755,30 @@ func (p *Parser) peek(types ...MType) bool {
 
 	for i := 0; i < l; i++ {
 		if p.items[n]._type == types[i] {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *Parser) peekVal(values ...[]byte) bool {
+	n := p.pos + 1
+	l := len(values)
+
+	// if p.items[n]._type == itemEOF {
+	// 	return false
+	// }
+
+	if n >= len(p.items) {
+		return false
+	}
+
+	if l == 1 {
+		return bytes.EqualFold(p.items[n].val, values[0])
+	}
+
+	for i := 0; i < l; i++ {
+		if bytes.EqualFold(p.items[n].val, values[i]) {
 			return true
 		}
 	}
