@@ -77,12 +77,16 @@ func newDB(
 	}
 
 	for i := 0; ; {
-		db, err = sql.Open(dc.driverName, dc.connString)
-		if err == nil {
+		if db, err = sql.Open(dc.driverName, dc.connString); err != nil {
+			log.Warnf("database open: %s", err)
+		}
+
+		if err = db.Ping(); err != nil {
+			log.Warnf("database ping: %s", err)
+		} else {
 			break
 		}
 
-		log.Warn("database connection: %w", err)
 		time.Sleep(time.Duration(i*100) * time.Millisecond)
 
 		if i > 50 {

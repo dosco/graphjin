@@ -20,6 +20,7 @@ import (
 
 const (
 	maxMembersPerWorker = 2000
+	errSubs             = "subscription: %s: %s"
 )
 
 type sub struct {
@@ -181,7 +182,7 @@ func (gj *graphjin) subController(s *sub) {
 		select {
 		case m := <-s.add:
 			if err := s.addMember(m); err != nil {
-				gj.log.Printf("Subscription Error: %s", err)
+				gj.log.Printf(errSubs, "add-sub", err)
 				return
 			}
 
@@ -193,7 +194,7 @@ func (gj *graphjin) subController(s *sub) {
 
 		case msg := <-s.updt:
 			if err := s.updateMember(msg); err != nil {
-				gj.log.Printf("Subscription Error: %s", err)
+				gj.log.Printf(errSubs, "update-sub", err)
 				return
 			}
 
@@ -312,7 +313,7 @@ func (gj *graphjin) checkUpdates(s *sub, mv mval, start int) {
 	}
 
 	if err != nil {
-		gj.log.Printf("Subscription Error: %s", err)
+		gj.log.Printf(errSubs, "query", err)
 		return
 	}
 	defer rows.Close()
@@ -322,61 +323,59 @@ func (gj *graphjin) checkUpdates(s *sub, mv mval, start int) {
 
 	for rows.Next() {
 		if err := rows.Scan(&js); err != nil {
-			gj.log.Printf("Subscription Error: %s", err)
+			gj.log.Printf(errSubs, "scan", err)
 			return
 		}
 		j := start + i
 		i++
 
-		newDH := sha256.Sum256(js)
-		if mv.mi[j].dh == newDH {
-			continue
-		}
-
-		cur, err := gj.encryptCursor(s.qc.st.qc, js)
-		if err != nil {
-			gj.log.Printf("Subscription Error: %s", err)
-			return
-		}
-
-		// we're expecting a cursor but the cursor was null
-		// so we skip this one.
-		if mv.mi[j].cindx != -1 && cur.value == "" {
-			continue
-		}
-
-		s.updt <- mmsg{id: mv.ids[j], dh: newDH, cursor: cur.value}
-
-		res := &Result{
-			op:   qcode.QTQuery,
-			name: s.name,
-			sql:  s.qc.st.sql,
-			role: s.qc.st.role.Name,
-			Data: cur.data,
-		}
-
-		// if parameters exists then each response is unique
-		// so each channel should be notified only with it's own
-		// result value
 		if hasParams {
-			select {
-			case mv.res[j] <- res:
-			case <-time.After(250 * time.Millisecond):
-			}
-		} else {
+			gj.notifyMember(s, mv, j, js)
+			continue
+		}
 
-			// if no params exist then it means we are not using
-			// the joined query so we are expecting only a single
-			// result, so we can optimize here by notifying
-			// all channels since there will only be one result
-			for k := start; k < end; k++ {
-				select {
-				case mv.res[k] <- res:
-				case <-time.After(250 * time.Millisecond):
-				}
-			}
+		for k := start; k < end; k++ {
+			gj.notifyMember(s, mv, k, js)
 		}
 	}
+}
+
+func (gj *graphjin) notifyMember(s *sub, mv mval, j int, js json.RawMessage) {
+	newDH := sha256.Sum256(js)
+	if mv.mi[j].dh == newDH {
+		return
+	}
+
+	cur, err := gj.encryptCursor(s.qc.st.qc, js)
+	if err != nil {
+		gj.log.Printf(errSubs, "cursor", err)
+		return
+	}
+
+	// we're expecting a cursor but the cursor was null
+	// so we skip this one.
+	if mv.mi[j].cindx != -1 && cur.value == "" {
+		return
+	}
+
+	s.updt <- mmsg{id: mv.ids[j], dh: newDH, cursor: cur.value}
+
+	res := &Result{
+		op:   qcode.QTQuery,
+		name: s.name,
+		sql:  s.qc.st.sql,
+		role: s.qc.st.role.Name,
+		Data: cur.data,
+	}
+
+	// if parameters exists then each response is unique
+	// so each channel should be notified only with it's own
+	// result value
+	select {
+	case mv.res[j] <- res:
+	case <-time.After(250 * time.Millisecond):
+	}
+
 }
 
 func renderSubWrap(st stmt, ct string) string {

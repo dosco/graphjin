@@ -170,7 +170,7 @@ func (s *service) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 				zap.String("msg_type", msg.Type),
 				zap.Error(errors.New("unknown message type")),
 			}
-			s.zlog.Error("Subscription Error", fields...)
+			s.zlog.Error("subscription error", fields...)
 		}
 
 		if err != nil {
@@ -180,7 +180,7 @@ func (s *service) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		s.zlog.Error("Subscription Error", []zapcore.Field{zap.Error(err)}...)
+		s.zlog.Error("subscription error", []zapcore.Field{zap.Error(err)}...)
 	}
 
 	m.Unsubscribe()

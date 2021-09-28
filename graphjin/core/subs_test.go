@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"math/rand"
 	"regexp"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/dosco/graphjin/core"
+	"golang.org/x/sync/errgroup"
 )
 
 var cursorRegex *regexp.Regexp
@@ -178,18 +178,18 @@ func TestSubscription(t *testing.T) {
 		panic(err)
 	}
 
-	w := sync.WaitGroup{}
+	g, ctx := errgroup.WithContext(context.Background())
 
 	for i := 101; i < 5000; i++ {
-		w.Add(1)
-		go func(n int) {
+		n := i
+		g.Go(func() error {
 			id := (rand.Intn(100-1) + 1)
 			vars := json.RawMessage(fmt.Sprintf(`{ "id": %d, "id2": %d }`, n, id))
-			m, err := gj.Subscribe(context.Background(), gql, vars, nil)
+			m, err := gj.Subscribe(ctx, gql, vars, nil)
 			if err != nil {
-				fmt.Println(err)
-				return
+				return fmt.Errorf("subscribe: %w", err)
 			}
+
 			msg := <-m.Result
 			exp := fmt.Sprintf(`{"users": {"id": %d, "email": "user%d@test.com"}}`, id, id)
 			val := string(msg.Data)
@@ -197,9 +197,12 @@ func TestSubscription(t *testing.T) {
 			if val != exp {
 				t.Errorf("expected '%s' got '%s'", exp, val)
 			}
-			w.Done()
-		}(i)
+
+			return nil
+		})
 	}
 
-	w.Wait()
+	if err := g.Wait(); err != nil {
+		panic(err)
+	}
 }
