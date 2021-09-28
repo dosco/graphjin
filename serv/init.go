@@ -71,6 +71,7 @@ func (s *service) initFS() error {
 
 func (s *service) initConfig() error {
 	c := s.conf
+	c.dirty = true
 
 	// copy over db_type from database.type
 	if c.Core.DBType == "" {
