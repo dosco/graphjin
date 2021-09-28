@@ -148,6 +148,11 @@ func (s1 *Service) apiV1() http.Handler {
 			rc.APQKey = (req.OpName + req.Ext.Persisted.Sha256Hash)
 		}
 
+		if req.OpName == "subscription" {
+			renderErr(w, errors.New("use websockets for subscriptions"))
+			return
+		}
+
 		res, err := s.gj.GraphQL(ct, req.Query, req.Vars, &rc)
 
 		if err == nil && r.Method == "GET" && res.Operation() == core.OpQuery {
