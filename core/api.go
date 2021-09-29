@@ -233,7 +233,6 @@ type Result struct {
 	sql          string
 	role         string
 	cacheControl string
-	ResponseTime int64
 	Errors       []Error         `json:"errors,omitempty"`
 	Data         json.RawMessage `json:"data,omitempty"`
 	Extensions   *extensions     `json:"extensions,omitempty"`

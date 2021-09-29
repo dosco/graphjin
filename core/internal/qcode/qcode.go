@@ -1020,15 +1020,11 @@ func (co *Compiler) compileDirectiveSkip(sel *Select, d *graph.Directive) error 
 }
 
 func (co *Compiler) compileDirectiveCacheControl(qc *QCode, d *graph.Directive) error {
-	if len(d.Args) == 0 || d.Args[0].Name != "maxAge" {
-		return fmt.Errorf("@cacheControl: required argument 'maxAge' missing")
-	}
-
 	var maxAge string
 	var scope string
 
 	for _, arg := range d.Args {
-		switch d.Args[0].Name {
+		switch arg.Name {
 		case "maxAge":
 			if arg.Val.Type != graph.NodeNum {
 				return argErr("maxAge", "number")
@@ -1044,11 +1040,11 @@ func (co *Compiler) compileDirectiveCacheControl(qc *QCode, d *graph.Directive) 
 		}
 	}
 
-	var hdr []string
-
-	if maxAge != "" {
-		hdr = []string{"max-age=" + maxAge}
+	if len(d.Args) == 0 || maxAge == "" {
+		return fmt.Errorf("@cacheControl: required argument 'maxAge' missing")
 	}
+
+	hdr := []string{"max-age=" + maxAge}
 
 	if scope != "" {
 		hdr = append(hdr, scope)

@@ -352,6 +352,8 @@ func Example_queryBySearch() {
 		products(search: $query, limit: 5) {
 			id
 			name
+			search_headline_name
+			search_rank
 		}
 	}`
 
@@ -371,7 +373,7 @@ func Example_queryBySearch() {
 	} else {
 		fmt.Println(string(res.Data))
 	}
-	// Output: {"products": [{"id": 3, "name": "Product 3"}]}
+	// Output: {"products": [{"id": 3, "name": "Product 3", "search_rank": 0.33442792, "search_headline_name": "<b>Product</b> <b>3</b>"}]}
 }
 
 func Example_queryParentsWithChildren() {
