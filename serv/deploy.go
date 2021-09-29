@@ -36,17 +36,9 @@ func (s *service) saveConfig(c context.Context, name, bundle string) error {
 		return err
 	}
 
-	ap, err := getAdminParams(tx)
-	if err != nil {
+	if _, err := getAdminParams(tx); err != nil {
 		_ = tx.Rollback()
 		return fmt.Errorf("error in admin schema: %w", err)
-	}
-
-	switch {
-	case ap.version < adminVersion:
-		return fmt.Errorf("please upgrade graphjin admin to latest version")
-	case ap.version > adminVersion:
-		return fmt.Errorf("please upgrade graphjin cli to the latest")
 	}
 
 	previousID := -1
@@ -130,6 +122,72 @@ func (s *service) saveConfig(c context.Context, name, bundle string) error {
 	return nil
 }
 
+func (s *service) rollbackConfig(c context.Context) error {
+	opt := &sql.TxOptions{Isolation: sql.LevelSerializable}
+	tx, err := s.db.BeginTx(c, opt)
+	if err != nil {
+		return err
+	}
+
+	if _, err := getAdminParams(tx); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("error in admin schema: %w", err)
+	}
+
+	id := -1
+	previousID := -1
+
+	// find previous active id
+	err = tx.QueryRow(`
+	SELECT
+		id,
+		previous_id
+	FROM 
+		_graphjin.configs
+	WHERE
+		(active = TRUE)`).Scan(&id, &previousID)
+
+	if err != nil && err != sql.ErrNoRows {
+		_ = tx.Rollback()
+		return err
+	}
+
+	if previousID != -1 {
+		_, err = tx.Exec(`
+	UPDATE 
+		_graphjin.configs 
+	SET 
+		active = (CASE id WHEN $1 THEN FALSE WHEN $2 THEN TRUE END)
+	WHERE 
+		(id = $1 OR id = $2)`, id, previousID)
+
+		if err != nil && err != sql.ErrNoRows {
+			_ = tx.Rollback()
+			return err
+		}
+	}
+
+	// check if current config already exists in db
+	_, err = tx.Exec(`
+	DELETE FROM 
+		_graphjin.configs
+	WHERE
+		(id = $1)
+`, id)
+
+	if err != nil && err != sql.ErrNoRows {
+		_ = tx.Rollback()
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
+	return nil
+}
+
 type adminParams struct {
 	version int
 	params  map[string]string
@@ -167,6 +225,13 @@ func getAdminParams(tx *sql.Tx) (adminParams, error) {
 		}
 	} else {
 		return ap, fmt.Errorf("missing param: admin.version")
+	}
+
+	switch {
+	case ap.version < adminVersion:
+		return ap, fmt.Errorf("please upgrade graphjin admin to latest version")
+	case ap.version > adminVersion:
+		return ap, fmt.Errorf("please upgrade graphjin cli to the latest")
 	}
 
 	return ap, nil

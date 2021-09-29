@@ -22,9 +22,16 @@ func deployCmd() *cobra.Command {
 		Short: "Deploy a new config",
 		Run:   cmdDeploy(),
 	}
-	c.Flags().StringVar(&host, "host", "", "URL of the GraphJin service")
-	c.Flags().StringVar(&name, "name", "", "Set a custom name for the deployment")
-	c.Flags().StringVar(&secret, "secret", "", "Set the admin auth secret key")
+	c.PersistentFlags().StringVar(&host, "host", "", "URL of the GraphJin service")
+	c.PersistentFlags().StringVar(&name, "name", "", "Set a custom name for the deployment")
+	c.PersistentFlags().StringVar(&secret, "secret", "", "Set the admin auth secret key")
+
+	c1 := &cobra.Command{
+		Use:   "rollback",
+		Short: "Rollback to the previous active config",
+		Run:   cmdRollback(),
+	}
+	c.AddCommand(c1)
 
 	return c
 }
@@ -36,6 +43,19 @@ func initCmd() *cobra.Command {
 		Run:   cmdInit(),
 	}
 	return c
+}
+
+func cmdInit() func(*cobra.Command, []string) {
+	return func(cmd *cobra.Command, args []string) {
+		setup(cpath)
+		initDB(true)
+
+		if err := serv.InitAdmin(db, conf.DBType); err != nil {
+			log.Fatal(err)
+		}
+
+		log.Infof("init successful: %s", name)
+	}
 }
 
 func cmdDeploy() func(*cobra.Command, []string) {
@@ -62,16 +82,22 @@ func cmdDeploy() func(*cobra.Command, []string) {
 	}
 }
 
-func cmdInit() func(*cobra.Command, []string) {
+func cmdRollback() func(*cobra.Command, []string) {
 	return func(cmd *cobra.Command, args []string) {
-		setup(cpath)
-		initDB(true)
+		if host == "" {
+			log.Fatalf("--host is a required argument")
+		}
 
-		if err := serv.InitAdmin(db, conf.DBType); err != nil {
+		if name != "" {
+			log.Fatalf("--name not supported with rollback")
+		}
+
+		c := serv.NewClient(host, secret)
+
+		if err := c.Rollback(); err != nil {
 			log.Fatal(err)
 		}
 
-		log.Infof("init successful: %s", name)
+		log.Infof("rollback successful")
 	}
-
 }

@@ -71,6 +71,20 @@ func (c *Client) Deploy(name, confPath string) error {
 	return nil
 }
 
+func (c *Client) Rollback() error {
+	errMsg := "rollback failed: %w"
+
+	_, err := c.R().
+		SetHeader("Content-Type", "application/json").
+		Post(rollbackRoute)
+
+	if err != nil {
+		return fmt.Errorf(errMsg, err)
+	}
+
+	return nil
+}
+
 func buildBundle(confPath string) (string, error) {
 	buf := bytes.Buffer{}
 	z := zip.NewWriter(&buf)
