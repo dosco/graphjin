@@ -53,6 +53,27 @@ func adminDeployHandler(s1 *Service) http.Handler {
 	return http.HandlerFunc(h)
 }
 
+func adminRollbackHandler(s1 *Service) http.Handler {
+	h := func(w http.ResponseWriter, r *http.Request) {
+		var msg string
+
+		s := s1.Load().(*service)
+
+		if !s.isAdminSecret(r) {
+			authFail(w)
+			return
+		}
+
+		if err := s.rollbackConfig(r.Context()); err != nil {
+			intErr(w, fmt.Sprintf("error rolling-back config: %s", err.Error()))
+		} else {
+			io.WriteString(w, msg)
+		}
+	}
+
+	return http.HandlerFunc(h)
+}
+
 func (s *service) isAdminSecret(r *http.Request) bool {
 	hv := r.Header["Authorization"]
 	if len(hv) == 0 || len(hv[0]) < 10 {

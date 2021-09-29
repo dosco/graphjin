@@ -13,11 +13,12 @@ import (
 )
 
 const (
-	deployRoute  = "/api/v1/deploy"
-	apiRoute     = "/api/v1/graphql"
-	actionRoute  = "/api/v1/actions"
-	healthRoute  = "/health"
-	metricsRoute = "/metrics"
+	deployRoute   = "/api/v1/deploy"
+	rollbackRoute = "/api/v1/deploy/rollback"
+	apiRoute      = "/api/v1/graphql"
+	actionRoute   = "/api/v1/actions"
+	healthRoute   = "/health"
+	metricsRoute  = "/metrics"
 )
 
 func (s *service) isHealthEndpoint(r *http.Request) bool {
@@ -26,53 +27,54 @@ func (s *service) isHealthEndpoint(r *http.Request) bool {
 		(s.conf.Telemetry.Metrics.Endpoint != "" && p == s.conf.Telemetry.Metrics.Endpoint)
 }
 
+type route struct {
+	path    string
+	handler http.Handler
+}
+
 func routeHandler(s1 *Service, mux *http.ServeMux) (http.Handler, error) {
 	var err error
 	s := s1.Load().(*service)
 
-	routes := map[string]http.Handler{
-		healthRoute: healthV1Handler(s1), // Healthcheck API
-		apiRoute:    apiV1Handler(s1),    // Main GraphQL API
-	}
+	// Healthcheck API
+	mux.Handle(healthRoute, healthV1Handler(s1))
 
 	if s.conf.HotDeploy {
-		routes[deployRoute] = adminDeployHandler(s1) // Deploy Config API
-
+		// Rollback Config API
+		mux.Handle(rollbackRoute, adminRollbackHandler(s1))
+		// Deploy Config API
+		mux.Handle(deployRoute, adminDeployHandler(s1))
 	}
 
-	if s.conf.rateLimiterEnable() {
-		routes[apiRoute] = rateLimiter(s1, routes[apiRoute]) // API rate limiter
-	}
-
-	if err := setActionRoutes(s1, routes); err != nil {
+	if err := setActionRoutes(s1, mux); err != nil {
 		return nil, err
 	}
 
 	if s.conf.WebUI {
-		webRoot, err := fs.Sub(webBuild, "web/build")
-		if err != nil {
+		if webRoot, err := fs.Sub(webBuild, "web/build"); err != nil {
 			return nil, err
+		} else {
+			mux.Handle("/", http.FileServer(http.FS(webRoot)))
 		}
-		routes["/"] = http.FileServer(http.FS(webRoot))
 	}
+
+	// Main GraphQL API
+	h := apiV1Handler(s1)
+	if s.conf.rateLimiterEnable() {
+		h = rateLimiter(s1, h)
+	}
+	mux.Handle(apiRoute, h)
 
 	if s.conf.HTTPGZip {
-		gz, err := gzhttp.NewWrapper(gzhttp.MinSize(2000), gzhttp.CompressionLevel(6))
-		if err != nil {
+		if gz, err := gzhttp.NewWrapper(gzhttp.CompressionLevel(6)); err != nil {
 			return nil, err
+		} else {
+			h = gz(h)
 		}
-		for k, v := range routes {
-			routes[k] = gz(v)
-		}
-	}
-
-	for k, v := range routes {
-		mux.Handle(k, v)
 	}
 
 	if s.conf.telemetryEnabled() {
-		s.closeFn, err = enableObservability(s, mux)
-		if err != nil {
+		if s.closeFn, err = enableObservability(s, mux); err != nil {
 			return nil, err
 		}
 	}
@@ -80,7 +82,7 @@ func routeHandler(s1 *Service, mux *http.ServeMux) (http.Handler, error) {
 	return setServerHeader(mux), nil
 }
 
-func setActionRoutes(s1 *Service, routes map[string]http.Handler) error {
+func setActionRoutes(s1 *Service, mux *http.ServeMux) error {
 	var zlog *zap.Logger
 	var err error
 	s := s1.Load().(*service)
@@ -98,20 +100,21 @@ func setActionRoutes(s1 *Service, routes map[string]http.Handler) error {
 		}
 
 		p := path.Join(actionRoute, strings.ToLower(a.Name))
-
-		if ac := findAuth(s, a.AuthName); ac != nil {
-			routes[p], err = auth.WithAuth(fn, ac, zlog)
-		} else {
-			routes[p] = fn
-		}
+		h := fn
 
 		if s.conf.telemetryEnabled() {
-			routes[p] = ochttp.WithRouteTag(routes[p], p)
+			h = ochttp.WithRouteTag(h, p)
+		}
+
+		if ac := findAuth(s, a.AuthName); ac != nil {
+			h, err = auth.WithAuth(h, ac, zlog)
 		}
 
 		if err != nil {
 			return err
 		}
+
+		mux.Handle(p, h)
 	}
 	return nil
 }

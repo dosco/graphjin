@@ -122,7 +122,6 @@ func enableObservability(s *service, mux *http.ServeMux) (func(), error) {
 				prob = v
 			}
 			trace.ApplyConfig(trace.Config{DefaultSampler: trace.ProbabilitySampler(prob)})
-
 		}
 	}
 
