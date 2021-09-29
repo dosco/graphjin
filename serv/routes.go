@@ -27,11 +27,6 @@ func (s *service) isHealthEndpoint(r *http.Request) bool {
 		(s.conf.Telemetry.Metrics.Endpoint != "" && p == s.conf.Telemetry.Metrics.Endpoint)
 }
 
-type route struct {
-	path    string
-	handler http.Handler
-}
-
 func routeHandler(s1 *Service, mux *http.ServeMux) (http.Handler, error) {
 	var err error
 	s := s1.Load().(*service)
@@ -60,10 +55,10 @@ func routeHandler(s1 *Service, mux *http.ServeMux) (http.Handler, error) {
 
 	// Main GraphQL API
 	h := apiV1Handler(s1)
+
 	if s.conf.rateLimiterEnable() {
 		h = rateLimiter(s1, h)
 	}
-	mux.Handle(apiRoute, h)
 
 	if s.conf.HTTPGZip {
 		if gz, err := gzhttp.NewWrapper(gzhttp.CompressionLevel(6)); err != nil {
@@ -72,6 +67,8 @@ func routeHandler(s1 *Service, mux *http.ServeMux) (http.Handler, error) {
 			h = gz(h)
 		}
 	}
+
+	mux.Handle(apiRoute, h)
 
 	if s.conf.telemetryEnabled() {
 		if s.closeFn, err = enableObservability(s, mux); err != nil {
