@@ -7,7 +7,6 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/dosco/graphjin/core"
@@ -184,25 +183,21 @@ func (s1 *Service) apiV1() http.Handler {
 			ochttp.SetRoute(ct, apiRoute)
 		}
 
-		elapsed := time.Since(start).Milliseconds()
-
-		if res != nil {
-			res.ResponseTime = elapsed
-		}
-
 		if s.logLevel >= logLevelInfo {
-			s.reqLog(res, err)
+			rt := time.Since(start).Milliseconds()
+			s.reqLog(res, rt, err)
 		}
 	}
 
 	return http.HandlerFunc(h)
 }
 
-func (s *service) reqLog(res *core.Result, err error) {
+func (s *service) reqLog(res *core.Result, resTimeMs int64, err error) {
 	fields := []zapcore.Field{
 		zap.String("op", res.OperationName()),
 		zap.String("name", res.QueryName()),
 		zap.String("role", res.Role()),
+		zap.Int64("responseTimeMs", resTimeMs),
 	}
 
 	if s.logLevel >= logLevelDebug {
@@ -217,7 +212,6 @@ func (s *service) reqLog(res *core.Result, err error) {
 		fields = append(fields, zap.Error(err))
 		s.zlog.Error("Query Failed", fields...)
 	} else {
-		fields = append(fields, zap.String("responseTime", strconv.FormatInt(res.ResponseTime, 10)+"ms"))
 		s.zlog.Info("Query", fields...)
 	}
 }
