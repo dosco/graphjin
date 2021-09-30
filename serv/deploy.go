@@ -286,7 +286,7 @@ func startHotDeployWatcher(s1 *Service) error {
 		}
 
 		if err := deployBundle(s1, name, hash, cf, bundle); err != nil {
-			s.log.Error("failed to deploy: %w", err)
+			s.log.Errorf("failed to deploy: %s", err.Error())
 			continue
 		}
 
@@ -350,7 +350,7 @@ func bundle2Fs(name, hash, confFile, bundle string) (bundleFs, error) {
 		return bfs, err
 	}
 
-	bfs.fs = afero.NewBasePathFs(zipfs.New(zr), "/")
+	bfs.fs = zipfs.New(zr)
 	bfs.conf, err = ReadInConfigFS(confFile, bfs.fs)
 	if err != nil {
 		return bfs, err
