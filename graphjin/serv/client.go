@@ -100,22 +100,30 @@ func buildBundle(confPath string) (string, error) {
 		if err != nil {
 			return err
 		}
-		if de.IsDir() || (de.Type()&os.ModeSymlink) == os.ModeSymlink {
-			bp := filepath.Base(fp)
-			if bp == "migrations" {
-				return filepath.SkipDir
-			}
-			return nil
+		bp := filepath.Base(fp)
+
+		if bp == "migrations" {
+			return filepath.SkipDir
+		}
+
+		if de.IsDir() && (de.Type()&os.ModeSymlink) == os.ModeSymlink {
+			return filepath.SkipDir
 		}
 
 		if fp == "" || fp == seedFile {
 			return nil
 		}
 
-		relPath := strings.TrimPrefix(fp, cpath)
-		zf, err := z.Create(relPath)
+		rp := strings.TrimPrefix(strings.TrimPrefix(fp, cpath), "/")
+		if de.IsDir() {
+			rp += "/"
+		}
+		zf, err := z.CreateHeader(&zip.FileHeader{Name: rp})
 		if err != nil {
 			return err
+		}
+		if de.IsDir() {
+			return nil
 		}
 
 		f, err := os.Open(fp)
