@@ -13,7 +13,7 @@ RIGHT JOIN
 	information_schema.parameters p
 	ON (r.specific_name = p.specific_name and p.ordinal_position IS NOT NULL)	
 WHERE 
-	p.specific_schema NOT IN ('information_schema', 'performance_schema', 'pg_catalog', 'mysql', 'sys')
+	p.specific_schema NOT IN ('_graphjin', 'information_schema', 'performance_schema', 'pg_catalog', 'mysql', 'sys')
 AND r.external_language NOT IN ('C')
 ORDER BY 
 	r.routine_name, p.ordinal_position;
@@ -73,7 +73,7 @@ FROM
 	LEFT JOIN pg_constraint co ON co.conrelid = c.oid AND f.attnum = ANY (co.conkey) 
 WHERE 
 	c.relkind IN ('r', 'v', 'm', 'f')
-	AND n.nspname NOT IN ('information_schema', 'pg_catalog') 
+	AND n.nspname NOT IN ('_graphjin', 'information_schema', 'pg_catalog') 
 	AND c.relname != 'schema_version'
 	AND f.attnum > 0
 	AND f.attisdropped = false;
@@ -119,7 +119,7 @@ LEFT JOIN information_schema.statistics stat ON col.table_schema = stat.table_sc
   AND col.column_name = stat.column_name
   AND stat.index_type = 'FULLTEXT'
 WHERE
-	col.table_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')
+	col.table_schema NOT IN ('_graphjin', 'information_schema', 'performance_schema', 'mysql', 'sys')
 UNION 
 SELECT
 	kcu.table_schema as "schema",
@@ -156,5 +156,5 @@ JOIN
 	AND kcu.table_name = tc.table_name
   	AND kcu.constraint_name = tc.constraint_name
 WHERE
-	kcu.constraint_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys');
+	kcu.constraint_schema NOT IN ('_graphjin', 'information_schema', 'performance_schema', 'mysql', 'sys');
 `

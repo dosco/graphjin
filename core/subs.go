@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -27,6 +28,7 @@ type sub struct {
 	name string
 	role string
 	qc   *queryComp
+	js   json.RawMessage
 
 	add  chan *Member
 	del  chan *Member
@@ -57,11 +59,13 @@ type mmsg struct {
 }
 
 type Member struct {
+	params json.RawMessage
 	sub    *sub
 	Result chan *Result
 	done   bool
 	id     xid.ID
 	vl     []interface{}
+	mm     mmsg
 	// index of cursor value in the arguments array
 	cindx int
 }
@@ -129,11 +133,26 @@ func (g *GraphJin) Subscribe(
 		return nil, err
 	}
 
+	var params json.RawMessage
+
+	if len(args.values) != 0 {
+		if params, err = json.Marshal(args.values); err != nil {
+			return nil, err
+		}
+	}
+
 	m := &Member{
+		id:     xid.New(),
 		Result: make(chan *Result, 10),
 		sub:    s,
 		vl:     args.values,
+		params: params,
 		cindx:  args.cindx,
+	}
+
+	m.mm, err = gj.subFirstQuery(s, m, params)
+	if err != nil {
+		return nil, err
 	}
 	s.add <- m
 
@@ -205,21 +224,32 @@ func (gj *graphjin) subController(s *sub) {
 }
 
 func (s *sub) addMember(m *Member) error {
-	v, err := json.Marshal(m.vl)
-	if err != nil {
-		return err
-	}
-
-	m.id = xid.New()
 	mi := minfo{cindx: m.cindx}
 	if mi.cindx != -1 {
 		mi.values = m.vl
 	}
+	mi.dh = m.mm.dh
 
-	s.params = append(s.params, v)
+	// if cindex is not -1 then this query contains
+	// a cursor that must be updated with the new
+	// cursor value so subscriptions can paginate.
+	if mi.cindx != -1 && m.mm.cursor != "" {
+		mi.values[mi.cindx] = m.mm.cursor
+
+		// values is a pre-generated json value that
+		// must be re-created.
+		if v, err := json.Marshal(mi.values); err != nil {
+			return nil
+		} else {
+			m.params = v
+		}
+	}
+
+	s.params = append(s.params, m.params)
 	s.mi = append(s.mi, mi)
 	s.res = append(s.res, m.Result)
 	s.ids = append(s.ids, m.id)
+
 	return nil
 }
 
@@ -247,6 +277,7 @@ func (s *sub) updateMember(msg mmsg) error {
 	if !ok {
 		return nil
 	}
+
 	s.mi[i].dh = msg.dh
 
 	// if cindex is not -1 then this query contains
@@ -272,18 +303,18 @@ func (s *sub) fanOutJobs(gj *graphjin) {
 		return
 
 	case len(s.ids) <= maxMembersPerWorker:
-		go gj.checkUpdates(s, s.mval, 0)
+		go gj.subCheckUpdates(s, s.mval, 0)
 
 	default:
 		// fan out chunks of work to multiple routines
 		// seperated by a random duration
 		for i := 0; i < len(s.ids); i += maxMembersPerWorker {
-			go gj.checkUpdates(s, s.mval, i)
+			go gj.subCheckUpdates(s, s.mval, i)
 		}
 	}
 }
 
-func (gj *graphjin) checkUpdates(s *sub, mv mval, start int) {
+func (gj *graphjin) subCheckUpdates(s *sub, mv mval, start int) {
 	// Do not use the `mval` embedded inside sub since
 	// its not thread safe use the copy `mv mval`.
 
@@ -296,10 +327,11 @@ func (gj *graphjin) checkUpdates(s *sub, mv mval, start int) {
 		end = start + (len(mv.ids) - start)
 	}
 
+	hasParams := len(s.qc.st.md.Params()) != 0
+
 	var rows *sql.Rows
 	var err error
 
-	hasParams := len(s.qc.st.md.Params()) != 0
 	c := context.Background()
 
 	// when params are not available we use a more optimized
@@ -319,8 +351,8 @@ func (gj *graphjin) checkUpdates(s *sub, mv mval, start int) {
 	defer rows.Close()
 
 	var js json.RawMessage
-	i := 0
 
+	i := 0
 	for rows.Next() {
 		if err := rows.Scan(&js); err != nil {
 			gj.log.Printf(errSubs, "scan", err)
@@ -330,35 +362,91 @@ func (gj *graphjin) checkUpdates(s *sub, mv mval, start int) {
 		i++
 
 		if hasParams {
-			gj.notifyMember(s, mv, j, js)
+			gj.subNotifyMember(s, mv, j, js)
 			continue
 		}
 
 		for k := start; k < end; k++ {
-			gj.notifyMember(s, mv, k, js)
+			gj.subNotifyMember(s, mv, k, js)
 		}
+		s.js = js
 	}
 }
 
-func (gj *graphjin) notifyMember(s *sub, mv mval, j int, js json.RawMessage) {
-	newDH := sha256.Sum256(js)
-	if mv.mi[j].dh == newDH {
-		return
+func (gj *graphjin) subFirstQuery(s *sub, m *Member, params json.RawMessage) (mmsg, error) {
+	c := context.Background()
+
+	// when params are not available we use a more optimized
+	// codepath that does not use a join query
+	// more details on this optimization are towards the end
+	// of the function
+	var js json.RawMessage
+	var mm mmsg
+	var err error
+
+	switch {
+	case s.js != nil:
+		js = s.js
+	case params != nil:
+		err = gj.db.
+			QueryRowContext(c, s.qc.st.sql, renderJSONArray([]json.RawMessage{params})).
+			Scan(&js)
+	default:
+		err = gj.db.
+			QueryRowContext(c, s.qc.st.sql).
+			Scan(&js)
+	}
+
+	if err != nil {
+		return mm, fmt.Errorf(errSubs, "scan", err)
+	}
+
+	mm, err = gj.subNotifyMemberEx(s,
+		[32]byte{},
+		m.cindx,
+		m.id,
+		m.Result, js, false)
+
+	return mm, err
+}
+
+func (gj *graphjin) subNotifyMember(s *sub, mv mval, j int, js json.RawMessage) {
+	_, err := gj.subNotifyMemberEx(s,
+		mv.mi[j].dh,
+		mv.mi[j].cindx,
+		mv.ids[j],
+		mv.res[j], js, true)
+
+	if err != nil {
+		gj.log.Print(err.Error())
+	}
+}
+
+func (gj *graphjin) subNotifyMemberEx(s *sub,
+	dh [32]byte, cindx int, id xid.ID, rc chan *Result, js json.RawMessage, update bool) (mmsg, error) {
+	mm := mmsg{id: id}
+
+	mm.dh = sha256.Sum256(js)
+	if dh == mm.dh {
+		return mm, nil
 	}
 
 	cur, err := gj.encryptCursor(s.qc.st.qc, js)
 	if err != nil {
-		gj.log.Printf(errSubs, "cursor", err)
-		return
+		return mm, fmt.Errorf(errSubs, "cursor", err)
 	}
 
 	// we're expecting a cursor but the cursor was null
 	// so we skip this one.
-	if mv.mi[j].cindx != -1 && cur.value == "" {
-		return
+	if cindx != -1 && cur.value == "" {
+		return mm, nil
 	}
 
-	s.updt <- mmsg{id: mv.ids[j], dh: newDH, cursor: cur.value}
+	mm.cursor = cur.value
+
+	if update {
+		s.updt <- mm
+	}
 
 	res := &Result{
 		op:   qcode.QTQuery,
@@ -372,10 +460,11 @@ func (gj *graphjin) notifyMember(s *sub, mv mval, j int, js json.RawMessage) {
 	// so each channel should be notified only with it's own
 	// result value
 	select {
-	case mv.res[j] <- res:
+	case rc <- res:
 	case <-time.After(250 * time.Millisecond):
 	}
 
+	return mm, nil
 }
 
 func renderSubWrap(st stmt, ct string) string {

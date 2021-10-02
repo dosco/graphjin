@@ -180,8 +180,10 @@ func TestSubscription(t *testing.T) {
 
 	g, ctx := errgroup.WithContext(context.Background())
 
-	for i := 101; i < 5000; i++ {
+	for i := 101; i < 3000; i++ {
 		n := i
+		time.Sleep(20 * time.Millisecond)
+
 		g.Go(func() error {
 			id := (rand.Intn(100-1) + 1)
 			vars := json.RawMessage(fmt.Sprintf(`{ "id": %d, "id2": %d }`, n, id))
