@@ -307,7 +307,7 @@ func (s *sub) fanOutJobs(gj *graphjin) {
 
 	default:
 		// fan out chunks of work to multiple routines
-		// seperated by a random duration
+		// separated by a random duration
 		for i := 0; i < len(s.ids); i += maxMembersPerWorker {
 			go gj.subCheckUpdates(s, s.mval, i)
 		}

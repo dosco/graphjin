@@ -77,7 +77,7 @@ type Serv struct {
 	// Port to run the service on
 	Port string
 
-	// HTTPGZip enables HTTP compresssion
+	// HTTPGZip enables HTTP compression
 	HTTPGZip bool `mapstructure:"http_compress"`
 
 	// Enable the web UI. Disabled in production

@@ -3,9 +3,9 @@
 GraphJin
 For documentation, visit https://graphjin.com
 
-Commit SHA-1          : 75ff551
-Commit timestamp      : 2020-04-13 00:43:18 -0400
-Go version            : go1.14
+Commit SHA-1          : 00c26ba
+Commit timestamp      : 2021-10-01 20:30:47 -0700
+Go version            : go1.16
 
 Licensed under the Apache Public License 2.0
 Copyright 2021, Vikram Rangnekar
@@ -14,19 +14,15 @@ Usage:
   graphjin [command]
 
 Available Commands:
-  conf:dump   Dump config to file
-  db:create   Create database
-  db:drop     Drop database
-  db:migrate  Migrate the database
-  db:new      Generate a new migration
-  db:reset    Reset database
-  db:seed     Run the seed script to seed the database
-  db:setup    Setup database
-  db:status   Print current migration status
+  completion  generate the autocompletion script for the specified shell
+  db          Create database
+  deploy      Deploy a new config
   help        Help about any command
+  init        Setup admin database
+  migrate     Migrate the database
   new         Create a new application
-  serv        Run the graphjin service
-  version     GraphJin binary version information
+  serv        Run the GraphJin service
+  version     Version information
 
 Flags:
   -h, --help          help for graphjin

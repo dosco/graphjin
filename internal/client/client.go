@@ -1,4 +1,4 @@
-package serv
+package client
 
 import (
 	"archive/zip"
@@ -14,7 +14,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dosco/graphjin/internal/common"
 	"github.com/go-resty/resty/v2"
+)
+
+const (
+	deployRoute   = "/api/v1/deploy"
+	rollbackRoute = "/api/v1/deploy/rollback"
 )
 
 const (
@@ -26,8 +32,15 @@ type Client struct {
 	*resty.Client
 }
 
+type Resp struct {
+	Msg string
+}
+
 func NewClient(host string, secret string) *Client {
-	c := resty.New().SetHostURL(host)
+	c := resty.New().
+		SetHostURL(host).
+		SetHeader("Content-Type", "application/json")
+
 	if secret != "" {
 		h := sha256.Sum256([]byte(secret))
 		s := base64.StdEncoding.EncodeToString(h[:])
@@ -51,38 +64,36 @@ func NewClient(host string, secret string) *Client {
 	return &Client{c}
 }
 
-func (c *Client) Deploy(name, confPath string) error {
+func (c *Client) Deploy(name, confPath string) (*Resp, error) {
 	errMsg := "deploy failed: %w"
 
 	bundle, err := buildBundle(confPath)
 	if err != nil {
-		return fmt.Errorf(errMsg, err)
+		return nil, fmt.Errorf(errMsg, err)
 	}
 
-	_, err = c.R().
-		SetHeader("Content-Type", "application/json").
-		SetBody(deployReq{name, bundle}).
+	res, err := c.R().
+		SetBody(common.DeployReq{Name: name, Bundle: bundle}).
 		Post(deployRoute)
 
 	if err != nil {
-		return fmt.Errorf(errMsg, err)
+		return nil, fmt.Errorf(errMsg, err)
 	}
 
-	return nil
+	return &Resp{Msg: string(res.Body())}, nil
 }
 
-func (c *Client) Rollback() error {
+func (c *Client) Rollback() (*Resp, error) {
 	errMsg := "rollback failed: %w"
 
-	_, err := c.R().
-		SetHeader("Content-Type", "application/json").
+	res, err := c.R().
 		Post(rollbackRoute)
 
 	if err != nil {
-		return fmt.Errorf(errMsg, err)
+		return nil, fmt.Errorf(errMsg, err)
 	}
 
-	return nil
+	return &Resp{Msg: string(res.Body())}, nil
 }
 
 func buildBundle(confPath string) (string, error) {

@@ -6,6 +6,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/dosco/graphjin/internal/common"
 	"github.com/dosco/graphjin/serv/internal/auth"
 	"github.com/klauspost/compress/gzhttp"
 	"go.opencensus.io/plugin/ochttp"
@@ -13,12 +14,10 @@ import (
 )
 
 const (
-	deployRoute   = "/api/v1/deploy"
-	rollbackRoute = "/api/v1/deploy/rollback"
-	apiRoute      = "/api/v1/graphql"
-	actionRoute   = "/api/v1/actions"
-	healthRoute   = "/health"
-	metricsRoute  = "/metrics"
+	apiRoute     = "/api/v1/graphql"
+	actionRoute  = "/api/v1/actions"
+	healthRoute  = "/health"
+	metricsRoute = "/metrics"
 )
 
 func (s *service) isHealthEndpoint(r *http.Request) bool {
@@ -36,9 +35,9 @@ func routeHandler(s1 *Service, mux *http.ServeMux) (http.Handler, error) {
 
 	if s.conf.HotDeploy {
 		// Rollback Config API
-		mux.Handle(rollbackRoute, adminRollbackHandler(s1))
+		mux.Handle(common.RollbackRoute, adminRollbackHandler(s1))
 		// Deploy Config API
-		mux.Handle(deployRoute, adminDeployHandler(s1))
+		mux.Handle(common.DeployRoute, adminDeployHandler(s1))
 	}
 
 	if err := setActionRoutes(s1, mux); err != nil {
