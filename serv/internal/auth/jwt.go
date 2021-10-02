@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	jwt "github.com/dgrijalva/jwt-go"
+	jwt "github.com/golang-jwt/jwt"
 
 	"github.com/dosco/graphjin/serv/internal/auth/provider"
 )

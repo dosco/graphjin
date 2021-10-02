@@ -10,8 +10,8 @@ import (
 	"os"
 	"time"
 
-	jwt "github.com/dgrijalva/jwt-go"
 	"github.com/dosco/graphjin/core"
+	jwt "github.com/golang-jwt/jwt"
 	"github.com/magiclabs/magic-admin-go"
 	"github.com/magiclabs/magic-admin-go/client"
 	"github.com/magiclabs/magic-admin-go/token"

@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	jwt "github.com/dgrijalva/jwt-go"
 	"github.com/dosco/graphjin/core"
+	jwt "github.com/golang-jwt/jwt"
 )
 
 const (

@@ -32,13 +32,13 @@ func initLogLevel(s *service) {
 func validateConf(s *service) {
 	var anonFound bool
 
-	for _, r := range s.conf.Roles {
+	for _, r := range s.conf.Core.Roles {
 		if r.Name == "anon" {
 			anonFound = true
 		}
 	}
 
-	if !anonFound && s.conf.DefaultBlock {
+	if !anonFound && s.conf.Core.DefaultBlock {
 		s.log.Warn("unauthenticated requests will be blocked. no role 'anon' defined")
 		s.conf.AuthFailBlock = false
 	}
@@ -125,7 +125,7 @@ func (s *service) initConfig() error {
 	}
 
 	if c.Auth.Type == "" || c.Auth.Type == "none" {
-		c.DefaultBlock = false
+		c.Core.DefaultBlock = false
 	}
 
 	hp := strings.SplitN(s.conf.HostPort, ":", 2)

@@ -83,11 +83,11 @@ func setActionRoutes(s1 *Service, mux *http.ServeMux) error {
 	var err error
 	s := s1.Load().(*service)
 
-	if s.conf.Debug {
+	if s.conf.Core.Debug {
 		zlog = s.zlog
 	}
 
-	for _, a := range s.conf.Actions {
+	for _, a := range s.conf.Serv.Actions {
 		var fn http.Handler
 
 		fn, err = newAction(s1, &a)

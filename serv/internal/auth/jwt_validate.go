@@ -5,7 +5,7 @@ package auth
 import (
 	"fmt"
 
-	jwt "github.com/dgrijalva/jwt-go"
+	jwt "github.com/golang-jwt/jwt"
 )
 
 func validateJWT(tok, aud, iss string, keyFunc jwt.Keyfunc) (jwt.MapClaims, error) {
