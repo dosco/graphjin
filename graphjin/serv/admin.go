@@ -8,18 +8,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-)
 
-type deployReq struct {
-	Name   string `json:"name"`
-	Bundle string `json:"bundle"`
-}
+	"github.com/dosco/graphjin/internal/common"
+)
 
 func adminDeployHandler(s1 *Service) http.Handler {
 	h := func(w http.ResponseWriter, r *http.Request) {
-		var msg string
-		var req deployReq
-
+		var req common.DeployReq
 		s := s1.Load().(*service)
 
 		if !s.isAdminSecret(r) {
@@ -43,11 +38,20 @@ func adminDeployHandler(s1 *Service) http.Handler {
 			return
 		}
 
-		if err := s.saveConfig(r.Context(), req.Name, req.Bundle); err != nil {
-			intErr(w, fmt.Sprintf("error saving config: %s", err.Error()))
-		} else {
-			io.WriteString(w, msg)
+		res, err := s.saveConfig(r.Context(), req.Name, req.Bundle)
+		if err != nil {
+			intErr(w, fmt.Sprintf("deploy error: %s", err.Error()))
+			return
 		}
+		var msg string
+
+		if res.name != res.pname && res.pname != "" {
+			msg = fmt.Sprintf("deploy successful: '%s', replacing: '%s'", res.name, res.pname)
+		} else {
+			msg = fmt.Sprintf("deploy successful: '%s'", res.name)
+		}
+
+		io.WriteString(w, msg)
 	}
 
 	return http.HandlerFunc(h)
@@ -55,8 +59,6 @@ func adminDeployHandler(s1 *Service) http.Handler {
 
 func adminRollbackHandler(s1 *Service) http.Handler {
 	h := func(w http.ResponseWriter, r *http.Request) {
-		var msg string
-
 		s := s1.Load().(*service)
 
 		if !s.isAdminSecret(r) {
@@ -64,11 +66,20 @@ func adminRollbackHandler(s1 *Service) http.Handler {
 			return
 		}
 
-		if err := s.rollbackConfig(r.Context()); err != nil {
+		res, err := s.rollbackConfig(r.Context())
+		if err != nil {
 			intErr(w, fmt.Sprintf("error rolling-back config: %s", err.Error()))
-		} else {
-			io.WriteString(w, msg)
+			return
 		}
+
+		var msg string
+
+		if res.name != res.pname && res.name != "" {
+			msg = fmt.Sprintf("rollback successful: '%s', replacing: '%s'", res.pname, res.name)
+		} else {
+			msg = fmt.Sprintf("rollback successful: '%s'", res.pname)
+		}
+		io.WriteString(w, msg)
 	}
 
 	return http.HandlerFunc(h)

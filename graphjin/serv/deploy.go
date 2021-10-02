@@ -20,10 +20,16 @@ import (
 
 const adminVersion = 1
 
-func (s *service) saveConfig(c context.Context, name, bundle string) error {
+type depResp struct {
+	name, pname string
+}
+
+func (s *service) saveConfig(c context.Context, name, bundle string) (*depResp, error) {
+	var dres depResp
+
 	zip, err := base64.StdEncoding.DecodeString(bundle)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	h := sha1.New()
@@ -33,12 +39,12 @@ func (s *service) saveConfig(c context.Context, name, bundle string) error {
 	opt := &sql.TxOptions{Isolation: sql.LevelSerializable}
 	tx, err := s.db.BeginTx(c, opt)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if _, err := getAdminParams(tx); err != nil {
 		_ = tx.Rollback()
-		return fmt.Errorf("error in admin schema: %w", err)
+		return nil, fmt.Errorf("error in admin schema: %w", err)
 	}
 
 	previousID := -1
@@ -46,49 +52,61 @@ func (s *service) saveConfig(c context.Context, name, bundle string) error {
 	// find previous active id
 	err = tx.QueryRow(`
 	SELECT
-		id
+		id,
+		name
 	FROM 
 		_graphjin.configs
 	WHERE
-		(active = TRUE)`).Scan(&previousID)
+		(active = TRUE)`).Scan(&previousID, &dres.pname)
 
 	if err != nil && err != sql.ErrNoRows {
 		_ = tx.Rollback()
-		return err
+		return nil, err
 	}
 
 	id := -1
+	phash := ""
 
 	// check if current config already exists in db
 	err = tx.QueryRow(`
 	SELECT
-		id
+		id,
+		name,
+		hash
 	FROM 
 		_graphjin.configs
 	WHERE
 		(hash = $1 OR name = $2)
-`, hash, name).Scan(&id)
+`, hash, name).Scan(&id, &dres.name, &phash)
 
 	if err != nil && err != sql.ErrNoRows {
 		_ = tx.Rollback()
-		return err
+		return nil, err
 	}
 
-	_, err = tx.Exec(`
-	UPDATE 
-		_graphjin.configs 
-	SET 
-		active = FALSE 
-	WHERE 
+	if hash == phash {
+		_ = tx.Rollback()
+		return &dres, nil
+	}
+
+	if previousID != -1 {
+		_, err = tx.Exec(`
+		UPDATE 
+			_graphjin.configs 
+		SET 
+			active = FALSE 
+		WHERE 
 		id = $1`, previousID)
 
-	if err != nil && err != sql.ErrNoRows {
-		_ = tx.Rollback()
-		return err
+		if err != nil && err != sql.ErrNoRows {
+			_ = tx.Rollback()
+			return nil, err
+		}
 	}
 
 	// if current config does not exist then insert
 	if id == -1 {
+		dres.name = name
 		_, err = tx.Exec(`
 		INSERT INTO
 			_graphjin.configs (previous_id, name, hash, active, bundle)
@@ -102,36 +120,38 @@ func (s *service) saveConfig(c context.Context, name, bundle string) error {
 			_graphjin.configs
 		SET
 			previous_id = $1,
-			active = FALSE,
-			hash = $2
-			bundle = $3,
+			active = TRUE,
+			hash = $2,
+			bundle = $3
 		WHERE
-			id = $3`, previousID, hash, bundle, id)
+			id = $4`, previousID, hash, bundle, id)
 	}
 
 	if err != nil {
 		_ = tx.Rollback()
-		return err
+		return nil, err
 	}
 
 	if err := tx.Commit(); err != nil {
 		_ = tx.Rollback()
-		return err
+		return nil, err
 	}
 
-	return nil
+	return &dres, nil
 }
 
-func (s *service) rollbackConfig(c context.Context) error {
+func (s *service) rollbackConfig(c context.Context) (*depResp, error) {
+	var dres depResp
+
 	opt := &sql.TxOptions{Isolation: sql.LevelSerializable}
 	tx, err := s.db.BeginTx(c, opt)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if _, err := getAdminParams(tx); err != nil {
 		_ = tx.Rollback()
-		return fmt.Errorf("error in admin schema: %w", err)
+		return nil, fmt.Errorf("error in admin schema: %w", err)
 	}
 
 	id := -1
@@ -140,16 +160,20 @@ func (s *service) rollbackConfig(c context.Context) error {
 	// find previous active id
 	err = tx.QueryRow(`
 	SELECT
-		id,
-		previous_id
+		cc.id,
+		cc.previous_id,
+		cc.name,
+		coalesce(pc.name, '')
 	FROM 
-		_graphjin.configs
+		_graphjin.configs cc
+	LEFT JOIN 
+		_graphjin.configs pc ON pc.id = cc.previous_id
 	WHERE
-		(active = TRUE)`).Scan(&id, &previousID)
+		(cc.active = TRUE)`).Scan(&id, &previousID, &dres.name, &dres.pname)
 
 	if err != nil && err != sql.ErrNoRows {
 		_ = tx.Rollback()
-		return err
+		return nil, err
 	}
 
 	if previousID != -1 {
@@ -163,7 +187,7 @@ func (s *service) rollbackConfig(c context.Context) error {
 
 		if err != nil && err != sql.ErrNoRows {
 			_ = tx.Rollback()
-			return err
+			return nil, err
 		}
 	}
 
@@ -177,15 +201,15 @@ func (s *service) rollbackConfig(c context.Context) error {
 
 	if err != nil && err != sql.ErrNoRows {
 		_ = tx.Rollback()
-		return err
+		return nil, err
 	}
 
 	if err := tx.Commit(); err != nil {
 		_ = tx.Rollback()
-		return err
+		return nil, err
 	}
 
-	return nil
+	return &dres, nil
 }
 
 type adminParams struct {

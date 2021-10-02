@@ -60,8 +60,8 @@ type Config struct {
 	// creating relationships between tables, etc
 	Tables []Table
 
-	// RolesQuery if set enabled attributed based access control. This query
-	// is used to fetch the user attributes that then dynamically define the users
+	// RolesQuery if set enabled attribute based access control. This query
+	// is used to fetch the user attribute that then dynamically define the users
 	// role
 	RolesQuery string `mapstructure:"roles_query"`
 

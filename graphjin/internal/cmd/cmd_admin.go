@@ -5,6 +5,7 @@ import (
 	"math/rand"
 
 	"github.com/brianvoe/gofakeit/v6"
+	"github.com/dosco/graphjin/internal/client"
 	"github.com/dosco/graphjin/serv"
 	"github.com/gosimple/slug"
 	"github.com/spf13/cobra"
@@ -72,13 +73,13 @@ func cmdDeploy() func(*cobra.Command, []string) {
 			name = slug.Make(fmt.Sprintf("%s-%d", gofakeit.Name(), rand.Intn(9)))
 		}
 
-		c := serv.NewClient(host, secret)
+		c := client.NewClient(host, secret)
 
-		if err := c.Deploy(name, "./config"); err != nil {
+		if res, err := c.Deploy(name, "./config"); err != nil {
 			log.Fatal(err)
+		} else {
+			log.Infof(res.Msg)
 		}
-
-		log.Infof("deploy successful: %s", name)
 	}
 }
 
@@ -92,12 +93,12 @@ func cmdRollback() func(*cobra.Command, []string) {
 			log.Fatalf("--name not supported with rollback")
 		}
 
-		c := serv.NewClient(host, secret)
+		c := client.NewClient(host, secret)
 
-		if err := c.Rollback(); err != nil {
+		if res, err := c.Rollback(); err != nil {
 			log.Fatal(err)
+		} else {
+			log.Infof(res.Msg)
 		}
-
-		log.Infof("rollback successful")
 	}
 }

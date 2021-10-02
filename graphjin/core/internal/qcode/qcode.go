@@ -421,7 +421,7 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 			sel.SkipRender = SkipTypeUserNeeded
 		}
 
-		// If an actual cursor is avalable
+		// If an actual cursor is available
 		if sel.Paging.Cursor {
 			// Set tie-breaker order column for the cursor direction
 			// this column needs to be the last in the order series.
