@@ -52,7 +52,7 @@ func apiV1Handler(s1 *Service) http.Handler {
 	var zlog *zap.Logger
 	s := s1.Load().(*service)
 
-	if s.conf.Debug {
+	if s.conf.Core.Debug {
 		zlog = s.zlog
 	}
 
@@ -131,7 +131,7 @@ func (s1 *Service) apiV1() http.Handler {
 
 		rc := core.ReqConfig{Vars: make(map[string]interface{})}
 
-		for k, v := range s.conf.HeaderVars {
+		for k, v := range s.conf.Core.HeaderVars {
 			rc.Vars[k] = func() string {
 				if v1, ok := r.Header[v]; ok {
 					return v1[0]
@@ -204,7 +204,7 @@ func (s *service) reqLog(res *core.Result, resTimeMs int64, err error) {
 		fields = append(fields, zap.String("sql", res.SQL()))
 	}
 
-	if s.conf.Debug {
+	if s.conf.Core.Debug {
 		s.log.Info(res.SQL())
 	}
 

@@ -63,7 +63,7 @@ func (s *service) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 	var run bool
 	var zlog *zap.Logger
 
-	if s.conf.Debug {
+	if s.conf.Core.Debug {
 		zlog = s.zlog
 	}
 

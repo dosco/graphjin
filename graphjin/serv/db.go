@@ -47,7 +47,7 @@ func newDB(
 	var dc *dbConf
 	var err error
 
-	switch conf.DBType {
+	switch conf.Core.DBType {
 	case "mysql":
 		dc, err = initMysql(conf, openDB, useTelemetry, fs)
 	default:

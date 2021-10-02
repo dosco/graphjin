@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 
-	jwt "github.com/dgrijalva/jwt-go"
 	"github.com/dosco/graphjin/core"
+	jwt "github.com/golang-jwt/jwt"
 )
 
 type Auth0Provider struct {
