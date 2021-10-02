@@ -117,7 +117,8 @@ func TestMain(m *testing.M) {
 		if err != nil {
 			panic(err)
 		}
-		db.SetMaxIdleConns(500)
+		db.SetMaxIdleConns(300)
+		db.SetMaxOpenConns(600)
 		dbType = v.name
 
 		if res := m.Run(); res != 0 {
