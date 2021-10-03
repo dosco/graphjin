@@ -47,7 +47,7 @@ go get github.com/dosco/graphjin
 graphjin new <app_name>
 
 cd <app_name>
-docker-compose run api db:setup
+docker-compose run api db setup
 docker-compose up
 ```
 
