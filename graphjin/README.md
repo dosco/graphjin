@@ -11,13 +11,15 @@
 
 GraphJin gives you a high performance GraphQL API without you having to write any code. GraphQL is automagically compiled into an efficient SQL query. Use it either as a library or a standalone service.
 
-## Sponsors
+## Sponsor GraphJin
 
-GraphJin is an Apache-licensed open source project with its ongoing development made possible entirely by the support of these awesome backers. If you'd like to join them, please consider:
+GraphJin is an Apache-licensed open source project with its ongoing development made possible by the support of awesome backers. If your company is saving time and money from using GraphJin please consider becoming a sponsor.
 
-[![Logos-EXO-SIN-TAG_2018_ALTA-V-Color](https://user-images.githubusercontent.com/832235/112428182-259def80-8d11-11eb-88b8-ccef9206b535.png)](https://www.exo.com.ar/)
-
-
+<div float="left">
+<a href="https://42papers.com"><img src="https://user-images.githubusercontent.com/832235/135753560-39e34be6-5734-440a-98e7-f7e160c2efb5.png" width="100"></a>
+<a href="https://www.exo.com.ar/"><img src="https://user-images.githubusercontent.com/832235/112428182-259def80-8d11-11eb-88b8-ccef9206b535.png" width="150"></a>
+</div>
+  
 ## 1. Quick Install
 Mac (Homebrew)
 ```
