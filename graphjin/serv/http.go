@@ -200,12 +200,14 @@ func (s *service) reqLog(res *core.Result, resTimeMs int64, err error) {
 		zap.Int64("responseTimeMs", resTimeMs),
 	}
 
-	if s.logLevel >= logLevelDebug {
-		fields = append(fields, zap.String("sql", res.SQL()))
+	sql := res.SQL()
+
+	if sql != "" && s.logLevel >= logLevelDebug {
+		fields = append(fields, zap.String("sql", sql))
 	}
 
-	if s.conf.Core.Debug {
-		s.log.Info(res.SQL())
+	if sql != "" && s.conf.Core.Debug {
+		s.log.Info(sql)
 	}
 
 	if err != nil {
