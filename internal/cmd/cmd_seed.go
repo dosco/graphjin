@@ -42,6 +42,8 @@ func cmdDBSeed() func(*cobra.Command, []string) {
 		conf.Core.Blocklist = nil
 		seed := path.Join(cpath, "seed.js")
 
+		log.Infof("Seed script started (please wait)")
+
 		if err := compileAndRunJS(seed, db); err != nil {
 			log.Fatalf("Failed to execute seed file %s: %s", seed, err)
 		}

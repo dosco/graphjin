@@ -61,6 +61,7 @@ import (
 	"github.com/dosco/graphjin/core/internal/psql"
 	"github.com/dosco/graphjin/core/internal/qcode"
 	"github.com/dosco/graphjin/core/internal/sdata"
+	"github.com/dosco/graphjin/core/internal/util"
 	"github.com/spf13/afero"
 )
 
@@ -116,7 +117,7 @@ type script struct {
 	ReqFunc  reqFunc
 	RespFunc respFunc
 	vm       *goja.Runtime
-	Once
+	util.Once
 }
 
 type Option func(*graphjin) error
