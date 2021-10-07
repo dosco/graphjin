@@ -3,7 +3,7 @@ package etags
 
 import (
 	"bytes"
-	"crypto/sha1"
+	"crypto/sha1" // #nosec F505
 	"encoding/hex"
 	"hash"
 	"net/http"
@@ -52,6 +52,7 @@ func Handler(h http.Handler, weak bool) http.Handler {
 			return
 		}
 
+		// #nosec G401
 		hw := hashWriter{rw: res, hash: sha1.New(), buf: bytes.NewBuffer(nil)}
 		h.ServeHTTP(&hw, req)
 

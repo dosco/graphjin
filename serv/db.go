@@ -183,6 +183,7 @@ func initPostgres(conf *Config, openDB, useTelemetry bool, fs afero.Fs) (*dbConf
 		}
 
 		config.TLSConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
 			RootCAs:    rootCertPool,
 			ServerName: c.DB.ServerName,
 		}

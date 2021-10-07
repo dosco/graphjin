@@ -149,7 +149,7 @@ func (al *List) Load() ([]Item, error) {
 			if err != nil {
 				return nil, err
 			}
-			if err := afero.WriteFile(al.fs, newFile, b, 0644); err != nil {
+			if err := afero.WriteFile(al.fs, newFile, b, 0600); err != nil {
 				return nil, err
 			}
 
@@ -303,7 +303,7 @@ func (al *List) saveItem(item Item, ow bool) error {
 	}
 
 	fn := path.Join(queryPath, (item.Name + ".yaml"))
-	if err := afero.WriteFile(al.fs, fn, b, 0644); err != nil {
+	if err := afero.WriteFile(al.fs, fn, b, 0600); err != nil {
 		return err
 	}
 
@@ -311,7 +311,7 @@ func (al *List) saveItem(item Item, ow bool) error {
 		fn := path.Join(fragmentPath, fv.Name)
 		b := []byte(fv.Value)
 
-		if err := afero.WriteFile(al.fs, fn, b, 0644); err != nil {
+		if err := afero.WriteFile(al.fs, fn, b, 0600); err != nil {
 			return err
 		}
 	}

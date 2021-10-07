@@ -70,6 +70,7 @@ func cmdDeploy() func(*cobra.Command, []string) {
 		}
 
 		if name == "" {
+			// #nosec G404
 			name = slug.Make(fmt.Sprintf("%s-%d", gofakeit.Name(), rand.Intn(9)))
 		}
 

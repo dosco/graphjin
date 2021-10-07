@@ -45,7 +45,7 @@ func cmdNew() func(*cobra.Command, []string) {
 
 		ifNotExists(path.Join(appPath, "Dockerfile"), func(p string) error {
 			if v, err := tmpl.get("Dockerfile"); err == nil {
-				return ioutil.WriteFile(p, v, 0644)
+				return ioutil.WriteFile(p, v, 0600)
 			} else {
 				return err
 			}
@@ -53,7 +53,7 @@ func cmdNew() func(*cobra.Command, []string) {
 
 		ifNotExists(path.Join(appPath, "docker-compose.yml"), func(p string) error {
 			if v, err := tmpl.get("docker-compose.yml"); err == nil {
-				return ioutil.WriteFile(p, v, 0644)
+				return ioutil.WriteFile(p, v, 0600)
 			} else {
 				return err
 			}
@@ -61,7 +61,7 @@ func cmdNew() func(*cobra.Command, []string) {
 
 		ifNotExists(path.Join(appPath, "cloudbuild.yaml"), func(p string) error {
 			if v, err := tmpl.get("cloudbuild.yaml"); err == nil {
-				return ioutil.WriteFile(p, v, 0644)
+				return ioutil.WriteFile(p, v, 0600)
 			} else {
 				return err
 			}
@@ -77,7 +77,7 @@ func cmdNew() func(*cobra.Command, []string) {
 
 		ifNotExists(path.Join(appConfigPath, "dev.yml"), func(p string) error {
 			if v, err := tmpl.get("dev.yml"); err == nil {
-				return ioutil.WriteFile(p, v, 0644)
+				return ioutil.WriteFile(p, v, 0600)
 			} else {
 				return err
 			}
@@ -85,7 +85,7 @@ func cmdNew() func(*cobra.Command, []string) {
 
 		ifNotExists(path.Join(appConfigPath, "prod.yml"), func(p string) error {
 			if v, err := tmpl.get("prod.yml"); err == nil {
-				return ioutil.WriteFile(p, v, 0644)
+				return ioutil.WriteFile(p, v, 0600)
 			} else {
 				return err
 			}
@@ -93,7 +93,7 @@ func cmdNew() func(*cobra.Command, []string) {
 
 		ifNotExists(path.Join(appConfigPath, "seed.js"), func(p string) error {
 			if v, err := tmpl.get("seed.js"); err == nil {
-				return ioutil.WriteFile(p, v, 0644)
+				return ioutil.WriteFile(p, v, 0600)
 			} else {
 				return err
 			}
@@ -109,7 +109,7 @@ func cmdNew() func(*cobra.Command, []string) {
 
 		ifNotExists(path.Join(appMigrationsPath, "0_init.sql"), func(p string) error {
 			if v, err := tmpl.get("0_init.sql"); err == nil {
-				return ioutil.WriteFile(p, v, 0644)
+				return ioutil.WriteFile(p, v, 0600)
 			} else {
 				return err
 			}

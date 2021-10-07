@@ -1053,7 +1053,7 @@ func Example_queryWithScriptDirective() {
 	}
 	defer os.RemoveAll(dir)
 
-	err = ioutil.WriteFile(path.Join(dir, "test.js"), []byte(script), 0644)
+	err = ioutil.WriteFile(path.Join(dir, "test.js"), []byte(script), 0600)
 	if err != nil {
 		panic(err)
 	}
@@ -1095,7 +1095,7 @@ func Example_queryWithScriptDirectiveUsingGraphQL() {
 	}
 	defer os.RemoveAll(dir)
 
-	err = ioutil.WriteFile(path.Join(dir, "test.js"), []byte(script), 0644)
+	err = ioutil.WriteFile(path.Join(dir, "test.js"), []byte(script), 0600)
 	if err != nil {
 		panic(err)
 	}
@@ -1142,7 +1142,7 @@ func Example_queryWithScriptDirectiveUsingHttp() {
 	}
 	defer os.RemoveAll(dir)
 
-	err = ioutil.WriteFile(path.Join(dir, "test.js"), []byte(script), 0644)
+	err = ioutil.WriteFile(path.Join(dir, "test.js"), []byte(script), 0600)
 	if err != nil {
 		panic(err)
 	}

@@ -320,7 +320,7 @@ func (gj *graphjin) subCheckUpdates(s *sub, mv mval, start int) {
 
 	// random wait to prevent multiple queries hitting the db
 	// at the same time.
-	time.Sleep(time.Duration(rand.Int63n(500)) * time.Millisecond)
+	time.Sleep(time.Duration(rand.Int63n(500)) * time.Millisecond) // #nosec F404
 
 	end := start + maxMembersPerWorker
 	if len(mv.ids) < end {
