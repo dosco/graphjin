@@ -356,14 +356,17 @@ func avatarURL(size int) string {
 	if size == 0 {
 		size = 200
 	}
+	// #nosec G404
 	return fmt.Sprintf("https://i.pravatar.cc/%d?%d", size, rand.Intn(5000))
 }
 
 func imageURL(width, height int) string {
+	// #nosec G404
 	return fmt.Sprintf("https://picsum.photos/%d/%d?%d", width, height, rand.Intn(5000))
 }
 
 func getRandValue(values []string) string {
+	// #nosec G404
 	return values[rand.Intn(len(values))]
 }
 

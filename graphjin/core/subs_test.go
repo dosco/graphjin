@@ -1,3 +1,4 @@
+//#nosec G404
 package core_test
 
 import (

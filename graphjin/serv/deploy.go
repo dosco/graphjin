@@ -4,7 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"crypto/sha1"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
 	"fmt"
@@ -32,7 +32,7 @@ func (s *service) saveConfig(c context.Context, name, bundle string) (*depResp, 
 		return nil, err
 	}
 
-	h := sha1.New()
+	h := sha256.New()
 	_, _ = h.Write(zip)
 	hash := base64.URLEncoding.EncodeToString(h.Sum(nil))
 

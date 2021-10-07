@@ -3,7 +3,7 @@ package rails
 import (
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/sha1"
+	"crypto/sha1" // #nosec G505
 	"encoding/base64"
 	"net/url"
 	"strings"
