@@ -80,6 +80,9 @@ type Serv struct {
 	// HTTPGZip enables HTTP compression
 	HTTPGZip bool `mapstructure:"http_compress"`
 
+	// ServerTiming enables the Server-Timing header
+	ServerTiming bool `mapstructure:"server_timing"`
+
 	// Enable the web UI. Disabled in production
 	WebUI bool `mapstructure:"web_ui"`
 

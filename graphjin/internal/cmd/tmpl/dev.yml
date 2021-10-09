@@ -11,6 +11,9 @@ log_format: "plain"
 # Enable or disable http compression (uses gzip)
 http_compress: true
 
+# enable or disable the server-timing http header
+server_timing: true
+
 # When production mode is 'true' only queries 
 # from the allow list are permitted.
 production: false

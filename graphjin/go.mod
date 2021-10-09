@@ -8,9 +8,7 @@ require (
 	contrib.go.opencensus.io/exporter/stackdriver v0.13.8
 	contrib.go.opencensus.io/exporter/zipkin v0.1.2
 	contrib.go.opencensus.io/integrations/ocsql v0.1.7
-	github.com/Microsoft/hcsshim v0.8.22 // indirect
 	github.com/adjust/gorails v0.0.0-20171013043634-2786ed0c03d3
-	github.com/bits-and-blooms/bitset v1.2.1 // indirect
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
 	github.com/brianvoe/gofakeit/v6 v6.8.0
 	github.com/btcsuite/btcd v0.22.0-beta // indirect
@@ -18,7 +16,6 @@ require (
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/chirino/graphql v0.0.0-20210707003802-dfaf250c773e
 	github.com/containerd/containerd v1.5.7 // indirect
-	github.com/containerd/continuity v0.2.0 // indirect
 	github.com/dop251/goja v0.0.0-20210912140721-ac5354e9a820
 	github.com/ethereum/go-ethereum v1.10.9 // indirect
 	github.com/fatih/color v1.13.0 // indirect
@@ -30,7 +27,6 @@ require (
 	github.com/go-resty/resty/v2 v2.6.0
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/gobuffalo/flect v0.2.2
-	github.com/gogo/googleapis v1.4.1 // indirect
 	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/goreleaser/goreleaser v0.179.0
 	github.com/gorilla/websocket v1.4.2
@@ -45,7 +41,6 @@ require (
 	github.com/mattn/go-colorable v0.1.10 // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2
 	github.com/mitchellh/mapstructure v1.4.2
-	github.com/opencontainers/selinux v1.8.5 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/openzipkin/zipkin-go v0.2.4
 	github.com/orlangure/gnomock v0.16.0

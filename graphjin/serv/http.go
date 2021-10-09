@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/dosco/graphjin/core"
@@ -183,9 +184,16 @@ func (s1 *Service) apiV1() http.Handler {
 			ochttp.SetRoute(ct, apiRoute)
 		}
 
+		rt := time.Since(start).Milliseconds()
+
 		if s.logLevel >= logLevelInfo {
-			rt := time.Since(start).Milliseconds()
 			s.reqLog(res, rt, err)
+		}
+
+		if s.conf.ServerTiming {
+			b := []byte("DB;dur=")
+			b = strconv.AppendInt(b, rt, 10)
+			w.Header().Set("Server-Timing", string(b))
 		}
 	}
 
