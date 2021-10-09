@@ -54,7 +54,7 @@ func adminDeployHandler(s1 *Service) http.Handler {
 		io.WriteString(w, msg)
 	}
 
-	return http.HandlerFunc(h)
+	return rateLimiter(s1, http.HandlerFunc(h))
 }
 
 func adminRollbackHandler(s1 *Service) http.Handler {
@@ -82,7 +82,7 @@ func adminRollbackHandler(s1 *Service) http.Handler {
 		io.WriteString(w, msg)
 	}
 
-	return http.HandlerFunc(h)
+	return rateLimiter(s1, http.HandlerFunc(h))
 }
 
 func (s *service) isAdminSecret(r *http.Request) bool {
