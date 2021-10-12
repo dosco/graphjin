@@ -20,7 +20,7 @@ var (
 func deployCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "deploy",
-		Short: "Deploy a new config",
+		Short: "Hot-deploy new config or rollback the active config",
 		Run:   cmdDeploy(),
 	}
 	c.PersistentFlags().StringVar(&host, "host", "", "URL of the GraphJin service")
@@ -40,7 +40,7 @@ func deployCmd() *cobra.Command {
 func initCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "init",
-		Short: "Setup admin database",
+		Short: "Setup the admin database used for hot-depoly, etc",
 		Run:   cmdInit(),
 	}
 	return c

@@ -15,10 +15,6 @@ RUN apt-get -y install build-essential git-all jq
 
 RUN GO111MODULE=off go get -u github.com/rafaelsq/wtc
 
-ARG SOPS_VERSION=3.5.0
-ADD https://github.com/mozilla/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux /usr/local/bin/sops
-RUN chmod 755 /usr/local/bin/sops
-
 WORKDIR /app
 COPY . /app
 
@@ -43,15 +39,12 @@ RUN mkdir -p /config
 
 COPY --from=go-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=go-build /app/graphjin .
-COPY --from=go-build /app/internal/scripts/start.sh .
-COPY --from=go-build /usr/local/bin/sops .
 
 RUN chmod +x /graphjin
-RUN chmod +x /start.sh
 
 #USER nobody
 
 ENV GO_ENV production
 
-ENTRYPOINT ["./start.sh"]
+ENTRYPOINT ["./graphjin"]
 CMD ["serv"]

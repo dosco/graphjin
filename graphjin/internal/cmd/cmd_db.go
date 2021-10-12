@@ -10,7 +10,7 @@ import (
 func dbCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "db",
-		Short: "Create database",
+		Short: "Create, setup, migrate, seed the database",
 	}
 
 	c1 := &cobra.Command{
@@ -26,6 +26,8 @@ func dbCmd() *cobra.Command {
 		Run:   cmdDBDrop(),
 	}
 	c.AddCommand(c2)
+
+	c.AddCommand(migrateCmd())
 
 	c3 := &cobra.Command{
 		Use:   "seed",
