@@ -65,6 +65,10 @@ func setup(cpath string) {
 	if conf != nil {
 		return
 	}
+	setupAgain(cpath)
+}
+
+func setupAgain(cpath string) {
 	cp, err := filepath.Abs(cpath)
 	if err != nil {
 		log.Fatal(err)

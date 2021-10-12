@@ -201,8 +201,10 @@ func (s *service) hotStart() error {
 	if err != nil {
 		return err
 	}
+	secFile := s.conf.Serv.SecretsFile
 	s.conf = bfs.conf
 	s.chash = bfs.conf.hash
+	s.conf.Serv.SecretsFile = secFile
 
 	if err := s.initConfig(); err != nil {
 		return err

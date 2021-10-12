@@ -11,7 +11,7 @@ import (
 	"go.mozilla.org/sops/v3/stores/dotenv"
 )
 
-func Init(fileName string) error {
+func Init(fileName string) (bool, error) {
 	var err error
 
 	inputStore := common.DefaultStoreForPath(fileName)
@@ -28,8 +28,10 @@ func Init(fileName string) error {
 
 	output, err := decrypt(opts)
 	if err != nil {
-		return err
+		return false, err
 	}
+
+	var found bool
 
 	lines := bytes.Split(output, []byte("\n"))
 	for _, line := range lines {
@@ -40,8 +42,11 @@ func Init(fileName string) error {
 			continue
 		}
 		v := strings.SplitN(string(line), "=", 2)
-		os.Setenv(v[0], v[1])
+		if err := os.Setenv(v[0], v[1]); err != nil {
+			return false, err
+		}
+		found = true
 	}
 
-	return nil
+	return found, nil
 }
