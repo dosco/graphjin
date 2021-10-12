@@ -32,14 +32,19 @@ func cmdServ() func(*cobra.Command, []string) {
 			opt = append(opt, serv.OptionDeployActive())
 		}
 
+		var fsec bool
 		if conf.SecretsFile != "" {
 			secFile, err := filepath.Abs(conf.RelPath(conf.SecretsFile))
 			if err != nil {
 				fatalInProd(err)
 			}
-			if err := secrets.Init(secFile); err != nil {
+			if fsec, err = secrets.Init(secFile); err != nil {
 				fatalInProd(err)
 			}
+		}
+
+		if fsec {
+			setupAgain(cpath)
 		}
 
 		gj, err := serv.NewGraphJinService(conf, opt...)

@@ -227,7 +227,9 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 			continue
 		}
 		v := strings.SplitN(e, "=", 2)
-		os.Setenv(("GJ_" + v[0][3:]), v[1])
+		if err := os.Setenv(("GJ_" + v[0][3:]), v[1]); err != nil {
+			return nil, err
+		}
 	}
 
 	cpath := path.Dir(configFile)
