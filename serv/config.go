@@ -62,6 +62,9 @@ type Serv struct {
 	// files and scripts under
 	ConfigPath string `mapstructure:"config_path"`
 
+	// SecretsFile is the file for the secret key store
+	SecretsFile string `mapstructure:"secrets_file"`
+
 	// LogLevel can be debug, error, warn, info
 	LogLevel string `mapstructure:"log_level"`
 

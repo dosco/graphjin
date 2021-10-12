@@ -28,6 +28,7 @@ func Cmd() {
 	bi = serv.GetBuildInfo()
 	log = util.NewLogger(false).Sugar()
 
+	cobra.EnableCommandSorting = false
 	rootCmd := &cobra.Command{
 		Use:   "graphjin",
 		Short: BuildDetails(),
@@ -44,7 +45,8 @@ func Cmd() {
 	rootCmd.AddCommand(deployCmd())
 
 	rootCmd.AddCommand(dbCmd())
-	rootCmd.AddCommand(migrateCmd())
+
+	rootCmd.AddCommand(cmdSecrets())
 
 	// rootCmd.AddCommand(&cobra.Command{
 	// 	Use:   fmt.Sprintf("conf:dump [%s]", strings.Join(viper.SupportedExts, "|")),
@@ -54,7 +56,7 @@ func Cmd() {
 	// })
 
 	if err := rootCmd.Execute(); err != nil {
-		log.Fatalf("Error: %s", err)
+		log.Fatalf("%s", err)
 	}
 
 }
@@ -71,7 +73,6 @@ func setup(cpath string) {
 	if conf, err = serv.ReadInConfig(path.Join(cp, GetConfigName())); err != nil {
 		log.Fatal(err)
 	}
-
 }
 
 func initDB(openDB bool) {

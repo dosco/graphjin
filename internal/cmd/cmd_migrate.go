@@ -21,22 +21,22 @@ func migrateCmd() *cobra.Command {
 		Destination migration version can be one of the following value types:
 
 		Migrate to the most recent migration.
-		e.g. db:migrate up
+		e.g. db migrate up
 
 		Rollback the most recent migration.
-		e.g. db:migrate down
+		e.g. db migrate down
 
 		Migrate to a specific migration.
-		e.g. db:migrate 42
+		e.g. db migrate 42
 
 		Migrate forward N steps.
-		e.g. db:migrate +3
+		e.g. db migrate +3
 
 		Migrate backward N steps.
-		e.g. db:migrate -2
+		e.g. db migrate -2
 
 		Redo previous N steps (migrate backward N steps then forward N steps).
-		e.g. db:migrate -+1
+		e.g. db migrate -+1
 			`,
 		Run: cmdDBMigrate(),
 	}

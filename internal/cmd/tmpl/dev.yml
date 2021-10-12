@@ -30,8 +30,12 @@ enable_tracing: true
 # with the new configs when a change is detected
 reload_on_config_change: true
 
+# File that points to use as the secrets key store
+# secrets_file: "prod.secrets.yml"
+
 # File that points to the database seeding script
 # seed_file: seed.js
+
 
 # Path pointing to where the migrations can be found
 # this must be a relative path under the config path

@@ -12,7 +12,6 @@ require (
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
 	github.com/brianvoe/gofakeit/v6 v6.8.0
 	github.com/btcsuite/btcd v0.22.0-beta // indirect
-	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/chirino/graphql v0.0.0-20210707003802-dfaf250c773e
 	github.com/containerd/containerd v1.5.7 // indirect
@@ -28,6 +27,7 @@ require (
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/gobuffalo/flect v0.2.2
 	github.com/golang-jwt/jwt v3.2.2+incompatible
+	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/goreleaser/goreleaser v0.179.0
 	github.com/gorilla/websocket v1.4.2
 	github.com/gosimple/slug v1.10.0
@@ -54,6 +54,7 @@ require (
 	github.com/spf13/viper v1.9.0
 	github.com/stretchr/testify v1.7.0
 	github.com/tj/assert v0.0.3
+	go.mozilla.org/sops/v3 v3.7.1
 	go.opencensus.io v0.23.0
 	go.uber.org/zap v1.19.1
 	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519
