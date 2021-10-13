@@ -1,4 +1,4 @@
-# GraphJin - Instant GraphQL
+# GraphJin Instant GraphQL API
 
 [![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=for-the-badge&logo=appveyor&logo=appveyor)](https://pkg.go.dev/github.com/dosco/graphjin)
 [![GoReport](https://goreportcard.com/badge/github.com/gojp/goreportcard?style=for-the-badge)](https://goreportcard.com/report/github.com/dosco/graphjin)
@@ -8,21 +8,8 @@
 <!-- [![Run on Google Cloud](./.github/deploy-cloud-run-button.svg)](https://deploy.cloud.run)
  -->
  
-GraphJin gives you an instant secure and fast GraphQL API without code. GraphQL is automagically compiled into an efficient SQL query. Use either as a library or a standalone service.
+GraphJin gives you an instant secure and fast GraphQL API without code. GraphQL is automagically compiled into an efficient SQL query. Use either as a library or a standalone service. Build your backend APIs 100X faster.
 
-## Sponsor GraphJin
-
-GraphJin is an open source project made possible by the support of awesome backers. It has collectively saved teams 1000's of hours dev. time and allowing them to focus on their product and be 100x more productive. If your team uses it please consider becoming a sponsor.
-
-<div float="left">
-<a href="https://42papers.com">
-<img src="https://user-images.githubusercontent.com/832235/135753560-39e34be6-5734-440a-98e7-f7e160c2efb5.png" width="75" target="_blank">
-</a>
-<a href="https://www.exo.com.ar/">
-<img src="https://user-images.githubusercontent.com/832235/112428182-259def80-8d11-11eb-88b8-ccef9206b535.png" width="100" target="_blank">
-</a>
-</div>
-  
 ## 1. Quick install
 Mac (Homebrew)
 ```
@@ -54,14 +41,34 @@ docker-compose run api db setup
 docker-compose up
 ```
 
-## Hot-Deploy in production
+## Secure out of the box
+
+When you use a query in development it's auto-saved in an allow list and only queries from this allow list can be run in production. In production these allowed queries are converted into prepared statments in the database to protect against sql injection, etc. This makes GraphJin very secure and also very fast since no compiling happens in production all queries go directly to the database. GraphJin is built in Go a language designed by Google to be secure and memory safe. 
+
+## Built for production
+
+#### Instantly deploy new versions
 
 ```bash
 # Deploy a new config
-graphjin deploy --host=https://your-server.com --secret="your-sercret-key"
+graphjin deploy --host=https://your-server.com --secret="your-secret-key"
 
 # Rollback the last deployment
-graphjin deploy rollback --host=https://your-server.com --secret="your-sercret-key"
+graphjin deploy rollback --host=https://your-server.com --secret="your-secret-key"
+```
+
+#### Secrets Management
+
+```bash
+# Secure save secrets like database passwords and JWT secret keys
+graphjin secrets
+```
+
+#### Database Management
+
+```bash
+# Create, Migrate and Seed your database
+graphjin db
 ```
 
 
@@ -108,7 +115,7 @@ func main() {
   ctx := context.Background()
   ctx = context.WithValue(ctx, core.UserIDKey, 1)
 
-  res, err := sg.GraphQL(ctx, query, nil)
+  res, err := sg.GraphQL(ctx, query, nil, nil)
   if err != nil {
     log.Fatal(err)
   }
@@ -116,6 +123,40 @@ func main() {
   fmt.Println(string(res.Data))
 }
 ```
+
+### Use the standalone service as a library
+
+```golang
+import (
+  "github.com/dosco/graphjin/serv"
+)
+
+gj, err := serv.NewGraphJinService(conf, opt...)
+if err != nil {
+ fatalInProd(err)
+}
+
+if err := gj.Start(); err != nil {
+ fatalInProd(err)
+}
+```
+
+![graphjin-screenshot-final](https://user-images.githubusercontent.com/832235/108806955-1c363180-7571-11eb-8bfa-488ece2e51ae.png)
+
+
+## Support the Project
+
+GraphJin is an open source project made possible by the support of awesome backers. It has collectively saved teams 1000's of hours dev. time and allowing them to focus on their product and be 100x more productive. If your team uses it please consider becoming a sponsor.
+
+<div float="left">
+<a href="https://42papers.com">
+<img src="https://user-images.githubusercontent.com/832235/135753560-39e34be6-5734-440a-98e7-f7e160c2efb5.png" width="75" target="_blank">
+</a>
+<a href="https://www.exo.com.ar/">
+<img src="https://user-images.githubusercontent.com/832235/112428182-259def80-8d11-11eb-88b8-ccef9206b535.png" width="100" target="_blank">
+</a>
+</div>
+  
 
 ## About GraphJin
 
@@ -162,9 +203,6 @@ With GraphJin your web and mobile developers can start building instantly. All t
 - Highly scalable and fast
 - Instant Hot-deploy and rollbacks
 - Add Custom resolvers
-
-![graphjin-screenshot-final](https://user-images.githubusercontent.com/832235/108806955-1c363180-7571-11eb-8bfa-488ece2e51ae.png)
-
 
 ## Documentation
 
