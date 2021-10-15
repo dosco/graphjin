@@ -17,9 +17,11 @@ var stdFuncs = []string{
 	"variance_",
 	"var_pop_",
 	"var_samp_",
-	"length_",
 	"lower_",
 	"length_",
+	"array_agg_",
+	"json_agg_",
+	"unnest_",
 }
 
 func (co *Compiler) isFunction(sel *Select, fname, alias string) (Function, bool, error) {
