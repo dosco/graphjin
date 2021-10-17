@@ -108,8 +108,10 @@ func (s *service) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 				err = conn.WritePreparedMessage(initMsg)
 			}
 
-			handler, _ := auth.WithAuth(http.HandlerFunc(hfn), &s.conf.Auth, zlog)
-
+			handler, herr := auth.WithAuth(http.HandlerFunc(hfn), &s.conf.Auth, zlog)
+			if herr != nil {
+				err = herr
+			}
 			if err != nil {
 				break
 			}
