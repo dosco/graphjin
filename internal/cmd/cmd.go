@@ -74,7 +74,8 @@ func setupAgain(cpath string) {
 		log.Fatal(err)
 	}
 
-	if conf, err = serv.ReadInConfig(path.Join(cp, GetConfigName())); err != nil {
+	cn := serv.GetConfigName()
+	if conf, err = serv.ReadInConfig(path.Join(cp, cn)); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -92,30 +93,6 @@ func initDB(openDB bool) {
 		log.Fatalf("Failed to connect to database: %s", err)
 	}
 	dbOpened = openDB
-}
-
-func GetConfigName() string {
-	if os.Getenv("GO_ENV") == "" {
-		return "dev"
-	}
-
-	ge := strings.ToLower(os.Getenv("GO_ENV"))
-
-	switch {
-	case strings.HasPrefix(ge, "pro"):
-		return "prod"
-
-	case strings.HasPrefix(ge, "sta"):
-		return "stage"
-
-	case strings.HasPrefix(ge, "tes"):
-		return "test"
-
-	case strings.HasPrefix(ge, "dev"):
-		return "dev"
-	}
-
-	return ge
 }
 
 func fatalInProd(err error) {
