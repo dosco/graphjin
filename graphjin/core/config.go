@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"log"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -447,4 +448,28 @@ func newViper(configPath, configFile string) *viper.Viper {
 	}
 
 	return vi
+}
+
+func GetConfigName() string {
+	if os.Getenv("GO_ENV") == "" {
+		return "dev"
+	}
+
+	ge := strings.ToLower(os.Getenv("GO_ENV"))
+
+	switch {
+	case strings.HasPrefix(ge, "pro"):
+		return "prod"
+
+	case strings.HasPrefix(ge, "sta"):
+		return "stage"
+
+	case strings.HasPrefix(ge, "tes"):
+		return "test"
+
+	case strings.HasPrefix(ge, "dev"):
+		return "dev"
+	}
+
+	return ge
 }

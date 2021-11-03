@@ -344,3 +344,7 @@ func (c *Config) SetName(name string) {
 func (c *Config) rateLimiterEnable() bool {
 	return c.RateLimiter.Rate > 0 && c.RateLimiter.Bucket > 0
 }
+
+func GetConfigName() string {
+	return core.GetConfigName()
+}
