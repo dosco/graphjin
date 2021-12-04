@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"time"
 
@@ -87,14 +88,15 @@ func adminRollbackHandler(s1 *Service) http.Handler {
 }
 
 func (s *service) isAdminSecret(r *http.Request) bool {
-	time.Sleep(3 * time.Second)
+	//#nosec G404
+	time.Sleep(time.Duration(rand.Intn(4000-2000)+2000) * time.Millisecond)
 
-	hv := r.Header["Authorization"]
-	if len(hv) == 0 || len(hv[0]) < 10 {
+	hv := r.Header.Get("Authorization")
+	if hv == "" {
 		return false
 	}
 
-	v1, err := base64.StdEncoding.DecodeString(hv[0][7:])
+	v1, err := base64.StdEncoding.DecodeString(hv[7:])
 	return (err == nil) && bytes.Equal(v1, s.asec[:])
 }
 

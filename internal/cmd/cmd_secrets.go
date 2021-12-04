@@ -40,7 +40,7 @@ For more information, see the README at github.com/mozilla/sops`
 
 func cmdSecrets() *cobra.Command {
 	c := &cobra.Command{
-		Use:     "secrets [options] secrets-file.yml",
+		Use:     "secrets [options]",
 		Short:   "Secure key managament (AWS KMS, GCP KMS, Azure Key Vault & GPG)",
 		Long:    sopsHelp,
 		Version: version.Version,
@@ -81,7 +81,9 @@ func cmdSecrets() *cobra.Command {
 	// }
 
 	var sa secrets.Args
+	var secretsFile string
 
+	c.PersistentFlags().StringVar(&secretsFile, "secrets-file", "", "Path to the secrets file")
 	c.PersistentFlags().StringVar(&sa.KMS, "kms", "", "Comma separated list of KMS ARNs")
 	c.PersistentFlags().StringVar(&sa.KMSC, "kms-context", "", "Comma separated list of KMS encryption context key:value pairs")
 	c.PersistentFlags().StringVar(&sa.AWS, "aws-profile", "", "The AWS profile to use for requests to AWS")
@@ -90,15 +92,25 @@ func cmdSecrets() *cobra.Command {
 	c.PersistentFlags().StringVar(&sa.PGP, "pgp", "", "Comma separated list of PGP fingerprints")
 
 	c.RunE = func(cmd *cobra.Command, args []string) error {
-		setup(cpath)
 
-		if conf.SecretsFile == "" {
-			return fmt.Errorf("no secrets_file defined in the config")
+		var fileName string
+		var err error
+
+		if secretsFile != "" {
+			fileName, err = filepath.Abs(secretsFile)
+		} else {
+			setup(cpath)
+			if conf.SecretsFile != "" {
+				fileName, err = filepath.Abs(conf.RelPath(conf.SecretsFile))
+			}
 		}
 
-		fileName, err := filepath.Abs(conf.RelPath(conf.SecretsFile))
 		if err != nil {
 			return err
+		}
+
+		if fileName == "" {
+			return fmt.Errorf("no secrets_file defined in the config or specified using the --secrets-file flag")
 		}
 
 		return secrets.Run(cmd.Name(), fileName, sa, args, log)
