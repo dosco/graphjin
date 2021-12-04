@@ -7,11 +7,12 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/dosco/graphjin/core"
 	"github.com/dosco/graphjin/serv/internal/rails"
-	"github.com/garyburd/redigo/redis"
+	"github.com/gomodule/redigo/redis"
 )
 
 func RailsHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
@@ -57,6 +58,13 @@ func RailsRedisHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
 
 			return c, nil
 		},
+		TestOnBorrow: func(c redis.Conn, t time.Time) error {
+			if time.Since(t) < (time.Second * 30) {
+				return nil
+			}
+			_, err := c.Do("PING")
+			return err
+		},
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) (context.Context, error) {
@@ -65,8 +73,11 @@ func RailsRedisHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
 			return nil, err
 		}
 
+		re := rp.Get()
+		defer re.Close()
+
 		key := fmt.Sprintf("session:%s", ck.Value)
-		sessionData, err := redis.Bytes(rp.Get().Do("GET", key))
+		sessionData, err := redis.Bytes(re.Do("GET", key))
 		if err != nil {
 			return nil, err
 		}

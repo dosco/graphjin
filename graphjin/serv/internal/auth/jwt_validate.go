@@ -2,6 +2,7 @@
 
 package auth
 
+/*
 import (
 	"fmt"
 
@@ -32,3 +33,4 @@ func validateJWT(tok, aud, iss string, keyFunc jwt.Keyfunc) (jwt.MapClaims, erro
 	}
 	return nil, fmt.Errorf("invalid claims")
 }
+*/
