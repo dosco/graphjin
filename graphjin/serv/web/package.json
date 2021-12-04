@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "dependencies": {
-    "graphiql": "^1.4.0",
+    "graphiql": "^1.4.7",
     "graphiql-explorer": "^0.6.2",
     "graphql": "^15.6.0",
     "graphql-language-service-utils": "^2.5.3",
