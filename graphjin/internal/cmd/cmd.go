@@ -2,11 +2,8 @@ package cmd
 
 import (
 	"database/sql"
-	"os"
 	"path"
 	"path/filepath"
-	"strings"
-	"sync"
 
 	"github.com/dosco/graphjin/internal/util"
 	"github.com/dosco/graphjin/serv"
@@ -93,21 +90,4 @@ func initDB(openDB bool) {
 		log.Fatalf("Failed to connect to database: %s", err)
 	}
 	dbOpened = openDB
-}
-
-func fatalInProd(err error) {
-	var wg sync.WaitGroup
-
-	if isDev() {
-		log.Error(err)
-	} else {
-		log.Fatal(err)
-	}
-
-	wg.Add(1)
-	wg.Wait()
-}
-
-func isDev() bool {
-	return strings.HasPrefix(os.Getenv("GO_ENV"), "dev")
 }

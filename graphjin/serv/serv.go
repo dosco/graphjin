@@ -130,7 +130,7 @@ func startHTTP(s1 *Service) {
 
 	l, err := net.Listen("tcp", s.conf.hostPort)
 	if err != nil {
-		s.log.Fatalf("c: %s", err)
+		s.log.Fatalf("failed to init port: %s", err)
 	}
 
 	// signal we are open for business.

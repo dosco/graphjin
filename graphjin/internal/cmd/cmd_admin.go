@@ -21,7 +21,7 @@ func deployCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "deploy",
 		Short: "Hot-deploy new config or rollback the active config",
-		Run:   cmdDeploy(),
+		Run:   cmdDeploy,
 	}
 	c.PersistentFlags().StringVar(&host, "host", "", "URL of the GraphJin service")
 	c.PersistentFlags().StringVar(&name, "name", "", "Set a custom name for the deployment")
@@ -30,7 +30,7 @@ func deployCmd() *cobra.Command {
 	c1 := &cobra.Command{
 		Use:   "rollback",
 		Short: "Rollback to the previous active config",
-		Run:   cmdRollback(),
+		Run:   cmdRollback,
 	}
 	c.AddCommand(c1)
 
@@ -41,65 +41,59 @@ func initCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "init",
 		Short: "Setup the admin database used for hot-depoly, etc",
-		Run:   cmdInit(),
+		Run:   cmdInit,
 	}
 	return c
 }
 
-func cmdInit() func(*cobra.Command, []string) {
-	return func(cmd *cobra.Command, args []string) {
-		setup(cpath)
-		initDB(true)
+func cmdInit(cmd *cobra.Command, args []string) {
+	setup(cpath)
+	initDB(true)
 
-		if err := serv.InitAdmin(db, conf.DBType); err != nil {
-			log.Fatal(err)
-		}
+	if err := serv.InitAdmin(db, conf.DBType); err != nil {
+		log.Fatal(err)
+	}
 
-		log.Infof("init successful: %s", name)
+	log.Infof("init successful: %s", name)
+}
+
+func cmdDeploy(cmd *cobra.Command, args []string) {
+	if host == "" {
+		log.Fatalf("--host is a required argument")
+	}
+
+	if secret == "" {
+		log.Fatalf("--secret is a required argument")
+	}
+
+	if name == "" {
+		// #nosec G404
+		name = slug.Make(fmt.Sprintf("%s-%d", gofakeit.Name(), rand.Intn(9)))
+	}
+
+	c := client.NewClient(host, secret)
+
+	if res, err := c.Deploy(name, "./config"); err != nil {
+		log.Fatal(err)
+	} else {
+		log.Infof(res.Msg)
 	}
 }
 
-func cmdDeploy() func(*cobra.Command, []string) {
-	return func(cmd *cobra.Command, args []string) {
-		if host == "" {
-			log.Fatalf("--host is a required argument")
-		}
-
-		if secret == "" {
-			log.Fatalf("--secret is a required argument")
-		}
-
-		if name == "" {
-			// #nosec G404
-			name = slug.Make(fmt.Sprintf("%s-%d", gofakeit.Name(), rand.Intn(9)))
-		}
-
-		c := client.NewClient(host, secret)
-
-		if res, err := c.Deploy(name, "./config"); err != nil {
-			log.Fatal(err)
-		} else {
-			log.Infof(res.Msg)
-		}
+func cmdRollback(cmd *cobra.Command, args []string) {
+	if host == "" {
+		log.Fatalf("--host is a required argument")
 	}
-}
 
-func cmdRollback() func(*cobra.Command, []string) {
-	return func(cmd *cobra.Command, args []string) {
-		if host == "" {
-			log.Fatalf("--host is a required argument")
-		}
+	if name != "" {
+		log.Fatalf("--name not supported with rollback")
+	}
 
-		if name != "" {
-			log.Fatalf("--name not supported with rollback")
-		}
+	c := client.NewClient(host, secret)
 
-		c := client.NewClient(host, secret)
-
-		if res, err := c.Rollback(); err != nil {
-			log.Fatal(err)
-		} else {
-			log.Infof(res.Msg)
-		}
+	if res, err := c.Rollback(); err != nil {
+		log.Fatal(err)
+	} else {
+		log.Infof(res.Msg)
 	}
 }

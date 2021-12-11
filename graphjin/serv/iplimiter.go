@@ -53,7 +53,7 @@ func rateLimiter(s1 *Service, h http.Handler) http.Handler {
 		} else {
 			ip, _, err = net.SplitHostPort(r.RemoteAddr)
 			if err != nil {
-				s.zlog.Error("Rate limiter (Remote IP)", []zapcore.Field{zap.Error(err)}...)
+				s.zlog.Error("Rate Limiter", []zapcore.Field{zap.Error(err)}...)
 				return
 			}
 		}

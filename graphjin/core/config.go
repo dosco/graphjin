@@ -451,25 +451,22 @@ func newViper(configPath, configFile string) *viper.Viper {
 }
 
 func GetConfigName() string {
-	if os.Getenv("GO_ENV") == "" {
-		return "dev"
-	}
+	ge := strings.TrimSpace(strings.ToLower(os.Getenv("GO_ENV")))
 
-	ge := strings.ToLower(os.Getenv("GO_ENV"))
-
-	switch {
-	case strings.HasPrefix(ge, "pro"):
+	switch ge {
+	case "production", "prod":
 		return "prod"
 
-	case strings.HasPrefix(ge, "sta"):
+	case "staging", "stage":
 		return "stage"
 
-	case strings.HasPrefix(ge, "tes"):
+	case "testing", "test":
 		return "test"
 
-	case strings.HasPrefix(ge, "dev"):
+	case "development", "dev", "":
 		return "dev"
-	}
 
-	return ge
+	default:
+		return ge
+	}
 }

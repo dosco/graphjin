@@ -25,31 +25,29 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func cmdDBSeed() func(*cobra.Command, []string) {
-	return func(cmd *cobra.Command, args []string) {
-		setup(cpath)
-		initDB(true)
+func cmdDBSeed(cmd *cobra.Command, args []string) {
+	setup(cpath)
+	initDB(true)
 
-		if conf.DB.Type == "mysql" {
-			log.Fatalf("Seed scripts not support with MySQL")
-		}
-
-		conf.Serv.Production = false
-		conf.DefaultBlock = false
-		conf.DisableAllowList = true
-		conf.DBSchemaPollDuration = -1
-
-		conf.Core.Blocklist = nil
-		seed := path.Join(cpath, "seed.js")
-
-		log.Infof("Seed script started (please wait)")
-
-		if err := compileAndRunJS(seed, db); err != nil {
-			log.Fatalf("Failed to execute seed file %s: %s", seed, err)
-		}
-
-		log.Infof("Seed script completed")
+	if conf.DB.Type == "mysql" {
+		log.Fatalf("Seed scripts not support with MySQL")
 	}
+
+	conf.Serv.Production = false
+	conf.DefaultBlock = false
+	conf.DisableAllowList = true
+	conf.DBSchemaPollDuration = -1
+
+	conf.Core.Blocklist = nil
+	seed := path.Join(cpath, "seed.js")
+
+	log.Infof("Seed script started (please wait)")
+
+	if err := compileAndRunJS(seed, db); err != nil {
+		log.Fatalf("Failed to execute seed file %s: %s", seed, err)
+	}
+
+	log.Infof("Seed script completed")
 }
 
 func compileAndRunJS(seed string, db *sql.DB) error {
