@@ -172,7 +172,7 @@ func (s *service) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 				zap.String("msg_type", msg.Type),
 				zap.Error(errors.New("unknown message type")),
 			}
-			s.zlog.Error("subscription error", fields...)
+			s.zlog.Error("Subscription", fields...)
 		}
 
 		if err != nil {
@@ -182,7 +182,7 @@ func (s *service) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		s.zlog.Error("subscription error", []zapcore.Field{zap.Error(err)}...)
+		s.zlog.Error("Subscription", []zapcore.Field{zap.Error(err)}...)
 	}
 
 	m.Unsubscribe()
@@ -233,7 +233,7 @@ func (s *service) waitForData(done chan bool, conn *ws.Conn, m *core.Member, req
 		}
 	}
 
-	if err != nil && isDev() {
+	if err != nil {
 		s.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
 	}
 }

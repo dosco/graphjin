@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/avast/retry-go"
 	"github.com/dosco/graphjin/core/internal/psql"
 	"github.com/dosco/graphjin/core/internal/qcode"
 	"github.com/dosco/graphjin/core/internal/sdata"
@@ -195,7 +196,7 @@ func (gj *graphjin) executeRoleQuery(c context.Context, conn *sql.Conn, md psql.
 	}
 
 	if ar, err = gj.argList(c, md, vars, rc); err != nil {
-		return "", err
+		return "", retry.Unrecoverable(err)
 	}
 
 	err = conn.QueryRowContext(c, gj.roleStmt, ar.values...).Scan(&role)
@@ -203,7 +204,19 @@ func (gj *graphjin) executeRoleQuery(c context.Context, conn *sql.Conn, md psql.
 }
 
 func (c *gcontext) execQuery(qr queryReq, role string) (queryResp, error) {
-	res, err := c.resolveSQL(qr, role)
+	var res queryResp
+	var err error
+
+	err = retry.Do(
+		func() error {
+			res, err = c.resolveSQL(qr, role)
+			return err
+		},
+		retry.Context(c),
+		retry.Attempts(3),
+		retry.LastErrorOnly(true),
+	)
+
 	if err != nil {
 		return res, err
 	}
@@ -261,27 +274,27 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 	}
 
 	if res.qc, err = c.gj.compileQuery(qr, res.role); err != nil {
-		return res, err
+		return res, retry.Unrecoverable(err)
 	}
 
 	scriptName := res.qc.st.qc.Script
 
 	if scriptName != "" {
 		if err := c.loadScript(scriptName); err != nil {
-			return res, err
+			return res, retry.Unrecoverable(err)
 		}
 	}
 
 	if c.sc != nil && c.sc.ReqFunc != nil {
 		qr.vars, err = c.scriptCallReq(qr.vars, res.qc.st.role.Name)
 		if err != nil {
-			return res, err
+			return res, retry.Unrecoverable(err)
 		}
 	}
 
 	args, err := c.gj.argList(c, res.qc.st.md, qr.vars, c.rc)
 	if err != nil {
-		return res, err
+		return res, retry.Unrecoverable(err)
 	}
 
 	// var stime time.Time
@@ -293,14 +306,14 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 	row := conn.QueryRowContext(c, res.qc.st.sql, args.values...)
 
 	if err := row.Scan(&res.data); err == sql.ErrNoRows {
-		return res, err
+		return res, nil
 	} else if err != nil {
 		return res, err
 	}
 
 	cur, err := c.gj.encryptCursor(res.qc.st.qc, res.data)
 	if err != nil {
-		return res, err
+		return res, retry.Unrecoverable(err)
 	}
 
 	res.data = cur.data
@@ -308,7 +321,7 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 	if !c.gj.prod && c.gj.allowList != nil {
 		err := c.gj.allowList.Set(qr.vars, string(qr.query), res.qc.st.qc.Metadata)
 		if err != nil {
-			return res, err
+			return res, retry.Unrecoverable(err)
 		}
 	}
 

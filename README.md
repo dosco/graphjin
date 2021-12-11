@@ -133,11 +133,11 @@ import (
 
 gj, err := serv.NewGraphJinService(conf, opt...)
 if err != nil {
- fatalInProd(err)
+ return err
 }
 
 if err := gj.Start(); err != nil {
- fatalInProd(err)
+ return err
 }
 ```
 

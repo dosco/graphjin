@@ -17,114 +17,112 @@ func newCmd() *cobra.Command {
 		Use:   "new <app-name>",
 		Short: "Create a new application",
 		Long:  "Generate all the required files to start on a new GraphJin app",
-		Run:   cmdNew(),
+		Run:   cmdNew,
 	}
 	return c
 }
 
-func cmdNew() func(*cobra.Command, []string) {
-	return func(cmd *cobra.Command, args []string) {
-		if len(args) != 1 {
-			cmd.Help() //nolint: errcheck
-			os.Exit(1)
-		}
-
-		tmpl := newTempl(map[string]string{
-			"AppName":     strings.Title(strings.Join(args, " ")),
-			"AppNameSlug": strings.ToLower(strings.Join(args, "_")),
-		})
-
-		// Create app folder and add relevant files
-
-		name := args[0]
-		appPath := path.Join("./", name)
-
-		ifNotExists(appPath, func(p string) error {
-			return os.Mkdir(p, os.ModePerm)
-		})
-
-		ifNotExists(path.Join(appPath, "Dockerfile"), func(p string) error {
-			if v, err := tmpl.get("Dockerfile"); err == nil {
-				return ioutil.WriteFile(p, v, 0600)
-			} else {
-				return err
-			}
-		})
-
-		ifNotExists(path.Join(appPath, "docker-compose.yml"), func(p string) error {
-			if v, err := tmpl.get("docker-compose.yml"); err == nil {
-				return ioutil.WriteFile(p, v, 0600)
-			} else {
-				return err
-			}
-		})
-
-		ifNotExists(path.Join(appPath, "cloudbuild.yaml"), func(p string) error {
-			if v, err := tmpl.get("cloudbuild.yaml"); err == nil {
-				return ioutil.WriteFile(p, v, 0600)
-			} else {
-				return err
-			}
-		})
-
-		// Create app config folder and add relevant files
-
-		appConfigPath := path.Join(appPath, "config")
-
-		ifNotExists(appConfigPath, func(p string) error {
-			return os.Mkdir(p, os.ModePerm)
-		})
-
-		ifNotExists(path.Join(appConfigPath, "dev.yml"), func(p string) error {
-			if v, err := tmpl.get("dev.yml"); err == nil {
-				return ioutil.WriteFile(p, v, 0600)
-			} else {
-				return err
-			}
-		})
-
-		ifNotExists(path.Join(appConfigPath, "prod.yml"), func(p string) error {
-			if v, err := tmpl.get("prod.yml"); err == nil {
-				return ioutil.WriteFile(p, v, 0600)
-			} else {
-				return err
-			}
-		})
-
-		ifNotExists(path.Join(appConfigPath, "seed.js"), func(p string) error {
-			if v, err := tmpl.get("seed.js"); err == nil {
-				return ioutil.WriteFile(p, v, 0600)
-			} else {
-				return err
-			}
-		})
-
-		// Create app migrations folder and add relevant files
-
-		appMigrationsPath := path.Join(appConfigPath, "migrations")
-
-		ifNotExists(appMigrationsPath, func(p string) error {
-			return os.Mkdir(p, os.ModePerm)
-		})
-
-		ifNotExists(path.Join(appMigrationsPath, "0_init.sql"), func(p string) error {
-			if v, err := tmpl.get("0_init.sql"); err == nil {
-				return ioutil.WriteFile(p, v, 0600)
-			} else {
-				return err
-			}
-		})
-
-		// Create folder to hold scripts
-
-		scriptsPath := path.Join(appConfigPath, "scripts")
-
-		ifNotExists(scriptsPath, func(p string) error {
-			return os.Mkdir(p, os.ModePerm)
-		})
-
-		log.Infof("App initialized: %s", name)
+func cmdNew(cmd *cobra.Command, args []string) {
+	if len(args) != 1 {
+		cmd.Help() //nolint: errcheck
+		os.Exit(1)
 	}
+
+	tmpl := newTempl(map[string]string{
+		"AppName":     strings.Title(strings.Join(args, " ")),
+		"AppNameSlug": strings.ToLower(strings.Join(args, "_")),
+	})
+
+	// Create app folder and add relevant files
+
+	name := args[0]
+	appPath := path.Join("./", name)
+
+	ifNotExists(appPath, func(p string) error {
+		return os.Mkdir(p, os.ModePerm)
+	})
+
+	ifNotExists(path.Join(appPath, "Dockerfile"), func(p string) error {
+		if v, err := tmpl.get("Dockerfile"); err == nil {
+			return ioutil.WriteFile(p, v, 0600)
+		} else {
+			return err
+		}
+	})
+
+	ifNotExists(path.Join(appPath, "docker-compose.yml"), func(p string) error {
+		if v, err := tmpl.get("docker-compose.yml"); err == nil {
+			return ioutil.WriteFile(p, v, 0600)
+		} else {
+			return err
+		}
+	})
+
+	ifNotExists(path.Join(appPath, "cloudbuild.yaml"), func(p string) error {
+		if v, err := tmpl.get("cloudbuild.yaml"); err == nil {
+			return ioutil.WriteFile(p, v, 0600)
+		} else {
+			return err
+		}
+	})
+
+	// Create app config folder and add relevant files
+
+	appConfigPath := path.Join(appPath, "config")
+
+	ifNotExists(appConfigPath, func(p string) error {
+		return os.Mkdir(p, os.ModePerm)
+	})
+
+	ifNotExists(path.Join(appConfigPath, "dev.yml"), func(p string) error {
+		if v, err := tmpl.get("dev.yml"); err == nil {
+			return ioutil.WriteFile(p, v, 0600)
+		} else {
+			return err
+		}
+	})
+
+	ifNotExists(path.Join(appConfigPath, "prod.yml"), func(p string) error {
+		if v, err := tmpl.get("prod.yml"); err == nil {
+			return ioutil.WriteFile(p, v, 0600)
+		} else {
+			return err
+		}
+	})
+
+	ifNotExists(path.Join(appConfigPath, "seed.js"), func(p string) error {
+		if v, err := tmpl.get("seed.js"); err == nil {
+			return ioutil.WriteFile(p, v, 0600)
+		} else {
+			return err
+		}
+	})
+
+	// Create app migrations folder and add relevant files
+
+	appMigrationsPath := path.Join(appConfigPath, "migrations")
+
+	ifNotExists(appMigrationsPath, func(p string) error {
+		return os.Mkdir(p, os.ModePerm)
+	})
+
+	ifNotExists(path.Join(appMigrationsPath, "0_init.sql"), func(p string) error {
+		if v, err := tmpl.get("0_init.sql"); err == nil {
+			return ioutil.WriteFile(p, v, 0600)
+		} else {
+			return err
+		}
+	})
+
+	// Create folder to hold scripts
+
+	scriptsPath := path.Join(appConfigPath, "scripts")
+
+	ifNotExists(scriptsPath, func(p string) error {
+		return os.Mkdir(p, os.ModePerm)
+	})
+
+	log.Infof("App initialized: %s", name)
 }
 
 //go:embed tmpl

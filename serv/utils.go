@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
-	"os"
 	"sort"
 	"strings"
 
@@ -97,10 +96,6 @@ func whitespace(b byte) bool {
 
 func alphanum(b byte) bool {
 	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
-}
-
-func isDev() bool {
-	return strings.HasPrefix(os.Getenv("GO_ENV"), "dev")
 }
 
 // Get path relative to cwd
