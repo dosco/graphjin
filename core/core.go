@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
 	"strconv"
 	"time"
@@ -196,7 +197,7 @@ func (gj *graphjin) executeRoleQuery(c context.Context, conn *sql.Conn, md psql.
 	}
 
 	if ar, err = gj.argList(c, md, vars, rc); err != nil {
-		return "", retry.Unrecoverable(err)
+		return "", err
 	}
 
 	err = conn.QueryRowContext(c, gj.roleStmt, ar.values...).Scan(&role)
@@ -213,6 +214,7 @@ func (c *gcontext) execQuery(qr queryReq, role string) (queryResp, error) {
 			return err
 		},
 		retry.Context(c),
+		retry.RetryIf(retryIfDBError),
 		retry.Attempts(3),
 		retry.LastErrorOnly(true),
 	)
@@ -274,27 +276,27 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 	}
 
 	if res.qc, err = c.gj.compileQuery(qr, res.role); err != nil {
-		return res, retry.Unrecoverable(err)
+		return res, err
 	}
 
 	scriptName := res.qc.st.qc.Script
 
 	if scriptName != "" {
 		if err := c.loadScript(scriptName); err != nil {
-			return res, retry.Unrecoverable(err)
+			return res, err
 		}
 	}
 
 	if c.sc != nil && c.sc.ReqFunc != nil {
 		qr.vars, err = c.scriptCallReq(qr.vars, res.qc.st.role.Name)
 		if err != nil {
-			return res, retry.Unrecoverable(err)
+			return res, err
 		}
 	}
 
 	args, err := c.gj.argList(c, res.qc.st.md, qr.vars, c.rc)
 	if err != nil {
-		return res, retry.Unrecoverable(err)
+		return res, err
 	}
 
 	// var stime time.Time
@@ -313,7 +315,7 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 
 	cur, err := c.gj.encryptCursor(res.qc.st.qc, res.data)
 	if err != nil {
-		return res, retry.Unrecoverable(err)
+		return res, err
 	}
 
 	res.data = cur.data
@@ -321,7 +323,7 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 	if !c.gj.prod && c.gj.allowList != nil {
 		err := c.gj.allowList.Set(qr.vars, string(qr.query), res.qc.st.qc.Metadata)
 		if err != nil {
-			return res, retry.Unrecoverable(err)
+			return res, err
 		}
 	}
 
@@ -438,4 +440,8 @@ func (c *gcontext) debugLog(st *stmt) {
 			c.gj.log.Printf("Field skipped, requires $user_id or table not added to anon role: %s", sel.FieldName)
 		}
 	}
+}
+
+func retryIfDBError(err error) bool {
+	return (err == driver.ErrBadConn)
 }

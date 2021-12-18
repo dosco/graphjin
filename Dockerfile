@@ -5,15 +5,13 @@ COPY /serv/web/ ./
 RUN yarn
 RUN yarn build
 
-
-
 # stage: 2
-FROM golang:1.17-buster as go-build
+FROM golang:1.18beta1-bullseye as go-build
 RUN apt-get -y update
 RUN apt-get -y upgrade
 RUN apt-get -y install build-essential git-all jq 
 
-RUN GO111MODULE=off go get -u github.com/rafaelsq/wtc
+RUN go install github.com/rafaelsq/wtc@latest
 
 WORKDIR /app
 COPY . /app
@@ -21,13 +19,11 @@ COPY . /app
 RUN mkdir -p /app/serv/web/build
 COPY --from=react-build /web/build/ ./serv/web/build
 
-RUN go mod vendor
+RUN go mod download
 RUN make build
 # RUN echo "Compressing binary, will take a bit of time..." && \
 #   upx --ultra-brute -qq graphjin && \
 #   upx -t graphjin
-
-
 
 # stage: 3
 FROM alpine:latest
