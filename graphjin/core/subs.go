@@ -351,6 +351,7 @@ func (gj *graphjin) subCheckUpdates(s *sub, mv mval, start int) {
 			return err
 		},
 		retry.Context(c),
+		retry.RetryIf(retryIfDBError),
 		retry.Attempts(3),
 		retry.LastErrorOnly(true),
 	)
@@ -414,6 +415,7 @@ func (gj *graphjin) subFirstQuery(s *sub, m *Member, params json.RawMessage) (mm
 				return err
 			},
 			retry.Context(c),
+			retry.RetryIf(retryIfDBError),
 			retry.Attempts(3),
 			retry.LastErrorOnly(true),
 		)
