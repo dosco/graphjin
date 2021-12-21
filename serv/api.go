@@ -78,6 +78,7 @@ type service struct {
 	state        servState
 	prod         bool
 	deployActive bool
+	adminCount   int32
 }
 
 type Option func(*service) error
