@@ -9,6 +9,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/dosco/graphjin/internal/common"
@@ -88,8 +89,15 @@ func adminRollbackHandler(s1 *Service) http.Handler {
 }
 
 func (s *service) isAdminSecret(r *http.Request) bool {
+	atomic.AddInt32(&s.adminCount, 1)
+	defer atomic.StoreInt32(&s.adminCount, 0)
+
 	//#nosec G404
 	time.Sleep(time.Duration(rand.Intn(4000-2000)+2000) * time.Millisecond)
+
+	if s.adminCount > 2 {
+		return false
+	}
 
 	hv := r.Header.Get("Authorization")
 	if hv == "" {

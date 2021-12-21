@@ -20,15 +20,16 @@ type reqFunc func(map[string]interface{}, string, interface{}) map[string]interf
 type respFunc func(map[string]interface{}, string, interface{}) map[string]interface{}
 
 func (gj *graphjin) initScripting() error {
-	if err := babel.Init(5); err != nil {
-		return err
-	}
 	gj.scripts = sync.Map{}
 	return nil
 }
 
 func (c *gcontext) loadScript(name string) error {
 	var err error
+
+	if err := babel.Init(5); err != nil {
+		return err
+	}
 
 	sv, _ := c.gj.scripts.LoadOrStore(name, &script{})
 	c.sc = sv.(*script)
@@ -67,9 +68,8 @@ func (c *gcontext) scriptCallReq(vars []byte, role string) (_ []byte, err error)
 	defer timer.Stop()
 
 	defer func() {
-		if err1 := recover(); err1 != nil {
-			err = fmt.Errorf("script: %w", err1)
-		}
+		// nolint: errcheck
+		recover()
 	}()
 
 	if err := c.sc.vm.Set("graphql", c.newGraphQLFunc(role)); err != nil {
@@ -116,9 +116,8 @@ func (c *gcontext) scriptCallResp(data []byte, role string) (_ []byte, err error
 	}
 
 	defer func() {
-		if err1 := recover(); err1 != nil {
-			err = fmt.Errorf("script: %w", err1)
-		}
+		// nolint: errcheck
+		recover()
 	}()
 
 	val := c.sc.RespFunc(rj, role, userID)
