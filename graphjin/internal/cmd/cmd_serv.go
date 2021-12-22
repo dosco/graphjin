@@ -3,7 +3,6 @@ package cmd
 import (
 	"path/filepath"
 
-	"github.com/dosco/graphjin/internal/secrets"
 	"github.com/dosco/graphjin/serv"
 	"github.com/spf13/cobra"
 )
@@ -37,7 +36,7 @@ func cmdServ(*cobra.Command, []string) error {
 		if err != nil {
 			return err
 		}
-		if fsec, err = secrets.Init(secFile); err != nil {
+		if fsec, err = initSecrets(secFile); err != nil {
 			return err
 		}
 	}

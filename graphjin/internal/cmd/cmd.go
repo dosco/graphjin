@@ -37,13 +37,13 @@ func Cmd() {
 	rootCmd.AddCommand(newCmd())
 	rootCmd.AddCommand(servCmd())
 	rootCmd.AddCommand(versionCmd())
-
 	rootCmd.AddCommand(initCmd())
 	rootCmd.AddCommand(deployCmd())
-
 	rootCmd.AddCommand(dbCmd())
 
-	rootCmd.AddCommand(cmdSecrets())
+	if v := cmdSecrets(); v != nil {
+		rootCmd.AddCommand()
+	}
 
 	// rootCmd.AddCommand(&cobra.Command{
 	// 	Use:   fmt.Sprintf("conf:dump [%s]", strings.Join(viper.SupportedExts, "|")),
