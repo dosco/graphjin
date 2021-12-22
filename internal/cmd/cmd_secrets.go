@@ -1,3 +1,5 @@
+//go:build !wasm
+
 package cmd
 
 import (
@@ -116,4 +118,8 @@ func cmdSecrets() *cobra.Command {
 		return secrets.Run(cmd.Name(), fileName, sa, args, log)
 	}
 	return c
+}
+
+func initSecrets(secFile string) (bool, error) {
+	return secrets.Init(secFile)
 }
