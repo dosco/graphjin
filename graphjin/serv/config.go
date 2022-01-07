@@ -234,6 +234,7 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 
 	cpath := path.Dir(configFile)
 	cfile := path.Base(configFile)
+
 	vi := newViper(cpath, cfile)
 	if fs != nil {
 		vi.SetFs(fs)
@@ -279,16 +280,44 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 	return c, nil
 }
 
-func newViper(configPath, configFile string) *viper.Viper {
+func NewConfig(config, format string) (*Config, error) {
+	if format == "" {
+		format = "yaml"
+	}
+
+	// migrate old sg var prefixes to new gj prefixes
+	for _, e := range os.Environ() {
+		if !strings.HasPrefix(e, "SG_") {
+			continue
+		}
+		v := strings.SplitN(e, "=", 2)
+		if err := os.Setenv(("GJ_" + v[0][3:]), v[1]); err != nil {
+			return nil, err
+		}
+	}
+
+	vi := newViperWithDefaults()
+	vi.SetConfigType(format)
+
+	if err := vi.ReadConfig(strings.NewReader(config)); err != nil {
+		return nil, err
+	}
+
+	c := &Config{vi: vi}
+
+	if err := vi.Unmarshal(&c); err != nil {
+		return nil, fmt.Errorf("failed to decode config, %v", err)
+	}
+
+	return c, nil
+}
+
+func newViperWithDefaults() *viper.Viper {
 	vi := viper.New()
 
 	vi.SetEnvPrefix("GJ")
 	vi.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	vi.AutomaticEnv()
-
-	vi.AddConfigPath(configPath)
-	vi.SetConfigName(configFile)
-	vi.AddConfigPath("./config")
 
 	vi.SetDefault("host_port", "0.0.0.0:8080")
 	vi.SetDefault("web_ui", false)
@@ -319,6 +348,18 @@ func newViper(configPath, configFile string) *viper.Viper {
 	vi.SetDefault("auth.creds_in_header", false)
 	vi.SetDefault("auth.subs_creds_in_vars", false)
 
+	return vi
+}
+
+func newViper(configPath, configFile string) *viper.Viper {
+	vi := newViperWithDefaults()
+	vi.SetConfigName(configFile)
+
+	if configPath == "" {
+		vi.AddConfigPath("./config")
+	} else {
+		vi.AddConfigPath(configPath)
+	}
 	return vi
 }
 
