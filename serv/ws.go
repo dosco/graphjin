@@ -4,38 +4,34 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/dosco/graphjin/core"
-	"github.com/dosco/graphjin/serv/internal/auth"
-	ws "github.com/gorilla/websocket"
+	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
-type gqlWsReq struct {
-	ID      string `json:"id"`
-	Type    string `json:"type"`
-	Payload gqlReq `json:"payload"`
+type wsReq struct {
+	ID      string          `json:"id"`
+	Type    string          `json:"type,omitempty"`
+	Payload json.RawMessage `json:"payload,omitempty"`
 }
 
-type gqlWsResp struct {
-	ID      string `json:"id"`
-	Type    string `json:"type"`
-	Payload struct {
-		Data   json.RawMessage `json:"data,omitempty"`
-		Errors []core.Error    `json:"errors,omitempty"`
-	} `json:"payload"`
+type wsRes struct {
+	ID      string  `json:"id"`
+	Type    string  `json:"type,omitempty"`
+	Payload Payload `json:"payload"`
 }
 
-type wsConnInit struct {
-	Type    string                 `json:"type,omitempty"`
-	Payload map[string]interface{} `json:"payload,omitempty"`
+type Payload struct {
+	Data   json.RawMessage `json:"data,omitempty"`
+	Errors []core.Error    `json:"errors,omitempty"`
 }
 
-var upgrader = ws.Upgrader{
+var upgrader = websocket.Upgrader{
 	EnableCompression: true,
 	ReadBufferSize:    1024,
 	WriteBufferSize:   1024,
@@ -44,15 +40,15 @@ var upgrader = ws.Upgrader{
 	CheckOrigin:       func(r *http.Request) bool { return true },
 }
 
-var initMsg *ws.PreparedMessage
+var initMsg *websocket.PreparedMessage
 
 func init() {
-	msg, err := json.Marshal(gqlWsReq{ID: "1", Type: "connection_ack"})
+	msg, err := json.Marshal(wsReq{ID: "1", Type: "connection_ack"})
 	if err != nil {
 		panic(err)
 	}
 
-	initMsg, err = ws.NewPreparedMessage(ws.TextMessage, msg)
+	initMsg, err = websocket.NewPreparedMessage(websocket.TextMessage, msg)
 	if err != nil {
 		panic(err)
 	}
@@ -60,123 +56,45 @@ func init() {
 
 func (s *service) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 	var m *core.Member
-	var run bool
-	var zlog *zap.Logger
+	var ready bool
+	var err error
 
-	if s.conf.Core.Debug {
-		zlog = s.zlog
-	}
-
-	ctx := r.Context()
-	conn, err := upgrader.Upgrade(w, r, nil)
+	ct := r.Context()
+	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		renderErr(w, err)
 		return
 	}
-	defer conn.Close()
-	conn.SetReadLimit(2048)
+	defer c.Close()
+	c.SetReadLimit(2048)
 
-	var msg gqlWsReq
-	var b []byte
+	var v wsReq
 
 	done := make(chan bool)
 	for {
-		if _, b, err = conn.ReadMessage(); err != nil {
-			s.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
+		var b []byte
+
+		if _, b, err = c.ReadMessage(); err != nil {
 			break
 		}
 
-		if err = json.Unmarshal(b, &msg); err != nil {
-			s.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
-			continue
+		if err = json.Unmarshal(b, &v); err != nil {
+			break
 		}
 
-		switch msg.Type {
-		case "connection_init":
-			var initReq wsConnInit
-
-			d := json.NewDecoder(bytes.NewReader(b))
-			d.UseNumber()
-
-			if err = d.Decode(&initReq); err != nil {
-				s.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
-				break
+		if ready {
+			if v.Type != "connection_terminate" &&
+				v.Type != "stop" &&
+				v.Type != "complete" {
+				err = fmt.Errorf("unknown message type: %s", v.Type)
 			}
-
-			hfn := func(writer http.ResponseWriter, request *http.Request) {
-				ctx = request.Context()
-				err = conn.WritePreparedMessage(initMsg)
-			}
-
-			handler, herr := auth.WithAuth(http.HandlerFunc(hfn), &s.conf.Auth, zlog)
-			if herr != nil {
-				err = herr
-			}
-			if err != nil {
-				break
-			}
-
-			for k, v := range initReq.Payload {
-				switch v1 := v.(type) {
-				case string:
-					r.Header.Set(k, v1)
-				case json.Number:
-					r.Header.Set(k, v1.String())
-				}
-			}
-			handler.ServeHTTP(w, r)
-
-		case "start", "subscribe":
-			if run {
-				continue
-			}
-
-			if s.conf.Serv.Auth.SubsCredsInVars {
-				type authHeaders struct {
-					UserIDProvider string      `json:"X-User-ID-Provider"`
-					UserRole       string      `json:"X-User-Role"`
-					UserID         interface{} `json:"X-User-ID"`
-				}
-				var x authHeaders
-				if err = json.Unmarshal(msg.Payload.Vars, &x); err == nil {
-					if x.UserIDProvider != "" {
-						ctx = context.WithValue(ctx, core.UserIDProviderKey, x.UserIDProvider)
-					}
-					if x.UserRole != "" {
-						ctx = context.WithValue(ctx, core.UserRoleKey, x.UserRole)
-					}
-					if x.UserID != nil {
-						ctx = context.WithValue(ctx, core.UserIDKey, x.UserID)
-					}
-				}
-			}
-
-			m, err = s.gj.Subscribe(ctx, msg.Payload.Query, msg.Payload.Vars, nil)
-			if err == nil {
-				go s.waitForData(done, conn, m, msg)
-				run = true
-			}
-
-		case "stop":
-			m.Unsubscribe()
-			done <- true
-			run = false
-
-		case "connection_terminate":
-			m.Unsubscribe()
-			done <- true
-			return
-
-		default:
-			fields := []zapcore.Field{
-				zap.String("msg_type", msg.Type),
-				zap.Error(errors.New("unknown message type")),
-			}
-			s.zlog.Error("Subscription", fields...)
+			break
 		}
 
-		if err != nil {
-			err = sendError(conn, err, msg.ID)
+		if ready, err = s.subSwitch(ct, c, v, done); err != nil {
+			if err1 := sendError(ct, c, err, v.ID); err1 != nil {
+				err = err1
+			}
 			break
 		}
 	}
@@ -189,8 +107,99 @@ func (s *service) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 	done <- true
 }
 
-func (s *service) waitForData(done chan bool, conn *ws.Conn, m *core.Member, req gqlWsReq) {
+func (s *service) subSwitch(
+	ct context.Context, c *websocket.Conn, v wsReq, done chan bool) (bool, error) {
+
+	switch v.Type {
+	case "connection_init":
+		if err := c.WritePreparedMessage(initMsg); err != nil {
+			return false, err
+		}
+
+		/*
+			hfn := func(w http.ResponseWriter, r *http.Request) {
+				if err := c.WritePreparedMessage(initMsg); err != nil {
+					s.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
+				}
+				ct = r.Context()
+			}
+
+			handler, err := auth.WithAuth(http.HandlerFunc(hfn), &s.conf.Auth, s.zlog)
+			if err != nil {
+				return false, err
+			}
+
+			if len(v.Payload) == 0 {
+				handler.ServeHTTP(w, r)
+				break
+			}
+
+			var p map[string]interface{}
+			if err := json.Unmarshal(v.Payload, &p); err != nil {
+				s.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
+				break
+			}
+
+			for k, v := range p {
+				switch v1 := v.(type) {
+				case string:
+					r.Header.Set(k, v1)
+				case json.Number:
+					r.Header.Set(k, v1.String())
+				}
+			}
+			handler.ServeHTTP(w, r)
+		*/
+
+	case "start", "subscribe":
+		var p gqlReq
+		if err := json.Unmarshal(v.Payload, &p); err != nil {
+			return false, err
+		}
+
+		if s.conf.Serv.Auth.SubsCredsInVars {
+			type authHeaders struct {
+				UserIDProvider string      `json:"X-User-ID-Provider"`
+				UserRole       string      `json:"X-User-Role"`
+				UserID         interface{} `json:"X-User-ID"`
+			}
+
+			var x authHeaders
+			if err := json.Unmarshal(p.Vars, &x); err == nil {
+				if x.UserIDProvider != "" {
+					ct = context.WithValue(ct, core.UserIDProviderKey, x.UserIDProvider)
+				}
+				if x.UserRole != "" {
+					ct = context.WithValue(ct, core.UserRoleKey, x.UserRole)
+				}
+				if x.UserID != nil {
+					ct = context.WithValue(ct, core.UserIDKey, x.UserID)
+				}
+			} else {
+				return false, err
+			}
+		}
+
+		m, err := s.gj.Subscribe(ct, p.Query, p.Vars, nil)
+		if err != nil {
+			return false, err
+		}
+
+		go s.waitForData(ct, done, c, m, v)
+		return true, nil
+
+	default:
+		return false, fmt.Errorf("unknown message type: %s", v.Type)
+	}
+
+	return false, nil
+}
+
+func (s *service) waitForData(
+	ct context.Context, done chan bool, c *websocket.Conn,
+	m *core.Member, req wsReq) {
 	var buf bytes.Buffer
+
 	var ptype string
 	var err error
 
@@ -205,22 +214,17 @@ func (s *service) waitForData(done chan bool, conn *ws.Conn, m *core.Member, req
 	for {
 		select {
 		case v := <-m.Result:
-			res := gqlWsResp{ID: req.ID, Type: ptype}
-			res.Payload.Data = v.Data
+			m := wsRes{ID: req.ID, Type: ptype}
+			m.Payload.Data = v.Data
+			m.Payload.Errors = v.Errors
 
-			if len(v.Errors) != 0 {
-				res.Payload.Errors = v.Errors
-			}
-
-			if err = enc.Encode(res); err != nil {
-				continue
+			if err = enc.Encode(m); err != nil {
+				break
 			}
 			msg := buf.Bytes()
 			buf.Reset()
 
-			if err = conn.WriteMessage(ws.TextMessage, msg); err != nil {
-				continue
-			}
+			err = c.WriteMessage(websocket.TextMessage, msg)
 		case v := <-done:
 			if v {
 				return
@@ -228,25 +232,24 @@ func (s *service) waitForData(done chan bool, conn *ws.Conn, m *core.Member, req
 		}
 
 		if err != nil {
-			err = sendError(conn, err, req.ID)
+			if err1 := sendError(ct, c, err, req.ID); err != nil {
+				err = err1
+			}
+			s.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
 			break
 		}
 	}
-
-	if err != nil {
-		s.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
-	}
 }
 
-func sendError(conn *ws.Conn, err error, id string) error {
-	res := gqlWsResp{ID: id, Type: "error"}
-	res.Payload.Errors = []core.Error{{Message: err.Error()}}
+func sendError(ct context.Context, c *websocket.Conn, err error, id string) error {
+	m := wsRes{ID: id, Type: "error"}
+	m.Payload.Errors = []core.Error{{Message: err.Error()}}
 
-	msg, err := json.Marshal(res)
+	msg, err := json.Marshal(m)
 	if err != nil {
 		return err
 	}
-	if err := conn.WriteMessage(ws.TextMessage, msg); err != nil {
+	if err := c.WriteMessage(websocket.TextMessage, msg); err != nil {
 		return err
 	}
 	return nil

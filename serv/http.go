@@ -89,17 +89,17 @@ func (s1 *Service) apiV1() http.Handler {
 		s := s1.Load().(*service)
 		start := time.Now()
 
-		if websocket.IsWebSocketUpgrade(r) {
-			s.apiV1Ws(w, r)
-			return
-		}
-
 		ct := r.Context()
 		w.Header().Set("Content-Type", "application/json")
 
 		//nolint: errcheck
 		if s.conf.AuthFailBlock && !auth.IsAuth(ct) {
 			renderErr(w, errUnauthorized)
+			return
+		}
+
+		if websocket.IsWebSocketUpgrade(r) {
+			s.apiV1Ws(w, r)
 			return
 		}
 
