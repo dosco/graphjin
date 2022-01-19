@@ -3,7 +3,6 @@ package cmd
 import (
 	"path/filepath"
 
-	"github.com/dosco/graphjin/internal/secrets"
 	"github.com/dosco/graphjin/serv"
 	"github.com/spf13/cobra"
 )
@@ -17,43 +16,42 @@ func servCmd() *cobra.Command {
 		Use:     "serve",
 		Aliases: []string{"serv"},
 		Short:   "Run the GraphJin service",
-		Run:     cmdServ(),
+		RunE:    cmdServ,
 	}
 	c.Flags().BoolVar(&deployActive, "deploy-active", false, "Deploy active config")
 	return c
 }
 
-func cmdServ() func(*cobra.Command, []string) {
-	return func(cmd *cobra.Command, args []string) {
-		setup(cpath)
+func cmdServ(*cobra.Command, []string) error {
+	setup(cpath)
 
-		var opt []serv.Option
-		if deployActive {
-			opt = append(opt, serv.OptionDeployActive())
-		}
+	var opt []serv.Option
+	if deployActive {
+		opt = append(opt, serv.OptionDeployActive())
+	}
 
-		var fsec bool
-		if conf.SecretsFile != "" {
-			secFile, err := filepath.Abs(conf.RelPath(conf.SecretsFile))
-			if err != nil {
-				fatalInProd(err)
-			}
-			if fsec, err = secrets.Init(secFile); err != nil {
-				fatalInProd(err)
-			}
-		}
-
-		if fsec {
-			setupAgain(cpath)
-		}
-
-		gj, err := serv.NewGraphJinService(conf, opt...)
+	var fsec bool
+	if conf.SecretsFile != "" {
+		secFile, err := filepath.Abs(conf.RelPath(conf.SecretsFile))
 		if err != nil {
-			fatalInProd(err)
+			return err
 		}
-
-		if err := gj.Start(); err != nil {
-			fatalInProd(err)
+		if fsec, err = initSecrets(secFile); err != nil {
+			return err
 		}
 	}
+
+	if fsec {
+		setupAgain(cpath)
+	}
+
+	gj, err := serv.NewGraphJinService(conf, opt...)
+	if err != nil {
+		return err
+	}
+
+	if err := gj.Start(); err != nil {
+		return err
+	}
+	return nil
 }

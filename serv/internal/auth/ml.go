@@ -2,6 +2,10 @@
 
 package auth
 
+// TODO: Can't add this back in until the magiclabs library removes its
+// btcd and eth dependencies.
+
+/*
 import (
 	"context"
 	"fmt"
@@ -122,3 +126,4 @@ func MagicLinkHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
 		return ctx, nil
 	}, nil
 }
+*/

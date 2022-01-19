@@ -38,7 +38,7 @@ type Resp struct {
 
 func NewClient(host string, secret string) *Client {
 	c := resty.New().
-		SetHostURL(host).
+		SetBaseURL(host).
 		SetHeader("Content-Type", "application/json")
 
 	if secret != "" {

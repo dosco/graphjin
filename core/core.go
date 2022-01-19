@@ -3,10 +3,12 @@ package core
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
 	"strconv"
 	"time"
 
+	"github.com/avast/retry-go"
 	"github.com/dosco/graphjin/core/internal/psql"
 	"github.com/dosco/graphjin/core/internal/qcode"
 	"github.com/dosco/graphjin/core/internal/sdata"
@@ -203,7 +205,20 @@ func (gj *graphjin) executeRoleQuery(c context.Context, conn *sql.Conn, md psql.
 }
 
 func (c *gcontext) execQuery(qr queryReq, role string) (queryResp, error) {
-	res, err := c.resolveSQL(qr, role)
+	var res queryResp
+	var err error
+
+	err = retry.Do(
+		func() error {
+			res, err = c.resolveSQL(qr, role)
+			return err
+		},
+		retry.Context(c),
+		retry.RetryIf(retryIfDBError),
+		retry.Attempts(3),
+		retry.LastErrorOnly(true),
+	)
+
 	if err != nil {
 		return res, err
 	}
@@ -293,7 +308,7 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 	row := conn.QueryRowContext(c, res.qc.st.sql, args.values...)
 
 	if err := row.Scan(&res.data); err == sql.ErrNoRows {
-		return res, err
+		return res, nil
 	} else if err != nil {
 		return res, err
 	}
@@ -425,4 +440,8 @@ func (c *gcontext) debugLog(st *stmt) {
 			c.gj.log.Printf("Field skipped, requires $user_id or table not added to anon role: %s", sel.FieldName)
 		}
 	}
+}
+
+func retryIfDBError(err error) bool {
+	return (err == driver.ErrBadConn)
 }

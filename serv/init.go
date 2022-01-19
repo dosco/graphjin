@@ -3,8 +3,6 @@ package serv
 import (
 	"crypto/sha256"
 	"fmt"
-	"os"
-	"path"
 	"strings"
 
 	// postgres drivers
@@ -49,16 +47,10 @@ func (s *service) initFS() error {
 		return nil
 	}
 
-	var cpath string
 	if s.conf.Serv.ConfigPath == "" {
-		cp, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-		cpath = path.Join(cp, "config")
-	} else {
-		cpath = s.conf.Serv.ConfigPath
+		return nil
 	}
+	cpath := s.conf.Serv.ConfigPath
 
 	s.fs = afero.NewBasePathFs(afero.NewOsFs(), cpath)
 	s.conf.Auth.JWT.SetFS(s.fs)

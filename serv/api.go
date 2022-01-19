@@ -78,6 +78,7 @@ type service struct {
 	state        servState
 	prod         bool
 	deployActive bool
+	adminCount   int32
 }
 
 type Option func(*service) error
@@ -148,7 +149,6 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*service, 
 			return nil, err
 		}
 	}
-
 	if err := s.initFS(); err != nil {
 		return nil, err
 	}

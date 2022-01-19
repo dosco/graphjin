@@ -1,3 +1,5 @@
+//go:build !wasm
+
 package serv
 
 import (
@@ -87,11 +89,25 @@ func startConfigWatcher(s1 *Service) error {
 				continue
 			}
 
+			// Check if new config is valid
+			cf := s.conf.RelPath(GetConfigName())
+			conf, err := readInConfig(cf, nil)
+			if err != nil {
+				s.log.Error(err)
+				continue
+			}
+
+			// Check if new config works fine
+			if _, err := NewGraphJinService(conf, s1.opt...); err != nil {
+				s.log.Error(err)
+				continue
+			}
+
 			// Wait for writes to finish.
 			s.log.Infof("reloading, config file changed: %s", event.Name)
 			time.Sleep(500 * time.Millisecond)
-			err := syscall.Exec(binary, os.Args, os.Environ())
-			if err != nil {
+
+			if err := syscall.Exec(binary, os.Args, os.Environ()); err != nil {
 				s.log.Fatal(err)
 			}
 		}

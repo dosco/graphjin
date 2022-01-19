@@ -3,6 +3,7 @@ package serv
 import (
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	cache "github.com/go-pkgz/expirable-cache"
@@ -30,26 +31,36 @@ func getIPLimiter(ip string, limit float64, bucket int) *rate.Limiter {
 
 func rateLimiter(s1 *Service, h http.Handler) http.Handler {
 	fn := func(w http.ResponseWriter, r *http.Request) {
-		var ip string
+		var iph, ip string
 		var err error
 		s := s1.Load().(*service)
 
 		if s.conf.RateLimiter.IPHeader != "" {
-			ip = r.Header.Get(s.conf.RateLimiter.IPHeader)
+			iph = r.Header.Get(s.conf.RateLimiter.IPHeader)
 		} else {
-			ip = r.Header.Get("X-Remote-Address")
+			iph = r.Header.Get("X-Forwarded-For")
 		}
 
-		if ip == "" {
+		if iph != "" {
+			v := strings.Split(iph, ",")
+			switch n := len(v); {
+			case n > 1:
+				ip = strings.TrimSpace(v[n-2])
+			case n == 1:
+				ip = v[0]
+			}
+
+		} else {
 			ip, _, err = net.SplitHostPort(r.RemoteAddr)
+			if err != nil {
+				s.zlog.Error("Rate Limiter", []zapcore.Field{zap.Error(err)}...)
+				return
+			}
 		}
 
-		if err != nil {
-			s.zlog.Error("Rate limiter (Remote IP)", []zapcore.Field{zap.Error(err)}...)
-			return
-		}
-
-		if !getIPLimiter(ip, s.conf.RateLimiter.Rate, s.conf.RateLimiter.Bucket).Allow() {
+		if !getIPLimiter(ip,
+			s.conf.RateLimiter.Rate,
+			s.conf.RateLimiter.Bucket).Allow() {
 			http.Error(w, "429 Too Many Requests", http.StatusTooManyRequests)
 			return
 		}

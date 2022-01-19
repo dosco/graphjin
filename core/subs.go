@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/avast/retry-go"
 	"github.com/dosco/graphjin/core/internal/qcode"
 	"github.com/rs/xid"
 )
@@ -338,11 +339,22 @@ func (gj *graphjin) subCheckUpdates(s *sub, mv mval, start int) {
 	// codepath that does not use a join query
 	// more details on this optimization are towards the end
 	// of the function
-	if hasParams {
-		rows, err = gj.db.QueryContext(c, s.qc.st.sql, renderJSONArray(mv.params[start:end]))
-	} else {
-		rows, err = gj.db.QueryContext(c, s.qc.st.sql)
-	}
+	err = retry.Do(
+		func() error {
+			if hasParams {
+				//nolint: sqlclosecheck
+				rows, err = gj.db.QueryContext(c, s.qc.st.sql, renderJSONArray(mv.params[start:end]))
+			} else {
+				//nolint: sqlclosecheck
+				rows, err = gj.db.QueryContext(c, s.qc.st.sql)
+			}
+			return err
+		},
+		retry.Context(c),
+		retry.RetryIf(retryIfDBError),
+		retry.Attempts(3),
+		retry.LastErrorOnly(true),
+	)
 
 	if err != nil {
 		gj.log.Printf(errSubs, "query", err)
@@ -384,21 +396,33 @@ func (gj *graphjin) subFirstQuery(s *sub, m *Member, params json.RawMessage) (mm
 	var mm mmsg
 	var err error
 
-	switch {
-	case s.js != nil:
+	if s.js != nil {
 		js = s.js
-	case params != nil:
-		err = gj.db.
-			QueryRowContext(c, s.qc.st.sql, renderJSONArray([]json.RawMessage{params})).
-			Scan(&js)
-	default:
-		err = gj.db.
-			QueryRowContext(c, s.qc.st.sql).
-			Scan(&js)
-	}
 
-	if err != nil {
-		return mm, fmt.Errorf(errSubs, "scan", err)
+	} else {
+		err = retry.Do(
+			func() error {
+				switch {
+				case params != nil:
+					err = gj.db.
+						QueryRowContext(c, s.qc.st.sql, renderJSONArray([]json.RawMessage{params})).
+						Scan(&js)
+				default:
+					err = gj.db.
+						QueryRowContext(c, s.qc.st.sql).
+						Scan(&js)
+				}
+				return err
+			},
+			retry.Context(c),
+			retry.RetryIf(retryIfDBError),
+			retry.Attempts(3),
+			retry.LastErrorOnly(true),
+		)
+
+		if err != nil {
+			return mm, fmt.Errorf(errSubs, "scan", err)
+		}
 	}
 
 	mm, err = gj.subNotifyMemberEx(s,

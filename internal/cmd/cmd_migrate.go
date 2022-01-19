@@ -38,21 +38,21 @@ func migrateCmd() *cobra.Command {
 		Redo previous N steps (migrate backward N steps then forward N steps).
 		e.g. db migrate -+1
 			`,
-		Run: cmdDBMigrate(),
+		Run: cmdDBMigrate,
 	}
 
 	c1 := &cobra.Command{
 		Use:   "new NAME",
 		Short: "Generate a new migration",
 		Long:  "Generate a new migration with the next sequence number and provided name",
-		Run:   cmdMigrateNew(),
+		Run:   cmdMigrateNew,
 	}
 	c.AddCommand(c1)
 
 	c2 := &cobra.Command{
 		Use:   "status",
 		Short: "Print current migration status",
-		Run:   cmdMigrateStatus(),
+		Run:   cmdMigrateStatus,
 	}
 	c.AddCommand(c2)
 
@@ -67,219 +67,212 @@ var newMigrationText = `-- Write your migrate up statements here
 -- Then delete the separator line above.
 `
 
-func cmdDBMigrate() func(*cobra.Command, []string) {
-	return func(cmd *cobra.Command, args []string) {
-		doneSomething := false
+func cmdDBMigrate(cmd *cobra.Command, args []string) {
+	doneSomething := false
 
-		if len(args) == 0 {
-			cmd.Help() //nolint: errcheck
-			os.Exit(1)
-		}
+	if len(args) == 0 {
+		cmd.Help() //nolint: errcheck
+		os.Exit(1)
+	}
 
-		dest := args[0]
+	dest := args[0]
 
-		setup(cpath)
-		initDB(true)
+	setup(cpath)
+	initDB(true)
 
-		if conf.DB.Type == "mysql" {
-			log.Fatal("Migrations not support with MySQL")
-		}
+	if conf.DB.Type == "mysql" {
+		log.Fatal("Migrations not support with MySQL")
+	}
 
-		m, err := migrate.NewMigrator(db, "schema_version")
-		if err != nil {
-			log.Fatalf("Error initializing migrations: %s", err)
-		}
+	m, err := migrate.NewMigrator(db, "schema_version")
+	if err != nil {
+		log.Fatalf("Error initializing migrations: %s", err)
+	}
 
-		m.Data = getMigrationVars(conf)
+	m.Data = getMigrationVars(conf)
 
-		err = m.LoadMigrations(conf.RelPath(conf.MigrationsPath))
-		if err != nil {
-			log.Fatalf("Failed to load migrations: %s", err)
-		}
+	err = m.LoadMigrations(conf.RelPath(conf.MigrationsPath))
+	if err != nil {
+		log.Fatalf("Failed to load migrations: %s", err)
+	}
 
-		if len(m.Migrations) == 0 {
-			log.Fatalf("No migrations found")
-		}
+	if len(m.Migrations) == 0 {
+		log.Fatalf("No migrations found")
+	}
 
-		m.OnStart = func(name, direction, sql string) {
-			var action string
-			if direction == "up" {
-				action = "Migrating: "
-			} else if direction == "down" {
-				action = "Rolling back: "
-			} else {
-				log.Fatalf("Migration direction %s not supported", direction)
-			}
-			log.Infof("%s %s", action, name)
-
-			if conf.Debug {
-				log.Infof("SQL:\n%s", sql)
-			}
-
-			doneSomething = true
-		}
-
-		m.OnFinish = func(name, direction string, durationMs int64) {
-			var action string
-			if direction == "up" {
-				action = "Migrated:  "
-			} else if direction == "down" {
-				action = "Rolled back:  "
-			} else {
-				log.Fatalf("Migration direction %s not supported", direction)
-			}
-			log.Infof("%s %s (%d ms)", action, name, durationMs)
-		}
-
-		m.OnError = func(name string, err error, sql string) {
-			sql = strings.TrimSpace(sql)
-			sql = "> " + strings.ReplaceAll(sql, "\n", "\n> ")
-			log.Infof("Error in %s\n%s\n%s", name, sql, err)
-		}
-
-		currentVersion, err := m.GetCurrentVersion()
-		if err != nil {
-			log.Fatalf("Failed fetching current migrations version: %s", err)
-			log.Fatalf("Unable to get current migration version:\n  %v\n", err)
-		}
-
-		mustParseDestination := func(d string) int32 {
-			var n int64
-			n, err = strconv.ParseInt(d, 10, 32)
-			if err != nil {
-				log.Fatalf("Invalid migration version: %s", err)
-			}
-			return int32(n)
-		}
-
-		if dest == "up" {
-			err = m.Migrate()
-
-		} else if dest == "down" {
-			err = m.MigrateTo(currentVersion - 1)
-
-		} else if len(dest) >= 3 && dest[0:2] == "-+" {
-			err = m.MigrateTo(currentVersion - mustParseDestination(dest[2:]))
-			if err == nil {
-				err = m.MigrateTo(currentVersion)
-			}
-
-		} else if len(dest) >= 2 && dest[0] == '-' {
-			err = m.MigrateTo(currentVersion - mustParseDestination(dest[1:]))
-
-		} else if len(dest) >= 2 && dest[0] == '+' {
-			err = m.MigrateTo(currentVersion + mustParseDestination(dest[1:]))
-
+	m.OnStart = func(name, direction, sql string) {
+		var action string
+		if direction == "up" {
+			action = "Migrating: "
+		} else if direction == "down" {
+			action = "Rolling back: "
 		} else {
-			cmd.Help() //nolint: errcheck
-			os.Exit(1)
+			log.Fatalf("Migration direction %s not supported", direction)
+		}
+		log.Infof("%s %s", action, name)
+
+		if conf.Debug {
+			log.Infof("SQL:\n%s", sql)
 		}
 
+		doneSomething = true
+	}
+
+	m.OnFinish = func(name, direction string, durationMs int64) {
+		var action string
+		if direction == "up" {
+			action = "Migrated:  "
+		} else if direction == "down" {
+			action = "Rolled back:  "
+		} else {
+			log.Fatalf("Migration direction %s not supported", direction)
+		}
+		log.Infof("%s %s (%d ms)", action, name, durationMs)
+	}
+
+	m.OnError = func(name string, err error, sql string) {
+		sql = strings.TrimSpace(sql)
+		sql = "> " + strings.ReplaceAll(sql, "\n", "\n> ")
+		log.Infof("Error in %s\n%s\n%s", name, sql, err)
+	}
+
+	currentVersion, err := m.GetCurrentVersion()
+	if err != nil {
+		log.Fatalf("Failed fetching current migrations version: %s", err)
+		log.Fatalf("Unable to get current migration version:\n  %v\n", err)
+	}
+
+	mustParseDestination := func(d string) int32 {
+		var n int64
+		n, err = strconv.ParseInt(d, 10, 32)
 		if err != nil {
-			log.Fatalf("Error with migrations: %s", err)
+			log.Fatalf("Invalid migration version: %s", err)
+		}
+		return int32(n)
+	}
 
-			// if err, ok := err.(m.MigrationPgError); ok {
-			// 	if err.Detail != "" {
-			// 		log.Fatalf("ERR %s", err.Detail)
-			// 	}
+	if dest == "up" {
+		err = m.Migrate()
 
-			// 	if err.Position != 0 {
-			// 		ele, err := ExtractErrorLine(err.Sql, int(err.Position))
-			// 		if err != nil {
-			// 			log.Fatalf("ERR %s", err)
-			// 		}
+	} else if dest == "down" {
+		err = m.MigrateTo(currentVersion - 1)
 
-			// 		log.Fatalf("INF line %d, %s%s", ele.LineNum, ele.Text)
-			// 	}
-
-			// }
+	} else if len(dest) >= 3 && dest[0:2] == "-+" {
+		err = m.MigrateTo(currentVersion - mustParseDestination(dest[2:]))
+		if err == nil {
+			err = m.MigrateTo(currentVersion)
 		}
 
-		if !doneSomething {
-			log.Infof("Nothing to do")
-		}
+	} else if len(dest) >= 2 && dest[0] == '-' {
+		err = m.MigrateTo(currentVersion - mustParseDestination(dest[1:]))
 
+	} else if len(dest) >= 2 && dest[0] == '+' {
+		err = m.MigrateTo(currentVersion + mustParseDestination(dest[1:]))
+
+	} else {
+		cmd.Help() //nolint: errcheck
+		os.Exit(1)
+	}
+
+	if err != nil {
+		log.Fatalf("Error with migrations: %s", err)
+
+		// if err, ok := err.(m.MigrationPgError); ok {
+		// 	if err.Detail != "" {
+		// 		log.Fatalf("ERR %s", err.Detail)
+		// 	}
+
+		// 	if err.Position != 0 {
+		// 		ele, err := ExtractErrorLine(err.Sql, int(err.Position))
+		// 		if err != nil {
+		// 			log.Fatalf("ERR %s", err)
+		// 		}
+
+		// 		log.Fatalf("INF line %d, %s%s", ele.LineNum, ele.Text)
+		// 	}
+
+		// }
+	}
+
+	if !doneSomething {
+		log.Infof("Nothing to do")
 	}
 }
 
-func cmdMigrateStatus() func(*cobra.Command, []string) {
-	return func(cmd *cobra.Command, args []string) {
-		setup(cpath)
-		initDB(true)
+func cmdMigrateStatus(cmd *cobra.Command, args []string) {
+	setup(cpath)
+	initDB(true)
 
-		if conf.DB.Type == "mysql" {
-			log.Fatal("Migrations not support with MySQL")
-		}
-
-		m, err := migrate.NewMigrator(db, "schema_version")
-		if err != nil {
-			log.Fatalf("Error initializing migrations: %s", err)
-		}
-
-		m.Data = getMigrationVars(conf)
-
-		err = m.LoadMigrations(conf.RelPath(conf.MigrationsPath))
-		if err != nil {
-			log.Fatalf("Failed to load migrations: %s", err)
-		}
-
-		if len(m.Migrations) == 0 {
-			log.Fatal("No migrations found")
-		}
-
-		mver, err := m.GetCurrentVersion()
-		if err != nil {
-			log.Fatalf("Failed to retrieve current migration version: %s", err)
-		}
-
-		var status string
-		behindCount := len(m.Migrations) - int(mver)
-		if behindCount == 0 {
-			status = "up to date"
-		} else {
-			status = "migration(s) pending"
-		}
-
-		log.Infof("Status: %s, version: %d of %d, host: %s, database: %s",
-			status, mver, len(m.Migrations), conf.DB.Host, conf.DB.DBName)
+	if conf.DB.Type == "mysql" {
+		log.Fatal("Migrations not support with MySQL")
 	}
+
+	m, err := migrate.NewMigrator(db, "schema_version")
+	if err != nil {
+		log.Fatalf("Error initializing migrations: %s", err)
+	}
+
+	m.Data = getMigrationVars(conf)
+
+	err = m.LoadMigrations(conf.RelPath(conf.MigrationsPath))
+	if err != nil {
+		log.Fatalf("Failed to load migrations: %s", err)
+	}
+
+	if len(m.Migrations) == 0 {
+		log.Fatal("No migrations found")
+	}
+
+	mver, err := m.GetCurrentVersion()
+	if err != nil {
+		log.Fatalf("Failed to retrieve current migration version: %s", err)
+	}
+
+	var status string
+	behindCount := len(m.Migrations) - int(mver)
+	if behindCount == 0 {
+		status = "up to date"
+	} else {
+		status = "migration(s) pending"
+	}
+
+	log.Infof("Status: %s, version: %d of %d, host: %s, database: %s",
+		status, mver, len(m.Migrations), conf.DB.Host, conf.DB.DBName)
 }
 
-func cmdMigrateNew() func(*cobra.Command, []string) {
-	return func(cmd *cobra.Command, args []string) {
-		if len(args) != 1 {
-			cmd.Help() //nolint: errcheck
-			os.Exit(1)
-		}
-
-		setup(cpath)
-		initDB(false)
-
-		name := args[0]
-		migrationsPath := conf.RelPath(conf.MigrationsPath)
-
-		m, err := migrate.FindMigrations(migrationsPath)
-		if err != nil {
-			log.Fatalf("Error loading migrations: %s", err)
-		}
-
-		mname := fmt.Sprintf("%d_%s.sql", len(m), name)
-
-		// Write new migration
-		mpath := filepath.Join(migrationsPath, mname)
-		mfile, err := os.OpenFile(mpath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-		if err != nil {
-			log.Fatalf("Error creating migration file: %s", err)
-		}
-		defer mfile.Close()
-
-		_, err = mfile.WriteString(newMigrationText)
-		if err != nil {
-			log.Fatalf("Error creating migration file: %s", err)
-		}
-
-		log.Infof("Migration file created: %s", mpath)
+func cmdMigrateNew(cmd *cobra.Command, args []string) {
+	if len(args) != 1 {
+		cmd.Help() //nolint: errcheck
+		os.Exit(1)
 	}
+
+	setup(cpath)
+	initDB(false)
+
+	name := args[0]
+	migrationsPath := conf.RelPath(conf.MigrationsPath)
+
+	m, err := migrate.FindMigrations(migrationsPath)
+	if err != nil {
+		log.Fatalf("Error loading migrations: %s", err)
+	}
+
+	mname := fmt.Sprintf("%d_%s.sql", len(m), name)
+
+	// Write new migration
+	mpath := filepath.Join(migrationsPath, mname)
+	mfile, err := os.OpenFile(mpath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		log.Fatalf("Error creating migration file: %s", err)
+	}
+	defer mfile.Close()
+
+	_, err = mfile.WriteString(newMigrationText)
+	if err != nil {
+		log.Fatalf("Error creating migration file: %s", err)
+	}
+
+	log.Infof("Migration file created: %s", mpath)
 }
 
 type ErrorLineExtract struct {

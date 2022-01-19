@@ -1,4 +1,4 @@
-//nolint:errcheck
+//nolint: errcheck
 package serv
 
 import (
@@ -7,7 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
+	"sync/atomic"
+	"time"
 
 	"github.com/dosco/graphjin/internal/common"
 )
@@ -54,7 +57,7 @@ func adminDeployHandler(s1 *Service) http.Handler {
 		io.WriteString(w, msg)
 	}
 
-	return rateLimiter(s1, http.HandlerFunc(h))
+	return http.HandlerFunc(h)
 }
 
 func adminRollbackHandler(s1 *Service) http.Handler {
@@ -82,15 +85,26 @@ func adminRollbackHandler(s1 *Service) http.Handler {
 		io.WriteString(w, msg)
 	}
 
-	return rateLimiter(s1, http.HandlerFunc(h))
+	return http.HandlerFunc(h)
 }
 
 func (s *service) isAdminSecret(r *http.Request) bool {
-	hv := r.Header["Authorization"]
-	if len(hv) == 0 || len(hv[0]) < 10 {
+	atomic.AddInt32(&s.adminCount, 1)
+	defer atomic.StoreInt32(&s.adminCount, 0)
+
+	//#nosec G404
+	time.Sleep(time.Duration(rand.Intn(4000-2000)+2000) * time.Millisecond)
+
+	if s.adminCount > 2 {
 		return false
 	}
-	v1, err := base64.StdEncoding.DecodeString(hv[0][7:])
+
+	hv := r.Header.Get("Authorization")
+	if hv == "" {
+		return false
+	}
+
+	v1, err := base64.StdEncoding.DecodeString(hv[7:])
 	return (err == nil) && bytes.Equal(v1, s.asec[:])
 }
 
