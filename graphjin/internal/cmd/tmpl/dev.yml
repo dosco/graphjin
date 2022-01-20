@@ -204,11 +204,21 @@ database:
   port: 5432
   dbname: {{ .AppNameSlug -}}_development
   user: postgres
-  password: postgres
-  
+  password: postgres 
   #schema: "public"
-  #pool_size: 10
-  #max_retries: 0
+
+  # Size of database connection pool
+  # pool_size: 15
+
+  # Max number of active database connections allowed
+  # max_connections: 25
+
+  # Max time after which idle database connections are closed
+  # max_connection_idle_time: 5s
+
+  # Max time after which database connections are not reused
+  # max_connection_life_time: 0s
+  
   #log_level: "debug"
 
   # database ping timeout is used for db health checking

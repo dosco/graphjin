@@ -77,27 +77,31 @@ func newDB(
 	}
 
 	for i := 0; ; {
-		if db, err = sql.Open(dc.driverName, dc.connString); err != nil {
-			log.Warnf("database open: %s", err)
-		}
+		if db, err = sql.Open(dc.driverName, dc.connString); err == nil {
+			db.SetMaxIdleConns(conf.DB.PoolSize)
+			db.SetMaxOpenConns(conf.DB.MaxConnections)
+			db.SetConnMaxIdleTime(conf.DB.MaxConnIdleTime)
+			db.SetConnMaxLifetime(conf.DB.MaxConnLifeTime)
 
-		if err = db.Ping(); err != nil {
-			log.Warnf("database ping: %s", err)
+			if err := db.Ping(); err == nil {
+				return db, nil
+			} else {
+				db.Close()
+				log.Warnf("database ping: %s", err)
+			}
+
 		} else {
-			break
+			log.Warnf("database open: %s", err)
 		}
 
 		time.Sleep(time.Duration(i*100) * time.Millisecond)
 
 		if i > 50 {
-			i = 0
+			return nil, err
 		} else {
 			i++
 		}
 	}
-
-	db.SetMaxIdleConns(100)
-	return db, nil
 }
 
 func initTelemetry(conf *Config, driverName string) (string, error) {
