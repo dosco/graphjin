@@ -111,9 +111,21 @@ database:
   dbname: {{ .AppNameSlug -}}_production
   user: postgres
   password: postgres
-  #pool_size: 10
-  #max_retries: 0
-  #log_level: "debug" 
+  #schema: "public"
+
+  # Size of database connection pool
+  # pool_size: 15
+
+  # Max number of active database connections allowed
+  # max_connections: 25
+
+  # Max time after which idle database connections are closed
+  # max_connection_idle_time: 5s
+
+  # Max time after which database connections are not reused
+  # max_connection_life_time: 0s
+  
+  #log_level: "debug"
 
   # database ping timeout is used for db health checking
   ping_timeout: 5m

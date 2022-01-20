@@ -133,21 +133,23 @@ type Serv struct {
 
 // Database config
 type Database struct {
-	Type        string
-	Host        string
-	Port        uint16
-	DBName      string
-	User        string
-	Password    string
-	Schema      string
-	PoolSize    int32         `mapstructure:"pool_size"`
-	MaxRetries  int           `mapstructure:"max_retries"`
-	PingTimeout time.Duration `mapstructure:"ping_timeout"`
-	EnableTLS   bool          `mapstructure:"enable_tls"`
-	ServerName  string        `mapstructure:"server_name"`
-	ServerCert  string        `mapstructure:"server_cert"`
-	ClientCert  string        `mapstructure:"client_cert"`
-	ClientKey   string        `mapstructure:"client_key"`
+	Type            string
+	Host            string
+	Port            uint16
+	DBName          string
+	User            string
+	Password        string
+	Schema          string
+	PoolSize        int           `mapstructure:"pool_size"`
+	MaxConnections  int           `mapstructure:"max_connections"`
+	MaxConnIdleTime time.Duration `mapstructure:"max_connection_idle_time"`
+	MaxConnLifeTime time.Duration `mapstructure:"max_connection_life_time"`
+	PingTimeout     time.Duration `mapstructure:"ping_timeout"`
+	EnableTLS       bool          `mapstructure:"enable_tls"`
+	ServerName      string        `mapstructure:"server_name"`
+	ServerCert      string        `mapstructure:"server_cert"`
+	ClientCert      string        `mapstructure:"client_cert"`
+	ClientKey       string        `mapstructure:"client_key"`
 }
 
 // RateLimiter sets the API rate limits
@@ -336,6 +338,7 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("database.user", "postgres")
 	vi.SetDefault("database.password", "")
 	vi.SetDefault("database.schema", "public")
+	vi.SetDefault("database.pool_size", 10)
 
 	vi.SetDefault("env", "development")
 
