@@ -218,8 +218,8 @@ type TPath struct {
 }
 
 func (s *DBSchema) FindPath(from, to, through string) ([]TPath, error) {
-	from = strings.TrimSuffix(from, s.SingularSuffix)
-	to = strings.TrimSuffix(to, s.SingularSuffix)
+	from = strings.ToLower(strings.TrimSuffix(from, s.SingularSuffix))
+	to = strings.ToLower(strings.TrimSuffix(to, s.SingularSuffix))
 
 	fl, ok := s.ei[from]
 	if !ok {

@@ -1,6 +1,7 @@
 package psql
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/dosco/graphjin/core/internal/qcode"
@@ -321,6 +322,11 @@ func (c *expContext) renderVal(ex *qcode.Exp) {
 		c.renderValVar(ex)
 
 	default:
+		if strings.HasPrefix(ex.Right.Val, "SQL_") {
+			c.writeSqlFunc(ex.Right.Val)
+			return
+		}
+
 		if len(ex.Right.Path) == 0 {
 			c.squoted(ex.Right.Val)
 			return
@@ -385,6 +391,11 @@ func (c *expContext) renderList(ex *qcode.Exp) {
 		}
 	}
 	c.w.WriteString(`])`)
+}
+
+func (c *expContext) writeSqlFunc(val string) {
+	function := strings.TrimPrefix(val, "SQL_")
+	c.w.WriteString(fmt.Sprintf("%s()", function))
 }
 
 func (c *compilerContext) renderValArrayColumn(ex *qcode.Exp, table string, pid int32) {

@@ -496,7 +496,7 @@ func (co *Compiler) addRelInfo(
 		if co.c.EnableCamelcase {
 			parentF.Name = util.ToSnake(parentF.Name)
 		}
-		path, err := co.s.FindPath(childF.Name, parentF.Name, sel.through)
+		path, err := co.s.FindPath(strings.ToLower(childF.Name), strings.ToLower(parentF.Name), sel.through)
 		if err != nil {
 			return graphError(err, childF.Name, parentF.Name, sel.through)
 		}
