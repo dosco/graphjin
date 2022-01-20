@@ -396,6 +396,19 @@ func (in *intro) addDirectives() {
 			},
 		},
 	}
+
+	in.DeclaredDirectives["opa"] = &schema.DirectiveDecl{
+		Name: "opa",
+		Desc: schema.NewDescription("Directs the executor to validate the query parameters and auth token values against a predefined OPA policy"),
+		Locs: []string{"QUERY", "MUTATION", "SUBSCRIPTION"},
+		Args: schema.InputValueList{
+			{
+				Name: "policy",
+				Desc: schema.NewDescription("The path to the policy used for the query"),
+				Type: &schema.TypeName{Name: "String"},
+			},
+		},
+	}
 }
 
 func (in *intro) addColumn(

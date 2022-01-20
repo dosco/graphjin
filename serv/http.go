@@ -141,6 +141,15 @@ func (s1 *Service) apiV1() http.Handler {
 			}
 		}
 
+		policy, err := s.gj.GetOpaPolicy(req.Query)
+		if err != nil && s.gj.IsProd() {
+			renderErr(w, err)
+			return
+		}
+
+		// CHECK POLICY
+		fmt.Println(policy, string(req.Vars))
+
 		switch {
 		case s.gj.IsProd():
 			rc.APQKey = req.OpName
