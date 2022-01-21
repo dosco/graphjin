@@ -16,7 +16,7 @@ require (
 	github.com/adjust/gorails v0.0.0-20171013043634-2786ed0c03d3
 	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/bradfitz/gomemcache v0.0.0-20220106215444-fb4bf637b56d
-	github.com/brianvoe/gofakeit/v6 v6.14.2
+	github.com/brianvoe/gofakeit/v6 v6.14.3
 	github.com/chirino/graphql v0.0.0-20210707003802-dfaf250c773e
 	github.com/containerd/containerd v1.5.9 // indirect
 	github.com/dop251/goja v0.0.0-20220110113543-261677941f3c
