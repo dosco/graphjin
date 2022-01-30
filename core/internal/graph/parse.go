@@ -1,4 +1,4 @@
-//go:generate stringer -type=ParserType,FieldType -output=./gen_string.go
+//go:generate stringer -linecomment -type=MType,ParserType,FieldType -output=./gen_string.go
 package graph
 
 import (
@@ -87,6 +87,7 @@ type Node struct {
 	Val      string
 	Parent   *Node
 	Children []*Node
+	CMap     map[string]*Node
 }
 
 var nodePool = sync.Pool{
@@ -579,7 +580,9 @@ func (p *Parser) parseArgs(args []Arg) ([]Arg, error) {
 		}
 
 		if !p.peek(argNameTypes...) {
-			return nil, fmt.Errorf("expecting an argument name got: %s", p.peekNext())
+			return nil, fmt.Errorf("expecting a label got: %s (%s)",
+				p.peekNext(),
+				p.peekNextType().String())
 		}
 		args = append(args, Arg{Name: p.val(p.next())})
 		arg := &args[(len(args) - 1)]
@@ -664,6 +667,8 @@ func (p *Parser) parseObj() (*Node, error) {
 		argNameTypes = []MType{itemName}
 	}
 
+	parent.CMap = make(map[string]*Node)
+
 	for {
 		if p.peek(itemEOF, itemObjClose) {
 			p.ignore()
@@ -671,7 +676,9 @@ func (p *Parser) parseObj() (*Node, error) {
 		}
 
 		if !p.peek(argNameTypes...) {
-			return nil, errors.New("expecting an argument name")
+			return nil, fmt.Errorf("expecting a label got: %s (%v)",
+				p.peekNext(),
+				p.peekNextType())
 		}
 		nodeName := p.val(p.next())
 
@@ -687,6 +694,7 @@ func (p *Parser) parseObj() (*Node, error) {
 		node.Name = nodeName
 		node.Parent = parent
 		nodes = append(nodes, node)
+		parent.CMap[node.Name] = node
 	}
 
 	parent.Type = NodeObj
@@ -807,6 +815,11 @@ func (p *Parser) ignore() {
 func (p *Parser) peekNext() string {
 	item := p.items[p.pos+1]
 	return b2s(item.val)
+}
+
+func (p *Parser) peekNextType() MType {
+	item := p.items[p.pos+1]
+	return item._type
 }
 
 func (p *Parser) reset(to int) {

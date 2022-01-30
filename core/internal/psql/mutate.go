@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"strings"
 
+	"github.com/dosco/graphjin/core/internal/graph"
 	"github.com/dosco/graphjin/core/internal/qcode"
 	"github.com/dosco/graphjin/core/internal/sdata"
 )
@@ -73,47 +74,96 @@ func (c *compilerContext) renderUnionStmt() {
 	}
 }
 
-func (c *compilerContext) renderInsertUpdateColumns(m qcode.Mutate, values bool) int {
+func (c *compilerContext) renderInsertUpdateValues(m qcode.Mutate) int {
 	i := 0
-	for _, col := range m.Cols {
-		if i != 0 {
-			c.w.WriteString(`, `)
-		}
-		i++
 
-		if values {
+	render := func(data *graph.Node) {
+		for _, col := range m.Cols {
+			if i != 0 {
+				c.w.WriteString(`, `)
+			}
+			i++
+
+			field := m.Data.CMap[col.FieldName]
 			// v will be a blank strings unless the value is from a preset
-			v := col.Value
+			v := field.Val
 
-			if len(v) > 1 && v[0] == '$' {
-				if v1, ok := c.svars[v[1:]]; ok {
+			if field.Type == graph.NodeVar {
+				if v1, ok := c.svars[v]; ok {
 					v = v1
 				}
 			}
 
 			switch {
-			case len(v) > 1 && v[0] == '$':
-				c.renderParam(Param{Name: v[1:], Type: col.Col.Type})
+			case field.Type == graph.NodeVar:
+				c.renderParam(Param{Name: v, Type: col.Col.Type})
 
 			case strings.HasPrefix(v, "sql:"):
 				c.w.WriteString(`(`)
 				c.renderVar(v[4:])
 				c.w.WriteString(`)`)
 
-			case v != "":
-				c.squoted(v)
-
 			default:
-				c.colWithTable("t", col.FieldName)
-				continue
+				c.squoted(v)
 			}
 
 			c.w.WriteString(` :: `)
 			c.w.WriteString(col.Col.Type)
 
-		} else {
-			c.quoted(col.Col.Name)
 		}
+	}
+
+	c.w.WriteString(` (`)
+	render(m.Data)
+	c.w.WriteString(`)`)
+
+	return i
+}
+
+func (c *compilerContext) renderInsertUpdateColumns(m qcode.Mutate, values bool) int {
+	i := 0
+
+	for _, col := range m.Cols {
+		if i != 0 {
+			c.w.WriteString(`, `)
+		}
+		i++
+
+		if !values {
+			c.quoted(col.Col.Name)
+			continue
+		}
+
+		// v will be a blank strings unless the value is from a preset
+		v := col.Value
+
+		if v != "" && v[0] == '$' {
+			if v1, ok := c.svars[v[1:]]; ok {
+				v = v1
+			}
+		}
+
+		switch {
+		case len(v) > 1 && v[0] == '$':
+			c.renderParam(Param{Name: v[1:], Type: col.Col.Type})
+
+		case strings.HasPrefix(v, "sql:"):
+			c.w.WriteString(`(`)
+			c.renderVar(v[4:])
+			c.w.WriteString(`)`)
+
+		case v != "":
+			c.squoted(v)
+
+		case m.IsJSON:
+			c.colWithTable("t", col.FieldName)
+
+		default:
+			c.w.WriteString(v)
+		}
+
+		c.w.WriteString(` :: `)
+		c.w.WriteString(col.Col.Type)
 	}
 	return i
 }
@@ -385,6 +435,31 @@ func (c *compilerContext) renderCteNameWithID(m qcode.Mutate) {
 	c.w.WriteString(m.Ti.Name)
 	c.w.WriteString(`_`)
 	int32String(c.w, m.ID)
+}
+
+func (c *compilerContext) renderValues(m qcode.Mutate, prefix bool) {
+	if m.IsJSON {
+		c.w.WriteString(` SELECT `)
+		n := c.renderInsertUpdateColumns(m, true)
+		c.renderNestedRelColumns(m, true, prefix, n)
+
+		c.w.WriteString(` FROM _sg_input i`)
+		c.renderNestedRelTables(m, prefix)
+
+		if m.IsArray {
+			c.w.WriteString(`, json_populate_recordset`)
+		} else {
+			c.w.WriteString(`, json_populate_record`)
+		}
+
+		c.w.WriteString(`(NULL::"`)
+		c.w.WriteString(m.Ti.Name)
+		joinPath(c.w, `", i.j`, m.Path)
+		c.w.WriteString(`) t`)
+	} else {
+		c.w.WriteString(` VALUES `)
+		c.renderInsertUpdateValues(m)
+	}
 }
 
 func joinPath(w *bytes.Buffer, prefix string, path []string) {

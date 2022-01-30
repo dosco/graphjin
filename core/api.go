@@ -269,9 +269,7 @@ func (g *GraphJin) GraphQL(
 
 	if rc != nil && rc.APQKey != "" && query == "" {
 		if v, ok := gj.apq.Get(rc.APQKey); ok {
-			if v.query != "" {
-				query = v.query
-			}
+			query = v.query
 			ct.op = v.op
 			ct.name = v.name
 		} else {

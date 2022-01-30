@@ -159,6 +159,7 @@ func _compileGQLToPSQL(t *testing.T, gql string, vars qcode.Variables, role stri
 		if err != nil {
 			return err
 		}
+		// fmt.Println(">", string(b))
 	}
 
 	return nil

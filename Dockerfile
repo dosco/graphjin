@@ -9,7 +9,7 @@ RUN yarn build
 FROM golang:1.18beta1-bullseye as go-build
 RUN apt-get -y update
 RUN apt-get -y upgrade
-RUN apt-get -y install build-essential git-all jq 
+#RUN apt-get -y install build-essential git-all jq 
 
 RUN go install github.com/rafaelsq/wtc@latest
 

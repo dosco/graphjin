@@ -9,7 +9,8 @@ import (
 	"github.com/dosco/graphjin/core/internal/util"
 )
 
-func (co *Compiler) compileArgObj(edge string, ti sdata.DBTable, st *util.StackInf, arg *graph.Arg) (*Exp, bool, error) {
+func (co *Compiler) compileArgObj(edge string,
+	ti sdata.DBTable, st *util.StackInf, arg *graph.Arg) (*Exp, bool, error) {
 	if arg.Val.Type != graph.NodeObj {
 		return nil, false, fmt.Errorf("expecting an object")
 	}

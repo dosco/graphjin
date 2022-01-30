@@ -41,25 +41,25 @@ type item struct {
 type MType int8
 
 const (
-	itemError MType = iota // error occurred; value is text of error
-	itemEOF
-	itemName
-	itemOn
-	itemPunctuator
-	itemArgsOpen
-	itemArgsClose
-	itemListOpen
-	itemListClose
-	itemObjOpen
-	itemObjClose
-	itemColon
-	itemEquals
-	itemDirective
-	itemVariable
-	itemSpread
-	itemNumberVal
-	itemStringVal
-	itemBoolVal
+	itemError      MType = iota // error
+	itemEOF                     // end of file
+	itemName                    // label
+	itemOn                      // "on"
+	itemPunctuator              // punctuation !():=[]{|}
+	itemArgsOpen                // (
+	itemArgsClose               // )
+	itemListOpen                // [
+	itemListClose               // ]
+	itemObjOpen                 // {
+	itemObjClose                // }
+	itemColon                   // :
+	itemEquals                  // =
+	itemDirective               // @(directive)
+	itemVariable                // $variable
+	itemSpread                  // ...
+	itemNumberVal               // number
+	itemStringVal               // string
+	itemBoolVal                 // boolean
 )
 
 // !$():=@[]{|}

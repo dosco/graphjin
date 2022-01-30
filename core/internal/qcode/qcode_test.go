@@ -92,6 +92,25 @@ func TestCompile3(t *testing.T) {
 	}
 }
 
+func TestCompile4(t *testing.T) {
+	gql := `mutation {
+		users(insert: { email: $email, full_name: $full_name}) {
+			id
+		}
+	}`
+
+	vars := map[string]json.RawMessage{
+		"email":     json.RawMessage(`"reannagreenholt@orn.com"`),
+		"full_name": json.RawMessage(`"Flo Barton"`),
+	}
+
+	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	_, err := qc.Compile([]byte(gql), vars, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestInvalidCompile1(t *testing.T) {
 	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
 	_, err := qcompile.Compile([]byte(`#`), nil, "user")

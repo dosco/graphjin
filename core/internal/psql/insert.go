@@ -35,23 +35,7 @@ func (c *compilerContext) renderInsertStmt(m qcode.Mutate, embedded bool) {
 	c.renderNestedRelColumns(m, false, false, n)
 	c.w.WriteString(`)`)
 
-	c.w.WriteString(` SELECT `)
-	n = c.renderInsertUpdateColumns(m, true)
-	c.renderNestedRelColumns(m, true, false, n)
-
-	c.w.WriteString(` FROM _sg_input i`)
-	c.renderNestedRelTables(m, false)
-
-	if m.Array {
-		c.w.WriteString(`, json_populate_recordset`)
-	} else {
-		c.w.WriteString(`, json_populate_record`)
-	}
-
-	c.w.WriteString(`(NULL::"`)
-	c.w.WriteString(m.Ti.Name)
-	joinPath(c.w, `", i.j`, m.Path)
-	c.w.WriteString(`) t`)
+	c.renderValues(m, false)
 
 	if !embedded {
 		c.w.WriteString(` RETURNING *)`)

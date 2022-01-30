@@ -8,7 +8,10 @@ import (
 	"github.com/dosco/graphjin/core/internal/graph"
 	"github.com/dosco/graphjin/core/internal/sdata"
 	"github.com/dosco/graphjin/core/internal/util"
-	"github.com/dosco/graphjin/internal/jsn"
+)
+
+var (
+	errUserIDReq = errors.New("$user_id required for this query")
 )
 
 type MType uint8
@@ -42,6 +45,8 @@ var updateTypes = map[string]MType{
 }
 
 type Mutate struct {
+	mData
+
 	ID        int32
 	ParentID  int32
 	DependsOn map[int32]struct{}
@@ -50,8 +55,6 @@ type Mutate struct {
 	Key      string
 	Path     []string
 	Val      json.RawMessage
-	Data     map[string]json.RawMessage
-	Array    bool
 	Cols     []MColumn
 	RCols    []MRColumn
 	Ti       sdata.DBTable
@@ -85,9 +88,8 @@ type mState struct {
 	id int32
 }
 
-func (co *Compiler) compileMutation(qc *QCode, op *graph.Operation, role string) error {
+func (co *Compiler) compileMutation(qc *QCode, role string) error {
 	var err error
-	var ok bool
 	var whereReq bool
 
 	sel := &qc.Selects[0]
@@ -119,13 +121,14 @@ func (co *Compiler) compileMutation(qc *QCode, op *graph.Operation, role string)
 		return nil
 	}
 
-	if m.Val, ok = qc.Vars[qc.ActionVar]; !ok {
-		return fmt.Errorf("variable not defined: %s", qc.ActionVar)
-	}
-
-	if m.Data, m.Array, err = jsn.Tree(m.Val); err != nil {
+	m.mData, err = parseMutationData(qc, qc.ActionArg.Val)
+	if err != nil {
 		return err
 	}
+
+	// if m.Data, m.IsArray, err = jsn.Tree(m.Val); err != nil {
+	// 	return err
+	// }
 
 	mutates := []Mutate{}
 	mmap := map[int32]int32{-1: -1}
@@ -147,7 +150,6 @@ func (co *Compiler) compileMutation(qc *QCode, op *graph.Operation, role string)
 			id := int32(len(mutates))
 			mmap[item.ID] = id
 			mutates = append(mutates, item)
-
 			continue
 		}
 
@@ -199,94 +201,70 @@ func (co *Compiler) compileMutation(qc *QCode, op *graph.Operation, role string)
 		}
 	}
 	qc.Mutates = mutates
-
 	return nil
+}
+
+type mData struct {
+	Data    *graph.Node
+	IsJSON  bool
+	IsArray bool
+}
+
+func parseDataValue(qc *QCode, actionVal *graph.Node, isJSON bool) (mData, error) {
+	md, err := parseMutationData(qc, actionVal)
+	if err != nil {
+		return md, err
+	}
+	if isJSON {
+		md.IsJSON = isJSON
+	}
+	return md, nil
+}
+
+func parseMutationData(qc *QCode, actionVal *graph.Node) (mData, error) {
+	var md mData
+	var err error
+
+	switch actionVal.Type {
+	case graph.NodeVar:
+		val, ok := qc.Vars[actionVal.Val]
+		if !ok {
+			return md, fmt.Errorf("variable not found: %s", actionVal.Val)
+		}
+		md.Data, err = graph.ParseArgValue(string(val), true)
+		if err != nil {
+			return md, err
+		}
+		md.IsJSON = true
+
+	default:
+		md.Data = actionVal
+	}
+
+	md.IsArray = md.Data.Type == graph.NodeList
+	return md, nil
 }
 
 // TODO: Handle cases where a column name matches the child table name
 // the child path needs to be exluded in the json sent to insert or update
 
 func (co *Compiler) newMutate(ms *mState, m Mutate, role string) error {
-	var m1 Mutate
-	items := make([]Mutate, 0, len(m.Data))
 	trv := co.getRole(role, m.Ti.Schema, m.Ti.Name, m.Key)
+	data := m.Data
 
-	for k, v := range m.Data {
-		if v[0] != '{' && v[0] != '[' {
-			continue
-		}
-
-		// Get child-to-parent relationship
-		// rel, err := co.s.GetRel(k, m.Key, "")
-		paths, err := co.s.FindPath(k, m.Key, "")
-		if err != nil {
-			var ty MType
-			var ok bool
-
-			switch ms.mt {
-			case MTInsert:
-				ty, ok = insertTypes[k]
-			case MTUpdate:
-				ty, ok = updateTypes[k]
-			}
-
-			if ok && ty != MTKeyword {
-				m1 = Mutate{
-					ID:       ms.id,
-					ParentID: m.ParentID,
-					Type:     ty,
-					Key:      k,
-					Val:      v,
-					Path:     append(m.Path, k),
-					Ti:       m.Ti,
-					Rel:      m.Rel,
-					render:   true,
-				}
-				m.Type = MTNone
-
-			} else if ok && ty == MTKeyword {
-				continue
-			} else if _, err := m.Ti.GetColumn(k); err != nil {
-				return err
-			} else {
-				// valid column so return
-				continue
-			}
-
-		} else {
-			rel := sdata.PathToRel(paths[0])
-			ti := rel.Left.Ti
-
-			if rel.Type != sdata.RelRecursive &&
-				ms.id == 1 && ti.Name == ms.qc.Selects[0].Ti.Name {
-				return fmt.Errorf("remove json root '%s' from '%s' data", k, ms.qc.SType)
-			}
-
-			m1 = Mutate{
-				ID:       ms.id,
-				ParentID: m.ID,
-				Type:     m.Type,
-				Key:      k,
-				Val:      v,
-				Path:     append(m.Path, k),
-				Ti:       ti,
-				Rel:      rel,
-			}
-		}
-
-		if err = co.processDirectives(ms, &m1, trv); err != nil {
-			return err
-		}
-
-		items = append(items, m1)
-		m.children = append(m.children, m1.ID)
-		ms.id++
+	if m.IsArray && m.IsJSON {
+		data = data.Children[0]
 	}
 
-	err := co.addTablesAndColumns(&m, items, trv)
+	items, err := co.processNestedMutations(ms, &m, data, trv)
 	if err != nil {
 		return err
 	}
+
+	if err := co.addTablesAndColumns(&m, items, data, trv); err != nil {
+		return err
+	}
+
 	m.render = true
 
 	// For inserts order the children according to
@@ -296,7 +274,6 @@ func (co *Compiler) newMutate(ms *mState, m Mutate, role string) error {
 
 	// For updates the order defined in the query must be
 	// the order used.
-
 	switch m.Type {
 	case MTInsert:
 		for _, v := range items {
@@ -326,70 +303,185 @@ func (co *Compiler) newMutate(ms *mState, m Mutate, role string) error {
 		}
 		ms.st.Push(m)
 	}
-
 	return nil
 }
 
-func (co *Compiler) processDirectives(ms *mState, m *Mutate, trv trval) error {
+func (co *Compiler) processNestedMutations(ms *mState, m *Mutate, data *graph.Node, trv trval) ([]Mutate, error) {
+	var m1 Mutate
+	var md mData
 	var err error
 
-	if m.Val[0] != '{' {
-		return nil
+	items := make([]Mutate, 0, len(data.Children))
+
+	for i := range data.Children {
+		v := data.Children[i]
+
+		if md, err = parseDataValue(ms.qc, v, m.IsJSON); err != nil {
+			return nil, err
+		}
+
+		if md.Data.Type != graph.NodeObj {
+			continue
+		}
+
+		k := v.Name
+
+		// Get child-to-parent relationship
+		paths, err := co.s.FindPath(k, m.Key, "")
+		// no relationship found must be a keyword
+		if err != nil {
+			var ty MType
+			var ok bool
+
+			switch ms.mt {
+			case MTInsert:
+				ty, ok = insertTypes[k]
+			case MTUpdate:
+				ty, ok = updateTypes[k]
+			}
+
+			if ok && ty != MTKeyword {
+				m1 = Mutate{
+					mData:    md,
+					ID:       ms.id,
+					ParentID: m.ParentID,
+					Type:     ty,
+					Key:      k,
+					//	Val:      v,
+					Path:   append(m.Path, k),
+					Ti:     m.Ti,
+					Rel:    m.Rel,
+					render: true,
+				}
+				m.Type = MTNone
+
+			} else if ok && ty == MTKeyword {
+				continue
+			} else if _, err := m.Ti.GetColumn(k); err != nil {
+				return nil, err
+			} else {
+				// valid column so return
+				continue
+			}
+
+			// is a related to parent so we need to mutate the related table
+		} else {
+			rel := sdata.PathToRel(paths[0])
+			ti := rel.Left.Ti
+
+			if rel.Type != sdata.RelRecursive &&
+				ms.id == 1 && ti.Name == ms.qc.Selects[0].Ti.Name {
+				return nil, fmt.Errorf("remove json root '%s' from '%s' data", k, ms.qc.SType)
+			}
+
+			m1 = Mutate{
+				mData:    md,
+				ID:       ms.id,
+				ParentID: m.ID,
+				Type:     m.Type,
+				Key:      k,
+				//Val:      v,
+				Path: append(m.Path, k),
+				Ti:   ti,
+				Rel:  rel,
+			}
+		}
+
+		if err = co.processDirectives(ms, &m1, md.Data, trv); err != nil {
+			return nil, err
+		}
+
+		items = append(items, m1)
+		m.children = append(m.children, m1.ID)
+		ms.id++
 	}
 
-	m.Data, m.Array, err = jsn.Tree(m.Val)
-	if err != nil {
-		return err
-	}
+	return items, nil
+}
 
-	var filterVal string
+func (co *Compiler) processDirectives(ms *mState, m *Mutate, data *graph.Node, trv trval) error {
+	var err error
 
-	if m.Type == MTConnect || m.Type == MTDisconnect {
-		filterVal = string(m.Val)
-	}
+	// m.Data, m.IsArray, err = jsn.Tree(m.Val)
+	// if err != nil {
+	// 	return err
+	// }
 
-	if m.Type == MTUpdate && m.Rel.Type == sdata.RelOneToOne {
-		_, connect := m.Data["connect"]
-		_, disconnect := m.Data["disconnect"]
+	// var filterVal string
+	var filterNode *graph.Node
+	switch {
+	case m.Type == MTConnect, m.Type == MTDisconnect:
+		filterNode = data
 
-		if v, ok := m.Data["where"]; ok {
-			filterVal = string(v)
-		} else if !connect && !disconnect {
-			return errors.New("missing argument: where")
+	case m.Type == MTUpdate && m.Rel.Type == sdata.RelOneToOne:
+		if v, ok := data.CMap["where"]; ok {
+			filterNode = v
+		} else {
+			_, ok1 := data.CMap["connect"]
+			_, ok2 := data.CMap["disconnect"]
+			if !ok1 && ok2 {
+				return errors.New("missing argument: where")
+			}
 		}
 	}
 
-	if filterVal != "" {
-		m.Where.Exp, _, err = compileFilter(
-			co.s,
-			m.Ti,
-			[]string{filterVal},
-			true)
+	// if filterVal != "" {
+	// 	m.Where.Exp, _, err = compileFilter(
+	// 		co.s,
+	// 		m.Ti,
+	// 		[]string{filterVal},
+	// 		true)
 
-		if err != nil {
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	addFilters(ms.qc, &m.Where, trv)
+	// }
+
+	if filterNode != nil {
+		st := util.NewStackInf()
+		nu := false
+
+		node := &graph.Node{
+			Type:     filterNode.Type,
+			Children: filterNode.Children,
+			CMap:     filterNode.CMap,
+		}
+
+		if m.Where.Exp, nu, err = co.compileArgNode(
+			"",
+			m.Ti,
+			st,
+			node,
+			m.IsJSON); err != nil {
 			return err
 		}
-		addFilters(ms.qc, &m.Where, trv)
+		if nu && trv.role == "anon" {
+			return errUserIDReq
+		}
+		if nu = addFilters(ms.qc, &m.Where, trv); nu && trv.role == "anon" {
+			return errUserIDReq
+		}
 	}
 
 	if m.Rel.Type == sdata.RelRecursive {
 		var find string
 
-		if v1, ok := m.Data["find"]; !ok {
+		if v1, ok := data.CMap["find"]; !ok {
 			if ms.mt == MTInsert {
-				find = `"child"`
+				find = "child"
 			} else {
-				find = `"parent"`
+				find = "parent"
 			}
 		} else {
-			find = string(v1)
+			find = string(v1.Val)
 		}
 
 		switch find {
-		case `"child"`, `"children"`:
+		case "child", "children":
 			m.Rel.Type = sdata.RelOneToOne
 
-		case `"parent"`, `"parents"`:
+		case "parent", "parents":
 			if ms.mt == MTInsert {
 				return fmt.Errorf("a new '%s' cannot have a parent", m.Key)
 			}
@@ -401,7 +493,7 @@ func (co *Compiler) processDirectives(ms *mState, m *Mutate, trv trval) error {
 	return nil
 }
 
-func (co *Compiler) addTablesAndColumns(m *Mutate, items []Mutate, trv trval) error {
+func (co *Compiler) addTablesAndColumns(m *Mutate, items []Mutate, data *graph.Node, trv trval) error {
 	var err error
 	cm := make(map[string]struct{})
 
@@ -426,6 +518,7 @@ func (co *Compiler) addTablesAndColumns(m *Mutate, items []Mutate, trv trval) er
 		// Render child foreign key columns if child-to-parent
 		// relationship is one-to-many
 		for _, v := range items {
+
 			if v.Rel.Type == sdata.RelOneToMany {
 				m.DependsOn[v.ID] = struct{}{}
 				m.RCols = append(m.RCols, MRColumn{
@@ -465,14 +558,14 @@ func (co *Compiler) addTablesAndColumns(m *Mutate, items []Mutate, trv trval) er
 		}
 	}
 
-	if m.Cols, err = getColumnsFromJSON(m, trv, cm); err != nil {
+	if m.Cols, err = getColumnsFromData(m, data, trv, cm); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func getColumnsFromJSON(m *Mutate, trv trval, cm map[string]struct{}) ([]MColumn, error) {
+func getColumnsFromData(m *Mutate, data *graph.Node, trv trval, cm map[string]struct{}) ([]MColumn, error) {
 	var cols []MColumn
 
 	for k, v := range trv.getPresets(m.Type) {
@@ -496,7 +589,7 @@ func getColumnsFromJSON(m *Mutate, trv trval, cm map[string]struct{}) ([]MColumn
 			continue
 		}
 
-		if _, ok := m.Data[k]; !ok {
+		if _, ok := data.CMap[k]; !ok {
 			continue
 		}
 

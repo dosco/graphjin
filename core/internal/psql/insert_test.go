@@ -19,6 +19,45 @@ func simpleInsert(t *testing.T) {
 	compileGQLToPSQL(t, gql, vars, "user")
 }
 
+// @constraint(min: 1, max: 100)
+func simpleInlineInsert(t *testing.T) {
+	gql := `mutation (
+			email : String!,
+			full_name : String!) {
+		users(insert: {email: $email, full_name: $full_name}) {
+			id
+		}
+	}`
+
+	vars := map[string]json.RawMessage{
+		"email":     json.RawMessage(`"reannagreenholt@orn.com"`),
+		"full_name": json.RawMessage(`"Flo Barton"`),
+	}
+
+	compileGQLToPSQL(t, gql, vars, "user")
+}
+
+/*
+func simpleInlineInsertBulk(t *testing.T) {
+	gql := `mutation {
+		users(insert: [
+			{email: $email1, full_name: $full_name1},
+			{email: $email2, full_name: $full_name2}]) {
+			id
+		}
+	}`
+
+	vars := map[string]json.RawMessage{
+		"email1":     json.RawMessage(`"one@test.com"`),
+		"full_name1": json.RawMessage(`"John One"`),
+		"email2":     json.RawMessage(`"two@test.com"`),
+		"full_name2": json.RawMessage(`"John Two"`),
+	}
+
+	compileGQLToPSQL(t, gql, vars, "user")
+}
+*/
+
 func singleInsert(t *testing.T) {
 	gql := `mutation {
 		products(id: $id, insert: $insert) {
@@ -309,6 +348,8 @@ func nestedInsertRecursive(t *testing.T) {
 func TestCompileInsert(t *testing.T) {
 	t.Run("simpleInsert", simpleInsert)
 	t.Run("singleInsert", singleInsert)
+	t.Run("simpleInlineInsert", simpleInlineInsert)
+	// t.Run("simpleInlineInsertBulk", simpleInlineInsertBulk)
 	t.Run("bulkInsert", bulkInsert)
 	t.Run("simpleInsertWithPresets", simpleInsertWithPresets)
 	t.Run("nestedInsertManyToMany", nestedInsertManyToMany)

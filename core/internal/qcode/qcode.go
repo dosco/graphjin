@@ -59,6 +59,7 @@ type QCode struct {
 	SType     QType
 	Name      string
 	ActionVar string
+	ActionArg graph.Arg
 	Selects   []Select
 	Vars      Variables
 	Roots     []int32
@@ -70,6 +71,11 @@ type QCode struct {
 	Script    string
 	Metadata  allow.Metadata
 	Cache     Cache
+}
+
+func (qc *QCode) GetActionVal() ([]byte, bool) {
+	v, ok := qc.Vars[qc.ActionVar]
+	return v, ok
 }
 
 type Select struct {
@@ -308,7 +314,7 @@ func (co *Compiler) Compile(query []byte, vars Variables, role string) (*QCode, 
 	}
 
 	if qc.Type == QTMutation {
-		if err = co.compileMutation(&qc, &op, role); err != nil {
+		if err := co.compileMutation(&qc, role); err != nil {
 			return nil, err
 		}
 	}
@@ -324,11 +330,10 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 	}
 
 	if op.Type == graph.OpMutate {
-		if err := co.setMutationType(qc, op.Fields[0].Args); err != nil {
+		if err := co.setMutationType(qc, op, role); err != nil {
 			return err
 		}
 	}
-
 	if err := co.compileOpDirectives(qc, op.Directives); err != nil {
 		return err
 	}
@@ -962,40 +967,48 @@ func (co *Compiler) validateSelect(sel *Select) error {
 	return nil
 }
 
-func (co *Compiler) setMutationType(qc *QCode, args []graph.Arg) error {
-	setActionVar := func(arg *graph.Arg) error {
-		if arg.Val.Type != graph.NodeVar {
-			return argErr(arg.Name, "variable")
+func (co *Compiler) setMutationType(qc *QCode, op *graph.Operation, role string) error {
+	var err error
+
+	setActionVar := func(arg graph.Arg) error {
+		v := arg.Val
+		if v.Type != graph.NodeVar &&
+			v.Type != graph.NodeObj &&
+			(v.Type != graph.NodeList || len(v.Children) == 0 && v.Children[0].Type != graph.NodeObj) {
+			return argErr(arg.Name, "variable, an object or a list of objects")
 		}
 		qc.ActionVar = arg.Val.Val
+		qc.ActionArg = arg
 		return nil
 	}
 
-	for i := range args {
-		arg := &args[i]
+	args := op.Fields[0].Args
 
+	for _, arg := range args {
 		switch arg.Name {
 		case "insert":
 			qc.SType = QTInsert
-			return setActionVar(arg)
+			err = setActionVar(arg)
 		case "update":
 			qc.SType = QTUpdate
-			return setActionVar(arg)
+			err = setActionVar(arg)
 		case "upsert":
 			qc.SType = QTUpsert
-			return setActionVar(arg)
+			err = setActionVar(arg)
 		case "delete":
 			qc.SType = QTDelete
-
-			if arg.Val.Type != graph.NodeBool {
-				return argErr(arg.Name, "boolen")
+			if arg.Val.Type != graph.NodeBool || arg.Val.Val != "true" {
+				err = errors.New("value for argument 'delete' must be 'true'")
 			}
-
-			if arg.Val.Val == "false" {
-				qc.Type = QTQuery
-			}
-			return nil
 		}
+
+		if err != nil {
+			return err
+		}
+	}
+
+	if qc.SType == QTUnknown {
+		return errors.New(`mutations must contains one of the following arguments (insert, update, upsert or delete)`)
 	}
 
 	return nil

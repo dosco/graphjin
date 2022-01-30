@@ -84,7 +84,7 @@ func cmdDBMigrate(cmd *cobra.Command, args []string) {
 		log.Fatal("Migrations not support with MySQL")
 	}
 
-	m, err := migrate.NewMigrator(db, "schema_version")
+	m, err := migrate.NewMigrator(db)
 	if err != nil {
 		log.Fatalf("Error initializing migrations: %s", err)
 	}
@@ -207,7 +207,7 @@ func cmdMigrateStatus(cmd *cobra.Command, args []string) {
 		log.Fatal("Migrations not support with MySQL")
 	}
 
-	m, err := migrate.NewMigrator(db, "schema_version")
+	m, err := migrate.NewMigrator(db)
 	if err != nil {
 		log.Fatalf("Error initializing migrations: %s", err)
 	}
