@@ -7,13 +7,17 @@ import (
 )
 
 func (c *compilerContext) renderInsert() {
+	i := 0
 	for _, m := range c.qc.Mutates {
 		switch {
 		case m.Type == qcode.MTInsert:
+			i = c.renderComma(i)
 			c.renderInsertStmt(m, false)
 		case m.Type == qcode.MTUpsert:
+			i = c.renderComma(i)
 			c.renderInsertStmt(m, true)
 		case m.Rel.Type == sdata.RelOneToOne && m.Type == qcode.MTConnect:
+			i = c.renderComma(i)
 			c.renderOneToOneConnectStmt(m)
 		}
 	}
@@ -21,7 +25,6 @@ func (c *compilerContext) renderInsert() {
 }
 
 func (c *compilerContext) renderInsertStmt(m qcode.Mutate, embedded bool) {
-	c.w.WriteString(`, `)
 	c.renderCteName(m)
 	c.w.WriteString(` AS (`)
 

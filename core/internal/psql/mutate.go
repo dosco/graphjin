@@ -20,13 +20,18 @@ func (co *Compiler) compileMutation(
 		md:       md,
 		w:        w,
 		qc:       qc,
+		isJSON:   qc.Mutates[0].IsJSON,
 		Compiler: co,
 	}
 
 	if qc.SType != qcode.QTDelete {
-		c.w.WriteString(`WITH _sg_input AS (SELECT `)
-		c.renderParam(Param{Name: c.qc.ActionVar, Type: "json"})
-		c.w.WriteString(` :: json AS j)`)
+		if c.isJSON {
+			c.w.WriteString(`WITH _sg_input AS (SELECT `)
+			c.renderParam(Param{Name: qc.ActionVar, Type: "json"})
+			c.w.WriteString(` :: json AS j), `)
+		} else {
+			c.w.WriteString(`WITH `)
+		}
 	}
 
 	switch qc.SType {
@@ -307,7 +312,6 @@ func (c *compilerContext) renderOneToManyConnectStmt(m qcode.Mutate) {
 }
 
 func (c *compilerContext) renderOneToOneConnectStmt(m qcode.Mutate) {
-	c.w.WriteString(`, `)
 	c.renderCteName(m)
 	c.w.WriteString(` AS ( UPDATE `)
 
@@ -355,7 +359,6 @@ func (c *compilerContext) renderOneToOneDisconnectStmt(m qcode.Mutate) {
 	// For this to work the child needs to found first so it's
 	// null value can beset in the related column on the parent object.
 	// Eg. Update product and diconnect the user from it.
-	c.w.WriteString(`, `)
 	c.renderCteName(m)
 	c.w.WriteString(` AS ( UPDATE `)
 
@@ -460,6 +463,13 @@ func (c *compilerContext) renderValues(m qcode.Mutate, prefix bool) {
 		c.w.WriteString(` VALUES `)
 		c.renderInsertUpdateValues(m)
 	}
+}
+
+func (c *compilerContext) renderComma(i int) int {
+	if i != 0 {
+		c.w.WriteString(`, `)
+	}
+	return i + 1
 }
 
 func joinPath(w *bytes.Buffer, prefix string, path []string) {

@@ -126,10 +126,6 @@ func (co *Compiler) compileMutation(qc *QCode, role string) error {
 		return err
 	}
 
-	// if m.Data, m.IsArray, err = jsn.Tree(m.Val); err != nil {
-	// 	return err
-	// }
-
 	mutates := []Mutate{}
 	mmap := map[int32]int32{-1: -1}
 	mids := map[string][]int32{}
@@ -400,15 +396,9 @@ func (co *Compiler) processNestedMutations(ms *mState, m *Mutate, data *graph.No
 }
 
 func (co *Compiler) processDirectives(ms *mState, m *Mutate, data *graph.Node, trv trval) error {
+	var filterNode *graph.Node
 	var err error
 
-	// m.Data, m.IsArray, err = jsn.Tree(m.Val)
-	// if err != nil {
-	// 	return err
-	// }
-
-	// var filterVal string
-	var filterNode *graph.Node
 	switch {
 	case m.Type == MTConnect, m.Type == MTDisconnect:
 		filterNode = data
@@ -424,19 +414,6 @@ func (co *Compiler) processDirectives(ms *mState, m *Mutate, data *graph.Node, t
 			}
 		}
 	}
-
-	// if filterVal != "" {
-	// 	m.Where.Exp, _, err = compileFilter(
-	// 		co.s,
-	// 		m.Ti,
-	// 		[]string{filterVal},
-	// 		true)
-
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// 	addFilters(ms.qc, &m.Where, trv)
-	// }
 
 	if filterNode != nil {
 		st := util.NewStackInf()
@@ -582,40 +559,46 @@ func getColumnsFromData(m *Mutate, data *graph.Node, trv trval, cm map[string]st
 		cm[k] = struct{}{}
 	}
 
-	for i, col := range m.Ti.Columns {
-		k := col.Name
+	/*
+		for i, col := range m.Ti.Columns {
+			k := col.Name
 
-		if _, ok := cm[k]; ok {
-			continue
+			if _, ok := cm[k]; ok {
+				continue
+			}
+
+			if _, ok := data.CMap[k]; !ok {
+				continue
+			}
+
+			if col.Blocked {
+				return nil, fmt.Errorf("column blocked: %s", k)
+			}
+
+			cols = append(cols, MColumn{Col: m.Ti.Columns[i], FieldName: k})
 		}
-
-		if _, ok := data.CMap[k]; !ok {
-			continue
-		}
-
-		if m.Ti.Blocked {
-			return nil, fmt.Errorf("column blocked: %s", k)
-		}
-
-		cols = append(cols, MColumn{Col: m.Ti.Columns[i], FieldName: k})
-	}
+	*/
 
 	// TODO: This is faster than the above
 	// but randomized maps in go make testing harder
 	// put this back in once we have integration testing
 
-	// for k, _ := range m.Data {
-	// if _, ok := cm[k]; ok {
-	// 	continue
-	// }
+	for k := range data.CMap {
+		if _, ok := cm[k]; ok {
+			continue
+		}
 
-	// 	col, err := m.Ti.GetColumn(k)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
+		col, ok := m.Ti.ColumnExists(k)
+		if !ok {
+			continue
+		}
 
-	// 	cols = append(cols, MColumn{Col: col, FieldName: k})
-	// }
+		if col.Blocked {
+			return nil, fmt.Errorf("column blocked: %s", k)
+		}
+
+		cols = append(cols, MColumn{Col: col, FieldName: k})
+	}
 
 	return cols, nil
 }

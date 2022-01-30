@@ -28,9 +28,10 @@ type Metadata struct {
 }
 
 type compilerContext struct {
-	md *Metadata
-	w  *bytes.Buffer
-	qc *qcode.QCode
+	md     *Metadata
+	w      *bytes.Buffer
+	qc     *qcode.QCode
+	isJSON bool
 	*Compiler
 }
 
