@@ -65,22 +65,21 @@ type MigratorOptions struct {
 }
 
 type Migrator struct {
-	db           *sql.DB
-	versionTable string
-	options      *MigratorOptions
-	Migrations   []*Migration
-	OnStart      func(name string, direction string, sql string) // OnStart is called when a migration is being run
-	OnFinish     func(name string, direction string, durationMs int64)
-	OnError      func(name string, err error, sql string)
-	Data         map[string]interface{} // Data available to use in migrations
+	db         *sql.DB
+	options    *MigratorOptions
+	Migrations []*Migration
+	OnStart    func(name string, direction string, sql string) // OnStart is called when a migration is being run
+	OnFinish   func(name string, direction string, durationMs int64)
+	OnError    func(name string, err error, sql string)
+	Data       map[string]interface{} // Data available to use in migrations
 }
 
-func NewMigrator(db *sql.DB, versionTable string) (m *Migrator, err error) {
-	return NewMigratorEx(db, versionTable, &MigratorOptions{MigratorFS: defaultMigratorFS{}})
+func NewMigrator(db *sql.DB) (m *Migrator, err error) {
+	return NewMigratorEx(db, &MigratorOptions{MigratorFS: defaultMigratorFS{}})
 }
 
-func NewMigratorEx(db *sql.DB, versionTable string, opts *MigratorOptions) (m *Migrator, err error) {
-	m = &Migrator{db: db, versionTable: versionTable, options: opts}
+func NewMigratorEx(db *sql.DB, opts *MigratorOptions) (m *Migrator, err error) {
+	m = &Migrator{db: db, options: opts}
 	err = m.ensureSchemaVersionTableExists()
 	m.Migrations = make([]*Migration, 0)
 	m.Data = make(map[string]interface{})
@@ -346,7 +345,7 @@ func (m *Migrator) MigrateTo(targetVersion int32) (err error) {
 		// }
 
 		// Add one to the version
-		_, err = tx.Exec("update "+m.versionTable+" set version=$1", sequence)
+		_, err = tx.Exec("update schema_version set version=$1", sequence)
 		if err != nil {
 			return err
 		}
@@ -369,19 +368,19 @@ func (m *Migrator) MigrateTo(targetVersion int32) (err error) {
 }
 
 func (m *Migrator) GetCurrentVersion() (v int32, err error) {
-	err = m.db.QueryRow("select version from " + m.versionTable).Scan(&v)
+	err = m.db.QueryRow("select version from schema_version").Scan(&v)
 
 	return v, err
 }
 
 func (m *Migrator) ensureSchemaVersionTableExists() (err error) {
-	_, err = m.db.Exec(fmt.Sprintf(`
-    create table if not exists %s(version int4 not null);
+	_, err = m.db.Exec(`
+    create table if not exists schema_version(version int4 not null);
 
-    insert into %s(version)
+    insert into schema_version(version)
     select 0
-    where 0=(select count(*) from %s);
-	`, m.versionTable, m.versionTable, m.versionTable))
+    where 0=(select count(*) from schema_version);
+	`)
 
 	return err
 }

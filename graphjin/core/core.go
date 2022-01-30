@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"time"
@@ -279,7 +280,8 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 		return res, err
 	}
 
-	scriptName := res.qc.st.qc.Script
+	qc := res.qc.st.qc
+	scriptName := qc.Script
 
 	if scriptName != "" {
 		if err := c.loadScript(scriptName); err != nil {
@@ -313,7 +315,7 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 		return res, err
 	}
 
-	cur, err := c.gj.encryptCursor(res.qc.st.qc, res.data)
+	cur, err := c.gj.encryptCursor(qc, res.data)
 	if err != nil {
 		return res, err
 	}
@@ -321,14 +323,17 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 	res.data = cur.data
 
 	if !c.gj.prod && c.gj.allowList != nil {
-		err := c.gj.allowList.Set(qr.vars, string(qr.query), res.qc.st.qc.Metadata)
+		err := c.saveToAllowList(qc, string(qr.query))
 		if err != nil {
 			return res, err
 		}
 	}
 
 	if !c.gj.prod && c.rc != nil && c.rc.APQKey != "" {
-		c.gj.apq.Set(c.rc.APQKey, apqInfo{op: qr.op, name: qr.name, query: string(qr.query)})
+		c.gj.apq.Set(c.rc.APQKey, apqInfo{
+			op:    qr.op,
+			name:  qr.name,
+			query: string(qr.query)})
 	}
 
 	// if c.gj.conf.EnableTracing {
@@ -338,6 +343,20 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 	// }
 
 	return res, nil
+}
+
+func (c *gcontext) saveToAllowList(qc *qcode.QCode, query string) error {
+	var av []byte
+	var err error
+
+	if v, ok := qc.GetActionVal(); ok {
+		m := map[string]json.RawMessage{qc.ActionVar: v}
+		if av, err = json.Marshal(m); err != nil {
+			return err
+		}
+	}
+
+	return c.gj.allowList.Set(av, query, qc.Metadata)
 }
 
 func (c *gcontext) setLocalUserID(conn *sql.Conn) error {
