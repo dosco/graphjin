@@ -42,6 +42,37 @@ func Example_insert() {
 	// Output: {"users": [{"id": 1001, "email": "user1001@test.com"}]}
 }
 
+func Example_inlineInsert() {
+	gql := `mutation {
+		users(insert: { id: $id, email: $email, full_name: $full_name }) {
+			id
+			email
+			full_name
+		}
+	}`
+
+	vars := json.RawMessage(`{
+		"id": 1007,
+		"email": "user1007@test.com",
+		"full_name": "User 1007"
+	}`)
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
+	res, err := gj.GraphQL(ctx, gql, vars, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+	// Output: {"users": [{"id": 1007, "email": "user1007@test.com", "full_name": "User 1007"}]}
+}
+
 func Example_insertWithPresets() {
 	gql := `mutation {
 		products(insert: $data) {

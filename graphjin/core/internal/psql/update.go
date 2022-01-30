@@ -8,13 +8,17 @@ import (
 )
 
 func (c *compilerContext) renderUpdate() {
+	i := 0
 	for _, m := range c.qc.Mutates {
 		switch {
 		case m.Type == qcode.MTUpdate:
+			i = c.renderComma(i)
 			c.renderUpdateStmt(m)
 		case m.Rel.Type == sdata.RelOneToOne && m.Type == qcode.MTConnect:
+			i = c.renderComma(i)
 			c.renderOneToOneConnectStmt(m)
 		case m.Rel.Type == sdata.RelOneToOne && m.Type == qcode.MTDisconnect:
+			i = c.renderComma(i)
 			c.renderOneToOneDisconnectStmt(m)
 		}
 	}
@@ -24,7 +28,6 @@ func (c *compilerContext) renderUpdate() {
 func (c *compilerContext) renderUpdateStmt(m qcode.Mutate) {
 	sel := c.qc.Selects[0]
 
-	c.w.WriteString(`, `)
 	c.renderCteName(m)
 	c.w.WriteString(` AS (`)
 

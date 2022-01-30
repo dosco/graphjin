@@ -352,6 +352,10 @@ func (ti *DBTable) GetColumn(name string) (DBColumn, error) {
 	return c, fmt.Errorf("column: '%s.%s' not found", ti.Name, name)
 }
 
+func (ti *DBTable) ColumnExists(name string) (DBColumn, bool) {
+	return ti.getColumn(name)
+}
+
 func (s *DBSchema) GetFunctions() map[string]DBFunction {
 	return s.fm
 }
