@@ -421,6 +421,13 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 			sel.SkipRender = SkipTypeUserNeeded
 		}
 
+		if sel.Where.Exp != nil && sel.Where.Exp.Op == OpEquals {
+			col := sel.Where.Exp.Left.Col
+			if col.UniqueKey || col.PrimaryKey {
+				sel.Singular = true
+			}
+		}
+
 		// If an actual cursor is available
 		if sel.Paging.Cursor {
 			// Set tie-breaker order column for the cursor direction
