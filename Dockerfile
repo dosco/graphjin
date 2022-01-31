@@ -9,7 +9,7 @@ RUN yarn build
 FROM golang:1.18beta1-bullseye as go-build
 RUN apt-get -y update
 RUN apt-get -y upgrade
-RUN apt-get -y install build-essential git-all jq 
+RUN apt-get -y install build-essential git jq upx
 
 RUN go install github.com/rafaelsq/wtc@latest
 
@@ -21,9 +21,9 @@ COPY --from=react-build /web/build/ ./serv/web/build
 
 RUN go mod download
 RUN make build
-# RUN echo "Compressing binary, will take a bit of time..." && \
-#   upx --ultra-brute -qq graphjin && \
-#   upx -t graphjin
+RUN echo "Compressing binary, will take a bit of time..." && \
+    upx --ultra-brute -qq graphjin && \
+    upx -t graphjin
 
 # stage: 3
 FROM alpine:latest
