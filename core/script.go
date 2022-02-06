@@ -50,16 +50,10 @@ func (c *gcontext) loadScript(name string) error {
 	return nil
 }
 
-func (c *gcontext) scriptCallReq(vars []byte, role string) (_ []byte, err error) {
+func (c *gcontext) scriptCallReq(vars map[string]interface{}, role string) (
+	[]byte, error) {
 	if c.sc.ReqFunc == nil {
-		return vars, nil
-	}
-
-	rj := make(map[string]interface{})
-	if len(vars) != 0 {
-		if err := json.Unmarshal(vars, &rj); err != nil {
-			return nil, err
-		}
+		return nil, nil
 	}
 
 	timer := time.AfterFunc(500*time.Millisecond, func() {
@@ -81,9 +75,9 @@ func (c *gcontext) scriptCallReq(vars []byte, role string) (_ []byte, err error)
 		userID = v
 	}
 
-	val := c.sc.ReqFunc(rj, role, userID)
+	val := c.sc.ReqFunc(vars, role, userID)
 	if val == nil {
-		return vars, nil
+		return nil, nil
 	}
 
 	return json.Marshal(val)

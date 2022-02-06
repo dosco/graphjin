@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/dosco/graphjin/core/internal/psql"
 	"github.com/dosco/graphjin/core/internal/qcode"
 	"github.com/dosco/graphjin/core/internal/sdata"
+	"github.com/go-playground/validator/v10"
 )
 
 type OpType int
@@ -181,10 +183,12 @@ func (gj *graphjin) initCompilers() error {
 	return nil
 }
 
-func (gj *graphjin) executeRoleQuery(c context.Context, conn *sql.Conn, md psql.Metadata, vars []byte, rc *ReqConfig) (string, error) {
+func (gj *graphjin) executeRoleQuery(c context.Context, conn *sql.Conn, vars []byte, rc *ReqConfig) (string, error) {
 	var role string
 	var ar args
 	var err error
+
+	md := gj.roleStmtMD
 
 	if conn == nil {
 		if conn, err = gj.db.Conn(c); err != nil {
@@ -269,34 +273,24 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 		res.role = v.(string)
 
 	} else if c.gj.abacEnabled {
-		res.role, err = c.gj.executeRoleQuery(c, conn, c.gj.roleStmtMD, qr.vars, c.rc)
+		res.role, err = c.gj.executeRoleQuery(c, conn, qr.vars, c.rc)
 	}
 
 	if err != nil {
 		return res, err
 	}
 
-	if res.qc, err = c.gj.compileQuery(qr, res.role); err != nil {
+	var qcomp *queryComp
+	if qcomp, err = c.gj.compileQuery(qr, res.role); err != nil {
+		return res, err
+	}
+	res.qc = qcomp
+
+	if err := c.handleVars(qcomp, &res); err != nil {
 		return res, err
 	}
 
-	qc := res.qc.st.qc
-	scriptName := qc.Script
-
-	if scriptName != "" {
-		if err := c.loadScript(scriptName); err != nil {
-			return res, err
-		}
-	}
-
-	if c.sc != nil && c.sc.ReqFunc != nil {
-		qr.vars, err = c.scriptCallReq(qr.vars, res.qc.st.role.Name)
-		if err != nil {
-			return res, err
-		}
-	}
-
-	args, err := c.gj.argList(c, res.qc.st.md, qr.vars, c.rc)
+	args, err := c.gj.argList(c, qcomp.st.md, qcomp.qr.vars, c.rc)
 	if err != nil {
 		return res, err
 	}
@@ -307,13 +301,15 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 	// 	stime = time.Now()
 	// }
 
-	row := conn.QueryRowContext(c, res.qc.st.sql, args.values...)
+	row := conn.QueryRowContext(c, qcomp.st.sql, args.values...)
 
 	if err := row.Scan(&res.data); err == sql.ErrNoRows {
 		return res, nil
 	} else if err != nil {
 		return res, err
 	}
+
+	qc := qcomp.st.qc
 
 	cur, err := c.gj.encryptCursor(qc, res.data)
 	if err != nil {
@@ -323,17 +319,16 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 	res.data = cur.data
 
 	if !c.gj.prod && c.gj.allowList != nil {
-		err := c.saveToAllowList(qc, string(qr.query))
-		if err != nil {
+		if err := c.saveToAllowList(qc, string(qcomp.qr.query)); err != nil {
 			return res, err
 		}
 	}
 
 	if !c.gj.prod && c.rc != nil && c.rc.APQKey != "" {
 		c.gj.apq.Set(c.rc.APQKey, apqInfo{
-			op:    qr.op,
-			name:  qr.name,
-			query: string(qr.query)})
+			op:    qcomp.qr.op,
+			name:  qcomp.qr.name,
+			query: string(qcomp.qr.query)})
 	}
 
 	// if c.gj.conf.EnableTracing {
@@ -345,13 +340,60 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 	return res, nil
 }
 
+func (c *gcontext) handleVars(qcomp *queryComp, res *queryResp) error {
+	var vars map[string]interface{}
+	qc := qcomp.st.qc
+	qr := &qcomp.qr
+
+	if len(qr.vars) != 0 || qc.Script != "" {
+		vars = make(map[string]interface{})
+	}
+
+	if len(qr.vars) != 0 {
+		if err := json.Unmarshal(qr.vars, &vars); err != nil {
+			return err
+		}
+	}
+
+	if qc.Consts != nil {
+		errs := qcomp.st.va.ValidateMap(vars, qc.Consts)
+
+		if !c.gj.prod && len(errs) != 0 {
+			for k, v := range errs {
+				v1 := v.(validator.ValidationErrors)
+				c.gj.log.Printf("Validation Failed: $%s: %s", k, v1.Error())
+			}
+		}
+
+		if len(errs) != 0 {
+			return errors.New("validation failed")
+		}
+	}
+
+	if qc.Script != "" {
+		if err := c.loadScript(qc.Script); err != nil {
+			return err
+		}
+	}
+
+	if c.sc != nil && c.sc.ReqFunc != nil {
+		if v, err := c.scriptCallReq(vars, qcomp.st.role.Name); len(v) != 0 {
+			qr.vars = v
+		} else if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (c *gcontext) saveToAllowList(qc *qcode.QCode, query string) error {
 	var av []byte
 	var err error
 
-	if v, ok := qc.GetActionVal(); ok {
+	if v, ok := qc.Vars[qc.ActionVar]; ok {
 		m := map[string]json.RawMessage{qc.ActionVar: v}
-		if av, err = json.Marshal(m); err != nil {
+		av, err = json.Marshal(m)
+		if err != nil {
 			return err
 		}
 	}

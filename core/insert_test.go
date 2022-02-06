@@ -73,6 +73,41 @@ func Example_inlineInsert() {
 	// Output: {"users": [{"id": 1007, "email": "user1007@test.com", "full_name": "User 1007"}]}
 }
 
+func Example_inlineInsertWithValidation() {
+	gql := `mutation 
+		@constraint(variable: "email", format: "email", min: 1, max: 100)
+		@constraint(variable: "full_name", requiredIf: { id: 1007 } ) {
+		users(insert: { id: $id, email: $email, full_name: $full_name }) {
+			id
+			email
+			full_name
+		}
+	}`
+
+	vars := json.RawMessage(`{
+		"id": 1007,
+		"email": "not_an_email"
+	}`)
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
+	res, err := gj.GraphQL(ctx, gql, vars, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+	// Unordered output:
+	// Validation Failed: $full_name: Key: '' Error:Field validation for '' failed on the 'required_if' tag
+	// Validation Failed: $email: Key: '' Error:Field validation for '' failed on the 'email' tag
+	// validation failed
+}
+
 func Example_insertWithPresets() {
 	gql := `mutation {
 		products(insert: $data) {

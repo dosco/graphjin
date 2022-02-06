@@ -271,18 +271,18 @@ func (p *Parser) parseOpTypeAndArgs(op *Operation) error {
 		op.Name = p.val(p.next())
 	}
 
-	for p.peek(itemDirective) {
-		p.ignore()
-		if op.Directives, err = p.parseDirective(op.Directives); err != nil {
-			return err
-		}
-	}
-
 	if p.peek(itemArgsOpen) {
 		p.ignore()
 
 		op.Args, err = p.parseOpParams(op.Args)
 		if err != nil {
+			return err
+		}
+	}
+
+	for p.peek(itemDirective) {
+		p.ignore()
+		if op.Directives, err = p.parseDirective(op.Directives); err != nil {
 			return err
 		}
 	}

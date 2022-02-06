@@ -62,6 +62,7 @@ type QCode struct {
 	ActionArg graph.Arg
 	Selects   []Select
 	Vars      Variables
+	Consts    Constraints
 	Roots     []int32
 	rootsA    [5]int32
 	Mutates   []Mutate
@@ -71,11 +72,6 @@ type QCode struct {
 	Script    string
 	Metadata  allow.Metadata
 	Cache     Cache
-}
-
-func (qc *QCode) GetActionVal() ([]byte, bool) {
-	v, ok := qc.Vars[qc.ActionVar]
-	return v, ok
 }
 
 type Select struct {
@@ -188,6 +184,9 @@ type Cache struct {
 	Header string
 }
 
+type Variables map[string]json.RawMessage
+type Constraints map[string]interface{}
+
 type ExpOp int8
 
 const (
@@ -284,8 +283,6 @@ func NewCompiler(s *sdata.DBSchema, c Config) (*Compiler, error) {
 
 	return &Compiler{c: c, s: s, tr: make(map[string]trval)}, nil
 }
-
-type Variables map[string]json.RawMessage
 
 func (co *Compiler) Compile(query []byte, vars Variables, role string) (*QCode, error) {
 	var err error
@@ -861,6 +858,12 @@ func (co *Compiler) compileOpDirectives(qc *QCode, dirs []graph.Directive) error
 
 		case "script":
 			err = co.compileDirectiveScript(qc, d)
+
+		case "constraint", "validate":
+			err = co.compileDirectiveConstraint(qc, d)
+
+		default:
+			err = fmt.Errorf("unknown operation level directive: %s", d.Name)
 		}
 
 		if err != nil {
@@ -892,6 +895,9 @@ func (co *Compiler) compileDirectives(qc *QCode, sel *Select, dirs []graph.Direc
 		case "object":
 			sel.Singular = true
 			sel.Paging.Limit = 1
+
+		default:
+			err = fmt.Errorf("unknown selector level directive: %s", d.Name)
 		}
 
 		if err != nil {
@@ -997,7 +1003,7 @@ func (co *Compiler) setMutationType(qc *QCode, op *graph.Operation, role string)
 			err = setActionVar(arg)
 		case "delete":
 			qc.SType = QTDelete
-			if arg.Val.Type != graph.NodeBool || arg.Val.Val != "true" {
+			if ifNotArg(arg, graph.NodeBool) || ifNotArgVal(arg, "true") {
 				err = errors.New("value for argument 'delete' must be 'true'")
 			}
 		}
@@ -1020,7 +1026,7 @@ func (co *Compiler) compileDirectiveSkip(sel *Select, d *graph.Directive) error 
 	}
 	arg := d.Args[0]
 
-	if arg.Val.Type != graph.NodeVar {
+	if ifNotArg(arg, graph.NodeVar) {
 		return argErr("if", "variable")
 	}
 
@@ -1039,12 +1045,12 @@ func (co *Compiler) compileDirectiveCacheControl(qc *QCode, d *graph.Directive) 
 	for _, arg := range d.Args {
 		switch arg.Name {
 		case "maxAge":
-			if arg.Val.Type != graph.NodeNum {
+			if ifNotArg(arg, graph.NodeNum) {
 				return argErr("maxAge", "number")
 			}
 			maxAge = arg.Val.Val
 		case "scope":
-			if arg.Val.Type != graph.NodeStr {
+			if ifNotArg(arg, graph.NodeStr) {
 				return argErr("scope", "string")
 			}
 			scope = arg.Val.Val
@@ -1068,12 +1074,15 @@ func (co *Compiler) compileDirectiveCacheControl(qc *QCode, d *graph.Directive) 
 }
 
 func (co *Compiler) compileDirectiveScript(qc *QCode, d *graph.Directive) error {
-	if len(d.Args) != 0 && d.Args[0].Name == "name" {
-		if d.Args[0].Val.Type != graph.NodeStr {
+	if len(d.Args) == 0 {
+		return argErr("name", "string")
+	}
+
+	if d.Args[0].Name == "name" {
+		if ifNotArg(d.Args[0], graph.NodeStr) {
 			return argErr("name", "string")
 		}
 		qc.Script = d.Args[0].Val.Val
-
 	}
 
 	if qc.Script == "" {
@@ -1089,6 +1098,151 @@ func (co *Compiler) compileDirectiveScript(qc *QCode, d *graph.Directive) error 
 	}
 
 	return nil
+}
+
+type validator struct {
+	name   string
+	types  []graph.ParserType
+	single bool
+}
+
+var validators = map[string]validator{
+	"variable":                 {name: "variable", types: []graph.ParserType{graph.NodeStr}},
+	"error":                    {name: "error", types: []graph.ParserType{graph.NodeStr}},
+	"unique":                   {name: "unique", types: []graph.ParserType{graph.NodeBool}, single: true},
+	"format":                   {name: "format", types: []graph.ParserType{graph.NodeStr}, single: true},
+	"required":                 {name: "required", types: []graph.ParserType{graph.NodeBool}, single: true},
+	"requiredIf":               {name: "required_if", types: []graph.ParserType{graph.NodeObj}},
+	"requiredUnless":           {name: "required_unless", types: []graph.ParserType{graph.NodeObj}},
+	"requiredWith":             {name: "required_with", types: []graph.ParserType{graph.NodeList, graph.NodeStr}},
+	"requiredWithAll":          {name: "required_with_all", types: []graph.ParserType{graph.NodeList, graph.NodeStr}},
+	"requiredWithout":          {name: "required_without", types: []graph.ParserType{graph.NodeList, graph.NodeStr}},
+	"requiredWithoutAll":       {name: "required_without_all", types: []graph.ParserType{graph.NodeList, graph.NodeStr}},
+	"length":                   {name: "len", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
+	"max":                      {name: "max", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
+	"min":                      {name: "min", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
+	"equals":                   {name: "eq", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
+	"notEquals":                {name: "neq", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
+	"oneOf":                    {name: "oneof", types: []graph.ParserType{graph.NodeList, graph.NodeNum, graph.NodeList, graph.NodeStr}},
+	"greaterThan":              {name: "gt", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
+	"greaterThanOrEquals":      {name: "gte", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
+	"lessThan":                 {name: "lt", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
+	"lessThanOrEquals":         {name: "lte", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
+	"equalsField":              {name: "eqfield", types: []graph.ParserType{graph.NodeStr}},
+	"notEqualsField":           {name: "nefield", types: []graph.ParserType{graph.NodeStr}},
+	"greaterThanField":         {name: "gtfield", types: []graph.ParserType{graph.NodeStr}},
+	"greaterThanOrEqualsField": {name: "gtefield", types: []graph.ParserType{graph.NodeStr}},
+	"lessThanField":            {name: "ltfield", types: []graph.ParserType{graph.NodeStr}},
+	"lessThanOrEqualsField":    {name: "ltefield", types: []graph.ParserType{graph.NodeStr}},
+}
+
+func (co *Compiler) compileDirectiveConstraint(qc *QCode, d *graph.Directive) error {
+	var varName string
+	var errMsg string
+	var vals []string
+
+	for _, a := range d.Args {
+		if a.Name == "variable" && ifNotArgVal(a, "") {
+			if a.Val.Val[0] == '$' {
+				varName = a.Val.Val[1:]
+			} else {
+				varName = a.Val.Val
+			}
+			continue
+		}
+
+		if a.Name == "error" && ifNotArgVal(a, "") {
+			errMsg = a.Val.Val
+		}
+
+		if a.Name == "format" && ifNotArgVal(a, "") {
+			vals = append(vals, a.Val.Val)
+			continue
+		}
+
+		v, ok := validators[a.Name]
+		if !ok {
+			continue
+		}
+
+		if err := validateConstraint(a, v); err != nil {
+			return err
+		}
+
+		if v.single {
+			vals = append(vals, v.name)
+			continue
+		}
+
+		var value string
+		switch a.Val.Type {
+		case graph.NodeStr, graph.NodeNum, graph.NodeBool:
+			if ifNotArgVal(a, "") {
+				value = a.Val.Val
+			}
+
+		case graph.NodeObj:
+			var items []string
+			for _, v := range a.Val.Children {
+				items = append(items, v.Name, v.Val)
+			}
+			value = strings.Join(items, " ")
+
+		case graph.NodeList:
+			var items []string
+			for _, v := range a.Val.Children {
+				items = append(items, v.Val)
+			}
+			value = strings.Join(items, " ")
+		}
+
+		vals = append(vals, (v.name + "=" + value))
+	}
+
+	if varName == "" {
+		return errors.New("invalid @constraint no variable name specified")
+	}
+
+	if qc.Consts == nil {
+		qc.Consts = make(map[string]interface{})
+	}
+
+	opt := strings.Join(vals, ",")
+	if errMsg != "" {
+		opt += "~" + errMsg
+	}
+
+	qc.Consts[varName] = opt
+	return nil
+}
+
+func validateConstraint(a graph.Arg, v validator) error {
+	list := false
+	for _, t := range v.types {
+		switch {
+		case t == graph.NodeList:
+			list = true
+		case list && ifArgList(a, t):
+			return nil
+		case ifArg(a, t):
+			return nil
+		}
+	}
+
+	list = false
+	err := "value must be of type: "
+
+	for i, t := range v.types {
+		if i != 0 {
+			err += ", "
+		}
+		if !list && t == graph.NodeList {
+			err += "a list of "
+			list = true
+		}
+		err += t.String()
+	}
+	return errors.New(err)
 }
 
 func (co *Compiler) compileDirectiveInclude(sel *Select, d *graph.Directive) error {
@@ -1591,6 +1745,28 @@ func compileFilter(s *sdata.DBSchema, ti sdata.DBTable, filter []string, isJSON 
 // 	}
 // 	return b.String()
 // }
+
+func ifArgList(arg graph.Arg, lty graph.ParserType) bool {
+	return arg.Val.Type == graph.NodeList &&
+		len(arg.Val.Children) != 0 &&
+		arg.Val.Children[0].Type == lty
+}
+
+func ifArg(arg graph.Arg, ty graph.ParserType) bool {
+	return arg.Val.Type == ty
+}
+
+func ifNotArg(arg graph.Arg, ty graph.ParserType) bool {
+	return arg.Val.Type != ty
+}
+
+// func ifArgVal(arg graph.Arg, val string) bool {
+// 	return arg.Val.Val == val
+// }
+
+func ifNotArgVal(arg graph.Arg, val string) bool {
+	return arg.Val.Val != val
+}
 
 func argErr(name, ty string) error {
 	return fmt.Errorf("value for argument '%s' must be a %s", name, ty)

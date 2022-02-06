@@ -106,7 +106,7 @@ func (g *GraphJin) Subscribe(
 	}
 
 	if role == "user" && gj.abacEnabled {
-		if role, err = gj.executeRoleQuery(c, nil, gj.roleStmtMD, vars, rc); err != nil {
+		if role, err = gj.executeRoleQuery(c, nil, vars, rc); err != nil {
 			return nil, err
 		}
 	}
