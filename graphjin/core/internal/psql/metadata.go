@@ -51,23 +51,23 @@ func (c *compilerContext) renderVar(vv string) {
 func (c *compilerContext) renderParam(p Param) {
 	var id int
 	var ok bool
+	md := c.md
 
 	switch c.ct {
 	case "mysql":
-		c.md.params = append(c.md.params, p)
+		md.params = append(md.params, p)
 	default:
-		id, ok = c.md.pindex[p.Name]
-		if !ok {
-			c.md.params = append(c.md.params, p)
-			id = len(c.md.params)
-			if c.md.pindex == nil {
-				c.md.pindex = make(map[string]int)
+		if id, ok = md.pindex[p.Name]; !ok {
+			md.params = append(md.params, p)
+			id = len(md.params)
+			if md.pindex == nil {
+				md.pindex = make(map[string]int)
 			}
-			c.md.pindex[p.Name] = id
+			md.pindex[p.Name] = id
 		}
 	}
 
-	if c.md.poll {
+	if md.poll {
 		_, _ = c.w.WriteString(`_gj_sub.`)
 		c.quoted(p.Name)
 		return

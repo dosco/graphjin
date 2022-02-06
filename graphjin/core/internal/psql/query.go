@@ -84,7 +84,7 @@ func (co *Compiler) Compile(w *bytes.Buffer, qc *qcode.QCode) (Metadata, error) 
 		co.compileMutation(w, qc, &md)
 
 	default:
-		err = fmt.Errorf("Unknown operation type %d", qc.Type)
+		err = fmt.Errorf("unknown operation type %d", qc.Type)
 	}
 
 	return md, err

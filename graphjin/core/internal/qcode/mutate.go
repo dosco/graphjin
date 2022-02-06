@@ -207,10 +207,14 @@ type mData struct {
 }
 
 func parseDataValue(qc *QCode, actionVal *graph.Node, isJSON bool) (mData, error) {
-	md, err := parseMutationData(qc, actionVal)
-	if err != nil {
-		return md, err
-	}
+	var md mData
+	md.Data = actionVal
+
+	// md, err := parseMutationData(qc, actionVal)
+	// if err != nil {
+	// 	return md, err
+	// }
+
 	if isJSON {
 		md.IsJSON = isJSON
 	}

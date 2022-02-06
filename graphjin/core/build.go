@@ -8,6 +8,7 @@ import (
 
 	"github.com/dosco/graphjin/core/internal/psql"
 	"github.com/dosco/graphjin/core/internal/qcode"
+	"github.com/go-playground/validator/v10"
 )
 
 type queryComp struct {
@@ -20,6 +21,7 @@ type stmt struct {
 	role *Role
 	qc   *qcode.QCode
 	md   psql.Metadata
+	va   *validator.Validate
 	sql  string
 }
 
@@ -41,6 +43,7 @@ func (gj *graphjin) compileQuery(qr queryReq, role string) (*queryComp, error) {
 		if err != nil {
 			return nil, err
 		}
+		st.va = validator.New()
 		return &queryComp{qr: qr, st: st}, nil
 	}
 
@@ -61,6 +64,7 @@ func (gj *graphjin) compileQuery(qr queryReq, role string) (*queryComp, error) {
 	if qc.st.sql == "" {
 		qc.Do(func() {
 			qc.st, err = gj.compileQueryRole(qc.qr, vm, role)
+			qc.st.va = validator.New()
 		})
 	}
 
