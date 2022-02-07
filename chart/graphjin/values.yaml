@@ -1,0 +1,68 @@
+nameOverride: ""
+fullnameOverride: ""
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+
+imagePullSecrets: {}
+
+serviceAccount:
+  create: true
+  annotations: {}
+
+image:
+  repository: docker.wiseflow.io/k8s/graphjin
+  tag: latest
+  pullPolicy: IfNotPresent
+
+terminationGracePeriodSeconds: 60
+
+replicaCount: 1
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+disruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+resources: 
+  limits:
+    cpu: 200m
+    memory: 100Mi
+  requests:
+    cpu: 50m
+    memory: 100Mi
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: false
+  # annotations: 
+  #   kubernetes.io/ingress.class: "nginx"
+  # hosts:
+  #   - host: author.stage.wiseflow.io
+  #     paths: 
+  #       - /
+  # tls:
+  #   - hosts:
+  #     - author.stage.wiseflow.io
+  #     secretName: api-author-tls
+
+config:
+  production: true
+  host_port: 0.0.0.0:8080
+  auth:
+    jwt: 
+      public_key_file: /keys/public.pem
+
+jwt:
+  publicKey: ""

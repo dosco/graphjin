@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "graphjin.fullname" . }}
+  labels:
+    {{- include "graphjin.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "graphjin.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "graphjin.selectorLabels" . | nindent 8 }}
+      annotations: 
+        checksum/config: {{ toJson .Values.config | sha256sum | quote }}
+        checksum/jwt: {{ .Values.jwt.publicKey | sha256sum | quote }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+    {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      volumes:
+        - name: "jwt-public-key"
+          configMap:
+            name: {{ include "graphjin.fullname" . }}-jwt-public-key
+        - name: "config"
+          secret:
+            secretName: {{ include "graphjin.fullname" . }}-config
+      serviceAccountName: {{ include "graphjin.serviceAccountName" . }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          envFrom: 
+            - configMapRef: 
+                name: {{ include "graphjin.fullname" . }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          volumeMounts:
+            - name: "jwt-public-key"
+              subPath: publicKey
+              mountPath: {{ .Values.config.auth.jwt.public_key_file }}
+            - name: "config"
+              subPath: config
+              mountPath: /config/prod.yaml
+          livenessProbe:
+            httpGet:
+              port: {{ .Values.service.port }}
+              path: "/health"
+          startupProbe:
+            httpGet:
+              port: {{ .Values.service.port }}
+              path: "/health"
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+    {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
