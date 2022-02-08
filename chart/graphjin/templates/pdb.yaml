@@ -1,0 +1,17 @@
+{{- if .Values.disruptionBudget.enabled }}
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "graphjin.fullname" . }}
+  labels:
+    {{- include "graphjin.labels" . | nindent 4 }}
+spec:
+  {{- if .Values.disruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ .Values.disruptionBudget.maxUnavailable }}
+  {{- else if .Values.disruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.disruptionBudget.minAvailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "graphjin.selectorLabels" . | nindent 6 }}
+{{- end }}
