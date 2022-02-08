@@ -1,0 +1,9 @@
+#!groovy
+@Library('utils')
+import jenkinslib.PodBuilder
+import jenkinslib.Utilities
+
+def podbuilder = new PodBuilder(this, false)
+def utils = new Utilities(this, false)
+
+utils.packagePipeline(podbuilder, "chart", "graphjin")
