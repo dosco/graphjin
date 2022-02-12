@@ -324,7 +324,13 @@ func (co *Compiler) processNestedMutations(ms *mState, m *Mutate, data *graph.No
 			continue
 		}
 
-		k := v.Name
+		var k string
+
+		if co.c.EnableCamelcase {
+			k = util.ToSnake(v.Name)
+		} else {
+			k = v.Name
+		}
 
 		// Get child-to-parent relationship
 		paths, err := co.s.FindPath(k, m.Key, "")
@@ -539,17 +545,21 @@ func (co *Compiler) addTablesAndColumns(m *Mutate, items []Mutate, data *graph.N
 		}
 	}
 
-	if m.Cols, err = getColumnsFromData(m, data, trv, cm); err != nil {
+	if m.Cols, err = co.getColumnsFromData(m, data, trv, cm); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func getColumnsFromData(m *Mutate, data *graph.Node, trv trval, cm map[string]struct{}) ([]MColumn, error) {
+func (co *Compiler) getColumnsFromData(m *Mutate, data *graph.Node, trv trval, cm map[string]struct{}) ([]MColumn, error) {
 	var cols []MColumn
 
 	for k, v := range trv.getPresets(m.Type) {
+		if co.c.EnableCamelcase {
+			k = util.ToSnake(k)
+		}
+
 		if _, ok := cm[k]; ok {
 			continue
 		}
@@ -588,6 +598,10 @@ func getColumnsFromData(m *Mutate, data *graph.Node, trv trval, cm map[string]st
 	// put this back in once we have integration testing
 
 	for k := range data.CMap {
+		if co.c.EnableCamelcase {
+			k = util.ToSnake(k)
+		}
+
 		if _, ok := cm[k]; ok {
 			continue
 		}
