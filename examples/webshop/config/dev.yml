@@ -1,5 +1,5 @@
 app_name: "Webshop Development"
-host_port: localhost:8080
+host_port: 0.0.0.0:8080
 web_ui: true
 
 # Log levels: debug, error, warn, info
