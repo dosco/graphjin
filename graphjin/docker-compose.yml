@@ -8,13 +8,13 @@ services:
     ports:
       - "5432:5432"
 
-  payments:
-    image: rivancic/json-server-faker:latest
-    volumes:
-      - ./examples/webshop/config/run.sh:/run.sh
-      - ./examples/webshop/config/file.js:/data/file.js
-    ports:
-      - "4000:80"
+  # payments:
+  #   image: rivancic/json-server-faker:latest
+  #   volumes:
+  #     - ./examples/webshop/config/:/
+  #     - ./examples/webshop/config/file.js:/data/file.js
+  #   ports:
+  #     - "4000:80"
 
   api:
     build:

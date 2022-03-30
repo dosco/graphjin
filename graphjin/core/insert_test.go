@@ -455,7 +455,7 @@ func Example_insertWithCamelToSnakeCase() {
 			"description": "Description for product 2007",
 			"price": 2011.5,
 			"tags": ["Tag 1", "Tag 2"],
-			"category_ids": [1, 2, 3, 4, 5]
+			"categoryIds": [1, 2, 3, 4, 5]
 		}
 	}`)
 

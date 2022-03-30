@@ -10,6 +10,8 @@ import (
 	"github.com/dosco/graphjin/internal/cmd/internal/migrate"
 	"github.com/dosco/graphjin/serv"
 	"github.com/spf13/cobra"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 func migrateCmd() *cobra.Command {
@@ -309,8 +311,10 @@ func ExtractErrorLine(source string, position int) (ErrorLineExtract, error) {
 }
 
 func getMigrationVars(c *serv.Config) map[string]interface{} {
+	en := cases.Title(language.English)
+
 	return map[string]interface{}{
-		"AppName":     strings.Title(c.AppName),
+		"AppName":     en.String(c.AppName),
 		"AppNameSlug": strings.ToLower(strings.ReplaceAll(c.AppName, " ", "_")),
 		"Env":         strings.ToLower(os.Getenv("GO_ENV")),
 	}

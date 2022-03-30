@@ -68,6 +68,7 @@ type Mutate struct {
 type MColumn struct {
 	Col       sdata.DBColumn
 	FieldName string
+	Alias     string
 	Value     string
 }
 
@@ -556,6 +557,7 @@ func (co *Compiler) getColumnsFromData(m *Mutate, data *graph.Node, trv trval, c
 	var cols []MColumn
 
 	for k, v := range trv.getPresets(m.Type) {
+		k1 := k
 		if co.c.EnableCamelcase {
 			k = util.ToSnake(k)
 		}
@@ -569,7 +571,7 @@ func (co *Compiler) getColumnsFromData(m *Mutate, data *graph.Node, trv trval, c
 			return nil, err
 		}
 
-		cols = append(cols, MColumn{Col: col, FieldName: k, Value: v})
+		cols = append(cols, MColumn{Col: col, FieldName: k1, Alias: k, Value: v})
 		cm[k] = struct{}{}
 	}
 
@@ -598,6 +600,7 @@ func (co *Compiler) getColumnsFromData(m *Mutate, data *graph.Node, trv trval, c
 	// put this back in once we have integration testing
 
 	for k := range data.CMap {
+		k1 := k
 		if co.c.EnableCamelcase {
 			k = util.ToSnake(k)
 		}
@@ -615,7 +618,7 @@ func (co *Compiler) getColumnsFromData(m *Mutate, data *graph.Node, trv trval, c
 			return nil, fmt.Errorf("column blocked: %s", k)
 		}
 
-		cols = append(cols, MColumn{Col: col, FieldName: k})
+		cols = append(cols, MColumn{Col: col, FieldName: k1, Alias: k})
 	}
 
 	return cols, nil

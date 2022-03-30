@@ -448,21 +448,38 @@ func (c *compilerContext) renderValues(m qcode.Mutate, prefix bool) {
 
 		c.w.WriteString(` FROM _sg_input i`)
 		c.renderNestedRelTables(m, prefix)
-
-		if m.IsArray {
-			c.w.WriteString(`, json_populate_recordset`)
-		} else {
-			c.w.WriteString(`, json_populate_record`)
-		}
-
-		c.w.WriteString(`(NULL::"`)
-		c.w.WriteString(m.Ti.Name)
-		joinPath(c.w, `", i.j`, m.Path)
-		c.w.WriteString(`) t`)
+		c.renderMutateToRecordSet(m)
 	} else {
 		c.w.WriteString(` VALUES `)
 		c.renderInsertUpdateValues(m)
 	}
+}
+
+func (c *compilerContext) renderMutateToRecordSet(m qcode.Mutate) {
+	if m.IsArray {
+		c.w.WriteString(`, json_to_recordset`)
+	} else {
+		c.w.WriteString(`, json_to_record`)
+	}
+
+	c.w.WriteString(`(`)
+	joinPath(c.w, `i.j`, m.Path)
+	c.w.WriteString(`) as t(`)
+
+	i := 0
+	for _, col := range m.Cols {
+		if col.Value != "" {
+			continue
+		}
+		if i != 0 {
+			c.w.WriteString(`, `)
+		}
+		c.quoted(col.FieldName)
+		c.w.WriteString(` `)
+		c.w.WriteString(col.Col.Type)
+		i++
+	}
+	c.w.WriteString(`)`)
 }
 
 func (c *compilerContext) renderComma(i int) int {
