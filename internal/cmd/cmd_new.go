@@ -10,6 +10,8 @@ import (
 	"text/template"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 func newCmd() *cobra.Command {
@@ -28,8 +30,9 @@ func cmdNew(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
+	en := cases.Title(language.English)
 	tmpl := newTempl(map[string]string{
-		"AppName":     strings.Title(strings.Join(args, " ")),
+		"AppName":     en.String(strings.Join(args, " ")),
 		"AppNameSlug": strings.ToLower(strings.Join(args, "_")),
 	})
 

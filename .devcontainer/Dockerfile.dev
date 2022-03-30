@@ -1,0 +1,4 @@
+FROM mcr.microsoft.com/vscode/devcontainers/go
+
+WORKDIR /workspace
+COPY . .

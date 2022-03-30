@@ -1,0 +1,41 @@
+{
+	"name": "Graphjin Dev",
+	"dockerComposeFile": "docker-compose.dev.yml",
+	"service": "app",
+  "shutdownAction": "stopCompose",
+	"workspaceFolder": "/workspace",
+  "settings": {
+    "#terminal.integrated.defaultProfile.linux#": "/bin/bash",
+		"[go]": {
+			"editor.formatOnSave": true
+		},
+		"go.useLanguageServer": true,
+		"go.testFlags": [
+			"-short",
+			"-v"
+		],
+		"go.testTimeout": "30m"
+
+  },
+	
+	// Add the IDs of extensions you want installed when the container is created.
+	"extensions": [
+		"golang.go",
+		"mhutchie.git-graph"
+	],
+
+	// Use 'forwardPorts' to make a list of ports inside the container available locally.
+	"forwardPorts": [8080],
+
+	// Uncomment the next line if you want start specific services in your Docker Compose config.
+	// "runServices": [],
+
+	// Uncomment the next line if you want to keep your containers running after VS Code shuts down.
+	// "shutdownAction": "none",
+
+	// Uncomment the next line to run commands after the container is created - for example installing curl.
+	// "postCreateCommand": "apt-get update && apt-get install -y curl",
+
+	// Uncomment to connect as a non-root user if you've added one. See https://aka.ms/vscode-remote/containers/non-root.
+	// "remoteUser": "vscode"
+}

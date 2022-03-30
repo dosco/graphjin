@@ -1,0 +1,33 @@
+version: "3.8"
+services:
+  db:
+    image: postgres:12
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+      
+  app:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile.dev
+    init: true
+    volumes:
+      # Docker in docker
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Use a named volume for the source code
+      - my-app:/workspace
+      # Persist VS Code extensions between rebuilds
+      - vscode-extensions:/root/.vscode-server/extensions
+      # And/or for VS Code Insiders
+      - vscode-extensions-insiders:/root/.vscode-server-insiders/extensions
+
+    container_name: graphjin-dev
+    # Overrides default command so things don't shut down after the process ends.
+    command: sleep infinity
+
+volumes:
+  my-app:
+  vscode-extensions:
+  vscode-extensions-insiders:

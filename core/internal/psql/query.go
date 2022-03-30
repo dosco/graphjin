@@ -439,7 +439,7 @@ func (c *compilerContext) renderFrom(sel *qcode.Select) {
 		case "mysql":
 			c.renderJSONTable(sel)
 		default:
-			c.renderRecordSet(sel)
+			c.renderSelectToRecordSet(sel)
 		}
 
 	default:
@@ -473,7 +473,7 @@ func (c *compilerContext) renderJSONTable(sel *qcode.Select) {
 	c.quoted(sel.Table)
 }
 
-func (c *compilerContext) renderRecordSet(sel *qcode.Select) {
+func (c *compilerContext) renderSelectToRecordSet(sel *qcode.Select) {
 	// jsonb_to_recordset('[{"a":1,"b":[1,2,3],"c":"bar"}, {"a":2,"b":[1,2,3],"c":"bar"}]') as x(a int, b text, d text);
 	c.w.WriteString(sel.Ti.Type)
 	c.w.WriteString(`_to_recordset(`)

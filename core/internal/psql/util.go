@@ -30,7 +30,7 @@ func colWithTableID(w *bytes.Buffer, table string, id int32, col string) {
 func (c *compilerContext) colWithTable(table, col string) {
 	c.quoted(table)
 	c.w.WriteString(`.`)
-	c.w.WriteString(col)
+	c.quoted(col)
 }
 
 func (c *compilerContext) quoted(identifier string) {
