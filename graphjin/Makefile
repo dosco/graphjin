@@ -45,7 +45,7 @@ os = $(word 1, $@)
 
 $(PLATFORMS): lint test 
 	@mkdir -p release
-	@GOOS=$(os) GOARCH=amd64 go build $(BUILD_FLAGS) -o release/$(BINARY)-$(BUILD_VERSION)-$(os)-amd64 main.go
+	@CGO_ENABLED=0 go build $(BUILD_FLAGS) -o release/$(BINARY)-$(BUILD_VERSION)-$(os) main.go
 
 release: windows linux darwin
 

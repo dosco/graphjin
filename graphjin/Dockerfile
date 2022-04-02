@@ -19,11 +19,20 @@ RUN go mod download
 RUN make build
 
 # stage: 3
-FROM gcr.io/distroless/static
+FROM alpine:latest
 WORKDIR /
 
+RUN apk add --no-cache tzdata
+RUN apk add --no-cache libc6-compat
+RUN mkdir -p /config
+
+COPY --from=go-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=go-build /app/graphjin .
+
+RUN chmod +x /graphjin
+
+#USER nobody
+
 ENV GO_ENV production
 
 ENTRYPOINT ["./graphjin"]
-CMD ["serv"]
