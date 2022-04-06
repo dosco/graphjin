@@ -34,7 +34,9 @@
 package serv
 
 import (
+	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -214,31 +216,55 @@ func (s *service) hotStart() error {
 	return err
 }
 
-func (s1 *Service) Deploy(conf *Config, options ...Option) error {
+func (s *Service) Deploy(conf *Config, options ...Option) error {
 	var err error
-	os := s1.Load().(*service)
+	os := s.Load().(*service)
 
 	if conf == nil {
 		return nil
 	}
 
-	s, err := newGraphJinService(conf, os.db, options...)
+	s1, err := newGraphJinService(conf, os.db, options...)
 	if err != nil {
 		return err
 	}
-	s.srv = os.srv
-	s.closeFn = os.closeFn
+	s1.srv = os.srv
+	s1.closeFn = os.closeFn
 
-	s1.Store(s)
+	s.Store(s1)
 	return nil
 }
 
-func (s1 *Service) Start() error {
-	startHTTP(s1)
+func (s *Service) Start() error {
+	startHTTP(s)
 	return nil
 }
 
-func (s1 *Service) Attach(mux *http.ServeMux) error {
-	_, err := routeHandler(s1, mux)
+func (s *Service) Attach(mux *http.ServeMux) error {
+	_, err := routeHandler(s, mux)
 	return err
+}
+
+func (s *Service) GraphQL(c context.Context,
+	query string,
+	vars json.RawMessage,
+	rc *core.ReqConfig) (*core.Result, error) {
+
+	s1 := s.Load().(*service)
+	return s1.gj.GraphQL(c, query, vars, rc)
+}
+
+func (s *Service) Subscribe(
+	c context.Context,
+	query string,
+	vars json.RawMessage,
+	rc *core.ReqConfig) (*core.Member, error) {
+
+	s1 := s.Load().(*service)
+	return s1.gj.Subscribe(c, query, vars, rc)
+}
+
+func (s *Service) GetDB() *sql.DB {
+	s1 := s.Load().(*service)
+	return s1.db
 }
