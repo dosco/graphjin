@@ -72,7 +72,7 @@ FROM
 	LEFT JOIN pg_namespace n ON n.oid = c.relnamespace  
 	LEFT JOIN pg_constraint co ON co.conrelid = c.oid AND f.attnum = ANY (co.conkey) 
 WHERE 
-	c.relkind IN ('r', 'v', 'm', 'f')
+	c.relkind IN ('r', 'v', 'm', 'f', 'p')
 	AND n.nspname NOT IN ('_graphjin', 'information_schema', 'pg_catalog') 
 	AND c.relname != 'schema_version'
 	AND f.attnum > 0
