@@ -44,14 +44,17 @@ lint: download-tools
 
 BINARY := graphjin
 LDFLAGS := -s -w
-PLATFORMS := windows linux darwin
-os = $(word 1, $@)
+PLATFORMS := linux/amd64 windows/amd64 darwin/amd64
+
+temp = $(subst /, ,$@)
+os = $(word 1, $(temp))
+arch = $(word 2, $(temp))
 
 $(PLATFORMS): lint test 
 	@mkdir -p release
-	@CGO_ENABLED=0 go build $(BUILD_FLAGS) -o release/$(BINARY)-$(BUILD_VERSION)-$(os) main.go
+	@CGO_ENABLED=0 GOOS=$(os) GOARCH=$(arch) go build $(BUILD_FLAGS) -o release/$(BINARY)-$(BUILD_VERSION)-$(os) main.go
 
-release: windows linux darwin
+release: linux/amd64 windows/amd64 darwin/amd64
 
 all: lint test $(BINARY)
 
@@ -61,7 +64,7 @@ gen: download-tools
 	@go generate ./...
 
 $(BINARY):
-	@go build $(BUILD_FLAGS) -o $(BINARY) main.go 
+	@CGO_ENABLED=0 go build $(BUILD_FLAGS) -o $(BINARY) main.go 
 
 clean:
 	@rm -f $(BINARY)
