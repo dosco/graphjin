@@ -68,9 +68,8 @@ cors_debug: false
 # cache_control: "public, max-age=300, s-maxage=600"
 
 # Subscriptions poll the database to query for updates
-# this sets the duration (in seconds) between requests.
-# Defaults to 5 seconds
-subs_poll_every_seconds: 5
+# this sets the duration between requests.
+subs_poll_duration: 2s
 
 # Default limit value to be used on queries and as the max
 # limit on all queries where a limit is defined as a query variable.

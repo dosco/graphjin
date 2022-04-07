@@ -95,7 +95,7 @@ type Config struct {
 	// SubsPollDuration is the database polling duration (in seconds)
 	// used by subscriptions to query for updates.
 	// Default set to 5 seconds
-	SubsPollDuration time.Duration `mapstructure:"subs_poll_every_seconds"`
+	SubsPollDuration time.Duration `mapstructure:"subs_poll_duration"`
 
 	// DefaultLimit sets the default max limit (number of rows) when a
 	// limit is not defined in the query or the table role config
@@ -118,7 +118,7 @@ type Config struct {
 	// DBSchemaPollDuration sets the duration for polling the database
 	// schema to detect changes to it. GraphJin is reinitialized when a
 	// change is detected
-	DBSchemaPollDuration time.Duration `mapstructure:"db_schema_poll_every_seconds"`
+	DBSchemaPollDuration time.Duration `mapstructure:"db_schema_poll_duration"`
 
 	rtmap map[string]refunc
 	tmap  map[string]qcode.TConfig

@@ -14,15 +14,14 @@ func (g *GraphJin) initDBWatcher() error {
 		return nil
 	}
 
-	var ps time.Duration
+	ps := gj.conf.DBSchemaPollDuration
 
-	switch d := gj.conf.DBSchemaPollDuration; {
-	case d < 0:
+	switch {
+	case ps < (1 * time.Second):
 		return nil
-	case d < 5:
+
+	case ps < (5 * time.Second):
 		ps = 10 * time.Second
-	default:
-		ps = d * time.Second
 	}
 
 	go func() {

@@ -69,9 +69,8 @@ secrets_file: "prod.secrets.yml"
 # cache_control: "public, max-age=300, s-maxage=600"
 
 # Subscriptions poll the database to query for updates
-# this sets the duration (in seconds) between requests.
-# Defaults to 5 seconds
-# subs_poll_every_seconds: 5
+# this sets the duration between requests.
+# subs_poll_duration: 2s
 
 # Hot deploy allows you to deploy config changes
 # instantly without needing to build a new image
