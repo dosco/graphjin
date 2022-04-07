@@ -25,6 +25,10 @@ const (
 	errSubs             = "subscription: %s: %s"
 )
 
+var (
+	minPollDuration = (200 * time.Millisecond)
+)
+
 type sub struct {
 	name string
 	role string
@@ -190,12 +194,10 @@ func (gj *graphjin) newSub(c context.Context, s *sub, query string, vars json.Ra
 
 func (gj *graphjin) subController(s *sub) {
 	defer gj.subs.Delete((s.name + s.role))
-	var ps time.Duration
 
-	if gj.conf.SubsPollDuration < 5 {
-		ps = 5 * time.Second
-	} else {
-		ps = gj.conf.SubsPollDuration * time.Second
+	ps := gj.conf.SubsPollDuration
+	if ps < minPollDuration {
+		ps = minPollDuration
 	}
 
 	for {
@@ -321,7 +323,13 @@ func (gj *graphjin) subCheckUpdates(s *sub, mv mval, start int) {
 
 	// random wait to prevent multiple queries hitting the db
 	// at the same time.
-	time.Sleep(time.Duration(rand.Int63n(500)) * time.Millisecond) // #nosec F404
+	ps := gj.conf.SubsPollDuration
+	if ps < minPollDuration {
+		ps = minPollDuration
+	}
+
+	rt := rand.Int63n(ps.Milliseconds()) // #nosec F404
+	time.Sleep(time.Duration(rt) * time.Millisecond)
 
 	end := start + maxMembersPerWorker
 	if len(mv.ids) < end {

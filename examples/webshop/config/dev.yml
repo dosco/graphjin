@@ -112,7 +112,7 @@ debug: true
 
 # Poll the database to detect schema changes. GraphJin is reinitialized
 # when a change is detected. Set to 0 to disable.
-db_schema_poll_every_seconds: 20
+db_schema_poll_duration: 20s
 
 # Auth related environment Variables
 # GJ_AUTH_RAILS_COOKIE_SECRET_KEY_BASE

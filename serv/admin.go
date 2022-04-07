@@ -1,4 +1,3 @@
-//nolint: errcheck
 package serv
 
 import (
@@ -54,7 +53,7 @@ func adminDeployHandler(s1 *Service) http.Handler {
 			msg = fmt.Sprintf("deploy successful: '%s'", res.name)
 		}
 
-		io.WriteString(w, msg)
+		_, _ = io.WriteString(w, msg)
 	}
 
 	return http.HandlerFunc(h)
@@ -82,7 +81,7 @@ func adminRollbackHandler(s1 *Service) http.Handler {
 		} else {
 			msg = fmt.Sprintf("rollback successful: '%s'", res.pname)
 		}
-		io.WriteString(w, msg)
+		_, _ = io.WriteString(w, msg)
 	}
 
 	return http.HandlerFunc(h)
