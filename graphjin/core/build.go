@@ -49,7 +49,7 @@ func (gj *graphjin) compileQuery(qr queryReq, role string) (*queryComp, error) {
 
 	// In production mode enforce the allow list and
 	// compile and cache the result else compile each time
-	if qc, ok = gj.queries[(qr.name + role)]; !ok {
+	if qc, ok = gj.queries[(qr.ns + qr.name + role)]; !ok {
 		return nil, errNotFound
 	}
 	ov := qc.qr.order[0]
@@ -74,7 +74,8 @@ func (gj *graphjin) compileQuery(qr queryReq, role string) (*queryComp, error) {
 func (gj *graphjin) orderQuery(
 	ov string,
 	qc *queryComp,
-	vm map[string]json.RawMessage, role string) (*queryComp, error) {
+	vm map[string]json.RawMessage,
+	role string) (*queryComp, error) {
 
 	var oval string
 
@@ -84,7 +85,7 @@ func (gj *graphjin) orderQuery(
 	}
 	oval = string(v[1:(len(v) - 1)])
 
-	if qc, ok := gj.queries[(qc.qr.name + role + oval)]; ok {
+	if qc, ok := gj.queries[(qc.qr.ns + qc.qr.name + role + oval)]; ok {
 		return qc, nil
 	} else {
 		return nil, fmt.Errorf("invalid value for variable (%s): %s", ov, oval)
@@ -92,8 +93,7 @@ func (gj *graphjin) orderQuery(
 }
 
 func (gj *graphjin) compileQueryRole(
-	qr queryReq,
-	vm map[string]json.RawMessage, role string) (stmt, error) {
+	qr queryReq, vm map[string]json.RawMessage, role string) (stmt, error) {
 
 	var st stmt
 	var err error
@@ -107,7 +107,7 @@ func (gj *graphjin) compileQueryRole(
 		vm[qr.order[0]] = json.RawMessage(qr.order[1])
 	}
 
-	if st.qc, err = gj.qc.Compile(qr.query, vm, st.role.Name); err != nil {
+	if st.qc, err = gj.qc.Compile(qr.query, vm, st.role.Name, qr.ns); err != nil {
 		return st, err
 	}
 

@@ -284,10 +284,16 @@ func NewCompiler(s *sdata.DBSchema, c Config) (*Compiler, error) {
 	return &Compiler{c: c, s: s, tr: make(map[string]trval)}, nil
 }
 
-func (co *Compiler) Compile(query []byte, vars Variables, role string) (*QCode, error) {
+func (co *Compiler) Compile(
+	query []byte, vars Variables, role, namespace string) (*QCode, error) {
 	var err error
+	var fragFetch func(string) (string, error)
 
-	op, err := graph.Parse(query, co.c.FragmentFetcher)
+	if co.c.FragmentFetcher != nil {
+		fragFetch = co.c.FragmentFetcher(namespace)
+	}
+
+	op, err := graph.Parse(query, fragFetch)
 	if err != nil {
 		return nil, err
 	}

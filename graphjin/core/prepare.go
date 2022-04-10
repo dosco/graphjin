@@ -13,6 +13,7 @@ import (
 
 type queryReq struct {
 	op    qcode.QType
+	ns    string
 	name  string
 	query []byte
 	vars  []byte
@@ -105,7 +106,8 @@ func (gj *graphjin) initAllowList() error {
 		}
 
 		op, _ := qcode.GetQType(item.Query)
-		gj.apq.Set(item.Name, apqInfo{op: op, name: item.Name})
+		k := (item.Namespace + item.Name)
+		gj.apq.Set(k, apqInfo{op: op, name: item.Name})
 	}
 
 	return nil
@@ -120,10 +122,12 @@ func (gj *graphjin) getQueryKeys(item allow.Item) []queryKey {
 	var qk []queryKey
 
 	for roleName := range gj.roles {
-		qk = append(qk, queryKey{key: (item.Name + roleName)})
+		k1 := (item.Namespace + item.Name + roleName)
+		qk = append(qk, queryKey{key: k1})
 
 		for _, v := range item.Metadata.Order.Values {
-			qk = append(qk, queryKey{key: (item.Name + roleName + v), val: v})
+			k2 := (item.Namespace + item.Name + roleName + v)
+			qk = append(qk, queryKey{key: k2, val: v})
 		}
 	}
 	return qk

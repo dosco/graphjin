@@ -26,6 +26,7 @@ require (
 	github.com/dop251/goja v0.0.0-20220405120441-9037c2b61cbf
 	github.com/frankban/quicktest v1.14.2 // indirect
 	github.com/fsnotify/fsnotify v1.5.1
+	github.com/go-chi/chi v1.5.4 // indirect
 	github.com/go-http-utils/headers v0.0.0-20181008091004-fed159eddc2a
 	github.com/go-pkgz/expirable-cache v0.0.3
 	github.com/go-playground/validator/v10 v10.10.1

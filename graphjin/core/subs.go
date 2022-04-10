@@ -125,7 +125,7 @@ func (g *GraphJin) Subscribe(
 	s := v.(*sub)
 
 	s.Do(func() {
-		err = gj.newSub(c, s, query, vars)
+		err = gj.newSub(c, s, query, vars, rc)
 	})
 
 	if err != nil {
@@ -164,14 +164,20 @@ func (g *GraphJin) Subscribe(
 	return m, nil
 }
 
-func (gj *graphjin) newSub(c context.Context, s *sub, query string, vars json.RawMessage) error {
+func (gj *graphjin) newSub(c context.Context,
+	s *sub, query string, vars json.RawMessage, rc *ReqConfig) error {
 	var err error
 
 	qr := queryReq{
+		ns:    gj.namespace,
 		op:    qcode.QTSubscription,
 		name:  s.name,
 		query: []byte(query),
 		vars:  vars,
+	}
+
+	if rc != nil && rc.Namespace != "" {
+		qr.ns = rc.Namespace
 	}
 
 	if s.qc, err = gj.compileQuery(qr, s.role); err != nil {
@@ -179,7 +185,13 @@ func (gj *graphjin) newSub(c context.Context, s *sub, query string, vars json.Ra
 	}
 
 	if gj.allowList != nil && !gj.prod {
-		if err := gj.allowList.Set(vars, query, s.qc.st.qc.Metadata); err != nil {
+		err := gj.allowList.Set(
+			vars,
+			query,
+			s.qc.st.qc.Metadata,
+			rc.Namespace)
+
+		if err != nil {
 			return err
 		}
 	}

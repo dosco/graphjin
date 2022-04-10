@@ -130,6 +130,51 @@ func TestAllowList(t *testing.T) {
 	assert.Equal(t, exp, got, "should equal")
 }
 
+func TestAllowListWithNamespace(t *testing.T) {
+	gql1 := `query getProducts {
+		products(id: 2) {
+			id
+		}
+	}`
+
+	gql2 := `query getProducts {
+		products(id: 3) {
+			id
+			name
+		}
+	}`
+
+	dir, err := ioutil.TempDir("", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	fs := afero.NewBasePathFs(afero.NewOsFs(), dir)
+
+	conf1 := newConfig(&core.Config{DBType: dbType})
+	gj1, err := core.NewGraphJin(conf1, db,
+		core.OptionSetFS(fs), core.OptionSetNamespace(("web")))
+	if err != nil {
+		t.Error(err)
+	}
+
+	_, err = gj1.GraphQL(context.Background(), gql1, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	conf2 := newConfig(&core.Config{DBType: dbType, Production: true})
+	gj2, err := core.NewGraphJin(conf2, db, core.OptionSetFS(fs))
+	if err != nil {
+		t.Error(err)
+	}
+
+	_, err = gj2.GraphQL(context.Background(), gql2, nil,
+		&core.ReqConfig{Namespace: "api"})
+
+	assert.ErrorContains(t, err, "not found in prepared statements")
+}
+
 func TestConfigReuse(t *testing.T) {
 	gql := `query {
 		products(id: 2) {

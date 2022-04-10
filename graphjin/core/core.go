@@ -58,6 +58,7 @@ type gcontext struct {
 	op   qcode.QType
 	rc   *ReqConfig
 	sc   *script
+	ns   string
 	name string
 }
 
@@ -163,7 +164,7 @@ func (gj *graphjin) initCompilers() error {
 	}
 
 	if gj.allowList != nil && gj.prod {
-		qcc.FragmentFetcher = gj.allowList.FragmentFetcher()
+		qcc.FragmentFetcher = gj.allowList.FragmentFetcher
 	}
 
 	gj.qc, err = qcode.NewCompiler(gj.schema, qcc)
@@ -286,6 +287,8 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 	}
 	res.qc = qcomp
 
+	// From here on use qcomp. for everything including accessing qr since it contains updated values of the latter. This code needs some refactoring
+
 	if err := c.handleVars(qcomp, &res); err != nil {
 		return res, err
 	}
@@ -319,13 +322,14 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 	res.data = cur.data
 
 	if !c.gj.prod && c.gj.allowList != nil {
-		if err := c.saveToAllowList(qc, string(qcomp.qr.query)); err != nil {
+		if err := c.saveToAllowList(qc, string(qcomp.qr.query), qr.ns); err != nil {
 			return res, err
 		}
 	}
 
 	if !c.gj.prod && c.rc != nil && c.rc.APQKey != "" {
-		c.gj.apq.Set(c.rc.APQKey, apqInfo{
+
+		c.gj.apq.Set((qr.ns + c.rc.APQKey), apqInfo{
 			op:    qcomp.qr.op,
 			name:  qcomp.qr.name,
 			query: string(qcomp.qr.query)})
@@ -386,19 +390,20 @@ func (c *gcontext) handleVars(qcomp *queryComp, res *queryResp) error {
 	return nil
 }
 
-func (c *gcontext) saveToAllowList(qc *qcode.QCode, query string) error {
+func (c *gcontext) saveToAllowList(qc *qcode.QCode, query, namespace string) error {
 	var av []byte
 	var err error
 
 	if v, ok := qc.Vars[qc.ActionVar]; ok {
-		m := map[string]json.RawMessage{qc.ActionVar: v}
-		av, err = json.Marshal(m)
+		av, err = json.Marshal(map[string]json.RawMessage{
+			qc.ActionVar: v,
+		})
 		if err != nil {
 			return err
 		}
 	}
 
-	return c.gj.allowList.Set(av, query, qc.Metadata)
+	return c.gj.allowList.Set(av, query, qc.Metadata, namespace)
 }
 
 func (c *gcontext) setLocalUserID(conn *sql.Conn) error {
