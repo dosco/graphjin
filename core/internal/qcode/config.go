@@ -9,7 +9,7 @@ import (
 type Config struct {
 	Vars             map[string]string
 	TConfig          map[string]TConfig
-	FragmentFetcher  func(name string) (string, error)
+	FragmentFetcher  func(namespace string) func(name string) (string, error)
 	DefaultBlock     bool
 	DefaultLimit     int
 	DisableAgg       bool

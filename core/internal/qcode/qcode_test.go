@@ -35,7 +35,7 @@ func TestCompile1(t *testing.T) {
 	query { products(id: 15) {
 			id
 			name
-		} }`), nil, "user")
+		} }`), nil, "user", "")
 
 	if err != nil {
 		t.Fatal(errors.New("this should not be an error id can be a number"))
@@ -57,7 +57,7 @@ func TestCompile2(t *testing.T) {
 	query { product(id: $id) {
 			id
 			price	
-		} }`), nil, "user")
+		} }`), nil, "user", "")
 
 	if err == nil {
 		t.Fatal(errors.New("expected an error: 'products.price' blocked"))
@@ -85,7 +85,7 @@ func TestCompile3(t *testing.T) {
 			id
 			name
 		}
-	}`), vars, "user")
+	}`), vars, "user", "")
 
 	if err != nil {
 		t.Fatal(err)
@@ -105,7 +105,7 @@ func TestCompile4(t *testing.T) {
 	}
 
 	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
-	_, err := qc.Compile([]byte(gql), vars, "user")
+	_, err := qc.Compile([]byte(gql), vars, "user", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestCompile4(t *testing.T) {
 
 func TestInvalidCompile1(t *testing.T) {
 	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
-	_, err := qcompile.Compile([]byte(`#`), nil, "user")
+	_, err := qcompile.Compile([]byte(`#`), nil, "user", "")
 
 	if err == nil {
 		t.Fatal(errors.New("expecting an error"))
@@ -122,7 +122,7 @@ func TestInvalidCompile1(t *testing.T) {
 
 func TestInvalidCompile2(t *testing.T) {
 	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
-	_, err := qcompile.Compile([]byte(`{u(where:{not:0})}`), nil, "user")
+	_, err := qcompile.Compile([]byte(`{u(where:{not:0})}`), nil, "user", "")
 
 	if err == nil {
 		t.Fatal(errors.New("expecting an error"))
@@ -131,7 +131,7 @@ func TestInvalidCompile2(t *testing.T) {
 
 func TestEmptyCompile(t *testing.T) {
 	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
-	_, err := qcompile.Compile([]byte(``), nil, "user")
+	_, err := qcompile.Compile([]byte(``), nil, "user", "")
 
 	if err == nil {
 		t.Fatal(errors.New("expecting an error"))
@@ -159,7 +159,7 @@ updateThread {
 }
 }}`
 	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
-	_, err := qcompile.Compile([]byte(gql), nil, "anon")
+	_, err := qcompile.Compile([]byte(gql), nil, "anon", "")
 
 	if err == nil {
 		t.Fatal(errors.New("expecting an error"))
@@ -189,7 +189,7 @@ func TestFragmentsCompile1(t *testing.T) {
 	}
 	`
 	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
-	_, err := qcompile.Compile([]byte(gql), nil, "user")
+	_, err := qcompile.Compile([]byte(gql), nil, "user", "")
 
 	if err != nil {
 		t.Fatal(err)
@@ -217,7 +217,7 @@ func TestFragmentsCompile2(t *testing.T) {
 		phone
 	}`
 	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
-	_, err := qcompile.Compile([]byte(gql), nil, "user")
+	_, err := qcompile.Compile([]byte(gql), nil, "user", "")
 
 	if err != nil {
 		t.Fatal(err)
@@ -247,7 +247,7 @@ func TestFragmentsCompile3(t *testing.T) {
 
 	`
 	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
-	_, err := qcompile.Compile([]byte(gql), nil, "user")
+	_, err := qcompile.Compile([]byte(gql), nil, "user", "")
 
 	if err != nil {
 		t.Fatal(err)
@@ -304,7 +304,7 @@ func BenchmarkQCompile(b *testing.B) {
 	b.ReportAllocs()
 
 	for n := 0; n < b.N; n++ {
-		_, err := qcompile.Compile(gql, nil, "user")
+		_, err := qcompile.Compile(gql, nil, "user", "")
 
 		if err != nil {
 			b.Fatal(err)
@@ -320,7 +320,7 @@ func BenchmarkQCompileP(b *testing.B) {
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			_, err := qcompile.Compile(gql, nil, "user")
+			_, err := qcompile.Compile(gql, nil, "user", "")
 
 			if err != nil {
 				b.Fatal(err)
@@ -335,7 +335,7 @@ func BenchmarkQCompileFragment(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for n := 0; n < b.N; n++ {
-		_, err := qcompile.Compile(gqlWithFragments, nil, "user")
+		_, err := qcompile.Compile(gqlWithFragments, nil, "user", "")
 
 		if err != nil {
 			b.Fatal(err)

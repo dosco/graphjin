@@ -50,6 +50,7 @@ import (
 	"github.com/dosco/graphjin/internal/util"
 	"github.com/spf13/afero"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 type Service struct {
@@ -240,9 +241,36 @@ func (s *Service) Start() error {
 	return nil
 }
 
-func (s *Service) Attach(mux *http.ServeMux) error {
-	_, err := routeHandler(s, mux)
-	return err
+func (s *Service) Attach(mux Mux) error {
+	if _, err := routeHandler(s, mux); err != nil {
+		return err
+	}
+
+	s1 := s.Load().(*service)
+
+	ver := version
+	dep := s1.conf.name
+
+	if version == "" {
+		ver = "not-set"
+	}
+
+	fields := []zapcore.Field{
+		zap.String("version", ver),
+		zap.String("app-name", s1.conf.AppName),
+		zap.String("deployment-name", dep),
+		zap.String("env", os.Getenv("GO_ENV")),
+		zap.Bool("hot-deploy", s1.conf.HotDeploy),
+		zap.Bool("production", s1.conf.Core.Production),
+		zap.Bool("secrets-used", (s1.conf.Serv.SecretsFile != "")),
+	}
+
+	if s1.conf.HotDeploy {
+		fields = append(fields, zap.String("deployment-name", dep))
+	}
+
+	s1.zlog.Info("GraphJin attached to router", fields...)
+	return nil
 }
 
 func (s *Service) GraphQL(c context.Context,

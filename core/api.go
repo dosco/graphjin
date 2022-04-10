@@ -107,6 +107,7 @@ type graphjin struct {
 	subs        sync.Map
 	scripts     sync.Map
 	prod        bool
+	namespace   string
 }
 
 type GraphJin struct {
@@ -215,6 +216,13 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo, options ...Opti
 	return gj, nil
 }
 
+func OptionSetNamespace(namespace string) Option {
+	return func(s *graphjin) error {
+		s.namespace = namespace
+		return nil
+	}
+}
+
 func OptionSetFS(fs afero.Fs) Option {
 	return func(s *graphjin) error {
 		s.fs = fs
@@ -241,8 +249,15 @@ type Result struct {
 
 // ReqConfig is used to pass request specific config values to the GraphQLEx and SubscribeEx functions. Dynamic variables can be set here.
 type ReqConfig struct {
+	// Namespace is used to namespace requests within a single instance of GraphJin. For example queries with the same name
+	// can exist in allow list in seperate namespaces.
+	Namespace string
+
+	// APQKey is set when using GraphJin with automatic persisted queries
 	APQKey string
-	Vars   map[string]interface{}
+
+	// Pass additional variables complex variables such as functions that return string values.
+	Vars map[string]interface{}
 }
 
 // GraphQL function is called on the GraphJin struct to convert the provided GraphQL query into an
@@ -265,10 +280,15 @@ func (g *GraphJin) GraphQL(
 		Context: c,
 		gj:      gj,
 		rc:      rc,
+		ns:      gj.namespace,
+	}
+
+	if rc != nil && rc.Namespace != "" {
+		ct.ns = rc.Namespace
 	}
 
 	if rc != nil && rc.APQKey != "" && query == "" {
-		if v, ok := gj.apq.Get(rc.APQKey); ok {
+		if v, ok := gj.apq.Get(ct.ns + rc.APQKey); ok {
 			query = v.query
 			ct.op = v.op
 			ct.name = v.name
@@ -320,6 +340,7 @@ func (g *GraphJin) GraphQL(
 	}
 
 	qreq := queryReq{
+		ns:    ct.ns,
 		op:    ct.op,
 		name:  ct.name,
 		query: []byte(query),

@@ -120,10 +120,14 @@ func startHTTP(s1 *Service) {
 		zap.String("version", ver),
 		zap.String("host-port", s.conf.hostPort),
 		zap.String("app-name", s.conf.AppName),
-		zap.String("deployment-name", dep),
 		zap.String("env", os.Getenv("GO_ENV")),
+		zap.Bool("hot-deploy", s.conf.HotDeploy),
 		zap.Bool("production", s.conf.Core.Production),
 		zap.Bool("secrets-used", (s.conf.Serv.SecretsFile != "")),
+	}
+
+	if s.conf.HotDeploy {
+		fields = append(fields, zap.String("deployment-name", dep))
 	}
 
 	s.zlog.Info("GraphJin started", fields...)

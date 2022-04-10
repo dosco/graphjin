@@ -233,7 +233,6 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 			return nil, err
 		}
 	}
-
 	cpath := path.Dir(configFile)
 	cfile := path.Base(configFile)
 
@@ -264,7 +263,7 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 				vi.GetString("inherits"))
 		}
 
-		vi.SetConfigName(cfile)
+		vi.SetConfigName(strings.TrimSuffix(cfile, filepath.Ext(cfile)))
 
 		if err := vi.MergeInConfig(); err != nil {
 			return nil, err
@@ -356,13 +355,14 @@ func newViperWithDefaults() *viper.Viper {
 
 func newViper(configPath, configFile string) *viper.Viper {
 	vi := newViperWithDefaults()
-	vi.SetConfigName(configFile)
+	vi.SetConfigName(strings.TrimSuffix(configFile, filepath.Ext(configFile)))
 
 	if configPath == "" {
 		vi.AddConfigPath("./config")
 	} else {
 		vi.AddConfigPath(configPath)
 	}
+
 	return vi
 }
 

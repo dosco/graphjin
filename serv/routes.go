@@ -26,7 +26,12 @@ func (s *service) isHealthEndpoint(r *http.Request) bool {
 		(s.conf.Telemetry.Metrics.Endpoint != "" && p == s.conf.Telemetry.Metrics.Endpoint)
 }
 
-func routeHandler(s1 *Service, mux *http.ServeMux) (http.Handler, error) {
+type Mux interface {
+	Handle(string, http.Handler)
+	ServeHTTP(http.ResponseWriter, *http.Request)
+}
+
+func routeHandler(s1 *Service, mux Mux) (http.Handler, error) {
 	var err error
 	s := s1.Load().(*service)
 
@@ -78,7 +83,7 @@ func routeHandler(s1 *Service, mux *http.ServeMux) (http.Handler, error) {
 	return setServerHeader(mux), nil
 }
 
-func setActionRoutes(s1 *Service, mux *http.ServeMux) error {
+func setActionRoutes(s1 *Service, mux Mux) error {
 	var zlog *zap.Logger
 	var err error
 	s := s1.Load().(*service)

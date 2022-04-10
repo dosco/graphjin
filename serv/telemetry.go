@@ -19,10 +19,10 @@ import (
 	"go.opencensus.io/zpages"
 )
 
-func enableObservability(s *service, mux *http.ServeMux) (func(), error) {
+func enableObservability(s *service, mux Mux) (func(), error) {
 	// Enable OpenCensus zPages
-	if s.conf.Telemetry.Debug {
-		zpages.Handle(mux, "/telemetry")
+	if h, ok := mux.(*http.ServeMux); ok && s.conf.Telemetry.Debug {
+		zpages.Handle(h, "/telemetry")
 	}
 
 	// Enable ocsql metrics with OpenCensus

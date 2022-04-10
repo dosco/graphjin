@@ -32,13 +32,14 @@ const (
 )
 
 type Item struct {
-	Name     string
-	Comment  string `yaml:",omitempty"`
-	key      string
-	Query    string
-	Vars     string   `yaml:",omitempty"`
-	Metadata Metadata `yaml:",inline,omitempty"`
-	frags    []Frag
+	Namespace string
+	Name      string
+	Comment   string `yaml:",omitempty"`
+	key       string
+	Query     string
+	Vars      string   `yaml:",omitempty"`
+	Metadata  Metadata `yaml:",inline,omitempty"`
+	frags     []Frag
 }
 
 type Metadata struct {
@@ -91,7 +92,7 @@ func New(conf Config, fs afero.Fs) (*List, error) {
 	return &al, nil
 }
 
-func (al *List) Set(vars []byte, query string, md Metadata) error {
+func (al *List) Set(vars []byte, query string, md Metadata, namespace string) error {
 	if al.saveChan == nil {
 		return errors.New("allow list is read-only")
 	}
@@ -105,6 +106,7 @@ func (al *List) Set(vars []byte, query string, md Metadata) error {
 		return err
 	}
 
+	item.Namespace = namespace
 	item.Vars = string(vars)
 	item.Metadata = md
 	al.saveChan <- item
@@ -257,7 +259,6 @@ func (al *List) save(item Item) error {
 	var buf bytes.Buffer
 
 	qd := &schema.QueryDocument{}
-
 	if err := qd.Parse(item.Query); err != nil {
 		return err
 	}
@@ -302,16 +303,34 @@ func (al *List) saveItem(item Item, ow bool) error {
 		return err
 	}
 
-	fn := path.Join(queryPath, (item.Name + ".yaml"))
-	if err := afero.WriteFile(al.fs, fn, b, 0600); err != nil {
+	var fn string
+	if item.Namespace != "" {
+		fn = item.Namespace + "." + item.Name + ".yaml"
+	} else {
+		fn = item.Name + ".yaml"
+	}
+
+	if err := afero.WriteFile(
+		al.fs,
+		filepath.Join(queryPath, fn),
+		b,
+		0600); err != nil {
 		return err
 	}
 
 	for _, fv := range item.frags {
-		fn := path.Join(fragmentPath, fv.Name)
-		b := []byte(fv.Value)
+		if item.Namespace != "" {
+			fn = item.Namespace + "." + fv.Name
+		} else {
+			fn = fv.Name
+		}
+		err := afero.WriteFile(
+			al.fs,
+			filepath.Join(fragmentPath, fn),
+			[]byte(fv.Value),
+			0600)
 
-		if err := afero.WriteFile(al.fs, fn, b, 0600); err != nil {
+		if err != nil {
 			return err
 		}
 	}
@@ -319,9 +338,18 @@ func (al *List) saveItem(item Item, ow bool) error {
 	return nil
 }
 
-func (al *List) FragmentFetcher() func(name string) (string, error) {
+func (al *List) FragmentFetcher(namespace string) func(name string) (string, error) {
 	return func(name string) (string, error) {
-		v, err := afero.ReadFile(al.fs, path.Join(fragmentPath, name))
+		var fn string
+		if namespace != "" {
+			fn = namespace + "." + name
+		} else {
+			fn = name
+		}
+		v, err := afero.ReadFile(
+			al.fs,
+			filepath.Join(fragmentPath, fn))
+
 		return string(v), err
 	}
 }

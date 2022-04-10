@@ -739,7 +739,7 @@ func BenchmarkCompile(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		w.Reset()
 
-		qc, err := qcompile.Compile(benchGQL, nil, "user")
+		qc, err := qcompile.Compile(benchGQL, nil, "user", "")
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -761,7 +761,7 @@ func BenchmarkCompileParallel(b *testing.B) {
 		for pb.Next() {
 			w.Reset()
 
-			qc, err := qcompile.Compile(benchGQL, nil, "user")
+			qc, err := qcompile.Compile(benchGQL, nil, "user", "")
 			if err != nil {
 				b.Fatal(err)
 			}
