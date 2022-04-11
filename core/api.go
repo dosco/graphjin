@@ -247,11 +247,16 @@ type Result struct {
 	Extensions   *extensions     `json:"extensions,omitempty"`
 }
 
+type Namespace struct {
+	Name string
+	Set  bool
+}
+
 // ReqConfig is used to pass request specific config values to the GraphQLEx and SubscribeEx functions. Dynamic variables can be set here.
 type ReqConfig struct {
 	// Namespace is used to namespace requests within a single instance of GraphJin. For example queries with the same name
 	// can exist in allow list in seperate namespaces.
-	Namespace string
+	Namespace Namespace
 
 	// APQKey is set when using GraphJin with automatic persisted queries
 	APQKey string
@@ -283,8 +288,8 @@ func (g *GraphJin) GraphQL(
 		ns:      gj.namespace,
 	}
 
-	if rc != nil && rc.Namespace != "" {
-		ct.ns = rc.Namespace
+	if rc != nil && rc.Namespace.Set {
+		ct.ns = rc.Namespace.Name
 	}
 
 	if rc != nil && rc.APQKey != "" && query == "" {

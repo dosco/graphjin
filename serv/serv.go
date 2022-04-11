@@ -58,7 +58,7 @@ func initHotDeployWatcher(s1 *Service) {
 func startHTTP(s1 *Service) {
 	s := s1.Load().(*service)
 
-	routes, err := routeHandler(s1, http.NewServeMux())
+	routes, err := routeHandler(s1, http.NewServeMux(), s.namespace)
 	if err != nil {
 		s.log.Fatalf("error setting up routes: %s", err)
 	}
@@ -124,6 +124,10 @@ func startHTTP(s1 *Service) {
 		zap.Bool("hot-deploy", s.conf.HotDeploy),
 		zap.Bool("production", s.conf.Core.Production),
 		zap.Bool("secrets-used", (s.conf.Serv.SecretsFile != "")),
+	}
+
+	if s.namespace.set {
+		fields = append(fields, zap.String("namespace", s.namespace.name))
 	}
 
 	if s.conf.HotDeploy {

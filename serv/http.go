@@ -49,7 +49,7 @@ type errorResp struct {
 	Errors []string `json:"errors"`
 }
 
-func apiV1Handler(s1 *Service) http.Handler {
+func apiV1Handler(s1 *Service, ns nspace) http.Handler {
 	var zlog *zap.Logger
 	s := s1.Load().(*service)
 
@@ -57,7 +57,7 @@ func apiV1Handler(s1 *Service) http.Handler {
 		zlog = s.zlog
 	}
 
-	h, err := auth.WithAuth(s1.apiV1(), &s.conf.Auth, zlog)
+	h, err := auth.WithAuth(s1.apiV1(ns), &s.conf.Auth, zlog)
 	if err != nil {
 		s.log.Fatalf("Error initializing auth: %s", err)
 	}
@@ -83,7 +83,7 @@ func apiV1Handler(s1 *Service) http.Handler {
 	return h
 }
 
-func (s1 *Service) apiV1() http.Handler {
+func (s1 *Service) apiV1(ns nspace) http.Handler {
 	h := func(w http.ResponseWriter, r *http.Request) {
 		var err error
 		s := s1.Load().(*service)
@@ -130,7 +130,15 @@ func (s1 *Service) apiV1() http.Handler {
 			return
 		}
 
-		rc := core.ReqConfig{Vars: make(map[string]interface{})}
+		rc := core.ReqConfig{
+			Vars: make(map[string]interface{}),
+		}
+
+		if ns.set {
+			rc.Namespace = core.Namespace{Name: ns.name, Set: true}
+		} else if s.namespace.set {
+			rc.Namespace = core.Namespace{Name: s.namespace.name, Set: true}
+		}
 
 		for k, v := range s.conf.Core.HeaderVars {
 			rc.Vars[k] = func() string {
@@ -187,7 +195,7 @@ func (s1 *Service) apiV1() http.Handler {
 		rt := time.Since(start).Milliseconds()
 
 		if s.logLevel >= logLevelInfo {
-			s.reqLog(res, rt, err)
+			s.reqLog(res, rc, rt, err)
 		}
 
 		if s.conf.ServerTiming {
@@ -200,12 +208,16 @@ func (s1 *Service) apiV1() http.Handler {
 	return http.HandlerFunc(h)
 }
 
-func (s *service) reqLog(res *core.Result, resTimeMs int64, err error) {
+func (s *service) reqLog(res *core.Result, rc core.ReqConfig, resTimeMs int64, err error) {
 	fields := []zapcore.Field{
 		zap.String("op", res.OperationName()),
 		zap.String("name", res.QueryName()),
 		zap.String("role", res.Role()),
 		zap.Int64("responseTimeMs", resTimeMs),
+	}
+
+	if rc.Namespace.Set {
+		fields = append(fields, zap.String("namespace", rc.Namespace.Name))
 	}
 
 	sql := res.SQL()

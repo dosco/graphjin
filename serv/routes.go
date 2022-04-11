@@ -31,7 +31,7 @@ type Mux interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 }
 
-func routeHandler(s1 *Service, mux Mux) (http.Handler, error) {
+func routeHandler(s1 *Service, mux Mux, ns nspace) (http.Handler, error) {
 	var err error
 	s := s1.Load().(*service)
 
@@ -58,7 +58,7 @@ func routeHandler(s1 *Service, mux Mux) (http.Handler, error) {
 	}
 
 	// Main GraphQL API
-	h := apiV1Handler(s1)
+	h := apiV1Handler(s1, ns)
 
 	if s.conf.rateLimiterEnable() {
 		h = rateLimiter(s1, h)
