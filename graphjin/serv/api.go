@@ -82,6 +82,12 @@ type service struct {
 	prod         bool
 	deployActive bool
 	adminCount   int32
+	namespace    nspace
+}
+
+type nspace struct {
+	name string
+	set  bool
 }
 
 type Option func(*service) error
@@ -108,6 +114,13 @@ func NewGraphJinService(conf *Config, options ...Option) (*Service, error) {
 	}
 
 	return s1, nil
+}
+
+func OptionSetNamespace(namespace string) Option {
+	return func(s *service) error {
+		s.namespace = nspace{namespace, true}
+		return nil
+	}
 }
 
 func OptionSetFS(fs afero.Fs) Option {
@@ -231,6 +244,7 @@ func (s *Service) Deploy(conf *Config, options ...Option) error {
 	}
 	s1.srv = os.srv
 	s1.closeFn = os.closeFn
+	s1.namespace = os.namespace
 
 	s.Store(s1)
 	return nil
@@ -242,7 +256,15 @@ func (s *Service) Start() error {
 }
 
 func (s *Service) Attach(mux Mux) error {
-	if _, err := routeHandler(s, mux); err != nil {
+	return s.attach(mux, nspace{})
+}
+
+func (s *Service) AttachWithNamespace(mux Mux, namespace string) error {
+	return s.attach(mux, nspace{namespace, true})
+}
+
+func (s *Service) attach(mux Mux, ns nspace) error {
+	if _, err := routeHandler(s, mux, ns); err != nil {
 		return err
 	}
 
@@ -263,6 +285,10 @@ func (s *Service) Attach(mux Mux) error {
 		zap.Bool("hot-deploy", s1.conf.HotDeploy),
 		zap.Bool("production", s1.conf.Core.Production),
 		zap.Bool("secrets-used", (s1.conf.Serv.SecretsFile != "")),
+	}
+
+	if s1.namespace.set {
+		fields = append(fields, zap.String("namespace", s1.namespace.name))
 	}
 
 	if s1.conf.HotDeploy {

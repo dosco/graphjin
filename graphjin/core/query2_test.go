@@ -170,7 +170,7 @@ func TestAllowListWithNamespace(t *testing.T) {
 	}
 
 	_, err = gj2.GraphQL(context.Background(), gql2, nil,
-		&core.ReqConfig{Namespace: "api"})
+		&core.ReqConfig{Namespace: core.Namespace{"api", true}})
 
 	assert.ErrorContains(t, err, "not found in prepared statements")
 }

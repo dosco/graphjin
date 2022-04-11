@@ -176,8 +176,8 @@ func (gj *graphjin) newSub(c context.Context,
 		vars:  vars,
 	}
 
-	if rc != nil && rc.Namespace != "" {
-		qr.ns = rc.Namespace
+	if rc != nil && rc.Namespace.Set {
+		qr.ns = rc.Namespace.Name
 	}
 
 	if s.qc, err = gj.compileQuery(qr, s.role); err != nil {
@@ -189,7 +189,7 @@ func (gj *graphjin) newSub(c context.Context,
 			vars,
 			query,
 			s.qc.st.qc.Metadata,
-			rc.Namespace)
+			qr.ns)
 
 		if err != nil {
 			return err
