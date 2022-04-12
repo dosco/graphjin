@@ -136,8 +136,6 @@ func (s1 *Service) apiV1(ns nspace) http.Handler {
 
 		if ns.set {
 			rc.Namespace = core.Namespace{Name: ns.name, Set: true}
-		} else if s.namespace.set {
-			rc.Namespace = core.Namespace{Name: s.namespace.name, Set: true}
 		}
 
 		for k, v := range s.conf.Core.HeaderVars {

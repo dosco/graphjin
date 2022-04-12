@@ -214,12 +214,63 @@ type Action struct {
 // ReadInConfig function reads in the config file for the environment specified in the GO_ENV
 // environment variable. This is the best way to create a new GraphJin config.
 func ReadInConfig(configFile string) (*Config, error) {
-	return readInConfig(configFile, nil)
+	c, err := readInConfig(configFile, nil)
+	if err != nil {
+		return nil, err
+	}
+	return setupSecrets(c, nil)
 }
 
 // ReadInConfigFS is the same as ReadInConfig but it also takes a filesytem as an argument
 func ReadInConfigFS(configFile string, fs afero.Fs) (*Config, error) {
-	return readInConfig(configFile, fs)
+	c, err := readInConfig(configFile, fs)
+	if err != nil {
+		return nil, err
+	}
+	return setupSecrets(c, fs)
+}
+
+func setupSecrets(conf *Config, fs afero.Fs) (*Config, error) {
+	if conf.SecretsFile == "" {
+		return conf, nil
+	}
+
+	var secFile string
+	var err error
+
+	if fs == nil {
+		secFile, err = filepath.Abs(conf.RelPath(conf.SecretsFile))
+	} else {
+		secFile, err = filepath.Abs(conf.RelPath(conf.SecretsFile))
+
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	vals, err := initSecrets(secFile, fs)
+	if err != nil {
+		return nil, err
+	}
+
+	for k, v := range vals {
+		if strings.HasPrefix(k, "gj.") || strings.HasPrefix(k, "sg.") {
+			k = k[3:]
+		}
+		conf.vi.Set(k, v)
+	}
+
+	if len(vals) == 0 {
+		return conf, nil
+	}
+
+	var newConf Config
+
+	if err := conf.vi.Unmarshal(&newConf); err != nil {
+		return nil, fmt.Errorf("failed to decode config, %v", err)
+	}
+
+	return &newConf, nil
 }
 
 func readInConfig(configFile string, fs afero.Fs) (*Config, error) {

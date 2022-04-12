@@ -191,8 +191,13 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*service, 
 }
 
 func (s *service) normalStart() error {
+	opts := []core.Option{core.OptionSetFS(s.fs)}
+	if s.namespace.set {
+		opts = append(opts, core.OptionSetNamespace(s.namespace.name))
+	}
+
 	var err error
-	s.gj, err = core.NewGraphJin(&s.conf.Core, s.db, core.OptionSetFS(s.fs))
+	s.gj, err = core.NewGraphJin(&s.conf.Core, s.db, opts...)
 	return err
 }
 
@@ -226,7 +231,12 @@ func (s *service) hotStart() error {
 		return err
 	}
 
-	s.gj, err = core.NewGraphJin(&s.conf.Core, s.db, core.OptionSetFS(bfs.fs))
+	opts := []core.Option{core.OptionSetFS(bfs.fs)}
+	if s.namespace.set {
+		opts = append(opts, core.OptionSetNamespace(s.namespace.name))
+	}
+
+	s.gj, err = core.NewGraphJin(&s.conf.Core, s.db, opts...)
 	return err
 }
 
