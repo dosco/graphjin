@@ -42,7 +42,7 @@ func Cmd() {
 	rootCmd.AddCommand(dbCmd())
 
 	if v := cmdSecrets(); v != nil {
-		rootCmd.AddCommand()
+		rootCmd.AddCommand(v)
 	}
 
 	// rootCmd.AddCommand(&cobra.Command{

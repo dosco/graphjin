@@ -328,7 +328,6 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 	}
 
 	if !c.gj.prod && c.rc != nil && c.rc.APQKey != "" {
-
 		c.gj.apq.Set((qr.ns + c.rc.APQKey), apqInfo{
 			op:    qcomp.qr.op,
 			name:  qcomp.qr.name,

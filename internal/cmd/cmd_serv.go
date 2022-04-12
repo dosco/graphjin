@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"path/filepath"
-
 	"github.com/dosco/graphjin/serv"
 	"github.com/spf13/cobra"
 )
@@ -28,21 +26,6 @@ func cmdServ(*cobra.Command, []string) error {
 	var opt []serv.Option
 	if deployActive {
 		opt = append(opt, serv.OptionDeployActive())
-	}
-
-	var fsec bool
-	if conf.SecretsFile != "" {
-		secFile, err := filepath.Abs(conf.RelPath(conf.SecretsFile))
-		if err != nil {
-			return err
-		}
-		if fsec, err = initSecrets(secFile); err != nil {
-			return err
-		}
-	}
-
-	if fsec {
-		setupAgain(cpath)
 	}
 
 	gj, err := serv.NewGraphJinService(conf, opt...)

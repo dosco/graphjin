@@ -2,9 +2,11 @@ package secrets
 
 import (
 	"fmt"
+	"io/ioutil"
+	"path/filepath"
 
+	"github.com/spf13/afero"
 	"go.mozilla.org/sops/v3"
-	"go.mozilla.org/sops/v3/cmd/sops/codes"
 	"go.mozilla.org/sops/v3/cmd/sops/common"
 	"go.mozilla.org/sops/v3/keyservice"
 )
@@ -19,14 +21,14 @@ type decryptOpts struct {
 	KeyServices []keyservice.KeyServiceClient
 }
 
-func decrypt(opts decryptOpts) (decryptedFile []byte, err error) {
-	tree, err := common.LoadEncryptedFileWithBugFixes(common.GenericDecryptOpts{
+func decrypt(opts decryptOpts, fs afero.Fs) (decryptedFile []byte, err error) {
+	tree, err := LoadEncryptedFileWithBugFixes(common.GenericDecryptOpts{
 		Cipher:      opts.Cipher,
 		InputStore:  opts.InputStore,
 		InputPath:   opts.InputPath,
 		IgnoreMAC:   opts.IgnoreMAC,
 		KeyServices: opts.KeyServices,
-	})
+	}, fs)
 	if err != nil {
 		return nil, err
 	}
@@ -44,31 +46,90 @@ func decrypt(opts decryptOpts) (decryptedFile []byte, err error) {
 	if len(opts.Extract) > 0 {
 		return extract(tree, opts.Extract, opts.OutputStore)
 	}
+
 	decryptedFile, err = opts.OutputStore.EmitPlainFile(tree.Branches)
 	if err != nil {
-		return nil, common.NewExitError(fmt.Sprintf("Error dumping file: %s", err), codes.ErrorDumpingTree)
+		return nil, err
 	}
 	return decryptedFile, err
 }
 
-func extract(tree *sops.Tree, path []interface{}, outputStore sops.Store) (output []byte, err error) {
+func extract(tree *sops.Tree, path []interface{}, outputStore sops.Store) ([]byte, error) {
+	var err error
+
 	v, err := tree.Branches[0].Truncate(path)
 	if err != nil {
 		return nil, fmt.Errorf("error truncating tree: %s", err)
 	}
+
 	if newBranch, ok := v.(sops.TreeBranch); ok {
 		tree.Branches[0] = newBranch
 		decrypted, err := outputStore.EmitPlainFile(tree.Branches)
 		if err != nil {
-			return nil, common.NewExitError(fmt.Sprintf("Error dumping file: %s", err), codes.ErrorDumpingTree)
+			return nil, err
 		}
 		return decrypted, err
+
 	} else if str, ok := v.(string); ok {
 		return []byte(str), nil
 	}
+
 	bytes, err := outputStore.EmitValue(v)
 	if err != nil {
-		return nil, common.NewExitError(fmt.Sprintf("Error dumping tree: %s", err), codes.ErrorDumpingTree)
+		return nil, err
 	}
+
 	return bytes, nil
+}
+
+func LoadEncryptedFile(
+	loader sops.EncryptedFileLoader,
+	inputPath string,
+	fs afero.Fs) (*sops.Tree, error) {
+
+	var fileBytes []byte
+	var err error
+
+	if fs == nil {
+		fileBytes, err = ioutil.ReadFile(inputPath)
+	} else {
+		fileBytes, err = afero.ReadFile(fs, inputPath)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	path, err := filepath.Abs(inputPath)
+	if err != nil {
+		return nil, err
+	}
+
+	tree, err := loader.LoadEncryptedFile(fileBytes)
+	tree.FilePath = path
+
+	return &tree, err
+}
+
+func LoadEncryptedFileWithBugFixes(
+	opts common.GenericDecryptOpts,
+	fs afero.Fs) (*sops.Tree, error) {
+
+	tree, err := LoadEncryptedFile(opts.InputStore, opts.InputPath, fs)
+	if err != nil {
+		return nil, err
+	}
+
+	encCtxBug, err := common.DetectKMSEncryptionContextBug(tree)
+	if err != nil {
+		return nil, err
+	}
+
+	if encCtxBug {
+		tree, err = common.FixAWSKMSEncryptionContextBug(opts, tree)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return tree, nil
 }

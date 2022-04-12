@@ -2,16 +2,16 @@ package secrets
 
 import (
 	"bytes"
-	"os"
 	"strings"
 
+	"github.com/spf13/afero"
 	"go.mozilla.org/sops/v3/aes"
 	"go.mozilla.org/sops/v3/cmd/sops/common"
 	"go.mozilla.org/sops/v3/keyservice"
 	"go.mozilla.org/sops/v3/stores/dotenv"
 )
 
-func Init(fileName string) (bool, error) {
+func Init(fileName string, fs afero.Fs) (map[string]string, error) {
 	var err error
 
 	inputStore := common.DefaultStoreForPath(fileName)
@@ -26,12 +26,12 @@ func Init(fileName string) (bool, error) {
 		IgnoreMAC:   false,
 	}
 
-	output, err := decrypt(opts)
+	output, err := decrypt(opts, fs)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 
-	var found bool
+	res := make(map[string]string)
 
 	lines := bytes.Split(output, []byte("\n"))
 	for _, line := range lines {
@@ -42,11 +42,12 @@ func Init(fileName string) (bool, error) {
 			continue
 		}
 		v := strings.SplitN(string(line), "=", 2)
-		if err := os.Setenv(v[0], v[1]); err != nil {
-			return false, err
-		}
-		found = true
+		k := strings.ReplaceAll(strings.ToLower(v[0]), "_", ".")
+		res[k] = v[1]
+		// if err := os.Setenv(v[0], v[1]); err != nil {
+		// 	return false, err
+		// }
 	}
 
-	return found, nil
+	return res, nil
 }

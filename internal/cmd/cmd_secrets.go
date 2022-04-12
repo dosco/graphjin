@@ -119,7 +119,3 @@ func cmdSecrets() *cobra.Command {
 	}
 	return c
 }
-
-func initSecrets(secFile string) (bool, error) {
-	return secrets.Init(secFile)
-}
