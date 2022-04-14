@@ -10,7 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dosco/graphjin/serv/internal/auth"
+	"github.com/dosco/graphjin/serv/auth"
+	"github.com/go-chi/chi"
 	"go.opencensus.io/plugin/ochttp"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -58,7 +59,8 @@ func initHotDeployWatcher(s1 *Service) {
 func startHTTP(s1 *Service) {
 	s := s1.Load().(*service)
 
-	routes, err := routeHandler(s1, http.NewServeMux(), s.namespace)
+	r := chi.NewRouter()
+	routes, err := routeHandler(s1, r, s.namespace)
 	if err != nil {
 		s.log.Fatalf("error setting up routes: %s", err)
 	}
@@ -158,13 +160,13 @@ func setServerHeader(h http.Handler) http.Handler {
 	return http.HandlerFunc(fn)
 }
 
-func findAuth(s *service, name string) *auth.Auth {
+func findAuth(s *service, name string) (auth.Auth, bool) {
 	for _, a := range s.conf.Auths {
 		if strings.EqualFold(a.Name, name) {
-			return &a
+			return a, true
 		}
 	}
-	return nil
+	return auth.Auth{}, false
 }
 
 type BuildInfo struct {

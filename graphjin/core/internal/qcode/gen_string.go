@@ -78,12 +78,13 @@ func _() {
 	var x [1]struct{}
 	_ = x[SkipTypeNone-0]
 	_ = x[SkipTypeUserNeeded-1]
-	_ = x[SkipTypeRemote-2]
+	_ = x[SkipTypeBlocked-2]
+	_ = x[SkipTypeRemote-3]
 }
 
-const _SkipType_name = "SkipTypeNoneSkipTypeUserNeededSkipTypeRemote"
+const _SkipType_name = "SkipTypeNoneSkipTypeUserNeededSkipTypeBlockedSkipTypeRemote"
 
-var _SkipType_index = [...]uint8{0, 12, 30, 44}
+var _SkipType_index = [...]uint8{0, 12, 30, 45, 59}
 
 func (i SkipType) String() string {
 	if i < 0 || i >= SkipType(len(_SkipType_index)-1) {

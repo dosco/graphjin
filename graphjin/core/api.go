@@ -293,7 +293,7 @@ func (g *GraphJin) GraphQL(
 	}
 
 	if rc != nil && rc.APQKey != "" && query == "" {
-		if v, ok := gj.apq.Get(ct.ns + rc.APQKey); ok {
+		if v, ok := gj.apq.Get(ct.ns, rc.APQKey); ok {
 			query = v.query
 			ct.op = v.op
 			ct.name = v.name
@@ -344,17 +344,24 @@ func (g *GraphJin) GraphQL(
 		role = "anon"
 	}
 
-	qreq := queryReq{
+	qr := queryReq{
 		ns:    ct.ns,
 		op:    ct.op,
 		name:  ct.name,
 		query: []byte(query),
 		vars:  vars,
 	}
-	qres, err := ct.execQuery(qreq, role)
+	qres, err := ct.execQuery(qr, role)
 
 	if err != nil {
 		res.Errors = []Error{{Message: err.Error()}}
+	}
+
+	if rc != nil && rc.APQKey != "" {
+		gj.apq.Set(qr.ns, rc.APQKey, apqInfo{
+			op:    qr.op,
+			name:  qr.name,
+			query: string(qr.query)})
 	}
 
 	if qres.qc != nil {

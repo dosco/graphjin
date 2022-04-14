@@ -122,7 +122,8 @@ func (co *Compiler) CompileQuery(
 		}
 		sel := &qc.Selects[id]
 
-		if sel.SkipRender == qcode.SkipTypeUserNeeded {
+		if sel.SkipRender == qcode.SkipTypeUserNeeded || 
+		sel.SkipRender == qcode.SkipTypeBlocked {
 			c.w.WriteString(`'`)
 			c.w.WriteString(sel.FieldName)
 			c.w.WriteString(`', NULL`)

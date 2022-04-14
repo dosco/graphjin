@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/dosco/graphjin/internal/common"
-	"github.com/dosco/graphjin/serv/internal/auth"
+	"github.com/dosco/graphjin/serv/auth"
 	"github.com/klauspost/compress/gzhttp"
 	"go.opencensus.io/plugin/ochttp"
 	"go.uber.org/zap"
@@ -107,12 +107,13 @@ func setActionRoutes(s1 *Service, mux Mux) error {
 			h = ochttp.WithRouteTag(h, p)
 		}
 
-		if ac := findAuth(s, a.AuthName); ac != nil {
-			h, err = auth.WithAuth(h, ac, zlog)
-		}
-
-		if err != nil {
-			return err
+		if ac, ok := findAuth(s, a.AuthName); ok {
+			authOpt := auth.Options{AuthFailBlock: s.conf.Serv.AuthFailBlock}
+			useAuth, err := auth.NewAuth(ac, zlog, authOpt)
+			if err != nil {
+				s.log.Fatalf("actions: error initializing auth: %s", err)
+			}
+			h = useAuth(h)
 		}
 
 		mux.Handle(p, h)

@@ -60,7 +60,7 @@ func NewAuth(version, secret string) (*Auth, error) {
 	return ra, nil
 }
 
-func (ra *Auth) ParseCookie(cookie string) (userID string, err error) {
+func (ra Auth) ParseCookie(cookie string) (userID string, err error) {
 	var dcookie []byte
 
 	switch ra.Cipher {

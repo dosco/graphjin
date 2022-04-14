@@ -28,18 +28,17 @@ type stmt struct {
 func (gj *graphjin) compileQuery(qr queryReq, role string) (*queryComp, error) {
 	var qc *queryComp
 	var err error
-	var ok bool
 
-	var vm map[string]json.RawMessage
+	var varsFromUser map[string]json.RawMessage
 
 	if len(qr.vars) != 0 {
-		if err := json.Unmarshal(qr.vars, &vm); err != nil {
+		if err := json.Unmarshal(qr.vars, &varsFromUser); err != nil {
 			return nil, fmt.Errorf("variables: %w", err)
 		}
 	}
 
 	if gj.allowList == nil || !gj.prod {
-		st, err := gj.compileQueryRole(qr, vm, role)
+		st, err := gj.compileQueryRole(qr, varsFromUser, role)
 		if err != nil {
 			return nil, err
 		}
@@ -49,47 +48,29 @@ func (gj *graphjin) compileQuery(qr queryReq, role string) (*queryComp, error) {
 
 	// In production mode enforce the allow list and
 	// compile and cache the result else compile each time
-	if qc, ok = gj.queries[(qr.ns + qr.name + role)]; !ok {
-		return nil, errNotFound
+	if qc, err = gj.getQuery(qr, role, varsFromUser); qc == nil {
+		return nil, err
 	}
-	ov := qc.qr.order[0]
 
-	// If order variable is set
-	if ov != "" {
-		if qc, err = gj.orderQuery(ov, qc, vm, role); err != nil {
-			return nil, err
+	var varsFromAllowList map[string]json.RawMessage
+
+	if len(qc.qr.vars) != 0 {
+		if err := json.Unmarshal(qc.qr.vars, &varsFromAllowList); err != nil {
+			return nil, fmt.Errorf("variables: %w", err)
 		}
 	}
 
 	if qc.st.sql == "" {
 		qc.Do(func() {
-			qc.st, err = gj.compileQueryRole(qc.qr, vm, role)
+			qc.st, err = gj.compileQueryRole(qc.qr, varsFromAllowList, role)
 			qc.st.va = validator.New()
 		})
 	}
 
+	// Overwrite allow list vars with user vars
+	qc.qr.vars = qr.vars
+	qc.qr.ns = qr.ns
 	return qc, err
-}
-
-func (gj *graphjin) orderQuery(
-	ov string,
-	qc *queryComp,
-	vm map[string]json.RawMessage,
-	role string) (*queryComp, error) {
-
-	var oval string
-
-	v, ok := vm[ov]
-	if !ok || v[0] != '"' || len(v) == 2 {
-		return nil, fmt.Errorf("required variable not set: %s", ov)
-	}
-	oval = string(v[1:(len(v) - 1)])
-
-	if qc, ok := gj.queries[(qc.qr.ns + qc.qr.name + role + oval)]; ok {
-		return qc, nil
-	} else {
-		return nil, fmt.Errorf("invalid value for variable (%s): %s", ov, oval)
-	}
 }
 
 func (gj *graphjin) compileQueryRole(

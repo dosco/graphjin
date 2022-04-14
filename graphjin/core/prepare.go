@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strconv"
@@ -88,26 +89,24 @@ func (gj *graphjin) initAllowList() error {
 			continue
 		}
 
-		qt, _ := qcode.GetQType(item.Query)
-		qk := gj.getQueryKeys(item)
+		q := strings.TrimSpace(item.Query)
+		qt, _ := qcode.GetQType(q)
+		qk := gj.generateQueryKeys(item)
+		qr := queryReq{
+			op:    qt,
+			name:  item.Name,
+			query: []byte(q),
+			vars:  []byte(item.Vars),
+		}
+		ov := item.Metadata.Order.Var
 
 		for _, v := range qk {
-			qc := &queryComp{qr: queryReq{
-				op:    qt,
-				name:  item.Name,
-				query: []byte(item.Query),
-				vars:  []byte(item.Vars),
-			}}
-
-			if item.Metadata.Order.Var != "" {
-				qc.qr.order = [2]string{item.Metadata.Order.Var, strconv.Quote(v.val)}
+			qc := &queryComp{qr: qr}
+			if ov != "" {
+				qc.qr.order = [2]string{ov, strconv.Quote(v.val)}
 			}
 			gj.queries[v.key] = qc
 		}
-
-		op, _ := qcode.GetQType(item.Query)
-		k := (item.Namespace + item.Name)
-		gj.apq.Set(k, apqInfo{op: op, name: item.Name})
 	}
 
 	return nil
@@ -118,7 +117,7 @@ type queryKey struct {
 	val string
 }
 
-func (gj *graphjin) getQueryKeys(item allow.Item) []queryKey {
+func (gj *graphjin) generateQueryKeys(item allow.Item) []queryKey {
 	var qk []queryKey
 
 	for roleName := range gj.roles {
@@ -126,9 +125,34 @@ func (gj *graphjin) getQueryKeys(item allow.Item) []queryKey {
 		qk = append(qk, queryKey{key: k1})
 
 		for _, v := range item.Metadata.Order.Values {
-			k2 := (item.Namespace + item.Name + roleName + v)
+			k2 := k1 + v
 			qk = append(qk, queryKey{key: k2, val: v})
 		}
 	}
 	return qk
+}
+
+func (gj *graphjin) getQuery(qr queryReq, role string, vm map[string]json.RawMessage) (*queryComp, error) {
+	qk := (qr.ns + qr.name + role)
+	qc, ok := gj.queries[qk]
+	if !ok {
+		return nil, errNotFound
+	}
+
+	ov := qc.qr.order[0]
+	if ov == "" {
+		return qc, nil
+	}
+
+	v, ok := vm[ov]
+	if !ok || v[0] != '"' || len(v) == 2 {
+		return nil, fmt.Errorf("required variable not set: %s", ov)
+	}
+
+	oval := string(v[1:(len(v) - 1)])
+	qc, ok = gj.queries[(qk + oval)]
+	if !ok {
+		return nil, fmt.Errorf("invalid value for variable (%s): %s", ov, oval)
+	}
+	return qc, nil
 }

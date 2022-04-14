@@ -253,10 +253,7 @@ func (c *gcontext) execQuery(qr queryReq, role string) (queryResp, error) {
 }
 
 func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
-	var res queryResp
-	var err error
-
-	res.role = role
+	res := queryResp{role: role}
 
 	conn, err := c.gj.db.Conn(c)
 	if err != nil {
@@ -281,15 +278,24 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 		return res, err
 	}
 
-	var qcomp *queryComp
-	if qcomp, err = c.gj.compileQuery(qr, res.role); err != nil {
+	qcomp, err := c.gj.compileQuery(qr, res.role)
+	if err != nil {
 		return res, err
 	}
 	res.qc = qcomp
 
+	return c.resolveCompiledQuery(conn, qcomp, res)
+}
+
+func (c *gcontext) resolveCompiledQuery(
+	conn *sql.Conn,
+	qcomp *queryComp,
+	res queryResp) (
+	queryResp, error) {
+
 	// From here on use qcomp. for everything including accessing qr since it contains updated values of the latter. This code needs some refactoring
 
-	if err := c.handleVars(qcomp, &res); err != nil {
+	if err := c.validateAndUpdateVars(qcomp, &res); err != nil {
 		return res, err
 	}
 
@@ -322,16 +328,12 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 	res.data = cur.data
 
 	if !c.gj.prod && c.gj.allowList != nil {
-		if err := c.saveToAllowList(qc, string(qcomp.qr.query), qr.ns); err != nil {
+		if err := c.saveToAllowList(
+			qc,
+			string(qcomp.qr.query),
+			qcomp.qr.ns); err != nil {
 			return res, err
 		}
-	}
-
-	if !c.gj.prod && c.rc != nil && c.rc.APQKey != "" {
-		c.gj.apq.Set((qr.ns + c.rc.APQKey), apqInfo{
-			op:    qcomp.qr.op,
-			name:  qcomp.qr.name,
-			query: string(qcomp.qr.query)})
 	}
 
 	// if c.gj.conf.EnableTracing {
@@ -343,10 +345,10 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 	return res, nil
 }
 
-func (c *gcontext) handleVars(qcomp *queryComp, res *queryResp) error {
+func (c *gcontext) validateAndUpdateVars(qcomp *queryComp, res *queryResp) error {
 	var vars map[string]interface{}
 	qc := qcomp.st.qc
-	qr := &qcomp.qr
+	qr := qcomp.qr
 
 	if len(qr.vars) != 0 || qc.Script != "" {
 		vars = make(map[string]interface{})
@@ -381,7 +383,7 @@ func (c *gcontext) handleVars(qcomp *queryComp, res *queryResp) error {
 
 	if c.sc != nil && c.sc.ReqFunc != nil {
 		if v, err := c.scriptCallReq(vars, qcomp.st.role.Name); len(v) != 0 {
-			qr.vars = v
+			qcomp.qr.vars = v
 		} else if err != nil {
 			return err
 		}
@@ -503,6 +505,9 @@ func (c *gcontext) debugLog(st *stmt) {
 	for _, sel := range st.qc.Selects {
 		if sel.SkipRender == qcode.SkipTypeUserNeeded {
 			c.gj.log.Printf("Field skipped, requires $user_id or table not added to anon role: %s", sel.FieldName)
+		}
+		if sel.SkipRender == qcode.SkipTypeBlocked {
+			c.gj.log.Printf("Field skipped, blocked: %s", sel.FieldName)
 		}
 	}
 }

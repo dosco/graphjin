@@ -46,6 +46,7 @@ type SkipType int8
 const (
 	SkipTypeNone SkipType = iota
 	SkipTypeUserNeeded
+	SkipTypeBlocked
 	SkipTypeRemote
 )
 
@@ -752,7 +753,7 @@ func (co *Compiler) setSelectorRole(role, fieldName string, qc *QCode, sel *Sele
 		if qc.SType != QTQuery {
 			return tr, fmt.Errorf("%s blocked: %s (role: %s)", qc.SType, fieldName, role)
 		}
-		sel.SkipRender = SkipTypeUserNeeded
+		sel.SkipRender = SkipTypeBlocked
 	}
 	return tr, nil
 }

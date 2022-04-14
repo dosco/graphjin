@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/dosco/graphjin/core"
-	"github.com/dosco/graphjin/serv/internal/auth"
+	"github.com/dosco/graphjin/serv/auth"
 	"github.com/spf13/afero"
 	"github.com/spf13/viper"
 )
@@ -20,6 +20,7 @@ type JWTConfig = auth.JWTConfig
 
 // Config struct holds the GraphJin service config values
 type Config struct {
+	secrets map[string]string
 
 	// Core holds config values for the GraphJin compiler
 	Core `mapstructure:",squash"`
@@ -248,27 +249,34 @@ func setupSecrets(conf *Config, fs afero.Fs) (*Config, error) {
 		return nil, err
 	}
 
-	vals, err := initSecrets(secFile, fs)
+	var newConf Config
+
+	newConf.secrets, err = initSecrets(secFile, fs)
 	if err != nil {
 		return nil, err
 	}
 
-	for k, v := range vals {
+	for k, v := range newConf.secrets {
 		if strings.HasPrefix(k, "gj.") || strings.HasPrefix(k, "sg.") {
 			k = k[3:]
 		}
 		conf.vi.Set(k, v)
 	}
 
-	if len(vals) == 0 {
+	if len(newConf.secrets) == 0 {
 		return conf, nil
 	}
-
-	var newConf Config
 
 	if err := conf.vi.Unmarshal(&newConf); err != nil {
 		return nil, fmt.Errorf("failed to decode config, %v", err)
 	}
+
+	// c := conf.vi.AllSettings()
+	// bs, err := yaml.Marshal(c)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// fmt.Println(">", string(bs))
 
 	return &newConf, nil
 }
@@ -284,10 +292,9 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 			return nil, err
 		}
 	}
-	cpath := path.Dir(configFile)
-	cfile := path.Base(configFile)
+	cp := path.Dir(configFile)
+	vi := newViper(cp, path.Base(configFile))
 
-	vi := newViper(cpath, cfile)
 	if fs != nil {
 		vi.SetFs(fs)
 	}
@@ -296,10 +303,9 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 		return nil, err
 	}
 
-	inherits := vi.GetString("inherits")
-
-	if inherits != "" {
-		vi = newViper(cpath, inherits)
+	if pcf := vi.GetString("inherits"); pcf != "" {
+		cf := vi.ConfigFileUsed()
+		vi = newViper(cp, pcf)
 		if fs != nil {
 			vi.SetFs(fs)
 		}
@@ -308,13 +314,11 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 			return nil, err
 		}
 
-		if vi.IsSet("inherits") {
-			return nil, fmt.Errorf("inherited config (%s) cannot itself inherit (%s)",
-				inherits,
-				vi.GetString("inherits"))
+		if v := vi.GetString("inherits"); v != "" {
+			return nil, fmt.Errorf("inherited config (%s) cannot itself inherit (%s)", pcf, v)
 		}
 
-		vi.SetConfigName(strings.TrimSuffix(cfile, filepath.Ext(cfile)))
+		vi.SetConfigFile(cf)
 
 		if err := vi.MergeInConfig(); err != nil {
 			return nil, err
@@ -322,8 +326,8 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 	}
 
 	c := &Config{vi: vi}
-	c.Serv.ConfigPath = cpath
-	c.Core.ConfigPath = cpath
+	c.Serv.ConfigPath = cp
+	c.Core.ConfigPath = cp
 
 	if err := vi.Unmarshal(&c); err != nil {
 		return nil, fmt.Errorf("failed to decode config, %v", err)
@@ -415,6 +419,18 @@ func newViper(configPath, configFile string) *viper.Viper {
 	}
 
 	return vi
+}
+
+func (c *Config) GetSecret(k string) (string, bool) {
+	v, ok := c.secrets[k]
+	return v, ok
+}
+
+func (c *Config) GetSecretOrEnv(k string) string {
+	if v, ok := c.GetSecret(k); ok {
+		return v
+	}
+	return os.Getenv(k)
 }
 
 func (c *Config) telemetryEnabled() bool {
