@@ -130,6 +130,14 @@ func OptionSetFS(fs afero.Fs) Option {
 	}
 }
 
+func OptionSetZapLogger(zlog *zap.Logger) Option {
+	return func(s *service) error {
+		s.zlog = zlog
+		s.log = zlog.Sugar()
+		return nil
+	}
+}
+
 func OptionDeployActive() Option {
 	return func(s *service) error {
 		s.deployActive = true

@@ -7,14 +7,14 @@ import (
 
 	jwt "github.com/golang-jwt/jwt"
 
-	"github.com/dosco/graphjin/serv/internal/auth/provider"
+	"github.com/dosco/graphjin/serv/auth/provider"
 )
 
 const (
 	authHeader = "Authorization"
 )
 
-func JwtHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
+func JwtHandler(ac Auth) (handlerFunc, error) {
 	jwtProvider, err := provider.NewProvider(ac.JWT)
 	if err != nil {
 		return nil, err

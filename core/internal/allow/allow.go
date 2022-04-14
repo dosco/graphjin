@@ -32,7 +32,7 @@ const (
 )
 
 type Item struct {
-	Namespace string
+	Namespace string `yaml:",omitempty"`
 	Name      string
 	Comment   string `yaml:",omitempty"`
 	key       string

@@ -1,3 +1,36 @@
+// Package auth provides an API to use GraphJin serv auth handles with your own application. Works with routers like chi and http mux.
+// For detailed documentation visit https://graphjin.com
+//
+// Example usage:
+/*
+	package main
+
+	import (
+		"net/http"
+		"path/filepath"
+		"github.com/go-chi/chi"
+		"github.com/dosco/graphjin/serv"
+		"github.com/dosco/graphjin/serv/auth"
+	)
+
+	func main() {
+		conf, err := serv.ReadInConfig(filepath.Join("./config", serv.GetConfigName()))
+		if err != nil {
+			panic(err)
+		}
+
+		useAuth, err := auth.NewAuth(conf.Auth, log, auth.Options{AuthFailBlock: true})
+		if err != nil {
+			panic(err)
+		}
+
+		r := chi.NewRouter()
+		r.Use(useAuth)
+		r.Get("/user", userInfo)
+
+		http.ListenAndServe(":8080", r)
+	}
+*/
 package auth
 
 import (
@@ -5,12 +38,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/dosco/graphjin/core"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
-	"github.com/dosco/graphjin/serv/internal/auth/provider"
+	"github.com/dosco/graphjin/serv/auth/provider"
 )
 
 type JWTConfig = provider.JWTConfig
@@ -99,32 +133,103 @@ type Auth struct {
 	}
 }
 
-func SimpleHandler(ac *Auth, next http.Handler) (http.HandlerFunc, error) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
+type handlerFunc func(w http.ResponseWriter, r *http.Request) (context.Context, error)
+
+type Options struct {
+	// Return a HTTP '401 Unauthoized' when auth fails
+	AuthFailBlock bool
+}
+
+func NewAuth(ac Auth, log *zap.Logger, opt Options) (
+	func(next http.Handler) http.Handler, error) {
+	var h handlerFunc
+	var err error
+
+	if ac.CredsInHeader {
+		h, err = SimpleHandler(ac)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	switch ac.Type {
+	case "rails":
+		h, err = RailsHandler(ac)
+
+	case "jwt":
+		h, err = JwtHandler(ac)
+
+	case "header":
+		h, err = HeaderHandler(ac)
+
+	// case "magiclink":
+	// 	h, err = MagicLinkHandler(ac, next)
+	case "":
+		return nil, nil
+
+	default:
+		return nil, fmt.Errorf("auth: unknown auth type: %s", ac.Type)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("%s: %s", ac.Type, err.Error())
+	}
+
+	return func(next http.Handler) http.Handler {
+		ah := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			c, err := h(w, r)
+			if err != nil && log != nil {
+				log.Error("Auth", []zapcore.Field{zap.String("type", ac.Type), zap.Error(err)}...)
+			}
+
+			if err == err401 {
+				http.Error(w, "401 unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			if opt.AuthFailBlock && !IsAuth(c) {
+				http.Error(w, "401 unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			if c != nil {
+				next.ServeHTTP(w, r.WithContext(c))
+			} else {
+				next.ServeHTTP(w, r)
+			}
+		})
+
+		return ah
+	}, nil
+}
+
+func SimpleHandler(ac Auth) (handlerFunc, error) {
+	return func(_ http.ResponseWriter, r *http.Request) (context.Context, error) {
+		c := r.Context()
 
 		userIDProvider := r.Header.Get("X-User-ID-Provider")
 		if userIDProvider != "" {
-			ctx = context.WithValue(ctx, core.UserIDProviderKey, userIDProvider)
+			c = context.WithValue(c, core.UserIDProviderKey, userIDProvider)
 		}
 
 		userID := r.Header.Get("X-User-ID")
 		if userID != "" {
-			ctx = context.WithValue(ctx, core.UserIDKey, userID)
+			c = context.WithValue(c, core.UserIDKey, userID)
 		}
 
 		userRole := r.Header.Get("X-User-Role")
 		if userRole != "" {
-			ctx = context.WithValue(ctx, core.UserRoleKey, userRole)
+			c = context.WithValue(c, core.UserRoleKey, userRole)
 		}
 
-		next.ServeHTTP(w, r.WithContext(ctx))
+		return c, nil
 	}, nil
 }
 
 var err401 = errors.New("401 unauthorized")
 
-func HeaderHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
+func HeaderHandler(ac Auth) (handlerFunc, error) {
 	hdr := ac.Header
 
 	if hdr.Name == "" {
@@ -135,7 +240,7 @@ func HeaderHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
 		return nil, fmt.Errorf("auth '%s': no header.value defined", ac.Name)
 	}
 
-	return func(w http.ResponseWriter, r *http.Request) (context.Context, error) {
+	return func(_ http.ResponseWriter, r *http.Request) (context.Context, error) {
 		var fo1 bool
 		value := r.Header.Get(hdr.Name)
 
@@ -154,61 +259,21 @@ func HeaderHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
 	}, nil
 }
 
-type handlerFunc func(w http.ResponseWriter, r *http.Request) (context.Context, error)
-
-func WithAuth(next http.Handler, ac *Auth, log *zap.Logger) (http.Handler, error) {
-	var err error
-
-	if ac.CredsInHeader {
-		next, err = SimpleHandler(ac, next)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	var h handlerFunc
-
-	switch ac.Type {
-	case "rails":
-		h, err = RailsHandler(ac, next)
-
-	case "jwt":
-		h, err = JwtHandler(ac, next)
-
-	case "header":
-		h, err = HeaderHandler(ac, next)
-
-	// case "magiclink":
-	// 	h, err = MagicLinkHandler(ac, next)
-
-	default:
-		return next, nil
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("%s: %s", ac.Type, err.Error())
-	}
-
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx, err := h(w, r)
-		if err != nil && log != nil {
-			log.Error("Auth", []zapcore.Field{zap.String("type", ac.Type), zap.Error(err)}...)
-		}
-
-		if err == err401 {
-			http.Error(w, "401 unauthorized", http.StatusUnauthorized)
-			return
-		}
-
-		if ctx != nil {
-			next.ServeHTTP(w, r.WithContext(ctx))
-		} else {
-			next.ServeHTTP(w, r)
-		}
-	}), nil
+func IsAuth(c context.Context) bool {
+	return c.Value(core.UserIDKey) != nil
 }
 
-func IsAuth(ct context.Context) bool {
-	return ct.Value(core.UserIDKey) != nil
+func UserID(c context.Context) interface{} {
+	return c.Value(core.UserIDKey)
+}
+
+func UserIDInt(c context.Context) int {
+	v, ok := UserID(c).(string)
+	if !ok {
+		return -1
+	}
+	if v, err := strconv.Atoi(v); err == nil {
+		return v
+	}
+	return -1
 }

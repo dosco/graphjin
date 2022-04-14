@@ -97,7 +97,8 @@ func (c *compilerContext) renderUnionColumn(sel, csel *qcode.Select) {
 		c.squoted(usel.Table)
 		c.w.WriteString(` THEN `)
 
-		if usel.SkipRender == qcode.SkipTypeUserNeeded {
+		if usel.SkipRender == qcode.SkipTypeUserNeeded || 
+			usel.SkipRender == qcode.SkipTypeBlocked {
 			c.w.WriteString(`NULL `)
 		} else {
 			c.w.WriteString(`__sj_`)

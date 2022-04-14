@@ -15,21 +15,21 @@ import (
 	"github.com/gomodule/redigo/redis"
 )
 
-func RailsHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
+func RailsHandler(ac Auth) (handlerFunc, error) {
 	ru := ac.Rails.URL
 
 	if strings.HasPrefix(ru, "memcache:") {
-		return RailsMemcacheHandler(ac, next)
+		return RailsMemcacheHandler(ac)
 	}
 
 	if strings.HasPrefix(ru, "redis:") {
-		return RailsRedisHandler(ac, next)
+		return RailsRedisHandler(ac)
 	}
 
-	return RailsCookieHandler(ac, next)
+	return RailsCookieHandler(ac)
 }
 
-func RailsRedisHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
+func RailsRedisHandler(ac Auth) (handlerFunc, error) {
 	cookie := ac.Cookie
 
 	if len(cookie) == 0 {
@@ -92,7 +92,7 @@ func RailsRedisHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
 	}, nil
 }
 
-func RailsMemcacheHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
+func RailsMemcacheHandler(ac Auth) (handlerFunc, error) {
 	cookie := ac.Cookie
 
 	if len(cookie) == 0 {
@@ -132,7 +132,7 @@ func RailsMemcacheHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
 	}, nil
 }
 
-func RailsCookieHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
+func RailsCookieHandler(ac Auth) (handlerFunc, error) {
 	cookie := ac.Cookie
 	if len(cookie) == 0 {
 		return nil, fmt.Errorf("no auth.cookie defined")
@@ -160,7 +160,7 @@ func RailsCookieHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
 	}, nil
 }
 
-func railsAuth(ac *Auth) (*rails.Auth, error) {
+func railsAuth(ac Auth) (*rails.Auth, error) {
 	secret := ac.Rails.SecretKeyBase
 	if len(secret) == 0 {
 		return nil, errors.New("no auth.rails.secret_key_base defined")

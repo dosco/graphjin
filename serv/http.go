@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/dosco/graphjin/core"
-	"github.com/dosco/graphjin/serv/internal/auth"
+	"github.com/dosco/graphjin/serv/auth"
 	"github.com/dosco/graphjin/serv/internal/etags"
 	"github.com/gorilla/websocket"
 	"github.com/rs/cors"
@@ -57,10 +57,12 @@ func apiV1Handler(s1 *Service, ns nspace) http.Handler {
 		zlog = s.zlog
 	}
 
-	h, err := auth.WithAuth(s1.apiV1(ns), &s.conf.Auth, zlog)
+	authOpt := auth.Options{AuthFailBlock: s.conf.Serv.AuthFailBlock}
+	useAuth, err := auth.NewAuth(s.conf.Auth, zlog, authOpt)
 	if err != nil {
-		s.log.Fatalf("Error initializing auth: %s", err)
+		s.log.Fatalf("api: error initializing auth: %s", err)
 	}
+	h := useAuth(s1.apiV1(ns))
 
 	if len(s.conf.AllowedOrigins) != 0 {
 		allowedHeaders := []string{
@@ -91,12 +93,6 @@ func (s1 *Service) apiV1(ns nspace) http.Handler {
 
 		ct := r.Context()
 		w.Header().Set("Content-Type", "application/json")
-
-		//nolint: errcheck
-		if s.conf.AuthFailBlock && !auth.IsAuth(ct) {
-			renderErr(w, errUnauthorized)
-			return
-		}
 
 		if websocket.IsWebSocketUpgrade(r) {
 			s.apiV1Ws(w, r)
@@ -147,10 +143,7 @@ func (s1 *Service) apiV1(ns nspace) http.Handler {
 			}
 		}
 
-		switch {
-		case s.gj.IsProd():
-			rc.APQKey = req.OpName
-		case req.apqEnabled():
+		if req.apqEnabled() {
 			rc.APQKey = (req.OpName + req.Ext.Persisted.Sha256Hash)
 		}
 
