@@ -42,11 +42,7 @@ func Init(fileName string, fs afero.Fs) (map[string]string, error) {
 			continue
 		}
 		v := strings.SplitN(string(line), "=", 2)
-		k := strings.ReplaceAll(strings.ToLower(v[0]), "_", ".")
-		res[k] = v[1]
-		// if err := os.Setenv(v[0], v[1]); err != nil {
-		// 	return false, err
-		// }
+		res[v[0]] = v[1]
 	}
 
 	return res, nil

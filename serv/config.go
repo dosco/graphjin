@@ -236,15 +236,7 @@ func setupSecrets(conf *Config, fs afero.Fs) (*Config, error) {
 		return conf, nil
 	}
 
-	var secFile string
-	var err error
-
-	if fs == nil {
-		secFile, err = filepath.Abs(conf.RelPath(conf.SecretsFile))
-	} else {
-		secFile, err = filepath.Abs(conf.RelPath(conf.SecretsFile))
-
-	}
+	secFile, err := filepath.Abs(conf.RelPath(conf.SecretsFile))
 	if err != nil {
 		return nil, err
 	}
@@ -257,9 +249,10 @@ func setupSecrets(conf *Config, fs afero.Fs) (*Config, error) {
 	}
 
 	for k, v := range newConf.secrets {
-		if strings.HasPrefix(k, "gj.") || strings.HasPrefix(k, "sg.") {
+		if strings.HasPrefix(k, "GJ_") || strings.HasPrefix(k, "SG_") {
 			k = k[3:]
 		}
+		k = strings.ReplaceAll(strings.ToLower(k), "_", ".")
 		conf.vi.Set(k, v)
 	}
 
