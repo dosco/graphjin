@@ -23,7 +23,8 @@ require (
 	github.com/chirino/graphql v0.0.0-20210707003802-dfaf250c773e
 	github.com/containerd/containerd v1.5.9 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1 // indirect
-	github.com/dop251/goja v0.0.0-20220405120441-9037c2b61cbf
+	github.com/docker/distribution v2.8.1+incompatible // indirect
+	github.com/dop251/goja v0.0.0-20220408131256-ffe77e20c6f1
 	github.com/frankban/quicktest v1.14.2 // indirect
 	github.com/fsnotify/fsnotify v1.5.1
 	github.com/go-chi/chi v1.5.4 // indirect
@@ -52,7 +53,7 @@ require (
 	github.com/howeyc/gopass v0.0.0-20210920133722-c8aef6fb66ef // indirect
 	github.com/jackc/pgx/v4 v4.15.0
 	github.com/jhump/protoreflect v1.6.1 // indirect
-	github.com/jvatic/goja-babel v0.0.0-20220405121752-986f309ee813
+	github.com/jvatic/goja-babel v0.0.0-20220412122858-f2bd58c5ff3f
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0
 	github.com/klauspost/compress v1.15.1
 	github.com/lestrrat-go/blackmagic v1.0.1 // indirect

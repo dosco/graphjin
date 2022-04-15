@@ -149,7 +149,7 @@ func compileGQLToPSQLExpectErr(t *testing.T, gql string, vars qcode.Variables, r
 }
 
 func _compileGQLToPSQL(t *testing.T, gql string, vars qcode.Variables, role string) error {
-	for i := 0; i < 1; i++ {
+	for i := 0; i < 1000; i++ {
 		qc, err := qcompile.Compile([]byte(gql), vars, role, "")
 		if err != nil {
 			return err
