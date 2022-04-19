@@ -37,7 +37,7 @@ func (c *compilerContext) renderUpdateStmt(m qcode.Mutate) {
 	c.quoted(m.Ti.Name)
 
 	c.w.WriteString(` SET (`)
-	n := c.renderInsertUpdateColumns(m, false)
+	n, needsJSON := c.renderInsertUpdateColumns(m, false)
 	c.renderNestedRelColumns(m, false, false, n)
 
 	c.w.WriteString(`) = (`)
@@ -54,21 +54,10 @@ func (c *compilerContext) renderUpdateStmt(m qcode.Mutate) {
 		rel := m.Rel
 
 		c.w.WriteString(` FROM _sg_input i`)
-		// c.quoted(rel.Right.Col.Table)
-		// c.w.WriteString(` _x_`)
-		// c.w.WriteString(rel.Right.Col.Table)
-		c.renderNestedRelTables(m, true)
-
-		if m.IsArray {
-			c.w.WriteString(`, json_populate_recordset`)
-		} else {
-			c.w.WriteString(`, json_populate_record`)
+		n = c.renderNestedRelTables(m, true, 1)
+		if needsJSON {
+			c.renderMutateToRecordSet(m, n)
 		}
-
-		c.w.WriteString(`(NULL::"`)
-		c.w.WriteString(m.Ti.Name)
-		joinPath(c.w, `", i.j`, m.Path)
-		c.w.WriteString(`) t`)
 
 		c.w.WriteString(` WHERE ((`)
 		c.colWithTable(rel.Left.Col.Table, rel.Left.Col.Name)

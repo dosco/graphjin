@@ -34,7 +34,7 @@ func (c *compilerContext) renderInsertStmt(m qcode.Mutate, embedded bool) {
 	c.quoted(m.Ti.Name)
 
 	c.w.WriteString(` (`)
-	n := c.renderInsertUpdateColumns(m, false)
+	n, _ := c.renderInsertUpdateColumns(m, false)
 	c.renderNestedRelColumns(m, false, false, n)
 	c.w.WriteString(`)`)
 
