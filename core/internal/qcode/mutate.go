@@ -70,6 +70,7 @@ type MColumn struct {
 	FieldName string
 	Alias     string
 	Value     string
+	Set       bool
 }
 
 type MRColumn struct {
@@ -125,6 +126,10 @@ func (co *Compiler) compileMutation(qc *QCode, role string) error {
 	m.mData, err = parseMutationData(qc, qc.ActionArg.Val)
 	if err != nil {
 		return err
+	}
+
+	if m.Data.Type == graph.NodeList {
+		m.Data = m.Data.Children[0]
 	}
 
 	mutates := []Mutate{}
@@ -252,10 +257,6 @@ func parseMutationData(qc *QCode, actionVal *graph.Node) (mData, error) {
 func (co *Compiler) newMutate(ms *mState, m Mutate, role string) error {
 	trv := co.getRole(role, m.Ti.Schema, m.Ti.Name, m.Key)
 	data := m.Data
-
-	if m.IsArray && m.IsJSON {
-		data = data.Children[0]
-	}
 
 	items, err := co.processNestedMutations(ms, &m, data, trv)
 	if err != nil {
@@ -571,7 +572,7 @@ func (co *Compiler) getColumnsFromData(m *Mutate, data *graph.Node, trv trval, c
 			return nil, err
 		}
 
-		cols = append(cols, MColumn{Col: col, FieldName: k1, Alias: k, Value: v})
+		cols = append(cols, MColumn{Col: col, FieldName: k1, Alias: k, Value: v, Set: true})
 		cm[k] = struct{}{}
 	}
 

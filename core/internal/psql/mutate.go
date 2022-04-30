@@ -81,52 +81,62 @@ func (c *compilerContext) renderUnionStmt() {
 
 func (c *compilerContext) renderInsertUpdateValues(m qcode.Mutate) int {
 	i := 0
-
-	render := func(data *graph.Node) {
-		for _, col := range m.Cols {
-			if i != 0 {
-				c.w.WriteString(`, `)
-			}
-			i++
-
-			field := m.Data.CMap[col.FieldName]
-			// v will be a blank strings unless the value is from a preset
-			v := field.Val
-
-			if field.Type == graph.NodeVar {
-				if v1, ok := c.svars[v]; ok {
-					v = v1
-				}
-			}
-
-			switch {
-			case field.Type == graph.NodeVar:
-				c.renderParam(Param{Name: v, Type: col.Col.Type})
-
-			case strings.HasPrefix(v, "sql:"):
-				c.w.WriteString(`(`)
-				c.renderVar(v[4:])
-				c.w.WriteString(`)`)
-
-			default:
-				c.squoted(v)
-			}
-
-			c.w.WriteString(` :: `)
-			c.w.WriteString(col.Col.Type)
-
+	for _, col := range m.Cols {
+		if i != 0 {
+			c.w.WriteString(`, `)
 		}
-	}
+		i++
 
-	c.w.WriteString(` (`)
-	render(m.Data)
-	c.w.WriteString(`)`)
+		var vk, v string
+		isVar := false
+
+		if col.Set {
+			v = col.Value
+			if v != "" && v[0] == '$' {
+				vk = v[1:]
+				isVar = true
+			}
+		} else {
+			field := m.Data.CMap[col.FieldName]
+			v = field.Val
+			vk = v
+			if field.Type == graph.NodeVar {
+				isVar = true
+			}
+		}
+
+		if isVar {
+			if v1, ok := c.svars[vk]; ok {
+				v = v1
+				isVar = false
+			}
+		}
+
+		switch {
+		case isVar:
+			c.renderParam(Param{Name: vk, Type: col.Col.Type})
+
+		case strings.HasPrefix(v, "sql:"):
+			c.w.WriteString(`(`)
+			c.renderVar(v[4:])
+			c.w.WriteString(`)`)
+
+		case m.IsJSON:
+			c.colWithTable("t", col.FieldName)
+
+		default:
+			c.squoted(v)
+		}
+
+		c.w.WriteString(` :: `)
+		c.w.WriteString(col.Col.Type)
+
+	}
 
 	return i
 }
 
-func (c *compilerContext) renderInsertUpdateColumns(m qcode.Mutate, values bool) (int, bool) {
-	needsJSON := false
+func (c *compilerContext) renderInsertUpdateColumns(m qcode.Mutate) int {
 	i := 0
 
 	for _, col := range m.Cols {
@@ -135,45 +145,48 @@ func (c *compilerContext) renderInsertUpdateColumns(m qcode.Mutate, values bool)
 		}
 		i++
 
-		if !values {
-			c.quoted(col.Col.Name)
-			continue
-		}
-
-		// v will be a blank strings unless the value is from a preset
-		v := col.Value
-
-		if v != "" && v[0] == '$' {
-			if v1, ok := c.svars[v[1:]]; ok {
-				v = v1
-			}
-		}
-
-		switch {
-		case len(v) > 1 && v[0] == '$':
-			c.renderParam(Param{Name: v[1:], Type: col.Col.Type})
-
-		case strings.HasPrefix(v, "sql:"):
-			c.w.WriteString(`(`)
-			c.renderVar(v[4:])
-			c.w.WriteString(`)`)
-
-		case v != "":
-			c.squoted(v)
-
-		case m.IsJSON:
-			needsJSON = true
-			c.colWithTable("t", col.FieldName)
-
-		default:
-			c.w.WriteString(v)
-		}
-
-		c.w.WriteString(` :: `)
-		c.w.WriteString(col.Col.Type)
+		// if !values {
+		c.quoted(col.Col.Name)
+		// 	continue
+		// }
 	}
 
-	return i, needsJSON
+	/*
+			v := col.Value
+			isVar := false
+
+			if v != "" && v[0] == '$' {
+				if v1, ok := c.svars[v[1:]]; ok {
+					v = v1
+				} else {
+					isVar = true
+				}
+			}
+
+			switch {
+			case isVar:
+				c.renderParam(Param{Name: v[1:], Type: col.Col.Type})
+
+			case strings.HasPrefix(v, "sql:"):
+				c.w.WriteString(`(`)
+				c.renderVar(v[4:])
+				c.w.WriteString(`)`)
+
+			case m.IsJSON:
+				needsJSON = true
+				c.colWithTable("t", col.FieldName)
+
+			default:
+				c.squoted(v)
+
+			}
+
+			c.w.WriteString(` :: `)
+			c.w.WriteString(col.Col.Type)
+		}
+	*/
+
+	return i
 }
 
 func (c *compilerContext) willBeArray(index int) bool {
@@ -224,18 +237,21 @@ func (c *compilerContext) renderNestedRelTables(m qcode.Mutate, prefix bool, n i
 			c.w.WriteString(`, `)
 		}
 		d := c.qc.Mutates[id]
+
 		if d.Multi {
 			c.renderCteNameWithID(d)
 		} else {
 			c.quoted(d.Ti.Name)
 		}
+
 		if prefix {
 			c.w.WriteString(` _x_`)
 			c.w.WriteString(d.Ti.Name)
-		} else {
+		} else if d.Multi {
 			c.w.WriteString(` `)
 			c.quoted(d.Ti.Name)
 		}
+
 		i++
 	}
 	return i
@@ -314,7 +330,11 @@ func (c *compilerContext) renderOneToManyConnectStmt(m qcode.Mutate) {
 		c.quoted(rel.Left.Col.Name)
 	}
 
-	c.w.WriteString(` FROM _sg_input i, `)
+	if m.IsJSON {
+		c.w.WriteString(` FROM _sg_input i, `)
+	} else {
+		c.w.WriteString(` FROM `)
+	}
 	c.quoted(m.Ti.Name)
 
 	c.w.WriteString(` WHERE `)
@@ -332,8 +352,13 @@ func (c *compilerContext) renderOneToOneConnectStmt(m qcode.Mutate) {
 	c.w.WriteString(` = `)
 	c.colWithTable(("_x_" + m.Rel.Right.Col.Table), m.Rel.Right.Col.Name)
 
-	c.w.WriteString(` FROM _sg_input i`)
-	c.renderNestedRelTables(m, true, 1)
+	if m.IsJSON {
+		c.w.WriteString(` FROM _sg_input i`)
+		c.renderNestedRelTables(m, true, 1)
+	} else {
+		c.w.WriteString(` FROM `)
+		c.renderNestedRelTables(m, true, 0)
+	}
 
 	c.w.WriteString(` WHERE `)
 	c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
@@ -355,7 +380,11 @@ func (c *compilerContext) renderOneToManyDisconnectStmt(m qcode.Mutate) {
 		c.w.WriteString(`SELECT `)
 		c.quoted(rel.Left.Col.Name)
 
-		c.w.WriteString(` FROM _sg_input i, `)
+		if m.IsJSON {
+			c.w.WriteString(` FROM _sg_input i, `)
+		} else {
+			c.w.WriteString(` FROM `)
+		}
 		c.quoted(m.Ti.Name)
 
 		c.w.WriteString(` WHERE `)
@@ -388,8 +417,13 @@ func (c *compilerContext) renderOneToOneDisconnectStmt(m qcode.Mutate) {
 		c.w.WriteString(` NULL`)
 	}
 
-	c.w.WriteString(` FROM _sg_input i`)
-	c.renderNestedRelTables(m, true, 1)
+	if m.IsJSON {
+		c.w.WriteString(` FROM _sg_input i`)
+		c.renderNestedRelTables(m, true, 1)
+	} else {
+		c.w.WriteString(` FROM `)
+		c.renderNestedRelTables(m, true, 0)
+	}
 
 	c.w.WriteString(` WHERE ((`)
 	c.colWithTable(m.Rel.Left.Col.Table, m.Rel.Left.Col.Name)
@@ -452,19 +486,18 @@ func (c *compilerContext) renderCteNameWithID(m qcode.Mutate) {
 }
 
 func (c *compilerContext) renderValues(m qcode.Mutate, prefix bool) {
-	if m.IsJSON {
-		c.w.WriteString(` SELECT `)
-		n, needsJSON := c.renderInsertUpdateColumns(m, true)
-		c.renderNestedRelColumns(m, true, prefix, n)
+	c.w.WriteString(` SELECT `)
+	n := c.renderInsertUpdateValues(m)
+	c.renderNestedRelColumns(m, true, prefix, n)
 
+	if m.IsJSON {
 		c.w.WriteString(` FROM _sg_input i`)
 		n = c.renderNestedRelTables(m, prefix, 1)
-		if needsJSON {
-			c.renderMutateToRecordSet(m, n)
-		}
-	} else {
-		c.w.WriteString(` VALUES `)
-		c.renderInsertUpdateValues(m)
+		c.renderMutateToRecordSet(m, n)
+
+	} else if len(m.DependsOn) != 0 {
+		c.w.WriteString(` FROM `)
+		c.renderNestedRelTables(m, prefix, 0)
 	}
 }
 
@@ -484,9 +517,6 @@ func (c *compilerContext) renderMutateToRecordSet(m qcode.Mutate, n int) {
 
 	i := 0
 	for _, col := range m.Cols {
-		if col.Value != "" {
-			continue
-		}
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}

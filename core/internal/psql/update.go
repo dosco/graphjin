@@ -37,7 +37,7 @@ func (c *compilerContext) renderUpdateStmt(m qcode.Mutate) {
 	c.quoted(m.Ti.Name)
 
 	c.w.WriteString(` SET (`)
-	n, needsJSON := c.renderInsertUpdateColumns(m, false)
+	n := c.renderInsertUpdateColumns(m)
 	c.renderNestedRelColumns(m, false, false, n)
 
 	c.w.WriteString(`) = (`)
@@ -53,10 +53,13 @@ func (c *compilerContext) renderUpdateStmt(m qcode.Mutate) {
 		// relationship is one-to-one
 		rel := m.Rel
 
-		c.w.WriteString(` FROM _sg_input i`)
-		n = c.renderNestedRelTables(m, true, 1)
-		if needsJSON {
+		if m.IsJSON {
+			c.w.WriteString(` FROM _sg_input i`)
+			n = c.renderNestedRelTables(m, true, 1)
 			c.renderMutateToRecordSet(m, n)
+		} else {
+			c.w.WriteString(` FROM `)
+			c.renderNestedRelTables(m, true, 0)
 		}
 
 		c.w.WriteString(` WHERE ((`)
