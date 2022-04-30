@@ -355,13 +355,14 @@ func (g *GraphJin) GraphQL(
 
 	if err != nil {
 		res.Errors = []Error{{Message: err.Error()}}
-	}
 
-	if rc != nil && rc.APQKey != "" {
-		gj.apq.Set(qr.ns, rc.APQKey, apqInfo{
-			op:    qr.op,
-			name:  qr.name,
-			query: string(qr.query)})
+	} else {
+		if rc != nil && rc.APQKey != "" {
+			gj.apq.Set(qr.ns, rc.APQKey, apqInfo{
+				op:    qr.op,
+				name:  qr.name,
+				query: string(qr.query)})
+		}
 	}
 
 	if qres.qc != nil {

@@ -359,11 +359,18 @@ func (gj *graphjin) subCheckUpdates(s *sub, mv mval, start int) {
 	// codepath that does not use a join query
 	// more details on this optimization are towards the end
 	// of the function
+
+	var params json.RawMessage
+
+	if hasParams {
+		params = renderJSONArray(mv.params[start:end])
+	}
+
 	err = retry.Do(
 		func() error {
 			if hasParams {
 				//nolint: sqlclosecheck
-				rows, err = gj.db.QueryContext(c, s.qc.st.sql, renderJSONArray(mv.params[start:end]))
+				rows, err = gj.db.QueryContext(c, s.qc.st.sql, params)
 			} else {
 				//nolint: sqlclosecheck
 				rows, err = gj.db.QueryContext(c, s.qc.st.sql)
