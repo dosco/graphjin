@@ -126,6 +126,9 @@ func parseVarVal(v json.RawMessage) interface{} {
 	case 'f', 'F':
 		return false
 
+	case 'n':
+		return nil
+
 	default:
 		return string(v)
 	}
