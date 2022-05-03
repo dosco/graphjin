@@ -375,7 +375,7 @@ func (g *GraphJin) GraphQL(
 
 	res.Data = json.RawMessage(qres.data)
 	res.role = qres.role
-	res.vars = vars
+	res.Vars = vars
 
 	return res, err
 }
