@@ -243,6 +243,7 @@ type Result struct {
 	role         string
 	cacheControl string
 	Errors       []Error         `json:"errors,omitempty"`
+	Vars         json.RawMessage `json:"-"`
 	Data         json.RawMessage `json:"data,omitempty"`
 	Extensions   *extensions     `json:"extensions,omitempty"`
 }
@@ -374,6 +375,7 @@ func (g *GraphJin) GraphQL(
 
 	res.Data = json.RawMessage(qres.data)
 	res.role = qres.role
+	res.vars = vars
 
 	return res, err
 }

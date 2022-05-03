@@ -128,17 +128,30 @@ func (co *Compiler) compileMutation(qc *QCode, role string) error {
 		return err
 	}
 
-	if m.Data.Type == graph.NodeList {
-		m.Data = m.Data.Children[0]
-	}
-
 	mutates := []Mutate{}
 	mmap := map[int32]int32{-1: -1}
 	mids := map[string][]int32{}
 
 	st := util.NewStackInf()
+	n := 0
+
+	if m.Data.Type == graph.NodeList {
+		if m.IsJSON {
+			for i := range m.Data.Children {
+				m.Data = m.Data.Children[i]
+				st.Push(m)
+			}
+			n += len(m.Data.Children)
+		} else {
+			m.Data = m.Data.Children[0]
+			st.Push(m)
+		}
+	} else {
+		st.Push(m)
+	}
+
 	st.Push(m)
-	ms := mState{st: st, qc: qc, mt: m.Type, id: (m.ID + 1)}
+	ms := mState{st: st, qc: qc, mt: m.Type, id: int32(n + 1)}
 
 	for {
 		if st.Len() == 0 {
