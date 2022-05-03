@@ -88,6 +88,7 @@ func apiV1Handler(s1 *Service, ns nspace) http.Handler {
 func (s1 *Service) apiV1(ns nspace) http.Handler {
 	h := func(w http.ResponseWriter, r *http.Request) {
 		var err error
+
 		s := s1.Load().(*service)
 		start := time.Now()
 
@@ -153,6 +154,10 @@ func (s1 *Service) apiV1(ns nspace) http.Handler {
 		}
 
 		res, err := s.gj.GraphQL(ct, req.Query, req.Vars, &rc)
+
+		if s.hook != nil {
+			s.hook(res)
+		}
 
 		if err == nil && r.Method == "GET" && res.Operation() == core.OpQuery {
 			switch {

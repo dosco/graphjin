@@ -66,6 +66,8 @@ const (
 	servListening
 )
 
+type HookFn func(*core.Result)
+
 type service struct {
 	log          *zap.SugaredLogger // logger
 	zlog         *zap.Logger        // faster logger
@@ -79,6 +81,7 @@ type service struct {
 	closeFn      func()
 	chash        string
 	state        servState
+	hook         HookFn
 	prod         bool
 	deployActive bool
 	adminCount   int32
@@ -114,6 +117,13 @@ func NewGraphJinService(conf *Config, options ...Option) (*Service, error) {
 	}
 
 	return s1, nil
+}
+
+func OptionSetHookFunc(fn HookFn) Option {
+	return func(s *service) error {
+		s.hook = fn
+		return nil
+	}
 }
 
 func OptionSetNamespace(namespace string) Option {
