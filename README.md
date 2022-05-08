@@ -181,7 +181,7 @@ With GraphJin your web and mobile developers can start building instantly. All t
 
 ## Features
 
-- Works with Postgres, MySQL8 and Yugabyte DB
+- Works with Postgres, MySQL8 and YugabyteDB
 - Complex nested queries and mutations
 - Realtime updates with subscriptions
 - Add custom business logic in Javascript
