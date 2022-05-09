@@ -48,6 +48,7 @@ func (co *Compiler) compileMutation(
 	}
 
 	c.renderUnionStmt()
+	c.w.WriteString(` `)
 	co.CompileQuery(w, qc, c.md)
 }
 

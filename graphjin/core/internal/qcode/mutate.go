@@ -140,16 +140,17 @@ func (co *Compiler) compileMutation(qc *QCode, role string) error {
 			st.Push(m)
 		} else {
 			for i := range m.Data.Children {
-				m.Data = m.Data.Children[i]
-				m.ID++
-				st.Push(m)
+				m1 := m
+				m1.Data = m.Data.Children[i]
+				m1.ID = int32(i)
+				st.Push(m1)
 			}
 		}
 	} else {
 		st.Push(m)
 	}
 
-	ms := mState{st: st, qc: qc, mt: m.Type, id: int32(m.ID + 1)}
+	ms := mState{st: st, qc: qc, mt: m.Type, id: int32(st.Len() + 1)}
 
 	for {
 		if st.Len() == 0 {

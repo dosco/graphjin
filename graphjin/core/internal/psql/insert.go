@@ -21,7 +21,6 @@ func (c *compilerContext) renderInsert() {
 			c.renderOneToOneConnectStmt(m)
 		}
 	}
-	c.w.WriteString(` `)
 }
 
 func (c *compilerContext) renderInsertStmt(m qcode.Mutate, embedded bool) {

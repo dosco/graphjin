@@ -22,7 +22,6 @@ func (c *compilerContext) renderUpdate() {
 			c.renderOneToOneDisconnectStmt(m)
 		}
 	}
-	c.w.WriteString(` `)
 }
 
 func (c *compilerContext) renderUpdateStmt(m qcode.Mutate) {

@@ -108,6 +108,41 @@ func Example_inlineInsertWithValidation() {
 	// validation failed
 }
 
+func Example_inlineBulkInsert() {
+	gql := `mutation {
+		users(insert: [
+			{id: $id1, email: $email1, full_name: $full_name1},
+			{id:, $id2, email: $email2, full_name: $full_name2}]) {
+			id
+			email
+		}
+	}`
+
+	vars := json.RawMessage(`{
+		"id1": 1008,
+		"email1": "one@test.com",
+		"full_name1": "John One",
+		"id2": 1009,
+		"email2":  "two@test.com",
+		"full_name2": "John Two"
+	}`)
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
+	res, err := gj.GraphQL(ctx, gql, vars, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+	// Output: {"users": [{"id": 1009, "email": "two@test.com"}, {"id": 1008, "email": "one@test.com"}]}
+}
+
 func Example_insertWithPresets() {
 	gql := `mutation {
 		products(insert: $data) {
