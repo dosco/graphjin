@@ -62,7 +62,12 @@ func apiV1Handler(s1 *Service, ns nspace) http.Handler {
 	if err != nil {
 		s.log.Fatalf("api: error initializing auth: %s", err)
 	}
-	h := useAuth(s1.apiV1(ns))
+
+	h := s1.apiV1(ns)
+	// useAuth can be nil when type="" or type="none"
+	if useAuth != nil {
+		h = useAuth(s1.apiV1(ns))
+	}
 
 	if len(s.conf.AllowedOrigins) != 0 {
 		allowedHeaders := []string{
