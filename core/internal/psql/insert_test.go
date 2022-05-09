@@ -19,7 +19,6 @@ func simpleInsert(t *testing.T) {
 	compileGQLToPSQL(t, gql, vars, "user")
 }
 
-/*
 func simpleInlineInsertBulk(t *testing.T) {
 	gql := `mutation {
 		users(insert: [
@@ -38,7 +37,6 @@ func simpleInlineInsertBulk(t *testing.T) {
 
 	compileGQLToPSQL(t, gql, vars, "user")
 }
-*/
 
 func singleInsert(t *testing.T) {
 	gql := `mutation {
@@ -330,7 +328,7 @@ func nestedInsertRecursive(t *testing.T) {
 func TestCompileInsert(t *testing.T) {
 	t.Run("simpleInsert", simpleInsert)
 	t.Run("singleInsert", singleInsert)
-	// t.Run("simpleInlineInsertBulk", simpleInlineInsertBulk)
+	t.Run("simpleInlineInsertBulk", simpleInlineInsertBulk)
 	t.Run("bulkInsert", bulkInsert)
 	t.Run("simpleInsertWithPresets", simpleInsertWithPresets)
 	t.Run("nestedInsertManyToMany", nestedInsertManyToMany)
