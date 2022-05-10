@@ -165,7 +165,7 @@ func NewAuth(ac Auth, log *zap.Logger, opt Options) (
 
 	// case "magiclink":
 	// 	h, err = MagicLinkHandler(ac, next)
-	case "":
+	case "", "none":
 		return nil, nil
 
 	default:
