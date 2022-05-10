@@ -53,7 +53,7 @@ func routeHandler(s1 *Service, mux Mux, ns nspace) (http.Handler, error) {
 		if webRoot, err := fs.Sub(webBuild, "web/build"); err != nil {
 			return nil, err
 		} else {
-			mux.Handle("/", http.FileServer(http.FS(webRoot)))
+			mux.Handle("/*", http.FileServer(http.FS(webRoot)))
 		}
 	}
 
