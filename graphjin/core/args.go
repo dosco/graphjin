@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -86,12 +87,18 @@ func (gj *graphjin) argList(c context.Context, md psql.Metadata, vars []byte, rc
 			ar.cindx = i
 
 		default:
+
 			if v, ok := fields[p.Name]; ok {
+				varIsNull := bytes.Equal(v, []byte("null"))
+
 				switch {
-				case p.IsArray && v[0] != '[':
+				case p.IsNotNull && varIsNull:
+					return ar, fmt.Errorf("variable '%s' cannot be null", p.Name)
+
+				case p.IsArray && v[0] != '[' && !varIsNull:
 					return ar, fmt.Errorf("variable '%s' should be an array of type '%s'", p.Name, p.Type)
 
-				case p.Type == "json" && v[0] != '[' && v[0] != '{':
+				case p.Type == "json" && v[0] != '[' && v[0] != '{' && !varIsNull:
 					return ar, fmt.Errorf("variable '%s' should be an array or object", p.Name)
 				}
 				vl[i] = parseVarVal(v)

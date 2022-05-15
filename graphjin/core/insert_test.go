@@ -231,7 +231,7 @@ func Example_bulkInsert() {
 	// Output: {"users": [{"id": 1002, "email": "user1002@test.com"}, {"id": 1003, "email": "user1003@test.com"}]}
 }
 
-func Example_insertIntoMultipleRelatedTables1() {
+func Example_insertIntoMultipleRelatedTables() {
 	gql := `mutation {
 		purchases(insert: $data) {
 			quantity
@@ -287,7 +287,7 @@ func Example_insertIntoMultipleRelatedTables1() {
 	// Output: {"purchases": [{"product": {"id": 2002, "name": "Product 2002", "price": 2012.5}, "customer": {"id": 1004, "email": "user1004@test.com", "full_name": "User 1004"}, "quantity": 5}]}
 }
 
-func Example_insertIntoMultipleRelatedTables2() {
+func Example_insertIntoTableAndRelatedTable1() {
 	gql := `mutation {
 		users(insert: $data) {
 			id
@@ -336,7 +336,7 @@ func Example_insertIntoMultipleRelatedTables2() {
 	// Output: {"users": [{"id": 1005, "email": "user1005@test.com", "products": [{"id": 2003, "name": "Product 2003", "price": 2013.5}], "full_name": "User 1005"}]}
 }
 
-func Example_insertIntoMultipleRelatedTables3() {
+func Example_insertIntoTableAndRelatedTable2() {
 	gql := `mutation {
 		products(insert: $data) {
 			id
@@ -381,6 +381,70 @@ func Example_insertIntoMultipleRelatedTables3() {
 		fmt.Println(string(res.Data))
 	}
 	// Output: {"products": [{"id": 2004, "name": "Product 2004", "owner": {"id": 1006, "email": "user1006@test.com", "full_name": "User 1006"}}]}
+}
+
+func Example_insertIntoTableBulkInsertIntoRelatedTable() {
+	gql := `mutation {
+		users(insert: $data) {
+			id
+			full_name
+			email
+			products {
+				id
+				name
+				price
+			}
+		}
+	}`
+
+	vars := json.RawMessage(`{
+		"data": {
+			"id": 10051,
+			"email": "user10051@test.com",
+			"full_name": "User 10051",
+			"stripe_id": "payment_id_10051",
+			"category_counts": [
+				{"category_id": 1, "count": 400},
+				{"category_id": 2, "count": 600}
+			],
+			"products": [
+				{
+					"id": 20031,
+					"name": "Product 20031",
+					"description": "Description for product 20031",
+					"price": 2013.5,
+					"tags": ["Tag 1", "Tag 2"],
+					"category_ids": [1, 2, 3, 4, 5],
+					"owner_id": 3
+				},
+				{
+					"id": 20032,
+					"name": "Product 20032",
+					"description": "Description for product 20032",
+					"price": 2014.5,
+					"tags": ["Tag 1", "Tag 2"],
+					"category_ids": [1, 2, 3, 4, 5],
+					"owner_id": 3
+				}
+			]
+		}
+	}`)
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
+	res, err := gj.GraphQL(ctx, gql, vars, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+
+	// Output: {"users": [{"id": 10051, "email": "user10051@test.com", "products": [{"id": 20031, "name": "Product 20031", "price": 2013.5}, {"id": 20032, "name": "Product 20032", "price": 2014.5}], "full_name": "User 10051"}]}
 }
 
 func Example_insertIntoTableAndConnectToRelatedTables() {
