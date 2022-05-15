@@ -15,9 +15,10 @@ const (
 )
 
 type Param struct {
-	Name    string
-	Type    string
-	IsArray bool
+	Name      string
+	Type      string
+	IsArray   bool
+	IsNotNull bool
 }
 
 type Metadata struct {
@@ -122,8 +123,8 @@ func (co *Compiler) CompileQuery(
 		}
 		sel := &qc.Selects[id]
 
-		if sel.SkipRender == qcode.SkipTypeUserNeeded || 
-		sel.SkipRender == qcode.SkipTypeBlocked {
+		if sel.SkipRender == qcode.SkipTypeUserNeeded ||
+			sel.SkipRender == qcode.SkipTypeBlocked {
 			c.w.WriteString(`'`)
 			c.w.WriteString(sel.FieldName)
 			c.w.WriteString(`', NULL`)

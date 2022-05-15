@@ -14,11 +14,15 @@ export GO111MODULE := on
 # Build-time Go variables
 BUILD_FLAGS ?= -ldflags '-s -w -X "github.com/dosco/graphjin/serv.version=${BUILD_VERSION}" -X "github.com/dosco/graphjin/serv.commit=${BUILD}" -X "github.com/dosco/graphjin/serv.date=${BUILD_DATE}"'
 
-.PHONY: all download-tools build gen clean test run lint changlog release version help $(PLATFORMS)
+.PHONY: all download-tools build gen clean test test-norace run lint changlog release version help $(PLATFORMS)
 
 test:
 	@go test -v -timeout 30m -short -race ./... 
 	@go test -v -timeout 30m -short -race -db=mysql -run=Example_query ./...
+
+test-norace:
+	@go test -v -timeout 30m -short ./... 
+	@go test -v -timeout 30m -short -db=mysql -run=Example_query ./...
 
 BIN_DIR := $(GOPATH)/bin
 WEB_BUILD_DIR := ./serv/web/build/manifest.json

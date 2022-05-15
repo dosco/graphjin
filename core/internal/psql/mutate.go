@@ -115,7 +115,7 @@ func (c *compilerContext) renderInsertUpdateValues(m qcode.Mutate) int {
 
 		switch {
 		case isVar:
-			c.renderParam(Param{Name: vk, Type: col.Col.Type})
+			c.renderParam(Param{Name: vk, Type: col.Col.Type, IsArray: col.Col.Array, IsNotNull: col.Col.NotNull})
 
 		case strings.HasPrefix(v, "sql:"):
 			c.w.WriteString(`(`)

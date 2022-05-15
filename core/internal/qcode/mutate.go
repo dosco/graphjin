@@ -135,16 +135,8 @@ func (co *Compiler) compileMutation(qc *QCode, role string) error {
 	st := util.NewStackInf()
 
 	if m.Data.Type == graph.NodeList {
-		if m.IsJSON {
-			m.Data = m.Data.Children[0]
-			st.Push(m)
-		} else {
-			for i := range m.Data.Children {
-				m1 := m
-				m1.Data = m.Data.Children[i]
-				m1.ID = int32(i)
-				st.Push(m1)
-			}
+		for _, v := range co.processList(m) {
+			st.Push(v)
 		}
 	} else {
 		st.Push(m)
@@ -248,6 +240,7 @@ func parseMutationData(qc *QCode, actionVal *graph.Node) (mData, error) {
 		val, ok := qc.Vars[actionVal.Val]
 		if !ok {
 			return md, fmt.Errorf("variable not found: %s", actionVal.Val)
+			// continue
 		}
 		md.Data, err = graph.ParseArgValue(string(val), true)
 		if err != nil {
@@ -258,8 +251,6 @@ func parseMutationData(qc *QCode, actionVal *graph.Node) (mData, error) {
 	default:
 		md.Data = actionVal
 	}
-
-	md.IsArray = md.Data.Type == graph.NodeList
 	return md, nil
 }
 
@@ -321,7 +312,7 @@ func (co *Compiler) newMutate(ms *mState, m Mutate, role string) error {
 }
 
 func (co *Compiler) processNestedMutations(ms *mState, m *Mutate, data *graph.Node, trv trval) ([]Mutate, error) {
-	var m1 Mutate
+	var ml []Mutate
 	var md mData
 	var err error
 
@@ -334,7 +325,7 @@ func (co *Compiler) processNestedMutations(ms *mState, m *Mutate, data *graph.No
 			return nil, err
 		}
 
-		if md.Data.Type != graph.NodeObj {
+		if md.Data.Type != graph.NodeObj && md.Data.Type != graph.NodeList {
 			continue
 		}
 
@@ -361,7 +352,7 @@ func (co *Compiler) processNestedMutations(ms *mState, m *Mutate, data *graph.No
 			}
 
 			if ok && ty != MTKeyword {
-				m1 = Mutate{
+				ml = []Mutate{{
 					mData:    md,
 					ID:       ms.id,
 					ParentID: m.ParentID,
@@ -372,7 +363,7 @@ func (co *Compiler) processNestedMutations(ms *mState, m *Mutate, data *graph.No
 					Ti:     m.Ti,
 					Rel:    m.Rel,
 					render: true,
-				}
+				}}
 				m.Type = MTNone
 
 			} else if ok && ty == MTKeyword {
@@ -394,7 +385,7 @@ func (co *Compiler) processNestedMutations(ms *mState, m *Mutate, data *graph.No
 				return nil, fmt.Errorf("remove json root '%s' from '%s' data", k, ms.qc.SType)
 			}
 
-			m1 = Mutate{
+			ml = []Mutate{{
 				mData:    md,
 				ID:       ms.id,
 				ParentID: m.ID,
@@ -404,19 +395,43 @@ func (co *Compiler) processNestedMutations(ms *mState, m *Mutate, data *graph.No
 				Path: append(m.Path, k),
 				Ti:   ti,
 				Rel:  rel,
-			}
+			}}
 		}
 
-		if err = co.processDirectives(ms, &m1, md.Data, trv); err != nil {
+		if err = co.processDirectives(ms, &ml[0], md.Data, trv); err != nil {
 			return nil, err
 		}
 
-		items = append(items, m1)
-		m.children = append(m.children, m1.ID)
-		ms.id++
+		if md.Data.Type == graph.NodeList {
+			ml = co.processList(ml[0])
+		}
+
+		for _, v := range ml {
+			items = append(items, v)
+			m.children = append(m.children, v.ID)
+			ms.id++
+		}
 	}
 
 	return items, nil
+}
+
+func (co *Compiler) processList(m Mutate) []Mutate {
+	if m.IsJSON {
+		m.IsArray = m.Data.Type == graph.NodeList
+		m.Data = m.Data.Children[0]
+		return []Mutate{m}
+	}
+
+	var mList []Mutate
+	for i := range m.Data.Children {
+		m1 := m
+		m1.Data = m.Data.Children[i]
+		m1.IsArray = m1.Data.Type == graph.NodeList
+		m1.ID += int32(i)
+		mList = append(mList, m1)
+	}
+	return mList
 }
 
 func (co *Compiler) processDirectives(ms *mState, m *Mutate, data *graph.Node, trv trval) error {
