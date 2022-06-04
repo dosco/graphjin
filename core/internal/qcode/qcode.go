@@ -9,6 +9,9 @@ import (
 	"strconv"
 	"strings"
 
+	"cuelang.org/go/cue"
+	"cuelang.org/go/cue/cuecontext"
+	cuejson "cuelang.org/go/encoding/json"
 	"github.com/dosco/graphjin/core/internal/allow"
 	"github.com/dosco/graphjin/core/internal/graph"
 	"github.com/dosco/graphjin/core/internal/sdata"
@@ -99,9 +102,12 @@ type Select struct {
 	Joins      []Join
 	order      Order
 	through    string
+	validation Validation
 	tc         TConfig
 }
-
+type Validation struct {
+	Cue graph.Node
+}
 type TableInfo struct {
 	sdata.DBTable
 }
@@ -321,6 +327,29 @@ func (co *Compiler) Compile(
 		if err := co.compileMutation(&qc, role); err != nil {
 			return nil, err
 		}
+	}
+
+	var (
+		c *cue.Context
+		v cue.Value
+	)
+	c = cuecontext.New()
+	switch qc.Selects[0].validation.Cue.Type {
+	case graph.NodeVar:
+		var o string
+		if err = json.Unmarshal([]byte(qc.Vars[qc.Selects[0].validation.Cue.Val]), &o); err != nil {
+			return nil, errors.New("cue validation variable value is not valid")
+		}
+		v = c.CompileString(o)
+	default:
+		v = c.CompileString(qc.Selects[0].validation.Cue.Val)
+	}
+	JSONvars, err := json.Marshal(qc.Vars)
+	if err != nil {
+		return nil, errors.New("variables are not valid json")
+	}
+	if e := cuejson.Validate(JSONvars, v); e != nil {
+		return nil, e
 	}
 
 	return &qc, nil
@@ -903,6 +932,9 @@ func (co *Compiler) compileDirectives(qc *QCode, sel *Select, dirs []graph.Direc
 			sel.Singular = true
 			sel.Paging.Limit = 1
 
+		case "validation":
+			err = co.compileDirectiveValidation(sel, d)
+
 		default:
 			err = fmt.Errorf("unknown selector level directive: %s", d.Name)
 		}
@@ -1286,6 +1318,18 @@ func (co *Compiler) compileDirectiveThrough(sel *Select, d *graph.Directive) err
 			return argErr(arg.Name, "string")
 		}
 		sel.through = arg.Val.Val
+	}
+
+	return nil
+}
+func (co *Compiler) compileDirectiveValidation(sel *Select, d *graph.Directive) error {
+	if len(d.Args) == 0 {
+		return fmt.Errorf("@validation: required cue schema")
+	}
+	arg := d.Args[0]
+
+	if arg.Name == "cue" {
+		sel.validation = Validation{Cue: *arg.Val}
 	}
 
 	return nil
