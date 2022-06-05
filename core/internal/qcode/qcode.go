@@ -59,23 +59,24 @@ type ColKey struct {
 }
 
 type QCode struct {
-	Type      QType
-	SType     QType
-	Name      string
-	ActionVar string
-	ActionArg graph.Arg
-	Selects   []Select
-	Vars      Variables
-	Consts    Constraints
-	Roots     []int32
-	rootsA    [5]int32
-	Mutates   []Mutate
-	MUnions   map[string][]int32
-	Schema    *sdata.DBSchema
-	Remotes   int32
-	Script    string
-	Metadata  allow.Metadata
-	Cache     Cache
+	Type       QType
+	SType      QType
+	Name       string
+	ActionVar  string
+	ActionArg  graph.Arg
+	Selects    []Select
+	Vars       Variables
+	Consts     Constraints
+	Roots      []int32
+	rootsA     [5]int32
+	Mutates    []Mutate
+	MUnions    map[string][]int32
+	Schema     *sdata.DBSchema
+	Remotes    int32
+	Script     string
+	Metadata   allow.Metadata
+	Cache      Cache
+	Validation Validation
 }
 
 type Select struct {
@@ -102,7 +103,6 @@ type Select struct {
 	Joins      []Join
 	order      Order
 	through    string
-	validation Validation
 	tc         TConfig
 }
 type Validation struct {
@@ -334,15 +334,15 @@ func (co *Compiler) Compile(
 		v cue.Value
 	)
 	c = cuecontext.New()
-	switch qc.Selects[0].validation.Cue.Type {
+	switch qc.Validation.Cue.Type {
 	case graph.NodeVar:
 		var o string
-		if err = json.Unmarshal([]byte(qc.Vars[qc.Selects[0].validation.Cue.Val]), &o); err != nil {
+		if err = json.Unmarshal([]byte(qc.Vars[qc.Validation.Cue.Val]), &o); err != nil {
 			return nil, errors.New("cue validation variable value is not valid")
 		}
 		v = c.CompileString(o)
 	default:
-		v = c.CompileString(qc.Selects[0].validation.Cue.Val)
+		v = c.CompileString(qc.Validation.Cue.Val)
 	}
 	JSONvars, err := json.Marshal(qc.Vars)
 	if err != nil {
@@ -898,6 +898,9 @@ func (co *Compiler) compileOpDirectives(qc *QCode, dirs []graph.Directive) error
 		case "constraint", "validate":
 			err = co.compileDirectiveConstraint(qc, d)
 
+		case "validation":
+			err = co.compileDirectiveValidation(qc, d)
+
 		default:
 			err = fmt.Errorf("unknown operation level directive: %s", d.Name)
 		}
@@ -931,9 +934,6 @@ func (co *Compiler) compileDirectives(qc *QCode, sel *Select, dirs []graph.Direc
 		case "object":
 			sel.Singular = true
 			sel.Paging.Limit = 1
-
-		case "validation":
-			err = co.compileDirectiveValidation(sel, d)
 
 		default:
 			err = fmt.Errorf("unknown selector level directive: %s", d.Name)
@@ -1322,14 +1322,14 @@ func (co *Compiler) compileDirectiveThrough(sel *Select, d *graph.Directive) err
 
 	return nil
 }
-func (co *Compiler) compileDirectiveValidation(sel *Select, d *graph.Directive) error {
+func (co *Compiler) compileDirectiveValidation(qc *QCode, d *graph.Directive) error {
 	if len(d.Args) == 0 {
 		return fmt.Errorf("@validation: required cue schema")
 	}
 	arg := d.Args[0]
 
 	if arg.Name == "cue" {
-		sel.validation = Validation{Cue: *arg.Val}
+		qc.Validation = Validation{Cue: *arg.Val}
 	}
 
 	return nil

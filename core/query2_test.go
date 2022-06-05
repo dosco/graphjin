@@ -389,8 +389,8 @@ func BenchmarkCompile(b *testing.B) {
 	}
 }
 func TestCueValidationQuerySingleIntVarValue(t *testing.T) {
-	gql := `query {
-		users(where: {id:$id}) @validation(cue:"id:2") {
+	gql := `query @validation(cue:"id:2") {
+		users(where: {id:$id}) {
 		  id
 		  full_name
 		  email
@@ -409,8 +409,8 @@ func TestCueValidationQuerySingleIntVarValue(t *testing.T) {
 	}
 }
 func TestCueInvalidationQuerySingleIntVarValue(t *testing.T) {
-	gql := `query {
-		users(where: {id:$id}) @validation(cue:"id:2") {
+	gql := `query @validation(cue:"id:2") {
+		users(where: {id:$id}) {
 		  id
 		  full_name
 		  email
@@ -429,8 +429,8 @@ func TestCueInvalidationQuerySingleIntVarValue(t *testing.T) {
 	}
 }
 func TestCueValidationQuerySingleIntVarType(t *testing.T) {
-	gql := `query {
-		users(where: {id:$id}) @validation(cue:"id:int") {
+	gql := `query @validation(cue:"id:int") {
+		users(where: {id:$id}) {
 		  id
 		  full_name
 		  email
@@ -449,8 +449,8 @@ func TestCueValidationQuerySingleIntVarType(t *testing.T) {
 	}
 }
 func TestCueValidationQuerySingleIntVarOR(t *testing.T) {
-	gql := `query {
-		users(where: {id:$id}) @validation(cue:"id: 3 | 2") {
+	gql := `query @validation(cue:"id: 3 | 2") {
+		users(where: {id:$id}) {
 		  id
 		  full_name
 		  email
@@ -469,8 +469,8 @@ func TestCueValidationQuerySingleIntVarOR(t *testing.T) {
 	}
 }
 func TestCueInvalidationQuerySingleIntVarOR(t *testing.T) {
-	gql := `query {
-		users(where: {id:$id}) @validation(cue:"id: 3 | 2") {
+	gql := `query @validation(cue:"id: 3 | 2") {
+		users(where: {id:$id}) {
 		  id
 		  full_name
 		  email
@@ -491,8 +491,8 @@ func TestCueInvalidationQuerySingleIntVarOR(t *testing.T) {
 func TestCueValidationQuerySingleStringVarOR(t *testing.T) {
 	// TODO: couldn't find a way to pass string inside cue through plain graphql query ( " )
 	// (only way is using varibales and escape \")
-	gql := `query {
-		users(where: {email:$mail}) @validation(cue:$validation) {
+	gql := `query @validation(cue:$validation) {
+		users(where: {email:$mail}) {
 		  id
 		  full_name
 		  email
@@ -511,8 +511,8 @@ func TestCueValidationQuerySingleStringVarOR(t *testing.T) {
 	}
 }
 func TestCueInvalidationQuerySingleStringVarOR(t *testing.T) {
-	gql := `query {
-		users(where: {email:$mail}) @validation(cue:$validation) {
+	gql := `query @validation(cue:$validation) {
+		users(where: {email:$mail}) {
 		  id
 		  full_name
 		  email
@@ -531,8 +531,8 @@ func TestCueInvalidationQuerySingleStringVarOR(t *testing.T) {
 	}
 }
 func TestCueInvalidationQuerySingleIntVarType(t *testing.T) {
-	gql := `query {
-		users(where: {email:$email}) @validation(cue:"email:int") {
+	gql := `query @validation(cue:"email:int") {
+		users(where: {email:$email}) {
 		  id
 		  full_name
 		  email
@@ -551,8 +551,8 @@ func TestCueInvalidationQuerySingleIntVarType(t *testing.T) {
 	}
 }
 func TestCueValidationMutationMapVarStringsLen(t *testing.T) {
-	gql := `mutation {
-		users(insert:$inp) @validation(cue:$validation) {
+	gql := `mutation @validation(cue:$validation) {
+		users(insert:$inp) {
 		  id
 		  full_name
 		  email
@@ -576,8 +576,8 @@ func TestCueValidationMutationMapVarStringsLen(t *testing.T) {
 	}
 }
 func TestCueInvalidationMutationMapVarStringsLen(t *testing.T) {
-	gql := `mutation {
-		users(insert:$inp) @validation(cue:$validation) {
+	gql := `mutation @validation(cue:$validation) {
+		users(insert:$inp) {
 		  id
 		  full_name
 		  email
@@ -602,8 +602,8 @@ func TestCueInvalidationMutationMapVarStringsLen(t *testing.T) {
 }
 
 func TestCueValidationMutationMapVarIntMaxMin(t *testing.T) {
-	gql := `mutation {
-		users(insert:$inp) @validation(cue:$validation) {
+	gql := `mutation @validation(cue:$validation) {
+		users(insert:$inp) {
 		  id
 		  full_name
 		  email
@@ -627,8 +627,8 @@ func TestCueValidationMutationMapVarIntMaxMin(t *testing.T) {
 	}
 }
 func TestCueInvalidationMutationMapVarIntMaxMin(t *testing.T) {
-	gql := `mutation {
-		users(insert:$inp) @validation(cue:$validation) {
+	gql := `mutation @validation(cue:$validation) {
+		users(insert:$inp) {
 		  id
 		  full_name
 		  email
@@ -652,8 +652,8 @@ func TestCueInvalidationMutationMapVarIntMaxMin(t *testing.T) {
 	}
 }
 func TestCueValidationMutationMapVarOptionalKey(t *testing.T) {
-	gql := `mutation {
-		users(insert:$inp) @validation(cue:$validation) {
+	gql := `mutation @validation(cue:$validation) {
+		users(insert:$inp) {
 		  id
 		  full_name
 		  email
@@ -677,8 +677,8 @@ func TestCueValidationMutationMapVarOptionalKey(t *testing.T) {
 	}
 }
 func TestCueValidationMutationMapVarRegex(t *testing.T) {
-	gql := `mutation {
-		users(insert:$inp) @validation(cue:$validation) {
+	gql := `mutation @validation(cue:$validation) {
+		users(insert:$inp) {
 		  id
 		  full_name
 		  email
@@ -702,8 +702,8 @@ func TestCueValidationMutationMapVarRegex(t *testing.T) {
 	}
 }
 func TestCueInvalidationMutationMapVarRegex(t *testing.T) {
-	gql := `mutation {
-		users(insert:$inp) @validation(cue:$validation) {
+	gql := `mutation @validation(cue:$validation) {
+		users(insert:$inp) {
 		  id
 		  full_name
 		  email
