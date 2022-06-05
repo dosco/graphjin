@@ -388,3 +388,341 @@ func BenchmarkCompile(b *testing.B) {
 		resultJSON = res.Data
 	}
 }
+func TestCueValidationQuerySingleIntVarValue(t *testing.T) {
+	gql := `query {
+		users(where: {id:$id}) @validation(cue:"id:2") {
+		  id
+		  full_name
+		  email
+		}
+	  }`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = gj.GraphQL(context.Background(), gql, json.RawMessage(`{"id":2}`), nil)
+	if err != nil {
+		t.Error(err)
+	}
+}
+func TestCueInvalidationQuerySingleIntVarValue(t *testing.T) {
+	gql := `query {
+		users(where: {id:$id}) @validation(cue:"id:2") {
+		  id
+		  full_name
+		  email
+		}
+	  }`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = gj.GraphQL(context.Background(), gql, json.RawMessage(`{"id":3}`), nil)
+	if err == nil {
+		t.Error("expected validation error")
+	}
+}
+func TestCueValidationQuerySingleIntVarType(t *testing.T) {
+	gql := `query {
+		users(where: {id:$id}) @validation(cue:"id:int") {
+		  id
+		  full_name
+		  email
+		}
+	  }`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = gj.GraphQL(context.Background(), gql, json.RawMessage(`{"id":2}`), nil)
+	if err != nil {
+		t.Error(err)
+	}
+}
+func TestCueValidationQuerySingleIntVarOR(t *testing.T) {
+	gql := `query {
+		users(where: {id:$id}) @validation(cue:"id: 3 | 2") {
+		  id
+		  full_name
+		  email
+		}
+	  }`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = gj.GraphQL(context.Background(), gql, json.RawMessage(`{"id":2}`), nil)
+	if err != nil {
+		t.Error(err)
+	}
+}
+func TestCueInvalidationQuerySingleIntVarOR(t *testing.T) {
+	gql := `query {
+		users(where: {id:$id}) @validation(cue:"id: 3 | 2") {
+		  id
+		  full_name
+		  email
+		}
+	  }`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = gj.GraphQL(context.Background(), gql, json.RawMessage(`{"id":4}`), nil)
+	if err == nil {
+		t.Error(err)
+	}
+}
+func TestCueValidationQuerySingleStringVarOR(t *testing.T) {
+	// TODO: couldn't find a way to pass string inside cue through plain graphql query ( " )
+	// (only way is using varibales and escape \")
+	gql := `query {
+		users(where: {email:$mail}) @validation(cue:$validation) {
+		  id
+		  full_name
+		  email
+		}
+	  }`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = gj.GraphQL(context.Background(), gql, json.RawMessage(`{"mail":"mail@example.com","validation":"mail: \"mail@example.com\" | \"mail@example.org\" "}`), nil)
+	if err != nil {
+		t.Error(err)
+	}
+}
+func TestCueInvalidationQuerySingleStringVarOR(t *testing.T) {
+	gql := `query {
+		users(where: {email:$mail}) @validation(cue:$validation) {
+		  id
+		  full_name
+		  email
+		}
+	  }`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = gj.GraphQL(context.Background(), gql, json.RawMessage(`{"mail":"mail@example.net","validation":"mail: \"mail@example.com\" | \"mail@example.org\" "}`), nil)
+	if err == nil {
+		t.Error(err)
+	}
+}
+func TestCueInvalidationQuerySingleIntVarType(t *testing.T) {
+	gql := `query {
+		users(where: {email:$email}) @validation(cue:"email:int") {
+		  id
+		  full_name
+		  email
+		}
+	  }`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = gj.GraphQL(context.Background(), gql, json.RawMessage(`{"email":"mail@example.com"}`), nil)
+	if err == nil {
+		t.Error("expected validation error")
+	}
+}
+func TestCueValidationMutationMapVarStringsLen(t *testing.T) {
+	gql := `mutation {
+		users(insert:$inp) @validation(cue:$validation) {
+		  id
+		  full_name
+		  email
+		}
+	  }`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = gj.GraphQL(context.Background(), gql, json.RawMessage(`{
+		"inp":{
+			"id":105, "email":"mail1@example.com", "full_name":"Full Name", "created_at":"now", "updated_at":"now"
+		},
+		"validation":"import (\"strings\"), inp: {id?: int, full_name: string & strings.MinRunes(3) & strings.MaxRunes(22), created_at:\"now\", updated_at:\"now\", email: string}"
+	}`), nil)
+	if err != nil {
+		t.Error(err)
+	}
+}
+func TestCueInvalidationMutationMapVarStringsLen(t *testing.T) {
+	gql := `mutation {
+		users(insert:$inp) @validation(cue:$validation) {
+		  id
+		  full_name
+		  email
+		}
+	  }`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = gj.GraphQL(context.Background(), gql, json.RawMessage(`{
+		"inp":{
+			"id":106, "email":"mail2@example.com", "full_name":"Fu", "created_at":"now", "updated_at":"now"
+		},
+		"validation":"import (\"strings\"), inp: {id?: int, full_name: string & strings.MinRunes(3) & strings.MaxRunes(22), created_at:\"now\", updated_at:\"now\", email: string}"
+	}`), nil)
+	if err == nil {
+		t.Error(err)
+	}
+}
+
+func TestCueValidationMutationMapVarIntMaxMin(t *testing.T) {
+	gql := `mutation {
+		users(insert:$inp) @validation(cue:$validation) {
+		  id
+		  full_name
+		  email
+		}
+	  }`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = gj.GraphQL(context.Background(), gql, json.RawMessage(`{
+		"inp":{
+			"id":101, "email":"mail3@example.com", "full_name":"Full Name", "created_at":"now", "updated_at":"now"
+		},
+		"validation":" inp: {id?: int & >100 & <102, full_name: string , created_at:\"now\", updated_at:\"now\", email: string}"
+	}`), nil)
+	if err != nil {
+		t.Error(err)
+	}
+}
+func TestCueInvalidationMutationMapVarIntMaxMin(t *testing.T) {
+	gql := `mutation {
+		users(insert:$inp) @validation(cue:$validation) {
+		  id
+		  full_name
+		  email
+		}
+	  }`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = gj.GraphQL(context.Background(), gql, json.RawMessage(`{
+		"inp":{
+			"id":107, "email":"mail4@example.com", "full_name":"Fu", "created_at":"now", "updated_at":"now"
+		},
+		"validation":"inp: {id?: int & >100 & <102, full_name: string , created_at:\"now\", updated_at:\"now\", email: string}"
+	}`), nil)
+	if err == nil {
+		t.Error(err)
+	}
+}
+func TestCueValidationMutationMapVarOptionalKey(t *testing.T) {
+	gql := `mutation {
+		users(insert:$inp) @validation(cue:$validation) {
+		  id
+		  full_name
+		  email
+		}
+	  }`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = gj.GraphQL(context.Background(), gql, json.RawMessage(`{
+		"inp":{
+			"id":111, "email":"mail7@example.com", "full_name":"Fu", "created_at":"now", "updated_at":"now"
+		},
+		"validation":"inp: {id?: int, phone?: string, full_name: string , created_at:\"now\", updated_at:\"now\", email: string}"
+	}`), nil)
+	if err != nil {
+		t.Error(err)
+	}
+}
+func TestCueValidationMutationMapVarRegex(t *testing.T) {
+	gql := `mutation {
+		users(insert:$inp) @validation(cue:$validation) {
+		  id
+		  full_name
+		  email
+		}
+	  }`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = gj.GraphQL(context.Background(), gql, json.RawMessage(`{
+		"inp":{
+			"id":108, "email":"mail5@example.com", "full_name":"Full Name", "created_at":"now", "updated_at":"now"
+		},
+		"validation":"inp: {id?: int & >100 & <110, full_name: string , created_at:\"now\", updated_at:\"now\", email: =~\"^[a-zA-Z0-9.!#$+%&'*/=?^_{|}\\\\-`+"`"+`~]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$\"}"
+	}`), nil) // regex from : https://cuelang.org/play/?id=iFcZKx72Bwm#cue@export@cue
+	if err != nil {
+		t.Error(err)
+	}
+}
+func TestCueInvalidationMutationMapVarRegex(t *testing.T) {
+	gql := `mutation {
+		users(insert:$inp) @validation(cue:$validation) {
+		  id
+		  full_name
+		  email
+		}
+	  }`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = gj.GraphQL(context.Background(), gql, json.RawMessage(`{
+		"inp":{
+			"id":109, "email":"mail6@ex`+"`"+`ample.com", "full_name":"Full Name", "created_at":"now", "updated_at":"now"
+		},
+		"validation":"inp: {id?: int & >110 & <102, full_name: string , created_at:\"now\", updated_at:\"now\", email: =~\"^[a-zA-Z0-9.!#$+%&'*/=?^_{|}\\\\-`+"`"+`~]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$\"}"
+	}`), nil)
+	if err == nil {
+		t.Error(err)
+	}
+}
