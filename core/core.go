@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	cuejson "cuelang.org/go/encoding/json"
 	"github.com/avast/retry-go"
 	"github.com/dosco/graphjin/core/internal/psql"
 	"github.com/dosco/graphjin/core/internal/qcode"
@@ -356,6 +357,14 @@ func (c *gcontext) validateAndUpdateVars(qcomp *queryComp, res *queryResp) error
 
 	if len(qr.vars) != 0 {
 		if err := json.Unmarshal(qr.vars, &vars); err != nil {
+			return err
+		}
+	}
+	if qc.Validation != nil {
+		if err := cuejson.Validate(qr.vars, qc.Validation.Cuev); err != nil {
+			// TODO: better error handling. it's not clear that error came from validation
+			// aslo it needs to be able to parse in frontend,
+			// ex: error:{kind:"validation",problem:"out of range",path:"input.id",shoud_be:"<5"}
 			return err
 		}
 	}

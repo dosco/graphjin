@@ -11,7 +11,6 @@ import (
 
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
-	cuejson "cuelang.org/go/encoding/json"
 	"github.com/dosco/graphjin/core/internal/allow"
 	"github.com/dosco/graphjin/core/internal/graph"
 	"github.com/dosco/graphjin/core/internal/sdata"
@@ -76,7 +75,7 @@ type QCode struct {
 	Script     string
 	Metadata   allow.Metadata
 	Cache      Cache
-	Validation Validation
+	Validation *Validation
 }
 
 type Select struct {
@@ -106,7 +105,8 @@ type Select struct {
 	tc         TConfig
 }
 type Validation struct {
-	Cue graph.Node
+	Cue  graph.Node
+	Cuev cue.Value
 }
 type TableInfo struct {
 	sdata.DBTable
@@ -329,27 +329,23 @@ func (co *Compiler) Compile(
 		}
 	}
 
-	var (
-		c *cue.Context
-		v cue.Value
-	)
-	c = cuecontext.New()
-	switch qc.Validation.Cue.Type {
-	case graph.NodeVar:
-		var o string
-		if err = json.Unmarshal([]byte(qc.Vars[qc.Validation.Cue.Val]), &o); err != nil {
-			return nil, errors.New("cue validation variable value is not valid")
+	if qc.Validation != nil {
+		var (
+			cuec *cue.Context
+			cuev cue.Value
+		)
+		cuec = cuecontext.New()
+		switch qc.Validation.Cue.Type {
+		case graph.NodeVar:
+			var o string
+			if err = json.Unmarshal([]byte(qc.Vars[qc.Validation.Cue.Val]), &o); err != nil {
+				return nil, errors.New("cue validation variable value is not valid")
+			}
+			cuev = cuec.CompileString(o)
+		default:
+			cuev = cuec.CompileString(qc.Validation.Cue.Val)
 		}
-		v = c.CompileString(o)
-	default:
-		v = c.CompileString(qc.Validation.Cue.Val)
-	}
-	JSONvars, err := json.Marshal(qc.Vars)
-	if err != nil {
-		return nil, errors.New("variables are not valid json")
-	}
-	if e := cuejson.Validate(JSONvars, v); e != nil {
-		return nil, e
+		qc.Validation = &Validation{Cuev: cuev}
 	}
 
 	return &qc, nil
@@ -1329,7 +1325,7 @@ func (co *Compiler) compileDirectiveValidation(qc *QCode, d *graph.Directive) er
 	arg := d.Args[0]
 
 	if arg.Name == "cue" {
-		qc.Validation = Validation{Cue: *arg.Val}
+		qc.Validation = &Validation{Cue: *arg.Val}
 	}
 
 	return nil
