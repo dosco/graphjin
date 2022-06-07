@@ -396,6 +396,18 @@ func (in *intro) addDirectives() {
 			},
 		},
 	}
+	in.DeclaredDirectives["validation"] = &schema.DirectiveDecl{
+		Name: "validation",
+		Desc: schema.NewDescription("Checks all variables for validation"),
+		Locs: []string{"QUERY", "MUTATION", "SUBSCRIPTION"},
+		Args: schema.InputValueList{
+			{
+				Name: "cue",
+				Desc: schema.NewDescription("Use Cue [https://cuelang.org/] schema to validate variables"),
+				Type: &schema.TypeName{Name: "String"},
+			},
+		},
+	}
 }
 
 func (in *intro) addColumn(
