@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"cuelang.org/go/cue"
+	"cuelang.org/go/cue/cuecontext"
 	"github.com/dosco/graphjin/core/internal/allow"
 	"github.com/dosco/graphjin/core/internal/graph"
 	"github.com/dosco/graphjin/core/internal/sdata"
@@ -56,23 +58,24 @@ type ColKey struct {
 }
 
 type QCode struct {
-	Type      QType
-	SType     QType
-	Name      string
-	ActionVar string
-	ActionArg graph.Arg
-	Selects   []Select
-	Vars      Variables
-	Consts    Constraints
-	Roots     []int32
-	rootsA    [5]int32
-	Mutates   []Mutate
-	MUnions   map[string][]int32
-	Schema    *sdata.DBSchema
-	Remotes   int32
-	Script    string
-	Metadata  allow.Metadata
-	Cache     Cache
+	Type       QType
+	SType      QType
+	Name       string
+	ActionVar  string
+	ActionArg  graph.Arg
+	Selects    []Select
+	Vars       Variables
+	Consts     Constraints
+	Roots      []int32
+	rootsA     [5]int32
+	Mutates    []Mutate
+	MUnions    map[string][]int32
+	Schema     *sdata.DBSchema
+	Remotes    int32
+	Script     string
+	Metadata   allow.Metadata
+	Cache      Cache
+	Validation *Validation
 }
 
 type Select struct {
@@ -101,7 +104,10 @@ type Select struct {
 	through    string
 	tc         TConfig
 }
-
+type Validation struct {
+	Cue  graph.Node
+	Cuev cue.Value
+}
 type TableInfo struct {
 	sdata.DBTable
 }
@@ -321,6 +327,25 @@ func (co *Compiler) Compile(
 		if err := co.compileMutation(&qc, role); err != nil {
 			return nil, err
 		}
+	}
+
+	if qc.Validation != nil {
+		var (
+			cuec *cue.Context
+			cuev cue.Value
+		)
+		cuec = cuecontext.New()
+		switch qc.Validation.Cue.Type {
+		case graph.NodeVar:
+			var o string
+			if err = json.Unmarshal([]byte(qc.Vars[qc.Validation.Cue.Val]), &o); err != nil {
+				return nil, errors.New("cue validation variable value is not valid")
+			}
+			cuev = cuec.CompileString(o)
+		default:
+			cuev = cuec.CompileString(qc.Validation.Cue.Val)
+		}
+		qc.Validation = &Validation{Cuev: cuev}
 	}
 
 	return &qc, nil
@@ -869,6 +894,9 @@ func (co *Compiler) compileOpDirectives(qc *QCode, dirs []graph.Directive) error
 		case "constraint", "validate":
 			err = co.compileDirectiveConstraint(qc, d)
 
+		case "validation":
+			err = co.compileDirectiveValidation(qc, d)
+
 		default:
 			err = fmt.Errorf("unknown operation level directive: %s", d.Name)
 		}
@@ -1286,6 +1314,18 @@ func (co *Compiler) compileDirectiveThrough(sel *Select, d *graph.Directive) err
 			return argErr(arg.Name, "string")
 		}
 		sel.through = arg.Val.Val
+	}
+
+	return nil
+}
+func (co *Compiler) compileDirectiveValidation(qc *QCode, d *graph.Directive) error {
+	if len(d.Args) == 0 {
+		return fmt.Errorf("@validation: required cue schema")
+	}
+	arg := d.Args[0]
+
+	if arg.Name == "cue" {
+		qc.Validation = &Validation{Cue: *arg.Val}
 	}
 
 	return nil

@@ -8,6 +8,7 @@ require (
 	contrib.go.opencensus.io/exporter/stackdriver v0.13.10
 	contrib.go.opencensus.io/exporter/zipkin v0.1.2
 	contrib.go.opencensus.io/integrations/ocsql v0.1.7
+	cuelang.org/go v0.4.3
 	filippo.io/age v1.0.0 // indirect
 	github.com/Azure/azure-sdk-for-go v63.1.0+incompatible // indirect
 	github.com/Azure/go-autorest/autorest v0.11.25 // indirect
