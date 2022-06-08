@@ -159,13 +159,13 @@ func (l *lexer) ignore() {
 }
 
 // accept consumes the next rune if it's from the valid set.
-func (l *lexer) accept(valid []byte) bool {
+func (l *lexer) accept(valid []byte) (rune, bool) {
 	r := l.next()
 	if r != eof && bytes.ContainsRune(valid, r) {
-		return true
+		return r, true
 	}
 	l.backup()
-	return false
+	return r, false
 }
 
 // acceptAlphaNum consumes a run of runes while they are alpha nums
@@ -314,7 +314,7 @@ func lexName(l *lexer) stateFn {
 
 // lexString scans a string.
 func lexString(l *lexer) stateFn {
-	if l.accept([]byte(quotesToken)) {
+	if sr, ok := l.accept([]byte(quotesToken)); ok {
 		l.ignore()
 
 		for {
@@ -323,10 +323,10 @@ func lexString(l *lexer) stateFn {
 				l.emit(itemEOF)
 				return nil
 			}
-			if r == '\'' || r == '"' {
+			if r == sr {
 				l.backup()
 				l.emit(itemStringVal)
-				if l.accept(quotesToken) {
+				if _, ok := l.accept(quotesToken); ok {
 					l.ignore()
 				}
 				break
@@ -351,7 +351,7 @@ func (l *lexer) scanNumber() bool {
 	// Optional leading sign.
 	l.accept(signsToken)
 	l.acceptRun(digitToken)
-	if l.accept(dotToken) {
+	if _, ok := l.accept(dotToken); ok {
 		l.acceptRun(digitToken)
 	}
 	// Is it imaginary?

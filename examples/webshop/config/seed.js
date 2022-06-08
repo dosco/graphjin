@@ -29,12 +29,9 @@ for (let i = 0; i < 3; i++) {
 		users(insert: $data) {
 			id
 		}
-	}`
+	}`;
 
-  let res = graphql(q,
-    { data: data },
-    { user_id: -1 }
-  );
+  let res = graphql(q, { data: data });
 
   users = users.concat(res.users);
 }
@@ -57,12 +54,9 @@ for (let i = 0; i < user_count; i++) {
 		users(insert: $data) {
 			id
 		}
-	}`
+	}`;
 
-  let res = graphql(q,
-    { data: data },
-    { user_id: -1 }
-  );
+  let res = graphql(q, { data: data });
 
   users = users.concat(res.users);
 }
@@ -87,12 +81,9 @@ for (let i = 0; i < customer_count; i++) {
 		customers(insert: $data) {
 			id
 		}
-	}`
+	}`;
 
-  let res = graphql(q,
-    { data: data },
-    { user_id: u.id }
-  );
+  let res = graphql(q, { data: data }, { user_id: u.id });
 
   customers = customers.concat(res.customers);
 }
@@ -123,10 +114,8 @@ let q = `mutation {
     id
   } 
 }
-`
-let res = graphql(q,
-  { categories: categories, user_id: 1 }
-);
+`;
+let res = graphql(q, { categories: categories }, { user_id: 1 });
 
 // ---- add products
 
@@ -153,16 +142,13 @@ for (let i = 0; i < product_count; i++) {
     },
   };
 
-  let  q = `mutation {
+  let q = `mutation {
   	products(insert: $data) {
   		id
   	}
-  }`
+  }`;
 
-  let res = graphql(q,
-    { data: data },
-    { user_id: u.id }
-  );
+  let res = graphql(q, { data: data }, { user_id: u.id });
 
   products = products.concat(res.products);
 }
@@ -189,12 +175,9 @@ for (let i = 0; i < purchase_count; i++) {
   	purchases(insert: $data) {
   		id
   	}
-  }`
+  }`;
 
-  let res = graphql(q,
-    { data: data },
-    { user_id: u.id }
-  );
+  let res = graphql(q, { data: data }, { user_id: u.id });
 
   purchases = purchases.concat(res.purchases);
 }
@@ -233,12 +216,9 @@ for (let i = 0; i < notifications_count; i++) {
   	notifications(insert: $data) {
   		id
   	}
-  }`
+  }`;
 
-  let res = graphql(q,
-    { data: data },
-    { user_id: u.id }
-  );
+  let res = graphql(q, { data: data }, { user_id: u.id });
 
   notifications = notifications.concat(res.notifications);
 }
@@ -271,16 +251,13 @@ for (let i = 0; i < comments_count; i++) {
     };
   }
 
-  let q =`  mutation {
+  let q = `  mutation {
   	comments(insert: $data) {
   		id
   	} 
-  }`
+  }`;
 
-  let res = graphql(q,
-    { data: data },
-    { user_id: u.id }
-  );
+  let res = graphql(q, { data: data }, { user_id: u.id });
 
   comments = comments.concat(res.comments);
 }

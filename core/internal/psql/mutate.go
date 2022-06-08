@@ -90,6 +90,7 @@ func (c *compilerContext) renderInsertUpdateValues(m qcode.Mutate) int {
 
 		var vk, v string
 		isVar := false
+		isList := false
 
 		if col.Set {
 			v = col.Value
@@ -101,8 +102,22 @@ func (c *compilerContext) renderInsertUpdateValues(m qcode.Mutate) int {
 			field := m.Data.CMap[col.FieldName]
 			v = field.Val
 			vk = v
+
 			if field.Type == graph.NodeVar {
 				isVar = true
+			}
+
+			if field.Type == graph.NodeList {
+				items := make([]string, 0, len(field.Children))
+				for _, c := range field.Children {
+					if c.Type == graph.NodeNum {
+						items = append(items, c.Val)
+					} else {
+						items = append(items, (`'` + c.Val + `'`))
+					}
+				}
+				vk = strings.Join(items, ",")
+				isList = true
 			}
 		}
 
@@ -117,13 +132,21 @@ func (c *compilerContext) renderInsertUpdateValues(m qcode.Mutate) int {
 		case isVar:
 			c.renderParam(Param{Name: vk, Type: col.Col.Type, IsArray: col.Col.Array, IsNotNull: col.Col.NotNull})
 
-		case strings.HasPrefix(v, "sql:"):
+		case col.Set && strings.HasPrefix(v, "sql:"):
 			c.w.WriteString(`(`)
 			c.renderVar(v[4:])
 			c.w.WriteString(`)`)
 
+		case col.Set:
+			c.squoted(v)
+
 		case m.IsJSON:
 			c.colWithTable("t", col.FieldName)
+
+		case isList:
+			c.w.WriteString(`ARRAY [`)
+			c.w.WriteString(vk)
+			c.w.WriteString(`]`)
 
 		default:
 			c.squoted(v)

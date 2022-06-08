@@ -38,7 +38,7 @@ func (gj *graphjin) compileQuery(qr queryReq, role string) (*queryComp, error) {
 	}
 
 	if gj.allowList == nil || !gj.prod {
-		st, err := gj.compileQueryRole(qr, varsFromUser, role)
+		st, err := gj.compileQueryForRole(qr, varsFromUser, role)
 		if err != nil {
 			return nil, err
 		}
@@ -62,7 +62,7 @@ func (gj *graphjin) compileQuery(qr queryReq, role string) (*queryComp, error) {
 
 	if qc.st.sql == "" {
 		qc.Do(func() {
-			qc.st, err = gj.compileQueryRole(qc.qr, varsFromAllowList, role)
+			qc.st, err = gj.compileQueryForRole(qc.qr, varsFromAllowList, role)
 			qc.st.va = validator.New()
 		})
 	}
@@ -73,7 +73,7 @@ func (gj *graphjin) compileQuery(qr queryReq, role string) (*queryComp, error) {
 	return qc, err
 }
 
-func (gj *graphjin) compileQueryRole(
+func (gj *graphjin) compileQueryForRole(
 	qr queryReq, vm map[string]json.RawMessage, role string) (stmt, error) {
 
 	var st stmt

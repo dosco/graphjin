@@ -155,3 +155,54 @@ func Example_updateTableAndRelatedTable() {
 	}
 	// Output: {"users": {"products": [{"id": 90}], "full_name": "Updated user 90"}}
 }
+
+func Example_setArrayColumnToValue() {
+	gql := `mutation {
+		products(where: { id: 100 }, update: { tags: ["super", "great", "wow"] }) {
+			id
+			tags
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
+	res, err := gj.GraphQL(ctx, gql, nil, nil)
+	if err != nil {
+		fmt.Println(res.SQL())
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+
+	// Output: {"products": [{"id": 100, "tags": ["super", "great", "wow"]}]}
+}
+
+func Example_setArrayColumnToEmpty() {
+	gql := `mutation {
+		products(where: { id: 100 }, update: { tags: [] }) {
+			id
+			tags
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
+	res, err := gj.GraphQL(ctx, gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+
+	// Output: {"products": [{"id": 100, "tags": []}]}
+}

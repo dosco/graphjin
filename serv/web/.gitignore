@@ -6,9 +6,6 @@
 # testing
 /coverage
 
-# production
-# /build
-
 # development
 /src/components/dataviz/core/*.js.map
 
