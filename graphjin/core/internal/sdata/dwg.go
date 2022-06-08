@@ -159,13 +159,13 @@ func (s *DBSchema) addEdge(name string, edge TEdge, inSchema bool) error {
 	}
 
 	ei1 := edgeInfo{nodeID: edge.From, edgeIDs: []int32{edgeID}}
-	//ei2 := edgeInfo{nodeID: edge.To, edgeIDs: []int32{edgeID}}
+	// ei2 := edgeInfo{nodeID: edge.To, edgeIDs: []int32{edgeID}}
 
 	k1 := strings.ToLower(name)
-	//k2 := strings.ToLower(edge.RT.Name)
+	// k2 := strings.ToLower(edge.RT.Name)
 
 	s.addEdgeInfo(k1, ei1)
-	//s.addEdgeInfo(k2, ei2)
+	// s.addEdgeInfo(k2, ei2)
 
 	if inSchema {
 		edge.name = k1
@@ -297,6 +297,7 @@ func (s *DBSchema) pickPath(f, t edgeInfo, through string) (*graphResult, error)
 
 		if ln == 2 {
 			lines := s.rg.GetEdges(nodes[0], nodes[1])
+
 			if through != "" {
 				for _, v := range lines {
 					if v.Name == through {
@@ -311,6 +312,8 @@ func (s *DBSchema) pickPath(f, t edgeInfo, through string) (*graphResult, error)
 				res.edges = append(res.edges, v.ID)
 				return res, nil
 			}
+
+			continue
 		}
 
 	outer:
@@ -405,12 +408,22 @@ func minWeightedLine(lines []util.Edge) *util.Edge {
 	return line
 }
 
-// func (s *DBSchema) printLines(lines []util.Edge) {
-// 	for _, v := range lines {
-// 		e := s.ae[v.ID]
-// 		f := s.tables[e.From]
-// 		t := s.tables[e.To]
-// 		fmt.Printf("- (%d) %s %d -> %s %d\n", v.ID, f.Name, e.From, t.Name, e.To)
-// 	}
-// 	fmt.Println("---")
-// }
+func (s *DBSchema) PrintLines(lines []util.Edge) {
+	for _, v := range lines {
+		e := s.ae[v.ID]
+		f := s.tables[e.From]
+		t := s.tables[e.To]
+		fmt.Printf("- (EdgeID: %d) %s TableID:%d -> %s TableID:%d\n", v.ID, f.Name, e.From, t.Name, e.To)
+	}
+	fmt.Println("---")
+}
+
+func (s *DBSchema) PrintEdgeInfo(e edgeInfo) {
+	t := s.tables[e.nodeID]
+	fmt.Printf("-- EdgeInfo %s %+v\n", t.Name, e.edgeIDs)
+
+	// for _, id := range e.edgeIDs {
+	// 	e := s.ae[id]
+	// }
+
+}

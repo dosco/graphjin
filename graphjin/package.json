@@ -33,6 +33,7 @@
     "url": "https://github.com/dosco/graphjin/releases/download/v{{version}}/graphjin_{{version}}_{{platform}}_{{arch}}.tar.gz"
   },
   "dependencies": {
+    "@markdoc/markdoc": "^0.1.2",
     "go-npm": "^0.1.9"
   }
 }

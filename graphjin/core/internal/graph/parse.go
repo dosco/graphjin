@@ -639,13 +639,10 @@ func (p *Parser) parseList() (*Node, error) {
 		if ty == 0 {
 			ty = node.Type
 		} else if ty != node.Type {
-			return nil, errors.New("All values in a list must be of the same type")
+			return nil, errors.New("all values in a list must be of the same type")
 		}
 		node.Parent = parent
 		nodes = append(nodes, node)
-	}
-	if len(nodes) == 0 {
-		return nil, errors.New("List cannot be empty")
 	}
 
 	parent.Type = NodeList
@@ -730,7 +727,8 @@ func (p *Parser) parseValue() (*Node, error) {
 	case itemVariable:
 		node.Type = NodeVar
 	default:
-		return nil, fmt.Errorf("expecting a number, string, object, list or variable as an argument value (not %s)", p.val(p.next()))
+		return nil, fmt.Errorf("expecting a number, string, object, list or variable as an argument value (not '%s' of type '%s')", p.val(item), item._type)
+
 	}
 	node.Val = p.val(item)
 
