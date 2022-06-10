@@ -298,10 +298,10 @@ func (al *List) saveItem(item Item, ow bool) error {
 		item.Vars = string(vj)
 	}
 
-	var b bytes.Buffer // HACK BEGIN
+	var b bytes.Buffer
 	y := yaml.NewEncoder(&b)
 	y.SetIndent(2)
-	err = y.Encode(&item) // HACK END
+	err = y.Encode(&item)
 	if err != nil {
 		return err
 	}
@@ -316,7 +316,7 @@ func (al *List) saveItem(item Item, ow bool) error {
 	if err := afero.WriteFile(
 		al.fs,
 		filepath.Join(queryPath, fn),
-		b.Bytes(), // HACK
+		b.Bytes(),
 		0600); err != nil {
 		return err
 	}
