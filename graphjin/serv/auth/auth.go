@@ -147,33 +147,32 @@ func NewAuth(ac Auth, log *zap.Logger, opt Options) (
 
 	if ac.CredsInHeader {
 		h, err = SimpleHandler(ac)
-	}
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		switch ac.Type {
+		case "rails":
+			h, err = RailsHandler(ac)
 
-	if err != nil {
-		return nil, err
-	}
+		case "jwt":
+			h, err = JwtHandler(ac)
 
-	switch ac.Type {
-	case "rails":
-		h, err = RailsHandler(ac)
+		case "header":
+			h, err = HeaderHandler(ac)
 
-	case "jwt":
-		h, err = JwtHandler(ac)
+		// case "magiclink":
+		// 	h, err = MagicLinkHandler(ac, next)
+		case "", "none":
+			return nil, nil
 
-	case "header":
-		h, err = HeaderHandler(ac)
+		default:
+			return nil, fmt.Errorf("auth: unknown auth type: %s", ac.Type)
+		}
 
-	// case "magiclink":
-	// 	h, err = MagicLinkHandler(ac, next)
-	case "", "none":
-		return nil, nil
-
-	default:
-		return nil, fmt.Errorf("auth: unknown auth type: %s", ac.Type)
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("%s: %s", ac.Type, err.Error())
+		if err != nil {
+			return nil, fmt.Errorf("%s: %s", ac.Type, err.Error())
+		}
 	}
 
 	return func(next http.Handler) http.Handler {
