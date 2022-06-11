@@ -317,19 +317,27 @@ func lexString(l *lexer) stateFn {
 	if sr, ok := l.accept([]byte(quotesToken)); ok {
 		l.ignore()
 
+		var escaped bool
 		for {
 			r := l.next()
 			if r == eof {
 				l.emit(itemEOF)
 				return nil
 			}
-			if r == sr {
+			if r == '\\' {
+				escaped = true
+				continue
+			}
+			if !escaped && r == sr {
 				l.backup()
 				l.emit(itemStringVal)
 				if _, ok := l.accept(quotesToken); ok {
 					l.ignore()
 				}
 				break
+			}
+			if escaped {
+				escaped = false
 			}
 		}
 	}
