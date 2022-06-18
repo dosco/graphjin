@@ -380,7 +380,7 @@ func (g *GraphJin) GraphQL(
 	return res, err
 }
 
-// Reload does database discover and reinitializes GraphJin.
+// Reload redoes database discover and reinitializes GraphJin.
 func (g *GraphJin) Reload() error {
 	gj := g.Load().(*graphjin)
 	gjNew, err := newGraphJin(gj.conf, gj.db, nil)
