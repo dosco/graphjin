@@ -180,6 +180,38 @@ func Example_queryWithLimitOffsetOrderByDistinctAndWhere() {
 	// Output: {"products": [{"id": 99, "name": "Product 99", "price": 109.5}, {"id": 98, "name": "Product 98", "price": 108.5}, {"id": 97, "name": "Product 97", "price": 107.5}, {"id": 96, "name": "Product 96", "price": 106.5}, {"id": 95, "name": "Product 95", "price": 105.5}]}
 }
 
+func Example_queryWithWhere1() {
+	gql := `query {
+		products(where: {
+			id: [3, 34], 
+			or: { 
+				name: { iregex: $name }, 
+				description: { iregex: $name }
+			}
+		}) {
+			id
+		}
+	}`
+
+	vars := json.RawMessage(`{
+		"name": "Product 3"
+	}`)
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(string(res.Data))
+	}
+	// Output: {"products": [{"id": 3}, {"id": 34}]}
+}
+
 func Example_queryWithWhereIn() {
 	gql := `query {
 		products(where: { id: { in: $list } }) {

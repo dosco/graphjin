@@ -350,3 +350,9 @@ func (s *Service) GetDB() *sql.DB {
 	s1 := s.Load().(*service)
 	return s1.db
 }
+
+// Reload redoes database discover and reinitializes GraphJin.
+func (s *Service) Reload() error {
+	s1 := s.Load().(*service)
+	return s1.gj.Reload()
+}
