@@ -175,13 +175,33 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 	case qcode.OpNotSimilar:
 		c.w.WriteString(`NOT SIMILAR TO`)
 	case qcode.OpRegex:
-		c.w.WriteString(`~`)
+		switch c.ct {
+		case "mysql":
+			c.w.WriteString(`REGEXP`)
+		default:
+			c.w.WriteString(`~`)
+		}
 	case qcode.OpNotRegex:
-		c.w.WriteString(`!~`)
+		switch c.ct {
+		case "mysql":
+			c.w.WriteString(`NOT REGEXP`)
+		default:
+			c.w.WriteString(`!~`)
+		}
 	case qcode.OpIRegex:
-		c.w.WriteString(`~*`)
+		switch c.ct {
+		case "mysql":
+			c.w.WriteString(`REGEXP`)
+		default:
+			c.w.WriteString(`~*`)
+		}
 	case qcode.OpNotIRegex:
-		c.w.WriteString(`!~*`)
+		switch c.ct {
+		case "mysql":
+			c.w.WriteString(`NOT REGEXP`)
+		default:
+			c.w.WriteString(`!~*`)
+		}
 	case qcode.OpContains:
 		c.w.WriteString(`@>`)
 	case qcode.OpContainedIn:
@@ -370,6 +390,15 @@ func (c *expContext) renderValVar(ex *qcode.Exp) {
 }
 
 func (c *expContext) renderList(ex *qcode.Exp) {
+	switch c.ct {
+	case "mysql":
+		c.renderListMysql(ex)
+	default:
+		c.renderListPostgres(ex)
+	}
+}
+
+func (c *expContext) renderListPostgres(ex *qcode.Exp) {
 	c.w.WriteString(`(ARRAY[`)
 	for i := range ex.Right.ListVal {
 		if i != 0 {
@@ -385,6 +414,25 @@ func (c *expContext) renderList(ex *qcode.Exp) {
 		}
 	}
 	c.w.WriteString(`])`)
+}
+
+func (c *expContext) renderListMysql(ex *qcode.Exp) {
+	c.w.WriteString(`(`)
+	for i := range ex.Right.ListVal {
+		if i != 0 {
+			c.w.WriteString(` UNION `)
+		}
+		c.w.WriteString(`SELECT `)
+		switch ex.Right.ListType {
+		case qcode.ValBool, qcode.ValNum:
+			c.w.WriteString(ex.Right.ListVal[i])
+		case qcode.ValStr:
+			c.w.WriteString(`'`)
+			c.w.WriteString(ex.Right.ListVal[i])
+			c.w.WriteString(`'`)
+		}
+	}
+	c.w.WriteString(`)`)
 }
 
 func (c *compilerContext) renderValArrayColumn(ex *qcode.Exp, table string, pid int32) {
