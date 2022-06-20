@@ -49,6 +49,8 @@ import (
 	"github.com/dosco/graphjin/core"
 	"github.com/dosco/graphjin/internal/util"
 	"github.com/spf13/afero"
+	"go.opencensus.io/stats/view"
+	"go.opencensus.io/trace"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -86,6 +88,8 @@ type service struct {
 	deployActive bool
 	adminCount   int32
 	namespace    nspace
+	traceEx      trace.Exporter
+	viewEx       view.Exporter
 }
 
 type nspace struct {
@@ -151,6 +155,20 @@ func OptionSetZapLogger(zlog *zap.Logger) Option {
 func OptionDeployActive() Option {
 	return func(s *service) error {
 		s.deployActive = true
+		return nil
+	}
+}
+
+func OptionSetMetricsExporter(ex view.Exporter) Option {
+	return func(s *service) error {
+		s.viewEx = ex
+		return nil
+	}
+}
+
+func OptionSetTraceExporter(ex trace.Exporter) Option {
+	return func(s *service) error {
+		s.traceEx = ex
 		return nil
 	}
 }

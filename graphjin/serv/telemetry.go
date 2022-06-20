@@ -62,7 +62,11 @@ func enableObservability(s *service, mux Mux) (func(), error) {
 		s.log.Warn("open-census: no metrics exporter defined")
 
 	default:
-		err = fmt.Errorf("invalid metrics exporter")
+		if s.viewEx == nil {
+			mex = s.viewEx
+		} else {
+			err = fmt.Errorf("invalid metrics exporter")
+		}
 	}
 
 	if err != nil {
@@ -101,7 +105,11 @@ func enableObservability(s *service, mux Mux) (func(), error) {
 		s.log.Warn("open-census: no traceing exporter defined")
 
 	default:
-		err = fmt.Errorf("invalid tracing exporter")
+		if s.traceEx == nil {
+			tex = s.traceEx
+		} else {
+			err = fmt.Errorf("invalid tracing exporter")
+		}
 	}
 
 	if err != nil {

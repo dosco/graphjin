@@ -20,6 +20,7 @@ require (
 	github.com/docker/distribution v2.8.1+incompatible // indirect
 	github.com/dop251/goja v0.0.0-20220516123900-4418d4575a41
 	github.com/fsnotify/fsnotify v1.5.4
+	github.com/getsentry/sentry-go v0.13.0
 	github.com/go-chi/chi v1.5.4
 	github.com/go-http-utils/headers v0.0.0-20181008091004-fed159eddc2a
 	github.com/go-pkgz/expirable-cache v0.1.0
