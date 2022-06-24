@@ -9,30 +9,29 @@ import (
 	"github.com/dosco/graphjin/internal/common"
 	"github.com/dosco/graphjin/serv/auth"
 	"github.com/klauspost/compress/gzhttp"
-	"go.opencensus.io/plugin/ochttp"
 	"go.uber.org/zap"
 )
 
 const (
-	apiRoute     = "/api/v1/graphql"
+	routeGraphQL = "/api/v1/graphql"
+	routeREST    = "/api/v1/rest/{queryName}"
 	actionRoute  = "/api/v1/actions"
 	healthRoute  = "/health"
-	metricsRoute = "/metrics"
+	// metricsRoute = "/metrics"
 )
 
-func (s *service) isHealthEndpoint(r *http.Request) bool {
-	p := r.URL.Path
-	return p == healthRoute || p == metricsRoute ||
-		(s.conf.Telemetry.Metrics.Endpoint != "" && p == s.conf.Telemetry.Metrics.Endpoint)
-}
+// func (s *service) isHealthEndpoint(r *http.Request) bool {
+// 	p := r.URL.Path
+// 	return p == healthRoute || p == metricsRoute ||
+// 		(s.conf.Telemetry.Metrics.Endpoint != "" && p == s.conf.Telemetry.Metrics.Endpoint)
+// }
 
 type Mux interface {
 	Handle(string, http.Handler)
 	ServeHTTP(http.ResponseWriter, *http.Request)
 }
 
-func routeHandler(s1 *Service, mux Mux, ns nspace) (http.Handler, error) {
-	var err error
+func routesHandler(s1 *Service, mux Mux, ns nspace) (http.Handler, error) {
 	s := s1.Load().(*service)
 
 	// Healthcheck API
@@ -57,28 +56,32 @@ func routeHandler(s1 *Service, mux Mux, ns nspace) (http.Handler, error) {
 		}
 	}
 
-	// Main GraphQL API
-	h := apiV1Handler(s1, ns)
+	// GraphQL / REST API
+	h1 := apiV1Handler(s1, ns, s1.apiV1GraphQL(ns))
+	h2 := apiV1Handler(s1, ns, s1.apiV1Rest(ns))
 
 	if s.conf.rateLimiterEnable() {
-		h = rateLimiter(s1, h)
+		h1 = rateLimiter(s1, h1)
+		h2 = rateLimiter(s1, h2)
 	}
 
 	if s.conf.HTTPGZip {
 		if gz, err := gzhttp.NewWrapper(gzhttp.CompressionLevel(6)); err != nil {
 			return nil, err
 		} else {
-			h = gz(h)
+			h1 = gz(h1)
+			h2 = gz(h2)
 		}
 	}
 
-	mux.Handle(apiRoute, h)
+	mux.Handle(routeGraphQL, h1)
+	mux.Handle(routeREST, h2)
 
-	if s.conf.telemetryEnabled() {
-		if s.closeFn, err = enableObservability(s, mux); err != nil {
-			return nil, err
-		}
-	}
+	// if s.conf.telemetryEnabled() {
+	// 	if s.closeFn, err = enableObservability(s, mux); err != nil {
+	// 		return nil, err
+	// 	}
+	// }
 
 	return setServerHeader(mux), nil
 }
@@ -102,10 +105,6 @@ func setActionRoutes(s1 *Service, mux Mux) error {
 
 		p := path.Join(actionRoute, strings.ToLower(a.Name))
 		h := fn
-
-		if s.conf.telemetryEnabled() {
-			h = ochttp.WithRouteTag(h, p)
-		}
 
 		if ac, ok := findAuth(s, a.AuthName); ok {
 			authOpt := auth.Options{AuthFailBlock: s.conf.Serv.AuthFailBlock}

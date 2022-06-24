@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -9,6 +10,8 @@ import (
 
 	"github.com/dosco/graphjin/internal/jsn"
 	"github.com/mitchellh/mapstructure"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // RemoteAPI struct defines a remote API endpoint
@@ -31,8 +34,13 @@ func newRemoteAPI(v map[string]interface{}) (*remoteAPI, error) {
 	return ra, nil
 }
 
-func (r *remoteAPI) Resolve(rr ResolverReq) ([]byte, error) {
+func (r *remoteAPI) Resolve(c context.Context, rr ResolverReq) ([]byte, error) {
 	uri := strings.ReplaceAll(r.URL, "$id", rr.ID)
+
+	span := trace.SpanFromContext(c)
+	if span.IsRecording() {
+		span.SetAttributes(attribute.String("endpoint", uri))
+	}
 
 	req, err := http.NewRequest("GET", uri, nil)
 	if err != nil {

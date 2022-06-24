@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"time"
 
 	cuejson "cuelang.org/go/encoding/json"
 	"github.com/avast/retry-go"
@@ -16,6 +15,9 @@ import (
 	"github.com/dosco/graphjin/core/internal/qcode"
 	"github.com/dosco/graphjin/core/internal/sdata"
 	"github.com/go-playground/validator/v10"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type OpType int
@@ -27,30 +29,30 @@ const (
 	OpMutation
 )
 
-type extensions struct {
-	Tracing *trace `json:"tracing,omitempty"`
-}
+// type extensions struct {
+// 	Tracing *trace `json:"tracing,omitempty"`
+// }
 
-type trace struct {
-	Version   int           `json:"version"`
-	StartTime time.Time     `json:"startTime"`
-	EndTime   time.Time     `json:"endTime"`
-	Duration  time.Duration `json:"duration"`
-	Execution execution     `json:"execution"`
-}
+// type trace struct {
+// 	Version   int           `json:"version"`
+// 	StartTime time.Time     `json:"startTime"`
+// 	EndTime   time.Time     `json:"endTime"`
+// 	Duration  time.Duration `json:"duration"`
+// 	Execution execution     `json:"execution"`
+// }
 
-type execution struct {
-	Resolvers []resolver `json:"resolvers"`
-}
+// type execution struct {
+// 	Resolvers []resolver `json:"resolvers"`
+// }
 
-type resolver struct {
-	Path        []string      `json:"path"`
-	ParentType  string        `json:"parentType"`
-	FieldName   string        `json:"fieldName"`
-	ReturnType  string        `json:"returnType"`
-	StartOffset int           `json:"startOffset"`
-	Duration    time.Duration `json:"duration"`
-}
+// type resolver struct {
+// 	Path        []string      `json:"path"`
+// 	ParentType  string        `json:"parentType"`
+// 	FieldName   string        `json:"fieldName"`
+// 	ReturnType  string        `json:"returnType"`
+// 	StartOffset int           `json:"startOffset"`
+// 	Duration    time.Duration `json:"duration"`
+// }
 
 type gcontext struct {
 	context.Context
@@ -192,13 +194,6 @@ func (gj *graphjin) executeRoleQuery(c context.Context, conn *sql.Conn, vars []b
 
 	md := gj.roleStmtMD
 
-	if conn == nil {
-		if conn, err = gj.db.Conn(c); err != nil {
-			return role, err
-		}
-		defer conn.Close()
-	}
-
 	if c.Value(UserIDKey) == nil {
 		return "anon", nil
 	}
@@ -207,7 +202,34 @@ func (gj *graphjin) executeRoleQuery(c context.Context, conn *sql.Conn, vars []b
 		return "", err
 	}
 
+	if conn == nil {
+		span := gj.spanStart(c, "Get Connection")
+		conn, err = gj.db.Conn(c)
+		if err != nil {
+			spanError(span, err)
+		}
+		span.End()
+
+		if err != nil {
+			return role, err
+		}
+		defer conn.Close()
+	}
+
+	span := gj.spanStart(c, "Execute Role Query")
+	defer span.End()
+
 	err = conn.QueryRowContext(c, gj.roleStmt, ar.values...).Scan(&role)
+
+	if err != nil {
+		spanError(span, err)
+		return role, err
+	}
+
+	if span.IsRecording() {
+		span.SetAttributes(attribute.String("role", role))
+	}
+
 	return role, err
 }
 
@@ -256,21 +278,33 @@ func (c *gcontext) execQuery(qr queryReq, role string) (queryResp, error) {
 func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 	res := queryResp{role: role}
 
+	span := c.gj.spanStart(c, "Get Connection")
 	conn, err := c.gj.db.Conn(c)
+	if err != nil {
+		spanError(span, err)
+	}
+	span.End()
+
 	if err != nil {
 		return res, err
 	}
 	defer conn.Close()
 
 	if c.gj.conf.SetUserID {
-		if err := c.setLocalUserID(conn); err != nil {
+		span := c.gj.spanStart(c, "Set Local User ID")
+		err := c.setLocalUserID(conn)
+		if err != nil {
+			spanError(span, err)
+		}
+		span.End()
+
+		if err != nil {
 			return res, err
 		}
 	}
 
 	if v := c.Value(UserRoleKey); v != nil {
 		res.role = v.(string)
-
 	} else if c.gj.abacEnabled {
 		res.role, err = c.gj.executeRoleQuery(c, conn, qr.vars, c.rc)
 	}
@@ -311,9 +345,25 @@ func (c *gcontext) resolveCompiledQuery(
 	// 	stime = time.Now()
 	// }
 
-	row := conn.QueryRowContext(c, qcomp.st.sql, args.values...)
+	span := c.gj.spanStart(c, "Execute Query")
+	err = conn.
+		QueryRowContext(c, qcomp.st.sql, args.values...).
+		Scan(&res.data)
 
-	if err := row.Scan(&res.data); err == sql.ErrNoRows {
+	if err != nil && err != sql.ErrNoRows {
+		spanError(span, err)
+	}
+
+	if span.IsRecording() {
+		op := qcomp.st.qc.Type.String()
+		span.SetAttributes(
+			attribute.String("query.namespace", res.qc.qr.ns),
+			attribute.String("query.operation", op),
+			attribute.String("query.name", res.qc.qr.name),
+			attribute.String("query.role", res.role))
+	}
+
+	if err == sql.ErrNoRows {
 		return res, nil
 	} else if err != nil {
 		return res, err
@@ -447,6 +497,10 @@ func (r *Result) Operation() OpType {
 	}
 }
 
+func (r *Result) Namespace() string {
+	return r.ns
+}
+
 func (r *Result) OperationName() string {
 	return r.op.String()
 }
@@ -523,4 +577,18 @@ func (c *gcontext) debugLog(st *stmt) {
 
 func retryIfDBError(err error) bool {
 	return (err == driver.ErrBadConn)
+}
+
+func (gj *graphjin) spanStart(c context.Context, name string) trace.Span {
+	_, span := gj.tracer.Start(c,
+		name,
+		trace.WithSpanKind(trace.SpanKindServer))
+	return span
+}
+
+func spanError(span trace.Span, err error) {
+	if span.IsRecording() {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
 }

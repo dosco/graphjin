@@ -426,9 +426,9 @@ func (c *Config) GetSecretOrEnv(k string) string {
 	return os.Getenv(k)
 }
 
-func (c *Config) telemetryEnabled() bool {
-	return c.Telemetry.Debug || c.Telemetry.Metrics.Exporter != "" || c.Telemetry.Tracing.Exporter != ""
-}
+// func (c *Config) telemetryEnabled() bool {
+// 	return c.Telemetry.Debug || c.Telemetry.Metrics.Exporter != "" || c.Telemetry.Tracing.Exporter != ""
+// }
 
 func (c *Config) RelPath(p string) string {
 	if filepath.IsAbs(p) {

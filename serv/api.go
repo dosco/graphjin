@@ -49,8 +49,9 @@ import (
 	"github.com/dosco/graphjin/core"
 	"github.com/dosco/graphjin/internal/util"
 	"github.com/spf13/afero"
-	"go.opencensus.io/stats/view"
-	"go.opencensus.io/trace"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -88,8 +89,7 @@ type service struct {
 	deployActive bool
 	adminCount   int32
 	namespace    nspace
-	traceEx      trace.Exporter
-	viewEx       view.Exporter
+	tracer       trace.Tracer
 }
 
 type nspace struct {
@@ -159,20 +159,6 @@ func OptionDeployActive() Option {
 	}
 }
 
-func OptionSetMetricsExporter(ex view.Exporter) Option {
-	return func(s *service) error {
-		s.viewEx = ex
-		return nil
-	}
-}
-
-func OptionSetTraceExporter(ex trace.Exporter) Option {
-	return func(s *service) error {
-		s.traceEx = ex
-		return nil
-	}
-}
-
 func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*service, error) {
 	var err error
 	if conf == nil {
@@ -190,6 +176,7 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*service, 
 		chash:        conf.hash,
 		prod:         prod,
 		deployActive: prod && conf.HotDeploy && db == nil,
+		tracer:       otel.Tracer("graphjin.com/serv"),
 	}
 
 	if err := s.initConfig(); err != nil {
@@ -310,7 +297,7 @@ func (s *Service) AttachWithNamespace(mux Mux, namespace string) error {
 }
 
 func (s *Service) attach(mux Mux, ns nspace) error {
-	if _, err := routeHandler(s, mux, ns); err != nil {
+	if _, err := routesHandler(s, mux, ns); err != nil {
 		return err
 	}
 
@@ -373,4 +360,25 @@ func (s *Service) GetDB() *sql.DB {
 func (s *Service) Reload() error {
 	s1 := s.Load().(*service)
 	return s1.gj.Reload()
+}
+
+func (s *service) spanStart(c context.Context, name string) trace.Span {
+	_, span := s.tracer.Start(c,
+		name,
+		trace.WithSpanKind(trace.SpanKindServer))
+	return span
+}
+
+func (s *service) spanStartWithContext(c context.Context, name string) (context.Context, trace.Span) {
+	c, span := s.tracer.Start(c,
+		name,
+		trace.WithSpanKind(trace.SpanKindServer))
+	return c, span
+}
+
+func spanError(span trace.Span, err error) {
+	if span.IsRecording() {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
 }

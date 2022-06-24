@@ -8,6 +8,7 @@ import (
 
 	"github.com/dosco/graphjin/core/internal/qcode"
 	"github.com/dosco/graphjin/internal/jsn"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func (c *gcontext) execRemoteJoin(res queryResp) (queryResp, error) {
@@ -86,10 +87,19 @@ func (c *gcontext) resolveRemotes(
 
 			//st := time.Now()
 
-			b, err := r.Fn.Resolve(ResolverReq{
+			span := c.gj.spanStart(c, "Execute Remote Request")
+			c1 := trace.ContextWithSpan(c, span)
+
+			b, err := r.Fn.Resolve(c1, ResolverReq{
 				ID: string(id), Sel: s, Log: c.gj.log, ReqConfig: c.rc})
+
 			if err != nil {
 				cerr = fmt.Errorf("%s: %s", s.Table, err)
+				spanError(span, cerr)
+			}
+			span.End()
+
+			if err != nil {
 				return
 			}
 

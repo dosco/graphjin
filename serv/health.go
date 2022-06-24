@@ -16,7 +16,13 @@ func healthV1Handler(s1 *Service) http.Handler {
 		ct, cancel := context.WithTimeout(r.Context(), s.conf.DB.PingTimeout)
 		defer cancel()
 
+		span := s.spanStart(ct, "Health Check Request")
 		err := s.db.PingContext(ct)
+		if err != nil {
+			spanError(span, err)
+		}
+		span.End()
+
 		if err != nil {
 			s.zlog.Error("Health Check", []zapcore.Field{zap.Error(err)}...)
 			w.WriteHeader(http.StatusInternalServerError)

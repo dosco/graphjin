@@ -1,14 +1,10 @@
 module github.com/dosco/graphjin
 
 require (
-	cloud.google.com/go/monitoring v1.5.0 // indirect
-	cloud.google.com/go/trace v1.2.0 // indirect
-	contrib.go.opencensus.io/exporter/aws v0.0.0-20200617204711-c478e41e60e9
-	contrib.go.opencensus.io/exporter/prometheus v0.4.1
-	contrib.go.opencensus.io/exporter/stackdriver v0.13.13
-	contrib.go.opencensus.io/exporter/zipkin v0.1.2
-	contrib.go.opencensus.io/integrations/ocsql v0.1.7
 	cuelang.org/go v0.4.3
+	github.com/Azure/azure-sdk-for-go v65.0.0+incompatible // indirect
+	github.com/Azure/go-autorest/autorest v0.11.27 // indirect
+	github.com/Azure/go-autorest/autorest/adal v0.9.20 // indirect
 	github.com/ProtonMail/go-crypto v0.0.0-20220517143526-88bb52951d5b // indirect
 	github.com/adjust/gorails v0.0.0-20171013043634-2786ed0c03d3
 	github.com/armon/go-metrics v0.4.0 // indirect
@@ -18,9 +14,9 @@ require (
 	github.com/brianvoe/gofakeit/v6 v6.16.0
 	github.com/chirino/graphql v0.0.0-20210707003802-dfaf250c773e
 	github.com/docker/distribution v2.8.1+incompatible // indirect
+	github.com/docker/docker v20.10.16+incompatible // indirect
 	github.com/dop251/goja v0.0.0-20220516123900-4418d4575a41
 	github.com/fsnotify/fsnotify v1.5.4
-	github.com/getsentry/sentry-go v0.13.0
 	github.com/go-chi/chi v1.5.4
 	github.com/go-http-utils/headers v0.0.0-20181008091004-fed159eddc2a
 	github.com/go-pkgz/expirable-cache v0.1.0
@@ -29,14 +25,18 @@ require (
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/go-test/deep v1.0.8 // indirect
 	github.com/gobuffalo/flect v0.2.5
+	github.com/gofrs/uuid v4.2.0+incompatible // indirect
 	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/golang-jwt/jwt/v4 v4.4.1 // indirect
+	github.com/golang/glog v1.0.0 // indirect
 	github.com/gomodule/redigo v1.8.8
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
+	github.com/gorilla/mux v1.8.0
 	github.com/gorilla/websocket v1.5.0
 	github.com/gosimple/slug v1.12.0
 	github.com/hashicorp/go-hclog v1.2.1 // indirect
 	github.com/hashicorp/go-plugin v1.4.4 // indirect
+	github.com/hashicorp/go-retryablehttp v0.7.1 // indirect
 	github.com/hashicorp/go-secure-stdlib/parseutil v0.1.6 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
 	github.com/hashicorp/go-version v1.5.0 // indirect
@@ -51,11 +51,9 @@ require (
 	github.com/lib/pq v1.10.6 // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2
 	github.com/mitchellh/mapstructure v1.5.0
-	github.com/openzipkin/zipkin-go v0.4.0
+	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/orlangure/gnomock v0.20.0
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/prometheus v0.36.0 // indirect
-	github.com/prometheus/statsd_exporter v0.22.5 // indirect
 	github.com/rs/cors v1.8.2
 	github.com/rs/xid v1.4.0
 	github.com/shopspring/decimal v1.3.1 // indirect
@@ -66,7 +64,9 @@ require (
 	github.com/subosito/gotenv v1.4.0 // indirect
 	github.com/tj/assert v0.0.3
 	go.mozilla.org/sops/v3 v3.7.3
-	go.opencensus.io v0.23.0
+	go.opentelemetry.io/otel v1.7.0
+	go.opentelemetry.io/otel/sdk v1.7.0
+	go.opentelemetry.io/otel/trace v1.7.0
 	go.uber.org/multierr v1.8.0 // indirect
 	go.uber.org/zap v1.21.0
 	golang.org/x/crypto v0.0.0-20220525230936-793ad666bf5e
