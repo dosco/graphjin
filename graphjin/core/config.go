@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -262,7 +263,7 @@ type Delete struct {
 	}
 */
 type Resolver interface {
-	Resolve(ResolverReq) ([]byte, error)
+	Resolve(context.Context, ResolverReq) ([]byte, error)
 }
 
 // ResolverProps is a map of properties from the resolver config to be passed

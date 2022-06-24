@@ -1,6 +1,7 @@
 package serv
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,10 +14,11 @@ import (
 	"github.com/dosco/graphjin/core"
 	"github.com/dosco/graphjin/serv/auth"
 	"github.com/dosco/graphjin/serv/internal/etags"
+	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 	"github.com/rs/cors"
-	"go.opencensus.io/plugin/ochttp"
-	"go.opencensus.io/trace"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -49,7 +51,7 @@ type errorResp struct {
 	Errors []string `json:"errors"`
 }
 
-func apiV1Handler(s1 *Service, ns nspace) http.Handler {
+func apiV1Handler(s1 *Service, ns nspace, h http.Handler) http.Handler {
 	var zlog *zap.Logger
 	s := s1.Load().(*service)
 
@@ -63,10 +65,9 @@ func apiV1Handler(s1 *Service, ns nspace) http.Handler {
 		s.log.Fatalf("api: error initializing auth: %s", err)
 	}
 
-	h := s1.apiV1(ns)
 	// useAuth can be nil when type="" or type="none"
 	if useAuth != nil {
-		h = useAuth(s1.apiV1(ns))
+		h = useAuth(h)
 	}
 
 	if len(s.conf.AllowedOrigins) != 0 {
@@ -90,12 +91,12 @@ func apiV1Handler(s1 *Service, ns nspace) http.Handler {
 	return h
 }
 
-func (s1 *Service) apiV1(ns nspace) http.Handler {
+func (s1 *Service) apiV1GraphQL(ns nspace) http.Handler {
 	h := func(w http.ResponseWriter, r *http.Request) {
 		var err error
 
-		s := s1.Load().(*service)
 		start := time.Now()
+		s := s1.Load().(*service)
 
 		ct := r.Context()
 		w.Header().Set("Content-Type", "application/json")
@@ -105,7 +106,11 @@ func (s1 *Service) apiV1(ns nspace) http.Handler {
 			return
 		}
 
-		req := gqlReq{}
+		var req gqlReq
+		var span trace.Span
+
+		ct, span = s.spanStartWithContext(ct, "GraphQL Request")
+		defer span.End()
 
 		switch r.Method {
 		case "POST":
@@ -128,85 +133,174 @@ func (s1 *Service) apiV1(ns nspace) http.Handler {
 		}
 
 		if err != nil {
+			spanError(span, err)
 			renderErr(w, err)
 			return
 		}
 
-		rc := core.ReqConfig{
-			Vars: make(map[string]interface{}),
+		var rc core.ReqConfig
+
+		if req.apqEnabled() {
+			rc.APQKey = (req.OpName + req.Ext.Persisted.Sha256Hash)
+		}
+
+		if rc.Vars == nil && len(s.conf.Core.HeaderVars) != 0 {
+			rc.Vars = s.setHeaderVars(r)
 		}
 
 		if ns.set {
 			rc.Namespace = core.Namespace{Name: ns.name, Set: true}
 		}
 
-		for k, v := range s.conf.Core.HeaderVars {
-			rc.Vars[k] = func() string {
-				if v1, ok := r.Header[v]; ok {
-					return v1[0]
-				}
-				return ""
-			}
-		}
-
-		if req.apqEnabled() {
-			rc.APQKey = (req.OpName + req.Ext.Persisted.Sha256Hash)
-		}
-
 		if req.OpName == "subscription" {
-			renderErr(w, errors.New("use websockets for subscriptions"))
-			return
-		}
-
-		res, err := s.gj.GraphQL(ct, req.Query, req.Vars, &rc)
-
-		if s.hook != nil {
-			s.hook(res)
-		}
-
-		if err == nil && r.Method == "GET" && res.Operation() == core.OpQuery {
-			switch {
-			case res.CacheControl() != "":
-				w.Header().Set("Cache-Control", res.CacheControl())
-
-			case s.conf.CacheControl != "":
-				w.Header().Set("Cache-Control", s.conf.CacheControl)
-			}
-		}
-
-		if err := json.NewEncoder(w).Encode(res); err != nil {
+			err := errors.New("use websockets for subscriptions")
+			spanError(span, err)
 			renderErr(w, err)
 			return
 		}
 
-		if s.conf.telemetryEnabled() {
-			span := trace.FromContext(ct)
+		res, err := s.gj.GraphQL(ct, req.Query, req.Vars, &rc)
+		s.responseHandler(
+			ct,
+			w,
+			r,
+			start,
+			rc,
+			res,
+			err)
 
-			span.AddAttributes(
-				trace.StringAttribute("operation", res.OperationName()),
-				trace.StringAttribute("query_name", res.QueryName()),
-				trace.StringAttribute("role", res.Role()),
-			)
-			if err != nil {
-				span.AddAttributes(trace.StringAttribute("error", err.Error()))
+		if span.IsRecording() {
+			span.SetAttributes(
+				attribute.String("http.path", r.RequestURI),
+				attribute.String("http.method", r.Method),
+				attribute.Bool("query.apq", req.apqEnabled()))
+		}
+
+		if err != nil {
+			spanError(span, err)
+		}
+	}
+	return http.HandlerFunc(h)
+}
+
+func (s1 *Service) apiV1Rest(ns nspace) http.Handler {
+	h := func(w http.ResponseWriter, r *http.Request) {
+		var err error
+
+		start := time.Now()
+		s := s1.Load().(*service)
+
+		ct := r.Context()
+		w.Header().Set("Content-Type", "application/json")
+
+		if websocket.IsWebSocketUpgrade(r) {
+			s.apiV1Ws(w, r)
+			return
+		}
+
+		var req gqlReq
+		var span trace.Span
+		var op core.OpType
+		var vars json.RawMessage
+
+		ct, span = s.spanStartWithContext(ct, "REST Request")
+		defer span.End()
+
+		queryName := mux.Vars(r)["queryName"]
+
+		switch r.Method {
+		case "POST":
+			var b []byte
+			b, err = ioutil.ReadAll(io.LimitReader(r.Body, maxReadBytes))
+			if err == nil {
+				defer r.Body.Close()
+				req.Vars = json.RawMessage(b)
 			}
-			ochttp.SetRoute(ct, apiRoute)
+			op = core.OpMutation
+
+		case "GET":
+			op = core.OpQuery
+			req.Vars = json.RawMessage(r.URL.Query().Get("variables"))
 		}
 
-		rt := time.Since(start).Milliseconds()
-
-		if s.logLevel >= logLevelInfo {
-			s.reqLog(res, rc, rt, err)
+		if err != nil {
+			spanError(span, err)
+			renderErr(w, err)
+			return
 		}
 
-		if s.conf.ServerTiming {
-			b := []byte("DB;dur=")
-			b = strconv.AppendInt(b, rt, 10)
-			w.Header().Set("Server-Timing", string(b))
+		var rc core.ReqConfig
+
+		if rc.Vars == nil && len(s.conf.Core.HeaderVars) != 0 {
+			rc.Vars = s.setHeaderVars(r)
+		}
+
+		if ns.set {
+			rc.Namespace = core.Namespace{Name: ns.name, Set: true}
+		}
+
+		res, err := s.gj.GraphQLByName(ct, op, queryName, vars, &rc)
+		s.responseHandler(
+			ct,
+			w,
+			r,
+			start,
+			rc,
+			res,
+			err)
+
+		if span.IsRecording() {
+			span.SetAttributes(
+				attribute.String("http.path", r.RequestURI),
+				attribute.String("http.method", r.Method))
+		}
+
+		if err != nil {
+			spanError(span, err)
+		}
+	}
+	return http.HandlerFunc(h)
+}
+
+func (s *service) responseHandler(ct context.Context,
+	w http.ResponseWriter,
+	r *http.Request,
+	start time.Time,
+	rc core.ReqConfig,
+	res *core.Result,
+	err error,
+) {
+
+	if s.hook != nil {
+		s.hook(res)
+	}
+
+	if err == nil && r.Method == "GET" && res.Operation() == core.OpQuery {
+		switch {
+		case res.CacheControl() != "":
+			w.Header().Set("Cache-Control", res.CacheControl())
+
+		case s.conf.CacheControl != "":
+			w.Header().Set("Cache-Control", s.conf.CacheControl)
 		}
 	}
 
-	return http.HandlerFunc(h)
+	if err := json.NewEncoder(w).Encode(res); err != nil {
+		renderErr(w, err)
+		return
+	}
+
+	rt := time.Since(start).Milliseconds()
+
+	if s.logLevel >= logLevelInfo {
+		s.reqLog(res, rc, rt, err)
+	}
+
+	if s.conf.ServerTiming {
+		b := []byte("DB;dur=")
+		b = strconv.AppendInt(b, rt, 10)
+		w.Header().Set("Server-Timing", string(b))
+	}
 }
 
 func (s *service) reqLog(res *core.Result, rc core.ReqConfig, resTimeMs int64, err error) {
@@ -237,6 +331,19 @@ func (s *service) reqLog(res *core.Result, rc core.ReqConfig, resTimeMs int64, e
 	} else {
 		s.zlog.Info("Query", fields...)
 	}
+}
+
+func (s *service) setHeaderVars(r *http.Request) map[string]interface{} {
+	vars := make(map[string]interface{})
+	for k, v := range s.conf.Core.HeaderVars {
+		vars[k] = func() string {
+			if v1, ok := r.Header[v]; ok {
+				return v1[0]
+			}
+			return ""
+		}
+	}
+	return vars
 }
 
 func (r gqlReq) apqEnabled() bool {

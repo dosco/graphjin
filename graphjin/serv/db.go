@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"contrib.go.opencensus.io/integrations/ocsql"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/stdlib"
 	"github.com/spf13/afero"
@@ -58,24 +57,6 @@ func newDB(
 		return nil, fmt.Errorf("database init: %v", err)
 	}
 
-	if useTelemetry && conf.telemetryEnabled() {
-		dc.driverName, err = initTelemetry(conf, dc.driverName)
-		if err != nil {
-			return nil, err
-		}
-
-		var interval time.Duration
-
-		if conf.Telemetry.Interval != nil {
-			interval = *conf.Telemetry.Interval
-		} else {
-			interval = 5 * time.Second
-		}
-
-		defer ocsql.RecordStats(db, interval)()
-		log.Infof("open-census telemetry enabled")
-	}
-
 	for i := 0; ; {
 		if db, err = sql.Open(dc.driverName, dc.connString); err == nil {
 			db.SetMaxIdleConns(conf.DB.PoolSize)
@@ -102,45 +83,6 @@ func newDB(
 			i++
 		}
 	}
-}
-
-func initTelemetry(conf *Config, driverName string) (string, error) {
-	var err error
-	var opts ocsql.TraceOptions
-
-	if conf.Serv.Telemetry.Tracing.ExcludeHealthCheck {
-		opts = ocsql.TraceOptions{
-			AllowRoot:    true,
-			Ping:         false,
-			RowsNext:     true,
-			RowsClose:    true,
-			RowsAffected: true,
-			LastInsertID: true,
-			Query:        conf.Telemetry.Tracing.IncludeQuery,
-			QueryParams:  conf.Telemetry.Tracing.IncludeParams,
-		}
-	} else {
-		opts = ocsql.TraceOptions{
-			AllowRoot:    true,
-			Ping:         true,
-			RowsNext:     true,
-			RowsClose:    true,
-			RowsAffected: true,
-			LastInsertID: true,
-			Query:        conf.Telemetry.Tracing.IncludeQuery,
-			QueryParams:  conf.Telemetry.Tracing.IncludeParams,
-		}
-	}
-
-	opt := ocsql.WithOptions(opts)
-	name := ocsql.WithInstanceName(conf.AppName)
-
-	driverName, err = ocsql.Register(driverName, opt, name)
-	if err != nil {
-		return "", fmt.Errorf("unable to register ocsql driver: %v", err)
-	}
-	ocsql.RegisterAllViews()
-	return driverName, nil
 }
 
 func initPostgres(conf *Config, openDB, useTelemetry bool, fs afero.Fs) (*dbConf, error) {

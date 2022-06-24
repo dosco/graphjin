@@ -49,6 +49,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	_log "log"
 	"os"
 	"sync"
@@ -63,6 +64,8 @@ import (
 	"github.com/dosco/graphjin/core/internal/sdata"
 	"github.com/dosco/graphjin/core/internal/util"
 	"github.com/spf13/afero"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type contextkey int
@@ -108,6 +111,7 @@ type graphjin struct {
 	scripts     sync.Map
 	prod        bool
 	namespace   string
+	tracer      trace.Tracer
 }
 
 type GraphJin struct {
@@ -115,10 +119,11 @@ type GraphJin struct {
 }
 
 type script struct {
+	util.Once
+
 	ReqFunc  reqFunc
 	RespFunc respFunc
 	vm       *goja.Runtime
-	util.Once
 }
 
 type Option func(*graphjin) error
@@ -152,6 +157,7 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo, options ...Opti
 		dbinfo: dbinfo,
 		log:    _log.New(os.Stdout, "", 0),
 		prod:   conf.Production || os.Getenv("GO_ENV") == "production",
+		tracer: otel.Tracer("graphjin.com/core"),
 	}
 
 	if err := gj.initAPQCache(); err != nil {
@@ -237,6 +243,7 @@ type Error struct {
 // Result struct contains the output of the GraphQL function this includes resulting json from the
 // database query and any error information
 type Result struct {
+	ns           string
 	op           qcode.QType
 	name         string
 	sql          string
@@ -245,7 +252,7 @@ type Result struct {
 	Errors       []Error         `json:"errors,omitempty"`
 	Vars         json.RawMessage `json:"-"`
 	Data         json.RawMessage `json:"data,omitempty"`
-	Extensions   *extensions     `json:"extensions,omitempty"`
+	// Extensions   *extensions     `json:"extensions,omitempty"`
 }
 
 type Namespace struct {
@@ -279,35 +286,115 @@ func (g *GraphJin) GraphQL(
 	rc *ReqConfig) (*Result, error) {
 
 	var err error
+	var op qcode.QType
+	var name string
 
 	gj := g.Load().(*graphjin)
+	ns := gj.namespace
+
+	if rc != nil && rc.Namespace.Set {
+		ns = rc.Namespace.Name
+	}
+
+	if rc != nil && rc.APQKey != "" && query == "" {
+		if v, ok := gj.apq.Get(ns, rc.APQKey); ok {
+			query = v.query
+			op = v.op
+			name = v.name
+		} else {
+			err = errors.New("PersistedQueryNotFound")
+		}
+	} else {
+		op, name = qcode.GetQType(query)
+	}
+
+	if err != nil {
+		res := &Result{
+			ns:     ns,
+			op:     op,
+			name:   name,
+			Errors: []Error{{Message: err.Error()}},
+		}
+		return res, err
+	}
+
+	res, err := gj.graphQL(c, op, ns, name, query, vars, rc)
+	if err != nil {
+		return res, err
+	}
+
+	if rc != nil && rc.APQKey != "" {
+		gj.apq.Set(ns, rc.APQKey, apqInfo{
+			op:    op,
+			name:  name,
+			query: query,
+		})
+	}
+
+	return res, err
+}
+
+func (g *GraphJin) GraphQLByName(
+	c context.Context,
+	operation OpType,
+	name string,
+	vars json.RawMessage,
+	rc *ReqConfig) (*Result, error) {
+
+	gj := g.Load().(*graphjin)
+	ns := gj.namespace
+
+	if rc != nil && rc.Namespace.Set {
+		ns = rc.Namespace.Name
+	}
+
+	var op qcode.QType
+
+	switch operation {
+	case OpQuery:
+		op = qcode.QTQuery
+	case OpMutation:
+		op = qcode.QTMutation
+	default:
+		err := fmt.Errorf("invalid operation: %d", operation)
+		res := &Result{
+			ns:     ns,
+			op:     op,
+			name:   name,
+			Errors: []Error{{Message: err.Error()}},
+		}
+		return res, err
+	}
+
+	return gj.graphQL(c, op, ns, name, "", vars, rc)
+}
+
+func (gj *graphjin) graphQL(
+	c context.Context,
+	op qcode.QType,
+	ns string,
+	name string,
+	query string,
+	vars json.RawMessage,
+	rc *ReqConfig) (*Result, error) {
+
+	var err error
+	span := gj.spanStart(c, "GraphJin Query")
+	defer span.End()
 
 	ct := gcontext{
 		Context: c,
 		gj:      gj,
 		rc:      rc,
-		ns:      gj.namespace,
-	}
-
-	if rc != nil && rc.Namespace.Set {
-		ct.ns = rc.Namespace.Name
-	}
-
-	if rc != nil && rc.APQKey != "" && query == "" {
-		if v, ok := gj.apq.Get(ct.ns, rc.APQKey); ok {
-			query = v.query
-			ct.op = v.op
-			ct.name = v.name
-		} else {
-			err = errors.New("PersistedQueryNotFound")
-		}
-	} else {
-		ct.op, ct.name = qcode.GetQType(query)
+		ns:      ns,
+		op:      op,
+		name:    name,
 	}
 
 	res := &Result{
-		op:   ct.op,
-		name: ct.name,
+		ns:   ns,
+		op:   op,
+		name: name,
 	}
 
 	if err != nil {
@@ -356,14 +443,6 @@ func (g *GraphJin) GraphQL(
 
 	if err != nil {
 		res.Errors = []Error{{Message: err.Error()}}
-
-	} else {
-		if rc != nil && rc.APQKey != "" {
-			gj.apq.Set(qr.ns, rc.APQKey, apqInfo{
-				op:    qr.op,
-				name:  qr.name,
-				query: string(qr.query)})
-		}
 	}
 
 	if qres.qc != nil {

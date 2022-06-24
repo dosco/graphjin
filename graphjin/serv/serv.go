@@ -12,7 +12,6 @@ import (
 
 	"github.com/dosco/graphjin/serv/auth"
 	"github.com/go-chi/chi"
-	"go.opencensus.io/plugin/ochttp"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -60,7 +59,7 @@ func startHTTP(s1 *Service) {
 	s := s1.Load().(*service)
 
 	r := chi.NewRouter()
-	routes, err := routeHandler(s1, r, s.namespace)
+	routes, err := routesHandler(s1, r, s.namespace)
 	if err != nil {
 		s.log.Fatalf("error setting up routes: %s", err)
 	}
@@ -71,17 +70,6 @@ func startHTTP(s1 *Service) {
 		ReadTimeout:    5 * time.Second,
 		WriteTimeout:   10 * time.Second,
 		MaxHeaderBytes: 1 << 20,
-	}
-
-	if s.conf.telemetryEnabled() {
-		if s.conf.Serv.Telemetry.Tracing.ExcludeHealthCheck {
-			s.srv.Handler = &ochttp.Handler{
-				Handler:          routes,
-				IsHealthEndpoint: s.isHealthEndpoint,
-			}
-		} else {
-			s.srv.Handler = &ochttp.Handler{Handler: routes}
-		}
 	}
 
 	idleConnsClosed := make(chan struct{})
