@@ -9,12 +9,12 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dosco/graphjin/core"
 	"github.com/dosco/graphjin/serv/auth"
 	"github.com/dosco/graphjin/serv/internal/etags"
-	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 	"github.com/rs/cors"
 	"go.opentelemetry.io/otel/attribute"
@@ -184,6 +184,7 @@ func (s1 *Service) apiV1GraphQL(ns nspace) http.Handler {
 }
 
 func (s1 *Service) apiV1Rest(ns nspace) http.Handler {
+	rLen := len(routeREST)
 	h := func(w http.ResponseWriter, r *http.Request) {
 		var err error
 
@@ -198,29 +199,33 @@ func (s1 *Service) apiV1Rest(ns nspace) http.Handler {
 			return
 		}
 
-		var req gqlReq
-		var span trace.Span
 		var op core.OpType
 		var vars json.RawMessage
+		var span trace.Span
 
 		ct, span = s.spanStartWithContext(ct, "REST Request")
 		defer span.End()
 
-		queryName := mux.Vars(r)["queryName"]
+		if len(r.RequestURI) < rLen {
+			err := errors.New("no query name defined")
+			spanError(span, err)
+			renderErr(w, err)
+			return
+		}
+
+		queryName := r.RequestURI[rLen-1:]
+		if n := strings.IndexRune(queryName, '?'); n != -1 {
+			queryName = queryName[:n]
+		}
 
 		switch r.Method {
 		case "POST":
-			var b []byte
-			b, err = ioutil.ReadAll(io.LimitReader(r.Body, maxReadBytes))
-			if err == nil {
-				defer r.Body.Close()
-				req.Vars = json.RawMessage(b)
-			}
 			op = core.OpMutation
+			vars, err = parseBody(r)
 
 		case "GET":
 			op = core.OpQuery
-			req.Vars = json.RawMessage(r.URL.Query().Get("variables"))
+			vars = json.RawMessage(r.URL.Query().Get("variables"))
 		}
 
 		if err != nil {
@@ -360,4 +365,13 @@ func renderErr(w http.ResponseWriter, err error) {
 	if err1 != nil {
 		panic(fmt.Errorf("%s: %w", err, err1))
 	}
+}
+
+func parseBody(r *http.Request) ([]byte, error) {
+	b, err := ioutil.ReadAll(io.LimitReader(r.Body, maxReadBytes))
+	if err != nil {
+		return nil, err
+	}
+	defer r.Body.Close()
+	return b, nil
 }

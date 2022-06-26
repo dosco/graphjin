@@ -122,54 +122,32 @@ func (al *List) Load() ([]Item, error) {
 	}
 
 	for _, f := range files {
-		var item Item
-		//var mi bool
-
 		fn := f.Name()
 		fn = strings.TrimSuffix(fn, filepath.Ext(fn))
 
-		// migrate if old file exists
-		/*
-			oldFile := path.Join(queryPath, fn)
-			if _, err := os.Stat(oldFile); !os.IsNotExist(err) {
-				b, err := afero.ReadFile(al.fs, oldFile)
-				if err != nil {
-					return nil, err
-				}
-
-				item, err = parseQuery(string(b))
-				if err != nil {
-					return nil, err
-				}
-				mi = true
-			}
-		*/
-
-		newFile := path.Join(queryPath, (fn + ".yaml"))
-		/*if mi {
-			b, err := yaml.Marshal(&item)
-			if err != nil {
-				return nil, err
-			}
-			if err := afero.WriteFile(al.fs, newFile, b, 0600); err != nil {
-				return nil, err
-			}
-
+		if item, err := al.Get(fn); err == nil {
+			items = append(items, item)
 		} else {
-		*/
-		b, err := afero.ReadFile(al.fs, newFile)
-		if err != nil {
 			return nil, err
 		}
-		if err := yaml.Unmarshal(b, &item); err != nil {
-			return nil, err
-		}
-		//}
-
-		items = append(items, item)
 	}
 
 	return items, nil
+}
+
+func (al *List) Get(name string) (Item, error) {
+	var item Item
+
+	newFile := path.Join(queryPath, (name + ".yaml"))
+	b, err := afero.ReadFile(al.fs, newFile)
+	if err != nil {
+		return item, err
+	}
+
+	if err := yaml.Unmarshal(b, &item); err != nil {
+		return item, err
+	}
+	return item, nil
 }
 
 func parseQuery(b string) (Item, error) {

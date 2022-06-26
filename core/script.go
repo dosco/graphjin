@@ -52,6 +52,7 @@ func (c *gcontext) loadScript(name string) error {
 
 func (c *gcontext) scriptCallReq(vars map[string]interface{}, role string) (
 	[]byte, error) {
+
 	if c.sc.ReqFunc == nil {
 		return nil, nil
 	}
@@ -66,7 +67,14 @@ func (c *gcontext) scriptCallReq(vars map[string]interface{}, role string) (
 		recover()
 	}()
 
-	if err := c.sc.vm.Set("graphql", c.newGraphQLFunc(role)); err != nil {
+	span := c.gj.spanStart(c, "Execute Request Script")
+	err := c.sc.vm.Set("graphql", c.newGraphQLFunc(role))
+	if err != nil {
+		spanError(span, err)
+	}
+	span.End()
+
+	if err != nil {
 		return nil, err
 	}
 
@@ -100,7 +108,14 @@ func (c *gcontext) scriptCallResp(data []byte, role string) (_ []byte, err error
 	})
 	defer timer.Stop()
 
-	if err := c.sc.vm.Set("graphql", c.newGraphQLFunc(role)); err != nil {
+	span := c.gj.spanStart(c, "Execute Response Script")
+	err = c.sc.vm.Set("graphql", c.newGraphQLFunc(role))
+	if err != nil {
+		spanError(span, err)
+	}
+	span.End()
+
+	if err != nil {
 		return nil, err
 	}
 

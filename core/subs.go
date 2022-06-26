@@ -91,7 +91,7 @@ func (g *GraphJin) Subscribe(
 	}
 
 	if name == "" {
-		if gj.allowList != nil && gj.prod {
+		if gj.prod {
 			return nil, errors.New("subscription: query name is required")
 		} else {
 			h := sha256.Sum256([]byte(query))
@@ -184,7 +184,7 @@ func (gj *graphjin) newSub(c context.Context,
 		return err
 	}
 
-	if gj.allowList != nil && !gj.prod {
+	if !gj.prod {
 		err := gj.allowList.Set(
 			vars,
 			query,
