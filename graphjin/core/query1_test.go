@@ -1373,7 +1373,7 @@ func Example_blockQueryWithRoles() {
 
 func Example_queryWithCamelToSnakeCase() {
 	gql := `query {
-		hotProducts(where: { productID: { eq: 55 } }) {
+		hotProducts(where: { productID: { eq: 55 } }, order_by: { productID: desc }) {
 			countryCode
 			countProductID
 			products {

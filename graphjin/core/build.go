@@ -26,51 +26,73 @@ type stmt struct {
 }
 
 func (gj *graphjin) compileQuery(qr queryReq, role string) (*queryComp, error) {
+	var userVars map[string]json.RawMessage
 	var qc *queryComp
 	var err error
 
-	var varsFromUser map[string]json.RawMessage
-
 	if len(qr.vars) != 0 {
-		if err := json.Unmarshal(qr.vars, &varsFromUser); err != nil {
+		if err := json.Unmarshal(qr.vars, &userVars); err != nil {
 			return nil, fmt.Errorf("variables: %w", err)
 		}
 	}
 
-	if gj.allowList == nil || !gj.prod {
-		st, err := gj.compileQueryForRole(qr, varsFromUser, role)
+	if !gj.prod || gj.conf.DisableAllowList {
+		if len(qr.query) == 0 {
+			item, err := gj.allowList.Get(qr.name)
+			if err != nil {
+				return nil, err
+			}
+			qr.query = []byte(item.Query)
+		}
+
+		st, err := gj.compileQueryForRole(qr, userVars, role)
 		if err != nil {
 			return nil, err
 		}
-		st.va = validator.New()
-		return &queryComp{qr: qr, st: st}, nil
+		qc = &queryComp{qr: qr, st: st}
+
+	} else {
+		// In production mode enforce the allow list and
+		// compile and cache the result else compile each time
+		if qc, err = gj.getQuery(qr, role, userVars); err != nil {
+			return nil, err
+		}
+
+		if qc, err = gj.compileQueryForRoleOnce(qc, role); err != nil {
+			return nil, err
+		}
+
+		// Overwrite allow list vars with user vars
+		qc.qr.vars = qr.vars
+		qc.qr.ns = qr.ns
 	}
 
-	// In production mode enforce the allow list and
-	// compile and cache the result else compile each time
-	if qc, err = gj.getQuery(qr, role, varsFromUser); qc == nil {
+	return qc, err
+}
+
+func (gj *graphjin) compileQueryForRoleOnce(qc *queryComp, role string) (*queryComp, error) {
+	var err error
+
+	if qc.st.sql != "" {
+		return qc, nil
+	}
+
+	qc.Do(func() {
+		var vars1 map[string]json.RawMessage
+
+		if len(qc.qr.vars) != 0 {
+			err = json.Unmarshal(qc.qr.vars, &vars1)
+		}
+
+		if err == nil {
+			qc.st, err = gj.compileQueryForRole(qc.qr, vars1, role)
+		}
+	})
+
+	if err != nil {
 		return nil, err
 	}
-
-	var varsFromAllowList map[string]json.RawMessage
-
-	if len(qc.qr.vars) != 0 {
-		if err := json.Unmarshal(qc.qr.vars, &varsFromAllowList); err != nil {
-			return nil, fmt.Errorf("variables: %w", err)
-		}
-	}
-
-	if qc.st.sql == "" {
-		qc.Do(func() {
-			qc.st, err = gj.compileQueryForRole(qc.qr, varsFromAllowList, role)
-			qc.st.va = validator.New()
-		})
-	}
-
-	// Overwrite allow list vars with user vars
-	qc.qr.vars = qr.vars
-	qc.qr.ns = qr.ns
-	return qc, err
+	return qc, nil
 }
 
 func (gj *graphjin) compileQueryForRole(
@@ -98,6 +120,7 @@ func (gj *graphjin) compileQueryForRole(
 		return st, err
 	}
 
+	st.va = validator.New()
 	st.sql = w.String()
 	return st, nil
 }

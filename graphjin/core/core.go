@@ -164,10 +164,7 @@ func (gj *graphjin) initCompilers() error {
 		EnableCamelcase:  gj.conf.EnableCamelcase,
 		EnableInflection: gj.conf.EnableInflection,
 		DBSchema:         gj.schema.DBSchema(),
-	}
-
-	if gj.allowList != nil && gj.prod {
-		qcc.FragmentFetcher = gj.allowList.FragmentFetcher
+		FragmentFetcher:  gj.allowList.FragmentFetcher,
 	}
 
 	gj.qc, err = qcode.NewCompiler(gj.schema, qcc)
@@ -188,6 +185,7 @@ func (gj *graphjin) initCompilers() error {
 }
 
 func (gj *graphjin) executeRoleQuery(c context.Context, conn *sql.Conn, vars []byte, rc *ReqConfig) (string, error) {
+
 	var role string
 	var ar args
 	var err error
@@ -378,15 +376,6 @@ func (c *gcontext) resolveCompiledQuery(
 
 	res.data = cur.data
 
-	if !c.gj.prod && c.gj.allowList != nil {
-		if err := c.saveToAllowList(
-			qc,
-			string(qcomp.qr.query),
-			qcomp.qr.ns); err != nil {
-			return res, err
-		}
-	}
-
 	// if c.gj.conf.EnableTracing {
 	// 	for _, id := range st.qc.Roots {
 	// 		c.addTrace(st.qc.Selects, id, stime)
@@ -448,22 +437,6 @@ func (c *gcontext) validateAndUpdateVars(qcomp *queryComp, res *queryResp) error
 		}
 	}
 	return nil
-}
-
-func (c *gcontext) saveToAllowList(qc *qcode.QCode, query, namespace string) error {
-	var av []byte
-	var err error
-
-	if v, ok := qc.Vars[qc.ActionVar]; ok {
-		av, err = json.Marshal(map[string]json.RawMessage{
-			qc.ActionVar: v,
-		})
-		if err != nil {
-			return err
-		}
-	}
-
-	return c.gj.allowList.Set(av, query, qc.Metadata, namespace)
 }
 
 func (c *gcontext) setLocalUserID(conn *sql.Conn) error {
@@ -577,6 +550,22 @@ func (c *gcontext) debugLog(st *stmt) {
 
 func retryIfDBError(err error) bool {
 	return (err == driver.ErrBadConn)
+}
+
+func (gj *graphjin) saveToAllowList(qc *qcode.QCode, query, namespace string) error {
+	var av []byte
+	var err error
+
+	if v, ok := qc.Vars[qc.ActionVar]; ok {
+		av, err = json.Marshal(map[string]json.RawMessage{
+			qc.ActionVar: v,
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	return gj.allowList.Set(av, query, qc.Metadata, namespace)
 }
 
 func (gj *graphjin) spanStart(c context.Context, name string) trace.Span {

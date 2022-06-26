@@ -308,17 +308,36 @@ func (g *GraphJin) GraphQL(
 		op, name = qcode.GetQType(query)
 	}
 
-	if err != nil {
-		res := &Result{
-			ns:     ns,
-			op:     op,
-			name:   name,
-			Errors: []Error{{Message: err.Error()}},
+	// use the chirino/graphql library for introspection queries
+	// disabled when allow list is enforced
+	if !gj.prod && name == "IntrospectionQuery" {
+		r := gj.ge.ServeGraphQL(&graphql.Request{Query: query})
+
+		if err := r.Error(); err != nil {
+			return errResult(ns, op, name, err), err
 		}
-		return res, err
+		res := &Result{
+			ns:   ns,
+			op:   op,
+			name: name,
+			Data: r.Data,
+		}
+		return res, nil
 	}
 
-	res, err := gj.graphQL(c, op, ns, name, query, vars, rc)
+	if err != nil {
+		return errResult(ns, op, name, err), err
+	}
+
+	var varMap map[string]interface{}
+
+	if len(vars) != 0 {
+		if err := json.Unmarshal(vars, &varMap); err != nil {
+			return errResult(ns, op, name, err), err
+		}
+	}
+
+	qc, res, err := gj.graphQL(c, op, ns, name, query, vars, rc)
 	if err != nil {
 		return res, err
 	}
@@ -329,6 +348,15 @@ func (g *GraphJin) GraphQL(
 			name:  name,
 			query: query,
 		})
+	}
+
+	if !gj.prod {
+		if err := gj.saveToAllowList(
+			qc,
+			query,
+			ns); err != nil {
+			return res, err
+		}
 	}
 
 	return res, err
@@ -366,7 +394,8 @@ func (g *GraphJin) GraphQLByName(
 		return res, err
 	}
 
-	return gj.graphQL(c, op, ns, name, "", vars, rc)
+	_, res, err := gj.graphQL(c, op, ns, name, "", vars, rc)
+	return res, err
 }
 
 func (gj *graphjin) graphQL(
@@ -376,9 +405,10 @@ func (gj *graphjin) graphQL(
 	name string,
 	query string,
 	vars json.RawMessage,
-	rc *ReqConfig) (*Result, error) {
+	rc *ReqConfig) (*qcode.QCode, *Result, error) {
 
 	var err error
+
 	span := gj.spanStart(c, "GraphJin Query")
 	defer span.End()
 
@@ -399,27 +429,15 @@ func (gj *graphjin) graphQL(
 
 	if err != nil {
 		res.Errors = []Error{{Message: err.Error()}}
-		return res, err
+		return nil, res, err
 	}
 
 	if ct.op == qcode.QTSubscription {
-		return res, errors.New("use 'core.Subscribe' for subscriptions")
+		return nil, res, errors.New("use 'core.Subscribe' for subscriptions")
 	}
 
 	if ct.op == qcode.QTMutation && gj.schema.DBType() == "mysql" {
-		return res, errors.New("mysql: mutations not supported")
-	}
-
-	// use the chirino/graphql library for introspection queries
-	// disabled when allow list is enforced
-	if !gj.prod && ct.name == "IntrospectionQuery" {
-		r := gj.ge.ServeGraphQL(&graphql.Request{Query: query})
-		res.Data = r.Data
-
-		if r.Error() != nil {
-			res.Errors = []Error{{Message: r.Error().Error()}}
-		}
-		return res, r.Error()
+		return nil, res, errors.New("mysql: mutations not supported")
 	}
 
 	var role string
@@ -445,10 +463,14 @@ func (gj *graphjin) graphQL(
 		res.Errors = []Error{{Message: err.Error()}}
 	}
 
+	var qc *qcode.QCode
+
 	if qres.qc != nil {
+		qc = qres.qc.st.qc
 		res.sql = qres.qc.st.sql
-		if qres.qc.st.qc != nil {
-			res.cacheControl = qres.qc.st.qc.Cache.Header
+
+		if qc != nil {
+			res.cacheControl = qc.Cache.Header
 		}
 	}
 
@@ -456,7 +478,7 @@ func (gj *graphjin) graphQL(
 	res.role = qres.role
 	res.Vars = vars
 
-	return res, err
+	return qc, res, err
 }
 
 // Reload redoes database discover and reinitializes GraphJin.
@@ -480,4 +502,14 @@ func (g *GraphJin) IsProd() bool {
 func Operation(query string) (OpType, string) {
 	qt, name := qcode.GetQType(query)
 	return OpType(qt), name
+}
+
+func errResult(ns string, op qcode.QType, name string, err error) *Result {
+	return &Result{
+		ns:     ns,
+		op:     op,
+		name:   name,
+		Errors: []Error{{Message: err.Error()}},
+	}
+
 }

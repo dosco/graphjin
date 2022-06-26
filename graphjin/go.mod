@@ -13,6 +13,7 @@ require (
 	github.com/bradfitz/gomemcache v0.0.0-20220106215444-fb4bf637b56d
 	github.com/brianvoe/gofakeit/v6 v6.16.0
 	github.com/chirino/graphql v0.0.0-20210707003802-dfaf250c773e
+	github.com/derekstavis/go-qs v0.0.0-20180720192143-9eef69e6c4e7 // indirect
 	github.com/docker/distribution v2.8.1+incompatible // indirect
 	github.com/docker/docker v20.10.16+incompatible // indirect
 	github.com/dop251/goja v0.0.0-20220516123900-4418d4575a41

@@ -1484,7 +1484,7 @@ func (co *Compiler) compileArgOrderByObj(sel *Select, node *graph.Node, cm map[s
 			if ob.Order, err = toOrder(node.Val); err != nil { // sets the asc desc etc
 				return err
 			}
-			if err := setOrderByColName(sel.Ti, &ob, node); err != nil {
+			if err := co.setOrderByColName(sel.Ti, &ob, node); err != nil {
 				return err
 			}
 		case graph.NodeObj:
@@ -1509,7 +1509,7 @@ func (co *Compiler) compileArgOrderByObj(sel *Select, node *graph.Node, cm map[s
 				})
 			}
 
-			if err := setOrderByColName(ti, &ob, cn); err != nil {
+			if err := co.setOrderByColName(ti, &ob, cn); err != nil {
 				return err
 			}
 		}
@@ -1695,6 +1695,23 @@ func (co *Compiler) compileArgAfterBefore(sel *Select, arg *graph.Arg, pt Paging
 	return nil
 }
 
+func (co *Compiler) setOrderByColName(ti sdata.DBTable, ob *OrderBy, node *graph.Node) error {
+	var name string
+
+	if co.c.EnableCamelcase {
+		name = util.ToSnake(node.Name)
+	} else {
+		name = node.Name
+	}
+
+	col, err := ti.GetColumn(name)
+	if err != nil {
+		return err
+	}
+	ob.Col = col
+	return nil
+}
+
 func setFilter(where *Filter, fil *Exp) {
 	if where.Exp != nil {
 		// save exiting exp pointer (could be a common one from filter config)
@@ -1710,15 +1727,6 @@ func setFilter(where *Filter, fil *Exp) {
 	} else {
 		where.Exp = fil
 	}
-}
-
-func setOrderByColName(ti sdata.DBTable, ob *OrderBy, node *graph.Node) error {
-	col, err := ti.GetColumn(node.Name)
-	if err != nil {
-		return err
-	}
-	ob.Col = col
-	return nil
 }
 
 func compileFilter(s *sdata.DBSchema, ti sdata.DBTable, filter []string, isJSON bool) (*Exp, bool, error) {

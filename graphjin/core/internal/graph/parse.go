@@ -144,7 +144,7 @@ func Parse(gql []byte, fetchFrag func(name string) (string, error)) (Operation, 
 			break
 		}
 
-		if p.peekVal(fragmentToken) && p.fetchFrag == nil {
+		if p.peekVal(fragmentToken) {
 			p.ignore()
 			if _, err := p.parseFragment(); err != nil {
 				return op, err
@@ -246,7 +246,7 @@ func (p *Parser) parseOp() (Operation, error) {
 			}
 		}
 	} else {
-		return op, fmt.Errorf("expecting a query, mutation or subscription, got: %s", p.next())
+		return op, fmt.Errorf("expecting a query, mutation or subscription, got: %s", p.peekNext())
 	}
 	return op, nil
 }
