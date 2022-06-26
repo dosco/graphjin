@@ -157,7 +157,7 @@ func (s *service) subSwitch(
 			return false, err
 		}
 
-		if s.conf.Serv.Auth.SubsCredsInVars {
+		if s.conf.Serv.Auth.Development {
 			type authHeaders struct {
 				UserIDProvider string      `json:"X-User-ID-Provider"`
 				UserRole       string      `json:"X-User-Role"`

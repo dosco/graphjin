@@ -395,7 +395,6 @@ func newViperWithDefaults() *viper.Viper {
 
 	vi.SetDefault("auth.rails.max_idle", 80)
 	vi.SetDefault("auth.rails.max_active", 12000)
-	vi.SetDefault("auth.creds_in_header", false)
 	vi.SetDefault("auth.subs_creds_in_vars", false)
 
 	return vi
