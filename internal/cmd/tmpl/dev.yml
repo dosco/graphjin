@@ -141,11 +141,6 @@ auth:
   type: none
   cookie: _{{- .AppNameSlug -}}_session
 
-  # Comment this out if you want to disable setting
-  # the user_id via a header for testing. 
-  # Disable in production
-  creds_in_header: true
-
   # Useful for quickly debugging subscriptions WebSocket authorization.
   # Disable in production
   # subs_creds_in_vars: true

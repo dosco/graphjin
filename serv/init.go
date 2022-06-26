@@ -70,9 +70,8 @@ func (s *service) initConfig() error {
 		c.Core.DBType = c.DB.Type
 	}
 
-	if c.Serv.Production {
-		c.Auth.CredsInHeader = false
-		c.Auth.SubsCredsInVars = false
+	if !c.Serv.Production {
+		c.Auth.Development = true
 	}
 
 	// Auths: validate and sanitize
@@ -81,9 +80,8 @@ func (s *service) initConfig() error {
 	for i := 0; i < len(c.Auths); i++ {
 		a := &c.Auths[i]
 
-		if c.Serv.Production {
-			a.CredsInHeader = false
-			a.SubsCredsInVars = false
+		if !c.Serv.Production {
+			c.Auth.Development = true
 		}
 
 		if _, ok := am[a.Name]; ok {
