@@ -110,8 +110,9 @@ func TestMain(m *testing.M) {
 		}
 
 		db, err = sql.Open(v.driver, fmt.Sprintf(v.connstr, con.DefaultAddress()))
+
 		if err != nil {
-			gnomock.Stop(con)
+			_ = gnomock.Stop(con)
 			panic(err)
 		}
 		db.SetMaxIdleConns(300)
@@ -119,7 +120,7 @@ func TestMain(m *testing.M) {
 		dbType = v.name
 
 		res := m.Run()
-		gnomock.Stop(con)
+		_ = gnomock.Stop(con)
 		os.Exit(res)
 	}
 }
