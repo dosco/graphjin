@@ -64,8 +64,6 @@ type Config struct {
 }
 
 func New(conf Config, fs afero.Fs) (*List, error) {
-	var err error
-
 	if fs == nil {
 		return nil, fmt.Errorf("no filesystem defined for the allow list")
 	}
@@ -75,21 +73,23 @@ func New(conf Config, fs afero.Fs) (*List, error) {
 	_ = fs.MkdirAll(queryPath, os.ModePerm)
 	_ = fs.MkdirAll(fragmentPath, os.ModePerm)
 
-	go func() {
-		for v := range al.saveChan {
-			err := al.save(v)
+	var err error
 
+	go func() {
+		for {
+			v, ok := <-al.saveChan
+			if !ok {
+				break
+			}
+			err = al.save(v)
 			if err != nil && conf.Log != nil {
 				conf.Log.Println("WRN allow list save:", err)
+				break
 			}
 		}
 	}()
 
-	if err != nil {
-		return nil, err
-	}
-
-	return &al, nil
+	return &al, err
 }
 
 func (al *List) Set(vars []byte, query string, md Metadata, namespace string) error {

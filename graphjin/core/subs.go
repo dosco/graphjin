@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/rand"
 	"strconv"
 	"strings"
 	"sync"
@@ -184,9 +183,9 @@ func (gj *graphjin) newSub(c context.Context,
 		return err
 	}
 
-	if !gj.prod {
+	if !gj.prod && !gj.conf.DisableAllowList {
 		err := gj.allowList.Set(
-			vars,
+			nil,
 			query,
 			s.qc.st.qc.Metadata,
 			qr.ns)
@@ -324,7 +323,7 @@ func (s *sub) fanOutJobs(gj *graphjin) {
 		// fan out chunks of work to multiple routines
 		// separated by a random duration
 		for i := 0; i < len(s.ids); i += maxMembersPerWorker {
-			go gj.subCheckUpdates(s, s.mval, i)
+			gj.subCheckUpdates(s, s.mval, i)
 		}
 	}
 }
@@ -335,13 +334,13 @@ func (gj *graphjin) subCheckUpdates(s *sub, mv mval, start int) {
 
 	// random wait to prevent multiple queries hitting the db
 	// at the same time.
-	ps := gj.conf.SubsPollDuration
-	if ps < minPollDuration {
-		ps = minPollDuration
-	}
+	// ps := gj.conf.SubsPollDuration
+	// if ps < minPollDuration {
+	// 	ps = minPollDuration
+	// }
 
-	rt := rand.Int63n(ps.Milliseconds()) // #nosec F404
-	time.Sleep(time.Duration(rt) * time.Millisecond)
+	// rt := rand.Int63n(ps.Milliseconds()) // #nosec F404
+	// time.Sleep(time.Duration(rt) * time.Millisecond)
 
 	end := start + maxMembersPerWorker
 	if len(mv.ids) < end {

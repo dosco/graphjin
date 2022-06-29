@@ -31,13 +31,16 @@ func queryWithVariableLimit(t *testing.T) {
 
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
+
 	if err != nil {
 		t.Error(err)
+		return
 	}
 
 	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
 	if err != nil {
 		t.Error(err)
+		return
 	}
 
 	switch dbType {
@@ -61,6 +64,7 @@ func TestAPQ(t *testing.T) {
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		t.Error(err)
+		return
 	}
 
 	_, err = gj.GraphQL(context.Background(), gql, nil, &core.ReqConfig{
@@ -68,6 +72,7 @@ func TestAPQ(t *testing.T) {
 	})
 	if err != nil {
 		t.Error(err)
+		return
 	}
 
 	res, err := gj.GraphQL(context.Background(), "", nil, &core.ReqConfig{
@@ -75,6 +80,7 @@ func TestAPQ(t *testing.T) {
 	})
 	if err != nil {
 		t.Error(err)
+		return
 	}
 
 	exp := `{"products": {"id": 2}}`
@@ -107,22 +113,26 @@ func TestAllowList(t *testing.T) {
 	gj1, err := core.NewGraphJin(conf1, db, core.OptionSetFS(fs))
 	if err != nil {
 		t.Error(err)
+		return
 	}
 
 	_, err = gj1.GraphQL(context.Background(), gql1, nil, nil)
 	if err != nil {
 		t.Error(err)
+		return
 	}
 
 	conf2 := newConfig(&core.Config{DBType: dbType, Production: true})
 	gj2, err := core.NewGraphJin(conf2, db, core.OptionSetFS(fs))
 	if err != nil {
 		t.Error(err)
+		return
 	}
 
 	res, err := gj2.GraphQL(context.Background(), gql2, nil, nil)
 	if err != nil {
 		t.Error(err)
+		return
 	}
 
 	exp := `{"products": {"id": 2}}`
@@ -156,17 +166,20 @@ func TestAllowListWithNamespace(t *testing.T) {
 		core.OptionSetFS(fs), core.OptionSetNamespace(("web")))
 	if err != nil {
 		t.Error(err)
+		return
 	}
 
 	_, err = gj1.GraphQL(context.Background(), gql1, nil, nil)
 	if err != nil {
 		t.Error(err)
+		return
 	}
 
 	conf2 := newConfig(&core.Config{DBType: dbType, Production: true})
 	gj2, err := core.NewGraphJin(conf2, db, core.OptionSetFS(fs))
 	if err != nil {
 		t.Error(err)
+		return
 	}
 
 	_, err = gj2.GraphQL(context.Background(), gql2, nil,
@@ -406,6 +419,7 @@ func TestCueValidationQuerySingleIntVarValue(t *testing.T) {
 	_, err = gj.GraphQL(context.Background(), gql, json.RawMessage(`{"id":2}`), nil)
 	if err != nil {
 		t.Error(err)
+		return
 	}
 }
 func TestCueInvalidationQuerySingleIntVarValue(t *testing.T) {
@@ -446,6 +460,7 @@ func TestCueValidationQuerySingleIntVarType(t *testing.T) {
 	_, err = gj.GraphQL(context.Background(), gql, json.RawMessage(`{"id":2}`), nil)
 	if err != nil {
 		t.Error(err)
+		return
 	}
 }
 func TestCueValidationQuerySingleIntVarOR(t *testing.T) {
@@ -466,6 +481,7 @@ func TestCueValidationQuerySingleIntVarOR(t *testing.T) {
 	_, err = gj.GraphQL(context.Background(), gql, json.RawMessage(`{"id":2}`), nil)
 	if err != nil {
 		t.Error(err)
+		return
 	}
 }
 func TestCueInvalidationQuerySingleIntVarOR(t *testing.T) {
@@ -508,6 +524,7 @@ func TestCueValidationQuerySingleStringVarOR(t *testing.T) {
 	_, err = gj.GraphQL(context.Background(), gql, json.RawMessage(`{"mail":"mail@example.com","validation":"mail: \"mail@example.com\" | \"mail@example.org\" "}`), nil)
 	if err != nil {
 		t.Error(err)
+		return
 	}
 }
 func TestCueInvalidationQuerySingleStringVarOR(t *testing.T) {
@@ -573,6 +590,7 @@ func TestCueValidationMutationMapVarStringsLen(t *testing.T) {
 	}`), nil)
 	if err != nil {
 		t.Error(err)
+		return
 	}
 }
 func TestCueInvalidationMutationMapVarStringsLen(t *testing.T) {
@@ -624,6 +642,7 @@ func TestCueValidationMutationMapVarIntMaxMin(t *testing.T) {
 	}`), nil)
 	if err != nil {
 		t.Error(err)
+		return
 	}
 }
 func TestCueInvalidationMutationMapVarIntMaxMin(t *testing.T) {
@@ -674,6 +693,7 @@ func TestCueValidationMutationMapVarOptionalKey(t *testing.T) {
 	}`), nil)
 	if err != nil {
 		t.Error(err)
+		return
 	}
 }
 func TestCueValidationMutationMapVarRegex(t *testing.T) {
@@ -699,6 +719,7 @@ func TestCueValidationMutationMapVarRegex(t *testing.T) {
 	}`), nil) // regex from : https://cuelang.org/play/?id=iFcZKx72Bwm#cue@export@cue
 	if err != nil {
 		t.Error(err)
+		return
 	}
 }
 func TestCueInvalidationMutationMapVarRegex(t *testing.T) {

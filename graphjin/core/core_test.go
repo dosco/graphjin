@@ -104,26 +104,23 @@ func TestMain(m *testing.M) {
 		con, err := gnomock.Start(
 			v.preset,
 			gnomock.WithLogWriter(os.Stdout))
+
 		if err != nil {
 			panic(err)
 		}
-		defer func() {
-			if err := gnomock.Stop(con); err != nil {
-				panic(err)
-			}
-		}()
 
 		db, err = sql.Open(v.driver, fmt.Sprintf(v.connstr, con.DefaultAddress()))
 		if err != nil {
+			gnomock.Stop(con)
 			panic(err)
 		}
 		db.SetMaxIdleConns(300)
 		db.SetMaxOpenConns(600)
 		dbType = v.name
 
-		if res := m.Run(); res != 0 {
-			os.Exit(res)
-		}
+		res := m.Run()
+		gnomock.Stop(con)
+		os.Exit(res)
 	}
 }
 

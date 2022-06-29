@@ -68,6 +68,10 @@ func (gj *graphjin) initAllowList() error {
 		return fmt.Errorf("failed to initialize allow list: %w", err)
 	}
 
+	if gj.conf.DisableAllowList {
+		return nil
+	}
+
 	gj.queries = make(map[string]*queryComp)
 
 	list, err := gj.allowList.Load()

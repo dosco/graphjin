@@ -10,8 +10,7 @@ import (
 
 	"github.com/dosco/graphjin/internal/jsn"
 	"github.com/mitchellh/mapstructure"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // RemoteAPI struct defines a remote API endpoint
@@ -35,14 +34,13 @@ func newRemoteAPI(v map[string]interface{}) (*remoteAPI, error) {
 }
 
 func (r *remoteAPI) Resolve(c context.Context, rr ResolverReq) ([]byte, error) {
-	uri := strings.ReplaceAll(r.URL, "$id", rr.ID)
-
-	span := trace.SpanFromContext(c)
-	if span.IsRecording() {
-		span.SetAttributes(attribute.String("endpoint", uri))
+	client := &http.Client{
+		Transport: otelhttp.NewTransport(http.DefaultTransport),
 	}
 
-	req, err := http.NewRequest("GET", uri, nil)
+	uri := strings.ReplaceAll(r.URL, "$id", rr.ID)
+
+	req, err := http.NewRequestWithContext(c, "GET", uri, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -58,8 +56,6 @@ func (r *remoteAPI) Resolve(c context.Context, rr ResolverReq) ([]byte, error) {
 	// for _, v := range r.PassHeaders {
 	// 	req.Header.Set(v, hdr.Get(v))
 	// }
-
-	client := &http.Client{}
 
 	res, err := client.Do(req)
 	if err != nil {

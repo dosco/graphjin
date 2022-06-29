@@ -29,6 +29,7 @@ func TestCompile1(t *testing.T) {
 	})
 	if err != nil {
 		t.Error(err)
+		return
 	}
 
 	_, err = qc.Compile([]byte(`
@@ -51,6 +52,7 @@ func TestCompile2(t *testing.T) {
 	})
 	if err != nil {
 		t.Error(err)
+		return
 	}
 
 	_, err = qc.Compile([]byte(`
@@ -73,6 +75,7 @@ func TestCompile3(t *testing.T) {
 	})
 	if err != nil {
 		t.Error(err)
+		return
 	}
 
 	vars := map[string]json.RawMessage{

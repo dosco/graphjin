@@ -1072,7 +1072,7 @@ func Example_queryWithScriptDirective() {
 	function request(vars) {
 		return { id: 2 };
 	}
-	
+
 	function response(json) {
 		json.usersByID.email = "u...@test.com";
 		return json;
