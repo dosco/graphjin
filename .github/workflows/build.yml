@@ -45,7 +45,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
-          go-version: "1.17"
+          go-version: "1.19beta1"
 
       - name: Cache Go modules
         uses: actions/cache@v3
@@ -56,13 +56,13 @@ jobs:
             ${{ runner.os }}-go-
 
       - name: Run Postgres Tests
-        run: go test -v -timeout 30m ./...
+        run: go test -v -timeout 30m -race ./...
 
       - name: Run MySQL Tests
         working-directory: ./core
         run: |
-          go test -v -timeout 30m -db=mysql -run=Example_query
-          go test -v -timeout 30m -db=mysql -run=Example_sub
+          go test -v -timeout 30m -db=mysql -race -run=Example_query
+          go test -v -timeout 30m -db=mysql -race -run=Example_sub
 
       - name: Snapcraft Login
         if: success() && startsWith(github.ref, 'refs/tags/v')

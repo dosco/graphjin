@@ -3,6 +3,8 @@ package serv
 import (
 	"fmt"
 	"net/http"
+
+	"go.opentelemetry.io/otel/trace"
 )
 
 type actionFn func(w http.ResponseWriter, r *http.Request) error
@@ -32,10 +34,12 @@ func newAction(s *Service, a *Action) (http.Handler, error) {
 
 func newSQLAction(s1 *Service, a *Action) (actionFn, error) {
 	fn := func(w http.ResponseWriter, r *http.Request) error {
+		var span trace.Span
+
 		s := s1.Load().(*service)
 		c := r.Context()
 
-		span := s.spanStart(c, "Action Request")
+		c, span = s.spanStart(c, "Action Request")
 		_, err := s.db.ExecContext(c, a.SQL)
 		if err != nil {
 			spanError(span, err)

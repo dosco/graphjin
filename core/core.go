@@ -55,8 +55,6 @@ const (
 // }
 
 type gcontext struct {
-	context.Context
-
 	gj   *graphjin
 	op   qcode.QType
 	rc   *ReqConfig
@@ -184,25 +182,27 @@ func (gj *graphjin) initCompilers() error {
 	return nil
 }
 
-func (gj *graphjin) executeRoleQuery(c context.Context, conn *sql.Conn, vars []byte, rc *ReqConfig) (string, error) {
-
+func (gj *graphjin) executeRoleQuery(ctx context.Context, conn *sql.Conn, vars []byte, rc *ReqConfig) (string, error) {
 	var role string
 	var ar args
 	var err error
 
 	md := gj.roleStmtMD
 
-	if c.Value(UserIDKey) == nil {
+	if ctx.Value(UserIDKey) == nil {
 		return "anon", nil
 	}
 
-	if ar, err = gj.argList(c, md, vars, rc); err != nil {
+	if ar, err = gj.argList(ctx, md, vars, rc); err != nil {
 		return "", err
 	}
 
 	if conn == nil {
-		span := gj.spanStart(c, "Get Connection")
-		conn, err = gj.db.Conn(c)
+		ctx1, span := gj.spanStart(ctx, "Get Connection")
+		err = retryOperation(ctx1, func() error {
+			conn, err = gj.db.Conn(ctx1)
+			return err
+		})
 		if err != nil {
 			spanError(span, err)
 		}
@@ -214,10 +214,14 @@ func (gj *graphjin) executeRoleQuery(c context.Context, conn *sql.Conn, vars []b
 		defer conn.Close()
 	}
 
-	span := gj.spanStart(c, "Execute Role Query")
+	ctx1, span := gj.spanStart(ctx, "Execute Role Query")
 	defer span.End()
 
-	err = conn.QueryRowContext(c, gj.roleStmt, ar.values...).Scan(&role)
+	err = retryOperation(ctx1, func() error {
+		return conn.
+			QueryRowContext(ctx1, gj.roleStmt, ar.values...).
+			Scan(&role)
+	})
 
 	if err != nil {
 		spanError(span, err)
@@ -231,22 +235,11 @@ func (gj *graphjin) executeRoleQuery(c context.Context, conn *sql.Conn, vars []b
 	return role, err
 }
 
-func (c *gcontext) execQuery(qr queryReq, role string) (queryResp, error) {
+func (c *gcontext) execQuery(ctx context.Context, qr queryReq, role string) (queryResp, error) {
 	var res queryResp
 	var err error
 
-	err = retry.Do(
-		func() error {
-			res, err = c.resolveSQL(qr, role)
-			return err
-		},
-		retry.Context(c),
-		retry.RetryIf(retryIfDBError),
-		retry.Attempts(3),
-		retry.LastErrorOnly(true),
-	)
-
-	if err != nil {
+	if res, err = c.resolveSQL(ctx, qr, role); err != nil {
 		return res, err
 	}
 
@@ -261,23 +254,29 @@ func (c *gcontext) execQuery(qr queryReq, role string) (queryResp, error) {
 	}
 
 	if qc.Remotes != 0 {
-		if res, err = c.execRemoteJoin(res); err != nil {
+		if res, err = c.execRemoteJoin(ctx, res); err != nil {
 			return res, err
 		}
 	}
 
 	if c.sc != nil && c.sc.RespFunc != nil {
-		res.data, err = c.scriptCallResp(res.data, res.role)
+		res.data, err = c.scriptCallResp(ctx, res.data, res.role)
 	}
 
 	return res, err
 }
 
-func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
+func (c *gcontext) resolveSQL(ctx context.Context, qr queryReq, role string) (queryResp, error) {
+	var conn *sql.Conn
+	var err error
+
 	res := queryResp{role: role}
 
-	span := c.gj.spanStart(c, "Get Connection")
-	conn, err := c.gj.db.Conn(c)
+	ctx1, span := c.gj.spanStart(ctx, "Get Connection")
+	err = retryOperation(ctx1, func() error {
+		conn, err = c.gj.db.Conn(ctx1)
+		return err
+	})
 	if err != nil {
 		spanError(span, err)
 	}
@@ -289,8 +288,10 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 	defer conn.Close()
 
 	if c.gj.conf.SetUserID {
-		span := c.gj.spanStart(c, "Set Local User ID")
-		err := c.setLocalUserID(conn)
+		ctx1, span = c.gj.spanStart(ctx, "Set Local User ID")
+		err = retryOperation(ctx1, func() error {
+			return c.setLocalUserID(ctx1, conn)
+		})
 		if err != nil {
 			spanError(span, err)
 		}
@@ -301,10 +302,10 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 		}
 	}
 
-	if v := c.Value(UserRoleKey); v != nil {
+	if v := ctx.Value(UserRoleKey); v != nil {
 		res.role = v.(string)
 	} else if c.gj.abacEnabled {
-		res.role, err = c.gj.executeRoleQuery(c, conn, qr.vars, c.rc)
+		res.role, err = c.gj.executeRoleQuery(ctx, conn, qr.vars, c.rc)
 	}
 
 	if err != nil {
@@ -317,10 +318,11 @@ func (c *gcontext) resolveSQL(qr queryReq, role string) (queryResp, error) {
 	}
 	res.qc = qcomp
 
-	return c.resolveCompiledQuery(conn, qcomp, res)
+	return c.resolveCompiledQuery(ctx, conn, qcomp, res)
 }
 
 func (c *gcontext) resolveCompiledQuery(
+	ctx context.Context,
 	conn *sql.Conn,
 	qcomp *queryComp,
 	res queryResp) (
@@ -328,25 +330,23 @@ func (c *gcontext) resolveCompiledQuery(
 
 	// From here on use qcomp. for everything including accessing qr since it contains updated values of the latter. This code needs some refactoring
 
-	if err := c.validateAndUpdateVars(qcomp, &res); err != nil {
+	if err := c.validateAndUpdateVars(ctx, qcomp, &res); err != nil {
 		return res, err
 	}
 
-	args, err := c.gj.argList(c, qcomp.st.md, qcomp.qr.vars, c.rc)
+	args, err := c.gj.argList(ctx, qcomp.st.md, qcomp.qr.vars, c.rc)
 	if err != nil {
 		return res, err
 	}
 
-	// var stime time.Time
+	ctx1, span := c.gj.spanStart(ctx, "Execute Query")
+	defer span.End()
 
-	// if c.gj.conf.EnableTracing {
-	// 	stime = time.Now()
-	// }
-
-	span := c.gj.spanStart(c, "Execute Query")
-	err = conn.
-		QueryRowContext(c, qcomp.st.sql, args.values...).
-		Scan(&res.data)
+	err = retryOperation(ctx1, func() error {
+		return conn.
+			QueryRowContext(ctx1, qcomp.st.sql, args.values...).
+			Scan(&res.data)
+	})
 
 	if err != nil && err != sql.ErrNoRows {
 		spanError(span, err)
@@ -357,8 +357,8 @@ func (c *gcontext) resolveCompiledQuery(
 		span.SetAttributes(
 			attribute.String("query.namespace", res.qc.qr.ns),
 			attribute.String("query.operation", op),
-			attribute.String("query.name", res.qc.qr.name),
-			attribute.String("query.role", res.role))
+			attribute.String("query.name", qcomp.st.qc.Name),
+			attribute.String("query.role", qcomp.st.role.Name))
 	}
 
 	if err == sql.ErrNoRows {
@@ -375,17 +375,10 @@ func (c *gcontext) resolveCompiledQuery(
 	}
 
 	res.data = cur.data
-
-	// if c.gj.conf.EnableTracing {
-	// 	for _, id := range st.qc.Roots {
-	// 		c.addTrace(st.qc.Selects, id, stime)
-	// 	}
-	// }
-
 	return res, nil
 }
 
-func (c *gcontext) validateAndUpdateVars(qcomp *queryComp, res *queryResp) error {
+func (c *gcontext) validateAndUpdateVars(ctx context.Context, qcomp *queryComp, res *queryResp) error {
 	var vars map[string]interface{}
 	qc := qcomp.st.qc
 	qr := qcomp.qr
@@ -430,7 +423,7 @@ func (c *gcontext) validateAndUpdateVars(qcomp *queryComp, res *queryResp) error
 	}
 
 	if c.sc != nil && c.sc.ReqFunc != nil {
-		if v, err := c.scriptCallReq(vars, qcomp.st.role.Name); len(v) != 0 {
+		if v, err := c.scriptCallReq(ctx, vars, qcomp.st.role.Name); len(v) != 0 {
 			qcomp.qr.vars = v
 		} else if err != nil {
 			return err
@@ -439,18 +432,18 @@ func (c *gcontext) validateAndUpdateVars(qcomp *queryComp, res *queryResp) error
 	return nil
 }
 
-func (c *gcontext) setLocalUserID(conn *sql.Conn) error {
+func (c *gcontext) setLocalUserID(ctx context.Context, conn *sql.Conn) error {
 	var err error
 
-	if v := c.Value(UserIDKey); v == nil {
+	if v := ctx.Value(UserIDKey); v == nil {
 		return nil
 	} else {
 		switch v1 := v.(type) {
 		case string:
-			_, err = conn.ExecContext(c, `SET SESSION "user.id" = '`+v1+`'`)
+			_, err = conn.ExecContext(ctx, `SET SESSION "user.id" = '`+v1+`'`)
 
 		case int:
-			_, err = conn.ExecContext(c, `SET SESSION "user.id" = `+strconv.Itoa(v1))
+			_, err = conn.ExecContext(ctx, `SET SESSION "user.id" = `+strconv.Itoa(v1))
 		}
 	}
 
@@ -556,6 +549,10 @@ func (gj *graphjin) saveToAllowList(qc *qcode.QCode, query, namespace string) er
 	var av []byte
 	var err error
 
+	if gj.conf.DisableAllowList {
+		return nil
+	}
+
 	if v, ok := qc.Vars[qc.ActionVar]; ok {
 		av, err = json.Marshal(map[string]json.RawMessage{
 			qc.ActionVar: v,
@@ -568,11 +565,10 @@ func (gj *graphjin) saveToAllowList(qc *qcode.QCode, query, namespace string) er
 	return gj.allowList.Set(av, query, qc.Metadata, namespace)
 }
 
-func (gj *graphjin) spanStart(c context.Context, name string) trace.Span {
-	_, span := gj.tracer.Start(c,
+func (gj *graphjin) spanStart(c context.Context, name string) (context.Context, trace.Span) {
+	return gj.tracer.Start(c,
 		name,
 		trace.WithSpanKind(trace.SpanKindServer))
-	return span
 }
 
 func spanError(span trace.Span, err error) {
@@ -580,4 +576,14 @@ func spanError(span trace.Span, err error) {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 	}
+}
+
+func retryOperation(c context.Context, fn func() error) error {
+	return retry.Do(
+		fn,
+		retry.Context(c),
+		retry.RetryIf(retryIfDBError),
+		retry.Attempts(3),
+		retry.LastErrorOnly(true),
+	)
 }

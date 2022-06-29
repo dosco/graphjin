@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -27,10 +28,6 @@ func (gj *graphjin) initScripting() error {
 func (c *gcontext) loadScript(name string) error {
 	var err error
 
-	if err := babel.Init(5); err != nil {
-		return err
-	}
-
 	sv, _ := c.gj.scripts.LoadOrStore(name, &script{})
 	c.sc = sv.(*script)
 
@@ -50,9 +47,8 @@ func (c *gcontext) loadScript(name string) error {
 	return nil
 }
 
-func (c *gcontext) scriptCallReq(vars map[string]interface{}, role string) (
+func (c *gcontext) scriptCallReq(ctx context.Context, vars map[string]interface{}, role string) (
 	[]byte, error) {
-
 	if c.sc.ReqFunc == nil {
 		return nil, nil
 	}
@@ -67,8 +63,8 @@ func (c *gcontext) scriptCallReq(vars map[string]interface{}, role string) (
 		recover()
 	}()
 
-	span := c.gj.spanStart(c, "Execute Request Script")
-	err := c.sc.vm.Set("graphql", c.newGraphQLFunc(role))
+	ctx1, span := c.gj.spanStart(ctx, "Execute Request Script")
+	err := c.sc.vm.Set("graphql", c.newGraphQLFunc(ctx1, role))
 	if err != nil {
 		spanError(span, err)
 	}
@@ -79,7 +75,7 @@ func (c *gcontext) scriptCallReq(vars map[string]interface{}, role string) (
 	}
 
 	var userID interface{}
-	if v := c.Value(UserIDKey); v != nil {
+	if v := ctx.Value(UserIDKey); v != nil {
 		userID = v
 	}
 
@@ -91,7 +87,7 @@ func (c *gcontext) scriptCallReq(vars map[string]interface{}, role string) (
 	return json.Marshal(val)
 }
 
-func (c *gcontext) scriptCallResp(data []byte, role string) (_ []byte, err error) {
+func (c *gcontext) scriptCallResp(ctx context.Context, data []byte, role string) (_ []byte, err error) {
 	if c.sc.RespFunc == nil {
 		return data, nil
 	}
@@ -108,8 +104,8 @@ func (c *gcontext) scriptCallResp(data []byte, role string) (_ []byte, err error
 	})
 	defer timer.Stop()
 
-	span := c.gj.spanStart(c, "Execute Response Script")
-	err = c.sc.vm.Set("graphql", c.newGraphQLFunc(role))
+	ctx1, span := c.gj.spanStart(ctx, "Execute Response Script")
+	err = c.sc.vm.Set("graphql", c.newGraphQLFunc(ctx1, role))
 	if err != nil {
 		spanError(span, err)
 	}
@@ -120,7 +116,7 @@ func (c *gcontext) scriptCallResp(data []byte, role string) (_ []byte, err error
 	}
 
 	var userID interface{}
-	if v := c.Value(UserIDKey); v != nil {
+	if v := ctx.Value(UserIDKey); v != nil {
 		userID = v
 	}
 
@@ -139,6 +135,13 @@ func (c *gcontext) scriptCallResp(data []byte, role string) (_ []byte, err error
 
 func (c *gcontext) scriptInit(s *script, name string) error {
 	var spath string
+
+	if !c.gj.babelInit {
+		if err := babel.Init(5); err != nil {
+			return err
+		}
+		c.gj.babelInit = true
+	}
 
 	if c.gj.conf.ScriptPath != "" {
 		spath = c.gj.conf.ScriptPath
@@ -242,7 +245,7 @@ func (c *gcontext) scriptInit(s *script, name string) error {
 	return nil
 }
 
-func (c *gcontext) newGraphQLFunc(role string) func(string, map[string]interface{}, map[string]string) map[string]interface{} {
+func (c *gcontext) newGraphQLFunc(ctx context.Context, role string) func(string, map[string]interface{}, map[string]string) map[string]interface{} {
 
 	return func(
 		query string,
@@ -259,10 +262,9 @@ func (c *gcontext) newGraphQLFunc(role string) func(string, map[string]interface
 		}
 
 		ct := gcontext{
-			Context: c.Context,
-			gj:      c.gj,
-			op:      c.op,
-			rc:      c.rc,
+			gj: c.gj,
+			op: c.op,
+			rc: c.rc,
 		}
 
 		if len(vars) != 0 {
@@ -279,7 +281,7 @@ func (c *gcontext) newGraphQLFunc(role string) func(string, map[string]interface
 			r1 = role
 		}
 
-		qres, err := ct.execQuery(qreq, r1)
+		qres, err := ct.execQuery(ctx, qreq, r1)
 		if err != nil {
 			panic(err)
 		}

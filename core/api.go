@@ -112,6 +112,7 @@ type graphjin struct {
 	prod        bool
 	namespace   string
 	tracer      trace.Tracer
+	babelInit   bool
 }
 
 type GraphJin struct {
@@ -399,7 +400,7 @@ func (g *GraphJin) GraphQLByName(
 }
 
 func (gj *graphjin) graphQL(
-	c context.Context,
+	ctx context.Context,
 	op qcode.QType,
 	ns string,
 	name string,
@@ -409,16 +410,15 @@ func (gj *graphjin) graphQL(
 
 	var err error
 
-	span := gj.spanStart(c, "GraphJin Query")
+	ctx1, span := gj.spanStart(ctx, "GraphJin Query")
 	defer span.End()
 
-	ct := gcontext{
-		Context: c,
-		gj:      gj,
-		rc:      rc,
-		ns:      ns,
-		op:      op,
-		name:    name,
+	ct := &gcontext{
+		gj:   gj,
+		rc:   rc,
+		ns:   ns,
+		op:   op,
+		name: name,
 	}
 
 	res := &Result{
@@ -442,9 +442,9 @@ func (gj *graphjin) graphQL(
 
 	var role string
 
-	if v, ok := c.Value(UserRoleKey).(string); ok {
+	if v, ok := ctx1.Value(UserRoleKey).(string); ok {
 		role = v
-	} else if c.Value(UserIDKey) != nil {
+	} else if ctx1.Value(UserIDKey) != nil {
 		role = "user"
 	} else {
 		role = "anon"
@@ -457,7 +457,7 @@ func (gj *graphjin) graphQL(
 		query: []byte(query),
 		vars:  vars,
 	}
-	qres, err := ct.execQuery(qr, role)
+	qres, err := ct.execQuery(ctx1, qr, role)
 
 	if err != nil {
 		res.Errors = []Error{{Message: err.Error()}}

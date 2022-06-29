@@ -2,16 +2,16 @@ package core
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"sync"
 
 	"github.com/dosco/graphjin/core/internal/qcode"
 	"github.com/dosco/graphjin/internal/jsn"
-	"go.opentelemetry.io/otel/trace"
 )
 
-func (c *gcontext) execRemoteJoin(res queryResp) (queryResp, error) {
+func (c *gcontext) execRemoteJoin(ctx context.Context, res queryResp) (queryResp, error) {
 	var err error
 	sel := res.qc.st.qc.Selects
 
@@ -32,7 +32,7 @@ func (c *gcontext) execRemoteJoin(res queryResp) (queryResp, error) {
 		return res, errors.New("something wrong no remote ids found in db response")
 	}
 
-	to, err = c.resolveRemotes(from, sel, sfmap)
+	to, err = c.resolveRemotes(ctx, from, sel, sfmap)
 	if err != nil {
 		return res, err
 	}
@@ -49,6 +49,7 @@ func (c *gcontext) execRemoteJoin(res queryResp) (queryResp, error) {
 }
 
 func (c *gcontext) resolveRemotes(
+	ctx context.Context,
 	from []jsn.Field,
 	sel []qcode.Select,
 	sfmap map[string]*qcode.Select) ([]jsn.Field, error) {
@@ -87,10 +88,9 @@ func (c *gcontext) resolveRemotes(
 
 			//st := time.Now()
 
-			span := c.gj.spanStart(c, "Execute Remote Request")
-			c1 := trace.ContextWithSpan(c, span)
+			ctx1, span := c.gj.spanStart(ctx, "Execute Remote Request")
 
-			b, err := r.Fn.Resolve(c1, ResolverReq{
+			b, err := r.Fn.Resolve(ctx1, ResolverReq{
 				ID: string(id), Sel: s, Log: c.gj.log, ReqConfig: c.rc})
 
 			if err != nil {

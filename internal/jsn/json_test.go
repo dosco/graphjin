@@ -318,6 +318,7 @@ func TestFilter1(t *testing.T) {
 	err := jsn.Filter(&b, []byte(input2), []string{"id", "full_name", "embed"})
 	if err != nil {
 		t.Error(err)
+		return
 	}
 
 	expected := `[{"id": 1,"full_name": "Sidney St[1]roman","embed": {"id": 8,"full_name": "Caroll Orn Sr.","email": "joannarau@hegmann.io","__twitter_id": "ABC123"}},{"id": 2,"full_name": "Jerry Dickinson"}]`
@@ -334,6 +335,7 @@ func TestFilter2(t *testing.T) {
 	err := jsn.Filter(&b, []byte(value), []string{"id"})
 	if err != nil {
 		t.Error(err)
+		return
 	}
 
 	expected := `[{"id":1},{"id":2},{"id":3}]`
@@ -369,6 +371,7 @@ func TestValidateTrue(t *testing.T) {
 	err := jsn.Validate(string(json))
 	if err != nil {
 		t.Error(err)
+		return
 	}
 }
 

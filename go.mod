@@ -65,6 +65,7 @@ require (
 	github.com/subosito/gotenv v1.4.0 // indirect
 	github.com/tj/assert v0.0.3
 	go.mozilla.org/sops/v3 v3.7.3
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.32.0
 	go.opentelemetry.io/otel v1.7.0
 	go.opentelemetry.io/otel/sdk v1.7.0
 	go.opentelemetry.io/otel/trace v1.7.0
