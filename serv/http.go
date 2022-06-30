@@ -386,14 +386,16 @@ func parseBody(r *http.Request) ([]byte, error) {
 
 func newDTrace(dtrace propagation.TextMapPropagator, r *http.Request) (context.Context, []trace.SpanStartOption) {
 	ctx := dtrace.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+
 	opts := []trace.SpanStartOption{
 		trace.WithAttributes(semconv.NetAttributesFromHTTPRequest(
 			"tcp", r)...),
 		trace.WithAttributes(semconv.EndUserAttributesFromHTTPRequest(
-			r.Response.Request)...),
+			r)...),
 		trace.WithAttributes(semconv.HTTPServerAttributesFromHTTPRequest(
 			"GraphJin", r.URL.Path, r)...),
 		trace.WithSpanKind(trace.SpanKindServer),
 	}
+
 	return ctx, opts
 }
