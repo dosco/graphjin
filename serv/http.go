@@ -17,8 +17,13 @@ import (
 	"github.com/dosco/graphjin/serv/internal/etags"
 	"github.com/gorilla/websocket"
 	"github.com/rs/cors"
+
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 	"go.opentelemetry.io/otel/trace"
+
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -92,13 +97,14 @@ func apiV1Handler(s1 *Service, ns nspace, h http.Handler) http.Handler {
 }
 
 func (s1 *Service) apiV1GraphQL(ns nspace) http.Handler {
+	dtrace := otel.GetTextMapPropagator()
+
 	h := func(w http.ResponseWriter, r *http.Request) {
 		var err error
 
 		start := time.Now()
 		s := s1.Load().(*service)
 
-		ct := r.Context()
 		w.Header().Set("Content-Type", "application/json")
 
 		if websocket.IsWebSocketUpgrade(r) {
@@ -107,9 +113,9 @@ func (s1 *Service) apiV1GraphQL(ns nspace) http.Handler {
 		}
 
 		var req gqlReq
-		var span trace.Span
 
-		ct, span = s.spanStartWithContext(ct, "GraphQL Request")
+		ctx, opts := newDTrace(dtrace, r)
+		ctx, span := s.spanStart(ctx, "GraphQL Request", opts...)
 		defer span.End()
 
 		switch r.Method {
@@ -159,9 +165,9 @@ func (s1 *Service) apiV1GraphQL(ns nspace) http.Handler {
 			return
 		}
 
-		res, err := s.gj.GraphQL(ct, req.Query, req.Vars, &rc)
+		res, err := s.gj.GraphQL(ctx, req.Query, req.Vars, &rc)
 		s.responseHandler(
-			ct,
+			ctx,
 			w,
 			r,
 			start,
@@ -185,13 +191,14 @@ func (s1 *Service) apiV1GraphQL(ns nspace) http.Handler {
 
 func (s1 *Service) apiV1Rest(ns nspace) http.Handler {
 	rLen := len(routeREST)
+	dtrace := otel.GetTextMapPropagator()
+
 	h := func(w http.ResponseWriter, r *http.Request) {
 		var err error
 
 		start := time.Now()
 		s := s1.Load().(*service)
 
-		ct := r.Context()
 		w.Header().Set("Content-Type", "application/json")
 
 		if websocket.IsWebSocketUpgrade(r) {
@@ -203,7 +210,8 @@ func (s1 *Service) apiV1Rest(ns nspace) http.Handler {
 		var vars json.RawMessage
 		var span trace.Span
 
-		ct, span = s.spanStartWithContext(ct, "REST Request")
+		ctx, opts := newDTrace(dtrace, r)
+		ctx, span = s.spanStart(ctx, "REST Request", opts...)
 		defer span.End()
 
 		if len(r.RequestURI) < rLen {
@@ -244,9 +252,9 @@ func (s1 *Service) apiV1Rest(ns nspace) http.Handler {
 			rc.Namespace = core.Namespace{Name: ns.name, Set: true}
 		}
 
-		res, err := s.gj.GraphQLByName(ct, op, queryName, vars, &rc)
+		res, err := s.gj.GraphQLByName(ctx, op, queryName, vars, &rc)
 		s.responseHandler(
-			ct,
+			ctx,
 			w,
 			r,
 			start,
@@ -374,4 +382,18 @@ func parseBody(r *http.Request) ([]byte, error) {
 	}
 	defer r.Body.Close()
 	return b, nil
+}
+
+func newDTrace(dtrace propagation.TextMapPropagator, r *http.Request) (context.Context, []trace.SpanStartOption) {
+	ctx := dtrace.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+	opts := []trace.SpanStartOption{
+		trace.WithAttributes(semconv.NetAttributesFromHTTPRequest(
+			"tcp", r)...),
+		trace.WithAttributes(semconv.EndUserAttributesFromHTTPRequest(
+			r.Response.Request)...),
+		trace.WithAttributes(semconv.HTTPServerAttributesFromHTTPRequest(
+			"GraphJin", r.URL.Path, r)...),
+		trace.WithSpanKind(trace.SpanKindServer),
+	}
+	return ctx, opts
 }

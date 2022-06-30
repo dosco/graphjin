@@ -362,17 +362,8 @@ func (s *Service) Reload() error {
 	return s1.gj.Reload()
 }
 
-func (s *service) spanStart(c context.Context, name string) (context.Context, trace.Span) {
-	return s.tracer.Start(c,
-		name,
-		trace.WithSpanKind(trace.SpanKindServer))
-}
-
-func (s *service) spanStartWithContext(c context.Context, name string) (context.Context, trace.Span) {
-	c, span := s.tracer.Start(c,
-		name,
-		trace.WithSpanKind(trace.SpanKindServer))
-	return c, span
+func (s *service) spanStart(c context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
+	return s.tracer.Start(c, name, opts...)
 }
 
 func spanError(span trace.Span, err error) {
