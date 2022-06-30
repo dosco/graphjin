@@ -565,10 +565,8 @@ func (gj *graphjin) saveToAllowList(qc *qcode.QCode, query, namespace string) er
 	return gj.allowList.Set(av, query, qc.Metadata, namespace)
 }
 
-func (gj *graphjin) spanStart(c context.Context, name string) (context.Context, trace.Span) {
-	return gj.tracer.Start(c,
-		name,
-		trace.WithSpanKind(trace.SpanKindServer))
+func (gj *graphjin) spanStart(c context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
+	return gj.tracer.Start(c, name, opts...)
 }
 
 func spanError(span trace.Span, err error) {
