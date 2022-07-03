@@ -123,6 +123,11 @@ func (al *List) Load() ([]Item, error) {
 
 	for _, f := range files {
 		fn := f.Name()
+
+		if f.IsDir() {
+			continue
+		}
+
 		fn = strings.TrimSuffix(fn, filepath.Ext(fn))
 
 		if item, err := al.Get(fn); err == nil {
@@ -138,8 +143,36 @@ func (al *List) Load() ([]Item, error) {
 func (al *List) Get(name string) (Item, error) {
 	var item Item
 
-	newFile := path.Join(queryPath, (name + ".yaml"))
-	b, err := afero.ReadFile(al.fs, newFile)
+	filePath := path.Join(queryPath, name)
+
+	fn := (filePath + ".gql")
+	if ok, err := afero.Exists(al.fs, fn); ok {
+		return itemFromGQL(al.fs, fn)
+	} else if err != nil {
+		return item, err
+	}
+
+	fn = (filePath + ".graphql")
+	if ok, err := afero.Exists(al.fs, fn); ok {
+		return itemFromGQL(al.fs, fn)
+	} else if err != nil {
+		return item, err
+	}
+
+	fn = (filePath + ".yaml")
+	if ok, err := afero.Exists(al.fs, fn); ok {
+		return itemFromYaml(al.fs, fn)
+	} else if err != nil {
+		return item, err
+	}
+
+	return item, nil
+}
+
+func itemFromYaml(fs afero.Fs, fn string) (Item, error) {
+	var item Item
+
+	b, err := afero.ReadFile(fs, fn)
 	if err != nil {
 		return item, err
 	}
@@ -147,6 +180,20 @@ func (al *List) Get(name string) (Item, error) {
 	if err := yaml.Unmarshal(b, &item); err != nil {
 		return item, err
 	}
+	return item, nil
+}
+
+func itemFromGQL(fs afero.Fs, fn string) (Item, error) {
+	var item Item
+
+	query, err := parseGQLFile(fs, fn)
+	if err != nil {
+		return item, err
+	}
+	item.Query = query
+	item.Name = QueryName(item.Query)
+	item.key = strings.ToLower(item.Name)
+
 	return item, nil
 }
 
@@ -334,21 +381,3 @@ func (al *List) FragmentFetcher(namespace string) func(name string) (string, err
 		return string(v), err
 	}
 }
-
-// func (al *List) GetQuery(name string) (Item, error) {
-// 	var item Item
-// 	var err error
-
-// 	b, err := ioutil.ReadFile(path.Join(al.queryPath, (name + ".yaml")))
-// 	if err == nil {
-// 		return item, err
-// 	}
-
-// 	return parseYAML(b)
-// }
-
-// func parseYAML(b []byte) (Item, error) {
-// 	var item Item
-// 	err := yaml.Unmarshal(b, &item)
-// 	return item, err
-// }
