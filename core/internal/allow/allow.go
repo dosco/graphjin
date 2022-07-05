@@ -15,6 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/chirino/graphql/schema"
+	"github.com/dosco/graphjin/core/internal/graph"
 	"github.com/dosco/graphjin/internal/jsn"
 	"github.com/spf13/afero"
 )
@@ -106,6 +107,7 @@ func (al *List) Set(vars []byte, query string, md Metadata, namespace string) er
 		return err
 	}
 
+	// item.Name = name
 	item.Namespace = namespace
 	item.Vars = string(vars)
 	item.Metadata = md
@@ -190,8 +192,12 @@ func itemFromGQL(fs afero.Fs, fn string) (Item, error) {
 	if err != nil {
 		return item, err
 	}
+	h, err := graph.FastParse(query)
+	if err != nil {
+		return item, err
+	}
 	item.Query = query
-	item.Name = QueryName(item.Query)
+	item.Name = h.Name
 	item.key = strings.ToLower(item.Name)
 
 	return item, nil
@@ -252,7 +258,6 @@ func parseQuery(b string) (Item, error) {
 		return item, err
 	}
 
-	item.Name = QueryName(item.Query)
 	item.key = strings.ToLower(item.Name)
 	return item, nil
 }
@@ -273,7 +278,7 @@ func setValue(st int, v string, item Item) (Item, error) {
 
 	case expFrag:
 		f := Frag{Value: val()}
-		f.Name = QueryName(f.Value)
+		f.Name = fragmentName(f.Value)
 		item.frags = append(item.frags, f)
 	}
 
@@ -292,11 +297,16 @@ func (al *List) save(item Item) error {
 	query := buf.String()
 	buf.Reset()
 
-	item.Name = QueryName(query)
+	h, err := graph.FastParse(query)
+	if err != nil {
+		return err
+	}
+
+	item.Name = h.Name
 	item.key = strings.ToLower(item.Name)
 
 	if item.Name == "" {
-		return nil
+		return errors.New("no name defined for query")
 	}
 
 	if err := al.saveItem(item, true); err != nil {

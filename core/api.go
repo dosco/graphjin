@@ -59,6 +59,7 @@ import (
 	"github.com/dop251/goja"
 	"github.com/dosco/graphjin/core/internal/allow"
 	"github.com/dosco/graphjin/core/internal/crypto"
+	"github.com/dosco/graphjin/core/internal/graph"
 	"github.com/dosco/graphjin/core/internal/psql"
 	"github.com/dosco/graphjin/core/internal/qcode"
 	"github.com/dosco/graphjin/core/internal/sdata"
@@ -128,6 +129,10 @@ type script struct {
 }
 
 type Option func(*graphjin) error
+
+var (
+	errPersistedQueryNotFound = errors.New("persisted query not found")
+)
 
 // NewGraphJin creates the GraphJin struct, this involves querying the database to learn its
 // schemas and relationships
@@ -303,10 +308,16 @@ func (g *GraphJin) GraphQL(
 			op = v.op
 			name = v.name
 		} else {
-			err = errors.New("PersistedQueryNotFound")
+			return nil, errPersistedQueryNotFound
 		}
+
 	} else {
-		op, name = qcode.GetQType(query)
+		if h, err := graph.FastParse(query); err == nil {
+			op = qcode.GetQType(h.Type)
+			name = h.Name
+		} else {
+			return nil, err
+		}
 	}
 
 	// use the chirino/graphql library for introspection queries
@@ -497,11 +508,20 @@ func (g *GraphJin) IsProd() bool {
 	return gj.prod
 }
 
+type Header struct {
+	Type OpType
+	Name string
+}
+
 // Operation function return the operation type and name from the query.
 // It uses a very fast algorithm to extract the operation without having to parse the query.
-func Operation(query string) (OpType, string) {
-	qt, name := qcode.GetQType(query)
-	return OpType(qt), name
+func Operation(query string) (Header, error) {
+	if h, err := graph.FastParse(query); err == nil {
+		t := OpType(qcode.GetQType(h.Type))
+		return Header{t, h.Name}, nil
+	} else {
+		return Header{}, err
+	}
 }
 
 func errResult(ns string, op qcode.QType, name string, err error) *Result {

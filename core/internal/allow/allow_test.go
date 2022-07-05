@@ -2,6 +2,8 @@ package allow
 
 import (
 	"testing"
+
+	"github.com/dosco/graphjin/core/internal/graph"
 )
 
 func TestGQLName1(t *testing.T) {
@@ -12,10 +14,13 @@ func TestGQLName1(t *testing.T) {
 			where: { id: { and: { greater_or_equals: 20, lt: 28 } } }
 		) { id name } }`
 
-	name := QueryName(q)
+	h, err := graph.FastParse(q)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	if name != "" {
-		t.Fatal("Name should be empty, not ", name)
+	if h.Name != "" {
+		t.Fatal("Name should be empty, not ", h.Name)
 	}
 }
 
@@ -33,10 +38,13 @@ func TestGQLName2(t *testing.T) {
 		}
 	}`
 
-	name := QueryName(q)
+	h, err := graph.FastParse(q)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	if name != "hakuna_matata" {
-		t.Fatal("Name should be 'hakuna_matata', not ", name)
+	if h.Name != "hakuna_matata" {
+		t.Fatal("Name should be 'hakuna_matata', not ", h.Name)
 	}
 }
 
@@ -46,10 +54,13 @@ func TestGQLName3(t *testing.T) {
 
 	// var v2 = `   { products( limit: 30, order_by: { price: desc }, distinct: [ price ] where: { id: { and: { greater_or_equals: 20, lt: 28 } } }) { id name price user { id email } } } `
 
-	name := QueryName(q)
+	h, err := graph.FastParse(q)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	if name != "means" {
-		t.Fatal("Name should be 'means', not ", name)
+	if h.Name != "means" {
+		t.Fatal("Name should be 'means', not ", h.Name)
 	}
 }
 
@@ -61,10 +72,13 @@ func TestGQLName4(t *testing.T) {
 		}
 	}`
 
-	name := QueryName(q)
+	h, err := graph.FastParse(q)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	if name != "no_worries" {
-		t.Fatal("Name should be 'no_worries', not ", name)
+	if h.Name != "no_worries" {
+		t.Fatal("Name should be 'no_worries', not ", h.Name)
 	}
 }
 
@@ -76,10 +90,13 @@ func TestGQLName5(t *testing.T) {
 		}
 	}`
 
-	name := QueryName(q)
+	h, err := graph.FastParse(q)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	if len(name) != 0 {
-		t.Fatal("Name should be empty, not ", name)
+	if h.Name != "" {
+		t.Fatal("Name should be empty, not ", h.Name)
 	}
 }
 

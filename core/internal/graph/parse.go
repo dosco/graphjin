@@ -42,9 +42,13 @@ const (
 	FieldKeyword
 )
 
+type Header struct {
+	Type ParserType
+	Name string
+}
+
 type Operation struct {
-	Type       ParserType
-	Name       string
+	Header
 	Args       []Arg
 	argsA      [10]Arg
 	Directives []Directive
@@ -344,7 +348,7 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 	for {
 		if p.peek(itemEOF) {
 			p.ignore()
-			return nil, errors.New("invalid query")
+			return nil, errors.New("invalid query: end reached before query was closed")
 		}
 
 		if p.peek(itemObjClose) {

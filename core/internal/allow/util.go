@@ -4,7 +4,7 @@ import (
 	"strings"
 )
 
-func QueryName(b string) string {
+func fragmentName(b string) string {
 	state, s := 0, 0
 	bl := len(b)
 
