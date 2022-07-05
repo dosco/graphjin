@@ -1,128 +1,144 @@
-package qcode
+package graph
 
 import (
 	"testing"
 )
 
-func TestGetQType(t *testing.T) {
+func TestFastPrase(t *testing.T) {
 	type args struct {
 		gql string
-	}
-	type want struct {
-		op   QType
-		name string
 	}
 	type ts struct {
 		name string
 		args args
-		want want
+		want Header
+		err  bool
 	}
 	tests := []ts{
-		ts{
+		{
 			name: "query",
-			args: args{gql: `query { query mutation(id: "query {") { id } subscription }`},
-			want: want{QTQuery, ""},
+			args: args{gql: `fragment User on users {  slug  firstName: first_name } 
+			
+			query { 
+				query mutation(id: "query {") 
+				{ 
+					id } 
+					subscription }`},
+			want: Header{OpQuery, ""},
 		},
-		ts{
+		{
 			name: "query with name",
 			args: args{gql: `query getStuff { query mutation(id: "query \"test1 '{") { id } subscription }`},
-			want: want{QTQuery, "getStuff"},
+			want: Header{OpQuery, "getStuff"},
 		},
-		ts{
+		{
 			name: "fragment first, query with name",
 			args: args{gql: `fragment User on users { id name } query getStuff { query mutation(id: "query \"test1 '{") { id } subscription }`},
-			want: want{QTQuery, "getStuff"},
+			want: Header{OpQuery, "getStuff"},
 		},
-		ts{
+		{
 			name: "fragment last, query with name",
 			args: args{gql: `query getStuff { query mutation(id: "query \"test1 '{") { id } subscription }fragment User on users { id name }`},
-			want: want{QTQuery, "getStuff"},
+			want: Header{OpQuery, "getStuff"},
 		},
-		ts{
+		{
 			name: "mutation",
 			args: args{gql: `mutation { query mutation(id: "query {") { id } subscription }`},
-			want: want{QTMutation, ""},
+			want: Header{OpMutate, ""},
 		},
-		ts{
+		{
 			name: "subscription",
 			args: args{gql: `subscription { query mutation(id: "query {") { id } subscription }`},
-			want: want{QTSubscription, ""},
+			want: Header{OpSub, ""},
 		},
-		ts{
+		{
 			name: "default query",
 			args: args{gql: ` { query mutation(id: "query {") { id } subscription }`},
-			want: want{QTQuery, ""},
+			want: Header{OpQuery, ""},
 		},
-		ts{
+		{
 			name: "default query with comment",
-			args: args{gql: `# mutation is good
+			args: args{gql: `#mutation is good
 				query { query mutation(id: "query") { id } subscription }`},
-			want: want{QTQuery, ""},
+			want: Header{OpQuery, ""},
 		},
-		ts{
+		{
 			name: "failed query with comment",
 			args: args{gql: `# query is good query { query mutation(id: "query {{") { id } subscription }`},
-			want: want{QTUnknown, ""},
+			err:  true,
 		},
 		// tests without space after the op type
-		ts{
+		{
 			name: "query without space",
 			args: args{gql: `query{ query mutation(id: "query {") { id } subscription }`},
-			want: want{QTQuery, ""},
+			want: Header{OpQuery, ""},
 		},
-		ts{
+		{
 			name: "query with name, without space",
 			args: args{gql: `query getStuff{ query mutation(id: "query \"test1 '{") { id } subscription }`},
-			want: want{QTQuery, "getStuff"},
+			want: Header{OpQuery, "getStuff"},
 		},
-		ts{
+		{
+			name: "query with name that includes underscores",
+			args: args{gql: `query get_cool_stuff{ query mutation(id: "query \"test1 '{") { id } subscription }`},
+			want: Header{OpQuery, "get_cool_stuff"},
+		},
+		{
 			name: "fragment first, query with name, without space",
 			args: args{gql: `fragment User on users { id name } query getStuff{ query mutation(id: "query \"test1 '{") { id } subscription }`},
-			want: want{QTQuery, "getStuff"},
+			want: Header{OpQuery, "getStuff"},
 		},
-		ts{
+		{
 			name: "fragment last, query with name, without space",
 			args: args{gql: `query getStuff{ query mutation(id: "query \"test1 '{") { id } subscription }fragment User on users { id name }`},
-			want: want{QTQuery, "getStuff"},
+			want: Header{OpQuery, "getStuff"},
 		},
-		ts{
+		{
 			name: "mutation without space",
 			args: args{gql: `mutation{ query mutation(id: "query {") { id } subscription }`},
-			want: want{QTMutation, ""},
+			want: Header{OpMutate, ""},
 		},
-		ts{
+		{
 			name: "subscription without space",
 			args: args{gql: `subscription{ query mutation(id: "query {") { id } subscription }`},
-			want: want{QTSubscription, ""},
+			want: Header{OpSub, ""},
 		},
-		ts{
+		{
 			name: "default query without space",
 			args: args{gql: `{ query mutation(id: "query {") { id } subscription }`},
-			want: want{QTQuery, ""},
+			want: Header{OpQuery, ""},
 		},
-		ts{
+		{
 			name: "default query with comment without space",
 			args: args{gql: `# mutation is good
 				query{ query mutation(id: "query") { id } subscription }`},
-			want: want{QTQuery, ""},
+			want: Header{OpQuery, ""},
 		},
-		ts{
+		{
 			name: "failed query with comment, without space",
 			args: args{gql: `# query is good query{ query mutation(id: "query {{") { id } subscription }`},
-			want: want{QTUnknown, ""},
+			err:  true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			op, name := GetQType(tt.args.gql)
+			h, err := FastParse(tt.args.gql)
 
-			if op != tt.want.op {
-				t.Errorf("operation = %v, want %v", op, tt.want.op)
+			if tt.err && err != nil {
+				return
 			}
 
-			if name != tt.want.name {
-				t.Errorf("name = %s, want %s", name, tt.want.name)
+			if err != nil {
+				t.Error(err)
+			}
+
+			if h.Type != tt.want.Type {
+				t.Errorf("operation = %v, want %v", h.Type, tt.want.Type)
+			}
+
+			if h.Name != tt.want.Name {
+				t.Errorf("name = %s, want %s", h.Name, tt.want.Name)
 			}
 		})
 	}

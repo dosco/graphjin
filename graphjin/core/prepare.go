@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/dosco/graphjin/core/internal/allow"
+	"github.com/dosco/graphjin/core/internal/graph"
 	"github.com/dosco/graphjin/core/internal/qcode"
 )
 
@@ -85,15 +86,20 @@ func (gj *graphjin) initAllowList() error {
 		}
 
 		q := strings.TrimSpace(item.Query)
-		qt, _ := qcode.GetQType(q)
-		qk := gj.generateQueryKeys(item)
+		h, err := graph.FastParse(q)
+		if err != nil {
+			return err
+		}
+
 		qr := queryReq{
-			op:    qt,
-			name:  item.Name,
+			op:    qcode.GetQType(h.Type),
+			name:  h.Name,
 			query: []byte(q),
 			vars:  []byte(item.Vars),
 		}
+
 		ov := item.Metadata.Order.Var
+		qk := gj.generateQueryKeys(item)
 
 		for _, v := range qk {
 			qc := &queryComp{qr: qr}

@@ -307,17 +307,7 @@ func (co *Compiler) Compile(
 
 	qc := QCode{Name: op.Name, SType: QTQuery, Schema: co.s, Vars: vars}
 	qc.Roots = qc.rootsA[:0]
-
-	switch op.Type {
-	case graph.OpQuery:
-		qc.Type = QTQuery
-	case graph.OpSub:
-		qc.Type = QTSubscription
-	case graph.OpMutate:
-		qc.Type = QTMutation
-	default:
-		return nil, fmt.Errorf("invalid operation: %s", op.Type)
-	}
+	qc.Type = GetQType(op.Type)
 
 	if err := co.compileQuery(&qc, &op, role); err != nil {
 		return nil, err
@@ -482,7 +472,7 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 	}
 
 	if id == 0 {
-		return errors.New("invalid query")
+		return errors.New("invalid query: no seclectors found")
 	}
 
 	return nil

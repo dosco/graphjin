@@ -13,6 +13,7 @@ import (
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja/parser"
+	"github.com/dosco/graphjin/core/internal/graph"
 	"github.com/dosco/graphjin/core/internal/qcode"
 	babel "github.com/jvatic/goja-babel"
 )
@@ -253,7 +254,13 @@ func (c *gcontext) newGraphQLFunc(ctx context.Context, role string) func(string,
 		opt map[string]string) map[string]interface{} {
 		var err error
 
-		op, name := qcode.GetQType(query)
+		h, err := graph.FastParse(query)
+		if err != nil {
+			panic(err)
+		}
+
+		op := qcode.GetQType(h.Type)
+		name := h.Name
 
 		qreq := queryReq{
 			op:    op,
@@ -262,9 +269,10 @@ func (c *gcontext) newGraphQLFunc(ctx context.Context, role string) func(string,
 		}
 
 		ct := gcontext{
-			gj: c.gj,
-			op: c.op,
-			rc: c.rc,
+			gj:   c.gj,
+			rc:   c.rc,
+			op:   op,
+			name: name,
 		}
 
 		if len(vars) != 0 {

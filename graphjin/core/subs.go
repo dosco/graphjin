@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/avast/retry-go"
+	"github.com/dosco/graphjin/core/internal/graph"
 	"github.com/dosco/graphjin/core/internal/qcode"
 	"github.com/rs/xid"
 )
@@ -83,7 +84,14 @@ func (g *GraphJin) Subscribe(
 	var err error
 
 	gj := g.Load().(*graphjin)
-	op, name := qcode.GetQType(query)
+
+	h, err := graph.FastParse(query)
+	if err != nil {
+		panic(err)
+	}
+
+	op := qcode.GetQType(h.Type)
+	name := h.Name
 
 	if op != qcode.QTSubscription {
 		return nil, errors.New("subscription: not a subscription query")

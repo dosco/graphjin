@@ -166,6 +166,11 @@ func (s1 *Service) apiV1GraphQL(ns nspace) http.Handler {
 		}
 
 		res, err := s.gj.GraphQL(ctx, req.Query, req.Vars, &rc)
+		if res == nil && err != nil {
+			renderErr(w, err)
+			return
+		}
+
 		s.responseHandler(
 			ctx,
 			w,
