@@ -233,9 +233,9 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 	if sel.Paging.Cursor {
 		c.w.WriteString(`, CONCAT_WS(','`)
 		for i := 0; i < len(sel.OrderBy); i++ {
-			c.w.WriteString(`, max(__cur_`)
+			c.w.WriteString(`, CAST(MAX(__cur_`)
 			int32String(c.w, int32(i))
-			c.w.WriteString(`)`)
+			c.w.WriteString(`) AS CHAR(20))`)
 		}
 		c.w.WriteString(`) as __cursor`)
 	}

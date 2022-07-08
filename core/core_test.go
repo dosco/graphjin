@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"database/sql"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -128,4 +129,18 @@ func TestMain(m *testing.M) {
 func newConfig(c *core.Config) *core.Config {
 	c.DBSchemaPollDuration = -1
 	return c
+}
+
+func printJSON(val []byte) {
+	var m map[string]interface{}
+
+	if err := json.Unmarshal(val, &m); err != nil {
+		panic(err)
+	}
+
+	if v, err := json.Marshal(m); err == nil {
+		fmt.Println(string(v))
+	} else {
+		panic(err)
+	}
 }

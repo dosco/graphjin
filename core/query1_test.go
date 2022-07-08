@@ -35,9 +35,9 @@ func Example_query() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"products": [{"id": 1, "owner": {"id": 1, "fullName": "User 1"}}, {"id": 2, "owner": {"id": 2, "fullName": "User 2"}}, {"id": 3, "owner": {"id": 3, "fullName": "User 3"}}]}
+	// Output: {"products":[{"id":1,"owner":{"fullName":"User 1","id":1}},{"id":2,"owner":{"fullName":"User 2","id":2}},{"id":3,"owner":{"fullName":"User 3","id":3}}]}
 }
 
 func Example_queryWithUser() {
@@ -61,9 +61,9 @@ func Example_queryWithUser() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"products": [{"id": 31, "owner": {"id": 31}}]}
+	// Output: {"products":[{"id":31,"owner":{"id":31}}]}
 }
 
 func Example_queryWithDynamicOrderBy() {
@@ -175,9 +175,9 @@ func Example_queryWithLimitOffsetOrderByDistinctAndWhere() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"products": [{"id": 99, "name": "Product 99", "price": 109.5}, {"id": 98, "name": "Product 98", "price": 108.5}, {"id": 97, "name": "Product 97", "price": 107.5}, {"id": 96, "name": "Product 96", "price": 106.5}, {"id": 95, "name": "Product 95", "price": 105.5}]}
+	// Output: {"products":[{"id":99,"name":"Product 99","price":109.5},{"id":98,"name":"Product 98","price":108.5},{"id":97,"name":"Product 97","price":107.5},{"id":96,"name":"Product 96","price":106.5},{"id":95,"name":"Product 95","price":105.5}]}
 }
 
 func Example_queryWithWhere1() {
@@ -207,9 +207,9 @@ func Example_queryWithWhere1() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"products": [{"id": 3}, {"id": 34}]}
+	// Output: {"products":[{"id":3},{"id":34}]}
 }
 
 func Example_queryWithWhereIn() {
@@ -233,9 +233,9 @@ func Example_queryWithWhereIn() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"products": [{"id": 1}, {"id": 2}, {"id": 3}]}
+	// Output: {"products":[{"id":1},{"id":2},{"id":3}]}
 }
 
 func Example_queryWithWhereNotIsNullAndGreaterThan() {
@@ -264,9 +264,9 @@ func Example_queryWithWhereNotIsNullAndGreaterThan() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"products": [{"id": 1, "name": "Product 1", "price": 11.5}, {"id": 2, "name": "Product 2", "price": 12.5}, {"id": 3, "name": "Product 3", "price": 13.5}]}
+	// Output: {"products":[{"id":1,"name":"Product 1","price":11.5},{"id":2,"name":"Product 2","price":12.5},{"id":3,"name":"Product 3","price":13.5}]}
 }
 
 func Example_queryWithWhereGreaterThanOrLesserThan() {
@@ -295,9 +295,9 @@ func Example_queryWithWhereGreaterThanOrLesserThan() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"products": [{"id": 1, "name": "Product 1", "price": 11.5}, {"id": 2, "name": "Product 2", "price": 12.5}, {"id": 3, "name": "Product 3", "price": 13.5}]}
+	// Output: {"products":[{"id":1,"name":"Product 1","price":11.5},{"id":2,"name":"Product 2","price":12.5},{"id":3,"name":"Product 3","price":13.5}]}
 }
 
 func Example_queryWithWhereOnRelatedTable() {
@@ -322,9 +322,9 @@ func Example_queryWithWhereOnRelatedTable() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"products": [{"id": 2, "owner": {"id": 2, "email": "user2@test.com"}}, {"id": 3, "owner": {"id": 3, "email": "user3@test.com"}}]}
+	// Output: {"products":[{"id":2,"owner":{"email":"user2@test.com","id":2}},{"id":3,"owner":{"email":"user3@test.com","id":3}}]}
 }
 
 func Example_queryWithAlternateFieldNames() {
@@ -347,9 +347,9 @@ func Example_queryWithAlternateFieldNames() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"comments": [{"id": 1, "commenter": {"email": "user1@test.com"}}, {"id": 2, "commenter": {"email": "user2@test.com"}}]}
+	// Output: {"comments":[{"commenter":{"email":"user1@test.com"},"id":1},{"commenter":{"email":"user2@test.com"},"id":2}]}
 }
 
 func Example_queryByID() {
@@ -374,9 +374,9 @@ func Example_queryByID() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"products": {"id": 2, "name": "Product 2"}}
+	// Output: {"products":{"id":2,"name":"Product 2"}}
 }
 
 func Example_queryBySearch() {
@@ -401,9 +401,9 @@ func Example_queryBySearch() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"products": [{"id": 3, "name": "Product 3"}]}
+	// Output: {"products":[{"id":3,"name":"Product 3"}]}
 }
 
 func Example_queryParentsWithChildren() {
@@ -427,9 +427,9 @@ func Example_queryParentsWithChildren() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"users": [{"email": "user1@test.com", "products": [{"name": "Product 1", "price": 11.5}]}, {"email": "user2@test.com", "products": [{"name": "Product 2", "price": 12.5}]}]}
+	// Output: {"users":[{"email":"user1@test.com","products":[{"name":"Product 1","price":11.5}]},{"email":"user2@test.com","products":[{"name":"Product 2","price":12.5}]}]}
 }
 
 func Example_queryChildrenWithParent() {
@@ -453,9 +453,9 @@ func Example_queryChildrenWithParent() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"products": [{"name": "Product 1", "owner": {"email": "user1@test.com"}, "price": 11.5}, {"name": "Product 2", "owner": {"email": "user2@test.com"}, "price": 12.5}]}
+	// Output: {"products":[{"name":"Product 1","owner":{"email":"user1@test.com"},"price":11.5},{"name":"Product 2","owner":{"email":"user2@test.com"},"price":12.5}]}
 }
 
 func Example_queryParentAndChildrenViaArrayColumn() {
@@ -495,9 +495,9 @@ func Example_queryParentAndChildrenViaArrayColumn() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"products": [{"name": "Product 1", "price": 11.5, "categories": [{"id": 1, "name": "Category 1"}, {"id": 2, "name": "Category 2"}]}, {"name": "Product 2", "price": 12.5, "categories": [{"id": 1, "name": "Category 1"}, {"id": 2, "name": "Category 2"}]}], "categories": [{"name": "Category 1", "products": [{"name": "Product 1"}, {"name": "Product 2"}]}, {"name": "Category 2", "products": [{"name": "Product 1"}, {"name": "Product 2"}]}]}
+	// Output: {"categories":[{"name":"Category 1","products":[{"name":"Product 1"},{"name":"Product 2"}]},{"name":"Category 2","products":[{"name":"Product 1"},{"name":"Product 2"}]}],"products":[{"categories":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"}],"name":"Product 1","price":11.5},{"categories":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"}],"name":"Product 2","price":12.5}]}
 }
 
 func Example_queryManyToManyViaJoinTable1() {
@@ -523,9 +523,9 @@ func Example_queryManyToManyViaJoinTable1() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"products": [{"name": "Product 1", "owner": {"email": "user1@test.com"}, "customer": [{"email": "user2@test.com"}]}, {"name": "Product 2", "owner": {"email": "user2@test.com"}, "customer": [{"email": "user3@test.com"}]}]}
+	// Output: {"products":[{"customer":[{"email":"user2@test.com"}],"name":"Product 1","owner":{"email":"user1@test.com"}},{"customer":[{"email":"user3@test.com"}],"name":"Product 2","owner":{"email":"user2@test.com"}}]}
 }
 
 func Example_queryManyToManyViaJoinTable2() {
@@ -549,9 +549,9 @@ func Example_queryManyToManyViaJoinTable2() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"users": [{"email": "user1@test.com", "products": [{"name": "Product 1"}], "full_name": "User 1"}, {"email": "user2@test.com", "products": [{"name": "Product 2"}], "full_name": "User 2"}]}
+	// Output: {"users":[{"email":"user1@test.com","full_name":"User 1","products":[{"name":"Product 1"}]},{"email":"user2@test.com","full_name":"User 2","products":[{"name":"Product 2"}]}]}
 }
 
 func Example_queryWithAggregation() {
@@ -571,9 +571,9 @@ func Example_queryWithAggregation() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"products": [{"count_id": 100}]}
+	// Output: {"products":[{"count_id":100}]}
 }
 
 func Example_queryWithAggregationBlockedColumn() {
@@ -600,7 +600,7 @@ func Example_queryWithAggregationBlockedColumn() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
 	// Output: column blocked: sum (anon)
 }
@@ -629,7 +629,7 @@ func Example_queryWithFunctionsBlocked() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
 	// Output: functions blocked: price (anon)
 }
@@ -651,9 +651,9 @@ func Example_queryWithFunctionsWithWhere() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"products": [{"max_price": 110.5}]}
+	// Output: {"products":[{"max_price":110.5}]}
 }
 
 func Example_queryWithSyntheticTables() {
@@ -683,9 +683,9 @@ func Example_queryWithSyntheticTables() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"me": {"email": "user1@test.com"}}
+	// Output: {"me":{"email":"user1@test.com"}}
 }
 
 func Example_queryWithVariables() {
@@ -710,9 +710,9 @@ func Example_queryWithVariables() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"products": {"id": 70, "name": "Product 70"}}
+	// Output: {"products":{"id":70,"name":"Product 70"}}
 
 }
 
@@ -746,9 +746,9 @@ func Example_queryWithMultipleTopLevelTables() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"users": {"id": 1, "email": "user1@test.com"}, "products": {"id": 1, "name": "Product 1", "customer": [{"email": "user2@test.com"}]}, "purchases": {"id": 1}}
+	// Output: {"products":{"customer":[{"email":"user2@test.com"}],"id":1,"name":"Product 1"},"purchases":{"id":1},"users":{"email":"user1@test.com","id":1}}
 }
 
 func Example_queryWithFragments1() {
@@ -780,9 +780,9 @@ func Example_queryWithFragments1() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"users": [{"id": 1, "email": "user1@test.com", "full_name": "User 1", "stripe_id": "payment_id_1001"}, {"id": 2, "email": "user2@test.com", "full_name": "User 2", "stripe_id": "payment_id_1002"}]}
+	// Output: {"users":[{"email":"user1@test.com","full_name":"User 1","id":1,"stripe_id":"payment_id_1001"},{"email":"user2@test.com","full_name":"User 2","id":2,"stripe_id":"payment_id_1002"}]}
 }
 
 func Example_queryWithFragments2() {
@@ -815,9 +815,9 @@ func Example_queryWithFragments2() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"users": [{"id": 1, "email": "user1@test.com", "full_name": "User 1", "stripe_id": "payment_id_1001"}, {"id": 2, "email": "user2@test.com", "full_name": "User 2", "stripe_id": "payment_id_1002"}]}
+	// Output: {"users":[{"email":"user1@test.com","full_name":"User 1","id":1,"stripe_id":"payment_id_1001"},{"email":"user2@test.com","full_name":"User 2","id":2,"stripe_id":"payment_id_1002"}]}
 }
 
 func Example_queryWithFragments3() {
@@ -850,9 +850,9 @@ func Example_queryWithFragments3() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"users": [{"id": 1, "email": "user1@test.com", "full_name": "User 1", "stripe_id": "payment_id_1001"}, {"id": 2, "email": "user2@test.com", "full_name": "User 2", "stripe_id": "payment_id_1002"}]}
+	// Output: {"users":[{"email":"user1@test.com","full_name":"User 1","id":1,"stripe_id":"payment_id_1001"},{"email":"user2@test.com","full_name":"User 2","id":2,"stripe_id":"payment_id_1002"}]}
 }
 
 func Example_queryWithUnionForPolymorphicRelationships() {
@@ -896,9 +896,9 @@ func Example_queryWithUnionForPolymorphicRelationships() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"notifications": [{"id": 1, "verb": "Joined", "subject": {"email": "user1@test.com"}}, {"id": 2, "verb": "Bought", "subject": {"name": "Product 2"}}]}
+	// Output: {"notifications":[{"id":1,"subject":{"email":"user1@test.com"},"verb":"Joined"},{"id":2,"subject":{"name":"Product 2"},"verb":"Bought"}]}
 }
 
 func Example_queryWithSkipAndIncludeDirectives() {
@@ -925,9 +925,9 @@ func Example_queryWithSkipAndIncludeDirectives() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"users": [], "products": [{"id": 1, "name": "Product 1"}, {"id": 2, "name": "Product 2"}]}
+	// Output: {"products":[{"id":1,"name":"Product 1"},{"id":2,"name":"Product 2"}],"users":[]}
 }
 
 func Example_queryWithRemoteAPIJoin() {
@@ -969,9 +969,9 @@ func Example_queryWithRemoteAPIJoin() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"users": [{"email": "user1@test.com", "payments":[{"desc":"Payment 1 for payment_id_1001"},{"desc": "Payment 2 for payment_id_1001"}]}, {"email": "user2@test.com", "payments":[{"desc":"Payment 1 for payment_id_1002"},{"desc": "Payment 2 for payment_id_1002"}]}]}
+	// Output: {"users":[{"email":"user1@test.com","payments":[{"desc":"Payment 1 for payment_id_1001"},{"desc":"Payment 2 for payment_id_1001"}]},{"email":"user2@test.com","payments":[{"desc":"Payment 1 for payment_id_1002"},{"desc":"Payment 2 for payment_id_1002"}]}]}
 }
 
 func Example_queryWithCursorPagination() {
@@ -1055,9 +1055,9 @@ func Example_queryWithJsonColumn() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"users": {"id": 1, "category_counts": [{"count": 400, "category": {"name": "Category 1"}}, {"count": 600, "category": {"name": "Category 2"}}]}}
+	// Output: {"users":{"category_counts":[{"category":{"name":"Category 1"},"count":400},{"category":{"name":"Category 2"},"count":600}],"id":1}}
 }
 
 func Example_queryWithScriptDirective() {
@@ -1100,7 +1100,7 @@ func Example_queryWithScriptDirective() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
 	// Output: {"usersByID":{"email":"u...@test.com","id":2}}
 }
@@ -1142,7 +1142,7 @@ func Example_queryWithScriptDirectiveUsingGraphQL() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
 
 	// Output: {"usersByID":{"email":"user1@test.com","id":2}}
@@ -1189,7 +1189,7 @@ func Example_queryWithScriptDirectiveUsingHttp() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
 
 	// Output: {"hello":"world"}
@@ -1224,9 +1224,9 @@ func Example_queryWithView() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"hot_products": [{"product": {"id": 51, "name": "Product 51"}}, {"product": {"id": 52, "name": "Product 52"}}, {"product": {"id": 53, "name": "Product 53"}}]}
+	// Output: {"hot_products":[{"product":{"id":51,"name":"Product 51"}},{"product":{"id":52,"name":"Product 52"}},{"product":{"id":53,"name":"Product 53"}}]}
 }
 
 func Example_queryWithRecursiveRelationship1() {
@@ -1254,9 +1254,9 @@ func Example_queryWithRecursiveRelationship1() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"reply": {"id": 50, "comments": [{"id": 49}, {"id": 48}, {"id": 47}, {"id": 46}, {"id": 45}]}}
+	// Output: {"reply":{"comments":[{"id":49},{"id":48},{"id":47},{"id":46},{"id":45}],"id":50}}
 }
 
 func Example_queryWithRecursiveRelationship2() {
@@ -1279,10 +1279,10 @@ func Example_queryWithRecursiveRelationship2() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
 
-	// Output: {"comments": {"id": 95, "replies": [{"id": 96}, {"id": 97}, {"id": 98}, {"id": 99}, {"id": 100}]}}
+	// Output: {"comments":{"id":95,"replies":[{"id":96},{"id":97},{"id":98},{"id":99},{"id":100}]}}
 }
 
 func Example_queryWithRecursiveRelationshipAndAggregations() {
@@ -1305,10 +1305,10 @@ func Example_queryWithRecursiveRelationshipAndAggregations() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
 
-	// Output: {"comments": {"id": 95, "replies": [{"count_id": 5}]}}
+	// Output: {"comments":{"id":95,"replies":[{"count_id":5}]}}
 }
 
 func Example_queryWithSkippingAuthRequiredSelectors() {
@@ -1333,12 +1333,12 @@ func Example_queryWithSkippingAuthRequiredSelectors() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"products": [{"id": 1, "name": "Product 1", "owner": null}, {"id": 2, "name": "Product 2", "owner": null}]}
+	// Output: {"products":[{"id":1,"name":"Product 1","owner":null},{"id":2,"name":"Product 2","owner":null}]}
 }
 
-func Example_blockQueryWithRoles() {
+func Example_queryBlockWithRoles() {
 	gql := `query {
 		users {
 			id
@@ -1366,9 +1366,9 @@ func Example_blockQueryWithRoles() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"users": null}
+	// Output: {"users":null}
 }
 
 func Example_queryWithCamelToSnakeCase() {
@@ -1401,7 +1401,7 @@ func Example_queryWithCamelToSnakeCase() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"hotProducts": [{"products": {"id": 55}, "countryCode": "US", "countProductID": 1}]}
+	// Output: {"hotProducts":[{"countProductID":1,"countryCode":"US","products":{"id":55}}]}
 }
