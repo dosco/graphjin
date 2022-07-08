@@ -37,12 +37,12 @@ func Example_insert() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"users": [{"id": 1001, "email": "user1001@test.com"}]}
+	// Output: {"users":[{"email":"user1001@test.com","id":1001}]}
 }
 
-func Example_inlineInsert() {
+func Example_insertInline() {
 	gql := `mutation {
 		users(insert: { id: $id, email: $email, full_name: $full_name }) {
 			id
@@ -68,12 +68,12 @@ func Example_inlineInsert() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"users": [{"id": 1007, "email": "user1007@test.com", "full_name": "User 1007"}]}
+	// Output: {"users":[{"email":"user1007@test.com","full_name":"User 1007","id":1007}]}
 }
 
-func Example_inlineInsertWithValidation() {
+func Example_insertInlineWithValidation() {
 	gql := `mutation 
 		@constraint(variable: "email", format: "email", min: 1, max: 100)
 		@constraint(variable: "full_name", requiredIf: { id: 1007 } ) {
@@ -100,7 +100,7 @@ func Example_inlineInsertWithValidation() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
 	// Unordered output:
 	// Validation Failed: $full_name: Key: '' Error:Field validation for '' failed on the 'required_if' tag
@@ -108,7 +108,7 @@ func Example_inlineInsertWithValidation() {
 	// validation failed
 }
 
-func Example_inlineBulkInsert() {
+func Example_insertInlineBulk() {
 	gql := `mutation {
 		users(insert: [
 			{id: $id1, email: $email1, full_name: $full_name1},
@@ -138,9 +138,9 @@ func Example_inlineBulkInsert() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"users": [{"id": 1009, "email": "two@test.com"}, {"id": 1008, "email": "one@test.com"}]}
+	// Output: {"users":[{"email":"two@test.com","id":1009},{"email":"one@test.com","id":1008}]}
 }
 
 func Example_insertWithPresets() {
@@ -185,12 +185,12 @@ func Example_insertWithPresets() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"products": [{"id": 2001, "name": "Product 2001", "owner": {"id": 3, "email": "user3@test.com"}}]}
+	// Output: {"products":[{"id":2001,"name":"Product 2001","owner":{"email":"user3@test.com","id":3}}]}
 }
 
-func Example_bulkInsert() {
+func Example_insertBulk() {
 	gql := `mutation {
 		users(insert: $data) {
 			id
@@ -226,9 +226,9 @@ func Example_bulkInsert() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"users": [{"id": 1002, "email": "user1002@test.com"}, {"id": 1003, "email": "user1003@test.com"}]}
+	// Output: {"users":[{"email":"user1002@test.com","id":1002},{"email":"user1003@test.com","id":1003}]}
 }
 
 func Example_insertIntoMultipleRelatedTables() {
@@ -282,9 +282,9 @@ func Example_insertIntoMultipleRelatedTables() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"purchases": [{"product": {"id": 2002, "name": "Product 2002", "price": 2012.5}, "customer": {"id": 1004, "email": "user1004@test.com", "full_name": "User 1004"}, "quantity": 5}]}
+	// Output: {"purchases":[{"customer":{"email":"user1004@test.com","full_name":"User 1004","id":1004},"product":{"id":2002,"name":"Product 2002","price":2012.5},"quantity":5}]}
 }
 
 func Example_insertIntoTableAndRelatedTable1() {
@@ -331,9 +331,9 @@ func Example_insertIntoTableAndRelatedTable1() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"users": [{"id": 1005, "email": "user1005@test.com", "products": [{"id": 2003, "name": "Product 2003", "price": 2013.5}], "full_name": "User 1005"}]}
+	// Output: {"users":[{"email":"user1005@test.com","full_name":"User 1005","id":1005,"products":[{"id":2003,"name":"Product 2003","price":2013.5}]}]}
 }
 
 func Example_insertIntoTableAndRelatedTable2() {
@@ -378,9 +378,9 @@ func Example_insertIntoTableAndRelatedTable2() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"products": [{"id": 2004, "name": "Product 2004", "owner": {"id": 1006, "email": "user1006@test.com", "full_name": "User 1006"}}]}
+	// Output: {"products":[{"id":2004,"name":"Product 2004","owner":{"email":"user1006@test.com","full_name":"User 1006","id":1006}}]}
 }
 
 func Example_insertIntoTableBulkInsertIntoRelatedTable() {
@@ -441,10 +441,10 @@ func Example_insertIntoTableBulkInsertIntoRelatedTable() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
 
-	// Output: {"users": [{"id": 10051, "email": "user10051@test.com", "products": [{"id": 20031, "name": "Product 20031", "price": 2013.5}, {"id": 20032, "name": "Product 20032", "price": 2014.5}], "full_name": "User 10051"}]}
+	// Output: {"users":[{"email":"user10051@test.com","full_name":"User 10051","id":10051,"products":[{"id":20031,"name":"Product 20031","price":2013.5},{"id":20032,"name":"Product 20032","price":2014.5}]}]}
 }
 
 func Example_insertIntoTableAndConnectToRelatedTables() {
@@ -485,9 +485,9 @@ func Example_insertIntoTableAndConnectToRelatedTables() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"products": [{"id": 2005, "name": "Product 2005", "owner": {"id": 6, "email": "user6@test.com", "full_name": "User 6"}}]}
+	// Output: {"products":[{"id":2005,"name":"Product 2005","owner":{"email":"user6@test.com","full_name":"User 6","id":6}}]}
 }
 
 func Example_insertIntoTableAndConnectToRelatedTableWithArrayColumn() {
@@ -530,9 +530,9 @@ func Example_insertIntoTableAndConnectToRelatedTableWithArrayColumn() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"products": [{"id": 2006, "name": "Product 2006", "categories": [{"id": 1, "name": "Category 1"}, {"id": 2, "name": "Category 2"}, {"id": 3, "name": "Category 3"}, {"id": 4, "name": "Category 4"}, {"id": 5, "name": "Category 5"}]}]}
+	// Output: {"products":[{"categories":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"},{"id":3,"name":"Category 3"},{"id":4,"name":"Category 4"},{"id":5,"name":"Category 5"}],"id":2006,"name":"Product 2006"}]}
 }
 
 func Example_insertWithCamelToSnakeCase() {
@@ -577,9 +577,9 @@ func Example_insertWithCamelToSnakeCase() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"products": [{"id": 2007, "name": "Product 2007", "owner": {"id": 3, "email": "user3@test.com"}}]}
+	// Output: {"products":[{"id":2007,"name":"Product 2007","owner":{"email":"user3@test.com","id":3}}]}
 }
 
 func Example_insertIntoRecursiveRelationship() {
@@ -615,9 +615,9 @@ func Example_insertIntoRecursiveRelationship() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"comments": [{"id": 5001, "reply_to_id": null}, {"id": 5002, "reply_to_id": 5001}]}
+	// Output: {"comments":[{"id":5001,"reply_to_id":null},{"id":5002,"reply_to_id":5001}]}
 }
 
 func Example_insertIntoRecursiveRelationshipAndConnectTable1() {
@@ -651,9 +651,9 @@ func Example_insertIntoRecursiveRelationshipAndConnectTable1() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"comments": [{"id": 5003, "reply_to_id": null}, {"id": 5, "reply_to_id": 5003}]}
+	// Output: {"comments":[{"id":5003,"reply_to_id":null},{"id":5,"reply_to_id":5003}]}
 }
 
 func Example_insertIntoRecursiveRelationshipAndConnectTable2() {
@@ -701,7 +701,7 @@ func Example_insertIntoRecursiveRelationshipAndConnectTable2() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"comments": {"id": 5004, "product": {"id": 26}, "comments": [{"id": 6}], "commenter": {"id": 3}}}
+	// Output: {"comments":{"commenter":{"id":3},"comments":[{"id":6}],"id":5004,"product":{"id":26}}}
 }

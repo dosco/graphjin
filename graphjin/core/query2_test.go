@@ -326,7 +326,7 @@ var benchGQL = `query {
 	}
 }`
 
-func Example_veryComplexQuery() {
+func Example_queryVeryComplex() {
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	conf.Tables = []core.Table{
 		{
@@ -356,8 +356,8 @@ func Example_veryComplexQuery() {
 		return
 	}
 
-	fmt.Println(string(res.Data))
-	// Output: {"products": [{"id": 27, "name": "Product 27", "owner": {"email": "user27@test.com", "picture": null, "full_name": "User 27", "category_counts": [{"count": 400, "category": {"name": "Category 1"}}, {"count": 600, "category": {"name": "Category 2"}}]}, "price": 37.5, "category": [{"id": 1, "name": "Category 1"}, {"id": 2, "name": "Category 2"}]}]}
+	printJSON(res.Data)
+	// Output: {"products":[{"category":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"}],"id":27,"name":"Product 27","owner":{"category_counts":[{"category":{"name":"Category 1"},"count":400},{"category":{"name":"Category 2"},"count":600}],"email":"user27@test.com","full_name":"User 27","picture":null},"price":37.5}]}
 }
 
 var resultJSON json.RawMessage

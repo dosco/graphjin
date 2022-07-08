@@ -35,9 +35,9 @@ func Example_update() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"products": {"id": 100, "name": "Updated Product 100"}}
+	// Output: {"products":{"id":100,"name":"Updated Product 100"}}
 }
 
 func Example_updateMultipleRelatedTables1() {
@@ -77,9 +77,9 @@ func Example_updateMultipleRelatedTables1() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"purchases": {"product": {"description": "Updated product related to purchase 100"}, "customer": {"full_name": "Updated user related to purchase 100"}, "quantity": 6}}
+	// Output: {"purchases":{"customer":{"full_name":"Updated user related to purchase 100"},"product":{"description":"Updated product related to purchase 100"},"quantity":6}}
 }
 
 func Example_updateTableAndConnectToRelatedTables() {
@@ -114,9 +114,9 @@ func Example_updateTableAndConnectToRelatedTables() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"users": {"products": [{"id": 99}], "full_name": "Updated user 100"}}
+	// Output: {"users":{"full_name":"Updated user 100","products":[{"id":99}]}}
 }
 
 func Example_updateTableAndRelatedTable() {
@@ -151,9 +151,9 @@ func Example_updateTableAndRelatedTable() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-	// Output: {"users": {"products": [{"id": 90}], "full_name": "Updated user 90"}}
+	// Output: {"users":{"full_name":"Updated user 90","products":[{"id":90}]}}
 }
 
 func Example_setArrayColumnToValue() {
@@ -176,10 +176,10 @@ func Example_setArrayColumnToValue() {
 		fmt.Println(res.SQL())
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
 
-	// Output: {"products": [{"id": 100, "tags": ["super", "great", "wow"]}]}
+	// Output: {"products":[{"id":100,"tags":["super","great","wow"]}]}
 }
 
 func Example_setArrayColumnToEmpty() {
@@ -201,8 +201,8 @@ func Example_setArrayColumnToEmpty() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
 
-	// Output: {"products": [{"id": 100, "tags": []}]}
+	// Output: {"products":[{"id":100,"tags":[]}]}
 }
