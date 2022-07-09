@@ -52,8 +52,16 @@ func (gj *graphjin) prepareRoleStmt() error {
 
 	io.WriteString(w, ` ELSE 'user' END) FROM (`)
 	gj.pc.RenderVar(w, &gj.roleStmtMD, gj.conf.RolesQuery)
-	io.WriteString(w, `) AS "_sg_auth_roles_query" LIMIT 1) `)
-	io.WriteString(w, `ELSE 'anon' END) FROM (VALUES (1)) AS "_sg_auth_filler" LIMIT 1; `)
+	io.WriteString(w, `) AS _sg_auth_roles_query LIMIT 1) `)
+
+	switch gj.dbtype {
+	case "mysql":
+		io.WriteString(w, `ELSE 'anon' END) FROM (VALUES ROW(1)) AS _sg_auth_filler LIMIT 1; `)
+
+	default:
+		io.WriteString(w, `ELSE 'anon' END) FROM (VALUES (1)) AS _sg_auth_filler LIMIT 1; `)
+
+	}
 
 	gj.roleStmt = w.String()
 
