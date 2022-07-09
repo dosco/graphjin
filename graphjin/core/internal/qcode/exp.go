@@ -358,10 +358,10 @@ func (ast *aexpst) processOpAndVal(av aexp, ex *Exp, node *graph.Node) (bool, er
 		ex.Right.Val = node.Val
 	case "has_key_any":
 		ex.Op = OpHasKeyAny
-		ex.Right.Val = node.Val
+		setListVal(ex, node)
 	case "has_key_all":
 		ex.Op = OpHasKeyAll
-		ex.Right.Val = node.Val
+		setListVal(ex, node)
 	case "is_null":
 		ex.Op = OpIsNull
 		ex.Right.Val = node.Val

@@ -288,6 +288,26 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 }
 
 func (c *expContext) renderValPrefix(ex *qcode.Exp) bool {
+	if c.ct == "mysql" && (ex.Op == qcode.OpHasKey ||
+		ex.Op == qcode.OpHasKeyAny ||
+		ex.Op == qcode.OpHasKeyAll) {
+		var optype string
+		switch ex.Op {
+		case qcode.OpHasKey, qcode.OpHasKeyAny:
+			optype = "'one'"
+		case qcode.OpHasKeyAll:
+			optype = "'all'"
+		}
+		c.w.WriteString("JSON_CONTAINS_PATH(")
+		c.colWithTable(c.ti.Name, ex.Left.Col.Name)
+		c.w.WriteString(", " + optype)
+		for i := range ex.Right.ListVal {
+			c.w.WriteString(`, '$.` + ex.Right.ListVal[i] + `'`)
+		}
+		c.w.WriteString(") = 1")
+		return true
+	}
+
 	if ex.Right.ValType == qcode.ValVar {
 		return c.renderValVarPrefix(ex)
 	}

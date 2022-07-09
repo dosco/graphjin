@@ -1405,3 +1405,30 @@ func Example_queryWithCamelToSnakeCase() {
 	}
 	// Output: {"hotProducts":[{"countProductID":1,"countryCode":"US","products":{"id":55}}]}
 }
+
+func Example_queryWithWhereHasAnyKey() {
+	gql := `query {
+		products(
+			where: { metadata: { has_key_any: ["foo", "bar"] } }
+			limit: 3
+		) {
+			id
+	}
+}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(res.SQL())
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+
+	// Output: {"products":[{"id":1},{"id":2},{"id":3}]}
+}

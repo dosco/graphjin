@@ -24,6 +24,7 @@ CREATE TABLE products (
   name TEXT CHECK (length(name) > 1 AND length(name) < 50),
   description TEXT CHECK (length(name) > 1 AND length(name) < 200),
   tags  TEXT[],  
+  metadata JSONB,
   country_code VARCHAR(3),  
   price NUMERIC(7,1),
   owner_id BIGINT REFERENCES users(id),
@@ -124,12 +125,13 @@ FROM
 
 -- insert products
 INSERT INTO 
-  products (id, name, description, tags, country_code, category_ids, price, owner_id, created_at)
+  products (id, name, description, tags, metadata, country_code, category_ids, price, owner_id, created_at)
 SELECT 
   i, 
   'Product ' || i, 
   'Description for product ' || i,
  	(SELECT array_agg(('Tag ' || i)) FROM GENERATE_SERIES(1, 5) i),
+  (CASE WHEN ((i % 2) = 0) THEN '{"foo": true}' ELSE '{"bar": true}' END) :: json,
   'US',
   (SELECT array_agg(i) FROM GENERATE_SERIES(1, 5) i),
   (i + 10.5),
