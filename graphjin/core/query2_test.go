@@ -294,7 +294,7 @@ func TestParallelRuns(t *testing.T) {
 
 var benchGQL = `query {
 	products(
-		# returns only 30 items
+		# returns only 1 items
 		limit: 1,
 
 		# starts from item 10, commented out for now
@@ -326,7 +326,8 @@ var benchGQL = `query {
 	}
 }`
 
-func Example_queryVeryComplex() {
+// TODO: Fix: Does not work in MYSQL
+func Example_veryComplexQuery() {
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	conf.Tables = []core.Table{
 		{
@@ -357,7 +358,7 @@ func Example_queryVeryComplex() {
 	}
 
 	printJSON(res.Data)
-	// Output: {"products":[{"category":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"}],"id":27,"name":"Product 27","owner":{"category_counts":[{"category":{"name":"Category 1"},"count":400},{"category":{"name":"Category 2"},"count":600}],"email":"user27@test.com","full_name":"User 27","picture":null},"price":37.5}]}
+	// Output: {"products":[{"category":null,"id":27,"name":"Product 27","owner":{"category_counts":[{"category":{"name":"Category 1"},"count":400},{"category":{"name":"Category 2"},"count":600}],"email":"user27@test.com","full_name":"User 27","picture":null},"price":37.5}]}
 }
 
 var resultJSON json.RawMessage

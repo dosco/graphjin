@@ -1424,7 +1424,6 @@ func Example_queryWithWhereHasAnyKey() {
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
-		fmt.Println(res.SQL())
 		fmt.Println(err)
 	} else {
 		printJSON(res.Data)
