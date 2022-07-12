@@ -311,7 +311,7 @@ type DBFuncParam struct {
 func DiscoverFunctions(db *sql.DB, blockList []string) ([]DBFunction, error) {
 	rows, err := db.Query(functionsStmt)
 	if err != nil {
-		return nil, fmt.Errorf("Error fetching functions: %s", err)
+		return nil, fmt.Errorf("error fetching functions: %s", err)
 	}
 	defer rows.Close()
 
