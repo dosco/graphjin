@@ -1,0 +1,108 @@
+{{ define "main" }}
+<section>
+  <div class="px-4">
+    <h1 class="tracking-tight text-gray-900 mt-10 mb-8 sm:mt-14 sm:mb-10">
+      Build APIs in 5 minutes not weeks
+      <span class="text-indigo-500 font-semibold"
+        >with GraphJin the automagical GraphQL to SQL compiler.</span
+      >
+    </h1>
+
+    <h2 class="h5 text-gray-800 pb-4">
+      (Supports REST, GraphQL, Websockets APIs and Go code)
+    </h2>
+
+    <div class="flex flex-wrap space-y-4 sm:space-y-0 sm:space-x-4 text-center">
+      <a
+        class="w-full sm:w-auto flex-none bg-gray-900 hover:bg-gray-700 text-white text-lg leading-6 font-semibold py-3 px-6 border border-transparent rounded-xl focus:ring-2 focus:ring-offset-2 focus:ring-offset-white focus:ring-gray-900 focus:outline-none transition-colors duration-200"
+        href="/docs/prologue/introduction/"
+        >Get started</a
+      ><button
+        type="button"
+        class="w-full sm:w-auto flex-none bg-gray-50 text-gray-400 hover:text-gray-900 font-mono leading-6 py-3 sm:px-6 border border-gray-200 rounded-xl flex items-center justify-center space-x-2 sm:space-x-4 focus:ring-2 focus:ring-offset-2 focus:ring-offset-white focus:ring-gray-300 focus:outline-none transition-colors duration-200"
+      >
+        <span class="text-gray-900"
+          ><span class="hidden sm:inline text-gray-500" aria-hidden="true"
+            >$ </span
+          >brew install dosco/graphjin/graphjin</span
+        ><span class="sr-only">(click to copy to clipboard)</span
+        ><svg
+          width="24"
+          height="24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+        >
+          <path
+            d="M8 16c0 1.886 0 2.828.586 3.414C9.172 20 10.114 20 12 20h4c1.886 0 2.828 0 3.414-.586C20 18.828 20 17.886 20 16v-4c0-1.886 0-2.828-.586-3.414C18.828 8 17.886 8 16 8m-8 8h4c1.886 0 2.828 0 3.414-.586C16 14.828 16 13.886 16 12V8m-8 8c-1.886 0-2.828 0-3.414-.586C4 14.828 4 13.886 4 12V8c0-1.886 0-2.828.586-3.414C5.172 4 6.114 4 8 4h4c1.886 0 2.828 0 3.414.586C16 5.172 16 6.114 16 8"
+          ></path>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="mt-4">
+    <img
+      src="https://user-images.githubusercontent.com/832235/108806955-1c363180-7571-11eb-8bfa-488ece2e51ae.png"
+    />
+  </div>
+</section>
+
+{{ end }} {{ define "sidebar-prefooter" }}
+<section class="section section-sm">
+  <div class="container">
+    <div class="row justify-content-center text-center">
+      <div class="col-lg-5">
+        <h2 class="h4">Fast ⚡️</h2>
+        <p>
+          GraphJin generates lighting fast queries, efficient SQL using only
+          indexes.
+        </p>
+      </div>
+      <div class="col-lg-5">
+        <h2 class="h4">Automatic</h2>
+        <p>
+          Just point at a database and you're good to go. Postgres Mysql,
+          CockroachDB and YugabyteDB
+        </p>
+      </div>
+      <div class="col-lg-5">
+        <h2 class="h4">Quick</h2>
+        <p>
+          Build quickly. Support for infinite scroll, threading, activity feed
+          and other common app patterns
+        </p>
+      </div>
+    </div>
+    <div class="row justify-content-center text-center">
+      <div class="col-lg-5">
+        <h2 class="h4">Full-text search</h2>
+        <p>
+          Leverage the built-in powerful full-text search features of your
+          database
+        </p>
+      </div>
+      <div class="col-lg-5">
+        <h2 class="h4">Auth</h2>
+        <p>
+          Support for JWT, Firebase, Rails cookie and many other authentication
+          options
+        </p>
+      </div>
+      <div class="col-lg-5">
+        <h2 class="h4">Not a startup</h2>
+        <p>
+          GraphJin is a pure Apache-licensed open source project with a fast
+          growing community
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+{{ end }} {{ define "sidebar-footer" }}
+<section class="section section-sm container-fluid">
+  <div class="row justify-content-center text-center">
+    <div class="col-lg-9">{{- .Content -}}</div>
+  </div>
+</section>
+{{ end }}
