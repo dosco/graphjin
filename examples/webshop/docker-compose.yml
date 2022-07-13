@@ -12,6 +12,7 @@ services:
 
   api:
     image: dosco/graphjin:latest
+    command: serve
     environment:
       GO_ENV: "development"
       GJ_DATABASE_HOST: "db"
@@ -19,7 +20,6 @@ services:
       GJ_DATABASE_PASSWORD: "postgres"
     volumes:
       - ./config:/config
-      - ./keys:/keys/
     ports:
       - "8080:8080"
     depends_on:

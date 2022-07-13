@@ -192,12 +192,12 @@ func itemFromGQL(fs afero.Fs, fn string) (Item, error) {
 	if err != nil {
 		return item, err
 	}
-	h, err := graph.FastParse(query)
-	if err != nil {
-		return item, err
-	}
+	// h, err := graph.FastParse(query)
+	// if err != nil {
+	// 	return item, err
+	// }
 	item.Query = query
-	item.Name = h.Name
+	item.Name = strings.TrimSuffix(fn, path.Ext(fn))
 	item.key = strings.ToLower(item.Name)
 
 	return item, nil
