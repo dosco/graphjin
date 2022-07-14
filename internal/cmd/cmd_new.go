@@ -61,14 +61,6 @@ func cmdNew(cmd *cobra.Command, args []string) {
 		}
 	})
 
-	ifNotExists(path.Join(appPath, "cloudbuild.yaml"), func(p string) error {
-		if v, err := tmpl.get("cloudbuild.yaml"); err == nil {
-			return ioutil.WriteFile(p, v, 0600)
-		} else {
-			return err
-		}
-	})
-
 	// Create app config folder and add relevant files
 
 	appConfigPath := path.Join(appPath, "config")
@@ -123,6 +115,22 @@ func cmdNew(cmd *cobra.Command, args []string) {
 
 	ifNotExists(scriptsPath, func(p string) error {
 		return os.Mkdir(p, os.ModePerm)
+	})
+
+	// Create queries folder and add a sample query
+
+	appQueriesPath := path.Join(appConfigPath, "queries")
+
+	ifNotExists(appQueriesPath, func(p string) error {
+		return os.Mkdir(p, os.ModePerm)
+	})
+
+	ifNotExists(path.Join(appQueriesPath, "getUsers.gql"), func(p string) error {
+		if v, err := tmpl.get("getUsers.gql"); err == nil {
+			return ioutil.WriteFile(p, v, 0600)
+		} else {
+			return err
+		}
 	})
 
 	log.Infof("App initialized: %s", name)
