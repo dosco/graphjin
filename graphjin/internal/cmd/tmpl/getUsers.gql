@@ -1,0 +1,12 @@
+query getUsers {
+  users(where: { id: { gt: 2 } }) {
+    id
+    full_name
+    email
+    created_at
+    products {
+      id
+      name
+    }
+  }
+}

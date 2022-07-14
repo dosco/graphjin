@@ -11,6 +11,7 @@ services:
 
   api:
     image: dosco/graphjin:latest
+    command: serve
     environment:
       GO_ENV: "development"
     volumes:

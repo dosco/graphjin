@@ -3,22 +3,28 @@
 let users = [];
 
 for (let i = 0; i < 10; i++) {
-  let data = {
-    id: i,
-    full_name: fake.name(),
-    email: fake.email(),
-    created_at: "now",
-  };
-
   let q = `
   mutation {
-		users(insert: $data) {
+		users(insert: {
+      id: $id,
+      email: $email
+      full_name: $fullName,
+      created_at: "now",
+      products: {
+        id: $productId,
+        name: $productName
+      }
+    }) {
 			id
 		}
 	}`;
 
   let res = graphql(q, {
-    data: data,
+    id: i,
+    email: fake.email(),
+    fullName: fake.name(),
+    productId: i,
+    productName: fake.name(),
   });
 
   users = users.concat(res.users);
