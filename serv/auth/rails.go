@@ -69,6 +69,9 @@ func RailsRedisHandler(ac Auth) (handlerFunc, error) {
 
 	return func(w http.ResponseWriter, r *http.Request) (context.Context, error) {
 		ck, err := r.Cookie(cookie)
+		if err == http.ErrNoCookie {
+			return nil, nil
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -112,6 +115,9 @@ func RailsMemcacheHandler(ac Auth) (handlerFunc, error) {
 
 	return func(w http.ResponseWriter, r *http.Request) (context.Context, error) {
 		ck, err := r.Cookie(cookie)
+		if err == http.ErrNoCookie {
+			return nil, nil
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -145,6 +151,9 @@ func RailsCookieHandler(ac Auth) (handlerFunc, error) {
 
 	return func(w http.ResponseWriter, r *http.Request) (context.Context, error) {
 		ck, err := r.Cookie(cookie)
+		if err == http.ErrNoCookie {
+			return nil, nil
+		}
 		if err != nil {
 			return nil, err
 		}
