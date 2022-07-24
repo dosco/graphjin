@@ -197,7 +197,7 @@ func itemFromGQL(fs afero.Fs, fn string) (Item, error) {
 	// 	return item, err
 	// }
 	item.Query = query
-	item.Name = strings.TrimSuffix(fn, path.Ext(fn))
+	item.Name = strings.TrimSuffix(filepath.Base(fn), filepath.Ext(fn))
 	item.key = strings.ToLower(item.Name)
 
 	return item, nil
