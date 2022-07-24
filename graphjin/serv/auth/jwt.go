@@ -27,6 +27,9 @@ func JwtHandler(ac Auth) (handlerFunc, error) {
 
 		if cookie != "" {
 			ck, err := r.Cookie(cookie)
+			if err == http.ErrNoCookie {
+				return nil, nil
+			}
 			if err != nil {
 				return nil, err
 			}

@@ -23,7 +23,7 @@ import (
 type OpType int
 
 const (
-	OpUnknown OpType = iota
+	 OpUnknown OpType = iota
 	OpQuery
 	OpSubscription
 	OpMutation

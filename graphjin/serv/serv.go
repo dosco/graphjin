@@ -67,9 +67,10 @@ func startHTTP(s1 *Service) {
 	s.srv = &http.Server{
 		Addr:           s.conf.hostPort,
 		Handler:        routes,
-		ReadTimeout:    5 * time.Second,
+		ReadTimeout:    10 * time.Second,
 		WriteTimeout:   10 * time.Second,
 		MaxHeaderBytes: 1 << 20,
+    ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	idleConnsClosed := make(chan struct{})
