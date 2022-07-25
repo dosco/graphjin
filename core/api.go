@@ -219,7 +219,6 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo, options ...Opti
 
 	if conf.SecretKey != "" {
 		sk := sha256.Sum256([]byte(conf.SecretKey))
-		conf.SecretKey = ""
 		gj.encKey = sk
 		gj.encKeySet = true
 	}
@@ -498,7 +497,6 @@ func (g *GraphJin) Reload() error {
 	if err == nil {
 		g.Store(gjNew)
 	}
-	// fmt.Println("!!!", gj.conf.Sec)
 	return err
 }
 
