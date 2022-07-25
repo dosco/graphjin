@@ -252,8 +252,21 @@ func setupSecrets(conf *Config, fs afero.Fs) (*Config, error) {
 		if strings.HasPrefix(k, "GJ_") || strings.HasPrefix(k, "SG_") {
 			k = k[3:]
 		}
-		k = strings.ReplaceAll(strings.ToLower(k), "_", ".")
-		conf.vi.Set(k, v)
+		uc := strings.Count(k, "_")
+		k1 := strings.ToLower(k)
+
+		if conf.vi.Get(k1) != nil {
+			conf.vi.Set(k1, v)
+		}
+
+		for i := 0; i < uc; i++ {
+			k1 = strings.Replace(k1, "_", ".", 1)
+			if conf.vi.Get(k1) != nil {
+				conf.vi.Set(k1, v)
+				break
+			}
+		}
+
 	}
 
 	if len(newConf.secrets) == 0 {
@@ -365,7 +378,7 @@ func newViperWithDefaults() *viper.Viper {
 	vi := viper.New()
 
 	vi.SetEnvPrefix("GJ")
-	vi.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	vi.SetEnvKeyReplacer(strings.NewReplacer("_", "."))
 	vi.AutomaticEnv()
 
 	vi.SetDefault("host_port", "0.0.0.0:8080")

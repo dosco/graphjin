@@ -9,14 +9,11 @@ require (
 	github.com/adjust/gorails v0.0.0-20171013043634-2786ed0c03d3
 	github.com/armon/go-metrics v0.4.0 // indirect
 	github.com/avast/retry-go v3.0.0+incompatible
-	github.com/aws/aws-sdk-go v1.44.29 // indirect
 	github.com/bradfitz/gomemcache v0.0.0-20220106215444-fb4bf637b56d
 	github.com/brianvoe/gofakeit/v6 v6.16.0
-	github.com/chirino/graphql v0.0.0-20210707003802-dfaf250c773e
-	github.com/derekstavis/go-qs v0.0.0-20180720192143-9eef69e6c4e7 // indirect
+	github.com/chirino/graphql v0.0.0-20220710191258-f420c1213e22
 	github.com/docker/distribution v2.8.1+incompatible // indirect
-	github.com/docker/docker v20.10.16+incompatible // indirect
-	github.com/dop251/goja v0.0.0-20220516123900-4418d4575a41
+	github.com/dop251/goja v0.0.0-20220722151623-4765a9872229
 	github.com/fsnotify/fsnotify v1.5.4
 	github.com/go-chi/chi v1.5.4
 	github.com/go-http-utils/headers v0.0.0-20181008091004-fed159eddc2a
@@ -28,11 +25,10 @@ require (
 	github.com/gobuffalo/flect v0.2.5
 	github.com/gofrs/uuid v4.2.0+incompatible // indirect
 	github.com/golang-jwt/jwt v3.2.2+incompatible
-	github.com/golang-jwt/jwt/v4 v4.4.1 // indirect
+	github.com/golang-jwt/jwt/v4 v4.4.2 // indirect
 	github.com/golang/glog v1.0.0 // indirect
-	github.com/gomodule/redigo v1.8.8
+	github.com/gomodule/redigo v1.8.9
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
-	github.com/gorilla/mux v1.8.0
 	github.com/gorilla/websocket v1.5.0
 	github.com/gosimple/slug v1.12.0
 	github.com/hashicorp/go-hclog v1.2.1 // indirect
@@ -49,11 +45,9 @@ require (
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0
 	github.com/klauspost/compress v1.15.6
 	github.com/lestrrat-go/jwx v1.2.25
-	github.com/lib/pq v1.10.6 // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2
 	github.com/mitchellh/mapstructure v1.5.0
-	github.com/opentracing/opentracing-go v1.2.0 // indirect
-	github.com/orlangure/gnomock v0.20.0
+	github.com/orlangure/gnomock v0.21.0
 	github.com/pkg/errors v0.9.1
 	github.com/rs/cors v1.8.2
 	github.com/rs/xid v1.4.0
@@ -61,14 +55,14 @@ require (
 	github.com/spf13/afero v1.8.2
 	github.com/spf13/cobra v1.4.0
 	github.com/spf13/viper v1.12.0
-	github.com/stretchr/testify v1.7.2
+	github.com/stretchr/testify v1.8.0
 	github.com/subosito/gotenv v1.4.0 // indirect
 	github.com/tj/assert v0.0.3
 	go.mozilla.org/sops/v3 v3.7.3
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.32.0
-	go.opentelemetry.io/otel v1.7.0
-	go.opentelemetry.io/otel/sdk v1.7.0
-	go.opentelemetry.io/otel/trace v1.7.0
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.33.0
+	go.opentelemetry.io/otel v1.8.0
+	go.opentelemetry.io/otel/sdk v1.8.0
+	go.opentelemetry.io/otel/trace v1.8.0
 	go.uber.org/multierr v1.8.0 // indirect
 	go.uber.org/zap v1.21.0
 	golang.org/x/crypto v0.0.0-20220525230936-793ad666bf5e

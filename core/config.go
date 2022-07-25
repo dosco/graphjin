@@ -437,7 +437,7 @@ func newViper(configPath, configFile string) *viper.Viper {
 	vi := viper.New()
 
 	vi.SetEnvPrefix("GJ")
-	vi.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	vi.SetEnvKeyReplacer(strings.NewReplacer("_", "."))
 	vi.AutomaticEnv()
 
 	if filepath.Ext(configFile) != "" {
