@@ -84,7 +84,12 @@ func Example_subscriptionWithCursor() {
 		}
 	}`
 
-	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, SubsPollDuration: 1})
+	conf := newConfig(&core.Config{
+		DBType:           dbType,
+		DisableAllowList: true,
+		SubsPollDuration: 1,
+		SecretKey:        "not_a_real_secret",
+	})
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)

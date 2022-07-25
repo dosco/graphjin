@@ -58,7 +58,6 @@ import (
 	"github.com/chirino/graphql"
 	"github.com/dop251/goja"
 	"github.com/dosco/graphjin/core/internal/allow"
-	"github.com/dosco/graphjin/core/internal/crypto"
 	"github.com/dosco/graphjin/core/internal/graph"
 	"github.com/dosco/graphjin/core/internal/psql"
 	"github.com/dosco/graphjin/core/internal/qcode"
@@ -98,6 +97,7 @@ type graphjin struct {
 	schema      *sdata.DBSchema
 	allowList   *allow.List
 	encKey      [32]byte
+	encKeySet   bool
 	apq         apqCache
 	queries     map[string]*queryComp
 	roles       map[string]*Role
@@ -221,8 +221,7 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo, options ...Opti
 		sk := sha256.Sum256([]byte(conf.SecretKey))
 		conf.SecretKey = ""
 		gj.encKey = sk
-	} else {
-		gj.encKey = crypto.NewEncryptionKey()
+		gj.encKeySet = true
 	}
 
 	return gj, nil
@@ -499,6 +498,7 @@ func (g *GraphJin) Reload() error {
 	if err == nil {
 		g.Store(gjNew)
 	}
+	// fmt.Println("!!!", gj.conf.Sec)
 	return err
 }
 

@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 
 	"github.com/dosco/graphjin/core/internal/crypto"
 	"github.com/dosco/graphjin/core/internal/qcode"
@@ -44,6 +45,10 @@ func (gj *graphjin) encryptCursor(qc *qcode.QCode, data []byte) (cursors, error)
 			// with subscriptions when fetching the next set
 			if cur.value == "" {
 				cur.value = string(val)
+			}
+
+			if !gj.encKeySet {
+				return cur, errors.New("no secret_key set, its required to encrypt the cursor")
 			}
 
 			v, err := crypto.Encrypt(val, &gj.encKey, true)
