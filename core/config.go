@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/dosco/graphjin/core/internal/qcode"
+	"github.com/dosco/graphjin/internal/util"
 	"github.com/spf13/afero"
 	"github.com/spf13/viper"
 )
@@ -389,8 +389,8 @@ func ReadInConfigFS(configFile string, fs afero.Fs) (*Config, error) {
 }
 
 func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
-	cp := path.Dir(configFile)
-	vi := newViper(cp, path.Base(configFile))
+	cp := filepath.Dir(configFile)
+	vi := newViper(cp, filepath.Base(configFile))
 
 	if fs != nil {
 		vi.SetFs(fs)
@@ -422,8 +422,15 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 		}
 	}
 
+	for _, e := range os.Environ() {
+		if strings.HasPrefix(e, "GJ_") || strings.HasPrefix(e, "SJ_") {
+			kv := strings.SplitN(e, "=", 2)
+			util.SetKeyValue(vi, kv[0], kv[1])
+		}
+	}
+
 	c := &Config{
-		ConfigPath: path.Dir(vi.ConfigFileUsed()),
+		ConfigPath: filepath.Dir(vi.ConfigFileUsed()),
 	}
 
 	if err := vi.Unmarshal(&c); err != nil {
@@ -436,12 +443,8 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 func newViper(configPath, configFile string) *viper.Viper {
 	vi := viper.New()
 
-	vi.SetEnvPrefix("GJ")
-	vi.SetEnvKeyReplacer(strings.NewReplacer("_", "."))
-	vi.AutomaticEnv()
-
 	if filepath.Ext(configFile) != "" {
-		vi.SetConfigFile(path.Join(configPath, configFile))
+		vi.SetConfigFile(filepath.Join(configPath, configFile))
 	} else {
 		vi.SetConfigName(configFile)
 		vi.AddConfigPath(configPath)

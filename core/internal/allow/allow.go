@@ -85,7 +85,6 @@ func New(conf Config, fs afero.Fs) (*List, error) {
 			err = al.save(v)
 			if err != nil && conf.Log != nil {
 				conf.Log.Println("WRN allow list save:", err)
-				break
 			}
 		}
 	}()
@@ -302,12 +301,12 @@ func (al *List) save(item Item) error {
 		return err
 	}
 
+	if h.Name == "" {
+		return errors.New("no query name defined. only named queries are saved to the allow list")
+	}
+
 	item.Name = h.Name
 	item.key = strings.ToLower(item.Name)
-
-	if item.Name == "" {
-		return errors.New("no name defined for query")
-	}
 
 	if err := al.saveItem(item, true); err != nil {
 		return err

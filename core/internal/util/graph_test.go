@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/dosco/graphjin/core/internal/util"
-	"github.com/tj/assert"
+	"github.com/stretchr/testify/assert"
 )
 
 //nolint: errcheck

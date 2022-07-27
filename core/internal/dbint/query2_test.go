@@ -1,4 +1,4 @@
-package core_test
+package dbint_test
 
 import (
 	"context"
@@ -183,7 +183,7 @@ func TestAllowListWithNamespace(t *testing.T) {
 	}
 
 	_, err = gj2.GraphQL(context.Background(), gql2, nil,
-		&core.ReqConfig{Namespace: core.Namespace{"api", true}})
+		&core.ReqConfig{Namespace: core.Namespace{Name: "api", Set: true}})
 
 	assert.ErrorContains(t, err, "not found in prepared statements")
 }

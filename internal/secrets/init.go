@@ -11,16 +11,20 @@ import (
 	"go.mozilla.org/sops/v3/stores/dotenv"
 )
 
-func Init(fileName string, fs afero.Fs) (map[string]string, error) {
+func Init(filename string, fs afero.Fs) (map[string]string, error) {
+	return initSecrets(filename, fs)
+}
+
+func initSecrets(filename string, fs afero.Fs) (map[string]string, error) {
 	var err error
 
-	inputStore := common.DefaultStoreForPath(fileName)
+	inputStore := common.DefaultStoreForPath(filename)
 	ks := []keyservice.KeyServiceClient{keyservice.NewLocalClient()}
 
 	opts := decryptOpts{
 		OutputStore: &dotenv.Store{},
 		InputStore:  inputStore,
-		InputPath:   fileName,
+		InputPath:   filename,
 		Cipher:      aes.NewCipher(),
 		KeyServices: ks,
 		IgnoreMAC:   false,
