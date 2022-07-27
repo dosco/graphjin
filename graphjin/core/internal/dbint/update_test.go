@@ -1,4 +1,4 @@
-package core_test
+package dbint_test
 
 import (
 	"context"

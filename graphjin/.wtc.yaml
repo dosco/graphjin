@@ -7,7 +7,7 @@ rules:
   - name: run
     match: \.go$
     ignore: web|examples|docs|_test\.go$
-    command: go run main.go serv
+    command: go run main.go serv --path examples/webshop/config
   - name: test
     match: _test\.go$
     command: go test -cover {PKG}

@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
@@ -29,6 +30,7 @@ func decrypt(opts decryptOpts, fs afero.Fs) (decryptedFile []byte, err error) {
 		IgnoreMAC:   opts.IgnoreMAC,
 		KeyServices: opts.KeyServices,
 	}, fs)
+
 	if err != nil {
 		return nil, err
 	}
@@ -82,6 +84,34 @@ func extract(tree *sops.Tree, path []interface{}, outputStore sops.Store) ([]byt
 	return bytes, nil
 }
 
+func LoadEncryptedFileWithBugFixes(
+	opts common.GenericDecryptOpts,
+	fs afero.Fs) (*sops.Tree, error) {
+
+	tree, err := LoadEncryptedFile(opts.InputStore, opts.InputPath, fs)
+	if err != nil {
+		return nil, err
+	}
+
+	if tree == nil {
+		return nil, errors.New("unable to decrypt file")
+	}
+
+	encCtxBug, err := common.DetectKMSEncryptionContextBug(tree)
+	if err != nil {
+		return nil, err
+	}
+
+	if encCtxBug {
+		tree, err = common.FixAWSKMSEncryptionContextBug(opts, tree)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return tree, nil
+}
+
 func LoadEncryptedFile(
 	loader sops.EncryptedFileLoader,
 	inputPath string,
@@ -105,31 +135,10 @@ func LoadEncryptedFile(
 	}
 
 	tree, err := loader.LoadEncryptedFile(fileBytes)
+	if err != nil {
+		return nil, err
+	}
+
 	tree.FilePath = path
-
-	return &tree, err
-}
-
-func LoadEncryptedFileWithBugFixes(
-	opts common.GenericDecryptOpts,
-	fs afero.Fs) (*sops.Tree, error) {
-
-	tree, err := LoadEncryptedFile(opts.InputStore, opts.InputPath, fs)
-	if err != nil {
-		return nil, err
-	}
-
-	encCtxBug, err := common.DetectKMSEncryptionContextBug(tree)
-	if err != nil {
-		return nil, err
-	}
-
-	if encCtxBug {
-		tree, err = common.FixAWSKMSEncryptionContextBug(opts, tree)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return tree, nil
+	return &tree, nil
 }

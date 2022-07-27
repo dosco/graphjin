@@ -3,12 +3,12 @@ package serv
 import (
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/dosco/graphjin/core"
+	"github.com/dosco/graphjin/internal/util"
 	"github.com/dosco/graphjin/serv/auth"
 	"github.com/spf13/afero"
 	"github.com/spf13/viper"
@@ -228,7 +228,11 @@ func ReadInConfigFS(configFile string, fs afero.Fs) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	return setupSecrets(c, fs)
+	c1, err := setupSecrets(c, fs)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", err, c.SecretsFile)
+	}
+	return c1, err
 }
 
 func setupSecrets(conf *Config, fs afero.Fs) (*Config, error) {
@@ -249,24 +253,7 @@ func setupSecrets(conf *Config, fs afero.Fs) (*Config, error) {
 	}
 
 	for k, v := range newConf.secrets {
-		if strings.HasPrefix(k, "GJ_") || strings.HasPrefix(k, "SG_") {
-			k = k[3:]
-		}
-		uc := strings.Count(k, "_")
-		k1 := strings.ToLower(k)
-
-		if conf.vi.Get(k1) != nil {
-			conf.vi.Set(k1, v)
-		}
-
-		for i := 0; i < uc; i++ {
-			k1 = strings.Replace(k1, "_", ".", 1)
-			if conf.vi.Get(k1) != nil {
-				conf.vi.Set(k1, v)
-				break
-			}
-		}
-
+		util.SetKeyValue(conf.vi, k, v)
 	}
 
 	if len(newConf.secrets) == 0 {
@@ -288,18 +275,8 @@ func setupSecrets(conf *Config, fs afero.Fs) (*Config, error) {
 }
 
 func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
-	// migrate old sg var prefixes to new gj prefixes
-	for _, e := range os.Environ() {
-		if !strings.HasPrefix(e, "SG_") {
-			continue
-		}
-		v := strings.SplitN(e, "=", 2)
-		if err := os.Setenv(("GJ_" + v[0][3:]), v[1]); err != nil {
-			return nil, err
-		}
-	}
-	cp := path.Dir(configFile)
-	vi := newViper(cp, path.Base(configFile))
+	cp := filepath.Dir(configFile)
+	vi := newViper(cp, filepath.Base(configFile))
 
 	if fs != nil {
 		vi.SetFs(fs)
@@ -328,6 +305,13 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 
 		if err := vi.MergeInConfig(); err != nil {
 			return nil, err
+		}
+	}
+
+	for _, e := range os.Environ() {
+		if strings.HasPrefix(e, "GJ_") || strings.HasPrefix(e, "SJ_") {
+			kv := strings.SplitN(e, "=", 2)
+			util.SetKeyValue(vi, kv[0], kv[1])
 		}
 	}
 
@@ -376,10 +360,6 @@ func NewConfig(config, format string) (*Config, error) {
 
 func newViperWithDefaults() *viper.Viper {
 	vi := viper.New()
-
-	vi.SetEnvPrefix("GJ")
-	vi.SetEnvKeyReplacer(strings.NewReplacer("_", "."))
-	vi.AutomaticEnv()
 
 	vi.SetDefault("host_port", "0.0.0.0:8080")
 	vi.SetDefault("web_ui", false)
@@ -446,7 +426,7 @@ func (c *Config) RelPath(p string) string {
 	if filepath.IsAbs(p) {
 		return p
 	}
-	return path.Join(c.Serv.ConfigPath, p)
+	return filepath.Join(c.Serv.ConfigPath, p)
 }
 
 func (c *Config) SetHash(hash string) {
