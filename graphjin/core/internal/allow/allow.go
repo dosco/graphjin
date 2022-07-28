@@ -64,6 +64,10 @@ type Config struct {
 	Log *log.Logger
 }
 
+func NewReadOnly(fs afero.Fs) (*List, error) {
+	return &List{fs: fs}, nil
+}
+
 func New(conf Config, fs afero.Fs) (*List, error) {
 	if fs == nil {
 		return nil, fmt.Errorf("no filesystem defined for the allow list")
@@ -106,7 +110,6 @@ func (al *List) Set(vars []byte, query string, md Metadata, namespace string) er
 		return err
 	}
 
-	// item.Name = name
 	item.Namespace = namespace
 	item.Vars = string(vars)
 	item.Metadata = md
@@ -118,6 +121,9 @@ func (al *List) Load() ([]Item, error) {
 	var items []Item
 
 	files, err := afero.ReadDir(al.fs, queryPath)
+	if err == afero.ErrFileNotFound {
+		return items, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("allow list: %w", err)
 	}

@@ -15,13 +15,16 @@ func TestServe(t *testing.T) {
 
 // nolint: errcheck
 func readInConfigWithEnvVars(t *testing.T) {
-	devConfig := "secrets_file: dev.secrets.json\n"
+	devConfig := "app_name: \"App Name\"\nsecrets_file: dev.secrets.json\n"
 	prodConfig := "inherits: dev\nsecrets_file: \"prod.secrets.json\"\n"
+	stageConfig := "inherits: dev\nsecrets_file: \"\"\n"
 	secrets := ``
 
 	fs := afero.NewMemMapFs()
 	afero.WriteFile(fs, "/dev.yml", []byte(devConfig), 0666)
 	afero.WriteFile(fs, "/prod.yml", []byte(prodConfig), 0666)
+	afero.WriteFile(fs, "/stage.yml", []byte(stageConfig), 0666)
+
 	afero.WriteFile(fs, "/dev.secrets.json", []byte(secrets), 0666)
 	afero.WriteFile(fs, "/prod.secrets.json", []byte(secrets), 0666)
 
@@ -40,4 +43,7 @@ func readInConfigWithEnvVars(t *testing.T) {
 	assert.ErrorContains(t, err, "new.prod.secrets.json")
 
 	os.Unsetenv("GJ_SECRETS_FILE")
+	c, err := serv.ReadInConfigFS("/stage.yml", fs)
+	assert.NoError(t, err)
+	assert.Equal(t, "App Name", c.AppName)
 }

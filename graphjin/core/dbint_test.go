@@ -1,4 +1,4 @@
-package dbint_test
+package core_test
 
 import (
 	"database/sql"

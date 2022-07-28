@@ -1,4 +1,4 @@
-package dbint_test
+package core_test
 
 import (
 	"context"
@@ -29,7 +29,7 @@ func queryWithVariableLimit(t *testing.T) {
 		"limit": 10
 	}`)
 
-	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	conf := newConfig(&core.Config{DBType: dbType})
 	gj, err := core.NewGraphJin(conf, db)
 
 	if err != nil {
