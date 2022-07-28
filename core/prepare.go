@@ -71,14 +71,14 @@ func (gj *graphjin) prepareRoleStmt() error {
 func (gj *graphjin) initAllowList() error {
 	var err error
 
-	gj.allowList, err = allow.New(allow.Config{Log: gj.log}, gj.fs)
+	if gj.conf.DisableAllowList {
+		gj.allowList, err = allow.NewReadOnly(gj.fs)
+	} else {
+		gj.allowList, err = allow.New(allow.Config{Log: gj.log}, gj.fs)
+	}
 
 	if err != nil {
 		return fmt.Errorf("failed to initialize allow list: %w", err)
-	}
-
-	if gj.conf.DisableAllowList {
-		return nil
 	}
 
 	gj.queries = make(map[string]*queryComp)

@@ -1,5 +1,5 @@
 //#nosec G404
-package dbint_test
+package core_test
 
 import (
 	"context"
