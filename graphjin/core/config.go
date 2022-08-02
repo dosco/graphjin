@@ -442,7 +442,6 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 
 func newViper(configPath, configFile string) *viper.Viper {
 	vi := viper.New()
-	vi.SetDefault("disable_allow_list", true)
 
 	if filepath.Ext(configFile) != "" {
 		vi.SetConfigFile(filepath.Join(configPath, configFile))

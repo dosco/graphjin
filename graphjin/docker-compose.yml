@@ -30,9 +30,9 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - .:/app
-      - ./examples/webshop/config:/app/config
-    working_dir: /app
+      - .:/home/nonroot
+      - ./examples/webshop/config:/home/nonroot/config
+    working_dir: /home/nonroot
     command: wtc
     depends_on:
       - db

@@ -179,9 +179,14 @@ Lets take for example a simple blog app. You'll probably need the following APIs
 
 With GraphJin your web and mobile developers can start building instantly. All they have to do is just build the GraphQL queries they need and GraphJin fetches the data. Nothing to maintain no backend API code, its secure, lighting fast and has tons of useful features like subscriptions, rate limiting, etc built-in. With GraphJin your building APIs in minutes not days.
 
-## Features
+## Highlevel
 
-- Works with Postgres, MySQL8 and YugabyteDB
+- Works with Postgres, MySQL8, YugabyteDB, CockroachDB, 
+- Also works with Amazon Aurora/RDS and Google Cloud SQL
+- Supports REST, GraphQL and Websocket APIs
+
+## More Features
+
 - Complex nested queries and mutations
 - Realtime updates with subscriptions
 - Add custom business logic in Javascript

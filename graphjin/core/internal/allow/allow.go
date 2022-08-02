@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"text/scanner"
@@ -129,46 +128,50 @@ func (al *List) Load() ([]Item, error) {
 	}
 
 	for _, f := range files {
-		fn := f.Name()
-
 		if f.IsDir() {
 			continue
 		}
 
-		fn = strings.TrimSuffix(fn, filepath.Ext(fn))
-
-		if item, err := al.Get(fn); err == nil {
-			items = append(items, item)
-		} else {
+		item, err := al.Get(filepath.Join(queryPath, f.Name()))
+		if err == errUnknownFileType {
+			continue
+		}
+		if err != nil {
 			return nil, err
 		}
+		items = append(items, item)
 	}
-
 	return items, nil
 }
 
-func (al *List) Get(name string) (Item, error) {
+func (al *List) GetByName(filePath string) (Item, error) {
 	var item Item
+	fpath := filepath.Join(queryPath, filePath)
 
-	filePath := path.Join(queryPath, name)
-
-	fn := (filePath + ".gql")
+	fn := (fpath + ".gql")
 	if ok, err := afero.Exists(al.fs, fn); ok {
-		return itemFromGQL(al.fs, fn)
+		return al.Get(fn)
 	} else if err != nil {
 		return item, err
 	}
 
-	fn = (filePath + ".graphql")
+	fn = (fpath + ".graphql")
 	if ok, err := afero.Exists(al.fs, fn); ok {
-		return itemFromGQL(al.fs, fn)
+		return al.Get(fn)
 	} else if err != nil {
 		return item, err
 	}
 
-	fn = (filePath + ".yaml")
+	fn = (fpath + ".yml")
 	if ok, err := afero.Exists(al.fs, fn); ok {
-		return itemFromYaml(al.fs, fn)
+		return al.Get(fn)
+	} else if err != nil {
+		return item, err
+	}
+
+	fn = (fpath + ".yaml")
+	if ok, err := afero.Exists(al.fs, fn); ok {
+		return al.Get(fn)
 	} else if err != nil {
 		return item, err
 	}
@@ -176,10 +179,25 @@ func (al *List) Get(name string) (Item, error) {
 	return item, nil
 }
 
-func itemFromYaml(fs afero.Fs, fn string) (Item, error) {
+var errUnknownFileType = errors.New("unknown filetype")
+
+func (al *List) Get(filePath string) (Item, error) {
 	var item Item
 
-	b, err := afero.ReadFile(fs, fn)
+	switch filepath.Ext(filePath) {
+	case ".gql", ".graphql":
+		return itemFromGQL(al.fs, filePath)
+	case ".yml", ".yaml":
+		return itemFromYaml(al.fs, filePath)
+	default:
+		return item, errUnknownFileType
+	}
+}
+
+func itemFromYaml(fs afero.Fs, filePath string) (Item, error) {
+	var item Item
+
+	b, err := afero.ReadFile(fs, filePath)
 	if err != nil {
 		return item, err
 	}
@@ -190,19 +208,30 @@ func itemFromYaml(fs afero.Fs, fn string) (Item, error) {
 	return item, nil
 }
 
-func itemFromGQL(fs afero.Fs, fn string) (Item, error) {
+func itemFromGQL(fs afero.Fs, filePath string) (Item, error) {
 	var item Item
 
-	query, err := parseGQLFile(fs, fn)
+	fn := filepath.Base(filePath)
+	fn = strings.TrimSuffix(fn, filepath.Ext(fn))
+	queryNS, queryName := splitName(fn)
+
+	if queryName == "" {
+		return item, fmt.Errorf("invalid filename: %s", filePath)
+	}
+
+	query, err := parseGQLFile(fs, filePath)
 	if err != nil {
 		return item, err
 	}
+
 	// h, err := graph.FastParse(query)
 	// if err != nil {
 	// 	return item, err
 	// }
+
+	item.Namespace = queryNS
+	item.Name = queryName
 	item.Query = query
-	item.Name = strings.TrimSuffix(filepath.Base(fn), filepath.Ext(fn))
 	item.key = strings.ToLower(item.Name)
 
 	return item, nil
@@ -395,4 +424,14 @@ func (al *List) FragmentFetcher(namespace string) func(name string) (string, err
 
 		return string(v), err
 	}
+}
+
+func splitName(v string) (string, string) {
+	i := strings.LastIndex(v, ".")
+	if i == -1 {
+		return "", v
+	} else if i < len(v)-1 {
+		return v[:i], v[(i + 1):]
+	}
+	return "", ""
 }
