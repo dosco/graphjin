@@ -1,6 +1,16 @@
 demo
 tmp
+*.yaml
+*.yml
+*.svg
+*.json
 *.md
+.*
 web/build
 docker-compose.*
 docs
+examples
+benchmark
+node_modules
+wasm
+release

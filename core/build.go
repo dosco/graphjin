@@ -38,7 +38,7 @@ func (gj *graphjin) compileQuery(qr queryReq, role string) (*queryComp, error) {
 
 	if !gj.prod || gj.conf.DisableAllowList {
 		if len(qr.query) == 0 {
-			item, err := gj.allowList.Get(qr.name)
+			item, err := gj.allowList.GetByName(qr.name)
 			if err != nil {
 				return nil, err
 			}

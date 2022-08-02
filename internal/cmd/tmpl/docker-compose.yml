@@ -15,7 +15,7 @@ services:
     environment:
       GO_ENV: "development"
     volumes:
-      - ./config:/config
+      - ./config:/home/nonroot/config
     ports:
       - "8080:8080"
     depends_on:

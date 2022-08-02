@@ -332,13 +332,9 @@ func (s *Service) attach(mux Mux, ns nspace) error {
 	return nil
 }
 
-func (s *Service) GraphQL(c context.Context,
-	query string,
-	vars json.RawMessage,
-	rc *core.ReqConfig) (*core.Result, error) {
-
+func (s *Service) GetGraphJin() *core.GraphJin {
 	s1 := s.Load().(*service)
-	return s1.gj.GraphQL(c, query, vars, rc)
+	return s1.gj
 }
 
 func (s *Service) Subscribe(
