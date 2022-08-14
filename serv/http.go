@@ -56,7 +56,7 @@ type errorResp struct {
 	Errors []string `json:"errors"`
 }
 
-func apiV1Handler(s1 *Service, ns nspace, h http.Handler) http.Handler {
+func apiV1Handler(authHandler auth.HandlerFunc, s1 *Service, ns nspace, h http.Handler) http.Handler {
 	var zlog *zap.Logger
 	s := s1.Load().(*service)
 
@@ -65,9 +65,13 @@ func apiV1Handler(s1 *Service, ns nspace, h http.Handler) http.Handler {
 	}
 
 	authOpt := auth.Options{AuthFailBlock: s.conf.Serv.AuthFailBlock}
-	useAuth, err := auth.NewAuth(s.conf.Auth, zlog, authOpt)
-	if err != nil {
-		s.log.Fatalf("api: error initializing auth: %s", err)
+	var useAuth func(next http.Handler) http.Handler
+	var err error
+	if authHandler != nil {
+		useAuth, err = auth.NewAuth(authHandler, s.conf.Auth, zlog, authOpt)
+		if err != nil {
+			s.log.Fatalf("api: error initializing auth: %s", err)
+		}
 	}
 
 	// useAuth can be nil when type="" or type="none"
@@ -96,7 +100,7 @@ func apiV1Handler(s1 *Service, ns nspace, h http.Handler) http.Handler {
 	return h
 }
 
-func (s1 *Service) apiV1GraphQL(ns nspace) http.Handler {
+func (s1 *Service) apiV1GraphQL(authHandler auth.HandlerFunc, ns nspace) http.Handler {
 	dtrace := otel.GetTextMapPropagator()
 
 	h := func(w http.ResponseWriter, r *http.Request) {
@@ -108,7 +112,7 @@ func (s1 *Service) apiV1GraphQL(ns nspace) http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 
 		if websocket.IsWebSocketUpgrade(r) {
-			s.apiV1Ws(w, r)
+			s.apiV1Ws(authHandler, w, r)
 			return
 		}
 
@@ -194,7 +198,7 @@ func (s1 *Service) apiV1GraphQL(ns nspace) http.Handler {
 	return http.HandlerFunc(h)
 }
 
-func (s1 *Service) apiV1Rest(ns nspace) http.Handler {
+func (s1 *Service) apiV1Rest(authHandler auth.HandlerFunc, ns nspace) http.Handler {
 	rLen := len(routeREST)
 	dtrace := otel.GetTextMapPropagator()
 
@@ -207,7 +211,7 @@ func (s1 *Service) apiV1Rest(ns nspace) http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 
 		if websocket.IsWebSocketUpgrade(r) {
-			s.apiV1Ws(w, r)
+			s.apiV1Ws(authHandler, w, r)
 			return
 		}
 

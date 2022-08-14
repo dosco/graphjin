@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dosco/graphjin/core"
+	"github.com/dosco/graphjin/serv/auth"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -54,7 +55,7 @@ func init() {
 	}
 }
 
-func (s *service) apiV1Ws(w http.ResponseWriter, r *http.Request) {
+func (s *service) apiV1Ws(authHandler auth.HandlerFunc, w http.ResponseWriter, r *http.Request) {
 	var m *core.Member
 	var ready bool
 	var err error
@@ -91,7 +92,7 @@ func (s *service) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		if ready, err = s.subSwitch(ct, c, v, done); err != nil {
+		if ct, ready, err = s.subSwitch(ct, c, v, done, authHandler, w, r); err != nil {
 			if err1 := sendError(ct, c, err, v.ID); err1 != nil {
 				err = err1
 			}
@@ -108,38 +109,20 @@ func (s *service) apiV1Ws(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *service) subSwitch(
-	ct context.Context, c *websocket.Conn, v wsReq, done chan bool) (bool, error) {
+	ct context.Context, c *websocket.Conn, v wsReq, done chan bool, authHandler auth.HandlerFunc, w http.ResponseWriter, r *http.Request) (context.Context, bool, error) {
 
 	switch v.Type {
 	case "connection_init":
 		if err := c.WritePreparedMessage(initMsg); err != nil {
-			return false, err
+			return ct, false, err
 		}
 
-		/*
-			hfn := func(w http.ResponseWriter, r *http.Request) {
-				if err := c.WritePreparedMessage(initMsg); err != nil {
-					s.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
-				}
-				ct = r.Context()
-			}
-
-			handler, err := auth.WithAuth(http.HandlerFunc(hfn), &s.conf.Auth, s.zlog)
-			if err != nil {
-				return false, err
-			}
-
-			if len(v.Payload) == 0 {
-				handler.ServeHTTP(w, r)
-				break
-			}
-
+		if len(v.Payload) > 0 {
 			var p map[string]interface{}
 			if err := json.Unmarshal(v.Payload, &p); err != nil {
 				s.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
 				break
 			}
-
 			for k, v := range p {
 				switch v1 := v.(type) {
 				case string:
@@ -148,13 +131,37 @@ func (s *service) subSwitch(
 					r.Header.Set(k, v1.String())
 				}
 			}
-			handler.ServeHTTP(w, r)
-		*/
+		}
+		if authHandler != nil {
+			c, err := authHandler(w, r)
+			if err != nil {
+				s.zlog.Error("Auth", []zapcore.Field{zap.Error(err)}...)
+			}
+			if err == auth.Err401 {
+				http.Error(w, "401 unauthorized", http.StatusUnauthorized)
+				break
+			}
+			if s.conf.Serv.AuthFailBlock && !auth.IsAuth(c) {
+				http.Error(w, "401 unauthorized", http.StatusUnauthorized)
+				break
+			}
+			if c != nil {
+				if v := c.Value(core.UserIDProviderKey); v != nil {
+					ct = context.WithValue(ct, core.UserIDProviderKey, v)
+				}
+				if v := c.Value(core.UserRoleKey); v != nil {
+					ct = context.WithValue(ct, core.UserRoleKey, v)
+				}
+				if v := c.Value(core.UserIDKey); v != nil {
+					ct = context.WithValue(ct, core.UserIDKey, v)
+				}
+			}
+		}
 
 	case "start", "subscribe":
 		var p gqlReq
 		if err := json.Unmarshal(v.Payload, &p); err != nil {
-			return false, err
+			return ct, false, err
 		}
 
 		if s.conf.Serv.Auth.Development {
@@ -176,23 +183,23 @@ func (s *service) subSwitch(
 					ct = context.WithValue(ct, core.UserIDKey, x.UserID)
 				}
 			} else {
-				return false, err
+				return ct, false, err
 			}
 		}
 
 		m, err := s.gj.Subscribe(ct, p.Query, p.Vars, nil)
 		if err != nil {
-			return false, err
+			return ct, false, err
 		}
 
 		go s.waitForData(ct, done, c, m, v)
-		return true, nil
+		return ct, true, nil
 
 	default:
-		return false, fmt.Errorf("unknown message type: %s", v.Type)
+		return ct, false, fmt.Errorf("unknown message type: %s", v.Type)
 	}
 
-	return false, nil
+	return ct, false, nil
 }
 
 func (s *service) waitForData(

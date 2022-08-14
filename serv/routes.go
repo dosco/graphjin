@@ -56,9 +56,14 @@ func routesHandler(s1 *Service, mux Mux, ns nspace) (http.Handler, error) {
 		}
 	}
 
+	authHandler, err := auth.NewAuthHandlerFunc(s.conf.Auth)
+	if err != nil {
+		s.log.Fatalf("api: error initializing auth handler: %s", err)
+	}
+
 	// GraphQL / REST API
-	h1 := apiV1Handler(s1, ns, s1.apiV1GraphQL(ns))
-	h2 := apiV1Handler(s1, ns, s1.apiV1Rest(ns))
+	h1 := apiV1Handler(authHandler, s1, ns, s1.apiV1GraphQL(authHandler, ns))
+	h2 := apiV1Handler(authHandler, s1, ns, s1.apiV1Rest(authHandler, ns))
 
 	if s.conf.rateLimiterEnable() {
 		h1 = rateLimiter(s1, h1)
@@ -108,11 +113,17 @@ func setActionRoutes(s1 *Service, mux Mux) error {
 
 		if ac, ok := findAuth(s, a.AuthName); ok {
 			authOpt := auth.Options{AuthFailBlock: s.conf.Serv.AuthFailBlock}
-			useAuth, err := auth.NewAuth(ac, zlog, authOpt)
+			authHandler, err := auth.NewAuthHandlerFunc(s.conf.Auth)
 			if err != nil {
-				s.log.Fatalf("actions: error initializing auth: %s", err)
+				s.log.Fatalf("actions: error initializing auth handler: %s", err)
 			}
-			h = useAuth(h)
+			if authHandler != nil {
+				useAuth, err := auth.NewAuth(authHandler, ac, zlog, authOpt)
+				if err != nil {
+					s.log.Fatalf("actions: error initializing auth: %s", err)
+				}
+				h = useAuth(h)
+			}
 		}
 
 		mux.Handle(p, h)
