@@ -142,30 +142,35 @@ func NewAuthHandlerFunc(ac Auth) (HandlerFunc, error) {
 	var h HandlerFunc
 	var err error
 
-	if ac.Development {
+	switch ac.Development {
+	case true:
 		h, err = SimpleHandler(ac)
 		if err != nil {
 			return nil, err
 		}
-	}
-
-	switch ac.Type {
-	case "rails":
-		h, err = RailsHandler(ac)
-
-	case "jwt":
-		h, err = JwtHandler(ac)
-
-	case "header":
-		h, err = HeaderHandler(ac)
-
-	// case "magiclink":
-	// 	h, err = MagicLinkHandler(ac, next)
-	case "", "none":
-		return nil, nil
-
 	default:
-		return nil, fmt.Errorf("auth: unknown auth type: %s", ac.Type)
+		switch ac.Type {
+		case "rails":
+			h, err = RailsHandler(ac)
+
+		case "jwt":
+			h, err = JwtHandler(ac)
+
+		case "header":
+			h, err = HeaderHandler(ac)
+
+		// case "magiclink":
+		// 	h, err = MagicLinkHandler(ac, next)
+		case "", "none":
+			return nil, nil
+
+		default:
+			return nil, fmt.Errorf("auth: unknown auth type: %s", ac.Type)
+		}
+
+		if err != nil {
+			return nil, fmt.Errorf("%s: %s", ac.Type, err.Error())
+		}
 	}
 	return h, err
 }
