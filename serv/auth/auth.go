@@ -41,6 +41,7 @@ import (
 	"strconv"
 
 	"github.com/dosco/graphjin/core"
+	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -127,69 +128,97 @@ type Auth struct {
 	}
 }
 
-type handlerFunc func(w http.ResponseWriter, r *http.Request) (context.Context, error)
+type HandlerFunc func(w http.ResponseWriter, r *http.Request) (context.Context, error)
 
 type Options struct {
 	// Return a HTTP '401 Unauthoized' when auth fails
 	AuthFailBlock bool
 }
 
-func NewAuth(ac Auth, log *zap.Logger, opt Options) (
-	func(next http.Handler) http.Handler, error) {
-	var h handlerFunc
+// NewAuthHandlerFunc returns a HandlerFunc based on the provided config.
+// Usually you don't need to use this function, because is called by NewAuth if
+// no HandlerFunc is provided.
+func NewAuthHandlerFunc(ac Auth) (HandlerFunc, error) {
+	var h HandlerFunc
 	var err error
 
-	if ac.Development {
+	switch ac.Development {
+	case true:
 		h, err = SimpleHandler(ac)
 		if err != nil {
 			return nil, err
 		}
-	}
-
-	switch ac.Type {
-	case "rails":
-		h, err = RailsHandler(ac)
-
-	case "jwt":
-		h, err = JwtHandler(ac)
-
-	case "header":
-		h, err = HeaderHandler(ac)
-
-	// case "magiclink":
-	// 	h, err = MagicLinkHandler(ac, next)
-	case "", "none":
-		return nil, nil
-
 	default:
-		return nil, fmt.Errorf("auth: unknown auth type: %s", ac.Type)
-	}
+		switch ac.Type {
+		case "rails":
+			h, err = RailsHandler(ac)
 
-	if err != nil {
-		return nil, fmt.Errorf("%s: %s", ac.Type, err.Error())
-	}
+		case "jwt":
+			h, err = JwtHandler(ac)
 
+		case "header":
+			h, err = HeaderHandler(ac)
+
+		// case "magiclink":
+		// 	h, err = MagicLinkHandler(ac, next)
+		case "", "none":
+			return nil, nil
+
+		default:
+			return nil, fmt.Errorf("auth: unknown auth type: %s", ac.Type)
+		}
+
+		if err != nil {
+			return nil, fmt.Errorf("%s: %s", ac.Type, err.Error())
+		}
+	}
+	return h, err
+}
+
+// NewAuth returns a new auth handler. It will create a HandlerFunc based on the
+// provided config.
+//
+// Optionally an existing HandlerFunc can be provided. This is required to
+// support auth in WS subscriptions.
+func NewAuth(ac Auth, log *zap.Logger, opt Options, hFn ...HandlerFunc) (
+	func(next http.Handler) http.Handler, error) {
+	var err error
+	var h HandlerFunc
+	var wsAuthSupported bool
+	if len(hFn) > 0 && hFn[0] != nil {
+		h = hFn[0]
+		wsAuthSupported = true
+	} else {
+		h, err = NewAuthHandlerFunc(ac)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return func(next http.Handler) http.Handler {
 		ah := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			c, err := h(w, r)
-			if err != nil && log != nil {
-				log.Error("Auth", []zapcore.Field{zap.String("type", ac.Type), zap.Error(err)}...)
-			}
-
-			if err == err401 {
-				http.Error(w, "401 unauthorized", http.StatusUnauthorized)
-				return
-			}
-
-			if opt.AuthFailBlock && !IsAuth(c) {
-				http.Error(w, "401 unauthorized", http.StatusUnauthorized)
-				return
-			}
-
-			if c != nil {
-				next.ServeHTTP(w, r.WithContext(c))
-			} else {
+			if wsAuthSupported && websocket.IsWebSocketUpgrade(r) {
 				next.ServeHTTP(w, r)
+			} else {
+				c, err := h(w, r)
+				if err != nil && log != nil {
+					log.Error("Auth", []zapcore.Field{zap.String("type", ac.Type), zap.Error(err)}...)
+				}
+
+				if err == Err401 {
+					http.Error(w, "401 unauthorized", http.StatusUnauthorized)
+					return
+				}
+
+				if opt.AuthFailBlock && !IsAuth(c) {
+					http.Error(w, "401 unauthorized", http.StatusUnauthorized)
+					return
+				}
+
+				if c != nil {
+					next.ServeHTTP(w, r.WithContext(c))
+				} else {
+					next.ServeHTTP(w, r)
+				}
 			}
 		})
 
@@ -197,7 +226,7 @@ func NewAuth(ac Auth, log *zap.Logger, opt Options) (
 	}, nil
 }
 
-func SimpleHandler(ac Auth) (handlerFunc, error) {
+func SimpleHandler(ac Auth) (HandlerFunc, error) {
 	return func(_ http.ResponseWriter, r *http.Request) (context.Context, error) {
 		c := r.Context()
 
@@ -220,9 +249,9 @@ func SimpleHandler(ac Auth) (handlerFunc, error) {
 	}, nil
 }
 
-var err401 = errors.New("401 unauthorized")
+var Err401 = errors.New("401 unauthorized")
 
-func HeaderHandler(ac Auth) (handlerFunc, error) {
+func HeaderHandler(ac Auth) (HandlerFunc, error) {
 	hdr := ac.Header
 
 	if hdr.Name == "" {
@@ -246,7 +275,7 @@ func HeaderHandler(ac Auth) (handlerFunc, error) {
 		}
 
 		if fo1 {
-			return nil, err401
+			return nil, Err401
 		}
 		return nil, nil
 	}, nil
