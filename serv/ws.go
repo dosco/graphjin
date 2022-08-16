@@ -55,7 +55,7 @@ func init() {
 	}
 }
 
-func (s *service) apiV1Ws(authHandler auth.HandlerFunc, w http.ResponseWriter, r *http.Request) {
+func (s *service) apiV1Ws(w http.ResponseWriter, r *http.Request, ah ...auth.HandlerFunc) {
 	var m *core.Member
 	var ready bool
 	var err error
@@ -68,6 +68,11 @@ func (s *service) apiV1Ws(authHandler auth.HandlerFunc, w http.ResponseWriter, r
 	}
 	defer c.Close()
 	c.SetReadLimit(2048)
+
+	var authHandler auth.HandlerFunc
+	if len(ah) > 0 {
+		authHandler = ah[0]
+	}
 
 	var v wsReq
 

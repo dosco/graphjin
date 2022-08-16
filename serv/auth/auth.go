@@ -135,6 +135,9 @@ type Options struct {
 	AuthFailBlock bool
 }
 
+// NewAuthHandlerFunc returns a HandlerFunc based on the provided config.
+// Usually you don't need to use this function, because is called by NewAuth if
+// no HandlerFunc is provided.
 func NewAuthHandlerFunc(ac Auth) (HandlerFunc, error) {
 	var h HandlerFunc
 	var err error
@@ -167,17 +170,30 @@ func NewAuthHandlerFunc(ac Auth) (HandlerFunc, error) {
 	return h, err
 }
 
-func NewAuth(h HandlerFunc, ac Auth, log *zap.Logger, opt Options) (
+// NewAuth returns a new auth handler. It will create a HandlerFunc based on the
+// provided config.
+//
+// Optionally an existing HandlerFunc can be provided. This is required to
+// support auth in WS subscriptions.
+func NewAuth(ac Auth, log *zap.Logger, opt Options, hFn ...HandlerFunc) (
 	func(next http.Handler) http.Handler, error) {
-	if h == nil {
-		return nil, errors.New("null HandlerFunc")
+	var err error
+	var h HandlerFunc
+	var wsAuthSupported bool
+	if len(hFn) > 0 && hFn[0] != nil {
+		h = hFn[0]
+		wsAuthSupported = true
+	} else {
+		h, err = NewAuthHandlerFunc(ac)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return func(next http.Handler) http.Handler {
 		ah := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			switch websocket.IsWebSocketUpgrade(r) {
-			case true:
+			if wsAuthSupported && websocket.IsWebSocketUpgrade(r) {
 				next.ServeHTTP(w, r)
-			case false:
+			} else {
 				c, err := h(w, r)
 				if err != nil && log != nil {
 					log.Error("Auth", []zapcore.Field{zap.String("type", ac.Type), zap.Error(err)}...)
