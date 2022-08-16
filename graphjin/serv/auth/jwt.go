@@ -14,7 +14,7 @@ const (
 	authHeader = "Authorization"
 )
 
-func JwtHandler(ac Auth) (handlerFunc, error) {
+func JwtHandler(ac Auth) (HandlerFunc, error) {
 	jwtProvider, err := provider.NewProvider(ac.JWT)
 	if err != nil {
 		return nil, err
