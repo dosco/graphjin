@@ -947,7 +947,7 @@ func Example_queryWithRemoteAPIJoin() {
 			fmt.Fprintf(w, `{"data":[{"desc":"Payment 1 for %s"},{"desc": "Payment 2 for %s"}]}`,
 				id, id)
 		})
-		log.Fatal(http.ListenAndServe("localhost:12345", nil))
+		log.Fatal(http.ListenAndServe("localhost:12345", nil)) //nolint:gosec
 	}()
 
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 2})

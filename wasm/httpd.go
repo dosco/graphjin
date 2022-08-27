@@ -25,5 +25,5 @@ func main() {
 		}
 	})
 	log.Println("WARM testing server started on port 8080")
-	log.Println(http.ListenAndServe(":8080", nil))
+	log.Println(http.ListenAndServe(":8080", nil)) //nolint:gosec
 }
