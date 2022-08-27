@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -118,11 +119,16 @@ func (al *List) Set(vars []byte, query string, md Metadata, namespace string) er
 
 func (al *List) Load() ([]Item, error) {
 	var items []Item
+	var files []fs.FileInfo
+	var err error
 
-	files, err := afero.ReadDir(al.fs, queryPath)
-	if err == afero.ErrFileNotFound {
+	if ok, err := afero.DirExists(al.fs, queryPath); ok {
 		return items, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("allow list: %w", err)
 	}
+
+	files, err = afero.ReadDir(al.fs, queryPath)
 	if err != nil {
 		return nil, fmt.Errorf("allow list: %w", err)
 	}
