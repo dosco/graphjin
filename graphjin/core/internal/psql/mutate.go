@@ -9,6 +9,7 @@ import (
 	"github.com/dosco/graphjin/core/internal/graph"
 	"github.com/dosco/graphjin/core/internal/qcode"
 	"github.com/dosco/graphjin/core/internal/sdata"
+	"github.com/dosco/graphjin/core/internal/util"
 )
 
 func (co *Compiler) compileMutation(
@@ -536,7 +537,7 @@ func (c *compilerContext) renderMutateToRecordSet(m qcode.Mutate, n int) {
 	}
 
 	c.w.WriteString(`(`)
-	joinPath(c.w, `i.j`, m.Path)
+	joinPath(c.w, `i.j`, m.Path, c.enableCamelcase)
 	c.w.WriteString(`) as t(`)
 
 	i := 0
@@ -559,12 +560,16 @@ func (c *compilerContext) renderComma(i int) int {
 	return i + 1
 }
 
-func joinPath(w *bytes.Buffer, prefix string, path []string) {
+func joinPath(w *bytes.Buffer, prefix string, path []string, enableCamelcase bool) {
 	w.WriteString(prefix)
 	for i := range path {
 		w.WriteString(`->`)
 		w.WriteString(`'`)
-		w.WriteString(path[i])
+		if enableCamelcase {
+			w.WriteString(util.ToCamel(path[i]))
+		} else {
+			w.WriteString(path[i])
+		}
 		w.WriteString(`'`)
 	}
 }

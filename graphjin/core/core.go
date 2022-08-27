@@ -175,9 +175,10 @@ func (gj *graphjin) initCompilers() error {
 	}
 
 	gj.pc = psql.NewCompiler(psql.Config{
-		Vars:      gj.conf.Vars,
-		DBType:    gj.schema.DBType(),
-		DBVersion: gj.schema.DBVersion(),
+		Vars:            gj.conf.Vars,
+		DBType:          gj.schema.DBType(),
+		DBVersion:       gj.schema.DBVersion(),
+		EnableCamelcase: gj.conf.EnableCamelcase,
 	})
 	return nil
 }
