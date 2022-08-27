@@ -39,19 +39,21 @@ type compilerContext struct {
 type Variables map[string]json.RawMessage
 
 type Config struct {
-	Vars      map[string]string
-	DBType    string
-	DBVersion int
+	Vars            map[string]string
+	DBType          string
+	DBVersion       int
+	EnableCamelcase bool
 }
 
 type Compiler struct {
-	svars map[string]string
-	ct    string // db type
-	cv    int    // db version
+	svars           map[string]string
+	ct              string // db type
+	cv              int    // db version
+	enableCamelcase bool
 }
 
 func NewCompiler(conf Config) *Compiler {
-	return &Compiler{svars: conf.Vars, ct: conf.DBType, cv: conf.DBVersion}
+	return &Compiler{svars: conf.Vars, ct: conf.DBType, cv: conf.DBVersion, enableCamelcase: conf.EnableCamelcase}
 }
 
 func (co *Compiler) CompileEx(qc *qcode.QCode) (Metadata, []byte, error) {
