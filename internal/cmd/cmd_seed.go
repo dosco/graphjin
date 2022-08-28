@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"path"
@@ -51,7 +50,7 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 }
 
 func compileAndRunJS(seed string, db *sql.DB) error {
-	b, err := ioutil.ReadFile(seed)
+	b, err := os.ReadFile(seed)
 	if err != nil {
 		return fmt.Errorf("Failed to read seed file %s: %s", seed, err)
 	}

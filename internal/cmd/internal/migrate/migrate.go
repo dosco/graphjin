@@ -5,7 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"io/ioutil"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -87,19 +87,19 @@ func NewMigratorEx(db *sql.DB, opts *MigratorOptions) (m *Migrator, err error) {
 }
 
 type MigratorFS interface {
-	ReadDir(dirname string) ([]os.FileInfo, error)
+	ReadDir(dirname string) ([]fs.DirEntry, error)
 	ReadFile(filename string) ([]byte, error)
 	Glob(pattern string) (matches []string, err error)
 }
 
 type defaultMigratorFS struct{}
 
-func (defaultMigratorFS) ReadDir(dirname string) ([]os.FileInfo, error) {
-	return ioutil.ReadDir(dirname)
+func (defaultMigratorFS) ReadDir(dirname string) ([]fs.DirEntry, error) {
+	return os.ReadDir(dirname)
 }
 
 func (defaultMigratorFS) ReadFile(filename string) ([]byte, error) {
-	return ioutil.ReadFile(filename)
+	return os.ReadFile(filename)
 }
 
 func (defaultMigratorFS) Glob(pattern string) ([]string, error) {
@@ -109,7 +109,7 @@ func (defaultMigratorFS) Glob(pattern string) ([]string, error) {
 func FindMigrationsEx(path string, fs MigratorFS) ([]string, error) {
 	path = strings.TrimRight(path, string(filepath.Separator))
 
-	files, err := ioutil.ReadDir(path)
+	files, err := os.ReadDir(path)
 	if err != nil {
 		log.Fatal(err)
 	}

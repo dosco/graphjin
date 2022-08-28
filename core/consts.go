@@ -5,5 +5,5 @@ import (
 )
 
 var (
-	errNotFound = errors.New("not found in prepared statements")
+	ErrNotFound = errors.New("not found in prepared statements")
 )
