@@ -145,7 +145,7 @@ func (gj *graphjin) getQuery(qr queryReq, role string, vm map[string]json.RawMes
 	qk := (qr.ns + qr.name + role)
 	qc, ok := gj.queries[qk]
 	if !ok {
-		return nil, errNotFound
+		return nil, ErrNotFound
 	}
 
 	ov := qc.qr.order[0]

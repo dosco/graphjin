@@ -2,7 +2,6 @@ package secrets
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 
 	"go.mozilla.org/sops/v3"
@@ -125,7 +124,7 @@ func Run(cmdName, fileName string, sa Args, args []string, log *zap.SugaredLogge
 		if err != nil {
 			return err
 		}
-		return ioutil.WriteFile(fileName, output, 0600)
+		return os.WriteFile(fileName, output, 0600)
 	}
 
 	if err != nil {

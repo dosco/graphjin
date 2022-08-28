@@ -3,7 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httputil"
 	"strings"
@@ -83,7 +83,7 @@ func (r *remoteAPI) Resolve(c context.Context, rr ResolverReq) ([]byte, error) {
 			fmt.Errorf("server responded with a %d", res.StatusCode)
 	}
 
-	b, err := ioutil.ReadAll(res.Body)
+	b, err := io.ReadAll(res.Body)
 	if err != nil {
 		return nil, err
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -1083,13 +1082,13 @@ func Example_queryWithScriptDirective() {
 	}
 	`
 
-	dir, err := ioutil.TempDir("", "test")
+	dir, err := os.MkdirTemp("", "test")
 	if err != nil {
 		panic(err)
 	}
 	defer os.RemoveAll(dir)
 
-	err = ioutil.WriteFile(path.Join(dir, "test.js"), []byte(script), 0600)
+	err = os.WriteFile(path.Join(dir, "test.js"), []byte(script), 0600)
 	if err != nil {
 		panic(err)
 	}
@@ -1125,13 +1124,13 @@ func Example_queryWithScriptDirectiveUsingGraphQL() {
 	}
 	`
 
-	dir, err := ioutil.TempDir("", "test")
+	dir, err := os.MkdirTemp("", "test")
 	if err != nil {
 		panic(err)
 	}
 	defer os.RemoveAll(dir)
 
-	err = ioutil.WriteFile(path.Join(dir, "test.js"), []byte(script), 0600)
+	err = os.WriteFile(path.Join(dir, "test.js"), []byte(script), 0600)
 	if err != nil {
 		panic(err)
 	}
@@ -1172,13 +1171,13 @@ func Example_queryWithScriptDirectiveUsingHttp() {
 	}
 	`
 
-	dir, err := ioutil.TempDir("", "test")
+	dir, err := os.MkdirTemp("", "test")
 	if err != nil {
 		panic(err)
 	}
 	defer os.RemoveAll(dir)
 
-	err = ioutil.WriteFile(path.Join(dir, "test.js"), []byte(script), 0600)
+	err = os.WriteFile(path.Join(dir, "test.js"), []byte(script), 0600)
 	if err != nil {
 		panic(err)
 	}

@@ -6,7 +6,6 @@ import (
 	"crypto/md5" // #nosec: G501
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -116,15 +115,15 @@ func edit(opts editOpts) ([]byte, error) {
 
 func editTree(opts editOpts, tree *sops.Tree, dataKey []byte) ([]byte, error) {
 	// Create temporary file for editing
-	tmpdir, err := ioutil.TempDir("", "")
+	tmpdir, err := os.MkdirTemp("", "")
 	if err != nil {
-		return nil, fmt.Errorf("Could not create temporary directory: %s", err)
+		return nil, fmt.Errorf("could not create temporary directory: %s", err)
 	}
 	defer os.RemoveAll(tmpdir)
 
 	tmpfile, err := os.Create(filepath.Join(tmpdir, filepath.Base(opts.InputPath)))
 	if err != nil {
-		return nil, fmt.Errorf("Could not create temporary file: %s", err)
+		return nil, fmt.Errorf("could not create temporary file: %s", err)
 	}
 
 	// Write to temporary file
@@ -176,7 +175,7 @@ func editTree(opts editOpts, tree *sops.Tree, dataKey []byte) ([]byte, error) {
 	// Output the file
 	encryptedFile, err := opts.OutputStore.EmitEncryptedFile(*tree)
 	if err != nil {
-		return nil, common.NewExitError(fmt.Sprintf("Could not marshal tree: %s", err), codes.ErrorDumpingTree)
+		return nil, common.NewExitError(fmt.Sprintf("could not marshal tree: %s", err), codes.ErrorDumpingTree)
 	}
 	return encryptedFile, nil
 }
@@ -194,13 +193,13 @@ func runEditorUntilOk(opts runEditorUntilOkOpts) error {
 		if bytes.Equal(newHash, opts.OriginalHash) {
 			return fmt.Errorf("file has not changed, exiting")
 		}
-		edited, err := ioutil.ReadFile(opts.TmpFile.Name())
+		edited, err := os.ReadFile(opts.TmpFile.Name())
 		if err != nil {
 			return fmt.Errorf("could not read edited file: %s", err)
 		}
 		newBranches, err := opts.InputStore.LoadPlainFile(edited)
 		if err != nil {
-			opts.log.Errorf("Could not load tree, probably due to invalid " +
+			opts.log.Errorf("could not load tree, probably due to invalid " +
 				"syntax. Press a key to return to the editor, or Ctrl+C to " +
 				"exit.")
 			_, _ = bufio.NewReader(os.Stdin).ReadByte()
@@ -211,7 +210,7 @@ func runEditorUntilOk(opts runEditorUntilOkOpts) error {
 			// metadata
 			t, err := opts.InputStore.LoadEncryptedFile(edited)
 			if err != nil {
-				opts.log.Errorf("SOPS metadata is invalid. Press a key to " +
+				opts.log.Errorf("invalid metadata. Press a key to " +
 					"return to the editor, or Ctrl+C to exit.")
 				_, _ = bufio.NewReader(os.Stdin).ReadByte()
 				continue
@@ -230,7 +229,7 @@ func runEditorUntilOk(opts runEditorUntilOkOpts) error {
 			opts.Tree.Metadata.Version = version.Version
 		}
 		if opts.Tree.Metadata.MasterKeyCount() == 0 {
-			opts.log.Error("No master keys were provided, so sops can't " +
+			opts.log.Error("no master keys were provided, so sops can't " +
 				"encrypt the file. Press a key to return to the editor, or " +
 				"Ctrl+C to exit.")
 			_, _ = bufio.NewReader(os.Stdin).ReadByte()

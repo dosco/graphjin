@@ -3,7 +3,7 @@ package jsn_test
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strings"
 	"testing"
 
@@ -167,9 +167,9 @@ var (
 	input6 = `
 	{"users" : [{"id" : 1, "email" : "vicram@gmail.com", "slug" : "vikram-rangnekar", "threads" : [], "threads_cursor" : null}, {"id" : 3, "email" : "marareilly@lang.name", "slug" : "raymundo-corwin", "threads" : [{"id" : 9, "title" : "Et alias et aut porro praesentium nam in voluptatem reiciendis quisquam perspiciatis inventore eos quia et et enim qui amet."}, {"id" : 25, "title" : "Ipsam quam nemo culpa tempore amet optio sit sed eligendi autem consequatur quaerat rem velit quibusdam quibusdam optio a voluptatem."}], "threads_cursor" : 25}], "users_cursor" : 3}`
 
-	input7, _ = ioutil.ReadFile("test7.json")
+	input7, _ = os.ReadFile("test7.json")
 
-	input8, _ = ioutil.ReadFile("test8.json")
+	input8, _ = os.ReadFile("test8.json")
 )
 
 func TestGet(t *testing.T) {

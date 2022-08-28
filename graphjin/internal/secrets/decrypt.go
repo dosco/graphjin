@@ -3,7 +3,7 @@ package secrets
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 
 	"github.com/spf13/afero"
@@ -121,7 +121,7 @@ func LoadEncryptedFile(
 	var err error
 
 	if fs == nil {
-		fileBytes, err = ioutil.ReadFile(inputPath)
+		fileBytes, err = os.ReadFile(inputPath)
 	} else {
 		fileBytes, err = afero.ReadFile(fs, inputPath)
 	}

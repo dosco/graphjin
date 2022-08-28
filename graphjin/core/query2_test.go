@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -102,7 +101,7 @@ func TestAllowList(t *testing.T) {
 		}
 	}`
 
-	dir, err := ioutil.TempDir("", "test")
+	dir, err := os.MkdirTemp("", "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,11 +115,15 @@ func TestAllowList(t *testing.T) {
 		return
 	}
 
-	_, err = gj1.GraphQL(context.Background(), gql1, nil, nil)
+	res1, err := gj1.GraphQL(context.Background(), gql1, nil, nil)
 	if err != nil {
 		t.Error(err)
 		return
 	}
+
+	exp1 := `{"products": {"id": 2}}`
+	got1 := string(res1.Data)
+	assert.Equal(t, exp1, got1, "should equal")
 
 	conf2 := newConfig(&core.Config{DBType: dbType, Production: true})
 	gj2, err := core.NewGraphJin(conf2, db, core.OptionSetFS(fs))
@@ -129,15 +132,8 @@ func TestAllowList(t *testing.T) {
 		return
 	}
 
-	res, err := gj2.GraphQL(context.Background(), gql2, nil, nil)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	exp := `{"products": {"id": 2}}`
-	got := string(res.Data)
-	assert.Equal(t, exp, got, "should equal")
+	_, err = gj2.GraphQL(context.Background(), gql2, nil, nil)
+	assert.ErrorIs(t, err, core.ErrNotFound)
 }
 
 func TestAllowListWithNamespace(t *testing.T) {
@@ -154,7 +150,7 @@ func TestAllowListWithNamespace(t *testing.T) {
 		}
 	}`
 
-	dir, err := ioutil.TempDir("", "test")
+	dir, err := os.MkdirTemp("", "test")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"strconv"
 	"strings"
@@ -123,7 +122,7 @@ func (s1 *Service) apiV1GraphQL(ns nspace, ah ...auth.HandlerFunc) http.Handler 
 		switch r.Method {
 		case "POST":
 			var b []byte
-			b, err = ioutil.ReadAll(io.LimitReader(r.Body, maxReadBytes))
+			b, err = io.ReadAll(io.LimitReader(r.Body, maxReadBytes))
 			if err == nil {
 				defer r.Body.Close()
 				err = json.Unmarshal(b, &req)
@@ -383,7 +382,7 @@ func renderErr(w http.ResponseWriter, err error) {
 }
 
 func parseBody(r *http.Request) ([]byte, error) {
-	b, err := ioutil.ReadAll(io.LimitReader(r.Body, maxReadBytes))
+	b, err := io.ReadAll(io.LimitReader(r.Body, maxReadBytes))
 	if err != nil {
 		return nil, err
 	}
