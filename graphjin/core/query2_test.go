@@ -105,10 +105,19 @@ func TestAllowList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	// os.MkdirAll("config/queries", os.ModePerm)
+
+	// err = os.WriteFile("config/queries/getProducts.gql", []byte(gql1), os.ModePerm)
+	// if err != nil {
+	// 	t.Error(err)
+	// 	return
+	// }
+
 	defer os.RemoveAll(dir)
 	fs := afero.NewBasePathFs(afero.NewOsFs(), dir)
 
-	conf1 := newConfig(&core.Config{DBType: dbType})
+	conf1 := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj1, err := core.NewGraphJin(conf1, db, core.OptionSetFS(fs))
 	if err != nil {
 		t.Error(err)

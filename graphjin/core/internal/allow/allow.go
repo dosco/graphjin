@@ -122,7 +122,7 @@ func (al *List) Load() ([]Item, error) {
 	var files []fs.FileInfo
 	var err error
 
-	if ok, err := afero.DirExists(al.fs, queryPath); ok {
+	if ok, err := afero.DirExists(al.fs, queryPath); !ok {
 		return items, nil
 	} else if err != nil {
 		return nil, fmt.Errorf("allow list: %w", err)
