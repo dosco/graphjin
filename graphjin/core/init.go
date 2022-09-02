@@ -404,10 +404,10 @@ func addRole(qc *qcode.Compiler, r Role, t RoleTable, defaultBlock bool) error {
 
 	if t.Upsert != nil {
 		upsert = qcode.UpsertConfig{
-			Filters: t.Update.Filters,
-			Columns: t.Update.Columns,
-			Presets: t.Update.Presets,
-			Block:   t.Update.Block,
+			Filters: t.Upsert.Filters,
+			Columns: t.Upsert.Columns,
+			Presets: t.Upsert.Presets,
+			Block:   t.Upsert.Block,
 		}
 	}
 
