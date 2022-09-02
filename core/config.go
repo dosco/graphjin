@@ -325,6 +325,8 @@ func (c *Config) AddRoleTable(role, table string, conf interface{}) error {
 		t.Insert = &v
 	case Update:
 		t.Update = &v
+	case Upsert:
+		t.Upsert = &v
 	case Delete:
 		t.Delete = &v
 	default:
