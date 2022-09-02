@@ -70,19 +70,11 @@ func (s *service) initConfig() error {
 		c.Core.DBType = c.DB.Type
 	}
 
-	if !c.Serv.Production {
-		c.Auth.Development = true
-	}
-
 	// Auths: validate and sanitize
 	am := make(map[string]struct{})
 
 	for i := 0; i < len(c.Auths); i++ {
 		a := &c.Auths[i]
-
-		if !c.Serv.Production {
-			c.Auth.Development = true
-		}
 
 		if _, ok := am[a.Name]; ok {
 			return fmt.Errorf("duplicate auth found: %s", a.Name)
