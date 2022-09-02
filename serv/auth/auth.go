@@ -145,9 +145,7 @@ func NewAuthHandlerFunc(ac Auth) (HandlerFunc, error) {
 	switch ac.Development {
 	case true:
 		h, err = SimpleHandler(ac)
-		if err != nil {
-			return nil, err
-		}
+
 	default:
 		switch ac.Type {
 		case "rails":
