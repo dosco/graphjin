@@ -146,7 +146,7 @@ func (co *Compiler) AddRole(role, schema, table string, trc TRConfig) error {
 	trv.update.block = trc.Update.Block
 
 	// upsert config
-	trv.upsert.fil, trv.update.filNU, err = compileFilter(co.s, ti, trc.Upsert.Filters, false)
+	trv.upsert.fil, trv.upsert.filNU, err = compileFilter(co.s, ti, trc.Upsert.Filters, false)
 	if err != nil {
 		return err
 	}
@@ -290,7 +290,8 @@ func (trv *trval) getPresets(mt MType) map[string]string {
 		return trv.insert.presets
 	case MTUpdate:
 		return trv.update.presets
-
+	case MTUpsert:
+		return trv.upsert.presets
 	}
 	return nil
 }
