@@ -55,7 +55,7 @@ type errorResp struct {
 	Errors []string `json:"errors"`
 }
 
-func apiV1Handler(s1 *Service, ns nspace, h http.Handler, ah ...auth.HandlerFunc) http.Handler {
+func apiV1Handler(s1 *Service, ns nspace, h http.Handler, ah auth.HandlerFunc) http.Handler {
 	var zlog *zap.Logger
 	s := s1.Load().(*service)
 
@@ -63,16 +63,12 @@ func apiV1Handler(s1 *Service, ns nspace, h http.Handler, ah ...auth.HandlerFunc
 		zlog = s.zlog
 	}
 
-	authOpt := auth.Options{AuthFailBlock: s.conf.Serv.AuthFailBlock}
-	var useAuth func(next http.Handler) http.Handler
-	var err error
-	useAuth, err = auth.NewAuth(s.conf.Auth, zlog, authOpt, ah...)
-	if err != nil {
-		s.log.Fatalf("api: error initializing auth: %s", err)
-	}
-
-	// useAuth can be nil when type="" or type="none"
-	if useAuth != nil {
+	if ah != nil {
+		authOpt := auth.Options{AuthFailBlock: s.conf.Serv.AuthFailBlock}
+		useAuth, err := auth.NewAuth(s.conf.Auth, zlog, authOpt, ah)
+		if err != nil {
+			s.log.Fatalf("api: error initializing auth: %s", err)
+		}
 		h = useAuth(h)
 	}
 
@@ -97,7 +93,7 @@ func apiV1Handler(s1 *Service, ns nspace, h http.Handler, ah ...auth.HandlerFunc
 	return h
 }
 
-func (s1 *Service) apiV1GraphQL(ns nspace, ah ...auth.HandlerFunc) http.Handler {
+func (s1 *Service) apiV1GraphQL(ns nspace, ah auth.HandlerFunc) http.Handler {
 	dtrace := otel.GetTextMapPropagator()
 
 	h := func(w http.ResponseWriter, r *http.Request) {
@@ -109,7 +105,7 @@ func (s1 *Service) apiV1GraphQL(ns nspace, ah ...auth.HandlerFunc) http.Handler 
 		w.Header().Set("Content-Type", "application/json")
 
 		if websocket.IsWebSocketUpgrade(r) {
-			s.apiV1Ws(w, r, ah...)
+			s.apiV1Ws(w, r, ah)
 			return
 		}
 
@@ -195,7 +191,7 @@ func (s1 *Service) apiV1GraphQL(ns nspace, ah ...auth.HandlerFunc) http.Handler 
 	return http.HandlerFunc(h)
 }
 
-func (s1 *Service) apiV1Rest(ns nspace, ah ...auth.HandlerFunc) http.Handler {
+func (s1 *Service) apiV1Rest(ns nspace, ah auth.HandlerFunc) http.Handler {
 	rLen := len(routeREST)
 	dtrace := otel.GetTextMapPropagator()
 
@@ -208,7 +204,7 @@ func (s1 *Service) apiV1Rest(ns nspace, ah ...auth.HandlerFunc) http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 
 		if websocket.IsWebSocketUpgrade(r) {
-			s.apiV1Ws(w, r, ah...)
+			s.apiV1Ws(w, r, ah)
 			return
 		}
 
@@ -369,7 +365,7 @@ func (r gqlReq) apqEnabled() bool {
 	return r.Ext.Persisted.Sha256Hash != ""
 }
 
-//nolint: errcheck
+// nolint: errcheck
 func renderErr(w http.ResponseWriter, err error) {
 	if err == errUnauthorized {
 		w.WriteHeader(http.StatusUnauthorized)

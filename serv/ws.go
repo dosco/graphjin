@@ -55,7 +55,7 @@ func init() {
 	}
 }
 
-func (s *service) apiV1Ws(w http.ResponseWriter, r *http.Request, ah ...auth.HandlerFunc) {
+func (s *service) apiV1Ws(w http.ResponseWriter, r *http.Request, ah auth.HandlerFunc) {
 	var m *core.Member
 	var ready bool
 	var err error
@@ -68,11 +68,6 @@ func (s *service) apiV1Ws(w http.ResponseWriter, r *http.Request, ah ...auth.Han
 	}
 	defer c.Close()
 	c.SetReadLimit(2048)
-
-	var authHandler auth.HandlerFunc
-	if len(ah) > 0 {
-		authHandler = ah[0]
-	}
 
 	var v wsReq
 
@@ -97,7 +92,7 @@ func (s *service) apiV1Ws(w http.ResponseWriter, r *http.Request, ah ...auth.Han
 			break
 		}
 
-		if ct, ready, err = s.subSwitch(ct, c, v, done, authHandler, w, r); err != nil {
+		if ct, ready, err = s.subSwitch(ct, c, v, done, ah, w, r); err != nil {
 			if err1 := sendError(ct, c, err, v.ID); err1 != nil {
 				err = err1
 			}
@@ -114,7 +109,13 @@ func (s *service) apiV1Ws(w http.ResponseWriter, r *http.Request, ah ...auth.Han
 }
 
 func (s *service) subSwitch(
-	ct context.Context, c *websocket.Conn, v wsReq, done chan bool, authHandler auth.HandlerFunc, w http.ResponseWriter, r *http.Request) (context.Context, bool, error) {
+	ct context.Context,
+	c *websocket.Conn,
+	v wsReq,
+	done chan bool,
+	ah auth.HandlerFunc,
+	w http.ResponseWriter,
+	r *http.Request) (context.Context, bool, error) {
 
 	switch v.Type {
 	case "connection_init":
@@ -137,8 +138,9 @@ func (s *service) subSwitch(
 				}
 			}
 		}
-		if authHandler != nil {
-			c, err := authHandler(w, r)
+
+		if ah != nil {
+			c, err := ah(w, r)
 			if err != nil {
 				s.zlog.Error("Auth", []zapcore.Field{zap.Error(err)}...)
 			}
