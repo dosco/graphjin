@@ -48,6 +48,8 @@ import (
 	"github.com/dosco/graphjin/serv/auth/provider"
 )
 
+var ErrNoAuthDefined = errors.New("no auth defined")
+
 type JWTConfig = provider.JWTConfig
 
 // Auth struct contains authentication related config values used by the GraphJin service
@@ -160,7 +162,7 @@ func NewAuthHandlerFunc(ac Auth) (HandlerFunc, error) {
 		// case "magiclink":
 		// 	h, err = MagicLinkHandler(ac, next)
 		case "", "none":
-			return nil, nil
+			return nil, ErrNoAuthDefined
 
 		default:
 			return nil, fmt.Errorf("auth: unknown auth type: %s", ac.Type)
@@ -183,7 +185,8 @@ func NewAuth(ac Auth, log *zap.Logger, opt Options, hFn ...HandlerFunc) (
 	var err error
 	var h HandlerFunc
 	var wsAuthSupported bool
-	if len(hFn) > 0 && hFn[0] != nil {
+
+	if len(hFn) != 0 && hFn[0] != nil {
 		h = hFn[0]
 		wsAuthSupported = true
 	} else {
@@ -192,31 +195,32 @@ func NewAuth(ac Auth, log *zap.Logger, opt Options, hFn ...HandlerFunc) (
 			return nil, err
 		}
 	}
+
 	return func(next http.Handler) http.Handler {
 		ah := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if wsAuthSupported && websocket.IsWebSocketUpgrade(r) {
 				next.ServeHTTP(w, r)
+				return
+			}
+			c, err := h(w, r)
+			if err != nil && log != nil {
+				log.Error("Auth", []zapcore.Field{zap.String("type", ac.Type), zap.Error(err)}...)
+			}
+
+			if err == Err401 {
+				http.Error(w, "401 unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			if opt.AuthFailBlock && !IsAuth(c) {
+				http.Error(w, "401 unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			if c != nil {
+				next.ServeHTTP(w, r.WithContext(c))
 			} else {
-				c, err := h(w, r)
-				if err != nil && log != nil {
-					log.Error("Auth", []zapcore.Field{zap.String("type", ac.Type), zap.Error(err)}...)
-				}
-
-				if err == Err401 {
-					http.Error(w, "401 unauthorized", http.StatusUnauthorized)
-					return
-				}
-
-				if opt.AuthFailBlock && !IsAuth(c) {
-					http.Error(w, "401 unauthorized", http.StatusUnauthorized)
-					return
-				}
-
-				if c != nil {
-					next.ServeHTTP(w, r.WithContext(c))
-				} else {
-					next.ServeHTTP(w, r)
-				}
+				next.ServeHTTP(w, r)
 			}
 		})
 

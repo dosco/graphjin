@@ -57,8 +57,12 @@ func routesHandler(s1 *Service, mux Mux, ns nspace) (http.Handler, error) {
 	}
 
 	ah, err := auth.NewAuthHandlerFunc(s.conf.Auth)
-	if err != nil {
+	if err != nil && err != auth.ErrNoAuthDefined {
 		s.log.Fatalf("api: error initializing auth handler: %s", err)
+	}
+
+	if s.conf.Auth.Development {
+		s.log.Warn("api: auth.development=true this allows clients to bypass authentication")
 	}
 
 	// GraphQL / REST API
@@ -101,31 +105,23 @@ func setActionRoutes(s1 *Service, mux Mux) error {
 	}
 
 	for i, a := range s.conf.Serv.Actions {
-		var fn http.Handler
+		var h http.Handler
 
-		fn, err = newAction(s1, &s.conf.Serv.Actions[i])
+		h, err = newAction(s1, &s.conf.Serv.Actions[i])
 		if err != nil {
 			break
 		}
-
 		p := path.Join(actionRoute, strings.ToLower(a.Name))
-		h := fn
 
 		if ac, ok := findAuth(s, a.AuthName); ok {
 			authOpt := auth.Options{AuthFailBlock: s.conf.Serv.AuthFailBlock}
-			ah, err := auth.NewAuthHandlerFunc(s.conf.Auth)
-			if err != nil {
-				s.log.Fatalf("actions: error initializing auth handler: %s", err)
-			}
-			if ah != nil {
-				useAuth, err := auth.NewAuth(ac, zlog, authOpt, ah)
-				if err != nil {
-					s.log.Fatalf("actions: error initializing auth: %s", err)
-				}
+			useAuth, err := auth.NewAuth(ac, zlog, authOpt)
+			if err == nil {
 				h = useAuth(h)
+			} else if err != nil && err != auth.ErrNoAuthDefined {
+				s.log.Fatalf("actions: error initializing auth: %s", err)
 			}
 		}
-
 		mux.Handle(p, h)
 	}
 	return nil
