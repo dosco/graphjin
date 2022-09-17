@@ -13,8 +13,8 @@ import (
 )
 
 func TestMutiSchema(t *testing.T) {
-	totalSchemas := 100
-	totalTables := 20
+	totalSchemas := 20
+	totalTables := 5
 
 	for i := 0; i < totalSchemas; i++ {
 		createSchemaSQL := `CREATE SCHEMA test_schema_%d;`
@@ -47,8 +47,8 @@ func TestMutiSchema(t *testing.T) {
 		}
 	}
 
-	sn := rand.Intn(totalSchemas) //nolint:gosec
-	tn := rand.Intn(totalTables)  //nolint:gosec
+	sn := rand.Intn(totalSchemas - 1) //nolint:gosec
+	tn := rand.Intn(totalTables - 1)  //nolint:gosec
 
 	gql := fmt.Sprintf(`query {
 		test_table_%d_%d @schema(name: "test_schema_%d") {
