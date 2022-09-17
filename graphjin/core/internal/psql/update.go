@@ -33,7 +33,7 @@ func (c *compilerContext) renderUpdateStmt(m qcode.Mutate) {
 	c.renderOneToManyModifiers(m)
 
 	c.w.WriteString(`UPDATE `)
-	c.quoted(m.Ti.Name)
+	c.table(m.Ti.Schema, m.Ti.Name, false)
 
 	c.w.WriteString(` SET (`)
 	n := c.renderInsertUpdateColumns(m)
@@ -75,6 +75,6 @@ func (c *compilerContext) renderUpdateStmt(m qcode.Mutate) {
 	}
 
 	c.w.WriteString(` RETURNING `)
-	c.quoted(m.Ti.Name)
+	c.table(m.Ti.Schema, m.Ti.Name, false)
 	c.w.WriteString(`.*)`)
 }

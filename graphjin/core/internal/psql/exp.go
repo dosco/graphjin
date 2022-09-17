@@ -97,7 +97,7 @@ func (c *expContext) render(ex *qcode.Exp) {
 func (c *expContext) renderNestedExp(st *util.StackInf, ex *qcode.Exp) {
 	firstJoin := ex.Joins[0]
 	c.w.WriteString(`EXISTS (SELECT 1 FROM `)
-	c.w.WriteString(firstJoin.Rel.Left.Col.Table)
+	c.table(firstJoin.Rel.Left.Col.Schema, firstJoin.Rel.Left.Col.Table, true)
 
 	if len(ex.Joins) > 1 {
 		for i := 1; i < len(ex.Joins); i++ {

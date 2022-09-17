@@ -328,12 +328,12 @@ func (c *compilerContext) renderDelete() {
 	c.quoted(sel.Table)
 
 	c.w.WriteString(` AS (DELETE FROM `)
-	c.quoted(sel.Table)
+	c.table(sel.Ti.Schema, sel.Ti.Name, false)
 	c.w.WriteString(` WHERE `)
 	c.renderExp(sel.Ti, sel.Where.Exp, false)
 
 	c.w.WriteString(` RETURNING `)
-	c.quoted(sel.Table)
+	c.table(sel.Ti.Schema, sel.Ti.Name, false)
 	c.w.WriteString(`.*) `)
 }
 
@@ -371,7 +371,7 @@ func (c *compilerContext) renderOneToOneConnectStmt(m qcode.Mutate) {
 	c.renderCteName(m)
 	c.w.WriteString(` AS ( UPDATE `)
 
-	c.quoted(m.Ti.Name)
+	c.table(m.Ti.Schema, m.Ti.Name, false)
 	c.w.WriteString(` SET `)
 	c.quoted(m.Rel.Left.Col.Name)
 	c.w.WriteString(` = `)
@@ -389,7 +389,7 @@ func (c *compilerContext) renderOneToOneConnectStmt(m qcode.Mutate) {
 	c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
 
 	c.w.WriteString(` RETURNING `)
-	c.quoted(m.Ti.Name)
+	c.table(m.Ti.Schema, m.Ti.Name, false)
 	c.w.WriteString(`.*)`)
 }
 
@@ -427,7 +427,7 @@ func (c *compilerContext) renderOneToOneDisconnectStmt(m qcode.Mutate) {
 	c.renderCteName(m)
 	c.w.WriteString(` AS ( UPDATE `)
 
-	c.quoted(m.Ti.Name)
+	c.table(m.Ti.Schema, m.Ti.Name, false)
 	c.w.WriteString(` SET `)
 	c.quoted(m.Rel.Left.Col.Name)
 	c.w.WriteString(` = `)
@@ -463,7 +463,7 @@ func (c *compilerContext) renderOneToOneDisconnectStmt(m qcode.Mutate) {
 	c.w.WriteString(`)`)
 
 	c.w.WriteString(` RETURNING `)
-	c.quoted(m.Ti.Name)
+	c.table(m.Ti.Schema, m.Ti.Name, false)
 	c.w.WriteString(`.*)`)
 }
 
