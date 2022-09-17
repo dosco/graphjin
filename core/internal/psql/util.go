@@ -27,6 +27,18 @@ func colWithTableID(w *bytes.Buffer, table string, id int32, col string) {
 	w.WriteString(col)
 }
 
+func (c *compilerContext) table(schema, table string, alias bool) {
+	if schema != "" {
+		c.quoted(schema)
+		c.w.WriteString(`.`)
+	}
+	c.quoted(table)
+	if alias {
+		c.w.WriteString(` AS `)
+		c.quoted(table)
+	}
+}
+
 func (c *compilerContext) colWithTable(table, col string) {
 	c.quoted(table)
 	c.w.WriteString(`.`)

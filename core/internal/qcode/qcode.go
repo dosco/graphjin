@@ -85,6 +85,7 @@ type Select struct {
 	Singular   bool
 	Typename   bool
 	Table      string
+	Schema     string
 	FieldName  string
 	Cols       []Column
 	BCols      []Column
@@ -555,6 +556,9 @@ func (co *Compiler) addRelInfo(
 		sel.Rel.Type == sdata.RelPolymorphic ||
 		sel.Rel.Type == sdata.RelNone {
 		schema := co.c.DBSchema
+		if sel.Schema != "" {
+			schema = sel.Schema
+		}
 		if sel.Ti, err = co.s.Find(schema, field.Name); err != nil {
 			return err
 		}
@@ -905,6 +909,9 @@ func (co *Compiler) compileDirectives(qc *QCode, sel *Select, dirs []graph.Direc
 		d := &dirs[i]
 
 		switch d.Name {
+		case "schema":
+			err = co.compileDirectiveSchema(sel, d)
+
 		case "skip":
 			err = co.compileDirectiveSkip(sel, d)
 
@@ -1042,6 +1049,20 @@ func (co *Compiler) setMutationType(qc *QCode, op *graph.Operation, role string)
 		return errors.New(`mutations must contains one of the following arguments (insert, update, upsert or delete)`)
 	}
 
+	return nil
+}
+
+func (co *Compiler) compileDirectiveSchema(sel *Select, d *graph.Directive) error {
+	if len(d.Args) == 0 {
+		return fmt.Errorf("@schema: required argument 'name' missing")
+	}
+	arg := d.Args[0]
+
+	if ifNotArg(arg, graph.NodeStr) {
+		return argErr("name", "string")
+	}
+
+	sel.Schema = arg.Val.Val
 	return nil
 }
 

@@ -305,15 +305,23 @@ func (c *Config) AddRoleTable(role, table string, conf interface{}) error {
 		r = &c.Roles[len(c.Roles)-1]
 	}
 
+	var schema string
+
+	if v := strings.SplitN(table, ".", 2); len(v) == 2 {
+		schema = v[0]
+		table = v[1]
+	}
+
 	var t *RoleTable
 	for i := range r.Tables {
-		if strings.EqualFold(r.Tables[i].Name, table) {
+		if strings.EqualFold(r.Tables[i].Name, table) &&
+			strings.EqualFold(r.Tables[i].Schema, schema) {
 			t = &r.Tables[i]
 			break
 		}
 	}
 	if t == nil {
-		nt := RoleTable{Name: table}
+		nt := RoleTable{Name: table, Schema: schema}
 		r.Tables = append(r.Tables, nt)
 		t = &r.Tables[len(r.Tables)-1]
 	}
@@ -351,8 +359,16 @@ func (c *Config) RemoveRoleTable(role, table string) error {
 	tables := c.Roles[ri].Tables
 	ti := -1
 
+	var schema string
+
+	if v := strings.SplitN(table, ".", 2); len(v) == 2 {
+		schema = v[0]
+		table = v[1]
+	}
+
 	for i, t := range tables {
-		if strings.EqualFold(t.Name, table) {
+		if strings.EqualFold(t.Name, table) &&
+			strings.EqualFold(t.Schema, schema) {
 			ti = i
 			break
 		}

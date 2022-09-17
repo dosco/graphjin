@@ -30,7 +30,7 @@ func (c *compilerContext) renderInsertStmt(m qcode.Mutate, embedded bool) {
 	c.renderOneToManyModifiers(m)
 
 	c.w.WriteString(`INSERT INTO `)
-	c.quoted(m.Ti.Name)
+	c.table(m.Ti.Schema, m.Ti.Name, false)
 
 	c.w.WriteString(` (`)
 	n := c.renderInsertUpdateColumns(m)
@@ -40,6 +40,9 @@ func (c *compilerContext) renderInsertStmt(m qcode.Mutate, embedded bool) {
 	c.renderValues(m, false)
 
 	if !embedded {
-		c.w.WriteString(` RETURNING *)`)
+		c.w.WriteString(` RETURNING `)
+		c.table(m.Ti.Schema, m.Ti.Name, false)
+		c.w.WriteString(`.*)`)
+
 	}
 }

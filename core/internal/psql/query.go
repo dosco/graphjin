@@ -434,6 +434,11 @@ func (c *compilerContext) renderRecursiveSelect(sel *qcode.Select) {
 func (c *compilerContext) renderFrom(sel *qcode.Select) {
 	c.w.WriteString(` FROM `)
 
+	if c.qc.Type == qcode.QTMutation {
+		c.quoted(sel.Table)
+		return
+	}
+
 	switch sel.Rel.Type {
 	case sdata.RelEmbedded:
 		c.w.WriteString(sel.Rel.Left.Col.Table)
@@ -447,7 +452,7 @@ func (c *compilerContext) renderFrom(sel *qcode.Select) {
 		}
 
 	default:
-		c.quoted(sel.Table)
+		c.table(sel.Ti.Schema, sel.Ti.Name, true)
 	}
 }
 
