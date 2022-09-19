@@ -104,12 +104,16 @@ hot_deploy: true
 #     sample: 0.6
 
 database:
-  type: postgres
-  host: db
-  port: 5432
+  type: {{ .DBType }}
+  host: {{ .DBHost }}
+  port: {{ .DBPort }}
+  {{- if eq .DBName "" }}
   dbname: {{ .AppNameSlug -}}_production
-  user: postgres
-  password: postgres
+  {{- else }}
+  dbname: {{ .DBName }}
+  {{- end }}
+  user: {{ .DBUser }}
+  password: {{ .DBPass }}
   #schema: "public"
 
   # Size of database connection pool

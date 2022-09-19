@@ -1,5 +1,5 @@
-version: "3.4"
 services:
+  {{- if .CreateDB }}
   # Postgres DB
   db:
     image: postgres:12
@@ -9,6 +9,7 @@ services:
     ports:
       - "5432:5432"
 
+  {{- end }}
   api:
     image: dosco/graphjin:latest
     command: serve
@@ -18,5 +19,7 @@ services:
       - ./config:/home/nonroot/config
     ports:
       - "8080:8080"
+    {{- if .CreateDB }}
     depends_on:
       - db
+    {{- end }}
