@@ -14,13 +14,13 @@ func servCmd() *cobra.Command {
 		Use:     "serve",
 		Aliases: []string{"serv"},
 		Short:   "Run the GraphJin service",
-		RunE:    cmdServ,
+		Run:     cmdServ,
 	}
 	c.Flags().BoolVar(&deployActive, "deploy-active", false, "Deploy active config")
 	return c
 }
 
-func cmdServ(*cobra.Command, []string) error {
+func cmdServ(*cobra.Command, []string) {
 	setup(cpath)
 
 	var opt []serv.Option
@@ -30,11 +30,10 @@ func cmdServ(*cobra.Command, []string) error {
 
 	gj, err := serv.NewGraphJinService(conf, opt...)
 	if err != nil {
-		return err
+		log.Fatalf("%s", err)
 	}
 
 	if err := gj.Start(); err != nil {
-		return err
+		log.Fatalf("%s", err)
 	}
-	return nil
 }

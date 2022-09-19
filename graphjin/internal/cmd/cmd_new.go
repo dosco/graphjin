@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"embed"
+	"net/url"
 	"os"
 	"path"
 	"strings"
@@ -13,6 +14,10 @@ import (
 	"golang.org/x/text/language"
 )
 
+var (
+	dbURL string
+)
+
 func newCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "new <app-name>",
@@ -20,6 +25,8 @@ func newCmd() *cobra.Command {
 		Long:  "Generate all the required files to start on a new GraphJin app",
 		Run:   cmdNew,
 	}
+
+	c.PersistentFlags().StringVar(&dbURL, "db-url", "", "URL of the database")
 	return c
 }
 
@@ -29,10 +36,55 @@ func cmdNew(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
+	dbType := "postgres"
+	dbHost := "db"
+	dbPort := "5432"
+	dbName := ""
+	dbUser := "postgres"
+	dbPass := "postgres"
+
+	if dbURL != "" {
+		u, err := url.Parse(dbURL)
+		if err != nil {
+			log.Fatal(err)
+		}
+		dbType = u.Scheme
+		dbHost = u.Host
+
+		if v := u.Port(); v != "" {
+			dbPort = v
+		} else if dbType == "mysql" {
+			dbPort = "3306"
+		}
+
+		if v := u.User.Username(); v != "" {
+			dbUser = v
+		} else if dbType == "mysql" {
+			dbPort = "root"
+		}
+
+		if v, ok := u.User.Password(); ok {
+			dbPass = v
+		} else if dbType == "mysql" {
+			dbPort = ""
+		}
+
+		if v := u.Path; len(v) > 1 {
+			dbName = v[1:]
+		}
+	}
+
 	en := cases.Title(language.English)
-	tmpl := newTempl(map[string]string{
+	tmpl := newTempl(map[string]interface{}{
 		"AppName":     en.String(strings.Join(args, " ")),
 		"AppNameSlug": strings.ToLower(strings.Join(args, "_")),
+		"CreateDB":    (dbURL == ""),
+		"DBType":      dbType,
+		"DBHost":      dbHost,
+		"DBPort":      dbPort,
+		"DBUser":      dbUser,
+		"DBPass":      dbPass,
+		"DBName":      dbName,
 	})
 
 	// Create app folder and add relevant files
@@ -139,10 +191,10 @@ func cmdNew(cmd *cobra.Command, args []string) {
 var tmpl embed.FS
 
 type Templ struct {
-	values map[string]string
+	values map[string]interface{}
 }
 
-func newTempl(values map[string]string) *Templ {
+func newTempl(values map[string]interface{}) *Templ {
 	return &Templ{values}
 }
 
