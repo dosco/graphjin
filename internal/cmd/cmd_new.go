@@ -78,7 +78,6 @@ func cmdNew(cmd *cobra.Command, args []string) {
 	tmpl := newTempl(map[string]interface{}{
 		"AppName":     en.String(strings.Join(args, " ")),
 		"AppNameSlug": strings.ToLower(strings.Join(args, "_")),
-		"CreateDB":    (dbURL == ""),
 		"DBType":      dbType,
 		"DBHost":      dbHost,
 		"DBPort":      dbPort,
@@ -104,13 +103,15 @@ func cmdNew(cmd *cobra.Command, args []string) {
 		}
 	})
 
-	ifNotExists(path.Join(appPath, "docker-compose.yml"), func(p string) error {
-		if v, err := tmpl.get("docker-compose.yml"); err == nil {
-			return os.WriteFile(p, v, 0600)
-		} else {
-			return err
-		}
-	})
+	if dbURL == "" {
+		ifNotExists(path.Join(appPath, "docker-compose.yml"), func(p string) error {
+			if v, err := tmpl.get("docker-compose.yml"); err == nil {
+				return os.WriteFile(p, v, 0600)
+			} else {
+				return err
+			}
+		})
+	}
 
 	// Create app config folder and add relevant files
 
