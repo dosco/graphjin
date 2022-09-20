@@ -1,5 +1,4 @@
 services:
-  {{- if .CreateDB }}
   # Postgres DB
   db:
     image: postgres:12
@@ -9,17 +8,14 @@ services:
     ports:
       - "5432:5432"
 
-  {{- end }}
   api:
     image: dosco/graphjin:latest
     command: serve
     environment:
       GO_ENV: "development"
     volumes:
-      - ./config:/home/nonroot/config
+      - ./config:/config
     ports:
       - "8080:8080"
-    {{- if .CreateDB }}
     depends_on:
       - db
-    {{- end }}
