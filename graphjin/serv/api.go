@@ -123,6 +123,13 @@ func NewGraphJinService(conf *Config, options ...Option) (*Service, error) {
 	return s1, nil
 }
 
+func OptionSetDB(db *sql.DB) Option {
+	return func(s *service) error {
+		s.db = db
+		return nil
+	}
+}
+
 func OptionSetHookFunc(fn HookFn) Option {
 	return func(s *service) error {
 		s.hook = fn
