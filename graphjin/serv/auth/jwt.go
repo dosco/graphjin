@@ -26,28 +26,22 @@ func JwtHandler(ac Auth) (HandlerFunc, error) {
 		var tok string
 
 		if cookie != "" {
-			ck, err := r.Cookie(cookie)
-			if err == http.ErrNoCookie {
-				return nil, nil
+			if ck, err := r.Cookie(cookie); err == nil && len(ck.Value) != 0 {
+				tok = ck.Value
 			}
-			if err != nil {
-				return nil, err
-			}
-			tok = ck.Value
-		} else {
-			ah := r.Header.Get(authHeader)
-			if len(ah) < 10 {
-				return nil, fmt.Errorf("invalid or missing header: %s", authHeader)
-			}
-			tok = ah[7:]
 		}
 
 		if tok == "" {
-			return nil, fmt.Errorf("jwt not found")
+			if ah := r.Header.Get(authHeader); len(ah) > 10 {
+				tok = ah[7:]
+			}
+		}
+
+		if tok == "" {
+			return nil, fmt.Errorf("no jwt token found in cookie or authorization header")
 		}
 
 		keyFunc := jwtProvider.KeyFunc()
-
 		token, err := jwt.ParseWithClaims(tok, jwt.MapClaims{}, keyFunc) //jwt.MapClaims is already passed by reference
 
 		if err != nil {
