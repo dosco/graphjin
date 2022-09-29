@@ -119,11 +119,7 @@ func (s *service) subSwitch(
 
 	switch v.Type {
 	case "connection_init":
-		if err := c.WritePreparedMessage(initMsg); err != nil {
-			return ct, false, err
-		}
-
-		if len(v.Payload) > 0 {
+		if len(v.Payload) != 0 {
 			var p map[string]interface{}
 			if err := json.Unmarshal(v.Payload, &p); err != nil {
 				s.zlog.Error("Websockets", []zapcore.Field{zap.Error(err)}...)
@@ -163,6 +159,9 @@ func (s *service) subSwitch(
 					ct = context.WithValue(ct, core.UserIDKey, v)
 				}
 			}
+		}
+		if err := c.WritePreparedMessage(initMsg); err != nil {
+			return ct, false, err
 		}
 
 	case "start", "subscribe":
