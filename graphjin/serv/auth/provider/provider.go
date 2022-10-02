@@ -11,37 +11,36 @@ import (
 // JWTConfig struct contains JWT authentication related config values used by
 // the GraphJin service
 type JWTConfig struct {
-	// Provider can be auth0, firebase, jwks or other
-	Provider string
+	// Provider can be one of auth0, firebase, jwks or other
+	Provider string `jsonschema:"title=JWT Provider,enum=auth0,enum=firebase,enum=jwks,enum=other"`
 
-	// Secret used for signing and encrypting the JWT token
-	Secret string
+	// The secret key used for signing and encrypting the JWT token
+	Secret string `jsonschema:"title=JWT Secret Key"`
 
 	// Public keys can be used instead of using a secret
 	// PublicKeyFile points to the file containing the public key
-	PubKeyFile string `mapstructure:"public_key_file"`
+	PubKeyFile string `mapstructure:"public_key_file" jsonschema:"title=Public Key File"`
 
-	// PubKeyType can be ecdsa or rsa
-	PubKeyType string `mapstructure:"public_key_type"`
+	// Public key file type can be one of ecdsa or rsa
+	PubKeyType string `mapstructure:"public_key_type" jsonschema:"title=Public Key File Type,enum=ecdsa,enum=rsa"`
 
 	// Audience value that the JWT token needs to match
-	Audience string `mapstructure:"audience"`
+	Audience string `mapstructure:"audience" jsonschema:"title=Match Audience Value"`
 
 	// Issuer value that the JWT token needs to match:
 	// Example: http://my-domain.auth0.com
-	Issuer string `mapstructure:"issuer"`
+	Issuer string `mapstructure:"issuer" jsonschema:"title=Match Issuer Value,example=http://my-domain.auth0.com"`
 
-	// JWKSURL sets the url of the JWKS endpoint.
+	// Sets the url of the JWKS endpoint.
 	// Example: https://YOUR_DOMAIN/.well-known/jwks.json
-	JWKSURL string `mapstructure:"jwks_url"`
+	JWKSURL string `mapstructure:"jwks_url" jsonschema:"title=JWKS Endpoint URL,example=https://YOUR_DOMAIN/.well-known/jwks.json"`
 
-	// JWKSRefresh sets in minutes interval between refreshes,
-	// overriding the adaptive token refreshing
-	JWKSRefresh int `mapstructure:"jwks_refresh"`
+	// Sets in minutes interval between refreshes, overriding the adaptive token refreshing
+	JWKSRefresh int `mapstructure:"jwks_refresh" jsonschema:"title=JWKS Refresh Timeout (minutes)"`
 
-	// JWKSMinRefresh sets in minutes fallback value when tokens
-	// are refreshed, default to 60 minutes
-	JWKSMinRefresh int `mapstructure:"jwks_min_refresh"`
+	// JWKSMinRefresh sets in minutes fallback value when tokens are refreshed, default
+	// to 60 minutes
+	JWKSMinRefresh int `mapstructure:"jwks_min_refresh" jsonschema:"title=JWKS Minumum Refresh Timeout (minutes)"`
 
 	// FileSystem
 	fs afero.Fs
