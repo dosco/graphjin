@@ -232,7 +232,7 @@ func addJsonTable(conf *Config, di *sdata.DBInfo, t Table) error {
 	for i := range t.Columns {
 		c := t.Columns[i]
 		columns = append(columns, sdata.DBColumn{
-			ID:     c.ID,
+			ID:     -1,
 			Schema: bc.Schema,
 			Table:  t.Name,
 			Name:   c.Name,

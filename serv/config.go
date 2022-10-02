@@ -18,18 +18,18 @@ type Core = core.Config
 type Auth = auth.Auth
 type JWTConfig = auth.JWTConfig
 
-// Config struct holds the GraphJin service config values
+// Configuration for the GraphJin service
 type Config struct {
 	secrets map[string]string
 
-	// Core holds config values for the GraphJin compiler
-	Core `mapstructure:",squash"`
+	// Configuration for the GraphJin compiler core
+	Core `mapstructure:",squash" jsonschema:"title=Compiler Configuration"`
 
-	// Serv holds config values for the GraphJin Service
-	Serv `mapstructure:",squash"`
+	// Configuration for the GraphJin Service
+	Serv `mapstructure:",squash" jsonschema:"title=Service Configuration"`
 
-	// Admin holds config values for adminstrationof GraphJin Service
-	Admin `mapstructure:",squash"`
+	// Configuration for admin service
+	Admin `mapstructure:",squash" jsonschema:"title=Admin Configuration"`
 
 	hostPort string
 	hash     string
@@ -38,129 +38,152 @@ type Config struct {
 	vi       *viper.Viper
 }
 
-// Admin struct contains config values used for adminstration of the
-// GraphJin service
+// Configuration for admin service
 type Admin struct {
-	// HotDeploy enables the ability to hot-deploy a new configuration
-	// to GraphJin.
-	HotDeploy bool `mapstructure:"hot_deploy"`
+	// Enables the ability to hot-deploy a new configuration
+	HotDeploy bool `mapstructure:"hot_deploy" jsonschema:"title=Enable Hot Deploy"`
 
-	// AdminSecret is the secret key used to control access
-	// to the admin api
-	AdminSecretKey string `mapstructure:"admin_secret_key"`
+	// Secret key used to control access to the admin api
+	AdminSecretKey string `mapstructure:"admin_secret_key" jsonschema:"title=Admin API Secret Key"`
 }
 
-// Serv struct contains config values used by the GraphJin service
+// Configuration for the GraphJin Service
 type Serv struct {
-	// AppName is the name of your application used in log and debug messages
-	AppName string `mapstructure:"app_name"`
+	// Application name is used in log and debug messages
+	AppName string `mapstructure:"app_name" jsonschema:"title=Application Name"`
 
-	// Production when set to true runs the service with production level
-	// security and other defaults. For example allow lists are enforced.
-	Production bool
+	// When enabled runs the service with production level security defaults.
+	// For example allow lists are enforced.
+	Production bool `jsonschema:"title=Enable Hot Deploy"`
 
-	// ConfigPath is the default path to find all configuration
-	// files and scripts under
-	ConfigPath string `mapstructure:"config_path"`
+	// The default path to find all configuration files and scripts
+	ConfigPath string `mapstructure:"config_path" jsonschema:"title=Config Path"`
 
-	// SecretsFile is the file for the secret key store
-	SecretsFile string `mapstructure:"secrets_file"`
+	// The file for the secret key store. This must be a Mozilla SOPS file
+	SecretsFile string `mapstructure:"secrets_file" jsonschema:"title=Secrets File"`
 
-	// LogLevel can be debug, error, warn, info
-	LogLevel string `mapstructure:"log_level"`
+	// Logging level must be one of debug, error, warn, info
+	LogLevel string `mapstructure:"log_level" jsonschema:"title=Log Level,enum=debug,enum=error,enum=warn,enum=info"`
 
-	// LogFormat can be json or simple
-	LogFormat string `mapstructure:"log_format"`
+	// Logging Format must me either json or simple
+	LogFormat string `mapstructure:"log_format" jsonschema:"title=Logging Level,enum=json,enum=simple"`
 
-	// HostPost to run the service on. Example localhost:8080
-	HostPort string `mapstructure:"host_port"`
+	// The host and port the service runs on. Example localhost:8080
+	HostPort string `mapstructure:"host_port" jsonschema:"title=Host and Port"`
 
 	// Host to run the service on
-	Host string
+	Host string `jsonschema:"title=Host"`
 
 	// Port to run the service on
-	Port string
+	Port string `jsonschema:"title=Port"`
 
-	// HTTPGZip enables HTTP compression
-	HTTPGZip bool `mapstructure:"http_compress"`
+	// Enables HTTP compression
+	HTTPGZip bool `mapstructure:"http_compress" jsonschema:"title=Enable Compression,default=true"`
 
-	// ServerTiming enables the Server-Timing header
-	ServerTiming bool `mapstructure:"server_timing"`
+	// Sets the API rate limits
+	RateLimiter RateLimiter `mapstructure:"rate_limiter" jsonschema:"title=Set API Rate Limiting"`
+
+	// Enables the Server-Timing HTTP header
+	ServerTiming bool `mapstructure:"server_timing" jsonschema:"title=Server Timing HTTP Header,default=true"`
 
 	// Enable the web UI. Disabled in production
-	WebUI bool `mapstructure:"web_ui"`
+	WebUI bool `mapstructure:"web_ui" jsonschema:"title=Enable Web UI,default=false"`
 
-	// EnableTracing enables OpenTrace request tracing
-	EnableTracing bool `mapstructure:"enable_tracing"`
+	// Enable OpenTrace request tracing
+	EnableTracing bool `mapstructure:"enable_tracing" jsonschema:"title=Enable Tracing,default=true"`
 
-	// WatchAndReload enables reloading the service on config changes
-	WatchAndReload bool `mapstructure:"reload_on_config_change"`
+	// Enables reloading the service on config changes. Disabled in production
+	WatchAndReload bool `mapstructure:"reload_on_config_change" jsonschema:"title=Reload Config"`
 
-	// AuthFailBlock when enabled blocks requests with a 401 on auth failure
-	AuthFailBlock bool `mapstructure:"auth_fail_block"`
+	// Enable blocking requests with a HTTP 401 on auth failure
+	AuthFailBlock bool `mapstructure:"auth_fail_block" jsonschema:"title=Block Request on Authorization Failure"`
 
-	// MigrationsPath is the path to the database migration files
-	MigrationsPath string `mapstructure:"migrations_path"`
+	// This is the path to the database migration files
+	MigrationsPath string `mapstructure:"migrations_path" jsonschema:"title=Migrations Path"`
 
-	// AllowedOrigins sets the HTTP CORS Access-Control-Allow-Origin header
-	AllowedOrigins []string `mapstructure:"cors_allowed_origins"`
+	// Sets the HTTP CORS Access-Control-Allow-Origin header
+	AllowedOrigins []string `mapstructure:"cors_allowed_origins" jsonschema:"title=HTTP CORS Allowed Origins"`
 
-	// AllowedHeaders sets the HTTP CORS Access-Control-Allow-Headers header
-	AllowedHeaders []string `mapstructure:"cors_allowed_headers"`
+	// Sets the HTTP CORS Access-Control-Allow-Headers header
+	AllowedHeaders []string `mapstructure:"cors_allowed_headers" jsonschema:"title=HTTP CORS Allowed Headers"`
 
-	// DebugCORS enables debug logs for cors
-	DebugCORS bool `mapstructure:"cors_debug"`
+	// Enables debug logs for CORS
+	DebugCORS bool `mapstructure:"cors_debug" jsonschema:"title=Log CORS"`
 
-	// CacheControl sets the HTTP Cache-Control header
-	CacheControl string `mapstructure:"cache_control"`
+	// Sets the HTTP Cache-Control header
+	CacheControl string `mapstructure:"cache_control" jsonschema:"title=Enable Cache-Control"`
 
 	// Telemetry struct contains OpenCensus metrics and tracing related config
-	Telemetry Telemetry
+	// Telemetry Telemetry
 
-	// Auth set the default auth used by the service
-	Auth Auth
+	// Sets the default authentication used by the service
+	Auth Auth `jsonschema:"title=Authentication"`
 
-	// Auths sets multiple auths to be used by actions
-	Auths []Auth
+	// Sets multiple authentication mechanism which can be used with actions
+	Auths []Auth `jsonschema:"title=Other Authentication"`
 
-	// DB struct contains db config
-	DB Database `mapstructure:"database"`
+	// Database configuration
+	DB Database `mapstructure:"database" jsonschema:"title=Database"`
 
-	Actions []Action
-
-	// RateLimiter sets the API rate limits
-	RateLimiter RateLimiter `mapstructure:"rate_limiter"`
+	Actions []Action `jsonschema:"-"`
 }
 
-// Database config
+// Database configuration
 type Database struct {
-	Type            string
-	Host            string
-	Port            uint16
-	DBName          string
-	User            string
-	Password        string
-	Schema          string
-	PoolSize        int           `mapstructure:"pool_size"`
-	MaxConnections  int           `mapstructure:"max_connections"`
-	MaxConnIdleTime time.Duration `mapstructure:"max_connection_idle_time"`
-	MaxConnLifeTime time.Duration `mapstructure:"max_connection_life_time"`
-	PingTimeout     time.Duration `mapstructure:"ping_timeout"`
-	EnableTLS       bool          `mapstructure:"enable_tls"`
-	ServerName      string        `mapstructure:"server_name"`
-	ServerCert      string        `mapstructure:"server_cert"`
-	ClientCert      string        `mapstructure:"client_cert"`
-	ClientKey       string        `mapstructure:"client_key"`
+	Type     string `jsonschema:"title=Type,enum=postgres,enum=mysql"`
+	Host     string `jsonschema:"title=Host"`
+	Port     uint16 `jsonschema:"title=Port"`
+	DBName   string `jsonschema:"title=Database Name"`
+	User     string `jsonschema:"title=User"`
+	Password string `jsonschema:"title=Password"`
+	Schema   string `jsonschema:"title=Postgres Schema"`
+
+	// Size of database connection pool
+	PoolSize int `mapstructure:"pool_size" jsonschema:"title=Connection Pool Size"`
+
+	// Max number of active database connections allowed
+	MaxConnections int `mapstructure:"max_connections" jsonschema:"title=Maximum Connections"`
+
+	// Max time after which idle database connections are closed
+	MaxConnIdleTime time.Duration `mapstructure:"max_connection_idle_time" jsonschema:"title=Connection Idel Time"`
+
+	// Max time after which database connections are not reused
+	MaxConnLifeTime time.Duration `mapstructure:"max_connection_life_time" jsonschema:"title=Connection Life Time"`
+
+	// Database ping timeout is used for db health checking
+	PingTimeout time.Duration `mapstructure:"ping_timeout" jsonschema:"title=Healthcheck Ping Timeout"`
+
+	// Set up an secure TLS encrypted database connection
+	EnableTLS bool `mapstructure:"enable_tls" jsonschema:"title=Enable TLS"`
+
+	// Required for TLS. For example with Google Cloud SQL it's
+	// <gcp-project-id>:<cloud-sql-instance>
+	ServerName string `mapstructure:"server_name" jsonschema:"title=TLS Server Name"`
+
+	// Required for TLS. Can be a file path or the contents of the PEM file
+	ServerCert string `mapstructure:"server_cert" jsonschema:"title=Server Certificate"`
+
+	// Required for TLS. Can be a file path or the contents of the PEM file
+	ClientCert string `mapstructure:"client_cert" jsonschema:"title=Client Certificate"`
+
+	// Required for TLS. Can be a file path or the contents of the pem file
+	ClientKey string `mapstructure:"client_key" jsonschema:"title=Client Key"`
 }
 
 // RateLimiter sets the API rate limits
 type RateLimiter struct {
-	Rate     float64
-	Bucket   int
-	IPHeader string `mapstructure:"ip_header"`
+	// The number of events per second
+	Rate float64 `jsonschema:"title=Connection Rate"`
+
+	// Bucket a burst of at most 'bucket' number of events
+	Bucket int `jsonschema:"title=Bucket Size"`
+
+	// The header that contains the client ip
+	IPHeader string `mapstructure:"ip_header" jsonschema:"title=IP From HTTP Header,example=X-Forwarded-For"`
 }
 
 // Telemetry struct contains OpenCensus metrics and tracing related config
+/*
 type Telemetry struct {
 	// Debug enables debug logging for metrics and tracing data.
 	Debug bool
@@ -204,6 +227,7 @@ type Telemetry struct {
 		ExcludeHealthCheck bool `mapstructure:"exclude_health_check"`
 	}
 }
+*/
 
 // Action struct contains config values for a GraphJin service action
 type Action struct {
