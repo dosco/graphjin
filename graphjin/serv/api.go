@@ -185,6 +185,7 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*service, 
 		deployActive: prod && conf.HotDeploy && db == nil,
 		tracer:       otel.Tracer("graphjin.com/serv"),
 	}
+	s.conf.Core.Production = prod
 
 	if err := s.initConfig(); err != nil {
 		return nil, err

@@ -54,7 +54,7 @@ type Serv struct {
 
 	// When enabled runs the service with production level security defaults.
 	// For example allow lists are enforced.
-	Production bool `jsonschema:"title=Enable Hot Deploy"`
+	Production bool `jsonschema:"title=Production Mode,default=false"`
 
 	// The default path to find all configuration files and scripts
 	ConfigPath string `mapstructure:"config_path" jsonschema:"title=Config Path"`
