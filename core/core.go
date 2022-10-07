@@ -141,6 +141,10 @@ func (gj *graphjin) _initSchema() error {
 		gj.dbinfo,
 		getDBTableAliases(gj.conf))
 
+	if err != nil {
+		return err
+	}
+
 	ssufx := gj.conf.SingularSuffix
 	if ssufx == "" {
 		ssufx = "ByID"

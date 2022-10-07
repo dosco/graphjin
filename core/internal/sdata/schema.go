@@ -191,7 +191,6 @@ func (s *DBSchema) addColumnRels(t DBTable) error {
 
 	for i := range t.Columns {
 		c := t.Columns[i]
-
 		if c.FKeyTable == "" {
 			continue
 		}
