@@ -47,4 +47,6 @@ WHERE
 	AND n.nspname NOT IN ('_graphjin', 'information_schema', 'pg_catalog') 
 	AND c.relname != 'schema_version'
 	AND f.attnum > 0
-	AND f.attisdropped = false;
+	AND f.attisdropped = false
+ORDER BY
+	f.attrelid, f.attnum ASC;

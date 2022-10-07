@@ -332,6 +332,7 @@ func addForeignKey(conf *Config, di *sdata.DBInfo, c Column, t Table) error {
 	}
 
 	fks, fkt, fkc := v[0], v[1], v[2]
+
 	c3, err := di.GetColumn(fks, fkt, fkc)
 	if err != nil {
 		return fmt.Errorf(

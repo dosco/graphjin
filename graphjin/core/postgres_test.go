@@ -24,7 +24,13 @@ func TestMutiSchema(t *testing.T) {
 		}
 
 		for j := 0; j < totalTables; j++ {
-			createTableSQL := `CREATE TABLE test_schema_%d.test_table_%d_%d (
+			st := fmt.Sprintf("test_schema_%d.test_table_%d_%d", i, i, j)
+			refCol := "bigint"
+			if i != 0 {
+				refCol = fmt.Sprintf("bigint references test_schema_%d.test_table_%d_%d(id)",
+					(i - 1), (i - 1), j)
+			}
+			createTableSQL := `CREATE TABLE %s (
    			id BIGSERIAL PRIMARY KEY,
    			column1 TEXT,
    			column2 TEXT,
@@ -37,10 +43,11 @@ func TestMutiSchema(t *testing.T) {
    			column9 NUMERIC,
    			column10 JSONB,
    			column11 TEXT,
-   			column12 TEXT
+   			column12 TEXT,
+			column13 %s 
    		  );`
 
-			_, err := db.Exec(fmt.Sprintf(createTableSQL, i, i, j))
+			_, err := db.Exec(fmt.Sprintf(createTableSQL, st, refCol))
 			if err != nil {
 				t.Fatal(err)
 			}
