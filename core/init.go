@@ -45,7 +45,7 @@ func (gj *graphjin) initConfig() error {
 	tm := make(map[string]struct{})
 
 	for _, t := range c.Tables {
-		k := strings.ToLower(t.Schema + t.Name)
+		k := t.Schema + t.Name
 		if _, ok := tm[k]; ok {
 			return fmt.Errorf("duplicate table found: %s", t.Name)
 		}
@@ -65,8 +65,8 @@ func (gj *graphjin) initConfig() error {
 	gj.roles = make(map[string]*Role)
 
 	for i, role := range c.Roles {
-		k := strings.ToLower(role.Name)
-		if _, ok := gj.roles[k]; ok {
+		k := role.Name
+		if _, ok := gj.roles[(role.Name)]; ok {
 			return fmt.Errorf("duplicate role found: %s", role.Name)
 		}
 
@@ -450,7 +450,7 @@ func (c *Column) getFK(defaultSchema string) ([3]string, bool) {
 }
 
 func sanitize(value string) string {
-	return strings.ToLower(strings.TrimSpace(value))
+	return strings.TrimSpace(value)
 }
 
 func isASCII(s string) (int, bool) {

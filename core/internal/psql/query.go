@@ -287,7 +287,7 @@ func (c *compilerContext) renderSelect(sel *qcode.Select) {
 	if sel.Paging.Cursor {
 		for i, ob := range sel.OrderBy {
 			c.w.WriteString(`, LAST_VALUE(`)
-			colWithTableID(c.w, sel.Table, sel.ID, ob.Col.Name)
+			c.colWithTableID(sel.Table, sel.ID, ob.Col.Name)
 			c.w.WriteString(`) OVER() AS __cur_`)
 			int32String(c.w, int32(i))
 		}
@@ -300,16 +300,16 @@ func (c *compilerContext) renderSelect(sel *qcode.Select) {
 		c.renderBaseSelect(sel)
 	}
 	c.w.WriteString(`)`)
-	aliasWithID(c.w, sel.Table, sel.ID)
+	c.aliasWithID(sel.Table, sel.ID)
 }
 
 func (c *compilerContext) renderSelectClose(sel *qcode.Select) {
 	c.w.WriteString(`)`)
-	aliasWithID(c.w, "__sr", sel.ID)
+	c.aliasWithID("__sr", sel.ID)
 
 	if !sel.Singular {
 		c.w.WriteString(`)`)
-		aliasWithID(c.w, "__sj", sel.ID)
+		c.aliasWithID("__sj", sel.ID)
 	}
 }
 
@@ -319,7 +319,7 @@ func (c *compilerContext) renderLateralJoin() {
 
 func (c *compilerContext) renderLateralJoinClose(sel *qcode.Select) {
 	c.w.WriteString(`)`)
-	aliasWithID(c.w, `__sj`, sel.ID)
+	c.aliasWithID(`__sj`, sel.ID)
 	c.w.WriteString(` ON true`)
 }
 
@@ -420,7 +420,7 @@ func (c *compilerContext) renderRecursiveSelect(sel *qcode.Select) {
 	c.w.WriteString(` WHERE (`)
 	c.colWithTable(sel.Table, sel.Ti.PrimaryCol.Name)
 	c.w.WriteString(`) = (`)
-	colWithTableID(c.w, psel.Table, psel.ID, sel.Ti.PrimaryCol.Name)
+	c.colWithTableID(psel.Table, psel.ID, sel.Ti.PrimaryCol.Name)
 	c.w.WriteString(`) LIMIT 1) UNION ALL `)
 
 	c.w.WriteString(`SELECT `)

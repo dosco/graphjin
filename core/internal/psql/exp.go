@@ -136,7 +136,7 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 		if ex.Left.ID == -1 {
 			c.colWithTable(table, ex.Left.Col.Name)
 		} else {
-			colWithTableID(c.w, table, ex.Left.ID, ex.Left.Col.Name)
+			c.colWithTableID(table, ex.Left.ID, ex.Left.Col.Name)
 		}
 		c.w.WriteString(`) `)
 	}
@@ -349,7 +349,7 @@ func (c *expContext) renderVal(ex *qcode.Exp) {
 			if pid == -1 {
 				c.colWithTable(table, ex.Right.Col.Name)
 			} else {
-				colWithTableID(c.w, table, pid, ex.Right.Col.Name)
+				c.colWithTableID(table, pid, ex.Right.Col.Name)
 			}
 		}
 		c.w.WriteString(`)`)
@@ -464,7 +464,7 @@ func (c *compilerContext) renderValArrayColumn(ex *qcode.Exp, table string, pid 
 		if pid == -1 {
 			c.colWithTable(table, col.Name)
 		} else {
-			colWithTableID(c.w, table, pid, col.Name)
+			c.colWithTableID(table, pid, col.Name)
 		}
 		c.w.WriteString(` AS JSON) as ids) j, `)
 		c.w.WriteString(`JSON_TABLE(j.ids, "$[*]" COLUMNS(`)
@@ -477,7 +477,7 @@ func (c *compilerContext) renderValArrayColumn(ex *qcode.Exp, table string, pid 
 		if pid == -1 {
 			c.colWithTable(table, col.Name)
 		} else {
-			colWithTableID(c.w, table, pid, col.Name)
+			c.colWithTableID(table, pid, col.Name)
 		}
 	}
 }

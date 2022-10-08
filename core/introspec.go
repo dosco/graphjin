@@ -707,7 +707,7 @@ func getGQLType(col sdata.DBColumn, id bool) (schema.Type, string) {
 	var typeName string
 	var ok bool
 
-	k := strings.ToLower(col.Type)
+	k := col.Type
 	if i := strings.IndexAny(k, "(["); i != -1 {
 		k = k[:i]
 	}
@@ -732,7 +732,7 @@ func getGQLTypeFunc(col sdata.DBFuncParam) (schema.Type, string) {
 	var typeName string
 	var ok bool
 
-	k := strings.ToLower(col.Type)
+	k := col.Type
 	if i := strings.IndexAny(k, "(["); i != -1 {
 		k = k[:i]
 	}

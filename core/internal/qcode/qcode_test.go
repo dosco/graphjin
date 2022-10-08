@@ -24,7 +24,7 @@ func TestCompile1(t *testing.T) {
 	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
 	err := qc.AddRole("user", "public", "products", qcode.TRConfig{
 		Query: qcode.QueryConfig{
-			Columns: []string{"id", "Name"},
+			Columns: []string{"id", "name"},
 		},
 	})
 	if err != nil {
@@ -39,7 +39,7 @@ func TestCompile1(t *testing.T) {
 		} }`), nil, "user", "")
 
 	if err != nil {
-		t.Fatal(errors.New("this should not be an error id can be a number"))
+		t.Fatal(err)
 	}
 }
 

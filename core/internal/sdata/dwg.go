@@ -161,7 +161,7 @@ func (s *DBSchema) addEdge(name string, edge TEdge, inSchema bool) error {
 	ei1 := edgeInfo{nodeID: edge.From, edgeIDs: []int32{edgeID}}
 	// ei2 := edgeInfo{nodeID: edge.To, edgeIDs: []int32{edgeID}}
 
-	k1 := strings.ToLower(name)
+	k1 := name
 	// k2 := strings.ToLower(edge.RT.Name)
 
 	s.addEdgeInfo(k1, ei1)
