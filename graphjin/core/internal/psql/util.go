@@ -10,21 +10,19 @@ func (c *compilerContext) alias(alias string) {
 	c.quoted(alias)
 }
 
-func aliasWithID(w *bytes.Buffer, alias string, id int32) {
-	w.WriteString(` AS `)
-	w.WriteString(alias)
-	w.WriteString(`_`)
-	int32String(w, id)
+func (c *compilerContext) aliasWithID(alias string, id int32) {
+	c.w.WriteString(` AS `)
+	c.quoted(alias + "_" + strconv.Itoa(int(id)))
 }
 
-func colWithTableID(w *bytes.Buffer, table string, id int32, col string) {
-	w.WriteString(table)
+func (c *compilerContext) colWithTableID(table string, id int32, col string) {
 	if id >= 0 {
-		w.WriteString(`_`)
-		int32String(w, id)
+		c.quoted(table + "_" + strconv.Itoa(int(id)))
+	} else {
+		c.quoted(table)
 	}
-	w.WriteString(`.`)
-	w.WriteString(col)
+	c.w.WriteString(`.`)
+	c.quoted(col)
 }
 
 func (c *compilerContext) table(schema, table string, alias bool) {

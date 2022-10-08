@@ -166,7 +166,7 @@ func NewDBTable(schema, name, _type string, cols []DBColumn) DBTable {
 			ti.PrimaryCol = c
 
 		}
-		ti.colMap[strings.ToLower(c.Name)] = i
+		ti.colMap[c.Name] = i
 	}
 	return ti
 }

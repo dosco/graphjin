@@ -1,8 +1,6 @@
 package qcode
 
 import (
-	"strings"
-
 	"github.com/gobuffalo/flect"
 )
 
@@ -300,7 +298,7 @@ func makeSet(list []string) map[string]struct{} {
 	m := make(map[string]struct{}, len(list))
 
 	for i := range list {
-		m[strings.ToLower(list[i])] = struct{}{}
+		m[list[i]] = struct{}{}
 	}
 	return m
 }

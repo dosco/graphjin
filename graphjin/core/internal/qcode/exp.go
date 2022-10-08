@@ -163,6 +163,7 @@ func (ast *aexpst) parseNode(av aexp, node *graph.Node) (*Exp, error) {
 			return ex, nil
 		}
 
+		// TODO: Make this function work with schemas
 		if _, err := ast.processColumn(av, ex, node); err != nil {
 			return nil, err
 		}
@@ -479,6 +480,7 @@ func (ast *aexpst) processNestedTable(av aexp, ex *Exp, node *graph.Node) (bool,
 		}
 
 		var path []sdata.TPath
+		// TODO: Make this function work with schemas
 		if path, err = s.FindPath(curr, prev, ""); err != nil {
 			break
 		}

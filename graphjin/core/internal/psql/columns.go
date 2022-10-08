@@ -11,7 +11,7 @@ func (c *compilerContext) renderColumns(sel *qcode.Select) {
 		if i != 0 {
 			c.w.WriteString(", ")
 		}
-		colWithTableID(c.w, sel.Table, sel.ID, col.Col.Name)
+		c.colWithTableID(sel.Table, sel.ID, col.Col.Name)
 		c.alias(col.FieldName)
 		i++
 	}
@@ -19,7 +19,7 @@ func (c *compilerContext) renderColumns(sel *qcode.Select) {
 		if i != 0 {
 			c.w.WriteString(", ")
 		}
-		colWithTableID(c.w, sel.Table, sel.ID, fn.FieldName)
+		c.colWithTableID(sel.Table, sel.ID, fn.FieldName)
 		if fn.Alias != "" {
 			c.alias(fn.Alias)
 		} else {
@@ -92,12 +92,12 @@ func (c *compilerContext) renderUnionColumn(sel, csel *qcode.Select) {
 		usel := &c.qc.Selects[cid]
 
 		c.w.WriteString(`WHEN `)
-		colWithTableID(c.w, sel.Table, sel.ID, csel.Rel.Left.Col.FKeyCol)
+		c.colWithTableID(sel.Table, sel.ID, csel.Rel.Left.Col.FKeyCol)
 		c.w.WriteString(` = `)
 		c.squoted(usel.Table)
 		c.w.WriteString(` THEN `)
 
-		if usel.SkipRender == qcode.SkipTypeUserNeeded || 
+		if usel.SkipRender == qcode.SkipTypeUserNeeded ||
 			usel.SkipRender == qcode.SkipTypeBlocked {
 			c.w.WriteString(`NULL `)
 		} else {

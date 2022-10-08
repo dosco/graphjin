@@ -114,7 +114,7 @@ func NewDBSchema(
 
 	for k, f := range info.Functions {
 		if len(f.Params) == 1 {
-			schema.fm[strings.ToLower(f.Name)] = info.Functions[k]
+			schema.fm[f.Name] = info.Functions[k]
 		}
 	}
 
@@ -360,7 +360,7 @@ func (s *DBSchema) GetFunctions() map[string]DBFunction {
 }
 
 func getRelName(colName string) string {
-	cn := strings.ToLower(colName)
+	cn := colName
 
 	if strings.HasSuffix(cn, "_id") {
 		return colName[:len(colName)-3]

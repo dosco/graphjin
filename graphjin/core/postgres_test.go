@@ -43,8 +43,8 @@ func TestMutiSchema(t *testing.T) {
    			column9 NUMERIC,
    			column10 JSONB,
    			column11 TEXT,
-   			column12 TEXT,
-			column13 %s 
+   			"colUMN_12" TEXT,
+			"colUMN_13" %s
    		  );`
 
 			_, err := db.Exec(fmt.Sprintf(createTableSQL, st, refCol))
@@ -62,6 +62,7 @@ func TestMutiSchema(t *testing.T) {
    			column1
    			column2
    			column3
+			colUMN_13
    		}
    	}`, sn, tn, sn)
 
@@ -71,7 +72,7 @@ func TestMutiSchema(t *testing.T) {
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 
 	err := conf.AddRoleTable("user", tname, core.Query{
-		Filters: []string{`{ column1: { is_null: true } }`},
+		Filters: []string{`{ colUMN_12: { is_null: true } }`},
 		Limit:   1,
 	})
 	assert.NoError(t, err)
