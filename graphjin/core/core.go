@@ -388,6 +388,10 @@ func (c *gcontext) validateAndUpdateVars(ctx context.Context, qcomp *queryComp, 
 	qc := qcomp.st.qc
 	qr := qcomp.qr
 
+	if qc == nil {
+		return nil
+	}
+
 	if len(qr.vars) != 0 || qc.Script != "" {
 		vars = make(map[string]interface{})
 	}
@@ -536,6 +540,9 @@ func (r *Result) CacheControl() string {
 // }
 
 func (c *gcontext) debugLog(st *stmt) {
+	if st == nil || st.qc == nil {
+		return
+	}
 	for _, sel := range st.qc.Selects {
 		if sel.SkipRender == qcode.SkipTypeUserNeeded {
 			c.gj.log.Printf("Field skipped, requires $user_id or table not added to anon role: %s", sel.FieldName)
