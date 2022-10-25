@@ -42,6 +42,7 @@ type Config struct {
 	Vars            map[string]string
 	DBType          string
 	DBVersion       int
+	SecPrefix       []byte
 	EnableCamelcase bool
 }
 
@@ -49,11 +50,17 @@ type Compiler struct {
 	svars           map[string]string
 	ct              string // db type
 	cv              int    // db version
+	pf              []byte // security prefix
 	enableCamelcase bool
 }
 
 func NewCompiler(conf Config) *Compiler {
-	return &Compiler{svars: conf.Vars, ct: conf.DBType, cv: conf.DBVersion, enableCamelcase: conf.EnableCamelcase}
+	return &Compiler{
+		svars:           conf.Vars,
+		ct:              conf.DBType,
+		cv:              conf.DBVersion,
+		pf:              conf.SecPrefix,
+		enableCamelcase: conf.EnableCamelcase}
 }
 
 func (co *Compiler) CompileEx(qc *qcode.QCode) (Metadata, []byte, error) {
@@ -233,13 +240,21 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 
 	// Build the cursor value string
 	if sel.Paging.Cursor {
-		c.w.WriteString(`, CONCAT_WS(','`)
+		c.w.WriteString(`, CONCAT('`)
+		c.w.Write(c.pf)
+		c.w.WriteString(`', CONCAT_WS(',', `)
+		int32String(c.w, int32(sel.ID))
+
 		for i := 0; i < len(sel.OrderBy); i++ {
-			c.w.WriteString(`, CAST(MAX(__cur_`)
+			c.w.WriteString(`, MAX(__cur_`)
 			int32String(c.w, int32(i))
-			c.w.WriteString(`) AS CHAR(20))`)
+			c.w.WriteString(`)`)
+
+			// c.w.WriteString(`, CAST(MAX(__cur_`)
+			// int32String(c.w, int32(i))
+			// c.w.WriteString(`) AS CHAR(20))`)
 		}
-		c.w.WriteString(`) as __cursor`)
+		c.w.WriteString(`)) as __cursor`)
 	}
 
 	c.w.WriteString(` FROM (`)
@@ -528,7 +543,7 @@ func (c *compilerContext) renderCursorCTE(sel *qcode.Select) {
 				c.w.WriteString(`, `)
 			}
 			c.w.WriteString(`a[`)
-			int32String(c.w, int32(i+1))
+			int32String(c.w, int32((i + 2)))
 			c.w.WriteString(`] :: `)
 			c.w.WriteString(ob.Col.Type)
 			c.w.WriteString(` as `)
@@ -537,6 +552,9 @@ func (c *compilerContext) renderCursorCTE(sel *qcode.Select) {
 		c.w.WriteString(` FROM string_to_array(`)
 		c.renderParam(Param{Name: "cursor", Type: "text"})
 		c.w.WriteString(`, ',') as a) `)
+		// c.w.WriteString(`WHERE CAST(a.a[1] AS integer) = `)
+		// int32String(c.w, sel.ID)
+		// c.w.WriteString(`) `)
 	}
 }
 

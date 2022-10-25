@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
@@ -19,6 +20,8 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 )
+
+var decPrefix = []byte(`__gj/enc:`)
 
 type OpType int
 
@@ -64,9 +67,10 @@ type gcontext struct {
 }
 
 type queryResp struct {
-	qc   *queryComp
-	data []byte
-	role string
+	qc    *queryComp
+	role  string
+	data  []byte
+	dhash [sha256.Size]byte
 }
 
 func (gj *graphjin) initDiscover() error {
@@ -182,12 +186,18 @@ func (gj *graphjin) initCompilers() error {
 		Vars:            gj.conf.Vars,
 		DBType:          gj.schema.DBType(),
 		DBVersion:       gj.schema.DBVersion(),
+		SecPrefix:       gj.pf,
 		EnableCamelcase: gj.conf.EnableCamelcase,
 	})
 	return nil
 }
 
-func (gj *graphjin) executeRoleQuery(ctx context.Context, conn *sql.Conn, vars []byte, rc *ReqConfig) (string, error) {
+func (gj *graphjin) executeRoleQuery(ctx context.Context,
+	conn *sql.Conn,
+	vars []byte,
+	pf []byte,
+	rc *ReqConfig) (string, error) {
+
 	var role string
 	var ar args
 	var err error
@@ -198,7 +208,7 @@ func (gj *graphjin) executeRoleQuery(ctx context.Context, conn *sql.Conn, vars [
 		return "anon", nil
 	}
 
-	if ar, err = gj.argList(ctx, md, vars, rc); err != nil {
+	if ar, err = gj.argList(ctx, md, vars, pf, rc); err != nil {
 		return "", err
 	}
 
@@ -310,7 +320,7 @@ func (c *gcontext) resolveSQL(ctx context.Context, qr queryReq, role string) (qu
 	if v := ctx.Value(UserRoleKey); v != nil {
 		res.role = v.(string)
 	} else if c.gj.abacEnabled {
-		res.role, err = c.gj.executeRoleQuery(ctx, conn, qr.vars, c.rc)
+		res.role, err = c.gj.executeRoleQuery(ctx, conn, qr.vars, c.gj.pf, c.rc)
 	}
 
 	if err != nil {
@@ -339,7 +349,7 @@ func (c *gcontext) resolveCompiledQuery(
 		return res, err
 	}
 
-	args, err := c.gj.argList(ctx, qcomp.st.md, qcomp.qr.vars, c.rc)
+	args, err := c.gj.argList(ctx, qcomp.st.md, qcomp.qr.vars, c.gj.pf, c.rc)
 	if err != nil {
 		return res, err
 	}
@@ -372,14 +382,14 @@ func (c *gcontext) resolveCompiledQuery(
 		return res, err
 	}
 
-	qc := qcomp.st.qc
+	res.dhash = sha256.Sum256(res.data)
 
-	cur, err := c.gj.encryptCursor(qc, res.data)
+	res.data, err = encryptValues(res.data,
+		c.gj.pf, decPrefix, res.dhash[:], c.gj.encKey)
 	if err != nil {
 		return res, err
 	}
 
-	res.data = cur.data
 	return res, nil
 }
 

@@ -2,6 +2,7 @@ package jsn_test
 
 import (
 	"bytes"
+	_ "embed"
 	"fmt"
 	"os"
 	"strings"
@@ -455,6 +456,35 @@ func TestReplace1(t *testing.T) {
 		t.Error("Does not match expected json")
 	}
 }
+
+/*
+func TestReplace2(t *testing.T) {
+	var buf bytes.Buffer
+
+	from := jsn.Get(json, [][]byte{
+		[]byte("votes_cursor"),
+		[]byte("bookmarks_cursor"),
+		[]byte("papers_cursor")})
+
+	var to []jsn.Field
+
+	for _, v := range from {
+		to = append(to, jsn.Field{v.Key, []byte(`"` + string(v.Key) + `_value"`)})
+	}
+
+	err := jsn.Replace(&buf, json, from, to)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	output := buf.String()
+
+	if output != expected {
+		t.Log(output)
+		t.Error("Does not match expected json")
+	}
+}
+*/
 
 func TestReplaceEmpty(t *testing.T) {
 	var buf bytes.Buffer

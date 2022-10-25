@@ -1,4 +1,4 @@
-//#nosec G404
+// #nosec G404
 package core_test
 
 import (
@@ -17,7 +17,7 @@ import (
 var cursorRegex *regexp.Regexp
 
 func init() {
-	cursorRegex, _ = regexp.Compile(`cursor\"\:\"([^\s\"]+)`)
+	cursorRegex = regexp.MustCompile(`cursor\"\:\s?\"([^\s\"]+)`)
 }
 
 func Example_subscription() {

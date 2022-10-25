@@ -18,8 +18,11 @@ type args struct {
 	cindx  int // index of cursor arg
 }
 
-func (gj *graphjin) argList(c context.Context, md psql.Metadata, vars []byte, rc *ReqConfig) (
-	args, error) {
+func (gj *graphjin) argList(c context.Context,
+	md psql.Metadata,
+	vars []byte,
+	pf []byte,
+	rc *ReqConfig) (args, error) {
 
 	ar := args{cindx: -1}
 	params := md.Params()
@@ -27,6 +30,11 @@ func (gj *graphjin) argList(c context.Context, md psql.Metadata, vars []byte, rc
 
 	var fields map[string]json.RawMessage
 	var err error
+
+	vars, err = decryptValues(vars, decPrefix, gj.encKey)
+	if err != nil {
+		return ar, err
+	}
 
 	if len(vars) != 0 {
 		fields, _, err = jsn.Tree(vars)
@@ -76,11 +84,7 @@ func (gj *graphjin) argList(c context.Context, md psql.Metadata, vars []byte, rc
 
 		case "cursor":
 			if v, ok := fields["cursor"]; ok && v[0] == '"' {
-				v1, err := gj.decrypt(string(v[1 : len(v)-1]))
-				if err != nil {
-					return ar, err
-				}
-				vl[i] = string(v1)
+				vl[i] = string(v[1 : len(v)-1])
 			} else {
 				vl[i] = nil
 			}

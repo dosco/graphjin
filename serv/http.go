@@ -2,6 +2,7 @@ package serv
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -298,6 +299,8 @@ func (s *service) responseHandler(ct context.Context,
 		case s.conf.CacheControl != "":
 			w.Header().Set("Cache-Control", s.conf.CacheControl)
 		}
+
+		w.Header().Set("ETag", hex.EncodeToString(res.Hash[:]))
 	}
 
 	if err := json.NewEncoder(w).Encode(res); err != nil {

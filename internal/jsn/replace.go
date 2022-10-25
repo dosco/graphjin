@@ -32,6 +32,30 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 		h.Reset()
 	}
 
+	// dec := json.NewDecoder(bytes.NewReader(b))
+
+	// var s, e int64
+	// for {
+	// 	t, err := dec.Token()
+	// 	if err == io.EOF {
+	// 		break
+	// 	}
+	// 	if err != nil {
+	// 		log.Fatal(err)
+	// 	}
+	// 	e = dec.InputOffset()
+	// 	if t == ':' {
+	// 		fmt.Println(">>>>")
+	// 	}
+	// 	fmt.Printf("[%d:%d] - %T: %v", s, e, t, t)
+	// 	if dec.More() {
+	// 		fmt.Printf(" (more)")
+	// 	}
+	// 	w.Write(b[s:e])
+	// 	fmt.Printf("\n")
+	// 	s = dec.InputOffset()
+	// }
+
 	s, e, d := 0, 0, 0
 
 	state := expectKey

@@ -117,7 +117,7 @@ func (g *GraphJin) Subscribe(
 	}
 
 	if role == "user" && gj.abacEnabled {
-		if role, err = gj.executeRoleQuery(c, nil, vars, rc); err != nil {
+		if role, err = gj.executeRoleQuery(c, nil, vars, gj.pf, rc); err != nil {
 			return nil, err
 		}
 	}
@@ -140,7 +140,7 @@ func (g *GraphJin) Subscribe(
 		return nil, err
 	}
 
-	args, err := gj.argList(c, s.qc.st.md, vars, rc)
+	args, err := gj.argList(c, s.qc.st.md, vars, gj.pf, rc)
 	if err != nil {
 		return nil, err
 	}
@@ -489,18 +489,27 @@ func (gj *graphjin) subNotifyMemberEx(s *sub,
 		return mm, nil
 	}
 
-	cur, err := gj.encryptCursor(s.qc.st.qc, js)
+	nonce := mm.dh
+
+	if cv := firstCursorValue(js, gj.pf); cv != nil {
+		mm.cursor = string(cv)
+	}
+
+	ejs, err := encryptValues(js,
+		gj.pf,
+		decPrefix,
+		nonce[:],
+		gj.encKey)
+
 	if err != nil {
 		return mm, fmt.Errorf(errSubs, "cursor", err)
 	}
 
 	// we're expecting a cursor but the cursor was null
 	// so we skip this one.
-	if cindx != -1 && cur.value == "" {
+	if cindx != -1 && mm.cursor == "" {
 		return mm, nil
 	}
-
-	mm.cursor = cur.value
 
 	if update {
 		s.updt <- mm
@@ -511,7 +520,7 @@ func (gj *graphjin) subNotifyMemberEx(s *sub,
 		name: s.name,
 		sql:  s.qc.st.sql,
 		role: s.qc.st.role.Name,
-		Data: cur.data,
+		Data: ejs,
 	}
 
 	// if parameters exists then each response is unique
