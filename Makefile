@@ -14,7 +14,7 @@ export GO111MODULE := on
 # Build-time Go variables
 BUILD_FLAGS ?= -ldflags '-s -w -X "github.com/dosco/graphjin/serv.version=${BUILD_VERSION}" -X "github.com/dosco/graphjin/serv.commit=${BUILD}" -X "github.com/dosco/graphjin/serv.date=${BUILD_DATE}"'
 
-.PHONY: all download-tools build gen clean tidy test test-norace run lint changlog release version help $(PLATFORMS)
+.PHONY: all download-tools build gen clean tidy test test-norace run run-github-actions lint changlog release version help $(PLATFORMS)
 
 tidy:
 	@go mod tidy -go=1.16 && go mod tidy -go=1.17
@@ -81,6 +81,9 @@ clean:
 run: clean
 	@go run $(BUILD_FLAGS) main.go $(ARGS)
 
+run-github-actions:
+	@act push --job linter
+
 install: clean build
 	@echo "Commit Hash: `git rev-parse HEAD`"
 	@echo "Old Hash: `shasum $(GOPATH)/bin/$(BINARY) 2>/dev/null | cut -c -32`"
@@ -100,13 +103,14 @@ version:
 help:
 	@echo
 	@echo Build commands:
-	@echo " make build         - Build graphjin binary"
-	@echo " make install       - Install graphjin binary"
-	@echo " make uninstall     - Uninstall graphjin binary"
-	@echo " make [platform]    - Build for platform [linux|darwin|windows]"
-	@echo " make release       - Build all platforms"
-	@echo " make run           - Run graphjin (eg. make run ARGS=\"help\")"
-	@echo " make test          - Run all tests"
-	@echo " make changelog     - Generate changelog (eg. make changelog ARGS=\"help\")"
-	@echo " make help          - This help"
+	@echo " make build         		- Build graphjin binary"
+	@echo " make install       		- Install graphjin binary"
+	@echo " make uninstall     		- Uninstall graphjin binary"
+	@echo " make [platform]    		- Build for platform [linux|darwin|windows]"
+	@echo " make release       		- Build all platforms"
+	@echo " make run           		- Run graphjin (eg. make run ARGS=\"help\")"
+	@echo " make test          		- Run all tests"
+	@echo " make run-github-actions	- Run Github Actions locally (brew install act)"
+	@echo " make changelog     		- Generate changelog (eg. make changelog ARGS=\"help\")"
+	@echo " make help          		- This help"
 	@echo
