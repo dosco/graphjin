@@ -528,9 +528,10 @@ func (c *compilerContext) renderCursorCTE(sel *qcode.Select) {
 			if i != 0 {
 				c.w.WriteString(`, `)
 			}
-			c.w.WriteString(`SUBSTRING_INDEX(SUBSTRING_INDEX(a.i, ',', `)
-			int32String(c.w, int32(i+1))
-			c.w.WriteString(`), ',', -1) AS `)
+			c.w.WriteString(`CONVERT(SUBSTRING_INDEX(SUBSTRING_INDEX(a.i, ',', `)
+			int32String(c.w, int32(i+2))
+			c.w.WriteString(`), ',', -1), UNSIGNED INTEGER) AS `)
+			// c.w.WriteString(ob.Col.Type)
 			c.quoted(ob.Col.Name)
 		}
 		c.w.WriteString(` FROM ((SELECT `)
@@ -549,7 +550,7 @@ func (c *compilerContext) renderCursorCTE(sel *qcode.Select) {
 			c.w.WriteString(` as `)
 			c.quoted(ob.Col.Name)
 		}
-		c.w.WriteString(` FROM string_to_array(`)
+		c.w.WriteString(` FROM STRING_TO_ARRAY(`)
 		c.renderParam(Param{Name: "cursor", Type: "text"})
 		c.w.WriteString(`, ',') as a) `)
 		// c.w.WriteString(`WHERE CAST(a.a[1] AS integer) = `)
