@@ -6,7 +6,7 @@ import (
 )
 
 func (c *Compiler) RenderVar(w *bytes.Buffer, md *Metadata, vv string) {
-	cc := &compilerContext{md: md, w: w, Compiler: c}
+	cc := compilerContext{md: md, w: w, Compiler: c}
 	cc.renderVar(vv)
 }
 

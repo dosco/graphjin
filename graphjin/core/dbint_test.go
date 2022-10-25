@@ -37,6 +37,11 @@ func init() {
 func TestMain(m *testing.M) {
 	flag.Parse()
 
+	if dbParam == "none" {
+		res := m.Run()
+		os.Exit(res)
+	}
+
 	dbinfoList := []dbinfo{
 		{
 			name:    "postgres",

@@ -54,6 +54,7 @@ import (
 	"os"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/chirino/graphql"
 	"github.com/dop251/goja"
@@ -114,6 +115,8 @@ type graphjin struct {
 	namespace   string
 	tracer      trace.Tracer
 	babelInit   bool
+	pf          []byte
+	opts        []Option
 }
 
 type GraphJin struct {
@@ -157,6 +160,8 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo, options ...Opti
 		conf = &Config{Debug: true, DisableAllowList: true}
 	}
 
+	t := time.Now()
+
 	gj := &graphjin{
 		conf:   conf,
 		db:     db,
@@ -164,6 +169,8 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo, options ...Opti
 		log:    _log.New(os.Stdout, "", 0),
 		prod:   conf.Production || os.Getenv("GO_ENV") == "production",
 		tracer: otel.Tracer("graphjin.com/core"),
+		pf:     []byte(fmt.Sprintf("gj/%x:", t.Unix())),
+		opts:   options,
 	}
 
 	if err := gj.initAPQCache(); err != nil {
@@ -253,9 +260,10 @@ type Result struct {
 	sql          string
 	role         string
 	cacheControl string
-	Errors       []Error         `json:"errors,omitempty"`
-	Vars         json.RawMessage `json:"-"`
-	Data         json.RawMessage `json:"data,omitempty"`
+	Errors       []Error           `json:"errors,omitempty"`
+	Vars         json.RawMessage   `json:"-"`
+	Data         json.RawMessage   `json:"data,omitempty"`
+	Hash         [sha256.Size]byte `json:"-"`
 	// Extensions   *extensions     `json:"extensions,omitempty"`
 }
 
@@ -484,6 +492,7 @@ func (gj *graphjin) graphQL(
 	}
 
 	res.Data = json.RawMessage(qres.data)
+	res.Hash = qres.dhash
 	res.role = qres.role
 	res.Vars = vars
 
@@ -493,7 +502,7 @@ func (gj *graphjin) graphQL(
 // Reload redoes database discover and reinitializes GraphJin.
 func (g *GraphJin) Reload() error {
 	gj := g.Load().(*graphjin)
-	gjNew, err := newGraphJin(gj.conf, gj.db, nil)
+	gjNew, err := newGraphJin(gj.conf, gj.db, nil, gj.opts...)
 	if err == nil {
 		g.Store(gjNew)
 	}
