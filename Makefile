@@ -49,7 +49,7 @@ changelog: download-tools
 	@git-chglog $(ARGS)
 
 lint: download-tools
-	@golangci-lint run -E gosec -E sqlclosecheck ./... --skip-dirs-use-default
+	@golangci-lint run ./...
 
 BINARY := graphjin
 LDFLAGS := -s -w
