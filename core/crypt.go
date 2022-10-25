@@ -10,6 +10,11 @@ import (
 func encryptValues(
 	data, encPrefix, decPrefix, nonce []byte,
 	key [32]byte) ([]byte, error) {
+	var s, e int
+
+	if e = bytes.Index(data[s:], encPrefix); e == -1 {
+		return data, nil
+	}
 
 	var b bytes.Buffer
 	var buf [500]byte
@@ -26,14 +31,10 @@ func encryptValues(
 
 	b64 := base64.NewEncoder(base64.StdEncoding, &b)
 
-	var s, e int
 	pl := len(encPrefix)
 	nonce = nonce[:gcm.NonceSize()]
 
 	for {
-		if e = bytes.Index(data[s:], encPrefix); e == -1 {
-			break
-		}
 		evs := (s + e + pl)
 		q := bytes.IndexByte(data[evs:], '"')
 		if q == -1 {
@@ -68,6 +69,10 @@ func encryptValues(
 		}
 		b64.Close()
 		s = eve
+
+		if e = bytes.Index(data[s:], encPrefix); e == -1 {
+			break
+		}
 	}
 	if s == e {
 		return data, nil

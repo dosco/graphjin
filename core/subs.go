@@ -5,7 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/avast/retry-go"
 	"github.com/dosco/graphjin/core/internal/graph"
 	"github.com/dosco/graphjin/core/internal/qcode"
 	"github.com/rs/xid"
@@ -102,7 +101,7 @@ func (g *GraphJin) Subscribe(
 			return nil, errors.New("subscription: query name is required")
 		} else {
 			h := sha256.Sum256([]byte(query))
-			name = base64.StdEncoding.EncodeToString(h[:])
+			name = hex.EncodeToString(h[:])
 		}
 	}
 
@@ -373,22 +372,17 @@ func (gj *graphjin) subCheckUpdates(s *sub, mv mval, start int) {
 		params = renderJSONArray(mv.params[start:end])
 	}
 
-	err = retry.Do(
-		func() error {
-			if hasParams {
-				//nolint: sqlclosecheck
-				rows, err = gj.db.QueryContext(c, s.qc.st.sql, params)
-			} else {
-				//nolint: sqlclosecheck
-				rows, err = gj.db.QueryContext(c, s.qc.st.sql)
-			}
-			return err
-		},
-		retry.Context(c),
-		retry.RetryIf(retryIfDBError),
-		retry.Attempts(3),
-		retry.LastErrorOnly(true),
-	)
+	err = retryOperation(c, func() error {
+		if hasParams {
+			//nolint: sqlclosecheck
+			rows, err = gj.db.QueryContext(c, s.qc.st.sql, params)
+		} else {
+			//nolint: sqlclosecheck
+			rows, err = gj.db.QueryContext(c, s.qc.st.sql)
+		}
+
+		return err
+	})
 
 	if err != nil {
 		gj.log.Printf(errSubs, "query", err)
@@ -404,6 +398,7 @@ func (gj *graphjin) subCheckUpdates(s *sub, mv mval, start int) {
 			gj.log.Printf(errSubs, "scan", err)
 			return
 		}
+
 		j := start + i
 		i++
 
@@ -434,25 +429,19 @@ func (gj *graphjin) subFirstQuery(s *sub, m *Member, params json.RawMessage) (mm
 		js = s.js
 
 	} else {
-		err = retry.Do(
-			func() error {
-				switch {
-				case params != nil:
-					err = gj.db.
-						QueryRowContext(c, s.qc.st.sql, renderJSONArray([]json.RawMessage{params})).
-						Scan(&js)
-				default:
-					err = gj.db.
-						QueryRowContext(c, s.qc.st.sql).
-						Scan(&js)
-				}
-				return err
-			},
-			retry.Context(c),
-			retry.RetryIf(retryIfDBError),
-			retry.Attempts(3),
-			retry.LastErrorOnly(true),
-		)
+		err := retryOperation(c, func() error {
+			switch {
+			case params != nil:
+				err = gj.db.
+					QueryRowContext(c, s.qc.st.sql, renderJSONArray([]json.RawMessage{params})).
+					Scan(&js)
+			default:
+				err = gj.db.
+					QueryRowContext(c, s.qc.st.sql).
+					Scan(&js)
+			}
+			return err
+		})
 
 		if err != nil {
 			return mm, fmt.Errorf(errSubs, "scan", err)
@@ -491,7 +480,7 @@ func (gj *graphjin) subNotifyMemberEx(s *sub,
 
 	nonce := mm.dh
 
-	if cv := firstCursorValue(js, gj.pf); cv != nil {
+	if cv := firstCursorValue(js, gj.pf); len(cv) != 0 {
 		mm.cursor = string(cv)
 	}
 
@@ -544,8 +533,9 @@ func renderSubWrap(st stmt, ct string) string {
 			if i != 0 {
 				w.WriteString(`, `)
 			}
-			w.WriteString("`" + p.Name + "`")
-			w.WriteString(` INT PATH "$[`)
+			w.WriteString("`" + p.Name + "` ")
+			w.WriteString(p.Type)
+			w.WriteString(` PATH "$[`)
 			w.WriteString(strconv.FormatInt(int64(i), 10))
 			w.WriteString(`]" ERROR ON ERROR`)
 		}
