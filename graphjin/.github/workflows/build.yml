@@ -18,8 +18,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
-          go-version: "1.17"
-          skip-cache: true
+          go-version: "1.19"
 
       - name: Checkout
         uses: actions/checkout@v3
@@ -28,6 +27,7 @@ jobs:
         uses: golangci/golangci-lint-action@v3
         with:
           version: latest
+          skip-cache: true
           args: --timeout=10m -v
 
   releaser:
