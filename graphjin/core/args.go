@@ -88,6 +88,13 @@ func (gj *graphjin) argList(c context.Context,
 			} else {
 				vl[i] = nil
 			}
+
+			// switch v := vl[i].(type) {
+			// case string:
+			// 	fmt.Println("CURSOR >>", v)
+			// case nil:
+			// 	fmt.Println("CURSOR >>", v)
+			// }
 			ar.cindx = i
 
 		default:

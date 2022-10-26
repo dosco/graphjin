@@ -39,7 +39,7 @@ func TestCryptEncryptDecrypt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assert.Equal(t, out2, expjs)
+	assert.Equal(t, string(expjs), string(out2))
 }
 
 func TestCryptBadDecrypt(t *testing.T) {
@@ -59,7 +59,7 @@ func TestCryptBadDecrypt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assert.Equal(t, out, js)
+	assert.Equal(t, string(js), string(out))
 }
 
 func TestCryptFirstEncyptedValue(t *testing.T) {
@@ -75,7 +75,7 @@ func TestCryptFirstEncyptedValue(t *testing.T) {
 	exp := []byte(`0,12345`)
 
 	out := firstCursorValue(jsb, []byte(prefix))
-	assert.Equal(t, out, exp)
+	assert.Equal(t, string(exp), string(out))
 
 	out1 := firstCursorValue(jsb, []byte("boo"))
 	assert.Empty(t, out1)
