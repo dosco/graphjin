@@ -249,10 +249,9 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 			c.w.WriteString(`, MAX(__cur_`)
 			int32String(c.w, int32(i))
 			c.w.WriteString(`)`)
-
-			// c.w.WriteString(`, CAST(MAX(__cur_`)
-			// int32String(c.w, int32(i))
-			// c.w.WriteString(`) AS CHAR(20))`)
+			// 	c.w.WriteString(`, CAST(MAX(__cur_`)
+			// 	int32String(c.w, int32(i))
+			// 	c.w.WriteString(`) AS CHAR(20))`)
 		}
 		c.w.WriteString(`)) as __cursor`)
 	}
@@ -528,15 +527,15 @@ func (c *compilerContext) renderCursorCTE(sel *qcode.Select) {
 			if i != 0 {
 				c.w.WriteString(`, `)
 			}
-			c.w.WriteString(`CONVERT(SUBSTRING_INDEX(SUBSTRING_INDEX(a.i, ',', `)
+			c.w.WriteString(`NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(a.i, ',', `)
 			int32String(c.w, int32(i+2))
-			c.w.WriteString(`), ',', -1), UNSIGNED INTEGER) AS `)
+			c.w.WriteString(`), ',', -1), '') AS `)
 			// c.w.WriteString(ob.Col.Type)
 			c.quoted(ob.Col.Name)
 		}
 		c.w.WriteString(` FROM ((SELECT `)
 		c.renderParam(Param{Name: "cursor", Type: "text"})
-		c.w.WriteString(` AS i)) as a) `)
+		c.w.WriteString(` AS i)) AS a) `)
 
 	default:
 		for i, ob := range sel.OrderBy {
@@ -547,12 +546,13 @@ func (c *compilerContext) renderCursorCTE(sel *qcode.Select) {
 			int32String(c.w, int32((i + 2)))
 			c.w.WriteString(`] :: `)
 			c.w.WriteString(ob.Col.Type)
-			c.w.WriteString(` as `)
+			c.w.WriteString(` AS `)
 			c.quoted(ob.Col.Name)
 		}
 		c.w.WriteString(` FROM STRING_TO_ARRAY(`)
 		c.renderParam(Param{Name: "cursor", Type: "text"})
-		c.w.WriteString(`, ',') as a) `)
+		c.w.WriteString(`, ',') AS a) `)
+
 		// c.w.WriteString(`WHERE CAST(a.a[1] AS integer) = `)
 		// int32String(c.w, sel.ID)
 		// c.w.WriteString(`) `)

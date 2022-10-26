@@ -27,7 +27,6 @@ jobs:
         uses: golangci/golangci-lint-action@v3
         with:
           version: latest
-          skip-cache: true
           args: --timeout=10m -v
 
   releaser:
@@ -62,8 +61,8 @@ jobs:
       - name: Run MySQL Tests
         working-directory: ./core
         run: |
-          go test -v -timeout 30m -db=mysql -race -run=Example_query ./...
-          go test -v -timeout 30m -db=mysql -race -run=Example_sub ./...
+          go test -v -timeout 30m -db=mysql -tags=mysql -race -run=Example_query ./...
+          go test -v -timeout 30m -db=mysql -tags=mysql -race -run=Example_sub ./...
 
       - name: Snapcraft Login
         if: success() && startsWith(github.ref, 'refs/tags/v')
