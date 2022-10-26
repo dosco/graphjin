@@ -29,7 +29,7 @@ func encryptValues(
 		return nil, err
 	}
 
-	b64 := base64.NewEncoder(base64.StdEncoding, &b)
+	b64 := base64.NewEncoder(base64.RawStdEncoding, &b)
 
 	pl := len(encPrefix)
 	nonce = nonce[:gcm.NonceSize()]
@@ -74,14 +74,16 @@ func encryptValues(
 			break
 		}
 	}
-	if s == e {
-		return data, nil
-	}
 	b.Write(data[s:])
 	return b.Bytes(), nil
 }
 
 func decryptValues(data, prefix []byte, key [32]byte) ([]byte, error) {
+	var s, e int
+	if e = bytes.Index(data[s:], prefix); e == -1 {
+		return data, nil
+	}
+
 	var b bytes.Buffer
 	var buf [500]byte
 
@@ -95,14 +97,11 @@ func decryptValues(data, prefix []byte, key [32]byte) ([]byte, error) {
 		return nil, err
 	}
 
-	var s, e int
 	pl := len(prefix)
 
 	for {
 		var fail bool
-		if e = bytes.Index(data[s:], prefix); e == -1 {
-			break
-		}
+
 		evs := (s + e + pl)
 		q := bytes.IndexByte(data[evs:], '"')
 		if q == -1 {
@@ -110,7 +109,7 @@ func decryptValues(data, prefix []byte, key [32]byte) ([]byte, error) {
 		}
 		eve := evs + q
 		d := data[evs:eve]
-		dl := base64.StdEncoding.DecodedLen(len(d))
+		dl := base64.RawStdEncoding.DecodedLen(len(d))
 
 		var out []byte
 		if dl < len(buf) {
@@ -119,7 +118,7 @@ func decryptValues(data, prefix []byte, key [32]byte) ([]byte, error) {
 			out = make([]byte, dl)
 		}
 
-		_, err := base64.StdEncoding.Decode(out, d)
+		_, err := base64.RawStdEncoding.Decode(out, d)
 		fail = err != nil
 
 		var out1 []byte
@@ -144,9 +143,9 @@ func decryptValues(data, prefix []byte, key [32]byte) ([]byte, error) {
 			b.Write(data[(s + e):eve])
 		}
 		s = eve
-	}
-	if s == e {
-		return data, nil
+		if e = bytes.Index(data[s:], prefix); e == -1 {
+			break
+		}
 	}
 	b.Write(data[s:])
 	return b.Bytes(), nil

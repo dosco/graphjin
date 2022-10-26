@@ -973,7 +973,7 @@ func Example_queryWithRemoteAPIJoin() {
 	// Output: {"users":[{"email":"user1@test.com","payments":[{"desc":"Payment 1 for payment_id_1001"},{"desc":"Payment 2 for payment_id_1001"}]},{"email":"user2@test.com","payments":[{"desc":"Payment 1 for payment_id_1002"},{"desc":"Payment 2 for payment_id_1002"}]}]}
 }
 
-func Example_queryWithCursorPagination() {
+func Example_queryWithCursorPagination1() {
 	gql := `query {
 		products(
 			where: { id: { lesser_or_equals: 100 } }
@@ -1021,6 +1021,59 @@ func Example_queryWithCursorPagination() {
 
 	fmt.Println(string(val.Products))
 	// Output: [{"name": "Product 100"}, {"name": "Product 99"}, {"name": "Product 98"}]
+}
+
+func Example_queryWithCursorPagination2() {
+	gql := `query {
+		products(
+			first: 5
+			after: $cursor
+			where: { id: { lte: 100 }}
+			order_by: { price: desc }) {
+			name
+		}
+		products_cursor
+	}`
+
+	conf := newConfig(&core.Config{
+		DBType:           dbType,
+		DisableAllowList: true,
+		SecretKey:        "not_a_real_secret",
+	})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	type result struct {
+		Products json.RawMessage `json:"products"`
+		Cursor   string          `json:"products_cursor"`
+	}
+
+	var val result
+	for i := 0; i < 5; i++ {
+		vars := json.RawMessage(
+			`{"cursor": "` + val.Cursor + `"}`)
+
+		res, err := gj.GraphQL(context.Background(), gql, vars, nil)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		if err := json.Unmarshal(res.Data, &val); err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Println(string(val.Products))
+	}
+
+	// Output:
+	// [{"name": "Product 100"}, {"name": "Product 99"}, {"name": "Product 98"}, {"name": "Product 97"}, {"name": "Product 96"}]
+	// [{"name": "Product 95"}, {"name": "Product 94"}, {"name": "Product 93"}, {"name": "Product 92"}, {"name": "Product 91"}]
+	// [{"name": "Product 90"}, {"name": "Product 89"}, {"name": "Product 88"}, {"name": "Product 87"}, {"name": "Product 86"}]
+	// [{"name": "Product 85"}, {"name": "Product 84"}, {"name": "Product 83"}, {"name": "Product 82"}, {"name": "Product 81"}]
+	// [{"name": "Product 80"}, {"name": "Product 79"}, {"name": "Product 78"}, {"name": "Product 77"}, {"name": "Product 76"}]
 }
 
 func Example_queryWithJsonColumn() {
