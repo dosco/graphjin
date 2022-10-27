@@ -331,41 +331,6 @@ var benchGQL = `query {
 	}
 }`
 
-// TODO: Fix: Does not work in MYSQL
-func Example_veryComplexQuery() {
-	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
-	conf.Tables = []core.Table{
-		{
-			Name:  "category_counts",
-			Table: "users",
-			Type:  "json",
-			Columns: []core.Column{
-				{Name: "category_id", Type: "int", ForeignKey: "categories.id"},
-				{Name: "count", Type: "int"},
-			},
-		},
-		{
-			Name:    "products",
-			Columns: []core.Column{{Name: "category_ids", ForeignKey: "categories.id"}},
-		},
-	}
-
-	gj, err := core.NewGraphJin(conf, db)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	res, err := gj.GraphQL(context.Background(), benchGQL, nil, nil)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	printJSON(res.Data)
-	// Output: {"products":[{"category":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"}],"id":27,"name":"Product 27","owner":{"category_counts":[{"category":{"name":"Category 1"},"count":400},{"category":{"name":"Category 2"},"count":600}],"email":"user27@test.com","full_name":"User 27","picture":null},"price":37.5}]}
-}
-
 var resultJSON json.RawMessage
 
 func BenchmarkCompile(b *testing.B) {

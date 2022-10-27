@@ -206,6 +206,8 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 		c.w.WriteString(`@>`)
 	case qcode.OpContainedIn:
 		c.w.WriteString(`<@`)
+	case qcode.OpHasInCommon:
+		c.w.WriteString(`&&`)
 	case qcode.OpHasKey:
 		c.w.WriteString(`?`)
 	case qcode.OpHasKeyAny:
@@ -288,9 +290,10 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 }
 
 func (c *expContext) renderValPrefix(ex *qcode.Exp) bool {
-	if c.ct == "mysql" && (ex.Op == qcode.OpHasKey ||
+	switch {
+	case c.ct == "mysql" && (ex.Op == qcode.OpHasKey ||
 		ex.Op == qcode.OpHasKeyAny ||
-		ex.Op == qcode.OpHasKeyAll) {
+		ex.Op == qcode.OpHasKeyAll):
 		var optype string
 		switch ex.Op {
 		case qcode.OpHasKey, qcode.OpHasKeyAny:
@@ -306,30 +309,34 @@ func (c *expContext) renderValPrefix(ex *qcode.Exp) bool {
 		}
 		c.w.WriteString(") = 1")
 		return true
-	}
 
-	if ex.Right.ValType == qcode.ValVar {
-		return c.renderValVarPrefix(ex)
-	}
-	return false
-}
-
-func (c *expContext) renderValVarPrefix(ex *qcode.Exp) bool {
-	if ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn {
-		if c.ct == "mysql" {
-			c.w.WriteString(`JSON_CONTAINS(`)
-			c.renderParam(Param{Name: ex.Right.Val, Type: ex.Left.Col.Type, IsArray: true})
-			c.w.WriteString(`, CAST(`)
-			c.colWithTable(c.ti.Name, ex.Left.Col.Name)
-			c.w.WriteString(` AS JSON), '$')`)
-			return true
-		}
+	case c.ct == "mysql" && ex.Right.ValType == qcode.ValVar &&
+		(ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn):
+		c.w.WriteString(`JSON_CONTAINS(`)
+		c.renderParam(Param{Name: ex.Right.Val, Type: ex.Left.Col.Type, IsArray: true})
+		c.w.WriteString(`, CAST(`)
+		c.colWithTable(c.ti.Name, ex.Left.Col.Name)
+		c.w.WriteString(` AS JSON), '$')`)
+		return true
 	}
 	return false
 }
 
 func (c *expContext) renderVal(ex *qcode.Exp) {
-	if ex.Right.Col.Name != "" {
+	switch {
+	case ex.Right.ValType == qcode.ValVar:
+		c.renderValVar(ex)
+
+	case !ex.Right.Col.Array && (ex.Op == qcode.OpContains ||
+		ex.Op == qcode.OpContainedIn ||
+		ex.Op == qcode.OpHasInCommon):
+		c.w.WriteString(`CAST(ARRAY[`)
+		c.colWithTable(c.ti.Name, ex.Right.Col.Name)
+		c.w.WriteString(`] AS `)
+		c.w.WriteString(ex.Right.Col.Type)
+		c.w.WriteString(`[])`)
+
+	case ex.Right.Col.Name != "":
 		var table string
 		if ex.Right.Table == "" {
 			table = ex.Right.Col.Table
@@ -353,12 +360,6 @@ func (c *expContext) renderVal(ex *qcode.Exp) {
 			}
 		}
 		c.w.WriteString(`)`)
-		return
-	}
-
-	switch ex.Right.ValType {
-	case qcode.ValVar:
-		c.renderValVar(ex)
 
 	default:
 		if len(ex.Right.Path) == 0 {

@@ -198,7 +198,7 @@ func (ast *aexpst) parseNode(av aexp, node *graph.Node) (*Exp, error) {
 		}
 		setListVal(ex, node)
 		if ex.Left.Col.Array {
-			ex.Op = OpContains
+			ex.Op = OpHasInCommon
 		} else {
 			ex.Op = OpIn
 		}
@@ -209,7 +209,7 @@ func (ast *aexpst) parseNode(av aexp, node *graph.Node) (*Exp, error) {
 			return nil, err
 		}
 		if ex.Left.Col.Array {
-			ex.Op = OpContains
+			ex.Op = OpHasInCommon
 			setListVal(ex, node)
 		} else {
 			if ex.Right.ValType, err = getExpType(node); err != nil {
@@ -353,6 +353,9 @@ func (ast *aexpst) processOpAndVal(av aexp, ex *Exp, node *graph.Node) (bool, er
 		setListVal(ex, node)
 	case "contained_in":
 		ex.Op = OpContainedIn
+		setListVal(ex, node)
+	case "has_in_common":
+		ex.Op = OpHasInCommon
 		setListVal(ex, node)
 	case "has_key":
 		ex.Op = OpHasKey

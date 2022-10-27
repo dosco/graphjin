@@ -490,51 +490,6 @@ func Example_insertIntoTableAndConnectToRelatedTables() {
 	// Output: {"products":[{"id":2005,"name":"Product 2005","owner":{"email":"user6@test.com","full_name":"User 6","id":6}}]}
 }
 
-func Example_insertIntoTableAndConnectToRelatedTableWithArrayColumn() {
-	gql := `mutation {
-		products(insert: $data) {
-			id
-			name
-			categories {
-				id
-				name
-			}
-		}
-	}`
-
-	vars := json.RawMessage(`{
-		"data": {
-			"id": 2006,
-			"name": "Product 2006",
-			"description": "Description for product 2006",
-			"price": 2016.5,
-			"tags": ["Tag 1", "Tag 2"],
-			"categories": {
-				"connect": { "id": [1, 2, 3, 4, 5] }
-			}
-		}
-	}`)
-
-	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
-	conf.Tables = []core.Table{
-		{Name: "products", Columns: []core.Column{{Name: "category_ids", ForeignKey: "categories.id"}}},
-	}
-
-	gj, err := core.NewGraphJin(conf, db)
-	if err != nil {
-		panic(err)
-	}
-
-	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
-	res, err := gj.GraphQL(ctx, gql, vars, nil)
-	if err != nil {
-		fmt.Println(err)
-	} else {
-		printJSON(res.Data)
-	}
-	// Output: {"products":[{"categories":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"},{"id":3,"name":"Category 3"},{"id":4,"name":"Category 4"},{"id":5,"name":"Category 5"}],"id":2006,"name":"Product 2006"}]}
-}
-
 func Example_insertWithCamelToSnakeCase() {
 	gql := `mutation {
 		products(insert: $data) {

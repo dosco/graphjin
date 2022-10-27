@@ -184,23 +184,24 @@ func _() {
 	_ = x[OpNotIRegex-21]
 	_ = x[OpContains-22]
 	_ = x[OpContainedIn-23]
-	_ = x[OpHasKey-24]
-	_ = x[OpHasKeyAny-25]
-	_ = x[OpHasKeyAll-26]
-	_ = x[OpIsNull-27]
-	_ = x[OpIsNotNull-28]
-	_ = x[OpTsQuery-29]
-	_ = x[OpFalse-30]
-	_ = x[OpNotDistinct-31]
-	_ = x[OpDistinct-32]
-	_ = x[OpEqualsTrue-33]
-	_ = x[OpNotEqualsTrue-34]
-	_ = x[OpSelectExists-35]
+	_ = x[OpHasInCommon-24]
+	_ = x[OpHasKey-25]
+	_ = x[OpHasKeyAny-26]
+	_ = x[OpHasKeyAll-27]
+	_ = x[OpIsNull-28]
+	_ = x[OpIsNotNull-29]
+	_ = x[OpTsQuery-30]
+	_ = x[OpFalse-31]
+	_ = x[OpNotDistinct-32]
+	_ = x[OpDistinct-33]
+	_ = x[OpEqualsTrue-34]
+	_ = x[OpNotEqualsTrue-35]
+	_ = x[OpSelectExists-36]
 }
 
-const _ExpOp_name = "OpNopOpAndOpOrOpNotOpEqualsOpNotEqualsOpGreaterOrEqualsOpLesserOrEqualsOpGreaterThanOpLesserThanOpInOpNotInOpLikeOpNotLikeOpILikeOpNotILikeOpSimilarOpNotSimilarOpRegexOpNotRegexOpIRegexOpNotIRegexOpContainsOpContainedInOpHasKeyOpHasKeyAnyOpHasKeyAllOpIsNullOpIsNotNullOpTsQueryOpFalseOpNotDistinctOpDistinctOpEqualsTrueOpNotEqualsTrueOpSelectExists"
+const _ExpOp_name = "OpNopOpAndOpOrOpNotOpEqualsOpNotEqualsOpGreaterOrEqualsOpLesserOrEqualsOpGreaterThanOpLesserThanOpInOpNotInOpLikeOpNotLikeOpILikeOpNotILikeOpSimilarOpNotSimilarOpRegexOpNotRegexOpIRegexOpNotIRegexOpContainsOpContainedInOpHasInCommonOpHasKeyOpHasKeyAnyOpHasKeyAllOpIsNullOpIsNotNullOpTsQueryOpFalseOpNotDistinctOpDistinctOpEqualsTrueOpNotEqualsTrueOpSelectExists"
 
-var _ExpOp_index = [...]uint16{0, 5, 10, 14, 19, 27, 38, 55, 71, 84, 96, 100, 107, 113, 122, 129, 139, 148, 160, 167, 177, 185, 196, 206, 219, 227, 238, 249, 257, 268, 277, 284, 297, 307, 319, 334, 348}
+var _ExpOp_index = [...]uint16{0, 5, 10, 14, 19, 27, 38, 55, 71, 84, 96, 100, 107, 113, 122, 129, 139, 148, 160, 167, 177, 185, 196, 206, 219, 232, 240, 251, 262, 270, 281, 290, 297, 310, 320, 332, 347, 361}
 
 func (i ExpOp) String() string {
 	if i < 0 || i >= ExpOp(len(_ExpOp_index)-1) {

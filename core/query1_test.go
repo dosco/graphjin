@@ -457,48 +457,6 @@ func Example_queryChildrenWithParent() {
 	// Output: {"products":[{"name":"Product 1","owner":{"email":"user1@test.com"},"price":11.5},{"name":"Product 2","owner":{"email":"user2@test.com"},"price":12.5}]}
 }
 
-func Example_queryParentAndChildrenViaArrayColumn() {
-	gql := `
-	query {
-		products(limit: 2) {
-			name
-			price
-			categories {
-				id
-				name
-			}
-		}
-		categories {
-			name
-			products {
-				name
-			}
-		}
-	}`
-
-	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 2})
-	conf.Tables = []core.Table{{
-		Name: "products",
-		Columns: []core.Column{
-			{Name: "category_ids", ForeignKey: "categories.id", Array: true},
-		},
-	},
-	}
-
-	gj, err := core.NewGraphJin(conf, db)
-	if err != nil {
-		panic(err)
-	}
-
-	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
-	if err != nil {
-		fmt.Println(err)
-	} else {
-		printJSON(res.Data)
-	}
-	// Output: {"categories":[{"name":"Category 1","products":[{"name":"Product 1"},{"name":"Product 2"}]},{"name":"Category 2","products":[{"name":"Product 1"},{"name":"Product 2"}]}],"products":[{"categories":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"}],"name":"Product 1","price":11.5},{"categories":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"}],"name":"Product 2","price":12.5}]}
-}
-
 func Example_queryManyToManyViaJoinTable1() {
 	gql := `query {
 		products(limit: 2) {
