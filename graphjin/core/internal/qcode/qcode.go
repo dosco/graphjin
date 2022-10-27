@@ -222,6 +222,7 @@ const (
 	OpNotIRegex
 	OpContains
 	OpContainedIn
+	OpHasInCommon
 	OpHasKey
 	OpHasKeyAny
 	OpHasKeyAll
