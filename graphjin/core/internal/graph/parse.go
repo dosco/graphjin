@@ -642,9 +642,10 @@ func (p *Parser) parseList() (*Node, error) {
 		}
 		if ty == 0 {
 			ty = node.Type
-		} else if ty != node.Type {
-			return nil, errors.New("all values in a list must be of the same type")
 		}
+		// } else if ty != node.Type {
+		// 	return nil, errors.New("all values in a list must be of the same type")
+		// }
 		node.Parent = parent
 		nodes = append(nodes, node)
 	}

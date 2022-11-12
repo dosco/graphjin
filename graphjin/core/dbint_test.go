@@ -136,7 +136,7 @@ func newConfig(c *core.Config) *core.Config {
 	return c
 }
 
-func printJSON(val []byte) {
+func stdJSON(val []byte) string {
 	var m map[string]interface{}
 
 	if err := json.Unmarshal(val, &m); err != nil {
@@ -144,8 +144,12 @@ func printJSON(val []byte) {
 	}
 
 	if v, err := json.Marshal(m); err == nil {
-		fmt.Println(string(v))
+		return string(v)
 	} else {
 		panic(err)
 	}
+}
+
+func printJSON(val []byte) {
+	fmt.Println(stdJSON(val))
 }

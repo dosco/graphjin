@@ -453,6 +453,11 @@ func (c *compilerContext) renderFrom(sel *qcode.Select) {
 		return
 	}
 
+	if sel.Ti.Type == "function" {
+		c.renderFunctionTable(sel)
+		return
+	}
+
 	switch sel.Rel.Type {
 	case sdata.RelEmbedded:
 		c.w.WriteString(sel.Rel.Left.Col.Table)
@@ -468,6 +473,28 @@ func (c *compilerContext) renderFrom(sel *qcode.Select) {
 	default:
 		c.table(sel.Ti.Schema, sel.Ti.Name, true)
 	}
+}
+
+func (c *compilerContext) renderFunctionTable(sel *qcode.Select) {
+	c.quoted(sel.Table)
+	c.w.WriteString(`(`)
+	i := 0
+	for j, v := range sel.Args {
+		if v.Name != "args" {
+			continue
+		}
+		if i != 0 {
+			c.w.WriteString(`, `)
+		}
+		if v.IsVar {
+			c.renderParam(Param{Name: v.Val, Type: sel.Ti.Args[j].Type})
+		} else {
+			c.w.WriteString(v.Val)
+		}
+		i++
+	}
+	c.w.WriteString(`) AS`)
+	c.quoted(sel.Table)
 }
 
 func (c *compilerContext) renderFromCursor(sel *qcode.Select) {

@@ -4,6 +4,7 @@ package core_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"testing"
@@ -67,7 +68,7 @@ func TestMutiSchema(t *testing.T) {
    	}`, sn, tn, sn)
 
 	tname := fmt.Sprintf(`test_schema_%d.test_table_%d_%d`, sn, sn, tn)
-	exp := fmt.Sprintf(`{"test_table_%d_%d": []}`, sn, tn)
+	exp := fmt.Sprintf(`{"test_table_%d_%d":[]}`, sn, tn)
 
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 
@@ -83,5 +84,51 @@ func TestMutiSchema(t *testing.T) {
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 1)
 	res, err := gj.GraphQL(ctx, gql, nil, nil)
 	assert.NoError(t, err)
-	assert.Equal(t, exp, string(res.Data))
+	assert.Equal(t, exp, stdJSON(res.Data))
+}
+
+func TestFunctionTables(t *testing.T) {
+	gql := `query {
+		get_latest5_products(limit: 3) {
+			id
+			name
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	}
+	exp := `{"get_latest5_products":[{"id":100,"name":"Product 100"},{"id":99,"name":"Product 99"},{"id":98,"name":"Product 98"}]}`
+	assert.Equal(t, exp, stdJSON(res.Data))
+}
+
+func TestFunctionTablesWithArgs(t *testing.T) {
+	gql := `query {
+		get_latest_users(limit: 2, args: [4, $tag]) {
+			tag_name
+			id
+			full_name
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	vars := json.RawMessage(`{ "tag": "boo" }`)
+	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
+	if err != nil {
+		fmt.Println(err)
+	}
+	exp := `{"get_latest_users":[{"full_name":"User 100","id":100,"tag_name":"boo"},{"full_name":"User 99","id":99,"tag_name":"boo"}]}`
+	assert.Equal(t, exp, stdJSON(res.Data))
 }

@@ -100,7 +100,7 @@ func NewDBSchema(
 		}
 	}
 
-	// Add aliases to edge index by duplicating
+	// add aliases to edge index by duplicating
 	for t, al := range aliases {
 		for _, alias := range al {
 			if _, ok := schema.ei[alias]; ok {
@@ -112,8 +112,9 @@ func NewDBSchema(
 		}
 	}
 
+	// add functions into the schema
 	for k, f := range info.Functions {
-		if len(f.Params) == 1 {
+		if f.Type != "record" && len(f.Inputs) == 1 {
 			schema.fm[f.Name] = info.Functions[k]
 		}
 	}

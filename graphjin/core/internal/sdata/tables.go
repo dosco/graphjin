@@ -33,7 +33,13 @@ type DBTable struct {
 	SecondaryCol DBColumn
 	FullText     []DBColumn `hash:"set"`
 	Blocked      bool
+	Args         []DBTableArg
 	colMap       map[string]int `hash:"-"`
+}
+
+type DBTableArg struct {
+	Name string
+	Type string
 }
 
 type VirtualTable struct {
@@ -145,6 +151,29 @@ func NewDBInfo(
 		di.AddTable(ti)
 	}
 
+	for _, f := range funcs {
+		if f.Type != "record" || len(f.Outputs) == 0 {
+			continue
+		}
+
+		var cols []DBColumn
+		for _, v := range f.Outputs {
+			cols = append(cols, DBColumn{
+				ID:   int32(v.ID),
+				Name: v.Name,
+				Type: v.Type,
+			})
+		}
+		t := NewDBTable(f.Schema, f.Name, "function", cols)
+		for _, v := range f.Inputs {
+			t.Args = append(t.Args, DBTableArg{
+				Name: v.Name,
+				Type: v.Type,
+			})
+		}
+		di.AddTable(t)
+	}
+
 	return di
 }
 
@@ -158,6 +187,9 @@ func NewDBTable(schema, name, _type string, cols []DBColumn) DBTable {
 	}
 
 	for i, c := range cols {
+		cols[i].Schema = schema
+		cols[i].Table = name
+
 		switch {
 		case c.FullText:
 			ti.FullText = append(ti.FullText, c)
@@ -298,13 +330,16 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 }
 
 type DBFunction struct {
-	Name   string
-	Params []DBFuncParam
+	Schema  string
+	Name    string
+	Type    string
+	Inputs  []DBFuncParam
+	Outputs []DBFuncParam
 }
 
 type DBFuncParam struct {
 	ID   int
-	Name sql.NullString
+	Name string
 	Type string
 }
 
@@ -318,31 +353,34 @@ func DiscoverFunctions(db *sql.DB, blockList []string) ([]DBFunction, error) {
 	var funcs []DBFunction
 	fm := make(map[string]int)
 
-	parameterIndex := 1
 	for rows.Next() {
-		var fn, fid string
-		fp := DBFuncParam{}
+		var fid, fs, fn, ft string
+		var pn, pt, pk string
+		var pid int
 
-		err = rows.Scan(&fn, &fid, &fp.Type, &fp.Name, &fp.ID)
+		err = rows.Scan(&fid, &fs, &fn, &ft, &pid, &pn, &pt, &pk)
 		if err != nil {
 			return nil, err
 		}
 
-		if !fp.Name.Valid {
-			fp.Name.String = fmt.Sprintf("%d", parameterIndex)
-			fp.Name.Valid = true
+		if isInList(fn, blockList) {
+			continue
 		}
 
-		if i, ok := fm[fid]; ok {
-			funcs[i].Params = append(funcs[i].Params, fp)
-		} else {
-			if isInList(fn, blockList) {
-				continue
-			}
-			funcs = append(funcs, DBFunction{Name: fn, Params: []DBFuncParam{fp}})
-			fm[fid] = len(funcs) - 1
+		i, ok := fm[fid]
+		if !ok {
+			funcs = append(funcs, DBFunction{Schema: fs, Name: fn, Type: ft})
+			i = len(funcs) - 1
+			fm[fid] = i
 		}
-		parameterIndex++
+		param := DBFuncParam{ID: pid, Name: pn, Type: pt}
+
+		switch pk {
+		case "IN", "in":
+			funcs[i].Inputs = append(funcs[i].Inputs, param)
+		case "OUT", "out":
+			funcs[i].Outputs = append(funcs[i].Outputs, param)
+		}
 	}
 
 	return funcs, nil

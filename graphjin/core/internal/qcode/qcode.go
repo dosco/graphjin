@@ -89,7 +89,7 @@ type Select struct {
 	FieldName  string
 	Cols       []Column
 	BCols      []Column
-	Args       map[string]Arg
+	Args       []Arg
 	Funcs      []Function
 	Where      Filter
 	OrderBy    []OrderBy
@@ -105,10 +105,12 @@ type Select struct {
 	through    string
 	tc         TConfig
 }
+
 type Validation struct {
 	Cue  graph.Node
 	Cuev cue.Value
 }
+
 type TableInfo struct {
 	sdata.DBTable
 }
@@ -162,7 +164,9 @@ type Join struct {
 }
 
 type Arg struct {
-	Val string
+	Name  string
+	Val   string
+	IsVar bool
 }
 
 type OrderBy struct {
@@ -626,7 +630,7 @@ func (co *Compiler) setRelFilters(qc *QCode, sel *Select) {
 		ex2 := newExp()
 		ex3 := newExp()
 
-		v := sel.Args["find"]
+		v, _ := sel.GetArg("find")
 		switch v.Val {
 		case "parents", "parent":
 			ex1.Left.Table = rcte
@@ -983,6 +987,9 @@ func (co *Compiler) compileArgs(qc *QCode, sel *Select, args []graph.Arg, role s
 
 		case "find":
 			err = co.compileArgFind(sel, arg)
+
+		case "args":
+			err = co.compileArgArgs(qc, sel, arg)
 		}
 
 		if err != nil {
@@ -995,7 +1002,7 @@ func (co *Compiler) compileArgs(qc *QCode, sel *Select, args []graph.Arg, role s
 
 func (co *Compiler) validateSelect(sel *Select) error {
 	if sel.Rel.Type == sdata.RelRecursive {
-		v, ok := sel.Args["find"]
+		v, ok := sel.GetArg("find")
 		if !ok {
 			return fmt.Errorf("arguments: 'find' needed for recursive queries")
 		}
@@ -1351,7 +1358,7 @@ func (co *Compiler) compileArgFind(sel *Select, arg *graph.Arg) error {
 	if arg.Val.Val != "parents" && arg.Val.Val != "children" {
 		return fmt.Errorf("find: valid values 'parents' or 'children'")
 	}
-	sel.addArg(arg)
+	sel.addArg(Arg{Name: arg.Name, Val: arg.Val.Val})
 	return nil
 }
 
@@ -1416,7 +1423,7 @@ func (co *Compiler) compileArgSearch(sel *Select, arg *graph.Arg) error {
 	ex.Right.ValType = ValVar
 	ex.Right.Val = arg.Val.Val
 
-	sel.addArg(arg)
+	sel.addArg(Arg{Name: arg.Name, Val: arg.Val.Val})
 	setFilter(&sel.Where, ex)
 	return nil
 }
@@ -1574,6 +1581,37 @@ func (co *Compiler) compileArgOrderByVar(qc *QCode, sel *Select, node *graph.Nod
 		obList = append(obList, ob)
 	}
 	sel.OrderBy = obList
+	return nil
+}
+
+func (co *Compiler) compileArgArgs(qc *QCode, sel *Select, arg *graph.Arg) error {
+	if sel.Ti.Type != "function" {
+		return fmt.Errorf("invalid argument 'args', '%s' is not a db function", sel.Ti.Name)
+	}
+
+	if len(sel.Ti.Args) == 0 {
+		return fmt.Errorf("invalid argument 'args', db function '%s' does not have any arguments", sel.Ti.Name)
+	}
+
+	node := arg.Val
+
+	if node.Type != graph.NodeList {
+		return argErr("args", "list")
+	}
+
+	if len(node.Children) != len(sel.Ti.Args) {
+		return fmt.Errorf("invalid argument 'args', db function '%s' expects %d value(s) you have provided %d",
+			sel.Ti.Name, len(sel.Ti.Args), len(node.Children))
+	}
+
+	for _, n := range node.Children {
+		sel.addArg(Arg{
+			Name:  arg.Name,
+			Val:   n.Val,
+			IsVar: n.Type == graph.NodeVar,
+		})
+	}
+
 	return nil
 }
 
@@ -1843,9 +1881,16 @@ func dbArgErr(name, ty, db string) error {
 	return fmt.Errorf("%s: value for argument '%s' must be a %s", db, name, ty)
 }
 
-func (sel *Select) addArg(arg *graph.Arg) {
-	if sel.Args == nil {
-		sel.Args = make(map[string]Arg)
+func (sel *Select) addArg(arg Arg) {
+	sel.Args = append(sel.Args, arg)
+}
+
+func (sel *Select) GetArg(name string) (Arg, bool) {
+	var arg Arg
+	for _, v := range sel.Args {
+		if v.Name == name {
+			return v, true
+		}
 	}
-	sel.Args[arg.Name] = Arg{Val: arg.Val.Val}
+	return arg, false
 }
