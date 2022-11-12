@@ -84,7 +84,5 @@ func initGraphJinServ(config string, client js.Value, fs js.Value) error {
 		return err
 	}
 
-	fmt.Println(">>>>", gj, err)
-
 	return nil
 }

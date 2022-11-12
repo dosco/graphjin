@@ -140,7 +140,7 @@ func (c *compilerContext) renderFunctionSearchRank(sel *qcode.Select, fn qcode.F
 	} else {
 		c.w.WriteString(`, to_tsquery(`)
 	}
-	arg := sel.Args["search"]
+	arg, _ := sel.GetArg("search")
 	c.renderParam(Param{Name: arg.Val, Type: "text"})
 	c.w.WriteString(`))`)
 }
@@ -158,7 +158,7 @@ func (c *compilerContext) renderFunctionSearchHeadline(sel *qcode.Select, fn qco
 	} else {
 		c.w.WriteString(`, to_tsquery(`)
 	}
-	arg := sel.Args["search"]
+	arg, _ := sel.GetArg("search")
 	c.renderParam(Param{Name: arg.Val, Type: "text"})
 	c.w.WriteString(`))`)
 }

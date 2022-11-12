@@ -522,7 +522,7 @@ func (in *intro) addFuncs(
 		})
 		for _, f := range in.GetFunctions() {
 			fn := f.Name + "_" + colName
-			fn_type, typeName := getGQLTypeFunc(f.Params[0])
+			fn_type, typeName := getGQLTypeFunc(f.Inputs[0])
 			_, colTypeName := getGQLType(col, false)
 			if typeName != colTypeName {
 				continue

@@ -35,7 +35,7 @@ func (co *Compiler) isFunction(sel *Select, fname, alias string) (Function, bool
 	case fname == "search_rank":
 		fn.Name = "search_rank"
 
-		if _, ok := sel.Args["search"]; !ok {
+		if _, ok := sel.GetArg("search"); !ok {
 			return fn, false, fmt.Errorf("no search defined: %s", fname)
 		}
 
@@ -43,7 +43,7 @@ func (co *Compiler) isFunction(sel *Select, fname, alias string) (Function, bool
 		fn.Name = "search_headline"
 		cn = fname[16:]
 
-		if _, ok := sel.Args["search"]; !ok {
+		if _, ok := sel.GetArg("search"); !ok {
 			return fn, false, fmt.Errorf("no search defined: %s", fname)
 		}
 

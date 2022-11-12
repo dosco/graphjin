@@ -18,8 +18,8 @@ import (
 	"github.com/dop251/goja"
 	"github.com/dosco/graphjin/core"
 	"github.com/gosimple/slug"
-	"github.com/jackc/pgx/v4"
-	"github.com/jackc/pgx/v4/stdlib"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	babel "github.com/jvatic/goja-babel"
 	"github.com/spf13/cobra"
 )
@@ -311,28 +311,34 @@ func importCSV(table, filename string, sep string, db *sql.DB) int64 {
 		cols = append(cols, c.(string))
 	}
 
-	conn, err := stdlib.AcquireConn(db)
+	c := context.Background()
+	conn, err := db.Conn(c)
 	if err != nil {
 		log.Fatalf("Error connecting to database: %s", err)
 	}
 	//nolint: errcheck
-	defer stdlib.ReleaseConn(db, conn)
+	defer conn.Close()
 
-	n, err := conn.CopyFrom(
-		context.Background(),
-		pgx.Identifier{table},
-		cols,
-		s)
+	var n int64
 
-	if err != nil {
-		err = fmt.Errorf("%w (line no %d)", err, s.i)
-		log.Fatalf("Error with copy-from: %s", err)
-	}
+	err = conn.Raw(func(driverConn interface{}) error {
+		conn := driverConn.(*stdlib.Conn).Conn()
+		n, err = conn.CopyFrom(c,
+			pgx.Identifier{table},
+			cols,
+			s)
+
+		if err != nil {
+			err = fmt.Errorf("%w (line no %d)", err, s.i)
+			log.Fatalf("Error with copy-from: %s", err)
+		}
+		return nil
+	})
 
 	return n
 }
 
-//nolint: errcheck
+// nolint: errcheck
 func logFunc(args ...interface{}) {
 	for _, arg := range args {
 		if _, ok := arg.(map[string]interface{}); ok {
@@ -367,7 +373,7 @@ func getRandValue(values []string) string {
 	return values[rand.Intn(len(values))]
 }
 
-//nolint: errcheck
+// nolint: errcheck
 func setFakeFuncs(f *goja.Object) {
 	gofakeit.Seed(0)
 
@@ -532,7 +538,7 @@ func setFakeFuncs(f *goja.Object) {
 	f.Set("numerify", gofakeit.Numerify)
 }
 
-//nolint: errcheck
+// nolint: errcheck
 func setUtilFuncs(f *goja.Object) {
 	// Slugs
 	f.Set("make_slug", slug.Make)
