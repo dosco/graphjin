@@ -173,7 +173,6 @@ func Example_setArrayColumnToValue() {
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, nil, nil)
 	if err != nil {
-		fmt.Println(res.SQL())
 		fmt.Println(err)
 	} else {
 		printJSON(res.Data)

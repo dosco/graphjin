@@ -171,6 +171,7 @@ type Arg struct {
 
 type OrderBy struct {
 	Col   sdata.DBColumn
+	Var   string
 	Order Order
 }
 
@@ -248,8 +249,8 @@ const (
 	ValNum
 	ValBool
 	ValList
+	ValObj
 	ValVar
-	ValNone
 )
 
 type AggregrateOp int8
@@ -934,11 +935,11 @@ func (co *Compiler) compileDirectives(qc *QCode, sel *Select, dirs []graph.Direc
 			sel.Paging.Limit = 1
 
 		default:
-			err = fmt.Errorf("unknown selector level directive: %s", d.Name)
+			err = fmt.Errorf("no such selector level directive")
 		}
 
 		if err != nil {
-			return err
+			return fmt.Errorf("@%s: %w", d.Name, err)
 		}
 	}
 
@@ -993,7 +994,7 @@ func (co *Compiler) compileArgs(qc *QCode, sel *Select, args []graph.Arg, role s
 		}
 
 		if err != nil {
-			return err
+			return fmt.Errorf("%s: %w", arg.Name, err)
 		}
 	}
 
@@ -1004,10 +1005,10 @@ func (co *Compiler) validateSelect(sel *Select) error {
 	if sel.Rel.Type == sdata.RelRecursive {
 		v, ok := sel.GetArg("find")
 		if !ok {
-			return fmt.Errorf("arguments: 'find' needed for recursive queries")
+			return fmt.Errorf("argument 'find' needed for recursive queries")
 		}
 		if v.Val != "parents" && v.Val != "children" {
-			return fmt.Errorf("find: valid values are 'parents' and 'children'")
+			return fmt.Errorf("valid values for 'find' are 'parents' and 'children'")
 		}
 	}
 	return nil
@@ -1044,7 +1045,7 @@ func (co *Compiler) setMutationType(qc *QCode, op *graph.Operation, role string)
 		case "delete":
 			qc.SType = QTDelete
 			if ifNotArg(arg, graph.NodeBool) || ifNotArgVal(arg, "true") {
-				err = errors.New("value for argument 'delete' must be 'true'")
+				err = errors.New("value for 'delete' must be 'true'")
 			}
 		}
 
@@ -1062,12 +1063,12 @@ func (co *Compiler) setMutationType(qc *QCode, op *graph.Operation, role string)
 
 func (co *Compiler) compileDirectiveSchema(sel *Select, d *graph.Directive) error {
 	if len(d.Args) == 0 {
-		return fmt.Errorf("@schema: required argument 'name' missing")
+		return fmt.Errorf("required argument 'name' missing")
 	}
 	arg := d.Args[0]
 
 	if ifNotArg(arg, graph.NodeStr) {
-		return argErr("name", "string")
+		return argTypeErr("string")
 	}
 
 	sel.Schema = arg.Val.Val
@@ -1081,7 +1082,7 @@ func (co *Compiler) compileDirectiveSkip(sel *Select, d *graph.Directive) error 
 	arg := d.Args[0]
 
 	if ifNotArg(arg, graph.NodeVar) {
-		return argErr("if", "variable")
+		return argTypeErr("variable")
 	}
 
 	ex := newExpOp(OpNotEqualsTrue)
@@ -1109,12 +1110,12 @@ func (co *Compiler) compileDirectiveCacheControl(qc *QCode, d *graph.Directive) 
 			}
 			scope = arg.Val.Val
 		default:
-			return fmt.Errorf("@cacheControl: invalid argument: %s", d.Args[0].Name)
+			return fmt.Errorf("invalid argument: %s", d.Args[0].Name)
 		}
 	}
 
 	if len(d.Args) == 0 || maxAge == "" {
-		return fmt.Errorf("@cacheControl: required argument 'maxAge' missing")
+		return fmt.Errorf("required argument 'maxAge' missing")
 	}
 
 	hdr := []string{"max-age=" + maxAge}
@@ -1144,7 +1145,7 @@ func (co *Compiler) compileDirectiveScript(qc *QCode, d *graph.Directive) error 
 	}
 
 	if qc.Script == "" {
-		return fmt.Errorf("@script: required argument 'name' missing")
+		return fmt.Errorf("required argument 'name' missing")
 	}
 
 	if path.Ext(qc.Script) == "" {
@@ -1301,7 +1302,7 @@ func validateConstraint(a graph.Arg, v validator) error {
 
 func (co *Compiler) compileDirectiveInclude(sel *Select, d *graph.Directive) error {
 	if len(d.Args) == 0 || d.Args[0].Name != "if" {
-		return fmt.Errorf("@include: required argument 'if' missing")
+		return fmt.Errorf("required argument 'if' missing")
 	}
 	arg := d.Args[0]
 
@@ -1324,7 +1325,7 @@ func (co *Compiler) compileDirectiveNotRelated(sel *Select, d *graph.Directive) 
 
 func (co *Compiler) compileDirectiveThrough(sel *Select, d *graph.Directive) error {
 	if len(d.Args) == 0 {
-		return fmt.Errorf("@through: required argument 'table' or 'column'")
+		return fmt.Errorf("required argument 'table' or 'column'")
 	}
 	arg := d.Args[0]
 
@@ -1339,7 +1340,7 @@ func (co *Compiler) compileDirectiveThrough(sel *Select, d *graph.Directive) err
 }
 func (co *Compiler) compileDirectiveValidation(qc *QCode, d *graph.Directive) error {
 	if len(d.Args) == 0 {
-		return fmt.Errorf("@validation: required cue schema")
+		return fmt.Errorf("required cue schema")
 	}
 	arg := d.Args[0]
 
@@ -1353,10 +1354,10 @@ func (co *Compiler) compileDirectiveValidation(qc *QCode, d *graph.Directive) er
 func (co *Compiler) compileArgFind(sel *Select, arg *graph.Arg) error {
 	// Only allow on recursive relationship selectors
 	if sel.Rel.Type != sdata.RelRecursive {
-		return fmt.Errorf("find: selector '%s' is not recursive", sel.FieldName)
+		return fmt.Errorf("selector '%s' is not recursive", sel.FieldName)
 	}
 	if arg.Val.Val != "parents" && arg.Val.Val != "children" {
-		return fmt.Errorf("find: valid values 'parents' or 'children'")
+		return fmt.Errorf("valid values 'parents' or 'children'")
 	}
 	sel.addArg(Arg{Name: arg.Name, Val: arg.Val.Val})
 	return nil
@@ -1366,17 +1367,17 @@ func (co *Compiler) compileArgID(sel *Select, arg *graph.Arg) error {
 	node := arg.Val
 
 	if sel.ParentID != -1 {
-		return fmt.Errorf("argument 'id' can only be specified at the query root")
+		return fmt.Errorf("can only be specified at the query root")
 	}
 
 	if node.Type != graph.NodeNum &&
 		node.Type != graph.NodeStr &&
 		node.Type != graph.NodeVar {
-		return argErr("id", "number, string or variable")
+		return argTypeErr("number, string or variable")
 	}
 
 	if sel.Ti.PrimaryCol.Name == "" {
-		return fmt.Errorf("no primary key column defined for %s", sel.Table)
+		return fmt.Errorf("no primary key column defined for '%s'", sel.Table)
 	}
 
 	ex := newExpOp(OpEquals)
@@ -1416,7 +1417,7 @@ func (co *Compiler) compileArgSearch(sel *Select, arg *graph.Arg) error {
 	}
 
 	if arg.Val.Type != graph.NodeVar {
-		return argErr("search", "variable")
+		return argTypeErr("variable")
 	}
 
 	ex := newExpOp(OpTsQuery)
@@ -1447,21 +1448,18 @@ func (co *Compiler) compileArgOrderBy(qc *QCode, sel *Select, arg *graph.Arg) er
 
 	if node.Type != graph.NodeObj &&
 		node.Type != graph.NodeVar {
-		return argErr("order_by", "object or variable")
+		return argTypeErr("object or variable")
 	}
 
-	var cm map[string]struct{}
+	cm := make(map[string]struct{})
 
-	if len(sel.OrderBy) != 0 {
-		cm = make(map[string]struct{})
-		for _, ob := range sel.OrderBy {
-			cm[ob.Col.Name] = struct{}{}
-		}
+	for _, ob := range sel.OrderBy {
+		cm[ob.Col.Name] = struct{}{}
 	}
 
 	switch node.Type {
 	case graph.NodeObj:
-		return co.compileArgOrderByObj(sel, node, cm)
+		return co.compileArgOrderByObj(qc, sel, node, cm)
 
 	case graph.NodeVar:
 		return co.compileArgOrderByVar(qc, sel, node, cm)
@@ -1470,52 +1468,68 @@ func (co *Compiler) compileArgOrderBy(qc *QCode, sel *Select, arg *graph.Arg) er
 	return nil
 }
 
-func (co *Compiler) compileArgOrderByObj(sel *Select, node *graph.Node, cm map[string]struct{}) error {
-	var err error
+func (co *Compiler) compileArgOrderByObj(qc *QCode, sel *Select, parent *graph.Node, cm map[string]struct{}) error {
 	st := util.NewStackInf()
 
-	for i := range node.Children {
-		st.Push(node.Children[i])
+	for i := range parent.Children {
+		st.Push(parent.Children[i])
 	}
 
-	obList := make([]OrderBy, 0, 2)
+	var obList []OrderBy
+
+	var node *graph.Node
+	var ok bool
+	var err error
 
 	for {
+		if err != nil {
+			return fmt.Errorf("argument '%s', %w", node.Name, err)
+		}
+
 		if st.Len() == 0 {
 			break
 		}
 
 		intf := st.Pop()
-		node, ok := intf.(*graph.Node)
+		node, ok = intf.(*graph.Node)
 		if !ok {
-			return fmt.Errorf("17: unexpected value %v (%t)", intf, intf)
+			err = fmt.Errorf("unexpected value '%v' (%t)", intf, intf)
+			continue
 		}
 
 		// Check for type
-		if node.Type != graph.NodeStr && node.Type != graph.NodeObj {
-			return fmt.Errorf("expecting a string or object")
+		if node.Type != graph.NodeStr &&
+			node.Type != graph.NodeObj &&
+			node.Type != graph.NodeList {
+			err = fmt.Errorf("expecting a string, object or list")
+			continue
 		}
 
 		var ob OrderBy
+		ti := sel.Ti
+		cn := node
 
 		switch node.Type {
 		case graph.NodeStr:
 			if ob.Order, err = toOrder(node.Val); err != nil { // sets the asc desc etc
-				return err
+				continue
 			}
-			if err := co.setOrderByColName(sel.Ti, &ob, node); err != nil {
-				return err
+
+		case graph.NodeList:
+			if ob, err = orderByFromList(qc, node); err != nil {
+				continue
 			}
+
 		case graph.NodeObj:
 			var path []sdata.TPath
 			if path, err = co.s.FindPath(node.Name, sel.Ti.Name, ""); err != nil {
-				return err
+				continue
 			}
-			ti := path[0].LT
+			ti = path[0].LT
 
-			cn := node.Children[0]
+			cn = node.Children[0]
 			if ob.Order, err = toOrder(cn.Val); err != nil { // sets the asc desc etc
-				return err
+				continue
 			}
 
 			for i := len(path) - 1; i >= 0; i-- {
@@ -1527,15 +1541,17 @@ func (co *Compiler) compileArgOrderByObj(sel *Select, node *graph.Node, cm map[s
 					Local:  true,
 				})
 			}
+		}
 
-			if err := co.setOrderByColName(ti, &ob, cn); err != nil {
-				return err
-			}
+		if err = co.setOrderByColName(ti, &ob, cn); err != nil {
+			continue
 		}
 
 		if _, ok := cm[ob.Col.Name]; ok {
-			return fmt.Errorf("duplicate column in order by: %s", ob.Col.Name)
+			err = fmt.Errorf("can only be defined once")
+			continue
 		}
+		cm[ob.Col.Name] = struct{}{}
 		obList = append(obList, ob)
 	}
 
@@ -1546,23 +1562,43 @@ func (co *Compiler) compileArgOrderByObj(sel *Select, node *graph.Node, cm map[s
 	return err
 }
 
+func orderByFromList(qc *QCode, parent *graph.Node) (ob OrderBy, err error) {
+	if len(parent.Children) != 2 {
+		return ob, fmt.Errorf(`valid format is [values, order] (eg. [$list, "desc"])`)
+	}
+
+	valNode := parent.Children[0]
+	orderNode := parent.Children[1]
+
+	if _, err = qc.getVar(valNode.Val, ValList); err != nil {
+		return ob, err
+	}
+	ob.Var = valNode.Val
+
+	if ob.Order, err = toOrder(orderNode.Val); err != nil {
+		return ob, err
+	}
+	return ob, nil
+}
+
 func (co *Compiler) compileArgOrderByVar(qc *QCode, sel *Select, node *graph.Node, cm map[string]struct{}) error {
 	obList := make([]OrderBy, 0, 2)
-	k := string(qc.Vars[node.Val])
-	if k[0] != '"' {
-		return fmt.Errorf("Order by variable must be a string: %s", k)
+
+	k, err := qc.getVar(node.Val, ValStr)
+	if err != nil {
+		return err
 	}
-	k = k[1:(len(k) - 1)]
 
 	values, ok := sel.tc.OrderBy[k]
 	if !ok {
-		return fmt.Errorf("Order by not found: %s", k)
+		return fmt.Errorf("not found: %s", k)
 	}
 
 	var mval []string
 	for k := range sel.tc.OrderBy {
 		mval = append(mval, k)
 	}
+	// save the order by details to the allow list file
 	qc.Metadata.Order.Var = node.Val
 	qc.Metadata.Order.Values = mval
 
@@ -1576,7 +1612,7 @@ func (co *Compiler) compileArgOrderByVar(qc *QCode, sel *Select, node *graph.Nod
 		}
 		ob.Col = col
 		if _, ok := cm[ob.Col.Name]; ok {
-			return fmt.Errorf("duplicate column in order by: %s", ob.Col.Name)
+			return fmt.Errorf("duplicate column '%s'", ob.Col.Name)
 		}
 		obList = append(obList, ob)
 	}
@@ -1586,11 +1622,11 @@ func (co *Compiler) compileArgOrderByVar(qc *QCode, sel *Select, node *graph.Nod
 
 func (co *Compiler) compileArgArgs(qc *QCode, sel *Select, arg *graph.Arg) error {
 	if sel.Ti.Type != "function" {
-		return fmt.Errorf("invalid argument 'args', '%s' is not a db function", sel.Ti.Name)
+		return fmt.Errorf("'%s' is not a db function", sel.Ti.Name)
 	}
 
 	if len(sel.Ti.Args) == 0 {
-		return fmt.Errorf("invalid argument 'args', db function '%s' does not have any arguments", sel.Ti.Name)
+		return fmt.Errorf("db function '%s' does not have any arguments", sel.Ti.Name)
 	}
 
 	node := arg.Val
@@ -1600,7 +1636,7 @@ func (co *Compiler) compileArgArgs(qc *QCode, sel *Select, arg *graph.Arg) error
 	}
 
 	if len(node.Children) != len(sel.Ti.Args) {
-		return fmt.Errorf("invalid argument 'args', db function '%s' expects %d value(s) you have provided %d",
+		return fmt.Errorf("db function '%s' expects %d value(s) you have provided %d",
 			sel.Ti.Name, len(sel.Ti.Args), len(node.Children))
 	}
 
@@ -1674,7 +1710,7 @@ func (co *Compiler) compileArgLimit(sel *Select, arg *graph.Arg) error {
 	node := arg.Val
 
 	if node.Type != graph.NodeNum && node.Type != graph.NodeVar {
-		return argErr("limit", "number or variable")
+		return argTypeErr("number or variable")
 	}
 
 	switch node.Type {
@@ -1698,7 +1734,7 @@ func (co *Compiler) compileArgOffset(sel *Select, arg *graph.Arg) error {
 	node := arg.Val
 
 	if node.Type != graph.NodeNum && node.Type != graph.NodeVar {
-		return argErr("offset", "number or variable")
+		return argTypeErr("number or variable")
 	}
 
 	switch node.Type {
@@ -1877,6 +1913,10 @@ func argErr(name, ty string) error {
 	return fmt.Errorf("value for argument '%s' must be a %s", name, ty)
 }
 
+func argTypeErr(ty string) error {
+	return fmt.Errorf("value must be a %s", ty)
+}
+
 func dbArgErr(name, ty, db string) error {
 	return fmt.Errorf("%s: value for argument '%s' must be a %s", db, name, ty)
 }
@@ -1893,4 +1933,32 @@ func (sel *Select) GetArg(name string) (Arg, bool) {
 		}
 	}
 	return arg, false
+}
+
+func (qc *QCode) getVar(name string, vt ValType) (string, error) {
+	k := string(qc.Vars[name])
+	switch vt {
+	case ValStr:
+		if k[0] == '"' {
+			return k[1:(len(k) - 1)], nil
+		}
+	case ValNum:
+		if (k[0] >= '0' && k[0] <= '9') || k[0] == '-' {
+			return k, nil
+		}
+	case ValBool:
+		if strings.EqualFold(k, "true") || strings.EqualFold(k, "false") {
+			return k, nil
+		}
+	case ValList:
+		if k[0] == '[' {
+			return k, nil
+		}
+	case ValObj:
+		if k[0] == '{' {
+			return k, nil
+		}
+	}
+
+	return "", fmt.Errorf("variable '%s' must be a boolean '%s'", name, k)
 }

@@ -395,7 +395,7 @@ func getExpType(node *graph.Node) (ValType, error) {
 	case graph.NodeVar:
 		return ValVar, nil
 	default:
-		return ValNone, fmt.Errorf("[Where] invalid values for: %s", node.Name)
+		return -1, fmt.Errorf("[Where] invalid values for: %s", node.Name)
 	}
 }
 

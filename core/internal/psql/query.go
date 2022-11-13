@@ -194,9 +194,7 @@ func (c *compilerContext) renderQuery(st *IntStack, multi bool) {
 
 		if open {
 			if sel.Type != qcode.SelTypeUnion {
-				if sel.Rel.Type != sdata.RelNone || multi {
-					c.renderLateralJoin()
-				}
+				c.renderLateralJoin(sel, multi)
 				c.renderPluralSelect(sel)
 				c.renderSelect(sel)
 			}
@@ -215,9 +213,7 @@ func (c *compilerContext) renderQuery(st *IntStack, multi bool) {
 		} else {
 			if sel.Type != qcode.SelTypeUnion {
 				c.renderSelectClose(sel)
-				if sel.Rel.Type != sdata.RelNone || multi {
-					c.renderLateralJoinClose(sel)
-				}
+				c.renderLateralJoinClose(sel, multi)
 			}
 		}
 	}
@@ -327,11 +323,17 @@ func (c *compilerContext) renderSelectClose(sel *qcode.Select) {
 	}
 }
 
-func (c *compilerContext) renderLateralJoin() {
+func (c *compilerContext) renderLateralJoin(sel *qcode.Select, multi bool) {
+	if sel.Rel.Type == sdata.RelNone && !multi {
+		return
+	}
 	c.w.WriteString(` LEFT OUTER JOIN LATERAL (`)
 }
 
-func (c *compilerContext) renderLateralJoinClose(sel *qcode.Select) {
+func (c *compilerContext) renderLateralJoinClose(sel *qcode.Select, multi bool) {
+	if sel.Rel.Type == sdata.RelNone && !multi {
+		return
+	}
 	c.w.WriteString(`)`)
 	c.aliasWithID(`__sj`, sel.ID)
 	c.w.WriteString(` ON true`)
@@ -341,6 +343,17 @@ func (c *compilerContext) renderJoinTables(sel *qcode.Select) {
 	for _, join := range sel.Joins {
 		c.renderJoin(join)
 	}
+	if c.ct != "mysql" {
+		c.renderPostgreaOnlyJoinTables(sel)
+	}
+}
+
+func (c *compilerContext) renderPostgreaOnlyJoinTables(sel *qcode.Select) {
+	for _, ob := range sel.OrderBy {
+		if ob.Var != "" {
+			c.renderJoinForOrderByList(ob)
+		}
+	}
 }
 
 func (c *compilerContext) renderJoin(join qcode.Join) {
@@ -349,6 +362,13 @@ func (c *compilerContext) renderJoin(join qcode.Join) {
 	c.w.WriteString(` ON ((`)
 	c.renderExp(join.Rel.Left.Ti, join.Filter, false)
 	c.w.WriteString(`))`)
+}
+
+func (c *compilerContext) renderJoinForOrderByList(ob qcode.OrderBy) {
+	// c.w.WriteString(` JOIN unnest(`)
+	c.w.WriteString(` JOIN (SELECT id ::` + ob.Col.Type + `, ord FROM json_array_elements_text(`)
+	c.renderParam(Param{Name: ob.Var, Type: ob.Col.Type})
+	c.w.WriteString(`) WITH ORDINALITY a(id, ord)) AS _gj_ob_` + ob.Col.Name + `(id, ord) USING (id)`)
 }
 
 func (c *compilerContext) renderBaseSelect(sel *qcode.Select) {
@@ -629,13 +649,22 @@ func (c *compilerContext) renderOrderBy(sel *qcode.Select) {
 	}
 	c.w.WriteString(` ORDER BY `)
 
-	for i, col := range sel.OrderBy {
+	for i, ob := range sel.OrderBy {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
-		c.colWithTable(col.Col.Table, col.Col.Name)
+		if ob.Var != "" {
+			switch c.ct {
+			case "mysql":
+				c.renderOrderByList(ob)
+			default:
+				c.colWithTable(`_gj_ob_`+ob.Col.Name, "ord")
+			}
+		} else {
+			c.colWithTable(ob.Col.Table, ob.Col.Name)
+		}
 
-		switch col.Order {
+		switch ob.Order {
 		case qcode.OrderAsc:
 			c.w.WriteString(` ASC`)
 		case qcode.OrderDesc:
@@ -649,6 +678,18 @@ func (c *compilerContext) renderOrderBy(sel *qcode.Select) {
 		case qcode.OrderDescNullsLast:
 			c.w.WriteString(` DESC NULLS LAST`)
 		}
+	}
+}
+
+func (c *compilerContext) renderOrderByList(ob qcode.OrderBy) {
+	switch c.ct {
+	case "mysql":
+		c.w.WriteString(`FIND_IN_SET(`)
+		c.colWithTable(ob.Col.Table, ob.Col.Name)
+		c.w.WriteString(`, (SELECT GROUP_CONCAT(id) FROM JSON_TABLE(`)
+		c.renderParam(Param{Name: ob.Var, Type: "text"})
+		c.w.WriteString(`, '$[*]' COLUMNS (id ` + ob.Col.Type + ` PATH '$')) AS a))`)
+	default:
 	}
 }
 
