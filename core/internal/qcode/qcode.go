@@ -1570,9 +1570,6 @@ func orderByFromList(qc *QCode, parent *graph.Node) (ob OrderBy, err error) {
 	valNode := parent.Children[0]
 	orderNode := parent.Children[1]
 
-	if _, err = qc.getVar(valNode.Val, ValList); err != nil {
-		return ob, err
-	}
 	ob.Var = valNode.Val
 
 	if ob.Order, err = toOrder(orderNode.Val); err != nil {
@@ -1936,14 +1933,21 @@ func (sel *Select) GetArg(name string) (Arg, bool) {
 }
 
 func (qc *QCode) getVar(name string, vt ValType) (string, error) {
-	k := string(qc.Vars[name])
+	val, ok := qc.Vars[name]
+	if !ok {
+		return "", fmt.Errorf("variable '%s' not defined", name)
+	}
+	k := string(val)
+	if k == "null" {
+		return "", nil
+	}
 	switch vt {
 	case ValStr:
-		if k[0] == '"' {
+		if k != "" && k[0] == '"' {
 			return k[1:(len(k) - 1)], nil
 		}
 	case ValNum:
-		if (k[0] >= '0' && k[0] <= '9') || k[0] == '-' {
+		if k != "" && ((k[0] >= '0' && k[0] <= '9') || k[0] == '-') {
 			return k, nil
 		}
 	case ValBool:
@@ -1951,14 +1955,29 @@ func (qc *QCode) getVar(name string, vt ValType) (string, error) {
 			return k, nil
 		}
 	case ValList:
-		if k[0] == '[' {
+		if k != "" && k[0] == '[' {
 			return k, nil
 		}
 	case ValObj:
-		if k[0] == '{' {
+		if k != "" && k[0] == '{' {
 			return k, nil
 		}
 	}
 
-	return "", fmt.Errorf("variable '%s' must be a boolean '%s'", name, k)
+	var vts string
+	switch vt {
+	case ValStr:
+		vts = "string"
+	case ValNum:
+		vts = "number"
+	case ValBool:
+		vts = "boolean"
+	case ValList:
+		vts = "list"
+	case ValObj:
+		vts = "object"
+	}
+
+	return "", fmt.Errorf("variable '%s' must be a %s and not '%s'",
+		name, vts, k)
 }
