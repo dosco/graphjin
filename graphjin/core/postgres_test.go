@@ -132,3 +132,25 @@ func TestFunctionTablesWithArgs(t *testing.T) {
 	exp := `{"get_latest_users":[{"full_name":"User 100","id":100,"tag_name":"boo"},{"full_name":"User 99","id":99,"tag_name":"boo"}]}`
 	assert.Equal(t, exp, stdJSON(res.Data))
 }
+
+func TestFunctionTablesWithUserDefinedType(t *testing.T) {
+	gql := `query {
+		get_product(limit: 2, args: [1]) {
+			id
+			name
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	}
+	exp := `{"get_product":[{"id":1,"name":"Product 1"},{"id":2,"name":"Product 2"}]}`
+	assert.Equal(t, exp, stdJSON(res.Data))
+}

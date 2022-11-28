@@ -191,14 +191,6 @@ FROM
 -- refresh view hot_products
 REFRESH MATERIALIZED VIEW hot_products;
 
--- CREATE OR REPLACE FUNCTION get_latest_users (n INTEGER) 
--- RETURNS TABLE ( id BIGINT, name TEXT ) 
--- LANGUAGE plpgsql 
--- as $$
--- BEGIN
--- 	RETURN QUERY select u.id, u.full_name from users u order by u.id desc limit n;
--- END; $$; 
-
 CREATE OR REPLACE FUNCTION get_latest_users (n INTEGER, tag TEXT) 
 RETURNS TABLE ( tag_name TEXT, id BIGINT, full_name TEXT ) 
 LANGUAGE plpgsql 
@@ -214,3 +206,10 @@ as $$
 BEGIN
 	RETURN QUERY select p.id, p.name from products p order by p.id desc limit 5;
 END; $$;
+
+CREATE TYPE product_tuple AS (id bigint, name text);
+
+CREATE OR REPLACE FUNCTION get_product(id bigint) RETURNS SETOF product_tuple AS $$
+    SELECT p.id, p.name FROM products p where p.id = id
+$$ LANGUAGE SQL;
+

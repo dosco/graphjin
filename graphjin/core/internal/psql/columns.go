@@ -7,7 +7,7 @@ import (
 
 func (c *compilerContext) renderColumns(sel *qcode.Select) {
 	i := 0
-	for _, col := range sel.Cols {
+	for _, col := range sel.Fields {
 		if i != 0 {
 			c.w.WriteString(", ")
 		}
@@ -196,7 +196,7 @@ func (c *compilerContext) renderFunctions(sel *qcode.Select, i int) {
 func (c *compilerContext) renderRecursiveBaseColumns(sel *qcode.Select) {
 	i := 0
 
-	for _, col := range sel.Cols {
+	for _, col := range sel.Fields {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
@@ -227,7 +227,7 @@ func (c *compilerContext) renderTypename(sel *qcode.Select) {
 
 func (c *compilerContext) renderJSONFields(sel *qcode.Select) {
 	i := 0
-	for _, col := range sel.Cols {
+	for _, col := range sel.Fields {
 		if i != 0 {
 			c.w.WriteString(", ")
 		}

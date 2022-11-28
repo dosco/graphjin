@@ -2,7 +2,7 @@ SELECT
 	r.specific_name 	as func_id,
 	r.routine_schema 	as func_schema,
 	r.routine_name 		as func_name, 
-	r.data_type 		as data_type,
+	(CASE WHEN r.data_type = 'USER-DEFINED' THEN 'record' ELSE r.data_type END) as data_type,
 	p.ordinal_position	as param_id,
 	COALESCE(p.parameter_name, CAST(p.ordinal_position as CHAR(3))) as param_name,
 	p.data_type 		as param_type,
@@ -11,9 +11,7 @@ FROM
 	information_schema.routines r
 RIGHT JOIN 
 	information_schema.parameters p
-	ON (r.specific_name = p.specific_name and p.ordinal_position IS NOT NULL)	
+	ON (r.specific_name = p.specific_name AND r.specific_name = p.specific_name)
 WHERE 
-	p.specific_schema NOT IN ('_graphjin', 'information_schema', 'performance_schema', 'pg_catalog', 'mysql', 'sys')
-	AND r.external_language NOT IN ('C')
-ORDER BY 
-	r.routine_name, p.ordinal_position;
+	r.routine_type = 'FUNCTION'
+	AND p.specific_schema NOT IN ('_graphjin', 'information_schema', 'performance_schema', 'mysql', 'sys');

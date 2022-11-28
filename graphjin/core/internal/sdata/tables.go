@@ -87,7 +87,7 @@ func GetDBInfo(
 			return err
 		}
 
-		if funcs, err = DiscoverFunctions(db, blockList); err != nil {
+		if funcs, err = DiscoverFunctions(db, dbType, blockList); err != nil {
 			return err
 		}
 		return nil
@@ -343,8 +343,17 @@ type DBFuncParam struct {
 	Type string
 }
 
-func DiscoverFunctions(db *sql.DB, blockList []string) ([]DBFunction, error) {
-	rows, err := db.Query(functionsStmt)
+func DiscoverFunctions(db *sql.DB, dbtype string, blockList []string) ([]DBFunction, error) {
+	var sqlStmt string
+
+	switch dbtype {
+	case "mysql":
+		sqlStmt = mysqlFunctionsStmt
+	default:
+		sqlStmt = postgresFunctionsStmt
+	}
+
+	rows, err := db.Query(sqlStmt)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching functions: %s", err)
 	}

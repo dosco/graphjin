@@ -2,8 +2,11 @@ package sdata
 
 import _ "embed"
 
-//go:embed sql/functions.sql
-var functionsStmt string
+//go:embed sql/postgres_functions.sql
+var postgresFunctionsStmt string
+
+//go:embed sql/mysql_functions.sql
+var mysqlFunctionsStmt string
 
 //go:embed sql/postgres_info.sql
 var postgresInfo string

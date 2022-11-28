@@ -635,7 +635,7 @@ func (c *compilerContext) renderRecursiveGroupBy(sel *qcode.Select) {
 	}
 	c.w.WriteString(` GROUP BY `)
 
-	for i, col := range sel.Cols {
+	for i, col := range sel.Fields {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
