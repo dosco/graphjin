@@ -109,8 +109,8 @@ func (c *gcontext) resolveRemotes(
 
 			var ob bytes.Buffer
 
-			if len(s.Cols) != 0 {
-				err = jsn.Filter(&ob, b, colsToList(s.Cols))
+			if len(s.Fields) != 0 {
+				err = jsn.Filter(&ob, b, fieldsToList(s.Fields))
 				if err != nil {
 					cerr = fmt.Errorf("%s: %w", s.Table, err)
 					return
@@ -156,10 +156,10 @@ func (c *gcontext) parentFieldIds(sel []qcode.Select, remotes int32) (
 	return fm, sm, nil
 }
 
-func colsToList(cols []qcode.Column) []string {
+func fieldsToList(fields []qcode.Field) []string {
 	var f []string
 
-	for _, col := range cols {
+	for _, col := range fields {
 		f = append(f, col.FieldName)
 	}
 	return f

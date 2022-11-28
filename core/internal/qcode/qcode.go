@@ -87,7 +87,7 @@ type Select struct {
 	Table      string
 	Schema     string
 	FieldName  string
-	Cols       []Column
+	Fields     []Field
 	BCols      []Column
 	Args       []Arg
 	Funcs      []Function
@@ -113,6 +113,11 @@ type Validation struct {
 
 type TableInfo struct {
 	sdata.DBTable
+}
+
+type Field struct {
+	Col       sdata.DBColumn
+	FieldName string
 }
 
 type Column struct {

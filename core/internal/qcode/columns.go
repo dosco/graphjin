@@ -17,7 +17,7 @@ func (co *Compiler) compileColumns(
 	field graph.Field,
 	tr trval) error {
 
-	sel.Cols = make([]Column, 0, len(field.Children))
+	sel.Fields = make([]Field, 0, len(field.Children))
 	sel.BCols = make([]Column, 0, len(field.Children))
 
 	if err := co.compileChildColumns(st, op, qc, sel, field, tr); err != nil {
@@ -66,7 +66,7 @@ func (co *Compiler) compileChildColumns(
 		// these are all remote fields we use
 		// these later to strip the response json
 		if sel.Rel.Type == sdata.RelRemote {
-			sel.Cols = append(sel.Cols, Column{FieldName: fname})
+			sel.Fields = append(sel.Fields, Field{FieldName: fname})
 			continue
 		}
 
@@ -88,7 +88,7 @@ func (co *Compiler) compileChildColumns(
 		if fn.Name == "" {
 			dbc, err := sel.Ti.GetColumn(f.Name)
 			if err == nil {
-				sel.addCol(Column{Col: dbc, FieldName: fname}, false)
+				sel.addField(Field{Col: dbc, FieldName: fname})
 			} else {
 				return err
 			}
@@ -105,7 +105,7 @@ func (co *Compiler) compileChildColumns(
 		}
 	}
 
-	if aggExist && len(sel.Cols) != 0 {
+	if aggExist && len(sel.Fields) != 0 {
 		sel.GroupCols = true
 	}
 
@@ -114,7 +114,7 @@ func (co *Compiler) compileChildColumns(
 
 func (co *Compiler) addOrderByColumns(sel *Select) {
 	for _, ob := range sel.OrderBy {
-		sel.addCol(Column{Col: ob.Col}, true)
+		sel.addBaseCol(Column{Col: ob.Col})
 	}
 }
 
@@ -157,25 +157,25 @@ func (co *Compiler) addRelColumns(qc *QCode, sel *Select, rel sdata.DBRel) error
 		return nil
 
 	case sdata.RelOneToOne, sdata.RelOneToMany:
-		psel.addCol(Column{Col: rel.Right.Col}, true)
+		psel.addBaseCol(Column{Col: rel.Right.Col})
 
 	case sdata.RelEmbedded:
-		psel.addCol(Column{Col: rel.Right.Col}, true)
+		psel.addBaseCol(Column{Col: rel.Right.Col})
 
 	case sdata.RelRemote:
-		psel.addCol(Column{Col: rel.Right.Col, FieldName: rel.Left.Col.Name}, false)
+		psel.addField(Field{Col: rel.Right.Col, FieldName: rel.Left.Col.Name})
 		sel.SkipRender = SkipTypeRemote
 
 	case sdata.RelPolymorphic:
 		typeCol := rel.Left.Col
 		typeCol.Name = rel.Left.Col.FKeyCol
 
-		psel.addCol(Column{Col: rel.Left.Col}, true)
-		psel.addCol(Column{Col: typeCol}, true)
+		psel.addBaseCol(Column{Col: rel.Left.Col})
+		psel.addBaseCol(Column{Col: typeCol})
 
 	case sdata.RelRecursive:
-		sel.addCol(Column{Col: rel.Left.Col}, true)
-		sel.addCol(Column{Col: rel.Right.Col}, true)
+		sel.addBaseCol(Column{Col: rel.Left.Col})
+		sel.addBaseCol(Column{Col: rel.Right.Col})
 	}
 	return nil
 }
@@ -187,7 +187,7 @@ func (co *Compiler) orderByIDCol(sel *Select) error {
 		return fmt.Errorf("table requires primary key: %s", sel.Ti.Name)
 	}
 
-	sel.addCol(Column{Col: idCol}, true)
+	sel.addBaseCol(Column{Col: idCol})
 
 	for _, ob := range sel.OrderBy {
 		if ob.Col.Name == idCol.Name {
@@ -200,7 +200,7 @@ func (co *Compiler) orderByIDCol(sel *Select) error {
 }
 
 func validateSelector(qc *QCode, sel *Select, tr trval) error {
-	for _, col := range sel.Cols {
+	for _, col := range sel.Fields {
 		if !tr.columnAllowed(qc, col.Col.Name) {
 			return fmt.Errorf("column blocked: %s (%s)", col.Col.Name, tr.role)
 		}
@@ -226,22 +226,23 @@ func validateSelector(qc *QCode, sel *Select, tr trval) error {
 	return nil
 }
 
-func (sel *Select) addCol(col Column, baseOnly bool) {
-	if sel.bcolExists(col.Col.Name) == -1 {
-		sel.BCols = append(sel.BCols, col)
+func (sel *Select) addField(f Field) {
+	if sel.bcolExists(f.Col.Name) == -1 {
+		sel.BCols = append(sel.BCols, Column(f))
 	}
-
-	if baseOnly {
-		return
-	}
-
-	if sel.colExists(col.FieldName) == -1 {
-		sel.Cols = append(sel.Cols, col)
+	if sel.fieldExists(f.FieldName) == -1 {
+		sel.Fields = append(sel.Fields, f)
 	}
 }
 
-func (sel *Select) colExists(name string) int {
-	for i, c := range sel.Cols {
+func (sel *Select) addBaseCol(col Column) {
+	if sel.bcolExists(col.Col.Name) == -1 {
+		sel.BCols = append(sel.BCols, col)
+	}
+}
+
+func (sel *Select) fieldExists(name string) int {
+	for i, c := range sel.Fields {
 		if strings.EqualFold(c.FieldName, name) {
 			return i
 		}
@@ -259,7 +260,7 @@ func (sel *Select) bcolExists(name string) int {
 }
 
 func (sel *Select) addFunc(fn Function) {
-	if sel.colExists(fn.FieldName) == -1 {
+	if sel.fieldExists(fn.FieldName) == -1 {
 		sel.Funcs = append(sel.Funcs, fn)
 	}
 }
