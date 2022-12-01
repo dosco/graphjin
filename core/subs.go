@@ -194,7 +194,6 @@ func (gj *graphjin) newSub(c context.Context,
 		err := gj.allowList.Set(
 			nil,
 			query,
-			s.qc.st.qc.Metadata,
 			qr.ns)
 
 		if err != nil {

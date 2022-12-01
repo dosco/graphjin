@@ -1,3 +1,5 @@
+//go:build !mysql
+
 package core_test
 
 import (

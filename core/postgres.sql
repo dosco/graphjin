@@ -191,25 +191,29 @@ FROM
 -- refresh view hot_products
 REFRESH MATERIALIZED VIEW hot_products;
 
-CREATE OR REPLACE FUNCTION get_latest_users (n INTEGER, tag TEXT) 
+CREATE OR REPLACE FUNCTION get_oldest_users (n INTEGER, tag TEXT) 
 RETURNS TABLE ( tag_name TEXT, id BIGINT, full_name TEXT ) 
 LANGUAGE plpgsql 
 as $$
 BEGIN
-	RETURN QUERY select tag as tag_name, u.id, u.full_name from users u order by u.id desc limit n;
+	RETURN QUERY select tag as tag_name, u.id, u.full_name from users u order by u.id asc limit n;
 END; $$; 
 
-CREATE OR REPLACE FUNCTION get_latest5_products () 
+CREATE OR REPLACE FUNCTION get_oldest5_products () 
 RETURNS TABLE ( id BIGINT, name TEXT ) 
 LANGUAGE plpgsql 
 as $$
 BEGIN
-	RETURN QUERY select p.id, p.name from products p order by p.id desc limit 5;
+	RETURN QUERY select p.id, p.name from products p order by p.id asc limit 5;
 END; $$;
 
 CREATE TYPE product_tuple AS (id bigint, name text);
 
 CREATE OR REPLACE FUNCTION get_product(id bigint) RETURNS SETOF product_tuple AS $$
     SELECT p.id, p.name FROM products p where p.id = id
+$$ LANGUAGE SQL;
+
+CREATE OR REPLACE FUNCTION is_hot_product(id bigint) RETURNS BOOL AS $$
+    SELECT EXISTS (SELECT p.product_id FROM hot_products p where p.product_id = id);
 $$ LANGUAGE SQL;
 

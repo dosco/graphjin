@@ -38,16 +38,8 @@ type Item struct {
 	Comment   string `yaml:",omitempty"`
 	key       string
 	Query     string
-	Vars      string   `yaml:",omitempty"`
-	Metadata  Metadata `yaml:",inline,omitempty"`
+	Vars      string `yaml:",omitempty"`
 	frags     []Frag
-}
-
-type Metadata struct {
-	Order struct {
-		Var    string   `yaml:"var,omitempty"`
-		Values []string `yaml:"values,omitempty"`
-	} `yaml:",omitempty"`
 }
 
 type Frag struct {
@@ -96,7 +88,7 @@ func New(conf Config, fs afero.Fs) (*List, error) {
 	return &al, err
 }
 
-func (al *List) Set(vars []byte, query string, md Metadata, namespace string) error {
+func (al *List) Set(vars []byte, query string, namespace string) error {
 	if al.saveChan == nil {
 		return errors.New("allow list is read-only")
 	}
@@ -112,7 +104,6 @@ func (al *List) Set(vars []byte, query string, md Metadata, namespace string) er
 
 	item.Namespace = namespace
 	item.Vars = string(vars)
-	item.Metadata = md
 	al.saveChan <- item
 	return nil
 }

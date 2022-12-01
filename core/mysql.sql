@@ -210,3 +210,17 @@ FROM
   seq100
 LIMIT 
   5;
+
+-- SET GLOBAL log_bin_trust_function_creators = 1;
+
+-- CREATE FUNCTION is_hot_product(id bigint) 
+-- RETURNS BOOL
+-- READS SQL DATA
+-- DETERMINISTIC
+-- BEGIN
+-- 	DECLARE v BOOL;
+-- 	SET v = True;
+
+--   SELECT EXISTS (SELECT p.product_id FROM hot_products p where p.product_id = id) INTO @v;
+-- 	RETURN v;
+-- END;

@@ -57,7 +57,7 @@ func (gj *graphjin) initConfig() error {
 			continue
 		}
 		if n, ok := isASCII(v); !ok {
-			return fmt.Errorf("variables: %s: invalid character (%s) at %d",
+			return fmt.Errorf("variables: %s: invalid character '%s' at %d",
 				k, c.RolesQuery[:n+1], n+1)
 		}
 	}

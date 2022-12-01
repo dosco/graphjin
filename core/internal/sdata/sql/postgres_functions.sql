@@ -4,7 +4,7 @@ SELECT
 	r.routine_name 		as func_name, 
 	(CASE WHEN r.data_type = 'USER-DEFINED' THEN 'record' ELSE r.data_type END) as data_type,
 	p.ordinal_position	as param_id,
-	COALESCE(p.parameter_name, CAST(p.ordinal_position as CHAR(3))) as param_name,
+	COALESCE(p.parameter_name, '') as param_name,
 	p.data_type 		as param_type,
 	p.parameter_mode 	as param_kind
 FROM

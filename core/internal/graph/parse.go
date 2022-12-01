@@ -584,7 +584,7 @@ func (p *Parser) parseArgs(args []Arg) ([]Arg, error) {
 		}
 
 		if !p.peek(argNameTypes...) {
-			return nil, fmt.Errorf("expecting a label got: %s (%s)",
+			return nil, fmt.Errorf("expecting a label got: %s (value: '%s')",
 				p.peekNext(),
 				p.peekNextType().String())
 		}

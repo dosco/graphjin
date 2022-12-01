@@ -322,7 +322,7 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 		}
 
 		if v := vi.GetString("inherits"); v != "" {
-			return nil, fmt.Errorf("inherited config (%s) cannot itself inherit (%s)", pcf, v)
+			return nil, fmt.Errorf("inherited config '%s' cannot itself inherit '%s'", pcf, v)
 		}
 
 		vi.SetConfigFile(cf)

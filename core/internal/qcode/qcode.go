@@ -1,4 +1,4 @@
-//go:generate stringer -linecomment -type=QType,MType,SelType,SkipType,PagingType,AggregrateOp,ValType,ExpOp -output=./gen_string.go
+//go:generate stringer -linecomment -type=QType,MType,SelType,FieldType,SkipType,PagingType,AggregrateOp,ValType,ExpOp -output=./gen_string.go
 package qcode
 
 import (
@@ -11,7 +11,6 @@ import (
 
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
-	"github.com/dosco/graphjin/core/internal/allow"
 	"github.com/dosco/graphjin/core/internal/graph"
 	"github.com/dosco/graphjin/core/internal/sdata"
 	"github.com/dosco/graphjin/core/internal/util"
@@ -73,7 +72,6 @@ type QCode struct {
 	Schema     *sdata.DBSchema
 	Remotes    int32
 	Script     string
-	Metadata   allow.Metadata
 	Cache      Cache
 	Validation *Validation
 }
@@ -93,8 +91,8 @@ type Select struct {
 	Funcs      []Function
 	Where      Filter
 	OrderBy    []OrderBy
-	GroupCols  bool
 	DistinctOn []sdata.DBColumn
+	GroupCols  bool
 	Paging     Paging
 	Children   []int32
 	SkipRender SkipType
@@ -115,22 +113,36 @@ type TableInfo struct {
 	sdata.DBTable
 }
 
+type FieldType int8
+
+const (
+	FieldTypeCol FieldType = iota
+	FieldTypeFunc
+)
+
 type Field struct {
-	Col       sdata.DBColumn
-	FieldName string
+	Type        FieldType
+	Col         sdata.DBColumn
+	Func        sdata.DBFunction
+	FieldName   string
+	FieldFilter Filter
+	Args        []Arg
 }
 
 type Column struct {
-	Col       sdata.DBColumn
-	FieldName string
+	Col         sdata.DBColumn
+	FieldFilter Filter
+	FieldName   string
 }
 
 type Function struct {
-	Name      string
-	Col       sdata.DBColumn
+	Name string
+	// Col       sdata.DBColumn
+	Func      sdata.DBFunction
 	FieldName string
 	Alias     string
-	skip      bool
+	Args      []Arg
+	Agg       bool
 }
 
 type Filter struct {
@@ -168,16 +180,27 @@ type Join struct {
 	Local  bool
 }
 
+type ArgType int8
+
+const (
+	ArgTypeVal ArgType = iota
+	ArgTypeVar
+	ArgTypeCol
+)
+
 type Arg struct {
-	Name  string
-	Val   string
-	IsVar bool
+	Type ArgType
+	Name string
+	Val  string
+	Col  sdata.DBColumn
 }
 
 type OrderBy struct {
-	Col   sdata.DBColumn
-	Var   string
-	Order Order
+	KeyVar string
+	Key    string
+	Col    sdata.DBColumn
+	Var    string
+	Order  Order
 }
 
 type PagingType int8
@@ -444,11 +467,11 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 
 		co.setLimit(tr, qc, sel)
 
-		if err := co.compileArgs(qc, sel, field.Args, role); err != nil {
+		if err := co.compileArgs(sel, field.Args, role); err != nil {
 			return err
 		}
 
-		if err := co.compileColumns(st, op, qc, sel, field, tr); err != nil {
+		if err := co.compileFields(st, op, qc, sel, field, tr); err != nil {
 			return err
 		}
 
@@ -913,6 +936,31 @@ func (co *Compiler) compileOpDirectives(qc *QCode, dirs []graph.Directive) error
 	return nil
 }
 
+func (co *Compiler) compileFieldDirectives(f *Field, dirs []graph.Directive) error {
+	var err error
+
+	for i := range dirs {
+		d := &dirs[i]
+
+		switch d.Name {
+
+		case "skip":
+			err = co.compileDirectiveSkip(&f.FieldFilter, d)
+
+		case "include":
+			err = co.compileDirectiveInclude(&f.FieldFilter, d)
+
+		default:
+			err = fmt.Errorf("unknown field level directive: %s", d.Name)
+		}
+
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (co *Compiler) compileDirectives(qc *QCode, sel *Select, dirs []graph.Directive) error {
 	var err error
 
@@ -924,10 +972,10 @@ func (co *Compiler) compileDirectives(qc *QCode, sel *Select, dirs []graph.Direc
 			err = co.compileDirectiveSchema(sel, d)
 
 		case "skip":
-			err = co.compileDirectiveSkip(sel, d)
+			err = co.compileDirectiveSkip(&sel.Where, d)
 
 		case "include":
-			err = co.compileDirectiveInclude(sel, d)
+			err = co.compileDirectiveInclude(&sel.Where, d)
 
 		case "notRelated", "not_related":
 			err = co.compileDirectiveNotRelated(sel, d)
@@ -944,14 +992,14 @@ func (co *Compiler) compileDirectives(qc *QCode, sel *Select, dirs []graph.Direc
 		}
 
 		if err != nil {
-			return fmt.Errorf("@%s: %w", d.Name, err)
+			return fmt.Errorf("directive @%s: %w", d.Name, err)
 		}
 	}
 
 	return nil
 }
 
-func (co *Compiler) compileArgs(qc *QCode, sel *Select, args []graph.Arg, role string) error {
+func (co *Compiler) compileArgs(sel *Select, args []graph.Arg, role string) error {
 	var err error
 
 	for i := range args {
@@ -968,7 +1016,7 @@ func (co *Compiler) compileArgs(qc *QCode, sel *Select, args []graph.Arg, role s
 			err = co.compileArgWhere(sel.Ti, sel, arg, role)
 
 		case "orderby", "order_by", "order":
-			err = co.compileArgOrderBy(qc, sel, arg)
+			err = co.compileArgOrderBy(sel, arg)
 
 		case "distinct_on", "distinct":
 			err = co.compileArgDistinctOn(sel, arg)
@@ -995,7 +1043,7 @@ func (co *Compiler) compileArgs(qc *QCode, sel *Select, args []graph.Arg, role s
 			err = co.compileArgFind(sel, arg)
 
 		case "args":
-			err = co.compileArgArgs(qc, sel, arg)
+			err = co.compileArgArgs(sel, arg)
 		}
 
 		if err != nil {
@@ -1080,7 +1128,7 @@ func (co *Compiler) compileDirectiveSchema(sel *Select, d *graph.Directive) erro
 	return nil
 }
 
-func (co *Compiler) compileDirectiveSkip(sel *Select, d *graph.Directive) error {
+func (co *Compiler) compileDirectiveSkip(fil *Filter, d *graph.Directive) error {
 	if len(d.Args) == 0 || d.Args[0].Name != "if" {
 		return fmt.Errorf("@skip: required argument 'if' missing")
 	}
@@ -1094,7 +1142,25 @@ func (co *Compiler) compileDirectiveSkip(sel *Select, d *graph.Directive) error 
 	ex.Right.ValType = ValVar
 	ex.Right.Val = arg.Val.Val
 
-	setFilter(&sel.Where, ex)
+	setFilter(fil, ex)
+	return nil
+}
+
+func (co *Compiler) compileDirectiveInclude(fil *Filter, d *graph.Directive) error {
+	if len(d.Args) == 0 || d.Args[0].Name != "if" {
+		return fmt.Errorf("required argument 'if' missing")
+	}
+	arg := d.Args[0]
+
+	if arg.Val.Type != graph.NodeVar {
+		return argErr("if", "variable")
+	}
+
+	ex := newExpOp(OpEqualsTrue)
+	ex.Right.ValType = ValVar
+	ex.Right.Val = arg.Val.Val
+
+	setFilter(fil, ex)
 	return nil
 }
 
@@ -1305,24 +1371,6 @@ func validateConstraint(a graph.Arg, v validator) error {
 	return errors.New(err)
 }
 
-func (co *Compiler) compileDirectiveInclude(sel *Select, d *graph.Directive) error {
-	if len(d.Args) == 0 || d.Args[0].Name != "if" {
-		return fmt.Errorf("required argument 'if' missing")
-	}
-	arg := d.Args[0]
-
-	if arg.Val.Type != graph.NodeVar {
-		return argErr("if", "variable")
-	}
-
-	ex := newExpOp(OpEqualsTrue)
-	ex.Right.ValType = ValVar
-	ex.Right.Val = arg.Val.Val
-
-	setFilter(&sel.Where, ex)
-	return nil
-}
-
 func (co *Compiler) compileDirectiveNotRelated(sel *Select, d *graph.Directive) error {
 	sel.Rel.Type = sdata.RelSkip
 	return nil
@@ -1448,7 +1496,7 @@ func (co *Compiler) compileArgWhere(ti sdata.DBTable, sel *Select, arg *graph.Ar
 	return nil
 }
 
-func (co *Compiler) compileArgOrderBy(qc *QCode, sel *Select, arg *graph.Arg) error {
+func (co *Compiler) compileArgOrderBy(sel *Select, arg *graph.Arg) error {
 	node := arg.Val
 
 	if node.Type != graph.NodeObj &&
@@ -1464,16 +1512,16 @@ func (co *Compiler) compileArgOrderBy(qc *QCode, sel *Select, arg *graph.Arg) er
 
 	switch node.Type {
 	case graph.NodeObj:
-		return co.compileArgOrderByObj(qc, sel, node, cm)
+		return co.compileArgOrderByObj(sel, node, cm)
 
 	case graph.NodeVar:
-		return co.compileArgOrderByVar(qc, sel, node, cm)
+		return co.compileArgOrderByVar(sel, node, cm)
 	}
 
 	return nil
 }
 
-func (co *Compiler) compileArgOrderByObj(qc *QCode, sel *Select, parent *graph.Node, cm map[string]struct{}) error {
+func (co *Compiler) compileArgOrderByObj(sel *Select, parent *graph.Node, cm map[string]struct{}) error {
 	st := util.NewStackInf()
 
 	for i := range parent.Children {
@@ -1521,7 +1569,7 @@ func (co *Compiler) compileArgOrderByObj(qc *QCode, sel *Select, parent *graph.N
 			}
 
 		case graph.NodeList:
-			if ob, err = orderByFromList(qc, node); err != nil {
+			if ob, err = orderByFromList(node); err != nil {
 				continue
 			}
 
@@ -1567,7 +1615,7 @@ func (co *Compiler) compileArgOrderByObj(qc *QCode, sel *Select, parent *graph.N
 	return err
 }
 
-func orderByFromList(qc *QCode, parent *graph.Node) (ob OrderBy, err error) {
+func orderByFromList(parent *graph.Node) (ob OrderBy, err error) {
 	if len(parent.Children) != 2 {
 		return ob, fmt.Errorf(`valid format is [values, order] (eg. [$list, "desc"])`)
 	}
@@ -1583,29 +1631,25 @@ func orderByFromList(qc *QCode, parent *graph.Node) (ob OrderBy, err error) {
 	return ob, nil
 }
 
-func (co *Compiler) compileArgOrderByVar(qc *QCode, sel *Select, node *graph.Node, cm map[string]struct{}) error {
-	obList := make([]OrderBy, 0, 2)
-
-	k, err := qc.getVar(node.Val, ValStr)
-	if err != nil {
-		return err
+func (co *Compiler) compileArgOrderByVar(sel *Select, node *graph.Node, cm map[string]struct{}) error {
+	for k, v := range sel.tc.OrderBy {
+		if err := compileOrderBy(sel, node.Val, k, v, cm); err != nil {
+			return err
+		}
 	}
 
-	values, ok := sel.tc.OrderBy[k]
-	if !ok {
-		return fmt.Errorf("not found: %s", k)
-	}
+	return nil
+}
 
-	var mval []string
-	for k := range sel.tc.OrderBy {
-		mval = append(mval, k)
-	}
-	// save the order by details to the allow list file
-	qc.Metadata.Order.Var = node.Val
-	qc.Metadata.Order.Values = mval
+func compileOrderBy(sel *Select,
+	keyVar, key string,
+	values [][2]string,
+	cm map[string]struct{}) error {
+
+	obList := make([]OrderBy, 0, len(values))
 
 	for _, v := range values {
-		ob := OrderBy{}
+		ob := OrderBy{KeyVar: keyVar, Key: key}
 		ob.Order, _ = toOrder(v[1])
 
 		col, err := sel.Ti.GetColumn(v[0])
@@ -1618,11 +1662,11 @@ func (co *Compiler) compileArgOrderByVar(qc *QCode, sel *Select, node *graph.Nod
 		}
 		obList = append(obList, ob)
 	}
-	sel.OrderBy = obList
+	sel.OrderBy = append(sel.OrderBy, obList...)
 	return nil
 }
 
-func (co *Compiler) compileArgArgs(qc *QCode, sel *Select, arg *graph.Arg) error {
+func (co *Compiler) compileArgArgs(sel *Select, arg *graph.Arg) error {
 	if sel.Ti.Type != "function" {
 		return fmt.Errorf("'%s' is not a db function", sel.Ti.Name)
 	}
@@ -1643,11 +1687,14 @@ func (co *Compiler) compileArgArgs(qc *QCode, sel *Select, arg *graph.Arg) error
 	}
 
 	for _, n := range node.Children {
-		sel.addArg(Arg{
-			Name:  arg.Name,
-			Val:   n.Val,
-			IsVar: n.Type == graph.NodeVar,
-		})
+		arg := Arg{
+			Name: arg.Name,
+			Val:  n.Val,
+		}
+		if n.Type == graph.NodeVar {
+			arg.Type = ArgTypeVar
+		}
+		sel.addArg(arg)
 	}
 
 	return nil
@@ -1937,6 +1984,7 @@ func (sel *Select) GetArg(name string) (Arg, bool) {
 	return arg, false
 }
 
+/*
 func (qc *QCode) getVar(name string, vt ValType) (string, error) {
 	val, ok := qc.Vars[name]
 	if !ok {
@@ -1986,3 +2034,4 @@ func (qc *QCode) getVar(name string, vt ValType) (string, error) {
 	return "", fmt.Errorf("variable '%s' must be a %s and not '%s'",
 		name, vts, k)
 }
+*/

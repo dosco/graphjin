@@ -54,7 +54,7 @@ func (gj *graphjin) compileQuery(qr queryReq, role string) (*queryComp, error) {
 	} else {
 		// In production mode enforce the allow list and
 		// compile and cache the result else compile each time
-		if qc, err = gj.getQuery(qr, role, userVars); err != nil {
+		if qc, err = gj.getQuery(qr, role); err != nil {
 			return nil, err
 		}
 
@@ -104,10 +104,6 @@ func (gj *graphjin) compileQueryForRole(
 
 	if st.role, ok = gj.roles[role]; !ok {
 		return st, fmt.Errorf(`roles '%s' not defined in c.gj.config`, role)
-	}
-
-	if qr.order[0] != "" {
-		vm[qr.order[0]] = json.RawMessage(qr.order[1])
 	}
 
 	if st.qc, err = gj.qc.Compile(qr.query, vm, st.role.Name, qr.ns); err != nil {

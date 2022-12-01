@@ -44,7 +44,7 @@ func Example_subscription() {
 	}
 	for i := 0; i < 10; i++ {
 		msg := <-m.Result
-		fmt.Println(string(msg.Data))
+		printJSON(msg.Data)
 
 		// update user phone in database to trigger subscription
 		q := fmt.Sprintf(`UPDATE users SET phone = '650-447-000%d' WHERE id = 3`, i)
@@ -52,18 +52,17 @@ func Example_subscription() {
 			panic(err)
 		}
 	}
-
 	// Output:
-	// {"users": {"id": 3, "email": "user3@test.com", "phone": null}}
-	// {"users": {"id": 3, "email": "user3@test.com", "phone": "650-447-0000"}}
-	// {"users": {"id": 3, "email": "user3@test.com", "phone": "650-447-0001"}}
-	// {"users": {"id": 3, "email": "user3@test.com", "phone": "650-447-0002"}}
-	// {"users": {"id": 3, "email": "user3@test.com", "phone": "650-447-0003"}}
-	// {"users": {"id": 3, "email": "user3@test.com", "phone": "650-447-0004"}}
-	// {"users": {"id": 3, "email": "user3@test.com", "phone": "650-447-0005"}}
-	// {"users": {"id": 3, "email": "user3@test.com", "phone": "650-447-0006"}}
-	// {"users": {"id": 3, "email": "user3@test.com", "phone": "650-447-0007"}}
-	// {"users": {"id": 3, "email": "user3@test.com", "phone": "650-447-0008"}}
+	// {"users":{"email":"user3@test.com","id":3,"phone":null}}
+	// {"users":{"email":"user3@test.com","id":3,"phone":"650-447-0000"}}
+	// {"users":{"email":"user3@test.com","id":3,"phone":"650-447-0001"}}
+	// {"users":{"email":"user3@test.com","id":3,"phone":"650-447-0002"}}
+	// {"users":{"email":"user3@test.com","id":3,"phone":"650-447-0003"}}
+	// {"users":{"email":"user3@test.com","id":3,"phone":"650-447-0004"}}
+	// {"users":{"email":"user3@test.com","id":3,"phone":"650-447-0005"}}
+	// {"users":{"email":"user3@test.com","id":3,"phone":"650-447-0006"}}
+	// {"users":{"email":"user3@test.com","id":3,"phone":"650-447-0007"}}
+	// {"users":{"email":"user3@test.com","id":3,"phone":"650-447-0008"}}
 }
 
 func Example_subscriptionWithCursor() {
@@ -145,30 +144,29 @@ func Example_subscriptionWithCursor() {
 	for i := 0; i < 19; i++ {
 		msg := <-m2.Result
 		// replace cursor value to make test work since it's encrypted
-		v2 := cursorRegex.ReplaceAllString(string(msg.Data), "cursor_was_here")
-		fmt.Println(v2)
+		v2 := cursorRegex.ReplaceAllString(string(msg.Data), `cursor":"cursor_was_here`)
+		printJSON([]byte(v2))
 	}
-
 	// Output:
-	// {"chats": [{"id": 1, "body": "This is chat message number 1"}], "chats_cursor_was_here"}
-	// {"chats": [{"id": 2, "body": "This is chat message number 2"}], "chats_cursor_was_here"}
-	// {"chats": [{"id": 3, "body": "This is chat message number 3"}], "chats_cursor_was_here"}
-	// {"chats": [{"id": 4, "body": "This is chat message number 4"}], "chats_cursor_was_here"}
-	// {"chats": [{"id": 5, "body": "This is chat message number 5"}], "chats_cursor_was_here"}
-	// {"chats": [{"id": 6, "body": "New chat message 6"}], "chats_cursor_was_here"}
-	// {"chats": [{"id": 7, "body": "New chat message 7"}], "chats_cursor_was_here"}
-	// {"chats": [{"id": 8, "body": "New chat message 8"}], "chats_cursor_was_here"}
-	// {"chats": [{"id": 9, "body": "New chat message 9"}], "chats_cursor_was_here"}
-	// {"chats": [{"id": 10, "body": "New chat message 10"}], "chats_cursor_was_here"}
-	// {"chats": [{"id": 11, "body": "New chat message 11"}], "chats_cursor_was_here"}
-	// {"chats": [{"id": 12, "body": "New chat message 12"}], "chats_cursor_was_here"}
-	// {"chats": [{"id": 13, "body": "New chat message 13"}], "chats_cursor_was_here"}
-	// {"chats": [{"id": 14, "body": "New chat message 14"}], "chats_cursor_was_here"}
-	// {"chats": [{"id": 15, "body": "New chat message 15"}], "chats_cursor_was_here"}
-	// {"chats": [{"id": 16, "body": "New chat message 16"}], "chats_cursor_was_here"}
-	// {"chats": [{"id": 17, "body": "New chat message 17"}], "chats_cursor_was_here"}
-	// {"chats": [{"id": 18, "body": "New chat message 18"}], "chats_cursor_was_here"}
-	// {"chats": [{"id": 19, "body": "New chat message 19"}], "chats_cursor_was_here"}
+	// {"chats":[{"body":"This is chat message number 1","id":1}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"This is chat message number 2","id":2}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"This is chat message number 3","id":3}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"This is chat message number 4","id":4}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"This is chat message number 5","id":5}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 6","id":6}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 7","id":7}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 8","id":8}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 9","id":9}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 10","id":10}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 11","id":11}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 12","id":12}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 13","id":13}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 14","id":14}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 15","id":15}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 16","id":16}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 17","id":17}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 18","id":18}],"chats_cursor":"cursor_was_here"}
+	// {"chats":[{"body":"New chat message 19","id":19}],"chats_cursor":"cursor_was_here"}
 }
 
 func TestSubscription(t *testing.T) {
