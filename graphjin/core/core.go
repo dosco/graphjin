@@ -584,7 +584,7 @@ func (gj *graphjin) saveToAllowList(qc *qcode.QCode, query, namespace string) er
 		}
 	}
 
-	return gj.allowList.Set(av, query, qc.Metadata, namespace)
+	return gj.allowList.Set(av, query, namespace)
 }
 
 func (gj *graphjin) spanStart(c context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {

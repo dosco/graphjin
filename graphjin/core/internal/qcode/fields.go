@@ -9,7 +9,7 @@ import (
 	"github.com/dosco/graphjin/core/internal/util"
 )
 
-func (co *Compiler) compileColumns(
+func (co *Compiler) compileFields(
 	st *util.StackInt32,
 	op *graph.Operation,
 	qc *QCode,
@@ -41,13 +41,12 @@ func (co *Compiler) compileChildColumns(
 	op *graph.Operation,
 	qc *QCode,
 	sel *Select,
-	field graph.Field,
+	gf graph.Field,
 	tr trval) error {
 
-	aggExist := false
-
-	for _, cid := range field.Children {
-		var fname string
+	var aggExists bool
+	for _, cid := range gf.Children {
+		var field Field
 		f := op.Fields[cid]
 
 		if co.c.EnableCamelcase {
@@ -58,15 +57,15 @@ func (co *Compiler) compileChildColumns(
 		}
 
 		if f.Alias != "" {
-			fname = f.Alias
+			field.FieldName = f.Alias
 		} else {
-			fname = f.Name
+			field.FieldName = f.Name
 		}
 
 		// these are all remote fields we use
 		// these later to strip the response json
 		if sel.Rel.Type == sdata.RelRemote {
-			sel.Fields = append(sel.Fields, Field{FieldName: fname})
+			sel.Fields = append(sel.Fields, field)
 			continue
 		}
 
@@ -76,41 +75,82 @@ func (co *Compiler) compileChildColumns(
 			continue
 		}
 
-		fn, agg, err := co.isFunction(sel, f.Name, f.Alias)
+		if err := co.compileFieldDirectives(&field, f.Directives); err != nil {
+			return err
+		}
+
+		fn, isFunc, err := co.isFunction(sel, f)
 		if err != nil {
 			return err
 		}
-		if fn.skip {
-			continue
-		}
 
-		// not a function
-		if fn.Name == "" {
-			dbc, err := sel.Ti.GetColumn(f.Name)
-			if err == nil {
-				sel.addField(Field{Col: dbc, FieldName: fname})
-			} else {
+		if isFunc {
+			field.Type = FieldTypeFunc
+			field.Func = fn.Func
+			field.Args = fn.Args
+
+			// if err := co.compileFuncArgs(&field, f.Args); err != nil {
+			// 	return err
+			// }
+
+			if fn.Agg && sel.Rel.Type == sdata.RelRecursive {
+				sel.addBaseCol(Column{Col: fn.Args[0].Col})
+			}
+
+			// for aggregate functions add column to group by
+			// if fn.Agg && len(fn.Args) == 1 {
+			// 	sel.addGroupCol(fn.Args[0].Col)
+			// }
+			aggExists = fn.Agg
+
+		} else { // not a function
+			if field.Col, err = sel.Ti.GetColumn(f.Name); err != nil {
 				return err
 			}
-			if dbc.Blocked {
+
+			if field.Col.Blocked {
 				return fmt.Errorf("column: '%s.%s.%s' blocked",
-					dbc.Schema, dbc.Table, dbc.Name)
+					field.Col.Schema,
+					field.Col.Table,
+					field.Col.Name)
 			}
-			// is a function
-		} else {
-			if agg {
-				aggExist = true
-			}
-			sel.addFunc(fn)
 		}
+		sel.addField(field)
 	}
 
-	if aggExist && len(sel.Fields) != 0 {
+	if aggExists {
 		sel.GroupCols = true
 	}
-
 	return nil
 }
+
+// func (co *Compiler) compileFuncArgs(f *Field, args []graph.Arg) error {
+// 	if len(args) != 0 && len(f.Func.Inputs) == 0 {
+// 		return fmt.Errorf("db function '%s' does not have any arguments", f.Func.Name)
+// 	}
+
+// 	for _, arg := range args {
+// 		_, err := f.Func.GetInput(arg.Name)
+// 		if err != nil {
+// 			return fmt.Errorf("db function %s: %w", f.Func.Name, err)
+// 		}
+// 		a := Arg{
+// 			Name: arg.Name,
+// 			Val:  arg.Val.Val,
+// 		}
+// 		if arg.Val.Type == graph.NodeVar {
+// 			a.Type = ArgTypeVar
+// 		}
+// 		// if arg.Val.Type = graph.
+// 		// fn.Col, err = sel.Ti.GetColumn(fname[(len(fn.Name) + 1):])
+// 		// if err != nil {
+// 		// 	return
+// 		// }
+// 		f.Args = append(f.Args, a)
+// 	}
+
+// 	return nil
+// }
 
 func (co *Compiler) addOrderByColumns(sel *Select) {
 	for _, ob := range sel.OrderBy {
@@ -136,12 +176,6 @@ func (co *Compiler) addColumns(qc *QCode, sel *Select) error {
 	//co.addFuncColumns(qc, sel)
 	return nil
 }
-
-// func (co *Compiler) addFuncColumns(qc *QCode, sel *Select) {
-// 	for _, fn := range sel.Funcs {
-// 		sel.addCol(Column{Col: fn.Col}, true)
-// 	}
-// }
 
 func (co *Compiler) addRelColumns(qc *QCode, sel *Select, rel sdata.DBRel) error {
 	var psel *Select
@@ -200,35 +234,39 @@ func (co *Compiler) orderByIDCol(sel *Select) error {
 }
 
 func validateSelector(qc *QCode, sel *Select, tr trval) error {
-	for _, col := range sel.Fields {
-		if !tr.columnAllowed(qc, col.Col.Name) {
-			return fmt.Errorf("column blocked: %s (%s)", col.Col.Name, tr.role)
-		}
-	}
-
-	if len(sel.Funcs) != 0 && tr.isFuncsBlocked() {
-		return fmt.Errorf("functions blocked: %s (%s)", sel.Funcs[0].Col.Name, tr.role)
-	}
-
-	for _, fn := range sel.Funcs {
-		var blocked bool
-
-		if fn.Col.Name != "" {
-			blocked = !tr.columnAllowed(qc, fn.Col.Name)
-		} else {
-			blocked = !tr.columnAllowed(qc, fn.Name)
-		}
-
-		if blocked {
-			return fmt.Errorf("column blocked: %s (%s)", fn.Name, tr.role)
+	for _, f := range sel.Fields {
+		if err := validateField(qc, f, tr); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
+func validateField(qc *QCode, f Field, tr trval) error {
+	switch f.Type {
+	case FieldTypeCol:
+		if !tr.columnAllowed(qc, f.Col.Name) {
+			return validateErr(tr, f.Col.Name, "db column blocked")
+		}
+	case FieldTypeFunc:
+		if tr.isFuncsBlocked() {
+			return validateErr(tr, f.Func.Name, "all db functions blocked")
+		}
+		if len(f.Args) != 0 && !tr.columnAllowed(qc, f.Args[0].Col.Name) {
+			return validateErr(tr, f.Args[0].Col.Name, "db column blocked")
+		}
+	}
+
+	return nil
+}
+
+func validateErr(tr trval, name, msg string) error {
+	return fmt.Errorf("%s: %s (role: '%s')", msg, name, tr.role)
+}
+
 func (sel *Select) addField(f Field) {
-	if sel.bcolExists(f.Col.Name) == -1 {
-		sel.BCols = append(sel.BCols, Column(f))
+	if f.Type == FieldTypeCol && sel.bcolExists(f.Col.Name) == -1 {
+		sel.BCols = append(sel.BCols, Column{Col: f.Col, FieldName: f.FieldName})
 	}
 	if sel.fieldExists(f.FieldName) == -1 {
 		sel.Fields = append(sel.Fields, f)
@@ -257,10 +295,4 @@ func (sel *Select) bcolExists(name string) int {
 		}
 	}
 	return -1
-}
-
-func (sel *Select) addFunc(fn Function) {
-	if sel.fieldExists(fn.FieldName) == -1 {
-		sel.Funcs = append(sel.Funcs, fn)
-	}
 }

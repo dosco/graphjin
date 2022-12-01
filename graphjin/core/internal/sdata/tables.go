@@ -333,14 +333,16 @@ type DBFunction struct {
 	Schema  string
 	Name    string
 	Type    string
+	Agg     bool
 	Inputs  []DBFuncParam
 	Outputs []DBFuncParam
 }
 
 type DBFuncParam struct {
-	ID   int
-	Name string
-	Type string
+	ID      int
+	Name    string
+	Type    string
+	IsArray bool
 }
 
 func DiscoverFunctions(db *sql.DB, dbtype string, blockList []string) ([]DBFunction, error) {
@@ -384,6 +386,10 @@ func DiscoverFunctions(db *sql.DB, dbtype string, blockList []string) ([]DBFunct
 		}
 		param := DBFuncParam{ID: pid, Name: pn, Type: pt}
 
+		if strings.HasSuffix(pt, "[]") {
+			param.IsArray = true
+		}
+
 		switch pk {
 		case "IN", "in":
 			funcs[i].Inputs = append(funcs[i].Inputs, param)
@@ -393,6 +399,15 @@ func DiscoverFunctions(db *sql.DB, dbtype string, blockList []string) ([]DBFunct
 	}
 
 	return funcs, nil
+}
+
+func (fn *DBFunction) GetInput(name string) (ret DBFuncParam, err error) {
+	for _, in := range fn.Inputs {
+		if in.Name == name {
+			return in, nil
+		}
+	}
+	return ret, fmt.Errorf("function input '%s' not found", name)
 }
 
 func (di *DBInfo) Hash() uint64 {

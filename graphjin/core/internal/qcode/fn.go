@@ -3,89 +3,96 @@ package qcode
 import (
 	"fmt"
 	"strings"
+
+	"github.com/dosco/graphjin/core/internal/graph"
+	"github.com/dosco/graphjin/core/internal/sdata"
 )
 
-var stdFuncs = []string{
-	"avg_",
-	"count_",
-	"max_",
-	"min_",
-	"sum_",
-	"stddev_pop_",
-	"stddev_samp_",
-	"stddev_",
-	"variance_",
-	"var_pop_",
-	"var_samp_",
-	"lower_",
-	"length_",
-	"array_agg_",
-	"json_agg_",
-	"unnest_",
-}
+func (co *Compiler) isFunction(sel *Select, f graph.Field) (
+	fn Function, isFunc bool, err error) {
 
-func (co *Compiler) isFunction(sel *Select, fname, alias string) (Function, bool, error) {
-	var cn string
-	var agg bool
-	var err error
-
-	fn := Function{FieldName: fname, Alias: alias}
+	fn.FieldName = f.Name
+	fn.Alias = f.Alias
 
 	switch {
-	case fname == "search_rank":
-		fn.Name = "search_rank"
-
+	case f.Name == "search_rank":
+		isFunc = true
 		if _, ok := sel.GetArg("search"); !ok {
-			return fn, false, fmt.Errorf("no search defined: %s", fname)
+			err = fmt.Errorf("no search defined: %s", f.Name)
 		}
 
-	case strings.HasPrefix(fname, "search_headline_"):
+	case strings.HasPrefix(f.Name, "search_headline_"):
+		isFunc = true
 		fn.Name = "search_headline"
-		cn = fname[16:]
-
+		fn.Args = []Arg{{Type: ArgTypeCol}}
+		fn.Args[0].Col, err = sel.Ti.GetColumn(f.Name[(len(fn.Name) + 1):])
+		if err != nil {
+			return
+		}
 		if _, ok := sel.GetArg("search"); !ok {
-			return fn, false, fmt.Errorf("no search defined: %s", fname)
+			err = fmt.Errorf("no search defined: %s", f.Name)
 		}
 
-	case fname == "__typename":
+	case f.Name == "__typename":
 		sel.Typename = true
-		fn.skip = true
 
-	case strings.HasSuffix(fname, "_cursor"):
-		fn.skip = true
+	case strings.HasSuffix(f.Name, "_cursor"):
 
 	default:
-		n := co.funcPrefixLen(fname)
-		if n != 0 {
-			cn = fname[n:]
-			fn.Name = fname[:(n - 1)]
-			agg = true
+		var fi funcInfo
+		if fi, isFunc, err = co.isFunctionEx(sel, f); isFunc {
+			fn.Name = fi.Name
+			fn.Func = fi.Func
+			fn.Agg = fi.Agg
+			if fi.Col.Name != "" {
+				fn.Args = []Arg{{Type: ArgTypeCol, Col: fi.Col}}
+			}
+			isFunc = true
+		} else {
+			return fn, false, err
 		}
 	}
 
-	if cn != "" {
-		fn.Col, err = sel.Ti.GetColumn(cn)
+	if co.c.DisableAgg && fn.Agg {
+		err = fmt.Errorf("aggreation disabled: db function '%s' cannot be used", fn.Name)
 	}
 
-	return fn, agg, err
+	return
 }
 
-func (co *Compiler) funcPrefixLen(col string) int {
-	if !co.c.DisableAgg {
-		for _, v := range stdFuncs {
-			if strings.HasPrefix(col, v) {
-				return len(v)
-			}
-		}
-	}
-	fnLen := len(col)
+type funcInfo struct {
+	Name string
+	Func sdata.DBFunction
+	Col  sdata.DBColumn
+	Agg  bool
+}
 
-	for k := range co.s.GetFunctions() {
+func (co *Compiler) isFunctionEx(sel *Select, f graph.Field) (
+	fi funcInfo, isFunc bool, err error) {
+	fieldName := f.Name
+
+	for k, v := range co.s.GetFunctions() {
+		if k == fieldName && len(f.Args) != 0 {
+			fi.Name = k
+			fi.Agg = false
+			fi.Func = v
+			isFunc = true
+			return
+		}
+
 		kLen := len(k)
-		if kLen < fnLen && k[0] == col[0] && strings.HasPrefix(col, k) && col[kLen] == '_' {
-			return kLen + 1
+		if strings.HasPrefix(fieldName, (k + "_")) {
+			fi.Name = fieldName[:kLen]
+			fi.Col, err = sel.Ti.GetColumn(fieldName[(kLen + 1):])
+			if err != nil {
+				return
+			}
+			fi.Agg = true
+			fi.Func = v
+			isFunc = true
+			return
 		}
 	}
 
-	return 0
+	return
 }

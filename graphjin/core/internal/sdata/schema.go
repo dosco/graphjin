@@ -112,9 +112,20 @@ func NewDBSchema(
 		}
 	}
 
+	// add some standard common functions into the schema
+	for _, v := range stdFuncNames {
+		info.Functions = append(info.Functions, DBFunction{
+			Name:   v,
+			Agg:    true,
+			Inputs: []DBFuncParam{{ID: 0}},
+		})
+	}
+
 	// add functions into the schema
 	for k, f := range info.Functions {
-		if f.Type != "record" && len(f.Inputs) == 1 {
+		// don't include functions that return records
+		// as those are considered selector functions
+		if f.Type != "record" {
 			schema.fm[f.Name] = info.Functions[k]
 		}
 	}

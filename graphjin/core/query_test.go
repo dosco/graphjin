@@ -99,7 +99,7 @@ func Example_queryWithDynamicOrderBy() {
 	if err != nil {
 		fmt.Println(err1)
 	} else {
-		fmt.Println(string(res1.Data))
+		printJSON(res1.Data)
 	}
 
 	vars2 := json.RawMessage(`{ "order": "just_id" }`)
@@ -108,12 +108,11 @@ func Example_queryWithDynamicOrderBy() {
 	if err != nil {
 		fmt.Println(err2)
 	} else {
-		fmt.Println(string(res2.Data))
+		printJSON(res2.Data)
 	}
-
 	// Output:
-	// {"products": [{"id": 5, "price": 15.5}, {"id": 4, "price": 14.5}, {"id": 3, "price": 13.5}, {"id": 2, "price": 12.5}, {"id": 1, "price": 11.5}]}
-	// {"products": [{"id": 1, "price": 11.5}, {"id": 2, "price": 12.5}, {"id": 3, "price": 13.5}, {"id": 4, "price": 14.5}, {"id": 5, "price": 15.5}]}
+	//{"products":[{"id":5,"price":15.5},{"id":4,"price":14.5},{"id":3,"price":13.5},{"id":2,"price":12.5},{"id":1,"price":11.5}]}
+	//{"products":[{"id":1,"price":11.5},{"id":2,"price":12.5},{"id":3,"price":13.5},{"id":4,"price":14.5},{"id":5,"price":15.5}]}
 }
 
 func Example_queryWithNestedOrderBy() {
@@ -139,10 +138,9 @@ func Example_queryWithNestedOrderBy() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-
-	// Output: {"products": [{"id": 5, "price": 15.5}, {"id": 4, "price": 14.5}, {"id": 3, "price": 13.5}, {"id": 2, "price": 12.5}, {"id": 1, "price": 11.5}]}
+	// Output: {"products":[{"id":5,"price":15.5},{"id":4,"price":14.5},{"id":3,"price":13.5},{"id":2,"price":12.5},{"id":1,"price":11.5}]}
 }
 
 func Example_queryWithOrderByList() {
@@ -169,10 +167,9 @@ func Example_queryWithOrderByList() {
 	if err != nil {
 		fmt.Println(err)
 	} else {
-		fmt.Println(string(res.Data))
+		printJSON(res.Data)
 	}
-
-	// Output: {"products": [{"id": 3, "price": 13.5}, {"id": 2, "price": 12.5}, {"id": 1, "price": 11.5}, {"id": 5, "price": 15.5}]}
+	// Output: {"products":[{"id":3,"price":13.5},{"id":2,"price":12.5},{"id":1,"price":11.5},{"id":5,"price":15.5}]}
 }
 
 func Example_queryWithLimitOffsetOrderByDistinctAndWhere() {
@@ -593,7 +590,7 @@ func Example_queryWithAggregationBlockedColumn() {
 	} else {
 		printJSON(res.Data)
 	}
-	// Output: column blocked: sum (anon)
+	// Output: db column blocked: price (role: 'anon')
 }
 
 func Example_queryWithFunctionsBlocked() {
@@ -622,7 +619,7 @@ func Example_queryWithFunctionsBlocked() {
 	} else {
 		printJSON(res.Data)
 	}
-	// Output: functions blocked: price (anon)
+	// Output: all db functions blocked: sum (role: 'anon')
 }
 
 func Example_queryWithFunctionsWithWhere() {
@@ -921,6 +918,35 @@ func Example_queryWithSkipAndIncludeDirectives() {
 	// Output: {"products":[{"id":1,"name":"Product 1"},{"id":2,"name":"Product 2"}],"users":[]}
 }
 
+func Example_queryWithSkipAndIncludeFieldDirectives() {
+	gql := `
+	query {
+		products(limit: 2)  {
+			id @include(if: $test)
+			name
+		}
+		users(limit: 3)  {
+			id @skip(if: $test)
+		}
+	}`
+
+	vars := json.RawMessage(`{ "test": true }`)
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"products":[{"id":1,"name":"Product 1"},{"id":2,"name":"Product 2"}],"users":[{"id":null},{"id":null},{"id":null}]}
+}
+
 func Example_queryWithRemoteAPIJoin() {
 	gql := `query {
 		users {
@@ -1010,7 +1036,6 @@ func Example_queryWithCursorPagination1() {
 		fmt.Println("product_cursor value missing")
 		return
 	}
-
 	fmt.Println(string(val.Products))
 	// Output: [{"name": "Product 100"}, {"name": "Product 99"}, {"name": "Product 98"}]
 }
@@ -1059,7 +1084,6 @@ func Example_queryWithCursorPagination2() {
 		}
 		fmt.Println(string(val.Products))
 	}
-
 	// Output:
 	// [{"name": "Product 100"}, {"name": "Product 99"}, {"name": "Product 98"}, {"name": "Product 97"}, {"name": "Product 96"}]
 	// [{"name": "Product 95"}, {"name": "Product 94"}, {"name": "Product 93"}, {"name": "Product 92"}, {"name": "Product 91"}]

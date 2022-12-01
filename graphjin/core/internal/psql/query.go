@@ -365,7 +365,6 @@ func (c *compilerContext) renderJoin(join qcode.Join) {
 }
 
 func (c *compilerContext) renderJoinForOrderByList(ob qcode.OrderBy) {
-	// c.w.WriteString(` JOIN unnest(`)
 	c.w.WriteString(` JOIN (SELECT id ::` + ob.Col.Type + `, ord FROM json_array_elements_text(`)
 	c.renderParam(Param{Name: ob.Var, Type: ob.Col.Type})
 	c.w.WriteString(`) WITH ORDINALITY a(id, ord)) AS _gj_ob_` + ob.Col.Name + `(id, ord) USING (id)`)
@@ -375,8 +374,7 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select) {
 	c.renderCursorCTE(sel)
 	c.w.WriteString(`SELECT `)
 	c.renderDistinctOn(sel)
-	n := c.renderBaseColumns(sel)
-	c.renderFunctions(sel, n)
+	c.renderBaseColumns(sel)
 	c.renderFrom(sel)
 	c.renderJoinTables(sel)
 	c.renderFromCursor(sel)
@@ -386,26 +384,17 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select) {
 	c.renderLimit(sel)
 }
 
-func (c *compilerContext) renderRecursiveBaseSelect(sel *qcode.Select) {
-	c.renderRecursiveCTE(sel)
-	c.w.WriteString(`SELECT `)
-	c.renderDistinctOn(sel)
-	c.renderRecursiveBaseColumns(sel)
-	c.w.WriteString(` FROM (SELECT * FROM `)
-	c.quoted("__rcte_" + sel.Table)
+func (c *compilerContext) renderLimit(sel *qcode.Select) {
 	switch c.ct {
 	case "mysql":
-		c.w.WriteString(` LIMIT 1, 18446744073709551610`)
+		c.renderMysqlLimit(sel)
 	default:
-		c.w.WriteString(` OFFSET 1`)
+		c.renderDefaultLimit(sel)
 	}
-	c.w.WriteString(`) `)
-	c.quoted(sel.Table)
-	c.renderRecursiveGroupBy(sel)
-	c.renderLimit(sel)
 }
 
-func (c *compilerContext) renderLimit(sel *qcode.Select) {
+func (c *compilerContext) renderDefaultLimit(sel *qcode.Select) {
+
 	switch {
 	case sel.Paging.NoLimit:
 		break
@@ -436,33 +425,29 @@ func (c *compilerContext) renderLimit(sel *qcode.Select) {
 	}
 }
 
-func (c *compilerContext) renderRecursiveCTE(sel *qcode.Select) {
-	c.w.WriteString(`WITH RECURSIVE `)
-	c.quoted("__rcte_" + sel.Table)
-	c.w.WriteString(` AS (`)
-	c.renderCursorCTE(sel)
-	c.renderRecursiveSelect(sel)
-	c.w.WriteString(`) `)
-}
+func (c *compilerContext) renderMysqlLimit(sel *qcode.Select) {
+	c.w.WriteString(` LIMIT `)
 
-func (c *compilerContext) renderRecursiveSelect(sel *qcode.Select) {
-	psel := &c.qc.Selects[sel.ParentID]
+	switch {
+	case sel.Paging.OffsetVar != "":
+		c.renderParam(Param{Name: sel.Paging.OffsetVar, Type: "integer"})
+		c.w.WriteString(`, `)
 
-	c.w.WriteString(`(SELECT `)
-	c.renderBaseColumns(sel)
-	c.renderFrom(psel)
-	c.w.WriteString(` WHERE (`)
-	c.colWithTable(sel.Table, sel.Ti.PrimaryCol.Name)
-	c.w.WriteString(`) = (`)
-	c.colWithTableID(psel.Table, psel.ID, sel.Ti.PrimaryCol.Name)
-	c.w.WriteString(`) LIMIT 1) UNION ALL `)
+	case sel.Paging.Offset != 0:
+		int32String(c.w, sel.Paging.Offset)
+		c.w.WriteString(`, `)
+	}
 
-	c.w.WriteString(`SELECT `)
-	c.renderBaseColumns(sel)
-	c.renderFrom(sel)
-	c.w.WriteString(`, `)
-	c.quoted("__rcte_" + sel.Rel.Right.Ti.Name)
-	c.renderWhere(sel)
+	switch {
+	case sel.Paging.NoLimit:
+		c.w.WriteString(`18446744073709551610`)
+
+	case sel.Singular:
+		c.w.WriteString(`1`)
+
+	default:
+		int32String(c.w, sel.Paging.Limit)
+	}
 }
 
 func (c *compilerContext) renderFrom(sel *qcode.Select) {
@@ -506,7 +491,7 @@ func (c *compilerContext) renderFunctionTable(sel *qcode.Select) {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
-		if v.IsVar {
+		if v.Type == qcode.ArgTypeVar {
 			c.renderParam(Param{Name: v.Val, Type: sel.Ti.Args[j].Type})
 		} else {
 			c.w.WriteString(v.Val)
@@ -616,26 +601,11 @@ func (c *compilerContext) renderWhere(sel *qcode.Select) {
 }
 
 func (c *compilerContext) renderGroupBy(sel *qcode.Select) {
-	if !sel.GroupCols {
+	if !sel.GroupCols || len(sel.BCols) == 0 {
 		return
 	}
 	c.w.WriteString(` GROUP BY `)
-
 	for i, col := range sel.BCols {
-		if i != 0 {
-			c.w.WriteString(`, `)
-		}
-		c.colWithTable(sel.Table, col.Col.Name)
-	}
-}
-
-func (c *compilerContext) renderRecursiveGroupBy(sel *qcode.Select) {
-	if !sel.GroupCols {
-		return
-	}
-	c.w.WriteString(` GROUP BY `)
-
-	for i, col := range sel.Fields {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
@@ -653,6 +623,13 @@ func (c *compilerContext) renderOrderBy(sel *qcode.Select) {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
+		if ob.KeyVar != "" && ob.Key != "" {
+			c.w.WriteString(` CASE WHEN `)
+			c.renderParam(Param{Name: ob.KeyVar, Type: "text"})
+			c.w.WriteString(` = `)
+			c.squoted(ob.Key)
+			c.w.WriteString(` THEN `)
+		}
 		if ob.Var != "" {
 			switch c.ct {
 			case "mysql":
@@ -662,6 +639,9 @@ func (c *compilerContext) renderOrderBy(sel *qcode.Select) {
 			}
 		} else {
 			c.colWithTable(ob.Col.Table, ob.Col.Name)
+		}
+		if ob.KeyVar != "" && ob.Key != "" {
+			c.w.WriteString(` END `)
 		}
 
 		switch ob.Order {

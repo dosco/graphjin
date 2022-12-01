@@ -2,10 +2,8 @@ package core
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 
 	"github.com/dosco/graphjin/core/internal/allow"
@@ -19,7 +17,6 @@ type queryReq struct {
 	name  string
 	query []byte
 	vars  []byte
-	order [2]string
 }
 
 // nolint: errcheck
@@ -106,14 +103,10 @@ func (gj *graphjin) initAllowList() error {
 			vars:  []byte(item.Vars),
 		}
 
-		ov := item.Metadata.Order.Var
 		qk := gj.generateQueryKeys(item)
 
 		for _, v := range qk {
 			qc := &queryComp{qr: qr}
-			if ov != "" {
-				qc.qr.order = [2]string{ov, strconv.Quote(v.val)}
-			}
 			gj.queries[v.key] = qc
 		}
 	}
@@ -123,7 +116,6 @@ func (gj *graphjin) initAllowList() error {
 
 type queryKey struct {
 	key string
-	val string
 }
 
 func (gj *graphjin) generateQueryKeys(item allow.Item) []queryKey {
@@ -132,36 +124,15 @@ func (gj *graphjin) generateQueryKeys(item allow.Item) []queryKey {
 	for roleName := range gj.roles {
 		k1 := (item.Namespace + item.Name + roleName)
 		qk = append(qk, queryKey{key: k1})
-
-		for _, v := range item.Metadata.Order.Values {
-			k2 := k1 + v
-			qk = append(qk, queryKey{key: k2, val: v})
-		}
 	}
 	return qk
 }
 
-func (gj *graphjin) getQuery(qr queryReq, role string, vm map[string]json.RawMessage) (*queryComp, error) {
+func (gj *graphjin) getQuery(qr queryReq, role string) (*queryComp, error) {
 	qk := (qr.ns + qr.name + role)
 	qc, ok := gj.queries[qk]
 	if !ok {
 		return nil, ErrNotFound
-	}
-
-	ov := qc.qr.order[0]
-	if ov == "" {
-		return qc, nil
-	}
-
-	v, ok := vm[ov]
-	if !ok || v[0] != '"' || len(v) == 2 {
-		return nil, fmt.Errorf("required variable not set: %s", ov)
-	}
-
-	oval := string(v[1:(len(v) - 1)])
-	qc, ok = gj.queries[(qk + oval)]
-	if !ok {
-		return nil, fmt.Errorf("invalid value for variable (%s): %s", ov, oval)
 	}
 	return qc, nil
 }
