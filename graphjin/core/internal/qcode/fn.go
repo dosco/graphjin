@@ -17,7 +17,7 @@ func (co *Compiler) isFunction(sel *Select, f graph.Field) (
 	switch {
 	case f.Name == "search_rank":
 		isFunc = true
-		if _, ok := sel.GetArg("search"); !ok {
+		if _, ok := sel.GetInternalArg("search"); !ok {
 			err = fmt.Errorf("no search defined: %s", f.Name)
 		}
 
@@ -29,14 +29,9 @@ func (co *Compiler) isFunction(sel *Select, f graph.Field) (
 		if err != nil {
 			return
 		}
-		if _, ok := sel.GetArg("search"); !ok {
+		if _, ok := sel.GetInternalArg("search"); !ok {
 			err = fmt.Errorf("no search defined: %s", f.Name)
 		}
-
-	case f.Name == "__typename":
-		sel.Typename = true
-
-	case strings.HasSuffix(f.Name, "_cursor"):
 
 	default:
 		var fi funcInfo

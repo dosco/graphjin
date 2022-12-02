@@ -77,7 +77,7 @@ func (c *compilerContext) renderRecursiveColumns(sel *qcode.Select) {
 			c.w.WriteString(` THEN `)
 		}
 		if f.Type == qcode.FieldTypeFunc {
-			c.renderFunction(sel, f)
+			c.renderFieldFunction(sel, f)
 		} else {
 			c.colWithTable(f.Col.Table, f.Col.Name)
 		}
