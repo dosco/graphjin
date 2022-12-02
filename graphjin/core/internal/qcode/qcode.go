@@ -1050,6 +1050,11 @@ func (co *Compiler) compileArgs(sel *Select, args []graph.Arg, role string) erro
 
 		case "args":
 			err = co.compileArgArgs(sel, arg)
+
+		default:
+			if sel.Ti.Type == "function" {
+				err = co.compileFuncTableArg(sel, arg)
+			}
 		}
 
 		if err != nil {
@@ -1677,7 +1682,8 @@ func (co *Compiler) compileArgArgs(sel *Select, arg *graph.Arg) error {
 		return fmt.Errorf("'%s' is not a db function", sel.Ti.Name)
 	}
 
-	if len(sel.Ti.Args) == 0 {
+	fn := sel.Ti.Func
+	if len(fn.Inputs) == 0 {
 		return fmt.Errorf("db function '%s' does not have any arguments", sel.Ti.Name)
 	}
 
@@ -1688,7 +1694,7 @@ func (co *Compiler) compileArgArgs(sel *Select, arg *graph.Arg) error {
 	}
 
 	for i, n := range node.Children {
-		a := Arg{Val: n.Val, ValType: sel.Ti.Args[i].Type}
+		a := Arg{Val: n.Val, ValType: fn.Inputs[i].Type}
 		if n.Type == graph.NodeVar {
 			a.Type = ArgTypeVar
 		}

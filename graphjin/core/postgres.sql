@@ -191,12 +191,12 @@ FROM
 -- refresh view hot_products
 REFRESH MATERIALIZED VIEW hot_products;
 
-CREATE OR REPLACE FUNCTION get_oldest_users (n INTEGER, tag TEXT) 
+CREATE OR REPLACE FUNCTION get_oldest_users (user_count INTEGER, tag TEXT) 
 RETURNS TABLE ( tag_name TEXT, id BIGINT, full_name TEXT ) 
 LANGUAGE plpgsql 
 as $$
 BEGIN
-	RETURN QUERY select tag as tag_name, u.id, u.full_name from users u order by u.id asc limit n;
+	RETURN QUERY select tag as tag_name, u.id, u.full_name from users u order by u.id asc limit user_count;
 END; $$; 
 
 CREATE OR REPLACE FUNCTION get_oldest5_products () 

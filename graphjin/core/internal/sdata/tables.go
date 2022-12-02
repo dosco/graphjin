@@ -33,13 +33,8 @@ type DBTable struct {
 	SecondaryCol DBColumn
 	FullText     []DBColumn `hash:"set"`
 	Blocked      bool
-	Args         []DBTableArg
+	Func         DBFunction
 	colMap       map[string]int `hash:"-"`
-}
-
-type DBTableArg struct {
-	Name string
-	Type string
 }
 
 type VirtualTable struct {
@@ -165,12 +160,7 @@ func NewDBInfo(
 			})
 		}
 		t := NewDBTable(f.Schema, f.Name, "function", cols)
-		for _, v := range f.Inputs {
-			t.Args = append(t.Args, DBTableArg{
-				Name: v.Name,
-				Type: v.Type,
-			})
-		}
+		t.Func = f
 		di.AddTable(t)
 	}
 

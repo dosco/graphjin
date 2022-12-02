@@ -129,6 +129,29 @@ func (co *Compiler) compileChildColumns(
 	return nil
 }
 
+func (co *Compiler) compileFuncTableArg(sel *Select, arg *graph.Arg) error {
+	fn := sel.Ti.Func
+	input, err := fn.GetInput(arg.Name)
+	if err != nil {
+		return fmt.Errorf("db function %s: %w", fn.Name, err)
+	}
+	a := Arg{
+		Name:    arg.Name,
+		Val:     arg.Val.Val,
+		ValType: input.Type,
+	}
+	if arg.Val.Type == graph.NodeVar {
+		a.Type = ArgTypeVar
+	}
+	// if arg.Val.Type = graph.
+	// fn.Col, err = sel.Ti.GetColumn(fname[(len(fn.Name) + 1):])
+	// if err != nil {
+	// 	return
+	// }
+	sel.Args = append(sel.Args, a)
+	return nil
+}
+
 func (co *Compiler) compileFuncArgs(f *Field, args []graph.Arg) error {
 	if len(args) != 0 && len(f.Func.Inputs) == 0 {
 		return fmt.Errorf("db function '%s' does not have any arguments", f.Func.Name)

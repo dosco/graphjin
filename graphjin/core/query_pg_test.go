@@ -63,32 +63,6 @@ func Example_queryWithFunctionFieldsArgList() {
 	// Output: {"products":{"id":51,"is_hot_product":true,"name":"Product 51"}}
 }
 
-func Example_queryWithVariableLimit() {
-	gql := `query {
-		products(limit: $limit) {
-			id
-		}
-	}`
-
-	vars := json.RawMessage(`{
-		"limit": 10
-	}`)
-
-	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
-	gj, err := core.NewGraphJin(conf, db)
-	if err != nil {
-		panic(err)
-	}
-
-	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
-	if err != nil {
-		fmt.Println(err)
-	} else {
-		printJSON(res.Data)
-	}
-	// Output: {"products":[{"id":1},{"id":2},{"id":3},{"id":4},{"id":5},{"id":6},{"id":7},{"id":8},{"id":9},{"id":10}]}
-}
-
 func Example_queryWithFunctionReturingTables() {
 	gql := `query {
 		get_oldest5_products(limit: 3) {
@@ -137,6 +111,31 @@ func Example_queryWithFunctionReturingTablesWithArgs() {
 	// Output: {"get_oldest_users":[{"full_name":"User 1","id":1,"tag_name":"boo"},{"full_name":"User 2","id":2,"tag_name":"boo"}]}
 }
 
+func Example_queryWithFunctionReturingTablesWithNamedArgs() {
+	gql := `query {
+		get_oldest_users(limit: 2, user_count: 4, tag: $tag) {
+			tag_name
+			id
+			full_name
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	vars := json.RawMessage(`{ "tag": "boo" }`)
+	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"get_oldest_users":[{"full_name":"User 1","id":1,"tag_name":"boo"},{"full_name":"User 2","id":2,"tag_name":"boo"}]}
+}
+
 func Example_queryWithFunctionReturingUserDefinedTypes() {
 	gql := `query {
 		get_product(limit: 2, args: [1]) {
@@ -158,6 +157,32 @@ func Example_queryWithFunctionReturingUserDefinedTypes() {
 		printJSON(res.Data)
 	}
 	// Output: {"get_product":[{"id":1,"name":"Product 1"},{"id":2,"name":"Product 2"}]}
+}
+
+func Example_queryWithVariableLimit() {
+	gql := `query {
+		products(limit: $limit) {
+			id
+		}
+	}`
+
+	vars := json.RawMessage(`{
+		"limit": 10
+	}`)
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"products":[{"id":1},{"id":2},{"id":3},{"id":4},{"id":5},{"id":6},{"id":7},{"id":8},{"id":9},{"id":10}]}
 }
 
 func TestMutiSchema(t *testing.T) {
