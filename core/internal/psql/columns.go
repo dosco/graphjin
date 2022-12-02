@@ -46,17 +46,6 @@ func (c *compilerContext) renderFuncColumn(sel *qcode.Select, f qcode.Field) {
 	c.colWithTableID(sel.Table, sel.ID, f.FieldName)
 }
 
-func (c *compilerContext) renderFunction(sel *qcode.Select, f qcode.Field) {
-	switch f.Func.Name {
-	case "search_rank":
-		c.renderFunctionSearchRank(sel, f)
-	case "search_headline":
-		c.renderFunctionSearchHeadline(sel, f)
-	default:
-		c.renderOtherFunction(sel, f)
-	}
-}
-
 func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 	i := n
 	for _, cid := range sel.Children {
@@ -129,85 +118,6 @@ func (c *compilerContext) renderUnionColumn(sel, csel *qcode.Select) {
 	c.alias(csel.FieldName)
 }
 
-func (c *compilerContext) renderFunctionSearchRank(sel *qcode.Select, f qcode.Field) {
-	if c.ct == "mysql" {
-		c.w.WriteString(`0`)
-		return
-	}
-
-	c.w.WriteString(`ts_rank(`)
-	for i, col := range sel.Ti.FullText {
-		if i != 0 {
-			c.w.WriteString(` || `)
-		}
-		c.colWithTable(sel.Table, col.Name)
-	}
-	if c.cv >= 110000 {
-		c.w.WriteString(`, websearch_to_tsquery(`)
-	} else {
-		c.w.WriteString(`, to_tsquery(`)
-	}
-	arg, _ := sel.GetArg("search")
-	c.renderParam(Param{Name: arg.Val, Type: "text"})
-	c.w.WriteString(`))`)
-}
-
-func (c *compilerContext) renderFunctionSearchHeadline(sel *qcode.Select, f qcode.Field) {
-	if c.ct == "mysql" {
-		c.w.WriteString(`''`)
-		return
-	}
-
-	c.w.WriteString(`ts_headline(`)
-	c.colWithTable(sel.Table, f.Col.Name)
-	if c.cv >= 110000 {
-		c.w.WriteString(`, websearch_to_tsquery(`)
-	} else {
-		c.w.WriteString(`, to_tsquery(`)
-	}
-	arg, _ := sel.GetArg("search")
-	c.renderParam(Param{Name: arg.Val, Type: "text"})
-	c.w.WriteString(`))`)
-}
-
-func (c *compilerContext) renderOtherFunction(sel *qcode.Select, f qcode.Field) {
-	c.w.WriteString(f.Func.Name)
-	c.w.WriteString(`(`)
-
-	i := 0
-	for _, a := range f.Args {
-		if a.Name == "" {
-			if i != 0 {
-				c.w.WriteString(`, `)
-			}
-			c.renderFuncArgVal(a)
-		}
-		i++
-	}
-	for _, a := range f.Args {
-		if a.Name != "" {
-			if i != 0 {
-				c.w.WriteString(`, `)
-			}
-			c.w.WriteString(a.Name + ` => `)
-			c.renderFuncArgVal(a)
-		}
-		i++
-	}
-	_, _ = c.w.WriteString(`)`)
-}
-
-func (c *compilerContext) renderFuncArgVal(a qcode.Arg) {
-	switch a.Type {
-	case qcode.ArgTypeCol:
-		c.colWithTable(a.Col.Table, a.Col.Name)
-	case qcode.ArgTypeVar:
-		fallthrough
-	default:
-		c.squoted(a.Val)
-	}
-}
-
 func (c *compilerContext) renderBaseColumns(sel *qcode.Select) {
 	i := 0
 	for _, col := range sel.BCols {
@@ -230,7 +140,7 @@ func (c *compilerContext) renderBaseColumns(sel *qcode.Select) {
 			c.renderExp(sel.Ti, f.FieldFilter.Exp, false)
 			c.w.WriteString(` THEN `)
 		}
-		c.renderFunction(sel, f)
+		c.renderFieldFunction(sel, f)
 
 		if f.FieldFilter.Exp != nil {
 			c.w.WriteString(` ELSE null END)`)
@@ -241,9 +151,8 @@ func (c *compilerContext) renderBaseColumns(sel *qcode.Select) {
 }
 
 func (c *compilerContext) renderTypename(sel *qcode.Select) {
-	c.w.WriteString(`(`)
 	c.squoted(sel.Table)
-	c.w.WriteString(`) AS "__typename"`)
+	c.w.WriteString(` AS "__typename"`)
 }
 
 func (c *compilerContext) renderJSONFields(sel *qcode.Select) {

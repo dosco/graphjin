@@ -1503,3 +1503,28 @@ func Example_queryWithWhereHasAnyKey() {
 
 	// Output: {"products":[{"id":1},{"id":2},{"id":3}]}
 }
+
+func Example_queryWithTypename() {
+	gql := `query getUser {
+		__typename
+		users(id: 1) {
+		  id
+		  email
+		  __typename
+		}
+	  }`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, json.RawMessage(`{"id":2}`), nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"__typename":"getUser","users":{"__typename":"users","email":"user1@test.com","id":1}}
+}

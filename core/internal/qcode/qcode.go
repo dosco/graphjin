@@ -74,6 +74,7 @@ type QCode struct {
 	Script     string
 	Cache      Cache
 	Validation *Validation
+	Typename   bool
 }
 
 type Select struct {
@@ -87,6 +88,7 @@ type Select struct {
 	FieldName  string
 	Fields     []Field
 	BCols      []Column
+	IArgs      []Arg
 	Args       []Arg
 	Funcs      []Function
 	Where      Filter
@@ -189,10 +191,11 @@ const (
 )
 
 type Arg struct {
-	Type ArgType
-	Name string
-	Val  string
-	Col  sdata.DBColumn
+	Type    ArgType
+	Name    string
+	Val     string
+	ValType string
+	Col     sdata.DBColumn
 }
 
 type OrderBy struct {
@@ -401,6 +404,9 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 
 	for _, f := range op.Fields {
 		if f.ParentID == -1 {
+			if f.Name == "__typename" && op.Name != "" {
+				qc.Typename = true
+			}
 			val := f.ID | (-1 << 16)
 			st.Push(val)
 		}
@@ -659,7 +665,7 @@ func (co *Compiler) setRelFilters(qc *QCode, sel *Select) {
 		ex2 := newExp()
 		ex3 := newExp()
 
-		v, _ := sel.GetArg("find")
+		v, _ := sel.GetInternalArg("find")
 		switch v.Val {
 		case "parents", "parent":
 			ex1.Left.Table = rcte
@@ -1056,7 +1062,7 @@ func (co *Compiler) compileArgs(sel *Select, args []graph.Arg, role string) erro
 
 func (co *Compiler) validateSelect(sel *Select) error {
 	if sel.Rel.Type == sdata.RelRecursive {
-		v, ok := sel.GetArg("find")
+		v, ok := sel.GetInternalArg("find")
 		if !ok {
 			return fmt.Errorf("argument 'find' needed for recursive queries")
 		}
@@ -1412,7 +1418,7 @@ func (co *Compiler) compileArgFind(sel *Select, arg *graph.Arg) error {
 	if arg.Val.Val != "parents" && arg.Val.Val != "children" {
 		return fmt.Errorf("valid values 'parents' or 'children'")
 	}
-	sel.addArg(Arg{Name: arg.Name, Val: arg.Val.Val})
+	sel.addIArg(Arg{Name: arg.Name, Val: arg.Val.Val})
 	return nil
 }
 
@@ -1477,7 +1483,7 @@ func (co *Compiler) compileArgSearch(sel *Select, arg *graph.Arg) error {
 	ex.Right.ValType = ValVar
 	ex.Right.Val = arg.Val.Val
 
-	sel.addArg(Arg{Name: arg.Name, Val: arg.Val.Val})
+	sel.addIArg(Arg{Name: arg.Name, Val: arg.Val.Val})
 	setFilter(&sel.Where, ex)
 	return nil
 }
@@ -1681,20 +1687,12 @@ func (co *Compiler) compileArgArgs(sel *Select, arg *graph.Arg) error {
 		return argErr("args", "list")
 	}
 
-	if len(node.Children) != len(sel.Ti.Args) {
-		return fmt.Errorf("db function '%s' expects %d value(s) you have provided %d",
-			sel.Ti.Name, len(sel.Ti.Args), len(node.Children))
-	}
-
-	for _, n := range node.Children {
-		arg := Arg{
-			Name: arg.Name,
-			Val:  n.Val,
-		}
+	for i, n := range node.Children {
+		a := Arg{Val: n.Val, ValType: sel.Ti.Args[i].Type}
 		if n.Type == graph.NodeVar {
-			arg.Type = ArgTypeVar
+			a.Type = ArgTypeVar
 		}
-		sel.addArg(arg)
+		sel.Args = append(sel.Args, a)
 	}
 
 	return nil
@@ -1970,13 +1968,13 @@ func dbArgErr(name, ty, db string) error {
 	return fmt.Errorf("%s: value for argument '%s' must be a %s", db, name, ty)
 }
 
-func (sel *Select) addArg(arg Arg) {
-	sel.Args = append(sel.Args, arg)
+func (sel *Select) addIArg(arg Arg) {
+	sel.IArgs = append(sel.IArgs, arg)
 }
 
-func (sel *Select) GetArg(name string) (Arg, bool) {
+func (sel *Select) GetInternalArg(name string) (Arg, bool) {
 	var arg Arg
-	for _, v := range sel.Args {
+	for _, v := range sel.IArgs {
 		if v.Name == name {
 			return v, true
 		}

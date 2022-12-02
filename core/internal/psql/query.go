@@ -126,6 +126,12 @@ func (co *Compiler) CompileQuery(
 	default:
 		c.w.WriteString(`SELECT jsonb_build_object(`)
 	}
+	if qc.Typename {
+		c.w.WriteString(`'__typename', `)
+		c.squoted(qc.Name)
+		i++
+	}
+
 	for _, id := range qc.Roots {
 		if i != 0 {
 			c.w.WriteString(`, `)
@@ -459,7 +465,7 @@ func (c *compilerContext) renderFrom(sel *qcode.Select) {
 	}
 
 	if sel.Ti.Type == "function" {
-		c.renderFunctionTable(sel)
+		c.renderTableFunction(sel)
 		return
 	}
 
@@ -478,28 +484,6 @@ func (c *compilerContext) renderFrom(sel *qcode.Select) {
 	default:
 		c.table(sel.Ti.Schema, sel.Ti.Name, true)
 	}
-}
-
-func (c *compilerContext) renderFunctionTable(sel *qcode.Select) {
-	c.quoted(sel.Table)
-	c.w.WriteString(`(`)
-	i := 0
-	for j, v := range sel.Args {
-		if v.Name != "args" {
-			continue
-		}
-		if i != 0 {
-			c.w.WriteString(`, `)
-		}
-		if v.Type == qcode.ArgTypeVar {
-			c.renderParam(Param{Name: v.Val, Type: sel.Ti.Args[j].Type})
-		} else {
-			c.w.WriteString(v.Val)
-		}
-		i++
-	}
-	c.w.WriteString(`) AS`)
-	c.quoted(sel.Table)
 }
 
 func (c *compilerContext) renderFromCursor(sel *qcode.Select) {

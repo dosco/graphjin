@@ -13,30 +13,55 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// func Example_queryWithFunctionFields() {
-// 	gql := `
-// 	query {
-// 		products(id: 51) {
-// 			id
-// 			name
-// 			is_hot_product(id: 51)
-// 		}
-// 	}`
+func Example_queryWithFunctionFields() {
+	gql := `
+	query {
+		products(id: 51) {
+			id
+			name
+			is_hot_product(id: 51)
+		}
+	}`
 
-// 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
-// 	gj, err := core.NewGraphJin(conf, db)
-// 	if err != nil {
-// 		panic(err)
-// 	}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
 
-// 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
-// 	if err != nil {
-// 		fmt.Println(err)
-// 	} else {
-// 		printJSON(res.Data)
-// 	}
-// 	// Output: {"products":[{"id":1,"name":"Product 1"},{"id":2,"name":"Product 2"}],"users":[]}
-// }
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"products":{"id":51,"is_hot_product":true,"name":"Product 51"}}
+}
+
+func Example_queryWithFunctionFieldsArgList() {
+	gql := `
+	query {
+		products(id: 51) {
+			id
+			name
+			is_hot_product(args: [51])
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"products":{"id":51,"is_hot_product":true,"name":"Product 51"}}
+}
 
 func Example_queryWithVariableLimit() {
 	gql := `query {
