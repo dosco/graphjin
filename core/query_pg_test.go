@@ -19,7 +19,7 @@ func Example_queryWithFunctionFields() {
 		products(id: 51) {
 			id
 			name
-			is_hot_product(id: 51)
+			is_hot_product(id: id)
 		}
 	}`
 

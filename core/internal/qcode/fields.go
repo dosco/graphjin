@@ -98,7 +98,7 @@ func (co *Compiler) compileChildColumns(
 			field.Func = fn.Func
 			field.Args = fn.Args
 
-			if err := co.compileFuncArgs(&field, f.Args); err != nil {
+			if err := co.compileFuncArgs(sel, &field, f.Args); err != nil {
 				return err
 			}
 
@@ -135,31 +135,34 @@ func (co *Compiler) compileFuncTableArg(sel *Select, arg *graph.Arg) error {
 	if err != nil {
 		return fmt.Errorf("db function %s: %w", fn.Name, err)
 	}
-	a := Arg{
-		Name:    arg.Name,
-		Val:     arg.Val.Val,
-		ValType: input.Type,
-	}
-	if arg.Val.Type == graph.NodeVar {
+
+	a := Arg{Name: arg.Name, DType: input.Type}
+
+	switch arg.Val.Type {
+	case graph.NodeLabel:
+		a.Type = ArgTypeCol
+		a.Col, err = sel.Ti.GetColumn(arg.Val.Val)
+	case graph.NodeVar:
 		a.Type = ArgTypeVar
+		fallthrough
+	default:
+		a.Val = arg.Val.Val
 	}
-	// if arg.Val.Type = graph.
-	// fn.Col, err = sel.Ti.GetColumn(fname[(len(fn.Name) + 1):])
-	// if err != nil {
-	// 	return
-	// }
+	if err != nil {
+		return err
+	}
 	sel.Args = append(sel.Args, a)
 	return nil
 }
 
-func (co *Compiler) compileFuncArgs(f *Field, args []graph.Arg) error {
+func (co *Compiler) compileFuncArgs(sel *Select, f *Field, args []graph.Arg) error {
 	if len(args) != 0 && len(f.Func.Inputs) == 0 {
 		return fmt.Errorf("db function '%s' does not have any arguments", f.Func.Name)
 	}
 
 	for _, arg := range args {
 		if arg.Name == "args" {
-			if err := co.compileFuncArgArgs(f, arg); err != nil {
+			if err := co.compileFuncArgArgs(sel, f, arg); err != nil {
 				return err
 			}
 			continue
@@ -168,40 +171,55 @@ func (co *Compiler) compileFuncArgs(f *Field, args []graph.Arg) error {
 		if err != nil {
 			return fmt.Errorf("db function %s: %w", f.Func.Name, err)
 		}
-		a := Arg{
-			Name:    arg.Name,
-			Val:     arg.Val.Val,
-			ValType: input.Type,
-		}
-		if arg.Val.Type == graph.NodeVar {
+
+		a := Arg{Name: arg.Name, DType: input.Type}
+
+		switch arg.Val.Type {
+		case graph.NodeLabel:
+			a.Type = ArgTypeCol
+			a.Col, err = sel.Ti.GetColumn(arg.Val.Val)
+		case graph.NodeVar:
 			a.Type = ArgTypeVar
+			fallthrough
+		default:
+			a.Val = arg.Val.Val
 		}
-		// if arg.Val.Type = graph.
-		// fn.Col, err = sel.Ti.GetColumn(fname[(len(fn.Name) + 1):])
-		// if err != nil {
-		// 	return
-		// }
+		if err != nil {
+			return err
+		}
 		f.Args = append(f.Args, a)
 	}
 
 	return nil
 }
 
-func (co *Compiler) compileFuncArgArgs(f *Field, arg graph.Arg) error {
+func (co *Compiler) compileFuncArgArgs(sel *Select, f *Field, arg graph.Arg) error {
 	if len(f.Func.Inputs) == 0 {
 		return fmt.Errorf("db function '%s' does not have any arguments", f.Func.Name)
 	}
 
 	node := arg.Val
-
 	if node.Type != graph.NodeList {
 		return argErr("args", "list")
 	}
 
+	var err error
+
 	for i, n := range node.Children {
-		a := Arg{Val: n.Val, ValType: f.Func.Inputs[i].Type}
-		if n.Type == graph.NodeVar {
+		a := Arg{DType: f.Func.Inputs[i].Type}
+
+		switch n.Type {
+		case graph.NodeLabel:
+			a.Type = ArgTypeCol
+			a.Col, err = sel.Ti.GetColumn(n.Val)
+		case graph.NodeVar:
 			a.Type = ArgTypeVar
+			a.Val = n.Val
+		default:
+			a.Val = n.Val
+		}
+		if err != nil {
+			return err
 		}
 		f.Args = append(f.Args, a)
 	}
