@@ -32,6 +32,7 @@ const (
 	NodeObj
 	NodeList
 	NodeVar
+	NodeLabel
 )
 
 type FieldType int8
@@ -727,10 +728,10 @@ func (p *Parser) parseValue() (*Node, error) {
 		node.Type = NodeStr
 	case itemBoolVal:
 		node.Type = NodeBool
-	case itemName:
-		node.Type = NodeStr
 	case itemVariable:
 		node.Type = NodeVar
+	case itemName:
+		node.Type = NodeLabel
 	default:
 		return nil, fmt.Errorf("expecting a number, string, object, list or variable as an argument value (not '%s' of type '%s')", p.val(item), item._type)
 

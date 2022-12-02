@@ -191,11 +191,11 @@ const (
 )
 
 type Arg struct {
-	Type    ArgType
-	Name    string
-	Val     string
-	ValType string
-	Col     sdata.DBColumn
+	Type  ArgType
+	DType string
+	Name  string
+	Val   string
+	Col   sdata.DBColumn
 }
 
 type OrderBy struct {
@@ -1564,7 +1564,8 @@ func (co *Compiler) compileArgOrderByObj(sel *Select, parent *graph.Node, cm map
 		// Check for type
 		if node.Type != graph.NodeStr &&
 			node.Type != graph.NodeObj &&
-			node.Type != graph.NodeList {
+			node.Type != graph.NodeList &&
+			node.Type != graph.NodeLabel {
 			err = fmt.Errorf("expecting a string, object or list")
 			continue
 		}
@@ -1574,7 +1575,7 @@ func (co *Compiler) compileArgOrderByObj(sel *Select, parent *graph.Node, cm map
 		cn := node
 
 		switch node.Type {
-		case graph.NodeStr:
+		case graph.NodeStr, graph.NodeLabel:
 			if ob.Order, err = toOrder(node.Val); err != nil { // sets the asc desc etc
 				continue
 			}
@@ -1694,9 +1695,21 @@ func (co *Compiler) compileArgArgs(sel *Select, arg *graph.Arg) error {
 	}
 
 	for i, n := range node.Children {
-		a := Arg{Val: n.Val, ValType: fn.Inputs[i].Type}
-		if n.Type == graph.NodeVar {
+		var err error
+		a := Arg{DType: fn.Inputs[i].Type}
+
+		switch n.Type {
+		case graph.NodeLabel:
+			a.Type = ArgTypeCol
+			a.Col, err = sel.Ti.GetColumn(n.Val)
+		case graph.NodeVar:
 			a.Type = ArgTypeVar
+			fallthrough
+		default:
+			a.Val = n.Val
+		}
+		if err != nil {
+			return err
 		}
 		sel.Args = append(sel.Args, a)
 	}

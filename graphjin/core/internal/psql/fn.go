@@ -91,7 +91,7 @@ func (c *compilerContext) renderFuncArgVal(a qcode.Arg) {
 	case qcode.ArgTypeCol:
 		c.colWithTable(a.Col.Table, a.Col.Name)
 	case qcode.ArgTypeVar:
-		c.renderParam(Param{Name: a.Val, Type: a.ValType})
+		c.renderParam(Param{Name: a.Val, Type: a.DType})
 	default:
 		c.squoted(a.Val)
 	}
