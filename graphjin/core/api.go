@@ -64,7 +64,6 @@ import (
 	"github.com/dosco/graphjin/core/internal/sdata"
 	"github.com/dosco/graphjin/plugin"
 	"github.com/dosco/graphjin/plugin/fs"
-	"github.com/dosco/graphjin/plugin/js"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -155,24 +154,27 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo, options ...Opti
 	t := time.Now()
 
 	gj := &graphjin{
-		conf:   conf,
-		db:     db,
-		dbinfo: dbinfo,
-		log:    _log.New(os.Stdout, "", 0),
-		prod:   conf.Production,
-		tracer: otel.Tracer("graphjin.com/core"),
-		pf:     []byte(fmt.Sprintf("gj/%x:", t.Unix())),
-		opts:   options,
-		scriptMap: map[string]plugin.ScriptCompiler{
-			".js": js.New(),
-		},
+		conf:      conf,
+		db:        db,
+		dbinfo:    dbinfo,
+		log:       _log.New(os.Stdout, "", 0),
+		prod:      conf.Production,
+		tracer:    otel.Tracer("graphjin.com/core"),
+		pf:        []byte(fmt.Sprintf("gj/%x:", t.Unix())),
+		opts:      options,
+		scriptMap: make(map[string]plugin.ScriptCompiler),
+	}
+
+	// ordering of these initializer matter, do not re-order!
+
+	if err := gj.initScript(); err != nil {
+		return nil, err
 	}
 
 	if err := gj.initAPQCache(); err != nil {
 		return nil, err
 	}
 
-	//order matters, do not re-order the initializers
 	if err := gj.initConfig(); err != nil {
 		return nil, err
 	}

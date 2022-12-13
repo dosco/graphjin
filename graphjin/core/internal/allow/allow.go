@@ -7,6 +7,7 @@ import (
 	"fmt"
 	_log "log"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/scanner"
 
@@ -273,6 +274,25 @@ func parseQuery(b string) (Item, error) {
 			item, err = setValue(st, v, item)
 			sp = op
 			st = expFrag
+		case txt == "@":
+			exp := []string{"json", "(", "schema", ":"}
+			if ok := expTokens(&s, exp); !ok {
+				continue
+			}
+			s.Scan()
+			txt = s.TokenText()
+			if txt == ":" {
+				s.Scan()
+				txt = s.TokenText()
+			}
+			if txt == "" {
+				continue
+			}
+			vars, err := strconv.Unquote(txt)
+			if err != nil {
+				return item, err
+			}
+			item.Vars = strings.TrimSpace(vars)
 		default:
 			if period == 3 && txt != "." {
 				frags[txt] = struct{}{}
@@ -304,6 +324,19 @@ func parseQuery(b string) (Item, error) {
 		item.frags = append(item.frags, Frag{Name: k})
 	}
 	return item, nil
+}
+
+func expTokens(s *scanner.Scanner, exp []string) (ok bool) {
+	for _, v := range exp {
+		if tok := s.Scan(); tok == scanner.EOF {
+			return
+		}
+		txt := s.TokenText()
+		if txt != v {
+			return
+		}
+	}
+	return true
 }
 
 func setValue(st int, v string, item Item) (Item, error) {
@@ -350,7 +383,7 @@ func (al *List) save(item Item, safe bool) error {
 		d := schema.Directive{
 			Name: "json",
 			Args: schema.ArgumentList{{
-				Name:  "schema:",
+				Name:  "schema",
 				Value: schema.ToLiteral(string(vj)),
 			}},
 		}
