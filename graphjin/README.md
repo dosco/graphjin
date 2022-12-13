@@ -9,39 +9,13 @@
 <!-- [![Run on Google Cloud](./.github/deploy-cloud-run-button.svg)](https://deploy.cloud.run)
  -->
 
-GraphJin gives you an instant secure and fast GraphQL API without code. Just use a GraphQL query to define your API and GraphJin automagically converts it into a full featured API. Build your backend APIs 100X faster.
+GraphJin gives you an instant secure and fast GraphQL API without code. Just use a GraphQL query to define your API and GraphJin automagically converts it into a full featured API. Build your backend APIs **100X** faster. Works with **NodeJS** and **GO**. Supports several databases, **Postgres**, **MySQL**, **YugabyteDB**, **Cockroach**, etc.
 
-Works with NodeJS and GO. Supports several databases, Postgres, MySQL, YugabyteDB Cockroach, etc.
-
-## Quick install
-
-NPM
-
-```
-npm install graphjin
-```
-
-Mac (Homebrew)
-
-```
-brew install dosco/graphjin/graphjin
-```
-
-Ubuntu (Snap)
-
-```
-sudo snap install --classic graphjin
-```
-
-Debian and Redhat ([releases](https://github.com/dosco/graphjin/releases))
-
-```
-Download the .deb or .rpm from the releases page and install with dpkg -i and rpm -i respectively.
-```
 
 ## Secure out of the box
 
-When you use a query in development it's saved to an allow list and only queries from this allow list can be run in production. In production these allowed queries are converted into prepared statments in the database to protect against sql injection, etc. This makes GraphJin very secure and also very fast since no compiling happens in production all queries go directly to the database. GraphJin is built in Go a language designed by Google to be fast and secure.
+In production all queries are always read from locally saved copies not from what the client sends hence clients cannot modify the query. This makes
+GraphJin very secure as its similiar to building APIs by hand. The idea that GraphQL means that clients can change the query as they wish **does not** apply to GraphJin
 
 ---
 
@@ -107,6 +81,33 @@ console.log("Express server started on port %s", server.address().port);
 ---
 
 ## Use with GO / Standalone service
+
+### Quick install
+
+
+Mac (Homebrew)
+
+```
+brew install dosco/graphjin/graphjin
+```
+
+Ubuntu (Snap)
+
+```
+sudo snap install --classic graphjin
+```
+
+Debian and Redhat ([releases](https://github.com/dosco/graphjin/releases))
+
+```
+Download the .deb or .rpm from the releases page and install with dpkg -i and rpm -i respectively.
+```
+
+NPM
+
+```
+npm install graphjin
+```
 
 ### Quickly create and deploy new apps
 
