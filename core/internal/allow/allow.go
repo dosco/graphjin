@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
-	"log"
-	"os"
+	_log "log"
 	"path/filepath"
 	"strings"
 	"text/scanner"
@@ -17,8 +15,11 @@ import (
 	"github.com/chirino/graphql/schema"
 	"github.com/dosco/graphjin/core/internal/graph"
 	"github.com/dosco/graphjin/internal/jsn"
-	"github.com/spf13/afero"
+	"github.com/dosco/graphjin/plugin"
+	lru "github.com/hashicorp/golang-lru"
 )
+
+var ErrUnknownGraphQLQuery = errors.New("unknown graphql query")
 
 const (
 	expComment = iota + 1
@@ -33,12 +34,11 @@ const (
 )
 
 type Item struct {
-	Namespace string `yaml:",omitempty"`
+	Namespace string
 	Name      string
-	Comment   string `yaml:",omitempty"`
-	key       string
+	Operation string
 	Query     string
-	Vars      string `yaml:",omitempty"`
+	Vars      string
 	frags     []Frag
 }
 
@@ -48,29 +48,31 @@ type Frag struct {
 }
 
 type List struct {
+	cache    *lru.TwoQueueCache
 	saveChan chan Item
-	fs       afero.Fs
+	fs       plugin.FS
 }
 
-type Config struct {
-	Log *log.Logger
-}
-
-func NewReadOnly(fs afero.Fs) (*List, error) {
-	return &List{fs: fs}, nil
-}
-
-func New(conf Config, fs afero.Fs) (*List, error) {
+func New(log *_log.Logger, fs plugin.FS, readOnly bool) (al *List, err error) {
 	if fs == nil {
 		return nil, fmt.Errorf("no filesystem defined for the allow list")
 	}
+	al = &List{fs: fs}
 
-	al := List{saveChan: make(chan Item), fs: fs}
+	al.cache, err = lru.New2Q(1000)
+	if err != nil {
+		return
+	}
 
-	_ = fs.MkdirAll(queryPath, os.ModePerm)
-	_ = fs.MkdirAll(fragmentPath, os.ModePerm)
+	if readOnly {
+		return
+	}
+	al.saveChan = make(chan Item)
 
-	var err error
+	err = fs.CreateDir(filepath.Join(queryPath, fragmentPath))
+	if err != nil {
+		return
+	}
 
 	go func() {
 		for {
@@ -78,17 +80,17 @@ func New(conf Config, fs afero.Fs) (*List, error) {
 			if !ok {
 				break
 			}
-			err = al.save(v)
-			if err != nil && conf.Log != nil {
-				conf.Log.Println("WRN allow list save:", err)
+			err = al.save(v, false)
+			if err != nil && log != nil {
+				log.Println("WRN allow list save:", err)
 			}
 		}
 	}()
 
-	return &al, err
+	return al, err
 }
 
-func (al *List) Set(vars []byte, query string, namespace string) error {
+func (al *List) Set(vars json.RawMessage, query string, namespace string) error {
 	if al.saveChan == nil {
 		return errors.New("allow list is read-only")
 	}
@@ -108,79 +110,60 @@ func (al *List) Set(vars []byte, query string, namespace string) error {
 	return nil
 }
 
-func (al *List) Load() ([]Item, error) {
-	var items []Item
-	var files []fs.FileInfo
-	var err error
-
-	if ok, err := afero.DirExists(al.fs, queryPath); !ok {
-		return items, nil
-	} else if err != nil {
-		return nil, fmt.Errorf("allow list: %w", err)
-	}
-
-	files, err = afero.ReadDir(al.fs, queryPath)
+func (al *List) Upgrade() (err error) {
+	files, err := al.fs.ReadDir(queryPath)
 	if err != nil {
-		return nil, fmt.Errorf("allow list: %w", err)
+		return fmt.Errorf("%w (%s)", err, queryPath)
 	}
 
 	for _, f := range files {
 		if f.IsDir() {
 			continue
 		}
-
-		item, err := al.Get(filepath.Join(queryPath, f.Name()))
-		if err == errUnknownFileType {
+		ext := filepath.Ext(f.Name())
+		if ext != ".yaml" && ext != ".yml" {
 			continue
 		}
+		item, err := al.Get(filepath.Join(queryPath, f.Name()))
 		if err != nil {
-			return nil, err
+			return err
 		}
-		items = append(items, item)
+
+		if err := al.save(item, false); err != nil {
+			return err
+		}
 	}
-	return items, nil
+	return
 }
 
-func (al *List) GetByName(filePath string) (Item, error) {
-	var item Item
-	fpath := filepath.Join(queryPath, filePath)
-
-	fn := (fpath + ".gql")
-	if ok, err := afero.Exists(al.fs, fn); ok {
-		return al.Get(fn)
-	} else if err != nil {
-		return item, err
+func (al *List) GetByName(name string, useCache bool) (item Item, err error) {
+	if useCache {
+		if v, ok := al.cache.Get(name); ok {
+			item = v.(Item)
+			return
+		}
 	}
 
-	fn = (fpath + ".graphql")
-	if ok, err := afero.Exists(al.fs, fn); ok {
-		return al.Get(fn)
-	} else if err != nil {
-		return item, err
+	fpath := filepath.Join(queryPath, name)
+	exts := []string{".gql", ".graphql", ".yml", ".yaml"}
+	for _, ext := range exts {
+		if item, err = al.Get((fpath + ext)); err == nil {
+			break
+		} else if err != plugin.ErrNotFound {
+			return item, err
+		}
 	}
 
-	fn = (fpath + ".yml")
-	if ok, err := afero.Exists(al.fs, fn); ok {
-		return al.Get(fn)
-	} else if err != nil {
-		return item, err
+	if useCache && err == nil {
+		al.cache.Add(name, item)
 	}
 
-	fn = (fpath + ".yaml")
-	if ok, err := afero.Exists(al.fs, fn); ok {
-		return al.Get(fn)
-	} else if err != nil {
-		return item, err
-	}
-
-	return item, nil
+	return
 }
 
-var errUnknownFileType = errors.New("unknown filetype")
+var errUnknownFileType = errors.New("not a graphql file")
 
-func (al *List) Get(filePath string) (Item, error) {
-	var item Item
-
+func (al *List) Get(filePath string) (item Item, err error) {
 	switch filepath.Ext(filePath) {
 	case ".gql", ".graphql":
 		return itemFromGQL(al.fs, filePath)
@@ -191,10 +174,10 @@ func (al *List) Get(filePath string) (Item, error) {
 	}
 }
 
-func itemFromYaml(fs afero.Fs, filePath string) (Item, error) {
+func itemFromYaml(fs plugin.FS, filePath string) (Item, error) {
 	var item Item
 
-	b, err := afero.ReadFile(fs, filePath)
+	b, err := fs.ReadFile(filePath)
 	if err != nil {
 		return item, err
 	}
@@ -202,12 +185,30 @@ func itemFromYaml(fs afero.Fs, filePath string) (Item, error) {
 	if err := yaml.Unmarshal(b, &item); err != nil {
 		return item, err
 	}
+
+	h, err := graph.FastParse(item.Query)
+	if err != nil {
+		return item, err
+	}
+	item.Operation = h.Operation
+
+	qi, err := parseQuery(item.Query)
+	if err != nil {
+		return item, err
+	}
+
+	for _, f := range qi.frags {
+		b, err := fs.ReadFile(filepath.Join(fragmentPath, f.Name))
+		if err != nil {
+			return item, err
+		}
+		item.frags = append(item.frags, Frag{Name: f.Name, Value: string(b)})
+	}
+
 	return item, nil
 }
 
-func itemFromGQL(fs afero.Fs, filePath string) (Item, error) {
-	var item Item
-
+func itemFromGQL(fs plugin.FS, filePath string) (item Item, err error) {
 	fn := filepath.Base(filePath)
 	fn = strings.TrimSuffix(fn, filepath.Ext(fn))
 	queryNS, queryName := splitName(fn)
@@ -221,16 +222,15 @@ func itemFromGQL(fs afero.Fs, filePath string) (Item, error) {
 		return item, err
 	}
 
-	// h, err := graph.FastParse(query)
-	// if err != nil {
-	// 	return item, err
-	// }
+	h, err := graph.FastParse(query)
+	if err != nil {
+		return item, err
+	}
 
 	item.Namespace = queryNS
+	item.Operation = h.Operation
 	item.Name = queryName
 	item.Query = query
-	item.key = strings.ToLower(item.Name)
-
 	return item, nil
 }
 
@@ -244,6 +244,8 @@ func parseQuery(b string) (Item, error) {
 	var err error
 
 	st := expComment
+	period := 0
+	frags := make(map[string]struct{})
 
 	for tok := s.Scan(); tok != scanner.EOF; tok = s.Scan() {
 		txt := s.TokenText()
@@ -271,6 +273,15 @@ func parseQuery(b string) (Item, error) {
 			item, err = setValue(st, v, item)
 			sp = op
 			st = expFrag
+		default:
+			if period == 3 && txt != "." {
+				frags[txt] = struct{}{}
+			}
+			if period != 3 && txt == "." {
+				period++
+			} else {
+				period = 0
+			}
 		}
 
 		if err != nil {
@@ -289,7 +300,9 @@ func parseQuery(b string) (Item, error) {
 		return item, err
 	}
 
-	item.key = strings.ToLower(item.Name)
+	for k := range frags {
+		item.frags = append(item.frags, Frag{Name: k})
+	}
 	return item, nil
 }
 
@@ -298,9 +311,6 @@ func setValue(st int, v string, item Item) (Item, error) {
 		return strings.TrimSpace(v[:strings.LastIndexByte(v, '}')+1])
 	}
 	switch st {
-	case expComment:
-		item.Comment = val()
-
 	case expVar:
 		item.Vars = val()
 
@@ -316,44 +326,18 @@ func setValue(st int, v string, item Item) (Item, error) {
 	return item, nil
 }
 
-func (al *List) save(item Item) error {
+func (al *List) save(item Item, safe bool) error {
 	var buf bytes.Buffer
+	var err error
 
 	qd := &schema.QueryDocument{}
 	if err := qd.Parse(item.Query); err != nil {
 		return err
 	}
 
-	qd.WriteTo(&buf)
-	query := buf.String()
-	buf.Reset()
-
-	h, err := graph.FastParse(query)
-	if err != nil {
-		return err
-	}
-
-	if h.Name == "" {
-		return errors.New("no query name defined. only named queries are saved to the allow list")
-	}
-
-	item.Name = h.Name
-	item.key = strings.ToLower(item.Name)
-
-	if err := al.saveItem(item, true); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (al *List) saveItem(item Item, ow bool) error {
-	var err error
-
-	if item.Vars != "" {
-		var buf bytes.Buffer
-
-		if err := jsn.Clear(&buf, []byte(item.Vars)); err != nil {
+	qvars := strings.TrimSpace(item.Vars)
+	if qvars != "" && qvars != "{}" {
+		if err := jsn.Clear(&buf, []byte(qvars)); err != nil {
 			return err
 		}
 
@@ -361,67 +345,111 @@ func (al *List) saveItem(item Item, ow bool) error {
 		if vj, err = json.MarshalIndent(vj, "", "  "); err != nil {
 			return err
 		}
-		item.Vars = string(vj)
+		buf.Reset()
+
+		d := schema.Directive{
+			Name: "json",
+			Args: schema.ArgumentList{{
+				Name:  "schema:",
+				Value: schema.ToLiteral(string(vj)),
+			}},
+		}
+		qd.Operations[0].Directives = append(qd.Operations[0].Directives, &d)
+		// Bug in chirino/graphql forces us to add the space after the query name
+		qd.Operations[0].Name = qd.Operations[0].Name + " "
+	}
+	qd.WriteTo(&buf)
+
+	item.Name = strings.TrimSpace(qd.Operations[0].Name)
+	if item.Name == "" {
+		return errors.New("no query name defined: only named queries are saved to the allow list")
 	}
 
-	var b bytes.Buffer
-	y := yaml.NewEncoder(&b)
-	y.SetIndent(2)
-	err = y.Encode(&item)
-	if err != nil {
-		return err
-	}
+	return al.saveItem(
+		item.Namespace,
+		item.Name,
+		buf.String(),
+		item.frags,
+		safe)
+}
 
-	var fn string
-	if item.Namespace != "" {
-		fn = item.Namespace + "." + item.Name + ".yaml"
+func (al *List) saveItem(
+	ns, name, content string, frags []Frag, safe bool) error {
+
+	var qfn string
+	if ns != "" {
+		qfn = ns + "." + name + ".gql"
 	} else {
-		fn = item.Name + ".yaml"
+		qfn = name + ".gql"
 	}
 
-	if err := afero.WriteFile(
-		al.fs,
-		filepath.Join(queryPath, fn),
-		b.Bytes(),
-		0600); err != nil {
-		return err
-	}
+	var gqlContent bytes.Buffer
+	fmap := make(map[string]struct{})
 
-	for _, fv := range item.frags {
-		if item.Namespace != "" {
-			fn = item.Namespace + "." + fv.Name
+	for _, fv := range frags {
+		var fn string
+		if ns != "" {
+			fn = ns + "." + fv.Name
 		} else {
 			fn = fv.Name
 		}
-		err := afero.WriteFile(
-			al.fs,
-			filepath.Join(fragmentPath, fn),
-			[]byte(fv.Value),
-			0600)
+		fn += ".gql"
 
+		if _, ok := fmap[fn]; !ok {
+			fh := fmt.Sprintf(`#import "./fragments/%s"`, fn)
+			gqlContent.WriteString(fh)
+			gqlContent.WriteRune('\n')
+			fmap[fn] = struct{}{}
+		}
+
+		fragFile := filepath.Join(queryPath, "fragments", fn)
+		if safe {
+			if ok, err := al.fs.Exists(fragFile); ok {
+				continue
+			} else if err != nil {
+				return err
+			}
+		}
+
+		err := al.fs.CreateFile(fragFile, []byte(fv.Value))
 		if err != nil {
 			return err
 		}
 	}
+	if gqlContent.Len() != 0 {
+		gqlContent.WriteRune('\n')
+	}
+	gqlContent.WriteString(content)
 
+	queryFile := filepath.Join(queryPath, qfn)
+	if safe {
+		if ok, err := al.fs.Exists(queryFile); ok {
+			return nil
+		} else if err != nil {
+			return err
+		}
+	}
+
+	err := al.fs.CreateFile(queryFile, gqlContent.Bytes())
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
-func (al *List) FragmentFetcher(namespace string) func(name string) (string, error) {
-	return func(name string) (string, error) {
-		var fn string
-		if namespace != "" {
-			fn = namespace + "." + name
-		} else {
-			fn = name
-		}
-		v, err := afero.ReadFile(
-			al.fs,
-			filepath.Join(fragmentPath, fn))
-
-		return string(v), err
-	}
-}
+// func (al *List) fetchFragment(namespace, name string) (string, error) {
+// 	var fn string
+// 	if namespace != "" {
+// 		fn = namespace + "." + name
+// 	} else {
+// 		fn = name
+// 	}
+// 	v, err := al.fs.ReadFile(filepath.Join(fragmentPath, fn))
+// 	if err != nil {
+// 		return "", err
+// 	}
+// 	return string(v), err
+// }
 
 func splitName(v string) (string, string) {
 	i := strings.LastIndex(v, ".")

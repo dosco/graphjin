@@ -26,73 +26,64 @@ type stmt struct {
 }
 
 func (gj *graphjin) compileQuery(qr queryReq, role string) (*queryComp, error) {
-	var userVars map[string]json.RawMessage
-	var qc *queryComp
 	var err error
-
-	if len(qr.vars) != 0 {
-		if err := json.Unmarshal(qr.vars, &userVars); err != nil {
-			return nil, fmt.Errorf("variables: %w", err)
-		}
-	}
+	qcomp := &queryComp{qr: qr}
 
 	if !gj.prod || gj.conf.DisableAllowList {
-		if len(qr.query) == 0 {
-			item, err := gj.allowList.GetByName(qr.name)
-			if err != nil {
-				return nil, err
+		var userVars map[string]json.RawMessage
+
+		if len(qr.vars) != 0 {
+			if err := json.Unmarshal(qr.vars, &userVars); err != nil {
+				return nil, fmt.Errorf("variables: %w", err)
 			}
-			qr.query = []byte(item.Query)
 		}
 
-		st, err := gj.compileQueryForRole(qr, userVars, role)
+		qcomp.st, err = gj.compileQueryForRole(qr, userVars, role)
 		if err != nil {
 			return nil, err
 		}
-		qc = &queryComp{qr: qr, st: st}
 
 	} else {
 		// In production mode enforce the allow list and
 		// compile and cache the result else compile each time
-		if qc, err = gj.getQuery(qr, role); err != nil {
-			return nil, err
-		}
-
-		if qc, err = gj.compileQueryForRoleOnce(qc, role); err != nil {
+		// the allowlist queries are already loaded at init.
+		// if qcomp, err = gj.getQuery(qr, role); err != nil {
+		// 	return nil, err
+		// }
+		if qcomp, err = gj.compileQueryForRoleOnce(qcomp, role); err != nil {
 			return nil, err
 		}
 
 		// Overwrite allow list vars with user vars
-		qc.qr.vars = qr.vars
-		qc.qr.ns = qr.ns
+		// qcomp.qr.vars = qr.vars
+		// qcomp.qr.ns = qr.ns
 	}
-
-	return qc, err
+	return qcomp, err
 }
 
-func (gj *graphjin) compileQueryForRoleOnce(qc *queryComp, role string) (*queryComp, error) {
+func (gj *graphjin) compileQueryForRoleOnce(qcomp *queryComp, role string) (*queryComp, error) {
 	var err error
 
-	if qc.st.sql != "" {
-		return qc, nil
+	val, loaded := gj.queries.LoadOrStore(reqKey(qcomp.qr, role), qcomp)
+	if loaded {
+		return val.(*queryComp), nil
 	}
 
-	qc.Do(func() {
+	qcomp.Do(func() {
 		var vars1 map[string]json.RawMessage
 
-		if len(qc.qr.vars) != 0 {
-			err = json.Unmarshal(qc.qr.vars, &vars1)
+		if len(qcomp.qr.vars) != 0 {
+			err = json.Unmarshal(qcomp.qr.vars, &vars1)
 		}
 
 		if err == nil {
-			qc.st, err = gj.compileQueryForRole(qc.qr, vars1, role)
+			qcomp.st, err = gj.compileQueryForRole(qcomp.qr, vars1, role)
 		}
 	})
-
 	if err != nil {
 		return nil, err
 	}
-	return qc, nil
+	return qcomp, nil
 }
 
 func (gj *graphjin) compileQueryForRole(
@@ -116,7 +107,29 @@ func (gj *graphjin) compileQueryForRole(
 		return st, err
 	}
 
+	if st.qc.Validation.Source != "" {
+		vc, ok := gj.validatorMap[st.qc.Validation.Type]
+		if !ok {
+			return st, fmt.Errorf("no validator found for '%s'", st.qc.Validation.Type)
+		}
+		ve, err := vc.CompileValidation(st.qc.Validation.Source)
+		if err != nil {
+			return st, err
+		}
+		st.qc.Validation.VE = ve
+	}
+
+	if st.qc.Script.Name != "" {
+		if err := gj.loadScript(st.qc); err != nil {
+			return st, err
+		}
+	}
+
 	st.va = validator.New()
 	st.sql = w.String()
 	return st, nil
+}
+
+func reqKey(qr queryReq, role string) string {
+	return (qr.ns + qr.name + role)
 }

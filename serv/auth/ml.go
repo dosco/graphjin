@@ -1,3 +1,4 @@
+//go:build magiclink
 // +build magiclink
 
 package auth
@@ -117,9 +118,7 @@ func MagicLinkHandler(ac *Auth, next http.Handler) (handlerFunc, error) {
 			Domain:   domain,
 			Path:     "/",
 		}
-		if os.Getenv("GO_ENV") != "development" {
-			ck.SameSite = http.SameSiteLaxMode
-		}
+		ck.SameSite = http.SameSiteLaxMode
 		http.SetCookie(w, &ck)
 
 		ctx = context.WithValue(ctx, core.UserIDKey, userInfo.Email)

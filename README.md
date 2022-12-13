@@ -1,4 +1,4 @@
-# GraphJin Instant GraphQL API
+# GraphJin, Build APIs in 5 minutes not weeks
 
 [![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=for-the-badge&logo=appveyor&logo=appveyor)](https://pkg.go.dev/github.com/dosco/graphjin)
 [![GoReport](https://goreportcard.com/badge/github.com/gojp/goreportcard?style=for-the-badge)](https://goreportcard.com/report/github.com/dosco/graphjin)
@@ -9,9 +9,17 @@
 <!-- [![Run on Google Cloud](./.github/deploy-cloud-run-button.svg)](https://deploy.cloud.run)
  -->
 
-GraphJin gives you an instant secure and fast GraphQL API without code. GraphQL is automagically compiled into an efficient SQL query. Use either as a library or a standalone service. Build your backend APIs 100X faster.
+GraphJin gives you an instant secure and fast GraphQL API without code. Just use a GraphQL query to define your API and GraphJin automagically converts it into a full featured API. Build your backend APIs 100X faster.
 
-## 1. Quick install
+Works with NodeJS and GO. Supports several databases, Postgres, MySQL, YugabyteDB Cockroach, etc.
+
+## Quick install
+
+NPM
+
+```
+npm install graphjin
+```
 
 Mac (Homebrew)
 
@@ -31,13 +39,72 @@ Debian and Redhat ([releases](https://github.com/dosco/graphjin/releases))
 Download the .deb or .rpm from the releases page and install with dpkg -i and rpm -i respectively.
 ```
 
-Go Install
+## Secure out of the box
 
-```
-go install github.com/dosco/graphjin@latest
+When you use a query in development it's saved to an allow list and only queries from this allow list can be run in production. In production these allowed queries are converted into prepared statments in the database to protect against sql injection, etc. This makes GraphJin very secure and also very fast since no compiling happens in production all queries go directly to the database. GraphJin is built in Go a language designed by Google to be fast and secure.
+
+## Use with NodeJS
+
+GraphJin allows you to use GraphQL and the full power of GraphJin to access to create instant APIs without writing and maintaining lines and lines of database code. GraphJin NodeJS currently only supports Postgres compatible databases working on adding MySQL support as well.
+
+```console
+npm install graphjin
 ```
 
-## 2. Create a new app
+```javascript
+import graphjin from "graphjin";
+import express from "express";
+import http from "http";
+import pg from "pg";
+
+const { Client } = pg;
+const db = new Client({
+  host: "localhost",
+  port: 5432,
+  user: "postgres",
+  password: "postgres",
+  database: "appdb-development",
+});
+
+await db.connect();
+
+// config can either be a file (eg. `dev.yml`) or an object
+// const config = { production: true, default_limit: 50 };
+
+var gj = await graphjin("./config", "dev.yml", db);
+var app = express();
+var server = http.createServer(app);
+
+// subscriptions allow you to have a callback function triggerd
+// automatically when data in your database changes
+const res1 = await gj.subscribe(
+  "subscription getUpdatedUser { users(id: $userID) { id email } }",
+  null,
+  { userID: 2 }
+);
+
+res1.data(function (res) {
+  console.log(">", res.data());
+});
+
+// queries allow you to use graphql to query and update your database
+app.get("/", async function (req, resp) {
+  const res2 = await gj.query(
+    "query getUser { users(id: $id) { id email } }",
+    { id: 1 },
+    { userID: 1 }
+  );
+
+  resp.send(res2.data());
+});
+
+server.listen(3000);
+console.log("Express server started on port %s", server.address().port);
+```
+
+## Use with GO
+
+#### Quickly create and deploy new apps
 
 ```bash
 graphjin new <app_name>
@@ -46,12 +113,6 @@ cd <app_name>
 docker-compose run api db setup
 docker-compose up
 ```
-
-## Secure out of the box
-
-When you use a query in development it's auto-saved in an allow list and only queries from this allow list can be run in production. In production these allowed queries are converted into prepared statments in the database to protect against sql injection, etc. This makes GraphJin very secure and also very fast since no compiling happens in production all queries go directly to the database. GraphJin is built in Go a language designed by Google to be secure and memory safe.
-
-## Built for production
 
 #### Instantly deploy new versions
 
@@ -77,9 +138,32 @@ graphjin secrets
 graphjin db
 ```
 
-## Use in your own code
+#### Use as a library
 
 You can use GraphJin as a library within your own code. The [serv](https://pkg.go.dev/github.com/dosco/graphjin/serv) package exposes the entirely GraphJin standlone service as a library while the [core](https://pkg.go.dev/github.com/dosco/graphjin/core) package exposes just the GraphJin compiler. The [Go docs](https://pkg.go.dev/github.com/dosco/graphjin/core#pkg-examples) are filled with examples on how to use GraphJin within your own apps as a sort of alternative to using ORM packages. GraphJin allows you to use GraphQL and the full power of GraphJin to access your data instead of a limiting ORM.
+
+#### Use the standalone service as a GO library
+
+```golang
+import (
+  "github.com/dosco/graphjin/serv"
+)
+
+gj, err := serv.NewGraphJinService(conf, opt...)
+if err != nil {
+ return err
+}
+
+if err := gj.Start(); err != nil {
+ return err
+}
+
+// if err := gj.Attach(chiRouter); err != nil {
+//  return err
+// }
+```
+
+#### Use just the core GraphQL compiler in your own GO app
 
 ```console
 go get github.com/dosco/graphjin/core
@@ -129,22 +213,7 @@ func main() {
 }
 ```
 
-### Use the standalone service as a library
-
-```golang
-import (
-  "github.com/dosco/graphjin/serv"
-)
-
-gj, err := serv.NewGraphJinService(conf, opt...)
-if err != nil {
- return err
-}
-
-if err := gj.Start(); err != nil {
- return err
-}
-```
+## Built in Web-UI to help craft GraphQL queries
 
 ![graphjin-screenshot-final](https://user-images.githubusercontent.com/832235/108806955-1c363180-7571-11eb-8bfa-488ece2e51ae.png)
 
@@ -181,7 +250,7 @@ With GraphJin your web and mobile developers can start building instantly. All t
 
 ## Highlevel
 
-- Works with Postgres, MySQL8, YugabyteDB, CockroachDB, 
+- Works with Postgres, MySQL8, YugabyteDB, CockroachDB,
 - Also works with Amazon Aurora/RDS and Google Cloud SQL
 - Supports REST, GraphQL and Websocket APIs
 
@@ -241,4 +310,4 @@ The popular [42papers.com](https://42papers.com) site for discovering trending p
 
 [Apache Public License 2.0](https://opensource.org/licenses/Apache-2.0)
 
-Copyright (c) 2019-present Vikram Rangnekar
+Copyright (c) 2022 Vikram Rangnekar

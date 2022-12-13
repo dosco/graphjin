@@ -16,3 +16,16 @@ func GetQType(t graph.ParserType) QType {
 		return QTUnknown
 	}
 }
+
+func GetQTypeByName(t string) QType {
+	switch t {
+	case "query":
+		return QTQuery
+	case "subscription":
+		return QTSubscription
+	case "mutation":
+		return QTMutation
+	default:
+		return QTUnknown
+	}
+}

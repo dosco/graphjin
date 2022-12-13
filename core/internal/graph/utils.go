@@ -6,12 +6,18 @@ import (
 	"text/scanner"
 )
 
-func FastParse(gql string) (Header, error) {
+type FPInfo struct {
+	Operation string
+	Name      string
+}
+
+func FastParse(gql string) (h FPInfo, err error) {
+	if gql == "" {
+		return h, errors.New("query missing or empty")
+	}
 	var s scanner.Scanner
 	s.Init(strings.NewReader(gql))
 	s.Whitespace ^= 1 << '\n' // don't skip new lines
-
-	var h Header
 
 	comment := false
 	n := 0
@@ -30,19 +36,14 @@ func FastParse(gql string) (Header, error) {
 			continue
 		}
 
-		if h.Type == 0 {
+		if h.Operation == "" {
 			if n == 0 && t == "{" {
-				h.Type = OpQuery
-				return h, nil
+				h.Operation = "query"
+				return
 			}
 
-			switch t {
-			case "query":
-				h.Type = OpQuery
-			case "mutation":
-				h.Type = OpMutate
-			case "subscription":
-				h.Type = OpSub
+			if t == "query" || t == "mutation" || t == "subscription" {
+				h.Operation = t
 			}
 
 		} else {

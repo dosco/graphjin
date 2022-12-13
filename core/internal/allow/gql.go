@@ -7,23 +7,25 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/spf13/afero"
+	"github.com/dosco/graphjin/plugin"
 )
 
 var incRe = regexp.MustCompile(`(?m)#import \"(.+)\"`)
 
-func parseGQLFile(fs afero.Fs, fname string) (string, error) {
+func parseGQLFile(fs plugin.FS, fname string) (string, error) {
 	var sb strings.Builder
 
-	if err := parseGQL(fs, fname, &sb); err != nil {
+	if err := parseGQL(fs, fname, &sb); err == plugin.ErrNotFound {
+		return "", ErrUnknownGraphQLQuery
+	} else if err != nil {
 		return "", err
 	}
 
 	return sb.String(), nil
 }
 
-func parseGQL(fs afero.Fs, fname string, sb *strings.Builder) error {
-	b, err := afero.ReadFile(fs, fname)
+func parseGQL(fs plugin.FS, fname string, sb *strings.Builder) error {
+	b, err := fs.ReadFile(fname)
 	if err != nil {
 		return err
 	}

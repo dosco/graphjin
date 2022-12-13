@@ -4,85 +4,117 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"path/filepath"
 	"syscall/js"
 
-	"github.com/dosco/graphjin/serv"
-	"github.com/spf13/afero"
+	"github.com/dosco/graphjin/core"
+	"github.com/dosco/graphjin/plugin"
 )
 
 func main() {
-	var fn js.Func
+	sql.Register("postgres", &JSPostgresDB{})
+	js.Global().Set("createGraphJin", graphjinFunc())
+	<-make(chan bool)
+}
 
-	fn = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-		if len(args) != 2 {
-			return nil
+func graphjinFunc() js.Func {
+	fn := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+		var err error
+
+		if len(args) != 4 {
+			err := errors.New("required arguments: config path, config, database and filesystem")
+			return toJSError(err)
 		}
 
-		confPath := args[0].String()
-		db := args[1]
+		cpv := args[0]
+		cov := args[1]
+		dbv := args[2]
+		fsv := args[3]
+
+		if cpv.Type() != js.TypeString || cpv.String() == "" {
+			err = errors.New("config path argument missing")
+		}
+
+		if cov.Type() != js.TypeObject || cov.Get("value").String() == "" {
+			err = errors.New("config file / value argument missing")
+		}
+
+		if dbv.Type() != js.TypeObject {
+			err = errors.New("database argument missing")
+		}
+
+		if fsv.Type() != js.TypeObject {
+			err = errors.New("filesystem argument missing")
+		}
+
+		if err != nil {
+			return toJSError(err)
+		}
+
+		conf := cov.Get("value").String()
+		confIsFile := cov.Get("isFile").Bool()
+
+		db := sql.OpenDB(NewJSPostgresDBConn(dbv))
+		fs := NewJSFSWithBase(fsv, cpv.String())
 
 		h := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 			resolve := args[0]
 			reject := args[1]
 
-			if confPath == "" {
-				jsErr := js.Global().Get("Error").New("config argument missing")
-				reject.Invoke(jsErr)
-				return nil
-			}
-
 			go func() {
-				err := initGraphJinServ(confPath, db)
+				gj, err := newGraphJin(conf, confIsFile, db, fs)
 				if err != nil {
-					jsErr := js.Global().Get("Error").New(err.Error())
-					reject.Invoke(jsErr)
+					reject.Invoke(toJSError(err))
 				} else {
-					resolve.Invoke( /*js.ValueOf(nil)*/ )
+					resolve.Invoke(newGraphJinObj(gj))
 				}
 			}()
-
 			return nil
 		})
-
 		return js.Global().Get("Promise").New(h)
 	})
-
-	sql.Register("postgres", &Driver{})
-	js.Global().Set("startGraphJin", fn)
-	c := make(chan bool)
-	<-c
+	return fn
 }
 
-func initGraphJinServ(config string, client js.Value, fs js.Value) error {
-	conf, err := serv.NewConfig(config, "yaml")
+func newGraphJinObj(gj *core.GraphJin) map[string]interface{} {
+	return map[string]interface{}{
+		"query":     query(gj),
+		"subscribe": subscribe(gj),
+	}
+}
+
+func newGraphJin(
+	conf string,
+	confIsFile bool,
+	db *sql.DB,
+	fs plugin.FS) (gj *core.GraphJin, err error) {
+
+	confFormat := "json"
+
+	if confIsFile {
+		ext := filepath.Ext(conf)
+		switch ext {
+		case ".json":
+			confFormat = "json"
+		case ".yml", ".yaml":
+			confFormat = "yaml"
+		default:
+			return nil, fmt.Errorf("invalid config file format: %s", ext)
+		}
+
+		if v, err := fs.ReadFile("dev.yml"); err != nil {
+			return nil, err
+		} else {
+			conf = string(v)
+		}
+	}
+
+	config, err := core.NewConfig(conf, confFormat)
 	if err != nil {
-		return err
-	}
-	conf.WatchAndReload = false
-	conf.HotDeploy = false
-	conf.Core.DisableAllowList = true
-
-	db := sql.OpenDB(NewDriverConn(client))
-
-	gj, err := serv.NewGraphJinService(conf,
-		// serv.OptionSetFS(NewFs(fs)),
-		serv.OptionSetDB(db))
-	// gj, err := serv.NewGraphJinService(conf)
-
-	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// var sourceID int
-	// row := db.QueryRow("select id from papers where limit 3", 1, 2)
-	// err = row.Scan(&sourceID)
-	// fmt.Println(">>>>", sourceID, err)
-	// return nil
-
-	if err := gj.Start(); err != nil {
-		return err
-	}
-
-	return nil
+	return core.NewGraphJin(config, db, core.OptionSetFS(fs))
 }

@@ -9,8 +9,8 @@ import (
 
 	"github.com/dosco/graphjin/core/internal/qcode"
 	"github.com/dosco/graphjin/core/internal/sdata"
+	"github.com/dosco/graphjin/plugin/fs"
 	"github.com/gobuffalo/flect"
-	"github.com/spf13/afero"
 )
 
 func (gj *graphjin) initFS() error {
@@ -18,18 +18,15 @@ func (gj *graphjin) initFS() error {
 		return nil
 	}
 
-	var cpath string
-	if gj.conf.ConfigPath == "" {
-		cp, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-		cpath = path.Join(cp, "config")
-	} else {
-		cpath = gj.conf.ConfigPath
+	basePath, err := gj.basePath()
+	if err != nil {
+		return err
 	}
 
-	gj.fs = afero.NewBasePathFs(afero.NewOsFs(), cpath)
+	err = OptionSetFS(fs.NewOsFSWithBase(basePath))(gj)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -110,6 +107,17 @@ func (gj *graphjin) initConfig() error {
 	}
 
 	return nil
+}
+
+func (gj *graphjin) basePath() (string, error) {
+	if gj.conf.ConfigPath == "" {
+		if cp, err := os.Getwd(); err == nil {
+			return path.Join(cp, "config"), nil
+		} else {
+			return "", err
+		}
+	}
+	return gj.conf.ConfigPath, nil
 }
 
 func initInflection(c *Config) error {

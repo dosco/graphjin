@@ -82,11 +82,11 @@ func (co *Compiler) compileArgNode(
 			continue
 		}
 
-		if ex.Right.ValType == ValVar &&
-			(ex.Right.Val == "user_id" ||
-				ex.Right.Val == "user_id_raw" ||
-				ex.Right.Val == "user_id_provider") {
-			needsUser = true
+		if ex.Right.ValType == ValVar {
+			v := ex.Right.Val
+			needsUser = (v == "user_id" || v == "userID" || v == "userId" ||
+				v == "user_id_raw" || v == "userIDRaw" || v == "userIdRaw" ||
+				v == "user_id_provider" || v == "userIDProvider" || v == "userIdProvider")
 		}
 
 		switch {

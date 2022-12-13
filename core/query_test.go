@@ -11,6 +11,7 @@ import (
 	"path"
 
 	"github.com/dosco/graphjin/core"
+	"github.com/dosco/graphjin/plugin/js"
 )
 
 func Example_query() {
@@ -1163,7 +1164,8 @@ func Example_queryWithScriptDirective() {
 	}
 
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, ScriptPath: dir})
-	gj, err := core.NewGraphJin(conf, db)
+	gj, err := core.NewGraphJin(conf, db,
+		core.OptionSetScriptCompiler([]string{".js"}, js.New()))
 	if err != nil {
 		panic(err)
 	}
@@ -1205,7 +1207,8 @@ func Example_queryWithScriptDirectiveUsingGraphQL() {
 	}
 
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, ScriptPath: dir})
-	gj, err := core.NewGraphJin(conf, db)
+	gj, err := core.NewGraphJin(conf, db,
+		core.OptionSetScriptCompiler([]string{".js"}, js.New()))
 	if err != nil {
 		panic(err)
 	}
@@ -1252,7 +1255,8 @@ func Example_queryWithScriptDirectiveUsingHttp() {
 	}
 
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, ScriptPath: dir})
-	gj, err := core.NewGraphJin(conf, db)
+	gj, err := core.NewGraphJin(conf, db,
+		core.OptionSetScriptCompiler([]string{".js"}, js.New()))
 	if err != nil {
 		panic(err)
 	}

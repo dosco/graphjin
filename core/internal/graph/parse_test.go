@@ -54,7 +54,7 @@ func BenchmarkParse(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for n := 0; n < b.N; n++ {
-		_, err := Parse(gql, nil)
+		_, err := Parse(gql)
 
 		if err != nil {
 			b.Fatal(err)
@@ -68,7 +68,7 @@ func BenchmarkParseP(b *testing.B) {
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			_, err := Parse(gql, nil)
+			_, err := Parse(gql)
 
 			if err != nil {
 				b.Fatal(err)
@@ -81,7 +81,7 @@ func BenchmarkParseFragment(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for n := 0; n < b.N; n++ {
-		_, err := Parse(gqlWithFragments, nil)
+		_, err := Parse(gqlWithFragments)
 
 		if err != nil {
 			b.Fatal(err)

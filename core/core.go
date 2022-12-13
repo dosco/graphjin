@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"strconv"
 
-	cuejson "cuelang.org/go/encoding/json"
 	"github.com/avast/retry-go"
 	"github.com/dosco/graphjin/core/internal/psql"
 	"github.com/dosco/graphjin/core/internal/qcode"
@@ -61,7 +60,6 @@ type gcontext struct {
 	gj   *graphjin
 	op   qcode.QType
 	rc   *ReqConfig
-	sc   *script
 	ns   string
 	name string
 }
@@ -170,7 +168,6 @@ func (gj *graphjin) initCompilers() error {
 		EnableCamelcase:  gj.conf.EnableCamelcase,
 		EnableInflection: gj.conf.EnableInflection,
 		DBSchema:         gj.schema.DBSchema(),
-		FragmentFetcher:  gj.allowList.FragmentFetcher,
 	}
 
 	gj.qc, err = qcode.NewCompiler(gj.schema, qcc)
@@ -274,8 +271,8 @@ func (c *gcontext) execQuery(ctx context.Context, qr queryReq, role string) (que
 		}
 	}
 
-	if c.sc != nil && c.sc.RespFunc != nil {
-		res.data, err = c.scriptCallResp(ctx, res.data, res.role)
+	if qc.Script.HasRespFn() {
+		res.data, err = c.scriptCallResp(ctx, qc, res.data, res.role)
 	}
 
 	return res, err
@@ -395,6 +392,7 @@ func (c *gcontext) resolveCompiledQuery(
 
 func (c *gcontext) validateAndUpdateVars(ctx context.Context, qcomp *queryComp, res *queryResp) error {
 	var vars map[string]interface{}
+
 	qc := qcomp.st.qc
 	qr := qcomp.qr
 
@@ -402,7 +400,7 @@ func (c *gcontext) validateAndUpdateVars(ctx context.Context, qcomp *queryComp, 
 		return nil
 	}
 
-	if len(qr.vars) != 0 || qc.Script != "" {
+	if len(qr.vars) != 0 || qc.Script.Name != "" {
 		vars = make(map[string]interface{})
 	}
 
@@ -411,11 +409,9 @@ func (c *gcontext) validateAndUpdateVars(ctx context.Context, qcomp *queryComp, 
 			return err
 		}
 	}
-	if qc.Validation != nil {
-		if err := cuejson.Validate(qr.vars, qc.Validation.Cuev); err != nil {
-			// TODO: better error handling. it's not clear that error came from validation
-			// aslo it needs to be able to parse in frontend,
-			// ex: error:{kind:"validation",problem:"out of range",path:"input.id",shoud_be:"<5"}
+
+	if qc.Validation.HasValidator() {
+		if err := qc.Validation.VE.Validate(qr.vars); err != nil {
 			return err
 		}
 	}
@@ -435,14 +431,9 @@ func (c *gcontext) validateAndUpdateVars(ctx context.Context, qcomp *queryComp, 
 		}
 	}
 
-	if qc.Script != "" {
-		if err := c.loadScript(qc.Script); err != nil {
-			return err
-		}
-	}
-
-	if c.sc != nil && c.sc.ReqFunc != nil {
-		if v, err := c.scriptCallReq(ctx, vars, qcomp.st.role.Name); len(v) != 0 {
+	if qc.Script.HasReqFn() {
+		v, err := c.scriptCallReq(ctx, qc, vars, qcomp.st.role.Name)
+		if len(v) != 0 {
 			qcomp.qr.vars = v
 		} else if err != nil {
 			return err
@@ -567,28 +558,39 @@ func retryIfDBError(err error) bool {
 	return (err == driver.ErrBadConn)
 }
 
-func (gj *graphjin) saveToAllowList(qc *qcode.QCode, query, namespace string) error {
-	var av []byte
-	var err error
-
+func (gj *graphjin) saveToAllowList(actionVar json.RawMessage, query, namespace string) error {
 	if gj.conf.DisableAllowList {
 		return nil
 	}
 
-	if v, ok := qc.Vars[qc.ActionVar]; ok {
-		av, err = json.Marshal(map[string]json.RawMessage{
-			qc.ActionVar: v,
-		})
-		if err != nil {
-			return err
-		}
-	}
-
-	return gj.allowList.Set(av, query, namespace)
+	return gj.allowList.Set(actionVar, query, namespace)
 }
 
 func (gj *graphjin) spanStart(c context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
 	return gj.tracer.Start(c, name, opts...)
+}
+
+func (qres *queryResp) sql() string {
+	if qres.qc != nil {
+		return qres.qc.st.sql
+	}
+	return ""
+}
+
+func (qres *queryResp) actionVar() json.RawMessage {
+	if qcomp := qres.qc; qcomp != nil {
+		if v, ok := qcomp.st.qc.Vars[qcomp.st.qc.ActionVar]; ok {
+			return v
+		}
+	}
+	return nil
+}
+
+func (qres *queryResp) cacheHeader() string {
+	if qres.qc != nil && qres.qc.st.qc != nil {
+		return qres.qc.st.qc.Cache.Header
+	}
+	return ""
 }
 
 func spanError(span trace.Span, err error) {

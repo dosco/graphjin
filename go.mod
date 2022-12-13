@@ -16,7 +16,7 @@ require (
 	github.com/go-pkgz/expirable-cache v1.0.0
 	github.com/go-playground/validator/v10 v10.11.1
 	github.com/go-resty/resty/v2 v2.7.0
-	github.com/go-sql-driver/mysql v1.6.0
+	github.com/go-sql-driver/mysql v1.7.0
 	github.com/gobuffalo/flect v0.3.0
 	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/gomodule/redigo v1.8.9
@@ -24,8 +24,8 @@ require (
 	github.com/gorilla/websocket v1.5.0
 	github.com/gosimple/slug v1.13.1
 	github.com/hashicorp/golang-lru v0.5.4
-	github.com/jackc/pgx/v5 v5.0.4
-	github.com/jvatic/goja-babel v0.0.0-20221109111359-14e5d306dedf
+	github.com/jackc/pgx/v5 v5.2.0
+	github.com/jvatic/goja-babel v0.0.0-20221128111320-553aaca4addf
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0
 	github.com/klauspost/compress v1.15.12
 	github.com/lestrrat-go/jwx v1.2.25
@@ -47,12 +47,13 @@ require (
 	go.uber.org/zap v1.24.0
 	golang.org/x/crypto v0.3.0
 	golang.org/x/sync v0.1.0
-	golang.org/x/text v0.4.0
+	golang.org/x/text v0.5.0
 	golang.org/x/time v0.2.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
+	cloud.google.com/go/compute v1.12.1 // indirect
 	cloud.google.com/go/compute/metadata v0.2.1 // indirect
 	filippo.io/age v1.0.0 // indirect
 	github.com/Azure/azure-sdk-for-go v63.3.0+incompatible // indirect
@@ -178,7 +179,6 @@ require (
 )
 
 require (
-	cloud.google.com/go/compute v1.12.1 // indirect
 	github.com/invopop/jsonschema v0.6.0
 	github.com/sirupsen/logrus v1.9.0 // indirect
 )

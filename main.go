@@ -8,7 +8,7 @@ Commit timestamp      : 2021-10-01 20:30:47 -0700
 Go version            : go1.16
 
 Licensed under the Apache Public License 2.0
-Copyright 2021, Vikram Rangnekar
+Copyright 2019 Vikram Rangnekar
 
 Usage:
   graphjin [command]

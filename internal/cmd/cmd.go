@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 
 	"github.com/dosco/graphjin/internal/util"
+	"github.com/dosco/graphjin/plugin/fs"
 	"github.com/dosco/graphjin/serv"
-	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
@@ -40,6 +40,7 @@ func Cmd() {
 	rootCmd.AddCommand(initCmd())
 	rootCmd.AddCommand(deployCmd())
 	rootCmd.AddCommand(dbCmd())
+	rootCmd.AddCommand(upgradeCmd())
 
 	if v := cmdSecrets(); v != nil {
 		rootCmd.AddCommand(v)
@@ -84,7 +85,7 @@ func initDB(openDB bool) {
 		return
 	}
 
-	fs := afero.NewBasePathFs(afero.NewOsFs(), cpath)
+	fs := fs.NewOsFSWithBase(cpath)
 
 	if db, err = serv.NewDB(conf, openDB, log, fs); err != nil {
 		log.Fatalf("Failed to connect to database: %s", err)

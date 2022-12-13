@@ -1,4 +1,4 @@
-package core
+package js
 
 import (
 	"bytes"
@@ -9,7 +9,7 @@ import (
 	"github.com/dop251/goja"
 )
 
-func (c *gcontext) httpFunc(method string, url goja.Value, args ...goja.Value) goja.Value {
+func (s *JScript) httpFunc(method string, url goja.Value, args ...goja.Value) goja.Value {
 	var body interface{}
 	var b io.Reader
 	//var headers goja.Value
@@ -53,13 +53,13 @@ func (c *gcontext) httpFunc(method string, url goja.Value, args ...goja.Value) g
 	if err != nil {
 		panic(err)
 	}
-	return c.sc.vm.ToValue(string(buf))
+	return s.vm.ToValue(string(buf))
 }
 
-func (c *gcontext) httpGetFunc(url goja.Value, args ...goja.Value) goja.Value {
-	return c.httpFunc("GET", url, args...)
+func (s *JScript) httpGetFunc(url goja.Value, args ...goja.Value) goja.Value {
+	return s.httpFunc("GET", url, args...)
 }
 
-func (c *gcontext) httpPostFunc(url goja.Value, args ...goja.Value) goja.Value {
-	return c.httpFunc("POST", url, args...)
+func (s *JScript) httpPostFunc(url goja.Value, args ...goja.Value) goja.Value {
+	return s.httpFunc("POST", url, args...)
 }

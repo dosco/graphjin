@@ -45,7 +45,7 @@ func (gj *graphjin) argList(c context.Context,
 
 	for i, p := range params {
 		switch p.Name {
-		case "user_id":
+		case "user_id", "userID", "userId":
 			if v := c.Value(UserIDKey); v != nil {
 				switch v1 := v.(type) {
 				case string:
@@ -55,27 +55,27 @@ func (gj *graphjin) argList(c context.Context,
 				case float64:
 					vl[i] = int(v1)
 				default:
-					return ar, fmt.Errorf("user_id must be an integer or a string: %T", v)
+					return ar, fmt.Errorf("%s must be an integer or a string: %T", p.Name, v)
 				}
 			} else {
 				return ar, argErr(p)
 			}
 
-		case "user_id_raw":
+		case "user_id_raw", "userIDRaw", "userIdRaw":
 			if v := c.Value(UserIDRawKey); v != nil {
 				vl[i] = v.(string)
 			} else {
 				return ar, argErr(p)
 			}
 
-		case "user_id_provider":
+		case "user_id_provider", "userIDProvider", "userIdProvider":
 			if v := c.Value(UserIDProviderKey); v != nil {
 				vl[i] = v.(string)
 			} else {
 				return ar, argErr(p)
 			}
 
-		case "user_role":
+		case "user_role", "userRole":
 			if v := c.Value(UserRoleKey); v != nil {
 				vl[i] = v.(string)
 			} else {
@@ -91,7 +91,6 @@ func (gj *graphjin) argList(c context.Context,
 			ar.cindx = i
 
 		default:
-
 			if v, ok := fields[p.Name]; ok {
 				varIsNull := bytes.Equal(v, []byte("null"))
 
