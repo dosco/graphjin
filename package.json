@@ -4,17 +4,17 @@
   "description": "GraphJin - Build APIs in 5 minutes with GraphQL. An instant GraphQL to SQL compiler.",
   "type": "module",
   "main": "wasm/graphjin.js",
-  "directories": {
-    "doc": "docs",
-    "example": "examples"
-  },
+  "files": [
+    "./wasm/*.js",
+    "./wasm/runtime"
+  ],
   "scripts": {
     "postinstall": "go-npm install",
     "preuninstall": "go-npm uninstall"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dosco/graphjin.git"
+    "url": "https://github.com/dosco/graphjin.git"
   },
   "keywords": [
     "postgres",
@@ -22,7 +22,7 @@
     "graphql",
     "sql"
   ],
-  "author": "Vikram (https://twitter.com/dosco)",
+  "author": "Vikram <https://twitter.com/dosco>",
   "license": "Apache-2.0",
   "bugs": {
     "url": "https://github.com/dosco/graphjin/issues"
