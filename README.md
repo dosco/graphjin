@@ -1,10 +1,10 @@
 # GraphJin, Build APIs in 5 minutes not weeks
 
+[![Apache 2.0](https://img.shields.io/github/license/dosco/graphjin.svg?style=for-the-badge)](https://github.com/dosco/graphjin/blob/master/LICENSE)
+[!![Docker Pulls](https://img.shields.io/docker/pulls/dosco/graphjin?style=for-the-badge)](https://hub.docker.com/r/dosco/graphjin/builds)
+[![Discord Chat](https://img.shields.io/discord/628796009539043348.svg?style=for-the-badge&logo=appveyor)](https://discord.gg/6pSWCTZ)
 [![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=for-the-badge&logo=appveyor&logo=appveyor)](https://pkg.go.dev/github.com/dosco/graphjin)
 [![GoReport](https://goreportcard.com/badge/github.com/gojp/goreportcard?style=for-the-badge)](https://goreportcard.com/report/github.com/dosco/graphjin)
-[![Apache 2.0](https://img.shields.io/github/license/dosco/graphjin.svg?style=for-the-badge)](https://github.com/dosco/graphjin/blob/master/LICENSE)
-[![Docker build](https://img.shields.io/docker/cloud/build/dosco/graphjin.svg?style=for-the-badge)](https://hub.docker.com/r/dosco/graphjin/builds)
-[![Discord Chat](https://img.shields.io/discord/628796009539043348.svg?style=for-the-badge&logo=appveyor)](https://discord.gg/6pSWCTZ)
 
 <!-- [![Run on Google Cloud](./.github/deploy-cloud-run-button.svg)](https://deploy.cloud.run)
  -->
@@ -43,9 +43,11 @@ Download the .deb or .rpm from the releases page and install with dpkg -i and rp
 
 When you use a query in development it's saved to an allow list and only queries from this allow list can be run in production. In production these allowed queries are converted into prepared statments in the database to protect against sql injection, etc. This makes GraphJin very secure and also very fast since no compiling happens in production all queries go directly to the database. GraphJin is built in Go a language designed by Google to be fast and secure.
 
+---
+
 ## Use with NodeJS
 
-GraphJin allows you to use GraphQL and the full power of GraphJin to access to create instant APIs without writing and maintaining lines and lines of database code. GraphJin NodeJS currently only supports Postgres compatible databases working on adding MySQL support as well.
+GraphJin allows you to use GraphQL and the full power of GraphJin to access to create instant APIs without writing and maintaining lines and lines of database code. GraphJin NodeJS currently only supports Postgres compatible databases working on adding MySQL support as well. Example app in [/examples/nodejs](https://github.com/dosco/graphjin/tree/master/examples/nodejs)
 
 ```console
 npm install graphjin
@@ -102,9 +104,11 @@ server.listen(3000);
 console.log("Express server started on port %s", server.address().port);
 ```
 
-## Use with GO
+---
 
-#### Quickly create and deploy new apps
+## Use with GO / Standalone service
+
+### Quickly create and deploy new apps
 
 ```bash
 graphjin new <app_name>
@@ -114,7 +118,7 @@ docker-compose run api db setup
 docker-compose up
 ```
 
-#### Instantly deploy new versions
+### Instantly deploy new versions
 
 ```bash
 # Deploy a new config
@@ -124,25 +128,25 @@ graphjin deploy --host=https://your-server.com --secret="your-secret-key"
 graphjin deploy rollback --host=https://your-server.com --secret="your-secret-key"
 ```
 
-#### Secrets Management
+### Secrets Management
 
 ```bash
 # Secure save secrets like database passwords and JWT secret keys
 graphjin secrets
 ```
 
-#### Database Management
+### Database Management
 
 ```bash
 # Create, Migrate and Seed your database
 graphjin db
 ```
 
-#### Use as a library
+### Use as a library
 
 You can use GraphJin as a library within your own code. The [serv](https://pkg.go.dev/github.com/dosco/graphjin/serv) package exposes the entirely GraphJin standlone service as a library while the [core](https://pkg.go.dev/github.com/dosco/graphjin/core) package exposes just the GraphJin compiler. The [Go docs](https://pkg.go.dev/github.com/dosco/graphjin/core#pkg-examples) are filled with examples on how to use GraphJin within your own apps as a sort of alternative to using ORM packages. GraphJin allows you to use GraphQL and the full power of GraphJin to access your data instead of a limiting ORM.
 
-#### Use the standalone service as a GO library
+### Use the standalone service as a GO library
 
 ```golang
 import (
@@ -163,7 +167,7 @@ if err := gj.Start(); err != nil {
 // }
 ```
 
-#### Use just the core GraphQL compiler in your own GO app
+### Use just the core GraphQL compiler in your own GO app
 
 ```console
 go get github.com/dosco/graphjin/core
@@ -212,6 +216,8 @@ func main() {
   fmt.Println(string(res.Data))
 }
 ```
+
+---
 
 ## Built in Web-UI to help craft GraphQL queries
 
