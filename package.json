@@ -1,6 +1,6 @@
 {
   "name": "graphjin",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "GraphJin - Build APIs in 5 minutes with GraphQL. An instant GraphQL to SQL compiler.",
   "type": "module",
   "main": "wasm/graphjin.js",

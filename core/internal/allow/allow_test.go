@@ -256,3 +256,22 @@ func TestParse2(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestParse3(t *testing.T) {
+	var query = `
+	mutation createCommentAndProduct @json(schema::"{\n  \"data\": {\n    \"body\": \"\",\n    \"created_at\": \"\",\n    \"updated_at\": \"\",\n    \"product\": {\n      \"connect\": {\n        \"id\": 0.0\n      }\n    }\n  }\n}") {
+		comment(insert:$data) {
+		id
+		product {
+			id
+			name
+		}
+		}
+	}
+	`
+
+	_, err := parseQuery(query)
+	if err != nil {
+		t.Fatal(err)
+	}
+}

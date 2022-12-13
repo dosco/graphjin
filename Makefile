@@ -15,7 +15,7 @@ export GO111MODULE := on
 # Build-time Go variables
 BUILD_FLAGS ?= -ldflags '-s -w -X "github.com/dosco/graphjin/serv.version=${BUILD_VERSION}" -X "github.com/dosco/graphjin/serv.commit=${BUILD}" -X "github.com/dosco/graphjin/serv.date=${BUILD_DATE}"'
 
-.PHONY: all download-tools build gen clean tidy test test-norace run run-github-actions lint changlog release version help $(PLATFORMS)
+.PHONY: all download-tools build wasm-build gen clean tidy test test-norace run run-github-actions lint changlog release version help $(PLATFORMS)
 
 tidy:
 	@go mod tidy -go=1.16 && go mod tidy -go=1.17
@@ -68,6 +68,8 @@ release: linux/amd64 windows/amd64 darwin/amd64
 all: lint test $(BINARY)
 
 build: $(BINARY) $(WASM)
+
+wasm-build: $(WASM)
 
 gen: download-tools
 	@go generate ./...
