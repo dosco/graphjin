@@ -28,11 +28,3 @@ func (o *Once) Do(f func()) {
 		f()
 	}
 }
-
-// Reset indicates that the next call to Do should actually be called
-// once again.
-func (o *Once) Reset() {
-	o.m.Lock()
-	defer o.m.Unlock()
-	atomic.StoreUint32(&o.done, 0)
-}

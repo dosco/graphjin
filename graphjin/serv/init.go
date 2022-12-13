@@ -3,13 +3,15 @@ package serv
 import (
 	"crypto/sha256"
 	"fmt"
+	"os"
+	"path"
 	"strings"
 
 	// postgres drivers
 
 	// mysql drivers
+	"github.com/dosco/graphjin/plugin/fs"
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/spf13/afero"
 )
 
 func initLogLevel(s *service) {
@@ -47,17 +49,16 @@ func (s *service) initFS() error {
 		return nil
 	}
 
-	if s.conf.Serv.ConfigPath == "" {
-		return nil
+	basePath, err := s.basePath()
+	if err != nil {
+		return err
 	}
-	cpath := s.conf.Serv.ConfigPath
 
-	s.fs = afero.NewBasePathFs(afero.NewOsFs(), cpath)
-	s.conf.Auth.JWT.SetFS(s.fs)
-
-	for i := range s.conf.Auths {
-		s.conf.Auths[i].JWT.SetFS(s.fs)
+	err = OptionSetFS(fs.NewOsFSWithBase(basePath))(s)
+	if err != nil {
+		return err
 	}
+
 	return nil
 }
 
@@ -144,4 +145,15 @@ func (s *service) initDB() error {
 		return err
 	}
 	return nil
+}
+
+func (s *service) basePath() (string, error) {
+	if s.conf.Serv.ConfigPath == "" {
+		if cp, err := os.Getwd(); err == nil {
+			return path.Join(cp, "config"), nil
+		} else {
+			return "", err
+		}
+	}
+	return s.conf.Serv.ConfigPath, nil
 }

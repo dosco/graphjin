@@ -36,7 +36,6 @@ package serv
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -48,7 +47,8 @@ import (
 
 	"github.com/dosco/graphjin/core"
 	"github.com/dosco/graphjin/internal/util"
-	"github.com/spf13/afero"
+	"github.com/dosco/graphjin/plugin"
+	"github.com/dosco/graphjin/plugin/fs"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -79,7 +79,7 @@ type service struct {
 	db           *sql.DB            // database connection pool
 	gj           *core.GraphJin
 	srv          *http.Server
-	fs           afero.Fs
+	fs           plugin.FS
 	asec         [32]byte
 	closeFn      func()
 	chash        string
@@ -144,9 +144,14 @@ func OptionSetNamespace(namespace string) Option {
 	}
 }
 
-func OptionSetFS(fs afero.Fs) Option {
+func OptionSetFS(fs plugin.FS) Option {
 	return func(s *service) error {
 		s.fs = fs
+		s.conf.Auth.JWT.SetFS(s.fs)
+
+		for i := range s.conf.Auths {
+			s.conf.Auths[i].JWT.SetFS(s.fs)
+		}
 		return nil
 	}
 }
@@ -173,7 +178,8 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*service, 
 	}
 
 	zlog := util.NewLogger(conf.LogFormat == "json")
-	prod := conf.Serv.Production || os.Getenv("GO_ENV") == "production"
+	prod := conf.Serv.Production
+	conf.Core.Production = prod
 
 	s := &service{
 		conf:         conf,
@@ -185,7 +191,6 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*service, 
 		deployActive: prod && conf.HotDeploy && db == nil,
 		tracer:       otel.Tracer("graphjin.com/serv"),
 	}
-	s.conf.Core.Production = prod
 
 	if err := s.initConfig(); err != nil {
 		return nil, err
@@ -262,9 +267,12 @@ func (s *service) hotStart() error {
 		return err
 	}
 
-	opts := []core.Option{core.OptionSetFS(bfs.fs)}
+	opts := []core.Option{
+		core.OptionSetFS(fs.NewAferoFS(bfs.fs))}
+
 	if s.namespace.set {
-		opts = append(opts, core.OptionSetNamespace(s.namespace.name))
+		opts = append(opts,
+			core.OptionSetNamespace(s.namespace.name))
 	}
 
 	s.gj, err = core.NewGraphJin(&s.conf.Core, s.db, opts...)
@@ -343,16 +351,6 @@ func (s *Service) attach(mux Mux, ns nspace) error {
 func (s *Service) GetGraphJin() *core.GraphJin {
 	s1 := s.Load().(*service)
 	return s1.gj
-}
-
-func (s *Service) Subscribe(
-	c context.Context,
-	query string,
-	vars json.RawMessage,
-	rc *core.ReqConfig) (*core.Member, error) {
-
-	s1 := s.Load().(*service)
-	return s1.gj.Subscribe(c, query, vars, rc)
 }
 
 func (s *Service) GetDB() *sql.DB {

@@ -4,6 +4,7 @@ BUILD_BRANCH  ?= $(shell git rev-parse --abbrev-ref HEAD)
 BUILD_VERSION ?= $(shell git describe --always --tags)
 
 GOPATH  ?= $(shell go env GOPATH)
+GOROOT ?= $(shell go env GOROOT)
 
 ifndef GOPATH
 override GOPATH = $(HOME)/go
@@ -50,6 +51,7 @@ lint: download-tools
 	@golangci-lint run ./...
 
 BINARY := graphjin
+WASM := ./wasm/graphjin.wasm
 LDFLAGS := -s -w
 PLATFORMS := linux/amd64 windows/amd64 darwin/amd64
 
@@ -65,7 +67,7 @@ release: linux/amd64 windows/amd64 darwin/amd64
 
 all: lint test $(BINARY)
 
-build: $(BINARY)
+build: $(BINARY) $(WASM)
 
 gen: download-tools
 	@go generate ./...
@@ -73,8 +75,15 @@ gen: download-tools
 $(BINARY):
 	@CGO_ENABLED=0 go build $(BUILD_FLAGS) -o $(BINARY) main.go 
 
+$(WASM):
+	@rm -rf ./wasm/runtime
+	@mkdir -p ./wasm/runtime
+	@cp $(GOROOT)/misc/wasm/wasm_exec.js ./wasm/runtime/
+	@GOOS=js GOARCH=wasm go build -o ./wasm/graphjin.wasm ./wasm/*.go
+
 clean:
 	@rm -f $(BINARY)
+	@rm -f $(WASM)
 
 run: clean
 	@go run $(BUILD_FLAGS) main.go $(ARGS)

@@ -478,3 +478,25 @@ func GetConfigName() string {
 		return ge
 	}
 }
+
+func NewConfig(config, format string) (*Config, error) {
+	if format == "" {
+		format = "yaml"
+	}
+
+	vi := viper.New()
+	vi.SetDefault("env", "development")
+	vi.BindEnv("env", "GO_ENV") //nolint: errcheck
+	vi.SetConfigType(format)
+
+	if err := vi.ReadConfig(strings.NewReader(config)); err != nil {
+		return nil, err
+	}
+
+	var c Config
+	if err := vi.Unmarshal(&c); err != nil {
+		return nil, fmt.Errorf("failed to decode config, %v", err)
+	}
+
+	return &c, nil
+}

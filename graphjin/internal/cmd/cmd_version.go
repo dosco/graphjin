@@ -31,7 +31,7 @@ To build with version information please use the Makefile
 > cd graphjin && make install
 
 Licensed under the Apache Public License 2.0
-Copyright 2021, Vikram Rangnekar
+Copyright 2019 Vikram Rangnekar
 `
 	}
 
@@ -44,7 +44,7 @@ Commit timestamp      : %v
 Go version            : %v
 
 Licensed under the Apache Public License 2.0
-Copyright 2021, Vikram Rangnekar
+Copyright 2019 Vikram Rangnekar
 `,
 		bi.Version,
 		bi.Commit,

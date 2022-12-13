@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dosco/graphjin/plugin/fs"
 	"github.com/spf13/afero"
 	"github.com/spf13/afero/zipfs"
 )
@@ -353,7 +354,8 @@ func deployBundle(s1 *Service, name, hash, confFile, bundle string) error {
 	if err != nil {
 		return err
 	}
-	return s1.Deploy(bfs.conf, OptionSetFS(bfs.fs))
+	fsOption := OptionSetFS(fs.NewAferoFS(bfs.fs))
+	return s1.Deploy(bfs.conf, fsOption)
 }
 
 type bundleFs struct {

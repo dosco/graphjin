@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/dosco/graphjin/core/internal/allow"
-	"github.com/dosco/graphjin/core/internal/graph"
 	"github.com/dosco/graphjin/core/internal/qcode"
 )
 
@@ -59,80 +58,16 @@ func (gj *graphjin) prepareRoleStmt() error {
 		io.WriteString(w, `ELSE 'anon' END) FROM (VALUES (1)) AS _sg_auth_filler LIMIT 1; `)
 
 	}
-
 	gj.roleStmt = w.String()
-
 	return nil
 }
 
-func (gj *graphjin) initAllowList() error {
-	var err error
-
-	if gj.conf.DisableAllowList {
-		gj.allowList, err = allow.NewReadOnly(gj.fs)
-	} else {
-		gj.allowList, err = allow.New(allow.Config{Log: gj.log}, gj.fs)
-	}
-
+func (gj *graphjin) initAllowList() (err error) {
+	readOnly := gj.conf.DisableAllowList
+	gj.allowList, err = allow.New(gj.log, gj.fs, readOnly)
 	if err != nil {
 		return fmt.Errorf("failed to initialize allow list: %w", err)
 	}
 
-	gj.queries = make(map[string]*queryComp)
-
-	list, err := gj.allowList.Load()
-	if err != nil {
-		return err
-	}
-
-	for _, item := range list {
-		if item.Query == "" {
-			continue
-		}
-
-		q := strings.TrimSpace(item.Query)
-		h, err := graph.FastParse(q)
-		if err != nil {
-			return err
-		}
-
-		qr := queryReq{
-			op:    qcode.GetQType(h.Type),
-			name:  h.Name,
-			query: []byte(q),
-			vars:  []byte(item.Vars),
-		}
-
-		qk := gj.generateQueryKeys(item)
-
-		for _, v := range qk {
-			qc := &queryComp{qr: qr}
-			gj.queries[v.key] = qc
-		}
-	}
-
 	return nil
-}
-
-type queryKey struct {
-	key string
-}
-
-func (gj *graphjin) generateQueryKeys(item allow.Item) []queryKey {
-	var qk []queryKey
-
-	for roleName := range gj.roles {
-		k1 := (item.Namespace + item.Name + roleName)
-		qk = append(qk, queryKey{key: k1})
-	}
-	return qk
-}
-
-func (gj *graphjin) getQuery(qr queryReq, role string) (*queryComp, error) {
-	qk := (qr.ns + qr.name + role)
-	qc, ok := gj.queries[qk]
-	if !ok {
-		return nil, ErrNotFound
-	}
-	return qc, nil
 }

@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/dosco/graphjin/core"
+	"github.com/dosco/graphjin/core/internal/allow"
+	"github.com/dosco/graphjin/plugin/fs"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/sync/errgroup"
@@ -79,14 +81,24 @@ func TestAPQ(t *testing.T) {
 }
 
 func TestAllowList(t *testing.T) {
-	gql1 := `query getProducts {
+	gql1 := `
+	query getProducts {
 		products(id: 2) {
 			id
 		}
 	}`
 
-	gql2 := `query getProducts {
+	gql2 := `
+	query getProducts {
 		products(id: 3) {
+			id
+			name
+		}
+	}`
+
+	gql3 := `
+	query getUsers {
+		users(id: 3) {
 			id
 			name
 		}
@@ -96,17 +108,18 @@ func TestAllowList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	// os.MkdirAll("config/queries", os.ModePerm)
-
-	// err = os.WriteFile("config/queries/getProducts.gql", []byte(gql1), os.ModePerm)
-	// if err != nil {
-	// 	t.Error(err)
-	// 	return
-	// }
-
 	defer os.RemoveAll(dir)
-	fs := afero.NewBasePathFs(afero.NewOsFs(), dir)
+
+	fs := fs.NewAferoFSWithBase(afero.NewOsFs(), dir)
+	if err := fs.CreateDir("queries"); err != nil {
+		t.Error(err)
+		return
+	}
+	err = fs.CreateFile("queries/getProducts.gql", []byte(gql1))
+	if err != nil {
+		t.Error(err)
+		return
+	}
 
 	conf1 := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj1, err := core.NewGraphJin(conf1, db, core.OptionSetFS(fs))
@@ -115,31 +128,37 @@ func TestAllowList(t *testing.T) {
 		return
 	}
 
-	res1, err := gj1.GraphQL(context.Background(), gql1, nil, nil)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
 	exp1 := `{"products": {"id": 2}}`
-	got1 := string(res1.Data)
-	assert.Equal(t, exp1, got1, "should equal")
+
+	res1, err := gj1.GraphQL(context.Background(), gql1, nil, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, exp1, string(res1.Data))
 
 	conf2 := newConfig(&core.Config{DBType: dbType, Production: true})
 	gj2, err := core.NewGraphJin(conf2, db, core.OptionSetFS(fs))
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NoError(t, err)
 
-	_, err = gj2.GraphQL(context.Background(), gql2, nil, nil)
-	assert.ErrorIs(t, err, core.ErrNotFound)
+	res2, err := gj2.GraphQL(context.Background(), gql2, nil, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, exp1, string(res2.Data))
+
+	res3, err := gj2.GraphQLByName(context.Background(), "getProducts", nil, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, exp1, string(res3.Data))
+
+	_, err = gj2.GraphQL(context.Background(), gql3, nil, nil)
+	assert.ErrorIs(t, err, allow.ErrUnknownGraphQLQuery)
 }
 
 func TestAllowListWithNamespace(t *testing.T) {
-	gql1 := `query getProducts {
+	gql1 := `
+	fragment Product on products {
+		id
+		name
+	}
+	query getProducts {
 		products(id: 2) {
-			id
+			...Product
 		}
 	}`
 
@@ -155,7 +174,7 @@ func TestAllowListWithNamespace(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(dir)
-	fs := afero.NewBasePathFs(afero.NewOsFs(), dir)
+	fs := fs.NewOsFSWithBase(dir)
 
 	conf1 := newConfig(&core.Config{DBType: dbType})
 	gj1, err := core.NewGraphJin(conf1, db,
@@ -178,10 +197,11 @@ func TestAllowListWithNamespace(t *testing.T) {
 		return
 	}
 
-	_, err = gj2.GraphQL(context.Background(), gql2, nil,
-		&core.ReqConfig{Namespace: core.Namespace{Name: "api", Set: true}})
+	var rc core.ReqConfig
+	rc.SetNamespace("api")
 
-	assert.ErrorContains(t, err, "not found in prepared statements")
+	_, err = gj2.GraphQL(context.Background(), gql2, nil, &rc)
+	assert.ErrorIs(t, err, allow.ErrUnknownGraphQLQuery)
 }
 
 func TestConfigReuse(t *testing.T) {

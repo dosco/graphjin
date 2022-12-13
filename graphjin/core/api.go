@@ -57,14 +57,14 @@ import (
 	"time"
 
 	"github.com/chirino/graphql"
-	"github.com/dop251/goja"
 	"github.com/dosco/graphjin/core/internal/allow"
 	"github.com/dosco/graphjin/core/internal/graph"
 	"github.com/dosco/graphjin/core/internal/psql"
 	"github.com/dosco/graphjin/core/internal/qcode"
 	"github.com/dosco/graphjin/core/internal/sdata"
-	"github.com/dosco/graphjin/core/internal/util"
-	"github.com/spf13/afero"
+	"github.com/dosco/graphjin/plugin"
+	"github.com/dosco/graphjin/plugin/fs"
+	"github.com/dosco/graphjin/plugin/js"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -89,46 +89,38 @@ const (
 // GraphJin struct is an instance of the GraphJin engine it holds all the required information like
 // datase schemas, relationships, etc that the GraphQL to SQL compiler would need to do it's job.
 type graphjin struct {
-	conf        *Config
-	db          *sql.DB
-	log         *_log.Logger
-	fs          afero.Fs
-	dbtype      string
-	dbinfo      *sdata.DBInfo
-	schema      *sdata.DBSchema
-	allowList   *allow.List
-	encKey      [32]byte
-	encKeySet   bool
-	apq         apqCache
-	queries     map[string]*queryComp
-	roles       map[string]*Role
-	roleStmt    string
-	roleStmtMD  psql.Metadata
-	rmap        map[string]resItem
-	abacEnabled bool
-	qc          *qcode.Compiler
-	pc          *psql.Compiler
-	ge          *graphql.Engine
-	subs        sync.Map
-	scripts     sync.Map
-	prod        bool
-	namespace   string
-	tracer      trace.Tracer
-	babelInit   bool
-	pf          []byte
-	opts        []Option
+	conf         *Config
+	db           *sql.DB
+	log          *_log.Logger
+	fs           plugin.FS
+	dbtype       string
+	dbinfo       *sdata.DBInfo
+	schema       *sdata.DBSchema
+	allowList    *allow.List
+	encKey       [32]byte
+	encKeySet    bool
+	apq          apqCache
+	queries      sync.Map
+	roles        map[string]*Role
+	roleStmt     string
+	roleStmtMD   psql.Metadata
+	rmap         map[string]resItem
+	abacEnabled  bool
+	qc           *qcode.Compiler
+	pc           *psql.Compiler
+	ge           *graphql.Engine
+	subs         sync.Map
+	scriptMap    map[string]plugin.ScriptCompiler
+	validatorMap map[string]plugin.ValidationCompiler
+	prod         bool
+	namespace    string
+	tracer       trace.Tracer
+	pf           []byte
+	opts         []Option
 }
 
 type GraphJin struct {
 	atomic.Value
-}
-
-type script struct {
-	util.Once
-
-	ReqFunc  reqFunc
-	RespFunc respFunc
-	vm       *goja.Runtime
 }
 
 type Option func(*graphjin) error
@@ -167,10 +159,13 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo, options ...Opti
 		db:     db,
 		dbinfo: dbinfo,
 		log:    _log.New(os.Stdout, "", 0),
-		prod:   conf.Production || os.Getenv("GO_ENV") == "production",
+		prod:   conf.Production,
 		tracer: otel.Tracer("graphjin.com/core"),
 		pf:     []byte(fmt.Sprintf("gj/%x:", t.Unix())),
 		opts:   options,
+		scriptMap: map[string]plugin.ScriptCompiler{
+			".js": js.New(),
+		},
 	}
 
 	if err := gj.initAPQCache(); err != nil {
@@ -220,10 +215,6 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo, options ...Opti
 		return nil, err
 	}
 
-	if err := gj.initScripting(); err != nil {
-		return nil, err
-	}
-
 	if conf.SecretKey != "" {
 		sk := sha256.Sum256([]byte(conf.SecretKey))
 		gj.encKey = sk
@@ -240,7 +231,29 @@ func OptionSetNamespace(namespace string) Option {
 	}
 }
 
-func OptionSetFS(fs afero.Fs) Option {
+func OptionSetScriptCompiler(ext []string, se plugin.ScriptCompiler) Option {
+	return func(s *graphjin) error {
+		if s.scriptMap == nil {
+			s.scriptMap = make(map[string]plugin.ScriptCompiler)
+		}
+		for _, v := range ext {
+			s.scriptMap[v] = se
+		}
+		return nil
+	}
+}
+
+func OptionSetValidator(name string, v plugin.ValidationCompiler) Option {
+	return func(s *graphjin) error {
+		if s.validatorMap == nil {
+			s.validatorMap = make(map[string]plugin.ValidationCompiler)
+		}
+		s.validatorMap[name] = v
+		return nil
+	}
+}
+
+func OptionSetFS(fs plugin.FS) Option {
 	return func(s *graphjin) error {
 		s.fs = fs
 		return nil
@@ -260,6 +273,7 @@ type Result struct {
 	sql          string
 	role         string
 	cacheControl string
+	actionJSON   json.RawMessage
 	Errors       []Error           `json:"errors,omitempty"`
 	Vars         json.RawMessage   `json:"-"`
 	Data         json.RawMessage   `json:"data,omitempty"`
@@ -267,22 +281,27 @@ type Result struct {
 	// Extensions   *extensions     `json:"extensions,omitempty"`
 }
 
-type Namespace struct {
-	Name string
-	Set  bool
-}
-
 // ReqConfig is used to pass request specific config values to the GraphQLEx and SubscribeEx functions. Dynamic variables can be set here.
 type ReqConfig struct {
-	// Namespace is used to namespace requests within a single instance of GraphJin. For example queries with the same name
-	// can exist in allow list in seperate namespaces.
-	Namespace Namespace
+	ns *string
 
 	// APQKey is set when using GraphJin with automatic persisted queries
 	APQKey string
 
 	// Pass additional variables complex variables such as functions that return string values.
 	Vars map[string]interface{}
+}
+
+// SetNamespace is used to set namespace requests within a single instance of GraphJin. For example queries with the same name
+func (rc *ReqConfig) SetNamespace(ns string) {
+	rc.ns = &ns
+}
+
+func (rc *ReqConfig) GetNamespace() (string, bool) {
+	if rc.ns != nil {
+		return *rc.ns, true
+	}
+	return "", false
 }
 
 // GraphQL function is called on the GraphJin struct to convert the provided GraphQL query into an
@@ -297,82 +316,37 @@ func (g *GraphJin) GraphQL(
 	vars json.RawMessage,
 	rc *ReqConfig) (*Result, error) {
 
-	var err error
-	var op qcode.QType
-	var name string
-
 	gj := g.Load().(*graphjin)
 	ns := gj.namespace
 
-	if rc != nil && rc.Namespace.Set {
-		ns = rc.Namespace.Name
-	}
+	c1, span := gj.spanStart(c, "GraphJin Query")
+	defer span.End()
 
-	if rc != nil && rc.APQKey != "" && query == "" {
-		if v, ok := gj.apq.Get(ns, rc.APQKey); ok {
-			query = v.query
-			op = v.op
-			name = v.name
-		} else {
-			return nil, errPersistedQueryNotFound
+	if rc != nil {
+		if rc.ns != nil {
+			ns = *rc.ns
 		}
-
-	} else {
-		if h, err := graph.FastParse(query); err == nil {
-			op = qcode.GetQType(h.Type)
-			name = h.Name
-		} else {
-			return nil, err
+		if rc.APQKey != "" && query == "" {
+			if v, ok := gj.apq.Get(ns, rc.APQKey); ok {
+				query = v.query
+			} else {
+				return nil, errPersistedQueryNotFound
+			}
 		}
 	}
 
-	// use the chirino/graphql library for introspection queries
-	// disabled when allow list is enforced
-	if !gj.prod && name == "IntrospectionQuery" {
-		r := gj.ge.ServeGraphQL(&graphql.Request{Query: query})
-
-		if err := r.Error(); err != nil {
-			return errResult(ns, op, name, err), err
-		}
-		res := &Result{
-			ns:   ns,
-			op:   op,
-			name: name,
-			Data: r.Data,
-		}
-		return res, nil
-	}
-
-	if err != nil {
-		return errResult(ns, op, name, err), err
-	}
-
-	var varMap map[string]interface{}
-
-	if len(vars) != 0 {
-		if err := json.Unmarshal(vars, &varMap); err != nil {
-			return errResult(ns, op, name, err), err
-		}
-	}
-
-	qc, res, err := gj.graphQL(c, op, ns, name, query, vars, rc)
+	res, err := gj.graphQL(c1, query, vars, rc)
 	if err != nil {
 		return res, err
 	}
 
 	if rc != nil && rc.APQKey != "" {
-		gj.apq.Set(ns, rc.APQKey, apqInfo{
-			op:    op,
-			name:  name,
-			query: query,
-		})
+		gj.apq.Set(ns, rc.APQKey, apqInfo{query: query})
 	}
 
 	if !gj.prod {
-		if err := gj.saveToAllowList(
-			qc,
-			query,
-			ns); err != nil {
+		err := gj.saveToAllowList(res.actionJSON, query, res.ns)
+		if err != nil {
 			return res, err
 		}
 	}
@@ -382,53 +356,71 @@ func (g *GraphJin) GraphQL(
 
 func (g *GraphJin) GraphQLByName(
 	c context.Context,
-	operation OpType,
 	name string,
 	vars json.RawMessage,
 	rc *ReqConfig) (*Result, error) {
 
 	gj := g.Load().(*graphjin)
-	ns := gj.namespace
 
-	if rc != nil && rc.Namespace.Set {
-		ns = rc.Namespace.Name
+	c1, span := gj.spanStart(c, "GraphJin Query")
+	defer span.End()
+
+	item, err := gj.allowList.GetByName(name, gj.prod)
+	if err != nil {
+		return nil, err
 	}
+	op := qcode.GetQTypeByName(item.Operation)
+	query := item.Query
 
-	var op qcode.QType
-
-	switch operation {
-	case OpQuery:
-		op = qcode.QTQuery
-	case OpMutation:
-		op = qcode.QTMutation
-	default:
-		err := fmt.Errorf("invalid operation: %d", operation)
-		res := &Result{
-			ns:     ns,
-			op:     op,
-			name:   name,
-			Errors: []Error{{Message: err.Error()}},
-		}
-		return res, err
-	}
-
-	_, res, err := gj.graphQL(c, op, ns, name, "", vars, rc)
-	return res, err
+	return gj.graphQLWithOpName(c1, op, name, query, vars, rc)
 }
 
 func (gj *graphjin) graphQL(
-	ctx context.Context,
+	c context.Context,
+	query string,
+	vars json.RawMessage,
+	rc *ReqConfig) (*Result, error) {
+
+	var op qcode.QType
+	var name string
+
+	if h, err := graph.FastParse(query); err == nil {
+		name = h.Name
+		op = qcode.GetQTypeByName(h.Operation)
+	} else {
+		return nil, err
+	}
+
+	if gj.prod && !gj.conf.DisableAllowList {
+		item, err := gj.allowList.GetByName(name, gj.prod)
+		if err != nil {
+			return nil, err
+		}
+		op = qcode.GetQTypeByName(item.Operation)
+		query = item.Query
+	}
+	return gj.graphQLWithOpName(c, op, name, query, vars, rc)
+}
+
+func (gj *graphjin) graphQLWithOpName(
+	c context.Context,
 	op qcode.QType,
-	ns string,
 	name string,
 	query string,
 	vars json.RawMessage,
-	rc *ReqConfig) (*qcode.QCode, *Result, error) {
+	rc *ReqConfig) (*Result, error) {
 
-	var err error
+	ns := gj.namespace
+	if rc != nil && rc.ns != nil {
+		ns = *rc.ns
+	}
 
-	ctx1, span := gj.spanStart(ctx, "GraphJin Query")
-	defer span.End()
+	// use the chirino/graphql library for introspection queries
+	// disabled when allow list is enforced
+	if !gj.prod && name == "IntrospectionQuery" {
+		res, err := gj.introspection(query)
+		return res, err
+	}
 
 	ct := &gcontext{
 		gj:   gj,
@@ -444,27 +436,25 @@ func (gj *graphjin) graphQL(
 		name: name,
 	}
 
-	if err != nil {
-		res.Errors = []Error{{Message: err.Error()}}
-		return nil, res, err
-	}
-
 	if ct.op == qcode.QTSubscription {
-		return nil, res, errors.New("use 'core.Subscribe' for subscriptions")
+		return res, errors.New("use 'core.Subscribe' for subscriptions")
 	}
 
 	if ct.op == qcode.QTMutation && gj.schema.DBType() == "mysql" {
-		return nil, res, errors.New("mysql: mutations not supported")
+		return res, errors.New("mysql: mutations not supported")
 	}
 
 	var role string
 
-	if v, ok := ctx1.Value(UserRoleKey).(string); ok {
+	if v, ok := c.Value(UserRoleKey).(string); ok {
 		role = v
-	} else if ctx1.Value(UserIDKey) != nil {
-		role = "user"
 	} else {
-		role = "anon"
+		switch c.Value(UserIDKey).(type) {
+		case string, int:
+			role = "user"
+		default:
+			role = "anon"
+		}
 	}
 
 	qr := queryReq{
@@ -474,29 +464,35 @@ func (gj *graphjin) graphQL(
 		query: []byte(query),
 		vars:  vars,
 	}
-	qres, err := ct.execQuery(ctx1, qr, role)
 
+	qres, err := ct.execQuery(c, qr, role)
 	if err != nil {
 		res.Errors = []Error{{Message: err.Error()}}
 	}
 
-	var qc *qcode.QCode
-
-	if qres.qc != nil {
-		qc = qres.qc.st.qc
-		res.sql = qres.qc.st.sql
-
-		if qc != nil {
-			res.cacheControl = qc.Cache.Header
-		}
-	}
+	res.actionJSON = qres.actionVar()
+	res.sql = qres.sql()
+	res.cacheControl = qres.cacheHeader()
 
 	res.Data = json.RawMessage(qres.data)
 	res.Hash = qres.dhash
 	res.role = qres.role
 	res.Vars = vars
 
-	return qc, res, err
+	return res, err
+}
+
+func (g *GraphJin) Introspection(query string) (*Result, error) {
+	gj := g.Load().(*graphjin)
+	return gj.introspection(query)
+}
+
+func (gj *graphjin) introspection(query string) (*Result, error) {
+	r := gj.ge.ServeGraphQL(&graphql.Request{Query: query})
+	if err := r.Error(); err != nil {
+		return errResult("", err), err
+	}
+	return &Result{Data: r.Data}, nil
 }
 
 // Reload redoes database discover and reinitializes GraphJin.
@@ -515,6 +511,15 @@ func (g *GraphJin) IsProd() bool {
 	return gj.prod
 }
 
+func Upgrade(configPath string) error {
+	fs := fs.NewOsFSWithBase(configPath)
+	al, err := allow.New(nil, fs, false)
+	if err != nil {
+		return fmt.Errorf("failed to initialize allow list: %w", err)
+	}
+	return al.Upgrade()
+}
+
 type Header struct {
 	Type OpType
 	Name string
@@ -524,17 +529,15 @@ type Header struct {
 // It uses a very fast algorithm to extract the operation without having to parse the query.
 func Operation(query string) (Header, error) {
 	if h, err := graph.FastParse(query); err == nil {
-		t := OpType(qcode.GetQType(h.Type))
+		t := OpType(qcode.GetQTypeByName(h.Operation))
 		return Header{t, h.Name}, nil
 	} else {
 		return Header{}, err
 	}
 }
 
-func errResult(ns string, op qcode.QType, name string, err error) *Result {
+func errResult(name string, err error) *Result {
 	return &Result{
-		ns:     ns,
-		op:     op,
 		name:   name,
 		Errors: []Error{{Message: err.Error()}},
 	}

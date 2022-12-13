@@ -153,7 +153,7 @@ func (s1 *Service) apiV1GraphQL(ns nspace, ah auth.HandlerFunc) http.Handler {
 		}
 
 		if ns.set {
-			rc.Namespace = core.Namespace{Name: ns.name, Set: true}
+			rc.SetNamespace(ns.name)
 		}
 
 		if req.OpName == "subscription" {
@@ -209,7 +209,6 @@ func (s1 *Service) apiV1Rest(ns nspace, ah auth.HandlerFunc) http.Handler {
 			return
 		}
 
-		var op core.OpType
 		var vars json.RawMessage
 		var span trace.Span
 
@@ -231,11 +230,9 @@ func (s1 *Service) apiV1Rest(ns nspace, ah auth.HandlerFunc) http.Handler {
 
 		switch r.Method {
 		case "POST":
-			op = core.OpMutation
 			vars, err = parseBody(r)
 
 		case "GET":
-			op = core.OpQuery
 			vars = json.RawMessage(r.URL.Query().Get("variables"))
 		}
 
@@ -252,10 +249,10 @@ func (s1 *Service) apiV1Rest(ns nspace, ah auth.HandlerFunc) http.Handler {
 		}
 
 		if ns.set {
-			rc.Namespace = core.Namespace{Name: ns.name, Set: true}
+			rc.SetNamespace(ns.name)
 		}
 
-		res, err := s.gj.GraphQLByName(ctx, op, queryName, vars, &rc)
+		res, err := s.gj.GraphQLByName(ctx, queryName, vars, &rc)
 		s.responseHandler(
 			ctx,
 			w,
@@ -329,8 +326,8 @@ func (s *service) reqLog(res *core.Result, rc core.ReqConfig, resTimeMs int64, e
 		zap.Int64("responseTimeMs", resTimeMs),
 	}
 
-	if rc.Namespace.Set {
-		fields = append(fields, zap.String("namespace", rc.Namespace.Name))
+	if ns, ok := rc.GetNamespace(); ok {
+		fields = append(fields, zap.String("namespace", ns))
 	}
 
 	sql := res.SQL()

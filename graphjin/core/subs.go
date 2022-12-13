@@ -88,8 +88,7 @@ func (g *GraphJin) Subscribe(
 	if err != nil {
 		panic(err)
 	}
-
-	op := qcode.GetQType(h.Type)
+	op := qcode.GetQTypeByName(h.Operation)
 	name := h.Name
 
 	if op != qcode.QTSubscription {
@@ -109,10 +108,13 @@ func (g *GraphJin) Subscribe(
 
 	if v, ok := c.Value(UserRoleKey).(string); ok {
 		role = v
-	} else if c.Value(UserIDKey) != nil {
-		role = "user"
 	} else {
-		role = "anon"
+		switch c.Value(UserIDKey).(type) {
+		case string, int:
+			role = "user"
+		default:
+			role = "anon"
+		}
 	}
 
 	if role == "user" && gj.abacEnabled {
@@ -182,8 +184,8 @@ func (gj *graphjin) newSub(c context.Context,
 		vars:  vars,
 	}
 
-	if rc != nil && rc.Namespace.Set {
-		qr.ns = rc.Namespace.Name
+	if rc != nil && rc.ns != nil {
+		qr.ns = *rc.ns
 	}
 
 	if s.qc, err = gj.compileQuery(qr, s.role); err != nil {
@@ -550,8 +552,7 @@ func renderSubWrap(st stmt, ct string) string {
 			w.WriteString(strconv.FormatInt(int64(i), 10))
 			w.WriteString(` AS `)
 			w.WriteString(p.Type)
-			w.WriteString(`) as `)
-			w.WriteString(p.Name)
+			w.WriteString(`) AS "` + p.Name + `"`)
 		}
 		w.WriteString(` FROM json_array_elements($1::json) AS x`)
 	}

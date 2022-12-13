@@ -63,6 +63,7 @@ func GetDBInfo(
 
 	g.Go(func() error {
 		var row *sql.Row
+
 		switch dbType {
 		case "mysql":
 			row = db.QueryRow(mysqlInfo)

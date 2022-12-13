@@ -102,11 +102,6 @@ func startHTTP(s1 *Service) {
 		ver = "not-set"
 	}
 
-	/*
-		s.log.Infof("GraphJin started, version: %s, host-port: %s, app-name: %s, deployment: %s, env: %s",
-		 	ver, s.conf.hostPort, s.conf.AppName, dep, os.Getenv("GO_ENV"))
-	*/
-
 	fields := []zapcore.Field{
 		zap.String("version", ver),
 		zap.String("host-port", s.conf.hostPort),

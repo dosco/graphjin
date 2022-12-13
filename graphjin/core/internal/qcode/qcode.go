@@ -9,11 +9,10 @@ import (
 	"strconv"
 	"strings"
 
-	"cuelang.org/go/cue"
-	"cuelang.org/go/cue/cuecontext"
 	"github.com/dosco/graphjin/core/internal/graph"
 	"github.com/dosco/graphjin/core/internal/sdata"
 	"github.com/dosco/graphjin/core/internal/util"
+	"github.com/dosco/graphjin/plugin"
 	"github.com/gobuffalo/flect"
 )
 
@@ -71,9 +70,9 @@ type QCode struct {
 	MUnions    map[string][]int32
 	Schema     *sdata.DBSchema
 	Remotes    int32
-	Script     string
 	Cache      Cache
-	Validation *Validation
+	Script     Script
+	Validation Validation
 	Typename   bool
 }
 
@@ -107,8 +106,15 @@ type Select struct {
 }
 
 type Validation struct {
-	Cue  graph.Node
-	Cuev cue.Value
+	Source string
+	Type   string
+	VE     plugin.ValidationExecuter
+}
+
+type Script struct {
+	Source string
+	Name   string
+	SC     plugin.ScriptExecuter
 }
 
 type TableInfo struct {
@@ -332,13 +338,8 @@ func NewCompiler(s *sdata.DBSchema, c Config) (*Compiler, error) {
 func (co *Compiler) Compile(
 	query []byte, vars Variables, role, namespace string) (*QCode, error) {
 	var err error
-	var fragFetch func(string) (string, error)
 
-	if co.c.FragmentFetcher != nil {
-		fragFetch = co.c.FragmentFetcher(namespace)
-	}
-
-	op, err := graph.Parse(query, fragFetch)
+	op, err := graph.Parse(query)
 	if err != nil {
 		return nil, err
 	}
@@ -355,25 +356,6 @@ func (co *Compiler) Compile(
 		if err := co.compileMutation(&qc, role); err != nil {
 			return nil, err
 		}
-	}
-
-	if qc.Validation != nil {
-		var (
-			cuec *cue.Context
-			cuev cue.Value
-		)
-		cuec = cuecontext.New()
-		switch qc.Validation.Cue.Type {
-		case graph.NodeVar:
-			var o string
-			if err = json.Unmarshal([]byte(qc.Vars[qc.Validation.Cue.Val]), &o); err != nil {
-				return nil, errors.New("cue validation variable value is not valid")
-			}
-			cuev = cuec.CompileString(o)
-		default:
-			cuev = cuec.CompileString(qc.Validation.Cue.Val)
-		}
-		qc.Validation = &Validation{Cuev: cuev}
 	}
 
 	return &qc, nil
@@ -1219,19 +1201,19 @@ func (co *Compiler) compileDirectiveScript(qc *QCode, d *graph.Directive) error 
 		if ifNotArg(d.Args[0], graph.NodeStr) {
 			return argErr("name", "string")
 		}
-		qc.Script = d.Args[0].Val.Val
+		qc.Script.Name = d.Args[0].Val.Val
 	}
 
-	if qc.Script == "" {
-		qc.Script = qc.Name
+	if qc.Script.Name == "" {
+		qc.Script.Name = qc.Name
 	}
 
-	if qc.Script == "" {
+	if qc.Script.Name == "" {
 		return fmt.Errorf("required argument 'name' missing")
 	}
 
-	if path.Ext(qc.Script) == "" {
-		qc.Script += ".js"
+	if path.Ext(qc.Script.Name) == "" {
+		qc.Script.Name += ".js"
 	}
 
 	return nil
@@ -1404,12 +1386,26 @@ func (co *Compiler) compileDirectiveThrough(sel *Select, d *graph.Directive) err
 }
 func (co *Compiler) compileDirectiveValidation(qc *QCode, d *graph.Directive) error {
 	if len(d.Args) == 0 {
-		return fmt.Errorf("required cue schema")
+		return fmt.Errorf("required arguments 'src' and 'type'")
 	}
-	arg := d.Args[0]
 
-	if arg.Name == "cue" {
-		qc.Validation = &Validation{Cue: *arg.Val}
+	for _, arg := range d.Args {
+		switch arg.Name {
+		case "src", "source":
+			qc.Validation.Source = arg.Val.Val
+		case "type", "lang":
+			qc.Validation.Type = arg.Val.Val
+		default:
+			return fmt.Errorf("invalid argument '%s', valid arguments are src/source and type/lang", arg.Name)
+		}
+	}
+
+	if qc.Validation.Source == "" {
+		return errors.New("validation script not set")
+	}
+
+	if qc.Validation.Type == "" {
+		return errors.New("validation type not set")
 	}
 
 	return nil
@@ -1999,6 +1995,18 @@ func (sel *Select) GetInternalArg(name string) (Arg, bool) {
 		}
 	}
 	return arg, false
+}
+
+func (s *Script) HasReqFn() bool {
+	return s.SC != nil && s.SC.HasRequestFn()
+}
+
+func (s *Script) HasRespFn() bool {
+	return s.SC != nil && s.SC.HasResponseFn()
+}
+
+func (s *Validation) HasValidator() bool {
+	return s.VE != nil
 }
 
 /*

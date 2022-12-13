@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 
+	"github.com/dosco/graphjin/plugin"
+	"github.com/dosco/graphjin/plugin/fs"
 	jwt "github.com/golang-jwt/jwt"
-	"github.com/spf13/afero"
 )
 
 // JWTConfig struct contains JWT authentication related config values used by
@@ -43,7 +44,7 @@ type JWTConfig struct {
 	JWKSMinRefresh int `mapstructure:"jwks_min_refresh" jsonschema:"title=JWKS Minumum Refresh Timeout (minutes)"`
 
 	// FileSystem
-	fs afero.Fs
+	fs plugin.FS
 }
 
 // JWTProvider is the interface to define providers for doing JWT
@@ -56,6 +57,7 @@ type JWTProvider interface {
 }
 
 func NewProvider(config JWTConfig) (JWTProvider, error) {
+	config.fs = fs.NewOsFS()
 	switch config.Provider {
 	case "auth0":
 		return NewAuth0Provider(config)
@@ -74,7 +76,7 @@ func getKey(config JWTConfig) (interface{}, error) {
 	publicKeyFile := config.PubKeyFile
 	switch {
 	case publicKeyFile != "":
-		kd, err := afero.ReadFile(config.fs, publicKeyFile)
+		kd, err := config.fs.ReadFile(publicKeyFile)
 		if err != nil {
 			return nil, err
 		}
@@ -102,12 +104,6 @@ func getKey(config JWTConfig) (interface{}, error) {
 	return key, nil
 }
 
-func (c *JWTConfig) initFS() {
-	if c.fs == nil {
-		c.fs = afero.NewBasePathFs(afero.NewOsFs(), "/")
-	}
-}
-
-func (c *JWTConfig) SetFS(fs afero.Fs) {
+func (c *JWTConfig) SetFS(fs plugin.FS) {
 	c.fs = fs
 }
