@@ -11,7 +11,6 @@
 
 GraphJin gives you an instant secure and fast GraphQL API without code. Just use a GraphQL query to define your API and GraphJin automagically converts it into a full featured API. Build your backend APIs **100X** faster. Works with **NodeJS** and **GO**. Supports several databases, **Postgres**, **MySQL**, **YugabyteDB**, **Cockroach**, etc.
 
-
 ## Secure out of the box
 
 In production all queries are always read from locally saved copies not from what the client sends hence clients cannot modify the query. This makes
@@ -83,7 +82,6 @@ console.log("Express server started on port %s", server.address().port);
 ## Use with GO / Standalone service
 
 ### Quick install
-
 
 Mac (Homebrew)
 

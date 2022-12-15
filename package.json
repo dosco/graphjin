@@ -1,17 +1,17 @@
 {
   "name": "graphjin",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "description": "GraphJin - Build APIs in 5 minutes with GraphQL. An instant GraphQL to SQL compiler.",
   "type": "module",
-  "main": "wasm/graphjin.js",
+  "main": "wasm/js/graphjin.js",
   "files": [
+    "./wasm/config",
+    "./wasm/runtime",
     "./wasm/graphjin.wasm",
-    "./wasm/*.js",
-    "./wasm/runtime"
+    "./wasm/js/*.js"
   ],
   "scripts": {
-    "postinstall": "go-npm install",
-    "preuninstall": "go-npm uninstall"
+    "postinstall": "node ./wasm/js/install.js"
   },
   "repository": {
     "type": "git",
@@ -29,12 +29,7 @@
     "url": "https://github.com/dosco/graphjin/issues"
   },
   "homepage": "https://github.com/dosco/graphjin#readme",
-  "goBinary": {
-    "name": "graphjin",
-    "path": "./bin",
-    "url": "https://github.com/dosco/graphjin/releases/download/v{{version}}/graphjin_{{version}}_{{platform}}_{{arch}}.tar.gz"
-  },
-  "dependencies": {
-    "@go-task/cli": "^3.16.0"
+  "devDependencies": {
+    "fs-extra": "^11.1.0"
   }
 }

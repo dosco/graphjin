@@ -167,10 +167,6 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo, options ...Opti
 
 	// ordering of these initializer matter, do not re-order!
 
-	if err := gj.initScript(); err != nil {
-		return nil, err
-	}
-
 	if err := gj.initAPQCache(); err != nil {
 		return nil, err
 	}
@@ -529,13 +525,12 @@ type Header struct {
 
 // Operation function return the operation type and name from the query.
 // It uses a very fast algorithm to extract the operation without having to parse the query.
-func Operation(query string) (Header, error) {
-	if h, err := graph.FastParse(query); err == nil {
-		t := OpType(qcode.GetQTypeByName(h.Operation))
-		return Header{t, h.Name}, nil
-	} else {
-		return Header{}, err
+func Operation(query string) (h Header, err error) {
+	if v, err := graph.FastParse(query); err == nil {
+		h.Type = OpType(qcode.GetQTypeByName(v.Operation))
+		h.Name = v.Name
 	}
+	return
 }
 
 func errResult(name string, err error) *Result {

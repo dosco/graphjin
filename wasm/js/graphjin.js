@@ -1,6 +1,7 @@
 import "./globals.js"
+import * as _ from "./wasm_exec.js";
+
 import fs from "fs"
-import * as _ from "./runtime/wasm_exec.js";
 
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -9,7 +10,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const go = new Go();
-const f = fs.readFileSync(join(__dirname,"./graphjin.wasm"));
+const f = fs.readFileSync(join(__dirname,"../graphjin.wasm"));
 const inst = await WebAssembly.instantiate(f, go.importObject);
 go.run(inst.instance);
 
