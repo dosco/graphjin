@@ -80,8 +80,10 @@ func graphjinFunc() js.Func {
 
 func newGraphJinObj(gj *core.GraphJin) map[string]interface{} {
 	return map[string]interface{}{
-		"query":     query(gj),
-		"subscribe": subscribe(gj),
+		"query":           query(gj),
+		"subscribe":       subscribe(gj),
+		"queryByName":     queryByName(gj),
+		"subscribeByName": subscribeByName(gj),
 	}
 }
 

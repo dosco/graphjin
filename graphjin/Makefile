@@ -78,9 +78,7 @@ $(BINARY):
 	@CGO_ENABLED=0 go build $(BUILD_FLAGS) -o $(BINARY) main.go 
 
 $(WASM):
-	@rm -rf ./wasm/runtime
-	@mkdir -p ./wasm/runtime
-	@cp $(GOROOT)/misc/wasm/wasm_exec.js ./wasm/runtime/
+	@cp $(GOROOT)/misc/wasm/wasm_exec.js ./wasm/js/
 	@GOOS=js GOARCH=wasm go build -o ./wasm/graphjin.wasm ./wasm/*.go
 
 clean:

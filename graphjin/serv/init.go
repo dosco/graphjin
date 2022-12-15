@@ -71,40 +71,12 @@ func (s *service) initConfig() error {
 		c.Core.DBType = c.DB.Type
 	}
 
-	// Auths: validate and sanitize
-	am := make(map[string]struct{})
-
-	for i := 0; i < len(c.Auths); i++ {
-		a := &c.Auths[i]
-
-		if _, ok := am[a.Name]; ok {
-			return fmt.Errorf("duplicate auth found: %s", a.Name)
-		}
-		am[a.Name] = struct{}{}
-	}
-
 	if c.HotDeploy {
 		if c.AdminSecretKey != "" {
 			s.asec = sha256.Sum256([]byte(s.conf.AdminSecretKey))
 		} else {
 			return fmt.Errorf("please set an admin_secret_key")
 		}
-	}
-
-	// Actions: validate and sanitize
-	axm := make(map[string]struct{})
-
-	for i := 0; i < len(c.Actions); i++ {
-		a := &c.Actions[i]
-
-		if _, ok := axm[a.Name]; ok {
-			return fmt.Errorf("duplicate action found: %s", a.Name)
-		}
-
-		if _, ok := am[a.AuthName]; !ok {
-			return fmt.Errorf("invalid auth name: %s, For auth: %s", a.AuthName, a.Name)
-		}
-		axm[a.Name] = struct{}{}
 	}
 
 	if c.Auth.Type == "" || c.Auth.Type == "none" {

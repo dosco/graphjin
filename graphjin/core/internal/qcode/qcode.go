@@ -440,7 +440,7 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 
 		sel.Children = make([]int32, 0, 5)
 
-		if err := co.compileDirectives(qc, sel, field.Directives); err != nil {
+		if err := co.compileSelectorDirectives(qc, sel, field.Directives); err != nil {
 			return err
 		}
 
@@ -949,7 +949,7 @@ func (co *Compiler) compileFieldDirectives(f *Field, dirs []graph.Directive) err
 	return nil
 }
 
-func (co *Compiler) compileDirectives(qc *QCode, sel *Select, dirs []graph.Directive) error {
+func (co *Compiler) compileSelectorDirectives(qc *QCode, sel *Select, dirs []graph.Directive) error {
 	var err error
 
 	for i := range dirs {

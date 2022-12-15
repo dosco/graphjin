@@ -1,4 +1,4 @@
-// import * as _ from "./runtime/wasm_exec.js";
+// import * as _ from "./wasm_exec.js";
 // const go = new window.Go();
 // const f = await Deno.readFileSync("graphjin.wasm");
 // const inst = await WebAssembly.instantiate(f, go.importObject);

@@ -56,7 +56,7 @@ type errorResp struct {
 	Errors []string `json:"errors"`
 }
 
-func apiV1Handler(s1 *Service, ns nspace, h http.Handler, ah auth.HandlerFunc) http.Handler {
+func apiV1Handler(s1 *Service, ns *string, h http.Handler, ah auth.HandlerFunc) http.Handler {
 	var zlog *zap.Logger
 	s := s1.Load().(*service)
 
@@ -94,7 +94,7 @@ func apiV1Handler(s1 *Service, ns nspace, h http.Handler, ah auth.HandlerFunc) h
 	return h
 }
 
-func (s1 *Service) apiV1GraphQL(ns nspace, ah auth.HandlerFunc) http.Handler {
+func (s1 *Service) apiV1GraphQL(ns *string, ah auth.HandlerFunc) http.Handler {
 	dtrace := otel.GetTextMapPropagator()
 
 	h := func(w http.ResponseWriter, r *http.Request) {
@@ -152,8 +152,8 @@ func (s1 *Service) apiV1GraphQL(ns nspace, ah auth.HandlerFunc) http.Handler {
 			rc.Vars = s.setHeaderVars(r)
 		}
 
-		if ns.set {
-			rc.SetNamespace(ns.name)
+		if ns != nil {
+			rc.SetNamespace(*ns)
 		}
 
 		if req.OpName == "subscription" {
@@ -192,7 +192,7 @@ func (s1 *Service) apiV1GraphQL(ns nspace, ah auth.HandlerFunc) http.Handler {
 	return http.HandlerFunc(h)
 }
 
-func (s1 *Service) apiV1Rest(ns nspace, ah auth.HandlerFunc) http.Handler {
+func (s1 *Service) apiV1Rest(ns *string, ah auth.HandlerFunc) http.Handler {
 	rLen := len(routeREST)
 	dtrace := otel.GetTextMapPropagator()
 
@@ -248,8 +248,8 @@ func (s1 *Service) apiV1Rest(ns nspace, ah auth.HandlerFunc) http.Handler {
 			rc.Vars = s.setHeaderVars(r)
 		}
 
-		if ns.set {
-			rc.SetNamespace(ns.name)
+		if ns != nil {
+			rc.SetNamespace(*ns)
 		}
 
 		res, err := s.gj.GraphQLByName(ctx, queryName, vars, &rc)

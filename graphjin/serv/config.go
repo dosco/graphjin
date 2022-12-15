@@ -119,13 +119,8 @@ type Serv struct {
 	// Sets the default authentication used by the service
 	Auth Auth `jsonschema:"title=Authentication"`
 
-	// Sets multiple authentication mechanism which can be used with actions
-	Auths []Auth `jsonschema:"title=Other Authentication"`
-
 	// Database configuration
 	DB Database `mapstructure:"database" jsonschema:"title=Database"`
-
-	Actions []Action `jsonschema:"-"`
 }
 
 // Database configuration
@@ -228,13 +223,6 @@ type Telemetry struct {
 	}
 }
 */
-
-// Action struct contains config values for a GraphJin service action
-type Action struct {
-	Name     string
-	SQL      string
-	AuthName string `mapstructure:"auth_name"`
-}
 
 // ReadInConfig function reads in the config file for the environment specified in the GO_ENV
 // environment variable. This is the best way to create a new GraphJin config.

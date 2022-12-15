@@ -7,10 +7,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"time"
 
-	"github.com/dosco/graphjin/serv/auth"
 	"github.com/go-chi/chi"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -112,8 +110,8 @@ func startHTTP(s1 *Service) {
 		zap.Bool("secrets-used", (s.conf.Serv.SecretsFile != "")),
 	}
 
-	if s.namespace.set {
-		fields = append(fields, zap.String("namespace", s.namespace.name))
+	if s.namespace != nil {
+		fields = append(fields, zap.String("namespace", *s.namespace))
 	}
 
 	if s.conf.HotDeploy {
@@ -142,15 +140,6 @@ func setServerHeader(h http.Handler) http.Handler {
 		h.ServeHTTP(w, r)
 	}
 	return http.HandlerFunc(fn)
-}
-
-func findAuth(s *service, name string) (auth.Auth, bool) {
-	for _, a := range s.conf.Auths {
-		if strings.EqualFold(a.Name, name) {
-			return a, true
-		}
-	}
-	return auth.Auth{}, false
 }
 
 type BuildInfo struct {

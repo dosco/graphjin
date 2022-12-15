@@ -10,8 +10,11 @@
     "dev": "node index.js"
   },
   "dependencies": {
-    "graphjin": "file:../..",
     "express": "^4.18.2",
+    "graphjin": "file:../..",
     "pg": "^8.8.0"
+  },
+  "devDependencies": {
+    "path": "^0.12.7"
   }
 }

@@ -9,7 +9,6 @@ import (
 	"syscall/js"
 
 	"github.com/dosco/graphjin/core"
-	"github.com/dosco/graphjin/serv"
 )
 
 func query(gj *core.GraphJin) js.Func {
@@ -36,14 +35,13 @@ func query(gj *core.GraphJin) js.Func {
 	})
 }
 
-func querybyName(gjs *serv.Service) js.Func {
+func queryByName(gj *core.GraphJin) js.Func {
 	return js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 		qa, err := newQueryByNameArgs(args)
 		if !err.IsNull() {
 			return err
 		}
 
-		gj := gjs.GetGraphJin()
 		c := context.TODO()
 
 		if qa.userID != nil {
@@ -76,6 +74,30 @@ func subscribe(gj *core.GraphJin) js.Func {
 
 		fn := func(resolve, reject js.Value) {
 			res, err := gj.Subscribe(c, qa.query, qa.vars, nil)
+			if err != nil {
+				reject.Invoke(toJSError(err))
+			} else {
+				resolve.Invoke(fromMember(res))
+			}
+		}
+		return toAwait(fn)
+	})
+}
+
+func subscribeByName(gj *core.GraphJin) js.Func {
+	return js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+		qa, err := newQueryByNameArgs(args)
+		if !err.IsNull() {
+			return err
+		}
+
+		c := context.TODO()
+		if qa.userID != nil {
+			c = context.WithValue(c, core.UserIDKey, qa.userID)
+		}
+
+		fn := func(resolve, reject js.Value) {
+			res, err := gj.SubscribeByName(c, qa.query, qa.vars, nil)
 			if err != nil {
 				reject.Invoke(toJSError(err))
 			} else {

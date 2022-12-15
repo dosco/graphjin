@@ -49,6 +49,7 @@ import (
 	"github.com/dosco/graphjin/internal/util"
 	"github.com/dosco/graphjin/plugin"
 	"github.com/dosco/graphjin/plugin/fs"
+	"github.com/dosco/graphjin/plugin/js"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -88,13 +89,8 @@ type service struct {
 	prod         bool
 	deployActive bool
 	adminCount   int32
-	namespace    nspace
+	namespace    *string
 	tracer       trace.Tracer
-}
-
-type nspace struct {
-	name string
-	set  bool
 }
 
 type Option func(*service) error
@@ -139,7 +135,7 @@ func OptionSetHookFunc(fn HookFn) Option {
 
 func OptionSetNamespace(namespace string) Option {
 	return func(s *service) error {
-		s.namespace = nspace{namespace, true}
+		s.namespace = &namespace
 		return nil
 	}
 }
@@ -148,10 +144,6 @@ func OptionSetFS(fs plugin.FS) Option {
 	return func(s *service) error {
 		s.fs = fs
 		s.conf.Auth.JWT.SetFS(s.fs)
-
-		for i := range s.conf.Auths {
-			s.conf.Auths[i].JWT.SetFS(s.fs)
-		}
 		return nil
 	}
 }
@@ -227,9 +219,12 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*service, 
 }
 
 func (s *service) normalStart() error {
-	opts := []core.Option{core.OptionSetFS(s.fs)}
-	if s.namespace.set {
-		opts = append(opts, core.OptionSetNamespace(s.namespace.name))
+	opts := []core.Option{
+		core.OptionSetFS(s.fs),
+		core.OptionSetScriptCompiler([]string{".js"}, js.New()),
+	}
+	if s.namespace != nil {
+		opts = append(opts, core.OptionSetNamespace(*s.namespace))
 	}
 
 	var err error
@@ -268,11 +263,13 @@ func (s *service) hotStart() error {
 	}
 
 	opts := []core.Option{
-		core.OptionSetFS(fs.NewAferoFS(bfs.fs))}
+		core.OptionSetFS(fs.NewAferoFS(bfs.fs)),
+		core.OptionSetScriptCompiler([]string{".js"}, js.New()),
+	}
 
-	if s.namespace.set {
+	if s.namespace != nil {
 		opts = append(opts,
-			core.OptionSetNamespace(s.namespace.name))
+			core.OptionSetNamespace(*s.namespace))
 	}
 
 	s.gj, err = core.NewGraphJin(&s.conf.Core, s.db, opts...)
@@ -305,14 +302,14 @@ func (s *Service) Start() error {
 }
 
 func (s *Service) Attach(mux Mux) error {
-	return s.attach(mux, nspace{})
+	return s.attach(mux, nil)
 }
 
 func (s *Service) AttachWithNamespace(mux Mux, namespace string) error {
-	return s.attach(mux, nspace{namespace, true})
+	return s.attach(mux, &namespace)
 }
 
-func (s *Service) attach(mux Mux, ns nspace) error {
+func (s *Service) attach(mux Mux, ns *string) error {
 	if _, err := routesHandler(s, mux, ns); err != nil {
 		return err
 	}
@@ -336,8 +333,8 @@ func (s *Service) attach(mux Mux, ns nspace) error {
 		zap.Bool("secrets-used", (s1.conf.Serv.SecretsFile != "")),
 	}
 
-	if s1.namespace.set {
-		fields = append(fields, zap.String("namespace", s1.namespace.name))
+	if s1.namespace != nil {
+		fields = append(fields, zap.String("namespace", *s1.namespace))
 	}
 
 	if s1.conf.HotDeploy {

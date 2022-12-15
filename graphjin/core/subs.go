@@ -82,8 +82,6 @@ func (g *GraphJin) Subscribe(
 	rc *ReqConfig) (*Member, error) {
 	var err error
 
-	gj := g.Load().(*graphjin)
-
 	h, err := graph.FastParse(query)
 	if err != nil {
 		panic(err)
@@ -91,20 +89,46 @@ func (g *GraphJin) Subscribe(
 	op := qcode.GetQTypeByName(h.Operation)
 	name := h.Name
 
-	if op != qcode.QTSubscription {
+	gj := g.Load().(*graphjin)
+	return gj.subscribeWithOpName(c, op, name, query, vars, rc)
+}
+
+func (g *GraphJin) SubscribeByName(
+	c context.Context,
+	name string,
+	vars json.RawMessage,
+	rc *ReqConfig) (*Member, error) {
+
+	gj := g.Load().(*graphjin)
+	item, err := gj.allowList.GetByName(name, gj.prod)
+	if err != nil {
+		return nil, err
+	}
+	op := qcode.GetQTypeByName(item.Operation)
+	query := item.Query
+
+	return gj.subscribeWithOpName(c, op, name, query, vars, rc)
+}
+
+func (gj *graphjin) subscribeWithOpName(
+	c context.Context,
+	op qcode.QType,
+	name string,
+	query string,
+	vars json.RawMessage,
+	rc *ReqConfig) (*Member, error) {
+
+	if op != qcode.QTSubscription && op != qcode.QTQuery {
 		return nil, errors.New("subscription: not a subscription query")
 	}
 
 	if name == "" {
-		if gj.prod {
-			return nil, errors.New("subscription: query name is required")
-		} else {
-			h := sha256.Sum256([]byte(query))
-			name = hex.EncodeToString(h[:])
-		}
+		h := sha256.Sum256([]byte(query))
+		name = hex.EncodeToString(h[:])
 	}
 
 	var role string
+	var err error
 
 	if v, ok := c.Value(UserRoleKey).(string); ok {
 		role = v
