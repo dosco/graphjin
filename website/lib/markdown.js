@@ -69,25 +69,6 @@ const autolinkOptions = {
   test: ['h2', 'h3']
 }
 
-// const autolinkOptions = { 
-//   behaviour: "append",
-//   content: (f) => ({...f,  
-//     properties: { 
-//       ...f.properties, 
-//       class: `flex items-center`
-//     },
-//     children: [...f.children, { 
-//       type: 'element',
-//       tagName: 'div',
-//       properties: { class: "material-symbols-outlined no-underline" },
-//       children : [{
-//         type: 'text',
-//         value: 'link'
-//       }]
-//     }]
-//   })
-// }
-
 export async function markdownToHtml(markdown) {
   const result = await unified()
     .use(remarkParse)

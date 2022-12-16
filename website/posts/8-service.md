@@ -4,9 +4,9 @@ title: Service
 description: Using GraphJin as a standlone service
 ---
 
-## Service
+# Service
 
-<span class="mark">GraphJin Standalone is a docker packaged GO build that you can run as a service on it's own.</span> It exposes **REST, GraphQL and Websocket** APIs and can handle various authentications like JWT, Rails cookies, etc.
+<mark>GraphJin Standalone is a docker packaged GO build that you can run as a service on it's own.</mark> It exposes **REST, GraphQL and Websocket** APIs and can handle various authentications like JWT, Rails cookies, etc.
 
 It is very fast, secure and has a ton of API best practices built in like `Rate Limiting`, `ETags & Cache Headers`, `Compression`, etc
 

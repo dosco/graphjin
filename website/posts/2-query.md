@@ -4,7 +4,7 @@ title: Query
 description: Query tables, Nested queries, Cursor pagination, Sorting, Searching, Using functions
 ---
 
-## Query
+# Query
 
 #### TOC
 
@@ -83,9 +83,9 @@ query getCurrentUserLatestProductsAndPurchases {
 
 The ability to fetch the next batch of results is key to building any efficient app. This is needed if your building an infinite scroll or a fetch next page feature. This is hard to do across all your APIs and even harder to do this efficiently. But for us this is a breeze.
 
-<span class="mark">
+<mark>
 GraphJin returns an opaque cursor (it's encrypted) to get the next batch of results all you have to do is pass that cursor back with the next API call
-</span>
+</mark>
 
 ```json title="Query Variables"
 { "cursor": "__gj/enc:/zH/MJoTLbQF4l0GuoDsYmCrpjPeaaIlNpfm4uFU4PQ" }

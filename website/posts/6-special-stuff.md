@@ -4,7 +4,7 @@ title: Special Stuff
 description: Graph queries, Array columns, Remote joins, etc
 ---
 
-## Special Stuff
+# Special Stuff
 
 This is all the really cool special stuff that you'll need but databases don't support or is hard to build. For example you want to build an feed for your website or join your query with an API call to Stripe, etc
 
@@ -93,9 +93,9 @@ query getProducts {
 
 Normally two tables are connected together by creating a foreign key on one of the tables. But what if you wanted this table to connect to any number of other tables without updating the table schema. This is called `Polymorphic Associations` and was made popular by [Ruby-on-Rails](https://guides.rubyonrails.org/association_basics.html#polymorphic-associations).
 
-<span class="mark">
+<mark>
 If you wanted to build a Facebook like feed you'd need a single table to reference so many things, photos, posts, birthdays, videos, updates, and a lot more...
-</span>
+</mark>
 
 One use case for this can be in a `notifications` table where you want to link each row to the table the notification is about. For example a notification about a comment to a comment table or a notification about a like to the table for the blog post, etc.
 
@@ -143,9 +143,9 @@ query getNotificationsFeed {
 
 It often happens that after fetching some data from the DB we need to call another API to fetch some more data and all this combined into a single JSON response. For example along with a list of users you need their last 5 payments from Stripe. This requires you to query your DB for the users and Stripe for the payments. GraphJin handles all this for you also only the fields you requested from the Stripe API are returned.
 
-<span class="mark">
+<mark>
 GraphJin is able fetch remote data and merge it with the DB response in a fast and efficient way. All of this without you having to write a line of code.
-</span>
+</mark>
 
 For example you need to list the last 3 payments made by a user. You will first need to look up the user in the database and then call the Stripe API to fetch his last 3 payments. For this to work your user table in the db has a `customer_id` column that contains his Stripe customer ID.
 

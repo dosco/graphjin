@@ -4,13 +4,13 @@ title: Subscribe
 description: Use subscriptions to get notified when the query result changes
 ---
 
-## Subscribe
+# Subscribe
 
 You can subscribe to a query and receive live updates whenever the result of the query changes. The query can be as large and nested as you need it to be.
 
-<span class="mark">
+<mark>
 This is by far one of the coolest features of GraphJin and you'd be hardpressed to find similiar functionality elsewhere.
-</span>
+</mark>
 
 #### TOC
 
