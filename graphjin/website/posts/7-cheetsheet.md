@@ -4,7 +4,7 @@ title: Cheatsheet
 description: Quick guide to GraphQL and config options
 ---
 
-## Cheatsheet
+# Cheatsheet
 
 Quick reference to configuration and GraphQL features.
 

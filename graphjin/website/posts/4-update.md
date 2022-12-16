@@ -4,7 +4,7 @@ title: Update
 description: Update rows in a single table, Multiple related tables, Array columns, Upsert, JSON columns
 ---
 
-## Update
+# Update
 
 #### TOC
 

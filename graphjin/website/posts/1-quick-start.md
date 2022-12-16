@@ -19,8 +19,8 @@ GraphJin changes all this just write a simple GraphQL query that defines the dat
 
 The below query will fetch a list of products their owners and various other category information including a cursor to fetch more products.
 
-<span class="mark">
-GraphJin will auto discover your database and learn all about it. It will figure out tables, relationships between tables `Foreign Keys`, functions, etc.</span>
+<mark>
+GraphJin will auto discover your database and learn all about it. It will figure out tables, relationships between tables `Foreign Keys`, functions, etc.</mark>
 
 ```graphql
 query getProducts {
@@ -297,8 +297,9 @@ for {
 }
 ```
 
+<!--
 ## Learn More
 
 https://www.youtube.com/watch?v=4zXy-4gFSpQ
 
-https://www.youtube.com/watch?v=gzAiAbsCMVA
+https://www.youtube.com/watch?v=gzAiAbsCMVA -->

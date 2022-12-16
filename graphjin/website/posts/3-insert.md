@@ -4,7 +4,7 @@ title: Insert
 description: Insert into a table, Multiple related tables, Bulk insert
 ---
 
-## Insert
+# Insert
 
 #### TOC
 
