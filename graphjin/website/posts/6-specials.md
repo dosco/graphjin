@@ -1,10 +1,10 @@
 ---
 chapter: 6
-title: Special Stuff
+title: Specials
 description: Graph queries, Array columns, Remote joins, etc
 ---
 
-# Special Stuff
+# Specials
 
 This is all the really cool special stuff that you'll need but databases don't support or is hard to build. For example you want to build an feed for your website or join your query with an API call to Stripe, etc
 

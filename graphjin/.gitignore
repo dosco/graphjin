@@ -44,7 +44,6 @@ release
 node_modules
 bin
 ./package-lock.json
-config
 slim.report.json
 
 
