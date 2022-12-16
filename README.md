@@ -83,38 +83,23 @@ console.log("Express server started on port %s", server.address().port);
 
 ### Quick install
 
-Mac (Homebrew)
 
 ```
+# Mac (Homebrew)
 brew install dosco/graphjin/graphjin
-```
 
-Ubuntu (Snap)
-
-```
+# Ubuntu (Snap)
 sudo snap install --classic graphjin
 ```
 
 Debian and Redhat ([releases](https://github.com/dosco/graphjin/releases))
-
-```
 Download the .deb or .rpm from the releases page and install with dpkg -i and rpm -i respectively.
-```
 
-NPM
-
-```
-npm install graphjin
-```
 
 ### Quickly create and deploy new apps
 
 ```bash
 graphjin new <app_name>
-
-cd <app_name>
-docker-compose run api db setup
-docker-compose up
 ```
 
 ### Instantly deploy new versions
@@ -289,15 +274,11 @@ With GraphJin your web and mobile developers can start building instantly. All t
 
 ## Documentation
 
-[Quick Start](https://github.com/dosco/graphjin/wiki/Quick-Start)
+[Quick Start](https://graphjin.com/posts/1-quick-start)
 
-[Documentation](https://github.com/dosco/graphjin/wiki)
+[Documentation](https://graphjin.com)
 
-[Build APIs in 5 minutes with GraphJin](https://dev.to/dosco/build-high-performance-graphql-apis-in-5-minutes-with-graphjin-261o)
-
-[GraphQL vs REST](https://dev.to/dosco/rest-vs-graphql-building-startups-in-2021-3k73)
-
-[GraphQL Examples](https://pkg.go.dev/github.com/dosco/graphjin/core#pkg-examples)
+[GraphJin GO Examples](https://pkg.go.dev/github.com/dosco/graphjin/core#pkg-examples)
 
 ## Reach out
 
