@@ -27,10 +27,14 @@ export const Layout = ({
         />
       </Head>
 
-      <nav className="w-full p-6 bg-black">
-        <div className="container mx-auto px-10 flex gap-2 items-center justify-between">
+      <nav className="w-full py-6 bg-black">
+        <div className="w-full md:w-6/12 mx-auto flex gap-6 items-center justify-between px-2">
           <h1 className="text-md font-normal text-white">
-            <a href="/">GraphJin | APIs in 5 mins</a>
+            <a href="/">GRAPHJIN</a>
+          </h1>
+
+          <h1 className="text-md font-normal text-white ">
+            <a href="/">APIs in 5 mins</a>
           </h1>
 
           <div className="flex gap-4">
@@ -44,7 +48,7 @@ export const Layout = ({
         </div>
       </nav>
 
-      <main className="prose lg:prose-xl prose-h1:text-lime-500 container mx-auto mt-12 mb-24">
+      <main className="prose lg:prose-xl prose-h1:text-lime-500 container mx-auto mt-12 mb-24 px-6">
         {children}
       </main>
 
