@@ -8,6 +8,31 @@ description: Query tables, Nested queries, Cursor pagination, Sorting, Searching
 
 #### TOC
 
+### Query basics
+
+Everything in GraphJin resolves around the GraphQL query. Every query must have a type and a name. Types are `query` for queries, `mutation` for update, insert, upsert, delete and `subscription` for live queries.
+
+Queries have selectors (tables) which can have arguments to [filter `where:`](/posts/7-cheetsheet#crafting-the-where-clause), target `id:`, limit `limit:` or [sort `order_by:`](/posts/2-query#sorting-the-query-result) the result.
+
+Queries can also use variables (eg. `$name`). These variables can either be passed in with the query or preset in the config. Some variables are special like `$user_id` which requires a user id to be set on the query. There is also a concept called [roles](/posts/7-cheetsheet#roles-for-access-control) that you can use for access control.
+
+Query selectors (tables) can have other selectors nested under them. The name of the nested selector is the same of the foreign key (relationship) column minus the `_id` prefix/suffix. For example if the products table has a foreign key column `owner_id` pointing to the users table then you would use `owner` as the nested selector.
+
+```graphql
+query getProducts {
+  id
+  name
+  owner {
+    id
+    full_name
+  }
+}
+```
+
+To use a nested selector to a table thats related to the current table though another table (join tables) you should use the name of the final table and GraphJin will figure out how to connect the two. If you want to enforce the middle table use the directive `@through(table: "name")` directive.
+
+[Directives](/posts/7-cheetsheet#using-query-directives) look like this `@directiveName(argument: value)` and are added to selectors or fields.
+
 ### Fetch from various related tables
 
 > Fetch the lastest 10 products and their owners
@@ -219,6 +244,19 @@ query getProductsWithSpecificOwners {
 }
 ```
 
+### Sorting the query result
+
+> Need to return the top 10 latest products with the highest costing product on top.
+
+````graphql
+query getLatestProducts {
+  products(order_by: [created_at: desc, price: desc]) {
+    id
+    name
+  }
+}
+```
+
 ### Dynamically changing the sort order of the result
 
 > You have a UI where customers can change how the products displayed are ordered. Since ordering requires databases index for each sort order you want to limit the ordering options to a set of fixed choices.
@@ -229,7 +267,7 @@ tables:
     order_by:
       most_expensive_products: ["price desc", "created_at desc"]
       least_expensive_products: ["price asc"]
-```
+````
 
 ```json title="Query Variables"
 { "order": "most_expensive_products" }
