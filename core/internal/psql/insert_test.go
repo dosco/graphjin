@@ -90,8 +90,11 @@ func nestedInsertManyToMany(t *testing.T) {
 			due_date
 			customer {
 				id
-				full_name
-				email
+				vip
+				user {
+					id
+					full_name
+				}
 			}
 			product {
 				id

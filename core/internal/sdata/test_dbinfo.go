@@ -4,15 +4,9 @@ func GetTestDBInfo() *DBInfo {
 	columns := [][]DBColumn{
 		[]DBColumn{
 			DBColumn{Schema: "public", Table: "customers", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
-			DBColumn{Schema: "public", Table: "customers", Name: "full_name", Type: "character varying", NotNull: true, PrimaryKey: false, UniqueKey: false},
-			DBColumn{Schema: "public", Table: "customers", Name: "phone", Type: "character varying", NotNull: false, PrimaryKey: false, UniqueKey: false},
-			DBColumn{Schema: "public", Table: "customers", Name: "email", Type: "character varying", NotNull: true, PrimaryKey: false, UniqueKey: false},
-			DBColumn{Schema: "public", Table: "customers", Name: "encrypted_password", Type: "character varying", NotNull: true, PrimaryKey: false, UniqueKey: false},
-			DBColumn{Schema: "public", Table: "customers", Name: "reset_password_token", Type: "character varying", NotNull: false, PrimaryKey: false, UniqueKey: false},
-			DBColumn{Schema: "public", Table: "customers", Name: "reset_password_sent_at", Type: "timestamp without time zone", NotNull: false, PrimaryKey: false, UniqueKey: false},
-			DBColumn{Schema: "public", Table: "customers", Name: "remember_created_at", Type: "timestamp without time zone", NotNull: false, PrimaryKey: false, UniqueKey: false},
-			DBColumn{Schema: "public", Table: "customers", Name: "created_at", Type: "timestamp without time zone", NotNull: true, PrimaryKey: false, UniqueKey: false},
-			DBColumn{Schema: "public", Table: "customers", Name: "updated_at", Type: "timestamp without time zone", NotNull: true, PrimaryKey: false, UniqueKey: false}},
+			DBColumn{Schema: "public", Table: "customers", Name: "user_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "users", FKeyCol: "id"},
+			DBColumn{Schema: "public", Table: "customers", Name: "product_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "products", FKeyCol: "id"},
+			DBColumn{Schema: "public", Table: "customers", Name: "vip", Type: "boolean", NotNull: true, PrimaryKey: false, UniqueKey: false}},
 		[]DBColumn{
 			DBColumn{Schema: "public", Table: "users", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
 			DBColumn{Schema: "public", Table: "users", Name: "full_name", Type: "character varying", NotNull: true, PrimaryKey: false, UniqueKey: false},

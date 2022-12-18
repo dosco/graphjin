@@ -22,8 +22,9 @@ func simpleQuery(t *testing.T) {
 func withNestedOrderBy(t *testing.T) {
 	gql := `query {
 	               products(
-	                       where: { and: {customer: { email: { eq: "http" }}, not: { customer: { email: { eq: ".com"}  }}}}
-	                       order_by: { customer: { email: desc }}
+	                       where: { and: {customer: { user: { email: { eq: "http" } } }, 
+						   		not: { customer: { user: { email: { eq: ".com"}  }}}}}
+	                       order_by: { customer: { vip: desc }}
 	               ) {
 	                       id
 	                       user {
@@ -246,8 +247,10 @@ func manyToMany(t *testing.T) {
 		products {
 			name
 			customers {
-				email
-				full_name
+				user {
+					email
+					full_name
+				}
 			}
 		}
 	}`
@@ -258,8 +261,10 @@ func manyToMany(t *testing.T) {
 func manyToManyReverse(t *testing.T) {
 	gql := `query {
 		customers {
-			email
-			full_name
+			user {
+				email
+				full_name
+			}
 			products {
 				name
 			}
@@ -357,7 +362,7 @@ func multiRoot(t *testing.T) {
 			id
 			name
 			customer {
-				email
+				vip
 			}
 		}
 		users {

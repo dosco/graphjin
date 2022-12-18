@@ -57,7 +57,7 @@ func (g *Graph) AllPaths(from, to int32) [][]int32 {
 	var limit int
 
 	h := newHeap()
-	h.push(path{weight: 0, nodes: []int32{from}})
+	h.push(path{weight: 0, parent: from, nodes: []int32{from}})
 	visited := make(map[[2]int32]struct{})
 
 	for len(*h.paths) > 0 {
@@ -68,13 +68,13 @@ func (g *Graph) AllPaths(from, to int32) [][]int32 {
 
 		// Find the nearest unvisited node
 		p := h.pop()
-		node := p.nodes[len(p.nodes)-1]
+		pnode := p.nodes[len(p.nodes)-1]
 
-		if _, ok := visited[[2]int32{p.parent, node}]; ok {
+		if _, ok := visited[[2]int32{p.parent, pnode}]; ok {
 			continue
 		}
 
-		if node == to && len(p.nodes) > 1 {
+		if pnode == to && len(p.nodes) > 1 {
 			for _, v := range paths {
 				if equals(v, p.nodes) {
 					return paths
@@ -84,24 +84,26 @@ func (g *Graph) AllPaths(from, to int32) [][]int32 {
 			continue
 		}
 
-		for _, e := range g.graph[node] {
+		for _, e := range g.graph[pnode] {
 			if _, ok := p.visited[e]; ok && e != to {
 				continue
 			}
 
-			if _, ok := visited[[2]int32{node, e}]; !ok {
-				// We calculate cost so far and add in the weight (cost) of this edge.
-				p1 := path{
-					weight:  p.weight + 1,
-					parent:  node,
-					nodes:   append(append([]int32{}, p.nodes...), e),
-					visited: make(map[int32]struct{}),
-				}
-				for _, v := range p1.nodes {
-					p1.visited[v] = struct{}{}
-				}
-				h.push(p1)
+			if _, ok := visited[[2]int32{pnode, e}]; ok {
+				continue
 			}
+
+			// We calculate cost so far and add in the weight (cost) of this edge.
+			p1 := path{
+				weight:  p.weight + 1,
+				parent:  pnode,
+				nodes:   append(append([]int32{}, p.nodes...), e),
+				visited: make(map[int32]struct{}),
+			}
+			for _, v := range p1.nodes {
+				p1.visited[v] = struct{}{}
+			}
+			h.push(p1)
 		}
 	}
 	return paths

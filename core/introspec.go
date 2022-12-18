@@ -1,3 +1,5 @@
+//go:build !wasm
+
 package core
 
 import (
@@ -10,6 +12,8 @@ import (
 	"github.com/dosco/graphjin/core/internal/sdata"
 	"github.com/dosco/graphjin/core/internal/util"
 )
+
+const singularSuffix = "ByID"
 
 var typeMap map[string]string = map[string]string{
 	"smallint":         "Int",
@@ -119,12 +123,25 @@ type intro struct {
 	exptNeeded   map[string]bool
 }
 
-func (gj *graphjin) initGraphQLEgine() error {
-	if gj.prod {
-		return nil
-	}
+// func (g *GraphJin) Introspection(query string) (*Result, error) {
+// 	gj := g.Load().(*graphjin)
+// 	return gj.introspection(query)
+// }
 
-	engine := graphql.New()
+func (gj *graphjin) introspection(query string) ([]byte, error) {
+	engine, err := gj.newGraphQLEngine()
+	if err != nil {
+		return nil, err
+	}
+	r := engine.ServeGraphQL(&graphql.Request{Query: query})
+	if err := r.Error(); err != nil {
+		return nil, err
+	}
+	return r.Data, nil
+}
+
+func (gj *graphjin) newGraphQLEngine() (engine *graphql.Engine, err error) {
+	engine = graphql.New()
 	in := &intro{
 		Schema:       engine.Schema,
 		DBSchema:     gj.schema,
@@ -158,19 +175,18 @@ func (gj *graphjin) initGraphQLEgine() error {
 		Desc: schema.NewDescription("A cursor is an encoded string use for pagination"),
 	}
 
-	if err := in.addTables(); err != nil {
-		return err
+	if err = in.addTables(); err != nil {
+		return
 	}
 	in.addExpressions()
 	in.addDirectives()
 
-	if err := in.ResolveTypes(); err != nil {
-		return err
+	if err = in.ResolveTypes(); err != nil {
+		return
 	}
 
 	engine.Resolver = resolvers.Func(revolverFunc)
-	gj.ge = engine
-	return nil
+	return
 }
 
 func revolverFunc(request *resolvers.ResolveRequest, next resolvers.Resolution) resolvers.Resolution {
@@ -233,7 +249,7 @@ func (in *intro) addTable(name string, ti sdata.DBTable, singular bool) error {
 	}
 
 	if singular {
-		name = name + in.SingularSuffix
+		name = name + singularSuffix
 	}
 
 	if in.gj.conf.EnableCamelcase {
@@ -297,6 +313,10 @@ func (in *intro) addRels(name string, ti sdata.DBTable) error {
 		return err
 	}
 
+	for k, v := range relTables1 {
+		relTables1[(k + singularSuffix)] = v
+	}
+
 	for k, t := range relTables1 {
 		k1 := t.Name + "Output"
 		if _, ok := in.Types[k1]; !ok {
@@ -318,6 +338,10 @@ func (in *intro) addRels(name string, ti sdata.DBTable) error {
 	relTables2, err := in.GetSecondDegree(ti.Schema, ti.Name)
 	if err != nil {
 		return err
+	}
+
+	for k, v := range relTables2 {
+		relTables2[(k + singularSuffix)] = v
 	}
 
 	for k, t := range relTables2 {

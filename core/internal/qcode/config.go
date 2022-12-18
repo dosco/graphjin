@@ -108,7 +108,7 @@ type trval struct {
 func (co *Compiler) AddRole(role, schema, table string, trc TRConfig) error {
 	var err error
 
-	ti, err := co.s.Find(schema, table)
+	ti, err := co.Find(schema, table)
 	if err != nil {
 		return err
 	}

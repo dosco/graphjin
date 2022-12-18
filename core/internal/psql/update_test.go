@@ -43,8 +43,10 @@ func nestedUpdateManyToMany(t *testing.T) {
 			due_date
 			customer {
 				id
-				full_name
-				email
+				user {
+					full_name
+					email
+				}
 			}
 			product {
 				id

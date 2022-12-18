@@ -137,7 +137,10 @@ func addTableInfo(c *Config, t Table) error {
 
 	for k, ob := range t.OrderBy {
 		for _, v := range ob {
-			vals := strings.SplitN(v, " ", 2)
+			vals := strings.Fields(strings.TrimSpace(v))
+			if len(vals) != 2 {
+				return fmt.Errorf("invalid format for order by (column sort_order): %s", v)
+			}
 			obm[k] = append(obm[k], [2]string{vals[0], vals[1]})
 		}
 	}

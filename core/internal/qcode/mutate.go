@@ -338,7 +338,7 @@ func (co *Compiler) processNestedMutations(ms *mState, m *Mutate, data *graph.No
 		}
 
 		// Get child-to-parent relationship
-		paths, err := co.s.FindPath(k, m.Key, "")
+		paths, err := co.FindPath(k, m.Key, "")
 		// no relationship found must be a keyword
 		if err != nil {
 			var ty MType

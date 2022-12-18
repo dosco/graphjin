@@ -451,7 +451,6 @@ func (ast *aexpst) processNestedTable(av aexp, ex *Exp, node *graph.Node) (bool,
 	var joins []Join
 	var err error
 
-	s := ast.co.s
 	ti := av.ti
 
 	var prev, curr string
@@ -484,7 +483,7 @@ func (ast *aexpst) processNestedTable(av aexp, ex *Exp, node *graph.Node) (bool,
 
 		var path []sdata.TPath
 		// TODO: Make this function work with schemas
-		if path, err = s.FindPath(curr, prev, ""); err != nil {
+		if path, err = ast.co.FindPath(curr, prev, ""); err != nil {
 			break
 		}
 
