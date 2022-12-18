@@ -96,8 +96,8 @@ type Config struct {
 	// Enable automatic coversion of camel case in GraphQL to snake case in SQL
 	EnableCamelcase bool `mapstructure:"enable_camelcase" jsonschema:"title=Enable Camel Case,default=false"`
 
-	// Enable production mode. This defaults to true if GO_ENV is set to
-	// "production". When true the allow list is enforced
+	// When enabled GraphJin runs with production level security defaults.
+	// For example allow lists are enforced.
 	Production bool `jsonschema:"title=Production Mode,default=false"`
 
 	// Duration for polling the database to detect schema changes

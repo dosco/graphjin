@@ -46,14 +46,14 @@ Debian and Redhat ([releases](https://github.com/dosco/graphjin/releases)) downl
 
 Let's call our app Webshop.
 
-```console
+```shell
 graphjin new webshop
 cd webshop
 ```
 
 ### Add a database schema
 
-```console
+```shell
 graphjin db migrate new users
 graphjin db migrate new products
 graphjin db migrate new sections
@@ -110,13 +110,13 @@ for (i = 0; i < 100; i++) {
 
 This will create the database, run the migrations and the seed file. Once it's set up to reset use the `db:reset` command-line argument.
 
-```console
+```shell
 docker-compose run api db setup
 ```
 
 ### Start the Webshop API
 
-```console
+```shell
 docker-compose up
 ```
 
@@ -181,14 +181,14 @@ SG_SECRET_KEY: generic_secret_ke
 
 2. Login to your cloud (Google Example)
 
-```console
+```shell
 gcloud auth login
 gcloud auth application-default login
 ```
 
 3. Encrypt the secrets with the key
 
-```console
+```shell
 sops -e -i ./config/prod.secrets.yml
 ```
 

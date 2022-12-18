@@ -15,10 +15,8 @@ log_format: "json"
 # Enable or disable http compression (uses gzip)
 http_compress: true
 
-# When production mode is 'true' only queries 
-# from the allow list are permitted.
-# When it's 'false' all queries are saved to the
-# the allow list in ./config/allow.list
+# When production mode is 'true' only queries from the queries 
+# folder can be used.
 production: true
 
 # Throw a 401 on auth failure for queries that need auth

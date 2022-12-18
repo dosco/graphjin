@@ -64,7 +64,8 @@ func (gj *graphjin) compileQuery(qr queryReq, role string) (*queryComp, error) {
 func (gj *graphjin) compileQueryForRoleOnce(qcomp *queryComp, role string) (*queryComp, error) {
 	var err error
 
-	val, loaded := gj.queries.LoadOrStore(reqKey(qcomp.qr, role), qcomp)
+	qr := qcomp.qr
+	val, loaded := gj.queries.LoadOrStore((qr.ns + qr.name + role), qcomp)
 	if loaded {
 		return val.(*queryComp), nil
 	}
@@ -128,8 +129,4 @@ func (gj *graphjin) compileQueryForRole(
 	st.va = validator.New()
 	st.sql = w.String()
 	return st, nil
-}
-
-func reqKey(qr queryReq, role string) string {
-	return (qr.ns + qr.name + role)
 }

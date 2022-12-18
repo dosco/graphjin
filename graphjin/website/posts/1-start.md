@@ -1,6 +1,6 @@
 ---
 chapter: 1
-title: Quick Start
+title: Start
 description: Quick guide to getting started
 ---
 
@@ -116,6 +116,14 @@ You get back the result JSON.
 2. Treat GraphQL as a schema for your APIs
 
 3. Stay secure, fast and easy to use
+
+## Why should I care?
+
+Lets take for example a simple blog app. You'll probably need the following APIs user management, posts, comments, votes. Each of these areas need apis for listing, creating, updating, deleting. Off the top of my head thats like 12 APIs if not more. This is just for managing things for rendering the blog posts, home page, profile page you probably need many more view APIs that fetch a whole bunch of things at the same time. This is a lot and we're still talking something simple like a basic blogging app.
+
+All these APIs have to be coded up by someone and then the code maintained, updated, made secure, fast, etc. We are talking weeks to months of work if not more. Also as your team grows you have to sure that folks are not making N+1 databse calls, failing to limit queries, introducing sql injection bugs, using inefficent queries and a lot more.
+
+Wouldn't it be better if you could just write a quick simple GraphQL query to define what you want to happen and it just does. GraphJin does exactly this and more, you'll never see any of the issues above and your queries will always be efficient. With GraphJin your building APIs in minutes not days.
 
 ## How to use GraphJin with your own code
 

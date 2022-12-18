@@ -33,13 +33,13 @@ export default function Home({ posts }) {
           with NodeJS and GO. Supports Postgres, MySQL, Yugabyte, Cockroach. 
         </p>
 
-        <div class="flex gap-2 items-center">
+        <div className="flex gap-2 items-center">
           <a href="https://github.com/dosco/graphjin" target="_blank">
             <FaGithub size={50} className="mr-2" />
           </a>
-          <mark class="flex items-center gap-2 px-4 cursor-pointer" onClick={copyToClipboard}>
+          <mark className="flex items-center gap-2 px-4 cursor-pointer" onClick={copyToClipboard}>
             npm i graphjin
-            <span class="material-symbols-outlined">content_copy</span>
+            <span className="material-symbols-outlined">content_copy</span>
           </mark>
         </div>
       </div> 

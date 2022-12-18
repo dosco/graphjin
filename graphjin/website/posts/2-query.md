@@ -189,7 +189,7 @@ query getProductsWithSpecificOwners {
 
 > If you rather use camel case for my queries instead of the snake case that my database tables and columns use. GraphJin will auto translate between the two.
 
-```yaml title="Config File ./config/dev.yml"
+```yaml title="Config File dev.yml"
 enable_camelcase: true
 ```
 
