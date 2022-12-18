@@ -21,6 +21,7 @@ import (
 )
 
 var decPrefix = []byte(`__gj/enc:`)
+var ErrNotFound = errors.New("not found in prepared statements")
 
 type OpType int
 
@@ -146,12 +147,6 @@ func (gj *graphjin) _initSchema() error {
 	if err != nil {
 		return err
 	}
-
-	ssufx := gj.conf.SingularSuffix
-	if ssufx == "" {
-		ssufx = "ByID"
-	}
-	gj.schema.SingularSuffix = ssufx
 
 	return err
 }

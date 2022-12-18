@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-//nolint: errcheck
-func TestGraph(t *testing.T) {
+// nolint: errcheck
+func TestGraph1(t *testing.T) {
 	g := util.NewGraph()
 
 	a := g.AddNode() // 0
@@ -55,3 +55,53 @@ func TestGraph(t *testing.T) {
 	edges := g.GetEdges(b, b)
 	assert.ElementsMatch(t, edges, []util.Edge{{13, 2, "test"}})
 }
+
+/*
+func TestGraph2(t *testing.T) {
+	rand.Seed(time.Now().Unix())
+	g := util.NewGraph()
+
+	var nodes []int32
+	for i := 0; i < 100; i++ {
+		nodes = append(nodes, g.AddNode())
+	}
+	n := len(nodes)
+
+	for i := 0; i < 50; i++ {
+		a := nodes[rand.Intn(n-1)]
+		b := nodes[rand.Intn(n-1)]
+		w := int32(rand.Intn(3))
+		name := fmt.Sprintf("node%d->node%d", a, b)
+		g.AddEdge(a, b, w, name)
+	}
+
+	for i := 0; i < 1000; i++ {
+		a := nodes[rand.Intn(n-1)]
+		b := nodes[rand.Intn(n-1)]
+		paths := g.AllPaths(b, a)
+		if len(paths) == 0 {
+			continue
+		}
+		fmt.Printf("Path From: %d -> %d\n", b, a)
+		for _, p := range paths {
+			fmt.Printf("- %d %v\n", len(p), p)
+			for i := 1; i < len(p); i++ {
+				a1 := p[(i - 1)]
+				b1 := p[(i)]
+				edges := g.GetEdges(a1, b1)
+				fmt.Printf("*** %v\n", edges)
+			}
+		}
+		fmt.Println("---")
+		// assert.ElementsMatch(t, paths, [][]int32{
+		// 	{6, 1, 0},
+		// 	{6, 3, 2, 0},
+		// 	{6, 3, 2, 1, 0},
+		// 	{6, 5, 4, 3, 2, 0},
+		// 	{6, 5, 4, 3, 2, 1, 0},
+		// })
+	}
+	// edges := g.GetEdges(b, b)
+	// assert.ElementsMatch(t, edges, []util.Edge{{13, 2, "test"}})
+}
+*/

@@ -10,10 +10,18 @@ import (
 	"hash/fnv"
 	"io"
 	"strconv"
+	"sync"
 	"syscall/js"
 )
 
-type JSPostgresDB struct{}
+var rowsPool = sync.Pool{
+	New: func() interface{} {
+		return new(Rows)
+	},
+}
+
+type JSPostgresDB struct {
+}
 
 func (d *JSPostgresDB) Open(name string) (driver.Conn, error) {
 	return nil, errors.New("use openwithclient")
@@ -21,6 +29,7 @@ func (d *JSPostgresDB) Open(name string) (driver.Conn, error) {
 
 type Connector struct {
 	client js.Value
+	pool   sync.Pool
 }
 
 func (c *Connector) Connect(ctx context.Context) (driver.Conn, error) {
@@ -124,9 +133,10 @@ func (s *Stmt) Query(args []driver.Value) (driver.Rows, error) {
 	cl := cols.Length()
 	rl := rows.Length()
 
-	ret := &Rows{
-		useArray: (cl == 1 && rl == 1 && rows.Index(0).Length() == 1),
-	}
+	ret := rowsPool.Get().(*Rows)
+	*ret = zeroRows // wipe clean for reuse
+
+	ret.useArray = (cl == 1 && rl == 1 && rows.Index(0).Length() == 1)
 
 	if ret.useArray {
 		ret.colsA[0] = cols.Index(0).Get("name").String()
@@ -233,6 +243,8 @@ type Rows struct {
 	useArray bool
 }
 
+var zeroRows = Rows{}
+
 func (r *Rows) Columns() []string {
 	if r.useArray {
 		return r.colsA[:]
@@ -242,6 +254,7 @@ func (r *Rows) Columns() []string {
 }
 
 func (r *Rows) Close() error {
+	rowsPool.Put(r)
 	return nil
 }
 

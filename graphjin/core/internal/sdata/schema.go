@@ -19,19 +19,18 @@ type nodeInfo struct {
 }
 
 type DBSchema struct {
-	typ            string                  // db type
-	ver            int                     // db version
-	schema         string                  // db schema
-	name           string                  // db name
-	tables         []DBTable               // tables
-	SingularSuffix string                  // singular suffix
-	vt             map[string]VirtualTable // for polymorphic relationships
-	fm             map[string]DBFunction   // db functions
-	tindex         map[string]nodeInfo     // table index
-	ai             map[string]nodeInfo     // table alias index
-	ei             map[string][]edgeInfo   // edges index
-	ae             map[int32]TEdge         // all edges
-	rg             *util.Graph             // relationship graph
+	typ    string                  // db type
+	ver    int                     // db version
+	schema string                  // db schema
+	name   string                  // db name
+	tables []DBTable               // tables
+	vt     map[string]VirtualTable // for polymorphic relationships
+	fm     map[string]DBFunction   // db functions
+	tindex map[string]nodeInfo     // table index
+	ai     map[string]nodeInfo     // table alias index
+	ei     map[string][]edgeInfo   // edges index
+	ae     map[int32]TEdge         // all edges
+	rg     *util.Graph             // relationship graph
 }
 
 type RelType int
@@ -313,7 +312,6 @@ func (s *DBSchema) GetFirstDegree(schema, table string) (map[string]DBTable, err
 			e1 := s.ae[e.ID]
 			if e1.name != "" {
 				ret[e1.name] = e1.LT
-				ret[(e1.name + s.SingularSuffix)] = e1.LT
 			}
 		}
 	}
@@ -339,7 +337,6 @@ func (s *DBSchema) GetSecondDegree(schema, table string) (map[string]DBTable, er
 				e1 := s.ae[e.ID]
 				if e1.name != "" {
 					ret[e1.name] = e1.LT
-					ret[(e1.name + s.SingularSuffix)] = e1.LT
 				}
 			}
 		}

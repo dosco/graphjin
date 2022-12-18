@@ -45,5 +45,6 @@ node_modules
 bin
 ./package-lock.json
 slim.report.json
+examples/nodejs/config/**/*.gql
 
 

@@ -14,6 +14,8 @@ const f = fs.readFileSync(join(__dirname,"../graphjin.wasm"));
 const inst = await WebAssembly.instantiate(f, go.importObject);
 go.run(inst.instance);
 
+// TODO: Use NODE_ENV to set production mode
+
 export default async function(configPath, config, db) {
     if (typeof config === 'string') {
         const conf = {value: config, isFile: true}

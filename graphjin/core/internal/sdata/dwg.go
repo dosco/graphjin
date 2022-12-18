@@ -3,7 +3,6 @@ package sdata
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/dosco/graphjin/core/internal/util"
 )
@@ -199,8 +198,6 @@ func (s *DBSchema) Find(schema, name string) (DBTable, error) {
 		schema = s.DBSchema()
 	}
 
-	name = strings.TrimSuffix(name, s.SingularSuffix)
-
 	v, ok := s.tindex[(schema + ":" + name)]
 	if !ok {
 		return t, fmt.Errorf("table not found: %s.%s", schema, name)
@@ -218,9 +215,6 @@ type TPath struct {
 }
 
 func (s *DBSchema) FindPath(from, to, through string) ([]TPath, error) {
-	from = strings.TrimSuffix(from, s.SingularSuffix)
-	to = strings.TrimSuffix(to, s.SingularSuffix)
-
 	fl, ok := s.ei[from]
 	if !ok {
 		return nil, ErrFromEdgeNotFound
@@ -234,9 +228,6 @@ func (s *DBSchema) FindPath(from, to, through string) ([]TPath, error) {
 	res, err := s.between(fl, tl, through)
 	if err != nil {
 		return nil, err
-	}
-	if res == nil {
-		return nil, ErrPathNotFound
 	}
 
 	// fmt.Printf("> %s (%d) -> %s (%d)\n",
@@ -265,88 +256,78 @@ type graphResult struct {
 	edges    []int32
 }
 
-func (s *DBSchema) between(from, to []edgeInfo, through string) (*graphResult, error) {
+func (s *DBSchema) between(from, to []edgeInfo, through string) (res graphResult, err error) {
+	// TODO: picking a path
+	// 1. first look for a direct edge to other table
+	// 2. then find shortest path using relevant edges
+
 	for _, f := range from {
 		for _, t := range to {
-			if res, err := s.pickPath(f, t, through); err != nil {
-				return nil, err
-			} else if res != nil {
-				return res, nil
+			res, err = s.pickPath(f, t, through)
+			if err == ErrPathNotFound {
+				continue
+			} else {
+				return
 			}
 		}
 	}
-	return nil, nil
+	return res, ErrPathNotFound
 }
 
-func (s *DBSchema) pickPath(f, t edgeInfo, through string) (*graphResult, error) {
-	var err error
+func (s *DBSchema) pickPath(from, to edgeInfo, through string) (res graphResult, err error) {
+	res.from = from
+	res.to = to
 
-	fn := f.nodeID
-	tn := t.nodeID
+	fn := from.nodeID
+	tn := to.nodeID
 	paths := s.rg.AllPaths(fn, tn)
 
 	if through != "" {
-		if paths, err = s.pickThroughPath(paths, through); err != nil {
-			return nil, err
+		paths, err = s.pickThroughPath(paths, through)
+		if err != nil {
+			return
 		}
 	}
 
-	for _, nodes := range paths {
-		res := &graphResult{from: f, to: t}
-		ln := len(nodes)
-
-		if ln == 2 {
-			lines := s.rg.GetEdges(nodes[0], nodes[1])
-
-			if through != "" {
-				for _, v := range lines {
-					if v.Name == through {
-						res.edges = append(res.edges, v.ID)
-						return res, nil
-					}
-				}
-				return nil, fmt.Errorf("no relationship found through column: %s", through)
-			}
-
-			if v := pickLine(lines, f); v != nil {
-				res.edges = append(res.edges, v.ID)
-				return res, nil
-			}
-
-			continue
+	for _, path := range paths {
+		edges := s.pickEdges(path, from, to)
+		if len(edges) != 0 {
+			res.edges = edges
+			return
 		}
+	}
+	return res, ErrPathNotFound
+}
+func (s *DBSchema) pickEdges(path []int32, from, to edgeInfo) (edges []int32) {
+	pathLen := len(path)
+	for i := 1; i < pathLen; i++ {
+		fn := path[i-1]
+		tn := path[i]
+		lines := s.rg.GetEdges(fn, tn)
 
-	outer:
-		for i := 1; i < ln; i++ {
-			fn := nodes[i-1]
-			tn := nodes[i]
-			lines := s.rg.GetEdges(fn, tn)
+		switch {
+		case i == 1:
+			if v := pickLine(lines, from); v != nil {
+				edges = append(edges, v.ID)
+			} else {
+				return
+			}
 
-			switch {
-			case i == 1:
-				if v := pickLine(lines, f); v != nil {
-					res.edges = append(res.edges, v.ID)
-				} else {
-					break outer
-				}
-
-			case i == (ln - 1):
-				if v := pickLine(lines, t); v != nil {
-					res.edges = append(res.edges, v.ID)
-				} else {
-					v := minWeightedLine(lines)
-					res.edges = append(res.edges, v.ID)
-				}
-				return res, nil
-
-			default:
+		case i == (pathLen - 1):
+			if v := pickLine(lines, to); v != nil {
+				edges = append(edges, v.ID)
+			} else {
 				v := minWeightedLine(lines)
-				res.edges = append(res.edges, v.ID)
+				edges = append(edges, v.ID)
 			}
+			return
+
+		default:
+			v := minWeightedLine(lines)
+			edges = append(edges, v.ID)
 		}
 	}
-
-	return nil, nil
+	return
 }
 
 func (s *DBSchema) pickThroughPath(paths [][]int32, through string) ([][]int32, error) {
@@ -426,4 +407,11 @@ func (s *DBSchema) PrintEdgeInfo(e edgeInfo) {
 	// 	e := s.ae[id]
 	// }
 
+}
+
+func (tp *TPath) String() string {
+	return fmt.Sprintf("(%s) %s ==> %s ==> (%s) %s",
+		tp.LT.String(), tp.LC.String(),
+		tp.Rel.String(),
+		tp.RT.String(), tp.RC.String())
 }

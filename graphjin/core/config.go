@@ -73,9 +73,6 @@ type Config struct {
 	// removed in next major version
 	EnableInflection bool `mapstructure:"enable_inflection" jsonschema:"-"`
 
-	// Customize singular suffix. Default value is "ByID"
-	SingularSuffix string `mapstructure:"singular_suffix" jsonschema:"title=Singular Suffix,default=ById"`
-
 	// Database type name Defaults to 'postgres' (options: mysql, postgres)
 	DBType string `mapstructure:"db_type" jsonschema:"title=Database Type,enum=postgres,enum=mysql"`
 

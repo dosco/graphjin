@@ -116,7 +116,7 @@ func TestMain(m *testing.M) {
 
 	err = qcompile.AddRole("user", "public", "customers", qcode.TRConfig{
 		Query: qcode.QueryConfig{
-			Columns: []string{"id", "email", "full_name", "products"},
+			Columns: []string{"id", "vip"},
 		},
 	})
 

@@ -56,7 +56,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/chirino/graphql"
 	"github.com/dosco/graphjin/core/internal/allow"
 	"github.com/dosco/graphjin/core/internal/graph"
 	"github.com/dosco/graphjin/core/internal/psql"
@@ -107,7 +106,6 @@ type graphjin struct {
 	abacEnabled  bool
 	qc           *qcode.Compiler
 	pc           *psql.Compiler
-	ge           *graphql.Engine
 	subs         sync.Map
 	scriptMap    map[string]plugin.ScriptCompiler
 	validatorMap map[string]plugin.ValidationCompiler
@@ -202,10 +200,6 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo, options ...Opti
 	}
 
 	if err := gj.initCompilers(); err != nil {
-		return nil, err
-	}
-
-	if err := gj.initGraphQLEgine(); err != nil {
 		return nil, err
 	}
 
@@ -413,13 +407,6 @@ func (gj *graphjin) graphQLWithOpName(
 		ns = *rc.ns
 	}
 
-	// use the chirino/graphql library for introspection queries
-	// disabled when allow list is enforced
-	if !gj.prod && name == "IntrospectionQuery" {
-		res, err := gj.introspection(query)
-		return res, err
-	}
-
 	ct := &gcontext{
 		gj:   gj,
 		rc:   rc,
@@ -432,6 +419,15 @@ func (gj *graphjin) graphQLWithOpName(
 		ns:   ns,
 		op:   op,
 		name: name,
+	}
+
+	if !gj.prod && name == "IntrospectionQuery" {
+		v, err := gj.introspection(query)
+		if err != nil {
+			return res, err
+		}
+		res.Data = v
+		return res, nil
 	}
 
 	if ct.op == qcode.QTSubscription {
@@ -480,19 +476,6 @@ func (gj *graphjin) graphQLWithOpName(
 	return res, err
 }
 
-func (g *GraphJin) Introspection(query string) (*Result, error) {
-	gj := g.Load().(*graphjin)
-	return gj.introspection(query)
-}
-
-func (gj *graphjin) introspection(query string) (*Result, error) {
-	r := gj.ge.ServeGraphQL(&graphql.Request{Query: query})
-	if err := r.Error(); err != nil {
-		return errResult("", err), err
-	}
-	return &Result{Data: r.Data}, nil
-}
-
 // Reload redoes database discover and reinitializes GraphJin.
 func (g *GraphJin) Reload() error {
 	gj := g.Load().(*graphjin)
@@ -531,12 +514,4 @@ func Operation(query string) (h Header, err error) {
 		h.Name = v.Name
 	}
 	return
-}
-
-func errResult(name string, err error) *Result {
-	return &Result{
-		name:   name,
-		Errors: []Error{{Message: err.Error()}},
-	}
-
 }

@@ -9,7 +9,7 @@
 <!-- [![Run on Google Cloud](./.github/deploy-cloud-run-button.svg)](https://deploy.cloud.run)
  -->
 
-GraphJin gives you an instant secure and fast GraphQL API without code. Just use a GraphQL query to define your API and GraphJin automagically converts it into a full featured API. Build your backend APIs **100X** faster. Works with **NodeJS** and **GO**. Supports several databases, **Postgres**, **MySQL**, **YugabyteDB**, **Cockroach**, etc.
+GraphJin gives you an instant secure and fast GraphQL API without code. Just use a GraphQL query to define your API and GraphJin automagically converts it into a full featured API. Build your backend APIs **100X** faster. Works with **NodeJS** and **GO**. Supports several databases, **Postgres**, **MySQL**, **YugabyteDB**, etc.
 
 ## Secure out of the box
 
@@ -83,7 +83,6 @@ console.log("Express server started on port %s", server.address().port);
 
 ### Quick install
 
-
 ```
 # Mac (Homebrew)
 brew install dosco/graphjin/graphjin
@@ -94,7 +93,6 @@ sudo snap install --classic graphjin
 
 Debian and Redhat ([releases](https://github.com/dosco/graphjin/releases))
 Download the .deb or .rpm from the releases page and install with dpkg -i and rpm -i respectively.
-
 
 ### Quickly create and deploy new apps
 
@@ -240,7 +238,7 @@ With GraphJin your web and mobile developers can start building instantly. All t
 
 ## Highlevel
 
-- Works with Postgres, MySQL8, YugabyteDB, CockroachDB,
+- Works with Postgres, MySQL8, YugabyteDB
 - Also works with Amazon Aurora/RDS and Google Cloud SQL
 - Supports REST, GraphQL and Websocket APIs
 

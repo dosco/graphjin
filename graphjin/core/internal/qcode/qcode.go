@@ -17,7 +17,8 @@ import (
 )
 
 const (
-	maxSelectors = 100
+	maxSelectors   = 100
+	singularSuffix = "ByID"
 )
 
 type QType int8
@@ -543,7 +544,7 @@ func (co *Compiler) addRelInfo(
 		if co.c.EnableCamelcase {
 			parentF.Name = util.ToSnake(parentF.Name)
 		}
-		path, err := co.s.FindPath(childF.Name, parentF.Name, sel.through)
+		path, err := co.FindPath(childF.Name, parentF.Name, sel.through)
 		if err != nil {
 			return graphError(err, childF.Name, parentF.Name, sel.through)
 		}
@@ -581,7 +582,7 @@ func (co *Compiler) addRelInfo(
 		if sel.Schema != "" {
 			schema = sel.Schema
 		}
-		if sel.Ti, err = co.s.Find(schema, field.Name); err != nil {
+		if sel.Ti, err = co.Find(schema, field.Name); err != nil {
 			return err
 		}
 	} else {
@@ -728,6 +729,17 @@ func (co *Compiler) setRelFilters(qc *QCode, sel *Select) {
 		ex.Children = []*Exp{ex1, ex2, ex3}
 		setFilter(&sel.Where, ex)
 	}
+}
+
+func (co *Compiler) Find(schema, name string) (sdata.DBTable, error) {
+	name = strings.TrimSuffix(name, singularSuffix)
+	return co.s.Find(schema, name)
+}
+
+func (co *Compiler) FindPath(from, to, through string) ([]sdata.TPath, error) {
+	from = strings.TrimSuffix(from, singularSuffix)
+	to = strings.TrimSuffix(to, singularSuffix)
+	return co.s.FindPath(from, to, through)
 }
 
 func buildFilter(rel sdata.DBRel, pid int32) *Exp {
@@ -1583,7 +1595,7 @@ func (co *Compiler) compileArgOrderByObj(sel *Select, parent *graph.Node, cm map
 
 		case graph.NodeObj:
 			var path []sdata.TPath
-			if path, err = co.s.FindPath(node.Name, sel.Ti.Name, ""); err != nil {
+			if path, err = co.FindPath(node.Name, sel.Ti.Name, ""); err != nil {
 				continue
 			}
 			ti = path[0].LT
