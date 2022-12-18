@@ -2,8 +2,8 @@
 # so I only need to overwrite some values
 inherits: dev
 
-# When production mode is 'true' only queries
-# from the allow list are permitted.
+# When production mode is 'true' only queries from the queries
+# folder can be used.
 production: true
 
 # Secret key for general encryption operations like

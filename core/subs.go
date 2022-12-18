@@ -29,6 +29,7 @@ var (
 )
 
 type sub struct {
+	ns   string
 	name string
 	role string
 	qc   *queryComp
@@ -63,6 +64,7 @@ type mmsg struct {
 }
 
 type Member struct {
+	ns     string
 	params json.RawMessage
 	sub    *sub
 	Result chan *Result
@@ -74,7 +76,11 @@ type Member struct {
 	cindx int
 }
 
-// GraphQLEx is the extended version of the Subscribe function allowing for request specific config.
+// Subscribe function is called on the GraphJin struct to subscribe to query.
+// Any database changes that apply to the query are streamed back in realtime.
+//
+// In developer mode all named queries are saved into the queries folder and in production mode only
+// queries from these saved queries can be used.
 func (g *GraphJin) Subscribe(
 	c context.Context,
 	query string,
@@ -84,15 +90,39 @@ func (g *GraphJin) Subscribe(
 
 	h, err := graph.FastParse(query)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	op := qcode.GetQTypeByName(h.Operation)
 	name := h.Name
 
 	gj := g.Load().(*graphjin)
-	return gj.subscribeWithOpName(c, op, name, query, vars, rc)
+
+	if gj.prod && !gj.conf.DisableAllowList {
+		item, err := gj.allowList.GetByName(name, gj.prod)
+		if err != nil {
+			return nil, err
+		}
+		op = qcode.GetQTypeByName(item.Operation)
+		query = item.Query
+	}
+
+	m, err := gj.subscribeWithOpName(c, op, name, query, vars, rc)
+	if err != nil {
+		return nil, err
+	}
+
+	if !gj.prod {
+		err := gj.saveToAllowList(nil, query, m.ns)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return m, err
 }
 
+// SubscribeByName is similiar to the Subscribe function except that queries saved
+// in the queries folder can directly be used by their filename.
 func (g *GraphJin) SubscribeByName(
 	c context.Context,
 	name string,
@@ -118,7 +148,7 @@ func (gj *graphjin) subscribeWithOpName(
 	vars json.RawMessage,
 	rc *ReqConfig) (*Member, error) {
 
-	if op != qcode.QTSubscription && op != qcode.QTQuery {
+	if op != qcode.QTSubscription {
 		return nil, errors.New("subscription: not a subscription query")
 	}
 
@@ -147,7 +177,13 @@ func (gj *graphjin) subscribeWithOpName(
 		}
 	}
 
-	v, _ := gj.subs.LoadOrStore((name + role), &sub{
+	ns := gj.namespace
+	if rc != nil && rc.ns != nil {
+		ns = *rc.ns
+	}
+
+	v, _ := gj.subs.LoadOrStore((ns + name + role), &sub{
+		ns:   ns,
 		name: name,
 		role: role,
 		add:  make(chan *Member),
@@ -179,6 +215,7 @@ func (gj *graphjin) subscribeWithOpName(
 	}
 
 	m := &Member{
+		ns:     ns,
 		id:     xid.New(),
 		Result: make(chan *Result, 10),
 		sub:    s,
@@ -201,15 +238,11 @@ func (gj *graphjin) newSub(c context.Context,
 	var err error
 
 	qr := queryReq{
-		ns:    gj.namespace,
+		ns:    s.ns,
 		op:    qcode.QTSubscription,
 		name:  s.name,
 		query: []byte(query),
 		vars:  vars,
-	}
-
-	if rc != nil && rc.ns != nil {
-		qr.ns = *rc.ns
 	}
 
 	if s.qc, err = gj.compileQuery(qr, s.role); err != nil {

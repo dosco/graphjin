@@ -300,8 +300,8 @@ func (rc *ReqConfig) GetNamespace() (string, bool) {
 // SQL query and execute it on the database. In production mode prepared statements are directly used
 // and no query compiling takes places.
 //
-// In developer mode all names queries are saved into a file `allow.list` and in production mode only
-// queries from this file can be run.
+// In developer mode all named queries are saved into the queries folder and in production mode only
+// queries from these saved queries can be used
 func (g *GraphJin) GraphQL(
 	c context.Context,
 	query string,
@@ -346,6 +346,8 @@ func (g *GraphJin) GraphQL(
 	return res, err
 }
 
+// GraphQLByName is similiar to the GraphQL function except that queries saved
+// in the queries folder can directly be used by their filename.
 func (g *GraphJin) GraphQLByName(
 	c context.Context,
 	name string,
