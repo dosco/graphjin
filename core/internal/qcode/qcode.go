@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dosco/graphjin/core/internal/graph"
-	"github.com/dosco/graphjin/core/internal/sdata"
-	"github.com/dosco/graphjin/core/internal/util"
-	"github.com/dosco/graphjin/plugin"
+	"github.com/dosco/graphjin/v2/core/internal/graph"
+	"github.com/dosco/graphjin/v2/core/internal/sdata"
+	"github.com/dosco/graphjin/v2/core/internal/util"
+	plugin "github.com/dosco/graphjin/v2/plugin"
 	"github.com/gobuffalo/flect"
 )
 
@@ -107,12 +107,14 @@ type Select struct {
 }
 
 type Validation struct {
+	Exists bool
 	Source string
 	Type   string
 	VE     plugin.ValidationExecuter
 }
 
 type Script struct {
+	Exists bool
 	Source string
 	Name   string
 	SC     plugin.ScriptExecuter
@@ -2010,15 +2012,11 @@ func (sel *Select) GetInternalArg(name string) (Arg, bool) {
 }
 
 func (s *Script) HasReqFn() bool {
-	return s.SC != nil && s.SC.HasRequestFn()
+	return s.SC.HasRequestFn()
 }
 
 func (s *Script) HasRespFn() bool {
-	return s.SC != nil && s.SC.HasResponseFn()
-}
-
-func (s *Validation) HasValidator() bool {
-	return s.VE != nil
+	return s.SC.HasResponseFn()
 }
 
 /*

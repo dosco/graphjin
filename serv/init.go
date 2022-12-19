@@ -10,7 +10,8 @@ import (
 	// postgres drivers
 
 	// mysql drivers
-	"github.com/dosco/graphjin/plugin/fs"
+
+	"github.com/dosco/graphjin/v2/plugin/fs"
 	_ "github.com/go-sql-driver/mysql"
 )
 
@@ -45,10 +46,6 @@ func validateConf(s *service) {
 }
 
 func (s *service) initFS() error {
-	if s.fs != nil {
-		return nil
-	}
-
 	basePath, err := s.basePath()
 	if err != nil {
 		return err
@@ -58,7 +55,6 @@ func (s *service) initFS() error {
 	if err != nil {
 		return err
 	}
-
 	return nil
 }
 

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dosco/graphjin/core/internal/qcode"
+	"github.com/dosco/graphjin/v2/core/internal/qcode"
 )
 
 // Configuration for the GraphJin compiler core

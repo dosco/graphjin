@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dosco/graphjin/internal/jsn"
+	"github.com/dosco/graphjin/v2/internal/jsn"
 )
 
 var (

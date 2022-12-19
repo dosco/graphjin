@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/dosco/graphjin/core"
-	"github.com/dosco/graphjin/serv/auth"
+	core "github.com/dosco/graphjin/v2/core"
+	"github.com/dosco/graphjin/v2/serv/auth"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"

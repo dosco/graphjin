@@ -11,9 +11,9 @@ import (
 	"strconv"
 
 	"github.com/avast/retry-go"
-	"github.com/dosco/graphjin/core/internal/psql"
-	"github.com/dosco/graphjin/core/internal/qcode"
-	"github.com/dosco/graphjin/core/internal/sdata"
+	"github.com/dosco/graphjin/v2/core/internal/psql"
+	"github.com/dosco/graphjin/v2/core/internal/qcode"
+	"github.com/dosco/graphjin/v2/core/internal/sdata"
 	"github.com/go-playground/validator/v10"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -266,7 +266,7 @@ func (c *gcontext) execQuery(ctx context.Context, qr queryReq, role string) (que
 		}
 	}
 
-	if qc.Script.HasRespFn() {
+	if qc.Script.Exists && qc.Script.HasRespFn() {
 		res.data, err = c.scriptCallResp(ctx, qc, res.data, res.role)
 	}
 
@@ -405,7 +405,7 @@ func (c *gcontext) validateAndUpdateVars(ctx context.Context, qcomp *queryComp, 
 		}
 	}
 
-	if qc.Validation.HasValidator() {
+	if qc.Validation.Exists {
 		if err := qc.Validation.VE.Validate(qr.vars); err != nil {
 			return err
 		}
@@ -426,7 +426,7 @@ func (c *gcontext) validateAndUpdateVars(ctx context.Context, qcomp *queryComp, 
 		}
 	}
 
-	if qc.Script.HasReqFn() {
+	if qc.Script.Exists && qc.Script.HasReqFn() {
 		v, err := c.scriptCallReq(ctx, qc, vars, qcomp.st.role.Name)
 		if len(v) != 0 {
 			qcomp.qr.vars = v

@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/dosco/graphjin/core"
+	"github.com/dosco/graphjin/v2/core"
 )
 
 func Example_update() {

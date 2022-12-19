@@ -1,6 +1,6 @@
 package psql
 
-import "github.com/dosco/graphjin/core/internal/qcode"
+import "github.com/dosco/graphjin/v2/core/internal/qcode"
 
 func (c *compilerContext) renderFunctionSearchRank(sel *qcode.Select, f qcode.Field) {
 	if c.ct == "mysql" {

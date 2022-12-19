@@ -1,4 +1,4 @@
-module github.com/dosco/graphjin
+module github.com/dosco/graphjin/v2
 
 go 1.17
 

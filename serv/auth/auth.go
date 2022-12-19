@@ -9,8 +9,8 @@
 		"net/http"
 		"path/filepath"
 		"github.com/go-chi/chi"
-		"github.com/dosco/graphjin/serv"
-		"github.com/dosco/graphjin/serv/auth"
+		"github.com/dosco/graphjin/v2/serv"
+		"github.com/dosco/graphjin/v2/serv/auth"
 	)
 
 	func main() {
@@ -40,12 +40,12 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/dosco/graphjin/core"
+	core "github.com/dosco/graphjin/v2/core"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
-	"github.com/dosco/graphjin/serv/auth/provider"
+	"github.com/dosco/graphjin/v2/serv/auth/provider"
 )
 
 var ErrNoAuthDefined = errors.New("no auth defined")

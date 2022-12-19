@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/dosco/graphjin/plugin"
+	"github.com/dosco/graphjin/v2/plugin"
 	"gopkg.in/yaml.v3"
 )
 

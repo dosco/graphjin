@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dosco/graphjin/internal/common"
+	"github.com/dosco/graphjin/v2/internal/common"
 	"github.com/go-resty/resty/v2"
 )
 

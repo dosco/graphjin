@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/dosco/graphjin/plugin"
+	"github.com/dosco/graphjin/v2/plugin"
 )
 
 type OsFS struct {

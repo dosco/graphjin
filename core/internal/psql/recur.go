@@ -1,7 +1,7 @@
 package psql
 
 import (
-	"github.com/dosco/graphjin/core/internal/qcode"
+	"github.com/dosco/graphjin/v2/core/internal/qcode"
 )
 
 func (c *compilerContext) renderRecursiveBaseSelect(sel *qcode.Select) {

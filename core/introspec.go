@@ -9,8 +9,8 @@ import (
 	"github.com/chirino/graphql"
 	"github.com/chirino/graphql/resolvers"
 	"github.com/chirino/graphql/schema"
-	"github.com/dosco/graphjin/core/internal/sdata"
-	"github.com/dosco/graphjin/core/internal/util"
+	"github.com/dosco/graphjin/v2/core/internal/sdata"
+	"github.com/dosco/graphjin/v2/core/internal/util"
 )
 
 const singularSuffix = "ByID"

@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/dosco/graphjin/plugin"
+	"github.com/dosco/graphjin/v2/plugin"
 )
 
 var incRe = regexp.MustCompile(`(?m)#import \"(.+)\"`)

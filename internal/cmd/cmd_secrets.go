@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/dosco/graphjin/internal/secrets"
+	"github.com/dosco/graphjin/v2/internal/secrets"
 	"github.com/spf13/cobra"
 	"go.mozilla.org/sops/v3/version"
 )

@@ -6,7 +6,7 @@ import (
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
 	cuejson "cuelang.org/go/encoding/json"
-	"github.com/dosco/graphjin/plugin"
+	plugin "github.com/dosco/graphjin/v2/plugin"
 )
 
 type CueEngine struct{}

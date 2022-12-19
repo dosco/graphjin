@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dosco/graphjin/core"
-	"github.com/dosco/graphjin/internal/util"
-	"github.com/dosco/graphjin/serv/auth"
+	core "github.com/dosco/graphjin/v2/core"
+	"github.com/dosco/graphjin/v2/internal/util"
+	"github.com/dosco/graphjin/v2/serv/auth"
 	"github.com/spf13/afero"
 	"github.com/spf13/viper"
 )

@@ -7,9 +7,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/dosco/graphjin/core"
-	"github.com/dosco/graphjin/core/internal/allow"
-	"github.com/dosco/graphjin/plugin/fs"
+	core "github.com/dosco/graphjin/v2/core"
+	"github.com/dosco/graphjin/v2/core/internal/allow"
+	"github.com/dosco/graphjin/v2/plugin/fs"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/sync/errgroup"
 )

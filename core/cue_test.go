@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/dosco/graphjin/core"
-	"github.com/dosco/graphjin/plugin/cue"
+	core "github.com/dosco/graphjin/v2/core"
+	"github.com/dosco/graphjin/v2/plugin/cue"
 )
 
 func TestCueValidationQuerySingleIntVarValue(t *testing.T) {

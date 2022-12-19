@@ -10,8 +10,8 @@ import (
 	"os"
 	"path"
 
-	"github.com/dosco/graphjin/core"
-	"github.com/dosco/graphjin/plugin/js"
+	core "github.com/dosco/graphjin/v2/core"
+	"github.com/dosco/graphjin/v2/plugin/js"
 )
 
 func Example_query() {

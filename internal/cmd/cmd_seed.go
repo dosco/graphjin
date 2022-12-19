@@ -16,7 +16,7 @@ import (
 
 	"github.com/brianvoe/gofakeit/v6"
 	"github.com/dop251/goja"
-	"github.com/dosco/graphjin/core"
+	core "github.com/dosco/graphjin/v2/core"
 	"github.com/gosimple/slug"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"

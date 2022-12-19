@@ -9,7 +9,7 @@
 		"database/sql"
 		"fmt"
 		"time"
-		"github.com/dosco/graphjin/core"
+		"github.com/dosco/graphjin/v2/core"
 		_ "github.com/jackc/pgx/v5/stdlib"
 	)
 
@@ -45,11 +45,11 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/dosco/graphjin/core"
-	"github.com/dosco/graphjin/internal/util"
-	"github.com/dosco/graphjin/plugin"
-	"github.com/dosco/graphjin/plugin/fs"
-	"github.com/dosco/graphjin/plugin/js"
+	core "github.com/dosco/graphjin/v2/core"
+	"github.com/dosco/graphjin/v2/internal/util"
+	plugin "github.com/dosco/graphjin/v2/plugin"
+	"github.com/dosco/graphjin/v2/plugin/fs"
+	"github.com/dosco/graphjin/v2/plugin/js"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -188,13 +188,14 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*service, 
 		return nil, err
 	}
 
+	if err := s.initFS(); err != nil {
+		return nil, err
+	}
+
 	for _, op := range options {
 		if err := op(s); err != nil {
 			return nil, err
 		}
-	}
-	if err := s.initFS(); err != nil {
-		return nil, err
 	}
 
 	initLogLevel(s)

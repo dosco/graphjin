@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/dosco/graphjin/serv"
+	serv "github.com/dosco/graphjin/v2/serv"
 	"github.com/invopop/jsonschema"
 )
 

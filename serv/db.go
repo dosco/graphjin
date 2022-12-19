@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dosco/graphjin/plugin"
+	"github.com/dosco/graphjin/v2/plugin"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 	"go.uber.org/zap"
