@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path"
+	"path/filepath"
 
 	"github.com/dosco/graphjin/v2/core/internal/graph"
 	"github.com/dosco/graphjin/v2/core/internal/qcode"
@@ -45,14 +45,7 @@ func (gj *graphjin) loadScript(qc *qcode.QCode) error {
 }
 
 func (gj *graphjin) readScriptSource(name string) (string, error) {
-	var spath string
-	if gj.conf.ScriptPath != "" {
-		spath = gj.conf.ScriptPath
-	} else {
-		spath = path.Join(gj.conf.ConfigPath, "scripts")
-	}
-
-	src, err := os.ReadFile(path.Join(spath, name))
+	src, err := gj.fs.ReadFile(filepath.Join("scripts", name))
 	if err != nil {
 		return "", err
 	}

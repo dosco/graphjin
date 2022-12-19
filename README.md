@@ -16,7 +16,11 @@ GraphJin gives you an instant secure and fast GraphQL API without code. Just use
 In production all queries are always read from locally saved copies not from what the client sends hence clients cannot modify the query. This makes
 GraphJin very secure as its similiar to building APIs by hand. The idea that GraphQL means that clients can change the query as they wish **does not** apply to GraphJin
 
----
+## Great Documentation
+
+Detailed docs on GraphQL syntax, usecases, Javascript and GO code examples and it's actively updated.
+
+# [https://graphjin.com](https://graphjin.com)
 
 ## Use with NodeJS
 
@@ -132,7 +136,7 @@ You can use GraphJin as a library within your own code. The [serv](https://pkg.g
 
 ```golang
 import (
-  "github.com/dosco/graphjin/serv"
+  "github.com/dosco/graphjin/serv/v2"
 )
 
 gj, err := serv.NewGraphJinService(conf, opt...)
@@ -152,7 +156,7 @@ if err := gj.Start(); err != nil {
 ### Use just the core GraphQL compiler in your own GO app
 
 ```console
-go get github.com/dosco/graphjin/core
+go get github.com/dosco/graphjin/v2
 ```
 
 ```golang
@@ -164,7 +168,7 @@ import (
   "fmt"
   "log"
 
-  "github.com/dosco/graphjin/core"
+  "github.com/dosco/graphjin/core/v2"
   _ "github.com/jackc/pgx/v4/stdlib"
 )
 

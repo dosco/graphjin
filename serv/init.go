@@ -4,7 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 
 	// postgres drivers
@@ -118,7 +118,7 @@ func (s *service) initDB() error {
 func (s *service) basePath() (string, error) {
 	if s.conf.Serv.ConfigPath == "" {
 		if cp, err := os.Getwd(); err == nil {
-			return path.Join(cp, "config"), nil
+			return filepath.Join(cp, "config"), nil
 		} else {
 			return "", err
 		}

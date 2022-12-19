@@ -10,7 +10,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -105,7 +104,7 @@ func buildBundle(confPath string) (string, error) {
 		return "", err
 	}
 
-	seedFile := path.Join(cpath, "seed.js")
+	seedFile := filepath.Join(cpath, "seed.js")
 
 	err = filepath.WalkDir(cpath, func(fp string, de fs.DirEntry, err error) error {
 		if err != nil {

@@ -2,12 +2,17 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/dosco/graphjin/v2/core/internal/qcode"
+	plugin "github.com/dosco/graphjin/v2/plugin"
+	"github.com/dosco/graphjin/v2/plugin/fs"
+	"gopkg.in/yaml.v3"
 )
 
 // Configuration for the GraphJin compiler core
@@ -18,12 +23,6 @@ type Config struct {
 	// When set to true it disables the allow list workflow and all queries are
 	// always compiled even in production (Warning possible security concern)
 	DisableAllowList bool `mapstructure:"disable_allow_list" json:"disable_allow_list" yaml:"disable_allow_list" jsonschema:"title=Disable Allow List,default=false"`
-
-	// The default path to find all configuration files and scripts under
-	ConfigPath string `mapstructure:"config_path" json:"config_path" yaml:"config_path" jsonschema:"title=Config Path,default=./config"`
-
-	// The default path to find all scripts under
-	ScriptPath string `mapstructure:"script_path" json:"script_path" yaml:"script_path" jsonschema:"title=Config Path,default=./config/scripts"`
 
 	// Forces the database session variable 'user.id' to be set to the user id
 	SetUserID bool `mapstructure:"set_user_id" json:"set_user_id" yaml:"set_user_id" jsonschema:"title=Set User ID,default=false"`
@@ -97,6 +96,9 @@ type Config struct {
 
 	// Duration for polling the database to detect schema changes
 	DBSchemaPollDuration time.Duration `mapstructure:"db_schema_poll_duration" json:"db_schema_poll_duration" yaml:"db_schema_poll_duration" jsonschema:"title=Schema Change Detection Polling Duration,default=10s"`
+
+	// The default path to find all configuration files and scripts under
+	configPath string
 
 	rtmap map[string]refunc
 	tmap  map[string]qcode.TConfig
@@ -371,4 +373,67 @@ func (c *Config) SetResolver(name string, fn refunc) error {
 	}
 	c.rtmap[name] = fn
 	return nil
+}
+
+type configInfo struct {
+	Inherits string
+}
+
+func NewConfig(configPath, configFile string) (c *Config, err error) {
+	fs := fs.NewOsFSWithBase(configPath)
+	if c, err = NewConfigWithFS(fs, configFile); err != nil {
+		return
+	}
+	c.configPath = configPath
+	return
+}
+
+func NewConfigWithFS(fs plugin.FS, configFile string) (*Config, error) {
+	var c Config
+	var ci configInfo
+
+	if err := readConfig(fs, configFile, &ci); err != nil {
+		return nil, err
+	}
+
+	if ci.Inherits != "" {
+		pc := ci.Inherits
+
+		if filepath.Ext(pc) == "" {
+			pc += filepath.Ext(configFile)
+		}
+
+		if err := readConfig(fs, pc, &c); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := readConfig(fs, configFile, &c); err != nil {
+		return nil, err
+	}
+
+	return &c, nil
+}
+
+func readConfig(fs plugin.FS, configFile string, v interface{}) (err error) {
+	format := filepath.Ext(configFile)
+
+	b, err := fs.ReadFile(configFile)
+	if err != nil {
+		return fmt.Errorf("error reading config: %w", err)
+	}
+
+	switch format {
+	case ".json":
+		err = json.Unmarshal(b, v)
+	case ".yml", ".yaml":
+		err = yaml.Unmarshal(b, v)
+	default:
+		err = fmt.Errorf("invalid format %s", format)
+	}
+
+	if err != nil {
+		err = fmt.Errorf("error reading config: %w", err)
+	}
+	return
 }

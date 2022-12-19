@@ -8,9 +8,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path"
+	"path/filepath"
 
 	core "github.com/dosco/graphjin/v2/core"
+	"github.com/dosco/graphjin/v2/plugin/fs"
 	"github.com/dosco/graphjin/v2/plugin/js"
 )
 
@@ -1158,13 +1159,18 @@ func Example_queryWithScriptDirective() {
 	}
 	defer os.RemoveAll(dir)
 
-	err = os.WriteFile(path.Join(dir, "test.js"), []byte(script), 0600)
+	fs := fs.NewOsFSWithBase(dir)
+	if err := fs.CreateDir("scripts"); err != nil {
+		panic(err)
+	}
+	err = fs.CreateFile(filepath.Join("scripts", "test.js"), []byte(script))
 	if err != nil {
 		panic(err)
 	}
 
-	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, ScriptPath: dir})
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db,
+		core.OptionSetFS(fs),
 		core.OptionSetScriptCompiler([]string{".js"}, js.New()))
 	if err != nil {
 		panic(err)
@@ -1201,13 +1207,18 @@ func Example_queryWithScriptDirectiveUsingGraphQL() {
 	}
 	defer os.RemoveAll(dir)
 
-	err = os.WriteFile(path.Join(dir, "test.js"), []byte(script), 0600)
+	fs := fs.NewOsFSWithBase(dir)
+	if err := fs.CreateDir("scripts"); err != nil {
+		panic(err)
+	}
+	err = fs.CreateFile(filepath.Join("scripts", "test.js"), []byte(script))
 	if err != nil {
 		panic(err)
 	}
 
-	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, ScriptPath: dir})
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db,
+		core.OptionSetFS(fs),
 		core.OptionSetScriptCompiler([]string{".js"}, js.New()))
 	if err != nil {
 		panic(err)
@@ -1249,13 +1260,18 @@ func Example_queryWithScriptDirectiveUsingHttp() {
 	}
 	defer os.RemoveAll(dir)
 
-	err = os.WriteFile(path.Join(dir, "test.js"), []byte(script), 0600)
+	fs := fs.NewOsFSWithBase(dir)
+	if err := fs.CreateDir("scripts"); err != nil {
+		panic(err)
+	}
+	err = fs.CreateFile(filepath.Join("scripts", "test.js"), []byte(script))
 	if err != nil {
 		panic(err)
 	}
 
-	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, ScriptPath: dir})
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db,
+		core.OptionSetFS(fs),
 		core.OptionSetScriptCompiler([]string{".js"}, js.New()))
 	if err != nil {
 		panic(err)

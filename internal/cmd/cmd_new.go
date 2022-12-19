@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"text/template"
 
@@ -89,7 +90,7 @@ func cmdNew(cmd *cobra.Command, args []string) {
 	// Create app folder and add relevant files
 
 	name := args[0]
-	appPath := path.Join("./", name)
+	appPath := filepath.Join("./", name)
 
 	ifNotExists(appPath, func(p string) error {
 		return os.Mkdir(p, os.ModePerm)
@@ -115,7 +116,7 @@ func cmdNew(cmd *cobra.Command, args []string) {
 
 	// Create app config folder and add relevant files
 
-	appConfigPath := path.Join(appPath, "config")
+	appConfigPath := filepath.Join(appPath, "config")
 
 	ifNotExists(appConfigPath, func(p string) error {
 		return os.Mkdir(p, os.ModePerm)
@@ -147,7 +148,7 @@ func cmdNew(cmd *cobra.Command, args []string) {
 
 	// Create app migrations folder and add relevant files
 
-	appMigrationsPath := path.Join(appConfigPath, "migrations")
+	appMigrationsPath := filepath.Join(appConfigPath, "migrations")
 
 	ifNotExists(appMigrationsPath, func(p string) error {
 		return os.Mkdir(p, os.ModePerm)
@@ -163,7 +164,7 @@ func cmdNew(cmd *cobra.Command, args []string) {
 
 	// Create folder to hold scripts
 
-	scriptsPath := path.Join(appConfigPath, "scripts")
+	scriptsPath := filepath.Join(appConfigPath, "scripts")
 
 	ifNotExists(scriptsPath, func(p string) error {
 		return os.Mkdir(p, os.ModePerm)
@@ -171,7 +172,7 @@ func cmdNew(cmd *cobra.Command, args []string) {
 
 	// Create queries folder and add a sample query
 
-	appQueriesPath := path.Join(appConfigPath, "queries")
+	appQueriesPath := filepath.Join(appConfigPath, "queries")
 
 	ifNotExists(appQueriesPath, func(p string) error {
 		return os.Mkdir(p, os.ModePerm)
