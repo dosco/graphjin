@@ -6,9 +6,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/dosco/graphjin/core/internal/psql"
-	"github.com/dosco/graphjin/core/internal/qcode"
-	"github.com/dosco/graphjin/core/internal/sdata"
+	"github.com/dosco/graphjin/v2/core/internal/psql"
+	"github.com/dosco/graphjin/v2/core/internal/qcode"
+	"github.com/dosco/graphjin/v2/core/internal/sdata"
 )
 
 var (

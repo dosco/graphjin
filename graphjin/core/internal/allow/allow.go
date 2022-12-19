@@ -14,9 +14,9 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/chirino/graphql/schema"
-	"github.com/dosco/graphjin/core/internal/graph"
-	"github.com/dosco/graphjin/internal/jsn"
-	"github.com/dosco/graphjin/plugin"
+	"github.com/dosco/graphjin/v2/core/internal/graph"
+	"github.com/dosco/graphjin/v2/internal/jsn"
+	"github.com/dosco/graphjin/v2/plugin"
 	lru "github.com/hashicorp/golang-lru"
 )
 

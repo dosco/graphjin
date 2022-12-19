@@ -7,26 +7,19 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/dosco/graphjin/core/internal/qcode"
-	"github.com/dosco/graphjin/core/internal/sdata"
-	"github.com/dosco/graphjin/plugin/fs"
+	"github.com/dosco/graphjin/v2/core/internal/qcode"
+	"github.com/dosco/graphjin/v2/core/internal/sdata"
+	"github.com/dosco/graphjin/v2/plugin/fs"
 	"github.com/gobuffalo/flect"
 )
 
 func (gj *graphjin) initFS() error {
-	if gj.fs != nil {
-		return nil
-	}
-
 	basePath, err := gj.basePath()
 	if err != nil {
 		return err
 	}
 
-	err = OptionSetFS(fs.NewOsFSWithBase(basePath))(gj)
-	if err != nil {
-		return err
-	}
+	gj.fs = fs.NewOsFSWithBase(basePath)
 	return nil
 }
 

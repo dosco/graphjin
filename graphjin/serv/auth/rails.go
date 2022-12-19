@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/bradfitz/gomemcache/memcache"
-	"github.com/dosco/graphjin/core"
-	"github.com/dosco/graphjin/serv/internal/rails"
+	"github.com/dosco/graphjin/v2/core"
+	"github.com/dosco/graphjin/v2/serv/internal/rails"
 	"github.com/gomodule/redigo/redis"
 )
 

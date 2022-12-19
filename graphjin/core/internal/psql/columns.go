@@ -1,8 +1,8 @@
 package psql
 
 import (
-	"github.com/dosco/graphjin/core/internal/qcode"
-	"github.com/dosco/graphjin/core/internal/sdata"
+	"github.com/dosco/graphjin/v2/core/internal/qcode"
+	"github.com/dosco/graphjin/v2/core/internal/sdata"
 )
 
 func (c *compilerContext) renderColumns(sel *qcode.Select) {

@@ -9,7 +9,7 @@
 		"database/sql"
 		"fmt"
 		"time"
-		"github.com/dosco/graphjin/core"
+		"github.com/dosco/graphjin/v2/core"
 		_ "github.com/jackc/pgx/v5/stdlib"
 	)
 
@@ -56,13 +56,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/dosco/graphjin/core/internal/allow"
-	"github.com/dosco/graphjin/core/internal/graph"
-	"github.com/dosco/graphjin/core/internal/psql"
-	"github.com/dosco/graphjin/core/internal/qcode"
-	"github.com/dosco/graphjin/core/internal/sdata"
-	"github.com/dosco/graphjin/plugin"
-	"github.com/dosco/graphjin/plugin/fs"
+	"github.com/dosco/graphjin/v2/core/internal/allow"
+	"github.com/dosco/graphjin/v2/core/internal/graph"
+	"github.com/dosco/graphjin/v2/core/internal/psql"
+	"github.com/dosco/graphjin/v2/core/internal/qcode"
+	"github.com/dosco/graphjin/v2/core/internal/sdata"
+	plugin "github.com/dosco/graphjin/v2/plugin"
+	"github.com/dosco/graphjin/v2/plugin/fs"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -173,14 +173,14 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo, options ...Opti
 		return nil, err
 	}
 
+	if err := gj.initFS(); err != nil {
+		return nil, err
+	}
+
 	for _, op := range options {
 		if err := op(gj); err != nil {
 			return nil, err
 		}
-	}
-
-	if err := gj.initFS(); err != nil {
-		return nil, err
 	}
 
 	if err := gj.initDiscover(); err != nil {

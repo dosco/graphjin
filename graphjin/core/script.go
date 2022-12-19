@@ -8,8 +8,8 @@ import (
 	"os"
 	"path"
 
-	"github.com/dosco/graphjin/core/internal/graph"
-	"github.com/dosco/graphjin/core/internal/qcode"
+	"github.com/dosco/graphjin/v2/core/internal/graph"
+	"github.com/dosco/graphjin/v2/core/internal/qcode"
 )
 
 func (gj *graphjin) loadScript(qc *qcode.QCode) error {
@@ -32,6 +32,7 @@ func (gj *graphjin) loadScript(qc *qcode.QCode) error {
 		if err != nil {
 			return err
 		}
+		qc.Script.Exists = true
 
 		return nil
 	}

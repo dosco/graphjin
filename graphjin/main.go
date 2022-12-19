@@ -34,7 +34,7 @@ Use "graphjin [command] --help" for more information about a command.
 package main
 
 import (
-	"github.com/dosco/graphjin/internal/cmd"
+	"github.com/dosco/graphjin/v2/internal/cmd"
 )
 
 func main() {

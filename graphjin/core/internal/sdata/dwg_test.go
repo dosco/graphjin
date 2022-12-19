@@ -3,7 +3,7 @@ package sdata_test
 import (
 	"testing"
 
-	"github.com/dosco/graphjin/core/internal/sdata"
+	"github.com/dosco/graphjin/v2/core/internal/sdata"
 	"github.com/stretchr/testify/assert"
 )
 

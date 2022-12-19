@@ -3,7 +3,7 @@ package fs
 import (
 	"os"
 
-	"github.com/dosco/graphjin/plugin"
+	"github.com/dosco/graphjin/v2/plugin"
 	"github.com/spf13/afero"
 )
 

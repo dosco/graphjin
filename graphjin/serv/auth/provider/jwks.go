@@ -7,10 +7,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dosco/graphjin/v2/core"
 	jwt "github.com/golang-jwt/jwt"
 	"github.com/lestrrat-go/jwx/jwk"
-
-	"github.com/dosco/graphjin/core"
 )
 
 type keychainCache struct {

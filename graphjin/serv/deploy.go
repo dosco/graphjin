@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dosco/graphjin/plugin/fs"
+	"github.com/dosco/graphjin/v2/plugin/fs"
 	"github.com/spf13/afero"
 	"github.com/spf13/afero/zipfs"
 )

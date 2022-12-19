@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/dosco/graphjin/core/internal/psql"
-	"github.com/dosco/graphjin/internal/jsn"
+	"github.com/dosco/graphjin/v2/core/internal/psql"
+	"github.com/dosco/graphjin/v2/internal/jsn"
 )
 
 // argList function is used to create a list of arguments to pass

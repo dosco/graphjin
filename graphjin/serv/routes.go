@@ -4,8 +4,8 @@ import (
 	"io/fs"
 	"net/http"
 
-	"github.com/dosco/graphjin/internal/common"
-	"github.com/dosco/graphjin/serv/auth"
+	"github.com/dosco/graphjin/v2/internal/common"
+	"github.com/dosco/graphjin/v2/serv/auth"
 	"github.com/klauspost/compress/gzhttp"
 )
 

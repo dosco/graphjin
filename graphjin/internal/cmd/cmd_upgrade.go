@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/dosco/graphjin/core"
+	core "github.com/dosco/graphjin/v2/core"
 	"github.com/spf13/cobra"
 )
 

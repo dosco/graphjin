@@ -8,7 +8,7 @@ import (
 	"strings"
 	"syscall/js"
 
-	"github.com/dosco/graphjin/plugin"
+	plugin "github.com/dosco/graphjin/v2/plugin"
 )
 
 type JSFS struct {

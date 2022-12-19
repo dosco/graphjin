@@ -9,7 +9,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/dosco/graphjin/core"
+	"github.com/dosco/graphjin/v2/core"
 	"github.com/stretchr/testify/assert"
 )
 

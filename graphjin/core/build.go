@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/dosco/graphjin/core/internal/psql"
-	"github.com/dosco/graphjin/core/internal/qcode"
+	"github.com/dosco/graphjin/v2/core/internal/psql"
+	"github.com/dosco/graphjin/v2/core/internal/qcode"
 	"github.com/go-playground/validator/v10"
 )
 
@@ -118,6 +118,7 @@ func (gj *graphjin) compileQueryForRole(
 			return st, err
 		}
 		st.qc.Validation.VE = ve
+		st.qc.Validation.Exists = true
 	}
 
 	if st.qc.Script.Name != "" {

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dosco/graphjin/core/internal/graph"
-	"github.com/dosco/graphjin/core/internal/sdata"
+	"github.com/dosco/graphjin/v2/core/internal/graph"
+	"github.com/dosco/graphjin/v2/core/internal/sdata"
 )
 
 func (co *Compiler) isFunction(sel *Select, f graph.Field) (

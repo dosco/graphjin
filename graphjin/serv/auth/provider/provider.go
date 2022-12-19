@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/dosco/graphjin/plugin"
-	"github.com/dosco/graphjin/plugin/fs"
+	plugin "github.com/dosco/graphjin/v2/plugin"
+	"github.com/dosco/graphjin/v2/plugin/fs"
 	jwt "github.com/golang-jwt/jwt"
 )
 

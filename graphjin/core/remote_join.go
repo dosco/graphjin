@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/dosco/graphjin/core/internal/qcode"
-	"github.com/dosco/graphjin/internal/jsn"
+	"github.com/dosco/graphjin/v2/core/internal/qcode"
+	"github.com/dosco/graphjin/v2/internal/jsn"
 )
 
 func (c *gcontext) execRemoteJoin(ctx context.Context, res queryResp) (queryResp, error) {

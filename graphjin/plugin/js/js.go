@@ -11,7 +11,7 @@ import (
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja/parser"
-	"github.com/dosco/graphjin/plugin"
+	plugin "github.com/dosco/graphjin/v2/plugin"
 	babel "github.com/jvatic/goja-babel"
 )
 

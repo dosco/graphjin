@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dosco/graphjin/core"
-	"github.com/dosco/graphjin/serv/auth"
-	"github.com/dosco/graphjin/serv/internal/etags"
+	core "github.com/dosco/graphjin/v2/core"
+	"github.com/dosco/graphjin/v2/serv/auth"
+	"github.com/dosco/graphjin/v2/serv/internal/etags"
 	"github.com/gorilla/websocket"
 	"github.com/rs/cors"
 

@@ -5,8 +5,8 @@ import (
 	"math/rand"
 
 	"github.com/brianvoe/gofakeit/v6"
-	"github.com/dosco/graphjin/internal/client"
-	"github.com/dosco/graphjin/serv"
+	"github.com/dosco/graphjin/v2/internal/client"
+	serv "github.com/dosco/graphjin/v2/serv"
 	"github.com/gosimple/slug"
 	"github.com/spf13/cobra"
 )
