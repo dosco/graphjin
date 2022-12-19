@@ -454,5 +454,22 @@ func (c *Config) rateLimiterEnable() bool {
 }
 
 func GetConfigName() string {
-	return core.GetConfigName()
+	ge := strings.TrimSpace(strings.ToLower(os.Getenv("GO_ENV")))
+
+	switch ge {
+	case "production", "prod":
+		return "prod"
+
+	case "staging", "stage":
+		return "stage"
+
+	case "testing", "test":
+		return "test"
+
+	case "development", "dev", "":
+		return "dev"
+
+	default:
+		return ge
+	}
 }

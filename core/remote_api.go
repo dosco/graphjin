@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/dosco/graphjin/internal/jsn"
-	"github.com/mitchellh/mapstructure"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
@@ -18,19 +17,35 @@ type remoteAPI struct {
 	URL   string
 	Debug bool
 
-	PassHeaders []string `mapstructure:"pass_headers"`
-	SetHeaders  []struct {
-		Name  string
-		Value string
-	} `mapstructure:"set_headers"`
+	PassHeaders []string
+	SetHeaders  []remoteHdrs
+}
+
+type remoteHdrs struct {
+	Name  string
+	Value string
 }
 
 func newRemoteAPI(v map[string]interface{}) (*remoteAPI, error) {
-	ra := &remoteAPI{}
-	if err := mapstructure.Decode(v, ra); err != nil {
-		return nil, err
+	var ra remoteAPI
+
+	if v, ok := v["url"].(string); ok {
+		ra.URL = v
 	}
-	return ra, nil
+	if v, ok := v["debug"].(bool); ok {
+		ra.Debug = v
+	}
+	if v, ok := v["pass_headers"].([]string); ok {
+		ra.PassHeaders = v
+	}
+	if v, ok := v["set_headers"].(map[string]string); ok {
+		for k, v1 := range v {
+			rh := remoteHdrs{Name: k, Value: v1}
+			ra.SetHeaders = append(ra.SetHeaders, rh)
+		}
+	}
+
+	return &ra, nil
 }
 
 func (r *remoteAPI) Resolve(c context.Context, rr ResolverReq) ([]byte, error) {

@@ -3,10 +3,10 @@ package sdata
 import (
 	"database/sql"
 	"fmt"
+	"hash/fnv"
 	"regexp"
 	"strings"
 
-	"github.com/mitchellh/hashstructure/v2"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -16,25 +16,25 @@ type DBInfo struct {
 	Schema  string
 	Name    string
 
-	Tables    []DBTable      `hash:"set"`
-	Functions []DBFunction   `hash:"set"`
-	VTables   []VirtualTable `hash:"set"`
-	colMap    map[string]int `hash:"-"`
-	tableMap  map[string]int `hash:"-"`
-	hash      uint64         `hash:"-"`
+	Tables    []DBTable
+	Functions []DBFunction
+	VTables   []VirtualTable
+	colMap    map[string]int
+	tableMap  map[string]int
+	hash      int
 }
 
 type DBTable struct {
 	Schema       string
 	Name         string
 	Type         string
-	Columns      []DBColumn `hash:"set"`
+	Columns      []DBColumn
 	PrimaryCol   DBColumn
 	SecondaryCol DBColumn
-	FullText     []DBColumn `hash:"set"`
+	FullText     []DBColumn
 	Blocked      bool
 	Func         DBFunction
-	colMap       map[string]int `hash:"-"`
+	colMap       map[string]int
 }
 
 type VirtualTable struct {
@@ -57,7 +57,6 @@ func GetDBInfo(
 	var dbSchema, dbName string
 	var cols []DBColumn
 	var funcs []DBFunction
-	var err error
 
 	g := errgroup.Group{}
 
@@ -93,6 +92,18 @@ func GetDBInfo(
 		return nil, err
 	}
 
+	h := fnv.New128()
+	hv := fmt.Sprintf("%s%d%s%s", dbType, dbVersion, dbSchema, dbName)
+	h.Write([]byte(hv))
+
+	for _, c := range cols {
+		h.Write([]byte(c.String()))
+	}
+
+	for _, fn := range funcs {
+		h.Write([]byte(fn.String()))
+	}
+
 	di := NewDBInfo(
 		dbType,
 		dbVersion,
@@ -102,10 +113,7 @@ func GetDBInfo(
 		funcs,
 		blockList)
 
-	di.hash, err = hashstructure.Hash(di, hashstructure.FormatV2, nil)
-	if err != nil {
-		return nil, err
-	}
+	di.hash = h.Size()
 
 	return di, nil
 }
@@ -401,7 +409,7 @@ func (fn *DBFunction) GetInput(name string) (ret DBFuncParam, err error) {
 	return ret, fmt.Errorf("function input '%s' not found", name)
 }
 
-func (di *DBInfo) Hash() uint64 {
+func (di *DBInfo) Hash() int {
 	return di.hash
 }
 

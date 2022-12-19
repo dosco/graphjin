@@ -2,8 +2,6 @@ package graph
 
 import (
 	"testing"
-
-	"github.com/chirino/graphql/schema"
 )
 
 var gql = []byte(`
@@ -87,32 +85,4 @@ func BenchmarkParseFragment(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
-}
-
-func BenchmarkSchemaParse(b *testing.B) {
-
-	b.ResetTimer()
-	b.ReportAllocs()
-	for n := 0; n < b.N; n++ {
-		doc := schema.QueryDocument{}
-		err := doc.Parse(string(gql))
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkSchemaParseP(b *testing.B) {
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			doc := schema.QueryDocument{}
-			err := doc.Parse(string(gql))
-			if err != nil {
-				b.Fatal(err)
-			}
-		}
-	})
 }
