@@ -35,9 +35,6 @@ brew install dosco/graphjin/graphjin
 
 # Ubuntu (Snap)
 sudo snap install --classic graphjin
-
-#Go Install
-go get github.com/dosco/graphjin
 ```
 
 Debian and Redhat ([releases](https://github.com/dosco/graphjin/releases)) download the .deb or .rpm from the releases page and install with dpkg -i and rpm -i respectively.

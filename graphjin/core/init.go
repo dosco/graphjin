@@ -2,26 +2,13 @@ package core
 
 import (
 	"fmt"
-	"os"
-	"path"
 	"strings"
 	"unicode"
 
 	"github.com/dosco/graphjin/v2/core/internal/qcode"
 	"github.com/dosco/graphjin/v2/core/internal/sdata"
-	"github.com/dosco/graphjin/v2/plugin/fs"
 	"github.com/gobuffalo/flect"
 )
-
-func (gj *graphjin) initFS() error {
-	basePath, err := gj.basePath()
-	if err != nil {
-		return err
-	}
-
-	gj.fs = fs.NewOsFSWithBase(basePath)
-	return nil
-}
 
 func (gj *graphjin) initConfig() error {
 	c := gj.conf
@@ -100,17 +87,6 @@ func (gj *graphjin) initConfig() error {
 	}
 
 	return nil
-}
-
-func (gj *graphjin) basePath() (string, error) {
-	if gj.conf.ConfigPath == "" {
-		if cp, err := os.Getwd(); err == nil {
-			return path.Join(cp, "config"), nil
-		} else {
-			return "", err
-		}
-	}
-	return gj.conf.ConfigPath, nil
 }
 
 func initInflection(c *Config) error {

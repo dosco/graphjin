@@ -10,7 +10,7 @@ import (
 	"io"
 	"math/rand"
 	"os"
-	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -38,7 +38,7 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 	conf.DBSchemaPollDuration = -1
 
 	conf.Core.Blocklist = nil
-	seed := path.Join(cpath, "seed.js")
+	seed := filepath.Join(cpath, "seed.js")
 
 	log.Infof("Seed script started (please wait)")
 
@@ -290,7 +290,7 @@ func importCSV(table, filename string, sep string, db *sql.DB) int64 {
 	log.Infof("Seeding table: %s, From file: %s", table, filename)
 
 	if filename[0] != '/' && filename[0] != '.' {
-		filename = path.Join(cpath, filename)
+		filename = filepath.Join(cpath, filename)
 	}
 
 	var sepRune rune

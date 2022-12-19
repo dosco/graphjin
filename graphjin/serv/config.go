@@ -329,7 +329,6 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 
 	c := &Config{vi: vi}
 	c.Serv.ConfigPath = cp
-	c.Core.ConfigPath = cp
 
 	if err := vi.Unmarshal(&c); err != nil {
 		return nil, fmt.Errorf("failed to decode config, %v", err)

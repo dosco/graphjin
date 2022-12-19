@@ -8,7 +8,6 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"fmt"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -270,7 +269,7 @@ func startHotDeployWatcher(s1 *Service) error {
 		s := s1.Load().(*service)
 
 		cf := s.conf.vi.ConfigFileUsed()
-		cf = path.Join("/", filepath.Base(strings.TrimSuffix(cf, filepath.Ext(cf))))
+		cf = filepath.Join("/", filepath.Base(strings.TrimSuffix(cf, filepath.Ext(cf))))
 
 		var id int
 		var hash string

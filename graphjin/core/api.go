@@ -52,6 +52,7 @@ import (
 	"fmt"
 	_log "log"
 	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -128,13 +129,34 @@ var (
 
 // NewGraphJin creates the GraphJin struct, this involves querying the database to learn its
 // schemas and relationships
-func NewGraphJin(conf *Config, db *sql.DB, options ...Option) (*GraphJin, error) {
-	gj, err := newGraphJin(conf, db, nil, options...)
+func NewGraphJin(conf *Config, db *sql.DB, options ...Option) (g *GraphJin, err error) {
+	bp, err := basePath(conf)
+	if err != nil {
+		return nil, err
+	}
+	fs := fs.NewOsFSWithBase(bp)
+
+	gj, err := newGraphJin(conf, db, nil, fs, options...)
 	if err != nil {
 		return nil, err
 	}
 
-	g := &GraphJin{}
+	g = &GraphJin{}
+	g.Store(gj)
+
+	if err := g.initDBWatcher(); err != nil {
+		return nil, err
+	}
+	return g, nil
+}
+
+func NewGraphJinWithFS(conf *Config, db *sql.DB, fs plugin.FS, options ...Option) (g *GraphJin, err error) {
+	gj, err := newGraphJin(conf, db, nil, fs, options...)
+	if err != nil {
+		return nil, err
+	}
+
+	g = &GraphJin{}
 	g.Store(gj)
 
 	if err := g.initDBWatcher(); err != nil {
@@ -144,7 +166,12 @@ func NewGraphJin(conf *Config, db *sql.DB, options ...Option) (*GraphJin, error)
 }
 
 // newGraphJin helps with writing tests and benchmarks
-func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo, options ...Option) (*graphjin, error) {
+func newGraphJin(conf *Config,
+	db *sql.DB,
+	dbinfo *sdata.DBInfo,
+	fs plugin.FS,
+	options ...Option) (*graphjin, error) {
+
 	if conf == nil {
 		conf = &Config{Debug: true, DisableAllowList: true}
 	}
@@ -161,6 +188,7 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo, options ...Opti
 		pf:        []byte(fmt.Sprintf("gj/%x:", t.Unix())),
 		opts:      options,
 		scriptMap: make(map[string]plugin.ScriptCompiler),
+		fs:        fs,
 	}
 
 	// ordering of these initializer matter, do not re-order!
@@ -170,10 +198,6 @@ func newGraphJin(conf *Config, db *sql.DB, dbinfo *sdata.DBInfo, options ...Opti
 	}
 
 	if err := gj.initConfig(); err != nil {
-		return nil, err
-	}
-
-	if err := gj.initFS(); err != nil {
 		return nil, err
 	}
 
@@ -481,7 +505,7 @@ func (gj *graphjin) graphQLWithOpName(
 // Reload redoes database discover and reinitializes GraphJin.
 func (g *GraphJin) Reload() error {
 	gj := g.Load().(*graphjin)
-	gjNew, err := newGraphJin(gj.conf, gj.db, nil, gj.opts...)
+	gjNew, err := newGraphJin(gj.conf, gj.db, nil, gj.fs, gj.opts...)
 	if err == nil {
 		g.Store(gjNew)
 	}
@@ -516,4 +540,15 @@ func Operation(query string) (h Header, err error) {
 		h.Name = v.Name
 	}
 	return
+}
+
+func basePath(conf *Config) (string, error) {
+	if conf.configPath != "" {
+		return conf.configPath, nil
+	}
+	v, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(v, "config"), nil
 }

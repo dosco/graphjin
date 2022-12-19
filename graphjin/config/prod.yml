@@ -1,0 +1,21 @@
+# Inherit config from this other config file
+# so I only need to overwrite some values
+inherits: dev
+
+# When production mode is 'true' only queries from the queries
+# folder can be used.
+production: true
+
+# Secret key for general encryption operations like
+# encrypting the cursor data
+secret_key: supercalifajalistics
+
+# Subscriptions poll the database to query for updates
+# this sets the duration (in seconds) between requests.
+# Defaults to 5 seconds
+subs_poll_every_seconds: 5
+
+# Default limit value to be used on queries and as the max
+# limit on all queries where a limit is defined as a query variable.
+# Defaults to 20
+default_limit: 20

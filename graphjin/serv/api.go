@@ -40,7 +40,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -248,7 +247,7 @@ func (s *service) hotStart() error {
 
 	cf := s.conf.vi.ConfigFileUsed()
 	cf = filepath.Base(strings.TrimSuffix(cf, filepath.Ext(cf)))
-	cf = path.Join("/", cf)
+	cf = filepath.Join("/", cf)
 
 	bfs, err := bundle2Fs(ab.name, ab.hash, cf, ab.bundle)
 	if err != nil {

@@ -29,11 +29,11 @@ func TestReadInConfigWithEnvVars(t *testing.T) {
 	fs.CreateFile("dev.yml", []byte(devConfig))
 	fs.CreateFile("prod.yml", []byte(prodConfig))
 
-	c, err := core.NewConfig(fs, "dev.yml")
+	c, err := core.NewConfigWithFS(fs, "dev.yml")
 	assert.NoError(t, err)
 	assert.Equal(t, "dev_secret_key", c.SecretKey)
 
-	c, err = core.NewConfig(fs, "prod.yml")
+	c, err = core.NewConfigWithFS(fs, "prod.yml")
 	assert.NoError(t, err)
 	assert.Equal(t, "prod_secret_key", c.SecretKey)
 

@@ -95,7 +95,7 @@ func newGraphJin(
 	var config *core.Config
 
 	if confIsFile {
-		if config, err = core.NewConfig(fs, conf); err != nil {
+		if config, err = core.NewConfigWithFS(fs, conf); err != nil {
 			return nil, err
 		}
 	} else {
@@ -106,5 +106,5 @@ func newGraphJin(
 		config = &c
 	}
 
-	return core.NewGraphJin(config, db, core.OptionSetFS(fs))
+	return core.NewGraphJinWithFS(config, db, fs)
 }
