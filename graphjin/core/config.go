@@ -4,46 +4,41 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/dosco/graphjin/core/internal/qcode"
-	"github.com/dosco/graphjin/internal/util"
-	"github.com/spf13/afero"
-	"github.com/spf13/viper"
 )
 
 // Configuration for the GraphJin compiler core
 type Config struct {
 	// Is used to encrypt opaque values such as the cursor. Auto-generated when not set
-	SecretKey string `mapstructure:"secret_key" jsonschema:"title=Secret Key"`
+	SecretKey string `mapstructure:"secret_key" json:"secret_key" yaml:"secret_key"  jsonschema:"title=Secret Key"`
 
 	// When set to true it disables the allow list workflow and all queries are
 	// always compiled even in production (Warning possible security concern)
-	DisableAllowList bool `mapstructure:"disable_allow_list" jsonschema:"title=Disable Allow List,default=false"`
+	DisableAllowList bool `mapstructure:"disable_allow_list" json:"disable_allow_list" yaml:"disable_allow_list" jsonschema:"title=Disable Allow List,default=false"`
 
 	// The default path to find all configuration files and scripts under
-	ConfigPath string `mapstructure:"config_path" jsonschema:"title=Config Path,default=./config"`
+	ConfigPath string `mapstructure:"config_path" json:"config_path" yaml:"config_path" jsonschema:"title=Config Path,default=./config"`
 
 	// The default path to find all scripts under
-	ScriptPath string `mapstructure:"script_path" jsonschema:"title=Config Path,default=./config/scripts"`
+	ScriptPath string `mapstructure:"script_path" json:"script_path" yaml:"script_path" jsonschema:"title=Config Path,default=./config/scripts"`
 
 	// Forces the database session variable 'user.id' to be set to the user id
-	SetUserID bool `mapstructure:"set_user_id" jsonschema:"title=Set User ID,default=false"`
+	SetUserID bool `mapstructure:"set_user_id" json:"set_user_id" yaml:"set_user_id" jsonschema:"title=Set User ID,default=false"`
 
 	// This ensures that for anonymous users (role 'anon') all tables are blocked
 	// from queries and mutations. To open access to tables for anonymous users
 	// they have to be added to the 'anon' role config
-	DefaultBlock bool `mapstructure:"default_block" jsonschema:"title=Block tables for anonymous users,default=true"`
+	DefaultBlock bool `mapstructure:"default_block" json:"default_block" yaml:"default_block" jsonschema:"title=Block tables for anonymous users,default=true"`
 
 	// This is a list of variables that can be leveraged in your queries.
 	// (eg. variable admin_id will be $admin_id in the query)
-	Vars map[string]string `mapstructure:"variables" jsonschema:"title=Variables"`
+	Vars map[string]string `mapstructure:"variables" json:"variables" yaml:"variables" jsonschema:"title=Variables"`
 
 	// This is a list of variables that map to http header values
-	HeaderVars map[string]string `mapstructure:"header_variables" jsonschema:"title=Header Variables"`
+	HeaderVars map[string]string `mapstructure:"header_variables" json:"header_variables" yaml:"header_variables" jsonschema:"title=Header Variables"`
 
 	// A list of tables and columns that should disallowed in any and all queries
 	Blocklist []string `jsonschema:"title=Block List"`
@@ -58,7 +53,7 @@ type Config struct {
 
 	// An SQL query if set enables attribute based access control. This query is
 	// used to fetch the user attribute that then dynamically define the users role
-	RolesQuery string `mapstructure:"roles_query" jsonschema:"title=Roles Query"`
+	RolesQuery string `mapstructure:"roles_query" json:"roles_query" yaml:"roles_query" jsonschema:"title=Roles Query"`
 
 	// Roles contains the configuration for all the roles you want to support 'user' and
 	// 'anon' are two default roles. The 'user' role is used when a user ID is available
@@ -67,41 +62,41 @@ type Config struct {
 
 	// Inflections is to add additionally singular to plural mappings
 	// to the engine (eg. sheep: sheep)
-	Inflections []string `mapstructure:"inflections" jsonschema:"-"`
+	Inflections []string `mapstructure:"inflections" json:"inflections" yaml:"inflections" jsonschema:"-"`
 
 	// Disable inflections. Inflections are deprecated and will be
 	// removed in next major version
-	EnableInflection bool `mapstructure:"enable_inflection" jsonschema:"-"`
+	EnableInflection bool `mapstructure:"enable_inflection" json:"enable_inflection" yaml:"enable_inflection" jsonschema:"-"`
 
 	// Database type name Defaults to 'postgres' (options: mysql, postgres)
-	DBType string `mapstructure:"db_type" jsonschema:"title=Database Type,enum=postgres,enum=mysql"`
+	DBType string `mapstructure:"db_type" json:"db_type" yaml:"db_type" jsonschema:"title=Database Type,enum=postgres,enum=mysql"`
 
 	// Log warnings and other debug information
 	Debug bool `jsonschema:"title=Debug,default=false"`
 
 	// Database polling duration (in seconds) used by subscriptions to
 	// query for updates.
-	SubsPollDuration time.Duration `mapstructure:"subs_poll_duration" jsonschema:"title=Subscription Polling Duration,default=5s"`
+	SubsPollDuration time.Duration `mapstructure:"subs_poll_duration" json:"subs_poll_duration" yaml:"subs_poll_duration" jsonschema:"title=Subscription Polling Duration,default=5s"`
 
 	// The default max limit (number of rows) when a limit is not defined in
 	// the query or the table role config.
-	DefaultLimit int `mapstructure:"default_limit" jsonschema:"title=Default Row Limit,default=20"`
+	DefaultLimit int `mapstructure:"default_limit" json:"default_limit" yaml:"default_limit" jsonschema:"title=Default Row Limit,default=20"`
 
 	// Disable all aggregation functions like count, sum, etc
-	DisableAgg bool `mapstructure:"disable_agg_functions" jsonschema:"title=Disable Aggregations,default=false"`
+	DisableAgg bool `mapstructure:"disable_agg_functions" json:"disable_agg_functions" yaml:"disable_agg_functions" jsonschema:"title=Disable Aggregations,default=false"`
 
 	// Disable all functions like count, length,  etc
-	DisableFuncs bool `mapstructure:"disable_functions" jsonschema:"title=Disable Functions,default=false"`
+	DisableFuncs bool `mapstructure:"disable_functions" json:"disable_functions" yaml:"disable_functions" jsonschema:"title=Disable Functions,default=false"`
 
 	// Enable automatic coversion of camel case in GraphQL to snake case in SQL
-	EnableCamelcase bool `mapstructure:"enable_camelcase" jsonschema:"title=Enable Camel Case,default=false"`
+	EnableCamelcase bool `mapstructure:"enable_camelcase" json:"enable_camelcase" yaml:"enable_camelcase" jsonschema:"title=Enable Camel Case,default=false"`
 
 	// When enabled GraphJin runs with production level security defaults.
 	// For example allow lists are enforced.
 	Production bool `jsonschema:"title=Production Mode,default=false"`
 
 	// Duration for polling the database to detect schema changes
-	DBSchemaPollDuration time.Duration `mapstructure:"db_schema_poll_duration" jsonschema:"title=Schema Change Detection Polling Duration,default=10s"`
+	DBSchemaPollDuration time.Duration `mapstructure:"db_schema_poll_duration" json:"db_schema_poll_duration" yaml:"db_schema_poll_duration" jsonschema:"title=Schema Change Detection Polling Duration,default=10s"`
 
 	rtmap map[string]refunc
 	tmap  map[string]qcode.TConfig
@@ -116,7 +111,7 @@ type Table struct {
 	Blocklist []string
 	Columns   []Column
 	// Permitted order by options
-	OrderBy map[string][]string `mapstructure:"order_by" jsonschema:"title=Order By Options,example=created_at desc"`
+	OrderBy map[string][]string `mapstructure:"order_by" json:"order_by" yaml:"order_by" jsonschema:"title=Order By Options,example=created_at desc"`
 }
 
 // Configuration for a database table column
@@ -125,7 +120,7 @@ type Column struct {
 	Type       string `jsonschema:"example=integer,example=text"`
 	Primary    bool
 	Array      bool
-	ForeignKey string `mapstructure:"related_to" jsonschema:"title=Related To,example=other_table.id_column,example=users.id"`
+	ForeignKey string `mapstructure:"related_to" json:"related_to" yaml:"related_to" jsonschema:"title=Related To,example=other_table.id_column,example=users.id"`
 }
 
 // Configuration for user role
@@ -140,7 +135,7 @@ type Role struct {
 type RoleTable struct {
 	Name     string
 	Schema   string
-	ReadOnly bool `mapstructure:"read_only" jsonschema:"title=Read Only"`
+	ReadOnly bool `mapstructure:"read_only" json:"read_only" yaml:"read_only" jsonschema:"title=Read Only"`
 
 	Query  *Query
 	Insert *Insert
@@ -154,7 +149,7 @@ type Query struct {
 	Limit            int
 	Filters          []string
 	Columns          []string
-	DisableFunctions bool `mapstructure:"disable_functions"`
+	DisableFunctions bool `mapstructure:"disable_functions" json:"disable_functions" yaml:"disable_functions"`
 	Block            bool
 }
 
@@ -260,7 +255,7 @@ type ResolverConfig struct {
 	Schema    string
 	Table     string
 	Column    string
-	StripPath string        `mapstructure:"strip_path"`
+	StripPath string        `mapstructure:"strip_path" json:"strip_path" yaml:"strip_path"`
 	Props     ResolverProps `mapstructure:",remain"`
 }
 
@@ -376,124 +371,4 @@ func (c *Config) SetResolver(name string, fn refunc) error {
 	}
 	c.rtmap[name] = fn
 	return nil
-}
-
-// ReadInConfig reads in the config file for the environment specified in the GO_ENV
-// environment variable. This is the best way to create a new GraphJin config.
-func ReadInConfig(configFile string) (*Config, error) {
-	return readInConfig(configFile, nil)
-}
-
-// ReadInConfigFS is the same as ReadInConfig but it also takes a filesytem as an argument
-func ReadInConfigFS(configFile string, fs afero.Fs) (*Config, error) {
-	return readInConfig(configFile, fs)
-}
-
-func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
-	cp := filepath.Dir(configFile)
-	vi := newViper(cp, filepath.Base(configFile))
-
-	if fs != nil {
-		vi.SetFs(fs)
-	}
-
-	if err := vi.ReadInConfig(); err != nil {
-		return nil, err
-	}
-
-	if pcf := vi.GetString("inherits"); pcf != "" {
-		cf := vi.ConfigFileUsed()
-		vi = newViper(cp, pcf)
-		if fs != nil {
-			vi.SetFs(fs)
-		}
-
-		if err := vi.ReadInConfig(); err != nil {
-			return nil, err
-		}
-
-		if v := vi.GetString("inherits"); v != "" {
-			return nil, fmt.Errorf("inherited config '%s' cannot itself inherit '%s'", pcf, v)
-		}
-
-		vi.SetConfigFile(cf)
-
-		if err := vi.MergeInConfig(); err != nil {
-			return nil, err
-		}
-	}
-
-	for _, e := range os.Environ() {
-		if strings.HasPrefix(e, "GJ_") || strings.HasPrefix(e, "SJ_") {
-			kv := strings.SplitN(e, "=", 2)
-			util.SetKeyValue(vi, kv[0], kv[1])
-		}
-	}
-
-	c := &Config{
-		ConfigPath: filepath.Dir(vi.ConfigFileUsed()),
-	}
-
-	if err := vi.Unmarshal(&c); err != nil {
-		return nil, fmt.Errorf("failed to decode config, %v", err)
-	}
-
-	return c, nil
-}
-
-func newViper(configPath, configFile string) *viper.Viper {
-	vi := viper.New()
-
-	if filepath.Ext(configFile) != "" {
-		vi.SetConfigFile(filepath.Join(configPath, configFile))
-	} else {
-		vi.SetConfigName(configFile)
-		vi.AddConfigPath(configPath)
-		vi.AddConfigPath("./config")
-	}
-
-	return vi
-}
-
-func GetConfigName() string {
-	ge := strings.TrimSpace(strings.ToLower(os.Getenv("GO_ENV")))
-
-	switch ge {
-	case "production", "prod":
-		return "prod"
-
-	case "staging", "stage":
-		return "stage"
-
-	case "testing", "test":
-		return "test"
-
-	case "development", "dev", "":
-		return "dev"
-
-	default:
-		return ge
-	}
-}
-
-func NewConfig(config, format string) (*Config, error) {
-	if format == "" {
-		format = "yaml"
-	}
-
-	vi := viper.New()
-	vi.SetDefault("env", "development")
-	vi.BindEnv("env", "GO_ENV") //nolint: errcheck
-	vi.SetConfigType(format)
-
-	if err := vi.ReadConfig(strings.NewReader(config)); err != nil {
-		return nil, err
-	}
-
-	var c Config
-	if err := vi.Unmarshal(&c); err != nil {
-		return nil, fmt.Errorf("failed to decode config, %v", err)
-	}
-
-	return &c, nil
 }

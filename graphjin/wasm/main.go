@@ -1,12 +1,11 @@
-//go:build js && wasm
+//go:build wasm && js
 
 package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
-	"fmt"
-	"path/filepath"
 	"syscall/js"
 
 	"github.com/dosco/graphjin/core"
@@ -93,29 +92,18 @@ func newGraphJin(
 	db *sql.DB,
 	fs plugin.FS) (gj *core.GraphJin, err error) {
 
-	confFormat := "json"
+	var config *core.Config
 
 	if confIsFile {
-		ext := filepath.Ext(conf)
-		switch ext {
-		case ".json":
-			confFormat = "json"
-		case ".yml", ".yaml":
-			confFormat = "yaml"
-		default:
-			return nil, fmt.Errorf("invalid config file format: %s", ext)
-		}
-
-		if v, err := fs.ReadFile("dev.yml"); err != nil {
+		if config, err = core.NewConfig(fs, conf); err != nil {
 			return nil, err
-		} else {
-			conf = string(v)
 		}
-	}
-
-	config, err := core.NewConfig(conf, confFormat)
-	if err != nil {
-		return nil, err
+	} else {
+		var c core.Config
+		if err = json.Unmarshal([]byte(conf), &c); err != nil {
+			return nil, err
+		}
+		config = &c
 	}
 
 	return core.NewGraphJin(config, db, core.OptionSetFS(fs))

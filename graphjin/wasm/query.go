@@ -1,4 +1,4 @@
-//go:build js && wasm
+//go:build wasm && js
 
 package main
 

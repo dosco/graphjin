@@ -1,23 +1,53 @@
 package sdata
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 func (ti *DBTable) String() string {
 	return ti.Schema + "." + ti.Name
 }
 
 func (col DBColumn) String() string {
-	colName := col.Name
-	if col.Array {
-		colName += "[]"
-	}
+	var sb strings.Builder
+
+	sb.WriteString(fmt.Sprintf("%s.%s.%s", col.Schema, col.Table, col.Name))
+	sb.WriteString(fmt.Sprintf(" [id:%d, type:%v, array:%t, notNull:%t, fulltext:%t]",
+		col.ID, col.Type, col.Array, col.NotNull, col.FullText))
 
 	if col.FKeyCol != "" {
-		return fmt.Sprintf("%s.%s.%s -FK-> %s.%s.%s",
-			col.Schema, col.Table, colName, col.FKeySchema, col.FKeyTable, col.FKeyCol)
-	} else {
-		return fmt.Sprintf("%s.%s.%s", col.Schema, col.Table, colName)
+		sb.WriteString(fmt.Sprintf(" -> %s.%s.%s",
+			col.FKeySchema, col.FKeyTable, col.FKeyCol))
 	}
+	return sb.String()
+}
+
+func (fn DBFunction) String() string {
+	var sb strings.Builder
+
+	sb.WriteString(fmt.Sprintf("%s.%s", fn.Schema, fn.Name))
+	sb.WriteString(fmt.Sprintf(" [type:%v, agg:%t] (", fn.Type, fn.Agg))
+
+	for _, v := range fn.Inputs {
+		if v.Name == "" {
+			sb.WriteString(fmt.Sprintf("%d: %v [array:%t]", v.ID, v.Type, v.IsArray))
+		} else {
+			sb.WriteString(fmt.Sprintf("%s: %v [array:%t]", v.Name, v.Type, v.IsArray))
+		}
+	}
+
+	sb.WriteString(") => ")
+
+	for _, v := range fn.Outputs {
+		if v.Name == "" {
+			sb.WriteString(fmt.Sprintf("%d: %v [array:%t]", v.ID, v.Type, v.IsArray))
+		} else {
+			sb.WriteString(fmt.Sprintf("%s: %v [array:%t]", v.Name, v.Type, v.IsArray))
+		}
+	}
+
+	return sb.String()
 }
 
 func (re *DBRel) String() string {
