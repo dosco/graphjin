@@ -105,8 +105,8 @@ func Example_insertInlineWithValidation() {
 		printJSON(res.Data)
 	}
 	// Unordered output:
-	// Validation Failed: $full_name: Key: '' Error:Field validation for '' failed on the 'required_if' tag
-	// Validation Failed: $email: Key: '' Error:Field validation for '' failed on the 'email' tag
+	// validation failed: $full_name: failed on 'required_if'
+	// validation failed: $email: failed on 'email'
 	// validation failed
 }
 
