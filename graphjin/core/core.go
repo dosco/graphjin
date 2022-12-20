@@ -14,7 +14,6 @@ import (
 	"github.com/dosco/graphjin/v2/core/internal/psql"
 	"github.com/dosco/graphjin/v2/core/internal/qcode"
 	"github.com/dosco/graphjin/v2/core/internal/sdata"
-	"github.com/go-playground/validator/v10"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -412,12 +411,10 @@ func (c *gcontext) validateAndUpdateVars(ctx context.Context, qcomp *queryComp, 
 	}
 
 	if qc.Consts != nil {
-		errs := qcomp.st.va.ValidateMap(vars, qc.Consts)
-
+		errs := qcomp.st.va.ValidateMap(ctx, vars, qc.Consts)
 		if !c.gj.prod && len(errs) != 0 {
 			for k, v := range errs {
-				v1 := v.(validator.ValidationErrors)
-				c.gj.log.Printf("Validation Failed: $%s: %s", k, v1.Error())
+				c.gj.log.Printf("validation failed: $%s: %s", k, v.Error())
 			}
 		}
 
