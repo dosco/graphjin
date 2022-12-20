@@ -14,9 +14,6 @@ import (
 	"github.com/dosco/graphjin/v2/core/internal/psql"
 	"github.com/dosco/graphjin/v2/core/internal/qcode"
 	"github.com/dosco/graphjin/v2/core/internal/sdata"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 )
 
 var decPrefix = []byte(`__gj/enc:`)
@@ -210,7 +207,7 @@ func (gj *graphjin) executeRoleQuery(ctx context.Context,
 			return err
 		})
 		if err != nil {
-			spanError(span, err)
+			span.Error(err)
 		}
 		span.End()
 
@@ -230,14 +227,11 @@ func (gj *graphjin) executeRoleQuery(ctx context.Context,
 	})
 
 	if err != nil {
-		spanError(span, err)
+		span.Error(err)
 		return role, err
 	}
 
-	if span.IsRecording() {
-		span.SetAttributes(attribute.String("role", role))
-	}
-
+	span.SetAttributesString(stringAttr{"role", role})
 	return role, err
 }
 
@@ -284,7 +278,7 @@ func (c *gcontext) resolveSQL(ctx context.Context, qr queryReq, role string) (qu
 		return err
 	})
 	if err != nil {
-		spanError(span, err)
+		span.Error(err)
 	}
 	span.End()
 
@@ -299,7 +293,7 @@ func (c *gcontext) resolveSQL(ctx context.Context, qr queryReq, role string) (qu
 			return c.setLocalUserID(ctx1, conn)
 		})
 		if err != nil {
-			spanError(span, err)
+			span.Error(err)
 		}
 		span.End()
 
@@ -355,16 +349,15 @@ func (c *gcontext) resolveCompiledQuery(
 	})
 
 	if err != nil && err != sql.ErrNoRows {
-		spanError(span, err)
+		span.Error(err)
 	}
 
 	if span.IsRecording() {
-		op := qcomp.st.qc.Type.String()
-		span.SetAttributes(
-			attribute.String("query.namespace", res.qc.qr.ns),
-			attribute.String("query.operation", op),
-			attribute.String("query.name", qcomp.st.qc.Name),
-			attribute.String("query.role", qcomp.st.role.Name))
+		span.SetAttributesString(
+			stringAttr{"query.namespace", res.qc.qr.ns},
+			stringAttr{"query.operation", qcomp.st.qc.Type.String()},
+			stringAttr{"query.name", qcomp.st.qc.Name},
+			stringAttr{"query.role", qcomp.st.role.Name})
 	}
 
 	if err == sql.ErrNoRows {
@@ -558,8 +551,8 @@ func (gj *graphjin) saveToAllowList(actionVar json.RawMessage, query, namespace 
 	return gj.allowList.Set(actionVar, query, namespace)
 }
 
-func (gj *graphjin) spanStart(c context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	return gj.tracer.Start(c, name, opts...)
+func (gj *graphjin) spanStart(c context.Context, name string) (context.Context, span) {
+	return gj.tracer.Start(c, name)
 }
 
 func (qres *queryResp) sql() string {
@@ -583,13 +576,6 @@ func (qres *queryResp) cacheHeader() string {
 		return qres.qc.st.qc.Cache.Header
 	}
 	return ""
-}
-
-func spanError(span trace.Span, err error) {
-	if span.IsRecording() {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-	}
 }
 
 func retryOperation(c context.Context, fn func() error) error {

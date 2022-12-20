@@ -64,8 +64,6 @@ import (
 	"github.com/dosco/graphjin/v2/core/internal/sdata"
 	plugin "github.com/dosco/graphjin/v2/plugin"
 	"github.com/dosco/graphjin/v2/plugin/fs"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/trace"
 )
 
 type contextkey int
@@ -112,7 +110,7 @@ type graphjin struct {
 	validatorMap map[string]plugin.ValidationCompiler
 	prod         bool
 	namespace    string
-	tracer       trace.Tracer
+	tracer       tracer
 	pf           []byte
 	opts         []Option
 }
@@ -184,7 +182,7 @@ func newGraphJin(conf *Config,
 		dbinfo:    dbinfo,
 		log:       _log.New(os.Stdout, "", 0),
 		prod:      conf.Production,
-		tracer:    otel.Tracer("graphjin.com/core"),
+		tracer:    newTracer(),
 		pf:        []byte(fmt.Sprintf("gj/%x:", t.Unix())),
 		opts:      options,
 		scriptMap: make(map[string]plugin.ScriptCompiler),

@@ -95,7 +95,7 @@ func (c *gcontext) resolveRemotes(
 
 			if err != nil {
 				cerr = fmt.Errorf("%s: %s", s.Table, err)
-				spanError(span, cerr)
+				span.Error(cerr)
 			}
 			span.End()
 

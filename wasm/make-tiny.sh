@@ -1,2 +1,2 @@
 #!/bin/sh
-tinygo build -o tiny-graphjin.wasm -target wasm ./main.go
+tinygo build -o tiny-graphjin.wasm -target wasm ./

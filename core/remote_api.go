@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/dosco/graphjin/v2/internal/jsn"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // RemoteAPI struct defines a remote API endpoint
@@ -49,10 +48,7 @@ func newRemoteAPI(v map[string]interface{}) (*remoteAPI, error) {
 }
 
 func (r *remoteAPI) Resolve(c context.Context, rr ResolverReq) ([]byte, error) {
-	client := &http.Client{
-		Transport: otelhttp.NewTransport(http.DefaultTransport),
-	}
-
+	client := newHTTPClient()
 	uri := strings.ReplaceAll(r.URL, "$id", rr.ID)
 
 	req, err := http.NewRequestWithContext(c, "GET", uri, nil)
