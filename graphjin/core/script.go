@@ -71,7 +71,7 @@ func (c *gcontext) scriptCallReq(ctx context.Context, qc *qcode.QCode,
 	val := qc.Script.SC.RequestFn(ctx1, vars, role, userID, gfn)
 	if val == nil {
 		err := errors.New("error excuting script")
-		spanError(span, err)
+		span.Error(err)
 		return nil, nil
 	}
 	span.End()
@@ -109,7 +109,7 @@ func (c *gcontext) scriptCallResp(ctx context.Context, qc *qcode.QCode,
 	val := qc.Script.SC.ReponseFn(ctx1, rj, role, userID, gfn)
 	if val == nil {
 		err := errors.New("error excuting script")
-		spanError(span, err)
+		span.Error(err)
 		return data, nil
 	}
 	span.End()
