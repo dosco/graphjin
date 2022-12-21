@@ -26,8 +26,8 @@ npm i graphjin
 production: true
 ```
 
-```json title="Javascript config object"
-const config = { production: true, default_limit: 50 }
+```js title="Javascript config object"
+const config = { production: true, default_limit: 50 };
 ```
 
 ### Using GraphJin
@@ -35,13 +35,18 @@ const config = { production: true, default_limit: 50 }
 ```js
 import graphjin from "graphjin";
 
+// config can be a filename
 const cf = process.env.NODE_ENV === "production" ? "prod.yml" : "dev.yml";
+
+// or config can be an object
+// const config = { production: true, default_limit: 50 }
+
 const gj = await graphjin("./config", cf, db);
 ```
 
 ### Whats `db` ?
 
-Thats the database client, currently we only support the popular
+Its the database client, currently we only support the popular
 Postgres client `pg`. Remeber to call `db.connect()`
 
 ```js
@@ -61,14 +66,13 @@ await db.connect();
 
 ### Your first query
 
-The `query` is the graphql query, the `variables` are the variables required by this query and the options are things like `{ userID: 1 }` to set the user
-identifier for the query ($user_id).
+The `query` is the graphql query, the `variables` are the variables required by this query and the options are things like `{ userID: 1 }` to set the user identifier for the query ($user_id).
 
 ```js
 const result = await gj.query("query", <variables>, <options>)
 ```
 
-If you would rather use a `.gql` or `.graphql` file for the query place it under `./config/queries` and use the `queryByName` api instead. <mark>`query name` is the filename of the query (minus the extension)</mark>
+If you would rather use a `.gql` or `.graphql` file for the query place it under `./config/queries` and use the `queryByName` API instead. <mark>`query name` is the filename of the query (minus the extension)</mark>
 
 ```js
 const result = await gj.queryByName("query name", <variables>, <options>)
@@ -114,7 +118,7 @@ console.log(res.data());
 }
 ```
 
-## Using subscriptions
+### Using subscriptions
 
 Did you ever need to have database changes streamed back to you in realtime. For example new sales that happened, comments added to a blog post, new likes that you want to stream back over websockets, whatever. This is not easy to implement efficiently. But with GraphJin its just as easy as making the above query and is designed to be very efficient.
 
@@ -124,7 +128,7 @@ A subscription query is just a normal query with the prefix `subscription`.
 const result = await gj.subscribe("query", <variables>, <options>)
 ```
 
-Use the `subscribe` api that works similiar to `query` in production mode
+Use the `subscribe` API that works similar to `query` in production mode
 only allows you to use queries from the queries folder.
 
 ```js
@@ -135,7 +139,7 @@ const res = await gj.subscribe(
 );
 ```
 
-Alterntively you can use the `subscribeByName` api which is similiar to the `queryByName` api.
+Alterntively you can use the `subscribeByName` API which is similar to the `queryByName` API.
 
 ```js
 const res = await gj.subscribeByName(

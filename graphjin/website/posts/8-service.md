@@ -12,7 +12,7 @@ It is very fast, secure and has a ton of API best practices built in like `Rate 
 
 #### TOC
 
-#### Building a web shop
+### Trying out the example
 
 For this example we will create a [example e-commerce store](https://github.com/dosco/graphjin/tree/master/examples/webshop). This example app can be found in repo.
 
@@ -105,16 +105,16 @@ for (i = 0; i < 100; i++) {
 
 ### Setup the database
 
-This will create the database, run the migrations and the seed file. Once it's set up to reset use the `db:reset` command-line argument.
+Ensure you have a Postgres database running and the config file has the correct connection details to it.
 
 ```shell
-docker-compose run api db setup
+graphjin db setup
 ```
 
 ### Start the Webshop API
 
 ```shell
-docker-compose up
+graphjin serve
 ```
 
 ### GraphJin WebUI

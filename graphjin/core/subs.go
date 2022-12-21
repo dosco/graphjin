@@ -121,7 +121,7 @@ func (g *GraphJin) Subscribe(
 	return m, err
 }
 
-// SubscribeByName is similiar to the Subscribe function except that queries saved
+// SubscribeByName is similar to the Subscribe function except that queries saved
 // in the queries folder can directly be used by their filename.
 func (g *GraphJin) SubscribeByName(
 	c context.Context,

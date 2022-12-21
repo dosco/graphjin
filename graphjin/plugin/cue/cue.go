@@ -26,7 +26,7 @@ func (cu *CueEngine) CompileValidation(source string) (plugin.ValidationExecuter
 
 func (cs *CueScript) Validate(vars []byte) error {
 	// TODO: better error handling. it's not clear that error came from validation
-	// aslo it needs to be able to parse in frontend,
+	// also it needs to be able to parse in frontend,
 	// ex: error:{kind:"validation",problem:"out of range",path:"input.id",shoud_be:"<5"}
 	cs.mu.Lock()
 	err := cuejson.Validate(vars, cs.val)

@@ -9,7 +9,7 @@ description: Use subscriptions to get notified when the query result changes
 You can subscribe to a query and receive live updates whenever the result of the query changes. The query can be as large and nested as you need it to be.
 
 <mark>
-This is by far one of the coolest features of GraphJin and you'd be hardpressed to find similiar functionality elsewhere.
+This is by far one of the coolest features of GraphJin and you'd be hardpressed to find similar functionality elsewhere.
 </mark>
 
 #### TOC

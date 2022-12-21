@@ -21,7 +21,7 @@ export default function Post({ post }) {
 }
 
 const Nav = ({post}) => (
-  <div className="flex gap-2">
+  <div className="grid justify-items-stretch grid-cols-2 gap-2">
     {post.previous && <NavButton post={post.previous} label="Previous" />}
     {post.next && <NavButton post={post.next} label="Next" />}
   </div>
@@ -29,9 +29,9 @@ const Nav = ({post}) => (
 
 const NavButton = ({post, label}) => (
   <Link href={post.slug}>
-    <div className="border rounded-full px-6 py-2 text-center cursor-pointer hover:border-black">
-      <div className="text-green-700 font-bold">{label}</div>
-      <div className="text-sm">{post.title}</div>
+    <div className="border border-lime-500 rounded-full px-6 py-2 text-center cursor-pointer hover:shadow">
+      <div className="text-lime-500 font-bold">{label}</div>
+      <div className="text-xl">{post.title}</div>
     </div>
   </Link>
 )

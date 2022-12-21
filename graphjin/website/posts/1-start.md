@@ -10,17 +10,24 @@ Learn what is GraphJin and how to quickly get started using it in your own NodeJ
 
 #### TOC
 
+## Why use GraphJin
+
+🔑 Build apps faster
+🔒 Secure, no dependencies
+🚀 Fast, NodeJS+GO+WASM
+😊 Easy small API
+📚 Great documentation
+🤟🏽 Actively developed
+
 ## What is Graphjin?
 
-Most apps need APIs and most APIs require custom code to talk to a database
-and return a resulting JSON. Generating this result requires pulling related data from multiple tables etc and putting it all together. This is all a lot of code to write and maintain for every single API.
+APIs are used by many apps to retrieve data from a database and return it in a JSON format. Writing and maintaining the code for this process can be time-consuming.
 
-GraphJin changes all this just write a simple GraphQL query that defines the data you need and GraphJin automagically write the most efficient SQL needed to put all this JSON result together.
+GraphJin simplifies this by allowing you to write a simple GraphQL query that defines the data you need. GraphJin will then automatically generate the necessary SQL code to retrieve and combine the data in a JSON result.
 
-The below query will fetch a list of products their owners and various other category information including a cursor to fetch more products.
+The following GraphQL query fetches a list of products, their owners, and other category information, including a cursor for retrieving more products.
 
-<mark>
-GraphJin will auto discover your database and learn all about it. It will figure out tables, relationships between tables `Foreign Keys`, functions, etc.</mark>
+<mark>GraphJin will auto discover your database and learn all about it. It will figure out tables, relationships between tables `Foreign Keys`, functions, etc.</mark>
 
 ```graphql
 query getProducts {
@@ -119,17 +126,13 @@ You get back the result JSON.
 
 ## Why should I care?
 
-Lets take for example a simple blog app. You'll probably need the following APIs user management, posts, comments, votes. Each of these areas need apis for listing, creating, updating, deleting. Off the top of my head thats like 12 APIs if not more. This is just for managing things for rendering the blog posts, home page, profile page you probably need many more view APIs that fetch a whole bunch of things at the same time. This is a lot and we're still talking something simple like a basic blogging app.
+Imagine you are building a simple blog app. You'll likely need APIs for user management, posts, comments, and votes, each of which requires multiple APIs for listing, creating, updating, and deleting. That's a minimum of 12 APIs, and that's just for managing the data. To render the blog posts, home page, and profile page, you'll probably need even more APIs to fetch a variety of data at the same time. This can take weeks or months to code and maintain, and as your team grows, you'll need to ensure that everyone is making efficient database calls and avoiding issues like N+1 calls and SQL injection bugs.
 
-All these APIs have to be coded up by someone and then the code maintained, updated, made secure, fast, etc. We are talking weeks to months of work if not more. Also as your team grows you have to sure that folks are not making N+1 databse calls, failing to limit queries, introducing sql injection bugs, using inefficent queries and a lot more.
+Instead of spending all of this time and effort coding and maintaining individual APIs, wouldn't it be easier to use a tool like GraphJin to define exactly what you want to happen with a quick and simple GraphQL query? GraphJin handles all of the behind-the-scenes work for you, so you never have to worry about inefficiencies or security issues. With GraphJin, you can build APIs in minutes instead of days.
 
-Wouldn't it be better if you could just write a quick simple GraphQL query to define what you want to happen and it just does. GraphJin does exactly this and more, you'll never see any of the issues above and your queries will always be efficient. With GraphJin your building APIs in minutes not days.
+## Use GraphJin in NodeJS
 
-## How to use GraphJin with your own code
-
-### NodeJS
-
-Create a NodeJS + Express API with just GraphJin
+Create a NodeJS + Express API with just GraphJin. <mark>For futher details goto the [GraphJin NodeJS docs](/posts/9-nodejs)</mark>
 
 ```js
 import graphjin from "graphjin";
@@ -190,38 +193,11 @@ server.listen(3000);
 console.log("Express server started on port %s", server.address().port);
 ```
 
-Alternatively you can also put the query into a query file
+[GraphJin NodeJS docs](/posts/9-nodejs)
 
-```graphql title="Fragment File ./config/queries/getUser.gql"
-query getUser {
-  users(id: $id) {
-    id
-    email
-    products {
-      id
-      name
-    }
-  }
-}
-```
+## Use GraphJin in GO
 
-And then use the `queryByName` or `subscribeByName` API to refer to it. This way your queries are kept in one place and you can avail of the syntax highting and linting that your IDE provides for GraphQL.
-
-```js
-const res = await gj.queryByName("getUser", { id: 1 }, { userID: 1 });
-console.log(res.data());
-```
-
-```js
-const res = await gj.subscribeByName("getUser", null, { userID: 2 });
-res.data(function (res) {
-  console.log(res.data());
-});
-```
-
-### GoLang
-
-Create a Go + Chi Router API with just GraphJin
+Create a Go + Chi Router API with just GraphJin. <mark>For futher details goto the [GraphJin GO docs](/posts/10-go)</mark>
 
 ```go
 package main
@@ -273,37 +249,7 @@ func main() {
 }
 ```
 
-Alternatively you can also put the query into a query file
-
-```graphql title="Fragment File ./config/queries/getUser.gql"
-query getUser {
-  users(id: $id) {
-    id
-    email
-    products {
-      id
-      name
-    }
-  }
-}
-```
-
-And then use the `QueryByName` or `SubscribeByName` API to refer to it. This way your queries are kept in one place and you can avail of the syntax highting and linting that your IDE provides for GraphQL.
-
-```go
-vars := json.RawMessage(`{ "id": 1 }`)
-res := gj.GraphQLByName("getUser", vars, nil);
-fmt.Println(string(res.Data));
-```
-
-```go
-vars := json.RawMessage(`{ "id": 1 }`)
-res := await gj.SubscribeByName("getUser", vars, nil);
-for {
-    msg := <-m.Result
-    fmt.Println(string(res.Data))
-}
-```
+[GraphJin GO docs](/posts/10-go)
 
 <!--
 ## Learn More

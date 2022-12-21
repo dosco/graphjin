@@ -368,7 +368,7 @@ func (g *GraphJin) GraphQL(
 	return res, err
 }
 
-// GraphQLByName is similiar to the GraphQL function except that queries saved
+// GraphQLByName is similar to the GraphQL function except that queries saved
 // in the queries folder can directly be used by their filename.
 func (g *GraphJin) GraphQLByName(
 	c context.Context,

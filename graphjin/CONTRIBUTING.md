@@ -4,19 +4,19 @@ GraphJin is a very approchable code-base and a project that is easy for almost
 anyone with basic GO knowledge to start contributing to. It is also a young project
 so a lot of high value work is there for the taking.
 
-Even the GraphQL to SQL compiler that is at the heart of GraphJin is essentially a text book compiler with clean and easy to read code. The data structures used by the lexer, parser and sql generator are easy to understand and modify. 
+Even the GraphQL to SQL compiler that is at the heart of GraphJin is essentially a text book compiler with clean and easy to read code. The data structures used by the lexer, parser and sql generator are easy to understand and modify.
 
 Finally we do have a lot of test for critical parts of the codebase which makes it easy for you to modify with confidence. I'm always available for questions or any sort of guidance so feel fee to reach out over twitter or discord.
 
-* [Getting Started](#getting-started)
-* [Setting Up the Development Environment](#setup-development-environment)
-   * [Prerequisites](#prerequisites)
-   * [Get the GraphJin source](#get-source-code)
-   * [Start the development envoirnment ](#start-the-development-envoirnment)
-   * [Testing](#testing-and-linting)
-* [Contributing](#contributing)
-   * [Guidelines](#guidelines)
-   * [Code style](#code-style)
+- [Getting Started](#getting-started)
+- [Setting Up the Development Environment](#setup-development-environment)
+  - [Prerequisites](#prerequisites)
+  - [Get the GraphJin source](#get-source-code)
+  - [Start the development envoirnment ](#start-the-development-envoirnment)
+  - [Testing](#testing-and-linting)
+- [Contributing](#contributing)
+  - [Guidelines](#guidelines)
+  - [Code style](#code-style)
 
 ## Getting Started
 
@@ -36,18 +36,18 @@ The entire build flow uses `Makefile` there is a whole list of sub-commands you
 can use to build, test, install, lint, etc.
 
 ```bash
-git clone https://github.com/dosco/graphjin 
+git clone https://github.com/dosco/graphjin
 cd ./graphjin
 make help
 ```
 
 ### Start the development envoirnment
 
-The entire development flow is packaged into a `docker-compose` work flow. The below `up` command will launch A Postgres database, a example e-commerce app in Rails and GraphJin in development mode. The `db:seed` Rails task will insert sample data into Postgres.
+Ensure you have a Postgres database running and the config file has the correct connection details to it.
 
 ```bash
-docker compose run api db setup
-docker compose up
+go run main.go db setup
+go run main.go serve
 ```
 
 ### Learn how the code works
@@ -57,7 +57,8 @@ docker compose up
 ### Testing and Linting
 
 ```
-make lint test
+make lint
+make test
 ```
 
 ## Contributing
@@ -77,6 +78,6 @@ make lint test
 
 - We're following [Go Code Review](https://github.com/golang/go/wiki/CodeReviewComments).
 - Use `go fmt` to format your code before committing.
-- If you see *any code* which clearly violates the style guide, please fix it and send a pull request. No need to ask for permission.
+- If you see _any code_ which clearly violates the style guide, please fix it and send a pull request. No need to ask for permission.
 - Avoid unnecessary vertical spaces. Use your judgment or follow the code review comments.
 - Wrap your code and comments to 100 characters, unless doing so makes the code less legible.

@@ -29,8 +29,12 @@ export default function Home({ posts }) {
         </div>
 
         <p>
+        Are you tired of spending endless hours coding and maintaining custom APIs for your applications? 
+        </p>
+
+        <p>
           GraphJin is a magical library that instantly converts simple GraphQL into fast and secure APIs. Works 
-          with NodeJS and GO. Supports Postgres, MySQL, Yugabyte, Cockroach. 
+          with NodeJS and GO. Supports Postgres, MySQL, Yugabyte, AWS Aurora/RDS and Google Cloud SQL
         </p>
 
         <div className="flex gap-2 items-center">

@@ -1,26 +1,27 @@
 # GraphJin, Build APIs in 5 minutes not weeks
 
 [![Apache 2.0](https://img.shields.io/github/license/dosco/graphjin.svg?style=for-the-badge)](https://github.com/dosco/graphjin/blob/master/LICENSE)
+[![NPM Package](https://img.shields.io/npm/v/graphjin?style=for-the-badge)](https://www.npmjs.com/package/graphjin)
 [![Docker Pulls](https://img.shields.io/docker/pulls/dosco/graphjin?style=for-the-badge)](https://hub.docker.com/r/dosco/graphjin/builds)
 [![Discord Chat](https://img.shields.io/discord/628796009539043348.svg?style=for-the-badge&logo=appveyor)](https://discord.gg/6pSWCTZ)
-[![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=for-the-badge&logo=appveyor&logo=appveyor)](https://pkg.go.dev/github.com/dosco/graphjin)
-[![GoReport](https://goreportcard.com/badge/github.com/gojp/goreportcard?style=for-the-badge)](https://goreportcard.com/report/github.com/dosco/graphjin)
+[![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=for-the-badge&logo=appveyor&logo=appveyor)](https://pkg.go.dev/github.com/dosco/graphjin/v2)
+[![GoReport](https://goreportcard.com/badge/github.com/gojp/goreportcard?style=for-the-badge)](https://goreportcard.com/report/github.com/dosco/graphjin/v2)
 
 <!-- [![Run on Google Cloud](./.github/deploy-cloud-run-button.svg)](https://deploy.cloud.run)
  -->
 
-GraphJin gives you an instant secure and fast GraphQL API without code. Just use a GraphQL query to define your API and GraphJin automagically converts it into a full featured API. Build your backend APIs **100X** faster. Works with **NodeJS** and **GO**. Supports several databases, **Postgres**, **MySQL**, **YugabyteDB**, etc.
+GraphJin gives you an instant secure and fast GraphQL API without code. Just use a GraphQL query to define your API and GraphJin automagically converts it into a full featured API. Build your backend APIs **100X** faster. Works with **NodeJS** and **GO**. Supports several databases, **Postgres**, **MySQL**, **Yugabyte**, **AWS Aurora/RDS** and **Google Cloud SQL**
 
 ## Secure out of the box
 
 In production all queries are always read from locally saved copies not from what the client sends hence clients cannot modify the query. This makes
-GraphJin very secure as its similiar to building APIs by hand. The idea that GraphQL means that clients can change the query as they wish **does not** apply to GraphJin
+GraphJin very secure as its similar to building APIs by hand. The idea that GraphQL means that clients can change the query as they wish **does not** apply to GraphJin
 
 ## Great Documentation
 
-Detailed docs on GraphQL syntax, usecases, Javascript and GO code examples and it's actively updated.
+Detailed docs on GraphQL syntax, usecases, JS and GO code examples and it's actively updated.
 
-# [https://graphjin.com](https://graphjin.com)
+## [![Docs](https://img.shields.io/badge/Docs-graphjin.com-red?style=for-the-badge)](https://graphjin.com)
 
 ## Use with NodeJS
 
@@ -81,9 +82,82 @@ server.listen(3000);
 console.log("Express server started on port %s", server.address().port);
 ```
 
----
+## Use with GO
 
-## Use with GO / Standalone service
+You can use GraphJin as a library within your own code. The [serv](https://pkg.go.dev/github.com/dosco/graphjin/v2/serv) package exposes the entirely GraphJin standlone service as a library while the [core](https://pkg.go.dev/github.com/dosco/graphjin/core/v2) package exposes just the GraphJin compiler. The [Go docs](https://pkg.go.dev/github.com/dosco/graphjin/v2/core#pkg-examples) are filled with examples on how to use GraphJin within your own apps as a sort of alternative to using ORM packages. GraphJin allows you to use GraphQL and the full power of GraphJin to access your data instead of a limiting ORM.
+
+### Use GraphJin Core
+
+```console
+go get github.com/dosco/graphjin/v2
+```
+
+```golang
+package main
+
+import (
+  "context"
+  "database/sql"
+  "fmt"
+  "log"
+
+  "github.com/dosco/graphjin/core/v2"
+  _ "github.com/jackc/pgx/v4/stdlib"
+)
+
+func main() {
+  db, err := sql.Open("pgx", "postgres://postgres:@localhost:5432/example_db")
+  if err != nil {
+    log.Fatal(err)
+  }
+
+  gj, err := core.NewGraphJin(nil, db)
+  if err != nil {
+    log.Fatal(err)
+  }
+
+  query := `
+    query {
+      posts {
+      id
+      title
+    }
+  }`
+
+  ctx := context.Background()
+  ctx = context.WithValue(ctx, core.UserIDKey, 1)
+
+  res, err := gj.GraphQL(ctx, query, nil, nil)
+  if err != nil {
+    log.Fatal(err)
+  }
+
+  fmt.Println(string(res.Data))
+}
+```
+
+### Use GraphJin Service
+
+```golang
+import (
+  "github.com/dosco/graphjin/serv/v2"
+)
+
+gj, err := serv.NewGraphJinService(conf, opt...)
+if err != nil {
+ return err
+}
+
+if err := gj.Start(); err != nil {
+ return err
+}
+
+// if err := gj.Attach(chiRouter); err != nil {
+//  return err
+// }
+```
+
+## Standalone Service
 
 ### Quick install
 
@@ -127,83 +201,6 @@ graphjin secrets
 # Create, Migrate and Seed your database
 graphjin db
 ```
-
-### Use as a library
-
-You can use GraphJin as a library within your own code. The [serv](https://pkg.go.dev/github.com/dosco/graphjin/serv) package exposes the entirely GraphJin standlone service as a library while the [core](https://pkg.go.dev/github.com/dosco/graphjin/core) package exposes just the GraphJin compiler. The [Go docs](https://pkg.go.dev/github.com/dosco/graphjin/core#pkg-examples) are filled with examples on how to use GraphJin within your own apps as a sort of alternative to using ORM packages. GraphJin allows you to use GraphQL and the full power of GraphJin to access your data instead of a limiting ORM.
-
-### Use the standalone service as a GO library
-
-```golang
-import (
-  "github.com/dosco/graphjin/serv/v2"
-)
-
-gj, err := serv.NewGraphJinService(conf, opt...)
-if err != nil {
- return err
-}
-
-if err := gj.Start(); err != nil {
- return err
-}
-
-// if err := gj.Attach(chiRouter); err != nil {
-//  return err
-// }
-```
-
-### Use just the core GraphQL compiler in your own GO app
-
-```console
-go get github.com/dosco/graphjin/v2
-```
-
-```golang
-package main
-
-import (
-  "context"
-  "database/sql"
-  "fmt"
-  "log"
-
-  "github.com/dosco/graphjin/core/v2"
-  _ "github.com/jackc/pgx/v4/stdlib"
-)
-
-func main() {
-  db, err := sql.Open("pgx", "postgres://postgres:@localhost:5432/example_db")
-  if err != nil {
-    log.Fatal(err)
-  }
-
-  sg, err := core.NewGraphJin(nil, db)
-  if err != nil {
-    log.Fatal(err)
-  }
-
-  query := `
-    query {
-      posts {
-      id
-      title
-    }
-  }`
-
-  ctx := context.Background()
-  ctx = context.WithValue(ctx, core.UserIDKey, 1)
-
-  res, err := sg.GraphQL(ctx, query, nil, nil)
-  if err != nil {
-    log.Fatal(err)
-  }
-
-  fmt.Println(string(res.Data))
-}
-```
-
----
 
 ## Built in Web-UI to help craft GraphQL queries
 

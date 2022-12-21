@@ -41,7 +41,7 @@ type JWTConfig struct {
 
 	// JWKSMinRefresh sets in minutes fallback value when tokens are refreshed, default
 	// to 60 minutes
-	JWKSMinRefresh int `mapstructure:"jwks_min_refresh" jsonschema:"title=JWKS Minumum Refresh Timeout (minutes)"`
+	JWKSMinRefresh int `mapstructure:"jwks_min_refresh" jsonschema:"title=JWKS Minimum Refresh Timeout (minutes)"`
 
 	// FileSystem
 	fs plugin.FS

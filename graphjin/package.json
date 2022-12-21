@@ -1,6 +1,6 @@
 {
   "name": "graphjin",
-  "version": "2.0.11",
+  "version": "2.0.12",
   "description": "GraphJin - Build APIs in 5 minutes with GraphQL",
   "type": "module",
   "main": "./wasm/js/graphjin.js",
@@ -28,7 +28,7 @@
   "bugs": {
     "url": "https://github.com/dosco/graphjin/issues"
   },
-  "homepage": "https://github.com/dosco/graphjin#readme",
+  "homepage": "https://graphjin.com",
   "devDependencies": {
     "fs-extra": "^11.1.0"
   }

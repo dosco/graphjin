@@ -148,7 +148,8 @@ type RoleTable struct {
 
 // Table configuration for querying a table with a role
 type Query struct {
-	Limit            int
+	Limit int
+	// Use filters to enforce table wide things like { disabled: false } where you never want disabled users to be shown.
 	Filters          []string
 	Columns          []string
 	DisableFunctions bool `mapstructure:"disable_functions" json:"disable_functions" yaml:"disable_functions"`
