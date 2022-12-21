@@ -12,7 +12,7 @@ export function getPostBySlug(slug, fields = []) {
   const realSlug = slug.replace(/\.md$/, '')
   const fullPath = join(postsDirectory, `${realSlug}.md`)
   const fileContents = fs.readFileSync(fullPath, 'utf8')
-  const { data, content } = matter(fileContents)
+  const { data, content, chapter } = matter(fileContents)
 
   const items = new Map()
 
@@ -23,22 +23,23 @@ export function getPostBySlug(slug, fields = []) {
     }
     else if (field === 'content') {
       items.set(field, content)
-    }
+    } 
     else if (typeof data[field] !== 'undefined') {
       items.set(field, data[field])
     }
   })
-
   return Object.fromEntries(items)
 }
 
 export function getAllPosts(fields = []) {
   const slugs = getPostSlugs()
 
-  const posts = slugs
-    .map((slug) => getPostBySlug(slug, fields))
+  return slugs
+    .map((slug) => getPostBySlug(slug, ['chapter', ...fields]))
     // sort posts by date in descending order
-    .sort((post1, post2) => (post1.chapter > post2.chapter ? -1 : 1))
+    .sort(sortPosts)
+}
 
-  return posts
+function sortPosts(a, b) {
+  return a.chapter > b.chapter ? 1 : -1
 }

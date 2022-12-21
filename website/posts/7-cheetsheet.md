@@ -281,6 +281,8 @@ roles:
     tables:
       - name: me
         query:
+        	# Use filters to enforce table wide things like `{ disabled: false }`
+          # where you never want disabled users to be shown.
           filters: ["{ id: { _eq: $user_id } }"]
 
       - name: products

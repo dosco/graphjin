@@ -29,11 +29,11 @@ export const Layout = ({
 
       <nav className="w-full py-6 bg-black">
         <div className="w-full md:w-6/12 mx-auto flex gap-6 items-center justify-between px-2">
-          <h1 className="text-md font-normal text-white">
+          <h1 className="text-md font-bold tracking-widest text-white">
             <a href="/">GRAPHJIN</a>
           </h1>
 
-          <h1 className="text-md font-normal text-white ">
+          <h1 className="text-md font-normal text-white">
             <a href="/">APIs in 5 mins</a>
           </h1>
 
