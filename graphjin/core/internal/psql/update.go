@@ -73,8 +73,5 @@ func (c *compilerContext) renderUpdateStmt(m qcode.Mutate) {
 		}
 		c.w.WriteString(`)`)
 	}
-
-	c.w.WriteString(` RETURNING `)
-	c.table(m.Ti.Schema, m.Ti.Name, false)
-	c.w.WriteString(`.*)`)
+	c.renderReturning(m)
 }

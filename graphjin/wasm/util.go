@@ -4,6 +4,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"syscall/js"
 )
 
@@ -53,4 +54,9 @@ func toError(err interface{}) error {
 
 func toJSError(err error) js.Value {
 	return js.Global().Get("Error").New(err.Error())
+}
+
+func debug(v js.Value) {
+	fmt.Println(js.Global().Get("JSON").Call("stringify", v))
+
 }

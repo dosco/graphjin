@@ -318,11 +318,12 @@ func (c *compilerContext) renderUpsert() {
 
 	c.w.WriteString(` WHERE `)
 	c.renderExp(m.Ti, sel.Where.Exp, false)
-	c.w.WriteString(` RETURNING *) `)
+	c.renderReturning(m)
 }
 
 func (c *compilerContext) renderDelete() {
 	sel := c.qc.Selects[0]
+	m := c.qc.Mutates[0]
 
 	c.w.WriteString(`WITH `)
 	c.quoted(sel.Table)
@@ -332,9 +333,7 @@ func (c *compilerContext) renderDelete() {
 	c.w.WriteString(` WHERE `)
 	c.renderExp(sel.Ti, sel.Where.Exp, false)
 
-	c.w.WriteString(` RETURNING `)
-	c.table(sel.Ti.Schema, sel.Ti.Name, false)
-	c.w.WriteString(`.*) `)
+	c.renderReturning(m)
 }
 
 func (c *compilerContext) renderOneToManyConnectStmt(m qcode.Mutate) {
@@ -387,10 +386,7 @@ func (c *compilerContext) renderOneToOneConnectStmt(m qcode.Mutate) {
 
 	c.w.WriteString(` WHERE `)
 	c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
-
-	c.w.WriteString(` RETURNING `)
-	c.table(m.Ti.Schema, m.Ti.Name, false)
-	c.w.WriteString(`.*)`)
+	c.renderReturning(m)
 }
 
 func (c *compilerContext) renderOneToManyDisconnectStmt(m qcode.Mutate) {
@@ -461,10 +457,7 @@ func (c *compilerContext) renderOneToOneDisconnectStmt(m qcode.Mutate) {
 		c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
 	}
 	c.w.WriteString(`)`)
-
-	c.w.WriteString(` RETURNING `)
-	c.table(m.Ti.Schema, m.Ti.Name, false)
-	c.w.WriteString(`.*)`)
+	c.renderReturning(m)
 }
 
 func (c *compilerContext) renderOneToManyModifiers(m qcode.Mutate) {
@@ -551,6 +544,12 @@ func (c *compilerContext) renderMutateToRecordSet(m qcode.Mutate, n int) {
 		i++
 	}
 	c.w.WriteString(`)`)
+}
+
+func (c *compilerContext) renderReturning(m qcode.Mutate) {
+	c.w.WriteString(` RETURNING `)
+	c.table(m.Ti.Schema, m.Ti.Name, false)
+	c.w.WriteString(`.*)`)
 }
 
 func (c *compilerContext) renderComma(i int) int {

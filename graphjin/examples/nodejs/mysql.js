@@ -1,25 +1,31 @@
 import graphjin from "graphjin";
 import express from "express";
 import http from "http";
-import pg from "pg"
+import mysql from "mysql2"
 
-const { Client } = pg
-const db = new Client({
+const pool = mysql.createPool({
     host: 'localhost',
-    port: 5432,
-    user: 'postgres',
-    password: 'postgres',
-    database: "42papers-development"
-})
+    port: '/tmp/mysql.sock',
+    user: 'root',
+    database: 'db',
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
+});
 
-await db.connect()
-
-// config can either be a file (eg. `dev.yml`) or an object
-// const config = { production: true, default_limit: 50 };
-
+const db = pool.promise();
 const app = express();
 const server = http.createServer(app);
-const gj = await graphjin("./config", "dev.yml", db);
+
+// config can either be a filename (eg. `dev.yml`) or an object
+const config = { 
+    production: false,
+    db_type: "mysql",
+    disable_allow_list: true
+};
+
+const gj = await graphjin("./config", config, db);
+
 
 const res1 = await gj.subscribe(
     "subscription getUpdatedUser { users(id: $userID) { id email } }", 

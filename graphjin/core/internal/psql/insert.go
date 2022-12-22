@@ -40,9 +40,6 @@ func (c *compilerContext) renderInsertStmt(m qcode.Mutate, embedded bool) {
 	c.renderValues(m, false)
 
 	if !embedded {
-		c.w.WriteString(` RETURNING `)
-		c.table(m.Ti.Schema, m.Ti.Name, false)
-		c.w.WriteString(`.*)`)
-
+		c.renderReturning(m)
 	}
 }

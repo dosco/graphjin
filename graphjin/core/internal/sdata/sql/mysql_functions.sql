@@ -6,7 +6,7 @@ SELECT
 	p.ordinal_position	as param_id,
 	COALESCE(p.parameter_name, '') as param_name,
 	p.data_type 		as param_type,
-	p.parameter_mode 	as param_kind
+	COALESCE(p.parameter_mode, '') 	as param_kind
 FROM
 	information_schema.routines r
 RIGHT JOIN 
