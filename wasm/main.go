@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	sql.Register("postgres", &JSPostgresDB{})
+	sql.Register("postgres", &PgDB{})
 	js.Global().Set("createGraphJin", graphjinFunc())
 	<-make(chan bool)
 }
@@ -52,18 +52,30 @@ func graphjinFunc() js.Func {
 			return toJSError(err)
 		}
 
-		conf := cov.Get("value").String()
-		confIsFile := cov.Get("isFile").Bool()
-
-		db := sql.OpenDB(NewJSPostgresDBConn(dbv))
 		fs := NewJSFSWithBase(fsv, cpv.String())
+
+		confVal := cov.Get("value").String()
+		confValIsFile := cov.Get("isFile").Bool()
+
+		conf, err := getConfig(confVal, confValIsFile, fs)
+		if err != nil {
+			return toJSError(err)
+		}
+
+		var db *sql.DB
+		switch conf.DBType {
+		case "mysql":
+			db = sql.OpenDB(NewMyDBConn(dbv))
+		default:
+			db = sql.OpenDB(NewPgDBConn(dbv))
+		}
 
 		h := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 			resolve := args[0]
 			reject := args[1]
 
 			go func() {
-				gj, err := newGraphJin(conf, confIsFile, db, fs)
+				gj, err := newGraphJin(conf, db, fs)
 				if err != nil {
 					reject.Invoke(toJSError(err))
 				} else {
@@ -86,14 +98,12 @@ func newGraphJinObj(gj *core.GraphJin) map[string]interface{} {
 	}
 }
 
-func newGraphJin(
-	conf string,
-	confIsFile bool,
-	db *sql.DB,
-	fs plugin.FS) (gj *core.GraphJin, err error) {
+func newGraphJin(conf *core.Config, db *sql.DB, fs plugin.FS) (gj *core.GraphJin, err error) {
+	return core.NewGraphJinWithFS(conf, db, fs)
+}
 
-	var config *core.Config
-
+func getConfig(conf string, confIsFile bool, fs plugin.FS) (
+	config *core.Config, err error) {
 	if confIsFile {
 		if config, err = core.NewConfigWithFS(fs, conf); err != nil {
 			return nil, err
@@ -105,6 +115,5 @@ func newGraphJin(
 		}
 		config = &c
 	}
-
-	return core.NewGraphJinWithFS(config, db, fs)
+	return
 }

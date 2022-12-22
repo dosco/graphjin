@@ -46,22 +46,42 @@ const gj = await graphjin("./config", cf, db);
 
 ### Whats `db` ?
 
-Its the database client, currently we only support the popular
-Postgres client `pg`. Remeber to call `db.connect()`
+Its the database client. We currently support the following popular clients.
+For [pg](https://www.npmjs.com/package/pg) and [pg-pool](https://www.npmjs.com/package/pg-pool) for Postgres and [mysql2](https://www.npmjs.com/package/mysql2) for MySQL. We recommend using pooling clients for performance, `pg-pool`, `mysql2` has a `createPool()` function. <mark>⚠️ We don't support mutations with MySQL</mark> and <mark>GraphJin requires the db client to support async/await (Promises)</mark>
 
-```js
-import pg from "pg";
+```js title="MySQL client setup"
+import mysql from "mysql2";
 
-const { Client } = pg;
-const db = new Client({
+const pool = mysql.createPool({
+  host: "localhost",
+  port: "/tmp/mysql.sock",
+  user: "root",
+  database: "db",
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+});
+
+// GraphJin requires the db client to support async/await (Promises)
+const db = pool.promise();
+
+// Set GraphJin config db_type to "mysql" for the MySQL client
+const graphjinConfig = { production: false, db_type: "mysql" };
+
+// Initialize GraphJin with this config and the MySQL client
+const gj = await graphjin("./config", graphjinConfig, db);
+```
+
+```js title="Postgres client setup"
+import PgPool from "pg-pool";
+
+const db = new PgPool({
   host: "localhost",
   port: 5432,
   user: "postgres",
   password: "postgres",
-  database: "appdb-development",
+  database: "42papers-development",
 });
-
-await db.connect();
 ```
 
 ### Your first query
@@ -169,3 +189,9 @@ res.data(function (res1) {
 {"users":{"email":"user3@test.com","id":3,"phone":"650-447-0007"}}
 {"users":{"email":"user3@test.com","id":3,"phone":"650-447-0008"}}
 ```
+
+### Code examples
+
+1. [node prostgres.js](https://github.com/dosco/graphjin/blob/master/examples/nodejs/postgres.js)
+
+2. [node mysql.js](https://github.com/dosco/graphjin/blob/master/examples/nodejs/mysql.js)

@@ -7,7 +7,7 @@ require (
 	github.com/adjust/gorails v0.0.0-20171013043634-2786ed0c03d3
 	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/bradfitz/gomemcache v0.0.0-20221031212613-62deef7fc822
-	github.com/brianvoe/gofakeit/v6 v6.19.0
+	github.com/brianvoe/gofakeit/v6 v6.20.1
 	github.com/chirino/graphql v0.0.0-20220710191258-f420c1213e22
 	github.com/dop251/goja v0.0.0-20221118162653-d4bf6fde1b86
 	github.com/fsnotify/fsnotify v1.6.0
