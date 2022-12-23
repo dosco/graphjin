@@ -273,7 +273,7 @@ With GraphJin your web and mobile developers can start building instantly. All t
 
 ## Documentation
 
-[Quick Start](https://graphjin.com/posts/1-quick-start)
+[Quick Start](https://graphjin.com/posts/1-start)
 
 [Documentation](https://graphjin.com)
 
