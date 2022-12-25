@@ -30,7 +30,7 @@ func (gj *graphjin) compileQuery(qr queryReq, role string) (*queryComp, error) {
 	qcomp := &queryComp{qr: qr}
 
 	if !gj.prod || gj.conf.DisableAllowList {
-		var userVars map[string]json.RawMessage
+		userVars := make(map[string]json.RawMessage)
 
 		if len(qr.vars) != 0 {
 			if err := json.Unmarshal(qr.vars, &userVars); err != nil {
@@ -55,8 +55,8 @@ func (gj *graphjin) compileQuery(qr queryReq, role string) (*queryComp, error) {
 		}
 
 		// Overwrite allow list vars with user vars
-		// qcomp.qr.vars = qr.vars
-		// qcomp.qr.ns = qr.ns
+		qcomp.qr.vars = qr.vars
+		qcomp.qr.ns = qr.ns
 	}
 	return qcomp, err
 }
