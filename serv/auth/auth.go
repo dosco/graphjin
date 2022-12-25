@@ -282,7 +282,7 @@ func HeaderHandler(ac Auth) (HandlerFunc, error) {
 }
 
 func IsAuth(c context.Context) bool {
-	return c.Value(core.UserIDKey) != nil
+	return c != nil && c.Value(core.UserIDKey) != nil
 }
 
 func UserID(c context.Context) interface{} {
