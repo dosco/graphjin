@@ -319,18 +319,21 @@ func (s *service) responseHandler(ct context.Context,
 }
 
 func (s *service) reqLog(res *core.Result, rc core.ReqConfig, resTimeMs int64, err error) {
-	fields := []zapcore.Field{
-		zap.String("op", res.OperationName()),
-		zap.String("name", res.QueryName()),
-		zap.String("role", res.Role()),
-		zap.Int64("responseTimeMs", resTimeMs),
+	var fields []zapcore.Field
+	var sql string
+
+	if res != nil {
+		sql = res.SQL()
+		fields = []zapcore.Field{
+			zap.String("op", res.OperationName()),
+			zap.String("name", res.QueryName()),
+			zap.String("role", res.Role()),
+			zap.Int64("responseTimeMs", resTimeMs)}
 	}
 
 	if ns, ok := rc.GetNamespace(); ok {
 		fields = append(fields, zap.String("namespace", ns))
 	}
-
-	sql := res.SQL()
 
 	if sql != "" && s.logLevel >= logLevelDebug {
 		fields = append(fields, zap.String("sql", sql))
