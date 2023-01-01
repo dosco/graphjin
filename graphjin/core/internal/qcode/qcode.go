@@ -13,7 +13,6 @@ import (
 	"github.com/dosco/graphjin/v2/core/internal/sdata"
 	"github.com/dosco/graphjin/v2/core/internal/util"
 	plugin "github.com/dosco/graphjin/v2/plugin"
-	"github.com/gobuffalo/flect"
 )
 
 const (
@@ -791,10 +790,6 @@ func buildFilter(rel sdata.DBRel, pid int32) *Exp {
 func (co *Compiler) setSingular(fieldName string, sel *Select) {
 	if sel.Singular {
 		return
-	}
-
-	if co.c.EnableInflection {
-		sel.Singular = (flect.Singularize(fieldName) == fieldName)
 	}
 
 	if len(sel.Joins) != 0 {

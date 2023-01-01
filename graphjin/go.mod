@@ -9,14 +9,13 @@ require (
 	github.com/bradfitz/gomemcache v0.0.0-20221031212613-62deef7fc822
 	github.com/brianvoe/gofakeit/v6 v6.20.1
 	github.com/chirino/graphql v0.0.0-20220710191258-f420c1213e22
-	github.com/dop251/goja v0.0.0-20221118162653-d4bf6fde1b86
+	github.com/dop251/goja v0.0.0-20221229151140-b95230a9dbad
 	github.com/fsnotify/fsnotify v1.6.0
 	github.com/go-chi/chi v1.5.4
 	github.com/go-http-utils/headers v0.0.0-20181008091004-fed159eddc2a
 	github.com/go-pkgz/expirable-cache v1.0.0
 	github.com/go-resty/resty/v2 v2.7.0
 	github.com/go-sql-driver/mysql v1.7.0
-	github.com/gobuffalo/flect v0.3.0
 	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/gomodule/redigo v1.8.9
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
@@ -24,13 +23,13 @@ require (
 	github.com/gosimple/slug v1.13.1
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/jackc/pgx/v5 v5.2.0
-	github.com/jvatic/goja-babel v0.0.0-20221128111320-553aaca4addf
+	github.com/jvatic/goja-babel v0.0.0-20221230121756-ba607767ec06
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0
 	github.com/klauspost/compress v1.15.13
 	github.com/lestrrat-go/jwx v1.2.25
 	github.com/orlangure/gnomock v0.24.0
 	github.com/pkg/errors v0.9.1
-	github.com/rs/cors v1.8.2
+	github.com/rs/cors v1.8.3
 	github.com/rs/xid v1.4.0
 	github.com/spf13/afero v1.9.3
 	github.com/spf13/cobra v1.6.1

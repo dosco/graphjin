@@ -151,14 +151,13 @@ func (gj *graphjin) initCompilers() error {
 	var err error
 
 	qcc := qcode.Config{
-		TConfig:          gj.conf.tmap,
-		DefaultBlock:     gj.conf.DefaultBlock,
-		DefaultLimit:     gj.conf.DefaultLimit,
-		DisableAgg:       gj.conf.DisableAgg,
-		DisableFuncs:     gj.conf.DisableFuncs,
-		EnableCamelcase:  gj.conf.EnableCamelcase,
-		EnableInflection: gj.conf.EnableInflection,
-		DBSchema:         gj.schema.DBSchema(),
+		TConfig:         gj.conf.tmap,
+		DefaultBlock:    gj.conf.DefaultBlock,
+		DefaultLimit:    gj.conf.DefaultLimit,
+		DisableAgg:      gj.conf.DisableAgg,
+		DisableFuncs:    gj.conf.DisableFuncs,
+		EnableCamelcase: gj.conf.EnableCamelcase,
+		DBSchema:        gj.schema.DBSchema(),
 	}
 
 	gj.qc, err = qcode.NewCompiler(gj.schema, qcc)
