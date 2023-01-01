@@ -143,8 +143,8 @@ func (co *Compiler) CompileQuery(
 			c.w.WriteString(`, `)
 		}
 
-		if sel.SkipRender == qcode.SkipTypeUserNeeded ||
-			sel.SkipRender == qcode.SkipTypeBlocked {
+		switch sel.SkipRender {
+		case qcode.SkipTypeUserNeeded, qcode.SkipTypeBlocked:
 			c.w.WriteString(`'`)
 			c.w.WriteString(sel.FieldName)
 			c.w.WriteString(`', NULL`)
@@ -155,7 +155,7 @@ func (co *Compiler) CompileQuery(
 				c.w.WriteString(`_cursor', NULL`)
 			}
 
-		} else {
+		default:
 			c.w.WriteString(`'`)
 			c.w.WriteString(sel.FieldName)
 			c.w.WriteString(`', __sj_`)

@@ -66,7 +66,16 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 
 		//TODO: log what and why this is being skipped
 		switch csel.SkipRender {
-		case qcode.SkipTypeNone:
+		case qcode.SkipTypeUserNeeded, qcode.SkipTypeBlocked:
+			c.w.WriteString(`NULL`)
+			c.alias(csel.FieldName)
+
+			if sel.Paging.Cursor {
+				c.w.WriteString(`, NULL`)
+				c.alias(sel.FieldName)
+			}
+
+		default:
 			switch csel.Rel.Type {
 			case sdata.RelPolymorphic:
 				c.renderUnionColumn(sel, csel)
@@ -86,18 +95,6 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 				c.w.WriteString(csel.FieldName)
 				c.w.WriteString(`_cursor`)
 			}
-		default:
-			if i != 0 {
-				c.w.WriteString(", ")
-			}
-
-			c.w.WriteString(`NULL`)
-			c.alias(csel.FieldName)
-
-			if sel.Paging.Cursor {
-				c.w.WriteString(`, NULL`)
-				c.alias(sel.FieldName)
-			}
 		}
 		i++
 	}
@@ -114,10 +111,10 @@ func (c *compilerContext) renderUnionColumn(sel, csel *qcode.Select) {
 		c.squoted(usel.Table)
 		c.w.WriteString(` THEN `)
 
-		if usel.SkipRender == qcode.SkipTypeUserNeeded ||
-			usel.SkipRender == qcode.SkipTypeBlocked {
+		switch usel.SkipRender {
+		case qcode.SkipTypeUserNeeded, qcode.SkipTypeBlocked:
 			c.w.WriteString(`NULL `)
-		} else {
+		default:
 			c.w.WriteString(`__sj_`)
 			int32String(c.w, usel.ID)
 			c.w.WriteString(`.json `)
