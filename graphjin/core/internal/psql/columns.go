@@ -11,6 +11,9 @@ func (c *compilerContext) renderColumns(sel *qcode.Select) {
 		if i != 0 {
 			c.w.WriteString(", ")
 		}
+		if f.SkipRender == qcode.SkipTypeDrop {
+			continue
+		}
 		if f.Type == qcode.FieldTypeFunc {
 			c.renderFuncColumn(sel, f)
 		} else {
@@ -35,6 +38,7 @@ func (c *compilerContext) renderStdColumn(sel *qcode.Select, f qcode.Field) {
 		c.renderExp(sel.Ti, f.FieldFilter.Exp, false)
 		c.w.WriteString(` THEN `)
 	}
+
 	c.colWithTableID(sel.Table, sel.ID, f.Col.Name)
 
 	if f.FieldFilter.Exp != nil {
@@ -51,7 +55,8 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 	for _, cid := range sel.Children {
 		csel := &c.qc.Selects[cid]
 
-		if csel.SkipRender == qcode.SkipTypeRemote {
+		if csel.SkipRender == qcode.SkipTypeDrop ||
+			csel.SkipRender == qcode.SkipTypeRemote {
 			continue
 		}
 
@@ -60,16 +65,8 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 		}
 
 		//TODO: log what and why this is being skipped
-		if csel.SkipRender != qcode.SkipTypeNone {
-			c.w.WriteString(`NULL`)
-			c.alias(csel.FieldName)
-
-			if sel.Paging.Cursor {
-				c.w.WriteString(`, NULL`)
-				c.alias(sel.FieldName)
-			}
-
-		} else {
+		switch csel.SkipRender {
+		case qcode.SkipTypeNone:
 			switch csel.Rel.Type {
 			case sdata.RelPolymorphic:
 				c.renderUnionColumn(sel, csel)
@@ -88,6 +85,18 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 				c.w.WriteString(`.__cursor AS `)
 				c.w.WriteString(csel.FieldName)
 				c.w.WriteString(`_cursor`)
+			}
+		default:
+			if i != 0 {
+				c.w.WriteString(", ")
+			}
+
+			c.w.WriteString(`NULL`)
+			c.alias(csel.FieldName)
+
+			if sel.Paging.Cursor {
+				c.w.WriteString(`, NULL`)
+				c.alias(sel.FieldName)
 			}
 		}
 		i++

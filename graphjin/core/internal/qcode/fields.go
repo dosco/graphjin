@@ -15,12 +15,13 @@ func (co *Compiler) compileFields(
 	qc *QCode,
 	sel *Select,
 	field graph.Field,
-	tr trval) error {
+	tr trval,
+	role string) error {
 
 	sel.Fields = make([]Field, 0, len(field.Children))
 	sel.BCols = make([]Column, 0, len(field.Children))
 
-	if err := co.compileChildColumns(st, op, qc, sel, field, tr); err != nil {
+	if err := co.compileChildColumns(st, op, qc, sel, field, tr, role); err != nil {
 		return err
 	}
 
@@ -42,7 +43,8 @@ func (co *Compiler) compileChildColumns(
 	qc *QCode,
 	sel *Select,
 	gf graph.Field,
-	tr trval) error {
+	tr trval,
+	role string) error {
 
 	var aggExists bool
 	for _, cid := range gf.Children {
@@ -73,10 +75,6 @@ func (co *Compiler) compileChildColumns(
 			val := f.ID | (sel.ID << 16)
 			st.Push(val)
 			continue
-		}
-
-		if err := co.compileFieldDirectives(&field, f.Directives); err != nil {
-			return err
 		}
 
 		switch {
@@ -120,6 +118,11 @@ func (co *Compiler) compileChildColumns(
 					field.Col.Name)
 			}
 		}
+
+		if err := co.compileFieldDirectives(sel, &field, f.Directives, role); err != nil {
+			return err
+		}
+
 		sel.addField(field)
 	}
 

@@ -133,10 +133,15 @@ func (co *Compiler) CompileQuery(
 	}
 
 	for _, id := range qc.Roots {
+		sel := &qc.Selects[id]
+
+		if sel.SkipRender == qcode.SkipTypeDrop {
+			continue
+		}
+
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
-		sel := &qc.Selects[id]
 
 		if sel.SkipRender == qcode.SkipTypeUserNeeded ||
 			sel.SkipRender == qcode.SkipTypeBlocked {

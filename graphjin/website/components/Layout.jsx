@@ -21,10 +21,6 @@ export const Layout = ({
         <meta name="twitter:image" content={image} href={image} />
         <meta name="twitter:image:alt" content={`{title} Logo`} />
         <meta property="og:image" content={image} />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@48,400,0,0"
-        />
       </Head>
 
       <nav className="w-full py-6 bg-black">

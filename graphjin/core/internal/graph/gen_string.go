@@ -54,11 +54,12 @@ func _() {
 	_ = x[NodeObj-8]
 	_ = x[NodeList-9]
 	_ = x[NodeVar-10]
+	_ = x[NodeLabel-11]
 }
 
-const _ParserType_name = "parserErrorparserEOFOpQueryOpMutateOpSubNodeStrNodeNumNodeBoolNodeObjNodeListNodeVar"
+const _ParserType_name = "parserErrorparserEOFOpQueryOpMutateOpSubNodeStrNodeNumNodeBoolNodeObjNodeListNodeVarNodeLabel"
 
-var _ParserType_index = [...]uint8{0, 11, 20, 27, 35, 40, 47, 54, 62, 69, 77, 84}
+var _ParserType_index = [...]uint8{0, 11, 20, 27, 35, 40, 47, 54, 62, 69, 77, 84, 93}
 
 func (i ParserType) String() string {
 	if i < 0 || i >= ParserType(len(_ParserType_index)-1) {
