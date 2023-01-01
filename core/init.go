@@ -7,17 +7,10 @@ import (
 
 	"github.com/dosco/graphjin/v2/core/internal/qcode"
 	"github.com/dosco/graphjin/v2/core/internal/sdata"
-	"github.com/gobuffalo/flect"
 )
 
 func (gj *graphjin) initConfig() error {
 	c := gj.conf
-
-	if gj.conf.EnableInflection {
-		if err := initInflection(c); err != nil {
-			return err
-		}
-	}
 
 	tm := make(map[string]struct{})
 
@@ -86,18 +79,6 @@ func (gj *graphjin) initConfig() error {
 		gj.abacEnabled = (len(gj.roles) > 2)
 	}
 
-	return nil
-}
-
-func initInflection(c *Config) error {
-	for _, v := range c.Inflections {
-		kv := strings.SplitN(v, ":", 2)
-		if kv[0] == "" || kv[1] == "" {
-			return fmt.Errorf("inflections: should be an array of singular:plural values: %s", v)
-		}
-		flect.AddPlural(kv[0], kv[1])
-		flect.AddSingular(kv[1], kv[0])
-	}
 	return nil
 }
 

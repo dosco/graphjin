@@ -1,20 +1,15 @@
 package qcode
 
-import (
-	"github.com/gobuffalo/flect"
-)
-
 type Config struct {
-	Vars             map[string]string
-	TConfig          map[string]TConfig
-	DefaultBlock     bool
-	DefaultLimit     int
-	DisableAgg       bool
-	DisableFuncs     bool
-	EnableCamelcase  bool
-	EnableInflection bool
-	DBSchema         string
-	defTrv           trval
+	Vars            map[string]string
+	TConfig         map[string]TConfig
+	DefaultBlock    bool
+	DefaultLimit    int
+	DisableAgg      bool
+	DisableFuncs    bool
+	EnableCamelcase bool
+	DBSchema        string
+	defTrv          trval
 }
 
 type TConfig struct {
@@ -162,15 +157,7 @@ func (co *Compiler) AddRole(role, schema, table string, trc TRConfig) error {
 	if schema == "" {
 		schema = co.s.DBSchema()
 	}
-
-	if co.c.EnableInflection {
-		singular := flect.Singularize(table)
-		plural := flect.Pluralize(table)
-		co.tr[(role + ":" + schema + ":" + singular)] = trv
-		co.tr[(role + ":" + schema + ":" + plural)] = trv
-	} else {
-		co.tr[(role + ":" + schema + ":" + table)] = trv
-	}
+	co.tr[(role + ":" + schema + ":" + table)] = trv
 
 	return nil
 }

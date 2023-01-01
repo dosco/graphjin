@@ -59,14 +59,6 @@ type Config struct {
 	// and 'anon' when it's not. Use the 'Roles Query' config to add more custom roles
 	Roles []Role
 
-	// Inflections is to add additionally singular to plural mappings
-	// to the engine (eg. sheep: sheep)
-	Inflections []string `mapstructure:"inflections" json:"inflections" yaml:"inflections" jsonschema:"-"`
-
-	// Disable inflections. Inflections are deprecated and will be
-	// removed in next major version
-	EnableInflection bool `mapstructure:"enable_inflection" json:"enable_inflection" yaml:"enable_inflection" jsonschema:"-"`
-
 	// Database type name Defaults to 'postgres' (options: mysql, postgres)
 	DBType string `mapstructure:"db_type" json:"db_type" yaml:"db_type" jsonschema:"title=Database Type,enum=postgres,enum=mysql"`
 
