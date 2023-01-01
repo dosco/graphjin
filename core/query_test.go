@@ -891,7 +891,7 @@ func Example_queryWithUnionForPolymorphicRelationships() {
 	// Output: {"notifications":[{"id":1,"subject":{"email":"user1@test.com"},"verb":"Joined"},{"id":2,"subject":{"name":"Product 2"},"verb":"Bought"}]}
 }
 
-func Example_queryWithSkipAndIncludeDirectives() {
+func Example_queryWithSkipAndIncludeDirectives1() {
 	gql := `
 	query {
 		products(limit: 2) @include(if: $test) {
@@ -920,7 +920,61 @@ func Example_queryWithSkipAndIncludeDirectives() {
 	// Output: {"products":[{"id":1,"name":"Product 1"},{"id":2,"name":"Product 2"}],"users":[]}
 }
 
-func Example_queryWithSkipAndIncludeFieldDirectives() {
+func Example_queryWithSkipAndIncludeDirectives2() {
+	gql := `
+	query {
+		products(limit: 2, order_by: { id: asc }) @include(if: { id: { eq: 1 } }) {
+			id
+			name
+		}
+		users(limit: 3, order_by: { id: asc }) @skip(if: { id: { eq: 2 } }) {
+			id
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"products":[{"id":1,"name":"Product 1"}],"users":[{"id":1},{"id":3},{"id":4}]}
+}
+
+func Example_queryWithSkipAndIncludeDirectives3() {
+	gql := `
+	query {
+		products(limit: 2, order_by: { id: asc }) @include(ifRole: "user", if: { id: { eq: 1 } }) {
+			id
+			name
+		}
+		users(limit: 3, order_by: { id: asc }) @skip(ifRole: "user") {
+			id
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"users":[{"id":1},{"id":2},{"id":3}]}
+}
+
+func Example_queryWithSkipAndIncludeFieldDirectives1() {
 	gql := `
 	query {
 		products(limit: 2)  {
@@ -947,6 +1001,64 @@ func Example_queryWithSkipAndIncludeFieldDirectives() {
 		printJSON(res.Data)
 	}
 	// Output: {"products":[{"id":1,"name":"Product 1"},{"id":2,"name":"Product 2"}],"users":[{"id":null},{"id":null},{"id":null}]}
+}
+
+func Example_queryWithSkipAndIncludeFieldDirectives2() {
+	gql := `
+	query {
+		products(limit: 2, order_by: { id: asc })  {
+			id @include(if: { id: { eq: 1 } })
+			name
+		}
+		users(limit: 3, order_by: { id: asc })  {
+			id @skip(if: { id: { eq: 2 } })
+		}
+	}`
+
+	vars := json.RawMessage(`{ "test": true }`)
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"products":[{"id":1,"name":"Product 1"},{"id":null,"name":"Product 2"}],"users":[{"id":1},{"id":null},{"id":3}]}
+}
+
+func Example_queryWithSkipAndIncludeFieldDirectives3() {
+	gql := `
+	query {
+		products(limit: 2, order_by: { id: asc })  {
+			id @include(if_role: "anon", if: { id: { eq: 1 } })
+			name
+		}
+		users(limit: 3, order_by: { id: asc })  {
+			id @skip(if_role: "anon")
+		}
+	}`
+
+	vars := json.RawMessage(`{ "test": true }`)
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"products":[{"id":1,"name":"Product 1"},{"id":2,"name":"Product 2"}],"users":[{},{},{}]}
 }
 
 func Example_queryWithRemoteAPIJoin() {
@@ -1045,7 +1157,7 @@ func Example_queryWithCursorPagination1() {
 func Example_queryWithCursorPagination2() {
 	gql := `query {
 		products(
-			first: 5
+			first: 1
 			after: $cursor
 			where: { id: { lte: 100 }}
 			order_by: { price: desc }) {
@@ -1070,7 +1182,7 @@ func Example_queryWithCursorPagination2() {
 	}
 
 	var val result
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 25; i++ {
 		vars := json.RawMessage(
 			`{"cursor": "` + val.Cursor + `"}`)
 
@@ -1087,11 +1199,31 @@ func Example_queryWithCursorPagination2() {
 		fmt.Println(string(val.Products))
 	}
 	// Output:
-	// [{"name": "Product 100"}, {"name": "Product 99"}, {"name": "Product 98"}, {"name": "Product 97"}, {"name": "Product 96"}]
-	// [{"name": "Product 95"}, {"name": "Product 94"}, {"name": "Product 93"}, {"name": "Product 92"}, {"name": "Product 91"}]
-	// [{"name": "Product 90"}, {"name": "Product 89"}, {"name": "Product 88"}, {"name": "Product 87"}, {"name": "Product 86"}]
-	// [{"name": "Product 85"}, {"name": "Product 84"}, {"name": "Product 83"}, {"name": "Product 82"}, {"name": "Product 81"}]
-	// [{"name": "Product 80"}, {"name": "Product 79"}, {"name": "Product 78"}, {"name": "Product 77"}, {"name": "Product 76"}]
+	// [{"name": "Product 100"}]
+	// [{"name": "Product 99"}]
+	// [{"name": "Product 98"}]
+	// [{"name": "Product 97"}]
+	// [{"name": "Product 96"}]
+	// [{"name": "Product 95"}]
+	// [{"name": "Product 94"}]
+	// [{"name": "Product 93"}]
+	// [{"name": "Product 92"}]
+	// [{"name": "Product 91"}]
+	// [{"name": "Product 90"}]
+	// [{"name": "Product 89"}]
+	// [{"name": "Product 88"}]
+	// [{"name": "Product 87"}]
+	// [{"name": "Product 86"}]
+	// [{"name": "Product 85"}]
+	// [{"name": "Product 84"}]
+	// [{"name": "Product 83"}]
+	// [{"name": "Product 82"}]
+	// [{"name": "Product 81"}]
+	// [{"name": "Product 80"}]
+	// [{"name": "Product 79"}]
+	// [{"name": "Product 78"}]
+	// [{"name": "Product 77"}]
+	// [{"name": "Product 76"}]
 }
 
 func Example_queryWithJsonColumn() {

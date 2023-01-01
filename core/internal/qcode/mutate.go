@@ -469,7 +469,7 @@ func (co *Compiler) processDirectives(ms *mState, m *Mutate, data *graph.Node, t
 			m.Ti,
 			st,
 			node,
-			m.IsJSON); err != nil {
+			m.IsJSON, -1); err != nil {
 			return err
 		}
 		if nu && trv.role == "anon" {

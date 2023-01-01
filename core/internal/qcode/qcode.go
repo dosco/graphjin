@@ -46,6 +46,7 @@ type SkipType int8
 
 const (
 	SkipTypeNone SkipType = iota
+	SkipTypeDrop
 	SkipTypeUserNeeded
 	SkipTypeBlocked
 	SkipTypeRemote
@@ -138,6 +139,7 @@ type Field struct {
 	FieldName   string
 	FieldFilter Filter
 	Args        []Arg
+	SkipRender  SkipType
 }
 
 type Column struct {
@@ -306,7 +308,8 @@ const (
 type Order int8
 
 const (
-	OrderAsc Order = iota + 1
+	OrderNone Order = iota
+	OrderAsc
 	OrderDesc
 	OrderAscNullsFirst
 	OrderAscNullsLast
@@ -315,7 +318,7 @@ const (
 )
 
 func (o Order) String() string {
-	return []string{"ASC", "DESC", "ASC NULLS FIRST", "ASC NULLS LAST", "DESC NULLLS FIRST", "DESC NULLS LAST"}[o-1]
+	return []string{"None", "ASC", "DESC", "ASC NULLS FIRST", "ASC NULLS LAST", "DESC NULLLS FIRST", "DESC NULLS LAST"}[o]
 }
 
 type Compiler struct {
@@ -443,7 +446,7 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 
 		sel.Children = make([]int32, 0, 5)
 
-		if err := co.compileSelectorDirectives(qc, sel, field.Directives); err != nil {
+		if err := co.compileSelectorDirectives1(qc, sel, field.Directives, role); err != nil {
 			return err
 		}
 
@@ -451,7 +454,11 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 			return err
 		}
 
-		tr, err := co.setSelectorRole(role, field.Name, qc, sel)
+		if err := co.compileSelectorDirectives2(qc, sel, field.Directives, role); err != nil {
+			return err
+		}
+
+		tr, err := co.setSelectorRoleConfig(role, field.Name, qc, sel)
 		if err != nil {
 			return err
 		}
@@ -462,7 +469,7 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 			return err
 		}
 
-		if err := co.compileFields(st, op, qc, sel, field, tr); err != nil {
+		if err := co.compileFields(st, op, qc, sel, field, tr, role); err != nil {
 			return err
 		}
 
@@ -498,7 +505,7 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 	}
 
 	if id == 0 {
-		return errors.New("invalid query: no seclectors found")
+		return errors.New("invalid query: no selectors found")
 	}
 
 	return nil
@@ -801,7 +808,7 @@ func (co *Compiler) setSingular(fieldName string, sel *Select) {
 	}
 }
 
-func (co *Compiler) setSelectorRole(role, fieldName string, qc *QCode, sel *Select) (trval, error) {
+func (co *Compiler) setSelectorRoleConfig(role, fieldName string, qc *QCode, sel *Select) (trval, error) {
 	tr := co.getRole(role, sel.Ti.Schema, sel.Ti.Name, fieldName)
 
 	if tr.isBlocked(qc.SType) {
@@ -938,19 +945,18 @@ func (co *Compiler) compileOpDirectives(qc *QCode, dirs []graph.Directive) error
 	return nil
 }
 
-func (co *Compiler) compileFieldDirectives(f *Field, dirs []graph.Directive) error {
+func (co *Compiler) compileFieldDirectives(sel *Select, f *Field, dirs []graph.Directive, role string) error {
 	var err error
 
 	for i := range dirs {
 		d := &dirs[i]
 
 		switch d.Name {
-
 		case "skip":
-			err = co.compileDirectiveSkip(&f.FieldFilter, d)
+			err = co.compileFieldDirectiveSkipInclude(true, sel, f, d, role)
 
 		case "include":
-			err = co.compileDirectiveInclude(&f.FieldFilter, d)
+			err = co.compileFieldDirectiveSkipInclude(false, sel, f, d, role)
 
 		default:
 			err = fmt.Errorf("unknown field level directive: %s", d.Name)
@@ -963,7 +969,8 @@ func (co *Compiler) compileFieldDirectives(f *Field, dirs []graph.Directive) err
 	return nil
 }
 
-func (co *Compiler) compileSelectorDirectives(qc *QCode, sel *Select, dirs []graph.Directive) error {
+// these directives need to run before the relationship resolution code
+func (co *Compiler) compileSelectorDirectives1(qc *QCode, sel *Select, dirs []graph.Directive, role string) error {
 	var err error
 
 	for i := range dirs {
@@ -973,17 +980,35 @@ func (co *Compiler) compileSelectorDirectives(qc *QCode, sel *Select, dirs []gra
 		case "schema":
 			err = co.compileDirectiveSchema(sel, d)
 
-		case "skip":
-			err = co.compileDirectiveSkip(&sel.Where, d)
-
-		case "include":
-			err = co.compileDirectiveInclude(&sel.Where, d)
-
 		case "notRelated", "not_related":
 			err = co.compileDirectiveNotRelated(sel, d)
 
 		case "through":
 			err = co.compileDirectiveThrough(sel, d)
+		}
+
+		if err != nil {
+			return fmt.Errorf("directive @%s: %w", d.Name, err)
+		}
+	}
+
+	return nil
+}
+
+func (co *Compiler) compileSelectorDirectives2(qc *QCode, sel *Select, dirs []graph.Directive, role string) error {
+	var err error
+
+	for i := range dirs {
+		d := &dirs[i]
+
+		switch d.Name {
+		case "schema", "through", "notRelated", "not_related":
+
+		case "skip":
+			err = co.compileSelectDirectiveSkipInclude(true, sel, d, role)
+
+		case "include":
+			err = co.compileSelectDirectiveSkipInclude(false, sel, d, role)
 
 		case "object":
 			sel.Singular = true
@@ -1015,7 +1040,7 @@ func (co *Compiler) compileArgs(sel *Select, args []graph.Arg, role string) erro
 			err = co.compileArgSearch(sel, arg)
 
 		case "where":
-			err = co.compileArgWhere(sel.Ti, sel, arg, role)
+			err = co.compileArgWhere(sel, arg, role)
 
 		case "orderby", "order_by", "order":
 			err = co.compileArgOrderBy(sel, arg)
@@ -1135,40 +1160,103 @@ func (co *Compiler) compileDirectiveSchema(sel *Select, d *graph.Directive) erro
 	return nil
 }
 
-func (co *Compiler) compileDirectiveSkip(fil *Filter, d *graph.Directive) error {
-	if len(d.Args) == 0 || d.Args[0].Name != "if" {
-		return fmt.Errorf("@skip: required argument 'if' missing")
+func (co *Compiler) compileSelectDirectiveSkipInclude(skip bool, sel *Select, d *graph.Directive, role string) (err error) {
+	err, drop := co.compileSkipInclude(skip, sel, -1, &sel.Where, d, role)
+	if err != nil {
+		return err
 	}
-	arg := d.Args[0]
-
-	if ifNotArg(arg, graph.NodeVar) {
-		return argTypeErr("variable")
+	if drop {
+		sel.SkipRender = SkipTypeDrop
 	}
-
-	ex := newExpOp(OpNotEqualsTrue)
-	ex.Right.ValType = ValVar
-	ex.Right.Val = arg.Val.Val
-
-	setFilter(fil, ex)
-	return nil
+	return
 }
 
-func (co *Compiler) compileDirectiveInclude(fil *Filter, d *graph.Directive) error {
-	if len(d.Args) == 0 || d.Args[0].Name != "if" {
-		return fmt.Errorf("required argument 'if' missing")
+func (co *Compiler) compileFieldDirectiveSkipInclude(skip bool, sel *Select, f *Field, d *graph.Directive, role string) (err error) {
+	var drop bool
+	if f.Type == FieldTypeFunc {
+		err, drop = co.compileSkipInclude(skip, sel, -1, &f.FieldFilter, d, role)
+	} else {
+		err, drop = co.compileSkipInclude(skip, sel, sel.ID, &f.FieldFilter, d, role)
 	}
-	arg := d.Args[0]
+	if err != nil {
+		return err
+	}
+	if drop {
+		f.SkipRender = SkipTypeDrop
+	}
+	return
+}
 
-	if arg.Val.Type != graph.NodeVar {
-		return argErr("if", "variable")
+func (co *Compiler) compileSkipInclude(
+	skip bool,
+	sel *Select,
+	selID int32,
+	fil *Filter,
+	d *graph.Directive,
+	role string) (err error, drop bool) {
+
+	if len(d.Args) == 0 {
+		err = fmt.Errorf("arguments 'if' or 'if_role' expected")
+		return
 	}
 
-	ex := newExpOp(OpEqualsTrue)
-	ex.Right.ValType = ValVar
-	ex.Right.Val = arg.Val.Val
+	for _, arg := range d.Args {
+		switch arg.Name {
+		case "if":
+			err = co.compileSkipIncludeFilter(
+				skip, sel, selID, fil, arg, role)
+			if err != nil {
+				return
+			}
+		case "if_role", "ifRole":
+			if ifArg(arg, graph.NodeStr) {
+				switch {
+				case skip && arg.Val.Val == role:
+					drop = true
+				case !skip && arg.Val.Val != role:
+					drop = true
+				}
+				return
+			}
+			err = argErr(arg.Name, "string")
+			return
 
-	setFilter(fil, ex)
-	return nil
+		default:
+			err = fmt.Errorf("invalid argument: %s", arg.Name)
+			return
+		}
+	}
+	return
+}
+
+func (co *Compiler) compileSkipIncludeFilter(
+	skip bool,
+	sel *Select,
+	selID int32,
+	fil *Filter,
+	arg graph.Arg,
+	role string) error {
+
+	if ifArg(arg, graph.NodeVar) {
+		var ex *Exp
+		if skip {
+			ex = newExpOp(OpNotEqualsTrue)
+		} else {
+			ex = newExpOp(OpEqualsTrue)
+		}
+		ex.Right.ValType = ValVar
+		ex.Right.Val = arg.Val.Val
+		setFilter(fil, ex)
+		return nil
+	}
+
+	if ifArg(arg, graph.NodeObj) {
+		if skip {
+			setFilter(fil, newExpOp(OpNot))
+		}
+		return co.compileAndSetFilter(sel, selID, fil, &arg, role)
+	}
+	return argErr("if", "variable or filter expression")
 }
 
 func (co *Compiler) compileDirectiveCacheControl(qc *QCode, d *graph.Directive) error {
@@ -1188,7 +1276,7 @@ func (co *Compiler) compileDirectiveCacheControl(qc *QCode, d *graph.Directive) 
 			}
 			scope = arg.Val.Val
 		default:
-			return fmt.Errorf("invalid argument: %s", d.Args[0].Name)
+			return fmt.Errorf("invalid argument: %s", arg.Name)
 		}
 	}
 
@@ -1410,7 +1498,7 @@ func (co *Compiler) compileDirectiveValidation(qc *QCode, d *graph.Directive) er
 		case "type", "lang":
 			qc.Validation.Type = arg.Val.Val
 		default:
-			return fmt.Errorf("invalid argument '%s', valid arguments are src/source and type/lang", arg.Name)
+			return fmt.Errorf("invalid argument '%s'", arg.Name)
 		}
 	}
 
@@ -1503,18 +1591,8 @@ func (co *Compiler) compileArgSearch(sel *Select, arg *graph.Arg) error {
 	return nil
 }
 
-func (co *Compiler) compileArgWhere(ti sdata.DBTable, sel *Select, arg *graph.Arg, role string) error {
-	st := util.NewStackInf()
-	ex, nu, err := co.compileArgObj(sel.Table, ti, st, arg)
-	if err != nil {
-		return err
-	}
-
-	if nu && role == "anon" {
-		sel.SkipRender = SkipTypeUserNeeded
-	}
-	setFilter(&sel.Where, ex)
-	return nil
+func (co *Compiler) compileArgWhere(sel *Select, arg *graph.Arg, role string) error {
+	return co.compileAndSetFilter(sel, -1, &sel.Where, arg, role)
 }
 
 func (co *Compiler) compileArgOrderBy(sel *Select, arg *graph.Arg) error {
@@ -1874,20 +1952,37 @@ func (co *Compiler) setOrderByColName(ti sdata.DBTable, ob *OrderBy, node *graph
 	return nil
 }
 
-func setFilter(where *Filter, fil *Exp) {
-	if where.Exp != nil {
-		// save exiting exp pointer (could be a common one from filter config)
-		ow := where.Exp
+func (co *Compiler) compileAndSetFilter(sel *Select, selID int32, fil *Filter, arg *graph.Arg, role string) error {
+	st := util.NewStackInf()
+	ex, nu, err := co.compileArgObj(sel.Table, sel.Ti, st, arg, selID)
+	if err != nil {
+		return err
+	}
 
-		// add a new `and` exp and hook the above saved exp pointer a child
-		// we don't want to modify an exp object thats common (from filter config)
-		where.Exp = newExpOp(OpAnd)
-		where.Children = where.childrenA[:2]
-		where.Children[0] = fil
-		where.Children[1] = ow
+	if nu && role == "anon" {
+		sel.SkipRender = SkipTypeUserNeeded
+	}
+	setFilter(fil, ex)
+	return nil
+}
 
+func setFilter(fil *Filter, ex *Exp) {
+	if fil.Exp == nil {
+		fil.Exp = ex
+		return
+	}
+	// save exiting exp pointer (could be a common one from filter config)
+	ow := fil.Exp
+
+	// add a new `and` exp and hook the above saved exp pointer a child
+	// we don't want to modify an exp object thats common (from filter config)
+	if ow.Op != OpAnd && ow.Op != OpOr && ow.Op != OpNot {
+		fil.Exp = newExpOp(OpAnd)
+		fil.Exp.Children = fil.Exp.childrenA[:2]
+		fil.Exp.Children[0] = ex
+		fil.Exp.Children[1] = ow
 	} else {
-		where.Exp = fil
+		fil.Exp.Children = append(fil.Exp.Children, ex)
 	}
 }
 
@@ -1912,7 +2007,7 @@ func compileFilter(s *sdata.DBSchema, ti sdata.DBTable, filter []string, isJSON 
 			return nil, false, err
 		}
 
-		f, nu, err := co.compileArgNode("", ti, st, node, isJSON)
+		f, nu, err := co.compileArgNode("", ti, st, node, isJSON, -1)
 		if err != nil {
 			return nil, false, err
 		}

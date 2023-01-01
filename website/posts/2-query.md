@@ -161,49 +161,6 @@ query getNewestProducts {
 secret_key: supercalifajalistics
 ```
 
-### Various GraphQL features
-
-> Fetch products by their id but allow us to control if we want the product id and owner returned as well. Also rename email column on the owner to `ownerEmail`
-
-```json title="Query Variables"
-{
-  "product_id" 2,
-  "include_id": false,
-  "dont_include_owner": true
-}
-```
-
-```graphql
-query getProductsWithSpecificOwners {
-  products(id: $product_id) {
-    id @include(if: $include_id)
-    name
-    description
-    owner @skip(if: $dont_include_owner) {
-      id
-      ownerEmail: email
-    }
-  }
-}
-```
-
-> If you rather use camel case for my queries instead of the snake case that my database tables and columns use. GraphJin will auto translate between the two.
-
-```yaml title="Config File dev.yml"
-enable_camelcase: true
-```
-
-```graphql
-query getUsers {
-  users {
-  fullName
-  createdAt
-  categoryCounts {
-    count
-  }
-}
-```
-
 ### Filtering options
 
 > Fetch all products from a list of ids where the price is greather than 20 or lesser than 22
@@ -370,6 +327,126 @@ roles:
 query {
   products(limit: $limit) {
     id
+  }
+}
+```
+
+### Rename columns
+
+> We want to rename fields in the resulting json. Lets call product `beer` and change the `id` and `name` columns to `sku` and `heading`
+
+```graphql
+query getProduct {
+  beer: products(id: $product_id) {
+    sku: id
+    heading: name
+    description
+  }
+}
+```
+
+```json title="Query Variables"
+{
+  "product_id" 2,
+}
+```
+
+```json title="Result"
+"data": {
+   "beer": {
+      "sku": 123,
+      "heading": "Pale Ale"
+      "description": "Something delicious to drink"
+    },
+}
+```
+
+### Skip or Include columns and tables
+
+> Fetch products by their id but allow us to control if we want the product id and owner returned as well. Also rename email column on the owner to `ownerEmail`
+
+```json title="Query Variables"
+{
+  "product_id" 2,
+  "include_id": false,
+  "dont_include_owner": true
+}
+```
+
+```graphql
+query getProductsWithSpecificOwners {
+  products(id: $product_id) {
+    id @include(if: $include_id)
+    name
+    description
+    owner @skip(if: $dont_include_owner) {
+      id
+      email
+    }
+  }
+}
+```
+
+> You can also use full filter expressions (eg. `{ id: { in: [1,2,3] } }` ) to define when to skip or include a column or a table. In this below example the directive `@skip(if: { keep_private: { eq: true } })` will hide users who's `keep_private` column is set to true.
+
+```graphql
+query getProductsWithSpecificOwners {
+  products(id: $product_id) {
+    id
+    name
+    description
+    owner @skip(if: { keep_private: { eq: true } }) {
+      id
+      email
+    }
+  }
+}
+```
+
+### User roles
+
+By default we support two roles `user` for authenticated users (eg. `$user_id` is set) and `anon` for anonymous users or users who are not authenticated. This is called [Role based access control](http://localhost:3000/posts/7-cheetsheet#roles-for-access-control) and you can follow the link to learn more.
+
+> I want to use the same query for both roles (user and anon) so I need to to hide and show tables and columns based on the users role.
+
+```graphql title="@include or @skip directive"
+@include(ifRole: "user", if: { id: { eq: 1 } })
+```
+
+```graphql
+query {
+  products(limit: 2, order_by: { id: asc })
+    @include(ifRole: "user", if: { id: { eq: 1 } }) {
+    id
+    name
+  }
+  users(limit: 3, order_by: { id: asc }) @skip(ifRole: "user") {
+    id
+  }
+}
+```
+
+```json title="Result"
+{
+  "products": [{ "id": 1, "name": "Product 1" }]
+}
+```
+
+### Use camel-case names
+
+> If you rather use camel case for my queries instead of the snake case that my database tables and columns use. GraphJin will auto translate between the two.
+
+```yaml title="Config File dev.yml"
+enable_camelcase: true
+```
+
+```graphql
+query getUsers {
+  users {
+  fullName
+  createdAt
+  categoryCounts {
+    count
   }
 }
 ```

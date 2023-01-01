@@ -345,9 +345,9 @@ func (s *service) reqLog(res *core.Result, rc core.ReqConfig, resTimeMs int64, e
 
 	if err != nil {
 		fields = append(fields, zap.Error(err))
-		s.zlog.Error("Query Failed", fields...)
+		s.zlog.Error("query failed", fields...)
 	} else {
-		s.zlog.Info("Query", fields...)
+		s.zlog.Info("query", fields...)
 	}
 }
 

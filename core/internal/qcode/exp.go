@@ -10,12 +10,12 @@ import (
 )
 
 func (co *Compiler) compileArgObj(edge string,
-	ti sdata.DBTable, st *util.StackInf, arg *graph.Arg) (*Exp, bool, error) {
+	ti sdata.DBTable, st *util.StackInf, arg *graph.Arg, selID int32) (*Exp, bool, error) {
 	if arg.Val.Type != graph.NodeObj {
 		return nil, false, fmt.Errorf("expecting an object")
 	}
 
-	return co.compileArgNode(edge, ti, st, arg.Val, false)
+	return co.compileArgNode(edge, ti, st, arg.Val, false, selID)
 }
 
 type aexpst struct {
@@ -38,7 +38,8 @@ func (co *Compiler) compileArgNode(
 	ti sdata.DBTable,
 	st *util.StackInf,
 	node *graph.Node,
-	savePath bool) (*Exp, bool, error) {
+	savePath bool,
+	selID int32) (*Exp, bool, error) {
 
 	if node == nil || len(node.Children) == 0 {
 		return nil, false, errors.New("invalid argument value")
@@ -73,7 +74,7 @@ func (co *Compiler) compileArgNode(
 			return nil, needsUser, fmt.Errorf("16: unexpected value %v (%t)", intf, intf)
 		}
 
-		ex, err := ast.parseNode(av, av.node)
+		ex, err := ast.parseNode(av, av.node, selID)
 		if err != nil {
 			return nil, needsUser, err
 		}
@@ -118,7 +119,7 @@ func newExpOp(op ExpOp) *Exp {
 	return ex
 }
 
-func (ast *aexpst) parseNode(av aexp, node *graph.Node) (*Exp, error) {
+func (ast *aexpst) parseNode(av aexp, node *graph.Node, selID int32) (*Exp, error) {
 	var ex *Exp
 	var err error
 
@@ -164,7 +165,7 @@ func (ast *aexpst) parseNode(av aexp, node *graph.Node) (*Exp, error) {
 		}
 
 		// TODO: Make this function work with schemas
-		if _, err := ast.processColumn(av, ex, node); err != nil {
+		if _, err := ast.processColumn(av, ex, node, selID); err != nil {
 			return nil, err
 		}
 		vn := node.Children[0]
@@ -193,7 +194,7 @@ func (ast *aexpst) parseNode(av aexp, node *graph.Node) (*Exp, error) {
 		if len(node.Children) == 0 {
 			return nil, fmt.Errorf("[Where] invalid empty list: %s", name)
 		}
-		if _, err := ast.processColumn(av, ex, node); err != nil {
+		if _, err := ast.processColumn(av, ex, node, selID); err != nil {
 			return nil, err
 		}
 		setListVal(ex, node)
@@ -205,7 +206,7 @@ func (ast *aexpst) parseNode(av aexp, node *graph.Node) (*Exp, error) {
 
 	// { column: value }
 	default:
-		if _, err := ast.processColumn(av, ex, node); err != nil {
+		if _, err := ast.processColumn(av, ex, node, selID); err != nil {
 			return nil, err
 		}
 		if ex.Left.Col.Array {
@@ -431,7 +432,7 @@ func setListVal(ex *Exp, node *graph.Node) {
 	}
 }
 
-func (ast *aexpst) processColumn(av aexp, ex *Exp, node *graph.Node) (bool, error) {
+func (ast *aexpst) processColumn(av aexp, ex *Exp, node *graph.Node, selID int32) (bool, error) {
 	var nn string
 
 	if ast.co.c.EnableCamelcase {
@@ -443,6 +444,7 @@ func (ast *aexpst) processColumn(av aexp, ex *Exp, node *graph.Node) (bool, erro
 	if err != nil {
 		return false, err
 	}
+	ex.Left.ID = selID
 	ex.Left.Col = col
 	return true, err
 }

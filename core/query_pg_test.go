@@ -159,6 +159,31 @@ func Example_queryWithFunctionReturingUserDefinedTypes() {
 	// Output: {"get_product":[{"id":1,"name":"Product 1"},{"id":2,"name":"Product 2"}]}
 }
 
+func Example_queryWithFunctionAndDirectives() {
+	gql := `
+	query {
+		products(id: 51) {
+			id
+			name
+			is_hot_product(id: id) @skip(if: { id: { eq: 51 } })
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"products":{"id":51,"is_hot_product":null,"name":"Product 51"}}
+}
+
 func Example_queryWithVariableLimit() {
 	gql := `query {
 		products(limit: $limit) {
