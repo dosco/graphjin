@@ -96,6 +96,14 @@ func (co *Compiler) compileChildColumns(
 			field.Func = fn.Func
 			field.Args = fn.Args
 
+			if err := co.compileFieldDirectives(sel, &field, f.Directives, role); err != nil {
+				return err
+			}
+
+			if field.SkipRender == SkipTypeDrop {
+				continue
+			}
+
 			if err := co.compileFuncArgs(sel, &field, f.Args); err != nil {
 				return err
 			}
@@ -111,16 +119,20 @@ func (co *Compiler) compileChildColumns(
 				return err
 			}
 
+			if err := co.compileFieldDirectives(sel, &field, f.Directives, role); err != nil {
+				return err
+			}
+
+			if field.SkipRender == SkipTypeDrop {
+				continue
+			}
+
 			if field.Col.Blocked {
 				return fmt.Errorf("column: '%s.%s.%s' blocked",
 					field.Col.Schema,
 					field.Col.Table,
 					field.Col.Name)
 			}
-		}
-
-		if err := co.compileFieldDirectives(sel, &field, f.Directives, role); err != nil {
-			return err
 		}
 
 		sel.addField(field)
