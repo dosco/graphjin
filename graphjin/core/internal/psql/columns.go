@@ -11,9 +11,6 @@ func (c *compilerContext) renderColumns(sel *qcode.Select) {
 		if i != 0 {
 			c.w.WriteString(", ")
 		}
-		if f.SkipRender == qcode.SkipTypeDrop {
-			continue
-		}
 		if f.Type == qcode.FieldTypeFunc {
 			c.renderFuncColumn(sel, f)
 		} else {
@@ -97,6 +94,10 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 			}
 		}
 		i++
+	}
+	// when no columns are rendered for mysql
+	if c.ct == "mysql" && i == 0 {
+		c.w.WriteString(`NULL`)
 	}
 }
 
