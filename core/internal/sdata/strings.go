@@ -31,9 +31,9 @@ func (fn DBFunction) String() string {
 
 	for _, v := range fn.Inputs {
 		if v.Name == "" {
-			sb.WriteString(fmt.Sprintf("%d: %v [array:%t]", v.ID, v.Type, v.IsArray))
+			sb.WriteString(fmt.Sprintf("%d: %v [array:%t]", v.ID, v.Type, v.Array))
 		} else {
-			sb.WriteString(fmt.Sprintf("%s: %v [array:%t]", v.Name, v.Type, v.IsArray))
+			sb.WriteString(fmt.Sprintf("%s: %v [array:%t]", v.Name, v.Type, v.Array))
 		}
 	}
 
@@ -41,9 +41,9 @@ func (fn DBFunction) String() string {
 
 	for _, v := range fn.Outputs {
 		if v.Name == "" {
-			sb.WriteString(fmt.Sprintf("%d: %v [array:%t]", v.ID, v.Type, v.IsArray))
+			sb.WriteString(fmt.Sprintf("%d: %v [array:%t]", v.ID, v.Type, v.Array))
 		} else {
-			sb.WriteString(fmt.Sprintf("%s: %v [array:%t]", v.Name, v.Type, v.IsArray))
+			sb.WriteString(fmt.Sprintf("%s: %v [array:%t]", v.Name, v.Type, v.Array))
 		}
 	}
 

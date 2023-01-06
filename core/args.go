@@ -21,7 +21,6 @@ type args struct {
 func (gj *graphjin) argList(c context.Context,
 	md psql.Metadata,
 	vars []byte,
-	pf []byte,
 	rc *ReqConfig) (args, error) {
 
 	ar := args{cindx: -1}

@@ -1,46 +1,5 @@
 // Package core provides an API to include and use the GraphJin compiler with your own code.
 // For detailed documentation visit https://graphjin.com
-//
-// Example usage:
-/*
-	package main
-
-	import (
-		"database/sql"
-		"fmt"
-		"time"
-		"github.com/dosco/graphjin/v2/core"
-		_ "github.com/jackc/pgx/v5/stdlib"
-	)
-
-	func main() {
-		db, err := sql.Open("pgx", "postgres://postgrs:@localhost:5432/example_db")
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		gj, err := core.NewGraphJin(nil, db)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		query := `
-			query {
-				posts {
-				id
-				title
-			}
-		}`
-
-		ctx = context.WithValue(ctx, core.UserIDKey, 1)
-
-		res, err := gj.GraphQL(ctx, query, nil)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-	}
-*/
 package core
 
 import (
@@ -121,10 +80,6 @@ type GraphJin struct {
 
 type Option func(*graphjin) error
 
-var (
-	errPersistedQueryNotFound = errors.New("persisted query not found")
-)
-
 // NewGraphJin creates the GraphJin struct, this involves querying the database to learn its
 // schemas and relationships
 func NewGraphJin(conf *Config, db *sql.DB, options ...Option) (g *GraphJin, err error) {
@@ -171,7 +126,7 @@ func newGraphJin(conf *Config,
 	options ...Option) (*graphjin, error) {
 
 	if conf == nil {
-		conf = &Config{Debug: true, DisableAllowList: true}
+		conf = &Config{Debug: true}
 	}
 
 	t := time.Now()
@@ -287,7 +242,6 @@ type Result struct {
 	sql          string
 	role         string
 	cacheControl string
-	actionJSON   json.RawMessage
 	Errors       []Error           `json:"errors,omitempty"`
 	Vars         json.RawMessage   `json:"-"`
 	Data         json.RawMessage   `json:"data,omitempty"`
@@ -324,57 +278,75 @@ func (rc *ReqConfig) GetNamespace() (string, bool) {
 //
 // In developer mode all named queries are saved into the queries folder and in production mode only
 // queries from these saved queries can be used
-func (g *GraphJin) GraphQL(
-	c context.Context,
+func (g *GraphJin) GraphQL(c context.Context,
 	query string,
 	vars json.RawMessage,
-	rc *ReqConfig) (*Result, error) {
+	rc *ReqConfig) (res *Result, err error) {
 
 	gj := g.Load().(*graphjin)
-	ns := gj.namespace
 
 	c1, span := gj.spanStart(c, "GraphJin Query")
 	defer span.End()
 
-	if rc != nil {
-		if rc.ns != nil {
-			ns = *rc.ns
-		}
-		if rc.APQKey != "" && query == "" {
-			if v, ok := gj.apq.Get(ns, rc.APQKey); ok {
-				query = v.query
-			} else {
-				return nil, errPersistedQueryNotFound
-			}
-		}
-	}
+	var queryBytes []byte
+	var inCache bool
 
-	res, err := gj.graphQL(c1, query, vars, rc)
-	if err != nil {
-		return res, err
-	}
-
+	// get query from apq cache if apq key exists
 	if rc != nil && rc.APQKey != "" {
-		gj.apq.Set(ns, rc.APQKey, apqInfo{query: query})
+		queryBytes, inCache = gj.apq.Get(rc.APQKey)
 	}
 
-	if !gj.prod {
-		err := gj.saveToAllowList(res.actionJSON, query, res.ns)
+	// query not found in apq cache so use original query
+	if len(queryBytes) == 0 {
+		queryBytes = []byte(query)
+	}
+
+	// fast extract name and query type from query
+	var h graph.FPInfo
+	if h, err = graph.FastParseBytes(queryBytes); err != nil {
+		return
+	}
+	r := gj.newGraphqlReq(rc, h.Operation, h.Name, queryBytes, vars)
+
+	// if production then get query and metadata from allow list
+	if gj.prod {
+		var item allow.Item
+		item, err = gj.allowList.GetByName(h.Name, gj.prod)
 		if err != nil {
-			return res, err
+			err = fmt.Errorf("%w: %s", err, h.Name)
+			return
+		}
+		r.Set(item)
+	}
+
+	// do the query
+	var resp graphqlResp
+	if resp, err = gj.query(c1, r); err != nil {
+		return
+	}
+	res = resp.res
+
+	// save to apq cache is apq key exists and not already in cache
+	if !inCache && rc != nil && rc.APQKey != "" {
+		gj.apq.Set(rc.APQKey, r.query)
+	}
+
+	// if not production then save to allow list
+	if !gj.prod {
+		if err = gj.saveToAllowList(resp.qc, vars, resp.res.ns); err != nil {
+			return
 		}
 	}
 
-	return res, err
+	return
 }
 
 // GraphQLByName is similar to the GraphQL function except that queries saved
 // in the queries folder can directly be used by their filename.
-func (g *GraphJin) GraphQLByName(
-	c context.Context,
+func (g *GraphJin) GraphQLByName(c context.Context,
 	name string,
 	vars json.RawMessage,
-	rc *ReqConfig) (*Result, error) {
+	rc *ReqConfig) (res *Result, err error) {
 
 	gj := g.Load().(*graphjin)
 
@@ -383,83 +355,89 @@ func (g *GraphJin) GraphQLByName(
 
 	item, err := gj.allowList.GetByName(name, gj.prod)
 	if err != nil {
-		return nil, err
+		err = fmt.Errorf("%w: %s", err, name)
+		return
 	}
-	op := qcode.GetQTypeByName(item.Operation)
-	query := item.Query
 
-	return gj.graphQLWithOpName(c1, op, name, query, vars, rc)
+	r := gj.newGraphqlReq(rc, "", name, nil, vars)
+	r.Set(item)
+
+	res, err = gj.queryWithResult(c1, r)
+	return
 }
 
-func (gj *graphjin) graphQL(
-	c context.Context,
-	query string,
-	vars json.RawMessage,
-	rc *ReqConfig) (*Result, error) {
-
-	var op qcode.QType
-	var name string
-
-	if h, err := graph.FastParse(query); err == nil {
-		name = h.Name
-		op = qcode.GetQTypeByName(h.Operation)
-	} else {
-		return nil, err
-	}
-
-	if gj.prod && !gj.conf.DisableAllowList {
-		item, err := gj.allowList.GetByName(name, gj.prod)
-		if err != nil {
-			return nil, err
-		}
-		op = qcode.GetQTypeByName(item.Operation)
-		query = item.Query
-	}
-	return gj.graphQLWithOpName(c, op, name, query, vars, rc)
+type graphqlReq struct {
+	ns      string
+	op      qcode.QType
+	name    string
+	query   []byte
+	vars    json.RawMessage
+	aschema json.RawMessage
+	rc      *ReqConfig
 }
 
-func (gj *graphjin) graphQLWithOpName(
-	c context.Context,
-	op qcode.QType,
+type graphqlResp struct {
+	res *Result
+	qc  *qcode.QCode
+}
+
+func (gj *graphjin) newGraphqlReq(rc *ReqConfig,
+	op string,
 	name string,
-	query string,
-	vars json.RawMessage,
-	rc *ReqConfig) (*Result, error) {
+	query []byte,
+	vars json.RawMessage) (r graphqlReq) {
 
-	ns := gj.namespace
+	r = graphqlReq{
+		op:    qcode.GetQTypeByName(op),
+		name:  name,
+		query: query,
+		vars:  vars,
+	}
+
 	if rc != nil && rc.ns != nil {
-		ns = *rc.ns
+		r.ns = *rc.ns
+	} else {
+		r.ns = gj.namespace
+	}
+	return
+}
+
+func (r *graphqlReq) Set(item allow.Item) {
+	r.ns = item.Namespace
+	r.op = qcode.GetQTypeByName(item.Operation)
+	r.name = item.Name
+	r.query = item.Query
+	r.aschema = item.Vars
+}
+
+func (gj *graphjin) queryWithResult(c context.Context, r graphqlReq) (
+	res *Result, err error) {
+	resp, err := gj.query(c, r)
+	return resp.res, err
+}
+
+func (gj *graphjin) query(c context.Context, r graphqlReq) (
+	resp graphqlResp, err error) {
+
+	resp.res = &Result{
+		ns:   r.ns,
+		op:   r.op,
+		name: r.name,
 	}
 
-	ct := &gcontext{
-		gj:   gj,
-		rc:   rc,
-		ns:   ns,
-		op:   op,
-		name: name,
+	if !gj.prod && r.name == "IntrospectionQuery" {
+		resp.res.Data, err = gj.introspection(r.query)
+		return
 	}
 
-	res := &Result{
-		ns:   ns,
-		op:   op,
-		name: name,
+	if r.op == qcode.QTSubscription {
+		err = errors.New("use 'core.Subscribe' for subscriptions")
+		return
 	}
 
-	if !gj.prod && name == "IntrospectionQuery" {
-		v, err := gj.introspection(query)
-		if err != nil {
-			return res, err
-		}
-		res.Data = v
-		return res, nil
-	}
-
-	if ct.op == qcode.QTSubscription {
-		return res, errors.New("use 'core.Subscribe' for subscriptions")
-	}
-
-	if ct.op == qcode.QTMutation && gj.schema.DBType() == "mysql" {
-		return res, errors.New("mysql: mutations not supported")
+	if r.op == qcode.QTMutation && gj.schema.DBType() == "mysql" {
+		err = errors.New("mysql: mutations not supported")
+		return
 	}
 
 	var role string
@@ -475,29 +453,22 @@ func (gj *graphjin) graphQLWithOpName(
 		}
 	}
 
-	qr := queryReq{
-		ns:    ct.ns,
-		op:    ct.op,
-		name:  ct.name,
-		query: []byte(query),
-		vars:  vars,
-	}
+	s := newGState(gj, r, role)
 
-	qres, err := ct.execQuery(c, qr, role)
+	err = s.compileAndExecuteWrapper(c)
 	if err != nil {
-		res.Errors = []Error{{Message: err.Error()}}
+		resp.res.Errors = []Error{{Message: err.Error()}}
 	}
 
-	res.actionJSON = qres.actionVar()
-	res.sql = qres.sql()
-	res.cacheControl = qres.cacheHeader()
+	resp.qc = s.qcode()
+	resp.res.sql = s.sql()
+	resp.res.cacheControl = s.cacheHeader()
 
-	res.Data = json.RawMessage(qres.data)
-	res.Hash = qres.dhash
-	res.role = qres.role
-	res.Vars = vars
-
-	return res, err
+	resp.res.Vars = r.vars
+	resp.res.Data = json.RawMessage(s.data)
+	resp.res.Hash = s.dhash
+	resp.res.role = s.role
+	return
 }
 
 // Reload redoes database discover and reinitializes GraphJin.
@@ -514,15 +485,6 @@ func (g *GraphJin) Reload() error {
 func (g *GraphJin) IsProd() bool {
 	gj := g.Load().(*graphjin)
 	return gj.prod
-}
-
-func Upgrade(configPath string) error {
-	fs := fs.NewOsFSWithBase(configPath)
-	al, err := allow.New(nil, fs, false)
-	if err != nil {
-		return fmt.Errorf("failed to initialize allow list: %w", err)
-	}
-	return al.Upgrade()
 }
 
 type Header struct {

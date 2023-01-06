@@ -11,48 +11,48 @@ import (
 	"github.com/dosco/graphjin/v2/internal/jsn"
 )
 
-func (c *gcontext) execRemoteJoin(ctx context.Context, res queryResp) (queryResp, error) {
-	var err error
-	sel := res.qc.st.qc.Selects
-
+func (s *gstate) execRemoteJoin(c context.Context) (err error) {
 	// fetch the field name used within the db response json
 	// that are used to mark insertion points and the mapping between
 	// those field names and their select objects
-	fids, sfmap, err := c.parentFieldIds(sel, res.qc.st.qc.Remotes)
+	var fids [][]byte
+	var sfmap map[string]*qcode.Select
+
+	fids, sfmap, err = s.parentFieldIds()
 	if err != nil {
-		return res, err
+		return
 	}
 
 	// fetch the field values of the marked insertion points
 	// these values contain the id to be used with fetching remote data
-	from := jsn.Get(res.data, fids)
+	from := jsn.Get(s.data, fids)
 	var to []jsn.Field
 
 	if len(from) == 0 {
-		return res, errors.New("something wrong no remote ids found in db response")
+		err = errors.New("something wrong no remote ids found in db response")
+		return
 	}
 
-	to, err = c.resolveRemotes(ctx, from, sel, sfmap)
+	to, err = s.resolveRemotes(c, from, sfmap)
 	if err != nil {
-		return res, err
+		return
 	}
 
 	var ob bytes.Buffer
 
-	err = jsn.Replace(&ob, res.data, from, to)
+	err = jsn.Replace(&ob, s.data, from, to)
 	if err != nil {
-		return res, err
+		return
 	}
-	res.data = ob.Bytes()
-
-	return res, nil
+	s.data = ob.Bytes()
+	return
 }
 
-func (c *gcontext) resolveRemotes(
+func (s *gstate) resolveRemotes(
 	ctx context.Context,
 	from []jsn.Field,
-	sel []qcode.Select,
 	sfmap map[string]*qcode.Select) ([]jsn.Field, error) {
+	selects := s.cs.st.qc.Selects
 
 	// replacement data for the marked insertion points
 	// key and value will be replaced by whats below
@@ -65,15 +65,15 @@ func (c *gcontext) resolveRemotes(
 
 	for i, id := range from {
 		// use the json key to find the related Select object
-		s, ok := sfmap[string(id.Key)]
+		sel, ok := sfmap[string(id.Key)]
 		if !ok {
 			return nil, fmt.Errorf("invalid remote field key")
 		}
-		p := sel[s.ParentID]
+		p := selects[sel.ParentID]
 
 		// then use the Table name in the Select and it's parent
 		// to find the resolver to use for this relationship
-		r, ok := c.gj.rmap[(s.Table + p.Table)]
+		r, ok := s.gj.rmap[(sel.Table + p.Table)]
 		if !ok {
 			return nil, fmt.Errorf("no resolver found")
 		}
@@ -83,18 +83,18 @@ func (c *gcontext) resolveRemotes(
 			return nil, fmt.Errorf("invalid remote field id")
 		}
 
-		go func(n int, id []byte, s *qcode.Select) {
+		go func(n int, id []byte, sel *qcode.Select) {
 			defer wg.Done()
 
 			//st := time.Now()
 
-			ctx1, span := c.gj.spanStart(ctx, "Execute Remote Request")
+			ctx1, span := s.gj.spanStart(ctx, "Execute Remote Request")
 
 			b, err := r.Fn.Resolve(ctx1, ResolverReq{
-				ID: string(id), Sel: s, Log: c.gj.log, ReqConfig: c.rc})
+				ID: string(id), Sel: sel, Log: s.gj.log, ReqConfig: s.r.rc})
 
 			if err != nil {
-				cerr = fmt.Errorf("%s: %s", s.Table, err)
+				cerr = fmt.Errorf("%s: %s", sel.Table, err)
 				span.Error(cerr)
 			}
 			span.End()
@@ -109,10 +109,10 @@ func (c *gcontext) resolveRemotes(
 
 			var ob bytes.Buffer
 
-			if len(s.Fields) != 0 {
-				err = jsn.Filter(&ob, b, fieldsToList(s.Fields))
+			if len(sel.Fields) != 0 {
+				err = jsn.Filter(&ob, b, fieldsToList(sel.Fields))
 				if err != nil {
-					cerr = fmt.Errorf("%s: %w", s.Table, err)
+					cerr = fmt.Errorf("%s: %w", sel.Table, err)
 					return
 				}
 
@@ -120,16 +120,16 @@ func (c *gcontext) resolveRemotes(
 				ob.WriteString("null")
 			}
 
-			to[n] = jsn.Field{Key: []byte(s.FieldName), Value: ob.Bytes()}
-		}(i, id, s)
+			to[n] = jsn.Field{Key: []byte(sel.FieldName), Value: ob.Bytes()}
+		}(i, id, sel)
 	}
 	wg.Wait()
-
 	return to, cerr
 }
 
-func (c *gcontext) parentFieldIds(sel []qcode.Select, remotes int32) (
-	[][]byte, map[string]*qcode.Select, error) {
+func (s *gstate) parentFieldIds() ([][]byte, map[string]*qcode.Select, error) {
+	selects := s.cs.st.qc.Selects
+	remotes := s.cs.st.qc.Remotes
 
 	// list of keys (and it's related value) to extract from
 	// the db json response
@@ -139,18 +139,16 @@ func (c *gcontext) parentFieldIds(sel []qcode.Select, remotes int32) (
 	// object
 	sm := make(map[string]*qcode.Select, remotes)
 
-	for i := range sel {
-		s := &sel[i]
-
-		if s.SkipRender != qcode.SkipTypeRemote {
+	for i, sel := range selects {
+		if sel.SkipRender != qcode.SkipTypeRemote {
 			continue
 		}
 
-		p := sel[s.ParentID]
+		p := selects[sel.ParentID]
 
-		if r, ok := c.gj.rmap[(s.Table + p.Table)]; ok {
+		if r, ok := s.gj.rmap[(sel.Table + p.Table)]; ok {
 			fm = append(fm, r.IDField)
-			sm[string(r.IDField)] = s
+			sm[string(r.IDField)] = &selects[i]
 		}
 	}
 	return fm, sm, nil

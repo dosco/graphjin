@@ -211,9 +211,9 @@ func (co *Compiler) compileMutation(qc *QCode, role string) error {
 }
 
 type mData struct {
-	Data    *graph.Node
-	IsJSON  bool
-	IsArray bool
+	Data   *graph.Node
+	IsJSON bool
+	Array  bool
 }
 
 func parseDataValue(qc *QCode, actionVal *graph.Node, isJSON bool) (mData, error) {
@@ -418,7 +418,7 @@ func (co *Compiler) processNestedMutations(ms *mState, m *Mutate, data *graph.No
 
 func (co *Compiler) processList(m Mutate) []Mutate {
 	if m.IsJSON {
-		m.IsArray = m.Data.Type == graph.NodeList
+		m.Array = m.Data.Type == graph.NodeList
 		m.Data = m.Data.Children[0]
 		return []Mutate{m}
 	}
@@ -427,7 +427,7 @@ func (co *Compiler) processList(m Mutate) []Mutate {
 	for i := range m.Data.Children {
 		m1 := m
 		m1.Data = m.Data.Children[i]
-		m1.IsArray = m1.Data.Type == graph.NodeList
+		m1.Array = m1.Data.Type == graph.NodeList
 		m1.ID += int32(i)
 		mList = append(mList, m1)
 	}

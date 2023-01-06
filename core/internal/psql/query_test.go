@@ -151,7 +151,7 @@ func withNestedWhere(t *testing.T) {
 	}`
 
 	vars := map[string]json.RawMessage{
-		"email": json.RawMessage(`test@test.com`),
+		"email": json.RawMessage(`"test@test.com"`),
 	}
 
 	compileGQLToPSQL(t, gql, vars, "user")

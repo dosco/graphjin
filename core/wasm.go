@@ -8,7 +8,7 @@ import (
 	"net/http"
 )
 
-func (gj *graphjin) introspection(query string) ([]byte, error) {
+func (gj *graphjin) introspection(query []byte) ([]byte, error) {
 	return nil, errors.New("introspection not supported")
 }
 

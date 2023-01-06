@@ -7,16 +7,7 @@ import (
 	"strings"
 
 	"github.com/dosco/graphjin/v2/core/internal/allow"
-	"github.com/dosco/graphjin/v2/core/internal/qcode"
 )
-
-type queryReq struct {
-	op    qcode.QType
-	ns    string
-	name  string
-	query []byte
-	vars  []byte
-}
 
 // nolint: errcheck
 func (gj *graphjin) prepareRoleStmt() error {

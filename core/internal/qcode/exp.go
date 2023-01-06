@@ -10,7 +10,7 @@ import (
 )
 
 func (co *Compiler) compileArgObj(edge string,
-	ti sdata.DBTable, st *util.StackInf, arg *graph.Arg, selID int32) (*Exp, bool, error) {
+	ti sdata.DBTable, st *util.StackInf, arg graph.Arg, selID int32) (*Exp, bool, error) {
 	if arg.Val.Type != graph.NodeObj {
 		return nil, false, fmt.Errorf("expecting an object")
 	}
@@ -370,10 +370,10 @@ func (ast *aexpst) processOpAndVal(av aexp, ex *Exp, node *graph.Node) (bool, er
 	case "is_null":
 		ex.Op = OpIsNull
 		ex.Right.Val = node.Val
-	case "null_eq", "ndis", "not_distinct":
+	case "ndis", "not_distinct":
 		ex.Op = OpNotDistinct
 		ex.Right.Val = node.Val
-	case "null_neq", "dis", "distinct":
+	case "dis", "distinct":
 		ex.Op = OpDistinct
 		ex.Right.Val = node.Val
 	default:

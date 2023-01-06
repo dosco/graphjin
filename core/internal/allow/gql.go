@@ -3,46 +3,49 @@ package allow
 import (
 	"bufio"
 	"bytes"
+	"io"
 	"path/filepath"
 	"regexp"
-	"strings"
 
 	"github.com/dosco/graphjin/v2/plugin"
 )
 
 var incRe = regexp.MustCompile(`(?m)#import \"(.+)\"`)
 
-func parseGQLFile(fs plugin.FS, fname string) (string, error) {
-	var sb strings.Builder
+func readGQL(fs plugin.FS, fname string) ([]byte, error) {
+	var b bytes.Buffer
 
-	if err := parseGQL(fs, fname, &sb); err == plugin.ErrNotFound {
-		return "", ErrUnknownGraphQLQuery
+	if err := parseGQL(fs, fname, &b); err == plugin.ErrNotFound {
+		return nil, ErrUnknownGraphQLQuery
 	} else if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return sb.String(), nil
+	return b.Bytes(), nil
 }
 
-func parseGQL(fs plugin.FS, fname string, sb *strings.Builder) error {
+func parseGQL(fs plugin.FS, fname string, r io.Writer) (err error) {
 	b, err := fs.ReadFile(fname)
 	if err != nil {
 		return err
 	}
-
 	s := bufio.NewScanner(bytes.NewReader(b))
 	for s.Scan() {
 		m := incRe.FindStringSubmatch(s.Text())
 		if len(m) == 0 {
-			sb.Write(s.Bytes())
+			r.Write(s.Bytes()) //nolint: errcheck
 			continue
 		}
 
-		fn := filepath.Join(filepath.Dir(fname), m[1])
-		if err := parseGQL(fs, fn, sb); err != nil {
+		incFile := m[1]
+		if filepath.Ext(incFile) == "" {
+			incFile += ".gql"
+		}
+
+		fn := filepath.Join(filepath.Dir(fname), incFile)
+		if err := parseGQL(fs, fn, r); err != nil {
 			return err
 		}
 	}
-
-	return nil
+	return
 }
