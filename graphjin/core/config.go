@@ -20,9 +20,13 @@ type Config struct {
 	// Is used to encrypt opaque values such as the cursor. Auto-generated when not set
 	SecretKey string `mapstructure:"secret_key" json:"secret_key" yaml:"secret_key"  jsonschema:"title=Secret Key"`
 
-	// When set to true it disables the allow list workflow and all queries are
-	// always compiled even in production (Warning possible security concern)
+	// When set to true it disables the allow list workflow
 	DisableAllowList bool `mapstructure:"disable_allow_list" json:"disable_allow_list" yaml:"disable_allow_list" jsonschema:"title=Disable Allow List,default=false"`
+
+	// When set to true a database schema file will be generated in dev mode and
+	// used in production mode. Auto database discovery will be disabled
+	// in production mode.
+	EnableSchema bool `mapstructure:"enable_schema" json:"enable_schema" yaml:"enable_schema" jsonschema:"title=Enable Schema,default=false"`
 
 	// Forces the database session variable 'user.id' to be set to the user id
 	SetUserID bool `mapstructure:"set_user_id" json:"set_user_id" yaml:"set_user_id" jsonschema:"title=Set User ID,default=false"`

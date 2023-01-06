@@ -9,6 +9,7 @@ import (
 )
 
 var (
+	typeToken         = []byte("type")
 	queryToken        = []byte("query")
 	mutationToken     = []byte("mutation")
 	fragmentToken     = []byte("fragment")
@@ -45,7 +46,7 @@ const (
 	itemEOF                     // end of file
 	itemName                    // label
 	itemOn                      // "on"
-	itemPunctuator              // punctuation !():=[]{|}
+	itemPunctuator              // punctuation !()[]{}:=
 	itemArgsOpen                // (
 	itemArgsClose               // )
 	itemListOpen                // [
@@ -54,6 +55,7 @@ const (
 	itemObjClose                // }
 	itemColon                   // :
 	itemEquals                  // =
+	itemRequired                // !
 	itemDirective               // @(directive)
 	itemVariable                // $variable
 	itemSpread                  // ...
@@ -62,8 +64,9 @@ const (
 	itemBoolVal                 // boolean
 )
 
-// !$():=@[]{|}
+// !()[]{}:=
 var punctuators = map[rune]MType{
+	'!': itemRequired,
 	'{': itemObjOpen,
 	'}': itemObjClose,
 	'[': itemListOpen,
@@ -248,6 +251,9 @@ func lexRoot(l *lexer) stateFn {
 	case r == '@':
 		l.ignore()
 		l.emit(itemDirective)
+	case r == '!':
+		l.ignore()
+		l.emit(itemRequired)
 	case r == '$':
 		l.ignore()
 		if l.acceptAlphaNum() {
@@ -257,8 +263,6 @@ func lexRoot(l *lexer) stateFn {
 	case contains(l.current(), punctuatorToken):
 		if item, ok := punctuators[r]; ok {
 			l.emit(item)
-		} else {
-			l.emit(itemPunctuator)
 		}
 	case r == '"' || r == '\'':
 		l.backup()

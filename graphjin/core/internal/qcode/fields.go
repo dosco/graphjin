@@ -144,7 +144,7 @@ func (co *Compiler) compileChildColumns(
 	return nil
 }
 
-func (co *Compiler) compileFuncTableArg(sel *Select, arg *graph.Arg) error {
+func (co *Compiler) compileFuncTableArg(sel *Select, arg graph.Arg) error {
 	fn := sel.Ti.Func
 	input, err := fn.GetInput(arg.Name)
 	if err != nil {

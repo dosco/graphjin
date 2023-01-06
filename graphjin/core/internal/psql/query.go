@@ -288,7 +288,6 @@ func (c *compilerContext) renderSelect(sel *qcode.Select) {
 			}
 		}
 	}
-
 	c.w.WriteString(`AS json `)
 
 	// We manually insert the cursor values into row we're building outside

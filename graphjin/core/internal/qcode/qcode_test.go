@@ -78,9 +78,8 @@ func TestCompile3(t *testing.T) {
 		return
 	}
 
-	vars := map[string]json.RawMessage{
-		"data": json.RawMessage(` { "name": "my_name", "description": "my_desc"  }`),
-	}
+	vars := json.RawMessage(`
+		{ "data": { "name": "my_name", "description": "my_desc"  } }`)
 
 	_, err = qc.Compile([]byte(`
 	mutation {
@@ -102,10 +101,10 @@ func TestCompile4(t *testing.T) {
 		}
 	}`
 
-	vars := map[string]json.RawMessage{
-		"email":     json.RawMessage(`"reannagreenholt@orn.com"`),
-		"full_name": json.RawMessage(`"Flo Barton"`),
-	}
+	vars := json.RawMessage(`{
+		"email":     "reannagreenholt@orn.com",
+		"full_name": "Flo Barton"
+	}`)
 
 	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
 	_, err := qc.Compile([]byte(gql), vars, "user", "")

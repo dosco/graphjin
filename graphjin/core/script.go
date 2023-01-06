@@ -52,9 +52,11 @@ func (gj *graphjin) readScriptSource(name string) (string, error) {
 	return string(src), nil
 }
 
-func (c *gcontext) scriptCallReq(ctx context.Context, qc *qcode.QCode,
-	vars map[string]interface{}, role string) (
-	[]byte, error) {
+func (s *gstate) scriptCallReq(ctx context.Context,
+	qc *qcode.QCode,
+	vars map[string]interface{},
+	role string) ([]byte, error) {
+
 	defer func() {
 		// nolint: errcheck
 		recover()
@@ -65,8 +67,8 @@ func (c *gcontext) scriptCallReq(ctx context.Context, qc *qcode.QCode,
 		userID = v
 	}
 
-	ctx1, span := c.gj.spanStart(ctx, "Execute Request Script")
-	gfn := c.newGraphQLFunc(ctx1, role)
+	ctx1, span := s.gj.spanStart(ctx, "Execute Request Script")
+	gfn := s.newGraphQLFunc(ctx1)
 
 	val := qc.Script.SC.RequestFn(ctx1, vars, role, userID, gfn)
 	if val == nil {
@@ -79,22 +81,21 @@ func (c *gcontext) scriptCallReq(ctx context.Context, qc *qcode.QCode,
 	return json.Marshal(val)
 }
 
-func (c *gcontext) scriptCallResp(ctx context.Context, qc *qcode.QCode,
-	data []byte, role string) (_ []byte, err error) {
+func (s *gstate) scriptCallResp(c context.Context) (err error) {
 	defer func() {
 		// nolint: errcheck
 		recover()
 	}()
 
 	rj := make(map[string]interface{})
-	if len(data) != 0 {
-		if err := json.Unmarshal(data, &rj); err != nil {
-			return nil, err
+	if len(s.data) != 0 {
+		if err = json.Unmarshal(s.data, &rj); err != nil {
+			return
 		}
 	}
 
 	var userID interface{}
-	if v := ctx.Value(UserIDKey); v != nil {
+	if v := c.Value(UserIDKey); v != nil {
 		userID = v
 	}
 
@@ -103,21 +104,22 @@ func (c *gcontext) scriptCallResp(ctx context.Context, qc *qcode.QCode,
 		recover()
 	}()
 
-	ctx1, span := c.gj.spanStart(ctx, "Execute Response Script")
-	gfn := c.newGraphQLFunc(ctx1, role)
+	c1, span := s.gj.spanStart(c, "Execute Response Script")
+	gfn := s.newGraphQLFunc(c1)
 
-	val := qc.Script.SC.ReponseFn(ctx1, rj, role, userID, gfn)
+	val := s.cs.st.qc.Script.SC.ReponseFn(c1, rj, s.role, userID, gfn)
 	if val == nil {
-		err := errors.New("error excuting script")
+		err = errors.New("error excuting script")
 		span.Error(err)
-		return data, nil
+		return
 	}
 	span.End()
 
-	return json.Marshal(val)
+	s.data, err = json.Marshal(val)
+	return
 }
 
-func (c *gcontext) newGraphQLFunc(ctx context.Context, role string) func(string, map[string]interface{}, map[string]string) map[string]interface{} {
+func (s *gstate) newGraphQLFunc(c context.Context) func(string, map[string]interface{}, map[string]string) map[string]interface{} {
 	return func(
 		query string,
 		vars map[string]interface{},
@@ -128,43 +130,33 @@ func (c *gcontext) newGraphQLFunc(ctx context.Context, role string) func(string,
 		if err != nil {
 			panic(err)
 		}
-		op := qcode.GetQTypeByName(h.Operation)
-		name := h.Name
 
-		qreq := queryReq{
-			op:    op,
-			name:  name,
-			query: []byte(query),
-		}
-
-		ct := gcontext{
-			gj:   c.gj,
-			rc:   c.rc,
-			op:   op,
-			name: name,
-		}
+		r := s.gj.newGraphqlReq(s.r.rc,
+			h.Operation,
+			h.Name,
+			[]byte(query),
+			nil)
 
 		if len(vars) != 0 {
-			if qreq.vars, err = json.Marshal(vars); err != nil {
+			if r.vars, err = json.Marshal(vars); err != nil {
 				panic(fmt.Errorf("variables: %s", err))
 			}
 		}
 
-		var r1 string
+		s := newGState(s.gj, r, s.role)
 
-		if v, ok := opt["role"]; ok && len(v) != 0 {
-			r1 = v
-		} else {
-			r1 = role
+		if v, ok := opt["role"]; ok && v != "" {
+			s.role = v
 		}
 
-		qres, err := ct.execQuery(ctx, qreq, r1)
+		err = s.compileAndExecuteWrapper(c)
+
 		if err != nil {
 			panic(err)
 		}
 
 		jres := make(map[string]interface{})
-		if err = json.Unmarshal(qres.data, &jres); err != nil {
+		if err = json.Unmarshal(s.data, &jres); err != nil {
 			panic(fmt.Errorf("json: %s", err))
 		}
 

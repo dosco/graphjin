@@ -123,17 +123,12 @@ type intro struct {
 	exptNeeded   map[string]bool
 }
 
-// func (g *GraphJin) Introspection(query string) (*Result, error) {
-// 	gj := g.Load().(*graphjin)
-// 	return gj.introspection(query)
-// }
-
-func (gj *graphjin) introspection(query string) ([]byte, error) {
+func (gj *graphjin) introspection(query []byte) ([]byte, error) {
 	engine, err := gj.newGraphQLEngine()
 	if err != nil {
 		return nil, err
 	}
-	r := engine.ServeGraphQL(&graphql.Request{Query: query})
+	r := engine.ServeGraphQL(&graphql.Request{Query: string(query)})
 	if err := r.Error(); err != nil {
 		return nil, err
 	}

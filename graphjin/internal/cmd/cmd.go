@@ -40,7 +40,6 @@ func Cmd() {
 	rootCmd.AddCommand(initCmd())
 	rootCmd.AddCommand(deployCmd())
 	rootCmd.AddCommand(dbCmd())
-	rootCmd.AddCommand(upgradeCmd())
 
 	if v := cmdSecrets(); v != nil {
 		rootCmd.AddCommand(v)

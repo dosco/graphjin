@@ -6,8 +6,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"testing"
 
 	"github.com/dosco/graphjin/v2/core"
+	"github.com/dosco/graphjin/v2/plugin/fs"
+	"github.com/stretchr/testify/assert"
 )
 
 func Example_insert() {
@@ -661,4 +665,72 @@ func Example_insertIntoRecursiveRelationshipAndConnectTable2() {
 		printJSON(res.Data)
 	}
 	// Output: {"comments":{"commenter":{"id":3},"comments":[{"id":6}],"id":5004,"product":{"id":26}}}
+}
+
+func TestAllowListWithMutations(t *testing.T) {
+	gql := `
+	mutation getProducts {
+		users(insert: $data) {
+			id
+		}
+	}`
+
+	dir, err := os.MkdirTemp("", "test")
+	assert.NoError(t, err)
+	defer os.RemoveAll(dir)
+
+	fs := fs.NewOsFSWithBase(dir)
+	err = fs.CreateDir("queries")
+	assert.NoError(t, err)
+
+	conf1 := newConfig(&core.Config{DBType: dbType, DisableAllowList: false})
+	gj1, err := core.NewGraphJin(conf1, db, core.OptionSetFS(fs))
+	assert.NoError(t, err)
+
+	vars1 := json.RawMessage(`{
+		"data": {
+			"id": 90011,
+			"email": "user90011@test.com",
+			"full_name": "User 90011"
+		}
+	}`)
+
+	exp1 := `{"users": [{"id": 90011}]}`
+
+	res1, err := gj1.GraphQL(context.Background(), gql, vars1, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, exp1, string(res1.Data))
+
+	conf2 := newConfig(&core.Config{DBType: dbType, Production: true})
+	gj2, err := core.NewGraphJin(conf2, db, core.OptionSetFS(fs))
+	assert.NoError(t, err)
+
+	vars2 := json.RawMessage(`{
+		"data": {
+			"id": 90012,
+			"email": "user90012@test.com",
+			"full_name": "User 90012"
+		}
+	}`)
+
+	exp2 := `{"users": [{"id": 90012}]}`
+
+	res2, err := gj2.GraphQL(context.Background(), gql, vars2, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, exp2, string(res2.Data))
+
+	vars3 := json.RawMessage(`{
+		"data": {
+			"id": 90013,
+			"email": "user90013@test.com",
+			"full_name": "User 90013",
+			"stripe_id": "payment_id_90013"
+		}
+	}`)
+
+	exp3 := `{"users": [{"id": 90013}]}`
+
+	res3, err := gj2.GraphQL(context.Background(), gql, vars3, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, exp3, string(res3.Data))
 }

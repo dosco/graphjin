@@ -1,6 +1,7 @@
 package psql_test
 
 import (
+	"encoding/json"
 	"errors"
 	"log"
 	"os"
@@ -136,19 +137,39 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func compileGQLToPSQL(t *testing.T, gql string, vars qcode.Variables, role string) {
-	if err := _compileGQLToPSQL(t, gql, vars, role); err != nil {
+func compileGQLToPSQL(t *testing.T, gql string,
+	vars map[string]json.RawMessage,
+	role string) {
+
+	var v json.RawMessage
+	var err error
+
+	if v, err = json.Marshal(vars); err != nil {
+		t.Error(err)
+	}
+
+	if err := _compileGQLToPSQL(t, gql, v, role); err != nil {
 		t.Error(err)
 	}
 }
 
-func compileGQLToPSQLExpectErr(t *testing.T, gql string, vars qcode.Variables, role string) {
-	if err := _compileGQLToPSQL(t, gql, vars, role); err == nil {
+func compileGQLToPSQLExpectErr(t *testing.T, gql string,
+	vars map[string]json.RawMessage,
+	role string) {
+
+	var v json.RawMessage
+	var err error
+
+	if v, err = json.Marshal(v); err != nil {
+		t.Error(err)
+	}
+
+	if err := _compileGQLToPSQL(t, gql, v, role); err == nil {
 		t.Error(errors.New("we were expecting an error"))
 	}
 }
 
-func _compileGQLToPSQL(t *testing.T, gql string, vars qcode.Variables, role string) error {
+func _compileGQLToPSQL(t *testing.T, gql string, vars json.RawMessage, role string) error {
 	for i := 0; i < 1000; i++ {
 		qc, err := qcompile.Compile([]byte(gql), vars, role, "")
 		if err != nil {

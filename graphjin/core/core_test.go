@@ -210,6 +210,41 @@ func TestAllowListWithNamespace(t *testing.T) {
 	assert.ErrorIs(t, err, allow.ErrUnknownGraphQLQuery)
 }
 
+func TestEnableSchema(t *testing.T) {
+	gql := `
+	fragment Product on products {
+		id
+		name
+	}
+	query getProducts {
+		products(id: 2) {
+			...Product
+		}
+	}`
+
+	dir, err := os.MkdirTemp("", "test")
+	assert.NoError(t, err)
+	defer os.RemoveAll(dir)
+
+	fs := fs.NewOsFSWithBase(dir)
+
+	conf1 := newConfig(&core.Config{DBType: dbType, EnableSchema: true})
+	gj1, err := core.NewGraphJin(conf1, db, core.OptionSetFS(fs))
+	assert.NoError(t, err)
+
+	res1, err := gj1.GraphQL(context.Background(), gql, nil, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, stdJSON(res1.Data), `{"products":{"id":2,"name":"Product 2"}}`)
+
+	conf2 := newConfig(&core.Config{DBType: dbType, EnableSchema: true, Production: true})
+	gj2, err := core.NewGraphJin(conf2, db, core.OptionSetFS(fs))
+	assert.NoError(t, err)
+
+	res2, err := gj2.GraphQL(context.Background(), gql, nil, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, stdJSON(res2.Data), `{"products":{"id":2,"name":"Product 2"}}`)
+}
+
 func TestConfigReuse(t *testing.T) {
 	gql := `query {
 		products(id: 2) {
@@ -280,7 +315,7 @@ func TestParallelRuns(t *testing.T) {
 			for n := 0; n < 10; n++ {
 				conf := newConfig(&core.Config{
 					DBType:           dbType,
-					Production:       true,
+					Production:       false,
 					DisableAllowList: true,
 					Tables: []core.Table{
 						{Name: "me", Table: "users"},
@@ -304,7 +339,6 @@ func TestParallelRuns(t *testing.T) {
 				if err != nil {
 					return fmt.Errorf("%d: %w", x, err)
 				}
-				// fmt.Println(x, ">", string(res.Data))
 			}
 			return nil
 		})

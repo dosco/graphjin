@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dosco/graphjin/v2/core/internal/allow"
 	"github.com/dosco/graphjin/v2/core/internal/graph"
 	"github.com/dosco/graphjin/v2/core/internal/qcode"
 	"github.com/rs/xid"
@@ -29,11 +30,9 @@ var (
 )
 
 type sub struct {
-	ns   string
-	name string
-	role string
-	qc   *queryComp
-	js   json.RawMessage
+	k  string
+	s  gstate
+	js json.RawMessage
 
 	add  chan *Member
 	del  chan *Member
@@ -85,40 +84,33 @@ func (g *GraphJin) Subscribe(
 	c context.Context,
 	query string,
 	vars json.RawMessage,
-	rc *ReqConfig) (*Member, error) {
-	var err error
+	rc *ReqConfig) (m *Member, err error) {
 
-	h, err := graph.FastParse(query)
-	if err != nil {
-		return nil, err
+	// get the name, query vars
+	var h graph.FPInfo
+	if h, err = graph.FastParse(query); err != nil {
+		return
 	}
-	op := qcode.GetQTypeByName(h.Operation)
-	name := h.Name
 
 	gj := g.Load().(*graphjin)
 
-	if gj.prod && !gj.conf.DisableAllowList {
-		item, err := gj.allowList.GetByName(name, gj.prod)
+	// create the request object
+	r := gj.newGraphqlReq(rc, "subscription", h.Name, nil, vars)
+
+	// if prod fetch query from allow list
+	if gj.prod {
+		var item allow.Item
+		item, err = gj.allowList.GetByName(h.Name, gj.prod)
 		if err != nil {
-			return nil, err
+			return
 		}
-		op = qcode.GetQTypeByName(item.Operation)
-		query = item.Query
+		r.Set(item)
+	} else {
+		r.query = []byte(query)
 	}
 
-	m, err := gj.subscribeWithOpName(c, op, name, query, vars, rc)
-	if err != nil {
-		return nil, err
-	}
-
-	if !gj.prod {
-		err := gj.saveToAllowList(nil, query, m.ns)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return m, err
+	m, err = gj.subscribe(c, r)
+	return
 }
 
 // SubscribeByName is similar to the Subscribe function except that queries saved
@@ -127,38 +119,35 @@ func (g *GraphJin) SubscribeByName(
 	c context.Context,
 	name string,
 	vars json.RawMessage,
-	rc *ReqConfig) (*Member, error) {
+	rc *ReqConfig) (m *Member, err error) {
 
 	gj := g.Load().(*graphjin)
-	item, err := gj.allowList.GetByName(name, gj.prod)
-	if err != nil {
-		return nil, err
-	}
-	op := qcode.GetQTypeByName(item.Operation)
-	query := item.Query
 
-	return gj.subscribeWithOpName(c, op, name, query, vars, rc)
+	var item allow.Item
+	item, err = gj.allowList.GetByName(name, gj.prod)
+	if err != nil {
+		return
+	}
+	r := gj.newGraphqlReq(rc, "subscription", name, nil, vars)
+	r.Set(item)
+
+	m, err = gj.subscribe(c, r)
+	return
 }
 
-func (gj *graphjin) subscribeWithOpName(
-	c context.Context,
-	op qcode.QType,
-	name string,
-	query string,
-	vars json.RawMessage,
-	rc *ReqConfig) (*Member, error) {
+func (gj *graphjin) subscribe(c context.Context, r graphqlReq) (
+	m *Member, err error) {
 
-	if op != qcode.QTSubscription {
+	if r.op != qcode.QTSubscription {
 		return nil, errors.New("subscription: not a subscription query")
 	}
 
-	if name == "" {
-		h := sha256.Sum256([]byte(query))
-		name = hex.EncodeToString(h[:])
+	if r.name == "" {
+		h := sha256.Sum256([]byte(r.query))
+		r.name = hex.EncodeToString(h[:])
 	}
 
 	var role string
-	var err error
 
 	if v, ok := c.Value(UserRoleKey).(string); ok {
 		role = v
@@ -172,37 +161,33 @@ func (gj *graphjin) subscribeWithOpName(
 	}
 
 	if role == "user" && gj.abacEnabled {
-		if role, err = gj.executeRoleQuery(c, nil, vars, gj.pf, rc); err != nil {
-			return nil, err
+		role, err = gj.executeRoleQuery(c, nil, r.vars, r.rc)
+		if err != nil {
+			return
 		}
 	}
 
-	ns := gj.namespace
-	if rc != nil && rc.ns != nil {
-		ns = *rc.ns
-	}
-
-	v, _ := gj.subs.LoadOrStore((ns + name + role), &sub{
-		ns:   ns,
-		name: name,
-		role: role,
+	k := (r.ns + r.name + role)
+	v, _ := gj.subs.LoadOrStore(k, &sub{
+		k:    k,
+		s:    newGState(gj, r, role),
 		add:  make(chan *Member),
 		del:  make(chan *Member),
 		updt: make(chan mmsg, 10),
 	})
-	s := v.(*sub)
+	sub := v.(*sub)
 
-	s.Do(func() {
-		err = gj.newSub(c, s, query, vars, rc)
+	sub.Do(func() {
+		err = gj.initSub(c, sub)
 	})
 
 	if err != nil {
-		gj.subs.Delete((name + role))
-		return nil, err
+		gj.subs.Delete(k)
+		return
 	}
 
-	args, err := gj.argList(c, s.qc.st.md, vars, gj.pf, rc)
-	if err != nil {
+	var args args
+	if args, err = sub.s.argListVars(c, r.vars); err != nil {
 		return nil, err
 	}
 
@@ -214,62 +199,47 @@ func (gj *graphjin) subscribeWithOpName(
 		}
 	}
 
-	m := &Member{
-		ns:     ns,
+	m = &Member{
+		ns:     r.ns,
 		id:     xid.New(),
 		Result: make(chan *Result, 10),
-		sub:    s,
+		sub:    sub,
 		vl:     args.values,
 		params: params,
 		cindx:  args.cindx,
 	}
 
-	m.mm, err = gj.subFirstQuery(s, m, params)
+	m.mm, err = gj.subFirstQuery(sub, m, params)
 	if err != nil {
 		return nil, err
 	}
-	s.add <- m
-
-	return m, nil
+	sub.add <- m
+	return
 }
 
-func (gj *graphjin) newSub(c context.Context,
-	s *sub, query string, vars json.RawMessage, rc *ReqConfig) error {
-	var err error
-
-	qr := queryReq{
-		ns:    s.ns,
-		op:    qcode.QTSubscription,
-		name:  s.name,
-		query: []byte(query),
-		vars:  vars,
+func (gj *graphjin) initSub(c context.Context, sub *sub) (err error) {
+	if err = sub.s.compile(); err != nil {
+		return
 	}
 
-	if s.qc, err = gj.compileQuery(qr, s.role); err != nil {
-		return err
-	}
-
-	if !gj.prod && !gj.conf.DisableAllowList {
-		err := gj.allowList.Set(
-			nil,
-			query,
-			qr.ns)
-
+	if !gj.prod {
+		err = gj.saveToAllowList(sub.s.cs.st.qc, nil, sub.s.r.ns)
 		if err != nil {
-			return err
+			return
 		}
 	}
 
-	if len(s.qc.st.md.Params()) != 0 {
-		s.qc.st.sql = renderSubWrap(s.qc.st, gj.schema.DBType())
+	if len(sub.s.cs.st.md.Params()) != 0 {
+		sub.s.cs.st.sql = renderSubWrap(sub.s.cs.st, gj.schema.DBType())
 	}
 
-	go gj.subController(s)
-	return nil
+	go gj.subController(sub)
+	return
 }
 
-func (gj *graphjin) subController(s *sub) {
-	defer gj.subs.Delete((s.name + s.role))
+func (gj *graphjin) subController(sub *sub) {
+	// remove subscription if controller exists
+	defer gj.subs.Delete(sub.k)
 
 	ps := gj.conf.SubsPollDuration
 	if ps < minPollDuration {
@@ -278,26 +248,26 @@ func (gj *graphjin) subController(s *sub) {
 
 	for {
 		select {
-		case m := <-s.add:
-			if err := s.addMember(m); err != nil {
+		case m := <-sub.add:
+			if err := sub.addMember(m); err != nil {
 				gj.log.Printf(errSubs, "add-sub", err)
 				return
 			}
 
-		case m := <-s.del:
-			s.deleteMember(m)
-			if len(s.ids) == 0 {
+		case m := <-sub.del:
+			sub.deleteMember(m)
+			if len(sub.ids) == 0 {
 				return
 			}
 
-		case msg := <-s.updt:
-			if err := s.updateMember(msg); err != nil {
+		case msg := <-sub.updt:
+			if err := sub.updateMember(msg); err != nil {
 				gj.log.Printf(errSubs, "update-sub", err)
 				return
 			}
 
 		case <-time.After(ps):
-			s.fanOutJobs(gj)
+			sub.fanOutJobs(gj)
 		}
 	}
 }
@@ -393,7 +363,7 @@ func (s *sub) fanOutJobs(gj *graphjin) {
 	}
 }
 
-func (gj *graphjin) subCheckUpdates(s *sub, mv mval, start int) {
+func (gj *graphjin) subCheckUpdates(sub *sub, mv mval, start int) {
 	// Do not use the `mval` embedded inside sub since
 	// its not thread safe use the copy `mv mval`.
 
@@ -412,7 +382,7 @@ func (gj *graphjin) subCheckUpdates(s *sub, mv mval, start int) {
 		end = start + (len(mv.ids) - start)
 	}
 
-	hasParams := len(s.qc.st.md.Params()) != 0
+	hasParams := len(sub.s.cs.st.md.Params()) != 0
 
 	var rows *sql.Rows
 	var err error
@@ -430,16 +400,15 @@ func (gj *graphjin) subCheckUpdates(s *sub, mv mval, start int) {
 		params = renderJSONArray(mv.params[start:end])
 	}
 
-	err = retryOperation(c, func() error {
+	err = retryOperation(c, func() (err1 error) {
 		if hasParams {
 			//nolint: sqlclosecheck
-			rows, err = gj.db.QueryContext(c, s.qc.st.sql, params)
+			rows, err1 = gj.db.QueryContext(c, sub.s.cs.st.sql, params)
 		} else {
 			//nolint: sqlclosecheck
-			rows, err = gj.db.QueryContext(c, s.qc.st.sql)
+			rows, err1 = gj.db.QueryContext(c, sub.s.cs.st.sql)
 		}
-
-		return err
+		return
 	})
 
 	if err != nil {
@@ -461,18 +430,18 @@ func (gj *graphjin) subCheckUpdates(s *sub, mv mval, start int) {
 		i++
 
 		if hasParams {
-			gj.subNotifyMember(s, mv, j, js)
+			gj.subNotifyMember(sub, mv, j, js)
 			continue
 		}
 
 		for k := start; k < end; k++ {
-			gj.subNotifyMember(s, mv, k, js)
+			gj.subNotifyMember(sub, mv, k, js)
 		}
-		s.js = js
+		sub.js = js
 	}
 }
 
-func (gj *graphjin) subFirstQuery(s *sub, m *Member, params json.RawMessage) (mmsg, error) {
+func (gj *graphjin) subFirstQuery(sub *sub, m *Member, params json.RawMessage) (mmsg, error) {
 	c := context.Background()
 
 	// when params are not available we use a more optimized
@@ -483,22 +452,22 @@ func (gj *graphjin) subFirstQuery(s *sub, m *Member, params json.RawMessage) (mm
 	var mm mmsg
 	var err error
 
-	if s.js != nil {
-		js = s.js
+	if sub.js != nil {
+		js = sub.js
 
 	} else {
-		err := retryOperation(c, func() error {
+		err := retryOperation(c, func() (err1 error) {
 			switch {
 			case params != nil:
-				err = gj.db.
-					QueryRowContext(c, s.qc.st.sql, renderJSONArray([]json.RawMessage{params})).
+				err1 = gj.db.
+					QueryRowContext(c, sub.s.cs.st.sql, renderJSONArray([]json.RawMessage{params})).
 					Scan(&js)
 			default:
-				err = gj.db.
-					QueryRowContext(c, s.qc.st.sql).
+				err1 = gj.db.
+					QueryRowContext(c, sub.s.cs.st.sql).
 					Scan(&js)
 			}
-			return err
+			return
 		})
 
 		if err != nil {
@@ -506,7 +475,7 @@ func (gj *graphjin) subFirstQuery(s *sub, m *Member, params json.RawMessage) (mm
 		}
 	}
 
-	mm, err = gj.subNotifyMemberEx(s,
+	mm, err = gj.subNotifyMemberEx(sub,
 		[32]byte{},
 		m.cindx,
 		m.id,
@@ -527,7 +496,7 @@ func (gj *graphjin) subNotifyMember(s *sub, mv mval, j int, js json.RawMessage) 
 	}
 }
 
-func (gj *graphjin) subNotifyMemberEx(s *sub,
+func (gj *graphjin) subNotifyMemberEx(sub *sub,
 	dh [32]byte, cindx int, id xid.ID, rc chan *Result, js json.RawMessage, update bool) (mmsg, error) {
 	mm := mmsg{id: id}
 
@@ -559,14 +528,14 @@ func (gj *graphjin) subNotifyMemberEx(s *sub,
 	}
 
 	if update {
-		s.updt <- mm
+		sub.updt <- mm
 	}
 
 	res := &Result{
 		op:   qcode.QTQuery,
-		name: s.name,
-		sql:  s.qc.st.sql,
-		role: s.qc.st.role.Name,
+		name: sub.s.r.name,
+		sql:  sub.s.cs.st.sql,
+		role: sub.s.cs.st.role,
 		Data: ejs,
 	}
 

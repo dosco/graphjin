@@ -51,12 +51,15 @@ type Operation struct {
 	Directives []Directive
 	Fields     []Field
 	fieldsA    [10]Field
+	Query      []byte
+	Frags      []Fragment
 }
 
 type Fragment struct {
 	Name   string
 	On     string
 	Fields []Field
+	Value  []byte
 }
 
 type Field struct {
@@ -114,10 +117,8 @@ type Parser struct {
 	err   error
 }
 
-func Parse(gql []byte) (Operation, error) {
+func Parse(gql []byte) (op Operation, err error) {
 	var l lexer
-	var op Operation
-	var err error
 
 	if len(gql) == 0 {
 		return op, errors.New("empty query")
@@ -134,7 +135,7 @@ func Parse(gql []byte) (Operation, error) {
 	}
 	op.Fields = op.fieldsA[:0]
 
-	s := -1
+	qs := -1
 	qf := false
 
 	for {
@@ -145,24 +146,29 @@ func Parse(gql []byte) (Operation, error) {
 
 		if p.peekVal(fragmentToken) {
 			p.ignore()
-			if _, err := p.parseFragment(); err != nil {
-				return op, err
+			if _, err = p.parseFragment(); err != nil {
+				return
 			}
 
 		} else {
 			if !qf &&
 				(p.peekVal(queryToken, mutationToken, fragmentToken, subscriptionToken) ||
 					p.peek(itemObjOpen)) {
-				s = p.pos
+				qs = p.pos
 				qf = true
 			}
 			p.ignore()
 		}
 	}
 
-	p.reset(s)
+	p.reset(qs)
 	if op, err = p.parseOp(); err != nil {
 		return op, err
+	}
+
+	op.Frags = make([]Fragment, 0, len(p.frags))
+	for _, f := range p.frags {
+		op.Frags = append(op.Frags, f)
 	}
 
 	for i, f := range op.Fields {
@@ -170,83 +176,95 @@ func Parse(gql []byte) (Operation, error) {
 			op.Fields[i].Type = FieldKeyword
 		}
 	}
-	return op, nil
+	return
 }
 
-func (p *Parser) parseFragment() (Fragment, error) {
-	var err error
-	var frag Fragment
+func (p *Parser) parseFragment() (frag Fragment, err error) {
+	s := p.curr().pos
 
 	if p.peek(itemName) {
 		frag.Name = p.val(p.next())
 	} else {
-		return frag, errors.New("fragment: missing name")
+		err = errors.New("fragment: missing name")
+		return
 	}
 
 	if p.peek(itemOn) {
 		p.ignore()
 	} else {
-		return frag, errors.New("fragment: missing 'on' keyword")
+		err = errors.New("fragment: missing 'on' keyword")
+		return
 	}
 
 	if p.peek(itemName) {
 		frag.On = p.vall(p.next())
 	} else {
-		return frag, errors.New("fragment: missing table name after 'on' keyword")
+		err = errors.New("fragment: missing table name after 'on' keyword")
+		return
 	}
 
 	if p.peek(itemObjOpen) {
 		p.ignore()
 	} else {
-		return frag, fmt.Errorf("fragment: expecting a '{', got: %s", p.next())
+		err = fmt.Errorf("fragment: expecting a '{', got: %s", p.next())
+		return
 	}
 
 	frag.Fields, err = p.parseFields(frag.Fields)
 	if err != nil {
-		return frag, fmt.Errorf("fragment: %v", err)
+		err = fmt.Errorf("fragment: %v", err)
+		return
 	}
+
+	if p.peek(itemObjClose) {
+		p.ignore()
+	}
+
+	e := p.curr().pos + 1
+	frag.Value = p.input[s:e]
 
 	if p.frags == nil {
-		p.frags = make(map[string]Fragment)
+		p.frags = map[string]Fragment{
+			frag.Name: frag,
+		}
+	} else {
+		p.frags[frag.Name] = frag
 	}
-
-	p.frags[frag.Name] = frag
 
 	return frag, nil
 }
 
 func (p *Parser) parseOp() (Operation, error) {
 	var err error
-	var typeSet bool
 	var op Operation
 
-	if p.peekVal(queryToken, mutationToken, subscriptionToken) {
-		if err = p.parseOpTypeAndArgs(&op); err != nil {
-			return op, fmt.Errorf("%s: %v", op.Type, err)
-		}
-		typeSet = true
-	}
+	s := p.curr().pos + 1
 
-	if p.peek(itemObjOpen) {
-		p.ignore()
-		if !typeSet {
-			op.Type = OpQuery
-		}
-
-		for {
-			if p.peek(itemEOF) || p.peekVal(fragmentToken) {
-				p.ignore()
-				break
-			}
-
-			op.Fields, err = p.parseFields(op.Fields)
-			if err != nil {
-				return op, fmt.Errorf("%s: %v", op.Type, err)
-			}
-		}
-	} else {
+	if !p.peekVal(queryToken, mutationToken, subscriptionToken) {
 		return op, fmt.Errorf("expecting a query, mutation or subscription, got: %s", p.peekNext())
 	}
+
+	if err = p.parseOpTypeAndArgs(&op); err != nil {
+		return op, fmt.Errorf("%s: %v", op.Type, err)
+	}
+
+	if !p.peek(itemObjOpen) {
+		return op, p.tokErr("{")
+	}
+	p.ignore()
+
+	op.Fields, err = p.parseFields(op.Fields)
+	if err != nil {
+		return op, fmt.Errorf("%s: %v", op.Type, err)
+	}
+
+	if p.peek(itemObjClose) {
+		p.ignore()
+	}
+
+	e := p.curr().pos + 1
+	op.Query = p.input[s:e]
+
 	return op, nil
 }
 
@@ -313,7 +331,7 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 	st := NewStack()
 
 	if !p.peek(itemName, itemSpread) {
-		return nil, fmt.Errorf("unexpected token: %s", p.peekNext())
+		return nil, p.tokErr(`1 field name or ...Fragment`)
 	}
 
 	for {
@@ -323,9 +341,8 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 		}
 
 		if p.peek(itemObjClose) {
-			p.ignore()
-
 			if st.Len() != 0 {
+				p.ignore()
 				st.Pop()
 				continue
 			} else {
@@ -475,6 +492,8 @@ func (p *Parser) parseFragmentFields(st *Stack, fields []Field) ([]Field, error)
 
 func (p *Parser) parseField(f *Field) error {
 	var err error
+
+	// hold onto name to while we check if its an alias
 	v := p.next()
 
 	if p.peek(itemColon) {
@@ -754,6 +773,13 @@ func (p *Parser) peekVal(values ...[]byte) bool {
 		}
 	}
 	return false
+}
+
+func (p *Parser) curr() item {
+	if p.pos == -1 {
+		return item{}
+	}
+	return p.items[p.pos]
 }
 
 func (p *Parser) next() item {

@@ -21,17 +21,18 @@ func _() {
 	_ = x[itemObjClose-10]
 	_ = x[itemColon-11]
 	_ = x[itemEquals-12]
-	_ = x[itemDirective-13]
-	_ = x[itemVariable-14]
-	_ = x[itemSpread-15]
-	_ = x[itemNumberVal-16]
-	_ = x[itemStringVal-17]
-	_ = x[itemBoolVal-18]
+	_ = x[itemRequired-13]
+	_ = x[itemDirective-14]
+	_ = x[itemVariable-15]
+	_ = x[itemSpread-16]
+	_ = x[itemNumberVal-17]
+	_ = x[itemStringVal-18]
+	_ = x[itemBoolVal-19]
 }
 
-const _MType_name = "errorend of filelabel\"on\"punctuation !():=[]{|}()[]{}:=@(directive)$variable...numberstringboolean"
+const _MType_name = "errorend of filelabel\"on\"punctuation !()[]{}:=()[]{}:=!@(directive)$variable...numberstringboolean"
 
-var _MType_index = [...]uint8{0, 5, 16, 21, 25, 47, 48, 49, 50, 51, 52, 53, 54, 55, 67, 76, 79, 85, 91, 98}
+var _MType_index = [...]uint8{0, 5, 16, 21, 25, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 67, 76, 79, 85, 91, 98}
 
 func (i MType) String() string {
 	if i < 0 || i >= MType(len(_MType_index)-1) {

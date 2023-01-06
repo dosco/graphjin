@@ -1,7 +1,9 @@
 package graph
 
 import (
+	"bytes"
 	"errors"
+	"io"
 	"strings"
 	"text/scanner"
 )
@@ -15,8 +17,19 @@ func FastParse(gql string) (h FPInfo, err error) {
 	if gql == "" {
 		return h, errors.New("query missing or empty")
 	}
+	return fastParse(strings.NewReader(gql))
+}
+
+func FastParseBytes(gql []byte) (h FPInfo, err error) {
+	if len(gql) == 0 {
+		return h, errors.New("query missing or empty")
+	}
+	return fastParse(bytes.NewReader(gql))
+}
+
+func fastParse(r io.Reader) (h FPInfo, err error) {
 	var s scanner.Scanner
-	s.Init(strings.NewReader(gql))
+	s.Init(r)
 	s.Whitespace ^= 1 << '\n' // don't skip new lines
 
 	comment := false

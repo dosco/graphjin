@@ -75,6 +75,13 @@ type QCode struct {
 	Script     Script
 	Validation Validation
 	Typename   bool
+	Query      []byte
+	Fragments  []Fragment
+}
+
+type Fragment struct {
+	Name  string
+	Value []byte
 }
 
 type Select struct {
@@ -341,29 +348,47 @@ func NewCompiler(s *sdata.DBSchema, c Config) (*Compiler, error) {
 }
 
 func (co *Compiler) Compile(
-	query []byte, vars Variables, role, namespace string) (*QCode, error) {
-	var err error
+	query []byte, vars json.RawMessage, role, namespace string) (qc *QCode, err error) {
 
-	op, err := graph.Parse(query)
+	var op graph.Operation
+	op, err = graph.Parse(query)
 	if err != nil {
-		return nil, err
+		return
 	}
 
-	qc := QCode{Name: op.Name, SType: QTQuery, Schema: co.s, Vars: vars}
-	qc.Roots = qc.rootsA[:0]
-	qc.Type = GetQType(op.Type)
-
-	if err := co.compileQuery(&qc, &op, role); err != nil {
-		return nil, err
+	qc = &QCode{
+		Name:      op.Name,
+		SType:     QTQuery,
+		Schema:    co.s,
+		Query:     op.Query,
+		Fragments: make([]Fragment, len(op.Frags)),
 	}
 
-	if qc.Type == QTMutation {
-		if err := co.compileMutation(&qc, role); err != nil {
-			return nil, err
+	if len(vars) != 0 {
+		qc.Vars = make(map[string]json.RawMessage)
+
+		if err := json.Unmarshal(vars, &qc.Vars); err != nil {
+			return nil, fmt.Errorf("variables: %w", err)
 		}
 	}
 
-	return &qc, nil
+	for i, f := range op.Frags {
+		qc.Fragments[i] = Fragment{Name: f.Name, Value: f.Value}
+	}
+
+	qc.Roots = qc.rootsA[:0]
+	qc.Type = GetQType(op.Type)
+
+	if err = co.compileQuery(qc, &op, role); err != nil {
+		return
+	}
+
+	if qc.Type == QTMutation {
+		if err = co.compileMutation(qc, role); err != nil {
+			return
+		}
+	}
+	return
 }
 
 func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) error {
@@ -624,10 +649,10 @@ func (co *Compiler) setRelFilters(qc *QCode, sel *Select) {
 
 	switch rel.Type {
 	case sdata.RelOneToOne, sdata.RelOneToMany:
-		setFilter(&sel.Where, buildFilter(rel, pid))
+		addAndFilter(&sel.Where, buildFilter(rel, pid))
 
 	case sdata.RelEmbedded:
-		setFilter(&sel.Where, buildFilter(rel, pid))
+		addAndFilter(&sel.Where, buildFilter(rel, pid))
 
 	case sdata.RelPolymorphic:
 		pid = qc.Selects[sel.ParentID].ParentID
@@ -647,7 +672,7 @@ func (co *Compiler) setRelFilters(qc *QCode, sel *Select) {
 		ex2.Right.Val = sel.Ti.Name
 
 		ex.Children = []*Exp{ex1, ex2}
-		setFilter(&sel.Where, ex)
+		addAndFilter(&sel.Where, ex)
 
 	case sdata.RelRecursive:
 		rcte := "__rcte_" + rel.Right.Ti.Name
@@ -735,7 +760,7 @@ func (co *Compiler) setRelFilters(qc *QCode, sel *Select) {
 		}
 
 		ex.Children = []*Exp{ex1, ex2, ex3}
-		setFilter(&sel.Where, ex)
+		addAndFilter(&sel.Where, ex)
 	}
 }
 
@@ -891,8 +916,7 @@ func (co *Compiler) addSeekPredicate(sel *Select) {
 			or.Children = append(or.Children, and)
 		}
 	}
-
-	setFilter(&sel.Where, or)
+	addAndFilter(&sel.Where, or)
 }
 
 func addFilters(qc *QCode, where *Filter, trv trval) bool {
@@ -902,7 +926,7 @@ func addFilters(qc *QCode, where *Filter, trv trval) bool {
 		case OpFalse:
 			where.Exp = fil
 		default:
-			setFilter(where, fil)
+			addAndFilter(where, fil)
 		}
 		return userNeeded
 	}
@@ -1024,9 +1048,7 @@ func (co *Compiler) compileSelectorDirectives2(qc *QCode, sel *Select, dirs []gr
 func (co *Compiler) compileArgs(sel *Select, args []graph.Arg, role string) error {
 	var err error
 
-	for i := range args {
-		arg := &args[i]
-
+	for _, arg := range args {
 		switch arg.Name {
 		case "id":
 			err = co.compileArgID(sel, arg)
@@ -1142,17 +1164,11 @@ func (co *Compiler) setMutationType(qc *QCode, op *graph.Operation, role string)
 }
 
 func (co *Compiler) compileDirectiveSchema(sel *Select, d *graph.Directive) error {
-	if len(d.Args) == 0 {
-		return fmt.Errorf("required argument 'name' missing")
+	arg, err := getArg(d.Args, "name", []graph.ParserType{graph.NodeStr}, true)
+	if err == nil {
+		sel.Schema = arg.Val.Val
 	}
-	arg := d.Args[0]
-
-	if ifNotArg(arg, graph.NodeStr) {
-		return argTypeErr("string")
-	}
-
-	sel.Schema = arg.Val.Val
-	return nil
+	return err
 }
 
 func (co *Compiler) compileSelectDirectiveSkipInclude(skip bool, sel *Select, d *graph.Directive, role string) (err error) {
@@ -1230,7 +1246,7 @@ func (co *Compiler) compileSkipIncludeFilter(
 	selID int32,
 	fil *Filter,
 	arg graph.Arg,
-	role string) error {
+	role string) (err error) {
 
 	if ifArg(arg, graph.NodeVar) {
 		var ex *Exp
@@ -1241,15 +1257,22 @@ func (co *Compiler) compileSkipIncludeFilter(
 		}
 		ex.Right.ValType = ValVar
 		ex.Right.Val = arg.Val.Val
-		setFilter(fil, ex)
-		return nil
+		addAndFilter(fil, ex)
+		return
 	}
 
 	if ifArg(arg, graph.NodeObj) {
-		if skip {
-			setFilter(fil, newExpOp(OpNot))
+		var ex *Exp
+		ex, err = co.compileFilter(sel, selID, arg, role)
+		if err != nil {
+			return
 		}
-		return co.compileAndSetFilter(sel, selID, fil, &arg, role)
+		if skip {
+			addNotFilter(fil, ex)
+		} else {
+			addAndFilter(fil, ex)
+		}
+		return
 	}
 	return argErr("if", "variable or filter expression")
 }
@@ -1508,7 +1531,12 @@ func (co *Compiler) compileDirectiveValidation(qc *QCode, d *graph.Directive) er
 	return nil
 }
 
-func (co *Compiler) compileArgFind(sel *Select, arg *graph.Arg) error {
+func (co *Compiler) compileArgFind(sel *Select, arg graph.Arg) error {
+	err := validateArg(arg, []graph.ParserType{graph.NodeStr})
+	if err != nil {
+		return err
+	}
+
 	// Only allow on recursive relationship selectors
 	if sel.Rel.Type != sdata.RelRecursive {
 		return fmt.Errorf("selector '%s' is not recursive", sel.FieldName)
@@ -1520,18 +1548,16 @@ func (co *Compiler) compileArgFind(sel *Select, arg *graph.Arg) error {
 	return nil
 }
 
-func (co *Compiler) compileArgID(sel *Select, arg *graph.Arg) error {
-	node := arg.Val
-
+func (co *Compiler) compileArgID(sel *Select, arg graph.Arg) error {
 	if sel.ParentID != -1 {
 		return fmt.Errorf("can only be specified at the query root")
 	}
 
-	if node.Type != graph.NodeNum &&
-		node.Type != graph.NodeStr &&
-		node.Type != graph.NodeVar {
-		return argTypeErr("number, string or variable")
+	err := validateArg(arg, []graph.ParserType{graph.NodeNum, graph.NodeStr, graph.NodeVar})
+	if err != nil {
+		return err
 	}
+	node := arg.Val
 
 	if sel.Ti.PrimaryCol.Name == "" {
 		return fmt.Errorf("no primary key column defined for '%s'", sel.Table)
@@ -1563,7 +1589,7 @@ func (co *Compiler) compileArgID(sel *Select, arg *graph.Arg) error {
 	return nil
 }
 
-func (co *Compiler) compileArgSearch(sel *Select, arg *graph.Arg) error {
+func (co *Compiler) compileArgSearch(sel *Select, arg graph.Arg) error {
 	if len(sel.Ti.FullText) == 0 {
 		switch co.s.DBType() {
 		case "mysql":
@@ -1573,8 +1599,9 @@ func (co *Compiler) compileArgSearch(sel *Select, arg *graph.Arg) error {
 		}
 	}
 
-	if arg.Val.Type != graph.NodeVar {
-		return argTypeErr("variable")
+	err := validateArg(arg, []graph.ParserType{graph.NodeStr, graph.NodeVar})
+	if err != nil {
+		return err
 	}
 
 	ex := newExpOp(OpTsQuery)
@@ -1582,22 +1609,32 @@ func (co *Compiler) compileArgSearch(sel *Select, arg *graph.Arg) error {
 	ex.Right.Val = arg.Val.Val
 
 	sel.addIArg(Arg{Name: arg.Name, Val: arg.Val.Val})
-	setFilter(&sel.Where, ex)
+	addAndFilter(&sel.Where, ex)
 	return nil
 }
 
-func (co *Compiler) compileArgWhere(sel *Select, arg *graph.Arg, role string) error {
-	return co.compileAndSetFilter(sel, -1, &sel.Where, arg, role)
-}
-
-func (co *Compiler) compileArgOrderBy(sel *Select, arg *graph.Arg) error {
-	node := arg.Val
-
-	if node.Type != graph.NodeObj &&
-		node.Type != graph.NodeVar {
-		return argTypeErr("object or variable")
+func (co *Compiler) compileArgWhere(sel *Select, arg graph.Arg, role string) (err error) {
+	err = validateArg(arg, []graph.ParserType{graph.NodeObj})
+	if err != nil {
+		return
 	}
 
+	var ex *Exp
+	ex, err = co.compileFilter(sel, -1, arg, role)
+	if err != nil {
+		return
+	}
+	addAndFilter(&sel.Where, ex)
+	return
+}
+
+func (co *Compiler) compileArgOrderBy(sel *Select, arg graph.Arg) error {
+	err := validateArg(arg, []graph.ParserType{graph.NodeObj, graph.NodeVar})
+	if err != nil {
+		return err
+	}
+
+	node := arg.Val
 	cm := make(map[string]struct{})
 
 	for _, ob := range sel.OrderBy {
@@ -1761,21 +1798,23 @@ func compileOrderBy(sel *Select,
 	return nil
 }
 
-func (co *Compiler) compileArgArgs(sel *Select, arg *graph.Arg) error {
+func (co *Compiler) compileArgArgs(sel *Select, arg graph.Arg) error {
 	if sel.Ti.Type != "function" {
 		return fmt.Errorf("'%s' is not a db function", sel.Ti.Name)
 	}
 
+	err := validateArg(arg, []graph.ParserType{graph.NodeList})
+	if err != nil {
+		return err
+	}
+
 	fn := sel.Ti.Func
+
 	if len(fn.Inputs) == 0 {
 		return fmt.Errorf("db function '%s' does not have any arguments", sel.Ti.Name)
 	}
 
 	node := arg.Val
-
-	if node.Type != graph.NodeList {
-		return argErr("args", "list")
-	}
 
 	for i, n := range node.Children {
 		var err error
@@ -1819,12 +1858,12 @@ func toOrder(val string) (Order, error) {
 	}
 }
 
-func (co *Compiler) compileArgDistinctOn(sel *Select, arg *graph.Arg) error {
-	node := arg.Val
-
-	if node.Type != graph.NodeList && node.Type != graph.NodeStr {
-		return fmt.Errorf("expecting a list of strings or just a string")
+func (co *Compiler) compileArgDistinctOn(sel *Select, arg graph.Arg) error {
+	err := validateArg(arg, []graph.ParserType{graph.NodeList, graph.NodeStr})
+	if err != nil {
+		return err
 	}
+	node := arg.Val
 
 	if node.Type == graph.NodeStr {
 		if col, err := sel.Ti.GetColumn(node.Val); err == nil {
@@ -1855,12 +1894,12 @@ func (co *Compiler) compileArgDistinctOn(sel *Select, arg *graph.Arg) error {
 	return nil
 }
 
-func (co *Compiler) compileArgLimit(sel *Select, arg *graph.Arg) error {
-	node := arg.Val
-
-	if node.Type != graph.NodeNum && node.Type != graph.NodeVar {
-		return argTypeErr("number or variable")
+func (co *Compiler) compileArgLimit(sel *Select, arg graph.Arg) error {
+	err := validateArg(arg, []graph.ParserType{graph.NodeNum, graph.NodeVar})
+	if err != nil {
+		return err
 	}
+	node := arg.Val
 
 	switch node.Type {
 	case graph.NodeNum:
@@ -1879,12 +1918,12 @@ func (co *Compiler) compileArgLimit(sel *Select, arg *graph.Arg) error {
 	return nil
 }
 
-func (co *Compiler) compileArgOffset(sel *Select, arg *graph.Arg) error {
-	node := arg.Val
-
-	if node.Type != graph.NodeNum && node.Type != graph.NodeVar {
-		return argTypeErr("number or variable")
+func (co *Compiler) compileArgOffset(sel *Select, arg graph.Arg) error {
+	err := validateArg(arg, []graph.ParserType{graph.NodeNum, graph.NodeVar})
+	if err != nil {
+		return err
 	}
+	node := arg.Val
 
 	switch node.Type {
 	case graph.NodeNum:
@@ -1903,7 +1942,7 @@ func (co *Compiler) compileArgOffset(sel *Select, arg *graph.Arg) error {
 	return nil
 }
 
-func (co *Compiler) compileArgFirstLast(sel *Select, arg *graph.Arg, order Order) error {
+func (co *Compiler) compileArgFirstLast(sel *Select, arg graph.Arg, order Order) error {
 	if err := co.compileArgLimit(sel, arg); err != nil {
 		return err
 	}
@@ -1916,10 +1955,14 @@ func (co *Compiler) compileArgFirstLast(sel *Select, arg *graph.Arg, order Order
 	return nil
 }
 
-func (co *Compiler) compileArgAfterBefore(sel *Select, arg *graph.Arg, pt PagingType) error {
+func (co *Compiler) compileArgAfterBefore(sel *Select, arg graph.Arg, pt PagingType) error {
+	err := validateArg(arg, []graph.ParserType{graph.NodeVar})
+	if err != nil {
+		return err
+	}
 	node := arg.Val
 
-	if node.Type != graph.NodeVar || node.Val != "cursor" {
+	if node.Val != "cursor" {
 		return fmt.Errorf("value for argument '%s' must be a variable named $cursor", arg.Name)
 	}
 	sel.Paging.Type = pt
@@ -1947,21 +1990,22 @@ func (co *Compiler) setOrderByColName(ti sdata.DBTable, ob *OrderBy, node *graph
 	return nil
 }
 
-func (co *Compiler) compileAndSetFilter(sel *Select, selID int32, fil *Filter, arg *graph.Arg, role string) error {
+func (co *Compiler) compileFilter(sel *Select, selID int32, arg graph.Arg, role string) (ex *Exp, err error) {
 	st := util.NewStackInf()
-	ex, nu, err := co.compileArgObj(sel.Table, sel.Ti, st, arg, selID)
+	var nu bool
+
+	ex, nu, err = co.compileArgObj(sel.Table, sel.Ti, st, arg, selID)
 	if err != nil {
-		return err
+		return
 	}
 
 	if nu && role == "anon" {
 		sel.SkipRender = SkipTypeUserNeeded
 	}
-	setFilter(fil, ex)
-	return nil
+	return
 }
 
-func setFilter(fil *Filter, ex *Exp) {
+func addAndFilter(fil *Filter, ex *Exp) {
 	if fil.Exp == nil {
 		fil.Exp = ex
 		return
@@ -1971,14 +2015,30 @@ func setFilter(fil *Filter, ex *Exp) {
 
 	// add a new `and` exp and hook the above saved exp pointer a child
 	// we don't want to modify an exp object thats common (from filter config)
-	if ow.Op != OpAnd && ow.Op != OpOr && ow.Op != OpNot {
-		fil.Exp = newExpOp(OpAnd)
-		fil.Exp.Children = fil.Exp.childrenA[:2]
-		fil.Exp.Children[0] = ex
-		fil.Exp.Children[1] = ow
-	} else {
-		fil.Exp.Children = append(fil.Exp.Children, ex)
+	fil.Exp = newExpOp(OpAnd)
+	fil.Exp.Children = fil.Exp.childrenA[:2]
+	fil.Exp.Children[0] = ex
+	fil.Exp.Children[1] = ow
+}
+
+func addNotFilter(fil *Filter, ex *Exp) {
+	ex1 := newExpOp(OpNot)
+	ex1.Children = ex1.childrenA[:1]
+	ex1.Children[0] = ex
+
+	if fil.Exp == nil {
+		fil.Exp = ex1
+		return
 	}
+	// save exiting exp pointer (could be a common one from filter config)
+	ow := fil.Exp
+
+	// add a new `and` exp and hook the above saved exp pointer a child
+	// we don't want to modify an exp object thats common (from filter config)
+	fil.Exp = newExpOp(OpAnd)
+	fil.Exp.Children = fil.Exp.childrenA[:2]
+	fil.Exp.Children[0] = ex1
+	fil.Exp.Children[1] = ow
 }
 
 func compileFilter(s *sdata.DBSchema, ti sdata.DBTable, filter []string, isJSON bool) (*Exp, bool, error) {
@@ -2053,6 +2113,36 @@ func compileFilter(s *sdata.DBSchema, ti sdata.DBTable, filter []string, isJSON 
 // 	return b.String()
 // }
 
+func getArg(args []graph.Arg, name string, validTypes []graph.ParserType,
+	required bool) (arg graph.Arg, err error) {
+	for _, a := range args {
+		if a.Name != name {
+			continue
+		}
+		if err = validateArg(a, validTypes); err != nil {
+			return
+		}
+		return a, nil
+	}
+	if required {
+		err = fmt.Errorf("required argument '%s' missing", name)
+	}
+	return
+}
+
+func validateArg(arg graph.Arg, validTypes []graph.ParserType) (err error) {
+	for _, vt := range validTypes {
+		if arg.Val.Type == vt {
+			return
+		}
+	}
+	return argErr(arg.Name, argTypes(validTypes))
+}
+
+func argExists(arg graph.Arg) bool {
+	return arg.Val != nil
+}
+
 func ifArgList(arg graph.Arg, lty graph.ParserType) bool {
 	return arg.Val.Type == graph.NodeList &&
 		len(arg.Val.Children) != 0 &&
@@ -2067,20 +2157,25 @@ func ifNotArg(arg graph.Arg, ty graph.ParserType) bool {
 	return arg.Val.Type != ty
 }
 
-// func ifArgVal(arg graph.Arg, val string) bool {
-// 	return arg.Val.Val == val
-// }
-
 func ifNotArgVal(arg graph.Arg, val string) bool {
 	return arg.Val.Val != val
 }
 
-func argErr(name, ty string) error {
-	return fmt.Errorf("value for argument '%s' must be a %s", name, ty)
+func argTypes(types []graph.ParserType) string {
+	var sb strings.Builder
+	lastIndex := len(types) - 1
+	for i, t := range types {
+		if i == lastIndex {
+			sb.WriteString(" or " + t.String())
+		} else if i != 0 {
+			sb.WriteString(", " + t.String())
+		}
+	}
+	return sb.String()
 }
 
-func argTypeErr(ty string) error {
-	return fmt.Errorf("value must be a %s", ty)
+func argErr(name, ty string) error {
+	return fmt.Errorf("value for argument '%s' must be a %s", name, ty)
 }
 
 func dbArgErr(name, ty, db string) error {
@@ -2108,55 +2203,3 @@ func (s *Script) HasReqFn() bool {
 func (s *Script) HasRespFn() bool {
 	return s.SC.HasResponseFn()
 }
-
-/*
-func (qc *QCode) getVar(name string, vt ValType) (string, error) {
-	val, ok := qc.Vars[name]
-	if !ok {
-		return "", fmt.Errorf("variable '%s' not defined", name)
-	}
-	k := string(val)
-	if k == "null" {
-		return "", nil
-	}
-	switch vt {
-	case ValStr:
-		if k != "" && k[0] == '"' {
-			return k[1:(len(k) - 1)], nil
-		}
-	case ValNum:
-		if k != "" && ((k[0] >= '0' && k[0] <= '9') || k[0] == '-') {
-			return k, nil
-		}
-	case ValBool:
-		if strings.EqualFold(k, "true") || strings.EqualFold(k, "false") {
-			return k, nil
-		}
-	case ValList:
-		if k != "" && k[0] == '[' {
-			return k, nil
-		}
-	case ValObj:
-		if k != "" && k[0] == '{' {
-			return k, nil
-		}
-	}
-
-	var vts string
-	switch vt {
-	case ValStr:
-		vts = "string"
-	case ValNum:
-		vts = "number"
-	case ValBool:
-		vts = "boolean"
-	case ValList:
-		vts = "list"
-	case ValObj:
-		vts = "object"
-	}
-
-	return "", fmt.Errorf("variable '%s' must be a %s and not '%s'",
-		name, vts, k)
-}
-*/

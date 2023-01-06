@@ -18,7 +18,7 @@ type DBInfo struct {
 
 	Tables    []DBTable
 	Functions []DBFunction
-	VTables   []VirtualTable
+	VTables   []VirtualTable `json:"-"`
 	colMap    map[string]int
 	tableMap  map[string]int
 	hash      int
@@ -42,10 +42,6 @@ type VirtualTable struct {
 	IDColumn   string
 	TypeColumn string
 	FKeyColumn string
-}
-
-type st struct {
-	schema, table string
 }
 
 func GetDBInfo(
@@ -92,18 +88,6 @@ func GetDBInfo(
 		return nil, err
 	}
 
-	h := fnv.New128()
-	hv := fmt.Sprintf("%s%d%s%s", dbType, dbVersion, dbSchema, dbName)
-	h.Write([]byte(hv))
-
-	for _, c := range cols {
-		h.Write([]byte(c.String()))
-	}
-
-	for _, fn := range funcs {
-		h.Write([]byte(fn.String()))
-	}
-
 	di := NewDBInfo(
 		dbType,
 		dbVersion,
@@ -112,8 +96,6 @@ func GetDBInfo(
 		cols,
 		funcs,
 		blockList)
-
-	di.hash = h.Size()
 
 	return di, nil
 }
@@ -137,13 +119,17 @@ func NewDBInfo(
 		tableMap:  make(map[string]int),
 	}
 
+	type st struct {
+		schema string
+		table  string
+	}
+
 	tm := make(map[st][]DBColumn)
-	for i := range cols {
-		c := cols[i]
+	for i, c := range cols {
 		di.colMap[(c.Schema + ":" + c.Table + ":" + c.Name)] = i
 
-		k1 := st{c.Schema, c.Table}
-		tm[k1] = append(tm[k1], c)
+		k := st{c.Schema, c.Table}
+		tm[k] = append(tm[k], c)
 	}
 
 	for k, tcols := range tm {
@@ -173,6 +159,19 @@ func NewDBInfo(
 		di.AddTable(t)
 	}
 
+	h := fnv.New128()
+	hv := fmt.Sprintf("%s%d%s%s", dbType, dbVersion, dbSchema, dbName)
+	h.Write([]byte(hv))
+
+	for _, c := range cols {
+		h.Write([]byte(c.String()))
+	}
+
+	for _, fn := range funcs {
+		h.Write([]byte(fn.String()))
+	}
+
+	di.hash = h.Size()
 	return di
 }
 
@@ -338,10 +337,10 @@ type DBFunction struct {
 }
 
 type DBFuncParam struct {
-	ID      int
-	Name    string
-	Type    string
-	IsArray bool
+	ID    int
+	Name  string
+	Type  string
+	Array bool
 }
 
 func DiscoverFunctions(db *sql.DB, dbtype string, blockList []string) ([]DBFunction, error) {
@@ -386,7 +385,7 @@ func DiscoverFunctions(db *sql.DB, dbtype string, blockList []string) ([]DBFunct
 		param := DBFuncParam{ID: pid, Name: pn, Type: pt}
 
 		if strings.HasSuffix(pt, "[]") {
-			param.IsArray = true
+			param.Array = true
 		}
 
 		switch pk {

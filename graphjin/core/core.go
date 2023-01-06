@@ -1,19 +1,20 @@
 package core
 
 import (
+	"bytes"
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 
 	"github.com/avast/retry-go"
+	"github.com/dosco/graphjin/v2/core/internal/allow"
 	"github.com/dosco/graphjin/v2/core/internal/psql"
 	"github.com/dosco/graphjin/v2/core/internal/qcode"
 	"github.com/dosco/graphjin/v2/core/internal/sdata"
+	"github.com/dosco/graphjin/v2/internal/jsn"
 )
 
 var decPrefix = []byte(`__gj/enc:`)
@@ -53,21 +54,6 @@ const (
 // 	Duration    time.Duration `json:"duration"`
 // }
 
-type gcontext struct {
-	gj   *graphjin
-	op   qcode.QType
-	rc   *ReqConfig
-	ns   string
-	name string
-}
-
-type queryResp struct {
-	qc    *queryComp
-	role  string
-	data  []byte
-	dhash [sha256.Size]byte
-}
-
 func (gj *graphjin) initDiscover() error {
 	switch gj.conf.DBType {
 	case "":
@@ -81,22 +67,54 @@ func (gj *graphjin) initDiscover() error {
 	if err := gj._initDiscover(); err != nil {
 		return fmt.Errorf("%s: %w", gj.dbtype, err)
 	}
+
 	return nil
 }
 
-func (gj *graphjin) _initDiscover() error {
-	var err error
-
-	// If gj.dbinfo is not null then it's probably set
-	// for tests
-	if gj.dbinfo == nil {
-		gj.dbinfo, err = sdata.GetDBInfo(
-			gj.db,
-			gj.dbtype,
+func (gj *graphjin) _initDiscover() (err error) {
+	if gj.prod && gj.conf.EnableSchema {
+		b, err := gj.fs.ReadFile("db.schema")
+		if err != nil {
+			return err
+		}
+		ds, err := qcode.ParseSchema(b)
+		if err != nil {
+			return err
+		}
+		gj.dbinfo = sdata.NewDBInfo(ds.Type,
+			ds.Version,
+			ds.Schema,
+			"",
+			ds.Columns,
+			ds.Functions,
 			gj.conf.Blocklist)
 	}
 
-	return err
+	// If gj.dbinfo is not null then it's probably set
+	// for tests or the schema file is being used
+	if gj.dbinfo != nil {
+		return
+	}
+
+	gj.dbinfo, err = sdata.GetDBInfo(
+		gj.db,
+		gj.dbtype,
+		gj.conf.Blocklist)
+	if err != nil {
+		return
+	}
+
+	if !gj.prod && gj.conf.EnableSchema {
+		var buf bytes.Buffer
+		if err := writeSchema(gj.dbinfo, &buf); err != nil {
+			return err
+		}
+		err = gj.fs.CreateFile("db.schema", buf.Bytes())
+		if err != nil {
+			return
+		}
+	}
+	return
 }
 
 func (gj *graphjin) initSchema() error {
@@ -179,269 +197,54 @@ func (gj *graphjin) initCompilers() error {
 	return nil
 }
 
-func (gj *graphjin) executeRoleQuery(ctx context.Context,
+func (gj *graphjin) executeRoleQuery(c context.Context,
 	conn *sql.Conn,
-	vars []byte,
-	pf []byte,
-	rc *ReqConfig) (string, error) {
+	vars json.RawMessage,
+	rc *ReqConfig) (role string, err error) {
 
-	var role string
-	var ar args
-	var err error
-
-	md := gj.roleStmtMD
-
-	if ctx.Value(UserIDKey) == nil {
-		return "anon", nil
+	if c.Value(UserIDKey) == nil {
+		role = "anon"
+		return
 	}
 
-	if ar, err = gj.argList(ctx, md, vars, pf, rc); err != nil {
-		return "", err
+	var ar args
+	if ar, err = gj.argList(c,
+		gj.roleStmtMD,
+		vars,
+		rc); err != nil {
+		return
 	}
 
 	if conn == nil {
-		ctx1, span := gj.spanStart(ctx, "Get Connection")
-		err = retryOperation(ctx1, func() error {
-			conn, err = gj.db.Conn(ctx1)
-			return err
+		c1, span := gj.spanStart(c, "Get Connection")
+		defer span.End()
+
+		err = retryOperation(c1, func() (err1 error) {
+			conn, err1 = gj.db.Conn(c1)
+			return
 		})
 		if err != nil {
 			span.Error(err)
-		}
-		span.End()
-
-		if err != nil {
-			return role, err
+			return
 		}
 		defer conn.Close()
 	}
 
-	ctx1, span := gj.spanStart(ctx, "Execute Role Query")
+	c1, span := gj.spanStart(c, "Execute Role Query")
 	defer span.End()
 
-	err = retryOperation(ctx1, func() error {
+	err = retryOperation(c1, func() (err1 error) {
 		return conn.
-			QueryRowContext(ctx1, gj.roleStmt, ar.values...).
+			QueryRowContext(c1, gj.roleStmt, ar.values...).
 			Scan(&role)
 	})
-
 	if err != nil {
 		span.Error(err)
-		return role, err
+		return
 	}
 
 	span.SetAttributesString(stringAttr{"role", role})
-	return role, err
-}
-
-func (c *gcontext) execQuery(ctx context.Context, qr queryReq, role string) (queryResp, error) {
-	var res queryResp
-	var err error
-
-	if res, err = c.resolveSQL(ctx, qr, role); err != nil {
-		return res, err
-	}
-
-	if c.gj.conf.Debug {
-		c.debugLog(&res.qc.st)
-	}
-
-	qc := res.qc.st.qc
-
-	if len(res.data) == 0 {
-		return res, nil
-	}
-
-	if qc.Remotes != 0 {
-		if res, err = c.execRemoteJoin(ctx, res); err != nil {
-			return res, err
-		}
-	}
-
-	if qc.Script.Exists && qc.Script.HasRespFn() {
-		res.data, err = c.scriptCallResp(ctx, qc, res.data, res.role)
-	}
-
-	return res, err
-}
-
-func (c *gcontext) resolveSQL(ctx context.Context, qr queryReq, role string) (queryResp, error) {
-	var conn *sql.Conn
-	var err error
-
-	res := queryResp{role: role}
-
-	ctx1, span := c.gj.spanStart(ctx, "Get Connection")
-	err = retryOperation(ctx1, func() error {
-		conn, err = c.gj.db.Conn(ctx1)
-		return err
-	})
-	if err != nil {
-		span.Error(err)
-	}
-	span.End()
-
-	if err != nil {
-		return res, err
-	}
-	defer conn.Close()
-
-	if c.gj.conf.SetUserID {
-		ctx1, span = c.gj.spanStart(ctx, "Set Local User ID")
-		err = retryOperation(ctx1, func() error {
-			return c.setLocalUserID(ctx1, conn)
-		})
-		if err != nil {
-			span.Error(err)
-		}
-		span.End()
-
-		if err != nil {
-			return res, err
-		}
-	}
-
-	if v := ctx.Value(UserRoleKey); v != nil {
-		res.role = v.(string)
-	} else if c.gj.abacEnabled {
-		res.role, err = c.gj.executeRoleQuery(ctx, conn, qr.vars, c.gj.pf, c.rc)
-	}
-
-	if err != nil {
-		return res, err
-	}
-
-	qcomp, err := c.gj.compileQuery(qr, res.role)
-	if err != nil {
-		return res, err
-	}
-	res.qc = qcomp
-
-	return c.resolveCompiledQuery(ctx, conn, qcomp, res)
-}
-
-func (c *gcontext) resolveCompiledQuery(
-	ctx context.Context,
-	conn *sql.Conn,
-	qcomp *queryComp,
-	res queryResp) (
-	queryResp, error) {
-
-	// From here on use qcomp. for everything including accessing qr since it contains updated values of the latter. This code needs some refactoring
-
-	if err := c.validateAndUpdateVars(ctx, qcomp, &res); err != nil {
-		return res, err
-	}
-
-	args, err := c.gj.argList(ctx, qcomp.st.md, qcomp.qr.vars, c.gj.pf, c.rc)
-	if err != nil {
-		return res, err
-	}
-
-	ctx1, span := c.gj.spanStart(ctx, "Execute Query")
-	defer span.End()
-
-	err = retryOperation(ctx1, func() error {
-		return conn.
-			QueryRowContext(ctx1, qcomp.st.sql, args.values...).
-			Scan(&res.data)
-	})
-
-	if err != nil && err != sql.ErrNoRows {
-		span.Error(err)
-	}
-
-	if span.IsRecording() {
-		span.SetAttributesString(
-			stringAttr{"query.namespace", res.qc.qr.ns},
-			stringAttr{"query.operation", qcomp.st.qc.Type.String()},
-			stringAttr{"query.name", qcomp.st.qc.Name},
-			stringAttr{"query.role", qcomp.st.role.Name})
-	}
-
-	if err == sql.ErrNoRows {
-		return res, nil
-	} else if err != nil {
-		return res, err
-	}
-
-	res.dhash = sha256.Sum256(res.data)
-
-	res.data, err = encryptValues(res.data,
-		c.gj.pf, decPrefix, res.dhash[:], c.gj.encKey)
-	if err != nil {
-		return res, err
-	}
-
-	return res, nil
-}
-
-func (c *gcontext) validateAndUpdateVars(ctx context.Context, qcomp *queryComp, res *queryResp) error {
-	var vars map[string]interface{}
-
-	qc := qcomp.st.qc
-	qr := qcomp.qr
-
-	if qc == nil {
-		return nil
-	}
-
-	if len(qr.vars) != 0 || qc.Script.Name != "" {
-		vars = make(map[string]interface{})
-	}
-
-	if len(qr.vars) != 0 {
-		if err := json.Unmarshal(qr.vars, &vars); err != nil {
-			return err
-		}
-	}
-
-	if qc.Validation.Exists {
-		if err := qc.Validation.VE.Validate(qr.vars); err != nil {
-			return err
-		}
-	}
-
-	if qc.Consts != nil {
-		errs := qcomp.st.va.ValidateMap(ctx, vars, qc.Consts)
-		if !c.gj.prod && len(errs) != 0 {
-			for k, v := range errs {
-				c.gj.log.Printf("validation failed: $%s: %s", k, v.Error())
-			}
-		}
-
-		if len(errs) != 0 {
-			return errors.New("validation failed")
-		}
-	}
-
-	if qc.Script.Exists && qc.Script.HasReqFn() {
-		v, err := c.scriptCallReq(ctx, qc, vars, qcomp.st.role.Name)
-		if len(v) != 0 {
-			qcomp.qr.vars = v
-		} else if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (c *gcontext) setLocalUserID(ctx context.Context, conn *sql.Conn) error {
-	var err error
-
-	if v := ctx.Value(UserIDKey); v == nil {
-		return nil
-	} else {
-		switch v1 := v.(type) {
-		case string:
-			_, err = conn.ExecContext(ctx, `SET SESSION "user.id" = '`+v1+`'`)
-
-		case int:
-			_, err = conn.ExecContext(ctx, `SET SESSION "user.id" = `+strconv.Itoa(v1))
-		}
-	}
-
-	return err
+	return
 }
 
 func (r *Result) Operation() OpType {
@@ -481,7 +284,7 @@ func (r *Result) CacheControl() string {
 	return r.cacheControl
 }
 
-// func (c *gcontext) addTrace(sel []qcode.Select, id int32, st time.Time) {
+// func (c *gstate) addTrace(sel []qcode.Select, id int32, st time.Time) {
 // 	et := time.Now()
 // 	du := et.Sub(st)
 
@@ -524,16 +327,19 @@ func (r *Result) CacheControl() string {
 // 		append(c.res.Extensions.Tracing.Execution.Resolvers, tr)
 // }
 
-func (c *gcontext) debugLog(st *stmt) {
-	if st == nil || st.qc == nil {
+func (s *gstate) debugLogStmt() {
+	st := s.cs.st
+
+	if st.qc == nil {
 		return
 	}
+
 	for _, sel := range st.qc.Selects {
 		if sel.SkipRender == qcode.SkipTypeUserNeeded {
-			c.gj.log.Printf("Field skipped, requires $user_id or table not added to anon role: %s", sel.FieldName)
+			s.gj.log.Printf("Field skipped, requires $user_id or table not added to anon role: %s", sel.FieldName)
 		}
 		if sel.SkipRender == qcode.SkipTypeBlocked {
-			c.gj.log.Printf("Field skipped, blocked: %s", sel.FieldName)
+			s.gj.log.Printf("Field skipped, blocked: %s", sel.FieldName)
 		}
 	}
 }
@@ -542,39 +348,40 @@ func retryIfDBError(err error) bool {
 	return (err == driver.ErrBadConn)
 }
 
-func (gj *graphjin) saveToAllowList(actionVar json.RawMessage, query, namespace string) error {
+func (gj *graphjin) saveToAllowList(qc *qcode.QCode, vars json.RawMessage, ns string) (err error) {
 	if gj.conf.DisableAllowList {
 		return nil
 	}
 
-	return gj.allowList.Set(actionVar, query, namespace)
+	item := allow.Item{
+		Namespace: ns,
+		Name:      qc.Name,
+		Query:     qc.Query,
+		Fragments: make([]allow.Fragment, len(qc.Fragments)),
+	}
+
+	if qc.ActionVar != "" {
+		var buf bytes.Buffer
+		if err = jsn.Clear(&buf, []byte(vars)); err != nil {
+			return
+		}
+
+		v := json.RawMessage(buf.Bytes())
+		item.Vars, err = json.MarshalIndent(v, "", "  ")
+		if err != nil {
+			return
+		}
+	}
+
+	for i, f := range qc.Fragments {
+		item.Fragments[i] = allow.Fragment{Name: f.Name, Value: f.Value}
+	}
+
+	return gj.allowList.Set(item)
 }
 
 func (gj *graphjin) spanStart(c context.Context, name string) (context.Context, span) {
 	return gj.tracer.Start(c, name)
-}
-
-func (qres *queryResp) sql() string {
-	if qres.qc != nil {
-		return qres.qc.st.sql
-	}
-	return ""
-}
-
-func (qres *queryResp) actionVar() json.RawMessage {
-	if qcomp := qres.qc; qcomp != nil {
-		if v, ok := qcomp.st.qc.Vars[qcomp.st.qc.ActionVar]; ok {
-			return v
-		}
-	}
-	return nil
-}
-
-func (qres *queryResp) cacheHeader() string {
-	if qres.qc != nil && qres.qc.st.qc != nil {
-		return qres.qc.st.qc.Cache.Header
-	}
-	return ""
 }
 
 func retryOperation(c context.Context, fn func() error) error {

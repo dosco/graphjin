@@ -523,7 +523,7 @@ func (c *compilerContext) renderMutateToRecordSet(m qcode.Mutate, n int) {
 	if n != 0 {
 		c.w.WriteString(`, `)
 	}
-	if m.IsArray {
+	if m.Array {
 		c.w.WriteString(`json_to_recordset`)
 	} else {
 		c.w.WriteString(`json_to_record`)
