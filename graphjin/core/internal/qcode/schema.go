@@ -90,6 +90,7 @@ func parseTFieldsColumns(tableSchema, tableName string, fields []graph.TField) (
 			NotNull:    f.Required,
 			PrimaryKey: dir.ID,
 			UniqueKey:  dir.Unique,
+			FullText:   dir.Search,
 			Blocked:    dir.Blocked,
 			FKeySchema: dir.RelatedSchema,
 			FKeyTable:  dir.RelatedType,
@@ -162,6 +163,7 @@ func parseTypeDirectives(dir []graph.Directive) (ti typeInfo, err error) {
 type tfieldInfo struct {
 	ID            bool
 	Unique        bool
+	Search        bool
 	Blocked       bool
 	RelatedType   string
 	RelatedField  string
@@ -179,6 +181,9 @@ func parseTFieldDirectives(ft string, dir []graph.Directive) (tfi tfieldInfo, er
 
 		case "unique":
 			tfi.Unique = true
+
+		case "search":
+			tfi.Search = true
 
 		case "blocked":
 			tfi.Blocked = true

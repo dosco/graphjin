@@ -155,15 +155,18 @@ func (gj *graphjin) newGraphQLEngine() (engine *graphql.Engine, err error) {
 	in.EntryPoints[schema.Mutation] = in.mutation
 	in.EntryPoints[schema.Subscription] = in.subscription
 
-	in.Types["OrderDirection"] = &schema.Enum{Name: "OrderDirection", Values: []*schema.EnumValue{
-		{
-			Name: "asc",
-			Desc: schema.NewDescription("Ascending"),
-		}, {
-			Name: "desc",
-			Desc: schema.NewDescription("Descending"),
+	in.Types["OrderDirection"] = &schema.Enum{
+		Name: "OrderDirection",
+		Values: []*schema.EnumValue{
+			{
+				Name: "asc",
+				Desc: schema.NewDescription("Ascending"),
+			}, {
+				Name: "desc",
+				Desc: schema.NewDescription("Descending"),
+			},
 		},
-	}}
+	}
 
 	in.Types["Cursor"] = &schema.Scalar{
 		Name: "Cursor",
@@ -222,17 +225,6 @@ func (in *intro) addTables() error {
 
 	return nil
 }
-
-// func (in *intro) addToTable(name, desc string, ti sdata.DBTable) {
-// 	k := name + "Output"
-// 	var ot *schema.Object = in.Types[k].(*schema.Object)
-
-// 	ot.Fields = append(ot.Fields, &schema.Field{
-// 		Name: ti.Name,
-// 		Type: &schema.TypeName{Name: ti.Name + "Output"},
-// 		Desc: schema.NewDescription(desc),
-// 	})
-// }
 
 func (in *intro) addTable(name string, ti sdata.DBTable, singular bool) error {
 	if ti.Blocked {
@@ -360,6 +352,42 @@ func (in *intro) addRels(name string, ti sdata.DBTable) error {
 }
 
 func (in *intro) addDirectives() {
+	in.DeclaredDirectives["skip"] = &schema.DirectiveDecl{
+		Name: "skip",
+		Desc: schema.NewDescription("Skip field"),
+		Locs: []string{"FIELD"},
+		Args: schema.InputValueList{
+			{
+				Name: "if",
+				Desc: schema.NewDescription("Filter expression"),
+				Type: &schema.TypeName{Name: "String"},
+			},
+			{
+				Name: "ifRole",
+				Desc: schema.NewDescription("Role name"),
+				Type: &schema.TypeName{Name: "String"},
+			},
+		},
+	}
+
+	in.DeclaredDirectives["include"] = &schema.DirectiveDecl{
+		Name: "include",
+		Desc: schema.NewDescription("Include field"),
+		Locs: []string{"FIELD"},
+		Args: schema.InputValueList{
+			{
+				Name: "if",
+				Desc: schema.NewDescription("Filter expression"),
+				Type: &schema.TypeName{Name: "String"},
+			},
+			{
+				Name: "ifRole",
+				Desc: schema.NewDescription("Role name"),
+				Type: &schema.TypeName{Name: "String"},
+			},
+		},
+	}
+
 	in.DeclaredDirectives["object"] = &schema.DirectiveDecl{
 		Name: "object",
 		Desc: schema.NewDescription("Directs the executor to change the return type from a list to a object. All but the first entry of the list will be truncated"),
@@ -379,14 +407,14 @@ func (in *intro) addDirectives() {
 		},
 	}
 
-	in.DeclaredDirectives["script"] = &schema.DirectiveDecl{
-		Name: "script",
-		Desc: schema.NewDescription("Script the executor to use run specified script against this GraphQL request"),
-		Locs: []string{"QUERY", "MUTATION", "SUBSCRIPTION"},
+	in.DeclaredDirectives["schema"] = &schema.DirectiveDecl{
+		Name: "schema",
+		Desc: schema.NewDescription("Set the database schema to use for this selector"),
+		Locs: []string{"FIELD"},
 		Args: schema.InputValueList{
 			{
 				Name: "name",
-				Desc: schema.NewDescription("Script name"),
+				Desc: schema.NewDescription("Schema name"),
 				Type: &schema.TypeName{Name: "String"},
 			},
 		},
@@ -415,14 +443,32 @@ func (in *intro) addDirectives() {
 			},
 		},
 	}
-	in.DeclaredDirectives["validation"] = &schema.DirectiveDecl{
-		Name: "validation",
-		Desc: schema.NewDescription("Checks all variables for validation"),
+	in.DeclaredDirectives["script"] = &schema.DirectiveDecl{
+		Name: "script",
+		Desc: schema.NewDescription("Script to run against the query"),
 		Locs: []string{"QUERY", "MUTATION", "SUBSCRIPTION"},
 		Args: schema.InputValueList{
 			{
-				Name: "cue",
-				Desc: schema.NewDescription("Use Cue [https://cuelang.org/] schema to validate variables"),
+				Name: "name",
+				Desc: schema.NewDescription("Script name"),
+				Type: &schema.TypeName{Name: "String"},
+			},
+		},
+	}
+
+	in.DeclaredDirectives["validation"] = &schema.DirectiveDecl{
+		Name: "validation",
+		Desc: schema.NewDescription("Validator script to run against the query"),
+		Locs: []string{"QUERY", "MUTATION", "SUBSCRIPTION"},
+		Args: schema.InputValueList{
+			{
+				Name: "src",
+				Desc: schema.NewDescription("Validation script source"),
+				Type: &schema.TypeName{Name: "String"},
+			},
+			{
+				Name: "lang",
+				Desc: schema.NewDescription("Validation script language"),
 				Type: &schema.TypeName{Name: "String"},
 			},
 		},

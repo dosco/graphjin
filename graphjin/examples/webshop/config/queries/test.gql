@@ -1,0 +1,7 @@
+ubscription test {
+  users(id: "3") {
+    id
+    full_name
+    email
+  }
+}

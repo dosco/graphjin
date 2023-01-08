@@ -15,10 +15,7 @@ func (s *gstate) execRemoteJoin(c context.Context) (err error) {
 	// fetch the field name used within the db response json
 	// that are used to mark insertion points and the mapping between
 	// those field names and their select objects
-	var fids [][]byte
-	var sfmap map[string]*qcode.Select
-
-	fids, sfmap, err = s.parentFieldIds()
+	fids, sfmap, err := s.parentFieldIds()
 	if err != nil {
 		return
 	}
@@ -26,22 +23,18 @@ func (s *gstate) execRemoteJoin(c context.Context) (err error) {
 	// fetch the field values of the marked insertion points
 	// these values contain the id to be used with fetching remote data
 	from := jsn.Get(s.data, fids)
-	var to []jsn.Field
-
 	if len(from) == 0 {
 		err = errors.New("something wrong no remote ids found in db response")
 		return
 	}
 
-	to, err = s.resolveRemotes(c, from, sfmap)
+	to, err := s.resolveRemotes(c, from, sfmap)
 	if err != nil {
 		return
 	}
 
 	var ob bytes.Buffer
-
-	err = jsn.Replace(&ob, s.data, from, to)
-	if err != nil {
+	if err = jsn.Replace(&ob, s.data, from, to); err != nil {
 		return
 	}
 	s.data = ob.Bytes()
