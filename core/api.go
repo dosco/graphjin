@@ -302,8 +302,8 @@ func (g *GraphJin) GraphQL(c context.Context,
 	}
 
 	// fast extract name and query type from query
-	var h graph.FPInfo
-	if h, err = graph.FastParseBytes(queryBytes); err != nil {
+	h, err := graph.FastParseBytes(queryBytes)
+	if err != nil {
 		return
 	}
 	r := gj.newGraphqlReq(rc, h.Operation, h.Name, queryBytes, vars)
@@ -320,8 +320,8 @@ func (g *GraphJin) GraphQL(c context.Context,
 	}
 
 	// do the query
-	var resp graphqlResp
-	if resp, err = gj.query(c1, r); err != nil {
+	resp, err := gj.query(c1, r)
+	if err != nil {
 		return
 	}
 	res = resp.res
@@ -332,7 +332,7 @@ func (g *GraphJin) GraphQL(c context.Context,
 	}
 
 	// if not production then save to allow list
-	if !gj.prod {
+	if !gj.prod && r.name != "IntrospectionQuery" {
 		if err = gj.saveToAllowList(resp.qc, vars, resp.res.ns); err != nil {
 			return
 		}

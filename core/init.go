@@ -5,6 +5,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/dosco/graphjin/v2/core/internal/allow"
 	"github.com/dosco/graphjin/v2/core/internal/qcode"
 	"github.com/dosco/graphjin/v2/core/internal/sdata"
 )
@@ -421,4 +422,17 @@ func isASCII(s string) (int, bool) {
 		}
 	}
 	return -1, true
+}
+
+func (gj *graphjin) initAllowList() (err error) {
+	gj.allowList, err = allow.New(
+		gj.log,
+		gj.fs,
+		gj.conf.DisableAllowList) // if true then read only
+
+	if err != nil {
+		return fmt.Errorf("failed to initialize allow list: %w", err)
+	}
+
+	return nil
 }

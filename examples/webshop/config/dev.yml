@@ -162,17 +162,6 @@ auth:
   #   exists: true
   #   value: localhost:8080
 
-# You can add additional named auths to use with actions
-# In this example actions using this auth can only be
-# called from the Google Appengine Cron service that
-# sets a special header to all it's requests
-auths:
-  - name: from_taskqueue
-    type: header
-    header:
-      name: X-Appengine-Cron
-      exists: true
-
 # Postgres related environment Variables
 # GJ_DATABASE_HOST
 # GJ_DATABASE_PORT
@@ -225,16 +214,6 @@ blocklist:
   - password
   - encrypted
   - token
-
-# Create custom actions with their own api endpoints
-# For example the below action will be available at /api/v1/actions/refresh_leaderboard_users
-# A request to this url will execute the configured SQL query
-# which in this case refreshes a materialized view in the database.
-# The auth_name is from one of the configured auths
-actions:
-  - name: refresh_leaderboard_users
-    sql: REFRESH MATERIALIZED VIEW CONCURRENTLY "leaderboard_users"
-    auth_name: from_taskqueue
 
 resolvers:
   - name: payments

@@ -2,14 +2,13 @@
   "name": "web",
   "private": true,
   "dependencies": {
-    "graphiql": "^1.9.12",
-    "graphiql-explorer": "^0.9.0",
-    "graphql": "^16.5.0",
-    "graphql-language-service-utils": "^2.7.1",
-    "react": "^18.0.0",
-    "react-dom": "^18.0.0",
+    "graphiql": "^2.2.0",
+    "graphql": "^16.6.0",
+    "graphql-ws": "^5.11.2",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
     "react-github-btn": "^1.2.0",
-    "react-scripts": "5.0.1"
+    "react-scripts": "^5.0.1"
   },
   "scripts": {
     "start": "PORT=3001 react-scripts start",

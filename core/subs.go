@@ -87,8 +87,8 @@ func (g *GraphJin) Subscribe(
 	rc *ReqConfig) (m *Member, err error) {
 
 	// get the name, query vars
-	var h graph.FPInfo
-	if h, err = graph.FastParse(query); err != nil {
+	h, err := graph.FastParse(query)
+	if err != nil {
 		return
 	}
 
@@ -123,8 +123,7 @@ func (g *GraphJin) SubscribeByName(
 
 	gj := g.Load().(*graphjin)
 
-	var item allow.Item
-	item, err = gj.allowList.GetByName(name, gj.prod)
+	item, err := gj.allowList.GetByName(name, gj.prod)
 	if err != nil {
 		return
 	}
@@ -186,8 +185,8 @@ func (gj *graphjin) subscribe(c context.Context, r graphqlReq) (
 		return
 	}
 
-	var args args
-	if args, err = sub.s.argListVars(c, r.vars); err != nil {
+	args, err := sub.s.argListVars(c, r.vars)
+	if err != nil {
 		return nil, err
 	}
 
