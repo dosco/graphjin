@@ -1159,7 +1159,7 @@ func Example_queryWithCursorPagination2() {
 		products(
 			first: 1
 			after: $cursor
-			where: { id: { lte: 100 }}
+			where: { id: { lteq: 100 }}
 			order_by: { price: desc }) {
 			name
 		}

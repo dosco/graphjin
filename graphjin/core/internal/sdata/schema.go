@@ -112,11 +112,13 @@ func NewDBSchema(
 	}
 
 	// add some standard common functions into the schema
-	for _, v := range stdFuncNames {
+	for _, v := range funcList {
 		info.Functions = append(info.Functions, DBFunction{
-			Name:   v,
-			Agg:    true,
-			Inputs: []DBFuncParam{{ID: 0}},
+			Name:    v.name,
+			Comment: v.desc,
+			Type:    v.ftype,
+			Agg:     true,
+			Inputs:  []DBFuncParam{{ID: 0}},
 		})
 	}
 
@@ -200,8 +202,7 @@ func (s *DBSchema) addRemoteRel(t DBTable) error {
 func (s *DBSchema) addColumnRels(t DBTable) error {
 	var err error
 
-	for i := range t.Columns {
-		c := t.Columns[i]
+	for _, c := range t.Columns {
 		if c.FKeyTable == "" {
 			continue
 		}
@@ -228,7 +229,7 @@ func (s *DBSchema) addColumnRels(t DBTable) error {
 		var rt RelType
 
 		switch {
-		case t.Name == c.FKeyTable:
+		case c.FKRecursive: // t.Name == c.FKeyTable:
 			rt = RelRecursive
 		case fc.UniqueKey:
 			rt = RelOneToOne
@@ -257,15 +258,19 @@ func (s *DBSchema) addVirtual(vt VirtualTable) error {
 			continue
 		}
 
+		isRecursive := (typeCol.Schema == t.Schema &&
+			typeCol.Table == t.Name)
+
 		col1 := DBColumn{
-			ID:         -1,
-			Schema:     t.Schema,
-			Table:      t.Name,
-			Name:       idCol.Name,
-			Type:       idCol.Type,
-			FKeySchema: typeCol.Schema,
-			FKeyTable:  typeCol.Table,
-			FKeyCol:    typeCol.Name,
+			ID:          -1,
+			Schema:      t.Schema,
+			Table:       t.Name,
+			Name:        idCol.Name,
+			Type:        idCol.Type,
+			FKeySchema:  typeCol.Schema,
+			FKeyTable:   typeCol.Table,
+			FKeyCol:     typeCol.Name,
+			FKRecursive: isRecursive,
 		}
 
 		fIDCol, ok := t.getColumn(vt.FKeyColumn)
@@ -297,51 +302,53 @@ func (s *DBSchema) GetTables() []DBTable {
 	return s.tables
 }
 
-func (s *DBSchema) GetFirstDegree(schema, table string) (map[string]DBTable, error) {
-	v, ok := s.tindex[(schema + ":" + table)]
-	if !ok {
-		return nil, fmt.Errorf("table not found: %s.%s", schema, table)
-	}
-
-	nodes := s.rg.Connections(v.nodeID)
-	ret := make(map[string]DBTable)
-
-	for _, id := range nodes {
-		edges := s.rg.GetEdges(id, v.nodeID)
-		for _, e := range edges {
-			e1 := s.ae[e.ID]
-			if e1.name != "" {
-				ret[e1.name] = e1.LT
-			}
-		}
-	}
-	return ret, nil
+type RelNode struct {
+	Name  string
+	Type  RelType
+	Table DBTable
 }
 
-func (s *DBSchema) GetSecondDegree(schema, table string) (map[string]DBTable, error) {
-	v, ok := s.tindex[(schema + ":" + table)]
+func (s *DBSchema) GetFirstDegree(t DBTable) (items []RelNode, err error) {
+	currNode, ok := s.tindex[(t.Schema + ":" + t.Name)]
 	if !ok {
-		return nil, fmt.Errorf("table not found: %s.%s", schema, table)
+		return nil, fmt.Errorf("table not found: %s", t.String())
+	}
+	relatedNodes := s.rg.Connections(currNode.nodeID)
+	for _, id := range relatedNodes {
+		v := s.getRelNodes(id, currNode.nodeID)
+		items = append(items, v...)
+	}
+	return
+}
+
+func (s *DBSchema) GetSecondDegree(t DBTable) (items []RelNode, err error) {
+	currNode, ok := s.tindex[(t.Schema + ":" + t.Name)]
+	if !ok {
+		return nil, fmt.Errorf("table not found: %s", t.String())
 	}
 
-	nodes := s.rg.Connections(v.nodeID)
-	ret := make(map[string]DBTable)
-
-	for _, id := range nodes {
-		nodes1 := s.rg.Connections(id)
-
-		for _, id1 := range nodes1 {
-
-			edges := s.rg.GetEdges(id1, id)
-			for _, e := range edges {
-				e1 := s.ae[e.ID]
-				if e1.name != "" {
-					ret[e1.name] = e1.LT
-				}
-			}
+	relatedNodes1 := s.rg.Connections(currNode.nodeID)
+	for _, id := range relatedNodes1 {
+		relatedNodes2 := s.rg.Connections(id)
+		for _, id1 := range relatedNodes2 {
+			v := s.getRelNodes(id1, id)
+			items = append(items, v...)
 		}
 	}
-	return ret, nil
+	return
+}
+
+func (s *DBSchema) getRelNodes(fromID, toID int32) (items []RelNode) {
+	edges := s.rg.GetEdges(fromID, toID)
+	for _, e := range edges {
+		e1 := s.ae[e.ID]
+		if e1.name == "" {
+			continue
+		}
+		item := RelNode{Name: e1.name, Type: e1.Type, Table: e1.LT}
+		items = append(items, item)
+	}
+	return
 }
 
 func (ti *DBTable) getColumn(name string) (DBColumn, bool) {
@@ -368,7 +375,7 @@ func (s *DBSchema) GetFunctions() map[string]DBFunction {
 	return s.fm
 }
 
-func getRelName(colName string) string {
+func GetRelName(colName string) string {
 	cn := colName
 
 	if strings.HasSuffix(cn, "_id") {

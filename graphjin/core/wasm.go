@@ -4,13 +4,8 @@ package core
 
 import (
 	"context"
-	"errors"
 	"net/http"
 )
-
-func (gj *graphjin) introspection(query []byte) ([]byte, error) {
-	return nil, errors.New("introspection not supported")
-}
 
 type tracer struct {
 }

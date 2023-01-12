@@ -298,79 +298,79 @@ func (ast *aexpst) processOpAndVal(av aexp, ex *Exp, node *graph.Node) (bool, er
 	case "eq", "equals":
 		ex.Op = OpEquals
 		ex.Right.Val = node.Val
-	case "neq", "not_equals":
+	case "neq", "notEquals", "not_equals":
 		ex.Op = OpNotEquals
 		ex.Right.Val = node.Val
-	case "gt", "greater_than":
+	case "gt", "greaterThan", "greater_than":
 		ex.Op = OpGreaterThan
 		ex.Right.Val = node.Val
-	case "lt", "lesser_than":
+	case "lt", "lesserThan", "lesser_than":
 		ex.Op = OpLesserThan
 		ex.Right.Val = node.Val
-	case "gte", "gteq", "greater_or_equals":
+	case "gte", "gteq", "greaterOrEquals", "greater_or_equals":
 		ex.Op = OpGreaterOrEquals
 		ex.Right.Val = node.Val
-	case "lte", "lteq", "lesser_or_equals":
+	case "lte", "lteq", "lesserOrEquals", "lesser_or_equals":
 		ex.Op = OpLesserOrEquals
 		ex.Right.Val = node.Val
 	case "in":
 		ex.Op = OpIn
 		setListVal(ex, node)
-	case "nin", "not_in":
+	case "nin", "notIn", "not_in":
 		ex.Op = OpNotIn
 		setListVal(ex, node)
 	case "like":
 		ex.Op = OpLike
 		ex.Right.Val = node.Val
-	case "nlike", "not_like":
+	case "nlike", "notLike", "not_like":
 		ex.Op = OpNotLike
 		ex.Right.Val = node.Val
-	case "ilike":
+	case "ilike", "iLike":
 		ex.Op = OpILike
 		ex.Right.Val = node.Val
-	case "nilike", "not_ilike":
+	case "nilike", "notILike", "not_ilike":
 		ex.Op = OpNotILike
 		ex.Right.Val = node.Val
 	case "similar":
 		ex.Op = OpSimilar
 		ex.Right.Val = node.Val
-	case "nsimilar", "not_similar":
+	case "nsimilar", "notSimiliar", "not_similar":
 		ex.Op = OpNotSimilar
 		ex.Right.Val = node.Val
 	case "regex":
 		ex.Op = OpRegex
 		ex.Right.Val = node.Val
-	case "nregex", "not_regex":
+	case "nregex", "notRegex", "not_regex":
 		ex.Op = OpNotRegex
 		ex.Right.Val = node.Val
 	case "iregex":
 		ex.Op = OpIRegex
 		ex.Right.Val = node.Val
-	case "niregex", "not_iregex":
+	case "niregex", "notIRegex", "not_iregex":
 		ex.Op = OpNotIRegex
 		ex.Right.Val = node.Val
 	case "contains":
 		ex.Op = OpContains
 		setListVal(ex, node)
-	case "contained_in":
+	case "containedIn", "contained_in":
 		ex.Op = OpContainedIn
 		setListVal(ex, node)
-	case "has_in_common":
+	case "hasInCommon", "has_in_common":
 		ex.Op = OpHasInCommon
 		setListVal(ex, node)
-	case "has_key":
+	case "hasKey", "has_key":
 		ex.Op = OpHasKey
 		ex.Right.Val = node.Val
-	case "has_key_any":
+	case "hasKeyAny", "has_key_any":
 		ex.Op = OpHasKeyAny
 		setListVal(ex, node)
-	case "has_key_all":
+	case "hasKeyAll", "has_key_all":
 		ex.Op = OpHasKeyAll
 		setListVal(ex, node)
-	case "is_null":
+	case "isNull", "is_null":
 		ex.Op = OpIsNull
 		ex.Right.Val = node.Val
-	case "ndis", "not_distinct":
+	case "notDistinct", "ndis", "not_distinct":
 		ex.Op = OpNotDistinct
 		ex.Right.Val = node.Val
 	case "dis", "distinct":

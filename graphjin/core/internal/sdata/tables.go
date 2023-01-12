@@ -25,6 +25,7 @@ type DBInfo struct {
 }
 
 type DBTable struct {
+	Comment      string
 	Schema       string
 	Name         string
 	Type         string
@@ -235,20 +236,22 @@ func (di *DBInfo) GetTable(schema, table string) (*DBTable, error) {
 }
 
 type DBColumn struct {
-	ID         int32
-	Name       string
-	Type       string
-	Array      bool
-	NotNull    bool
-	PrimaryKey bool
-	UniqueKey  bool
-	FullText   bool
-	FKeySchema string
-	FKeyTable  string
-	FKeyCol    string
-	Blocked    bool
-	Table      string
-	Schema     string
+	Comment     string
+	ID          int32
+	Name        string
+	Type        string
+	Array       bool
+	NotNull     bool
+	PrimaryKey  bool
+	UniqueKey   bool
+	FullText    bool
+	FKRecursive bool
+	FKeySchema  string
+	FKeyTable   string
+	FKeyCol     string
+	Blocked     bool
+	Table       string
+	Schema      string
 }
 
 func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn, error) {
@@ -269,10 +272,23 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 
 	cmap := make(map[string]DBColumn)
 
+	i := 0
 	for rows.Next() {
 		var c DBColumn
+		c.ID = int32(i)
 
-		err = rows.Scan(&c.Schema, &c.Table, &c.Name, &c.Type, &c.NotNull, &c.PrimaryKey, &c.UniqueKey, &c.Array, &c.FullText, &c.FKeySchema, &c.FKeyTable, &c.FKeyCol)
+		err = rows.Scan(&c.Schema,
+			&c.Table,
+			&c.Name,
+			&c.Type,
+			&c.NotNull,
+			&c.PrimaryKey,
+			&c.UniqueKey,
+			&c.Array,
+			&c.FullText,
+			&c.FKeySchema,
+			&c.FKeyTable,
+			&c.FKeyCol)
 
 		if err != nil {
 			return nil, err
@@ -316,7 +332,11 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 		if c.FKeyCol != "" {
 			v.FKeyCol = c.FKeyCol
 		}
+		if v.FKeySchema == v.Schema && v.FKeyTable == v.Table {
+			v.FKRecursive = true
+		}
 		cmap[k] = v
+		i++
 	}
 
 	var cols []DBColumn
@@ -328,6 +348,7 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 }
 
 type DBFunction struct {
+	Comment string
 	Schema  string
 	Name    string
 	Type    string

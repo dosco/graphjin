@@ -54,7 +54,7 @@ func GetTestDBInfo() *DBInfo {
 			{Schema: "public", Table: "comments", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
 			{Schema: "public", Table: "comments", Name: "product_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "products", FKeyCol: "id"},
 			{Schema: "public", Table: "comments", Name: "commenter_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "users", FKeyCol: "id"},
-			{Schema: "public", Table: "comments", Name: "reply_to_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "comments", FKeyCol: "id"},
+			{Schema: "public", Table: "comments", Name: "reply_to_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "comments", FKeyCol: "id", FKRecursive: true},
 			{Schema: "public", Table: "comments", Name: "body", Type: "character varying", NotNull: false, PrimaryKey: false, UniqueKey: false}},
 	}
 

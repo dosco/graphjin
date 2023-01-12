@@ -234,17 +234,17 @@ func (p *Parser) parseFragment() (frag Fragment, err error) {
 	return frag, nil
 }
 
-func (p *Parser) parseOp() (Operation, error) {
-	var err error
-	var op Operation
-
+func (p *Parser) parseOp() (op Operation, err error) {
 	s := p.curr().pos + 1
 
-	if !p.peekVal(queryToken, mutationToken, subscriptionToken) {
-		return op, fmt.Errorf("expecting a query, mutation or subscription, got: %s", p.peekNext())
+	if p.peekVal(queryToken, mutationToken, subscriptionToken) {
+		err = p.parseOpTypeAndArgs(&op)
+
+	} else if !p.peek(itemObjOpen) {
+		err = p.tokErr(`query, mutation or subscription`)
 	}
 
-	if err = p.parseOpTypeAndArgs(&op); err != nil {
+	if err != nil {
 		return op, fmt.Errorf("%s: %v", op.Type, err)
 	}
 
@@ -252,6 +252,10 @@ func (p *Parser) parseOp() (Operation, error) {
 		return op, p.tokErr("{")
 	}
 	p.ignore()
+
+	if op.Type == 0 {
+		op.Type = OpQuery
+	}
 
 	op.Fields, err = p.parseFields(op.Fields)
 	if err != nil {

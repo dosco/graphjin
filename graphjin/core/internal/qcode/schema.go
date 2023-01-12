@@ -80,21 +80,25 @@ func parseTFieldsColumns(tableSchema, tableName string, fields []graph.TField) (
 		if err != nil {
 			return
 		}
+		isRecursive := (dir.RelatedSchema == tableSchema &&
+			dir.RelatedType == tableName)
+
 		col := sdata.DBColumn{
-			ID:         int32(i),
-			Schema:     tableSchema,
-			Table:      tableName,
-			Name:       f.Name,
-			Type:       pascalToSnakeSpace(f.Type),
-			Array:      f.List,
-			NotNull:    f.Required,
-			PrimaryKey: dir.ID,
-			UniqueKey:  dir.Unique,
-			FullText:   dir.Search,
-			Blocked:    dir.Blocked,
-			FKeySchema: dir.RelatedSchema,
-			FKeyTable:  dir.RelatedType,
-			FKeyCol:    dir.RelatedField,
+			ID:          int32(i),
+			Schema:      tableSchema,
+			Table:       tableName,
+			Name:        f.Name,
+			Type:        pascalToSnakeSpace(f.Type),
+			Array:       f.List,
+			NotNull:     f.Required,
+			PrimaryKey:  dir.ID,
+			UniqueKey:   dir.Unique,
+			FullText:    dir.Search,
+			Blocked:     dir.Blocked,
+			FKeySchema:  dir.RelatedSchema,
+			FKeyTable:   dir.RelatedType,
+			FKeyCol:     dir.RelatedField,
+			FKRecursive: isRecursive,
 		}
 		cols = append(cols, col)
 	}

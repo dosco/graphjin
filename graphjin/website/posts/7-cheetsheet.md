@@ -68,32 +68,32 @@ query getProducts {
 
 #### Other operators
 
-| Name                   | Example                                | Explained                                                                                                |
-| ---------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| eq, equals             | id : { eq: 100 }                       | id = 100                                                                                                 |
-| neq, not_equals        | id: { not_equals: 100 }                | id != 100                                                                                                |
-| gt, greater_than       | id: { gt: 100 }                        | id > 100                                                                                                 |
-| lt, lesser_than        | id: { gt: 100 }                        | id < 100                                                                                                 |
-| gte, greater_or_equals | id: { gte: 100 }                       | id >= 100                                                                                                |
-| lte, lesser_or_equals  | id: { lesser_or_equals: 100 }          | id <= 100                                                                                                |
-| in                     | status: { in: [ "A", "B", "C" ] }      | status IN ('A', 'B', 'C')                                                                                |
-| nin, not_in            | status: { in: [ "A", "B", "C" ] }      | status IN ('A', 'B', 'C')                                                                                |
-| like                   | name: { like "phil%" }                 | Names starting with 'phil'                                                                               |
-| nlike, not_like        | name: { nlike "v%m" }                  | Not names starting with 'v' and ending with 'm'                                                          |
-| ilike                  | name: { ilike "%wOn" }                 | Names ending with 'won' case-insensitive                                                                 |
-| nilike, not_ilike      | name: { nilike "%wOn" }                | Not names ending with 'won' case-insensitive                                                             |
-| similar                | name: { similar: "%(b\|d)%" }          | [Similar Docs](https://www.postgresql.org/docs/9/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP)     |
-| nsimilar, not_similar  | name: { nsimilar: "%(b\|d)%" }         | [Not Similar Docs](https://www.postgresql.org/docs/9/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP) |
-| regex                  | name: { regex: "^([a-zA-Z]+)$" }       | [Regex Docs](https://www.postgresql.org/docs/9/functions-matching.html#FUNCTIONS-POSIX-TABLE)            |
-| nregex, not_regex      | name: { nregex: "^([a-zA-Z]+)$" }      | [Regex Docs](https://www.postgresql.org/docs/9/functions-matching.html#FUNCTIONS-POSIX-TABLE)            |
-| iregex                 | name: { iregex: "^([a-z]+)$" }         | [Regex Docs](https://www.postgresql.org/docs/9/functions-matching.html#FUNCTIONS-POSIX-TABLE)            |
-| niregex, not_iregex    | name: { not_iregex: "^([a-z]+)$" }     | [Regex Docs](https://www.postgresql.org/docs/9/functions-matching.html#FUNCTIONS-POSIX-TABLE)            |
-| has_key                | column: { has_key: 'b' }               | Does JSON column contain this key                                                                        |
-| has_key_any            | column: { has_key_any: [ a, b ] }      | Does JSON column contain any of these keys                                                               |
-| has_key_all            | column: [ a, b ]                       | Does JSON column contain all of this keys                                                                |
-| contains               | column: { contains: [1, 2, 4] }        | Is this array/json column a subset of value                                                              |
-| contained_in           | column: { contains: "{'a':1, 'b':2}" } | Is this array/json column a subset of these value                                                        |
-| is_null                | column: { is_null: true }              | Is column value null or not                                                                              |
+| Name                    | Example                                | Explained                                                                                                |
+| ----------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| eq, equals              | id : { eq: 100 }                       | id = 100                                                                                                 |
+| neq, not_equals         | id: { not_equals: 100 }                | id != 100                                                                                                |
+| gt, greater_than        | id: { gt: 100 }                        | id > 100                                                                                                 |
+| lt, lesser_than         | id: { gt: 100 }                        | id < 100                                                                                                 |
+| gteq, greater_or_equals | id: { gteq: 100 }                      | id >= 100                                                                                                |
+| lteq, lesser_or_equals  | id: { lesser_or_equals: 100 }          | id <= 100                                                                                                |
+| in                      | status: { in: [ "A", "B", "C" ] }      | status IN ('A', 'B', 'C')                                                                                |
+| nin, not_in             | status: { in: [ "A", "B", "C" ] }      | status IN ('A', 'B', 'C')                                                                                |
+| like                    | name: { like "phil%" }                 | Names starting with 'phil'                                                                               |
+| nlike, not_like         | name: { nlike "v%m" }                  | Not names starting with 'v' and ending with 'm'                                                          |
+| ilike                   | name: { ilike "%wOn" }                 | Names ending with 'won' case-insensitive                                                                 |
+| nilike, not_ilike       | name: { nilike "%wOn" }                | Not names ending with 'won' case-insensitive                                                             |
+| similar                 | name: { similar: "%(b\|d)%" }          | [Similar Docs](https://www.postgresql.org/docs/9/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP)     |
+| nsimilar, not_similar   | name: { nsimilar: "%(b\|d)%" }         | [Not Similar Docs](https://www.postgresql.org/docs/9/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP) |
+| regex                   | name: { regex: "^([a-zA-Z]+)$" }       | [Regex Docs](https://www.postgresql.org/docs/9/functions-matching.html#FUNCTIONS-POSIX-TABLE)            |
+| nregex, not_regex       | name: { nregex: "^([a-zA-Z]+)$" }      | [Regex Docs](https://www.postgresql.org/docs/9/functions-matching.html#FUNCTIONS-POSIX-TABLE)            |
+| iregex                  | name: { iregex: "^([a-z]+)$" }         | [Regex Docs](https://www.postgresql.org/docs/9/functions-matching.html#FUNCTIONS-POSIX-TABLE)            |
+| niregex, not_iregex     | name: { not_iregex: "^([a-z]+)$" }     | [Regex Docs](https://www.postgresql.org/docs/9/functions-matching.html#FUNCTIONS-POSIX-TABLE)            |
+| has_key                 | column: { has_key: 'b' }               | Does JSON column contain this key                                                                        |
+| has_key_any             | column: { has_key_any: [ a, b ] }      | Does JSON column contain any of these keys                                                               |
+| has_key_all             | column: [ a, b ]                       | Does JSON column contain all of this keys                                                                |
+| contains                | column: { contains: [1, 2, 4] }        | Is this array/json column a subset of value                                                              |
+| contained_in            | column: { contains: "{'a':1, 'b':2}" } | Is this array/json column a subset of these value                                                        |
+| is_null                 | column: { is_null: true }              | Is column value null or not                                                                              |
 
 ### Using aggregation functions
 
