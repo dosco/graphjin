@@ -85,7 +85,7 @@ func (s *DBSchema) addToGraph(
 	rn := tn.nodeID
 
 	var weight int32 = 1
-	relT := getRelName(lcol.Name)
+	relT := GetRelName(lcol.Name)
 
 	switch rt {
 	case RelOneToOne:
@@ -101,6 +101,7 @@ func (s *DBSchema) addToGraph(
 		relT = rti.Name
 		weight = 5
 	case RelRecursive:
+		rt2 = rt
 		weight = 10
 	case RelRemote:
 		weight = 8

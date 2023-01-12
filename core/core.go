@@ -54,6 +54,19 @@ const (
 // 	Duration    time.Duration `json:"duration"`
 // }
 
+func (gj *graphjin) getIntroResult() (data json.RawMessage, err error) {
+	var ok bool
+	if data, ok = gj.cache.Get("_intro"); ok {
+		return
+	}
+	in := newIntro(gj.schema, gj.conf.EnableCamelcase)
+	if data, err = introspection(in); err != nil {
+		return
+	}
+	gj.cache.Set("_intro", data)
+	return
+}
+
 func (gj *graphjin) initDiscover() error {
 	switch gj.conf.DBType {
 	case "":

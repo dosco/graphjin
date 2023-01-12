@@ -2,6 +2,8 @@ package qcode
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/dosco/graphjin/v2/core/internal/graph"
@@ -144,102 +146,91 @@ func (co *Compiler) compileChildColumns(
 	return nil
 }
 
-func (co *Compiler) compileFuncTableArg(sel *Select, arg graph.Arg) error {
-	fn := sel.Ti.Func
-	input, err := fn.GetInput(arg.Name)
-	if err != nil {
-		return fmt.Errorf("db function %s: %w", fn.Name, err)
+func (co *Compiler) compileFuncArgs(sel *Select, f *Field, args []graph.Arg) (err error) {
+	for _, arg := range args {
+		switch arg.Name {
+		case "args":
+			err = co.compileFuncArgArgs(sel, f, arg)
+		default:
+			err = fmt.Errorf("unknown field argument: %s", arg.Name)
+		}
+
+		if err != nil {
+			return err
+		}
 	}
 
-	a := Arg{Name: arg.Name, DType: input.Type}
-
-	switch arg.Val.Type {
-	case graph.NodeLabel:
-		a.Type = ArgTypeCol
-		a.Col, err = sel.Ti.GetColumn(arg.Val.Val)
-	case graph.NodeVar:
-		a.Type = ArgTypeVar
-		fallthrough
-	default:
-		a.Val = arg.Val.Val
-	}
-	if err != nil {
-		return err
-	}
-	sel.Args = append(sel.Args, a)
 	return nil
 }
 
-func (co *Compiler) compileFuncArgs(sel *Select, f *Field, args []graph.Arg) error {
-	if len(args) != 0 && len(f.Func.Inputs) == 0 {
-		return fmt.Errorf("db function '%s' does not have any arguments", f.Func.Name)
+var numArgKeyRe = regexp.MustCompile(`^_\d+`)
+
+func (co *Compiler) compileFuncArgArgs(sel *Select, f *Field, arg graph.Arg) (err error) {
+	if len(f.Func.Inputs) == 0 {
+		err = fmt.Errorf("db function '%s' does not have any arguments", f.Func.Name)
+		return
 	}
+	err = validateArg(arg, []graph.ParserType{graph.NodeObj})
+	if err != nil {
+		return
+	}
+	args, err := newArgs(sel, f.Func, arg)
+	if err != nil {
+		return
+	}
+	f.Args = args
+	return
+}
 
-	for _, arg := range args {
-		if arg.Name == "args" {
-			if err := co.compileFuncArgArgs(sel, f, arg); err != nil {
-				return err
-			}
-			continue
-		}
-		input, err := f.Func.GetInput(arg.Name)
+func newArgs(sel *Select, f sdata.DBFunction, arg graph.Arg) (args []Arg, err error) {
+	node := arg.Val
+	for i, argNode := range node.Children {
+		var a Arg
+		a, err = parseArg(argNode, f, i)
 		if err != nil {
-			return fmt.Errorf("db function %s: %w", f.Func.Name, err)
+			return
 		}
-
-		a := Arg{Name: arg.Name, DType: input.Type}
-
-		switch arg.Val.Type {
+		switch argNode.Type {
 		case graph.NodeLabel:
 			a.Type = ArgTypeCol
-			a.Col, err = sel.Ti.GetColumn(arg.Val.Val)
+			a.Col, err = sel.Ti.GetColumn(argNode.Val)
 		case graph.NodeVar:
 			a.Type = ArgTypeVar
 			fallthrough
 		default:
-			a.Val = arg.Val.Val
+			a.Val = argNode.Val
 		}
 		if err != nil {
-			return err
+			return
 		}
-		f.Args = append(f.Args, a)
+		args = append(args, a)
 	}
-
-	return nil
+	return
 }
 
-func (co *Compiler) compileFuncArgArgs(sel *Select, f *Field, arg graph.Arg) error {
-	if len(f.Func.Inputs) == 0 {
-		return fmt.Errorf("db function '%s' does not have any arguments", f.Func.Name)
-	}
-
-	node := arg.Val
-	if node.Type != graph.NodeList {
-		return argErr("args", "list")
-	}
-
-	var err error
-
-	for i, n := range node.Children {
-		a := Arg{DType: f.Func.Inputs[i].Type}
-
-		switch n.Type {
-		case graph.NodeLabel:
-			a.Type = ArgTypeCol
-			a.Col, err = sel.Ti.GetColumn(n.Val)
-		case graph.NodeVar:
-			a.Type = ArgTypeVar
-			a.Val = n.Val
-		default:
-			a.Val = n.Val
-		}
+func parseArg(arg *graph.Node, f sdata.DBFunction, index int) (a Arg, err error) {
+	if numArgKeyRe.MatchString(arg.Name) {
+		var n int
+		n, err = strconv.Atoi(arg.Name[1:])
 		if err != nil {
-			return err
+			err = fmt.Errorf("db function %s: invalid key: %s", f.Name, arg.Name)
+			return
 		}
-		f.Args = append(f.Args, a)
+		if n != index {
+			err = fmt.Errorf("db function %s: invalid key order: %s", f.Name, arg.Name)
+			return
+		}
+		a = Arg{DType: f.Inputs[n].Type}
+		return
 	}
 
-	return nil
+	var input sdata.DBFuncParam
+	input, err = f.GetInput(arg.Name)
+	if err != nil {
+		err = fmt.Errorf("db function %s: %w", f.Name, err)
+	}
+	a = Arg{Name: arg.Name, DType: input.Type}
+	return
 }
 
 func (co *Compiler) addOrderByColumns(sel *Select) {

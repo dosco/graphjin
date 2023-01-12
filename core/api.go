@@ -55,7 +55,7 @@ type graphjin struct {
 	allowList    *allow.List
 	encKey       [32]byte
 	encKeySet    bool
-	apq          apqCache
+	cache        Cache
 	queries      sync.Map
 	roles        map[string]*Role
 	roleStmt     string
@@ -146,7 +146,7 @@ func newGraphJin(conf *Config,
 
 	// ordering of these initializer matter, do not re-order!
 
-	if err := gj.initAPQCache(); err != nil {
+	if err := gj.initCache(); err != nil {
 		return nil, err
 	}
 
@@ -293,7 +293,7 @@ func (g *GraphJin) GraphQL(c context.Context,
 
 	// get query from apq cache if apq key exists
 	if rc != nil && rc.APQKey != "" {
-		queryBytes, inCache = gj.apq.Get(rc.APQKey)
+		queryBytes, inCache = gj.cache.Get(rc.APQKey)
 	}
 
 	// query not found in apq cache so use original query
@@ -328,7 +328,7 @@ func (g *GraphJin) GraphQL(c context.Context,
 
 	// save to apq cache is apq key exists and not already in cache
 	if !inCache && rc != nil && rc.APQKey != "" {
-		gj.apq.Set(rc.APQKey, r.query)
+		gj.cache.Set(rc.APQKey, r.query)
 	}
 
 	// if not production then save to allow list
@@ -426,7 +426,7 @@ func (gj *graphjin) query(c context.Context, r graphqlReq) (
 	}
 
 	if !gj.prod && r.name == "IntrospectionQuery" {
-		resp.res.Data, err = gj.introspection(r.query)
+		resp.res.Data, err = gj.getIntroResult()
 		return
 	}
 

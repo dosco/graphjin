@@ -19,7 +19,7 @@ func Example_queryWithFunctionFields() {
 		products(id: 51) {
 			id
 			name
-			is_hot_product(id: id)
+			is_hot_product(args: { id: id })
 		}
 	}`
 
@@ -44,7 +44,7 @@ func Example_queryWithFunctionFieldsArgList() {
 		products(id: 51) {
 			id
 			name
-			is_hot_product(args: [51])
+			is_hot_product(args: {_0: 51})
 		}
 	}`
 
@@ -88,7 +88,7 @@ func Example_queryWithFunctionReturingTables() {
 
 func Example_queryWithFunctionReturingTablesWithArgs() {
 	gql := `query {
-		get_oldest_users(limit: 2, args: [4, $tag]) {
+		get_oldest_users(limit: 2, args: {_0: 4, _1: $tag}) {
 			tag_name
 			id
 			full_name
@@ -113,7 +113,7 @@ func Example_queryWithFunctionReturingTablesWithArgs() {
 
 func Example_queryWithFunctionReturingTablesWithNamedArgs() {
 	gql := `query {
-		get_oldest_users(limit: 2, user_count: 4, tag: $tag) {
+		get_oldest_users(limit: 2, args: { user_count: 4, tag: $tag }) {
 			tag_name
 			id
 			full_name
@@ -138,7 +138,7 @@ func Example_queryWithFunctionReturingTablesWithNamedArgs() {
 
 func Example_queryWithFunctionReturingUserDefinedTypes() {
 	gql := `query {
-		get_product(limit: 2, args: [1]) {
+		get_product(limit: 2, args: { _0: 1 }) {
 			id
 			name
 		}
@@ -165,7 +165,7 @@ func Example_queryWithFunctionAndDirectives() {
 		products(id: 51) {
 			id
 			name
-			is_hot_product(id: id) @skip(if: { id: { eq: 51 } })
+			is_hot_product(args: {id: id}) @skip(if: { id: { eq: 51 } })
 		}
 	}`
 

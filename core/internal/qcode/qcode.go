@@ -577,6 +577,7 @@ func (co *Compiler) addRelInfo(
 		if co.c.EnableCamelcase {
 			parentF.Name = util.ToSnake(parentF.Name)
 		}
+
 		path, err := co.FindPath(childF.Name, parentF.Name, sel.through)
 		if err != nil {
 			return graphError(err, childF.Name, parentF.Name, sel.through)
@@ -1059,10 +1060,10 @@ func (co *Compiler) compileArgs(sel *Select, args []graph.Arg, role string) erro
 		case "where":
 			err = co.compileArgWhere(sel, arg, role)
 
-		case "orderby", "order_by", "order":
+		case "orderBy", "orderby", "order_by", "order":
 			err = co.compileArgOrderBy(sel, arg)
 
-		case "distinct_on", "distinct":
+		case "distinctOn", "distinct_on", "distinct":
 			err = co.compileArgDistinctOn(sel, arg)
 
 		case "limit":
@@ -1089,10 +1090,10 @@ func (co *Compiler) compileArgs(sel *Select, args []graph.Arg, role string) erro
 		case "args":
 			err = co.compileArgArgs(sel, arg)
 
+		case "insert", "update", "upsert", "delete":
+
 		default:
-			if sel.Ti.Type == "function" {
-				err = co.compileFuncTableArg(sel, arg)
-			}
+			err = fmt.Errorf("unknown selector level argument")
 		}
 
 		if err != nil {
@@ -1798,45 +1799,21 @@ func compileOrderBy(sel *Select,
 	return nil
 }
 
-func (co *Compiler) compileArgArgs(sel *Select, arg graph.Arg) error {
+func (co *Compiler) compileArgArgs(sel *Select, arg graph.Arg) (err error) {
 	if sel.Ti.Type != "function" {
-		return fmt.Errorf("'%s' is not a db function", sel.Ti.Name)
+		err = fmt.Errorf("'%s' does not have any argument", sel.Ti.Name)
+		return
 	}
-
-	err := validateArg(arg, []graph.ParserType{graph.NodeList})
+	err = validateArg(arg, []graph.ParserType{graph.NodeObj})
 	if err != nil {
-		return err
+		return
 	}
-
-	fn := sel.Ti.Func
-
-	if len(fn.Inputs) == 0 {
-		return fmt.Errorf("db function '%s' does not have any arguments", sel.Ti.Name)
+	args, err := newArgs(sel, sel.Ti.Func, arg)
+	if err != nil {
+		return
 	}
-
-	node := arg.Val
-
-	for i, n := range node.Children {
-		var err error
-		a := Arg{DType: fn.Inputs[i].Type}
-
-		switch n.Type {
-		case graph.NodeLabel:
-			a.Type = ArgTypeCol
-			a.Col, err = sel.Ti.GetColumn(n.Val)
-		case graph.NodeVar:
-			a.Type = ArgTypeVar
-			fallthrough
-		default:
-			a.Val = n.Val
-		}
-		if err != nil {
-			return err
-		}
-		sel.Args = append(sel.Args, a)
-	}
-
-	return nil
+	sel.Args = args
+	return
 }
 
 func toOrder(val string) (Order, error) {
@@ -1935,7 +1912,7 @@ func (co *Compiler) compileArgOffset(sel *Select, arg graph.Arg) error {
 
 	case graph.NodeVar:
 		if co.s.DBType() == "mysql" {
-			return dbArgErr("limit", "number", "mysql")
+			return dbArgErr("offset", "number", "mysql")
 		}
 		sel.Paging.OffsetVar = node.Val
 	}

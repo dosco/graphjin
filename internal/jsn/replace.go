@@ -44,9 +44,6 @@ func Replace(w *bytes.Buffer, b []byte, from, to []Field) error {
 	// 		log.Fatal(err)
 	// 	}
 	// 	e = dec.InputOffset()
-	// 	if t == ':' {
-	// 		fmt.Println(">>>>")
-	// 	}
 	// 	fmt.Printf("[%d:%d] - %T: %v", s, e, t, t)
 	// 	if dec.More() {
 	// 		fmt.Printf(" (more)")
