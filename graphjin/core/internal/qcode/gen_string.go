@@ -76,13 +76,14 @@ func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
 	// Re-run the stringer command to generate them again.
 	var x [1]struct{}
-	_ = x[FieldTypeCol-0]
-	_ = x[FieldTypeFunc-1]
+	_ = x[FieldTypeTable-0]
+	_ = x[FieldTypeCol-1]
+	_ = x[FieldTypeFunc-2]
 }
 
-const _FieldType_name = "FieldTypeColFieldTypeFunc"
+const _FieldType_name = "FieldTypeTableFieldTypeColFieldTypeFunc"
 
-var _FieldType_index = [...]uint8{0, 12, 25}
+var _FieldType_index = [...]uint8{0, 14, 26, 39}
 
 func (i FieldType) String() string {
 	if i < 0 || i >= FieldType(len(_FieldType_index)-1) {
@@ -96,14 +97,15 @@ func _() {
 	var x [1]struct{}
 	_ = x[SkipTypeNone-0]
 	_ = x[SkipTypeDrop-1]
-	_ = x[SkipTypeUserNeeded-2]
-	_ = x[SkipTypeBlocked-3]
-	_ = x[SkipTypeRemote-4]
+	_ = x[SkipTypeNulled-2]
+	_ = x[SkipTypeUserNeeded-3]
+	_ = x[SkipTypeBlocked-4]
+	_ = x[SkipTypeRemote-5]
 }
 
-const _SkipType_name = "SkipTypeNoneSkipTypeDropSkipTypeUserNeededSkipTypeBlockedSkipTypeRemote"
+const _SkipType_name = "SkipTypeNoneSkipTypeDropSkipTypeNulledSkipTypeUserNeededSkipTypeBlockedSkipTypeRemote"
 
-var _SkipType_index = [...]uint8{0, 12, 24, 42, 57, 71}
+var _SkipType_index = [...]uint8{0, 12, 24, 38, 56, 71, 85}
 
 func (i SkipType) String() string {
 	if i < 0 || i >= SkipType(len(_SkipType_index)-1) {

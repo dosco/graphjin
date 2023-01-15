@@ -273,6 +273,9 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 	cmap := make(map[string]DBColumn)
 
 	i := 0
+	// we have to rescan and update columns to overcome
+	// weird bugs in mysql like joins with information_schema
+	// don't work in 8.0.22 etc.
 	for rows.Next() {
 		var c DBColumn
 		c.ID = int32(i)

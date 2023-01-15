@@ -37,7 +37,7 @@ func (g *GraphJin) startDBWatcher(ps time.Duration) {
 	for range ticker.C {
 		gj := g.Load().(*graphjin)
 
-		dbinfo, err := sdata.GetDBInfo(
+		latestDi, err := sdata.GetDBInfo(
 			gj.db,
 			gj.dbtype,
 			gj.conf.Blocklist)
@@ -47,13 +47,13 @@ func (g *GraphJin) startDBWatcher(ps time.Duration) {
 			continue
 		}
 
-		if dbinfo.Hash() == gj.dbinfo.Hash() {
+		if latestDi.Hash() == gj.dbinfo.Hash() {
 			continue
 		}
 
 		gj.log.Println("database change detected. reinitializing...")
 
-		if err := g.Reload(); err != nil {
+		if err := g.reload(latestDi); err != nil {
 			gj.log.Println(err)
 		}
 	}

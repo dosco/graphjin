@@ -11,10 +11,16 @@ func (c *compilerContext) renderColumns(sel *qcode.Select) {
 		if i != 0 {
 			c.w.WriteString(", ")
 		}
-		if f.Type == qcode.FieldTypeFunc {
+
+		switch {
+		case f.SkipRender == qcode.SkipTypeNulled:
+			c.w.WriteString(`NULL`)
+		case f.Type == qcode.FieldTypeFunc:
 			c.renderFuncColumn(sel, f)
-		} else {
+		case f.Type == qcode.FieldTypeCol:
 			c.renderStdColumn(sel, f)
+		default:
+			continue
 		}
 		c.alias(f.FieldName)
 		i++
@@ -63,7 +69,9 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 
 		//TODO: log what and why this is being skipped
 		switch csel.SkipRender {
-		case qcode.SkipTypeUserNeeded, qcode.SkipTypeBlocked:
+		case qcode.SkipTypeUserNeeded, qcode.SkipTypeBlocked,
+			qcode.SkipTypeNulled:
+
 			c.w.WriteString(`NULL`)
 			c.alias(csel.FieldName)
 
@@ -113,7 +121,8 @@ func (c *compilerContext) renderUnionColumn(sel, csel *qcode.Select) {
 		c.w.WriteString(` THEN `)
 
 		switch usel.SkipRender {
-		case qcode.SkipTypeUserNeeded, qcode.SkipTypeBlocked:
+		case qcode.SkipTypeUserNeeded, qcode.SkipTypeBlocked,
+			qcode.SkipTypeNulled:
 			c.w.WriteString(`NULL `)
 		default:
 			c.w.WriteString(`__sj_`)
@@ -134,6 +143,8 @@ func (c *compilerContext) renderBaseColumns(sel *qcode.Select) {
 		c.colWithTable(col.Col.Table, col.Col.Name)
 		i++
 	}
+
+	// render only function columns
 	for _, f := range sel.Fields {
 		if f.Type != qcode.FieldTypeFunc {
 			continue
@@ -164,22 +175,11 @@ func (c *compilerContext) renderTypename(sel *qcode.Select) {
 
 func (c *compilerContext) renderJSONFields(sel *qcode.Select) {
 	i := 0
-	for _, col := range sel.Fields {
+	for _, f := range sel.Fields {
 		if i != 0 {
 			c.w.WriteString(", ")
 		}
-		c.renderJSONField(col.FieldName, sel.ID)
-		i++
-	}
-	for _, fn := range sel.Funcs {
-		if i != 0 {
-			c.w.WriteString(", ")
-		}
-		if fn.Alias != "" {
-			c.renderJSONField(fn.Alias, sel.ID)
-		} else {
-			c.renderJSONField(fn.FieldName, sel.ID)
-		}
+		c.renderJSONField(f.FieldName, sel.ID)
 		i++
 	}
 

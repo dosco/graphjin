@@ -83,12 +83,17 @@ func parseTFieldsColumns(tableSchema, tableName string, fields []graph.TField) (
 		isRecursive := (dir.RelatedSchema == tableSchema &&
 			dir.RelatedType == tableName)
 
+		colType := pascalToSnakeSpace(f.Type)
+		if dir.TypeSuffix != "" {
+			colType += "(" + dir.TypeSuffix + ")"
+		}
+
 		col := sdata.DBColumn{
 			ID:          int32(i),
 			Schema:      tableSchema,
 			Table:       tableName,
 			Name:        f.Name,
-			Type:        pascalToSnakeSpace(f.Type),
+			Type:        colType,
 			Array:       f.List,
 			NotNull:     f.Required,
 			PrimaryKey:  dir.ID,
@@ -141,16 +146,14 @@ func parseTypeDirectives(dir []graph.Directive) (ti typeInfo, err error) {
 		var arg graph.Arg
 		switch d.Name {
 		case "schema":
-			arg, err = getArg(d.Args, "name",
-				[]graph.ParserType{graph.NodeStr, graph.NodeLabel}, true)
+			arg, err = getArg(d.Args, "name", true, graph.NodeStr, graph.NodeLabel)
 			if err != nil {
 				break
 			}
 			ti.Schema = arg.Val.Val
 
 		case "function":
-			arg, err = getArg(d.Args, "return_type",
-				[]graph.ParserType{graph.NodeStr, graph.NodeLabel}, true)
+			arg, err = getArg(d.Args, "return_type", true, graph.NodeStr, graph.NodeLabel)
 			if err != nil {
 				break
 			}
@@ -169,6 +172,7 @@ type tfieldInfo struct {
 	Unique        bool
 	Search        bool
 	Blocked       bool
+	TypeSuffix    string
 	RelatedType   string
 	RelatedField  string
 	RelatedSchema string
@@ -179,6 +183,7 @@ type tfieldInfo struct {
 func parseTFieldDirectives(ft string, dir []graph.Directive) (tfi tfieldInfo, err error) {
 	for _, d := range dir {
 		var arg graph.Arg
+
 		switch d.Name {
 		case "id":
 			tfi.ID = true
@@ -192,17 +197,22 @@ func parseTFieldDirectives(ft string, dir []graph.Directive) (tfi tfieldInfo, er
 		case "blocked":
 			tfi.Blocked = true
 
+		case "type":
+			arg, err = getArg(d.Args, "args", true, graph.NodeStr, graph.NodeLabel)
+			if err != nil {
+				break
+			}
+			tfi.TypeSuffix = arg.Val.Val
+
 		case "relation":
-			arg, err = getArg(d.Args, "type",
-				[]graph.ParserType{graph.NodeStr, graph.NodeLabel}, true)
+			arg, err = getArg(d.Args, "type", true, graph.NodeStr, graph.NodeLabel)
 			if err != nil {
 				break
 			}
 			tfi.RelatedType = arg.Val.Val
 
-			arg, err = getArg(d.Args, "field",
-				[]graph.ParserType{graph.NodeStr, graph.NodeLabel},
-				(ft != "Json"))
+			required := (ft != "Json")
+			arg, err = getArg(d.Args, "field", required, graph.NodeStr, graph.NodeLabel)
 			if err != nil {
 				break
 			}
@@ -210,22 +220,27 @@ func parseTFieldDirectives(ft string, dir []graph.Directive) (tfi tfieldInfo, er
 				tfi.RelatedField = arg.Val.Val
 			}
 
-			arg, err = getArg(d.Args, "schema",
-				[]graph.ParserType{graph.NodeStr, graph.NodeLabel}, false)
+			arg, err = getArg(d.Args, "schema", false, graph.NodeStr, graph.NodeLabel)
 			if err != nil {
 				break
 			}
 			if argExists(arg) {
 				tfi.RelatedSchema = arg.Val.Val
 			}
+
 		case "input":
 			tfi.Input = true
 
 		case "output":
 			tfi.Output = true
+
+		default:
+			err = fmt.Errorf("unknown schema field directive: %s", d.Name)
+			return
 		}
+
 		if err != nil {
-			err = fmt.Errorf("type field: %w", err)
+			err = fmt.Errorf("type field: %s: %w", d.Name, err)
 			return
 		}
 	}

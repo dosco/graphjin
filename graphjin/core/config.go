@@ -28,6 +28,11 @@ type Config struct {
 	// in production mode.
 	EnableSchema bool `mapstructure:"enable_schema" json:"enable_schema" yaml:"enable_schema" jsonschema:"title=Enable Schema,default=false"`
 
+	// When set to true an introspection json file will be generated in dev mode.
+	// This file can be used with other GraphQL tooling to generate clients, enable
+	// autocomplete, etc
+	EnableIntrospection bool `mapstructure:"enable_introspection" json:"enable_introspection" yaml:"enable_introspection" jsonschema:"title=Generate introspection JSON,default=false"`
+
 	// Forces the database session variable 'user.id' to be set to the user id
 	SetUserID bool `mapstructure:"set_user_id" json:"set_user_id" yaml:"set_user_id" jsonschema:"title=Set User ID,default=false"`
 
@@ -123,10 +128,11 @@ type Column struct {
 
 // Configuration for user role
 type Role struct {
-	Name   string
-	Match  string      `jsonschema:"title=Related To,example=other_table.id_column,example=users.id"`
-	Tables []RoleTable `jsonschema:"title=Table Configuration for Role"`
-	tm     map[string]*RoleTable
+	Name    string
+	Comment string
+	Match   string      `jsonschema:"title=Related To,example=other_table.id_column,example=users.id"`
+	Tables  []RoleTable `jsonschema:"title=Table Configuration for Role"`
+	tm      map[string]*RoleTable
 }
 
 // Table configuration for a specific role (user role)

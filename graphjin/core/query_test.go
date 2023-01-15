@@ -891,44 +891,15 @@ func Example_queryWithUnionForPolymorphicRelationships() {
 	// Output: {"notifications":[{"id":1,"subject":{"email":"user1@test.com"},"verb":"Joined"},{"id":2,"subject":{"name":"Product 2"},"verb":"Bought"}]}
 }
 
-func Example_queryWithSkipAndIncludeDirectives1() {
+func Example_queryWithSkipAndIncludeIfArg() {
 	gql := `
 	query {
-		products(limit: 2) @include(if: $test) {
-			id
+		products(limit: 2, order_by: { id: asc })  {
+			id(includeIf: { id: { eq: 1 } })
 			name
 		}
-		users(limit: 3) @skip(if: $test) {
-			id
-		}
-	}`
-
-	vars := json.RawMessage(`{ "test": true }`)
-
-	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
-	gj, err := core.NewGraphJin(conf, db)
-	if err != nil {
-		panic(err)
-	}
-
-	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
-	if err != nil {
-		fmt.Println(err)
-	} else {
-		printJSON(res.Data)
-	}
-	// Output: {"products":[{"id":1,"name":"Product 1"},{"id":2,"name":"Product 2"}],"users":[]}
-}
-
-func Example_queryWithSkipAndIncludeDirectives2() {
-	gql := `
-	query {
-		products(limit: 2, order_by: { id: asc }) @include(if: { id: { eq: 1 } }) {
-			id
-			name
-		}
-		users(limit: 3, order_by: { id: asc }) @skip(if: { id: { eq: 2 } }) {
-			id
+		users(limit: 3, order_by: { id: asc })  {
+			id(skipIf: { id: { eq: 2 } })
 		}
 	}`
 
@@ -944,13 +915,13 @@ func Example_queryWithSkipAndIncludeDirectives2() {
 	} else {
 		printJSON(res.Data)
 	}
-	// Output: {"products":[{"id":1,"name":"Product 1"}],"users":[{"id":1},{"id":3},{"id":4}]}
+	// Output: {"products":[{"id":1,"name":"Product 1"},{"id":null,"name":"Product 2"}],"users":[{"id":1},{"id":null},{"id":3}]}
 }
 
-func Example_queryWithSkipAndIncludeDirectives3() {
+func Example_queryWithSkipAndIncludeDirective1() {
 	gql := `
 	query {
-		products(limit: 2, order_by: { id: asc }) @include(ifRole: "user", if: { id: { eq: 1 } }) {
+		products(limit: 2, order_by: { id: asc }) @include(ifRole: "user") {
 			id
 			name
 		}
@@ -971,18 +942,75 @@ func Example_queryWithSkipAndIncludeDirectives3() {
 	} else {
 		printJSON(res.Data)
 	}
-	// Output: {"users":[{"id":1},{"id":2},{"id":3}]}
+	// Output: {"products":null,"users":[{"id":1},{"id":2},{"id":3}]}
 }
 
-func Example_queryWithSkipAndIncludeFieldDirectives1() {
+func Example_queryWithSkipAndIncludeDirective2() {
+	gql := `
+	query {
+		products(limit: 2, order_by: { id: asc })  {
+			id @skip(ifRole: "user")
+			name @include(ifRole: "user")
+		}
+		users(limit: 3, order_by: { id: asc })  {
+			id @include(ifRole: "anon")
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	c := context.WithValue(context.Background(), core.UserIDKey, 1)
+	res, err := gj.GraphQL(c, gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"products":[{"id":null,"name":"Product 1"},{"id":null,"name":"Product 2"}],"users":[{"id":null},{"id":null},{"id":null}]}
+}
+
+func Example_queryWithSkipAndIncludeDirective3() {
+	gql := `
+	query {
+		products(limit: 2) @include(ifVar: $test) {
+			id
+			name
+		}
+		users(limit: 3) @skip(ifVar: $test) {
+			id
+		}
+	}`
+
+	vars := json.RawMessage(`{ "test": true }`)
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"products":[{"id":1,"name":"Product 1"},{"id":2,"name":"Product 2"}],"users":null}
+}
+
+func Example_queryWithSkipAndIncludeDirective4() {
 	gql := `
 	query {
 		products(limit: 2)  {
-			id @include(if: $test)
-			name
+			id @skip(ifVar: $test)
+			name @include(ifVar: $test)
 		}
 		users(limit: 3)  {
-			id @skip(if: $test)
+			id @skip(ifVar: $test)
 		}
 	}`
 
@@ -1000,22 +1028,47 @@ func Example_queryWithSkipAndIncludeFieldDirectives1() {
 	} else {
 		printJSON(res.Data)
 	}
-	// Output: {"products":[{"id":1,"name":"Product 1"},{"id":2,"name":"Product 2"}],"users":[{"id":null},{"id":null},{"id":null}]}
+	// Output: {"products":[{"id":null,"name":"Product 1"},{"id":null,"name":"Product 2"}],"users":[{"id":null},{"id":null},{"id":null}]}
 }
 
-func Example_queryWithSkipAndIncludeFieldDirectives2() {
+func Example_queryWithAddAndRemoveDirective1() {
+	gql := `
+	query {
+		products(limit: 2, order_by: { id: asc }) @add(ifRole: "user") {
+			id
+			name
+		}
+		users(limit: 3, order_by: { id: asc }) @remove(ifRole: "user") {
+			id
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"users":[{"id":1},{"id":2},{"id":3}]}
+}
+
+func Example_queryWithAddAndRemoveDirective2() {
 	gql := `
 	query {
 		products(limit: 2, order_by: { id: asc })  {
-			id @include(if: { id: { eq: 1 } })
-			name
+			id 
+			name @add(ifRole: "user")
 		}
 		users(limit: 3, order_by: { id: asc })  {
-			id @skip(if: { id: { eq: 2 } })
+			id @remove(ifRole: "anon")
 		}
 	}`
-
-	vars := json.RawMessage(`{ "test": true }`)
 
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
@@ -1023,42 +1076,13 @@ func Example_queryWithSkipAndIncludeFieldDirectives2() {
 		panic(err)
 	}
 
-	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {
 		printJSON(res.Data)
 	}
-	// Output: {"products":[{"id":1,"name":"Product 1"},{"id":null,"name":"Product 2"}],"users":[{"id":1},{"id":null},{"id":3}]}
-}
-
-func Example_queryWithSkipAndIncludeFieldDirectives3() {
-	gql := `
-	query {
-		products(limit: 2, order_by: { id: asc })  {
-			id @include(if_role: "anon", if: { id: { eq: 1 } })
-			name
-		}
-		users(limit: 3, order_by: { id: asc })  {
-			id @skip(if_role: "anon")
-		}
-	}`
-
-	vars := json.RawMessage(`{ "test": true }`)
-
-	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
-	gj, err := core.NewGraphJin(conf, db)
-	if err != nil {
-		panic(err)
-	}
-
-	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
-	if err != nil {
-		fmt.Println(err)
-	} else {
-		printJSON(res.Data)
-	}
-	// Output: {"products":[{"id":1,"name":"Product 1"},{"id":2,"name":"Product 2"}],"users":[{},{},{}]}
+	// Output: {"products":[{"id":1},{"id":2}],"users":[{},{},{}]}
 }
 
 func Example_queryWithRemoteAPIJoin() {

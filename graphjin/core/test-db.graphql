@@ -1,0 +1,119 @@
+# dbinfo:postgres,120005,public
+
+type purchases {
+  id: Bigint! @id @unique
+  quantity: Integer
+  updated_at: TimestampWithTimeZone
+  returned_at: TimestampWithTimeZone
+  created_at: TimestampWithTimeZone!
+  product_id: Bigint @relation(type: products, field: id)
+  customer_id: Bigint @relation(type: users, field: id)
+}
+
+type users {
+  phone: Text
+  category_counts: Json
+  avatar: Text
+  updated_at: TimestampWithTimeZone
+  stripe_id: Text
+  full_name: Text!
+  disabled: Boolean
+  created_at: TimestampWithTimeZone!
+  email: Text! @unique
+  id: Bigint! @id @unique
+}
+
+type categories {
+  description: Text
+  updated_at: TimestampWithTimeZone
+  id: Bigint! @id @unique
+  created_at: TimestampWithTimeZone!
+  name: Text!
+}
+
+type products {
+  tags: [Text]
+  metadata: Jsonb
+  updated_at: TimestampWithTimeZone
+  category_ids: [Bigint]!
+  description: Text
+  country_code: CharacterVarying @type(args: "3")
+  tsv: Tsvector @search
+  price: Numeric @type(args: "7,1")
+  name: Text
+  created_at: TimestampWithTimeZone!
+  id: Bigint! @id @unique
+  owner_id: Bigint @relation(type: users, field: id)
+}
+
+type comments {
+  updated_at: TimestampWithTimeZone
+  product_id: Bigint @relation(type: products, field: id)
+  id: Bigint! @id @unique
+  reply_to_id: Bigint @relation(type: comments, field: id)
+  created_at: TimestampWithTimeZone!
+  body: Text
+  commenter_id: Bigint @relation(type: users, field: id)
+}
+
+type chats {
+  updated_at: TimestampWithTimeZone
+  body: Text
+  created_at: TimestampWithTimeZone!
+  reply_to_id: Bigint @relation(type: chats, field: id)
+  id: Bigint! @id @unique
+}
+
+type notifications {
+  id: Bigint! @id @unique
+  updated_at: TimestampWithTimeZone
+  subject_type: Text
+  created_at: TimestampWithTimeZone!
+  verb: Text
+  subject_id: Bigint
+  user_id: Bigint @relation(type: users, field: id)
+}
+
+type hot_products {
+  product_id: Bigint
+  country_code: CharacterVarying @type(args: "3")
+}
+
+type get_product {
+  name: Text
+  id: Bigint
+}
+
+type get_oldest5_products {
+  id: Bigint
+  name: Text
+}
+
+type get_oldest_users {
+  tag_name: Text
+  full_name: Text
+  id: Bigint
+}
+
+type is_hot_product @function(return_type: boolean) {
+  id: Bigint @input
+}
+
+type get_product @function(return_type: record) {
+  id: Bigint @input
+  name: Text @output
+  id: Bigint @output
+}
+
+type get_oldest5_products @function(return_type: record) {
+  id: Bigint @output
+  name: Text @output
+}
+
+type get_oldest_users @function(return_type: record) {
+  tag: Text @input
+  user_count: Integer @input
+  tag_name: Text @output
+  full_name: Text @output
+  id: Bigint @output
+}

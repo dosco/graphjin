@@ -59,15 +59,14 @@ func (gj *graphjin) getIntroResult() (data json.RawMessage, err error) {
 	if data, ok = gj.cache.Get("_intro"); ok {
 		return
 	}
-	in := newIntro(gj.schema, gj.conf.EnableCamelcase)
-	if data, err = introspection(in); err != nil {
+	if data, err = gj.introQuery(); err != nil {
 		return
 	}
 	gj.cache.Set("_intro", data)
 	return
 }
 
-func (gj *graphjin) initDiscover() error {
+func (gj *graphjin) initDiscover() (err error) {
 	switch gj.conf.DBType {
 	case "":
 		gj.dbtype = "postgres"
@@ -77,16 +76,15 @@ func (gj *graphjin) initDiscover() error {
 		gj.dbtype = gj.conf.DBType
 	}
 
-	if err := gj._initDiscover(); err != nil {
-		return fmt.Errorf("%s: %w", gj.dbtype, err)
+	if err = gj._initDiscover(); err != nil {
+		err = fmt.Errorf("%s: %w", gj.dbtype, err)
 	}
-
-	return nil
+	return
 }
 
 func (gj *graphjin) _initDiscover() (err error) {
 	if gj.prod && gj.conf.EnableSchema {
-		b, err := gj.fs.ReadFile("db.schema")
+		b, err := gj.fs.ReadFile("db.graphql")
 		if err != nil {
 			return err
 		}
@@ -103,18 +101,16 @@ func (gj *graphjin) _initDiscover() (err error) {
 			gj.conf.Blocklist)
 	}
 
-	// If gj.dbinfo is not null then it's probably set
-	// for tests or the schema file is being used
-	if gj.dbinfo != nil {
-		return
-	}
-
-	gj.dbinfo, err = sdata.GetDBInfo(
-		gj.db,
-		gj.dbtype,
-		gj.conf.Blocklist)
-	if err != nil {
-		return
+	// gj.dbinfo could be preset due to tests or db
+	// watcher reloading
+	if gj.dbinfo == nil {
+		gj.dbinfo, err = sdata.GetDBInfo(
+			gj.db,
+			gj.dbtype,
+			gj.conf.Blocklist)
+		if err != nil {
+			return
+		}
 	}
 
 	if !gj.prod && gj.conf.EnableSchema {
@@ -122,11 +118,12 @@ func (gj *graphjin) _initDiscover() (err error) {
 		if err := writeSchema(gj.dbinfo, &buf); err != nil {
 			return err
 		}
-		err = gj.fs.CreateFile("db.schema", buf.Bytes())
+		err = gj.fs.CreateFile("db.graphql", buf.Bytes())
 		if err != nil {
 			return
 		}
 	}
+
 	return
 }
 
@@ -137,9 +134,7 @@ func (gj *graphjin) initSchema() error {
 	return nil
 }
 
-func (gj *graphjin) _initSchema() error {
-	var err error
-
+func (gj *graphjin) _initSchema() (err error) {
 	if len(gj.dbinfo.Tables) == 0 {
 		return fmt.Errorf("no tables found in database")
 	}
@@ -154,17 +149,17 @@ func (gj *graphjin) _initSchema() error {
 		if t.Table != "" && t.Type == "" {
 			continue
 		}
-		if err := addTableInfo(gj.conf, t); err != nil {
-			return err
+		if err = addTableInfo(gj.conf, t); err != nil {
+			return
 		}
 	}
 
-	if err := addTables(gj.conf, gj.dbinfo); err != nil {
-		return err
+	if err = addTables(gj.conf, gj.dbinfo); err != nil {
+		return
 	}
 
-	if err := addForeignKeys(gj.conf, gj.dbinfo); err != nil {
-		return err
+	if err = addForeignKeys(gj.conf, gj.dbinfo); err != nil {
+		return
 	}
 
 	gj.schema, err = sdata.NewDBSchema(
@@ -172,15 +167,24 @@ func (gj *graphjin) _initSchema() error {
 		getDBTableAliases(gj.conf))
 
 	if err != nil {
-		return err
+		return
 	}
 
-	return err
+	if !gj.prod && gj.conf.EnableIntrospection {
+		var introJSON json.RawMessage
+		introJSON, err = gj.getIntroResult()
+		if err != nil {
+			return
+		}
+		err = gj.fs.CreateFile("intro.json", []byte(introJSON))
+		if err != nil {
+			return
+		}
+	}
+	return
 }
 
-func (gj *graphjin) initCompilers() error {
-	var err error
-
+func (gj *graphjin) initCompilers() (err error) {
 	qcc := qcode.Config{
 		TConfig:         gj.conf.tmap,
 		DefaultBlock:    gj.conf.DefaultBlock,
@@ -193,11 +197,11 @@ func (gj *graphjin) initCompilers() error {
 
 	gj.qc, err = qcode.NewCompiler(gj.schema, qcc)
 	if err != nil {
-		return err
+		return
 	}
 
-	if err := addRoles(gj.conf, gj.qc); err != nil {
-		return err
+	if err = addRoles(gj.conf, gj.qc); err != nil {
+		return
 	}
 
 	gj.pc = psql.NewCompiler(psql.Config{
@@ -207,7 +211,7 @@ func (gj *graphjin) initCompilers() error {
 		SecPrefix:       gj.pf,
 		EnableCamelcase: gj.conf.EnableCamelcase,
 	})
-	return nil
+	return
 }
 
 func (gj *graphjin) executeRoleQuery(c context.Context,
