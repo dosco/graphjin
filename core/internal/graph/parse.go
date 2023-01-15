@@ -272,7 +272,7 @@ func (p *Parser) parseOp() (op Operation, err error) {
 	return op, nil
 }
 
-func (p *Parser) parseOpTypeAndArgs(op *Operation) error {
+func (p *Parser) parseOpTypeAndArgs(op *Operation) (err error) {
 	item := p.next()
 
 	switch {
@@ -285,8 +285,6 @@ func (p *Parser) parseOpTypeAndArgs(op *Operation) error {
 	}
 
 	op.Args = op.argsA[:0]
-
-	var err error
 
 	if p.peek(itemName) {
 		op.Name = p.val(p.next())
@@ -307,8 +305,7 @@ func (p *Parser) parseOpTypeAndArgs(op *Operation) error {
 			return err
 		}
 	}
-
-	return nil
+	return
 }
 
 func ParseArgValue(argVal string, json bool) (*Node, error) {
@@ -381,7 +378,7 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 
 func (p *Parser) parseNormalFields(st *Stack, fields []Field) ([]Field, error) {
 	if !p.peek(itemName) {
-		return nil, fmt.Errorf("expecting an alias or field name, got: %s", p.next())
+		return nil, p.tokErr(`expecting an alias or field name`)
 	}
 
 	fields = append(fields, Field{ID: int32(len(fields))})

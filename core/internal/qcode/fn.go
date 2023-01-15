@@ -8,34 +8,31 @@ import (
 	"github.com/dosco/graphjin/v2/core/internal/sdata"
 )
 
-func (co *Compiler) isFunction(sel *Select, f graph.Field) (
+func (co *Compiler) isFunction(sel *Select, name string, f graph.Field) (
 	fn Function, isFunc bool, err error) {
 
-	fn.FieldName = f.Name
-	fn.Alias = f.Alias
-
 	switch {
-	case f.Name == "search_rank":
+	case name == "search_rank":
 		isFunc = true
 		if _, ok := sel.GetInternalArg("search"); !ok {
-			err = fmt.Errorf("no search defined: %s", f.Name)
+			err = fmt.Errorf("search argument not found: %s", name)
 		}
 
-	case strings.HasPrefix(f.Name, "search_headline_"):
+	case strings.HasPrefix(name, "search_headline_"):
 		isFunc = true
 		fn.Name = "search_headline"
 		fn.Args = []Arg{{Type: ArgTypeCol}}
-		fn.Args[0].Col, err = sel.Ti.GetColumn(f.Name[(len(fn.Name) + 1):])
+		fn.Args[0].Col, err = sel.Ti.GetColumn(name[(len(fn.Name) + 1):])
 		if err != nil {
 			return
 		}
 		if _, ok := sel.GetInternalArg("search"); !ok {
-			err = fmt.Errorf("no search defined: %s", f.Name)
+			err = fmt.Errorf("no search defined: %s", name)
 		}
 
 	default:
 		var fi funcInfo
-		if fi, isFunc, err = co.isFunctionEx(sel, f); isFunc {
+		if fi, isFunc, err = co.isFunctionEx(sel, name, f); isFunc {
 			fn.Name = fi.Name
 			fn.Func = fi.Func
 			fn.Agg = fi.Agg
@@ -62,12 +59,11 @@ type funcInfo struct {
 	Agg  bool
 }
 
-func (co *Compiler) isFunctionEx(sel *Select, f graph.Field) (
+func (co *Compiler) isFunctionEx(sel *Select, name string, f graph.Field) (
 	fi funcInfo, isFunc bool, err error) {
-	fieldName := f.Name
 
 	for k, v := range co.s.GetFunctions() {
-		if k == fieldName && len(f.Args) != 0 {
+		if k == name && len(f.Args) != 0 {
 			fi.Name = k
 			fi.Agg = false
 			fi.Func = v
@@ -76,9 +72,9 @@ func (co *Compiler) isFunctionEx(sel *Select, f graph.Field) (
 		}
 
 		kLen := len(k)
-		if strings.HasPrefix(fieldName, (k + "_")) {
-			fi.Name = fieldName[:kLen]
-			fi.Col, err = sel.Ti.GetColumn(fieldName[(kLen + 1):])
+		if strings.HasPrefix(name, (k + "_")) {
+			fi.Name = name[:kLen]
+			fi.Col, err = sel.Ti.GetColumn(name[(kLen + 1):])
 			if err != nil {
 				return
 			}

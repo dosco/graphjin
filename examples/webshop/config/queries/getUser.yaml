@@ -1,8 +1,0 @@
-name: getUser
-query: |-
-    query getUser {
-      users(order_by: {created_at: desc}, limit: 5) {
-        ...User
-      }
-    }
-vars: '{}'

@@ -196,17 +196,15 @@ type intro struct {
 	res         introResult
 }
 
-func newIntro(schema *sdata.DBSchema, camelCase bool) intro {
-	return intro{
-		schema:      schema,
-		camelCase:   camelCase,
+func (gj *graphjin) introQuery() (result json.RawMessage, err error) {
+	in := intro{
+		schema:      gj.schema,
+		camelCase:   gj.conf.EnableCamelcase,
 		types:       make(map[string]fullType),
 		enumValues:  make(map[string]enumValue),
 		inputValues: make(map[string]inputValue),
 	}
-}
 
-func introspection(in intro) (result json.RawMessage, err error) {
 	in.res.Schema = introSchema{
 		QueryType:        &shortFullType{Name: "Query"},
 		SubscriptionType: &shortFullType{Name: "Subscription"},
@@ -214,7 +212,7 @@ func introspection(in intro) (result json.RawMessage, err error) {
 	}
 
 	for _, v := range stdTypes {
-		in.types[v.Name] = v
+		in.addType(v)
 	}
 
 	// Expression types
@@ -234,6 +232,9 @@ func introspection(in intro) (result json.RawMessage, err error) {
 
 	v = append(expAll, expJSON...)
 	in.addExpTypes(v, "JSON", newTR("", "String", nil))
+
+	in.addRolesEnumType(gj.roles)
+	in.addTablesEnumType()
 
 	for alias, t := range in.schema.GetAliases() {
 		if err = in.addTable(t, alias); err != nil {
@@ -263,18 +264,29 @@ func (in *intro) addTable(t sdata.DBTable, alias string) (err error) {
 	if t.Blocked || len(t.Columns) == 0 {
 		return
 	}
-	var ft fullType
-	ft, err = in.addTableType(t, alias, 0)
-	if err != nil {
-		return
-	}
-	in.addTypeTo("Query", ft)
-	in.addTypeTo("Subscription", ft)
+	var ftQS fullType
 
-	if err = in.addInputType(t, &ft); err != nil {
+	// add table type to query and subscription
+	if ftQS, err = in.addTableType(t, alias); err != nil {
 		return
 	}
-	in.addTypeTo("Mutation", ft)
+	in.addTypeTo("Query", ftQS)
+	in.addTypeTo("Subscription", ftQS)
+
+	var ftM fullType
+
+	// add table type to mutation
+	if ftM, err = in.addInputType(t, ftQS); err != nil {
+		return
+	}
+	in.addTypeTo("Mutation", ftM)
+
+	// add tableByID type to query and subscription
+	ftQS.Name += "ByID"
+	ftQS.addOrReplaceArg("id", newTR(KIND_NONNULL, "ID", newTR("", "ID", nil)))
+	in.addType(ftQS)
+	in.addTypeTo("Query", ftQS)
+	in.addTypeTo("Subscription", ftQS)
 	return
 }
 
@@ -298,10 +310,9 @@ func (in *intro) getName(name string) string {
 }
 
 func (in *intro) addExpTypes(exps []exp, name string, rt *typeRef) {
-	tn := (name + SUFFIX_EXP)
 	ft := fullType{
 		Kind:        KIND_INPUT_OBJ,
-		Name:        tn,
+		Name:        (name + SUFFIX_EXP),
 		InputFields: []inputValue{},
 		Interfaces:  []typeRef{},
 	}
@@ -317,10 +328,15 @@ func (in *intro) addExpTypes(exps []exp, name string, rt *typeRef) {
 			Type:        rtVal,
 		})
 	}
-	in.types[tn] = ft
+	in.addType(ft)
 }
 
-func (in *intro) addTableType(t sdata.DBTable, alias string, depth int) (ft fullType, err error) {
+func (in *intro) addTableType(t sdata.DBTable, alias string) (ft fullType, err error) {
+	return in.addTableTypeWithDepth(t, alias, 0)
+}
+
+func (in *intro) addTableTypeWithDepth(
+	t sdata.DBTable, alias string, depth int) (ft fullType, err error) {
 	ft = fullType{
 		Kind:        KIND_OBJECT,
 		InputFields: []inputValue{},
@@ -331,7 +347,9 @@ func (in *intro) addTableType(t sdata.DBTable, alias string, depth int) (ft full
 	if alias != "" {
 		name = alias
 	}
-	ft.Name = in.getName(name)
+	name = in.getName(name)
+
+	ft.Name = name
 	ft.Description = t.Comment
 
 	var hasSearch bool
@@ -342,12 +360,8 @@ func (in *intro) addTableType(t sdata.DBTable, alias string, depth int) (ft full
 	}
 
 	for _, fn := range in.schema.GetFunctions() {
-		var ty fullType
-		ty, err = in.addArgsType(t, fn)
-		if err != nil {
-			return
-		}
-		in.types[ty.Name] = ty
+		ty := in.addArgsType(t, fn)
+		in.addType(ty)
 	}
 
 	for _, c := range t.Columns {
@@ -369,11 +383,7 @@ func (in *intro) addTableType(t sdata.DBTable, alias string, depth int) (ft full
 	}
 
 	for _, fn := range in.schema.GetFunctions() {
-		var f1 fieldObj
-		f1, err = in.getFunctionField(t, fn)
-		if err != nil {
-			return
-		}
+		f1 := in.getFunctionField(t, fn)
 		ft.Fields = append(ft.Fields, f1)
 	}
 
@@ -408,17 +418,9 @@ func (in *intro) addTableType(t sdata.DBTable, alias string, depth int) (ft full
 	ft.addArg("after", newTR("", "Cursor", nil))
 	ft.addArg("before", newTR("", "Cursor", nil))
 
-	if err = in.addOrderByType(t, &ft); err != nil {
-		return
-	}
-
-	if err = in.addWhereType(t, &ft); err != nil {
-		return
-	}
-
-	if err = in.addTableArgsType(t, &ft); err != nil {
-		return
-	}
+	in.addOrderByType(t, &ft)
+	in.addWhereType(t, &ft)
+	in.addTableArgsType(t, &ft)
 
 	if hasSearch {
 		ft.addArg("search", newTR("", "String", nil))
@@ -431,10 +433,12 @@ func (in *intro) addTableType(t sdata.DBTable, alias string, depth int) (ft full
 		ft.addArg("find", newTR("", "FindSearchInput", nil))
 	}
 
-	in.types[name] = ft
+	in.addType(ft)
 
 	if hasRecursive {
-		_, err = in.addTableType(t, (name + "Recursive"), (depth + 1))
+		_, err = in.addTableTypeWithDepth(t,
+			(name + "Recursive"),
+			(depth + 1))
 	}
 	return
 }
@@ -443,7 +447,7 @@ func (in *intro) addColumnsEnumType(t sdata.DBTable) (err error) {
 	tableName := in.getName(t.Name)
 	ft := fullType{
 		Kind:        KIND_ENUM,
-		Name:        (t.Name + SUFFIX_ENUM),
+		Name:        (t.Name + "Columns" + SUFFIX_ENUM),
 		Description: fmt.Sprintf("Table columns for '%s'", tableName),
 	}
 	for _, c := range t.Columns {
@@ -455,15 +459,51 @@ func (in *intro) addColumnsEnumType(t sdata.DBTable) (err error) {
 			Description: c.Comment,
 		})
 	}
-	in.types[ft.Name] = ft
+	in.addType(ft)
 	return
 }
 
-func (in *intro) addOrderByType(t sdata.DBTable, ft *fullType) (err error) {
-	tn := (t.Name + SUFFIX_ORDER_BY)
+func (in *intro) addTablesEnumType() {
+	ft := fullType{
+		Kind:        KIND_ENUM,
+		Name:        ("tables" + SUFFIX_ENUM),
+		Description: "All available tables",
+	}
+	for _, t := range in.schema.GetTables() {
+		if t.Blocked {
+			continue
+		}
+		ft.EnumValues = append(ft.EnumValues, enumValue{
+			Name:        in.getName(t.Name),
+			Description: t.Comment,
+		})
+	}
+	in.addType(ft)
+}
+
+func (in *intro) addRolesEnumType(roles map[string]*Role) {
+	ft := fullType{
+		Kind:        KIND_ENUM,
+		Name:        ("roles" + SUFFIX_ENUM),
+		Description: "All available roles",
+	}
+	for name, ro := range roles {
+		cmt := ro.Comment
+		if ro.Match != "" {
+			cmt = fmt.Sprintf("%s (Match: %s)", cmt, ro.Match)
+		}
+		ft.EnumValues = append(ft.EnumValues, enumValue{
+			Name:        name,
+			Description: cmt,
+		})
+	}
+	in.addType(ft)
+}
+
+func (in *intro) addOrderByType(t sdata.DBTable, ft *fullType) {
 	ty := fullType{
 		Kind: KIND_INPUT_OBJ,
-		Name: tn,
+		Name: (t.Name + SUFFIX_ORDER_BY),
 	}
 	for _, c := range t.Columns {
 		if c.Blocked {
@@ -475,12 +515,11 @@ func (in *intro) addOrderByType(t sdata.DBTable, ft *fullType) (err error) {
 			Type:        newTR("", "OrderDirection", nil),
 		})
 	}
-	in.types[tn] = ty
+	in.addType(ty)
 	ft.addArg("orderBy", newTR("", (t.Name+SUFFIX_ORDER_BY), nil))
-	return
 }
 
-func (in *intro) addWhereType(t sdata.DBTable, ft *fullType) (err error) {
+func (in *intro) addWhereType(t sdata.DBTable, ft *fullType) {
 	tn := (t.Name + SUFFIX_WHERE)
 	ty := fullType{
 		Kind: "INPUT_OBJECT",
@@ -507,12 +546,11 @@ func (in *intro) addWhereType(t sdata.DBTable, ft *fullType) (err error) {
 			Type:        newTR("", ft, nil),
 		})
 	}
-	in.types[ty.Name] = ty
+	in.addType(ty)
 	ft.addArg("where", newTR("", ty.Name, nil))
-	return
 }
 
-func (in *intro) addInputType(t sdata.DBTable, ft *fullType) (err error) {
+func (in *intro) addInputType(t sdata.DBTable, ft fullType) (retFT fullType, err error) {
 	// upsert
 	ty := fullType{
 		Kind:        "INPUT_OBJECT",
@@ -530,7 +568,7 @@ func (in *intro) addInputType(t sdata.DBTable, ft *fullType) (err error) {
 			Type:        newTR("", ft1, nil),
 		})
 	}
-	in.types[ty.Name] = ty
+	in.addType(ty)
 	ft.addArg("upsert", newTR("", ty.Name, nil))
 
 	// insert
@@ -559,7 +597,7 @@ func (in *intro) addInputType(t sdata.DBTable, ft *fullType) (err error) {
 			Type:        newTR("", ("insert" + t1.Name + SUFFIX_INPUT), nil),
 		})
 	}
-	in.types[ty.Name] = ty
+	in.addType(ty)
 	ft.addArg("insert", newTR("", ty.Name, nil))
 
 	// update
@@ -597,28 +635,25 @@ func (in *intro) addInputType(t sdata.DBTable, ft *fullType) (err error) {
 		Description: desc3,
 		Type:        newTR("", (t.Name + SUFFIX_WHERE), nil),
 	})
-	in.types[ty.Name] = ty
+	in.addType(ty)
 	ft.addArg("update", newTR("", ty.Name, nil))
 
 	// delete
 	ft.addArg("delete", newTR("", TYPE_BOOLEAN, nil))
+	retFT = ft
 	return
 }
 
-func (in *intro) addTableArgsType(t sdata.DBTable, ft *fullType) (err error) {
+func (in *intro) addTableArgsType(t sdata.DBTable, ft *fullType) {
 	if t.Type != "function" {
 		return
 	}
-	ty, err := in.addArgsType(t, t.Func)
-	if err != nil {
-		return
-	}
-	in.types[ty.Name] = ty
+	ty := in.addArgsType(t, t.Func)
+	in.addType(ty)
 	ft.addArg("args", newTR("", ty.Name, nil))
-	return
 }
 
-func (in *intro) addArgsType(t sdata.DBTable, fn sdata.DBFunction) (ft fullType, err error) {
+func (in *intro) addArgsType(t sdata.DBTable, fn sdata.DBFunction) (ft fullType) {
 	ft = fullType{
 		Kind: "INPUT_OBJECT",
 		Name: (t.Name + fn.Name + SUFFIX_ARGS),
@@ -626,7 +661,7 @@ func (in *intro) addArgsType(t sdata.DBTable, fn sdata.DBFunction) (ft fullType,
 	for _, fi := range fn.Inputs {
 		var tr *typeRef
 		if fn.Agg {
-			tr = newTR("", (t.Name + SUFFIX_ENUM), nil)
+			tr = newTR("", (t.Name + "Columns" + SUFFIX_ENUM), nil)
 		} else {
 			tn, list := getType(fi.Type)
 			if tn == "" {
@@ -669,10 +704,17 @@ func (in *intro) getColumnField(c sdata.DBColumn) (f fieldObj, err error) {
 	}
 
 	f.Type = typeValue
+
+	f.Args = append(f.Args, inputValue{
+		Name: "includeIf", Type: newTR("", (c.Table + SUFFIX_WHERE), nil)})
+
+	f.Args = append(f.Args, inputValue{
+		Name: "skipIf", Type: newTR("", (c.Table + SUFFIX_WHERE), nil)})
+
 	return
 }
 
-func (in *intro) getFunctionField(t sdata.DBTable, fn sdata.DBFunction) (f fieldObj, err error) {
+func (in *intro) getFunctionField(t sdata.DBTable, fn sdata.DBFunction) (f fieldObj) {
 	f.Name = in.getName(fn.Name)
 	f.Args = []inputValue{}
 	ty, list := getType(fn.Type)
@@ -686,6 +728,12 @@ func (in *intro) getFunctionField(t sdata.DBTable, fn sdata.DBFunction) (f field
 		argsArg := inputValue{Name: "args", Type: newTR("", typeName, nil)}
 		f.Args = append(f.Args, argsArg)
 	}
+
+	f.Args = append(f.Args, inputValue{
+		Name: "includeIf", Type: newTR("", (t.Name + SUFFIX_WHERE), nil)})
+
+	f.Args = append(f.Args, inputValue{
+		Name: "skipIf", Type: newTR("", (t.Name + SUFFIX_WHERE), nil)})
 	return
 }
 
@@ -737,6 +785,23 @@ func (ft *fullType) addArg(name string, tr *typeRef) {
 		Name: name,
 		Type: tr,
 	})
+}
+
+func (ft *fullType) addOrReplaceArg(name string, tr *typeRef) {
+	for i, a := range ft.InputFields {
+		if a.Name == name {
+			ft.InputFields[i].Type = tr
+			return
+		}
+	}
+	ft.InputFields = append(ft.InputFields, inputValue{
+		Name: name,
+		Type: tr,
+	})
+}
+
+func (in *intro) addType(ft fullType) {
+	in.types[ft.Name] = ft
 }
 
 func newTR(kind, name string, tr *typeRef) *typeRef {

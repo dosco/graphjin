@@ -504,11 +504,11 @@ func withPolymorphicUnion(t *testing.T) {
 func withSkipAndIncludeDirectives(t *testing.T) {
 	gql := `
 	query {
-		products(limit: 6) @include(if: $test) {
+		products(limit: 6) @include(ifVar: $test) {
 			id
 			name
 		}
-		users(limit: 3) @skip(if: $test) {
+		users(limit: 3) @skip(ifVar: $test) {
 			id
 		}
 	}`

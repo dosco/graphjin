@@ -2,7 +2,6 @@ package qcode
 
 import (
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -49,16 +48,13 @@ func (co *Compiler) compileChildColumns(
 	role string) error {
 
 	var aggExists bool
+	var id int32
+
 	for _, cid := range gf.Children {
-		var field Field
+		field := Field{ID: id, ParentID: sel.ID, Type: FieldTypeCol}
 		f := op.Fields[cid]
 
-		if co.c.EnableCamelcase {
-			if f.Alias == "" {
-				f.Alias = f.Name
-			}
-			f.Name = util.ToSnake(f.Name)
-		}
+		name := co.ParseName(f.Name)
 
 		if f.Alias != "" {
 			field.FieldName = f.Alias
@@ -80,15 +76,15 @@ func (co *Compiler) compileChildColumns(
 		}
 
 		switch {
-		case f.Name == "__typename":
+		case name == "__typename":
 			sel.Typename = true
 			continue
 
-		case strings.HasSuffix(f.Name, "_cursor"):
+		case strings.HasSuffix(name, "_cursor"):
 			continue
 		}
 
-		fn, isFunc, err := co.isFunction(sel, f)
+		fn, isFunc, err := co.isFunction(sel, name, f)
 		if err != nil {
 			return err
 		}
@@ -97,89 +93,47 @@ func (co *Compiler) compileChildColumns(
 			field.Type = FieldTypeFunc
 			field.Func = fn.Func
 			field.Args = fn.Args
-
-			if err := co.compileFieldDirectives(sel, &field, f.Directives, role); err != nil {
-				return err
-			}
-
-			if field.SkipRender == SkipTypeDrop {
-				continue
-			}
-
-			if err := co.compileFuncArgs(sel, &field, f.Args); err != nil {
-				return err
-			}
-
-			if fn.Agg && sel.Rel.Type == sdata.RelRecursive {
-				sel.addBaseCol(Column{Col: fn.Args[0].Col})
-			}
-
 			aggExists = fn.Agg
-
-		} else { // not a function
-			if field.Col, err = sel.Ti.GetColumn(f.Name); err != nil {
+		} else {
+			if field.Col, err = sel.Ti.GetColumn(name); err != nil {
 				return err
-			}
-
-			if err := co.compileFieldDirectives(sel, &field, f.Directives, role); err != nil {
-				return err
-			}
-
-			if field.SkipRender == SkipTypeDrop {
-				continue
-			}
-
-			if field.Col.Blocked {
-				return fmt.Errorf("column: '%s.%s.%s' blocked",
-					field.Col.Schema,
-					field.Col.Table,
-					field.Col.Name)
 			}
 		}
 
+		if err := co.compileFieldDirectives(sel, &field, f.Directives, role); err != nil {
+			return err
+		}
+
+		if err := co.compileFieldArgs(sel, &field, f.Args, role); err != nil {
+			return err
+		}
+
+		if field.Col.Blocked {
+			return fmt.Errorf("column: '%s.%s.%s' blocked",
+				field.Col.Schema,
+				field.Col.Table,
+				field.Col.Name)
+		}
+
+		if field.SkipRender == SkipTypeDrop {
+			continue
+		}
+
+		// this is needed cause recursive selects cannot have functions
+		// in them so we need to render the function a level above
+		// and therefore the column to run to aggregation function
+		// on should be included in the base columns
+		if isFunc && fn.Agg && sel.Rel.Type == sdata.RelRecursive {
+			sel.addBaseCol(Column{Col: fn.Args[0].Col})
+		}
 		sel.addField(field)
+		id++
 	}
 
 	if aggExists {
 		sel.GroupCols = true
 	}
 	return nil
-}
-
-func (co *Compiler) compileFuncArgs(sel *Select, f *Field, args []graph.Arg) (err error) {
-	for _, arg := range args {
-		switch arg.Name {
-		case "args":
-			err = co.compileFuncArgArgs(sel, f, arg)
-		default:
-			err = fmt.Errorf("unknown field argument: %s", arg.Name)
-		}
-
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-var numArgKeyRe = regexp.MustCompile(`^_\d+`)
-
-func (co *Compiler) compileFuncArgArgs(sel *Select, f *Field, arg graph.Arg) (err error) {
-	if len(f.Func.Inputs) == 0 {
-		err = fmt.Errorf("db function '%s' does not have any arguments", f.Func.Name)
-		return
-	}
-	err = validateArg(arg, []graph.ParserType{graph.NodeObj})
-	if err != nil {
-		return
-	}
-	args, err := newArgs(sel, f.Func, arg)
-	if err != nil {
-		return
-	}
-	f.Args = args
-	return
 }
 
 func newArgs(sel *Select, f sdata.DBFunction, arg graph.Arg) (args []Arg, err error) {
@@ -278,7 +232,8 @@ func (co *Compiler) addRelColumns(qc *QCode, sel *Select, rel sdata.DBRel) error
 		psel.addBaseCol(Column{Col: rel.Right.Col})
 
 	case sdata.RelRemote:
-		psel.addField(Field{Col: rel.Right.Col, FieldName: rel.Left.Col.Name})
+		f := Field{Type: FieldTypeCol, Col: rel.Right.Col, FieldName: rel.Left.Col.Name}
+		psel.addField(f)
 		sel.SkipRender = SkipTypeRemote
 
 	case sdata.RelPolymorphic:

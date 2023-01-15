@@ -2,7 +2,15 @@ package qcode
 
 import (
 	"github.com/dosco/graphjin/v2/core/internal/graph"
+	"github.com/dosco/graphjin/v2/core/internal/util"
 )
+
+func (co *Compiler) ParseName(name string) string {
+	if co.c.EnableCamelcase {
+		return util.ToSnake(name)
+	}
+	return name
+}
 
 func GetQType(t graph.ParserType) QType {
 	switch t {

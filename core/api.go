@@ -42,6 +42,10 @@ const (
 	UserRoleKey
 )
 
+const (
+	APQ_PX = "_apq"
+)
+
 // GraphJin struct is an instance of the GraphJin engine it holds all the required information like
 // datase schemas, relationships, etc that the GraphQL to SQL compiler would need to do it's job.
 type graphjin struct {
@@ -293,7 +297,7 @@ func (g *GraphJin) GraphQL(c context.Context,
 
 	// get query from apq cache if apq key exists
 	if rc != nil && rc.APQKey != "" {
-		queryBytes, inCache = gj.cache.Get(rc.APQKey)
+		queryBytes, inCache = gj.cache.Get(APQ_PX + rc.APQKey)
 	}
 
 	// query not found in apq cache so use original query
@@ -328,7 +332,7 @@ func (g *GraphJin) GraphQL(c context.Context,
 
 	// save to apq cache is apq key exists and not already in cache
 	if !inCache && rc != nil && rc.APQKey != "" {
-		gj.cache.Set(rc.APQKey, r.query)
+		gj.cache.Set((APQ_PX + rc.APQKey), r.query)
 	}
 
 	// if not production then save to allow list
@@ -473,8 +477,12 @@ func (gj *graphjin) query(c context.Context, r graphqlReq) (
 
 // Reload redoes database discover and reinitializes GraphJin.
 func (g *GraphJin) Reload() error {
+	return g.reload(nil)
+}
+
+func (g *GraphJin) reload(di *sdata.DBInfo) error {
 	gj := g.Load().(*graphjin)
-	gjNew, err := newGraphJin(gj.conf, gj.db, nil, gj.fs, gj.opts...)
+	gjNew, err := newGraphJin(gj.conf, gj.db, di, gj.fs, gj.opts...)
 	if err == nil {
 		g.Store(gjNew)
 	}

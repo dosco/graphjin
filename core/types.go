@@ -92,10 +92,10 @@ var dirTypes []dir = []dir{{
 	args: []dirArg{{
 		name:  "ifRole",
 		desc:  "If current role matches",
-		atype: "String",
+		atype: ("roles" + SUFFIX_ENUM),
 	}, {
-		name:  "if",
-		desc:  "If expression matches: eg. { hidden: true }",
+		name:  "ifVar",
+		desc:  "If a variable is true",
 		atype: "String",
 	}},
 }, {
@@ -105,11 +105,29 @@ var dirTypes []dir = []dir{{
 	args: []dirArg{{
 		name:  "ifRole",
 		desc:  "If current role matches",
-		atype: "String",
+		atype: ("roles" + SUFFIX_ENUM),
 	}, {
-		name:  "if",
-		desc:  "If expression matches: eg. { hidden: true }",
+		name:  "ifVar",
+		desc:  "If a variable is true",
 		atype: "String",
+	}},
+}, {
+	name: "add",
+	desc: "Add field if defined condition is met, Similar to 'include' except field is removed when condition is not met",
+	locs: []string{LOC_FIELD},
+	args: []dirArg{{
+		name:  "ifRole",
+		desc:  "If current role matches",
+		atype: ("roles" + SUFFIX_ENUM),
+	}},
+}, {
+	name: "remove",
+	desc: "Include field if defined condition is met. Unlike 'skip' field is remove not set to null",
+	locs: []string{LOC_FIELD},
+	args: []dirArg{{
+		name:  "ifRole",
+		desc:  "If current role matches",
+		atype: ("roles" + SUFFIX_ENUM),
 	}},
 }, {
 	name: "schema",
@@ -131,7 +149,7 @@ var dirTypes []dir = []dir{{
 	args: []dirArg{{
 		name:  "table",
 		desc:  "Table name",
-		atype: "String",
+		atype: "tables" + SUFFIX_ENUM,
 	}},
 },
 }

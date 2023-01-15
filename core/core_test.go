@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	core "github.com/dosco/graphjin/v2/core"
 	"github.com/dosco/graphjin/v2/core/internal/allow"
@@ -223,25 +224,37 @@ func TestEnableSchema(t *testing.T) {
 	}`
 
 	dir, err := os.MkdirTemp("", "test")
-	assert.NoError(t, err)
+	if err != nil {
+		panic(err)
+	}
 	defer os.RemoveAll(dir)
 
 	fs := fs.NewOsFSWithBase(dir)
 
 	conf1 := newConfig(&core.Config{DBType: dbType, EnableSchema: true})
 	gj1, err := core.NewGraphJin(conf1, db, core.OptionSetFS(fs))
-	assert.NoError(t, err)
+	if err != nil {
+		panic(err)
+	}
 
 	res1, err := gj1.GraphQL(context.Background(), gql, nil, nil)
-	assert.NoError(t, err)
+	if err != nil {
+		panic(err)
+	}
 	assert.Equal(t, stdJSON(res1.Data), `{"products":{"id":2,"name":"Product 2"}}`)
+
+	time.Sleep(3 * time.Second)
 
 	conf2 := newConfig(&core.Config{DBType: dbType, EnableSchema: true, Production: true})
 	gj2, err := core.NewGraphJin(conf2, db, core.OptionSetFS(fs))
-	assert.NoError(t, err)
+	if err != nil {
+		panic(err)
+	}
 
 	res2, err := gj2.GraphQL(context.Background(), gql, nil, nil)
-	assert.NoError(t, err)
+	if err != nil {
+		panic(err)
+	}
 	assert.Equal(t, stdJSON(res2.Data), `{"products":{"id":2,"name":"Product 2"}}`)
 }
 
@@ -256,27 +269,24 @@ func TestConfigReuse(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		gj1, err := core.NewGraphJin(conf, db)
 		if err != nil {
-			t.Error(err)
+			panic(err)
 		}
 
 		res1, err := gj1.GraphQL(context.Background(), gql, nil, nil)
 		if err != nil {
-			t.Error(err)
+			panic(err)
 		}
 
 		gj2, err := core.NewGraphJin(conf, db)
 		if err != nil {
-			t.Error(err)
+			panic(err)
 		}
-
 		res2, err := gj2.GraphQL(context.Background(), gql, nil, nil)
 		if err != nil {
-			t.Error(err)
+			panic(err)
 		}
-
 		assert.Equal(t, res1.Data, res2.Data, "should equal")
 	}
-
 }
 
 func TestConfigRoleManagement(t *testing.T) {
@@ -412,13 +422,13 @@ func BenchmarkCompile(b *testing.B) {
 
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
-		b.Error(err)
+		panic(err)
 	}
 
 	for n := 0; n < b.N; n++ {
 		res, err := gj.GraphQL(context.Background(), benchGQL, vars, nil)
 		if err != nil {
-			b.Fatal(err)
+			panic(err)
 		}
 
 		resultJSON = res.Data

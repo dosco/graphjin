@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path"
-	"strconv"
 	"strings"
 
 	"github.com/dosco/graphjin/v2/core/internal/graph"
@@ -46,6 +44,7 @@ type SkipType int8
 const (
 	SkipTypeNone SkipType = iota
 	SkipTypeDrop
+	SkipTypeNulled
 	SkipTypeUserNeeded
 	SkipTypeBlocked
 	SkipTypeRemote
@@ -85,26 +84,21 @@ type Fragment struct {
 }
 
 type Select struct {
-	ID         int32
-	ParentID   int32
+	Field
 	Type       SelType
 	Singular   bool
 	Typename   bool
 	Table      string
 	Schema     string
-	FieldName  string
 	Fields     []Field
 	BCols      []Column
 	IArgs      []Arg
-	Args       []Arg
-	Funcs      []Function
 	Where      Filter
 	OrderBy    []OrderBy
 	DistinctOn []sdata.DBColumn
 	GroupCols  bool
 	Paging     Paging
 	Children   []int32
-	SkipRender SkipType
 	Ti         sdata.DBTable
 	Rel        sdata.DBRel
 	Joins      []Join
@@ -134,11 +128,14 @@ type TableInfo struct {
 type FieldType int8
 
 const (
-	FieldTypeCol FieldType = iota
+	FieldTypeTable FieldType = iota
+	FieldTypeCol
 	FieldTypeFunc
 )
 
 type Field struct {
+	ID          int32
+	ParentID    int32
 	Type        FieldType
 	Col         sdata.DBColumn
 	Func        sdata.DBFunction
@@ -157,11 +154,9 @@ type Column struct {
 type Function struct {
 	Name string
 	// Col       sdata.DBColumn
-	Func      sdata.DBFunction
-	FieldName string
-	Alias     string
-	Args      []Arg
-	Agg       bool
+	Func sdata.DBFunction
+	Args []Arg
+	Agg  bool
 }
 
 type Filter struct {
@@ -450,17 +445,12 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 		}
 
 		s1 := Select{
-			ID:       id,
-			ParentID: parentID,
+			Field: Field{ID: id, ParentID: parentID, Type: FieldTypeTable},
 		}
+
 		sel := &s1
 
-		if co.c.EnableCamelcase {
-			if field.Alias == "" {
-				field.Alias = field.Name
-			}
-			field.Name = util.ToSnake(field.Name)
-		}
+		name := co.ParseName(field.Name)
 
 		if field.Alias != "" {
 			sel.FieldName = field.Alias
@@ -470,26 +460,22 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 
 		sel.Children = make([]int32, 0, 5)
 
-		if err := co.compileSelectorDirectives1(qc, sel, field.Directives, role); err != nil {
+		if err := co.compileSelectorDirectives(qc, sel, field.Directives, role); err != nil {
 			return err
 		}
 
-		if err := co.addRelInfo(op, qc, sel, field); err != nil {
+		if err := co.addRelInfo(name, op, qc, sel, field); err != nil {
 			return err
 		}
 
-		if err := co.compileSelectorDirectives2(qc, sel, field.Directives, role); err != nil {
-			return err
-		}
-
-		tr, err := co.setSelectorRoleConfig(role, field.Name, qc, sel)
+		tr, err := co.setSelectorRoleConfig(role, name, qc, sel)
 		if err != nil {
 			return err
 		}
 
 		co.setLimit(tr, qc, sel)
 
-		if err := co.compileArgs(sel, field.Args, role); err != nil {
+		if err := co.compileSelectArgs(sel, field.Args, role); err != nil {
 			return err
 		}
 
@@ -536,7 +522,12 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 }
 
 func (co *Compiler) addRelInfo(
-	op *graph.Operation, qc *QCode, sel *Select, field graph.Field) error {
+	name string,
+	op *graph.Operation,
+	qc *QCode,
+	sel *Select,
+	field graph.Field) error {
+
 	var psel *Select
 	var childF, parentF graph.Field
 	var err error
@@ -574,13 +565,12 @@ func (co *Compiler) addRelInfo(
 		sel.Rel.Type = sdata.RelNone
 
 	} else if sel.ParentID != -1 {
-		if co.c.EnableCamelcase {
-			parentF.Name = util.ToSnake(parentF.Name)
-		}
+		parentName := co.ParseName(parentF.Name)
+		childName := co.ParseName(childF.Name)
 
-		path, err := co.FindPath(childF.Name, parentF.Name, sel.through)
+		path, err := co.FindPath(childName, parentName, sel.through)
 		if err != nil {
-			return graphError(err, childF.Name, parentF.Name, sel.through)
+			return graphError(err, childName, parentName, sel.through)
 		}
 		sel.Rel = sdata.PathToRel(path[0])
 
@@ -616,7 +606,7 @@ func (co *Compiler) addRelInfo(
 		if sel.Schema != "" {
 			schema = sel.Schema
 		}
-		if sel.Ti, err = co.Find(schema, field.Name); err != nil {
+		if sel.Ti, err = co.Find(schema, name); err != nil {
 			return err
 		}
 	} else {
@@ -624,19 +614,19 @@ func (co *Compiler) addRelInfo(
 	}
 
 	if sel.Ti.Blocked {
-		return fmt.Errorf("table: '%t' (%s) blocked", sel.Ti.Blocked, field.Name)
+		return fmt.Errorf("table: '%t' (%s) blocked", sel.Ti.Blocked, name)
 	}
 
 	sel.Table = sel.Ti.Name
 	sel.tc = co.getTConfig(sel.Ti.Schema, sel.Ti.Name)
 
 	if sel.Rel.Type == sdata.RelRemote {
-		sel.Table = field.Name
+		sel.Table = name
 		qc.Remotes++
 		return nil
 	}
 
-	co.setSingular(field.Name, sel)
+	co.setSingular(name, sel)
 	return nil
 }
 
@@ -920,6 +910,19 @@ func (co *Compiler) addSeekPredicate(sel *Select) {
 	addAndFilter(&sel.Where, or)
 }
 
+func (co *Compiler) validateSelect(sel *Select) error {
+	if sel.Rel.Type == sdata.RelRecursive {
+		v, ok := sel.GetInternalArg("find")
+		if !ok {
+			return fmt.Errorf("argument 'find' needed for recursive queries")
+		}
+		if v.Val != "parents" && v.Val != "children" {
+			return fmt.Errorf("valid values for 'find' are 'parents' and 'children'")
+		}
+	}
+	return nil
+}
+
 func addFilters(qc *QCode, where *Filter, trv trval) bool {
 	if fil, userNeeded := trv.filter(qc.SType); fil != nil {
 		switch fil.Op {
@@ -935,197 +938,14 @@ func addFilters(qc *QCode, where *Filter, trv trval) bool {
 	return false
 }
 
-func (co *Compiler) compileOpDirectives(qc *QCode, dirs []graph.Directive) error {
-	var err error
-
-	for i := range dirs {
-		d := &dirs[i]
-
-		switch d.Name {
-		case "cacheControl":
-			err = co.compileDirectiveCacheControl(qc, d)
-
-		case "script":
-			err = co.compileDirectiveScript(qc, d)
-
-		case "constraint", "validate":
-			err = co.compileDirectiveConstraint(qc, d)
-
-		case "validation":
-			err = co.compileDirectiveValidation(qc, d)
-
-		default:
-			err = fmt.Errorf("unknown operation level directive: %s", d.Name)
-		}
-
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (co *Compiler) compileFieldDirectives(sel *Select, f *Field, dirs []graph.Directive, role string) error {
-	var err error
-
-	for i := range dirs {
-		d := &dirs[i]
-
-		switch d.Name {
-		case "skip":
-			err = co.compileFieldDirectiveSkipInclude(true, sel, f, d, role)
-
-		case "include":
-			err = co.compileFieldDirectiveSkipInclude(false, sel, f, d, role)
-
-		default:
-			err = fmt.Errorf("unknown field level directive: %s", d.Name)
-		}
-
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// these directives need to run before the relationship resolution code
-func (co *Compiler) compileSelectorDirectives1(qc *QCode, sel *Select, dirs []graph.Directive, role string) error {
-	var err error
-
-	for i := range dirs {
-		d := &dirs[i]
-
-		switch d.Name {
-		case "schema":
-			err = co.compileDirectiveSchema(sel, d)
-
-		case "notRelated", "not_related":
-			err = co.compileDirectiveNotRelated(sel, d)
-
-		case "through":
-			err = co.compileDirectiveThrough(sel, d)
-		}
-
-		if err != nil {
-			return fmt.Errorf("directive @%s: %w", d.Name, err)
-		}
-	}
-
-	return nil
-}
-
-func (co *Compiler) compileSelectorDirectives2(qc *QCode, sel *Select, dirs []graph.Directive, role string) error {
-	var err error
-
-	for i := range dirs {
-		d := &dirs[i]
-
-		switch d.Name {
-		case "schema", "through", "notRelated", "not_related":
-
-		case "skip":
-			err = co.compileSelectDirectiveSkipInclude(true, sel, d, role)
-
-		case "include":
-			err = co.compileSelectDirectiveSkipInclude(false, sel, d, role)
-
-		case "object":
-			sel.Singular = true
-			sel.Paging.Limit = 1
-
-		default:
-			err = fmt.Errorf("no such selector level directive")
-		}
-
-		if err != nil {
-			return fmt.Errorf("directive @%s: %w", d.Name, err)
-		}
-	}
-
-	return nil
-}
-
-func (co *Compiler) compileArgs(sel *Select, args []graph.Arg, role string) error {
-	var err error
-
-	for _, arg := range args {
-		switch arg.Name {
-		case "id":
-			err = co.compileArgID(sel, arg)
-
-		case "search":
-			err = co.compileArgSearch(sel, arg)
-
-		case "where":
-			err = co.compileArgWhere(sel, arg, role)
-
-		case "orderBy", "orderby", "order_by", "order":
-			err = co.compileArgOrderBy(sel, arg)
-
-		case "distinctOn", "distinct_on", "distinct":
-			err = co.compileArgDistinctOn(sel, arg)
-
-		case "limit":
-			err = co.compileArgLimit(sel, arg)
-
-		case "offset":
-			err = co.compileArgOffset(sel, arg)
-
-		case "first":
-			err = co.compileArgFirstLast(sel, arg, OrderAsc)
-
-		case "last":
-			err = co.compileArgFirstLast(sel, arg, OrderDesc)
-
-		case "after":
-			err = co.compileArgAfterBefore(sel, arg, PTForward)
-
-		case "before":
-			err = co.compileArgAfterBefore(sel, arg, PTBackward)
-
-		case "find":
-			err = co.compileArgFind(sel, arg)
-
-		case "args":
-			err = co.compileArgArgs(sel, arg)
-
-		case "insert", "update", "upsert", "delete":
-
-		default:
-			err = fmt.Errorf("unknown selector level argument")
-		}
-
-		if err != nil {
-			return fmt.Errorf("%s: %w", arg.Name, err)
-		}
-	}
-
-	return nil
-}
-
-func (co *Compiler) validateSelect(sel *Select) error {
-	if sel.Rel.Type == sdata.RelRecursive {
-		v, ok := sel.GetInternalArg("find")
-		if !ok {
-			return fmt.Errorf("argument 'find' needed for recursive queries")
-		}
-		if v.Val != "parents" && v.Val != "children" {
-			return fmt.Errorf("valid values for 'find' are 'parents' and 'children'")
-		}
-	}
-	return nil
-}
-
 func (co *Compiler) setMutationType(qc *QCode, op *graph.Operation, role string) error {
 	var err error
 
 	setActionVar := func(arg graph.Arg) error {
 		v := arg.Val
-		if v.Type != graph.NodeVar &&
-			v.Type != graph.NodeObj &&
+		if v.Type != graph.NodeVar && v.Type != graph.NodeObj &&
 			(v.Type != graph.NodeList || len(v.Children) == 0 && v.Children[0].Type != graph.NodeObj) {
-			return argErr(arg.Name, "variable, an object or a list of objects")
+			return argErr(arg, "variable, an object or a list of objects")
 		}
 		qc.ActionVar = arg.Val.Val
 		qc.ActionArg = arg
@@ -1164,814 +984,19 @@ func (co *Compiler) setMutationType(qc *QCode, op *graph.Operation, role string)
 	return nil
 }
 
-func (co *Compiler) compileDirectiveSchema(sel *Select, d *graph.Directive) error {
-	arg, err := getArg(d.Args, "name", []graph.ParserType{graph.NodeStr}, true)
-	if err == nil {
-		sel.Schema = arg.Val.Val
-	}
-	return err
-}
+func (co *Compiler) compileArgFilter(sel *Select,
+	selID int32, arg graph.Arg, role string) (ex *Exp, err error) {
 
-func (co *Compiler) compileSelectDirectiveSkipInclude(skip bool, sel *Select, d *graph.Directive, role string) (err error) {
-	err, drop := co.compileSkipInclude(skip, sel, -1, &sel.Where, d, role)
-	if err != nil {
-		return err
-	}
-	if drop {
-		sel.SkipRender = SkipTypeDrop
-	}
-	return
-}
-
-func (co *Compiler) compileFieldDirectiveSkipInclude(skip bool, sel *Select, f *Field, d *graph.Directive, role string) (err error) {
-	var drop bool
-	if f.Type == FieldTypeFunc {
-		err, drop = co.compileSkipInclude(skip, sel, -1, &f.FieldFilter, d, role)
-	} else {
-		err, drop = co.compileSkipInclude(skip, sel, sel.ID, &f.FieldFilter, d, role)
-	}
-	if err != nil {
-		return err
-	}
-	if drop {
-		f.SkipRender = SkipTypeDrop
-	}
-	return
-}
-
-func (co *Compiler) compileSkipInclude(
-	skip bool,
-	sel *Select,
-	selID int32,
-	fil *Filter,
-	d *graph.Directive,
-	role string) (err error, drop bool) {
-
-	if len(d.Args) == 0 {
-		err = fmt.Errorf("arguments 'if' or 'if_role' expected")
-		return
-	}
-
-	for _, arg := range d.Args {
-		switch arg.Name {
-		case "if":
-			err = co.compileSkipIncludeFilter(
-				skip, sel, selID, fil, arg, role)
-			if err != nil {
-				return
-			}
-		case "if_role", "ifRole":
-			if ifArg(arg, graph.NodeStr) {
-				switch {
-				case skip && arg.Val.Val == role:
-					drop = true
-				case !skip && arg.Val.Val != role:
-					drop = true
-				}
-				return
-			}
-			err = argErr(arg.Name, "string")
-			return
-
-		default:
-			err = fmt.Errorf("invalid argument: %s", arg.Name)
-			return
-		}
-	}
-	return
-}
-
-func (co *Compiler) compileSkipIncludeFilter(
-	skip bool,
-	sel *Select,
-	selID int32,
-	fil *Filter,
-	arg graph.Arg,
-	role string) (err error) {
-
-	if ifArg(arg, graph.NodeVar) {
-		var ex *Exp
-		if skip {
-			ex = newExpOp(OpNotEqualsTrue)
-		} else {
-			ex = newExpOp(OpEqualsTrue)
-		}
-		ex.Right.ValType = ValVar
-		ex.Right.Val = arg.Val.Val
-		addAndFilter(fil, ex)
-		return
-	}
-
-	if ifArg(arg, graph.NodeObj) {
-		var ex *Exp
-		ex, err = co.compileFilter(sel, selID, arg, role)
-		if err != nil {
-			return
-		}
-		if skip {
-			addNotFilter(fil, ex)
-		} else {
-			addAndFilter(fil, ex)
-		}
-		return
-	}
-	return argErr("if", "variable or filter expression")
-}
-
-func (co *Compiler) compileDirectiveCacheControl(qc *QCode, d *graph.Directive) error {
-	var maxAge string
-	var scope string
-
-	for _, arg := range d.Args {
-		switch arg.Name {
-		case "maxAge":
-			if ifNotArg(arg, graph.NodeNum) {
-				return argErr("maxAge", "number")
-			}
-			maxAge = arg.Val.Val
-		case "scope":
-			if ifNotArg(arg, graph.NodeStr) {
-				return argErr("scope", "string")
-			}
-			scope = arg.Val.Val
-		default:
-			return fmt.Errorf("invalid argument: %s", arg.Name)
-		}
-	}
-
-	if len(d.Args) == 0 || maxAge == "" {
-		return fmt.Errorf("required argument 'maxAge' missing")
-	}
-
-	hdr := []string{"max-age=" + maxAge}
-
-	if scope != "" {
-		hdr = append(hdr, scope)
-	}
-
-	qc.Cache.Header = strings.Join(hdr, " ")
-	return nil
-}
-
-func (co *Compiler) compileDirectiveScript(qc *QCode, d *graph.Directive) error {
-	if len(d.Args) == 0 {
-		return argErr("name", "string")
-	}
-
-	if d.Args[0].Name == "name" {
-		if ifNotArg(d.Args[0], graph.NodeStr) {
-			return argErr("name", "string")
-		}
-		qc.Script.Name = d.Args[0].Val.Val
-	}
-
-	if qc.Script.Name == "" {
-		qc.Script.Name = qc.Name
-	}
-
-	if qc.Script.Name == "" {
-		return fmt.Errorf("required argument 'name' missing")
-	}
-
-	if path.Ext(qc.Script.Name) == "" {
-		qc.Script.Name += ".js"
-	}
-
-	return nil
-}
-
-type validator struct {
-	name   string
-	types  []graph.ParserType
-	single bool
-}
-
-var validators = map[string]validator{
-	"variable":                 {name: "variable", types: []graph.ParserType{graph.NodeStr}},
-	"error":                    {name: "error", types: []graph.ParserType{graph.NodeStr}},
-	"unique":                   {name: "unique", types: []graph.ParserType{graph.NodeBool}, single: true},
-	"format":                   {name: "format", types: []graph.ParserType{graph.NodeStr}, single: true},
-	"required":                 {name: "required", types: []graph.ParserType{graph.NodeBool}, single: true},
-	"requiredIf":               {name: "required_if", types: []graph.ParserType{graph.NodeObj}},
-	"requiredUnless":           {name: "required_unless", types: []graph.ParserType{graph.NodeObj}},
-	"requiredWith":             {name: "required_with", types: []graph.ParserType{graph.NodeList, graph.NodeStr}},
-	"requiredWithAll":          {name: "required_with_all", types: []graph.ParserType{graph.NodeList, graph.NodeStr}},
-	"requiredWithout":          {name: "required_without", types: []graph.ParserType{graph.NodeList, graph.NodeStr}},
-	"requiredWithoutAll":       {name: "required_without_all", types: []graph.ParserType{graph.NodeList, graph.NodeStr}},
-	"length":                   {name: "len", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
-	"max":                      {name: "max", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
-	"min":                      {name: "min", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
-	"equals":                   {name: "eq", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
-	"notEquals":                {name: "neq", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
-	"oneOf":                    {name: "oneof", types: []graph.ParserType{graph.NodeList, graph.NodeNum, graph.NodeList, graph.NodeStr}},
-	"greaterThan":              {name: "gt", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
-	"greaterThanOrEquals":      {name: "gte", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
-	"lessThan":                 {name: "lt", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
-	"lessThanOrEquals":         {name: "lte", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
-	"equalsField":              {name: "eqfield", types: []graph.ParserType{graph.NodeStr}},
-	"notEqualsField":           {name: "nefield", types: []graph.ParserType{graph.NodeStr}},
-	"greaterThanField":         {name: "gtfield", types: []graph.ParserType{graph.NodeStr}},
-	"greaterThanOrEqualsField": {name: "gtefield", types: []graph.ParserType{graph.NodeStr}},
-	"lessThanField":            {name: "ltfield", types: []graph.ParserType{graph.NodeStr}},
-	"lessThanOrEqualsField":    {name: "ltefield", types: []graph.ParserType{graph.NodeStr}},
-}
-
-func (co *Compiler) compileDirectiveConstraint(qc *QCode, d *graph.Directive) error {
-	var varName string
-	var errMsg string
-	var vals []string
-
-	for _, a := range d.Args {
-		if a.Name == "variable" && ifNotArgVal(a, "") {
-			if a.Val.Val[0] == '$' {
-				varName = a.Val.Val[1:]
-			} else {
-				varName = a.Val.Val
-			}
-			continue
-		}
-
-		if a.Name == "error" && ifNotArgVal(a, "") {
-			errMsg = a.Val.Val
-		}
-
-		if a.Name == "format" && ifNotArgVal(a, "") {
-			vals = append(vals, a.Val.Val)
-			continue
-		}
-
-		v, ok := validators[a.Name]
-		if !ok {
-			continue
-		}
-
-		if err := validateConstraint(a, v); err != nil {
-			return err
-		}
-
-		if v.single {
-			vals = append(vals, v.name)
-			continue
-		}
-
-		var value string
-		switch a.Val.Type {
-		case graph.NodeStr, graph.NodeNum, graph.NodeBool:
-			if ifNotArgVal(a, "") {
-				value = a.Val.Val
-			}
-
-		case graph.NodeObj:
-			var items []string
-			for _, v := range a.Val.Children {
-				items = append(items, v.Name, v.Val)
-			}
-			value = strings.Join(items, " ")
-
-		case graph.NodeList:
-			var items []string
-			for _, v := range a.Val.Children {
-				items = append(items, v.Val)
-			}
-			value = strings.Join(items, " ")
-		}
-
-		vals = append(vals, (v.name + "=" + value))
-	}
-
-	if varName == "" {
-		return errors.New("invalid @constraint no variable name specified")
-	}
-
-	if qc.Consts == nil {
-		qc.Consts = make(map[string]interface{})
-	}
-
-	opt := strings.Join(vals, ",")
-	if errMsg != "" {
-		opt += "~" + errMsg
-	}
-
-	qc.Consts[varName] = opt
-	return nil
-}
-
-func validateConstraint(a graph.Arg, v validator) error {
-	list := false
-	for _, t := range v.types {
-		switch {
-		case t == graph.NodeList:
-			list = true
-		case list && ifArgList(a, t):
-			return nil
-		case ifArg(a, t):
-			return nil
-		}
-	}
-
-	list = false
-	err := "value must be of type: "
-
-	for i, t := range v.types {
-		if i != 0 {
-			err += ", "
-		}
-		if !list && t == graph.NodeList {
-			err += "a list of "
-			list = true
-		}
-		err += t.String()
-	}
-	return errors.New(err)
-}
-
-func (co *Compiler) compileDirectiveNotRelated(sel *Select, d *graph.Directive) error {
-	sel.Rel.Type = sdata.RelSkip
-	return nil
-}
-
-func (co *Compiler) compileDirectiveThrough(sel *Select, d *graph.Directive) error {
-	if len(d.Args) == 0 {
-		return fmt.Errorf("required argument 'table' or 'column'")
-	}
-	arg := d.Args[0]
-
-	if arg.Name == "table" || arg.Name == "column" {
-		if arg.Val.Type != graph.NodeStr {
-			return argErr(arg.Name, "string")
-		}
-		sel.through = arg.Val.Val
-	}
-
-	return nil
-}
-func (co *Compiler) compileDirectiveValidation(qc *QCode, d *graph.Directive) error {
-	if len(d.Args) == 0 {
-		return fmt.Errorf("required arguments 'src' and 'type'")
-	}
-
-	for _, arg := range d.Args {
-		switch arg.Name {
-		case "src", "source":
-			qc.Validation.Source = arg.Val.Val
-		case "type", "lang":
-			qc.Validation.Type = arg.Val.Val
-		default:
-			return fmt.Errorf("invalid argument '%s'", arg.Name)
-		}
-	}
-
-	if qc.Validation.Source == "" {
-		return errors.New("validation script not set")
-	}
-
-	if qc.Validation.Type == "" {
-		return errors.New("validation type not set")
-	}
-
-	return nil
-}
-
-func (co *Compiler) compileArgFind(sel *Select, arg graph.Arg) error {
-	err := validateArg(arg, []graph.ParserType{graph.NodeStr})
-	if err != nil {
-		return err
-	}
-
-	// Only allow on recursive relationship selectors
-	if sel.Rel.Type != sdata.RelRecursive {
-		return fmt.Errorf("selector '%s' is not recursive", sel.FieldName)
-	}
-	if arg.Val.Val != "parents" && arg.Val.Val != "children" {
-		return fmt.Errorf("valid values 'parents' or 'children'")
-	}
-	sel.addIArg(Arg{Name: arg.Name, Val: arg.Val.Val})
-	return nil
-}
-
-func (co *Compiler) compileArgID(sel *Select, arg graph.Arg) error {
-	if sel.ParentID != -1 {
-		return fmt.Errorf("can only be specified at the query root")
-	}
-
-	err := validateArg(arg, []graph.ParserType{graph.NodeNum, graph.NodeStr, graph.NodeVar})
-	if err != nil {
-		return err
-	}
-	node := arg.Val
-
-	if sel.Ti.PrimaryCol.Name == "" {
-		return fmt.Errorf("no primary key column defined for '%s'", sel.Table)
-	}
-
-	ex := newExpOp(OpEquals)
-	ex.Left.Col = sel.Ti.PrimaryCol
-
-	switch node.Type {
-	case graph.NodeNum:
-		if _, err := strconv.ParseInt(node.Val, 10, 32); err != nil {
-			return err
-		} else {
-			ex.Right.ValType = ValNum
-			ex.Right.Val = node.Val
-		}
-
-	case graph.NodeStr:
-		ex.Right.ValType = ValStr
-		ex.Right.Val = node.Val
-
-	case graph.NodeVar:
-		ex.Right.ValType = ValVar
-		ex.Right.Val = node.Val
-	}
-
-	sel.Where.Exp = ex
-	sel.Singular = true
-	return nil
-}
-
-func (co *Compiler) compileArgSearch(sel *Select, arg graph.Arg) error {
-	if len(sel.Ti.FullText) == 0 {
-		switch co.s.DBType() {
-		case "mysql":
-			return fmt.Errorf("no fulltext indexes defined for table '%s'", sel.Table)
-		default:
-			return fmt.Errorf("no tsvector column defined on table '%s'", sel.Table)
-		}
-	}
-
-	err := validateArg(arg, []graph.ParserType{graph.NodeStr, graph.NodeVar})
-	if err != nil {
-		return err
-	}
-
-	ex := newExpOp(OpTsQuery)
-	ex.Right.ValType = ValVar
-	ex.Right.Val = arg.Val.Val
-
-	sel.addIArg(Arg{Name: arg.Name, Val: arg.Val.Val})
-	addAndFilter(&sel.Where, ex)
-	return nil
-}
-
-func (co *Compiler) compileArgWhere(sel *Select, arg graph.Arg, role string) (err error) {
-	err = validateArg(arg, []graph.ParserType{graph.NodeObj})
-	if err != nil {
-		return
-	}
-
-	var ex *Exp
-	ex, err = co.compileFilter(sel, -1, arg, role)
-	if err != nil {
-		return
-	}
-	addAndFilter(&sel.Where, ex)
-	return
-}
-
-func (co *Compiler) compileArgOrderBy(sel *Select, arg graph.Arg) error {
-	err := validateArg(arg, []graph.ParserType{graph.NodeObj, graph.NodeVar})
-	if err != nil {
-		return err
-	}
-
-	node := arg.Val
-	cm := make(map[string]struct{})
-
-	for _, ob := range sel.OrderBy {
-		cm[ob.Col.Name] = struct{}{}
-	}
-
-	switch node.Type {
-	case graph.NodeObj:
-		return co.compileArgOrderByObj(sel, node, cm)
-
-	case graph.NodeVar:
-		return co.compileArgOrderByVar(sel, node, cm)
-	}
-
-	return nil
-}
-
-func (co *Compiler) compileArgOrderByObj(sel *Select, parent *graph.Node, cm map[string]struct{}) error {
-	st := util.NewStackInf()
-
-	for i := range parent.Children {
-		st.Push(parent.Children[i])
-	}
-
-	var obList []OrderBy
-
-	var node *graph.Node
-	var ok bool
-	var err error
-
-	for {
-		if err != nil {
-			return fmt.Errorf("argument '%s', %w", node.Name, err)
-		}
-
-		if st.Len() == 0 {
-			break
-		}
-
-		intf := st.Pop()
-		node, ok = intf.(*graph.Node)
-		if !ok {
-			err = fmt.Errorf("unexpected value '%v' (%t)", intf, intf)
-			continue
-		}
-
-		// Check for type
-		if node.Type != graph.NodeStr &&
-			node.Type != graph.NodeObj &&
-			node.Type != graph.NodeList &&
-			node.Type != graph.NodeLabel {
-			err = fmt.Errorf("expecting a string, object or list")
-			continue
-		}
-
-		var ob OrderBy
-		ti := sel.Ti
-		cn := node
-
-		switch node.Type {
-		case graph.NodeStr, graph.NodeLabel:
-			if ob.Order, err = toOrder(node.Val); err != nil { // sets the asc desc etc
-				continue
-			}
-
-		case graph.NodeList:
-			if ob, err = orderByFromList(node); err != nil {
-				continue
-			}
-
-		case graph.NodeObj:
-			var path []sdata.TPath
-			if path, err = co.FindPath(node.Name, sel.Ti.Name, ""); err != nil {
-				continue
-			}
-			ti = path[0].LT
-
-			cn = node.Children[0]
-			if ob.Order, err = toOrder(cn.Val); err != nil { // sets the asc desc etc
-				continue
-			}
-
-			for i := len(path) - 1; i >= 0; i-- {
-				p := path[i]
-				rel := sdata.PathToRel(p)
-				sel.Joins = append(sel.Joins, Join{
-					Rel:    rel,
-					Filter: buildFilter(rel, -1),
-					Local:  true,
-				})
-			}
-		}
-
-		if err = co.setOrderByColName(ti, &ob, cn); err != nil {
-			continue
-		}
-
-		if _, ok := cm[ob.Col.Name]; ok {
-			err = fmt.Errorf("can only be defined once")
-			continue
-		}
-		cm[ob.Col.Name] = struct{}{}
-		obList = append(obList, ob)
-	}
-
-	for i := len(obList) - 1; i >= 0; i-- {
-		sel.OrderBy = append(sel.OrderBy, obList[i])
-	}
-
-	return err
-}
-
-func orderByFromList(parent *graph.Node) (ob OrderBy, err error) {
-	if len(parent.Children) != 2 {
-		return ob, fmt.Errorf(`valid format is [values, order] (eg. [$list, "desc"])`)
-	}
-
-	valNode := parent.Children[0]
-	orderNode := parent.Children[1]
-
-	ob.Var = valNode.Val
-
-	if ob.Order, err = toOrder(orderNode.Val); err != nil {
-		return ob, err
-	}
-	return ob, nil
-}
-
-func (co *Compiler) compileArgOrderByVar(sel *Select, node *graph.Node, cm map[string]struct{}) error {
-	for k, v := range sel.tc.OrderBy {
-		if err := compileOrderBy(sel, node.Val, k, v, cm); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func compileOrderBy(sel *Select,
-	keyVar, key string,
-	values [][2]string,
-	cm map[string]struct{}) error {
-
-	obList := make([]OrderBy, 0, len(values))
-
-	for _, v := range values {
-		ob := OrderBy{KeyVar: keyVar, Key: key}
-		ob.Order, _ = toOrder(v[1])
-
-		col, err := sel.Ti.GetColumn(v[0])
-		if err != nil {
-			return err
-		}
-		ob.Col = col
-		if _, ok := cm[ob.Col.Name]; ok {
-			return fmt.Errorf("duplicate column '%s'", ob.Col.Name)
-		}
-		obList = append(obList, ob)
-	}
-	sel.OrderBy = append(sel.OrderBy, obList...)
-	return nil
-}
-
-func (co *Compiler) compileArgArgs(sel *Select, arg graph.Arg) (err error) {
-	if sel.Ti.Type != "function" {
-		err = fmt.Errorf("'%s' does not have any argument", sel.Ti.Name)
-		return
-	}
-	err = validateArg(arg, []graph.ParserType{graph.NodeObj})
-	if err != nil {
-		return
-	}
-	args, err := newArgs(sel, sel.Ti.Func, arg)
-	if err != nil {
-		return
-	}
-	sel.Args = args
-	return
-}
-
-func toOrder(val string) (Order, error) {
-	switch val {
-	case "asc":
-		return OrderAsc, nil
-	case "desc":
-		return OrderDesc, nil
-	case "asc_nulls_first":
-		return OrderAscNullsFirst, nil
-	case "desc_nulls_first":
-		return OrderDescNullsFirst, nil
-	case "asc_nulls_last":
-		return OrderAscNullsLast, nil
-	case "desc_nulls_last":
-		return OrderDescNullsLast, nil
-	default:
-		return OrderAsc, fmt.Errorf("valid values include asc, desc, asc_nulls_first and desc_nulls_first")
-	}
-}
-
-func (co *Compiler) compileArgDistinctOn(sel *Select, arg graph.Arg) error {
-	err := validateArg(arg, []graph.ParserType{graph.NodeList, graph.NodeStr})
-	if err != nil {
-		return err
-	}
-	node := arg.Val
-
-	if node.Type == graph.NodeStr {
-		if col, err := sel.Ti.GetColumn(node.Val); err == nil {
-			switch co.s.DBType() {
-			case "mysql":
-				sel.OrderBy = append(sel.OrderBy, OrderBy{Order: OrderAsc, Col: col})
-			default:
-				sel.DistinctOn = append(sel.DistinctOn, col)
-			}
-		} else {
-			return err
-		}
-	}
-
-	for _, cn := range node.Children {
-		if col, err := sel.Ti.GetColumn(cn.Val); err == nil {
-			switch co.s.DBType() {
-			case "mysql":
-				sel.OrderBy = append(sel.OrderBy, OrderBy{Order: OrderAsc, Col: col})
-			default:
-				sel.DistinctOn = append(sel.DistinctOn, col)
-			}
-		} else {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (co *Compiler) compileArgLimit(sel *Select, arg graph.Arg) error {
-	err := validateArg(arg, []graph.ParserType{graph.NodeNum, graph.NodeVar})
-	if err != nil {
-		return err
-	}
-	node := arg.Val
-
-	switch node.Type {
-	case graph.NodeNum:
-		if n, err := strconv.ParseInt(node.Val, 10, 32); err != nil {
-			return err
-		} else {
-			sel.Paging.Limit = int32(n)
-		}
-
-	case graph.NodeVar:
-		if co.s.DBType() == "mysql" {
-			return dbArgErr("limit", "number", "mysql")
-		}
-		sel.Paging.LimitVar = node.Val
-	}
-	return nil
-}
-
-func (co *Compiler) compileArgOffset(sel *Select, arg graph.Arg) error {
-	err := validateArg(arg, []graph.ParserType{graph.NodeNum, graph.NodeVar})
-	if err != nil {
-		return err
-	}
-	node := arg.Val
-
-	switch node.Type {
-	case graph.NodeNum:
-		if n, err := strconv.ParseInt(node.Val, 10, 32); err != nil {
-			return err
-		} else {
-			sel.Paging.Offset = int32(n)
-		}
-
-	case graph.NodeVar:
-		if co.s.DBType() == "mysql" {
-			return dbArgErr("offset", "number", "mysql")
-		}
-		sel.Paging.OffsetVar = node.Val
-	}
-	return nil
-}
-
-func (co *Compiler) compileArgFirstLast(sel *Select, arg graph.Arg, order Order) error {
-	if err := co.compileArgLimit(sel, arg); err != nil {
-		return err
-	}
-
-	if !sel.Singular {
-		sel.Paging.Cursor = true
-	}
-
-	sel.order = order
-	return nil
-}
-
-func (co *Compiler) compileArgAfterBefore(sel *Select, arg graph.Arg, pt PagingType) error {
-	err := validateArg(arg, []graph.ParserType{graph.NodeVar})
-	if err != nil {
-		return err
-	}
-	node := arg.Val
-
-	if node.Val != "cursor" {
-		return fmt.Errorf("value for argument '%s' must be a variable named $cursor", arg.Name)
-	}
-	sel.Paging.Type = pt
-	if !sel.Singular {
-		sel.Paging.Cursor = true
-	}
-
-	return nil
-}
-
-func (co *Compiler) setOrderByColName(ti sdata.DBTable, ob *OrderBy, node *graph.Node) error {
-	var name string
-
-	if co.c.EnableCamelcase {
-		name = util.ToSnake(node.Name)
-	} else {
-		name = node.Name
-	}
-
-	col, err := ti.GetColumn(name)
-	if err != nil {
-		return err
-	}
-	ob.Col = col
-	return nil
-}
-
-func (co *Compiler) compileFilter(sel *Select, selID int32, arg graph.Arg, role string) (ex *Exp, err error) {
 	st := util.NewStackInf()
 	var nu bool
 
-	ex, nu, err = co.compileArgObj(sel.Table, sel.Ti, st, arg, selID)
+	if arg.Val.Type != graph.NodeObj {
+		err = fmt.Errorf("expecting an object")
+		return
+	}
+
+	ex, nu, err = co.compileExpNode(sel.Table,
+		sel.Ti, st, arg.Val, false, selID)
 	if err != nil {
 		return
 	}
@@ -1980,6 +1005,24 @@ func (co *Compiler) compileFilter(sel *Select, selID int32, arg graph.Arg, role 
 		sel.SkipRender = SkipTypeUserNeeded
 	}
 	return
+}
+
+func addAndFilterLast(fil *Filter, ex *Exp) {
+	if fil.Exp == nil {
+		fil.Exp = ex
+		return
+	}
+	// save exiting exp pointer (could be a common one from filter config)
+	ow := fil.Exp
+
+	// add a new `and` exp and hook the above saved exp pointer a child
+	// we don't want to modify an exp object thats common (from filter config)
+	fil.Exp = newExpOp(OpAnd)
+	fil.Exp.Children = fil.Exp.childrenA[:2]
+
+	// here we append the filter to the last child
+	fil.Exp.Children[0] = ow
+	fil.Exp.Children[1] = ex
 }
 
 func addAndFilter(fil *Filter, ex *Exp) {
@@ -2039,7 +1082,7 @@ func compileFilter(s *sdata.DBSchema, ti sdata.DBTable, filter []string, isJSON 
 			return nil, false, err
 		}
 
-		f, nu, err := co.compileArgNode("", ti, st, node, isJSON, -1)
+		f, nu, err := co.compileBaseExpNode("", ti, st, node, isJSON)
 		if err != nil {
 			return nil, false, err
 		}
@@ -2067,53 +1110,43 @@ func compileFilter(s *sdata.DBSchema, ti sdata.DBTable, filter []string, isJSON 
 	return fl, needsUser, nil
 }
 
-// func buildPath(a []string) string {
-// 	switch len(a) {
-// 	case 0:
-// 		return ""
-// 	case 1:
-// 		return a[0]
-// 	}
-
-// 	n := len(a) - 1
-// 	for i := 0; i < len(a); i++ {
-// 		n += len(a[i])
-// 	}
-
-// 	var b strings.Builder
-// 	b.Grow(n)
-// 	b.WriteString(a[0])
-// 	for _, s := range a[1:] {
-// 		b.WriteRune('.')
-// 		b.WriteString(s)
-// 	}
-// 	return b.String()
-// }
-
-func getArg(args []graph.Arg, name string, validTypes []graph.ParserType,
-	required bool) (arg graph.Arg, err error) {
+func getArg(args []graph.Arg, name string, required bool, validTypes ...graph.ParserType,
+) (arg graph.Arg, err error) {
 	for _, a := range args {
 		if a.Name != name {
 			continue
 		}
-		if err = validateArg(a, validTypes); err != nil {
+		if err = validateArg(a, validTypes...); err != nil {
 			return
 		}
 		return a, nil
 	}
 	if required {
-		err = fmt.Errorf("required argument '%s' missing", name)
+		err = reqArgMissing(name)
 	}
 	return
 }
 
-func validateArg(arg graph.Arg, validTypes []graph.ParserType) (err error) {
+func validateArg(arg graph.Arg, validTypes ...graph.ParserType) (err error) {
 	for _, vt := range validTypes {
-		if arg.Val.Type == vt {
+		ty := arg.Val.Type
+		if ty == graph.NodeStr && arg.Val.Val == "" {
+			continue
+		}
+		if ty == vt {
 			return
 		}
 	}
-	return argErr(arg.Name, argTypes(validTypes))
+	err = argErr(arg, argTypes(validTypes))
+	return
+}
+
+func reqArgMissing(name string) (err error) {
+	return fmt.Errorf("required argument '%s' missing", name)
+}
+
+func unknownArg(arg graph.Arg) (err error) {
+	return fmt.Errorf("unknown argument '%s'", arg.Name)
 }
 
 func argExists(arg graph.Arg) bool {
@@ -2126,11 +1159,11 @@ func ifArgList(arg graph.Arg, lty graph.ParserType) bool {
 		arg.Val.Children[0].Type == lty
 }
 
-func ifArg(arg graph.Arg, ty graph.ParserType) bool {
+func ifArg(arg graph.Arg, ty graph.ParserType) (ok bool) {
 	return arg.Val.Type == ty
 }
 
-func ifNotArg(arg graph.Arg, ty graph.ParserType) bool {
+func ifNotArg(arg graph.Arg, ty graph.ParserType) (ok bool) {
 	return arg.Val.Type != ty
 }
 
@@ -2151,8 +1184,8 @@ func argTypes(types []graph.ParserType) string {
 	return sb.String()
 }
 
-func argErr(name, ty string) error {
-	return fmt.Errorf("value for argument '%s' must be a %s", name, ty)
+func argErr(arg graph.Arg, ty string) error {
+	return fmt.Errorf("value for argument '%s' must be a %s", arg.Name, ty)
 }
 
 func dbArgErr(name, ty, db string) error {

@@ -45,6 +45,7 @@ var updateTypes = map[string]MType{
 }
 
 type Mutate struct {
+	Field
 	mData
 
 	ID        int32
@@ -95,7 +96,12 @@ func (co *Compiler) compileMutation(qc *QCode, role string) error {
 	var whereReq bool
 
 	sel := &qc.Selects[0]
-	m := Mutate{ParentID: -1, Key: sel.Table, Ti: sel.Ti}
+	m := Mutate{
+		Field:    Field{Type: FieldTypeTable},
+		ParentID: -1,
+		Key:      sel.Table,
+		Ti:       sel.Ti,
+	}
 
 	switch qc.SType {
 	case QTInsert:
@@ -329,13 +335,7 @@ func (co *Compiler) processNestedMutations(ms *mState, m *Mutate, data *graph.No
 			continue
 		}
 
-		var k string
-
-		if co.c.EnableCamelcase {
-			k = util.ToSnake(v.Name)
-		} else {
-			k = v.Name
-		}
+		k := co.ParseName(v.Name)
 
 		// Get child-to-parent relationship
 		paths, err := co.FindPath(k, m.Key, "")
@@ -464,12 +464,12 @@ func (co *Compiler) processDirectives(ms *mState, m *Mutate, data *graph.Node, t
 			CMap:     filterNode.CMap,
 		}
 
-		if m.Where.Exp, nu, err = co.compileArgNode(
+		if m.Where.Exp, nu, err = co.compileBaseExpNode(
 			"",
 			m.Ti,
 			st,
 			node,
-			m.IsJSON, -1); err != nil {
+			m.IsJSON); err != nil {
 			return err
 		}
 		if nu && trv.role == "anon" {
@@ -586,9 +586,7 @@ func (co *Compiler) getColumnsFromData(m *Mutate, data *graph.Node, trv trval, c
 
 	for k, v := range trv.getPresets(m.Type) {
 		k1 := k
-		if co.c.EnableCamelcase {
-			k = util.ToSnake(k)
-		}
+		k := co.ParseName(k)
 
 		if _, ok := cm[k]; ok {
 			continue
@@ -629,9 +627,7 @@ func (co *Compiler) getColumnsFromData(m *Mutate, data *graph.Node, trv trval, c
 
 	for k := range data.CMap {
 		k1 := k
-		if co.c.EnableCamelcase {
-			k = util.ToSnake(k)
-		}
+		k := co.ParseName(k)
 
 		if _, ok := cm[k]; ok {
 			continue

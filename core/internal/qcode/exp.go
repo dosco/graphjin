@@ -9,15 +9,6 @@ import (
 	"github.com/dosco/graphjin/v2/core/internal/util"
 )
 
-func (co *Compiler) compileArgObj(edge string,
-	ti sdata.DBTable, st *util.StackInf, arg graph.Arg, selID int32) (*Exp, bool, error) {
-	if arg.Val.Type != graph.NodeObj {
-		return nil, false, fmt.Errorf("expecting an object")
-	}
-
-	return co.compileArgNode(edge, ti, st, arg.Val, false, selID)
-}
-
 type aexpst struct {
 	co       *Compiler
 	st       *util.StackInf
@@ -33,7 +24,15 @@ type aexp struct {
 	path []string
 }
 
-func (co *Compiler) compileArgNode(
+func (co *Compiler) compileBaseExpNode(edge string,
+	ti sdata.DBTable,
+	st *util.StackInf,
+	node *graph.Node,
+	savePath bool) (*Exp, bool, error) {
+	return co.compileExpNode(edge, ti, st, node, savePath, -1)
+}
+
+func (co *Compiler) compileExpNode(
 	edge string,
 	ti sdata.DBTable,
 	st *util.StackInf,
@@ -433,13 +432,8 @@ func setListVal(ex *Exp, node *graph.Node) {
 }
 
 func (ast *aexpst) processColumn(av aexp, ex *Exp, node *graph.Node, selID int32) (bool, error) {
-	var nn string
+	nn := ast.co.ParseName(node.Name)
 
-	if ast.co.c.EnableCamelcase {
-		nn = util.ToSnake(node.Name)
-	} else {
-		nn = node.Name
-	}
 	col, err := av.ti.GetColumn(nn)
 	if err != nil {
 		return false, err
@@ -472,11 +466,7 @@ func (ast *aexpst) processNestedTable(av aexp, ex *Exp, node *graph.Node) (bool,
 			k == "_and" || k == "_or" || k == "_not" {
 			break
 		}
-		if ast.co.c.EnableCamelcase {
-			curr = util.ToSnake(k)
-		} else {
-			curr = k
-		}
+		curr = ast.co.ParseName(k)
 
 		if curr == ti.Name {
 			continue

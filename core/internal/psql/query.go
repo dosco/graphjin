@@ -144,7 +144,9 @@ func (co *Compiler) CompileQuery(
 		}
 
 		switch sel.SkipRender {
-		case qcode.SkipTypeUserNeeded, qcode.SkipTypeBlocked:
+		case qcode.SkipTypeUserNeeded, qcode.SkipTypeBlocked,
+			qcode.SkipTypeNulled:
+
 			c.w.WriteString(`'`)
 			c.w.WriteString(sel.FieldName)
 			c.w.WriteString(`', NULL`)
@@ -234,16 +236,30 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 	if sel.Singular {
 		return
 	}
+
+	c.w.WriteString(`SELECT `)
+	if sel.FieldFilter.Exp != nil {
+		c.w.WriteString(`(CASE WHEN `)
+		c.renderExp(sel.Ti, sel.FieldFilter.Exp, false)
+		c.w.WriteString(` THEN (`)
+	}
+
 	switch c.ct {
 	case "mysql":
-		c.w.WriteString(`SELECT CAST(COALESCE(json_arrayagg(__sj_`)
+		c.w.WriteString(`CAST(COALESCE(json_arrayagg(__sj_`)
 		int32String(c.w, sel.ID)
-		c.w.WriteString(`.json), '[]') AS JSON) AS json`)
+		c.w.WriteString(`.json), '[]') AS JSON)`)
+
 	default:
-		c.w.WriteString(`SELECT COALESCE(jsonb_agg(__sj_`)
+		c.w.WriteString(`COALESCE(jsonb_agg(__sj_`)
 		int32String(c.w, sel.ID)
-		c.w.WriteString(`.json), '[]') AS json`)
+		c.w.WriteString(`.json), '[]')`)
 	}
+
+	if sel.FieldFilter.Exp != nil {
+		c.w.WriteString(`) ELSE null END)`)
+	}
+	c.w.WriteString(` AS json`)
 
 	// Build the cursor value string
 	if sel.Paging.Cursor {
