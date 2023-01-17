@@ -127,8 +127,8 @@ func newGraphJin(conf *Config,
 	db *sql.DB,
 	dbinfo *sdata.DBInfo,
 	fs plugin.FS,
-	options ...Option) (*graphjin, error) {
-
+	options ...Option,
+) (*graphjin, error) {
 	if conf == nil {
 		conf = &Config{Debug: true}
 	}
@@ -246,10 +246,11 @@ type Result struct {
 	sql          string
 	role         string
 	cacheControl string
-	Errors       []Error           `json:"errors,omitempty"`
 	Vars         json.RawMessage   `json:"-"`
 	Data         json.RawMessage   `json:"data,omitempty"`
 	Hash         [sha256.Size]byte `json:"-"`
+	Errors       []Error           `json:"errors,omitempty"`
+	Validation   []qcode.ValidErr  `json:"validation,omitempty"`
 	// Extensions   *extensions     `json:"extensions,omitempty"`
 }
 
@@ -285,8 +286,8 @@ func (rc *ReqConfig) GetNamespace() (string, bool) {
 func (g *GraphJin) GraphQL(c context.Context,
 	query string,
 	vars json.RawMessage,
-	rc *ReqConfig) (res *Result, err error) {
-
+	rc *ReqConfig,
+) (res *Result, err error) {
 	gj := g.Load().(*graphjin)
 
 	c1, span := gj.spanStart(c, "GraphJin Query")
@@ -325,10 +326,10 @@ func (g *GraphJin) GraphQL(c context.Context,
 
 	// do the query
 	resp, err := gj.query(c1, r)
+	res = &resp.res
 	if err != nil {
 		return
 	}
-	res = resp.res
 
 	// save to apq cache is apq key exists and not already in cache
 	if !inCache && rc != nil && rc.APQKey != "" {
@@ -341,7 +342,6 @@ func (g *GraphJin) GraphQL(c context.Context,
 			return
 		}
 	}
-
 	return
 }
 
@@ -350,8 +350,8 @@ func (g *GraphJin) GraphQL(c context.Context,
 func (g *GraphJin) GraphQLByName(c context.Context,
 	name string,
 	vars json.RawMessage,
-	rc *ReqConfig) (res *Result, err error) {
-
+	rc *ReqConfig,
+) (res *Result, err error) {
 	gj := g.Load().(*graphjin)
 
 	c1, span := gj.spanStart(c, "GraphJin Query")
@@ -381,7 +381,7 @@ type graphqlReq struct {
 }
 
 type graphqlResp struct {
-	res *Result
+	res Result
 	qc  *qcode.QCode
 }
 
@@ -389,8 +389,8 @@ func (gj *graphjin) newGraphqlReq(rc *ReqConfig,
 	op string,
 	name string,
 	query []byte,
-	vars json.RawMessage) (r graphqlReq) {
-
+	vars json.RawMessage,
+) (r graphqlReq) {
 	r = graphqlReq{
 		op:    qcode.GetQTypeByName(op),
 		name:  name,
@@ -414,16 +414,15 @@ func (r *graphqlReq) Set(item allow.Item) {
 	r.aschema = item.Vars
 }
 
-func (gj *graphjin) queryWithResult(c context.Context, r graphqlReq) (
-	res *Result, err error) {
+func (gj *graphjin) queryWithResult(c context.Context, r graphqlReq) (res *Result, err error) {
 	resp, err := gj.query(c, r)
-	return resp.res, err
+	return &resp.res, err
 }
 
 func (gj *graphjin) query(c context.Context, r graphqlReq) (
-	resp graphqlResp, err error) {
-
-	resp.res = &Result{
+	resp graphqlResp, err error,
+) {
+	resp.res = Result{
 		ns:   r.ns,
 		op:   r.op,
 		name: r.name,
@@ -458,20 +457,23 @@ func (gj *graphjin) query(c context.Context, r graphqlReq) (
 	}
 
 	s := newGState(gj, r, role)
-
 	err = s.compileAndExecuteWrapper(c)
-	if err != nil {
-		resp.res.Errors = []Error{{Message: err.Error()}}
-	}
 
 	resp.qc = s.qcode()
 	resp.res.sql = s.sql()
 	resp.res.cacheControl = s.cacheHeader()
-
 	resp.res.Vars = r.vars
 	resp.res.Data = json.RawMessage(s.data)
 	resp.res.Hash = s.dhash
 	resp.res.role = s.role
+
+	if err != nil {
+		resp.res.Errors = newError(err)
+	}
+
+	if len(s.verrs) != 0 {
+		resp.res.Validation = s.verrs
+	}
 	return
 }
 
@@ -519,4 +521,9 @@ func basePath(conf *Config) (string, error) {
 		return "", err
 	}
 	return filepath.Join(v, "config"), nil
+}
+
+func newError(err error) (errList []Error) {
+	errList = []Error{{Message: err.Error()}}
+	return
 }

@@ -332,7 +332,7 @@ func (p *Parser) parseFields(fields []Field) ([]Field, error) {
 	st := NewStack()
 
 	if !p.peek(itemName, itemSpread) {
-		return nil, p.tokErr(`1 field name or ...Fragment`)
+		return nil, p.tokErr(`field name or ...Fragment`)
 	}
 
 	for {

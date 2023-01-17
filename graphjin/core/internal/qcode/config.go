@@ -9,7 +9,9 @@ type Config struct {
 	DisableFuncs    bool
 	EnableCamelcase bool
 	DBSchema        string
-	defTrv          trval
+	Validators      map[string]Validator
+
+	defTrv trval
 }
 
 type TConfig struct {

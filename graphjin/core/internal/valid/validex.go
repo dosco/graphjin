@@ -1,6 +1,11 @@
 package valid
 
-import "regexp"
+import (
+	"fmt"
+	"regexp"
+
+	"github.com/dosco/graphjin/v2/core/internal/qcode"
+)
 
 const (
 	alphaRegexString               = "^[a-zA-Z]+$"
@@ -19,40 +24,35 @@ const (
 	uUID5RFC4122RegexString        = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-5[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
 	uUIDRFC4122RegexString         = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 	uLIDRegexString                = "^[A-HJKMNP-TV-Z0-9]{26}$"
-	aSCIIRegexString               = "^[\x00-\x7F]*$"
-	printableASCIIRegexString      = "^[\x20-\x7E]*$"
-	multibyteRegexString           = "[^\x00-\x7F]"
-	dataURIRegexString             = `^data:((?:\w+\/(?:([^;]|;[^;]).)+)?)`
-	uRLEncodedRegexString          = `^(?:[^%]|%[0-9A-Fa-f]{2})*$`
-	hTMLEncodedRegexString         = `&#[x]?([0-9a-fA-F]{2})|(&gt)|(&lt)|(&quot)|(&amp)+[;]?`
-	hTMLRegexString                = `<[/]?([a-zA-Z]+).*?>`
-	jWTRegexString                 = "^[A-Za-z0-9-_]+\\.[A-Za-z0-9-_]+\\.[A-Za-z0-9-_]*$"
-	splitParamsRegexString         = `'[^']*'|\S+`
-	bicRegexString                 = `^[A-Za-z]{6}[A-Za-z0-9]{2}([A-Za-z0-9]{3})?$`
-	semverRegexString              = `^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$` // numbered capture groups https://semver.org/
-	dnsRegexStringRFC1035Label     = "^[a-z]([-a-z0-9]*[a-z0-9]){0,62}$"
 )
 
-var (
-	alphaRegex               = regexp.MustCompile(alphaRegexString)
-	alphaNumericRegex        = regexp.MustCompile(alphaNumericRegexString)
-	alphaUnicodeRegex        = regexp.MustCompile(alphaUnicodeRegexString)
-	alphaUnicodeNumericRegex = regexp.MustCompile(alphaUnicodeNumericRegexString)
-	numericRegex             = regexp.MustCompile(numericRegexString)
-	numberRegex              = regexp.MustCompile(numberRegexString)
-	emailRegex               = regexp.MustCompile(emailRegexString)
-	uUID3Regex               = regexp.MustCompile(uUID3RegexString)
-	uUID4Regex               = regexp.MustCompile(uUID4RegexString)
-	uUID5Regex               = regexp.MustCompile(uUID5RegexString)
-	uUIDRegex                = regexp.MustCompile(uUIDRegexString)
-	uUID3RFC4122Regex        = regexp.MustCompile(uUID3RFC4122RegexString)
-	uUID4RFC4122Regex        = regexp.MustCompile(uUID4RFC4122RegexString)
-	uUID5RFC4122Regex        = regexp.MustCompile(uUID5RFC4122RegexString)
-	uUIDRFC4122Regex         = regexp.MustCompile(uUIDRFC4122RegexString)
-	uLIDRegex                = regexp.MustCompile(uLIDRegexString)
-	aSCIIRegex               = regexp.MustCompile(aSCIIRegexString)
-	printableASCIIRegex      = regexp.MustCompile(printableASCIIRegexString)
-	multibyteRegex           = regexp.MustCompile(multibyteRegexString)
-	uRLEncodedRegex          = regexp.MustCompile(uRLEncodedRegexString)
-	splitParamsRegex         = regexp.MustCompile(splitParamsRegexString)
-)
+var Formats = map[string]*regexp.Regexp{
+	"alpha":               regexp.MustCompile(alphaRegexString),
+	"alphaNumeric":        regexp.MustCompile(alphaNumericRegexString),
+	"alphaUnicode":        regexp.MustCompile(alphaUnicodeRegexString),
+	"alphaUnicodeNumeric": regexp.MustCompile(alphaUnicodeNumericRegexString),
+	"numeric":             regexp.MustCompile(numericRegexString),
+	"number":              regexp.MustCompile(numberRegexString),
+	"email":               regexp.MustCompile(emailRegexString),
+	"uuid":                regexp.MustCompile(uUIDRegexString),
+	"uuid3":               regexp.MustCompile(uUID3RegexString),
+	"uuid4":               regexp.MustCompile(uUID4RegexString),
+	"uuid5":               regexp.MustCompile(uUID5RegexString),
+	"ulid":                regexp.MustCompile(uLIDRegexString),
+}
+
+func format(args []string) (fn qcode.ValidFn, err error) {
+	re, ok := Formats[args[0]]
+	if !ok {
+		err = fmt.Errorf("unknown format: %s", args[0])
+		return
+	}
+	fn = func(vars qcode.Vars, c qcode.Constraint) (ok bool) {
+		v1, ok := vars[c.VarName]
+		if ok {
+			ok = re.Match(v1)
+		}
+		return
+	}
+	return
+}

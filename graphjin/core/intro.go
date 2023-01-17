@@ -8,6 +8,7 @@ import (
 
 	"github.com/dosco/graphjin/v2/core/internal/sdata"
 	"github.com/dosco/graphjin/v2/core/internal/util"
+	"github.com/dosco/graphjin/v2/core/internal/valid"
 )
 
 const (
@@ -106,85 +107,86 @@ type introResult struct {
 
 // const singularSuffix = "ByID"
 
-var stdTypes = []fullType{{
-	Kind:        KIND_SCALAR,
-	Name:        TYPE_BOOLEAN,
-	Description: "The `Boolean` scalar type represents `true` or `false`",
-}, {
-	Kind:        KIND_SCALAR,
-	Name:        TYPE_FLOAT,
-	Description: "The `Float` scalar type represents signed double-precision fractional values as specified by\n[IEEE 754](http://en.wikipedia.org/wiki/IEEE_floating_point).",
-}, {
-	Kind:        KIND_SCALAR,
-	Name:        TYPE_INT,
-	Description: "The `Int` scalar type represents non-fractional signed whole numeric values. Int can represent\nvalues between -(2^31) and 2^31 - 1.\n",
-	// Add Int expression after
-}, {
-	Kind:        KIND_SCALAR,
-	Name:        TYPE_STRING,
-	Description: "The `String` scalar type represents textual data, represented as UTF-8 character sequences.\nThe String type is most often used by GraphQL to represent free-form human-readable text.\n",
-}, {
-	Kind:        KIND_SCALAR,
-	Name:        TYPE_JSON,
-	Description: "The `JSON` scalar type represents json data",
-}, {
-	Kind:       KIND_OBJECT,
-	Name:       "Query",
-	Interfaces: []typeRef{},
-	Fields:     []fieldObj{},
-}, {
-	Kind:       KIND_OBJECT,
-	Name:       "Subscription",
-	Interfaces: []typeRef{},
-	Fields:     []fieldObj{},
-}, {
-	Kind:       KIND_OBJECT,
-	Name:       "Mutation",
-	Interfaces: []typeRef{},
-	Fields:     []fieldObj{},
-}, {
-	Kind: KIND_ENUM,
-	Name: "FindSearchInput",
-	EnumValues: []enumValue{{
-		Name:        "children",
-		Description: "Children of parent row",
+var stdTypes = []fullType{
+	{
+		Kind:        KIND_SCALAR,
+		Name:        TYPE_BOOLEAN,
+		Description: "The `Boolean` scalar type represents `true` or `false`",
 	}, {
-		Name:        "parents",
-		Description: "Parents of current row",
-	}},
-}, {
-	Kind:        "ENUM",
-	Name:        "OrderDirection",
-	Description: "Result ordering types",
-	EnumValues: []enumValue{{
-		Name:        "asc",
-		Description: "Ascending order",
+		Kind:        KIND_SCALAR,
+		Name:        TYPE_FLOAT,
+		Description: "The `Float` scalar type represents signed double-precision fractional values as specified by\n[IEEE 754](http://en.wikipedia.org/wiki/IEEE_floating_point).",
 	}, {
-		Name:        "desc",
-		Description: "Descending order",
+		Kind:        KIND_SCALAR,
+		Name:        TYPE_INT,
+		Description: "The `Int` scalar type represents non-fractional signed whole numeric values. Int can represent\nvalues between -(2^31) and 2^31 - 1.\n",
+		// Add Int expression after
 	}, {
-		Name:        "asc_nulls_first",
-		Description: "Ascending nulls first order",
+		Kind:        KIND_SCALAR,
+		Name:        TYPE_STRING,
+		Description: "The `String` scalar type represents textual data, represented as UTF-8 character sequences.\nThe String type is most often used by GraphQL to represent free-form human-readable text.\n",
 	}, {
-		Name:        "desc_nulls_first",
-		Description: "Descending nulls first order",
+		Kind:        KIND_SCALAR,
+		Name:        TYPE_JSON,
+		Description: "The `JSON` scalar type represents json data",
 	}, {
-		Name:        "asc_nulls_last",
-		Description: "Ascending nulls last order",
+		Kind:       KIND_OBJECT,
+		Name:       "Query",
+		Interfaces: []typeRef{},
+		Fields:     []fieldObj{},
 	}, {
-		Name:        "desc_nulls_last",
-		Description: "Descending nulls last order",
-	}},
-}, {
-	Kind:        KIND_SCALAR,
-	Name:        "ID",
-	Description: "The `ID` scalar type represents a unique identifier, often used to refetch an object or as key for a cache.\nThe ID type appears in a JSON response as a String; however, it is not intended to be human-readable.\nWhen expected as an input type, any string (such as `\"4\"`) or integer (such as `4`) input value will be accepted\nas an ID.\n",
-	// Add IDException after
-}, {
-	Kind:        KIND_SCALAR,
-	Name:        "Cursor",
-	Description: "A cursor is an encoded string use for pagination",
-},
+		Kind:       KIND_OBJECT,
+		Name:       "Subscription",
+		Interfaces: []typeRef{},
+		Fields:     []fieldObj{},
+	}, {
+		Kind:       KIND_OBJECT,
+		Name:       "Mutation",
+		Interfaces: []typeRef{},
+		Fields:     []fieldObj{},
+	}, {
+		Kind: KIND_ENUM,
+		Name: "FindSearchInput",
+		EnumValues: []enumValue{{
+			Name:        "children",
+			Description: "Children of parent row",
+		}, {
+			Name:        "parents",
+			Description: "Parents of current row",
+		}},
+	}, {
+		Kind:        "ENUM",
+		Name:        "OrderDirection",
+		Description: "Result ordering types",
+		EnumValues: []enumValue{{
+			Name:        "asc",
+			Description: "Ascending order",
+		}, {
+			Name:        "desc",
+			Description: "Descending order",
+		}, {
+			Name:        "asc_nulls_first",
+			Description: "Ascending nulls first order",
+		}, {
+			Name:        "desc_nulls_first",
+			Description: "Descending nulls first order",
+		}, {
+			Name:        "asc_nulls_last",
+			Description: "Ascending nulls last order",
+		}, {
+			Name:        "desc_nulls_last",
+			Description: "Descending nulls last order",
+		}},
+	}, {
+		Kind:        KIND_SCALAR,
+		Name:        "ID",
+		Description: "The `ID` scalar type represents a unique identifier, often used to refetch an object or as key for a cache.\nThe ID type appears in a JSON response as a String; however, it is not intended to be human-readable.\nWhen expected as an input type, any string (such as `\"4\"`) or integer (such as `4`) input value will be accepted\nas an ID.\n",
+		// Add IDException after
+	}, {
+		Kind:        KIND_SCALAR,
+		Name:        "Cursor",
+		Description: "A cursor is an encoded string use for pagination",
+	},
 }
 
 type intro struct {
@@ -251,6 +253,7 @@ func (gj *graphjin) introQuery() (result json.RawMessage, err error) {
 	for _, dt := range dirTypes {
 		in.addDirType(dt)
 	}
+	in.addDirValidateType()
 
 	for _, v := range in.types {
 		in.res.Schema.Types = append(in.res.Schema.Types, v)
@@ -283,7 +286,7 @@ func (in *intro) addTable(t sdata.DBTable, alias string) (err error) {
 
 	// add tableByID type to query and subscription
 	ftQS.Name += "ByID"
-	ftQS.addOrReplaceArg("id", newTR(KIND_NONNULL, "ID", newTR("", "ID", nil)))
+	ftQS.addOrReplaceArg("id", newTR(KIND_NONNULL, "", newTR("", "ID", nil)))
 	in.addType(ftQS)
 	in.addTypeTo("Query", ftQS)
 	in.addTypeTo("Subscription", ftQS)
@@ -336,7 +339,8 @@ func (in *intro) addTableType(t sdata.DBTable, alias string) (ft fullType, err e
 }
 
 func (in *intro) addTableTypeWithDepth(
-	t sdata.DBTable, alias string, depth int) (ft fullType, err error) {
+	t sdata.DBTable, alias string, depth int,
+) (ft fullType, err error) {
 	ft = fullType{
 		Kind:        KIND_OBJECT,
 		InputFields: []inputValue{},
@@ -706,10 +710,12 @@ func (in *intro) getColumnField(c sdata.DBColumn) (f fieldObj, err error) {
 	f.Type = typeValue
 
 	f.Args = append(f.Args, inputValue{
-		Name: "includeIf", Type: newTR("", (c.Table + SUFFIX_WHERE), nil)})
+		Name: "includeIf", Type: newTR("", (c.Table + SUFFIX_WHERE), nil),
+	})
 
 	f.Args = append(f.Args, inputValue{
-		Name: "skipIf", Type: newTR("", (c.Table + SUFFIX_WHERE), nil)})
+		Name: "skipIf", Type: newTR("", (c.Table + SUFFIX_WHERE), nil),
+	})
 
 	return
 }
@@ -730,15 +736,18 @@ func (in *intro) getFunctionField(t sdata.DBTable, fn sdata.DBFunction) (f field
 	}
 
 	f.Args = append(f.Args, inputValue{
-		Name: "includeIf", Type: newTR("", (t.Name + SUFFIX_WHERE), nil)})
+		Name: "includeIf", Type: newTR("", (t.Name + SUFFIX_WHERE), nil),
+	})
 
 	f.Args = append(f.Args, inputValue{
-		Name: "skipIf", Type: newTR("", (t.Name + SUFFIX_WHERE), nil)})
+		Name: "skipIf", Type: newTR("", (t.Name + SUFFIX_WHERE), nil),
+	})
 	return
 }
 
 func (in *intro) getTableField(relNode sdata.RelNode) (
-	f fieldObj, skip bool, err error) {
+	f fieldObj, skip bool, err error,
+) {
 	f.Args = []inputValue{}
 	f.Name = in.getName(relNode.Name)
 
@@ -776,6 +785,49 @@ func (in *intro) addDirType(dt dir) {
 	}
 	if len(dt.args) == 0 {
 		d.Args = []inputValue{}
+	}
+	in.res.Schema.Directives = append(in.res.Schema.Directives, d)
+}
+
+func (in *intro) addDirValidateType() {
+	ft := fullType{
+		Kind:        KIND_ENUM,
+		Name:        ("validateFormat" + SUFFIX_ENUM),
+		Description: "Various formats supported by @validate",
+	}
+	for k := range valid.Formats {
+		ft.EnumValues = append(ft.EnumValues, enumValue{
+			Name: k,
+		})
+	}
+	in.addType(ft)
+
+	d := directiveType{
+		Name:         "validate",
+		Description:  "Add a validation for input variables",
+		Locations:    []string{LOC_QUERY, LOC_MUTATION, LOC_SUBSCRIPTION},
+		IsRepeatable: true,
+	}
+	d.Args = append(d.Args, inputValue{
+		Name:        "variable",
+		Description: "Variable to add the validation on",
+		Type:        newTR(KIND_NONNULL, "", newTR("", "String", nil)),
+	})
+	for k, v := range valid.Validators {
+		if v.Type == "" {
+			continue
+		}
+		var ty *typeRef
+		if v.List {
+			ty = newTR(KIND_LIST, "", newTR("", v.Type, nil))
+		} else {
+			ty = newTR("", v.Type, nil)
+		}
+		d.Args = append(d.Args, inputValue{
+			Name:        k,
+			Description: v.Description,
+			Type:        ty,
+		})
 	}
 	in.res.Schema.Directives = append(in.res.Schema.Directives, d)
 }

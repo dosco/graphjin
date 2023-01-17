@@ -1,7 +1,6 @@
 package qcode
 
 import (
-	"errors"
 	"fmt"
 	"path"
 	"strings"
@@ -40,7 +39,8 @@ func (co *Compiler) compileOpDirectives(qc *QCode, dirs []graph.Directive) error
 
 // directives need to run before the relationship resolution code
 func (co *Compiler) compileSelectorDirectives(qc *QCode,
-	sel *Select, dirs []graph.Directive, role string) (err error) {
+	sel *Select, dirs []graph.Directive, role string,
+) (err error) {
 	for _, d := range dirs {
 		switch d.Name {
 		case "add":
@@ -80,7 +80,8 @@ func (co *Compiler) compileSelectorDirectives(qc *QCode,
 }
 
 func (co *Compiler) compileFieldDirectives(sel *Select,
-	f *Field, dirs []graph.Directive, role string) (err error) {
+	f *Field, dirs []graph.Directive, role string,
+) (err error) {
 	for _, d := range dirs {
 		switch d.Name {
 		case "add":
@@ -98,7 +99,6 @@ func (co *Compiler) compileFieldDirectives(sel *Select,
 		default:
 			err = fmt.Errorf("unknown field directive: %s", d.Name)
 		}
-
 		if err != nil {
 			return fmt.Errorf("directive @%s: %w", d.Name, err)
 		}
@@ -107,10 +107,11 @@ func (co *Compiler) compileFieldDirectives(sel *Select,
 }
 
 func (co *Compiler) compileDirectiveSchema(sel *Select, d graph.Directive) (err error) {
-	arg, err := getArg(d.Args, "name", true, graph.NodeStr)
-	if err == nil {
-		sel.Schema = arg.Val.Val
+	arg, err := getArg(d.Args, "name", graph.NodeStr)
+	if err != nil {
+		return
 	}
+	sel.Schema = arg.Val.Val
 	return
 }
 
@@ -119,9 +120,9 @@ func (co *Compiler) compileDirectiveAddRemove(
 	sel *Select,
 	f *Field,
 	d graph.Directive,
-	role string) (err error) {
-
-	arg, err := getArg(d.Args, "ifRole", true, graph.NodeStr, graph.NodeLabel)
+	role string,
+) (err error) {
+	arg, err := getArg(d.Args, "ifRole", graph.NodeStr, graph.NodeLabel)
 	if err != nil {
 		return
 	}
@@ -140,8 +141,8 @@ func (co *Compiler) compileDirectiveSkipInclude(
 	sel *Select,
 	f *Field,
 	d graph.Directive,
-	role string) (err error) {
-
+	role string,
+) (err error) {
 	if len(d.Args) == 0 {
 		err = fmt.Errorf("arguments 'ifVar' or 'ifRole' expected")
 		return
@@ -223,11 +224,13 @@ func (co *Compiler) compileDirectiveScript(qc *QCode, d graph.Directive) (err er
 		return
 	}
 
-	arg, err := getArg(d.Args, "name", false, graph.NodeStr)
+	arg, ok, err := getOptionalArg(d.Args, "name", graph.NodeStr)
 	if err != nil {
 		return
 	}
-	qc.Script.Name = arg.Val.Val
+	if ok {
+		qc.Script.Name = arg.Val.Val
+	}
 
 	if path.Ext(qc.Script.Name) == "" {
 		qc.Script.Name += ".js"
@@ -235,154 +238,23 @@ func (co *Compiler) compileDirectiveScript(qc *QCode, d graph.Directive) (err er
 	return
 }
 
-type validator struct {
-	name   string
-	types  []graph.ParserType
-	single bool
-}
-
-var validators = map[string]validator{
-	"variable":                 {name: "variable", types: []graph.ParserType{graph.NodeStr}},
-	"error":                    {name: "error", types: []graph.ParserType{graph.NodeStr}},
-	"unique":                   {name: "unique", types: []graph.ParserType{graph.NodeBool}, single: true},
-	"format":                   {name: "format", types: []graph.ParserType{graph.NodeStr}, single: true},
-	"required":                 {name: "required", types: []graph.ParserType{graph.NodeBool}, single: true},
-	"requiredIf":               {name: "required_if", types: []graph.ParserType{graph.NodeObj}},
-	"requiredUnless":           {name: "required_unless", types: []graph.ParserType{graph.NodeObj}},
-	"requiredWith":             {name: "required_with", types: []graph.ParserType{graph.NodeList, graph.NodeStr}},
-	"requiredWithAll":          {name: "required_with_all", types: []graph.ParserType{graph.NodeList, graph.NodeStr}},
-	"requiredWithout":          {name: "required_without", types: []graph.ParserType{graph.NodeList, graph.NodeStr}},
-	"requiredWithoutAll":       {name: "required_without_all", types: []graph.ParserType{graph.NodeList, graph.NodeStr}},
-	"length":                   {name: "len", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
-	"max":                      {name: "max", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
-	"min":                      {name: "min", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
-	"equals":                   {name: "eq", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
-	"notEquals":                {name: "neq", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
-	"oneOf":                    {name: "oneof", types: []graph.ParserType{graph.NodeList, graph.NodeNum, graph.NodeList, graph.NodeStr}},
-	"greaterThan":              {name: "gt", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
-	"greaterThanOrEquals":      {name: "gte", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
-	"lessThan":                 {name: "lt", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
-	"lessThanOrEquals":         {name: "lte", types: []graph.ParserType{graph.NodeStr, graph.NodeNum}},
-	"equalsField":              {name: "eqfield", types: []graph.ParserType{graph.NodeStr}},
-	"notEqualsField":           {name: "nefield", types: []graph.ParserType{graph.NodeStr}},
-	"greaterThanField":         {name: "gtfield", types: []graph.ParserType{graph.NodeStr}},
-	"greaterThanOrEqualsField": {name: "gtefield", types: []graph.ParserType{graph.NodeStr}},
-	"lessThanField":            {name: "ltfield", types: []graph.ParserType{graph.NodeStr}},
-	"lessThanOrEqualsField":    {name: "ltefield", types: []graph.ParserType{graph.NodeStr}},
-}
-
 func (co *Compiler) compileDirectiveConstraint(qc *QCode, d graph.Directive) (err error) {
-	var varName string
-	var errMsg string
-	var vals []string
+	a, err := getArg(d.Args, "variable", graph.NodeStr)
+	if err != nil {
+		return
+	}
+	varName := a.Val.Val
 
-	for _, a := range d.Args {
-		switch a.Name {
-		case "variable":
-			if err = validateArg(a, graph.NodeStr); err != nil {
-				return
-			}
-			varName = a.Val.Val
-			continue
-
-		case "error":
-			if err = validateArg(a, graph.NodeStr); err != nil {
-				return
-			}
-			errMsg = a.Val.Val
-			continue
-
-		case "format":
-			if err = validateArg(a, graph.NodeStr); err != nil {
-				return
-			}
-			vals = append(vals, a.Val.Val)
-			continue
-		}
-
-		v, ok := validators[a.Name]
-		if !ok {
-			return unknownArg(a)
-		}
-
-		if err := validateConstraint(a, v); err != nil {
-			return err
-		}
-
-		if v.single {
-			vals = append(vals, v.name)
-			continue
-		}
-
-		var value string
-		switch a.Val.Type {
-		case graph.NodeStr, graph.NodeNum, graph.NodeBool:
-			if ifNotArgVal(a, "") {
-				value = a.Val.Val
-			}
-
-		case graph.NodeObj:
-			var items []string
-			for _, v := range a.Val.Children {
-				items = append(items, v.Name, v.Val)
-			}
-			value = strings.Join(items, " ")
-
-		case graph.NodeList:
-			var items []string
-			for _, v := range a.Val.Children {
-				items = append(items, v.Val)
-			}
-			value = strings.Join(items, " ")
-		}
-
-		vals = append(vals, (v.name + "=" + value))
+	con, err := co.newConstraint(varName, d.Args)
+	if err == ErrUnknownValidator {
+		return unknownArg(a)
+	}
+	if err != nil {
+		return
 	}
 
-	if varName == "" {
-		return errors.New("invalid @constraint no variable name specified")
-	}
-
-	if qc.Consts == nil {
-		qc.Consts = make(map[string]interface{})
-	}
-
-	opt := strings.Join(vals, ",")
-	if errMsg != "" {
-		opt += "~" + errMsg
-	}
-
-	qc.Consts[varName] = opt
-	return nil
-}
-
-func validateConstraint(a graph.Arg, v validator) error {
-	list := false
-	for _, t := range v.types {
-		switch {
-		case t == graph.NodeList:
-			list = true
-		case list && ifArgList(a, t):
-			return nil
-		case ifArg(a, t):
-			return nil
-		}
-	}
-
-	list = false
-	err := "value must be of type: "
-
-	for i, t := range v.types {
-		if i != 0 {
-			err += ", "
-		}
-		if !list && t == graph.NodeList {
-			err += "a list of "
-			list = true
-		}
-		err += t.String()
-	}
-	return errors.New(err)
+	qc.Consts = append(qc.Consts, con)
+	return
 }
 
 func (co *Compiler) compileDirectiveNotRelated(sel *Select, d graph.Directive) error {
@@ -417,6 +289,7 @@ func (co *Compiler) compileDirectiveThrough(sel *Select, d graph.Directive) (err
 	}
 	return
 }
+
 func (co *Compiler) compileDirectiveValidation(qc *QCode, d graph.Directive) (err error) {
 	if len(d.Args) == 0 {
 		return fmt.Errorf("required arguments 'src' and 'type'")

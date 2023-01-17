@@ -225,7 +225,10 @@ func (co *Compiler) compileArgArgs(sel *Select, arg graph.Arg) (err error) {
 }
 
 func (co *Compiler) compileArgDistinctOn(sel *Select, arg graph.Arg) (err error) {
-	if err = validateArg(arg, graph.NodeList, graph.NodeStr); err != nil {
+	if err = validateArg(arg,
+		graph.NodeList, graph.NodeLabel,
+		graph.NodeList, graph.NodeStr,
+		graph.NodeStr); err != nil {
 		return
 	}
 
