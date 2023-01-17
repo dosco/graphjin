@@ -14,11 +14,14 @@ import (
 	"github.com/dosco/graphjin/v2/core/internal/psql"
 	"github.com/dosco/graphjin/v2/core/internal/qcode"
 	"github.com/dosco/graphjin/v2/core/internal/sdata"
+	"github.com/dosco/graphjin/v2/core/internal/valid"
 	"github.com/dosco/graphjin/v2/internal/jsn"
 )
 
-var decPrefix = []byte(`__gj/enc:`)
-var ErrNotFound = errors.New("not found in prepared statements")
+var (
+	decPrefix   = []byte(`__gj/enc:`)
+	ErrNotFound = errors.New("not found in prepared statements")
+)
 
 type OpType int
 
@@ -193,6 +196,7 @@ func (gj *graphjin) initCompilers() (err error) {
 		DisableFuncs:    gj.conf.DisableFuncs,
 		EnableCamelcase: gj.conf.EnableCamelcase,
 		DBSchema:        gj.schema.DBSchema(),
+		Validators:      valid.Validators,
 	}
 
 	gj.qc, err = qcode.NewCompiler(gj.schema, qcc)
@@ -217,8 +221,8 @@ func (gj *graphjin) initCompilers() (err error) {
 func (gj *graphjin) executeRoleQuery(c context.Context,
 	conn *sql.Conn,
 	vars json.RawMessage,
-	rc *ReqConfig) (role string, err error) {
-
+	rc *ReqConfig,
+) (role string, err error) {
 	if c.Value(UserIDKey) == nil {
 		role = "anon"
 		return

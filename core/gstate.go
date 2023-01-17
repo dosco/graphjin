@@ -13,7 +13,6 @@ import (
 
 	"github.com/dosco/graphjin/v2/core/internal/psql"
 	"github.com/dosco/graphjin/v2/core/internal/qcode"
-	"github.com/dosco/graphjin/v2/core/internal/valid"
 	plugin "github.com/dosco/graphjin/v2/plugin"
 )
 
@@ -24,6 +23,7 @@ type gstate struct {
 	data  []byte
 	dhash [sha256.Size]byte
 	role  string
+	verrs []qcode.ValidErr
 }
 
 type cstate struct {
@@ -37,7 +37,6 @@ type stmt struct {
 	roc  *Role
 	qc   *qcode.QCode
 	md   psql.Metadata
-	va   *valid.Validate
 	sql  string
 }
 
@@ -131,7 +130,6 @@ func (s *gstate) compileQueryForRole() (err error) {
 		}
 	}
 
-	st.va = valid.New()
 	st.sql = w.String()
 
 	if s.cs == nil {
@@ -281,7 +279,8 @@ func (s *gstate) argList(c context.Context) (args args, err error) {
 }
 
 func (s *gstate) argListVars(c context.Context, vars json.RawMessage) (
-	args args, err error) {
+	args args, err error,
+) {
 	args, err = s.gj.argList(c, s.cs.st.md, vars, s.r.rc)
 	return
 }
@@ -301,6 +300,8 @@ func (s *gstate) setLocalUserID(c context.Context, conn *sql.Conn) (err error) {
 	return
 }
 
+var errValidationFailed = errors.New("validation failed")
+
 func (s *gstate) validateAndUpdateVars(c context.Context) (err error) {
 	var vars map[string]interface{}
 
@@ -311,36 +312,29 @@ func (s *gstate) validateAndUpdateVars(c context.Context) (err error) {
 		return nil
 	}
 
-	if qc.Consts != nil || (qc.Script.Exists && qc.Script.HasReqFn()) {
-		vars = make(map[string]interface{})
+	if qc.Validation.Exists {
+		err = qc.Validation.VE.Validate(s.r.vars)
+		if err != nil {
+			return
+		}
+	}
 
+	if len(qc.Consts) != 0 {
+		s.verrs = qc.ProcessConstraints()
+		if len(s.verrs) != 0 {
+			err = errValidationFailed
+			return
+		}
+	}
+
+	if qc.Script.Exists && qc.Script.HasReqFn() {
+		vars = make(map[string]interface{})
 		if len(s.r.vars) != 0 {
 			if err := json.Unmarshal(s.r.vars, &vars); err != nil {
 				return err
 			}
 		}
-	}
 
-	if qc.Validation.Exists {
-		if err := qc.Validation.VE.Validate(s.r.vars); err != nil {
-			return err
-		}
-	}
-
-	if qc.Consts != nil {
-		errs := cs.st.va.ValidateMap(c, vars, qc.Consts)
-		if !s.gj.prod && len(errs) != 0 {
-			for k, v := range errs {
-				s.gj.log.Printf("validation failed: $%s: %s", k, v.Error())
-			}
-		}
-
-		if len(errs) != 0 {
-			return errors.New("validation failed")
-		}
-	}
-
-	if qc.Script.Exists && qc.Script.HasReqFn() {
 		var v []byte
 		if v, err = s.scriptCallReq(c, qc, vars, s.role); err != nil {
 			return

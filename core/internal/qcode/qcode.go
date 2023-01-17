@@ -62,8 +62,8 @@ type QCode struct {
 	ActionVar  string
 	ActionArg  graph.Arg
 	Selects    []Select
-	Vars       Variables
-	Consts     Constraints
+	Vars       Vars
+	Consts     []Constraint
 	Roots      []int32
 	rootsA     [5]int32
 	Mutates    []Mutate
@@ -240,8 +240,7 @@ type Cache struct {
 	Header string
 }
 
-type Variables map[string]json.RawMessage
-type Constraints map[string]interface{}
+type Vars map[string]json.RawMessage
 
 type ExpOp int8
 
@@ -343,8 +342,8 @@ func NewCompiler(s *sdata.DBSchema, c Config) (*Compiler, error) {
 }
 
 func (co *Compiler) Compile(
-	query []byte, vars json.RawMessage, role, namespace string) (qc *QCode, err error) {
-
+	query []byte, vars json.RawMessage, role, namespace string,
+) (qc *QCode, err error) {
 	var op graph.Operation
 	op, err = graph.Parse(query)
 	if err != nil {
@@ -526,8 +525,8 @@ func (co *Compiler) addRelInfo(
 	op *graph.Operation,
 	qc *QCode,
 	sel *Select,
-	field graph.Field) error {
-
+	field graph.Field,
+) error {
 	var psel *Select
 	var childF, parentF graph.Field
 	var err error
@@ -563,7 +562,6 @@ func (co *Compiler) addRelInfo(
 
 	if sel.Rel.Type == sdata.RelSkip {
 		sel.Rel.Type = sdata.RelNone
-
 	} else if sel.ParentID != -1 {
 		parentName := co.ParseName(parentF.Name)
 		childName := co.ParseName(childF.Name)
@@ -985,8 +983,8 @@ func (co *Compiler) setMutationType(qc *QCode, op *graph.Operation, role string)
 }
 
 func (co *Compiler) compileArgFilter(sel *Select,
-	selID int32, arg graph.Arg, role string) (ex *Exp, err error) {
-
+	selID int32, arg graph.Arg, role string,
+) (ex *Exp, err error) {
 	st := util.NewStackInf()
 	var nu bool
 
@@ -1110,26 +1108,56 @@ func compileFilter(s *sdata.DBSchema, ti sdata.DBTable, filter []string, isJSON 
 	return fl, needsUser, nil
 }
 
-func getArg(args []graph.Arg, name string, required bool, validTypes ...graph.ParserType,
+func getArg(args []graph.Arg, name string, validTypes ...graph.ParserType,
 ) (arg graph.Arg, err error) {
-	for _, a := range args {
-		if a.Name != name {
-			continue
-		}
-		if err = validateArg(a, validTypes...); err != nil {
-			return
-		}
-		return a, nil
+	var ok bool
+	arg, ok, err = getOptionalArg(args, name, validTypes...)
+	if err != nil {
+		return
 	}
-	if required {
+	if !ok {
 		err = reqArgMissing(name)
 	}
 	return
 }
 
+func getOptionalArg(args []graph.Arg, name string, validTypes ...graph.ParserType,
+) (arg graph.Arg, ok bool, err error) {
+	for _, arg = range args {
+		if arg.Name != name {
+			continue
+		}
+		if err = validateArg(arg, validTypes...); err != nil {
+			return
+		}
+		ok = true
+		return
+	}
+	return
+}
+
+// todo: add support for list of types
 func validateArg(arg graph.Arg, validTypes ...graph.ParserType) (err error) {
-	for _, vt := range validTypes {
+	n := len(validTypes)
+	for i := 0; i < n; i++ {
+		vt := validTypes[i]
 		ty := arg.Val.Type
+
+		switch {
+		case vt == graph.NodeList && ty != vt:
+			continue
+		case vt == graph.NodeList && ty == vt:
+			if len(arg.Val.Children) == 0 {
+				return
+			}
+			if (i + 1) >= n {
+				continue
+			}
+			vt = validTypes[(i + 1)]
+			ty = arg.Val.Children[0].Type
+			i++
+		}
+
 		if ty == graph.NodeStr && arg.Val.Val == "" {
 			continue
 		}
@@ -1149,20 +1177,6 @@ func unknownArg(arg graph.Arg) (err error) {
 	return fmt.Errorf("unknown argument '%s'", arg.Name)
 }
 
-func argExists(arg graph.Arg) bool {
-	return arg.Val != nil
-}
-
-func ifArgList(arg graph.Arg, lty graph.ParserType) bool {
-	return arg.Val.Type == graph.NodeList &&
-		len(arg.Val.Children) != 0 &&
-		arg.Val.Children[0].Type == lty
-}
-
-func ifArg(arg graph.Arg, ty graph.ParserType) (ok bool) {
-	return arg.Val.Type == ty
-}
-
 func ifNotArg(arg graph.Arg, ty graph.ParserType) (ok bool) {
 	return arg.Val.Type != ty
 }
@@ -1173,19 +1187,47 @@ func ifNotArgVal(arg graph.Arg, val string) bool {
 
 func argTypes(types []graph.ParserType) string {
 	var sb strings.Builder
+	var list bool
 	lastIndex := len(types) - 1
 	for i, t := range types {
-		if i == lastIndex {
-			sb.WriteString(" or " + t.String())
-		} else if i != 0 {
-			sb.WriteString(", " + t.String())
+		if !list {
+			if i == lastIndex {
+				sb.WriteString(" or ")
+			} else if i != 0 {
+				sb.WriteString(", ")
+			}
 		}
+		if t == graph.NodeList {
+			sb.WriteString("a list of ")
+			list = true
+			continue
+		}
+		if !list {
+			sb.WriteString("a ")
+		}
+		switch t {
+		case graph.NodeBool:
+			sb.WriteString("boolean")
+		case graph.NodeNum:
+			sb.WriteString("number")
+		case graph.NodeLabel, graph.NodeStr:
+			sb.WriteString("string")
+		case graph.NodeObj:
+			sb.WriteString("object")
+		case graph.NodeVar:
+			sb.WriteString("variable")
+		}
+		if list {
+			sb.WriteString("s")
+			list = false
+		}
+
 	}
 	return sb.String()
 }
 
 func argErr(arg graph.Arg, ty string) error {
-	return fmt.Errorf("value for argument '%s' must be a %s", arg.Name, ty)
+	return fmt.Errorf("value for argument '%s' must be %s", arg.Name, ty)
 }
 
 func dbArgErr(name, ty, db string) error {

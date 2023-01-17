@@ -82,7 +82,9 @@ func Example_insertInline() {
 func Example_insertInlineWithValidation() {
 	gql := `mutation 
 		@constraint(variable: "email", format: "email", min: 1, max: 100)
-		@constraint(variable: "full_name", requiredIf: { id: 1007 } ) {
+		@constraint(variable: "full_name", requiredIf: { id: 1007 } ) 
+		@constraint(variable: "id", greaterThan:1006  ) 
+		@constraint(variable: "id", lessThanOrEqualsField:id  ) {
 		users(insert: { id: $id, email: $email, full_name: $full_name }) {
 			id
 			email
@@ -105,13 +107,18 @@ func Example_insertInlineWithValidation() {
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
+		for _, e := range res.Validation {
+			fmt.Println(e.Constraint, e.FieldName)
+		}
 	} else {
 		printJSON(res.Data)
 	}
-	// Unordered output:
-	// validation failed: $full_name: failed on 'required_if'
-	// validation failed: $email: failed on 'email'
+	// Ordered output:
 	// validation failed
+	// format email
+	// min email
+	// max email
+	// requiredIf full_name
 }
 
 func Example_insertInlineBulk() {
@@ -176,7 +183,6 @@ func Example_insertWithPresets() {
 	err := conf.AddRoleTable("user", "products", core.Insert{
 		Presets: map[string]string{"owner_id": "$user_id"},
 	})
-
 	if err != nil {
 		panic(err)
 	}
@@ -523,7 +529,6 @@ func Example_insertWithCamelToSnakeCase() {
 	err := conf.AddRoleTable("user", "products", core.Insert{
 		Presets: map[string]string{"ownerId": "$user_id"},
 	})
-
 	if err != nil {
 		panic(err)
 	}

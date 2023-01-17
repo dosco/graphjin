@@ -32,126 +32,118 @@ type dir struct {
 	repeat bool
 }
 
-var dirTypes []dir = []dir{{
-	name: "cacheControl",
-	desc: "Set the cache-control header to be passed back with the query result",
-	locs: []string{LOC_QUERY, LOC_MUTATION, LOC_SUBSCRIPTION},
-	args: []dirArg{{
-		name:  "maxAge",
-		desc:  "The maximum amount of time (in seconds) a resource is considered fresh",
-		atype: "Int",
-	}, {
-		name:  "scope",
-		desc:  "Set to 'public' when any cache can store the data and 'private' when only the browser cache should",
-		atype: "String",
-	}},
-}, {
-	name: "script",
-	desc: "Script to run with the query",
-	locs: []string{LOC_QUERY, LOC_MUTATION, LOC_SUBSCRIPTION},
-	args: []dirArg{{
-		name:  "name",
-		desc:  "Script filename",
-		atype: "String",
-	}},
-}, {
-	name:   "validate",
-	desc:   "Add a validation for input variables",
-	locs:   []string{LOC_QUERY, LOC_MUTATION, LOC_SUBSCRIPTION},
-	repeat: true,
-	args: []dirArg{{
-		name:  "variable",
-		desc:  "Name of variable to validate",
-		atype: "String",
-	}, {
-		name:  "error",
-		desc:  "Error message",
-		atype: "String",
-	}, {
-		name:  "format",
-		desc:  "Variable format: eg. email",
-		atype: "String",
-	}},
-}, {
-	name: "validation",
-	desc: "Validator script to run for the query",
-	locs: []string{LOC_QUERY, LOC_MUTATION, LOC_SUBSCRIPTION},
-	args: []dirArg{{
-		name:  "source",
-		desc:  "Validation script source",
-		atype: "String",
-	}, {
-		name:  "lang",
-		desc:  "Source language: eg. cue",
-		atype: "String",
-	}},
-}, {
-	name: "skip",
-	desc: "Skip field if defined condition is met",
-	locs: []string{LOC_FIELD},
-	args: []dirArg{{
-		name:  "ifRole",
-		desc:  "If current role matches",
-		atype: ("roles" + SUFFIX_ENUM),
-	}, {
-		name:  "ifVar",
-		desc:  "If a variable is true",
-		atype: "String",
-	}},
-}, {
-	name: "include",
-	desc: "Include field if defined condition is met",
-	locs: []string{LOC_FIELD},
-	args: []dirArg{{
-		name:  "ifRole",
-		desc:  "If current role matches",
-		atype: ("roles" + SUFFIX_ENUM),
-	}, {
-		name:  "ifVar",
-		desc:  "If a variable is true",
-		atype: "String",
-	}},
-}, {
-	name: "add",
-	desc: "Add field if defined condition is met, Similar to 'include' except field is removed when condition is not met",
-	locs: []string{LOC_FIELD},
-	args: []dirArg{{
-		name:  "ifRole",
-		desc:  "If current role matches",
-		atype: ("roles" + SUFFIX_ENUM),
-	}},
-}, {
-	name: "remove",
-	desc: "Include field if defined condition is met. Unlike 'skip' field is remove not set to null",
-	locs: []string{LOC_FIELD},
-	args: []dirArg{{
-		name:  "ifRole",
-		desc:  "If current role matches",
-		atype: ("roles" + SUFFIX_ENUM),
-	}},
-}, {
-	name: "schema",
-	desc: "Specify database schema to use (Postgres specific)",
-	locs: []string{LOC_FIELD},
-	args: []dirArg{{
-		name:  "name",
-		desc:  "Name of schema",
-		atype: "String",
-	}},
-}, {
-	name: "notRelated",
-	desc: "Treat this selector as if it were a top-level selector with no relation to its parent",
-	locs: []string{LOC_FIELD},
-}, {
-	name: "through",
-	desc: "use the specified table as a join-table to connect this field and it's parent",
-	locs: []string{LOC_FIELD},
-	args: []dirArg{{
-		name:  "table",
-		desc:  "Table name",
-		atype: "tables" + SUFFIX_ENUM,
-	}},
-},
+var dirTypes []dir = []dir{
+	{
+		name: "cacheControl",
+		desc: "Set the cache-control header to be passed back with the query result",
+		locs: []string{LOC_QUERY, LOC_MUTATION, LOC_SUBSCRIPTION},
+		args: []dirArg{{
+			name:  "maxAge",
+			desc:  "The maximum amount of time (in seconds) a resource is considered fresh",
+			atype: "Int",
+		}, {
+			name:  "scope",
+			desc:  "Set to 'public' when any cache can store the data and 'private' when only the browser cache should",
+			atype: "String",
+		}},
+	},
+	{
+		name: "script",
+		desc: "Script to run with the query",
+		locs: []string{LOC_QUERY, LOC_MUTATION, LOC_SUBSCRIPTION},
+		args: []dirArg{{
+			name:  "name",
+			desc:  "Script filename",
+			atype: "String",
+		}},
+	},
+	{
+		name: "validation",
+		desc: "Validator script to run for the query",
+		locs: []string{LOC_QUERY, LOC_MUTATION, LOC_SUBSCRIPTION},
+		args: []dirArg{{
+			name:  "source",
+			desc:  "Validation script source",
+			atype: "String",
+		}, {
+			name:  "lang",
+			desc:  "Source language: eg. cue",
+			atype: "String",
+		}},
+	},
+	{
+		name: "skip",
+		desc: "Skip field if defined condition is met",
+		locs: []string{LOC_FIELD},
+		args: []dirArg{{
+			name:  "ifRole",
+			desc:  "If current role matches",
+			atype: ("roles" + SUFFIX_ENUM),
+		}, {
+			name:  "ifVar",
+			desc:  "If a variable is true",
+			atype: "String",
+		}},
+	},
+	{
+		name: "include",
+		desc: "Include field if defined condition is met",
+		locs: []string{LOC_FIELD},
+		args: []dirArg{{
+			name:  "ifRole",
+			desc:  "If current role matches",
+			atype: ("roles" + SUFFIX_ENUM),
+		}, {
+			name:  "ifVar",
+			desc:  "If a variable is true",
+			atype: "String",
+		}},
+	},
+	{
+		name: "add",
+		desc: "Add field if defined condition is met, Similar to 'include' except field is removed when condition is not met",
+		locs: []string{LOC_FIELD},
+		args: []dirArg{{
+			name:  "ifRole",
+			desc:  "If current role matches",
+			atype: ("roles" + SUFFIX_ENUM),
+		}},
+	},
+	{
+		name: "remove",
+		desc: "Include field if defined condition is met. Unlike 'skip' field is remove not set to null",
+		locs: []string{LOC_FIELD},
+		args: []dirArg{{
+			name:  "ifRole",
+			desc:  "If current role matches",
+			atype: ("roles" + SUFFIX_ENUM),
+		}},
+	},
+	{
+		name: "schema",
+		desc: "Specify database schema to use (Postgres specific)",
+		locs: []string{LOC_FIELD},
+		args: []dirArg{{
+			name:  "name",
+			desc:  "Name of schema",
+			atype: "String",
+		}},
+	},
+	{
+		name: "notRelated",
+		desc: "Treat this selector as if it were a top-level selector with no relation to its parent",
+		locs: []string{LOC_FIELD},
+	},
+	{
+		name: "through",
+		desc: "use the specified table as a join-table to connect this field and it's parent",
+		locs: []string{LOC_FIELD},
+		args: []dirArg{{
+			name:  "table",
+			desc:  "Table name",
+			atype: "tables" + SUFFIX_ENUM,
+		}},
+	},
 }
 
 type exp struct {

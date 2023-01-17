@@ -73,7 +73,8 @@ func ParseSchema(b []byte) (ds Schema, err error) {
 }
 
 func parseTFieldsColumns(tableSchema, tableName string, fields []graph.TField) (
-	cols []sdata.DBColumn, err error) {
+	cols []sdata.DBColumn, err error,
+) {
 	var dir tfieldInfo
 	for i, f := range fields {
 		dir, err = parseTFieldDirectives(f.Type, f.Directives)
@@ -111,7 +112,8 @@ func parseTFieldsColumns(tableSchema, tableName string, fields []graph.TField) (
 }
 
 func parseTFieldsFunction(fn *sdata.DBFunction, fields []graph.TField) (
-	err error) {
+	err error,
+) {
 	for i, f := range fields {
 		var dir tfieldInfo
 		dir, err = parseTFieldDirectives(f.Type, f.Directives)
@@ -146,14 +148,14 @@ func parseTypeDirectives(dir []graph.Directive) (ti typeInfo, err error) {
 		var arg graph.Arg
 		switch d.Name {
 		case "schema":
-			arg, err = getArg(d.Args, "name", true, graph.NodeStr, graph.NodeLabel)
+			arg, err = getArg(d.Args, "name", graph.NodeStr, graph.NodeLabel)
 			if err != nil {
 				break
 			}
 			ti.Schema = arg.Val.Val
 
 		case "function":
-			arg, err = getArg(d.Args, "return_type", true, graph.NodeStr, graph.NodeLabel)
+			arg, err = getArg(d.Args, "return_type", graph.NodeStr, graph.NodeLabel)
 			if err != nil {
 				break
 			}
@@ -198,33 +200,39 @@ func parseTFieldDirectives(ft string, dir []graph.Directive) (tfi tfieldInfo, er
 			tfi.Blocked = true
 
 		case "type":
-			arg, err = getArg(d.Args, "args", true, graph.NodeStr, graph.NodeLabel)
+			arg, err = getArg(d.Args, "args", graph.NodeStr, graph.NodeLabel)
 			if err != nil {
 				break
 			}
 			tfi.TypeSuffix = arg.Val.Val
 
 		case "relation":
-			arg, err = getArg(d.Args, "type", true, graph.NodeStr, graph.NodeLabel)
+			arg, err = getArg(d.Args, "type", graph.NodeStr, graph.NodeLabel)
 			if err != nil {
 				break
 			}
 			tfi.RelatedType = arg.Val.Val
 
 			required := (ft != "Json")
-			arg, err = getArg(d.Args, "field", required, graph.NodeStr, graph.NodeLabel)
+			var ok bool
+
+			if required {
+				arg, err = getArg(d.Args, "field", graph.NodeStr, graph.NodeLabel)
+			} else {
+				arg, ok, err = getOptionalArg(d.Args, "field", graph.NodeStr, graph.NodeLabel)
+			}
 			if err != nil {
 				break
 			}
-			if argExists(arg) {
+			if required || ok {
 				tfi.RelatedField = arg.Val.Val
 			}
 
-			arg, err = getArg(d.Args, "schema", false, graph.NodeStr, graph.NodeLabel)
+			arg, ok, err = getOptionalArg(d.Args, "schema", graph.NodeStr, graph.NodeLabel)
 			if err != nil {
 				break
 			}
-			if argExists(arg) {
+			if ok {
 				tfi.RelatedSchema = arg.Val.Val
 			}
 
