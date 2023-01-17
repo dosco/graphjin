@@ -33,7 +33,7 @@ func parseGQL(fs plugin.FS, fname string, r io.Writer) (err error) {
 	for s.Scan() {
 		m := incRe.FindStringSubmatch(s.Text())
 		if len(m) == 0 {
-			r.Write(s.Bytes()) //nolint: errcheck
+			r.Write(s.Bytes()) //nolint:errcheck
 			continue
 		}
 

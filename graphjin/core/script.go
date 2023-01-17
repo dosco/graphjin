@@ -55,10 +55,10 @@ func (gj *graphjin) readScriptSource(name string) (string, error) {
 func (s *gstate) scriptCallReq(ctx context.Context,
 	qc *qcode.QCode,
 	vars map[string]interface{},
-	role string) ([]byte, error) {
-
+	role string,
+) ([]byte, error) {
 	defer func() {
-		// nolint: errcheck
+		// nolint:errcheck
 		recover()
 	}()
 
@@ -83,7 +83,7 @@ func (s *gstate) scriptCallReq(ctx context.Context,
 
 func (s *gstate) scriptCallResp(c context.Context) (err error) {
 	defer func() {
-		// nolint: errcheck
+		// nolint:errcheck
 		recover()
 	}()
 
@@ -100,7 +100,7 @@ func (s *gstate) scriptCallResp(c context.Context) (err error) {
 	}
 
 	defer func() {
-		// nolint: errcheck
+		// nolint:errcheck
 		recover()
 	}()
 
@@ -123,7 +123,8 @@ func (s *gstate) newGraphQLFunc(c context.Context) func(string, map[string]inter
 	return func(
 		query string,
 		vars map[string]interface{},
-		opt map[string]string) map[string]interface{} {
+		opt map[string]string,
+	) map[string]interface{} {
 		var err error
 
 		h, err := graph.FastParse(query)

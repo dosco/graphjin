@@ -320,7 +320,7 @@ func (m *Migrator) MigrateTo(targetVersion int32) (err error) {
 		if err != nil {
 			return err
 		}
-		defer tx.Rollback() //nolint: errcheck
+		defer tx.Rollback() //nolint:errcheck
 
 		// Fire on start callback
 		if m.OnStart != nil {

@@ -10,7 +10,7 @@ func (c *Compiler) RenderVar(w *bytes.Buffer, md *Metadata, vv string) {
 	cc.renderVar(vv)
 }
 
-// nolint: errcheck
+// nolint:errcheck
 func (c *compilerContext) renderVar(vv string) {
 	f, s := -1, 0
 
@@ -47,7 +47,7 @@ func (c *compilerContext) renderVar(vv string) {
 	}
 }
 
-// nolint: errcheck
+// nolint:errcheck
 func (c *compilerContext) renderParam(p Param) {
 	var id int
 	var ok bool

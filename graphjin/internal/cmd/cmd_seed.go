@@ -78,7 +78,7 @@ func compileAndRunJS(seed string, db *sql.DB) error {
 	}
 
 	console := vm.NewObject()
-	console.Set("log", logFunc) //nolint: errcheck
+	console.Set("log", logFunc) //nolint:errcheck
 	if err := vm.Set("console", console); err != nil {
 		return err
 	}
@@ -316,7 +316,7 @@ func importCSV(table, filename string, sep string, db *sql.DB) int64 {
 	if err != nil {
 		log.Fatalf("Error connecting to database: %s", err)
 	}
-	//nolint: errcheck
+	//nolint:errcheck
 	defer conn.Close()
 
 	var n int64
@@ -338,7 +338,7 @@ func importCSV(table, filename string, sep string, db *sql.DB) int64 {
 	return n
 }
 
-// nolint: errcheck
+// nolint:errcheck
 func logFunc(args ...interface{}) {
 	for _, arg := range args {
 		if _, ok := arg.(map[string]interface{}); ok {
@@ -373,7 +373,7 @@ func getRandValue(values []string) string {
 	return values[rand.Intn(len(values))]
 }
 
-// nolint: errcheck
+// nolint:errcheck
 func setFakeFuncs(f *goja.Object) {
 	gofakeit.Seed(0)
 
@@ -503,7 +503,7 @@ func setFakeFuncs(f *goja.Object) {
 	f.Set("hacker_phrase", gofakeit.HackerPhrase)
 	f.Set("hacker_verb", gofakeit.HackerVerb)
 
-	//Hipster
+	// Hipster
 	f.Set("hipster_word", gofakeit.HipsterWord)
 	f.Set("hipster_paragraph", gofakeit.HipsterParagraph)
 	f.Set("hipster_sentence", gofakeit.HipsterSentence)
@@ -538,7 +538,7 @@ func setFakeFuncs(f *goja.Object) {
 	f.Set("numerify", gofakeit.Numerify)
 }
 
-// nolint: errcheck
+// nolint:errcheck
 func setUtilFuncs(f *goja.Object) {
 	// Slugs
 	f.Set("make_slug", slug.Make)

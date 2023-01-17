@@ -11,8 +11,7 @@ import (
 	"syscall/js"
 )
 
-type MyDB struct {
-}
+type MyDB struct{}
 
 func (d *MyDB) Open(name string) (driver.Conn, error) {
 	return nil, errors.New("use openwithclient")
@@ -67,22 +66,14 @@ func (c *MyConn) Close() error {
 }
 
 func (c *MyConn) Begin() (driver.Tx, error) {
-	return &MyTx{client: c.client}, nil
+	return c, nil
 }
 
-type MyTx struct {
-	client js.Value
-}
-
-func (t *MyTx) Begin() (driver.Tx, error) {
-	return t, nil
-}
-
-func (t *MyTx) Commit() error {
+func (t *MyConn) Commit() error {
 	return nil
 }
 
-func (t *MyTx) Rollback() error {
+func (t *MyConn) Rollback() error {
 	return nil
 }
 

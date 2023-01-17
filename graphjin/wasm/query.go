@@ -13,8 +13,8 @@ import (
 
 func query(gj *core.GraphJin) js.Func {
 	return js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-		qa, err := newQueryArgs(args)
-		if !err.IsNull() {
+		var qa queryArgs
+		if err := processArgs(&qa, args, "query"); !err.IsUndefined() {
 			return err
 		}
 
@@ -35,10 +35,34 @@ func query(gj *core.GraphJin) js.Func {
 	})
 }
 
+// func queryWithTx(gj *core.GraphJin) js.Func {
+// 	return js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+// 		var qa queryArgs
+// 		if err := processArgsWithTx(&qa, args, "query"); !err.IsUndefined() {
+// 			return err
+// 		}
+
+// 		c := context.TODO()
+// 		if qa.userID != nil {
+// 			c = context.WithValue(c, core.UserIDKey, qa.userID)
+// 		}
+
+// 		fn := func(resolve, reject js.Value) {
+// 			res, err := gj.GraphQLTx(c, qa.conn, qa.query, qa.vars, nil)
+// 			if err != nil {
+// 				reject.Invoke(toJSError(err))
+// 			} else {
+// 				resolve.Invoke(fromResult(res))
+// 			}
+// 		}
+// 		return toAwait(fn)
+// 	})
+// }
+
 func queryByName(gj *core.GraphJin) js.Func {
 	return js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-		qa, err := newQueryByNameArgs(args)
-		if !err.IsNull() {
+		var qa queryArgs
+		if err := processArgs(&qa, args, "name"); !err.IsUndefined() {
 			return err
 		}
 
@@ -62,8 +86,8 @@ func queryByName(gj *core.GraphJin) js.Func {
 
 func subscribe(gj *core.GraphJin) js.Func {
 	return js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-		qa, err := newQueryArgs(args)
-		if !err.IsNull() {
+		var qa queryArgs
+		if err := processArgs(&qa, args, "query"); !err.IsUndefined() {
 			return err
 		}
 
@@ -86,8 +110,8 @@ func subscribe(gj *core.GraphJin) js.Func {
 
 func subscribeByName(gj *core.GraphJin) js.Func {
 	return js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-		qa, err := newQueryByNameArgs(args)
-		if !err.IsNull() {
+		var qa queryArgs
+		if err := processArgs(&qa, args, "name"); !err.IsUndefined() {
 			return err
 		}
 

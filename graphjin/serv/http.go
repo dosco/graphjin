@@ -32,9 +32,7 @@ const (
 	maxReadBytes = 100000 // 100Kb
 )
 
-var (
-	errUnauthorized = errors.New("not authorized")
-)
+var errUnauthorized = errors.New("not authorized")
 
 type extensions struct {
 	Persisted apqExt `json:"persistedQuery"`
@@ -75,7 +73,8 @@ func apiV1Handler(s1 *Service, ns *string, h http.Handler, ah auth.HandlerFunc) 
 
 	if len(s.conf.AllowedOrigins) != 0 {
 		allowedHeaders := []string{
-			"Origin", "Accept", "Content-Type", "X-Requested-With", "Authorization"}
+			"Origin", "Accept", "Content-Type", "X-Requested-With", "Authorization",
+		}
 
 		if len(s.conf.AllowedHeaders) != 0 {
 			allowedHeaders = s.conf.AllowedHeaders
@@ -283,7 +282,6 @@ func (s *service) responseHandler(ct context.Context,
 	res *core.Result,
 	err error,
 ) {
-
 	if s.hook != nil {
 		s.hook(res)
 	}
@@ -328,7 +326,8 @@ func (s *service) reqLog(res *core.Result, rc core.ReqConfig, resTimeMs int64, e
 			zap.String("op", res.OperationName()),
 			zap.String("name", res.QueryName()),
 			zap.String("role", res.Role()),
-			zap.Int64("responseTimeMs", resTimeMs)}
+			zap.Int64("responseTimeMs", resTimeMs),
+		}
 	}
 
 	if ns, ok := rc.GetNamespace(); ok {
@@ -368,7 +367,7 @@ func (r gqlReq) apqEnabled() bool {
 	return r.Ext.Persisted.Sha256Hash != ""
 }
 
-// nolint: errcheck
+// nolint:errcheck
 func renderErr(w http.ResponseWriter, err error) {
 	if err == errUnauthorized {
 		w.WriteHeader(http.StatusUnauthorized)

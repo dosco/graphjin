@@ -11,8 +11,7 @@ import (
 	"syscall/js"
 )
 
-type PgDB struct {
-}
+type PgDB struct{}
 
 func (d *PgDB) Open(name string) (driver.Conn, error) {
 	return nil, errors.New("use openwithclient")
@@ -67,22 +66,14 @@ func (c *PgConn) Close() error {
 }
 
 func (c *PgConn) Begin() (driver.Tx, error) {
-	return &PgTx{client: c.client}, nil
+	return c, nil
 }
 
-type PgTx struct {
-	client js.Value
-}
-
-func (t *PgTx) Begin() (driver.Tx, error) {
-	return t, nil
-}
-
-func (t *PgTx) Commit() error {
+func (c *PgConn) Commit() error {
 	return nil
 }
 
-func (t *PgTx) Rollback() error {
+func (c *PgConn) Rollback() error {
 	return nil
 }
 

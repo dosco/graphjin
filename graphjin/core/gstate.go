@@ -174,19 +174,21 @@ func (s *gstate) compileAndExecuteWrapper(c context.Context) (err error) {
 func (s *gstate) compileAndExecute(c context.Context) (err error) {
 	var conn *sql.Conn
 
-	// get a new database connection
-	c1, span1 := s.gj.spanStart(c, "Get Connection")
-	defer span1.End()
+	if s.tx() == nil {
+		// get a new database connection
+		c1, span1 := s.gj.spanStart(c, "Get Connection")
+		defer span1.End()
 
-	err = retryOperation(c1, func() (err1 error) {
-		conn, err1 = s.gj.db.Conn(c1)
-		return
-	})
-	if err != nil {
-		span1.Error(err)
-		return
+		err = retryOperation(c1, func() (err1 error) {
+			conn, err1 = s.gj.db.Conn(c1)
+			return
+		})
+		if err != nil {
+			span1.Error(err)
+			return
+		}
+		defer conn.Close()
 	}
-	defer conn.Close()
 
 	// set the local user id on the connection if needed
 	if s.gj.conf.SetUserID {
@@ -236,9 +238,13 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 	defer span.End()
 
 	err = retryOperation(c1, func() (err1 error) {
-		return conn.
-			QueryRowContext(c1, cs.st.sql, args.values...).
-			Scan(&s.data)
+		var row *sql.Row
+		if tx := s.tx(); tx != nil {
+			row = tx.QueryRowContext(c1, cs.st.sql, args.values...)
+		} else {
+			row = conn.QueryRowContext(c1, cs.st.sql, args.values...)
+		}
+		return row.Scan(&s.data)
 	})
 
 	if err != nil && err != sql.ErrNoRows {
@@ -289,12 +295,17 @@ func (s *gstate) setLocalUserID(c context.Context, conn *sql.Conn) (err error) {
 	if v := c.Value(UserIDKey); v == nil {
 		return nil
 	} else {
+		var q string
 		switch v1 := v.(type) {
 		case string:
-			_, err = conn.ExecContext(c, `SET SESSION "user.id" = '`+v1+`'`)
-
+			q = `SET SESSION "user.id" = '` + v1 + `'`
 		case int:
-			_, err = conn.ExecContext(c, `SET SESSION "user.id" = `+strconv.Itoa(v1))
+			q = `SET SESSION "user.id" = ` + strconv.Itoa(v1)
+		}
+		if tx := s.tx(); tx != nil {
+			_, err = tx.ExecContext(c, q)
+		} else {
+			_, err = conn.ExecContext(c, q)
 		}
 	}
 	return
@@ -344,23 +355,30 @@ func (s *gstate) validateAndUpdateVars(c context.Context) (err error) {
 	return
 }
 
-func (s *gstate) sql() string {
+func (s *gstate) sql() (sql string) {
 	if s.cs != nil && s.cs.st.qc != nil {
-		return s.cs.st.sql
+		sql = s.cs.st.sql
 	}
-	return ""
+	return
 }
 
-func (s *gstate) cacheHeader() string {
+func (s *gstate) cacheHeader() (ch string) {
 	if s.cs != nil && s.cs.st.qc != nil {
-		return s.cs.st.qc.Cache.Header
+		ch = s.cs.st.qc.Cache.Header
 	}
-	return ""
+	return
 }
 
-func (s *gstate) qcode() *qcode.QCode {
-	if s.cs != nil && s.cs.st.qc != nil {
-		return s.cs.st.qc
+func (s *gstate) qcode() (qc *qcode.QCode) {
+	if s.cs != nil {
+		qc = s.cs.st.qc
 	}
-	return nil
+	return
+}
+
+func (s *gstate) tx() (tx *sql.Tx) {
+	if s.r.rc != nil {
+		tx = s.r.rc.Tx
+	}
+	return
 }

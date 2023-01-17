@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// nolint: errcheck
+// nolint:errcheck
 func TestGraph1(t *testing.T) {
 	g := util.NewGraph()
 

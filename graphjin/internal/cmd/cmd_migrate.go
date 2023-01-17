@@ -73,7 +73,7 @@ func cmdDBMigrate(cmd *cobra.Command, args []string) {
 	doneSomething := false
 
 	if len(args) == 0 {
-		cmd.Help() //nolint: errcheck
+		cmd.Help() //nolint:errcheck
 		os.Exit(1)
 	}
 
@@ -155,10 +155,8 @@ func cmdDBMigrate(cmd *cobra.Command, args []string) {
 
 	if dest == "up" {
 		err = m.Migrate()
-
 	} else if dest == "down" {
 		err = m.MigrateTo(currentVersion - 1)
-
 	} else if len(dest) >= 3 && dest[0:2] == "-+" {
 		err = m.MigrateTo(currentVersion - mustParseDestination(dest[2:]))
 		if err == nil {
@@ -167,12 +165,10 @@ func cmdDBMigrate(cmd *cobra.Command, args []string) {
 
 	} else if len(dest) >= 2 && dest[0] == '-' {
 		err = m.MigrateTo(currentVersion - mustParseDestination(dest[1:]))
-
 	} else if len(dest) >= 2 && dest[0] == '+' {
 		err = m.MigrateTo(currentVersion + mustParseDestination(dest[1:]))
-
 	} else {
-		cmd.Help() //nolint: errcheck
+		cmd.Help() //nolint:errcheck
 		os.Exit(1)
 	}
 
@@ -244,7 +240,7 @@ func cmdMigrateStatus(cmd *cobra.Command, args []string) {
 
 func cmdMigrateNew(cmd *cobra.Command, args []string) {
 	if len(args) != 1 {
-		cmd.Help() //nolint: errcheck
+		cmd.Help() //nolint:errcheck
 		os.Exit(1)
 	}
 
@@ -263,7 +259,7 @@ func cmdMigrateNew(cmd *cobra.Command, args []string) {
 
 	// Write new migration
 	mpath := filepath.Join(migrationsPath, mname)
-	mfile, err := os.OpenFile(mpath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	mfile, err := os.OpenFile(mpath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		log.Fatalf("Error creating migration file: %s", err)
 	}

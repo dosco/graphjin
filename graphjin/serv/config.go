@@ -14,9 +14,11 @@ import (
 	"github.com/spf13/viper"
 )
 
-type Core = core.Config
-type Auth = auth.Auth
-type JWTConfig = auth.JWTConfig
+type (
+	Core      = core.Config
+	Auth      = auth.Auth
+	JWTConfig = auth.JWTConfig
+)
 
 // Configuration for the GraphJin service
 type Config struct {
@@ -393,9 +395,9 @@ func newViperWithDefaults() *viper.Viper {
 
 	vi.SetDefault("env", "development")
 
-	vi.BindEnv("env", "GO_ENV") //nolint: errcheck
-	vi.BindEnv("host", "HOST")  //nolint: errcheck
-	vi.BindEnv("port", "PORT")  //nolint: errcheck
+	vi.BindEnv("env", "GO_ENV") //nolint:errcheck
+	vi.BindEnv("host", "HOST")  //nolint:errcheck
+	vi.BindEnv("port", "PORT")  //nolint:errcheck
 
 	vi.SetDefault("auth.rails.max_idle", 80)
 	vi.SetDefault("auth.rails.max_active", 12000)
