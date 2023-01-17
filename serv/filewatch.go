@@ -34,7 +34,7 @@ func startConfigWatcher(s1 *Service) error {
 	if watcher, err = fsnotify.NewWatcher(); err != nil {
 		return fmt.Errorf("cannot setup watcher: %w", err)
 	}
-	defer watcher.Close() // nolint: errcheck
+	defer watcher.Close() // nolint:errcheck
 
 	var dirs []string
 	for _, p := range paths {

@@ -16,20 +16,24 @@ import (
 
 func Example_insert() {
 	gql := `mutation {
-		users(insert: $data) {
+		users(insert: {
+			id: $id,
+			email: $email,
+			full_name: $fullName,
+			stripe_id: $stripeID,
+			category_counts: $categoryCounts
+		}) {
 			id
 			email
 		}
 	}`
 
 	vars := json.RawMessage(`{
-		"data": {
-			"id": 1001,
-			"email": "user1001@test.com",
-			"full_name": "User 1001",
-			"stripe_id": "payment_id_1001",
-			"category_counts": [{"category_id": 1, "count": 400},{"category_id": 2, "count": 600}]
-		}
+		"id": 1001,
+		"email": "user1001@test.com",
+		"fullName": "User 1001",
+		"stripeID": "payment_id_1001",
+		"categoryCounts": [{"category_id": 1, "count": 400},{"category_id": 2, "count": 600}]
 	}`)
 
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
@@ -48,19 +52,26 @@ func Example_insert() {
 	// Output: {"users":[{"email":"user1001@test.com","id":1001}]}
 }
 
-func Example_insertInline() {
+func Example_insertWithTransaction() {
 	gql := `mutation {
-		users(insert: { id: $id, email: $email, full_name: $full_name }) {
+		users(insert: {
+			id: $id,
+			email: $email,
+			full_name: $fullName,
+			stripe_id: $stripeID,
+			category_counts: $categoryCounts
+		}) {
 			id
 			email
-			full_name
 		}
 	}`
 
 	vars := json.RawMessage(`{
 		"id": 1007,
 		"email": "user1007@test.com",
-		"full_name": "User 1007"
+		"fullName": "User 1007",
+		"stripeID": "payment_id_1007",
+		"categoryCounts": [{"category_id": 1, "count": 400},{"category_id": 2, "count": 600}]
 	}`)
 
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
@@ -69,14 +80,24 @@ func Example_insertInline() {
 		panic(err)
 	}
 
-	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
-	res, err := gj.GraphQL(ctx, gql, vars, nil)
+	c := context.Background()
+	tx, err := db.BeginTx(c, nil)
+	if err != nil {
+		panic(err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	c = context.WithValue(c, core.UserIDKey, 3)
+	res, err := gj.GraphQLTx(c, tx, gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
-	} else {
-		printJSON(res.Data)
+		return
 	}
-	// Output: {"users":[{"email":"user1007@test.com","full_name":"User 1007","id":1007}]}
+	if err := tx.Commit(); err != nil {
+		panic(err)
+	}
+	printJSON(res.Data)
+	// Output: {"users":[{"email":"user1007@test.com","id":1007}]}
 }
 
 func Example_insertInlineWithValidation() {

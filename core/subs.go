@@ -25,9 +25,7 @@ const (
 	errSubs             = "subscription: %s: %s"
 )
 
-var (
-	minPollDuration = (200 * time.Millisecond)
-)
+var minPollDuration = (200 * time.Millisecond)
 
 type sub struct {
 	k  string
@@ -84,8 +82,8 @@ func (g *GraphJin) Subscribe(
 	c context.Context,
 	query string,
 	vars json.RawMessage,
-	rc *ReqConfig) (m *Member, err error) {
-
+	rc *ReqConfig,
+) (m *Member, err error) {
 	// get the name, query vars
 	h, err := graph.FastParse(query)
 	if err != nil {
@@ -119,8 +117,8 @@ func (g *GraphJin) SubscribeByName(
 	c context.Context,
 	name string,
 	vars json.RawMessage,
-	rc *ReqConfig) (m *Member, err error) {
-
+	rc *ReqConfig,
+) (m *Member, err error) {
 	gj := g.Load().(*graphjin)
 
 	item, err := gj.allowList.GetByName(name, gj.prod)
@@ -135,10 +133,15 @@ func (g *GraphJin) SubscribeByName(
 }
 
 func (gj *graphjin) subscribe(c context.Context, r graphqlReq) (
-	m *Member, err error) {
-
+	m *Member, err error,
+) {
 	if r.op != qcode.QTSubscription {
 		return nil, errors.New("subscription: not a subscription query")
+	}
+
+	// transactions not supported with subscriptions
+	if r.rc != nil && r.rc.Tx != nil {
+		return nil, errors.New("subscription: database transactions not supported")
 	}
 
 	if r.name == "" {
@@ -453,22 +456,19 @@ func (gj *graphjin) subFirstQuery(sub *sub, m *Member, params json.RawMessage) (
 
 	if sub.js != nil {
 		js = sub.js
-
 	} else {
-		err := retryOperation(c, func() (err1 error) {
-			switch {
-			case params != nil:
-				err1 = gj.db.
-					QueryRowContext(c, sub.s.cs.st.sql, renderJSONArray([]json.RawMessage{params})).
-					Scan(&js)
-			default:
-				err1 = gj.db.
-					QueryRowContext(c, sub.s.cs.st.sql).
-					Scan(&js)
-			}
-			return
-		})
+		err := retryOperation(c, func() error {
+			var row *sql.Row
+			q := sub.s.cs.st.sql
 
+			if params != nil {
+				row = gj.db.QueryRowContext(c, q,
+					renderJSONArray([]json.RawMessage{params}))
+			} else {
+				row = gj.db.QueryRowContext(c, q)
+			}
+			return row.Scan(&js)
+		})
 		if err != nil {
 			return mm, fmt.Errorf(errSubs, "scan", err)
 		}
@@ -489,14 +489,14 @@ func (gj *graphjin) subNotifyMember(s *sub, mv mval, j int, js json.RawMessage) 
 		mv.mi[j].cindx,
 		mv.ids[j],
 		mv.res[j], js, true)
-
 	if err != nil {
 		gj.log.Print(err.Error())
 	}
 }
 
 func (gj *graphjin) subNotifyMemberEx(sub *sub,
-	dh [32]byte, cindx int, id xid.ID, rc chan *Result, js json.RawMessage, update bool) (mmsg, error) {
+	dh [32]byte, cindx int, id xid.ID, rc chan *Result, js json.RawMessage, update bool,
+) (mmsg, error) {
 	mm := mmsg{id: id}
 
 	mm.dh = sha256.Sum256(js)
@@ -515,7 +515,6 @@ func (gj *graphjin) subNotifyMemberEx(sub *sub,
 		decPrefix,
 		nonce[:],
 		gj.encKey)
-
 	if err != nil {
 		return mm, fmt.Errorf(errSubs, "cursor", err)
 	}

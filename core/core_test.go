@@ -15,7 +15,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// nolint: errcheck
+// nolint:errcheck
 func TestReadInConfigWithEnvVars(t *testing.T) {
 	devConfig := "secret_key: dev_secret_key\n"
 	prodConfig := "inherits: dev\nsecret_key: \"prod_secret_key\"\n"

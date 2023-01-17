@@ -263,6 +263,9 @@ type ReqConfig struct {
 
 	// Pass additional variables complex variables such as functions that return string values.
 	Vars map[string]interface{}
+
+	// Execute this query as part of a transaction
+	Tx *sql.Tx
 }
 
 // SetNamespace is used to set namespace requests within a single instance of GraphJin. For example queries with the same name
@@ -277,12 +280,14 @@ func (rc *ReqConfig) GetNamespace() (string, bool) {
 	return "", false
 }
 
-// GraphQL function is called on the GraphJin struct to convert the provided GraphQL query into an
-// SQL query and execute it on the database. In production mode prepared statements are directly used
-// and no query compiling takes places.
+// GraphQL function is our main function it takes a GraphQL query compiles it
+// to SQL and executes returning the resulting JSON.
+//
+// In production mode the compiling happens only once and from there on the compiled queries
+// are directly executed.
 //
 // In developer mode all named queries are saved into the queries folder and in production mode only
-// queries from these saved queries can be used
+// queries from these saved queries can be used.
 func (g *GraphJin) GraphQL(c context.Context,
 	query string,
 	vars json.RawMessage,
@@ -345,8 +350,24 @@ func (g *GraphJin) GraphQL(c context.Context,
 	return
 }
 
+// GraphQLTx is similiar to the GraphQL function except that it can be used
+// within a database transactions.
+func (g *GraphJin) GraphQLTx(c context.Context,
+	tx *sql.Tx,
+	query string,
+	vars json.RawMessage,
+	rc *ReqConfig,
+) (res *Result, err error) {
+	if rc == nil {
+		rc = &ReqConfig{Tx: tx}
+	} else {
+		rc.Tx = tx
+	}
+	return g.GraphQL(c, query, vars, rc)
+}
+
 // GraphQLByName is similar to the GraphQL function except that queries saved
-// in the queries folder can directly be used by their filename.
+// in the queries folder can directly be used just by their name (filename).
 func (g *GraphJin) GraphQLByName(c context.Context,
 	name string,
 	vars json.RawMessage,
@@ -368,6 +389,22 @@ func (g *GraphJin) GraphQLByName(c context.Context,
 
 	res, err = gj.queryWithResult(c1, r)
 	return
+}
+
+// GraphQLByNameTx is similiar to the GraphQLByName function except
+// that it can be used within a database transactions.
+func (g *GraphJin) GraphQLByNameTx(c context.Context,
+	tx *sql.Tx,
+	name string,
+	vars json.RawMessage,
+	rc *ReqConfig,
+) (res *Result, err error) {
+	if rc == nil {
+		rc = &ReqConfig{Tx: tx}
+	} else {
+		rc.Tx = tx
+	}
+	return g.GraphQLByName(c, name, vars, rc)
 }
 
 type graphqlReq struct {

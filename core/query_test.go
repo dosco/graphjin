@@ -42,6 +42,44 @@ func Example_query() {
 	// Output: {"products":[{"id":1,"owner":{"fullName":"User 1","id":1}},{"id":2,"owner":{"fullName":"User 2","id":2}},{"id":3,"owner":{"fullName":"User 3","id":3}}]}
 }
 
+func Example_queryInTransaction() {
+	gql := `
+	query {
+		products(limit: 3) {
+			id
+			owner {
+				id
+				fullName: full_name
+			}
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	c := context.Background()
+	tx, err := db.BeginTx(c, nil)
+	if err != nil {
+		panic(err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	res, err := gj.GraphQLTx(c, tx, gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		panic(err)
+	}
+	printJSON(res.Data)
+
+	// Output: {"products":[{"id":1,"owner":{"fullName":"User 1","id":1}},{"id":2,"owner":{"fullName":"User 2","id":2}},{"id":3,"owner":{"fullName":"User 3","id":3}}]}
+}
+
 func Example_queryWithUser() {
 	gql := `
 	query {
@@ -703,7 +741,6 @@ func Example_queryWithVariables() {
 		printJSON(res.Data)
 	}
 	// Output: {"products":{"id":70,"name":"Product 70"}}
-
 }
 
 func Example_queryWithMultipleTopLevelTables() {

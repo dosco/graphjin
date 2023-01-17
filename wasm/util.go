@@ -58,5 +58,4 @@ func toJSError(err error) js.Value {
 
 func debug(v js.Value) {
 	fmt.Println(js.Global().Get("JSON").Call("stringify", v))
-
 }

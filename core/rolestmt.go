@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// nolint: errcheck
+// nolint:errcheck
 func (gj *graphjin) prepareRoleStmt() error {
 	if !gj.abacEnabled {
 		return nil

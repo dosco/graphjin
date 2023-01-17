@@ -236,7 +236,8 @@ func (gj *graphjin) executeRoleQuery(c context.Context,
 		return
 	}
 
-	if conn == nil {
+	needsConn := ((rc != nil && rc.Tx == nil) && conn == nil)
+	if needsConn {
 		c1, span := gj.spanStart(c, "Get Connection")
 		defer span.End()
 
@@ -254,10 +255,14 @@ func (gj *graphjin) executeRoleQuery(c context.Context,
 	c1, span := gj.spanStart(c, "Execute Role Query")
 	defer span.End()
 
-	err = retryOperation(c1, func() (err1 error) {
-		return conn.
-			QueryRowContext(c1, gj.roleStmt, ar.values...).
-			Scan(&role)
+	err = retryOperation(c1, func() error {
+		var row *sql.Row
+		if rc != nil && rc.Tx != nil {
+			row = rc.Tx.QueryRowContext(c1, gj.roleStmt, ar.values...)
+		} else {
+			row = conn.QueryRowContext(c1, gj.roleStmt, ar.values...)
+		}
+		return row.Scan(&role)
 	})
 	if err != nil {
 		span.Error(err)

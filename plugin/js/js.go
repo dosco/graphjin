@@ -44,8 +44,8 @@ func (s *JScript) RequestFn(
 	vars map[string]interface{},
 	role string,
 	userID interface{},
-	gfn plugin.GraphQLFn) map[string]interface{} {
-
+	gfn plugin.GraphQLFn,
+) map[string]interface{} {
 	if gfn != nil {
 		if err := s.vm.Set("graphql", gfn); err != nil {
 			panic(err)
@@ -63,8 +63,8 @@ func (s *JScript) ReponseFn(
 	vars map[string]interface{},
 	role string,
 	userID interface{},
-	gfn plugin.GraphQLFn) map[string]interface{} {
-
+	gfn plugin.GraphQLFn,
+) map[string]interface{} {
 	if gfn != nil {
 		if err := s.vm.Set("graphql", gfn); err != nil {
 			panic(err)
@@ -78,7 +78,8 @@ func (s *JScript) ReponseFn(
 }
 
 func (js *JSEngine) CompileScript(name, source string) (
-	plugin.ScriptExecuter, error) {
+	plugin.ScriptExecuter, error,
+) {
 	var s JScript
 
 	if !js.ready {
@@ -259,11 +260,11 @@ func logFunc(args ...interface{}) {
 			if err != nil {
 				continue
 			}
-			os.Stdout.Write(j) //nolint: errcheck
+			os.Stdout.Write(j) //nolint:errcheck
 		} else {
-			io.WriteString(os.Stdout, fmt.Sprintf("%v", arg)) //nolint: errcheck
+			io.WriteString(os.Stdout, fmt.Sprintf("%v", arg)) //nolint:errcheck
 		}
 
-		io.WriteString(os.Stdout, "\n") //nolint: errcheck
+		io.WriteString(os.Stdout, "\n") //nolint:errcheck
 	}
 }

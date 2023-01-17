@@ -15,9 +15,7 @@ import (
 	"golang.org/x/text/language"
 )
 
-var (
-	dbURL string
-)
+var dbURL string
 
 func newCmd() *cobra.Command {
 	c := &cobra.Command{
@@ -33,7 +31,7 @@ func newCmd() *cobra.Command {
 
 func cmdNew(cmd *cobra.Command, args []string) {
 	if len(args) != 1 {
-		cmd.Help() //nolint: errcheck
+		cmd.Help() //nolint:errcheck
 		os.Exit(1)
 	}
 
@@ -98,7 +96,7 @@ func cmdNew(cmd *cobra.Command, args []string) {
 
 	ifNotExists(path.Join(appPath, "Dockerfile"), func(p string) error {
 		if v, err := tmpl.get("Dockerfile"); err == nil {
-			return os.WriteFile(p, v, 0600)
+			return os.WriteFile(p, v, 0o600)
 		} else {
 			return err
 		}
@@ -107,7 +105,7 @@ func cmdNew(cmd *cobra.Command, args []string) {
 	if dbURL == "" {
 		ifNotExists(path.Join(appPath, "docker-compose.yml"), func(p string) error {
 			if v, err := tmpl.get("docker-compose.yml"); err == nil {
-				return os.WriteFile(p, v, 0600)
+				return os.WriteFile(p, v, 0o600)
 			} else {
 				return err
 			}
@@ -124,7 +122,7 @@ func cmdNew(cmd *cobra.Command, args []string) {
 
 	ifNotExists(path.Join(appConfigPath, "dev.yml"), func(p string) error {
 		if v, err := tmpl.get("dev.yml"); err == nil {
-			return os.WriteFile(p, v, 0600)
+			return os.WriteFile(p, v, 0o600)
 		} else {
 			return err
 		}
@@ -132,7 +130,7 @@ func cmdNew(cmd *cobra.Command, args []string) {
 
 	ifNotExists(path.Join(appConfigPath, "prod.yml"), func(p string) error {
 		if v, err := tmpl.get("prod.yml"); err == nil {
-			return os.WriteFile(p, v, 0600)
+			return os.WriteFile(p, v, 0o600)
 		} else {
 			return err
 		}
@@ -140,7 +138,7 @@ func cmdNew(cmd *cobra.Command, args []string) {
 
 	ifNotExists(path.Join(appConfigPath, "seed.js"), func(p string) error {
 		if v, err := tmpl.get("seed.js"); err == nil {
-			return os.WriteFile(p, v, 0600)
+			return os.WriteFile(p, v, 0o600)
 		} else {
 			return err
 		}
@@ -156,7 +154,7 @@ func cmdNew(cmd *cobra.Command, args []string) {
 
 	ifNotExists(path.Join(appMigrationsPath, "0_init.sql"), func(p string) error {
 		if v, err := tmpl.get("0_init.sql"); err == nil {
-			return os.WriteFile(p, v, 0600)
+			return os.WriteFile(p, v, 0o600)
 		} else {
 			return err
 		}
@@ -180,7 +178,7 @@ func cmdNew(cmd *cobra.Command, args []string) {
 
 	ifNotExists(path.Join(appQueriesPath, "getUsers.gql"), func(p string) error {
 		if v, err := tmpl.get("getUsers.gql"); err == nil {
-			return os.WriteFile(p, v, 0600)
+			return os.WriteFile(p, v, 0o600)
 		} else {
 			return err
 		}
