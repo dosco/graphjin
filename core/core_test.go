@@ -211,6 +211,49 @@ func TestAllowListWithNamespace(t *testing.T) {
 	assert.ErrorIs(t, err, allow.ErrUnknownGraphQLQuery)
 }
 
+func TestDisableProdSecurity(t *testing.T) {
+	gql1 := `
+	query getProducts {
+		products(id: 2) {
+			id
+		}
+	}`
+
+	gql2 := `
+	query getProducts {
+		products(id: 3) {
+			id
+		}
+	}`
+
+	conf1 := newConfig(&core.Config{DBType: dbType, Production: true})
+	gj1, err := core.NewGraphJin(conf1, db)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = gj1.GraphQL(context.Background(), gql1, nil, nil)
+	assert.ErrorIs(t, err, allow.ErrUnknownGraphQLQuery)
+
+	conf2 := newConfig(&core.Config{
+		DBType:              dbType,
+		Production:          true,
+		DisableProdSecurity: true,
+	})
+	gj2, err := core.NewGraphJin(conf2, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj2.GraphQL(context.Background(), gql1, nil, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, `{"products": {"id": 2}}`, string(res.Data))
+
+	res, err = gj2.GraphQL(context.Background(), gql2, nil, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, `{"products": {"id": 3}}`, string(res.Data))
+}
+
 func TestEnableSchema(t *testing.T) {
 	gql := `
 	fragment Product on products {

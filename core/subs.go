@@ -95,10 +95,11 @@ func (g *GraphJin) Subscribe(
 	// create the request object
 	r := gj.newGraphqlReq(rc, "subscription", h.Name, nil, vars)
 
-	// if prod fetch query from allow list
-	if gj.prod {
+	// if production security enabled then get query and metadata
+	// from allow list
+	if gj.prodSec {
 		var item allow.Item
-		item, err = gj.allowList.GetByName(h.Name, gj.prod)
+		item, err = gj.allowList.GetByName(h.Name, true)
 		if err != nil {
 			return
 		}
