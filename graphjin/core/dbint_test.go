@@ -110,7 +110,6 @@ func TestMain(m *testing.M) {
 		con, err := gnomock.Start(
 			v.preset,
 			gnomock.WithLogWriter(os.Stdout))
-
 		if err != nil {
 			panic(err)
 		}

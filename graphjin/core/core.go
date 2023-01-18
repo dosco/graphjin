@@ -116,7 +116,7 @@ func (gj *graphjin) _initDiscover() (err error) {
 		}
 	}
 
-	if !gj.prod {
+	if !gj.prod && gj.conf.EnableSchema {
 		var buf bytes.Buffer
 		if err := writeSchema(gj.dbinfo, &buf); err != nil {
 			return err
