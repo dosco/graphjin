@@ -41,7 +41,6 @@ func (g *GraphJin) startDBWatcher(ps time.Duration) {
 			gj.db,
 			gj.dbtype,
 			gj.conf.Blocklist)
-
 		if err != nil {
 			gj.log.Println(err)
 			continue

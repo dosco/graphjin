@@ -98,8 +98,8 @@ type Config struct {
 	// Duration for polling the database to detect schema changes
 	DBSchemaPollDuration time.Duration `mapstructure:"db_schema_poll_duration" json:"db_schema_poll_duration" yaml:"db_schema_poll_duration" jsonschema:"title=Schema Change Detection Polling Duration,default=10s"`
 
-	// When set to the string "yes" it disables production security features like enforcing the allow list
-	DisableProdSecurity string `mapstructure:"disable_production_security" json:"disable_production_security" yaml:"disable_production_security" jsonschema:"title=Disable Production Security"`
+	// When set to true it disables production security features like enforcing the allow list
+	DisableProdSecurity bool `mapstructure:"disable_production_security" json:"disable_production_security" yaml:"disable_production_security" jsonschema:"title=Disable Production Security"`
 
 	// The default path to find all configuration files and scripts under
 	configPath string

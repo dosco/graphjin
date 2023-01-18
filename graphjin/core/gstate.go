@@ -48,10 +48,9 @@ func newGState(gj *graphjin, r graphqlReq, role string) (s gstate) {
 }
 
 func (s *gstate) compile() (err error) {
-	if !s.gj.prod {
+	if !s.gj.prodSec {
 		err = s.compileQueryForRole()
 		return
-
 	}
 
 	// In production mode and compile and cache the result

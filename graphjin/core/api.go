@@ -72,6 +72,7 @@ type graphjin struct {
 	scriptMap    map[string]plugin.ScriptCompiler
 	validatorMap map[string]plugin.ValidationCompiler
 	prod         bool
+	prodSec      bool
 	namespace    string
 	tracer       tracer
 	pf           []byte
@@ -141,11 +142,16 @@ func newGraphJin(conf *Config,
 		dbinfo:    dbinfo,
 		log:       _log.New(os.Stdout, "", 0),
 		prod:      conf.Production,
+		prodSec:   conf.Production,
 		tracer:    newTracer(),
 		pf:        []byte(fmt.Sprintf("gj/%x:", t.Unix())),
 		opts:      options,
 		scriptMap: make(map[string]plugin.ScriptCompiler),
 		fs:        fs,
+	}
+
+	if gj.conf.DisableProdSecurity {
+		gj.prodSec = false
 	}
 
 	// ordering of these initializer matter, do not re-order!
@@ -318,10 +324,11 @@ func (g *GraphJin) GraphQL(c context.Context,
 	}
 	r := gj.newGraphqlReq(rc, h.Operation, h.Name, queryBytes, vars)
 
-	// if production then get query and metadata from allow list
-	if gj.prod {
+	// if production security enabled then get query and metadata
+	// from allow list
+	if gj.prodSec {
 		var item allow.Item
-		item, err = gj.allowList.GetByName(h.Name, gj.prod)
+		item, err = gj.allowList.GetByName(h.Name, true)
 		if err != nil {
 			err = fmt.Errorf("%w: %s", err, h.Name)
 			return
@@ -465,7 +472,7 @@ func (gj *graphjin) query(c context.Context, r graphqlReq) (
 		name: r.name,
 	}
 
-	if !gj.prod && r.name == "IntrospectionQuery" {
+	if !gj.prodSec && r.name == "IntrospectionQuery" {
 		resp.res.Data, err = gj.getIntroResult()
 		return
 	}
