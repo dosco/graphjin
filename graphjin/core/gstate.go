@@ -20,6 +20,7 @@ type gstate struct {
 	gj    *graphjin
 	r     graphqlReq
 	cs    *cstate
+	vmap  map[string]json.RawMessage
 	data  []byte
 	dhash [sha256.Size]byte
 	role  string
@@ -40,10 +41,34 @@ type stmt struct {
 	sql  string
 }
 
-func newGState(gj *graphjin, r graphqlReq, role string) (s gstate) {
+func newGState(c context.Context, gj *graphjin, r graphqlReq) (s gstate, err error) {
 	s.gj = gj
 	s.r = r
-	s.role = role
+
+	if v, ok := c.Value(UserRoleKey).(string); ok {
+		s.role = v
+	} else {
+		switch c.Value(UserIDKey).(type) {
+		case string, int:
+			s.role = "user"
+		default:
+			s.role = "anon"
+		}
+	}
+
+	// convert variable json to a go map also decrypted encrypted values
+	if len(r.vars) != 0 {
+		var vars json.RawMessage
+		vars, err = decryptValues(r.vars, decPrefix, s.gj.encKey)
+		if err != nil {
+			return
+		}
+
+		s.vmap = make(map[string]json.RawMessage, 5)
+		if err = json.Unmarshal(vars, &s.vmap); err != nil {
+			return
+		}
+	}
 	return
 }
 
@@ -60,9 +85,7 @@ func (s *gstate) compile() (err error) {
 }
 
 func (s *gstate) compileQueryForRoleOnce() (err error) {
-	k := (s.r.ns + s.r.name + s.role)
-
-	val, loaded := s.gj.queries.LoadOrStore(k, &cstate{})
+	val, loaded := s.gj.queries.LoadOrStore(s.key(), &cstate{})
 	s.cs = val.(*cstate)
 	err = s.cs.err
 
@@ -86,11 +109,11 @@ func (s *gstate) compileQueryForRole() (err error) {
 		return
 	}
 
-	var vars json.RawMessage
-	if len(s.r.aschema) != 0 {
+	var vars map[string]json.RawMessage
+	if len(s.r.aschema) != 0 { // compile in prod (once)
 		vars = s.r.aschema
-	} else {
-		vars = s.r.vars
+	} else { // compiling in dev
+		vars = s.vmap
 	}
 
 	if st.qc, err = s.gj.qc.Compile(
@@ -202,23 +225,33 @@ func (s *gstate) compileAndExecute(c context.Context) (err error) {
 			return
 		}
 	}
-
-	// get the role from context or using the role_query
-	if v := c.Value(UserRoleKey); v != nil {
-		s.role = v.(string)
-	} else if s.gj.abacEnabled {
-		err = s.executeRoleQuery(c, conn)
-	}
-	if err != nil {
-		return
+	if s.role == "user" && s.gj.abacEnabled {
+		if err = s.executeRoleQuery(c, conn); err != nil {
+			return
+		}
 	}
 
 	// compile query for the role
 	if err = s.compile(); err != nil {
 		return
 	}
+
+	// set default variables
+	s.setDefaultVars()
+
+	// execute query
 	err = s.execute(c, conn)
 	return
+}
+
+func (s *gstate) setDefaultVars() {
+	if vlen := len(s.cs.st.qc.Vars); vlen != 0 && s.vmap == nil {
+		s.vmap = make(map[string]json.RawMessage, vlen)
+	}
+
+	for _, v := range s.cs.st.qc.Vars {
+		s.vmap[v.Name] = v.Val
+	}
 }
 
 func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
@@ -274,19 +307,19 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 }
 
 func (s *gstate) executeRoleQuery(c context.Context, conn *sql.Conn) (err error) {
-	s.role, err = s.gj.executeRoleQuery(c, conn, s.r.vars, s.r.rc)
+	s.role, err = s.gj.executeRoleQuery(c, conn, s.vmap, s.r.rc)
 	return
 }
 
 func (s *gstate) argList(c context.Context) (args args, err error) {
-	args, err = s.gj.argList(c, s.cs.st.md, s.r.vars, s.r.rc)
+	args, err = s.gj.argList(c, s.cs.st.md, s.vmap, s.r.rc, false)
 	return
 }
 
-func (s *gstate) argListVars(c context.Context, vars json.RawMessage) (
-	args args, err error,
-) {
-	args, err = s.gj.argList(c, s.cs.st.md, vars, s.r.rc)
+func (s *gstate) argListForSub(c context.Context,
+	vmap map[string]json.RawMessage,
+) (args args, err error) {
+	args, err = s.gj.argList(c, s.cs.st.md, vmap, s.r.rc, true)
 	return
 }
 
@@ -313,13 +346,19 @@ func (s *gstate) setLocalUserID(c context.Context, conn *sql.Conn) (err error) {
 var errValidationFailed = errors.New("validation failed")
 
 func (s *gstate) validateAndUpdateVars(c context.Context) (err error) {
-	var vars map[string]interface{}
-
 	cs := s.cs
 	qc := cs.st.qc
 
 	if qc == nil {
 		return nil
+	}
+
+	if len(qc.Consts) != 0 {
+		s.verrs = qc.ProcessConstraints(s.vmap)
+		if len(s.verrs) != 0 {
+			err = errValidationFailed
+			return
+		}
 	}
 
 	if qc.Validation.Exists {
@@ -329,27 +368,42 @@ func (s *gstate) validateAndUpdateVars(c context.Context) (err error) {
 		}
 	}
 
-	if len(qc.Consts) != 0 {
-		s.verrs = qc.ProcessConstraints()
-		if len(s.verrs) != 0 {
-			err = errValidationFailed
+	if qc.Script.Exists && qc.Script.HasReqFn() {
+		var v []byte
+		var vars map[string]interface{}
+		if vars, err = fromVMap(s.vmap); err != nil {
 			return
 		}
-	}
-
-	if qc.Script.Exists && qc.Script.HasReqFn() {
-		vars = make(map[string]interface{})
-		if len(s.r.vars) != 0 {
-			if err := json.Unmarshal(s.r.vars, &vars); err != nil {
-				return err
-			}
-		}
-
-		var v []byte
 		if v, err = s.scriptCallReq(c, qc, vars, s.role); err != nil {
 			return
 		}
-		s.r.vars = v
+		if s.vmap, err = toVMap(v); err != nil {
+			return
+		}
+	}
+	return
+}
+
+func fromVMap(vmap map[string]json.RawMessage) (
+	vars map[string]interface{}, err error,
+) {
+	vars = make(map[string]interface{}, len(vmap))
+	for k, v := range vmap {
+		var v1 interface{}
+		if err = json.Unmarshal(v, &v1); err != nil {
+			return
+		}
+		vars[k] = v1
+	}
+	return
+}
+
+func toVMap(vars json.RawMessage) (
+	vmap map[string]json.RawMessage, err error,
+) {
+	vmap = make(map[string]json.RawMessage)
+	if err = json.Unmarshal(vars, &vmap); err != nil {
+		return
 	}
 	return
 }
@@ -379,5 +433,10 @@ func (s *gstate) tx() (tx *sql.Tx) {
 	if s.r.rc != nil {
 		tx = s.r.rc.Tx
 	}
+	return
+}
+
+func (s *gstate) key() (key string) {
+	key = s.r.ns + s.r.name + s.role
 	return
 }

@@ -743,6 +743,31 @@ func Example_queryWithVariables() {
 	// Output: {"products":{"id":70,"name":"Product 70"}}
 }
 
+func Example_queryWithVariablesDefaultValue() {
+	gql := `query ($product_id = 70) {
+		products(id: $product_id, where: { price: { gt: $product_price } }) {
+			id
+			name
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	conf.Vars = map[string]string{"product_price": "50"}
+
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"products":{"id":70,"name":"Product 70"}}
+}
+
 func Example_queryWithMultipleTopLevelTables() {
 	gql := `query {
 		products(id: $id) {

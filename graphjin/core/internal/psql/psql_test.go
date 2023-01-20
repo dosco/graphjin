@@ -139,8 +139,8 @@ func TestMain(m *testing.M) {
 
 func compileGQLToPSQL(t *testing.T, gql string,
 	vars map[string]json.RawMessage,
-	role string) {
-
+	role string,
+) {
 	var v json.RawMessage
 	var err error
 
@@ -155,8 +155,8 @@ func compileGQLToPSQL(t *testing.T, gql string,
 
 func compileGQLToPSQLExpectErr(t *testing.T, gql string,
 	vars map[string]json.RawMessage,
-	role string) {
-
+	role string,
+) {
 	var v json.RawMessage
 	var err error
 
@@ -170,8 +170,13 @@ func compileGQLToPSQLExpectErr(t *testing.T, gql string,
 }
 
 func _compileGQLToPSQL(t *testing.T, gql string, vars json.RawMessage, role string) error {
+	v := make(map[string]json.RawMessage)
+	if err := json.Unmarshal(vars, &v); err != nil {
+		t.Error(err)
+	}
+
 	for i := 0; i < 1000; i++ {
-		qc, err := qcompile.Compile([]byte(gql), vars, role, "")
+		qc, err := qcompile.Compile([]byte(gql), v, role, "")
 		if err != nil {
 			return err
 		}

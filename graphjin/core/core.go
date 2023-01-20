@@ -220,7 +220,7 @@ func (gj *graphjin) initCompilers() (err error) {
 
 func (gj *graphjin) executeRoleQuery(c context.Context,
 	conn *sql.Conn,
-	vars json.RawMessage,
+	vmap map[string]json.RawMessage,
 	rc *ReqConfig,
 ) (role string, err error) {
 	if c.Value(UserIDKey) == nil {
@@ -228,11 +228,12 @@ func (gj *graphjin) executeRoleQuery(c context.Context,
 		return
 	}
 
-	var ar args
-	if ar, err = gj.argList(c,
+	ar, err := gj.argList(c,
 		gj.roleStmtMD,
-		vars,
-		rc); err != nil {
+		vmap,
+		rc,
+		false)
+	if err != nil {
 		return
 	}
 
@@ -374,7 +375,7 @@ func retryIfDBError(err error) bool {
 	return (err == driver.ErrBadConn)
 }
 
-func (gj *graphjin) saveToAllowList(qc *qcode.QCode, vars json.RawMessage, ns string) (err error) {
+func (gj *graphjin) saveToAllowList(qc *qcode.QCode, ns string) (err error) {
 	if gj.conf.DisableAllowList {
 		return nil
 	}
@@ -386,16 +387,13 @@ func (gj *graphjin) saveToAllowList(qc *qcode.QCode, vars json.RawMessage, ns st
 		Fragments: make([]allow.Fragment, len(qc.Fragments)),
 	}
 
-	if qc.ActionVar != "" {
+	if len(qc.ActionVal) != 0 {
 		var buf bytes.Buffer
-		if err = jsn.Clear(&buf, []byte(vars)); err != nil {
+		if err = jsn.Clear(&buf, qc.ActionVal); err != nil {
 			return
 		}
-
-		v := json.RawMessage(buf.Bytes())
-		item.Vars, err = json.MarshalIndent(v, "", "  ")
-		if err != nil {
-			return
+		item.ActionJSON = map[string]json.RawMessage{
+			qc.ActionVar: json.RawMessage(buf.Bytes()),
 		}
 	}
 

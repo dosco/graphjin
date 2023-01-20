@@ -1,6 +1,8 @@
 package qcode
 
 import (
+	"bytes"
+
 	"github.com/dosco/graphjin/v2/core/internal/graph"
 	"github.com/dosco/graphjin/v2/core/internal/util"
 )
@@ -35,5 +37,37 @@ func GetQTypeByName(t string) QType {
 		return QTMutation
 	default:
 		return QTUnknown
+	}
+}
+
+func graphNodeToJSON(node *graph.Node, w *bytes.Buffer) {
+	switch node.Type {
+	case graph.NodeStr:
+		w.WriteString(`"` + node.Val + `"`)
+
+	case graph.NodeNum, graph.NodeBool:
+		w.WriteString(node.Val)
+
+	case graph.NodeObj:
+		w.WriteString(`{`)
+		for i, c := range node.Children {
+			if i == 0 {
+				w.WriteString(`"` + c.Name + `": `)
+			} else {
+				w.WriteString(`,"` + c.Name + `": `)
+			}
+			graphNodeToJSON(c, w)
+		}
+		w.WriteString(`}`)
+
+	case graph.NodeList:
+		w.WriteString(`[`)
+		for i, c := range node.Children {
+			if i != 0 {
+				w.WriteString(`,`)
+			}
+			graphNodeToJSON(c, w)
+		}
+		w.WriteString(`]`)
 	}
 }

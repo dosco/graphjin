@@ -150,30 +150,21 @@ func (gj *graphjin) subscribe(c context.Context, r graphqlReq) (
 		r.name = hex.EncodeToString(h[:])
 	}
 
-	var role string
-
-	if v, ok := c.Value(UserRoleKey).(string); ok {
-		role = v
-	} else {
-		switch c.Value(UserIDKey).(type) {
-		case string, int:
-			role = "user"
-		default:
-			role = "anon"
-		}
+	s, err := newGState(c, gj, r)
+	if err != nil {
+		return
 	}
 
-	if role == "user" && gj.abacEnabled {
-		role, err = gj.executeRoleQuery(c, nil, r.vars, r.rc)
-		if err != nil {
+	if s.role == "user" && gj.abacEnabled {
+		if err = s.executeRoleQuery(c, nil); err != nil {
 			return
 		}
 	}
 
-	k := (r.ns + r.name + role)
+	k := s.key()
 	v, _ := gj.subs.LoadOrStore(k, &sub{
 		k:    k,
-		s:    newGState(gj, r, role),
+		s:    s,
 		add:  make(chan *Member),
 		del:  make(chan *Member),
 		updt: make(chan mmsg, 10),
@@ -189,17 +180,11 @@ func (gj *graphjin) subscribe(c context.Context, r graphqlReq) (
 		return
 	}
 
-	args, err := sub.s.argListVars(c, r.vars)
+	// don't use the vmap in the sub gstate use the new
+	// one that was created this current subscription
+	args, err := sub.s.argListForSub(c, s.vmap)
 	if err != nil {
 		return nil, err
-	}
-
-	var params json.RawMessage
-
-	if len(args.values) != 0 {
-		if params, err = json.Marshal(args.values); err != nil {
-			return nil, err
-		}
 	}
 
 	m = &Member{
@@ -208,11 +193,11 @@ func (gj *graphjin) subscribe(c context.Context, r graphqlReq) (
 		Result: make(chan *Result, 10),
 		sub:    sub,
 		vl:     args.values,
-		params: params,
+		params: args.json,
 		cindx:  args.cindx,
 	}
 
-	m.mm, err = gj.subFirstQuery(sub, m, params)
+	m.mm, err = gj.subFirstQuery(sub, m)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +211,7 @@ func (gj *graphjin) initSub(c context.Context, sub *sub) (err error) {
 	}
 
 	if !gj.prod {
-		err = gj.saveToAllowList(sub.s.cs.st.qc, nil, sub.s.r.ns)
+		err = gj.saveToAllowList(sub.s.cs.st.qc, sub.s.r.ns)
 		if err != nil {
 			return
 		}
@@ -444,7 +429,7 @@ func (gj *graphjin) subCheckUpdates(sub *sub, mv mval, start int) {
 	}
 }
 
-func (gj *graphjin) subFirstQuery(sub *sub, m *Member, params json.RawMessage) (mmsg, error) {
+func (gj *graphjin) subFirstQuery(sub *sub, m *Member) (mmsg, error) {
 	c := context.Background()
 
 	// when params are not available we use a more optimized
@@ -462,9 +447,9 @@ func (gj *graphjin) subFirstQuery(sub *sub, m *Member, params json.RawMessage) (
 			var row *sql.Row
 			q := sub.s.cs.st.sql
 
-			if params != nil {
+			if m.params != nil {
 				row = gj.db.QueryRowContext(c, q,
-					renderJSONArray([]json.RawMessage{params}))
+					renderJSONArray([]json.RawMessage{m.params}))
 			} else {
 				row = gj.db.QueryRowContext(c, q)
 			}

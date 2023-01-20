@@ -1,6 +1,7 @@
 package qcode
 
 import (
+	"encoding/json"
 	"errors"
 
 	"github.com/dosco/graphjin/v2/core/internal/graph"
@@ -15,6 +16,8 @@ type constFn struct {
 	name string
 	fn   ValidFn
 }
+
+type Vars map[string]json.RawMessage
 
 type (
 	ValidFn    func(Vars, Constraint) bool
@@ -97,18 +100,18 @@ type ValidErr struct {
 	Constraint string `json:"constraint"`
 }
 
-func (qc *QCode) ProcessConstraints() (errs []ValidErr) {
+func (qc *QCode) ProcessConstraints(vmap map[string]json.RawMessage) (errs []ValidErr) {
 	for _, c := range qc.Consts {
-		if err := validate(qc, c); err != nil {
+		if err := validate(vmap, c); err != nil {
 			errs = append(errs, err...)
 		}
 	}
 	return
 }
 
-func validate(qc *QCode, c Constraint) (errs []ValidErr) {
+func validate(vmap map[string]json.RawMessage, c Constraint) (errs []ValidErr) {
 	for _, fn := range c.fns {
-		if ok := fn.fn(qc.Vars, c); !ok {
+		if ok := fn.fn(vmap, c); !ok {
 			err := ValidErr{
 				FieldName:  c.VarName,
 				Constraint: fn.name,
