@@ -48,8 +48,6 @@ import (
 	"github.com/dosco/graphjin/v2/serv/auth/provider"
 )
 
-var ErrNoAuthDefined = errors.New("no auth defined")
-
 type JWTConfig = provider.JWTConfig
 
 // Auth struct contains authentication related config values used by the GraphJin service
@@ -159,8 +157,9 @@ func NewAuthHandlerFunc(ac Auth) (HandlerFunc, error) {
 
 		// case "magiclink":
 		// 	h, err = MagicLinkHandler(ac, next)
+
 		case "", "none":
-			return nil, ErrNoAuthDefined
+			h, err = NoAuth()
 
 		default:
 			return nil, fmt.Errorf("auth: unknown auth type: %s", ac.Type)
@@ -173,13 +172,20 @@ func NewAuthHandlerFunc(ac Auth) (HandlerFunc, error) {
 	return h, err
 }
 
+func NoAuth() (HandlerFunc, error) {
+	return func(w http.ResponseWriter, r *http.Request) (context.Context, error) {
+		return r.Context(), nil
+	}, nil
+}
+
 // NewAuth returns a new auth handler. It will create a HandlerFunc based on the
 // provided config.
 //
 // Optionally an existing HandlerFunc can be provided. This is required to
 // support auth in WS subscriptions.
 func NewAuth(ac Auth, log *zap.Logger, opt Options, hFn ...HandlerFunc) (
-	func(next http.Handler) http.Handler, error) {
+	func(next http.Handler) http.Handler, error,
+) {
 	var err error
 	var h HandlerFunc
 	var wsAuthSupported bool

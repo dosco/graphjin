@@ -50,7 +50,7 @@ func routesHandler(s1 *Service, mux Mux, ns *string) (http.Handler, error) {
 	}
 
 	ah, err := auth.NewAuthHandlerFunc(s.conf.Auth)
-	if err != nil && err != auth.ErrNoAuthDefined {
+	if err != nil {
 		s.log.Fatalf("api: error initializing auth handler: %s", err)
 	}
 
