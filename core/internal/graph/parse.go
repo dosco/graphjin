@@ -9,9 +9,7 @@ import (
 	"unsafe"
 )
 
-var (
-	errEOT = errors.New("end of tokens")
-)
+var errEOT = errors.New("end of tokens")
 
 const (
 	maxFields = 1200
@@ -46,6 +44,7 @@ const (
 type Operation struct {
 	Type       ParserType
 	Name       string
+	VarDef     []VarDef
 	Args       []Arg
 	argsA      [10]Arg
 	Directives []Directive
@@ -73,6 +72,11 @@ type Field struct {
 	Directives []Directive
 	Children   []int32
 	childrenA  [5]int32
+}
+
+type VarDef struct {
+	Name string
+	Val  *Node
 }
 
 type Arg struct {
@@ -239,7 +243,6 @@ func (p *Parser) parseOp() (op Operation, err error) {
 
 	if p.peekVal(queryToken, mutationToken, subscriptionToken) {
 		err = p.parseOpTypeAndArgs(&op)
-
 	} else if !p.peek(itemObjOpen) {
 		err = p.tokErr(`query, mutation or subscription`)
 	}
@@ -293,8 +296,7 @@ func (p *Parser) parseOpTypeAndArgs(op *Operation) (err error) {
 	if p.peek(itemArgsOpen) {
 		p.ignore()
 
-		op.Args, err = p.parseOpParams(op.Args)
-		if err != nil {
+		if err = p.parseOpParams(op); err != nil {
 			return err
 		}
 	}
@@ -527,20 +529,52 @@ func (p *Parser) parseField(f *Field) error {
 	return nil
 }
 
-func (p *Parser) parseOpParams(args []Arg) ([]Arg, error) {
+func (p *Parser) parseOpParams(op *Operation) (err error) {
 	for {
-		if len(args) >= maxArgs {
-			return nil, fmt.Errorf("too many args (max %d)", maxArgs)
+		if len(op.VarDef) >= maxArgs {
+			err = fmt.Errorf("too many variable defintions (max %d)", maxArgs)
+			break
 		}
 
-		if p.peek(itemEOF, itemArgsClose) {
+		if p.peek(itemVariable) {
+			if err = p.parseVarDef(op); err != nil {
+				return
+			}
+		}
+
+		if p.peek(itemArgsClose) {
 			p.ignore()
 			break
 		}
-		p.next()
+	}
+	return
+}
+
+func (p *Parser) parseVarDef(op *Operation) (err error) {
+	name := p.val(p.next())
+
+	if !p.peek(itemEquals) {
+		return
+	}
+	p.ignore()
+
+	if !p.peek(itemName,
+		itemStringVal,
+		itemNumberVal,
+		itemBoolVal,
+		itemObjOpen,
+		itemListOpen) {
+		err = p.tokErr(`string, number, bool, object or list`)
+		return
 	}
 
-	return args, nil
+	val, err := p.parseValue()
+	if err != nil {
+		return
+	}
+
+	op.VarDef = append(op.VarDef, VarDef{Name: name, Val: val})
+	return
 }
 
 func (p *Parser) parseArgs(args []Arg) ([]Arg, error) {
@@ -558,7 +592,7 @@ func (p *Parser) parseArgs(args []Arg) ([]Arg, error) {
 			return nil, fmt.Errorf("too many args (max %d)", maxArgs)
 		}
 
-		if p.peek(itemEOF, itemArgsClose) {
+		if p.peek(itemArgsClose) {
 			p.ignore()
 			break
 		}
@@ -732,9 +766,6 @@ func (p *Parser) vall(v item) string {
 func (p *Parser) peek(types ...MType) bool {
 	n := p.pos + 1
 	l := len(types)
-	// if p.items[n]._type == itemEOF {
-	// 	return false
-	// }
 
 	if n >= len(p.items) {
 		return types[0] == itemEOF

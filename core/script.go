@@ -138,13 +138,12 @@ func (s *gstate) newGraphQLFunc(c context.Context) func(string, map[string]inter
 			[]byte(query),
 			nil)
 
-		if len(vars) != 0 {
-			if r.vars, err = json.Marshal(vars); err != nil {
-				panic(fmt.Errorf("variables: %s", err))
-			}
+		role := s.role
+		s, err := newGState(c, s.gj, r)
+		if err != nil {
+			panic(err)
 		}
-
-		s := newGState(s.gj, r, s.role)
+		s.role = role
 
 		if v, ok := opt["role"]; ok && v != "" {
 			s.role = v

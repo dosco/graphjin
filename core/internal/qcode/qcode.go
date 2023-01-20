@@ -2,6 +2,7 @@
 package qcode
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -60,9 +61,9 @@ type QCode struct {
 	SType      QType
 	Name       string
 	ActionVar  string
-	ActionArg  graph.Arg
+	ActionVal  json.RawMessage
+	Vars       []Var
 	Selects    []Select
-	Vars       Vars
 	Consts     []Constraint
 	Roots      []int32
 	rootsA     [5]int32
@@ -76,6 +77,8 @@ type QCode struct {
 	Typename   bool
 	Query      []byte
 	Fragments  []Fragment
+
+	actionArg graph.Arg
 }
 
 type Fragment struct {
@@ -240,7 +243,10 @@ type Cache struct {
 	Header string
 }
 
-type Vars map[string]json.RawMessage
+type Var struct {
+	Name string
+	Val  json.RawMessage
+}
 
 type ExpOp int8
 
@@ -342,7 +348,9 @@ func NewCompiler(s *sdata.DBSchema, c Config) (*Compiler, error) {
 }
 
 func (co *Compiler) Compile(
-	query []byte, vars json.RawMessage, role, namespace string,
+	query []byte,
+	vmap map[string]json.RawMessage,
+	role, namespace string,
 ) (qc *QCode, err error) {
 	var op graph.Operation
 	op, err = graph.Parse(query)
@@ -356,18 +364,18 @@ func (co *Compiler) Compile(
 		Schema:    co.s,
 		Query:     op.Query,
 		Fragments: make([]Fragment, len(op.Frags)),
-	}
-
-	if len(vars) != 0 {
-		qc.Vars = make(map[string]json.RawMessage)
-
-		if err := json.Unmarshal(vars, &qc.Vars); err != nil {
-			return nil, fmt.Errorf("variables: %w", err)
-		}
+		Vars:      make([]Var, len(op.VarDef)),
 	}
 
 	for i, f := range op.Frags {
 		qc.Fragments[i] = Fragment{Name: f.Name, Value: f.Value}
+	}
+
+	var buf bytes.Buffer
+	for i, v := range op.VarDef {
+		graphNodeToJSON(v.Val, &buf)
+		qc.Vars[i] = Var{Name: v.Name, Val: buf.Bytes()}
+		buf.Reset()
 	}
 
 	qc.Roots = qc.rootsA[:0]
@@ -378,10 +386,11 @@ func (co *Compiler) Compile(
 	}
 
 	if qc.Type == QTMutation {
-		if err = co.compileMutation(qc, role); err != nil {
+		if err = co.compileMutation(qc, vmap, role); err != nil {
 			return
 		}
 	}
+
 	return
 }
 
@@ -946,7 +955,7 @@ func (co *Compiler) setMutationType(qc *QCode, op *graph.Operation, role string)
 			return argErr(arg, "variable, an object or a list of objects")
 		}
 		qc.ActionVar = arg.Val.Val
-		qc.ActionArg = arg
+		qc.actionArg = arg
 		return nil
 	}
 

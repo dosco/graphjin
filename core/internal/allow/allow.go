@@ -22,12 +22,12 @@ const (
 )
 
 type Item struct {
-	Namespace string
-	Operation string
-	Name      string
-	Vars      json.RawMessage
-	Query     []byte
-	Fragments []Fragment
+	Namespace  string
+	Operation  string
+	Name       string
+	ActionJSON map[string]json.RawMessage
+	Query      []byte
+	Fragments  []Fragment
 }
 
 type Fragment struct {
@@ -143,7 +143,12 @@ func (al *List) get(queryPath, name, ext string, useCache bool) (item Item, err 
 	item.Operation = h.Operation
 	item.Name = queryName
 	item.Query = query
-	item.Vars = vars
+
+	if len(vars) != 0 {
+		if err = json.Unmarshal(vars, &item.ActionJSON); err != nil {
+			return
+		}
+	}
 
 	if useCache {
 		al.cache.Add(name, item)
@@ -203,9 +208,14 @@ func (al *List) saveItem(item Item) (err error) {
 		return
 	}
 
-	if len(item.Vars) != 0 {
+	if len(item.ActionJSON) != 0 {
+		var vars []byte
 		jf := filepath.Join(queryPath, (queryFile + ".json"))
-		err = al.fs.CreateFile(jf, bytes.TrimSpace(item.Vars))
+		vars, err = json.MarshalIndent(item.ActionJSON, "", "  ")
+		if err != nil {
+			return
+		}
+		err = al.fs.CreateFile(jf, vars)
 	}
 	return
 }

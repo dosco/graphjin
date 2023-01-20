@@ -10,9 +10,7 @@ import (
 	"github.com/dosco/graphjin/v2/core/internal/util"
 )
 
-var (
-	errUserIDReq = errors.New("$user_id required for this query")
-)
+var errUserIDReq = errors.New("$user_id required for this query")
 
 type MType uint8
 
@@ -91,8 +89,13 @@ type mState struct {
 	id int32
 }
 
-func (co *Compiler) compileMutation(qc *QCode, role string) error {
-	var err error
+func (co *Compiler) compileMutation(qc *QCode,
+	vmap map[string]json.RawMessage, role string,
+) (err error) {
+	if qc.ActionVar != "" {
+		qc.ActionVal = vmap[qc.ActionVar]
+	}
+
 	var whereReq bool
 
 	sel := &qc.Selects[0]
@@ -129,7 +132,7 @@ func (co *Compiler) compileMutation(qc *QCode, role string) error {
 		return nil
 	}
 
-	m.mData, err = parseMutationData(qc, qc.ActionArg.Val)
+	m.mData, err = parseMutationData(qc)
 	if err != nil {
 		return err
 	}
@@ -237,25 +240,24 @@ func parseDataValue(qc *QCode, actionVal *graph.Node, isJSON bool) (mData, error
 	return md, nil
 }
 
-func parseMutationData(qc *QCode, actionVal *graph.Node) (mData, error) {
+func parseMutationData(qc *QCode) (mData, error) {
 	var md mData
 	var err error
 
-	switch actionVal.Type {
+	av := qc.actionArg.Val
+	switch av.Type {
 	case graph.NodeVar:
-		val, ok := qc.Vars[actionVal.Val]
-		if !ok {
-			return md, fmt.Errorf("variable not found: %s", actionVal.Val)
-			// continue
+		if len(qc.ActionVal) == 0 {
+			return md, fmt.Errorf("variable not found: %s", av.Val)
 		}
-		md.Data, err = graph.ParseArgValue(string(val), true)
+		md.Data, err = graph.ParseArgValue(string(qc.ActionVal), true)
 		if err != nil {
 			return md, err
 		}
 		md.IsJSON = true
 
 	default:
-		md.Data = actionVal
+		md.Data = av
 	}
 	return md, nil
 }
@@ -391,7 +393,7 @@ func (co *Compiler) processNestedMutations(ms *mState, m *Mutate, data *graph.No
 				ParentID: m.ID,
 				Type:     m.Type,
 				Key:      k,
-				//Val:      v,
+				// Val:      v,
 				Path: append(m.Path, k),
 				Ti:   ti,
 				Rel:  rel,
@@ -534,7 +536,6 @@ func (co *Compiler) addTablesAndColumns(m *Mutate, items []Mutate, data *graph.N
 		// Render child foreign key columns if child-to-parent
 		// relationship is one-to-many
 		for _, v := range items {
-
 			if v.Rel.Type == sdata.RelOneToMany {
 				m.DependsOn[v.ID] = struct{}{}
 				m.RCols = append(m.RCols, MRColumn{

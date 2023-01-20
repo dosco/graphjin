@@ -81,13 +81,18 @@ func TestCompile3(t *testing.T) {
 	vars := json.RawMessage(`
 		{ "data": { "name": "my_name", "description": "my_desc"  } }`)
 
+	vars1 := make(map[string]json.RawMessage)
+	if err := json.Unmarshal(vars, &vars1); err != nil {
+		t.Error(err)
+	}
+
 	_, err = qc.Compile([]byte(`
 	mutation {
 		products(insert: $data) {
 			id
 			name
 		}
-	}`), vars, "user", "")
+	}`), vars1, "user", "")
 
 	if err != nil {
 		t.Fatal(err)
@@ -106,8 +111,13 @@ func TestCompile4(t *testing.T) {
 		"full_name": "Flo Barton"
 	}`)
 
+	vars1 := make(map[string]json.RawMessage)
+	if err := json.Unmarshal(vars, &vars1); err != nil {
+		t.Error(err)
+	}
+
 	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
-	_, err := qc.Compile([]byte(gql), vars, "user", "")
+	_, err := qc.Compile([]byte(gql), vars1, "user", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +176,6 @@ updateThread {
 	if err == nil {
 		t.Fatal(errors.New("expecting an error"))
 	}
-
 }
 
 func TestFragmentsCompile1(t *testing.T) {
@@ -192,7 +201,6 @@ func TestFragmentsCompile1(t *testing.T) {
 	`
 	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
 	_, err := qcompile.Compile([]byte(gql), nil, "user", "")
-
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +228,6 @@ func TestFragmentsCompile2(t *testing.T) {
 	}`
 	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
 	_, err := qcompile.Compile([]byte(gql), nil, "user", "")
-
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +257,6 @@ func TestFragmentsCompile3(t *testing.T) {
 	`
 	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
 	_, err := qcompile.Compile([]byte(gql), nil, "user", "")
-
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +313,6 @@ func BenchmarkQCompile(b *testing.B) {
 
 	for n := 0; n < b.N; n++ {
 		_, err := qcompile.Compile(gql, nil, "user", "")
-
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -323,7 +328,6 @@ func BenchmarkQCompileP(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			_, err := qcompile.Compile(gql, nil, "user", "")
-
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -338,7 +342,6 @@ func BenchmarkQCompileFragment(b *testing.B) {
 	b.ReportAllocs()
 	for n := 0; n < b.N; n++ {
 		_, err := qcompile.Compile(gqlWithFragments, nil, "user", "")
-
 		if err != nil {
 			b.Fatal(err)
 		}

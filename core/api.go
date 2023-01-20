@@ -350,7 +350,7 @@ func (g *GraphJin) GraphQL(c context.Context,
 
 	// if not production then save to allow list
 	if !gj.prod && r.name != "IntrospectionQuery" {
-		if err = gj.saveToAllowList(resp.qc, vars, resp.res.ns); err != nil {
+		if err = gj.saveToAllowList(resp.qc, resp.res.ns); err != nil {
 			return
 		}
 	}
@@ -420,7 +420,7 @@ type graphqlReq struct {
 	name    string
 	query   []byte
 	vars    json.RawMessage
-	aschema json.RawMessage
+	aschema map[string]json.RawMessage
 	rc      *ReqConfig
 }
 
@@ -455,7 +455,7 @@ func (r *graphqlReq) Set(item allow.Item) {
 	r.op = qcode.GetQTypeByName(item.Operation)
 	r.name = item.Name
 	r.query = item.Query
-	r.aschema = item.Vars
+	r.aschema = item.ActionJSON
 }
 
 func (gj *graphjin) queryWithResult(c context.Context, r graphqlReq) (res *Result, err error) {
@@ -487,20 +487,10 @@ func (gj *graphjin) query(c context.Context, r graphqlReq) (
 		return
 	}
 
-	var role string
-
-	if v, ok := c.Value(UserRoleKey).(string); ok {
-		role = v
-	} else {
-		switch c.Value(UserIDKey).(type) {
-		case string, int:
-			role = "user"
-		default:
-			role = "anon"
-		}
+	s, err := newGState(c, gj, r)
+	if err != nil {
+		return
 	}
-
-	s := newGState(gj, r, role)
 	err = s.compileAndExecuteWrapper(c)
 
 	resp.qc = s.qcode()

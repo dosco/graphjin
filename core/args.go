@@ -7,40 +7,26 @@ import (
 	"fmt"
 
 	"github.com/dosco/graphjin/v2/core/internal/psql"
-	"github.com/dosco/graphjin/v2/internal/jsn"
 )
 
 // argList function is used to create a list of arguments to pass
 // to a prepared statement.
 
 type args struct {
+	json   []byte
 	values []interface{}
 	cindx  int // index of cursor arg
 }
 
 func (gj *graphjin) argList(c context.Context,
 	md psql.Metadata,
-	vars []byte,
-	rc *ReqConfig) (args, error) {
-
-	ar := args{cindx: -1}
+	fields map[string]json.RawMessage,
+	rc *ReqConfig,
+	buildJSON bool,
+) (ar args, err error) {
+	ar = args{cindx: -1}
 	params := md.Params()
 	vl := make([]interface{}, len(params))
-
-	var fields map[string]json.RawMessage
-	var err error
-
-	vars, err = decryptValues(vars, decPrefix, gj.encKey)
-	if err != nil {
-		return ar, err
-	}
-
-	if len(vars) != 0 {
-		fields, _, err = jsn.Tree(vars)
-		if err != nil {
-			return ar, err
-		}
-	}
 
 	for i, p := range params {
 		switch p.Name {
@@ -111,13 +97,18 @@ func (gj *graphjin) argList(c context.Context,
 						vl[i] = fn()
 					}
 				}
-
 			} else {
 				return ar, argErr(p)
 			}
 		}
 	}
 	ar.values = vl
+
+	if buildJSON && len(vl) != 0 {
+		if ar.json, err = json.Marshal(vl); err != nil {
+			return
+		}
+	}
 	return ar, nil
 }
 
