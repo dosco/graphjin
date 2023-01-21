@@ -256,6 +256,9 @@ func (gj *graphjin) subController(sub *sub) {
 
 		case <-time.After(ps):
 			sub.fanOutJobs(gj)
+
+		case <-gj.done:
+			return
 		}
 	}
 }

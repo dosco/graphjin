@@ -55,5 +55,11 @@ func (g *GraphJin) startDBWatcher(ps time.Duration) {
 		if err := g.reload(latestDi); err != nil {
 			gj.log.Println(err)
 		}
+
+		select {
+		case <-g.done:
+			return
+		default:
+		}
 	}
 }
