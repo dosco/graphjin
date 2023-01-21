@@ -87,16 +87,14 @@ func (s *gstate) compile() (err error) {
 func (s *gstate) compileQueryForRoleOnce() (err error) {
 	val, loaded := s.gj.queries.LoadOrStore(s.key(), &cstate{})
 	s.cs = val.(*cstate)
-	err = s.cs.err
 
-	if loaded {
-		return
+	if !loaded {
+		s.cs.Do(func() {
+			s.cs.err = s.compileQueryForRole()
+		})
 	}
 
-	s.cs.Do(func() {
-		err = s.compileQueryForRole()
-		s.cs.err = err
-	})
+	err = s.cs.err
 	return
 }
 
@@ -125,7 +123,6 @@ func (s *gstate) compileQueryForRole() (err error) {
 	}
 
 	var w bytes.Buffer
-
 	if st.md, err = s.gj.pc.Compile(&w, st.qc); err != nil {
 		return
 	}
@@ -157,7 +154,6 @@ func (s *gstate) compileQueryForRole() (err error) {
 	if s.cs == nil {
 		s.cs = &cstate{st: st}
 	} else {
-		// s.cs.r = s.r
 		s.cs.st = st
 	}
 

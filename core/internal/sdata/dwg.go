@@ -66,7 +66,8 @@ func (s *DBSchema) IsAlias(name string) bool {
 func (s *DBSchema) addToGraph(
 	lti DBTable, lcol DBColumn,
 	rti DBTable, rcol DBColumn,
-	rt RelType) error {
+	rt RelType,
+) error {
 	var rt2 RelType
 	k1 := (lti.Schema + ":" + lti.Name)
 	k2 := (rti.Schema + ":" + rti.Name)
@@ -299,12 +300,15 @@ func (s *DBSchema) pickPath(from, to edgeInfo, through string) (res graphResult,
 	}
 	return res, ErrPathNotFound
 }
+
 func (s *DBSchema) pickEdges(path []int32, from, to edgeInfo) (edges []int32) {
 	pathLen := len(path)
 	for i := 1; i < pathLen; i++ {
 		fn := path[i-1]
 		tn := path[i]
 		lines := s.rg.GetEdges(fn, tn)
+
+		// s.PrintLines(lines)
 
 		switch {
 		case i == 1:
@@ -407,7 +411,6 @@ func (s *DBSchema) PrintEdgeInfo(e edgeInfo) {
 	// for _, id := range e.edgeIDs {
 	// 	e := s.ae[id]
 	// }
-
 }
 
 func (tp *TPath) String() string {

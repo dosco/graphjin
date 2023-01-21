@@ -65,8 +65,8 @@ type DBRel struct {
 
 func NewDBSchema(
 	info *DBInfo,
-	aliases map[string][]string) (*DBSchema, error) {
-
+	aliases map[string][]string,
+) (*DBSchema, error) {
 	schema := &DBSchema{
 		typ:    info.Type,
 		ver:    info.Version,

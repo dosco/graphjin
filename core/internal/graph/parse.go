@@ -125,11 +125,12 @@ func Parse(gql []byte) (op Operation, err error) {
 	var l lexer
 
 	if len(gql) == 0 {
-		return op, errors.New("empty query")
+		err = errors.New("empty query")
+		return
 	}
 
 	if l, err = lex(gql); err != nil {
-		return op, err
+		return
 	}
 
 	p := Parser{
@@ -167,7 +168,7 @@ func Parse(gql []byte) (op Operation, err error) {
 
 	p.reset(qs)
 	if op, err = p.parseOp(); err != nil {
-		return op, err
+		return
 	}
 
 	op.Frags = make([]Fragment, 0, len(p.frags))
@@ -536,15 +537,18 @@ func (p *Parser) parseOpParams(op *Operation) (err error) {
 			break
 		}
 
-		if p.peek(itemVariable) {
-			if err = p.parseVarDef(op); err != nil {
-				return
-			}
-		}
-
 		if p.peek(itemArgsClose) {
 			p.ignore()
 			break
+		}
+
+		if !p.peek(itemEOF, itemVariable) {
+			p.ignore()
+			continue
+		}
+
+		if err = p.parseVarDef(op); err != nil {
+			return
 		}
 	}
 	return
@@ -592,7 +596,7 @@ func (p *Parser) parseArgs(args []Arg) ([]Arg, error) {
 			return nil, fmt.Errorf("too many args (max %d)", maxArgs)
 		}
 
-		if p.peek(itemArgsClose) {
+		if p.peek(itemEOF, itemArgsClose) {
 			p.ignore()
 			break
 		}
@@ -646,7 +650,7 @@ func (p *Parser) parseList() (*Node, error) {
 
 	var ty ParserType
 	for {
-		if p.peek(itemListClose) {
+		if p.peek(itemEOF, itemListClose) {
 			p.ignore()
 			break
 		}
@@ -768,7 +772,7 @@ func (p *Parser) peek(types ...MType) bool {
 	l := len(types)
 
 	if n >= len(p.items) {
-		return types[0] == itemEOF
+		return false
 	}
 
 	if l == 1 {
