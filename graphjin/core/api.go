@@ -77,10 +77,12 @@ type graphjin struct {
 	tracer       tracer
 	pf           []byte
 	opts         []Option
+	done         chan bool
 }
 
 type GraphJin struct {
 	atomic.Value
+	done chan bool
 }
 
 type Option func(*graphjin) error
@@ -90,46 +92,40 @@ type Option func(*graphjin) error
 func NewGraphJin(conf *Config, db *sql.DB, options ...Option) (g *GraphJin, err error) {
 	bp, err := basePath(conf)
 	if err != nil {
-		return nil, err
+		return
 	}
 	fs := fs.NewOsFSWithBase(bp)
 
-	gj, err := newGraphJin(conf, db, nil, fs, options...)
-	if err != nil {
-		return nil, err
+	g = &GraphJin{done: make(chan bool)}
+	if err = g.newGraphJin(conf, db, nil, fs, options...); err != nil {
+		return
 	}
 
-	g = &GraphJin{}
-	g.Store(gj)
-
-	if err := g.initDBWatcher(); err != nil {
-		return nil, err
+	if err = g.initDBWatcher(); err != nil {
+		return
 	}
-	return g, nil
+	return
 }
 
 func NewGraphJinWithFS(conf *Config, db *sql.DB, fs plugin.FS, options ...Option) (g *GraphJin, err error) {
-	gj, err := newGraphJin(conf, db, nil, fs, options...)
-	if err != nil {
-		return nil, err
+	g = &GraphJin{done: make(chan bool)}
+	if err = g.newGraphJin(conf, db, nil, fs, options...); err != nil {
+		return
 	}
 
-	g = &GraphJin{}
-	g.Store(gj)
-
-	if err := g.initDBWatcher(); err != nil {
-		return nil, err
+	if err = g.initDBWatcher(); err != nil {
+		return
 	}
-	return g, nil
+	return
 }
 
-// newGraphJin helps with writing tests and benchmarks
-func newGraphJin(conf *Config,
+// it all starts here
+func (g *GraphJin) newGraphJin(conf *Config,
 	db *sql.DB,
 	dbinfo *sdata.DBInfo,
 	fs plugin.FS,
 	options ...Option,
-) (*graphjin, error) {
+) (err error) {
 	if conf == nil {
 		conf = &Config{Debug: true}
 	}
@@ -148,6 +144,7 @@ func newGraphJin(conf *Config,
 		opts:      options,
 		scriptMap: make(map[string]plugin.ScriptCompiler),
 		fs:        fs,
+		done:      g.done,
 	}
 
 	if gj.conf.DisableProdSecurity {
@@ -156,42 +153,42 @@ func newGraphJin(conf *Config,
 
 	// ordering of these initializer matter, do not re-order!
 
-	if err := gj.initCache(); err != nil {
-		return nil, err
+	if err = gj.initCache(); err != nil {
+		return
 	}
 
-	if err := gj.initConfig(); err != nil {
-		return nil, err
+	if err = gj.initConfig(); err != nil {
+		return
 	}
 
 	for _, op := range options {
-		if err := op(gj); err != nil {
-			return nil, err
+		if err = op(gj); err != nil {
+			return
 		}
 	}
 
-	if err := gj.initDiscover(); err != nil {
-		return nil, err
+	if err = gj.initDiscover(); err != nil {
+		return
 	}
 
-	if err := gj.initResolvers(); err != nil {
-		return nil, err
+	if err = gj.initResolvers(); err != nil {
+		return
 	}
 
-	if err := gj.initSchema(); err != nil {
-		return nil, err
+	if err = gj.initSchema(); err != nil {
+		return
 	}
 
-	if err := gj.initAllowList(); err != nil {
-		return nil, err
+	if err = gj.initAllowList(); err != nil {
+		return
 	}
 
-	if err := gj.initCompilers(); err != nil {
-		return nil, err
+	if err = gj.initCompilers(); err != nil {
+		return
 	}
 
-	if err := gj.prepareRoleStmt(); err != nil {
-		return nil, err
+	if err = gj.prepareRoleStmt(); err != nil {
+		return
 	}
 
 	if conf.SecretKey != "" {
@@ -200,7 +197,8 @@ func newGraphJin(conf *Config,
 		gj.encKeySet = true
 	}
 
-	return gj, nil
+	g.Store(gj)
+	return
 }
 
 func OptionSetNamespace(namespace string) Option {
@@ -516,13 +514,10 @@ func (g *GraphJin) Reload() error {
 	return g.reload(nil)
 }
 
-func (g *GraphJin) reload(di *sdata.DBInfo) error {
+func (g *GraphJin) reload(di *sdata.DBInfo) (err error) {
 	gj := g.Load().(*graphjin)
-	gjNew, err := newGraphJin(gj.conf, gj.db, di, gj.fs, gj.opts...)
-	if err == nil {
-		g.Store(gjNew)
-	}
-	return err
+	err = g.newGraphJin(gj.conf, gj.db, di, gj.fs, gj.opts...)
+	return
 }
 
 // IsProd return true for production mode or false for development mode
