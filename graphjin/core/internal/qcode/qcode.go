@@ -390,7 +390,6 @@ func (co *Compiler) Compile(
 			return
 		}
 	}
-
 	return
 }
 
