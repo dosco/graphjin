@@ -35,7 +35,13 @@ To use a nested selector to a table thats related to the current table though an
 
 ### Fetch from various related tables
 
+GraphJin builds a weighted graph of all your database relationships and can figure out on its own how to write the most efficient query to fetch the data your need so use as many nested (related) tables in your query as you need GraphJin will figure out the rest.
+
+![AltText {priority}{768x432}](/images/tables-graph.png)
+
 > Fetch the lastest 10 products and their owners
+
+![AltText {priority}{768x432}](/images/related-tables-1.png)
 
 ```graphql
 query {
@@ -50,30 +56,42 @@ query {
 }
 ```
 
-> Fetch last 5 users. Use the common shared user fragment
+> Fetch a user and his purchases. GraphJin will auto join with user_purchase join-table. You don't have to do anything it will figure out the relationship on its own
+
+![AltText {priority}{768x432}](/images/related-tables-2.png)
 
 ```graphql
-#import "./fragments/User.gql"
-
-query getUser {
-  users(order_by: { created_at: desc }, limit: 5) {
-    ...User
+query {
+  user(id: 1) {
+    id
+    fullName
+    purchases: products {
+      id
+      name
+    }
   }
 }
 ```
 
-```graphql title="Fragment File ./fragments/User.gql"
-fragment User on users {
-  id
-  email
-  full_name
-  created_at
-  category_counts {
-    category {
+> You can add a many nested tables as you need. As long as they use foreign keys the overall query should be pretty fast. Tables joins are very fast and fine to use in almost all cases.
+
+```graphql
+query {
+  user(id: 1) {
+    id
+    fullName
+    purchases: products {
       id
       name
+      tags {
+        id
+        name
+      }
+      images {
+        id
+        link
+      }
     }
-    count
   }
 }
 ```
@@ -101,6 +119,38 @@ query getCurrentUserLatestProductsAndPurchases {
   }
   products_cursor
   purchases_cursor
+}
+```
+
+### Use Fragments
+
+Fragments are a great way to keep common fields together and use them in various queries. You can nest fragments inside fragments if you like just remember to use the `#import` statement at the top of the file.
+
+> Fetch last 5 users. Use the common shared user fragment
+
+```graphql
+#import "./fragments/User.gql"
+
+query getUser {
+  users(order_by: { created_at: desc }, limit: 5) {
+    ...User
+  }
+}
+```
+
+```graphql title="Fragment File ./fragments/User.gql"
+fragment User on users {
+  id
+  email
+  full_name
+  created_at
+  category_counts {
+    category {
+      id
+      name
+    }
+    count
+  }
 }
 ```
 
