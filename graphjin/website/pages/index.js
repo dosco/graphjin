@@ -28,13 +28,9 @@ export default function Home({ posts }) {
           Are you tired of spending endless hours coding and maintaining custom
           APIs for your applications?{" "}
           <mark>
-            Try GraphJin its a totally new approch to building complex database
-            backed apps 100X faster
-          </mark>
-          .
-        </p>
-
-        <p>
+            Try GraphJin, a totally new way to building complex database backed
+            apps 100X faster.
+          </mark>{" "}
           GraphJin is a magical library that instantly converts simple GraphQL
           into fast, secure and efficient SQL.
         </p>
