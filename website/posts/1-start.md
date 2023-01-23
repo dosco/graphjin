@@ -25,6 +25,12 @@ APIs are used by many apps to retrieve data from a database and return it in a J
 
 GraphJin simplifies this by allowing you to write a simple GraphQL query that defines the data you need. GraphJin will then automatically generate the necessary SQL code to retrieve and combine the data in a JSON result.
 
+GraphJin requires almost no configuration it does automatic disovery of your database schema and relationships and can instantly start converting (compiling) your GraphQL into an efficient SQL query.
+
+## Why GraphQL?
+
+Traditionally you might think of GraphQL as something you use in a client app but we think thats not a great idea for most folks as it adds unnecessary complexity and bloat on the client. Instead we treat GraphQL as a simple and easy language to define the data your need and its structure. And GraphJin does the work of writing the most efficient SQL to fetch that data for you.
+
 The following GraphQL query fetches a list of products, their owners, and other category information, including a cursor for retrieving more products.
 
 <mark>GraphJin will auto discover your database and learn all about it. It will figure out tables, relationships between tables `Foreign Keys`, functions, etc.</mark>
