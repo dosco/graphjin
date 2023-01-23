@@ -255,7 +255,7 @@ query getProductsWithSpecificOwners {
 
 > Need to return the top 10 latest products with the highest costing product on top.
 
-````graphql
+```graphql
 query getLatestProducts {
   products(order_by: [created_at: desc, price: desc]) {
     id
@@ -274,7 +274,7 @@ tables:
     order_by:
       most_expensive_products: ["price desc", "created_at desc"]
       least_expensive_products: ["price asc"]
-````
+```
 
 ```json title="Query Variables"
 { "order": "most_expensive_products" }
@@ -413,7 +413,7 @@ query getProduct {
 
 ### Skip or Include columns and tables
 
-> Fetch products by their id but allow us to control if we want the product id and owner returned as well. Also rename email column on the owner to `ownerEmail`
+> Fetch products by their id but allow us to control if we want the product id and owner returned as well.
 
 ```json title="Query Variables"
 {
@@ -426,10 +426,10 @@ query getProduct {
 ```graphql
 query getProductsWithSpecificOwners {
   products(id: $product_id) {
-    id @include(if: $include_id)
+    id @include(ifVar: $include_id)
     name
     description
-    owner @skip(if: $dont_include_owner) {
+    owner @skip(ifVar: $dont_include_owner) {
       id
       email
     }
@@ -437,15 +437,47 @@ query getProductsWithSpecificOwners {
 }
 ```
 
-> You can also use full filter expressions (eg. `{ id: { in: [1,2,3] } }` ) to define when to skip or include a column or a table. In this below example the directive `@skip(if: { keep_private: { eq: true } })` will hide users who's `keep_private` column is set to true.
+> Skip or include based on the current users role `@skip(ifRole: "user")` or `@include(ifRole: "anon")`. Skipping sets the field to `null` but if you want to entirely drop the field then for example say you want to pick one of two similiar fields by the users role then you can use the `@add` and `@remove` directives.
+
+```graphql title="Using @skip and @include"
+query getProductsWithSpecificOwners {
+  products(id: $product_id) {
+    id @skip(ifRole: "anon")
+    name
+    description
+    owner @include(ifRole: "user") {
+      id
+      email
+    }
+  }
+}
+```
+
+```graphql title="Using @add and @remove"
+query getProductsWithSpecificOwners {
+  currentUser: users(id: $user_id) @add(ifRole: "user") {
+    id
+    name
+    email
+  }
+  someUsers: users(limit: 3) @remove(ifRole: "user") {
+    id
+    name
+  }
+}
+```
+
+> You can also use full filter expressions (eg. `{ id: { in: [1,2,3] } }` ) to define when to skip or include a column or a table. For this you must use the `includeIf` or `skipIf` field arguments.
+
+> In this below example we hide users who's `keep_private` column is set to true.
 
 ```graphql
 query getProductsWithSpecificOwners {
   products(id: $product_id) {
-    id
+    id(includeIf: { user_id: { eq: $user_id } })
     name
     description
-    owner @skip(if: { keep_private: { eq: true } }) {
+    owner(skipIf: { keep_private: { eq: true } }) {
       id
       email
     }
@@ -459,18 +491,18 @@ By default we support two roles `user` for authenticated users (eg. `$user_id` i
 
 > I want to use the same query for both roles (user and anon) so I need to to hide and show tables and columns based on the users role.
 
-```graphql title="@include or @skip directive"
-@include(ifRole: "user", if: { id: { eq: 1 } })
+```graphql title="@add or @remove directive"
+@add(ifRole: "user")
+@remove(ifRole: "user")
 ```
 
 ```graphql
 query {
-  products(limit: 2, order_by: { id: asc })
-    @include(ifRole: "user", if: { id: { eq: 1 } }) {
+  products(limit: 2, order_by: { id: asc }) @add(ifRole: "user") {
     id
     name
   }
-  users(limit: 3, order_by: { id: asc }) @skip(ifRole: "user") {
+  users(limit: 3, order_by: { id: asc }) @remove(ifRole: "user") {
     id
   }
 }
