@@ -6,8 +6,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/dosco/graphjin/v2/core/internal/graph"
-	"github.com/dosco/graphjin/v2/core/internal/sdata"
+	"github.com/dosco/graphjin/core/v3/internal/graph"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
 
 type Schema struct {

@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"strconv"
 
-	"github.com/dosco/graphjin/v2/core/internal/graph"
-	"github.com/dosco/graphjin/v2/core/internal/qcode"
+	"github.com/dosco/graphjin/core/v3/internal/graph"
+	"github.com/dosco/graphjin/core/v3/internal/qcode"
 )
 
 const formatsEnum = "validateFormatEnum"

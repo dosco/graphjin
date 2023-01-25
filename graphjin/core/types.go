@@ -48,30 +48,6 @@ var dirTypes []dir = []dir{
 		}},
 	},
 	{
-		name: "script",
-		desc: "Script to run with the query",
-		locs: []string{LOC_QUERY, LOC_MUTATION, LOC_SUBSCRIPTION},
-		args: []dirArg{{
-			name:  "name",
-			desc:  "Script filename",
-			atype: "String",
-		}},
-	},
-	{
-		name: "validation",
-		desc: "Validator script to run for the query",
-		locs: []string{LOC_QUERY, LOC_MUTATION, LOC_SUBSCRIPTION},
-		args: []dirArg{{
-			name:  "source",
-			desc:  "Validation script source",
-			atype: "String",
-		}, {
-			name:  "lang",
-			desc:  "Source language: eg. cue",
-			atype: "String",
-		}},
-	},
-	{
 		name: "skip",
 		desc: "Skip field if defined condition is met",
 		locs: []string{LOC_FIELD},

@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/dosco/graphjin/v2/core/internal/qcode"
-	"github.com/dosco/graphjin/v2/internal/jsn"
+	"github.com/dosco/graphjin/core/v3/internal/jsn"
+	"github.com/dosco/graphjin/core/v3/internal/qcode"
 )
 
 func (s *gstate) execRemoteJoin(c context.Context) (err error) {
@@ -44,7 +44,8 @@ func (s *gstate) execRemoteJoin(c context.Context) (err error) {
 func (s *gstate) resolveRemotes(
 	ctx context.Context,
 	from []jsn.Field,
-	sfmap map[string]*qcode.Select) ([]jsn.Field, error) {
+	sfmap map[string]*qcode.Select,
+) ([]jsn.Field, error) {
 	selects := s.cs.st.qc.Selects
 
 	// replacement data for the marked insertion points
@@ -79,13 +80,13 @@ func (s *gstate) resolveRemotes(
 		go func(n int, id []byte, sel *qcode.Select) {
 			defer wg.Done()
 
-			//st := time.Now()
+			// st := time.Now()
 
 			ctx1, span := s.gj.spanStart(ctx, "Execute Remote Request")
 
 			b, err := r.Fn.Resolve(ctx1, ResolverReq{
-				ID: string(id), Sel: sel, Log: s.gj.log, ReqConfig: s.r.rc})
-
+				ID: string(id), Sel: sel, Log: s.gj.log, ReqConfig: s.r.rc,
+			})
 			if err != nil {
 				cerr = fmt.Errorf("%s: %s", sel.Table, err)
 				span.Error(cerr)

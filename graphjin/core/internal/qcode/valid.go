@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/dosco/graphjin/v2/core/internal/graph"
+	"github.com/dosco/graphjin/core/v3/internal/graph"
 )
 
 type Constraint struct {

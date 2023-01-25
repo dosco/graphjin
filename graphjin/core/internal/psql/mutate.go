@@ -6,17 +6,17 @@ import (
 	"bytes"
 	"strings"
 
-	"github.com/dosco/graphjin/v2/core/internal/graph"
-	"github.com/dosco/graphjin/v2/core/internal/qcode"
-	"github.com/dosco/graphjin/v2/core/internal/sdata"
-	"github.com/dosco/graphjin/v2/core/internal/util"
+	"github.com/dosco/graphjin/core/v3/internal/graph"
+	"github.com/dosco/graphjin/core/v3/internal/qcode"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
+	"github.com/dosco/graphjin/core/v3/internal/util"
 )
 
 func (co *Compiler) compileMutation(
 	w *bytes.Buffer,
 	qc *qcode.QCode,
-	md *Metadata) {
-
+	md *Metadata,
+) {
 	c := compilerContext{
 		md:       md,
 		w:        w,

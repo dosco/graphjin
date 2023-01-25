@@ -9,7 +9,7 @@
 		"database/sql"
 		"fmt"
 		"time"
-		"github.com/dosco/graphjin/v2/core"
+		"github.com/dosco/graphjin/core/v3"
 		_ "github.com/jackc/pgx/v5/stdlib"
 	)
 
@@ -44,11 +44,9 @@ import (
 	"strings"
 	"sync/atomic"
 
-	core "github.com/dosco/graphjin/v2/core"
-	"github.com/dosco/graphjin/v2/internal/util"
-	plugin "github.com/dosco/graphjin/v2/plugin"
-	"github.com/dosco/graphjin/v2/plugin/fs"
-	"github.com/dosco/graphjin/v2/plugin/js"
+	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/plugin/afero/v3"
+	"github.com/dosco/graphjin/serv/v3/internal/util"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -79,7 +77,7 @@ type service struct {
 	db           *sql.DB            // database connection pool
 	gj           *core.GraphJin
 	srv          *http.Server
-	fs           plugin.FS
+	fs           core.FS
 	asec         [32]byte
 	closeFn      func()
 	chash        string
@@ -139,7 +137,7 @@ func OptionSetNamespace(namespace string) Option {
 	}
 }
 
-func OptionSetFS(fs plugin.FS) Option {
+func OptionSetFS(fs core.FS) Option {
 	return func(s *service) error {
 		s.fs = fs
 		s.conf.Auth.JWT.SetFS(s.fs)
@@ -219,10 +217,7 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*service, 
 }
 
 func (s *service) normalStart() error {
-	opts := []core.Option{
-		core.OptionSetFS(s.fs),
-		core.OptionSetScriptCompiler([]string{".js"}, js.New()),
-	}
+	opts := []core.Option{core.OptionSetFS(s.fs)}
 	if s.namespace != nil {
 		opts = append(opts, core.OptionSetNamespace(*s.namespace))
 	}
@@ -263,8 +258,7 @@ func (s *service) hotStart() error {
 	}
 
 	opts := []core.Option{
-		core.OptionSetFS(fs.NewAferoFS(bfs.fs)),
-		core.OptionSetScriptCompiler([]string{".js"}, js.New()),
+		core.OptionSetFS(afero.NewFS(bfs.fs)),
 	}
 
 	if s.namespace != nil {

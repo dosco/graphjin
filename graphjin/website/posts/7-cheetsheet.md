@@ -161,7 +161,6 @@ query getProducts {
 | Directive     | Arguments                   | Description                                              |
 | ------------- | --------------------------- | -------------------------------------------------------- |
 | @cacheControl | maxAge: 500, scope: private | Sets the HTTP Cache-Control headers for APQ Get requests |
-| @script       | name: "test.js"             | Executes the script                                      |
 
 Special directives are different from standard directives since they can only be applied to the operation and not GraphQL selectors. See the below example for how the `@cacheControl` directive is used. Script is used in a similar manner see the next section for how to use it.
 

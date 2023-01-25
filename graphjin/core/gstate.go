@@ -11,9 +11,8 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/dosco/graphjin/v2/core/internal/psql"
-	"github.com/dosco/graphjin/v2/core/internal/qcode"
-	plugin "github.com/dosco/graphjin/v2/plugin"
+	"github.com/dosco/graphjin/core/v3/internal/psql"
+	"github.com/dosco/graphjin/core/v3/internal/qcode"
 )
 
 type gstate struct {
@@ -127,28 +126,6 @@ func (s *gstate) compileQueryForRole() (err error) {
 		return
 	}
 
-	if st.qc.Validation.Source != "" {
-		vc, ok := s.gj.validatorMap[st.qc.Validation.Type]
-		if !ok {
-			err = fmt.Errorf("no validator found for '%s'", st.qc.Validation.Type)
-			return
-		}
-
-		var ve plugin.ValidationExecuter
-		ve, err = vc.CompileValidation(st.qc.Validation.Source)
-		if err != nil {
-			return
-		}
-		st.qc.Validation.VE = ve
-		st.qc.Validation.Exists = true
-	}
-
-	if st.qc.Script.Name != "" {
-		if err = s.gj.loadScript(st.qc); err != nil {
-			return
-		}
-	}
-
 	st.sql = w.String()
 
 	if s.cs == nil {
@@ -181,11 +158,6 @@ func (s *gstate) compileAndExecuteWrapper(c context.Context) (err error) {
 		}
 	}
 
-	qc := cs.st.qc
-
-	if qc.Script.Exists && qc.Script.HasRespFn() {
-		err = s.scriptCallResp(c)
-	}
 	return
 }
 
@@ -281,10 +253,10 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 
 	if span.IsRecording() {
 		span.SetAttributesString(
-			stringAttr{"query.namespace", s.r.ns},
-			stringAttr{"query.operation", cs.st.qc.Type.String()},
-			stringAttr{"query.name", cs.st.qc.Name},
-			stringAttr{"query.role", cs.st.role})
+			StringAttr{"query.namespace", s.r.ns},
+			StringAttr{"query.operation", cs.st.qc.Type.String()},
+			StringAttr{"query.name", cs.st.qc.Name},
+			StringAttr{"query.role", cs.st.role})
 	}
 
 	if err == sql.ErrNoRows {
@@ -355,51 +327,6 @@ func (s *gstate) validateAndUpdateVars(c context.Context) (err error) {
 			err = errValidationFailed
 			return
 		}
-	}
-
-	if qc.Validation.Exists {
-		err = qc.Validation.VE.Validate(s.r.vars)
-		if err != nil {
-			return
-		}
-	}
-
-	if qc.Script.Exists && qc.Script.HasReqFn() {
-		var v []byte
-		var vars map[string]interface{}
-		if vars, err = fromVMap(s.vmap); err != nil {
-			return
-		}
-		if v, err = s.scriptCallReq(c, qc, vars, s.role); err != nil {
-			return
-		}
-		if s.vmap, err = toVMap(v); err != nil {
-			return
-		}
-	}
-	return
-}
-
-func fromVMap(vmap map[string]json.RawMessage) (
-	vars map[string]interface{}, err error,
-) {
-	vars = make(map[string]interface{}, len(vmap))
-	for k, v := range vmap {
-		var v1 interface{}
-		if err = json.Unmarshal(v, &v1); err != nil {
-			return
-		}
-		vars[k] = v1
-	}
-	return
-}
-
-func toVMap(vars json.RawMessage) (
-	vmap map[string]json.RawMessage, err error,
-) {
-	vmap = make(map[string]json.RawMessage)
-	if err = json.Unmarshal(vars, &vmap); err != nil {
-		return
 	}
 	return
 }

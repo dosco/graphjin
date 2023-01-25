@@ -6,7 +6,7 @@ package psql
 import (
 	"encoding/json"
 
-	"github.com/dosco/graphjin/v2/core/internal/qcode"
+	"github.com/dosco/graphjin/core/v3/internal/qcode"
 )
 
 var (

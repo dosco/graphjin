@@ -8,7 +8,7 @@ import (
 	"errors"
 	"syscall/js"
 
-	core "github.com/dosco/graphjin/v2/core"
+	"github.com/dosco/graphjin/core/v3"
 )
 
 func query(gj *core.GraphJin) js.Func {

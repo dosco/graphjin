@@ -3,7 +3,7 @@ package sdata_test
 import (
 	"testing"
 
-	"github.com/dosco/graphjin/v2/core/internal/sdata"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -30,5 +30,4 @@ func TestDWG(t *testing.T) {
 			`(public.customers) public.customers.user_id [id:0, type:bigint, array:false, notNull:false, fulltext:false] -> public.users.id ==> RelOneToOne ==> (public.users) public.users.id [id:0, type:bigint, array:false, notNull:true, fulltext:false]`,
 			paths[1].String())
 	}
-
 }

@@ -8,8 +8,7 @@ import (
 	"errors"
 	"syscall/js"
 
-	core "github.com/dosco/graphjin/v2/core"
-	plugin "github.com/dosco/graphjin/v2/plugin"
+	"github.com/dosco/graphjin/core/v3"
 )
 
 func main() {
@@ -98,12 +97,13 @@ func newGraphJinObj(gj *core.GraphJin) map[string]interface{} {
 	}
 }
 
-func newGraphJin(conf *core.Config, db *sql.DB, fs plugin.FS) (gj *core.GraphJin, err error) {
+func newGraphJin(conf *core.Config, db *sql.DB, fs core.FS) (gj *core.GraphJin, err error) {
 	return core.NewGraphJinWithFS(conf, db, fs)
 }
 
-func getConfig(conf string, confIsFile bool, fs plugin.FS) (
-	config *core.Config, err error) {
+func getConfig(conf string, confIsFile bool, fs core.FS) (
+	config *core.Config, err error,
+) {
 	if confIsFile {
 		if config, err = core.NewConfigWithFS(fs, conf); err != nil {
 			return nil, err

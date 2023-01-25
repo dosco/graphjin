@@ -4,8 +4,7 @@ import (
 	"io/fs"
 	"net/http"
 
-	"github.com/dosco/graphjin/v2/internal/common"
-	"github.com/dosco/graphjin/v2/serv/auth"
+	"github.com/dosco/graphjin/auth/v3"
 	"github.com/klauspost/compress/gzhttp"
 )
 
@@ -36,9 +35,9 @@ func routesHandler(s1 *Service, mux Mux, ns *string) (http.Handler, error) {
 
 	if s.conf.HotDeploy {
 		// Rollback Config API
-		mux.Handle(common.RollbackRoute, adminRollbackHandler(s1))
+		mux.Handle(RollbackRoute, adminRollbackHandler(s1))
 		// Deploy Config API
-		mux.Handle(common.DeployRoute, adminDeployHandler(s1))
+		mux.Handle(DeployRoute, adminDeployHandler(s1))
 	}
 
 	if s.conf.WebUI {

@@ -10,13 +10,11 @@ import (
 	"net/http"
 	"sync/atomic"
 	"time"
-
-	"github.com/dosco/graphjin/v2/internal/common"
 )
 
 func adminDeployHandler(s1 *Service) http.Handler {
 	h := func(w http.ResponseWriter, r *http.Request) {
-		var req common.DeployReq
+		var req DeployReq
 		s := s1.Load().(*service)
 
 		if !s.isAdminSecret(r) {

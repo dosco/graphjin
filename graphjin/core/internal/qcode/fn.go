@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dosco/graphjin/v2/core/internal/graph"
-	"github.com/dosco/graphjin/v2/core/internal/sdata"
+	"github.com/dosco/graphjin/core/v3/internal/graph"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
 
 func (co *Compiler) isFunction(sel *Select, name string, f graph.Field) (
-	fn Function, isFunc bool, err error) {
-
+	fn Function, isFunc bool, err error,
+) {
 	switch {
 	case name == "search_rank":
 		isFunc = true
@@ -60,8 +60,8 @@ type funcInfo struct {
 }
 
 func (co *Compiler) isFunctionEx(sel *Select, name string, f graph.Field) (
-	fi funcInfo, isFunc bool, err error) {
-
+	fi funcInfo, isFunc bool, err error,
+) {
 	for k, v := range co.s.GetFunctions() {
 		if k == name && len(f.Args) != 0 {
 			fi.Name = k

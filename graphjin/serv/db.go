@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dosco/graphjin/v2/plugin"
+	"github.com/dosco/graphjin/core/v3"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 	"go.uber.org/zap"
@@ -32,7 +32,7 @@ type dbConf struct {
 	connString string
 }
 
-func NewDB(conf *Config, openDB bool, log *zap.SugaredLogger, fs plugin.FS) (*sql.DB, error) {
+func NewDB(conf *Config, openDB bool, log *zap.SugaredLogger, fs core.FS) (*sql.DB, error) {
 	return newDB(conf, openDB, false, log, fs)
 }
 
@@ -40,8 +40,8 @@ func newDB(
 	conf *Config,
 	openDB, useTelemetry bool,
 	log *zap.SugaredLogger,
-	fs plugin.FS) (*sql.DB, error) {
-
+	fs core.FS,
+) (*sql.DB, error) {
 	var db *sql.DB
 	var dc *dbConf
 	var err error
@@ -85,7 +85,7 @@ func newDB(
 	}
 }
 
-func initPostgres(conf *Config, openDB, useTelemetry bool, fs plugin.FS) (*dbConf, error) {
+func initPostgres(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf, error) {
 	c := conf
 	config, _ := pgx.ParseConfig("")
 	config.Host = c.DB.Host
@@ -163,7 +163,7 @@ func initPostgres(conf *Config, openDB, useTelemetry bool, fs plugin.FS) (*dbCon
 	return &dbConf{"pgx", stdlib.RegisterConnConfig(config)}, nil
 }
 
-func initMysql(conf *Config, openDB, useTelemetry bool, fs plugin.FS) (*dbConf, error) {
+func initMysql(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf, error) {
 	c := conf
 	connString := fmt.Sprintf("%s:%s@tcp(%s:%d)/", c.DB.User, c.DB.Password, c.DB.Host, c.DB.Port)
 
@@ -174,9 +174,9 @@ func initMysql(conf *Config, openDB, useTelemetry bool, fs plugin.FS) (*dbConf, 
 	return &dbConf{"mysql", connString}, nil
 }
 
-func loadX509KeyPair(fs plugin.FS, certFile, keyFile string) (
-	cert tls.Certificate, err error) {
-
+func loadX509KeyPair(fs core.FS, certFile, keyFile string) (
+	cert tls.Certificate, err error,
+) {
 	certPEMBlock, err := fs.ReadFile(certFile)
 	if err != nil {
 		return cert, err

@@ -3,9 +3,9 @@ package qcode
 import (
 	"fmt"
 
-	"github.com/dosco/graphjin/v2/core/internal/graph"
-	"github.com/dosco/graphjin/v2/core/internal/sdata"
-	"github.com/dosco/graphjin/v2/core/internal/util"
+	"github.com/dosco/graphjin/core/v3/internal/graph"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
+	"github.com/dosco/graphjin/core/v3/internal/util"
 )
 
 func (co *Compiler) compileArgOrderByObj(sel *Select, parent *graph.Node, cm map[string]struct{}) error {
@@ -140,8 +140,8 @@ func (co *Compiler) setOrderByColName(ti sdata.DBTable, ob *OrderBy, node *graph
 func compileOrderBy(sel *Select,
 	keyVar, key string,
 	values [][2]string,
-	cm map[string]struct{}) error {
-
+	cm map[string]struct{},
+) error {
 	obList := make([]OrderBy, 0, len(values))
 
 	for _, v := range values {
