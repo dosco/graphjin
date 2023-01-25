@@ -2,18 +2,11 @@ module github.com/dosco/graphjin/serv/v3
 
 go 1.18
 
-replace github.com/dosco/graphjin/auth/v3 => ../auth
-
-replace github.com/dosco/graphjin/core/v3 => ../core
-
-replace github.com/dosco/graphjin/plugin/osfs/v3 => ../plugin/osfs
-
-replace github.com/dosco/graphjin/plugin/afero/v3 => ../plugin/afero
-
 require (
-	github.com/dosco/graphjin/auth/v3 v3.0.0-00010101000000-000000000000
-	github.com/dosco/graphjin/core/v3 v3.0.0-00010101000000-000000000000
-	github.com/dosco/graphjin/plugin/afero/v3 v3.0.0-00010101000000-000000000000
+	github.com/dosco/graphjin/auth/v3 v3.0.0-20230125090031-062b181a2f0f
+	github.com/dosco/graphjin/core/v3 v3.0.0-20230125090031-062b181a2f0f
+	github.com/dosco/graphjin/plugin/afero/v3 v3.0.0-20230125090031-062b181a2f0f
+	github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-20230125090031-062b181a2f0f
 	github.com/fsnotify/fsnotify v1.6.0
 	github.com/go-chi/chi v1.5.4
 	github.com/go-http-utils/headers v0.0.0-20181008091004-fed159eddc2a
@@ -66,7 +59,6 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.1.0 // indirect
 	github.com/dimchansky/utfbom v1.1.1 // indirect
-	github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-00010101000000-000000000000 // indirect
 	github.com/fatih/color v1.13.0 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

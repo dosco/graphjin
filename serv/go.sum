@@ -134,6 +134,14 @@ github.com/dimchansky/utfbom v1.1.1 h1:vV6w1AhK4VMnhBno/TPVCoK9U/LP0PkLCS9tbxHdi
 github.com/dimchansky/utfbom v1.1.1/go.mod h1:SxdoEBH5qIqFocHMyGOXVAybYJdr71b1Q/j0mACtrfE=
 github.com/docker/go-connections v0.4.0 h1:El9xVISelRB7BuFusrZozjnkIM5YnzCViNKohAFqRJQ=
 github.com/docker/go-units v0.4.0 h1:3uh0PgVws3nIA0Q+MwDC8yjEPf9zjRfZZWXZYDct3Tw=
+github.com/dosco/graphjin/auth/v3 v3.0.0-20230125090031-062b181a2f0f h1:h9LI04CR8AqvxknpHiHXtf3FOFh1nBDe3/cGgIe+viE=
+github.com/dosco/graphjin/auth/v3 v3.0.0-20230125090031-062b181a2f0f/go.mod h1:YIRq6CfDEYjop0MdZoe4c07FGW2ybdCvAUyVKDNNUrQ=
+github.com/dosco/graphjin/core/v3 v3.0.0-20230125090031-062b181a2f0f h1:WoVu+C7bCJZYifWdFpF2lnwKO7phczscCx7lP0IbCt8=
+github.com/dosco/graphjin/core/v3 v3.0.0-20230125090031-062b181a2f0f/go.mod h1:48LNBZjRk5M44l9rkDs+ZuclxNb0LVx4HEiKpNQhkZw=
+github.com/dosco/graphjin/plugin/afero/v3 v3.0.0-20230125090031-062b181a2f0f h1:fHDgBTvUtKMShr/ZaYibqEmcov0+Yr5JLu0kl9+Jr6g=
+github.com/dosco/graphjin/plugin/afero/v3 v3.0.0-20230125090031-062b181a2f0f/go.mod h1:LBuqdgz7Fi9/Wz0iAqSV2FeWu2k5mOBzt+WN/ZJ2pSs=
+github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-20230125090031-062b181a2f0f h1:EBPKpvgo5lb4FJudBcgLZsbZeDD0VcqXzFHC0QWpspY=
+github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-20230125090031-062b181a2f0f/go.mod h1:lg2ZkWi2PmA8d8t0vL7fgyFc1bKAkSIb6sWnOWmaseQ=
 github.com/envoyproxy/go-control-plane v0.9.0/go.mod h1:YTl/9mNaCwkRvm6d1a2C3ymFceY/DCBVvsKhRF0iEA4=
 github.com/envoyproxy/go-control-plane v0.9.1-0.20191026205805-5f8ba28d4473/go.mod h1:YTl/9mNaCwkRvm6d1a2C3ymFceY/DCBVvsKhRF0iEA4=
 github.com/envoyproxy/go-control-plane v0.9.4/go.mod h1:6rpuAdCZL397s3pYoYcLgu1mIlRU8Am5FuJP05cCM98=

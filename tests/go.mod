@@ -2,12 +2,9 @@ module github.com/dosco/graphjin/tests/v3
 
 go 1.18
 
-replace github.com/dosco/graphjin/core/v3 => ../core
-
-replace github.com/dosco/graphjin/plugin/osfs/v3 => ../plugin/osfs
-
 require (
-	github.com/dosco/graphjin/core/v3 v3.0.0-00010101000000-000000000000
+	github.com/dosco/graphjin/core/v3 v3.0.0-20230125090031-062b181a2f0f
+	github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-20230125090031-062b181a2f0f
 	github.com/orlangure/gnomock v0.24.0
 	github.com/stretchr/testify v1.8.1
 	golang.org/x/sync v0.1.0
@@ -23,7 +20,6 @@ require (
 	github.com/docker/docker v20.10.21+incompatible // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-units v0.4.0 // indirect
-	github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-00010101000000-000000000000 // indirect
 	github.com/go-sql-driver/mysql v1.7.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-sql/civil v0.0.0-20190719163853-cb61b32ac6fe // indirect
