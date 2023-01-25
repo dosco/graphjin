@@ -3,9 +3,8 @@ module github.com/dosco/graphjin/core/v3
 go 1.18
 
 require (
-	github.com/avast/retry-go v3.0.0+incompatible
+	github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-20230125094531-96f5ec6d2d29
 	github.com/hashicorp/golang-lru v0.5.4
-	github.com/rs/xid v1.4.0
 	golang.org/x/sync v0.1.0
 	golang.org/x/text v0.6.0
 	gopkg.in/yaml.v3 v3.0.1

@@ -1,6 +1,6 @@
 {
   "name": "graphjin",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "description": "GraphJin - Build APIs in 5 minutes with GraphQL",
   "type": "module",
   "main": "./wasm/js/graphjin.js",

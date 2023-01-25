@@ -4,12 +4,11 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
-	"github.com/avast/retry-go"
 	"github.com/dosco/graphjin/core/v3/internal/allow"
 	"github.com/dosco/graphjin/core/v3/internal/jsn"
 	"github.com/dosco/graphjin/core/v3/internal/psql"
@@ -371,10 +370,6 @@ func (s *gstate) debugLogStmt() {
 	}
 }
 
-func retryIfDBError(err error) bool {
-	return (err == driver.ErrBadConn)
-}
-
 func (gj *graphjin) saveToAllowList(qc *qcode.QCode, ns string) (err error) {
 	if gj.conf.DisableAllowList {
 		return nil
@@ -408,12 +403,14 @@ func (gj *graphjin) spanStart(c context.Context, name string) (context.Context, 
 	return gj.trace.Start(c, name)
 }
 
-func retryOperation(c context.Context, fn func() error) error {
-	return retry.Do(
-		fn,
-		retry.Context(c),
-		retry.RetryIf(retryIfDBError),
-		retry.Attempts(3),
-		retry.LastErrorOnly(true),
-	)
+func retryOperation(c context.Context, fn func() error) (err error) {
+	jitter := []int{50, 100, 200}
+	for i := 0; i < 3; i++ {
+		if err = fn(); err == nil {
+			return
+		}
+		d := time.Duration(jitter[i])
+		time.Sleep(d * time.Millisecond)
+	}
+	return
 }
