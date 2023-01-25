@@ -3,11 +3,11 @@ package allow
 import (
 	"testing"
 
-	"github.com/dosco/graphjin/v2/core/internal/graph"
+	"github.com/dosco/graphjin/core/v3/internal/graph"
 )
 
 func TestFuzzCrashers(t *testing.T) {
-	var crashers = []string{
+	crashers := []string{
 		"query",
 		"q",
 		"que",

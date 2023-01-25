@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dosco/graphjin/v2/core/internal/sdata"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
 
 type refunc func(v ResolverProps) (Resolver, error)
@@ -20,7 +20,7 @@ func (gj *graphjin) initResolvers() error {
 
 	rtmap := map[string]refunc{
 		"remote_api": func(v ResolverProps) (Resolver, error) {
-			return newRemoteAPI(v)
+			return newRemoteAPI(v, gj.trace.NewHTTPClient())
 		},
 	}
 

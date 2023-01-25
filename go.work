@@ -1,0 +1,14 @@
+go 1.18
+
+use (
+	./core
+	./tests
+	./serv
+	./auth
+	./cmd
+	./plugin/afero
+	./plugin/osfs
+	./plugin/otel
+	./plugin/wasm
+	
+)

@@ -10,12 +10,12 @@ import (
 	"fmt"
 
 	"github.com/avast/retry-go"
-	"github.com/dosco/graphjin/v2/core/internal/allow"
-	"github.com/dosco/graphjin/v2/core/internal/psql"
-	"github.com/dosco/graphjin/v2/core/internal/qcode"
-	"github.com/dosco/graphjin/v2/core/internal/sdata"
-	"github.com/dosco/graphjin/v2/core/internal/valid"
-	"github.com/dosco/graphjin/v2/internal/jsn"
+	"github.com/dosco/graphjin/core/v3/internal/allow"
+	"github.com/dosco/graphjin/core/v3/internal/jsn"
+	"github.com/dosco/graphjin/core/v3/internal/psql"
+	"github.com/dosco/graphjin/core/v3/internal/qcode"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
+	"github.com/dosco/graphjin/core/v3/internal/valid"
 )
 
 var (
@@ -270,7 +270,7 @@ func (gj *graphjin) executeRoleQuery(c context.Context,
 		return
 	}
 
-	span.SetAttributesString(stringAttr{"role", role})
+	span.SetAttributesString(StringAttr{"role", role})
 	return
 }
 
@@ -405,7 +405,7 @@ func (gj *graphjin) saveToAllowList(qc *qcode.QCode, ns string) (err error) {
 }
 
 func (gj *graphjin) spanStart(c context.Context, name string) (context.Context, span) {
-	return gj.tracer.Start(c, name)
+	return gj.trace.Start(c, name)
 }
 
 func retryOperation(c context.Context, fn func() error) error {

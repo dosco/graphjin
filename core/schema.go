@@ -8,7 +8,7 @@ import (
 	"text/tabwriter"
 	"text/template"
 
-	"github.com/dosco/graphjin/v2/core/internal/sdata"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
@@ -93,7 +93,6 @@ func writeSchema(s *sdata.DBInfo, out io.Writer) (err error) {
 		New("schema").
 		Funcs(fn).
 		Parse(schemaTemplate)
-
 	if err != nil {
 		return err
 	}

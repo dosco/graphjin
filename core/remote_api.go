@@ -8,13 +8,14 @@ import (
 	"net/http/httputil"
 	"strings"
 
-	"github.com/dosco/graphjin/v2/internal/jsn"
+	"github.com/dosco/graphjin/core/v3/internal/jsn"
 )
 
 // RemoteAPI struct defines a remote API endpoint
 type remoteAPI struct {
-	URL   string
-	Debug bool
+	httpClient *http.Client
+	URL        string
+	Debug      bool
 
 	PassHeaders []string
 	SetHeaders  []remoteHdrs
@@ -25,8 +26,10 @@ type remoteHdrs struct {
 	Value string
 }
 
-func newRemoteAPI(v map[string]interface{}) (*remoteAPI, error) {
-	var ra remoteAPI
+func newRemoteAPI(v map[string]interface{}, httpClient *http.Client) (*remoteAPI, error) {
+	ra := remoteAPI{
+		httpClient: httpClient,
+	}
 
 	if v, ok := v["url"].(string); ok {
 		ra.URL = v
@@ -48,7 +51,6 @@ func newRemoteAPI(v map[string]interface{}) (*remoteAPI, error) {
 }
 
 func (r *remoteAPI) Resolve(c context.Context, rr ResolverReq) ([]byte, error) {
-	client := newHTTPClient()
 	uri := strings.ReplaceAll(r.URL, "$id", rr.ID)
 
 	req, err := http.NewRequestWithContext(c, "GET", uri, nil)
@@ -68,7 +70,7 @@ func (r *remoteAPI) Resolve(c context.Context, rr ResolverReq) ([]byte, error) {
 	// 	req.Header.Set(v, hdr.Get(v))
 	// }
 
-	res, err := client.Do(req)
+	res, err := r.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to '%s': %v", uri, err)
 	}

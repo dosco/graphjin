@@ -1,8 +1,8 @@
 package psql
 
 import (
-	"github.com/dosco/graphjin/v2/core/internal/qcode"
-	"github.com/dosco/graphjin/v2/core/internal/sdata"
+	"github.com/dosco/graphjin/core/v3/internal/qcode"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
 
 func (c *compilerContext) renderColumns(sel *qcode.Select) {
@@ -67,7 +67,7 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 			c.w.WriteString(", ")
 		}
 
-		//TODO: log what and why this is being skipped
+		// TODO: log what and why this is being skipped
 		switch csel.SkipRender {
 		case qcode.SkipTypeUserNeeded, qcode.SkipTypeBlocked,
 			qcode.SkipTypeNulled:
@@ -202,7 +202,7 @@ func (c *compilerContext) renderJSONFields(sel *qcode.Select) {
 			c.w.WriteString(", ")
 		}
 
-		//TODO: log what and why this is being skipped
+		// TODO: log what and why this is being skipped
 		if csel.SkipRender != qcode.SkipTypeNone {
 			c.renderJSONNullField(csel.FieldName)
 

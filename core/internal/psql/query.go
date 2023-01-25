@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/dosco/graphjin/v2/core/internal/qcode"
-	"github.com/dosco/graphjin/v2/core/internal/sdata"
+	"github.com/dosco/graphjin/core/v3/internal/qcode"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
 
 const (
@@ -60,7 +60,8 @@ func NewCompiler(conf Config) *Compiler {
 		ct:              conf.DBType,
 		cv:              conf.DBVersion,
 		pf:              conf.SecPrefix,
-		enableCamelcase: conf.EnableCamelcase}
+		enableCamelcase: conf.EnableCamelcase,
+	}
 }
 
 func (co *Compiler) CompileEx(qc *qcode.QCode) (Metadata, []byte, error) {
@@ -103,8 +104,8 @@ func (co *Compiler) Compile(w *bytes.Buffer, qc *qcode.QCode) (Metadata, error) 
 func (co *Compiler) CompileQuery(
 	w *bytes.Buffer,
 	qc *qcode.QCode,
-	md *Metadata) {
-
+	md *Metadata,
+) {
 	if qc.Type == qcode.QTSubscription {
 		md.poll = true
 	}
@@ -420,7 +421,6 @@ func (c *compilerContext) renderLimit(sel *qcode.Select) {
 }
 
 func (c *compilerContext) renderDefaultLimit(sel *qcode.Select) {
-
 	switch {
 	case sel.Paging.NoLimit:
 		break

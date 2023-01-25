@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"regexp"
 
-	"github.com/dosco/graphjin/v2/core/internal/qcode"
+	"github.com/dosco/graphjin/core/v3/internal/qcode"
 )
 
 var Formats = map[string]string{

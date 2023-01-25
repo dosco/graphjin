@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/dosco/graphjin/v2/core/internal/graph"
-	"github.com/dosco/graphjin/v2/core/internal/sdata"
-	"github.com/dosco/graphjin/v2/core/internal/util"
+	"github.com/dosco/graphjin/core/v3/internal/graph"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
+	"github.com/dosco/graphjin/core/v3/internal/util"
 )
 
 type aexpst struct {
@@ -28,7 +28,8 @@ func (co *Compiler) compileBaseExpNode(edge string,
 	ti sdata.DBTable,
 	st *util.StackInf,
 	node *graph.Node,
-	savePath bool) (*Exp, bool, error) {
+	savePath bool,
+) (*Exp, bool, error) {
 	return co.compileExpNode(edge, ti, st, node, savePath, -1)
 }
 
@@ -38,8 +39,8 @@ func (co *Compiler) compileExpNode(
 	st *util.StackInf,
 	node *graph.Node,
 	savePath bool,
-	selID int32) (*Exp, bool, error) {
-
+	selID int32,
+) (*Exp, bool, error) {
 	if node == nil || len(node.Children) == 0 {
 		return nil, false, errors.New("invalid argument value")
 	}

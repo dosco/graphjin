@@ -8,10 +8,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dosco/graphjin/v2/core/internal/graph"
-	"github.com/dosco/graphjin/v2/core/internal/sdata"
-	"github.com/dosco/graphjin/v2/core/internal/util"
-	plugin "github.com/dosco/graphjin/v2/plugin"
+	"github.com/dosco/graphjin/core/v3/internal/graph"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
+	"github.com/dosco/graphjin/core/v3/internal/util"
 )
 
 const (
@@ -57,27 +56,24 @@ type ColKey struct {
 }
 
 type QCode struct {
-	Type       QType
-	SType      QType
-	Name       string
-	ActionVar  string
-	ActionVal  json.RawMessage
-	Vars       []Var
-	Selects    []Select
-	Consts     []Constraint
-	Roots      []int32
-	rootsA     [5]int32
-	Mutates    []Mutate
-	MUnions    map[string][]int32
-	Schema     *sdata.DBSchema
-	Remotes    int32
-	Cache      Cache
-	Script     Script
-	Validation Validation
-	Typename   bool
-	Query      []byte
-	Fragments  []Fragment
-
+	Type      QType
+	SType     QType
+	Name      string
+	ActionVar string
+	ActionVal json.RawMessage
+	Vars      []Var
+	Selects   []Select
+	Consts    []Constraint
+	Roots     []int32
+	rootsA    [5]int32
+	Mutates   []Mutate
+	MUnions   map[string][]int32
+	Schema    *sdata.DBSchema
+	Remotes   int32
+	Cache     Cache
+	Typename  bool
+	Query     []byte
+	Fragments []Fragment
 	actionArg graph.Arg
 }
 
@@ -111,17 +107,13 @@ type Select struct {
 }
 
 type Validation struct {
-	Exists bool
 	Source string
 	Type   string
-	VE     plugin.ValidationExecuter
 }
 
 type Script struct {
-	Exists bool
 	Source string
 	Name   string
-	SC     plugin.ScriptExecuter
 }
 
 type TableInfo struct {
@@ -1254,12 +1246,4 @@ func (sel *Select) GetInternalArg(name string) (Arg, bool) {
 		}
 	}
 	return arg, false
-}
-
-func (s *Script) HasReqFn() bool {
-	return s.SC.HasRequestFn()
-}
-
-func (s *Script) HasRespFn() bool {
-	return s.SC.HasResponseFn()
 }

@@ -11,7 +11,8 @@ before:
     - go mod download
     - make gen
 builds:
-  - env:
+  - main: ./cmd
+    env:
       - CGO_ENABLED=0
     goos:
       - linux

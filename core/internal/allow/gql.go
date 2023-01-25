@@ -6,25 +6,29 @@ import (
 	"io"
 	"path/filepath"
 	"regexp"
-
-	"github.com/dosco/graphjin/v2/plugin"
 )
 
 var incRe = regexp.MustCompile(`(?m)#import \"(.+)\"`)
 
-func readGQL(fs plugin.FS, fname string) ([]byte, error) {
+func readGQL(fs FS, fname string) (gql []byte, err error) {
 	var b bytes.Buffer
 
-	if err := parseGQL(fs, fname, &b); err == plugin.ErrNotFound {
-		return nil, ErrUnknownGraphQLQuery
-	} else if err != nil {
-		return nil, err
+	ok, err := fs.Exists(fname)
+	if !ok {
+		err = ErrUnknownGraphQLQuery
+	}
+	if err != nil {
+		return
 	}
 
-	return b.Bytes(), nil
+	if err = parseGQL(fs, fname, &b); err != nil {
+		return
+	}
+	gql = b.Bytes()
+	return
 }
 
-func parseGQL(fs plugin.FS, fname string, r io.Writer) (err error) {
+func parseGQL(fs FS, fname string, r io.Writer) (err error) {
 	b, err := fs.ReadFile(fname)
 	if err != nil {
 		return err

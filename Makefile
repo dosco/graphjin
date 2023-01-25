@@ -6,6 +6,8 @@ BUILD_VERSION ?= $(shell git describe --always --tags)
 GOPATH  ?= $(shell go env GOPATH)
 GOROOT ?= $(shell go env GOROOT)
 
+PACKAGES ?= core tests plugin/afero plugin/osfs plugin/otel plugin/wasm serv auth cmd
+
 ifndef GOPATH
 override GOPATH = $(HOME)/go
 endif
@@ -21,8 +23,8 @@ tidy:
 	@go mod tidy -go=1.16 && go mod tidy -go=1.17
 
 test:
-	@go test -v -timeout 50m -race ./... 
-	@cd core; go test -v -timeout 50m -race -db=mysql -tags=mysql ./... 
+	@cd tests; go test -v -timeout 30m -race ./...
+	@cd tests; go test -v -timeout 30m -race -db=mysql -tags=mysql ./... 
 
 test-norace:
 	@go test -v -timeout 50m ./... && go test -v -timeout 50m -db=mysql -tags=mysql ./... 
@@ -33,7 +35,6 @@ WEB_BUILD_DIR := ./serv/web/build/manifest.json
 # @echo Installing tools from tools.go
 # @cat tools.go | grep _ | awk -F'"' '{print $$2}' | xargs -tI % go install %
 download-tools:
-	@go install github.com/git-chglog/git-chglog/cmd/git-chglog@latest
 	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	@go install golang.org/x/perf/cmd/benchstat@latest
 	@go install golang.org/x/tools/cmd/stringer@latest
@@ -43,11 +44,8 @@ $(WEB_BUILD_DIR):
 	@echo "Run this command: yarn --cwd serv/web/ build"
 	@exit 1
 
-changelog: download-tools
-	@git-chglog $(ARGS)
-
 lint: download-tools
-	@golangci-lint run ./...
+	@golangci-lint run $(PACKAGES)
 
 BINARY := graphjin
 WASM := ./wasm/graphjin.wasm
@@ -74,8 +72,7 @@ gen: download-tools
 	@go generate ./...
 
 $(BINARY):
-	@CGO_ENABLED=0 go build $(BUILD_FLAGS) -o $(BINARY) main.go 
-
+	@CGO_ENABLED=0 go build $(BUILD_FLAGS) -o $(BINARY) cmd/*.go
 $(WASM):
 	@cp $(GOROOT)/misc/wasm/wasm_exec.js ./wasm/js/
 	@GOOS=js GOARCH=wasm go build -o ./wasm/graphjin.wasm ./wasm/*.go
@@ -85,7 +82,7 @@ clean:
 	@rm -f $(WASM)
 
 run: clean
-	@go run $(BUILD_FLAGS) main.go $(ARGS)
+	@go run $(BUILD_FLAGS) cmd/*.go $(ARGS)
 
 run-github-actions:
 	@act push --job linter
@@ -117,6 +114,5 @@ help:
 	@echo " make run           		- Run graphjin (eg. make run ARGS=\"help\")"
 	@echo " make test          		- Run all tests"
 	@echo " make run-github-actions	- Run Github Actions locally (brew install act)"
-	@echo " make changelog     		- Generate changelog (eg. make changelog ARGS=\"help\")"
 	@echo " make help          		- This help"
 	@echo

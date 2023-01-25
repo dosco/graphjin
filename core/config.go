@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dosco/graphjin/v2/core/internal/qcode"
-	plugin "github.com/dosco/graphjin/v2/plugin"
-	"github.com/dosco/graphjin/v2/plugin/fs"
+	"github.com/dosco/graphjin/core/v3/internal/qcode"
+	"github.com/dosco/graphjin/plugin/osfs/v3"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -386,7 +386,7 @@ type configInfo struct {
 }
 
 func NewConfig(configPath, configFile string) (c *Config, err error) {
-	fs := fs.NewOsFSWithBase(configPath)
+	fs := osfs.NewFSWithBase(configPath)
 	if c, err = NewConfigWithFS(fs, configFile); err != nil {
 		return
 	}
@@ -394,7 +394,7 @@ func NewConfig(configPath, configFile string) (c *Config, err error) {
 	return
 }
 
-func NewConfigWithFS(fs plugin.FS, configFile string) (*Config, error) {
+func NewConfigWithFS(fs FS, configFile string) (*Config, error) {
 	var c Config
 	var ci configInfo
 
@@ -421,7 +421,7 @@ func NewConfigWithFS(fs plugin.FS, configFile string) (*Config, error) {
 	return &c, nil
 }
 
-func readConfig(fs plugin.FS, configFile string, v interface{}) (err error) {
+func readConfig(fs FS, configFile string, v interface{}) (err error) {
 	format := filepath.Ext(configFile)
 
 	b, err := fs.ReadFile(configFile)

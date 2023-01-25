@@ -1,7 +1,7 @@
 package psql
 
 import (
-	"github.com/dosco/graphjin/v2/core/internal/qcode"
+	"github.com/dosco/graphjin/core/v3/internal/qcode"
 )
 
 func (c *compilerContext) renderRecursiveBaseSelect(sel *qcode.Select) {
@@ -107,7 +107,6 @@ func (c *compilerContext) renderRecursiveGroupBy(sel *qcode.Select) {
 		}
 		if f.Type != qcode.FieldTypeCol {
 			continue
-
 		}
 		if i == 0 {
 			c.w.WriteString(` GROUP BY `)

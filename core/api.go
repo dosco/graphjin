@@ -16,13 +16,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/dosco/graphjin/v2/core/internal/allow"
-	"github.com/dosco/graphjin/v2/core/internal/graph"
-	"github.com/dosco/graphjin/v2/core/internal/psql"
-	"github.com/dosco/graphjin/v2/core/internal/qcode"
-	"github.com/dosco/graphjin/v2/core/internal/sdata"
-	plugin "github.com/dosco/graphjin/v2/plugin"
-	"github.com/dosco/graphjin/v2/plugin/fs"
+	"github.com/dosco/graphjin/core/v3/internal/allow"
+	"github.com/dosco/graphjin/core/v3/internal/graph"
+	"github.com/dosco/graphjin/core/v3/internal/psql"
+	"github.com/dosco/graphjin/core/v3/internal/qcode"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
+	"github.com/dosco/graphjin/plugin/osfs/v3"
 )
 
 type contextkey int
@@ -49,35 +48,33 @@ const (
 // GraphJin struct is an instance of the GraphJin engine it holds all the required information like
 // datase schemas, relationships, etc that the GraphQL to SQL compiler would need to do it's job.
 type graphjin struct {
-	conf         *Config
-	db           *sql.DB
-	log          *_log.Logger
-	fs           plugin.FS
-	dbtype       string
-	dbinfo       *sdata.DBInfo
-	schema       *sdata.DBSchema
-	allowList    *allow.List
-	encKey       [32]byte
-	encKeySet    bool
-	cache        Cache
-	queries      sync.Map
-	roles        map[string]*Role
-	roleStmt     string
-	roleStmtMD   psql.Metadata
-	rmap         map[string]resItem
-	abacEnabled  bool
-	qc           *qcode.Compiler
-	pc           *psql.Compiler
-	subs         sync.Map
-	scriptMap    map[string]plugin.ScriptCompiler
-	validatorMap map[string]plugin.ValidationCompiler
-	prod         bool
-	prodSec      bool
-	namespace    string
-	tracer       tracer
-	pf           []byte
-	opts         []Option
-	done         chan bool
+	conf        *Config
+	db          *sql.DB
+	log         *_log.Logger
+	fs          FS
+	trace       Tracer
+	dbtype      string
+	dbinfo      *sdata.DBInfo
+	schema      *sdata.DBSchema
+	allowList   *allow.List
+	encKey      [32]byte
+	encKeySet   bool
+	cache       Cache
+	queries     sync.Map
+	roles       map[string]*Role
+	roleStmt    string
+	roleStmtMD  psql.Metadata
+	rmap        map[string]resItem
+	abacEnabled bool
+	qc          *qcode.Compiler
+	pc          *psql.Compiler
+	subs        sync.Map
+	prod        bool
+	prodSec     bool
+	namespace   string
+	pf          []byte
+	opts        []Option
+	done        chan bool
 }
 
 type GraphJin struct {
@@ -94,7 +91,7 @@ func NewGraphJin(conf *Config, db *sql.DB, options ...Option) (g *GraphJin, err 
 	if err != nil {
 		return
 	}
-	fs := fs.NewOsFSWithBase(bp)
+	fs := osfs.NewFSWithBase(bp)
 
 	g = &GraphJin{done: make(chan bool)}
 	if err = g.newGraphJin(conf, db, nil, fs, options...); err != nil {
@@ -107,7 +104,7 @@ func NewGraphJin(conf *Config, db *sql.DB, options ...Option) (g *GraphJin, err 
 	return
 }
 
-func NewGraphJinWithFS(conf *Config, db *sql.DB, fs plugin.FS, options ...Option) (g *GraphJin, err error) {
+func NewGraphJinWithFS(conf *Config, db *sql.DB, fs FS, options ...Option) (g *GraphJin, err error) {
 	g = &GraphJin{done: make(chan bool)}
 	if err = g.newGraphJin(conf, db, nil, fs, options...); err != nil {
 		return
@@ -123,7 +120,7 @@ func NewGraphJinWithFS(conf *Config, db *sql.DB, fs plugin.FS, options ...Option
 func (g *GraphJin) newGraphJin(conf *Config,
 	db *sql.DB,
 	dbinfo *sdata.DBInfo,
-	fs plugin.FS,
+	fs FS,
 	options ...Option,
 ) (err error) {
 	if conf == nil {
@@ -133,18 +130,17 @@ func (g *GraphJin) newGraphJin(conf *Config,
 	t := time.Now()
 
 	gj := &graphjin{
-		conf:      conf,
-		db:        db,
-		dbinfo:    dbinfo,
-		log:       _log.New(os.Stdout, "", 0),
-		prod:      conf.Production,
-		prodSec:   conf.Production,
-		tracer:    newTracer(),
-		pf:        []byte(fmt.Sprintf("gj/%x:", t.Unix())),
-		opts:      options,
-		scriptMap: make(map[string]plugin.ScriptCompiler),
-		fs:        fs,
-		done:      g.done,
+		conf:    conf,
+		db:      db,
+		dbinfo:  dbinfo,
+		log:     _log.New(os.Stdout, "", 0),
+		prod:    conf.Production,
+		prodSec: conf.Production,
+		pf:      []byte(fmt.Sprintf("gj/%x:", t.Unix())),
+		opts:    options,
+		fs:      fs,
+		trace:   &tracer{},
+		done:    g.done,
 	}
 
 	if gj.conf.DisableProdSecurity {
@@ -208,31 +204,16 @@ func OptionSetNamespace(namespace string) Option {
 	}
 }
 
-func OptionSetScriptCompiler(ext []string, se plugin.ScriptCompiler) Option {
-	return func(s *graphjin) error {
-		if s.scriptMap == nil {
-			s.scriptMap = make(map[string]plugin.ScriptCompiler)
-		}
-		for _, v := range ext {
-			s.scriptMap[v] = se
-		}
-		return nil
-	}
-}
-
-func OptionSetValidator(name string, v plugin.ValidationCompiler) Option {
-	return func(s *graphjin) error {
-		if s.validatorMap == nil {
-			s.validatorMap = make(map[string]plugin.ValidationCompiler)
-		}
-		s.validatorMap[name] = v
-		return nil
-	}
-}
-
-func OptionSetFS(fs plugin.FS) Option {
+func OptionSetFS(fs FS) Option {
 	return func(s *graphjin) error {
 		s.fs = fs
+		return nil
+	}
+}
+
+func OptionSetTrace(trace Tracer) Option {
+	return func(s *graphjin) error {
+		s.trace = trace
 		return nil
 	}
 }

@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dosco/graphjin/v2/core/internal/graph"
-	"github.com/dosco/graphjin/v2/core/internal/sdata"
-	"github.com/dosco/graphjin/v2/core/internal/util"
+	"github.com/dosco/graphjin/core/v3/internal/graph"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
+	"github.com/dosco/graphjin/core/v3/internal/util"
 )
 
 func (co *Compiler) compileFields(
@@ -17,8 +17,8 @@ func (co *Compiler) compileFields(
 	sel *Select,
 	field graph.Field,
 	tr trval,
-	role string) error {
-
+	role string,
+) error {
 	sel.Fields = make([]Field, 0, len(field.Children))
 	sel.BCols = make([]Column, 0, len(field.Children))
 
@@ -45,8 +45,8 @@ func (co *Compiler) compileChildColumns(
 	sel *Select,
 	gf graph.Field,
 	tr trval,
-	role string) error {
-
+	role string,
+) error {
 	var aggExists bool
 	var id int32
 
@@ -208,7 +208,7 @@ func (co *Compiler) addColumns(qc *QCode, sel *Select) error {
 		return err
 	}
 
-	//co.addFuncColumns(qc, sel)
+	// co.addFuncColumns(qc, sel)
 	return nil
 }
 

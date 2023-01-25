@@ -7,8 +7,6 @@ import (
 	"runtime"
 	"strings"
 	"syscall/js"
-
-	plugin "github.com/dosco/graphjin/v2/plugin"
 )
 
 type JSFS struct {
@@ -29,30 +27,6 @@ func (f *JSFS) CreateDir(path string) (err error) {
 	path = filepath.Join(f.bp, path)
 	f.fs.Call("mkdirSync", path, opts)
 	return nil
-}
-
-func (f *JSFS) ReadDir(path string) (fi []plugin.FileInfo, err error) {
-	path = filepath.Join(f.bp, path)
-	if err := f.exists(path); err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err1 := recover(); err1 != nil {
-			err = toError(err1)
-		}
-	}()
-	opts := map[string]interface{}{"withFileTypes": true}
-	files := f.fs.Call("readdirSync", path, opts)
-
-	fi = make([]plugin.FileInfo, files.Length())
-	for i := 0; i < files.Length(); i++ {
-		f := files.Index(i)
-		fi[i] = &FileInfo{
-			name:  f.Get("name").String(),
-			isDir: f.Call("isDirectory").Bool(),
-		}
-	}
-	return fi, nil
 }
 
 func (f *JSFS) CreateFile(path string, data []byte) (err error) {
@@ -77,9 +51,6 @@ func (f *JSFS) CreateFile(path string, data []byte) (err error) {
 
 func (f *JSFS) ReadFile(path string) (data []byte, err error) {
 	path = filepath.Join(f.bp, path)
-	if err := f.exists(path); err != nil {
-		return nil, err
-	}
 	defer func() {
 		if err1 := recover(); err1 != nil {
 			err = toError(err1)
@@ -94,26 +65,18 @@ func (f *JSFS) ReadFile(path string) (data []byte, err error) {
 }
 
 func (f *JSFS) Exists(path string) (exists bool, err error) {
-	path = filepath.Join(f.bp, path)
-	if err := f.exists(path); err == plugin.ErrNotFound {
-		return false, nil
-	}
-	return (err == nil), err
-}
-
-func (f *JSFS) exists(path string) (err error) {
 	defer func() {
 		if err1 := recover(); err1 != nil {
 			err2 := toError(err1)
 			if strings.HasPrefix(err2.Error(), "ENOENT:") {
-				err = plugin.ErrNotFound
+				exists = false
 			} else {
 				err = err2
 			}
 		}
 	}()
 	f.fs.Call("statSync", path)
-	return nil
+	return
 }
 
 type FileInfo struct {

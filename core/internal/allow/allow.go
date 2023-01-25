@@ -9,10 +9,16 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dosco/graphjin/v2/core/internal/graph"
-	"github.com/dosco/graphjin/v2/plugin"
+	"github.com/dosco/graphjin/core/v3/internal/graph"
 	lru "github.com/hashicorp/golang-lru"
 )
+
+type FS interface {
+	CreateDir(path string) error
+	CreateFile(path string, data []byte) error
+	ReadFile(path string) (data []byte, err error)
+	Exists(path string) (exists bool, err error)
+}
 
 var ErrUnknownGraphQLQuery = errors.New("unknown graphql query")
 
@@ -38,10 +44,10 @@ type Fragment struct {
 type List struct {
 	cache    *lru.TwoQueueCache
 	saveChan chan Item
-	fs       plugin.FS
+	fs       FS
 }
 
-func New(log *_log.Logger, fs plugin.FS, readOnly bool) (al *List, err error) {
+func New(log *_log.Logger, fs FS, readOnly bool) (al *List, err error) {
 	if fs == nil {
 		return nil, fmt.Errorf("no filesystem defined for the allow list")
 	}
@@ -134,8 +140,14 @@ func (al *List) get(queryPath, name, ext string, useCache bool) (item Item, err 
 		return
 	}
 
-	vars, err1 := al.fs.ReadFile(filepath.Join(queryPath, (name + ".json")))
-	if err1 != nil && err1 != plugin.ErrNotFound {
+	var vars []byte
+
+	jsonFile := filepath.Join(queryPath, (name + ".json"))
+	ok, err := al.fs.Exists(jsonFile)
+	if ok {
+		vars, err = al.fs.ReadFile(jsonFile)
+	}
+	if err != nil {
 		return
 	}
 

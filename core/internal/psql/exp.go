@@ -3,9 +3,9 @@ package psql
 import (
 	"strings"
 
-	"github.com/dosco/graphjin/v2/core/internal/qcode"
-	"github.com/dosco/graphjin/v2/core/internal/sdata"
-	"github.com/dosco/graphjin/v2/core/internal/util"
+	"github.com/dosco/graphjin/core/v3/internal/qcode"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
+	"github.com/dosco/graphjin/core/v3/internal/util"
 )
 
 type expContext struct {
@@ -246,7 +246,7 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 	case qcode.OpTsQuery:
 		switch c.ct {
 		case "mysql":
-			//MATCH (name) AGAINST ('phone' IN BOOLEAN MODE);
+			// MATCH (name) AGAINST ('phone' IN BOOLEAN MODE);
 			c.w.WriteString(`(MATCH(`)
 			for i, col := range c.ti.FullText {
 				if i != 0 {
@@ -259,7 +259,7 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 			c.w.WriteString(` IN NATURAL LANGUAGE MODE))`)
 
 		default:
-			//fmt.Fprintf(w, `(("%s") @@ websearch_to_tsquery('%s'))`, c.ti.TSVCol, val.Val)
+			// fmt.Fprintf(w, `(("%s") @@ websearch_to_tsquery('%s'))`, c.ti.TSVCol, val.Val)
 			c.w.WriteString(`((`)
 			for i, col := range c.ti.FullText {
 				if i != 0 {

@@ -2,11 +2,10 @@ package qcode
 
 import (
 	"fmt"
-	"path"
 	"strings"
 
-	"github.com/dosco/graphjin/v2/core/internal/graph"
-	"github.com/dosco/graphjin/v2/core/internal/sdata"
+	"github.com/dosco/graphjin/core/v3/internal/graph"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
 
 func (co *Compiler) compileOpDirectives(qc *QCode, dirs []graph.Directive) error {
@@ -17,14 +16,8 @@ func (co *Compiler) compileOpDirectives(qc *QCode, dirs []graph.Directive) error
 		case "cacheControl":
 			err = co.compileDirectiveCacheControl(qc, d)
 
-		case "script":
-			err = co.compileDirectiveScript(qc, d)
-
 		case "constraint", "validate":
 			err = co.compileDirectiveConstraint(qc, d)
-
-		case "validation":
-			err = co.compileDirectiveValidation(qc, d)
 
 		default:
 			err = fmt.Errorf("unknown operation directive: %s", d.Name)
@@ -218,26 +211,6 @@ func (co *Compiler) compileDirectiveCacheControl(qc *QCode, d graph.Directive) (
 	return nil
 }
 
-func (co *Compiler) compileDirectiveScript(qc *QCode, d graph.Directive) (err error) {
-	if len(d.Args) == 0 {
-		qc.Script.Name = (qc.Name + ".js")
-		return
-	}
-
-	arg, ok, err := getOptionalArg(d.Args, "name", graph.NodeStr)
-	if err != nil {
-		return
-	}
-	if ok {
-		qc.Script.Name = arg.Val.Val
-	}
-
-	if path.Ext(qc.Script.Name) == "" {
-		qc.Script.Name += ".js"
-	}
-	return
-}
-
 func (co *Compiler) compileDirectiveConstraint(qc *QCode, d graph.Directive) (err error) {
 	a, err := getArg(d.Args, "variable", graph.NodeStr)
 	if err != nil {
@@ -282,32 +255,6 @@ func (co *Compiler) compileDirectiveThrough(sel *Select, d graph.Directive) (err
 			}
 			sel.through = a.Val.Val
 			return
-
-		default:
-			return unknownArg(a)
-		}
-	}
-	return
-}
-
-func (co *Compiler) compileDirectiveValidation(qc *QCode, d graph.Directive) (err error) {
-	if len(d.Args) == 0 {
-		return fmt.Errorf("required arguments 'src' and 'type'")
-	}
-
-	for _, a := range d.Args {
-		switch a.Name {
-		case "src", "source":
-			if err = validateArg(a, graph.NodeStr); err != nil {
-				return
-			}
-			qc.Validation.Source = a.Val.Val
-
-		case "type", "lang":
-			if err = validateArg(a, graph.NodeStr); err != nil {
-				return
-			}
-			qc.Validation.Type = a.Val.Val
 
 		default:
 			return unknownArg(a)

@@ -13,8 +13,8 @@ import (
 func InitTelemetry(
 	c context.Context,
 	exp trace.SpanExporter,
-	serviceName, serviceInstanceID string) error {
-
+	serviceName, serviceInstanceID string,
+) error {
 	r1 := resource.NewWithAttributes(
 		semconv.SchemaURL,
 		semconv.ServiceNameKey.String(serviceName),
@@ -141,7 +141,7 @@ func enableObservability(s *service, mux Mux) (func(), error) {
 		}
 
 		// The Zipkin reporter takes collected spans from the app and reports them to the backend
-		// http://localhost:9411/api/v2/spans is the default for the Zipkin Span v2
+		// http://localhost:9411/api/v3/spans is the default for the Zipkin Span v2
 		re := httpreporter.NewReporter(s.conf.Telemetry.Tracing.Endpoint)
 		tCloseFn = func() { re.Close() }
 		tex = zipkin.NewExporter(re, lep)

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dosco/graphjin/v2/plugin/fs"
+	pluginAfero "github.com/dosco/graphjin/plugin/afero/v3"
 	"github.com/spf13/afero"
 	"github.com/spf13/afero/zipfs"
 )
@@ -226,7 +226,6 @@ func getAdminParams(tx *sql.Tx) (adminParams, error) {
 		value
 	FROM
 		_graphjin.params`)
-
 	if err != nil {
 		return ap, err
 	}
@@ -353,7 +352,7 @@ func deployBundle(s1 *Service, name, hash, confFile, bundle string) error {
 	if err != nil {
 		return err
 	}
-	fsOption := OptionSetFS(fs.NewAferoFS(bfs.fs))
+	fsOption := OptionSetFS(pluginAfero.NewFS(bfs.fs))
 	return s1.Deploy(bfs.conf, fsOption)
 }
 
