@@ -79,5 +79,4 @@ func TestCryptFirstEncyptedValue(t *testing.T) {
 
 	out1 := firstCursorValue(jsb, []byte("boo"))
 	assert.Empty(t, out1)
-
 }

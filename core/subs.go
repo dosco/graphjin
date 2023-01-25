@@ -12,12 +12,12 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dosco/graphjin/core/v3/internal/allow"
 	"github.com/dosco/graphjin/core/v3/internal/graph"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
-	"github.com/rs/xid"
 )
 
 const (
@@ -32,9 +32,10 @@ type sub struct {
 	s  gstate
 	js json.RawMessage
 
-	add  chan *Member
-	del  chan *Member
-	updt chan mmsg
+	idgen uint64
+	add   chan *Member
+	del   chan *Member
+	updt  chan mmsg
 
 	mval
 	sync.Once
@@ -44,7 +45,7 @@ type mval struct {
 	params []json.RawMessage
 	mi     []minfo
 	res    []chan *Result
-	ids    []xid.ID
+	ids    []uint64
 }
 
 type minfo struct {
@@ -55,7 +56,7 @@ type minfo struct {
 }
 
 type mmsg struct {
-	id     xid.ID
+	id     uint64
 	dh     [sha256.Size]byte
 	cursor string
 }
@@ -66,7 +67,7 @@ type Member struct {
 	sub    *sub
 	Result chan *Result
 	done   bool
-	id     xid.ID
+	id     uint64
 	vl     []interface{}
 	mm     mmsg
 	// index of cursor value in the arguments array
@@ -189,7 +190,7 @@ func (gj *graphjin) subscribe(c context.Context, r graphqlReq) (
 
 	m = &Member{
 		ns:     r.ns,
-		id:     xid.New(),
+		id:     atomic.AddUint64(&sub.idgen, 1),
 		Result: make(chan *Result, 10),
 		sub:    sub,
 		vl:     args.values,
@@ -484,7 +485,7 @@ func (gj *graphjin) subNotifyMember(s *sub, mv mval, j int, js json.RawMessage) 
 }
 
 func (gj *graphjin) subNotifyMemberEx(sub *sub,
-	dh [32]byte, cindx int, id xid.ID, rc chan *Result, js json.RawMessage, update bool,
+	dh [32]byte, cindx int, id uint64, rc chan *Result, js json.RawMessage, update bool,
 ) (mmsg, error) {
 	mm := mmsg{id: id}
 
@@ -589,7 +590,7 @@ func renderJSONArray(v []json.RawMessage) json.RawMessage {
 	return json.RawMessage(w.Bytes())
 }
 
-func (s *sub) findByID(id xid.ID) (int, bool) {
+func (s *sub) findByID(id uint64) (int, bool) {
 	for i := range s.ids {
 		if s.ids[i] == id {
 			return i, true
@@ -605,6 +606,10 @@ func (m *Member) Unsubscribe() {
 	}
 }
 
+func (m *Member) ID() uint64 {
+	return m.id
+}
+
 func (m *Member) String() string {
-	return m.id.String()
+	return strconv.Itoa(int(m.id))
 }
