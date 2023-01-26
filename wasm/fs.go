@@ -40,7 +40,7 @@ func (f *JSFS) Put(path string, data []byte) (err error) {
 	path = filepath.Join(f.bp, path)
 
 	dir := filepath.Dir(path)
-	ok, err := f.Exists(dir)
+	ok, err := f.exists(dir)
 	if !ok {
 		err = f.createDir(dir)
 	}
@@ -60,12 +60,18 @@ func (f *JSFS) Put(path string, data []byte) (err error) {
 	return nil
 }
 
-func (f *JSFS) Exists(path string) (exists bool, err error) {
+func (f *JSFS) Exists(path string) (ok bool, err error) {
+	path = filepath.Join(f.bp, path)
+	ok, err = f.exists(path)
+	return
+}
+
+func (f *JSFS) exists(path string) (ok bool, err error) {
 	defer func() {
 		if err1 := recover(); err1 != nil {
 			err2 := toError(err1)
 			if strings.HasPrefix(err2.Error(), "ENOENT:") {
-				exists = false
+				ok = false
 			} else {
 				err = err2
 			}
@@ -82,7 +88,6 @@ func (f *JSFS) createDir(path string) (err error) {
 		}
 	}()
 	opts := map[string]interface{}{"recursive": true}
-	path = filepath.Join(f.bp, path)
 	f.fs.Call("mkdirSync", path, opts)
 	return nil
 }

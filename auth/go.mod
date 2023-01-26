@@ -5,7 +5,7 @@ go 1.18
 require (
 	github.com/adjust/gorails v0.0.0-20171013043634-2786ed0c03d3
 	github.com/bradfitz/gomemcache v0.0.0-20230124162541-5f7a7d875746
-	github.com/dosco/graphjin/core/v3 v3.0.0-20230125090031-062b181a2f0f
+	github.com/dosco/graphjin/core/v3 v3.0.0-20230126190039-60bf6b5d3fd3
 	github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-20230125090031-062b181a2f0f
 	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/gomodule/redigo v1.8.9

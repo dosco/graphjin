@@ -2,12 +2,10 @@ module github.com/dosco/graphjin/tests/v3
 
 go 1.18
 
-replace github.com/dosco/graphjin/conf/v3 => ../conf
-replace github.com/dosco/graphjin/core/v3 => ../core
-
 require (
-	github.com/dosco/graphjin/core/v3 v3.0.0-20230125090031-062b181a2f0f
-	github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-20230125090031-062b181a2f0f
+	github.com/dosco/graphjin/conf/v3 v3.0.0-20230126190039-60bf6b5d3fd3
+	github.com/dosco/graphjin/core/v3 v3.0.0-20230126190039-60bf6b5d3fd3
+	github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-20230125094531-96f5ec6d2d29
 	github.com/orlangure/gnomock v0.24.0
 	github.com/stretchr/testify v1.8.1
 	golang.org/x/sync v0.1.0
@@ -16,7 +14,6 @@ require (
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 // indirect
 	github.com/Microsoft/go-winio v0.5.2 // indirect
-	github.com/avast/retry-go v3.0.0+incompatible // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/denisenkom/go-mssqldb v0.12.3 // indirect
 	github.com/docker/distribution v2.8.0+incompatible // indirect
@@ -30,13 +27,11 @@ require (
 	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
-	github.com/kr/text v0.2.0 // indirect
 	github.com/lib/pq v1.10.7 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.0.2 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/rs/xid v1.4.0 // indirect
 	github.com/sirupsen/logrus v1.9.0 // indirect
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.8.0 // indirect
@@ -46,5 +41,6 @@ require (
 	golang.org/x/sys v0.4.0 // indirect
 	golang.org/x/text v0.6.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
