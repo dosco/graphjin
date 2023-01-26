@@ -13,7 +13,6 @@ import (
 )
 
 func main() {
-	sql.Register("postgres", &PgDB{})
 	js.Global().Set("createGraphJin", graphjinFunc())
 	<-make(chan bool)
 }
@@ -110,9 +109,9 @@ func getConfig(config string, confIsFile bool, fs core.FS) (
 			return
 		}
 	} else {
-		c := &core.Config{}
-		if err = json.Unmarshal([]byte(config), &c); err != nil {
-			return nil, err
+		c = &core.Config{}
+		if err = json.Unmarshal([]byte(config), c); err != nil {
+			return
 		}
 	}
 	return

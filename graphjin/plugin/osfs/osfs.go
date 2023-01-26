@@ -21,7 +21,7 @@ func (f *FS) Put(path string, data []byte) (err error) {
 	path = filepath.Join(f.bp, path)
 
 	dir := filepath.Dir(path)
-	ok, err := f.Exists(dir)
+	ok, err := f.exists(dir)
 	if !ok {
 		err = os.MkdirAll(dir, os.ModePerm)
 	}
@@ -33,7 +33,13 @@ func (f *FS) Put(path string, data []byte) (err error) {
 }
 
 func (f *FS) Exists(path string) (ok bool, err error) {
-	if _, err = os.Stat(filepath.Join(f.bp, path)); err == nil {
+	path = filepath.Join(f.bp, path)
+	ok, err = f.exists(path)
+	return
+}
+
+func (f *FS) exists(path string) (ok bool, err error) {
+	if _, err = os.Stat(path); err == nil {
 		ok = true
 	} else {
 		if errors.Is(err, fs.ErrNotExist) {

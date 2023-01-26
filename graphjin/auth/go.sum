@@ -15,6 +15,8 @@ github.com/decred/dcrd/dcrec/secp256k1/v4 v4.1.0 h1:HbphB4TFFXpv7MNrT52FGrrgVXF1
 github.com/decred/dcrd/dcrec/secp256k1/v4 v4.1.0/go.mod h1:DZGJHZMqrU4JJqFAWUS2UO1+lbSKsdiOoYi9Zzey7Fc=
 github.com/dosco/graphjin/core/v3 v3.0.0-20230125090031-062b181a2f0f h1:WoVu+C7bCJZYifWdFpF2lnwKO7phczscCx7lP0IbCt8=
 github.com/dosco/graphjin/core/v3 v3.0.0-20230125090031-062b181a2f0f/go.mod h1:48LNBZjRk5M44l9rkDs+ZuclxNb0LVx4HEiKpNQhkZw=
+github.com/dosco/graphjin/core/v3 v3.0.0-20230126190039-60bf6b5d3fd3 h1:yP2iwhjekGvTkSLpLPKD1Rd6XL9CCZ0sxjJCWCjOulk=
+github.com/dosco/graphjin/core/v3 v3.0.0-20230126190039-60bf6b5d3fd3/go.mod h1:L6P2d8aYSpSGxSUXOUVyVtXOgVwaQwR8KkSRi+MM5Tw=
 github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-20230125090031-062b181a2f0f h1:EBPKpvgo5lb4FJudBcgLZsbZeDD0VcqXzFHC0QWpspY=
 github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-20230125090031-062b181a2f0f/go.mod h1:lg2ZkWi2PmA8d8t0vL7fgyFc1bKAkSIb6sWnOWmaseQ=
 github.com/goccy/go-json v0.9.7/go.mod h1:6MelG93GURQebXPDq3khkgXZkazVtN9CRI+MGFi0w8I=

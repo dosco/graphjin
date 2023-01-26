@@ -2,10 +2,7 @@ module github.com/dosco/graphjin/wasm/v3
 
 go 1.18
 
-replace github.com/dosco/graphjin/conf/v3 => ../conf
-
-
-require github.com/dosco/graphjin/core/v3 v3.0.0-20230125090031-062b181a2f0f
+require github.com/dosco/graphjin/core/v3 v3.0.0-20230126190039-60bf6b5d3fd3
 
 require (
 	github.com/avast/retry-go v3.0.0+incompatible // indirect
