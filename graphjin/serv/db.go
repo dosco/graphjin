@@ -117,7 +117,7 @@ func initPostgres(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf,
 		if strings.Contains(c.DB.ServerCert, pemSig) {
 			pem = []byte(strings.ReplaceAll(c.DB.ServerCert, `\n`, "\n"))
 		} else {
-			pem, err = fs.ReadFile(c.DB.ServerCert)
+			pem, err = fs.Get(c.DB.ServerCert)
 		}
 
 		if err != nil {
@@ -177,11 +177,11 @@ func initMysql(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf, er
 func loadX509KeyPair(fs core.FS, certFile, keyFile string) (
 	cert tls.Certificate, err error,
 ) {
-	certPEMBlock, err := fs.ReadFile(certFile)
+	certPEMBlock, err := fs.Get(certFile)
 	if err != nil {
 		return cert, err
 	}
-	keyPEMBlock, err := fs.ReadFile(keyFile)
+	keyPEMBlock, err := fs.Get(keyFile)
 	if err != nil {
 		return cert, err
 	}

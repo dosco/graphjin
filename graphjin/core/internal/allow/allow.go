@@ -14,9 +14,8 @@ import (
 )
 
 type FS interface {
-	CreateDir(path string) error
-	CreateFile(path string, data []byte) error
-	ReadFile(path string) (data []byte, err error)
+	Get(path string) (data []byte, err error)
+	Put(path string, data []byte) (err error)
 	Exists(path string) (exists bool, err error)
 }
 
@@ -62,11 +61,6 @@ func New(log *_log.Logger, fs FS, readOnly bool) (al *List, err error) {
 		return
 	}
 	al.saveChan = make(chan Item)
-
-	err = fs.CreateDir(filepath.Join(queryPath, fragmentPath))
-	if err != nil {
-		return
-	}
 
 	go func() {
 		for {
@@ -145,7 +139,7 @@ func (al *List) get(queryPath, name, ext string, useCache bool) (item Item, err 
 	jsonFile := filepath.Join(queryPath, (name + ".json"))
 	ok, err := al.fs.Exists(jsonFile)
 	if ok {
-		vars, err = al.fs.ReadFile(jsonFile)
+		vars, err = al.fs.Get(jsonFile)
 	}
 	if err != nil {
 		return
@@ -204,7 +198,7 @@ func (al *List) saveItem(item Item) (err error) {
 		}
 
 		ff := filepath.Join(queryPath, "fragments", (fragFile + ".gql"))
-		err = al.fs.CreateFile(ff, []byte(f.Value))
+		err = al.fs.Put(ff, []byte(f.Value))
 		if err != nil {
 			return
 		}
@@ -215,7 +209,7 @@ func (al *List) saveItem(item Item) (err error) {
 	buf.Write(bytes.TrimSpace(item.Query))
 
 	qf := filepath.Join(queryPath, (queryFile + ".gql"))
-	err = al.fs.CreateFile(qf, bytes.TrimSpace(buf.Bytes()))
+	err = al.fs.Put(qf, bytes.TrimSpace(buf.Bytes()))
 	if err != nil {
 		return
 	}
@@ -227,7 +221,7 @@ func (al *List) saveItem(item Item) (err error) {
 		if err != nil {
 			return
 		}
-		err = al.fs.CreateFile(jf, vars)
+		err = al.fs.Put(jf, vars)
 	}
 	return
 }

@@ -86,7 +86,7 @@ func (gj *graphjin) initDiscover() (err error) {
 
 func (gj *graphjin) _initDiscover() (err error) {
 	if gj.prod && gj.conf.EnableSchema {
-		b, err := gj.fs.ReadFile("db.graphql")
+		b, err := gj.fs.Get("db.graphql")
 		if err != nil {
 			return err
 		}
@@ -120,7 +120,7 @@ func (gj *graphjin) _initDiscover() (err error) {
 		if err := writeSchema(gj.dbinfo, &buf); err != nil {
 			return err
 		}
-		err = gj.fs.CreateFile("db.graphql", buf.Bytes())
+		err = gj.fs.Put("db.graphql", buf.Bytes())
 		if err != nil {
 			return
 		}
@@ -178,7 +178,7 @@ func (gj *graphjin) _initSchema() (err error) {
 		if err != nil {
 			return
 		}
-		err = gj.fs.CreateFile("intro.json", []byte(introJSON))
+		err = gj.fs.Put("intro.json", []byte(introJSON))
 		if err != nil {
 			return
 		}

@@ -2,6 +2,7 @@ package afero
 
 import (
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/afero"
 )
@@ -14,16 +15,21 @@ func NewFS(fs afero.Fs, basePath string) *AferoFS {
 	return &AferoFS{fs: afero.NewBasePathFs(fs, basePath)}
 }
 
-func (f *AferoFS) CreateDir(path string) error {
-	return f.fs.MkdirAll(path, os.ModePerm)
-}
-
-func (f *AferoFS) CreateFile(path string, data []byte) error {
-	return afero.WriteFile(f.fs, path, data, os.ModePerm)
-}
-
-func (f *AferoFS) ReadFile(path string) ([]byte, error) {
+func (f *AferoFS) Get(path string) ([]byte, error) {
 	return afero.ReadFile(f.fs, path)
+}
+
+func (f *AferoFS) Put(path string, data []byte) (err error) {
+	dir := filepath.Dir(path)
+	ok, err := f.Exists(dir)
+	if !ok {
+		err = f.fs.MkdirAll(dir, os.ModePerm)
+	}
+	if err != nil {
+		return
+	}
+
+	return afero.WriteFile(f.fs, path, data, os.ModePerm)
 }
 
 func (f *AferoFS) Exists(path string) (exists bool, err error) {

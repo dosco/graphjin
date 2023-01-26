@@ -51,7 +51,7 @@ func NewConfigWithFS(fs core.FS, configFile string) (c *core.Config, err error) 
 func readConfig(fs core.FS, configFile string, v interface{}) (err error) {
 	format := filepath.Ext(configFile)
 
-	b, err := fs.ReadFile(configFile)
+	b, err := fs.Get(configFile)
 	if err != nil {
 		return fmt.Errorf("error reading config: %w", err)
 	}

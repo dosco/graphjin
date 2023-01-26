@@ -13,16 +13,23 @@ type FS struct {
 
 func NewFS(basePath string) *FS { return &FS{bp: basePath} }
 
-func (f *FS) CreateDir(path string) error {
-	return os.MkdirAll(filepath.Join(f.bp, path), os.ModePerm)
-}
-
-func (f *FS) CreateFile(path string, data []byte) error {
-	return os.WriteFile(filepath.Join(f.bp, path), data, os.ModePerm)
-}
-
-func (f *FS) ReadFile(path string) ([]byte, error) {
+func (f *FS) Get(path string) ([]byte, error) {
 	return os.ReadFile(filepath.Join(f.bp, path))
+}
+
+func (f *FS) Put(path string, data []byte) (err error) {
+	path = filepath.Join(f.bp, path)
+
+	dir := filepath.Dir(path)
+	ok, err := f.Exists(dir)
+	if !ok {
+		err = os.MkdirAll(dir, os.ModePerm)
+	}
+	if err != nil {
+		return
+	}
+
+	return os.WriteFile(path, data, os.ModePerm)
 }
 
 func (f *FS) Exists(path string) (ok bool, err error) {
