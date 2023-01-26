@@ -83,7 +83,7 @@ func initDB(openDB bool) {
 	if db != nil && openDB == dbOpened {
 		return
 	}
-	fs := osfs.NewFSWithBase(cpath)
+	fs := osfs.NewFS(cpath)
 
 	if db, err = serv.NewDB(conf, openDB, log, fs); err != nil {
 		log.Fatalf("Failed to connect to database: %s", err)

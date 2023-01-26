@@ -57,7 +57,7 @@ type JWTProvider interface {
 }
 
 func NewProvider(config JWTConfig) (JWTProvider, error) {
-	config.fs = osfs.NewFS()
+	config.fs = osfs.NewFS("/")
 	switch config.Provider {
 	case "auth0":
 		return NewAuth0Provider(config)

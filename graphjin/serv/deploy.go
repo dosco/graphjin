@@ -352,7 +352,7 @@ func deployBundle(s1 *Service, name, hash, confFile, bundle string) error {
 	if err != nil {
 		return err
 	}
-	fsOption := OptionSetFS(pluginAfero.NewFS(bfs.fs))
+	fsOption := OptionSetFS(pluginAfero.NewFS(bfs.fs, "/"))
 	return s1.Deploy(bfs.conf, fsOption)
 }
 

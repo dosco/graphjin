@@ -51,7 +51,7 @@ func (s *service) initFS() error {
 		return err
 	}
 
-	err = OptionSetFS(osfs.NewFSWithBase(basePath))(s)
+	err = OptionSetFS(osfs.NewFS(basePath))(s)
 	if err != nil {
 		return err
 	}

@@ -2,17 +2,12 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
-	"github.com/dosco/graphjin/plugin/osfs/v3"
-
-	"gopkg.in/yaml.v3"
 )
 
 // Configuration for the GraphJin compiler core
@@ -101,11 +96,8 @@ type Config struct {
 	// When set to true it disables production security features like enforcing the allow list
 	DisableProdSecurity bool `mapstructure:"disable_production_security" json:"disable_production_security" yaml:"disable_production_security" jsonschema:"title=Disable Production Security"`
 
-	// The default path to find all configuration files and scripts under
-	configPath string
-
-	rtmap map[string]refunc
-	tmap  map[string]qcode.TConfig
+	// The filesystem to use for this instance of GraphJin
+	FS interface{} `mapstructure:"-" jsonschema:"-" json:"-"`
 }
 
 // Configuration for a database table
@@ -238,11 +230,12 @@ type Delete struct {
 			},
 		}
 
-		gj.conf.SetResolver("redis", func(v ResolverProps) (Resolver, error) {
+		redisRe := func(v ResolverProps) (Resolver, error) {
 			return newRedis(v)
-		})
+		}
 
-		gj, err := core.NewGraphJin(conf, db)
+		gj, err := core.NewGraphJin(conf, db,
+			core.OptionSetResolver("redis" redisRe))
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -368,78 +361,4 @@ func (c *Config) RemoveRoleTable(role, table string) error {
 		c.Roles = append(c.Roles[:ri], c.Roles[ri+1:]...)
 	}
 	return nil
-}
-
-func (c *Config) SetResolver(name string, fn refunc) error {
-	if c.rtmap == nil {
-		c.rtmap = make(map[string]refunc)
-	}
-	if _, ok := c.rtmap[name]; ok {
-		return fmt.Errorf("resolver defined: %s", name)
-	}
-	c.rtmap[name] = fn
-	return nil
-}
-
-type configInfo struct {
-	Inherits string
-}
-
-func NewConfig(configPath, configFile string) (c *Config, err error) {
-	fs := osfs.NewFSWithBase(configPath)
-	if c, err = NewConfigWithFS(fs, configFile); err != nil {
-		return
-	}
-	c.configPath = configPath
-	return
-}
-
-func NewConfigWithFS(fs FS, configFile string) (*Config, error) {
-	var c Config
-	var ci configInfo
-
-	if err := readConfig(fs, configFile, &ci); err != nil {
-		return nil, err
-	}
-
-	if ci.Inherits != "" {
-		pc := ci.Inherits
-
-		if filepath.Ext(pc) == "" {
-			pc += filepath.Ext(configFile)
-		}
-
-		if err := readConfig(fs, pc, &c); err != nil {
-			return nil, err
-		}
-	}
-
-	if err := readConfig(fs, configFile, &c); err != nil {
-		return nil, err
-	}
-
-	return &c, nil
-}
-
-func readConfig(fs FS, configFile string, v interface{}) (err error) {
-	format := filepath.Ext(configFile)
-
-	b, err := fs.ReadFile(configFile)
-	if err != nil {
-		return fmt.Errorf("error reading config: %w", err)
-	}
-
-	switch format {
-	case ".json":
-		err = json.Unmarshal(b, v)
-	case ".yml", ".yaml":
-		err = yaml.Unmarshal(b, v)
-	default:
-		err = fmt.Errorf("invalid format %s", format)
-	}
-
-	if err != nil {
-		err = fmt.Errorf("error reading config: %w", err)
-	}
-	return
 }

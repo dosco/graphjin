@@ -83,7 +83,7 @@ func (gj *graphjin) initConfig() error {
 	return nil
 }
 
-func addTableInfo(c *Config, t Table) error {
+func (gj *graphjin) addTableInfo(t Table) error {
 	obm := map[string][][2]string{}
 
 	for k, ob := range t.OrderBy {
@@ -95,10 +95,10 @@ func addTableInfo(c *Config, t Table) error {
 			obm[k] = append(obm[k], [2]string{vals[0], vals[1]})
 		}
 	}
-	if c.tmap == nil {
-		c.tmap = make(map[string]qcode.TConfig)
+	if gj.tmap == nil {
+		gj.tmap = make(map[string]qcode.TConfig)
 	}
-	c.tmap[(t.Schema + t.Name)] = qcode.TConfig{OrderBy: obm}
+	gj.tmap[(t.Schema + t.Name)] = qcode.TConfig{OrderBy: obm}
 	return nil
 }
 

@@ -258,7 +258,7 @@ func (s *service) hotStart() error {
 	}
 
 	opts := []core.Option{
-		core.OptionSetFS(afero.NewFS(bfs.fs)),
+		core.OptionSetFS(afero.NewFS(bfs.fs, "/")),
 	}
 
 	if s.namespace != nil {

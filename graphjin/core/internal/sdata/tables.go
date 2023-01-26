@@ -48,8 +48,8 @@ type VirtualTable struct {
 func GetDBInfo(
 	db *sql.DB,
 	dbType string,
-	blockList []string) (*DBInfo, error) {
-
+	blockList []string,
+) (*DBInfo, error) {
 	var dbVersion int
 	var dbSchema, dbName string
 	var cols []DBColumn
@@ -108,8 +108,8 @@ func NewDBInfo(
 	dbName string,
 	cols []DBColumn,
 	funcs []DBFunction,
-	blockList []string) *DBInfo {
-
+	blockList []string,
+) *DBInfo {
 	di := &DBInfo{
 		Type:      dbType,
 		Version:   dbVersion,
