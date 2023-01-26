@@ -48,7 +48,7 @@ func TestIntrospection(t *testing.T) {
 		panic(err)
 	}
 	defer os.RemoveAll(dir)
-	fs := osfs.NewFSWithBase(dir)
+	fs := osfs.NewFS(dir)
 
 	conf := newConfig(&core.Config{DBType: dbType, EnableIntrospection: true})
 	_, err = core.NewGraphJin(conf, db, core.OptionSetFS(fs))

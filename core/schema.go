@@ -7,10 +7,9 @@ import (
 	"strings"
 	"text/tabwriter"
 	"text/template"
+	"unicode"
 
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
-	"golang.org/x/text/cases"
-	"golang.org/x/text/language"
 )
 
 const schemaTemplate = `
@@ -107,9 +106,9 @@ func writeSchema(s *sdata.DBInfo, out io.Writer) (err error) {
 
 func toPascalCase(text string) string {
 	var sb strings.Builder
-	c := cases.Title(language.English)
 	for _, v := range strings.Fields(text) {
-		sb.WriteString(c.String(v))
+		sb.WriteRune(unicode.ToUpper(rune(v[0])))
+		sb.WriteString(v[1:])
 	}
 	return sb.String()
 }

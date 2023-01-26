@@ -2,6 +2,9 @@ module github.com/dosco/graphjin/wasm/v3
 
 go 1.18
 
+replace github.com/dosco/graphjin/conf/v3 => ../conf
+
+
 require github.com/dosco/graphjin/core/v3 v3.0.0-20230125090031-062b181a2f0f
 
 require (

@@ -11,8 +11,7 @@ type FS struct {
 	bp string
 }
 
-func NewFS() *FS                    { return &FS{} }
-func NewFSWithBase(path string) *FS { return &FS{bp: path} }
+func NewFS(basePath string) *FS { return &FS{bp: basePath} }
 
 func (f *FS) CreateDir(path string) error {
 	return os.MkdirAll(filepath.Join(f.bp, path), os.ModePerm)

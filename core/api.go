@@ -21,7 +21,6 @@ import (
 	"github.com/dosco/graphjin/core/v3/internal/psql"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
-	"github.com/dosco/graphjin/plugin/osfs/v3"
 )
 
 type contextkey int
@@ -64,6 +63,8 @@ type graphjin struct {
 	roles       map[string]*Role
 	roleStmt    string
 	roleStmtMD  psql.Metadata
+	tmap        map[string]qcode.TConfig
+	rtmap       map[string]ResolverFn
 	rmap        map[string]resItem
 	abacEnabled bool
 	qc          *qcode.Compiler
@@ -87,11 +88,10 @@ type Option func(*graphjin) error
 // NewGraphJin creates the GraphJin struct, this involves querying the database to learn its
 // schemas and relationships
 func NewGraphJin(conf *Config, db *sql.DB, options ...Option) (g *GraphJin, err error) {
-	bp, err := basePath(conf)
+	fs, err := getFS(conf)
 	if err != nil {
 		return
 	}
-	fs := osfs.NewFSWithBase(bp)
 
 	g = &GraphJin{done: make(chan bool)}
 	if err = g.newGraphJin(conf, db, nil, fs, options...); err != nil {
@@ -214,6 +214,19 @@ func OptionSetFS(fs FS) Option {
 func OptionSetTrace(trace Tracer) Option {
 	return func(s *graphjin) error {
 		s.trace = trace
+		return nil
+	}
+}
+
+func OptionSetResolver(name string, fn ResolverFn) Option {
+	return func(s *graphjin) error {
+		if s.rtmap == nil {
+			s.rtmap = s.newRTMap()
+		}
+		if _, ok := s.rtmap[name]; ok {
+			return fmt.Errorf("duplicate resolver: %s", name)
+		}
+		s.rtmap[name] = fn
 		return nil
 	}
 }
@@ -522,15 +535,19 @@ func Operation(query string) (h Header, err error) {
 	return
 }
 
-func basePath(conf *Config) (string, error) {
-	if conf.configPath != "" {
-		return conf.configPath, nil
+func getFS(conf *Config) (fs FS, err error) {
+	if v, ok := conf.FS.(FS); ok {
+		fs = v
+		return
 	}
+
 	v, err := os.Getwd()
 	if err != nil {
-		return "", err
+		return
 	}
-	return filepath.Join(v, "config"), nil
+
+	fs = NewFS(filepath.Join(v, "config"))
+	return
 }
 
 func newError(err error) (errList []Error) {

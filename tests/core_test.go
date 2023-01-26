@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dosco/graphjin/conf/v3"
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/dosco/graphjin/plugin/osfs/v3"
 	"github.com/stretchr/testify/assert"
@@ -25,15 +26,15 @@ func TestReadInConfigWithEnvVars(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-	fs := osfs.NewFSWithBase(dir)
+	fs := osfs.NewFS(dir)
 	fs.CreateFile("dev.yml", []byte(devConfig))
 	fs.CreateFile("prod.yml", []byte(prodConfig))
 
-	c, err := core.NewConfigWithFS(fs, "dev.yml")
+	c, err := conf.NewConfigWithFS(fs, "dev.yml")
 	assert.NoError(t, err)
 	assert.Equal(t, "dev_secret_key", c.SecretKey)
 
-	c, err = core.NewConfigWithFS(fs, "prod.yml")
+	c, err = conf.NewConfigWithFS(fs, "prod.yml")
 	assert.NoError(t, err)
 	assert.Equal(t, "prod_secret_key", c.SecretKey)
 
@@ -116,7 +117,7 @@ func TestAllowList(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-	fs := osfs.NewFSWithBase(dir)
+	fs := osfs.NewFS(dir)
 	if err := fs.CreateDir("queries"); err != nil {
 		t.Error(err)
 		return
@@ -180,7 +181,7 @@ func TestAllowListWithNamespace(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(dir)
-	fs := osfs.NewFSWithBase(dir)
+	fs := osfs.NewFS(dir)
 
 	conf1 := newConfig(&core.Config{DBType: dbType})
 	gj1, err := core.NewGraphJin(conf1, db,
@@ -271,7 +272,7 @@ func TestEnableSchema(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-	fs := osfs.NewFSWithBase(dir)
+	fs := osfs.NewFS(dir)
 
 	conf1 := newConfig(&core.Config{DBType: dbType, EnableSchema: true})
 	gj1, err := core.NewGraphJin(conf1, db, core.OptionSetFS(fs))

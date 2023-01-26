@@ -8,6 +8,7 @@ import (
 	"errors"
 	"syscall/js"
 
+	"github.com/dosco/graphjin/conf/v3"
 	"github.com/dosco/graphjin/core/v3"
 )
 
@@ -97,23 +98,22 @@ func newGraphJinObj(gj *core.GraphJin) map[string]interface{} {
 	}
 }
 
-func newGraphJin(conf *core.Config, db *sql.DB, fs core.FS) (gj *core.GraphJin, err error) {
-	return core.NewGraphJinWithFS(conf, db, fs)
+func newGraphJin(config *core.Config, db *sql.DB, fs core.FS) (gj *core.GraphJin, err error) {
+	return core.NewGraphJinWithFS(config, db, fs)
 }
 
-func getConfig(conf string, confIsFile bool, fs core.FS) (
-	config *core.Config, err error,
+func getConfig(config string, confIsFile bool, fs core.FS) (
+	c *core.Config, err error,
 ) {
 	if confIsFile {
-		if config, err = core.NewConfigWithFS(fs, conf); err != nil {
-			return nil, err
+		if c, err = conf.NewConfigWithFS(fs, config); err != nil {
+			return
 		}
 	} else {
-		var c core.Config
-		if err = json.Unmarshal([]byte(conf), &c); err != nil {
+		c := &core.Config{}
+		if err = json.Unmarshal([]byte(config), &c); err != nil {
 			return nil, err
 		}
-		config = &c
 	}
 	return
 }

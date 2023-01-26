@@ -151,7 +151,7 @@ func (gj *graphjin) _initSchema() (err error) {
 		if t.Table != "" && t.Type == "" {
 			continue
 		}
-		if err = addTableInfo(gj.conf, t); err != nil {
+		if err = gj.addTableInfo(t); err != nil {
 			return
 		}
 	}
@@ -188,7 +188,7 @@ func (gj *graphjin) _initSchema() (err error) {
 
 func (gj *graphjin) initCompilers() (err error) {
 	qcc := qcode.Config{
-		TConfig:         gj.conf.tmap,
+		TConfig:         gj.tmap,
 		DefaultBlock:    gj.conf.DefaultBlock,
 		DefaultLimit:    gj.conf.DefaultLimit,
 		DisableAgg:      gj.conf.DisableAgg,

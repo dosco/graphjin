@@ -10,10 +10,8 @@ type AferoFS struct {
 	fs afero.Fs
 }
 
-func NewFS(fs afero.Fs) *AferoFS { return &AferoFS{fs: fs} }
-
-func NewFSWithBase(fs afero.Fs, path string) *AferoFS {
-	return &AferoFS{fs: afero.NewBasePathFs(fs, path)}
+func NewFS(fs afero.Fs, basePath string) *AferoFS {
+	return &AferoFS{fs: afero.NewBasePathFs(fs, basePath)}
 }
 
 func (f *AferoFS) CreateDir(path string) error {

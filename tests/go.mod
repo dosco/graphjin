@@ -2,6 +2,9 @@ module github.com/dosco/graphjin/tests/v3
 
 go 1.18
 
+replace github.com/dosco/graphjin/conf/v3 => ../conf
+replace github.com/dosco/graphjin/core/v3 => ../core
+
 require (
 	github.com/dosco/graphjin/core/v3 v3.0.0-20230125090031-062b181a2f0f
 	github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-20230125090031-062b181a2f0f

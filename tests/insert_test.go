@@ -705,7 +705,7 @@ func TestAllowListWithMutations(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.RemoveAll(dir)
 
-	fs := osfs.NewFSWithBase(dir)
+	fs := osfs.NewFS(dir)
 	err = fs.CreateDir("queries")
 	assert.NoError(t, err)
 

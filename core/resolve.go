@@ -7,7 +7,7 @@ import (
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
 
-type refunc func(v ResolverProps) (Resolver, error)
+type ResolverFn func(v ResolverProps) (Resolver, error)
 
 type resItem struct {
 	IDField []byte
@@ -15,17 +15,19 @@ type resItem struct {
 	Fn      Resolver
 }
 
-func (gj *graphjin) initResolvers() error {
-	gj.rmap = make(map[string]resItem)
-
-	rtmap := map[string]refunc{
+func (gj *graphjin) newRTMap() map[string]ResolverFn {
+	return map[string]ResolverFn{
 		"remote_api": func(v ResolverProps) (Resolver, error) {
 			return newRemoteAPI(v, gj.trace.NewHTTPClient())
 		},
 	}
+}
 
-	for name, fn := range gj.conf.rtmap {
-		rtmap[name] = fn
+func (gj *graphjin) initResolvers() error {
+	gj.rmap = make(map[string]resItem)
+
+	if gj.rtmap == nil {
+		gj.rtmap = gj.newRTMap()
 	}
 
 	for i, r := range gj.conf.Resolvers {
@@ -33,15 +35,16 @@ func (gj *graphjin) initResolvers() error {
 			gj.conf.Resolvers[i].Schema = gj.dbinfo.Schema
 			r.Schema = gj.dbinfo.Schema
 		}
-		if err := gj.initRemote(r, rtmap); err != nil {
+		if err := gj.initRemote(r, gj.rtmap); err != nil {
 			return fmt.Errorf("resolvers: %w", err)
 		}
 	}
-
 	return nil
 }
 
-func (gj *graphjin) initRemote(rc ResolverConfig, rtmap map[string]refunc) error {
+func (gj *graphjin) initRemote(
+	rc ResolverConfig, rtmap map[string]ResolverFn,
+) error {
 	// Defines the table column to be used as an id in the
 	// remote reques
 	var col sdata.DBColumn
