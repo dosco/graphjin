@@ -55,7 +55,7 @@ func TestIntrospection(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	b, err := fs.ReadFile("intro.json")
+	b, err := fs.Get("intro.json")
 	assert.NoError(t, err)
 	assert.NotEmpty(t, b)
 }

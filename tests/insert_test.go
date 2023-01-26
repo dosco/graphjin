@@ -706,7 +706,6 @@ func TestAllowListWithMutations(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	fs := osfs.NewFS(dir)
-	err = fs.CreateDir("queries")
 	assert.NoError(t, err)
 
 	conf1 := newConfig(&core.Config{DBType: dbType, DisableAllowList: false})

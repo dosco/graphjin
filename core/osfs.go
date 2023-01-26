@@ -13,16 +13,23 @@ type osFS struct {
 
 func NewFS(basePath string) *osFS { return &osFS{bp: basePath} }
 
-func (f *osFS) CreateDir(path string) error {
-	return os.MkdirAll(filepath.Join(f.bp, path), os.ModePerm)
-}
-
-func (f *osFS) CreateFile(path string, data []byte) error {
-	return os.WriteFile(filepath.Join(f.bp, path), data, os.ModePerm)
-}
-
-func (f *osFS) ReadFile(path string) ([]byte, error) {
+func (f *osFS) Get(path string) ([]byte, error) {
 	return os.ReadFile(filepath.Join(f.bp, path))
+}
+
+func (f *osFS) Put(path string, data []byte) (err error) {
+	path = filepath.Join(f.bp, path)
+
+	dir := filepath.Dir(path)
+	ok, err := f.Exists(dir)
+	if !ok {
+		err = os.MkdirAll(dir, os.ModePerm)
+	}
+	if err != nil {
+		return
+	}
+
+	return os.WriteFile(path, data, os.ModePerm)
 }
 
 func (f *osFS) Exists(path string) (ok bool, err error) {

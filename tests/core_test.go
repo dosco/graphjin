@@ -27,8 +27,8 @@ func TestReadInConfigWithEnvVars(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	fs := osfs.NewFS(dir)
-	fs.CreateFile("dev.yml", []byte(devConfig))
-	fs.CreateFile("prod.yml", []byte(prodConfig))
+	fs.Put("dev.yml", []byte(devConfig))
+	fs.Put("prod.yml", []byte(prodConfig))
 
 	c, err := conf.NewConfigWithFS(fs, "dev.yml")
 	assert.NoError(t, err)
@@ -118,11 +118,7 @@ func TestAllowList(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	fs := osfs.NewFS(dir)
-	if err := fs.CreateDir("queries"); err != nil {
-		t.Error(err)
-		return
-	}
-	err = fs.CreateFile("queries/getProducts.gql", []byte(gql1))
+	err = fs.Put("queries/getProducts.gql", []byte(gql1))
 	if err != nil {
 		t.Error(err)
 		return

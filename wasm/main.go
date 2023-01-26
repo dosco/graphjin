@@ -52,7 +52,7 @@ func graphjinFunc() js.Func {
 			return toJSError(err)
 		}
 
-		fs := NewJSFSWithBase(fsv, cpv.String())
+		fs := NewJSFS(fsv, cpv.String())
 
 		confVal := cov.Get("value").String()
 		confValIsFile := cov.Get("isFile").Bool()

@@ -29,7 +29,7 @@ func readGQL(fs FS, fname string) (gql []byte, err error) {
 }
 
 func parseGQL(fs FS, fname string, r io.Writer) (err error) {
-	b, err := fs.ReadFile(fname)
+	b, err := fs.Get(fname)
 	if err != nil {
 		return err
 	}

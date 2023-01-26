@@ -76,7 +76,7 @@ func getKey(config JWTConfig) (interface{}, error) {
 	publicKeyFile := config.PubKeyFile
 	switch {
 	case publicKeyFile != "":
-		kd, err := config.fs.ReadFile(publicKeyFile)
+		kd, err := config.fs.Get(publicKeyFile)
 		if err != nil {
 			return nil, err
 		}
