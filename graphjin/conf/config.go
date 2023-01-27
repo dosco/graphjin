@@ -7,7 +7,7 @@ import (
 
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/dosco/graphjin/plugin/osfs/v3"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 type configInfo struct {

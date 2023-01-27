@@ -23,12 +23,9 @@ tidy:
 	@go mod tidy -go=1.16 && go mod tidy -go=1.17
 
 test:
-	@go test -v $(PACKAGES) 
-	@go test -v -timeout 30m -race ./tests/...
-	@go test -v -timeout 30m -race -db=mysql -tags=mysql ./tests/... 
-
-test-norace:
-	@go test -v -timeout 50m ./... && go test -v -timeout 50m -db=mysql -tags=mysql ./... 
+	@go test -v -race $(PACKAGES) 
+	@cd tests; go test -v -timeout 30m -race .
+	@cd tests; go test -v -timeout 30m -race -db=mysql -tags=mysql .
 
 BIN_DIR := $(GOPATH)/bin
 WEB_BUILD_DIR := ./serv/web/build/manifest.json
