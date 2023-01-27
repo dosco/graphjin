@@ -70,7 +70,7 @@ func New(log *_log.Logger, fs FS, readOnly bool) (al *List, err error) {
 			}
 			err = al.save(v)
 			if err != nil && log != nil {
-				log.Println("WRN allow list save:", err)
+				log.Println("WRN allow list:", err)
 			}
 		}
 	}()

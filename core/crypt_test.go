@@ -7,7 +7,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/dosco/graphjin/core/v3/internal/assert"
 )
 
 func TestCryptEncryptDecrypt(t *testing.T) {
@@ -22,24 +22,18 @@ func TestCryptEncryptDecrypt(t *testing.T) {
 
 	key := [32]byte{}
 	_, err := io.ReadFull(rand.Reader, key[:])
-	if err != nil {
-		panic(err)
-	}
+	assert.NoErrorFatal(t, err)
 
 	nonce := sha256.Sum256(js)
 
 	out1, err := encryptValues(
 		js, []byte(encPrefix), []byte(decPrefix), nonce[:], key)
-	if err != nil {
-		t.Fatal(err)
-	}
+	assert.NoErrorFatal(t, err)
 
 	out2, err := decryptValues(out1, []byte(decPrefix), key)
-	if err != nil {
-		t.Fatal(err)
-	}
+	assert.NoErrorFatal(t, err)
 
-	assert.Equal(t, string(expjs), string(out2))
+	assert.Equals(t, expjs, out2)
 }
 
 func TestCryptBadDecrypt(t *testing.T) {
@@ -50,16 +44,12 @@ func TestCryptBadDecrypt(t *testing.T) {
 
 	key := [32]byte{}
 	_, err := io.ReadFull(rand.Reader, key[:])
-	if err != nil {
-		panic(err)
-	}
+	assert.NoErrorFatal(t, err)
 
 	out, err := decryptValues(js, []byte(prefix), key)
-	if err != nil {
-		t.Fatal(err)
-	}
+	assert.NoErrorFatal(t, err)
 
-	assert.Equal(t, string(js), string(out))
+	assert.Equals(t, js, out)
 }
 
 func TestCryptFirstEncyptedValue(t *testing.T) {
@@ -75,7 +65,7 @@ func TestCryptFirstEncyptedValue(t *testing.T) {
 	exp := []byte(`0,12345`)
 
 	out := firstCursorValue(jsb, []byte(prefix))
-	assert.Equal(t, string(exp), string(out))
+	assert.Equals(t, exp, out)
 
 	out1 := firstCursorValue(jsb, []byte("boo"))
 	assert.Empty(t, out1)

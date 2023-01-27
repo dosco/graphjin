@@ -13,14 +13,7 @@ const (
 	routeREST    = "/api/v1/rest/*"
 	actionRoute  = "/api/v1/actions"
 	healthRoute  = "/health"
-	// metricsRoute = "/metrics"
 )
-
-// func (s *service) isHealthEndpoint(r *http.Request) bool {
-// 	p := r.URL.Path
-// 	return p == healthRoute || p == metricsRoute ||
-// 		(s.conf.Telemetry.Metrics.Endpoint != "" && p == s.conf.Telemetry.Metrics.Endpoint)
-// }
 
 type Mux interface {
 	Handle(string, http.Handler)
@@ -31,7 +24,7 @@ func routesHandler(s1 *Service, mux Mux, ns *string) (http.Handler, error) {
 	s := s1.Load().(*service)
 
 	// Healthcheck API
-	mux.Handle(healthRoute, healthV1Handler(s1))
+	mux.Handle(healthRoute, healthCheckHandler(s1))
 
 	if s.conf.HotDeploy {
 		// Rollback Config API
@@ -77,12 +70,6 @@ func routesHandler(s1 *Service, mux Mux, ns *string) (http.Handler, error) {
 
 	mux.Handle(routeGraphQL, h1)
 	mux.Handle(routeREST, h2)
-
-	// if s.conf.telemetryEnabled() {
-	// 	if s.closeFn, err = enableObservability(s, mux); err != nil {
-	// 		return nil, err
-	// 	}
-	// }
 
 	return setServerHeader(mux), nil
 }

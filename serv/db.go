@@ -93,9 +93,14 @@ func initPostgres(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf,
 	config.User = c.DB.User
 	config.Password = c.DB.Password
 
-	config.RuntimeParams = map[string]string{
-		"application_name": c.AppName,
-		"search_path":      c.DB.Schema,
+	config.RuntimeParams = map[string]string{}
+
+	if c.DB.Schema != "" {
+		config.RuntimeParams["search_path"] = c.DB.Schema
+	}
+
+	if c.AppName != "" {
+		config.RuntimeParams["application_name"] = c.AppName
 	}
 
 	if openDB {
