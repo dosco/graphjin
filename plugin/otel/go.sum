@@ -1,4 +1,6 @@
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
+github.com/dosco/graphjin/core/v3 v3.0.0-20230127063635-357767ee278d h1:nlQgn6S3i/gYIUQ5f/MzymWuxrXMnCe3qhkSYdGijFo=
+github.com/dosco/graphjin/core/v3 v3.0.0-20230127063635-357767ee278d/go.mod h1:JNJBiJJCh9VzcEr8tx8yN2BddDvxCBrk8S4bO6dcw5U=
 github.com/felixge/httpsnoop v1.0.3 h1:s/nj+GCswXYzN5v2DpNMuMQYe+0DDwt5WVCU6CWBdXk=
 github.com/felixge/httpsnoop v1.0.3/go.mod h1:m8KPJKqk1gH5J9DgRY2ASl2lWCfGKXixSwevea8zH2U=
 github.com/go-logr/logr v1.2.2/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=

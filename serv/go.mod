@@ -2,9 +2,6 @@ module github.com/dosco/graphjin/serv/v3
 
 go 1.18
 
-replace ithub.com/dosco/graphjin/core/v3 => ../core
-replace ithub.com/dosco/graphjin/plugin/otel/v3 => ../plugin/otel
-
 require (
 	github.com/dosco/graphjin/core/v3 v3.0.0-20230126190039-60bf6b5d3fd3
 	github.com/dosco/graphjin/plugin/afero/v3 v3.0.0-20230125090031-062b181a2f0f
