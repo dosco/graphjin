@@ -6,7 +6,7 @@ BUILD_VERSION ?= $(shell git describe --always --tags)
 GOPATH  ?= $(shell go env GOPATH)
 GOROOT ?= $(shell go env GOROOT)
 
-PACKAGES ?= core tests plugin/afero plugin/osfs plugin/otel plugin/wasm serv auth cmd
+PACKAGES ?= ./core ./plugin/afero ./plugin/osfs ./plugin/otel ./plugin/wasm ./serv ./auth ./cmd
 
 ifndef GOPATH
 override GOPATH = $(HOME)/go
@@ -23,8 +23,9 @@ tidy:
 	@go mod tidy -go=1.16 && go mod tidy -go=1.17
 
 test:
-	@cd tests; go test -v -timeout 30m -race ./...
-	@cd tests; go test -v -timeout 30m -race -db=mysql -tags=mysql ./... 
+	@go test -v $(PACKAGES) 
+	@go test -v -timeout 30m -race ./tests/...
+	@go test -v -timeout 30m -race -db=mysql -tags=mysql ./tests/... 
 
 test-norace:
 	@go test -v -timeout 50m ./... && go test -v -timeout 50m -db=mysql -tags=mysql ./... 
@@ -45,7 +46,7 @@ $(WEB_BUILD_DIR):
 	@exit 1
 
 lint: download-tools
-	@golangci-lint run $(PACKAGES)
+	@golangci-lint run ./tests $(PACKAGES) 
 
 BINARY := graphjin
 WASM := ./wasm/graphjin.wasm

@@ -3,8 +3,8 @@ package util_test
 import (
 	"testing"
 
+	"github.com/dosco/graphjin/core/v3/internal/assert"
 	"github.com/dosco/graphjin/core/v3/internal/util"
-	"github.com/stretchr/testify/assert"
 )
 
 // nolint:errcheck
@@ -36,7 +36,7 @@ func TestGraph1(t *testing.T) {
 	g.AddEdge(b, b, 2, "test")
 
 	paths := g.AllPaths(h, a)
-	assert.ElementsMatch(t, paths, [][]int32{
+	assert.Equals(t, paths, [][]int32{
 		{6, 1, 0},
 		{6, 3, 2, 0},
 		{6, 3, 2, 1, 0},
@@ -45,7 +45,7 @@ func TestGraph1(t *testing.T) {
 	})
 
 	paths = g.AllPaths(b, b)
-	assert.ElementsMatch(t, paths, [][]int32{
+	assert.Equals(t, paths, [][]int32{
 		{1, 1},
 		{1, 0, 1},
 		{1, 0, 2, 1},
@@ -53,7 +53,7 @@ func TestGraph1(t *testing.T) {
 	})
 
 	edges := g.GetEdges(b, b)
-	assert.ElementsMatch(t, edges, []util.Edge{{13, 2, "test"}})
+	assert.Equals(t, edges, []util.Edge{{13, 2, "test"}})
 }
 
 /*

@@ -399,7 +399,7 @@ func (gj *graphjin) saveToAllowList(qc *qcode.QCode, ns string) (err error) {
 	return gj.allowList.Set(item)
 }
 
-func (gj *graphjin) spanStart(c context.Context, name string) (context.Context, span) {
+func (gj *graphjin) spanStart(c context.Context, name string) (context.Context, Spaner) {
 	return gj.trace.Start(c, name)
 }
 

@@ -6,7 +6,7 @@ import (
 )
 
 type Tracer interface {
-	Start(c context.Context, name string) (context.Context, span)
+	Start(c context.Context, name string) (context.Context, Spaner)
 	NewHTTPClient() *http.Client
 }
 
@@ -21,8 +21,8 @@ type tracer struct{}
 
 type span struct{}
 
-func (t *tracer) Start(c context.Context, name string) (context.Context, span) {
-	return c, span{}
+func (t *tracer) Start(c context.Context, name string) (context.Context, Spaner) {
+	return c, &span{}
 }
 
 func (t *tracer) NewHTTPClient() *http.Client {
@@ -36,8 +36,8 @@ func (s *span) Error(err error) {
 }
 
 type StringAttr struct {
-	name  string
-	value string
+	Name  string
+	Value string
 }
 
 func (s *span) IsRecording() bool {

@@ -38,15 +38,19 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
 
+	"github.com/dosco/graphjin/auth/v3"
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/dosco/graphjin/plugin/afero/v3"
+	otelPlugin "github.com/dosco/graphjin/plugin/otel/v3"
 	"github.com/dosco/graphjin/serv/v3/internal/util"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -92,6 +96,7 @@ type service struct {
 
 type Option func(*service) error
 
+// NewGraphJinService a new service
 func NewGraphJinService(conf *Config, options ...Option) (*Service, error) {
 	if conf.dirty {
 		return nil, errors.New("do not re-use config object")
@@ -116,6 +121,7 @@ func NewGraphJinService(conf *Config, options ...Option) (*Service, error) {
 	return s1, nil
 }
 
+// OptionSetDB sets a new db client
 func OptionSetDB(db *sql.DB) Option {
 	return func(s *service) error {
 		s.db = db
@@ -123,6 +129,7 @@ func OptionSetDB(db *sql.DB) Option {
 	}
 }
 
+// OptionSetHookFunc sets a function to be called on every request
 func OptionSetHookFunc(fn HookFn) Option {
 	return func(s *service) error {
 		s.hook = fn
@@ -130,6 +137,7 @@ func OptionSetHookFunc(fn HookFn) Option {
 	}
 }
 
+// OptionSetNamespace sets service namespace
 func OptionSetNamespace(namespace string) Option {
 	return func(s *service) error {
 		s.namespace = &namespace
@@ -137,6 +145,7 @@ func OptionSetNamespace(namespace string) Option {
 	}
 }
 
+// OptionSetFS sets service filesystem
 func OptionSetFS(fs core.FS) Option {
 	return func(s *service) error {
 		s.fs = fs
@@ -145,6 +154,7 @@ func OptionSetFS(fs core.FS) Option {
 	}
 }
 
+// OptionSetZapLogger sets service structured logger
 func OptionSetZapLogger(zlog *zap.Logger) Option {
 	return func(s *service) error {
 		s.zlog = zlog
@@ -153,6 +163,7 @@ func OptionSetZapLogger(zlog *zap.Logger) Option {
 	}
 }
 
+// OptionDeployActive caused the active config to be deployed on
 func OptionDeployActive() Option {
 	return func(s *service) error {
 		s.deployActive = true
@@ -259,6 +270,7 @@ func (s *service) hotStart() error {
 
 	opts := []core.Option{
 		core.OptionSetFS(afero.NewFS(bfs.fs, "/")),
+		core.OptionSetTrace(otelPlugin.NewTracerFrom(s.tracer)),
 	}
 
 	if s.namespace != nil {
@@ -270,6 +282,7 @@ func (s *service) hotStart() error {
 	return err
 }
 
+// Deploy a new configuration
 func (s *Service) Deploy(conf *Config, options ...Option) error {
 	var err error
 	os := s.Load().(*service)
@@ -290,16 +303,19 @@ func (s *Service) Deploy(conf *Config, options ...Option) error {
 	return nil
 }
 
+// Start the service listening on the configured port
 func (s *Service) Start() error {
 	startHTTP(s)
 	return nil
 }
 
+// Attach route to the internal http service
 func (s *Service) Attach(mux Mux) error {
 	return s.attach(mux, nil)
 }
 
-func (s *Service) AttachWithNamespace(mux Mux, namespace string) error {
+// AttachWithNS a namespaced route to the internal http service
+func (s *Service) AttachWithNS(mux Mux, namespace string) error {
 	return s.attach(mux, &namespace)
 }
 
@@ -339,17 +355,55 @@ func (s *Service) attach(mux Mux, ns *string) error {
 	return nil
 }
 
+// GraphQLHandler is the http handler the GraphQL endpoint
+func (s *Service) GraphQLHandler(ah auth.HandlerFunc) http.Handler {
+	return s.apiHandler(nil, ah, false)
+}
+
+// GraphQLHandlerNS is the http handler the namespaced GraphQL endpoint
+func (s *Service) GraphQLHandlerNS(ah auth.HandlerFunc, ns string) http.Handler {
+	return s.apiHandler(&ns, ah, false)
+}
+
+// RESTHandler is the http handler the REST endpoint
+func (s *Service) RESTHandler(ah auth.HandlerFunc) http.Handler {
+	return s.apiHandler(nil, ah, true)
+}
+
+// RESTHandlerNS is the http handler the namespaced REST endpoint
+func (s *Service) RESTHandlerNS(ah auth.HandlerFunc, ns string) http.Handler {
+	return s.apiHandler(&ns, ah, true)
+}
+
+func (s *Service) apiHandler(ns *string, ah auth.HandlerFunc, rest bool) http.Handler {
+	var h http.Handler
+	if rest {
+		h = s.apiV1Rest(ns, ah)
+	} else {
+		h = s.apiV1GraphQL(ns, ah)
+	}
+	return apiV1Handler(s, ns, h, ah)
+}
+
+// RESTHandlerNS is the http handler the namespaced REST endpoint
+func (s *Service) WebUIHandler() http.Handler {
+	webRoot, _ := fs.Sub(webBuild, "web/build")
+	return http.FileServer(http.FS(webRoot))
+}
+
+// GetGraphJin fetching internal GraphJin core
 func (s *Service) GetGraphJin() *core.GraphJin {
 	s1 := s.Load().(*service)
 	return s1.gj
 }
 
+// GetDB fetching internal db client
 func (s *Service) GetDB() *sql.DB {
 	s1 := s.Load().(*service)
 	return s1.db
 }
 
-// Reload redoes database discover and reinitializes GraphJin.
+// Reload reruns database discover and reinitializes service.
 func (s *Service) Reload() error {
 	s1 := s.Load().(*service)
 	return s1.gj.Reload()

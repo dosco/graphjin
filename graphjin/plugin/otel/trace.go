@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/dosco/graphjin/core/v3"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -19,13 +20,17 @@ type span struct {
 	trace.Span
 }
 
-func NewTracer() Tracer {
-	return Tracer{Tracer: otel.Tracer("graphjin.com/core")}
+func NewTracer() *Tracer {
+	return &Tracer{Tracer: otel.Tracer("graphjin.com/core")}
 }
 
-func (t *Tracer) Start(c context.Context, name string) (context.Context, span) {
+func NewTracerFrom(t trace.Tracer) *Tracer {
+	return &Tracer{Tracer: t}
+}
+
+func (t *Tracer) Start(c context.Context, name string) (context.Context, core.Spaner) {
 	c, s := t.Tracer.Start(c, name)
-	return c, span{Span: s}
+	return c, &span{Span: s}
 }
 
 func (t *Tracer) NewHTTPClient() *http.Client {
@@ -45,19 +50,14 @@ func (s *span) Error(err error) {
 	}
 }
 
-type stringAttr struct {
-	name  string
-	value string
-}
-
 func (s *span) IsRecording() bool {
 	return s.Span.IsRecording()
 }
 
-func (s *span) SetAttributesString(attrs ...stringAttr) {
+func (s *span) SetAttributesString(attrs ...core.StringAttr) {
 	as := make([]attribute.KeyValue, len(attrs))
 	for _, a := range attrs {
-		as = append(as, attribute.String(a.name, a.value))
+		as = append(as, attribute.String(a.Name, a.Value))
 	}
 	s.Span.SetAttributes(as...)
 }
