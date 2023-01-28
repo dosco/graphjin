@@ -5,7 +5,7 @@ go 1.18
 require (
 	github.com/adjust/gorails v0.0.0-20171013043634-2786ed0c03d3
 	github.com/bradfitz/gomemcache v0.0.0-20230124162541-5f7a7d875746
-	github.com/dosco/graphjin/core/v3 v3.0.0-20230127082222-13448e4d7160
+	github.com/dosco/graphjin/core/v3 v3.0.0-20230128064639-95e7abc910b9
 	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/gomodule/redigo v1.8.9
 	github.com/gorilla/websocket v1.5.0

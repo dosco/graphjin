@@ -3,8 +3,8 @@ module github.com/dosco/graphjin/serv/v3
 go 1.18
 
 require (
-	github.com/dosco/graphjin/auth/v3 v3.0.0-20230127082222-13448e4d7160
-	github.com/dosco/graphjin/core/v3 v3.0.0-20230127082222-13448e4d7160
+	github.com/dosco/graphjin/auth/v3 v3.0.0-20230128064639-95e7abc910b9
+	github.com/dosco/graphjin/core/v3 v3.0.0-20230128064639-95e7abc910b9
 	github.com/dosco/graphjin/plugin/otel/v3 v3.0.0-20230127082222-13448e4d7160
 	github.com/fsnotify/fsnotify v1.6.0
 	github.com/go-http-utils/headers v0.0.0-20181008091004-fed159eddc2a

@@ -7,10 +7,7 @@
 [![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=for-the-badge&logo=appveyor&logo=appveyor)](https://pkg.go.dev/github.com/dosco/graphjin/v2)
 [![GoReport](https://goreportcard.com/badge/github.com/gojp/goreportcard?style=for-the-badge)](https://goreportcard.com/report/github.com/dosco/graphjin/v2)
 
-<!-- [![Run on Google Cloud](./.github/deploy-cloud-run-button.svg)](https://deploy.cloud.run)
- -->
- 
- ## Build APIs in 5 minutes not weeks
+## Build APIs in 5 minutes not weeks
 
 GraphJin gives you an instant secure and fast GraphQL API without code. Just use a GraphQL query to define your API and GraphJin automagically converts it into a full featured API. Build your backend APIs **100X** faster. Works with **NodeJS** and **GO**. Supports several databases, **Postgres**, **MySQL**, **Yugabyte**, **AWS Aurora/RDS** and **Google Cloud SQL**
 
