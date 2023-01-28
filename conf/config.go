@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 
 	"github.com/dosco/graphjin/core/v3"
-	"github.com/dosco/graphjin/plugin/osfs/v3"
 	"gopkg.in/yaml.v3"
 )
 
@@ -15,7 +14,7 @@ type configInfo struct {
 }
 
 func NewConfig(configPath, configFile string) (c *core.Config, err error) {
-	fs := osfs.NewFS(configPath)
+	fs := core.NewOsFS(configPath)
 	if c, err = NewConfigWithFS(fs, configFile); err != nil {
 		return
 	}

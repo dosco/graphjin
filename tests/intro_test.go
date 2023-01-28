@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/dosco/graphjin/core/v3"
-	"github.com/dosco/graphjin/plugin/osfs/v3"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -48,7 +47,7 @@ func TestIntrospection(t *testing.T) {
 		panic(err)
 	}
 	defer os.RemoveAll(dir)
-	fs := osfs.NewFS(dir)
+	fs := core.NewOsFS(dir)
 
 	conf := newConfig(&core.Config{DBType: dbType, EnableIntrospection: true})
 	_, err = core.NewGraphJin(conf, db, core.OptionSetFS(fs))

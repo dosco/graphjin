@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/dosco/graphjin/core/v3"
-	"github.com/dosco/graphjin/plugin/osfs/v3"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -705,7 +704,7 @@ func TestAllowListWithMutations(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.RemoveAll(dir)
 
-	fs := osfs.NewFS(dir)
+	fs := core.NewOsFS(dir)
 	assert.NoError(t, err)
 
 	conf1 := newConfig(&core.Config{DBType: dbType, DisableAllowList: false})

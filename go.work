@@ -7,9 +7,5 @@ use (
 	./serv
 	./auth
 	./cmd
-	./plugin/afero
-	./plugin/osfs
 	./plugin/otel
-	./plugin/wasm
-	
 )

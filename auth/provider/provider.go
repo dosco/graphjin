@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 
-	"github.com/dosco/graphjin/core/v3"
-	"github.com/dosco/graphjin/plugin/osfs/v3"
 	jwt "github.com/golang-jwt/jwt"
 )
 
@@ -20,7 +18,7 @@ type JWTConfig struct {
 
 	// Public keys can be used instead of using a secret
 	// PublicKeyFile points to the file containing the public key
-	PubKeyFile string `mapstructure:"public_key_file" jsonschema:"title=Public Key File"`
+	PubKey string `mapstructure:"public_key" jsonschema:"title=Public Key"`
 
 	// Public key file type can be one of ecdsa or rsa
 	PubKeyType string `mapstructure:"public_key_type" jsonschema:"title=Public Key File Type,enum=ecdsa,enum=rsa"`
@@ -42,9 +40,6 @@ type JWTConfig struct {
 	// JWKSMinRefresh sets in minutes fallback value when tokens are refreshed, default
 	// to 60 minutes
 	JWKSMinRefresh int `mapstructure:"jwks_min_refresh" jsonschema:"title=JWKS Minimum Refresh Timeout (minutes)"`
-
-	// FileSystem
-	fs core.FS
 }
 
 // JWTProvider is the interface to define providers for doing JWT
@@ -57,7 +52,6 @@ type JWTProvider interface {
 }
 
 func NewProvider(config JWTConfig) (JWTProvider, error) {
-	config.fs = osfs.NewFS("/")
 	switch config.Provider {
 	case "auth0":
 		return NewAuth0Provider(config)
@@ -72,29 +66,26 @@ func NewProvider(config JWTConfig) (JWTProvider, error) {
 
 func getKey(config JWTConfig) (interface{}, error) {
 	var key interface{}
-	secret := config.Secret
-	publicKeyFile := config.PubKeyFile
+	var err error
+
 	switch {
-	case publicKeyFile != "":
-		kd, err := config.fs.Get(publicKeyFile)
-		if err != nil {
-			return nil, err
-		}
+	case config.PubKey != "":
+		pk := []byte(config.PubKey)
 		switch config.PubKeyType {
 		case "ecdsa":
-			key, err = jwt.ParseECPublicKeyFromPEM(kd)
+			key, err = jwt.ParseECPublicKeyFromPEM(pk)
 		case "rsa":
-			key, err = jwt.ParseRSAPublicKeyFromPEM(kd)
+			key, err = jwt.ParseRSAPublicKeyFromPEM(pk)
 		default:
-			key, err = jwt.ParseECPublicKeyFromPEM(kd)
+			key, err = jwt.ParseECPublicKeyFromPEM(pk)
 		}
 		if err != nil {
 			return nil, err
 		}
 		// TODO: Log message informing that a public key will be used
 
-	case secret != "":
-		key = []byte(secret)
+	case config.Secret != "":
+		key = []byte(config.Secret)
 		// TODO: Log message informing that a secret will be used
 
 	}
@@ -102,8 +93,4 @@ func getKey(config JWTConfig) (interface{}, error) {
 		return nil, errors.New("undefined key")
 	}
 	return key, nil
-}
-
-func (c *JWTConfig) SetFS(fs core.FS) {
-	c.fs = fs
 }

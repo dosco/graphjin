@@ -546,7 +546,7 @@ func getFS(conf *Config) (fs FS, err error) {
 		return
 	}
 
-	fs = NewFS(filepath.Join(v, "config"))
+	fs = NewOsFS(filepath.Join(v, "config"))
 	return
 }
 

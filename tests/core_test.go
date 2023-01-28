@@ -10,7 +10,6 @@ import (
 
 	"github.com/dosco/graphjin/conf/v3"
 	"github.com/dosco/graphjin/core/v3"
-	"github.com/dosco/graphjin/plugin/osfs/v3"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/sync/errgroup"
 )
@@ -26,7 +25,7 @@ func TestReadInConfigWithEnvVars(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-	fs := osfs.NewFS(dir)
+	fs := core.NewOsFS(dir)
 	fs.Put("dev.yml", []byte(devConfig))
 	fs.Put("prod.yml", []byte(prodConfig))
 
@@ -117,7 +116,7 @@ func TestAllowList(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-	fs := osfs.NewFS(dir)
+	fs := core.NewOsFS(dir)
 	err = fs.Put("queries/getProducts.gql", []byte(gql1))
 	if err != nil {
 		t.Error(err)
@@ -177,7 +176,7 @@ func TestAllowListWithNamespace(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(dir)
-	fs := osfs.NewFS(dir)
+	fs := core.NewOsFS(dir)
 
 	conf1 := newConfig(&core.Config{DBType: dbType})
 	gj1, err := core.NewGraphJin(conf1, db,
@@ -268,7 +267,7 @@ func TestEnableSchema(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-	fs := osfs.NewFS(dir)
+	fs := core.NewOsFS(dir)
 
 	conf1 := newConfig(&core.Config{DBType: dbType, EnableSchema: true})
 	gj1, err := core.NewGraphJin(conf1, db, core.OptionSetFS(fs))

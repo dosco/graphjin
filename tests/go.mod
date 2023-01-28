@@ -3,9 +3,8 @@ module github.com/dosco/graphjin/tests/v3
 go 1.18
 
 require (
-	github.com/dosco/graphjin/conf/v3 v3.0.0-20230126190039-60bf6b5d3fd3
-	github.com/dosco/graphjin/core/v3 v3.0.0-20230126190039-60bf6b5d3fd3
-	github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-20230125094531-96f5ec6d2d29
+	github.com/dosco/graphjin/conf/v3 v3.0.0-20230127082222-13448e4d7160
+	github.com/dosco/graphjin/core/v3 v3.0.0-20230127082222-13448e4d7160
 	github.com/orlangure/gnomock v0.24.0
 	github.com/stretchr/testify v1.8.1
 	golang.org/x/sync v0.1.0
@@ -20,6 +19,7 @@ require (
 	github.com/docker/docker v20.10.21+incompatible // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-units v0.4.0 // indirect
+	github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-20230127082222-13448e4d7160 // indirect
 	github.com/go-sql-driver/mysql v1.7.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-sql/civil v0.0.0-20190719163853-cb61b32ac6fe // indirect
@@ -39,8 +39,6 @@ require (
 	golang.org/x/crypto v0.5.0 // indirect
 	golang.org/x/net v0.5.0 // indirect
 	golang.org/x/sys v0.4.0 // indirect
-	golang.org/x/text v0.6.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
-	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

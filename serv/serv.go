@@ -2,14 +2,13 @@ package serv
 
 import (
 	"context"
-	"embed"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"time"
 
-	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -24,9 +23,6 @@ var (
 	version string
 	commit  string
 	date    string
-
-	//go:embed web/build
-	webBuild embed.FS
 )
 
 func initConfigWatcher(s1 *Service) {

@@ -6,7 +6,7 @@ import (
 	"path"
 	"path/filepath"
 
-	"github.com/dosco/graphjin/plugin/osfs/v3"
+	"github.com/dosco/graphjin/core/v3"
 	"github.com/dosco/graphjin/serv/v3"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
@@ -83,7 +83,7 @@ func initDB(openDB bool) {
 	if db != nil && openDB == dbOpened {
 		return
 	}
-	fs := osfs.NewFS(cpath)
+	fs := core.NewOsFS(cpath)
 
 	if db, err = serv.NewDB(conf, openDB, log, fs); err != nil {
 		log.Fatalf("Failed to connect to database: %s", err)

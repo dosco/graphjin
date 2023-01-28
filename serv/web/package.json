@@ -1,5 +1,5 @@
 {
-  "name": "web",
+  "name": "web-ui",
   "private": true,
   "dependencies": {
     "graphiql": "^2.2.0",
@@ -11,8 +11,8 @@
     "react-scripts": "^5.0.1"
   },
   "scripts": {
-    "start": "PORT=3001 react-scripts start",
-    "build": "react-scripts build",
+    "start": "PUBLIC_URL='./' PORT=3001 react-scripts start",
+    "build": "PUBLIC_URL='./' react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
