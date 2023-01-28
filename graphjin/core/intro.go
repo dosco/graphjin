@@ -370,7 +370,7 @@ func (in *intro) addTableTypeWithDepth(
 
 	for _, c := range t.Columns {
 		if c.Blocked {
-			return
+			continue
 		}
 		if c.FullText {
 			hasSearch = true
