@@ -5,8 +5,8 @@ go 1.18
 require (
 	github.com/brianvoe/gofakeit/v6 v6.20.1
 	github.com/dop251/goja v0.0.0-20230111111035-473251c96b4c
-	github.com/dosco/graphjin/core/v3 v3.0.0-20230127082222-13448e4d7160
-	github.com/dosco/graphjin/serv/v3 v3.0.0-20230127082222-13448e4d7160
+	github.com/dosco/graphjin/core/v3 v3.0.0-20230128064639-95e7abc910b9
+	github.com/dosco/graphjin/serv/v3 v3.0.0-20230128064639-95e7abc910b9
 	github.com/gosimple/slug v1.13.1
 	github.com/jackc/pgx/v5 v5.2.0
 	github.com/jvatic/goja-babel v0.0.0-20230111121754-c57c791c6a80
@@ -45,12 +45,13 @@ require (
 	github.com/dlclark/regexp2 v1.7.0 // indirect
 	github.com/dosco/graphjin/auth/v3 v3.0.0-20230127082222-13448e4d7160 // indirect
 	github.com/dosco/graphjin/plugin/afero/v3 v3.0.0-20230125090031-062b181a2f0f // indirect
-	github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-20230125090031-062b181a2f0f // indirect
+	github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-20230127082222-13448e4d7160 // indirect
 	github.com/dosco/graphjin/plugin/otel/v3 v3.0.0-20230127082222-13448e4d7160 // indirect
 	github.com/fatih/color v1.13.0 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/go-chi/chi v1.5.4 // indirect
+	github.com/go-chi/chi/v5 v5.0.8 // indirect
 	github.com/go-http-utils/headers v0.0.0-20181008091004-fed159eddc2a // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

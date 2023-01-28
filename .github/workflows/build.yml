@@ -72,8 +72,9 @@ jobs:
 
       - name: Run GoReleaser
         if: success() && startsWith(github.ref, 'refs/tags/v')
-        uses: goreleaser/goreleaser-action@v2
+        uses: goreleaser/goreleaser-action@v4
         with:
+          distribution: goreleaser
           version: latest
           args: release --rm-dist
         env:

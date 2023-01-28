@@ -134,8 +134,12 @@ github.com/docker/go-connections v0.4.0 h1:El9xVISelRB7BuFusrZozjnkIM5YnzCViNKoh
 github.com/docker/go-units v0.4.0 h1:3uh0PgVws3nIA0Q+MwDC8yjEPf9zjRfZZWXZYDct3Tw=
 github.com/dosco/graphjin/auth/v3 v3.0.0-20230127082222-13448e4d7160 h1:H8AvshLuo1NVq/FvqPQ6Lv1IhEy0sTnPvBwDFOyyCEE=
 github.com/dosco/graphjin/auth/v3 v3.0.0-20230127082222-13448e4d7160/go.mod h1:RYIyGIrtw5lwIsScyL9XNRxX6LGVqv1BazRjgtEpTCk=
+github.com/dosco/graphjin/auth/v3 v3.0.0-20230128064639-95e7abc910b9 h1:9Xc2GYlyw7otkB2PQDRdape2fFsdl5/xOEi2LphNX7o=
+github.com/dosco/graphjin/auth/v3 v3.0.0-20230128064639-95e7abc910b9/go.mod h1:yxZ/EJNJKAOSkamqT6OAQ5RixWG8AIzcirAhTxlKNtk=
 github.com/dosco/graphjin/core/v3 v3.0.0-20230127082222-13448e4d7160 h1:1OTSZXcTzPHGTBtyX3NIuicSlBBofGPN7rs+axyzdqk=
 github.com/dosco/graphjin/core/v3 v3.0.0-20230127082222-13448e4d7160/go.mod h1:JNJBiJJCh9VzcEr8tx8yN2BddDvxCBrk8S4bO6dcw5U=
+github.com/dosco/graphjin/core/v3 v3.0.0-20230128064639-95e7abc910b9 h1:Z+1Wu43UcWuYCvsANeKq0hmhGhk/ALigcHHtQNluUDQ=
+github.com/dosco/graphjin/core/v3 v3.0.0-20230128064639-95e7abc910b9/go.mod h1:JNJBiJJCh9VzcEr8tx8yN2BddDvxCBrk8S4bO6dcw5U=
 github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-20230127082222-13448e4d7160 h1:E5TTZbVxsp31LkvNosi9gqarp95Hh6fRwKqAVMn0keo=
 github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-20230127082222-13448e4d7160/go.mod h1:lg2ZkWi2PmA8d8t0vL7fgyFc1bKAkSIb6sWnOWmaseQ=
 github.com/dosco/graphjin/plugin/otel/v3 v3.0.0-20230127082222-13448e4d7160 h1:XYXEOW8yUXdB6Pc3J3EVtZ5LzP91UV8siKEB7G25ryc=
