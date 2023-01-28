@@ -16,6 +16,7 @@ import (
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/dosco/graphjin/serv/v3/internal/etags"
 	"github.com/gorilla/websocket"
+	"github.com/klauspost/compress/gzhttp"
 	"github.com/rs/cors"
 
 	"go.opentelemetry.io/otel"
@@ -66,7 +67,7 @@ func apiV1Handler(s1 *Service, ns *string, h http.Handler, ah auth.HandlerFunc) 
 		authOpt := auth.Options{AuthFailBlock: s.conf.Serv.AuthFailBlock}
 		useAuth, err := auth.NewAuth(s.conf.Auth, zlog, authOpt, ah)
 		if err != nil {
-			s.log.Fatalf("api: error initializing auth: %s", err)
+			s.log.Fatalf("api: error with auth: %s", err)
 		}
 		h = useAuth(h)
 	}
@@ -90,6 +91,19 @@ func apiV1Handler(s1 *Service, ns *string, h http.Handler, ah auth.HandlerFunc) 
 	}
 
 	h = etags.Handler(h, false)
+
+	if s.conf.rateLimiterEnable() {
+		h = rateLimiter(s1, h)
+	}
+
+	if s.conf.HTTPGZip {
+		gz, err := gzhttp.NewWrapper(gzhttp.CompressionLevel(6))
+		if err != nil {
+			s.log.Fatalf("api: error with compression: %s", err)
+		}
+		h = gz(h)
+	}
+
 	return h
 }
 

@@ -11,7 +11,7 @@ import (
 
 	// mysql drivers
 
-	"github.com/dosco/graphjin/plugin/osfs/v3"
+	"github.com/dosco/graphjin/core/v3"
 	_ "github.com/go-sql-driver/mysql"
 )
 
@@ -51,7 +51,7 @@ func (s *service) initFS() error {
 		return err
 	}
 
-	err = OptionSetFS(osfs.NewFS(basePath))(s)
+	err = OptionSetFS(core.NewOsFS(basePath))(s)
 	if err != nil {
 		return err
 	}

@@ -1,11 +1,9 @@
 package serv
 
 import (
-	"io/fs"
 	"net/http"
 
 	"github.com/dosco/graphjin/auth/v3"
-	"github.com/klauspost/compress/gzhttp"
 )
 
 const (
@@ -26,19 +24,14 @@ func routesHandler(s1 *Service, mux Mux, ns *string) (http.Handler, error) {
 	// Healthcheck API
 	mux.Handle(healthRoute, healthCheckHandler(s1))
 
+	// Hot deploy API
 	if s.conf.HotDeploy {
-		// Rollback Config API
 		mux.Handle(RollbackRoute, adminRollbackHandler(s1))
-		// Deploy Config API
 		mux.Handle(DeployRoute, adminDeployHandler(s1))
 	}
 
 	if s.conf.WebUI {
-		if webRoot, err := fs.Sub(webBuild, "web/build"); err != nil {
-			return nil, err
-		} else {
-			mux.Handle("/*", http.FileServer(http.FS(webRoot)))
-		}
+		mux.Handle("/*", s1.WebUI("/", routeGraphQL))
 	}
 
 	ah, err := auth.NewAuthHandlerFunc(s.conf.Auth)
@@ -51,25 +44,13 @@ func routesHandler(s1 *Service, mux Mux, ns *string) (http.Handler, error) {
 	}
 
 	// GraphQL / REST API
-	h1 := apiV1Handler(s1, ns, s1.apiV1GraphQL(ns, ah), ah)
-	h2 := apiV1Handler(s1, ns, s1.apiV1Rest(ns, ah), ah)
-
-	if s.conf.rateLimiterEnable() {
-		h1 = rateLimiter(s1, h1)
-		h2 = rateLimiter(s1, h2)
+	if ns == nil {
+		mux.Handle(routeGraphQL, s1.GraphQL(ah))
+		mux.Handle(routeREST, s1.REST(ah))
+	} else {
+		mux.Handle(routeGraphQL, s1.GraphQLWithNS(ah, *ns))
+		mux.Handle(routeREST, s1.RESTWithNS(ah, *ns))
 	}
-
-	if s.conf.HTTPGZip {
-		if gz, err := gzhttp.NewWrapper(gzhttp.CompressionLevel(6)); err != nil {
-			return nil, err
-		} else {
-			h1 = gz(h1)
-			h2 = gz(h2)
-		}
-	}
-
-	mux.Handle(routeGraphQL, h1)
-	mux.Handle(routeREST, h2)
 
 	return setServerHeader(mux), nil
 }

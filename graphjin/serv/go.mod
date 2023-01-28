@@ -3,11 +3,10 @@ module github.com/dosco/graphjin/serv/v3
 go 1.18
 
 require (
-	github.com/dosco/graphjin/core/v3 v3.0.0-20230126190039-60bf6b5d3fd3
-	github.com/dosco/graphjin/plugin/afero/v3 v3.0.0-20230125090031-062b181a2f0f
-	github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-20230125090031-062b181a2f0f
+	github.com/dosco/graphjin/auth/v3 v3.0.0-20230127082222-13448e4d7160
+	github.com/dosco/graphjin/core/v3 v3.0.0-20230127082222-13448e4d7160
+	github.com/dosco/graphjin/plugin/otel/v3 v3.0.0-20230127082222-13448e4d7160
 	github.com/fsnotify/fsnotify v1.6.0
-	github.com/go-chi/chi v1.5.4
 	github.com/go-http-utils/headers v0.0.0-20181008091004-fed159eddc2a
 	github.com/go-pkgz/expirable-cache v1.0.0
 	github.com/go-resty/resty/v2 v2.7.0
@@ -32,6 +31,13 @@ require (
 )
 
 require (
+	github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-20230127082222-13448e4d7160 // indirect
+	github.com/felixge/httpsnoop v1.0.3 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.37.0 // indirect
+	go.opentelemetry.io/otel/metric v0.34.0 // indirect
+)
+
+require (
 	cloud.google.com/go/compute v1.14.0 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
 	filippo.io/age v1.0.0 // indirect
@@ -50,7 +56,6 @@ require (
 	github.com/adjust/gorails v0.0.0-20171013043634-2786ed0c03d3 // indirect
 	github.com/armon/go-metrics v0.4.0 // indirect
 	github.com/armon/go-radix v1.0.0 // indirect
-	github.com/avast/retry-go v3.0.0+incompatible // indirect
 	github.com/aws/aws-sdk-go v1.44.130 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/bradfitz/gomemcache v0.0.0-20230124162541-5f7a7d875746 // indirect
@@ -59,6 +64,7 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.1.0 // indirect
 	github.com/dimchansky/utfbom v1.1.1 // indirect
 	github.com/fatih/color v1.13.0 // indirect
+	github.com/go-chi/chi/v5 v5.0.8
 	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/goccy/go-json v0.10.0 // indirect
@@ -116,7 +122,6 @@ require (
 	github.com/pelletier/go-toml/v2 v2.0.6 // indirect
 	github.com/pierrec/lz4 v2.6.1+incompatible // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/rs/xid v1.4.0 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/sirupsen/logrus v1.9.0 // indirect
 	github.com/spf13/cast v1.5.0 // indirect

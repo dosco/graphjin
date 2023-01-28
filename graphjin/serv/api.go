@@ -38,7 +38,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -47,7 +46,6 @@ import (
 
 	"github.com/dosco/graphjin/auth/v3"
 	"github.com/dosco/graphjin/core/v3"
-	"github.com/dosco/graphjin/plugin/afero/v3"
 	otelPlugin "github.com/dosco/graphjin/plugin/otel/v3"
 	"github.com/dosco/graphjin/serv/v3/internal/util"
 
@@ -149,7 +147,6 @@ func OptionSetNamespace(namespace string) Option {
 func OptionSetFS(fs core.FS) Option {
 	return func(s *service) error {
 		s.fs = fs
-		s.conf.Auth.JWT.SetFS(s.fs)
 		return nil
 	}
 }
@@ -269,7 +266,7 @@ func (s *service) hotStart() error {
 	}
 
 	opts := []core.Option{
-		core.OptionSetFS(afero.NewFS(bfs.fs, "/")),
+		core.OptionSetFS(newAferoFS(bfs.fs, "/")),
 		core.OptionSetTrace(otelPlugin.NewTracerFrom(s.tracer)),
 	}
 
@@ -355,23 +352,23 @@ func (s *Service) attach(mux Mux, ns *string) error {
 	return nil
 }
 
-// GraphQLHandler is the http handler the GraphQL endpoint
-func (s *Service) GraphQLHandler(ah auth.HandlerFunc) http.Handler {
+// GraphQLis the http handler the GraphQL endpoint
+func (s *Service) GraphQL(ah auth.HandlerFunc) http.Handler {
 	return s.apiHandler(nil, ah, false)
 }
 
-// GraphQLHandlerNS is the http handler the namespaced GraphQL endpoint
-func (s *Service) GraphQLHandlerNS(ah auth.HandlerFunc, ns string) http.Handler {
+// GraphQLWithNS is the http handler the namespaced GraphQL endpoint
+func (s *Service) GraphQLWithNS(ah auth.HandlerFunc, ns string) http.Handler {
 	return s.apiHandler(&ns, ah, false)
 }
 
-// RESTHandler is the http handler the REST endpoint
-func (s *Service) RESTHandler(ah auth.HandlerFunc) http.Handler {
+// REST is the http handler the REST endpoint
+func (s *Service) REST(ah auth.HandlerFunc) http.Handler {
 	return s.apiHandler(nil, ah, true)
 }
 
-// RESTHandlerNS is the http handler the namespaced REST endpoint
-func (s *Service) RESTHandlerNS(ah auth.HandlerFunc, ns string) http.Handler {
+// RESTWithNS is the http handler the namespaced REST endpoint
+func (s *Service) RESTWithNS(ah auth.HandlerFunc, ns string) http.Handler {
 	return s.apiHandler(&ns, ah, true)
 }
 
@@ -385,10 +382,9 @@ func (s *Service) apiHandler(ns *string, ah auth.HandlerFunc, rest bool) http.Ha
 	return apiV1Handler(s, ns, h, ah)
 }
 
-// RESTHandlerNS is the http handler the namespaced REST endpoint
-func (s *Service) WebUIHandler() http.Handler {
-	webRoot, _ := fs.Sub(webBuild, "web/build")
-	return http.FileServer(http.FS(webRoot))
+// WebUI is the http handler the web ui endpoint
+func (s *Service) WebUI(routePrefix, gqlEndpoint string) http.Handler {
+	return webuiHandler(routePrefix, gqlEndpoint)
 }
 
 // GetGraphJin fetching internal GraphJin core
@@ -403,7 +399,7 @@ func (s *Service) GetDB() *sql.DB {
 	return s1.db
 }
 
-// Reload reruns database discover and reinitializes service.
+// Reload re-runs database discover and reinitializes service.
 func (s *Service) Reload() error {
 	s1 := s.Load().(*service)
 	return s1.gj.Reload()

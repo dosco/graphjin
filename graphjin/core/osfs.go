@@ -11,7 +11,7 @@ type osFS struct {
 	bp string
 }
 
-func NewFS(basePath string) *osFS { return &osFS{bp: basePath} }
+func NewOsFS(basePath string) *osFS { return &osFS{bp: basePath} }
 
 func (f *osFS) Get(path string) ([]byte, error) {
 	return os.ReadFile(filepath.Join(f.bp, path))

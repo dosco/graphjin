@@ -5,15 +5,21 @@ import { GraphiQL } from "graphiql";
 
 import "graphiql/graphiql.css";
 
+let apiPath = "/api/v1/graphql";
+
+const urlParams = new URLSearchParams(window.location.search);
+const ep = urlParams.get("endpoint");
+
+if (ep !== null && ep !== "") {
+  apiPath = ep;
+}
+
 const fetcher = createGraphiQLFetcher({
-  url: `${window.location.protocol}//${window.location.host}/api/v1/graphql`,
-  subscriptionUrl: `ws://${window.location.host}/api/v1/graphql`,
+  url: `${window.location.protocol}//${window.location.host}${apiPath}`,
+  subscriptionUrl: `ws://${window.location.host}${apiPath}`,
 });
 
 // import GitHubButton from "react-github-btn";
-
-// const url = `${window.location.protocol}//${window.location.host}/api/v1/graphql`;
-// const subscriptionUrl = ;
 
 const defaultQuery = `
 # Welcome to GraphJin Web

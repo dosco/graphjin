@@ -1,7 +1,5 @@
-github.com/dosco/graphjin/core/v3 v3.0.0-20230127063635-357767ee278d h1:nlQgn6S3i/gYIUQ5f/MzymWuxrXMnCe3qhkSYdGijFo=
-github.com/dosco/graphjin/core/v3 v3.0.0-20230127063635-357767ee278d/go.mod h1:JNJBiJJCh9VzcEr8tx8yN2BddDvxCBrk8S4bO6dcw5U=
-github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-20230125094531-96f5ec6d2d29 h1:Ctl/1wccrwLRXwnShEeG3KwexhFRJMx5L11ltwjlbiU=
-github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-20230125094531-96f5ec6d2d29/go.mod h1:lg2ZkWi2PmA8d8t0vL7fgyFc1bKAkSIb6sWnOWmaseQ=
+github.com/dosco/graphjin/core/v3 v3.0.0-20230127082222-13448e4d7160 h1:1OTSZXcTzPHGTBtyX3NIuicSlBBofGPN7rs+axyzdqk=
+github.com/dosco/graphjin/core/v3 v3.0.0-20230127082222-13448e4d7160/go.mod h1:JNJBiJJCh9VzcEr8tx8yN2BddDvxCBrk8S4bO6dcw5U=
 github.com/hashicorp/golang-lru v0.5.4 h1:YDjusn29QI/Das2iO9M0BHnIbxPeyuCHsjMW+lJfyTc=
 github.com/hashicorp/golang-lru v0.5.4/go.mod h1:iADmTwqILo4mZ8BN3D2Q6+9jd8WM5uGBxy+E8yxSoD4=
 golang.org/x/sync v0.1.0 h1:wsuoTGHzEhffawBOhz5CYhcrV4IdKZbEyZjBMuTp12o=

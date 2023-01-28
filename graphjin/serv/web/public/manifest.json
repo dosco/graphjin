@@ -1,6 +1,6 @@
 {
   "short_name": "GraphJin",
-  "name": "GraphJin - GraphQL API for Rails",
+  "name": "GraphJin - Web UI",
   "icons": [
     {
       "src": "favicon.ico",
