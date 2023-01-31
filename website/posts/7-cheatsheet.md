@@ -12,6 +12,71 @@ Quick reference to configuration and GraphQL features.
 
 ---
 
+### Add validation
+
+When inserting or updating rows you often want to add valition on your variables this can easy be done using the `@validate` directive.
+
+```graphql
+mutation
+@validate(variable: "email", format: "email", min: 1, max: 100)
+@validate(variable: "full_name", requiredIf: { id: 1007 })
+@validate(variable: "id", greaterThan: 1006)
+@validate(variable: "id", lessThanOrEqualsField: id) {
+  users(insert: { id: $id, email: $email, full_name: $full_name }) {
+    id
+    email
+    full_name
+  }
+}
+```
+
+```json
+{
+  "id": 1007,
+  "email": "not_an_email"
+}
+```
+
+| Arguments                | Example                         | Explained                                                               |
+| ------------------------ | ------------------------------- | ----------------------------------------------------------------------- |
+| format                   | format: "email"                 | Value must be of a format, eg: email, uuid                              |
+| required                 | required: true                  | Variable is required                                                    |
+| requiredIf               | requiredIf: { id: 123 }         | Variable is required if another variable equals a value                 |
+| requiredUnless           | requiredUnless: { id: 123 }     | Variable is required unless another variable equals a value             |
+| requiredWith             | requiredWith: id                | Variable is required if one of a list of other variables exist          |
+| requiredWithAll          | requiredWithAll: [id, name]     | Variable is required if all of a list of other variables exist          |
+| requiredWithout          | requiredWithout: [id, name]     | Variable is required if one of a list of other variables does not exist |
+| requiredWithoutAll       | requiredWithoutAll: [id, name]  | Variable is required if none of a list of other variables exist         |
+| max                      | max: 5                          | Maximum value a variable can be                                         |
+| min                      | min: 3                          | Minimum value a variable can be                                         |
+| equals                   | equals: 5                       | Variable equals a value                                                 |
+| notEquals                | notEquals: 5                    | Variable does not equal a value                                         |
+| oneOf                    | oneOf: [1,2,3]                  | Variable equals one of the following values                             |
+| greaterThan              | greaterThan: 5                  | Variable is greater than a value                                        |
+| greaterThanOrEquals      | greaterThanOrEquals: 5          | Variable is greater than or equal to a value"                           |
+| lessThan                 | lessThan: 5                     | Variable is less than a value                                           |
+| lessThanOrEquals         | lessThanOrEquals: 5             | Variable is less than or equal to a value                               |
+| equalsField              | equalsField: id                 | Variable equals the value of another variable                           |
+| notEqualsField           | notEqualsField: id              | Variable does not equal the value of another variable                   |
+| greaterThanField         | greaterThanField: count         | Variable is greater than the value of another variable                  |
+| greaterThanOrEqualsField | greaterThanOrEqualsField: count | Variable is greater than or equals the value of another variable        |
+| lessThanField            | lessThanField: count            | Variable is less than the value of another variable                     |
+| lessThanOrEqualsField    | lessThanOrEqualsField: count    | Variable is less than or equals the value of another variable           |
+
+| Format              | Explained                |
+| ------------------- | ------------------------ |
+| alpha               | a-z, A-Z                 |
+| alphaNumeric        | a-z, A-Z, 0-9            |
+| alphaUnicode        | alpha and unicode        |
+| alphaUnicodeNumeric | alphaNumeric and unicode |
+| numeric             | +, - , . 0-9             |
+| number              | 0-9                      |
+| email               | valid email address      |
+| uuid3               | uuid version 3           |
+| uuid4               | uuid version 4           |
+| uuid5               | uuid version 5           |
+| ulid                | ulid id format           |
+
 ### Roles for access control
 
 We use the concept of roles to auto. apply access control like filters, etc to a query. Out of the box we have two roles `user` when a user id is provided and `anon` for when its not. Each role has its own set of table level configuration. Additionally you can define your own roles (eg. `admin`)
