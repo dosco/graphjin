@@ -138,7 +138,7 @@ Instead of spending all of this time and effort coding and maintaining individua
 
 ## Use GraphJin in NodeJS
 
-Create a NodeJS + Express API with just GraphJin. <mark>For futher details goto the [GraphJin NodeJS docs](/posts/9-nodejs)</mark>
+Create a NodeJS + Express API with just GraphJin. <mark>For futher details goto the [GraphJin NodeJS docs](/posts/nodejs)</mark>
 
 ```js
 import graphjin from "graphjin";
@@ -199,7 +199,7 @@ server.listen(3000);
 console.log("Express server started on port %s", server.address().port);
 ```
 
-[GraphJin NodeJS docs](/posts/9-nodejs)
+[GraphJin NodeJS docs](/posts/nodejs)
 
 ## Use GraphJin in GO
 
