@@ -14,7 +14,13 @@ import (
 )
 
 var (
-	bi       serv.BuildInfo
+	// These variables are set using -ldflags
+	version string
+	commit  string
+	date    string
+)
+
+var (
 	log      *zap.SugaredLogger
 	db       *sql.DB
 	dbOpened bool
@@ -23,7 +29,6 @@ var (
 )
 
 func Cmd() {
-	bi = serv.GetBuildInfo()
 	log = newLogger(false).Sugar()
 
 	cobra.EnableCommandSorting = false

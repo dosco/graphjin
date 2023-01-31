@@ -57,7 +57,7 @@ func main() {
 Add Graphjin to your GO application.
 
 ```shell
-go get github.com/dosco/graphjin/v2
+go get github.com/dosco/graphjin/core/v3
 ```
 
 <mark>
@@ -77,7 +77,7 @@ config := core.Config{ Production: true, DefaultLimit: 50 }
 ### Using GraphJin
 
 ```go
-import "github.com/dosco/graphjin/core/v2"
+import "github.com/dosco/graphjin/core/v3"
 
 // config can be read in from a file
 config, err := NewConfig("./config", "dev.yml")
@@ -244,5 +244,67 @@ for {
       "full_name": "Andy A."
     }
   }
+}
+```
+
+### Using the service
+
+GraphJin has two packages `core` whih contains the core compiler and `serv` which contains the standalone service. One way to not have to build your own service and get the flexibility of using your own app is to use the `serv` package with your own code. This also means that you get cache headers (etags), compression, rate limiting all of this good stuff for free. The following http and websocket handlers are exposed for you to use:
+
+```go title="GraphQL HTTP/Websocket Handler"
+gjs.GraphQL(nil)
+```
+
+```go title="REST HTTP/Websocket Handler"
+ gjs.REST(nil)
+```
+
+```go title="Embed the Web UI"
+gjs.WebUI("/webui/", "/graphql")
+```
+
+Below is an example app to see how all this comes together.
+
+```go
+import (
+	"log"
+	"net/http"
+	"path/filepath"
+
+	"github.com/dosco/graphjin/serv/v3"
+	"github.com/go-chi/chi/v5"
+)
+
+func main() {
+	// create the router
+	r := chi.NewRouter()
+
+	// readin graphjin config
+	conf, err := serv.ReadInConfig(filepath.Join("./config", "dev.yml"))
+	if err != nil {
+		panic(err)
+	}
+
+	// create the graphjin service
+	gjs, err := serv.NewGraphJinService(conf)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// attach the graphql http handler
+	r.Handle("/graphql", gjs.GraphQL(nil))
+
+	// attach the rest http handler
+	r.Handle("/rest/*", gjs.REST(nil))
+
+	// attach the webui http handler
+	r.Handle("/webui/*", gjs.WebUI("/webui/", "/graphql"))
+
+	// add your own http handlers
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Welcome to the webshop!"))
+	})
+
+	http.ListenAndServe(":8080", r)
 }
 ```

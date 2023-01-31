@@ -23,29 +23,24 @@ export const Layout = ({
         <meta property="og:image" content={image} />
       </Head>
 
-      <nav className="w-full py-6 bg-black">
-        <div className="w-full md:w-6/12 mx-auto flex gap-6 items-center justify-between px-2">
-          <h1 className="text-md font-bold tracking-widest text-white">
-            <a href="/">GRAPHJIN</a>
-          </h1>
-
-          <h1 className="text-md font-normal text-white">
-            <a href="/">APIs in 5 mins</a>
-          </h1>
-
-          <div className="flex gap-4">
-            <a href="https://twitter.com/dosco" target="_blank">
-              <FaTwitter size={20} className="text-white" />
-            </a>
-            <a href="https://github.com/dosco/graphjin" target="_blank">
-              <FaGithub size={20} className="text-white" />
-            </a>
-          </div>
-        </div>
-      </nav>
-
       <main>
-        <div className="prose lg:prose-xl prose-neutral prose-h1:text-sky-500 mx-auto m-2 pt-4 mb-24 px-6 shadow-xl border-t border-t-gray-200 rounded-xl">
+        <nav className="w-full pt-2 px-1 md:px-0">
+          <div className="w-full md:w-6/12 mx-auto flex gap-6 items-center justify-between px-2">
+            <h1 className="text-2xl font-semibold tracking-widest text-red-500">
+              <a href="/">GRAPHJIN</a>
+            </h1>
+
+            <div className="flex gap-4">
+              <a href="https://twitter.com/dosco" target="_blank">
+                <FaTwitter size={40} className="text-red-500" />
+              </a>
+              <a href="https://github.com/dosco/graphjin" target="_blank">
+                <FaGithub size={40} className="text-red-500" />
+              </a>
+            </div>
+          </div>
+        </nav>
+        <div className="prose lg:prose-xl prose-neutral prose-h1:text-sky-900 mx-auto m-2 pt-4 mb-24 px-6 shadow-xl border-t border-t-gray-200 rounded-xl pb-20">
           {children}
         </div>
       </main>

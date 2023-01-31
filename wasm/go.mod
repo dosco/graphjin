@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/dosco/graphjin/conf/v3 v3.0.0-20230127082222-13448e4d7160
-	github.com/dosco/graphjin/core/v3 v3.0.0-20230127082222-13448e4d7160
+	github.com/dosco/graphjin/core/v3 v3.0.0-20230131095039-2864a2e4a4db
 )
 
 require (
