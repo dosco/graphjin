@@ -44,8 +44,10 @@ export const Layout = ({
         </div>
       </nav>
 
-      <main className="prose lg:prose-xl prose-h1:text-lime-500 container mx-auto mt-12 mb-24 px-6">
-        {children}
+      <main>
+        <div className="prose lg:prose-xl prose-neutral prose-h1:text-sky-500 mx-auto m-2 pt-4 mb-24 px-6 shadow-xl border-t border-t-gray-200 rounded-xl">
+          {children}
+        </div>
       </main>
 
       {/* <footer className="border-t bg-indigo-500 text-white  text-center">

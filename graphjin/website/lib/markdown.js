@@ -61,10 +61,10 @@ const emojiOptions = { emoticon: true, padSpaceAfter: true };
 const tocOptions = { maxDepth: 3, tight: true };
 
 const autolinkOptions = {
-  behaviour: "before",
+  behaviour: "after",
   group: h("div", { class: "flex items-center" }),
   content: (n) =>
-    h(n.tagName, { class: "material-symbols-outlined mr-3" }, "link"),
+    h(n.tagName, { class: "material-symbols-outlined pl-3" }, "link"),
   test: ["h2", "h3"],
 };
 

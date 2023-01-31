@@ -67,15 +67,14 @@ rm -rf config/migrations/0_init.sql
 Be sure to define primary keys to all of your tables and to use foreign keys to define
 relationships between tables. In the example below the products table has a foreign key relationhsip `user_id` to the users table. It looks like this `user_id bigint REFERENCES users(id)`
 
-```sql title="Database Migration config/migrations/1_users.sql"
+```sql title="Database Migration config/migrations/1_products.sql"
 -- Write your migrate up statements here
 
-CREATE TABLE users (
+CREATE TABLE products (
     id BIGSERIAL PRIMARY KEY,
-    full_name TEXT NOT NULL,
-    phone TEXT,
-    avatar TEXT,
-    email TEXT UNIQUE NOT NULL
+    name TEXT NOT NULL,
+    descriptioj TEXT,
+    user_id BIGINT REFERENCES users(id)
 );
 ```
 
