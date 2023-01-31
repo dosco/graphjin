@@ -326,7 +326,7 @@ func (s *Service) attach(mux Mux, ns *string) error {
 	ver := version
 	dep := s1.conf.name
 
-	if version == "" {
+	if ver == "" {
 		ver = "not-set"
 	}
 

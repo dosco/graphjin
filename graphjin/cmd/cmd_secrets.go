@@ -6,7 +6,6 @@ import (
 
 	"github.com/dosco/graphjin/serv/v3"
 	"github.com/spf13/cobra"
-	"go.mozilla.org/sops/v3/version"
 )
 
 var sopsHelp = `GraphJin Secrets Management (Using Mozilla SOPS)
@@ -40,10 +39,9 @@ For more information, see the README at github.com/mozilla/sops`
 
 func cmdSecrets() *cobra.Command {
 	c := &cobra.Command{
-		Use:     "secrets [options]",
-		Short:   "Secure key managament (AWS KMS, GCP KMS, Azure Key Vault & GPG)",
-		Long:    sopsHelp,
-		Version: version.Version,
+		Use:   "secrets [options]",
+		Short: "Secure key managament (AWS KMS, GCP KMS, Azure Key Vault & GPG)",
+		Long:  sopsHelp,
 	}
 
 	rot := &cobra.Command{
@@ -63,22 +61,6 @@ func cmdSecrets() *cobra.Command {
 		Short: "Rotate keys and remove the provided comma-separated list from the list of master keys on the given file",
 	}
 	c.AddCommand(delMasterKeys)
-
-	// enc := &cobra.Command{
-	// 	Use:     "eecrypt",
-	// 	Short:   "Encrypt key file",
-	// 	Long:    sopsHelp,
-	// 	Version: version.Version,
-	// 	//Run:     cmdServ(),
-	// }
-
-	// dec := &cobra.Command{
-	// 	Use:     "decrypt",
-	// 	Short:   "Decrypt key file",
-	// 	Long:    sopsHelp,
-	// 	Version: version.Version,
-	// 	//Run:     cmdServ(),
-	// }
 
 	var sa serv.SecretArgs
 	var secretsFile string

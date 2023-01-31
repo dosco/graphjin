@@ -29,7 +29,7 @@ func main() {
 	r.Handle("/graphql", gjs.GraphQL(nil))
 
 	// attach the rest http handler
-	r.Handle("/rest", gjs.GraphQL(nil))
+	r.Handle("/rest/*", gjs.REST(nil))
 
 	// attach the webui http handler
 	r.Handle("/webui/*", gjs.WebUI("/webui/", "/graphql"))

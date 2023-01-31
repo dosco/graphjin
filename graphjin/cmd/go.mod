@@ -5,8 +5,8 @@ go 1.18
 require (
 	github.com/brianvoe/gofakeit/v6 v6.20.1
 	github.com/dop251/goja v0.0.0-20230111111035-473251c96b4c
-	github.com/dosco/graphjin/core/v3 v3.0.0-20230128064639-95e7abc910b9
-	github.com/dosco/graphjin/serv/v3 v3.0.0-20230128064639-95e7abc910b9
+	github.com/dosco/graphjin/core/v3 v3.0.0-20230131095039-2864a2e4a4db
+	github.com/dosco/graphjin/serv/v3 v3.0.0-20230131095039-2864a2e4a4db
 	github.com/gosimple/slug v1.13.1
 	github.com/jackc/pgx/v5 v5.2.0
 	github.com/jvatic/goja-babel v0.0.0-20230111121754-c57c791c6a80
@@ -43,7 +43,7 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.1.0 // indirect
 	github.com/dimchansky/utfbom v1.1.1 // indirect
 	github.com/dlclark/regexp2 v1.7.0 // indirect
-	github.com/dosco/graphjin/auth/v3 v3.0.0-20230127082222-13448e4d7160 // indirect
+	github.com/dosco/graphjin/auth/v3 v3.0.0-20230128064639-95e7abc910b9 // indirect
 	github.com/dosco/graphjin/plugin/afero/v3 v3.0.0-20230125090031-062b181a2f0f // indirect
 	github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-20230127082222-13448e4d7160 // indirect
 	github.com/dosco/graphjin/plugin/otel/v3 v3.0.0-20230127082222-13448e4d7160 // indirect

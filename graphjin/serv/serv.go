@@ -13,16 +13,11 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+var version string
+
 const (
 	serverName = "GraphJin"
 	defaultHP  = "0.0.0.0:8080"
-)
-
-var (
-	// These variables are set using -ldflags
-	version string
-	commit  string
-	date    string
 )
 
 func initConfigWatcher(s1 *Service) {
@@ -92,7 +87,7 @@ func startHTTP(s1 *Service) {
 	ver := version
 	dep := s.conf.name
 
-	if version == "" {
+	if ver == "" {
 		ver = "not-set"
 	}
 
@@ -136,18 +131,4 @@ func setServerHeader(h http.Handler) http.Handler {
 		h.ServeHTTP(w, r)
 	}
 	return http.HandlerFunc(fn)
-}
-
-type BuildInfo struct {
-	Version string
-	Commit  string
-	Date    string
-}
-
-func GetBuildInfo() BuildInfo {
-	return BuildInfo{
-		Version: version,
-		Commit:  commit,
-		Date:    date,
-	}
 }

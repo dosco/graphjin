@@ -30,8 +30,8 @@ const Nav = ({ post }) => (
 
 const NavButton = ({ post, label }) => (
   <Link href={post.slug}>
-    <div className="border border-lime-500 rounded-full px-6 py-2 text-center cursor-pointer hover:shadow">
-      <div className="text-lime-500 font-bold">{label}</div>
+    <div className="border border-gray-500 rounded-full px-6 py-2 text-center cursor-pointer hover:shadow">
+      <div className="text-black font-bold">{label}</div>
       <div className="text-xl">{post.title}</div>
     </div>
   </Link>
