@@ -20,7 +20,7 @@ No matter how complex your GraphQL query GraphJin will only generate a single qu
 
 ### What are filters?
 
-Query filters (`filter`) in the role table configuration are there to enforce table wide filters like `{ disabled: false }` which will cause disabled users (users with column disabled set to true) from never been shown in any query. Filters use the same GraphQL expressions used in the [`Where`](posts/7-cheetsheet#crafting-the-where-clause) query
+Query filters (`filter`) in the role table configuration are there to enforce table wide filters like `{ disabled: false }` which will cause disabled users (users with column disabled set to true) from never been shown in any query. Filters use the same GraphQL expressions used in the [`Where`](posts/cheatsheet#crafting-the-where-clause) query
 
 ```yaml title="Config file"
 roles:

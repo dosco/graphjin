@@ -11,31 +11,31 @@
 
 Just use a simple GraphQL query to define your API and GraphJin automagically converts it into SQL and fetches the data you need. Build your backend APIs **100X** faster. Works with **NodeJS** and **GO**. Supports several databases, **Postgres**, **MySQL**, **Yugabyte**, **AWS Aurora/RDS** and **Google Cloud SQL**
 
-The following GraphQL query fetches a list of products, their owners, and other category information, including a cursor for retrieving more products. 
-GraphJin would do auto-discovery of your database schema and relationships and generate the most efficient single SQL query to fetch all this data including a cursor to fetch the next 20 times. You don't have to do a single thing besides write the GraphQL query. 
+The following GraphQL query fetches a list of products, their owners, and other category information, including a cursor for retrieving more products.
+GraphJin would do auto-discovery of your database schema and relationships and generate the most efficient single SQL query to fetch all this data including a cursor to fetch the next 20 times. You don't have to do a single thing besides write the GraphQL query.
 
 ```graphql
 query getProducts {
   products(
     # returns only 20 items
     limit: 20
- 
+
     # orders the response items by highest price
     order_by: { price: desc }
- 
+
     # only items with a price >= 20 and < 50 are returned
     where: { price: { and: { greater_or_equals: 20, lt: 50 } } }
   ) {
     id
     name
     price
- 
+
     # also fetch the owner of the product
     owner {
       full_name
       picture: avatar
       email
- 
+
       # and the categories the owner has products under
       category_counts(limit: 3) {
         count
@@ -44,7 +44,7 @@ query getProducts {
         }
       }
     }
- 
+
     # and the categories of the product itself
     category(limit: 3) {
       id
@@ -318,7 +318,7 @@ With GraphJin your web and mobile developers can start building instantly. All t
 
 ## Documentation
 
-[Quick Start](https://graphjin.com/posts/1-start)
+[Quick Start](https://graphjin.com/posts/start)
 
 [Documentation](https://graphjin.com)
 

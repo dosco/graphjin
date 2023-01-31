@@ -12,9 +12,9 @@ description: Query tables, Nested queries, Cursor pagination, Sorting, Searching
 
 Everything in GraphJin resolves around the GraphQL query. Every query must have a type and a name. Types are `query` for queries, `mutation` for update, insert, upsert, delete and `subscription` for live queries.
 
-Queries have selectors (tables) which can have arguments to [filter `where:`](/posts/7-cheetsheet#crafting-the-where-clause), target `id:`, limit `limit:` or [sort `order_by:`](/posts/2-query#sorting-the-query-result) the result.
+Queries have selectors (tables) which can have arguments to [filter `where:`](/posts/cheatsheet#crafting-the-where-clause), target `id:`, limit `limit:` or [sort `order_by:`](/posts/query#sorting-the-query-result) the result.
 
-Queries can also use variables (eg. `$name`). These variables can either be passed in with the query or preset in the config. Some variables are special like `$user_id` which requires a user id to be set on the query. There is also a concept called [roles](/posts/7-cheetsheet#roles-for-access-control) that you can use for access control.
+Queries can also use variables (eg. `$name`). These variables can either be passed in with the query or preset in the config. Some variables are special like `$user_id` which requires a user id to be set on the query. There is also a concept called [roles](/posts/cheatsheet#roles-for-access-control) that you can use for access control.
 
 Query selectors (tables) can have other selectors nested under them. The name of the nested selector is the same of the foreign key (relationship) column minus the `_id` prefix/suffix. For example if the products table has a foreign key column `owner_id` pointing to the users table then you would use `owner` as the nested selector.
 
@@ -31,7 +31,7 @@ query getProducts {
 
 To use a nested selector to a table thats related to the current table though another table (join tables) you should use the name of the final table and GraphJin will figure out how to connect the two. If you want to enforce the middle table use the directive `@through(table: "name")` directive.
 
-[Directives](/posts/7-cheetsheet#using-query-directives) look like this `@directiveName(argument: value)` and are added to selectors or fields.
+[Directives](/posts/cheatsheet#using-query-directives) look like this `@directiveName(argument: value)` and are added to selectors or fields.
 
 ### Fetch from various related tables
 
@@ -487,7 +487,7 @@ query getProductsWithSpecificOwners {
 
 ### User roles
 
-By default we support two roles `user` for authenticated users (eg. `$user_id` is set) and `anon` for anonymous users or users who are not authenticated. This is called [Role based access control](http://localhost:3000/posts/7-cheetsheet#roles-for-access-control) and you can follow the link to learn more.
+By default we support two roles `user` for authenticated users (eg. `$user_id` is set) and `anon` for anonymous users or users who are not authenticated. This is called [Role based access control](/posts/cheatsheet#roles-for-access-control) and you can follow the link to learn more.
 
 > I want to use the same query for both roles (user and anon) so I need to to hide and show tables and columns based on the users role.
 
