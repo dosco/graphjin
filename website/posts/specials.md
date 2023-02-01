@@ -10,9 +10,9 @@ This is all the really cool special stuff that you'll need but databases don't s
 
 #### TOC
 
-### Connecting tables together
+### Table relationships
 
-The below configs are only needed in special cases such as when you don't use foreign keys or when you want to create a relationship between two tables where a foreign key is not defined or cannot be defined.
+<mark>The below configs are only needed in special cases</mark> such as when you don't use foreign keys or when you want to create a relationship between two tables where a foreign key is not defined or cannot be defined like with array columns.
 
 For example in the example below a relationship is defined between the `tags` column on the `posts` table with the `slug` column on the `tags` table. This cannot be defined as using foreign keys since the `tags` column is of type array `text[]` and Postgres for one does not allow foreign keys with array columns.
 
@@ -26,7 +26,7 @@ tables:
         related_to: tags.slug
 ```
 
-#### Using JSON or array columns
+#### JSON or Array columns
 
 The ablity to have `JSON/JSONB` and `Array` columns is often considered in the top most useful features of Postgres. There are many cases where using an array or a json column saves space and reduces complexity in your app. The only issue with these columns is that your SQL queries can get harder to write and maintain.
 

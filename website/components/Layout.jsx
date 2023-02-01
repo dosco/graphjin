@@ -40,7 +40,7 @@ export const Layout = ({
             </div>
           </div>
         </nav>
-        <div className="prose lg:prose-xl prose-neutral prose-h1:text-sky-900 mx-auto m-2 pt-4 mb-24 px-6 shadow-xl border-t border-t-gray-200 rounded-xl pb-20">
+        <div className="prose lg:prose-xl prose-neutral prose-h1:text-sky-900 mx-auto shadow-xl border-t border-t-gray-200 rounded-xl mt-2 p-4 md:p-6 pb-20">
           {children}
         </div>
       </main>
