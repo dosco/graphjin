@@ -8,7 +8,7 @@ description: Frequently asked questions
 
 ### Is it production ready?
 
-Yes, before its release into the NodeJS ecosystem it has been a popular library in the GO ecosystem used in several projects. GraphJin has a large library of integration tests that covers all its usecases with Postgres and MySQL and detection of data races. This test framework is run on every commit to ensure high code quality. It also earns an A+ in the GO [code quality report](https://goreportcard.com/report/github.com/dosco/graphjin/v2). It has minimum dependencies on other GO libraries and is Fuzz tests.
+Yes, before its release into the NodeJS ecosystem it has been a popular library in the GO ecosystem used in several projects. GraphJin has a large library of integration tests that covers all its usecases with Postgres and MySQL and detection of data races. This test framework is run on every commit to ensure high code quality. It also earns an A+ in the GO [code quality report](https://goreportcard.com/report/github.com/dosco/graphjin/core/v3). It has minimum dependencies on other GO libraries and is Fuzz tests.
 
 ### Why not just use SQL?
 
@@ -20,7 +20,7 @@ No matter how complex your GraphQL query GraphJin will only generate a single qu
 
 ### What are filters?
 
-Query filters (`filter`) in the role table configuration are there to enforce table wide filters like `{ disabled: false }` which will cause disabled users (users with column disabled set to true) from never been shown in any query. Filters use the same GraphQL expressions used in the [`Where`](posts/7-cheetsheet#crafting-the-where-clause) query
+Query filters (`filter`) in the role table configuration are there to enforce table wide filters like `{ disabled: false }` which will cause disabled users (users with column disabled set to true) from never been shown in any query. Filters use the same GraphQL expressions used in the [`Where`](cheatsheet#crafting-the-where-clause) query
 
 ```yaml title="Config file"
 roles:

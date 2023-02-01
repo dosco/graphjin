@@ -28,6 +28,8 @@ github.com/dosco/graphjin/core/v3 v3.0.0-20230127082222-13448e4d7160 h1:1OTSZXcT
 github.com/dosco/graphjin/core/v3 v3.0.0-20230127082222-13448e4d7160/go.mod h1:JNJBiJJCh9VzcEr8tx8yN2BddDvxCBrk8S4bO6dcw5U=
 github.com/dosco/graphjin/core/v3 v3.0.0-20230128064639-95e7abc910b9 h1:Z+1Wu43UcWuYCvsANeKq0hmhGhk/ALigcHHtQNluUDQ=
 github.com/dosco/graphjin/core/v3 v3.0.0-20230128064639-95e7abc910b9/go.mod h1:JNJBiJJCh9VzcEr8tx8yN2BddDvxCBrk8S4bO6dcw5U=
+github.com/dosco/graphjin/core/v3 v3.0.0-20230131095039-2864a2e4a4db h1:Y7oO3VIhvREY8zKlbQBKWWs6WtEpomZihf7+0o6n5vQ=
+github.com/dosco/graphjin/core/v3 v3.0.0-20230131095039-2864a2e4a4db/go.mod h1:JNJBiJJCh9VzcEr8tx8yN2BddDvxCBrk8S4bO6dcw5U=
 github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-20230127082222-13448e4d7160 h1:E5TTZbVxsp31LkvNosi9gqarp95Hh6fRwKqAVMn0keo=
 github.com/dosco/graphjin/plugin/osfs/v3 v3.0.0-20230127082222-13448e4d7160/go.mod h1:lg2ZkWi2PmA8d8t0vL7fgyFc1bKAkSIb6sWnOWmaseQ=
 github.com/go-sql-driver/mysql v1.7.0 h1:ueSltNNllEqE3qcWBTD0iQd3IpL/6U+mJxLkazJ7YPc=

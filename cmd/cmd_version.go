@@ -21,7 +21,7 @@ func cmdVersion(cmd *cobra.Command, args []string) {
 }
 
 func BuildDetails() string {
-	if bi.Version == "" {
+	if version == "" {
 		return `
 GraphJin (unknown version)
 For documentation, visit https://graphjin.com
@@ -46,8 +46,8 @@ Go version            : %v
 Licensed under the Apache Public License 2.0
 Copyright 2019 Vikram Rangnekar
 `,
-		bi.Version,
-		bi.Commit,
-		bi.Date,
+		version,
+		commit,
+		date,
 		runtime.Version())
 }

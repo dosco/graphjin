@@ -4,12 +4,58 @@
 [![NPM Package](https://img.shields.io/npm/v/graphjin?style=for-the-badge)](https://www.npmjs.com/package/graphjin)
 [![Docker Pulls](https://img.shields.io/docker/pulls/dosco/graphjin?style=for-the-badge)](https://hub.docker.com/r/dosco/graphjin/builds)
 [![Discord Chat](https://img.shields.io/discord/628796009539043348.svg?style=for-the-badge&logo=appveyor)](https://discord.gg/6pSWCTZ)
-[![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=for-the-badge&logo=appveyor&logo=appveyor)](https://pkg.go.dev/github.com/dosco/graphjin/v2)
-[![GoReport](https://goreportcard.com/badge/github.com/gojp/goreportcard?style=for-the-badge)](https://goreportcard.com/report/github.com/dosco/graphjin/v2)
+[![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=for-the-badge&logo=appveyor&logo=appveyor)](https://pkg.go.dev/github.com/dosco/graphjin/core/v3)
+[![GoReport](https://goreportcard.com/badge/github.com/gojp/goreportcard?style=for-the-badge)](https://goreportcard.com/report/github.com/dosco/graphjin/core/v3)
 
 ## Build APIs in 5 minutes not weeks
 
-GraphJin gives you an instant secure and fast GraphQL API without code. Just use a GraphQL query to define your API and GraphJin automagically converts it into a full featured API. Build your backend APIs **100X** faster. Works with **NodeJS** and **GO**. Supports several databases, **Postgres**, **MySQL**, **Yugabyte**, **AWS Aurora/RDS** and **Google Cloud SQL**
+Just use a simple GraphQL query to define your API and GraphJin automagically converts it into SQL and fetches the data you need. Build your backend APIs **100X** faster. Works with **NodeJS** and **GO**. Supports several databases, **Postgres**, **MySQL**, **Yugabyte**, **AWS Aurora/RDS** and **Google Cloud SQL**
+
+The following GraphQL query fetches a list of products, their owners, and other category information, including a cursor for retrieving more products.
+GraphJin would do auto-discovery of your database schema and relationships and generate the most efficient single SQL query to fetch all this data including a cursor to fetch the next 20 times. You don't have to do a single thing besides write the GraphQL query.
+
+```graphql
+query getProducts {
+  products(
+    # returns only 20 items
+    limit: 20
+
+    # orders the response items by highest price
+    order_by: { price: desc }
+
+    # only items with a price >= 20 and < 50 are returned
+    where: { price: { and: { greater_or_equals: 20, lt: 50 } } }
+  ) {
+    id
+    name
+    price
+
+    # also fetch the owner of the product
+    owner {
+      full_name
+      picture: avatar
+      email
+
+      # and the categories the owner has products under
+      category_counts(limit: 3) {
+        count
+        category {
+          name
+        }
+      }
+    }
+
+    # and the categories of the product itself
+    category(limit: 3) {
+      id
+      name
+    }
+  }
+  # also return a cursor that we can use to fetch the next
+  # batch of products
+  products_cursor
+}
+```
 
 ## Secure out of the box
 
@@ -83,12 +129,12 @@ console.log("Express server started on port %s", server.address().port);
 
 ## Use with GO
 
-You can use GraphJin as a library within your own code. The [serv](https://pkg.go.dev/github.com/dosco/graphjin/v2/serv) package exposes the entirely GraphJin standlone service as a library while the [core](https://pkg.go.dev/github.com/dosco/graphjin/core/v2) package exposes just the GraphJin compiler. The [Go docs](https://pkg.go.dev/github.com/dosco/graphjin/v2/core#pkg-examples) are filled with examples on how to use GraphJin within your own apps as a sort of alternative to using ORM packages. GraphJin allows you to use GraphQL and the full power of GraphJin to access your data instead of a limiting ORM.
+You can use GraphJin as a library within your own code. The [serv](https://pkg.go.dev/github.com/dosco/graphjin/serv/v3) package exposes the entirely GraphJin standlone service as a library while the [core](https://pkg.go.dev/github.com/dosco/graphjin/core/v3) package exposes just the GraphJin compiler. The [Go docs](https://pkg.go.dev/github.com/dosco/graphjin/tests/v3#pkg-examples) are filled with examples on how to use GraphJin within your own apps as a sort of alternative to using ORM packages. GraphJin allows you to use GraphQL and the full power of GraphJin to access your data instead of a limiting ORM.
 
 ### Use GraphJin Core
 
 ```console
-go get github.com/dosco/graphjin/v2
+go get github.com/dosco/graphjin/core/v3
 ```
 
 ```golang
@@ -100,7 +146,7 @@ import (
   "fmt"
   "log"
 
-  "github.com/dosco/graphjin/core/v2"
+  "github.com/dosco/graphjin/core/v3"
   _ "github.com/jackc/pgx/v4/stdlib"
 )
 
@@ -272,7 +318,7 @@ With GraphJin your web and mobile developers can start building instantly. All t
 
 ## Documentation
 
-[Quick Start](https://graphjin.com/posts/1-start)
+[Quick Start](https://graphjin.com/posts/start)
 
 [Documentation](https://graphjin.com)
 
