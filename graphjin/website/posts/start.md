@@ -138,7 +138,7 @@ Instead of spending all of this time and effort coding and maintaining individua
 
 ## Use GraphJin in NodeJS
 
-Create a NodeJS + Express API with just GraphJin. <mark>For futher details goto the [GraphJin NodeJS docs](/posts/nodejs)</mark>
+Create a NodeJS + Express API with just GraphJin. <mark>For futher details goto the [GraphJin NodeJS docs](nodejs)</mark>
 
 ```js
 import graphjin from "graphjin";
@@ -199,11 +199,11 @@ server.listen(3000);
 console.log("Express server started on port %s", server.address().port);
 ```
 
-[GraphJin NodeJS docs](/posts/nodejs)
+[GraphJin NodeJS docs](nodejs)
 
 ## Use GraphJin in GO
 
-Create a Go + Chi Router API with just GraphJin. <mark>For futher details goto the [GraphJin GO docs](/posts/10-go)</mark>
+Create a Go + Chi Router API with just GraphJin. <mark>For futher details goto the [GraphJin GO docs](go)</mark>
 
 ```go
 package main
@@ -255,7 +255,7 @@ func main() {
 }
 ```
 
-[GraphJin GO docs](/posts/10-go)
+[GraphJin GO docs](go)
 
 <!--
 ## Learn More
