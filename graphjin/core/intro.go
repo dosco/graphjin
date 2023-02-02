@@ -751,7 +751,7 @@ func (in *intro) getTableField(relNode sdata.RelNode) (
 	f.Args = []inputValue{}
 	f.Name = in.getName(relNode.Name)
 
-	tn := relNode.Table.Name
+	tn := in.getName(relNode.Table.Name)
 	if _, ok := in.types[tn]; !ok && relNode.Type != sdata.RelRecursive {
 		skip = true
 		return
