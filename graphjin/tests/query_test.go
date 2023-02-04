@@ -577,6 +577,35 @@ func Example_queryManyToManyViaJoinTable2() {
 	// Output: {"users":[{"email":"user1@test.com","full_name":"User 1","products":[{"name":"Product 1"}]},{"email":"user2@test.com","full_name":"User 2","products":[{"name":"Product 2"}]}]}
 }
 
+func Example_queryManyToManyViaJoinTable3() {
+	gql := `
+	query {
+		graph_node {
+			id
+			dst_node  {
+				id
+			}
+			src_node {
+				id
+			}
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 2})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"graph_node":[{"dst_node":[{"id":"b"},{"id":"c"}],"id":"a","src_node":[]},{"dst_node":[],"id":"b","src_node":[{"id":"a"}]}]}
+}
+
 func Example_queryWithAggregation() {
 	gql := `query {
 		products(where: { id: { lteq: 100 } }) {

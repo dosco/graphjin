@@ -5,8 +5,10 @@ import (
 )
 
 type Edge struct {
-	ID, Weight int32
-	Name       string
+	ID     int32
+	OppID  int32
+	Weight int32
+	Name   string
 }
 
 type Graph struct {
@@ -40,12 +42,36 @@ func (g *Graph) AddEdge(from, to, weight int32, name string) (int32, error) {
 
 	e := [2]int32{from, to}
 	_, edgeExists := g.edges[e]
-	g.edges[e] = append(g.edges[e], Edge{ID: id, Weight: weight, Name: name})
+	g.edges[e] = append(g.edges[e], Edge{
+		ID:     id,
+		OppID:  -1,
+		Weight: weight,
+		Name:   name,
+	})
 
 	if !edgeExists {
 		g.graph[from] = append(g.graph[from], to)
 	}
 	return id, nil
+}
+
+func (g *Graph) UpdateEdge(
+	from, to, edgeID, oppEdgeID int32,
+) error {
+	ek := [2]int32{from, to}
+	edges, ok := g.edges[ek]
+	if !ok {
+		return fmt.Errorf("not edges found: %v", ek)
+	}
+
+	for i, e := range edges {
+		if e.ID == edgeID {
+			e.OppID = oppEdgeID
+			g.edges[ek][i] = e
+			return nil
+		}
+	}
+	return fmt.Errorf("edge not found: %d", edgeID)
 }
 
 func (g *Graph) GetEdges(from, to int32) []Edge {
