@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	maxSelectors   = 100
-	singularSuffix = "ByID"
+	maxSelectors        = 100
+	singularSuffixCamel = "ByID"
+	singularSuffixSnake = "_by_id"
 )
 
 type QType int8
@@ -754,13 +755,22 @@ func (co *Compiler) setRelFilters(qc *QCode, sel *Select) {
 }
 
 func (co *Compiler) Find(schema, name string) (sdata.DBTable, error) {
-	name = strings.TrimSuffix(name, singularSuffix)
+	if co.c.EnableCamelcase {
+		name = strings.TrimSuffix(name, singularSuffixSnake)
+	} else {
+		name = strings.TrimSuffix(name, singularSuffixCamel)
+	}
 	return co.s.Find(schema, name)
 }
 
 func (co *Compiler) FindPath(from, to, through string) ([]sdata.TPath, error) {
-	from = strings.TrimSuffix(from, singularSuffix)
-	to = strings.TrimSuffix(to, singularSuffix)
+	if co.c.EnableCamelcase {
+		from = strings.TrimSuffix(from, singularSuffixSnake)
+		to = strings.TrimSuffix(to, singularSuffixSnake)
+	} else {
+		from = strings.TrimSuffix(from, singularSuffixCamel)
+		to = strings.TrimSuffix(to, singularSuffixCamel)
+	}
 	return co.s.FindPath(from, to, through)
 }
 
