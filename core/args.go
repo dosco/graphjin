@@ -93,8 +93,15 @@ func (gj *graphjin) argList(c context.Context,
 
 			} else if rc != nil {
 				if v, ok := rc.Vars[p.Name]; ok {
-					if fn, ok := v.(func() string); ok {
-						vl[i] = fn()
+					switch v1 := v.(type) {
+					case (func() string):
+						vl[i] = v1()
+					case (func() int):
+						vl[i] = v1()
+					case (func() bool):
+						vl[i] = v1()
+					default:
+						vl[i] = v
 					}
 				}
 			} else {

@@ -252,7 +252,7 @@ type Result struct {
 	// Extensions   *extensions     `json:"extensions,omitempty"`
 }
 
-// ReqConfig is used to pass request specific config values to the GraphQLEx and SubscribeEx functions. Dynamic variables can be set here.
+// ReqConfig is used to pass request specific config values to the GraphQL and Subscribe functions. Dynamic variables can be set here.
 type ReqConfig struct {
 	ns *string
 
