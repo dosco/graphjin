@@ -434,6 +434,9 @@ func (gj *graphjin) newGraphqlReq(rc *ReqConfig,
 		vars:  vars,
 	}
 
+	if rc != nil {
+		r.rc = rc
+	}
 	if rc != nil && rc.ns != nil {
 		r.ns = *rc.ns
 	} else {
