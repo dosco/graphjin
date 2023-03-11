@@ -13,6 +13,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 	"go.uber.org/zap"
+
+	_ "github.com/go-sql-driver/mysql"
 )
 
 const (
@@ -45,6 +47,16 @@ func newDB(
 	var db *sql.DB
 	var dc *dbConf
 	var err error
+
+	if cs := conf.DB.ConnString; cs != "" {
+		if strings.HasPrefix(cs, "postgres://") {
+			conf.Core.DBType = "postgres"
+		}
+		if strings.HasPrefix(cs, "mysql://") {
+			conf.Core.DBType = "mysql"
+			conf.DB.ConnString = strings.TrimPrefix(cs, "mysql://")
+		}
+	}
 
 	switch conf.Core.DBType {
 	case "mysql":
@@ -87,13 +99,23 @@ func newDB(
 
 func initPostgres(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf, error) {
 	c := conf
-	config, _ := pgx.ParseConfig("")
-	config.Host = c.DB.Host
-	config.Port = c.DB.Port
-	config.User = c.DB.User
-	config.Password = c.DB.Password
+	config, _ := pgx.ParseConfig(c.DB.ConnString)
+	if c.DB.Host != "" {
+		config.Host = c.DB.Host
+	}
+	if c.DB.Port != 0 {
+		config.Port = c.DB.Port
+	}
+	if c.DB.User != "" {
+		config.User = c.DB.User
+	}
+	if c.DB.Password != "" {
+		config.Password = c.DB.Password
+	}
 
-	config.RuntimeParams = map[string]string{}
+	if config.RuntimeParams == nil {
+		config.RuntimeParams = map[string]string{}
+	}
 
 	if c.DB.Schema != "" {
 		config.RuntimeParams["search_path"] = c.DB.Schema
@@ -169,8 +191,14 @@ func initPostgres(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf,
 }
 
 func initMysql(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf, error) {
+	var connString string
 	c := conf
-	connString := fmt.Sprintf("%s:%s@tcp(%s:%d)/", c.DB.User, c.DB.Password, c.DB.Host, c.DB.Port)
+
+	if c.DB.ConnString == "" {
+		connString = fmt.Sprintf("%s:%s@tcp(%s:%d)/", c.DB.User, c.DB.Password, c.DB.Host, c.DB.Port)
+	} else {
+		connString = c.DB.ConnString
+	}
 
 	if openDB {
 		connString += c.DB.DBName

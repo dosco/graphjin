@@ -176,6 +176,9 @@ database:
   user: postgres
   password: postgres
 
+  # alternatively you can use a connection string
+  #connection_string: postgres://jack:secret@pg.example.com:5432/mydb?sslmode=verify-ca&pool_max_conns=10
+
   #schema: "public"
   #pool_size: 10
   #max_retries: 0

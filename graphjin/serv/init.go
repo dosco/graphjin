@@ -7,12 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	// postgres drivers
-
-	// mysql drivers
-
 	"github.com/dosco/graphjin/core/v3"
-	_ "github.com/go-sql-driver/mysql"
 )
 
 func initLogLevel(s *service) {

@@ -18,7 +18,7 @@ import (
 )
 
 type SecretArgs struct {
-	KMS, KMSC, AWS, GCP, Azure, PGP string
+	KMS, KMSC, AWS, GCP, Azure, PGP string //nolint:golint,unused
 }
 
 func SecretsCmd(cmdName, fileName string, sa SecretArgs, args []string, log *zap.SugaredLogger) error {

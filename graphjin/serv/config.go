@@ -127,13 +127,14 @@ type Serv struct {
 
 // Database configuration
 type Database struct {
-	Type     string `jsonschema:"title=Type,enum=postgres,enum=mysql"`
-	Host     string `jsonschema:"title=Host"`
-	Port     uint16 `jsonschema:"title=Port"`
-	DBName   string `jsonschema:"title=Database Name"`
-	User     string `jsonschema:"title=User"`
-	Password string `jsonschema:"title=Password"`
-	Schema   string `jsonschema:"title=Postgres Schema"`
+	ConnString string `mapstructure:"connection_string" jsonschema:"title=Connection String"`
+	Type       string `jsonschema:"title=Type,enum=postgres,enum=mysql"`
+	Host       string `jsonschema:"title=Host"`
+	Port       uint16 `jsonschema:"title=Port"`
+	DBName     string `jsonschema:"title=Database Name"`
+	User       string `jsonschema:"title=User"`
+	Password   string `jsonschema:"title=Password"`
+	Schema     string `jsonschema:"title=Postgres Schema"`
 
 	// Size of database connection pool
 	PoolSize int `mapstructure:"pool_size" jsonschema:"title=Connection Pool Size"`

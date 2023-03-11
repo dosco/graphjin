@@ -7,5 +7,6 @@ use (
 	./serv
 	./auth
 	./cmd
+	./wasm
 	./plugin/otel
 )
