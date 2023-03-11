@@ -6,7 +6,7 @@ BUILD_VERSION ?= $(shell git describe --always --tags)
 GOPATH  ?= $(shell go env GOPATH)
 GOROOT ?= $(shell go env GOROOT)
 
-PACKAGES ?= ./core ./plugin/otel ./serv ./auth ./cmd
+PACKAGES ?= ./core ./plugin/otel ./serv ./auth ./cmd ./conf
 
 ifndef GOPATH
 override GOPATH = $(HOME)/go

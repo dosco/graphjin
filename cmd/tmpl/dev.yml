@@ -194,6 +194,9 @@ database:
   password: {{ .DBPass }}
   #schema: "public"
 
+  # alternatively you can use a connection string
+  #connection_string: postgres://jack:secret@pg.example.com:5432/mydb?sslmode=verify-ca&pool_max_conns=10
+
   # Size of database connection pool
   # pool_size: 15
 

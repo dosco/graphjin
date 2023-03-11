@@ -8,4 +8,4 @@ inspect=`docker images -q dosco/graphjin:$version 2> /dev/null`
 # fi
 
 # docker login  
-env KO_DOCKER_REPO=dosco/graphjin ko build --bare --tags=$version,latest --platform=linux/amd64,linux/arm64 .
+env KO_DOCKER_REPO=dosco/graphjin ko build --bare --tags=$version,latest --platform=linux/amd64,linux/arm64 ./cmd
