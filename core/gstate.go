@@ -237,15 +237,16 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 	c1, span := s.gj.spanStart(c, "Execute Query")
 	defer span.End()
 
-	err = retryOperation(c1, func() (err1 error) {
-		var row *sql.Row
-		if tx := s.tx(); tx != nil {
-			row = tx.QueryRowContext(c1, cs.st.sql, args.values...)
-		} else {
+	var row *sql.Row
+	if tx := s.tx(); tx != nil {
+		row = tx.QueryRowContext(c1, cs.st.sql, args.values...)
+		err = row.Scan(&s.data)
+	} else {
+		err = retryOperation(c1, func() (err1 error) {
 			row = conn.QueryRowContext(c1, cs.st.sql, args.values...)
-		}
-		return row.Scan(&s.data)
-	})
+			return row.Scan(&s.data)
+		})
+	}
 
 	if err != nil && err != sql.ErrNoRows {
 		span.Error(err)
