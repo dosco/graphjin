@@ -15,6 +15,7 @@ func Example_query() {
 	query {
 		products(limit: 3) {
 			id
+			count_likes,
 			owner {
 				id
 				fullName: full_name
@@ -34,7 +35,7 @@ func Example_query() {
 	} else {
 		printJSON(res.Data)
 	}
-	// Output: {"products":[{"id":1,"owner":{"fullName":"User 1","id":1}},{"id":2,"owner":{"fullName":"User 2","id":2}},{"id":3,"owner":{"fullName":"User 3","id":3}}]}
+	// Output: {"products":[{"count_likes":null,"id":1,"owner":{"fullName":"User 1","id":1}},{"count_likes":null,"id":2,"owner":{"fullName":"User 2","id":2}},{"count_likes":null,"id":3,"owner":{"fullName":"User 3","id":3}}]}
 }
 
 func Example_queryInTransaction() {
