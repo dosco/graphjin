@@ -31,6 +31,7 @@ CREATE TABLE products (
   metadata JSONB,
   country_code VARCHAR(3),
   price NUMERIC(7, 1),
+  count_likes INTEGER,
   owner_id BIGINT REFERENCES users(id),
   -- tsv column is used by full-text search
   tsv tsvector GENERATED ALWAYS AS (
@@ -47,7 +48,7 @@ CREATE TABLE purchases (
   id BIGSERIAL PRIMARY KEY,
   customer_id BIGINT REFERENCES users(id),
   product_id BIGINT REFERENCES products(id),
-  quantity integer,
+  quantity INTEGER,
   returned_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ

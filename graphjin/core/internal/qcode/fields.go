@@ -18,20 +18,20 @@ func (co *Compiler) compileFields(
 	field graph.Field,
 	tr trval,
 	role string,
-) error {
+) (err error) {
 	sel.Fields = make([]Field, 0, len(field.Children))
 	sel.BCols = make([]Column, 0, len(field.Children))
 
-	if err := co.compileChildColumns(st, op, qc, sel, field, tr, role); err != nil {
-		return err
+	if err = co.compileChildColumns(st, op, qc, sel, field, tr, role); err != nil {
+		return
 	}
 
-	if err := validateSelector(qc, sel, tr); err != nil {
-		return err
+	if err = validateSelector(qc, sel, tr); err != nil {
+		return
 	}
 
-	if err := co.addColumns(qc, sel); err != nil {
-		return err
+	if err = co.addColumns(qc, sel); err != nil {
+		return
 	}
 
 	co.addOrderByColumns(sel)
@@ -46,7 +46,7 @@ func (co *Compiler) compileChildColumns(
 	gf graph.Field,
 	tr trval,
 	role string,
-) error {
+) (err error) {
 	var aggExists bool
 	var id int32
 
@@ -84,20 +84,27 @@ func (co *Compiler) compileChildColumns(
 			continue
 		}
 
-		fn, isFunc, err := co.isFunction(sel, name, f)
-		if err != nil {
-			return err
+		var isCol, isFunc bool
+		var fn Function
+
+		field.Col, isCol = sel.Ti.ColumnExists(name)
+
+		if !isCol {
+			fn, isFunc, err = co.isFunction(sel, name, f)
+			if err != nil {
+				return err
+			}
 		}
 
-		if isFunc {
+		switch {
+		case isCol:
+		case isFunc:
 			field.Type = FieldTypeFunc
 			field.Func = fn.Func
 			field.Args = fn.Args
 			aggExists = fn.Agg
-		} else {
-			if field.Col, err = sel.Ti.GetColumn(name); err != nil {
-				return err
-			}
+		default:
+			return fmt.Errorf("field '%s' is not a column or a function", name)
 		}
 
 		if err := co.compileFieldDirectives(sel, &field, f.Directives, role); err != nil {
