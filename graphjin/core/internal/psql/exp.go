@@ -397,7 +397,7 @@ func (c *expContext) renderValVar(ex *qcode.Exp) {
 		c.renderVar(val)
 		c.w.WriteString(`'`)
 
-	case ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn:
+	case ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn || ex.Op == qcode.OpContains:
 		c.w.WriteString(`(ARRAY(SELECT json_array_elements_text(`)
 		c.renderParam(Param{Name: ex.Right.Val, Type: ex.Left.Col.Type, IsArray: true})
 		c.w.WriteString(`))`)

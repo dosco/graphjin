@@ -13,6 +13,34 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func Example_queryWithWhereInWithArrayColumn() {
+	gql := `query {
+		products(where: { tags: { in: $list } }, 
+			limit: 2, 
+			order_by: {id: asc}) {
+			id
+		}
+	}`
+
+	vars := json.RawMessage(`{
+		"list": ["Tag 1", "Tag 2"]
+	}`)
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"products":[{"id":1},{"id":2}]}
+}
+
 func Example_queryWithFunctionFields() {
 	gql := `
 	query {
