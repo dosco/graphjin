@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Example_queryWithWhereInWithArrayColumn() {
+func Example_queryWithWhereInWithVariableArrayColumn() {
 	gql := `query {
 		products(where: { tags: { in: $list } }, 
 			limit: 2, 
@@ -33,6 +33,82 @@ func Example_queryWithWhereInWithArrayColumn() {
 	}
 
 	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"products":[{"id":1},{"id":2}]}
+}
+
+func Example_queryWithWhereInWithStaticArrayColumn() {
+	gql := `query {
+		products(where: { tags: { in: ["Tag 1", "Tag 2"] } }, 
+			limit: 2, 
+			order_by: {id: asc}) {
+			id
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"products":[{"id":1},{"id":2}]}
+}
+
+func Example_queryWithWhereInWithVariableNumericArrayColumn() {
+	gql := `query {
+		products(where: { category_ids: { in: $list } }, 
+			limit: 2, 
+			order_by: {id: asc}) {
+			id
+		}
+	}`
+
+	vars := json.RawMessage(`{
+		"list": [1, 2]
+	}`)
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"products":[{"id":1},{"id":2}]}
+}
+
+func Example_queryWithWhereInWithStaticNumericArrayColumn() {
+	gql := `query {
+		products(where: { category_ids: { in: [1,2] } }, 
+			limit: 2, 
+			order_by: {id: asc}) {
+			id
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
 	} else {

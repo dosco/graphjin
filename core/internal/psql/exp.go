@@ -397,7 +397,7 @@ func (c *expContext) renderValVar(ex *qcode.Exp) {
 		c.renderVar(val)
 		c.w.WriteString(`'`)
 
-	case ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn || ex.Op == qcode.OpContains:
+	case ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn || ex.Op == qcode.OpContains || ex.Op == qcode.OpHasInCommon:
 		c.w.WriteString(`(ARRAY(SELECT json_array_elements_text(`)
 		c.renderParam(Param{Name: ex.Right.Val, Type: ex.Left.Col.Type, IsArray: true})
 		c.w.WriteString(`))`)
@@ -420,7 +420,20 @@ func (c *expContext) renderList(ex *qcode.Exp) {
 }
 
 func (c *expContext) renderListPostgres(ex *qcode.Exp) {
-	c.w.WriteString(`(ARRAY[`)
+	if strings.HasPrefix(ex.Left.Col.Type, "json") {
+		c.w.WriteString(`(ARRAY[`)
+		c.renderListBodyPostgres(ex)
+		c.w.WriteString(`])`)
+	} else {
+		c.w.WriteString(`(CAST(ARRAY[`)
+		c.renderListBodyPostgres(ex)
+		c.w.WriteString(`] AS `)
+		c.w.WriteString(ex.Left.Col.Type)
+		c.w.WriteString(`[]))`)
+	}
+}
+
+func (c *expContext) renderListBodyPostgres(ex *qcode.Exp) {
 	for i := range ex.Right.ListVal {
 		if i != 0 {
 			c.w.WriteString(`, `)
@@ -434,7 +447,6 @@ func (c *expContext) renderListPostgres(ex *qcode.Exp) {
 			c.w.WriteString(`'`)
 		}
 	}
-	c.w.WriteString(`])`)
 }
 
 func (c *expContext) renderListMysql(ex *qcode.Exp) {
