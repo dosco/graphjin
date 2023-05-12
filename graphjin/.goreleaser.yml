@@ -82,17 +82,16 @@ scoop:
   homepage: https://graphjin.com
   description: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler."
   license: Apache-2.0
-
-snapcrafts:
-  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    summary: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler"
-    description: |
-      GraphJin gives you a high performance GraphQL API without you having to write any code. GraphQL is automagically compiled into an efficient SQL query. Use it either as a library or a standalone service.
-    apps:
-      graphjin:
-        plugs: ["home", "network", "network-bind"]
-    grade: stable
-    confinement: strict
-    publish: true
-    license: Apache-2.0
-    base: core18
+# snapcrafts:
+#   - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+#     summary: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler"
+#     description: |
+#       GraphJin gives you a high performance GraphQL API without you having to write any code. GraphQL is automagically compiled into an efficient SQL query. Use it either as a library or a standalone service.
+#     apps:
+#       graphjin:
+#         plugs: ["home", "network", "network-bind"]
+#     grade: stable
+#     confinement: strict
+#     publish: true
+#     license: Apache-2.0
+#     base: core18
