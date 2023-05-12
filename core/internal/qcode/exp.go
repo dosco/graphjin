@@ -314,7 +314,11 @@ func (ast *aexpst) processOpAndVal(av aexp, ex *Exp, node *graph.Node) (bool, er
 		ex.Op = OpLesserOrEquals
 		ex.Right.Val = node.Val
 	case "in":
-		ex.Op = OpIn
+		if ex.Left.Col.Array {
+			ex.Op = OpContains
+		} else {
+			ex.Op = OpIn
+		}
 		setListVal(ex, node)
 	case "nin", "notIn", "not_in":
 		ex.Op = OpNotIn
