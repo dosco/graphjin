@@ -315,7 +315,7 @@ func (ast *aexpst) processOpAndVal(av aexp, ex *Exp, node *graph.Node) (bool, er
 		ex.Right.Val = node.Val
 	case "in":
 		if ex.Left.Col.Array {
-			ex.Op = OpContains
+			ex.Op = OpHasInCommon
 		} else {
 			ex.Op = OpIn
 		}
