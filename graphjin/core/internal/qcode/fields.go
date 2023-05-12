@@ -170,9 +170,11 @@ func newArgs(sel *Select, f sdata.DBFunction, arg graph.Arg) (args []Arg, err er
 }
 
 func parseArg(arg *graph.Node, f sdata.DBFunction, index int) (a Arg, err error) {
-	if numArgKeyRe.MatchString(arg.Name) {
+	argName := arg.Name
+	if numArgKeyRe.MatchString(argName) {
 		var n int
-		n, err = strconv.Atoi(arg.Name[1:])
+		argName = argName[1:]
+		n, err = strconv.Atoi(argName)
 		if err != nil {
 			err = fmt.Errorf("db function %s: invalid key: %s", f.Name, arg.Name)
 			return
@@ -186,7 +188,7 @@ func parseArg(arg *graph.Node, f sdata.DBFunction, index int) (a Arg, err error)
 	}
 
 	var input sdata.DBFuncParam
-	input, err = f.GetInput(arg.Name)
+	input, err = f.GetInput(argName)
 	if err != nil {
 		err = fmt.Errorf("db function %s: %w", f.Name, err)
 	}
