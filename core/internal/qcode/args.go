@@ -366,11 +366,11 @@ func (co *Compiler) compileFieldArgs(sel *Select, f *Field, args []graph.Arg, ro
 	return nil
 }
 
-var numArgKeyRe = regexp.MustCompile(`^a\d+`)
+var numArgKeyRe = regexp.MustCompile(`^[a_]\d+`)
 
 func (co *Compiler) compileFuncArgArgs(sel *Select, f *Field, arg graph.Arg) (err error) {
 	if f.Type == FieldTypeFunc && len(f.Func.Inputs) == 0 {
-		return fmt.Errorf("db function '%s' has no arguments", f.Func.Name)
+		return fmt.Errorf("db function '%s': has no arguments", f.Func.Name)
 	}
 
 	if err = validateArg(arg, graph.NodeObj); err != nil {
