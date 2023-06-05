@@ -22,8 +22,7 @@ type FS interface {
 var ErrUnknownGraphQLQuery = errors.New("unknown graphql query")
 
 const (
-	queryPath    = "/queries"
-	fragmentPath = "/fragments"
+	queryPath = "/queries"
 )
 
 type Item struct {
