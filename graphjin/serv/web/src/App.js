@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useState } from "react";
 
 import { createGraphiQLFetcher } from "@graphiql/toolkit";
 import { GraphiQL } from "graphiql";
+import { explorerPlugin } from "@graphiql/plugin-explorer";
 
 import "graphiql/graphiql.css";
 
@@ -18,6 +19,8 @@ const fetcher = createGraphiQLFetcher({
   url: `${window.location.protocol}//${window.location.host}${apiPath}`,
   subscriptionUrl: `ws://${window.location.host}${apiPath}`,
 });
+
+const explorer = explorerPlugin();
 
 // import GitHubButton from "react-github-btn";
 
@@ -37,6 +40,17 @@ query {
 }
 `;
 
-const App = () => <GraphiQL fetcher={fetcher} query={defaultQuery} />;
+const App = () => {
+  const [query, setQuery] = useState(defaultQuery);
+
+  return (
+    <GraphiQL
+      fetcher={fetcher}
+      query={query}
+      onEditQuery={setQuery}
+      plugins={[explorer]}
+    />
+  );
+};
 
 export default App;
