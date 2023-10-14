@@ -6,7 +6,7 @@ RUN yarn
 RUN yarn build
 
 # stage: 2
-FROM golang:1.20 as go-build
+FROM golang:1.21 as go-build
 RUN go install github.com/rafaelsq/wtc@latest
 
 WORKDIR /app

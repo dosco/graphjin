@@ -9,7 +9,6 @@ import (
 const (
 	routeGraphQL = "/api/v1/graphql"
 	routeREST    = "/api/v1/rest/*"
-	actionRoute  = "/api/v1/actions"
 	healthRoute  = "/health"
 )
 
