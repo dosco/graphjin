@@ -12,6 +12,12 @@ before:
     - make gen
 builds:
   - main: ./cmd
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+      - -X main.date={{ .Date }}
+      - -X github.com/dosco/graphjin/serv/v3.version={{ .Version }}
     env:
       - CGO_ENABLED=0
     goos:
