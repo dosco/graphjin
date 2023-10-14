@@ -38,6 +38,7 @@ func parseGQL(fs FS, fname string, r io.Writer) (err error) {
 		m := incRe.FindStringSubmatch(s.Text())
 		if len(m) == 0 {
 			r.Write(s.Bytes()) //nolint:errcheck
+			r.Write([]byte("\n"))
 			continue
 		}
 
