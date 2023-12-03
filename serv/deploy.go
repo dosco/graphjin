@@ -23,7 +23,8 @@ type depResp struct {
 	name, pname string
 }
 
-func (s *service) saveConfig(c context.Context, name, bundle string) (*depResp, error) {
+// saveConfig saves the config to the database
+func (s *graphjinService) saveConfig(c context.Context, name, bundle string) (*depResp, error) {
 	var dres depResp
 
 	zip, err := base64.StdEncoding.DecodeString(bundle)
@@ -139,7 +140,8 @@ func (s *service) saveConfig(c context.Context, name, bundle string) (*depResp, 
 	return &dres, nil
 }
 
-func (s *service) rollbackConfig(c context.Context) (*depResp, error) {
+// rollbackConfig rolls back the config to the previous one
+func (s *graphjinService) rollbackConfig(c context.Context) (*depResp, error) {
 	var dres depResp
 
 	opt := &sql.TxOptions{Isolation: sql.LevelSerializable}
@@ -216,6 +218,7 @@ type adminParams struct {
 	params  map[string]string
 }
 
+// getAdminParams fetches the admin params from the database
 func getAdminParams(tx *sql.Tx) (adminParams, error) {
 	var ap adminParams
 
@@ -259,14 +262,15 @@ func getAdminParams(tx *sql.Tx) (adminParams, error) {
 	return ap, nil
 }
 
-func startHotDeployWatcher(s1 *Service) error {
+// startHotDeployWatcher starts the hot deploy watcher
+func startHotDeployWatcher(s1 *HttpService) error {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		s := s1.Load().(*service)
+		s := s1.Load().(*graphjinService)
 
-		cf := s.conf.vi.ConfigFileUsed()
+		cf := s.conf.viper.ConfigFileUsed()
 		cf = filepath.Join("/", filepath.Base(strings.TrimSuffix(cf, filepath.Ext(cf))))
 
 		var id int
@@ -322,6 +326,7 @@ type activeBundle struct {
 	name, hash, bundle string
 }
 
+// fetchActiveBundle fetches the active bundle from the database
 func fetchActiveBundle(db *sql.DB) (*activeBundle, error) {
 	var ab activeBundle
 
@@ -346,7 +351,8 @@ func fetchActiveBundle(db *sql.DB) (*activeBundle, error) {
 	return &ab, nil
 }
 
-func deployBundle(s1 *Service, name, hash, confFile, bundle string) error {
+// deployBundle deploys the bundle to the server
+func deployBundle(s1 *HttpService, name, hash, confFile, bundle string) error {
 	bfs, err := bundle2Fs(name, hash, confFile, bundle)
 	if err != nil {
 		return err
@@ -360,6 +366,7 @@ type bundleFs struct {
 	fs   afero.Fs
 }
 
+// bundle2Fs converts the bundle to a filesystem
 func bundle2Fs(name, hash, confFile, bundle string) (bundleFs, error) {
 	var bfs bundleFs
 

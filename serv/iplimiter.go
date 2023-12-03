@@ -14,10 +14,12 @@ import (
 
 var ipCache cache.Cache
 
+// init initializes the cache
 func init() {
 	ipCache, _ = cache.NewCache(cache.MaxKeys(10), cache.TTL(time.Minute*5))
 }
 
+// getIPLimiter returns the rate limiter for the given IP
 func getIPLimiter(ip string, limit float64, bucket int) *rate.Limiter {
 	v, exists := ipCache.Get(ip)
 	if !exists {
@@ -29,11 +31,12 @@ func getIPLimiter(ip string, limit float64, bucket int) *rate.Limiter {
 	return v.(*rate.Limiter)
 }
 
-func rateLimiter(s1 *Service, h http.Handler) http.Handler {
+// rateLimiter is a middleware that limits the number of requests per IP
+func rateLimiter(s1 *HttpService, h http.Handler) http.Handler {
 	fn := func(w http.ResponseWriter, r *http.Request) {
 		var iph, ip string
 		var err error
-		s := s1.Load().(*service)
+		s := s1.Load().(*graphjinService)
 
 		if s.conf.RateLimiter.IPHeader != "" {
 			iph = r.Header.Get(s.conf.RateLimiter.IPHeader)

@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// dbCmd creates the db command
 func dbCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "db",
@@ -30,6 +31,7 @@ func dbCmd() *cobra.Command {
 	return c
 }
 
+// cmdDBSeed seeds the database
 func cmdDBSetup(cmd *cobra.Command, args []string) {
 	setup(cpath)
 

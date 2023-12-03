@@ -11,11 +11,8 @@ import (
 	"go.mozilla.org/sops/v3/stores/dotenv"
 )
 
+// Init reads the secrets from the given file and returns them as a map
 func Init(filename string, fs afero.Fs) (map[string]string, error) {
-	return initSecrets(filename, fs)
-}
-
-func initSecrets(filename string, fs afero.Fs) (map[string]string, error) {
 	var err error
 
 	inputStore := common.DefaultStoreForPath(filename)

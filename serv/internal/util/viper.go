@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/viper"
 )
 
+// SetKeyValue sets the value of a key in the viper config
 func SetKeyValue(vi *viper.Viper, key string, value interface{}) bool {
 	if strings.HasPrefix(key, "GJ_") || strings.HasPrefix(key, "SG_") {
 		key = key[3:]

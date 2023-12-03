@@ -79,8 +79,8 @@ var punctuators = map[rune]MType{
 
 const eof = -1
 
-// stateFn represents the state of the scanner as a function that returns the next state.
-type stateFn func(*lexer) stateFn
+// StateFn represents the state of the scanner as a function that returns the next state.
+type StateFn func(*lexer) StateFn
 
 // lexer holds the state of the scanner.
 type lexer struct {
@@ -96,6 +96,7 @@ type lexer struct {
 
 var zeroLex = lexer{}
 
+// Reset resets the lexer to scan a new input string.
 func (l *lexer) Reset() {
 	*l = zeroLex
 }
@@ -133,6 +134,7 @@ func (l *lexer) backup() {
 	}
 }
 
+// current returns the current bytes of the input.
 func (l *lexer) current() []byte {
 	return l.input[l.start:l.pos]
 }
@@ -151,6 +153,7 @@ func (l *lexer) emit(t MType) {
 	l.start = l.pos
 }
 
+// emitL passes an item back to the client and lowercases the value.
 func (l *lexer) emitL(t MType) {
 	lowercase(l.current())
 	l.emit(t)
@@ -199,7 +202,7 @@ func (l *lexer) acceptRun(valid []byte) {
 
 // errorf returns an error token and terminates the scan by passing
 // back a nil pointer that will be the next state, terminating l.nextItem.
-func (l *lexer) errorf(format string, args ...interface{}) stateFn {
+func (l *lexer) errorf(format string, args ...interface{}) StateFn {
 	l.err = fmt.Errorf(format, args...)
 	l.items = append(l.items, item{itemError, l.start, l.input[l.start:l.pos], l.line})
 	return nil
@@ -233,7 +236,7 @@ func (l *lexer) run() {
 }
 
 // lexInsideAction scans the elements inside action delimiters.
-func lexRoot(l *lexer) stateFn {
+func lexRoot(l *lexer) StateFn {
 	r := l.next()
 
 	switch {
@@ -287,7 +290,7 @@ func lexRoot(l *lexer) stateFn {
 }
 
 // lexName scans a name.
-func lexName(l *lexer) stateFn {
+func lexName(l *lexer) StateFn {
 	for {
 		r := l.next()
 
@@ -317,7 +320,7 @@ func lexName(l *lexer) stateFn {
 }
 
 // lexString scans a string.
-func lexString(l *lexer) stateFn {
+func lexString(l *lexer) StateFn {
 	if sr, ok := l.accept([]byte(quotesToken)); ok {
 		l.ignore()
 
@@ -351,7 +354,7 @@ func lexString(l *lexer) stateFn {
 // lexNumber scans a number: decimal and float. This isn't a perfect number scanner
 // for instance it accepts "." and "0x0.2" and "089" - but when it's wrong the input
 // is invalid and the parser (via strconv) should notice.
-func lexNumber(l *lexer) stateFn {
+func lexNumber(l *lexer) StateFn {
 	if !l.scanNumber() {
 		return l.errorf("bad number syntax: %q", l.input[l.start:l.pos])
 	}
@@ -359,6 +362,7 @@ func lexNumber(l *lexer) stateFn {
 	return lexRoot
 }
 
+// scanNumber scans a number: decimal and float.
 func (l *lexer) scanNumber() bool {
 	// Optional leading sign.
 	l.accept(signsToken)
@@ -391,14 +395,17 @@ func isAlphaNumeric(r rune) bool {
 	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
+// equals reports whether b is equal to val.
 func equals(b, val []byte) bool {
 	return bytes.EqualFold(b, val)
 }
 
+// contains reports whether b contains any of the chars.
 func contains(b []byte, chars string) bool {
 	return bytes.ContainsAny(b, chars)
 }
 
+// lowercase lowercases the bytes in b.
 func lowercase(b []byte) {
 	for i := 0; i < len(b); i++ {
 		if b[i] >= 'A' && b[i] <= 'Z' {
@@ -407,6 +414,7 @@ func lowercase(b []byte) {
 	}
 }
 
+// String returns a string representation of the item.
 func (i item) String() string {
 	var v string
 

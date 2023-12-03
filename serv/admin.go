@@ -12,10 +12,11 @@ import (
 	"time"
 )
 
-func adminDeployHandler(s1 *Service) http.Handler {
+// adminDeployHandler handles the admin deploy endpoint
+func adminDeployHandler(s1 *HttpService) http.Handler {
 	h := func(w http.ResponseWriter, r *http.Request) {
 		var req DeployReq
-		s := s1.Load().(*service)
+		s := s1.Load().(*graphjinService)
 
 		if !s.isAdminSecret(r) {
 			authFail(w)
@@ -57,9 +58,10 @@ func adminDeployHandler(s1 *Service) http.Handler {
 	return http.HandlerFunc(h)
 }
 
-func adminRollbackHandler(s1 *Service) http.Handler {
+// adminRollbackHandler handles the admin rollback endpoint
+func adminRollbackHandler(s1 *HttpService) http.Handler {
 	h := func(w http.ResponseWriter, r *http.Request) {
-		s := s1.Load().(*service)
+		s := s1.Load().(*graphjinService)
 
 		if !s.isAdminSecret(r) {
 			authFail(w)
@@ -85,7 +87,8 @@ func adminRollbackHandler(s1 *Service) http.Handler {
 	return http.HandlerFunc(h)
 }
 
-func (s *service) isAdminSecret(r *http.Request) bool {
+// adminConfigHandler handles the checking of the admin secret endpoint
+func (s *graphjinService) isAdminSecret(r *http.Request) bool {
 	atomic.AddInt32(&s.adminCount, 1)
 	defer atomic.StoreInt32(&s.adminCount, 0)
 
@@ -105,14 +108,17 @@ func (s *service) isAdminSecret(r *http.Request) bool {
 	return (err == nil) && bytes.Equal(v1, s.asec[:])
 }
 
+// badReq sends a bad request response
 func badReq(w http.ResponseWriter, msg string) {
 	http.Error(w, msg, http.StatusBadRequest)
 }
 
+// intErr sends an internal server error response
 func intErr(w http.ResponseWriter, msg string) {
 	http.Error(w, msg, http.StatusInternalServerError)
 }
 
+// authFail sends an unauthorized response
 func authFail(w http.ResponseWriter) {
 	http.Error(w, "auth failed", http.StatusUnauthorized)
 }

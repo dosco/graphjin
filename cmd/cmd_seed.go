@@ -24,6 +24,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// cmdSeed is the cobra CLI for the seed subcommand
 func cmdDBSeed(cmd *cobra.Command, args []string) {
 	setup(cpath)
 	initDB(true)
@@ -49,6 +50,7 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 	log.Infof("Seed script completed")
 }
 
+// compileAndRunJS compiles and runs the seed script
 func compileAndRunJS(seed string, db *sql.DB) error {
 	b, err := os.ReadFile(seed)
 	if err != nil {
@@ -168,7 +170,7 @@ func compileAndRunJS(seed string, db *sql.DB) error {
 	return err
 }
 
-// func runFunc(call goja.FunctionCall) {
+// graphQLFunc is a helper function to run a GraphQL query
 func graphQLFunc(gj *core.GraphJin, query string, data interface{}, opt map[string]string) map[string]interface{} {
 	ct := context.Background()
 
@@ -214,6 +216,7 @@ type csvSource struct {
 	i    int
 }
 
+// NewCSVSource creates a new CSV source
 func NewCSVSource(filename string, sep rune) (*csvSource, error) {
 	f, err := os.Open(filename)
 	if err != nil {
@@ -272,6 +275,7 @@ func (c *csvSource) Values() ([]interface{}, error) {
 	return vals, nil
 }
 
+// isDigit checks if a string is a digit
 func isDigit(v string) bool {
 	for i := range v {
 		if v[i] < '0' || v[i] > '9' {
@@ -285,6 +289,7 @@ func (c *csvSource) Err() error {
 	return nil
 }
 
+// importCSV imports a CSV file into a table
 func importCSV(table, filename string, sep string, db *sql.DB) int64 {
 	log.Infof("Seeding table: %s, From file: %s", table, filename)
 
@@ -353,6 +358,7 @@ func logFunc(args ...interface{}) {
 	}
 }
 
+// avatarURL returns a random avatar URL
 func avatarURL(size int) string {
 	if size == 0 {
 		size = 200

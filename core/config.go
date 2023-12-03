@@ -267,7 +267,7 @@ type ResolverReq struct {
 	ID  string
 	Sel *qcode.Select
 	Log *log.Logger
-	*ReqConfig
+	*RequestConfig
 }
 
 // AddRoleTable function is a helper function to make it easy to add per-table

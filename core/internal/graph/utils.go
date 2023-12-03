@@ -13,6 +13,7 @@ type FPInfo struct {
 	Name      string
 }
 
+// FastParse parses the query and returns the operation type and name
 func FastParse(gql string) (h FPInfo, err error) {
 	if gql == "" {
 		return h, errors.New("query missing or empty")
@@ -20,6 +21,7 @@ func FastParse(gql string) (h FPInfo, err error) {
 	return fastParse(strings.NewReader(gql))
 }
 
+// FastParseBytes parses the query and returns the operation type and name
 func FastParseBytes(gql []byte) (h FPInfo, err error) {
 	if len(gql) == 0 {
 		return h, errors.New("query missing or empty")
@@ -27,6 +29,7 @@ func FastParseBytes(gql []byte) (h FPInfo, err error) {
 	return fastParse(bytes.NewReader(gql))
 }
 
+// fastParse parses the query and returns the operation type and name
 func fastParse(r io.Reader) (h FPInfo, err error) {
 	var s scanner.Scanner
 	s.Init(r)

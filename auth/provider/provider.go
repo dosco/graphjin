@@ -51,6 +51,7 @@ type JWTProvider interface {
 	SetContextValues(context.Context, jwt.MapClaims) (context.Context, error)
 }
 
+// NewProvider creates a new JWT provider based on the config values
 func NewProvider(config JWTConfig) (JWTProvider, error) {
 	switch config.Provider {
 	case "auth0":
@@ -64,20 +65,21 @@ func NewProvider(config JWTConfig) (JWTProvider, error) {
 	}
 }
 
+// getKey returns the key used to verify the JWT token
 func getKey(config JWTConfig) (interface{}, error) {
 	var key interface{}
 	var err error
 
 	switch {
 	case config.PubKey != "":
-		pk := []byte(config.PubKey)
+		pubKey := []byte(config.PubKey)
 		switch config.PubKeyType {
 		case "ecdsa":
-			key, err = jwt.ParseECPublicKeyFromPEM(pk)
+			key, err = jwt.ParseECPublicKeyFromPEM(pubKey)
 		case "rsa":
-			key, err = jwt.ParseRSAPublicKeyFromPEM(pk)
+			key, err = jwt.ParseRSAPublicKeyFromPEM(pubKey)
 		default:
-			key, err = jwt.ParseECPublicKeyFromPEM(pk)
+			key, err = jwt.ParseECPublicKeyFromPEM(pubKey)
 		}
 		if err != nil {
 			return nil, err

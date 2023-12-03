@@ -7,6 +7,8 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+// NewLogger creates a new zap logger instance
+// json - if true logs are in json format
 func NewLogger(json bool) *zap.Logger {
 	econf := zapcore.EncoderConfig{
 		MessageKey:     "msg",

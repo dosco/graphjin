@@ -11,7 +11,7 @@ import (
 	"github.com/dosco/graphjin/core/v3/internal/jsn"
 )
 
-// RemoteAPI struct defines a remote API endpoint
+// remoteAPI struct defines a remote API endpoint
 type remoteAPI struct {
 	httpClient *http.Client
 	URL        string
@@ -26,6 +26,7 @@ type remoteHdrs struct {
 	Value string
 }
 
+// newRemoteAPI creates a new remote API endpoint
 func newRemoteAPI(v map[string]interface{}, httpClient *http.Client) (*remoteAPI, error) {
 	ra := remoteAPI{
 		httpClient: httpClient,
@@ -50,6 +51,7 @@ func newRemoteAPI(v map[string]interface{}, httpClient *http.Client) (*remoteAPI
 	return &ra, nil
 }
 
+// Resolve function resolves a remote API request
 func (r *remoteAPI) Resolve(c context.Context, rr ResolverReq) ([]byte, error) {
 	uri := strings.ReplaceAll(r.URL, "$id", rr.ID)
 

@@ -33,6 +33,7 @@ CREATE TABLE _graphjin.configs (
 CREATE INDEX config_active ON _graphjin.configs (active);
 `
 
+// InitAdmin creates the admin tables
 func InitAdmin(db *sql.DB, dbtype string) error {
 	c := context.Background()
 
@@ -52,6 +53,7 @@ func InitAdmin(db *sql.DB, dbtype string) error {
 	return nil
 }
 
+// idColSql returns the id column sql
 func idColSql(dbtype string) string {
 	switch dbtype {
 	case "mysql":
