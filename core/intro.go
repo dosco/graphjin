@@ -285,11 +285,18 @@ func (in *intro) addTable(t sdata.DBTable, alias string) (err error) {
 	in.addTypeTo("Mutation", ftM)
 
 	// add tableByID type to query and subscription
-	ftQS.Name += "ByID"
-	ftQS.addOrReplaceArg("id", newTR(KIND_NONNULL, "", newTR("", "ID", nil)))
-	in.addType(ftQS)
-	in.addTypeTo("Query", ftQS)
-	in.addTypeTo("Subscription", ftQS)
+	var ftQSByID fullType
+
+	if ftQSByID, err = in.addTableType(t, alias); err != nil {
+		return
+	}
+
+	ftQSByID.Name += "ByID"
+	ftQSByID.addOrReplaceArg("id", newTR(KIND_NONNULL, "", newTR("", "ID", nil)))
+	in.addType(ftQSByID)
+	in.addTypeTo("Query", ftQSByID)
+	in.addTypeTo("Subscription", ftQSByID)
+
 	return
 }
 
