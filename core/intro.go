@@ -294,7 +294,7 @@ func (in *Introspection) addTable(table sdata.DBTable, alias string) (err error)
 	in.addTypeTo("Mutation", ftM)
 
 	// add tableByID type to query and subscription
-	var ftQSByID fullType
+	var ftQSByID FullType
 
 	if ftQSByID, err = in.addTableType(t, alias); err != nil {
 		return
