@@ -57,6 +57,19 @@ query getProducts {
 }
 ```
 
+**Note**: The corresponding SQL for creating the table (POSTGRES)
+  
+  ```sql
+  CREATE TABLE products (
+    id SERIAL NOT NULL,
+    name TEXT NOT NULL,
+    price INTEGER NOT NULL,
+    owner_id INTEGER NOT NULL,
+    category_id INTEGER NOT NULL,
+    PRIMARY KEY(id)
+  );
+  ```
+
 ## Secure out of the box
 
 In production all queries are always read from locally saved copies not from what the client sends hence clients cannot modify the query. This makes
@@ -143,44 +156,52 @@ go get github.com/dosco/graphjin/core/v3
 package main
 
 import (
-  "context"
-  "database/sql"
-  "fmt"
-  "log"
+	"context"
+	"database/sql"
+	"log"
+	"net/http"
 
-  "github.com/dosco/graphjin/core/v3"
-  _ "github.com/jackc/pgx/v4/stdlib"
+	"github.com/dosco/graphjin/core"
+	"github.com/go-chi/chi/v5"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 func main() {
-  db, err := sql.Open("pgx", "postgres://postgres:@localhost:5432/example_db")
-  if err != nil {
-    log.Fatal(err)
-  }
+	db, err := sql.Open("pgx", "postgres://postgres:@localhost:5432/exampledb?sslmode=disable")
+	if err != nil {
+		log.Fatal(err)
+	}
 
-  gj, err := core.NewGraphJin(nil, db)
-  if err != nil {
-    log.Fatal(err)
-  }
+	gj, err := core.NewGraphJin(nil, db)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-  query := `
-    query {
-      posts {
-      id
-      title
-    }
-  }`
+	query := `
+    query getPosts {
+        posts {
+            id
+            title
+        }
+        posts_cursor
+    }`
 
-  ctx := context.Background()
-  ctx = context.WithValue(ctx, core.UserIDKey, 1)
+	router := chi.NewRouter()
+	router.Get("/", func(w http.ResponseWriter, request *http.Request) {
+		context := context.WithValue(request.Context(), core.UserIDKey, 1)
+		res, err := gj.GraphQL(context, query, nil, nil)
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+		w.Write(res.Data)
+	})
 
-  res, err := gj.GraphQL(ctx, query, nil, nil)
-  if err != nil {
-    log.Fatal(err)
-  }
+	log.Println("Go server started on port 3000")
+  http.ListenAndServe(":3000", router)
 
-  fmt.Println(string(res.Data))
 }
+
 ```
 
 ### Use GraphJin Service

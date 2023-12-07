@@ -68,6 +68,7 @@ func (gj *graphjin) getIntroResult() (data json.RawMessage, err error) {
 	return
 }
 
+// Initializes the database discovery process on graphjin
 func (gj *graphjin) initDiscover() (err error) {
 	switch gj.conf.DBType {
 	case "":
@@ -84,6 +85,7 @@ func (gj *graphjin) initDiscover() (err error) {
 	return
 }
 
+// Private method that does the actual database discovery for initDiscover
 func (gj *graphjin) _initDiscover() (err error) {
 	if gj.prod && gj.conf.EnableSchema {
 		b, err := gj.fs.Get("db.graphql")
@@ -129,6 +131,7 @@ func (gj *graphjin) _initDiscover() (err error) {
 	return
 }
 
+// Initializes the database schema on graphjin
 func (gj *graphjin) initSchema() error {
 	if err := gj._initSchema(); err != nil {
 		return fmt.Errorf("%s: %w", gj.dbtype, err)
@@ -186,6 +189,7 @@ func (gj *graphjin) _initSchema() (err error) {
 	return
 }
 
+// Initializes the qcode compilers
 func (gj *graphjin) initCompilers() (err error) {
 	qcc := qcode.Config{
 		TConfig:         gj.tmap,
@@ -273,6 +277,7 @@ func (gj *graphjin) executeRoleQuery(c context.Context,
 	return
 }
 
+// Returns the operation type for the query result
 func (r *Result) Operation() OpType {
 	switch r.op {
 	case qcode.QTQuery:
@@ -286,26 +291,32 @@ func (r *Result) Operation() OpType {
 	}
 }
 
+// Returns the namespace for the query result
 func (r *Result) Namespace() string {
 	return r.ns
 }
 
+// Returns the operation name for the query result
 func (r *Result) OperationName() string {
 	return r.op.String()
 }
 
+// Returns the query name for the query result
 func (r *Result) QueryName() string {
 	return r.name
 }
 
+// Returns the role used to execute the query
 func (r *Result) Role() string {
 	return r.role
 }
 
+// Returns the SQL query string for the query result
 func (r *Result) SQL() string {
 	return r.sql
 }
 
+// Returns the cache control header value for the query result
 func (r *Result) CacheControl() string {
 	return r.cacheControl
 }
@@ -370,6 +381,7 @@ func (s *gstate) debugLogStmt() {
 	}
 }
 
+// Saved the query qcode to the allow list
 func (gj *graphjin) saveToAllowList(qc *qcode.QCode, ns string) (err error) {
 	if gj.conf.DisableAllowList {
 		return nil
@@ -399,10 +411,12 @@ func (gj *graphjin) saveToAllowList(qc *qcode.QCode, ns string) (err error) {
 	return gj.allowList.Set(item)
 }
 
+// Starts tracing with the given name
 func (gj *graphjin) spanStart(c context.Context, name string) (context.Context, Spaner) {
 	return gj.trace.Start(c, name)
 }
 
+// Retry operation with jittered backoff at 50, 100, 200 ms
 func retryOperation(c context.Context, fn func() error) (err error) {
 	jitter := []int{50, 100, 200}
 	for i := 0; i < 3; i++ {
