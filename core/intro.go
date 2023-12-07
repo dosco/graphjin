@@ -296,7 +296,7 @@ func (in *Introspection) addTable(table sdata.DBTable, alias string) (err error)
 	// add tableByID type to query and subscription
 	var ftQSByID FullType
 
-	if ftQSByID, err = in.addTableType(t, alias); err != nil {
+	if ftQSByID, err = in.addTableType(table, alias); err != nil {
 		return
 	}
 
