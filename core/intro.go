@@ -293,10 +293,19 @@ func (in *Introspection) addTable(table sdata.DBTable, alias string) (err error)
 	}
 	in.addTypeTo("Mutation", ftM)
 
-	ftQS.addOrReplaceArg("id", newTypeRef(KIND_NONNULL, "", newTypeRef("", "ID", nil)))
-	in.addType(ftQS)
-	in.addTypeTo("Query", ftQS)
-	in.addTypeTo("Subscription", ftQS)
+	// add tableByID type to query and subscription
+	var ftQSByID FullType
+
+	if ftQSByID, err = in.addTableType(table, alias); err != nil {
+		return
+	}
+
+	ftQSByID.Name += "ByID"
+	ftQSByID.addOrReplaceArg("id", newTypeRef(KIND_NONNULL, "", newTypeRef("", "ID", nil)))
+	in.addType(ftQSByID)
+	in.addTypeTo("Query", ftQSByID)
+	in.addTypeTo("Subscription", ftQSByID)
+
 	return
 }
 
