@@ -301,7 +301,7 @@ func (in *Introspection) addTable(table sdata.DBTable, alias string) (err error)
 	}
 
 	ftQSByID.Name += "ByID"
-	ftQSByID.addOrReplaceArg("id", newTR(KIND_NONNULL, "", newTR("", "ID", nil)))
+	ftQSByID.addOrReplaceArg("id", newTypeRef(KIND_NONNULL, "", newTypeRef("", "ID", nil)))
 	in.addType(ftQSByID)
 	in.addTypeTo("Query", ftQSByID)
 	in.addTypeTo("Subscription", ftQSByID)
