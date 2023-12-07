@@ -12,6 +12,7 @@ import (
 
 // Initializes the graphjin instance with the config
 func (gj *GraphjinEngine) initConfig() error {
+
 	c := gj.conf
 
 	tableMap := make(map[string]struct{})
