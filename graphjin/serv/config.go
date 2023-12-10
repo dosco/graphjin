@@ -296,7 +296,6 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 	if fs != nil {
 		vi.SetFs(fs)
 	}
-
 	if err := vi.ReadInConfig(); err != nil {
 		return nil, err
 	}
@@ -333,7 +332,7 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 	c := &Config{vi: vi}
 	c.Serv.ConfigPath = cp
 
-	if err := vi.Unmarshal(&c); err != nil {
+	if err := vi.Unmarshal(c); err != nil {
 		return nil, fmt.Errorf("failed to decode config, %v", err)
 	}
 
@@ -365,7 +364,7 @@ func NewConfig(config, format string) (*Config, error) {
 
 	c := &Config{vi: vi}
 
-	if err := vi.Unmarshal(&c); err != nil {
+	if err := vi.Unmarshal(c); err != nil {
 		return nil, fmt.Errorf("failed to decode config, %v", err)
 	}
 
