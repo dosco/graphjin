@@ -189,6 +189,10 @@ func (g *GraphJin) newGraphJin(conf *Config,
 		return
 	}
 
+	if err = gj.initIntro(); err != nil {
+		return
+	}
+
 	if conf.SecretKey != "" {
 		sk := sha256.Sum256([]byte(conf.SecretKey))
 		gj.encryptionKey = sk
