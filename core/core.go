@@ -175,6 +175,10 @@ func (gj *graphjin) _initSchema() (err error) {
 		return
 	}
 
+	return
+}
+
+func (gj *graphjin) initIntro() (err error) {
 	if !gj.prod && gj.conf.EnableIntrospection {
 		var introJSON json.RawMessage
 		introJSON, err = gj.getIntroResult()
