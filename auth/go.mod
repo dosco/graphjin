@@ -12,7 +12,7 @@ require (
 	github.com/lestrrat-go/jwx v0.9.2
 	github.com/stretchr/testify v1.2.2
 	go.uber.org/zap v1.11.0
-	golang.org/x/crypto v0.9.0
+	golang.org/x/crypto v0.17.0
 )
 
 require (
