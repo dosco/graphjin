@@ -127,14 +127,14 @@ type Serv struct {
 
 // Database configuration
 type Database struct {
-	ConnString string `mapstructure:"connection_string" jsonschema:"title=Connection String"`
-	Type       string `jsonschema:"title=Type,enum=postgres,enum=mysql"`
-	Host       string `jsonschema:"title=Host"`
-	Port       uint16 `jsonschema:"title=Port"`
-	DBName     string `jsonschema:"title=Database Name"`
-	User       string `jsonschema:"title=User"`
-	Password   string `jsonschema:"title=Password"`
-	Schema     string `jsonschema:"title=Postgres Schema"`
+	ConnString string   `mapstructure:"connection_string" jsonschema:"title=Connection String"`
+	Type       string   `jsonschema:"title=Type,enum=postgres,enum=mysql"`
+	Host       string   `jsonschema:"title=Host"`
+	Port       uint16   `jsonschema:"title=Port"`
+	DBName     string   `jsonschema:"title=Database Name"`
+	User       string   `jsonschema:"title=User"`
+	Password   string   `jsonschema:"title=Password"`
+	Schema     []string `mapstructure:"schema" jsonschema:"title=Postgres Schema"`
 
 	// Size of database connection pool
 	PoolSize int `mapstructure:"pool_size" jsonschema:"title=Connection Pool Size"`
@@ -395,7 +395,7 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("database.port", 5432)
 	vi.SetDefault("database.user", "postgres")
 	vi.SetDefault("database.password", "")
-	vi.SetDefault("database.schema", "public")
+	vi.SetDefault("database.schema", []string{"public", "users", "core"})
 	vi.SetDefault("database.pool_size", 10)
 
 	vi.SetDefault("env", "development")
