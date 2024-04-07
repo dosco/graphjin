@@ -98,42 +98,49 @@ func newDB(
 }
 
 func initPostgres(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf, error) {
-	c := conf
-	config, _ := pgx.ParseConfig(c.DB.ConnString)
-	if c.DB.Host != "" {
-		config.Host = c.DB.Host
+	// Copy the config to avoid changing the original
+	confCopy := conf
+	config, _ := pgx.ParseConfig(confCopy.DB.ConnString)
+	if confCopy.DB.Host != "" {
+		config.Host = confCopy.DB.Host
 	}
-	if c.DB.Port != 0 {
-		config.Port = c.DB.Port
+	if confCopy.DB.Port != 0 {
+		config.Port = confCopy.DB.Port
 	}
-	if c.DB.User != "" {
-		config.User = c.DB.User
+	if confCopy.DB.User != "" {
+		config.User = confCopy.DB.User
 	}
-	if c.DB.Password != "" {
-		config.Password = c.DB.Password
+	if confCopy.DB.Password != "" {
+		config.Password = confCopy.DB.Password
 	}
 
 	if config.RuntimeParams == nil {
 		config.RuntimeParams = map[string]string{}
 	}
 
-	if c.DB.Schema != "" {
-		config.RuntimeParams["search_path"] = c.DB.Schema
+	if len(confCopy.DB.Schema) != 0 {
+		// This is a default parameter that postgres uses to search
+		// for tables. You need to set it as a comma separated values of the schemas of interes,
+		// Here are the references:
+		// https://docs.aws.amazon.com/prescriptive-guidance/latest/tuning-postgresql-parameters/search-path.html
+		// https://www.postgresql.org/docs/9.1/sql-set.html
+		// https://www.postgresql.org/docs/8.1/ddl-schemas.html
+		config.RuntimeParams["search_path"] = strings.Join(confCopy.DB.Schema, ", ")
 	}
 
-	if c.AppName != "" {
-		config.RuntimeParams["application_name"] = c.AppName
+	if confCopy.AppName != "" {
+		config.RuntimeParams["application_name"] = confCopy.AppName
 	}
 
 	if openDB {
-		config.Database = c.DB.DBName
+		config.Database = confCopy.DB.DBName
 	}
 
-	if c.DB.EnableTLS {
-		if len(c.DB.ServerName) == 0 {
+	if confCopy.DB.EnableTLS {
+		if len(confCopy.DB.ServerName) == 0 {
 			return nil, errors.New("tls: server_name is required")
 		}
-		if len(c.DB.ServerCert) == 0 {
+		if len(confCopy.DB.ServerCert) == 0 {
 			return nil, errors.New("tls: server_cert is required")
 		}
 
@@ -141,10 +148,10 @@ func initPostgres(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf,
 		var pem []byte
 		var err error
 
-		if strings.Contains(c.DB.ServerCert, pemSig) {
-			pem = []byte(strings.ReplaceAll(c.DB.ServerCert, `\n`, "\n"))
+		if strings.Contains(confCopy.DB.ServerCert, pemSig) {
+			pem = []byte(strings.ReplaceAll(confCopy.DB.ServerCert, `\n`, "\n"))
 		} else {
-			pem, err = fs.Get(c.DB.ServerCert)
+			pem, err = fs.Get(confCopy.DB.ServerCert)
 		}
 
 		if err != nil {
@@ -158,24 +165,24 @@ func initPostgres(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf,
 		config.TLSConfig = &tls.Config{
 			MinVersion: tls.VersionTLS12,
 			RootCAs:    rootCertPool,
-			ServerName: c.DB.ServerName,
+			ServerName: confCopy.DB.ServerName,
 		}
 
-		if len(c.DB.ClientCert) > 0 {
-			if len(c.DB.ClientKey) == 0 {
+		if len(confCopy.DB.ClientCert) > 0 {
+			if len(confCopy.DB.ClientKey) == 0 {
 				return nil, errors.New("tls: client_key is required")
 			}
 
 			clientCert := make([]tls.Certificate, 0, 1)
 			var certs tls.Certificate
 
-			if strings.Contains(c.DB.ClientCert, pemSig) {
+			if strings.Contains(confCopy.DB.ClientCert, pemSig) {
 				certs, err = tls.X509KeyPair(
-					[]byte(strings.ReplaceAll(c.DB.ClientCert, `\n`, "\n")),
-					[]byte(strings.ReplaceAll(c.DB.ClientKey, `\n`, "\n")),
+					[]byte(strings.ReplaceAll(confCopy.DB.ClientCert, `\n`, "\n")),
+					[]byte(strings.ReplaceAll(confCopy.DB.ClientKey, `\n`, "\n")),
 				)
 			} else {
-				certs, err = loadX509KeyPair(fs, c.DB.ClientCert, c.DB.ClientKey)
+				certs, err = loadX509KeyPair(fs, confCopy.DB.ClientCert, confCopy.DB.ClientKey)
 			}
 
 			if err != nil {
