@@ -9,7 +9,7 @@ import (
 
 type ResolverFn func(v ResolverProps) (Resolver, error)
 
-type resItem struct {
+type ResItem struct {
 	IDField []byte
 	Path    [][]byte
 	Fn      Resolver
@@ -32,6 +32,7 @@ func (gj *GraphjinEngine) initResolvers() error {
 		gj.rtmap = gj.newRTMap()
 	}
 
+	// TODO: what is a resolver ? How do I scale this to work for mutiple schemas?
 	for i, r := range gj.conf.Resolvers {
 		if r.Schema == "" {
 			gj.conf.Resolvers[i].Schema = gj.dbinfo.Schema
@@ -105,7 +106,7 @@ func (gj *GraphjinEngine) initRemote(
 		path = append(path, []byte(p))
 	}
 
-	rf := resItem{
+	rf := ResItem{
 		IDField: []byte(idk),
 		Path:    path,
 		Fn:      fn,

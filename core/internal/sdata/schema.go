@@ -90,18 +90,16 @@ func NewDBSchema(
 		schema.addAliases(schema.tables[nid], nid, aliases[t.Name])
 	}
 
-	for _, t := range info.VTables {
-		if err := schema.addVirtual(t); err != nil {
-			return nil, err
+		for _, t := range info.Tables {
+			nid := schema.addNode(t)
+			schema.addAliases(schema.tables[nid], nid, aliases[t.Name])
 		}
-	}
 
-	for _, t := range schema.tables {
-		err := schema.addRels(t)
-		if err != nil {
-			return nil, err
+		for _, t := range info.VTables {
+			if err := schema.addVirtual(t); err != nil {
+				return nil, err
+			}
 		}
-	}
 
 	// add aliases to edge index by duplicating
 	for t, al := range aliases {
@@ -113,18 +111,17 @@ func NewDBSchema(
 				schema.edgesIndex[alias] = e
 			}
 		}
-	}
 
-	// add some standard common functions into the schema
-	for _, v := range funcList {
-		info.Functions = append(info.Functions, DBFunction{
-			Name:    v.name,
-			Comment: v.desc,
-			Type:    v.ftype,
-			Agg:     true,
-			Inputs:  []DBFuncParam{{ID: 0}},
-		})
-	}
+		// add some standard common functions into the schema
+		for _, v := range funcList {
+			info.Functions = append(info.Functions, DBFunction{
+				Name:    v.name,
+				Comment: v.desc,
+				Type:    v.ftype,
+				Agg:     true,
+				Inputs:  []DBFuncParam{{ID: 0}},
+			})
+		}
 
 	// add functions into the schema
 	for k, f := range info.Functions {
@@ -133,9 +130,10 @@ func NewDBSchema(
 		if f.Type != "record" {
 			schema.dbFunctions[f.Name] = info.Functions[k]
 		}
+
 	}
 
-	return schema, nil
+	return schemas, nil
 }
 
 // addRels adds relationships to the schema
@@ -429,7 +427,7 @@ func (s *DBSchema) DBVersion() int {
 
 // DBSchema returns the database schema
 func (s *DBSchema) DBSchema() string {
-	return s.schema
+	return s.schemaName
 }
 
 // DBName returns the database name

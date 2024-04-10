@@ -9,7 +9,8 @@ import (
 
 func TestDWG(t *testing.T) {
 	for i := 0; i < 10000; i++ {
-		s, err := sdata.GetTestSchema()
+		testSchemas, err := sdata.GetTestSchema()
+		s := testSchemas[0]
 		assert.NoErrorFatal(t, err)
 
 		paths, err := s.FindPath("customers", "users", "")

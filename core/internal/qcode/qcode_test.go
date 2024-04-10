@@ -9,19 +9,23 @@ import (
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
 
-var dbs *sdata.DBSchema
+var dbs []*sdata.DBSchema
 
 func init() {
 	var err error
 
-	dbs, err = sdata.NewDBSchema(sdata.GetTestDBInfo(), nil)
+	dbs, err = sdata.NewDBSchemas(sdata.GetTestDBInfo(), nil)
 	if err != nil {
 		panic(err)
 	}
 }
 
 func TestCompile1(t *testing.T) {
-	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	// Check to see if the dbs are empty
+	if len(dbs) == 0 {
+		t.Fatal(errors.New("no dbs found"))
+	}
+	qc, _ := qcode.NewCompiler(dbs[0], qcode.Config{})
 	err := qc.AddRole("user", "public", "products", qcode.TRConfig{
 		Query: qcode.QueryConfig{
 			Columns: []string{"id", "name"},
@@ -44,7 +48,11 @@ func TestCompile1(t *testing.T) {
 }
 
 func TestCompile2(t *testing.T) {
-	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	// Check to see if the dbs are empty
+	if len(dbs) == 0 {
+		t.Fatal(errors.New("no dbs found"))
+	}
+	qc, _ := qcode.NewCompiler(dbs[0], qcode.Config{})
 	err := qc.AddRole("user", "public", "products", qcode.TRConfig{
 		Query: qcode.QueryConfig{
 			Columns: []string{"ID"},
@@ -67,7 +75,11 @@ func TestCompile2(t *testing.T) {
 }
 
 func TestCompile3(t *testing.T) {
-	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	// Check to see if the dbs are empty
+	if len(dbs) == 0 {
+		t.Fatal(errors.New("no dbs found"))
+	}
+	qc, _ := qcode.NewCompiler(dbs[0], qcode.Config{})
 	err := qc.AddRole("user", "public", "products", qcode.TRConfig{
 		Query: qcode.QueryConfig{
 			Columns: []string{"ID"},
@@ -116,7 +128,11 @@ func TestCompile4(t *testing.T) {
 		t.Error(err)
 	}
 
-	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	// Check to see if the dbs are empty
+	if len(dbs) == 0 {
+		t.Fatal(errors.New("no dbs found"))
+	}
+	qc, _ := qcode.NewCompiler(dbs[0], qcode.Config{})
 	_, err := qc.Compile([]byte(gql), vars1, "user", "")
 	if err != nil {
 		t.Fatal(err)
@@ -124,7 +140,11 @@ func TestCompile4(t *testing.T) {
 }
 
 func TestInvalidCompile1(t *testing.T) {
-	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	// Check to see if the dbs are empty
+	if len(dbs) == 0 {
+		t.Fatal(errors.New("no dbs found"))
+	}
+	qcompile, _ := qcode.NewCompiler(dbs[0], qcode.Config{})
 	_, err := qcompile.Compile([]byte(`#`), nil, "user", "")
 
 	if err == nil {
@@ -133,7 +153,11 @@ func TestInvalidCompile1(t *testing.T) {
 }
 
 func TestInvalidCompile2(t *testing.T) {
-	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	// Check to see if the dbs are empty
+	if len(dbs) == 0 {
+		t.Fatal(errors.New("no dbs found"))
+	}
+	qcompile, _ := qcode.NewCompiler(dbs[0], qcode.Config{})
 	_, err := qcompile.Compile([]byte(`{u(where:{not:0})}`), nil, "user", "")
 
 	if err == nil {
@@ -142,7 +166,11 @@ func TestInvalidCompile2(t *testing.T) {
 }
 
 func TestEmptyCompile(t *testing.T) {
-	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	// Check to see if the dbs are empty
+	if len(dbs) == 0 {
+		t.Fatal(errors.New("no dbs found"))
+	}
+	qcompile, _ := qcode.NewCompiler(dbs[0], qcode.Config{})
 	_, err := qcompile.Compile([]byte(``), nil, "user", "")
 
 	if err == nil {
@@ -170,7 +198,12 @@ updateThread {
 	}
 }
 }}`
-	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	// Check to see if the dbs are empty
+	if len(dbs) == 0 {
+		t.Fatal(errors.New("no dbs found"))
+	}
+
+	qcompile, _ := qcode.NewCompiler(dbs[0], qcode.Config{})
 	_, err := qcompile.Compile([]byte(gql), nil, "anon", "")
 
 	if err == nil {
@@ -199,7 +232,11 @@ func TestFragmentsCompile1(t *testing.T) {
 		phone
 	}
 	`
-	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	// Check to see if the dbs are empty
+	if len(dbs) == 0 {
+		t.Fatal(errors.New("no dbs found"))
+	}
+	qcompile, _ := qcode.NewCompiler(dbs[0], qcode.Config{})
 	_, err := qcompile.Compile([]byte(gql), nil, "user", "")
 	if err != nil {
 		t.Fatal(err)
@@ -226,7 +263,12 @@ func TestFragmentsCompile2(t *testing.T) {
 		full_name
 		phone
 	}`
-	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
+
+	// Check to see if the dbs are empty
+	if len(dbs) == 0 {
+		t.Fatal(errors.New("no dbs found"))
+	}
+	qcompile, _ := qcode.NewCompiler(dbs[0], qcode.Config{})
 	_, err := qcompile.Compile([]byte(gql), nil, "user", "")
 	if err != nil {
 		t.Fatal(err)
@@ -253,9 +295,13 @@ func TestFragmentsCompile3(t *testing.T) {
 			...userFields1
 		}
 	}
-
 	`
-	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
+
+	// Check to see if the dbs are empty
+	if len(dbs) == 0 {
+		t.Fatal(errors.New("no dbs found"))
+	}
+	qcompile, _ := qcode.NewCompiler(dbs[0], qcode.Config{})
 	_, err := qcompile.Compile([]byte(gql), nil, "user", "")
 	if err != nil {
 		t.Fatal(err)
@@ -306,7 +352,11 @@ fragment userFields2 on user {
 }`)
 
 func BenchmarkQCompile(b *testing.B) {
-	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	// Check to see if the dbs are empty
+	if len(dbs) == 0 {
+		b.Fatal(errors.New("no dbs found"))
+	}
+	qcompile, _ := qcode.NewCompiler(dbs[0], qcode.Config{})
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -320,7 +370,11 @@ func BenchmarkQCompile(b *testing.B) {
 }
 
 func BenchmarkQCompileP(b *testing.B) {
-	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	// Check to see if the dbs are empty
+	if len(dbs) == 0 {
+		b.Fatal(errors.New("no dbs found"))
+	}
+	qcompile, _ := qcode.NewCompiler(dbs[0], qcode.Config{})
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -336,7 +390,11 @@ func BenchmarkQCompileP(b *testing.B) {
 }
 
 func BenchmarkQCompileFragment(b *testing.B) {
-	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	// Check to see if the dbs are empty
+	if len(dbs) == 0 {
+		b.Fatal(errors.New("no dbs found"))
+	}
+	qcompile, _ := qcode.NewCompiler(dbs[0], qcode.Config{})
 
 	b.ResetTimer()
 	b.ReportAllocs()

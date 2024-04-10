@@ -167,13 +167,16 @@ func (gj *GraphjinEngine) _initSchema() (err error) {
 		return
 	}
 
-	gj.schema, err = sdata.NewDBSchema(
+	schema, err = sdata.NewDBSchema(
 		gj.dbinfo,
 		getDBTableAliases(gj.conf))
 
 	if err != nil {
 		return
 	}
+
+	// Append schema to gj.schemas
+	gj.schemas = append(gj.schemas, schema)
 
 	return
 }

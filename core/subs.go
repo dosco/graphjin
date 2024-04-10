@@ -221,7 +221,7 @@ func (gj *GraphjinEngine) initSub(c context.Context, sub *Sub) (err error) {
 	}
 
 	if len(sub.s.cs.st.md.Params()) != 0 {
-		sub.s.cs.st.sql = renderSubWrap(sub.s.cs.st, gj.schema.DBType())
+		sub.s.cs.st.sql = renderSubWrap(sub.s.cs.st, gj.schemas[0].DBType())
 	}
 
 	go gj.subController(sub)
