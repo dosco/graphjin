@@ -95,16 +95,16 @@ func GetTestDBInfo() *DBInfo {
 		FKeyColumn: "id"},
 	}
 
-	di := NewDBInfo("", 110000, "public", "db", cols, nil, nil)
+	di := NewDBInfo("", 110000, []string{"public"}, "db", cols, nil, nil)
 	di.VTables = vt
 	di.Functions = fn
 	return di
 }
 
-func GetTestSchema() (*DBSchema, error) {
+func GetTestSchema() ([]*DBSchema, error) {
 	aliases := map[string][]string{
 		"users": {"me"},
 	}
 
-	return NewDBSchema(GetTestDBInfo(), aliases)
+	return NewDBSchemas(GetTestDBInfo(), aliases)
 }

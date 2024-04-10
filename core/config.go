@@ -114,23 +114,25 @@ type Table struct {
 
 // Configuration for a database table column
 type Column struct {
-	Name       string
-	Type       string `jsonschema:"example=integer,example=text"`
-	Primary    bool
-	Array      bool
+	Name    string
+	Type    string `jsonschema:"example=integer,example=text"`
+	Primary bool
+	Array   bool
+	// TODO: This forces us to do string manipulation, change this to have subfields for the relationship that would include schema level resolution
 	ForeignKey string `mapstructure:"related_to" json:"related_to" yaml:"related_to" jsonschema:"title=Related To,example=other_table.id_column,example=users.id"`
 }
 
 // Configuration for user role
 type Role struct {
-	Name    string
-	Comment string
-	Match   string      `jsonschema:"title=Related To,example=other_table.id_column,example=users.id"`
-	Tables  []RoleTable `jsonschema:"title=Table Configuration for Role"`
-	tm      map[string]*RoleTable
+	Name     string
+	Comment  string
+	Match    string      `jsonschema:"title=Related To,example=other_table.id_column,example=users.id"`
+	Tables   []RoleTable `jsonschema:"title=Table Configuration for Role"`
+	tablemap map[string]*RoleTable
 }
 
 // Table configuration for a specific role (user role)
+// TODO: figure out how we should hold info for multiple schemas
 type RoleTable struct {
 	Name     string
 	Schema   string

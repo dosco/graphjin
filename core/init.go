@@ -43,10 +43,10 @@ func (gj *graphjin) initConfig() error {
 		}
 
 		role.Match = sanitize(role.Match)
-		role.tm = make(map[string]*RoleTable)
+		role.tablemap = make(map[string]*RoleTable)
 
 		for n, t := range role.Tables {
-			role.tm[t.Schema+t.Name] = &role.Tables[n]
+			role.tablemap[t.Schema+t.Name] = &role.Tables[n]
 		}
 
 		gj.roles[k] = &c.Roles[i]
@@ -55,8 +55,8 @@ func (gj *graphjin) initConfig() error {
 	// If user role not defined then create it
 	if _, ok := gj.roles["user"]; !ok {
 		ur := Role{
-			Name: "user",
-			tm:   make(map[string]*RoleTable),
+			Name:     "user",
+			tablemap: make(map[string]*RoleTable),
 		}
 		gj.roles["user"] = &ur
 	}
@@ -64,8 +64,8 @@ func (gj *graphjin) initConfig() error {
 	// If anon role is not defined then create it
 	if _, ok := gj.roles["anon"]; !ok {
 		ur := Role{
-			Name: "anon",
-			tm:   make(map[string]*RoleTable),
+			Name:     "anon",
+			tablemap: make(map[string]*RoleTable),
 		}
 		gj.roles["anon"] = &ur
 	}
@@ -224,7 +224,9 @@ func addJsonTable(conf *Config, di *sdata.DBInfo, t Table) error {
 	return nil
 }
 
-func addVirtualTable(conf *Config, di *sdata.DBInfo, t Table) error {
+func addVirtualTable(conf *Config, dbInfo *sdata.DBInfo, t Table) error {
+	// TODO:Update this method to go through each of the schemas in
+	// this database config
 	if len(t.Columns) == 0 {
 		return fmt.Errorf("polymorphic table: no id column specified")
 	}
@@ -234,12 +236,12 @@ func addVirtualTable(conf *Config, di *sdata.DBInfo, t Table) error {
 		return fmt.Errorf("polymorphic table: no 'related_to' specified on id column")
 	}
 
-	s, ok := c.getFK(di.Schema)
+	s, ok := c.getFK(dbInfo.Schema)
 	if !ok {
 		return fmt.Errorf("polymorphic table: foreign key must be <type column>.<foreign key column>")
 	}
 
-	di.VTables = append(di.VTables, sdata.VirtualTable{
+	dbInfo.VTables = append(dbInfo.VTables, sdata.VirtualTable{
 		Name:       t.Name,
 		IDColumn:   c.Name,
 		TypeColumn: s[1],
@@ -393,7 +395,7 @@ func addRole(qc *qcode.Compiler, r Role, t RoleTable, defaultBlock bool) error {
 }
 
 func (r *Role) GetTable(schema, name string) *RoleTable {
-	return r.tm[name]
+	return r.tablemap[name]
 }
 
 func (c *Column) getFK(defaultSchema string) ([3]string, bool) {

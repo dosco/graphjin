@@ -19,18 +19,18 @@ type nodeInfo struct {
 }
 
 type DBSchema struct {
-	typ    string                  // db type
-	ver    int                     // db version
-	schema string                  // db schema
-	name   string                  // db name
-	tables []DBTable               // tables
-	vt     map[string]VirtualTable // for polymorphic relationships
-	fm     map[string]DBFunction   // db functions
-	tindex map[string]nodeInfo     // table index
-	ai     map[string]nodeInfo     // table alias index
-	ei     map[string][]edgeInfo   // edges index
-	ae     map[int32]TEdge         // all edges
-	rg     *util.Graph             // relationship graph
+	dbType            string                  // db type
+	version           int                     // db version
+	schemaName        string                  // db schema
+	name              string                  // db name
+	tables            []DBTable               // tables
+	virtualTable      map[string]VirtualTable // for polymorphic relationships
+	dbFunctions       map[string]DBFunction   // db functions
+	tindex            map[string]nodeInfo     // table index
+	aliasIndex        map[string]nodeInfo     // table alias index
+	edgesIndex        map[string][]edgeInfo   // edges index
+	allEdges          map[int32]TEdge         // all edges
+	relationshipGraph *util.Graph             // relationship graph
 }
 
 type RelType int
@@ -63,75 +63,81 @@ type DBRel struct {
 	Right DBRelRight
 }
 
-func NewDBSchema(
+func NewDBSchemas(
 	info *DBInfo,
 	aliases map[string][]string,
-) (*DBSchema, error) {
-	schema := &DBSchema{
-		typ:    info.Type,
-		ver:    info.Version,
-		schema: info.Schema,
-		name:   info.Name,
-		vt:     make(map[string]VirtualTable),
-		fm:     make(map[string]DBFunction),
-		tindex: make(map[string]nodeInfo),
-		ai:     make(map[string]nodeInfo),
-		ei:     make(map[string][]edgeInfo),
-		ae:     make(map[int32]TEdge),
-		rg:     util.NewGraph(),
-	}
+) ([]*DBSchema, error) {
+	var schemas []*DBSchema
 
-	for _, t := range info.Tables {
-		nid := schema.addNode(t)
-		schema.addAliases(schema.tables[nid], nid, aliases[t.Name])
-	}
-
-	for _, t := range info.VTables {
-		if err := schema.addVirtual(t); err != nil {
-			return nil, err
+	for _, schemaName := range info.Schemas {
+		// TODO: Do I create a new DBSchema per schema or do I update this to work for multiple schemas?
+		schema := &DBSchema{
+			dbType:            info.Type,
+			version:           info.Version,
+			schemaName:        schemaName,
+			name:              info.Name,
+			virtualTable:      make(map[string]VirtualTable),
+			dbFunctions:       make(map[string]DBFunction),
+			tindex:            make(map[string]nodeInfo),
+			aliasIndex:        make(map[string]nodeInfo),
+			edgesIndex:        make(map[string][]edgeInfo),
+			allEdges:          make(map[int32]TEdge),
+			relationshipGraph: util.NewGraph(),
 		}
-	}
 
-	for _, t := range schema.tables {
-		err := schema.addRels(t)
-		if err != nil {
-			return nil, err
+		for _, t := range info.Tables {
+			nid := schema.addNode(t)
+			schema.addAliases(schema.tables[nid], nid, aliases[t.Name])
 		}
-	}
 
-	// add aliases to edge index by duplicating
-	for t, al := range aliases {
-		for _, alias := range al {
-			if _, ok := schema.ei[alias]; ok {
-				continue
-			}
-			if e, ok := schema.ei[t]; ok {
-				schema.ei[alias] = e
+		for _, t := range info.VTables {
+			if err := schema.addVirtual(t); err != nil {
+				return nil, err
 			}
 		}
-	}
 
-	// add some standard common functions into the schema
-	for _, v := range funcList {
-		info.Functions = append(info.Functions, DBFunction{
-			Name:    v.name,
-			Comment: v.desc,
-			Type:    v.ftype,
-			Agg:     true,
-			Inputs:  []DBFuncParam{{ID: 0}},
-		})
-	}
-
-	// add functions into the schema
-	for k, f := range info.Functions {
-		// don't include functions that return records
-		// as those are considered selector functions
-		if f.Type != "record" {
-			schema.fm[f.Name] = info.Functions[k]
+		for _, t := range schema.tables {
+			err := schema.addRels(t)
+			if err != nil {
+				return nil, err
+			}
 		}
+
+		// add aliases to edge index by duplicating
+		for t, al := range aliases {
+			for _, alias := range al {
+				if _, ok := schema.edgesIndex[alias]; ok {
+					continue
+				}
+				if e, ok := schema.edgesIndex[t]; ok {
+					schema.edgesIndex[alias] = e
+				}
+			}
+		}
+
+		// add some standard common functions into the schema
+		for _, v := range funcList {
+			info.Functions = append(info.Functions, DBFunction{
+				Name:    v.name,
+				Comment: v.desc,
+				Type:    v.ftype,
+				Agg:     true,
+				Inputs:  []DBFuncParam{{ID: 0}},
+			})
+		}
+
+		// add functions into the schema
+		for k, f := range info.Functions {
+			// don't include functions that return records
+			// as those are considered selector functions
+			if f.Type != "record" {
+				schema.dbFunctions[f.Name] = info.Functions[k]
+			}
+		}
+
 	}
 
-	return schema, nil
+	return schemas, nil
 }
 
 func (s *DBSchema) addRels(t DBTable) error {
@@ -245,7 +251,7 @@ func (s *DBSchema) addColumnRels(t DBTable) error {
 }
 
 func (s *DBSchema) addVirtual(vt VirtualTable) error {
-	s.vt[vt.Name] = vt
+	s.virtualTable[vt.Name] = vt
 
 	for _, t := range s.tables {
 		idCol, ok := t.getColumn(vt.IDColumn)
@@ -313,7 +319,7 @@ func (s *DBSchema) GetFirstDegree(t DBTable) (items []RelNode, err error) {
 	if !ok {
 		return nil, fmt.Errorf("table not found: %s", t.String())
 	}
-	relatedNodes := s.rg.Connections(currNode.nodeID)
+	relatedNodes := s.relationshipGraph.Connections(currNode.nodeID)
 	for _, id := range relatedNodes {
 		v := s.getRelNodes(id, currNode.nodeID)
 		items = append(items, v...)
@@ -327,9 +333,9 @@ func (s *DBSchema) GetSecondDegree(t DBTable) (items []RelNode, err error) {
 		return nil, fmt.Errorf("table not found: %s", t.String())
 	}
 
-	relatedNodes1 := s.rg.Connections(currNode.nodeID)
+	relatedNodes1 := s.relationshipGraph.Connections(currNode.nodeID)
 	for _, id := range relatedNodes1 {
-		relatedNodes2 := s.rg.Connections(id)
+		relatedNodes2 := s.relationshipGraph.Connections(id)
 		for _, id1 := range relatedNodes2 {
 			v := s.getRelNodes(id1, id)
 			items = append(items, v...)
@@ -339,9 +345,9 @@ func (s *DBSchema) GetSecondDegree(t DBTable) (items []RelNode, err error) {
 }
 
 func (s *DBSchema) getRelNodes(fromID, toID int32) (items []RelNode) {
-	edges := s.rg.GetEdges(fromID, toID)
+	edges := s.relationshipGraph.GetEdges(fromID, toID)
 	for _, e := range edges {
-		e1 := s.ae[e.ID]
+		e1 := s.allEdges[e.ID]
 		if e1.name == "" {
 			continue
 		}
@@ -372,7 +378,7 @@ func (ti *DBTable) ColumnExists(name string) (DBColumn, bool) {
 }
 
 func (s *DBSchema) GetFunctions() map[string]DBFunction {
-	return s.fm
+	return s.dbFunctions
 }
 
 func GetRelName(colName string) string {
@@ -398,15 +404,15 @@ func GetRelName(colName string) string {
 }
 
 func (s *DBSchema) DBType() string {
-	return s.typ
+	return s.dbType
 }
 
 func (s *DBSchema) DBVersion() int {
-	return s.ver
+	return s.version
 }
 
 func (s *DBSchema) DBSchema() string {
-	return s.schema
+	return s.schemaName
 }
 
 func (s *DBSchema) DBName() string {

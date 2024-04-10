@@ -47,35 +47,38 @@ const (
 // GraphJin struct is an instance of the GraphJin engine it holds all the required information like
 // datase schemas, relationships, etc that the GraphQL to SQL compiler would need to do it's job.
 type graphjin struct {
-	conf        *Config
-	db          *sql.DB
-	log         *_log.Logger
-	fs          FS
-	trace       Tracer
-	dbtype      string
-	dbinfo      *sdata.DBInfo
-	schema      *sdata.DBSchema
-	allowList   *allow.List
-	encKey      [32]byte
-	encKeySet   bool
-	cache       Cache
-	queries     sync.Map
-	roles       map[string]*Role
-	roleStmt    string
-	roleStmtMD  psql.Metadata
-	tmap        map[string]qcode.TConfig
-	rtmap       map[string]ResolverFn
-	rmap        map[string]resItem
-	abacEnabled bool
-	qc          *qcode.Compiler
-	pc          *psql.Compiler
-	subs        sync.Map
-	prod        bool
-	prodSec     bool
-	namespace   string
-	pf          []byte
-	opts        []Option
-	done        chan bool
+	conf       *Config
+	db         *sql.DB
+	log        *_log.Logger
+	fs         FS
+	trace      Tracer
+	dbtype     string
+	dbinfo     *sdata.DBInfo
+	schemas    []*sdata.DBSchema
+	allowList  *allow.List
+	encKey     [32]byte
+	encKeySet  bool
+	cache      Cache
+	queries    sync.Map
+	roles      map[string]*Role
+	roleStmt   string
+	roleStmtMD psql.Metadata
+	tmap       map[string]qcode.TConfig
+	// TODO: Update the naming of both these maps to be more
+	// meaningful and less confusing
+	rtmap         map[string]ResolverFn
+	rmap          map[string]ResItem
+	abacEnabled   bool
+	qCodeCompiler *qcode.Compiler
+	pCodeCompiler *psql.Compiler
+	subs          sync.Map
+	prod          bool
+	prodSec       bool
+	namespace     string
+	// What kind of a prefix is this ?
+	pf   []byte
+	opts []Option
+	done chan bool
 }
 
 type GraphJin struct {
@@ -485,7 +488,7 @@ func (gj *graphjin) query(c context.Context, r graphqlReq) (
 		return
 	}
 
-	if r.op == qcode.QTMutation && gj.schema.DBType() == "mysql" {
+	if r.op == qcode.QTMutation && gj.schemas[0].DBType() == "mysql" {
 		err = errors.New("mysql: mutations not supported")
 		return
 	}
