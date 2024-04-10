@@ -113,7 +113,7 @@ func (s *gstate) compileQueryForRole() (err error) {
 		vars = s.vmap
 	}
 
-	if st.qc, err = s.gj.qc.Compile(
+	if st.qc, err = s.gj.qCodeCompiler.Compile(
 		s.r.query,
 		vars,
 		s.role,
@@ -122,7 +122,7 @@ func (s *gstate) compileQueryForRole() (err error) {
 	}
 
 	var w bytes.Buffer
-	if st.md, err = s.gj.pc.Compile(&w, st.qc); err != nil {
+	if st.md, err = s.gj.pCodeCompiler.Compile(&w, st.qc); err != nil {
 		return
 	}
 

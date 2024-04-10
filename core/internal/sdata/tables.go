@@ -13,7 +13,7 @@ import (
 type DBInfo struct {
 	Type    string
 	Version int
-	Schema  string
+	Schemas []string
 	Name    string
 
 	Tables    []DBTable
@@ -51,7 +51,8 @@ func GetDBInfo(
 	blockList []string,
 ) (*DBInfo, error) {
 	var dbVersion int
-	var dbSchema, dbName string
+	var dbSchemas []string
+	var dbName string
 	var cols []DBColumn
 	var funcs []DBFunction
 
@@ -67,7 +68,7 @@ func GetDBInfo(
 			row = db.QueryRow(postgresInfo)
 		}
 
-		if err := row.Scan(&dbVersion, &dbSchema, &dbName); err != nil {
+		if err := row.Scan(&dbVersion, &dbSchemas[0], &dbName); err != nil {
 			return err
 		}
 		return nil
@@ -92,7 +93,7 @@ func GetDBInfo(
 	di := NewDBInfo(
 		dbType,
 		dbVersion,
-		dbSchema,
+		dbSchemas,
 		dbName,
 		cols,
 		funcs,
@@ -104,7 +105,7 @@ func GetDBInfo(
 func NewDBInfo(
 	dbType string,
 	dbVersion int,
-	dbSchema string,
+	dbSchemas []string,
 	dbName string,
 	cols []DBColumn,
 	funcs []DBFunction,
@@ -113,23 +114,23 @@ func NewDBInfo(
 	di := &DBInfo{
 		Type:      dbType,
 		Version:   dbVersion,
-		Schema:    dbSchema,
+		Schemas:   dbSchemas,
 		Name:      dbName,
 		Functions: funcs,
 		colMap:    make(map[string]int),
 		tableMap:  make(map[string]int),
 	}
 
-	type st struct {
+	type SchemaTablePair struct {
 		schema string
 		table  string
 	}
 
-	tm := make(map[st][]DBColumn)
+	tm := make(map[SchemaTablePair][]DBColumn)
 	for i, c := range cols {
 		di.colMap[(c.Schema + ":" + c.Table + ":" + c.Name)] = i
 
-		k := st{c.Schema, c.Table}
+		k := SchemaTablePair{c.Schema, c.Table}
 		tm[k] = append(tm[k], c)
 	}
 
@@ -161,7 +162,7 @@ func NewDBInfo(
 	}
 
 	h := fnv.New128()
-	hv := fmt.Sprintf("%s%d%s%s", dbType, dbVersion, dbSchema, dbName)
+	hv := fmt.Sprintf("%s%d%s%s", dbType, dbVersion, dbSchemas, dbName)
 	h.Write([]byte(hv))
 
 	for _, c := range cols {
@@ -212,7 +213,7 @@ func (di *DBInfo) AddTable(t DBTable) {
 	di.tableMap[(t.Schema + ":" + t.Name)] = i
 }
 
-func (di *DBInfo) GetColumn(schema, table, column string) (*DBColumn, error) {
+func (di *DBInfo) GetColumn(schema string, table, column string) (*DBColumn, error) {
 	t, err := di.GetTable(schema, table)
 	if err != nil {
 		return nil, err
@@ -226,7 +227,7 @@ func (di *DBInfo) GetColumn(schema, table, column string) (*DBColumn, error) {
 	return &t.Columns[cid], nil
 }
 
-func (di *DBInfo) GetTable(schema, table string) (*DBTable, error) {
+func (di *DBInfo) GetTable(schema string, table string) (*DBTable, error) {
 	tid, ok := di.tableMap[(schema + ":" + table)]
 	if !ok {
 		return nil, fmt.Errorf("table: '%s.%s' not found", schema, table)

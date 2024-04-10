@@ -26,7 +26,7 @@ type TEdge struct {
 
 func (s *DBSchema) addNode(t DBTable) int32 {
 	s.tables = append(s.tables, t)
-	n := s.rg.AddNode()
+	n := s.relationshipGraph.AddNode()
 
 	s.tindex[(t.Schema + ":" + t.Name)] = nodeInfo{n}
 	return n
@@ -35,21 +35,21 @@ func (s *DBSchema) addNode(t DBTable) int32 {
 func (s *DBSchema) addAliases(t DBTable, nodeID int32, aliases []string) {
 	for _, al := range aliases {
 		s.tindex[(t.Schema + ":" + al)] = nodeInfo{nodeID}
-		s.ai[al] = nodeInfo{nodeID}
+		s.aliasIndex[al] = nodeInfo{nodeID}
 	}
 }
 
 func (s *DBSchema) GetAliases() map[string]DBTable {
 	ts := make(map[string]DBTable)
 
-	for name, n := range s.ai {
+	for name, n := range s.aliasIndex {
 		ts[name] = s.tables[int(n.nodeID)]
 	}
 	return ts
 }
 
 func (s *DBSchema) IsAlias(name string) bool {
-	_, ok := s.ai[name]
+	_, ok := s.aliasIndex[name]
 	return ok
 }
 
@@ -145,11 +145,11 @@ func (s *DBSchema) addToGraph(
 		return err
 	}
 
-	if err := s.rg.UpdateEdge(ln, rn, edgeID1, edgeID2); err != nil {
+	if err := s.relationshipGraph.UpdateEdge(ln, rn, edgeID1, edgeID2); err != nil {
 		return err
 	}
 
-	if err := s.rg.UpdateEdge(rn, ln, edgeID2, edgeID1); err != nil {
+	if err := s.relationshipGraph.UpdateEdge(rn, ln, edgeID2, edgeID1); err != nil {
 		return err
 	}
 
@@ -169,7 +169,7 @@ func (s *DBSchema) addToGraph(
 func (s *DBSchema) addEdge(name string, edge TEdge, inSchema bool,
 ) (int32, error) {
 	// add edge to graph
-	edgeID, err := s.rg.AddEdge(edge.From, edge.To,
+	edgeID, err := s.relationshipGraph.AddEdge(edge.From, edge.To,
 		edge.Weight, edge.CName)
 	if err != nil {
 		return -1, err
@@ -181,13 +181,13 @@ func (s *DBSchema) addEdge(name string, edge TEdge, inSchema bool,
 	if inSchema {
 		edge.name = name
 	}
-	s.ae[edgeID] = edge
+	s.allEdges[edgeID] = edge
 
 	return edgeID, nil
 }
 
 func (s *DBSchema) addEdgeInfo(k string, ei edgeInfo) {
-	if eiList, ok := s.ei[k]; ok {
+	if eiList, ok := s.edgesIndex[k]; ok {
 		for i, v := range eiList {
 			if v.nodeID != ei.nodeID {
 				continue
@@ -198,11 +198,11 @@ func (s *DBSchema) addEdgeInfo(k string, ei edgeInfo) {
 				}
 			}
 			edgeIDs := append(v.edgeIDs, ei.edgeIDs[0])
-			s.ei[k][i].edgeIDs = edgeIDs
+			s.edgesIndex[k][i].edgeIDs = edgeIDs
 			return
 		}
 	}
-	s.ei[k] = append(s.ei[k], ei)
+	s.edgesIndex[k] = append(s.edgesIndex[k], ei)
 }
 
 func (s *DBSchema) Find(schema, name string) (DBTable, error) {
@@ -229,12 +229,12 @@ type TPath struct {
 }
 
 func (s *DBSchema) FindPath(from, to, through string) ([]TPath, error) {
-	fl, ok := s.ei[from]
+	fl, ok := s.edgesIndex[from]
 	if !ok {
 		return nil, ErrFromEdgeNotFound
 	}
 
-	tl, ok := s.ei[to]
+	tl, ok := s.edgesIndex[to]
 	if !ok {
 		return nil, ErrToEdgeNotFound
 	}
@@ -250,7 +250,7 @@ func (s *DBSchema) FindPath(from, to, through string) ([]TPath, error) {
 
 	path := []TPath{}
 	for _, eid := range res.edges {
-		edge := s.ae[eid]
+		edge := s.allEdges[eid]
 		path = append(path, TPath{
 			Rel: edge.Type,
 			LT:  edge.LT,
@@ -294,7 +294,7 @@ func (s *DBSchema) pickPath(from, to edgeInfo, through string) (res graphResult,
 
 	fn := from.nodeID
 	tn := to.nodeID
-	paths := s.rg.AllPaths(fn, tn)
+	paths := s.relationshipGraph.AllPaths(fn, tn)
 
 	if through != "" {
 		paths, err = s.pickThroughPath(paths, through)
@@ -320,7 +320,7 @@ func (s *DBSchema) pickEdges(path []int32, from, to edgeInfo) (edges []int32, al
 	for i := 1; i < pathLen; i++ {
 		fn := path[i-1]
 		tn := path[i]
-		lines := s.rg.GetEdges(fn, tn)
+		lines := s.relationshipGraph.GetEdges(fn, tn)
 
 		// s.PrintLines(lines)
 
@@ -415,7 +415,7 @@ func minWeightedLine(lines []util.Edge, peID int32) *util.Edge {
 
 func (s *DBSchema) PrintLines(lines []util.Edge) {
 	for _, v := range lines {
-		e := s.ae[v.ID]
+		e := s.allEdges[v.ID]
 		f := s.tables[e.From]
 		t := s.tables[e.To]
 

@@ -167,13 +167,16 @@ func (gj *graphjin) _initSchema() (err error) {
 		return
 	}
 
-	gj.schema, err = sdata.NewDBSchema(
+	schema, err = sdata.NewDBSchema(
 		gj.dbinfo,
 		getDBTableAliases(gj.conf))
 
 	if err != nil {
 		return
 	}
+
+	// Append schema to gj.schemas
+	gj.schemas = append(gj.schemas, schema)
 
 	return
 }
@@ -206,16 +209,16 @@ func (gj *graphjin) initCompilers() (err error) {
 		Validators:      valid.Validators,
 	}
 
-	gj.qc, err = qcode.NewCompiler(gj.schema, qcc)
+	gj.qCodeCompiler, err = qcode.NewCompiler(gj.schema, qcc)
 	if err != nil {
 		return
 	}
 
-	if err = addRoles(gj.conf, gj.qc); err != nil {
+	if err = addRoles(gj.conf, gj.qCodeCompiler); err != nil {
 		return
 	}
 
-	gj.pc = psql.NewCompiler(psql.Config{
+	gj.pCodeCompiler = psql.NewCompiler(psql.Config{
 		Vars:            gj.conf.Vars,
 		DBType:          gj.schema.DBType(),
 		DBVersion:       gj.schema.DBVersion(),
