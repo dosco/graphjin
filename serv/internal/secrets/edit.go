@@ -20,7 +20,7 @@ import (
 	"go.uber.org/zap"
 )
 
-type editOpts struct {
+type EditOpts struct {
 	log            *zap.SugaredLogger
 	Cipher         sops.Cipher
 	InputStore     common.Store
@@ -31,8 +31,8 @@ type editOpts struct {
 	ShowMasterKeys bool
 }
 
-type editExampleOpts struct {
-	editOpts
+type EditExampleOpts struct {
+	EditOpts
 	UnencryptedSuffix string
 	EncryptedSuffix   string
 	UnencryptedRegex  string
@@ -41,7 +41,7 @@ type editExampleOpts struct {
 	GroupThreshold    int
 }
 
-type runEditorUntilOkOpts struct {
+type RunEditorUntilOkOpts struct {
 	log            *zap.SugaredLogger
 	TmpFile        *os.File
 	OriginalHash   []byte
@@ -56,7 +56,8 @@ GJ_ADMIN_SECRET_KEY: hotdeploy_admin_secret_key
 GJ_SECRET_KEY: graphjin_generic_secret_key
 GJ_AUTH_JWT_SECRET: jwt_auth_secret_key`
 
-func editExample(opts editExampleOpts) ([]byte, error) {
+// editExample edits the example file
+func editExample(opts EditExampleOpts) ([]byte, error) {
 	branches, err := opts.InputStore.LoadPlainFile([]byte(fileBytes))
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshalling file: %s", err)
@@ -84,10 +85,11 @@ func editExample(opts editExampleOpts) ([]byte, error) {
 		return nil, fmt.Errorf("error encrypting the data key with one or more master keys: %s", errs)
 	}
 
-	return editTree(opts.editOpts, &tree, dataKey)
+	return editTree(opts.EditOpts, &tree, dataKey)
 }
 
-func edit(opts editOpts) ([]byte, error) {
+// edit edits the file at the given path using options passed.
+func edit(opts EditOpts) ([]byte, error) {
 	// Load the file
 	tree, err := common.LoadEncryptedFileWithBugFixes(common.GenericDecryptOpts{
 		Cipher:      opts.Cipher,
@@ -113,7 +115,8 @@ func edit(opts editOpts) ([]byte, error) {
 	return editTree(opts, tree, dataKey)
 }
 
-func editTree(opts editOpts, tree *sops.Tree, dataKey []byte) ([]byte, error) {
+// editTree edits the tree using the options passed.
+func editTree(opts EditOpts, tree *sops.Tree, dataKey []byte) ([]byte, error) {
 	// Create temporary file for editing
 	tmpdir, err := os.MkdirTemp("", "")
 	if err != nil {
@@ -151,7 +154,7 @@ func editTree(opts editOpts, tree *sops.Tree, dataKey []byte) ([]byte, error) {
 	}
 
 	// Let the user edit the file
-	err = runEditorUntilOk(runEditorUntilOkOpts{
+	err = runEditorUntilOk(RunEditorUntilOkOpts{
 		log:            opts.log,
 		InputStore:     opts.InputStore,
 		OriginalHash:   origHash,
@@ -180,7 +183,8 @@ func editTree(opts editOpts, tree *sops.Tree, dataKey []byte) ([]byte, error) {
 	return encryptedFile, nil
 }
 
-func runEditorUntilOk(opts runEditorUntilOkOpts) error {
+// runEditorUntilOk runs the editor until the file is saved and the hash is different
+func runEditorUntilOk(opts RunEditorUntilOkOpts) error {
 	for {
 		err := runEditor(opts.TmpFile.Name())
 		if err != nil {
@@ -240,6 +244,7 @@ func runEditorUntilOk(opts runEditorUntilOkOpts) error {
 	return nil
 }
 
+// hashFile returns the MD5 hash of the file at the given path
 func hashFile(filePath string) ([]byte, error) {
 	var result []byte
 	file, err := os.Open(filePath)
@@ -254,6 +259,7 @@ func hashFile(filePath string) ([]byte, error) {
 	return hash.Sum(result), nil
 }
 
+// runEditor runs the editor
 func runEditor(path string) error {
 	editor := os.Getenv("EDITOR")
 	var cmd *exec.Cmd
@@ -279,6 +285,7 @@ func runEditor(path string) error {
 	return cmd.Run()
 }
 
+// lookupAnyEditor looks up the first available editor
 func lookupAnyEditor(editorNames ...string) (editorPath string, err error) {
 	for _, editorName := range editorNames {
 		editorPath, err = exec.LookPath(editorName)

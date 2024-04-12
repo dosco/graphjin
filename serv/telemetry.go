@@ -10,9 +10,10 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.10.0"
 )
 
+// InitTelemetry initializes the OpenTelemetry SDK with the given exporter and service name.
 func InitTelemetry(
-	c context.Context,
-	exp trace.SpanExporter,
+	context context.Context,
+	exporter trace.SpanExporter,
 	serviceName, serviceInstanceID string,
 ) error {
 	r1 := resource.NewWithAttributes(
@@ -27,7 +28,7 @@ func InitTelemetry(
 	}
 
 	provider := trace.NewTracerProvider(
-		trace.WithBatcher(exp),
+		trace.WithBatcher(exporter),
 		trace.WithResource(r2),
 		trace.WithSampler(trace.AlwaysSample()),
 	)

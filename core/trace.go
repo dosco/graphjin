@@ -21,6 +21,7 @@ type tracer struct{}
 
 type span struct{}
 
+// Start starts a new trace span
 func (t *tracer) Start(c context.Context, name string) (context.Context, Spaner) {
 	return c, &span{}
 }

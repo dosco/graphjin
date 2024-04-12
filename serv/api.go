@@ -56,7 +56,7 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-type Service struct {
+type HttpService struct {
 	atomic.Value
 	opt   []Option
 	cpath string
@@ -71,7 +71,7 @@ const (
 
 type HookFn func(*core.Result)
 
-type service struct {
+type GraphjinService struct {
 	log          *zap.SugaredLogger // logger
 	zlog         *zap.Logger        // faster logger
 	logLevel     int                // log level
@@ -92,10 +92,10 @@ type service struct {
 	tracer       trace.Tracer
 }
 
-type Option func(*service) error
+type Option func(*GraphjinService) error
 
 // NewGraphJinService a new service
-func NewGraphJinService(conf *Config, options ...Option) (*Service, error) {
+func NewGraphJinService(conf *Config, options ...Option) (*HttpService, error) {
 	if conf.dirty {
 		return nil, errors.New("do not re-use config object")
 	}
@@ -105,7 +105,7 @@ func NewGraphJinService(conf *Config, options ...Option) (*Service, error) {
 		return nil, err
 	}
 
-	s1 := &Service{opt: options, cpath: conf.Serv.ConfigPath}
+	s1 := &HttpService{opt: options, cpath: conf.Serv.ConfigPath}
 	s1.Store(s)
 
 	if s.conf.WatchAndReload {
@@ -121,7 +121,7 @@ func NewGraphJinService(conf *Config, options ...Option) (*Service, error) {
 
 // OptionSetDB sets a new db client
 func OptionSetDB(db *sql.DB) Option {
-	return func(s *service) error {
+	return func(s *GraphjinService) error {
 		s.db = db
 		return nil
 	}
@@ -129,7 +129,7 @@ func OptionSetDB(db *sql.DB) Option {
 
 // OptionSetHookFunc sets a function to be called on every request
 func OptionSetHookFunc(fn HookFn) Option {
-	return func(s *service) error {
+	return func(s *GraphjinService) error {
 		s.hook = fn
 		return nil
 	}
@@ -137,7 +137,7 @@ func OptionSetHookFunc(fn HookFn) Option {
 
 // OptionSetNamespace sets service namespace
 func OptionSetNamespace(namespace string) Option {
-	return func(s *service) error {
+	return func(s *GraphjinService) error {
 		s.namespace = &namespace
 		return nil
 	}
@@ -145,7 +145,7 @@ func OptionSetNamespace(namespace string) Option {
 
 // OptionSetFS sets service filesystem
 func OptionSetFS(fs core.FS) Option {
-	return func(s *service) error {
+	return func(s *GraphjinService) error {
 		s.fs = fs
 		return nil
 	}
@@ -153,7 +153,7 @@ func OptionSetFS(fs core.FS) Option {
 
 // OptionSetZapLogger sets service structured logger
 func OptionSetZapLogger(zlog *zap.Logger) Option {
-	return func(s *service) error {
+	return func(s *GraphjinService) error {
 		s.zlog = zlog
 		s.log = zlog.Sugar()
 		return nil
@@ -162,13 +162,14 @@ func OptionSetZapLogger(zlog *zap.Logger) Option {
 
 // OptionDeployActive caused the active config to be deployed on
 func OptionDeployActive() Option {
-	return func(s *service) error {
+	return func(s *GraphjinService) error {
 		s.deployActive = true
 		return nil
 	}
 }
 
-func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*service, error) {
+// newGraphJinService creates a new service
+func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*GraphjinService, error) {
 	var err error
 	if conf == nil {
 		conf = &Config{Core: Core{Debug: true}}
@@ -178,7 +179,7 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*service, 
 	prod := conf.Serv.Production
 	conf.Core.Production = prod
 
-	s := &service{
+	s := &GraphjinService{
 		conf:         conf,
 		zlog:         zlog,
 		log:          zlog.Sugar(),
@@ -224,7 +225,8 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*service, 
 	return s, nil
 }
 
-func (s *service) normalStart() error {
+// normalStart starts the service in normal mode
+func (s *GraphjinService) normalStart() error {
 	opts := []core.Option{core.OptionSetFS(s.fs)}
 	if s.namespace != nil {
 		opts = append(opts, core.OptionSetNamespace(*s.namespace))
@@ -235,7 +237,8 @@ func (s *service) normalStart() error {
 	return err
 }
 
-func (s *service) hotStart() error {
+// hotStart starts the service in hot-deploy mode
+func (s *GraphjinService) hotStart() error {
 	ab, err := fetchActiveBundle(s.db)
 	if err != nil {
 		if strings.Contains(err.Error(), "_graphjin.") {
@@ -248,7 +251,7 @@ func (s *service) hotStart() error {
 		return s.normalStart()
 	}
 
-	cf := s.conf.vi.ConfigFileUsed()
+	cf := s.conf.viper.ConfigFileUsed()
 	cf = filepath.Base(strings.TrimSuffix(cf, filepath.Ext(cf)))
 	cf = filepath.Join("/", cf)
 
@@ -280,9 +283,9 @@ func (s *service) hotStart() error {
 }
 
 // Deploy a new configuration
-func (s *Service) Deploy(conf *Config, options ...Option) error {
+func (s *HttpService) Deploy(conf *Config, options ...Option) error {
 	var err error
-	os := s.Load().(*service)
+	os := s.Load().(*GraphjinService)
 
 	if conf == nil {
 		return nil
@@ -301,27 +304,28 @@ func (s *Service) Deploy(conf *Config, options ...Option) error {
 }
 
 // Start the service listening on the configured port
-func (s *Service) Start() error {
+func (s *HttpService) Start() error {
 	startHTTP(s)
 	return nil
 }
 
 // Attach route to the internal http service
-func (s *Service) Attach(mux Mux) error {
+func (s *HttpService) Attach(mux Mux) error {
 	return s.attach(mux, nil)
 }
 
 // AttachWithNS a namespaced route to the internal http service
-func (s *Service) AttachWithNS(mux Mux, namespace string) error {
+func (s *HttpService) AttachWithNS(mux Mux, namespace string) error {
 	return s.attach(mux, &namespace)
 }
 
-func (s *Service) attach(mux Mux, ns *string) error {
+// attach attaches the service to the router
+func (s *HttpService) attach(mux Mux, ns *string) error {
 	if _, err := routesHandler(s, mux, ns); err != nil {
 		return err
 	}
 
-	s1 := s.Load().(*service)
+	s1 := s.Load().(*GraphjinService)
 
 	ver := version
 	dep := s1.conf.name
@@ -353,26 +357,26 @@ func (s *Service) attach(mux Mux, ns *string) error {
 }
 
 // GraphQLis the http handler the GraphQL endpoint
-func (s *Service) GraphQL(ah auth.HandlerFunc) http.Handler {
+func (s *HttpService) GraphQL(ah auth.HandlerFunc) http.Handler {
 	return s.apiHandler(nil, ah, false)
 }
 
 // GraphQLWithNS is the http handler the namespaced GraphQL endpoint
-func (s *Service) GraphQLWithNS(ah auth.HandlerFunc, ns string) http.Handler {
+func (s *HttpService) GraphQLWithNS(ah auth.HandlerFunc, ns string) http.Handler {
 	return s.apiHandler(&ns, ah, false)
 }
 
 // REST is the http handler the REST endpoint
-func (s *Service) REST(ah auth.HandlerFunc) http.Handler {
+func (s *HttpService) REST(ah auth.HandlerFunc) http.Handler {
 	return s.apiHandler(nil, ah, true)
 }
 
 // RESTWithNS is the http handler the namespaced REST endpoint
-func (s *Service) RESTWithNS(ah auth.HandlerFunc, ns string) http.Handler {
+func (s *HttpService) RESTWithNS(ah auth.HandlerFunc, ns string) http.Handler {
 	return s.apiHandler(&ns, ah, true)
 }
 
-func (s *Service) apiHandler(ns *string, ah auth.HandlerFunc, rest bool) http.Handler {
+func (s *HttpService) apiHandler(ns *string, ah auth.HandlerFunc, rest bool) http.Handler {
 	var h http.Handler
 	if rest {
 		h = s.apiV1Rest(ns, ah)
@@ -383,32 +387,34 @@ func (s *Service) apiHandler(ns *string, ah auth.HandlerFunc, rest bool) http.Ha
 }
 
 // WebUI is the http handler the web ui endpoint
-func (s *Service) WebUI(routePrefix, gqlEndpoint string) http.Handler {
+func (s *HttpService) WebUI(routePrefix, gqlEndpoint string) http.Handler {
 	return webuiHandler(routePrefix, gqlEndpoint)
 }
 
 // GetGraphJin fetching internal GraphJin core
-func (s *Service) GetGraphJin() *core.GraphJin {
-	s1 := s.Load().(*service)
+func (s *HttpService) GetGraphJin() *core.GraphJin {
+	s1 := s.Load().(*GraphjinService)
 	return s1.gj
 }
 
 // GetDB fetching internal db client
-func (s *Service) GetDB() *sql.DB {
-	s1 := s.Load().(*service)
+func (s *HttpService) GetDB() *sql.DB {
+	s1 := s.Load().(*GraphjinService)
 	return s1.db
 }
 
 // Reload re-runs database discover and reinitializes service.
-func (s *Service) Reload() error {
-	s1 := s.Load().(*service)
+func (s *HttpService) Reload() error {
+	s1 := s.Load().(*GraphjinService)
 	return s1.gj.Reload()
 }
 
-func (s *service) spanStart(c context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
+// spanStart starts the tracer
+func (s *GraphjinService) spanStart(c context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
 	return s.tracer.Start(c, name, opts...)
 }
 
+// spanError records an error in the span
 func spanError(span trace.Span, err error) {
 	if span.IsRecording() {
 		span.RecordError(err)

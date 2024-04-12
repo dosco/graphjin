@@ -10,7 +10,7 @@ import (
 	"github.com/dosco/graphjin/core/v3"
 )
 
-func initLogLevel(s *service) {
+func initLogLevel(s *GraphjinService) {
 	switch s.conf.LogLevel {
 	case "debug":
 		s.logLevel = logLevelDebug
@@ -25,7 +25,7 @@ func initLogLevel(s *service) {
 	}
 }
 
-func validateConf(s *service) {
+func validateConf(s *GraphjinService) {
 	var anonFound bool
 
 	for _, r := range s.conf.Core.Roles {
@@ -40,7 +40,7 @@ func validateConf(s *service) {
 	}
 }
 
-func (s *service) initFS() error {
+func (s *GraphjinService) initFS() error {
 	basePath, err := s.basePath()
 	if err != nil {
 		return err
@@ -53,7 +53,7 @@ func (s *service) initFS() error {
 	return nil
 }
 
-func (s *service) initConfig() error {
+func (s *GraphjinService) initConfig() error {
 	c := s.conf
 	c.dirty = true
 
@@ -96,7 +96,7 @@ func (s *service) initConfig() error {
 	return nil
 }
 
-func (s *service) initDB() error {
+func (s *GraphjinService) initDB() error {
 	var err error
 
 	if s.db != nil {
@@ -110,7 +110,7 @@ func (s *service) initDB() error {
 	return nil
 }
 
-func (s *service) basePath() (string, error) {
+func (s *GraphjinService) basePath() (string, error) {
 	if s.conf.Serv.ConfigPath == "" {
 		if cp, err := os.Getwd(); err == nil {
 			return filepath.Join(cp, "config"), nil

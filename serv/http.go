@@ -55,9 +55,9 @@ type errorResp struct {
 	Errors []string `json:"errors"`
 }
 
-func apiV1Handler(s1 *Service, ns *string, h http.Handler, ah auth.HandlerFunc) http.Handler {
+func apiV1Handler(s1 *HttpService, ns *string, h http.Handler, ah auth.HandlerFunc) http.Handler {
 	var zlog *zap.Logger
-	s := s1.Load().(*service)
+	s := s1.Load().(*GraphjinService)
 
 	if s.conf.Core.Debug {
 		zlog = s.zlog
@@ -107,14 +107,14 @@ func apiV1Handler(s1 *Service, ns *string, h http.Handler, ah auth.HandlerFunc) 
 	return h
 }
 
-func (s1 *Service) apiV1GraphQL(ns *string, ah auth.HandlerFunc) http.Handler {
+func (s1 *HttpService) apiV1GraphQL(ns *string, ah auth.HandlerFunc) http.Handler {
 	dtrace := otel.GetTextMapPropagator()
 
 	h := func(w http.ResponseWriter, r *http.Request) {
 		var err error
 
 		start := time.Now()
-		s := s1.Load().(*service)
+		s := s1.Load().(*GraphjinService)
 
 		w.Header().Set("Content-Type", "application/json")
 
@@ -155,7 +155,7 @@ func (s1 *Service) apiV1GraphQL(ns *string, ah auth.HandlerFunc) http.Handler {
 			return
 		}
 
-		var rc core.ReqConfig
+		var rc core.RequestConfig
 
 		if req.apqEnabled() {
 			rc.APQKey = (req.OpName + req.Ext.Persisted.Sha256Hash)
@@ -205,7 +205,7 @@ func (s1 *Service) apiV1GraphQL(ns *string, ah auth.HandlerFunc) http.Handler {
 	return http.HandlerFunc(h)
 }
 
-func (s1 *Service) apiV1Rest(ns *string, ah auth.HandlerFunc) http.Handler {
+func (s1 *HttpService) apiV1Rest(ns *string, ah auth.HandlerFunc) http.Handler {
 	rLen := len(routeREST)
 	dtrace := otel.GetTextMapPropagator()
 
@@ -213,7 +213,7 @@ func (s1 *Service) apiV1Rest(ns *string, ah auth.HandlerFunc) http.Handler {
 		var err error
 
 		start := time.Now()
-		s := s1.Load().(*service)
+		s := s1.Load().(*GraphjinService)
 
 		w.Header().Set("Content-Type", "application/json")
 
@@ -255,7 +255,7 @@ func (s1 *Service) apiV1Rest(ns *string, ah auth.HandlerFunc) http.Handler {
 			return
 		}
 
-		var rc core.ReqConfig
+		var rc core.RequestConfig
 
 		if rc.Vars == nil && len(s.conf.Core.HeaderVars) != 0 {
 			rc.Vars = s.setHeaderVars(r)
@@ -288,11 +288,11 @@ func (s1 *Service) apiV1Rest(ns *string, ah auth.HandlerFunc) http.Handler {
 	return http.HandlerFunc(h)
 }
 
-func (s *service) responseHandler(ct context.Context,
+func (s *GraphjinService) responseHandler(ct context.Context,
 	w http.ResponseWriter,
 	r *http.Request,
 	start time.Time,
-	rc core.ReqConfig,
+	rc core.RequestConfig,
 	res *core.Result,
 	err error,
 ) {
@@ -330,7 +330,7 @@ func (s *service) responseHandler(ct context.Context,
 	}
 }
 
-func (s *service) reqLog(res *core.Result, rc core.ReqConfig, resTimeMs int64, err error) {
+func (s *GraphjinService) reqLog(res *core.Result, rc core.RequestConfig, resTimeMs int64, err error) {
 	var fields []zapcore.Field
 	var sql string
 
@@ -364,7 +364,7 @@ func (s *service) reqLog(res *core.Result, rc core.ReqConfig, resTimeMs int64, e
 	}
 }
 
-func (s *service) setHeaderVars(r *http.Request) map[string]interface{} {
+func (s *GraphjinService) setHeaderVars(r *http.Request) map[string]interface{} {
 	vars := make(map[string]interface{})
 	for k, v := range s.conf.Core.HeaderVars {
 		vars[k] = func() string {

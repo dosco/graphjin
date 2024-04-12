@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// This is cobra CLI command for the version subcommand
 func versionCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "version",
@@ -16,10 +17,12 @@ func versionCmd() *cobra.Command {
 	return c
 }
 
+// cmdVersion is the handler for the version subcommand
 func cmdVersion(cmd *cobra.Command, args []string) {
 	fmt.Printf("%s\n", BuildDetails())
 }
 
+// BuildDetails returns the version information
 func BuildDetails() string {
 	if version == "" {
 		return `

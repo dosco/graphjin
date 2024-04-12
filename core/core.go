@@ -56,7 +56,7 @@ const (
 // 	Duration    time.Duration `json:"duration"`
 // }
 
-func (gj *graphjin) getIntroResult() (data json.RawMessage, err error) {
+func (gj *GraphjinEngine) getIntroResult() (data json.RawMessage, err error) {
 	var ok bool
 	if data, ok = gj.cache.Get("_intro"); ok {
 		return
@@ -69,7 +69,7 @@ func (gj *graphjin) getIntroResult() (data json.RawMessage, err error) {
 }
 
 // Initializes the database discovery process on graphjin
-func (gj *graphjin) initDiscover() (err error) {
+func (gj *GraphjinEngine) initDiscover() (err error) {
 	switch gj.conf.DBType {
 	case "":
 		gj.dbtype = "postgres"
@@ -86,7 +86,7 @@ func (gj *graphjin) initDiscover() (err error) {
 }
 
 // Private method that does the actual database discovery for initDiscover
-func (gj *graphjin) _initDiscover() (err error) {
+func (gj *GraphjinEngine) _initDiscover() (err error) {
 	if gj.prod && gj.conf.EnableSchema {
 		b, err := gj.fs.Get("db.graphql")
 		if err != nil {
@@ -132,14 +132,14 @@ func (gj *graphjin) _initDiscover() (err error) {
 }
 
 // Initializes the database schema on graphjin
-func (gj *graphjin) initSchema() error {
+func (gj *GraphjinEngine) initSchema() error {
 	if err := gj._initSchema(); err != nil {
 		return fmt.Errorf("%s: %w", gj.dbtype, err)
 	}
 	return nil
 }
 
-func (gj *graphjin) _initSchema() (err error) {
+func (gj *GraphjinEngine) _initSchema() (err error) {
 	if len(gj.dbinfo.Tables) == 0 {
 		return fmt.Errorf("no tables found in database")
 	}
@@ -190,7 +190,7 @@ func (gj *graphjin) _initSchema() (err error) {
 }
 
 // Initializes the qcode compilers
-func (gj *graphjin) initCompilers() (err error) {
+func (gj *GraphjinEngine) initCompilers() (err error) {
 	qcc := qcode.Config{
 		TConfig:         gj.tmap,
 		DefaultBlock:    gj.conf.DefaultBlock,
@@ -202,29 +202,29 @@ func (gj *graphjin) initCompilers() (err error) {
 		Validators:      valid.Validators,
 	}
 
-	gj.qc, err = qcode.NewCompiler(gj.schema, qcc)
+	gj.qcodeCompiler, err = qcode.NewCompiler(gj.schema, qcc)
 	if err != nil {
 		return
 	}
 
-	if err = addRoles(gj.conf, gj.qc); err != nil {
+	if err = addRoles(gj.conf, gj.qcodeCompiler); err != nil {
 		return
 	}
 
-	gj.pc = psql.NewCompiler(psql.Config{
+	gj.psqlCompiler = psql.NewCompiler(psql.Config{
 		Vars:            gj.conf.Vars,
 		DBType:          gj.schema.DBType(),
 		DBVersion:       gj.schema.DBVersion(),
-		SecPrefix:       gj.pf,
+		SecPrefix:       gj.printFormat,
 		EnableCamelcase: gj.conf.EnableCamelcase,
 	})
 	return
 }
 
-func (gj *graphjin) executeRoleQuery(c context.Context,
+func (gj *GraphjinEngine) executeRoleQuery(c context.Context,
 	conn *sql.Conn,
 	vmap map[string]json.RawMessage,
-	rc *ReqConfig,
+	rc *RequestConfig,
 ) (role string, err error) {
 	if c.Value(UserIDKey) == nil {
 		role = "anon"
@@ -232,7 +232,7 @@ func (gj *graphjin) executeRoleQuery(c context.Context,
 	}
 
 	ar, err := gj.argList(c,
-		gj.roleStmtMD,
+		gj.roleStatementMetadata,
 		vmap,
 		rc,
 		false)
@@ -262,9 +262,9 @@ func (gj *graphjin) executeRoleQuery(c context.Context,
 	err = retryOperation(c1, func() error {
 		var row *sql.Row
 		if rc != nil && rc.Tx != nil {
-			row = rc.Tx.QueryRowContext(c1, gj.roleStmt, ar.values...)
+			row = rc.Tx.QueryRowContext(c1, gj.roleStatement, ar.values...)
 		} else {
-			row = conn.QueryRowContext(c1, gj.roleStmt, ar.values...)
+			row = conn.QueryRowContext(c1, gj.roleStatement, ar.values...)
 		}
 		return row.Scan(&role)
 	})
@@ -279,7 +279,7 @@ func (gj *graphjin) executeRoleQuery(c context.Context,
 
 // Returns the operation type for the query result
 func (r *Result) Operation() OpType {
-	switch r.op {
+	switch r.operation {
 	case qcode.QTQuery:
 		return OpQuery
 
@@ -293,12 +293,12 @@ func (r *Result) Operation() OpType {
 
 // Returns the namespace for the query result
 func (r *Result) Namespace() string {
-	return r.ns
+	return r.namespace
 }
 
 // Returns the operation name for the query result
 func (r *Result) OperationName() string {
-	return r.op.String()
+	return r.operation.String()
 }
 
 // Returns the query name for the query result
@@ -382,7 +382,7 @@ func (s *gstate) debugLogStmt() {
 }
 
 // Saved the query qcode to the allow list
-func (gj *graphjin) saveToAllowList(qc *qcode.QCode, ns string) (err error) {
+func (gj *GraphjinEngine) saveToAllowList(qc *qcode.QCode, ns string) (err error) {
 	if gj.conf.DisableAllowList {
 		return nil
 	}
@@ -412,7 +412,7 @@ func (gj *graphjin) saveToAllowList(qc *qcode.QCode, ns string) (err error) {
 }
 
 // Starts tracing with the given name
-func (gj *graphjin) spanStart(c context.Context, name string) (context.Context, Spaner) {
+func (gj *GraphjinEngine) spanStart(c context.Context, name string) (context.Context, Spaner) {
 	return gj.trace.Start(c, name)
 }
 

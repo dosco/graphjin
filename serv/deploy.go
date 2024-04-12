@@ -23,7 +23,7 @@ type depResp struct {
 	name, pname string
 }
 
-func (s *service) saveConfig(c context.Context, name, bundle string) (*depResp, error) {
+func (s *GraphjinService) saveConfig(c context.Context, name, bundle string) (*depResp, error) {
 	var dres depResp
 
 	zip, err := base64.StdEncoding.DecodeString(bundle)
@@ -139,7 +139,7 @@ func (s *service) saveConfig(c context.Context, name, bundle string) (*depResp, 
 	return &dres, nil
 }
 
-func (s *service) rollbackConfig(c context.Context) (*depResp, error) {
+func (s *GraphjinService) rollbackConfig(c context.Context) (*depResp, error) {
 	var dres depResp
 
 	opt := &sql.TxOptions{Isolation: sql.LevelSerializable}
@@ -259,14 +259,14 @@ func getAdminParams(tx *sql.Tx) (adminParams, error) {
 	return ap, nil
 }
 
-func startHotDeployWatcher(s1 *Service) error {
+func startHotDeployWatcher(s1 *HttpService) error {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		s := s1.Load().(*service)
+		s := s1.Load().(*GraphjinService)
 
-		cf := s.conf.vi.ConfigFileUsed()
+		cf := s.conf.viper.ConfigFileUsed()
 		cf = filepath.Join("/", filepath.Base(strings.TrimSuffix(cf, filepath.Ext(cf))))
 
 		var id int
@@ -346,7 +346,7 @@ func fetchActiveBundle(db *sql.DB) (*activeBundle, error) {
 	return &ab, nil
 }
 
-func deployBundle(s1 *Service, name, hash, confFile, bundle string) error {
+func deployBundle(s1 *HttpService, name, hash, confFile, bundle string) error {
 	bfs, err := bundle2Fs(name, hash, confFile, bundle)
 	if err != nil {
 		return err

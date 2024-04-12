@@ -9,28 +9,28 @@ import (
 	"github.com/dosco/graphjin/core/v3/internal/util"
 )
 
-type edgeInfo struct {
+type EdgeInfo struct {
 	nodeID  int32
 	edgeIDs []int32
 }
 
-type nodeInfo struct {
+type NodeInfo struct {
 	nodeID int32
 }
 
 type DBSchema struct {
-	typ    string                  // db type
-	ver    int                     // db version
-	schema string                  // db schema
-	name   string                  // db name
-	tables []DBTable               // tables
-	vt     map[string]VirtualTable // for polymorphic relationships
-	fm     map[string]DBFunction   // db functions
-	tindex map[string]nodeInfo     // table index
-	ai     map[string]nodeInfo     // table alias index
-	ei     map[string][]edgeInfo   // edges index
-	ae     map[int32]TEdge         // all edges
-	rg     *util.Graph             // relationship graph
+	dbType            string                  // db type
+	version           int                     // db version
+	schema            string                  // db schema
+	name              string                  // db name
+	tables            []DBTable               // tables
+	virtualTables     map[string]VirtualTable // for polymorphic relationships
+	dbFunctions       map[string]DBFunction   // db functions
+	tindex            map[string]NodeInfo     // table index
+	tableAliasIndex   map[string]NodeInfo     // table alias index
+	edgesIndex        map[string][]EdgeInfo   // edges index
+	allEdges          map[int32]TEdge         // all edges
+	relationshipGraph *util.Graph             // relationship graph
 }
 
 type RelType int
@@ -46,39 +46,43 @@ const (
 	RelSkip
 )
 
+// DBRelLeft represents database information
 type DBRelLeft struct {
 	Ti  DBTable
 	Col DBColumn
 }
 
+// DBRelRight represents a database relationship
 type DBRelRight struct {
 	VTable string
 	Ti     DBTable
 	Col    DBColumn
 }
 
+// DBRel represents a database relationship
 type DBRel struct {
 	Type  RelType
 	Left  DBRelLeft
 	Right DBRelRight
 }
 
+// NewDBSchema creates a new database schema
 func NewDBSchema(
 	info *DBInfo,
 	aliases map[string][]string,
 ) (*DBSchema, error) {
 	schema := &DBSchema{
-		typ:    info.Type,
-		ver:    info.Version,
-		schema: info.Schema,
-		name:   info.Name,
-		vt:     make(map[string]VirtualTable),
-		fm:     make(map[string]DBFunction),
-		tindex: make(map[string]nodeInfo),
-		ai:     make(map[string]nodeInfo),
-		ei:     make(map[string][]edgeInfo),
-		ae:     make(map[int32]TEdge),
-		rg:     util.NewGraph(),
+		dbType:            info.Type,
+		version:           info.Version,
+		schema:            info.Schema,
+		name:              info.Name,
+		virtualTables:     make(map[string]VirtualTable),
+		dbFunctions:       make(map[string]DBFunction),
+		tindex:            make(map[string]NodeInfo),
+		tableAliasIndex:   make(map[string]NodeInfo),
+		edgesIndex:        make(map[string][]EdgeInfo),
+		allEdges:          make(map[int32]TEdge),
+		relationshipGraph: util.NewGraph(),
 	}
 
 	for _, t := range info.Tables {
@@ -102,11 +106,11 @@ func NewDBSchema(
 	// add aliases to edge index by duplicating
 	for t, al := range aliases {
 		for _, alias := range al {
-			if _, ok := schema.ei[alias]; ok {
+			if _, ok := schema.edgesIndex[alias]; ok {
 				continue
 			}
-			if e, ok := schema.ei[t]; ok {
-				schema.ei[alias] = e
+			if e, ok := schema.edgesIndex[t]; ok {
+				schema.edgesIndex[alias] = e
 			}
 		}
 	}
@@ -127,13 +131,14 @@ func NewDBSchema(
 		// don't include functions that return records
 		// as those are considered selector functions
 		if f.Type != "record" {
-			schema.fm[f.Name] = info.Functions[k]
+			schema.dbFunctions[f.Name] = info.Functions[k]
 		}
 	}
 
 	return schema, nil
 }
 
+// addRels adds relationships to the schema
 func (s *DBSchema) addRels(t DBTable) error {
 	var err error
 	switch t.Type {
@@ -152,6 +157,7 @@ func (s *DBSchema) addRels(t DBTable) error {
 	return s.addColumnRels(t)
 }
 
+// addJsonRel adds a json relationship to the schema
 func (s *DBSchema) addJsonRel(t DBTable) error {
 	st, err := s.Find(t.SecondaryCol.Schema, t.SecondaryCol.Table)
 	if err != nil {
@@ -166,6 +172,7 @@ func (s *DBSchema) addJsonRel(t DBTable) error {
 	return s.addToGraph(t, t.PrimaryCol, st, sc, RelEmbedded)
 }
 
+// addPolymorphicRel adds a polymorphic relationship to the schema
 func (s *DBSchema) addPolymorphicRel(t DBTable) error {
 	pt, err := s.Find(t.PrimaryCol.FKeySchema, t.PrimaryCol.FKeyTable)
 	if err != nil {
@@ -185,6 +192,7 @@ func (s *DBSchema) addPolymorphicRel(t DBTable) error {
 	return s.addToGraph(t, t.PrimaryCol, pt, pc, RelPolymorphic)
 }
 
+// addRemoteRel adds a remote relationship to the schema
 func (s *DBSchema) addRemoteRel(t DBTable) error {
 	pt, err := s.Find(t.PrimaryCol.FKeySchema, t.PrimaryCol.FKeyTable)
 	if err != nil {
@@ -199,6 +207,7 @@ func (s *DBSchema) addRemoteRel(t DBTable) error {
 	return s.addToGraph(t, t.PrimaryCol, pt, pc, RelRemote)
 }
 
+// addColumnRels adds column relationships to the schema
 func (s *DBSchema) addColumnRels(t DBTable) error {
 	var err error
 
@@ -244,8 +253,9 @@ func (s *DBSchema) addColumnRels(t DBTable) error {
 	return nil
 }
 
+// addVirtual adds a virtual table to the schema
 func (s *DBSchema) addVirtual(vt VirtualTable) error {
-	s.vt[vt.Name] = vt
+	s.virtualTables[vt.Name] = vt
 
 	for _, t := range s.tables {
 		idCol, ok := t.getColumn(vt.IDColumn)
@@ -298,22 +308,25 @@ func (s *DBSchema) addVirtual(vt VirtualTable) error {
 	return nil
 }
 
+// GetTables returns a table from the schema
 func (s *DBSchema) GetTables() []DBTable {
 	return s.tables
 }
 
+// RelNode represents a relationship node
 type RelNode struct {
 	Name  string
 	Type  RelType
 	Table DBTable
 }
 
+// GetFirstDegree returns the first degree relationships of a table
 func (s *DBSchema) GetFirstDegree(t DBTable) (items []RelNode, err error) {
 	currNode, ok := s.tindex[(t.Schema + ":" + t.Name)]
 	if !ok {
 		return nil, fmt.Errorf("table not found: %s", t.String())
 	}
-	relatedNodes := s.rg.Connections(currNode.nodeID)
+	relatedNodes := s.relationshipGraph.Connections(currNode.nodeID)
 	for _, id := range relatedNodes {
 		v := s.getRelNodes(id, currNode.nodeID)
 		items = append(items, v...)
@@ -321,15 +334,16 @@ func (s *DBSchema) GetFirstDegree(t DBTable) (items []RelNode, err error) {
 	return
 }
 
+// GetSecondDegree returns the second degree relationships of a table
 func (s *DBSchema) GetSecondDegree(t DBTable) (items []RelNode, err error) {
 	currNode, ok := s.tindex[(t.Schema + ":" + t.Name)]
 	if !ok {
 		return nil, fmt.Errorf("table not found: %s", t.String())
 	}
 
-	relatedNodes1 := s.rg.Connections(currNode.nodeID)
+	relatedNodes1 := s.relationshipGraph.Connections(currNode.nodeID)
 	for _, id := range relatedNodes1 {
-		relatedNodes2 := s.rg.Connections(id)
+		relatedNodes2 := s.relationshipGraph.Connections(id)
 		for _, id1 := range relatedNodes2 {
 			v := s.getRelNodes(id1, id)
 			items = append(items, v...)
@@ -338,10 +352,11 @@ func (s *DBSchema) GetSecondDegree(t DBTable) (items []RelNode, err error) {
 	return
 }
 
+// getRelNodes returns the relationship nodes
 func (s *DBSchema) getRelNodes(fromID, toID int32) (items []RelNode) {
-	edges := s.rg.GetEdges(fromID, toID)
+	edges := s.relationshipGraph.GetEdges(fromID, toID)
 	for _, e := range edges {
-		e1 := s.ae[e.ID]
+		e1 := s.allEdges[e.ID]
 		if e1.name == "" {
 			continue
 		}
@@ -351,6 +366,7 @@ func (s *DBSchema) getRelNodes(fromID, toID int32) (items []RelNode) {
 	return
 }
 
+// getColumn returns a column from a table
 func (ti *DBTable) getColumn(name string) (DBColumn, bool) {
 	var c DBColumn
 	if i, ok := ti.colMap[name]; ok {
@@ -359,6 +375,7 @@ func (ti *DBTable) getColumn(name string) (DBColumn, bool) {
 	return c, false
 }
 
+// GetColumn returns a column from a table
 func (ti *DBTable) GetColumn(name string) (DBColumn, error) {
 	c, ok := ti.getColumn(name)
 	if ok {
@@ -367,14 +384,17 @@ func (ti *DBTable) GetColumn(name string) (DBColumn, error) {
 	return c, fmt.Errorf("column: '%s.%s' not found", ti.Name, name)
 }
 
+// ColumnExists returns true if a column exists in a table
 func (ti *DBTable) ColumnExists(name string) (DBColumn, bool) {
 	return ti.getColumn(name)
 }
 
+// GetFunction returns a function from the schema
 func (s *DBSchema) GetFunctions() map[string]DBFunction {
-	return s.fm
+	return s.dbFunctions
 }
 
+// GetRelName returns the relationship name
 func GetRelName(colName string) string {
 	cn := colName
 
@@ -397,18 +417,22 @@ func GetRelName(colName string) string {
 	return cn
 }
 
+// DBType returns the database type
 func (s *DBSchema) DBType() string {
-	return s.typ
+	return s.dbType
 }
 
+// DBVersion returns the database version
 func (s *DBSchema) DBVersion() int {
-	return s.ver
+	return s.version
 }
 
+// DBSchema returns the database schema
 func (s *DBSchema) DBSchema() string {
 	return s.schema
 }
 
+// DBName returns the database name
 func (s *DBSchema) DBName() string {
 	return s.name
 }

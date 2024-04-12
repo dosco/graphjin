@@ -12,7 +12,7 @@ import (
 	"go.uber.org/zap"
 )
 
-type rotateOpts struct {
+type RotateOpts struct {
 	log              *zap.SugaredLogger
 	Cipher           sops.Cipher
 	InputStore       sops.Store
@@ -24,7 +24,8 @@ type rotateOpts struct {
 	KeyServices      []keyservice.KeyServiceClient
 }
 
-func rotate(opts rotateOpts) ([]byte, error) {
+// rotate rotates the keys in the file at the given path using options passed.
+func rotate(opts RotateOpts) ([]byte, error) {
 	tree, err := common.LoadEncryptedFileWithBugFixes(common.GenericDecryptOpts{
 		Cipher:      opts.Cipher,
 		InputStore:  opts.InputStore,

@@ -10,9 +10,9 @@ import (
 
 var healthyResponse = []byte("All's Well")
 
-func healthCheckHandler(s1 *Service) http.Handler {
+func healthCheckHandler(s1 *HttpService) http.Handler {
 	h := func(w http.ResponseWriter, r *http.Request) {
-		s := s1.Load().(*service)
+		s := s1.Load().(*GraphjinService)
 		c, cancel := context.WithTimeout(r.Context(), s.conf.DB.PingTimeout)
 		defer cancel()
 

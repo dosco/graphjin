@@ -12,10 +12,11 @@ import (
 	"time"
 )
 
-func adminDeployHandler(s1 *Service) http.Handler {
+// adminDeployHandler handles the admin deploy endpoint
+func adminDeployHandler(s1 *HttpService) http.Handler {
 	h := func(w http.ResponseWriter, r *http.Request) {
 		var req DeployReq
-		s := s1.Load().(*service)
+		s := s1.Load().(*GraphjinService)
 
 		if !s.isAdminSecret(r) {
 			authFail(w)
@@ -57,9 +58,10 @@ func adminDeployHandler(s1 *Service) http.Handler {
 	return http.HandlerFunc(h)
 }
 
-func adminRollbackHandler(s1 *Service) http.Handler {
+// adminRollbackHandler handles the admin rollback endpoint
+func adminRollbackHandler(s1 *HttpService) http.Handler {
 	h := func(w http.ResponseWriter, r *http.Request) {
-		s := s1.Load().(*service)
+		s := s1.Load().(*GraphjinService)
 
 		if !s.isAdminSecret(r) {
 			authFail(w)
@@ -85,7 +87,8 @@ func adminRollbackHandler(s1 *Service) http.Handler {
 	return http.HandlerFunc(h)
 }
 
-func (s *service) isAdminSecret(r *http.Request) bool {
+// adminConfigHandler handles the checking of the admin secret endpoint
+func (s *GraphjinService) isAdminSecret(r *http.Request) bool {
 	atomic.AddInt32(&s.adminCount, 1)
 	defer atomic.StoreInt32(&s.adminCount, 0)
 

@@ -12,22 +12,23 @@ import (
 )
 
 // RemoteAPI struct defines a remote API endpoint
-type remoteAPI struct {
+type RemoteAPI struct {
 	httpClient *http.Client
 	URL        string
 	Debug      bool
 
 	PassHeaders []string
-	SetHeaders  []remoteHdrs
+	SetHeaders  []RemoteHdrs
 }
 
-type remoteHdrs struct {
+type RemoteHdrs struct {
 	Name  string
 	Value string
 }
 
-func newRemoteAPI(v map[string]interface{}, httpClient *http.Client) (*remoteAPI, error) {
-	ra := remoteAPI{
+// newRemoteAPI creates a new remote API endpoint
+func newRemoteAPI(v map[string]interface{}, httpClient *http.Client) (*RemoteAPI, error) {
+	ra := RemoteAPI{
 		httpClient: httpClient,
 	}
 
@@ -42,7 +43,7 @@ func newRemoteAPI(v map[string]interface{}, httpClient *http.Client) (*remoteAPI
 	}
 	if v, ok := v["set_headers"].(map[string]string); ok {
 		for k, v1 := range v {
-			rh := remoteHdrs{Name: k, Value: v1}
+			rh := RemoteHdrs{Name: k, Value: v1}
 			ra.SetHeaders = append(ra.SetHeaders, rh)
 		}
 	}
@@ -50,7 +51,8 @@ func newRemoteAPI(v map[string]interface{}, httpClient *http.Client) (*remoteAPI
 	return &ra, nil
 }
 
-func (r *remoteAPI) Resolve(c context.Context, rr ResolverReq) ([]byte, error) {
+// Resolve function resolves a remote API request
+func (r *RemoteAPI) Resolve(c context.Context, rr ResolverReq) ([]byte, error) {
 	uri := strings.ReplaceAll(r.URL, "$id", rr.ID)
 
 	req, err := http.NewRequestWithContext(c, "GET", uri, nil)

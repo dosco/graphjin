@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// dbCmd creates the db command
 func dbCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "db",
@@ -55,6 +56,7 @@ func dbCmd() *cobra.Command {
 	return c
 }
 
+// cmdDBSeed seeds the database
 func cmdDBSetup(cmd *cobra.Command, args []string) {
 	setup(cpath)
 
@@ -67,6 +69,7 @@ func cmdDBSetup(cmd *cobra.Command, args []string) {
 	cmdDBSeed(cmd, []string{})
 }
 
+// cmdDBReset resets the database
 func cmdDBReset(cmd *cobra.Command, args []string) {
 	setup(cpath)
 
@@ -78,6 +81,7 @@ func cmdDBReset(cmd *cobra.Command, args []string) {
 	cmdDBSetup(cmd, []string{})
 }
 
+// cmdDBCreate seeds the database
 func cmdDBCreate(cmd *cobra.Command, args []string) {
 	setup(cpath)
 	initDB(false)
@@ -109,6 +113,7 @@ func cmdDBCreate(cmd *cobra.Command, args []string) {
 	log.Infof("Created database: %s", dbName)
 }
 
+// cmdDBDrop seeds the database
 func cmdDBDrop(cmd *cobra.Command, args []string) {
 	setup(cpath)
 	initDB(false)

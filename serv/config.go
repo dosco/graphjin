@@ -37,7 +37,7 @@ type Config struct {
 	hash     string
 	name     string
 	dirty    bool
-	vi       *viper.Viper
+	viper    *viper.Viper
 }
 
 // Configuration for admin service
@@ -239,23 +239,24 @@ func ReadInConfig(configFile string) (*Config, error) {
 
 // ReadInConfigFS is the same as ReadInConfig but it also takes a filesytem as an argument
 func ReadInConfigFS(configFile string, fs afero.Fs) (*Config, error) {
-	c, err := readInConfig(configFile, fs)
+	config, err := readInConfig(configFile, fs)
 	if err != nil {
 		return nil, err
 	}
-	c1, err := setupSecrets(c, fs)
+	secrets, err := setupSecrets(config, fs)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s", err, c.SecretsFile)
+		return nil, fmt.Errorf("%w: %s", err, config.SecretsFile)
 	}
-	return c1, err
+	return secrets, err
 }
 
+// setupSecrets function reads in the secrets file and merges the secrets into the config
 func setupSecrets(conf *Config, fs afero.Fs) (*Config, error) {
 	if conf.SecretsFile == "" {
 		return conf, nil
 	}
 
-	secFile, err := filepath.Abs(conf.RelPath(conf.SecretsFile))
+	secFile, err := filepath.Abs(conf.AbsolutePath(conf.SecretsFile))
 	if err != nil {
 		return nil, err
 	}
@@ -267,15 +268,15 @@ func setupSecrets(conf *Config, fs afero.Fs) (*Config, error) {
 		return nil, err
 	}
 
-	for k, v := range newConf.secrets {
-		util.SetKeyValue(conf.vi, k, v)
+	for secretKey, secretValue := range newConf.secrets {
+		util.SetKeyValue(conf.viper, secretKey, secretValue)
 	}
 
 	if len(newConf.secrets) == 0 {
 		return conf, nil
 	}
 
-	if err := conf.vi.Unmarshal(&newConf); err != nil {
+	if err := conf.viper.Unmarshal(&newConf); err != nil {
 		return nil, fmt.Errorf("failed to decode config, %v", err)
 	}
 
@@ -289,36 +290,37 @@ func setupSecrets(conf *Config, fs afero.Fs) (*Config, error) {
 	return &newConf, nil
 }
 
+// readInConfig function reads in the config file for the environment specified in the GO_ENV
 func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 	cp := filepath.Dir(configFile)
-	vi := newViper(cp, filepath.Base(configFile))
+	viper := newViper(cp, filepath.Base(configFile))
 
 	if fs != nil {
-		vi.SetFs(fs)
+		viper.SetFs(fs)
 	}
 
-	if err := vi.ReadInConfig(); err != nil {
+	if err := viper.ReadInConfig(); err != nil {
 		return nil, err
 	}
 
-	if pcf := vi.GetString("inherits"); pcf != "" {
-		cf := vi.ConfigFileUsed()
-		vi = newViper(cp, pcf)
+	if pcf := viper.GetString("inherits"); pcf != "" {
+		cf := viper.ConfigFileUsed()
+		viper = newViper(cp, pcf)
 		if fs != nil {
-			vi.SetFs(fs)
+			viper.SetFs(fs)
 		}
 
-		if err := vi.ReadInConfig(); err != nil {
+		if err := viper.ReadInConfig(); err != nil {
 			return nil, err
 		}
 
-		if v := vi.GetString("inherits"); v != "" {
-			return nil, fmt.Errorf("inherited config '%s' cannot itself inherit '%s'", pcf, v)
+		if value := viper.GetString("inherits"); value != "" {
+			return nil, fmt.Errorf("inherited config '%s' cannot itself inherit '%s'", pcf, value)
 		}
 
-		vi.SetConfigFile(cf)
+		viper.SetConfigFile(cf)
 
-		if err := vi.MergeInConfig(); err != nil {
+		if err := viper.MergeInConfig(); err != nil {
 			return nil, err
 		}
 	}
@@ -326,20 +328,21 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 	for _, e := range os.Environ() {
 		if strings.HasPrefix(e, "GJ_") || strings.HasPrefix(e, "SJ_") {
 			kv := strings.SplitN(e, "=", 2)
-			util.SetKeyValue(vi, kv[0], kv[1])
+			util.SetKeyValue(viper, kv[0], kv[1])
 		}
 	}
 
-	c := &Config{vi: vi}
-	c.Serv.ConfigPath = cp
+	config := &Config{viper: viper}
+	config.Serv.ConfigPath = cp
 
-	if err := vi.Unmarshal(&c); err != nil {
+	if err := viper.Unmarshal(&config); err != nil {
 		return nil, fmt.Errorf("failed to decode config, %v", err)
 	}
 
-	return c, nil
+	return config, nil
 }
 
+// NewConfig function creates a new GraphJin configuration from the provided config string
 func NewConfig(config, format string) (*Config, error) {
 	if format == "" {
 		format = "yaml"
@@ -356,22 +359,23 @@ func NewConfig(config, format string) (*Config, error) {
 		}
 	}
 
-	vi := newViperWithDefaults()
-	vi.SetConfigType(format)
+	viper := newViperWithDefaults()
+	viper.SetConfigType(format)
 
-	if err := vi.ReadConfig(strings.NewReader(config)); err != nil {
+	if err := viper.ReadConfig(strings.NewReader(config)); err != nil {
 		return nil, err
 	}
 
-	c := &Config{vi: vi}
+	c := &Config{viper: viper}
 
-	if err := vi.Unmarshal(&c); err != nil {
+	if err := viper.Unmarshal(&c); err != nil {
 		return nil, fmt.Errorf("failed to decode config, %v", err)
 	}
 
 	return c, nil
 }
 
+// newViperWithDefaults returns a new viper instance with the default settings
 func newViperWithDefaults() *viper.Viper {
 	vi := viper.New()
 
@@ -407,6 +411,7 @@ func newViperWithDefaults() *viper.Viper {
 	return vi
 }
 
+// newViper returns a new viper instance with the default settings
 func newViper(configPath, configFile string) *viper.Viper {
 	vi := newViperWithDefaults()
 	vi.SetConfigName(strings.TrimSuffix(configFile, filepath.Ext(configFile)))
@@ -420,23 +425,28 @@ func newViper(configPath, configFile string) *viper.Viper {
 	return vi
 }
 
-func (c *Config) GetSecret(k string) (string, bool) {
-	v, ok := c.secrets[k]
-	return v, ok
+// GetSecret returns the value of the secret key
+// if it exists
+func (c *Config) GetSecret(key string) (string, bool) {
+	value, ok := c.secrets[key]
+	return value, ok
 }
 
-func (c *Config) GetSecretOrEnv(k string) string {
-	if v, ok := c.GetSecret(k); ok {
-		return v
+// GetSecretOrEnv returns the value of the secret key if
+// it exists or the value of the environment variable
+func (c *Config) GetSecretOrEnv(key string) string {
+	if value, ok := c.GetSecret(key); ok {
+		return value
 	}
-	return os.Getenv(k)
+	return os.Getenv(key)
 }
 
 // func (c *Config) telemetryEnabled() bool {
 // 	return c.Telemetry.Debug || c.Telemetry.Metrics.Exporter != "" || c.Telemetry.Tracing.Exporter != ""
 // }
 
-func (c *Config) RelPath(p string) string {
+// AbsolutePath returns the absolute path of the file
+func (c *Config) AbsolutePath(p string) string {
 	if filepath.IsAbs(p) {
 		return p
 	}
@@ -455,10 +465,11 @@ func (c *Config) rateLimiterEnable() bool {
 	return c.RateLimiter.Rate > 0 && c.RateLimiter.Bucket > 0
 }
 
+// GetConfigName returns the name of the configuration
 func GetConfigName() string {
-	ge := strings.TrimSpace(strings.ToLower(os.Getenv("GO_ENV")))
+	goEnv := strings.TrimSpace(strings.ToLower(os.Getenv("GO_ENV")))
 
-	switch ge {
+	switch goEnv {
 	case "production", "prod":
 		return "prod"
 
@@ -472,6 +483,6 @@ func GetConfigName() string {
 		return "dev"
 
 	default:
-		return ge
+		return goEnv
 	}
 }

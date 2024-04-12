@@ -17,16 +17,19 @@ type Graph struct {
 	graph  [][]int32
 }
 
+// Create a new graph
 func NewGraph() *Graph {
 	return &Graph{edges: make(map[[2]int32][]Edge)}
 }
 
+// AddNode adds a new node to the graph
 func (g *Graph) AddNode() int32 {
 	id := int32(len(g.graph))
 	g.graph = append(g.graph, []int32{})
 	return id
 }
 
+// AddEdge adds a new edge to the graph
 func (g *Graph) AddEdge(from, to, weight int32, name string) (int32, error) {
 	nl := int32(len(g.graph))
 	if from >= nl {
@@ -55,6 +58,7 @@ func (g *Graph) AddEdge(from, to, weight int32, name string) (int32, error) {
 	return id, nil
 }
 
+// UpdateEdge updates the edge with the given ID
 func (g *Graph) UpdateEdge(
 	from, to, edgeID, oppEdgeID int32,
 ) error {
@@ -74,16 +78,18 @@ func (g *Graph) UpdateEdge(
 	return fmt.Errorf("edge not found: %d", edgeID)
 }
 
+// GetEdges returns all edges between the two nodes
 func (g *Graph) GetEdges(from, to int32) []Edge {
 	return g.edges[[2]int32{from, to}]
 }
 
+// AllPaths returns all paths between two nodes
 func (g *Graph) AllPaths(from, to int32) [][]int32 {
 	var paths [][]int32
 	var limit int
 
 	h := newHeap()
-	h.push(path{weight: 0, parent: from, nodes: []int32{from}})
+	h.push(Path{weight: 0, parent: from, nodes: []int32{from}})
 	visited := make(map[[2]int32]struct{})
 
 	for len(*h.paths) > 0 {
@@ -120,7 +126,7 @@ func (g *Graph) AllPaths(from, to int32) [][]int32 {
 			}
 
 			// We calculate cost so far and add in the weight (cost) of this edge.
-			p1 := path{
+			p1 := Path{
 				weight:  p.weight + 1,
 				parent:  pnode,
 				nodes:   append(append([]int32{}, p.nodes...), e),
@@ -135,10 +141,12 @@ func (g *Graph) AllPaths(from, to int32) [][]int32 {
 	return paths
 }
 
+// Connections returns all connections for a given node
 func (g *Graph) Connections(n int32) []int32 {
 	return g.graph[n]
 }
 
+// equals checks if two slices are equal
 func equals(a, b []int32) bool {
 	if len(a) != len(b) {
 		return false

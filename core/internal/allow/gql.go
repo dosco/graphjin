@@ -10,6 +10,7 @@ import (
 
 var incRe = regexp.MustCompile(`(?m)#import \"(.+)\"`)
 
+// readGQL reads a graphql file and resolves all imports
 func readGQL(fs FS, fname string) (gql []byte, err error) {
 	var b bytes.Buffer
 
@@ -28,6 +29,7 @@ func readGQL(fs FS, fname string) (gql []byte, err error) {
 	return
 }
 
+// parseGQL parses a graphql file and resolves all imports
 func parseGQL(fs FS, fname string, r io.Writer) (err error) {
 	b, err := fs.Get(fname)
 	if err != nil {

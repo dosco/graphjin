@@ -13,7 +13,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func startConfigWatcher(s1 *Service) error {
+func startConfigWatcher(s1 *HttpService) error {
 	var watcher *fsnotify.Watcher
 	var err error
 
@@ -59,7 +59,7 @@ func startConfigWatcher(s1 *Service) error {
 	}
 
 	for {
-		s := s1.Load().(*service)
+		s := s1.Load().(*GraphjinService)
 
 		select {
 		case err := <-watcher.Errors:
@@ -88,7 +88,7 @@ func startConfigWatcher(s1 *Service) error {
 			}
 
 			// Check if new config is valid
-			cf := s.conf.RelPath(GetConfigName())
+			cf := s.conf.AbsolutePath(GetConfigName())
 			conf, err := readInConfig(cf, nil)
 			if err != nil {
 				s.log.Error(err)

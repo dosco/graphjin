@@ -9,10 +9,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type configInfo struct {
+type ConfigInfo struct {
 	Inherits string
 }
 
+// NewConfig creates a new config object
 func NewConfig(configPath, configFile string) (c *core.Config, err error) {
 	fs := core.NewOsFS(configPath)
 	if c, err = NewConfigWithFS(fs, configFile); err != nil {
@@ -21,9 +22,10 @@ func NewConfig(configPath, configFile string) (c *core.Config, err error) {
 	return
 }
 
+// NewConfigWithFS creates a new config object using the provided filesystem
 func NewConfigWithFS(fs core.FS, configFile string) (c *core.Config, err error) {
 	c = &core.Config{FS: fs}
-	var ci configInfo
+	var ci ConfigInfo
 
 	if err = readConfig(fs, configFile, &ci); err != nil {
 		return
@@ -47,6 +49,7 @@ func NewConfigWithFS(fs core.FS, configFile string) (c *core.Config, err error) 
 	return
 }
 
+// readConfig reads the config file and unmarshals it into the provided struct
 func readConfig(fs core.FS, configFile string, v interface{}) (err error) {
 	format := filepath.Ext(configFile)
 

@@ -6,8 +6,9 @@ import (
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
 
+// initDBWatcher initializes the database schema watcher
 func (g *GraphJin) initDBWatcher() error {
-	gj := g.Load().(*graphjin)
+	gj := g.Load().(*GraphjinEngine)
 
 	// no schema polling in production
 	if gj.prod {
@@ -35,7 +36,7 @@ func (g *GraphJin) startDBWatcher(ps time.Duration) {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		gj := g.Load().(*graphjin)
+		gj := g.Load().(*GraphjinEngine)
 
 		latestDi, err := sdata.GetDBInfo(
 			gj.db,

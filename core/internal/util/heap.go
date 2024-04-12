@@ -4,24 +4,24 @@ import (
 	hp "container/heap"
 )
 
-type path struct {
+type Path struct {
 	weight  int32
 	parent  int32
 	nodes   []int32
 	visited map[int32]struct{}
 }
 
-type minPath []path
+type MinPath []Path
 
-func (h minPath) Len() int           { return len(h) }
-func (h minPath) Less(i, j int) bool { return h[i].weight < h[j].weight }
-func (h minPath) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h MinPath) Len() int           { return len(h) }
+func (h MinPath) Less(i, j int) bool { return h[i].weight < h[j].weight }
+func (h MinPath) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
 
-func (h *minPath) Push(x interface{}) {
-	*h = append(*h, x.(path))
+func (h *MinPath) Push(x interface{}) {
+	*h = append(*h, x.(Path))
 }
 
-func (h *minPath) Pop() interface{} {
+func (h *MinPath) Pop() interface{} {
 	old := *h
 	n := len(old)
 	x := old[n-1]
@@ -29,19 +29,19 @@ func (h *minPath) Pop() interface{} {
 	return x
 }
 
-type heap struct {
-	paths *minPath
+type Heap struct {
+	paths *MinPath
 }
 
-func newHeap() *heap {
-	return &heap{paths: &minPath{}}
+func newHeap() *Heap {
+	return &Heap{paths: &MinPath{}}
 }
 
-func (h *heap) push(p path) {
+func (h *Heap) push(p Path) {
 	hp.Push(h.paths, p)
 }
 
-func (h *heap) pop() path {
+func (h *Heap) pop() Path {
 	i := hp.Pop(h.paths)
-	return i.(path)
+	return i.(Path)
 }

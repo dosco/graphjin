@@ -17,6 +17,7 @@ import (
 
 var dbURL string
 
+// This is the cobra CLI command for the new subcommand
 func newCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "new <app-name>",
@@ -29,6 +30,7 @@ func newCmd() *cobra.Command {
 	return c
 }
 
+// cmdNew is the handler for the new subcommand
 func cmdNew(cmd *cobra.Command, args []string) {
 	if len(args) != 1 {
 		cmd.Help() //nolint:errcheck

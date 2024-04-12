@@ -116,13 +116,13 @@ type Parser struct {
 	frags map[string]Fragment
 	input []byte // the string being scanned
 	pos   int
-	items []item
+	items []Item
 	json  bool
 	err   error
 }
 
 func Parse(gql []byte) (op Operation, err error) {
-	var l lexer
+	var l Lexer
 
 	if len(gql) == 0 {
 		err = errors.New("empty query")
@@ -758,11 +758,11 @@ func (p *Parser) parseValue() (*Node, error) {
 	return node, nil
 }
 
-func (p *Parser) val(v item) string {
+func (p *Parser) val(v Item) string {
 	return b2s(v.val)
 }
 
-func (p *Parser) vall(v item) string {
+func (p *Parser) vall(v Item) string {
 	lowercase(v.val)
 	return b2s(v.val)
 }
@@ -811,18 +811,18 @@ func (p *Parser) peekVal(values ...[]byte) bool {
 	return false
 }
 
-func (p *Parser) curr() item {
+func (p *Parser) curr() Item {
 	if p.pos == -1 {
-		return item{}
+		return Item{}
 	}
 	return p.items[p.pos]
 }
 
-func (p *Parser) next() item {
+func (p *Parser) next() Item {
 	n := p.pos + 1
 	if n >= len(p.items) {
 		p.err = errEOT
-		return item{_type: itemEOF}
+		return Item{_type: itemEOF}
 	}
 	p.pos = n
 	return p.items[p.pos]

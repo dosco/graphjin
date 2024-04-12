@@ -8,7 +8,7 @@ type Cache struct {
 	cache *lru.TwoQueueCache
 }
 
-func (gj *graphjin) initCache() (err error) {
+func (gj *GraphjinEngine) initCache() (err error) {
 	gj.cache.cache, err = lru.New2Q(500)
 	return
 }

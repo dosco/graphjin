@@ -17,8 +17,9 @@ type Mux interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 }
 
-func routesHandler(s1 *Service, mux Mux, ns *string) (http.Handler, error) {
-	s := s1.Load().(*service)
+// routesHandler is the main handler for all routes
+func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
+	s := s1.Load().(*GraphjinService)
 
 	// Healthcheck API
 	mux.Handle(healthRoute, healthCheckHandler(s1))

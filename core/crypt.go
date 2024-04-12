@@ -7,6 +7,11 @@ import (
 	"encoding/base64"
 )
 
+// encryptValues encrypts the values in the data using the given key
+// data: the data to encrypt
+// encPrefix: the prefix to search for the values to encrypt
+// decPrefix: the prefix to replace the values with
+// nonce: the nonce to use for encryption
 func encryptValues(
 	data, encPrefix, decPrefix, nonce []byte,
 	key [32]byte) ([]byte, error) {
@@ -78,6 +83,10 @@ func encryptValues(
 	return b.Bytes(), nil
 }
 
+// decryptValues decrypts the values in the data using the given key
+// data: the data to decrypt
+// prefix: the prefix to search for the values to decrypt
+// key: the key to use for decryption
 func decryptValues(data, prefix []byte, key [32]byte) ([]byte, error) {
 	var s, e int
 	if e = bytes.Index(data[s:], prefix); e == -1 {

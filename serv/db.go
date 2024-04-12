@@ -29,11 +29,12 @@ const (
 	logLevelDebug
 )
 
-type dbConf struct {
+type DBConf struct {
 	driverName string
 	connString string
 }
 
+// Config holds the configuration for the service
 func NewDB(conf *Config, openDB bool, log *zap.SugaredLogger, fs core.FS) (*sql.DB, error) {
 	return newDB(conf, openDB, false, log, fs)
 }
@@ -45,7 +46,7 @@ func newDB(
 	fs core.FS,
 ) (*sql.DB, error) {
 	var db *sql.DB
-	var dc *dbConf
+	var dc *DBConf
 	var err error
 
 	if cs := conf.DB.ConnString; cs != "" {
@@ -97,43 +98,44 @@ func newDB(
 	}
 }
 
-func initPostgres(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf, error) {
-	c := conf
-	config, _ := pgx.ParseConfig(c.DB.ConnString)
-	if c.DB.Host != "" {
-		config.Host = c.DB.Host
+// initPostgres initializes the postgres database
+func initPostgres(conf *Config, openDB, useTelemetry bool, fs core.FS) (*DBConf, error) {
+	confCopy := conf
+	config, _ := pgx.ParseConfig(confCopy.DB.ConnString)
+	if confCopy.DB.Host != "" {
+		config.Host = confCopy.DB.Host
 	}
-	if c.DB.Port != 0 {
-		config.Port = c.DB.Port
+	if confCopy.DB.Port != 0 {
+		config.Port = confCopy.DB.Port
 	}
-	if c.DB.User != "" {
-		config.User = c.DB.User
+	if confCopy.DB.User != "" {
+		config.User = confCopy.DB.User
 	}
-	if c.DB.Password != "" {
-		config.Password = c.DB.Password
+	if confCopy.DB.Password != "" {
+		config.Password = confCopy.DB.Password
 	}
 
 	if config.RuntimeParams == nil {
 		config.RuntimeParams = map[string]string{}
 	}
 
-	if c.DB.Schema != "" {
-		config.RuntimeParams["search_path"] = c.DB.Schema
+	if confCopy.DB.Schema != "" {
+		config.RuntimeParams["search_path"] = confCopy.DB.Schema
 	}
 
-	if c.AppName != "" {
-		config.RuntimeParams["application_name"] = c.AppName
+	if confCopy.AppName != "" {
+		config.RuntimeParams["application_name"] = confCopy.AppName
 	}
 
 	if openDB {
-		config.Database = c.DB.DBName
+		config.Database = confCopy.DB.DBName
 	}
 
-	if c.DB.EnableTLS {
-		if len(c.DB.ServerName) == 0 {
+	if confCopy.DB.EnableTLS {
+		if len(confCopy.DB.ServerName) == 0 {
 			return nil, errors.New("tls: server_name is required")
 		}
-		if len(c.DB.ServerCert) == 0 {
+		if len(confCopy.DB.ServerCert) == 0 {
 			return nil, errors.New("tls: server_cert is required")
 		}
 
@@ -141,10 +143,10 @@ func initPostgres(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf,
 		var pem []byte
 		var err error
 
-		if strings.Contains(c.DB.ServerCert, pemSig) {
-			pem = []byte(strings.ReplaceAll(c.DB.ServerCert, `\n`, "\n"))
+		if strings.Contains(confCopy.DB.ServerCert, pemSig) {
+			pem = []byte(strings.ReplaceAll(confCopy.DB.ServerCert, `\n`, "\n"))
 		} else {
-			pem, err = fs.Get(c.DB.ServerCert)
+			pem, err = fs.Get(confCopy.DB.ServerCert)
 		}
 
 		if err != nil {
@@ -158,24 +160,24 @@ func initPostgres(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf,
 		config.TLSConfig = &tls.Config{
 			MinVersion: tls.VersionTLS12,
 			RootCAs:    rootCertPool,
-			ServerName: c.DB.ServerName,
+			ServerName: confCopy.DB.ServerName,
 		}
 
-		if len(c.DB.ClientCert) > 0 {
-			if len(c.DB.ClientKey) == 0 {
+		if len(confCopy.DB.ClientCert) > 0 {
+			if len(confCopy.DB.ClientKey) == 0 {
 				return nil, errors.New("tls: client_key is required")
 			}
 
 			clientCert := make([]tls.Certificate, 0, 1)
 			var certs tls.Certificate
 
-			if strings.Contains(c.DB.ClientCert, pemSig) {
+			if strings.Contains(confCopy.DB.ClientCert, pemSig) {
 				certs, err = tls.X509KeyPair(
-					[]byte(strings.ReplaceAll(c.DB.ClientCert, `\n`, "\n")),
-					[]byte(strings.ReplaceAll(c.DB.ClientKey, `\n`, "\n")),
+					[]byte(strings.ReplaceAll(confCopy.DB.ClientCert, `\n`, "\n")),
+					[]byte(strings.ReplaceAll(confCopy.DB.ClientKey, `\n`, "\n")),
 				)
 			} else {
-				certs, err = loadX509KeyPair(fs, c.DB.ClientCert, c.DB.ClientKey)
+				certs, err = loadX509KeyPair(fs, confCopy.DB.ClientCert, confCopy.DB.ClientKey)
 			}
 
 			if err != nil {
@@ -187,10 +189,11 @@ func initPostgres(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf,
 		}
 	}
 
-	return &dbConf{"pgx", stdlib.RegisterConnConfig(config)}, nil
+	return &DBConf{"pgx", stdlib.RegisterConnConfig(config)}, nil
 }
 
-func initMysql(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf, error) {
+// initMysql initializes the mysql database
+func initMysql(conf *Config, openDB, useTelemetry bool, fs core.FS) (*DBConf, error) {
 	var connString string
 	c := conf
 
@@ -204,9 +207,10 @@ func initMysql(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf, er
 		connString += c.DB.DBName
 	}
 
-	return &dbConf{"mysql", connString}, nil
+	return &DBConf{"mysql", connString}, nil
 }
 
+// loadX509KeyPair loads a X509 key pair from a file system
 func loadX509KeyPair(fs core.FS, certFile, keyFile string) (
 	cert tls.Certificate, err error,
 ) {

@@ -18,10 +18,10 @@ type args struct {
 	cindx  int // index of cursor arg
 }
 
-func (gj *graphjin) argList(c context.Context,
+func (gj *GraphjinEngine) argList(c context.Context,
 	md psql.Metadata,
 	fields map[string]json.RawMessage,
-	rc *ReqConfig,
+	rc *RequestConfig,
 	buildJSON bool,
 ) (ar args, err error) {
 	ar = args{cindx: -1}

@@ -21,7 +21,7 @@ func initSecrets(filename string, fs afero.Fs) (map[string]string, error) {
 	inputStore := common.DefaultStoreForPath(filename)
 	ks := []keyservice.KeyServiceClient{keyservice.NewLocalClient()}
 
-	opts := decryptOpts{
+	opts := DecryptOpts{
 		OutputStore: &dotenv.Store{},
 		InputStore:  inputStore,
 		InputPath:   filename,

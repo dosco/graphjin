@@ -72,7 +72,8 @@ type wsState struct {
 	done chan bool
 }
 
-func (s *service) apiV1Ws(w http.ResponseWriter, r *http.Request, ah auth.HandlerFunc) {
+// apiV1Ws handles the websocket connection
+func (s *GraphjinService) apiV1Ws(w http.ResponseWriter, r *http.Request, ah auth.HandlerFunc) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		renderErr(w, err)
@@ -125,7 +126,8 @@ type authHeaders struct {
 	UserID         interface{} `json:"X-User-ID"`
 }
 
-func (s *service) subSwitch(wc *wsConn, req wsReq) (err error) {
+// subSwitch handles the websocket message types
+func (s *GraphjinService) subSwitch(wc *wsConn, req wsReq) (err error) {
 	switch req.Type {
 	case "connection_init":
 		if err = setHeaders(req, wc.r); err != nil {
@@ -191,7 +193,8 @@ func (s *service) subSwitch(wc *wsConn, req wsReq) (err error) {
 	return
 }
 
-func (s *service) waitForData(wc *wsConn, st *wsState, useNext bool) {
+// waitForData waits for data from the subscription
+func (s *GraphjinService) waitForData(wc *wsConn, st *wsState, useNext bool) {
 	var buf bytes.Buffer
 
 	var ptype string
@@ -237,6 +240,7 @@ func (s *service) waitForData(wc *wsConn, st *wsState, useNext bool) {
 	}
 }
 
+// setHeaders sets the headers from the payload
 func setHeaders(req wsReq, r *http.Request) (err error) {
 	if len(req.Payload) == 0 {
 		return
@@ -256,6 +260,7 @@ func setHeaders(req wsReq, r *http.Request) (err error) {
 	return
 }
 
+// sendError sends an error message to the client
 func sendError(wc *wsConn, id string, cerr error) (err error) {
 	m := wsRes{ID: id, Type: "error"}
 	m.Payload.Errors = []core.Error{{Message: cerr.Error()}}

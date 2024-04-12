@@ -30,7 +30,7 @@ type TField struct {
 }
 
 func ParseSchema(schema []byte) (s Schema, err error) {
-	var l lexer
+	var l Lexer
 
 	if len(schema) == 0 {
 		err = errors.New("empty schema")

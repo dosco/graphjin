@@ -30,8 +30,8 @@ var (
 // this template was parsed.
 type Pos int
 
-// item represents a token or text string returned from the scanner.
-type item struct {
+// Item represents a token or text string returned from the scanner.
+type Item struct {
 	_type MType  // The type of this item.
 	pos   Pos    // The starting position, in bytes, of this item in the input string.
 	val   []byte // The value of this item.
@@ -79,29 +79,30 @@ var punctuators = map[rune]MType{
 
 const eof = -1
 
-// stateFn represents the state of the scanner as a function that returns the next state.
-type stateFn func(*lexer) stateFn
+// StateFn represents the state of the scanner as a function that returns the next state.
+type StateFn func(*Lexer) StateFn
 
-// lexer holds the state of the scanner.
-type lexer struct {
+// Lexer holds the state of the scanner.
+type Lexer struct {
 	input  []byte // the string being scanned
 	pos    Pos    // current position in the input
 	start  Pos    // start position of this item
 	width  Pos    // width of last rune read from input
-	items  []item // array of scanned items
-	itemsA [50]item
+	items  []Item // array of scanned items
+	itemsA [50]Item
 	line   int16 // 1+number of newlines seen
 	err    error
 }
 
-var zeroLex = lexer{}
+var zeroLex = Lexer{}
 
-func (l *lexer) Reset() {
+// Reset resets the lexer to scan a new input string.
+func (l *Lexer) Reset() {
 	*l = zeroLex
 }
 
 // next returns the next byte in the input.
-func (l *lexer) next() rune {
+func (l *Lexer) next() rune {
 	if int(l.pos) >= len(l.input) {
 		l.width = 0
 		return eof
@@ -116,14 +117,14 @@ func (l *lexer) next() rune {
 }
 
 // peek returns but does not consume the next rune in the input.
-func (l *lexer) peek() rune {
+func (l *Lexer) peek() rune {
 	r := l.next()
 	l.backup()
 	return r
 }
 
 // backup steps back one rune. Can only be called once per call of next.
-func (l *lexer) backup() {
+func (l *Lexer) backup() {
 	if l.pos != 0 {
 		l.pos -= l.width
 		// Correct newline count.
@@ -133,13 +134,14 @@ func (l *lexer) backup() {
 	}
 }
 
-func (l *lexer) current() []byte {
+// current returns the current bytes of the input.
+func (l *Lexer) current() []byte {
 	return l.input[l.start:l.pos]
 }
 
 // emit passes an item back to the client.
-func (l *lexer) emit(t MType) {
-	l.items = append(l.items, item{t, l.start, l.current(), l.line})
+func (l *Lexer) emit(t MType) {
+	l.items = append(l.items, Item{t, l.start, l.current(), l.line})
 	// Some items contain text internally. If so, count their newlines.
 	if t == itemStringVal {
 		for i := l.start; i < l.pos; i++ {
@@ -151,18 +153,19 @@ func (l *lexer) emit(t MType) {
 	l.start = l.pos
 }
 
-func (l *lexer) emitL(t MType) {
+// emitL passes an item back to the client and lowercases the value.
+func (l *Lexer) emitL(t MType) {
 	lowercase(l.current())
 	l.emit(t)
 }
 
 // ignore skips over the pending input before this point.
-func (l *lexer) ignore() {
+func (l *Lexer) ignore() {
 	l.start = l.pos
 }
 
 // accept consumes the next rune if it's from the valid set.
-func (l *lexer) accept(valid []byte) (rune, bool) {
+func (l *Lexer) accept(valid []byte) (rune, bool) {
 	r := l.next()
 	if r != eof && bytes.ContainsRune(valid, r) {
 		return r, true
@@ -172,7 +175,7 @@ func (l *lexer) accept(valid []byte) (rune, bool) {
 }
 
 // acceptAlphaNum consumes a run of runes while they are alpha nums
-func (l *lexer) acceptAlphaNum() bool {
+func (l *Lexer) acceptAlphaNum() bool {
 	n := 0
 	for r := l.next(); isAlphaNumeric(r); r = l.next() {
 		n++
@@ -182,7 +185,7 @@ func (l *lexer) acceptAlphaNum() bool {
 }
 
 // acceptComment consumes a run of runes while till the end of line
-func (l *lexer) acceptComment() {
+func (l *Lexer) acceptComment() {
 	n := 0
 	for r := l.next(); !isEndOfLine(r); r = l.next() {
 		n++
@@ -190,7 +193,7 @@ func (l *lexer) acceptComment() {
 }
 
 // acceptRun consumes a run of runes from the valid set.
-func (l *lexer) acceptRun(valid []byte) {
+func (l *Lexer) acceptRun(valid []byte) {
 	for bytes.ContainsRune(valid, l.next()) {
 
 	}
@@ -199,15 +202,15 @@ func (l *lexer) acceptRun(valid []byte) {
 
 // errorf returns an error token and terminates the scan by passing
 // back a nil pointer that will be the next state, terminating l.nextItem.
-func (l *lexer) errorf(format string, args ...interface{}) stateFn {
+func (l *Lexer) errorf(format string, args ...interface{}) StateFn {
 	l.err = fmt.Errorf(format, args...)
-	l.items = append(l.items, item{itemError, l.start, l.input[l.start:l.pos], l.line})
+	l.items = append(l.items, Item{itemError, l.start, l.input[l.start:l.pos], l.line})
 	return nil
 }
 
 // lex creates a new scanner for the input string.
-func lex(input []byte) (lexer, error) {
-	var l lexer
+func lex(input []byte) (Lexer, error) {
+	var l Lexer
 
 	if len(input) == 0 {
 		return l, errors.New("empty query")
@@ -226,14 +229,14 @@ func lex(input []byte) (lexer, error) {
 }
 
 // run runs the state machine for the lexer.
-func (l *lexer) run() {
+func (l *Lexer) run() {
 	for state := lexRoot; state != nil; {
 		state = state(l)
 	}
 }
 
 // lexInsideAction scans the elements inside action delimiters.
-func lexRoot(l *lexer) stateFn {
+func lexRoot(l *Lexer) StateFn {
 	r := l.next()
 
 	switch {
@@ -287,7 +290,7 @@ func lexRoot(l *lexer) stateFn {
 }
 
 // lexName scans a name.
-func lexName(l *lexer) stateFn {
+func lexName(l *Lexer) StateFn {
 	for {
 		r := l.next()
 
@@ -317,7 +320,7 @@ func lexName(l *lexer) stateFn {
 }
 
 // lexString scans a string.
-func lexString(l *lexer) stateFn {
+func lexString(l *Lexer) StateFn {
 	if sr, ok := l.accept([]byte(quotesToken)); ok {
 		l.ignore()
 
@@ -351,7 +354,7 @@ func lexString(l *lexer) stateFn {
 // lexNumber scans a number: decimal and float. This isn't a perfect number scanner
 // for instance it accepts "." and "0x0.2" and "089" - but when it's wrong the input
 // is invalid and the parser (via strconv) should notice.
-func lexNumber(l *lexer) stateFn {
+func lexNumber(l *Lexer) StateFn {
 	if !l.scanNumber() {
 		return l.errorf("bad number syntax: %q", l.input[l.start:l.pos])
 	}
@@ -359,7 +362,8 @@ func lexNumber(l *lexer) stateFn {
 	return lexRoot
 }
 
-func (l *lexer) scanNumber() bool {
+// scanNumber scans a number: decimal and float.
+func (l *Lexer) scanNumber() bool {
 	// Optional leading sign.
 	l.accept(signsToken)
 	l.acceptRun(digitToken)
@@ -391,14 +395,17 @@ func isAlphaNumeric(r rune) bool {
 	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
+// equals reports whether b is equal to val.
 func equals(b, val []byte) bool {
 	return bytes.EqualFold(b, val)
 }
 
+// contains reports whether b contains any of the chars.
 func contains(b []byte, chars string) bool {
 	return bytes.ContainsAny(b, chars)
 }
 
+// lowercase lowercases the bytes in b.
 func lowercase(b []byte) {
 	for i := 0; i < len(b); i++ {
 		if b[i] >= 'A' && b[i] <= 'Z' {
@@ -407,7 +414,8 @@ func lowercase(b []byte) {
 	}
 }
 
-func (i item) String() string {
+// String returns a string representation of the item.
+func (i Item) String() string {
 	var v string
 
 	switch i._type {

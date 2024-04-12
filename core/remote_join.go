@@ -11,6 +11,7 @@ import (
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 )
 
+// execRemoteJoin fetches remote data for the marked insertion points
 func (s *gstate) execRemoteJoin(c context.Context) (err error) {
 	// fetch the field name used within the db response json
 	// that are used to mark insertion points and the mapping between
@@ -41,6 +42,7 @@ func (s *gstate) execRemoteJoin(c context.Context) (err error) {
 	return
 }
 
+// resolveRemotes fetches remote data for the marked insertion points
 func (s *gstate) resolveRemotes(
 	ctx context.Context,
 	from []jsn.Field,
@@ -85,7 +87,7 @@ func (s *gstate) resolveRemotes(
 			ctx1, span := s.gj.spanStart(ctx, "Execute Remote Request")
 
 			b, err := r.Fn.Resolve(ctx1, ResolverReq{
-				ID: string(id), Sel: sel, Log: s.gj.log, ReqConfig: s.r.rc,
+				ID: string(id), Sel: sel, Log: s.gj.log, RequestConfig: s.r.requestconfig,
 			})
 			if err != nil {
 				cerr = fmt.Errorf("%s: %s", sel.Table, err)
@@ -121,6 +123,7 @@ func (s *gstate) resolveRemotes(
 	return to, cerr
 }
 
+// parentFieldIds fetches the field name used within the db response json
 func (s *gstate) parentFieldIds() ([][]byte, map[string]*qcode.Select, error) {
 	selects := s.cs.st.qc.Selects
 	remotes := s.cs.st.qc.Remotes
