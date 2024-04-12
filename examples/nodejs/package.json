@@ -7,7 +7,7 @@
   "license": "Apache-2.0",
   "scripts": {},
   "dependencies": {
-    "express": "^4.18.2",
+    "express": "^4.19.2",
     "fs-extra": "^11.1.0",
     "graphjin": "file:../..",
     "mysql2": "^2.3.3",
