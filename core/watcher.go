@@ -31,6 +31,7 @@ func (g *GraphJin) initDBWatcher() error {
 	return nil
 }
 
+// startDBWatcher starts the database schema watcher
 func (g *GraphJin) startDBWatcher(ps time.Duration) {
 	ticker := time.NewTicker(ps)
 	defer ticker.Stop()

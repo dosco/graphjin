@@ -15,6 +15,7 @@ type resItem struct {
 	Fn      Resolver
 }
 
+// newRTMap returns a map of resolver functions
 func (gj *GraphjinEngine) newRTMap() map[string]ResolverFn {
 	return map[string]ResolverFn{
 		"remote_api": func(v ResolverProps) (Resolver, error) {
@@ -23,6 +24,7 @@ func (gj *GraphjinEngine) newRTMap() map[string]ResolverFn {
 	}
 }
 
+// initResolvers initializes the resolvers
 func (gj *GraphjinEngine) initResolvers() error {
 	gj.rmap = make(map[string]resItem)
 
@@ -42,6 +44,7 @@ func (gj *GraphjinEngine) initResolvers() error {
 	return nil
 }
 
+// initRemote initializes the remote resolver
 func (gj *GraphjinEngine) initRemote(
 	rc ResolverConfig, rtmap map[string]ResolverFn,
 ) error {

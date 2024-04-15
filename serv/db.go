@@ -39,6 +39,7 @@ func NewDB(conf *Config, openDB bool, log *zap.SugaredLogger, fs core.FS) (*sql.
 	return newDB(conf, openDB, false, log, fs)
 }
 
+// newDB initializes the database
 func newDB(
 	conf *Config,
 	openDB, useTelemetry bool,

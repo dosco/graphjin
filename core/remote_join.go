@@ -151,6 +151,7 @@ func (s *gstate) parentFieldIds() ([][]byte, map[string]*qcode.Select, error) {
 	return fm, sm, nil
 }
 
+// fieldsToList converts a list of qcode.Field to a list of strings
 func fieldsToList(fields []qcode.Field) []string {
 	var f []string
 

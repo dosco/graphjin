@@ -10,6 +10,7 @@ import (
 	"github.com/dosco/graphjin/core/v3"
 )
 
+// initLogLevel initializes the log level
 func initLogLevel(s *GraphjinService) {
 	switch s.conf.LogLevel {
 	case "debug":
@@ -25,6 +26,7 @@ func initLogLevel(s *GraphjinService) {
 	}
 }
 
+// validateConf validates the configuration
 func validateConf(s *GraphjinService) {
 	var anonFound bool
 
@@ -40,6 +42,7 @@ func validateConf(s *GraphjinService) {
 	}
 }
 
+// initFS initializes the file system
 func (s *GraphjinService) initFS() error {
 	basePath, err := s.basePath()
 	if err != nil {
@@ -53,6 +56,7 @@ func (s *GraphjinService) initFS() error {
 	return nil
 }
 
+// initConfig initializes the configuration
 func (s *GraphjinService) initConfig() error {
 	c := s.conf
 	c.dirty = true
@@ -96,6 +100,7 @@ func (s *GraphjinService) initConfig() error {
 	return nil
 }
 
+// initDB initializes the database
 func (s *GraphjinService) initDB() error {
 	var err error
 
@@ -110,6 +115,7 @@ func (s *GraphjinService) initDB() error {
 	return nil
 }
 
+// basePath returns the base path
 func (s *GraphjinService) basePath() (string, error) {
 	if s.conf.Serv.ConfigPath == "" {
 		if cp, err := os.Getwd(); err == nil {

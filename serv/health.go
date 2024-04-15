@@ -10,6 +10,7 @@ import (
 
 var healthyResponse = []byte("All's Well")
 
+// healthCheckHandler returns a handler that checks the health of the service
 func healthCheckHandler(s1 *HttpService) http.Handler {
 	h := func(w http.ResponseWriter, r *http.Request) {
 		s := s1.Load().(*GraphjinService)

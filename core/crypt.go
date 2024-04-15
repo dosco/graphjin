@@ -160,6 +160,7 @@ func decryptValues(data, prefix []byte, key [32]byte) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
+// firstCursorValue returns the first cursor value in the data
 func firstCursorValue(data []byte, prefix []byte) []byte {
 	var buf [100]byte
 	pf := append(buf[:0], prefix...)

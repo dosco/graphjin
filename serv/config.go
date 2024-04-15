@@ -453,14 +453,17 @@ func (c *Config) AbsolutePath(p string) string {
 	return filepath.Join(c.Serv.ConfigPath, p)
 }
 
+// SetHash sets the hash value of the configuration
 func (c *Config) SetHash(hash string) {
 	c.hash = hash
 }
 
+// SetName sets the name of the configuration
 func (c *Config) SetName(name string) {
 	c.name = name
 }
 
+// rateLimiterEnable returns true if the rate limiter is enabled
 func (c *Config) rateLimiterEnable() bool {
 	return c.RateLimiter.Rate > 0 && c.RateLimiter.Bucket > 0
 }

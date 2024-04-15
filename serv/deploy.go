@@ -23,6 +23,7 @@ type depResp struct {
 	name, pname string
 }
 
+// saveConfig saves the config to the database
 func (s *GraphjinService) saveConfig(c context.Context, name, bundle string) (*depResp, error) {
 	var dres depResp
 
@@ -139,6 +140,7 @@ func (s *GraphjinService) saveConfig(c context.Context, name, bundle string) (*d
 	return &dres, nil
 }
 
+// rollbackConfig rolls back the config to the previous one
 func (s *GraphjinService) rollbackConfig(c context.Context) (*depResp, error) {
 	var dres depResp
 
@@ -216,6 +218,7 @@ type adminParams struct {
 	params  map[string]string
 }
 
+// getAdminParams fetches the admin params from the database
 func getAdminParams(tx *sql.Tx) (adminParams, error) {
 	var ap adminParams
 
@@ -259,6 +262,7 @@ func getAdminParams(tx *sql.Tx) (adminParams, error) {
 	return ap, nil
 }
 
+// startHotDeployWatcher starts the hot deploy watcher
 func startHotDeployWatcher(s1 *HttpService) error {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
@@ -322,6 +326,7 @@ type activeBundle struct {
 	name, hash, bundle string
 }
 
+// fetchActiveBundle fetches the active bundle from the database
 func fetchActiveBundle(db *sql.DB) (*activeBundle, error) {
 	var ab activeBundle
 
@@ -346,6 +351,7 @@ func fetchActiveBundle(db *sql.DB) (*activeBundle, error) {
 	return &ab, nil
 }
 
+// deployBundle deploys the bundle to the server
 func deployBundle(s1 *HttpService, name, hash, confFile, bundle string) error {
 	bfs, err := bundle2Fs(name, hash, confFile, bundle)
 	if err != nil {
@@ -360,6 +366,7 @@ type bundleFs struct {
 	fs   afero.Fs
 }
 
+// bundle2Fs converts the bundle to a filesystem
 func bundle2Fs(name, hash, confFile, bundle string) (bundleFs, error) {
 	var bfs bundleFs
 

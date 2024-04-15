@@ -82,6 +82,7 @@ func setup(cpath string) {
 	}
 }
 
+// initDB is a helper function to initialize the database connection
 func initDB(openDB bool) {
 	var err error
 
@@ -96,6 +97,7 @@ func initDB(openDB bool) {
 	dbOpened = openDB
 }
 
+// newLogger creates a new logger
 func newLogger(json bool) *zap.Logger {
 	econf := zapcore.EncoderConfig{
 		MessageKey:     "msg",

@@ -108,14 +108,17 @@ func (s *GraphjinService) isAdminSecret(r *http.Request) bool {
 	return (err == nil) && bytes.Equal(v1, s.asec[:])
 }
 
+// badReq sends a bad request response
 func badReq(w http.ResponseWriter, msg string) {
 	http.Error(w, msg, http.StatusBadRequest)
 }
 
+// intErr sends an internal server error response
 func intErr(w http.ResponseWriter, msg string) {
 	http.Error(w, msg, http.StatusInternalServerError)
 }
 
+// authFail sends an unauthorized response
 func authFail(w http.ResponseWriter) {
 	http.Error(w, "auth failed", http.StatusUnauthorized)
 }

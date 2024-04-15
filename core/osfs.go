@@ -11,12 +11,15 @@ type OSFS struct {
 	basePath string
 }
 
+// NewOsFS creates a new OSFS instance
 func NewOsFS(basePath string) *OSFS { return &OSFS{basePath: basePath} }
 
+// Get returns the file content
 func (f *OSFS) Get(path string) ([]byte, error) {
 	return os.ReadFile(filepath.Join(f.basePath, path))
 }
 
+// Put writes the data to the file
 func (f *OSFS) Put(path string, data []byte) (err error) {
 	path = filepath.Join(f.basePath, path)
 
@@ -32,12 +35,14 @@ func (f *OSFS) Put(path string, data []byte) (err error) {
 	return os.WriteFile(path, data, os.ModePerm)
 }
 
+// Exists checks if the file exists
 func (f *OSFS) Exists(path string) (ok bool, err error) {
 	path = filepath.Join(f.basePath, path)
 	ok, err = f.exists(path)
 	return
 }
 
+// Remove deletes the file
 func (f *OSFS) exists(path string) (ok bool, err error) {
 	if _, err = os.Stat(path); err == nil {
 		ok = true

@@ -55,6 +55,7 @@ type errorResp struct {
 	Errors []string `json:"errors"`
 }
 
+// apiV1Handler is the main handler for all API requests
 func apiV1Handler(s1 *HttpService, ns *string, h http.Handler, ah auth.HandlerFunc) http.Handler {
 	var zlog *zap.Logger
 	s := s1.Load().(*GraphjinService)
@@ -107,6 +108,7 @@ func apiV1Handler(s1 *HttpService, ns *string, h http.Handler, ah auth.HandlerFu
 	return h
 }
 
+// apiV1GraphQLHandler handles the GraphQL API requests
 func (s1 *HttpService) apiV1GraphQL(ns *string, ah auth.HandlerFunc) http.Handler {
 	dtrace := otel.GetTextMapPropagator()
 
@@ -205,6 +207,7 @@ func (s1 *HttpService) apiV1GraphQL(ns *string, ah auth.HandlerFunc) http.Handle
 	return http.HandlerFunc(h)
 }
 
+// apiV1Rest returns a handler that handles the REST API requests
 func (s1 *HttpService) apiV1Rest(ns *string, ah auth.HandlerFunc) http.Handler {
 	rLen := len(routeREST)
 	dtrace := otel.GetTextMapPropagator()
@@ -288,6 +291,7 @@ func (s1 *HttpService) apiV1Rest(ns *string, ah auth.HandlerFunc) http.Handler {
 	return http.HandlerFunc(h)
 }
 
+// responseHandler handles the response from the GraphQL API
 func (s *GraphjinService) responseHandler(ct context.Context,
 	w http.ResponseWriter,
 	r *http.Request,
@@ -330,6 +334,7 @@ func (s *GraphjinService) responseHandler(ct context.Context,
 	}
 }
 
+// reqLog logs the request details
 func (s *GraphjinService) reqLog(res *core.Result, rc core.RequestConfig, resTimeMs int64, err error) {
 	var fields []zapcore.Field
 	var sql string
@@ -364,6 +369,7 @@ func (s *GraphjinService) reqLog(res *core.Result, rc core.RequestConfig, resTim
 	}
 }
 
+// setHeaderVars sets the header variables
 func (s *GraphjinService) setHeaderVars(r *http.Request) map[string]interface{} {
 	vars := make(map[string]interface{})
 	for k, v := range s.conf.Core.HeaderVars {
@@ -377,11 +383,12 @@ func (s *GraphjinService) setHeaderVars(r *http.Request) map[string]interface{} 
 	return vars
 }
 
+// apqEnabled checks if the APQ is enabled
 func (r gqlReq) apqEnabled() bool {
 	return r.Ext.Persisted.Sha256Hash != ""
 }
 
-// nolint:errcheck
+// renderErr renders the error response
 func renderErr(w http.ResponseWriter, err error) {
 	if err == errUnauthorized {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -393,6 +400,7 @@ func renderErr(w http.ResponseWriter, err error) {
 	}
 }
 
+// parseBody parses the request body
 func parseBody(r *http.Request) ([]byte, error) {
 	b, err := io.ReadAll(io.LimitReader(r.Body, maxReadBytes))
 	if err != nil {
@@ -402,6 +410,7 @@ func parseBody(r *http.Request) ([]byte, error) {
 	return b, nil
 }
 
+// newDTrace creates a new DTrace
 func newDTrace(dtrace propagation.TextMapPropagator, r *http.Request) (context.Context, []trace.SpanStartOption) {
 	ctx := dtrace.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
 

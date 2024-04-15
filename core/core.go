@@ -364,6 +364,7 @@ func (r *Result) CacheControl() string {
 // 		append(c.res.Extensions.Tracing.Execution.Resolvers, tr)
 // }
 
+// debugLogStmt logs the query statement for debugging
 func (s *gstate) debugLogStmt() {
 	st := s.cs.st
 

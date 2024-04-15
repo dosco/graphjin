@@ -30,6 +30,7 @@ type Auth struct {
 	AuthSalt string
 }
 
+// NewAuth creates a new Auth instance
 func NewAuth(version, secret string) (*Auth, error) {
 	ra := &Auth{
 		Secret:   secret,
@@ -60,6 +61,7 @@ func NewAuth(version, secret string) (*Auth, error) {
 	return ra, nil
 }
 
+// ParseCookie parses the rails cookie and returns the user ID
 func (ra Auth) ParseCookie(cookie string) (userID string, err error) {
 	var dcookie []byte
 
@@ -87,6 +89,7 @@ func (ra Auth) ParseCookie(cookie string) (userID string, err error) {
 	return
 }
 
+// ParseCookie parses the rails cookie and returns the user ID
 func ParseCookie(cookie string) (string, error) {
 	if cookie[0] != '{' {
 		return getUserId4([]byte(cookie))
@@ -95,6 +98,7 @@ func ParseCookie(cookie string) (string, error) {
 	return getUserId([]byte(cookie))
 }
 
+// getUserId extracts the user ID from the session data
 func getUserId(data []byte) (userID string, err error) {
 	var sessionData map[string]interface{}
 
@@ -135,10 +139,11 @@ func getUserId(data []byte) (userID string, err error) {
 	return
 }
 
+// getUserId4 extracts the user ID from the session data
 func getUserId4(data []byte) (userID string, err error) {
 	sessionData, err := marshal.CreateMarshalledObject(data).GetAsMap()
 	if err != nil {
-		return
+		return "", err
 	}
 
 	wardenData, ok := sessionData["warden.user.user.key"]

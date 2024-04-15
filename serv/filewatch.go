@@ -13,6 +13,7 @@ import (
 	"github.com/pkg/errors"
 )
 
+// startConfigWatcher watches for changes in the config file
 func startConfigWatcher(s1 *HttpService) error {
 	var watcher *fsnotify.Watcher
 	var err error
