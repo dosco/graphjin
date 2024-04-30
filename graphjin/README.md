@@ -355,12 +355,6 @@ We're happy to help you leverage GraphJin reach out if you have questions
 
 [discord/graphjin](https://discord.gg/6pSWCTZ) (Chat)
 
-## Production use
-
-The popular [42papers.com](https://42papers.com) site for discovering trending papers in AI and Computer Science uses GraphJin for it's entire backend.
-
 ## License
 
 [Apache Public License 2.0](https://opensource.org/licenses/Apache-2.0)
-
-Copyright (c) 2022 Vikram Rangnekar
