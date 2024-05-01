@@ -272,6 +272,10 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 		for i := 0; i < len(sel.OrderBy); i++ {
 			c.w.WriteString(`, MAX(__cur_`)
 			int32String(c.w, int32(i))
+			// Postgres rejects MAX(uuid)
+			if sel.OrderBy[i].Col.Type == "uuid" {
+				c.w.WriteString(`::text`)
+			}
 			c.w.WriteString(`)`)
 			// 	c.w.WriteString(`, CAST(MAX(__cur_`)
 			// 	int32String(c.w, int32(i))
