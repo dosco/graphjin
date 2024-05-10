@@ -115,7 +115,6 @@ func TestMain(m *testing.M) {
 		}
 
 		db, err = sql.Open(v.driver, fmt.Sprintf(v.connstr, con.DefaultAddress()))
-
 		if err != nil {
 			_ = gnomock.Stop(con)
 			panic(err)

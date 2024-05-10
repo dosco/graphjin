@@ -22,7 +22,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
-	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.25.0"
 	"go.opentelemetry.io/otel/trace"
 
 	"go.uber.org/zap"
@@ -405,13 +405,25 @@ func parseBody(r *http.Request) ([]byte, error) {
 func newDTrace(dtrace propagation.TextMapPropagator, r *http.Request) (context.Context, []trace.SpanStartOption) {
 	ctx := dtrace.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
 
+	atrr := []attribute.KeyValue{
+		semconv.ServiceName("Graphjin"),
+	}
+
+	if v := r.Header.Get("User-Agent"); v != "" {
+		atrr = append(atrr, semconv.HTTPUserAgent(v))
+	}
+	if v := r.Method; v != "" {
+		atrr = append(atrr, semconv.HTTPMethod(v))
+	}
+	if v := r.URL.Path; v != "" {
+		atrr = append(atrr, semconv.HTTPURL(v))
+	}
+	if v := r.URL.Scheme; v != "" {
+		atrr = append(atrr, semconv.HTTPScheme(v))
+	}
+
 	opts := []trace.SpanStartOption{
-		trace.WithAttributes(semconv.NetAttributesFromHTTPRequest(
-			"tcp", r)...),
-		trace.WithAttributes(semconv.EndUserAttributesFromHTTPRequest(
-			r)...),
-		trace.WithAttributes(semconv.HTTPServerAttributesFromHTTPRequest(
-			"GraphJin", r.URL.Path, r)...),
+		trace.WithAttributes(atrr...),
 		trace.WithSpanKind(trace.SpanKindServer),
 	}
 
