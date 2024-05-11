@@ -106,7 +106,11 @@ func Example_queryWithUser() {
 func Example_queryWithDynamicOrderBy() {
 	gql := `
 	query getProducts {
-		products(order_by: $order, where: { id: { lt: 6 } }, limit: 5) {
+		products(
+			order_by: $order, 
+			where: { id: { lt: 6 } }, 
+			limit: 5,
+			before: $cursor) {
 			id
 			price
 		}
@@ -124,6 +128,12 @@ func Example_queryWithDynamicOrderBy() {
 		}},
 	})
 
+	type result struct {
+		Products json.RawMessage `json:"products"`
+		Cursor   string          `json:"products_cursor"`
+	}
+	var val result
+
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -132,23 +142,45 @@ func Example_queryWithDynamicOrderBy() {
 	vars1 := json.RawMessage(`{ "order": "price_and_id" }`)
 
 	res1, err1 := gj.GraphQL(context.Background(), gql, vars1, nil)
-	if err != nil {
-		fmt.Println(err1)
-	} else {
-		printJSON(res1.Data)
+	if err1 != nil {
+		fmt.Println(err)
+		return
 	}
+
+	if err := json.Unmarshal(res1.Data, &val); err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	if val.Cursor == "" {
+		fmt.Println("product_cursor value missing")
+		return
+	}
+	printJSONString(string(val.Products))
 
 	vars2 := json.RawMessage(`{ "order": "just_id" }`)
 
 	res2, err2 := gj.GraphQL(context.Background(), gql, vars2, nil)
-	if err != nil {
-		fmt.Println(err2)
-	} else {
-		printJSON(res2.Data)
+	if err2 != nil {
+		fmt.Println(err)
+		return
 	}
+
+	if err := json.Unmarshal(res2.Data, &val); err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	if val.Cursor == "" {
+		fmt.Println("product_cursor value missing")
+		return
+	}
+
+	printJSONString(string(val.Products))
+
 	// Output:
-	//{"products":[{"id":5,"price":15.5},{"id":4,"price":14.5},{"id":3,"price":13.5},{"id":2,"price":12.5},{"id":1,"price":11.5}]}
-	//{"products":[{"id":1,"price":11.5},{"id":2,"price":12.5},{"id":3,"price":13.5},{"id":4,"price":14.5},{"id":5,"price":15.5}]}
+	//[{"id":5,"price":15.5},{"id":4,"price":14.5},{"id":3,"price":13.5},{"id":2,"price":12.5},{"id":1,"price":11.5}]
+	//[{"id":1,"price":11.5},{"id":2,"price":12.5},{"id":3,"price":13.5},{"id":4,"price":14.5},{"id":5,"price":15.5}]
 }
 
 func Example_queryWithNestedOrderBy() {
