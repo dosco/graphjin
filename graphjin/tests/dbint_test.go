@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"regexp"
 	"testing"
 
 	"github.com/dosco/graphjin/core/v3"
@@ -150,4 +151,11 @@ func stdJSON(val []byte) string {
 
 func printJSON(val []byte) {
 	fmt.Println(stdJSON(val))
+}
+
+var re = regexp.MustCompile(`([:,])\s|`)
+
+func printJSONString(val string) {
+	v := re.ReplaceAllString(val, `$1`)
+	fmt.Println(v)
 }

@@ -132,11 +132,18 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 			table = ex.Left.Table
 		}
 
+		var colName string
+		if ex.Left.ColName != "" {
+			colName = ex.Left.ColName
+		} else {
+			colName = ex.Left.Col.Name
+		}
+
 		c.w.WriteString(`((`)
 		if ex.Left.ID == -1 {
-			c.colWithTable(table, ex.Left.Col.Name)
+			c.colWithTable(table, colName)
 		} else {
-			c.colWithTableID(table, ex.Left.ID, ex.Left.Col.Name)
+			c.colWithTableID(table, ex.Left.ID, colName)
 		}
 		c.w.WriteString(`) `)
 	}
@@ -344,6 +351,13 @@ func (c *expContext) renderVal(ex *qcode.Exp) {
 			table = ex.Right.Table
 		}
 
+		var colName string
+		if ex.Right.ColName != "" {
+			colName = ex.Right.ColName
+		} else {
+			colName = ex.Right.Col.Name
+		}
+
 		pid := ex.Right.ID
 		if ex.Right.ID != -1 {
 			pid = ex.Right.ID
@@ -354,9 +368,9 @@ func (c *expContext) renderVal(ex *qcode.Exp) {
 			c.renderValArrayColumn(ex, table, pid)
 		} else {
 			if pid == -1 {
-				c.colWithTable(table, ex.Right.Col.Name)
+				c.colWithTable(table, colName)
 			} else {
-				c.colWithTableID(table, pid, ex.Right.Col.Name)
+				c.colWithTableID(table, pid, colName)
 			}
 		}
 		c.w.WriteString(`)`)

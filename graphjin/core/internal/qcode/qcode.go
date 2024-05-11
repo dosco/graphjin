@@ -166,9 +166,10 @@ type Exp struct {
 	OrderBy bool
 
 	Left struct {
-		ID    int32
-		Table string
-		Col   sdata.DBColumn
+		ID      int32
+		Table   string
+		Col     sdata.DBColumn
+		ColName string
 	}
 	Right struct {
 		ValType  ValType
@@ -176,6 +177,7 @@ type Exp struct {
 		ID       int32
 		Table    string
 		Col      sdata.DBColumn
+		ColName  string
 		ListType ValType
 		ListVal  []string
 		Path     []string
@@ -871,11 +873,16 @@ func (co *Compiler) addSeekPredicate(sel *Select) {
 	obLen := len(sel.OrderBy)
 
 	if obLen != 0 {
+		ob := sel.OrderBy[0]
 		or = newExpOp(OpOr)
 
 		isnull := newExpOp(OpIsNull)
 		isnull.Left.Table = "__cur"
-		isnull.Left.Col = sel.OrderBy[0].Col
+		isnull.Left.Col = ob.Col
+
+		if ob.Key != "" {
+			isnull.Left.ColName = ob.Col.Name + "_" + ob.Key
+		}
 
 		or.Children = []*Exp{isnull}
 	}
@@ -894,6 +901,10 @@ func (co *Compiler) addSeekPredicate(sel *Select) {
 			f.Left.Col = ob.Col
 			f.Right.Table = "__cur"
 			f.Right.Col = ob.Col
+
+			if ob.Key != "" {
+				f.Right.ColName = ob.Col.Name + "_" + ob.Key
+			}
 
 			switch {
 			case i > 0 && n != i:
@@ -916,6 +927,10 @@ func (co *Compiler) addSeekPredicate(sel *Select) {
 
 				isnull2 := newExpOp(OpIsNull)
 				isnull2.Left.Col = ob.Col
+
+				if ob.Key != "" {
+					isnull1.Left.ColName = ob.Col.Name + "_" + ob.Key
+				}
 
 				or1 := newExpOp(OpOr)
 				or1.Children = append(or.Children, isnull1, isnull2, f)
