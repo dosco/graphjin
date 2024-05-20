@@ -342,24 +342,19 @@ func (s *service) reqLog(res *core.Result, rc core.ReqConfig, resTimeMs int64, e
 			zap.String("role", res.Role()),
 			zap.Int64("responseTimeMs", resTimeMs),
 		}
-
-		if s.conf.Core.DebugReplaceVars {
-			var vars map[string]interface{}
-			if err := json.Unmarshal(res.Vars, &vars); err == nil {
-				for i := 1; ; i++ {
-					placeholder := fmt.Sprintf("$%d", i)
-					if val, ok := vars[getKeyByIndex(vars, i-1)]; ok {
-						sql = replacePlaceholder(sql, placeholder, val)
-					} else {
-						break
-					}
-				}
-			}
-		}
 	}
 
 	if ns, ok := rc.GetNamespace(); ok {
 		fields = append(fields, zap.String("namespace", ns))
+	}
+
+	if res.Vars != nil && s.conf.Core.LogSQLVars {
+		var vars map[string]interface{}
+		err := json.Unmarshal(res.Vars, &vars)
+		if err != nil {
+			s.log.Error("failed to unmarshal sql vars", zap.Error(err))
+		}
+		fields = append(fields, zap.Any("sqlVars", vars))
 	}
 
 	if sql != "" && s.logLevel >= logLevelDebug {
@@ -375,34 +370,6 @@ func (s *service) reqLog(res *core.Result, rc core.ReqConfig, resTimeMs int64, e
 		s.zlog.Error("query failed", fields...)
 	} else {
 		s.zlog.Info("query", fields...)
-	}
-}
-
-func getKeyByIndex(m map[string]interface{}, index int) string {
-	i := 0
-	for k := range m {
-		if i == index {
-			return k
-		}
-		i++
-	}
-	return ""
-}
-
-func replacePlaceholder(sql, placeholder string, value interface{}) string {
-	switch v := value.(type) {
-	case string:
-		valStr := fmt.Sprintf("'%s'", v)
-		return strings.Replace(sql, placeholder, valStr, -1)
-	case int, int64, float64:
-		valStr := fmt.Sprintf("%v", v)
-		return strings.Replace(sql, placeholder, valStr, -1)
-	case bool:
-		valStr := fmt.Sprintf("%t", v)
-		return strings.Replace(sql, placeholder, valStr, -1)
-	default:
-		valStr := fmt.Sprintf("%v", v)
-		return strings.Replace(sql, placeholder, valStr, -1)
 	}
 }
 

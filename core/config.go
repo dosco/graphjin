@@ -69,8 +69,8 @@ type Config struct {
 	// Log warnings and other debug information
 	Debug bool `jsonschema:"title=Debug,default=false"`
 
-	// Replace variable placeholders in the debug sql query with actual values
-	DebugReplaceVars bool `mapstructure:"debug_replace_vars" json:"debug_replace_vars" yaml:"debug_replace_vars" jsonschema:"title=Debug Replace Variables,default=false"`
+	// Log SQL Query variable values
+	LogSQLVars bool `mapstructure:"log_sql_vars" json:"log_sql_vars" yaml:"log_sql_vars" jsonschema:"title=Log SQL Variables,default=false"`
 
 	// Database polling duration (in seconds) used by subscriptions to
 	// query for updates.
