@@ -70,7 +70,7 @@ type Config struct {
 	Debug bool `jsonschema:"title=Debug,default=false"`
 
 	// Log SQL Query variable values
-	LogSQLVars bool `mapstructure:"log_sql_vars" json:"log_sql_vars" yaml:"log_sql_vars" jsonschema:"title=Log SQL Variables,default=false"`
+	LogVars bool `mapstructure:"log_vars" json:"log_vars" yaml:"log_vars" jsonschema:"title=Log Variables,default=false"`
 
 	// Database polling duration (in seconds) used by subscriptions to
 	// query for updates.
