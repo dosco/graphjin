@@ -348,13 +348,13 @@ func (s *service) reqLog(res *core.Result, rc core.ReqConfig, resTimeMs int64, e
 		fields = append(fields, zap.String("namespace", ns))
 	}
 
-	if res.Vars != nil && s.conf.Core.LogSQLVars {
+	if res.Vars != nil && s.conf.Core.LogVars {
 		var vars map[string]interface{}
 		err := json.Unmarshal(res.Vars, &vars)
 		if err != nil {
 			s.log.Error("failed to unmarshal sql vars", zap.Error(err))
 		}
-		fields = append(fields, zap.Any("sqlVars", vars))
+		fields = append(fields, zap.Any("vars", vars))
 	}
 
 	if sql != "" && s.logLevel >= logLevelDebug {
