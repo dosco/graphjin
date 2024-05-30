@@ -10,7 +10,7 @@
     "express": "^4.18.2",
     "fs-extra": "^11.1.0",
     "graphjin": "file:../..",
-    "mysql2": "^2.3.3",
+    "mysql2": "^3.9.8",
     "pg-pool": "^3.5.2"
   },
   "devDependencies": {
