@@ -5,6 +5,7 @@
 
 # GPG Key
 # gpg --armor --export-secret-key <email> | pbcopy
+version: 2
 
 before:
   hooks:
@@ -71,23 +72,23 @@ nfpms:
       - rpm
 
 brews:
-  - tap:
+  - repository:
       owner: dosco
       name: homebrew-graphjin
-    folder: Formula
+    directory: Formula
     homepage: https://graphjin.com
     description: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler."
     license: Apache-2.0
     skip_upload: auto
 
-scoop:
-  bucket:
-    owner: dosco
-    name: graphjin-scoop
-  commit_msg_template: "Scoop update for {{ .ProjectName }} version {{ .Tag }}"
-  homepage: https://graphjin.com
-  description: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler."
-  license: Apache-2.0
+scoops:
+  - repository:
+      owner: dosco
+      name: graphjin-scoop
+    commit_msg_template: "Scoop update for {{ .ProjectName }} version {{ .Tag }}"
+    homepage: https://graphjin.com
+    description: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler."
+    license: Apache-2.0
 # snapcrafts:
 #   - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 #     summary: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler"
