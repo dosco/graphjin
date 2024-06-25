@@ -76,7 +76,7 @@ jobs:
         with:
           distribution: goreleaser
           version: latest
-          args: release --rm-dist
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GR_TOKEN }}
           GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
