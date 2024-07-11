@@ -125,9 +125,9 @@ func initPostgres(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf,
 		config.RuntimeParams["application_name"] = c.AppName
 	}
 
-	if openDB {
-		config.Database = c.DB.DBName
-	}
+	// if openDB {
+	config.Database = c.DB.DBName
+	// }
 
 	if c.DB.EnableTLS {
 		if len(c.DB.ServerName) == 0 {

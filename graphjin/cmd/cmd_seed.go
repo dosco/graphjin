@@ -99,7 +99,6 @@ func compileAndRunJS(seed string, db *sql.DB) error {
 		"plugins": []string{
 			"proposal-async-generator-functions",
 			"proposal-class-properties",
-			"proposal-dynamic-import",
 			"proposal-json-strings",
 			"proposal-nullish-coalescing-operator",
 			"proposal-numeric-separator",
@@ -327,7 +326,6 @@ func importCSV(table, filename string, sep string, db *sql.DB) int64 {
 			pgx.Identifier{table},
 			cols,
 			s)
-
 		if err != nil {
 			err = fmt.Errorf("%w (line no %d)", err, s.i)
 			log.Fatalf("Error with copy-from: %s", err)
