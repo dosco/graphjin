@@ -189,7 +189,7 @@ var stdTypes = []FullType{
 	},
 }
 
-type introspection struct {
+type Introspection struct {
 	schema      *sdata.DBSchema
 	camelCase   bool
 	types       map[string]FullType
@@ -202,7 +202,7 @@ type introspection struct {
 func (gj *GraphjinEngine) introQuery() (result json.RawMessage, err error) {
 
 	// Initialize the introscpection object
-	in := introspection{
+	in := Introspection{
 		schema:      gj.schema,
 		camelCase:   gj.conf.EnableCamelcase,
 		types:       make(map[string]FullType),
@@ -290,7 +290,7 @@ func (gj *GraphjinEngine) introQuery() (result json.RawMessage, err error) {
 }
 
 // addTable adds a table to the introspection schema
-func (in *introspection) addTable(table sdata.DBTable, alias string) (err error) {
+func (in *Introspection) addTable(table sdata.DBTable, alias string) (err error) {
 	if table.Blocked || len(table.Columns) == 0 {
 		return
 	}
@@ -328,7 +328,7 @@ func (in *introspection) addTable(table sdata.DBTable, alias string) (err error)
 }
 
 // addTypeTo adds a type to the introspection schema
-func (in *introspection) addTypeTo(op string, ft FullType) {
+func (in *Introspection) addTypeTo(op string, ft FullType) {
 	qt := in.types[op]
 	qt.Fields = append(qt.Fields, FieldObject{
 		Name:        ft.Name,
@@ -340,7 +340,7 @@ func (in *introspection) addTypeTo(op string, ft FullType) {
 }
 
 // getName returns the name of the type
-func (in *introspection) getName(name string) string {
+func (in *Introspection) getName(name string) string {
 	if in.camelCase {
 		return util.ToCamel(name)
 	} else {
@@ -349,7 +349,7 @@ func (in *introspection) getName(name string) string {
 }
 
 // addExpTypes adds the expression types to the introspection schema
-func (in *introspection) addExpTypes(exps []exp, name string, rt *TypeRef) {
+func (in *Introspection) addExpTypes(exps []exp, name string, rt *TypeRef) {
 	ft := FullType{
 		Kind:        KIND_INPUT_OBJ,
 		Name:        (name + SUFFIX_EXP),
@@ -372,12 +372,12 @@ func (in *introspection) addExpTypes(exps []exp, name string, rt *TypeRef) {
 }
 
 // addTableType adds a table type to the introspection schema
-func (in *introspection) addTableType(t sdata.DBTable, alias string) (ft FullType, err error) {
+func (in *Introspection) addTableType(t sdata.DBTable, alias string) (ft FullType, err error) {
 	return in.addTableTypeWithDepth(t, alias, 0)
 }
 
 // addTableTypeWithDepth adds a table type with depth to the introspection schema
-func (in *introspection) addTableTypeWithDepth(
+func (in *Introspection) addTableTypeWithDepth(
 	table sdata.DBTable, alias string, depth int,
 ) (ft FullType, err error) {
 	ft = FullType{
@@ -487,7 +487,7 @@ func (in *introspection) addTableTypeWithDepth(
 }
 
 // addColumnsEnumType adds an enum type for the columns of the table
-func (in *introspection) addColumnsEnumType(t sdata.DBTable) (err error) {
+func (in *Introspection) addColumnsEnumType(t sdata.DBTable) (err error) {
 	tableName := in.getName(t.Name)
 	ft := FullType{
 		Kind:        KIND_ENUM,
@@ -508,7 +508,7 @@ func (in *introspection) addColumnsEnumType(t sdata.DBTable) (err error) {
 }
 
 // addTablesEnumType adds an enum type for the tables
-func (in *introspection) addTablesEnumType() {
+func (in *Introspection) addTablesEnumType() {
 	ft := FullType{
 		Kind:        KIND_ENUM,
 		Name:        ("tables" + SUFFIX_ENUM),
@@ -527,7 +527,7 @@ func (in *introspection) addTablesEnumType() {
 }
 
 // addRolesEnumType adds an enum type for the roles
-func (in *introspection) addRolesEnumType(roles map[string]*Role) {
+func (in *Introspection) addRolesEnumType(roles map[string]*Role) {
 	ft := FullType{
 		Kind:        KIND_ENUM,
 		Name:        ("roles" + SUFFIX_ENUM),
@@ -547,7 +547,7 @@ func (in *introspection) addRolesEnumType(roles map[string]*Role) {
 }
 
 // addOrderByType adds an order by type to the introspection schema
-func (in *introspection) addOrderByType(t sdata.DBTable, ft *FullType) {
+func (in *Introspection) addOrderByType(t sdata.DBTable, ft *FullType) {
 	ty := FullType{
 		Kind: KIND_INPUT_OBJ,
 		Name: (t.Name + SUFFIX_ORDER_BY),
@@ -567,7 +567,7 @@ func (in *introspection) addOrderByType(t sdata.DBTable, ft *FullType) {
 }
 
 // addWhereType adds a where type to the introspection schema
-func (in *introspection) addWhereType(table sdata.DBTable, ft *FullType) {
+func (in *Introspection) addWhereType(table sdata.DBTable, ft *FullType) {
 	tablename := (table.Name + SUFFIX_WHERE)
 	ty := FullType{
 		Kind: "INPUT_OBJECT",
@@ -598,7 +598,7 @@ func (in *introspection) addWhereType(table sdata.DBTable, ft *FullType) {
 	ft.addArg("where", newTypeRef("", ty.Name, nil))
 }
 
-func (in *introspection) addInputType(table sdata.DBTable, ft FullType) (retFT FullType, err error) {
+func (in *Introspection) addInputType(table sdata.DBTable, ft FullType) (retFT FullType, err error) {
 	// upsert
 	ty := FullType{
 		Kind:        "INPUT_OBJECT",
@@ -693,7 +693,7 @@ func (in *introspection) addInputType(table sdata.DBTable, ft FullType) (retFT F
 }
 
 // addTableArgsType adds the table arguments type to the introspection schema
-func (in *introspection) addTableArgsType(table sdata.DBTable, ft *FullType) {
+func (in *Introspection) addTableArgsType(table sdata.DBTable, ft *FullType) {
 	if table.Type != "function" {
 		return
 	}
@@ -703,7 +703,7 @@ func (in *introspection) addTableArgsType(table sdata.DBTable, ft *FullType) {
 }
 
 // addArgsType adds the arguments type to the introspection schema
-func (in *introspection) addArgsType(table sdata.DBTable, fn sdata.DBFunction) (ft FullType) {
+func (in *Introspection) addArgsType(table sdata.DBTable, fn sdata.DBFunction) (ft FullType) {
 	ft = FullType{
 		Kind: "INPUT_OBJECT",
 		Name: (table.Name + fn.Name + SUFFIX_ARGS),
@@ -736,7 +736,7 @@ func (in *introspection) addArgsType(table sdata.DBTable, fn sdata.DBFunction) (
 }
 
 // getColumnField returns the field object for the given column
-func (in *introspection) getColumnField(column sdata.DBColumn) (field FieldObject, err error) {
+func (in *Introspection) getColumnField(column sdata.DBColumn) (field FieldObject, err error) {
 	field.Args = []InputValue{}
 	field.Name = in.getName(column.Name)
 	typeValue := newTypeRef("", "String", nil)
@@ -768,7 +768,7 @@ func (in *introspection) getColumnField(column sdata.DBColumn) (field FieldObjec
 }
 
 // getFunctionField returns the field object for the given function
-func (in *introspection) getFunctionField(t sdata.DBTable, fn sdata.DBFunction) (f FieldObject) {
+func (in *Introspection) getFunctionField(t sdata.DBTable, fn sdata.DBFunction) (f FieldObject) {
 	f.Name = in.getName(fn.Name)
 	f.Args = []InputValue{}
 	ty, list := getType(fn.Type)
@@ -794,7 +794,7 @@ func (in *introspection) getFunctionField(t sdata.DBTable, fn sdata.DBFunction) 
 }
 
 // getTableField returns the field object for the given table
-func (in *introspection) getTableField(relNode sdata.RelNode) (
+func (in *Introspection) getTableField(relNode sdata.RelNode) (
 	f FieldObject, skip bool, err error,
 ) {
 	f.Args = []InputValue{}
@@ -819,7 +819,7 @@ func (in *introspection) getTableField(relNode sdata.RelNode) (
 }
 
 // addDirType adds a directive type to the introspection schema
-func (in *introspection) addDirType(dt dir) {
+func (in *Introspection) addDirType(dt dir) {
 	d := DirectiveType{
 		Name:         dt.name,
 		Description:  dt.desc,
@@ -840,7 +840,7 @@ func (in *introspection) addDirType(dt dir) {
 }
 
 // addDirValidateType adds a validate directive type to the introspection schema
-func (in *introspection) addDirValidateType() {
+func (in *Introspection) addDirValidateType() {
 	ft := FullType{
 		Kind:        KIND_ENUM,
 		Name:        ("validateFormat" + SUFFIX_ENUM),
@@ -906,7 +906,7 @@ func (ft *FullType) addOrReplaceArg(name string, tr *TypeRef) {
 }
 
 // addType adds a type to the introspection schema
-func (in *introspection) addType(ft FullType) {
+func (in *Introspection) addType(ft FullType) {
 	in.types[ft.Name] = ft
 }
 
