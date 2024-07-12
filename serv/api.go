@@ -225,7 +225,10 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*service, 
 }
 
 func (s *service) normalStart() error {
-	opts := []core.Option{core.OptionSetFS(s.fs)}
+	opts := []core.Option{
+		core.OptionSetFS(s.fs),
+		core.OptionSetTrace(otelPlugin.NewTracerFrom(s.tracer)),
+	}
 	if s.namespace != nil {
 		opts = append(opts, core.OptionSetNamespace(*s.namespace))
 	}

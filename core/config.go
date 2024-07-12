@@ -69,6 +69,9 @@ type Config struct {
 	// Log warnings and other debug information
 	Debug bool `jsonschema:"title=Debug,default=false"`
 
+	// Log SQL Query variable values
+	LogVars bool `mapstructure:"log_vars" json:"log_vars" yaml:"log_vars" jsonschema:"title=Log Variables,default=false"`
+
 	// Database polling duration (in seconds) used by subscriptions to
 	// query for updates.
 	SubsPollDuration time.Duration `mapstructure:"subs_poll_duration" json:"subs_poll_duration" yaml:"subs_poll_duration" jsonschema:"title=Subscription Polling Duration,default=5s"`

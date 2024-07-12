@@ -12,7 +12,7 @@
 Just use a simple GraphQL query to define your API and GraphJin automagically converts it into SQL and fetches the data you need. Build your backend APIs **100X** faster. Works with **NodeJS** and **GO**. Supports several databases, **Postgres**, **MySQL**, **Yugabyte**, **AWS Aurora/RDS** and **Google Cloud SQL**
 
 The following GraphQL query fetches a list of products, their owners, and other category information, including a cursor for retrieving more products.
-GraphJin would do auto-discovery of your database schema and relationships and generate the most efficient single SQL query to fetch all this data including a cursor to fetch the next 20 times. You don't have to do a single thing besides write the GraphQL query.
+GraphJin will do auto-discovery of your database schema and relationships and generate the most efficient single SQL query to fetch all this data including a cursor to fetch the next 20 item. You don't have to do a single thing besides write the GraphQL query.
 
 ```graphql
 query getProducts {
@@ -355,12 +355,6 @@ We're happy to help you leverage GraphJin reach out if you have questions
 
 [discord/graphjin](https://discord.gg/6pSWCTZ) (Chat)
 
-## Production use
-
-The popular [42papers.com](https://42papers.com) site for discovering trending papers in AI and Computer Science uses GraphJin for it's entire backend.
-
 ## License
 
 [Apache Public License 2.0](https://opensource.org/licenses/Apache-2.0)
-
-Copyright (c) 2022 Vikram Rangnekar

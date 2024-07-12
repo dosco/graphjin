@@ -187,6 +187,10 @@ func (g *GraphJin) newGraphJin(conf *Config,
 		return
 	}
 
+	if err = gj.initIntro(); err != nil {
+		return
+	}
+
 	if conf.SecretKey != "" {
 		sk := sha256.Sum256([]byte(conf.SecretKey))
 		gj.encKey = sk
@@ -271,6 +275,7 @@ func (rc *ReqConfig) SetNamespace(ns string) {
 	rc.ns = &ns
 }
 
+// GetNamespace is used to get the namespace requests within a single instance of GraphJin
 func (rc *ReqConfig) GetNamespace() (string, bool) {
 	if rc.ns != nil {
 		return *rc.ns, true
@@ -445,6 +450,7 @@ func (gj *graphjin) newGraphqlReq(rc *ReqConfig,
 	return
 }
 
+// Set is used to set the namespace, operation type, name and query for the GraphQL request
 func (r *graphqlReq) Set(item allow.Item) {
 	r.ns = item.Namespace
 	r.op = qcode.GetQTypeByName(item.Operation)
@@ -453,11 +459,13 @@ func (r *graphqlReq) Set(item allow.Item) {
 	r.aschema = item.ActionJSON
 }
 
+// GraphQL function is our main function it takes a GraphQL query compiles it
 func (gj *graphjin) queryWithResult(c context.Context, r graphqlReq) (res *Result, err error) {
 	resp, err := gj.query(c, r)
 	return &resp.res, err
 }
 
+// GraphQL function is our main function it takes a GraphQL query compiles it
 func (gj *graphjin) query(c context.Context, r graphqlReq) (
 	resp graphqlResp, err error,
 ) {

@@ -10,6 +10,7 @@ import (
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
 
+// Initializes the graphjin instance with the config
 func (gj *graphjin) initConfig() error {
 	c := gj.conf
 

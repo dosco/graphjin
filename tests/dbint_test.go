@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"regexp"
 	"testing"
 
 	"github.com/dosco/graphjin/core/v3"
@@ -115,7 +116,6 @@ func TestMain(m *testing.M) {
 		}
 
 		db, err = sql.Open(v.driver, fmt.Sprintf(v.connstr, con.DefaultAddress()))
-
 		if err != nil {
 			_ = gnomock.Stop(con)
 			panic(err)
@@ -151,4 +151,11 @@ func stdJSON(val []byte) string {
 
 func printJSON(val []byte) {
 	fmt.Println(stdJSON(val))
+}
+
+var re = regexp.MustCompile(`([:,])\s|`)
+
+func printJSONString(val string) {
+	v := re.ReplaceAllString(val, `$1`)
+	fmt.Println(v)
 }

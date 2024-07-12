@@ -272,6 +272,10 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 		for i := 0; i < len(sel.OrderBy); i++ {
 			c.w.WriteString(`, MAX(__cur_`)
 			int32String(c.w, int32(i))
+			// Postgres rejects MAX(uuid)
+			if sel.OrderBy[i].Col.Type == "uuid" {
+				c.w.WriteString(`::text`)
+			}
 			c.w.WriteString(`)`)
 			// 	c.w.WriteString(`, CAST(MAX(__cur_`)
 			// 	int32String(c.w, int32(i))
@@ -567,7 +571,11 @@ func (c *compilerContext) renderCursorCTE(sel *qcode.Select) {
 			int32String(c.w, int32(i+2))
 			c.w.WriteString(`), ',', -1), '') AS `)
 			// c.w.WriteString(ob.Col.Type)
-			c.quoted(ob.Col.Name)
+			if ob.KeyVar != "" && ob.Key != "" {
+				c.quoted(ob.Col.Name + "_" + ob.Key)
+			} else {
+				c.quoted(ob.Col.Name)
+			}
 		}
 		c.w.WriteString(` FROM ((SELECT `)
 		c.renderParam(Param{Name: "cursor", Type: "text"})
@@ -583,7 +591,11 @@ func (c *compilerContext) renderCursorCTE(sel *qcode.Select) {
 			c.w.WriteString(`] :: `)
 			c.w.WriteString(ob.Col.Type)
 			c.w.WriteString(` AS `)
-			c.quoted(ob.Col.Name)
+			if ob.KeyVar != "" && ob.Key != "" {
+				c.quoted(ob.Col.Name + "_" + ob.Key)
+			} else {
+				c.quoted(ob.Col.Name)
+			}
 		}
 		c.w.WriteString(` FROM STRING_TO_ARRAY(`)
 		c.renderParam(Param{Name: "cursor", Type: "text"})
