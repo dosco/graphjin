@@ -11,7 +11,7 @@ import (
 )
 
 // Initializes the graphjin instance with the config
-func (gj *GraphjinEngine) initConfig() error {
+func (gj *graphjinEngine) initConfig() error {
 	c := gj.conf
 
 	tableMap := make(map[string]struct{})
@@ -85,7 +85,7 @@ func (gj *GraphjinEngine) initConfig() error {
 }
 
 // addTableInfo adds table info to the compiler
-func (gj *GraphjinEngine) addTableInfo(t Table) error {
+func (gj *graphjinEngine) addTableInfo(t Table) error {
 	obm := map[string][][2]string{}
 
 	for k, ob := range t.OrderBy {
@@ -440,12 +440,11 @@ func isASCII(s string) (int, bool) {
 }
 
 // initAllowList initializes the allow list
-func (gj *GraphjinEngine) initAllowList() (err error) {
+func (gj *graphjinEngine) initAllowList() (err error) {
 	gj.allowList, err = allow.New(
 		gj.log,
 		gj.fs,
 		gj.conf.DisableAllowList) // if true then read only
-
 	if err != nil {
 		return fmt.Errorf("failed to initialize allow list: %w", err)
 	}

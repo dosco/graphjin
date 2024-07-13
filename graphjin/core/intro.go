@@ -199,8 +199,7 @@ type Introspection struct {
 }
 
 // introQuery returns the introspection query result
-func (gj *GraphjinEngine) introQuery() (result json.RawMessage, err error) {
-
+func (gj *graphjinEngine) introQuery() (result json.RawMessage, err error) {
 	// Initialize the introscpection object
 	in := Introspection{
 		schema:      gj.schema,
@@ -217,7 +216,6 @@ func (gj *GraphjinEngine) introQuery() (result json.RawMessage, err error) {
 		MutationType:     &ShortFullType{Name: "Mutation"},
 	}
 
-	// Add the standard types
 	// Add the standard types
 	for _, v := range stdTypes {
 		in.addType(v)
@@ -242,21 +240,14 @@ func (gj *GraphjinEngine) introQuery() (result json.RawMessage, err error) {
 	in.addExpTypes(v, "IntList", newTypeRef("", "Int", nil))
 	in.addExpTypes(v, "BooleanList", newTypeRef("", "Boolean", nil))
 	in.addExpTypes(v, "FloatList", newTypeRef("", "Float", nil))
-	in.addExpTypes(v, "StringList", newTypeRef("", "String", nil))
-	in.addExpTypes(v, "IntList", newTypeRef("", "Int", nil))
-	in.addExpTypes(v, "BooleanList", newTypeRef("", "Boolean", nil))
-	in.addExpTypes(v, "FloatList", newTypeRef("", "Float", nil))
 
 	v = append(expAll, expJSON...)
 	in.addExpTypes(v, "JSON", newTypeRef("", "String", nil))
-	in.addExpTypes(v, "JSON", newTypeRef("", "String", nil))
 
-	// Add the roles
 	// Add the roles
 	in.addRolesEnumType(gj.roles)
 	in.addTablesEnumType()
 
-	// Get all the alias and add to the schema
 	// Get all the alias and add to the schema
 	for alias, t := range in.schema.GetAliases() {
 		if err = in.addTable(t, alias); err != nil {
@@ -265,7 +256,6 @@ func (gj *GraphjinEngine) introQuery() (result json.RawMessage, err error) {
 	}
 
 	// Get all the tables and add to the schema
-	// Get all the tables and add to the schema
 	for _, t := range in.schema.GetTables() {
 		if err = in.addTable(t, ""); err != nil {
 			return
@@ -273,13 +263,11 @@ func (gj *GraphjinEngine) introQuery() (result json.RawMessage, err error) {
 	}
 
 	// Add the directives
-	// Add the directives
 	for _, dt := range dirTypes {
 		in.addDirType(dt)
 	}
 	in.addDirValidateType()
 
-	// Add the types to the schema
 	// Add the types to the schema
 	for _, v := range in.types {
 		in.result.Schema.Types = append(in.result.Schema.Types, v)

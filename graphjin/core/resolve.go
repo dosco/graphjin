@@ -16,7 +16,7 @@ type resItem struct {
 }
 
 // newRTMap returns a map of resolver functions
-func (gj *GraphjinEngine) newRTMap() map[string]ResolverFn {
+func (gj *graphjinEngine) newRTMap() map[string]ResolverFn {
 	return map[string]ResolverFn{
 		"remote_api": func(v ResolverProps) (Resolver, error) {
 			return newRemoteAPI(v, gj.trace.NewHTTPClient())
@@ -25,7 +25,7 @@ func (gj *GraphjinEngine) newRTMap() map[string]ResolverFn {
 }
 
 // initResolvers initializes the resolvers
-func (gj *GraphjinEngine) initResolvers() error {
+func (gj *graphjinEngine) initResolvers() error {
 	gj.rmap = make(map[string]resItem)
 
 	if gj.rtmap == nil {
@@ -45,7 +45,7 @@ func (gj *GraphjinEngine) initResolvers() error {
 }
 
 // initRemote initializes the remote resolver
-func (gj *GraphjinEngine) initRemote(
+func (gj *graphjinEngine) initRemote(
 	rc ResolverConfig, rtmap map[string]ResolverFn,
 ) error {
 	// Defines the table column to be used as an id in the

@@ -46,7 +46,7 @@ const (
 
 // GraphJin struct is an instance of the GraphJin engine it holds all the required information like
 // datase schemas, relationships, etc that the GraphQL to SQL compiler would need to do it's job.
-type GraphjinEngine struct {
+type graphjinEngine struct {
 	conf                  *Config
 	db                    *sql.DB
 	log                   *_log.Logger
@@ -83,7 +83,7 @@ type GraphJin struct {
 	done chan bool
 }
 
-type Option func(*GraphjinEngine) error
+type Option func(*graphjinEngine) error
 
 // NewGraphJin creates the GraphJin struct, this involves querying the database to learn its
 // schemas and relationships
@@ -131,7 +131,7 @@ func (g *GraphJin) newGraphJin(conf *Config,
 
 	t := time.Now()
 
-	gj := &GraphjinEngine{
+	gj := &graphjinEngine{
 		conf:        conf,
 		db:          db,
 		dbinfo:      dbinfo,
@@ -204,7 +204,7 @@ func (g *GraphJin) newGraphJin(conf *Config,
 }
 
 func OptionSetNamespace(namespace string) Option {
-	return func(s *GraphjinEngine) error {
+	return func(s *graphjinEngine) error {
 		s.namespace = namespace
 		return nil
 	}
@@ -212,7 +212,7 @@ func OptionSetNamespace(namespace string) Option {
 
 // OptionSetFS sets the file system to be used by GraphJin
 func OptionSetFS(fs FS) Option {
-	return func(s *GraphjinEngine) error {
+	return func(s *graphjinEngine) error {
 		s.fs = fs
 		return nil
 	}
@@ -220,7 +220,7 @@ func OptionSetFS(fs FS) Option {
 
 // OptionSetTrace sets the tracer to be used by GraphJin
 func OptionSetTrace(trace Tracer) Option {
-	return func(s *GraphjinEngine) error {
+	return func(s *graphjinEngine) error {
 		s.trace = trace
 		return nil
 	}
@@ -228,7 +228,7 @@ func OptionSetTrace(trace Tracer) Option {
 
 // OptionSetResolver sets the resolver function to be used by GraphJin
 func OptionSetResolver(name string, fn ResolverFn) Option {
-	return func(s *GraphjinEngine) error {
+	return func(s *graphjinEngine) error {
 		if s.rtmap == nil {
 			s.rtmap = s.newRTMap()
 		}
@@ -301,7 +301,7 @@ func (g *GraphJin) GraphQL(c context.Context,
 	vars json.RawMessage,
 	rc *RequestConfig,
 ) (res *Result, err error) {
-	gj := g.Load().(*GraphjinEngine)
+	gj := g.Load().(*graphjinEngine)
 
 	c1, span := gj.spanStart(c, "GraphJin Query")
 	defer span.End()
@@ -382,7 +382,7 @@ func (g *GraphJin) GraphQLByName(c context.Context,
 	vars json.RawMessage,
 	rc *RequestConfig,
 ) (res *Result, err error) {
-	gj := g.Load().(*GraphjinEngine)
+	gj := g.Load().(*graphjinEngine)
 
 	c1, span := gj.spanStart(c, "GraphJin Query")
 	defer span.End()
@@ -432,7 +432,7 @@ type GraphqlResponse struct {
 }
 
 // newGraphqlReq creates a new GraphQL request
-func (gj *GraphjinEngine) newGraphqlReq(rc *RequestConfig,
+func (gj *graphjinEngine) newGraphqlReq(rc *RequestConfig,
 	op string,
 	name string,
 	query []byte,
@@ -466,13 +466,13 @@ func (r *GraphqlReq) Set(item allow.Item) {
 }
 
 // GraphQL function is our main function it takes a GraphQL query compiles it
-func (gj *GraphjinEngine) queryWithResult(c context.Context, r GraphqlReq) (res *Result, err error) {
+func (gj *graphjinEngine) queryWithResult(c context.Context, r GraphqlReq) (res *Result, err error) {
 	resp, err := gj.query(c, r)
 	return &resp.res, err
 }
 
 // GraphQL function is our main function it takes a GraphQL query compiles it
-func (gj *GraphjinEngine) query(c context.Context, r GraphqlReq) (
+func (gj *graphjinEngine) query(c context.Context, r GraphqlReq) (
 	resp GraphqlResponse, err error,
 ) {
 	resp.res = Result{
@@ -527,14 +527,14 @@ func (g *GraphJin) Reload() error {
 
 // reload redoes database discover and reinitializes GraphJin.
 func (g *GraphJin) reload(di *sdata.DBInfo) (err error) {
-	gj := g.Load().(*GraphjinEngine)
+	gj := g.Load().(*graphjinEngine)
 	err = g.newGraphJin(gj.conf, gj.db, di, gj.fs, gj.opts...)
 	return
 }
 
 // IsProd return true for production mode or false for development mode
 func (g *GraphJin) IsProd() bool {
-	gj := g.Load().(*GraphjinEngine)
+	gj := g.Load().(*graphjinEngine)
 	return gj.prod
 }
 

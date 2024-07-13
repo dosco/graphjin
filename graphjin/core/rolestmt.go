@@ -8,7 +8,7 @@ import (
 )
 
 // nolint:errcheck
-func (gj *GraphjinEngine) prepareRoleStmt() error {
+func (gj *graphjinEngine) prepareRoleStmt() error {
 	if !gj.abacEnabled {
 		return nil
 	}
