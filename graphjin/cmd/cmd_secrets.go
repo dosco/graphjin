@@ -82,7 +82,7 @@ func cmdSecrets() *cobra.Command {
 		} else {
 			setup(cpath)
 			if conf.SecretsFile != "" {
-				fileName, err = filepath.Abs(conf.RelPath(conf.SecretsFile))
+				fileName, err = filepath.Abs(conf.AbsolutePath(conf.SecretsFile))
 			}
 		}
 

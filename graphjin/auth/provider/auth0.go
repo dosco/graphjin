@@ -15,6 +15,7 @@ type Auth0Provider struct {
 	issuer string
 }
 
+// NewAuth0Provider creates a new Auth0 JWT provider
 func NewAuth0Provider(config JWTConfig) (*Auth0Provider, error) {
 	key, err := getKey(config)
 	if err != nil {
@@ -27,12 +28,14 @@ func NewAuth0Provider(config JWTConfig) (*Auth0Provider, error) {
 	}, nil
 }
 
+// KeyFunc returns a function that returns the key used to verify the JWT token
 func (p *Auth0Provider) KeyFunc() jwt.Keyfunc {
 	return func(token *jwt.Token) (interface{}, error) {
 		return p.key, nil
 	}
 }
 
+// VerifyAudience checks if the audience claim is valid
 func (p *Auth0Provider) VerifyAudience(claims jwt.MapClaims) bool {
 	if claims == nil {
 		return false
@@ -40,6 +43,7 @@ func (p *Auth0Provider) VerifyAudience(claims jwt.MapClaims) bool {
 	return claims.VerifyAudience(p.aud, p.aud != "")
 }
 
+// VerifyIssuer checks if the issuer claim is valid
 func (p *Auth0Provider) VerifyIssuer(claims jwt.MapClaims) bool {
 	if claims == nil {
 		return false
@@ -47,6 +51,7 @@ func (p *Auth0Provider) VerifyIssuer(claims jwt.MapClaims) bool {
 	return claims.VerifyIssuer(p.issuer, p.issuer != "")
 }
 
+// SetContextValues sets the user ID and provider in the context
 func (p *Auth0Provider) SetContextValues(ctx context.Context, claims jwt.MapClaims) (context.Context, error) {
 	if claims == nil {
 		return ctx, errors.New("undefined claims")

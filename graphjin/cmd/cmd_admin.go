@@ -16,6 +16,7 @@ var (
 	secret string
 )
 
+// deployCmd deploys a new config or rolls back the active config
 func deployCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "deploy",
@@ -36,6 +37,7 @@ func deployCmd() *cobra.Command {
 	return c
 }
 
+// initCmd initializes the admin database
 func initCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "init",
@@ -45,6 +47,7 @@ func initCmd() *cobra.Command {
 	return c
 }
 
+// cmdInit initializes the admin database
 func cmdInit(cmd *cobra.Command, args []string) {
 	setup(cpath)
 	initDB(true)
@@ -56,6 +59,7 @@ func cmdInit(cmd *cobra.Command, args []string) {
 	log.Infof("init successful: %s", name)
 }
 
+// cmdDeploy deploys a new config
 func cmdDeploy(cmd *cobra.Command, args []string) {
 	if host == "" {
 		log.Fatalf("--host is a required argument")
@@ -79,6 +83,7 @@ func cmdDeploy(cmd *cobra.Command, args []string) {
 	}
 }
 
+// cmdRollback rolls back the active config
 func cmdRollback(cmd *cobra.Command, args []string) {
 	if host == "" {
 		log.Fatalf("--host is a required argument")

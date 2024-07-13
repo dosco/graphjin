@@ -16,8 +16,8 @@ import (
 )
 
 type gstate struct {
-	gj    *graphjin
-	r     graphqlReq
+	gj    *GraphjinEngine
+	r     GraphqlReq
 	cs    *cstate
 	vmap  map[string]json.RawMessage
 	data  []byte
@@ -40,7 +40,7 @@ type stmt struct {
 	sql  string
 }
 
-func newGState(c context.Context, gj *graphjin, r graphqlReq) (s gstate, err error) {
+func newGState(c context.Context, gj *GraphjinEngine, r GraphqlReq) (s gstate, err error) {
 	s.gj = gj
 	s.r = r
 
@@ -58,7 +58,7 @@ func newGState(c context.Context, gj *graphjin, r graphqlReq) (s gstate, err err
 	// convert variable json to a go map also decrypted encrypted values
 	if len(r.vars) != 0 {
 		var vars json.RawMessage
-		vars, err = decryptValues(r.vars, decPrefix, s.gj.encKey)
+		vars, err = decryptValues(r.vars, decPrefix, s.gj.encryptionKey)
 		if err != nil {
 			return
 		}
@@ -113,16 +113,16 @@ func (s *gstate) compileQueryForRole() (err error) {
 		vars = s.vmap
 	}
 
-	if st.qc, err = s.gj.qc.Compile(
+	if st.qc, err = s.gj.qcodeCompiler.Compile(
 		s.r.query,
 		vars,
 		s.role,
-		s.r.ns); err != nil {
+		s.r.namespace); err != nil {
 		return
 	}
 
 	var w bytes.Buffer
-	if st.md, err = s.gj.pc.Compile(&w, st.qc); err != nil {
+	if st.md, err = s.gj.psqlCompiler.Compile(&w, st.qc); err != nil {
 		return
 	}
 
@@ -254,7 +254,7 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 
 	if span.IsRecording() {
 		span.SetAttributesString(
-			StringAttr{"query.namespace", s.r.ns},
+			StringAttr{"query.namespace", s.r.namespace},
 			StringAttr{"query.operation", cs.st.qc.Type.String()},
 			StringAttr{"query.name", cs.st.qc.Name},
 			StringAttr{"query.role", cs.st.role})
@@ -270,25 +270,25 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 	s.dhash = sha256.Sum256(s.data)
 
 	s.data, err = encryptValues(s.data,
-		s.gj.pf, decPrefix, s.dhash[:], s.gj.encKey)
+		s.gj.printFormat, decPrefix, s.dhash[:], s.gj.encryptionKey)
 
 	return
 }
 
 func (s *gstate) executeRoleQuery(c context.Context, conn *sql.Conn) (err error) {
-	s.role, err = s.gj.executeRoleQuery(c, conn, s.vmap, s.r.rc)
+	s.role, err = s.gj.executeRoleQuery(c, conn, s.vmap, s.r.requestconfig)
 	return
 }
 
 func (s *gstate) argList(c context.Context) (args args, err error) {
-	args, err = s.gj.argList(c, s.cs.st.md, s.vmap, s.r.rc, false)
+	args, err = s.gj.argList(c, s.cs.st.md, s.vmap, s.r.requestconfig, false)
 	return
 }
 
 func (s *gstate) argListForSub(c context.Context,
 	vmap map[string]json.RawMessage,
 ) (args args, err error) {
-	args, err = s.gj.argList(c, s.cs.st.md, vmap, s.r.rc, true)
+	args, err = s.gj.argList(c, s.cs.st.md, vmap, s.r.requestconfig, true)
 	return
 }
 
@@ -354,13 +354,13 @@ func (s *gstate) qcode() (qc *qcode.QCode) {
 }
 
 func (s *gstate) tx() (tx *sql.Tx) {
-	if s.r.rc != nil {
-		tx = s.r.rc.Tx
+	if s.r.requestconfig != nil {
+		tx = s.r.requestconfig.Tx
 	}
 	return
 }
 
 func (s *gstate) key() (key string) {
-	key = s.r.ns + s.r.name + s.role
+	key = s.r.namespace + s.r.name + s.role
 	return
 }

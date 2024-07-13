@@ -46,36 +46,36 @@ const (
 
 // GraphJin struct is an instance of the GraphJin engine it holds all the required information like
 // datase schemas, relationships, etc that the GraphQL to SQL compiler would need to do it's job.
-type graphjin struct {
-	conf        *Config
-	db          *sql.DB
-	log         *_log.Logger
-	fs          FS
-	trace       Tracer
-	dbtype      string
-	dbinfo      *sdata.DBInfo
-	schema      *sdata.DBSchema
-	allowList   *allow.List
-	encKey      [32]byte
-	encKeySet   bool
-	cache       Cache
-	queries     sync.Map
-	roles       map[string]*Role
-	roleStmt    string
-	roleStmtMD  psql.Metadata
-	tmap        map[string]qcode.TConfig
-	rtmap       map[string]ResolverFn
-	rmap        map[string]resItem
-	abacEnabled bool
-	qc          *qcode.Compiler
-	pc          *psql.Compiler
-	subs        sync.Map
-	prod        bool
-	prodSec     bool
-	namespace   string
-	pf          []byte
-	opts        []Option
-	done        chan bool
+type GraphjinEngine struct {
+	conf                  *Config
+	db                    *sql.DB
+	log                   *_log.Logger
+	fs                    FS
+	trace                 Tracer
+	dbtype                string
+	dbinfo                *sdata.DBInfo
+	schema                *sdata.DBSchema
+	allowList             *allow.List
+	encryptionKey         [32]byte
+	encryptionKeySet      bool
+	cache                 Cache
+	queries               sync.Map
+	roles                 map[string]*Role
+	roleStatement         string
+	roleStatementMetadata psql.Metadata
+	tmap                  map[string]qcode.TConfig
+	rtmap                 map[string]ResolverFn
+	rmap                  map[string]resItem
+	abacEnabled           bool
+	qcodeCompiler         *qcode.Compiler
+	psqlCompiler          *psql.Compiler
+	subs                  sync.Map
+	prod                  bool
+	prodSec               bool
+	namespace             string
+	printFormat           []byte
+	opts                  []Option
+	done                  chan bool
 }
 
 type GraphJin struct {
@@ -83,7 +83,7 @@ type GraphJin struct {
 	done chan bool
 }
 
-type Option func(*graphjin) error
+type Option func(*GraphjinEngine) error
 
 // NewGraphJin creates the GraphJin struct, this involves querying the database to learn its
 // schemas and relationships
@@ -104,6 +104,7 @@ func NewGraphJin(conf *Config, db *sql.DB, options ...Option) (g *GraphJin, err 
 	return
 }
 
+// NewGraphJinWithFS creates the GraphJin struct, this involves querying the database to learn its
 func NewGraphJinWithFS(conf *Config, db *sql.DB, fs FS, options ...Option) (g *GraphJin, err error) {
 	g = &GraphJin{done: make(chan bool)}
 	if err = g.newGraphJin(conf, db, nil, fs, options...); err != nil {
@@ -116,6 +117,7 @@ func NewGraphJinWithFS(conf *Config, db *sql.DB, fs FS, options ...Option) (g *G
 	return
 }
 
+// newGraphJinWithDBInfo creates the GraphJin struct, this involves querying the database to learn its
 // it all starts here
 func (g *GraphJin) newGraphJin(conf *Config,
 	db *sql.DB,
@@ -129,18 +131,18 @@ func (g *GraphJin) newGraphJin(conf *Config,
 
 	t := time.Now()
 
-	gj := &graphjin{
-		conf:    conf,
-		db:      db,
-		dbinfo:  dbinfo,
-		log:     _log.New(os.Stdout, "", 0),
-		prod:    conf.Production,
-		prodSec: conf.Production,
-		pf:      []byte(fmt.Sprintf("gj/%x:", t.Unix())),
-		opts:    options,
-		fs:      fs,
-		trace:   &tracer{},
-		done:    g.done,
+	gj := &GraphjinEngine{
+		conf:        conf,
+		db:          db,
+		dbinfo:      dbinfo,
+		log:         _log.New(os.Stdout, "", 0),
+		prod:        conf.Production,
+		prodSec:     conf.Production,
+		printFormat: []byte(fmt.Sprintf("gj/%x:", t.Unix())),
+		opts:        options,
+		fs:          fs,
+		trace:       &tracer{},
+		done:        g.done,
 	}
 
 	if gj.conf.DisableProdSecurity {
@@ -193,8 +195,8 @@ func (g *GraphJin) newGraphJin(conf *Config,
 
 	if conf.SecretKey != "" {
 		sk := sha256.Sum256([]byte(conf.SecretKey))
-		gj.encKey = sk
-		gj.encKeySet = true
+		gj.encryptionKey = sk
+		gj.encryptionKeySet = true
 	}
 
 	g.Store(gj)
@@ -202,28 +204,31 @@ func (g *GraphJin) newGraphJin(conf *Config,
 }
 
 func OptionSetNamespace(namespace string) Option {
-	return func(s *graphjin) error {
+	return func(s *GraphjinEngine) error {
 		s.namespace = namespace
 		return nil
 	}
 }
 
+// OptionSetFS sets the file system to be used by GraphJin
 func OptionSetFS(fs FS) Option {
-	return func(s *graphjin) error {
+	return func(s *GraphjinEngine) error {
 		s.fs = fs
 		return nil
 	}
 }
 
+// OptionSetTrace sets the tracer to be used by GraphJin
 func OptionSetTrace(trace Tracer) Option {
-	return func(s *graphjin) error {
+	return func(s *GraphjinEngine) error {
 		s.trace = trace
 		return nil
 	}
 }
 
+// OptionSetResolver sets the resolver function to be used by GraphJin
 func OptionSetResolver(name string, fn ResolverFn) Option {
-	return func(s *graphjin) error {
+	return func(s *GraphjinEngine) error {
 		if s.rtmap == nil {
 			s.rtmap = s.newRTMap()
 		}
@@ -242,8 +247,8 @@ type Error struct {
 // Result struct contains the output of the GraphQL function this includes resulting json from the
 // database query and any error information
 type Result struct {
-	ns           string
-	op           qcode.QType
+	namespace    string
+	operation    qcode.QType
 	name         string
 	sql          string
 	role         string
@@ -256,8 +261,8 @@ type Result struct {
 	// Extensions   *extensions     `json:"extensions,omitempty"`
 }
 
-// ReqConfig is used to pass request specific config values to the GraphQL and Subscribe functions. Dynamic variables can be set here.
-type ReqConfig struct {
+// RequestConfig is used to pass request specific config values to the GraphQL and Subscribe functions. Dynamic variables can be set here.
+type RequestConfig struct {
 	ns *string
 
 	// APQKey is set when using GraphJin with automatic persisted queries
@@ -271,12 +276,12 @@ type ReqConfig struct {
 }
 
 // SetNamespace is used to set namespace requests within a single instance of GraphJin. For example queries with the same name
-func (rc *ReqConfig) SetNamespace(ns string) {
+func (rc *RequestConfig) SetNamespace(ns string) {
 	rc.ns = &ns
 }
 
 // GetNamespace is used to get the namespace requests within a single instance of GraphJin
-func (rc *ReqConfig) GetNamespace() (string, bool) {
+func (rc *RequestConfig) GetNamespace() (string, bool) {
 	if rc.ns != nil {
 		return *rc.ns, true
 	}
@@ -294,9 +299,9 @@ func (rc *ReqConfig) GetNamespace() (string, bool) {
 func (g *GraphJin) GraphQL(c context.Context,
 	query string,
 	vars json.RawMessage,
-	rc *ReqConfig,
+	rc *RequestConfig,
 ) (res *Result, err error) {
-	gj := g.Load().(*graphjin)
+	gj := g.Load().(*GraphjinEngine)
 
 	c1, span := gj.spanStart(c, "GraphJin Query")
 	defer span.End()
@@ -347,7 +352,7 @@ func (g *GraphJin) GraphQL(c context.Context,
 
 	// if not production then save to allow list
 	if !gj.prod && r.name != "IntrospectionQuery" {
-		if err = gj.saveToAllowList(resp.qc, resp.res.ns); err != nil {
+		if err = gj.saveToAllowList(resp.qc, resp.res.namespace); err != nil {
 			return
 		}
 	}
@@ -360,10 +365,10 @@ func (g *GraphJin) GraphQLTx(c context.Context,
 	tx *sql.Tx,
 	query string,
 	vars json.RawMessage,
-	rc *ReqConfig,
+	rc *RequestConfig,
 ) (res *Result, err error) {
 	if rc == nil {
-		rc = &ReqConfig{Tx: tx}
+		rc = &RequestConfig{Tx: tx}
 	} else {
 		rc.Tx = tx
 	}
@@ -375,9 +380,9 @@ func (g *GraphJin) GraphQLTx(c context.Context,
 func (g *GraphJin) GraphQLByName(c context.Context,
 	name string,
 	vars json.RawMessage,
-	rc *ReqConfig,
+	rc *RequestConfig,
 ) (res *Result, err error) {
-	gj := g.Load().(*graphjin)
+	gj := g.Load().(*GraphjinEngine)
 
 	c1, span := gj.spanStart(c, "GraphJin Query")
 	defer span.End()
@@ -401,78 +406,79 @@ func (g *GraphJin) GraphQLByNameTx(c context.Context,
 	tx *sql.Tx,
 	name string,
 	vars json.RawMessage,
-	rc *ReqConfig,
+	rc *RequestConfig,
 ) (res *Result, err error) {
 	if rc == nil {
-		rc = &ReqConfig{Tx: tx}
+		rc = &RequestConfig{Tx: tx}
 	} else {
 		rc.Tx = tx
 	}
 	return g.GraphQLByName(c, name, vars, rc)
 }
 
-type graphqlReq struct {
-	ns      string
-	op      qcode.QType
-	name    string
-	query   []byte
-	vars    json.RawMessage
-	aschema map[string]json.RawMessage
-	rc      *ReqConfig
+type GraphqlReq struct {
+	namespace     string
+	operation     qcode.QType
+	name          string
+	query         []byte
+	vars          json.RawMessage
+	aschema       map[string]json.RawMessage
+	requestconfig *RequestConfig
 }
 
-type graphqlResp struct {
+type GraphqlResponse struct {
 	res Result
 	qc  *qcode.QCode
 }
 
-func (gj *graphjin) newGraphqlReq(rc *ReqConfig,
+// newGraphqlReq creates a new GraphQL request
+func (gj *GraphjinEngine) newGraphqlReq(rc *RequestConfig,
 	op string,
 	name string,
 	query []byte,
 	vars json.RawMessage,
-) (r graphqlReq) {
-	r = graphqlReq{
-		op:    qcode.GetQTypeByName(op),
-		name:  name,
-		query: query,
-		vars:  vars,
+) (r GraphqlReq) {
+	r = GraphqlReq{
+		operation: qcode.GetQTypeByName(op),
+		name:      name,
+		query:     query,
+		vars:      vars,
 	}
 
 	if rc != nil {
-		r.rc = rc
+		r.requestconfig = rc
 	}
 	if rc != nil && rc.ns != nil {
-		r.ns = *rc.ns
+		r.namespace = *rc.ns
 	} else {
-		r.ns = gj.namespace
+		r.namespace = gj.namespace
 	}
 	return
 }
 
 // Set is used to set the namespace, operation type, name and query for the GraphQL request
-func (r *graphqlReq) Set(item allow.Item) {
-	r.ns = item.Namespace
-	r.op = qcode.GetQTypeByName(item.Operation)
+func (r *GraphqlReq) Set(item allow.Item) {
+	r.namespace = item.Namespace
+	r.operation = qcode.GetQTypeByName(item.Operation)
 	r.name = item.Name
 	r.query = item.Query
 	r.aschema = item.ActionJSON
 }
 
 // GraphQL function is our main function it takes a GraphQL query compiles it
-func (gj *graphjin) queryWithResult(c context.Context, r graphqlReq) (res *Result, err error) {
+func (gj *GraphjinEngine) queryWithResult(c context.Context, r GraphqlReq) (res *Result, err error) {
 	resp, err := gj.query(c, r)
 	return &resp.res, err
 }
 
 // GraphQL function is our main function it takes a GraphQL query compiles it
-func (gj *graphjin) query(c context.Context, r graphqlReq) (
-	resp graphqlResp, err error,
+func (gj *GraphjinEngine) query(c context.Context, r GraphqlReq) (
+	resp GraphqlResponse, err error,
 ) {
 	resp.res = Result{
-		ns:   r.ns,
-		op:   r.op,
-		name: r.name,
+		namespace: r.namespace,
+		operation: r.operation,
+		name:      r.name,
 	}
 
 	if !gj.prodSec && r.name == "IntrospectionQuery" {
@@ -480,12 +486,12 @@ func (gj *graphjin) query(c context.Context, r graphqlReq) (
 		return
 	}
 
-	if r.op == qcode.QTSubscription {
+	if r.operation == qcode.QTSubscription {
 		err = errors.New("use 'core.Subscribe' for subscriptions")
 		return
 	}
 
-	if r.op == qcode.QTMutation && gj.schema.DBType() == "mysql" {
+	if r.operation == qcode.QTMutation && gj.schema.DBType() == "mysql" {
 		err = errors.New("mysql: mutations not supported")
 		return
 	}
@@ -519,15 +525,16 @@ func (g *GraphJin) Reload() error {
 	return g.reload(nil)
 }
 
+// reload redoes database discover and reinitializes GraphJin.
 func (g *GraphJin) reload(di *sdata.DBInfo) (err error) {
-	gj := g.Load().(*graphjin)
+	gj := g.Load().(*GraphjinEngine)
 	err = g.newGraphJin(gj.conf, gj.db, di, gj.fs, gj.opts...)
 	return
 }
 
 // IsProd return true for production mode or false for development mode
 func (g *GraphJin) IsProd() bool {
-	gj := g.Load().(*graphjin)
+	gj := g.Load().(*GraphjinEngine)
 	return gj.prod
 }
 
@@ -546,6 +553,7 @@ func Operation(query string) (h Header, err error) {
 	return
 }
 
+// getFS returns the file system to be used by GraphJin
 func getFS(conf *Config) (fs FS, err error) {
 	if v, ok := conf.FS.(FS); ok {
 		fs = v
@@ -561,6 +569,7 @@ func getFS(conf *Config) (fs FS, err error) {
 	return
 }
 
+// newError creates a new error list
 func newError(err error) (errList []Error) {
 	errList = []Error{{Message: err.Error()}}
 	return

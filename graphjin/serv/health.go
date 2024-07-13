@@ -10,9 +10,10 @@ import (
 
 var healthyResponse = []byte("All's Well")
 
-func healthCheckHandler(s1 *Service) http.Handler {
+// healthCheckHandler returns a handler that checks the health of the service
+func healthCheckHandler(s1 *HttpService) http.Handler {
 	h := func(w http.ResponseWriter, r *http.Request) {
-		s := s1.Load().(*service)
+		s := s1.Load().(*graphjinService)
 		c, cancel := context.WithTimeout(r.Context(), s.conf.DB.PingTimeout)
 		defer cancel()
 

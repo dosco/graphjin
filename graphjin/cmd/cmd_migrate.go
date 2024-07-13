@@ -14,6 +14,7 @@ import (
 	"golang.org/x/text/language"
 )
 
+// This is the cobra CLI command for the migrate subcommand
 func migrateCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "migrate",
@@ -69,6 +70,7 @@ var newMigrationText = `-- Write your migrate up statements here
 -- Then delete the separator line above.
 `
 
+// cmdDBMigrate is the main function for the migrate subcommand
 func cmdDBMigrate(cmd *cobra.Command, args []string) {
 	doneSomething := false
 
@@ -93,7 +95,7 @@ func cmdDBMigrate(cmd *cobra.Command, args []string) {
 
 	m.Data = getMigrationVars(conf)
 
-	err = m.LoadMigrations(conf.RelPath(conf.MigrationsPath))
+	err = m.LoadMigrations(conf.AbsolutePath(conf.MigrationsPath))
 	if err != nil {
 		log.Fatalf("Failed to load migrations: %s", err)
 	}
@@ -197,6 +199,7 @@ func cmdDBMigrate(cmd *cobra.Command, args []string) {
 	}
 }
 
+// cmdMigrateStatus is the function for the migrate status subcommand
 func cmdMigrateStatus(cmd *cobra.Command, args []string) {
 	setup(cpath)
 	initDB(true)
@@ -212,7 +215,7 @@ func cmdMigrateStatus(cmd *cobra.Command, args []string) {
 
 	m.Data = getMigrationVars(conf)
 
-	err = m.LoadMigrations(conf.RelPath(conf.MigrationsPath))
+	err = m.LoadMigrations(conf.AbsolutePath(conf.MigrationsPath))
 	if err != nil {
 		log.Fatalf("Failed to load migrations: %s", err)
 	}
@@ -238,6 +241,7 @@ func cmdMigrateStatus(cmd *cobra.Command, args []string) {
 		status, mver, len(m.Migrations), conf.DB.Host, conf.DB.DBName)
 }
 
+// cmdMigrateNew is the function for the migrate new subcommand
 func cmdMigrateNew(cmd *cobra.Command, args []string) {
 	if len(args) != 1 {
 		cmd.Help() //nolint:errcheck
@@ -248,7 +252,7 @@ func cmdMigrateNew(cmd *cobra.Command, args []string) {
 	initDB(false)
 
 	name := args[0]
-	migrationsPath := conf.RelPath(conf.MigrationsPath)
+	migrationsPath := conf.AbsolutePath(conf.MigrationsPath)
 
 	m, err := migrate.FindMigrations(migrationsPath)
 	if err != nil {
@@ -306,6 +310,7 @@ func ExtractErrorLine(source string, position int) (ErrorLineExtract, error) {
 	return ele, nil
 }
 
+// getMigrationVars returns the variables to be used in the migration templates
 func getMigrationVars(c *serv.Config) map[string]interface{} {
 	en := cases.Title(language.English)
 

@@ -56,6 +56,7 @@ GJ_ADMIN_SECRET_KEY: hotdeploy_admin_secret_key
 GJ_SECRET_KEY: graphjin_generic_secret_key
 GJ_AUTH_JWT_SECRET: jwt_auth_secret_key`
 
+// editExample edits the example file
 func editExample(opts editExampleOpts) ([]byte, error) {
 	branches, err := opts.InputStore.LoadPlainFile([]byte(fileBytes))
 	if err != nil {
@@ -87,6 +88,7 @@ func editExample(opts editExampleOpts) ([]byte, error) {
 	return editTree(opts.editOpts, &tree, dataKey)
 }
 
+// edit edits the file at the given path using options passed.
 func edit(opts editOpts) ([]byte, error) {
 	// Load the file
 	tree, err := common.LoadEncryptedFileWithBugFixes(common.GenericDecryptOpts{
@@ -113,6 +115,7 @@ func edit(opts editOpts) ([]byte, error) {
 	return editTree(opts, tree, dataKey)
 }
 
+// editTree edits the tree using the options passed.
 func editTree(opts editOpts, tree *sops.Tree, dataKey []byte) ([]byte, error) {
 	// Create temporary file for editing
 	tmpdir, err := os.MkdirTemp("", "")
@@ -180,6 +183,7 @@ func editTree(opts editOpts, tree *sops.Tree, dataKey []byte) ([]byte, error) {
 	return encryptedFile, nil
 }
 
+// runEditorUntilOk runs the editor until the file is saved and the hash is different
 func runEditorUntilOk(opts runEditorUntilOkOpts) error {
 	for {
 		err := runEditor(opts.TmpFile.Name())
@@ -240,6 +244,7 @@ func runEditorUntilOk(opts runEditorUntilOkOpts) error {
 	return nil
 }
 
+// hashFile returns the MD5 hash of the file at the given path
 func hashFile(filePath string) ([]byte, error) {
 	var result []byte
 	file, err := os.Open(filePath)
@@ -254,6 +259,7 @@ func hashFile(filePath string) ([]byte, error) {
 	return hash.Sum(result), nil
 }
 
+// runEditor runs the editor
 func runEditor(path string) error {
 	editor := os.Getenv("EDITOR")
 	var cmd *exec.Cmd
@@ -279,6 +285,7 @@ func runEditor(path string) error {
 	return cmd.Run()
 }
 
+// lookupAnyEditor looks up the first available editor
 func lookupAnyEditor(editorNames ...string) (editorPath string, err error) {
 	for _, editorName := range editorNames {
 		editorPath, err = exec.LookPath(editorName)

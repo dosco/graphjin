@@ -14,6 +14,7 @@ var (
 	ErrThoughNodeNotFound = errors.New("though node not found")
 )
 
+// TEdge represents a table edge for the graph
 type TEdge struct {
 	From, To, Weight int32
 
@@ -24,32 +25,36 @@ type TEdge struct {
 	name   string
 }
 
+// addNode adds a table node to the graph
 func (s *DBSchema) addNode(t DBTable) int32 {
 	s.tables = append(s.tables, t)
-	n := s.rg.AddNode()
+	n := s.relationshipGraph.AddNode()
 
 	s.tindex[(t.Schema + ":" + t.Name)] = nodeInfo{n}
 	return n
 }
 
+// addAliases adds table aliases to the graph
 func (s *DBSchema) addAliases(t DBTable, nodeID int32, aliases []string) {
 	for _, al := range aliases {
 		s.tindex[(t.Schema + ":" + al)] = nodeInfo{nodeID}
-		s.ai[al] = nodeInfo{nodeID}
+		s.tableAliasIndex[al] = nodeInfo{nodeID}
 	}
 }
 
+// GetAliases returns a map of table aliases
 func (s *DBSchema) GetAliases() map[string]DBTable {
 	ts := make(map[string]DBTable)
 
-	for name, n := range s.ai {
+	for name, n := range s.tableAliasIndex {
 		ts[name] = s.tables[int(n.nodeID)]
 	}
 	return ts
 }
 
+// IsAlias checks if a table is an alias
 func (s *DBSchema) IsAlias(name string) bool {
-	_, ok := s.ai[name]
+	_, ok := s.tableAliasIndex[name]
 	return ok
 }
 
@@ -145,11 +150,11 @@ func (s *DBSchema) addToGraph(
 		return err
 	}
 
-	if err := s.rg.UpdateEdge(ln, rn, edgeID1, edgeID2); err != nil {
+	if err := s.relationshipGraph.UpdateEdge(ln, rn, edgeID1, edgeID2); err != nil {
 		return err
 	}
 
-	if err := s.rg.UpdateEdge(rn, ln, edgeID2, edgeID1); err != nil {
+	if err := s.relationshipGraph.UpdateEdge(rn, ln, edgeID2, edgeID1); err != nil {
 		return err
 	}
 
@@ -166,10 +171,11 @@ func (s *DBSchema) addToGraph(
 	return nil
 }
 
+// addEdge creates a relationship between two tables
 func (s *DBSchema) addEdge(name string, edge TEdge, inSchema bool,
 ) (int32, error) {
 	// add edge to graph
-	edgeID, err := s.rg.AddEdge(edge.From, edge.To,
+	edgeID, err := s.relationshipGraph.AddEdge(edge.From, edge.To,
 		edge.Weight, edge.CName)
 	if err != nil {
 		return -1, err
@@ -181,13 +187,14 @@ func (s *DBSchema) addEdge(name string, edge TEdge, inSchema bool,
 	if inSchema {
 		edge.name = name
 	}
-	s.ae[edgeID] = edge
+	s.allEdges[edgeID] = edge
 
 	return edgeID, nil
 }
 
+// addEdgeInfo adds edge info to the index
 func (s *DBSchema) addEdgeInfo(k string, ei edgeInfo) {
-	if eiList, ok := s.ei[k]; ok {
+	if eiList, ok := s.edgesIndex[k]; ok {
 		for i, v := range eiList {
 			if v.nodeID != ei.nodeID {
 				continue
@@ -198,13 +205,14 @@ func (s *DBSchema) addEdgeInfo(k string, ei edgeInfo) {
 				}
 			}
 			edgeIDs := append(v.edgeIDs, ei.edgeIDs[0])
-			s.ei[k][i].edgeIDs = edgeIDs
+			s.edgesIndex[k][i].edgeIDs = edgeIDs
 			return
 		}
 	}
-	s.ei[k] = append(s.ei[k], ei)
+	s.edgesIndex[k] = append(s.edgesIndex[k], ei)
 }
 
+// Find returns a table by schema and name
 func (s *DBSchema) Find(schema, name string) (DBTable, error) {
 	var t DBTable
 
@@ -220,6 +228,7 @@ func (s *DBSchema) Find(schema, name string) (DBTable, error) {
 	return s.tables[v.nodeID], nil
 }
 
+// TPath represents a table path
 type TPath struct {
 	Rel RelType
 	LT  DBTable
@@ -228,13 +237,14 @@ type TPath struct {
 	RC  DBColumn
 }
 
+// FindPath returns a path between two tables
 func (s *DBSchema) FindPath(from, to, through string) ([]TPath, error) {
-	fl, ok := s.ei[from]
+	fl, ok := s.edgesIndex[from]
 	if !ok {
 		return nil, ErrFromEdgeNotFound
 	}
 
-	tl, ok := s.ei[to]
+	tl, ok := s.edgesIndex[to]
 	if !ok {
 		return nil, ErrToEdgeNotFound
 	}
@@ -250,7 +260,7 @@ func (s *DBSchema) FindPath(from, to, through string) ([]TPath, error) {
 
 	path := []TPath{}
 	for _, eid := range res.edges {
-		edge := s.ae[eid]
+		edge := s.allEdges[eid]
 		path = append(path, TPath{
 			Rel: edge.Type,
 			LT:  edge.LT,
@@ -265,11 +275,13 @@ func (s *DBSchema) FindPath(from, to, through string) ([]TPath, error) {
 	return path, nil
 }
 
+// graphResult represents a graph result
 type graphResult struct {
 	from, to edgeInfo
 	edges    []int32
 }
 
+// between finds a path between two tables
 func (s *DBSchema) between(from, to []edgeInfo, through string) (res graphResult, err error) {
 	// TODO: picking a path
 	// 1. first look for a direct edge to other table
@@ -288,13 +300,14 @@ func (s *DBSchema) between(from, to []edgeInfo, through string) (res graphResult
 	return res, ErrPathNotFound
 }
 
+// pickPath picks a path between two tables
 func (s *DBSchema) pickPath(from, to edgeInfo, through string) (res graphResult, err error) {
 	res.from = from
 	res.to = to
 
 	fn := from.nodeID
 	tn := to.nodeID
-	paths := s.rg.AllPaths(fn, tn)
+	paths := s.relationshipGraph.AllPaths(fn, tn)
 
 	if through != "" {
 		paths, err = s.pickThroughPath(paths, through)
@@ -313,6 +326,7 @@ func (s *DBSchema) pickPath(from, to edgeInfo, through string) (res graphResult,
 	return res, ErrPathNotFound
 }
 
+// pickEdges picks edges between two tables
 func (s *DBSchema) pickEdges(path []int32, from, to edgeInfo) (edges []int32, allFound bool) {
 	pathLen := len(path)
 	peID := int32(-2) // must be -2 so does not match default -1
@@ -320,7 +334,7 @@ func (s *DBSchema) pickEdges(path []int32, from, to edgeInfo) (edges []int32, al
 	for i := 1; i < pathLen; i++ {
 		fn := path[i-1]
 		tn := path[i]
-		lines := s.rg.GetEdges(fn, tn)
+		lines := s.relationshipGraph.GetEdges(fn, tn)
 
 		// s.PrintLines(lines)
 
@@ -354,6 +368,7 @@ func (s *DBSchema) pickEdges(path []int32, from, to edgeInfo) (edges []int32, al
 	return
 }
 
+// pickThroughPath picks a path through a node
 func (s *DBSchema) pickThroughPath(paths [][]int32, through string) ([][]int32, error) {
 	var npaths [][]int32
 
@@ -376,6 +391,7 @@ func (s *DBSchema) pickThroughPath(paths [][]int32, through string) ([][]int32, 
 	return npaths, nil
 }
 
+// pickLine picks a line between two tables
 func pickLine(lines []util.Edge, ei edgeInfo, peID int32) *util.Edge {
 	for _, v := range lines {
 		for _, eid := range ei.edgeIDs {
@@ -387,6 +403,7 @@ func pickLine(lines []util.Edge, ei edgeInfo, peID int32) *util.Edge {
 	return nil
 }
 
+// PathToRel converts a table path to a relationship
 func PathToRel(p TPath) DBRel {
 	return DBRel{
 		Type:  p.Rel,
@@ -395,6 +412,7 @@ func PathToRel(p TPath) DBRel {
 	}
 }
 
+// minWeightedLine returns the line with the minimum weight
 func minWeightedLine(lines []util.Edge, peID int32) *util.Edge {
 	var min int32 = 100
 	var line *util.Edge
@@ -413,9 +431,10 @@ func minWeightedLine(lines []util.Edge, peID int32) *util.Edge {
 	return line
 }
 
+// PrintLines prints the graph lines
 func (s *DBSchema) PrintLines(lines []util.Edge) {
 	for _, v := range lines {
-		e := s.ae[v.ID]
+		e := s.allEdges[v.ID]
 		f := s.tables[e.From]
 		t := s.tables[e.To]
 
@@ -425,6 +444,7 @@ func (s *DBSchema) PrintLines(lines []util.Edge) {
 	fmt.Println("---")
 }
 
+// PrintEdgeInfo prints edge info
 func (s *DBSchema) PrintEdgeInfo(e edgeInfo) {
 	t := s.tables[e.nodeID]
 	fmt.Printf("-- EdgeInfo %s %+v\n", t.Name, e.edgeIDs)
@@ -434,6 +454,7 @@ func (s *DBSchema) PrintEdgeInfo(e edgeInfo) {
 	// }
 }
 
+// String returns a string representation of a table path
 func (tp *TPath) String() string {
 	return fmt.Sprintf("(%s) %s ==> %s ==> (%s) %s",
 		tp.LT.String(), tp.LC.String(),

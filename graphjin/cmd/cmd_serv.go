@@ -7,6 +7,7 @@ import (
 
 var deployActive bool
 
+// servCmd is the cobra CLI command for the serve subcommand
 func servCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:     "serve",
@@ -18,6 +19,7 @@ func servCmd() *cobra.Command {
 	return c
 }
 
+// cmdServ is the handler for the serve subcommand
 func cmdServ(*cobra.Command, []string) {
 	setup(cpath)
 

@@ -82,6 +82,7 @@ type {{.Name}}
 {{end -}}
 `
 
+// writeSchema writes the schema to the given writer
 func writeSchema(s *sdata.DBInfo, out io.Writer) (err error) {
 	fn := template.FuncMap{
 		"pascal": toPascalCase,
@@ -104,6 +105,7 @@ func writeSchema(s *sdata.DBInfo, out io.Writer) (err error) {
 	return
 }
 
+// toPascalCase converts a string to pascal case
 func toPascalCase(text string) string {
 	var sb strings.Builder
 	for _, v := range strings.Fields(text) {
@@ -115,6 +117,7 @@ func toPascalCase(text string) string {
 
 var dbTypeRe = regexp.MustCompile(`([a-zA-Z ]+)(\((.+)\))?`)
 
+// parseDBType parses the db type string
 func parseDBType(name string) (res [2]string, err error) {
 	v := dbTypeRe.FindStringSubmatch(name)
 	if len(v) == 4 {

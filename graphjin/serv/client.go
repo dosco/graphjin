@@ -39,6 +39,7 @@ type Resp struct {
 	Msg string
 }
 
+// NewAdminClient creates a new admin client
 func NewAdminClient(host string, secret string) *Client {
 	c := resty.New().
 		SetBaseURL(host).
@@ -67,6 +68,7 @@ func NewAdminClient(host string, secret string) *Client {
 	return &Client{c}
 }
 
+// Deploy deploys the configuration to the server
 func (c *Client) Deploy(name, confPath string) (*Resp, error) {
 	errMsg := "deploy failed: %w"
 
@@ -85,6 +87,7 @@ func (c *Client) Deploy(name, confPath string) (*Resp, error) {
 	return &Resp{Msg: string(res.Body())}, nil
 }
 
+// Rollback rolls back the last deployment
 func (c *Client) Rollback() (*Resp, error) {
 	errMsg := "rollback failed: %w"
 
@@ -97,6 +100,7 @@ func (c *Client) Rollback() (*Resp, error) {
 	return &Resp{Msg: string(res.Body())}, nil
 }
 
+// buildBundle creates a zip archive of the configuration directory
 func buildBundle(confPath string) (string, error) {
 	buf := bytes.Buffer{}
 	z := zip.NewWriter(&buf)

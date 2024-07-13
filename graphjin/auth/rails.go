@@ -15,6 +15,7 @@ import (
 	"github.com/gomodule/redigo/redis"
 )
 
+// RailsHandler returns a handler that authenticates using a Rails session cookie
 func RailsHandler(ac Auth) (HandlerFunc, error) {
 	ru := ac.Rails.URL
 
@@ -29,6 +30,7 @@ func RailsHandler(ac Auth) (HandlerFunc, error) {
 	return RailsCookieHandler(ac)
 }
 
+// RailsRedisHandler returns a handler that authenticates using a Rails session cookie
 func RailsRedisHandler(ac Auth) (HandlerFunc, error) {
 	cookie := ac.Cookie
 
@@ -95,6 +97,7 @@ func RailsRedisHandler(ac Auth) (HandlerFunc, error) {
 	}, nil
 }
 
+// RailsMemcacheHandler returns a handler that authenticates using a Rails session cookie
 func RailsMemcacheHandler(ac Auth) (HandlerFunc, error) {
 	cookie := ac.Cookie
 
@@ -138,6 +141,7 @@ func RailsMemcacheHandler(ac Auth) (HandlerFunc, error) {
 	}, nil
 }
 
+// RailsCookieHandler returns a handler that authenticates using a Rails session cookie
 func RailsCookieHandler(ac Auth) (HandlerFunc, error) {
 	cookie := ac.Cookie
 	if len(cookie) == 0 {
@@ -168,6 +172,7 @@ func RailsCookieHandler(ac Auth) (HandlerFunc, error) {
 	}, nil
 }
 
+// railsAuth returns a new rails auth instance
 func railsAuth(ac Auth) (*rails.Auth, error) {
 	secret := ac.Rails.SecretKeyBase
 	if len(secret) == 0 {

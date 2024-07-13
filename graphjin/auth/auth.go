@@ -172,6 +172,7 @@ func NewAuthHandlerFunc(ac Auth) (HandlerFunc, error) {
 	return h, err
 }
 
+// NoAuth returns a handler that does not perform any authentication.
 func NoAuth() (HandlerFunc, error) {
 	return func(w http.ResponseWriter, r *http.Request) (context.Context, error) {
 		return r.Context(), nil
@@ -232,6 +233,7 @@ func NewAuth(ac Auth, log *zap.Logger, opt Options, hFn ...HandlerFunc) (
 	}, nil
 }
 
+// SimpleHandler is a simple auth handler that sets the user ID, provider and role
 func SimpleHandler(ac Auth) (HandlerFunc, error) {
 	return func(_ http.ResponseWriter, r *http.Request) (context.Context, error) {
 		c := r.Context()
@@ -257,6 +259,7 @@ func SimpleHandler(ac Auth) (HandlerFunc, error) {
 
 var Err401 = errors.New("401 unauthorized")
 
+// HeaderHandler is a middleware that checks for a header value
 func HeaderHandler(ac Auth) (HandlerFunc, error) {
 	hdr := ac.Header
 
@@ -287,14 +290,17 @@ func HeaderHandler(ac Auth) (HandlerFunc, error) {
 	}, nil
 }
 
+// IsAuth returns true if the context contains a user ID
 func IsAuth(c context.Context) bool {
 	return c != nil && c.Value(core.UserIDKey) != nil
 }
 
+// UserID returns the user ID from the context
 func UserID(c context.Context) interface{} {
 	return c.Value(core.UserIDKey)
 }
 
+// UserIDInt returns the user ID from the context as an int
 func UserIDInt(c context.Context) int {
 	v, ok := UserID(c).(string)
 	if !ok {

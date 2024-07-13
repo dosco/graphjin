@@ -22,6 +22,7 @@ type decryptOpts struct {
 	KeyServices []keyservice.KeyServiceClient
 }
 
+// decrypt decrypts the file at the given path using options passed.
 func decrypt(opts decryptOpts, fs afero.Fs) (decryptedFile []byte, err error) {
 	tree, err := LoadEncryptedFileWithBugFixes(common.GenericDecryptOpts{
 		Cipher:      opts.Cipher,
@@ -84,6 +85,7 @@ func extract(tree *sops.Tree, path []interface{}, outputStore sops.Store) ([]byt
 	return bytes, nil
 }
 
+// LoadEncryptedFileWithBugFixes loads an encrypted file from the given path and applies bug fixes.
 func LoadEncryptedFileWithBugFixes(
 	opts common.GenericDecryptOpts,
 	fs afero.Fs) (*sops.Tree, error) {
@@ -112,6 +114,7 @@ func LoadEncryptedFileWithBugFixes(
 	return tree, nil
 }
 
+// LoadEncryptedFile loads an encrypted file from the given path.
 func LoadEncryptedFile(
 	loader sops.EncryptedFileLoader,
 	inputPath string,

@@ -14,6 +14,8 @@ const (
 	authHeader = "Authorization"
 )
 
+// JwtHandler is a middleware that checks for a JWT token in the cookie or the
+// authorization header. If the token is found, it is validated and the claims
 func JwtHandler(ac Auth) (HandlerFunc, error) {
 	jwtProvider, err := provider.NewProvider(ac.JWT)
 	if err != nil {

@@ -20,8 +20,9 @@ const (
 	defaultHP  = "0.0.0.0:8080"
 )
 
-func initConfigWatcher(s1 *Service) {
-	s := s1.Load().(*service)
+// Initialize the watcher for the graphjin config file
+func initConfigWatcher(s1 *HttpService) {
+	s := s1.Load().(*graphjinService)
 	if s.conf.Serv.Production {
 		return
 	}
@@ -34,8 +35,9 @@ func initConfigWatcher(s1 *Service) {
 	}()
 }
 
-func initHotDeployWatcher(s1 *Service) {
-	s := s1.Load().(*service)
+// Initialize the hot deploy watcher
+func initHotDeployWatcher(s1 *HttpService) {
+	s := s1.Load().(*graphjinService)
 	go func() {
 		err := startHotDeployWatcher(s1)
 		if err != nil {
@@ -44,8 +46,9 @@ func initHotDeployWatcher(s1 *Service) {
 	}()
 }
 
-func startHTTP(s1 *Service) {
-	s := s1.Load().(*service)
+// Start the HTTP server
+func startHTTP(s1 *HttpService) {
+	s := s1.Load().(*graphjinService)
 
 	r := chi.NewRouter()
 	routes, err := routesHandler(s1, r, s.namespace)
@@ -125,6 +128,7 @@ func startHTTP(s1 *Service) {
 	<-idleConnsClosed
 }
 
+// Set the server header
 func setServerHeader(h http.Handler) http.Handler {
 	fn := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Server", serverName)

@@ -24,6 +24,7 @@ type rotateOpts struct {
 	KeyServices      []keyservice.KeyServiceClient
 }
 
+// rotate rotates the keys in the file at the given path using options passed.
 func rotate(opts rotateOpts) ([]byte, error) {
 	tree, err := common.LoadEncryptedFileWithBugFixes(common.GenericDecryptOpts{
 		Cipher:      opts.Cipher,

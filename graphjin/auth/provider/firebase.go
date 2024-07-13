@@ -35,6 +35,7 @@ type FirebaseProvider struct {
 	issuer string
 }
 
+// NewFirebaseProvider creates a new Firebase JWT provider
 func NewFirebaseProvider(config JWTConfig) (*FirebaseProvider, error) {
 	issuer := config.Issuer
 	if issuer == "" {
@@ -46,10 +47,12 @@ func NewFirebaseProvider(config JWTConfig) (*FirebaseProvider, error) {
 	}, nil
 }
 
+// KeyFunc returns a function that returns the key used to verify the JWT token
 func (p *FirebaseProvider) KeyFunc() jwt.Keyfunc {
 	return firebaseKeyFunction
 }
 
+// VerifyAudience checks if the audience claim is valid
 func (p *FirebaseProvider) VerifyAudience(claims jwt.MapClaims) bool {
 	if claims == nil {
 		return false
@@ -57,6 +60,7 @@ func (p *FirebaseProvider) VerifyAudience(claims jwt.MapClaims) bool {
 	return claims.VerifyAudience(p.aud, p.aud != "")
 }
 
+// VerifyIssuer checks if the issuer claim is valid
 func (p *FirebaseProvider) VerifyIssuer(claims jwt.MapClaims) bool {
 	if claims == nil {
 		return false
@@ -64,6 +68,7 @@ func (p *FirebaseProvider) VerifyIssuer(claims jwt.MapClaims) bool {
 	return claims.VerifyIssuer(p.issuer, p.issuer != "")
 }
 
+// SetContextValues sets the user ID and provider in the context
 func (p *FirebaseProvider) SetContextValues(ctx context.Context, claims jwt.MapClaims) (context.Context, error) {
 	if claims == nil {
 		return ctx, errors.New("undefined claims")
@@ -85,6 +90,7 @@ func (e *firebaseKeyError) Error() string {
 	return e.Message + " " + e.Err.Error()
 }
 
+// firebaseKeyFunction returns the public key used to verify the JWT token
 func firebaseKeyFunction(token *jwt.Token) (interface{}, error) {
 	kid, ok := token.Header["kid"]
 

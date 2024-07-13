@@ -65,7 +65,7 @@ func TestAPQ(t *testing.T) {
 		return
 	}
 
-	_, err = gj.GraphQL(context.Background(), gql, nil, &core.ReqConfig{
+	_, err = gj.GraphQL(context.Background(), gql, nil, &core.RequestConfig{
 		APQKey: "getProducts",
 	})
 	if err != nil {
@@ -73,7 +73,7 @@ func TestAPQ(t *testing.T) {
 		return
 	}
 
-	res, err := gj.GraphQL(context.Background(), "", nil, &core.ReqConfig{
+	res, err := gj.GraphQL(context.Background(), "", nil, &core.RequestConfig{
 		APQKey: "getProducts",
 	})
 	if err != nil {
@@ -199,7 +199,7 @@ func TestAllowListWithNamespace(t *testing.T) {
 		return
 	}
 
-	var rc core.ReqConfig
+	var rc core.RequestConfig
 	rc.SetNamespace("api")
 
 	_, err = gj2.GraphQL(context.Background(), gql2, nil, &rc)

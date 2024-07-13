@@ -22,7 +22,7 @@ type FS interface {
 var ErrUnknownGraphQLQuery = errors.New("unknown graphql query")
 
 const (
-	queryPath = "/queries"
+	QUERY_PATH = "/queries"
 )
 
 type Item struct {
@@ -45,6 +45,7 @@ type List struct {
 	fs       FS
 }
 
+// New creates a new allow list
 func New(log *_log.Logger, fs FS, readOnly bool) (al *List, err error) {
 	if fs == nil {
 		return nil, fmt.Errorf("no filesystem defined for the allow list")
@@ -77,6 +78,7 @@ func New(log *_log.Logger, fs FS, readOnly bool) (al *List, err error) {
 	return al, err
 }
 
+// Set adds a new query to the allow list
 func (al *List) Set(item Item) error {
 	if al.saveChan == nil {
 		return errors.New("allow list is read-only")
@@ -90,6 +92,7 @@ func (al *List) Set(item Item) error {
 	return nil
 }
 
+// GetByName returns a query by name
 func (al *List) GetByName(name string, useCache bool) (item Item, err error) {
 	if useCache {
 		if v, ok := al.cache.Get(name); ok {
@@ -98,26 +101,27 @@ func (al *List) GetByName(name string, useCache bool) (item Item, err error) {
 		}
 	}
 
-	fp := filepath.Join(queryPath, name)
+	fp := filepath.Join(QUERY_PATH, name)
 	var ok bool
 
 	if ok, err = al.fs.Exists((fp + ".gql")); err != nil {
 		return
 	} else if ok {
-		item, err = al.get(queryPath, name, ".gql", useCache)
+		item, err = al.get(QUERY_PATH, name, ".gql", useCache)
 		return
 	}
 
 	if ok, err = al.fs.Exists((fp + ".graphql")); err != nil {
 		return
 	} else if ok {
-		item, err = al.get(queryPath, name, ".gql", useCache)
+		item, err = al.get(QUERY_PATH, name, ".gql", useCache)
 	} else {
 		err = ErrUnknownGraphQLQuery
 	}
 	return
 }
 
+// get returns a query by name
 func (al *List) get(queryPath, name, ext string, useCache bool) (item Item, err error) {
 	queryNS, queryName := splitName(name)
 
@@ -161,6 +165,7 @@ func (al *List) get(queryPath, name, ext string, useCache bool) (item Item, err 
 	return
 }
 
+// save saves a query to the allow list
 func (al *List) save(item Item) (err error) {
 	item.Name = strings.TrimSpace(item.Name)
 	if item.Name == "" {
@@ -170,6 +175,7 @@ func (al *List) save(item Item) (err error) {
 	return al.saveItem(item)
 }
 
+// saveItem saves a query to the allow list
 func (al *List) saveItem(item Item) (err error) {
 	var queryFile string
 	if item.Namespace != "" {
@@ -196,7 +202,7 @@ func (al *List) saveItem(item Item) (err error) {
 			fmap[fragFile] = struct{}{}
 		}
 
-		ff := filepath.Join(queryPath, "fragments", (fragFile + ".gql"))
+		ff := filepath.Join(QUERY_PATH, "fragments", (fragFile + ".gql"))
 		err = al.fs.Put(ff, []byte(f.Value))
 		if err != nil {
 			return
@@ -207,7 +213,7 @@ func (al *List) saveItem(item Item) (err error) {
 	}
 	buf.Write(bytes.TrimSpace(item.Query))
 
-	qf := filepath.Join(queryPath, (queryFile + ".gql"))
+	qf := filepath.Join(QUERY_PATH, (queryFile + ".gql"))
 	err = al.fs.Put(qf, bytes.TrimSpace(buf.Bytes()))
 	if err != nil {
 		return
@@ -215,7 +221,7 @@ func (al *List) saveItem(item Item) (err error) {
 
 	if len(item.ActionJSON) != 0 {
 		var vars []byte
-		jf := filepath.Join(queryPath, (queryFile + ".json"))
+		jf := filepath.Join(QUERY_PATH, (queryFile + ".json"))
 		vars, err = json.MarshalIndent(item.ActionJSON, "", "  ")
 		if err != nil {
 			return
@@ -225,12 +231,13 @@ func (al *List) saveItem(item Item) (err error) {
 	return
 }
 
-func splitName(v string) (string, string) {
-	i := strings.LastIndex(v, ".")
+// splitName splits a name into namespace and name
+func splitName(name string) (string, string) {
+	i := strings.LastIndex(name, ".")
 	if i == -1 {
-		return "", v
-	} else if i < len(v)-1 {
-		return v[:i], v[(i + 1):]
+		return "", name
+	} else if i < len(name)-1 {
+		return name[:i], name[(i + 1):]
 	}
 	return "", ""
 }

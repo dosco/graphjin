@@ -11,17 +11,17 @@ import (
 )
 
 // Initializes the graphjin instance with the config
-func (gj *graphjin) initConfig() error {
+func (gj *GraphjinEngine) initConfig() error {
 	c := gj.conf
 
-	tm := make(map[string]struct{})
+	tableMap := make(map[string]struct{})
 
-	for _, t := range c.Tables {
-		k := t.Schema + t.Name
-		if _, ok := tm[k]; ok {
-			return fmt.Errorf("duplicate table found: %s", t.Name)
+	for _, table := range c.Tables {
+		k := table.Schema + table.Name
+		if _, ok := tableMap[k]; ok {
+			return fmt.Errorf("duplicate table found: %s", table.Name)
 		}
-		tm[k] = struct{}{}
+		tableMap[k] = struct{}{}
 	}
 
 	for k, v := range c.Vars {
@@ -84,7 +84,8 @@ func (gj *graphjin) initConfig() error {
 	return nil
 }
 
-func (gj *graphjin) addTableInfo(t Table) error {
+// addTableInfo adds table info to the compiler
+func (gj *GraphjinEngine) addTableInfo(t Table) error {
 	obm := map[string][][2]string{}
 
 	for k, ob := range t.OrderBy {
@@ -103,6 +104,7 @@ func (gj *graphjin) addTableInfo(t Table) error {
 	return nil
 }
 
+// getDBTableAliases returns a map of table aliases
 func getDBTableAliases(c *Config) map[string][]string {
 	m := make(map[string][]string, len(c.Tables))
 
@@ -116,7 +118,8 @@ func getDBTableAliases(c *Config) map[string][]string {
 	return m
 }
 
-func addTables(conf *Config, di *sdata.DBInfo) error {
+// addTables adds tables to the database info
+func addTables(conf *Config, dbInfo *sdata.DBInfo) error {
 	var err error
 
 	for _, t := range conf.Tables {
@@ -126,13 +129,13 @@ func addTables(conf *Config, di *sdata.DBInfo) error {
 		}
 		switch t.Type {
 		case "json", "jsonb":
-			err = addJsonTable(conf, di, t)
+			err = addJsonTable(conf, dbInfo, t)
 
 		case "polymorphic":
-			err = addVirtualTable(conf, di, t)
+			err = addVirtualTable(conf, dbInfo, t)
 
 		default:
-			err = updateTable(conf, di, t)
+			err = updateTable(conf, dbInfo, t)
 		}
 
 		if err != nil {
@@ -143,14 +146,15 @@ func addTables(conf *Config, di *sdata.DBInfo) error {
 	return nil
 }
 
-func updateTable(conf *Config, di *sdata.DBInfo, t Table) error {
-	t1, err := di.GetTable(t.Schema, t.Name)
+// updateTable updates the table info in the database info
+func updateTable(conf *Config, dbInfo *sdata.DBInfo, table Table) error {
+	t1, err := dbInfo.GetTable(table.Schema, table.Name)
 	if err != nil {
 		return fmt.Errorf("table: %w", err)
 	}
 
-	for _, c := range t.Columns {
-		c1, err := di.GetColumn(t.Schema, t.Name, c.Name)
+	for _, c := range table.Columns {
+		c1, err := dbInfo.GetColumn(table.Schema, table.Name, c.Name)
 		if err != nil {
 			return err
 		}
@@ -168,18 +172,19 @@ func updateTable(conf *Config, di *sdata.DBInfo, t Table) error {
 	return nil
 }
 
-func addJsonTable(conf *Config, di *sdata.DBInfo, t Table) error {
+// addJsonTable adds a json table to the database info
+func addJsonTable(conf *Config, dbInfo *sdata.DBInfo, table Table) error {
 	// This is for jsonb column that want to be a table.
-	if t.Table == "" {
-		return fmt.Errorf("json table: set the 'table' for column '%s'", t.Name)
+	if table.Table == "" {
+		return fmt.Errorf("json table: set the 'table' for column '%s'", table.Name)
 	}
 
-	bc, err := di.GetColumn(t.Schema, t.Table, t.Name)
+	bc, err := dbInfo.GetColumn(table.Schema, table.Table, table.Name)
 	if err != nil {
 		return fmt.Errorf("json table: %w", err)
 	}
 
-	bt, err := di.GetTable(bc.Schema, bc.Table)
+	bt, err := dbInfo.GetTable(bc.Schema, bc.Table)
 	if err != nil {
 		return fmt.Errorf("json table: %w", err)
 	}
@@ -187,23 +192,23 @@ func addJsonTable(conf *Config, di *sdata.DBInfo, t Table) error {
 	if bc.Type != "json" && bc.Type != "jsonb" {
 		return fmt.Errorf(
 			"json table: column '%s' in table '%s' is of type '%s'. Only JSON or JSONB is valid",
-			t.Name, t.Table, bc.Type)
+			table.Name, table.Table, bc.Type)
 	}
 
-	columns := make([]sdata.DBColumn, 0, len(t.Columns))
+	columns := make([]sdata.DBColumn, 0, len(table.Columns))
 
-	for i := range t.Columns {
-		c := t.Columns[i]
+	for i := range table.Columns {
+		c := table.Columns[i]
 		columns = append(columns, sdata.DBColumn{
 			ID:     -1,
 			Schema: bc.Schema,
-			Table:  t.Name,
+			Table:  table.Name,
 			Name:   c.Name,
 			Type:   c.Type,
 		})
 		if c.Type == "" {
 			return fmt.Errorf("json table: type parameter missing for column: %s.%s'",
-				t.Name, c.Name)
+				table.Name, c.Name)
 		}
 	}
 
@@ -216,14 +221,15 @@ func addJsonTable(conf *Config, di *sdata.DBInfo, t Table) error {
 		Type:       bc.Type,
 	}
 
-	nt := sdata.NewDBTable(bc.Schema, t.Name, bc.Type, columns)
+	nt := sdata.NewDBTable(bc.Schema, table.Name, bc.Type, columns)
 	nt.PrimaryCol = col1
 	nt.SecondaryCol = bt.PrimaryCol
 
-	di.AddTable(nt)
+	dbInfo.AddTable(nt)
 	return nil
 }
 
+// addVirtualTable adds a virtual table to the database info
 func addVirtualTable(conf *Config, di *sdata.DBInfo, t Table) error {
 	if len(t.Columns) == 0 {
 		return fmt.Errorf("polymorphic table: no id column specified")
@@ -249,6 +255,7 @@ func addVirtualTable(conf *Config, di *sdata.DBInfo, t Table) error {
 	return nil
 }
 
+// addForeignKeys adds foreign keys to the database info
 func addForeignKeys(conf *Config, di *sdata.DBInfo) error {
 	for _, t := range conf.Tables {
 		if t.Type == "polymorphic" {
@@ -266,6 +273,7 @@ func addForeignKeys(conf *Config, di *sdata.DBInfo) error {
 	return nil
 }
 
+// addForeignKey adds a foreign key to the database info
 func addForeignKey(conf *Config, di *sdata.DBInfo, c Column, t Table) error {
 	c1, err := di.GetColumn(t.Schema, t.Name, c.Name)
 	if err != nil {
@@ -310,6 +318,7 @@ func addForeignKey(conf *Config, di *sdata.DBInfo, c Column, t Table) error {
 	return nil
 }
 
+// addRoles adds roles to the compiler
 func addRoles(c *Config, qc *qcode.Compiler) error {
 	for _, r := range c.Roles {
 		for _, t := range r.Tables {
@@ -322,6 +331,7 @@ func addRoles(c *Config, qc *qcode.Compiler) error {
 	return nil
 }
 
+// addRole adds a role to the compiler
 func addRole(qc *qcode.Compiler, r Role, t RoleTable, defaultBlock bool) error {
 	ro := false // read-only
 
@@ -392,10 +402,12 @@ func addRole(qc *qcode.Compiler, r Role, t RoleTable, defaultBlock bool) error {
 	})
 }
 
+// GetTable returns a table from the role
 func (r *Role) GetTable(schema, name string) *RoleTable {
 	return r.tm[name]
 }
 
+// getFK returns the foreign key for the column
 func (c *Column) getFK(defaultSchema string) ([3]string, bool) {
 	var ret [3]string
 	var ok bool
@@ -412,10 +424,12 @@ func (c *Column) getFK(defaultSchema string) ([3]string, bool) {
 	return ret, ok
 }
 
+// sanitize trims the value
 func sanitize(value string) string {
 	return strings.TrimSpace(value)
 }
 
+// isASCII checks if the string is ASCII
 func isASCII(s string) (int, bool) {
 	for i := 0; i < len(s); i++ {
 		if s[i] > unicode.MaxASCII {
@@ -425,7 +439,8 @@ func isASCII(s string) (int, bool) {
 	return -1, true
 }
 
-func (gj *graphjin) initAllowList() (err error) {
+// initAllowList initializes the allow list
+func (gj *GraphjinEngine) initAllowList() (err error) {
 	gj.allowList, err = allow.New(
 		gj.log,
 		gj.fs,

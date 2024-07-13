@@ -10,6 +10,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// DBInfo holds the database schema information
 type DBInfo struct {
 	Type    string
 	Version int
@@ -24,6 +25,7 @@ type DBInfo struct {
 	hash      int
 }
 
+// DBTable holds the database table information
 type DBTable struct {
 	Comment      string
 	Schema       string
@@ -38,6 +40,7 @@ type DBTable struct {
 	colMap       map[string]int
 }
 
+// VirtualTable holds the virtual table information
 type VirtualTable struct {
 	Name       string
 	IDColumn   string
@@ -45,6 +48,7 @@ type VirtualTable struct {
 	FKeyColumn string
 }
 
+// GetDBInfo returns the database schema information
 func GetDBInfo(
 	db *sql.DB,
 	dbType string,
@@ -101,6 +105,7 @@ func GetDBInfo(
 	return di, nil
 }
 
+// NewDBInfo returns a new DBInfo object
 func NewDBInfo(
 	dbType string,
 	dbVersion int,
@@ -176,6 +181,7 @@ func NewDBInfo(
 	return di
 }
 
+// NewDBTable returns a new DBTable object
 func NewDBTable(schema, name, _type string, cols []DBColumn) DBTable {
 	ti := DBTable{
 		Schema:  schema,
@@ -202,6 +208,7 @@ func NewDBTable(schema, name, _type string, cols []DBColumn) DBTable {
 	return ti
 }
 
+// AddTable adds a table to the DBInfo object
 func (di *DBInfo) AddTable(t DBTable) {
 	for i, c := range t.Columns {
 		di.colMap[(c.Schema + ":" + c.Table + ":" + c.Name)] = i
@@ -212,6 +219,7 @@ func (di *DBInfo) AddTable(t DBTable) {
 	di.tableMap[(t.Schema + ":" + t.Name)] = i
 }
 
+// GetTable returns a table from the DBInfo object
 func (di *DBInfo) GetColumn(schema, table, column string) (*DBColumn, error) {
 	t, err := di.GetTable(schema, table)
 	if err != nil {
@@ -226,6 +234,7 @@ func (di *DBInfo) GetColumn(schema, table, column string) (*DBColumn, error) {
 	return &t.Columns[cid], nil
 }
 
+// GetTable returns a table from the DBInfo object
 func (di *DBInfo) GetTable(schema, table string) (*DBTable, error) {
 	tid, ok := di.tableMap[(schema + ":" + table)]
 	if !ok {
@@ -235,6 +244,7 @@ func (di *DBInfo) GetTable(schema, table string) (*DBTable, error) {
 	return &di.Tables[tid], nil
 }
 
+// DBColumn returns the column as a string
 type DBColumn struct {
 	Comment     string
 	ID          int32
@@ -254,6 +264,7 @@ type DBColumn struct {
 	Schema      string
 }
 
+// DiscoverColumns returns the columns of a table
 func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn, error) {
 	var sqlStmt string
 
@@ -350,6 +361,7 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 	return cols, nil
 }
 
+// DBFunction holds the database function information
 type DBFunction struct {
 	Comment string
 	Schema  string
@@ -360,6 +372,7 @@ type DBFunction struct {
 	Outputs []DBFuncParam
 }
 
+// DBFuncParam holds the database function parameter information
 type DBFuncParam struct {
 	ID    int
 	Name  string
@@ -367,6 +380,7 @@ type DBFuncParam struct {
 	Array bool
 }
 
+// DiscoverFunctions returns the functions of a database
 func DiscoverFunctions(db *sql.DB, dbtype string, blockList []string) ([]DBFunction, error) {
 	var sqlStmt string
 
@@ -423,6 +437,7 @@ func DiscoverFunctions(db *sql.DB, dbtype string, blockList []string) ([]DBFunct
 	return funcs, nil
 }
 
+// GetInput returns the input of a function
 func (fn *DBFunction) GetInput(name string) (ret DBFuncParam, err error) {
 	for _, in := range fn.Inputs {
 		if in.Name == name {
@@ -432,10 +447,12 @@ func (fn *DBFunction) GetInput(name string) (ret DBFuncParam, err error) {
 	return ret, fmt.Errorf("function input '%s' not found", name)
 }
 
+// Hash returns the hash of the DBInfo object
 func (di *DBInfo) Hash() int {
 	return di.hash
 }
 
+// isInList checks if a value is in a list
 func isInList(val string, s []string) bool {
 	for _, v := range s {
 		regex := fmt.Sprintf("^%s$", v)
