@@ -8,7 +8,7 @@ import (
 
 // initDBWatcher initializes the database schema watcher
 func (g *GraphJin) initDBWatcher() error {
-	gj := g.Load().(*GraphjinEngine)
+	gj := g.Load().(*graphjinEngine)
 
 	// no schema polling in production
 	if gj.prod {
@@ -37,7 +37,7 @@ func (g *GraphJin) startDBWatcher(ps time.Duration) {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		gj := g.Load().(*GraphjinEngine)
+		gj := g.Load().(*graphjinEngine)
 
 		latestDi, err := sdata.GetDBInfo(
 			gj.db,

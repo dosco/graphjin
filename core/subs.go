@@ -91,7 +91,7 @@ func (g *GraphJin) Subscribe(
 		return
 	}
 
-	gj := g.Load().(*GraphjinEngine)
+	gj := g.Load().(*graphjinEngine)
 
 	// create the request object
 	r := gj.newGraphqlReq(rc, "subscription", h.Name, nil, vars)
@@ -121,7 +121,7 @@ func (g *GraphJin) SubscribeByName(
 	vars json.RawMessage,
 	rc *RequestConfig,
 ) (m *Member, err error) {
-	gj := g.Load().(*GraphjinEngine)
+	gj := g.Load().(*graphjinEngine)
 
 	item, err := gj.allowList.GetByName(name, gj.prod)
 	if err != nil {
@@ -135,7 +135,7 @@ func (g *GraphJin) SubscribeByName(
 }
 
 // subscribe function is called on the graphjin struct to subscribe to a query.
-func (gj *GraphjinEngine) subscribe(c context.Context, r GraphqlReq) (
+func (gj *graphjinEngine) subscribe(c context.Context, r GraphqlReq) (
 	m *Member, err error,
 ) {
 	if r.operation != qcode.QTSubscription {
@@ -208,7 +208,7 @@ func (gj *GraphjinEngine) subscribe(c context.Context, r GraphqlReq) (
 }
 
 // initSub function is called on the graphjin struct to initialize a subscription.
-func (gj *GraphjinEngine) initSub(c context.Context, sub *sub) (err error) {
+func (gj *graphjinEngine) initSub(c context.Context, sub *sub) (err error) {
 	if err = sub.s.compile(); err != nil {
 		return
 	}
@@ -229,7 +229,7 @@ func (gj *GraphjinEngine) initSub(c context.Context, sub *sub) (err error) {
 }
 
 // subController function is called on the graphjin struct to control the subscription.
-func (gj *GraphjinEngine) subController(sub *sub) {
+func (gj *graphjinEngine) subController(sub *sub) {
 	// remove subscription if controller exists
 	defer gj.subs.Delete(sub.k)
 
@@ -345,7 +345,7 @@ func (s *sub) updateMember(msg mmsg) error {
 }
 
 // fanOutJobs function is called on the sub struct to fan out jobs.
-func (s *sub) fanOutJobs(gj *GraphjinEngine) {
+func (s *sub) fanOutJobs(gj *graphjinEngine) {
 	switch {
 	case len(s.ids) == 0:
 		return
@@ -363,7 +363,7 @@ func (s *sub) fanOutJobs(gj *GraphjinEngine) {
 }
 
 // subCheckUpdates function is called on the graphjin struct to check updates.
-func (gj *GraphjinEngine) subCheckUpdates(sub *sub, mv mval, start int) {
+func (gj *graphjinEngine) subCheckUpdates(sub *sub, mv mval, start int) {
 	// Do not use the `mval` embedded inside sub since
 	// its not thread safe use the copy `mv mval`.
 
@@ -410,7 +410,6 @@ func (gj *GraphjinEngine) subCheckUpdates(sub *sub, mv mval, start int) {
 		}
 		return
 	})
-
 	if err != nil {
 		gj.log.Printf(errSubs, "query", err)
 		return
@@ -442,7 +441,7 @@ func (gj *GraphjinEngine) subCheckUpdates(sub *sub, mv mval, start int) {
 }
 
 // subFirstQuery function is called on the graphjin struct to get the first query.
-func (gj *GraphjinEngine) subFirstQuery(sub *sub, m *Member) (mmsg, error) {
+func (gj *graphjinEngine) subFirstQuery(sub *sub, m *Member) (mmsg, error) {
 	c := context.Background()
 
 	// when params are not available we use a more optimized
@@ -483,7 +482,7 @@ func (gj *GraphjinEngine) subFirstQuery(sub *sub, m *Member) (mmsg, error) {
 }
 
 // subNotifyMember function is called on the graphjin struct to notify a member.
-func (gj *GraphjinEngine) subNotifyMember(s *sub, mv mval, j int, js json.RawMessage) {
+func (gj *graphjinEngine) subNotifyMember(s *sub, mv mval, j int, js json.RawMessage) {
 	_, err := gj.subNotifyMemberEx(s,
 		mv.mi[j].dh,
 		mv.mi[j].cindx,
@@ -495,7 +494,7 @@ func (gj *GraphjinEngine) subNotifyMember(s *sub, mv mval, j int, js json.RawMes
 }
 
 // subNotifyMemberEx function is called on the graphjin struct to notify a member.
-func (gj *GraphjinEngine) subNotifyMemberEx(sub *sub,
+func (gj *graphjinEngine) subNotifyMemberEx(sub *sub,
 	dh [32]byte, cindx int, id uint64, rc chan *Result, js json.RawMessage, update bool,
 ) (mmsg, error) {
 	mm := mmsg{id: id}

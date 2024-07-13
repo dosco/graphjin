@@ -18,7 +18,7 @@ type args struct {
 	cindx  int // index of cursor arg
 }
 
-func (gj *GraphjinEngine) argList(c context.Context,
+func (gj *graphjinEngine) argList(c context.Context,
 	md psql.Metadata,
 	fields map[string]json.RawMessage,
 	rc *RequestConfig,

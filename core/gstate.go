@@ -16,7 +16,7 @@ import (
 )
 
 type gstate struct {
-	gj    *GraphjinEngine
+	gj    *graphjinEngine
 	r     GraphqlReq
 	cs    *cstate
 	vmap  map[string]json.RawMessage
@@ -40,7 +40,7 @@ type stmt struct {
 	sql  string
 }
 
-func newGState(c context.Context, gj *GraphjinEngine, r GraphqlReq) (s gstate, err error) {
+func newGState(c context.Context, gj *graphjinEngine, r GraphqlReq) (s gstate, err error) {
 	s.gj = gj
 	s.r = r
 
