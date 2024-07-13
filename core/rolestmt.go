@@ -8,7 +8,7 @@ import (
 )
 
 // nolint:errcheck
-func (gj *graphjin) prepareRoleStmt() error {
+func (gj *GraphjinEngine) prepareRoleStmt() error {
 	if !gj.abacEnabled {
 		return nil
 	}
@@ -20,7 +20,7 @@ func (gj *graphjin) prepareRoleStmt() error {
 	w := &bytes.Buffer{}
 
 	io.WriteString(w, `SELECT (CASE WHEN EXISTS (`)
-	gj.pc.RenderVar(w, &gj.roleStmtMD, gj.conf.RolesQuery)
+	gj.psqlCompiler.RenderVar(w, &gj.roleStatementMetadata, gj.conf.RolesQuery)
 	io.WriteString(w, `) THEN `)
 
 	io.WriteString(w, `(SELECT (CASE`)
@@ -36,7 +36,7 @@ func (gj *graphjin) prepareRoleStmt() error {
 	}
 
 	io.WriteString(w, ` ELSE 'user' END) FROM (`)
-	gj.pc.RenderVar(w, &gj.roleStmtMD, gj.conf.RolesQuery)
+	gj.psqlCompiler.RenderVar(w, &gj.roleStatementMetadata, gj.conf.RolesQuery)
 	io.WriteString(w, `) AS _sg_auth_roles_query LIMIT 1) `)
 
 	switch gj.dbtype {
@@ -47,6 +47,6 @@ func (gj *graphjin) prepareRoleStmt() error {
 		io.WriteString(w, `ELSE 'anon' END) FROM (VALUES (1)) AS _sg_auth_filler LIMIT 1; `)
 
 	}
-	gj.roleStmt = w.String()
+	gj.roleStatement = w.String()
 	return nil
 }

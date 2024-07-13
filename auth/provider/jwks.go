@@ -19,6 +19,7 @@ type keychainCache struct {
 	semaphore   int32
 }
 
+// newKeychainCache creates a new KeychainCache
 func newKeychainCache(jwksURL string, refreshInterval, minRefreshInterval int) *keychainCache {
 	ar := jwk.NewAutoRefresh(context.Background())
 	if refreshInterval > 0 {
@@ -34,6 +35,7 @@ func newKeychainCache(jwksURL string, refreshInterval, minRefreshInterval int) *
 	}
 }
 
+// getKey returns the key from the cache
 func (k *keychainCache) getKey(kid string) (interface{}, error) {
 	set, err := k.keyCache.Fetch(context.TODO(), k.jwksURL)
 	if err != nil {
@@ -89,6 +91,7 @@ type JWKSProvider struct {
 	cache  *keychainCache
 }
 
+// NewJWKSProvider creates a new JWKSProvider
 func NewJWKSProvider(config JWTConfig) (*JWKSProvider, error) {
 	if config.JWKSURL == "" {
 		return nil, errors.New("undefined JWKSURL")
@@ -100,6 +103,7 @@ func NewJWKSProvider(config JWTConfig) (*JWKSProvider, error) {
 	}, nil
 }
 
+// KeyFunc returns a function that returns the key used to verify the JWT token
 func (p *JWKSProvider) KeyFunc() jwt.Keyfunc {
 	return func(token *jwt.Token) (interface{}, error) {
 		if token == nil {
@@ -123,6 +127,7 @@ func (p *JWKSProvider) KeyFunc() jwt.Keyfunc {
 	}
 }
 
+// VerifyAudience checks if the audience claim is valid
 func (p *JWKSProvider) VerifyAudience(claims jwt.MapClaims) bool {
 	if claims == nil {
 		return false
@@ -130,6 +135,7 @@ func (p *JWKSProvider) VerifyAudience(claims jwt.MapClaims) bool {
 	return claims.VerifyAudience(p.aud, p.aud != "")
 }
 
+// VerifyIssuer checks if the issuer claim is valid
 func (p *JWKSProvider) VerifyIssuer(claims jwt.MapClaims) bool {
 	if claims == nil {
 		return false
@@ -137,6 +143,7 @@ func (p *JWKSProvider) VerifyIssuer(claims jwt.MapClaims) bool {
 	return claims.VerifyIssuer(p.issuer, p.issuer != "")
 }
 
+// SetContextValues sets the user ID and provider in the context
 func (p *JWKSProvider) SetContextValues(ctx context.Context, claims jwt.MapClaims) (context.Context, error) {
 	if claims == nil {
 		return ctx, errors.New("undefined claims")

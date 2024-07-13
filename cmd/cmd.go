@@ -29,6 +29,7 @@ var (
 	cpath    string
 )
 
+// Cmd is the entry point for the CLI
 func Cmd() {
 	log = newLogger(false).Sugar()
 
@@ -64,14 +65,12 @@ func Cmd() {
 	}
 }
 
+// setup is a helper function to read the config file
 func setup(cpath string) {
 	if conf != nil {
 		return
 	}
-	setupAgain(cpath)
-}
 
-func setupAgain(cpath string) {
 	cp, err := filepath.Abs(cpath)
 	if err != nil {
 		log.Fatal(err)
@@ -83,6 +82,7 @@ func setupAgain(cpath string) {
 	}
 }
 
+// initDB is a helper function to initialize the database connection
 func initDB(openDB bool) {
 	var err error
 
@@ -97,6 +97,7 @@ func initDB(openDB bool) {
 	dbOpened = openDB
 }
 
+// newLogger creates a new logger
 func newLogger(json bool) *zap.Logger {
 	econf := zapcore.EncoderConfig{
 		MessageKey:     "msg",

@@ -21,6 +21,7 @@ type SecretArgs struct {
 	KMS, KMSC, AWS, GCP, Azure, PGP string //nolint:golint,unused
 }
 
+// SecretsCmd is the entry point for the secrets command
 func SecretsCmd(cmdName, fileName string, sa SecretArgs, args []string, log *zap.SugaredLogger) error {
 	var err error
 
@@ -148,6 +149,7 @@ func SecretsCmd(cmdName, fileName string, sa SecretArgs, args []string, log *zap
 	return nil
 }
 
+// keyGroups returns a slice of key groups based on the secret arguments
 func keyGroups(sa SecretArgs, file string) ([]sops.KeyGroup, error) {
 	var kmsKeys []keys.MasterKey
 	var pgpKeys []keys.MasterKey

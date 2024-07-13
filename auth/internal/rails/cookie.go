@@ -12,6 +12,7 @@ import (
 	"golang.org/x/crypto/pbkdf2"
 )
 
+// parseCookie decrypts and parses a Rails session cookie
 func parseCookie(cookie, secretKeyBase, salt, signSalt string) ([]byte, error) {
 	return session.DecryptSignedCookie(
 		cookie,
@@ -22,6 +23,7 @@ func parseCookie(cookie, secretKeyBase, salt, signSalt string) ([]byte, error) {
 
 // {"session_id":"a71d6ffcd4ed5572ea2097f569eb95ef","warden.user.user.key":[[2],"$2a$11$q9Br7m4wJxQvF11hAHvTZO"],"_csrf_token":"HsYgrD2YBaWAabOYceN0hluNRnGuz49XiplmMPt43aY="}
 
+// parseCookie52 decrypts and parses a Rails 5.2+ session cookie
 func parseCookie52(cookie, secretKeyBase, authSalt string) ([]byte, error) {
 	ecookie, err := url.QueryUnescape(cookie)
 	if err != nil {

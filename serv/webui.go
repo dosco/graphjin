@@ -10,6 +10,7 @@ import (
 //go:embed web/build
 var webBuild embed.FS
 
+// webuiHandler serves the web UI
 func webuiHandler(routePrefix string, gqlEndpoint string) http.Handler {
 	webRoot, _ := fs.Sub(webBuild, "web/build")
 	fs := http.FileServer(http.FS(webRoot))

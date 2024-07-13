@@ -8,11 +8,13 @@ type Cache struct {
 	cache *lru.TwoQueueCache
 }
 
-func (gj *graphjin) initCache() (err error) {
+// initCache initializes the cache
+func (gj *GraphjinEngine) initCache() (err error) {
 	gj.cache.cache, err = lru.New2Q(500)
 	return
 }
 
+// Get returns the value from the cache
 func (c Cache) Get(key string) (val []byte, fromCache bool) {
 	if v, ok := c.cache.Get(key); ok {
 		val = v.([]byte)
@@ -21,6 +23,7 @@ func (c Cache) Get(key string) (val []byte, fromCache bool) {
 	return
 }
 
+// Set sets the value in the cache
 func (c Cache) Set(key string, val []byte) {
 	c.cache.Add(key, val)
 }
