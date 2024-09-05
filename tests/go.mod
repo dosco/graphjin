@@ -1,12 +1,10 @@
 module github.com/dosco/graphjin/tests/v3
 
-go 1.21
-
-toolchain go1.21.0
+go 1.18
 
 require (
-	github.com/dosco/graphjin/conf/v3 v3.0.0-20240503072632-ee9ecd63cbc1
-	github.com/dosco/graphjin/core/v3 v3.0.0-20240503072632-ee9ecd63cbc1
+	github.com/dosco/graphjin/conf/v3 v3.0.31
+	github.com/dosco/graphjin/core/v3 v3.0.31
 	github.com/orlangure/gnomock v0.30.0
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/sync v0.7.0

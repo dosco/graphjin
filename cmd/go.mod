@@ -1,14 +1,12 @@
 module github.com/dosco/graphjin/cmd/v3
 
-go 1.21
-
-toolchain go1.21.0
+go 1.18
 
 require (
 	github.com/brianvoe/gofakeit/v6 v6.28.0
 	github.com/dop251/goja v0.0.0-20240220182346-e401ed450204
-	github.com/dosco/graphjin/core/v3 v3.0.0-20240503072632-ee9ecd63cbc1
-	github.com/dosco/graphjin/serv/v3 v3.0.0-20240503072632-ee9ecd63cbc1
+	github.com/dosco/graphjin/core/v3 v3.0.31
+	github.com/dosco/graphjin/serv/v3 v3.0.31
 	github.com/gosimple/slug v1.14.0
 	github.com/jackc/pgx/v5 v5.5.5
 	github.com/jvatic/goja-babel v0.0.0-20240430111315-efc2226a021f
@@ -48,8 +46,6 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0 // indirect
 	github.com/dimchansky/utfbom v1.1.1 // indirect
 	github.com/dlclark/regexp2 v1.11.0 // indirect
-	github.com/dosco/graphjin/auth/v3 v3.0.0-20240503072632-ee9ecd63cbc1 // indirect
-	github.com/dosco/graphjin/plugin/otel/v3 v3.0.0-20240503072632-ee9ecd63cbc1 // indirect
 	github.com/fatih/color v1.16.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
