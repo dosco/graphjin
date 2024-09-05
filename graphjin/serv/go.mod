@@ -1,13 +1,11 @@
 module github.com/dosco/graphjin/serv/v3
 
-go 1.21
-
-toolchain go1.22.2
+go 1.18
 
 require (
-	github.com/dosco/graphjin/auth/v3 v3.0.0-20240503072632-ee9ecd63cbc1
-	github.com/dosco/graphjin/core/v3 v3.0.0-20240503072632-ee9ecd63cbc1
-	github.com/dosco/graphjin/plugin/otel/v3 v3.0.0-20240503072632-ee9ecd63cbc1
+	github.com/dosco/graphjin/auth/v3 v3.0.31
+	github.com/dosco/graphjin/core/v3 v3.0.31
+	github.com/dosco/graphjin/plugin/otel/v3 v3.0.31
 	github.com/fsnotify/fsnotify v1.7.0
 	github.com/go-http-utils/headers v0.0.0-20181008091004-fed159eddc2a
 	github.com/go-pkgz/expirable-cache v1.0.0

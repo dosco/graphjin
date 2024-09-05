@@ -12,7 +12,7 @@ ifndef GOPATH
 override GOPATH = $(HOME)/go
 endif
 
-export GO111MODULE := on
+# export GO111MODULE := on
 
 # Build-time Go variables
 BUILD_FLAGS ?= -ldflags '-s -w -X "main.version=${BUILD_VERSION}" -X "main.commit=${BUILD}" -X "main.date=${BUILD_DATE}" -X "github.com/dosco/graphjin/serv/v3.version=${BUILD_VERSION}"'
@@ -20,7 +20,7 @@ BUILD_FLAGS ?= -ldflags '-s -w -X "main.version=${BUILD_VERSION}" -X "main.commi
 .PHONY: all download-tools build wasm-build gen clean tidy test test-norace run run-github-actions lint changlog release version help $(PLATFORMS)
 
 tidy:
-	@go mod tidy -go=1.16 && go mod tidy -go=1.17
+	@find . -name "go.mod" -execdir go mod tidy \;
 
 test:
 	@go test -v -race $(PACKAGES) 
@@ -70,17 +70,17 @@ gen: download-tools
 	@go generate ./...
 
 $(BINARY):
-	@CGO_ENABLED=0 go build $(BUILD_FLAGS) -o $(BINARY) cmd/*.go
+	@CGO_ENABLED=0 GOTOOLCHAIN=auto go build $(BUILD_FLAGS) -o $(BINARY) cmd/*.go
 $(WASM):
 	@cp $(GOROOT)/misc/wasm/wasm_exec.js ./wasm/js/
-	@GOOS=js GOARCH=wasm go build -o ./wasm/graphjin.wasm ./wasm/*.go
+	@GOOS=js GOARCH=wasm GOTOOLCHAIN=auto go build -o ./wasm/graphjin.wasm ./wasm/*.go
 
 clean:
 	@rm -f $(BINARY)
 	@rm -f $(WASM)
 
 run: clean
-	@go run $(BUILD_FLAGS) cmd/*.go $(ARGS)
+	@GOTOOLCHAIN=auto go run $(BUILD_FLAGS) cmd/*.go $(ARGS)
 
 run-github-actions:
 	@act push --job linter
