@@ -63,6 +63,8 @@ func gitCommands(version string) error {
 	}{
 		{"git", []string{"add", "."}},
 		{"git", []string{"commit", "-m", fmt.Sprintf("Release v%s", version)}},
+		{"git", []string{"push", "origin", "master"}},
+
 		{"git", []string{"tag", fmt.Sprintf("auth/v%s", version)}},
 		{"git", []string{"tag", fmt.Sprintf("cmd/v%s", version)}},
 		{"git", []string{"tag", fmt.Sprintf("conf/v%s", version)}},
@@ -71,8 +73,8 @@ func gitCommands(version string) error {
 		{"git", []string{"tag", fmt.Sprintf("serv/v%s", version)}},
 		{"git", []string{"tag", fmt.Sprintf("tests/v%s", version)}},
 		{"git", []string{"tag", fmt.Sprintf("wasm/v%s", version)}},
+		{"git", []string{"push", "--tags"}},
 		{"git", []string{"tag", fmt.Sprintf("v%s", version)}},
-		{"git", []string{"push", "origin", "master"}},
 		{"git", []string{"push", "--tags"}},
 	}
 
