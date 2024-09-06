@@ -61,6 +61,7 @@ func gitCommands(version string) error {
 		command string
 		args    []string
 	}{
+		{"make", []string{"tidy"}},
 		{"git", []string{"add", "."}},
 		{"git", []string{"commit", "-m", fmt.Sprintf("Release v%s", version)}},
 		{"git", []string{"push", "origin", "master"}},

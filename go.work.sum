@@ -29,7 +29,12 @@ github.com/cyphar/filepath-securejoin v0.2.4/go.mod h1:aPGpWjXOXUn2NCNjFvBE6aRxG
 github.com/deepmap/oapi-codegen v1.10.1/go.mod h1:TvVmDQlUkFli9gFij/gtW1o+tFBr4qCHyv2zG+R0YZY=
 github.com/docker/go-units v0.4.0/go.mod h1:fgPhTUdO+D/Jk86RDLlptpiXQzgHJF7gydDDbaIK4Dk=
 github.com/dop251/goja_nodejs v0.0.0-20211022123610-8dd9abb0616d/go.mod h1:DngW8aVqWbuLRMHItjPUyqdj+HWPvnQe8V8y1nDpIbM=
+github.com/dosco/graphjin/auth/v3 v3.0.37/go.mod h1:vRnXV0qsYXoj89qGHA+0An/V291EaVvvgtpZYBlNj0o=
+github.com/dosco/graphjin/conf/v3 v3.0.37/go.mod h1:CAb/HWjTMyD0gkFlHxOIgJG4M0sgnWAQ63PxUw1JC3c=
 github.com/dosco/graphjin/core/v3 v3.0.35/go.mod h1:jnqpOc5MuXa1jqaok8Drlh0BAPw12IwOECspmouoABc=
+github.com/dosco/graphjin/core/v3 v3.0.37/go.mod h1:jnqpOc5MuXa1jqaok8Drlh0BAPw12IwOECspmouoABc=
+github.com/dosco/graphjin/plugin/otel/v3 v3.0.37/go.mod h1:3xBf6RtKUehNJ+pvHJ0i2zeuSKBicD+s3Rf9ZSpnYj8=
+github.com/dosco/graphjin/serv/v3 v3.0.37/go.mod h1:1axutJTvgu7s6OATErZCQFOWrv25dU5wDZqTa5H6cFo=
 github.com/elastic/elastic-transport-go/v8 v8.2.0/go.mod h1:87Tcz8IVNe6rVSLdBux1o/PEItLtyabHU3naC7IoqKI=
 github.com/elastic/go-elasticsearch/v7 v7.17.10/go.mod h1:OJ4wdbtDNk5g503kvlHLyErCgQwwzmDtaFC4XyOxXA4=
 github.com/elastic/go-elasticsearch/v8 v8.9.0/go.mod h1:NGmpvohKiRHXI0Sw4fuUGn6hYOmAXlyCphKpzVBiqDE=
