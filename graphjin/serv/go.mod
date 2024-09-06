@@ -5,9 +5,9 @@ go 1.21
 toolchain go1.23.1
 
 require (
-	github.com/dosco/graphjin/auth/v3 v3.0.36
-	github.com/dosco/graphjin/core/v3 v3.0.36
-	github.com/dosco/graphjin/plugin/otel/v3 v3.0.36
+	github.com/dosco/graphjin/auth/v3 v3.0.37
+	github.com/dosco/graphjin/core/v3 v3.0.37
+	github.com/dosco/graphjin/plugin/otel/v3 v3.0.37
 	github.com/fsnotify/fsnotify v1.7.0
 	github.com/go-http-utils/headers v0.0.0-20181008091004-fed159eddc2a
 	github.com/go-pkgz/expirable-cache v1.0.0
