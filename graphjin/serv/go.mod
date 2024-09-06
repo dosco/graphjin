@@ -5,9 +5,9 @@ go 1.21
 toolchain go1.23.1
 
 require (
-	github.com/dosco/graphjin/auth/v3 v3.0.32
-	github.com/dosco/graphjin/core/v3 v3.0.32
-	github.com/dosco/graphjin/plugin/otel/v3 v3.0.32
+	github.com/dosco/graphjin/auth/v3 v3.0.34
+	github.com/dosco/graphjin/core/v3 v3.0.34
+	github.com/dosco/graphjin/plugin/otel/v3 v3.0.34
 	github.com/fsnotify/fsnotify v1.7.0
 	github.com/go-http-utils/headers v0.0.0-20181008091004-fed159eddc2a
 	github.com/go-pkgz/expirable-cache v1.0.0
@@ -31,12 +31,6 @@ require (
 	go.uber.org/zap v1.27.0
 	golang.org/x/time v0.6.0
 )
-
-replace github.com/dosco/graphjin/core/v3 => ../core
-
-replace github.com/dosco/graphjin/auth/v3 => ../auth
-
-replace github.com/dosco/graphjin/plugin/otel/v3 => ../plugin/otel
 
 require (
 	cloud.google.com/go/auth v0.4.1 // indirect
@@ -93,7 +87,7 @@ require (
 	github.com/go-chi/chi/v5 v5.0.12
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/goccy/go-json v0.10.2 // indirect
+	github.com/goccy/go-json v0.10.3 // indirect
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.0 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
@@ -122,7 +116,7 @@ require (
 	github.com/lestrrat-go/blackmagic v1.0.2 // indirect
 	github.com/lestrrat-go/httpcc v1.0.1 // indirect
 	github.com/lestrrat-go/iter v1.0.2 // indirect
-	github.com/lestrrat-go/jwx v1.2.29 // indirect
+	github.com/lestrrat-go/jwx v1.2.30 // indirect
 	github.com/lestrrat-go/option v1.0.1 // indirect
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
@@ -141,13 +135,13 @@ require (
 	go.mozilla.org/gopgagent v0.0.0-20170926210634-4d7ea76ff71a // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.25.0 // indirect
+	golang.org/x/crypto v0.27.0 // indirect
 	golang.org/x/net v0.27.0 // indirect
 	golang.org/x/oauth2 v0.20.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect
-	golang.org/x/sys v0.24.0 // indirect
-	golang.org/x/term v0.22.0 // indirect
-	golang.org/x/text v0.16.0 // indirect
+	golang.org/x/sys v0.25.0 // indirect
+	golang.org/x/term v0.24.0 // indirect
+	golang.org/x/text v0.18.0 // indirect
 	google.golang.org/api v0.180.0 // indirect
 	google.golang.org/grpc v1.63.2 // indirect
 	google.golang.org/protobuf v1.34.1 // indirect

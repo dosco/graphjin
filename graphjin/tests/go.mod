@@ -5,16 +5,12 @@ go 1.21
 toolchain go1.23.1
 
 require (
-	github.com/dosco/graphjin/conf/v3 v3.0.32
-	github.com/dosco/graphjin/core/v3 v3.0.32
+	github.com/dosco/graphjin/conf/v3 v3.0.34
+	github.com/dosco/graphjin/core/v3 v3.0.34
 	github.com/orlangure/gnomock v0.30.0
 	github.com/stretchr/testify v1.9.0
-	golang.org/x/sync v0.7.0
+	golang.org/x/sync v0.8.0
 )
-
-replace github.com/dosco/graphjin/core/v3 => ../core
-
-replace github.com/dosco/graphjin/conf/v3 => ../conf
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect

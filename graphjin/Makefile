@@ -12,8 +12,6 @@ ifndef GOPATH
 override GOPATH = $(HOME)/go
 endif
 
-# export GO111MODULE := on
-
 # Build-time Go variables
 BUILD_FLAGS ?= -ldflags '-s -w -X "main.version=${BUILD_VERSION}" -X "main.commit=${BUILD}" -X "main.date=${BUILD_DATE}" -X "github.com/dosco/graphjin/serv/v3.version=${BUILD_VERSION}"'
 
