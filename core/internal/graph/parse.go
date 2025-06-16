@@ -271,7 +271,7 @@ func (p *Parser) parseOp() (op Operation, err error) {
 	}
 
 	e := p.curr().pos + 1
-	op.Query = p.input[s:e]
+	op.Query = p.input[s-1 : e]
 
 	return op, nil
 }
