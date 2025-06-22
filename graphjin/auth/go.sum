@@ -7,8 +7,8 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0 h1:rpfIENRNNilwHwZeG5+P150SMrnNEcHYvcCuK6dPZSg=
 github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0/go.mod h1:v57UDF4pDQJcEfFUCRop3lJL149eHGSe9Jvczhzjo/0=
-github.com/dosco/graphjin/core/v3 v3.0.34 h1:V3KmflmrA1qBIiMRkmOC3m1WKcowTpM25CRzI6WXLCg=
-github.com/dosco/graphjin/core/v3 v3.0.34/go.mod h1:jnqpOc5MuXa1jqaok8Drlh0BAPw12IwOECspmouoABc=
+github.com/dosco/graphjin/core/v3 v3.0.38 h1:WkGplcXcNpgkFYcvYr6GYUwncVlUYX+EY2kaOYnRIEQ=
+github.com/dosco/graphjin/core/v3 v3.0.38/go.mod h1:jnqpOc5MuXa1jqaok8Drlh0BAPw12IwOECspmouoABc=
 github.com/goccy/go-json v0.10.3 h1:KZ5WoDbxAIgm2HNbYckL0se1fHD6rz5j4ywS6ebzDqA=
 github.com/goccy/go-json v0.10.3/go.mod h1:oq7eo15ShAhp70Anwd5lgX2pLfOS3QCiwU/PULtXL6M=
 github.com/golang-jwt/jwt v3.2.2+incompatible h1:IfV12K8xAKAnZqdXVzCZ+TOjboZ2keLg81eXfW3O+oY=

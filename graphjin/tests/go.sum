@@ -23,10 +23,10 @@ github.com/docker/go-connections v0.4.0 h1:El9xVISelRB7BuFusrZozjnkIM5YnzCViNKoh
 github.com/docker/go-connections v0.4.0/go.mod h1:Gbd7IOopHjR8Iph03tsViu4nIes5XhDvyHbTtUxmeec=
 github.com/docker/go-units v0.5.0 h1:69rxXcBk27SvSaaxTtLh/8llcHD8vYHT7WSdRZ/jvr4=
 github.com/docker/go-units v0.5.0/go.mod h1:fgPhTUdO+D/Jk86RDLlptpiXQzgHJF7gydDDbaIK4Dk=
-github.com/dosco/graphjin/conf/v3 v3.0.34 h1:J159mjtBB7BMJs6LbXisClAJ1N05bZlJhtBwYQoIn0w=
-github.com/dosco/graphjin/conf/v3 v3.0.34/go.mod h1:0kABUWZn9Zjde3O2QG2oDfCqPlZaFzyl0ZeftMgLQbs=
-github.com/dosco/graphjin/core/v3 v3.0.34 h1:V3KmflmrA1qBIiMRkmOC3m1WKcowTpM25CRzI6WXLCg=
-github.com/dosco/graphjin/core/v3 v3.0.34/go.mod h1:jnqpOc5MuXa1jqaok8Drlh0BAPw12IwOECspmouoABc=
+github.com/dosco/graphjin/conf/v3 v3.0.38 h1:+ubl83tXRMktMdrwLbdIJw3jLB4D1gJ5xxZkzgZQJLg=
+github.com/dosco/graphjin/conf/v3 v3.0.38/go.mod h1:CHVKxZ8dE+cq07YlYKVLvUmB2fZQyCsr04iXre5+RXU=
+github.com/dosco/graphjin/core/v3 v3.0.38 h1:WkGplcXcNpgkFYcvYr6GYUwncVlUYX+EY2kaOYnRIEQ=
+github.com/dosco/graphjin/core/v3 v3.0.38/go.mod h1:jnqpOc5MuXa1jqaok8Drlh0BAPw12IwOECspmouoABc=
 github.com/go-sql-driver/mysql v1.8.1 h1:LedoTUt/eveggdHS9qUFC1EFSa8bU2+1pZjSRpvNJ1Y=
 github.com/go-sql-driver/mysql v1.8.1/go.mod h1:wEBSXgmK//2ZFJyE+qWnIsVGmvmEKlqwuVSjsCm7DZg=
 github.com/gogo/protobuf v1.3.2 h1:Ov1cvc58UF3b5XjBnZv7+opcTcQFZebYjWzi34vdm4Q=
