@@ -139,36 +139,60 @@ const (
 
 var expAll = []exp{
 	{name: "isNull", desc: "Is value null (true) or not null (false)", etype: "Boolean"},
+	{name: "_isNull", desc: "Is value null (true) or not null (false)", etype: "Boolean"},
 }
 
 var expScalar = []exp{
 	{name: "equals", desc: "Equals value"},
+	{name: "_eq", desc: "Equals value"},
 	{name: "notEquals", desc: "Does not equal value"},
+	{name: "_neq", desc: "Does not equal value"},
 	{name: "greaterThan", desc: "Is greater than value"},
+	{name: "_gt", desc: "Is greater than value"},
 	{name: "lesserThan", desc: "Is lesser than value"},
+	{name: "_lt", desc: "Is lesser than value"},
 	{name: "greaterOrEquals", desc: "Is greater than or equals value"},
+	{name: "_gte", desc: "Is greater than or equals value"},
 	{name: "lesserOrEquals", desc: "Is lesser than or equals value"},
+	{name: "_lte", desc: "Is lesser than or equals value"},
 	{name: "like", desc: iLikeDesc},
+	{name: "_like", desc: iLikeDesc},
 	{name: "notLike", desc: notLikeDesc},
+	{name: "_nlike", desc: notLikeDesc},
 	{name: "iLike", desc: iLikeDesc},
+	{name: "_ilike", desc: iLikeDesc},
 	{name: "notILike", desc: notILikeDesc},
+	{name: "_nilike", desc: notILikeDesc},
 	{name: "similar", desc: similarDesc},
+	{name: "_similar", desc: similarDesc},
 	{name: "notSimilar", desc: notSimilarDesc},
+	{name: "_nsimilar", desc: notSimilarDesc},
 	{name: "regex", desc: "Value matches regex pattern"},
+	{name: "_regex", desc: "Value matches regex pattern"},
 	{name: "notRegex", desc: "Value not matching regex pattern"},
+	{name: "_nregex", desc: "Value not matching regex pattern"},
 	{name: "iRegex", desc: "Value matches (case-insensitive) regex pattern"},
+	{name: "_iregex", desc: "Value matches (case-insensitive) regex pattern"},
 	{name: "notIRegex", desc: "Value not matching (case-insensitive) regex pattern"},
+	{name: "_niregex", desc: "Value not matching (case-insensitive) regex pattern"},
 }
 
 var expList = []exp{
 	{name: "in", desc: "Is in list of values"},
+	{name: "_in", desc: "Is in list of values"},
 	{name: "notIn", desc: "Is not in list of values"},
+	{name: "_nin", desc: "Is not in list of values"},
 }
 
 var expJSON = []exp{
 	{name: "hasKey", desc: "JSON value contains this key"},
+	{name: "_hasKey", desc: "JSON value contains this key"},
 	{name: "hasKeyAny", desc: "JSON value contains any of these keys"},
+	{name: "_hasKeyAny", desc: "JSON value contains any of these keys"},
 	{name: "hasKeyAll", desc: "JSON value contains all of these keys"},
+	{name: "_hasKeyAll", desc: "JSON value contains all of these keys"},
 	{name: "contains", desc: "JSON value matches any of they key/value pairs"},
+	{name: "_contains", desc: "JSON value matches any of they key/value pairs"},
 	{name: "containedIn", desc: "JSON value contains all of they key/value pairs"},
+	{name: "_containedIn", desc: "JSON value contains all of they key/value pairs"},
 }

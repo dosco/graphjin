@@ -562,8 +562,11 @@ func (in *Introspection) addWhereType(table sdata.DBTable, ft *FullType) {
 		Name: tablename,
 		InputFields: []InputValue{
 			{Name: "and", Type: newTypeRef("", tablename, nil)},
+			{Name: "_and", Type: newTypeRef("", tablename, nil)},
 			{Name: "or", Type: newTypeRef("", tablename, nil)},
+			{Name: "_or", Type: newTypeRef("", tablename, nil)},
 			{Name: "not", Type: newTypeRef("", tablename, nil)},
+			{Name: "_not", Type: newTypeRef("", tablename, nil)},
 		},
 	}
 	for _, c := range table.Columns {
