@@ -1,0 +1,149 @@
+name: Auto Release
+
+on:
+  push:
+    branches: [master]
+    paths-ignore: 
+      - "**.md"
+      - "docs/**"
+      - ".github/workflows/**"
+      - "website/**"
+
+jobs:
+  auto-release:
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, '[skip-release]')"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Get current version
+        id: current_version
+        run: |
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          echo "current=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "Current version: $CURRENT_VERSION"
+
+      - name: Determine version increment
+        id: version_increment
+        run: |
+          # Check commit message for version increment hints
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          
+          if [[ "$COMMIT_MSG" == *"[major]"* ]]; then
+            INCREMENT_TYPE="major"
+          elif [[ "$COMMIT_MSG" == *"[minor]"* ]] || [[ "$COMMIT_MSG" == *"feat:"* ]] || [[ "$COMMIT_MSG" == *"feature:"* ]]; then
+            INCREMENT_TYPE="minor"
+          else
+            INCREMENT_TYPE="patch"
+          fi
+          
+          echo "increment_type=$INCREMENT_TYPE" >> $GITHUB_OUTPUT
+          echo "Version increment type: $INCREMENT_TYPE"
+
+      - name: Calculate new version
+        id: new_version
+        run: |
+          CURRENT="${{ steps.current_version.outputs.current }}"
+          INCREMENT_TYPE="${{ steps.version_increment.outputs.increment_type }}"
+          
+          # Split version into parts
+          IFS='.' read -ra VERSION_PARTS <<< "$CURRENT"
+          MAJOR=${VERSION_PARTS[0]}
+          MINOR=${VERSION_PARTS[1]}
+          PATCH=${VERSION_PARTS[2]}
+          
+          # Increment based on type
+          case $INCREMENT_TYPE in
+            "major")
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            "minor")
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            "patch")
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+          
+          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "New version: $NEW_VERSION"
+
+      - name: Update package.json version
+        run: |
+          NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
+          npm version $NEW_VERSION --no-git-tag-version
+          echo "Updated package.json to version $NEW_VERSION"
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.23.1"
+
+      - name: Update Go module versions
+        run: |
+          NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
+          chmod +x ./release.sh
+          ./release.sh $NEW_VERSION
+          echo "Updated Go modules to version $NEW_VERSION"
+
+      - name: Configure Git
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+      - name: Commit version updates
+        run: |
+          NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
+          git add .
+          git commit -m "chore: bump version to v$NEW_VERSION [skip-release]"
+
+      - name: Create and push tags
+        run: |
+          NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
+          
+          # Create all module tags
+          git tag "auth/v$NEW_VERSION"
+          git tag "cmd/v$NEW_VERSION"
+          git tag "conf/v$NEW_VERSION"
+          git tag "core/v$NEW_VERSION"
+          git tag "plugin/otel/v$NEW_VERSION"
+          git tag "serv/v$NEW_VERSION"
+          git tag "tests/v$NEW_VERSION"
+          git tag "wasm/v$NEW_VERSION"
+          git tag "v$NEW_VERSION"
+          
+          # Push changes and tags
+          git push origin master
+          git push --tags
+          
+          echo "Created and pushed tags for version $NEW_VERSION"
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.new_version.outputs.new_version }}
+          release_name: Release v${{ steps.new_version.outputs.new_version }}
+          body: |
+            Auto-generated release v${{ steps.new_version.outputs.new_version }}
+            
+            **Changes:**
+            ${{ github.event.head_commit.message }}
+            
+            **Commit:** ${{ github.sha }}
+          draft: false
+          prerelease: false 

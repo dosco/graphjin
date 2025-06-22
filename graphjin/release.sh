@@ -18,17 +18,5 @@ find . -name 'go.mod' -exec sh -c '
     done
 ' sh {} +
 
-# git add .
-# git commit -m "Release v$new_version"
-
-# git tag auth/v$1
-# git tag cmd/v$1
-# git tag conf/v$1
-# git tag core/v$1
-# git tag plugin/otel/v$1
-# git tag serv/v$1
-# git tag tests/v$1
-# git tag wasm/v$1
-
-# git tag v$1
-# git push --tags
+# Note: Git operations are now handled by GitHub Actions
+# This script only updates the Go module versions
