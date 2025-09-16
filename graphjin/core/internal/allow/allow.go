@@ -241,3 +241,37 @@ func splitName(name string) (string, string) {
 	}
 	return "", ""
 }
+
+// ListAll returns all queries in the allow list
+func (al *List) ListAll() (items []Item, err error) {
+	files, err := al.fs.List(QUERY_PATH)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, file := range files {
+		// Only process .gql and .graphql files
+		if !strings.HasSuffix(file, ".gql") && !strings.HasSuffix(file, ".graphql") {
+			continue
+		}
+
+		// Extract query name (remove extension)
+		var name string
+		if strings.HasSuffix(file, ".gql") {
+			name = strings.TrimSuffix(file, ".gql")
+		} else {
+			name = strings.TrimSuffix(file, ".graphql")
+		}
+
+		// Get the query item
+		item, getErr := al.GetByName(name, false)
+		if getErr != nil {
+			// Log error but continue with other queries
+			continue
+		}
+
+		items = append(items, item)
+	}
+
+	return items, nil
+}

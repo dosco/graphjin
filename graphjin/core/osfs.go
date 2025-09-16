@@ -53,3 +53,19 @@ func (f *osFS) exists(path string) (ok bool, err error) {
 	}
 	return
 }
+
+// List returns all files in the directory
+func (f *osFS) List(path string) (entries []string, err error) {
+	fullPath := filepath.Join(f.basePath, path)
+	dirEntries, err := os.ReadDir(fullPath)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, entry := range dirEntries {
+		if !entry.IsDir() {
+			entries = append(entries, entry.Name())
+		}
+	}
+	return entries, nil
+}
