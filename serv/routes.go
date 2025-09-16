@@ -9,6 +9,7 @@ import (
 const (
 	routeGraphQL = "/api/v1/graphql"
 	routeREST    = "/api/v1/rest/*"
+	routeOpenAPI = "/api/v1/openapi.json"
 	healthRoute  = "/health"
 )
 
@@ -47,9 +48,11 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 	if ns == nil {
 		mux.Handle(routeGraphQL, s1.GraphQL(ah))
 		mux.Handle(routeREST, s1.REST(ah))
+		mux.Handle(routeOpenAPI, s1.OpenAPI())
 	} else {
 		mux.Handle(routeGraphQL, s1.GraphQLWithNS(ah, *ns))
 		mux.Handle(routeREST, s1.RESTWithNS(ah, *ns))
+		mux.Handle(routeOpenAPI, s1.OpenAPIWithNS(*ns))
 	}
 
 	return setServerHeader(mux), nil
