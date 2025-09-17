@@ -14,6 +14,23 @@ CREATE TABLE users (
 
 -- CREATE UNIQUE INDEX users_unique_email_idx ON users(email);
 
+-- Table for testing JSON path operations (based on GitHub issue #519)
+CREATE TABLE quotations (
+  id bigint IDENTITY(1,1) PRIMARY KEY,
+  validity_period nvarchar(1024) NOT NULL,
+  customer_id bigint,
+  amount decimal(10, 2),
+  created_at timestamp NOT NULL DEFAULT current_timestamp,
+  FOREIGN KEY (customer_id) REFERENCES users(id)
+);
+
+-- Insert test data for quotations with nested JSON structures
+INSERT INTO quotations (validity_period, customer_id, amount, created_at)
+VALUES
+  ('{"issue_date": "2024-09-15T03:03:16+0000", "expiry_date": "2024-10-15T03:03:16+0000", "status": "active"}', 1, 1000.00, '2024-09-15 03:03:16'),
+  ('{"issue_date": "2024-09-20T03:03:16+0000", "expiry_date": "2024-10-20T03:03:16+0000", "status": "pending"}', 2, 2000.00, '2024-09-20 03:03:16'),
+  ('{"issue_date": "2024-09-10T03:03:16+0000", "expiry_date": "2024-10-10T03:03:16+0000", "status": "expired"}', 3, 1500.00, '2024-09-10 03:03:16');
+
 /*
 CREATE TABLE categories (
   id bigint NOT NULL,

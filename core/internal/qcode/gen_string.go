@@ -218,11 +218,13 @@ func _() {
 	_ = x[OpEqualsTrue-34]
 	_ = x[OpNotEqualsTrue-35]
 	_ = x[OpSelectExists-36]
+	_ = x[OpJSONPath-37]
+	_ = x[OpJSONPathText-38]
 }
 
-const _ExpOp_name = "OpNopOpAndOpOrOpNotOpEqualsOpNotEqualsOpGreaterOrEqualsOpLesserOrEqualsOpGreaterThanOpLesserThanOpInOpNotInOpLikeOpNotLikeOpILikeOpNotILikeOpSimilarOpNotSimilarOpRegexOpNotRegexOpIRegexOpNotIRegexOpContainsOpContainedInOpHasInCommonOpHasKeyOpHasKeyAnyOpHasKeyAllOpIsNullOpIsNotNullOpTsQueryOpFalseOpNotDistinctOpDistinctOpEqualsTrueOpNotEqualsTrueOpSelectExists"
+const _ExpOp_name = "OpNopOpAndOpOrOpNotOpEqualsOpNotEqualsOpGreaterOrEqualsOpLesserOrEqualsOpGreaterThanOpLesserThanOpInOpNotInOpLikeOpNotLikeOpILikeOpNotILikeOpSimilarOpNotSimilarOpRegexOpNotRegexOpIRegexOpNotIRegexOpContainsOpContainedInOpHasInCommonOpHasKeyOpHasKeyAnyOpHasKeyAllOpIsNullOpIsNotNullOpTsQueryOpFalseOpNotDistinctOpDistinctOpEqualsTrueOpNotEqualsTrueOpSelectExistsJSON path operator (->)JSON path text operator (->>)"
 
-var _ExpOp_index = [...]uint16{0, 5, 10, 14, 19, 27, 38, 55, 71, 84, 96, 100, 107, 113, 122, 129, 139, 148, 160, 167, 177, 185, 196, 206, 219, 232, 240, 251, 262, 270, 281, 290, 297, 310, 320, 332, 347, 361}
+var _ExpOp_index = [...]uint16{0, 5, 10, 14, 19, 27, 38, 55, 71, 84, 96, 100, 107, 113, 122, 129, 139, 148, 160, 167, 177, 185, 196, 206, 219, 232, 240, 251, 262, 270, 281, 290, 297, 310, 320, 332, 347, 361, 384, 413}
 
 func (i ExpOp) String() string {
 	if i < 0 || i >= ExpOp(len(_ExpOp_index)-1) {

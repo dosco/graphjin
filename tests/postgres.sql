@@ -282,6 +282,22 @@ INSERT INTO graph_edge (src_node, dst_node)
 VALUES ('a', 'b'),
   ('a', 'c');
 
+-- Table for testing JSON path operations (based on GitHub issue #519)
+CREATE TABLE quotations (
+  id BIGSERIAL PRIMARY KEY,
+  validity_period JSONB NOT NULL,
+  customer_id BIGINT REFERENCES users(id),
+  amount NUMERIC(10, 2),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Insert test data for quotations with nested JSON structures
+INSERT INTO quotations (id, validity_period, customer_id, amount, created_at)
+VALUES
+  (1, '{"issue_date": "2024-09-15T03:03:16+0000", "expiry_date": "2024-10-15T03:03:16+0000", "status": "active"}', 1, 1000.00, '2024-09-15 03:03:16'),
+  (2, '{"issue_date": "2024-09-20T03:03:16+0000", "expiry_date": "2024-10-20T03:03:16+0000", "status": "pending"}', 2, 2000.00, '2024-09-20 03:03:16'),
+  (3, '{"issue_date": "2024-09-10T03:03:16+0000", "expiry_date": "2024-10-10T03:03:16+0000", "status": "expired"}', 3, 1500.00, '2024-09-10 03:03:16');
+
 -- Function to test JSONB parameter handling
 CREATE OR REPLACE FUNCTION process_user_data(user_id BIGINT, user_data JSONB)
 RETURNS TABLE (id BIGINT, result_data JSONB)

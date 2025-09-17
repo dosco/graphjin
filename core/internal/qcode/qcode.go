@@ -170,6 +170,7 @@ type Exp struct {
 		Table   string
 		Col     sdata.DBColumn
 		ColName string
+		Path    []string
 	}
 	Right struct {
 		ValType  ValType
@@ -283,6 +284,8 @@ const (
 	OpEqualsTrue
 	OpNotEqualsTrue
 	OpSelectExists
+	OpJSONPath      // JSON path operator (->)
+	OpJSONPathText  // JSON path text operator (->>)
 )
 
 type ValType int8

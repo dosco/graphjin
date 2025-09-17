@@ -78,6 +78,57 @@ func Example_queryInTransaction() {
 	// Output: {"products":[{"id":1,"owner":{"fullName":"User 1","id":1}},{"id":2,"owner":{"fullName":"User 2","id":2}},{"id":3,"owner":{"fullName":"User 3","id":3}}]}
 }
 
+func Example_queryJSONPathOperations() {
+	// Test case for issue #519: JSON path filtering on nested objects
+	gql := `
+	query {
+		quotations(where: { validity_period: { issue_date: { lte: "2024-09-18T03:03:16+0000" } } }) {
+			id
+			validity_period
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"quotations":[{"id":1,"validity_period":{"expiry_date":"2024-10-15T03:03:16+0000","issue_date":"2024-09-15T03:03:16+0000","status":"active"}},{"id":3,"validity_period":{"expiry_date":"2024-10-10T03:03:16+0000","issue_date":"2024-09-10T03:03:16+0000","status":"expired"}}]}
+}
+
+func Example_queryJSONPathOperationsAlternativeSyntax() {
+	// Test case for issue #519: Alternative syntax using JSON path operator
+	// Using underscore syntax which gets transformed to JSON path
+	gql := `
+	query {
+		products(limit: 10, where: { metadata_foo: { eq: true } }) {
+			id
+			metadata
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"products":[{"id":2,"metadata":{"foo":true}},{"id":4,"metadata":{"foo":true}},{"id":6,"metadata":{"foo":true}},{"id":8,"metadata":{"foo":true}},{"id":10,"metadata":{"foo":true}},{"id":12,"metadata":{"foo":true}},{"id":14,"metadata":{"foo":true}},{"id":16,"metadata":{"foo":true}},{"id":18,"metadata":{"foo":true}},{"id":20,"metadata":{"foo":true}}]}
+}
+
 func Example_queryWithUser() {
 	gql := `
 	query {
