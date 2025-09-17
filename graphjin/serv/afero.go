@@ -39,3 +39,18 @@ func (f *aferoFS) Put(path string, data []byte) (err error) {
 func (f *aferoFS) Exists(path string) (exists bool, err error) {
 	return afero.Exists(f.fs, path)
 }
+
+// List returns all files in the directory
+func (f *aferoFS) List(path string) (entries []string, err error) {
+	dirEntries, err := afero.ReadDir(f.fs, path)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, entry := range dirEntries {
+		if !entry.IsDir() {
+			entries = append(entries, entry.Name())
+		}
+	}
+	return entries, nil
+}

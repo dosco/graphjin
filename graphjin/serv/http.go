@@ -451,7 +451,6 @@ func newDTrace(dtrace propagation.TextMapPropagator, r *http.Request) (context.C
 // openAPIHandler generates and serves the OpenAPI specification
 func (s1 *HttpService) openAPIHandler(ns *string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
 		s := s1.Load().(*graphjinService)
 
 		// Set content type for JSON
