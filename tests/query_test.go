@@ -1698,3 +1698,27 @@ func Example_queryWithTypename() {
 	}
 	// Output: {"__typename":"getUser","users":{"__typename":"users","email":"user1@test.com","id":1}}
 }
+
+func Example_queryFunctionWithJsonbParam() {
+	gql := `query {
+		process_user_data(user_id: 1, user_data: $userData) {
+			id
+			result_data
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	vars := json.RawMessage(`{"userData": {"field": "Alex", "value": 123}}`)
+	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// This test reproduces the JSONB function parameter issue from GitHub issue #521
+}

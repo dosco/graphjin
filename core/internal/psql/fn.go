@@ -92,6 +92,11 @@ func (c *compilerContext) renderFuncArgVal(a qcode.Arg) {
 		c.colWithTable(a.Col.Table, a.Col.Name)
 	case qcode.ArgTypeVar:
 		c.renderParam(Param{Name: a.Val, Type: a.DType})
+		// Add proper casting for JSON/JSONB parameters
+		if a.DType == "json" || a.DType == "jsonb" {
+			c.w.WriteString(" :: ")
+			c.w.WriteString(a.DType)
+		}
 	default:
 		c.squoted(a.Val)
 	}
