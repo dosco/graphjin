@@ -237,6 +237,7 @@ github.com/dosco/graphjin/auth/v3 v3.0.37/go.mod h1:vRnXV0qsYXoj89qGHA+0An/V291E
 github.com/dosco/graphjin/conf/v3 v3.0.37/go.mod h1:CAb/HWjTMyD0gkFlHxOIgJG4M0sgnWAQ63PxUw1JC3c=
 github.com/dosco/graphjin/core/v3 v3.0.35/go.mod h1:jnqpOc5MuXa1jqaok8Drlh0BAPw12IwOECspmouoABc=
 github.com/dosco/graphjin/core/v3 v3.0.37/go.mod h1:jnqpOc5MuXa1jqaok8Drlh0BAPw12IwOECspmouoABc=
+github.com/dosco/graphjin/core/v3 v3.1.1/go.mod h1:OH/Ko9P6EnxHRoWexanRlHS+d7rgqCCsIzUjUxWs6wk=
 github.com/dosco/graphjin/plugin/otel/v3 v3.0.37/go.mod h1:3xBf6RtKUehNJ+pvHJ0i2zeuSKBicD+s3Rf9ZSpnYj8=
 github.com/dosco/graphjin/serv/v3 v3.0.37/go.mod h1:1axutJTvgu7s6OATErZCQFOWrv25dU5wDZqTa5H6cFo=
 github.com/elastic/elastic-transport-go/v8 v8.2.0/go.mod h1:87Tcz8IVNe6rVSLdBux1o/PEItLtyabHU3naC7IoqKI=

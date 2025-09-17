@@ -3,3 +3,230 @@ description:
 globs:
 alwaysApply: false
 ---
+---
+description: Guidelines for GraphJin core internal packages
+globs: ["core/internal/**/*.go"]
+alwaysApply: false
+---
+
+# Core Internal Packages
+
+## Package Organization
+
+The core internal packages are the heart of GraphJin's GraphQL to SQL compilation:
+
+### Parser (`graph/`)
+- **Lexer** - Tokenizes GraphQL input
+- **Parser** - Builds Abstract Syntax Tree (AST)
+- **Schema** - GraphQL schema introspection
+- **Utils** - Common parsing utilities
+
+### Query Compiler (`qcode/`)
+- **Compiler** - Converts GraphQL AST to intermediate representation
+- **Fields** - Field selection and aliasing
+- **Arguments** - Query argument processing
+- **Validation** - Query validation and security checks
+
+### SQL Generator (`psql/`)
+- **Query** - SELECT statement generation
+- **Mutations** - INSERT/UPDATE/DELETE generation
+- **Metadata** - SQL metadata and introspection
+- **Utilities** - SQL helper functions
+
+### Schema Discovery (`sdata/`)
+- **Tables** - Database table introspection
+- **Relationships** - Foreign key relationship detection
+- **Functions** - Database function discovery
+- **Types** - Database type mapping
+
+### JSON Processing (`jsn/`)
+- **Parser** - High-performance JSON parsing
+- **Filter** - JSON field filtering
+- **Validation** - JSON schema validation
+- **Tree** - JSON tree manipulation
+
+## Design Principles
+
+### Internal Package Rules
+- Packages in `internal/` are NOT part of the public API
+- Never export internal types or functions outside core
+- Use interfaces for cross-package dependencies
+- Keep internal implementation details hidden
+
+### Performance Critical Code
+- These packages are in the hot path for every request
+- Optimize for zero allocations where possible
+- Use object pooling for frequently allocated objects
+- Profile and benchmark all changes
+
+### Error Handling
+- Use structured errors with context
+- Provide helpful error messages for developers
+- Include source location information when possible
+- Log compilation errors with query context
+
+## Package-Specific Guidelines
+
+### Graph Package (`graph/`)
+
+#### Lexer Implementation
+- Use efficient state machine for tokenization
+- Handle Unicode correctly
+- Support GraphQL specification completely
+- Provide meaningful error messages with positions
+
+#### Parser Implementation
+- Build complete AST with all GraphQL constructs
+- Handle fragments, variables, and directives
+- Validate syntax during parsing
+- Support schema introspection queries
+
+### QCode Package (`qcode/`)
+
+#### Compilation Process
+- Convert GraphQL AST to queryable intermediate form
+- Resolve field selections and aliases
+- Process arguments and variables
+- Apply security policies and validations
+
+#### Security Validation
+- Check field permissions based on user roles
+- Validate argument types and constraints
+- Enforce query complexity limits
+- Block dangerous operations in production mode
+
+### PSQL Package (`psql/`)
+
+#### SQL Generation
+- Generate single efficient SQL query
+- Use CTEs for complex nested queries
+- Support database-specific optimizations
+- Handle pagination with cursors
+
+#### Database Compatibility
+- Primary: PostgreSQL (full feature support)
+- Secondary: MySQL 8+ (limited mutations)
+- Use database-specific SQL dialects when needed
+- Test against multiple database versions
+
+### SData Package (`sdata/`)
+
+#### Schema Discovery
+- Auto-discover tables, columns, and relationships
+- Build relationship graph from foreign keys
+- Cache schema information for performance
+- Support custom type mappings
+
+#### Relationship Detection
+- Detect one-to-one, one-to-many, many-to-many
+- Handle self-referencing relationships
+- Support junction table detection
+- Allow manual relationship overrides
+
+### JSN Package (`jsn/`)
+
+#### High-Performance JSON
+- Zero-allocation JSON parsing where possible
+- Efficient field filtering and selection
+- Support for large JSON documents
+- Memory-efficient tree representation
+
+## Testing Internal Packages
+
+### Unit Testing
+- Test each package in isolation
+- Use table-driven tests for multiple scenarios
+- Mock dependencies between packages
+- Test error conditions thoroughly
+
+### Integration Testing
+- Test full compilation pipeline
+- Use real database schemas
+- Test with complex GraphQL queries
+- Verify SQL output correctness
+
+### Benchmark Testing
+- Measure compilation performance
+- Track memory allocations
+- Compare against baseline performance
+- Set regression thresholds
+
+### Fuzz Testing
+- Fuzz GraphQL parser with random inputs
+- Test JSON parser with malformed data
+- Verify SQL generation doesn't panic
+- Test schema discovery edge cases
+
+## Common Patterns
+
+### Error Handling Pattern
+```go
+type CompilerError struct {
+    Message string
+    Line    int
+    Column  int
+    Query   string
+}
+
+func (e *CompilerError) Error() string {
+    return fmt.Sprintf("%s at line %d, column %d", e.Message, e.Line, e.Column)
+}
+```
+
+### Builder Pattern
+```go
+type QueryBuilder struct {
+    query strings.Builder
+    args  []interface{}
+}
+
+func (b *QueryBuilder) AddField(name string) *QueryBuilder {
+    // implementation
+    return b
+}
+```
+
+### Interface Usage
+```go
+type Compiler interface {
+    Compile(query string) (*QCode, error)
+}
+
+type SQLGenerator interface {
+    Generate(qc *QCode) (string, error)
+}
+```
+
+## Performance Considerations
+
+### Memory Management
+- Reuse objects where possible
+- Use sync.Pool for frequently allocated objects
+- Avoid unnecessary string allocations
+- Profile memory usage regularly
+
+### CPU Optimization
+- Use efficient algorithms and data structures
+- Minimize reflection usage
+- Cache expensive computations
+- Optimize hot code paths
+
+### Concurrency
+- Design for concurrent access
+- Use appropriate synchronization primitives
+- Avoid shared mutable state
+- Test for race conditions
+
+## Debugging Internal Packages
+
+### Debug Logging
+- Use structured logging with levels
+- Include query context in log messages
+- Log compilation steps in debug mode
+- Provide verbose error information
+
+### Development Tools
+- Use Go's built-in profiling tools
+- Leverage race detector during testing
+- Use benchmarking for performance analysis
+- Implement debug endpoints for introspection

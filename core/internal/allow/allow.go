@@ -17,6 +17,7 @@ type FS interface {
 	Get(path string) (data []byte, err error)
 	Put(path string, data []byte) (err error)
 	Exists(path string) (exists bool, err error)
+	List(path string) (entries []string, err error)
 }
 
 var ErrUnknownGraphQLQuery = errors.New("unknown graphql query")

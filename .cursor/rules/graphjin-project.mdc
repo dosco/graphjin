@@ -3,3 +3,104 @@ description:
 globs:
 alwaysApply: false
 ---
+---
+description: GraphJin project overview and development guidelines
+alwaysApply: true
+---
+
+# GraphJin Project Rules
+
+## Project Overview
+
+GraphJin is a high-performance GraphQL to SQL compiler that builds APIs in minutes instead of weeks. It's a "new kind of ORM" that automatically converts GraphQL queries into efficient SQL, supporting PostgreSQL, MySQL, YugabyteDB, AWS Aurora/RDS, and Google Cloud SQL.
+
+**Key Features:**
+- GraphQL to SQL compilation with auto-discovery of database schemas
+- Works with NodeJS and Go
+- Secure by design (production queries are pre-saved, not client-modifiable)
+- Real-time subscriptions and WebSocket support
+- Built-in authentication, rate limiting, and security features
+- Remote joins (combine database queries with REST API calls)
+- Array and JSON column support
+- Role-based access control
+
+## Architecture & Module Structure
+
+This is a Go workspace with multiple modules:
+
+### Core Modules
+- `core/` - Main GraphQL to SQL compiler engine
+- `serv/` - Standalone HTTP service with REST/GraphQL/WebSocket APIs
+- `auth/` - Authentication providers (JWT, Auth0, Firebase, Rails)
+- `cmd/` - CLI tool for database management, migrations, deployment
+- `conf/` - Configuration management
+- `plugin/otel/` - OpenTelemetry tracing integration
+- `wasm/` - WebAssembly build for NodeJS integration
+
+### Key Internal Packages
+- `core/internal/graph/` - GraphQL parser and lexer
+- `core/internal/psql/` - SQL query generation
+- `core/internal/qcode/` - Query compilation
+- `core/internal/sdata/` - Schema discovery and metadata
+- `core/internal/jsn/` - JSON processing utilities
+
+### Supporting Directories
+- `tests/` - Integration tests with database fixtures
+- `examples/` - Sample applications (NodeJS, webshop)
+- `website/` - Documentation site (Next.js)
+- `benchmark/` - Performance benchmarks
+
+## Development Guidelines
+
+### Go Code Standards
+- Use Go 1.23+ (current toolchain: go1.23.5)
+- Follow standard Go conventions and formatting
+- Use meaningful package and variable names
+- Prefer composition over inheritance
+- Write comprehensive tests for new features
+- Use the existing error handling patterns
+
+### Key Patterns Used
+- **Compiler Pattern**: GraphQL → QCode → SQL transformation pipeline
+- **Builder Pattern**: Query and mutation builders with method chaining
+- **Factory Pattern**: Database-specific implementations
+- **Observer Pattern**: Real-time subscriptions and change notifications
+
+### Database Support
+- **Primary**: PostgreSQL (full feature support)
+- **Secondary**: MySQL 8+ (limited mutation support)
+- **Supported**: YugabyteDB, AWS Aurora/RDS, Google Cloud SQL
+- Always consider cross-database compatibility when adding features
+
+### Configuration
+- YAML-based configuration files (`dev.yml`, `prod.yml`)
+- Environment-specific configs with inheritance
+- Production vs development mode distinctions
+- Security-first approach in production mode
+
+## Performance Guidelines
+
+### Query Optimization
+- Generate single SQL queries regardless of GraphQL complexity
+- Leverage database indexes and relationships
+- Avoid N+1 query patterns
+- Use prepared statements for repeated queries
+
+### Memory Management
+- Efficient JSON processing with custom parsers
+- Connection pooling for database access
+- Caching for compiled queries and schema metadata
+
+## Security Considerations
+
+### Production Mode
+- All queries must be pre-saved in production
+- No dynamic query execution from client input
+- Prepared statements for SQL injection prevention
+- Role-based access control enforcement
+
+### Authentication
+- JWT token support with multiple providers
+- Rails session compatibility
+- Custom authentication provider support
+- User context propagation through request lifecycle

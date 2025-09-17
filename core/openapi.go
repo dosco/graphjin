@@ -33,13 +33,13 @@ type OpenAPIServer struct {
 }
 
 type PathItem struct {
-	Get    *Operation `json:"get,omitempty"`
-	Post   *Operation `json:"post,omitempty"`
-	Put    *Operation `json:"put,omitempty"`
-	Delete *Operation `json:"delete,omitempty"`
+	Get    *OpenAPIOperation `json:"get,omitempty"`
+	Post   *OpenAPIOperation `json:"post,omitempty"`
+	Put    *OpenAPIOperation `json:"put,omitempty"`
+	Delete *OpenAPIOperation `json:"delete,omitempty"`
 }
 
-type Operation struct {
+type OpenAPIOperation struct {
 	Summary     string              `json:"summary,omitempty"`
 	Description string              `json:"description,omitempty"`
 	OperationID string              `json:"operationId,omitempty"`
@@ -249,12 +249,25 @@ func (g *GraphJin) extractParameters(varDefs []graph.VarDef) []Parameter {
 	var params []Parameter
 
 	for _, varDef := range varDefs {
+		// Extract type information from the Val node
+		typeName := "String" // default type
+		required := false    // default to optional
+
+		if varDef.Val != nil {
+			typeName = varDef.Val.Name
+			// Check if it's a non-null type (required)
+			if varDef.Val.Type == graph.NodeLabel && len(varDef.Val.Children) > 0 &&
+			   varDef.Val.Children[0].Type == graph.NodeLabel {
+				required = true
+			}
+		}
+
 		param := Parameter{
 			Name:        varDef.Name,
 			In:          "query",
 			Description: fmt.Sprintf("GraphQL variable: %s", varDef.Name),
-			Required:    varDef.Required,
-			Schema:      g.graphQLTypeToOpenAPISchema(varDef.Type),
+			Required:    required,
+			Schema:      g.graphQLTypeToOpenAPISchema(typeName),
 		}
 		params = append(params, param)
 	}
@@ -550,7 +563,7 @@ func (g *GraphJin) generatePathItem(analysis *QueryAnalysis, components *OpenAPI
 	pathItem := PathItem{}
 
 	for _, method := range analysis.HTTPMethods {
-		operation := &Operation{
+		operation := &OpenAPIOperation{
 			Summary:     fmt.Sprintf("Execute %s query", analysis.Item.Name),
 			Description: fmt.Sprintf("Executes the %s GraphQL query via REST", analysis.Item.Name),
 			OperationID: fmt.Sprintf("%s_%s", strings.ToLower(method), analysis.Item.Name),

@@ -58,6 +58,7 @@ func (s *gstate) resolveRemotes(
 	wg.Add(len(from))
 
 	var cerr error
+	var cerrMutex sync.Mutex
 
 	for i, id := range from {
 		// use the json key to find the related Select object
@@ -90,8 +91,11 @@ func (s *gstate) resolveRemotes(
 				ID: string(id), Sel: sel, Log: s.gj.log, RequestConfig: s.r.requestconfig,
 			})
 			if err != nil {
+				cerrMutex.Lock()
 				cerr = fmt.Errorf("%s: %s", sel.Table, err)
-				span.Error(cerr)
+				spanErr := cerr
+				cerrMutex.Unlock()
+				span.Error(spanErr)
 			}
 			span.End()
 
@@ -108,7 +112,9 @@ func (s *gstate) resolveRemotes(
 			if len(sel.Fields) != 0 {
 				err = jsn.Filter(&ob, b, fieldsToList(sel.Fields))
 				if err != nil {
+					cerrMutex.Lock()
 					cerr = fmt.Errorf("%s: %w", sel.Table, err)
+					cerrMutex.Unlock()
 					return
 				}
 

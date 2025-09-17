@@ -5,9 +5,9 @@ go 1.23.0
 toolchain go1.23.5
 
 require (
-	github.com/dosco/graphjin/auth/v3 v
-	github.com/dosco/graphjin/core/v3 v
-	github.com/dosco/graphjin/plugin/otel/v3 v
+	github.com/dosco/graphjin/auth/v3 v3.1.1
+	github.com/dosco/graphjin/core/v3 v3.1.1
+	github.com/dosco/graphjin/plugin/otel/v3 v3.1.1
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/go-http-utils/headers v0.0.0-20181008091004-fed159eddc2a
 	github.com/go-pkgz/expirable-cache v1.0.0
@@ -149,4 +149,10 @@ require (
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/urfave/cli.v1 v1.20.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+)
+
+replace (
+	github.com/dosco/graphjin/auth/v3 => ../auth
+	github.com/dosco/graphjin/core/v3 => ../core
+	github.com/dosco/graphjin/plugin/otel/v3 => ../plugin/otel
 )

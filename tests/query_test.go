@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"time"
 
 	"github.com/dosco/graphjin/core/v3"
 )
@@ -1215,14 +1217,40 @@ func Example_queryWithRemoteAPIJoin() {
 	}`
 
 	// fake remote api service
+	mux := http.NewServeMux()
+	mux.HandleFunc("/payments/", func(w http.ResponseWriter, r *http.Request) {
+		id := r.URL.Path[10:]
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"data":[{"desc":"Payment 1 for %s"},{"desc": "Payment 2 for %s"}]}`,
+			id, id)
+	})
+
+	// Use a listener to ensure we get an available port
+	listener, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		panic(err)
+	}
+
+	// Get the actual port that was assigned
+	port := listener.Addr().(*net.TCPAddr).Port
+
+	server := &http.Server{
+		Handler: mux,
+	}
+
 	go func() {
-		http.HandleFunc("/payments/", func(w http.ResponseWriter, r *http.Request) {
-			id := r.URL.Path[10:]
-			fmt.Fprintf(w, `{"data":[{"desc":"Payment 1 for %s"},{"desc": "Payment 2 for %s"}]}`,
-				id, id)
-		})
-		log.Fatal(http.ListenAndServe("localhost:12345", nil)) //nolint:gosec
+		log.Fatal(server.Serve(listener)) //nolint:gosec
 	}()
+
+	// Wait for server to be ready by polling the actual endpoint
+	for i := 0; i < 100; i++ {
+		resp, err := http.Get(fmt.Sprintf("http://localhost:%d/payments/test", port))
+		if err == nil {
+			resp.Body.Close()
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 2})
 	conf.Resolvers = []core.ResolverConfig{{
@@ -1231,7 +1259,7 @@ func Example_queryWithRemoteAPIJoin() {
 		Table:     "users",
 		Column:    "stripe_id",
 		StripPath: "data",
-		Props:     core.ResolverProps{"url": "http://localhost:12345/payments/$id"},
+		Props:     core.ResolverProps{"url": fmt.Sprintf("http://localhost:%d/payments/$id", port)},
 	}}
 
 	gj, err := core.NewGraphJin(conf, db)
