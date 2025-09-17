@@ -280,4 +280,14 @@ VALUES ('a', 'node a'),
   ('c', 'node c');
 INSERT INTO graph_edge (src_node, dst_node)
 VALUES ('a', 'b'),
-  ('a', 'c')
+  ('a', 'c');
+
+-- Function to test JSONB parameter handling
+CREATE OR REPLACE FUNCTION process_user_data(user_id BIGINT, user_data JSONB)
+RETURNS TABLE (id BIGINT, result_data JSONB)
+LANGUAGE plpgsql as $$
+BEGIN
+  RETURN QUERY
+  SELECT user_id as id, user_data as result_data;
+END;
+$$;
