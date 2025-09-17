@@ -140,10 +140,16 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 		}
 
 		c.w.WriteString(`((`)
-		if ex.Left.ID == -1 {
-			c.colWithTable(table, colName)
+
+		// Handle JSON path operations
+		if len(ex.Left.Path) > 0 {
+			c.renderJSONPathColumn(table, colName, ex.Left.Path, ex.Left.ID)
 		} else {
-			c.colWithTableID(table, ex.Left.ID, colName)
+			if ex.Left.ID == -1 {
+				c.colWithTable(table, colName)
+			} else {
+				c.colWithTableID(table, ex.Left.ID, colName)
+			}
 		}
 		c.w.WriteString(`) `)
 	}
@@ -505,6 +511,36 @@ func (c *compilerContext) renderValArrayColumn(ex *qcode.Exp, table string, pid 
 			c.colWithTable(table, col.Name)
 		} else {
 			c.colWithTableID(table, pid, col.Name)
+		}
+	}
+}
+
+func (c *expContext) renderJSONPathColumn(table, colName string, path []string, selID int32) {
+	// Render the base column
+	if selID == -1 {
+		c.colWithTable(table, colName)
+	} else {
+		c.colWithTableID(table, selID, colName)
+	}
+
+	// Build the JSON path
+	switch c.ct {
+	case "mysql":
+		// MySQL JSON path syntax: column->'$.path1.path2'
+		c.w.WriteString(`->>'$.`)
+		for i, pathElement := range path {
+			if i > 0 {
+				c.w.WriteString(`.`)
+			}
+			c.w.WriteString(pathElement)
+		}
+		c.w.WriteString(`'`)
+	default:
+		// PostgreSQL JSON path syntax: column->>'path1'->>'path2'
+		for _, pathElement := range path {
+			c.w.WriteString(`->>'`)
+			c.w.WriteString(pathElement)
+			c.w.WriteString(`'`)
 		}
 	}
 }

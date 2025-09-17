@@ -71,10 +71,19 @@ CREATE TABLE chats (
   updated_at TIMESTAMPTZ
 );
 
-CREATE VIEW 
+-- Table for testing JSON path operations (based on GitHub issue #519)
+CREATE TABLE quotations (
+  id BIGSERIAL PRIMARY KEY,
+  validity_period JSON NOT NULL,
+  customer_id BIGINT REFERENCES users(id),
+  amount NUMERIC(10, 2),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE VIEW
   hot_products
 AS (
-  SELECT 
+  SELECT
       id as product_id
   FROM
       products
@@ -169,11 +178,18 @@ FROM
   GENERATE_SERIES(1, 100) i;
 
 -- insert chats
-INSERT INTO 
+INSERT INTO
   chats (id, body, created_at)
-SELECT 
-  i, 
+SELECT
+  i,
   'This is chat message number ' || i::string,
   '2021-01-09 16:37:01'
-FROM 
+FROM
   GENERATE_SERIES(1, 5) i;
+
+-- insert quotations
+INSERT INTO quotations (id, validity_period, customer_id, amount, created_at)
+VALUES
+  (1, '{"issue_date": "2024-09-15T03:03:16+0000", "expiry_date": "2024-10-15T03:03:16+0000", "status": "active"}', 1, 1000.00, '2024-09-15 03:03:16'),
+  (2, '{"issue_date": "2024-09-20T03:03:16+0000", "expiry_date": "2024-10-20T03:03:16+0000", "status": "pending"}', 2, 2000.00, '2024-09-20 03:03:16'),
+  (3, '{"issue_date": "2024-09-10T03:03:16+0000", "expiry_date": "2024-10-10T03:03:16+0000", "status": "expired"}', 3, 1500.00, '2024-09-10 03:03:16');

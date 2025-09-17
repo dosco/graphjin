@@ -323,6 +323,23 @@ LIMIT 5;
 --   SELECT EXISTS (SELECT p.product_id FROM hot_products p where p.product_id = id) INTO @v;
 -- 	RETURN v;
 -- END;
+-- Table for testing JSON path operations (based on GitHub issue #519)
+CREATE TABLE quotations (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  validity_period JSON NOT NULL,
+  customer_id BIGINT,
+  amount DECIMAL(10, 2),
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (customer_id) REFERENCES users(id)
+);
+
+-- Insert test data for quotations with nested JSON structures
+INSERT INTO quotations (id, validity_period, customer_id, amount, created_at)
+VALUES
+  (1, '{"issue_date": "2024-09-15T03:03:16+0000", "expiry_date": "2024-10-15T03:03:16+0000", "status": "active"}', 1, 1000.00, '2024-09-15 03:03:16'),
+  (2, '{"issue_date": "2024-09-20T03:03:16+0000", "expiry_date": "2024-10-20T03:03:16+0000", "status": "pending"}', 2, 2000.00, '2024-09-20 03:03:16'),
+  (3, '{"issue_date": "2024-09-10T03:03:16+0000", "expiry_date": "2024-10-10T03:03:16+0000", "status": "expired"}', 3, 1500.00, '2024-09-10 03:03:16');
+
 -- graph relationships
 CREATE TABLE graph_node (
   id VARCHAR(10) NOT NULL PRIMARY KEY,

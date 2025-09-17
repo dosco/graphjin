@@ -3,6 +3,7 @@ package qcode
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/graph"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
@@ -159,6 +160,13 @@ func (ast *aexpst) parseNode(av aexp, node *graph.Node, selID int32) (*Exp, erro
 		}
 
 		if ok, err := ast.processNestedTable(av, ex, node); err != nil {
+			return nil, err
+		} else if ok {
+			return ex, nil
+		}
+
+		// Check for JSON path operations on nested objects
+		if ok, err := ast.processJSONPath(av, ex, node, selID); err != nil {
 			return nil, err
 		} else if ok {
 			return ex, nil
@@ -439,13 +447,154 @@ func setListVal(ex *Exp, node *graph.Node) {
 func (ast *aexpst) processColumn(av aexp, ex *Exp, node *graph.Node, selID int32) (bool, error) {
 	nn := ast.co.ParseName(node.Name)
 
+	// Check for JSON path operators in column name (e.g., "validity_period->>issue_date")
+	if strings.Contains(nn, "->>") {
+		parts := strings.Split(nn, "->>")
+		if len(parts) == 2 {
+			colName := strings.TrimSpace(parts[0])
+			jsonPath := strings.TrimSpace(parts[1])
+
+			col, err := av.ti.GetColumn(colName)
+			if err != nil {
+				return false, err
+			}
+
+			// Set up for JSON path text operation
+			ex.Left.ID = selID
+			ex.Left.Col = col
+			ex.Left.Path = []string{jsonPath}
+			return true, nil
+		}
+	} else if strings.Contains(nn, "->") {
+		parts := strings.Split(nn, "->")
+		if len(parts) == 2 {
+			colName := strings.TrimSpace(parts[0])
+			jsonPath := strings.TrimSpace(parts[1])
+
+			col, err := av.ti.GetColumn(colName)
+			if err != nil {
+				return false, err
+			}
+
+			// Set up for JSON path operation
+			ex.Left.ID = selID
+			ex.Left.Col = col
+			ex.Left.Path = []string{jsonPath}
+			return true, nil
+		}
+	}
+
 	col, err := av.ti.GetColumn(nn)
 	if err != nil {
+		// Check if this might be a JSON path using underscore syntax (e.g., metadata_foo)
+		if strings.Contains(nn, "_") {
+			parts := strings.SplitN(nn, "_", 2)
+			if len(parts) == 2 {
+				colName := parts[0]
+				jsonPath := parts[1]
+
+				col, err := av.ti.GetColumn(colName)
+				if err == nil && (col.Type == "json" || col.Type == "jsonb") {
+					// Set up for JSON path operation using underscore syntax
+					ex.Left.ID = selID
+					ex.Left.Col = col
+					ex.Left.Path = []string{jsonPath}
+					return true, nil
+				}
+			}
+		}
 		return false, err
 	}
 	ex.Left.ID = selID
 	ex.Left.Col = col
 	return true, err
+}
+
+func (ast *aexpst) processJSONPath(av aexp, ex *Exp, node *graph.Node, selID int32) (bool, error) {
+	// Check if this is a JSON/JSONB column with nested path
+	nn := ast.co.ParseName(node.Name)
+	col, err := av.ti.GetColumn(nn)
+	if err != nil {
+		// Column doesn't exist at this level, might be a JSON path
+		return false, nil
+	}
+
+	// Check if the column is JSON/JSONB type
+	if col.Type != "json" && col.Type != "jsonb" {
+		return false, nil
+	}
+
+	// This is a JSON/JSONB column, check if the child is a nested object (not an operator)
+	vn := node.Children[0]
+	if vn.Type != graph.NodeObj {
+		return false, nil
+	}
+
+	// Check if the child node has a single child (indicating it's a nested path)
+	if len(vn.Children) != 1 {
+		return false, nil
+	}
+
+	// Set up the column
+	ex.Left.ID = selID
+	ex.Left.Col = col
+
+	// Navigate through the nested structure to build the path
+	jsonPath := []string{}
+	currentNode := vn
+	for {
+		jsonPath = append(jsonPath, currentNode.Name)
+		if currentNode.Type != graph.NodeObj || len(currentNode.Children) != 1 {
+			break
+		}
+		nextNode := currentNode.Children[0]
+		// Check if the next node is an operator (not a path element)
+		if ok, _ := ast.isOperator(nextNode.Name); ok {
+			// Found an operator, process it
+			ex.Left.Path = jsonPath
+			if ok, err := ast.processOpAndVal(av, ex, nextNode); err != nil {
+				return false, err
+			} else if !ok {
+				return false, fmt.Errorf("[Where] unknown operator in JSON path: %s", nextNode.Name)
+			}
+
+			if ex.Right.ValType, err = getExpType(nextNode); err != nil {
+				return false, err
+			}
+			return true, nil
+		}
+		currentNode = nextNode
+	}
+
+	return false, nil
+}
+
+func (ast *aexpst) isOperator(name string) (bool, error) {
+	// Remove leading underscore if present
+	if name != "" && name[0] == '_' {
+		name = name[1:]
+	}
+
+	switch name {
+	case "eq", "equals", "neq", "notEquals", "not_equals",
+		"gt", "greaterThan", "greater_than",
+		"lt", "lesserThan", "lesser_than",
+		"gte", "gteq", "greaterOrEquals", "greater_or_equals",
+		"lte", "lteq", "lesserOrEquals", "lesser_or_equals",
+		"in", "nin", "notIn", "not_in",
+		"like", "nlike", "notLike", "not_like",
+		"ilike", "iLike", "nilike", "notILike", "not_ilike",
+		"similar", "nsimilar", "notSimiliar", "not_similar",
+		"regex", "nregex", "notRegex", "not_regex",
+		"iregex", "niregex", "notIRegex", "not_iregex",
+		"contains", "containedIn", "contained_in",
+		"hasInCommon", "has_in_common",
+		"hasKey", "has_key", "hasKeyAny", "has_key_any", "hasKeyAll", "has_key_all",
+		"isNull", "is_null", "notDistinct", "ndis", "not_distinct",
+		"dis", "distinct":
+		return true, nil
+	}
+	return false, nil
 }
 
 func (ast *aexpst) processNestedTable(av aexp, ex *Exp, node *graph.Node) (bool, error) {
