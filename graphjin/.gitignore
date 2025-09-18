@@ -47,4 +47,10 @@ bin
 slim.report.json
 examples/nodejs/config/**/*.gql
 
+*.mp4
+*.mov
+*.mp3
+*.ac3
+*.webm
+
 
