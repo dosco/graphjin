@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/graph"
-	lru "github.com/hashicorp/golang-lru"
+	lru "github.com/hashicorp/golang-lru/v2"
 )
 
 type FS interface {
@@ -41,7 +41,7 @@ type Fragment struct {
 }
 
 type List struct {
-	cache    *lru.TwoQueueCache
+	cache    *lru.TwoQueueCache[string, Item]
 	saveChan chan Item
 	fs       FS
 }
@@ -53,7 +53,7 @@ func New(log *_log.Logger, fs FS, readOnly bool) (al *List, err error) {
 	}
 	al = &List{fs: fs}
 
-	al.cache, err = lru.New2Q(1000)
+	al.cache, err = lru.New2Q[string, Item](1000)
 	if err != nil {
 		return
 	}
@@ -97,7 +97,7 @@ func (al *List) Set(item Item) error {
 func (al *List) GetByName(name string, useCache bool) (item Item, err error) {
 	if useCache {
 		if v, ok := al.cache.Get(name); ok {
-			item = v.(Item)
+			item = v
 			return
 		}
 	}

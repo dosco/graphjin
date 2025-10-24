@@ -22,8 +22,6 @@ type (
 
 // Configuration for the GraphJin service
 type Config struct {
-	secrets map[string]string
-
 	// Configuration for the GraphJin compiler core
 	Core `mapstructure:",squash" jsonschema:"title=Compiler Configuration"`
 
@@ -61,8 +59,6 @@ type Serv struct {
 	// The default path to find all configuration files and scripts
 	ConfigPath string `mapstructure:"config_path" jsonschema:"title=Config Path"`
 
-	// The file for the secret key store. This must be a Mozilla SOPS file
-	SecretsFile string `mapstructure:"secrets_file" jsonschema:"title=Secrets File"`
 
 	// Logging level must be one of debug, error, warn, info
 	LogLevel string `mapstructure:"log_level" jsonschema:"title=Log Level,enum=debug,enum=error,enum=warn,enum=info"`
@@ -230,65 +226,14 @@ type Telemetry struct {
 // ReadInConfig function reads in the config file for the environment specified in the GO_ENV
 // environment variable. This is the best way to create a new GraphJin config.
 func ReadInConfig(configFile string) (*Config, error) {
-	c, err := readInConfig(configFile, nil)
-	if err != nil {
-		return nil, err
-	}
-	return setupSecrets(c, nil)
+	return readInConfig(configFile, nil)
 }
 
 // ReadInConfigFS is the same as ReadInConfig but it also takes a filesytem as an argument
 func ReadInConfigFS(configFile string, fs afero.Fs) (*Config, error) {
-	config, err := readInConfig(configFile, fs)
-	if err != nil {
-		return nil, err
-	}
-	secrets, err := setupSecrets(config, fs)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s", err, config.SecretsFile)
-	}
-	return secrets, err
+	return readInConfig(configFile, fs)
 }
 
-// setupSecrets function reads in the secrets file and merges the secrets into the config
-func setupSecrets(conf *Config, fs afero.Fs) (*Config, error) {
-	if conf.SecretsFile == "" {
-		return conf, nil
-	}
-
-	secFile, err := filepath.Abs(conf.AbsolutePath(conf.SecretsFile))
-	if err != nil {
-		return nil, err
-	}
-
-	var newConf Config
-
-	newConf.secrets, err = initSecrets(secFile, fs)
-	if err != nil {
-		return nil, err
-	}
-
-	for secretKey, secretValue := range newConf.secrets {
-		util.SetKeyValue(conf.viper, secretKey, secretValue)
-	}
-
-	if len(newConf.secrets) == 0 {
-		return conf, nil
-	}
-
-	if err := conf.viper.Unmarshal(&newConf); err != nil {
-		return nil, fmt.Errorf("failed to decode config, %v", err)
-	}
-
-	// c := conf.vi.AllSettings()
-	// bs, err := yaml.Marshal(c)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// fmt.Println(">", string(bs))
-
-	return &newConf, nil
-}
 
 // readInConfig function reads in the config file for the environment specified in the GO_ENV
 func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
@@ -404,8 +349,6 @@ func newViperWithDefaults() *viper.Viper {
 	vi.BindEnv("host", "HOST")  //nolint:errcheck
 	vi.BindEnv("port", "PORT")  //nolint:errcheck
 
-	vi.SetDefault("auth.rails.max_idle", 80)
-	vi.SetDefault("auth.rails.max_active", 12000)
 	vi.SetDefault("auth.subs_creds_in_vars", false)
 
 	return vi
@@ -425,21 +368,6 @@ func newViper(configPath, configFile string) *viper.Viper {
 	return vi
 }
 
-// GetSecret returns the value of the secret key
-// if it exists
-func (c *Config) GetSecret(key string) (string, bool) {
-	value, ok := c.secrets[key]
-	return value, ok
-}
-
-// GetSecretOrEnv returns the value of the secret key if
-// it exists or the value of the environment variable
-func (c *Config) GetSecretOrEnv(key string) string {
-	if value, ok := c.GetSecret(key); ok {
-		return value
-	}
-	return os.Getenv(key)
-}
 
 // func (c *Config) telemetryEnabled() bool {
 // 	return c.Telemetry.Debug || c.Telemetry.Metrics.Exporter != "" || c.Telemetry.Tracing.Exporter != ""

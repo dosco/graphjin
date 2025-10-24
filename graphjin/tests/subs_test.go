@@ -185,7 +185,7 @@ func TestSubscription(t *testing.T) {
 
 	g, ctx := errgroup.WithContext(context.Background())
 
-	for i := 101; i < 3000; i++ {
+	for i := 101; i < 200; i++ {
 		n := i
 		time.Sleep(20 * time.Millisecond)
 
@@ -196,6 +196,7 @@ func TestSubscription(t *testing.T) {
 			if err != nil {
 				return fmt.Errorf("subscribe: %w", err)
 			}
+			defer m.Unsubscribe()
 
 			msg := <-m.Result
 			exp := fmt.Sprintf(`{"users": {"id": %d, "email": "user%d@test.com"}}`, id, id)

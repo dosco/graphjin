@@ -1,10 +1,8 @@
 module github.com/dosco/graphjin/core/v3
 
-go 1.23.0
-
-toolchain go1.23.5
+go 1.24.0
 
 require (
-	github.com/hashicorp/golang-lru v0.5.4
-	golang.org/x/sync v0.14.0
+	github.com/hashicorp/golang-lru/v2 v2.0.7
+	golang.org/x/sync v0.17.0
 )
