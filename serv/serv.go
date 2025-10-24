@@ -101,7 +101,6 @@ func startHTTP(s1 *HttpService) {
 		zap.String("env", os.Getenv("GO_ENV")),
 		zap.Bool("hot-deploy", s.conf.HotDeploy),
 		zap.Bool("production", s.conf.Core.Production),
-		zap.Bool("secrets-used", (s.conf.Serv.SecretsFile != "")),
 	}
 
 	if s.namespace != nil {

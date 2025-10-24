@@ -346,6 +346,14 @@ func (s *sub) updateMember(msg mmsg) error {
 
 // fanOutJobs function is called on the sub struct to fan out jobs.
 func (s *sub) fanOutJobs(gj *graphjinEngine) {
+	// Take a point-in-time snapshot of current members and their params for safe concurrent reads.
+	s.mval = mval{
+		params: append([]json.RawMessage(nil), s.params...),
+		mi:     append([]minfo(nil), s.mi...),
+		res:    append([]chan *Result(nil), s.res...),
+		ids:    append([]uint64(nil), s.ids...),
+	}
+
 	switch {
 	case len(s.ids) == 0:
 		return
@@ -537,12 +545,15 @@ func (gj *graphjinEngine) subNotifyMemberEx(sub *sub,
 		Data:      ejs,
 	}
 
-	// if parameters exists then each response is unique
-	// so each channel should be notified only with it's own
-	// result value
-	select {
-	case rc <- res:
-	case <-time.After(250 * time.Millisecond):
+	// If this is an update notification, avoid blocking indefinitely by using a timeout.
+	// For the initial subscription response, perform a blocking send to guarantee delivery.
+	if update {
+		select {
+		case rc <- res:
+		case <-time.After(250 * time.Millisecond):
+		}
+	} else {
+		rc <- res
 	}
 
 	return mm, nil

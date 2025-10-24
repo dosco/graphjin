@@ -58,8 +58,8 @@ type Auth struct {
 	// Name is a friendly name for this auth config
 	Name string
 
-	// Type can be one of rails, jwt or header
-	Type string `jsonschema:"title=Type,enum=jwt,enum=rails,enum=header"`
+	// Type can be one of jwt or header
+	Type string `jsonschema:"title=Type,enum=jwt,enum=header"`
 
 	// The name of the cookie that holds the authentication token
 	Cookie string `jsonschema:"title=Cookie Name"`
@@ -72,37 +72,6 @@ type Auth struct {
 	// set the expiry parameter of this cookie (ex. "20m", "2h")
 	// CookieExpiry string `mapstructure:"cookie_expiry"`
 
-	// Ruby on Rails cookie authentication
-	Rails struct {
-		// Rails version is needed to decode the cookie correctly.
-		// Can be 5.2 or 6
-		Version string `jsonschema:"enum=5.2,enum=6"`
-
-		// SecretKeyBase is the cookie encryption key used in your Rails config
-		SecretKeyBase string `mapstructure:"secret_key_base"`
-
-		// URL is used for Rails cookie store based auth.
-		// Example: redis://redis-host:6379 or memcache://memcache-host
-		URL string `jsonschema:"title=Cookie Store URL,example=redis://redis-host:6379"`
-
-		// Password is set if needed by the cookie store (Redis, Memcache, etc)
-		Password string
-
-		// Maximum idle time for the connection
-		MaxIdle int `mapstructure:"max_idle" jsonschema:"title=Cookie Store Maximum Idle Time"`
-
-		// MaxActive maximum active time for the connection
-		MaxActive int `mapstructure:"max_active" jsonschema:"title=Cookie Store Maximum Active Time"`
-
-		// Salt value is from your Rails 5.2 and below auth config
-		Salt string
-
-		// SignSalt value is from your Rails 5.2 and below auth config
-		SignSalt string `mapstructure:"sign_salt" jsonschema:"title=Siging Salt (Rails 5.2)"`
-
-		// AuthSalt value is from your Rails 5.2 and below auth config
-		AuthSalt string `mapstructure:"auth_salt" jsonschema:"title=Authentication Salt (Rails 5.2)"`
-	}
 
 	// JWT authentication
 	JWT JWTConfig
@@ -146,9 +115,6 @@ func NewAuthHandlerFunc(ac Auth) (HandlerFunc, error) {
 
 	default:
 		switch ac.Type {
-		case "rails":
-			h, err = RailsHandler(ac)
-
 		case "jwt":
 			h, err = JwtHandler(ac)
 

@@ -30,8 +30,6 @@ enable_tracing: true
 # with the new configs when a change is detected
 reload_on_config_change: true
 
-# File that points to use as the secrets key store
-# secrets_file: "prod.secrets.yml"
 
 # File that points to the database seeding script
 # seed_file: seed.js
@@ -131,33 +129,16 @@ hot_deploy: false
 admin_secret_key: blahblah
 
 # Auth related environment Variables
-# GJ_AUTH_RAILS_COOKIE_SECRET_KEY_BASE
-# GJ_AUTH_RAILS_REDIS_URL
-# GJ_AUTH_RAILS_REDIS_PASSWORD
 # GJ_AUTH_JWT_PUBLIC_KEY_FILE
 
 auth:
-  # Can be 'none', 'rails', 'jwt' or 'header'
+  # Can be 'none', 'jwt' or 'header'
   type: none
   cookie: _{{- .AppNameSlug -}}_session
 
   # Useful for quickly debugging subscriptions WebSocket authorization.
   # Disable in production
   # subs_creds_in_vars: true
-
-  rails:
-    # Rails version this is used for reading the
-    # various cookies formats.
-    version: 5.2
-
-    # Found in 'Rails.application.config.secret_key_base'
-    secret_key_base: 0a248500a64c01184edb4d7ad3a805488f8097ac761b76aaa6c17c01dcb7af03a2f18ba61b2868134b9c7b79a122bc0dadff4367414a2d173297bfea92be5566
-
-    # Remote cookie store. (memcache or redis)
-    # url: redis://redis:6379
-    # password: ""
-    # max_idle: 80
-    # max_active: 12000
 
     # In most cases you don't need these
     # salt: "encrypted cookie"

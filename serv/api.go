@@ -262,10 +262,8 @@ func (s *graphjinService) hotStart() error {
 	if err != nil {
 		return err
 	}
-	secFile := s.conf.Serv.SecretsFile
 	s.conf = bfs.conf
 	s.chash = bfs.conf.hash
-	s.conf.Serv.SecretsFile = secFile
 
 	if err := s.initConfig(); err != nil {
 		return err
@@ -344,7 +342,6 @@ func (s *HttpService) attach(mux Mux, ns *string) error {
 		zap.String("env", os.Getenv("GO_ENV")),
 		zap.Bool("hot-deploy", s1.conf.HotDeploy),
 		zap.Bool("production", s1.conf.Core.Production),
-		zap.Bool("secrets-used", (s1.conf.Serv.SecretsFile != "")),
 	}
 
 	if s1.namespace != nil {
