@@ -5,8 +5,8 @@ go 1.24.0
 require (
 	github.com/brianvoe/gofakeit/v6 v6.28.0
 	github.com/dop251/goja v0.0.0-20250630131328-58d95d85e994
-	github.com/dosco/graphjin/core/v3 v3.0.0-00010101000000-000000000000
-	github.com/dosco/graphjin/serv/v3 v3.0.0-00010101000000-000000000000
+	github.com/dosco/graphjin/core/v3 v-00010101000000-000000000000
+	github.com/dosco/graphjin/serv/v3 v-00010101000000-000000000000
 	github.com/gosimple/slug v1.15.0
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/jvatic/goja-babel v0.0.0-20250906111304-06c40d6b931b
@@ -27,8 +27,8 @@ require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
-	github.com/dosco/graphjin/auth/v3 v3.0.0-00010101000000-000000000000 // indirect
-	github.com/dosco/graphjin/plugin/otel/v3 v3.0.0-00010101000000-000000000000 // indirect
+	github.com/dosco/graphjin/auth/v3 v-00010101000000-000000000000 // indirect
+	github.com/dosco/graphjin/plugin/otel/v3 v-00010101000000-000000000000 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-chi/chi/v5 v5.2.3 // indirect
