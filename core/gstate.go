@@ -162,6 +162,20 @@ func (s *gstate) compileAndExecuteWrapper(c context.Context) (err error) {
 }
 
 func (s *gstate) compileAndExecute(c context.Context) (err error) {
+	if s.gj.conf.MockDB {
+		// compile query for the role
+		if err = s.compile(); err != nil {
+			return
+		}
+
+		// set default variables
+		s.setDefaultVars()
+
+		// execute query
+		err = s.executeMock(c)
+		return
+	}
+
 	var conn *sql.Conn
 
 	if s.tx() == nil {

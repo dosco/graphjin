@@ -86,6 +86,10 @@ type Config struct {
 	// Disable all functions like count, length,  etc
 	DisableFuncs bool `mapstructure:"disable_functions" json:"disable_functions" yaml:"disable_functions" jsonschema:"title=Disable Functions,default=false"`
 
+	// When set to true, GraphJin will not connect to a database and instead
+	// return mock data based on the query structure.
+	MockDB bool `mapstructure:"mock_db" json:"mock_db" yaml:"mock_db" jsonschema:"title=Mock DB,default=false"`
+
 	// Enable automatic coversion of camel case in GraphQL to snake case in SQL
 	EnableCamelcase bool `mapstructure:"enable_camelcase" json:"enable_camelcase" yaml:"enable_camelcase" jsonschema:"title=Enable Camel Case,default=false"`
 

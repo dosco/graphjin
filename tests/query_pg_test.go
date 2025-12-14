@@ -1,4 +1,4 @@
-//go:build !mysql
+//go:build !mysql && !sqlite
 
 package tests_test
 
@@ -315,6 +315,10 @@ func Example_queryWithVariableLimit() {
 }
 
 func TestMutiSchema(t *testing.T) {
+	if dbType == "sqlite" {
+		t.Skip("skipping test for sqlite")
+	}
+
 	totalSchemas := 20
 	totalTables := 5
 

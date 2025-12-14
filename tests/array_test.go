@@ -1,16 +1,21 @@
-//go:build !mysql
+//go:build !mysql && !sqlite
 
 package tests_test
 
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"testing"
 
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/stretchr/testify/assert"
 )
 
-func Example_queryParentAndChildrenViaArrayColumn() {
+func TestQueryParentAndChildrenViaArrayColumn(t *testing.T) {
+	if dbType == "sqlite" || dbType == "mysql" {
+		t.Skip("skipping test for sqlite and mysql (array column joins not yet supported)")
+	}
+
 	gql := `
 	query {
 		products(limit: 2) {
@@ -41,19 +46,23 @@ func Example_queryParentAndChildrenViaArrayColumn() {
 
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
-		fmt.Println(err)
-	} else {
-		printJSON(res.Data)
+		t.Error(err)
 	}
-	// Output: {"categories":[{"name":"Category 1","products":[{"name":"Product 1"},{"name":"Product 2"}]},{"name":"Category 2","products":[{"name":"Product 1"},{"name":"Product 2"}]}],"products":[{"categories":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"}],"name":"Product 1","price":11.5},{"categories":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"}],"name":"Product 2","price":12.5}]}
+	
+	exp := `{"categories":[{"name":"Category 1","products":[{"name":"Product 1"},{"name":"Product 2"}]},{"name":"Category 2","products":[{"name":"Product 1"},{"name":"Product 2"}]}],"products":[{"categories":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"}],"name":"Product 1","price":11.5},{"categories":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"}],"name":"Product 2","price":12.5}]}`
+	assert.Equal(t, exp, stdJSON(res.Data))
 }
 
-func Example_insertIntoTableAndConnectToRelatedTableWithArrayColumn() {
+func TestInsertIntoTableAndConnectToRelatedTableWithArrayColumn(t *testing.T) {
+	if dbType == "sqlite" || dbType == "mysql" {
+		t.Skip("skipping test for sqlite and mysql (array column joins not yet supported)")
+	}
+
 	gql := `mutation {
 		products(insert: $data) {
 			id
@@ -85,21 +94,25 @@ func Example_insertIntoTableAndConnectToRelatedTableWithArrayColumn() {
 
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
 	if err != nil {
-		fmt.Println(err)
-	} else {
-		printJSON(res.Data)
+		t.Error(err)
 	}
-	// Output: {"products":[{"categories":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"},{"id":3,"name":"Category 3"},{"id":4,"name":"Category 4"},{"id":5,"name":"Category 5"}],"id":2006,"name":"Product 2006"}]}
+	
+	exp := `{"products":[{"categories":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"},{"id":3,"name":"Category 3"},{"id":4,"name":"Category 4"},{"id":5,"name":"Category 5"}],"id":2006,"name":"Product 2006"}]}`
+	assert.Equal(t, exp, stdJSON(res.Data))
 }
 
 // TODO: Fix: Does not work in MYSQL
-func Example_veryComplexQueryWithArrayColumns() {
+func TestVeryComplexQueryWithArrayColumns(t *testing.T) {
+	if dbType == "sqlite" {
+		t.Skip("skipping test for sqlite")
+	}
+
 	gql := `query {
 		products(
 			# returns only 1 items
@@ -153,16 +166,14 @@ func Example_veryComplexQueryWithArrayColumns() {
 
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
-		fmt.Println(err)
-		return
+		t.Fatal(err)
 	}
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
-		fmt.Println(err)
-		return
+		t.Error(err)
 	}
 
-	printJSON(res.Data)
-	// Output: {"products":[{"category":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"}],"id":27,"name":"Product 27","owner":{"category_counts":[{"category":{"name":"Category 1"},"count":400},{"category":{"name":"Category 2"},"count":600}],"email":"user27@test.com","full_name":"User 27","picture":null},"price":37.5}]}
+	exp := `{"products":[{"category":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"}],"id":27,"name":"Product 27","owner":{"category_counts":[{"category":{"name":"Category 1"},"count":400},{"category":{"name":"Category 2"},"count":600}],"email":"user27@test.com","full_name":"User 27","picture":null},"price":37.5}]}`
+	assert.Equal(t, exp, stdJSON(res.Data))
 }

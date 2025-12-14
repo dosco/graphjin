@@ -1,4 +1,4 @@
-// #nosec G404
+//go:build !mysql && !sqlite
 package tests_test
 
 import (
@@ -170,6 +170,10 @@ func Example_subscriptionWithCursor() {
 }
 
 func TestSubscription(t *testing.T) {
+	if dbType == "sqlite" {
+		t.Skip("skipping test for sqlite")
+	}
+
 	gql := `subscription test {
 		users(where: { or: { id: { eq: $id }, id: { eq: $id2 } } }) @object {
 			id

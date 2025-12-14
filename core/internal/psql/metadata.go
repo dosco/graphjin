@@ -53,10 +53,9 @@ func (c *compilerContext) renderParam(p Param) {
 	var ok bool
 	md := c.md
 
-	switch c.ct {
-	case "mysql":
+	if !c.dialect.UseNamedParams() {
 		md.params = append(md.params, p)
-	default:
+	} else {
 		if id, ok = md.pindex[p.Name]; !ok {
 			md.params = append(md.params, p)
 			id = len(md.params)
@@ -73,13 +72,7 @@ func (c *compilerContext) renderParam(p Param) {
 		return
 	}
 
-	switch c.ct {
-	case "mysql":
-		c.w.WriteString(`?`)
-	default:
-		c.w.WriteString(`$`)
-		int32String(c.w, int32(id))
-	}
+	c.w.WriteString(c.dialect.BindVar(id))
 }
 
 func (md Metadata) Params() []Param {

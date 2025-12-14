@@ -86,10 +86,15 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 				c.renderUnionColumn(sel, csel)
 
 			default:
-				c.w.WriteString(`__sj_`)
-				int32String(c.w, csel.ID)
-				c.w.WriteString(`.json`)
-				c.alias(csel.FieldName)
+				if !c.dialect.SupportsLateral() {
+					c.renderInlineChild(csel)
+					c.alias(csel.FieldName)
+				} else {
+					c.w.WriteString(`__sj_`)
+					int32String(c.w, csel.ID)
+					c.w.WriteString(`.json`)
+					c.alias(csel.FieldName)
+				}
 			}
 
 			// return the cursor for the this child selector as part of the parents json
@@ -104,7 +109,7 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 		i++
 	}
 	// when no columns are rendered for mysql
-	if c.ct == "mysql" && i == 0 {
+	if c.dialect.Name() == "mysql" && i == 0 {
 		c.w.WriteString(`NULL`)
 	}
 }
