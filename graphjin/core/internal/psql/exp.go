@@ -154,6 +154,7 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 		c.w.WriteString(`) `)
 	}
 
+	// Handle standard operators first
 	switch ex.Op {
 	case qcode.OpEquals:
 		c.w.WriteString(`=`)
@@ -171,63 +172,7 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 		c.w.WriteString(`>`)
 	case qcode.OpLesserThan:
 		c.w.WriteString(`<`)
-	case qcode.OpIn:
-		c.w.WriteString(`= ANY`)
-	case qcode.OpNotIn:
-		c.w.WriteString(`!= ALL`)
-	case qcode.OpLike:
-		c.w.WriteString(`LIKE`)
-	case qcode.OpNotLike:
-		c.w.WriteString(`NOT LIKE`)
-	case qcode.OpILike:
-		c.w.WriteString(`ILIKE`)
-	case qcode.OpNotILike:
-		c.w.WriteString(`NOT ILIKE`)
-	case qcode.OpSimilar:
-		c.w.WriteString(`SIMILAR TO`)
-	case qcode.OpNotSimilar:
-		c.w.WriteString(`NOT SIMILAR TO`)
-	case qcode.OpRegex:
-		switch c.ct {
-		case "mysql":
-			c.w.WriteString(`REGEXP`)
-		default:
-			c.w.WriteString(`~`)
-		}
-	case qcode.OpNotRegex:
-		switch c.ct {
-		case "mysql":
-			c.w.WriteString(`NOT REGEXP`)
-		default:
-			c.w.WriteString(`!~`)
-		}
-	case qcode.OpIRegex:
-		switch c.ct {
-		case "mysql":
-			c.w.WriteString(`REGEXP`)
-		default:
-			c.w.WriteString(`~*`)
-		}
-	case qcode.OpNotIRegex:
-		switch c.ct {
-		case "mysql":
-			c.w.WriteString(`NOT REGEXP`)
-		default:
-			c.w.WriteString(`!~*`)
-		}
-	case qcode.OpContains:
-		c.w.WriteString(`@>`)
-	case qcode.OpContainedIn:
-		c.w.WriteString(`<@`)
-	case qcode.OpHasInCommon:
-		c.w.WriteString(`&&`)
-	case qcode.OpHasKey:
-		c.w.WriteString(`?`)
-	case qcode.OpHasKeyAny:
-		c.w.WriteString(`?|`)
-	case qcode.OpHasKeyAll:
-		c.w.WriteString(`?&`)
-
+	
 	case qcode.OpEqualsTrue:
 		c.w.WriteString(`(`)
 		c.renderParam(Param{Name: ex.Right.Val, Type: "boolean"})
@@ -257,39 +202,21 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 		return
 
 	case qcode.OpTsQuery:
-		switch c.ct {
-		case "mysql":
-			// MATCH (name) AGAINST ('phone' IN BOOLEAN MODE);
-			c.w.WriteString(`(MATCH(`)
-			for i, col := range c.ti.FullText {
-				if i != 0 {
-					c.w.WriteString(`, `)
-				}
-				c.colWithTable(c.ti.Name, col.Name)
-			}
-			c.w.WriteString(`) AGAINST (`)
-			c.renderParam(Param{Name: ex.Right.Val, Type: "text"})
-			c.w.WriteString(` IN NATURAL LANGUAGE MODE))`)
-
-		default:
-			// fmt.Fprintf(w, `(("%s") @@ websearch_to_tsquery('%s'))`, c.ti.TSVCol, val.Val)
-			c.w.WriteString(`((`)
-			for i, col := range c.ti.FullText {
-				if i != 0 {
-					c.w.WriteString(` OR (`)
-				}
-				c.colWithTable(c.ti.Name, col.Name)
-				if c.cv >= 110000 {
-					c.w.WriteString(`) @@ websearch_to_tsquery(`)
-				} else {
-					c.w.WriteString(`) @@ to_tsquery(`)
-				}
-				c.renderParam(Param{Name: ex.Right.Val, Type: "text"})
-				c.w.WriteString(`)`)
-			}
-			c.w.WriteString(`)`)
-		}
+		c.dialect.RenderTsQuery(c, c.ti, ex)
 		return
+
+	default:
+		opStr, err := c.dialect.RenderOp(ex.Op)
+		if err != nil {
+			c.err = err
+			return
+		}
+		if opStr != "" {
+			c.w.WriteString(opStr)
+		} else {
+			// If not handled, logic error or unknown op?
+			// Just ignore or error?
+		}
 	}
 	c.w.WriteString(` `)
 
@@ -303,33 +230,7 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 }
 
 func (c *expContext) renderValPrefix(ex *qcode.Exp) bool {
-	switch {
-	case c.ct == "mysql" && (ex.Op == qcode.OpHasKey ||
-		ex.Op == qcode.OpHasKeyAny ||
-		ex.Op == qcode.OpHasKeyAll):
-		var optype string
-		switch ex.Op {
-		case qcode.OpHasKey, qcode.OpHasKeyAny:
-			optype = "'one'"
-		case qcode.OpHasKeyAll:
-			optype = "'all'"
-		}
-		c.w.WriteString("JSON_CONTAINS_PATH(")
-		c.colWithTable(c.ti.Name, ex.Left.Col.Name)
-		c.w.WriteString(", " + optype)
-		for i := range ex.Right.ListVal {
-			c.w.WriteString(`, '$.` + ex.Right.ListVal[i] + `'`)
-		}
-		c.w.WriteString(") = 1")
-		return true
-
-	case c.ct == "mysql" && ex.Right.ValType == qcode.ValVar &&
-		(ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn):
-		c.w.WriteString(`JSON_CONTAINS(`)
-		c.renderParam(Param{Name: ex.Right.Val, Type: ex.Left.Col.Type, IsArray: true})
-		c.w.WriteString(`, CAST(`)
-		c.colWithTable(c.ti.Name, ex.Left.Col.Name)
-		c.w.WriteString(` AS JSON), '$')`)
+	if c.dialect.RenderValPrefix(c, ex) {
 		return true
 	}
 	return false
@@ -337,6 +238,9 @@ func (c *expContext) renderValPrefix(ex *qcode.Exp) bool {
 
 func (c *expContext) renderVal(ex *qcode.Exp) {
 	switch {
+	case ex.Right.ValType == qcode.ValDBVar:
+		c.dialect.RenderVar(c, ex.Right.Val)
+
 	case ex.Right.ValType == qcode.ValVar:
 		c.renderValVar(ex)
 
@@ -388,15 +292,10 @@ func (c *expContext) renderVal(ex *qcode.Exp) {
 		}
 
 		path := append(c.prefixPath, ex.Right.Path...)
-		j := (len(path) - 1)
-
-		c.w.WriteString(`CAST(i.j`)
-		for i := 0; i < j; i++ {
-			c.w.WriteString(`->`)
-			c.squoted(path[i])
-		}
-		c.w.WriteString(`->>`)
-		c.squoted(path[j])
+		
+		c.w.WriteString(`CAST(`)
+		c.colWithTable("i", "j")
+		c.dialect.RenderJSONPath(c, "i", "j", path)
 		c.w.WriteString(` AS `)
 		c.w.WriteString(ex.Left.Col.Type)
 		c.w.WriteString(`)`)
@@ -405,8 +304,10 @@ func (c *expContext) renderVal(ex *qcode.Exp) {
 
 func (c *expContext) renderValVar(ex *qcode.Exp) {
 	val, isVal := c.svars[ex.Right.Val]
-
 	switch {
+	case c.dialect.RenderValVar(c, ex, val):
+		return
+
 	case isVal && strings.HasPrefix(val, "sql:"):
 		c.w.WriteString(`(`)
 		c.renderVar(val[4:])
@@ -417,103 +318,21 @@ func (c *expContext) renderValVar(ex *qcode.Exp) {
 		c.renderVar(val)
 		c.w.WriteString(`'`)
 
-	case ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn || ex.Op == qcode.OpContains || ex.Op == qcode.OpHasInCommon:
-		c.w.WriteString(`(ARRAY(SELECT json_array_elements_text(`)
-		c.renderParam(Param{Name: ex.Right.Val, Type: ex.Left.Col.Type, IsArray: true})
-		c.w.WriteString(`))`)
-		c.w.WriteString(` :: `)
-		c.w.WriteString(ex.Left.Col.Type)
-		c.w.WriteString(`[])`)
-
 	default:
 		c.renderParam(Param{Name: ex.Right.Val, Type: ex.Left.Col.Type, IsArray: false})
 	}
 }
 
 func (c *expContext) renderList(ex *qcode.Exp) {
-	switch c.ct {
-	case "mysql":
-		c.renderListMysql(ex)
-	default:
-		c.renderListPostgres(ex)
-	}
+	c.dialect.RenderList(c, ex)
 }
 
-func (c *expContext) renderListPostgres(ex *qcode.Exp) {
-	if strings.HasPrefix(ex.Left.Col.Type, "json") {
-		c.w.WriteString(`(ARRAY[`)
-		c.renderListBodyPostgres(ex)
-		c.w.WriteString(`])`)
-	} else {
-		c.w.WriteString(`(CAST(ARRAY[`)
-		c.renderListBodyPostgres(ex)
-		c.w.WriteString(`] AS `)
-		c.w.WriteString(ex.Left.Col.Type)
-		c.w.WriteString(`[]))`)
-	}
-}
 
-func (c *expContext) renderListBodyPostgres(ex *qcode.Exp) {
-	for i := range ex.Right.ListVal {
-		if i != 0 {
-			c.w.WriteString(`, `)
-		}
-		switch ex.Right.ListType {
-		case qcode.ValBool, qcode.ValNum:
-			c.w.WriteString(ex.Right.ListVal[i])
-		case qcode.ValStr:
-			c.w.WriteString(`'`)
-			c.w.WriteString(ex.Right.ListVal[i])
-			c.w.WriteString(`'`)
-		}
-	}
-}
-
-func (c *expContext) renderListMysql(ex *qcode.Exp) {
-	c.w.WriteString(`(`)
-	for i := range ex.Right.ListVal {
-		if i != 0 {
-			c.w.WriteString(` UNION `)
-		}
-		c.w.WriteString(`SELECT `)
-		switch ex.Right.ListType {
-		case qcode.ValBool, qcode.ValNum:
-			c.w.WriteString(ex.Right.ListVal[i])
-		case qcode.ValStr:
-			c.w.WriteString(`'`)
-			c.w.WriteString(ex.Right.ListVal[i])
-			c.w.WriteString(`'`)
-		}
-	}
-	c.w.WriteString(`)`)
-}
 
 func (c *compilerContext) renderValArrayColumn(ex *qcode.Exp, table string, pid int32) {
-	col := ex.Right.Col
-	switch c.ct {
-	case "mysql":
-		c.w.WriteString(`SELECT _gj_jt.* FROM `)
-		c.w.WriteString(`(SELECT CAST(`)
-		if pid == -1 {
-			c.colWithTable(table, col.Name)
-		} else {
-			c.colWithTableID(table, pid, col.Name)
-		}
-		c.w.WriteString(` AS JSON) as ids) j, `)
-		c.w.WriteString(`JSON_TABLE(j.ids, "$[*]" COLUMNS(`)
-		c.w.WriteString(col.Name)
-		c.w.WriteString(` `)
-		c.w.WriteString(ex.Left.Col.Type)
-		c.w.WriteString(` PATH "$" ERROR ON ERROR)) AS _gj_jt`)
-
-	default:
-		if pid == -1 {
-			c.colWithTable(table, col.Name)
-		} else {
-			c.colWithTableID(table, pid, col.Name)
-		}
-	}
+	c.dialect.RenderValArrayColumn(c, ex, table, pid)
 }
+
 
 func (c *expContext) renderJSONPathColumn(table, colName string, path []string, selID int32) {
 	// Render the base column
@@ -524,23 +343,5 @@ func (c *expContext) renderJSONPathColumn(table, colName string, path []string, 
 	}
 
 	// Build the JSON path
-	switch c.ct {
-	case "mysql":
-		// MySQL JSON path syntax: column->'$.path1.path2'
-		c.w.WriteString(`->>'$.`)
-		for i, pathElement := range path {
-			if i > 0 {
-				c.w.WriteString(`.`)
-			}
-			c.w.WriteString(pathElement)
-		}
-		c.w.WriteString(`'`)
-	default:
-		// PostgreSQL JSON path syntax: column->>'path1'->>'path2'
-		for _, pathElement := range path {
-			c.w.WriteString(`->>'`)
-			c.w.WriteString(pathElement)
-			c.w.WriteString(`'`)
-		}
-	}
+	c.dialect.RenderJSONPath(c, table, colName, path)
 }

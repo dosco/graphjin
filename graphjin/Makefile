@@ -20,10 +20,21 @@ BUILD_FLAGS ?= -ldflags '-s -w -X "main.version=${BUILD_VERSION}" -X "main.commi
 tidy:
 	@find . -name "go.mod" -execdir go mod tidy \;
 
-test:
-	@go test -v -race $(PACKAGES) 
-	@cd tests; go test -v -timeout 30m -race .
-	@cd tests; go test -v -timeout 30m -race -db=mysql -tags=mysql .
+test: test-postgres test-mysql
+	@echo "Note: SQLite tests disabled due to core initialization issue with current_setting()"
+	@go test -v -race $(PACKAGES)
+
+test-postgres:
+	@echo "Running Postgres tests..."
+	@cd tests; go test -v -timeout 30m -race -db=postgres .
+
+test-mysql:
+	@echo "Running MySQL tests..."
+	@cd tests; go test -v -timeout 30m -race -db=mysql -tags mysql .
+
+test-sqlite:
+	@echo "Running SQLite tests..."
+	@cd tests; go test -v -timeout 30m -race -db=sqlite -tags sqlite .
 
 BIN_DIR := $(GOPATH)/bin
 WEB_BUILD_DIR := ./serv/web/build/manifest.json

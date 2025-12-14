@@ -491,10 +491,6 @@ func (gj *graphjinEngine) query(c context.Context, r GraphqlReq) (
 		return
 	}
 
-	if r.operation == qcode.QTMutation && gj.schema.DBType() == "mysql" {
-		err = errors.New("mysql: mutations not supported")
-		return
-	}
 
 	s, err := newGState(c, gj, r)
 	if err != nil {

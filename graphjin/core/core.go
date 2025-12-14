@@ -85,9 +85,9 @@ func (gj *graphjinEngine) initDiscover() (err error) {
 	return
 }
 
-// Private method that does the actual database discovery for initDiscover
+	// Private method that does the actual database discovery for initDiscover
 func (gj *graphjinEngine) _initDiscover() (err error) {
-	if gj.prod && gj.conf.EnableSchema {
+	if (gj.prod && gj.conf.EnableSchema) || gj.conf.MockDB {
 		b, err := gj.fs.Get("db.graphql")
 		if err != nil {
 			return err
@@ -108,6 +108,10 @@ func (gj *graphjinEngine) _initDiscover() (err error) {
 	// gj.dbinfo could be preset due to tests or db
 	// watcher reloading
 	if gj.dbinfo == nil {
+		if gj.conf.MockDB {
+			return errors.New("mock_db is enabled but db.graphql not found")
+		}
+
 		gj.dbinfo, err = sdata.GetDBInfo(
 			gj.db,
 			gj.dbtype,

@@ -8,23 +8,24 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/dosco/graphjin/core/v3"
-	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/mysql"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type dbinfo struct {
 	name      string
 	driver    string
 	disable   bool
-	startFunc func(context.Context) (testcontainers.Container, string, error)
+	startFunc func(context.Context) (func(context.Context) error, string, error)
 }
 
 var (
@@ -51,7 +52,7 @@ func TestMain(m *testing.M) {
 		{
 			name:   "postgres",
 			driver: "postgres",
-			startFunc: func(ctx context.Context) (testcontainers.Container, string, error) {
+			startFunc: func(ctx context.Context) (func(context.Context) error, string, error) {
 				container, err := postgres.Run(ctx,
 					"postgres:12.5",
 					postgres.WithUsername("tester"),
@@ -65,7 +66,7 @@ func TestMain(m *testing.M) {
 
 				connStr, err := container.ConnectionString(ctx, "sslmode=disable")
 				if err != nil {
-					return container, "", err
+					return nil, "", err
 				}
 
 				// Test connection and wait for database to be fully ready
@@ -86,14 +87,13 @@ func TestMain(m *testing.M) {
 					time.Sleep(500 * time.Millisecond)
 				}
 
-				return container, connStr, err
+				return container.Terminate, connStr, err
 			},
 		},
 		{
-			disable: true,
 			name:    "mysql",
 			driver:  "mysql",
-			startFunc: func(ctx context.Context) (testcontainers.Container, string, error) {
+			startFunc: func(ctx context.Context) (func(context.Context) error, string, error) {
 				container, err := mysql.Run(ctx,
 					"mysql:8.0",
 					mysql.WithUsername("user"),
@@ -107,8 +107,14 @@ func TestMain(m *testing.M) {
 
 				connStr, err := container.ConnectionString(ctx)
 				if err != nil {
-					return container, "", err
+					return nil, "", err
 				}
+				if strings.Contains(connStr, "?") {
+					connStr += "&multiStatements=true&parseTime=true&interpolateParams=true"
+				} else {
+					connStr += "?multiStatements=true&parseTime=true&interpolateParams=true"
+				}
+				// fmt.Printf("DEBUG MySQL DSN: %s\n", connStr)
 
 				// Test connection and wait for database to be fully ready
 				for i := 0; i < 30; i++ {
@@ -128,7 +134,43 @@ func TestMain(m *testing.M) {
 					time.Sleep(500 * time.Millisecond)
 				}
 
-				return container, connStr, err
+				return container.Terminate, connStr, err
+			},
+		},
+		{
+			name:   "sqlite",
+			driver: "sqlite3",
+			startFunc: func(ctx context.Context) (func(context.Context) error, string, error) {
+				// Use shared in-memory DB
+				connStr := "file:memdb1?mode=memory&cache=shared"
+				
+				// Initialize DB
+				db, err := sql.Open("sqlite3", connStr)
+				if err != nil {
+					return nil, "", err
+				}
+				defer db.Close()
+				
+				script, err := os.ReadFile("./sqlite.sql")
+				if err != nil {
+					return nil, "", err
+				}
+				
+				// Split statements (simple split by ;)
+				// Note: complex triggers might break this, but our schema is simple enough?
+				// Actually sqlite.sql has CTEs and normal statements.
+				// Let's execute the whole script if logic allows, or split.
+				// go-sqlite3 Exec can handle multiple statements?
+				
+				_, err = db.Exec(string(script))
+				if err != nil {
+					return nil, "", fmt.Errorf("failed to init sqlite: %w", err)
+				}
+
+				cleanup := func(ctx context.Context) error {
+					return nil
+				}
+				return cleanup, connStr, nil
 			},
 		},
 	}
@@ -148,14 +190,14 @@ func TestMain(m *testing.M) {
 			continue
 		}
 
-		container, connStr, err := v.startFunc(ctx)
+		cleanup, connStr, err := v.startFunc(ctx)
 		if err != nil {
 			panic(err)
 		}
 
 		db, err = sql.Open(v.driver, connStr)
 		if err != nil {
-			_ = container.Terminate(ctx)
+			_ = cleanup(ctx)
 			panic(err)
 		}
 		// Configure connection pool settings to prevent "closing bad idle connection" errors
@@ -168,9 +210,12 @@ func TestMain(m *testing.M) {
 		dbType = v.name
 
 		res := m.Run()
-		_ = container.Terminate(ctx)
-		os.Exit(res)
+		_ = cleanup(ctx)
+		if res != 0 {
+			os.Exit(res)
+		}
 	}
+	os.Exit(0)
 }
 
 func newConfig(c *core.Config) *core.Config {

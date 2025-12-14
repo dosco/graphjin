@@ -5,6 +5,7 @@ package psql
 import (
 	"bytes"
 	"strings"
+	"fmt"
 
 	"github.com/dosco/graphjin/core/v3/internal/graph"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
@@ -24,6 +25,11 @@ func (co *Compiler) compileMutation(
 		isJSON:   qc.Mutates[0].IsJSON,
 		Compiler: co,
 	}
+
+    if c.dialect.SupportsLinearExecution() {
+        c.compileLinearMutation()
+        return
+    }
 
 	if qc.SType != qcode.QTDelete {
 		if c.isJSON {
@@ -51,6 +57,322 @@ func (co *Compiler) compileMutation(
 	c.renderUnionStmt()
 	c.w.WriteString(` `)
 	co.CompileQuery(w, qc, c.md)
+	
+	// DEBUG: Print generated SQL to stdout
+	// if strings.Contains(md.Params[0].Name, "mysql") || true { // just print everything
+	// fmt.Fprintf(os.Stderr, "DEBUG SQL: %s\n", w.String())
+	// }
+}
+
+func (c *compilerContext) compileLinearMutation() {
+    // Linear execution: Flat script of statements
+    
+    // Setup (e.g. Create Temp Table)
+    c.dialect.RenderSetup(c)
+
+    // 1. Sort mutations by dependency 
+    //    Naive approach: Sort by ID? No.
+    //    Use m.DependsOn.
+    
+    ordered := c.sortMutations()
+    
+    	for _, mid := range ordered {
+		m := c.qc.Mutates[mid]
+		// fmt.Fprintf(os.Stderr, "DEBUG Mutation: %d Type: %d\n", mid, m.Type)
+
+		if m.Type == qcode.MTNone || m.Type == qcode.MTKeyword {
+			continue
+		}
+
+		switch m.Type {
+		case qcode.MTInsert:
+			c.renderLinearInsert(m)
+		case qcode.MTUpdate:
+			c.renderLinearUpdate(m)
+		case qcode.MTConnect:
+			c.renderLinearConnect(m)
+		case qcode.MTDisconnect:
+			c.renderLinearDisconnect(m)
+		}
+
+		c.w.WriteString(`; `)
+	}
+
+	if c.qc.Selects != nil {
+        // For the final selection, we need to filter by the IDs we just generated.
+        // We inject WHERE clauses into the Root Selects.
+        for i := range c.qc.Roots {
+            selID := c.qc.Roots[i]
+            sel := &c.qc.Selects[selID]
+            
+            var mID int = -1
+            for _, mid := range ordered {
+                if c.qc.Mutates[mid].Ti.Name == sel.Ti.Name {
+                    mID = mid
+                    break
+                }
+            }
+            
+            if mID != -1 {
+                m := c.qc.Mutates[mID]
+                pk := m.Ti.PrimaryCol
+                varName := c.getVarName(m)
+                
+                ex := &qcode.Exp{
+                    Op: qcode.OpEquals,
+                }
+                ex.Left.ID = -1
+                ex.Left.Col = pk
+                ex.Right.ValType = qcode.ValDBVar
+                ex.Right.Val = varName
+                
+                if sel.Where.Exp == nil {
+                    sel.Where.Exp = ex
+                } else {
+                    newEx := &qcode.Exp{
+                        Op: qcode.OpAnd,
+                        Children: []*qcode.Exp{sel.Where.Exp, ex},
+                    }
+                    sel.Where.Exp = newEx
+                }
+            }
+        }
+
+        c.Compiler.CompileQuery(c.w, c.qc, c.md)
+    }
+    
+    // Teardown (e.g. Drop Temp Table)
+    c.dialect.RenderTeardown(c)
+
+	// Teardown (e.g. Drop Temp Table)
+	c.dialect.RenderTeardown(c)
+
+	// fmt.Fprintf(os.Stderr, "DEBUG SQL: %s\n", c.w.String())
+}
+
+func (c *compilerContext) sortMutations() []int {
+	if len(c.qc.Mutates) == 0 {
+		return nil
+	}
+	
+
+
+
+    // DFS topological sort
+    // Check qc.Mutates for graph
+    visited := make(map[int]bool)
+    var stack []int
+    
+    var visit func(int)
+    visit = func(id int) {
+        if visited[id] { return }
+        visited[id] = true
+        
+        m := c.qc.Mutates[id]
+        // Visit dependencies first
+        for depID := range m.DependsOn {
+            visit(int(depID))
+        }
+        stack = append(stack, id)
+    }
+    
+    for i := range c.qc.Mutates {
+        visit(i)
+    }
+    return stack
+}
+
+func (c *compilerContext) renderLinearInsert(m qcode.Mutate) {
+	// Insert
+	c.dialect.RenderInsert(c, &m, func() {
+		i := 0
+		for _, col := range m.Cols {
+			if i != 0 {
+				c.w.WriteString(", ")
+			}
+			c.quoted(col.Col.Name)
+			i++
+		}
+		// Relationship cols (FKs)
+		for _, rcol := range m.RCols {
+			if i != 0 {
+				c.w.WriteString(", ")
+			}
+			c.quoted(rcol.Col.Name)
+			i++
+		}
+	})
+
+	varName := c.getVarName(m)
+	hasExplicitPK := false
+
+	if c.dialect.SupportsLinearExecution() && m.IsJSON {
+		c.w.WriteString(" SELECT ")
+	} else {
+		c.w.WriteString(" VALUES (")
+	}
+
+	i := 0
+	for _, col := range m.Cols {
+		if i != 0 {
+			c.w.WriteString(", ")
+		}
+		if c.dialect.SupportsLinearExecution() && col.Col.Name == m.Ti.PrimaryCol.Name {
+			// Use inline variable assignment for MySQL:  @var := value
+			c.w.WriteString("@")
+			c.w.WriteString(varName)
+			c.w.WriteString(" := ")
+			c.renderColumnValue(m, col)
+			hasExplicitPK = true
+		} else {
+			c.renderColumnValue(m, col)
+		}
+		i++
+	}
+	for _, rcol := range m.RCols {
+		if i != 0 {
+			c.w.WriteString(", ")
+		}
+		// Find dependency
+		found := false
+		for id := range m.DependsOn {
+			if c.qc.Mutates[id].Ti.Name == rcol.VCol.Table {
+				c.dialect.RenderVar(c, c.getVarName(c.qc.Mutates[id]))
+				found = true
+				break
+			}
+		}
+		if !found {
+			c.w.WriteString("NULL")
+		}
+
+		i++
+	}
+
+	if c.dialect.SupportsLinearExecution() && m.IsJSON {
+		c.w.WriteString(" FROM ")
+		c.renderMutateToRecordSet(m, 0)
+	} else {
+		c.w.WriteString(")")
+	}
+
+	// Capture ID only if we don't have an explicit PK (auto-increment case)
+	if !hasExplicitPK {
+		c.w.WriteString("; ")
+		c.dialect.RenderIDCapture(c, varName)
+	}
+}
+
+func (c *compilerContext) renderLinearUpdate(m qcode.Mutate) {
+    c.dialect.RenderUpdate(c, &m, func() {
+         i := 0
+         for _, col := range m.Cols {
+             if i != 0 { c.w.WriteString(", ") }
+             c.w.WriteString(col.Col.Name)
+             c.w.WriteString(" = ")
+             c.renderColumnValue(m, col)
+             i++
+         }
+         
+         for _, rcol := range m.RCols {
+             if i != 0 { c.w.WriteString(", ") }
+             c.w.WriteString(rcol.Col.Name)
+             c.w.WriteString(" = ")
+             
+             found := false
+             for id := range m.DependsOn {
+                 if c.qc.Mutates[id].Ti.Name == rcol.VCol.Table {
+                     c.dialect.RenderVar(c, c.getVarName(c.qc.Mutates[id]))
+                     found = true
+                     break
+                 }
+             }
+             if !found { c.w.WriteString("NULL") }
+             i++
+         }
+
+		if i == 0 {
+			// No columns to update, render dummy update to keep SQL valid
+			// SET id = id  (or primary key)
+			c.w.WriteString(m.Ti.PrimaryCol.Name)
+			c.w.WriteString(" = ")
+			c.colWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
+		}
+    	}, func() {
+		if m.IsJSON {
+			c.renderMutateToRecordSet(m, 0)
+		} 
+	}, func() {
+		hasWhere := false
+		
+		// MySQL/Postgres: Add join condition to WHERE clause
+		if (c.dialect.Name() == "postgres" || c.dialect.Name() == "mysql") && m.IsJSON {
+			c.colWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
+			c.w.WriteString(" = ")
+			c.colWithTable("t", m.Ti.PrimaryCol.Name)
+			hasWhere = true
+		}
+
+		if m.ParentID == -1 {
+			if hasWhere {
+				c.w.WriteString(" AND ")
+			}
+			c.renderExp(m.Ti, c.qc.Selects[0].Where.Exp, false)
+		} else if !hasWhere {
+			// For nested updates (non-root), if no json join (unlikely here if IsJSON),
+			// and no parent (handled above), effectively WHERE 1=1 if nothing else specific.
+			// But we usually rely on JOIN/WHERE from input ID matching.
+			c.w.WriteString("1=1")
+		}
+	})
+}
+
+func (c *compilerContext) renderLinearConnect(m qcode.Mutate) {
+	// SELECT IDs into variable
+	c.w.WriteString(`SELECT JSON_ARRAYAGG(`)
+	c.colWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
+	c.w.WriteString(`) INTO `)
+	c.dialect.RenderVar(c, c.getVarName(m))
+	
+	if m.IsJSON {
+		c.w.WriteString(` FROM `)
+		c.renderMutateToRecordSet(m, 0)
+		c.w.WriteString(`, `)
+	} else {
+		c.w.WriteString(` FROM `)
+	}
+	c.quoted(m.Ti.Name)
+
+	c.w.WriteString(` WHERE `)
+	// For connect, we join m.Ti (related table) with input (t) or args
+	// The Where clause likely contains the join condition if it was generated by qcode
+	c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
+}
+
+func (c *compilerContext) renderLinearDisconnect(m qcode.Mutate) {
+	// Disconnect typically updates the related table to NULL out the FK
+	// Or if it's an array column on the other side, it removes it.
+	
+	c.w.WriteString(`SELECT JSON_ARRAYAGG(`)
+	c.colWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
+	c.w.WriteString(`) INTO `)
+	c.dialect.RenderVar(c, c.getVarName(m))
+
+	if m.IsJSON {
+		c.w.WriteString(` FROM `)
+		c.renderMutateToRecordSet(m, 0)
+		c.w.WriteString(`, `)
+	} else {
+		c.w.WriteString(` FROM `)
+	}
+	c.quoted(m.Ti.Name)
+
+	c.w.WriteString(` WHERE `)
+	c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
+}
+
+func (c *compilerContext) getVarName(m qcode.Mutate) string {
+    return m.Ti.Name + "_" + fmt.Sprintf("%d", m.ID)
 }
 
 func (c *compilerContext) renderUnionStmt() {
@@ -81,54 +403,63 @@ func (c *compilerContext) renderUnionStmt() {
 	}
 }
 
+
+
 func (c *compilerContext) renderInsertUpdateValues(m qcode.Mutate) int {
 	i := 0
 	for _, col := range m.Cols {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
+		c.renderColumnValue(m, col)
 		i++
+	}
 
-		var vk, v string
-		isVar := false
-		isList := false
+	return i
+}
 
-		if col.Set {
-			v = col.Value
-			if v != "" && v[0] == '$' {
-				vk = v[1:]
-				isVar = true
-			}
-		} else {
-			field := m.Data.CMap[col.FieldName]
-			v = field.Val
-			vk = v
+func (c *compilerContext) renderColumnValue(m qcode.Mutate, col qcode.MColumn) {
+	var vk, v string
+	isVar := false
+	isList := false
 
-			if field.Type == graph.NodeVar {
-				isVar = true
-			}
+	if col.Set {
+		v = col.Value
+		if v != "" && v[0] == '$' {
+			vk = v[1:]
+			isVar = true
+		}
+	} else {
+		field := m.Data.CMap[col.FieldName]
+		v = field.Val
+		vk = v
 
-			if field.Type == graph.NodeList {
-				items := make([]string, 0, len(field.Children))
-				for _, c := range field.Children {
-					if c.Type == graph.NodeNum {
-						items = append(items, c.Val)
-					} else {
-						items = append(items, (`'` + c.Val + `'`))
-					}
+		if field.Type == graph.NodeVar {
+			isVar = true
+		}
+
+		if field.Type == graph.NodeList {
+			items := make([]string, 0, len(field.Children))
+			for _, c := range field.Children {
+				if c.Type == graph.NodeNum {
+					items = append(items, c.Val)
+				} else {
+					items = append(items, (`'` + c.Val + `'`))
 				}
-				vk = strings.Join(items, ",")
-				isList = true
 			}
+			vk = strings.Join(items, ",")
+			isList = true
 		}
+	}
 
-		if isVar {
-			if v1, ok := c.svars[vk]; ok {
-				v = v1
-				isVar = false
-			}
+	if isVar {
+		if v1, ok := c.svars[vk]; ok {
+			v = v1
+			isVar = false
 		}
+	}
 
+	valFunc := func() {
 		switch {
 		case isVar:
 			c.renderParam(Param{Name: vk, Type: col.Col.Type, IsArray: col.Col.Array, IsNotNull: col.Col.NotNull})
@@ -152,13 +483,8 @@ func (c *compilerContext) renderInsertUpdateValues(m qcode.Mutate) int {
 		default:
 			c.squoted(v)
 		}
-
-		c.w.WriteString(` :: `)
-		c.w.WriteString(col.Col.Type)
-
 	}
-
-	return i
+	c.dialect.RenderCast(c, valFunc, col.Col.Type)
 }
 
 func (c *compilerContext) renderInsertUpdateColumns(m qcode.Mutate) int {
@@ -263,7 +589,7 @@ func (c *compilerContext) renderNestedRelTables(m qcode.Mutate, prefix bool, n i
 		}
 		d := c.qc.Mutates[id]
 
-		if d.Multi {
+		if d.Multi || d.Type == qcode.MTConnect || d.Type == qcode.MTDisconnect {
 			c.renderCteNameWithID(d)
 		} else {
 			c.quoted(d.Ti.Name)
@@ -272,7 +598,7 @@ func (c *compilerContext) renderNestedRelTables(m qcode.Mutate, prefix bool, n i
 		if prefix {
 			c.w.WriteString(` _x_`)
 			c.w.WriteString(d.Ti.Name)
-		} else if d.Multi {
+		} else if d.Multi || d.Type == qcode.MTConnect || d.Type == qcode.MTDisconnect {
 			c.w.WriteString(` `)
 			c.quoted(d.Ti.Name)
 		}
@@ -283,42 +609,22 @@ func (c *compilerContext) renderNestedRelTables(m qcode.Mutate, prefix bool, n i
 }
 
 func (c *compilerContext) renderUpsert() {
-	sel := c.qc.Selects[0]
-
-	c.renderInsert()
-	c.w.WriteString(` ON CONFLICT (`)
 	m := c.qc.Mutates[0]
 
-	i := 0
-	for _, col := range m.Cols {
-		if !col.Col.UniqueKey && !col.Col.PrimaryKey {
-			continue
+	c.dialect.RenderUpsert(c, &m, func() {
+		c.renderInsert()
+	}, func() {
+		for i, col := range m.Cols {
+			if i != 0 {
+				c.w.WriteString(`, `)
+			}
+			c.dialect.RenderAssign(c, col.Col.Name, "EXCLUDED."+col.Col.Name)
 		}
-		if i != 0 {
-			c.w.WriteString(`, `)
-		}
-		c.w.WriteString(col.Col.Name)
-		i++
-	}
-	if i == 0 {
-		c.w.WriteString(sel.Ti.PrimaryCol.Name)
-	}
-	c.w.WriteString(`)`)
-
-	c.w.WriteString(` DO UPDATE SET `)
-
-	for i, col := range m.Cols {
-		if i != 0 {
-			c.w.WriteString(`, `)
-		}
-		c.w.WriteString(col.Col.Name)
-		c.w.WriteString(` = EXCLUDED.`)
-		c.w.WriteString(col.Col.Name)
-	}
+	})
 
 	c.w.WriteString(` WHERE `)
-	c.renderExp(m.Ti, sel.Where.Exp, false)
-	c.renderReturning(m)
+	c.renderExp(m.Ti, c.qc.Selects[0].Where.Exp, false)
+	c.dialect.RenderReturning(c, &m)
 }
 
 func (c *compilerContext) renderDelete() {
@@ -327,13 +633,12 @@ func (c *compilerContext) renderDelete() {
 
 	c.w.WriteString(`WITH `)
 	c.quoted(sel.Table)
-
-	c.w.WriteString(` AS (DELETE FROM `)
-	c.table(sel.Ti.Schema, sel.Ti.Name, false)
-	c.w.WriteString(` WHERE `)
-	c.renderExp(sel.Ti, sel.Where.Exp, false)
-
-	c.renderReturning(m)
+	c.w.WriteString(` AS (`)
+	c.dialect.RenderDelete(c, &m, func() {
+		c.renderExp(sel.Ti, sel.Where.Exp, false)
+	})
+	c.dialect.RenderReturning(c, &m)
+	c.w.WriteString(`)`)
 }
 
 func (c *compilerContext) renderOneToManyConnectStmt(m qcode.Mutate) {
@@ -387,6 +692,7 @@ func (c *compilerContext) renderOneToOneConnectStmt(m qcode.Mutate) {
 	c.w.WriteString(` WHERE `)
 	c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
 	c.renderReturning(m)
+	c.w.WriteString(`)`)
 }
 
 func (c *compilerContext) renderOneToManyDisconnectStmt(m qcode.Mutate) {
@@ -458,39 +764,34 @@ func (c *compilerContext) renderOneToOneDisconnectStmt(m qcode.Mutate) {
 	}
 	c.w.WriteString(`)`)
 	c.renderReturning(m)
+	c.w.WriteString(`)`)
 }
 
-func (c *compilerContext) renderOneToManyModifiers(m qcode.Mutate) {
-	renderPrefix := func(i int) {
-		if i == 0 {
-			c.w.WriteString(`WITH `)
-		} else {
-			c.w.WriteString(`, `)
-		}
-	}
-
+func (c *compilerContext) renderOneToManyModifiers(m qcode.Mutate) int {
 	i := 0
 	for id := range m.DependsOn {
 		m1 := c.qc.Mutates[id]
 
 		switch m1.Type {
 		case qcode.MTConnect:
-			renderPrefix(i)
+			if i != 0 {
+				c.w.WriteString(`, `)
+			}
 			c.renderOneToManyConnectStmt(m1)
 			i++
 		case qcode.MTDisconnect:
-			renderPrefix(i)
+			if i != 0 {
+				c.w.WriteString(`, `)
+			}
 			c.renderOneToManyDisconnectStmt(m1)
 			i++
 		}
-		if i != 0 {
-			c.w.WriteString(` `)
-		}
 	}
+	return i
 }
 
 func (c *compilerContext) renderCteName(m qcode.Mutate) {
-	if m.Multi {
+	if m.Multi || m.Type == qcode.MTConnect || m.Type == qcode.MTDisconnect {
 		c.renderCteNameWithID(m)
 	} else {
 		c.quoted(m.Ti.Name)
@@ -520,36 +821,19 @@ func (c *compilerContext) renderValues(m qcode.Mutate, prefix bool) {
 }
 
 func (c *compilerContext) renderMutateToRecordSet(m qcode.Mutate, n int) {
-	if n != 0 {
-		c.w.WriteString(`, `)
-	}
-	if m.Array {
-		c.w.WriteString(`json_to_recordset`)
-	} else {
-		c.w.WriteString(`json_to_record`)
-	}
-
-	c.w.WriteString(`(`)
-	joinPath(c.w, `i.j`, m.Path, c.enableCamelcase)
-	c.w.WriteString(`) as t(`)
-
-	i := 0
-	for _, col := range m.Cols {
-		if i != 0 {
-			c.w.WriteString(`, `)
+	c.dialect.RenderMutateToRecordSet(c, &m, n, func() {
+		if c.dialect.SupportsLinearExecution() {
+			if m.IsJSON { // should be true here anyway
+				c.renderParam(Param{Name: c.qc.ActionVar, Type: "json"})
+			}
+		} else {
+			c.w.WriteString("i.j")
 		}
-		c.quoted(col.FieldName)
-		c.w.WriteString(` `)
-		c.w.WriteString(col.Col.Type)
-		i++
-	}
-	c.w.WriteString(`)`)
+	})
 }
 
 func (c *compilerContext) renderReturning(m qcode.Mutate) {
-	c.w.WriteString(` RETURNING `)
-	c.table(m.Ti.Schema, m.Ti.Name, false)
-	c.w.WriteString(`.*)`)
+	c.dialect.RenderReturning(c, &m)
 }
 
 func (c *compilerContext) renderComma(i int) int {

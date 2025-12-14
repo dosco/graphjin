@@ -297,6 +297,7 @@ const (
 	ValList
 	ValObj
 	ValVar
+	ValDBVar
 )
 
 type AggregrateOp int8

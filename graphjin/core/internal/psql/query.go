@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/dosco/graphjin/core/v3/internal/dialect"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
@@ -33,6 +34,7 @@ type compilerContext struct {
 	w      *bytes.Buffer
 	qc     *qcode.QCode
 	isJSON bool
+	err    error
 	*Compiler
 }
 
@@ -48,16 +50,30 @@ type Config struct {
 
 type Compiler struct {
 	svars           map[string]string
-	ct              string // db type
+	dialect         dialect.Dialect
 	cv              int    // db version
 	pf              []byte // security prefix
 	enableCamelcase bool
 }
 
 func NewCompiler(conf Config) *Compiler {
+	var d dialect.Dialect
+	switch conf.DBType {
+	case "mysql":
+		d = &dialect.MySQLDialect{EnableCamelcase: conf.EnableCamelcase}
+	case "sqlite":
+		d = &dialect.SQLiteDialect{}
+	default:
+		d = &dialect.PostgresDialect{
+			DBVersion:       conf.DBVersion,
+			EnableCamelcase: conf.EnableCamelcase,
+			SecPrefix:       conf.SecPrefix,
+		}
+	}
+
 	return &Compiler{
 		svars:           conf.Vars,
-		ct:              conf.DBType,
+		dialect:         d,
 		cv:              conf.DBVersion,
 		pf:              conf.SecPrefix,
 		enableCamelcase: conf.EnableCamelcase,
@@ -86,10 +102,10 @@ func (co *Compiler) Compile(w *bytes.Buffer, qc *qcode.QCode) (Metadata, error) 
 
 	switch qc.Type {
 	case qcode.QTQuery:
-		co.CompileQuery(w, qc, &md)
+		err = co.CompileQuery(w, qc, &md)
 
 	case qcode.QTSubscription:
-		co.CompileQuery(w, qc, &md)
+		err = co.CompileQuery(w, qc, &md)
 
 	case qcode.QTMutation:
 		co.compileMutation(w, qc, &md)
@@ -105,13 +121,17 @@ func (co *Compiler) CompileQuery(
 	w *bytes.Buffer,
 	qc *qcode.QCode,
 	md *Metadata,
-) {
+) error {
 	if qc.Type == qcode.QTSubscription {
 		md.poll = true
 	}
 
-	md.ct = qc.Schema.DBType()
-
+	// md.ct = qc.Schema.DBType() // md.ct is likely used elsewhere, kept for now if md has it?
+	// But md.ct was string. qc.Schema.DBType() is string.
+	// Compiler struct no longer has ct.
+	
+	// c.ct usage in loops below needs refactor.
+	
 	st := NewIntStack()
 	c := &compilerContext{
 		md:       md,
@@ -121,17 +141,25 @@ func (co *Compiler) CompileQuery(
 	}
 
 	i := 0
-	switch c.ct {
-	case "mysql":
-		c.w.WriteString(`SELECT json_object(`)
-	default:
-		c.w.WriteString(`SELECT jsonb_build_object(`)
-	}
+	c.dialect.RenderJSONRoot(c, nil) // sel is nil for root? Or qc is enough?
+	// RenderJSONRoot(ctx, sel)
+	// original: SELECT json_object( or jsonb_build_object(
+	// It didn't use sel. It used qc.Name if qc.Typename.
+	
+	// Wait, original:
+	// switch c.ct { ... SELECT ... }
+	// if qc.Typename { c.w.WriteString(...) }
+	
+	// RenderJSONRoot should maybe handle the whole SELECT part?
+	// My Dialect.RenderJSONRoot implementation just writes SELECT ..._object(
+	// Then logic continues.
+	
 	if qc.Typename {
 		c.w.WriteString(`'__typename', `)
 		c.squoted(qc.Name)
 		i++
 	}
+
 
 	for _, id := range qc.Roots {
 		sel := &qc.Selects[id]
@@ -159,11 +187,18 @@ func (co *Compiler) CompileQuery(
 			}
 
 		default:
-			c.w.WriteString(`'`)
-			c.w.WriteString(sel.FieldName)
-			c.w.WriteString(`', __sj_`)
-			int32String(c.w, sel.ID)
-			c.w.WriteString(`.json`)
+			if !c.dialect.SupportsLateral() {
+				c.w.WriteString(`'`)
+				c.w.WriteString(sel.FieldName)
+				c.w.WriteString(`', `)
+				c.renderInlineChild(sel)
+			} else {
+				c.w.WriteString(`'`)
+				c.w.WriteString(sel.FieldName)
+				c.w.WriteString(`', __sj_`)
+				int32String(c.w, sel.ID)
+				c.w.WriteString(`.json`)
+			}
 
 			// return the cursor for the this child selector as part of the parents json
 			if sel.Paging.Cursor {
@@ -171,9 +206,17 @@ func (co *Compiler) CompileQuery(
 				c.w.WriteString(sel.FieldName)
 				c.w.WriteString(`_cursor', `)
 
-				c.w.WriteString(`__sj_`)
-				int32String(c.w, sel.ID)
-				c.w.WriteString(`.__cursor`)
+				if !c.dialect.SupportsLateral() {
+					c.w.WriteString(`NULL`) // Cursors not fully supported inline yet
+				} else {
+					c.w.WriteString(`__sj_`)
+					int32String(c.w, sel.ID)
+					c.w.WriteString(`.__cursor`)
+				}
+			}
+
+			if !c.dialect.SupportsLateral() {
+				continue
 			}
 
 			st.Push(sel.ID + closeBlock)
@@ -187,6 +230,8 @@ func (co *Compiler) CompileQuery(
 
 	c.w.WriteString(`) AS __root FROM ((SELECT true)) AS __root_x`)
 	c.renderQuery(st, true)
+
+	return c.err
 }
 
 func (c *compilerContext) renderQuery(st *IntStack, multi bool) {
@@ -220,6 +265,10 @@ func (c *compilerContext) renderQuery(st *IntStack, multi bool) {
 					continue
 				}
 
+				if !c.dialect.SupportsLateral() {
+					continue
+				}
+
 				st.Push(child.ID + closeBlock)
 				st.Push(child.ID)
 			}
@@ -233,6 +282,14 @@ func (c *compilerContext) renderQuery(st *IntStack, multi bool) {
 	}
 }
 
+func (c *compilerContext) renderInlineChild(sel *qcode.Select) {
+	c.w.WriteString(`(`)
+	c.renderPluralSelect(sel)
+	c.renderSelect(sel)
+	c.renderSelectClose(sel)
+	c.w.WriteString(`)`)
+}
+
 func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 	if sel.Singular {
 		return
@@ -242,20 +299,10 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 	if sel.FieldFilter.Exp != nil {
 		c.w.WriteString(`(CASE WHEN `)
 		c.renderExp(sel.Ti, sel.FieldFilter.Exp, false)
-		c.w.WriteString(` THEN (`)
+		c.w.WriteString(` THEN (SELECT `)
 	}
 
-	switch c.ct {
-	case "mysql":
-		c.w.WriteString(`CAST(COALESCE(json_arrayagg(__sj_`)
-		int32String(c.w, sel.ID)
-		c.w.WriteString(`.json), '[]') AS JSON)`)
-
-	default:
-		c.w.WriteString(`COALESCE(jsonb_agg(__sj_`)
-		int32String(c.w, sel.ID)
-		c.w.WriteString(`.json), '[]')`)
-	}
+	c.dialect.RenderJSONPlural(c, sel)
 
 	if sel.FieldFilter.Exp != nil {
 		c.w.WriteString(`) ELSE null END)`)
@@ -288,27 +335,7 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 }
 
 func (c *compilerContext) renderSelect(sel *qcode.Select) {
-	switch c.ct {
-	case "mysql":
-		c.w.WriteString(`SELECT json_object(`)
-		c.renderJSONFields(sel)
-		c.w.WriteString(`) `)
-	default:
-		c.w.WriteString(`SELECT to_jsonb(__sr_`)
-		int32String(c.w, sel.ID)
-		c.w.WriteString(`.*) `)
-
-		// Exclude the cusor values from the the generated json object since
-		// we manually use these values to build the cursor string
-		// Notice the `- '__cur_` its' what excludes fields in `to_jsonb`
-		if sel.Paging.Cursor {
-			for i := range sel.OrderBy {
-				c.w.WriteString(`- '__cur_`)
-				int32String(c.w, int32(i))
-				c.w.WriteString(`' `)
-			}
-		}
-	}
+	c.dialect.RenderJSONSelect(c, sel)
 	c.w.WriteString(`AS json `)
 
 	// We manually insert the cursor values into row we're building outside
@@ -374,18 +401,10 @@ func (c *compilerContext) renderJoinTables(sel *qcode.Select) {
 	for _, join := range sel.Joins {
 		c.renderJoin(join)
 	}
-	if c.ct != "mysql" {
-		c.renderPostgreaOnlyJoinTables(sel)
-	}
+	c.dialect.RenderJoinTables(c, sel)
 }
 
-func (c *compilerContext) renderPostgreaOnlyJoinTables(sel *qcode.Select) {
-	for _, ob := range sel.OrderBy {
-		if ob.Var != "" {
-			c.renderJoinForOrderByList(ob)
-		}
-	}
-}
+
 
 func (c *compilerContext) renderJoin(join qcode.Join) {
 	c.w.WriteString(` INNER JOIN `)
@@ -395,11 +414,7 @@ func (c *compilerContext) renderJoin(join qcode.Join) {
 	c.w.WriteString(`))`)
 }
 
-func (c *compilerContext) renderJoinForOrderByList(ob qcode.OrderBy) {
-	c.w.WriteString(` JOIN (SELECT id ::` + ob.Col.Type + `, ord FROM json_array_elements_text(`)
-	c.renderParam(Param{Name: ob.Var, Type: ob.Col.Type})
-	c.w.WriteString(`) WITH ORDINALITY a(id, ord)) AS _gj_ob_` + ob.Col.Name + `(id, ord) USING (id)`)
-}
+
 
 func (c *compilerContext) renderBaseSelect(sel *qcode.Select) {
 	c.renderCursorCTE(sel)
@@ -416,69 +431,12 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select) {
 }
 
 func (c *compilerContext) renderLimit(sel *qcode.Select) {
-	switch c.ct {
-	case "mysql":
-		c.renderMysqlLimit(sel)
-	default:
-		c.renderDefaultLimit(sel)
-	}
+	c.dialect.RenderLimit(c, sel)
 }
 
-func (c *compilerContext) renderDefaultLimit(sel *qcode.Select) {
-	switch {
-	case sel.Paging.NoLimit:
-		break
 
-	case sel.Singular:
-		c.w.WriteString(` LIMIT 1`)
 
-	case sel.Paging.LimitVar != "":
-		c.w.WriteString(` LIMIT LEAST(`)
-		c.renderParam(Param{Name: sel.Paging.LimitVar, Type: "integer"})
-		c.w.WriteString(`, `)
-		int32String(c.w, sel.Paging.Limit)
-		c.w.WriteString(`)`)
 
-	default:
-		c.w.WriteString(` LIMIT `)
-		int32String(c.w, sel.Paging.Limit)
-	}
-
-	switch {
-	case sel.Paging.OffsetVar != "":
-		c.w.WriteString(` OFFSET `)
-		c.renderParam(Param{Name: sel.Paging.OffsetVar, Type: "integer"})
-
-	case sel.Paging.Offset != 0:
-		c.w.WriteString(` OFFSET `)
-		int32String(c.w, sel.Paging.Offset)
-	}
-}
-
-func (c *compilerContext) renderMysqlLimit(sel *qcode.Select) {
-	c.w.WriteString(` LIMIT `)
-
-	switch {
-	case sel.Paging.OffsetVar != "":
-		c.renderParam(Param{Name: sel.Paging.OffsetVar, Type: "integer"})
-		c.w.WriteString(`, `)
-
-	case sel.Paging.Offset != 0:
-		int32String(c.w, sel.Paging.Offset)
-		c.w.WriteString(`, `)
-	}
-
-	switch {
-	case sel.Paging.NoLimit:
-		c.w.WriteString(`18446744073709551610`)
-
-	case sel.Singular:
-		c.w.WriteString(`1`)
-
-	default:
-		int32String(c.w, sel.Paging.Limit)
-	}
-}
 
 func (c *compilerContext) renderFrom(sel *qcode.Select) {
 	c.w.WriteString(` FROM `)
@@ -498,12 +456,7 @@ func (c *compilerContext) renderFrom(sel *qcode.Select) {
 		c.w.WriteString(sel.Rel.Left.Col.Table)
 		c.w.WriteString(`, `)
 
-		switch c.ct {
-		case "mysql":
-			c.renderJSONTable(sel)
-		default:
-			c.renderSelectToRecordSet(sel)
-		}
+		c.dialect.RenderFromEdge(c, sel)
 
 	default:
 		c.table(sel.Ti.Schema, sel.Ti.Name, true)
@@ -516,95 +469,12 @@ func (c *compilerContext) renderFromCursor(sel *qcode.Select) {
 	}
 }
 
-func (c *compilerContext) renderJSONTable(sel *qcode.Select) {
-	c.w.WriteString(`JSON_TABLE(`)
-	c.colWithTable(sel.Rel.Left.Col.Table, sel.Rel.Left.Col.Name)
-	c.w.WriteString(`, "$[*]" COLUMNS(`)
 
-	for i, col := range sel.Ti.Columns {
-		if i != 0 {
-			c.w.WriteString(`, `)
-		}
-		c.w.WriteString(col.Name)
-		c.w.WriteString(` `)
-		c.w.WriteString(col.Type)
-		c.w.WriteString(` PATH "$.`)
-		c.w.WriteString(col.Name)
-		c.w.WriteString(`" ERROR ON ERROR`)
-	}
-	c.w.WriteString(`)) AS`)
-	c.quoted(sel.Table)
-}
 
-func (c *compilerContext) renderSelectToRecordSet(sel *qcode.Select) {
-	// jsonb_to_recordset('[{"a":1,"b":[1,2,3],"c":"bar"}, {"a":2,"b":[1,2,3],"c":"bar"}]') as x(a int, b text, d text);
-	c.w.WriteString(sel.Ti.Type)
-	c.w.WriteString(`_to_recordset(`)
-	c.colWithTable(sel.Rel.Left.Col.Table, sel.Rel.Left.Col.Name)
-	c.w.WriteString(`) AS `)
-	c.quoted(sel.Table)
 
-	c.w.WriteString(`(`)
-	for i, col := range sel.Ti.Columns {
-		if i != 0 {
-			c.w.WriteString(`, `)
-		}
-		c.w.WriteString(col.Name)
-		c.w.WriteString(` `)
-		c.w.WriteString(col.Type)
-	}
-	c.w.WriteString(`)`)
-}
 
 func (c *compilerContext) renderCursorCTE(sel *qcode.Select) {
-	if !sel.Paging.Cursor {
-		return
-	}
-	c.w.WriteString(`WITH __cur AS (SELECT `)
-	switch c.ct {
-	case "mysql":
-		for i, ob := range sel.OrderBy {
-			if i != 0 {
-				c.w.WriteString(`, `)
-			}
-			c.w.WriteString(`NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(a.i, ',', `)
-			int32String(c.w, int32(i+2))
-			c.w.WriteString(`), ',', -1), '') AS `)
-			// c.w.WriteString(ob.Col.Type)
-			if ob.KeyVar != "" && ob.Key != "" {
-				c.quoted(ob.Col.Name + "_" + ob.Key)
-			} else {
-				c.quoted(ob.Col.Name)
-			}
-		}
-		c.w.WriteString(` FROM ((SELECT `)
-		c.renderParam(Param{Name: "cursor", Type: "text"})
-		c.w.WriteString(` AS i)) AS a) `)
-
-	default:
-		for i, ob := range sel.OrderBy {
-			if i != 0 {
-				c.w.WriteString(`, `)
-			}
-			c.w.WriteString(`a[`)
-			int32String(c.w, int32((i + 2)))
-			c.w.WriteString(`] :: `)
-			c.w.WriteString(ob.Col.Type)
-			c.w.WriteString(` AS `)
-			if ob.KeyVar != "" && ob.Key != "" {
-				c.quoted(ob.Col.Name + "_" + ob.Key)
-			} else {
-				c.quoted(ob.Col.Name)
-			}
-		}
-		c.w.WriteString(` FROM STRING_TO_ARRAY(`)
-		c.renderParam(Param{Name: "cursor", Type: "text"})
-		c.w.WriteString(`, ',') AS a) `)
-
-		// c.w.WriteString(`WHERE CAST(a.a[1] AS integer) = `)
-		// int32String(c.w, sel.ID)
-		// c.w.WriteString(`) `)
-	}
+	c.dialect.RenderCursorCTE(c, sel)
 }
 
 func (c *compilerContext) renderWhere(sel *qcode.Select) {
@@ -630,75 +500,11 @@ func (c *compilerContext) renderGroupBy(sel *qcode.Select) {
 }
 
 func (c *compilerContext) renderOrderBy(sel *qcode.Select) {
-	if len(sel.OrderBy) == 0 {
-		return
-	}
-	c.w.WriteString(` ORDER BY `)
-
-	for i, ob := range sel.OrderBy {
-		if i != 0 {
-			c.w.WriteString(`, `)
-		}
-		if ob.KeyVar != "" && ob.Key != "" {
-			c.w.WriteString(` CASE WHEN `)
-			c.renderParam(Param{Name: ob.KeyVar, Type: "text"})
-			c.w.WriteString(` = `)
-			c.squoted(ob.Key)
-			c.w.WriteString(` THEN `)
-		}
-		if ob.Var != "" {
-			switch c.ct {
-			case "mysql":
-				c.renderOrderByList(ob)
-			default:
-				c.colWithTable(`_gj_ob_`+ob.Col.Name, "ord")
-			}
-		} else {
-			c.colWithTable(ob.Col.Table, ob.Col.Name)
-		}
-		if ob.KeyVar != "" && ob.Key != "" {
-			c.w.WriteString(` END `)
-		}
-
-		switch ob.Order {
-		case qcode.OrderAsc:
-			c.w.WriteString(` ASC`)
-		case qcode.OrderDesc:
-			c.w.WriteString(` DESC`)
-		case qcode.OrderAscNullsFirst:
-			c.w.WriteString(` ASC NULLS FIRST`)
-		case qcode.OrderDescNullsFirst:
-			c.w.WriteString(` DESC NULLLS FIRST`)
-		case qcode.OrderAscNullsLast:
-			c.w.WriteString(` ASC NULLS LAST`)
-		case qcode.OrderDescNullsLast:
-			c.w.WriteString(` DESC NULLS LAST`)
-		}
-	}
+	c.dialect.RenderOrderBy(c, sel)
 }
 
-func (c *compilerContext) renderOrderByList(ob qcode.OrderBy) {
-	switch c.ct {
-	case "mysql":
-		c.w.WriteString(`FIND_IN_SET(`)
-		c.colWithTable(ob.Col.Table, ob.Col.Name)
-		c.w.WriteString(`, (SELECT GROUP_CONCAT(id) FROM JSON_TABLE(`)
-		c.renderParam(Param{Name: ob.Var, Type: "text"})
-		c.w.WriteString(`, '$[*]' COLUMNS (id ` + ob.Col.Type + ` PATH '$')) AS a))`)
-	default:
-	}
-}
+
 
 func (c *compilerContext) renderDistinctOn(sel *qcode.Select) {
-	if len(sel.DistinctOn) == 0 {
-		return
-	}
-	c.w.WriteString(`DISTINCT ON (`)
-	for i, col := range sel.DistinctOn {
-		if i != 0 {
-			c.w.WriteString(`, `)
-		}
-		c.colWithTable(sel.Table, col.Name)
-	}
-	c.w.WriteString(`) `)
+	c.dialect.RenderDistinctOn(c, sel)
 }

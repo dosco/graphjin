@@ -3,44 +3,11 @@ package psql
 import "github.com/dosco/graphjin/core/v3/internal/qcode"
 
 func (c *compilerContext) renderFunctionSearchRank(sel *qcode.Select, f qcode.Field) {
-	if c.ct == "mysql" {
-		c.w.WriteString(`0`)
-		return
-	}
-
-	c.w.WriteString(`ts_rank(`)
-	for i, col := range sel.Ti.FullText {
-		if i != 0 {
-			c.w.WriteString(` || `)
-		}
-		c.colWithTable(sel.Table, col.Name)
-	}
-	if c.cv >= 110000 {
-		c.w.WriteString(`, websearch_to_tsquery(`)
-	} else {
-		c.w.WriteString(`, to_tsquery(`)
-	}
-	arg, _ := sel.GetInternalArg("search")
-	c.renderParam(Param{Name: arg.Val, Type: "text"})
-	c.w.WriteString(`))`)
+	c.dialect.RenderSearchRank(c, sel, f)
 }
 
 func (c *compilerContext) renderFunctionSearchHeadline(sel *qcode.Select, f qcode.Field) {
-	if c.ct == "mysql" {
-		c.w.WriteString(`''`)
-		return
-	}
-
-	c.w.WriteString(`ts_headline(`)
-	c.colWithTable(sel.Table, f.Col.Name)
-	if c.cv >= 110000 {
-		c.w.WriteString(`, websearch_to_tsquery(`)
-	} else {
-		c.w.WriteString(`, to_tsquery(`)
-	}
-	arg, _ := sel.GetInternalArg("search")
-	c.renderParam(Param{Name: arg.Val, Type: "text"})
-	c.w.WriteString(`))`)
+	c.dialect.RenderSearchHeadline(c, sel, f)
 }
 
 func (c *compilerContext) renderTableFunction(sel *qcode.Select) {

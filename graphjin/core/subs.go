@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/dosco/graphjin/core/v3/internal/allow"
+	"github.com/dosco/graphjin/core/v3/internal/dialect"
 	"github.com/dosco/graphjin/core/v3/internal/graph"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 )
@@ -36,6 +37,7 @@ type sub struct {
 	add   chan *Member
 	del   chan *Member
 	updt  chan mmsg
+	done  chan struct{}
 
 	mval
 	sync.Once
@@ -164,47 +166,56 @@ func (gj *graphjinEngine) subscribe(c context.Context, r GraphqlReq) (
 	}
 
 	k := s.key()
-	v, _ := gj.subs.LoadOrStore(k, &sub{
-		k:    k,
-		s:    s,
-		add:  make(chan *Member),
-		del:  make(chan *Member),
-		updt: make(chan mmsg, 10),
-	})
-	sub := v.(*sub)
+	for {
+		v, _ := gj.subs.LoadOrStore(k, &sub{
+			k:    k,
+			s:    s,
+			add:  make(chan *Member),
+			del:  make(chan *Member),
+			updt: make(chan mmsg, 10),
+			done: make(chan struct{}),
+		})
+		sub := v.(*sub)
 
-	sub.Do(func() {
-		err = gj.initSub(c, sub)
-	})
+		sub.Do(func() {
+			err = gj.initSub(c, sub)
+		})
 
-	if err != nil {
-		gj.subs.Delete(k)
-		return
+		if err != nil {
+			gj.subs.Delete(k)
+			return
+		}
+
+		// don't use the vmap in the sub gstate use the new
+		// one that was created this current subscription
+		args, err1 := sub.s.argListForSub(c, s.vmap)
+		if err1 != nil {
+			return nil, err1
+		}
+
+		m = &Member{
+			ns:     r.namespace,
+			id:     atomic.AddUint64(&sub.idgen, 1),
+			Result: make(chan *Result, 10),
+			sub:    sub,
+			vl:     args.values,
+			params: args.json,
+			cindx:  args.cindx,
+		}
+
+		m.mm, err = gj.subFirstQuery(sub, m)
+		if err != nil {
+			return nil, err
+		}
+
+		select {
+		case sub.add <- m:
+			return
+		case <-sub.done:
+			gj.subs.Delete(k)
+			continue
+		}
 	}
-
-	// don't use the vmap in the sub gstate use the new
-	// one that was created this current subscription
-	args, err := sub.s.argListForSub(c, s.vmap)
-	if err != nil {
-		return nil, err
-	}
-
-	m = &Member{
-		ns:     r.namespace,
-		id:     atomic.AddUint64(&sub.idgen, 1),
-		Result: make(chan *Result, 10),
-		sub:    sub,
-		vl:     args.values,
-		params: args.json,
-		cindx:  args.cindx,
-	}
-
-	m.mm, err = gj.subFirstQuery(sub, m)
-	if err != nil {
-		return nil, err
-	}
-	sub.add <- m
-	return
 }
 
 // initSub function is called on the graphjin struct to initialize a subscription.
@@ -232,6 +243,7 @@ func (gj *graphjinEngine) initSub(c context.Context, sub *sub) (err error) {
 func (gj *graphjinEngine) subController(sub *sub) {
 	// remove subscription if controller exists
 	defer gj.subs.Delete(sub.k)
+	defer close(sub.done)
 
 	ps := gj.conf.SubsPollDuration
 	if ps < minPollDuration {
@@ -561,43 +573,54 @@ func (gj *graphjinEngine) subNotifyMemberEx(sub *sub,
 
 // renderSubWrap function is called on the graphjin struct to render a sub wrap.
 func renderSubWrap(st stmt, ct string) string {
-	var w strings.Builder
-
+	var d dialect.Dialect
 	switch ct {
 	case "mysql":
-		w.WriteString(`WITH _gj_sub AS (SELECT * FROM JSON_TABLE(?, "$[*]" COLUMNS(`)
-		for i, p := range st.md.Params() {
-			if i != 0 {
-				w.WriteString(`, `)
-			}
-			w.WriteString("`" + p.Name + "` ")
-			w.WriteString(p.Type)
-			w.WriteString(` PATH "$[`)
-			w.WriteString(strconv.FormatInt(int64(i), 10))
-			w.WriteString(`]" ERROR ON ERROR`)
-		}
-		w.WriteString(`)) AS _gj_jt`)
-
+		d = &dialect.MySQLDialect{}
 	default:
-		w.WriteString(`WITH _gj_sub AS (SELECT `)
-		for i, p := range st.md.Params() {
-			if i != 0 {
-				w.WriteString(`, `)
-			}
-			w.WriteString(`CAST(x->>`)
-			w.WriteString(strconv.FormatInt(int64(i), 10))
-			w.WriteString(` AS `)
-			w.WriteString(p.Type)
-			w.WriteString(`) AS "` + p.Name + `"`)
-		}
-		w.WriteString(` FROM json_array_elements($1::json) AS x`)
+		d = &dialect.PostgresDialect{}
 	}
-	w.WriteString(`) SELECT _gj_sub_data.__root FROM _gj_sub LEFT OUTER JOIN LATERAL (`)
-	w.WriteString(st.sql)
-	w.WriteString(`) AS _gj_sub_data ON true`)
 
-	return w.String()
+	params := make([]dialect.Param, len(st.md.Params()))
+	for i, p := range st.md.Params() {
+		params[i] = dialect.Param{Name: p.Name, Type: p.Type}
+	}
+
+	sc := &stringContext{}
+	d.RenderSubscriptionUnbox(sc, params, func() {
+		sc.WriteString(st.sql)
+	})
+
+	return sc.sb.String()
 }
+
+type stringContext struct {
+	sb strings.Builder
+}
+
+func (c *stringContext) Write(s string) (int, error) {
+	return c.sb.WriteString(s)
+}
+
+func (c *stringContext) WriteString(s string) (int, error) {
+	return c.sb.WriteString(s)
+}
+func (c *stringContext) AddParam(p dialect.Param) string {
+	return ""
+}
+func (c *stringContext) Quote(s string) {
+	c.sb.WriteString(`"`)
+	c.sb.WriteString(s)
+	c.sb.WriteString(`"`)
+}
+func (c *stringContext) ColWithTable(table, col string) {
+	if table != "" {
+		c.Quote(table)
+		c.sb.WriteString(".")
+	}
+	c.Quote(col)
+}
+func (c *stringContext) RenderJSONFields(sel *qcode.Select) {}
 
 // renderJSONArray function is called on the graphjin struct to render a json array.
 func renderJSONArray(v []json.RawMessage) json.RawMessage {

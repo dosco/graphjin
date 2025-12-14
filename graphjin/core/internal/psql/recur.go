@@ -11,10 +11,9 @@ func (c *compilerContext) renderRecursiveBaseSelect(sel *qcode.Select) {
 	c.renderRecursiveColumns(sel)
 	c.w.WriteString(` FROM (SELECT * FROM `)
 	c.quoted("__rcte_" + sel.Table)
-	switch c.ct {
-	case "mysql":
+	if c.dialect.Name() == "mysql" {
 		c.w.WriteString(` LIMIT 1, 18446744073709551610`)
-	default:
+	} else {
 		c.w.WriteString(` OFFSET 1`)
 	}
 	c.w.WriteString(`) `)

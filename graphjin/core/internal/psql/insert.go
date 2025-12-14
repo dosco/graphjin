@@ -24,22 +24,22 @@ func (c *compilerContext) renderInsert() {
 }
 
 func (c *compilerContext) renderInsertStmt(m qcode.Mutate, embedded bool) {
-	c.renderCteName(m)
-	c.w.WriteString(` AS (`)
-
-	c.renderOneToManyModifiers(m)
-
-	c.w.WriteString(`INSERT INTO `)
-	c.table(m.Ti.Schema, m.Ti.Name, false)
-
-	c.w.WriteString(` (`)
-	n := c.renderInsertUpdateColumns(m)
-	c.renderNestedRelColumns(m, false, false, n)
-	c.w.WriteString(`)`)
-
-	c.renderValues(m, false)
-
-	if !embedded {
-		c.renderReturning(m)
+	n := c.renderOneToManyModifiers(m)
+	if n != 0 {
+		c.w.WriteString(`, `)
 	}
+
+	c.dialect.RenderMutationCTE(c, &m, func() {
+
+		c.dialect.RenderInsert(c, &m, func() {
+			n := c.renderInsertUpdateColumns(m)
+			c.renderNestedRelColumns(m, false, false, n)
+		})
+
+		c.renderValues(m, false)
+
+		if !embedded {
+			c.dialect.RenderReturning(c, &m)
+		}
+	})
 }
