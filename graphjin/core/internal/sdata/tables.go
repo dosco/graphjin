@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/dosco/graphjin/core/v3/internal/util"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -67,6 +68,8 @@ func GetDBInfo(
 		switch dbType {
 		case "mysql":
 			row = db.QueryRow(mysqlInfo)
+		case "sqlite":
+			row = db.QueryRow(sqliteInfo)
 		default:
 			row = db.QueryRow(postgresInfo)
 		}
@@ -271,6 +274,8 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 	switch dbtype {
 	case "mysql":
 		sqlStmt = mysqlColumnsStmt
+	case "sqlite":
+		sqlStmt = sqliteColumnsStmt
 	default:
 		sqlStmt = postgresColumnsStmt
 	}
@@ -306,6 +311,10 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 
 		if err != nil {
 			return nil, err
+		}
+
+		if dbtype == "sqlite" {
+			c.Name = util.ToSnake(c.Name)
 		}
 
 		k := (c.Schema + ":" + c.Table + ":" + c.Name)
@@ -387,6 +396,8 @@ func DiscoverFunctions(db *sql.DB, dbtype string, blockList []string) ([]DBFunct
 	switch dbtype {
 	case "mysql":
 		sqlStmt = mysqlFunctionsStmt
+	case "sqlite":
+		sqlStmt = sqliteFunctionsStmt
 	default:
 		sqlStmt = postgresFunctionsStmt
 	}

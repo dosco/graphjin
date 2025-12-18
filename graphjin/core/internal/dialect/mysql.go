@@ -156,6 +156,7 @@ func (d *MySQLDialect) RenderFromEdge(ctx Context, sel *qcode.Select) {
 }
 
 func (d *MySQLDialect) RenderJSONPath(ctx Context, table, col string, path []string) {
+	ctx.ColWithTable(table, col)
 	// MySQL JSON path syntax: column->'$.path1.path2'
 	ctx.WriteString(`->>'$.`)
 	for i, pathElement := range path {
@@ -251,6 +252,19 @@ func (d *MySQLDialect) RenderValVar(ctx Context, ex *qcode.Exp, val string) bool
 	// MySQL doesn't support the ARRAY(SELECT ...) pattern for vars easily or uses different syntax.
 	// Returning false falls back to default renderParam logic in exp.go
 	return false 
+}
+
+func (d *MySQLDialect) RenderLiteral(ctx Context, val string, valType qcode.ValType) {
+	switch valType {
+	case qcode.ValBool, qcode.ValNum:
+		ctx.WriteString(val)
+	case qcode.ValStr:
+		ctx.WriteString(`'`)
+		ctx.WriteString(val)
+		ctx.WriteString(`'`)
+	default:
+		ctx.Quote(val)
+	}
 }
 
 func (d *MySQLDialect) RenderValArrayColumn(ctx Context, ex *qcode.Exp, table string, pid int32) {
@@ -412,6 +426,28 @@ func (d *MySQLDialect) RenderCast(ctx Context, val func(), typ string) {
 	ctx.WriteString(`)`)
 }
 
+func (d *MySQLDialect) RenderTryCast(ctx Context, val func(), typ string) {
+	switch typ {
+	case "boolean", "bool":
+		ctx.WriteString(`(CASE WHEN `)
+		val()
+		ctx.WriteString(` = 'true' THEN 1 WHEN `)
+		val()
+		ctx.WriteString(` = 'false' THEN 0 ELSE NULL END)`)
+
+	case "number", "numeric":
+		// MySQL regex for number validation
+		ctx.WriteString(`(CASE WHEN `)
+		val()
+		ctx.WriteString(` REGEXP '^[-+]?[0-9]*\\.?[0-9]+([eE][-+]?[0-9]+)?$' THEN `)
+		d.RenderCast(ctx, val, "DECIMAL(65,30)")
+		ctx.WriteString(` ELSE NULL END)`)
+
+	default:
+		d.RenderCast(ctx, val, typ)
+	}
+}
+
 func (d *MySQLDialect) RenderSubscriptionUnbox(ctx Context, params []Param, renderInnerSQL func()) {
 	ctx.WriteString(`WITH _gj_sub AS (SELECT * FROM JSON_TABLE(?, "$[*]" COLUMNS(`)
 	for i, p := range params {
@@ -533,6 +569,32 @@ func (d *MySQLDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, n i
 
 	ctx.WriteString(`)) AS _jt) AS `)
 	ctx.Quote("t") 
+}
+
+
+// RenderSetSessionVar renders the SQL to set a session variable in MySQL
+func (d *MySQLDialect) RenderSetSessionVar(ctx Context, name, value string) bool {
+	ctx.WriteString(`SET @`)
+	ctx.WriteString(name) // MySQL variables usually don't have quotes or have specific quoting. @name is standard.
+	// But name like "user.id" might need to be `user.id`.
+	// For now, assume strict naming or handle `.` replacement if needed?
+	// Postgres uses "user.id". MySQL uses @`user.id`?
+	// Let's rely on standard quoting if likely.
+	// Actually, `user.id` is not valid MySQL variable name usually unless quoted?
+	// `SET @'user.id' = ...` ?
+	// Standard MySQL user defined vars are `@var_name`.
+	// GraphJin core uses `user.id` which fits Postgres specialized GUCs.
+	// For MySQL we might map `user.id` to `@user_id` or just use what is passed if compatible.
+	// But let's just quote the name if it contains dots.
+	// Or just quote it always with backticks.
+	// `SET @"user.id" = ...`
+	// Wait, MySQL user variables are `@var_name`.
+	// Quoting after @: `@`identifier``
+	ctx.WriteString(name)
+	ctx.WriteString(` = '`)
+	ctx.WriteString(value)
+	ctx.WriteString(`'`)
+	return true
 }
 
 // Helper to join path for MySQL

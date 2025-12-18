@@ -13,6 +13,8 @@ func (c *compilerContext) renderRecursiveBaseSelect(sel *qcode.Select) {
 	c.quoted("__rcte_" + sel.Table)
 	if c.dialect.Name() == "mysql" {
 		c.w.WriteString(` LIMIT 1, 18446744073709551610`)
+	} else if c.dialect.Name() == "sqlite" {
+		c.w.WriteString(` LIMIT -1 OFFSET 1`)
 	} else {
 		c.w.WriteString(` OFFSET 1`)
 	}
@@ -34,7 +36,11 @@ func (c *compilerContext) renderRecursiveCTE(sel *qcode.Select) {
 func (c *compilerContext) renderRecursiveSelect(sel *qcode.Select) {
 	psel := &c.qc.Selects[sel.ParentID]
 
-	c.w.WriteString(`(SELECT `)
+	if c.dialect.Name() == "sqlite" {
+		c.w.WriteString(`SELECT * FROM (SELECT `)
+	} else {
+		c.w.WriteString(`(SELECT `)
+	}
 	c.renderRecursiveBaseColumns(sel)
 	c.renderFrom(psel)
 	c.w.WriteString(` WHERE (`)
