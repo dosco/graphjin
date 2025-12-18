@@ -19,3 +19,12 @@ var mysqlInfo string
 
 //go:embed sql/mysql_columns.sql
 var mysqlColumnsStmt string
+
+//go:embed sql/sqlite_functions.sql
+var sqliteFunctionsStmt string
+
+//go:embed sql/sqlite_info.sql
+var sqliteInfo string
+
+//go:embed sql/sqlite_columns.sql
+var sqliteColumnsStmt string

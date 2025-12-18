@@ -130,6 +130,8 @@ func (co *Compiler) compileArgSearch(sel *Select, arg graph.Arg) (err error) {
 		switch co.s.DBType() {
 		case "mysql":
 			return fmt.Errorf("no fulltext indexes defined for table '%s'", sel.Table)
+		case "sqlite":
+			return fmt.Errorf("no fts virtual table or fulltext indexes defined for table '%s'", sel.Table)
 		default:
 			return fmt.Errorf("no tsvector column defined on table '%s'", sel.Table)
 		}
@@ -139,7 +141,11 @@ func (co *Compiler) compileArgSearch(sel *Select, arg graph.Arg) (err error) {
 	}
 
 	ex := newExpOp(OpTsQuery)
-	ex.Right.ValType = ValVar
+	if arg.Val.Type == graph.NodeStr {
+		ex.Right.ValType = ValStr
+	} else {
+		ex.Right.ValType = ValVar
+	}
 	ex.Right.Val = arg.Val.Val
 
 	sel.addIArg(Arg{Name: arg.Name, Val: arg.Val.Val})

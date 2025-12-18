@@ -18,8 +18,23 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/mattn/go-sqlite3"
 )
+
+func init() {
+	sql.Register("sqlite3_regexp", &sqlite3.SQLiteDriver{
+		ConnectHook: func(conn *sqlite3.SQLiteConn) error {
+			if err := conn.RegisterFunc("REGEXP", func(re, s string) (bool, error) {
+				return regexp.MatchString(re, s)
+			}, true); err != nil {
+				return err
+			}
+			return conn.RegisterFunc("regexp", func(re, s string) (bool, error) {
+				return regexp.MatchString(re, s)
+			}, true)
+		},
+	})
+}
 
 type dbinfo struct {
 	name      string
@@ -139,36 +154,33 @@ func TestMain(m *testing.M) {
 		},
 		{
 			name:   "sqlite",
-			driver: "sqlite3",
+			driver: "sqlite3_regexp",
 			startFunc: func(ctx context.Context) (func(context.Context) error, string, error) {
 				// Use shared in-memory DB
 				connStr := "file:memdb1?mode=memory&cache=shared"
 				
+				
 				// Initialize DB
-				db, err := sql.Open("sqlite3", connStr)
+				db, err := sql.Open("sqlite3_regexp", connStr)
 				if err != nil {
 					return nil, "", err
 				}
-				defer db.Close()
+				// defer db.Close() // Keep open for shared memory DB
 				
 				script, err := os.ReadFile("./sqlite.sql")
 				if err != nil {
+					db.Close()
 					return nil, "", err
 				}
 				
-				// Split statements (simple split by ;)
-				// Note: complex triggers might break this, but our schema is simple enough?
-				// Actually sqlite.sql has CTEs and normal statements.
-				// Let's execute the whole script if logic allows, or split.
-				// go-sqlite3 Exec can handle multiple statements?
-				
 				_, err = db.Exec(string(script))
 				if err != nil {
+					db.Close() // Cleanup on error
 					return nil, "", fmt.Errorf("failed to init sqlite: %w", err)
 				}
 
 				cleanup := func(ctx context.Context) error {
-					return nil
+					return db.Close()
 				}
 				return cleanup, connStr, nil
 			},

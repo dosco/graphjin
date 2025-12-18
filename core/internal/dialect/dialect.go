@@ -46,6 +46,7 @@ type Dialect interface {
 	RenderSearchHeadline(ctx Context, sel *qcode.Select, f qcode.Field)
 	RenderValVar(ctx Context, ex *qcode.Exp, val string) bool
 	RenderValArrayColumn(ctx Context, ex *qcode.Exp, table string, pid int32)
+	RenderLiteral(ctx Context, val string, valType qcode.ValType)
 
 	// Parameter Handling
 	BindVar(i int) string
@@ -65,6 +66,7 @@ type Dialect interface {
 	RenderReturning(ctx Context, m *qcode.Mutate)
 	RenderAssign(ctx Context, col string, val string)
 	RenderCast(ctx Context, val func(), typ string)
+	RenderTryCast(ctx Context, val func(), typ string)
 	
 	RenderSubscriptionUnbox(ctx Context, params []Param, renderInnerSQL func())
 
@@ -75,4 +77,5 @@ type Dialect interface {
 	RenderSetup(ctx Context)
 	RenderTeardown(ctx Context)
 	RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, n int, renderRoot func())
+	RenderSetSessionVar(ctx Context, name, value string) bool
 }

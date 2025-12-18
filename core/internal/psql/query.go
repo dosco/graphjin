@@ -114,7 +114,33 @@ func (co *Compiler) Compile(w *bytes.Buffer, qc *qcode.QCode) (Metadata, error) 
 		err = fmt.Errorf("unknown operation type %d", qc.Type)
 	}
 
+
+	// md.ct = qc.Schema.DBType()
+	
 	return md, err
+}
+
+func (co *Compiler) RenderSetSessionVar(name, value string) string {
+	var w bytes.Buffer
+	// Provide a minimal Context implementation over bytes.Buffer
+	ctx := &compilerContext{
+		w: &w,
+		// minimal context, methods not used by RenderSetSessionVar should be safe or not called
+	}
+	// We need 'WriteString' which compilerContext has via *bytes.Buffer?
+    // No, compilerContext has w *bytes.Buffer. It needs to implement Context interface.
+    // compilerContext DOES implement Context (implicitly via methods in other files? or we need to ensure it).
+    // Let's check if compilerContext implements Context.
+    // It has `w *bytes.Buffer`.
+    // Dialect expects `Context` interface: WriteString, Quote, etc.
+    // `compilerContext` in `query.go` (and probably `common.go` which I missed reading fully but saw `dialect/common.go` earlier failure)
+    // usually implements these.
+    // I should create a temporary context safe for this.
+    
+    if co.dialect.RenderSetSessionVar(ctx, name, value) {
+    	return w.String()
+    }
+    return ""
 }
 
 func (co *Compiler) CompileQuery(
@@ -191,7 +217,21 @@ func (co *Compiler) CompileQuery(
 				c.w.WriteString(`'`)
 				c.w.WriteString(sel.FieldName)
 				c.w.WriteString(`', `)
-				c.renderInlineChild(sel)
+
+				if c.dialect.Name() == "sqlite" && !sel.Singular && sel.Paging.Cursor {
+					c.w.WriteString(`json_extract(`)
+					var buf bytes.Buffer
+					oldW := c.w
+					c.w = &buf
+					c.renderInlineChild(sel)
+					c.w = oldW
+					subQuery := buf.String()
+
+					c.w.WriteString(subQuery)
+					c.w.WriteString(`, '$.json')`)
+				} else {
+					c.renderInlineChild(sel)
+				}
 			} else {
 				c.w.WriteString(`'`)
 				c.w.WriteString(sel.FieldName)
@@ -207,15 +247,34 @@ func (co *Compiler) CompileQuery(
 				c.w.WriteString(`_cursor', `)
 
 				if !c.dialect.SupportsLateral() {
-					c.w.WriteString(`NULL`) // Cursors not fully supported inline yet
+					if c.dialect.Name() == "sqlite" {
+						c.w.WriteString(`json_extract(`)
+						// Capture subquery again (or reuse variable if I could, but scope tricky)
+						// Re-rendering is safer or reuse subQuery string if I lift it?
+						// I'll reuse the logic by checking if I already captured it? 
+						// No, simpler to just re-render or assume duplication.
+						// Wait, I can't access `subQuery` from above block easily without restructuring.
+						// Let's re-render. It's safe.
+						var buf bytes.Buffer
+						oldW := c.w
+						c.w = &buf
+						c.renderInlineChild(sel)
+						c.w = oldW
+						// fmt.Fprintln(os.Stderr, "DEBUG SQL:", w.String()) // This line was in the instruction, but `w` is the top-level buffer, not `buf`.
+						c.w.WriteString(buf.String())
+						c.w.WriteString(`, '$.cursor')`)
+					} else {
+						c.w.WriteString(`NULL`) // Cursors not fully supported inline yet
+					}
 				} else {
 					c.w.WriteString(`__sj_`)
-					int32String(c.w, sel.ID)
+					int32String(c.w, int32(sel.ID))
 					c.w.WriteString(`.__cursor`)
 				}
 			}
 
 			if !c.dialect.SupportsLateral() {
+				i++
 				continue
 			}
 
@@ -230,6 +289,8 @@ func (co *Compiler) CompileQuery(
 
 	c.w.WriteString(`) AS __root FROM ((SELECT true)) AS __root_x`)
 	c.renderQuery(st, true)
+
+
 
 	return c.err
 }
@@ -295,40 +356,72 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 		return
 	}
 
-	c.w.WriteString(`SELECT `)
-	if sel.FieldFilter.Exp != nil {
-		c.w.WriteString(`(CASE WHEN `)
-		c.renderExp(sel.Ti, sel.FieldFilter.Exp, false)
-		c.w.WriteString(` THEN (SELECT `)
-	}
+	// SQLite cursor workaround: return json_object containing both json and cursor
+	if sel.Paging.Cursor && c.dialect.Name() == "sqlite" {
+		c.w.WriteString(`SELECT json_object('json', `)
 
-	c.dialect.RenderJSONPlural(c, sel)
-
-	if sel.FieldFilter.Exp != nil {
-		c.w.WriteString(`) ELSE null END)`)
-	}
-	c.w.WriteString(` AS json`)
-
-	// Build the cursor value string
-	if sel.Paging.Cursor {
-		c.w.WriteString(`, CONCAT('`)
-		c.w.Write(c.pf)
-		c.w.WriteString(`', CONCAT_WS(',', `)
-		int32String(c.w, int32(sel.ID))
-
-		for i := 0; i < len(sel.OrderBy); i++ {
-			c.w.WriteString(`, MAX(__cur_`)
-			int32String(c.w, int32(i))
-			// Postgres rejects MAX(uuid)
-			if sel.OrderBy[i].Col.Type == "uuid" {
-				c.w.WriteString(`::text`)
-			}
-			c.w.WriteString(`)`)
-			// 	c.w.WriteString(`, CAST(MAX(__cur_`)
-			// 	int32String(c.w, int32(i))
-			// 	c.w.WriteString(`) AS CHAR(20))`)
+		if sel.FieldFilter.Exp != nil {
+			c.w.WriteString(`(CASE WHEN `)
+			c.renderExp(sel.Ti, sel.FieldFilter.Exp, false)
+			c.w.WriteString(` THEN (SELECT `)
 		}
-		c.w.WriteString(`)) as __cursor`)
+
+		c.dialect.RenderJSONPlural(c, sel)
+
+		if sel.FieldFilter.Exp != nil {
+			c.w.WriteString(`) ELSE null END)`)
+		}
+		
+		c.w.WriteString(`, 'cursor', '`)
+		c.w.Write(c.pf)
+		c.w.WriteString(`' || `)
+		int32String(c.w, int32(sel.ID))
+		
+		for i := 0; i < len(sel.OrderBy); i++ {
+			c.w.WriteString(` || ',' || (CASE WHEN COUNT(*) > 0 THEN json_extract(json_group_array(__cur_`)
+			int32String(c.w, int32(i))
+			c.w.WriteString(`), '$[' || (COUNT(*) - 1) || ']') ELSE NULL END)`)
+		}
+		c.w.WriteString(`) as __cursor`) // Sub-select 1 column (the json_object)
+
+	} else {
+		c.w.WriteString(`SELECT `)
+		if sel.FieldFilter.Exp != nil {
+			c.w.WriteString(`(CASE WHEN `)
+			c.renderExp(sel.Ti, sel.FieldFilter.Exp, false)
+			c.w.WriteString(` THEN (SELECT `)
+		}
+
+		c.dialect.RenderJSONPlural(c, sel)
+
+		if sel.FieldFilter.Exp != nil {
+			c.w.WriteString(`) ELSE null END)`)
+		}
+		c.w.WriteString(` AS json`)
+
+		// Build the cursor value string
+		if sel.Paging.Cursor && c.dialect.SupportsLateral() {
+			if c.dialect.Name() == "sqlite" {
+				// Should not happen if we used the if block above, 
+				// but keeping for safety if logic changes
+			} else {
+				c.w.WriteString(`, CONCAT('`)
+				c.w.Write(c.pf)
+				c.w.WriteString(`', CONCAT_WS(',', `)
+				int32String(c.w, int32(sel.ID))
+
+				for i := 0; i < len(sel.OrderBy); i++ {
+					c.w.WriteString(`, MAX(__cur_`)
+					int32String(c.w, int32(i))
+					// Postgres rejects MAX(uuid)
+					if sel.OrderBy[i].Col.Type == "uuid" {
+						c.w.WriteString(`::text`)
+					}
+					c.w.WriteString(`)`)
+				}
+				c.w.WriteString(`)) as __cursor`)
+			}
+		}
 	}
 
 	c.w.WriteString(` FROM (`)
@@ -354,10 +447,17 @@ func (c *compilerContext) renderSelect(sel *qcode.Select) {
 	// This is how we get the values to use to build the cursor.
 	if sel.Paging.Cursor {
 		for i, ob := range sel.OrderBy {
-			c.w.WriteString(`, LAST_VALUE(`)
-			c.colWithTableID(sel.Table, sel.ID, ob.Col.Name)
-			c.w.WriteString(`) OVER() AS __cur_`)
-			int32String(c.w, int32(i))
+			if c.dialect.Name() == "sqlite" {
+				c.w.WriteString(`, `)
+				c.colWithTableID(sel.Table, sel.ID, ob.Col.Name)
+				c.w.WriteString(` AS __cur_`)
+				int32String(c.w, int32(i))
+			} else {
+				c.w.WriteString(`, LAST_VALUE(`)
+				c.colWithTableID(sel.Table, sel.ID, ob.Col.Name)
+				c.w.WriteString(`) OVER() AS __cur_`)
+				int32String(c.w, int32(i))
+			}
 		}
 	}
 

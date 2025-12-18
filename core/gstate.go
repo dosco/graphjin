@@ -310,13 +310,19 @@ func (s *gstate) setLocalUserID(c context.Context, conn *sql.Conn) (err error) {
 	if v := c.Value(UserIDKey); v == nil {
 		return nil
 	} else {
-		var q string
+		var val string
 		switch v1 := v.(type) {
 		case string:
-			q = `SET SESSION "user.id" = '` + v1 + `'`
+			val = v1
 		case int:
-			q = `SET SESSION "user.id" = ` + strconv.Itoa(v1)
+			val = strconv.Itoa(v1)
 		}
+		
+		q := s.gj.psqlCompiler.RenderSetSessionVar("user.id", val)
+		if q == "" {
+			return nil
+		}
+
 		if tx := s.tx(); tx != nil {
 			_, err = tx.ExecContext(c, q)
 		} else {

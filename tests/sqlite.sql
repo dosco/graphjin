@@ -110,6 +110,9 @@ CREATE TABLE graph_edge (
   FOREIGN KEY (dst_node) REFERENCES graph_node(id)
 );
 
+CREATE VIEW hot_products AS
+  SELECT id AS product_id, country_code FROM products WHERE id > 50;
+
 -- Data Generation using Recursive CTE
 WITH RECURSIVE seq100(i) AS (
   SELECT 1
@@ -220,3 +223,6 @@ VALUES
 
 INSERT INTO graph_node (id, label) VALUES ('a', 'node a'), ('b', 'node b'), ('c', 'node c');
 INSERT INTO graph_edge (src_node, dst_node) VALUES ('a', 'b'), ('a', 'c');
+-- Test FTS Table
+CREATE VIRTUAL TABLE products_fts USING fts5(name, description);
+INSERT INTO products_fts (name, description) VALUES ('Product 3', 'Description for product 3');

@@ -49,10 +49,12 @@ func (d *SQLiteDialect) RenderJSONSelect(ctx Context, sel *qcode.Select) {
 	ctx.WriteString(`) `)
 }
 
+
+
+
+
 func (d *SQLiteDialect) RenderJSONPlural(ctx Context, sel *qcode.Select) {
-	ctx.WriteString(`COALESCE(json_group_array(json(__sj_`)
-	ctx.Write(fmt.Sprintf("%d", sel.ID))
-	ctx.WriteString(`.json)), '[]')`)
+	ctx.WriteString(`COALESCE(json_group_array(json("json")), '[]')`)
 }
 
 func (d *SQLiteDialect) RenderLateralJoin(ctx Context, sel *qcode.Select, multi bool) {
@@ -61,15 +63,48 @@ func (d *SQLiteDialect) RenderLateralJoin(ctx Context, sel *qcode.Select, multi 
 	// We can leave it empty or safer, do nothing.
 }
 
-func (d *SQLiteDialect) RenderJoinTables(ctx Context, sel *qcode.Select) {
-	// SQLite doesn't need extra joins here for basic cases.
-}
+
 
 func (d *SQLiteDialect) RenderCursorCTE(ctx Context, sel *qcode.Select) {
-	// Similar complexity to MySQL/Postgres but SQLite lacks proper array access
-	// Use string splitting if basic or empty if not supported initially.
-	// For MVP, skip complex cursor CTE logic.
+	if !sel.Paging.Cursor {
+		return
+	}
+	// SQLite: Parse comma-separated cursor as JSON array
+	// Convert "val1,val2,val3" to '["val1","val2","val3"]' then use json_each
+	ctx.WriteString(`WITH __cur AS (SELECT `)
+	for i, ob := range sel.OrderBy {
+		if i != 0 {
+			ctx.WriteString(`, `)
+		}
+		// Use json_extract with array index (0-based in SQLite JSON)
+		ctx.WriteString(`CAST(json_extract('["' || replace(NULLIF(`)
+		ctx.AddParam(Param{Name: "cursor", Type: "text"})
+		ctx.WriteString(`, ''), ',', '","') || '"]', '$[`)
+		ctx.WriteString(fmt.Sprintf("%d", i+1))
+		ctx.WriteString(`]') AS `)
+		ctx.WriteString(d.sqliteType(ob.Col.Type))
+		ctx.WriteString(`) AS `)
+		if ob.KeyVar != "" && ob.Key != "" {
+			ctx.Quote(ob.Col.Name + "_" + ob.Key)
+		} else {
+			ctx.Quote(ob.Col.Name)
+		}
+	}
+	ctx.WriteString(`)`)
 }
+
+// sqliteType converts GraphJin types to SQLite types
+func (d *SQLiteDialect) sqliteType(t string) string {
+	switch t {
+	case "int", "integer", "int4", "int8", "bigint", "smallint":
+		return "INTEGER"
+	case "float", "float4", "float8", "double", "real", "numeric", "decimal":
+		return "REAL"
+	default:
+		return "TEXT"
+	}
+}
+
 
 func (d *SQLiteDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
 	if len(sel.OrderBy) == 0 {
@@ -89,7 +124,11 @@ func (d *SQLiteDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
 			ctx.WriteString(` THEN `)
 		}
 		
-		ctx.ColWithTable(ob.Col.Table, ob.Col.Name)
+		if ob.Var != "" {
+			ctx.ColWithTable("_gj_ob_"+ob.Col.Name, "ord")
+		} else {
+			ctx.ColWithTable(ob.Col.Table, ob.Col.Name)
+		}
 		
 		if ob.KeyVar != "" && ob.Key != "" {
 			ctx.WriteString(` END `)
@@ -120,19 +159,21 @@ func (d *SQLiteDialect) RenderFromEdge(ctx Context, sel *qcode.Select) {
 	ctx.WriteString(`json_each(`)
 	ctx.ColWithTable(sel.Rel.Left.Col.Table, sel.Rel.Left.Col.Name)
 	ctx.WriteString(`) AS `)
-	ctx.Quote(sel.Table)
+	ctx.Quote(fmt.Sprintf("__sr_%d", sel.ID))
 }
 
 func (d *SQLiteDialect) RenderJSONPath(ctx Context, table, col string, path []string) {
-	// SQLite JSON path syntax: column->'$.path1.path2' or json_extract
-	ctx.WriteString(`->>'$.`)
+	// SQLite JSON path syntax: json_extract(column, '$.path1.path2')
+	ctx.WriteString(`json_extract(`)
+	ctx.ColWithTable(table, col)
+	ctx.WriteString(`, '$.`)
 	for i, pathElement := range path {
 		if i > 0 {
 			ctx.WriteString(`.`)
 		}
 		ctx.WriteString(pathElement)
 	}
-	ctx.WriteString(`'`)
+	ctx.WriteString(`')`)
 }
 
 func (d *SQLiteDialect) RenderList(ctx Context, ex *qcode.Exp) {
@@ -155,15 +196,57 @@ func (d *SQLiteDialect) RenderList(ctx Context, ex *qcode.Exp) {
 }
 
 func (d *SQLiteDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
-    // Basic JSON support
-    if (ex.Op == qcode.OpHasKey ||
-		ex.Op == qcode.OpHasKeyAny ||
-		ex.Op == qcode.OpHasKeyAll) {
-		// Bare bones support, assumes paths are simple keys
-        // json_extract(col, '$.key') IS NOT NULL
-		return false // Fallback
+	if ex.Op == qcode.OpHasKey {
+		ctx.WriteString(`json_extract(`)
+		ctx.ColWithTable(ex.Left.Col.Table, ex.Left.Col.Name)
+		ctx.WriteString(`, '$."' || `)
+		if ex.Right.ValType == qcode.ValVar {
+			ctx.AddParam(Param{Name: ex.Right.Val, Type: "text"})
+		} else {
+			ctx.WriteString(fmt.Sprintf("'%s'", ex.Right.Val))
+		}
+		ctx.WriteString(` || '"') IS NOT NULL`)
+		return true
 	}
-    return false
+
+	if ex.Op == qcode.OpHasKeyAny || ex.Op == qcode.OpHasKeyAll {
+		op := " OR "
+		if ex.Op == qcode.OpHasKeyAll {
+			op = " AND "
+		}
+		ctx.WriteString(`(`)
+		if ex.Right.ValType == qcode.ValVar {
+			// Variable case: use json_each on the variable
+			// EXISTS (SELECT 1 FROM json_each($var) WHERE json_extract(col, '$."' || value || '"') IS NOT NULL)
+			if ex.Op == qcode.OpHasKeyAll {
+				ctx.WriteString(`NOT EXISTS (SELECT 1 FROM json_each(`)
+			} else {
+				ctx.WriteString(`EXISTS (SELECT 1 FROM json_each(`)
+			}
+			ctx.AddParam(Param{Name: ex.Right.Val, Type: "json"})
+			ctx.WriteString(`) WHERE json_extract(`)
+			ctx.ColWithTable(ex.Left.Col.Table, ex.Left.Col.Name)
+			ctx.WriteString(`, '$."' || value || '"') IS `)
+			if ex.Op == qcode.OpHasKeyAll {
+				ctx.WriteString(`NULL)`)
+			} else {
+				ctx.WriteString(`NOT NULL)`)
+			}
+		} else {
+			// Literal list case
+			for i, val := range ex.Right.ListVal {
+				if i != 0 {
+					ctx.WriteString(op)
+				}
+				ctx.WriteString(`json_extract(`)
+				ctx.ColWithTable(ex.Left.Col.Table, ex.Left.Col.Name)
+				ctx.WriteString(`, '$."` + val + `"') IS NOT NULL`)
+			}
+		}
+		ctx.WriteString(`)`)
+		return true
+	}
+	return false
 }
 
 func (d *SQLiteDialect) RenderTsQuery(ctx Context, ti sdata.DBTable, ex *qcode.Exp) {
@@ -178,7 +261,11 @@ func (d *SQLiteDialect) RenderTsQuery(ctx Context, ti sdata.DBTable, ex *qcode.E
 		}
 		ctx.ColWithTable(ti.Name, col.Name)
         ctx.WriteString(` MATCH `)
-        ctx.AddParam(Param{Name: ex.Right.Val, Type: "text"})
+		if ex.Right.ValType == qcode.ValStr {
+			d.RenderLiteral(ctx, ex.Right.Val, ex.Right.ValType)
+		} else {
+	        ctx.AddParam(Param{Name: ex.Right.Val, Type: "text"})
+		}
 	}
 	ctx.WriteString(`)`)
 }
@@ -194,7 +281,38 @@ func (d *SQLiteDialect) RenderSearchHeadline(ctx Context, sel *qcode.Select, f q
 }
 
 func (d *SQLiteDialect) RenderValVar(ctx Context, ex *qcode.Exp, val string) bool {
+	if ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn {
+		ctx.WriteString(`(SELECT value FROM json_each(`)
+		ctx.AddParam(Param{Name: ex.Right.Val, Type: "json"})
+		ctx.WriteString(`))`)
+		return true
+	}
 	return false
+}
+
+func (d *SQLiteDialect) RenderLiteral(ctx Context, val string, valType qcode.ValType) {
+	switch valType {
+	case qcode.ValBool, qcode.ValNum:
+		ctx.WriteString(val)
+	case qcode.ValStr:
+		ctx.WriteString(`'`)
+		ctx.WriteString(val)
+		ctx.WriteString(`'`)
+	default:
+		ctx.Quote(val)
+	}
+}
+
+func (d *SQLiteDialect) RenderJoinTables(ctx Context, sel *qcode.Select) {
+	for _, ob := range sel.OrderBy {
+		if ob.Var != "" {
+			ctx.WriteString(` JOIN (SELECT value, key as ord FROM json_each(`)
+			ctx.AddParam(Param{Name: ob.Var, Type: "json"})
+			ctx.WriteString(`)) AS _gj_ob_` + ob.Col.Name)
+			ctx.WriteString(` ON _gj_ob_` + ob.Col.Name + `.value = `)
+			ctx.ColWithTable(sel.Table, ob.Col.Name)
+		}
+	}
 }
 
 func (d *SQLiteDialect) RenderValArrayColumn(ctx Context, ex *qcode.Exp, table string, pid int32) {
@@ -336,6 +454,10 @@ func (d *SQLiteDialect) RenderCast(ctx Context, val func(), typ string) {
 	ctx.WriteString(`)`)
 }
 
+func (d *SQLiteDialect) RenderTryCast(ctx Context, val func(), typ string) {
+	val()
+}
+
 func (d *SQLiteDialect) RenderSubscriptionUnbox(ctx Context, params []Param, renderInnerSQL func()) {
 	// SQLite json_each approach
 	ctx.WriteString(`WITH _gj_sub AS (SELECT `)
@@ -421,6 +543,14 @@ func (d *SQLiteDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, n 
 	// `RenderMutateToRecordSet` must actually produce a subquery that projects these columns.
 	// Let's try to project them as a subquery if possible?
 	// (SELECT json_extract(value, '$.col') as col, ... FROM json_each(...)) AS t
+}
+
+
+// RenderSetSessionVar renders the SQL to set a session variable in SQLite
+func (d *SQLiteDialect) RenderSetSessionVar(ctx Context, name, value string) bool {
+	// SQLite does not support session variables in the same way (SET ...).
+	// We rely on query parameters instead.
+	return false
 }
 
 // Helper to join path for SQLite

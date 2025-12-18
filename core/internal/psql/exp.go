@@ -1,6 +1,7 @@
 package psql
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
@@ -143,7 +144,21 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 
 		// Handle JSON path operations
 		if len(ex.Left.Path) > 0 {
-			c.renderJSONPathColumn(table, colName, ex.Left.Path, ex.Left.ID)
+			switch ex.Right.ValType {
+			case qcode.ValBool:
+				c.dialect.RenderTryCast(c, func() {
+					c.renderJSONPathColumn(table, colName, ex.Left.Path, ex.Left.ID)
+				}, "boolean")
+
+			case qcode.ValNum:
+				c.dialect.RenderTryCast(c, func() {
+					c.renderJSONPathColumn(table, colName, ex.Left.Path, ex.Left.ID)
+				}, "numeric")
+
+			default:
+				c.renderJSONPathColumn(table, colName, ex.Left.Path, ex.Left.ID)
+			}
+
 		} else {
 			if ex.Left.ID == -1 {
 				c.colWithTable(table, colName)
@@ -244,6 +259,17 @@ func (c *expContext) renderVal(ex *qcode.Exp) {
 	case ex.Right.ValType == qcode.ValVar:
 		c.renderValVar(ex)
 
+	case ex.Right.ValType == qcode.ValSubQuery:
+		c.w.WriteString(`(SELECT `)
+		if ex.Right.ColName != "" {
+			c.colWithTable(ex.Right.Table, ex.Right.ColName)
+		} else {
+			c.colWithTable(ex.Right.Table, ex.Right.Col.Name)
+		}
+		c.w.WriteString(` FROM `)
+		c.quoted(ex.Right.Table)
+		c.w.WriteString(`)`)
+
 	case !ex.Right.Col.Array && (ex.Op == qcode.OpContains ||
 		ex.Op == qcode.OpContainedIn ||
 		ex.Op == qcode.OpHasInCommon):
@@ -287,14 +313,15 @@ func (c *expContext) renderVal(ex *qcode.Exp) {
 
 	default:
 		if len(ex.Right.Path) == 0 {
-			c.squoted(ex.Right.Val)
+			c.dialect.RenderLiteral(c, ex.Right.Val, ex.Right.ValType)
 			return
 		}
 
 		path := append(c.prefixPath, ex.Right.Path...)
 		
+
 		c.w.WriteString(`CAST(`)
-		c.colWithTable("i", "j")
+		// c.colWithTable("i", "j") // Handled by RenderJSONPath now
 		c.dialect.RenderJSONPath(c, "i", "j", path)
 		c.w.WriteString(` AS `)
 		c.w.WriteString(ex.Left.Col.Type)
@@ -335,13 +362,10 @@ func (c *compilerContext) renderValArrayColumn(ex *qcode.Exp, table string, pid 
 
 
 func (c *expContext) renderJSONPathColumn(table, colName string, path []string, selID int32) {
-	// Render the base column
-	if selID == -1 {
-		c.colWithTable(table, colName)
-	} else {
-		c.colWithTableID(table, selID, colName)
-	}
-
 	// Build the JSON path
-	c.dialect.RenderJSONPath(c, table, colName, path)
+	t := table
+	if selID != -1 {
+		t = fmt.Sprintf("%s_%d", table, selID)
+	}
+	c.dialect.RenderJSONPath(c, t, colName, path)
 }

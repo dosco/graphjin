@@ -195,6 +195,7 @@ func (d *PostgresDialect) RenderFromEdge(ctx Context, sel *qcode.Select) {
 }
 
 func (d *PostgresDialect) RenderJSONPath(ctx Context, table, col string, path []string) {
+	ctx.ColWithTable(table, col)
 	// PostgreSQL JSON path syntax: column->'path1'->>'path2'
 	for i, pathElement := range path {
 		if i == len(path)-1 {
@@ -301,6 +302,19 @@ func (d *PostgresDialect) RenderValVar(ctx Context, ex *qcode.Exp, val string) b
 		return true
 	}
 	return false
+}
+
+func (d *PostgresDialect) RenderLiteral(ctx Context, val string, valType qcode.ValType) {
+	switch valType {
+	case qcode.ValBool, qcode.ValNum:
+		ctx.WriteString(val)
+	case qcode.ValStr:
+		ctx.WriteString(`'`)
+		ctx.WriteString(val)
+		ctx.WriteString(`'`)
+	default:
+		ctx.Quote(val)
+	}
 }
 
 func (d *PostgresDialect) RenderValArrayColumn(ctx Context, ex *qcode.Exp, table string, pid int32) {
@@ -489,6 +503,27 @@ func (d *PostgresDialect) RenderCast(ctx Context, val func(), typ string) {
 	ctx.WriteString(typ)
 }
 
+func (d *PostgresDialect) RenderTryCast(ctx Context, val func(), typ string) {
+	switch typ {
+	case "boolean", "bool":
+		ctx.WriteString(`(CASE WHEN `)
+		val()
+		ctx.WriteString(` = 'true' THEN true WHEN `)
+		val()
+		ctx.WriteString(` = 'false' THEN false ELSE NULL END)`)
+
+	case "number", "numeric":
+		ctx.WriteString(`(CASE WHEN `)
+		val()
+		ctx.WriteString(` ~ '^[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$' THEN `)
+		d.RenderCast(ctx, val, "numeric")
+		ctx.WriteString(` ELSE NULL END)`)
+
+	default:
+		d.RenderCast(ctx, val, typ)
+	}
+}
+
 func (d *PostgresDialect) RenderSubscriptionUnbox(ctx Context, params []Param, renderInnerSQL func()) {
 	ctx.WriteString(`WITH _gj_sub AS (SELECT `)
 	for i, p := range params {
@@ -565,6 +600,17 @@ func (d *PostgresDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, 
 		i++
 	}
 	ctx.WriteString(`)`)
+}
+
+
+// RenderSetSessionVar renders the SQL to set a session variable in Postgres
+func (d *PostgresDialect) RenderSetSessionVar(ctx Context, name, value string) bool {
+	ctx.WriteString(`SET SESSION "`)
+	ctx.WriteString(name)
+	ctx.WriteString(`" = '`)
+	ctx.WriteString(value)
+	ctx.WriteString(`'`)
+	return true
 }
 
 // Helper to join path for Postgres

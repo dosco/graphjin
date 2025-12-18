@@ -1,6 +1,8 @@
 package psql
 
 import (
+	"strconv"
+
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
@@ -41,6 +43,8 @@ func (c *compilerContext) renderStdColumn(sel *qcode.Select, f qcode.Field) {
 		c.renderExp(sel.Ti, f.FieldFilter.Exp, false)
 		c.w.WriteString(` THEN `)
 	}
+
+
 
 	c.colWithTableID(sel.Table, sel.ID, f.Col.Name)
 
@@ -98,7 +102,8 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 			}
 
 			// return the cursor for the this child selector as part of the parents json
-			if csel.Paging.Cursor {
+			// Only for LATERAL supporting dialects - SQLite handles cursor differently
+			if csel.Paging.Cursor && (c.dialect.SupportsLateral() || c.dialect.Name() == "sqlite") {
 				c.w.WriteString(`, __sj_`)
 				int32String(c.w, csel.ID)
 				c.w.WriteString(`.__cursor AS `)
@@ -108,8 +113,8 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 		}
 		i++
 	}
-	// when no columns are rendered for mysql
-	if c.dialect.Name() == "mysql" && i == 0 {
+	// when no columns are rendered for mysql or sqlite
+	if (c.dialect.Name() == "mysql" || c.dialect.Name() == "sqlite") && i == 0 {
 		c.w.WriteString(`NULL`)
 	}
 }
@@ -130,9 +135,14 @@ func (c *compilerContext) renderUnionColumn(sel, csel *qcode.Select) {
 			qcode.SkipTypeNulled:
 			c.w.WriteString(`NULL `)
 		default:
-			c.w.WriteString(`__sj_`)
-			int32String(c.w, usel.ID)
-			c.w.WriteString(`.json `)
+			if c.dialect.SupportsLateral() {
+				c.w.WriteString(`__sj_`)
+				int32String(c.w, usel.ID)
+				c.w.WriteString(`.json `)
+			} else {
+				c.renderInlineChild(usel)
+				c.w.WriteString(` `)
+			}
 		}
 	}
 	c.w.WriteString(`END)`)
@@ -145,7 +155,17 @@ func (c *compilerContext) renderBaseColumns(sel *qcode.Select) {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
-		c.colWithTable(col.Col.Table, col.Col.Name)
+		// Handle JSON table columns in SQLite
+		if c.dialect.Name() == "sqlite" && (sel.Ti.Type == "json" || sel.Ti.Type == "jsonb") {
+			c.w.WriteString(`json_extract(`)
+			c.quoted("__sr_" + strconv.Itoa(int(sel.ID)))
+			c.w.WriteString(`."value", '$."`)
+			c.w.WriteString(col.Col.Name)
+			c.w.WriteString(`"') AS `)
+			c.quoted(col.Col.Name)
+		} else {
+			c.colWithTable(col.Col.Table, col.Col.Name)
+		}
 		i++
 	}
 
@@ -184,7 +204,32 @@ func (c *compilerContext) renderJSONFields(sel *qcode.Select) {
 		if i != 0 {
 			c.w.WriteString(", ")
 		}
-		c.renderJSONField(f.FieldName, sel.ID)
+
+		if c.dialect.Name() == "sqlite" {
+			c.squoted(f.FieldName)
+			c.w.WriteString(", ")
+
+			isJSONCol := false
+			if f.Col.Type != "" {
+				isJSONCol = f.Col.Type == "json" || f.Col.Type == "jsonb" || f.Col.Type == "json[]" || f.Col.Type == "jsonb[]"
+			}
+
+			if isJSONCol {
+				c.w.WriteString("json(")
+			}
+
+			c.w.WriteString(`__sr_`)
+			int32String(c.w, sel.ID)
+			c.w.WriteString(`.`)
+			c.w.WriteString(f.FieldName)
+
+			if isJSONCol {
+				c.w.WriteString(")")
+			}
+
+		} else {
+			c.renderJSONField(f.FieldName, sel.ID)
+		}
 		i++
 	}
 
@@ -217,7 +262,16 @@ func (c *compilerContext) renderJSONFields(sel *qcode.Select) {
 			}
 
 		} else {
-			c.renderJSONField(csel.FieldName, sel.ID)
+			if c.dialect.Name() == "sqlite" {
+				c.squoted(csel.FieldName)
+				c.w.WriteString(`, json(__sr_`)
+				int32String(c.w, sel.ID)
+				c.w.WriteString(`.`)
+				c.w.WriteString(csel.FieldName)
+				c.w.WriteString(`)`)
+			} else {
+				c.renderJSONField(csel.FieldName, sel.ID)
+			}
 
 			// return the cursor for the this child selector as part of the parents json
 			if csel.Paging.Cursor {
