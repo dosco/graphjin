@@ -2,4 +2,4 @@
 set -e
 cd "$(dirname "$0")/../tests"
 echo "Running SQLite tests..."
-go test -v -timeout 30m -race -db=sqlite -tags sqlite "$@" .
+go test -v -timeout 30m -race -db=sqlite -tags "sqlite sqlite_fts5" "$@" .

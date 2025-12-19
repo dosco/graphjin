@@ -334,8 +334,12 @@ type Compiler struct {
 }
 
 func NewCompiler(s *sdata.DBSchema, c Config) (*Compiler, error) {
-	if c.DBSchema == "" && s.DBType() != "sqlite" {
-		c.DBSchema = "public"
+	if c.DBSchema == "" {
+		if s.DBType() == "oracle" {
+			c.DBSchema = s.DBSchema()
+		} else if s.DBType() != "sqlite" {
+			c.DBSchema = "public"
+		}
 	}
 
 	c.defTrv.query.block = c.DefaultBlock

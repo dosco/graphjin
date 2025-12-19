@@ -28,3 +28,12 @@ var sqliteInfo string
 
 //go:embed sql/sqlite_columns.sql
 var sqliteColumnsStmt string
+
+//go:embed sql/oracle_functions.sql
+var oracleFunctionsStmt string
+
+//go:embed sql/oracle_info.sql
+var oracleInfo string
+
+//go:embed sql/oracle_columns.sql
+var oracleColumnsStmt string

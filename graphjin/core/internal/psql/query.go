@@ -63,6 +63,8 @@ func NewCompiler(conf Config) *Compiler {
 		d = &dialect.MySQLDialect{EnableCamelcase: conf.EnableCamelcase}
 	case "sqlite":
 		d = &dialect.SQLiteDialect{}
+	case "oracle":
+		d = &dialect.OracleDialect{EnableCamelcase: conf.EnableCamelcase}
 	default:
 		d = &dialect.PostgresDialect{
 			DBVersion:       conf.DBVersion,
@@ -152,6 +154,7 @@ func (co *Compiler) CompileQuery(
 		md.poll = true
 	}
 
+
 	// md.ct = qc.Schema.DBType() // md.ct is likely used elsewhere, kept for now if md has it?
 	// But md.ct was string. qc.Schema.DBType() is string.
 	// Compiler struct no longer has ct.
@@ -181,8 +184,9 @@ func (co *Compiler) CompileQuery(
 	// Then logic continues.
 	
 	if qc.Typename {
-		c.w.WriteString(`'__typename', `)
-		c.squoted(qc.Name)
+		c.dialect.RenderJSONRootField(c, "__typename", func() {
+			c.squoted(qc.Name)
+		})
 		i++
 	}
 
@@ -202,74 +206,77 @@ func (co *Compiler) CompileQuery(
 		case qcode.SkipTypeUserNeeded, qcode.SkipTypeBlocked,
 			qcode.SkipTypeNulled:
 
-			c.w.WriteString(`'`)
-			c.w.WriteString(sel.FieldName)
-			c.w.WriteString(`', NULL`)
-
-			if sel.Paging.Cursor {
-				c.w.WriteString(`, '`)
+			if c.dialect.Name() == "oracle" {
+				c.w.WriteString(`KEY '`)
 				c.w.WriteString(sel.FieldName)
-				c.w.WriteString(`_cursor', NULL`)
-			}
-
-		default:
-			if !c.dialect.SupportsLateral() {
-				c.w.WriteString(`'`)
-				c.w.WriteString(sel.FieldName)
-				c.w.WriteString(`', `)
-
-				if c.dialect.Name() == "sqlite" && !sel.Singular && sel.Paging.Cursor {
-					c.w.WriteString(`json_extract(`)
-					var buf bytes.Buffer
-					oldW := c.w
-					c.w = &buf
-					c.renderInlineChild(sel)
-					c.w = oldW
-					subQuery := buf.String()
-
-					c.w.WriteString(subQuery)
-					c.w.WriteString(`, '$.json')`)
-				} else {
-					c.renderInlineChild(sel)
-				}
+				c.w.WriteString(`' VALUE NULL`)
 			} else {
 				c.w.WriteString(`'`)
 				c.w.WriteString(sel.FieldName)
-				c.w.WriteString(`', __sj_`)
-				int32String(c.w, sel.ID)
-				c.w.WriteString(`.json`)
+				c.w.WriteString(`', NULL`)
 			}
 
-			// return the cursor for the this child selector as part of the parents json
 			if sel.Paging.Cursor {
-				c.w.WriteString(`, '`)
-				c.w.WriteString(sel.FieldName)
-				c.w.WriteString(`_cursor', `)
+				if c.dialect.Name() == "oracle" {
+					c.w.WriteString(`, KEY '`)
+					c.w.WriteString(sel.FieldName)
+					c.w.WriteString(`_cursor' VALUE NULL`)
+				} else {
+					c.w.WriteString(`, '`)
+					c.w.WriteString(sel.FieldName)
+					c.w.WriteString(`_cursor', NULL`)
+				}
+			}
 
+		default:
+			c.dialect.RenderJSONRootField(c, sel.FieldName, func() {
 				if !c.dialect.SupportsLateral() {
-					if c.dialect.Name() == "sqlite" {
+					if c.dialect.Name() == "sqlite" && !sel.Singular && sel.Paging.Cursor {
 						c.w.WriteString(`json_extract(`)
-						// Capture subquery again (or reuse variable if I could, but scope tricky)
-						// Re-rendering is safer or reuse subQuery string if I lift it?
-						// I'll reuse the logic by checking if I already captured it? 
-						// No, simpler to just re-render or assume duplication.
-						// Wait, I can't access `subQuery` from above block easily without restructuring.
-						// Let's re-render. It's safe.
 						var buf bytes.Buffer
 						oldW := c.w
 						c.w = &buf
 						c.renderInlineChild(sel)
 						c.w = oldW
-						// fmt.Fprintln(os.Stderr, "DEBUG SQL:", w.String()) // This line was in the instruction, but `w` is the top-level buffer, not `buf`.
+						subQuery := buf.String()
+	
+						c.w.WriteString(subQuery)
+						c.w.WriteString(`, '$.json')`)
+					} else {
+						c.renderInlineChild(sel)
+					}
+				} else {
+					c.colWithTableID("__sj", sel.ID, "json")
+				}
+			})
+
+			// return the cursor for the this child selector as part of the parents json
+			if sel.Paging.Cursor {
+				if c.dialect.Name() == "oracle" {
+					c.w.WriteString(`, KEY '`)
+					c.w.WriteString(sel.FieldName)
+					c.w.WriteString(`_cursor' VALUE `)
+				} else {
+					c.w.WriteString(`, '`)
+					c.w.WriteString(sel.FieldName)
+					c.w.WriteString(`_cursor', `)
+				}
+
+				if !c.dialect.SupportsLateral() {
+					if c.dialect.Name() == "sqlite" {
+						c.w.WriteString(`json_extract(`)
+						var buf bytes.Buffer
+						oldW := c.w
+						c.w = &buf
+						c.renderInlineChild(sel)
+						c.w = oldW
 						c.w.WriteString(buf.String())
 						c.w.WriteString(`, '$.cursor')`)
 					} else {
 						c.w.WriteString(`NULL`) // Cursors not fully supported inline yet
 					}
 				} else {
-					c.w.WriteString(`__sj_`)
-					int32String(c.w, int32(sel.ID))
-					c.w.WriteString(`.__cursor`)
+					c.colWithTableID("__sj", int32(sel.ID), "__cursor")
 				}
 			}
 
@@ -287,9 +294,14 @@ func (co *Compiler) CompileQuery(
 	// This helps multi-root work as well as return a null json value when
 	// there are no rows found.
 
-	c.w.WriteString(`) AS __root FROM ((SELECT true)) AS __root_x`)
+	c.w.WriteString(`) AS `)
+	c.quoted("__root")
+	c.w.WriteString(` FROM (`)
+	c.dialect.RenderBaseTable(c)
+	c.w.WriteString(`)`)
+	c.dialect.RenderTableAlias(c, "__root_x")
 	c.renderQuery(st, true)
-
+	
 
 
 	return c.err
@@ -402,8 +414,21 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 		// Build the cursor value string
 		if sel.Paging.Cursor && c.dialect.SupportsLateral() {
 			if c.dialect.Name() == "sqlite" {
-				// Should not happen if we used the if block above, 
+				// Should not happen if we used the if block above,
 				// but keeping for safety if logic changes
+			} else if c.dialect.Name() == "oracle" {
+				// Oracle uses || for concatenation
+				c.w.WriteString(`, '`)
+				c.w.Write(c.pf)
+				c.w.WriteString(`' || `)
+				int32String(c.w, int32(sel.ID))
+
+				for i := 0; i < len(sel.OrderBy); i++ {
+					c.w.WriteString(` || ',' || MAX("__CUR_`)
+					int32String(c.w, int32(i))
+					c.w.WriteString(`")`)
+				}
+				c.w.WriteString(` AS "__CURSOR"`)
 			} else {
 				c.w.WriteString(`, CONCAT('`)
 				c.w.Write(c.pf)
@@ -429,15 +454,21 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 
 func (c *compilerContext) renderSelect(sel *qcode.Select) {
 	c.dialect.RenderJSONSelect(c, sel)
-	c.w.WriteString(`AS json `)
+	c.dialect.RenderTableAlias(c, "json")
 
 	// We manually insert the cursor values into row we're building outside
 	// of the generated json object so they can be used higher up in the sql.
 	if sel.Paging.Cursor {
 		for i := range sel.OrderBy {
-			c.w.WriteString(`, __cur_`)
-			int32String(c.w, int32(i))
-			c.w.WriteString(` `)
+			if c.dialect.Name() == "oracle" {
+				c.w.WriteString(`, "__CUR_`)
+				int32String(c.w, int32(i))
+				c.w.WriteString(`" `)
+			} else {
+				c.w.WriteString(`, __cur_`)
+				int32String(c.w, int32(i))
+				c.w.WriteString(` `)
+			}
 		}
 	}
 
@@ -452,6 +483,12 @@ func (c *compilerContext) renderSelect(sel *qcode.Select) {
 				c.colWithTableID(sel.Table, sel.ID, ob.Col.Name)
 				c.w.WriteString(` AS __cur_`)
 				int32String(c.w, int32(i))
+			} else if c.dialect.Name() == "oracle" {
+				c.w.WriteString(`, LAST_VALUE(`)
+				c.colWithTableID(sel.Table, sel.ID, ob.Col.Name)
+				c.w.WriteString(`) OVER() AS "__CUR_`)
+				int32String(c.w, int32(i))
+				c.w.WriteString(`"`)
 			} else {
 				c.w.WriteString(`, LAST_VALUE(`)
 				c.colWithTableID(sel.Table, sel.ID, ob.Col.Name)
@@ -494,7 +531,7 @@ func (c *compilerContext) renderLateralJoinClose(sel *qcode.Select, multi bool) 
 	}
 	c.w.WriteString(`)`)
 	c.aliasWithID(`__sj`, sel.ID)
-	c.w.WriteString(` ON true`)
+	c.w.WriteString(` ON 1=1`)
 }
 
 func (c *compilerContext) renderJoinTables(sel *qcode.Select) {
@@ -565,7 +602,8 @@ func (c *compilerContext) renderFrom(sel *qcode.Select) {
 
 func (c *compilerContext) renderFromCursor(sel *qcode.Select) {
 	if sel.Paging.Cursor {
-		c.w.WriteString(`, __cur`)
+		c.w.WriteString(`, `)
+		c.quoted("__cur")
 	}
 }
 

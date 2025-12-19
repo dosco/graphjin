@@ -2,6 +2,7 @@ package dialect
 
 import (
 	"fmt"
+	"strconv"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 	"github.com/dosco/graphjin/core/v3/internal/util"
@@ -51,8 +52,8 @@ func (d *MySQLDialect) RenderJSONSelect(ctx Context, sel *qcode.Select) {
 }
 
 func (d *MySQLDialect) RenderJSONPlural(ctx Context, sel *qcode.Select) {
-	ctx.WriteString(`CAST(COALESCE(json_arrayagg(__sj_`)
-	ctx.Write(fmt.Sprintf("%d", sel.ID))
+	ctx.WriteString(`CAST(COALESCE(json_arrayagg(`)
+	ctx.Quote("__sj_" + strconv.Itoa(int(sel.ID)))
 	ctx.WriteString(`.json), '[]') AS JSON)`)
 }
 
@@ -265,6 +266,50 @@ func (d *MySQLDialect) RenderLiteral(ctx Context, val string, valType qcode.ValT
 	default:
 		ctx.Quote(val)
 	}
+}
+
+func (d *MySQLDialect) RenderJSONField(ctx Context, fieldName string, tableAlias string, colName string, isNull bool, isJSON bool) {
+	ctx.WriteString(`'`)
+	ctx.WriteString(fieldName)
+	ctx.WriteString(`', `)
+	if isNull {
+		ctx.WriteString(`NULL`)
+	} else {
+		if tableAlias != "" {
+			ctx.Quote(tableAlias)
+			ctx.WriteString(`.`)
+			ctx.Quote(colName)
+		} else {
+			ctx.WriteString(colName)
+		}
+	}
+	// MySQL handles nested JSON automatically with JSON_OBJECT
+}
+
+func (d *MySQLDialect) RenderRootTerminator(ctx Context) {
+	ctx.WriteString(`) AS "__root"`)
+}
+
+func (d *MySQLDialect) RenderBaseTable(ctx Context) {
+	ctx.WriteString(`(SELECT 1)`)
+}
+
+func (d *MySQLDialect) RenderJSONRootField(ctx Context, key string, val func()) {
+	ctx.WriteString(`'`)
+	ctx.WriteString(key)
+	ctx.WriteString(`', `)
+	val()
+}
+
+func (d *MySQLDialect) RenderTableAlias(ctx Context, alias string) {
+	ctx.WriteString(` AS `)
+	ctx.Quote(alias)
+}
+
+func (d *MySQLDialect) RenderLateralJoinClose(ctx Context, alias string) {
+	ctx.WriteString(`) AS `)
+	ctx.Quote(alias)
+	ctx.WriteString(` ON true`)
 }
 
 func (d *MySQLDialect) RenderValArrayColumn(ctx Context, ex *qcode.Exp, table string, pid int32) {
@@ -481,11 +526,10 @@ func (d *MySQLDialect) RenderVar(ctx Context, name string) {
 	ctx.WriteString(name)
 }
 
-func (d *MySQLDialect) RenderSetup(ctx Context) {
-}
-
-func (d *MySQLDialect) RenderTeardown(ctx Context) {
-}
+func (d *MySQLDialect) RenderSetup(ctx Context) {}
+func (d *MySQLDialect) RenderBegin(ctx Context) {}
+func (d *MySQLDialect) RenderTeardown(ctx Context) {}
+func (d *MySQLDialect) RenderVarDeclaration(ctx Context, name, typeName string) {}
 
 func (d *MySQLDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, n int, renderRoot func()) {
 	if n != 0 {

@@ -15,6 +15,8 @@ func (c *compilerContext) renderRecursiveBaseSelect(sel *qcode.Select) {
 		c.w.WriteString(` LIMIT 1, 18446744073709551610`)
 	} else if c.dialect.Name() == "sqlite" {
 		c.w.WriteString(` LIMIT -1 OFFSET 1`)
+	} else if c.dialect.Name() == "oracle" {
+		c.w.WriteString(` OFFSET 1 ROWS`)
 	} else {
 		c.w.WriteString(` OFFSET 1`)
 	}
@@ -25,7 +27,10 @@ func (c *compilerContext) renderRecursiveBaseSelect(sel *qcode.Select) {
 }
 
 func (c *compilerContext) renderRecursiveCTE(sel *qcode.Select) {
-	c.w.WriteString(`WITH RECURSIVE `)
+	c.w.WriteString(`WITH `)
+	if c.dialect.Name() != "oracle" {
+		c.w.WriteString(`RECURSIVE `)
+	}
 	c.quoted("__rcte_" + sel.Table)
 	c.w.WriteString(` AS (`)
 	c.renderCursorCTE(sel)
@@ -48,7 +53,11 @@ func (c *compilerContext) renderRecursiveSelect(sel *qcode.Select) {
 	c.w.WriteString(`) = (`)
 	c.colWithTableID(psel.Table, psel.ID, sel.Ti.PrimaryCol.Name)
 	c.w.WriteString(`) `)
-	c.w.WriteString(` LIMIT 1) UNION ALL `)
+	if c.dialect.Name() == "oracle" {
+		c.w.WriteString(` FETCH FIRST 1 ROWS ONLY) UNION ALL `)
+	} else {
+		c.w.WriteString(` LIMIT 1) UNION ALL `)
+	}
 
 	c.w.WriteString(`SELECT `)
 	c.renderRecursiveBaseColumns(sel)

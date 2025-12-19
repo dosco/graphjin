@@ -26,14 +26,16 @@ func (co *Compiler) compileMutation(
 		Compiler: co,
 	}
 
-    if c.dialect.SupportsLinearExecution() {
+    if co.dialect.SupportsLinearExecution() {
         c.compileLinearMutation()
         return
     }
 
 	if qc.SType != qcode.QTDelete {
 		if c.isJSON {
-			c.w.WriteString(`WITH _sg_input AS (SELECT `)
+			c.w.WriteString(`WITH `)
+			c.quoted("_sg_input")
+			c.w.WriteString(` AS (SELECT `)
 			c.renderParam(Param{Name: qc.ActionVar, Type: "json"})
 			c.w.WriteString(` :: json AS j), `)
 		} else {
@@ -57,11 +59,6 @@ func (co *Compiler) compileMutation(
 	c.renderUnionStmt()
 	c.w.WriteString(` `)
 	co.CompileQuery(w, qc, c.md)
-	
-	// DEBUG: Print generated SQL to stdout
-	// if strings.Contains(md.Params[0].Name, "mysql") || true { // just print everything
-	// fmt.Fprintf(os.Stderr, "DEBUG SQL: %s\n", w.String())
-	// }
 }
 
 func (c *compilerContext) compileLinearMutation() {
@@ -74,9 +71,21 @@ func (c *compilerContext) compileLinearMutation() {
     //    Naive approach: Sort by ID? No.
     //    Use m.DependsOn.
     
-    ordered := c.sortMutations()
-    
-    	for _, mid := range ordered {
+    	ordered := c.sortMutations()
+
+	for _, mid := range ordered {
+		m := c.qc.Mutates[mid]
+		// Skip if not needing variable? Or just declare all?
+		// We use variable for Primary Key capture.
+		vName := c.getVarName(m)
+		// Assuming type is Number for IDs usually?
+		// Or inspect m.Ti.PrimaryCol.Type
+		c.dialect.RenderVarDeclaration(c, vName, m.Ti.PrimaryCol.Type)
+	}
+
+	c.dialect.RenderBegin(c)
+
+	for _, mid := range ordered {
 		m := c.qc.Mutates[mid]
 		// fmt.Fprintf(os.Stderr, "DEBUG Mutation: %d Type: %d\n", mid, m.Type)
 
@@ -143,11 +152,6 @@ func (c *compilerContext) compileLinearMutation() {
     
     // Teardown (e.g. Drop Temp Table)
     c.dialect.RenderTeardown(c)
-
-	// Teardown (e.g. Drop Temp Table)
-	c.dialect.RenderTeardown(c)
-
-	// fmt.Fprintf(os.Stderr, "DEBUG SQL: %s\n", c.w.String())
 }
 
 func (c *compilerContext) sortMutations() []int {
@@ -217,8 +221,9 @@ func (c *compilerContext) renderLinearInsert(m qcode.Mutate) {
 		if i != 0 {
 			c.w.WriteString(", ")
 		}
-		if c.dialect.SupportsLinearExecution() && col.Col.Name == m.Ti.PrimaryCol.Name {
-			// Use inline variable assignment for MySQL:  @var := value
+		// MySQL uses inline variable assignment (@var := value) for PK capture
+		// Oracle uses RETURNING INTO instead, so skip inline assignment for Oracle
+		if c.dialect.Name() == "mysql" && col.Col.Name == m.Ti.PrimaryCol.Name {
 			c.w.WriteString("@")
 			c.w.WriteString(varName)
 			c.w.WriteString(" := ")
@@ -258,8 +263,13 @@ func (c *compilerContext) renderLinearInsert(m qcode.Mutate) {
 
 	// Capture ID only if we don't have an explicit PK (auto-increment case)
 	if !hasExplicitPK {
-		c.w.WriteString("; ")
-		c.dialect.RenderIDCapture(c, varName)
+		if c.dialect.Name() == "oracle" {
+			c.dialect.RenderIDCapture(c, varName)
+			c.w.WriteString("; ")
+		} else {
+			c.w.WriteString("; ")
+			c.dialect.RenderIDCapture(c, varName)
+		}
 	}
 }
 
@@ -660,7 +670,9 @@ func (c *compilerContext) renderOneToManyConnectStmt(m qcode.Mutate) {
 	}
 
 	if m.IsJSON {
-		c.w.WriteString(` FROM _sg_input i, `)
+		c.w.WriteString(` FROM `)
+		c.quoted("_sg_input")
+		c.w.WriteString(` i, `)
 	} else {
 		c.w.WriteString(` FROM `)
 	}
@@ -682,7 +694,9 @@ func (c *compilerContext) renderOneToOneConnectStmt(m qcode.Mutate) {
 	c.colWithTable(("_x_" + m.Rel.Right.Col.Table), m.Rel.Right.Col.Name)
 
 	if m.IsJSON {
-		c.w.WriteString(` FROM _sg_input i`)
+		c.w.WriteString(` FROM `)
+		c.quoted("_sg_input")
+		c.w.WriteString(` i`)
 		c.renderNestedRelTables(m, true, 1)
 	} else {
 		c.w.WriteString(` FROM `)
@@ -708,7 +722,9 @@ func (c *compilerContext) renderOneToManyDisconnectStmt(m qcode.Mutate) {
 		c.quoted(rel.Left.Col.Name)
 
 		if m.IsJSON {
-			c.w.WriteString(` FROM _sg_input i, `)
+			c.w.WriteString(` FROM `)
+		c.quoted("_sg_input")
+		c.w.WriteString(` i, `)
 		} else {
 			c.w.WriteString(` FROM `)
 		}
@@ -745,7 +761,9 @@ func (c *compilerContext) renderOneToOneDisconnectStmt(m qcode.Mutate) {
 	}
 
 	if m.IsJSON {
-		c.w.WriteString(` FROM _sg_input i`)
+		c.w.WriteString(` FROM `)
+		c.quoted("_sg_input")
+		c.w.WriteString(` i`)
 		c.renderNestedRelTables(m, true, 1)
 	} else {
 		c.w.WriteString(` FROM `)
@@ -810,7 +828,9 @@ func (c *compilerContext) renderValues(m qcode.Mutate, prefix bool) {
 	c.renderNestedRelColumns(m, true, prefix, n)
 
 	if m.IsJSON {
-		c.w.WriteString(` FROM _sg_input i`)
+		c.w.WriteString(` FROM `)
+		c.quoted("_sg_input")
+		c.w.WriteString(` i`)
 		n = c.renderNestedRelTables(m, prefix, 1)
 		c.renderMutateToRecordSet(m, n)
 

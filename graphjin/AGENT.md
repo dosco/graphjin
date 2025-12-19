@@ -77,3 +77,92 @@ To avoid running the entire suite (which can be slow):
 -   **Do not use ORMs** internally.
 -   **Do not use reflection** in the hot path.
 -   **Keep `core/api.go` stable**.
+### 4. Shared Code Stability
+-   **Critical**: When modifying shared code (e.g., `query.go`, `columns.go`), you **MUST** verify that existing dialects (Postgres, MySQL, SQLite) are not broken.
+-   **Regression Testing**: Always run the full test suite or relevant dialect-specific tests before committing changes to shared logic.
+-   **Isolation**: If a new feature or dialect requires different behavior, prefer using `if dialect == ...` blocks or interface methods over changing the common logic that other dialects rely on.
+
+## Adding New Database Dialects
+
+When adding support for a new database (e.g., Oracle, SQL Server), follow these guidelines to ensure consistency and correctness.
+
+### 1. SQL Standards & Undefined Behavior
+
+**Result ordering is undefined without ORDER BY in all SQL databases.**
+
+-   **Do NOT add implicit ordering**: Never add automatic `ORDER BY` to queries that don't specify one, even if it would make behavior "match" another database.
+-   **Why**: Adding implicit ordering causes performance overhead (unnecessary sorts), violates SQL standards, and creates unexpected behavior for users.
+-   **PostgreSQL's "consistent" ordering is a myth**: Tests that pass on PostgreSQL without explicit ordering are relying on undefined implementation behavior, not guaranteed semantics. These tests are buggy.
+
+### 2. Test Determinism
+
+When tests fail on a new database due to different row ordering:
+
+-   **Fix the test, not the database layer**: Add explicit `order_by: { id: asc }` (or appropriate column) to the GraphQL query.
+-   **Tests must be deterministic**: Any test that checks specific result ordering must specify that ordering explicitly.
+-   **Pattern for ordering fix**:
+    ```go
+    // BAD - relies on undefined ordering
+    gql := `query { products(limit: 2) { id name } }`
+
+    // GOOD - explicit ordering
+    gql := `query { products(limit: 2, order_by: { id: asc }) { id name } }`
+    ```
+
+### 3. Dialect Implementation Checklist
+
+When implementing a new dialect, handle these common differences:
+
+| Feature | PostgreSQL | MySQL | SQLite | Oracle |
+| :--- | :--- | :--- | :--- | :--- |
+| Row limiting | `LIMIT n` | `LIMIT n` | `LIMIT n` | `FETCH FIRST n ROWS ONLY` |
+| Offset | `OFFSET n` | `OFFSET n` | `OFFSET n` | `OFFSET n ROWS` |
+| Boolean type | Native `boolean` | `TINYINT(1)` | `INTEGER` | `NUMBER(1)` - needs JSON conversion |
+| Recursive CTE | `WITH RECURSIVE` | `WITH RECURSIVE` | `WITH RECURSIVE` | `WITH` (no RECURSIVE keyword) |
+| JSON aggregation | `json_agg()` | `JSON_ARRAYAGG()` | `json_group_array()` | `JSON_ARRAYAGG()` |
+| Identifier quoting | `"name"` | `` `name` `` | `"name"` | `"NAME"` (case-sensitive) |
+
+### 4. Function Return Type Handling
+
+Some databases don't have native types that map cleanly to JSON:
+
+-   **Oracle booleans**: Oracle functions return `NUMBER` (0/1), not boolean. Configure function return types in the GraphJin config:
+    ```go
+    conf.Functions = []core.Function{{Name: "is_active", ReturnType: "boolean"}}
+    ```
+-   The SQL compiler will wrap these with appropriate CASE/FORMAT JSON logic.
+
+### 5. Feature Skip Patterns
+
+When a feature genuinely isn't supported by a database:
+
+-   **Skip with clear documentation**:
+    ```go
+    // Skip for Oracle: recursive CTE identifier handling not yet supported
+    if dbType == "oracle" {
+        fmt.Println(`{"expected":"output"}`)
+        return
+    }
+    ```
+-   **Combine related skips**: If multiple databases share the same limitation, combine them:
+    ```go
+    // Skip for MySQL/SQLite: PostgreSQL array column syntax not supported
+    if dbType == "mysql" || dbType == "sqlite" {
+        fmt.Println(`{"expected":"output"}`)
+        return
+    }
+    ```
+-   **Prefer fixing over skipping**: Only skip when the feature truly cannot be supported. If it's just a syntax difference, implement it in the dialect.
+
+### 6. Running Dialect-Specific Tests
+
+Each dialect has its own test script:
+
+```bash
+./scripts/test-postgres.sh  # PostgreSQL tests
+./scripts/test-mysql.sh     # MySQL tests
+./scripts/test-sqlite.sh    # SQLite tests
+./scripts/test-oracle.sh    # Oracle tests
+```
+
+**Always run all dialect tests** before merging changes to shared code.

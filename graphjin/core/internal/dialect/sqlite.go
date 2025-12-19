@@ -151,6 +151,30 @@ func (d *SQLiteDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
 	}
 }
 
+func (d *SQLiteDialect) RenderSetup(ctx Context) {
+	ctx.WriteString(`CREATE TEMP TABLE IF NOT EXISTS _gj_ids (k TEXT PRIMARY KEY, id INTEGER); `)
+}
+
+func (d *SQLiteDialect) RenderBegin(ctx Context) {}
+
+func (d *SQLiteDialect) RenderTeardown(ctx Context) {
+	ctx.WriteString(`; DROP TABLE _gj_ids`)
+}
+
+func (d *SQLiteDialect) RenderVarDeclaration(ctx Context, name, typeName string) {}
+
+func (d *SQLiteDialect) RenderVar(ctx Context, name string) {
+	ctx.WriteString(`(SELECT id FROM _gj_ids WHERE k = '`)
+	ctx.WriteString(name)
+	ctx.WriteString(`')`)
+}
+
+func (d *SQLiteDialect) RenderIDCapture(ctx Context, name string) {
+	ctx.WriteString(`INSERT INTO _gj_ids (k, id) VALUES ('`)
+	ctx.WriteString(name)
+	ctx.WriteString(`', last_insert_rowid())`)
+}
+
 func (d *SQLiteDialect) RenderDistinctOn(ctx Context, sel *qcode.Select) {
 }
 
@@ -301,6 +325,36 @@ func (d *SQLiteDialect) RenderLiteral(ctx Context, val string, valType qcode.Val
 	default:
 		ctx.Quote(val)
 	}
+}
+
+func (d *SQLiteDialect) RenderJSONField(ctx Context, fieldName string, tableAlias string, colName string, isNull bool, isJSON bool) {
+	// Not used by SQLite in current implementation (handled in columns.go)
+}
+
+func (d *SQLiteDialect) RenderRootTerminator(ctx Context) {
+	ctx.WriteString(`) AS "__root"`)
+}
+
+func (d *SQLiteDialect) RenderBaseTable(ctx Context) {
+	ctx.WriteString(`(SELECT 1)`)
+}
+
+func (d *SQLiteDialect) RenderJSONRootField(ctx Context, key string, val func()) {
+	ctx.WriteString(`'`)
+	ctx.WriteString(key)
+	ctx.WriteString(`', `)
+	val()
+}
+
+func (d *SQLiteDialect) RenderTableAlias(ctx Context, alias string) {
+	ctx.WriteString(` AS `)
+	ctx.Quote(alias)
+}
+
+func (d *SQLiteDialect) RenderLateralJoinClose(ctx Context, alias string) {
+	ctx.WriteString(`) AS `)
+	ctx.Quote(alias)
+	ctx.WriteString(` ON true`)
 }
 
 func (d *SQLiteDialect) RenderJoinTables(ctx Context, sel *qcode.Select) {
@@ -489,25 +543,8 @@ func (d *SQLiteDialect) SupportsLinearExecution() bool {
 	return true
 }
 
-func (d *SQLiteDialect) RenderIDCapture(ctx Context, name string) {
-	ctx.WriteString(`INSERT INTO _gj_ids (k, id) VALUES ('`)
-	ctx.WriteString(name)
-	ctx.WriteString(`', last_insert_rowid())`)
-}
 
-func (d *SQLiteDialect) RenderVar(ctx Context, name string) {
-	ctx.WriteString(`(SELECT id FROM _gj_ids WHERE k = '`)
-	ctx.WriteString(name)
-	ctx.WriteString(`')`)
-}
 
-func (d *SQLiteDialect) RenderSetup(ctx Context) {
-	ctx.WriteString(`CREATE TEMP TABLE IF NOT EXISTS _gj_ids (k TEXT PRIMARY KEY, id INTEGER); `)
-}
-
-func (d *SQLiteDialect) RenderTeardown(ctx Context) {
-	ctx.WriteString(`; DROP TABLE _gj_ids`)
-}
 
 func (d *SQLiteDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, n int, renderRoot func()) {
 	if n != 0 {
@@ -575,3 +612,4 @@ func joinPathSQLite(ctx Context, prefix string, path []string, enableCamelcase b
 		ctx.WriteString(`'`)
 	}
 }
+
