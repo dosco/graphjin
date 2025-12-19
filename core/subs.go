@@ -423,7 +423,7 @@ func (gj *graphjinEngine) subCheckUpdates(sub *sub, mv mval, start int) {
 	err = retryOperation(c, func() (err1 error) {
 		if hasParams {
 			//nolint: sqlclosecheck
-			rows, err1 = gj.db.QueryContext(c, sub.s.cs.st.sql, params)
+			rows, err1 = gj.db.QueryContext(c, sub.s.cs.st.sql, string(params))
 		} else {
 			//nolint: sqlclosecheck
 			rows, err1 = gj.db.QueryContext(c, sub.s.cs.st.sql)
@@ -436,14 +436,14 @@ func (gj *graphjinEngine) subCheckUpdates(sub *sub, mv mval, start int) {
 	}
 	defer rows.Close()
 
-	var js json.RawMessage
-
+	var b []byte
 	i := 0
 	for rows.Next() {
-		if err := rows.Scan(&js); err != nil {
+		if err := rows.Scan(&b); err != nil {
 			gj.log.Printf(errSubs, "scan", err)
 			return
 		}
+		js := json.RawMessage(b)
 
 		j := start + i
 		i++
@@ -481,11 +481,16 @@ func (gj *graphjinEngine) subFirstQuery(sub *sub, m *Member) (mmsg, error) {
 
 			if m.params != nil {
 				row = gj.db.QueryRowContext(c, q,
-					renderJSONArray([]json.RawMessage{m.params}))
+					string(renderJSONArray([]json.RawMessage{m.params})))
 			} else {
 				row = gj.db.QueryRowContext(c, q)
 			}
-			return row.Scan(&js)
+			var b []byte
+			if err := row.Scan(&b); err != nil {
+				return err
+			}
+			js = json.RawMessage(b)
+			return nil
 		})
 		if err != nil {
 			return mm, fmt.Errorf(errSubs, "scan", err)
@@ -577,6 +582,8 @@ func renderSubWrap(st stmt, ct string) string {
 	switch ct {
 	case "mysql":
 		d = &dialect.MySQLDialect{}
+	case "oracle":
+		d = &dialect.OracleDialect{}
 	default:
 		d = &dialect.PostgresDialect{}
 	}
@@ -586,7 +593,7 @@ func renderSubWrap(st stmt, ct string) string {
 		params[i] = dialect.Param{Name: p.Name, Type: p.Type}
 	}
 
-	sc := &stringContext{}
+	sc := &stringContext{ct: ct}
 	d.RenderSubscriptionUnbox(sc, params, func() {
 		sc.WriteString(st.sql)
 	})
@@ -596,6 +603,7 @@ func renderSubWrap(st stmt, ct string) string {
 
 type stringContext struct {
 	sb strings.Builder
+	ct string
 }
 
 func (c *stringContext) Write(s string) (int, error) {
@@ -609,9 +617,19 @@ func (c *stringContext) AddParam(p dialect.Param) string {
 	return ""
 }
 func (c *stringContext) Quote(s string) {
-	c.sb.WriteString(`"`)
-	c.sb.WriteString(s)
-	c.sb.WriteString(`"`)
+	if c.ct == "mysql" {
+		c.sb.WriteString("`")
+		c.sb.WriteString(s)
+		c.sb.WriteString("`")
+	} else if c.ct == "oracle" {
+		c.sb.WriteString(`"`)
+		c.sb.WriteString(strings.ToUpper(s))
+		c.sb.WriteString(`"`)
+	} else {
+		c.sb.WriteString(`"`)
+		c.sb.WriteString(s)
+		c.sb.WriteString(`"`)
+	}
 }
 func (c *stringContext) ColWithTable(table, col string) {
 	if table != "" {

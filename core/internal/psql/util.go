@@ -3,19 +3,18 @@ package psql
 import (
 	"bytes"
 	"strconv"
+	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/dialect"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 )
 
 func (c *compilerContext) alias(alias string) {
-	c.w.WriteString(` AS `)
-	c.quoted(alias)
+	c.dialect.RenderTableAlias(c, alias)
 }
 
 func (c *compilerContext) aliasWithID(alias string, id int32) {
-	c.w.WriteString(` AS `)
-	c.quoted(alias + "_" + strconv.Itoa(int(id)))
+	c.dialect.RenderTableAlias(c, alias+"_"+strconv.Itoa(int(id)))
 }
 
 func (c *compilerContext) colWithTableID(table string, id int32, col string) {
@@ -35,8 +34,7 @@ func (c *compilerContext) table(schema, table string, alias bool) {
 	}
 	c.quoted(table)
 	if alias {
-		c.w.WriteString(` AS `)
-		c.quoted(table)
+		c.dialect.RenderTableAlias(c, table)
 	}
 }
 
@@ -51,6 +49,10 @@ func (c *compilerContext) quoted(identifier string) {
 		c.w.WriteByte('`')
 		c.w.WriteString(identifier)
 		c.w.WriteByte('`')
+	} else if c.dialect.Name() == "oracle" {
+		c.w.WriteByte('"')
+		c.w.WriteString(strings.ToUpper(identifier))
+		c.w.WriteByte('"')
 	} else {
 		c.w.WriteByte('"')
 		c.w.WriteString(identifier)

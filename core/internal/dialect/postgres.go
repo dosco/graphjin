@@ -317,6 +317,22 @@ func (d *PostgresDialect) RenderLiteral(ctx Context, val string, valType qcode.V
 	}
 }
 
+func (d *PostgresDialect) RenderJSONField(ctx Context, fieldName string, tableAlias string, colName string, isNull bool, isJSON bool) {
+	ctx.WriteString(`'`)
+	ctx.WriteString(fieldName)
+	ctx.WriteString(`', `)
+	if isNull {
+		ctx.WriteString(`NULL`)
+	} else {
+		if tableAlias != "" {
+			ctx.WriteString(tableAlias)
+			ctx.WriteString(`.`)
+		}
+		ctx.Quote(colName)
+	}
+	// Postgres handles nested JSON automatically with jsonb_build_object
+}
+
 func (d *PostgresDialect) RenderValArrayColumn(ctx Context, ex *qcode.Exp, table string, pid int32) {
 	if pid == -1 {
 		ctx.ColWithTable(table, ex.Right.Col.Name)
@@ -397,6 +413,32 @@ func (d *PostgresDialect) RenderOp(op qcode.ExpOp) (string, error) {
 
 func (d *PostgresDialect) BindVar(i int) string {
 	return fmt.Sprintf("$%d", i)
+}
+
+func (d *PostgresDialect) RenderRootTerminator(ctx Context) {
+	ctx.WriteString(`) AS "__root"`)
+}
+
+func (d *PostgresDialect) RenderBaseTable(ctx Context) {
+	ctx.WriteString(`(SELECT true)`)
+}
+
+func (d *PostgresDialect) RenderJSONRootField(ctx Context, key string, val func()) {
+	ctx.WriteString(`'`)
+	ctx.WriteString(key)
+	ctx.WriteString(`', `)
+	val()
+}
+
+func (d *PostgresDialect) RenderTableAlias(ctx Context, alias string) {
+	ctx.WriteString(` AS `)
+	ctx.Quote(alias)
+}
+
+func (d *PostgresDialect) RenderLateralJoinClose(ctx Context, alias string) {
+	ctx.WriteString(`) AS `)
+	ctx.Quote(alias)
+	ctx.WriteString(` ON true`)
 }
 
 func (d *PostgresDialect) UseNamedParams() bool {
@@ -556,11 +598,10 @@ func (d *PostgresDialect) RenderVar(ctx Context, name string) {
 	// Not used for Postgres
 }
 
-func (d *PostgresDialect) RenderSetup(ctx Context) {
-}
-
-func (d *PostgresDialect) RenderTeardown(ctx Context) {
-}
+func (d *PostgresDialect) RenderSetup(ctx Context) {}
+func (d *PostgresDialect) RenderBegin(ctx Context) {}
+func (d *PostgresDialect) RenderTeardown(ctx Context) {}
+func (d *PostgresDialect) RenderVarDeclaration(ctx Context, name, typeName string) {}
 func (d *PostgresDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, n int, renderRoot func()) {
 	if n != 0 {
 		ctx.WriteString(`, `)

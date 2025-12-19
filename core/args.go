@@ -89,7 +89,13 @@ func (gj *graphjinEngine) argList(c context.Context,
 				case p.Type == "json" && v[0] != '[' && v[0] != '{' && !varIsNull:
 					return ar, fmt.Errorf("variable '%s' should be an array or object", p.Name)
 				}
-				vl[i] = parseVarVal(v)
+				// For Oracle, JSON arrays/objects must be passed as strings
+				// because the godror driver doesn't handle json.RawMessage
+				if gj.dbtype == "oracle" && p.Type == "json" && (v[0] == '[' || v[0] == '{') {
+					vl[i] = string(v)
+				} else {
+					vl[i] = parseVarVal(v)
+				}
 
 			} else if rc != nil {
 				if v, ok := rc.Vars[p.Name]; ok {

@@ -189,9 +189,10 @@ func addJsonTable(conf *Config, dbInfo *sdata.DBInfo, table Table) error {
 		return fmt.Errorf("json table: %w", err)
 	}
 
-	if bc.Type != "json" && bc.Type != "jsonb" {
+	// Allow json, jsonb, and clob (Oracle uses CLOB for JSON storage)
+	if bc.Type != "json" && bc.Type != "jsonb" && bc.Type != "clob" {
 		return fmt.Errorf(
-			"json table: column '%s' in table '%s' is of type '%s'. Only JSON or JSONB is valid",
+			"json table: column '%s' in table '%s' is of type '%s'. Only JSON, JSONB, or CLOB is valid",
 			table.Name, table.Table, bc.Type)
 	}
 
@@ -315,6 +316,20 @@ func addForeignKey(conf *Config, di *sdata.DBInfo, c Column, t Table) error {
 	c1.FKeyTable = fkt
 	c1.FKeyCol = c3.Name
 
+	return nil
+}
+
+// addFunctions updates function configurations in the database info
+func addFunctions(conf *Config, di *sdata.DBInfo) error {
+	for _, f := range conf.Functions {
+		for i := range di.Functions {
+			if di.Functions[i].Name == f.Name && (f.Schema == "" || di.Functions[i].Schema == f.Schema) {
+				if f.ReturnType != "" {
+					di.Functions[i].Type = f.ReturnType
+				}
+			}
+		}
+	}
 	return nil
 }
 

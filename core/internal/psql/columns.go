@@ -94,9 +94,7 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 					c.renderInlineChild(csel)
 					c.alias(csel.FieldName)
 				} else {
-					c.w.WriteString(`__sj_`)
-					int32String(c.w, csel.ID)
-					c.w.WriteString(`.json`)
+					c.colWithTableID("__sj", csel.ID, "json")
 					c.alias(csel.FieldName)
 				}
 			}
@@ -104,9 +102,9 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 			// return the cursor for the this child selector as part of the parents json
 			// Only for LATERAL supporting dialects - SQLite handles cursor differently
 			if csel.Paging.Cursor && (c.dialect.SupportsLateral() || c.dialect.Name() == "sqlite") {
-				c.w.WriteString(`, __sj_`)
-				int32String(c.w, csel.ID)
-				c.w.WriteString(`.__cursor AS `)
+				c.w.WriteString(`, `)
+				c.colWithTableID("__sj", csel.ID, "__cursor")
+				c.w.WriteString(` AS `)
 				c.w.WriteString(csel.FieldName)
 				c.w.WriteString(`_cursor`)
 			}
@@ -136,9 +134,8 @@ func (c *compilerContext) renderUnionColumn(sel, csel *qcode.Select) {
 			c.w.WriteString(`NULL `)
 		default:
 			if c.dialect.SupportsLateral() {
-				c.w.WriteString(`__sj_`)
-				int32String(c.w, usel.ID)
-				c.w.WriteString(`.json `)
+				c.colWithTableID("__sj", usel.ID, "json")
+				c.w.WriteString(` `)
 			} else {
 				c.renderInlineChild(usel)
 				c.w.WriteString(` `)
@@ -227,6 +224,21 @@ func (c *compilerContext) renderJSONFields(sel *qcode.Select) {
 				c.w.WriteString(")")
 			}
 
+		} else if c.dialect.Name() == "oracle" {
+			// Check if this is a boolean function that needs conversion from NUMBER to JSON boolean
+			isBoolFunc := f.Type == qcode.FieldTypeFunc && f.Func.Type == "boolean"
+			if isBoolFunc {
+				// For Oracle, convert numeric 0/1 to JSON boolean true/false
+				c.w.WriteString(`KEY '`)
+				c.w.WriteString(f.FieldName)
+				c.w.WriteString(`' VALUE CASE WHEN `)
+				c.quoted("__sr_" + strconv.Itoa(int(sel.ID)))
+				c.w.WriteString(`.`)
+				c.quoted(f.FieldName)
+				c.w.WriteString(` = 1 THEN 'true' ELSE 'false' END FORMAT JSON`)
+			} else {
+				c.dialect.RenderJSONField(c, f.FieldName, "__sr_"+strconv.Itoa(int(sel.ID)), f.FieldName, false, false)
+			}
 		} else {
 			c.renderJSONField(f.FieldName, sel.ID)
 		}
@@ -237,7 +249,11 @@ func (c *compilerContext) renderJSONFields(sel *qcode.Select) {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
-		c.renderJSONField("__typename", sel.ID)
+		if c.dialect.Name() == "oracle" {
+			c.dialect.RenderJSONField(c, "__typename", "__sr_"+strconv.Itoa(int(sel.ID)), "__typename", false, false)
+		} else {
+			c.renderJSONField("__typename", sel.ID)
+		}
 		i++
 	}
 
@@ -254,11 +270,19 @@ func (c *compilerContext) renderJSONFields(sel *qcode.Select) {
 
 		// TODO: log what and why this is being skipped
 		if csel.SkipRender != qcode.SkipTypeNone {
-			c.renderJSONNullField(csel.FieldName)
+			if c.dialect.Name() == "oracle" {
+				c.dialect.RenderJSONField(c, csel.FieldName, "", "", true, false)
+			} else {
+				c.renderJSONNullField(csel.FieldName)
+			}
 
 			if sel.Paging.Cursor {
 				c.w.WriteString(", ")
-				c.renderJSONNullField(sel.FieldName + `_cursor`)
+				if c.dialect.Name() == "oracle" {
+					c.dialect.RenderJSONField(c, sel.FieldName+`_cursor`, "", "", true, false)
+				} else {
+					c.renderJSONNullField(sel.FieldName + `_cursor`)
+				}
 			}
 
 		} else {
@@ -269,6 +293,9 @@ func (c *compilerContext) renderJSONFields(sel *qcode.Select) {
 				c.w.WriteString(`.`)
 				c.w.WriteString(csel.FieldName)
 				c.w.WriteString(`)`)
+			} else if c.dialect.Name() == "oracle" {
+				// Child selections are nested JSON, need FORMAT JSON to prevent double-escaping
+				c.dialect.RenderJSONField(c, csel.FieldName, "__sr_"+strconv.Itoa(int(sel.ID)), csel.FieldName, false, true)
 			} else {
 				c.renderJSONField(csel.FieldName, sel.ID)
 			}
@@ -276,7 +303,11 @@ func (c *compilerContext) renderJSONFields(sel *qcode.Select) {
 			// return the cursor for the this child selector as part of the parents json
 			if csel.Paging.Cursor {
 				c.w.WriteString(", ")
-				c.renderJSONField(csel.FieldName+`_cursor`, sel.ID)
+				if c.dialect.Name() == "oracle" {
+					c.dialect.RenderJSONField(c, csel.FieldName+`_cursor`, "__sr_"+strconv.Itoa(int(sel.ID)), csel.FieldName+`_cursor`, false, false)
+				} else {
+					c.renderJSONField(csel.FieldName+`_cursor`, sel.ID)
+				}
 			}
 		}
 		i++

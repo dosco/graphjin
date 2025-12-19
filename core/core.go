@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/dosco/graphjin/core/v3/internal/allow"
@@ -150,6 +151,12 @@ func (gj *graphjinEngine) _initSchema() (err error) {
 
 	schema := gj.dbinfo.Schema
 	for i, t := range gj.conf.Tables {
+		if gj.dbtype == "oracle" {
+			gj.conf.Tables[i].Schema = strings.ToLower(gj.conf.Tables[i].Schema)
+			gj.conf.Tables[i].Name = strings.ToLower(gj.conf.Tables[i].Name)
+			gj.conf.Tables[i].Table = strings.ToLower(gj.conf.Tables[i].Table)
+			t = gj.conf.Tables[i]
+		}
 		if t.Schema == "" {
 			gj.conf.Tables[i].Schema = schema
 			t.Schema = schema
@@ -168,6 +175,10 @@ func (gj *graphjinEngine) _initSchema() (err error) {
 	}
 
 	if err = addForeignKeys(gj.conf, gj.dbinfo); err != nil {
+		return
+	}
+
+	if err = addFunctions(gj.conf, gj.dbinfo); err != nil {
 		return
 	}
 

@@ -54,6 +54,9 @@ type Config struct {
 	// between tables
 	Tables []Table `jsonschema:"title=Tables"`
 
+	// All function specific configuration such as return types
+	Functions []Function `jsonschema:"title=Functions"`
+
 	// An SQL query if set enables attribute based access control. This query is
 	// used to fetch the user attribute that then dynamically define the users role
 	RolesQuery string `mapstructure:"roles_query" json:"roles_query" yaml:"roles_query" jsonschema:"title=Roles Query"`
@@ -126,6 +129,13 @@ type Column struct {
 	Primary    bool
 	Array      bool
 	ForeignKey string `mapstructure:"related_to" json:"related_to" yaml:"related_to" jsonschema:"title=Related To,example=other_table.id_column,example=users.id"`
+}
+
+// Configuration for a database function
+type Function struct {
+	Name       string
+	Schema     string
+	ReturnType string `mapstructure:"return_type" json:"return_type" yaml:"return_type" jsonschema:"title=Return Type,example=boolean,example=record"`
 }
 
 // Configuration for user role

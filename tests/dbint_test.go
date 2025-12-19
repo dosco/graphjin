@@ -13,12 +13,15 @@ import (
 	"time"
 
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/mysql"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/wait"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	"github.com/mattn/go-sqlite3"
+	_ "github.com/sijms/go-ora/v2"
 )
 
 func init() {
@@ -183,6 +186,84 @@ func TestMain(m *testing.M) {
 					return db.Close()
 				}
 				return cleanup, connStr, nil
+			},
+		},
+		{
+			name:   "oracle",
+			driver: "oracle",
+			startFunc: func(ctx context.Context) (func(context.Context) error, string, error) {
+				req := testcontainers.GenericContainerRequest{
+					ContainerRequest: testcontainers.ContainerRequest{
+						Image:        "gvenzl/oracle-free:23-slim",
+						ExposedPorts: []string{"1521/tcp"},
+						Env: map[string]string{
+							"ORACLE_PASSWORD":    "tester_password",
+							"APP_USER":           "tester",
+							"APP_USER_PASSWORD":  "tester_password",
+						},
+						WaitingFor: wait.ForLog("DATABASE IS READY TO USE!"),
+					},
+					Started: true,
+				}
+				container, err := testcontainers.GenericContainer(ctx, req)
+				if err != nil {
+					return nil, "", err
+				}
+
+				host, _ := container.Host(ctx)
+				port, _ := container.MappedPort(ctx, "1521")
+
+				// Connection string for go-ora
+				// oracle://user:password@host:port/service_name
+				connStr := fmt.Sprintf("oracle://tester:tester_password@%s:%s/FREEPDB1", host, port.Port())
+
+				// Initialize DB
+				db, err := sql.Open("oracle", connStr)
+				if err != nil {
+					return nil, "", err
+				}
+				defer db.Close()
+
+				script, err := os.ReadFile("./oracle.sql")
+				if err != nil {
+					return nil, "", err
+				}
+
+				// Oracle SQL files can contain PL/SQL blocks terminated by / on its own line
+				// Use regexp to split on / at end of line (with optional following whitespace/newlines)
+				plsqlRe := regexp.MustCompile(`(?m)^/\s*$`)
+				blocks := plsqlRe.Split(string(script), -1)
+
+				for _, block := range blocks {
+					block = strings.TrimSpace(block)
+					if block == "" {
+						continue
+					}
+					// Check if this is a PL/SQL block
+					// Look for patterns like CREATE FUNCTION, CREATE PROCEDURE, CREATE TYPE, or BEGIN
+					// Use word boundaries to avoid matching column names like "subject_type"
+					plsqlPatterns := regexp.MustCompile(`(?i)\bCREATE\s+(OR\s+REPLACE\s+)?(FUNCTION|PROCEDURE|TYPE)\b|\bBEGIN\b`)
+					isPLSQL := plsqlPatterns.MatchString(block)
+					if isPLSQL {
+						// Execute the entire block as one statement
+						if _, err := db.Exec(block); err != nil {
+							return nil, "", fmt.Errorf("failed to init oracle: %w\nSQL: %s", err, block)
+						}
+					} else {
+						// Split by ; for regular statements
+						for _, sqlLine := range strings.Split(block, ";") {
+							sqlLine = strings.TrimSpace(sqlLine)
+							if sqlLine == "" {
+								continue
+							}
+							if _, err := db.Exec(sqlLine); err != nil {
+								return nil, "", fmt.Errorf("failed to init oracle: %w\nSQL: %s", err, sqlLine)
+							}
+						}
+					}
+				}
+
+				return container.Terminate, connStr, nil
 			},
 		},
 	}

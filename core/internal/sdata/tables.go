@@ -70,12 +70,17 @@ func GetDBInfo(
 			row = db.QueryRow(mysqlInfo)
 		case "sqlite":
 			row = db.QueryRow(sqliteInfo)
+		case "oracle":
+			row = db.QueryRow(oracleInfo)
 		default:
 			row = db.QueryRow(postgresInfo)
 		}
 
 		if err := row.Scan(&dbVersion, &dbSchema, &dbName); err != nil {
 			return err
+		}
+		if dbType == "oracle" {
+			dbSchema = strings.ToLower(dbSchema)
 		}
 		return nil
 	})
@@ -276,6 +281,8 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 		sqlStmt = mysqlColumnsStmt
 	case "sqlite":
 		sqlStmt = sqliteColumnsStmt
+	case "oracle":
+		sqlStmt = oracleColumnsStmt
 	default:
 		sqlStmt = postgresColumnsStmt
 	}
@@ -308,13 +315,23 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 			&c.FKeySchema,
 			&c.FKeyTable,
 			&c.FKeyCol)
+		
+		c.FKeySchema = strings.TrimSpace(c.FKeySchema)
+		c.FKeyTable = strings.TrimSpace(c.FKeyTable)
+		c.FKeyCol = strings.TrimSpace(c.FKeyCol)
 
 		if err != nil {
 			return nil, err
 		}
 
-		if dbtype == "sqlite" {
+		if dbtype == "sqlite" || dbtype == "oracle" {
 			c.Name = util.ToSnake(c.Name)
+			c.Table = strings.ToLower(c.Table)
+			c.Schema = strings.ToLower(c.Schema)
+			c.Type = strings.ToLower(c.Type)
+			c.FKeyTable = strings.ToLower(c.FKeyTable)
+			c.FKeySchema = strings.ToLower(c.FKeySchema)
+			c.FKeyCol = strings.ToLower(c.FKeyCol)
 		}
 
 		k := (c.Schema + ":" + c.Table + ":" + c.Name)
@@ -398,6 +415,8 @@ func DiscoverFunctions(db *sql.DB, dbtype string, blockList []string) ([]DBFunct
 		sqlStmt = mysqlFunctionsStmt
 	case "sqlite":
 		sqlStmt = sqliteFunctionsStmt
+	case "oracle":
+		sqlStmt = oracleFunctionsStmt
 	default:
 		sqlStmt = postgresFunctionsStmt
 	}
@@ -413,8 +432,8 @@ func DiscoverFunctions(db *sql.DB, dbtype string, blockList []string) ([]DBFunct
 
 	for rows.Next() {
 		var fid, fs, fn, ft string
-		var pn, pt, pk string
-		var pid int
+		var pn, pt, pk sql.NullString
+		var pid sql.NullInt64
 
 		err = rows.Scan(&fid, &fs, &fn, &ft, &pid, &pn, &pt, &pk)
 		if err != nil {
@@ -431,13 +450,18 @@ func DiscoverFunctions(db *sql.DB, dbtype string, blockList []string) ([]DBFunct
 			i = len(funcs) - 1
 			fm[fid] = i
 		}
-		param := DBFuncParam{ID: pid, Name: pn, Type: pt}
 
-		if strings.HasSuffix(pt, "[]") {
+		pidVal := 0
+		if pid.Valid {
+			pidVal = int(pid.Int64)
+		}
+		param := DBFuncParam{ID: pidVal, Name: pn.String, Type: pt.String}
+
+		if strings.HasSuffix(pt.String, "[]") {
 			param.Array = true
 		}
 
-		switch pk {
+		switch pk.String {
 		case "IN", "in":
 			funcs[i].Inputs = append(funcs[i].Inputs, param)
 		case "OUT", "out":

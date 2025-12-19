@@ -39,7 +39,8 @@ func (c *compilerContext) renderUpdateStmt(m qcode.Mutate, embedded bool) {
 		if m.ParentID != -1 {
 			fromFunc = func() {
 				if m.IsJSON {
-					c.w.WriteString(`_sg_input i`)
+					c.quoted("_sg_input")
+					c.w.WriteString(` i`)
 					n := c.renderNestedRelTables(m, true, 1)
 					c.renderMutateToRecordSet(m, n)
 				} else {
@@ -48,7 +49,8 @@ func (c *compilerContext) renderUpdateStmt(m qcode.Mutate, embedded bool) {
 			}
 		} else if m.IsJSON {
 			fromFunc = func() {
-				c.w.WriteString(`_sg_input i`)
+				c.quoted("_sg_input")
+				c.w.WriteString(` i`)
 				c.renderMutateToRecordSet(m, 1)
 			}
 		}

@@ -47,6 +47,12 @@ type Dialect interface {
 	RenderValVar(ctx Context, ex *qcode.Exp, val string) bool
 	RenderValArrayColumn(ctx Context, ex *qcode.Exp, table string, pid int32)
 	RenderLiteral(ctx Context, val string, valType qcode.ValType)
+	RenderJSONField(ctx Context, fieldName string, tableAlias string, colName string, isNull bool, isJSON bool)
+	RenderRootTerminator(ctx Context)
+	RenderBaseTable(ctx Context)
+	RenderJSONRootField(ctx Context, key string, val func())
+	RenderTableAlias(ctx Context, alias string)
+	RenderLateralJoinClose(ctx Context, alias string)
 
 	// Parameter Handling
 	BindVar(i int) string
@@ -75,7 +81,9 @@ type Dialect interface {
 	RenderIDCapture(ctx Context, name string)
 	RenderVar(ctx Context, name string)
 	RenderSetup(ctx Context)
+	RenderBegin(ctx Context)
 	RenderTeardown(ctx Context)
+	RenderVarDeclaration(ctx Context, name, typeName string)
 	RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, n int, renderRoot func())
 	RenderSetSessionVar(ctx Context, name, value string) bool
 }
