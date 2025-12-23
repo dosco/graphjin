@@ -2,6 +2,7 @@ package dialect
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
@@ -151,14 +152,16 @@ func (d *SQLiteDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
 	}
 }
 
+
 func (d *SQLiteDialect) RenderSetup(ctx Context) {
-	ctx.WriteString(`CREATE TEMP TABLE IF NOT EXISTS _gj_ids (k TEXT PRIMARY KEY, id INTEGER); `)
+	ctx.WriteString(`CREATE TEMP TABLE IF NOT EXISTS _gj_ids (k TEXT, id INTEGER, PRIMARY KEY (k, id)); `)
 }
 
-func (d *SQLiteDialect) RenderBegin(ctx Context) {}
+func (d *SQLiteDialect) RenderBegin(ctx Context) {
+}
 
 func (d *SQLiteDialect) RenderTeardown(ctx Context) {
-	ctx.WriteString(`; DROP TABLE _gj_ids`)
+	ctx.WriteString(`; DROP TABLE IF EXISTS _gj_ids; DROP TRIGGER IF EXISTS gj_capture; `)
 }
 
 func (d *SQLiteDialect) RenderVarDeclaration(ctx Context, name, typeName string) {}
@@ -170,7 +173,7 @@ func (d *SQLiteDialect) RenderVar(ctx Context, name string) {
 }
 
 func (d *SQLiteDialect) RenderIDCapture(ctx Context, name string) {
-	ctx.WriteString(`INSERT INTO _gj_ids (k, id) VALUES ('`)
+	ctx.WriteString(`INSERT OR IGNORE INTO _gj_ids (k, id) VALUES ('`)
 	ctx.WriteString(name)
 	ctx.WriteString(`', last_insert_rowid())`)
 }
@@ -375,6 +378,17 @@ func (d *SQLiteDialect) RenderValArrayColumn(ctx Context, ex *qcode.Exp, table s
 	ctx.ColWithTable(table, ex.Right.Col.Name)
 }
 
+func (d *SQLiteDialect) RenderArray(ctx Context, items []string) {
+	ctx.WriteString(`json_array(`)
+	for i, item := range items {
+		if i != 0 {
+			ctx.WriteString(`, `)
+		}
+		ctx.WriteString(item)
+	}
+	ctx.WriteString(`)`)
+}
+
 func (d *SQLiteDialect) RenderOp(op qcode.ExpOp) (string, error) {
 	switch op {
 	case qcode.OpIn:
@@ -407,8 +421,10 @@ func (d *SQLiteDialect) UseNamedParams() bool {
 
 
 func (d *SQLiteDialect) SupportsReturning() bool {
-	return true
+	return false
 }
+
+
 
 func (d *SQLiteDialect) SupportsWritableCTE() bool {
 	return false
@@ -419,43 +435,120 @@ func (d *SQLiteDialect) SupportsConflictUpdate() bool {
 }
 
 func (d *SQLiteDialect) RenderMutationCTE(ctx Context, m *qcode.Mutate, renderBody func()) {
-	// SQLite supports CTEs but not writable CTEs in standard way for this usage?
-	// Actually SQLite allows INSERT INTO ... SELECT ...
-	// But `WITH x AS (INSERT ... RETURNING)` is not valid in SQLite?
-	// Docs say: "The WITH clause cannot be used with an INSERT, UPDATE, or DELETE statement." -> Wait.
-	// "The WITH clause ... can occur ... at the beginning of an INSERT, UPDATE, Delete."
-	// But can the CTE *contain* an INSERT? No.
-	// So SupportsWritableCTE is false.
+	// SQLite supports CTEs but not writable CTEs data-modifying CTEs (INSERT inside WITH).
+	// So we render the body directly (INSERT ...) so it becomes the main statement.
+	// We inject a dummy CTE to consume the trailing comma from the previous CTE (e.g. input variables).
+	// Result: `WITH input AS (...), "ignored_<table>_<id>" AS (SELECT 1) INSERT ...`
+	var cteName string
 	if m.Multi {
-		ctx.WriteString(m.Ti.Name)
-		ctx.WriteString(`_`)
-		ctx.Write(fmt.Sprintf("%d", m.ID))
+		cteName = fmt.Sprintf("ignored_%s_%d", m.Ti.Name, m.ID)
 	} else {
-		ctx.Quote(m.Ti.Name)
+		cteName = "ignored_" + m.Ti.Name
 	}
-	ctx.WriteString(` AS (`)
+	ctx.Quote(cteName)
+	ctx.WriteString(` AS (SELECT 1) `)
 	renderBody()
-	ctx.WriteString(`)`)
 }
 
 func (d *SQLiteDialect) RenderInsert(ctx Context, m *qcode.Mutate, values func()) {
+	// Capture all inserted IDs using a temporary trigger
+	// This works for both Single and Bulk inserts
+	vName := getVarName(m)
+    
+	ctx.WriteString(`DROP TRIGGER IF EXISTS gj_capture; `)
+	ctx.WriteString(`CREATE TEMP TRIGGER gj_capture AFTER INSERT ON `)
+	ctx.Quote(m.Ti.Name)
+	ctx.WriteString(` BEGIN INSERT INTO _gj_ids (k, id) VALUES ('`)
+	ctx.WriteString(vName)
+	ctx.WriteString(`', NEW.`)
+	ctx.Quote(m.Ti.PrimaryCol.Name)
+	ctx.WriteString(`); END; `)
+
 	ctx.WriteString(`INSERT INTO `)
 	ctx.ColWithTable(m.Ti.Schema, m.Ti.Name)
 	ctx.WriteString(` (`)
 	values()
-	ctx.WriteString(`)`)
+	ctx.WriteString(`) `)
 }
 
 func (d *SQLiteDialect) RenderUpdate(ctx Context, m *qcode.Mutate, set func(), from func(), where func()) {
-	ctx.WriteString(`UPDATE `)
+	// Pre-select IDs into _gj_ids for later use by the SELECT query
+	vName := getVarName(m)
+	ctx.WriteString(`INSERT INTO _gj_ids (k, id) SELECT '`)
+	ctx.WriteString(vName)
+	ctx.WriteString(`', `)
+	ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
+	ctx.WriteString(` FROM `)
 	ctx.ColWithTable(m.Ti.Schema, m.Ti.Name)
-	ctx.WriteString(` SET `)
-	set()
+    ctx.WriteString(` AS `)
+    ctx.Quote(m.Ti.Name)
 	if from != nil {
-		ctx.WriteString(` FROM `)
+		ctx.WriteString(`, `) // Comma for implicit join in SELECT
 		from()
 	}
 	ctx.WriteString(` WHERE `)
+
+	// Add implicit join condition for JSON updates (only for Arrays where ID is in Input)
+	if m.IsJSON && m.Array {
+		pkAlias := m.Ti.PrimaryCol.Name
+        isExplicitPK := false
+		for _, col := range m.Cols {
+			if col.Col.Name == m.Ti.PrimaryCol.Name {
+				pkAlias = col.FieldName
+                isExplicitPK = true
+				break
+			}
+		}
+
+        // If PK is implicit, we aliased it as "_gj_pkt" in RenderMutateToRecordSet
+        if !isExplicitPK {
+            pkAlias = "_gj_pkt"
+        }
+
+		ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
+		ctx.WriteString(` = t.`)
+		ctx.Quote(pkAlias)
+		ctx.WriteString(` AND `)
+	}
+
+	where()
+	ctx.WriteString(`; `)
+
+	ctx.WriteString(`UPDATE `)
+	ctx.ColWithTable(m.Ti.Schema, m.Ti.Name)
+    ctx.WriteString(` AS `)
+    ctx.Quote(m.Ti.Name)
+	ctx.WriteString(` SET `)
+	set()
+	if from != nil {
+		ctx.WriteString(` FROM `) // SQLite UPDATE FROM syntax
+		from()
+	}
+	ctx.WriteString(` WHERE `)
+
+	// Add implicit join condition for JSON updates (only for Arrays where ID is in Input)
+	if m.IsJSON && m.Array {
+		pkAlias := m.Ti.PrimaryCol.Name
+        isExplicitPK := false
+		for _, col := range m.Cols {
+			if col.Col.Name == m.Ti.PrimaryCol.Name {
+				pkAlias = col.FieldName
+                isExplicitPK = true
+				break
+			}
+		}
+
+        // If PK is implicit, we aliased it as "_gj_pkt" in RenderMutateToRecordSet
+        if !isExplicitPK {
+            pkAlias = "_gj_pkt"
+        }
+
+		ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
+		ctx.WriteString(` = t.`)
+		ctx.Quote(pkAlias)
+		ctx.WriteString(` AND `)
+	}
+
 	where()
 }
 
@@ -489,9 +582,11 @@ func (d *SQLiteDialect) RenderUpsert(ctx Context, m *qcode.Mutate, insert func()
 }
 
 func (d *SQLiteDialect) RenderReturning(ctx Context, m *qcode.Mutate) {
-	ctx.WriteString(` RETURNING `)
-	ctx.ColWithTable(m.Ti.Schema, m.Ti.Name)
-	ctx.WriteString(`.*`)
+	// SQLite 3.35+ supports RETURNING clause
+	// Return a JSON object with the ID for the execution layer to parse
+	ctx.WriteString(` RETURNING json_object('id', `)
+	ctx.Quote(m.Ti.PrimaryCol.Name)
+	ctx.WriteString(`)`)
 }
 
 func (d *SQLiteDialect) RenderAssign(ctx Context, col string, val string) {
@@ -513,103 +608,603 @@ func (d *SQLiteDialect) RenderTryCast(ctx Context, val func(), typ string) {
 }
 
 func (d *SQLiteDialect) RenderSubscriptionUnbox(ctx Context, params []Param, renderInnerSQL func()) {
-	// SQLite json_each approach
+	// SQLite doesn't support LATERAL joins, use subquery approach
 	ctx.WriteString(`WITH _gj_sub AS (SELECT `)
+	seen := make(map[string]int)
 	for i, p := range params {
 		if i != 0 {
 			ctx.WriteString(`, `)
 		}
-		// value is parsed from json
-		ctx.WriteString(`value ->> 'type' AS "` + p.Name + `"`) 
-		// Wait, json_each returns key, value, type, fullkey, path.
-		// If input is ARRAY of objects/arrays?
-		// Subscription params are usually [param1, param2, ...].
-		// If params are passed as JSON array.
-		// `json_each($1)`
-		// Row 1: value is param1.
+		name := p.Name
+		if count, ok := seen[name]; ok {
+			seen[name] = count + 1
+			name = fmt.Sprintf("%s_%d", name, count)
+		} else {
+			seen[name] = 1
+		}
+		ctx.WriteString(fmt.Sprintf(`json_extract(value, '$[%d]') AS "%s"`, i, name))
 	}
-	// This logic for generic unbox is tricky in SQLite without creating object logic.
-	// But for MVP, let's assume we use standard json_each on the array.
-	// AND we need to cast/extract?
-	// Let's implement basic structure:
-	ctx.WriteString(`* FROM json_each($1))`)
-	
-	ctx.WriteString(` SELECT _gj_sub_data.__root FROM _gj_sub LEFT OUTER JOIN LATERAL (`)
+	ctx.WriteString(` FROM json_each(?))`)
+	ctx.WriteString(` SELECT (`)
 	renderInnerSQL()
-	ctx.WriteString(`) AS _gj_sub_data ON true`)
+	ctx.WriteString(`) AS "__root" FROM _gj_sub`)
 }
 
 func (d *SQLiteDialect) SupportsLinearExecution() bool {
 	return true
 }
 
+func (d *SQLiteDialect) RenderMutationInput(ctx Context, qc *qcode.QCode) {
+	ctx.WriteString(`WITH `)
+	ctx.Quote("_sg_input")
+	ctx.WriteString(` AS (SELECT `)
+	ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+	ctx.WriteString(` AS j)`)
+}
+
+func (d *SQLiteDialect) RenderMutationPostamble(ctx Context, qc *qcode.QCode) {
+	// SQLite does nothing at the end of mutation
+}
+
+func (d *SQLiteDialect) getVarName(m qcode.Mutate) string {
+	return m.Ti.Name + "_" + fmt.Sprintf("%d", m.ID)
+}
+
+func (d *SQLiteDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderColVal func(qcode.MColumn)) {
+	// Capture all inserted IDs using a temporary trigger (if not capturing via simple RETURNING)
+	// But SQLite now supports RETURNING so we use that at end.
+	
+	ctx.WriteString("INSERT INTO ")
+	ctx.ColWithTable(m.Ti.Schema, m.Ti.Name)
+	ctx.WriteString(" (")
+	i := 0
+	for _, col := range m.Cols {
+		if i != 0 {
+			ctx.WriteString(", ")
+		}
+		ctx.Quote(col.Col.Name)
+		i++
+	}
+	for _, rcol := range m.RCols {
+		if i != 0 {
+			ctx.WriteString(", ")
+		}
+		ctx.Quote(rcol.Col.Name)
+		i++
+	}
+	ctx.WriteString(")")
+
+	if m.IsJSON {
+		ctx.WriteString(" SELECT ")
+	} else {
+		ctx.WriteString(" VALUES (")
+	}
+
+	i = 0
+	for _, col := range m.Cols {
+		if i != 0 {
+			ctx.WriteString(", ")
+		}
+		renderColVal(col)
+		i++
+	}
+	for _, rcol := range m.RCols {
+		if i != 0 {
+			ctx.WriteString(", ")
+		}
+		found := false
+		for id := range m.DependsOn {
+			if qc.Mutates[id].Ti.Name == rcol.VCol.Table {
+				d.RenderVar(ctx, d.getVarName(qc.Mutates[id]))
+				found = true
+				break
+			}
+		}
+		if !found {
+			ctx.WriteString("NULL")
+		}
+		i++
+	}
+
+	if m.IsJSON {
+		ctx.WriteString(" FROM ")
+		d.RenderMutateToRecordSet(ctx, m, 0, func() {
+             ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+        })
+	} else {
+		ctx.WriteString(")")
+	}
+
+    d.RenderReturning(ctx, m)
+	ctx.WriteString(" -- @gj_ids=")
+	ctx.WriteString(varName)
+	ctx.WriteString("\n; ")
+}
+
+func (d *SQLiteDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderColVal func(qcode.MColumn), renderWhere func()) {
+    d.RenderUpdate(ctx, m, func() {
+		// Set
+		i := 0
+		for _, col := range m.Cols {
+			if i != 0 {
+				ctx.WriteString(", ")
+			}
+            // SQLite restriction on qualified column names in SET
+			ctx.Quote(col.Col.Name)
+			ctx.WriteString(" = ")
+			renderColVal(col)
+			i++
+		}
+		for range m.RCols {
+			// For SQLite updates, we don't want to update the relationship columns
+			// in the SET clause, as we handle the join in the WHERE clause?
+            // mutate.go logic: line 329: if c.dialect.Name() == "sqlite" { continue }
+            // So we skip them here.
+            continue
+		}
+		
+		if i == 0 {
+			ctx.Quote(m.Ti.PrimaryCol.Name)
+			ctx.WriteString(" = ")
+			ctx.Quote(m.Ti.PrimaryCol.Name)
+		}
+	}, func() {
+        // From
+        if m.IsJSON {
+			d.RenderMutateToRecordSet(ctx, m, 0, func() {
+				ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+			})
+		}
+    }, func() {
+        // Where
+        // Logic from mutate.go lines 402+
+        // c.renderExp(path...)
+        
+        // Also handle join conditions.
+        // mutate.go: if m.ParentID != -1 ... AND childCol = (SELECT parentCol FROM ... WHERE ...)
+        
+        renderWhere() // Renders m.Where.Exp
+        
+        if m.ParentID != -1 {
+            if m.Where.Exp != nil {
+				ctx.WriteString(" AND ")
+			}
+			var childCol, parentCol string
+			if m.Rel.Left.Ti.Name == m.Ti.Name {
+				childCol = m.Rel.Left.Col.Name
+				parentCol = m.Rel.Right.Col.Name
+			} else {
+				childCol = m.Rel.Right.Col.Name
+				parentCol = m.Rel.Left.Col.Name
+			}
+			pm := qc.Mutates[m.ParentID]
+
+			ctx.Quote(childCol)
+			ctx.WriteString(" = (SELECT ")
+			ctx.Quote(parentCol)
+			ctx.WriteString(" FROM ")
+			ctx.Quote(pm.Ti.Name)
+			ctx.WriteString(" WHERE ")
+			ctx.Quote(pm.Ti.PrimaryCol.Name)
+			ctx.WriteString(" = ")
+			d.RenderVar(ctx, d.getVarName(pm))
+			ctx.WriteString(")")
+        }
+    })
+    
+    d.RenderReturning(ctx, m)
+	ctx.WriteString(" -- @gj_ids=")
+	ctx.WriteString(varName)
+	ctx.WriteString("\n; ")
+}
+
+func (d *SQLiteDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
+    // Logic from mutate.go lines 442+
+	var colToUpdate string
+	if m.Ti.Name == m.Rel.Right.Col.Table && !m.Rel.Right.Col.PrimaryKey {
+		colToUpdate = m.Rel.Right.Col.Name
+	} else if m.Ti.Name == m.Rel.Left.Col.Table && !m.Rel.Left.Col.PrimaryKey {
+		colToUpdate = m.Rel.Left.Col.Name
+	}
+    
+    if (m.Rel.Type == sdata.RelOneToMany || m.Rel.Type == sdata.RelOneToOne || m.Rel.Type == sdata.RelRecursive) && colToUpdate != "" {
+        ctx.WriteString(`UPDATE `)
+		ctx.Quote(m.Ti.Name)
+		ctx.WriteString(` SET `)
+		ctx.Quote(colToUpdate)
+		ctx.WriteString(` = (SELECT id FROM _gj_ids WHERE k = '`)
+		if m.ParentID != -1 {
+			pm := qc.Mutates[m.ParentID]
+			ctx.WriteString(d.getVarName(pm))
+		}
+		ctx.WriteString(`') WHERE `)
+		
+		renderFilter()
+		
+		// Capture IDs of updated rows
+		ctx.WriteString(` RETURNING json_object('id', "id")`) 
+		ctx.WriteString(" -- @gj_ids=")
+		ctx.WriteString(varName)
+		ctx.WriteString("\n; ")
+		return
+    }
+
+	ctx.WriteString(`SELECT `)
+	ctx.WriteString(`json_object('id', `)
+    ctx.ColWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
+    ctx.WriteString(`)`)
+	
+	if m.IsJSON {
+		ctx.WriteString(` FROM `)
+		d.RenderMutateToRecordSet(ctx, m, 0, func() {
+			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+		})
+		ctx.WriteString(`, `)
+	} else {
+		ctx.WriteString(` FROM `)
+	}
+	ctx.Quote(m.Ti.Name)
+
+	ctx.WriteString(` WHERE `)
+    renderFilter()
+    
+	ctx.WriteString(" -- @gj_ids=")
+	ctx.WriteString(varName)
+	ctx.WriteString("\n; ")
+}
+
+func (d *SQLiteDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
+    // Logic from mutate.go lines 516+
+    var childCol, parentCol string
+    if m.Rel.Left.Ti.Name == m.Ti.Name {
+        childCol = m.Rel.Left.Col.Name
+        parentCol = m.Rel.Right.Col.Name
+    } else {
+        childCol = m.Rel.Right.Col.Name
+        parentCol = m.Rel.Left.Col.Name
+    }
+    pm := qc.Mutates[m.ParentID]
+
+    ctx.WriteString(`UPDATE `)
+    ctx.Quote(m.Ti.Name)
+    ctx.WriteString(` SET `)
+    ctx.Quote(childCol)
+    ctx.WriteString(` = NULL WHERE `)
+    ctx.Quote(childCol)
+    ctx.WriteString(` = (SELECT `)
+    ctx.Quote(parentCol)
+    ctx.WriteString(` FROM `)
+    ctx.Quote(pm.Ti.Name)
+    ctx.WriteString(` WHERE `)
+    ctx.Quote(pm.Ti.PrimaryCol.Name)
+    ctx.WriteString(` = `)
+    d.RenderVar(ctx, d.getVarName(pm))
+    ctx.WriteString(`) AND `)
+    renderFilter()
+
+    ctx.WriteString(" -- @gj_ids=")
+    ctx.WriteString(varName)
+    ctx.WriteString("\n; ")
+}
 
 
+// Package-level map to track mutated tables for the current mutation
+// Package-level map removed - using Context.IsTableMutated instead
 
+// RenderTableName renders table names for SQLite.
+// For mutated tables in mutations, omits the schema so the scoping CTE is used.
+func (d *SQLiteDialect) RenderTableName(ctx Context, sel *qcode.Select, schema, table string) {
+	
+	// Only omit schema for mutated tables that are:
+	// 1. In a mutation query
+	// 2. The table is mutated
+	// 3. This is NOT a relationship join (RelNone or RelRecursive)
+	if sel != nil && ctx.IsTableMutated(table) {
+		// Check if this is a relationship join (not the main table)
+		if sel.Rel.Type != sdata.RelNone {
+			// This is a related table - use schema-qualified name
+			if schema != "" {
+				ctx.Quote(schema)
+				ctx.WriteString(`.`)
+			}
+			ctx.Quote(table)
+			return
+		}
+		// This is the main table in a mutation - omit schema to use CTE
+		ctx.Quote(table)
+	} else {
+		// Normal rendering with schema
+		if schema != "" {
+			ctx.Quote(schema)
+			ctx.WriteString(`.`)
+		}
+		ctx.Quote(table)
+	}
+}
+
+// ModifySelectsForMutation tracks mutated tables for SQLite mutations.
+// The scoping CTE handles all filtering, so we don't inject WHERE clauses.
+func (d *SQLiteDialect) ModifySelectsForMutation(qc *qcode.QCode) {
+	if qc.Type != qcode.QTMutation || qc.Selects == nil {
+		return
+	}
+	// No need to populate global variable anymore
+	// This works correctly for both single inserts and bulk inserts
+}
+// getVarName returns the variable name for a mutation's captured ID
+func getVarName(m *qcode.Mutate) string {
+return m.Ti.Name + "_" + fmt.Sprintf("%d", m.ID)
+}
 func (d *SQLiteDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, n int, renderRoot func()) {
 	if n != 0 {
 		ctx.WriteString(`, `)
 	}
 
-	// For SQLite we use json_each to convert JSON input to a derived table
-	ctx.WriteString(`json_each(`)
-	renderRoot()
-	joinPathSQLite(ctx, "", m.Path, false) 
-	ctx.WriteString(`) AS t`)
-	
-	// Note: SQLite json_each return 'value' (and 'key', etc).
-	// Subsequent mapping needs to handle 't.value'.
-	// But the generic code expects columns like "t"."name".
-	// SQLite dynamic table json_each returns fixed columns.
-	// Since we are aliasing AS t, t.value is the object.
-	// However, subsequent column logical checks 't.name' won't work on 'value'.
-	// SQLite lacks json_table.
-	// We might need a CTE or subquery to project 'value' ->> 'name' AS name.
-	// OR we assume the callers only use it in a way compatible?
-	// The psql/generate.go logic does: `... AS t(col1 type1, col2 type2)`
-	// SQLite json_each -> t(key, value, type, atom, id, parent, fullkey, path).
-	// We can't define schema inplace.
-	
-	// BUT, if we look at `renderLinearUpdate`, it accesses columns via `renderColumnValue`.
-	// `renderColumnValue` for JSON: `c.colWithTable("t", col.FieldName)`.
-	// For Postgres: "t"."name".
-	// For SQLite: "t"."name" is invalid if t is json_each.
-	// It should be `json_extract(t.value, '$.name')`.
-	
-	// This implies `RenderColumnValue` or similar abstraction is also needed or 
-	// `RenderMutateToRecordSet` must actually produce a subquery that projects these columns.
-	// Let's try to project them as a subquery if possible?
-	// (SELECT json_extract(value, '$.col') as col, ... FROM json_each(...)) AS t
-}
+	if m.Array {
+        // Bulk inserts are wrapped by mutate.go in a SELECT ... FROM (...) AS t
+        // So we MUST return a valid subquery with alias 't'.
+		ctx.WriteString(`(SELECT `)
 
-
-// RenderSetSessionVar renders the SQL to set a session variable in SQLite
-func (d *SQLiteDialect) RenderSetSessionVar(ctx Context, name, value string) bool {
-	// SQLite does not support session variables in the same way (SET ...).
-	// We rely on query parameters instead.
-	return false
-}
-
-// Helper to join path for SQLite
-func joinPathSQLite(ctx Context, prefix string, path []string, enableCamelcase bool) {
-	ctx.WriteString(prefix)
-	for i := range path {
-		ctx.WriteString(`->>`) // or -> for intermediate?
-		// Actually json path structure:
-		// SQLite: json_extract(json, '$.a.b')
-		// But here we are appending to a string builder?
-		// prefix is likely "i.j".
-		// `i.j->'a'->'b'` works in sqlite if they are valid operators.
-		// SQLite has -> and ->>.
-		ctx.WriteString(`->`)
-		ctx.WriteString(`'`)
-		if enableCamelcase {
-			// ctx.WriteString(util.ToCamel(path[i])) // Dialect doesn't have util imported yet
-			ctx.WriteString(path[i]) // Skip camel for now or add import
-		} else {
-			ctx.WriteString(path[i])
+		hasPK := false
+        first := true
+		for _, col := range m.Cols {
+			if !first {
+				ctx.WriteString(`, `)
+			}
+            first = false
+			if col.Col.Name == m.Ti.PrimaryCol.Name {
+				hasPK = true
+			}
+			ctx.WriteString(`json_extract(value, '$.`)
+			ctx.WriteString(col.FieldName)
+			ctx.WriteString(`') AS `)
+			ctx.Quote(col.FieldName)
 		}
-		ctx.WriteString(`'`)
+		if !hasPK {
+            if !first {
+			    ctx.WriteString(`, `)
+            }
+			ctx.WriteString(`json_extract(value, '$.`)
+			ctx.WriteString(m.Ti.PrimaryCol.Name) 
+			ctx.WriteString(`') AS "_gj_pkt"`)
+		}
+		ctx.WriteString(` FROM `)
+		if !d.SupportsLinearExecution() {
+			ctx.WriteString(`_sg_input AS i, `)
+		}
+		ctx.WriteString(`json_each(`)
+		renderRoot()
+		if len(m.Path) > 0 {
+			ctx.WriteString(`, '$.`)
+			ctx.WriteString(strings.Join(m.Path, "."))
+			ctx.WriteString(`'`)
+		}
+		ctx.WriteString(`)) AS t`)
+	} else {
+		// Single object case - always output (SELECT ...) AS t for valid FROM clause
+		ctx.WriteString(`(SELECT `)
+
+		hasPK := false
+        first := true
+		for _, col := range m.Cols {
+			if !first {
+				ctx.WriteString(`, `)
+			}
+            first = false
+			if col.Col.Name == m.Ti.PrimaryCol.Name {
+				hasPK = true
+			}
+			ctx.WriteString(`json_extract(`)
+			renderRoot()
+			ctx.WriteString(`, '$.`)
+			if len(m.Path) > 0 {
+				ctx.WriteString(strings.Join(m.Path, "."))
+				ctx.WriteString(`.`)
+			}
+			ctx.WriteString(col.FieldName)
+			ctx.WriteString(`') AS `)
+			ctx.Quote(col.FieldName)
+		}
+// ... Inside RenderMutateToRecordSet Single Object Block
+		if !hasPK {
+            if !first {
+			    ctx.WriteString(`, `)
+            }
+			ctx.WriteString(`CAST(json_extract(`)
+			renderRoot()
+			ctx.WriteString(`, '$.`)
+			if len(m.Path) > 0 {
+				ctx.WriteString(strings.Join(m.Path, "."))
+				ctx.WriteString(`.`)
+			}
+			ctx.WriteString(m.Ti.PrimaryCol.Name)
+			ctx.WriteString(`') AS INTEGER) AS "_gj_pkt"`)
+		}
+		if !d.SupportsLinearExecution() {
+			ctx.WriteString(` FROM _sg_input AS i`)
+		}
+        
+		ctx.WriteString(`) AS t`)
 	}
 }
 
+func (d *SQLiteDialect) RenderQueryPrefix(ctx Context, qc *qcode.QCode) {
+	if qc.Type != qcode.QTMutation {
+		return
+	}
+	// Group mutations by table
+	tableMutations := make(map[string][]int32)
+	for _, m := range qc.Mutates {
+		if m.Type == qcode.MTNone || m.Type == qcode.MTKeyword {
+			continue
+		}
+		tableMutations[m.Ti.Name] = append(tableMutations[m.Ti.Name], m.ID)
+	}
+
+    first := true
+	for table, ids := range tableMutations {
+		if !ctx.IsTableMutated(table) {
+			continue
+		}
+		
+		if first {
+			ctx.WriteString(`WITH `)
+			first = false
+		} else {
+			ctx.WriteString(`, `)
+		}
+
+		// Use the metadata from the first mutation for the table (schema, primary key)
+		// This assumes schema/pk is consistent for the table across mutations.
+		var m *qcode.Mutate
+		// Find 'm' for details
+		for _, mut := range qc.Mutates {
+			if mut.ID == ids[0] {
+				m = &mut
+				break
+			}
+		}
+
+		ctx.Quote(table)
+		ctx.WriteString(` AS (SELECT * FROM `)
+		if m.Ti.Schema != "" {
+			ctx.Quote(m.Ti.Schema)
+			ctx.WriteString(`.`)
+		}
+		ctx.Quote(table)
+		ctx.WriteString(` WHERE `)
+		ctx.Quote(m.Ti.PrimaryCol.Name)
+		ctx.WriteString(` IN (SELECT id FROM _gj_ids WHERE k LIKE '`)
+		ctx.WriteString(table)
+		ctx.WriteString(`_%')) `)
+	}
+}
+
+func (d *SQLiteDialect) SplitQuery(query string) (parts []string) {
+	var buf strings.Builder
+	var inStr, inQuote, inComment bool
+    var depth int
+
+    // Helper to check if we are at a keyword
+    isKeyword := func(q string, i int, kw string) bool {
+        if len(q)-i < len(kw) {
+            return false
+        }
+        // Check word match
+        if !strings.EqualFold(q[i:i+len(kw)], kw) {
+            return false
+        }
+        // Check boundaries
+        if i > 0 {
+            c := q[i-1]
+            if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' {
+                return false
+            }
+        }
+        if i+len(kw) < len(q) {
+            c := q[i+len(kw)]
+            if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' {
+                return false
+            }
+        }
+        return true
+    }
+
+	for i := 0; i < len(query); i++ {
+		c := query[i]
+
+		if inComment {
+			if c == '\n' {
+				inComment = false
+			}
+            // SQLite single-line comments don't end with semicolon technically, but graphjin gen might rely on it.
+            // Stick to standard newline termination for safety.
+			buf.WriteByte(c)
+			continue
+		}
+
+		if inStr {
+			if c == '\'' {
+				if i+1 < len(query) && query[i+1] == '\'' {
+					buf.WriteByte(c)
+					i++
+					buf.WriteByte(c)
+					continue
+				}
+				inStr = false
+			}
+			buf.WriteByte(c)
+			continue
+		}
+
+		if inQuote {
+			if c == '"' {
+				if i+1 < len(query) && query[i+1] == '"' {
+					buf.WriteByte(c)
+					i++
+					buf.WriteByte(c)
+					continue
+				}
+				inQuote = false
+			}
+			buf.WriteByte(c)
+			continue
+		}
+        
+        // Detect BEGIN/END for Triggers and Case statements (simple nesting)
+        // Only check if not in string/quote/comment
+        if c == 'B' || c == 'b' {
+            if isKeyword(query, i, "BEGIN") {
+                depth++
+            }
+        }
+        if c == 'E' || c == 'e' {
+            if isKeyword(query, i, "END") {
+                if depth > 0 {
+                    depth--
+                }
+            }
+        }
+
+		switch c {
+		case '\'':
+			inStr = true
+			buf.WriteByte(c)
+		case '"':
+			inQuote = true
+			buf.WriteByte(c)
+		case '-':
+			if i+1 < len(query) && query[i+1] == '-' {
+				inComment = true
+				buf.WriteByte(c)
+				i++
+				buf.WriteByte('-')
+			} else {
+				buf.WriteByte(c)
+			}
+		case ';':
+            // Only split if we are at depth 0 (not inside BEGIN...END)
+            if depth == 0 {
+			    q := strings.TrimSpace(buf.String())
+			    if q != "" {
+				    parts = append(parts, q)
+			    }
+			    buf.Reset()
+            } else {
+                buf.WriteByte(c)
+            }
+		default:
+			buf.WriteByte(c)
+		}
+	}
+	q := strings.TrimSpace(buf.String())
+	if q != "" {
+		parts = append(parts, q)
+	}
+	return parts
+}
+
+
+func (d *SQLiteDialect) RenderSetSessionVar(ctx Context, name, value string) bool {
+	return false
+}

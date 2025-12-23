@@ -1,5 +1,7 @@
 package dialect
 
+
+
 import (
 	"fmt"
 	"strconv"
@@ -665,3 +667,227 @@ func (d *OracleDialect) RenderSetSessionVar(ctx Context, name, value string) boo
 	ctx.WriteString(`')`)
 	return true
 }
+
+func (d *OracleDialect) RenderArray(ctx Context, items []string) {
+	// Oracle has no direct array literal syntax simple enough for this context, 
+	// unless PL/SQL or type constructor.
+	// But GraphJin uses JSON mainly.
+	// Use JSON_ARRAY(...)
+	ctx.WriteString(`JSON_ARRAY(`)
+	for i, item := range items {
+		if i != 0 {
+			ctx.WriteString(`, `)
+		}
+		ctx.WriteString(item)
+	}
+	ctx.WriteString(`)`)
+}
+func (d *OracleDialect) RenderTableName(ctx Context, sel *qcode.Select, schema, table string) {
+	if schema != "" {
+		ctx.Quote(schema)
+		ctx.WriteString(`.`)
+	}
+	ctx.Quote(table)
+}
+
+func (d *OracleDialect) RenderMutationInput(ctx Context, qc *qcode.QCode) {
+	ctx.WriteString(`WITH "_sg_input" AS (SELECT `)
+	ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+	ctx.WriteString(` AS j FROM DUAL)`)
+}
+
+func (d *OracleDialect) RenderMutationPostamble(ctx Context, qc *qcode.QCode) {
+	GenericRenderMutationPostamble(ctx, qc)
+}
+
+func (d *OracleDialect) getVarName(m qcode.Mutate) string {
+	return m.Ti.Name + "_" + fmt.Sprintf("%d", m.ID)
+}
+
+func (d *OracleDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderColVal func(qcode.MColumn)) {
+    ctx.WriteString("INSERT INTO ")
+	ctx.ColWithTable(m.Ti.Schema, m.Ti.Name)
+	ctx.WriteString(" (")
+	i := 0
+	for _, col := range m.Cols {
+		if i != 0 {
+			ctx.WriteString(", ")
+		}
+		ctx.Quote(col.Col.Name)
+		i++
+	}
+	for _, rcol := range m.RCols {
+		if i != 0 {
+			ctx.WriteString(", ")
+		}
+		ctx.Quote(rcol.Col.Name)
+		i++
+	}
+	ctx.WriteString(")")
+
+	if m.IsJSON {
+		ctx.WriteString(" SELECT ")
+	} else {
+		ctx.WriteString(" VALUES (")
+	}
+
+	i = 0
+	hasExplicitPK := false
+	for _, col := range m.Cols {
+		if i != 0 {
+			ctx.WriteString(", ")
+		}
+		renderColVal(col)
+		if col.Col.Name == m.Ti.PrimaryCol.Name {
+			hasExplicitPK = true
+		}
+		i++
+	}
+	for _, rcol := range m.RCols {
+		if i != 0 {
+			ctx.WriteString(", ")
+		}
+		found := false
+		for id := range m.DependsOn {
+			if qc.Mutates[id].Ti.Name == rcol.VCol.Table {
+				ctx.WriteString("v_")
+				ctx.WriteString(d.getVarName(qc.Mutates[id]))
+				found = true
+				break
+			}
+		}
+		if !found {
+			ctx.WriteString("NULL")
+		}
+		i++
+	}
+
+	if m.IsJSON {
+		ctx.WriteString(" FROM ")
+		d.RenderMutateToRecordSet(ctx, m, 0, func() {
+			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+		})
+	} else {
+		ctx.WriteString(")")
+	}
+
+	if !hasExplicitPK {
+		d.RenderIDCapture(ctx, varName)
+	}
+	ctx.WriteString("; ")
+}
+
+func (d *OracleDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderColVal func(qcode.MColumn), renderWhere func()) {
+    d.RenderUpdate(ctx, m, func() {
+		// Set
+		i := 0
+		for _, col := range m.Cols {
+			if i != 0 {
+				ctx.WriteString(", ")
+			}
+			ctx.ColWithTable(m.Ti.Name, col.Col.Name)
+			ctx.WriteString(" = ")
+			renderColVal(col)
+			i++
+		}
+		for _, rcol := range m.RCols {
+			if i != 0 {
+				ctx.WriteString(", ")
+			}
+			ctx.ColWithTable(m.Ti.Name, rcol.Col.Name)
+			ctx.WriteString(" = ")
+			
+			found := false
+			for id := range m.DependsOn {
+				if qc.Mutates[id].Ti.Name == rcol.VCol.Table {
+					ctx.WriteString("v_")
+					ctx.WriteString(d.getVarName(qc.Mutates[id]))
+					found = true
+					break
+				}
+			}
+			if !found {
+				ctx.WriteString("NULL")
+			}
+			i++
+		}
+		
+		if i == 0 {
+			ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
+			ctx.WriteString(" = ")
+			ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
+		}
+
+	}, func() {
+		// From
+		if m.IsJSON {
+			d.RenderMutateToRecordSet(ctx, m, 0, func() {
+				ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+			})
+		}
+	}, func() {
+		// Where
+		if m.IsJSON {
+			// Join with input
+            ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
+			ctx.WriteString(" = ")
+            ctx.Quote("t")
+            ctx.WriteString(".")
+			ctx.Quote(m.Ti.PrimaryCol.Name)
+			ctx.WriteString(" AND ")
+		}
+		renderWhere()
+	})
+	ctx.WriteString("; ")
+}
+
+func (d *OracleDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
+    // Oracle Connect: JSON_ARRAYAGG
+	ctx.WriteString(`SELECT JSON_ARRAYAGG(`)
+	ctx.ColWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
+	ctx.WriteString(`) INTO `)
+	d.RenderVar(ctx, varName)
+	
+	if m.IsJSON {
+		ctx.WriteString(` FROM `)
+		d.RenderMutateToRecordSet(ctx, m, 0, func() {
+			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+		})
+		ctx.WriteString(`, `)
+	} else {
+		ctx.WriteString(` FROM `)
+	}
+	ctx.Quote(m.Ti.Name)
+	ctx.WriteString(` WHERE `)
+	renderFilter()
+	ctx.WriteString("; ")
+}
+
+func (d *OracleDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
+     // Oracle Disconnect: JSON_ARRAYAGG
+	ctx.WriteString(`SELECT JSON_ARRAYAGG(`)
+	ctx.ColWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
+	ctx.WriteString(`) INTO `)
+	d.RenderVar(ctx, varName)
+	
+	if m.IsJSON {
+		ctx.WriteString(` FROM `)
+		d.RenderMutateToRecordSet(ctx, m, 0, func() {
+			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+		})
+		ctx.WriteString(`, `)
+	} else {
+		ctx.WriteString(` FROM `)
+	}
+	ctx.Quote(m.Ti.Name)
+	ctx.WriteString(` WHERE `)
+	renderFilter()
+	ctx.WriteString("; ")
+}
+
+
+func (d *OracleDialect) ModifySelectsForMutation(qc *qcode.QCode) {}
+
+func (d *OracleDialect) RenderQueryPrefix(ctx Context, qc *qcode.QCode) {}
+
+func (d *OracleDialect) SplitQuery(query string) (parts []string) { return []string{query} }

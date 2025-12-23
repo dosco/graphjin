@@ -15,7 +15,7 @@ import (
 type args struct {
 	json   []byte
 	values []interface{}
-	cindx  int // index of cursor arg
+	cindxs []int // indices of cursor arg
 }
 
 func (gj *graphjinEngine) argList(c context.Context,
@@ -24,7 +24,7 @@ func (gj *graphjinEngine) argList(c context.Context,
 	rc *RequestConfig,
 	buildJSON bool,
 ) (ar args, err error) {
-	ar = args{cindx: -1}
+	ar = args{}
 	params := md.Params()
 	vl := make([]interface{}, len(params))
 
@@ -73,7 +73,7 @@ func (gj *graphjinEngine) argList(c context.Context,
 			} else {
 				vl[i] = nil
 			}
-			ar.cindx = i
+			ar.cindxs = append(ar.cindxs, i)
 
 		default:
 			if v, ok := fields[p.Name]; ok {
@@ -88,6 +88,14 @@ func (gj *graphjinEngine) argList(c context.Context,
 
 				case p.Type == "json" && v[0] != '[' && v[0] != '{' && !varIsNull:
 					return ar, fmt.Errorf("variable '%s' should be an array or object", p.Name)
+				}
+				// For MySQL/MariaDB: wrap single JSON object in array for JSON_TABLE '$[*]' path
+				if p.WrapInArray && v[0] == '{' {
+					wrapped := make([]byte, 0, len(v)+2)
+					wrapped = append(wrapped, '[')
+					wrapped = append(wrapped, v...)
+					wrapped = append(wrapped, ']')
+					v = json.RawMessage(wrapped)
 				}
 				// For Oracle, JSON arrays/objects must be passed as strings
 				// because the godror driver doesn't handle json.RawMessage

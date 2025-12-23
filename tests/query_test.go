@@ -35,6 +35,9 @@ func Example_query() {
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
 		fmt.Println(err)
+		if dbType == "mariadb" {
+			fmt.Printf("DEBUG SQL:\n%s\n", res.SQL())
+		}
 	} else {
 		printJSON(res.Data)
 	}
@@ -80,12 +83,6 @@ func Example_queryInTransaction() {
 }
 
 func Example_queryJSONPathOperations() {
-	// Skip for Oracle: JSON path operators not yet fully supported
-	if dbType == "oracle" {
-		fmt.Println(`{"quotations":[{"id":1,"validity_period":{"expiry_date":"2024-10-15T03:03:16+0000","issue_date":"2024-09-15T03:03:16+0000","status":"active"}},{"id":3,"validity_period":{"expiry_date":"2024-10-10T03:03:16+0000","issue_date":"2024-09-10T03:03:16+0000","status":"expired"}}]}`)
-		return
-	}
-
 	// Test case for issue #519: JSON path filtering on nested objects
 	gql := `
 	query {
@@ -111,12 +108,6 @@ func Example_queryJSONPathOperations() {
 }
 
 func Example_queryJSONPathOperationsAlternativeSyntax() {
-	// Skip for Oracle: JSON path underscore syntax not yet supported
-	if dbType == "oracle" {
-		fmt.Println(`{"products":[{"id":2,"metadata":{"foo":true}},{"id":4,"metadata":{"foo":true}},{"id":6,"metadata":{"foo":true}},{"id":8,"metadata":{"foo":true}},{"id":10,"metadata":{"foo":true}},{"id":12,"metadata":{"foo":true}},{"id":14,"metadata":{"foo":true}},{"id":16,"metadata":{"foo":true}},{"id":18,"metadata":{"foo":true}},{"id":20,"metadata":{"foo":true}}]}`)
-		return
-	}
-
 	// Test case for issue #519: Alternative syntax using JSON path operator
 	// Using underscore syntax which gets transformed to JSON path
 	gql := `
@@ -143,12 +134,6 @@ func Example_queryJSONPathOperationsAlternativeSyntax() {
 }
 
 func Example_queryWithUser() {
-	// Skip for SQLite: uses core.UserIDKey which triggers current_setting()
-	if dbType == "sqlite" {
-		fmt.Println(`{"products":[{"id":31,"owner":{"id":31}}]}`)
-		return
-	}
-
 	gql := `
 	query {
 		products(where: { owner_id: { eq: $user_id } }) {
@@ -179,8 +164,8 @@ func Example_queryWithDynamicOrderBy() {
 	gql := `
 	query getProducts {
 		products(
-			order_by: $order, 
-			where: { id: { lt: 6 } }, 
+			order_by: $order,
+			where: { id: { lt: 6 } },
 			limit: 5,
 			before: $cursor) {
 			id
@@ -351,12 +336,6 @@ func Example_queryWithLimitOffsetOrderByDistinctAndWhere() {
 }
 
 func Example_queryWithWhere1() {
-	// Skip for Oracle: iregex operator uses ~* which is not supported in Oracle
-	if dbType == "oracle" {
-		fmt.Println(`{"products":[{"id":3},{"id":34}]}`)
-		return
-	}
-
 	gql := `query {
 		products(where: {
 			id: [3, 34],
@@ -479,12 +458,6 @@ func Example_queryWithWhereGreaterThanOrLesserThan() {
 }
 
 func Example_queryWithWhereOnRelatedTable() {
-	// Skip for SQLite: uses core.UserIDKey which triggers current_setting()
-	if dbType == "sqlite" {
-		fmt.Println(`{"products":[{"id":2,"owner":{"email":"user2@test.com","id":2}},{"id":3,"owner":{"email":"user3@test.com","id":3}}]}`)
-		return
-	}
-
 	gql := `query {
 		products(where: { owner: { id: { or: [ { eq: $user_id }, { eq: 3 } ] } } }, limit: 2) {
 			id
@@ -564,8 +537,7 @@ func Example_queryByID() {
 }
 
 func Example_queryBySearch() {
-	// Skip for SQLite and Oracle: full-text search not supported
-	if dbType == "sqlite" || dbType == "oracle" {
+	if dbType == "sqlite" {
 		fmt.Println(`{"products":[{"id":3,"name":"Product 3"}]}`)
 		return
 	}
@@ -833,12 +805,6 @@ func Example_queryWithFunctionsWithWhere() {
 }
 
 func Example_queryWithSyntheticTables() {
-	// Skip for SQLite: uses core.UserIDKey which triggers current_setting()
-	if dbType == "sqlite" {
-		fmt.Println(`{"me":{"email":"user1@test.com"}}`)
-		return
-	}
-
 	gql := `query {
 		me @object {
 			email
@@ -1162,12 +1128,6 @@ func Example_queryWithSkipAndIncludeDirective1() {
 }
 
 func Example_queryWithSkipAndIncludeDirective2() {
-	// Skip for SQLite: uses core.UserIDKey which triggers current_setting()
-	if dbType == "sqlite" {
-		fmt.Println(`{"products":[{"id":null,"name":"Product 1"},{"id":null,"name":"Product 2"}],"users":[{"id":null},{"id":null},{"id":null}]}`)
-		return
-	}
-
 	gql := `
 	query {
 		products(limit: 2, order_by: { id: asc })  {
@@ -1196,12 +1156,6 @@ func Example_queryWithSkipAndIncludeDirective2() {
 }
 
 func Example_queryWithSkipAndIncludeDirective3() {
-	// Skip for Oracle: directive + limit interaction returns fewer rows than expected
-	if dbType == "oracle" {
-		fmt.Println(`{"products":[{"id":1,"name":"Product 1"},{"id":2,"name":"Product 2"}],"users":null}`)
-		return
-	}
-
 	gql := `
 	query {
 		products(limit: 2, order_by: { id: asc }) @include(ifVar: $test) {
@@ -1287,12 +1241,6 @@ func Example_queryWithAddAndRemoveDirective1() {
 }
 
 func Example_queryWithAddAndRemoveDirective2() {
-	// Skip for Oracle: directive SQL generation issue
-	if dbType == "oracle" {
-		fmt.Println(`{"products":[{"id":1},{"id":2}],"users":[{},{},{}]}`)
-		return
-	}
-
 	gql := `
 	query {
 		products(limit: 2, order_by: { id: asc })  {
@@ -1522,12 +1470,6 @@ func Example_queryWithCursorPagination2() {
 }
 
 func Example_queryWithJsonColumn() {
-	// Skip for Oracle: JSON column relationships not yet supported
-	if dbType == "oracle" {
-		fmt.Println(`{"users":{"category_counts":[{"category":{"name":"Category 1"},"count":400},{"category":{"name":"Category 2"},"count":600}],"id":1}}`)
-		return
-	}
-
 	gql := `query {
 		users(id: 1) {
 			id
@@ -1602,12 +1544,6 @@ func Example_queryWithView() {
 }
 
 func Example_queryWithRecursiveRelationship1() {
-	// Skip for Oracle: recursive CTE identifier handling not yet supported
-	if dbType == "oracle" {
-		fmt.Println(`{"reply":{"comments":[{"id":49},{"id":48},{"id":47},{"id":46},{"id":45}],"id":50}}`)
-		return
-	}
-
 	gql := `query {
 		reply : comments(id: $id) {
 			id
@@ -1638,12 +1574,6 @@ func Example_queryWithRecursiveRelationship1() {
 }
 
 func Example_queryWithRecursiveRelationship2() {
-	// Skip for Oracle: recursive CTE identifier handling not yet supported
-	if dbType == "oracle" {
-		fmt.Println(`{"comments":{"id":95,"replies":[{"id":96},{"id":97},{"id":98},{"id":99},{"id":100}]}}`)
-		return
-	}
-
 	gql := `query {
 		comments(id: 95) {
 			id
@@ -1670,12 +1600,6 @@ func Example_queryWithRecursiveRelationship2() {
 }
 
 func Example_queryWithRecursiveRelationshipAndAggregations() {
-	// Skip for Oracle: recursive CTE identifier handling not yet supported
-	if dbType == "oracle" {
-		fmt.Println(`{"comments":{"id":95,"replies":[{"count_id":5}]}}`)
-		return
-	}
-
 	gql := `query {
 		comments(id: 95) {
 			id
@@ -1729,13 +1653,6 @@ func Example_queryWithSkippingAuthRequiredSelectors() {
 }
 
 func Example_queryBlockWithRoles() {
-	// Skip for SQLite: uses core.UserIDKey which triggers current_setting()
-	// Skip for Oracle: role-based block SQL generation issue
-	if dbType == "sqlite" || dbType == "oracle" {
-		fmt.Println(`{"users":null}`)
-		return
-	}
-
 	gql := `query {
 		users {
 			id
@@ -1804,12 +1721,6 @@ func Example_queryWithCamelToSnakeCase() {
 }
 
 func Example_queryWithWhereHasAnyKey() {
-	// Skip for Oracle: has_key_any operator not supported
-	if dbType == "oracle" {
-		fmt.Println(`{"products":[{"id":1},{"id":2},{"id":3}]}`)
-		return
-	}
-
 	gql := `query {
 		products(
 			where: { metadata: { has_key_any: ["foo", "bar"] } }
@@ -1836,12 +1747,6 @@ func Example_queryWithWhereHasAnyKey() {
 }
 
 func Example_queryWithTypename() {
-	// Skip for Oracle: __typename handling issue
-	if dbType == "oracle" {
-		fmt.Println(`{"__typename":"getUser","users":{"__typename":"users","email":"user1@test.com","id":1}}`)
-		return
-	}
-
 	gql := `query getUser {
 		__typename
 		users(id: 1) {

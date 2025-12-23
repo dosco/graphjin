@@ -52,9 +52,6 @@ func TestReadInConfigWithEnvVars(t *testing.T) {
 }
 
 func TestAPQ(t *testing.T) {
-	if dbType == "sqlite" {
-		t.Skip("skipping test for sqlite")
-	}
 
 	gql := `query getProducts {
 		products(id: 2) {
@@ -91,9 +88,6 @@ func TestAPQ(t *testing.T) {
 }
 
 func TestAllowList(t *testing.T) {
-	if dbType == "sqlite" {
-		t.Skip("skipping test for sqlite")
-	}
 
 	gql1 := `
 	query getProducts {
@@ -161,9 +155,6 @@ func TestAllowList(t *testing.T) {
 }
 
 func TestAllowListWithNamespace(t *testing.T) {
-	if dbType == "sqlite" {
-		t.Skip("skipping test for sqlite")
-	}
 
 	gql1 := `
 	fragment Product on products {
@@ -219,9 +210,6 @@ func TestAllowListWithNamespace(t *testing.T) {
 }
 
 func TestDisableProdSecurity(t *testing.T) {
-	if dbType == "sqlite" {
-		t.Skip("skipping test for sqlite")
-	}
 
 	gql1 := `
 	query getProducts {
@@ -275,9 +263,6 @@ func TestDisableProdSecurity(t *testing.T) {
 }
 
 func TestEnableSchema(t *testing.T) {
-	if dbType == "sqlite" {
-		t.Skip("skipping test for sqlite")
-	}
 
 	gql := `
 	fragment Product on products {
@@ -326,8 +311,8 @@ func TestEnableSchema(t *testing.T) {
 }
 
 func TestConfigReuse(t *testing.T) {
-	if dbType == "sqlite" || dbType == "oracle" {
-		t.Skip("skipping test for sqlite and oracle")
+	if dbType == "oracle" {
+		t.Skip("skipping test for oracle")
 	}
 
 	gql := `query {
@@ -378,9 +363,6 @@ func TestConfigRoleManagement(t *testing.T) {
 }
 
 func TestParallelRuns(t *testing.T) {
-	if dbType == "sqlite" {
-		t.Skip("skipping test for sqlite")
-	}
 
 	gql := `query {
 		me {

@@ -53,8 +53,8 @@ type mval struct {
 type minfo struct {
 	dh     [sha256.Size]byte
 	values []interface{}
-	// index of cursor value in the arguments array
-	cindx int
+	// indices of cursor value in the arguments array
+	cindxs []int
 }
 
 type mmsg struct {
@@ -72,8 +72,8 @@ type Member struct {
 	id     uint64
 	vl     []interface{}
 	mm     mmsg
-	// index of cursor value in the arguments array
-	cindx int
+	// indices of cursor value in the arguments array
+	cindxs []int
 }
 
 // Subscribe function is called on the GraphJin struct to subscribe to query.
@@ -200,7 +200,7 @@ func (gj *graphjinEngine) subscribe(c context.Context, r GraphqlReq) (
 			sub:    sub,
 			vl:     args.values,
 			params: args.json,
-			cindx:  args.cindx,
+			cindxs: args.cindxs,
 		}
 
 		m.mm, err = gj.subFirstQuery(sub, m)
@@ -281,22 +281,24 @@ func (gj *graphjinEngine) subController(sub *sub) {
 
 // addMember function is called on the sub struct to add a member.
 func (s *sub) addMember(m *Member) error {
-	mi := minfo{cindx: m.cindx}
-	if mi.cindx != -1 {
+	mi := minfo{cindxs: m.cindxs}
+	if len(mi.cindxs) != 0 {
 		mi.values = m.vl
 	}
 	mi.dh = m.mm.dh
 
-	// if cindex is not -1 then this query contains
+	// if cindices is not empty then this query contains
 	// a cursor that must be updated with the new
 	// cursor value so subscriptions can paginate.
-	if mi.cindx != -1 && m.mm.cursor != "" {
-		mi.values[mi.cindx] = m.mm.cursor
+	if len(mi.cindxs) != 0 && m.mm.cursor != "" {
+		for _, idx := range mi.cindxs {
+			mi.values[idx] = m.mm.cursor
+		}
 
 		// values is a pre-generated json value that
 		// must be re-created.
 		if v, err := json.Marshal(mi.values); err != nil {
-			return nil
+			return err
 		} else {
 			m.params = v
 		}
@@ -337,22 +339,17 @@ func (s *sub) updateMember(msg mmsg) error {
 		return nil
 	}
 
-	s.mi[i].dh = msg.dh
-
-	// if cindex is not -1 then this query contains
-	// a cursor that must be updated with the new
-	// cursor value so subscriptions can paginate.
-	if s.mi[i].cindx != -1 && msg.cursor != "" {
-		s.mi[i].values[s.mi[i].cindx] = msg.cursor
-
-		// values is a pre-generated json value that
-		// must be re-created.
-		if v, err := json.Marshal(s.mi[i].values); err != nil {
-			return nil
-		} else {
-			s.params[i] = v
+	if len(s.mi[i].cindxs) != 0 && msg.cursor != "" {
+		for _, idx := range s.mi[i].cindxs {
+			s.mi[i].values[idx] = msg.cursor
 		}
+		v, err := json.Marshal(s.mi[i].values)
+		if err != nil {
+			return err
+		}
+		s.params[i] = v
 	}
+	s.mi[i].dh = msg.dh
 	return nil
 }
 
@@ -499,7 +496,7 @@ func (gj *graphjinEngine) subFirstQuery(sub *sub, m *Member) (mmsg, error) {
 
 	mm, err = gj.subNotifyMemberEx(sub,
 		[32]byte{},
-		m.cindx,
+		m.cindxs,
 		m.id,
 		m.Result, js, false)
 
@@ -510,7 +507,7 @@ func (gj *graphjinEngine) subFirstQuery(sub *sub, m *Member) (mmsg, error) {
 func (gj *graphjinEngine) subNotifyMember(s *sub, mv mval, j int, js json.RawMessage) {
 	_, err := gj.subNotifyMemberEx(s,
 		mv.mi[j].dh,
-		mv.mi[j].cindx,
+		mv.mi[j].cindxs,
 		mv.ids[j],
 		mv.res[j], js, true)
 	if err != nil {
@@ -520,9 +517,9 @@ func (gj *graphjinEngine) subNotifyMember(s *sub, mv mval, j int, js json.RawMes
 
 // subNotifyMemberEx function is called on the graphjin struct to notify a member.
 func (gj *graphjinEngine) subNotifyMemberEx(sub *sub,
-	dh [32]byte, cindx int, id uint64, rc chan *Result, js json.RawMessage, update bool,
-) (mmsg, error) {
-	mm := mmsg{id: id}
+	dh [32]byte, cindxs []int, id uint64, rc chan *Result, js json.RawMessage, update bool,
+) (mm mmsg, err error) {
+	mm = mmsg{id: id}
 
 	mm.dh = sha256.Sum256(js)
 	if dh == mm.dh {
@@ -541,12 +538,12 @@ func (gj *graphjinEngine) subNotifyMemberEx(sub *sub,
 		nonce[:],
 		gj.encryptionKey)
 	if err != nil {
-		return mm, fmt.Errorf(errSubs, "cursor", err)
+		return mm, err
 	}
 
 	// we're expecting a cursor but the cursor was null
 	// so we skip this one.
-	if cindx != -1 && mm.cursor == "" {
+	if len(cindxs) != 0 && mm.cursor == "" {
 		return mm, nil
 	}
 
@@ -584,6 +581,8 @@ func renderSubWrap(st stmt, ct string) string {
 		d = &dialect.MySQLDialect{}
 	case "oracle":
 		d = &dialect.OracleDialect{}
+	case "sqlite":
+		d = &dialect.SQLiteDialect{}
 	default:
 		d = &dialect.PostgresDialect{}
 	}
@@ -639,6 +638,7 @@ func (c *stringContext) ColWithTable(table, col string) {
 	c.Quote(col)
 }
 func (c *stringContext) RenderJSONFields(sel *qcode.Select) {}
+func (c *stringContext) IsTableMutated(table string) bool  { return false }
 
 // renderJSONArray function is called on the graphjin struct to render a json array.
 func renderJSONArray(v []json.RawMessage) json.RawMessage {

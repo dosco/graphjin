@@ -1,4 +1,4 @@
-//go:build !mysql && !sqlite
+//go:build !mysql && !mariadb && !sqlite
 
 package tests_test
 
@@ -245,12 +245,6 @@ func Example_queryWithFunctionReturingTablesWithNamedArgs() {
 }
 
 func Example_queryWithFunctionReturingUserDefinedTypes() {
-	// Skip for Oracle: user-defined type function returns not yet fully supported
-	if dbType == "oracle" {
-		fmt.Println(`{"get_product":[{"id":1,"name":"Product 1"},{"id":2,"name":"Product 2"}]}`)
-		return
-	}
-
 	gql := `query {
 		get_product(limit: 2, args: { a0: 1 }) {
 			id

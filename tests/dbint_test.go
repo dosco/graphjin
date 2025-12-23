@@ -156,6 +156,65 @@ func TestMain(m *testing.M) {
 			},
 		},
 		{
+			name:   "mariadb",
+			driver: "mysql", // MariaDB uses MySQL wire protocol
+			startFunc: func(ctx context.Context) (func(context.Context) error, string, error) {
+				// Use GenericContainer instead of mysql.Run because the MySQL helper
+				// has a wait strategy that doesn't recognize MariaDB's log format
+				req := testcontainers.GenericContainerRequest{
+					ContainerRequest: testcontainers.ContainerRequest{
+						Image:        "mariadb:10.11",
+						ExposedPorts: []string{"3306/tcp"},
+						Env: map[string]string{
+							"MYSQL_ROOT_PASSWORD": "root",
+							"MYSQL_DATABASE":      "db",
+							"MYSQL_USER":          "user",
+							"MYSQL_PASSWORD":      "user",
+						},
+						WaitingFor: wait.ForLog("ready for connections").WithStartupTimeout(120 * time.Second),
+					},
+					Started: true,
+				}
+				container, err := testcontainers.GenericContainer(ctx, req)
+				if err != nil {
+					return nil, "", err
+				}
+
+				host, _ := container.Host(ctx)
+				port, _ := container.MappedPort(ctx, "3306")
+
+				connStr := fmt.Sprintf("user:user@tcp(%s:%s)/db?multiStatements=true&parseTime=true&interpolateParams=true",
+					host, port.Port())
+
+				// Wait for database to be fully ready and initialize with mariadb.sql script
+				var initDB *sql.DB
+				for i := 0; i < 30; i++ {
+					initDB, err = sql.Open("mysql", connStr)
+					if err == nil {
+						if err = initDB.Ping(); err == nil {
+							break
+						}
+						initDB.Close()
+					}
+					time.Sleep(500 * time.Millisecond)
+				}
+				if err != nil {
+					return nil, "", fmt.Errorf("failed to connect to mariadb: %w", err)
+				}
+				defer initDB.Close()
+
+				script, err := os.ReadFile("./mariadb.sql")
+				if err != nil {
+					return nil, "", err
+				}
+				if _, err := initDB.Exec(string(script)); err != nil {
+					return nil, "", fmt.Errorf("failed to init mariadb: %w", err)
+				}
+
+				return container.Terminate, connStr, nil
+			},
+		},
+		{
 			name:   "sqlite",
 			driver: "sqlite3_regexp",
 			startFunc: func(ctx context.Context) (func(context.Context) error, string, error) {

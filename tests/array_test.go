@@ -1,4 +1,4 @@
-//go:build !mysql && !sqlite
+//go:build !mysql && !mariadb && !sqlite
 
 package tests_test
 
@@ -12,7 +12,7 @@ import (
 )
 
 func TestQueryParentAndChildrenViaArrayColumn(t *testing.T) {
-	if dbType == "sqlite" || dbType == "mysql" || dbType == "oracle" {
+	if dbType == "sqlite" || dbType == "mysql" || dbType == "mariadb" || dbType == "oracle" {
 		t.Skip("skipping test for sqlite, mysql, and oracle (array column joins not yet supported)")
 	}
 
@@ -59,7 +59,7 @@ func TestQueryParentAndChildrenViaArrayColumn(t *testing.T) {
 }
 
 func TestInsertIntoTableAndConnectToRelatedTableWithArrayColumn(t *testing.T) {
-	if dbType == "sqlite" || dbType == "mysql" || dbType == "oracle" {
+	if dbType == "sqlite" || dbType == "mysql" || dbType == "mariadb" || dbType == "oracle" {
 		t.Skip("skipping test for sqlite, mysql, and oracle (array column joins not yet supported)")
 	}
 

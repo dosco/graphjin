@@ -547,17 +547,18 @@ func (co *Compiler) addTablesAndColumns(m *Mutate, items []Mutate, data *graph.N
 		}
 
 	case MTUpdate:
-		if m.Rel.Type == sdata.RelOneToMany {
+		// For updates, the parent MUST execute before the child
+		// if they are linked, so the child can use the parent's ID in its WHERE clause.
+		if m.ParentID != -1 {
 			m.DependsOn[m.ParentID] = struct{}{}
+		}
+
+		if m.Rel.Type == sdata.RelOneToMany {
 			m.RCols = append(m.RCols, MRColumn{
 				Col:  m.Rel.Left.Col,
 				VCol: m.Rel.Right.Col,
 			})
 			cm[m.Rel.Left.Col.Name] = struct{}{}
-		}
-
-		if m.Rel.Type == sdata.RelOneToOne {
-			m.DependsOn[m.ParentID] = struct{}{}
 		}
 
 	default:

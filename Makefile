@@ -20,7 +20,7 @@ BUILD_FLAGS ?= -ldflags '-s -w -X "main.version=${BUILD_VERSION}" -X "main.commi
 tidy:
 	@find . -name "go.mod" -execdir go mod tidy \;
 
-test: test-postgres test-mysql test-sqlite test-oracle
+test: test-postgres test-mysql test-mariadb test-sqlite test-oracle
 	@go test -v -race $(PACKAGES)
 
 test-postgres:
@@ -30,6 +30,10 @@ test-postgres:
 test-mysql:
 	@echo "Running MySQL tests..."
 	@cd tests; go test -v -timeout 30m -race -db=mysql -tags mysql .
+
+test-mariadb:
+	@echo "Running MariaDB tests..."
+	@cd tests; go test -v -timeout 30m -race -db=mariadb -tags mariadb .
 
 test-sqlite:
 	@echo "Running SQLite tests..."

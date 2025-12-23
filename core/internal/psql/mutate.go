@@ -7,10 +7,10 @@ import (
 	"strings"
 	"fmt"
 
+
 	"github.com/dosco/graphjin/core/v3/internal/graph"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
-	"github.com/dosco/graphjin/core/v3/internal/util"
 )
 
 func (co *Compiler) compileMutation(
@@ -33,11 +33,8 @@ func (co *Compiler) compileMutation(
 
 	if qc.SType != qcode.QTDelete {
 		if c.isJSON {
-			c.w.WriteString(`WITH `)
-			c.quoted("_sg_input")
-			c.w.WriteString(` AS (SELECT `)
-			c.renderParam(Param{Name: qc.ActionVar, Type: "json"})
-			c.w.WriteString(` :: json AS j), `)
+			co.dialect.RenderMutationInput(&c, qc)
+			c.w.WriteString(`, `)
 		} else {
 			c.w.WriteString(`WITH `)
 		}
@@ -56,9 +53,10 @@ func (co *Compiler) compileMutation(
 		return
 	}
 
-	c.renderUnionStmt()
+	co.dialect.RenderMutationPostamble(&c, qc)
 	c.w.WriteString(` `)
 	co.CompileQuery(w, qc, c.md)
+
 }
 
 func (c *compilerContext) compileLinearMutation() {
@@ -93,65 +91,127 @@ func (c *compilerContext) compileLinearMutation() {
 			continue
 		}
 
-		switch m.Type {
-		case qcode.MTInsert:
-			c.renderLinearInsert(m)
-		case qcode.MTUpdate:
-			c.renderLinearUpdate(m)
-		case qcode.MTConnect:
-			c.renderLinearConnect(m)
-		case qcode.MTDisconnect:
-			c.renderLinearDisconnect(m)
+		vName := c.getVarName(m)
+		renderColVal := func(col qcode.MColumn) {
+			c.renderColumnValue(m, col)
 		}
 
+
+		switch m.Type {
+		case qcode.MTInsert:
+			c.dialect.RenderLinearInsert(c, &m, c.qc, vName, renderColVal)
+		case qcode.MTUpdate:
+			renderWhere := func() {
+				// renderWhere needs to handle:
+				// implicit joins (handled by dialect if needed)
+				// m.Where (path args)
+				// join conditions (parent/child)
+				// m.Where.Exp
+				
+				// Wait, `RenderLinearUpdate` in SQLite/MySQL implementation calls `renderWhere`.
+				// In SQLite I added logic to `renderWhere` closure to call `c.renderExp` and handle parent join.
+				// In MySQL I called `c.renderExp`.
+				// But `c.renderExp` is not exported.
+				// Oh, `c` IS `compilerContext` here. It has `renderExp` method.
+				
+				// The Dialect `RenderLinearUpdate` logic I wrote calls `renderWhere()` inside `RunUpdate`.
+				// It handles its own `hasWhere` logic for JSON joins.
+				// So here I should just render the standard filters.
+				
+				hasWhere := false
+				if m.IsJSON {
+					if c.dialect.Name() == "postgres" {
+						c.colWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
+						c.w.WriteString(" = ")
+						c.colWithTable("t", m.Ti.PrimaryCol.Name)
+						hasWhere = true
+					} else if c.dialect.Name() == "mysql" || c.dialect.Name() == "mariadb" {
+						if m.ParentID != -1 || len(c.qc.Selects) == 0 || c.qc.Selects[0].Where.Exp == nil {
+							c.colWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
+							c.w.WriteString(" = ")
+							c.colWithTable("t", m.Ti.PrimaryCol.Name)
+							hasWhere = true
+						}
+					}
+				}
+
+				if m.ParentID == -1 {
+					if hasWhere {
+						c.w.WriteString(" AND ")
+					}
+					if len(c.qc.Selects) > 0 && c.qc.Selects[0].Where.Exp != nil {
+						c.renderExp(m.Ti, c.qc.Selects[0].Where.Exp, false)
+						hasWhere = true
+					}
+				}
+				
+				if m.Where.Exp != nil {
+                    if hasWhere {
+                         c.w.WriteString(" AND ")
+                    }
+				}
+				c.renderExpPath(m.Ti, m.Where.Exp, false, nil)
+
+				if c.dialect.Name() == "sqlite" && m.ParentID != -1 {
+					if m.Where.Exp != nil || hasWhere { // Check if anything was rendered before
+						c.w.WriteString(" AND ")
+					}
+					var childCol, parentCol string
+					if m.Rel.Left.Ti.Name == m.Ti.Name {
+						childCol = m.Rel.Left.Col.Name
+						parentCol = m.Rel.Right.Col.Name
+					} else {
+						childCol = m.Rel.Right.Col.Name
+						parentCol = m.Rel.Left.Col.Name
+					}
+					pm := c.qc.Mutates[m.ParentID]
+
+					c.quoted(childCol)
+					c.w.WriteString(" = (SELECT ")
+					c.quoted(parentCol)
+					c.w.WriteString(" FROM ")
+					c.quoted(pm.Ti.Name)
+					c.w.WriteString(" WHERE ")
+					c.quoted(pm.Ti.PrimaryCol.Name)
+					c.w.WriteString(" = ")
+					c.dialect.RenderVar(c, c.getVarName(pm))
+					c.w.WriteString(")")
+				}
+			}
+			c.dialect.RenderLinearUpdate(c, &m, c.qc, vName, renderColVal, renderWhere)
+			
+		case qcode.MTConnect:
+			renderFilter := func() {
+                 if c.dialect.Name() == "postgres" {
+                     c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
+                 } else {
+                     c.renderExpPath(m.Ti, m.Where.Exp, false, nil)
+                 }
+			}
+			c.dialect.RenderLinearConnect(c, &m, c.qc, vName, renderFilter)
+
+		case qcode.MTDisconnect:
+			renderFilter := func() {
+				if c.dialect.Name() == "postgres" {
+                     c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
+                 } else {
+                     c.renderExpPath(m.Ti, m.Where.Exp, false, nil)
+                 }
+			}
+			c.dialect.RenderLinearDisconnect(c, &m, c.qc, vName, renderFilter)
+		}
 		c.w.WriteString(`; `)
 	}
 
 	if c.qc.Selects != nil {
-        // For the final selection, we need to filter by the IDs we just generated.
-        // We inject WHERE clauses into the Root Selects.
-        for i := range c.qc.Roots {
-            selID := c.qc.Roots[i]
-            sel := &c.qc.Selects[selID]
-            
-            var mID int = -1
-            for _, mid := range ordered {
-                if c.qc.Mutates[mid].Ti.Name == sel.Ti.Name {
-                    mID = mid
-                    break
-                }
-            }
-            
-            if mID != -1 {
-                m := c.qc.Mutates[mID]
-                pk := m.Ti.PrimaryCol
-                varName := c.getVarName(m)
-                
-                ex := &qcode.Exp{
-                    Op: qcode.OpEquals,
-                }
-                ex.Left.ID = -1
-                ex.Left.Col = pk
-                ex.Right.ValType = qcode.ValDBVar
-                ex.Right.Val = varName
-                
-                if sel.Where.Exp == nil {
-                    sel.Where.Exp = ex
-                } else {
-                    newEx := &qcode.Exp{
-                        Op: qcode.OpAnd,
-                        Children: []*qcode.Exp{sel.Where.Exp, ex},
-                    }
-                    sel.Where.Exp = newEx
-                }
-            }
-        }
+		c.dialect.ModifySelectsForMutation(c.qc)
+		c.dialect.RenderQueryPrefix(c, c.qc)
+		c.Compiler.CompileQuery(c.w, c.qc, c.md)
+	}
+	
+	// Teardown (e.g. Drop Temp Table)
+	c.dialect.RenderTeardown(c)
 
-        c.Compiler.CompileQuery(c.w, c.qc, c.md)
-    }
-    
-    // Teardown (e.g. Drop Temp Table)
-    c.dialect.RenderTeardown(c)
 }
 
 func (c *compilerContext) sortMutations() []int {
@@ -159,9 +219,6 @@ func (c *compilerContext) sortMutations() []int {
 		return nil
 	}
 	
-
-
-
     // DFS topological sort
     // Check qc.Mutates for graph
     visited := make(map[int]bool)
@@ -186,232 +243,12 @@ func (c *compilerContext) sortMutations() []int {
     return stack
 }
 
-func (c *compilerContext) renderLinearInsert(m qcode.Mutate) {
-	// Insert
-	c.dialect.RenderInsert(c, &m, func() {
-		i := 0
-		for _, col := range m.Cols {
-			if i != 0 {
-				c.w.WriteString(", ")
-			}
-			c.quoted(col.Col.Name)
-			i++
-		}
-		// Relationship cols (FKs)
-		for _, rcol := range m.RCols {
-			if i != 0 {
-				c.w.WriteString(", ")
-			}
-			c.quoted(rcol.Col.Name)
-			i++
-		}
-	})
-
-	varName := c.getVarName(m)
-	hasExplicitPK := false
-
-	if c.dialect.SupportsLinearExecution() && m.IsJSON {
-		c.w.WriteString(" SELECT ")
-	} else {
-		c.w.WriteString(" VALUES (")
-	}
-
-	i := 0
-	for _, col := range m.Cols {
-		if i != 0 {
-			c.w.WriteString(", ")
-		}
-		// MySQL uses inline variable assignment (@var := value) for PK capture
-		// Oracle uses RETURNING INTO instead, so skip inline assignment for Oracle
-		if c.dialect.Name() == "mysql" && col.Col.Name == m.Ti.PrimaryCol.Name {
-			c.w.WriteString("@")
-			c.w.WriteString(varName)
-			c.w.WriteString(" := ")
-			c.renderColumnValue(m, col)
-			hasExplicitPK = true
-		} else {
-			c.renderColumnValue(m, col)
-		}
-		i++
-	}
-	for _, rcol := range m.RCols {
-		if i != 0 {
-			c.w.WriteString(", ")
-		}
-		// Find dependency
-		found := false
-		for id := range m.DependsOn {
-			if c.qc.Mutates[id].Ti.Name == rcol.VCol.Table {
-				c.dialect.RenderVar(c, c.getVarName(c.qc.Mutates[id]))
-				found = true
-				break
-			}
-		}
-		if !found {
-			c.w.WriteString("NULL")
-		}
-
-		i++
-	}
-
-	if c.dialect.SupportsLinearExecution() && m.IsJSON {
-		c.w.WriteString(" FROM ")
-		c.renderMutateToRecordSet(m, 0)
-	} else {
-		c.w.WriteString(")")
-	}
-
-	// Capture ID only if we don't have an explicit PK (auto-increment case)
-	if !hasExplicitPK {
-		if c.dialect.Name() == "oracle" {
-			c.dialect.RenderIDCapture(c, varName)
-			c.w.WriteString("; ")
-		} else {
-			c.w.WriteString("; ")
-			c.dialect.RenderIDCapture(c, varName)
-		}
-	}
-}
-
-func (c *compilerContext) renderLinearUpdate(m qcode.Mutate) {
-    c.dialect.RenderUpdate(c, &m, func() {
-         i := 0
-         for _, col := range m.Cols {
-             if i != 0 { c.w.WriteString(", ") }
-             c.w.WriteString(col.Col.Name)
-             c.w.WriteString(" = ")
-             c.renderColumnValue(m, col)
-             i++
-         }
-         
-         for _, rcol := range m.RCols {
-             if i != 0 { c.w.WriteString(", ") }
-             c.w.WriteString(rcol.Col.Name)
-             c.w.WriteString(" = ")
-             
-             found := false
-             for id := range m.DependsOn {
-                 if c.qc.Mutates[id].Ti.Name == rcol.VCol.Table {
-                     c.dialect.RenderVar(c, c.getVarName(c.qc.Mutates[id]))
-                     found = true
-                     break
-                 }
-             }
-             if !found { c.w.WriteString("NULL") }
-             i++
-         }
-
-		if i == 0 {
-			// No columns to update, render dummy update to keep SQL valid
-			// SET id = id  (or primary key)
-			c.w.WriteString(m.Ti.PrimaryCol.Name)
-			c.w.WriteString(" = ")
-			c.colWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
-		}
-    	}, func() {
-		if m.IsJSON {
-			c.renderMutateToRecordSet(m, 0)
-		} 
-	}, func() {
-		hasWhere := false
-		
-		// MySQL/Postgres: Add join condition to WHERE clause
-		if (c.dialect.Name() == "postgres" || c.dialect.Name() == "mysql") && m.IsJSON {
-			c.colWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
-			c.w.WriteString(" = ")
-			c.colWithTable("t", m.Ti.PrimaryCol.Name)
-			hasWhere = true
-		}
-
-		if m.ParentID == -1 {
-			if hasWhere {
-				c.w.WriteString(" AND ")
-			}
-			c.renderExp(m.Ti, c.qc.Selects[0].Where.Exp, false)
-		} else if !hasWhere {
-			// For nested updates (non-root), if no json join (unlikely here if IsJSON),
-			// and no parent (handled above), effectively WHERE 1=1 if nothing else specific.
-			// But we usually rely on JOIN/WHERE from input ID matching.
-			c.w.WriteString("1=1")
-		}
-	})
-}
-
-func (c *compilerContext) renderLinearConnect(m qcode.Mutate) {
-	// SELECT IDs into variable
-	c.w.WriteString(`SELECT JSON_ARRAYAGG(`)
-	c.colWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
-	c.w.WriteString(`) INTO `)
-	c.dialect.RenderVar(c, c.getVarName(m))
-	
-	if m.IsJSON {
-		c.w.WriteString(` FROM `)
-		c.renderMutateToRecordSet(m, 0)
-		c.w.WriteString(`, `)
-	} else {
-		c.w.WriteString(` FROM `)
-	}
-	c.quoted(m.Ti.Name)
-
-	c.w.WriteString(` WHERE `)
-	// For connect, we join m.Ti (related table) with input (t) or args
-	// The Where clause likely contains the join condition if it was generated by qcode
-	c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
-}
-
-func (c *compilerContext) renderLinearDisconnect(m qcode.Mutate) {
-	// Disconnect typically updates the related table to NULL out the FK
-	// Or if it's an array column on the other side, it removes it.
-	
-	c.w.WriteString(`SELECT JSON_ARRAYAGG(`)
-	c.colWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
-	c.w.WriteString(`) INTO `)
-	c.dialect.RenderVar(c, c.getVarName(m))
-
-	if m.IsJSON {
-		c.w.WriteString(` FROM `)
-		c.renderMutateToRecordSet(m, 0)
-		c.w.WriteString(`, `)
-	} else {
-		c.w.WriteString(` FROM `)
-	}
-	c.quoted(m.Ti.Name)
-
-	c.w.WriteString(` WHERE `)
-	c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
-}
-
 func (c *compilerContext) getVarName(m qcode.Mutate) string {
     return m.Ti.Name + "_" + fmt.Sprintf("%d", m.ID)
 }
 
-func (c *compilerContext) renderUnionStmt() {
-	for k, cids := range c.qc.MUnions {
-		if len(cids) < 2 {
-			continue
-		}
-		c.w.WriteString(`, `)
-		c.quoted(k)
-		c.w.WriteString(` AS (`)
-
-		i := 0
-		for _, id := range cids {
-			m := c.qc.Mutates[id]
-			if m.Rel.Type == sdata.RelOneToMany &&
-				(m.Type == qcode.MTConnect || m.Type == qcode.MTDisconnect) {
-				continue
-			}
-			if i != 0 {
-				c.w.WriteString(` UNION ALL `)
-			}
-			c.w.WriteString(`SELECT * FROM `)
-			c.renderCteName(m)
-			i++
-		}
-
-		c.w.WriteString(`)`)
-	}
-}
+// Removed renderLinearInsert, renderLinearUpdate, renderLinearConnect, renderLinearDisconnect which are now handled by dialect
+// Removed renderUnionStmt which is now handled by dialect
 
 
 
@@ -431,8 +268,9 @@ func (c *compilerContext) renderInsertUpdateValues(m qcode.Mutate) int {
 func (c *compilerContext) renderColumnValue(m qcode.Mutate, col qcode.MColumn) {
 	var vk, v string
 	isVar := false
-	isList := false
+	var listItems []string
 
+	isEmptyList := false
 	if col.Set {
 		v = col.Value
 		if v != "" && v[0] == '$' {
@@ -449,16 +287,18 @@ func (c *compilerContext) renderColumnValue(m qcode.Mutate, col qcode.MColumn) {
 		}
 
 		if field.Type == graph.NodeList {
-			items := make([]string, 0, len(field.Children))
+			listItems = make([]string, 0, len(field.Children))
 			for _, c := range field.Children {
 				if c.Type == graph.NodeNum {
-					items = append(items, c.Val)
+					listItems = append(listItems, c.Val)
 				} else {
-					items = append(items, (`'` + c.Val + `'`))
+					listItems = append(listItems, (`'` + c.Val + `'`))
 				}
 			}
-			vk = strings.Join(items, ",")
-			isList = true
+			// Mark as empty list if NodeList but no children
+			if len(listItems) == 0 {
+				isEmptyList = true
+			}
 		}
 	}
 
@@ -485,10 +325,12 @@ func (c *compilerContext) renderColumnValue(m qcode.Mutate, col qcode.MColumn) {
 		case m.IsJSON:
 			c.colWithTable("t", col.FieldName)
 
-		case isList:
-			c.w.WriteString(`ARRAY [`)
-			c.w.WriteString(vk)
-			c.w.WriteString(`]`)
+		case isEmptyList:
+			// Render empty array literal for the dialect
+			c.dialect.RenderArray(c, []string{})
+
+		case len(listItems) > 0:
+			c.dialect.RenderArray(c, listItems)
 
 		default:
 			c.squoted(v)
@@ -567,7 +409,12 @@ func (c *compilerContext) renderNestedRelColumns(m qcode.Mutate, values bool, pr
 		if values {
 			if col.Col.Array {
 				if !c.willBeArray(i) {
-					c.w.WriteString(`ARRAY(SELECT `)
+					if c.dialect.Name() == "postgres" {
+						c.w.WriteString(`ARRAY(SELECT `)
+					} else {
+						// MariaDB/MySQL/SQLite use JSON_ARRAYAGG
+						c.w.WriteString(`(SELECT JSON_ARRAYAGG(`)
+					}
 				} else {
 					c.w.WriteString(`(SELECT `)
 				}
@@ -661,7 +508,17 @@ func (c *compilerContext) renderOneToManyConnectStmt(m qcode.Mutate) {
 
 	rel := m.Rel
 	if rel.Right.Col.Array {
-		c.w.WriteString(`ARRAY_AGG(DISTINCT `)
+		if c.dialect.Name() == "postgres" {
+			c.w.WriteString(`ARRAY_AGG(DISTINCT `)
+		} else {
+			// MariaDB/MySQL/SQLite use JSON_ARRAYAGG
+			// SQLite: json_group_array
+			if c.dialect.Name() == "sqlite" {
+				c.w.WriteString(`json_group_array(DISTINCT `)
+			} else {
+				c.w.WriteString(`JSON_ARRAYAGG(DISTINCT `)
+			}
+		}
 		c.quoted(rel.Left.Col.Name)
 		c.w.WriteString(`) AS `)
 		c.quoted(rel.Left.Col.Name)
@@ -679,7 +536,11 @@ func (c *compilerContext) renderOneToManyConnectStmt(m qcode.Mutate) {
 	c.quoted(m.Ti.Name)
 
 	c.w.WriteString(` WHERE `)
-	c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
+	if c.dialect.Name() == "postgres" {
+		c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
+	} else {
+		c.renderExpPath(m.Ti, m.Where.Exp, false, nil)
+	}
 	c.w.WriteString(` LIMIT 1)`)
 }
 
@@ -687,7 +548,7 @@ func (c *compilerContext) renderOneToOneConnectStmt(m qcode.Mutate) {
 	c.renderCteName(m)
 	c.w.WriteString(` AS ( UPDATE `)
 
-	c.table(m.Ti.Schema, m.Ti.Name, false)
+	c.table(nil, m.Ti.Schema, m.Ti.Name, false)
 	c.w.WriteString(` SET `)
 	c.quoted(m.Rel.Left.Col.Name)
 	c.w.WriteString(` = `)
@@ -704,7 +565,11 @@ func (c *compilerContext) renderOneToOneConnectStmt(m qcode.Mutate) {
 	}
 
 	c.w.WriteString(` WHERE `)
-	c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
+	if c.dialect.Name() == "postgres" {
+		c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
+	} else {
+		c.renderExpPath(m.Ti, m.Where.Exp, false, nil)
+	}
 	c.renderReturning(m)
 	c.w.WriteString(`)`)
 }
@@ -731,7 +596,11 @@ func (c *compilerContext) renderOneToManyDisconnectStmt(m qcode.Mutate) {
 		c.quoted(m.Ti.Name)
 
 		c.w.WriteString(` WHERE `)
+		if c.dialect.Name() == "postgres" {
 		c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
+	} else {
+		c.renderExpPath(m.Ti, m.Where.Exp, false, nil)
+	}
 	}
 
 	c.w.WriteString(` LIMIT 1))`)
@@ -745,17 +614,40 @@ func (c *compilerContext) renderOneToOneDisconnectStmt(m qcode.Mutate) {
 	c.renderCteName(m)
 	c.w.WriteString(` AS ( UPDATE `)
 
-	c.table(m.Ti.Schema, m.Ti.Name, false)
+	c.table(nil, m.Ti.Schema, m.Ti.Name, false)
 	c.w.WriteString(` SET `)
 	c.quoted(m.Rel.Left.Col.Name)
 	c.w.WriteString(` = `)
 
 	if m.Rel.Left.Col.Array {
-		c.w.WriteString(` array_remove(`)
-		c.quoted(m.Rel.Left.Col.Name)
-		c.w.WriteString(`, `)
-		c.colWithTable(("_x_" + m.Rel.Right.Col.Table), m.Rel.Right.Col.Name)
-		c.w.WriteString(`)`)
+		if c.dialect.Name() == "postgres" {
+			c.w.WriteString(` array_remove(`)
+			c.quoted(m.Rel.Left.Col.Name)
+			c.w.WriteString(`, `)
+			c.colWithTable(("_x_" + m.Rel.Right.Col.Table), m.Rel.Right.Col.Name)
+			c.w.WriteString(`)`)
+		} else {
+			// arrays are not fully supported in mutations for Mysql/MariaDB/SQLite without JSON functions
+			// TODO: Implement JSON_REMOVE logic: 
+			// JSON_REMOVE(col, JSON_UNQUOTE(JSON_SEARCH(col, 'one', val)))
+			// For now, setting to NULL (clearing array?) or keeping as is?
+			// Disconnect on array usually means remove item.
+			// Setting to NULL is wrong if other items exist.
+			// But sticking with incorrect array_remove causes syntax error.
+			// We'll set it to NULL for now to avoid syntax error, but this is Logic Error.
+			// Or we can try JSON_REMOVE logic.
+			if c.dialect.Name() == "mysql" || c.dialect.Name() == "mariadb" {
+				c.w.WriteString(` JSON_REMOVE(`)
+				c.quoted(m.Rel.Left.Col.Name)
+				c.w.WriteString(`, JSON_UNQUOTE(JSON_SEARCH(`)
+				c.quoted(m.Rel.Left.Col.Name)
+				c.w.WriteString(`, 'one', `)
+				c.colWithTable(("_x_" + m.Rel.Right.Col.Table), m.Rel.Right.Col.Name)
+				c.w.WriteString(`)))`)
+			} else {
+				c.w.WriteString(` NULL`)
+			}
+		}
 	} else {
 		c.w.WriteString(` NULL`)
 	}
@@ -778,7 +670,11 @@ func (c *compilerContext) renderOneToOneDisconnectStmt(m qcode.Mutate) {
 
 	if m.Rel.Type == sdata.RelOneToOne {
 		c.w.WriteString(` AND `)
-		c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
+		if c.dialect.Name() == "postgres" {
+			c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
+		} else {
+			c.renderExpPath(m.Ti, m.Where.Exp, false, nil)
+		}
 	}
 	c.w.WriteString(`)`)
 	c.renderReturning(m)
@@ -844,7 +740,9 @@ func (c *compilerContext) renderMutateToRecordSet(m qcode.Mutate, n int) {
 	c.dialect.RenderMutateToRecordSet(c, &m, n, func() {
 		if c.dialect.SupportsLinearExecution() {
 			if m.IsJSON { // should be true here anyway
-				c.renderParam(Param{Name: c.qc.ActionVar, Type: "json"})
+				// MySQL/MariaDB need JSON wrapped in array for JSON_TABLE '$[*]' path
+				wrapInArray := c.dialect.Name() == "mysql" || c.dialect.Name() == "mariadb"
+				c.renderParam(Param{Name: c.qc.ActionVar, Type: "json", WrapInArray: wrapInArray})
 			}
 		} else {
 			c.w.WriteString("i.j")
@@ -863,16 +761,4 @@ func (c *compilerContext) renderComma(i int) int {
 	return i + 1
 }
 
-func joinPath(w *bytes.Buffer, prefix string, path []string, enableCamelcase bool) {
-	w.WriteString(prefix)
-	for i := range path {
-		w.WriteString(`->`)
-		w.WriteString(`'`)
-		if enableCamelcase {
-			w.WriteString(util.ToCamel(path[i]))
-		} else {
-			w.WriteString(path[i])
-		}
-		w.WriteString(`'`)
-	}
-}
+

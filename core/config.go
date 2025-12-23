@@ -66,8 +66,8 @@ type Config struct {
 	// and 'anon' when it's not. Use the 'Roles Query' config to add more custom roles
 	Roles []Role
 
-	// Database type name Defaults to 'postgres' (options: mysql, postgres)
-	DBType string `mapstructure:"db_type" json:"db_type" yaml:"db_type" jsonschema:"title=Database Type,enum=postgres,enum=mysql"`
+	// Database type name Defaults to 'postgres' (options: postgres, mysql, mariadb, sqlite, oracle)
+	DBType string `mapstructure:"db_type" json:"db_type" yaml:"db_type" jsonschema:"title=Database Type,enum=postgres,enum=mysql,enum=mariadb,enum=sqlite,enum=oracle"`
 
 	// Log warnings and other debug information
 	Debug bool `jsonschema:"title=Debug,default=false"`
