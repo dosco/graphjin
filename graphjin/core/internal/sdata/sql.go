@@ -37,3 +37,12 @@ var oracleInfo string
 
 //go:embed sql/oracle_columns.sql
 var oracleColumnsStmt string
+
+//go:embed sql/mariadb_functions.sql
+var mariadbFunctionsStmt string
+
+//go:embed sql/mariadb_info.sql
+var mariadbInfo string
+
+//go:embed sql/mariadb_columns.sql
+var mariadbColumnsStmt string

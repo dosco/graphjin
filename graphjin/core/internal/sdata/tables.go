@@ -68,6 +68,8 @@ func GetDBInfo(
 		switch dbType {
 		case "mysql":
 			row = db.QueryRow(mysqlInfo)
+		case "mariadb":
+			row = db.QueryRow(mariadbInfo)
 		case "sqlite":
 			row = db.QueryRow(sqliteInfo)
 		case "oracle":
@@ -279,6 +281,8 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 	switch dbtype {
 	case "mysql":
 		sqlStmt = mysqlColumnsStmt
+	case "mariadb":
+		sqlStmt = mariadbColumnsStmt
 	case "sqlite":
 		sqlStmt = sqliteColumnsStmt
 	case "oracle":
@@ -413,6 +417,8 @@ func DiscoverFunctions(db *sql.DB, dbtype string, blockList []string) ([]DBFunct
 	switch dbtype {
 	case "mysql":
 		sqlStmt = mysqlFunctionsStmt
+	case "mariadb":
+		sqlStmt = mariadbFunctionsStmt
 	case "sqlite":
 		sqlStmt = sqliteFunctionsStmt
 	case "oracle":

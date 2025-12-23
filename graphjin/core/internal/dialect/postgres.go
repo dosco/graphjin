@@ -308,12 +308,11 @@ func (d *PostgresDialect) RenderLiteral(ctx Context, val string, valType qcode.V
 	switch valType {
 	case qcode.ValBool, qcode.ValNum:
 		ctx.WriteString(val)
-	case qcode.ValStr:
+	default:
+		// Default to single-quoted string literal (not double-quoted identifier)
 		ctx.WriteString(`'`)
 		ctx.WriteString(val)
 		ctx.WriteString(`'`)
-	default:
-		ctx.Quote(val)
 	}
 }
 
@@ -365,6 +364,17 @@ func (d *PostgresDialect) RenderValArrayColumn(ctx Context, ex *qcode.Exp, table
 		}
 		ctx.ColWithTable(t, ex.Right.Col.Name)
 	}
+}
+
+func (d *PostgresDialect) RenderArray(ctx Context, items []string) {
+	ctx.WriteString(`ARRAY [`)
+	for i, item := range items {
+		if i != 0 {
+			ctx.WriteString(`, `)
+		}
+		ctx.WriteString(item)
+	}
+	ctx.WriteString(`]`)
 }
 
 func (d *PostgresDialect) RenderOp(op qcode.ExpOp) (string, error) {
@@ -590,6 +600,35 @@ func (d *PostgresDialect) SupportsLinearExecution() bool {
 	return false
 }
 
+func (d *PostgresDialect) RenderMutationInput(ctx Context, qc *qcode.QCode) {
+	ctx.WriteString(`WITH `)
+	ctx.Quote("_sg_input")
+	ctx.WriteString(` AS (SELECT `)
+	ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+	ctx.WriteString(` :: json AS j)`)
+}
+
+func (d *PostgresDialect) RenderMutationPostamble(ctx Context, qc *qcode.QCode) {
+	GenericRenderMutationPostamble(ctx, qc)
+}
+
+func (d *PostgresDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderColVal func(qcode.MColumn)) {
+	// Not supported in Postgres yet
+}
+
+func (d *PostgresDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderColVal func(qcode.MColumn), renderWhere func()) {
+	// Not supported in Postgres yet
+}
+
+func (d *PostgresDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
+	// Not supported in Postgres yet
+}
+
+func (d *PostgresDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
+	// Not supported in Postgres yet
+}
+
+
 func (d *PostgresDialect) RenderIDCapture(ctx Context, name string) {
 	// Not used for Postgres
 }
@@ -668,3 +707,16 @@ func joinPathPostgres(ctx Context, prefix string, path []string, enableCamelcase
 		ctx.WriteString(`'`)
 	}
 }
+func (d *PostgresDialect) RenderTableName(ctx Context, sel *qcode.Select, schema, table string) {
+	if schema != "" {
+		ctx.Quote(schema)
+		ctx.WriteString(`.`)
+	}
+	ctx.Quote(table)
+}
+
+func (d *PostgresDialect) ModifySelectsForMutation(qc *qcode.QCode) {}
+
+func (d *PostgresDialect) RenderQueryPrefix(ctx Context, qc *qcode.QCode) {}
+
+func (d *PostgresDialect) SplitQuery(query string) (parts []string) { return []string{query} }

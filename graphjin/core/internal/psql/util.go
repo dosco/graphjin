@@ -27,7 +27,7 @@ func (c *compilerContext) colWithTableID(table string, id int32, col string) {
 	c.quoted(col)
 }
 
-func (c *compilerContext) table(schema, table string, alias bool) {
+func (c *compilerContext) table(sel *qcode.Select, schema, table string, alias bool) {
 	if schema != "" {
 		c.quoted(schema)
 		c.w.WriteString(`.`)

@@ -1,4 +1,4 @@
-//go:build !mysql && !sqlite
+//go:build !mysql && !mariadb && !sqlite
 
 package tests_test
 
@@ -44,9 +44,6 @@ import (
 // }
 
 func TestIntrospection(t *testing.T) {
-	if dbType == "sqlite" {
-		t.Skip("skipping test for sqlite")
-	}
 
 	dir, err := os.MkdirTemp("", "test")
 	if err != nil {

@@ -1,4 +1,4 @@
-//go:build !mysql && !sqlite
+//go:build !mysql && !mariadb
 package tests_test
 
 import (
@@ -66,30 +66,6 @@ func Example_subscription() {
 }
 
 func Example_subscriptionWithCursor() {
-	// Skip for Oracle: cursor subscription handling issue
-	if dbType == "oracle" {
-		fmt.Println(`{"chats":[{"body":"This is chat message number 1","id":1}],"chats_cursor":"cursor_was_here"}`)
-		fmt.Println(`{"chats":[{"body":"This is chat message number 2","id":2}],"chats_cursor":"cursor_was_here"}`)
-		fmt.Println(`{"chats":[{"body":"This is chat message number 3","id":3}],"chats_cursor":"cursor_was_here"}`)
-		fmt.Println(`{"chats":[{"body":"This is chat message number 4","id":4}],"chats_cursor":"cursor_was_here"}`)
-		fmt.Println(`{"chats":[{"body":"This is chat message number 5","id":5}],"chats_cursor":"cursor_was_here"}`)
-		fmt.Println(`{"chats":[{"body":"New chat message 6","id":6}],"chats_cursor":"cursor_was_here"}`)
-		fmt.Println(`{"chats":[{"body":"New chat message 7","id":7}],"chats_cursor":"cursor_was_here"}`)
-		fmt.Println(`{"chats":[{"body":"New chat message 8","id":8}],"chats_cursor":"cursor_was_here"}`)
-		fmt.Println(`{"chats":[{"body":"New chat message 9","id":9}],"chats_cursor":"cursor_was_here"}`)
-		fmt.Println(`{"chats":[{"body":"New chat message 10","id":10}],"chats_cursor":"cursor_was_here"}`)
-		fmt.Println(`{"chats":[{"body":"New chat message 11","id":11}],"chats_cursor":"cursor_was_here"}`)
-		fmt.Println(`{"chats":[{"body":"New chat message 12","id":12}],"chats_cursor":"cursor_was_here"}`)
-		fmt.Println(`{"chats":[{"body":"New chat message 13","id":13}],"chats_cursor":"cursor_was_here"}`)
-		fmt.Println(`{"chats":[{"body":"New chat message 14","id":14}],"chats_cursor":"cursor_was_here"}`)
-		fmt.Println(`{"chats":[{"body":"New chat message 15","id":15}],"chats_cursor":"cursor_was_here"}`)
-		fmt.Println(`{"chats":[{"body":"New chat message 16","id":16}],"chats_cursor":"cursor_was_here"}`)
-		fmt.Println(`{"chats":[{"body":"New chat message 17","id":17}],"chats_cursor":"cursor_was_here"}`)
-		fmt.Println(`{"chats":[{"body":"New chat message 18","id":18}],"chats_cursor":"cursor_was_here"}`)
-		fmt.Println(`{"chats":[{"body":"New chat message 19","id":19}],"chats_cursor":"cursor_was_here"}`)
-		return
-	}
-
 	// func TestSubCursor(t *testing.T) {
 	// query to fetch existing chat messages
 	// gql1 := `query {
@@ -194,9 +170,6 @@ func Example_subscriptionWithCursor() {
 }
 
 func TestSubscription(t *testing.T) {
-	if dbType == "sqlite" {
-		t.Skip("skipping test for sqlite")
-	}
 	if dbType == "oracle" {
 		t.Skip("skipping test for oracle: subscription with @object directive not yet supported")
 	}
@@ -230,8 +203,8 @@ func TestSubscription(t *testing.T) {
 			defer m.Unsubscribe()
 
 			msg := <-m.Result
-			exp := fmt.Sprintf(`{"users": {"id": %d, "email": "user%d@test.com"}}`, id, id)
-			val := string(msg.Data)
+			exp := fmt.Sprintf(`{"users":{"email":"user%d@test.com","id":%d}}`, id, id)
+			val := stdJSON(msg.Data)
 
 			if val != exp {
 				t.Errorf("expected '%s' got '%s'", exp, val)

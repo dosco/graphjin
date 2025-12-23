@@ -3,6 +3,9 @@ package dialect
 import (
 	"fmt"
 	"strconv"
+	"strings"
+
+	"github.com/dosco/graphjin/core/v3/internal/graph"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 	"github.com/dosco/graphjin/core/v3/internal/util"
@@ -10,6 +13,107 @@ import (
 
 type MySQLDialect struct {
 	EnableCamelcase bool
+}
+
+func (d *MySQLDialect) SplitQuery(query string) (parts []string) {
+	var buf strings.Builder
+	var inStr, inQuote, inBacktick, inComment bool
+	var depth int
+	
+	for i := 0; i < len(query); i++ {
+		c := query[i]
+
+		if inComment {
+			if c == '\n' {
+				inComment = false
+			}
+			buf.WriteByte(c)
+			continue
+		}
+
+		if inStr {
+			if c == '\'' {
+				if i+1 < len(query) && query[i+1] == '\'' {
+					buf.WriteByte(c)
+					i++
+					buf.WriteByte(c)
+					continue
+				}
+				inStr = false
+			}
+			buf.WriteByte(c)
+			continue
+		}
+
+		if inQuote {
+			if c == '"' {
+				if i+1 < len(query) && query[i+1] == '"' {
+					buf.WriteByte(c)
+					i++
+					buf.WriteByte(c)
+					continue
+				}
+				inQuote = false
+			}
+			buf.WriteByte(c)
+			continue
+		}
+
+		if inBacktick {
+			if c == '`' {
+				if i+1 < len(query) && query[i+1] == '`' {
+					buf.WriteByte(c)
+					i++
+					buf.WriteByte(c)
+					continue
+				}
+				inBacktick = false
+			}
+			buf.WriteByte(c)
+			continue
+		}
+
+		switch c {
+		case '\'':
+			inStr = true
+			buf.WriteByte(c)
+		case '"':
+			inQuote = true
+			buf.WriteByte(c)
+		case '`':
+			inBacktick = true
+			buf.WriteByte(c)
+		case '-':
+			if i+1 < len(query) && query[i+1] == '-' {
+				inComment = true
+				buf.WriteByte(c)
+				i++
+				buf.WriteByte('-')
+			} else {
+				buf.WriteByte(c)
+			}
+		case '#':
+			inComment = true
+			buf.WriteByte(c)
+		case ';':
+			if depth == 0 {
+				q := strings.TrimSpace(buf.String())
+				if q != "" {
+					parts = append(parts, q)
+				}
+				buf.Reset()
+			} else {
+				buf.WriteByte(c)
+			}
+		default:
+			buf.WriteByte(c)
+		}
+	}
+	q := strings.TrimSpace(buf.String())
+	if q != "" {
+		parts = append(parts, q)
+	}
+	return parts
 }
 
 func (d *MySQLDialect) Name() string {
@@ -183,6 +287,8 @@ func (d *MySQLDialect) RenderList(ctx Context, ex *qcode.Exp) {
 			ctx.WriteString(`'`)
 			ctx.WriteString(ex.Right.ListVal[i])
 			ctx.WriteString(`'`)
+		case qcode.ValDBVar:
+			d.RenderVar(ctx, ex.Right.ListVal[i])
 		}
 	}
 	ctx.WriteString(`)`)
@@ -328,6 +434,17 @@ func (d *MySQLDialect) RenderValArrayColumn(ctx Context, ex *qcode.Exp, table st
 	ctx.WriteString(` `)
 	ctx.WriteString(ex.Left.Col.Type)
 	ctx.WriteString(` PATH "$" ERROR ON ERROR)) AS _gj_jt`)
+}
+
+func (d *MySQLDialect) RenderArray(ctx Context, items []string) {
+	ctx.WriteString(`JSON_ARRAY(`)
+	for i, item := range items {
+		if i != 0 {
+			ctx.WriteString(`, `)
+		}
+		ctx.WriteString(item)
+	}
+	ctx.WriteString(`)`)
 }
 
 func (d *MySQLDialect) RenderOp(op qcode.ExpOp) (string, error) {
@@ -559,11 +676,20 @@ func (d *MySQLDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, n i
 		renderRoot()
 	}
 	
-	ctx.WriteString(`, '$[*]' COLUMNS(`)
+	// Use '$[*]' for array input, '$' for single object
+	if m.Array {
+		ctx.WriteString(`, '$[*]' COLUMNS(`)
+	} else {
+		ctx.WriteString(`, '$' COLUMNS(`)
+	}
 
 	i := 0
 	hasPK := false
 	for _, col := range m.Cols {
+		// Skip preset columns - they get values from parameters, not JSON input
+		if col.Set {
+			continue
+		}
 		if col.FieldName == m.Ti.PrimaryCol.Name {
 			hasPK = true
 		}
@@ -573,26 +699,39 @@ func (d *MySQLDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, n i
 		ctx.WriteString(col.FieldName)
 		ctx.WriteString(` `)
 
-		// Map types for MySQL JSON_TABLE columns
-		switch col.Col.Type {
-		case "varchar", "character varying", "text", "string":
-			ctx.WriteString("TEXT") 
-		case "int", "integer", "int4", "int8", "bigint", "smallint":
-			ctx.WriteString("BIGINT") 
-		case "boolean", "bool":
-			ctx.WriteString("TINYINT") 
-		case "float", "double", "numeric", "real":
-			ctx.WriteString("DECIMAL(65,30)")
-		case "json", "jsonb":
+		// Check if the field value is an array/object - use JSON type for those
+		// This handles cases like tags: ["a", "b"] which can't be extracted as TEXT
+		isJSONValue := false
+		if m.Data != nil && m.Data.CMap != nil {
+			if field, ok := m.Data.CMap[col.FieldName]; ok {
+				isJSONValue = field.Type == graph.NodeList || field.Type == graph.NodeObj
+			}
+		}
+
+		if isJSONValue {
 			ctx.WriteString("JSON")
-		case "timestamp", "timestamptz", "timestamp without time zone", "timestamp with time zone":
-			ctx.WriteString("DATETIME")
-		case "date":
-			ctx.WriteString("DATE")
-		case "time", "timetz":
-			ctx.WriteString("TIME")
-		default:
-			ctx.WriteString(col.Col.Type)
+		} else {
+			// Map types for MySQL JSON_TABLE columns
+			switch col.Col.Type {
+			case "varchar", "character varying", "text", "string":
+				ctx.WriteString("TEXT")
+			case "int", "integer", "int4", "int8", "bigint", "smallint":
+				ctx.WriteString("BIGINT")
+			case "boolean", "bool":
+				ctx.WriteString("TINYINT")
+			case "float", "double", "numeric", "real":
+				ctx.WriteString("DECIMAL(65,30)")
+			case "json", "jsonb":
+				ctx.WriteString("JSON")
+			case "timestamp", "timestamptz", "timestamp without time zone", "timestamp with time zone":
+				ctx.WriteString("DATETIME")
+			case "date":
+				ctx.WriteString("DATE")
+			case "time", "timetz":
+				ctx.WriteString("TIME")
+			default:
+				ctx.WriteString(col.Col.Type)
+			}
 		}
 
 		ctx.WriteString(` PATH '$.`)
@@ -655,3 +794,325 @@ func joinPathMySQL(ctx Context, prefix string, path []string, enableCamelcase bo
 		ctx.WriteString(`'`)
 	}
 }
+func (d *MySQLDialect) RenderTableName(ctx Context, sel *qcode.Select, schema, table string) {
+	if schema != "" {
+		ctx.Quote(schema)
+		ctx.WriteString(`.`)
+	}
+	ctx.Quote(table)
+}
+
+func (d *MySQLDialect) RenderMutationInput(ctx Context, qc *qcode.QCode) {
+	ctx.WriteString(`WITH `)
+	ctx.Quote("_sg_input")
+	ctx.WriteString(` AS (SELECT `)
+	ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+	ctx.WriteString(` AS j)`)
+}
+
+func (d *MySQLDialect) RenderMutationPostamble(ctx Context, qc *qcode.QCode) {
+	GenericRenderMutationPostamble(ctx, qc)
+}
+
+func (d *MySQLDialect) getVarName(m qcode.Mutate) string {
+	return m.Ti.Name + "_" + fmt.Sprintf("%d", m.ID)
+}
+
+func (d *MySQLDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderColVal func(qcode.MColumn)) {
+	ctx.WriteString("INSERT INTO ")
+	ctx.ColWithTable(m.Ti.Schema, m.Ti.Name)
+	ctx.WriteString(" (")
+	i := 0
+	for _, col := range m.Cols {
+		if i != 0 {
+			ctx.WriteString(", ")
+		}
+		ctx.Quote(col.Col.Name)
+		i++
+	}
+	for _, rcol := range m.RCols {
+		if i != 0 {
+			ctx.WriteString(", ")
+		}
+		ctx.Quote(rcol.Col.Name)
+		i++
+	}
+	ctx.WriteString(")")
+
+	if m.IsJSON {
+		ctx.WriteString(" SELECT ")
+	} else {
+		ctx.WriteString(" VALUES (")
+	}
+
+	i = 0
+	hasExplicitPK := false
+	for _, col := range m.Cols {
+		if i != 0 {
+			ctx.WriteString(", ")
+		}
+		if col.Col.Name == m.Ti.PrimaryCol.Name {
+			ctx.WriteString("@")
+			ctx.WriteString(varName)
+			ctx.WriteString(" := ")
+			renderColVal(col)
+			hasExplicitPK = true
+		} else {
+			renderColVal(col)
+		}
+		i++
+	}
+	for _, rcol := range m.RCols {
+		if i != 0 {
+			ctx.WriteString(", ")
+		}
+		found := false
+		for id := range m.DependsOn {
+			if qc.Mutates[id].Ti.Name == rcol.VCol.Table {
+				d.RenderVar(ctx, d.getVarName(qc.Mutates[id]))
+				found = true
+				break
+			}
+		}
+		if !found {
+			ctx.WriteString("NULL")
+		}
+		i++
+	}
+
+	if m.IsJSON {
+		ctx.WriteString(" FROM ")
+		d.RenderMutateToRecordSet(ctx, m, 0, func() {
+			// In linear execution mode, pass the JSON parameter directly
+			// (there's no _sg_input CTE in linear execution)
+			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+		})
+		ctx.WriteString("; ")
+		// For JSON inserts where PK wasn't captured inline, capture LAST_INSERT_ID
+		if !hasExplicitPK {
+			d.RenderIDCapture(ctx, varName)
+		}
+	} else {
+		ctx.WriteString(")")
+		ctx.WriteString("; ")
+		if !hasExplicitPK {
+			d.RenderIDCapture(ctx, varName)
+		}
+	}
+}
+
+func (d *MySQLDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderColVal func(qcode.MColumn), renderWhere func()) {
+	// Pre-update select to capture ID
+	if m.ParentID == -1 {
+		// Only for root update (no parent) and if we have selects? 
+		// mutate.go: if m.ParentID == -1 && len(c.qc.Selects) > 0 { ... }
+		if len(qc.Selects) > 0 {
+			ctx.WriteString(`SELECT `)
+			ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
+			ctx.WriteString(` INTO @`)
+			ctx.WriteString(varName)
+			ctx.WriteString(` FROM `)
+			ctx.Quote(m.Ti.Name)
+			ctx.WriteString(` WHERE `)
+			// c.renderExp(m.Ti, c.qc.Selects[0].Where.Exp, false)
+			// But I don't have access to renderExp directly?
+			// `renderWhere` passed to this function renders the WHERE clause for the UPDATE statement.
+			// Does it render safely for SELECT too?
+			// The `renderWhere` passed from `mutate.go` renders `m.Where.Exp`? 
+			// No, `mutate.go` line 301 calls `c.renderExp(m.Ti, c.qc.Selects[0].Where.Exp, false)`.
+			// `mutate.go` lines 402: `c.renderExp(m.Ti, c.qc.Selects[0].Where.Exp, false)`.
+			// So `renderWhere` passed to `RenderUpdate` (generic) renders the *combined* where clauses.
+			
+			// `RenderLinearUpdate` here takes `renderWhere`.
+			// `mutate.go` caller will pass a closure that does the right thing.
+			// But for this pre-select, we need specifically `Selects[0].Where.Exp`.
+			// `mutate.go` has access to `qc`.
+			// Maybe I should just rely on `renderWhere` rendering the filter?
+			// But `renderWhere` includes `m.Where.Exp` (path/filters) and potentially join conditions AND `Selects[0].Where` if root.
+			// The pre-select needs specifically the condition that identifies the row.
+			// If I use `renderWhere`, it should be fine?
+			
+			renderWhere()
+			ctx.WriteString(` LIMIT 1; `)
+		}
+	}
+
+	d.RenderUpdate(ctx, m, func() {
+		// Set
+		i := 0
+		for _, col := range m.Cols {
+			if i != 0 {
+				ctx.WriteString(", ")
+			}
+			ctx.ColWithTable(m.Ti.Name, col.Col.Name)
+			ctx.WriteString(" = ")
+			renderColVal(col)
+			i++
+		}
+		for _, rcol := range m.RCols {
+			if i != 0 {
+				ctx.WriteString(", ")
+			}
+			ctx.ColWithTable(m.Ti.Name, rcol.Col.Name)
+			ctx.WriteString(" = ")
+			
+			found := false
+			for id := range m.DependsOn {
+				if qc.Mutates[id].Ti.Name == rcol.VCol.Table {
+					d.RenderVar(ctx, d.getVarName(qc.Mutates[id]))
+					found = true
+					break
+				}
+			}
+			if !found {
+				ctx.WriteString("NULL")
+			}
+			i++
+		}
+		
+		if i == 0 {
+			ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
+			ctx.WriteString(" = ")
+			ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
+		}
+
+	}, func() {
+		// From
+		if m.IsJSON {
+			d.RenderMutateToRecordSet(ctx, m, 0, func() {
+			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+		})
+		}
+	}, func() {
+		// Where
+		if m.IsJSON {
+			// MySQL: Only use t.id join if we DON'T have a separate WHERE clause
+			// Logic from mutate.go line 389.
+			// But here we might not have easy access to checking Selects[0].Where.Exp directly if not passed.
+			// But we passed `qc`.
+			if m.ParentID != -1 || len(qc.Selects) == 0 || qc.Selects[0].Where.Exp == nil {
+				ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
+				ctx.WriteString(" = ")
+				ctx.ColWithTable("t", m.Ti.PrimaryCol.Name)
+				// AND ...
+				ctx.WriteString(" AND ")
+			}
+		}
+		renderWhere()
+	})
+	ctx.WriteString("; ")
+}
+
+func (d *MySQLDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
+	ctx.WriteString(`SELECT JSON_ARRAYAGG(`)
+	ctx.ColWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
+	ctx.WriteString(`) INTO `)
+	d.RenderVar(ctx, varName)
+	
+	if m.IsJSON {
+		ctx.WriteString(` FROM `)
+		d.RenderMutateToRecordSet(ctx, m, 0, func() {
+			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+		})
+		ctx.WriteString(`, `)
+	} else {
+		ctx.WriteString(` FROM `)
+	}
+	ctx.Quote(m.Ti.Name)
+	ctx.WriteString(` WHERE `)
+	renderFilter()
+	ctx.WriteString("; ")
+}
+
+func (d *MySQLDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
+	ctx.WriteString(`SELECT JSON_ARRAYAGG(`)
+	ctx.ColWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
+	ctx.WriteString(`) INTO `)
+	d.RenderVar(ctx, varName)
+	
+	if m.IsJSON {
+		ctx.WriteString(` FROM `)
+		d.RenderMutateToRecordSet(ctx, m, 0, func() {
+			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+		})
+		ctx.WriteString(`, `)
+	} else {
+		ctx.WriteString(` FROM `)
+	}
+	ctx.Quote(m.Ti.Name)
+	ctx.WriteString(` WHERE `)
+	renderFilter()
+	ctx.WriteString("; ")
+}
+
+func (d *MySQLDialect) ModifySelectsForMutation(qc *qcode.QCode) {
+	if qc.Type != qcode.QTMutation || qc.Selects == nil {
+		return
+	}
+
+	// For MySQL, we need to inject a WHERE clause to filter by the captured IDs
+	// The IDs are captured via @tablename_N := id assignments during INSERT
+	for i := range qc.Selects {
+		sel := &qc.Selects[i]
+		
+		// Only modify the root-level selects that correspond to mutated tables
+		if sel.ParentID != -1 {
+			continue
+		}
+		
+		// Collect ALL mutations for this table
+		var mutations []qcode.Mutate
+		for _, m := range qc.Mutates {
+			if m.Ti.Name == sel.Table && (m.Type == qcode.MTInsert || m.Type == qcode.MTUpdate || m.Type == qcode.MTUpsert) {
+				mutations = append(mutations, m)
+			}
+		}
+		
+		if len(mutations) == 0 {
+			continue
+		}
+		
+		var exp *qcode.Exp
+		if len(mutations) == 1 {
+			// Single mutation: id = @varName
+			m := mutations[0]
+			varName := m.Ti.Name + "_" + fmt.Sprintf("%d", m.ID)
+			exp = &qcode.Exp{Op: qcode.OpEquals}
+			col := m.Ti.PrimaryCol
+			col.Table = m.Ti.Name
+			exp.Left.Col = col
+			exp.Left.ID = -1
+			exp.Right.ValType = qcode.ValDBVar
+			exp.Right.Val = varName
+		} else {
+			// Multiple mutations: id IN (@var1, @var2, ...)
+			m := mutations[0]
+			exp = &qcode.Exp{Op: qcode.OpIn}
+			col := m.Ti.PrimaryCol
+			col.Table = m.Ti.Name
+			exp.Left.Col = col
+			exp.Left.ID = -1
+			exp.Right.ValType = qcode.ValList  // Required for renderList to be called
+			exp.Right.ListType = qcode.ValDBVar
+			for _, mut := range mutations {
+				varName := mut.Ti.Name + "_" + fmt.Sprintf("%d", mut.ID)
+				exp.Right.ListVal = append(exp.Right.ListVal, varName)
+			}
+		}
+		
+		// Merge with existing WHERE clause
+		if sel.Where.Exp != nil {
+			andExp := &qcode.Exp{
+				Op:       qcode.OpAnd,
+				Children: []*qcode.Exp{exp, sel.Where.Exp},
+			}
+			sel.Where.Exp = andExp
+		} else {
+			sel.Where.Exp = exp
+		}
+	}
+}
+
+func (d *MySQLDialect) RenderQueryPrefix(ctx Context, qc *qcode.QCode) {}
+
+

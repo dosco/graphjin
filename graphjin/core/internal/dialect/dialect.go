@@ -1,9 +1,11 @@
 package dialect
 
 import (
+	"fmt"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
+
 
 type Param struct {
 	Name      string
@@ -21,6 +23,7 @@ type Context interface {
 	Quote(s string)
 	ColWithTable(table, col string)
 	RenderJSONFields(sel *qcode.Select)
+	IsTableMutated(table string) bool
 }
 
 type Dialect interface {
@@ -46,11 +49,13 @@ type Dialect interface {
 	RenderSearchHeadline(ctx Context, sel *qcode.Select, f qcode.Field)
 	RenderValVar(ctx Context, ex *qcode.Exp, val string) bool
 	RenderValArrayColumn(ctx Context, ex *qcode.Exp, table string, pid int32)
+	RenderArray(ctx Context, items []string)
 	RenderLiteral(ctx Context, val string, valType qcode.ValType)
 	RenderJSONField(ctx Context, fieldName string, tableAlias string, colName string, isNull bool, isJSON bool)
 	RenderRootTerminator(ctx Context)
 	RenderBaseTable(ctx Context)
 	RenderJSONRootField(ctx Context, key string, val func())
+	RenderTableName(ctx Context, sel *qcode.Select, schema, table string)
 	RenderTableAlias(ctx Context, alias string)
 	RenderLateralJoinClose(ctx Context, alias string)
 
@@ -65,6 +70,9 @@ type Dialect interface {
 	SupportsConflictUpdate() bool
 
 	RenderMutationCTE(ctx Context, m *qcode.Mutate, renderBody func())
+	RenderMutationInput(ctx Context, qc *qcode.QCode)
+	RenderMutationPostamble(ctx Context, qc *qcode.QCode)
+
 	RenderInsert(ctx Context, m *qcode.Mutate, values func())
 	RenderUpdate(ctx Context, m *qcode.Mutate, set func(), from func(), where func())
 	RenderDelete(ctx Context, m *qcode.Mutate, where func())
@@ -86,4 +94,50 @@ type Dialect interface {
 	RenderVarDeclaration(ctx Context, name, typeName string)
 	RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, n int, renderRoot func())
 	RenderSetSessionVar(ctx Context, name, value string) bool
+	
+	RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderColVal func(qcode.MColumn))
+	RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderColVal func(qcode.MColumn), renderWhere func())
+	RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func())
+	RenderLinearDisconnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func())
+
+	ModifySelectsForMutation(qc *qcode.QCode)
+	RenderQueryPrefix(ctx Context, qc *qcode.QCode)
+	SplitQuery(query string) []string
 }
+
+func GenericRenderMutationPostamble(ctx Context, qc *qcode.QCode) {
+	for k, cids := range qc.MUnions {
+		if len(cids) < 2 {
+			continue
+		}
+		ctx.WriteString(`, `)
+		ctx.Quote(k)
+		ctx.WriteString(` AS (`)
+
+		i := 0
+		for _, id := range cids {
+			m := qc.Mutates[id]
+			if m.Rel.Type == sdata.RelOneToMany &&
+				(m.Type == qcode.MTConnect || m.Type == qcode.MTDisconnect) {
+				continue
+			}
+			if i != 0 {
+				ctx.WriteString(` UNION ALL `)
+			}
+			ctx.WriteString(`SELECT * FROM `)
+			
+			if m.Multi {
+				ctx.WriteString(m.Ti.Name)
+				ctx.WriteString(`_`)
+				ctx.WriteString(fmt.Sprintf("%d", m.ID))
+			} else {
+				ctx.Quote(m.Ti.Name)
+			}
+			i++
+		}
+
+		ctx.WriteString(`)`)
+	}
+}
+
+

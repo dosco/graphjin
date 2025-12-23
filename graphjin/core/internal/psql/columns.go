@@ -91,8 +91,19 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 
 			default:
 				if !c.dialect.SupportsLateral() {
-					c.renderInlineChild(csel)
-					c.alias(csel.FieldName)
+					// MariaDB doesn't allow correlated subqueries through derived table boundaries
+					// Use a simplified rendering that avoids nested derived tables
+					if c.dialect.Name() == "mariadb" {
+						// Wrap with JSON_QUERY to prevent double-escaping since
+						// MariaDB treats JSON as LONGTEXT and json_object would escape it
+						c.w.WriteString(`JSON_QUERY(`)
+						c.renderMariaDBInlineChild(sel, csel)
+						c.w.WriteString(`, '$')`)
+						c.alias(csel.FieldName)
+					} else {
+						c.renderInlineChild(csel)
+						c.alias(csel.FieldName)
+					}
 				} else {
 					c.colWithTableID("__sj", csel.ID, "json")
 					c.alias(csel.FieldName)
@@ -100,8 +111,8 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 			}
 
 			// return the cursor for the this child selector as part of the parents json
-			// Only for LATERAL supporting dialects - SQLite handles cursor differently
-			if csel.Paging.Cursor && (c.dialect.SupportsLateral() || c.dialect.Name() == "sqlite") {
+			// Only for LATERAL supporting dialects - SQLite/MariaDB handle cursor differently
+			if csel.Paging.Cursor && (c.dialect.SupportsLateral() || c.dialect.Name() == "sqlite" || c.dialect.Name() == "mariadb") {
 				c.w.WriteString(`, `)
 				c.colWithTableID("__sj", csel.ID, "__cursor")
 				c.w.WriteString(` AS `)
@@ -111,8 +122,8 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 		}
 		i++
 	}
-	// when no columns are rendered for mysql or sqlite
-	if (c.dialect.Name() == "mysql" || c.dialect.Name() == "sqlite") && i == 0 {
+	// when no columns are rendered for mysql, sqlite, or mariadb
+	if (c.dialect.Name() == "mysql" || c.dialect.Name() == "sqlite" || c.dialect.Name() == "mariadb") && i == 0 {
 		c.w.WriteString(`NULL`)
 	}
 }
@@ -136,6 +147,11 @@ func (c *compilerContext) renderUnionColumn(sel, csel *qcode.Select) {
 			if c.dialect.SupportsLateral() {
 				c.colWithTableID("__sj", usel.ID, "json")
 				c.w.WriteString(` `)
+			} else if c.dialect.Name() == "mariadb" {
+				// MariaDB needs simplified inline child rendering
+				c.w.WriteString(`JSON_QUERY(`)
+				c.renderMariaDBInlineChild(sel, usel)
+				c.w.WriteString(`, '$') `)
 			} else {
 				c.renderInlineChild(usel)
 				c.w.WriteString(` `)
@@ -206,22 +222,28 @@ func (c *compilerContext) renderJSONFields(sel *qcode.Select) {
 			c.squoted(f.FieldName)
 			c.w.WriteString(", ")
 
-			isJSONCol := false
-			if f.Col.Type != "" {
-				isJSONCol = f.Col.Type == "json" || f.Col.Type == "jsonb" || f.Col.Type == "json[]" || f.Col.Type == "jsonb[]"
-			}
-
-			if isJSONCol {
-				c.w.WriteString("json(")
-			}
-
-			c.w.WriteString(`__sr_`)
-			int32String(c.w, sel.ID)
-			c.w.WriteString(`.`)
-			c.w.WriteString(f.FieldName)
-
-			if isJSONCol {
-				c.w.WriteString(")")
+			if f.Col.Array {
+				c.w.WriteString(`(CASE WHEN json_valid(`)
+				c.w.WriteString(`__sr_`)
+				int32String(c.w, sel.ID)
+				c.w.WriteString(`.`)
+				c.w.WriteString(f.FieldName)
+				c.w.WriteString(`) THEN json(`)
+				c.w.WriteString(`__sr_`)
+				int32String(c.w, sel.ID)
+				c.w.WriteString(`.`)
+				c.w.WriteString(f.FieldName)
+				c.w.WriteString(`) ELSE `)
+				c.w.WriteString(`__sr_`)
+				int32String(c.w, sel.ID)
+				c.w.WriteString(`.`)
+				c.w.WriteString(f.FieldName)
+				c.w.WriteString(` END)`)
+			} else {
+				c.w.WriteString(`__sr_`)
+				int32String(c.w, sel.ID)
+				c.w.WriteString(`.`)
+				c.w.WriteString(f.FieldName)
 			}
 
 		} else if c.dialect.Name() == "oracle" {

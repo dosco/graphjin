@@ -9,7 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
+
+
 
 	"github.com/dosco/graphjin/core/v3/internal/psql"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
@@ -231,12 +234,16 @@ func (s *gstate) setDefaultVars() {
 		s.vmap = make(map[string]json.RawMessage, vlen)
 	}
 
+
 	for _, v := range s.cs.st.qc.Vars {
 		s.vmap[v.Name] = v.Val
 	}
 }
 
 func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
+
+
+
 	if err = s.validateAndUpdateVars(c); err != nil {
 		return
 	}
@@ -248,6 +255,154 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 
 	cs := s.cs
 
+    // Use Dialect to check for multi-statement scripts (e.g., SQLite)
+    dialect := s.gj.psqlCompiler.GetDialect()
+    parts := dialect.SplitQuery(cs.st.sql)
+
+    if len(parts) > 1 {
+        // Multi-statement script execution
+        c1, span := s.gj.spanStart(c, "Execute Script")
+        defer span.End()
+
+        argIdx := 0
+        		for i, stmt := range parts {
+			// Count parameters (?) in this statement to slice arguments
+			nParams := strings.Count(stmt, "?")
+			var stmtArgs []interface{}
+			
+			if nParams > 0 {
+				if argIdx+nParams > len(args.values) {
+					span.Error(fmt.Errorf("script: not enough arguments for statement %d", i))
+					return fmt.Errorf("script: not enough arguments")
+				}
+				stmtArgs = args.values[argIdx : argIdx+nParams]
+				argIdx += nParams
+			}
+
+			upperStmt := strings.ToUpper(strings.TrimSpace(stmt))
+
+			isReturning := strings.Contains(upperStmt, "RETURNING")
+			isSelect := (strings.HasPrefix(upperStmt, "SELECT") && !strings.Contains(upperStmt, " INTO ")) || strings.HasPrefix(upperStmt, "WITH")
+			
+			// Check for @gj_ids hint
+			gjIdsHint := strings.Index(stmt, "-- @gj_ids=")
+			var gjIdsKey string
+			if gjIdsHint != -1 {
+				// Parse key: -- @gj_ids=users_0;
+				remainder := stmt[gjIdsHint+11:]
+				if idx := strings.Index(remainder, ";"); idx != -1 {
+					gjIdsKey = strings.TrimSpace(remainder[:idx])
+				} else {
+					gjIdsKey = strings.TrimSpace(remainder)
+				}
+			}
+
+
+			if gjIdsKey != "" {
+				// Bulk Capture Path for SQLite (handles RETURNING and SELECT)
+				var rows *sql.Rows
+				var err1 error
+				if tx := s.tx(); tx != nil {
+					rows, err1 = tx.QueryContext(c1, stmt, stmtArgs...)
+				} else {
+					err1 = retryOperation(c1, func() (err2 error) {
+						rows, err2 = conn.QueryContext(c1, stmt, stmtArgs...)
+						return
+					})
+				}
+				if err1 != nil {
+					err = err1 // Propagate error
+				} else {
+					defer rows.Close()
+					
+					var ids []string
+					
+					for rows.Next() {
+						var b []byte
+						if err = rows.Scan(&b); err != nil {
+							return err
+						}
+						// b is JSON object from RETURNING json_object(...)
+						
+						// Parse ID from JSON
+						var rowMap map[string]interface{}
+						if err = json.Unmarshal(b, &rowMap); err != nil {
+							return err
+						}
+						
+						if idVal, ok := rowMap["id"]; ok {
+							ids = append(ids, fmt.Sprintf("%v", idVal))
+						}
+					}
+					
+					if err = rows.Err(); err != nil {
+						return err
+					}
+					
+					// Note: We do NOT set s.data here - the final SELECT will set the response
+					// We only capture IDs into _gj_ids for the scoping CTE
+					
+					// Insert captured IDs into _gj_ids
+					if len(ids) > 0 {
+						var ib strings.Builder
+						ib.WriteString(`INSERT OR IGNORE INTO _gj_ids (k, id) VALUES `)
+						for k, id := range ids {
+							if k > 0 {
+								ib.WriteString(", ")
+							}
+							ib.WriteString(fmt.Sprintf("('%s', %s)", gjIdsKey, id))
+						}
+						insertSQL := ib.String()
+
+						if tx := s.tx(); tx != nil {
+							_, err = tx.ExecContext(c1, insertSQL)
+						} else {
+							_, err = conn.ExecContext(c1, insertSQL)
+						}
+					}
+				}
+			} else if isReturning || isSelect {
+                // Statement returns data (e.g. INSERT ... RETURNING or SELECT ...)
+                var row *sql.Row
+                if tx := s.tx(); tx != nil {
+                    row = tx.QueryRowContext(c1, stmt, stmtArgs...)
+                    err = row.Scan(&s.data)
+                } else {
+                    err = retryOperation(c1, func() (err1 error) {
+                        row = conn.QueryRowContext(c1, stmt, stmtArgs...)
+                        return row.Scan(&s.data)
+                    })
+                }
+
+            } else {
+                // Intermediate statement: Use Exec
+                if tx := s.tx(); tx != nil {
+                    _, err = tx.ExecContext(c1, stmt, stmtArgs...)
+                } else {
+                    err = retryOperation(c1, func() (err1 error) {
+                        _, err1 = conn.ExecContext(c1, stmt, stmtArgs...)
+                        return
+                    })
+                }
+            }
+
+            if err != nil {
+                 if err != sql.ErrNoRows {
+                    span.Error(err)
+                 }
+                 return
+            }
+        }
+        
+        if err == nil {
+            s.dhash = sha256.Sum256(s.data)
+            s.data, err = encryptValues(s.data,
+                s.gj.printFormat, decPrefix, s.dhash[:], s.gj.encryptionKey)
+        }
+        return
+    }
+
+    // Standard Single-Statement Execution
 	c1, span := s.gj.spanStart(c, "Execute Query")
 	defer span.End()
 

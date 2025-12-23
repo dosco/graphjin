@@ -189,10 +189,15 @@ func addJsonTable(conf *Config, dbInfo *sdata.DBInfo, table Table) error {
 		return fmt.Errorf("json table: %w", err)
 	}
 
-	// Allow json, jsonb, and clob (Oracle uses CLOB for JSON storage)
-	if bc.Type != "json" && bc.Type != "jsonb" && bc.Type != "clob" {
+	// Allow json, jsonb, clob, and text types
+	// MariaDB stores JSON as longtext, so we need to accept text types as well
+	validJSONTypes := map[string]bool{
+		"json": true, "jsonb": true, "clob": true,
+		"longtext": true, "text": true, "mediumtext": true,
+	}
+	if !validJSONTypes[bc.Type] {
 		return fmt.Errorf(
-			"json table: column '%s' in table '%s' is of type '%s'. Only JSON, JSONB, or CLOB is valid",
+			"json table: column '%s' in table '%s' is of type '%s'. Only JSON, JSONB, CLOB, or TEXT types are valid",
 			table.Name, table.Table, bc.Type)
 	}
 
@@ -279,6 +284,16 @@ func addForeignKey(conf *Config, di *sdata.DBInfo, c Column, t Table) error {
 	c1, err := di.GetColumn(t.Schema, t.Name, c.Name)
 	if err != nil {
 		return fmt.Errorf("config: add foreign key: %w", err)
+	}
+
+	// Check if this is an array column foreign key on an unsupported database
+	if c.Array || c1.Array {
+		switch di.Type {
+		case "sqlite", "mysql", "mariadb", "oracle":
+			return fmt.Errorf(
+				"config: array column joins not supported for %s database: table '%s', column '%s'",
+				di.Type, t.Name, c.Name)
+		}
 	}
 
 	v, ok := c.getFK(di.Schema)

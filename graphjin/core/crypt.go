@@ -162,20 +162,27 @@ func decryptValues(data, prefix []byte, key [32]byte) ([]byte, error) {
 
 // firstCursorValue returns the first cursor value in the data
 func firstCursorValue(data []byte, prefix []byte) []byte {
-	var buf [100]byte
-	pf := append(buf[:0], prefix...)
-	pf = append(pf, []byte("0,")...)
-	pl := len(pf)
-
-	s := bytes.Index(data, pf)
+	s := bytes.Index(data, prefix)
 	if s == -1 {
 		return nil
 	}
-	s = (s + pl)
-	e := bytes.IndexByte(data[s:], '"')
+	// skip prefix
+	i := s + len(prefix)
+
+	// skip digits (sel.ID)
+	for i < len(data) && data[i] >= '0' && data[i] <= '9' {
+		i++
+	}
+
+	// must be followed by a comma
+	if i >= len(data) || data[i] != ',' {
+		return nil
+	}
+
+	e := bytes.IndexByte(data[i:], '"')
 	if e == -1 {
 		return nil
 	}
-	e = s + e
-	return data[(s - 2):e]
+	e = i + e
+	return data[s:e]
 }

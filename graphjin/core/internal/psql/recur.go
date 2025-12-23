@@ -11,7 +11,7 @@ func (c *compilerContext) renderRecursiveBaseSelect(sel *qcode.Select) {
 	c.renderRecursiveColumns(sel)
 	c.w.WriteString(` FROM (SELECT * FROM `)
 	c.quoted("__rcte_" + sel.Table)
-	if c.dialect.Name() == "mysql" {
+	if c.dialect.Name() == "mysql" || c.dialect.Name() == "mariadb" {
 		c.w.WriteString(` LIMIT 1, 18446744073709551610`)
 	} else if c.dialect.Name() == "sqlite" {
 		c.w.WriteString(` LIMIT -1 OFFSET 1`)
@@ -32,6 +32,8 @@ func (c *compilerContext) renderRecursiveCTE(sel *qcode.Select) {
 		c.w.WriteString(`RECURSIVE `)
 	}
 	c.quoted("__rcte_" + sel.Table)
+	// Standard SQL doesn't require explicit column list in CTE
+	// The columns are implied from the SELECT
 	c.w.WriteString(` AS (`)
 	c.renderCursorCTE(sel)
 	c.renderRecursiveSelect(sel)

@@ -52,5 +52,6 @@ examples/nodejs/config/**/*.gql
 *.mp3
 *.ac3
 *.webm
-
+*.log
+test.db
 

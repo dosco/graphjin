@@ -98,7 +98,7 @@ func (c *expContext) render(ex *qcode.Exp) {
 func (c *expContext) renderNestedExp(st *util.StackInf, ex *qcode.Exp) {
 	firstJoin := ex.Joins[0]
 	c.w.WriteString(`EXISTS (SELECT 1 FROM `)
-	c.table(firstJoin.Rel.Left.Col.Schema, firstJoin.Rel.Left.Col.Table, true)
+	c.table(nil, firstJoin.Rel.Left.Col.Schema, firstJoin.Rel.Left.Col.Table, true)
 
 	if len(ex.Joins) > 1 {
 		for i := 1; i < len(ex.Joins); i++ {
@@ -315,17 +315,26 @@ func (c *expContext) renderVal(ex *qcode.Exp) {
 		if len(ex.Right.Path) == 0 {
 			c.dialect.RenderLiteral(c, ex.Right.Val, ex.Right.ValType)
 			return
+		} else if c.dialect.Name() == "postgres" && (len(c.prefixPath) != 0 || len(ex.Right.Path) != 0) {
+			// Build path from JSON input (i.j), matching original Postgres behavior
+			path := append(c.prefixPath, ex.Right.Path...)
+			j := (len(path) - 1)
+
+			c.w.WriteString(`CAST(i.j`)
+			for i := 0; i < j; i++ {
+				c.w.WriteString(`->`)
+				c.squoted(path[i])
+			}
+			c.w.WriteString(`->>`)
+			c.squoted(path[j])
+			c.w.WriteString(` AS `)
+			c.w.WriteString(ex.Left.Col.Type)
+			c.w.WriteString(`)`)
+		} else {
+			// If not postgres or path is empty, render as a literal.
+			// This handles cases where JSON path is not supported or not applicable.
+			c.dialect.RenderLiteral(c, ex.Right.Val, ex.Right.ValType)
 		}
-
-		path := append(c.prefixPath, ex.Right.Path...)
-		
-
-		c.w.WriteString(`CAST(`)
-		// c.colWithTable("i", "j") // Handled by RenderJSONPath now
-		c.dialect.RenderJSONPath(c, "i", "j", path)
-		c.w.WriteString(` AS `)
-		c.w.WriteString(ex.Left.Col.Type)
-		c.w.WriteString(`)`)
 	}
 }
 

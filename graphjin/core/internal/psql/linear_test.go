@@ -1,8 +1,9 @@
 package psql_test
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
-    "strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/psql"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
@@ -139,5 +140,74 @@ func TestLinearExecutionSQLite(t *testing.T) {
     }
      if !strings.Contains(sql, "DROP TABLE _gj_ids") {
         t.Errorf("Expected DROP TABLE _gj_ids")
+    }
+}
+
+func TestLinearExecutionMySQLWithExplicitID(t *testing.T) {
+	schema, err := sdata.GetTestSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	qc, err := qcode.NewCompiler(schema, qcode.Config{DBSchema: schema.DBSchema()})
+	if err != nil {
+		t.Fatal(err)
+	}
+    
+    // Add role configuration with insert allowed on products
+    qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "description", "price", "owner_id"},
+		},
+        Insert: qcode.InsertConfig{
+			Columns: []string{"id", "name", "description", "price"},
+		},
+	})
+    
+    // Add users for the join
+    qc.AddRole("user", "public", "users", qcode.TRConfig{
+        Query: qcode.QueryConfig{
+            Columns: []string{"id", "full_name", "email"},
+        },
+    })
+
+	pc := psql.NewCompiler(psql.Config{
+		DBType: "mysql",
+	})
+    
+    // This mutation uses JSON variable input similar to Example_insertWithPresets
+    gql := `mutation {
+        products(insert: $data) {
+            id
+            name
+        }
+    }`
+
+    // Compile QCode with JSON vars containing explicit ID
+	vars := map[string]json.RawMessage{
+		"data": json.RawMessage(`{"id": 2001, "name": "Product 2001", "description": "Desc", "price": 10.5}`),
+	}
+    reqQC, err := qc.Compile([]byte(gql), vars, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+    
+    // Compile SQL
+    _, sqlBytes, err := pc.CompileEx(reqQC)
+    if err != nil {
+        t.Fatal(err)
+    }
+    
+    sql := string(sqlBytes)
+    t.Logf("Generated SQL: %s", sql)
+    
+    // Verify inline variable assignment is used for explicit PK
+    if !strings.Contains(sql, "@products_0 :=") {
+        t.Errorf("Expected inline variable assignment @products_0 :=, got: %s", sql)
+    }
+    
+    // Verify WHERE clause uses the variable
+    if !strings.Contains(sql, "= @products_0") {
+        t.Errorf("Expected WHERE clause to use @products_0")
     }
 }
