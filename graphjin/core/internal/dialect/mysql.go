@@ -243,7 +243,7 @@ func (d *MySQLDialect) RenderDistinctOn(ctx Context, sel *qcode.Select) {
 func (d *MySQLDialect) RenderFromEdge(ctx Context, sel *qcode.Select) {
 	ctx.WriteString(`JSON_TABLE(`)
 	ctx.ColWithTable(sel.Rel.Left.Col.Table, sel.Rel.Left.Col.Name)
-	ctx.WriteString(`, "$[*]" COLUMNS(`)
+	ctx.WriteString(`, '$[*]' COLUMNS(`)
 
 	for i, col := range sel.Ti.Columns {
 		if i != 0 {
@@ -252,9 +252,9 @@ func (d *MySQLDialect) RenderFromEdge(ctx Context, sel *qcode.Select) {
 		ctx.WriteString(col.Name)
 		ctx.WriteString(` `)
 		ctx.WriteString(col.Type)
-		ctx.WriteString(` PATH "$.`)
+		ctx.WriteString(` PATH '$.`)
 		ctx.WriteString(col.Name)
-		ctx.WriteString(`" ERROR ON ERROR`)
+		ctx.WriteString(`' ERROR ON ERROR`)
 	}
 	ctx.WriteString(`)) AS`)
 	ctx.Quote(sel.Table)
@@ -323,6 +323,59 @@ func (d *MySQLDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
 
 	if ex.Right.ValType == qcode.ValVar &&
 		(ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn) {
+		
+		if strings.HasPrefix(ex.Right.Val, "__gj_json_pk:gj_sep:") {
+			parts := strings.Split(ex.Right.Val, ":gj_sep:")
+			if len(parts) == 4 {
+				actionVar := parts[1]
+				jsonKey := parts[2]
+				colType := parts[3]
+
+				// Render LHS column
+				ctx.ColWithTable(ex.Left.Col.Table, ex.Left.Col.Name)
+				ctx.WriteString(` `)
+
+				if ex.Op == qcode.OpNotIn {
+					ctx.WriteString(`NOT `)
+				}
+
+				// Render subquery: (SELECT id FROM JSON_TABLE(?, '$[*]' COLUMNS (id TYPE PATH '$.key')))
+				ctx.WriteString(`IN (SELECT _gj_ids.id FROM JSON_TABLE(`)
+				
+				// Encode/Decode logic handled by RenderParam logic if any? 
+				// Here we just pass the variable name.
+				ctx.AddParam(Param{Name: actionVar, Type: "json", WrapInArray: true}) 
+				
+				ctx.WriteString(`, '$[*]' COLUMNS (id `)
+				
+				switch colType {
+				case "varchar", "character varying", "text", "string":
+					ctx.WriteString("TEXT")
+				case "int", "integer", "int4", "int8", "bigint", "smallint":
+					ctx.WriteString("BIGINT")
+				case "boolean", "bool":
+					ctx.WriteString("TINYINT")
+				case "float", "double", "numeric", "real":
+					ctx.WriteString("DECIMAL(65,30)")
+				case "json", "jsonb":
+					ctx.WriteString("JSON")
+				case "timestamp", "timestamptz", "timestamp without time zone", "timestamp with time zone":
+					ctx.WriteString("DATETIME")
+				case "date":
+					ctx.WriteString("DATE")
+				case "time", "timetz":
+					ctx.WriteString("TIME")
+				default:
+					ctx.WriteString(colType)
+				}
+				
+				ctx.WriteString(` PATH '$.`)
+				ctx.WriteString(jsonKey)
+				ctx.WriteString(`' ERROR ON ERROR)) AS _gj_ids)`)
+				return true
+			}
+		}
+
 		ctx.WriteString(`JSON_CONTAINS(`)
 		ctx.AddParam(Param{Name: ex.Right.Val, Type: ex.Left.Col.Type, IsArray: true})
 		ctx.WriteString(`, CAST(`)
@@ -356,8 +409,13 @@ func (d *MySQLDialect) RenderSearchHeadline(ctx Context, sel *qcode.Select, f qc
 }
 
 func (d *MySQLDialect) RenderValVar(ctx Context, ex *qcode.Exp, val string) bool {
-	// MySQL doesn't support the ARRAY(SELECT ...) pattern for vars easily or uses different syntax.
-	// Returning false falls back to default renderParam logic in exp.go
+	// If the variable name contains a dot, it's a reference to a column in a previous result.
+	// For MySQL linear execution, we capture these into user variables with dots in the name.
+	if strings.Contains(val, ".") {
+		flatVal := strings.ReplaceAll(val, ".", "_")
+		ctx.WriteString(`@` + flatVal)
+		return true
+	}
 	return false 
 }
 
@@ -370,7 +428,7 @@ func (d *MySQLDialect) RenderLiteral(ctx Context, val string, valType qcode.ValT
 		ctx.WriteString(val)
 		ctx.WriteString(`'`)
 	default:
-		ctx.Quote(val)
+		d.Quote(ctx, val)
 	}
 }
 
@@ -429,11 +487,11 @@ func (d *MySQLDialect) RenderValArrayColumn(ctx Context, ex *qcode.Exp, table st
 	ctx.ColWithTable(t, ex.Right.Col.Name)
 
 	ctx.WriteString(` AS JSON) as ids) j, `)
-	ctx.WriteString(`JSON_TABLE(j.ids, "$[*]" COLUMNS(`)
+	ctx.WriteString(`JSON_TABLE(j.ids, '$[*]' COLUMNS(`)
 	ctx.WriteString(ex.Right.Col.Name)
 	ctx.WriteString(` `)
 	ctx.WriteString(ex.Left.Col.Type)
-	ctx.WriteString(` PATH "$" ERROR ON ERROR)) AS _gj_jt`)
+	ctx.WriteString(` PATH '$' ERROR ON ERROR)) AS _gj_jt`)
 }
 
 func (d *MySQLDialect) RenderArray(ctx Context, items []string) {
@@ -611,16 +669,16 @@ func (d *MySQLDialect) RenderTryCast(ctx Context, val func(), typ string) {
 }
 
 func (d *MySQLDialect) RenderSubscriptionUnbox(ctx Context, params []Param, renderInnerSQL func()) {
-	ctx.WriteString(`WITH _gj_sub AS (SELECT * FROM JSON_TABLE(?, "$[*]" COLUMNS(`)
+	ctx.WriteString(`WITH _gj_sub AS (SELECT * FROM JSON_TABLE(?, '$[*]' COLUMNS(`)
 	for i, p := range params {
 		if i != 0 {
 			ctx.WriteString(`, `)
 		}
 		ctx.WriteString("`" + p.Name + "` ")
 		ctx.WriteString(p.Type)
-		ctx.WriteString(` PATH "$[`)
+		ctx.WriteString(` PATH '$[`)
 		ctx.Write(fmt.Sprintf("%d", i))
-		ctx.WriteString(`]" ERROR ON ERROR`)
+		ctx.WriteString(`]' ERROR ON ERROR`)
 	}
 	ctx.WriteString(`)) AS _gj_jt`)
 	ctx.WriteString(`) SELECT _gj_sub_data.__root FROM _gj_sub LEFT OUTER JOIN LATERAL (`)
@@ -643,7 +701,9 @@ func (d *MySQLDialect) RenderVar(ctx Context, name string) {
 	ctx.WriteString(name)
 }
 
-func (d *MySQLDialect) RenderSetup(ctx Context) {}
+func (d *MySQLDialect) RenderSetup(ctx Context) {
+	ctx.WriteString("SET SESSION sql_mode = CONCAT(@@sql_mode, ',ANSI_QUOTES'); ")
+}
 func (d *MySQLDialect) RenderBegin(ctx Context) {}
 func (d *MySQLDialect) RenderTeardown(ctx Context) {}
 func (d *MySQLDialect) RenderVarDeclaration(ctx Context, name, typeName string) {}
@@ -751,7 +811,7 @@ func (d *MySQLDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, n i
 	}
 
 	ctx.WriteString(`)) AS _jt) AS `)
-	ctx.Quote("t") 
+	d.Quote(ctx, "t") 
 }
 
 
@@ -834,7 +894,7 @@ func (d *MySQLDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qcod
 		if i != 0 {
 			ctx.WriteString(", ")
 		}
-		ctx.Quote(rcol.Col.Name)
+		d.Quote(ctx, rcol.Col.Name)
 		i++
 	}
 	ctx.WriteString(")")
@@ -869,7 +929,18 @@ func (d *MySQLDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qcod
 		found := false
 		for id := range m.DependsOn {
 			if qc.Mutates[id].Ti.Name == rcol.VCol.Table {
-				d.RenderVar(ctx, d.getVarName(qc.Mutates[id]))
+				depM := qc.Mutates[id]
+				varName := d.getVarName(depM)
+
+				// If we differ to a connect/disconnect mutation, the value is a JSON array
+				// If the target column is not an array, we need to extract the first element
+				if (depM.Type == qcode.MTConnect || depM.Type == qcode.MTDisconnect) && !rcol.Col.Array {
+					ctx.WriteString("JSON_UNQUOTE(JSON_EXTRACT(")
+					d.RenderVar(ctx, varName)
+					ctx.WriteString(", '$[0]'))")
+				} else {
+					d.RenderVar(ctx, varName)
+				}
 				found = true
 				break
 			}
@@ -902,39 +973,98 @@ func (d *MySQLDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qcod
 }
 
 func (d *MySQLDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderColVal func(qcode.MColumn), renderWhere func()) {
-	// Pre-update select to capture ID
-	if m.ParentID == -1 {
-		// Only for root update (no parent) and if we have selects? 
-		// mutate.go: if m.ParentID == -1 && len(c.qc.Selects) > 0 { ... }
+	
+	// Check if there are child mutations that depend on this parent
+	// Only if there are child mutations do we need the pre-update SELECT to capture values
+	hasChildMutations := false
+	for _, otherM := range qc.Mutates {
+		if otherM.ParentID == m.ID {
+			hasChildMutations = true
+			break
+		}
+	}
+	
+	// Pre-update select to capture ID - ONLY if there are child mutations that need it
+	if m.ParentID == -1 && hasChildMutations {
 		if len(qc.Selects) > 0 {
 			ctx.WriteString(`SELECT `)
 			ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
-			ctx.WriteString(` INTO @`)
-			ctx.WriteString(varName)
+			
+			// Capture base variable first (CRITICAL for ModifySelectsForMutation)
+			var vars []string
+			vars = append(vars, "@"+varName)
+			
+			// Capture all other columns (CRITICAL for Child Updates)
+			for _, col := range m.Ti.Columns {
+				ctx.WriteString(`, `)
+				ctx.ColWithTable(m.Ti.Name, col.Name)
+				vars = append(vars, "@"+varName+"_"+col.Name)
+			}
+			
+			ctx.WriteString(` INTO `)
+			ctx.WriteString(strings.Join(vars, ", "))
 			ctx.WriteString(` FROM `)
 			ctx.Quote(m.Ti.Name)
-			ctx.WriteString(` WHERE `)
-			// c.renderExp(m.Ti, c.qc.Selects[0].Where.Exp, false)
-			// But I don't have access to renderExp directly?
-			// `renderWhere` passed to this function renders the WHERE clause for the UPDATE statement.
-			// Does it render safely for SELECT too?
-			// The `renderWhere` passed from `mutate.go` renders `m.Where.Exp`? 
-			// No, `mutate.go` line 301 calls `c.renderExp(m.Ti, c.qc.Selects[0].Where.Exp, false)`.
-			// `mutate.go` lines 402: `c.renderExp(m.Ti, c.qc.Selects[0].Where.Exp, false)`.
-			// So `renderWhere` passed to `RenderUpdate` (generic) renders the *combined* where clauses.
 			
-			// `RenderLinearUpdate` here takes `renderWhere`.
-			// `mutate.go` caller will pass a closure that does the right thing.
-			// But for this pre-select, we need specifically `Selects[0].Where.Exp`.
-			// `mutate.go` has access to `qc`.
-			// Maybe I should just rely on `renderWhere` rendering the filter?
-			// But `renderWhere` includes `m.Where.Exp` (path/filters) and potentially join conditions AND `Selects[0].Where` if root.
-			// The pre-select needs specifically the condition that identifies the row.
-			// If I use `renderWhere`, it should be fine?
-			
-			renderWhere()
+			// CRITICAL: Use m.Where (original filter) not qc.Selects (which might be patched to use @var)
+			if m.Where.Exp != nil {
+				ex := m.Where.Exp
+				ctx.WriteString(` WHERE `)
+				ctx.ColWithTable(m.Ti.Name, ex.Left.Col.Name)
+				ctx.WriteString(` = `)
+				// Handle different value types for ID lookup
+				switch ex.Right.ValType {
+				case qcode.ValStr:
+					ctx.WriteString("'" + ex.Right.Val + "'")
+				case qcode.ValVar:
+					// Bind variable - use AddParam to render as ?
+					ctx.AddParam(Param{Name: ex.Right.Val, Type: ex.Left.Col.Type})
+				case qcode.ValNum:
+					ctx.WriteString(ex.Right.Val)
+				default:
+					ctx.WriteString(ex.Right.Val)
+				}
+			} else if len(qc.Selects) > 0 && qc.Selects[0].Where.Exp != nil {
+				ctx.WriteString(` WHERE `)
+				renderWhere()
+			}
 			ctx.WriteString(` LIMIT 1; `)
 		}
+	}
+		// Patch for MySQL/MariaDB:
+		// For BelongsTo updates (Child.ID = Parent.FK), the compiler generates `WHERE id = $parent_var`.
+		// Since $parent_var assumes PK, this is wrong. We need `WHERE id = $parent_var.fk`.
+		// We modify the expression tree to append the FK column.
+		if m.ParentID != -1 && m.Rel.Right.Ti.Name == m.Ti.Name {
+			var traverse func(*qcode.Exp)
+			traverse = func(ex *qcode.Exp) {
+				if ex == nil {
+					return
+				}
+				// Logic to patch OpIn / OpEq
+				// If LHS is "id" (PK) and RHS is Var without dot
+				// append "." + m.Rel.Left.Col.Name
+				isPK := ex.Left.Col.Name == m.Ti.PrimaryCol.Name
+
+				if (ex.Op == qcode.OpEquals || ex.Op == qcode.OpIn) && isPK && ex.Right.ValType == qcode.ValVar {
+					if !strings.Contains(ex.Right.Val, ".") {
+						ex.Right.Val += "." + m.Rel.Left.Col.Name
+					}
+				}
+				
+				for _, child := range ex.Children {
+					traverse(child)
+				}
+			}
+			traverse(m.Where.Exp)
+		}
+
+	// For child updates, use separate simpler UPDATE with JSON_EXTRACT
+	// This avoids JSON_TABLE join complexity and WHERE clause issues
+	if m.ParentID != -1 && m.IsJSON {
+		d.renderChildUpdate(ctx, m, qc, renderWhere)
+		ctx.WriteString("; ")
+		return
 	}
 
 	d.RenderUpdate(ctx, m, func() {
@@ -959,7 +1089,18 @@ func (d *MySQLDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcod
 			found := false
 			for id := range m.DependsOn {
 				if qc.Mutates[id].Ti.Name == rcol.VCol.Table {
-					d.RenderVar(ctx, d.getVarName(qc.Mutates[id]))
+					depM := qc.Mutates[id]
+					varName := d.getVarName(depM)
+
+					// If we differ to a connect/disconnect mutation, the value is a JSON array
+					// If the target column is not an array, we need to extract the first element
+					if (depM.Type == qcode.MTConnect || depM.Type == qcode.MTDisconnect) && !rcol.Col.Array {
+						ctx.WriteString("JSON_UNQUOTE(JSON_EXTRACT(")
+						d.RenderVar(ctx, varName)
+						ctx.WriteString(", '$[0]'))")
+					} else {
+						d.RenderVar(ctx, varName)
+					}
 					found = true
 					break
 				}
@@ -986,15 +1127,11 @@ func (d *MySQLDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcod
 	}, func() {
 		// Where
 		if m.IsJSON {
-			// MySQL: Only use t.id join if we DON'T have a separate WHERE clause
-			// Logic from mutate.go line 389.
-			// But here we might not have easy access to checking Selects[0].Where.Exp directly if not passed.
-			// But we passed `qc`.
-			if m.ParentID != -1 || len(qc.Selects) == 0 || qc.Selects[0].Where.Exp == nil {
+			// Root-level update: may need JSON table join for WHERE
+			if len(qc.Selects) == 0 || qc.Selects[0].Where.Exp == nil {
 				ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
 				ctx.WriteString(" = ")
 				ctx.ColWithTable("t", m.Ti.PrimaryCol.Name)
-				// AND ...
 				ctx.WriteString(" AND ")
 			}
 		}
@@ -1003,9 +1140,142 @@ func (d *MySQLDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcod
 	ctx.WriteString("; ")
 }
 
+// renderChildUpdate renders a simple UPDATE for child mutations using JSON_EXTRACT
+// This avoids the complexity of JSON_TABLE joins for child updates
+func (d *MySQLDialect) renderChildUpdate(ctx Context, m *qcode.Mutate, qc *qcode.QCode, renderWhere func()) {
+	ctx.WriteString("UPDATE ")
+	ctx.ColWithTable(m.Ti.Schema, m.Ti.Name)
+	ctx.WriteString(" SET ")
+	
+	// Build JSON path prefix from m.Path (e.g., ["customer"] -> "$.customer")
+	jsonPathPrefix := "$"
+	for _, p := range m.Path {
+		jsonPathPrefix += "." + p
+	}
+	
+	i := 0
+	for _, col := range m.Cols {
+		if col.Set {
+			// Preset columns - skip, they don't come from JSON
+			continue
+		}
+		if i != 0 {
+			ctx.WriteString(", ")
+		}
+		d.Quote(ctx, col.Col.Name)
+		ctx.WriteString(" = ")
+		
+		// Use JSON_UNQUOTE(JSON_EXTRACT(?, '$.path.field'))
+		ctx.WriteString("JSON_UNQUOTE(JSON_EXTRACT(")
+		ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+		ctx.WriteString(", '")
+		ctx.WriteString(jsonPathPrefix)
+		ctx.WriteString(".")
+		ctx.WriteString(col.FieldName)
+		ctx.WriteString("'))")
+		i++
+	}
+	
+	// Handle preset columns (they have literal values)
+	for _, col := range m.Cols {
+		if !col.Set {
+			continue
+		}
+		if i != 0 {
+			ctx.WriteString(", ")
+		}
+		d.Quote(ctx, col.Col.Name)
+		ctx.WriteString(" = ")
+		// For preset columns, render the value directly
+		if strings.HasPrefix(col.Value, "sql:") {
+			ctx.WriteString("(")
+			ctx.WriteString(col.Value[4:])
+			ctx.WriteString(")")
+		} else {
+			ctx.WriteString("'")
+			ctx.WriteString(col.Value)
+			ctx.WriteString("'")
+		}
+		i++
+	}
+	
+	if i == 0 {
+		// No columns to update - use identity update
+		d.Quote(ctx, m.Ti.PrimaryCol.Name)
+		ctx.WriteString(" = ")
+		d.Quote(ctx, m.Ti.PrimaryCol.Name)
+	}
+	
+	ctx.WriteString(" WHERE ")
+	renderWhere()
+}
+
+func (d *MySQLDialect) Quote(ctx Context, col string) {
+	ctx.WriteString("`")
+	ctx.WriteString(col)
+	ctx.WriteString("`")
+}
+
 func (d *MySQLDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
 	ctx.WriteString(`SELECT JSON_ARRAYAGG(`)
-	ctx.ColWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
+	d.Quote(ctx, m.Ti.Name)
+	ctx.WriteString(".")
+	d.Quote(ctx, m.Rel.Left.Col.Name)
+	ctx.WriteString(`) INTO `)
+	d.RenderVar(ctx, varName)
+	
+	if m.IsJSON {
+		ctx.WriteString(` FROM `)
+		d.RenderMutateToRecordSet(ctx, m, 0, func() {
+			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+		})
+		ctx.WriteString(`, `)
+	} else {
+		ctx.WriteString(` FROM `)
+	}
+	d.Quote(ctx, m.Ti.Name)
+	ctx.WriteString(` WHERE `)
+	renderFilter()
+	ctx.WriteString("; ")
+
+	// If this is a One-to-Many connection (Child needs to point to Parent),
+	// we need to update the child table with the parent's ID.
+	// We check if we have a dependency on the parent table.
+	var parentVar string
+	for id := range m.DependsOn {
+		if qc.Mutates[id].Ti.Name == m.Rel.Right.Col.Table {
+			parentVar = d.getVarName(qc.Mutates[id])
+			break
+		}
+	}
+
+	if parentVar != "" {
+		ctx.WriteString("UPDATE ")
+		d.Quote(ctx, m.Ti.Name)
+		if m.IsJSON {
+			ctx.WriteString(", ")
+			d.RenderMutateToRecordSet(ctx, m, 0, func() {
+				ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+			})
+		}
+		ctx.WriteString(" SET ")
+		
+		// Fix quoting: m.Rel.Left.Col.Name is the column name.
+		d.Quote(ctx, m.Rel.Left.Col.Name)
+		
+		ctx.WriteString(" = @")
+		ctx.WriteString(parentVar)
+		ctx.WriteString(" WHERE ")
+		renderFilter()
+		ctx.WriteString("; ")
+	}
+}
+
+func (d *MySQLDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
+	ctx.WriteString(`SELECT JSON_ARRAYAGG(`)
+	d.Quote(ctx, m.Ti.Name)
+	ctx.WriteString(".")
+	d.Quote(ctx, m.Rel.Left.Col.Name)
 	ctx.WriteString(`) INTO `)
 	d.RenderVar(ctx, varName)
 	
@@ -1021,26 +1291,20 @@ func (d *MySQLDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qco
 	ctx.Quote(m.Ti.Name)
 	ctx.WriteString(` WHERE `)
 	renderFilter()
-	ctx.WriteString("; ")
-}
+	ctx.WriteString(`; `)
 
-func (d *MySQLDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
-	ctx.WriteString(`SELECT JSON_ARRAYAGG(`)
-	ctx.ColWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
-	ctx.WriteString(`) INTO `)
-	d.RenderVar(ctx, varName)
-	
+	// Perform the actual disconnect (UPDATE child SET fk = NULL)
+	ctx.WriteString("UPDATE ")
+	d.Quote(ctx, m.Ti.Name)
 	if m.IsJSON {
-		ctx.WriteString(` FROM `)
+		ctx.WriteString(", ")
 		d.RenderMutateToRecordSet(ctx, m, 0, func() {
 			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
 		})
-		ctx.WriteString(`, `)
-	} else {
-		ctx.WriteString(` FROM `)
 	}
-	ctx.Quote(m.Ti.Name)
-	ctx.WriteString(` WHERE `)
+	ctx.WriteString(" SET ")
+	d.Quote(ctx, m.Rel.Left.Col.Name)
+	ctx.WriteString(" = NULL WHERE ")
 	renderFilter()
 	ctx.WriteString("; ")
 }
@@ -1073,8 +1337,72 @@ func (d *MySQLDialect) ModifySelectsForMutation(qc *qcode.QCode) {
 		}
 		
 		var exp *qcode.Exp
-		if len(mutations) == 1 {
-			// Single mutation: id = @varName
+
+		// Special handling for JSON input (potentially bulk)
+		// If we refer to a single JSON mutation, it might be a bulk insert
+		if len(mutations) == 1 && mutations[0].IsJSON {
+			m := mutations[0]
+			
+			// Check if this mutation has child mutations that need it
+			hasChildMutations := false
+			for _, otherM := range qc.Mutates {
+				if otherM.ParentID == m.ID {
+					hasChildMutations = true
+					break
+				}
+			}
+			
+			// For UPDATE without child mutations, keep the original WHERE clause
+			// The pre-select that would populate @var is skipped, so we can't use @var
+			if m.Type == qcode.MTUpdate && !hasChildMutations && sel.Where.Exp != nil {
+				// Don't modify - keep the original WHERE clause
+				continue
+			}
+			
+			hasExplicitPK := false
+			var pkName string
+			for _, col := range m.Cols {
+				if col.Col.Name == m.Ti.PrimaryCol.Name {
+					hasExplicitPK = true
+					pkName = col.FieldName // The JSON key
+					break
+				}
+			}
+
+			if hasExplicitPK {
+				// If PK is provided in JSON, we filter by the IDs in the JSON input
+				// id IN (SELECT id FROM JSON_TABLE(..., '$[*]' COLUMNS (id TYPE PATH '$.id')))
+				
+				exp = &qcode.Exp{Op: qcode.OpIn}
+				col := m.Ti.PrimaryCol
+				col.Table = m.Ti.Name
+				exp.Left.Col = col
+				exp.Left.ID = -1
+				exp.Right.ValType = qcode.ValVar
+				
+				// Encode metadata into the variable name for RenderValVar to deconstruct
+				// Format: __gj_json_pk:<action_var>:<json_key>:<col_type>
+				exp.Right.Val = fmt.Sprintf("__gj_json_pk:gj_sep:%s:gj_sep:%s:gj_sep:%s", qc.ActionVar, pkName, m.Ti.PrimaryCol.Type)
+
+			} else {
+				// Auto-generated PKs with JSON input
+				// TODO: Implement range optimization (id >= @start AND id < @start + @count)
+				// For now, fallback to single ID capture (last one) which is existing behavior
+				// causing the partial result issue for bulk auto-inc, but acceptable for single row.
+				
+				m := mutations[0]
+				varName := m.Ti.Name + "_" + fmt.Sprintf("%d", m.ID)
+				exp = &qcode.Exp{Op: qcode.OpEquals}
+				col := m.Ti.PrimaryCol
+				col.Table = m.Ti.Name
+				exp.Left.Col = col
+				exp.Left.ID = -1
+				exp.Right.ValType = qcode.ValDBVar
+				exp.Right.Val = varName
+			}
+
+		} else if len(mutations) == 1 {
+			// Single standard mutation
 			m := mutations[0]
 			varName := m.Ti.Name + "_" + fmt.Sprintf("%d", m.ID)
 			exp = &qcode.Exp{Op: qcode.OpEquals}
@@ -1085,14 +1413,14 @@ func (d *MySQLDialect) ModifySelectsForMutation(qc *qcode.QCode) {
 			exp.Right.ValType = qcode.ValDBVar
 			exp.Right.Val = varName
 		} else {
-			// Multiple mutations: id IN (@var1, @var2, ...)
+			// Multiple mutations
 			m := mutations[0]
 			exp = &qcode.Exp{Op: qcode.OpIn}
 			col := m.Ti.PrimaryCol
 			col.Table = m.Ti.Name
 			exp.Left.Col = col
 			exp.Left.ID = -1
-			exp.Right.ValType = qcode.ValList  // Required for renderList to be called
+			exp.Right.ValType = qcode.ValList 
 			exp.Right.ListType = qcode.ValDBVar
 			for _, mut := range mutations {
 				varName := mut.Ti.Name + "_" + fmt.Sprintf("%d", mut.ID)

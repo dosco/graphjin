@@ -80,10 +80,11 @@ func (c *compilerContext) WriteString(s string) (int, error) {
 
 func (c *compilerContext) AddParam(p dialect.Param) string {
 	pp := Param{
-		Name:      p.Name,
-		Type:      p.Type,
-		IsArray:   p.IsArray,
-		IsNotNull: p.IsNotNull,
+		Name:        p.Name,
+		Type:        p.Type,
+		IsArray:     p.IsArray,
+		IsNotNull:   p.IsNotNull,
+		WrapInArray: p.WrapInArray,
 	}
 	c.renderParam(pp)
 	return ""

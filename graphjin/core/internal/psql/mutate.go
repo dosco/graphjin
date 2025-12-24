@@ -4,9 +4,8 @@ package psql
 
 import (
 	"bytes"
-	"strings"
 	"fmt"
-
+	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/graph"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
@@ -126,7 +125,10 @@ func (c *compilerContext) compileLinearMutation() {
 						c.colWithTable("t", m.Ti.PrimaryCol.Name)
 						hasWhere = true
 					} else if c.dialect.Name() == "mysql" || c.dialect.Name() == "mariadb" {
-						if m.ParentID != -1 || len(c.qc.Selects) == 0 || c.qc.Selects[0].Where.Exp == nil {
+						// For child updates (m.ParentID != -1), the JSON input doesn't contain the child's PK.
+						// The row to update is determined by the parent's FK, not by JSON table join.
+						// Only add JSON table join for root updates that need it.
+						if m.ParentID == -1 && (len(c.qc.Selects) == 0 || c.qc.Selects[0].Where.Exp == nil) {
 							c.colWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
 							c.w.WriteString(" = ")
 							c.colWithTable("t", m.Ti.PrimaryCol.Name)
@@ -152,30 +154,44 @@ func (c *compilerContext) compileLinearMutation() {
 				}
 				c.renderExpPath(m.Ti, m.Where.Exp, false, nil)
 
-				if c.dialect.Name() == "sqlite" && m.ParentID != -1 {
-					if m.Where.Exp != nil || hasWhere { // Check if anything was rendered before
-						c.w.WriteString(" AND ")
-					}
-					var childCol, parentCol string
-					if m.Rel.Left.Ti.Name == m.Ti.Name {
-						childCol = m.Rel.Left.Col.Name
-						parentCol = m.Rel.Right.Col.Name
-					} else {
-						childCol = m.Rel.Right.Col.Name
-						parentCol = m.Rel.Left.Col.Name
-					}
-					pm := c.qc.Mutates[m.ParentID]
+				// Handle parent join for child updates
+				if m.ParentID != -1 {
+					dialectName := c.dialect.Name()
+					if dialectName == "sqlite" || dialectName == "mysql" || dialectName == "mariadb" {
+						if m.Where.Exp != nil || hasWhere { // Check if anything was rendered before
+							c.w.WriteString(" AND ")
+						}
+						var childCol, parentCol string
+						if m.Rel.Left.Ti.Name == m.Ti.Name {
+							childCol = m.Rel.Left.Col.Name
+							parentCol = m.Rel.Right.Col.Name
+						} else {
+							childCol = m.Rel.Right.Col.Name
+							parentCol = m.Rel.Left.Col.Name
+						}
+						pm := c.qc.Mutates[m.ParentID]
 
-					c.quoted(childCol)
-					c.w.WriteString(" = (SELECT ")
-					c.quoted(parentCol)
-					c.w.WriteString(" FROM ")
-					c.quoted(pm.Ti.Name)
-					c.w.WriteString(" WHERE ")
-					c.quoted(pm.Ti.PrimaryCol.Name)
+					c.colWithTable(m.Ti.Name, childCol)
 					c.w.WriteString(" = ")
-					c.dialect.RenderVar(c, c.getVarName(pm))
-					c.w.WriteString(")")
+						
+						if dialectName == "sqlite" {
+							// SQLite uses subquery
+							c.w.WriteString("(SELECT ")
+							c.quoted(parentCol)
+							c.w.WriteString(" FROM ")
+							c.quoted(pm.Ti.Name)
+							c.w.WriteString(" WHERE ")
+							c.quoted(pm.Ti.PrimaryCol.Name)
+							c.w.WriteString(" = ")
+							c.dialect.RenderVar(c, c.getVarName(pm))
+							c.w.WriteString(")")
+						} else {
+							// MySQL/MariaDB use captured variable with FK column name
+							// Variable format: @parentTable_parentID_fkColumn
+							parentVarName := c.getVarName(pm) + "_" + parentCol
+							c.dialect.RenderVar(c, parentVarName)
+						}
+					}
 				}
 			}
 			c.dialect.RenderLinearUpdate(c, &m, c.qc, vName, renderColVal, renderWhere)
