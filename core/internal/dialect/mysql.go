@@ -1066,6 +1066,15 @@ func (d *MySQLDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcod
 		ctx.WriteString("; ")
 		return
 	}
+	// Determine FROM function - only needed for JSON mutations
+	var fromFunc func()
+	if m.IsJSON {
+		fromFunc = func() {
+			d.RenderMutateToRecordSet(ctx, m, 0, func() {
+				ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+			})
+		}
+	}
 
 	d.RenderUpdate(ctx, m, func() {
 		// Set
@@ -1117,14 +1126,7 @@ func (d *MySQLDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcod
 			ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
 		}
 
-	}, func() {
-		// From
-		if m.IsJSON {
-			d.RenderMutateToRecordSet(ctx, m, 0, func() {
-			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
-		})
-		}
-	}, func() {
+	}, fromFunc, func() {
 		// Where
 		if m.IsJSON {
 			// Root-level update: may need JSON table join for WHERE
@@ -1404,6 +1406,13 @@ func (d *MySQLDialect) ModifySelectsForMutation(qc *qcode.QCode) {
 		} else if len(mutations) == 1 {
 			// Single standard mutation
 			m := mutations[0]
+			
+			// For non-JSON updates (inline WHERE mutations), keep the original WHERE clause
+			// The pre-select that would populate @var is not done for non-JSON mutations
+			if !m.IsJSON && sel.Where.Exp != nil {
+				continue
+			}
+			
 			varName := m.Ti.Name + "_" + fmt.Sprintf("%d", m.ID)
 			exp = &qcode.Exp{Op: qcode.OpEquals}
 			col := m.Ti.PrimaryCol

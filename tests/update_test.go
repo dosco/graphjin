@@ -157,10 +157,6 @@ func Example_updateTableAndRelatedTable() {
 }
 
 func Example_setArrayColumnToValue() {
-	if dbType == "mysql" {
-		fmt.Println(`{"products":[{"id":100,"tags":["super","great","wow"]}]}`)
-		return
-	}
 	gql := `mutation {
 		products(where: { id: 100 }, update: { tags: ["super", "great", "wow"] }) {
 			id
@@ -186,10 +182,6 @@ func Example_setArrayColumnToValue() {
 }
 
 func Example_setArrayColumnToEmpty() {
-	if dbType == "mysql" {
-		fmt.Println(`{"products":[{"id":100,"tags":[]}]}`)
-		return
-	}
 	gql := `mutation {
 		products(where: { id: 100 }, update: { tags: [] }) {
 			id
