@@ -41,11 +41,6 @@ func Example_update() {
 }
 
 func Example_updateMultipleRelatedTables1() {
-	if dbType == "mysql" {
-		// Multi-table updates require Phase 3 INSERT fixes
-		fmt.Println(`{"purchases":{"customer":{"full_name":"Updated user related to purchase 100"},"product":{"description":"Updated product related to purchase 100"},"quantity":6}}`)
-		return
-	}
 	gql := `mutation {
 		purchases(id: $id, update: $data) {
 			quantity
@@ -88,11 +83,6 @@ func Example_updateMultipleRelatedTables1() {
 }
 
 func Example_updateTableAndConnectToRelatedTables() {
-	if dbType == "mysql" {
-		// Connect/disconnect operations require Phase 3 INSERT fixes
-		fmt.Println(`{"users":{"full_name":"Updated user 100","products":[{"id":99}]}}`)
-		return
-	}
 	gql := `mutation {
 		users(id: $id, update: $data) {
 			full_name

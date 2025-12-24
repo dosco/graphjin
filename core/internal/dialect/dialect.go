@@ -8,10 +8,11 @@ import (
 
 
 type Param struct {
-	Name      string
-	Type      string
-	IsArray   bool
-	IsNotNull bool
+	Name        string
+	Type        string
+	IsArray     bool
+	IsNotNull   bool
+	WrapInArray bool
 }
 
 type Context interface {
