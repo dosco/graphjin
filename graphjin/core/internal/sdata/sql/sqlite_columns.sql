@@ -7,7 +7,19 @@ SELECT
   (p.pk > 0) as primary_key,
   0 as unique_key,
   (LOWER(p.type) IN ('json', 'jsonb') OR p.name = 'tags' OR p.name LIKE '%_ids') as is_array,
-  (m.sql LIKE '%USING fts%') as full_text,
+  (
+    -- Check if this is an FTS virtual table column
+    m.sql LIKE '%USING fts%'
+    OR
+    -- Check if there's a content-backed FTS5 table for this table with this column
+    EXISTS (
+      SELECT 1 FROM sqlite_master fm
+      JOIN pragma_table_info(fm.name) fp ON fp.name = p.name
+      WHERE fm.type = 'table' 
+        AND fm.sql LIKE '%USING fts5%'
+        AND fm.sql LIKE '%content=''' || m.name || '''%'
+    )
+  ) as full_text,
   'main' as foreignkey_schema,
   COALESCE(fk."table", '') as foreignkey_table,
   COALESCE(fk."to", '') as foreignkey_column

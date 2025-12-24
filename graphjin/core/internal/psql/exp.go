@@ -125,6 +125,12 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 		return
 	}
 
+	// Handle TsQuery early - it generates a self-contained condition without column prefix
+	if ex.Op == qcode.OpTsQuery {
+		c.dialect.RenderTsQuery(c, c.ti, ex)
+		return
+	}
+
 	if ex.Left.Col.Name != "" {
 		var table string
 		if ex.Left.Table == "" {
@@ -216,9 +222,8 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 		}
 		return
 
-	case qcode.OpTsQuery:
-		c.dialect.RenderTsQuery(c, c.ti, ex)
-		return
+
+	// Note: OpTsQuery is handled early in renderOp, before column prefix logic
 
 	default:
 		opStr, err := c.dialect.RenderOp(ex.Op)
