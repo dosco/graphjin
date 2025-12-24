@@ -217,6 +217,8 @@ func (d *SQLiteDialect) RenderList(ctx Context, ex *qcode.Exp) {
 			ctx.WriteString(`'`)
 			ctx.WriteString(ex.Right.ListVal[i])
 			ctx.WriteString(`'`)
+		case qcode.ValDBVar:
+			d.RenderVar(ctx, ex.Right.ListVal[i])
 		}
 	}
 	ctx.WriteString(`)`)
@@ -836,135 +838,10 @@ func (d *SQLiteDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qco
 }
 
 func (d *SQLiteDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
-	var colToUpdate string
-	var tableToUpdate string
-    _ = tableToUpdate
-	
-	// Default to Target table
-	tableToUpdate = m.Ti.Name
-	
-	// Check if Foreign Key is on Parent (BelongsTo relationship)
-	if m.ParentID != -1 {
-		pm := qc.Mutates[m.ParentID]
-		if pm.Ti.Name == m.Rel.Left.Col.Table && !m.Rel.Left.Col.PrimaryKey {
-			colToUpdate = m.Rel.Left.Col.Name
-			tableToUpdate = pm.Ti.Name
-		} else if pm.Ti.Name == m.Rel.Right.Col.Table && !m.Rel.Right.Col.PrimaryKey {
-			colToUpdate = m.Rel.Right.Col.Name
-			tableToUpdate = pm.Ti.Name
-		}
-	}
-	
-	// If not found on Parent, check if FK is on Target
-	if colToUpdate == "" {
-		if m.Ti.Name == m.Rel.Right.Col.Table && !m.Rel.Right.Col.PrimaryKey {
-			colToUpdate = m.Rel.Right.Col.Name
-		} else if m.Ti.Name == m.Rel.Left.Col.Table && !m.Rel.Left.Col.PrimaryKey {
-			colToUpdate = m.Rel.Left.Col.Name
-		}
-	}
-
-	if colToUpdate != "" {
-        var sb strings.Builder
-		sb.WriteString(`UPDATE `)
-		sb.WriteString(`"`)
-        sb.WriteString(tableToUpdate)
-        sb.WriteString(`"`)
-		sb.WriteString(` SET `)
-		sb.WriteString(`"`)
-        sb.WriteString(colToUpdate)
-        sb.WriteString(`"`)
-		
-		valToSet := "NULL"
-		if len(m.Cols) > 0 {
-			val := m.Cols[0].Value
-			if strings.HasPrefix(val, "$") {
-				valToSet = fmt.Sprintf("(SELECT id FROM _gj_ids WHERE k='%s')", val[1:])
-			} else {
-				valToSet = "'" + strings.ReplaceAll(val, "'", "''") + "'"
-			}
-		}
-
-		// Determine if we are updating Parent or Child
-		isParentUpdate := false
-		if m.ParentID != -1 && tableToUpdate == qc.Mutates[m.ParentID].Ti.Name {
-			isParentUpdate = true
-		}
-
-        var retID string
-
-		if isParentUpdate {
-			// Updating Parent (BelongsTo): SET FK = ChildID (valToSet)
-			sb.WriteString(` = `)
-			sb.WriteString(valToSet)
-			
-			// WHERE Parent.PK = ParentVar
-			sb.WriteString(` WHERE `)
-			pm := qc.Mutates[m.ParentID]
-			sb.WriteString(`"`)
-            sb.WriteString(pm.Ti.PrimaryCol.Name)
-            sb.WriteString(`"`)
-			sb.WriteString(` = (SELECT id FROM _gj_ids WHERE k = '`)
-			sb.WriteString(d.getVarName(pm))
-			sb.WriteString(`')`)
-
-			// Return the Child ID (valToSet) so GraphJin knows what we linked
-            retID = valToSet
-
-		} else {
-			// Updating Target (HasMany/One): SET FK = ParentVar
-			sb.WriteString(` = `)
-			if m.ParentID != -1 {
-				pm := qc.Mutates[m.ParentID]
-				sb.WriteString(`(SELECT id FROM _gj_ids WHERE k = '`)
-				sb.WriteString(d.getVarName(pm))
-				sb.WriteString(`')`)
-			} else {
-				sb.WriteString("NULL")
-			}
-			
-			// WHERE Target.PK = ChildID (valToSet) OR Filter
-			sb.WriteString(` WHERE `)
-			
-			// If we have a specific ID to connect (valToSet derived from m.Cols)
-			if len(m.Cols) > 0 {
-				sb.WriteString(`"`)
-                sb.WriteString(m.Ti.PrimaryCol.Name)
-                sb.WriteString(`"`)
-				sb.WriteString(` = `)
-				sb.WriteString(valToSet)
-			} else {
-				// Otherwise rely on filter (e.g. where inputs)
-				renderFilter()
-			}
-			
-			// Return Target ID (PK)
-            // Use Primary Key name for return
-            retID = `"` + m.Ti.PrimaryCol.Name + `"`
-		}
-
-		sb.WriteString(" -- @gj_ids=")
-		sb.WriteString(varName)
-		sb.WriteString("\n; ")
-        
-        // Append SELECT for RETURNING replacement
-        sb.WriteString(`SELECT json_object('id', `)
-        sb.WriteString(retID)
-        sb.WriteString(`)`)
-        sb.WriteString(" -- @gj_ids=")
-		sb.WriteString(varName)
-		sb.WriteString("\n; ")
-        
-        q := sb.String()
-        ctx.WriteString(q)
-		return
-	}
-
-	// Fallback: Select (Branch 2)
-	ctx.WriteString(`SELECT `)
-	ctx.WriteString(`json_object('id', `)
-    ctx.ColWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
-    ctx.WriteString(`)`)
+	// Step 1: SELECT to capture IDs matching the filter
+	ctx.WriteString(`SELECT json_object('id', `)
+	ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
+	ctx.WriteString(`)`)
 	
 	if m.IsJSON {
 		ctx.WriteString(` FROM `)
@@ -976,13 +853,99 @@ func (d *SQLiteDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qc
 		ctx.WriteString(` FROM `)
 	}
 	ctx.Quote(m.Ti.Name)
-
+	
 	ctx.WriteString(` WHERE `)
-    renderFilter()
-    
+	renderFilter()
+	
 	ctx.WriteString(" -- @gj_ids=")
 	ctx.WriteString(varName)
 	ctx.WriteString("\n; ")
+	
+	// Step 2: Determine relationship direction and perform appropriate UPDATE
+	// For recursive self-referential tables (e.g., comments.reply_to_id -> comments.id),
+	// we need to update the CONNECTED row's FK to point to the PARENT.
+	
+	// Check if this is a recursive relationship (same table on both sides)
+	isRecursive := m.Rel.Left.Col.Table == m.Rel.Right.Col.Table
+	
+	// Find the parent mutation this connect depends on
+	var parentVar string
+	var parentMut *qcode.Mutate
+	for id := range m.DependsOn {
+		pm := qc.Mutates[id]
+		parentVar = d.getVarName(pm)
+		parentMut = &pm
+		break
+	}
+	
+	if parentVar == "" || parentMut == nil {
+		return
+	}
+	
+	if isRecursive {
+		// For recursive relationships (e.g., comments -> comments via reply_to_id):
+		// The FK column is on the same table. We need to determine which column is the FK.
+		// The non-PK column in the relationship is the FK.
+		var fkColName string
+		if !m.Rel.Left.Col.PrimaryKey {
+			fkColName = m.Rel.Left.Col.Name
+		} else if !m.Rel.Right.Col.PrimaryKey {
+			fkColName = m.Rel.Right.Col.Name
+		}
+		
+		if fkColName != "" {
+			// UPDATE the connected (child) row's FK to point to the parent
+			ctx.WriteString(`UPDATE `)
+			ctx.Quote(m.Ti.Name)
+			ctx.WriteString(` SET `)
+			ctx.Quote(fkColName)
+			ctx.WriteString(` = (SELECT id FROM _gj_ids WHERE k = '`)
+			ctx.WriteString(parentVar)
+			ctx.WriteString(`' LIMIT 1) WHERE `)
+			ctx.Quote(m.Ti.PrimaryCol.Name)
+			ctx.WriteString(` IN (SELECT id FROM _gj_ids WHERE k = '`)
+			ctx.WriteString(varName)
+			ctx.WriteString(`'); `)
+		}
+	} else {
+		// For non-recursive relationships:
+		// Check if parent table has the FK column pointing to our target
+		var parentTableName string
+		var fkColName string
+		
+		if parentMut.Ti.Name == m.Rel.Right.Col.Table && !m.Rel.Right.Col.PrimaryKey {
+			// FK is on the right side (parent side)
+			parentTableName = parentMut.Ti.Name
+			fkColName = m.Rel.Right.Col.Name
+		} else if parentMut.Ti.Name == m.Rel.Left.Col.Table && !m.Rel.Left.Col.PrimaryKey {
+			// FK is on the left side (parent side)
+			parentTableName = parentMut.Ti.Name
+			fkColName = m.Rel.Left.Col.Name
+		}
+
+		if parentTableName != "" && fkColName != "" {
+			// Update the parent's FK to point to the connected child
+			ctx.WriteString(`UPDATE `)
+			ctx.Quote(parentTableName)
+			ctx.WriteString(` SET `)
+			ctx.Quote(fkColName)
+			ctx.WriteString(` = (SELECT id FROM _gj_ids WHERE k = '`)
+			ctx.WriteString(varName)
+			ctx.WriteString(`' LIMIT 1) WHERE `)
+			ctx.Quote(parentMut.Ti.PrimaryCol.Name)
+			ctx.WriteString(` = (SELECT id FROM _gj_ids WHERE k = '`)
+			ctx.WriteString(parentVar)
+			ctx.WriteString(`' LIMIT 1); `)
+		}
+	}
+}
+
+// Helper to get first key from a map
+func getFirstKey(m map[int32]struct{}) int32 {
+	for k := range m {
+		return k
+	}
+	return -1
 }
 
 func (d *SQLiteDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
@@ -1054,14 +1017,80 @@ func (d *SQLiteDialect) RenderTableName(ctx Context, sel *qcode.Select, schema, 
 	}
 }
 
-// ModifySelectsForMutation tracks mutated tables for SQLite mutations.
-// The scoping CTE handles all filtering, so we don't inject WHERE clauses.
+// ModifySelectsForMutation injects WHERE clauses to filter SELECT results
+// to only include records from INSERT/UPDATE/UPSERT mutations.
+// This ensures CONNECT mutations' captured IDs are available in the CTE for joins,
+// but don't affect which primary records are returned.
 func (d *SQLiteDialect) ModifySelectsForMutation(qc *qcode.QCode) {
 	if qc.Type != qcode.QTMutation || qc.Selects == nil {
 		return
 	}
-	// No need to populate global variable anymore
-	// This works correctly for both single inserts and bulk inserts
+
+	// For SQLite, we need to inject a WHERE clause to filter by captured IDs
+	// from INSERT/UPDATE/UPSERT mutations only (not CONNECT/DISCONNECT)
+	for i := range qc.Selects {
+		sel := &qc.Selects[i]
+		
+		// Only modify root-level selects that correspond to mutated tables
+		if sel.ParentID != -1 {
+			continue
+		}
+		
+		// If user already provided a WHERE clause, don't inject ours
+		// The CTE already scopes to mutated records, so user's filter works correctly
+		if sel.Where.Exp != nil {
+			continue
+		}
+		
+		// Collect INSERT/UPDATE/UPSERT mutations for this table only
+		var mutations []qcode.Mutate
+		for _, m := range qc.Mutates {
+			if m.Ti.Name == sel.Table && 
+				(m.Type == qcode.MTInsert || m.Type == qcode.MTUpdate || m.Type == qcode.MTUpsert) {
+				mutations = append(mutations, m)
+			}
+		}
+		
+		if len(mutations) == 0 {
+			continue
+		}
+		
+		// For bulk array JSON inserts, skip WHERE injection - the CTE handles it
+		// via `k LIKE 'table_%'` which includes all captured bulk IDs
+		if len(mutations) == 1 && mutations[0].IsJSON && mutations[0].Array {
+			continue
+		}
+		
+		var exp *qcode.Exp
+		
+		if len(mutations) == 1 {
+			m := mutations[0]
+			varName := m.Ti.Name + "_" + fmt.Sprintf("%d", m.ID)
+			exp = &qcode.Exp{Op: qcode.OpEquals}
+			col := m.Ti.PrimaryCol
+			col.Table = m.Ti.Name
+			exp.Left.Col = col
+			exp.Left.ID = -1
+			exp.Right.ValType = qcode.ValDBVar
+			exp.Right.Val = varName
+		} else {
+			// Multiple mutations - use IN
+			m := mutations[0]
+			exp = &qcode.Exp{Op: qcode.OpIn}
+			col := m.Ti.PrimaryCol
+			col.Table = m.Ti.Name
+			exp.Left.Col = col
+			exp.Left.ID = -1
+			exp.Right.ValType = qcode.ValList 
+			exp.Right.ListType = qcode.ValDBVar
+			for _, mut := range mutations {
+				varName := mut.Ti.Name + "_" + fmt.Sprintf("%d", mut.ID)
+				exp.Right.ListVal = append(exp.Right.ListVal, varName)
+			}
+		}
+		
+		sel.Where.Exp = exp
+	}
 }
 // getVarName returns the variable name for a mutation's captured ID
 func getVarName(m *qcode.Mutate) string {
