@@ -25,7 +25,7 @@ CREATE TABLE products (
   id BIGINT NOT NULL PRIMARY KEY,
   name VARCHAR(255),
   description VARCHAR(255),
-  tags VARCHAR(255),
+  tags JSON,
   metadata json,
   country_code VARCHAR(3),
   price FLOAT(7, 1),
@@ -210,14 +210,7 @@ INSERT INTO products (
 SELECT i,
   CONCAT('Product ', i),
   CONCAT('Description for product ', i),
-  (
-    SELECT GROUP_CONCAT(
-        CONCAT('Tag ', i)
-        ORDER BY i ASC SEPARATOR ','
-      )
-    FROM seq100
-    WHERE i <= 5
-  ),
+  JSON_ARRAY('Tag 1', 'Tag 2', 'Tag 3', 'Tag 4', 'Tag 5'),
   (
     CASE
       WHEN ((i % 2) = 0) THEN '{"foo": true}'
