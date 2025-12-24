@@ -387,17 +387,49 @@ func (d *MySQLDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
 }
 
 func (d *MySQLDialect) RenderTsQuery(ctx Context, ti sdata.DBTable, ex *qcode.Exp) {
-	// MATCH (name) AGAINST ('phone' IN BOOLEAN MODE);
-	ctx.WriteString(`(MATCH(`)
-	for i, col := range ti.FullText {
-		if i != 0 {
-			ctx.WriteString(`, `)
+	// MySQL FULLTEXT search: For exact phrase matching, use BOOLEAN MODE
+	// NATURAL LANGUAGE MODE matches common words in all rows which gives false positives
+	
+	if len(ti.FullText) > 0 {
+		// Use FULLTEXT index with BOOLEAN MODE for more precise matching
+		// Wrap search term in double quotes for phrase matching
+		ctx.WriteString(`(MATCH(`)
+		for i, col := range ti.FullText {
+			if i != 0 {
+				ctx.WriteString(`, `)
+			}
+			ctx.ColWithTable(ti.Name, col.Name)
 		}
-		ctx.ColWithTable(ti.Name, col.Name)
+		ctx.WriteString(`) AGAINST (CONCAT('"', `)
+		ctx.AddParam(Param{Name: ex.Right.Val, Type: "text"})
+		ctx.WriteString(`, '"') IN BOOLEAN MODE))`)
+	} else {
+		// Fallback: Use LIKE search on common text columns (name, description)
+		// Find name and description columns
+		var textCols []string
+		for _, col := range ti.Columns {
+			if col.Name == "name" || col.Name == "description" {
+				textCols = append(textCols, col.Name)
+			}
+		}
+		
+		if len(textCols) > 0 {
+			ctx.WriteString(`(`)
+			for i, colName := range textCols {
+				if i > 0 {
+					ctx.WriteString(` OR `)
+				}
+				ctx.ColWithTable(ti.Name, colName)
+				ctx.WriteString(` LIKE CONCAT('%', `)
+				ctx.AddParam(Param{Name: ex.Right.Val, Type: "text"})
+				ctx.WriteString(`, '%')`)
+			}
+			ctx.WriteString(`)`)
+		} else {
+			// No searchable columns, return no results
+			ctx.WriteString(`FALSE`)
+		}
 	}
-	ctx.WriteString(`) AGAINST (`)
-	ctx.AddParam(Param{Name: ex.Right.Val, Type: "text"})
-	ctx.WriteString(` IN NATURAL LANGUAGE MODE))`)
 }
 
 func (d *MySQLDialect) RenderSearchRank(ctx Context, sel *qcode.Select, f qcode.Field) {

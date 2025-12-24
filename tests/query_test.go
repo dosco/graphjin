@@ -537,10 +537,6 @@ func Example_queryByID() {
 }
 
 func Example_queryBySearch() {
-	if dbType == "sqlite" {
-		fmt.Println(`{"products":[{"id":3,"name":"Product 3"}]}`)
-		return
-	}
 	gql := `query {
 		products(search: $query, limit: 5) {
 			id
@@ -549,7 +545,7 @@ func Example_queryBySearch() {
 	}`
 
 	vars := json.RawMessage(`{
-		"query": "\"Product 3\""
+		"query": "Product 3"
 	}`)
 
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})

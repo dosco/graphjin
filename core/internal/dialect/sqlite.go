@@ -277,24 +277,24 @@ func (d *SQLiteDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
 }
 
 func (d *SQLiteDialect) RenderTsQuery(ctx Context, ti sdata.DBTable, ex *qcode.Exp) {
-	// SQLite FTS5 Match
-	// MATCH 'query'
+	// SQLite FTS5: For content-backed FTS, we need to query the FTS virtual table
+	// and match rowid with the main table's primary key.
+	// The FTS table name is typically the main table name suffixed with "_fts"
+	ftsTableName := ti.Name + "_fts"
+	
 	ctx.WriteString(`(`)
-    // Assume FTS table is joined or we are on it?
-    // Basic match check:
-    for i, col := range ti.FullText {
-		if i != 0 {
-			ctx.WriteString(` OR `)
-		}
-		ctx.ColWithTable(ti.Name, col.Name)
-        ctx.WriteString(` MATCH `)
-		if ex.Right.ValType == qcode.ValStr {
-			d.RenderLiteral(ctx, ex.Right.Val, ex.Right.ValType)
-		} else {
-	        ctx.AddParam(Param{Name: ex.Right.Val, Type: "text"})
-		}
+	ctx.ColWithTable(ti.Name, ti.PrimaryCol.Name)
+	ctx.WriteString(` IN (SELECT rowid FROM `)
+	ctx.Quote(ftsTableName)
+	ctx.WriteString(` WHERE `)
+	ctx.Quote(ftsTableName)
+	ctx.WriteString(` MATCH `)
+	if ex.Right.ValType == qcode.ValStr {
+		d.RenderLiteral(ctx, ex.Right.Val, ex.Right.ValType)
+	} else {
+		ctx.AddParam(Param{Name: ex.Right.Val, Type: "text"})
 	}
-	ctx.WriteString(`)`)
+	ctx.WriteString(`))`)
 }
 
 func (d *SQLiteDialect) RenderSearchRank(ctx Context, sel *qcode.Select, f qcode.Field) {
@@ -708,17 +708,54 @@ func (d *SQLiteDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qco
 
 	if m.IsJSON {
 		ctx.WriteString(" FROM ")
-		d.RenderMutateToRecordSet(ctx, m, 0, func() {
+		d.RenderLinearValues(ctx, m, func() {
              ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
         })
 	} else {
 		ctx.WriteString(")")
 	}
 
-    d.RenderReturning(ctx, m)
+    // Render RETURNING clause - execution layer (gstate.go) captures IDs via @gj_ids hint
+    // For inline inserts (!m.IsJSON), RETURNING works directly
+    // For JSON inserts (m.IsJSON), RETURNING doesn't work with INSERT...SELECT, 
+    // so we use a separate SELECT statement
+    if !m.IsJSON {
+        d.RenderReturning(ctx, m)
+    }
+
 	ctx.WriteString(" -- @gj_ids=")
 	ctx.WriteString(varName)
 	ctx.WriteString("\n; ")
+    
+    // Note: ID capture into _gj_ids is handled by gstate.go execution layer
+    // It parses the RETURNING/SELECT JSON output and inserts into _gj_ids
+    // We do NOT use last_insert_rowid() for inline inserts because it returns 
+    // SQLite's internal rowid, not the user-provided explicit ID value
+
+    // For JSON inserts (INSERT SELECT), RETURNING doesn't work, so we manually 
+    // return the IDs via a SELECT. gstate.go will capture these via @gj_ids hint.
+    if m.IsJSON {
+        if m.Array {
+            // Bulk insert: Extract ALL IDs from the JSON array input
+            ctx.WriteString("SELECT json_object('id', json_extract(value, '$.")
+            ctx.WriteString(m.Ti.PrimaryCol.Name)
+            ctx.WriteString("')) FROM json_each(")
+            ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+            if len(m.Path) > 0 {
+                ctx.WriteString(", '$.")
+                ctx.WriteString(strings.Join(m.Path, "."))
+                ctx.WriteString("'")
+            }
+            ctx.WriteString(") -- @gj_ids=")
+            ctx.WriteString(varName)
+            ctx.WriteString("\n; ")
+        } else {
+            // Single JSON insert: last_insert_rowid() is correct for one row
+            ctx.WriteString("SELECT json_object('id', last_insert_rowid()) -- @gj_ids=")
+            ctx.WriteString(varName)
+            ctx.WriteString("\n; ")
+        }
+    }
 }
 
 func (d *SQLiteDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderColVal func(qcode.MColumn), renderWhere func()) {
@@ -799,36 +836,131 @@ func (d *SQLiteDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qco
 }
 
 func (d *SQLiteDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
-    // Logic from mutate.go lines 442+
 	var colToUpdate string
-	if m.Ti.Name == m.Rel.Right.Col.Table && !m.Rel.Right.Col.PrimaryKey {
-		colToUpdate = m.Rel.Right.Col.Name
-	} else if m.Ti.Name == m.Rel.Left.Col.Table && !m.Rel.Left.Col.PrimaryKey {
-		colToUpdate = m.Rel.Left.Col.Name
-	}
-    
-    if (m.Rel.Type == sdata.RelOneToMany || m.Rel.Type == sdata.RelOneToOne || m.Rel.Type == sdata.RelRecursive) && colToUpdate != "" {
-        ctx.WriteString(`UPDATE `)
-		ctx.Quote(m.Ti.Name)
-		ctx.WriteString(` SET `)
-		ctx.Quote(colToUpdate)
-		ctx.WriteString(` = (SELECT id FROM _gj_ids WHERE k = '`)
-		if m.ParentID != -1 {
-			pm := qc.Mutates[m.ParentID]
-			ctx.WriteString(d.getVarName(pm))
+	var tableToUpdate string
+    _ = tableToUpdate
+	
+	// Default to Target table
+	tableToUpdate = m.Ti.Name
+	
+	// Check if Foreign Key is on Parent (BelongsTo relationship)
+	if m.ParentID != -1 {
+		pm := qc.Mutates[m.ParentID]
+		if pm.Ti.Name == m.Rel.Left.Col.Table && !m.Rel.Left.Col.PrimaryKey {
+			colToUpdate = m.Rel.Left.Col.Name
+			tableToUpdate = pm.Ti.Name
+		} else if pm.Ti.Name == m.Rel.Right.Col.Table && !m.Rel.Right.Col.PrimaryKey {
+			colToUpdate = m.Rel.Right.Col.Name
+			tableToUpdate = pm.Ti.Name
 		}
-		ctx.WriteString(`') WHERE `)
-		
-		renderFilter()
-		
-		// Capture IDs of updated rows
-		ctx.WriteString(` RETURNING json_object('id', "id")`) 
-		ctx.WriteString(" -- @gj_ids=")
-		ctx.WriteString(varName)
-		ctx.WriteString("\n; ")
-		return
-    }
+	}
+	
+	// If not found on Parent, check if FK is on Target
+	if colToUpdate == "" {
+		if m.Ti.Name == m.Rel.Right.Col.Table && !m.Rel.Right.Col.PrimaryKey {
+			colToUpdate = m.Rel.Right.Col.Name
+		} else if m.Ti.Name == m.Rel.Left.Col.Table && !m.Rel.Left.Col.PrimaryKey {
+			colToUpdate = m.Rel.Left.Col.Name
+		}
+	}
 
+	if colToUpdate != "" {
+        var sb strings.Builder
+		sb.WriteString(`UPDATE `)
+		sb.WriteString(`"`)
+        sb.WriteString(tableToUpdate)
+        sb.WriteString(`"`)
+		sb.WriteString(` SET `)
+		sb.WriteString(`"`)
+        sb.WriteString(colToUpdate)
+        sb.WriteString(`"`)
+		
+		valToSet := "NULL"
+		if len(m.Cols) > 0 {
+			val := m.Cols[0].Value
+			if strings.HasPrefix(val, "$") {
+				valToSet = fmt.Sprintf("(SELECT id FROM _gj_ids WHERE k='%s')", val[1:])
+			} else {
+				valToSet = "'" + strings.ReplaceAll(val, "'", "''") + "'"
+			}
+		}
+
+		// Determine if we are updating Parent or Child
+		isParentUpdate := false
+		if m.ParentID != -1 && tableToUpdate == qc.Mutates[m.ParentID].Ti.Name {
+			isParentUpdate = true
+		}
+
+        var retID string
+
+		if isParentUpdate {
+			// Updating Parent (BelongsTo): SET FK = ChildID (valToSet)
+			sb.WriteString(` = `)
+			sb.WriteString(valToSet)
+			
+			// WHERE Parent.PK = ParentVar
+			sb.WriteString(` WHERE `)
+			pm := qc.Mutates[m.ParentID]
+			sb.WriteString(`"`)
+            sb.WriteString(pm.Ti.PrimaryCol.Name)
+            sb.WriteString(`"`)
+			sb.WriteString(` = (SELECT id FROM _gj_ids WHERE k = '`)
+			sb.WriteString(d.getVarName(pm))
+			sb.WriteString(`')`)
+
+			// Return the Child ID (valToSet) so GraphJin knows what we linked
+            retID = valToSet
+
+		} else {
+			// Updating Target (HasMany/One): SET FK = ParentVar
+			sb.WriteString(` = `)
+			if m.ParentID != -1 {
+				pm := qc.Mutates[m.ParentID]
+				sb.WriteString(`(SELECT id FROM _gj_ids WHERE k = '`)
+				sb.WriteString(d.getVarName(pm))
+				sb.WriteString(`')`)
+			} else {
+				sb.WriteString("NULL")
+			}
+			
+			// WHERE Target.PK = ChildID (valToSet) OR Filter
+			sb.WriteString(` WHERE `)
+			
+			// If we have a specific ID to connect (valToSet derived from m.Cols)
+			if len(m.Cols) > 0 {
+				sb.WriteString(`"`)
+                sb.WriteString(m.Ti.PrimaryCol.Name)
+                sb.WriteString(`"`)
+				sb.WriteString(` = `)
+				sb.WriteString(valToSet)
+			} else {
+				// Otherwise rely on filter (e.g. where inputs)
+				renderFilter()
+			}
+			
+			// Return Target ID (PK)
+            // Use Primary Key name for return
+            retID = `"` + m.Ti.PrimaryCol.Name + `"`
+		}
+
+		sb.WriteString(" -- @gj_ids=")
+		sb.WriteString(varName)
+		sb.WriteString("\n; ")
+        
+        // Append SELECT for RETURNING replacement
+        sb.WriteString(`SELECT json_object('id', `)
+        sb.WriteString(retID)
+        sb.WriteString(`)`)
+        sb.WriteString(" -- @gj_ids=")
+		sb.WriteString(varName)
+		sb.WriteString("\n; ")
+        
+        q := sb.String()
+        ctx.WriteString(q)
+		return
+	}
+
+	// Fallback: Select (Branch 2)
 	ctx.WriteString(`SELECT `)
 	ctx.WriteString(`json_object('id', `)
     ctx.ColWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
@@ -836,7 +968,7 @@ func (d *SQLiteDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qc
 	
 	if m.IsJSON {
 		ctx.WriteString(` FROM `)
-		d.RenderMutateToRecordSet(ctx, m, 0, func() {
+		d.RenderLinearValues(ctx, m, func() {
 			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
 		})
 		ctx.WriteString(`, `)
@@ -1207,4 +1339,87 @@ func (d *SQLiteDialect) SplitQuery(query string) (parts []string) {
 
 func (d *SQLiteDialect) RenderSetSessionVar(ctx Context, name, value string) bool {
 	return false
+}
+
+func (d *SQLiteDialect) RenderLinearValues(ctx Context, m *qcode.Mutate, renderRoot func()) {
+	// Custom implementation for Linear Execution values that handles variable injection
+	ctx.WriteString(`(SELECT `)
+
+	hasPK := false
+	first := true
+	for _, col := range m.Cols {
+		if !first {
+			ctx.WriteString(`, `)
+		}
+		first = false
+		if col.Col.Name == m.Ti.PrimaryCol.Name {
+			hasPK = true
+		}
+
+		if col.Set && col.Value != "" {
+			if strings.HasPrefix(col.Value, "$") {
+				ctx.WriteString(`(SELECT id FROM _gj_ids WHERE k='`)
+				ctx.WriteString(col.Value[1:])
+				ctx.WriteString(`')`)
+			} else {
+				if strings.HasPrefix(col.Value, "sql:") {
+					ctx.WriteString(`(`)
+					ctx.WriteString(col.Value[4:])
+					ctx.WriteString(`)`)
+				} else {
+					ctx.WriteString("'")
+					ctx.WriteString(strings.ReplaceAll(col.Value, "'", "''"))
+					ctx.WriteString("'")
+				}
+			}
+		} else {
+            if m.Array {
+			    ctx.WriteString(`json_extract(value, '$.`)
+            } else {
+                ctx.WriteString(`json_extract(`)
+                renderRoot()
+                ctx.WriteString(`, '$.`)
+                if len(m.Path) > 0 {
+                    ctx.WriteString(strings.Join(m.Path, "."))
+                    ctx.WriteString(`.`)
+                }
+            }
+			ctx.WriteString(col.FieldName)
+			ctx.WriteString(`')`)
+		}
+		ctx.WriteString(` AS `)
+		ctx.Quote(col.FieldName)
+	}
+	
+	if !hasPK {
+		if !first {
+			ctx.WriteString(`, `)
+		}
+        if m.Array {
+		    ctx.WriteString(`json_extract(value, '$.`)
+        } else {
+            ctx.WriteString(`json_extract(`)
+            renderRoot()
+            ctx.WriteString(`, '$.`)
+            if len(m.Path) > 0 {
+                ctx.WriteString(strings.Join(m.Path, "."))
+                ctx.WriteString(`.`)
+            }
+        }
+		ctx.WriteString(m.Ti.PrimaryCol.Name) 
+		ctx.WriteString(`') AS "_gj_pkt"`)
+	}
+
+    if m.Array {
+	    ctx.WriteString(` FROM `)
+	    ctx.WriteString(`json_each(`)
+	    renderRoot()
+	    if len(m.Path) > 0 {
+		    ctx.WriteString(`, '$.`)
+		    ctx.WriteString(strings.Join(m.Path, "."))
+		    ctx.WriteString(`'`)
+	    }
+	    ctx.WriteString(`)`)
+    }
+	ctx.WriteString(`) AS t`)
 }

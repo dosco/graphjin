@@ -223,6 +223,22 @@ VALUES
 
 INSERT INTO graph_node (id, label) VALUES ('a', 'node a'), ('b', 'node b'), ('c', 'node c');
 INSERT INTO graph_edge (src_node, dst_node) VALUES ('a', 'b'), ('a', 'c');
--- Test FTS Table
-CREATE VIRTUAL TABLE products_fts USING fts5(name, description);
-INSERT INTO products_fts (name, description) VALUES ('Product 3', 'Description for product 3');
+-- FTS5 Content Table linked to products
+CREATE VIRTUAL TABLE products_fts USING fts5(name, description, content='products', content_rowid='id');
+
+-- Triggers to keep FTS in sync with products
+CREATE TRIGGER products_fts_insert AFTER INSERT ON products BEGIN
+  INSERT INTO products_fts(rowid, name, description) VALUES (NEW.id, NEW.name, NEW.description);
+END;
+
+CREATE TRIGGER products_fts_update AFTER UPDATE ON products BEGIN
+  INSERT INTO products_fts(products_fts, rowid, name, description) VALUES('delete', OLD.id, OLD.name, OLD.description);
+  INSERT INTO products_fts(rowid, name, description) VALUES (NEW.id, NEW.name, NEW.description);
+END;
+
+CREATE TRIGGER products_fts_delete AFTER DELETE ON products BEGIN
+  INSERT INTO products_fts(products_fts, rowid, name, description) VALUES('delete', OLD.id, OLD.name, OLD.description);
+END;
+
+-- Rebuild FTS index from products table (runs after all inserts above)
+INSERT INTO products_fts(products_fts) VALUES('rebuild');
