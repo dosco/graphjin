@@ -15,6 +15,10 @@ func (d *SQLiteDialect) Name() string {
 	return "sqlite"
 }
 
+func (d *SQLiteDialect) QuoteIdentifier(s string) string {
+	return `"` + s + `"`
+}
+
 func (d *SQLiteDialect) Quote(ctx Context, col string) {
 	ctx.WriteString(`[`)
 	ctx.WriteString(col)
@@ -23,6 +27,17 @@ func (d *SQLiteDialect) Quote(ctx Context, col string) {
 
 func (d *SQLiteDialect) SupportsLateral() bool {
 	return false
+}
+
+// RenderInlineChild for SQLite uses the default implementation from query.go
+func (d *SQLiteDialect) RenderInlineChild(ctx Context, renderer InlineChildRenderer, psel, sel *qcode.Select) {
+	if sel.Paging.Cursor {
+		ctx.WriteString(`json_extract(`)
+		renderer.RenderDefaultInlineChild(sel)
+		ctx.WriteString(`, '$.json')`)
+	} else {
+		renderer.RenderDefaultInlineChild(sel)
+	}
 }
 
 func (d *SQLiteDialect) RenderLimit(ctx Context, sel *qcode.Select) {
@@ -178,12 +193,11 @@ func (d *SQLiteDialect) RenderVar(ctx Context, name string) {
 	ctx.WriteString(`')`)
 }
 
-func (d *SQLiteDialect) RenderIDCapture(ctx Context, name string) {
-	ctx.WriteString(`INSERT OR IGNORE INTO _gj_ids (k, id) VALUES ('`)
-	ctx.WriteString(name)
-	ctx.WriteString(`', last_insert_rowid())`)
+func (d *SQLiteDialect) RenderIDCapture(ctx Context, varName string) {
+	ctx.WriteString(`SET `)
+	d.RenderVar(ctx, varName)
+	ctx.WriteString(` = last_insert_rowid()`)
 }
-
 func (d *SQLiteDialect) RenderDistinctOn(ctx Context, sel *qcode.Select) {
 }
 
@@ -443,6 +457,10 @@ func (d *SQLiteDialect) SupportsWritableCTE() bool {
 }
 
 func (d *SQLiteDialect) SupportsConflictUpdate() bool {
+	return true
+}
+
+func (d *SQLiteDialect) SupportsSubscriptionBatching() bool {
 	return true
 }
 

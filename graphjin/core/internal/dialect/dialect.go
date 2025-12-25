@@ -27,6 +27,23 @@ type Context interface {
 	IsTableMutated(table string) bool
 }
 
+// InlineChildRenderer is passed to dialects for rendering inline children
+// It provides callbacks to compiler methods that dialects need
+type InlineChildRenderer interface {
+	RenderTable(sel *qcode.Select, schema, table string, alias bool)
+	RenderJoin(join qcode.Join)
+	RenderLimit(sel *qcode.Select)
+	RenderOrderBy(sel *qcode.Select)
+	RenderWhereExp(psel, sel *qcode.Select, ex interface{})
+	RenderInlineChild(psel, sel *qcode.Select)
+	RenderDefaultInlineChild(sel *qcode.Select) // For dialects that want to use the default implementation
+	GetChild(id int32) *qcode.Select
+	ColWithTable(table, col string)
+	Quoted(s string)
+	Squoted(s string)
+	RenderExp(ti sdata.DBTable, ex *qcode.Exp)
+}
+
 type Dialect interface {
 	Name() string
 
@@ -65,10 +82,18 @@ type Dialect interface {
 	UseNamedParams() bool
 	SupportsLateral() bool
 	
+	// Identifier quoting - each dialect uses different quote characters
+	QuoteIdentifier(s string) string
+	
+	// Inline child rendering for dialects without LATERAL support
+	// renderer provides callbacks to compiler methods
+	RenderInlineChild(ctx Context, renderer InlineChildRenderer, psel, sel *qcode.Select)
+	
 	// Mutation and Subscriptions
 	SupportsReturning() bool
 	SupportsWritableCTE() bool
 	SupportsConflictUpdate() bool
+	SupportsSubscriptionBatching() bool
 
 	RenderMutationCTE(ctx Context, m *qcode.Mutate, renderBody func())
 	RenderMutationInput(ctx Context, qc *qcode.QCode)
@@ -87,7 +112,7 @@ type Dialect interface {
 
 	// Linear Execution (for MySQL/SQLite)
 	SupportsLinearExecution() bool
-	RenderIDCapture(ctx Context, name string)
+	RenderIDCapture(ctx Context, varName string)
 	RenderVar(ctx Context, name string)
 	RenderSetup(ctx Context)
 	RenderBegin(ctx Context)

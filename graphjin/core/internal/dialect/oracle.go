@@ -20,6 +20,10 @@ func (d *OracleDialect) Name() string {
 	return "oracle"
 }
 
+func (d *OracleDialect) QuoteIdentifier(s string) string {
+	return `"` + strings.ToUpper(s) + `"`
+}
+
 func (d *OracleDialect) RenderLimit(ctx Context, sel *qcode.Select) {
 	if sel.Paging.NoLimit {
 		return
@@ -419,6 +423,11 @@ func (d *OracleDialect) SupportsLateral() bool {
 	return true
 }
 
+// RenderInlineChild is not used for Oracle since it supports LATERAL joins
+func (d *OracleDialect) RenderInlineChild(ctx Context, renderer InlineChildRenderer, psel, sel *qcode.Select) {
+	// Oracle uses LATERAL joins, so this is not called
+}
+
 func (d *OracleDialect) SupportsReturning() bool {
 	return false // Oracle supports RETURNING INTO but it's different
 }
@@ -429,6 +438,10 @@ func (d *OracleDialect) SupportsWritableCTE() bool {
 
 func (d *OracleDialect) SupportsConflictUpdate() bool {
 	return true // MERGE INTO
+}
+
+func (d *OracleDialect) SupportsSubscriptionBatching() bool {
+	return true
 }
 
 func (d *OracleDialect) RenderMutationCTE(ctx Context, m *qcode.Mutate, renderBody func()) {
@@ -537,9 +550,7 @@ func (d *OracleDialect) SupportsLinearExecution() bool {
 	return true
 }
 
-func (d *OracleDialect) RenderIDCapture(ctx Context, name string) {
-	ctx.WriteString(` RETURNING "id" INTO `)
-	d.RenderVar(ctx, name)
+func (d *OracleDialect) RenderIDCapture(ctx Context, varName string) {
 }
 
 func (d *OracleDialect) RenderVar(ctx Context, name string) {
@@ -772,7 +783,10 @@ func (d *OracleDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qco
 	}
 
 	if !hasExplicitPK {
-		d.RenderIDCapture(ctx, varName)
+		switch m.Type {
+		case qcode.MTInsert:
+			d.RenderIDCapture(ctx, varName)
+		}
 	}
 	ctx.WriteString("; ")
 }

@@ -120,6 +120,10 @@ func (d *MySQLDialect) Name() string {
 	return "mysql"
 }
 
+func (d *MySQLDialect) QuoteIdentifier(s string) string {
+	return "`" + s + "`"
+}
+
 func (d *MySQLDialect) RenderLimit(ctx Context, sel *qcode.Select) {
 	ctx.WriteString(` LIMIT `)
 
@@ -573,6 +577,11 @@ func (d *MySQLDialect) SupportsLateral() bool {
 	return true
 }
 
+// RenderInlineChild is not used for MySQL since it supports LATERAL joins
+func (d *MySQLDialect) RenderInlineChild(ctx Context, renderer InlineChildRenderer, psel, sel *qcode.Select) {
+	// MySQL uses LATERAL joins, so this is not called
+}
+
 func (d *MySQLDialect) SupportsReturning() bool {
 	return false
 }
@@ -583,6 +592,10 @@ func (d *MySQLDialect) SupportsWritableCTE() bool {
 
 func (d *MySQLDialect) SupportsConflictUpdate() bool {
 	return false
+}
+
+func (d *MySQLDialect) SupportsSubscriptionBatching() bool {
+	return true
 }
 
 // RenderMutationCTE for MySQL generally mocks logic or errors, but as per plan,
@@ -722,9 +735,9 @@ func (d *MySQLDialect) SupportsLinearExecution() bool {
 	return true
 }
 
-func (d *MySQLDialect) RenderIDCapture(ctx Context, name string) {
+func (d *MySQLDialect) RenderIDCapture(ctx Context, varName string) {
 	ctx.WriteString(`SET @`)
-	ctx.WriteString(name)
+	ctx.WriteString(varName)
 	ctx.WriteString(` = LAST_INSERT_ID()`)
 }
 
