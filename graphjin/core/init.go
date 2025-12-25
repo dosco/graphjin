@@ -289,7 +289,7 @@ func addForeignKey(conf *Config, di *sdata.DBInfo, c Column, t Table) error {
 	// Check if this is an array column foreign key on an unsupported database
 	if c.Array || c1.Array {
 		switch di.Type {
-		case "mysql", "mariadb", "oracle":
+		case "oracle":
 			return fmt.Errorf(
 				"config: array column joins not supported for %s database: table '%s', column '%s'",
 				di.Type, t.Name, c.Name)

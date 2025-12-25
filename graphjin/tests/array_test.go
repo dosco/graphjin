@@ -12,7 +12,7 @@ import (
 )
 
 func TestQueryParentAndChildrenViaArrayColumn(t *testing.T) {
-	if dbType == "mysql" || dbType == "mariadb" || dbType == "oracle" {
+	if dbType == "oracle" {
 		t.Skip("skipping test for sqlite, mysql, and oracle (array column joins not yet supported)")
 	}
 
@@ -59,7 +59,7 @@ func TestQueryParentAndChildrenViaArrayColumn(t *testing.T) {
 }
 
 func TestInsertIntoTableAndConnectToRelatedTableWithArrayColumn(t *testing.T) {
-	if dbType == "mysql" || dbType == "mariadb" || dbType == "oracle" || dbType == "sqlite" {
+	if dbType == "oracle" || dbType == "sqlite" {
 		t.Skip("skipping test for mysql/mariadb/oracle/sqlite (array column inserts not fully working)")
 	}
 
