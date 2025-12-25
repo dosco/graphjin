@@ -486,7 +486,7 @@ func Example_queryWithWhereOnRelatedTable() {
 
 func Example_queryWithAlternateFieldNames() {
 	gql := `query {
-		comments(limit: 2) {
+		comments(limit: 2, order_by: { id: asc }) {
 			id
 			commenter {
 				email

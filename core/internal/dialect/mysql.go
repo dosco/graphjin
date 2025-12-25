@@ -1370,6 +1370,13 @@ func (d *MySQLDialect) ModifySelectsForMutation(qc *qcode.QCode) {
 			continue
 		}
 		
+		// Heuristic: If the user provided a WHERE clause, they likely want to control the result set manually.
+		// Since we can't easily capture all affected IDs in simulated linear execution (especially for Connect),
+		// we defer to the user's filter if present.
+		if sel.Where.Exp != nil {
+			continue
+		}
+		
 		var exp *qcode.Exp
 
 		// Special handling for JSON input (potentially bulk)
