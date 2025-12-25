@@ -698,9 +698,7 @@ func Example_insertIntoRecursiveRelationshipAndConnectTable2() {
 }
 
 func TestAllowListWithMutations(t *testing.T) {
-	if dbType == "sqlite" || dbType == "mysql" || dbType == "mariadb" || dbType == "oracle" {
-		t.Skip("skipping test for sqlite/mysql/oracle: insert result inconsistencies")
-	}
+
 
 	gql := `
 	mutation getProducts {
@@ -732,7 +730,7 @@ func TestAllowListWithMutations(t *testing.T) {
 
 	res1, err := gj1.GraphQL(context.Background(), gql, vars1, nil)
 	assert.NoError(t, err)
-	assert.Equal(t, exp1, string(res1.Data))
+	assert.JSONEq(t, exp1, string(res1.Data))
 
 	conf2 := newConfig(&core.Config{DBType: dbType, Production: true})
 	gj2, err := core.NewGraphJin(conf2, db, core.OptionSetFS(fs))
@@ -750,7 +748,7 @@ func TestAllowListWithMutations(t *testing.T) {
 
 	res2, err := gj2.GraphQL(context.Background(), gql, vars2, nil)
 	assert.NoError(t, err)
-	assert.Equal(t, exp2, string(res2.Data))
+	assert.JSONEq(t, exp2, string(res2.Data))
 
 	vars3 := json.RawMessage(`{
 		"data": {
@@ -765,5 +763,5 @@ func TestAllowListWithMutations(t *testing.T) {
 
 	res3, err := gj2.GraphQL(context.Background(), gql, vars3, nil)
 	assert.NoError(t, err)
-	assert.Equal(t, exp3, string(res3.Data))
+	assert.JSONEq(t, exp3, string(res3.Data))
 }

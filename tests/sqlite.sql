@@ -154,7 +154,7 @@ SELECT i,
   'Tag ' || i,
   (CASE WHEN (i % 2) = 0 THEN '{"foo": true}' ELSE '{"bar": true}' END),
   'US',
-  json_array(i),
+  json_array(1, 2, 3, 4, 5),
   (i + 10.5),
   i,
   '2021-01-09 16:37:01'
