@@ -15,6 +15,12 @@ func (d *SQLiteDialect) Name() string {
 	return "sqlite"
 }
 
+func (d *SQLiteDialect) Quote(ctx Context, col string) {
+	ctx.WriteString(`[`)
+	ctx.WriteString(col)
+	ctx.WriteString(`]`)
+}
+
 func (d *SQLiteDialect) SupportsLateral() bool {
 	return false
 }
@@ -518,8 +524,6 @@ func (d *SQLiteDialect) RenderUpdate(ctx Context, m *qcode.Mutate, set func(), f
 
 	ctx.WriteString(`UPDATE `)
 	ctx.ColWithTable(m.Ti.Schema, m.Ti.Name)
-    ctx.WriteString(` AS `)
-    ctx.Quote(m.Ti.Name)
 	ctx.WriteString(` SET `)
 	set()
 	if from != nil {
@@ -761,7 +765,17 @@ func (d *SQLiteDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qco
 }
 
 func (d *SQLiteDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderColVal func(qcode.MColumn), renderWhere func()) {
-    d.RenderUpdate(ctx, m, func() {
+	var fromFunc func()
+	if m.IsJSON {
+		fromFunc = func() {
+			d.RenderMutateToRecordSet(ctx, m, 0, func() {
+				ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+			})
+		}
+	}
+
+
+	d.RenderUpdate(ctx, m, func() {
 		// Set
 		i := 0
 		for _, col := range m.Cols {
@@ -787,14 +801,7 @@ func (d *SQLiteDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qco
 			ctx.WriteString(" = ")
 			ctx.Quote(m.Ti.PrimaryCol.Name)
 		}
-	}, func() {
-        // From
-        if m.IsJSON {
-			d.RenderMutateToRecordSet(ctx, m, 0, func() {
-				ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
-			})
-		}
-    }, func() {
+	}, fromFunc, func() {
         // Where
         // Logic from mutate.go lines 402+
         // c.renderExp(path...)
@@ -803,32 +810,6 @@ func (d *SQLiteDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qco
         // mutate.go: if m.ParentID != -1 ... AND childCol = (SELECT parentCol FROM ... WHERE ...)
         
         renderWhere() // Renders m.Where.Exp
-        
-        if m.ParentID != -1 {
-            if m.Where.Exp != nil {
-				ctx.WriteString(" AND ")
-			}
-			var childCol, parentCol string
-			if m.Rel.Left.Ti.Name == m.Ti.Name {
-				childCol = m.Rel.Left.Col.Name
-				parentCol = m.Rel.Right.Col.Name
-			} else {
-				childCol = m.Rel.Right.Col.Name
-				parentCol = m.Rel.Left.Col.Name
-			}
-			pm := qc.Mutates[m.ParentID]
-
-			ctx.Quote(childCol)
-			ctx.WriteString(" = (SELECT ")
-			ctx.Quote(parentCol)
-			ctx.WriteString(" FROM ")
-			ctx.Quote(pm.Ti.Name)
-			ctx.WriteString(" WHERE ")
-			ctx.Quote(pm.Ti.PrimaryCol.Name)
-			ctx.WriteString(" = ")
-			d.RenderVar(ctx, d.getVarName(pm))
-			ctx.WriteString(")")
-        }
     })
     
     d.RenderReturning(ctx, m)
@@ -936,7 +917,33 @@ func (d *SQLiteDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qc
 			ctx.WriteString(` = (SELECT id FROM _gj_ids WHERE k = '`)
 			ctx.WriteString(parentVar)
 			ctx.WriteString(`' LIMIT 1); `)
-		}
+		} else {
+            // Check if Child (m.Ti) has FK pointing to Parent
+            var childTableName string
+            var childFkColName string
+            
+            if m.Ti.Name == m.Rel.Right.Col.Table && !m.Rel.Right.Col.PrimaryKey {
+               childTableName = m.Ti.Name
+               childFkColName = m.Rel.Right.Col.Name
+            } else if m.Ti.Name == m.Rel.Left.Col.Table && !m.Rel.Left.Col.PrimaryKey {
+               childTableName = m.Ti.Name
+               childFkColName = m.Rel.Left.Col.Name
+            }
+            
+            if childTableName != "" && childFkColName != "" {
+                ctx.WriteString(`UPDATE `)
+                ctx.Quote(childTableName)
+                ctx.WriteString(` SET `)
+                ctx.Quote(childFkColName)
+                ctx.WriteString(` = (SELECT id FROM _gj_ids WHERE k = '`)
+                ctx.WriteString(parentVar)
+                ctx.WriteString(`' LIMIT 1) WHERE `)
+                ctx.Quote(m.Ti.PrimaryCol.Name)
+                ctx.WriteString(` IN (SELECT id FROM _gj_ids WHERE k = '`)
+                ctx.WriteString(varName)
+                ctx.WriteString(`'); `)
+            }
+        }
 	}
 }
 
