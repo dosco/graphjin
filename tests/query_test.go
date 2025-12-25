@@ -353,6 +353,7 @@ func Example_queryWithWhere1() {
 	}`)
 
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)

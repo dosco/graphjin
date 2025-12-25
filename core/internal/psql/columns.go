@@ -97,7 +97,7 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 						// Wrap with JSON_QUERY to prevent double-escaping since
 						// MariaDB treats JSON as LONGTEXT and json_object would escape it
 						c.w.WriteString(`JSON_QUERY(`)
-						c.renderMariaDBInlineChild(sel, csel)
+						c.dialect.RenderInlineChild(c, c, sel, csel)
 						c.w.WriteString(`, '$')`)
 						c.alias(csel.FieldName)
 					} else {
@@ -150,7 +150,7 @@ func (c *compilerContext) renderUnionColumn(sel, csel *qcode.Select) {
 			} else if c.dialect.Name() == "mariadb" {
 				// MariaDB needs simplified inline child rendering
 				c.w.WriteString(`JSON_QUERY(`)
-				c.renderMariaDBInlineChild(sel, usel)
+				c.dialect.RenderInlineChild(c, c, sel, usel)
 				c.w.WriteString(`, '$') `)
 			} else {
 				c.renderInlineChild(usel)
@@ -338,10 +338,10 @@ func (c *compilerContext) renderJSONFields(sel *qcode.Select) {
 
 func (c *compilerContext) renderJSONField(name string, selID int32) {
 	c.squoted(name)
-	c.w.WriteString(`, __sr_`)
-	int32String(c.w, selID)
+	c.w.WriteString(`, `)
+	c.quoted("__sr_" + strconv.Itoa(int(selID)))
 	c.w.WriteString(`.`)
-	c.w.WriteString(name)
+	c.quoted(name)
 }
 
 func (c *compilerContext) renderJSONNullField(name string) {

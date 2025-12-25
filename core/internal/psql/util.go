@@ -3,10 +3,10 @@ package psql
 import (
 	"bytes"
 	"strconv"
-	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/dialect"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
 
 func (c *compilerContext) alias(alias string) {
@@ -45,19 +45,7 @@ func (c *compilerContext) colWithTable(table, col string) {
 }
 
 func (c *compilerContext) quoted(identifier string) {
-	if c.dialect.Name() == "mysql" {
-		c.w.WriteByte('`')
-		c.w.WriteString(identifier)
-		c.w.WriteByte('`')
-	} else if c.dialect.Name() == "oracle" {
-		c.w.WriteByte('"')
-		c.w.WriteString(strings.ToUpper(identifier))
-		c.w.WriteByte('"')
-	} else {
-		c.w.WriteByte('"')
-		c.w.WriteString(identifier)
-		c.w.WriteByte('"')
-	}
+	c.w.WriteString(c.dialect.QuoteIdentifier(identifier))
 }
 
 func (c *compilerContext) squoted(identifier string) {
@@ -100,4 +88,52 @@ func (c *compilerContext) ColWithTable(table, col string) {
 
 func (c *compilerContext) RenderJSONFields(sel *qcode.Select) {
 	c.renderJSONFields(sel)
+}
+
+// InlineChildRenderer interface implementations
+
+func (c *compilerContext) RenderTable(sel *qcode.Select, schema, table string, alias bool) {
+	c.table(sel, schema, table, alias)
+}
+
+func (c *compilerContext) RenderJoin(join qcode.Join) {
+	c.renderJoin(join)
+}
+
+func (c *compilerContext) RenderLimit(sel *qcode.Select) {
+	c.dialect.RenderLimit(c, sel)
+}
+
+func (c *compilerContext) RenderOrderBy(sel *qcode.Select) {
+	c.dialect.RenderOrderBy(c, sel)
+}
+
+func (c *compilerContext) RenderWhereExp(psel, sel *qcode.Select, ex interface{}) {
+	if exp, ok := ex.(*qcode.Exp); ok {
+		c.renderExp(sel.Ti, exp, false)
+	}
+}
+
+func (c *compilerContext) RenderExp(ti sdata.DBTable, ex *qcode.Exp) {
+	c.renderExp(ti, ex, false)
+}
+
+func (c *compilerContext) RenderInlineChild(psel, sel *qcode.Select) {
+	c.dialect.RenderInlineChild(c, c, psel, sel)
+}
+
+func (c *compilerContext) RenderDefaultInlineChild(sel *qcode.Select) {
+	c.renderInlineChild(sel)
+}
+
+func (c *compilerContext) GetChild(id int32) *qcode.Select {
+	return &c.qc.Selects[id]
+}
+
+func (c *compilerContext) Quoted(s string) {
+	c.quoted(s)
+}
+
+func (c *compilerContext) Squoted(s string) {
+	c.squoted(s)
 }

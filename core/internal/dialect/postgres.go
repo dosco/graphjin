@@ -19,6 +19,10 @@ func (d *PostgresDialect) Name() string {
 	return "postgres"
 }
 
+func (d *PostgresDialect) QuoteIdentifier(s string) string {
+	return `"` + s + `"`
+}
+
 func (d *PostgresDialect) RenderLimit(ctx Context, sel *qcode.Select) {
 	switch {
 	case sel.Paging.NoLimit:
@@ -459,6 +463,11 @@ func (d *PostgresDialect) SupportsLateral() bool {
 	return true
 }
 
+// RenderInlineChild is not used for PostgreSQL since it supports LATERAL joins
+func (d *PostgresDialect) RenderInlineChild(ctx Context, renderer InlineChildRenderer, psel, sel *qcode.Select) {
+	// PostgreSQL uses LATERAL joins, so this is not called
+}
+
 func (d *PostgresDialect) SupportsReturning() bool {
 	return true
 }
@@ -468,6 +477,10 @@ func (d *PostgresDialect) SupportsWritableCTE() bool {
 }
 
 func (d *PostgresDialect) SupportsConflictUpdate() bool {
+	return true
+}
+
+func (d *PostgresDialect) SupportsSubscriptionBatching() bool {
 	return true
 }
 
@@ -629,8 +642,7 @@ func (d *PostgresDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, q
 }
 
 
-func (d *PostgresDialect) RenderIDCapture(ctx Context, name string) {
-	// Not used for Postgres
+func (d *PostgresDialect) RenderIDCapture(ctx Context, varName string) {
 }
 
 func (d *PostgresDialect) RenderVar(ctx Context, name string) {
