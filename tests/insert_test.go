@@ -570,10 +570,7 @@ func Example_insertWithCamelToSnakeCase() {
 }
 
 func Example_insertIntoRecursiveRelationship() {
-	if dbType == "mysql" {
-		fmt.Println(`{"comments":[{"id":5001,"reply_to_id":null},{"id":5002,"reply_to_id":5001}]}`)
-		return
-	}
+
 	gql := `mutation {
 		comments(insert: $data, where: { id: { in: [5001, 5002] }}) {
 			id
@@ -612,10 +609,7 @@ func Example_insertIntoRecursiveRelationship() {
 }
 
 func Example_insertIntoRecursiveRelationshipAndConnectTable1() {
-	if dbType == "mysql" {
-		fmt.Println(`{"comments":[{"id":5003,"reply_to_id":null},{"id":5,"reply_to_id":5003}]}`)
-		return
-	}
+
 	gql := `mutation {
 		comments(insert: $data, where: { id: { in: [5, 5003] } }, order_by: { id: desc }) {
 			id

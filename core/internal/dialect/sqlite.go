@@ -429,7 +429,7 @@ func (d *SQLiteDialect) UseNamedParams() bool {
 
 
 func (d *SQLiteDialect) SupportsReturning() bool {
-	return false
+	return true
 }
 
 
@@ -459,24 +459,12 @@ func (d *SQLiteDialect) RenderMutationCTE(ctx Context, m *qcode.Mutate, renderBo
 }
 
 func (d *SQLiteDialect) RenderInsert(ctx Context, m *qcode.Mutate, values func()) {
-	// Capture all inserted IDs using a temporary trigger
-	// This works for both Single and Bulk inserts
-	vName := getVarName(m)
-    
-	ctx.WriteString(`DROP TRIGGER IF EXISTS gj_capture; `)
-	ctx.WriteString(`CREATE TEMP TRIGGER gj_capture AFTER INSERT ON `)
-	ctx.Quote(m.Ti.Name)
-	ctx.WriteString(` BEGIN INSERT INTO _gj_ids (k, id) VALUES ('`)
-	ctx.WriteString(vName)
-	ctx.WriteString(`', NEW.`)
-	ctx.Quote(m.Ti.PrimaryCol.Name)
-	ctx.WriteString(`); END; `)
-
 	ctx.WriteString(`INSERT INTO `)
 	ctx.ColWithTable(m.Ti.Schema, m.Ti.Name)
 	ctx.WriteString(` (`)
 	values()
 	ctx.WriteString(`) `)
+	d.RenderReturning(ctx, m)
 }
 
 func (d *SQLiteDialect) RenderUpdate(ctx Context, m *qcode.Mutate, set func(), from func(), where func()) {
@@ -722,46 +710,11 @@ func (d *SQLiteDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qco
 	}
 
     // Render RETURNING clause - execution layer (gstate.go) captures IDs via @gj_ids hint
-    // For inline inserts (!m.IsJSON), RETURNING works directly
-    // For JSON inserts (m.IsJSON), RETURNING doesn't work with INSERT...SELECT, 
-    // so we use a separate SELECT statement
-    if !m.IsJSON {
-        d.RenderReturning(ctx, m)
-    }
+    d.RenderReturning(ctx, m)
 
 	ctx.WriteString(" -- @gj_ids=")
 	ctx.WriteString(varName)
 	ctx.WriteString("\n; ")
-    
-    // Note: ID capture into _gj_ids is handled by gstate.go execution layer
-    // It parses the RETURNING/SELECT JSON output and inserts into _gj_ids
-    // We do NOT use last_insert_rowid() for inline inserts because it returns 
-    // SQLite's internal rowid, not the user-provided explicit ID value
-
-    // For JSON inserts (INSERT SELECT), RETURNING doesn't work, so we manually 
-    // return the IDs via a SELECT. gstate.go will capture these via @gj_ids hint.
-    if m.IsJSON {
-        if m.Array {
-            // Bulk insert: Extract ALL IDs from the JSON array input
-            ctx.WriteString("SELECT json_object('id', json_extract(value, '$.")
-            ctx.WriteString(m.Ti.PrimaryCol.Name)
-            ctx.WriteString("')) FROM json_each(")
-            ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
-            if len(m.Path) > 0 {
-                ctx.WriteString(", '$.")
-                ctx.WriteString(strings.Join(m.Path, "."))
-                ctx.WriteString("'")
-            }
-            ctx.WriteString(") -- @gj_ids=")
-            ctx.WriteString(varName)
-            ctx.WriteString("\n; ")
-        } else {
-            // Single JSON insert: last_insert_rowid() is correct for one row
-            ctx.WriteString("SELECT json_object('id', last_insert_rowid()) -- @gj_ids=")
-            ctx.WriteString(varName)
-            ctx.WriteString("\n; ")
-        }
-    }
 }
 
 func (d *SQLiteDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderColVal func(qcode.MColumn), renderWhere func()) {
