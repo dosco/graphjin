@@ -1,4 +1,4 @@
-//go:build !mysql && !mariadb
+
 package tests_test
 
 import (

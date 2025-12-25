@@ -1,4 +1,4 @@
-//go:build !mysql && !mariadb && !sqlite
+//go:build !mysql && !mariadb
 
 package tests_test
 
@@ -12,7 +12,7 @@ import (
 )
 
 func TestQueryParentAndChildrenViaArrayColumn(t *testing.T) {
-	if dbType == "sqlite" || dbType == "mysql" || dbType == "mariadb" || dbType == "oracle" {
+	if dbType == "mysql" || dbType == "mariadb" || dbType == "oracle" {
 		t.Skip("skipping test for sqlite, mysql, and oracle (array column joins not yet supported)")
 	}
 
@@ -59,8 +59,8 @@ func TestQueryParentAndChildrenViaArrayColumn(t *testing.T) {
 }
 
 func TestInsertIntoTableAndConnectToRelatedTableWithArrayColumn(t *testing.T) {
-	if dbType == "sqlite" || dbType == "mysql" || dbType == "mariadb" || dbType == "oracle" {
-		t.Skip("skipping test for sqlite, mysql, and oracle (array column joins not yet supported)")
+	if dbType == "mysql" || dbType == "mariadb" || dbType == "oracle" || dbType == "sqlite" {
+		t.Skip("skipping test for mysql/mariadb/oracle/sqlite (array column inserts not fully working)")
 	}
 
 	gql := `mutation {
@@ -109,7 +109,7 @@ func TestInsertIntoTableAndConnectToRelatedTableWithArrayColumn(t *testing.T) {
 
 // TODO: Fix: Does not work in MYSQL
 func TestVeryComplexQueryWithArrayColumns(t *testing.T) {
-	if dbType == "sqlite" || dbType == "oracle" {
+	if dbType == "oracle" {
 		t.Skip("skipping test for sqlite and oracle (array column joins not yet supported)")
 	}
 
