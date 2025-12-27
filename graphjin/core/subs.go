@@ -579,6 +579,8 @@ func renderSubWrap(st stmt, ct string) string {
 	switch ct {
 	case "mysql":
 		d = &dialect.MySQLDialect{}
+	case "mariadb":
+		d = &dialect.MariaDBDialect{}
 	case "oracle":
 		d = &dialect.OracleDialect{}
 	case "sqlite":

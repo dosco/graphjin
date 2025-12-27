@@ -137,3 +137,12 @@ func (c *compilerContext) Quoted(s string) {
 func (c *compilerContext) Squoted(s string) {
 	c.squoted(s)
 }
+
+func (c *compilerContext) GetConfigVar(name string) (string, bool) {
+	val, ok := c.svars[name]
+	return val, ok
+}
+
+func (c *compilerContext) GetSecPrefix() string {
+	return string(c.pf)
+}
