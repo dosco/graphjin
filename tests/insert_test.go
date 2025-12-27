@@ -43,9 +43,6 @@ func Example_insert() {
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
 	if err != nil {
 		fmt.Println(err)
-		if dbType == "mariadb" {
-			fmt.Printf("DEBUG SQL:\n%s\n", res.SQL())
-		}
 	} else {
 		printJSON(res.Data)
 	}

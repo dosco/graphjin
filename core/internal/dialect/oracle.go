@@ -905,3 +905,11 @@ func (d *OracleDialect) ModifySelectsForMutation(qc *qcode.QCode) {}
 func (d *OracleDialect) RenderQueryPrefix(ctx Context, qc *qcode.QCode) {}
 
 func (d *OracleDialect) SplitQuery(query string) (parts []string) { return []string{query} }
+
+func (d *OracleDialect) RenderChildCursor(ctx Context, renderChild func()) {
+	ctx.WriteString("NULL")
+}
+
+func (d *OracleDialect) RenderChildValue(ctx Context, sel *qcode.Select, renderChild func()) {
+	renderChild()
+}

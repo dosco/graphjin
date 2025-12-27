@@ -30,13 +30,24 @@ func (d *SQLiteDialect) SupportsLateral() bool {
 }
 
 // RenderInlineChild for SQLite uses the default implementation from query.go
+// RenderInlineChild for SQLite uses the default implementation from query.go
 func (d *SQLiteDialect) RenderInlineChild(ctx Context, renderer InlineChildRenderer, psel, sel *qcode.Select) {
+	renderer.RenderDefaultInlineChild(sel)
+}
+
+func (d *SQLiteDialect) RenderChildCursor(ctx Context, renderChild func()) {
+	ctx.WriteString(`json_extract(`)
+	renderChild()
+	ctx.WriteString(`, '$.cursor')`)
+}
+
+func (d *SQLiteDialect) RenderChildValue(ctx Context, sel *qcode.Select, renderChild func()) {
 	if sel.Paging.Cursor {
 		ctx.WriteString(`json_extract(`)
-		renderer.RenderDefaultInlineChild(sel)
+		renderChild()
 		ctx.WriteString(`, '$.json')`)
 	} else {
-		renderer.RenderDefaultInlineChild(sel)
+		renderChild()
 	}
 }
 

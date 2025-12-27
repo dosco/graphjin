@@ -42,6 +42,8 @@ type InlineChildRenderer interface {
 	Quoted(s string)
 	Squoted(s string)
 	RenderExp(ti sdata.DBTable, ex *qcode.Exp)
+	GetConfigVar(name string) (string, bool) // Returns config var value and whether it exists
+	GetSecPrefix() string
 }
 
 type Dialect interface {
@@ -88,6 +90,9 @@ type Dialect interface {
 	// Inline child rendering for dialects without LATERAL support
 	// renderer provides callbacks to compiler methods
 	RenderInlineChild(ctx Context, renderer InlineChildRenderer, psel, sel *qcode.Select)
+	RenderChildCursor(ctx Context, renderChild func())
+	RenderChildValue(ctx Context, sel *qcode.Select, renderChild func())
+
 	
 	// Mutation and Subscriptions
 	SupportsReturning() bool

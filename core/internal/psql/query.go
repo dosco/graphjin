@@ -243,7 +243,9 @@ func (co *Compiler) CompileQuery(
 			if !c.dialect.SupportsLateral() {
 				// Dialects without LATERAL use inline subqueries
 				// Each dialect implements its own RenderInlineChild
-				c.dialect.RenderInlineChild(c, c, nil, sel)
+				c.dialect.RenderChildValue(c, sel, func() {
+					c.dialect.RenderInlineChild(c, c, nil, sel)
+				})
 			} else {
 				c.colWithTableID("__sj", sel.ID, "json")
 			}
@@ -262,18 +264,9 @@ func (co *Compiler) CompileQuery(
 				}
 
 				if !c.dialect.SupportsLateral() {
-					if c.dialect.Name() == "sqlite" {
-						c.w.WriteString(`json_extract(`)
-						var buf bytes.Buffer
-						oldW := c.w
-						c.w = &buf
-						c.renderInlineChild(sel)
-						c.w = oldW
-						c.w.WriteString(buf.String())
-						c.w.WriteString(`, '$.cursor')`)
-					} else {
-						c.w.WriteString(`NULL`) // Cursors not fully supported inline yet
-					}
+					c.dialect.RenderChildCursor(c, func() {
+						c.dialect.RenderInlineChild(c, c, nil, sel)
+					})
 				} else {
 					c.colWithTableID("__sj", int32(sel.ID), "__cursor")
 				}

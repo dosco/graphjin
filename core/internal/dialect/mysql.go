@@ -1504,4 +1504,10 @@ func (d *MySQLDialect) ModifySelectsForMutation(qc *qcode.QCode) {
 
 func (d *MySQLDialect) RenderQueryPrefix(ctx Context, qc *qcode.QCode) {}
 
+func (d *MySQLDialect) RenderChildCursor(ctx Context, renderChild func()) {
+	// MySQL cursor workaround handled in RenderInlineChild
+}
 
+func (d *MySQLDialect) RenderChildValue(ctx Context, sel *qcode.Select, renderChild func()) {
+	renderChild()
+}

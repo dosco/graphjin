@@ -732,3 +732,10 @@ func (d *PostgresDialect) ModifySelectsForMutation(qc *qcode.QCode) {}
 func (d *PostgresDialect) RenderQueryPrefix(ctx Context, qc *qcode.QCode) {}
 
 func (d *PostgresDialect) SplitQuery(query string) (parts []string) { return []string{query} }
+
+func (d *PostgresDialect) RenderChildCursor(ctx Context, renderChild func()) {}
+
+func (d *PostgresDialect) RenderChildValue(ctx Context, sel *qcode.Select, renderChild func()) {
+	renderChild()
+}
+
