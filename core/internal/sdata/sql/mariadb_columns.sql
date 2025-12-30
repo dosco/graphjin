@@ -1,7 +1,18 @@
 SELECT col.table_schema as "schema",
 	col.table_name as "table",
 	col.column_name as "column",
-	col.data_type as "type",
+	-- MariaDB: JSON columns are stored as LONGTEXT with json_valid check constraint
+	-- We detect JSON by looking for the json_valid check constraint
+	(
+		CASE
+			WHEN col.data_type = 'longtext' AND EXISTS (
+				SELECT 1 FROM information_schema.check_constraints chk
+				WHERE chk.constraint_schema = col.table_schema
+					AND LOWER(chk.check_clause) LIKE CONCAT('%json_valid%', LOWER(col.column_name), '%')
+			) THEN 'json'
+			ELSE LOWER(col.data_type)
+		END
+	) as "type",
 	(
 		CASE
 			WHEN col.is_nullable = 'YES' THEN TRUE

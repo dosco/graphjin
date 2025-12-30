@@ -44,6 +44,7 @@ type InlineChildRenderer interface {
 	RenderExp(ti sdata.DBTable, ex *qcode.Exp)
 	GetConfigVar(name string) (string, bool) // Returns config var value and whether it exists
 	GetSecPrefix() string
+	GetRootWithCursor() *qcode.Select // Returns first root select with cursor pagination
 }
 
 type Dialect interface {

@@ -16,6 +16,35 @@ type MariaDBDialect struct {
 	DBVersion int
 }
 
+// findSkipVarExp searches for a skip/include variable expression at the top level of a Where clause.
+// Returns the variable name and true if found, empty string and false otherwise.
+// For @skip(ifVar: $var), the Op will be OpNotEqualsTrue
+// For @include(ifVar: $var), the Op will be OpEqualsTrue
+func (d *MariaDBDialect) findSkipVarExp(exp *qcode.Exp) (varName string, isSkip bool, found bool) {
+	if exp == nil {
+		return "", false, false
+	}
+
+	// Direct OpEqualsTrue or OpNotEqualsTrue
+	switch exp.Op {
+	case qcode.OpEqualsTrue:
+		if exp.Right.ValType == qcode.ValVar {
+			return exp.Right.Val, false, true // include directive
+		}
+	case qcode.OpNotEqualsTrue:
+		if exp.Right.ValType == qcode.ValVar {
+			return exp.Right.Val, true, true // skip directive
+		}
+	case qcode.OpAnd:
+		// Check first child (skip conditions are usually added first)
+		if len(exp.Children) > 0 {
+			return d.findSkipVarExp(exp.Children[0])
+		}
+	}
+
+	return "", false, false
+}
+
 func (d *MariaDBDialect) Name() string {
 	return "mariadb"
 }
@@ -38,22 +67,47 @@ func (d *MariaDBDialect) SupportsLateral() bool {
 func (d *MariaDBDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, psel, sel *qcode.Select) {
 	ctx.WriteString(`(SELECT `)
 	if sel.Singular {
+		if sel.Type == qcode.SelTypeUnion {
+			// For Union types, we dispatch to children using COALESCE.
+			// The children (concrete types) are correlated to the grandparent table by the compiler.
+			// We use the existing (SELECT from function start.
+			ctx.WriteString(`COALESCE(`)
+			first := true
+			for _, cid := range sel.Children {
+				csel := r.GetChild(cid)
+				if csel == nil {
+					continue
+				}
+				if !first {
+					ctx.WriteString(`, `)
+				}
+				first = false
+				r.RenderInlineChild(sel, csel)
+			}
+			ctx.WriteString(`) FROM DUAL)`)
+			return
+		}
+
 		// For singular (one-to-one/many-to-one), return a single json_object
 		ctx.WriteString(`json_object(`)
 		d.renderInlineJSONFields(ctx, r, sel)
 		ctx.WriteString(`)`)
 
 		ctx.WriteString(` FROM `)
-		r.RenderTable(sel, sel.Ti.Schema, sel.Ti.Name, false)
-		t := sel.Ti.Name
-		if sel.ID >= 0 {
-			t = fmt.Sprintf("%s_%d", t, sel.ID)
+		d.renderFromTable(ctx, r, sel, psel)
+		// Skip alias for embedded JSON tables since RenderFromEdge already adds alias
+		if sel.Rel.Type != sdata.RelEmbedded {
+			t := sel.Ti.Name
+			if sel.ID >= 0 {
+				t = fmt.Sprintf("%s_%d", t, sel.ID)
+			}
+			d.RenderTableAlias(ctx, t)
 		}
-		d.RenderTableAlias(ctx, t)
 
 		// Render join tables for many-to-many relationships
+		// Use custom join rendering with proper table aliases
 		for _, join := range sel.Joins {
-			r.RenderJoin(join)
+			d.renderJoinWithAlias(ctx, r, psel, sel, join)
 		}
 
 		// Render self-joins for order by list
@@ -64,7 +118,10 @@ func (d *MariaDBDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, p
 		}
 
 		// Render the relationship filter (WHERE clause)
-		if sel.Where.Exp != nil {
+		// For recursive relationships, generate a simpler filter instead of using CTE references
+		if sel.Rel.Type == sdata.RelRecursive {
+			d.renderRecursiveWhereClause(ctx, r, psel, sel)
+		} else if sel.Where.Exp != nil {
 			ctx.WriteString(` WHERE `)
 			d.renderWhereExp(ctx, r, psel, sel, sel.Where.Exp)
 		}
@@ -75,45 +132,77 @@ func (d *MariaDBDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, p
 	} else {
 		// For plural (one-to-many/many-to-many), aggregate into array
 		if psel != nil {
-			// For correlated child subqueries, we use a derived table to support nested aggregations
+			// For correlated child subqueries, use simple correlated subquery (no derived table)
+			// This allows the parent table to be visible in the WHERE clause
 			ctx.WriteString(`COALESCE(json_arrayagg(json_object(`)
-			d.renderSubqueryJSONFields(ctx, r, sel)
-			ctx.WriteString(`)), '[]')`)
-
-			ctx.WriteString(` FROM (SELECT `)
-			d.renderBaseColumns(ctx, r, sel)
-			ctx.WriteString(` FROM `)
-			r.RenderTable(sel, sel.Ti.Schema, sel.Ti.Name, false)
-			t := sel.Ti.Name
-			if sel.ID >= 0 {
-				t = fmt.Sprintf("%s_%d", t, sel.ID)
+			d.renderInlineJSONFields(ctx, r, sel)
+			ctx.WriteString(`))`)
+			// Add ORDER BY inside aggregation if needed
+			if len(sel.OrderBy) > 0 {
+				ctx.WriteString(` ORDER BY `)
+				for i, ob := range sel.OrderBy {
+					if i != 0 {
+						ctx.WriteString(`, `)
+					}
+					t := sel.Ti.Name
+					if sel.ID >= 0 {
+						t = fmt.Sprintf("%s_%d", t, sel.ID)
+					}
+					r.ColWithTable(t, ob.Col.Name)
+					switch ob.Order {
+					case qcode.OrderAsc:
+						ctx.WriteString(` ASC`)
+					case qcode.OrderDesc:
+						ctx.WriteString(` DESC`)
+					}
+				}
 			}
-			d.RenderTableAlias(ctx, t)
+			ctx.WriteString(`, '[]')`)
+
+			ctx.WriteString(` FROM `)
+			d.renderFromTable(ctx, r, sel, psel)
+			// Skip alias for embedded JSON tables since RenderFromEdge already adds alias
+			if sel.Rel.Type != sdata.RelEmbedded {
+				t := sel.Ti.Name
+				if sel.ID >= 0 {
+					t = fmt.Sprintf("%s_%d", t, sel.ID)
+				}
+				d.RenderTableAlias(ctx, t)
+			}
 
 			// Render join tables for many-to-many relationships
+			// Use custom join rendering with proper table aliases
 			for _, join := range sel.Joins {
-				r.RenderJoin(join)
-			}
-            
-			// Render self-joins for order by list
-			for _, ob := range sel.OrderBy {
-				if ob.Var != "" {
-					d.renderOrderByJoin(ctx, r, sel, ob)
-				}
+				d.renderJoinWithAlias(ctx, r, psel, sel, join)
 			}
 
 			// Render the relationship filter (WHERE clause)
-			if sel.Where.Exp != nil {
+			// For recursive relationships, generate a simpler filter instead of using CTE references
+			if sel.Rel.Type == sdata.RelRecursive {
+				d.renderRecursiveWhereClause(ctx, r, psel, sel)
+			} else if sel.Where.Exp != nil {
 				ctx.WriteString(` WHERE `)
 				d.renderWhereExp(ctx, r, psel, sel, sel.Where.Exp)
 			}
 			d.renderGroupBy(ctx, r, sel)
-			d.renderOrderBy(ctx, r, sel, "")
-            
-			ctx.WriteString(`) AS `)
-			d.RenderTableAlias(ctx, "_gj_t")
 		} else {
 			// For root queries, use a subquery to apply ORDER BY and LIMIT before aggregation
+
+			// Check if there's a skip/include variable condition - if so, we need to wrap with CASE WHEN
+			// to return NULL when the condition is met, instead of returning [] from COALESCE
+			skipVarName, isSkip, hasSkipVar := d.findSkipVarExp(sel.Where.Exp)
+			if hasSkipVar {
+				ctx.WriteString(`CASE WHEN (`)
+				ctx.AddParam(Param{Name: skipVarName, Type: "boolean"})
+				if isSkip {
+					// @skip(ifVar: $var) - show when variable is NOT true
+					ctx.WriteString(` IS NOT TRUE) THEN (SELECT `)
+				} else {
+					// @include(ifVar: $var) - show when variable IS true
+					ctx.WriteString(` IS TRUE) THEN (SELECT `)
+				}
+			}
+
 			if sel.Paging.Cursor {
 				ctx.WriteString(`json_object('json', JSON_EXTRACT(`)
 			}
@@ -143,18 +232,31 @@ func (d *MariaDBDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, p
 			ctx.WriteString(` FROM (SELECT `)
 			// Select the columns we need
 			d.renderBaseColumns(ctx, r, sel)
+
 			ctx.WriteString(` FROM `)
-			r.RenderTable(sel, sel.Ti.Schema, sel.Ti.Name, false)
+			d.renderFromTable(ctx, r, sel, psel)
 			// Apply alias to match generic RenderJoin expectations
-			t := sel.Ti.Name
-			if sel.ID >= 0 {
-				t = fmt.Sprintf("%s_%d", t, sel.ID)
+			// Skip for embedded JSON tables since RenderFromEdge already adds alias
+			if sel.Rel.Type != sdata.RelEmbedded {
+				t := sel.Ti.Name
+				if sel.ID >= 0 {
+					t = fmt.Sprintf("%s_%d", t, sel.ID)
+				}
+				d.RenderTableAlias(ctx, t)
 			}
-			d.RenderTableAlias(ctx, t)
+
+			// Add cross join with __cur for cursor pagination
+			// The __cur CTE is defined at the query start but needs to be
+			// accessible inside the subquery
+			if sel.Paging.Cursor {
+				ctx.WriteString(`, `)
+				ctx.Quote("__cur")
+			}
 
 			// Render join tables for many-to-many relationships
+			// Use custom join rendering with proper table aliases
 			for _, join := range sel.Joins {
-				r.RenderJoin(join)
+				d.renderJoinWithAlias(ctx, r, nil, sel, join)
 			}
 
 			// Render self-joins for order by list
@@ -167,7 +269,7 @@ func (d *MariaDBDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, p
 			// Render the relationship filter (WHERE clause)
 			if sel.Where.Exp != nil {
 				ctx.WriteString(` WHERE `)
-				d.renderWhereExp(ctx, r, psel, sel, sel.Where.Exp)
+				d.renderWhereExp(ctx, r, nil, sel, sel.Where.Exp)
 			}
 			d.renderGroupBy(ctx, r, sel)
 
@@ -183,6 +285,11 @@ func (d *MariaDBDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, p
 
 			ctx.WriteString(`) AS `)
 			r.Quoted("_gj_t")
+
+			// Close the CASE WHEN wrapper if we have a skip/include variable
+			if hasSkipVar {
+				ctx.WriteString(`) ELSE NULL END`)
+			}
 		}
 	}
 
@@ -287,7 +394,16 @@ func (d *MariaDBDialect) renderInlineJSONFields(ctx Context, r InlineChildRender
 			}
 			ctx.WriteString(`)`)
 		} else {
+			// Handle skipIf/includeIf field filters (ifVar)
+			if f.FieldFilter.Exp != nil {
+				ctx.WriteString(`CASE WHEN `)
+				d.renderFieldFilterExp(ctx, r, sel, f.FieldFilter.Exp)
+				ctx.WriteString(` THEN `)
+			}
 			r.ColWithTable(t, f.Col.Name)
+			if f.FieldFilter.Exp != nil {
+				ctx.WriteString(` ELSE null END`)
+			}
 		}
 		i++
 	}
@@ -311,7 +427,16 @@ func (d *MariaDBDialect) renderInlineJSONFields(ctx Context, r InlineChildRender
 			ctx.WriteString(`, `)
 		}
 		r.Squoted(csel.FieldName)
-		ctx.WriteString(`, JSON_QUERY(`)
+		ctx.WriteString(`, `)
+
+		// Handle SkipTypeNulled for role-based directives
+		if csel.SkipRender == qcode.SkipTypeNulled || csel.SkipRender == qcode.SkipTypeBlocked || csel.SkipRender == qcode.SkipTypeUserNeeded {
+			ctx.WriteString(`NULL`)
+			i++
+			continue
+		}
+
+		ctx.WriteString(`JSON_QUERY(`)
 		r.RenderInlineChild(sel, csel)
 		ctx.WriteString(`, '$')`)
 		i++
@@ -380,6 +505,13 @@ func (d *MariaDBDialect) renderBaseColumns(ctx Context, r InlineChildRenderer, s
 			t = fmt.Sprintf("%s_%d", t, sel.ID)
 		}
 
+		// Handle skipIf/includeIf field filters
+		if f.FieldFilter.Exp != nil {
+			ctx.WriteString(`(CASE WHEN `)
+			d.renderFieldFilterExp(ctx, r, sel, f.FieldFilter.Exp)
+			ctx.WriteString(` THEN `)
+		}
+
 		if f.Func.Name != "" {
 			ctx.WriteString(f.Func.Name)
 			ctx.WriteString(`(`)
@@ -406,6 +538,11 @@ func (d *MariaDBDialect) renderBaseColumns(ctx Context, r InlineChildRenderer, s
 		} else {
 			r.ColWithTable(t, f.Col.Name)
 		}
+
+		if f.FieldFilter.Exp != nil {
+			ctx.WriteString(` ELSE null END)`)
+		}
+
 		ctx.WriteString(` AS `)
 		r.Squoted(f.FieldName)
 		i++
@@ -429,9 +566,23 @@ func (d *MariaDBDialect) renderBaseColumns(ctx Context, r InlineChildRenderer, s
 				if sel.ID >= 0 {
 					t = fmt.Sprintf("%s_%d", t, sel.ID)
 				}
+			} else {
+				// For nested order by (ordering by a related table's column),
+				// the table is joined with _0 suffix by renderJoinWithAlias
+				t = fmt.Sprintf("%s_0", t)
 			}
 		}
+		if ob.KeyVar != "" && ob.Key != "" {
+			ctx.WriteString(`CASE WHEN `)
+			ctx.AddParam(Param{Name: ob.KeyVar, Type: "text"})
+			ctx.WriteString(` = `)
+			ctx.WriteString(fmt.Sprintf("'%s'", ob.Key))
+			ctx.WriteString(` THEN `)
+		}
 		r.ColWithTable(t, col)
+		if ob.KeyVar != "" && ob.Key != "" {
+			ctx.WriteString(` END`)
+		}
 		ctx.WriteString(fmt.Sprintf(` AS _ord_%d`, j))
 	}
 
@@ -493,12 +644,20 @@ func (d *MariaDBDialect) RenderReturning(ctx Context, m *qcode.Mutate) {
 // RenderJSONRootField renders a JSON field at the root level for MariaDB.
 // MariaDB treats JSON as LONGTEXT, so nested JSON values get stringified
 // unless we use JSON_QUERY to extract them as proper JSON.
+// For scalar values like __typename, we output the value directly without JSON_QUERY.
 func (d *MariaDBDialect) RenderJSONRootField(ctx Context, key string, val func()) {
 	ctx.WriteString(`'`)
 	ctx.WriteString(key)
-	ctx.WriteString(`', JSON_QUERY(`)
-	val()
-	ctx.WriteString(`, '$')`)
+	ctx.WriteString(`', `)
+	// For __typename, val() outputs a quoted string like 'getUser'
+	// which should be used directly, not wrapped in JSON_QUERY
+	if key == "__typename" {
+		val()
+	} else {
+		ctx.WriteString(`JSON_QUERY(`)
+		val()
+		ctx.WriteString(`, '$')`)
+	}
 }
 
 // RenderJSONPlural renders JSON array aggregation for MariaDB.
@@ -619,6 +778,98 @@ func (d *MariaDBDialect) RenderTableAlias(ctx Context, alias string) {
 	ctx.WriteString(` `)
 }
 
+// renderFromTable handles FROM clause for both regular tables and embedded JSON tables.
+// For embedded JSON tables (RelEmbedded), it uses JSON_TABLE to unpack the JSON column.
+// For regular tables, it uses the standard table name.
+func (d *MariaDBDialect) renderFromTable(ctx Context, r InlineChildRenderer, sel *qcode.Select, psel *qcode.Select) {
+	if sel.Rel.Type == sdata.RelEmbedded {
+		// For embedded JSON columns, use JSON_TABLE with the correct alias pattern
+		// JSON_TABLE references the parent table from the outer query (via psel)
+		// MariaDB inline child rendering expects tableName_ID pattern for column references
+		ctx.WriteString(`JSON_TABLE(`)
+		// Reference the parent table with its alias (tableName_ID pattern)
+		parentAlias := sel.Rel.Left.Col.Table
+		if psel != nil && psel.ID >= 0 {
+			parentAlias = fmt.Sprintf("%s_%d", sel.Rel.Left.Col.Table, psel.ID)
+		}
+		ctx.Quote(parentAlias)
+		ctx.WriteString(`.`)
+		ctx.Quote(sel.Rel.Left.Col.Name)
+		ctx.WriteString(`, '$[*]' COLUMNS(`)
+		for i, col := range sel.Ti.Columns {
+			if i != 0 {
+				ctx.WriteString(`, `)
+			}
+			ctx.WriteString(col.Name)
+			ctx.WriteString(` `)
+			ctx.WriteString(col.Type)
+			ctx.WriteString(` PATH '$.`)
+			ctx.WriteString(col.Name)
+			ctx.WriteString(`' ERROR ON ERROR`)
+		}
+		ctx.WriteString(`)) AS `)
+		// Use tableName_ID pattern to match column reference expectations
+		t := sel.Ti.Name
+		if sel.ID >= 0 {
+			t = fmt.Sprintf("%s_%d", t, sel.ID)
+		}
+		ctx.Quote(t)
+	} else {
+		r.RenderTable(sel, sel.Ti.Schema, sel.Ti.Name, false)
+	}
+}
+
+// RenderCursorCTE renders the cursor CTE for MariaDB.
+// MariaDB cursor format uses : as separator (see RenderInlineChild cursor generation).
+// Format: <prefix><id>:<val1>:<val2>:...
+func (d *MariaDBDialect) RenderCursorCTE(ctx Context, sel *qcode.Select) {
+	if !sel.Paging.Cursor {
+		return
+	}
+	ctx.WriteString(`WITH __cur AS (SELECT `)
+	for i, ob := range sel.OrderBy {
+		if i != 0 {
+			ctx.WriteString(`, `)
+		}
+		// Use SUBSTRING_INDEX with : separator
+		// The cursor format is: <prefix><id>:<val1>:<val2>:...
+		// We need to extract element at position i+2 (skip prefix+id, then 1-indexed values)
+		// Cast to the correct type for proper comparison
+		ctx.WriteString(`CAST(NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(a.i, ':', `)
+		ctx.Write(fmt.Sprintf("%d", i+2))
+		ctx.WriteString(`), ':', -1), '') AS `)
+		ctx.WriteString(d.mariadbType(ob.Col.Type))
+		ctx.WriteString(`) AS `)
+
+		if ob.KeyVar != "" && ob.Key != "" {
+			ctx.Quote(ob.Col.Name + "_" + ob.Key)
+		} else {
+			ctx.Quote(ob.Col.Name)
+		}
+	}
+	ctx.WriteString(` FROM ((SELECT `)
+	ctx.AddParam(Param{Name: "cursor", Type: "text"})
+	ctx.WriteString(` AS i)) AS a) `)
+}
+
+// mariadbType converts GraphJin types to MariaDB types for CAST
+func (d *MariaDBDialect) mariadbType(t string) string {
+	switch t {
+	case "int", "integer", "int4", "int8", "bigint", "smallint":
+		return "SIGNED"
+	case "float", "float4", "float8", "double", "real", "numeric", "decimal":
+		return "DECIMAL(65,30)"
+	case "timestamp", "timestamptz", "timestamp without time zone", "timestamp with time zone":
+		return "DATETIME"
+	case "date":
+		return "DATE"
+	case "time", "timetz":
+		return "TIME"
+	default:
+		return "CHAR"
+	}
+}
+
 func (d *MariaDBDialect) renderGroupBy(ctx Context, r InlineChildRenderer, sel *qcode.Select) {
 	if !sel.GroupCols || len(sel.BCols) == 0 {
 		return
@@ -661,9 +912,23 @@ func (d *MariaDBDialect) renderOrderBy(ctx Context, r InlineChildRenderer, sel *
 				if sel.ID >= 0 {
 					t = fmt.Sprintf("%s_%d", t, sel.ID)
 				}
+			} else {
+				// For nested order by (ordering by a related table's column),
+				// the table is joined with _0 suffix by renderJoinWithAlias
+				t = fmt.Sprintf("%s_0", t)
 			}
 		}
+		if ob.KeyVar != "" && ob.Key != "" {
+			ctx.WriteString(` CASE WHEN `)
+			ctx.AddParam(Param{Name: ob.KeyVar, Type: "text"})
+			ctx.WriteString(` = `)
+			ctx.WriteString(fmt.Sprintf("'%s'", ob.Key))
+			ctx.WriteString(` THEN `)
+		}
 		r.ColWithTable(t, col)
+		if ob.KeyVar != "" && ob.Key != "" {
+			ctx.WriteString(` END `)
+		}
 		switch ob.Order {
 		case qcode.OrderAsc:
 			ctx.WriteString(` ASC`)
@@ -690,9 +955,8 @@ func (d *MariaDBDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel
 		return
 	}
 
-	// DEBUG
-	// fmt.Printf("DEBUG renderExp: Op=%d Left.Table='%s' Left.Col='%s' sel.Ti='%s' sel.ID=%d\n", ex.Op, ex.Left.Col.Table, ex.Left.Col.Name, sel.Ti.Name, sel.ID)
-	// fmt.Printf("DEBUG renderExp: Op=%d Left.Table='%s' Left.Col='%s' sel.Ti='%s' sel.ID=%d\n", ex.Op, ex.Left.Col.Table, ex.Left.Col.Name, sel.Ti.Name, sel.ID)
+
+
 
 	switch ex.Op {
 	case qcode.OpAnd:
@@ -725,7 +989,17 @@ func (d *MariaDBDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel
 		}
 		ctx.WriteString(`(`)
 		if ex.Left.Col.Name != "" {
-			if ex.Left.ID >= 0 && psel != nil && ex.Left.ID == psel.ID {
+			// Check for cursor CTE reference first
+			// qcode sets ex.Left.Table = "__cur" for cursor pagination filters
+			if ex.Left.Table == "__cur" {
+				// Use ColName if set (for cursor key variants like "price_key")
+				colName := ex.Left.Col.Name
+				if ex.Left.ColName != "" {
+					colName = ex.Left.ColName
+				}
+				r.ColWithTable("__cur", colName)
+			} else if (ex.Left.ID >= 0 && psel != nil && ex.Left.ID == psel.ID) ||
+				(ex.Left.ID == -1 && psel != nil && ex.Left.Col.Table == psel.Ti.Name) {
 				t := psel.Ti.Name
 				if psel.ID >= 0 {
 					t = fmt.Sprintf("%s_%d", t, psel.ID)
@@ -744,13 +1018,18 @@ func (d *MariaDBDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel
 				} else if ex.Left.ID >= 0 {
 					t = fmt.Sprintf("%s_%d", t, ex.Left.ID)
 				}
-				r.ColWithTable(t, ex.Left.Col.Name)
+				// Use ColName if set (for cursor key variants)
+				colName := ex.Left.Col.Name
+				if ex.Left.ColName != "" {
+					colName = ex.Left.ColName
+				}
+				r.ColWithTable(t, colName)
 			}
 		}
-		if strings.EqualFold(ex.Right.Val, "true") {
-			ctx.WriteString(` IS NULL)`)
-		} else {
+		if strings.EqualFold(ex.Right.Val, "false") {
 			ctx.WriteString(` IS NOT NULL)`)
+		} else {
+			ctx.WriteString(` IS NULL)`)
 		}
 
 	case qcode.OpSelectExists:
@@ -760,12 +1039,16 @@ func (d *MariaDBDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel
 		first := ex.Joins[0]
 		ctx.WriteString(`EXISTS (SELECT 1 FROM `)
 		ctx.Quote(first.Rel.Left.Col.Table)
+		// Add alias with _0 suffix to match what renderExp produces for table references
+		d.RenderTableAlias(ctx, fmt.Sprintf("%s_0", first.Rel.Left.Col.Table))
 
 		if len(ex.Joins) > 1 {
 			for i := 1; i < len(ex.Joins); i++ {
 				j := ex.Joins[i]
 				ctx.WriteString(` LEFT JOIN `)
 				ctx.Quote(j.Rel.Left.Col.Table)
+				// Add alias for nested joins too
+				d.RenderTableAlias(ctx, fmt.Sprintf("%s_0", j.Rel.Left.Col.Table))
 				ctx.WriteString(` ON `)
 
 				// Render ON clause manually or via Filter?
@@ -852,16 +1135,38 @@ func (d *MariaDBDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel
 
 		// Render left side
 		if ex.Left.Col.Name != "" {
-			if ex.Left.ID >= 0 && psel != nil && ex.Left.ID == psel.ID {
-				// References a parent table
-				t := psel.Ti.Name
+			// Determine table alias
+			var t string
+			if ex.Left.ID >= 0 && psel != nil && ex.Left.ID == psel.ID &&
+				(ex.Left.Col.Table == "" || (ex.Left.Col.Table == psel.Ti.Name && ex.Left.Col.Table != sel.Ti.Name)) {
+				// References a parent table (but not for self-referential tables where parent == child table)
+				t = psel.Ti.Name
 				if psel.ID >= 0 {
 					t = fmt.Sprintf("%s_%d", t, psel.ID)
 				}
-				r.ColWithTable(t, ex.Left.Col.Name)
+			} else if ex.Left.ID == -1 && psel != nil && ex.Left.Col.Table == psel.Ti.Name && ex.Left.Col.Table != sel.Ti.Name {
+				// Fallback: matches parent table name (but not for self-referential tables)
+				t = psel.Ti.Name
+				if psel.ID >= 0 {
+					t = fmt.Sprintf("%s_%d", t, psel.ID)
+				}
+			} else if ex.Left.ID == -1 && ex.Left.Table != "" && ex.Left.Table == sel.Ti.Name {
+				// Polymorphic relationships: ex.Left.Table is set to the child table name
+				// Use the current selection's table alias
+				t = sel.Ti.Name
+				if sel.ID >= 0 {
+					t = fmt.Sprintf("%s_%d", t, sel.ID)
+				}
+			} else if ex.Left.ID == -1 && ex.Left.Col.Table != "" && ex.Left.Col.Table != sel.Ti.Name {
+				// Fallback: handle outer references
+				t = ex.Left.Col.Table
+				// Don't add suffix to __cur CTE (cursor pagination)
+				if t != "__cur" {
+					t = fmt.Sprintf("%s_0", t)
+				}
 			} else {
 				// Current table or Joined table
-				t := ex.Left.Col.Table
+				t = ex.Left.Col.Table
 				if t == "" {
 					t = sel.Ti.Name
 				}
@@ -873,6 +1178,33 @@ func (d *MariaDBDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel
 				} else if ex.Left.ID >= 0 {
 					t = fmt.Sprintf("%s_%d", t, ex.Left.ID)
 				}
+			}
+
+			// Handle JSON path if present
+			if len(ex.Left.Path) > 0 {
+				// For boolean values, use JSON_EXTRACT directly (without JSON_UNQUOTE)
+				// because JSON booleans need to be compared as JSON values
+				switch ex.Right.ValType {
+				case qcode.ValBool:
+					// JSON_EXTRACT returns JSON boolean (true/false) directly
+					ctx.WriteString(`JSON_EXTRACT(`)
+					r.ColWithTable(t, ex.Left.Col.Name)
+					ctx.WriteString(`, '$.`)
+					for i, p := range ex.Left.Path {
+						if i > 0 {
+							ctx.WriteString(`.`)
+						}
+						ctx.WriteString(p)
+					}
+					ctx.WriteString(`')`)
+				case qcode.ValNum:
+					ctx.WriteString(`CAST(`)
+					d.RenderJSONPath(ctx, t, ex.Left.Col.Name, ex.Left.Path)
+					ctx.WriteString(` AS DECIMAL(65,30))`)
+				default:
+					d.RenderJSONPath(ctx, t, ex.Left.Col.Name, ex.Left.Path)
+				}
+			} else {
 				r.ColWithTable(t, ex.Left.Col.Name)
 			}
 		}
@@ -906,12 +1238,43 @@ func (d *MariaDBDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel
 
 		// Render right side
 		if ex.Right.Col.Name != "" {
-			if ex.Right.ID >= 0 && psel != nil && ex.Right.ID == psel.ID {
+			// Check for cursor CTE reference first
+			// qcode sets ex.Right.Table = "__cur" for cursor pagination filters
+			if ex.Right.Table == "__cur" {
+				// Use ColName if set (for cursor key variants like "price_key")
+				colName := ex.Right.Col.Name
+				if ex.Right.ColName != "" {
+					colName = ex.Right.ColName
+				}
+				r.ColWithTable("__cur", colName)
+			} else if ex.Right.ID >= 0 && psel != nil && ex.Right.ID == psel.ID &&
+				(ex.Right.Col.Table == "" || ex.Right.Col.Table == psel.Ti.Name) {
+				// References a parent table
 				t := psel.Ti.Name
-				if psel.ID > 0 {
+				if psel.ID >= 0 {
 					t = fmt.Sprintf("%s_%d", t, psel.ID)
 				}
 				r.ColWithTable(t, ex.Right.Col.Name)
+			} else if ex.Right.ID == -1 && psel != nil && ex.Right.Col.Table == psel.Ti.Name {
+				// Fallback: matches parent table name
+				t := psel.Ti.Name
+				if psel.ID >= 0 {
+					t = fmt.Sprintf("%s_%d", t, psel.ID)
+				}
+				r.ColWithTable(t, ex.Right.Col.Name)
+			} else if ex.Right.ID == -1 && ex.Right.Col.Table != "" && ex.Right.Col.Table != sel.Ti.Name {
+				// Fallback: handle outer references
+				t := ex.Right.Col.Table
+				// Don't add suffix to __cur CTE (cursor pagination)
+				if t != "__cur" {
+					t = fmt.Sprintf("%s_0", t)
+				}
+				// Use ColName if set (for cursor key variants like "price_key")
+				colName := ex.Right.Col.Name
+				if ex.Right.ColName != "" {
+					colName = ex.Right.ColName
+				}
+				r.ColWithTable(t, colName)
 			} else {
 				t := ex.Right.Col.Table
 				if t == "" {
@@ -919,10 +1282,13 @@ func (d *MariaDBDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel
 				}
 
 				if t == sel.Ti.Name {
-					if sel.ID > 0 {
+					if sel.ID >= 0 {
 						t = fmt.Sprintf("%s_%d", t, sel.ID)
 					}
-				} else if ex.Right.ID > 0 {
+				} else if t == "__cur" {
+					// Don't add suffix to __cur CTE (cursor pagination)
+					// This handles cursor filter expressions where Right.ID defaults to 0
+				} else if ex.Right.ID >= 0 {
 					t = fmt.Sprintf("%s_%d", t, ex.Right.ID)
 				}
 				r.ColWithTable(t, ex.Right.Col.Name)
@@ -954,7 +1320,7 @@ func (d *MariaDBDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel
 		if ex.Left.Col.Name != "" {
 			if ex.Left.ID >= 0 && psel != nil && ex.Left.ID == psel.ID {
 				t := psel.Ti.Name
-				if psel.ID > 0 {
+				if psel.ID >= 0 {
 					t = fmt.Sprintf("%s_%d", t, psel.ID)
 				}
 				r.ColWithTable(t, ex.Left.Col.Name)
@@ -965,10 +1331,10 @@ func (d *MariaDBDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel
 				}
 
 				if t == sel.Ti.Name {
-					if sel.ID > 0 {
+					if sel.ID >= 0 {
 						t = fmt.Sprintf("%s_%d", t, sel.ID)
 					}
-				} else if ex.Left.ID > 0 {
+				} else if ex.Left.ID >= 0 {
 					t = fmt.Sprintf("%s_%d", t, ex.Left.ID)
 				}
 				r.ColWithTable(t, ex.Left.Col.Name)
@@ -985,7 +1351,7 @@ func (d *MariaDBDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel
 		if ex.Right.Col.Name != "" {
 			if ex.Right.ID >= 0 && psel != nil && ex.Right.ID == psel.ID {
 				t := psel.Ti.Name
-				if psel.ID > 0 {
+				if psel.ID >= 0 {
 					t = fmt.Sprintf("%s_%d", t, psel.ID)
 				}
 				r.ColWithTable(t, ex.Right.Col.Name)
@@ -996,10 +1362,10 @@ func (d *MariaDBDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel
 				}
 
 				if t == sel.Ti.Name {
-					if sel.ID > 0 {
+					if sel.ID >= 0 {
 						t = fmt.Sprintf("%s_%d", t, sel.ID)
 					}
-				} else if ex.Right.ID > 0 {
+				} else if ex.Right.ID >= 0 {
 					t = fmt.Sprintf("%s_%d", t, ex.Right.ID)
 				}
 				r.ColWithTable(t, ex.Right.Col.Name)
@@ -1051,10 +1417,10 @@ func (d *MariaDBDialect) renderValPrefix(ctx Context, r InlineChildRenderer, pse
 			t = sel.Ti.Name
 		}
 		if t == sel.Ti.Name {
-			if sel.ID > 0 {
+			if sel.ID >= 0 {
 				t = fmt.Sprintf("%s_%d", t, sel.ID)
 			}
-		} else if ex.Left.ID > 0 {
+		} else if ex.Left.ID >= 0 {
 			t = fmt.Sprintf("%s_%d", t, ex.Left.ID)
 		}
 		r.ColWithTable(t, ex.Left.Col.Name)
@@ -1086,10 +1452,10 @@ func (d *MariaDBDialect) renderValPrefix(ctx Context, r InlineChildRenderer, pse
 					t = sel.Ti.Name
 				}
 				if t == sel.Ti.Name {
-					if sel.ID > 0 {
+					if sel.ID >= 0 {
 						t = fmt.Sprintf("%s_%d", t, sel.ID)
 					}
-				} else if ex.Left.ID > 0 {
+				} else if ex.Left.ID >= 0 {
 					t = fmt.Sprintf("%s_%d", t, ex.Left.ID)
 				}
 				r.ColWithTable(t, ex.Left.Col.Name)
@@ -1148,10 +1514,10 @@ func (d *MariaDBDialect) renderValPrefix(ctx Context, r InlineChildRenderer, pse
 			t = sel.Ti.Name
 		}
 		if t == sel.Ti.Name {
-			if sel.ID > 0 {
+			if sel.ID >= 0 {
 				t = fmt.Sprintf("%s_%d", t, sel.ID)
 			}
-		} else if ex.Left.ID > 0 {
+		} else if ex.Left.ID >= 0 {
 			t = fmt.Sprintf("%s_%d", t, ex.Left.ID)
 		}
 		r.ColWithTable(t, ex.Left.Col.Name)
@@ -1164,6 +1530,13 @@ func (d *MariaDBDialect) renderValPrefix(ctx Context, r InlineChildRenderer, pse
 
 func (d *MariaDBDialect) RenderJSONRoot(ctx Context, sel *qcode.Select) {
 	if sel == nil {
+		// Check if any root select has cursor pagination
+		// If so, we need to render the cursor CTE first
+		if r, ok := ctx.(InlineChildRenderer); ok {
+			if cursorSel := r.GetRootWithCursor(); cursorSel != nil {
+				d.RenderCursorCTE(ctx, cursorSel)
+			}
+		}
 		d.MySQLDialect.RenderJSONRoot(ctx, sel)
 		return
 	}
@@ -1213,6 +1586,20 @@ func (d *MariaDBDialect) RenderJSONRoot(ctx Context, sel *qcode.Select) {
 	ctx.WriteString(`)`)
 }
 
+// renderJoinWithAlias renders a JOIN with a table alias that matches MariaDB's expression aliasing.
+// The generic compiler's renderJoin doesn't add aliases, but MariaDB's renderExp adds _0 suffix
+// for outer table references, so we need to alias join tables to match.
+func (d *MariaDBDialect) renderJoinWithAlias(ctx Context, r InlineChildRenderer, psel, sel *qcode.Select, join qcode.Join) {
+	ctx.WriteString(` INNER JOIN `)
+	ctx.WriteString(d.QuoteIdentifier(join.Rel.Left.Ti.Name))
+	// Alias the join table with _0 suffix to match what renderExp produces
+	d.RenderTableAlias(ctx, fmt.Sprintf("%s_0", join.Rel.Left.Ti.Name))
+	ctx.WriteString(` ON ((`)
+	// Use MariaDB's renderExp so the table references get consistent aliasing
+	d.renderExp(ctx, r, psel, sel, join.Filter)
+	ctx.WriteString(`))`)
+}
+
 func (d *MariaDBDialect) renderOrderByJoin(ctx Context, r InlineChildRenderer, sel *qcode.Select, ob qcode.OrderBy) {
 	ctx.WriteString(` JOIN JSON_TABLE(`)
 	ctx.AddParam(Param{Name: ob.Var, Type: "json"})
@@ -1232,9 +1619,279 @@ func (d *MariaDBDialect) renderOrderByJoin(ctx Context, r InlineChildRenderer, s
 	ctx.WriteString(`.id = `)
 
 	if t == sel.Ti.Name {
-		if sel.ID > 0 {
+		if sel.ID >= 0 {
 			t = fmt.Sprintf("%s_%d", t, sel.ID)
 		}
+	} else {
+		// For nested order by (ordering by a related table's column),
+		// the table is joined with _0 suffix
+		t = fmt.Sprintf("%s_0", t)
 	}
 	r.ColWithTable(t, ob.Col.Name)
 }
+
+// renderRecursiveWhereClause generates a WHERE clause for recursive relationships.
+// Instead of referencing CTEs (which MariaDB inline subqueries don't use),
+// we generate a direct parent-child join condition.
+func (d *MariaDBDialect) renderRecursiveWhereClause(ctx Context, r InlineChildRenderer, psel, sel *qcode.Select) {
+	if psel == nil {
+		return
+	}
+
+	// For recursive relationships, we need to join child to parent
+	// The relationship is: child.fk_column = parent.pk_column
+	// For "children" find: sel.Rel.Left.Col is the FK (e.g., reply_to_id)
+	//                      sel.Rel.Right.Col is the PK (e.g., id)
+
+	ctx.WriteString(` WHERE `)
+
+	// Child table alias
+	childTable := sel.Ti.Name
+	if sel.ID >= 0 {
+		childTable = fmt.Sprintf("%s_%d", sel.Ti.Name, sel.ID)
+	}
+
+	// Parent table alias
+	parentTable := psel.Ti.Name
+	if psel.ID >= 0 {
+		parentTable = fmt.Sprintf("%s_%d", psel.Ti.Name, psel.ID)
+	}
+
+	// Determine the join columns based on "find" direction
+	// For "children": child.reply_to_id = parent.id
+	// For "parents": child.id = parent.reply_to_id (but we handle that by flipping in qcode)
+	v, _ := sel.GetInternalArg("find")
+	switch v.Val {
+	case "parents", "parent":
+		// For parents: we find rows where parent.reply_to_id = child.id
+		r.ColWithTable(parentTable, sel.Rel.Left.Col.Name)
+		ctx.WriteString(` = `)
+		r.ColWithTable(childTable, sel.Rel.Right.Col.Name)
+	default:
+		// For children (default): we find rows where child.reply_to_id = parent.id
+		r.ColWithTable(childTable, sel.Rel.Left.Col.Name)
+		ctx.WriteString(` = `)
+		r.ColWithTable(parentTable, sel.Rel.Right.Col.Name)
+	}
+}
+
+// RenderLinearConnect overrides MySQL's version for MariaDB.
+// MariaDB has issues with column resolution when JSON_TABLE derived table
+// is in the same FROM clause as the target table. We restructure the query
+// to use an explicit JOIN instead of a cartesian product.
+func (d *MariaDBDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
+	ctx.WriteString(`SELECT JSON_ARRAYAGG(`)
+	d.Quote(ctx, m.Ti.Name)
+	ctx.WriteString(".")
+	d.Quote(ctx, m.Rel.Left.Col.Name)
+	ctx.WriteString(`) INTO `)
+	d.RenderVar(ctx, varName)
+
+	ctx.WriteString(` FROM `)
+	d.Quote(ctx, m.Ti.Name)
+
+	if m.IsJSON {
+		ctx.WriteString(` JOIN `)
+		d.RenderMutateToRecordSet(ctx, m, 0, func() {
+			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+		})
+		ctx.WriteString(` ON TRUE`)
+	}
+
+	ctx.WriteString(` WHERE `)
+	renderFilter()
+	ctx.WriteString("; ")
+
+	// If this is a One-to-Many connection (Child needs to point to Parent),
+	// we need to update the child table with the parent's ID.
+	var parentVar string
+	for id := range m.DependsOn {
+		if qc.Mutates[id].Ti.Name == m.Rel.Right.Col.Table {
+			parentVar = d.getVarName(qc.Mutates[id])
+			break
+		}
+	}
+
+	if parentVar != "" {
+		ctx.WriteString("UPDATE ")
+		d.Quote(ctx, m.Ti.Name)
+		if m.IsJSON {
+			ctx.WriteString(" JOIN ")
+			d.RenderMutateToRecordSet(ctx, m, 0, func() {
+				ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+			})
+			ctx.WriteString(" ON TRUE")
+		}
+		ctx.WriteString(" SET ")
+		d.Quote(ctx, m.Ti.Name)
+		ctx.WriteString(".")
+		d.Quote(ctx, m.Rel.Left.Col.Name)
+		ctx.WriteString(" = @")
+		ctx.WriteString(parentVar)
+		ctx.WriteString(" WHERE ")
+		renderFilter()
+		ctx.WriteString("; ")
+	}
+}
+
+// RenderLinearDisconnect overrides MySQL's version for MariaDB.
+func (d *MariaDBDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
+	ctx.WriteString(`SELECT JSON_ARRAYAGG(`)
+	d.Quote(ctx, m.Ti.Name)
+	ctx.WriteString(".")
+	d.Quote(ctx, m.Rel.Left.Col.Name)
+	ctx.WriteString(`) INTO `)
+	d.RenderVar(ctx, varName)
+
+	ctx.WriteString(` FROM `)
+	d.Quote(ctx, m.Ti.Name)
+
+	if m.IsJSON {
+		ctx.WriteString(` JOIN `)
+		d.RenderMutateToRecordSet(ctx, m, 0, func() {
+			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+		})
+		ctx.WriteString(` ON TRUE`)
+	}
+
+	ctx.WriteString(` WHERE `)
+	renderFilter()
+	ctx.WriteString(`; `)
+
+	// Perform the actual disconnect (UPDATE child SET fk = NULL)
+	ctx.WriteString("UPDATE ")
+	d.Quote(ctx, m.Ti.Name)
+	if m.IsJSON {
+		ctx.WriteString(" JOIN ")
+		d.RenderMutateToRecordSet(ctx, m, 0, func() {
+			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+		})
+		ctx.WriteString(" ON TRUE")
+	}
+	ctx.WriteString(" SET ")
+	d.Quote(ctx, m.Ti.Name)
+	ctx.WriteString(".")
+	d.Quote(ctx, m.Rel.Left.Col.Name)
+	ctx.WriteString(" = NULL WHERE ")
+	renderFilter()
+	ctx.WriteString("; ")
+}
+
+// renderFieldFilterExp renders a field filter expression (skipIf/includeIf) for MariaDB.
+// This is a simplified version that renders the condition for CASE WHEN usage.
+func (d *MariaDBDialect) renderFieldFilterExp(ctx Context, r InlineChildRenderer, sel *qcode.Select, ex *qcode.Exp) {
+	if ex == nil {
+		return
+	}
+
+	t := sel.Ti.Name
+	if sel.ID >= 0 {
+		t = fmt.Sprintf("%s_%d", t, sel.ID)
+	}
+
+	switch ex.Op {
+	case qcode.OpNot:
+		ctx.WriteString(`NOT `)
+		d.renderFieldFilterExp(ctx, r, sel, ex.Children[0])
+
+	case qcode.OpAnd:
+		ctx.WriteString(`(`)
+		for i, child := range ex.Children {
+			if i > 0 {
+				ctx.WriteString(` AND `)
+			}
+			d.renderFieldFilterExp(ctx, r, sel, child)
+		}
+		ctx.WriteString(`)`)
+
+	case qcode.OpOr:
+		ctx.WriteString(`(`)
+		for i, child := range ex.Children {
+			if i > 0 {
+				ctx.WriteString(` OR `)
+			}
+			d.renderFieldFilterExp(ctx, r, sel, child)
+		}
+		ctx.WriteString(`)`)
+
+	case qcode.OpEquals:
+		ctx.WriteString(`(`)
+		r.ColWithTable(t, ex.Left.Col.Name)
+		ctx.WriteString(`) = `)
+		d.renderFieldFilterVal(ctx, ex)
+
+	case qcode.OpNotEquals:
+		ctx.WriteString(`(`)
+		r.ColWithTable(t, ex.Left.Col.Name)
+		ctx.WriteString(`) != `)
+		d.renderFieldFilterVal(ctx, ex)
+
+	case qcode.OpGreaterThan:
+		ctx.WriteString(`(`)
+		r.ColWithTable(t, ex.Left.Col.Name)
+		ctx.WriteString(`) > `)
+		d.renderFieldFilterVal(ctx, ex)
+
+	case qcode.OpLesserThan:
+		ctx.WriteString(`(`)
+		r.ColWithTable(t, ex.Left.Col.Name)
+		ctx.WriteString(`) < `)
+		d.renderFieldFilterVal(ctx, ex)
+
+	case qcode.OpGreaterOrEquals:
+		ctx.WriteString(`(`)
+		r.ColWithTable(t, ex.Left.Col.Name)
+		ctx.WriteString(`) >= `)
+		d.renderFieldFilterVal(ctx, ex)
+
+	case qcode.OpLesserOrEquals:
+		ctx.WriteString(`(`)
+		r.ColWithTable(t, ex.Left.Col.Name)
+		ctx.WriteString(`) <= `)
+		d.renderFieldFilterVal(ctx, ex)
+
+	case qcode.OpIsNull:
+		ctx.WriteString(`(`)
+		r.ColWithTable(t, ex.Left.Col.Name)
+		if strings.EqualFold(ex.Right.Val, "false") {
+			ctx.WriteString(`) IS NOT NULL`)
+		} else {
+			ctx.WriteString(`) IS NULL`)
+		}
+
+	case qcode.OpEqualsTrue:
+		// For @include(ifVar: $varName) - show when variable is true
+		ctx.WriteString(`(`)
+		ctx.AddParam(Param{Name: ex.Right.Val, Type: "boolean"})
+		ctx.WriteString(` IS TRUE)`)
+
+	case qcode.OpNotEqualsTrue:
+		// For @skip(ifVar: $varName) - show when variable is NOT true (i.e., skip when true)
+		ctx.WriteString(`(`)
+		ctx.AddParam(Param{Name: ex.Right.Val, Type: "boolean"})
+		ctx.WriteString(` IS NOT TRUE)`)
+
+	default:
+		// Fallback: just render true for unsupported ops
+		ctx.WriteString(`TRUE`)
+	}
+}
+
+// renderFieldFilterVal renders the right-hand side value for field filter expressions
+func (d *MariaDBDialect) renderFieldFilterVal(ctx Context, ex *qcode.Exp) {
+	switch ex.Right.ValType {
+	case qcode.ValStr:
+		ctx.WriteString(`'`)
+		ctx.WriteString(ex.Right.Val)
+		ctx.WriteString(`'`)
+	case qcode.ValNum, qcode.ValBool:
+		ctx.WriteString(ex.Right.Val)
+	case qcode.ValVar:
+		ctx.AddParam(Param{Name: ex.Right.Val, Type: ex.Left.Col.Type})
+	default:
+		ctx.WriteString(ex.Right.Val)
+	}
+}
+
+
+
