@@ -514,16 +514,16 @@ func (d *OracleDialect) RenderTryCast(ctx Context, val func(), typ string) {
 	}
 }
 
-func (d *OracleDialect) RenderSubscriptionUnbox(ctx Context, params []Param, renderInnerSQL func()) {
+func (d *OracleDialect) RenderSubscriptionUnbox(ctx Context, params []Param, innerSQL string) {
 	// Oracle JSON_TABLE unbox approach
 	// SELECT _gj_sub_data."__root" FROM JSON_TABLE(?, '$[*]' COLUMNS (
 	//   "col1" TYPE PATH '$[0]', ...
 	// )) _gj_sub, LATERAL (...) _gj_sub_data
-	
+
 	ctx.WriteString(`SELECT "_GJ_SUB_DATA"."__ROOT" FROM JSON_TABLE(`)
 	ctx.WriteString(d.BindVar(1))
 	ctx.WriteString(`, '$[*]' COLUMNS (`)
-	
+
 	for i, p := range params {
 		if i != 0 {
 			ctx.WriteString(`, `)
@@ -542,7 +542,7 @@ func (d *OracleDialect) RenderSubscriptionUnbox(ctx Context, params []Param, ren
 		ctx.WriteString(`]'`)
 	}
 	ctx.WriteString(`)) "_GJ_SUB" CROSS APPLY (`)
-	renderInnerSQL()
+	ctx.WriteString(innerSQL)
 	ctx.WriteString(`) "_GJ_SUB_DATA"`)
 }
 

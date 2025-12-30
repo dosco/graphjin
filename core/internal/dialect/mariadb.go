@@ -65,6 +65,14 @@ func (d *MariaDBDialect) SupportsLateral() bool {
 // MariaDB doesn't support LATERAL joins, so we generate flat correlated subqueries.
 // For plural (array) results, we use a subquery to apply ORDER BY and LIMIT before aggregation.
 func (d *MariaDBDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, psel, sel *qcode.Select) {
+	// For recursive relationships, MariaDB needs a special approach since:
+	// 1. It doesn't support LATERAL joins
+	// 2. Correlated CTEs in subqueries don't work well
+	// We use a recursive CTE at the query level with proper structure
+	if sel.Rel.Type == sdata.RelRecursive {
+		d.renderRecursiveInlineChild(ctx, r, psel, sel)
+		return
+	}
 	ctx.WriteString(`(SELECT `)
 	if sel.Singular {
 		if sel.Type == qcode.SelTypeUnion {
@@ -118,10 +126,7 @@ func (d *MariaDBDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, p
 		}
 
 		// Render the relationship filter (WHERE clause)
-		// For recursive relationships, generate a simpler filter instead of using CTE references
-		if sel.Rel.Type == sdata.RelRecursive {
-			d.renderRecursiveWhereClause(ctx, r, psel, sel)
-		} else if sel.Where.Exp != nil {
+		if sel.Where.Exp != nil {
 			ctx.WriteString(` WHERE `)
 			d.renderWhereExp(ctx, r, psel, sel, sel.Where.Exp)
 		}
@@ -177,10 +182,7 @@ func (d *MariaDBDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, p
 			}
 
 			// Render the relationship filter (WHERE clause)
-			// For recursive relationships, generate a simpler filter instead of using CTE references
-			if sel.Rel.Type == sdata.RelRecursive {
-				d.renderRecursiveWhereClause(ctx, r, psel, sel)
-			} else if sel.Where.Exp != nil {
+			if sel.Where.Exp != nil {
 				ctx.WriteString(` WHERE `)
 				d.renderWhereExp(ctx, r, psel, sel, sel.Where.Exp)
 			}
@@ -595,6 +597,16 @@ func (d *MariaDBDialect) renderBaseColumns(ctx Context, r InlineChildRenderer, s
 		if i != 0 {
 			ctx.WriteString(`, `)
 		}
+
+		// Handle SkipTypeUserNeeded, SkipTypeBlocked, SkipTypeNulled - render NULL instead of subquery
+		if csel.SkipRender == qcode.SkipTypeUserNeeded || csel.SkipRender == qcode.SkipTypeBlocked ||
+			csel.SkipRender == qcode.SkipTypeNulled {
+			ctx.WriteString(`NULL AS `)
+			r.Quoted(csel.FieldName)
+			i++
+			continue
+		}
+
 		ctx.WriteString(`JSON_QUERY(`)
 		r.RenderInlineChild(sel, csel)
 		ctx.WriteString(`, '$') AS `)
@@ -747,14 +759,25 @@ func (d *MariaDBDialect) RenderJSONPath(ctx Context, table, col string, path []s
 	ctx.WriteString(`'))`)
 }
 
-// RenderSubscriptionUnbox renders the SQL to unwrap subscription parameters for MariaDB.
-// MariaDB (as of 10.11) does not support the LEFT OUTER JOIN LATERAL syntax used by MySQL 8+.
-// Instead, we use a correlated subquery in the SELECT list to achieve the same result.
+// SupportsSubscriptionBatching returns true for simple subscriptions on MariaDB.
+// Cursor subscriptions are handled specially in RenderSubscriptionUnbox.
 func (d *MariaDBDialect) SupportsSubscriptionBatching() bool {
-	return d.DBVersion >= 110100 // MariaDB 11.1+
+	return true
 }
 
-func (d *MariaDBDialect) RenderSubscriptionUnbox(ctx Context, params []Param, renderInnerSQL func()) {
+func (d *MariaDBDialect) RenderSubscriptionUnbox(ctx Context, params []Param, innerSQL string) {
+	// MariaDB subscription batching using scalar subquery approach
+	// Note: Cursor subscriptions are not supported with batching due to MariaDB LATERAL/CTE limitations
+
+	// Strip leading comment if present (e.g., /* action='...' */)
+	sql := strings.TrimSpace(innerSQL)
+	if strings.HasPrefix(sql, "/*") {
+		if end := strings.Index(sql, "*/"); end != -1 {
+			sql = strings.TrimSpace(sql[end+2:])
+		}
+	}
+
+	// Use CTE + scalar subquery approach
 	ctx.WriteString(`WITH _gj_sub AS (SELECT * FROM JSON_TABLE(?, '$[*]' COLUMNS(`)
 	for i, p := range params {
 		if i != 0 {
@@ -766,10 +789,9 @@ func (d *MariaDBDialect) RenderSubscriptionUnbox(ctx Context, params []Param, re
 		ctx.Write(fmt.Sprintf("%d", i))
 		ctx.WriteString(`]' ERROR ON ERROR`)
 	}
-	ctx.WriteString(`)) AS _gj_jt`)
-	ctx.WriteString(`) SELECT (`)
-	renderInnerSQL()
-	ctx.WriteString(`) FROM _gj_sub`)
+	ctx.WriteString(`)) AS _gj_jt) SELECT (`)
+	ctx.WriteString(sql)
+	ctx.WriteString(`) AS __root FROM _gj_sub`)
 }
 
 func (d *MariaDBDialect) RenderTableAlias(ctx Context, alias string) {
@@ -822,6 +844,8 @@ func (d *MariaDBDialect) renderFromTable(ctx Context, r InlineChildRenderer, sel
 // RenderCursorCTE renders the cursor CTE for MariaDB.
 // MariaDB cursor format uses : as separator (see RenderInlineChild cursor generation).
 // Format: <prefix><id>:<val1>:<val2>:...
+// Note: For subscription batching, we reference _gj_sub directly to avoid nested derived table
+// issues with MariaDB's LATERAL support.
 func (d *MariaDBDialect) RenderCursorCTE(ctx Context, sel *qcode.Select) {
 	if !sel.Paging.Cursor {
 		return
@@ -835,7 +859,10 @@ func (d *MariaDBDialect) RenderCursorCTE(ctx Context, sel *qcode.Select) {
 		// The cursor format is: <prefix><id>:<val1>:<val2>:...
 		// We need to extract element at position i+2 (skip prefix+id, then 1-indexed values)
 		// Cast to the correct type for proper comparison
-		ctx.WriteString(`CAST(NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(a.i, ':', `)
+		// Reference cursor param directly (will be _gj_sub.cursor in poll mode)
+		ctx.WriteString(`CAST(NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(`)
+		ctx.AddParam(Param{Name: "cursor", Type: "text"})
+		ctx.WriteString(`, ':', `)
 		ctx.Write(fmt.Sprintf("%d", i+2))
 		ctx.WriteString(`), ':', -1), '') AS `)
 		ctx.WriteString(d.mariadbType(ob.Col.Type))
@@ -847,9 +874,7 @@ func (d *MariaDBDialect) RenderCursorCTE(ctx Context, sel *qcode.Select) {
 			ctx.Quote(ob.Col.Name)
 		}
 	}
-	ctx.WriteString(` FROM ((SELECT `)
-	ctx.AddParam(Param{Name: "cursor", Type: "text"})
-	ctx.WriteString(` AS i)) AS a) `)
+	ctx.WriteString(` FROM DUAL) `)
 }
 
 // mariadbType converts GraphJin types to MariaDB types for CAST
@@ -1569,6 +1594,14 @@ func (d *MariaDBDialect) RenderJSONRoot(ctx Context, sel *qcode.Select) {
 		r.Squoted(csel.FieldName)
 		ctx.WriteString(`, `)
 
+		// Handle SkipTypeUserNeeded, SkipTypeBlocked, SkipTypeNulled - render NULL instead of subquery
+		if csel.SkipRender == qcode.SkipTypeUserNeeded || csel.SkipRender == qcode.SkipTypeBlocked ||
+			csel.SkipRender == qcode.SkipTypeNulled {
+			ctx.WriteString(`NULL`)
+			i++
+			continue
+		}
+
 		ctx.WriteString(`JSON_QUERY(`)
 		d.RenderInlineChild(ctx, r, sel, csel)
 		ctx.WriteString(`, '$')`)
@@ -1630,48 +1663,386 @@ func (d *MariaDBDialect) renderOrderByJoin(ctx Context, r InlineChildRenderer, s
 	r.ColWithTable(t, ob.Col.Name)
 }
 
-// renderRecursiveWhereClause generates a WHERE clause for recursive relationships.
-// Instead of referencing CTEs (which MariaDB inline subqueries don't use),
-// we generate a direct parent-child join condition.
-func (d *MariaDBDialect) renderRecursiveWhereClause(ctx Context, r InlineChildRenderer, psel, sel *qcode.Select) {
-	if psel == nil {
-		return
-	}
-
-	// For recursive relationships, we need to join child to parent
-	// The relationship is: child.fk_column = parent.pk_column
-	// For "children" find: sel.Rel.Left.Col is the FK (e.g., reply_to_id)
-	//                      sel.Rel.Right.Col is the PK (e.g., id)
-
-	ctx.WriteString(` WHERE `)
-
-	// Child table alias
-	childTable := sel.Ti.Name
-	if sel.ID >= 0 {
-		childTable = fmt.Sprintf("%s_%d", sel.Ti.Name, sel.ID)
-	}
-
-	// Parent table alias
+// renderRecursiveInlineChild handles recursive relationships for MariaDB.
+// MariaDB doesn't allow correlated references through derived table boundaries,
+// so we use OR conditions instead of UNION ALL to keep correlation at one level.
+func (d *MariaDBDialect) renderRecursiveInlineChild(ctx Context, r InlineChildRenderer, psel, sel *qcode.Select) {
+	// Get the parent table alias
 	parentTable := psel.Ti.Name
 	if psel.ID >= 0 {
 		parentTable = fmt.Sprintf("%s_%d", psel.Ti.Name, psel.ID)
 	}
 
-	// Determine the join columns based on "find" direction
-	// For "children": child.reply_to_id = parent.id
-	// For "parents": child.id = parent.reply_to_id (but we handle that by flipping in qcode)
+	// Get the relationship columns
+	fkCol := sel.Rel.Left.Col.Name  // e.g., reply_to_id
+	pkCol := sel.Rel.Right.Col.Name // e.g., id
+
+	// Determine recursion direction
 	v, _ := sel.GetInternalArg("find")
-	switch v.Val {
-	case "parents", "parent":
-		// For parents: we find rows where parent.reply_to_id = child.id
-		r.ColWithTable(parentTable, sel.Rel.Left.Col.Name)
+	findParents := v.Val == "parents" || v.Val == "parent"
+
+	// Table name
+	tableName := sel.Ti.Name
+
+	// Use limit to determine max depth, defaulting to 20 if not specified
+	// This ensures we don't return more than the requested limit
+	maxDepth := 20
+	if sel.Paging.Limit > 0 && sel.Paging.Limit < int32(maxDepth) {
+		maxDepth = int(sel.Paging.Limit)
+	}
+
+	// Determine if we have aggregation functions
+	hasAggregation := false
+	for _, f := range sel.Fields {
+		if f.Type == qcode.FieldTypeFunc {
+			hasAggregation = true
+			break
+		}
+	}
+
+	// Build the query structure WITHOUT derived tables
+	// For aggregations, use json_array(json_object(...)) directly
+	// For regular fields, use json_arrayagg
+
+	if hasAggregation {
+		// Aggregation case: return a single-element array with the aggregated values
+		// SELECT json_array(json_object('count_id', COUNT(t.id))) FROM table t WHERE ...
+		ctx.WriteString(`(SELECT json_array(json_object(`)
+		d.renderRecursiveJSONFields(ctx, r, sel)
+		ctx.WriteString(`)) FROM `)
+		ctx.Quote(tableName)
+		ctx.WriteString(` t WHERE (`)
+	} else {
+		// Regular case: aggregate rows into array
+		ctx.WriteString(`(SELECT COALESCE(json_arrayagg(json_object(`)
+		d.renderRecursiveJSONFields(ctx, r, sel)
+		ctx.WriteString(`)`)
+
+		// Add ORDER BY inside aggregation if needed
+		// Note: ORDER BY must be inside the json_arrayagg() parentheses
+		if len(sel.OrderBy) > 0 {
+			ctx.WriteString(` ORDER BY `)
+			for i, ob := range sel.OrderBy {
+				if i != 0 {
+					ctx.WriteString(`, `)
+				}
+				ctx.WriteString(`t.`)
+				ctx.Quote(ob.Col.Name)
+				switch ob.Order {
+				case qcode.OrderAsc:
+					ctx.WriteString(` ASC`)
+				case qcode.OrderDesc:
+					ctx.WriteString(` DESC`)
+				}
+			}
+		} else if findParents {
+			// Default ordering for parents: descending by PK (closest parent first)
+			ctx.WriteString(` ORDER BY t.`)
+			ctx.Quote(pkCol)
+			ctx.WriteString(` DESC`)
+		}
+
+		ctx.WriteString(`), '[]') FROM `)
+		ctx.Quote(tableName)
+		ctx.WriteString(` t WHERE (`)
+	}
+
+	// Generate OR conditions for each depth level
+	for depth := 1; depth <= maxDepth; depth++ {
+		if depth > 1 {
+			ctx.WriteString(` OR `)
+		}
+
+		ctx.WriteString(`t.`)
+		if findParents {
+			// For parents: t.id = (nested subquery to get reply_to_id chain)
+			ctx.Quote(pkCol)
+			ctx.WriteString(` = `)
+			d.renderNestedFKSubquery(ctx, tableName, pkCol, fkCol, parentTable, depth)
+		} else {
+			// For children: t.reply_to_id = (nested subquery to get id chain)
+			ctx.Quote(fkCol)
+			ctx.WriteString(` = `)
+			d.renderNestedPKSubquery(ctx, tableName, pkCol, fkCol, parentTable, depth)
+		}
+	}
+
+	ctx.WriteString(`)`)
+
+	// Apply WHERE clause filters (additional conditions)
+	d.renderRecursiveWhereClauseFiltersInline(ctx, r, sel)
+
+	ctx.WriteString(`)`)
+}
+
+// renderNestedFKSubquery generates nested subqueries for traversing up via FK
+// Example for depth 2: (SELECT reply_to_id FROM comments WHERE id = (SELECT reply_to_id FROM comments WHERE id = parent.id))
+func (d *MariaDBDialect) renderNestedFKSubquery(ctx Context, tableName, pkCol, fkCol, parentTable string, depth int) {
+	if depth == 1 {
+		// Base case: direct reference to parent's FK
+		ctx.WriteString(`(SELECT `)
+		ctx.Quote(fkCol)
+		ctx.WriteString(` FROM `)
+		ctx.Quote(tableName)
+		ctx.WriteString(` WHERE `)
+		ctx.Quote(pkCol)
 		ctx.WriteString(` = `)
-		r.ColWithTable(childTable, sel.Rel.Right.Col.Name)
+		ctx.Quote(parentTable)
+		ctx.WriteString(`.`)
+		ctx.Quote(pkCol)
+		ctx.WriteString(`)`)
+	} else {
+		// Recursive case: nested subquery
+		ctx.WriteString(`(SELECT `)
+		ctx.Quote(fkCol)
+		ctx.WriteString(` FROM `)
+		ctx.Quote(tableName)
+		ctx.WriteString(` WHERE `)
+		ctx.Quote(pkCol)
+		ctx.WriteString(` = `)
+		d.renderNestedFKSubquery(ctx, tableName, pkCol, fkCol, parentTable, depth-1)
+		ctx.WriteString(`)`)
+	}
+}
+
+// renderNestedPKSubquery generates nested subqueries for traversing down via PK
+// Example for depth 2: parent.id at depth 1, then find children of children
+func (d *MariaDBDialect) renderNestedPKSubquery(ctx Context, tableName, pkCol, fkCol, parentTable string, depth int) {
+	if depth == 1 {
+		// Base case: direct reference to parent's PK
+		ctx.Quote(parentTable)
+		ctx.WriteString(`.`)
+		ctx.Quote(pkCol)
+	} else {
+		// For children traversal, we need to find IDs at each level
+		// This is more complex - use a subquery approach
+		ctx.WriteString(`(SELECT `)
+		ctx.Quote(pkCol)
+		ctx.WriteString(` FROM `)
+		ctx.Quote(tableName)
+		ctx.WriteString(` WHERE `)
+		ctx.Quote(fkCol)
+		ctx.WriteString(` = `)
+		d.renderNestedPKSubquery(ctx, tableName, pkCol, fkCol, parentTable, depth-1)
+		ctx.WriteString(`)`)
+	}
+}
+
+// renderRecursiveWhereClauseFilters renders WHERE clause filters for recursive queries
+func (d *MariaDBDialect) renderRecursiveWhereClauseFilters(ctx Context, r InlineChildRenderer, sel *qcode.Select) {
+	if sel.Where.Exp == nil {
+		return
+	}
+
+	filters := d.collectNonRelFilters(sel.Where.Exp)
+	if len(filters) == 0 {
+		return
+	}
+
+	ctx.WriteString(` WHERE `)
+	for i, f := range filters {
+		if i != 0 {
+			ctx.WriteString(` AND `)
+		}
+		d.renderSimpleExp(ctx, sel, f)
+	}
+}
+
+// renderRecursiveWhereClauseFiltersInline renders AND clause filters for recursive queries
+// when there's already a WHERE clause present
+func (d *MariaDBDialect) renderRecursiveWhereClauseFiltersInline(ctx Context, r InlineChildRenderer, sel *qcode.Select) {
+	if sel.Where.Exp == nil {
+		return
+	}
+
+	filters := d.collectNonRelFilters(sel.Where.Exp)
+	if len(filters) == 0 {
+		return
+	}
+
+	for _, f := range filters {
+		ctx.WriteString(` AND `)
+		d.renderSimpleExp(ctx, sel, f)
+	}
+}
+
+// collectNonRelFilters collects non-relationship filter expressions
+func (d *MariaDBDialect) collectNonRelFilters(exp *qcode.Exp) []*qcode.Exp {
+	if exp == nil {
+		return nil
+	}
+
+	var filters []*qcode.Exp
+
+	if exp.Op == qcode.OpAnd {
+		for _, child := range exp.Children {
+			if !d.isRelationshipFilterExp(child) && d.isSimpleComparisonExp(child) {
+				filters = append(filters, child)
+			}
+		}
+	} else if !d.isRelationshipFilterExp(exp) && d.isSimpleComparisonExp(exp) {
+		filters = append(filters, exp)
+	}
+
+	return filters
+}
+
+// isSimpleComparisonExp checks if an expression is a simple comparison
+func (d *MariaDBDialect) isSimpleComparisonExp(exp *qcode.Exp) bool {
+	if exp == nil {
+		return false
+	}
+	switch exp.Op {
+	case qcode.OpEquals, qcode.OpNotEquals, qcode.OpGreaterThan, qcode.OpLesserThan,
+		qcode.OpGreaterOrEquals, qcode.OpLesserOrEquals:
+		return true
+	}
+	return false
+}
+
+// renderRecursiveJSONFields renders JSON object fields for recursive queries
+func (d *MariaDBDialect) renderRecursiveJSONFields(ctx Context, r InlineChildRenderer, sel *qcode.Select) {
+	i := 0
+	for _, f := range sel.Fields {
+		if f.SkipRender != qcode.SkipTypeNone {
+			continue
+		}
+		if i != 0 {
+			ctx.WriteString(`, `)
+		}
+		ctx.WriteString(`'`)
+		ctx.WriteString(f.FieldName)
+		ctx.WriteString(`', `)
+
+		switch f.Type {
+		case qcode.FieldTypeFunc:
+			// Handle aggregate functions like count_id
+			d.renderFunctionForRecursive(ctx, f)
+		default:
+			// Regular column
+			ctx.WriteString(`t.`)
+			ctx.Quote(f.Col.Name)
+		}
+		i++
+	}
+}
+
+// renderFunctionForRecursive renders a function call for recursive queries
+func (d *MariaDBDialect) renderFunctionForRecursive(ctx Context, f qcode.Field) {
+	ctx.WriteString(f.Func.Name)
+	ctx.WriteString(`(`)
+
+	argCount := 0
+	for _, a := range f.Args {
+		if a.Name == "" {
+			if argCount != 0 {
+				ctx.WriteString(`, `)
+			}
+			if a.Type == qcode.ArgTypeCol {
+				ctx.WriteString(`t.`)
+				ctx.Quote(a.Col.Name)
+			} else {
+				ctx.WriteString(a.Val)
+			}
+			argCount++
+		}
+	}
+
+	ctx.WriteString(`)`)
+}
+
+// hasNonRelationshipFilter checks if there are filters beyond the recursive relationship
+func (d *MariaDBDialect) hasNonRelationshipFilter(exp *qcode.Exp) bool {
+	if exp == nil {
+		return false
+	}
+	// Check if this is a simple relationship filter (IsNotNull, NotEquals on __rcte)
+	if exp.Op == qcode.OpAnd {
+		// Recursive relationship filters have 3 children: IsNotNull, NotEquals, Equals
+		// If there are additional filters, we have non-relationship filters
+		nonRelCount := 0
+		for _, child := range exp.Children {
+			if !d.isRelationshipFilterExp(child) {
+				nonRelCount++
+			}
+		}
+		return nonRelCount > 0
+	}
+	return !d.isRelationshipFilterExp(exp)
+}
+
+// isRelationshipFilterExp checks if an expression is part of the recursive relationship filter
+func (d *MariaDBDialect) isRelationshipFilterExp(exp *qcode.Exp) bool {
+	if exp == nil {
+		return false
+	}
+	// Relationship filters reference __rcte_ tables
+	if exp.Left.Table != "" && len(exp.Left.Table) > 7 && exp.Left.Table[:7] == "__rcte_" {
+		return true
+	}
+	if exp.Right.Table != "" && len(exp.Right.Table) > 7 && exp.Right.Table[:7] == "__rcte_" {
+		return true
+	}
+	return false
+}
+
+// renderRecursiveWhereFilter renders WHERE filter excluding relationship conditions
+func (d *MariaDBDialect) renderRecursiveWhereFilter(ctx Context, r InlineChildRenderer, sel *qcode.Select, exp *qcode.Exp) {
+	if exp == nil {
+		return
+	}
+	if exp.Op == qcode.OpAnd {
+		first := true
+		for _, child := range exp.Children {
+			if d.isRelationshipFilterExp(child) {
+				continue
+			}
+			if !first {
+				ctx.WriteString(` AND `)
+			}
+			d.renderSimpleExp(ctx, sel, child)
+			first = false
+		}
+	} else if !d.isRelationshipFilterExp(exp) {
+		d.renderSimpleExp(ctx, sel, exp)
+	}
+}
+
+// renderSimpleExp renders a simple expression for recursive WHERE clause
+func (d *MariaDBDialect) renderSimpleExp(ctx Context, sel *qcode.Select, exp *qcode.Exp) {
+	if exp == nil {
+		return
+	}
+	// Render the column reference
+	if exp.Left.Col.Name != "" {
+		ctx.Quote(exp.Left.Col.Name)
+	}
+	// Render the operator and value
+	switch exp.Op {
+	case qcode.OpEquals:
+		ctx.WriteString(` = `)
+	case qcode.OpNotEquals:
+		ctx.WriteString(` != `)
+	case qcode.OpGreaterThan:
+		ctx.WriteString(` > `)
+	case qcode.OpLesserThan:
+		ctx.WriteString(` < `)
+	case qcode.OpGreaterOrEquals:
+		ctx.WriteString(` >= `)
+	case qcode.OpLesserOrEquals:
+		ctx.WriteString(` <= `)
 	default:
-		// For children (default): we find rows where child.reply_to_id = parent.id
-		r.ColWithTable(childTable, sel.Rel.Left.Col.Name)
-		ctx.WriteString(` = `)
-		r.ColWithTable(parentTable, sel.Rel.Right.Col.Name)
+		return
+	}
+	// Render the right side value
+	if exp.Right.ValType == qcode.ValNum {
+		ctx.WriteString(exp.Right.Val)
+	} else if exp.Right.Col.Name != "" {
+		ctx.Quote(exp.Right.Col.Name)
+	} else {
+		ctx.WriteString(`'`)
+		ctx.WriteString(exp.Right.Val)
+		ctx.WriteString(`'`)
 	}
 }
 

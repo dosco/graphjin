@@ -634,7 +634,7 @@ func (d *SQLiteDialect) RenderTryCast(ctx Context, val func(), typ string) {
 	val()
 }
 
-func (d *SQLiteDialect) RenderSubscriptionUnbox(ctx Context, params []Param, renderInnerSQL func()) {
+func (d *SQLiteDialect) RenderSubscriptionUnbox(ctx Context, params []Param, innerSQL string) {
 	// SQLite doesn't support LATERAL joins, use subquery approach
 	ctx.WriteString(`WITH _gj_sub AS (SELECT `)
 	seen := make(map[string]int)
@@ -653,7 +653,7 @@ func (d *SQLiteDialect) RenderSubscriptionUnbox(ctx Context, params []Param, ren
 	}
 	ctx.WriteString(` FROM json_each(?))`)
 	ctx.WriteString(` SELECT (`)
-	renderInnerSQL()
+	ctx.WriteString(innerSQL)
 	ctx.WriteString(`) AS "__root" FROM _gj_sub`)
 }
 
