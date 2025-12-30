@@ -146,3 +146,13 @@ func (c *compilerContext) GetConfigVar(name string) (string, bool) {
 func (c *compilerContext) GetSecPrefix() string {
 	return string(c.pf)
 }
+
+func (c *compilerContext) GetRootWithCursor() *qcode.Select {
+	for _, id := range c.qc.Roots {
+		sel := &c.qc.Selects[id]
+		if sel.Paging.Cursor {
+			return sel
+		}
+	}
+	return nil
+}
