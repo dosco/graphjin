@@ -114,7 +114,7 @@ type Dialect interface {
 	RenderCast(ctx Context, val func(), typ string)
 	RenderTryCast(ctx Context, val func(), typ string)
 	
-	RenderSubscriptionUnbox(ctx Context, params []Param, renderInnerSQL func())
+	RenderSubscriptionUnbox(ctx Context, params []Param, innerSQL string)
 
 	// Linear Execution (for MySQL/SQLite)
 	SupportsLinearExecution() bool

@@ -595,9 +595,7 @@ func renderSubWrap(st stmt, ct string) string {
 	}
 
 	sc := &stringContext{ct: ct}
-	d.RenderSubscriptionUnbox(sc, params, func() {
-		sc.WriteString(st.sql)
-	})
+	d.RenderSubscriptionUnbox(sc, params, st.sql)
 
 	return sc.sb.String()
 }

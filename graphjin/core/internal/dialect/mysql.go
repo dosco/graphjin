@@ -713,7 +713,7 @@ func (d *MySQLDialect) RenderTryCast(ctx Context, val func(), typ string) {
 	}
 }
 
-func (d *MySQLDialect) RenderSubscriptionUnbox(ctx Context, params []Param, renderInnerSQL func()) {
+func (d *MySQLDialect) RenderSubscriptionUnbox(ctx Context, params []Param, innerSQL string) {
 	ctx.WriteString(`WITH _gj_sub AS (SELECT * FROM JSON_TABLE(?, '$[*]' COLUMNS(`)
 	for i, p := range params {
 		if i != 0 {
@@ -727,7 +727,7 @@ func (d *MySQLDialect) RenderSubscriptionUnbox(ctx Context, params []Param, rend
 	}
 	ctx.WriteString(`)) AS _gj_jt`)
 	ctx.WriteString(`) SELECT _gj_sub_data.__root FROM _gj_sub LEFT OUTER JOIN LATERAL (`)
-	renderInnerSQL()
+	ctx.WriteString(innerSQL)
 	ctx.WriteString(`) AS _gj_sub_data ON true`)
 }
 
