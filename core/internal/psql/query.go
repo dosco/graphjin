@@ -160,7 +160,9 @@ func (co *Compiler) CompileQuery(
 	qc *qcode.QCode,
 	md *Metadata,
 ) error {
-	if qc.Type == qcode.QTSubscription {
+	// Only enable poll mode (which renders params as _gj_sub.column)
+	// if the dialect supports subscription batching
+	if qc.Type == qcode.QTSubscription && co.dialect.SupportsSubscriptionBatching() {
 		md.poll = true
 	}
 
