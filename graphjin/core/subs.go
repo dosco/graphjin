@@ -231,7 +231,8 @@ func (gj *graphjinEngine) initSub(c context.Context, sub *sub) (err error) {
 		}
 	}
 
-	if len(sub.s.cs.st.md.Params()) != 0 {
+	// Only wrap subscriptions for batching if the dialect supports it
+	if len(sub.s.cs.st.md.Params()) != 0 && dialectSupportsSubscriptionBatching(gj.schema.DBType()) {
 		sub.s.cs.st.sql = renderSubWrap(sub.s.cs.st, gj.schema.DBType())
 	}
 
@@ -356,9 +357,18 @@ func (s *sub) updateMember(msg mmsg) error {
 // fanOutJobs function is called on the sub struct to fan out jobs.
 func (s *sub) fanOutJobs(gj *graphjinEngine) {
 	// Take a point-in-time snapshot of current members and their params for safe concurrent reads.
+	// Deep copy mi slice to prevent race conditions on the values slice.
+	miCopy := make([]minfo, len(s.mi))
+	for i, mi := range s.mi {
+		miCopy[i] = mi
+		if len(mi.values) > 0 {
+			miCopy[i].values = make([]interface{}, len(mi.values))
+			copy(miCopy[i].values, mi.values)
+		}
+	}
 	s.mval = mval{
 		params: append([]json.RawMessage(nil), s.params...),
-		mi:     append([]minfo(nil), s.mi...),
+		mi:     miCopy,
 		res:    append([]chan *Result(nil), s.res...),
 		ids:    append([]uint64(nil), s.ids...),
 	}
@@ -400,6 +410,7 @@ func (gj *graphjinEngine) subCheckUpdates(sub *sub, mv mval, start int) {
 	}
 
 	hasParams := len(sub.s.cs.st.md.Params()) != 0
+	supportsBatching := dialectSupportsSubscriptionBatching(gj.schema.DBType())
 
 	var rows *sql.Rows
 	var err error
@@ -410,6 +421,53 @@ func (gj *graphjinEngine) subCheckUpdates(sub *sub, mv mval, start int) {
 	// codepath that does not use a join query
 	// more details on this optimization are towards the end
 	// of the function
+
+	// For dialects that don't support batching, we need to query each member individually
+	if hasParams && !supportsBatching {
+		mdParams := sub.s.cs.st.md.Params()
+		for j := start; j < end; j++ {
+			jIdx := j // capture for closure
+			err = retryOperation(c, func() error {
+				// Parse JSON params to get individual values
+				var values []interface{}
+				if mv.mi[jIdx].values != nil {
+					// Use stored values if available (cursor case)
+					values = mv.mi[jIdx].values
+				} else {
+					// Parse from JSON params
+					var arr []json.RawMessage
+					if err := json.Unmarshal(mv.params[jIdx], &arr); err != nil {
+						return err
+					}
+					values = make([]interface{}, len(mdParams))
+					for i := range mdParams {
+						if i < len(arr) {
+							// Parse raw value
+							v := arr[i]
+							if len(v) >= 2 && v[0] == '"' && v[len(v)-1] == '"' {
+								values[i] = string(v[1 : len(v)-1])
+							} else {
+								values[i] = string(v)
+							}
+						}
+					}
+				}
+				var row *sql.Row
+				row = gj.db.QueryRowContext(c, sub.s.cs.st.sql, values...)
+				var b []byte
+				if err := row.Scan(&b); err != nil {
+					return err
+				}
+				js := json.RawMessage(b)
+				gj.subNotifyMember(sub, mv, jIdx, js)
+				return nil
+			})
+			if err != nil {
+				gj.log.Printf(errSubs, "query", err)
+			}
+		}
+		return
+	}
 
 	var params json.RawMessage
 
@@ -469,6 +527,8 @@ func (gj *graphjinEngine) subFirstQuery(sub *sub, m *Member) (mmsg, error) {
 	var mm mmsg
 	var err error
 
+	supportsBatching := dialectSupportsSubscriptionBatching(gj.schema.DBType())
+
 	if sub.js != nil {
 		js = sub.js
 	} else {
@@ -477,8 +537,15 @@ func (gj *graphjinEngine) subFirstQuery(sub *sub, m *Member) (mmsg, error) {
 			q := sub.s.cs.st.sql
 
 			if m.params != nil {
-				row = gj.db.QueryRowContext(c, q,
-					string(renderJSONArray([]json.RawMessage{m.params})))
+				if supportsBatching {
+					// Use JSON array for batching-enabled dialects
+					row = gj.db.QueryRowContext(c, q,
+						string(renderJSONArray([]json.RawMessage{m.params})))
+				} else {
+					// Use m.vl (value list) directly for non-batching dialects
+					// m.vl contains the parsed values in the correct order
+					row = gj.db.QueryRowContext(c, q, m.vl...)
+				}
 			} else {
 				row = gj.db.QueryRowContext(c, q)
 			}
@@ -542,8 +609,12 @@ func (gj *graphjinEngine) subNotifyMemberEx(sub *sub,
 	}
 
 	// we're expecting a cursor but the cursor was null
-	// so we skip this one.
+	// so we skip this one but still send the hash update
+	// to prevent reprocessing the same result.
 	if len(cindxs) != 0 && mm.cursor == "" {
+		if update {
+			sub.updt <- mm
+		}
 		return mm, nil
 	}
 
@@ -573,21 +644,30 @@ func (gj *graphjinEngine) subNotifyMemberEx(sub *sub,
 	return mm, nil
 }
 
-// renderSubWrap function is called on the graphjin struct to render a sub wrap.
-func renderSubWrap(st stmt, ct string) string {
-	var d dialect.Dialect
+// getDialectForType returns a dialect instance for the given database type.
+func getDialectForType(ct string) dialect.Dialect {
 	switch ct {
 	case "mysql":
-		d = &dialect.MySQLDialect{}
+		return &dialect.MySQLDialect{}
 	case "mariadb":
-		d = &dialect.MariaDBDialect{}
+		return &dialect.MariaDBDialect{}
 	case "oracle":
-		d = &dialect.OracleDialect{}
+		return &dialect.OracleDialect{}
 	case "sqlite":
-		d = &dialect.SQLiteDialect{}
+		return &dialect.SQLiteDialect{}
 	default:
-		d = &dialect.PostgresDialect{}
+		return &dialect.PostgresDialect{}
 	}
+}
+
+// dialectSupportsSubscriptionBatching checks if the database type supports subscription batching.
+func dialectSupportsSubscriptionBatching(ct string) bool {
+	return getDialectForType(ct).SupportsSubscriptionBatching()
+}
+
+// renderSubWrap function is called on the graphjin struct to render a sub wrap.
+func renderSubWrap(st stmt, ct string) string {
+	d := getDialectForType(ct)
 
 	params := make([]dialect.Param, len(st.md.Params()))
 	for i, p := range st.md.Params() {

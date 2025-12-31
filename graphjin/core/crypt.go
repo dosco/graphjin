@@ -161,6 +161,13 @@ func decryptValues(data, prefix []byte, key [32]byte) ([]byte, error) {
 }
 
 // firstCursorValue returns the first cursor value in the data
+// Cursor formats differ by database:
+// - Postgres: prefix + decimal(sel.ID) + "," + values (comma-separated)
+// - MariaDB: prefix + hex(sel.ID) + ":" + index + ":" + values (colon-separated)
+// Examples: "gj/12345,1" (Postgres), "gj/6954668a:0:1" (MariaDB)
+// When there are no results, cursor may be just prefix + sel.ID with no values.
+// We only return cursors that have actual values (separator after sel.ID).
+// Cursors without values would cause the query to restart from the beginning.
 func firstCursorValue(data []byte, prefix []byte) []byte {
 	s := bytes.Index(data, prefix)
 	if s == -1 {
@@ -169,20 +176,23 @@ func firstCursorValue(data []byte, prefix []byte) []byte {
 	// skip prefix
 	i := s + len(prefix)
 
-	// skip digits (sel.ID)
-	for i < len(data) && data[i] >= '0' && data[i] <= '9' {
+	// skip alphanumeric digits (sel.ID) - can contain 0-9 and a-f (hex for MariaDB, decimal for others)
+	for i < len(data) && ((data[i] >= '0' && data[i] <= '9') || (data[i] >= 'a' && data[i] <= 'f')) {
 		i++
 	}
 
-	// must be followed by a comma
-	if i >= len(data) || data[i] != ',' {
-		return nil
-	}
-
+	// Find the end quote
 	e := bytes.IndexByte(data[i:], '"')
 	if e == -1 {
 		return nil
 	}
 	e = i + e
-	return data[s:e]
+
+	// Only return cursor if it has actual values (separator + values after sel.ID).
+	// Cursors that end with just the quote (no values) would cause queries to
+	// restart from the beginning, so we treat them as empty/no cursor.
+	if i < len(data) && (data[i] == ',' || data[i] == ':') {
+		return data[s:e]
+	}
+	return nil
 }

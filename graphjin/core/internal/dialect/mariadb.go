@@ -53,10 +53,11 @@ func (d *MariaDBDialect) QuoteIdentifier(s string) string {
 	return "`" + s + "`"
 }
 
-// SupportsLateral returns false for MariaDB.
-// While MariaDB has some LATERAL support since 10.6, it does NOT support the
-// LEFT OUTER JOIN LATERAL syntax that MySQL 8+ uses (see MDEV-33018).
-// Instead, we use inline subqueries like SQLite.
+// SupportsLateral returns false for MariaDB because the shared LATERAL join
+// code path in query.go is incompatible with MariaDB's RenderJSONPlural.
+// MariaDB uses inline subqueries via RenderInlineChild instead.
+// Note: Subscription batching uses a separate code path (RenderSubscriptionUnbox)
+// that handles LATERAL joins internally and is not affected by this setting.
 func (d *MariaDBDialect) SupportsLateral() bool {
 	return false
 }
@@ -247,9 +248,7 @@ func (d *MariaDBDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, p
 				d.RenderTableAlias(ctx, t)
 			}
 
-			// Add cross join with __cur for cursor pagination
-			// The __cur CTE is defined at the query start but needs to be
-			// accessible inside the subquery
+			// Add __cur CTE join for cursor pagination
 			if sel.Paging.Cursor {
 				ctx.WriteString(`, `)
 				ctx.Quote("__cur")
@@ -759,15 +758,17 @@ func (d *MariaDBDialect) RenderJSONPath(ctx Context, table, col string, path []s
 	ctx.WriteString(`'))`)
 }
 
-// SupportsSubscriptionBatching returns true for simple subscriptions on MariaDB.
-// Cursor subscriptions are handled specially in RenderSubscriptionUnbox.
+// SupportsSubscriptionBatching returns false for MariaDB.
+// MariaDB's LATERAL support is incompatible with the inline subquery structure
+// used when SupportsLateral() = false. Each subscription runs individually.
 func (d *MariaDBDialect) SupportsSubscriptionBatching() bool {
-	return true
+	return false
 }
 
 func (d *MariaDBDialect) RenderSubscriptionUnbox(ctx Context, params []Param, innerSQL string) {
-	// MariaDB subscription batching using scalar subquery approach
-	// Note: Cursor subscriptions are not supported with batching due to MariaDB LATERAL/CTE limitations
+	// MariaDB subscription batching using LATERAL syntax
+	// MariaDB uses comma-based LATERAL: FROM table, LATERAL (...) AS alias
+	// This allows the derived table to reference _gj_sub columns (including cursor)
 
 	// Strip leading comment if present (e.g., /* action='...' */)
 	sql := strings.TrimSpace(innerSQL)
@@ -777,7 +778,7 @@ func (d *MariaDBDialect) RenderSubscriptionUnbox(ctx Context, params []Param, in
 		}
 	}
 
-	// Use CTE + scalar subquery approach
+	// Use CTE + LATERAL (comma syntax for MariaDB 10.6+)
 	ctx.WriteString(`WITH _gj_sub AS (SELECT * FROM JSON_TABLE(?, '$[*]' COLUMNS(`)
 	for i, p := range params {
 		if i != 0 {
@@ -789,9 +790,9 @@ func (d *MariaDBDialect) RenderSubscriptionUnbox(ctx Context, params []Param, in
 		ctx.Write(fmt.Sprintf("%d", i))
 		ctx.WriteString(`]' ERROR ON ERROR`)
 	}
-	ctx.WriteString(`)) AS _gj_jt) SELECT (`)
+	ctx.WriteString(`)) AS _gj_jt) SELECT _gj_sub_data.__root FROM _gj_sub CROSS JOIN LATERAL (`)
 	ctx.WriteString(sql)
-	ctx.WriteString(`) AS __root FROM _gj_sub`)
+	ctx.WriteString(`) AS _gj_sub_data`)
 }
 
 func (d *MariaDBDialect) RenderTableAlias(ctx Context, alias string) {
@@ -841,11 +842,8 @@ func (d *MariaDBDialect) renderFromTable(ctx Context, r InlineChildRenderer, sel
 	}
 }
 
-// RenderCursorCTE renders the cursor CTE for MariaDB.
-// MariaDB cursor format uses : as separator (see RenderInlineChild cursor generation).
-// Format: <prefix><id>:<val1>:<val2>:...
-// Note: For subscription batching, we reference _gj_sub directly to avoid nested derived table
-// issues with MariaDB's LATERAL support.
+// RenderCursorCTE creates a __cur CTE that parses the cursor parameter.
+// MariaDB uses colon separator for cursors (matching RenderInlineChild cursor generation).
 func (d *MariaDBDialect) RenderCursorCTE(ctx Context, sel *qcode.Select) {
 	if !sel.Paging.Cursor {
 		return
@@ -855,18 +853,14 @@ func (d *MariaDBDialect) RenderCursorCTE(ctx Context, sel *qcode.Select) {
 		if i != 0 {
 			ctx.WriteString(`, `)
 		}
-		// Use SUBSTRING_INDEX with : separator
-		// The cursor format is: <prefix><id>:<val1>:<val2>:...
-		// We need to extract element at position i+2 (skip prefix+id, then 1-indexed values)
-		// Cast to the correct type for proper comparison
-		// Reference cursor param directly (will be _gj_sub.cursor in poll mode)
-		ctx.WriteString(`CAST(NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(`)
-		ctx.AddParam(Param{Name: "cursor", Type: "text"})
-		ctx.WriteString(`, ':', `)
+		// Use SUBSTRING_INDEX with colon separator (matching RenderInlineChild cursor generation)
+		// Cursor format is: gj/selID:val1:val2:...
+		// position 1 = gj/selID
+		// position 2 = val1 (first cursor value)
+		// position 3 = val2 (second cursor value), etc.
+		ctx.WriteString(`NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(a.i, ':', `)
 		ctx.Write(fmt.Sprintf("%d", i+2))
 		ctx.WriteString(`), ':', -1), '') AS `)
-		ctx.WriteString(d.mariadbType(ob.Col.Type))
-		ctx.WriteString(`) AS `)
 
 		if ob.KeyVar != "" && ob.Key != "" {
 			ctx.Quote(ob.Col.Name + "_" + ob.Key)
@@ -874,7 +868,9 @@ func (d *MariaDBDialect) RenderCursorCTE(ctx Context, sel *qcode.Select) {
 			ctx.Quote(ob.Col.Name)
 		}
 	}
-	ctx.WriteString(` FROM DUAL) `)
+	ctx.WriteString(` FROM ((SELECT `)
+	ctx.AddParam(Param{Name: "cursor", Type: "text"})
+	ctx.WriteString(` AS i)) AS a) `)
 }
 
 // mariadbType converts GraphJin types to MariaDB types for CAST
@@ -893,6 +889,12 @@ func (d *MariaDBDialect) mariadbType(t string) string {
 	default:
 		return "CHAR"
 	}
+}
+
+// renderCursorColumn renders a reference to a cursor CTE column.
+// Since we now use a __cur CTE (like MySQL), we simply reference the column directly.
+func (d *MariaDBDialect) renderCursorColumn(ctx Context, r InlineChildRenderer, colName string) {
+	r.ColWithTable("__cur", colName)
 }
 
 func (d *MariaDBDialect) renderGroupBy(ctx Context, r InlineChildRenderer, sel *qcode.Select) {
@@ -1022,7 +1024,8 @@ func (d *MariaDBDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel
 				if ex.Left.ColName != "" {
 					colName = ex.Left.ColName
 				}
-				r.ColWithTable("__cur", colName)
+				// Reference the __cur CTE column
+				d.renderCursorColumn(ctx, r, colName)
 			} else if (ex.Left.ID >= 0 && psel != nil && ex.Left.ID == psel.ID) ||
 				(ex.Left.ID == -1 && psel != nil && ex.Left.Col.Table == psel.Ti.Name) {
 				t := psel.Ti.Name
@@ -1271,7 +1274,8 @@ func (d *MariaDBDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel
 				if ex.Right.ColName != "" {
 					colName = ex.Right.ColName
 				}
-				r.ColWithTable("__cur", colName)
+				// Reference the __cur CTE column
+				d.renderCursorColumn(ctx, r, colName)
 			} else if ex.Right.ID >= 0 && psel != nil && ex.Right.ID == psel.ID &&
 				(ex.Right.Col.Table == "" || ex.Right.Col.Table == psel.Ti.Name) {
 				// References a parent table
@@ -1290,16 +1294,22 @@ func (d *MariaDBDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel
 			} else if ex.Right.ID == -1 && ex.Right.Col.Table != "" && ex.Right.Col.Table != sel.Ti.Name {
 				// Fallback: handle outer references
 				t := ex.Right.Col.Table
-				// Don't add suffix to __cur CTE (cursor pagination)
-				if t != "__cur" {
+				// __cur references should be handled above, but add fallback just in case
+				if t == "__cur" {
+					colName := ex.Right.Col.Name
+					if ex.Right.ColName != "" {
+						colName = ex.Right.ColName
+					}
+					d.renderCursorColumn(ctx, r, colName)
+				} else {
 					t = fmt.Sprintf("%s_0", t)
+					// Use ColName if set (for cursor key variants like "price_key")
+					colName := ex.Right.Col.Name
+					if ex.Right.ColName != "" {
+						colName = ex.Right.ColName
+					}
+					r.ColWithTable(t, colName)
 				}
-				// Use ColName if set (for cursor key variants like "price_key")
-				colName := ex.Right.Col.Name
-				if ex.Right.ColName != "" {
-					colName = ex.Right.ColName
-				}
-				r.ColWithTable(t, colName)
 			} else {
 				t := ex.Right.Col.Table
 				if t == "" {
@@ -1310,13 +1320,20 @@ func (d *MariaDBDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel
 					if sel.ID >= 0 {
 						t = fmt.Sprintf("%s_%d", t, sel.ID)
 					}
+					r.ColWithTable(t, ex.Right.Col.Name)
 				} else if t == "__cur" {
-					// Don't add suffix to __cur CTE (cursor pagination)
-					// This handles cursor filter expressions where Right.ID defaults to 0
+					// Reference the __cur CTE column
+					colName := ex.Right.Col.Name
+					if ex.Right.ColName != "" {
+						colName = ex.Right.ColName
+					}
+					d.renderCursorColumn(ctx, r, colName)
 				} else if ex.Right.ID >= 0 {
 					t = fmt.Sprintf("%s_%d", t, ex.Right.ID)
+					r.ColWithTable(t, ex.Right.Col.Name)
+				} else {
+					r.ColWithTable(t, ex.Right.Col.Name)
 				}
-				r.ColWithTable(t, ex.Right.Col.Name)
 			}
 		} else if ex.Right.ValType == qcode.ValVar {
 			// Check if this variable is a config variable
