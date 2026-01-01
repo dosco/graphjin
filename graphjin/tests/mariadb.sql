@@ -25,7 +25,7 @@ CREATE TABLE products (
   id BIGINT NOT NULL PRIMARY KEY,
   name VARCHAR(255),
   description VARCHAR(255),
-  tags VARCHAR(255),
+  tags LONGTEXT CHECK (tags IS NULL OR json_valid(tags)),
   metadata json,
   country_code VARCHAR(3),
   price FLOAT(7, 1),
@@ -204,12 +204,9 @@ SELECT i,
   CONCAT('Product ', i),
   CONCAT('Description for product ', i),
   (
-    SELECT GROUP_CONCAT(
-        CONCAT('Tag ', i)
-        ORDER BY i ASC SEPARATOR ','
-      )
-    FROM seq100
-    WHERE i <= 5
+    SELECT JSON_ARRAYAGG(CONCAT('Tag ', s.i))
+    FROM seq100 s
+    WHERE s.i <= 5
   ),
   (
     CASE
