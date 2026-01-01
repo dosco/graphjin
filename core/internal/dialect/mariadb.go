@@ -401,7 +401,16 @@ func (d *MariaDBDialect) renderInlineJSONFields(ctx Context, r InlineChildRender
 				d.renderFieldFilterExp(ctx, r, sel, f.FieldFilter.Exp)
 				ctx.WriteString(` THEN `)
 			}
+			// For JSON columns, wrap with JSON_QUERY to preserve JSON structure
+			// MariaDB stores JSON as LONGTEXT, so without this, JSON values get stringified
+			isJSON := f.Col.Type == "json" || f.Col.Array
+			if isJSON {
+				ctx.WriteString(`JSON_QUERY(`)
+			}
 			r.ColWithTable(t, f.Col.Name)
+			if isJSON {
+				ctx.WriteString(`, '$')`)
+			}
 			if f.FieldFilter.Exp != nil {
 				ctx.WriteString(` ELSE null END`)
 			}
@@ -463,7 +472,15 @@ func (d *MariaDBDialect) renderSubqueryJSONFields(ctx Context, r InlineChildRend
 			continue
 		}
 
+		// For JSON columns, wrap with JSON_QUERY to preserve JSON structure
+		isJSON := f.Col.Type == "json" || f.Col.Array
+		if isJSON {
+			ctx.WriteString(`JSON_QUERY(`)
+		}
 		r.ColWithTable("_gj_t", f.FieldName)
+		if isJSON {
+			ctx.WriteString(`, '$')`)
+		}
 		i++
 	}
 
@@ -668,6 +685,33 @@ func (d *MariaDBDialect) RenderJSONRootField(ctx Context, key string, val func()
 		ctx.WriteString(`JSON_QUERY(`)
 		val()
 		ctx.WriteString(`, '$')`)
+	}
+}
+
+// RenderJSONField renders a JSON field for MariaDB.
+// For JSON columns (isJSON=true), wrap with JSON_QUERY to preserve JSON structure.
+// MariaDB stores JSON as LONGTEXT, so without this, JSON values get stringified.
+func (d *MariaDBDialect) RenderJSONField(ctx Context, fieldName string, tableAlias string, colName string, isNull bool, isJSON bool) {
+	ctx.WriteString(`'`)
+	ctx.WriteString(fieldName)
+	ctx.WriteString(`', `)
+	if isNull {
+		ctx.WriteString(`NULL`)
+	} else if isJSON {
+		// Wrap JSON columns with JSON_QUERY to preserve structure
+		ctx.WriteString(`JSON_QUERY(`)
+		if tableAlias != "" {
+			ctx.Quote(tableAlias)
+			ctx.WriteString(`.`)
+		}
+		ctx.Quote(colName)
+		ctx.WriteString(`, '$')`)
+	} else {
+		if tableAlias != "" {
+			ctx.Quote(tableAlias)
+			ctx.WriteString(`.`)
+		}
+		ctx.Quote(colName)
 	}
 }
 
