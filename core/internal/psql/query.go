@@ -386,10 +386,9 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 		
 		for i := 0; i < len(sel.OrderBy); i++ {
 			if c.dialect.Name() == "mariadb" {
-				// MariaDB uses slightly different syntax or functions if needed, but standard SQL + JSON functions overlap well with SQLite here.
-				// However, json_extract path in MariaDB is '$[0]' syntax too.
+				// MariaDB uses colon separator to match RenderCursorCTE parsing
 				// json_group_array is SQLite. MariaDB uses json_arrayagg.
-				c.w.WriteString(` || ',' || (CASE WHEN COUNT(*) > 0 THEN json_extract(json_arrayagg(__cur_`)
+				c.w.WriteString(` || ':' || (CASE WHEN COUNT(*) > 0 THEN json_extract(json_arrayagg(__cur_`)
 			} else {
 				c.w.WriteString(` || ',' || (CASE WHEN COUNT(*) > 0 THEN json_extract(json_group_array(__cur_`)
 			}

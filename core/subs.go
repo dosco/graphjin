@@ -596,7 +596,17 @@ func (gj *graphjinEngine) subNotifyMemberEx(sub *sub,
 	nonce := mm.dh
 
 	if cv := firstCursorValue(js, gj.printFormat); len(cv) != 0 {
-		mm.cursor = string(cv)
+		cursor := string(cv)
+		// Strip the gj/xxx: prefix from cursor for internal subscription use
+		// The cursor format is: gj/hexTimestamp:selID:val1:val2
+		// We store just: selID:val1:val2 to match the decrypted format
+		// that the SQL CTE expects
+		if strings.HasPrefix(cursor, "gj/") {
+			if idx := strings.Index(cursor, ":"); idx != -1 {
+				cursor = cursor[idx+1:]
+			}
+		}
+		mm.cursor = cursor
 	}
 
 	ejs, err := encryptValues(js,
