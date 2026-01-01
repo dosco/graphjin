@@ -854,13 +854,17 @@ func (d *MariaDBDialect) RenderCursorCTE(ctx Context, sel *qcode.Select) {
 			ctx.WriteString(`, `)
 		}
 		// Use SUBSTRING_INDEX with colon separator (matching RenderInlineChild cursor generation)
-		// Cursor format is: gj/selID:val1:val2:...
-		// position 1 = gj/selID
+		// Cursor format after decryption is: selID:val1:val2:...
+		// (The gj/hexTimestamp: prefix is stripped during encryption/decryption)
+		// position 1 = selID
 		// position 2 = val1 (first cursor value)
 		// position 3 = val2 (second cursor value), etc.
-		ctx.WriteString(`NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(a.i, ':', `)
+		// Cast to the correct type to ensure proper comparison (e.g., numeric vs string)
+		ctx.WriteString(`CAST(NULLIF(SUBSTRING_INDEX(SUBSTRING_INDEX(a.i, ':', `)
 		ctx.Write(fmt.Sprintf("%d", i+2))
 		ctx.WriteString(`), ':', -1), '') AS `)
+		ctx.WriteString(d.mariadbType(ob.Col.Type))
+		ctx.WriteString(`) AS `)
 
 		if ob.KeyVar != "" && ob.Key != "" {
 			ctx.Quote(ob.Col.Name + "_" + ob.Key)

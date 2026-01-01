@@ -1426,6 +1426,7 @@ func Example_queryWithCursorPagination2() {
 			return
 		}
 
+
 		if err := json.Unmarshal(res.Data, &val); err != nil {
 			fmt.Println(err)
 			return
