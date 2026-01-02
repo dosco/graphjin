@@ -75,6 +75,11 @@ func NewCompiler(conf Config) *Compiler {
 		d = &dialect.SQLiteDialect{}
 	case "oracle":
 		d = &dialect.OracleDialect{EnableCamelcase: conf.EnableCamelcase}
+	case "mssql":
+		d = &dialect.MSSQLDialect{
+			DBVersion:       conf.DBVersion,
+			EnableCamelcase: conf.EnableCamelcase,
+		}
 	default:
 		d = &dialect.PostgresDialect{
 			DBVersion:       conf.DBVersion,
@@ -288,6 +293,10 @@ func (co *Compiler) CompileQuery(
 	// This helps multi-root work as well as return a null json value when
 	// there are no rows found.
 
+	// MSSQL uses FOR JSON PATH to build the root object
+	if c.dialect.Name() == "mssql" {
+		c.w.WriteString(` FOR JSON PATH, WITHOUT_ARRAY_WRAPPER`)
+	}
 	c.w.WriteString(`) AS `)
 	c.quoted("__root")
 	c.w.WriteString(` FROM (`)

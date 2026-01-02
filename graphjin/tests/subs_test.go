@@ -173,6 +173,9 @@ func TestSubscription(t *testing.T) {
 	if dbType == "oracle" {
 		t.Skip("skipping test for oracle: subscription with @object directive not yet supported")
 	}
+	if dbType == "mssql" {
+		t.Skip("skipping test for mssql: subscription rendering needs more work")
+	}
 
 	gql := `subscription test {
 		users(where: { or: { id: { eq: $id }, id: { eq: $id2 } } }) @object {

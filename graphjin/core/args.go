@@ -97,9 +97,9 @@ func (gj *graphjinEngine) argList(c context.Context,
 					wrapped = append(wrapped, ']')
 					v = json.RawMessage(wrapped)
 				}
-				// For Oracle, JSON arrays/objects must be passed as strings
-				// because the godror driver doesn't handle json.RawMessage
-				if gj.dbtype == "oracle" && p.Type == "json" && (v[0] == '[' || v[0] == '{') {
+				// For Oracle and MSSQL, JSON arrays/objects must be passed as strings
+				// because the drivers don't handle json.RawMessage properly
+				if (gj.dbtype == "oracle" || gj.dbtype == "mssql") && p.Type == "json" && (v[0] == '[' || v[0] == '{') {
 					vl[i] = string(v)
 				} else {
 					vl[i] = parseVarVal(v)

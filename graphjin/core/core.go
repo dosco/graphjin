@@ -75,7 +75,7 @@ func (gj *graphjinEngine) initDiscover() (err error) {
 	case "":
 		gj.dbtype = "postgres"
 	case "mssql":
-		gj.dbtype = "mysql"
+		gj.dbtype = "mssql"
 	default:
 		gj.dbtype = gj.conf.DBType
 	}

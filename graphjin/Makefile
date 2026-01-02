@@ -20,7 +20,7 @@ BUILD_FLAGS ?= -ldflags '-s -w -X "main.version=${BUILD_VERSION}" -X "main.commi
 tidy:
 	@find . -name "go.mod" -execdir go mod tidy \;
 
-test: test-postgres test-mysql test-mariadb test-sqlite test-oracle
+test: test-postgres test-mysql test-mariadb test-sqlite test-oracle test-mssql
 	@go test -v -race $(PACKAGES)
 
 test-postgres:
@@ -42,6 +42,10 @@ test-sqlite:
 test-oracle:
 	@echo "Running Oracle tests..."
 	@cd tests; go test -v -timeout 30m -race -db=oracle .
+
+test-mssql:
+	@echo "Running MSSQL tests..."
+	@cd tests; go test -v -timeout 30m -race -db=mssql -tags mssql .
 
 BIN_DIR := $(GOPATH)/bin
 WEB_BUILD_DIR := ./serv/web/build/manifest.json

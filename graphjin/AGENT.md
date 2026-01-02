@@ -113,14 +113,14 @@ When tests fail on a new database due to different row ordering:
 
 When implementing a new dialect, handle these common differences:
 
-| Feature | PostgreSQL | MySQL | SQLite | Oracle |
-| :--- | :--- | :--- | :--- | :--- |
-| Row limiting | `LIMIT n` | `LIMIT n` | `LIMIT n` | `FETCH FIRST n ROWS ONLY` |
-| Offset | `OFFSET n` | `OFFSET n` | `OFFSET n` | `OFFSET n ROWS` |
-| Boolean type | Native `boolean` | `TINYINT(1)` | `INTEGER` | `NUMBER(1)` - needs JSON conversion |
-| Recursive CTE | `WITH RECURSIVE` | `WITH RECURSIVE` | `WITH RECURSIVE` | `WITH` (no RECURSIVE keyword) |
-| JSON aggregation | `json_agg()` | `JSON_ARRAYAGG()` | `json_group_array()` | `JSON_ARRAYAGG()` |
-| Identifier quoting | `"name"` | `` `name` `` | `"name"` | `"NAME"` (case-sensitive) |
+| Feature | PostgreSQL | MySQL | SQLite | Oracle | MSSQL |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Row limiting | `LIMIT n` | `LIMIT n` | `LIMIT n` | `FETCH FIRST n ROWS ONLY` | `FETCH NEXT n ROWS ONLY` |
+| Offset | `OFFSET n` | `OFFSET n` | `OFFSET n` | `OFFSET n ROWS` | `OFFSET n ROWS` |
+| Boolean type | Native `boolean` | `TINYINT(1)` | `INTEGER` | `NUMBER(1)` - needs JSON conversion | `BIT` (0/1) |
+| Recursive CTE | `WITH RECURSIVE` | `WITH RECURSIVE` | `WITH RECURSIVE` | `WITH` (no RECURSIVE keyword) | `WITH` (no RECURSIVE keyword) |
+| JSON aggregation | `json_agg()` | `JSON_ARRAYAGG()` | `json_group_array()` | `JSON_ARRAYAGG()` | `STRING_AGG()` + `FOR JSON PATH` |
+| Identifier quoting | `"name"` | `` `name` `` | `"name"` | `"NAME"` (case-sensitive) | `[name]` |
 
 ### 4. Function Return Type Handling
 
@@ -163,6 +163,7 @@ Each dialect has its own test script:
 ./scripts/test-mysql.sh     # MySQL tests
 ./scripts/test-sqlite.sh    # SQLite tests
 ./scripts/test-oracle.sh    # Oracle tests
+./scripts/test-mssql.sh     # MSSQL tests
 ```
 
 **Always run all dialect tests** before merging changes to shared code.
