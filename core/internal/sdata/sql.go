@@ -46,3 +46,12 @@ var mariadbInfo string
 
 //go:embed sql/mariadb_columns.sql
 var mariadbColumnsStmt string
+
+//go:embed sql/mssql_functions.sql
+var mssqlFunctionsStmt string
+
+//go:embed sql/mssql_info.sql
+var mssqlInfo string
+
+//go:embed sql/mssql_columns.sql
+var mssqlColumnsStmt string

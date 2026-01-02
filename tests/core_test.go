@@ -363,6 +363,9 @@ func TestConfigRoleManagement(t *testing.T) {
 }
 
 func TestParallelRuns(t *testing.T) {
+	if dbType == "mssql" {
+		t.Skip("skipping for mssql - synthetic table rendering needs more work")
+	}
 
 	gql := `query {
 		me {

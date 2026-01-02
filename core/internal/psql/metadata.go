@@ -55,6 +55,7 @@ func (c *compilerContext) renderParam(p Param) {
 
 	if !c.dialect.UseNamedParams() {
 		md.params = append(md.params, p)
+		id = len(md.params)
 	} else {
 		if id, ok = md.pindex[p.Name]; !ok {
 			md.params = append(md.params, p)

@@ -21,6 +21,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	"github.com/mattn/go-sqlite3"
+	_ "github.com/microsoft/go-mssqldb"
 	_ "github.com/sijms/go-ora/v2"
 )
 
@@ -319,6 +320,86 @@ func TestMain(m *testing.M) {
 								return nil, "", fmt.Errorf("failed to init oracle: %w\nSQL: %s", err, sqlLine)
 							}
 						}
+					}
+				}
+
+				return container.Terminate, connStr, nil
+			},
+		},
+		{
+			name:   "mssql",
+			driver: "sqlserver",
+			startFunc: func(ctx context.Context) (func(context.Context) error, string, error) {
+				req := testcontainers.GenericContainerRequest{
+					ContainerRequest: testcontainers.ContainerRequest{
+						Image:        "mcr.microsoft.com/mssql/server:2022-latest",
+						ExposedPorts: []string{"1433/tcp"},
+						Env: map[string]string{
+							"ACCEPT_EULA":       "Y",
+							"MSSQL_SA_PASSWORD": "YourStrong!Passw0rd",
+						},
+						WaitingFor: wait.ForLog("SQL Server is now ready for client connections").WithStartupTimeout(120 * time.Second),
+					},
+					Started: true,
+				}
+				container, err := testcontainers.GenericContainer(ctx, req)
+				if err != nil {
+					return nil, "", err
+				}
+
+				host, _ := container.Host(ctx)
+				port, _ := container.MappedPort(ctx, "1433")
+
+				// Connection string for go-mssqldb
+				connStr := fmt.Sprintf("sqlserver://sa:YourStrong!Passw0rd@%s:%s?database=master", host, port.Port())
+
+				// Wait for SQL Server to be ready and create database
+				var initDB *sql.DB
+				for i := 0; i < 60; i++ {
+					initDB, err = sql.Open("sqlserver", connStr)
+					if err == nil {
+						if err = initDB.Ping(); err == nil {
+							break
+						}
+						initDB.Close()
+					}
+					time.Sleep(1 * time.Second)
+				}
+				if err != nil {
+					return nil, "", fmt.Errorf("failed to connect to mssql: %w", err)
+				}
+
+				// Create the test database
+				if _, err := initDB.Exec("IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = 'db') CREATE DATABASE db"); err != nil {
+					initDB.Close()
+					return nil, "", fmt.Errorf("failed to create mssql database: %w", err)
+				}
+				initDB.Close()
+
+				// Connect to the test database and run init script
+				connStr = fmt.Sprintf("sqlserver://sa:YourStrong!Passw0rd@%s:%s?database=db", host, port.Port())
+				initDB, err = sql.Open("sqlserver", connStr)
+				if err != nil {
+					return nil, "", err
+				}
+				defer initDB.Close()
+
+				script, err := os.ReadFile("./mssql.sql")
+				if err != nil {
+					return nil, "", err
+				}
+
+				// Split by GO statements (MSSQL batch separator)
+				goRe := regexp.MustCompile(`(?im)^\s*GO\s*$`)
+				blocks := goRe.Split(string(script), -1)
+
+				for _, block := range blocks {
+					block = strings.TrimSpace(block)
+					if block == "" {
+						continue
+					}
+					if _, err := initDB.Exec(block); err != nil {
+						return nil, "", fmt.Errorf("failed to init mssql: %w\nSQL: %s", err, block)
 					}
 				}
 

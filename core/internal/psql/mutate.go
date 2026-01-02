@@ -84,7 +84,6 @@ func (c *compilerContext) compileLinearMutation() {
 
 	for _, mid := range ordered {
 		m := c.qc.Mutates[mid]
-		// fmt.Fprintf(os.Stderr, "DEBUG Mutation: %d Type: %d\n", mid, m.Type)
 
 		if m.Type == qcode.MTNone || m.Type == qcode.MTKeyword {
 			continue
@@ -339,7 +338,13 @@ func (c *compilerContext) renderColumnValue(m qcode.Mutate, col qcode.MColumn) {
 			c.squoted(v)
 
 		case m.IsJSON:
-			c.colWithTable("t", col.FieldName)
+			// MSSQL in linear execution uses parameters, not "t" table reference
+			if c.dialect.Name() == "mssql" {
+				// Render the value as a literal for MSSQL
+				c.squoted(v)
+			} else {
+				c.colWithTable("t", col.FieldName)
+			}
 
 		case isEmptyList:
 			// Render empty array literal for the dialect

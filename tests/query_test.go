@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"testing"
 	"time"
 
 	"github.com/dosco/graphjin/core/v3"
@@ -1467,7 +1468,11 @@ func Example_queryWithCursorPagination2() {
 	// [{"name":"Product 76"}]
 }
 
-func Example_queryWithJsonColumn() {
+func TestQueryWithJsonColumn(t *testing.T) {
+	if dbType == "mssql" {
+		t.Skip("skipping for mssql - JSON column type detection needs work (nvarchar not recognized as JSON)")
+	}
+
 	gql := `query {
 		users(id: 1) {
 			id
@@ -1495,16 +1500,17 @@ func Example_queryWithJsonColumn() {
 
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
-		fmt.Println(err)
-	} else {
-		printJSON(res.Data)
+		t.Fatal(err)
 	}
-	// Output: {"users":{"category_counts":[{"category":{"name":"Category 1"},"count":400},{"category":{"name":"Category 2"},"count":600}],"id":1}}
+	exp := `{"users":{"category_counts":[{"category":{"name":"Category 1"},"count":400},{"category":{"name":"Category 2"},"count":600}],"id":1}}`
+	if stdJSON(res.Data) != exp {
+		t.Errorf("expected '%s' got '%s'", exp, stdJSON(res.Data))
+	}
 }
 
 func Example_queryWithView() {

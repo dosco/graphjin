@@ -74,6 +74,8 @@ func GetDBInfo(
 			row = db.QueryRow(sqliteInfo)
 		case "oracle":
 			row = db.QueryRow(oracleInfo)
+		case "mssql":
+			row = db.QueryRow(mssqlInfo)
 		default:
 			row = db.QueryRow(postgresInfo)
 		}
@@ -287,6 +289,8 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 		sqlStmt = sqliteColumnsStmt
 	case "oracle":
 		sqlStmt = oracleColumnsStmt
+	case "mssql":
+		sqlStmt = mssqlColumnsStmt
 	default:
 		sqlStmt = postgresColumnsStmt
 	}
@@ -328,7 +332,7 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 			return nil, err
 		}
 
-		if dbtype == "sqlite" || dbtype == "oracle" {
+		if dbtype == "sqlite" || dbtype == "oracle" || dbtype == "mssql" {
 			c.Name = util.ToSnake(c.Name)
 			c.Table = strings.ToLower(c.Table)
 			c.Schema = strings.ToLower(c.Schema)
@@ -423,6 +427,8 @@ func DiscoverFunctions(db *sql.DB, dbtype string, blockList []string) ([]DBFunct
 		sqlStmt = sqliteFunctionsStmt
 	case "oracle":
 		sqlStmt = oracleFunctionsStmt
+	case "mssql":
+		sqlStmt = mssqlFunctionsStmt
 	default:
 		sqlStmt = postgresFunctionsStmt
 	}

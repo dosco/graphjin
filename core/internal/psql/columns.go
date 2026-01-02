@@ -91,14 +91,18 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 
 			default:
 				if !c.dialect.SupportsLateral() {
-					// MariaDB doesn't allow correlated subqueries through derived table boundaries
-					// Use a simplified rendering that avoids nested derived tables
+					// MariaDB and MSSQL don't allow correlated subqueries through derived table boundaries
+					// Use dialect-specific rendering that avoids nested derived tables
 					if c.dialect.Name() == "mariadb" {
 						// Wrap with JSON_QUERY to prevent double-escaping since
 						// MariaDB treats JSON as LONGTEXT and json_object would escape it
 						c.w.WriteString(`JSON_QUERY(`)
 						c.dialect.RenderInlineChild(c, c, sel, csel)
 						c.w.WriteString(`, '$')`)
+						c.alias(csel.FieldName)
+					} else if c.dialect.Name() == "mssql" {
+						// MSSQL needs its own inline child rendering
+						c.dialect.RenderInlineChild(c, c, sel, csel)
 						c.alias(csel.FieldName)
 					} else {
 						c.renderInlineChild(csel)
