@@ -153,7 +153,9 @@ func (d *MSSQLDialect) RenderLimit(ctx Context, sel *qcode.Select) {
 
 	switch {
 	case sel.Paging.OffsetVar != "":
-		ctx.AddParam(Param{Name: sel.Paging.OffsetVar, Type: "integer"})
+		ctx.WriteString(`CAST(`)
+		ctx.AddParam(Param{Name: sel.Paging.OffsetVar, Type: "int"})
+		ctx.WriteString(` AS INT)`)
 	case sel.Paging.Offset != 0:
 		ctx.Write(fmt.Sprintf("%d", sel.Paging.Offset))
 	default:
@@ -165,6 +167,10 @@ func (d *MSSQLDialect) RenderLimit(ctx Context, sel *qcode.Select) {
 		ctx.WriteString(` FETCH NEXT `)
 		if sel.Singular {
 			ctx.WriteString(`1`)
+		} else if sel.Paging.LimitVar != "" {
+			ctx.WriteString(`CAST(`)
+			ctx.AddParam(Param{Name: sel.Paging.LimitVar, Type: "int"})
+			ctx.WriteString(` AS INT)`)
 		} else {
 			ctx.Write(fmt.Sprintf("%d", sel.Paging.Limit))
 		}
@@ -385,6 +391,48 @@ func (d *MSSQLDialect) RenderOp(op qcode.ExpOp) (string, error) {
 }
 
 func (d *MSSQLDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
+	// Handle array column overlap operations
+	// OpHasInCommon is used when comparing array columns to a list
+	// It checks if any element in the column's JSON array exists in the provided list
+	if ex.Left.Col.Array && (ex.Op == qcode.OpHasInCommon || ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn) {
+		// For MSSQL, array columns contain JSON arrays like ["Tag 1", "Tag 2"]
+		// We need to check if any element in the column's array exists in the provided list
+		if ex.Op == qcode.OpNotIn {
+			ctx.WriteString(`(NOT `)
+		} else {
+			ctx.WriteString(`(`)
+		}
+		ctx.WriteString(`EXISTS (SELECT 1 FROM OPENJSON(`)
+
+		// Render the column
+		var table string
+		if ex.Left.Table == "" {
+			table = ex.Left.Col.Table
+		} else {
+			table = ex.Left.Table
+		}
+		ctx.ColWithTable(table, ex.Left.Col.Name)
+
+		ctx.WriteString(`) WHERE [value] IN (`)
+
+		if ex.Right.ValType == qcode.ValVar {
+			// Variable list: use OPENJSON to unpack
+			ctx.WriteString(`SELECT [value] FROM OPENJSON(`)
+			ctx.AddParam(Param{Name: ex.Right.Val, Type: "json", IsArray: true})
+			ctx.WriteString(`)`)
+		} else if ex.Right.ValType == qcode.ValList {
+			// Static list: render inline values
+			for i := range ex.Right.ListVal {
+				if i != 0 {
+					ctx.WriteString(`, `)
+				}
+				d.RenderLiteral(ctx, ex.Right.ListVal[i], ex.Right.ListType)
+			}
+		}
+		ctx.WriteString(`)))`)
+		return true
+	}
+
 	// Handle special __gj_json_pk format for bulk JSON inserts
 	if ex.Right.ValType == qcode.ValVar &&
 		(ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn) &&
@@ -507,7 +555,7 @@ func (d *MSSQLDialect) RenderJSONField(ctx Context, fieldName string, tableAlias
 			ctx.WriteString(`.`)
 		}
 		ctx.Quote(colName)
-		ctx.WriteString(`) AS [`)
+		ctx.WriteString(`, '$') AS [`)
 		ctx.WriteString(fieldName)
 		ctx.WriteString(`]`)
 	} else {
@@ -742,35 +790,125 @@ func (d *MSSQLDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, pse
 }
 
 func (d *MSSQLDialect) renderRecursiveInlineChild(ctx Context, r InlineChildRenderer, psel, sel *qcode.Select) {
-	// MSSQL doesn't support CTEs inside subqueries, so we use a simpler approach:
-	// Just get the immediate children (one level) without true recursion.
-	// For full recursive support, the query structure would need to be refactored
-	// to have the CTE at the top level with CROSS APPLY.
+	// MSSQL doesn't support CTEs inside subqueries, so we use nested OR conditions
+	// (same approach as MariaDB) to traverse recursive relationships up to a max depth.
 
+	// 1. Determine direction: parents vs children
+	v, _ := sel.GetInternalArg("find")
+	findParents := v.Val == "parents" || v.Val == "parent"
+
+	// 2. Get max depth (default 20, can be reduced by limit)
+	maxDepth := 20
+	if sel.Paging.Limit > 0 && int(sel.Paging.Limit) < maxDepth {
+		maxDepth = int(sel.Paging.Limit)
+	}
+
+	// 3. Build table aliases
 	t := sel.Ti.Name
 	if sel.ID >= 0 {
 		t = fmt.Sprintf("%s_%d", t, sel.ID)
 	}
-
-	// Reference the parent select
 	pt := psel.Ti.Name
 	if psel.ID >= 0 {
 		pt = fmt.Sprintf("%s_%d", pt, psel.ID)
 	}
 
-	// Simple subquery to get immediate children using FOR JSON PATH directly
+	// 4. Get column names
+	pkCol := sel.Ti.PrimaryCol.Name
+	fkCol := sel.Rel.Left.Col.Name // e.g., reply_to_id
+
+	// 5. Render the query
 	ctx.WriteString(`(SELECT COALESCE((SELECT `)
 	d.renderInlineJSONFields(ctx, r, sel)
 	ctx.WriteString(` FROM `)
 	r.RenderTable(sel, sel.Ti.Schema, sel.Ti.Name, false)
 	d.RenderTableAlias(ctx, t)
-	ctx.WriteString(` WHERE `)
-	// For finding children: child.reply_to_id = parent.id
-	// rel.Left.Col = foreign key (reply_to_id), rel.Right.Col = primary key (id)
-	r.ColWithTable(t, sel.Rel.Left.Col.Name)
-	ctx.WriteString(` = `)
-	r.ColWithTable(pt, sel.Rel.Right.Col.Name)
+	ctx.WriteString(` WHERE (`)
+
+	// 6. Generate nested OR conditions for each depth level
+	for depth := 1; depth <= maxDepth; depth++ {
+		if depth > 1 {
+			ctx.WriteString(` OR `)
+		}
+		ctx.Quote(t)
+		ctx.WriteString(`.`)
+		if findParents {
+			ctx.Quote(pkCol)
+			ctx.WriteString(` = `)
+			d.renderNestedFKSubquery(ctx, sel.Ti.Schema, sel.Ti.Name, pkCol, fkCol, pt, depth)
+		} else {
+			ctx.Quote(fkCol)
+			ctx.WriteString(` = `)
+			d.renderNestedPKSubquery(ctx, sel.Ti.Schema, sel.Ti.Name, pkCol, fkCol, pt, depth)
+		}
+	}
+
+	ctx.WriteString(`)`)
+
+	// For parent traversal, order by PK descending (closest parent first)
+	if findParents {
+		ctx.WriteString(` ORDER BY `)
+		ctx.Quote(t)
+		ctx.WriteString(`.`)
+		ctx.Quote(pkCol)
+		ctx.WriteString(` DESC`)
+	}
+
 	ctx.WriteString(` FOR JSON PATH, INCLUDE_NULL_VALUES), '[]'))`)
+}
+
+// renderNestedFKSubquery generates nested subqueries for parent traversal.
+// For depth=1: (SELECT [reply_to_id] FROM [table] WHERE [id] = [parent].[id])
+// For depth>1: wraps the previous level recursively.
+func (d *MSSQLDialect) renderNestedFKSubquery(ctx Context, schema, table, pkCol, fkCol, parentTable string, depth int) {
+	if depth == 1 {
+		// Base case: get the FK value from the parent row
+		ctx.WriteString(`(SELECT `)
+		ctx.Quote(fkCol)
+		ctx.WriteString(` FROM `)
+		d.RenderTableName(ctx, nil, schema, table)
+		ctx.WriteString(` WHERE `)
+		ctx.Quote(pkCol)
+		ctx.WriteString(` = `)
+		ctx.Quote(parentTable)
+		ctx.WriteString(`.`)
+		ctx.Quote(pkCol)
+		ctx.WriteString(`)`)
+	} else {
+		// Recursive case: wrap previous level
+		ctx.WriteString(`(SELECT `)
+		ctx.Quote(fkCol)
+		ctx.WriteString(` FROM `)
+		d.RenderTableName(ctx, nil, schema, table)
+		ctx.WriteString(` WHERE `)
+		ctx.Quote(pkCol)
+		ctx.WriteString(` = `)
+		d.renderNestedFKSubquery(ctx, schema, table, pkCol, fkCol, parentTable, depth-1)
+		ctx.WriteString(`)`)
+	}
+}
+
+// renderNestedPKSubquery generates nested subqueries for children traversal.
+// For depth=1: just references [parent].[id]
+// For depth>1: (SELECT [id] FROM [table] WHERE [fk] = nested_subquery)
+func (d *MSSQLDialect) renderNestedPKSubquery(ctx Context, schema, table, pkCol, fkCol, parentTable string, depth int) {
+	if depth == 1 {
+		// Base case: reference parent's PK directly
+		ctx.Quote(parentTable)
+		ctx.WriteString(`.`)
+		ctx.Quote(pkCol)
+	} else {
+		// Recursive case: find children of the previous level
+		ctx.WriteString(`(SELECT `)
+		ctx.Quote(pkCol)
+		ctx.WriteString(` FROM `)
+		d.RenderTableName(ctx, nil, schema, table)
+		ctx.WriteString(` WHERE `)
+		ctx.Quote(fkCol)
+		ctx.WriteString(` = `)
+		d.renderNestedPKSubquery(ctx, schema, table, pkCol, fkCol, parentTable, depth-1)
+		ctx.WriteString(`)`)
+	}
 }
 
 func (d *MSSQLDialect) renderOuterOrderBy(ctx Context, r InlineChildRenderer, sel *qcode.Select, subqueryAlias string) {
@@ -835,8 +973,28 @@ func (d *MSSQLDialect) renderInlineJSONFields(ctx Context, r InlineChildRenderer
 			t = fmt.Sprintf("%s_%d", t, sel.ID)
 		}
 
+		// Handle skipIf/includeIf field filters
+		if f.FieldFilter.Exp != nil {
+			ctx.WriteString(`(CASE WHEN `)
+			d.renderFieldFilterExp(ctx, r, sel, f.FieldFilter.Exp)
+			ctx.WriteString(` THEN `)
+		}
+
 		if f.Func.Name != "" {
-			ctx.WriteString(f.Func.Name)
+			// MSSQL requires user-defined functions to be called with at least a two-part name
+			// Built-in aggregates (count, sum, max, etc.) have Agg=true and empty Schema - no prefix needed
+			if f.Func.Schema != "" {
+				ctx.Quote(f.Func.Schema)
+				ctx.WriteString(`.`)
+				ctx.Quote(f.Func.Name)
+			} else if !f.Func.Agg {
+				// User-defined function without explicit schema, use dbo
+				ctx.WriteString(`[dbo].`)
+				ctx.Quote(f.Func.Name)
+			} else {
+				// Built-in aggregates (Schema == "" && Agg == true) - write directly without quoting
+				ctx.WriteString(f.Func.Name)
+			}
 			ctx.WriteString(`(`)
 			if len(f.Args) != 0 {
 				for k, arg := range f.Args {
@@ -859,15 +1017,21 @@ func (d *MSSQLDialect) renderInlineJSONFields(ctx Context, r InlineChildRenderer
 			}
 			ctx.WriteString(`)`)
 		} else {
-			isJSON := f.Col.Type == "json" || f.Col.Type == "nvarchar(max)" || f.Col.Array
+			// Schema detection now returns "json" for NVARCHAR(MAX) columns with ISJSON constraints
+			isJSON := f.Col.Type == "json" || f.Col.Array
 			if isJSON {
 				ctx.WriteString(`JSON_QUERY(`)
 			}
 			r.ColWithTable(t, f.Col.Name)
 			if isJSON {
-				ctx.WriteString(`)`)
+				ctx.WriteString(`, '$')`)
 			}
 		}
+
+		if f.FieldFilter.Exp != nil {
+			ctx.WriteString(` ELSE null END)`)
+		}
+
 		ctx.WriteString(` AS `)
 		ctx.Quote(f.FieldName)
 		i++
@@ -931,7 +1095,7 @@ func (d *MSSQLDialect) renderSubqueryJSONFields(ctx Context, r InlineChildRender
 		}
 		r.ColWithTable("_gj_t", f.FieldName)
 		if isJSON {
-			ctx.WriteString(`)`)
+			ctx.WriteString(`, '$')`)
 		} else {
 			ctx.WriteString(` AS `)
 			ctx.Quote(f.FieldName)
@@ -979,8 +1143,28 @@ func (d *MSSQLDialect) renderBaseColumns(ctx Context, r InlineChildRenderer, sel
 			t = fmt.Sprintf("%s_%d", t, sel.ID)
 		}
 
+		// Handle skipIf/includeIf field filters
+		if f.FieldFilter.Exp != nil {
+			ctx.WriteString(`(CASE WHEN `)
+			d.renderFieldFilterExp(ctx, r, sel, f.FieldFilter.Exp)
+			ctx.WriteString(` THEN `)
+		}
+
 		if f.Func.Name != "" {
-			ctx.WriteString(f.Func.Name)
+			// MSSQL requires user-defined functions to be called with at least a two-part name
+			// Built-in aggregates (count, sum, max, etc.) have Agg=true and empty Schema - no prefix needed
+			if f.Func.Schema != "" {
+				ctx.Quote(f.Func.Schema)
+				ctx.WriteString(`.`)
+				ctx.Quote(f.Func.Name)
+			} else if !f.Func.Agg {
+				// User-defined function without explicit schema, use dbo
+				ctx.WriteString(`[dbo].`)
+				ctx.Quote(f.Func.Name)
+			} else {
+				// Built-in aggregates (Schema == "" && Agg == true) - write directly without quoting
+				ctx.WriteString(f.Func.Name)
+			}
 			ctx.WriteString(`(`)
 			if len(f.Args) != 0 {
 				for k, arg := range f.Args {
@@ -1005,6 +1189,11 @@ func (d *MSSQLDialect) renderBaseColumns(ctx Context, r InlineChildRenderer, sel
 		} else {
 			r.ColWithTable(t, f.Col.Name)
 		}
+
+		if f.FieldFilter.Exp != nil {
+			ctx.WriteString(` ELSE null END)`)
+		}
+
 		ctx.WriteString(` AS `)
 		ctx.Quote(f.FieldName)
 		i++
@@ -1104,6 +1293,31 @@ func (d *MSSQLDialect) renderFromTable(ctx Context, r InlineChildRenderer, sel *
 			t = fmt.Sprintf("%s_%d", t, sel.ID)
 		}
 		ctx.Quote(t)
+	} else if sel.Ti.Type == "function" {
+		// Table-valued function call - needs schema prefix and parentheses with args
+		if sel.Ti.Func.Schema != "" {
+			ctx.Quote(sel.Ti.Func.Schema)
+			ctx.WriteString(`.`)
+		} else {
+			ctx.WriteString(`[dbo].`)
+		}
+		ctx.Quote(sel.Ti.Name)
+		ctx.WriteString(`(`)
+		// Render function arguments
+		for i, arg := range sel.Args {
+			if i != 0 {
+				ctx.WriteString(`, `)
+			}
+			switch arg.Type {
+			case qcode.ArgTypeCol:
+				r.ColWithTable(arg.Col.Table, arg.Col.Name)
+			case qcode.ArgTypeVar:
+				ctx.AddParam(Param{Name: arg.Val, Type: arg.DType})
+			default:
+				ctx.WriteString(arg.Val)
+			}
+		}
+		ctx.WriteString(`)`)
 	} else {
 		r.RenderTable(sel, sel.Ti.Schema, sel.Ti.Name, false)
 	}
@@ -1258,7 +1472,18 @@ func (d *MSSQLDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel *
 		d.renderValue(ctx, r, sel, ex)
 		ctx.WriteString(`)`)
 
+	case qcode.OpHasInCommon:
+		// Handle array column overlap operations
+		// OpHasInCommon is used when comparing array columns to a list
+		d.renderArrayColumnExists(ctx, r, psel, sel, ex, false)
+
 	case qcode.OpIn, qcode.OpNotIn:
+		// Handle array column IN operations
+		if ex.Left.Col.Array {
+			d.renderArrayColumnExists(ctx, r, psel, sel, ex, ex.Op == qcode.OpNotIn)
+			return
+		}
+
 		// Check for special __gj_json_pk format for bulk JSON inserts
 		if ex.Right.ValType == qcode.ValVar &&
 			strings.HasPrefix(ex.Right.Val, "__gj_json_pk:gj_sep:") {
@@ -1370,6 +1595,26 @@ func (d *MSSQLDialect) renderColumn(ctx Context, r InlineChildRenderer, psel, se
 	if ex.Left.ColName != "" {
 		colName = ex.Left.ColName
 	}
+
+	// Handle JSON path operations
+	if len(ex.Left.Path) > 0 {
+		switch ex.Right.ValType {
+		case qcode.ValBool:
+			// Cast JSON_VALUE result to BIT for boolean comparison
+			ctx.WriteString(`CAST(`)
+			d.RenderJSONPath(ctx, t, colName, ex.Left.Path)
+			ctx.WriteString(` AS BIT)`)
+		case qcode.ValNum:
+			// Cast JSON_VALUE result to NUMERIC for number comparison
+			ctx.WriteString(`CAST(`)
+			d.RenderJSONPath(ctx, t, colName, ex.Left.Path)
+			ctx.WriteString(` AS NUMERIC)`)
+		default:
+			d.RenderJSONPath(ctx, t, colName, ex.Left.Path)
+		}
+		return
+	}
+
 	r.ColWithTable(t, colName)
 }
 
@@ -1421,6 +1666,48 @@ func (d *MSSQLDialect) renderValue(ctx Context, r InlineChildRenderer, sel *qcod
 	default:
 		ctx.WriteString(ex.Right.Val)
 	}
+}
+
+// renderArrayColumnExists renders EXISTS with OPENJSON for array column IN operations
+func (d *MSSQLDialect) renderArrayColumnExists(ctx Context, r InlineChildRenderer, psel, sel *qcode.Select, ex *qcode.Exp, isNot bool) {
+	// For MSSQL, array columns contain JSON arrays like ["Tag 1", "Tag 2"]
+	// We need to check if any element in the column's array exists in the provided list
+	if isNot {
+		ctx.WriteString(`(NOT `)
+	} else {
+		ctx.WriteString(`(`)
+	}
+	ctx.WriteString(`EXISTS (SELECT 1 FROM OPENJSON(`)
+
+	// Render the column with proper table alias
+	t := ex.Left.Col.Table
+	if t == "" {
+		t = sel.Ti.Name
+	}
+	if t == sel.Ti.Name && sel.ID >= 0 {
+		t = fmt.Sprintf("%s_%d", t, sel.ID)
+	} else if ex.Left.ID >= 0 {
+		t = fmt.Sprintf("%s_%d", t, ex.Left.ID)
+	}
+	r.ColWithTable(t, ex.Left.Col.Name)
+
+	ctx.WriteString(`) WHERE [value] IN (`)
+
+	if ex.Right.ValType == qcode.ValVar {
+		// Variable list: use OPENJSON to unpack
+		ctx.WriteString(`SELECT [value] FROM OPENJSON(`)
+		ctx.AddParam(Param{Name: ex.Right.Val, Type: "json", IsArray: true})
+		ctx.WriteString(`)`)
+	} else if ex.Right.ValType == qcode.ValList {
+		// Static list: render inline values
+		for i := range ex.Right.ListVal {
+			if i != 0 {
+				ctx.WriteString(`, `)
+			}
+			d.RenderLiteral(ctx, ex.Right.ListVal[i], ex.Right.ListType)
+		}
+	}
+	ctx.WriteString(`)))`)
 }
 
 func (d *MSSQLDialect) findSkipVarExp(exp *qcode.Exp) (varName string, isSkip bool, found bool) {
@@ -2080,19 +2367,118 @@ func (d *MSSQLDialect) mssqlType(t string) string {
 	}
 }
 
-func (d *MSSQLDialect) renderFieldFilterExp(ctx Context, r InlineChildRenderer, sel *qcode.Select, exp *qcode.Exp) {
-	// Field filter expression rendering for @skip/@include
-	if exp == nil {
+func (d *MSSQLDialect) renderFieldFilterExp(ctx Context, r InlineChildRenderer, sel *qcode.Select, ex *qcode.Exp) {
+	// Field filter expression rendering for @skip/@include directives
+	if ex == nil {
 		return
 	}
 
-	switch exp.Op {
+	t := sel.Ti.Name
+	if sel.ID >= 0 {
+		t = fmt.Sprintf("%s_%d", t, sel.ID)
+	}
+
+	switch ex.Op {
+	case qcode.OpNot:
+		ctx.WriteString(`NOT `)
+		d.renderFieldFilterExp(ctx, r, sel, ex.Children[0])
+
+	case qcode.OpAnd:
+		ctx.WriteString(`(`)
+		for i, child := range ex.Children {
+			if i > 0 {
+				ctx.WriteString(` AND `)
+			}
+			d.renderFieldFilterExp(ctx, r, sel, child)
+		}
+		ctx.WriteString(`)`)
+
+	case qcode.OpOr:
+		ctx.WriteString(`(`)
+		for i, child := range ex.Children {
+			if i > 0 {
+				ctx.WriteString(` OR `)
+			}
+			d.renderFieldFilterExp(ctx, r, sel, child)
+		}
+		ctx.WriteString(`)`)
+
+	case qcode.OpEquals:
+		ctx.WriteString(`(`)
+		r.ColWithTable(t, ex.Left.Col.Name)
+		ctx.WriteString(`) = `)
+		d.renderFieldFilterVal(ctx, ex)
+
+	case qcode.OpNotEquals:
+		ctx.WriteString(`(`)
+		r.ColWithTable(t, ex.Left.Col.Name)
+		ctx.WriteString(`) != `)
+		d.renderFieldFilterVal(ctx, ex)
+
+	case qcode.OpGreaterThan:
+		ctx.WriteString(`(`)
+		r.ColWithTable(t, ex.Left.Col.Name)
+		ctx.WriteString(`) > `)
+		d.renderFieldFilterVal(ctx, ex)
+
+	case qcode.OpLesserThan:
+		ctx.WriteString(`(`)
+		r.ColWithTable(t, ex.Left.Col.Name)
+		ctx.WriteString(`) < `)
+		d.renderFieldFilterVal(ctx, ex)
+
+	case qcode.OpGreaterOrEquals:
+		ctx.WriteString(`(`)
+		r.ColWithTable(t, ex.Left.Col.Name)
+		ctx.WriteString(`) >= `)
+		d.renderFieldFilterVal(ctx, ex)
+
+	case qcode.OpLesserOrEquals:
+		ctx.WriteString(`(`)
+		r.ColWithTable(t, ex.Left.Col.Name)
+		ctx.WriteString(`) <= `)
+		d.renderFieldFilterVal(ctx, ex)
+
+	case qcode.OpIsNull:
+		ctx.WriteString(`(`)
+		r.ColWithTable(t, ex.Left.Col.Name)
+		if strings.EqualFold(ex.Right.Val, "false") {
+			ctx.WriteString(`) IS NOT NULL`)
+		} else {
+			ctx.WriteString(`) IS NULL`)
+		}
+
 	case qcode.OpEqualsTrue:
-		ctx.AddParam(Param{Name: exp.Right.Val, Type: "bit"})
-		ctx.WriteString(` = 1`)
+		// For @include(ifVar: $varName) - show when variable is true
+		ctx.WriteString(`(`)
+		ctx.AddParam(Param{Name: ex.Right.Val, Type: "bit"})
+		ctx.WriteString(` = 1)`)
+
 	case qcode.OpNotEqualsTrue:
-		ctx.AddParam(Param{Name: exp.Right.Val, Type: "bit"})
-		ctx.WriteString(` != 1`)
+		// For @skip(ifVar: $varName) - show when variable is NOT true (i.e., skip when true)
+		ctx.WriteString(`(`)
+		ctx.AddParam(Param{Name: ex.Right.Val, Type: "bit"})
+		ctx.WriteString(` != 1)`)
+
+	default:
+		// Fallback: just render 1=1 (true) for unsupported ops
+		ctx.WriteString(`1=1`)
+	}
+}
+
+// renderFieldFilterVal renders the right-hand side value for field filter expressions
+func (d *MSSQLDialect) renderFieldFilterVal(ctx Context, ex *qcode.Exp) {
+	switch ex.Right.ValType {
+	case qcode.ValStr:
+		ctx.WriteString(`'`)
+		ctx.WriteString(ex.Right.Val)
+		ctx.WriteString(`'`)
+	case qcode.ValNum, qcode.ValBool:
+		ctx.WriteString(ex.Right.Val)
+	case qcode.ValVar:
+		ctx.AddParam(Param{Name: ex.Right.Val, Type: ex.Left.Col.Type})
+	default:
+		ctx.WriteString(ex.Right.Val)
 	}
 }
 

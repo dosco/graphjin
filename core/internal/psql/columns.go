@@ -269,6 +269,10 @@ func (c *compilerContext) renderJSONFields(sel *qcode.Select) {
 			// MariaDB: use dialect method with isJSON flag for JSON columns
 			isJSON := f.Col.Type == "json" || f.Col.Array
 			c.dialect.RenderJSONField(c, f.FieldName, "__sr_"+strconv.Itoa(int(sel.ID)), f.FieldName, false, isJSON)
+		} else if c.dialect.Name() == "mssql" {
+			// MSSQL: use dialect method with isJSON flag for JSON columns
+			isJSON := f.Col.Type == "json" || f.Col.Array
+			c.dialect.RenderJSONField(c, f.FieldName, "__sr_"+strconv.Itoa(int(sel.ID)), f.FieldName, false, isJSON)
 		} else {
 			c.renderJSONField(f.FieldName, sel.ID)
 		}

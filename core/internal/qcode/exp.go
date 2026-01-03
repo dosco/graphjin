@@ -494,7 +494,10 @@ func (ast *aexpst) processColumn(av aexp, ex *Exp, node *graph.Node, selID int32
 				jsonPath := parts[1]
 
 				col, err := av.ti.GetColumn(colName)
-				if err == nil && (col.Type == "json" || col.Type == "jsonb") {
+				// Check for JSON types - MSSQL stores JSON in NVARCHAR(MAX)
+				isJSONType := col.Type == "json" || col.Type == "jsonb" ||
+					(strings.HasPrefix(col.Type, "nvarchar") && ast.co.s.DBType() == "mssql")
+				if err == nil && isJSONType {
 					// Set up for JSON path operation using underscore syntax
 					ex.Left.ID = selID
 					ex.Left.Col = col
@@ -520,7 +523,10 @@ func (ast *aexpst) processJSONPath(av aexp, ex *Exp, node *graph.Node, selID int
 	}
 
 	// Check if the column is JSON/JSONB type
-	if col.Type != "json" && col.Type != "jsonb" {
+	// MSSQL stores JSON in NVARCHAR(MAX), so also check for nvarchar when dbType is mssql
+	isJSONType := col.Type == "json" || col.Type == "jsonb" ||
+		(strings.HasPrefix(col.Type, "nvarchar") && ast.co.s.DBType() == "mssql")
+	if !isJSONType {
 		return false, nil
 	}
 

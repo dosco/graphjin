@@ -29,7 +29,7 @@ CREATE TABLE products (
   name NVARCHAR(255),
   description NVARCHAR(255),
   tags NVARCHAR(MAX),
-  metadata NVARCHAR(MAX),
+  metadata NVARCHAR(MAX) CONSTRAINT CHK_products_metadata CHECK (ISJSON(metadata) = 1 OR metadata IS NULL),
   country_code NVARCHAR(3),
   price DECIMAL(10, 2),
   count_likes INT,
@@ -95,6 +95,18 @@ CREATE VIEW hot_products AS
 SELECT id AS product_id, country_code
 FROM products
 WHERE id > 50;
+GO
+
+-- Function to check if a product is hot
+CREATE FUNCTION is_hot_product(@id BIGINT)
+RETURNS BIT
+AS
+BEGIN
+    DECLARE @result BIT = 0;
+    IF EXISTS (SELECT 1 FROM hot_products WHERE product_id = @id)
+        SET @result = 1;
+    RETURN @result;
+END;
 GO
 
 -- Sequence table for generating test data
@@ -254,7 +266,7 @@ GO
 -- Table for testing JSON path operations
 CREATE TABLE quotations (
   id BIGINT IDENTITY(1,1) PRIMARY KEY,
-  validity_period NVARCHAR(MAX) NOT NULL,
+  validity_period NVARCHAR(MAX) NOT NULL CONSTRAINT CHK_quotations_validity_period CHECK (ISJSON(validity_period) = 1),
   customer_id BIGINT,
   amount DECIMAL(10, 2),
   created_at DATETIME2 NOT NULL DEFAULT GETDATE(),
@@ -289,4 +301,36 @@ INSERT INTO graph_node (id, label) VALUES (N'a', N'node a'), (N'b', N'node b'), 
 GO
 
 INSERT INTO graph_edge (src_node, dst_node) VALUES (N'a', N'b'), (N'a', N'c');
+GO
+
+-- Table-returning functions for testing
+CREATE FUNCTION get_oldest5_products()
+RETURNS TABLE
+AS
+RETURN (
+    SELECT TOP 5 p.id, p.name
+    FROM products p
+    ORDER BY p.id ASC
+);
+GO
+
+CREATE FUNCTION get_oldest_users(@user_count INT, @tag NVARCHAR(100))
+RETURNS TABLE
+AS
+RETURN (
+    SELECT TOP (@user_count) @tag AS tag_name, u.id, u.full_name
+    FROM users u
+    ORDER BY u.id ASC
+);
+GO
+
+CREATE FUNCTION get_product(@id BIGINT)
+RETURNS TABLE
+AS
+RETURN (
+    -- Note: PostgreSQL's get_product has a naming conflict where p.id = id
+    -- refers to the column, not the parameter. This matches that behavior.
+    SELECT p.id, p.name
+    FROM products p
+);
 GO
