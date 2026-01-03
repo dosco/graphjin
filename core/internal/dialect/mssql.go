@@ -655,24 +655,43 @@ func (d *MSSQLDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, pse
 
 	if sel.Singular {
 		if sel.Type == qcode.SelTypeUnion {
-			ctx.WriteString(`(SELECT COALESCE(`)
-			first := true
+			// Polymorphic UNION type - render CASE WHEN to check subject_type
+			ctx.WriteString(`(CASE `)
 			for _, cid := range sel.Children {
 				csel := r.GetChild(cid)
 				if csel == nil {
 					continue
 				}
-				if !first {
-					ctx.WriteString(`, `)
+				ctx.WriteString(`WHEN `)
+				// Reference the parent's type column (e.g., notifications.subject_type)
+				if psel != nil {
+					t := psel.Ti.Name
+					if psel.ID >= 0 {
+						t = fmt.Sprintf("%s_%d", t, psel.ID)
+					}
+					r.ColWithTable(t, sel.Rel.Left.Col.FKeyCol)
+				} else {
+					ctx.WriteString(sel.Rel.Left.Col.FKeyCol)
 				}
-				first = false
-				r.RenderInlineChild(sel, csel)
+				ctx.WriteString(` = `)
+				r.Squoted(csel.Ti.Name)
+				ctx.WriteString(` THEN `)
+				// Pass psel (grandparent) as the parent because polymorphic children
+				// reference the grandparent's columns (e.g., notifications.subject_id)
+				r.RenderInlineChild(psel, csel)
+				ctx.WriteString(` `)
 			}
-			ctx.WriteString(`))`)
+			ctx.WriteString(`END)`)
 			return
 		}
 
 		// For singular, return a single JSON object using FOR JSON PATH
+		if !d.hasRenderableFields(sel, r) {
+			// No fields to render - return empty object
+			ctx.WriteString(`'{}'`)
+			return
+		}
+
 		ctx.WriteString(`(SELECT `)
 		d.renderInlineJSONFields(ctx, r, sel)
 
@@ -707,56 +726,76 @@ func (d *MSSQLDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, pse
 	// For plural, aggregate into array using FOR JSON PATH directly
 	// MSSQL's FOR JSON PATH naturally produces an array, no need for STRING_AGG
 	if psel != nil {
-		// Correlated subquery - use FOR JSON PATH to produce array
-		ctx.WriteString(`COALESCE((SELECT `)
-		d.renderInlineJSONFields(ctx, r, sel)
-
-		ctx.WriteString(` FROM `)
-		d.renderFromTable(ctx, r, sel, psel)
-		if sel.Rel.Type != sdata.RelEmbedded {
-			t := sel.Ti.Name
-			if sel.ID >= 0 {
-				t = fmt.Sprintf("%s_%d", t, sel.ID)
-			}
-			d.RenderTableAlias(ctx, t)
-		}
-
-		// Render joins
-		for _, join := range sel.Joins {
-			d.renderJoinWithAlias(ctx, r, psel, sel, join)
-		}
-		// Render ORDER BY list join tables
-		d.RenderJoinTables(ctx, sel)
-
-		// Render WHERE clause
-		if sel.Where.Exp != nil {
-			ctx.WriteString(` WHERE `)
-			d.renderWhereExp(ctx, r, psel, sel, sel.Where.Exp)
-		}
-		d.renderGroupBy(ctx, r, sel)
-
-		// Add ORDER BY if needed
-		if len(sel.OrderBy) > 0 {
-			ctx.WriteString(` ORDER BY `)
-			for i, ob := range sel.OrderBy {
-				if i != 0 {
-					ctx.WriteString(`, `)
-				}
+		if !d.hasRenderableFields(sel, r) {
+			// No fields to render - use STRING_AGG to produce array of empty objects
+			ctx.WriteString(`COALESCE('[' + STRING_AGG('{}', ',') + ']', '[]')`)
+			ctx.WriteString(` FROM `)
+			d.renderFromTable(ctx, r, sel, psel)
+			if sel.Rel.Type != sdata.RelEmbedded {
 				t := sel.Ti.Name
 				if sel.ID >= 0 {
 					t = fmt.Sprintf("%s_%d", t, sel.ID)
 				}
-				r.ColWithTable(t, ob.Col.Name)
-				switch ob.Order {
-				case qcode.OrderAsc:
-					ctx.WriteString(` ASC`)
-				case qcode.OrderDesc:
-					ctx.WriteString(` DESC`)
+				d.RenderTableAlias(ctx, t)
+			}
+			// Render WHERE clause for filtering
+			if sel.Where.Exp != nil {
+				ctx.WriteString(` WHERE `)
+				d.renderWhereExp(ctx, r, psel, sel, sel.Where.Exp)
+			}
+			ctx.WriteString(`)`)
+		} else {
+			// Correlated subquery - use FOR JSON PATH to produce array
+			ctx.WriteString(`COALESCE((SELECT `)
+			d.renderInlineJSONFields(ctx, r, sel)
+
+			ctx.WriteString(` FROM `)
+			d.renderFromTable(ctx, r, sel, psel)
+			if sel.Rel.Type != sdata.RelEmbedded {
+				t := sel.Ti.Name
+				if sel.ID >= 0 {
+					t = fmt.Sprintf("%s_%d", t, sel.ID)
+				}
+				d.RenderTableAlias(ctx, t)
+			}
+
+			// Render joins
+			for _, join := range sel.Joins {
+				d.renderJoinWithAlias(ctx, r, psel, sel, join)
+			}
+			// Render ORDER BY list join tables
+			d.RenderJoinTables(ctx, sel)
+
+			// Render WHERE clause
+			if sel.Where.Exp != nil {
+				ctx.WriteString(` WHERE `)
+				d.renderWhereExp(ctx, r, psel, sel, sel.Where.Exp)
+			}
+			d.renderGroupBy(ctx, r, sel)
+
+			// Add ORDER BY if needed
+			if len(sel.OrderBy) > 0 {
+				ctx.WriteString(` ORDER BY `)
+				for i, ob := range sel.OrderBy {
+					if i != 0 {
+						ctx.WriteString(`, `)
+					}
+					t := sel.Ti.Name
+					if sel.ID >= 0 {
+						t = fmt.Sprintf("%s_%d", t, sel.ID)
+					}
+					r.ColWithTable(t, ob.Col.Name)
+					switch ob.Order {
+					case qcode.OrderAsc:
+						ctx.WriteString(` ASC`)
+					case qcode.OrderDesc:
+						ctx.WriteString(` DESC`)
+					}
 				}
 			}
-		}
 
-		ctx.WriteString(` FOR JSON PATH, INCLUDE_NULL_VALUES), '[]')`)
+			ctx.WriteString(` FOR JSON PATH, INCLUDE_NULL_VALUES), '[]')`)
+		}
 	} else {
 		// Root query - use FOR JSON PATH directly instead of STRING_AGG with subquery
 		// MSSQL doesn't allow subqueries inside STRING_AGG
@@ -771,54 +810,84 @@ func (d *MSSQLDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, pse
 			}
 		}
 
-		// Use COALESCE to handle empty result set
-		// Use renderInlineJSONFields instead of renderBaseColumns to exclude _ord_ columns from JSON
-		ctx.WriteString(`COALESCE((SELECT `)
-		d.renderInlineJSONFields(ctx, r, sel)
-
-		ctx.WriteString(` FROM `)
-		d.renderFromTable(ctx, r, sel, psel)
-		if sel.Rel.Type != sdata.RelEmbedded {
-			t := sel.Ti.Name
-			if sel.ID >= 0 {
-				t = fmt.Sprintf("%s_%d", t, sel.ID)
+		if !d.hasRenderableFields(sel, r) {
+			// No fields to render - use STRING_AGG to produce array of empty objects
+			if sel.Singular {
+				ctx.WriteString(`'{}'`)
+			} else {
+				// Use subquery to limit rows BEFORE STRING_AGG aggregation
+				ctx.WriteString(`(SELECT COALESCE('[' + STRING_AGG('{}', ',') + ']', '[]')`)
+				ctx.WriteString(` FROM (SELECT 1 AS __x FROM `)
+				d.renderFromTable(ctx, r, sel, psel)
+				if sel.Rel.Type != sdata.RelEmbedded {
+					t := sel.Ti.Name
+					if sel.ID >= 0 {
+						t = fmt.Sprintf("%s_%d", t, sel.ID)
+					}
+					d.RenderTableAlias(ctx, t)
+				}
+				// Render WHERE clause for filtering
+				if sel.Where.Exp != nil {
+					ctx.WriteString(` WHERE `)
+					d.renderWhereExp(ctx, r, nil, sel, sel.Where.Exp)
+				}
+				// Render ORDER BY and OFFSET/FETCH inside the subquery
+				d.renderOrderBy(ctx, r, sel, "")
+				if sel.Paging.Limit != 0 {
+					r.RenderLimit(sel)
+				}
+				ctx.WriteString(`) AS __rows)`)
 			}
-			d.RenderTableAlias(ctx, t)
-		}
-
-		// Add cursor CTE join
-		if sel.Paging.Cursor {
-			ctx.WriteString(`, [__cur]`)
-		}
-
-		// Render joins
-		for _, join := range sel.Joins {
-			d.renderJoinWithAlias(ctx, r, nil, sel, join)
-		}
-		// Render ORDER BY list join tables
-		d.RenderJoinTables(ctx, sel)
-
-		// Render WHERE clause
-		if sel.Where.Exp != nil {
-			ctx.WriteString(` WHERE `)
-			d.renderWhereExp(ctx, r, nil, sel, sel.Where.Exp)
-		}
-		d.renderGroupBy(ctx, r, sel)
-
-		// Render ORDER BY
-		d.renderOrderBy(ctx, r, sel, "")
-
-		// Render OFFSET/FETCH
-		if sel.Paging.Limit != 0 {
-			r.RenderLimit(sel)
-		}
-
-		// For singular root, use WITHOUT_ARRAY_WRAPPER and null fallback
-		// For plural root, use array format and '[]' fallback
-		if sel.Singular {
-			ctx.WriteString(` FOR JSON PATH, INCLUDE_NULL_VALUES, WITHOUT_ARRAY_WRAPPER), NULL)`)
 		} else {
-			ctx.WriteString(` FOR JSON PATH, INCLUDE_NULL_VALUES), '[]')`)
+			// Use COALESCE to handle empty result set
+			// Use renderInlineJSONFields instead of renderBaseColumns to exclude _ord_ columns from JSON
+			ctx.WriteString(`COALESCE((SELECT `)
+			d.renderInlineJSONFields(ctx, r, sel)
+
+			ctx.WriteString(` FROM `)
+			d.renderFromTable(ctx, r, sel, psel)
+			if sel.Rel.Type != sdata.RelEmbedded {
+				t := sel.Ti.Name
+				if sel.ID >= 0 {
+					t = fmt.Sprintf("%s_%d", t, sel.ID)
+				}
+				d.RenderTableAlias(ctx, t)
+			}
+
+			// Add cursor CTE join
+			if sel.Paging.Cursor {
+				ctx.WriteString(`, [__cur]`)
+			}
+
+			// Render joins
+			for _, join := range sel.Joins {
+				d.renderJoinWithAlias(ctx, r, nil, sel, join)
+			}
+			// Render ORDER BY list join tables
+			d.RenderJoinTables(ctx, sel)
+
+			// Render WHERE clause
+			if sel.Where.Exp != nil {
+				ctx.WriteString(` WHERE `)
+				d.renderWhereExp(ctx, r, nil, sel, sel.Where.Exp)
+			}
+			d.renderGroupBy(ctx, r, sel)
+
+			// Render ORDER BY
+			d.renderOrderBy(ctx, r, sel, "")
+
+			// Render OFFSET/FETCH
+			if sel.Paging.Limit != 0 {
+				r.RenderLimit(sel)
+			}
+
+			// For singular root, use WITHOUT_ARRAY_WRAPPER and null fallback
+			// For plural root, use array format and '[]' fallback
+			if sel.Singular {
+				ctx.WriteString(` FOR JSON PATH, INCLUDE_NULL_VALUES, WITHOUT_ARRAY_WRAPPER), NULL)`)
+			} else {
+				ctx.WriteString(` FOR JSON PATH, INCLUDE_NULL_VALUES), '[]')`)
+			}
 		}
 
 		if hasSkipVar {
@@ -1134,10 +1203,9 @@ func (d *MSSQLDialect) renderSubqueryJSONFields(ctx Context, r InlineChildRender
 		r.ColWithTable("_gj_t", f.FieldName)
 		if isJSON {
 			ctx.WriteString(`, '$')`)
-		} else {
-			ctx.WriteString(` AS `)
-			ctx.Quote(f.FieldName)
 		}
+		ctx.WriteString(` AS `)
+		ctx.Quote(f.FieldName)
 		i++
 	}
 
@@ -1370,19 +1438,14 @@ func (d *MSSQLDialect) renderFromTable(ctx Context, r InlineChildRenderer, sel *
 }
 
 func (d *MSSQLDialect) renderJoinWithAlias(ctx Context, r InlineChildRenderer, psel, sel *qcode.Select, join qcode.Join) {
-	ctx.WriteString(` LEFT JOIN `)
-	ctx.Quote(join.Rel.Left.Col.Table)
-	ctx.WriteString(` AS `)
-	ctx.Quote(fmt.Sprintf("%s_0", join.Rel.Left.Col.Table))
-	ctx.WriteString(` ON `)
-
-	t := sel.Ti.Name
-	if sel.ID >= 0 {
-		t = fmt.Sprintf("%s_%d", t, sel.ID)
-	}
-	r.ColWithTable(t, join.Rel.Right.Col.Name)
-	ctx.WriteString(` = `)
-	r.ColWithTable(fmt.Sprintf("%s_0", join.Rel.Left.Col.Table), join.Rel.Left.Col.Name)
+	ctx.WriteString(` INNER JOIN `)
+	ctx.Quote(join.Rel.Left.Ti.Name)
+	// Alias the join table with _0 suffix to match what renderExp produces
+	d.RenderTableAlias(ctx, fmt.Sprintf("%s_0", join.Rel.Left.Ti.Name))
+	ctx.WriteString(` ON ((`)
+	// Use MSSQL's renderExp so the table references get consistent aliasing
+	d.renderExp(ctx, r, psel, sel, join.Filter)
+	ctx.WriteString(`))`)
 }
 
 func (d *MSSQLDialect) renderGroupBy(ctx Context, r InlineChildRenderer, sel *qcode.Select) {
@@ -1520,7 +1583,7 @@ func (d *MSSQLDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel *
 		ctx.WriteString(` `)
 		ctx.WriteString(op)
 		ctx.WriteString(` `)
-		d.renderValue(ctx, r, sel, ex)
+		d.renderValue(ctx, r, psel, sel, ex)
 		ctx.WriteString(`)`)
 
 	case qcode.OpLike, qcode.OpNotLike, qcode.OpILike, qcode.OpNotILike:
@@ -1530,7 +1593,7 @@ func (d *MSSQLDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel *
 		ctx.WriteString(` `)
 		ctx.WriteString(op)
 		ctx.WriteString(` `)
-		d.renderValue(ctx, r, sel, ex)
+		d.renderValue(ctx, r, psel, sel, ex)
 		ctx.WriteString(`)`)
 
 	case qcode.OpHasInCommon:
@@ -1605,12 +1668,17 @@ func (d *MSSQLDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel *
 		ctx.WriteString(` `)
 		ctx.WriteString(op)
 		ctx.WriteString(` `)
-		d.renderValue(ctx, r, sel, ex)
+		d.renderValue(ctx, r, psel, sel, ex)
 		ctx.WriteString(`)`)
 
 	case qcode.OpEqualsTrue, qcode.OpNotEqualsTrue:
 		ctx.WriteString(`(`)
-		d.renderColumn(ctx, r, psel, sel, ex)
+		if ex.Right.ValType == qcode.ValVar {
+			// For @skip/@include(ifVar: $var), render as parameter comparison
+			ctx.AddParam(Param{Name: ex.Right.Val, Type: "bit"})
+		} else {
+			d.renderColumn(ctx, r, psel, sel, ex)
+		}
 		if ex.Op == qcode.OpEqualsTrue {
 			ctx.WriteString(` = 1)`)
 		} else {
@@ -1629,7 +1697,48 @@ func (d *MSSQLDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel *
 		ctx.WriteString(` `)
 		ctx.WriteString(op)
 		ctx.WriteString(` `)
-		d.renderRegexValue(ctx, r, sel, ex)
+		d.renderRegexValue(ctx, r, psel, sel, ex)
+		ctx.WriteString(`)`)
+
+	case qcode.OpSelectExists:
+		// WHERE on related tables - generate EXISTS subquery
+		if len(ex.Joins) == 0 {
+			return
+		}
+		first := ex.Joins[0]
+		relatedTable := first.Rel.Left.Col.Table
+		relatedAlias := fmt.Sprintf("%s_0", relatedTable)
+
+		ctx.WriteString(`EXISTS (SELECT 1 FROM `)
+		ctx.Quote(relatedTable)
+		d.RenderTableAlias(ctx, relatedAlias)
+
+		// Handle nested joins if any
+		if len(ex.Joins) > 1 {
+			for i := 1; i < len(ex.Joins); i++ {
+				j := ex.Joins[i]
+				ctx.WriteString(` LEFT JOIN `)
+				ctx.Quote(j.Rel.Left.Col.Table)
+				d.RenderTableAlias(ctx, fmt.Sprintf("%s_0", j.Rel.Left.Col.Table))
+				ctx.WriteString(` ON `)
+				if j.Filter != nil {
+					d.renderExistsExp(ctx, r, psel, sel, j.Filter, relatedTable, relatedAlias)
+				}
+			}
+		}
+
+		ctx.WriteString(` WHERE `)
+		d.renderExistsExp(ctx, r, psel, sel, first.Filter, relatedTable, relatedAlias)
+
+		if len(ex.Children) > 0 {
+			ctx.WriteString(` AND `)
+			for i, child := range ex.Children {
+				if i > 0 {
+					ctx.WriteString(` AND `)
+				}
+				d.renderExistsExp(ctx, r, psel, sel, child, relatedTable, relatedAlias)
+			}
+		}
 		ctx.WriteString(`)`)
 
 	default:
@@ -1639,9 +1748,121 @@ func (d *MSSQLDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel *
 		ctx.WriteString(` `)
 		ctx.WriteString(op)
 		ctx.WriteString(` `)
-		d.renderValue(ctx, r, sel, ex)
+		d.renderValue(ctx, r, psel, sel, ex)
 		ctx.WriteString(`)`)
 	}
+}
+
+// renderExistsExp renders expressions inside EXISTS subqueries with proper table aliasing.
+// relatedTable is the table being queried in the EXISTS (e.g., "users")
+// relatedAlias is the alias used for it (e.g., "users_0")
+func (d *MSSQLDialect) renderExistsExp(ctx Context, r InlineChildRenderer, psel, sel *qcode.Select, ex *qcode.Exp, relatedTable, relatedAlias string) {
+	if ex == nil {
+		return
+	}
+
+	switch ex.Op {
+	case qcode.OpNop:
+		return
+
+	case qcode.OpAnd:
+		ctx.WriteString(`(`)
+		for i, child := range ex.Children {
+			if i > 0 {
+				ctx.WriteString(` AND `)
+			}
+			d.renderExistsExp(ctx, r, psel, sel, child, relatedTable, relatedAlias)
+		}
+		ctx.WriteString(`)`)
+
+	case qcode.OpOr:
+		ctx.WriteString(`(`)
+		for i, child := range ex.Children {
+			if i > 0 {
+				ctx.WriteString(` OR `)
+			}
+			d.renderExistsExp(ctx, r, psel, sel, child, relatedTable, relatedAlias)
+		}
+		ctx.WriteString(`)`)
+
+	case qcode.OpNot:
+		ctx.WriteString(`NOT `)
+		d.renderExistsExp(ctx, r, psel, sel, ex.Children[0], relatedTable, relatedAlias)
+
+	default:
+		// For other operators, render column = value with proper aliasing
+		ctx.WriteString(`(`)
+		d.renderExistsColumn(ctx, r, psel, sel, ex, relatedTable, relatedAlias)
+		op, _ := d.RenderOp(ex.Op)
+		ctx.WriteString(` `)
+		ctx.WriteString(op)
+		ctx.WriteString(` `)
+		d.renderExistsValue(ctx, r, psel, sel, ex, relatedTable, relatedAlias)
+		ctx.WriteString(`)`)
+	}
+}
+
+// renderExistsColumn renders a column reference inside an EXISTS subquery
+func (d *MSSQLDialect) renderExistsColumn(ctx Context, r InlineChildRenderer, psel, sel *qcode.Select, ex *qcode.Exp, relatedTable, relatedAlias string) {
+	if ex.Left.Col.Name == "" {
+		return
+	}
+
+	t := ex.Left.Col.Table
+	if t == "" {
+		t = sel.Ti.Name
+	}
+
+	// If the column is from the related table, use the alias
+	if t == relatedTable {
+		t = relatedAlias
+	} else if t == sel.Ti.Name && sel.ID >= 0 {
+		// Reference to the outer query's table
+		t = fmt.Sprintf("%s_%d", t, sel.ID)
+	} else if psel != nil && t == psel.Ti.Name && psel.ID >= 0 {
+		// Reference to the parent select's table
+		t = fmt.Sprintf("%s_%d", t, psel.ID)
+	}
+
+	colName := ex.Left.Col.Name
+	if ex.Left.ColName != "" {
+		colName = ex.Left.ColName
+	}
+
+	r.ColWithTable(t, colName)
+}
+
+// renderExistsValue renders the right side of an expression inside an EXISTS subquery
+func (d *MSSQLDialect) renderExistsValue(ctx Context, r InlineChildRenderer, psel, sel *qcode.Select, ex *qcode.Exp, relatedTable, relatedAlias string) {
+	// Handle column references (for relationship joins)
+	if ex.Right.Col.Name != "" {
+		var t string
+		if ex.Right.Table != "" {
+			t = ex.Right.Table
+		} else {
+			t = ex.Right.Col.Table
+		}
+
+		// If the column is from the related table, use the alias
+		if t == relatedTable {
+			t = relatedAlias
+		} else if t == sel.Ti.Name && sel.ID >= 0 {
+			t = fmt.Sprintf("%s_%d", t, sel.ID)
+		} else if psel != nil && t == psel.Ti.Name && psel.ID >= 0 {
+			t = fmt.Sprintf("%s_%d", t, psel.ID)
+		}
+
+		colName := ex.Right.Col.Name
+		if ex.Right.ColName != "" {
+			colName = ex.Right.ColName
+		}
+
+		r.ColWithTable(t, colName)
+		return
+	}
+
+	// For non-column values, use the standard renderValue
+	d.renderValue(ctx, r, psel, sel, ex)
 }
 
 func (d *MSSQLDialect) renderColumn(ctx Context, r InlineChildRenderer, psel, sel *qcode.Select, ex *qcode.Exp) {
@@ -1658,8 +1879,15 @@ func (d *MSSQLDialect) renderColumn(ctx Context, r InlineChildRenderer, psel, se
 		return
 	}
 
-	if (ex.Left.ID >= 0 && psel != nil && ex.Left.ID == psel.ID) ||
-		(ex.Left.ID == -1 && psel != nil && ex.Left.Col.Table == psel.Ti.Name) {
+	// Check if column references the parent table
+	// For self-referential tables (psel.Ti.Name == sel.Ti.Name), we need extra checks
+	// to avoid incorrectly matching the parent when ex.Left.ID defaults to 0
+	// Also check ex.Left.Table - if it's explicitly set and doesn't match the parent,
+	// it's not a parent reference (e.g., polymorphic relationships set this to the child table)
+	if psel != nil && (ex.Left.Table == "" || ex.Left.Table == psel.Ti.Name) &&
+		((ex.Left.ID >= 0 && ex.Left.ID == psel.ID &&
+			(ex.Left.Col.Table == "" || (ex.Left.Col.Table == psel.Ti.Name && ex.Left.Col.Table != sel.Ti.Name))) ||
+			(ex.Left.ID == -1 && ex.Left.Col.Table == psel.Ti.Name && ex.Left.Col.Table != sel.Ti.Name)) {
 		t := psel.Ti.Name
 		if psel.ID >= 0 {
 			t = fmt.Sprintf("%s_%d", t, psel.ID)
@@ -1668,9 +1896,15 @@ func (d *MSSQLDialect) renderColumn(ctx Context, r InlineChildRenderer, psel, se
 		return
 	}
 
-	t := ex.Left.Col.Table
+	// Prefer ex.Left.Table (explicitly set) over ex.Left.Col.Table
+	// This is important for polymorphic relationships where ex.Left.Table
+	// is set to the child table but ex.Left.Col.Table may contain the parent table
+	t := ex.Left.Table
 	if t == "" {
-		t = sel.Ti.Name
+		t = ex.Left.Col.Table
+		if t == "" {
+			t = sel.Ti.Name
+		}
 	}
 
 	if t == sel.Ti.Name {
@@ -1679,6 +1913,12 @@ func (d *MSSQLDialect) renderColumn(ctx Context, r InlineChildRenderer, psel, se
 		}
 	} else if ex.Left.ID >= 0 {
 		t = fmt.Sprintf("%s_%d", t, ex.Left.ID)
+	} else if ex.Left.ID == -1 && t != "" && t != sel.Ti.Name {
+		// Fallback: handle join table references (e.g., many-to-many through tables)
+		// The join table is aliased as table_0 in the JOIN clause
+		if t != "__cur" {
+			t = fmt.Sprintf("%s_0", t)
+		}
 	}
 
 	colName := ex.Left.Col.Name
@@ -1708,7 +1948,7 @@ func (d *MSSQLDialect) renderColumn(ctx Context, r InlineChildRenderer, psel, se
 	r.ColWithTable(t, colName)
 }
 
-func (d *MSSQLDialect) renderValue(ctx Context, r InlineChildRenderer, sel *qcode.Select, ex *qcode.Exp) {
+func (d *MSSQLDialect) renderValue(ctx Context, r InlineChildRenderer, psel, sel *qcode.Select, ex *qcode.Exp) {
 	// Handle column references (for relationship joins)
 	if ex.Right.Col.Name != "" {
 		var table string
@@ -1728,6 +1968,21 @@ func (d *MSSQLDialect) renderValue(ctx Context, r InlineChildRenderer, sel *qcod
 		// Add table ID suffix if the reference is to a parent table
 		if ex.Right.ID >= 0 {
 			table = fmt.Sprintf("%s_%d", table, ex.Right.ID)
+		} else if ex.Right.ID == -1 && psel != nil && table == psel.Ti.Name {
+			// Reference to parent table
+			if psel.ID >= 0 {
+				table = fmt.Sprintf("%s_%d", table, psel.ID)
+			}
+		} else if ex.Right.ID == -1 && table != "" && table != sel.Ti.Name {
+			// Fallback: handle join table references (e.g., many-to-many through tables)
+			if table != "__cur" {
+				table = fmt.Sprintf("%s_0", table)
+			}
+		} else if ex.Right.ID == -1 && table == sel.Ti.Name {
+			// Reference to current select's table
+			if sel.ID >= 0 {
+				table = fmt.Sprintf("%s_%d", table, sel.ID)
+			}
 		}
 		r.ColWithTable(table, colName)
 		return
@@ -1738,7 +1993,12 @@ func (d *MSSQLDialect) renderValue(ctx Context, r InlineChildRenderer, sel *qcod
 		// Database variable - render with @ prefix
 		d.RenderVar(ctx, ex.Right.Val)
 	case qcode.ValVar:
-		ctx.AddParam(Param{Name: ex.Right.Val, Type: ex.Left.Col.Type})
+		if val, ok := r.GetConfigVar(ex.Right.Val); ok {
+			// Config variable - render as literal
+			d.RenderLiteral(ctx, val, qcode.ValNum)
+		} else {
+			ctx.AddParam(Param{Name: ex.Right.Val, Type: ex.Left.Col.Type})
+		}
 	case qcode.ValNum:
 		ctx.WriteString(ex.Right.Val)
 	case qcode.ValBool:
@@ -1759,13 +2019,20 @@ func (d *MSSQLDialect) renderValue(ctx Context, r InlineChildRenderer, sel *qcod
 }
 
 // renderRegexValue renders a value wrapped with % wildcards for LIKE-based regex emulation
-func (d *MSSQLDialect) renderRegexValue(ctx Context, r InlineChildRenderer, sel *qcode.Select, ex *qcode.Exp) {
+func (d *MSSQLDialect) renderRegexValue(ctx Context, r InlineChildRenderer, psel, sel *qcode.Select, ex *qcode.Exp) {
 	switch ex.Right.ValType {
 	case qcode.ValVar:
-		// For variables, use string concatenation: '%' + @param + '%'
-		ctx.WriteString(`'%' + `)
-		ctx.AddParam(Param{Name: ex.Right.Val, Type: ex.Left.Col.Type})
-		ctx.WriteString(` + '%'`)
+		if val, ok := r.GetConfigVar(ex.Right.Val); ok {
+			// Config variable - embed as literal with wildcards
+			ctx.WriteString(`N'%`)
+			ctx.WriteString(strings.ReplaceAll(val, "'", "''"))
+			ctx.WriteString(`%'`)
+		} else {
+			// For variables, use string concatenation: '%' + @param + '%'
+			ctx.WriteString(`'%' + `)
+			ctx.AddParam(Param{Name: ex.Right.Val, Type: ex.Left.Col.Type})
+			ctx.WriteString(` + '%'`)
+		}
 	case qcode.ValStr:
 		// For string literals, embed the wildcards directly
 		ctx.WriteString(`N'%`)
@@ -1773,7 +2040,7 @@ func (d *MSSQLDialect) renderRegexValue(ctx Context, r InlineChildRenderer, sel 
 		ctx.WriteString(`%'`)
 	default:
 		// Fallback to regular rendering
-		d.renderValue(ctx, r, sel, ex)
+		d.renderValue(ctx, r, psel, sel, ex)
 	}
 }
 
@@ -1840,6 +2107,24 @@ func (d *MSSQLDialect) findSkipVarExp(exp *qcode.Exp) (varName string, isSkip bo
 	}
 
 	return "", false, false
+}
+
+// hasRenderableFields checks if a select has any fields that will be rendered
+// (i.e., not dropped). Returns false when all fields are SkipTypeDrop.
+func (d *MSSQLDialect) hasRenderableFields(sel *qcode.Select, r InlineChildRenderer) bool {
+	for _, f := range sel.Fields {
+		if f.SkipRender != qcode.SkipTypeDrop {
+			return true
+		}
+	}
+	for _, cid := range sel.Children {
+		csel := r.GetChild(cid)
+		if csel != nil && csel.SkipRender != qcode.SkipTypeRemote &&
+			csel.SkipRender != qcode.SkipTypeDrop {
+			return true
+		}
+	}
+	return sel.Typename
 }
 
 // Mutation methods

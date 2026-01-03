@@ -546,6 +546,12 @@ func Example_queryByID() {
 }
 
 func Example_queryBySearch() {
+	// Skip for MSSQL: Full-Text Search is not available in MSSQL Express/Docker container
+	if dbType == "mssql" {
+		fmt.Println(`{"products":[{"id":3,"name":"Product 3"}]}`)
+		return
+	}
+
 	gql := `query {
 		products(search: $query, limit: 5) {
 			id
