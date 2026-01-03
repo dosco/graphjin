@@ -15,8 +15,8 @@ import (
 
 func Example_queryWithWhereInWithVariableArrayColumn() {
 	gql := `query {
-		products(where: { tags: { in: $list } }, 
-			limit: 2, 
+		products(where: { tags: { in: $list } },
+			limit: 2,
 			order_by: {id: asc}) {
 			id
 		}
@@ -27,6 +27,10 @@ func Example_queryWithWhereInWithVariableArrayColumn() {
 	}`)
 
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	// For databases without native array types (Oracle, MSSQL), configure tags as an array
+	conf.Tables = []core.Table{
+		{Name: "products", Columns: []core.Column{{Name: "tags", Array: true}}},
+	}
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -43,14 +47,18 @@ func Example_queryWithWhereInWithVariableArrayColumn() {
 
 func Example_queryWithWhereInWithStaticArrayColumn() {
 	gql := `query {
-		products(where: { tags: { in: ["Tag 1", "Tag 2"] } }, 
-			limit: 2, 
+		products(where: { tags: { in: ["Tag 1", "Tag 2"] } },
+			limit: 2,
 			order_by: {id: asc}) {
 			id
 		}
 	}`
 
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	// For databases without native array types (Oracle, MSSQL), configure tags as an array
+	conf.Tables = []core.Table{
+		{Name: "products", Columns: []core.Column{{Name: "tags", Array: true}}},
+	}
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -67,8 +75,8 @@ func Example_queryWithWhereInWithStaticArrayColumn() {
 
 func Example_queryWithWhereInWithVariableNumericArrayColumn() {
 	gql := `query {
-		products(where: { category_ids: { in: $list } }, 
-			limit: 2, 
+		products(where: { category_ids: { in: $list } },
+			limit: 2,
 			order_by: {id: asc}) {
 			id
 		}
@@ -79,6 +87,10 @@ func Example_queryWithWhereInWithVariableNumericArrayColumn() {
 	}`)
 
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	// For databases without native array types (Oracle, MSSQL), configure category_ids as an array
+	conf.Tables = []core.Table{
+		{Name: "products", Columns: []core.Column{{Name: "category_ids", Array: true}}},
+	}
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)
@@ -95,14 +107,18 @@ func Example_queryWithWhereInWithVariableNumericArrayColumn() {
 
 func Example_queryWithWhereInWithStaticNumericArrayColumn() {
 	gql := `query {
-		products(where: { category_ids: { in: [1,2] } }, 
-			limit: 2, 
+		products(where: { category_ids: { in: [1,2] } },
+			limit: 2,
 			order_by: {id: asc}) {
 			id
 		}
 	}`
 
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	// For databases without native array types (Oracle, MSSQL), configure category_ids as an array
+	conf.Tables = []core.Table{
+		{Name: "products", Columns: []core.Column{{Name: "category_ids", Array: true}}},
+	}
 	gj, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		panic(err)

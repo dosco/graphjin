@@ -2,7 +2,14 @@ SELECT
     s.name AS [schema],
     t.name AS [table],
     c.name AS [column],
-    LOWER(ty.name) AS [type],
+    CASE
+        WHEN ty.name IN ('nvarchar', 'varchar') AND c.max_length = -1 AND EXISTS (
+            SELECT 1 FROM sys.check_constraints chk
+            WHERE chk.parent_object_id = c.object_id
+                AND LOWER(chk.definition) LIKE '%isjson%[' + LOWER(c.name) + ']%'
+        ) THEN 'json'
+        ELSE LOWER(ty.name)
+    END AS [type],
     CASE WHEN c.is_nullable = 0 THEN 1 ELSE 0 END AS not_null,
     CASE WHEN pk.column_id IS NOT NULL THEN 1 ELSE 0 END AS primary_key,
     CASE WHEN uq.column_id IS NOT NULL THEN 1 ELSE 0 END AS unique_key,
