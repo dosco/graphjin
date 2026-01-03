@@ -240,6 +240,9 @@ func (co *Compiler) CompileQuery(
 				c.w.WriteString(`KEY '`)
 				c.w.WriteString(sel.FieldName)
 				c.w.WriteString(`' VALUE NULL`)
+			} else if c.dialect.Name() == "mssql" {
+				c.w.WriteString(`NULL AS `)
+				c.quoted(sel.FieldName)
 			} else {
 				c.w.WriteString(`'`)
 				c.w.WriteString(sel.FieldName)
@@ -251,6 +254,9 @@ func (co *Compiler) CompileQuery(
 					c.w.WriteString(`, KEY '`)
 					c.w.WriteString(sel.FieldName)
 					c.w.WriteString(`_cursor' VALUE NULL`)
+				} else if c.dialect.Name() == "mssql" {
+					c.w.WriteString(`, NULL AS `)
+					c.quoted(sel.FieldName + "_cursor")
 				} else {
 					c.w.WriteString(`, '`)
 					c.w.WriteString(sel.FieldName)
@@ -308,7 +314,7 @@ func (co *Compiler) CompileQuery(
 
 	// MSSQL uses FOR JSON PATH to build the root object
 	if c.dialect.Name() == "mssql" {
-		c.w.WriteString(` FOR JSON PATH, WITHOUT_ARRAY_WRAPPER`)
+		c.w.WriteString(` FOR JSON PATH, INCLUDE_NULL_VALUES, WITHOUT_ARRAY_WRAPPER`)
 	}
 	c.w.WriteString(`) AS `)
 	c.quoted("__root")

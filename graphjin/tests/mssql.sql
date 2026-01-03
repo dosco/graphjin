@@ -25,7 +25,7 @@ CREATE TABLE categories (
 GO
 
 CREATE TABLE products (
-  id BIGINT NOT NULL PRIMARY KEY,
+  id BIGINT NOT NULL,
   name NVARCHAR(255),
   description NVARCHAR(255),
   tags NVARCHAR(MAX),
@@ -37,6 +37,7 @@ CREATE TABLE products (
   category_ids NVARCHAR(255) NOT NULL,
   created_at DATETIME2 NOT NULL DEFAULT GETDATE(),
   updated_at DATETIME2,
+  CONSTRAINT products_pkey PRIMARY KEY (id),
   CONSTRAINT products_owner_fk FOREIGN KEY (owner_id) REFERENCES users(id)
 );
 GO
@@ -334,3 +335,6 @@ RETURN (
     FROM products p
 );
 GO
+
+-- Note: Full-Text Search is not available in MSSQL Express/Docker container
+-- The Example_queryBySearch test is skipped for MSSQL

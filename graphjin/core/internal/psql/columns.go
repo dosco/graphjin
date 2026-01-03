@@ -156,6 +156,10 @@ func (c *compilerContext) renderUnionColumn(sel, csel *qcode.Select) {
 				c.w.WriteString(`JSON_QUERY(`)
 				c.dialect.RenderInlineChild(c, c, sel, usel)
 				c.w.WriteString(`, '$') `)
+			} else if c.dialect.Name() == "mssql" {
+				// MSSQL needs its own inline child rendering for polymorphic unions
+				c.dialect.RenderInlineChild(c, c, sel, usel)
+				c.w.WriteString(` `)
 			} else {
 				c.renderInlineChild(usel)
 				c.w.WriteString(` `)
