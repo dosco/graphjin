@@ -210,7 +210,31 @@ func (d *MSSQLDialect) RenderLateralJoinClose(ctx Context, alias string) {
 }
 
 func (d *MSSQLDialect) RenderJoinTables(ctx Context, sel *qcode.Select) {
-	// MSSQL does not render extra joins for order by lists
+	for _, ob := range sel.OrderBy {
+		if ob.Var != "" {
+			// MSSQL: Use OPENJSON to parse the order by array
+			// OPENJSON returns [key] (array index) and [value] (element value)
+			ctx.WriteString(` JOIN (SELECT CAST([value] AS `)
+			ctx.WriteString(d.mssqlType(ob.Col.Type))
+			ctx.WriteString(`) AS [id], CAST([key] AS INT) AS [ord] FROM OPENJSON(`)
+			ctx.AddParam(Param{Name: ob.Var, Type: "json"})
+			ctx.WriteString(`)) AS [_gj_ob_`)
+			ctx.WriteString(ob.Col.Table)
+			ctx.WriteString(`_`)
+			ctx.WriteString(ob.Col.Name)
+			ctx.WriteString(`] ON [_gj_ob_`)
+			ctx.WriteString(ob.Col.Table)
+			ctx.WriteString(`_`)
+			ctx.WriteString(ob.Col.Name)
+			ctx.WriteString(`].[id] = `)
+			// Use aliased table name for the join condition
+			t := sel.Ti.Name
+			if sel.ID >= 0 {
+				t = fmt.Sprintf("%s_%d", t, sel.ID)
+			}
+			ctx.ColWithTable(t, ob.Col.Name)
+		}
+	}
 }
 
 func (d *MSSQLDialect) RenderCursorCTE(ctx Context, sel *qcode.Select) {
@@ -370,6 +394,14 @@ func (d *MSSQLDialect) RenderOp(op qcode.ExpOp) (string, error) {
 	case qcode.OpILike:
 		return "LIKE", nil // MSSQL uses case-insensitive collation
 	case qcode.OpNotILike:
+		return "NOT LIKE", nil
+	case qcode.OpRegex:
+		return "LIKE", nil // MSSQL doesn't have native regex, use LIKE
+	case qcode.OpNotRegex:
+		return "NOT LIKE", nil
+	case qcode.OpIRegex:
+		return "LIKE", nil // MSSQL uses case-insensitive collation by default
+	case qcode.OpNotIRegex:
 		return "NOT LIKE", nil
 	case qcode.OpIn:
 		return "IN", nil
@@ -658,6 +690,8 @@ func (d *MSSQLDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, pse
 		for _, join := range sel.Joins {
 			d.renderJoinWithAlias(ctx, r, psel, sel, join)
 		}
+		// Render ORDER BY list join tables
+		d.RenderJoinTables(ctx, sel)
 
 		// Render WHERE clause
 		if sel.Where.Exp != nil {
@@ -691,6 +725,8 @@ func (d *MSSQLDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, pse
 		for _, join := range sel.Joins {
 			d.renderJoinWithAlias(ctx, r, psel, sel, join)
 		}
+		// Render ORDER BY list join tables
+		d.RenderJoinTables(ctx, sel)
 
 		// Render WHERE clause
 		if sel.Where.Exp != nil {
@@ -759,6 +795,8 @@ func (d *MSSQLDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, pse
 		for _, join := range sel.Joins {
 			d.renderJoinWithAlias(ctx, r, nil, sel, join)
 		}
+		// Render ORDER BY list join tables
+		d.RenderJoinTables(ctx, sel)
 
 		// Render WHERE clause
 		if sel.Where.Exp != nil {
@@ -1251,8 +1289,16 @@ func (d *MSSQLDialect) renderBaseColumns(ctx Context, r InlineChildRenderer, sel
 	}
 
 	// Add cursor columns for pagination
+	// Track unique columns to avoid duplicates (for dynamic ORDER BY with multiple keys)
 	if sel.Paging.Cursor {
+		addedCols := make(map[string]bool)
 		for j, ob := range sel.OrderBy {
+			colKey := ob.Col.Name
+			if addedCols[colKey] {
+				continue // Skip duplicate columns
+			}
+			addedCols[colKey] = true
+
 			ctx.WriteString(`, `)
 			t := sel.Ti.Name
 			if sel.ID >= 0 {
@@ -1365,6 +1411,16 @@ func (d *MSSQLDialect) renderOrderBy(ctx Context, r InlineChildRenderer, sel *qc
 		if i != 0 {
 			ctx.WriteString(`, `)
 		}
+
+		// Handle dynamic order by (KeyVar) - wrap in CASE WHEN to select the right column
+		if ob.KeyVar != "" && ob.Key != "" {
+			ctx.WriteString(`CASE WHEN `)
+			ctx.AddParam(Param{Name: ob.KeyVar, Type: "text"})
+			ctx.WriteString(` = `)
+			ctx.WriteString(fmt.Sprintf("'%s'", ob.Key))
+			ctx.WriteString(` THEN `)
+		}
+
 		t := ob.Col.Table
 		col := ob.Col.Name
 
@@ -1386,6 +1442,11 @@ func (d *MSSQLDialect) renderOrderBy(ctx Context, r InlineChildRenderer, sel *qc
 			}
 		}
 		r.ColWithTable(t, col)
+
+		if ob.KeyVar != "" && ob.Key != "" {
+			ctx.WriteString(` END`)
+		}
+
 		switch ob.Order {
 		case qcode.OrderAsc:
 			ctx.WriteString(` ASC`)
@@ -1520,6 +1581,24 @@ func (d *MSSQLDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel *
 			}
 		}
 
+		// Handle regular variable arrays - MSSQL needs OPENJSON to iterate
+		if ex.Right.ValType == qcode.ValVar {
+			ctx.WriteString(`(`)
+			d.renderColumn(ctx, r, psel, sel, ex)
+			ctx.WriteString(` `)
+			if ex.Op == qcode.OpNotIn {
+				ctx.WriteString(`NOT `)
+			}
+			// MSSQL: IN (SELECT CAST([value] AS TYPE) FROM OPENJSON(@param))
+			ctx.WriteString(`IN (SELECT CAST([value] AS `)
+			ctx.WriteString(d.mssqlType(ex.Left.Col.Type))
+			ctx.WriteString(`) FROM OPENJSON(`)
+			ctx.AddParam(Param{Name: ex.Right.Val, Type: "json"})
+			ctx.WriteString(`))`)
+			ctx.WriteString(`)`)
+			return
+		}
+
 		ctx.WriteString(`(`)
 		d.renderColumn(ctx, r, psel, sel, ex)
 		op, _ := d.RenderOp(ex.Op)
@@ -1541,6 +1620,17 @@ func (d *MSSQLDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel *
 	case qcode.OpTsQuery:
 		ti := sel.Ti
 		d.RenderTsQuery(ctx, ti, ex)
+
+	case qcode.OpRegex, qcode.OpNotRegex, qcode.OpIRegex, qcode.OpNotIRegex:
+		// MSSQL doesn't have native regex support, use LIKE with wildcards for partial matching
+		ctx.WriteString(`(`)
+		d.renderColumn(ctx, r, psel, sel, ex)
+		op, _ := d.RenderOp(ex.Op)
+		ctx.WriteString(` `)
+		ctx.WriteString(op)
+		ctx.WriteString(` `)
+		d.renderRegexValue(ctx, r, sel, ex)
+		ctx.WriteString(`)`)
 
 	default:
 		ctx.WriteString(`(`)
@@ -1564,7 +1654,7 @@ func (d *MSSQLDialect) renderColumn(ctx Context, r InlineChildRenderer, psel, se
 		if ex.Left.ColName != "" {
 			colName = ex.Left.ColName
 		}
-		r.ColWithTable("[__cur]", colName)
+		r.ColWithTable("__cur", colName)
 		return
 	}
 
@@ -1665,6 +1755,25 @@ func (d *MSSQLDialect) renderValue(ctx Context, r InlineChildRenderer, sel *qcod
 		d.RenderList(ctx, ex)
 	default:
 		ctx.WriteString(ex.Right.Val)
+	}
+}
+
+// renderRegexValue renders a value wrapped with % wildcards for LIKE-based regex emulation
+func (d *MSSQLDialect) renderRegexValue(ctx Context, r InlineChildRenderer, sel *qcode.Select, ex *qcode.Exp) {
+	switch ex.Right.ValType {
+	case qcode.ValVar:
+		// For variables, use string concatenation: '%' + @param + '%'
+		ctx.WriteString(`'%' + `)
+		ctx.AddParam(Param{Name: ex.Right.Val, Type: ex.Left.Col.Type})
+		ctx.WriteString(` + '%'`)
+	case qcode.ValStr:
+		// For string literals, embed the wildcards directly
+		ctx.WriteString(`N'%`)
+		ctx.WriteString(strings.ReplaceAll(ex.Right.Val, "'", "''"))
+		ctx.WriteString(`%'`)
+	default:
+		// Fallback to regular rendering
+		d.renderValue(ctx, r, sel, ex)
 	}
 }
 

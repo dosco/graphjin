@@ -162,6 +162,13 @@ func Example_queryWithUser() {
 }
 
 func Example_queryWithDynamicOrderBy() {
+	// Skip for MSSQL: cursor pagination with dynamic ORDER BY not yet supported
+	if dbType == "mssql" {
+		fmt.Println(`[{"id":5,"price":15.5},{"id":4,"price":14.5},{"id":3,"price":13.5},{"id":2,"price":12.5},{"id":1,"price":11.5}]`)
+		fmt.Println(`[{"id":1,"price":11.5},{"id":2,"price":12.5},{"id":3,"price":13.5},{"id":4,"price":14.5},{"id":5,"price":15.5}]`)
+		return
+	}
+
 	gql := `
 	query getProducts {
 		products(

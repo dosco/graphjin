@@ -187,6 +187,19 @@ func (co *Compiler) CompileQuery(
 	}
 
 	i := 0
+
+	// For MSSQL without LATERAL: render cursor CTE at query root if any root selection uses cursor pagination
+	// CTEs must be at the top level of a SQL query, not inside subqueries
+	if !c.dialect.SupportsLateral() && c.dialect.Name() == "mssql" {
+		for _, id := range qc.Roots {
+			sel := &qc.Selects[id]
+			if sel.Paging.Cursor {
+				c.dialect.RenderCursorCTE(c, sel)
+				break // Only need one CTE definition
+			}
+		}
+	}
+
 	c.dialect.RenderJSONRoot(c, nil) // sel is nil for root? Or qc is enough?
 	// RenderJSONRoot(ctx, sel)
 	// original: SELECT json_object( or jsonb_build_object(
