@@ -645,14 +645,14 @@ func (d *MSSQLDialect) RenderValArrayColumn(ctx Context, ex *qcode.Exp, table st
 }
 
 func (d *MSSQLDialect) RenderArray(ctx Context, items []string) {
-	ctx.WriteString(`'[`)
+	ctx.WriteString(`JSON_ARRAY(`)
 	for i, item := range items {
 		if i != 0 {
-			ctx.WriteString(`,`)
+			ctx.WriteString(`, `)
 		}
 		ctx.WriteString(item)
 	}
-	ctx.WriteString(`]'`)
+	ctx.WriteString(`)`)
 }
 
 func (d *MSSQLDialect) RenderLiteral(ctx Context, val string, valType qcode.ValType) {
@@ -1775,6 +1775,42 @@ func (d *MSSQLDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel *
 		// OpHasInCommon is used when comparing array columns to a list
 		d.renderArrayColumnExists(ctx, r, psel, sel, ex, false)
 
+	case qcode.OpHasKeyAny, qcode.OpHasKeyAll:
+		// Handle JSON key existence checks
+		op := " OR "
+		if ex.Op == qcode.OpHasKeyAll {
+			op = " AND "
+		}
+		ctx.WriteString(`(`)
+		if ex.Right.ValType == qcode.ValVar {
+			// Variable case: use OPENJSON to iterate keys
+			if ex.Op == qcode.OpHasKeyAll {
+				ctx.WriteString(`NOT EXISTS (SELECT 1 FROM OPENJSON(`)
+			} else {
+				ctx.WriteString(`EXISTS (SELECT 1 FROM OPENJSON(`)
+			}
+			ctx.AddParam(Param{Name: ex.Right.Val, Type: "json"})
+			ctx.WriteString(`) WHERE JSON_VALUE(`)
+			d.renderColumn(ctx, r, psel, sel, ex)
+			ctx.WriteString(`, '$."' + [value] + '"') IS `)
+			if ex.Op == qcode.OpHasKeyAll {
+				ctx.WriteString(`NULL)`)
+			} else {
+				ctx.WriteString(`NOT NULL)`)
+			}
+		} else {
+			// Literal list case
+			for i, val := range ex.Right.ListVal {
+				if i != 0 {
+					ctx.WriteString(op)
+				}
+				ctx.WriteString(`JSON_VALUE(`)
+				d.renderColumn(ctx, r, psel, sel, ex)
+				ctx.WriteString(`, '$."` + val + `"') IS NOT NULL`)
+			}
+		}
+		ctx.WriteString(`)`)
+
 	case qcode.OpIn, qcode.OpNotIn:
 		// Handle array column IN operations
 		if ex.Left.Col.Array {
@@ -2722,17 +2758,171 @@ func (d *MSSQLDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qcod
 	}
 }
 
+func (d *MSSQLDialect) getVarName(m qcode.Mutate) string {
+	return m.Ti.Name + "_" + fmt.Sprintf("%d", m.ID)
+}
+
 func (d *MSSQLDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderColVal func(qcode.MColumn), renderWhere func()) {
-	d.RenderUpdate(ctx, m, func() {
-		for i, col := range m.Cols {
-			if i != 0 {
-				ctx.WriteString(`, `)
-			}
-			ctx.Quote(col.Col.Name)
-			ctx.WriteString(` = `)
-			renderColVal(col)
+	// Check if there are child mutations that need parent values
+	hasChildMutations := false
+	for _, otherM := range qc.Mutates {
+		if otherM.ParentID == m.ID {
+			hasChildMutations = true
+			break
 		}
-	}, nil, renderWhere)
+	}
+
+	// Pre-update SELECT to capture values for child updates
+	if m.ParentID == -1 && hasChildMutations {
+		if len(qc.Selects) > 0 {
+			ctx.WriteString(`SELECT @`)
+			ctx.WriteString(varName)
+			ctx.WriteString(` = `)
+			ctx.Quote(m.Ti.PrimaryCol.Name)
+
+			// Capture all other columns for FK references
+			for _, col := range m.Ti.Columns {
+				ctx.WriteString(`, @`)
+				ctx.WriteString(varName + "_" + col.Name)
+				ctx.WriteString(` = `)
+				ctx.Quote(col.Name)
+			}
+
+			ctx.WriteString(` FROM `)
+			ctx.Quote(m.Ti.Name)
+			ctx.WriteString(` WHERE `)
+			renderWhere()
+			ctx.WriteString(`; `)
+		}
+	}
+
+	// For child updates with JSON data, use special handling with JSON_VALUE
+	if m.ParentID != -1 && m.IsJSON {
+		d.renderChildUpdate(ctx, m, qc, renderWhere)
+		return
+	}
+
+	// UPDATE statement
+	ctx.WriteString(`UPDATE `)
+	ctx.Quote(m.Ti.Name)
+	ctx.WriteString(` SET `)
+
+	i := 0
+	// Regular columns
+	for _, col := range m.Cols {
+		if i != 0 {
+			ctx.WriteString(`, `)
+		}
+		ctx.Quote(col.Col.Name)
+		ctx.WriteString(` = `)
+		renderColVal(col)
+		i++
+	}
+
+	// Related columns from dependent mutations
+	for _, rcol := range m.RCols {
+		if i != 0 {
+			ctx.WriteString(`, `)
+		}
+		ctx.Quote(rcol.Col.Name)
+		ctx.WriteString(` = `)
+
+		found := false
+		for id := range m.DependsOn {
+			if qc.Mutates[id].Ti.Name == rcol.VCol.Table {
+				depM := qc.Mutates[id]
+				depVarName := d.getVarName(depM)
+				ctx.WriteString(`@`)
+				ctx.WriteString(depVarName)
+				found = true
+				break
+			}
+		}
+		if !found {
+			ctx.WriteString(`NULL`)
+		}
+		i++
+	}
+
+	// Identity fallback if no columns to update
+	if i == 0 {
+		ctx.Quote(m.Ti.PrimaryCol.Name)
+		ctx.WriteString(` = `)
+		ctx.Quote(m.Ti.PrimaryCol.Name)
+	}
+
+	ctx.WriteString(` WHERE `)
+	renderWhere()
+}
+
+// renderChildUpdate renders a simple UPDATE for child mutations using JSON_VALUE
+// This extracts values from the JSON input for child table updates
+func (d *MSSQLDialect) renderChildUpdate(ctx Context, m *qcode.Mutate, qc *qcode.QCode, renderWhere func()) {
+	ctx.WriteString(`UPDATE `)
+	ctx.Quote(m.Ti.Name)
+	ctx.WriteString(` SET `)
+
+	// Build JSON path prefix from m.Path (e.g., ["customer"] -> "$.customer")
+	jsonPathPrefix := "$"
+	for _, p := range m.Path {
+		jsonPathPrefix += "." + p
+	}
+
+	i := 0
+	for _, col := range m.Cols {
+		if col.Set {
+			// Preset columns - skip, they don't come from JSON
+			continue
+		}
+		if i != 0 {
+			ctx.WriteString(`, `)
+		}
+		ctx.Quote(col.Col.Name)
+		ctx.WriteString(` = `)
+
+		// Use JSON_VALUE(?, N'$.path.field') for MSSQL
+		ctx.WriteString(`JSON_VALUE(`)
+		ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+		ctx.WriteString(`, N'`)
+		ctx.WriteString(jsonPathPrefix)
+		ctx.WriteString(`.`)
+		ctx.WriteString(col.FieldName)
+		ctx.WriteString(`')`)
+		i++
+	}
+
+	// Handle preset columns (they have literal values)
+	for _, col := range m.Cols {
+		if !col.Set {
+			continue
+		}
+		if i != 0 {
+			ctx.WriteString(`, `)
+		}
+		ctx.Quote(col.Col.Name)
+		ctx.WriteString(` = `)
+		// For preset columns, render the value directly
+		if strings.HasPrefix(col.Value, "sql:") {
+			ctx.WriteString(`(`)
+			ctx.WriteString(col.Value[4:])
+			ctx.WriteString(`)`)
+		} else {
+			ctx.WriteString(`'`)
+			ctx.WriteString(col.Value)
+			ctx.WriteString(`'`)
+		}
+		i++
+	}
+
+	if i == 0 {
+		// No columns to update - use identity update
+		ctx.Quote(m.Ti.PrimaryCol.Name)
+		ctx.WriteString(` = `)
+		ctx.Quote(m.Ti.PrimaryCol.Name)
+	}
+
+	ctx.WriteString(` WHERE `)
+	renderWhere()
 }
 
 func (d *MSSQLDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
@@ -2772,7 +2962,25 @@ func (d *MSSQLDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qco
 }
 
 func (d *MSSQLDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
-	// Disconnect operation for MSSQL
+	// Step 1: Capture the IDs being disconnected into a variable
+	ctx.WriteString(`SET @`)
+	ctx.WriteString(varName)
+	ctx.WriteString(` = (SELECT `)
+	ctx.Quote(m.Rel.Left.Col.Name)
+	ctx.WriteString(` FROM `)
+	ctx.Quote(m.Ti.Name)
+	ctx.WriteString(` WHERE `)
+	renderFilter()
+	ctx.WriteString(`); `)
+
+	// Step 2: Perform the actual disconnect (UPDATE child SET fk = NULL)
+	ctx.WriteString(`UPDATE `)
+	ctx.Quote(m.Ti.Name)
+	ctx.WriteString(` SET `)
+	ctx.Quote(m.Rel.Left.Col.Name)
+	ctx.WriteString(` = NULL WHERE `)
+	renderFilter()
+	ctx.WriteString(`; `)
 }
 
 func (d *MSSQLDialect) ModifySelectsForMutation(qc *qcode.QCode) {
