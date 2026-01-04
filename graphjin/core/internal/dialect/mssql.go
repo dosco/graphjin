@@ -241,17 +241,41 @@ func (d *MSSQLDialect) RenderCursorCTE(ctx Context, sel *qcode.Select) {
 	if !sel.Paging.Cursor {
 		return
 	}
+	// Parse cursor value: format is "selectID:val1:val2:..."
+	// The gj/hexTimestamp: prefix SHOULD be stripped during encryption/decryption,
+	// but if encryption fails, the cursor may still contain the prefix.
+	// To be robust, we strip the prefix if present before parsing.
+	// For example: "0:110.50:1" -> selID="0", val1="110.50", val2="1"
+	// For element i, we extract from position (i+1) after colon (i+1)
+
+	// Use a single CTE with inline prefix stripping using CROSS APPLY
+	// The CROSS APPLY ensures the cleaned cursor is computed once and accessible
 	ctx.WriteString(`WITH [__cur] AS (SELECT `)
 	for i, ob := range sel.OrderBy {
 		if i != 0 {
 			ctx.WriteString(`, `)
 		}
-		// Parse cursor value using STRING_SPLIT equivalent
-		// Cursor format: selID:val1:val2:...
-		// We use PARSENAME or custom parsing with CHARINDEX
-		ctx.WriteString(`NULLIF(`)
-		ctx.WriteString(fmt.Sprintf(`(SELECT value FROM STRING_SPLIT(a.i, ':') ORDER BY (SELECT NULL) OFFSET %d ROWS FETCH NEXT 1 ROWS ONLY)`, i+1))
-		ctx.WriteString(`, '') AS `)
+
+		// TRY_CAST the parsed value to the column type
+		// Use the cleaned cursor [c].[v] which has the prefix stripped
+		ctx.WriteString(`TRY_CAST(NULLIF(CASE WHEN [c].[v] IS NULL OR LEN([c].[v]) = 0 THEN NULL ELSE `)
+
+		// For element i, extract from colon #(i+1) to colon #(i+2) or end of string
+		ctx.WriteString(`SUBSTRING([c].[v], `)
+		// start position = position of colon #(i+1) + 1
+		d.renderNthColonPosFromClean(ctx, i+1)
+		ctx.WriteString(` + 1, `)
+		// length = position of colon #(i+2) - position of colon #(i+1) - 1, or to end of string
+		ctx.WriteString(`ISNULL(NULLIF(`)
+		d.renderNthColonPosFromClean(ctx, i+2)
+		ctx.WriteString(`, 0), LEN([c].[v]) + 1) - `)
+		d.renderNthColonPosFromClean(ctx, i+1)
+		ctx.WriteString(` - 1)`)
+
+		ctx.WriteString(` END, '') AS `)
+		// Cast to column type
+		ctx.WriteString(d.mssqlType(ob.Col.Type))
+		ctx.WriteString(`) AS `)
 
 		if ob.KeyVar != "" && ob.Key != "" {
 			ctx.Quote(ob.Col.Name + "_" + ob.Key)
@@ -259,9 +283,87 @@ func (d *MSSQLDialect) RenderCursorCTE(ctx Context, sel *qcode.Select) {
 			ctx.Quote(ob.Col.Name)
 		}
 	}
-	ctx.WriteString(` FROM (SELECT `)
+	// Use VALUES to pass the cursor parameter once, then CROSS APPLY to strip prefix
+	// This avoids multiple parameter placeholders for the same value
+	ctx.WriteString(` FROM (VALUES (`)
 	ctx.AddParam(Param{Name: "cursor", Type: "text"})
-	ctx.WriteString(` AS i) AS a) `)
+	ctx.WriteString(`)) AS [_p]([v]) CROSS APPLY (SELECT CASE WHEN [_p].[v] LIKE 'gj/%' THEN STUFF([_p].[v], 1, CHARINDEX(':', [_p].[v], 4), '') ELSE [_p].[v] END AS [v]) AS [c]) `)
+}
+
+// renderNthColonPos renders a CHARINDEX expression to find the position of the n-th colon
+// in the cursor parameter. Returns 0 if there aren't enough colons.
+func (d *MSSQLDialect) renderNthColonPos(ctx Context, n int) {
+	if n <= 0 {
+		ctx.WriteString(`0`)
+		return
+	}
+	if n == 1 {
+		ctx.WriteString(`CHARINDEX(':', `)
+		ctx.AddParam(Param{Name: "cursor", Type: "text"})
+		ctx.WriteString(`)`)
+		return
+	}
+	// For n > 1, we need to nest: CHARINDEX(':', @cursor, prev_pos + 1)
+	// where prev_pos is the position of colon (n-1)
+	ctx.WriteString(`CHARINDEX(':', `)
+	ctx.AddParam(Param{Name: "cursor", Type: "text"})
+	ctx.WriteString(`, `)
+	d.renderNthColonPos(ctx, n-1)
+	ctx.WriteString(` + 1)`)
+}
+
+// renderNthColonPosFromCol renders a CHARINDEX expression to find the position of the n-th colon
+// in the [c].[cursor] column (from the __cur_clean CTE). Returns 0 if there aren't enough colons.
+func (d *MSSQLDialect) renderNthColonPosFromCol(ctx Context, n int) {
+	if n <= 0 {
+		ctx.WriteString(`0`)
+		return
+	}
+	if n == 1 {
+		ctx.WriteString(`CHARINDEX(':', [c].[cursor])`)
+		return
+	}
+	// For n > 1, we need to nest: CHARINDEX(':', [c].[cursor], prev_pos + 1)
+	// where prev_pos is the position of colon (n-1)
+	ctx.WriteString(`CHARINDEX(':', [c].[cursor], `)
+	d.renderNthColonPosFromCol(ctx, n-1)
+	ctx.WriteString(` + 1)`)
+}
+
+// renderNthColonPosInline renders a CHARINDEX expression to find the position of the n-th colon
+// in the [cursor] column (inline within the __cur CTE). Returns 0 if there aren't enough colons.
+func (d *MSSQLDialect) renderNthColonPosInline(ctx Context, n int) {
+	if n <= 0 {
+		ctx.WriteString(`0`)
+		return
+	}
+	if n == 1 {
+		ctx.WriteString(`CHARINDEX(':', [cursor])`)
+		return
+	}
+	// For n > 1, we need to nest: CHARINDEX(':', [cursor], prev_pos + 1)
+	// where prev_pos is the position of colon (n-1)
+	ctx.WriteString(`CHARINDEX(':', [cursor], `)
+	d.renderNthColonPosInline(ctx, n-1)
+	ctx.WriteString(` + 1)`)
+}
+
+// renderNthColonPosFromClean renders a CHARINDEX expression to find the position of the n-th colon
+// in the [c].[v] column (the cleaned cursor from CROSS APPLY). Returns 0 if there aren't enough colons.
+func (d *MSSQLDialect) renderNthColonPosFromClean(ctx Context, n int) {
+	if n <= 0 {
+		ctx.WriteString(`0`)
+		return
+	}
+	if n == 1 {
+		ctx.WriteString(`CHARINDEX(':', [c].[v])`)
+		return
+	}
+	// For n > 1, we need to nest: CHARINDEX(':', [c].[v], prev_pos + 1)
+	// where prev_pos is the position of colon (n-1)
+	ctx.WriteString(`CHARINDEX(':', [c].[v], `)
+	d.renderNthColonPosFromClean(ctx, n-1)
+	ctx.WriteString(` + 1)`)
 }
 
 func (d *MSSQLDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
@@ -841,52 +943,144 @@ func (d *MSSQLDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, pse
 		} else {
 			// Use COALESCE to handle empty result set
 			// Use renderInlineJSONFields instead of renderBaseColumns to exclude _ord_ columns from JSON
-			ctx.WriteString(`COALESCE((SELECT `)
-			d.renderInlineJSONFields(ctx, r, sel)
 
-			ctx.WriteString(` FROM `)
-			d.renderFromTable(ctx, r, sel, psel)
-			if sel.Rel.Type != sdata.RelEmbedded {
-				t := sel.Ti.Name
-				if sel.ID >= 0 {
-					t = fmt.Sprintf("%s_%d", t, sel.ID)
+		if sel.Paging.Cursor {
+				// Cursor pagination: wrap output with json/cursor structure
+				// Structure: (SELECT [json], [cursor] FOR JSON PATH, WITHOUT_ARRAY_WRAPPER)
+				// where [json] = JSON array of results, [cursor] = cursor string
+				ctx.WriteString(`(SELECT `)
+
+				// Build the JSON array of results
+				// Use JSON_QUERY to prevent the inner JSON from being escaped as a string
+				ctx.WriteString(`JSON_QUERY(COALESCE((SELECT `)
+				d.renderInlineJSONFields(ctx, r, sel)
+				ctx.WriteString(` FROM `)
+				d.renderFromTable(ctx, r, sel, psel)
+				if sel.Rel.Type != sdata.RelEmbedded {
+					t := sel.Ti.Name
+					if sel.ID >= 0 {
+						t = fmt.Sprintf("%s_%d", t, sel.ID)
+					}
+					d.RenderTableAlias(ctx, t)
 				}
-				d.RenderTableAlias(ctx, t)
-			}
-
-			// Add cursor CTE join
-			if sel.Paging.Cursor {
+				// Add cursor CTE join for filtering
 				ctx.WriteString(`, [__cur]`)
-			}
+				// Render joins
+				for _, join := range sel.Joins {
+					d.renderJoinWithAlias(ctx, r, nil, sel, join)
+				}
+				d.RenderJoinTables(ctx, sel)
+				// Render WHERE clause
+				if sel.Where.Exp != nil {
+					ctx.WriteString(` WHERE `)
+					d.renderWhereExp(ctx, r, nil, sel, sel.Where.Exp)
+				}
+				d.renderGroupBy(ctx, r, sel)
+				d.renderOrderBy(ctx, r, sel, "")
+				if sel.Paging.Limit != 0 {
+					r.RenderLimit(sel)
+				}
+				ctx.WriteString(` FOR JSON PATH, INCLUDE_NULL_VALUES), '[]')) AS [json], `)
 
-			// Render joins
-			for _, join := range sel.Joins {
-				d.renderJoinWithAlias(ctx, r, nil, sel, join)
-			}
-			// Render ORDER BY list join tables
-			d.RenderJoinTables(ctx, sel)
-
-			// Render WHERE clause
-			if sel.Where.Exp != nil {
-				ctx.WriteString(` WHERE `)
-				d.renderWhereExp(ctx, r, nil, sel, sel.Where.Exp)
-			}
-			d.renderGroupBy(ctx, r, sel)
-
-			// Render ORDER BY
-			d.renderOrderBy(ctx, r, sel, "")
-
-			// Render OFFSET/FETCH
-			if sel.Paging.Limit != 0 {
-				r.RenderLimit(sel)
-			}
-
-			// For singular root, use WITHOUT_ARRAY_WRAPPER and null fallback
-			// For plural root, use array format and '[]' fallback
-			if sel.Singular {
-				ctx.WriteString(` FOR JSON PATH, INCLUDE_NULL_VALUES, WITHOUT_ARRAY_WRAPPER), NULL)`)
+				// Build cursor value using a subquery to get the last row's ORDER BY column values
+				// IMPORTANT: Each subquery must use the FULL ORDER BY clause (all columns) to ensure
+				// we get values from the SAME row, not just the column-specific extreme value
+				ctx.WriteString(`CONCAT('`)
+				ctx.WriteString(r.GetSecPrefix())
+				ctx.WriteString(fmt.Sprintf(`%d`, sel.ID))
+				ctx.WriteString(`'`)
+				for i, ob := range sel.OrderBy {
+					ctx.WriteString(`, ':', CAST((SELECT `)
+					t := sel.Ti.Name
+					if sel.ID >= 0 {
+						t = fmt.Sprintf("%s_%d", t, sel.ID)
+					}
+					// Use table-qualified column name
+					r.ColWithTable(t, ob.Col.Name)
+					ctx.WriteString(` FROM `)
+					d.renderFromTable(ctx, r, sel, psel)
+					if sel.Rel.Type != sdata.RelEmbedded {
+						d.RenderTableAlias(ctx, t)
+					}
+					ctx.WriteString(`, [__cur]`)
+					for _, join := range sel.Joins {
+						d.renderJoinWithAlias(ctx, r, nil, sel, join)
+					}
+					d.RenderJoinTables(ctx, sel)
+					if sel.Where.Exp != nil {
+						ctx.WriteString(` WHERE `)
+						d.renderWhereExp(ctx, r, nil, sel, sel.Where.Exp)
+					}
+					// Use the FULL ORDER BY clause (all columns) to ensure we get values from the same row
+					// This is critical: if ORDER BY is (price DESC, id ASC), we must order by BOTH
+					// to get the correct row, not just order by the current column
+					ctx.WriteString(` ORDER BY `)
+					for j, orderCol := range sel.OrderBy {
+						if j != 0 {
+							ctx.WriteString(`, `)
+						}
+						r.ColWithTable(t, orderCol.Col.Name)
+						if orderCol.Order == qcode.OrderDesc {
+							ctx.WriteString(` DESC`)
+						} else {
+							ctx.WriteString(` ASC`)
+						}
+					}
+					// Skip to last row: OFFSET (limit-1) ROWS FETCH NEXT 1 ROWS ONLY
+					if sel.Paging.Limit > 0 {
+						ctx.WriteString(fmt.Sprintf(` OFFSET %d ROWS FETCH NEXT 1 ROWS ONLY`, sel.Paging.Limit-1))
+					} else {
+						// No limit means we need a different approach - just get first row
+						ctx.WriteString(` OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY`)
+					}
+					ctx.WriteString(`) AS NVARCHAR(MAX))`)
+					_ = i // avoid unused variable
+				}
+				// Add dummy FROM clause - FOR JSON requires a FROM in MSSQL
+				ctx.WriteString(`) AS [cursor] FROM (SELECT 1 AS _x) AS _ FOR JSON PATH, WITHOUT_ARRAY_WRAPPER)`)
 			} else {
-				ctx.WriteString(` FOR JSON PATH, INCLUDE_NULL_VALUES), '[]')`)
+				ctx.WriteString(`COALESCE((SELECT `)
+				d.renderInlineJSONFields(ctx, r, sel)
+
+				ctx.WriteString(` FROM `)
+				d.renderFromTable(ctx, r, sel, psel)
+				if sel.Rel.Type != sdata.RelEmbedded {
+					t := sel.Ti.Name
+					if sel.ID >= 0 {
+						t = fmt.Sprintf("%s_%d", t, sel.ID)
+					}
+					d.RenderTableAlias(ctx, t)
+				}
+
+				// Render joins
+				for _, join := range sel.Joins {
+					d.renderJoinWithAlias(ctx, r, nil, sel, join)
+				}
+				// Render ORDER BY list join tables
+				d.RenderJoinTables(ctx, sel)
+
+				// Render WHERE clause
+				if sel.Where.Exp != nil {
+					ctx.WriteString(` WHERE `)
+					d.renderWhereExp(ctx, r, nil, sel, sel.Where.Exp)
+				}
+				d.renderGroupBy(ctx, r, sel)
+
+				// Render ORDER BY
+				d.renderOrderBy(ctx, r, sel, "")
+
+				// Render OFFSET/FETCH
+				if sel.Paging.Limit != 0 {
+					r.RenderLimit(sel)
+				}
+
+				// For singular root, use WITHOUT_ARRAY_WRAPPER and null fallback
+				// For plural root, use array format and '[]' fallback
+				if sel.Singular {
+					ctx.WriteString(` FOR JSON PATH, INCLUDE_NULL_VALUES, WITHOUT_ARRAY_WRAPPER), NULL)`)
+				} else {
+					ctx.WriteString(` FOR JSON PATH, INCLUDE_NULL_VALUES), '[]')`)
+				}
 			}
 		}
 
@@ -1356,26 +1550,6 @@ func (d *MSSQLDialect) renderBaseColumns(ctx Context, r InlineChildRenderer, sel
 		i++
 	}
 
-	// Add cursor columns for pagination
-	// Track unique columns to avoid duplicates (for dynamic ORDER BY with multiple keys)
-	if sel.Paging.Cursor {
-		addedCols := make(map[string]bool)
-		for j, ob := range sel.OrderBy {
-			colKey := ob.Col.Name
-			if addedCols[colKey] {
-				continue // Skip duplicate columns
-			}
-			addedCols[colKey] = true
-
-			ctx.WriteString(`, `)
-			t := sel.Ti.Name
-			if sel.ID >= 0 {
-				t = fmt.Sprintf("%s_%d", t, sel.ID)
-			}
-			r.ColWithTable(t, ob.Col.Name)
-			ctx.WriteString(fmt.Sprintf(" AS [__cur_%d]", j))
-		}
-	}
 }
 
 func (d *MSSQLDialect) renderFromTable(ctx Context, r InlineChildRenderer, sel *qcode.Select, psel *qcode.Select) {

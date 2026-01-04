@@ -283,18 +283,33 @@ func (co *Compiler) CompileQuery(
 					c.w.WriteString(`, KEY '`)
 					c.w.WriteString(sel.FieldName)
 					c.w.WriteString(`_cursor' VALUE `)
+					if !c.dialect.SupportsLateral() {
+						c.dialect.RenderChildCursor(c, func() {
+							c.dialect.RenderInlineChild(c, c, nil, sel)
+						})
+					} else {
+						c.colWithTableID("__sj", int32(sel.ID), "__cursor")
+					}
+				} else if c.dialect.Name() == "mssql" {
+					// MSSQL needs value AS [field_cursor] format for FOR JSON PATH
+					c.w.WriteString(`, `)
+					c.dialect.RenderChildCursor(c, func() {
+						c.dialect.RenderInlineChild(c, c, nil, sel)
+					})
+					c.w.WriteString(` AS `)
+					c.quoted(sel.FieldName + "_cursor")
 				} else {
 					c.w.WriteString(`, '`)
 					c.w.WriteString(sel.FieldName)
 					c.w.WriteString(`_cursor', `)
-				}
 
-				if !c.dialect.SupportsLateral() {
-					c.dialect.RenderChildCursor(c, func() {
-						c.dialect.RenderInlineChild(c, c, nil, sel)
-					})
-				} else {
-					c.colWithTableID("__sj", int32(sel.ID), "__cursor")
+					if !c.dialect.SupportsLateral() {
+						c.dialect.RenderChildCursor(c, func() {
+							c.dialect.RenderInlineChild(c, c, nil, sel)
+						})
+					} else {
+						c.colWithTableID("__sj", int32(sel.ID), "__cursor")
+					}
 				}
 			}
 

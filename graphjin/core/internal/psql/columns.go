@@ -274,9 +274,21 @@ func (c *compilerContext) renderJSONFields(sel *qcode.Select) {
 			isJSON := f.Col.Type == "json" || f.Col.Array
 			c.dialect.RenderJSONField(c, f.FieldName, "__sr_"+strconv.Itoa(int(sel.ID)), f.FieldName, false, isJSON)
 		} else if c.dialect.Name() == "mssql" {
-			// MSSQL: use dialect method with isJSON flag for JSON columns
-			isJSON := f.Col.Type == "json" || f.Col.Array
-			c.dialect.RenderJSONField(c, f.FieldName, "__sr_"+strconv.Itoa(int(sel.ID)), f.FieldName, false, isJSON)
+			// Check if this is a boolean function that needs conversion from BIT to JSON boolean
+			isBoolFunc := f.Type == qcode.FieldTypeFunc && f.Func.Type == "boolean"
+			if isBoolFunc {
+				// For MSSQL, convert BIT 0/1 to JSON boolean true/false
+				// Use CASE WHEN with string literals that FOR JSON PATH will interpret correctly
+				c.w.WriteString(`CASE WHEN `)
+				c.quoted("__sr_" + strconv.Itoa(int(sel.ID)))
+				c.w.WriteString(`.`)
+				c.quoted(f.FieldName)
+				c.w.WriteString(` = 1 THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS `)
+				c.quoted(f.FieldName)
+			} else {
+				isJSON := f.Col.Type == "json" || f.Col.Array
+				c.dialect.RenderJSONField(c, f.FieldName, "__sr_"+strconv.Itoa(int(sel.ID)), f.FieldName, false, isJSON)
+			}
 		} else {
 			c.renderJSONField(f.FieldName, sel.ID)
 		}
