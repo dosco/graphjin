@@ -78,6 +78,25 @@ func (c *compilerContext) compileLinearMutation() {
 		// Assuming type is Number for IDs usually?
 		// Or inspect m.Ti.PrimaryCol.Type
 		c.dialect.RenderVarDeclaration(c, vName, m.Ti.PrimaryCol.Type)
+
+		// For MSSQL/MySQL/MariaDB: declare additional variables for all columns
+		// when there are child mutations that need FK values
+		dialectName := c.dialect.Name()
+		if dialectName == "mysql" || dialectName == "mariadb" || dialectName == "mssql" {
+			hasChildMutations := false
+			for _, otherM := range c.qc.Mutates {
+				if otherM.ParentID == m.ID {
+					hasChildMutations = true
+					break
+				}
+			}
+			if hasChildMutations {
+				for _, col := range m.Ti.Columns {
+					colVarName := vName + "_" + col.Name
+					c.dialect.RenderVarDeclaration(c, colVarName, col.Type)
+				}
+			}
+		}
 	}
 
 	c.dialect.RenderBegin(c)
@@ -156,7 +175,7 @@ func (c *compilerContext) compileLinearMutation() {
 				// Handle parent join for child updates
 				if m.ParentID != -1 {
 					dialectName := c.dialect.Name()
-					if dialectName == "sqlite" || dialectName == "mysql" || dialectName == "mariadb" {
+					if dialectName == "sqlite" || dialectName == "mysql" || dialectName == "mariadb" || dialectName == "mssql" {
 						if m.Where.Exp != nil || hasWhere { // Check if anything was rendered before
 							c.w.WriteString(" AND ")
 						}
@@ -172,7 +191,7 @@ func (c *compilerContext) compileLinearMutation() {
 
 					c.colWithTable(m.Ti.Name, childCol)
 					c.w.WriteString(" = ")
-						
+
 						if dialectName == "sqlite" {
 							// SQLite uses subquery
 							c.w.WriteString("(SELECT ")
@@ -185,7 +204,7 @@ func (c *compilerContext) compileLinearMutation() {
 							c.dialect.RenderVar(c, c.getVarName(pm))
 							c.w.WriteString(")")
 						} else {
-							// MySQL/MariaDB use captured variable with FK column name
+							// MySQL/MariaDB/MSSQL use captured variable with FK column name
 							// Variable format: @parentTable_parentID_fkColumn
 							parentVarName := c.getVarName(pm) + "_" + parentCol
 							c.dialect.RenderVar(c, parentVarName)

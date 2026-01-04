@@ -714,6 +714,10 @@ func (c *stringContext) Quote(s string) {
 		c.sb.WriteString(`"`)
 		c.sb.WriteString(strings.ToUpper(s))
 		c.sb.WriteString(`"`)
+	} else if c.ct == "mssql" {
+		c.sb.WriteString(`[`)
+		c.sb.WriteString(s)
+		c.sb.WriteString(`]`)
 	} else {
 		c.sb.WriteString(`"`)
 		c.sb.WriteString(s)

@@ -19,7 +19,7 @@ SELECT
     ISNULL(fk.ref_table, '') AS foreignkey_table,
     ISNULL(fk.ref_column, '') AS foreignkey_column
 FROM sys.columns c
-JOIN sys.tables t ON c.object_id = t.object_id
+JOIN sys.objects t ON c.object_id = t.object_id AND t.type IN ('U', 'V')
 JOIN sys.schemas s ON t.schema_id = s.schema_id
 JOIN sys.types ty ON c.user_type_id = ty.user_type_id
 LEFT JOIN (
