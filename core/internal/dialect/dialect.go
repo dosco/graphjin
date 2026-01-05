@@ -135,6 +135,38 @@ type Dialect interface {
 	ModifySelectsForMutation(qc *qcode.QCode)
 	RenderQueryPrefix(ctx Context, qc *qcode.QCode)
 	SplitQuery(query string) []string
+
+	// Role Statement rendering (moves db-specific code from core/rolestmt.go)
+	// These return strings since they're used outside the psql compiler context
+	RoleSelectPrefix() string             // "SELECT TOP 1 (CASE" vs "SELECT (CASE"
+	RoleLimitSuffix() string              // Close with/without LIMIT 1
+	RoleDummyTable() string               // Database-specific dummy table
+	TransformBooleanLiterals(match string) string   // "true"→"1" for MSSQL
+
+	// Driver Behavior (moves db-specific code from core/args.go and core/core.go)
+	RequiresJSONAsString() bool          // Oracle/MSSQL need JSON as string
+	RequiresLowercaseIdentifiers() bool  // Oracle needs lowercase schemas
+
+	// Recursive CTE Syntax (moves db-specific code from psql/recur.go)
+	RequiresRecursiveKeyword() bool      // Oracle doesn't use RECURSIVE
+	RenderRecursiveOffset(ctx Context)   // OFFSET 1 vs LIMIT -1 OFFSET 1 vs LIMIT 1, MAX
+	RenderRecursiveLimit1(ctx Context)   // LIMIT 1 vs FETCH FIRST 1 ROWS ONLY
+	WrapRecursiveSelect() bool           // SQLite needs extra SELECT * FROM (...)
+
+	// JSON Null Fields (moves db-specific code from psql/query.go)
+	RenderJSONNullField(ctx Context, fieldName string)       // NULL field syntax
+	RenderJSONNullCursorField(ctx Context, fieldName string) // NULL cursor field syntax
+	RenderJSONRootSuffix(ctx Context)                        // FOR JSON PATH for MSSQL, empty for others
+
+	// Array Operations (moves db-specific code from psql/mutate.go)
+	RenderArraySelectPrefix(ctx Context)                     // ARRAY(SELECT vs (SELECT JSON_ARRAYAGG(
+	RenderArraySelectSuffix(ctx Context)                     // ) vs ))
+	RenderArrayAggPrefix(ctx Context, distinct bool)         // ARRAY_AGG vs json_group_array vs JSON_ARRAYAGG
+	RenderArrayRemove(ctx Context, col string, val func())   // array_remove vs JSON_REMOVE
+
+	// Column rendering (moves db-specific code from psql/columns.go)
+	RequiresJSONQueryWrapper() bool     // MariaDB needs JSON_QUERY wrapper for inline children
+	RequiresNullOnEmptySelect() bool    // MySQL/SQLite/MariaDB need NULL when no columns rendered
 }
 
 func GenericRenderMutationPostamble(ctx Context, qc *qcode.QCode) {

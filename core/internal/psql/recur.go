@@ -11,15 +11,8 @@ func (c *compilerContext) renderRecursiveBaseSelect(sel *qcode.Select) {
 	c.renderRecursiveColumns(sel)
 	c.w.WriteString(` FROM (SELECT * FROM `)
 	c.quoted("__rcte_" + sel.Table)
-	if c.dialect.Name() == "mysql" || c.dialect.Name() == "mariadb" {
-		c.w.WriteString(` LIMIT 1, 18446744073709551610`)
-	} else if c.dialect.Name() == "sqlite" {
-		c.w.WriteString(` LIMIT -1 OFFSET 1`)
-	} else if c.dialect.Name() == "oracle" {
-		c.w.WriteString(` OFFSET 1 ROWS`)
-	} else {
-		c.w.WriteString(` OFFSET 1`)
-	}
+	// Use dialect-specific recursive offset syntax
+	c.dialect.RenderRecursiveOffset(c)
 	c.w.WriteString(`) `)
 	c.alias(sel.Table)
 	c.renderRecursiveGroupBy(sel)
@@ -28,7 +21,8 @@ func (c *compilerContext) renderRecursiveBaseSelect(sel *qcode.Select) {
 
 func (c *compilerContext) renderRecursiveCTE(sel *qcode.Select) {
 	c.w.WriteString(`WITH `)
-	if c.dialect.Name() != "oracle" {
+	// Some databases (Oracle) don't use the RECURSIVE keyword
+	if c.dialect.RequiresRecursiveKeyword() {
 		c.w.WriteString(`RECURSIVE `)
 	}
 	c.quoted("__rcte_" + sel.Table)
@@ -43,7 +37,8 @@ func (c *compilerContext) renderRecursiveCTE(sel *qcode.Select) {
 func (c *compilerContext) renderRecursiveSelect(sel *qcode.Select) {
 	psel := &c.qc.Selects[sel.ParentID]
 
-	if c.dialect.Name() == "sqlite" {
+	// Some databases (SQLite) need extra wrapping for recursive select
+	if c.dialect.WrapRecursiveSelect() {
 		c.w.WriteString(`SELECT * FROM (SELECT `)
 	} else {
 		c.w.WriteString(`(SELECT `)
@@ -55,11 +50,9 @@ func (c *compilerContext) renderRecursiveSelect(sel *qcode.Select) {
 	c.w.WriteString(`) = (`)
 	c.colWithTableID(psel.Table, psel.ID, sel.Ti.PrimaryCol.Name)
 	c.w.WriteString(`) `)
-	if c.dialect.Name() == "oracle" {
-		c.w.WriteString(` FETCH FIRST 1 ROWS ONLY) UNION ALL `)
-	} else {
-		c.w.WriteString(` LIMIT 1) UNION ALL `)
-	}
+	// Use dialect-specific LIMIT 1 syntax
+	c.dialect.RenderRecursiveLimit1(c)
+	c.w.WriteString(`) UNION ALL `)
 
 	c.w.WriteString(`SELECT `)
 	c.renderRecursiveBaseColumns(sel)

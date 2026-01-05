@@ -236,32 +236,12 @@ func (co *Compiler) CompileQuery(
 		case qcode.SkipTypeUserNeeded, qcode.SkipTypeBlocked,
 			qcode.SkipTypeNulled:
 
-			if c.dialect.Name() == "oracle" {
-				c.w.WriteString(`KEY '`)
-				c.w.WriteString(sel.FieldName)
-				c.w.WriteString(`' VALUE NULL`)
-			} else if c.dialect.Name() == "mssql" {
-				c.w.WriteString(`NULL AS `)
-				c.quoted(sel.FieldName)
-			} else {
-				c.w.WriteString(`'`)
-				c.w.WriteString(sel.FieldName)
-				c.w.WriteString(`', NULL`)
-			}
+			// Use dialect-specific JSON null field rendering
+			c.dialect.RenderJSONNullField(c, sel.FieldName)
 
 			if sel.Paging.Cursor {
-				if c.dialect.Name() == "oracle" {
-					c.w.WriteString(`, KEY '`)
-					c.w.WriteString(sel.FieldName)
-					c.w.WriteString(`_cursor' VALUE NULL`)
-				} else if c.dialect.Name() == "mssql" {
-					c.w.WriteString(`, NULL AS `)
-					c.quoted(sel.FieldName + "_cursor")
-				} else {
-					c.w.WriteString(`, '`)
-					c.w.WriteString(sel.FieldName)
-					c.w.WriteString(`_cursor', NULL`)
-				}
+				// Use dialect-specific JSON null cursor field rendering
+				c.dialect.RenderJSONNullCursorField(c, sel.FieldName)
 			}
 
 		default:
@@ -327,10 +307,8 @@ func (co *Compiler) CompileQuery(
 	// This helps multi-root work as well as return a null json value when
 	// there are no rows found.
 
-	// MSSQL uses FOR JSON PATH to build the root object
-	if c.dialect.Name() == "mssql" {
-		c.w.WriteString(` FOR JSON PATH, INCLUDE_NULL_VALUES, WITHOUT_ARRAY_WRAPPER`)
-	}
+	// Use dialect-specific JSON root suffix (e.g., FOR JSON PATH for MSSQL)
+	c.dialect.RenderJSONRootSuffix(c)
 	c.w.WriteString(`) AS `)
 	c.quoted("__root")
 	c.w.WriteString(` FROM (`)
