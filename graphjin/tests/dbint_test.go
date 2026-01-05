@@ -220,7 +220,7 @@ func TestMain(m *testing.M) {
 			driver: "sqlite3_regexp",
 			startFunc: func(ctx context.Context) (func(context.Context) error, string, error) {
 				// Use shared in-memory DB
-				connStr := "file:memdb1?mode=memory&cache=shared"
+				connStr := "file:memdb1?mode=memory&cache=shared&_busy_timeout=5000"
 				
 				
 				// Initialize DB

@@ -151,6 +151,8 @@ func (gj *graphjinEngine) _initSchema() (err error) {
 
 	schema := gj.dbinfo.Schema
 	for i, t := range gj.conf.Tables {
+		// Oracle requires lowercase identifiers
+		// Note: Using gj.dbtype here because psqlCompiler isn't initialized yet at this stage
 		if gj.dbtype == "oracle" {
 			gj.conf.Tables[i].Schema = strings.ToLower(gj.conf.Tables[i].Schema)
 			gj.conf.Tables[i].Name = strings.ToLower(gj.conf.Tables[i].Name)

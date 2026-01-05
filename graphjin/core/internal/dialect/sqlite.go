@@ -1445,3 +1445,98 @@ func (d *SQLiteDialect) RenderLinearValues(ctx Context, m *qcode.Mutate, renderR
     }
 	ctx.WriteString(`) AS t`)
 }
+
+// Role Statement rendering
+func (d *SQLiteDialect) RoleSelectPrefix() string {
+	return `(SELECT (CASE`
+}
+
+func (d *SQLiteDialect) RoleLimitSuffix() string {
+	return `) AS _sg_auth_roles_query LIMIT 1) `
+}
+
+func (d *SQLiteDialect) RoleDummyTable() string {
+	return `ELSE 'anon' END) FROM (VALUES (1)) AS _sg_auth_filler LIMIT 1; `
+}
+
+func (d *SQLiteDialect) TransformBooleanLiterals(match string) string {
+	return match // SQLite uses true/false natively
+}
+
+// Driver Behavior
+func (d *SQLiteDialect) RequiresJSONAsString() bool {
+	return false // SQLite driver handles json.RawMessage properly
+}
+
+func (d *SQLiteDialect) RequiresLowercaseIdentifiers() bool {
+	return false // SQLite doesn't require lowercase identifiers
+}
+
+// Recursive CTE Syntax
+func (d *SQLiteDialect) RequiresRecursiveKeyword() bool {
+	return true // SQLite uses WITH RECURSIVE
+}
+
+func (d *SQLiteDialect) RenderRecursiveOffset(ctx Context) {
+	ctx.WriteString(` LIMIT -1 OFFSET 1`) // SQLite specific syntax
+}
+
+func (d *SQLiteDialect) RenderRecursiveLimit1(ctx Context) {
+	ctx.WriteString(` LIMIT 1`)
+}
+
+func (d *SQLiteDialect) WrapRecursiveSelect() bool {
+	return true // SQLite needs extra SELECT * FROM (...) wrapping
+}
+
+// JSON Null Fields
+func (d *SQLiteDialect) RenderJSONNullField(ctx Context, fieldName string) {
+	ctx.WriteString(`'`)
+	ctx.WriteString(fieldName)
+	ctx.WriteString(`', NULL`)
+}
+
+func (d *SQLiteDialect) RenderJSONNullCursorField(ctx Context, fieldName string) {
+	ctx.WriteString(`, '`)
+	ctx.WriteString(fieldName)
+	ctx.WriteString(`_cursor', NULL`)
+}
+
+func (d *SQLiteDialect) RenderJSONRootSuffix(ctx Context) {
+	// SQLite doesn't need any suffix
+}
+
+// Array Operations
+func (d *SQLiteDialect) RenderArraySelectPrefix(ctx Context) {
+	ctx.WriteString(`(SELECT json_group_array(`)
+}
+
+func (d *SQLiteDialect) RenderArraySelectSuffix(ctx Context) {
+	ctx.WriteString(`))`)
+}
+
+func (d *SQLiteDialect) RenderArrayAggPrefix(ctx Context, distinct bool) {
+	if distinct {
+		ctx.WriteString(`json_group_array(DISTINCT `)
+	} else {
+		ctx.WriteString(`json_group_array(`)
+	}
+}
+
+func (d *SQLiteDialect) RenderArrayRemove(ctx Context, col string, val func()) {
+	// SQLite doesn't have a direct array_remove, would need json_remove
+	ctx.WriteString(` json_remove(`)
+	ctx.Quote(col)
+	ctx.WriteString(`, `)
+	val()
+	ctx.WriteString(`)`)
+}
+
+// Column rendering
+func (d *SQLiteDialect) RequiresJSONQueryWrapper() bool {
+	return false // SQLite doesn't need JSON_QUERY wrapper
+}
+
+func (d *SQLiteDialect) RequiresNullOnEmptySelect() bool {
+	return true // SQLite needs NULL when no columns rendered
+}

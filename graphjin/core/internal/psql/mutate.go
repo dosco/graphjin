@@ -548,17 +548,7 @@ func (c *compilerContext) renderOneToManyConnectStmt(m qcode.Mutate) {
 
 	rel := m.Rel
 	if rel.Right.Col.Array {
-		if c.dialect.Name() == "postgres" {
-			c.w.WriteString(`ARRAY_AGG(DISTINCT `)
-		} else {
-			// MariaDB/MySQL/SQLite use JSON_ARRAYAGG
-			// SQLite: json_group_array
-			if c.dialect.Name() == "sqlite" {
-				c.w.WriteString(`json_group_array(DISTINCT `)
-			} else {
-				c.w.WriteString(`JSON_ARRAYAGG(DISTINCT `)
-			}
-		}
+		c.dialect.RenderArrayAggPrefix(c, true)
 		c.quoted(rel.Left.Col.Name)
 		c.w.WriteString(`) AS `)
 		c.quoted(rel.Left.Col.Name)

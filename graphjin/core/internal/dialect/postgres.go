@@ -739,3 +739,97 @@ func (d *PostgresDialect) RenderChildValue(ctx Context, sel *qcode.Select, rende
 	renderChild()
 }
 
+// Role Statement rendering
+func (d *PostgresDialect) RoleSelectPrefix() string {
+	return `(SELECT (CASE`
+}
+
+func (d *PostgresDialect) RoleLimitSuffix() string {
+	return `) AS _sg_auth_roles_query LIMIT 1) `
+}
+
+func (d *PostgresDialect) RoleDummyTable() string {
+	return `ELSE 'anon' END) FROM (VALUES (1)) AS _sg_auth_filler LIMIT 1; `
+}
+
+func (d *PostgresDialect) TransformBooleanLiterals(match string) string {
+	return match // PostgreSQL uses true/false natively
+}
+
+// Driver Behavior
+func (d *PostgresDialect) RequiresJSONAsString() bool {
+	return false // PostgreSQL driver handles json.RawMessage properly
+}
+
+func (d *PostgresDialect) RequiresLowercaseIdentifiers() bool {
+	return false // PostgreSQL doesn't require lowercase identifiers
+}
+
+// Recursive CTE Syntax
+func (d *PostgresDialect) RequiresRecursiveKeyword() bool {
+	return true // PostgreSQL uses WITH RECURSIVE
+}
+
+func (d *PostgresDialect) RenderRecursiveOffset(ctx Context) {
+	ctx.WriteString(` OFFSET 1`)
+}
+
+func (d *PostgresDialect) RenderRecursiveLimit1(ctx Context) {
+	ctx.WriteString(` LIMIT 1`)
+}
+
+func (d *PostgresDialect) WrapRecursiveSelect() bool {
+	return false // PostgreSQL doesn't need extra wrapping
+}
+
+// JSON Null Fields
+func (d *PostgresDialect) RenderJSONNullField(ctx Context, fieldName string) {
+	ctx.WriteString(`'`)
+	ctx.WriteString(fieldName)
+	ctx.WriteString(`', NULL`)
+}
+
+func (d *PostgresDialect) RenderJSONNullCursorField(ctx Context, fieldName string) {
+	ctx.WriteString(`, '`)
+	ctx.WriteString(fieldName)
+	ctx.WriteString(`_cursor', NULL`)
+}
+
+func (d *PostgresDialect) RenderJSONRootSuffix(ctx Context) {
+	// PostgreSQL doesn't need any suffix
+}
+
+// Array Operations
+func (d *PostgresDialect) RenderArraySelectPrefix(ctx Context) {
+	ctx.WriteString(`ARRAY(SELECT `)
+}
+
+func (d *PostgresDialect) RenderArraySelectSuffix(ctx Context) {
+	ctx.WriteString(`)`)
+}
+
+func (d *PostgresDialect) RenderArrayAggPrefix(ctx Context, distinct bool) {
+	if distinct {
+		ctx.WriteString(`ARRAY_AGG(DISTINCT `)
+	} else {
+		ctx.WriteString(`ARRAY_AGG(`)
+	}
+}
+
+func (d *PostgresDialect) RenderArrayRemove(ctx Context, col string, val func()) {
+	ctx.WriteString(` array_remove(`)
+	ctx.Quote(col)
+	ctx.WriteString(`, `)
+	val()
+	ctx.WriteString(`)`)
+}
+
+// Column rendering
+func (d *PostgresDialect) RequiresJSONQueryWrapper() bool {
+	return false // PostgreSQL doesn't need JSON_QUERY wrapper
+}
+
+func (d *PostgresDialect) RequiresNullOnEmptySelect() bool {
+	return false // PostgreSQL doesn't need NULL when no columns rendered
+}
+

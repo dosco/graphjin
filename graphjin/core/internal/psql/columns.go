@@ -91,9 +91,8 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 
 			default:
 				if !c.dialect.SupportsLateral() {
-					// MariaDB and MSSQL don't allow correlated subqueries through derived table boundaries
-					// Use dialect-specific rendering that avoids nested derived tables
-					if c.dialect.Name() == "mariadb" {
+					// Dialects without LATERAL support use inline child rendering
+					if c.dialect.RequiresJSONQueryWrapper() {
 						// Wrap with JSON_QUERY to prevent double-escaping since
 						// MariaDB treats JSON as LONGTEXT and json_object would escape it
 						c.w.WriteString(`JSON_QUERY(`)
@@ -126,8 +125,8 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 		}
 		i++
 	}
-	// when no columns are rendered for mysql, sqlite, or mariadb
-	if (c.dialect.Name() == "mysql" || c.dialect.Name() == "sqlite" || c.dialect.Name() == "mariadb") && i == 0 {
+	// when no columns are rendered for certain databases
+	if c.dialect.RequiresNullOnEmptySelect() && i == 0 {
 		c.w.WriteString(`NULL`)
 	}
 }
@@ -151,7 +150,7 @@ func (c *compilerContext) renderUnionColumn(sel, csel *qcode.Select) {
 			if c.dialect.SupportsLateral() {
 				c.colWithTableID("__sj", usel.ID, "json")
 				c.w.WriteString(` `)
-			} else if c.dialect.Name() == "mariadb" {
+			} else if c.dialect.RequiresJSONQueryWrapper() {
 				// MariaDB needs simplified inline child rendering
 				c.w.WriteString(`JSON_QUERY(`)
 				c.dialect.RenderInlineChild(c, c, sel, usel)

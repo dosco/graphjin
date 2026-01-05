@@ -913,3 +913,94 @@ func (d *OracleDialect) RenderChildCursor(ctx Context, renderChild func()) {
 func (d *OracleDialect) RenderChildValue(ctx Context, sel *qcode.Select, renderChild func()) {
 	renderChild()
 }
+
+// Role Statement rendering
+func (d *OracleDialect) RoleSelectPrefix() string {
+	return `(SELECT (CASE`
+}
+
+func (d *OracleDialect) RoleLimitSuffix() string {
+	return `) AS _sg_auth_roles_query FETCH FIRST 1 ROWS ONLY) `
+}
+
+func (d *OracleDialect) RoleDummyTable() string {
+	return `ELSE 'anon' END) FROM DUAL FETCH FIRST 1 ROWS ONLY; `
+}
+
+func (d *OracleDialect) TransformBooleanLiterals(match string) string {
+	return match // Oracle uses true/false natively
+}
+
+// Driver Behavior
+func (d *OracleDialect) RequiresJSONAsString() bool {
+	return true // Oracle driver doesn't handle json.RawMessage properly
+}
+
+func (d *OracleDialect) RequiresLowercaseIdentifiers() bool {
+	return true // Oracle requires lowercase identifiers in configuration
+}
+
+// Recursive CTE Syntax
+func (d *OracleDialect) RequiresRecursiveKeyword() bool {
+	return false // Oracle doesn't use RECURSIVE keyword
+}
+
+func (d *OracleDialect) RenderRecursiveOffset(ctx Context) {
+	ctx.WriteString(` OFFSET 1 ROWS`)
+}
+
+func (d *OracleDialect) RenderRecursiveLimit1(ctx Context) {
+	ctx.WriteString(` FETCH FIRST 1 ROWS ONLY`)
+}
+
+func (d *OracleDialect) WrapRecursiveSelect() bool {
+	return false // Oracle doesn't need extra wrapping
+}
+
+// JSON Null Fields
+func (d *OracleDialect) RenderJSONNullField(ctx Context, fieldName string) {
+	ctx.WriteString(`KEY '`)
+	ctx.WriteString(fieldName)
+	ctx.WriteString(`' VALUE NULL`)
+}
+
+func (d *OracleDialect) RenderJSONNullCursorField(ctx Context, fieldName string) {
+	ctx.WriteString(`, KEY '`)
+	ctx.WriteString(fieldName)
+	ctx.WriteString(`_cursor' VALUE NULL`)
+}
+
+func (d *OracleDialect) RenderJSONRootSuffix(ctx Context) {
+	// Oracle doesn't need any suffix
+}
+
+// Array Operations
+func (d *OracleDialect) RenderArraySelectPrefix(ctx Context) {
+	ctx.WriteString(`(SELECT JSON_ARRAYAGG(`)
+}
+
+func (d *OracleDialect) RenderArraySelectSuffix(ctx Context) {
+	ctx.WriteString(`))`)
+}
+
+func (d *OracleDialect) RenderArrayAggPrefix(ctx Context, distinct bool) {
+	if distinct {
+		ctx.WriteString(`JSON_ARRAYAGG(DISTINCT `)
+	} else {
+		ctx.WriteString(`JSON_ARRAYAGG(`)
+	}
+}
+
+func (d *OracleDialect) RenderArrayRemove(ctx Context, col string, val func()) {
+	// Oracle doesn't have a simple array_remove, would need JSON_TABLE approach
+	ctx.WriteString(` NULL`) // Placeholder - needs proper implementation
+}
+
+// Column rendering
+func (d *OracleDialect) RequiresJSONQueryWrapper() bool {
+	return false // Oracle doesn't need JSON_QUERY wrapper
+}
+
+func (d *OracleDialect) RequiresNullOnEmptySelect() bool {
+	return false // Oracle doesn't need NULL when no columns rendered
+}

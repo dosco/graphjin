@@ -1511,3 +1511,100 @@ func (d *MySQLDialect) RenderChildCursor(ctx Context, renderChild func()) {
 func (d *MySQLDialect) RenderChildValue(ctx Context, sel *qcode.Select, renderChild func()) {
 	renderChild()
 }
+
+// Role Statement rendering
+func (d *MySQLDialect) RoleSelectPrefix() string {
+	return `(SELECT (CASE`
+}
+
+func (d *MySQLDialect) RoleLimitSuffix() string {
+	return `) AS _sg_auth_roles_query LIMIT 1) `
+}
+
+func (d *MySQLDialect) RoleDummyTable() string {
+	return `ELSE 'anon' END) FROM (VALUES ROW(1)) AS _sg_auth_filler LIMIT 1; `
+}
+
+func (d *MySQLDialect) TransformBooleanLiterals(match string) string {
+	return match // MySQL uses true/false natively
+}
+
+// Driver Behavior
+func (d *MySQLDialect) RequiresJSONAsString() bool {
+	return false // MySQL driver handles json.RawMessage properly
+}
+
+func (d *MySQLDialect) RequiresLowercaseIdentifiers() bool {
+	return false // MySQL doesn't require lowercase identifiers
+}
+
+// Recursive CTE Syntax
+func (d *MySQLDialect) RequiresRecursiveKeyword() bool {
+	return true // MySQL uses WITH RECURSIVE
+}
+
+func (d *MySQLDialect) RenderRecursiveOffset(ctx Context) {
+	ctx.WriteString(` LIMIT 1, 18446744073709551610`) // MySQL workaround for OFFSET without LIMIT
+}
+
+func (d *MySQLDialect) RenderRecursiveLimit1(ctx Context) {
+	ctx.WriteString(` LIMIT 1`)
+}
+
+func (d *MySQLDialect) WrapRecursiveSelect() bool {
+	return false // MySQL doesn't need extra wrapping
+}
+
+// JSON Null Fields
+func (d *MySQLDialect) RenderJSONNullField(ctx Context, fieldName string) {
+	ctx.WriteString(`'`)
+	ctx.WriteString(fieldName)
+	ctx.WriteString(`', NULL`)
+}
+
+func (d *MySQLDialect) RenderJSONNullCursorField(ctx Context, fieldName string) {
+	ctx.WriteString(`, '`)
+	ctx.WriteString(fieldName)
+	ctx.WriteString(`_cursor', NULL`)
+}
+
+func (d *MySQLDialect) RenderJSONRootSuffix(ctx Context) {
+	// MySQL doesn't need any suffix
+}
+
+// Array Operations
+func (d *MySQLDialect) RenderArraySelectPrefix(ctx Context) {
+	ctx.WriteString(`(SELECT JSON_ARRAYAGG(`)
+}
+
+func (d *MySQLDialect) RenderArraySelectSuffix(ctx Context) {
+	ctx.WriteString(`))`)
+}
+
+func (d *MySQLDialect) RenderArrayAggPrefix(ctx Context, distinct bool) {
+	if distinct {
+		ctx.WriteString(`JSON_ARRAYAGG(DISTINCT `)
+	} else {
+		ctx.WriteString(`JSON_ARRAYAGG(`)
+	}
+}
+
+func (d *MySQLDialect) RenderArrayRemove(ctx Context, col string, val func()) {
+	// MySQL uses JSON_REMOVE with JSON_SEARCH
+	ctx.WriteString(` JSON_REMOVE(`)
+	ctx.Quote(col)
+	ctx.WriteString(`, JSON_UNQUOTE(JSON_SEARCH(`)
+	ctx.Quote(col)
+	ctx.WriteString(`, 'one', `)
+	val()
+	ctx.WriteString(`)))`)
+}
+
+// Column rendering
+func (d *MySQLDialect) RequiresJSONQueryWrapper() bool {
+	return false // MySQL doesn't need JSON_QUERY wrapper
+}
+
+func (d *MySQLDialect) RequiresNullOnEmptySelect() bool {
+	return true // MySQL needs NULL when no columns rendered
+}

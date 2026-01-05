@@ -2329,5 +2329,103 @@ func (d *MariaDBDialect) renderFieldFilterVal(ctx Context, ex *qcode.Exp) {
 	}
 }
 
+// Role Statement rendering - MariaDB uses default syntax (same as Postgres)
+func (d *MariaDBDialect) RoleSelectPrefix() string {
+	return `(SELECT (CASE`
+}
+
+func (d *MariaDBDialect) RoleLimitSuffix() string {
+	return `) AS _sg_auth_roles_query LIMIT 1) `
+}
+
+func (d *MariaDBDialect) RoleDummyTable() string {
+	// MariaDB uses same syntax as default (not MySQL's VALUES ROW(1))
+	return `ELSE 'anon' END) FROM (VALUES (1)) AS _sg_auth_filler LIMIT 1; `
+}
+
+func (d *MariaDBDialect) TransformBooleanLiterals(match string) string {
+	return match // MariaDB uses true/false natively
+}
+
+// Driver Behavior
+func (d *MariaDBDialect) RequiresJSONAsString() bool {
+	return false // MariaDB driver handles json.RawMessage properly
+}
+
+func (d *MariaDBDialect) RequiresLowercaseIdentifiers() bool {
+	return false // MariaDB doesn't require lowercase identifiers
+}
+
+// Recursive CTE Syntax
+func (d *MariaDBDialect) RequiresRecursiveKeyword() bool {
+	return true // MariaDB uses WITH RECURSIVE
+}
+
+func (d *MariaDBDialect) RenderRecursiveOffset(ctx Context) {
+	ctx.WriteString(` LIMIT 1, 18446744073709551610`) // MariaDB same as MySQL
+}
+
+func (d *MariaDBDialect) RenderRecursiveLimit1(ctx Context) {
+	ctx.WriteString(` LIMIT 1`)
+}
+
+func (d *MariaDBDialect) WrapRecursiveSelect() bool {
+	return false // MariaDB doesn't need extra wrapping
+}
+
+// JSON Null Fields
+func (d *MariaDBDialect) RenderJSONNullField(ctx Context, fieldName string) {
+	ctx.WriteString(`'`)
+	ctx.WriteString(fieldName)
+	ctx.WriteString(`', NULL`)
+}
+
+func (d *MariaDBDialect) RenderJSONNullCursorField(ctx Context, fieldName string) {
+	ctx.WriteString(`, '`)
+	ctx.WriteString(fieldName)
+	ctx.WriteString(`_cursor', NULL`)
+}
+
+func (d *MariaDBDialect) RenderJSONRootSuffix(ctx Context) {
+	// MariaDB doesn't need any suffix
+}
+
+// Array Operations
+func (d *MariaDBDialect) RenderArraySelectPrefix(ctx Context) {
+	ctx.WriteString(`(SELECT JSON_ARRAYAGG(`)
+}
+
+func (d *MariaDBDialect) RenderArraySelectSuffix(ctx Context) {
+	ctx.WriteString(`))`)
+}
+
+func (d *MariaDBDialect) RenderArrayAggPrefix(ctx Context, distinct bool) {
+	if distinct {
+		ctx.WriteString(`JSON_ARRAYAGG(DISTINCT `)
+	} else {
+		ctx.WriteString(`JSON_ARRAYAGG(`)
+	}
+}
+
+func (d *MariaDBDialect) RenderArrayRemove(ctx Context, col string, val func()) {
+	// MariaDB uses JSON_REMOVE with JSON_SEARCH (same as MySQL)
+	ctx.WriteString(` JSON_REMOVE(`)
+	ctx.Quote(col)
+	ctx.WriteString(`, JSON_UNQUOTE(JSON_SEARCH(`)
+	ctx.Quote(col)
+	ctx.WriteString(`, 'one', `)
+	val()
+	ctx.WriteString(`)))`)
+}
+
+// Column rendering
+func (d *MariaDBDialect) RequiresJSONQueryWrapper() bool {
+	return true // MariaDB needs JSON_QUERY wrapper for inline children
+}
+
+func (d *MariaDBDialect) RequiresNullOnEmptySelect() bool {
+	return true // MariaDB needs NULL when no columns rendered
+}
+
 
 

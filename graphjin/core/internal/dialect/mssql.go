@@ -3394,3 +3394,102 @@ func (d *MSSQLDialect) renderRecursiveBaseWhere(ctx Context, r InlineChildRender
 		d.renderExp(ctx, r, psel, sel, exp)
 	}
 }
+
+// Role Statement rendering
+func (d *MSSQLDialect) RoleSelectPrefix() string {
+	return `(SELECT TOP 1 (CASE` // MSSQL uses TOP instead of LIMIT
+}
+
+func (d *MSSQLDialect) RoleLimitSuffix() string {
+	return `) AS _sg_auth_roles_query) ` // No LIMIT, uses TOP in prefix
+}
+
+func (d *MSSQLDialect) RoleDummyTable() string {
+	return `ELSE 'anon' END) FROM (SELECT 1 AS _sg_auth_filler) AS _sg_auth_filler; `
+}
+
+func (d *MSSQLDialect) TransformBooleanLiterals(match string) string {
+	// MSSQL uses 1/0 for boolean literals instead of true/false
+	match = strings.ReplaceAll(match, " true", " 1")
+	match = strings.ReplaceAll(match, " false", " 0")
+	match = strings.ReplaceAll(match, "=true", "=1")
+	match = strings.ReplaceAll(match, "=false", "=0")
+	return match
+}
+
+// Driver Behavior
+func (d *MSSQLDialect) RequiresJSONAsString() bool {
+	return true // MSSQL driver doesn't handle json.RawMessage properly
+}
+
+func (d *MSSQLDialect) RequiresLowercaseIdentifiers() bool {
+	return false // MSSQL doesn't require lowercase identifiers
+}
+
+// Recursive CTE Syntax
+func (d *MSSQLDialect) RequiresRecursiveKeyword() bool {
+	return true // MSSQL uses WITH RECURSIVE (actually just WITH, but keyword is used)
+}
+
+func (d *MSSQLDialect) RenderRecursiveOffset(ctx Context) {
+	ctx.WriteString(` OFFSET 1 ROWS`)
+}
+
+func (d *MSSQLDialect) RenderRecursiveLimit1(ctx Context) {
+	ctx.WriteString(` FETCH FIRST 1 ROWS ONLY`)
+}
+
+func (d *MSSQLDialect) WrapRecursiveSelect() bool {
+	return false // MSSQL doesn't need extra wrapping
+}
+
+// JSON Null Fields
+func (d *MSSQLDialect) RenderJSONNullField(ctx Context, fieldName string) {
+	ctx.WriteString(`NULL AS `)
+	ctx.Quote(fieldName)
+}
+
+func (d *MSSQLDialect) RenderJSONNullCursorField(ctx Context, fieldName string) {
+	ctx.WriteString(`, NULL AS `)
+	ctx.Quote(fieldName + "_cursor")
+}
+
+func (d *MSSQLDialect) RenderJSONRootSuffix(ctx Context) {
+	ctx.WriteString(` FOR JSON PATH, INCLUDE_NULL_VALUES, WITHOUT_ARRAY_WRAPPER`)
+}
+
+// Array Operations
+func (d *MSSQLDialect) RenderArraySelectPrefix(ctx Context) {
+	ctx.WriteString(`(SELECT JSON_ARRAYAGG(`)
+}
+
+func (d *MSSQLDialect) RenderArraySelectSuffix(ctx Context) {
+	ctx.WriteString(`))`)
+}
+
+func (d *MSSQLDialect) RenderArrayAggPrefix(ctx Context, distinct bool) {
+	if distinct {
+		ctx.WriteString(`JSON_ARRAYAGG(DISTINCT `)
+	} else {
+		ctx.WriteString(`JSON_ARRAYAGG(`)
+	}
+}
+
+func (d *MSSQLDialect) RenderArrayRemove(ctx Context, col string, val func()) {
+	// MSSQL doesn't have a direct array_remove function
+	// Use JSON_MODIFY approach
+	ctx.WriteString(` JSON_MODIFY(`)
+	ctx.Quote(col)
+	ctx.WriteString(`, `)
+	val()
+	ctx.WriteString(`, NULL)`)
+}
+
+// Column rendering
+func (d *MSSQLDialect) RequiresJSONQueryWrapper() bool {
+	return false // MSSQL doesn't need JSON_QUERY wrapper (uses FOR JSON PATH)
+}
+
+func (d *MSSQLDialect) RequiresNullOnEmptySelect() bool {
+	return false // MSSQL doesn't need NULL when no columns rendered
+}
