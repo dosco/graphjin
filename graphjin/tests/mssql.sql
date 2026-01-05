@@ -7,7 +7,7 @@ CREATE TABLE users (
   avatar NVARCHAR(255),
   stripe_id NVARCHAR(255),
   email NVARCHAR(255) NOT NULL,
-  category_counts NVARCHAR(MAX),
+  category_counts NVARCHAR(MAX) CONSTRAINT CHK_users_category_counts CHECK (ISJSON(category_counts) = 1 OR category_counts IS NULL),
   disabled BIT DEFAULT 0,
   created_at DATETIME2 NOT NULL DEFAULT GETDATE(),
   updated_at DATETIME2,

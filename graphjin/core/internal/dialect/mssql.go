@@ -242,7 +242,7 @@ func (d *MSSQLDialect) RenderCursorCTE(ctx Context, sel *qcode.Select) {
 		return
 	}
 	// Parse cursor value: format is "selectID:val1:val2:..."
-	// The gj/hexTimestamp: prefix SHOULD be stripped during encryption/decryption,
+	// The gj-hexTimestamp: prefix SHOULD be stripped during encryption/decryption,
 	// but if encryption fails, the cursor may still contain the prefix.
 	// To be robust, we strip the prefix if present before parsing.
 	// For example: "0:110.50:1" -> selID="0", val1="110.50", val2="1"
@@ -287,7 +287,7 @@ func (d *MSSQLDialect) RenderCursorCTE(ctx Context, sel *qcode.Select) {
 	// This avoids multiple parameter placeholders for the same value
 	ctx.WriteString(` FROM (VALUES (`)
 	ctx.AddParam(Param{Name: "cursor", Type: "text"})
-	ctx.WriteString(`)) AS [_p]([v]) CROSS APPLY (SELECT CASE WHEN [_p].[v] LIKE 'gj/%' THEN STUFF([_p].[v], 1, CHARINDEX(':', [_p].[v], 4), '') ELSE [_p].[v] END AS [v]) AS [c]) `)
+	ctx.WriteString(`)) AS [_p]([v]) CROSS APPLY (SELECT CASE WHEN [_p].[v] LIKE 'gj-%' THEN STUFF([_p].[v], 1, CHARINDEX(':', [_p].[v], 4), '') ELSE [_p].[v] END AS [v]) AS [c]) `)
 }
 
 // renderNthColonPos renders a CHARINDEX expression to find the position of the n-th colon
@@ -2471,21 +2471,84 @@ func (d *MSSQLDialect) RenderSubscriptionUnbox(ctx Context, params []Param, inne
 		}
 	}
 
-	ctx.WriteString(`WITH [_gj_sub] AS (SELECT * FROM OPENJSON(?) WITH (`)
-	for i, p := range params {
-		if i != 0 {
-			ctx.WriteString(`, `)
+	// Check if the inner SQL starts with a CTE (e.g., WITH [__cur] AS (...))
+	// CTEs cannot be inside CROSS APPLY, so we need to extract and merge them
+	cursorCTE := ""
+	if strings.HasPrefix(strings.ToUpper(sql), "WITH [__CUR]") || strings.HasPrefix(sql, "WITH [__cur]") {
+		// Find the end of the CTE definition - need to match balanced parentheses
+		// The CTE ends with ") " followed by "SELECT"
+		depth := 0
+		inCTE := false
+		cteEnd := -1
+		for i := 0; i < len(sql); i++ {
+			if sql[i] == '(' {
+				depth++
+				inCTE = true
+			} else if sql[i] == ')' {
+				depth--
+				if inCTE && depth == 0 {
+					// Found end of CTE - look for following SELECT
+					rest := strings.TrimSpace(sql[i+1:])
+					if strings.HasPrefix(strings.ToUpper(rest), "SELECT") {
+						cursorCTE = sql[:i+1] // Include the closing paren
+						sql = rest
+						cteEnd = i
+						break
+					}
+				}
+			}
 		}
-		ctx.Quote(p.Name)
-		ctx.WriteString(` `)
-		ctx.WriteString(d.mssqlType(p.Type))
-		ctx.WriteString(` '$[`)
-		ctx.Write(fmt.Sprintf("%d", i))
-		ctx.WriteString(`]'`)
+		_ = cteEnd // avoid unused variable warning
 	}
-	ctx.WriteString(`)) SELECT [_gj_sub_data].[__root] FROM [_gj_sub] CROSS APPLY (`)
-	ctx.WriteString(sql)
-	ctx.WriteString(`) AS [_gj_sub_data]`)
+
+	// If we extracted a cursor CTE, we need to:
+	// 1. Replace the cursor parameter placeholder (?) with [_gj_sub].[cursor]
+	// 2. Merge it with the subscription CTE
+	if cursorCTE != "" {
+		// The cursor CTE has parameter placeholders (?) for the cursor value
+		// In subscriptions, the cursor comes from [_gj_sub].[cursor] not from a direct param
+		// Replace the placeholder: "(VALUES (?))" -> "(VALUES ([_gj_sub].[cursor]))"
+		cursorCTE = strings.Replace(cursorCTE, "(VALUES (?))", "(VALUES ([_gj_sub].[cursor]))", 1)
+
+		// cursorCTE is like "WITH [__cur] AS (...)"
+		// We need: "WITH [_gj_sub] AS (...), [__cur] AS (...)"
+		// Note: [_gj_sub] must come FIRST since [__cur] references it
+		ctx.WriteString(`WITH [_gj_sub] AS (SELECT * FROM OPENJSON(?) WITH (`)
+		for i, p := range params {
+			if i != 0 {
+				ctx.WriteString(`, `)
+			}
+			ctx.Quote(p.Name)
+			ctx.WriteString(` `)
+			ctx.WriteString(d.mssqlType(p.Type))
+			ctx.WriteString(` '$[`)
+			ctx.Write(fmt.Sprintf("%d", i))
+			ctx.WriteString(`]'`)
+		}
+		ctx.WriteString(`)), `)
+		// Strip "WITH " from cursorCTE since we're adding it as a second CTE
+		cursorCTE = strings.TrimPrefix(cursorCTE, "WITH ")
+		ctx.WriteString(cursorCTE)
+		ctx.WriteString(` SELECT [_gj_sub_data].[__root] FROM [_gj_sub] CROSS APPLY (`)
+		ctx.WriteString(sql)
+		ctx.WriteString(`) AS [_gj_sub_data]`)
+	} else {
+		ctx.WriteString(`WITH [_gj_sub] AS (SELECT * FROM OPENJSON(?) WITH (`)
+		for i, p := range params {
+			if i != 0 {
+				ctx.WriteString(`, `)
+			}
+			ctx.Quote(p.Name)
+			ctx.WriteString(` `)
+			ctx.WriteString(d.mssqlType(p.Type))
+			ctx.WriteString(` '$[`)
+			ctx.Write(fmt.Sprintf("%d", i))
+			ctx.WriteString(`]'`)
+		}
+		ctx.WriteString(`)) SELECT [_gj_sub_data].[__root] FROM [_gj_sub] CROSS APPLY (`)
+		ctx.WriteString(sql)
+		ctx.WriteString(`) AS [_gj_sub_data]`)
+	}
 }
 
 // Linear execution methods

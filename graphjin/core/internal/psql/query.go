@@ -421,12 +421,12 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 		if sel.FieldFilter.Exp != nil {
 			c.w.WriteString(`) ELSE null END)`)
 		}
-		
+
 		c.w.WriteString(`, 'cursor', '`)
 		c.w.Write(c.pf)
 		c.w.WriteString(`' || `)
 		int32String(c.w, int32(sel.ID))
-		
+
 		for i := 0; i < len(sel.OrderBy); i++ {
 			if c.dialect.Name() == "mariadb" {
 				// MariaDB uses colon separator to match RenderCursorCTE parsing
