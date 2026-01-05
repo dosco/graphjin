@@ -19,7 +19,7 @@ import (
 )
 
 var (
-	decPrefix   = []byte(`__gj/enc:`)
+	decPrefix   = []byte(`__gj-enc:`)
 	ErrNotFound = errors.New("not found in prepared statements")
 )
 

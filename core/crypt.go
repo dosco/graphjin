@@ -163,8 +163,8 @@ func decryptValues(data, prefix []byte, key [32]byte) ([]byte, error) {
 // firstCursorValue returns the first cursor value in the data
 // Cursor formats differ by database:
 // - Postgres: prefix + decimal(sel.ID) + "," + values (comma-separated)
-// - MariaDB: prefix + hex(sel.ID) + ":" + index + ":" + values (colon-separated)
-// Examples: "gj/12345,1" (Postgres), "gj/6954668a:0:1" (MariaDB)
+// - MariaDB/MSSQL: prefix + hex(sel.ID) + ":" + index + ":" + values (colon-separated)
+// Examples: "gj-12345,1" (Postgres), "gj-6954668a:0:1" (MariaDB/MSSQL)
 // When there are no results, cursor may be just prefix + sel.ID with no values.
 // We only return cursors that have actual values (separator after sel.ID).
 // Cursors without values would cause the query to restart from the beginning.
@@ -191,7 +191,8 @@ func firstCursorValue(data []byte, prefix []byte) []byte {
 	// Only return cursor if it has actual values (separator + values after sel.ID).
 	// Cursors that end with just the quote (no values) would cause queries to
 	// restart from the beginning, so we treat them as empty/no cursor.
-	if i < len(data) && (data[i] == ',' || data[i] == ':') {
+	// Check: separator exists AND there's content between separator and end quote
+	if i < len(data) && (data[i] == ',' || data[i] == ':') && (i+1 < e) {
 		return data[s:e]
 	}
 	return nil

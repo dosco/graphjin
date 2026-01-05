@@ -1482,10 +1482,6 @@ func Example_queryWithCursorPagination2() {
 }
 
 func TestQueryWithJsonColumn(t *testing.T) {
-	if dbType == "mssql" {
-		t.Skip("skipping for mssql - JSON column type detection needs work (nvarchar not recognized as JSON)")
-	}
-
 	gql := `query {
 		users(id: 1) {
 			id

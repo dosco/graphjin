@@ -899,7 +899,7 @@ func (d *MariaDBDialect) RenderCursorCTE(ctx Context, sel *qcode.Select) {
 		}
 		// Use SUBSTRING_INDEX with colon separator (matching RenderInlineChild cursor generation)
 		// Cursor format after decryption is: selID:val1:val2:...
-		// (The gj/hexTimestamp: prefix is stripped during encryption/decryption)
+		// (The gj-hexTimestamp: prefix is stripped during encryption/decryption)
 		// position 1 = selID
 		// position 2 = val1 (first cursor value)
 		// position 3 = val2 (second cursor value), etc.

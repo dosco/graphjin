@@ -696,10 +696,6 @@ func Example_insertIntoRecursiveRelationshipAndConnectTable2() {
 }
 
 func TestAllowListWithMutations(t *testing.T) {
-	if dbType == "mssql" {
-		t.Skip("skipping for mssql - mutations need more work")
-	}
-
 	gql := `
 	mutation getProducts {
 		users(insert: $data) {

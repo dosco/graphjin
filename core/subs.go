@@ -597,11 +597,11 @@ func (gj *graphjinEngine) subNotifyMemberEx(sub *sub,
 
 	if cv := firstCursorValue(js, gj.printFormat); len(cv) != 0 {
 		cursor := string(cv)
-		// Strip the gj/xxx: prefix from cursor for internal subscription use
-		// The cursor format is: gj/hexTimestamp:selID:val1:val2
+		// Strip the gj-xxx: prefix from cursor for internal subscription use
+		// The cursor format is: gj-hexTimestamp:selID:val1:val2
 		// We store just: selID:val1:val2 to match the decrypted format
 		// that the SQL CTE expects
-		if strings.HasPrefix(cursor, "gj/") {
+		if strings.HasPrefix(cursor, "gj-") {
 			if idx := strings.Index(cursor, ":"); idx != -1 {
 				cursor = cursor[idx+1:]
 			}
@@ -665,6 +665,8 @@ func getDialectForType(ct string) dialect.Dialect {
 		return &dialect.OracleDialect{}
 	case "sqlite":
 		return &dialect.SQLiteDialect{}
+	case "mssql":
+		return &dialect.MSSQLDialect{}
 	default:
 		return &dialect.PostgresDialect{}
 	}
