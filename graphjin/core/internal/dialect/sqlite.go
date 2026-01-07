@@ -363,6 +363,18 @@ func (d *SQLiteDialect) RenderLiteral(ctx Context, val string, valType qcode.Val
 	}
 }
 
+func (d *SQLiteDialect) RenderBooleanEqualsTrue(ctx Context, paramName string) {
+	ctx.WriteString(`(`)
+	ctx.AddParam(Param{Name: paramName, Type: "boolean"})
+	ctx.WriteString(` IS TRUE)`)
+}
+
+func (d *SQLiteDialect) RenderBooleanNotEqualsTrue(ctx Context, paramName string) {
+	ctx.WriteString(`(`)
+	ctx.AddParam(Param{Name: paramName, Type: "boolean"})
+	ctx.WriteString(` IS NOT TRUE)`)
+}
+
 func (d *SQLiteDialect) RenderJSONField(ctx Context, fieldName string, tableAlias string, colName string, isNull bool, isJSON bool) {
 	// Not used by SQLite in current implementation (handled in columns.go)
 }
@@ -1472,9 +1484,17 @@ func (d *SQLiteDialect) RequiresLowercaseIdentifiers() bool {
 	return false // SQLite doesn't require lowercase identifiers
 }
 
+func (d *SQLiteDialect) RequiresBooleanAsInt() bool {
+	return false // SQLite handles boolean as INTEGER natively
+}
+
 // Recursive CTE Syntax
 func (d *SQLiteDialect) RequiresRecursiveKeyword() bool {
 	return true // SQLite uses WITH RECURSIVE
+}
+
+func (d *SQLiteDialect) RequiresRecursiveCTEColumnList() bool {
+	return false // SQLite doesn't require explicit column list
 }
 
 func (d *SQLiteDialect) RenderRecursiveOffset(ctx Context) {
@@ -1487,6 +1507,10 @@ func (d *SQLiteDialect) RenderRecursiveLimit1(ctx Context) {
 
 func (d *SQLiteDialect) WrapRecursiveSelect() bool {
 	return true // SQLite needs extra SELECT * FROM (...) wrapping
+}
+
+func (d *SQLiteDialect) RenderRecursiveAnchorWhere(ctx Context, psel *qcode.Select, ti sdata.DBTable, pkCol string) bool {
+	return false // SQLite supports outer scope correlation in CTEs
 }
 
 // JSON Null Fields

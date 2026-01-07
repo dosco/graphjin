@@ -320,6 +320,18 @@ func (d *PostgresDialect) RenderLiteral(ctx Context, val string, valType qcode.V
 	}
 }
 
+func (d *PostgresDialect) RenderBooleanEqualsTrue(ctx Context, paramName string) {
+	ctx.WriteString(`(`)
+	ctx.AddParam(Param{Name: paramName, Type: "boolean"})
+	ctx.WriteString(` IS TRUE)`)
+}
+
+func (d *PostgresDialect) RenderBooleanNotEqualsTrue(ctx Context, paramName string) {
+	ctx.WriteString(`(`)
+	ctx.AddParam(Param{Name: paramName, Type: "boolean"})
+	ctx.WriteString(` IS NOT TRUE)`)
+}
+
 func (d *PostgresDialect) RenderJSONField(ctx Context, fieldName string, tableAlias string, colName string, isNull bool, isJSON bool) {
 	ctx.WriteString(`'`)
 	ctx.WriteString(fieldName)
@@ -765,9 +777,17 @@ func (d *PostgresDialect) RequiresLowercaseIdentifiers() bool {
 	return false // PostgreSQL doesn't require lowercase identifiers
 }
 
+func (d *PostgresDialect) RequiresBooleanAsInt() bool {
+	return false // PostgreSQL has native boolean support
+}
+
 // Recursive CTE Syntax
 func (d *PostgresDialect) RequiresRecursiveKeyword() bool {
 	return true // PostgreSQL uses WITH RECURSIVE
+}
+
+func (d *PostgresDialect) RequiresRecursiveCTEColumnList() bool {
+	return false // PostgreSQL doesn't require explicit column list
 }
 
 func (d *PostgresDialect) RenderRecursiveOffset(ctx Context) {
@@ -780,6 +800,10 @@ func (d *PostgresDialect) RenderRecursiveLimit1(ctx Context) {
 
 func (d *PostgresDialect) WrapRecursiveSelect() bool {
 	return false // PostgreSQL doesn't need extra wrapping
+}
+
+func (d *PostgresDialect) RenderRecursiveAnchorWhere(ctx Context, psel *qcode.Select, ti sdata.DBTable, pkCol string) bool {
+	return false // PostgreSQL supports outer scope correlation in CTEs
 }
 
 // JSON Null Fields

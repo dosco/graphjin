@@ -468,6 +468,18 @@ func (d *MySQLDialect) RenderLiteral(ctx Context, val string, valType qcode.ValT
 	}
 }
 
+func (d *MySQLDialect) RenderBooleanEqualsTrue(ctx Context, paramName string) {
+	ctx.WriteString(`(`)
+	ctx.AddParam(Param{Name: paramName, Type: "boolean"})
+	ctx.WriteString(` IS TRUE)`)
+}
+
+func (d *MySQLDialect) RenderBooleanNotEqualsTrue(ctx Context, paramName string) {
+	ctx.WriteString(`(`)
+	ctx.AddParam(Param{Name: paramName, Type: "boolean"})
+	ctx.WriteString(` IS NOT TRUE)`)
+}
+
 func (d *MySQLDialect) RenderJSONField(ctx Context, fieldName string, tableAlias string, colName string, isNull bool, isJSON bool) {
 	ctx.WriteString(`'`)
 	ctx.WriteString(fieldName)
@@ -1538,9 +1550,17 @@ func (d *MySQLDialect) RequiresLowercaseIdentifiers() bool {
 	return false // MySQL doesn't require lowercase identifiers
 }
 
+func (d *MySQLDialect) RequiresBooleanAsInt() bool {
+	return false // MySQL handles boolean as TINYINT(1) natively
+}
+
 // Recursive CTE Syntax
 func (d *MySQLDialect) RequiresRecursiveKeyword() bool {
 	return true // MySQL uses WITH RECURSIVE
+}
+
+func (d *MySQLDialect) RequiresRecursiveCTEColumnList() bool {
+	return false // MySQL doesn't require explicit column list
 }
 
 func (d *MySQLDialect) RenderRecursiveOffset(ctx Context) {
@@ -1553,6 +1573,10 @@ func (d *MySQLDialect) RenderRecursiveLimit1(ctx Context) {
 
 func (d *MySQLDialect) WrapRecursiveSelect() bool {
 	return false // MySQL doesn't need extra wrapping
+}
+
+func (d *MySQLDialect) RenderRecursiveAnchorWhere(ctx Context, psel *qcode.Select, ti sdata.DBTable, pkCol string) bool {
+	return false // MySQL supports outer scope correlation in CTEs
 }
 
 // JSON Null Fields

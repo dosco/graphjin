@@ -19,6 +19,7 @@ import (
 	"github.com/dosco/graphjin/core/v3/internal/dialect"
 	"github.com/dosco/graphjin/core/v3/internal/graph"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
 
 const (
@@ -735,6 +736,9 @@ func (c *stringContext) ColWithTable(table, col string) {
 }
 func (c *stringContext) RenderJSONFields(sel *qcode.Select) {}
 func (c *stringContext) IsTableMutated(table string) bool  { return false }
+func (c *stringContext) RenderExp(ti sdata.DBTable, ex *qcode.Exp) {
+	// Not implemented for stringContext - only used for subscription unboxing
+}
 
 // renderJSONArray function is called on the graphjin struct to render a json array.
 func renderJSONArray(v []json.RawMessage) json.RawMessage {

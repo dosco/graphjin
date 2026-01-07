@@ -2356,9 +2356,17 @@ func (d *MariaDBDialect) RequiresLowercaseIdentifiers() bool {
 	return false // MariaDB doesn't require lowercase identifiers
 }
 
+func (d *MariaDBDialect) RequiresBooleanAsInt() bool {
+	return false // MariaDB handles boolean as TINYINT(1) natively
+}
+
 // Recursive CTE Syntax
 func (d *MariaDBDialect) RequiresRecursiveKeyword() bool {
 	return true // MariaDB uses WITH RECURSIVE
+}
+
+func (d *MariaDBDialect) RequiresRecursiveCTEColumnList() bool {
+	return false // MariaDB doesn't require explicit column list
 }
 
 func (d *MariaDBDialect) RenderRecursiveOffset(ctx Context) {
@@ -2371,6 +2379,10 @@ func (d *MariaDBDialect) RenderRecursiveLimit1(ctx Context) {
 
 func (d *MariaDBDialect) WrapRecursiveSelect() bool {
 	return false // MariaDB doesn't need extra wrapping
+}
+
+func (d *MariaDBDialect) RenderRecursiveAnchorWhere(ctx Context, psel *qcode.Select, ti sdata.DBTable, pkCol string) bool {
+	return false // MariaDB supports outer scope correlation in CTEs
 }
 
 // JSON Null Fields

@@ -30,6 +30,31 @@ func resetDB(t *testing.T) {
 			DELETE FROM customers;
 			DELETE FROM sqlite_sequence;
 		`)
+	case "oracle":
+		// Oracle doesn't support multi-statement execution in a single Exec call
+		// Delete in reverse order of foreign key dependencies
+		db.Exec(`DELETE FROM quotations`)
+		db.Exec(`DELETE FROM graph_edge`)
+		db.Exec(`DELETE FROM graph_node`)
+		db.Exec(`DELETE FROM chats`)
+		db.Exec(`DELETE FROM comments`)
+		db.Exec(`DELETE FROM notifications`)
+		db.Exec(`DELETE FROM purchases`)
+		db.Exec(`DELETE FROM products`)
+		db.Exec(`DELETE FROM categories`)
+		_, err = db.Exec(`DELETE FROM users`)
+	case "mssql":
+		// MSSQL: Delete in reverse order of foreign key dependencies
+		db.Exec(`DELETE FROM quotations`)
+		db.Exec(`DELETE FROM graph_edge`)
+		db.Exec(`DELETE FROM graph_node`)
+		db.Exec(`DELETE FROM chats`)
+		db.Exec(`DELETE FROM comments`)
+		db.Exec(`DELETE FROM notifications`)
+		db.Exec(`DELETE FROM purchases`)
+		db.Exec(`DELETE FROM products`)
+		db.Exec(`DELETE FROM categories`)
+		_, err = db.Exec(`DELETE FROM users`)
 	}
 
 	if err != nil {
