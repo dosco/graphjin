@@ -215,7 +215,13 @@ func (c *compilerContext) renderBaseColumns(sel *qcode.Select) {
 
 func (c *compilerContext) renderTypename(sel *qcode.Select) {
 	c.squoted(sel.Table)
-	c.w.WriteString(` AS "__typename"`)
+	// Oracle uppercases all quoted identifiers, so we need to use uppercase
+	// to match when the column is later referenced
+	if c.dialect.Name() == "oracle" {
+		c.w.WriteString(` AS "__TYPENAME"`)
+	} else {
+		c.w.WriteString(` AS "__typename"`)
+	}
 }
 
 func (c *compilerContext) renderJSONFields(sel *qcode.Select) {

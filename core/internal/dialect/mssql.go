@@ -674,6 +674,18 @@ func (d *MSSQLDialect) RenderLiteral(ctx Context, val string, valType qcode.ValT
 	}
 }
 
+func (d *MSSQLDialect) RenderBooleanEqualsTrue(ctx Context, paramName string) {
+	ctx.WriteString(`(`)
+	ctx.AddParam(Param{Name: paramName, Type: "boolean"})
+	ctx.WriteString(` = 1)`)
+}
+
+func (d *MSSQLDialect) RenderBooleanNotEqualsTrue(ctx Context, paramName string) {
+	ctx.WriteString(`(`)
+	ctx.AddParam(Param{Name: paramName, Type: "boolean"})
+	ctx.WriteString(` <> 1)`)
+}
+
 // RenderJSONField renders a field for MSSQL's FOR JSON PATH.
 // Unlike MySQL's json_object which uses 'key', value pairs,
 // MSSQL FOR JSON PATH uses column aliases: col AS [key]
@@ -3426,9 +3438,17 @@ func (d *MSSQLDialect) RequiresLowercaseIdentifiers() bool {
 	return false // MSSQL doesn't require lowercase identifiers
 }
 
+func (d *MSSQLDialect) RequiresBooleanAsInt() bool {
+	return false // MSSQL handles boolean as BIT natively
+}
+
 // Recursive CTE Syntax
 func (d *MSSQLDialect) RequiresRecursiveKeyword() bool {
 	return true // MSSQL uses WITH RECURSIVE (actually just WITH, but keyword is used)
+}
+
+func (d *MSSQLDialect) RequiresRecursiveCTEColumnList() bool {
+	return true // MSSQL requires explicit column alias list in recursive CTEs
 }
 
 func (d *MSSQLDialect) RenderRecursiveOffset(ctx Context) {
@@ -3441,6 +3461,16 @@ func (d *MSSQLDialect) RenderRecursiveLimit1(ctx Context) {
 
 func (d *MSSQLDialect) WrapRecursiveSelect() bool {
 	return false // MSSQL doesn't need extra wrapping
+}
+
+func (d *MSSQLDialect) RenderRecursiveAnchorWhere(ctx Context, psel *qcode.Select, ti sdata.DBTable, pkCol string) bool {
+	// MSSQL doesn't support outer scope correlation in CTEs
+	// Instead of correlating with outer table alias, inline the parent's WHERE expression
+	if psel.Where.Exp != nil {
+		ctx.RenderExp(ti, psel.Where.Exp)
+		return true
+	}
+	return false
 }
 
 // JSON Null Fields

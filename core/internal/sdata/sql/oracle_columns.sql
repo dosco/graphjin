@@ -1,8 +1,17 @@
-SELECT 
+SELECT
     owner AS "schema",
     table_name AS "table",
     column_name AS "column",
-    data_type AS "type",
+    CASE
+        WHEN data_type = 'CLOB' AND EXISTS (
+            SELECT 1 FROM all_constraints ac
+            WHERE ac.owner = tc.owner
+              AND ac.table_name = tc.table_name
+              AND ac.constraint_type = 'C'
+              AND UPPER(ac.search_condition_vc) LIKE '%' || tc.column_name || '%IS%JSON%'
+        ) THEN 'json'
+        ELSE data_type
+    END AS "type",
     CASE WHEN nullable = 'N' THEN 1 ELSE 0 END AS not_null,
     CASE WHEN EXISTS (
         SELECT 1 FROM all_constraints ac

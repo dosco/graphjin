@@ -26,12 +26,25 @@ func (c *compilerContext) renderRecursiveCTE(sel *qcode.Select) {
 		c.w.WriteString(`RECURSIVE `)
 	}
 	c.quoted("__rcte_" + sel.Table)
-	// Standard SQL doesn't require explicit column list in CTE
-	// The columns are implied from the SELECT
+	// Oracle/MSSQL require explicit column alias list in recursive CTEs
+	if c.dialect.RequiresRecursiveCTEColumnList() {
+		c.w.WriteString(`(`)
+		c.renderRecursiveCTEColumnList(sel)
+		c.w.WriteString(`)`)
+	}
 	c.w.WriteString(` AS (`)
 	c.renderCursorCTE(sel)
 	c.renderRecursiveSelect(sel)
 	c.w.WriteString(`) `)
+}
+
+func (c *compilerContext) renderRecursiveCTEColumnList(sel *qcode.Select) {
+	for i, col := range sel.BCols {
+		if i != 0 {
+			c.w.WriteString(`, `)
+		}
+		c.quoted(col.Col.Name)
+	}
 }
 
 func (c *compilerContext) renderRecursiveSelect(sel *qcode.Select) {
@@ -45,11 +58,19 @@ func (c *compilerContext) renderRecursiveSelect(sel *qcode.Select) {
 	}
 	c.renderRecursiveBaseColumns(sel)
 	c.renderFrom(psel)
-	c.w.WriteString(` WHERE (`)
-	c.colWithTable(sel.Table, sel.Ti.PrimaryCol.Name)
-	c.w.WriteString(`) = (`)
-	c.colWithTableID(psel.Table, psel.ID, sel.Ti.PrimaryCol.Name)
-	c.w.WriteString(`) `)
+	c.w.WriteString(` WHERE `)
+	// Use dialect-specific WHERE clause for recursive CTE anchor
+	// Oracle/MSSQL: inline parent's WHERE expression (no outer scope correlation)
+	// Postgres/MySQL: correlate with outer scope table alias
+	if !c.dialect.RenderRecursiveAnchorWhere(c, psel, sel.Ti, sel.Ti.PrimaryCol.Name) {
+		// Default: correlate with outer scope (works in Postgres/MySQL)
+		c.w.WriteString(`(`)
+		c.colWithTable(sel.Table, sel.Ti.PrimaryCol.Name)
+		c.w.WriteString(`) = (`)
+		c.colWithTableID(psel.Table, psel.ID, sel.Ti.PrimaryCol.Name)
+		c.w.WriteString(`)`)
+	}
+	c.w.WriteString(` `)
 	// Use dialect-specific LIMIT 1 syntax
 	c.dialect.RenderRecursiveLimit1(c)
 	c.w.WriteString(`) UNION ALL `)

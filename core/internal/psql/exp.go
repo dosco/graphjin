@@ -195,15 +195,11 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 		c.w.WriteString(`<`)
 	
 	case qcode.OpEqualsTrue:
-		c.w.WriteString(`(`)
-		c.renderParam(Param{Name: ex.Right.Val, Type: "boolean"})
-		c.w.WriteString(` IS TRUE)`)
+		c.dialect.RenderBooleanEqualsTrue(c, ex.Right.Val)
 		return
 
 	case qcode.OpNotEqualsTrue:
-		c.w.WriteString(`(`)
-		c.renderParam(Param{Name: ex.Right.Val, Type: "boolean"})
-		c.w.WriteString(` IS NOT TRUE)`)
+		c.dialect.RenderBooleanNotEqualsTrue(c, ex.Right.Val)
 		return
 
 	case qcode.OpIsNull:

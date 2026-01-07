@@ -106,7 +106,10 @@ func (d *OracleDialect) RenderJSONRootField(ctx Context, key string, val func())
 	ctx.WriteString(`' VALUE `)
 	val()
 	// Add FORMAT JSON for nested JSON values to prevent double-escaping
-	ctx.WriteString(` FORMAT JSON`)
+	// But NOT for __typename which is a simple string value, not JSON
+	if key != "__typename" {
+		ctx.WriteString(` FORMAT JSON`)
+	}
 }
 
 func (d *OracleDialect) RenderTableAlias(ctx Context, alias string) {
@@ -251,14 +254,80 @@ func (d *OracleDialect) RenderList(ctx Context, ex *qcode.Exp) {
 	ctx.WriteString(`(`)
 	for i := range ex.Right.ListVal {
 		if i != 0 {
-			ctx.WriteString(`, `)
+			ctx.WriteString(` UNION ALL `)
 		}
-		d.RenderLiteral(ctx, ex.Right.ListVal[i], ex.Right.ListType)
+		ctx.WriteString(`SELECT `)
+		switch ex.Right.ListType {
+		case qcode.ValBool, qcode.ValNum:
+			ctx.WriteString(ex.Right.ListVal[i])
+		case qcode.ValStr:
+			ctx.WriteString(`'`)
+			ctx.WriteString(ex.Right.ListVal[i])
+			ctx.WriteString(`'`)
+		case qcode.ValDBVar:
+			d.RenderVar(ctx, ex.Right.ListVal[i])
+		default:
+			ctx.WriteString(ex.Right.ListVal[i])
+		}
+		ctx.WriteString(` FROM DUAL`)
 	}
 	ctx.WriteString(`)`)
 }
 
 func (d *OracleDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
+	// Handle JSON key existence operations
+	if ex.Op == qcode.OpHasKeyAny || ex.Op == qcode.OpHasKeyAll {
+		op := " OR "
+		if ex.Op == qcode.OpHasKeyAll {
+			op = " AND "
+		}
+		ctx.WriteString(`(`)
+		if ex.Right.ValType == qcode.ValVar {
+			// Variable case: use JSON_TABLE to iterate keys from the variable array
+			// For has_key_all: NOT EXISTS (keys where NOT JSON_EXISTS)
+			// For has_key_any: EXISTS (keys where JSON_EXISTS)
+			if ex.Op == qcode.OpHasKeyAll {
+				ctx.WriteString(`NOT EXISTS (SELECT 1 FROM JSON_TABLE(`)
+			} else {
+				ctx.WriteString(`EXISTS (SELECT 1 FROM JSON_TABLE(`)
+			}
+			ctx.AddParam(Param{Name: ex.Right.Val, Type: "json", IsArray: true})
+			ctx.WriteString(`, '$[*]' COLUMNS("VALUE" VARCHAR2(4000) PATH '$')) WHERE `)
+			if ex.Op == qcode.OpHasKeyAll {
+				ctx.WriteString(`NOT `)
+			}
+			ctx.WriteString(`JSON_EXISTS(`)
+			var table string
+			if ex.Left.Table == "" {
+				table = ex.Left.Col.Table
+			} else {
+				table = ex.Left.Table
+			}
+			ctx.ColWithTable(table, ex.Left.Col.Name)
+			ctx.WriteString(`, '$."' || "VALUE" || '"'))`)
+		} else if ex.Right.ValType == qcode.ValList {
+			// Static list case: generate JSON_EXISTS checks for each key
+			for i, key := range ex.Right.ListVal {
+				if i != 0 {
+					ctx.WriteString(op)
+				}
+				ctx.WriteString(`JSON_EXISTS(`)
+				var table string
+				if ex.Left.Table == "" {
+					table = ex.Left.Col.Table
+				} else {
+					table = ex.Left.Table
+				}
+				ctx.ColWithTable(table, ex.Left.Col.Name)
+				ctx.WriteString(`, '$.`)
+				ctx.WriteString(key)
+				ctx.WriteString(`')`)
+			}
+		}
+		ctx.WriteString(`)`)
+		return true
+	}
+
 	// Handle array column overlap operations
 	// OpHasInCommon is used when comparing array columns to a list
 	// It checks if any element in the column's JSON array exists in the provided list
@@ -310,6 +379,42 @@ func (d *OracleDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
 		ctx.WriteString(`)))`)
 		return true
 	}
+
+	// Handle regex operations - Oracle uses REGEXP_LIKE function syntax
+	if ex.Op == qcode.OpRegex || ex.Op == qcode.OpIRegex ||
+		ex.Op == qcode.OpNotRegex || ex.Op == qcode.OpNotIRegex {
+		if ex.Op == qcode.OpNotRegex || ex.Op == qcode.OpNotIRegex {
+			ctx.WriteString(`NOT `)
+		}
+		ctx.WriteString(`REGEXP_LIKE(`)
+
+		// Render the column
+		var table string
+		if ex.Left.Table == "" {
+			table = ex.Left.Col.Table
+		} else {
+			table = ex.Left.Table
+		}
+		ctx.ColWithTable(table, ex.Left.Col.Name)
+
+		ctx.WriteString(`, `)
+		// Render the pattern value
+		if ex.Right.ValType == qcode.ValVar {
+			ctx.AddParam(Param{Name: ex.Right.Val, Type: "text"})
+		} else {
+			ctx.WriteString(`'`)
+			ctx.WriteString(ex.Right.Val)
+			ctx.WriteString(`'`)
+		}
+
+		// Add 'i' flag for case-insensitive
+		if ex.Op == qcode.OpIRegex || ex.Op == qcode.OpNotIRegex {
+			ctx.WriteString(`, 'i'`)
+		}
+		ctx.WriteString(`)`)
+		return true
+	}
+
 	return false
 }
 
@@ -336,6 +441,32 @@ func (d *OracleDialect) RenderSearchHeadline(ctx Context, sel *qcode.Select, f q
 }
 
 func (d *OracleDialect) RenderValVar(ctx Context, ex *qcode.Exp, val string) bool {
+	// Handle special __gj_json_pk format for bulk JSON inserts (explicit PK in JSON)
+	if (ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn) &&
+		strings.HasPrefix(ex.Right.Val, "__gj_json_pk:gj_sep:") {
+
+		parts := strings.Split(ex.Right.Val, ":gj_sep:")
+		if len(parts) == 4 {
+			actionVar := parts[1]
+			jsonKey := parts[2]
+			colType := parts[3]
+
+			// Render: IN (SELECT "id" FROM JSON_TABLE(:param, '$[*]' COLUMNS("id" TYPE PATH '$.id')))
+			ctx.WriteString(`(SELECT `)
+			ctx.Quote(jsonKey)
+			ctx.WriteString(` FROM JSON_TABLE(`)
+			ctx.AddParam(Param{Name: actionVar, Type: "json", WrapInArray: true})
+			ctx.WriteString(`, '$[*]' COLUMNS(`)
+			ctx.Quote(jsonKey)
+			ctx.WriteString(` `)
+			ctx.WriteString(d.oracleType(colType))
+			ctx.WriteString(` PATH '$.`)
+			ctx.WriteString(jsonKey)
+			ctx.WriteString(`')))`)
+			return true
+		}
+	}
+
 	if ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn {
 		// Oracle can't bind arrays directly to SQL, use JSON_TABLE to unpack JSON array
 		ctx.WriteString(`(SELECT "VALUE" FROM JSON_TABLE(`)
@@ -373,6 +504,23 @@ func (d *OracleDialect) RenderLiteral(ctx Context, val string, valType qcode.Val
 	default:
 		ctx.Quote(val)
 	}
+}
+
+func (d *OracleDialect) RenderBooleanEqualsTrue(ctx Context, paramName string) {
+	// Oracle doesn't have native SQL boolean in SQL contexts
+	// The Go driver converts Go bool to PL/SQL BOOLEAN which can't be used in SQL
+	// Boolean values are converted to int (1/0) in args.go via RequiresBooleanAsInt()
+	ctx.WriteString(`(`)
+	ctx.AddParam(Param{Name: paramName, Type: "number"})
+	ctx.WriteString(` = 1)`)
+}
+
+func (d *OracleDialect) RenderBooleanNotEqualsTrue(ctx Context, paramName string) {
+	// Oracle doesn't have native SQL boolean in SQL contexts
+	// Boolean values are converted to int (1/0) in args.go via RequiresBooleanAsInt()
+	ctx.WriteString(`(`)
+	ctx.AddParam(Param{Name: paramName, Type: "number"})
+	ctx.WriteString(` <> 1)`)
 }
 
 func (d *OracleDialect) RenderValArrayColumn(ctx Context, ex *qcode.Exp, table string, pid int32) {
@@ -486,11 +634,47 @@ func (d *OracleDialect) RenderAssign(ctx Context, col string, val string) {
 }
 
 func (d *OracleDialect) RenderCast(ctx Context, val func(), typ string) {
-	ctx.WriteString(`CAST(`)
-	val()
-	ctx.WriteString(` AS `)
-	ctx.WriteString(typ)
-	ctx.WriteString(`)`)
+	upperTyp := strings.ToUpper(typ)
+	switch upperTyp {
+	case "CLOB", "NCLOB", "JSON", "JSONB", "BLOB":
+		// For LOB types, just pass the value directly - Oracle driver handles conversion
+		// CAST and TO_CLOB don't work well with bind variables in PL/SQL contexts
+		val()
+	default:
+		ctx.WriteString(`CAST(`)
+		val()
+		ctx.WriteString(` AS `)
+		// Oracle's CAST requires size for certain types
+		ctx.WriteString(d.castType(typ))
+		ctx.WriteString(`)`)
+	}
+}
+
+// castType converts GraphJin column types to Oracle CAST types
+// Oracle's CAST requires size specifications for VARCHAR2, NVARCHAR2, etc.
+func (d *OracleDialect) castType(typ string) string {
+	upperTyp := strings.ToUpper(typ)
+	switch upperTyp {
+	case "VARCHAR2", "VARCHAR", "NVARCHAR2", "NVARCHAR":
+		return "VARCHAR2(4000)"
+	case "CHAR", "NCHAR":
+		return "CHAR(255)"
+	case "RAW":
+		return "RAW(2000)"
+	case "NUMBER", "INTEGER", "INT", "BIGINT", "SMALLINT", "FLOAT", "DOUBLE", "REAL", "NUMERIC", "DECIMAL":
+		return "NUMBER"
+	case "CLOB", "NCLOB", "BLOB":
+		return upperTyp
+	case "DATE", "TIMESTAMP", "TIMESTAMPTZ":
+		return "TIMESTAMP"
+	default:
+		// If the type already has a size specification (e.g., "VARCHAR2(100)"), use as-is
+		if strings.Contains(typ, "(") {
+			return typ
+		}
+		// Default to VARCHAR2(4000) for unknown string types
+		return typ
+	}
 }
 
 func (d *OracleDialect) RenderTryCast(ctx Context, val func(), typ string) {
@@ -560,10 +744,14 @@ func (d *OracleDialect) RenderVar(ctx Context, name string) {
 
 func (d *OracleDialect) RenderSetup(ctx Context) {
 	ctx.WriteString("DECLARE\n")
+	// Cursor for returning query results via DBMS_SQL.RETURN_RESULT
+	ctx.WriteString("  c SYS_REFCURSOR;\n")
 }
 
 func (d *OracleDialect) RenderBegin(ctx Context) {
 	ctx.WriteString("BEGIN\n")
+	// Set NLS_TIMESTAMP_FORMAT to handle common timestamp formats in JSON input
+	ctx.WriteString("  EXECUTE IMMEDIATE 'ALTER SESSION SET NLS_TIMESTAMP_FORMAT = ''YYYY-MM-DD HH24:MI:SS''';\n")
 }
 
 func (d *OracleDialect) RenderVarDeclaration(ctx Context, name, typeName string) {
@@ -585,7 +773,8 @@ func (d *OracleDialect) RenderVarDeclaration(ctx Context, name, typeName string)
 }
 
 func (d *OracleDialect) RenderTeardown(ctx Context) {
-	ctx.WriteString("END;")
+	// Return the cursor result set via DBMS_SQL.RETURN_RESULT (Oracle 12c+)
+	ctx.WriteString("; DBMS_SQL.RETURN_RESULT(c); END;")
 }
 
 func (d *OracleDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, n int, renderRoot func()) {
@@ -630,6 +819,7 @@ func (d *OracleDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, n 
 		ctx.WriteString(` `)
 
 		// Map types for Oracle JSON_TABLE columns
+		// Note: CLOB is not supported in JSON_TABLE COLUMNS, use VARCHAR2 for JSON/text types
 		switch col.Col.Type {
 		case "varchar", "character varying", "text", "string", "varchar2":
 			ctx.WriteString("VARCHAR2(4000)")
@@ -640,9 +830,12 @@ func (d *OracleDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, n 
 		case "float", "double", "numeric", "real":
 			ctx.WriteString("NUMBER")
 		case "json", "jsonb", "clob":
-			ctx.WriteString("CLOB")
+			// CLOB and FORMAT JSON not supported in JSON_TABLE COLUMNS for extraction
+			// Use VARCHAR2 which can hold up to 4000 chars for typical JSON values
+			ctx.WriteString("VARCHAR2(4000)")
 		case "timestamp", "timestamptz", "timestamp without time zone", "timestamp with time zone":
-			ctx.WriteString("TIMESTAMP")
+			// Extract as VARCHAR2, Oracle will implicitly convert to TIMESTAMP on insert
+			ctx.WriteString("VARCHAR2(30)")
 		case "date":
 			ctx.WriteString("DATE")
 		default:
@@ -665,9 +858,8 @@ func (d *OracleDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, n 
 		ctx.WriteString(`'`)
 	}
 
-	ctx.WriteString(`)) `)
+	ctx.WriteString(`))) `)
 	ctx.Quote("t")
-	ctx.WriteString(`)`)
 }
 
 func (d *OracleDialect) RenderSetSessionVar(ctx Context, name, value string) bool {
@@ -744,6 +936,7 @@ func (d *OracleDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qco
 
 	i = 0
 	hasExplicitPK := false
+	pkFieldName := ""
 	for _, col := range m.Cols {
 		if i != 0 {
 			ctx.WriteString(", ")
@@ -751,6 +944,7 @@ func (d *OracleDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qco
 		renderColVal(col)
 		if col.Col.Name == m.Ti.PrimaryCol.Name {
 			hasExplicitPK = true
+			pkFieldName = col.FieldName
 		}
 		i++
 	}
@@ -776,19 +970,37 @@ func (d *OracleDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qco
 	if m.IsJSON {
 		ctx.WriteString(" FROM ")
 		d.RenderMutateToRecordSet(ctx, m, 0, func() {
-			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+			// WrapInArray: Oracle JSON_TABLE with '$[*]' path expects array input
+			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json", WrapInArray: true})
 		})
+		ctx.WriteString("; ")
+
+		// For JSON inserts with explicit PK, capture the ID from JSON
+		// This is needed for dependent mutations that reference this ID
+		if hasExplicitPK && m.Type == qcode.MTInsert {
+			ctx.WriteString("SELECT JSON_VALUE(")
+			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+			ctx.WriteString(", '$.")
+			for _, p := range m.Path {
+				ctx.WriteString(p)
+				ctx.WriteString(".")
+			}
+			ctx.WriteString(pkFieldName)
+			ctx.WriteString("') INTO v_")
+			ctx.WriteString(varName)
+			ctx.WriteString(" FROM DUAL")
+		}
 	} else {
 		ctx.WriteString(")")
-	}
-
-	if !hasExplicitPK {
-		switch m.Type {
-		case qcode.MTInsert:
-			d.RenderIDCapture(ctx, varName)
+		// For VALUES inserts: always capture ID using RETURNING INTO
+		// Works for both explicit and auto-generated PKs
+		if m.Type == qcode.MTInsert {
+			ctx.WriteString(` RETURNING `)
+			ctx.Quote(m.Ti.PrimaryCol.Name)
+			ctx.WriteString(` INTO v_`)
+			ctx.WriteString(varName)
 		}
 	}
-	ctx.WriteString("; ")
 }
 
 func (d *OracleDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderColVal func(qcode.MColumn), renderWhere func()) {
@@ -836,7 +1048,8 @@ func (d *OracleDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qco
 		// From
 		if m.IsJSON {
 			d.RenderMutateToRecordSet(ctx, m, 0, func() {
-				ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+				// WrapInArray: Oracle JSON_TABLE with '$[*]' path expects array input
+				ctx.AddParam(Param{Name: qc.ActionVar, Type: "json", WrapInArray: true})
 			})
 		}
 	}, func() {
@@ -852,20 +1065,19 @@ func (d *OracleDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qco
 		}
 		renderWhere()
 	})
-	ctx.WriteString("; ")
 }
 
 func (d *OracleDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
-    // Oracle Connect: JSON_ARRAYAGG
-	ctx.WriteString(`SELECT JSON_ARRAYAGG(`)
+	// Oracle Connect: SELECT INTO for scalar value
+	ctx.WriteString(`SELECT `)
 	ctx.ColWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
-	ctx.WriteString(`) INTO `)
+	ctx.WriteString(` INTO `)
 	d.RenderVar(ctx, varName)
-	
+
 	if m.IsJSON {
 		ctx.WriteString(` FROM `)
 		d.RenderMutateToRecordSet(ctx, m, 0, func() {
-			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json", WrapInArray: true})
 		})
 		ctx.WriteString(`, `)
 	} else {
@@ -874,20 +1086,41 @@ func (d *OracleDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qc
 	ctx.Quote(m.Ti.Name)
 	ctx.WriteString(` WHERE `)
 	renderFilter()
-	ctx.WriteString("; ")
+
+	// If this is a One-to-Many connection (Child needs to point to Parent),
+	// we need to update the child table with the parent's ID.
+	var parentVar string
+	for id := range m.DependsOn {
+		if qc.Mutates[id].Ti.Name == m.Rel.Right.Col.Table {
+			parentVar = d.getVarName(qc.Mutates[id])
+			break
+		}
+	}
+
+	if parentVar != "" {
+		ctx.WriteString("; UPDATE ")
+		ctx.Quote(m.Ti.Name)
+		ctx.WriteString(" SET ")
+		ctx.Quote(m.Rel.Left.Col.Name)
+		ctx.WriteString(" = v_")
+		ctx.WriteString(parentVar)
+		ctx.WriteString(" WHERE ")
+		renderFilter()
+	}
 }
 
 func (d *OracleDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
-     // Oracle Disconnect: JSON_ARRAYAGG
+    // Oracle Disconnect: JSON_ARRAYAGG
 	ctx.WriteString(`SELECT JSON_ARRAYAGG(`)
 	ctx.ColWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
 	ctx.WriteString(`) INTO `)
 	d.RenderVar(ctx, varName)
-	
+
 	if m.IsJSON {
 		ctx.WriteString(` FROM `)
 		d.RenderMutateToRecordSet(ctx, m, 0, func() {
-			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+			// WrapInArray: Oracle JSON_TABLE with '$[*]' path expects array input
+			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json", WrapInArray: true})
 		})
 		ctx.WriteString(`, `)
 	} else {
@@ -896,13 +1129,117 @@ func (d *OracleDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, qc 
 	ctx.Quote(m.Ti.Name)
 	ctx.WriteString(` WHERE `)
 	renderFilter()
-	ctx.WriteString("; ")
 }
 
 
-func (d *OracleDialect) ModifySelectsForMutation(qc *qcode.QCode) {}
+func (d *OracleDialect) ModifySelectsForMutation(qc *qcode.QCode) {
+	if qc.Type != qcode.QTMutation || qc.Selects == nil {
+		return
+	}
 
-func (d *OracleDialect) RenderQueryPrefix(ctx Context, qc *qcode.QCode) {}
+	// For Oracle, we need to inject a WHERE clause to filter by the captured IDs
+	// The IDs are captured via RETURNING INTO v_tablename_N
+	for i := range qc.Selects {
+		sel := &qc.Selects[i]
+
+		// Only modify the root-level selects that correspond to mutated tables
+		if sel.ParentID != -1 {
+			continue
+		}
+
+		// Collect ALL mutations for this table
+		var mutations []qcode.Mutate
+		for _, m := range qc.Mutates {
+			if m.Ti.Name == sel.Table && (m.Type == qcode.MTInsert || m.Type == qcode.MTUpdate || m.Type == qcode.MTUpsert) {
+				mutations = append(mutations, m)
+			}
+		}
+
+		if len(mutations) == 0 {
+			continue
+		}
+
+		// If the user provided a WHERE clause, don't override it
+		if sel.Where.Exp != nil {
+			continue
+		}
+
+		var exp *qcode.Exp
+
+		// Special handling for JSON bulk inserts
+		if len(mutations) == 1 && mutations[0].IsJSON {
+			m := mutations[0]
+
+			// Check if PK is provided in JSON input
+			hasExplicitPK := false
+			var pkName string
+			for _, col := range m.Cols {
+				if col.Col.Name == m.Ti.PrimaryCol.Name {
+					hasExplicitPK = true
+					pkName = col.FieldName
+					break
+				}
+			}
+
+			if hasExplicitPK {
+				// Filter by IDs from JSON: WHERE id IN (SELECT ... FROM JSON_TABLE(...))
+				exp = &qcode.Exp{Op: qcode.OpIn}
+				col := m.Ti.PrimaryCol
+				col.Table = m.Ti.Name
+				exp.Left.Col = col
+				exp.Left.ID = -1
+				exp.Right.ValType = qcode.ValVar
+				// Special format for RenderValVar to parse
+				exp.Right.Val = fmt.Sprintf("__gj_json_pk:gj_sep:%s:gj_sep:%s:gj_sep:%s", qc.ActionVar, pkName, m.Ti.PrimaryCol.Type)
+			} else {
+				// Auto-generated PKs - use captured variable (existing behavior)
+				varName := m.Ti.Name + "_" + fmt.Sprintf("%d", m.ID)
+				exp = &qcode.Exp{Op: qcode.OpEquals}
+				col := m.Ti.PrimaryCol
+				col.Table = m.Ti.Name
+				exp.Left.Col = col
+				exp.Left.ID = -1
+				exp.Right.ValType = qcode.ValDBVar
+				exp.Right.Val = varName
+			}
+		} else if len(mutations) == 1 {
+			// Single non-JSON mutation - filter by id = v_varName
+			m := mutations[0]
+			varName := m.Ti.Name + "_" + fmt.Sprintf("%d", m.ID)
+			exp = &qcode.Exp{Op: qcode.OpEquals}
+			col := m.Ti.PrimaryCol
+			col.Table = m.Ti.Name
+			exp.Left.Col = col
+			exp.Left.ID = -1
+			exp.Right.ValType = qcode.ValDBVar
+			exp.Right.Val = varName
+		} else {
+			// Multiple mutations - filter by id IN (v_var1, v_var2, ...)
+			m := mutations[0]
+			exp = &qcode.Exp{Op: qcode.OpIn}
+			col := m.Ti.PrimaryCol
+			col.Table = m.Ti.Name
+			exp.Left.Col = col
+			exp.Left.ID = -1
+			exp.Right.ValType = qcode.ValList
+			exp.Right.ListType = qcode.ValDBVar
+			for _, mut := range mutations {
+				varName := mut.Ti.Name + "_" + fmt.Sprintf("%d", mut.ID)
+				exp.Right.ListVal = append(exp.Right.ListVal, varName)
+			}
+		}
+
+		// Set the WHERE clause
+		if exp != nil {
+			sel.Where.Exp = exp
+		}
+	}
+}
+
+func (d *OracleDialect) RenderQueryPrefix(ctx Context, qc *qcode.QCode) {
+	// Open cursor for the SELECT query that will be returned via DBMS_SQL.RETURN_RESULT
+	ctx.WriteString("OPEN c FOR ")
+}
 
 func (d *OracleDialect) SplitQuery(query string) (parts []string) { return []string{query} }
 
@@ -920,7 +1257,8 @@ func (d *OracleDialect) RoleSelectPrefix() string {
 }
 
 func (d *OracleDialect) RoleLimitSuffix() string {
-	return `) AS _sg_auth_roles_query FETCH FIRST 1 ROWS ONLY) `
+	// Oracle doesn't support AS for table aliases
+	return `) "_SG_AUTH_ROLES_QUERY" FETCH FIRST 1 ROWS ONLY) `
 }
 
 func (d *OracleDialect) RoleDummyTable() string {
@@ -940,9 +1278,17 @@ func (d *OracleDialect) RequiresLowercaseIdentifiers() bool {
 	return true // Oracle requires lowercase identifiers in configuration
 }
 
+func (d *OracleDialect) RequiresBooleanAsInt() bool {
+	return true // Oracle's PL/SQL BOOLEAN can't be used in SQL WHERE clauses
+}
+
 // Recursive CTE Syntax
 func (d *OracleDialect) RequiresRecursiveKeyword() bool {
 	return false // Oracle doesn't use RECURSIVE keyword
+}
+
+func (d *OracleDialect) RequiresRecursiveCTEColumnList() bool {
+	return true // Oracle requires explicit column alias list in recursive CTEs
 }
 
 func (d *OracleDialect) RenderRecursiveOffset(ctx Context) {
@@ -955,6 +1301,16 @@ func (d *OracleDialect) RenderRecursiveLimit1(ctx Context) {
 
 func (d *OracleDialect) WrapRecursiveSelect() bool {
 	return false // Oracle doesn't need extra wrapping
+}
+
+func (d *OracleDialect) RenderRecursiveAnchorWhere(ctx Context, psel *qcode.Select, ti sdata.DBTable, pkCol string) bool {
+	// Oracle doesn't support outer scope correlation in CTEs
+	// Instead of correlating with outer table alias, inline the parent's WHERE expression
+	if psel.Where.Exp != nil {
+		ctx.RenderExp(ti, psel.Where.Exp)
+		return true
+	}
+	return false
 }
 
 // JSON Null Fields
@@ -1002,5 +1358,5 @@ func (d *OracleDialect) RequiresJSONQueryWrapper() bool {
 }
 
 func (d *OracleDialect) RequiresNullOnEmptySelect() bool {
-	return false // Oracle doesn't need NULL when no columns rendered
+	return true // Oracle needs NULL when no columns rendered to avoid empty JSON_OBJECT()
 }

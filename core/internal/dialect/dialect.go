@@ -19,12 +19,13 @@ type Context interface {
 	Write(s string) (int, error)
 	WriteString(s string) (int, error) // io.StringWriter
 	AddParam(p Param) string
-	
+
 	// Helpers commonly used by dialects
 	Quote(s string)
 	ColWithTable(table, col string)
 	RenderJSONFields(sel *qcode.Select)
 	IsTableMutated(table string) bool
+	RenderExp(ti sdata.DBTable, ex *qcode.Exp)
 }
 
 // InlineChildRenderer is passed to dialects for rendering inline children
@@ -72,6 +73,8 @@ type Dialect interface {
 	RenderValArrayColumn(ctx Context, ex *qcode.Exp, table string, pid int32)
 	RenderArray(ctx Context, items []string)
 	RenderLiteral(ctx Context, val string, valType qcode.ValType)
+	RenderBooleanEqualsTrue(ctx Context, paramName string)
+	RenderBooleanNotEqualsTrue(ctx Context, paramName string)
 	RenderJSONField(ctx Context, fieldName string, tableAlias string, colName string, isNull bool, isJSON bool)
 	RenderRootTerminator(ctx Context)
 	RenderBaseTable(ctx Context)
@@ -146,12 +149,19 @@ type Dialect interface {
 	// Driver Behavior (moves db-specific code from core/args.go and core/core.go)
 	RequiresJSONAsString() bool          // Oracle/MSSQL need JSON as string
 	RequiresLowercaseIdentifiers() bool  // Oracle needs lowercase schemas
+	RequiresBooleanAsInt() bool          // Oracle needs bool as 1/0 (PL/SQL BOOLEAN can't be used in SQL)
 
 	// Recursive CTE Syntax (moves db-specific code from psql/recur.go)
 	RequiresRecursiveKeyword() bool      // Oracle doesn't use RECURSIVE
+	RequiresRecursiveCTEColumnList() bool // Oracle requires explicit column alias list
 	RenderRecursiveOffset(ctx Context)   // OFFSET 1 vs LIMIT -1 OFFSET 1 vs LIMIT 1, MAX
 	RenderRecursiveLimit1(ctx Context)   // LIMIT 1 vs FETCH FIRST 1 ROWS ONLY
 	WrapRecursiveSelect() bool           // SQLite needs extra SELECT * FROM (...)
+	// RenderRecursiveAnchorWhere renders the WHERE clause for recursive CTE anchor
+	// Returns true if it handled the WHERE rendering, false to use default correlation
+	// For Oracle/MSSQL: inline parent's WHERE expression (no outer scope correlation)
+	// For Postgres/MySQL: return false to use default outer scope correlation
+	RenderRecursiveAnchorWhere(ctx Context, psel *qcode.Select, ti sdata.DBTable, pkCol string) bool
 
 	// JSON Null Fields (moves db-specific code from psql/query.go)
 	RenderJSONNullField(ctx Context, fieldName string)       // NULL field syntax
