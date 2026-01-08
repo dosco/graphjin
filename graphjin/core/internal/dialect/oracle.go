@@ -1223,9 +1223,16 @@ func (d *OracleDialect) renderChildUpdate(ctx Context, m *qcode.Mutate, qc *qcod
 }
 
 func (d *OracleDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
-	// Oracle Connect: SELECT INTO for scalar value
+	// Oracle Connect: SELECT INTO for scalar value, or JSON_ARRAYAGG for array columns
 	ctx.WriteString(`SELECT `)
-	ctx.ColWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
+	if m.Rel.Right.Col.Array {
+		// Array column: aggregate multiple IDs into a JSON array
+		ctx.WriteString(`JSON_ARRAYAGG(`)
+		ctx.ColWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
+		ctx.WriteString(`)`)
+	} else {
+		ctx.ColWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
+	}
 	ctx.WriteString(` INTO `)
 	d.RenderVar(ctx, varName)
 
@@ -1511,8 +1518,12 @@ func (d *OracleDialect) RenderArrayAggPrefix(ctx Context, distinct bool) {
 }
 
 func (d *OracleDialect) RenderArrayRemove(ctx Context, col string, val func()) {
-	// Oracle doesn't have a simple array_remove, would need JSON_TABLE approach
-	ctx.WriteString(` NULL`) // Placeholder - needs proper implementation
+	// Oracle: Use JSON_TABLE to unpack, filter out the value, and re-aggregate
+	ctx.WriteString(` (SELECT JSON_ARRAYAGG(j."VALUE") FROM JSON_TABLE(`)
+	ctx.Quote(col)
+	ctx.WriteString(`, '$[*]' COLUMNS("VALUE" NUMBER PATH '$')) j WHERE j."VALUE" != `)
+	val()
+	ctx.WriteString(`)`)
 }
 
 // Column rendering
