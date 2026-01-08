@@ -658,27 +658,24 @@ func (c *compilerContext) renderOneToOneDisconnectStmt(m qcode.Mutate) {
 			c.w.WriteString(`, `)
 			c.colWithTable(("_x_" + m.Rel.Right.Col.Table), m.Rel.Right.Col.Name)
 			c.w.WriteString(`)`)
+		} else if c.dialect.Name() == "mysql" || c.dialect.Name() == "mariadb" {
+			// MySQL/MariaDB use JSON_REMOVE with JSON_SEARCH
+			c.w.WriteString(` JSON_REMOVE(`)
+			c.quoted(m.Rel.Left.Col.Name)
+			c.w.WriteString(`, JSON_UNQUOTE(JSON_SEARCH(`)
+			c.quoted(m.Rel.Left.Col.Name)
+			c.w.WriteString(`, 'one', `)
+			c.colWithTable(("_x_" + m.Rel.Right.Col.Table), m.Rel.Right.Col.Name)
+			c.w.WriteString(`)))`)
+		} else if c.dialect.Name() == "oracle" {
+			// Oracle: Use JSON_TABLE to unpack, filter, and re-aggregate
+			c.w.WriteString(` (SELECT JSON_ARRAYAGG(j."VALUE") FROM JSON_TABLE(`)
+			c.quoted(m.Rel.Left.Col.Name)
+			c.w.WriteString(`, '$[*]' COLUMNS("VALUE" NUMBER PATH '$')) j WHERE j."VALUE" != `)
+			c.colWithTable(("_x_" + m.Rel.Right.Col.Table), m.Rel.Right.Col.Name)
+			c.w.WriteString(`)`)
 		} else {
-			// arrays are not fully supported in mutations for Mysql/MariaDB/SQLite without JSON functions
-			// TODO: Implement JSON_REMOVE logic: 
-			// JSON_REMOVE(col, JSON_UNQUOTE(JSON_SEARCH(col, 'one', val)))
-			// For now, setting to NULL (clearing array?) or keeping as is?
-			// Disconnect on array usually means remove item.
-			// Setting to NULL is wrong if other items exist.
-			// But sticking with incorrect array_remove causes syntax error.
-			// We'll set it to NULL for now to avoid syntax error, but this is Logic Error.
-			// Or we can try JSON_REMOVE logic.
-			if c.dialect.Name() == "mysql" || c.dialect.Name() == "mariadb" {
-				c.w.WriteString(` JSON_REMOVE(`)
-				c.quoted(m.Rel.Left.Col.Name)
-				c.w.WriteString(`, JSON_UNQUOTE(JSON_SEARCH(`)
-				c.quoted(m.Rel.Left.Col.Name)
-				c.w.WriteString(`, 'one', `)
-				c.colWithTable(("_x_" + m.Rel.Right.Col.Table), m.Rel.Right.Col.Name)
-				c.w.WriteString(`)))`)
-			} else {
-				c.w.WriteString(` NULL`)
-			}
+			c.w.WriteString(` NULL`)
 		}
 	} else {
 		c.w.WriteString(` NULL`)
