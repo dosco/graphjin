@@ -82,7 +82,7 @@ func (c *compilerContext) compileLinearMutation() {
 		// For MSSQL/MySQL/MariaDB: declare additional variables for all columns
 		// when there are child mutations that need FK values
 		dialectName := c.dialect.Name()
-		if dialectName == "mysql" || dialectName == "mariadb" || dialectName == "mssql" {
+		if dialectName == "mysql" || dialectName == "mariadb" || dialectName == "mssql" || dialectName == "oracle" {
 			hasChildMutations := false
 			for _, otherM := range c.qc.Mutates {
 				if otherM.ParentID == m.ID {
@@ -175,7 +175,7 @@ func (c *compilerContext) compileLinearMutation() {
 				// Handle parent join for child updates
 				if m.ParentID != -1 {
 					dialectName := c.dialect.Name()
-					if dialectName == "sqlite" || dialectName == "mysql" || dialectName == "mariadb" || dialectName == "mssql" {
+					if dialectName == "sqlite" || dialectName == "mysql" || dialectName == "mariadb" || dialectName == "mssql" || dialectName == "oracle" {
 						if m.Where.Exp != nil || hasWhere { // Check if anything was rendered before
 							c.w.WriteString(" AND ")
 						}
@@ -204,8 +204,8 @@ func (c *compilerContext) compileLinearMutation() {
 							c.dialect.RenderVar(c, c.getVarName(pm))
 							c.w.WriteString(")")
 						} else {
-							// MySQL/MariaDB/MSSQL use captured variable with FK column name
-							// Variable format: @parentTable_parentID_fkColumn
+							// MySQL/MariaDB/MSSQL/Oracle use captured variable with FK column name
+							// Variable format: @parentTable_parentID_fkColumn (or v_ for Oracle)
 							parentVarName := c.getVarName(pm) + "_" + parentCol
 							c.dialect.RenderVar(c, parentVarName)
 						}
@@ -357,9 +357,11 @@ func (c *compilerContext) renderColumnValue(m qcode.Mutate, col qcode.MColumn) {
 			c.squoted(v)
 
 		case m.IsJSON:
-			// MSSQL in linear execution uses parameters, not "t" table reference
-			if c.dialect.Name() == "mssql" {
-				// Render the value as a literal for MSSQL
+			// MSSQL and Oracle in linear execution use parameters for UPDATE, not "t" table reference
+			// But INSERT operations need "t" reference for JSON_TABLE to get different values per row
+			dialectName := c.dialect.Name()
+			if (dialectName == "mssql" || dialectName == "oracle") && m.Type == qcode.MTUpdate {
+				// Render the value as a literal for MSSQL/Oracle UPDATE
 				c.squoted(v)
 			} else {
 				c.colWithTable("t", col.FieldName)

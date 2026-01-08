@@ -272,7 +272,9 @@ func (c *compilerContext) renderJSONFields(sel *qcode.Select) {
 				c.quoted(f.FieldName)
 				c.w.WriteString(` = 1 THEN 'true' ELSE 'false' END FORMAT JSON`)
 			} else {
-				c.dialect.RenderJSONField(c, f.FieldName, "__sr_"+strconv.Itoa(int(sel.ID)), f.FieldName, false, false)
+				// Oracle: use FORMAT JSON for JSON/CLOB/array columns to prevent double-escaping
+				isJSON := f.Col.Type == "json" || f.Col.Type == "clob" || f.Col.Array
+				c.dialect.RenderJSONField(c, f.FieldName, "__sr_"+strconv.Itoa(int(sel.ID)), f.FieldName, false, isJSON)
 			}
 		} else if c.dialect.Name() == "mariadb" {
 			// MariaDB: use dialect method with isJSON flag for JSON columns
