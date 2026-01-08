@@ -239,7 +239,23 @@ func (d *OracleDialect) RenderDistinctOn(ctx Context, sel *qcode.Select) {
 }
 
 func (d *OracleDialect) RenderFromEdge(ctx Context, sel *qcode.Select) {
-	// Not implemented for Oracle yet
+	ctx.WriteString(`JSON_TABLE(`)
+	ctx.ColWithTable(sel.Rel.Left.Col.Table, sel.Rel.Left.Col.Name)
+	ctx.WriteString(`, '$[*]' COLUMNS(`)
+
+	for i, col := range sel.Ti.Columns {
+		if i != 0 {
+			ctx.WriteString(`, `)
+		}
+		ctx.Quote(col.Name)
+		ctx.WriteString(` `)
+		ctx.WriteString(d.oracleType(col.Type))
+		ctx.WriteString(` PATH '$.`)
+		ctx.WriteString(col.Name)
+		ctx.WriteString(`'`)
+	}
+	ctx.WriteString(`)) `)
+	ctx.Quote(sel.Table)
 }
 
 func (d *OracleDialect) RenderJSONPath(ctx Context, table, col string, path []string) {
@@ -699,12 +715,42 @@ func (d *OracleDialect) RenderTryCast(ctx Context, val func(), typ string) {
 }
 
 func (d *OracleDialect) RenderSubscriptionUnbox(ctx Context, params []Param, innerSQL string) {
-	// Oracle JSON_TABLE unbox approach
-	// SELECT _gj_sub_data."__root" FROM JSON_TABLE(?, '$[*]' COLUMNS (
-	//   "col1" TYPE PATH '$[0]', ...
-	// )) _gj_sub, LATERAL (...) _gj_sub_data
+	// Oracle subscription batching with cursor CTE extraction
+	// The cursor CTE may be nested inside LATERAL joins, so we search for it anywhere in the SQL.
+	// We extract it, modify it to reference "_GJ_SUB" instead of DUAL, and move it to the outer level.
+	//
+	// Structure when cursor CTE exists:
+	// WITH "_GJ_SUB" AS (SELECT * FROM JSON_TABLE(...)),
+	//      "__CUR" AS (SELECT ... FROM "_GJ_SUB")  -- extracted and modified
+	// SELECT "_GJ_SUB_DATA"."__ROOT"
+	// FROM "_GJ_SUB" CROSS APPLY (...innerSQL without cursor CTE...) "_GJ_SUB_DATA"
 
-	ctx.WriteString(`SELECT "_GJ_SUB_DATA"."__ROOT" FROM JSON_TABLE(`)
+	sql := innerSQL
+
+	// Search for cursor CTE anywhere in the SQL: WITH "__CUR" AS (...)
+	cursorCTE := ""
+	cursorCTEMarker := `WITH "__CUR" AS (SELECT `
+	if cteStart := strings.Index(sql, cursorCTEMarker); cteStart != -1 {
+		// Find the end of the cursor CTE - it ends with "FROM DUAL) "
+		dualMarker := "FROM DUAL) "
+		if dualEnd := strings.Index(sql[cteStart:], dualMarker); dualEnd != -1 {
+			cteEnd := cteStart + dualEnd + len(dualMarker)
+			cursorCTE = sql[cteStart:cteEnd]
+			// Remove the cursor CTE from the SQL, leaving the rest intact
+			sql = sql[:cteStart] + sql[cteEnd:]
+
+			// Modify cursor CTE: change FROM DUAL to FROM "_GJ_SUB"
+			// This allows the cursor CTE to access the subscription parameters
+			cursorCTE = strings.Replace(cursorCTE, "FROM DUAL)", `FROM "_GJ_SUB")`, 1)
+			// Remove the WITH prefix since we'll add it ourselves
+			cursorCTE = strings.TrimPrefix(cursorCTE, "WITH ")
+			// Ensure it ends cleanly (trim trailing space)
+			cursorCTE = strings.TrimSuffix(cursorCTE, " ")
+		}
+	}
+
+	// Build outer WITH clause: "_GJ_SUB" (JSON_TABLE) and optionally "__CUR"
+	ctx.WriteString(`WITH "_GJ_SUB" AS (SELECT * FROM JSON_TABLE(`)
 	ctx.WriteString(d.BindVar(1))
 	ctx.WriteString(`, '$[*]' COLUMNS (`)
 
@@ -714,7 +760,7 @@ func (d *OracleDialect) RenderSubscriptionUnbox(ctx Context, params []Param, inn
 		}
 		ctx.Quote(p.Name)
 		ctx.WriteString(` `)
-		// Map types?
+		// Map types
 		switch p.Type {
 		case "integer", "int4", "int8", "bigint":
 			ctx.WriteString("NUMBER")
@@ -725,8 +771,17 @@ func (d *OracleDialect) RenderSubscriptionUnbox(ctx Context, params []Param, inn
 		ctx.WriteString(fmt.Sprintf("%d", i))
 		ctx.WriteString(`]'`)
 	}
-	ctx.WriteString(`)) "_GJ_SUB" CROSS APPLY (`)
-	ctx.WriteString(innerSQL)
+	ctx.WriteString(`)))`)
+
+	// Add cursor CTE if it was extracted
+	if cursorCTE != "" {
+		ctx.WriteString(`, `)
+		ctx.WriteString(cursorCTE)
+	}
+
+	// Main query using CROSS APPLY
+	ctx.WriteString(` SELECT "_GJ_SUB_DATA"."__ROOT" FROM "_GJ_SUB" CROSS APPLY (`)
+	ctx.WriteString(sql)
 	ctx.WriteString(`) "_GJ_SUB_DATA"`)
 }
 
@@ -1004,67 +1059,167 @@ func (d *OracleDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qco
 }
 
 func (d *OracleDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderColVal func(qcode.MColumn), renderWhere func()) {
-    d.RenderUpdate(ctx, m, func() {
-		// Set
-		i := 0
-		for _, col := range m.Cols {
-			if i != 0 {
-				ctx.WriteString(", ")
-			}
-			ctx.ColWithTable(m.Ti.Name, col.Col.Name)
-			ctx.WriteString(" = ")
-			renderColVal(col)
-			i++
+	// Check if there are child mutations that need parent values
+	hasChildMutations := false
+	for _, otherM := range qc.Mutates {
+		if otherM.ParentID == m.ID {
+			hasChildMutations = true
+			break
 		}
-		for _, rcol := range m.RCols {
-			if i != 0 {
-				ctx.WriteString(", ")
-			}
-			ctx.ColWithTable(m.Ti.Name, rcol.Col.Name)
-			ctx.WriteString(" = ")
-			
-			found := false
-			for id := range m.DependsOn {
-				if qc.Mutates[id].Ti.Name == rcol.VCol.Table {
-					ctx.WriteString("v_")
-					ctx.WriteString(d.getVarName(qc.Mutates[id]))
-					found = true
-					break
-				}
-			}
-			if !found {
-				ctx.WriteString("NULL")
-			}
-			i++
-		}
-		
-		if i == 0 {
-			ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
-			ctx.WriteString(" = ")
-			ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
-		}
+	}
 
-	}, func() {
-		// From
-		if m.IsJSON {
-			d.RenderMutateToRecordSet(ctx, m, 0, func() {
-				// WrapInArray: Oracle JSON_TABLE with '$[*]' path expects array input
-				ctx.AddParam(Param{Name: qc.ActionVar, Type: "json", WrapInArray: true})
-			})
-		}
-	}, func() {
-		// Where
-		if m.IsJSON {
-			// Join with input
-            ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
-			ctx.WriteString(" = ")
-            ctx.Quote("t")
-            ctx.WriteString(".")
+	// Pre-update SELECT to capture values for child updates
+	if m.ParentID == -1 && hasChildMutations {
+		if len(qc.Selects) > 0 {
+			// Oracle SELECT INTO syntax: SELECT col1, col2 INTO var1, var2 FROM table
+			ctx.WriteString(`SELECT `)
 			ctx.Quote(m.Ti.PrimaryCol.Name)
-			ctx.WriteString(" AND ")
+
+			// Capture all other columns for FK references
+			for _, col := range m.Ti.Columns {
+				ctx.WriteString(`, `)
+				ctx.Quote(col.Name)
+			}
+
+			ctx.WriteString(` INTO v_`)
+			ctx.WriteString(varName)
+			for _, col := range m.Ti.Columns {
+				ctx.WriteString(`, v_`)
+				ctx.WriteString(varName + "_" + col.Name)
+			}
+
+			ctx.WriteString(` FROM `)
+			ctx.Quote(m.Ti.Name)
+			ctx.WriteString(` WHERE `)
+			renderWhere()
+			ctx.WriteString(` AND ROWNUM = 1; `)
 		}
-		renderWhere()
-	})
+	}
+
+	// For child updates with JSON data, use special handling with JSON_VALUE
+	if m.ParentID != -1 && m.IsJSON {
+		d.renderChildUpdate(ctx, m, qc, renderWhere)
+		return
+	}
+
+	// Simple UPDATE statement - no FROM clause, no JSON_TABLE join
+	ctx.WriteString(`UPDATE `)
+	ctx.ColWithTable(m.Ti.Schema, m.Ti.Name)
+	ctx.WriteString(` SET `)
+
+	i := 0
+	// Regular columns
+	for _, col := range m.Cols {
+		if i != 0 {
+			ctx.WriteString(`, `)
+		}
+		ctx.Quote(col.Col.Name)
+		ctx.WriteString(` = `)
+		renderColVal(col)
+		i++
+	}
+
+	// Related columns from dependent mutations
+	for _, rcol := range m.RCols {
+		if i != 0 {
+			ctx.WriteString(`, `)
+		}
+		ctx.Quote(rcol.Col.Name)
+		ctx.WriteString(` = `)
+
+		found := false
+		for id := range m.DependsOn {
+			if qc.Mutates[id].Ti.Name == rcol.VCol.Table {
+				ctx.WriteString(`v_`)
+				ctx.WriteString(d.getVarName(qc.Mutates[id]))
+				found = true
+				break
+			}
+		}
+		if !found {
+			ctx.WriteString(`NULL`)
+		}
+		i++
+	}
+
+	// Identity fallback if no columns to update
+	if i == 0 {
+		ctx.Quote(m.Ti.PrimaryCol.Name)
+		ctx.WriteString(` = `)
+		ctx.Quote(m.Ti.PrimaryCol.Name)
+	}
+
+	ctx.WriteString(` WHERE `)
+	renderWhere()
+}
+
+// renderChildUpdate renders a simple UPDATE for child mutations using JSON_VALUE
+// This extracts values from the JSON input for child table updates
+func (d *OracleDialect) renderChildUpdate(ctx Context, m *qcode.Mutate, qc *qcode.QCode, renderWhere func()) {
+	ctx.WriteString(`UPDATE `)
+	ctx.ColWithTable(m.Ti.Schema, m.Ti.Name)
+	ctx.WriteString(` SET `)
+
+	// Build JSON path prefix from m.Path (e.g., ["customer"] -> "$.customer")
+	jsonPathPrefix := "$"
+	for _, p := range m.Path {
+		jsonPathPrefix += "." + p
+	}
+
+	i := 0
+	for _, col := range m.Cols {
+		if col.Set {
+			// Preset columns - skip, they don't come from JSON
+			continue
+		}
+		if i != 0 {
+			ctx.WriteString(`, `)
+		}
+		ctx.Quote(col.Col.Name)
+		ctx.WriteString(` = `)
+
+		// Use JSON_VALUE(?, '$.path.field') for Oracle
+		ctx.WriteString(`JSON_VALUE(`)
+		ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
+		ctx.WriteString(`, '`)
+		ctx.WriteString(jsonPathPrefix)
+		ctx.WriteString(`.`)
+		ctx.WriteString(col.FieldName)
+		ctx.WriteString(`')`)
+		i++
+	}
+
+	// Handle preset columns (they have literal values)
+	for _, col := range m.Cols {
+		if !col.Set {
+			continue
+		}
+		if i != 0 {
+			ctx.WriteString(`, `)
+		}
+		ctx.Quote(col.Col.Name)
+		ctx.WriteString(` = `)
+		// For preset columns, render the value directly
+		if strings.HasPrefix(col.Value, "sql:") {
+			ctx.WriteString(`(`)
+			ctx.WriteString(col.Value[4:])
+			ctx.WriteString(`)`)
+		} else {
+			ctx.WriteString(`'`)
+			ctx.WriteString(col.Value)
+			ctx.WriteString(`'`)
+		}
+		i++
+	}
+
+	if i == 0 {
+		ctx.Quote(m.Ti.PrimaryCol.Name)
+		ctx.WriteString(` = `)
+		ctx.Quote(m.Ti.PrimaryCol.Name)
+	}
+
+	ctx.WriteString(` WHERE `)
+	renderWhere()
 }
 
 func (d *OracleDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
@@ -1110,7 +1265,7 @@ func (d *OracleDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qc
 }
 
 func (d *OracleDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
-    // Oracle Disconnect: JSON_ARRAYAGG
+	// Step 1: Capture the IDs being disconnected into a variable
 	ctx.WriteString(`SELECT JSON_ARRAYAGG(`)
 	ctx.ColWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
 	ctx.WriteString(`) INTO `)
@@ -1128,6 +1283,14 @@ func (d *OracleDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, qc 
 	}
 	ctx.Quote(m.Ti.Name)
 	ctx.WriteString(` WHERE `)
+	renderFilter()
+
+	// Step 2: Perform the actual disconnect (UPDATE child SET fk = NULL)
+	ctx.WriteString(`; UPDATE `)
+	ctx.Quote(m.Ti.Name)
+	ctx.WriteString(` SET `)
+	ctx.Quote(m.Rel.Left.Col.Name)
+	ctx.WriteString(` = NULL WHERE `)
 	renderFilter()
 }
 
