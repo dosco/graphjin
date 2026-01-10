@@ -281,7 +281,12 @@ func addForeignKeys(conf *Config, di *sdata.DBInfo) error {
 
 // addForeignKey adds a foreign key to the database info
 func addForeignKey(conf *Config, di *sdata.DBInfo, c Column, t Table) error {
-	c1, err := di.GetColumn(t.Schema, t.Name, c.Name)
+	// Use di.Schema as default if table schema is not specified
+	schema := t.Schema
+	if schema == "" {
+		schema = di.Schema
+	}
+	c1, err := di.GetColumn(schema, t.Name, c.Name)
 	if err != nil {
 		return fmt.Errorf("config: add foreign key: %w", err)
 	}
@@ -294,15 +299,15 @@ func addForeignKey(conf *Config, di *sdata.DBInfo, c Column, t Table) error {
 	}
 
 	// check if it's a polymorphic foreign key
-	if _, err := di.GetColumn(t.Schema, t.Name, v[1]); err == nil {
-		c2, err := di.GetColumn(t.Schema, t.Name, v[2])
+	if _, err := di.GetColumn(schema, t.Name, v[1]); err == nil {
+		c2, err := di.GetColumn(schema, t.Name, v[2])
 		if err != nil {
 			return fmt.Errorf(
 				"config: invalid column '%s' for polymorphic relationship on table '%s' and column '%s'",
 				v[2], t.Name, c.Name)
 		}
 
-		c1.FKeySchema = t.Schema
+		c1.FKeySchema = schema
 		c1.FKeyTable = v[1]
 		c1.FKeyCol = c2.Name
 		return nil
@@ -321,6 +326,34 @@ func addForeignKey(conf *Config, di *sdata.DBInfo, c Column, t Table) error {
 	c1.FKeyTable = fkt
 	c1.FKeyCol = c3.Name
 
+	return nil
+}
+
+// addFullTextColumns applies full-text search configuration to database columns
+func addFullTextColumns(conf *Config, di *sdata.DBInfo) error {
+	for _, t := range conf.Tables {
+		schema := t.Schema
+		if schema == "" {
+			schema = di.Schema
+		}
+		for _, c := range t.Columns {
+			if !c.FullText {
+				continue
+			}
+			col, err := di.GetColumn(schema, t.Name, c.Name)
+			if err != nil {
+				return fmt.Errorf("config: add fulltext column: %w", err)
+			}
+			col.FullText = true
+
+			// Also add to table's FullText slice
+			table, err := di.GetTable(schema, t.Name)
+			if err != nil {
+				return fmt.Errorf("config: add fulltext column: %w", err)
+			}
+			table.FullText = append(table.FullText, *col)
+		}
+	}
 	return nil
 }
 

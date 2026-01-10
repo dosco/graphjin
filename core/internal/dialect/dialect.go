@@ -179,6 +179,24 @@ type Dialect interface {
 	RequiresNullOnEmptySelect() bool    // MySQL/SQLite/MariaDB need NULL when no columns rendered
 }
 
+// FullQueryCompiler is an optional interface that dialects can implement
+// to handle entire query compilation themselves (bypassing SQL generation).
+// This is used by MongoDB which generates JSON query DSL, not SQL.
+type FullQueryCompiler interface {
+	// CompileFullQuery generates the complete query output.
+	// Returns true if it handled the compilation, false to use default SQL generation.
+	CompileFullQuery(ctx Context, qc *qcode.QCode) bool
+}
+
+// FullMutationCompiler is an optional interface that dialects can implement
+// to handle entire mutation compilation themselves (bypassing SQL generation).
+// This is used by MongoDB which generates JSON mutation DSL, not SQL.
+type FullMutationCompiler interface {
+	// CompileFullMutation generates the complete mutation output.
+	// Returns true if it handled the compilation, false to use default SQL generation.
+	CompileFullMutation(ctx Context, qc *qcode.QCode) bool
+}
+
 func GenericRenderMutationPostamble(ctx Context, qc *qcode.QCode) {
 	for k, cids := range qc.MUnions {
 		if len(cids) < 2 {

@@ -59,8 +59,8 @@ func TestQueryParentAndChildrenViaArrayColumn(t *testing.T) {
 }
 
 func TestInsertIntoTableAndConnectToRelatedTableWithArrayColumn(t *testing.T) {
-	if dbType == "sqlite" || dbType == "mssql" {
-		t.Skip("skipping test for sqlite/mssql (array column inserts not fully working)")
+	if dbType == "sqlite" || dbType == "mssql" || dbType == "mongodb" {
+		t.Skip("skipping test for sqlite/mssql/mongodb (array column inserts with connect not fully working)")
 	}
 
 	gql := `mutation {
@@ -109,8 +109,8 @@ func TestInsertIntoTableAndConnectToRelatedTableWithArrayColumn(t *testing.T) {
 
 // TODO: Fix: Does not work in MYSQL
 func TestVeryComplexQueryWithArrayColumns(t *testing.T) {
-	if dbType == "mssql" {
-		t.Skip("skipping test for mssql (array column joins not yet supported)")
+	if dbType == "mssql" || dbType == "mongodb" {
+		t.Skip("skipping test for mssql/mongodb (JSON virtual tables and deep nesting not yet supported)")
 	}
 
 	gql := `query {

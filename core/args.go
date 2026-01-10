@@ -158,6 +158,18 @@ func parseVarVal(v json.RawMessage) interface{} {
 		return nil
 
 	default:
+		// Try to parse as a number (for MongoDB and other document databases)
+		var num json.Number
+		if err := json.Unmarshal(v, &num); err == nil {
+			// Try int64 first
+			if i, err := num.Int64(); err == nil {
+				return i
+			}
+			// Fall back to float64
+			if f, err := num.Float64(); err == nil {
+				return f
+			}
+		}
 		return string(v)
 	}
 }

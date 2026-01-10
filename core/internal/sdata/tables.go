@@ -76,6 +76,9 @@ func GetDBInfo(
 			row = db.QueryRow(oracleInfo)
 		case "mssql":
 			row = db.QueryRow(mssqlInfo)
+		case "mongodb":
+			// MongoDB returns info via the driver's introspection
+			row = db.QueryRow(mongodbInfo)
 		default:
 			row = db.QueryRow(postgresInfo)
 		}
@@ -291,6 +294,9 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 		sqlStmt = oracleColumnsStmt
 	case "mssql":
 		sqlStmt = mssqlColumnsStmt
+	case "mongodb":
+		// MongoDB uses JSON query DSL - the driver handles introspection
+		sqlStmt = mongodbColumnsStmt
 	default:
 		sqlStmt = postgresColumnsStmt
 	}
@@ -429,6 +435,9 @@ func DiscoverFunctions(db *sql.DB, dbtype string, blockList []string) ([]DBFunct
 		sqlStmt = oracleFunctionsStmt
 	case "mssql":
 		sqlStmt = mssqlFunctionsStmt
+	case "mongodb":
+		// MongoDB doesn't have user-defined functions in the SQL sense
+		return nil, nil
 	default:
 		sqlStmt = postgresFunctionsStmt
 	}

@@ -668,6 +668,8 @@ func getDialectForType(ct string) dialect.Dialect {
 		return &dialect.SQLiteDialect{}
 	case "mssql":
 		return &dialect.MSSQLDialect{}
+	case "mongodb":
+		return &dialect.MongoDBDialect{}
 	default:
 		return &dialect.PostgresDialect{}
 	}

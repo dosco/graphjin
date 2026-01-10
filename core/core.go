@@ -180,6 +180,10 @@ func (gj *graphjinEngine) _initSchema() (err error) {
 		return
 	}
 
+	if err = addFullTextColumns(gj.conf, gj.dbinfo); err != nil {
+		return
+	}
+
 	if err = addFunctions(gj.conf, gj.dbinfo); err != nil {
 		return
 	}

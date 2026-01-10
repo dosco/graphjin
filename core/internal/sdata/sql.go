@@ -55,3 +55,9 @@ var mssqlInfo string
 
 //go:embed sql/mssql_columns.sql
 var mssqlColumnsStmt string
+
+//go:embed sql/mongodb_info.json
+var mongodbInfo string
+
+//go:embed sql/mongodb_columns.json
+var mongodbColumnsStmt string
