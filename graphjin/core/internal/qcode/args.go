@@ -75,8 +75,18 @@ func (co *Compiler) compileArgFind(sel *Select, arg graph.Arg) (err error) {
 		return err
 	}
 
-	// Only allow on recursive relationship selectors
-	if sel.Rel.Type != sdata.RelRecursive {
+	// Check if relationship is recursive - either directly or by checking if both tables are the same.
+	// The Rel.Type may have been converted from RelRecursive to RelOneToOne/RelOneToMany during
+	// mutation processing, so we also check if both tables are the same (self-referencing).
+	isRecursive := sel.Rel.Type == sdata.RelRecursive
+	if !isRecursive && sel.ParentID != -1 {
+		// Check if the underlying relationship is self-referencing (same table)
+		if sel.Rel.Left.Ti.Name == sel.Rel.Right.Ti.Name {
+			isRecursive = true
+		}
+	}
+
+	if !isRecursive {
 		return fmt.Errorf("selector '%s' is not recursive", sel.FieldName)
 	}
 	if arg.Val.Val != "parents" && arg.Val.Val != "children" {

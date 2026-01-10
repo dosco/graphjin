@@ -13,10 +13,15 @@ import (
 	"time"
 
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/mongodriver"
 	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/modules/mongodb"
 	"github.com/testcontainers/testcontainers-go/modules/mysql"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
@@ -45,6 +50,8 @@ type dbinfo struct {
 	driver    string
 	disable   bool
 	startFunc func(context.Context) (func(context.Context) error, string, error)
+	// dbFunc is an optional function that returns *sql.DB directly (for drivers like MongoDB)
+	dbFunc func(context.Context) (func(context.Context) error, *sql.DB, error)
 }
 
 var (
@@ -406,6 +413,201 @@ func TestMain(m *testing.M) {
 				return container.Terminate, connStr, nil
 			},
 		},
+		{
+			name:   "mongodb",
+			driver: "mongodb", // Not used since we use dbFunc
+			dbFunc: func(ctx context.Context) (func(context.Context) error, *sql.DB, error) {
+				container, err := mongodb.Run(ctx, "mongo:7")
+				if err != nil {
+					return nil, nil, err
+				}
+
+				connStr, err := container.ConnectionString(ctx)
+				if err != nil {
+					return nil, nil, err
+				}
+
+				// Connect to MongoDB using the official driver
+				client, err := mongo.Connect(options.Client().ApplyURI(connStr))
+				if err != nil {
+					container.Terminate(ctx)
+					return nil, nil, err
+				}
+
+				// Wait for MongoDB to be ready
+				for i := 0; i < 30; i++ {
+					if err := client.Ping(ctx, nil); err == nil {
+						break
+					}
+					time.Sleep(500 * time.Millisecond)
+				}
+
+				// Initialize test data
+				testDB := client.Database("graphjin_test")
+
+				// Create users collection
+				usersCol := testDB.Collection("users")
+				var userDocs []interface{}
+				for i := 1; i <= 100; i++ {
+					disabled := false
+					if i == 50 {
+						disabled = true
+					}
+					userDocs = append(userDocs, bson.M{
+						"_id":             int64(i),
+						"full_name":       fmt.Sprintf("User %d", i),
+						"email":           fmt.Sprintf("user%d@test.com", i),
+						"stripe_id":       fmt.Sprintf("payment_id_%d", i+1000),
+						"category_counts": []bson.M{{"category_id": 1, "count": 400}, {"category_id": 2, "count": 600}},
+						"disabled":        disabled,
+						"created_at":      time.Date(2021, 1, 9, 16, 37, 1, 0, time.UTC),
+					})
+				}
+				usersCol.InsertMany(ctx, userDocs)
+
+				// Create categories collection
+				categoriesCol := testDB.Collection("categories")
+				var categoryDocs []interface{}
+				for i := 1; i <= 5; i++ {
+					categoryDocs = append(categoryDocs, bson.M{
+						"_id":         int64(i),
+						"name":        fmt.Sprintf("Category %d", i),
+						"description": fmt.Sprintf("Description for category %d", i),
+						"created_at":  time.Date(2021, 1, 9, 16, 37, 1, 0, time.UTC),
+					})
+				}
+				categoriesCol.InsertMany(ctx, categoryDocs)
+
+				// Create products collection
+				productsCol := testDB.Collection("products")
+				var productDocs []interface{}
+				tags := []string{"Tag 1", "Tag 2", "Tag 3", "Tag 4", "Tag 5"}
+				categoryIDs := []int64{1, 2, 3, 4, 5}
+				for i := 1; i <= 100; i++ {
+					metadata := bson.M{"bar": true}
+					if i%2 == 0 {
+						metadata = bson.M{"foo": true}
+					}
+					productDocs = append(productDocs, bson.M{
+						"_id":          int64(i),
+						"name":         fmt.Sprintf("Product %d", i),
+						"description":  fmt.Sprintf("Description for product %d", i),
+						"tags":         tags,
+						"metadata":     metadata,
+						"country_code": "US",
+						"category_ids": categoryIDs,
+						"price":        float64(i) + 10.5,
+						"owner_id":     int64(i),
+						"likes":        []int64{}, // Empty likes array for count_likes aggregation
+						"created_at":   time.Date(2021, 1, 9, 16, 37, 1, 0, time.UTC),
+					})
+				}
+				productsCol.InsertMany(ctx, productDocs)
+
+				// Create text index for full-text search on products collection
+				_, err = productsCol.Indexes().CreateOne(ctx, mongo.IndexModel{
+					Keys: bson.D{{Key: "name", Value: "text"}},
+				})
+				if err != nil {
+					return nil, nil, fmt.Errorf("failed to create text index: %w", err)
+				}
+
+				// Create purchases collection
+				purchasesCol := testDB.Collection("purchases")
+				var purchaseDocs []interface{}
+				for i := 1; i <= 100; i++ {
+					customerID := int64(i + 1)
+					if i >= 100 {
+						customerID = 1
+					}
+					purchaseDocs = append(purchaseDocs, bson.M{
+						"_id":         int64(i),
+						"customer_id": customerID,
+						"product_id":  int64(i),
+						"quantity":    i * 10,
+						"created_at":  time.Date(2021, 1, 9, 16, 37, 1, 0, time.UTC),
+					})
+				}
+				purchasesCol.InsertMany(ctx, purchaseDocs)
+
+				// Create comments collection
+				commentsCol := testDB.Collection("comments")
+				var commentDocs []interface{}
+				for i := 1; i <= 100; i++ {
+					doc := bson.M{
+						"_id":          int64(i),
+						"body":         fmt.Sprintf("This is comment number %d", i),
+						"product_id":   int64(i),
+						"commenter_id": int64(i),
+						"created_at":   time.Date(2021, 1, 9, 16, 37, 1, 0, time.UTC),
+					}
+					if i >= 2 {
+						doc["reply_to_id"] = int64(i - 1)
+					}
+					commentDocs = append(commentDocs, doc)
+				}
+				commentsCol.InsertMany(ctx, commentDocs)
+
+				// Create quotations collection for JSON path tests
+				quotationsCol := testDB.Collection("quotations")
+				quotationDocs := []interface{}{
+					bson.M{
+						"_id": int64(1),
+						"validity_period": bson.M{
+							"issue_date":  "2024-09-15T03:03:16+0000",
+							"expiry_date": "2024-10-15T03:03:16+0000",
+							"status":      "active",
+						},
+					},
+					bson.M{
+						"_id": int64(2),
+						"validity_period": bson.M{
+							"issue_date":  "2024-09-20T03:03:16+0000",
+							"expiry_date": "2024-10-20T03:03:16+0000",
+							"status":      "pending",
+						},
+					},
+					bson.M{
+						"_id": int64(3),
+						"validity_period": bson.M{
+							"issue_date":  "2024-09-10T03:03:16+0000",
+							"expiry_date": "2024-10-10T03:03:16+0000",
+							"status":      "expired",
+						},
+					},
+				}
+				quotationsCol.InsertMany(ctx, quotationDocs)
+
+				// Create graph_node collection for self-referencing M2M tests
+				graphNodeCol := testDB.Collection("graph_node")
+				graphNodeDocs := []interface{}{
+					bson.M{"_id": "a", "label": "node a"},
+					bson.M{"_id": "b", "label": "node b"},
+					bson.M{"_id": "c", "label": "node c"},
+				}
+				graphNodeCol.InsertMany(ctx, graphNodeDocs)
+
+				// Create graph_edge collection (join table for graph_node M2M)
+				graphEdgeCol := testDB.Collection("graph_edge")
+				graphEdgeDocs := []interface{}{
+					bson.M{"_id": int64(1), "src_node": "a", "dst_node": "b"},
+					bson.M{"_id": int64(2), "src_node": "a", "dst_node": "c"},
+				}
+				graphEdgeCol.InsertMany(ctx, graphEdgeDocs)
+
+				// Create sql.DB using mongodriver
+				connector := mongodriver.NewConnector(client, "graphjin_test")
+				sqlDB := sql.OpenDB(connector)
+
+				cleanup := func(ctx context.Context) error {
+					sqlDB.Close()
+					client.Disconnect(ctx)
+					return container.Terminate(ctx)
+				}
+
+				return cleanup, sqlDB, nil
+			},
+		},
 	}
 
 	for _, v := range dbinfoList {
@@ -423,15 +625,27 @@ func TestMain(m *testing.M) {
 			continue
 		}
 
-		cleanup, connStr, err := v.startFunc(ctx)
-		if err != nil {
-			panic(err)
-		}
+		var cleanup func(context.Context) error
+		var err error
 
-		db, err = sql.Open(v.driver, connStr)
-		if err != nil {
-			_ = cleanup(ctx)
-			panic(err)
+		// Use dbFunc if provided (for MongoDB), otherwise use standard startFunc + sql.Open
+		if v.dbFunc != nil {
+			cleanup, db, err = v.dbFunc(ctx)
+			if err != nil {
+				panic(err)
+			}
+		} else {
+			var connStr string
+			cleanup, connStr, err = v.startFunc(ctx)
+			if err != nil {
+				panic(err)
+			}
+
+			db, err = sql.Open(v.driver, connStr)
+			if err != nil {
+				_ = cleanup(ctx)
+				panic(err)
+			}
 		}
 		// Configure connection pool settings to prevent "closing bad idle connection" errors
 		// Use reasonable limits for test scenarios and ensure connections are recycled
@@ -453,6 +667,58 @@ func TestMain(m *testing.M) {
 
 func newConfig(c *core.Config) *core.Config {
 	c.DBSchemaPollDuration = -1
+
+	// MongoDB needs explicit relationship configuration since it has no foreign keys
+	if c.DBType == "mongodb" {
+		mongoTables := []core.Table{
+			{
+				Name: "products",
+				Columns: []core.Column{
+					{Name: "owner_id", ForeignKey: "users.id"},
+					{Name: "name", FullText: true}, // Enable full-text search on name
+				},
+			},
+			{
+				Name: "comments",
+				Columns: []core.Column{
+					{Name: "product_id", ForeignKey: "products.id"},
+					{Name: "commenter_id", ForeignKey: "users.id"},
+					{Name: "reply_to_id", ForeignKey: "comments.id"},
+				},
+			},
+			{
+				Name: "purchases",
+				Columns: []core.Column{
+					{Name: "customer_id", ForeignKey: "users.id"},
+					{Name: "product_id", ForeignKey: "products.id"},
+				},
+			},
+			{
+				Name: "graph_edge",
+				Columns: []core.Column{
+					{Name: "src_node", ForeignKey: "graph_node.id"},
+					{Name: "dst_node", ForeignKey: "graph_node.id"},
+				},
+			},
+		}
+
+		// Merge MongoDB tables with existing tables (avoid duplicates)
+		for _, mt := range mongoTables {
+			found := false
+			for i, t := range c.Tables {
+				if t.Name == mt.Name && t.Schema == mt.Schema {
+					// Merge columns into existing table
+					c.Tables[i].Columns = append(c.Tables[i].Columns, mt.Columns...)
+					found = true
+					break
+				}
+			}
+			if !found {
+				c.Tables = append(c.Tables, mt)
+			}
+		}
+	}
+
 	return c
 }
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/dosco/graphjin/core/v3/internal/dialect"
 	"github.com/dosco/graphjin/core/v3/internal/graph"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
@@ -25,10 +26,18 @@ func (co *Compiler) compileMutation(
 		Compiler: co,
 	}
 
-    if co.dialect.SupportsLinearExecution() {
-        c.compileLinearMutation()
-        return
-    }
+	// Check if the dialect wants to handle the entire mutation compilation itself
+	// This is used by MongoDB which generates JSON mutation DSL, not SQL
+	if fmc, ok := co.dialect.(dialect.FullMutationCompiler); ok {
+		if fmc.CompileFullMutation(&c, qc) {
+			return
+		}
+	}
+
+	if co.dialect.SupportsLinearExecution() {
+		c.compileLinearMutation()
+		return
+	}
 
 	if qc.SType != qcode.QTDelete {
 		if c.isJSON {

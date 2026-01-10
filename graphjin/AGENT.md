@@ -4,7 +4,7 @@ This document is a guide for AI agents working on the GraphJin codebase. It outl
 
 ## Architectural Overview
 
-GraphJin is a compiler that turns GraphQL into SQL. It is NOT a typical ORM or resolver-based GraphQL server.
+GraphJin is a compiler that turns GraphQL into database queries. For SQL databases, it generates SQL. For MongoDB, it generates a JSON DSL that is translated to aggregation pipelines. It is NOT a typical ORM or resolver-based GraphQL server.
 
 -   **Core Philosophy**: Push as much work as possible to the database.
 -   **No Resolvers**: Data fetching is done via a single generated SQL query. Do not add resolvers for database fields.
@@ -19,6 +19,8 @@ GraphJin is a compiler that turns GraphQL into SQL. It is NOT a typical ORM or r
 | `core/internal/sdata` | **Schema** | Metadata about tables, columns, and relationships. Graph traversal logic. |
 | `core/internal/qcode` | **IR Compiler** | Front-end compiler. Parses GraphQL -> `QCode` (Intermediate Representation). |
 | `core/internal/psql` | **SQL Compiler** | Back-end compiler. `QCode` -> SQL. Handles dialect differences. |
+| `core/internal/dialect` | **Dialect Interface** | Database-specific SQL generation methods. Each dialect implements this interface. |
+| `mongodriver/` | **MongoDB Driver** | Custom database/sql-compatible driver for MongoDB. Translates JSON DSL to aggregation pipelines. |
 
 ## Coding Guidelines
 
@@ -113,14 +115,15 @@ When tests fail on a new database due to different row ordering:
 
 When implementing a new dialect, handle these common differences:
 
-| Feature | PostgreSQL | MySQL | SQLite | Oracle | MSSQL |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| Row limiting | `LIMIT n` | `LIMIT n` | `LIMIT n` | `FETCH FIRST n ROWS ONLY` | `FETCH NEXT n ROWS ONLY` |
-| Offset | `OFFSET n` | `OFFSET n` | `OFFSET n` | `OFFSET n ROWS` | `OFFSET n ROWS` |
-| Boolean type | Native `boolean` | `TINYINT(1)` | `INTEGER` | `NUMBER(1)` - needs JSON conversion | `BIT` (0/1) |
-| Recursive CTE | `WITH RECURSIVE` | `WITH RECURSIVE` | `WITH RECURSIVE` | `WITH` (no RECURSIVE keyword) | `WITH` (no RECURSIVE keyword) |
-| JSON aggregation | `json_agg()` | `JSON_ARRAYAGG()` | `json_group_array()` | `JSON_ARRAYAGG()` | `STRING_AGG()` + `FOR JSON PATH` |
-| Identifier quoting | `"name"` | `` `name` `` | `"name"` | `"NAME"` (case-sensitive) | `[name]` |
+| Feature | PostgreSQL | MySQL | SQLite | Oracle | MSSQL | MongoDB |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Row limiting | `LIMIT n` | `LIMIT n` | `LIMIT n` | `FETCH FIRST n ROWS ONLY` | `FETCH NEXT n ROWS ONLY` | `$limit` stage |
+| Offset | `OFFSET n` | `OFFSET n` | `OFFSET n` | `OFFSET n ROWS` | `OFFSET n ROWS` | `$skip` stage |
+| Boolean type | Native `boolean` | `TINYINT(1)` | `INTEGER` | `NUMBER(1)` - needs JSON conversion | `BIT` (0/1) | Native boolean |
+| Recursive CTE | `WITH RECURSIVE` | `WITH RECURSIVE` | `WITH RECURSIVE` | `WITH` (no RECURSIVE keyword) | `WITH` (no RECURSIVE keyword) | `$graphLookup` |
+| JSON aggregation | `json_agg()` | `JSON_ARRAYAGG()` | `json_group_array()` | `JSON_ARRAYAGG()` | `STRING_AGG()` + `FOR JSON PATH` | Native (documents) |
+| Identifier quoting | `"name"` | `` `name` `` | `"name"` | `"NAME"` (case-sensitive) | `[name]` | N/A (JSON keys) |
+| Relationships | SQL `JOIN` | SQL `JOIN` | SQL `JOIN` | SQL `JOIN` | SQL `JOIN` | `$lookup` stage |
 
 ### 4. Function Return Type Handling
 
@@ -164,6 +167,109 @@ Each dialect has its own test script:
 ./scripts/test-sqlite.sh    # SQLite tests
 ./scripts/test-oracle.sh    # Oracle tests
 ./scripts/test-mssql.sh     # MSSQL tests
+./scripts/test-mongo.sh     # MongoDB tests
 ```
 
 **Always run all dialect tests** before merging changes to shared code.
+
+## MongoDB Implementation
+
+MongoDB is fundamentally different from SQL databases. Instead of generating SQL, GraphJin generates a **JSON DSL** that the custom MongoDB driver (`mongodriver/`) translates into aggregation pipelines.
+
+### Architecture Differences
+
+| Aspect | SQL Databases | MongoDB |
+| :--- | :--- | :--- |
+| Query output | SQL string | JSON DSL structure |
+| Relationships | `JOIN` clauses | `$lookup` pipeline stages |
+| Filtering | `WHERE` clause | `$match` pipeline stage |
+| Ordering | `ORDER BY` | `$sort` pipeline stage |
+| Field selection | `SELECT` columns | `$project` pipeline stage |
+| Mutations | `INSERT`/`UPDATE`/`DELETE` | `insertOne`/`updateOne`/`deleteOne` |
+
+### Key Files for MongoDB
+
+| File | Purpose |
+| :--- | :--- |
+| `core/internal/dialect/mongodb.go` | Main dialect implementation. Generates JSON DSL from QCode. |
+| `mongodriver/driver.go` | database/sql-compatible driver registration and connection handling. |
+| `mongodriver/conn.go` | Connection implementation that executes JSON DSL against MongoDB. |
+| `mongodriver/pipeline.go` | Translates JSON DSL to MongoDB aggregation pipeline and handles result transformation. |
+| `mongodriver/query.go` | Parses JSON DSL and handles parameter substitution. |
+
+### JSON DSL Format
+
+The MongoDB dialect generates JSON structures like:
+
+```json
+{
+  "operation": "aggregate",
+  "collection": "users",
+  "field_name": "users",
+  "pipeline": [
+    {"$match": {"_id": 1}},
+    {"$project": {"_id": 0, "id": "$_id", "email": 1, "full_name": 1}}
+  ]
+}
+```
+
+For mutations:
+```json
+{
+  "operation": "insertOne",
+  "collection": "users",
+  "raw_document": "$1",
+  "return_pipeline": [...]
+}
+```
+
+### MongoDB-Specific Considerations
+
+1. **ID Translation**: GraphQL uses `id`, MongoDB uses `_id`. The dialect and driver handle this translation.
+
+2. **Relationship Lookups**: Use `$lookup` with pipelines for field selection and filtering:
+   ```json
+   {"$lookup": {
+     "from": "products",
+     "let": {"userId": "$_id"},
+     "pipeline": [{"$match": {"$expr": {"$eq": ["$owner_id", "$$userId"]}}}],
+     "as": "products"
+   }}
+   ```
+
+3. **Array Columns**: For array-based relationships (e.g., `category_ids: [1,2,3]`), use `$in` instead of `$eq`:
+   ```json
+   {"$match": {"$expr": {"$in": ["$_id", "$$categoryIds"]}}}
+   ```
+
+4. **JSON Virtual Tables (RelEmbedded)**: For embedded JSON arrays queried as virtual tables, use `$unwind` + `$lookup` + `$group` pattern instead of simple `$lookup`.
+
+5. **Parameter Substitution**: Parameters are placeholders (`$1`, `$2`) in the JSON DSL. The driver's `SubstituteParams()` resolves them at runtime.
+
+6. **Mutations with Allowlist**: Use `raw_document` with parameter placeholder for runtime substitution, not compile-time embedding. This ensures cached queries work correctly with different request data.
+
+### MongoDB Feature Support Status
+
+| Feature | Status | Notes |
+| :--- | :--- | :--- |
+| Basic queries | ✅ Supported | Field selection, filtering, ordering, limits |
+| Relationships | ✅ Supported | Via `$lookup` with pipeline |
+| Array column joins | ✅ Supported | Uses `$in` for matching |
+| JSON virtual tables | ✅ Supported | Uses `$unwind`/`$lookup`/`$group` pattern |
+| Mutations (insert/update/delete) | ✅ Supported | With `raw_document` for allowlist mode |
+| Subscriptions | ✅ Supported | Uses polling (change streams possible future enhancement) |
+| Aggregation functions | ❌ Not yet | `count`, `sum`, `avg`, etc. |
+| `iregex` | ❌ Different | MongoDB uses `$regex`, needs mapping |
+| Custom functions | ❌ Not yet | Database functions not supported |
+
+### Testing MongoDB Changes
+
+```bash
+# Run all MongoDB tests
+./scripts/test-mongo.sh
+
+# Run specific test
+./scripts/test-mongo.sh -run "TestQueryWithJsonColumn"
+```
+
+**Important**: MongoDB tests require Docker. The test script starts a MongoDB container automatically.

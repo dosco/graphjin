@@ -419,12 +419,34 @@ func (co *Compiler) processNestedMutations(ms *mState, m *Mutate, data *graph.No
 }
 
 func (co *Compiler) processList(m Mutate) []Mutate {
+	// For MongoDB: always expand arrays into multiple mutations
+	// MongoDB processes each element separately in its driver
+	if co.s.DBType() == "mongodb" {
+		// For single objects, return single mutation
+		if m.Data.Type != graph.NodeList {
+			return []Mutate{m}
+		}
+		// For arrays, create separate mutations for each element
+		var mList []Mutate
+		for i := range m.Data.Children {
+			m1 := m
+			m1.Data = m.Data.Children[i]
+			m1.Array = m1.Data.Type == graph.NodeList
+			m1.ID += int32(i)
+			mList = append(mList, m1)
+		}
+		return mList
+	}
+
+	// For SQL databases: use Array flag to control json_to_recordset vs json_to_record
+	// The SQL is generated once and processes all elements from the JSON parameter
 	if m.IsJSON {
 		m.Array = m.Data.Type == graph.NodeList
 		m.Data = m.Data.Children[0]
 		return []Mutate{m}
 	}
 
+	// For non-IsJSON (inline data), create separate mutations for each element
 	var mList []Mutate
 	for i := range m.Data.Children {
 		m1 := m

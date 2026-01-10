@@ -80,6 +80,8 @@ func NewCompiler(conf Config) *Compiler {
 			DBVersion:       conf.DBVersion,
 			EnableCamelcase: conf.EnableCamelcase,
 		}
+	case "mongodb":
+		d = &dialect.MongoDBDialect{EnableCamelcase: conf.EnableCamelcase}
 	default:
 		d = &dialect.PostgresDialect{
 			DBVersion:       conf.DBVersion,
@@ -115,7 +117,10 @@ func (co *Compiler) Compile(w *bytes.Buffer, qc *qcode.QCode) (Metadata, error) 
 		return md, fmt.Errorf("qcode is nil")
 	}
 
-	w.WriteString(`/* action='` + qc.Name + `',controller='graphql',framework='graphjin' */ `)
+	// Skip SQL comment for MongoDB (it generates JSON, not SQL)
+	if co.dialect.Name() != "mongodb" {
+		w.WriteString(`/* action='` + qc.Name + `',controller='graphql',framework='graphjin' */ `)
+	}
 
 	switch qc.Type {
 	case qcode.QTQuery:
@@ -171,13 +176,26 @@ func (co *Compiler) CompileQuery(
 		md.poll = true
 	}
 
+	// Check if the dialect wants to handle the entire query compilation itself
+	// This is used by MongoDB which generates JSON query DSL, not SQL
+	if fqc, ok := co.dialect.(dialect.FullQueryCompiler); ok {
+		c := &compilerContext{
+			md:       md,
+			w:        w,
+			qc:       qc,
+			Compiler: co,
+		}
+		if fqc.CompileFullQuery(c, qc) {
+			return c.err
+		}
+	}
 
 	// md.ct = qc.Schema.DBType() // md.ct is likely used elsewhere, kept for now if md has it?
 	// But md.ct was string. qc.Schema.DBType() is string.
 	// Compiler struct no longer has ct.
-	
+
 	// c.ct usage in loops below needs refactor.
-	
+
 	st := NewIntStack()
 	c := &compilerContext{
 		md:       md,

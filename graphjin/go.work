@@ -5,6 +5,7 @@ use (
 	./cmd
 	./conf
 	./core
+	./mongodriver
 	./plugin/otel
 	./serv
 	./tests
