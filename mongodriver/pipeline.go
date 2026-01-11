@@ -5,6 +5,8 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -149,6 +151,75 @@ func extractProjectedFields(pipeline []map[string]any) []string {
 	return fields
 }
 
+// convertSortOrderedToSort converts $sort_ordered stages to proper $sort stages with bson.D
+// to preserve field order. MongoDB sort order depends on key order, but Go maps don't preserve order.
+// $sort_ordered format: {"$sort_ordered": [["field1", 1], ["field2", -1]]}
+// Converted to: {"$sort": bson.D{{"field1", 1}, {"field2", -1}}}
+func convertSortOrderedToSort(stage map[string]any) map[string]any {
+	// Check for $sort_ordered key
+	sortOrdered, ok := stage["$sort_ordered"]
+	if !ok {
+		// Also recursively convert nested pipelines (e.g., in $lookup)
+		return convertNestedSortOrdered(stage)
+	}
+
+	// Convert array of [field, order] pairs to bson.D
+	sortArray, ok := sortOrdered.([]any)
+	if !ok {
+		return stage
+	}
+
+	sortDoc := make(bson.D, 0, len(sortArray))
+	for _, item := range sortArray {
+		pair, ok := item.([]any)
+		if !ok || len(pair) != 2 {
+			continue
+		}
+		field, ok := pair[0].(string)
+		if !ok {
+			continue
+		}
+		// Order can be float64 (from JSON) or int
+		var order int
+		switch v := pair[1].(type) {
+		case float64:
+			order = int(v)
+		case int:
+			order = v
+		default:
+			order = 1
+		}
+		sortDoc = append(sortDoc, bson.E{Key: field, Value: order})
+	}
+
+	return map[string]any{"$sort": sortDoc}
+}
+
+// convertNestedSortOrdered recursively converts $sort_ordered in nested pipelines (e.g., $lookup)
+func convertNestedSortOrdered(stage map[string]any) map[string]any {
+	result := make(map[string]any)
+	for k, v := range stage {
+		switch val := v.(type) {
+		case map[string]any:
+			result[k] = convertNestedSortOrdered(val)
+		case []any:
+			// Check if this is a pipeline array
+			converted := make([]any, len(val))
+			for i, item := range val {
+				if m, ok := item.(map[string]any); ok {
+					converted[i] = convertSortOrderedToSort(m)
+				} else {
+					converted[i] = item
+				}
+			}
+			result[k] = converted
+		default:
+			result[k] = v
+		}
+	}
+	return result
+}
+
 // executeAggregate runs an aggregation pipeline.
 func (c *Conn) executeAggregate(ctx context.Context, q *QueryDSL) (driver.Rows, error) {
 	if q.Collection == "" {
@@ -158,9 +229,11 @@ func (c *Conn) executeAggregate(ctx context.Context, q *QueryDSL) (driver.Rows, 
 	coll := c.db.Collection(q.Collection)
 
 	// Convert pipeline to bson.A, translating field names (id -> _id)
+	// and converting $sort_ordered to proper ordered $sort stages
 	pipeline := make(bson.A, len(q.Pipeline))
 	for i, stage := range q.Pipeline {
-		pipeline[i] = translateFieldsInMap(stage)
+		translated := translateFieldsInMap(stage)
+		pipeline[i] = convertSortOrderedToSort(translated)
 	}
 
 	cursor, err := coll.Aggregate(ctx, pipeline)
@@ -176,23 +249,41 @@ func (c *Conn) executeAggregate(ctx context.Context, q *QueryDSL) (driver.Rows, 
 	}
 	cursor.Close(ctx)
 
-	// Transform _id to id in results for GraphQL convention
+	// Extract cursor value before transforming results
+	var cursorValue string
+	if q.CursorInfo != nil && len(results) > 0 {
+		lastDoc := results[len(results)-1]
+		cursorValue = buildCursorValue(q.CursorInfo, lastDoc)
+	}
+
+	// Transform _id to id and remove __cursor_ prefixed fields
 	for i := range results {
 		results[i] = translateIDFieldsBack(results[i])
+		// Remove cursor helper fields from result
+		for key := range results[i] {
+			if strings.HasPrefix(key, "__cursor_") {
+				delete(results[i], key)
+			}
+		}
 	}
 
 	// Wrap results in field name and handle singular vs plural
-	var finalResult any
+	finalResult := make(map[string]any)
 	if q.Singular {
 		// For singular queries, return first result or null
 		if len(results) > 0 {
-			finalResult = map[string]any{q.FieldName: results[0]}
+			finalResult[q.FieldName] = results[0]
 		} else {
-			finalResult = map[string]any{q.FieldName: nil}
+			finalResult[q.FieldName] = nil
 		}
 	} else {
 		// For plural queries, return array
-		finalResult = map[string]any{q.FieldName: results}
+		finalResult[q.FieldName] = results
+	}
+
+	// Add cursor field if cursor pagination is enabled
+	if cursorValue != "" {
+		finalResult[q.FieldName+"_cursor"] = cursorValue
 	}
 
 	jsonBytes, err := json.Marshal(finalResult)
@@ -201,6 +292,69 @@ func (c *Conn) executeAggregate(ctx context.Context, q *QueryDSL) (driver.Rows, 
 	}
 
 	return NewSingleValueRows(jsonBytes, []string{"__root"}), nil
+}
+
+// buildCursorValue builds a cursor string from the last document's order-by values.
+// Format: prefix + hex(selID) + ":" + value1 + ":" + value2 + ...
+func buildCursorValue(info *CursorInfo, lastDoc bson.M) string {
+	if info == nil || len(info.OrderBy) == 0 {
+		return ""
+	}
+
+	var parts []string
+	// Add prefix and selection ID in hex format
+	parts = append(parts, fmt.Sprintf("%s%x", info.Prefix, info.SelID))
+
+	for _, col := range info.OrderBy {
+		// Try __cursor_ prefixed field first, then regular field
+		var val any
+		cursorKey := "__cursor_" + col.Col
+		if v, ok := lastDoc[cursorKey]; ok {
+			val = v
+		} else if v, ok := lastDoc[col.Col]; ok {
+			val = v
+		} else if col.Col == "_id" {
+			// Handle _id which might be stored as id after translation
+			if v, ok := lastDoc["id"]; ok {
+				val = v
+			}
+		}
+
+		// Format value for cursor
+		parts = append(parts, formatCursorValue(val))
+	}
+
+	return strings.Join(parts, ":")
+}
+
+// formatCursorValue converts a value to a string for cursor encoding.
+func formatCursorValue(val any) string {
+	if val == nil {
+		return ""
+	}
+
+	switch v := val.(type) {
+	case int:
+		return strconv.Itoa(v)
+	case int32:
+		return strconv.FormatInt(int64(v), 10)
+	case int64:
+		return strconv.FormatInt(v, 10)
+	case float64:
+		// Check if it's a whole number
+		if v == float64(int64(v)) {
+			return strconv.FormatInt(int64(v), 10)
+		}
+		return strconv.FormatFloat(v, 'f', -1, 64)
+	case float32:
+		return strconv.FormatFloat(float64(v), 'f', -1, 32)
+	case string:
+		return v
+	case bson.ObjectID:
+		return v.Hex()
+	default:
+		return fmt.Sprintf("%v", v)
+	}
 }
 
 // executeMultiAggregate runs multiple aggregation pipelines and merges results.
@@ -213,7 +367,18 @@ func (c *Conn) executeMultiAggregate(ctx context.Context, q *QueryDSL) (driver.R
 	// Merge all results into a single map
 	finalResult := make(map[string]any)
 
+	// Add root-level __typename if requested
+	if q.QueryTypename != "" {
+		finalResult["__typename"] = q.QueryTypename
+	}
+
 	for _, subQ := range q.Queries {
+		// Handle null operation for @skip/@include directive-affected selections
+		if subQ.Operation == OpNull {
+			finalResult[subQ.FieldName] = nil
+			continue
+		}
+
 		if subQ.Collection == "" {
 			return nil, fmt.Errorf("mongodriver: aggregate requires collection")
 		}
@@ -221,9 +386,11 @@ func (c *Conn) executeMultiAggregate(ctx context.Context, q *QueryDSL) (driver.R
 		coll := c.db.Collection(subQ.Collection)
 
 		// Convert pipeline to bson.A, translating field names (id -> _id)
+		// and converting $sort_ordered to proper ordered $sort stages
 		pipeline := make(bson.A, len(subQ.Pipeline))
 		for i, stage := range subQ.Pipeline {
-			pipeline[i] = translateFieldsInMap(stage)
+			translated := translateFieldsInMap(stage)
+			pipeline[i] = convertSortOrderedToSort(translated)
 		}
 
 		cursor, err := coll.Aggregate(ctx, pipeline)
@@ -239,9 +406,26 @@ func (c *Conn) executeMultiAggregate(ctx context.Context, q *QueryDSL) (driver.R
 		}
 		cursor.Close(ctx)
 
-		// Transform _id to id in results for GraphQL convention
+		// Extract cursor value before transforming results
+		var cursorValue string
+		if subQ.CursorInfo != nil && len(results) > 0 {
+			lastDoc := results[len(results)-1]
+			cursorValue = buildCursorValue(subQ.CursorInfo, lastDoc)
+		}
+
+		// Transform _id to id and remove __cursor_ prefixed fields
 		for i := range results {
 			results[i] = translateIDFieldsBack(results[i])
+			// Remove cursor helper fields from result
+			for key := range results[i] {
+				if strings.HasPrefix(key, "__cursor_") {
+					delete(results[i], key)
+				}
+			}
+			// Add __typename field if requested
+			if subQ.Typename != "" {
+				results[i]["__typename"] = subQ.Typename
+			}
 		}
 
 		// Add to final result under the field name
@@ -253,6 +437,11 @@ func (c *Conn) executeMultiAggregate(ctx context.Context, q *QueryDSL) (driver.R
 			}
 		} else {
 			finalResult[subQ.FieldName] = results
+		}
+
+		// Add cursor field if cursor pagination is enabled
+		if cursorValue != "" {
+			finalResult[subQ.FieldName+"_cursor"] = cursorValue
 		}
 	}
 
@@ -403,9 +592,10 @@ func (c *Conn) executeInsertOneAsQuery(ctx context.Context, q *QueryDSL) (driver
 		// First stage: match the inserted document
 		pipeline = append(pipeline, bson.M{"$match": bson.M{"_id": result.InsertedID}})
 
-		// Add return pipeline stages
+		// Add return pipeline stages, converting $sort_ordered to $sort
 		for _, stage := range q.ReturnPipeline {
-			pipeline = append(pipeline, translateFieldsInMap(stage))
+			translated := translateFieldsInMap(stage)
+			pipeline = append(pipeline, convertSortOrderedToSort(translated))
 		}
 
 		cursor, err := coll.Aggregate(ctx, pipeline)
@@ -523,9 +713,10 @@ func (c *Conn) executeInsertManyAsQuery(ctx context.Context, q *QueryDSL) (drive
 		// First stage: match all inserted documents
 		pipeline = append(pipeline, bson.M{"$match": bson.M{"_id": bson.M{"$in": result.InsertedIDs}}})
 
-		// Add return pipeline stages
+		// Add return pipeline stages, converting $sort_ordered to $sort
 		for _, stage := range q.ReturnPipeline {
-			pipeline = append(pipeline, translateFieldsInMap(stage))
+			translated := translateFieldsInMap(stage)
+			pipeline = append(pipeline, convertSortOrderedToSort(translated))
 		}
 
 		cursor, err := coll.Aggregate(ctx, pipeline)
@@ -569,6 +760,112 @@ func (c *Conn) executeInsertManyAsQuery(ctx context.Context, q *QueryDSL) (drive
 	jsonBytes, err := json.Marshal(finalResult)
 	if err != nil {
 		return nil, fmt.Errorf("mongodriver: marshal insertMany result: %w", err)
+	}
+
+	return NewSingleValueRows(jsonBytes, []string{"__root"}), nil
+}
+
+// executeUpdateOneAsQuery updates a document and returns it as query results.
+// This is used when GraphQL mutations need to return the updated data.
+func (c *Conn) executeUpdateOneAsQuery(ctx context.Context, q *QueryDSL) (driver.Rows, error) {
+	if q.Collection == "" {
+		return nil, fmt.Errorf("mongodriver: updateOne requires collection")
+	}
+
+	filter := bson.M{}
+	if q.Filter != nil {
+		// Translate field names (id -> _id)
+		filter = translateFieldsInMap(q.Filter)
+	}
+
+	update := bson.M{}
+	if q.Update != nil {
+		// Translate field names in update as well
+		update = translateFieldsInMap(q.Update)
+	}
+
+	coll := c.db.Collection(q.Collection)
+
+	updateOpts := options.UpdateOne()
+	if q.Options != nil {
+		if upsert, ok := q.Options["upsert"].(bool); ok && upsert {
+			updateOpts.SetUpsert(true)
+		}
+	}
+
+	_, err := coll.UpdateOne(ctx, filter, update, updateOpts)
+	if err != nil {
+		return nil, fmt.Errorf("mongodriver: updateOne: %w", err)
+	}
+
+	// Fetch the updated document
+	var finalDoc bson.M
+
+	// If there's a return_pipeline, use aggregate to fetch the updated document with related data
+	if len(q.ReturnPipeline) > 0 {
+		// Build pipeline: $match the updated document, then apply return_pipeline
+		pipeline := make(bson.A, 0, len(q.ReturnPipeline)+1)
+
+		// First stage: match the updated document using the same filter
+		pipeline = append(pipeline, bson.M{"$match": filter})
+
+		// Add return pipeline stages, converting $sort_ordered to $sort
+		for _, stage := range q.ReturnPipeline {
+			translated := translateFieldsInMap(stage)
+			pipeline = append(pipeline, convertSortOrderedToSort(translated))
+		}
+
+		cursor, err := coll.Aggregate(ctx, pipeline)
+		if err != nil {
+			return nil, fmt.Errorf("mongodriver: aggregate after update: %w", err)
+		}
+
+		var results []bson.M
+		if err := cursor.All(ctx, &results); err != nil {
+			cursor.Close(ctx)
+			return nil, fmt.Errorf("mongodriver: aggregate results: %w", err)
+		}
+		cursor.Close(ctx)
+
+		if len(results) > 0 {
+			finalDoc = results[0]
+		} else {
+			// Fallback to simple findOne
+			err = coll.FindOne(ctx, filter).Decode(&finalDoc)
+			if err != nil {
+				return nil, fmt.Errorf("mongodriver: findOne after update: %w", err)
+			}
+		}
+	} else {
+		// No return_pipeline, just fetch the updated document
+		err = coll.FindOne(ctx, filter).Decode(&finalDoc)
+		if err != nil {
+			return nil, fmt.Errorf("mongodriver: findOne after update: %w", err)
+		}
+	}
+
+	// Translate _id back to id
+	finalDoc = translateIDFieldsBack(finalDoc)
+
+	// Wrap result in field name if provided
+	var finalResult any
+	if q.FieldName != "" {
+		if q.Singular {
+			finalResult = map[string]any{q.FieldName: finalDoc}
+		} else {
+			finalResult = map[string]any{q.FieldName: []any{finalDoc}}
+		}
+	} else {
+		if q.Singular {
+			finalResult = finalDoc
+		} else {
+			finalResult = []any{finalDoc}
+		}
+	}
+
+	jsonBytes, err := json.Marshal(finalResult)
+	if err != nil {
+		return nil, fmt.Errorf("mongodriver: marshal update result: %w", err)
 	}
 
 	return NewSingleValueRows(jsonBytes, []string{"__root"}), nil
@@ -704,9 +1001,10 @@ func (c *Conn) executeNestedInsert(ctx context.Context, q *QueryDSL) (driver.Row
 			pipeline := make(bson.A, 0, len(q.ReturnPipeline)+1)
 			// Match all inserted/connected documents
 			pipeline = append(pipeline, bson.M{"$match": bson.M{"_id": bson.M{"$in": allIDs}}})
-			// Add return pipeline stages (especially $project for field selection)
+			// Add return pipeline stages (especially $project for field selection), converting $sort_ordered
 			for _, stage := range q.ReturnPipeline {
-				pipeline = append(pipeline, translateFieldsInMap(stage))
+				translated := translateFieldsInMap(stage)
+				pipeline = append(pipeline, convertSortOrderedToSort(translated))
 			}
 
 			cursor, err := coll.Aggregate(ctx, pipeline)
@@ -779,9 +1077,10 @@ func (c *Conn) executeNestedInsert(ctx context.Context, q *QueryDSL) (driver.Row
 			// First stage: match the root document
 			pipeline = append(pipeline, bson.M{"$match": bson.M{"_id": rootID}})
 
-			// Add return pipeline stages ($lookup, $project, etc.)
+			// Add return pipeline stages ($lookup, $project, etc.), converting $sort_ordered
 			for _, stage := range q.ReturnPipeline {
-				pipeline = append(pipeline, translateFieldsInMap(stage))
+				translated := translateFieldsInMap(stage)
+				pipeline = append(pipeline, convertSortOrderedToSort(translated))
 			}
 
 			coll := c.db.Collection(q.RootCollection)
@@ -831,6 +1130,238 @@ func (c *Conn) executeNestedInsert(ctx context.Context, q *QueryDSL) (driver.Row
 	jsonBytes, err := json.Marshal(finalResult)
 	if err != nil {
 		return nil, fmt.Errorf("mongodriver: marshal nested insert result: %w", err)
+	}
+
+	return NewSingleValueRows(jsonBytes, []string{"__root"}), nil
+}
+
+// executeNestedUpdate handles updating documents in multiple related collections.
+// It executes updates in topological order and handles connect/disconnect operations.
+func (c *Conn) executeNestedUpdate(ctx context.Context, q *QueryDSL) (driver.Rows, error) {
+	if len(q.Updates) == 0 {
+		return nil, fmt.Errorf("mongodriver: nested_update requires updates array")
+	}
+	if q.RootCollection == "" {
+		return nil, fmt.Errorf("mongodriver: nested_update requires root_collection")
+	}
+
+	// Track updated document IDs for FK linking
+	// Key is mutation ID, value is the document's _id
+	updatedIDs := make(map[int]any)
+
+	// First, find the root document to get FK values for child filtering
+	// This is needed because children may need to be filtered by parent's FK values
+	var rootFilter bson.M
+	var rootDoc bson.M
+	var rootMutateID int = -1
+
+	// Find the root mutation and fetch its document
+	for _, upd := range q.Updates {
+		if upd.ParentID == -1 && upd.Type == "update" {
+			rootFilter = translateFieldsInMap(upd.Filter)
+			rootMutateID = upd.ID
+
+			// Fetch the root document to get FK values
+			coll := c.db.Collection(upd.Collection)
+			if err := coll.FindOne(ctx, rootFilter).Decode(&rootDoc); err != nil {
+				return nil, fmt.Errorf("mongodriver: find root for nested update: %w", err)
+			}
+
+			// Store the root document ID
+			if id, ok := rootDoc["_id"]; ok {
+				updatedIDs[rootMutateID] = id
+			}
+			break
+		}
+	}
+
+	// Execute updates in order
+	for _, upd := range q.Updates {
+		coll := c.db.Collection(upd.Collection)
+
+		// Translate filter fields (id -> _id)
+		filter := bson.M{}
+		if upd.Filter != nil {
+			filter = translateFieldsInMap(upd.Filter)
+		}
+
+		switch upd.Type {
+		case "update":
+			// Regular update - execute updateOne with $set
+			update := bson.M{}
+			if upd.Update != nil {
+				update = translateFieldsInMap(upd.Update)
+			}
+
+			// If this update depends on a parent, determine how to filter
+			if upd.ParentID != -1 && upd.FKCol != "" {
+				if upd.FKOnParent {
+					// FK is on parent table - use parent's FK value to filter child by _id
+					// e.g., purchases.product_id -> products._id
+					if fkValue, ok := rootDoc[upd.FKCol]; ok {
+						filter["_id"] = fkValue
+					}
+				} else {
+					// FK is on this child table - filter by parent's ID
+					parentID, hasParent := updatedIDs[upd.ParentID]
+					if hasParent && parentID != nil {
+						filter[upd.FKCol] = parentID
+					}
+				}
+			}
+
+			_, err := coll.UpdateOne(ctx, filter, update)
+			if err != nil {
+				return nil, fmt.Errorf("mongodriver: nested update %s: %w", upd.Collection, err)
+			}
+
+			// Find the document ID that was updated for FK linking
+			var doc bson.M
+			if err := coll.FindOne(ctx, filter).Decode(&doc); err == nil {
+				if id, ok := doc["_id"]; ok {
+					updatedIDs[upd.ID] = id
+				}
+			}
+
+		case "connect":
+			// Connect: update the FK column to link to another document
+			// The filter is the document to connect (e.g., product with id: 99)
+			// The update sets the FK column to the parent's ID
+
+			// Get the parent's ID (the document we're connecting to)
+			parentID, hasParent := updatedIDs[upd.ParentID]
+			if !hasParent || parentID == nil {
+				// For root-level connects, the parent ID should be in the root filter
+				if upd.ParentID == q.RootMutateID && rootFilter != nil {
+					if id, ok := rootFilter["_id"]; ok {
+						parentID = id
+					}
+				}
+			}
+
+			if upd.FKOnParent {
+				// FK is on parent table - update parent's FK to point to this document
+				// Get the ID of the document being connected
+				connectedID := filter["_id"]
+				if connectedID != nil && parentID != nil {
+					parentColl := c.db.Collection(q.RootCollection)
+					parentFilter := bson.M{"_id": parentID}
+					parentUpdate := bson.M{"$set": bson.M{upd.FKCol: connectedID}}
+					_, err := parentColl.UpdateOne(ctx, parentFilter, parentUpdate)
+					if err != nil {
+						return nil, fmt.Errorf("mongodriver: connect update parent %s: %w", q.RootCollection, err)
+					}
+				}
+			} else {
+				// FK is on this table - update this document's FK to point to parent
+				if parentID != nil {
+					update := bson.M{"$set": bson.M{upd.FKCol: parentID}}
+					_, err := coll.UpdateOne(ctx, filter, update)
+					if err != nil {
+						return nil, fmt.Errorf("mongodriver: connect update %s: %w", upd.Collection, err)
+					}
+				}
+			}
+
+			// Store the connected document's ID
+			if id, ok := filter["_id"]; ok {
+				updatedIDs[upd.ID] = id
+			}
+
+		case "disconnect":
+			// Disconnect: set the FK column to null or remove from array
+			if upd.FKOnParent {
+				// FK is on parent table - set parent's FK to null
+				parentID, hasParent := updatedIDs[upd.ParentID]
+				if !hasParent || parentID == nil {
+					if upd.ParentID == q.RootMutateID && rootFilter != nil {
+						if id, ok := rootFilter["_id"]; ok {
+							parentID = id
+						}
+					}
+				}
+				if parentID != nil {
+					parentColl := c.db.Collection(q.RootCollection)
+					parentFilter := bson.M{"_id": parentID}
+					parentUpdate := bson.M{"$set": bson.M{upd.FKCol: nil}}
+					_, err := parentColl.UpdateOne(ctx, parentFilter, parentUpdate)
+					if err != nil {
+						return nil, fmt.Errorf("mongodriver: disconnect update parent %s: %w", q.RootCollection, err)
+					}
+				}
+			} else {
+				// FK is on this table - set this document's FK to null
+				update := bson.M{"$set": bson.M{upd.FKCol: nil}}
+				_, err := coll.UpdateOne(ctx, filter, update)
+				if err != nil {
+					return nil, fmt.Errorf("mongodriver: disconnect update %s: %w", upd.Collection, err)
+				}
+			}
+		}
+	}
+
+	// Fetch the final result using return_pipeline
+	var finalDoc bson.M
+
+	if len(q.ReturnPipeline) > 0 {
+		pipeline := make(bson.A, 0, len(q.ReturnPipeline)+1)
+
+		// First stage: match the root document
+		pipeline = append(pipeline, bson.M{"$match": rootFilter})
+
+		// Add return pipeline stages ($lookup, $project, etc.)
+		for _, stage := range q.ReturnPipeline {
+			translated := translateFieldsInMap(stage)
+			pipeline = append(pipeline, convertSortOrderedToSort(translated))
+		}
+
+		coll := c.db.Collection(q.RootCollection)
+		cursor, err := coll.Aggregate(ctx, pipeline)
+		if err != nil {
+			return nil, fmt.Errorf("mongodriver: aggregate after nested update: %w", err)
+		}
+
+		var results []bson.M
+		if err := cursor.All(ctx, &results); err != nil {
+			cursor.Close(ctx)
+			return nil, fmt.Errorf("mongodriver: aggregate results: %w", err)
+		}
+		cursor.Close(ctx)
+
+		if len(results) > 0 {
+			finalDoc = results[0]
+		}
+	} else {
+		// No return_pipeline, just fetch the root document
+		coll := c.db.Collection(q.RootCollection)
+		err := coll.FindOne(ctx, rootFilter).Decode(&finalDoc)
+		if err != nil {
+			return nil, fmt.Errorf("mongodriver: findOne after nested update: %w", err)
+		}
+	}
+
+	// Translate _id back to id
+	finalDoc = translateIDFieldsBack(finalDoc)
+
+	// Wrap result in field name
+	var finalResult any
+	if q.FieldName != "" {
+		if q.Singular {
+			finalResult = map[string]any{q.FieldName: finalDoc}
+		} else {
+			finalResult = map[string]any{q.FieldName: []any{finalDoc}}
+		}
+	} else {
+		if q.Singular {
+			finalResult = finalDoc
+		} else {
+			finalResult = []any{finalDoc}
+		}
+	}
+
+	jsonBytes, err := json.Marshal(finalResult)
+	if err != nil {
+		return nil, fmt.Errorf("mongodriver: marshal nested update result: %w", err)
 	}
 
 	return NewSingleValueRows(jsonBytes, []string{"__root"}), nil

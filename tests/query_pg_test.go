@@ -386,6 +386,9 @@ func TestMutiSchema(t *testing.T) {
 	if dbType == "mssql" {
 		t.Skip("skipping test for mssql: boolean literal rendering needs work")
 	}
+	if dbType == "mongodb" {
+		t.Skip("skipping test for mongodb: MongoDB uses databases instead of schemas")
+	}
 
 	totalSchemas := 20
 	totalTables := 5

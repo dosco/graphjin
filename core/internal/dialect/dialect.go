@@ -26,6 +26,7 @@ type Context interface {
 	RenderJSONFields(sel *qcode.Select)
 	IsTableMutated(table string) bool
 	RenderExp(ti sdata.DBTable, ex *qcode.Exp)
+	GetStaticVar(name string) (string, bool) // Get config-level variable
 }
 
 // InlineChildRenderer is passed to dialects for rendering inline children

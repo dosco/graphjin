@@ -738,6 +738,7 @@ func (c *stringContext) ColWithTable(table, col string) {
 }
 func (c *stringContext) RenderJSONFields(sel *qcode.Select) {}
 func (c *stringContext) IsTableMutated(table string) bool  { return false }
+func (c *stringContext) GetStaticVar(name string) (string, bool) { return "", false }
 func (c *stringContext) RenderExp(ti sdata.DBTable, ex *qcode.Exp) {
 	// Not implemented for stringContext - only used for subscription unboxing
 }
