@@ -99,6 +99,14 @@ func (c *Conn) ExecContext(ctx context.Context, query string, args []driver.Name
 // executeQuery handles query operations (aggregate, find).
 func (c *Conn) executeQuery(ctx context.Context, q *QueryDSL) (driver.Rows, error) {
 	switch q.Operation {
+	case OpEmpty:
+		// Return empty result for dropped root selections (@add/@remove directives)
+		return NewSingleValueRows([]byte("{}"), []string{"__root"}), nil
+	case OpNull:
+		// Return null result for skipped selections (@skip/@include with variable)
+		// Wrap null in a JSON object with the field name
+		result := fmt.Sprintf(`{"%s":null}`, q.FieldName)
+		return NewSingleValueRows([]byte(result), []string{"__root"}), nil
 	case OpIntrospectInfo:
 		return c.introspectInfo(ctx, q)
 	case OpIntrospectColumns:
@@ -118,6 +126,12 @@ func (c *Conn) executeQuery(ctx context.Context, q *QueryDSL) (driver.Rows, erro
 	case OpNestedInsert:
 		// Handle nested insert (insert into multiple related collections)
 		return c.executeNestedInsert(ctx, q)
+	case OpUpdateOne:
+		// Handle updateOne as a query that returns the updated document
+		return c.executeUpdateOneAsQuery(ctx, q)
+	case OpNestedUpdate:
+		// Handle nested update (update multiple related collections)
+		return c.executeNestedUpdate(ctx, q)
 	case OpFind:
 		return c.executeFind(ctx, q)
 	case OpFindOne:

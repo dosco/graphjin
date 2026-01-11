@@ -326,6 +326,11 @@ func addForeignKey(conf *Config, di *sdata.DBInfo, c Column, t Table) error {
 	c1.FKeyTable = fkt
 	c1.FKeyCol = c3.Name
 
+	// Check if this is a recursive FK (same table pointing to itself)
+	if fks == schema && fkt == t.Name {
+		c1.FKRecursive = true
+	}
+
 	return nil
 }
 

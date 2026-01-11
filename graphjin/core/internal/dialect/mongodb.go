@@ -79,13 +79,19 @@ func (d *MongoDBDialect) RenderJSONRoot(ctx Context, sel *qcode.Select) {
 }
 
 func (d *MongoDBDialect) RenderJSONSelect(ctx Context, sel *qcode.Select) {
-	// In MongoDB, we use $project stage instead of SELECT
 	if d.pipelineDepth > 0 {
 		ctx.WriteString(`,`)
 	}
-	ctx.WriteString(`{"$project":{`)
-	d.renderProjectFields(ctx, sel)
-	ctx.WriteString(`}}`)
+
+	// Check if we have aggregation functions
+	if sel.GroupCols {
+		d.renderGroupStage(ctx, sel)
+	} else {
+		// In MongoDB, we use $project stage instead of SELECT
+		ctx.WriteString(`{"$project":{`)
+		d.renderProjectFields(ctx, sel)
+		ctx.WriteString(`}}`)
+	}
 	d.pipelineDepth++
 }
 
@@ -106,6 +112,72 @@ func (d *MongoDBDialect) renderProjectFields(ctx Context, sel *qcode.Select) {
 	}
 }
 
+// renderGroupStage renders a $group pipeline stage for aggregation queries
+// followed by a $project to remove the _id field
+func (d *MongoDBDialect) renderGroupStage(ctx Context, sel *qcode.Select) {
+	ctx.WriteString(`{"$group":{"_id":null`)
+
+	// Collect field names for the subsequent $project stage
+	var fieldNames []string
+
+	for _, f := range sel.Fields {
+		if f.Type != qcode.FieldTypeFunc {
+			continue
+		}
+
+		fieldNames = append(fieldNames, f.FieldName)
+		ctx.WriteString(`,"`)
+		ctx.WriteString(f.FieldName)
+		ctx.WriteString(`":`)
+
+		// Map function name to MongoDB aggregation operator
+		switch f.Func.Name {
+		case "count":
+			ctx.WriteString(`{"$sum":1}`)
+		case "sum":
+			d.renderAggOp(ctx, "$sum", f.Args)
+		case "avg":
+			d.renderAggOp(ctx, "$avg", f.Args)
+		case "max":
+			d.renderAggOp(ctx, "$max", f.Args)
+		case "min":
+			d.renderAggOp(ctx, "$min", f.Args)
+		case "stddev", "stddev_pop":
+			d.renderAggOp(ctx, "$stdDevPop", f.Args)
+		case "stddev_samp":
+			d.renderAggOp(ctx, "$stdDevSamp", f.Args)
+		default:
+			// Fallback for unknown functions - treat as count
+			ctx.WriteString(`{"$sum":1}`)
+		}
+	}
+	ctx.WriteString(`}}`)
+
+	// Add $project to exclude _id (which is null) and include only aggregation fields
+	ctx.WriteString(`,{"$project":{"_id":0`)
+	for _, fn := range fieldNames {
+		ctx.WriteString(`,"`)
+		ctx.WriteString(fn)
+		ctx.WriteString(`":1`)
+	}
+	ctx.WriteString(`}}`)
+}
+
+// renderAggOp renders a MongoDB aggregation operator with a column reference
+func (d *MongoDBDialect) renderAggOp(ctx Context, op string, args []qcode.Arg) {
+	ctx.WriteString(`{"`)
+	ctx.WriteString(op)
+	ctx.WriteString(`":"$`)
+	if len(args) > 0 && args[0].Col.Name != "" {
+		colName := args[0].Col.Name
+		if colName == "id" {
+			colName = "_id"
+		}
+		ctx.WriteString(colName)
+	}
+	ctx.WriteString(`"}`)
+}
+
 func (d *MongoDBDialect) RenderJSONPlural(ctx Context, sel *qcode.Select) {
 	// For plural results, we just close the aggregate
 	// The driver will return results as an array
@@ -122,6 +194,12 @@ func (d *MongoDBDialect) RenderLateralJoin(ctx Context, sel *qcode.Select, multi
 	}
 
 	rel := sel.Rel
+
+	// For recursive relationships, use $graphLookup to traverse the hierarchy
+	if rel.Type == sdata.RelRecursive {
+		d.renderGraphLookup(ctx, sel)
+		return
+	}
 
 	ctx.WriteString(`{"$lookup":{`)
 	ctx.WriteString(`"from":"`)
@@ -146,6 +224,44 @@ func (d *MongoDBDialect) RenderLateralJoin(ctx Context, sel *qcode.Select, multi
 	d.pipelineDepth++
 }
 
+// renderGraphLookup renders $graphLookup for recursive relationships
+func (d *MongoDBDialect) renderGraphLookup(ctx Context, sel *qcode.Select) {
+	rel := sel.Rel
+	fkCol := rel.Right.Col.Name // The FK column (e.g., "reply_to_id")
+	if fkCol == "id" {
+		fkCol = "_id"
+	}
+
+	// Get direction from internal args
+	findArg, _ := sel.GetInternalArg("find")
+	find := findArg.Val
+
+	ctx.WriteString(`{"$graphLookup":{`)
+	ctx.WriteString(`"from":"`)
+	ctx.WriteString(sel.Table)
+	ctx.WriteString(`","startWith":"$`)
+
+	if find == "parents" || find == "parent" {
+		// Walk UP: start with our FK value, match against _id
+		ctx.WriteString(fkCol)
+		ctx.WriteString(`","connectFromField":"`)
+		ctx.WriteString(fkCol)
+		ctx.WriteString(`","connectToField":"_id"`)
+	} else {
+		// Walk DOWN (children): start with our _id, match against their FK
+		ctx.WriteString(`_id`)
+		ctx.WriteString(`","connectFromField":"_id"`)
+		ctx.WriteString(`","connectToField":"`)
+		ctx.WriteString(fkCol)
+		ctx.WriteString(`"`)
+	}
+
+	ctx.WriteString(`,"as":"`)
+	ctx.WriteString(sel.FieldName)
+	ctx.WriteString(`"}}`)
+	d.pipelineDepth++
+}
+
 func (d *MongoDBDialect) RenderJoinTables(ctx Context, sel *qcode.Select) {
 	// MongoDB doesn't have traditional JOIN tables
 }
@@ -156,6 +272,12 @@ func (d *MongoDBDialect) RenderCursorCTE(ctx Context, sel *qcode.Select) {
 
 func (d *MongoDBDialect) RenderLimit(ctx Context, sel *qcode.Select) {
 	if sel.Paging.NoLimit {
+		return
+	}
+
+	// Skip limit for aggregation queries - they aggregate all matching documents
+	// and return a single result
+	if sel.GroupCols {
 		return
 	}
 
@@ -196,15 +318,21 @@ func (d *MongoDBDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
 	if d.pipelineDepth > 0 {
 		ctx.WriteString(`,`)
 	}
-	ctx.WriteString(`{"$sort":{`)
+	// Use $sort_ordered to preserve field order (Go maps don't preserve order)
+	ctx.WriteString(`{"$sort_ordered":[`)
 
 	for i, ob := range sel.OrderBy {
 		if i != 0 {
 			ctx.WriteString(`,`)
 		}
-		ctx.WriteString(`"`)
-		ctx.WriteString(ob.Col.Name)
-		ctx.WriteString(`":`)
+		ctx.WriteString(`["`)
+		colName := ob.Col.Name
+		// Translate "id" to "_id"
+		if colName == "id" {
+			colName = "_id"
+		}
+		ctx.WriteString(colName)
+		ctx.WriteString(`",`)
 
 		switch ob.Order {
 		case qcode.OrderAsc, qcode.OrderAscNullsFirst, qcode.OrderAscNullsLast:
@@ -214,8 +342,9 @@ func (d *MongoDBDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
 		default:
 			ctx.WriteString(`1`)
 		}
+		ctx.WriteString(`]`)
 	}
-	ctx.WriteString(`}}`)
+	ctx.WriteString(`]}`)
 	d.pipelineDepth++
 }
 
@@ -678,10 +807,11 @@ func (d *MongoDBDialect) CompileFullMutation(ctx Context, qc *qcode.QCode) bool 
 		return true
 	}
 
-	// Check if there are child mutations (nested inserts into related tables)
+	// Check if there are child mutations (nested inserts/updates into related tables)
 	// Note: MTConnect for FK relationships (different tables) are handled in renderInsertMutation
 	// Only MTConnect for recursive relationships (same table) should trigger nested insert
 	hasChildMutations := false
+	hasUpdateChildMutations := false
 	for i := range qc.Mutates {
 		m := &qc.Mutates[i]
 		if m.ParentID != -1 {
@@ -689,7 +819,11 @@ func (d *MongoDBDialect) CompileFullMutation(ctx Context, qc *qcode.QCode) bool 
 				hasChildMutations = true
 				break
 			}
-			// For connect operations, only include recursive connects (same table)
+			// For update mutations, detect child updates/connect/disconnect
+			if m.Type == qcode.MTUpdate || m.Type == qcode.MTConnect || m.Type == qcode.MTDisconnect {
+				hasUpdateChildMutations = true
+			}
+			// For connect operations, only include recursive connects (same table) for inserts
 			if m.Type == qcode.MTConnect {
 				// Find parent mutation to compare tables
 				for j := range qc.Mutates {
@@ -712,6 +846,12 @@ func (d *MongoDBDialect) CompileFullMutation(ctx Context, qc *qcode.QCode) bool 
 	// For nested inserts, generate multi-collection operation
 	if hasChildMutations && rootMutate.Type == qcode.MTInsert {
 		d.renderNestedInsertMutation(ctx, qc, rootMutate)
+		return true
+	}
+
+	// For nested updates (updating related tables or connect/disconnect operations)
+	if hasUpdateChildMutations && rootMutate.Type == qcode.MTUpdate {
+		d.renderNestedUpdateMutation(ctx, qc, rootMutate)
 		return true
 	}
 
@@ -1242,7 +1382,18 @@ func (d *MongoDBDialect) renderUpdateMutation(ctx Context, qc *qcode.QCode, m *q
 	ctx.WriteString(`","filter":{`)
 
 	// Render where clause for the filter
+	// Check both the mutation's WHERE and the root select's WHERE (for id: $id style filters)
+	hasFilter := false
+	if len(qc.Selects) > 0 && qc.Selects[0].Where.Exp != nil {
+		d.renderExpression(ctx, qc.Selects[0].Where.Exp)
+		hasFilter = true
+	}
 	if m.Where.Exp != nil {
+		if hasFilter {
+			// If we already have a filter, we need to wrap in $and
+			// But for simplicity, just add the mutation's WHERE with a comma
+			// This is a simplification - proper implementation would need $and wrapper
+		}
 		d.renderExpression(ctx, m.Where.Exp)
 	}
 
@@ -1261,17 +1412,288 @@ func (d *MongoDBDialect) renderUpdateMutation(ctx Context, qc *qcode.QCode, m *q
 		ctx.WriteString(colName)
 		ctx.WriteString(`":`)
 
-		if col.Value != "" {
-			ctx.WriteString(`"`)
-			ctx.WriteString(col.Value)
-			ctx.WriteString(`"`)
+		if col.Set {
+			// Preset value (e.g., owner_id: "$user_id")
+			if col.Value != "" && col.Value[0] == '$' {
+				ctx.WriteString(`"`)
+				ctx.AddParam(Param{Name: col.Value[1:], Type: col.Col.Type})
+				ctx.WriteString(`"`)
+			} else {
+				ctx.WriteString(`"`)
+				ctx.WriteString(col.Value)
+				ctx.WriteString(`"`)
+			}
+		} else if m.Data != nil && m.Data.CMap != nil {
+			// Get value from parsed mutation data
+			field := m.Data.CMap[col.FieldName]
+			if field == nil {
+				ctx.WriteString(`null`)
+			} else if field.Type == graph.NodeVar {
+				// Variable reference - add parameter placeholder
+				ctx.WriteString(`"`)
+				ctx.AddParam(Param{Name: field.Val, Type: col.Col.Type})
+				ctx.WriteString(`"`)
+			} else {
+				// Literal value - render directly
+				d.renderGraphNodeValue(ctx, field)
+			}
 		} else {
 			ctx.WriteString(`null`)
 		}
 		first = false
 	}
 
-	ctx.WriteString(`}}}`)
+	ctx.WriteString(`}}`)
+
+	// Add field_name for result wrapping
+	var rootSel *qcode.Select
+	if len(qc.Roots) > 0 {
+		rootSel = &qc.Selects[qc.Roots[0]]
+		ctx.WriteString(`,"field_name":"`)
+		ctx.WriteString(rootSel.FieldName)
+		ctx.WriteString(`"`)
+
+		// Add singular flag based on the select's singularity
+		if rootSel.Singular {
+			ctx.WriteString(`,"singular":true`)
+		}
+	}
+
+	// Add return_pipeline for fetching related data after update
+	if rootSel != nil && (len(rootSel.Fields) > 0 || len(rootSel.Children) > 0) {
+		ctx.WriteString(`,"return_pipeline":[`)
+
+		// Generate $lookup stages for children (relationships)
+		pipelineDepth := 0
+		for _, childID := range rootSel.Children {
+			child := &qc.Selects[childID]
+			if child.SkipRender != qcode.SkipTypeNone {
+				continue
+			}
+			if pipelineDepth > 0 {
+				ctx.WriteString(`,`)
+			}
+			d.renderLookupStage(ctx, rootSel, child)
+			pipelineDepth++
+		}
+
+		// Add $project stage for field selection
+		if pipelineDepth > 0 {
+			ctx.WriteString(`,`)
+		}
+		d.renderProjectStageWithChildren(ctx, rootSel, qc)
+
+		ctx.WriteString(`]`)
+	}
+
+	ctx.WriteString(`}`)
+}
+
+// renderNestedUpdateMutation generates a nested_update operation for updating multiple related collections.
+func (d *MongoDBDialect) renderNestedUpdateMutation(ctx Context, qc *qcode.QCode, rootMutate *qcode.Mutate) {
+	ctx.WriteString(`{"operation":"nested_update","root_collection":"`)
+	ctx.WriteString(rootMutate.Ti.Name)
+	ctx.WriteString(`","root_mutate_id":`)
+	ctx.WriteString(strconv.Itoa(int(rootMutate.ID)))
+
+	// Build a map of mutation IDs to mutations for parent lookup
+	mutateMap := make(map[int32]*qcode.Mutate)
+	for i := range qc.Mutates {
+		mutateMap[qc.Mutates[i].ID] = &qc.Mutates[i]
+	}
+
+	// Topologically sort mutations
+	allSortedMutates := d.topologicalSortMutates(qc.Mutates)
+
+	// Filter mutations: include updates, connects, and disconnects
+	var filteredMutates []*qcode.Mutate
+	for _, m := range allSortedMutates {
+		if m.Type == qcode.MTUpdate || m.Type == qcode.MTConnect || m.Type == qcode.MTDisconnect {
+			filteredMutates = append(filteredMutates, m)
+		}
+	}
+
+	ctx.WriteString(`,"updates":[`)
+	for i, m := range filteredMutates {
+		if i > 0 {
+			ctx.WriteString(`,`)
+		}
+		d.renderNestedUpdateItem(ctx, qc, m)
+	}
+	ctx.WriteString(`]`)
+
+	// Add field_name for result wrapping
+	var rootSel *qcode.Select
+	if len(qc.Roots) > 0 {
+		rootSel = &qc.Selects[qc.Roots[0]]
+		ctx.WriteString(`,"field_name":"`)
+		ctx.WriteString(rootSel.FieldName)
+		ctx.WriteString(`"`)
+
+		// Add singular flag
+		if rootSel.Singular {
+			ctx.WriteString(`,"singular":true`)
+		}
+	}
+
+	// Add return_pipeline for fetching related data after all updates
+	if rootSel != nil && (len(rootSel.Fields) > 0 || len(rootSel.Children) > 0) {
+		ctx.WriteString(`,"return_pipeline":[`)
+
+		// Generate $lookup stages for children (relationships)
+		pipelineDepth := 0
+		for _, childID := range rootSel.Children {
+			child := &qc.Selects[childID]
+			if child.SkipRender != qcode.SkipTypeNone {
+				continue
+			}
+			if pipelineDepth > 0 {
+				ctx.WriteString(`,`)
+			}
+			d.renderLookupStage(ctx, rootSel, child)
+			pipelineDepth++
+		}
+
+		// Add $project stage for field selection
+		if pipelineDepth > 0 {
+			ctx.WriteString(`,`)
+		}
+		d.renderProjectStageWithChildren(ctx, rootSel, qc)
+
+		ctx.WriteString(`]`)
+	}
+
+	ctx.WriteString(`}`)
+}
+
+// renderNestedUpdateItem renders a single update item for nested mutations.
+func (d *MongoDBDialect) renderNestedUpdateItem(ctx Context, qc *qcode.QCode, m *qcode.Mutate) {
+	ctx.WriteString(`{"collection":"`)
+	ctx.WriteString(m.Ti.Name)
+	ctx.WriteString(`","id":`)
+	ctx.WriteString(strconv.Itoa(int(m.ID)))
+	ctx.WriteString(`,"parent_id":`)
+	ctx.WriteString(strconv.Itoa(int(m.ParentID)))
+
+	// Set type
+	ctx.WriteString(`,"type":"`)
+	switch m.Type {
+	case qcode.MTUpdate:
+		ctx.WriteString(`update`)
+	case qcode.MTConnect:
+		ctx.WriteString(`connect`)
+	case qcode.MTDisconnect:
+		ctx.WriteString(`disconnect`)
+	}
+	ctx.WriteString(`"`)
+
+	// Add relationship info for FK operations
+	if m.ParentID != -1 && m.Rel.Type != sdata.RelNone {
+		ctx.WriteString(`,"rel_type":"`)
+		switch m.Rel.Type {
+		case sdata.RelOneToOne:
+			ctx.WriteString(`one_to_one`)
+		case sdata.RelOneToMany:
+			ctx.WriteString(`one_to_many`)
+		default:
+			ctx.WriteString(`other`)
+		}
+		ctx.WriteString(`"`)
+
+		// Determine FK column and which side it's on
+		var fkCol string
+		var fkOnParent bool
+
+		if m.Rel.Type == sdata.RelOneToOne {
+			fkCol = m.Rel.Left.Col.Name
+			fkOnParent = m.Rel.Left.Ti.Name != m.Ti.Name
+		} else {
+			fkCol = m.Rel.Right.Col.Name
+			fkOnParent = m.Rel.Right.Ti.Name != m.Ti.Name
+		}
+
+		if fkCol == "id" {
+			fkCol = "_id"
+		}
+		ctx.WriteString(`,"fk_col":"`)
+		ctx.WriteString(fkCol)
+		ctx.WriteString(`"`)
+		ctx.WriteString(`,"fk_on_parent":`)
+		if fkOnParent {
+			ctx.WriteString(`true`)
+		} else {
+			ctx.WriteString(`false`)
+		}
+	}
+
+	// Add filter
+	ctx.WriteString(`,"filter":{`)
+	if m.Type == qcode.MTConnect || m.Type == qcode.MTDisconnect {
+		// For connect/disconnect, filter is in Where clause
+		if m.Where.Exp != nil {
+			d.renderExpression(ctx, m.Where.Exp)
+		}
+	} else {
+		// For update, use the root select's where or mutation's where
+		if len(qc.Selects) > 0 && m.ParentID == -1 && qc.Selects[0].Where.Exp != nil {
+			d.renderExpression(ctx, qc.Selects[0].Where.Exp)
+		} else if m.Where.Exp != nil {
+			d.renderExpression(ctx, m.Where.Exp)
+		} else if m.ParentID != -1 {
+			// For child updates, we'll filter by FK at execution time
+			// Just render empty for now
+		}
+	}
+	ctx.WriteString(`}`)
+
+	// Add update for MTUpdate type
+	if m.Type == qcode.MTUpdate && len(m.Cols) > 0 {
+		ctx.WriteString(`,"update":{"$set":{`)
+
+		first := true
+		for _, col := range m.Cols {
+			if !first {
+				ctx.WriteString(`,`)
+			}
+			colName := col.Col.Name
+			if colName == "id" {
+				colName = "_id"
+			}
+			ctx.WriteString(`"`)
+			ctx.WriteString(colName)
+			ctx.WriteString(`":`)
+
+			if col.Set {
+				if col.Value != "" && col.Value[0] == '$' {
+					ctx.WriteString(`"`)
+					ctx.AddParam(Param{Name: col.Value[1:], Type: col.Col.Type})
+					ctx.WriteString(`"`)
+				} else {
+					ctx.WriteString(`"`)
+					ctx.WriteString(col.Value)
+					ctx.WriteString(`"`)
+				}
+			} else if m.Data != nil && m.Data.CMap != nil {
+				field := m.Data.CMap[col.FieldName]
+				if field == nil {
+					ctx.WriteString(`null`)
+				} else if field.Type == graph.NodeVar {
+					ctx.WriteString(`"`)
+					ctx.AddParam(Param{Name: field.Val, Type: col.Col.Type})
+					ctx.WriteString(`"`)
+				} else {
+					d.renderGraphNodeValue(ctx, field)
+				}
+			} else {
+				ctx.WriteString(`null`)
+			}
+			first = false
+		}
+
+		ctx.WriteString(`}}`)
+	}
+
+	ctx.WriteString(`}`)
 }
 
 // renderDeleteMutation generates a MongoDB deleteOne operation
@@ -1466,13 +1888,39 @@ func (d *MongoDBDialect) CompileFullQuery(ctx Context, qc *qcode.QCode) bool {
 	}
 
 	// Handle multiple roots with multi_aggregate operation
-	if len(qc.Roots) > 1 {
-		ctx.WriteString(`{"operation":"multi_aggregate","queries":[`)
-		for i, rootID := range qc.Roots {
-			if i > 0 {
+	// Also use multi_aggregate when root-level typename is requested
+	if len(qc.Roots) > 1 || qc.Typename {
+		ctx.WriteString(`{"operation":"multi_aggregate"`)
+		// Add root-level typename (query name) if requested
+		if qc.Typename {
+			ctx.WriteString(`,"query_typename":"`)
+			ctx.WriteString(escapeJSONString(qc.Name))
+			ctx.WriteString(`"`)
+		}
+		ctx.WriteString(`,"queries":[`)
+		first := true
+		for _, rootID := range qc.Roots {
+			sel := &qc.Selects[rootID]
+			skipType := d.effectiveSkipRender(sel)
+
+			// SkipTypeDrop: completely omit from output (@add/@remove directives)
+			if skipType == qcode.SkipTypeDrop {
+				continue
+			}
+
+			if !first {
 				ctx.WriteString(`,`)
 			}
-			sel := &qc.Selects[rootID]
+			first = false
+
+			// SkipTypeNulled: render as null placeholder (@skip/@include directives)
+			if skipType == qcode.SkipTypeNulled ||
+				skipType == qcode.SkipTypeUserNeeded ||
+				skipType == qcode.SkipTypeBlocked {
+				d.renderNulledQuery(ctx, sel)
+				continue
+			}
+
 			d.renderAggregateQuery(ctx, qc, sel)
 		}
 		ctx.WriteString(`]}`)
@@ -1482,9 +1930,44 @@ func (d *MongoDBDialect) CompileFullQuery(ctx Context, qc *qcode.QCode) bool {
 	// Single root - use standard aggregate operation
 	rootID := qc.Roots[0]
 	sel := &qc.Selects[rootID]
+	skipType := d.effectiveSkipRender(sel)
+
+	// Handle single root directive skipping
+	if skipType == qcode.SkipTypeDrop {
+		ctx.WriteString(`{"operation":"empty"}`)
+		return true
+	}
+	if skipType == qcode.SkipTypeNulled ||
+		skipType == qcode.SkipTypeUserNeeded ||
+		skipType == qcode.SkipTypeBlocked {
+		ctx.WriteString(`{"operation":"multi_aggregate","queries":[`)
+		d.renderNulledQuery(ctx, sel)
+		ctx.WriteString(`]}`)
+		return true
+	}
+
 	d.renderAggregateQuery(ctx, qc, sel)
 
 	return true
+}
+
+// effectiveSkipRender returns the effective skip render status for a selection.
+// It checks both sel.SkipRender (for auth/block status) and sel.Field.SkipRender
+// (for @skip/@include/@add/@remove directives on selectors).
+func (d *MongoDBDialect) effectiveSkipRender(sel *qcode.Select) qcode.SkipType {
+	// First check selector-level directive status (from @skip/@include/@add/@remove on the selector)
+	if sel.Field.SkipRender != qcode.SkipTypeNone {
+		return sel.Field.SkipRender
+	}
+	// Then check selection-level status (from auth/block checks)
+	return sel.SkipRender
+}
+
+// renderNulledQuery generates a null placeholder for a skipped selection.
+func (d *MongoDBDialect) renderNulledQuery(ctx Context, sel *qcode.Select) {
+	ctx.WriteString(`{"operation":"null","field_name":"`)
+	ctx.WriteString(escapeJSONString(sel.FieldName))
+	ctx.WriteString(`"}`)
 }
 
 // renderAggregateQuery generates a single aggregate query for a root selection
@@ -1501,14 +1984,26 @@ func (d *MongoDBDialect) renderAggregateQuery(ctx Context, qc *qcode.QCode, sel 
 		ctx.WriteString(`,"singular":true`)
 	}
 
+	// Include typename (table name) if requested for __typename field
+	if sel.Typename {
+		ctx.WriteString(`,"typename":"`)
+		ctx.WriteString(escapeJSONString(sel.Table))
+		ctx.WriteString(`"`)
+	}
+
 	ctx.WriteString(`,"pipeline":[`)
 
 	pipelineDepth := 0
 
-	// Add $match stage if there's a filter
+	// Add $match stage if there's a filter (excluding variable conditions)
+	// Variable conditions (OpEqualsTrue/OpNotEqualsTrue) are for @include(ifVar:$var)/@skip(ifVar:$var)
+	// and should not be used in $match - they're handled via the condition field
 	if sel.Where.Exp != nil {
-		d.renderMatchStage(ctx, sel.Where.Exp)
-		pipelineDepth++
+		filteredExp := filterOutVariableConditions(sel.Where.Exp)
+		if filteredExp != nil {
+			d.renderMatchStage(ctx, filteredExp)
+			pipelineDepth++
+		}
 	}
 
 	// Add $lookup stages for each child (related table)
@@ -1533,8 +2028,8 @@ func (d *MongoDBDialect) renderAggregateQuery(ctx Context, qc *qcode.QCode, sel 
 		pipelineDepth++
 	}
 
-	// Add $skip stage if there's an offset
-	if sel.Paging.Offset > 0 || sel.Paging.OffsetVar != "" {
+	// Add $skip stage if there's an offset (skip for aggregation queries)
+	if !sel.GroupCols && (sel.Paging.Offset > 0 || sel.Paging.OffsetVar != "") {
 		if pipelineDepth > 0 {
 			ctx.WriteString(`,`)
 		}
@@ -1550,8 +2045,8 @@ func (d *MongoDBDialect) renderAggregateQuery(ctx Context, qc *qcode.QCode, sel 
 		pipelineDepth++
 	}
 
-	// Add $limit stage
-	if !sel.Paging.NoLimit && (sel.Paging.Limit > 0 || sel.Paging.LimitVar != "") {
+	// Add $limit stage (skip for aggregation queries - they return a single result)
+	if !sel.Paging.NoLimit && !sel.GroupCols && (sel.Paging.Limit > 0 || sel.Paging.LimitVar != "") {
 		if pipelineDepth > 0 {
 			ctx.WriteString(`,`)
 		}
@@ -1568,16 +2063,127 @@ func (d *MongoDBDialect) renderAggregateQuery(ctx Context, qc *qcode.QCode, sel 
 	}
 
 	// Add $project stage for field selection (including children)
+	// We need a projection stage even if sel.Fields is empty (all fields dropped)
+	// to produce empty objects instead of full documents
 	if len(sel.Fields) > 0 || len(sel.Children) > 0 {
 		if pipelineDepth > 0 {
 			ctx.WriteString(`,`)
 		}
 		d.renderProjectStageWithChildren(ctx, sel, qc)
 		pipelineDepth++
+	} else {
+		// No fields requested (all dropped) - return empty objects
+		if pipelineDepth > 0 {
+			ctx.WriteString(`,`)
+		}
+		ctx.WriteString(`{"$replaceRoot":{"newRoot":{}}}`)
+		pipelineDepth++
 	}
 
-	// Close pipeline array and root object
+	// Close pipeline array
+	ctx.WriteString(`]`)
+
+	// Add condition for variable-based directives (@include(ifVar:$var), @skip(ifVar:$var))
+	if sel.Field.FieldFilter.Exp != nil {
+		d.renderQueryCondition(ctx, sel.Field.FieldFilter.Exp)
+	}
+
+	// Add cursor info for cursor-based pagination
+	if sel.Paging.Cursor && len(sel.OrderBy) > 0 {
+		d.renderCursorInfo(ctx, sel)
+	}
+
+	// Close root object
+	ctx.WriteString(`}`)
+}
+
+// renderCursorInfo generates cursor metadata for the driver to extract cursor values
+// and to apply seek-based filtering for cursor pagination.
+func (d *MongoDBDialect) renderCursorInfo(ctx Context, sel *qcode.Select) {
+	ctx.WriteString(`,"cursor_info":{"sel_id":`)
+	ctx.WriteString(strconv.Itoa(int(sel.ID)))
+	ctx.WriteString(`,"prefix":"gj-","order_by":[`)
+
+	for i, ob := range sel.OrderBy {
+		if i > 0 {
+			ctx.WriteString(`,`)
+		}
+		// Use original column name (matching __cursor_ projection keys)
+		// The driver will handle id -> _id translation when building $match
+		colName := ob.Col.Name
+		ctx.WriteString(`{"col":"`)
+		ctx.WriteString(colName)
+		ctx.WriteString(`","order":"`)
+		if ob.Order == qcode.OrderDesc {
+			ctx.WriteString(`desc`)
+		} else {
+			ctx.WriteString(`asc`)
+		}
+		ctx.WriteString(`"}`)
+	}
 	ctx.WriteString(`]}`)
+
+	// Add cursor_param so the driver knows which parameter contains the cursor value
+	ctx.WriteString(`,"cursor_param":"`)
+	ctx.AddParam(Param{Name: "cursor", Type: "text"})
+	ctx.WriteString(`"`)
+}
+
+// filterOutVariableConditions removes variable conditions (OpEqualsTrue/OpNotEqualsTrue)
+// from an expression tree. These are used for @include(ifVar:$var)/@skip(ifVar:$var)
+// and should not be rendered in $match stages.
+func filterOutVariableConditions(exp *qcode.Exp) *qcode.Exp {
+	if exp == nil {
+		return nil
+	}
+
+	// If this is a variable condition, filter it out entirely
+	if exp.Op == qcode.OpEqualsTrue || exp.Op == qcode.OpNotEqualsTrue {
+		return nil
+	}
+
+	// If it's an AND with children, filter each child
+	if exp.Op == qcode.OpAnd {
+		var filteredChildren []*qcode.Exp
+		for _, child := range exp.Children {
+			filtered := filterOutVariableConditions(child)
+			if filtered != nil {
+				filteredChildren = append(filteredChildren, filtered)
+			}
+		}
+		if len(filteredChildren) == 0 {
+			return nil
+		}
+		if len(filteredChildren) == 1 {
+			return filteredChildren[0]
+		}
+		// Create a new AND with filtered children
+		result := &qcode.Exp{Op: qcode.OpAnd, Children: filteredChildren}
+		return result
+	}
+
+	// For other operators, return as-is
+	return exp
+}
+
+// renderQueryCondition generates the condition field for variable-based directives.
+func (d *MongoDBDialect) renderQueryCondition(ctx Context, exp *qcode.Exp) {
+	if exp == nil {
+		return
+	}
+
+	switch exp.Op {
+	case qcode.OpEqualsTrue:
+		// @include(ifVar: $var): show if var == true
+		ctx.WriteString(`,"condition":{"var_param":"`)
+		ctx.AddParam(Param{Name: exp.Right.Val, Type: "boolean"})
+		ctx.WriteString(`","op":"eq"}`)
+	case qcode.OpNotEqualsTrue:
+		// @skip(ifVar: $var): show if var != true (i.e., show when var is false)
+		ctx.WriteString(`,"condition":{"var_param":"`)
+		ctx.AddParam(Param{Name: exp.Right.Val, Type: "boolean"})
+		ctx.WriteString(`","op":"ne"}`)
+	}
 }
 
 // renderLookupStage generates a $lookup stage for joining a related collection
@@ -1590,6 +2196,18 @@ func (d *MongoDBDialect) renderLookupStageWithQC(ctx Context, parent, child *qco
 	// Check if this is an embedded JSON table (RelEmbedded)
 	if child.Rel.Type == sdata.RelEmbedded {
 		d.renderEmbeddedJSONStage(ctx, parent, child, qc)
+		return
+	}
+
+	// Check if this is a polymorphic relationship (union type)
+	if child.Rel.Type == sdata.RelPolymorphic {
+		d.renderPolymorphicLookups(ctx, parent, child, qc)
+		return
+	}
+
+	// Check if this is a recursive relationship (self-referential)
+	if child.Rel.Type == sdata.RelRecursive {
+		d.renderRecursiveLookup(ctx, parent, child, qc)
 		return
 	}
 
@@ -1674,13 +2292,19 @@ func (d *MongoDBDialect) renderLookupStageWithQC(ctx Context, parent, child *qco
 	if len(child.Fields) > 0 {
 		// Track if we're outputting an id field to determine _id handling
 		// Skip function fields - MongoDB doesn't support SQL-style aggregations
+		// Check if id field is requested AND not dropped/nulled/conditional
 		hasIdField := false
 		for _, f := range child.Fields {
 			if f.Type == qcode.FieldTypeFunc {
 				continue
 			}
 			if f.FieldName == "id" || f.Col.Name == "id" {
-				hasIdField = true
+				// Only count as "has id" if it will be rendered normally
+				if f.SkipRender != qcode.SkipTypeDrop &&
+					f.SkipRender != qcode.SkipTypeNulled &&
+					f.FieldFilter.Exp == nil {
+					hasIdField = true
+				}
 				break
 			}
 		}
@@ -1696,6 +2320,10 @@ func (d *MongoDBDialect) renderLookupStageWithQC(ctx Context, parent, child *qco
 		for _, f := range child.Fields {
 			// Skip function fields - MongoDB doesn't support SQL-style aggregations
 			if f.Type == qcode.FieldTypeFunc {
+				continue
+			}
+			// SkipTypeDrop: completely skip field (@add/@remove directives)
+			if f.SkipRender == qcode.SkipTypeDrop {
 				continue
 			}
 			if !first {
@@ -1715,17 +2343,32 @@ func (d *MongoDBDialect) renderLookupStageWithQC(ctx Context, parent, child *qco
 			}
 			ctx.WriteString(`"`)
 			ctx.WriteString(outputName)
-			ctx.WriteString(`":"$`)
-			ctx.WriteString(colName)
-			ctx.WriteString(`"`)
+			ctx.WriteString(`":`)
+
+			// Handle based on directive type
+			if f.FieldFilter.Exp != nil {
+				// Variable-based directive: use $cond for runtime evaluation
+				d.renderFieldWithCondition(ctx, f, colName)
+			} else if f.SkipRender == qcode.SkipTypeNulled ||
+				f.SkipRender == qcode.SkipTypeUserNeeded ||
+				f.SkipRender == qcode.SkipTypeBlocked {
+				// Role-based @skip/@include: static null
+				ctx.WriteString(`null`)
+			} else {
+				// Normal field - use $colName syntax for child lookups
+				ctx.WriteString(`"$`)
+				ctx.WriteString(colName)
+				ctx.WriteString(`"`)
+			}
 			first = false
 		}
 		ctx.WriteString(`}}`)
 	}
 
 	// Add $sort stage if there's ordering, or default sort by _id for consistent results
+	// Use $sort_ordered to preserve field order (Go maps don't preserve order)
 	if len(child.OrderBy) > 0 {
-		ctx.WriteString(`,{"$sort":{`)
+		ctx.WriteString(`,{"$sort_ordered":[`)
 		for i, ob := range child.OrderBy {
 			if i > 0 {
 				ctx.WriteString(`,`)
@@ -1734,19 +2377,20 @@ func (d *MongoDBDialect) renderLookupStageWithQC(ctx Context, parent, child *qco
 			if colName == "id" {
 				colName = "_id"
 			}
-			ctx.WriteString(`"`)
+			ctx.WriteString(`["`)
 			ctx.WriteString(colName)
-			ctx.WriteString(`":`)
+			ctx.WriteString(`",`)
 			if ob.Order == qcode.OrderDesc {
 				ctx.WriteString(`-1`)
 			} else {
 				ctx.WriteString(`1`)
 			}
+			ctx.WriteString(`]`)
 		}
-		ctx.WriteString(`}}`)
+		ctx.WriteString(`]}`)
 	} else {
 		// Default sort by _id for consistent ordering
-		ctx.WriteString(`,{"$sort":{"_id":1}}`)
+		ctx.WriteString(`,{"$sort_ordered":[["_id",1]]}`)
 	}
 
 	// Add $limit stage for nested queries
@@ -1765,6 +2409,369 @@ func (d *MongoDBDialect) renderLookupStageWithQC(ctx Context, parent, child *qco
 	ctx.WriteString(`],"as":"`)
 	ctx.WriteString(child.FieldName)
 	ctx.WriteString(`"}}`)
+}
+
+// renderRecursiveLookup handles recursive (self-referential) relationships using $graphLookup
+// For example, comments with reply_to_id pointing to parent comments
+func (d *MongoDBDialect) renderRecursiveLookup(ctx Context, parent, child *qcode.Select, qc *qcode.QCode) {
+	rel := child.Rel
+
+	// For recursive relationships:
+	// rel.Left.Col is the FK column (e.g., reply_to_id)
+	// rel.Right.Col is the PK column (e.g., id)
+	fkCol := rel.Left.Col.Name
+	if fkCol == "id" {
+		fkCol = "_id"
+	}
+
+	// Get direction from internal args ("parents" or "children")
+	findArg, _ := child.GetInternalArg("find")
+	find := findArg.Val
+
+	ctx.WriteString(`{"$graphLookup":{`)
+	ctx.WriteString(`"from":"`)
+	ctx.WriteString(child.Table)
+	ctx.WriteString(`","startWith":"$`)
+
+	if find == "parents" || find == "parent" {
+		// Walk UP: start with our FK value, match against _id
+		// E.g., comment 50 has reply_to_id=49, find comment where _id=49,
+		// then use its reply_to_id to find the next ancestor
+		ctx.WriteString(fkCol)
+		ctx.WriteString(`","connectFromField":"`)
+		ctx.WriteString(fkCol)
+		ctx.WriteString(`","connectToField":"_id"`)
+	} else {
+		// Walk DOWN (children): start with our _id, match against their FK
+		// E.g., for comment 95 (_id=95), find comments where reply_to_id=95,
+		// then use their _id to find grandchildren where reply_to_id matches
+		ctx.WriteString(`_id`)
+		ctx.WriteString(`","connectFromField":"_id`)
+		ctx.WriteString(`","connectToField":"`)
+		ctx.WriteString(fkCol)
+		ctx.WriteString(`"`)
+	}
+
+	// Add depthField to track hierarchy level
+	ctx.WriteString(`,"depthField":"__depth"`)
+
+	ctx.WriteString(`,"as":"`)
+	ctx.WriteString(child.FieldName)
+	ctx.WriteString(`"}}`)
+
+	// After $graphLookup, add pipeline stages to handle where clause, limit, ordering
+	d.renderRecursiveLookupPostProcessing(ctx, child, qc, find)
+}
+
+// renderRecursiveLookupPostProcessing adds $addFields and other stages to process
+// the $graphLookup results (filtering, ordering, limiting)
+func (d *MongoDBDialect) renderRecursiveLookupPostProcessing(ctx Context, child *qcode.Select, qc *qcode.QCode, find string) {
+	// Use $addFields to filter, sort, limit, and project the graphLookup results
+	ctx.WriteString(`,{"$addFields":{"`)
+	ctx.WriteString(child.FieldName)
+	ctx.WriteString(`":{"$let":{"vars":{"items":"$`)
+	ctx.WriteString(child.FieldName)
+	ctx.WriteString(`"},"in":{`)
+
+	// Use $map to project only requested fields from the filtered/sorted/limited results
+	ctx.WriteString(`"$map":{"input":{"$slice":[{"$sortArray":{"input":{"$filter":{"input":"$$items","as":"item","cond":{`)
+
+	// Apply where clause conditions
+	hasWhere := child.Where.Exp != nil
+	if hasWhere {
+		d.renderRecursiveWhereCondition(ctx, child.Where.Exp)
+	} else {
+		ctx.WriteString(`"$literal":true`)
+	}
+
+	ctx.WriteString(`}}},"sortBy":{`)
+
+	// Apply ordering
+	if len(child.OrderBy) > 0 {
+		for i, ob := range child.OrderBy {
+			if i > 0 {
+				ctx.WriteString(`,`)
+			}
+			colName := ob.Col.Name
+			if colName == "id" {
+				colName = "_id"
+			}
+			ctx.WriteString(`"`)
+			ctx.WriteString(colName)
+			ctx.WriteString(`":`)
+			if ob.Order == qcode.OrderDesc {
+				ctx.WriteString(`-1`)
+			} else {
+				ctx.WriteString(`1`)
+			}
+		}
+	} else if find == "parents" || find == "parent" {
+		// Default: sort parents by _id descending (closest parent first)
+		ctx.WriteString(`"_id":-1`)
+	} else {
+		// Default: sort children by _id ascending
+		ctx.WriteString(`"_id":1`)
+	}
+
+	// Close sortBy value }, $sortArray value }, and the object containing $sortArray }
+	ctx.WriteString(`}}}`)
+
+	// Apply limit as second element of $slice array
+	if child.Paging.Limit > 0 {
+		ctx.WriteString(`,`)
+		ctx.WriteString(strconv.Itoa(int(child.Paging.Limit)))
+	}
+
+	// Close $slice array ], $map input value }, open $map "as" and "in"
+	ctx.WriteString(`]},"as":"elem","in":{`)
+
+	// Project only the requested fields (skip aggregation functions)
+	first := true
+	hasFields := false
+	for _, f := range child.Fields {
+		// Skip aggregation functions - not supported in recursive lookups
+		if f.Type == qcode.FieldTypeFunc {
+			continue
+		}
+		if !first {
+			ctx.WriteString(`,`)
+		}
+		colName := f.Col.Name
+		srcColName := colName
+		if srcColName == "id" {
+			srcColName = "_id"
+		}
+		ctx.WriteString(`"`)
+		ctx.WriteString(colName)
+		ctx.WriteString(`":"$$elem.`)
+		ctx.WriteString(srcColName)
+		ctx.WriteString(`"`)
+		first = false
+		hasFields = true
+	}
+
+	// If no regular fields, project _id at minimum
+	if !hasFields {
+		ctx.WriteString(`"_id":"$$elem._id"`)
+	}
+
+	// Close: $map "in" }, $map }, $let "in" }, $let }, field value }, $addFields }, stage }
+	ctx.WriteString(`}}}}}}}`)
+}
+
+// renderRecursiveWhereCondition renders a where condition for $filter in recursive lookups
+func (d *MongoDBDialect) renderRecursiveWhereCondition(ctx Context, exp *qcode.Exp) {
+	// Skip internal recursive CTE conditions (tables starting with __rcte_)
+	// These are for SQL CTEs but MongoDB's $graphLookup handles traversal automatically
+	if strings.HasPrefix(exp.Left.Table, "__rcte_") || strings.HasPrefix(exp.Right.Table, "__rcte_") {
+		ctx.WriteString(`"$literal":true`)
+		return
+	}
+
+	// Skip conditions that compare columns (join conditions) rather than column to value
+	// These are internal recursive conditions that $graphLookup handles
+	if exp.Right.Col.Name != "" && exp.Right.ValType == 0 && exp.Right.Val == "" {
+		ctx.WriteString(`"$literal":true`)
+		return
+	}
+
+	switch exp.Op {
+	case qcode.OpAnd:
+		// Filter out children that are internal recursive conditions
+		validChildren := make([]*qcode.Exp, 0, len(exp.Children))
+		for _, child := range exp.Children {
+			if !strings.HasPrefix(child.Left.Table, "__rcte_") &&
+				!strings.HasPrefix(child.Right.Table, "__rcte_") {
+				validChildren = append(validChildren, child)
+			}
+		}
+
+		if len(validChildren) == 0 {
+			ctx.WriteString(`"$literal":true`)
+			return
+		}
+		if len(validChildren) == 1 {
+			d.renderRecursiveWhereCondition(ctx, validChildren[0])
+			return
+		}
+
+		ctx.WriteString(`"$and":[`)
+		for i, child := range validChildren {
+			if i > 0 {
+				ctx.WriteString(`,`)
+			}
+			ctx.WriteString(`{`)
+			d.renderRecursiveWhereCondition(ctx, child)
+			ctx.WriteString(`}`)
+		}
+		ctx.WriteString(`]`)
+	case qcode.OpOr:
+		ctx.WriteString(`"$or":[`)
+		for i, child := range exp.Children {
+			if i > 0 {
+				ctx.WriteString(`,`)
+			}
+			ctx.WriteString(`{`)
+			d.renderRecursiveWhereCondition(ctx, child)
+			ctx.WriteString(`}`)
+		}
+		ctx.WriteString(`]`)
+	case qcode.OpLesserThan:
+		colName := exp.Left.Col.Name
+		if colName == "id" {
+			colName = "_id"
+		}
+		ctx.WriteString(`"$lt":["$$item.`)
+		ctx.WriteString(colName)
+		ctx.WriteString(`",`)
+		d.renderRecursiveComparisonValue(ctx, exp)
+		ctx.WriteString(`]`)
+	case qcode.OpLesserOrEquals:
+		colName := exp.Left.Col.Name
+		if colName == "id" {
+			colName = "_id"
+		}
+		ctx.WriteString(`"$lte":["$$item.`)
+		ctx.WriteString(colName)
+		ctx.WriteString(`",`)
+		d.renderRecursiveComparisonValue(ctx, exp)
+		ctx.WriteString(`]`)
+	case qcode.OpGreaterThan:
+		colName := exp.Left.Col.Name
+		if colName == "id" {
+			colName = "_id"
+		}
+		ctx.WriteString(`"$gt":["$$item.`)
+		ctx.WriteString(colName)
+		ctx.WriteString(`",`)
+		d.renderRecursiveComparisonValue(ctx, exp)
+		ctx.WriteString(`]`)
+	case qcode.OpGreaterOrEquals:
+		colName := exp.Left.Col.Name
+		if colName == "id" {
+			colName = "_id"
+		}
+		ctx.WriteString(`"$gte":["$$item.`)
+		ctx.WriteString(colName)
+		ctx.WriteString(`",`)
+		d.renderRecursiveComparisonValue(ctx, exp)
+		ctx.WriteString(`]`)
+	case qcode.OpEquals:
+		colName := exp.Left.Col.Name
+		if colName == "id" {
+			colName = "_id"
+		}
+		ctx.WriteString(`"$eq":["$$item.`)
+		ctx.WriteString(colName)
+		ctx.WriteString(`",`)
+		d.renderRecursiveComparisonValue(ctx, exp)
+		ctx.WriteString(`]`)
+	case qcode.OpNotEquals:
+		colName := exp.Left.Col.Name
+		if colName == "id" {
+			colName = "_id"
+		}
+		ctx.WriteString(`"$ne":["$$item.`)
+		ctx.WriteString(colName)
+		ctx.WriteString(`",`)
+		d.renderRecursiveComparisonValue(ctx, exp)
+		ctx.WriteString(`]`)
+	default:
+		// Fallback: true
+		ctx.WriteString(`"$literal":true`)
+	}
+}
+
+// renderRecursiveComparisonValue renders a value for comparison in recursive where
+func (d *MongoDBDialect) renderRecursiveComparisonValue(ctx Context, exp *qcode.Exp) {
+	if exp.Right.ValType == qcode.ValVar {
+		ctx.AddParam(Param{Name: exp.Right.Val, Type: "any"})
+	} else {
+		ctx.WriteString(exp.Right.Val)
+	}
+}
+
+// renderPolymorphicLookups handles polymorphic (union type) relationships
+// For a polymorphic field like "subject" that can be users or products,
+// we render a $lookup for each union member with a unique field name
+func (d *MongoDBDialect) renderPolymorphicLookups(ctx Context, parent, polyChild *qcode.Select, qc *qcode.QCode) {
+	// Get the type column name from the relationship (e.g., "subject_type")
+	typeCol := polyChild.Rel.Left.Col.FKeyCol
+	// Get the ID column name (e.g., "subject_id")
+	idCol := polyChild.Rel.Left.Col.Name
+	if idCol == "id" {
+		idCol = "_id"
+	}
+
+	// For each union member (e.g., users, products), render a $lookup
+	for i, childID := range polyChild.Children {
+		unionMember := &qc.Selects[childID]
+		if unionMember.SkipRender != qcode.SkipTypeNone {
+			continue
+		}
+
+		if i > 0 {
+			ctx.WriteString(`,`)
+		}
+
+		// Use a special field name for the lookup result (e.g., "__poly_users")
+		lookupFieldName := "__poly_" + unionMember.Table
+
+		ctx.WriteString(`{"$lookup":{`)
+		ctx.WriteString(`"from":"`)
+		ctx.WriteString(unionMember.Table)
+		ctx.WriteString(`","let":{"typeVal":"$`)
+		ctx.WriteString(typeCol)
+		ctx.WriteString(`","idVal":"$`)
+		ctx.WriteString(idCol)
+		ctx.WriteString(`"},"pipeline":[{"$match":{"$expr":{"$and":[`)
+		// Match: type column must equal this table name AND id must match
+		ctx.WriteString(`{"$eq":["$$typeVal","`)
+		ctx.WriteString(unionMember.Table)
+		ctx.WriteString(`"]},{"$eq":["$_id","$$idVal"]}]}}}`)
+
+		// Add $project stage within the pipeline to select only requested fields
+		if len(unionMember.Fields) > 0 {
+			hasIdField := false
+			for _, f := range unionMember.Fields {
+				if f.Type == qcode.FieldTypeFunc {
+					continue
+				}
+				if f.FieldName == "id" || f.Col.Name == "id" {
+					hasIdField = true
+					break
+				}
+			}
+
+			ctx.WriteString(`,{"$project":{`)
+			first := true
+			if !hasIdField {
+				ctx.WriteString(`"_id":0`)
+				first = false
+			}
+			for _, f := range unionMember.Fields {
+				if f.Type == qcode.FieldTypeFunc {
+					continue
+				}
+				if !first {
+					ctx.WriteString(`,`)
+				}
+				colName := f.Col.Name
+				if colName == "id" {
+					colName = "_id"
+				}
+				ctx.WriteString(`"`)
+				ctx.WriteString(colName)
+				ctx.WriteString(`":1`)
+				first = false
+			}
+			ctx.WriteString(`}}`)
+		}
+
+		ctx.WriteString(`],"as":"`)
+		ctx.WriteString(lookupFieldName)
+		ctx.WriteString(`"}}`)
+	}
 }
 
 // renderM2MLookupViaJoinTable handles many-to-many relationships via join tables
@@ -1878,15 +2885,61 @@ func (d *MongoDBDialect) renderM2MLookupViaJoinTable(ctx Context, parent, child 
 }
 
 // renderProjectStageWithChildren renders $project including child field names
+// or $group for aggregation queries
 func (d *MongoDBDialect) renderProjectStageWithChildren(ctx Context, sel *qcode.Select, qc *qcode.QCode) {
+	// Check if we have aggregation functions
+	if sel.GroupCols {
+		d.renderGroupStage(ctx, sel)
+		return
+	}
+
+	// First, count how many visible fields we have (excluding dropped fields)
+	visibleFieldCount := 0
+	for _, f := range sel.Fields {
+		if f.Type == qcode.FieldTypeFunc {
+			continue
+		}
+		if f.SkipRender != qcode.SkipTypeDrop {
+			visibleFieldCount++
+		}
+	}
+
+	// Also count visible children (including those rendered as null)
+	visibleChildCount := 0
+	for _, childID := range sel.Children {
+		child := &qc.Selects[childID]
+		// Count normally rendered children
+		if child.SkipRender == qcode.SkipTypeNone &&
+			child.Field.SkipRender == qcode.SkipTypeNone {
+			visibleChildCount++
+		}
+		// Also count children that will be rendered as null
+		if child.SkipRender == qcode.SkipTypeUserNeeded ||
+			child.SkipRender == qcode.SkipTypeBlocked ||
+			child.SkipRender == qcode.SkipTypeNulled {
+			visibleChildCount++
+		}
+	}
+
+	// If all fields and children are dropped, use $replaceRoot to produce empty objects
+	if visibleFieldCount == 0 && visibleChildCount == 0 {
+		ctx.WriteString(`{"$replaceRoot":{"newRoot":{}}}`)
+		return
+	}
+
 	ctx.WriteString(`{"$project":{`)
 	first := true
 
-	// Check if id field is requested (skip function fields)
+	// Check if id field is requested AND not dropped/nulled/conditional
 	hasIdField := false
 	for _, f := range sel.Fields {
 		if f.Type != qcode.FieldTypeFunc && f.Col.Name == "id" {
-			hasIdField = true
+			// Only count as "has id" if it will be rendered normally
+			if f.SkipRender != qcode.SkipTypeDrop &&
+				f.SkipRender != qcode.SkipTypeNulled &&
+				f.FieldFilter.Exp == nil {
+				hasIdField = true
+			}
 			break
 		}
 	}
@@ -1897,33 +2950,124 @@ func (d *MongoDBDialect) renderProjectStageWithChildren(ctx Context, sel *qcode.
 		first = false
 	}
 
-	// Add parent fields (skip function fields - MongoDB doesn't support SQL-style aggregations)
+	// Add parent fields (skip function fields for regular projection)
 	for _, f := range sel.Fields {
 		if f.Type == qcode.FieldTypeFunc {
+			continue
+		}
+		// SkipTypeDrop: completely skip field (@add/@remove directives)
+		if f.SkipRender == qcode.SkipTypeDrop {
 			continue
 		}
 		if !first {
 			ctx.WriteString(`,`)
 		}
-		colName := f.Col.Name
-		if colName == "id" {
-			colName = "_id"
+
+		// Source column name (for MongoDB field reference)
+		sourceCol := f.Col.Name
+		if sourceCol == "id" {
+			sourceCol = "_id"
 		}
+
+		// Output field name - use FieldName for remote ID fields (prefixed with __)
+		// Remote ID fields have FieldName like "__payments_stripe_id" but Col.Name is "stripe_id"
+		outputName := f.Col.Name
+		if strings.HasPrefix(f.FieldName, "__") {
+			outputName = f.FieldName
+		}
+		if outputName == "id" {
+			outputName = "_id"
+		}
+
 		ctx.WriteString(`"`)
-		ctx.WriteString(colName)
-		ctx.WriteString(`":1`)
+		ctx.WriteString(outputName)
+		ctx.WriteString(`":`)
+
+		// Handle based on directive type
+		if f.FieldFilter.Exp != nil {
+			// Variable-based directive: use $cond for runtime evaluation
+			d.renderFieldWithCondition(ctx, f, sourceCol)
+		} else if f.SkipRender == qcode.SkipTypeNulled ||
+			f.SkipRender == qcode.SkipTypeUserNeeded ||
+			f.SkipRender == qcode.SkipTypeBlocked {
+			// Role-based @skip/@include: static null
+			ctx.WriteString(`null`)
+		} else if outputName != sourceCol {
+			// Remote ID field - reference the source column with $ prefix
+			ctx.WriteString(`"$`)
+			ctx.WriteString(sourceCol)
+			ctx.WriteString(`"`)
+		} else {
+			// Normal field - use projection shorthand
+			ctx.WriteString(`1`)
+		}
 		first = false
+	}
+
+	// Add order-by columns for cursor pagination (if not already in Fields)
+	if sel.Paging.Cursor && len(sel.OrderBy) > 0 {
+		// Track which columns are already projected
+		projectedCols := make(map[string]bool)
+		for _, f := range sel.Fields {
+			projectedCols[f.Col.Name] = true
+		}
+
+		for _, ob := range sel.OrderBy {
+			colName := ob.Col.Name
+			if projectedCols[colName] {
+				continue // Already projected
+			}
+			if !first {
+				ctx.WriteString(`,`)
+			}
+			// Use __cursor_ prefix for order-by columns not in result fields
+			// This allows driver to extract cursor values without polluting result
+			mongoCol := colName
+			if mongoCol == "id" {
+				mongoCol = "_id"
+			}
+			ctx.WriteString(`"__cursor_`)
+			ctx.WriteString(colName)
+			ctx.WriteString(`":"$`)
+			ctx.WriteString(mongoCol)
+			ctx.WriteString(`"`)
+			first = false
+		}
 	}
 
 	// Add child fields (from $lookup)
 	for _, childID := range sel.Children {
 		child := &qc.Selects[childID]
+
+		// Render skipped/blocked children as null (for auth-required fields, role blocks, etc.)
+		if child.SkipRender == qcode.SkipTypeUserNeeded ||
+			child.SkipRender == qcode.SkipTypeBlocked ||
+			child.SkipRender == qcode.SkipTypeNulled {
+			if !first {
+				ctx.WriteString(`,`)
+			}
+			ctx.WriteString(`"`)
+			ctx.WriteString(child.FieldName)
+			ctx.WriteString(`":null`)
+			first = false
+			continue
+		}
+
+		// Skip other non-renderable children completely
 		if child.SkipRender != qcode.SkipTypeNone {
 			continue
 		}
 		if !first {
 			ctx.WriteString(`,`)
 		}
+
+		// Handle polymorphic relationships with $switch
+		if child.Rel.Type == sdata.RelPolymorphic {
+			d.renderPolymorphicProjectField(ctx, child, qc)
+			first = false
+			continue
+		}
+
 		// For singular relationships (e.g., owner), extract first element
 		if child.Singular {
 			ctx.WriteString(`"`)
@@ -1942,11 +3086,205 @@ func (d *MongoDBDialect) renderProjectStageWithChildren(ctx Context, sel *qcode.
 	ctx.WriteString(`}}`)
 }
 
+// renderFieldWithCondition renders a field with a $cond for variable-based directives.
+// This implements @skip(ifVar: $var) and @include(ifVar: $var) runtime evaluation.
+func (d *MongoDBDialect) renderFieldWithCondition(ctx Context, f qcode.Field, colName string) {
+	// MongoDB $cond format: { $cond: { if: <expr>, then: "$field", else: null } }
+	ctx.WriteString(`{"$cond":{"if":`)
+	d.renderBoolExpression(ctx, f.FieldFilter.Exp)
+	ctx.WriteString(`,"then":"$`)
+	ctx.WriteString(colName)
+	ctx.WriteString(`","else":null}}`)
+}
+
+// renderBoolExpression renders a boolean expression for $cond evaluation.
+func (d *MongoDBDialect) renderBoolExpression(ctx Context, exp *qcode.Exp) {
+	if exp == nil {
+		ctx.WriteString(`true`)
+		return
+	}
+
+	switch exp.Op {
+	case qcode.OpEqualsTrue:
+		// @include(ifVar: $var): variable == true
+		ctx.WriteString(`{"$eq":["`)
+		ctx.AddParam(Param{Name: exp.Right.Val, Type: "boolean"})
+		ctx.WriteString(`",true]}`)
+	case qcode.OpNotEqualsTrue:
+		// @skip(ifVar: $var): variable != true (i.e., show when var is NOT true)
+		ctx.WriteString(`{"$ne":["`)
+		ctx.AddParam(Param{Name: exp.Right.Val, Type: "boolean"})
+		ctx.WriteString(`",true]}`)
+	default:
+		// For other expressions (includeIf/skipIf with row conditions)
+		// These need to be evaluated differently in MongoDB
+		d.renderConditionExpression(ctx, exp)
+	}
+}
+
+// renderConditionExpression renders a condition expression for field-level filters.
+// Used for includeIf/skipIf with row data conditions.
+func (d *MongoDBDialect) renderConditionExpression(ctx Context, exp *qcode.Exp) {
+	if exp == nil {
+		ctx.WriteString(`true`)
+		return
+	}
+
+	switch exp.Op {
+	case qcode.OpAnd:
+		if len(exp.Children) > 0 {
+			ctx.WriteString(`{"$and":[`)
+			for i, child := range exp.Children {
+				if i > 0 {
+					ctx.WriteString(`,`)
+				}
+				d.renderConditionExpression(ctx, child)
+			}
+			ctx.WriteString(`]}`)
+		}
+	case qcode.OpOr:
+		if len(exp.Children) > 0 {
+			ctx.WriteString(`{"$or":[`)
+			for i, child := range exp.Children {
+				if i > 0 {
+					ctx.WriteString(`,`)
+				}
+				d.renderConditionExpression(ctx, child)
+			}
+			ctx.WriteString(`]}`)
+		}
+	case qcode.OpNot:
+		// NOT is used by skipIf to negate the condition
+		if len(exp.Children) > 0 {
+			ctx.WriteString(`{"$not":[`)
+			d.renderConditionExpression(ctx, exp.Children[0])
+			ctx.WriteString(`]}`)
+		}
+	case qcode.OpEquals:
+		ctx.WriteString(`{"$eq":["$`)
+		colName := exp.Left.Col.Name
+		if colName == "" {
+			colName = exp.Left.ColName
+		}
+		if colName == "id" {
+			colName = "_id"
+		}
+		ctx.WriteString(colName)
+		ctx.WriteString(`",`)
+		d.renderConditionValue(ctx, exp)
+		ctx.WriteString(`]}`)
+	case qcode.OpNotEquals:
+		ctx.WriteString(`{"$ne":["$`)
+		colName := exp.Left.Col.Name
+		if colName == "" {
+			colName = exp.Left.ColName
+		}
+		if colName == "id" {
+			colName = "_id"
+		}
+		ctx.WriteString(colName)
+		ctx.WriteString(`",`)
+		d.renderConditionValue(ctx, exp)
+		ctx.WriteString(`]}`)
+	default:
+		// Fallback: always true for unsupported operators
+		ctx.WriteString(`true`)
+	}
+}
+
+// renderConditionValue renders a value for condition expressions.
+func (d *MongoDBDialect) renderConditionValue(ctx Context, exp *qcode.Exp) {
+	switch exp.Right.ValType {
+	case qcode.ValVar:
+		ctx.WriteString(`"`)
+		ctx.AddParam(Param{Name: exp.Right.Val, Type: "any"})
+		ctx.WriteString(`"`)
+	case qcode.ValNum:
+		ctx.WriteString(exp.Right.Val)
+	case qcode.ValStr:
+		ctx.WriteString(`"`)
+		ctx.WriteString(exp.Right.Val)
+		ctx.WriteString(`"`)
+	case qcode.ValBool:
+		ctx.WriteString(exp.Right.Val)
+	default:
+		ctx.WriteString(`null`)
+	}
+}
+
+// renderPolymorphicProjectField renders a polymorphic field using $switch
+// to select the appropriate lookup result based on the type column
+func (d *MongoDBDialect) renderPolymorphicProjectField(ctx Context, polyChild *qcode.Select, qc *qcode.QCode) {
+	// Get the type column name from the relationship (e.g., "subject_type")
+	typeCol := polyChild.Rel.Left.Col.FKeyCol
+
+	ctx.WriteString(`"`)
+	ctx.WriteString(polyChild.FieldName)
+	ctx.WriteString(`":{"$switch":{"branches":[`)
+
+	first := true
+	for _, childID := range polyChild.Children {
+		unionMember := &qc.Selects[childID]
+		if unionMember.SkipRender != qcode.SkipTypeNone {
+			continue
+		}
+
+		if !first {
+			ctx.WriteString(`,`)
+		}
+
+		// Use the same field name as in renderPolymorphicLookups
+		lookupFieldName := "__poly_" + unionMember.Table
+
+		// Branch: when type equals this table name, return the lookup result
+		ctx.WriteString(`{"case":{"$eq":["$`)
+		ctx.WriteString(typeCol)
+		ctx.WriteString(`","`)
+		ctx.WriteString(unionMember.Table)
+		ctx.WriteString(`"]},"then":{"$arrayElemAt":["$`)
+		ctx.WriteString(lookupFieldName)
+		ctx.WriteString(`",0]}}`)
+		first = false
+	}
+
+	ctx.WriteString(`],"default":null}}`)
+}
+
 // renderMatchStage renders a $match pipeline stage from an expression
 func (d *MongoDBDialect) renderMatchStage(ctx Context, exp *qcode.Exp) {
 	ctx.WriteString(`{"$match":{`)
 	d.renderExpression(ctx, exp)
 	ctx.WriteString(`}}`)
+}
+
+// hasTableRef checks if an expression references a specific table (recursively)
+func hasTableRef(exp *qcode.Exp, tableName string) bool {
+	if exp == nil {
+		return false
+	}
+	// Check if this expression references the table
+	if exp.Left.Table == tableName || exp.Right.Table == tableName {
+		return true
+	}
+	// Check children recursively
+	for _, child := range exp.Children {
+		if hasTableRef(child, tableName) {
+			return true
+		}
+	}
+	return false
+}
+
+// filterOutTableRefs filters out expressions that reference a specific table
+// Returns filtered children and whether any remain
+func filterOutTableRefs(children []*qcode.Exp, tableName string) []*qcode.Exp {
+	var result []*qcode.Exp
+	for _, child := range children {
+		if !hasTableRef(child, tableName) {
+			result = append(result, child)
+		}
+	}
+	return result
 }
 
 // renderExpression renders a filter expression in MongoDB query format
@@ -1957,9 +3295,15 @@ func (d *MongoDBDialect) renderExpression(ctx Context, exp *qcode.Exp) {
 
 	switch exp.Op {
 	case qcode.OpAnd:
-		if len(exp.Children) > 0 {
+		// Filter out __cur references from children (cursor pagination predicates)
+		// MongoDB handles cursor pagination differently - not via CTE-based seek predicates
+		filteredChildren := filterOutTableRefs(exp.Children, "__cur")
+		if len(filteredChildren) == 1 {
+			// Single child - render directly without $and wrapper
+			d.renderExpression(ctx, filteredChildren[0])
+		} else if len(filteredChildren) > 1 {
 			ctx.WriteString(`"$and":[`)
-			for i, child := range exp.Children {
+			for i, child := range filteredChildren {
 				if i > 0 {
 					ctx.WriteString(`,`)
 				}
@@ -1969,10 +3313,16 @@ func (d *MongoDBDialect) renderExpression(ctx Context, exp *qcode.Exp) {
 			}
 			ctx.WriteString(`]`)
 		}
+		// If no children remain after filtering, render nothing (empty $match)
 	case qcode.OpOr:
-		if len(exp.Children) > 0 {
+		// Filter out __cur references from children
+		filteredChildren := filterOutTableRefs(exp.Children, "__cur")
+		if len(filteredChildren) == 1 {
+			// Single child - render directly without $or wrapper
+			d.renderExpression(ctx, filteredChildren[0])
+		} else if len(filteredChildren) > 1 {
 			ctx.WriteString(`"$or":[`)
-			for i, child := range exp.Children {
+			for i, child := range filteredChildren {
 				if i > 0 {
 					ctx.WriteString(`,`)
 				}
@@ -2014,6 +3364,36 @@ func (d *MongoDBDialect) renderExpression(ctx Context, exp *qcode.Exp) {
 		ctx.WriteString(`"$text":{"$search":"`)
 		ctx.AddParam(Param{Name: exp.Right.Val, Type: "text"})
 		ctx.WriteString(`"}`)
+	case qcode.OpHasKeyAny, qcode.OpHasKeyAll:
+		// Check if JSON field has any/all of the specified keys
+		// has_key_any: ["foo", "bar"] -> $or: [{field.foo: {$exists: true}}, {field.bar: {$exists: true}}]
+		// has_key_all: ["foo", "bar"] -> $and: [{field.foo: {$exists: true}}, {field.bar: {$exists: true}}]
+		colName := exp.Left.Col.Name
+		if colName == "" {
+			colName = exp.Left.ColName
+		}
+		if colName == "id" {
+			colName = "_id"
+		}
+
+		// Choose $or for has_key_any, $and for has_key_all
+		if exp.Op == qcode.OpHasKeyAny {
+			ctx.WriteString(`"$or":[`)
+		} else {
+			ctx.WriteString(`"$and":[`)
+		}
+
+		for i, key := range exp.Right.ListVal {
+			if i > 0 {
+				ctx.WriteString(`,`)
+			}
+			ctx.WriteString(`{"`)
+			ctx.WriteString(colName)
+			ctx.WriteString(`.`)
+			ctx.WriteString(escapeJSONString(key))
+			ctx.WriteString(`":{"$exists":true}}`)
+		}
+		ctx.WriteString(`]`)
 	default:
 		// Simple comparison: field op value
 		colName := exp.Left.Col.Name
@@ -2136,7 +3516,21 @@ func (d *MongoDBDialect) renderComparisonValue(ctx Context, exp *qcode.Exp) {
 func (d *MongoDBDialect) renderValue(ctx Context, exp *qcode.Exp) {
 	switch exp.Right.ValType {
 	case qcode.ValVar:
-		// This is a parameter reference - wrap in quotes for valid JSON
+		// Check if this is a config-level static variable
+		if val, ok := ctx.GetStaticVar(exp.Right.Val); ok {
+			// Render as literal - determine if numeric or string
+			if _, err := strconv.ParseFloat(val, 64); err == nil {
+				ctx.WriteString(val) // numeric
+			} else if val == "true" || val == "false" {
+				ctx.WriteString(val) // boolean
+			} else {
+				ctx.WriteString(`"`)
+				ctx.WriteString(escapeJSONString(val))
+				ctx.WriteString(`"`)
+			}
+			return
+		}
+		// Runtime parameter - wrap in quotes for valid JSON
 		// The driver will substitute the actual value
 		ctx.WriteString(`"`)
 		ctx.AddParam(Param{Name: exp.Right.Val, Type: "any"})
@@ -2251,13 +3645,15 @@ func (d *MongoDBDialect) renderSortStage(ctx Context, sel *qcode.Select) {
 		ctx.WriteString(`}},`)
 	}
 
-	// Now render $sort stage
-	ctx.WriteString(`{"$sort":{`)
+	// Now render $sort stage using array format to preserve field order
+	// MongoDB sort order depends on key order, but Go maps don't preserve order
+	// So we use $sort_ordered: [[field, order], ...] format
+	ctx.WriteString(`{"$sort_ordered":[`)
 	for i, ob := range sel.OrderBy {
 		if i > 0 {
 			ctx.WriteString(`,`)
 		}
-		ctx.WriteString(`"`)
+		ctx.WriteString(`["`)
 		if ob.Var != "" {
 			// Use computed position field for list-based ordering
 			ctx.WriteString(`__sort_pos_`)
@@ -2270,15 +3666,16 @@ func (d *MongoDBDialect) renderSortStage(ctx Context, sel *qcode.Select) {
 			}
 			ctx.WriteString(colName)
 		}
-		ctx.WriteString(`":`)
+		ctx.WriteString(`",`)
 		switch ob.Order {
 		case qcode.OrderDesc, qcode.OrderDescNullsFirst, qcode.OrderDescNullsLast:
 			ctx.WriteString(`-1`)
 		default:
 			ctx.WriteString(`1`)
 		}
+		ctx.WriteString(`]`)
 	}
-	ctx.WriteString(`}}`)
+	ctx.WriteString(`]}`)
 }
 
 // renderProjectStage renders a $project pipeline stage

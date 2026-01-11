@@ -593,8 +593,10 @@ func (c *compilerContext) IsTableMutated(table string) bool {
 	return false
 }
 
-
-
+func (c *compilerContext) GetStaticVar(name string) (string, bool) {
+	val, ok := c.svars[name]
+	return val, ok
+}
 
 func (c *compilerContext) renderJoin(join qcode.Join) {
 	c.w.WriteString(` INNER JOIN `)

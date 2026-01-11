@@ -595,6 +595,28 @@ func TestMain(m *testing.M) {
 				}
 				graphEdgeCol.InsertMany(ctx, graphEdgeDocs)
 
+				// Create notifications collection for polymorphic relationship tests
+				notificationsCol := testDB.Collection("notifications")
+				notificationDocs := []interface{}{
+					bson.M{
+						"_id":          int64(1),
+						"verb":         "Joined",
+						"subject_type": "users",
+						"subject_id":   int64(1),
+						"user_id":      int64(1),
+						"created_at":   time.Date(2021, 1, 9, 16, 37, 1, 0, time.UTC),
+					},
+					bson.M{
+						"_id":          int64(2),
+						"verb":         "Bought",
+						"subject_type": "products",
+						"subject_id":   int64(2),
+						"user_id":      int64(2),
+						"created_at":   time.Date(2021, 1, 9, 16, 37, 1, 0, time.UTC),
+					},
+				}
+				notificationsCol.InsertMany(ctx, notificationDocs)
+
 				// Create sql.DB using mongodriver
 				connector := mongodriver.NewConnector(client, "graphjin_test")
 				sqlDB := sql.OpenDB(connector)
