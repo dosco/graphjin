@@ -217,14 +217,11 @@ func (q *QueryDSL) SubstituteParams(args []any) error {
 		}
 	}
 
-	// Handle ConnectPath - extract connect IDs from the document
-	if q.ConnectColumn != "" && q.ConnectPath != "" {
-		// The ConnectPath points to the parameter with connect IDs
-		// But the IDs are actually embedded in the Document under "tablename.connect.id"
-		// We need to extract them and add them to the document as the ConnectColumn
-		if q.Document != nil {
-			extractConnectIDs(q.Document, q.ConnectColumn)
-		}
+	// Handle ConnectColumn - extract connect IDs from the document
+	// The IDs are embedded in the Document under "tablename.connect.id" pattern
+	// We need to extract them and add them to the document as the ConnectColumn
+	if q.ConnectColumn != "" && q.Document != nil {
+		extractConnectIDs(q.Document, q.ConnectColumn)
 	}
 
 	// Handle FK connect - transform owner.connect.id -> owner_id

@@ -458,6 +458,7 @@ func TestMain(m *testing.M) {
 						"full_name":       fmt.Sprintf("User %d", i),
 						"email":           fmt.Sprintf("user%d@test.com", i),
 						"phone":           nil,
+						"avatar":          nil,
 						"stripe_id":       fmt.Sprintf("payment_id_%d", i+1000),
 						"category_counts": []bson.M{{"category_id": 1, "count": 400}, {"category_id": 2, "count": 600}},
 						"disabled":        disabled,
