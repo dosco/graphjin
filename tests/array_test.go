@@ -59,8 +59,8 @@ func TestQueryParentAndChildrenViaArrayColumn(t *testing.T) {
 }
 
 func TestInsertIntoTableAndConnectToRelatedTableWithArrayColumn(t *testing.T) {
-	if dbType == "sqlite" || dbType == "mssql" || dbType == "mongodb" {
-		t.Skip("skipping test for sqlite/mssql/mongodb (array column inserts with connect not fully working)")
+	if dbType == "sqlite" || dbType == "mssql" {
+		t.Skip("skipping test for sqlite/mssql (array column inserts with connect not fully working)")
 	}
 
 	gql := `mutation {
@@ -76,9 +76,9 @@ func TestInsertIntoTableAndConnectToRelatedTableWithArrayColumn(t *testing.T) {
 
 	vars := json.RawMessage(`{
 		"data": {
-			"id": 2006,
-			"name": "Product 2006",
-			"description": "Description for product 2006",
+			"id": 100006,
+			"name": "Product 100006",
+			"description": "Description for product 100006",
 			"price": 2016.5,
 			"tags": ["Tag 1", "Tag 2"],
 			"categories": {
@@ -89,7 +89,7 @@ func TestInsertIntoTableAndConnectToRelatedTableWithArrayColumn(t *testing.T) {
 
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	conf.Tables = []core.Table{
-		{Name: "products", Columns: []core.Column{{Name: "category_ids", ForeignKey: "categories.id"}}},
+		{Name: "products", Columns: []core.Column{{Name: "category_ids", ForeignKey: "categories.id", Array: true}}},
 	}
 
 	gj, err := core.NewGraphJin(conf, db)
@@ -103,14 +103,14 @@ func TestInsertIntoTableAndConnectToRelatedTableWithArrayColumn(t *testing.T) {
 		t.Error(err)
 	}
 	
-	exp := `{"products":[{"categories":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"},{"id":3,"name":"Category 3"},{"id":4,"name":"Category 4"},{"id":5,"name":"Category 5"}],"id":2006,"name":"Product 2006"}]}`
+	exp := `{"products":[{"categories":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"},{"id":3,"name":"Category 3"},{"id":4,"name":"Category 4"},{"id":5,"name":"Category 5"}],"id":100006,"name":"Product 100006"}]}`
 	assert.Equal(t, exp, stdJSON(res.Data))
 }
 
 // TODO: Fix: Does not work in MYSQL
 func TestVeryComplexQueryWithArrayColumns(t *testing.T) {
-	if dbType == "mssql" || dbType == "mongodb" {
-		t.Skip("skipping test for mssql/mongodb (JSON virtual tables and deep nesting not yet supported)")
+	if dbType == "mssql" {
+		t.Skip("skipping test for mssql (JSON virtual tables and deep nesting not yet supported)")
 	}
 
 	gql := `query {
@@ -148,20 +148,29 @@ func TestVeryComplexQueryWithArrayColumns(t *testing.T) {
 	}`
 
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
-	conf.Tables = []core.Table{
-		{
-			Name:  "category_counts",
-			Table: "users",
-			Type:  "json",
-			Columns: []core.Column{
-				{Name: "category_id", Type: "int", ForeignKey: "categories.id"},
-				{Name: "count", Type: "int"},
-			},
+	conf.Tables = append(conf.Tables, core.Table{
+		Name:  "category_counts",
+		Table: "users",
+		Type:  "json",
+		Columns: []core.Column{
+			{Name: "category_id", Type: "int", ForeignKey: "categories.id"},
+			{Name: "count", Type: "int"},
 		},
-		{
+	})
+	// Append array column config to existing products table or add new
+	found := false
+	for i, t := range conf.Tables {
+		if t.Name == "products" {
+			conf.Tables[i].Columns = append(conf.Tables[i].Columns, core.Column{Name: "category_ids", ForeignKey: "categories.id"})
+			found = true
+			break
+		}
+	}
+	if !found {
+		conf.Tables = append(conf.Tables, core.Table{
 			Name:    "products",
 			Columns: []core.Column{{Name: "category_ids", ForeignKey: "categories.id"}},
-		},
+		})
 	}
 
 	gj, err := core.NewGraphJin(conf, db)

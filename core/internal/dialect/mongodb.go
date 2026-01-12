@@ -944,7 +944,7 @@ func (d *MongoDBDialect) renderInsertMutation(ctx Context, qc *qcode.QCode, m *q
 			if pipelineDepth > 0 {
 				ctx.WriteString(`,`)
 			}
-			d.renderLookupStage(ctx, rootSel, child)
+			d.renderLookupStageWithQC(ctx, rootSel, child, qc)
 			pipelineDepth++
 		}
 
@@ -1151,7 +1151,7 @@ func (d *MongoDBDialect) renderNestedInsertMutation(ctx Context, qc *qcode.QCode
 			if pipelineDepth > 0 {
 				ctx.WriteString(`,`)
 			}
-			d.renderLookupStage(ctx, rootSel, child)
+			d.renderLookupStageWithQC(ctx, rootSel, child, qc)
 			pipelineDepth++
 		}
 
@@ -1473,7 +1473,7 @@ func (d *MongoDBDialect) renderUpdateMutation(ctx Context, qc *qcode.QCode, m *q
 			if pipelineDepth > 0 {
 				ctx.WriteString(`,`)
 			}
-			d.renderLookupStage(ctx, rootSel, child)
+			d.renderLookupStageWithQC(ctx, rootSel, child, qc)
 			pipelineDepth++
 		}
 
@@ -1550,7 +1550,7 @@ func (d *MongoDBDialect) renderNestedUpdateMutation(ctx Context, qc *qcode.QCode
 			if pipelineDepth > 0 {
 				ctx.WriteString(`,`)
 			}
-			d.renderLookupStage(ctx, rootSel, child)
+			d.renderLookupStageWithQC(ctx, rootSel, child, qc)
 			pipelineDepth++
 		}
 
@@ -2292,8 +2292,29 @@ func (d *MongoDBDialect) renderLookupStageWithQC(ctx Context, parent, child *qco
 	}
 	ctx.WriteString(`}}}`)
 
+	// Add nested lookups for grandchildren FIRST (before $project)
+	// This is important for embedded JSON tables which use $unwind/$group
+	// and need to access the embedded array before it's projected out
+	hasEmbeddedChild := false
+	if qc != nil && len(child.Children) > 0 {
+		for _, grandchildID := range child.Children {
+			grandchild := &qc.Selects[grandchildID]
+			if grandchild.SkipRender != qcode.SkipTypeNone {
+				continue
+			}
+			if grandchild.Rel.Type == sdata.RelEmbedded {
+				hasEmbeddedChild = true
+			}
+			ctx.WriteString(`,`)
+			// Use the same lookup rendering recursively
+			d.renderLookupStageWithQC(ctx, child, grandchild, qc)
+		}
+	}
+
 	// Add $project stage within the pipeline to select only requested fields
-	if len(child.Fields) > 0 {
+	// Note: Skip $project if there was embedded processing - it handles projection differently
+	// (The $group stage in embedded processing already renames fields to aliases)
+	if !hasEmbeddedChild && (len(child.Fields) > 0 || (qc != nil && len(child.Children) > 0)) {
 		// Track if we're outputting an id field to determine _id handling
 		// Skip function fields - MongoDB doesn't support SQL-style aggregations
 		// Check if id field is requested AND not dropped/nulled/conditional
@@ -2365,6 +2386,22 @@ func (d *MongoDBDialect) renderLookupStageWithQC(ctx Context, parent, child *qco
 				ctx.WriteString(`"`)
 			}
 			first = false
+		}
+		// Also include grandchild field names (for embedded or looked up fields)
+		if qc != nil {
+			for _, grandchildID := range child.Children {
+				grandchild := &qc.Selects[grandchildID]
+				if grandchild.SkipRender != qcode.SkipTypeNone {
+					continue
+				}
+				if !first {
+					ctx.WriteString(`,`)
+				}
+				ctx.WriteString(`"`)
+				ctx.WriteString(grandchild.FieldName)
+				ctx.WriteString(`":1`)
+				first = false
+			}
 		}
 		ctx.WriteString(`}}`)
 	}
@@ -3775,7 +3812,7 @@ func (d *MongoDBDialect) renderEmbeddedJSONStage(ctx Context, parent, child *qco
 	ctx.WriteString(embeddedField)
 	ctx.WriteString(`"}}}`)
 
-	// Add $addFields to rename _id back to id if needed
+	// Add $addFields to rename _id back to id if requested, otherwise exclude _id
 	hasIdField := false
 	for _, f := range parent.Fields {
 		if f.Col.Name == "id" {
@@ -3785,6 +3822,9 @@ func (d *MongoDBDialect) renderEmbeddedJSONStage(ctx Context, parent, child *qco
 	}
 	if hasIdField {
 		ctx.WriteString(`,{"$addFields":{"id":"$_id"}}`)
+	} else {
+		// Exclude _id from results if id wasn't requested
+		ctx.WriteString(`,{"$project":{"_id":0}}`)
 	}
 
 	// Step 5: Final $project to select only requested fields from embedded elements

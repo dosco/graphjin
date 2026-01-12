@@ -9,7 +9,7 @@
 
 ## Build APIs in 5 minutes not weeks
 
-Just use a simple GraphQL query to define your API and GraphJin automagically converts it into SQL and fetches the data you need. Build your backend APIs **100X** faster. Works with **NodeJS** and **GO**. Supports several databases, **Postgres**, **MySQL**, **Yugabyte**, **AWS Aurora/RDS** and **Google Cloud SQL**
+Just use a simple GraphQL query to define your API and GraphJin automagically converts it into SQL and fetches the data you need. Build your backend APIs **100X** faster. Works with **NodeJS** and **GO**. Supports **8 databases**: **PostgreSQL**, **MySQL**, **MariaDB**, **MSSQL**, **Oracle**, **SQLite**, **MongoDB**, and **CockroachDB** (plus AWS Aurora/RDS, Google Cloud SQL, YugabyteDB)
 
 The following GraphQL query fetches a list of products, their owners, and other category information, including a cursor for retrieving more products.
 GraphJin will do auto-discovery of your database schema and relationships and generate the most efficient single SQL query to fetch all this data including a cursor to fetch the next 20 item. You don't have to do a single thing besides write the GraphQL query.
@@ -82,6 +82,12 @@ Detailed docs on GraphQL syntax, usecases, JS and GO code examples and it's acti
 ## [![Docs](https://img.shields.io/badge/Docs-graphjin.com-red?style=for-the-badge)](https://graphjin.com)
 
 ## [![Example Code](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=for-the-badge&logo=go&label=Example+Code)](https://pkg.go.dev/github.com/dosco/graphjin/tests/v3)
+
+## Comprehensive Feature Reference
+
+For a complete guide to all **50+ GraphJin features** with examples, see **[docs/FEATURES.md](docs/FEATURES.md)**
+
+Covers: Complex queries, nested mutations, recursive relationships, real-time subscriptions, role-based security, remote API joins, database functions, and much more.
 
 ## Use with NodeJS
 
@@ -305,39 +311,57 @@ Lets take for example a simple blog app. You'll probably need the following APIs
 
 With GraphJin your web and mobile developers can start building instantly. All they have to do is just build the GraphQL queries they need and GraphJin fetches the data. Nothing to maintain no backend API code, its secure, lighting fast and has tons of useful features like subscriptions, rate limiting, etc built-in. With GraphJin your building APIs in minutes not days.
 
-## Highlevel
+## Database Support
 
-- Works with Postgres, MySQL8, YugabyteDB
-- Also works with Amazon Aurora/RDS and Google Cloud SQL
-- Supports REST, GraphQL and Websocket APIs
+| Database | Queries | Mutations | Subscriptions | Arrays | Full-Text |
+|----------|---------|-----------|---------------|--------|-----------|
+| PostgreSQL | Yes | Yes | Yes | Yes | Yes |
+| MySQL | Yes | Yes | Polling | No | Yes |
+| MariaDB | Yes | Yes | Polling | No | Yes |
+| MSSQL | Yes | Yes | No | No | No |
+| Oracle | Yes | Yes | No | No | No |
+| SQLite | Yes | Yes | No | No | FTS5 |
+| MongoDB | Yes | Yes | Yes | Yes | Yes |
+| CockroachDB | Yes | Yes | Yes | Yes | Yes |
 
-## More Features
+Also works with: **AWS Aurora/RDS**, **Google Cloud SQL**, **YugabyteDB**
 
-- Complex nested queries and mutations
-- Realtime updates with subscriptions
-- Add custom business logic in Javascript
-- Build infinite scroll, feeds, nested comments, etc
-- Add data validations on insert or update
-- Auto learns database tables and relationships
-- Role and Attribute-based access control
-- Cursor-based efficient pagination
-- Full-text search and aggregations
-- Automatic persisted queries
+Supports REST, GraphQL and Websocket APIs
+
+## Feature Highlights
+
+### Query Power
+- Complex nested queries compiled to single optimized SQL
+- Full-text search, aggregations, and cursor pagination
+- Recursive relationship traversal (parent/child trees)
+- Polymorphic/union type support
+- Remote API joins (combine database with REST APIs)
+
+### Mutation Capabilities
+- Atomic nested inserts/updates across multiple tables
+- Connect/disconnect relationships in single mutation
+- Data validation with @constraint directives
+
+### Real-time
+- GraphQL subscriptions with automatic change detection
+- Cursor-based subscription pagination
+
+### Security
+- Role and attribute-based access control
+- Row-level and column-level permissions
+- Query allow-lists for production security
 - JWT tokens supported (Auth0, JWKS, Firebase, etc)
-- Join database queries with remote REST APIs
-- Also works with existing Ruby-On-Rails apps
-- Rails authentication supported (Redis, Memcache, Cookie)
-- A simple config file
-- High performance Go codebase
-- Tiny docker image and low memory requirements
-- Fuzz tested for security
-- Database migrations tool
-- Database seeding tool
+
+### Developer Experience
+- Auto-discovers database schema and relationships
+- Works with Node.js and Go
+- Built-in Web UI for query development
+- Database migrations and seeding tools
 - OpenCensus Support: Zipkin, Prometheus, X-Ray, Stackdriver
-- API Rate Limiting
-- Highly scalable and fast
-- Instant Hot-deploy and rollbacks
-- Add Custom resolvers
+- Tiny docker image and low memory requirements
+- Instant hot-deploy and rollbacks
+
+See **[docs/FEATURES.md](docs/FEATURES.md)** for complete documentation with examples
 
 ## Documentation
 
