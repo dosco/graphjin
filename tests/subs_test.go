@@ -47,9 +47,18 @@ func Example_subscription() {
 		printJSON(msg.Data)
 
 		// update user phone in database to trigger subscription
-		q := fmt.Sprintf(`UPDATE users SET phone = '650-447-000%d' WHERE id = 3`, i)
-		if _, err := db.Exec(q); err != nil {
-			panic(err)
+		if dbType == "mongodb" {
+			// MongoDB: use JSON DSL for update
+			q := fmt.Sprintf(`{"operation":"updateOne","collection":"users","filter":{"_id":3},"update":{"$set":{"phone":"650-447-000%d"}}}`, i)
+			if _, err := db.Exec(q); err != nil {
+				panic(err)
+			}
+		} else {
+			// SQL databases: use SQL update
+			q := fmt.Sprintf(`UPDATE users SET phone = '650-447-000%d' WHERE id = 3`, i)
+			if _, err := db.Exec(q); err != nil {
+				panic(err)
+			}
 		}
 	}
 	// Output:
@@ -133,9 +142,18 @@ func Example_subscriptionWithCursor() {
 	go func() {
 		for i := 6; i < 20; i++ {
 			// insert a new chat message
-			q := fmt.Sprintf(`INSERT INTO chats (id, body) VALUES (%d, 'New chat message %d')`, i, i)
-			if _, err := db.Exec(q); err != nil {
-				panic(err)
+			if dbType == "mongodb" {
+				// MongoDB: use JSON DSL for insert
+				q := fmt.Sprintf(`{"operation":"insertOne","collection":"chats","document":{"_id":%d,"body":"New chat message %d"}}`, i, i)
+				if _, err := db.Exec(q); err != nil {
+					panic(err)
+				}
+			} else {
+				// SQL databases: use SQL insert
+				q := fmt.Sprintf(`INSERT INTO chats (id, body) VALUES (%d, 'New chat message %d')`, i, i)
+				if _, err := db.Exec(q); err != nil {
+					panic(err)
+				}
 			}
 			time.Sleep(3 * time.Second)
 		}
@@ -170,10 +188,6 @@ func Example_subscriptionWithCursor() {
 }
 
 func TestSubscription(t *testing.T) {
-	if dbType == "mongodb" {
-		t.Skip("skipping for mongodb (complex or clauses with @object directive not yet supported)")
-	}
-
 	gql := `subscription test {
 		users(where: { or: { id: { eq: $id }, id: { eq: $id2 } } }) @object {
 			id

@@ -443,13 +443,8 @@ func (gj *graphjinEngine) subCheckUpdates(sub *sub, mv mval, start int) {
 					values = make([]interface{}, len(mdParams))
 					for i := range mdParams {
 						if i < len(arr) {
-							// Parse raw value
-							v := arr[i]
-							if len(v) >= 2 && v[0] == '"' && v[len(v)-1] == '"' {
-								values[i] = string(v[1 : len(v)-1])
-							} else {
-								values[i] = string(v)
-							}
+							// Parse raw value using parseVarVal for proper type conversion
+							values[i] = parseVarVal(arr[i])
 						}
 					}
 				}
@@ -739,6 +734,7 @@ func (c *stringContext) ColWithTable(table, col string) {
 func (c *stringContext) RenderJSONFields(sel *qcode.Select) {}
 func (c *stringContext) IsTableMutated(table string) bool  { return false }
 func (c *stringContext) GetStaticVar(name string) (string, bool) { return "", false }
+func (c *stringContext) GetSecPrefix() string { return "" }
 func (c *stringContext) RenderExp(ti sdata.DBTable, ex *qcode.Exp) {
 	// Not implemented for stringContext - only used for subscription unboxing
 }

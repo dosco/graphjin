@@ -313,6 +313,11 @@ func buildCursorValue(info *CursorInfo, lastDoc bson.M) string {
 			val = v
 		} else if v, ok := lastDoc[col.Col]; ok {
 			val = v
+		} else if col.Col == "id" {
+			// Handle id which is stored as _id in MongoDB raw result (before translation)
+			if v, ok := lastDoc["_id"]; ok {
+				val = v
+			}
 		} else if col.Col == "_id" {
 			// Handle _id which might be stored as id after translation
 			if v, ok := lastDoc["id"]; ok {
