@@ -172,6 +172,10 @@ Each dialect has its own test script:
 
 **Always run all dialect tests** before merging changes to shared code.
 
+### 7. Subscription Cursor Prefix (Common Pitfall)
+
+Cursor prefixes must use `ctx.GetSecPrefix()` (the dynamic timestamp-based prefix like `gj-65a8b3c0:`). Hardcoding `"gj-"` will cause subscriptions to hang because `firstCursorValue()` in `core/crypt.go` won't recognize the cursor. Always test with `Example_subscriptionWithCursor`.
+
 ## MongoDB Implementation
 
 MongoDB is fundamentally different from SQL databases. Instead of generating SQL, GraphJin generates a **JSON DSL** that the custom MongoDB driver (`mongodriver/`) translates into aggregation pipelines.

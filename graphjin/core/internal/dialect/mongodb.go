@@ -56,7 +56,7 @@ func (d *MongoDBDialect) SupportsConflictUpdate() bool {
 }
 
 func (d *MongoDBDialect) SupportsSubscriptionBatching() bool {
-	return true // MongoDB change streams
+	return false // MongoDB doesn't support the batching wrapper format
 }
 
 func (d *MongoDBDialect) SupportsLinearExecution() bool {
@@ -2102,7 +2102,11 @@ func (d *MongoDBDialect) renderAggregateQuery(ctx Context, qc *qcode.QCode, sel 
 func (d *MongoDBDialect) renderCursorInfo(ctx Context, sel *qcode.Select) {
 	ctx.WriteString(`,"cursor_info":{"sel_id":`)
 	ctx.WriteString(strconv.Itoa(int(sel.ID)))
-	ctx.WriteString(`,"prefix":"gj-","order_by":[`)
+	ctx.WriteString(`,"prefix":"`)
+	// Use the security prefix from the compiler context (e.g., "gj-65a8b3c0:")
+	// This ensures cursor values match the format expected by firstCursorValue
+	ctx.WriteString(ctx.GetSecPrefix())
+	ctx.WriteString(`","order_by":[`)
 
 	for i, ob := range sel.OrderBy {
 		if i > 0 {

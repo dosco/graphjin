@@ -457,6 +457,7 @@ func TestMain(m *testing.M) {
 						"_id":             int64(i),
 						"full_name":       fmt.Sprintf("User %d", i),
 						"email":           fmt.Sprintf("user%d@test.com", i),
+						"phone":           nil,
 						"stripe_id":       fmt.Sprintf("payment_id_%d", i+1000),
 						"category_counts": []bson.M{{"category_id": 1, "count": 400}, {"category_id": 2, "count": 600}},
 						"disabled":        disabled,
@@ -617,6 +618,18 @@ func TestMain(m *testing.M) {
 				}
 				notificationsCol.InsertMany(ctx, notificationDocs)
 
+				// Create chats collection for subscription cursor tests
+				chatsCol := testDB.Collection("chats")
+				var chatDocs []interface{}
+				for i := 1; i <= 5; i++ {
+					chatDocs = append(chatDocs, bson.M{
+						"_id":        int64(i),
+						"body":       fmt.Sprintf("This is chat message number %d", i),
+						"created_at": time.Date(2021, 1, 9, 16, 37, 1, 0, time.UTC),
+					})
+				}
+				chatsCol.InsertMany(ctx, chatDocs)
+
 				// Create sql.DB using mongodriver
 				connector := mongodriver.NewConnector(client, "graphjin_test")
 				sqlDB := sql.OpenDB(connector)
@@ -721,6 +734,9 @@ func newConfig(c *core.Config) *core.Config {
 					{Name: "src_node", ForeignKey: "graph_node.id"},
 					{Name: "dst_node", ForeignKey: "graph_node.id"},
 				},
+			},
+			{
+				Name: "chats",
 			},
 		}
 

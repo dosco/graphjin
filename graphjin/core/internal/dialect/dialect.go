@@ -27,6 +27,7 @@ type Context interface {
 	IsTableMutated(table string) bool
 	RenderExp(ti sdata.DBTable, ex *qcode.Exp)
 	GetStaticVar(name string) (string, bool) // Get config-level variable
+	GetSecPrefix() string                    // Get security prefix for cursor encryption
 }
 
 // InlineChildRenderer is passed to dialects for rendering inline children
