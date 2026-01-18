@@ -9,6 +9,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -58,10 +59,208 @@ var (
 	dbParam string
 	dbType  string
 	db      *sql.DB
+
+	// Multi-DB mode variables
+	multiDBMode  bool
+	multiDBs     map[string]*sql.DB // "postgres", "sqlite", "mongodb" -> connection
+	multiDBTypes map[string]string  // Database name -> type
 )
 
 func init() {
 	flag.StringVar(&dbParam, "db", "", "database type")
+}
+
+// setupMultiDB starts PostgreSQL, SQLite, and MongoDB in parallel for multi-DB tests
+func setupMultiDB(ctx context.Context) ([]func(context.Context) error, error) {
+	var cleanups []func(context.Context) error
+	var mu sync.Mutex
+	var setupErr error
+	var wg sync.WaitGroup
+
+	multiDBs = make(map[string]*sql.DB)
+	multiDBTypes = make(map[string]string)
+
+	wg.Add(3)
+
+	// PostgreSQL
+	go func() {
+		defer wg.Done()
+		container, err := postgres.Run(ctx,
+			"postgres:12.5",
+			postgres.WithUsername("tester"),
+			postgres.WithPassword("tester"),
+			postgres.WithDatabase("db"),
+			postgres.WithInitScripts("./multidb_postgres.sql"),
+		)
+		if err != nil {
+			mu.Lock()
+			setupErr = fmt.Errorf("postgres container failed: %w", err)
+			mu.Unlock()
+			return
+		}
+
+		connStr, err := container.ConnectionString(ctx, "sslmode=disable")
+		if err != nil {
+			mu.Lock()
+			setupErr = fmt.Errorf("postgres connection string failed: %w", err)
+			mu.Unlock()
+			return
+		}
+
+		// Wait for database to be ready
+		for i := 0; i < 30; i++ {
+			testDB, err := sql.Open("postgres", connStr)
+			if err == nil {
+				if err = testDB.Ping(); err == nil {
+					var count int
+					err = testDB.QueryRow("SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'users'").Scan(&count)
+					testDB.Close()
+					if err == nil && count > 0 {
+						break
+					}
+				}
+				testDB.Close()
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+
+		pgDB, err := sql.Open("postgres", connStr)
+		if err != nil {
+			mu.Lock()
+			setupErr = fmt.Errorf("postgres open failed: %w", err)
+			mu.Unlock()
+			return
+		}
+
+		mu.Lock()
+		multiDBs["postgres"] = pgDB
+		multiDBTypes["postgres"] = "postgres"
+		cleanups = append(cleanups, container.Terminate)
+		mu.Unlock()
+	}()
+
+	// SQLite
+	go func() {
+		defer wg.Done()
+		connStr := "file:multidb_memdb?mode=memory&cache=shared&_busy_timeout=5000"
+
+		initDB, err := sql.Open("sqlite3_regexp", connStr)
+		if err != nil {
+			mu.Lock()
+			setupErr = fmt.Errorf("sqlite open failed: %w", err)
+			mu.Unlock()
+			return
+		}
+
+		script, err := os.ReadFile("./multidb_sqlite.sql")
+		if err != nil {
+			initDB.Close()
+			mu.Lock()
+			setupErr = fmt.Errorf("sqlite script read failed: %w", err)
+			mu.Unlock()
+			return
+		}
+
+		if _, err = initDB.Exec(string(script)); err != nil {
+			initDB.Close()
+			mu.Lock()
+			setupErr = fmt.Errorf("sqlite init failed: %w", err)
+			mu.Unlock()
+			return
+		}
+
+		mu.Lock()
+		multiDBs["sqlite"] = initDB
+		multiDBTypes["sqlite"] = "sqlite"
+		cleanups = append(cleanups, func(ctx context.Context) error {
+			return initDB.Close()
+		})
+		mu.Unlock()
+	}()
+
+	// MongoDB
+	go func() {
+		defer wg.Done()
+		container, err := mongodb.Run(ctx, "mongo:7")
+		if err != nil {
+			mu.Lock()
+			setupErr = fmt.Errorf("mongodb container failed: %w", err)
+			mu.Unlock()
+			return
+		}
+
+		connStr, err := container.ConnectionString(ctx)
+		if err != nil {
+			mu.Lock()
+			setupErr = fmt.Errorf("mongodb connection string failed: %w", err)
+			mu.Unlock()
+			return
+		}
+
+		client, err := mongo.Connect(options.Client().ApplyURI(connStr))
+		if err != nil {
+			container.Terminate(ctx)
+			mu.Lock()
+			setupErr = fmt.Errorf("mongodb connect failed: %w", err)
+			mu.Unlock()
+			return
+		}
+
+		// Wait for MongoDB to be ready
+		for i := 0; i < 30; i++ {
+			if err := client.Ping(ctx, nil); err == nil {
+				break
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+
+		// Initialize test data for multi-DB tests
+		testDB := client.Database("graphjin_multidb")
+
+		// Create events collection (for cross-DB join tests)
+		eventsCol := testDB.Collection("events")
+		eventDocs := []interface{}{
+			bson.M{"_id": int64(1), "type": "page_view", "user_id": int64(1), "page": "/home", "created_at": time.Now()},
+			bson.M{"_id": int64(2), "type": "click", "user_id": int64(1), "element": "buy_btn", "created_at": time.Now()},
+			bson.M{"_id": int64(3), "type": "page_view", "user_id": int64(2), "page": "/products", "created_at": time.Now()},
+		}
+		eventsCol.InsertMany(ctx, eventDocs)
+
+		// Create users collection (for disambiguation tests - same table name as postgres)
+		usersCol := testDB.Collection("users")
+		userDocs := []interface{}{
+			bson.M{"_id": int64(1), "full_name": "Mongo User 1", "email": "muser1@test.com", "activity_score": 100},
+			bson.M{"_id": int64(2), "full_name": "Mongo User 2", "email": "muser2@test.com", "activity_score": 200},
+			bson.M{"_id": int64(3), "full_name": "Mongo User 3", "email": "muser3@test.com", "activity_score": 300},
+		}
+		usersCol.InsertMany(ctx, userDocs)
+
+		// Create sql.DB using mongodriver
+		connector := mongodriver.NewConnector(client, "graphjin_multidb")
+		sqlDB := sql.OpenDB(connector)
+
+		mu.Lock()
+		multiDBs["mongodb"] = sqlDB
+		multiDBTypes["mongodb"] = "mongodb"
+		cleanups = append(cleanups, func(ctx context.Context) error {
+			sqlDB.Close()
+			client.Disconnect(ctx)
+			return container.Terminate(ctx)
+		})
+		mu.Unlock()
+	}()
+
+	wg.Wait()
+
+	if setupErr != nil {
+		// Cleanup any successful containers
+		for _, cleanup := range cleanups {
+			cleanup(ctx)
+		}
+		return nil, setupErr
+	}
+
+	return cleanups, nil
 }
 
 func TestMain(m *testing.M) {
@@ -73,6 +272,36 @@ func TestMain(m *testing.M) {
 	}
 
 	ctx := context.Background()
+
+	// Multi-DB mode: start PostgreSQL, SQLite, and MongoDB in parallel
+	if dbParam == "multidb" {
+		multiDBMode = true
+		cleanups, err := setupMultiDB(ctx)
+		if err != nil {
+			panic(fmt.Sprintf("multidb setup failed: %v", err))
+		}
+
+		// Set default single-DB variables for backward compatibility
+		// Tests that don't use multiDB will use postgres as default
+		db = multiDBs["postgres"]
+		dbType = "postgres"
+
+		// Configure connection pools
+		for _, conn := range multiDBs {
+			conn.SetMaxIdleConns(20)
+			conn.SetMaxOpenConns(100)
+			conn.SetConnMaxLifetime(5 * time.Minute)
+			conn.SetConnMaxIdleTime(2 * time.Minute)
+		}
+
+		res := m.Run()
+
+		// Cleanup all databases
+		for _, cleanup := range cleanups {
+			_ = cleanup(ctx)
+		}
+		os.Exit(res)
+	}
 
 	dbinfoList := []dbinfo{
 		{

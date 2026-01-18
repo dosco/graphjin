@@ -1,0 +1,1326 @@
+/* Subtle Dark Theme for GraphJin Web */
+
+/* Force dark mode */
+body.graphiql-dark .graphiql-container {
+  /* Core colors - HSL format required by GraphiQL */
+  --color-base: 220, 13%, 10%;
+  --color-neutral: 220, 10%, 75%;
+  --color-primary: 210, 60%, 55%;
+  --color-secondary: 210, 50%, 50%;
+  --color-tertiary: 210, 60%, 55%;
+  --color-info: 210, 60%, 55%;
+  --color-success: 140, 50%, 45%;
+  --color-warning: 45, 70%, 50%;
+  --color-error: 0, 65%, 55%;
+
+  /* Transparency */
+  --alpha-secondary: 0.8;
+  --alpha-tertiary: 0.6;
+  --alpha-background-heavy: 0.12;
+  --alpha-background-medium: 0.08;
+  --alpha-background-light: 0.04;
+
+  /* Typography */
+  --font-family: "SF Mono", "Fira Code", "JetBrains Mono", "Consolas", monospace;
+  --font-family-mono: "SF Mono", "Fira Code", "JetBrains Mono", "Consolas", monospace;
+
+  /* Minimal borders */
+  --border-radius-2: 1px;
+  --border-radius-4: 2px;
+  --border-radius-8: 3px;
+  --border-radius-12: 4px;
+
+  /* Subtle shadows */
+  --popover-box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --popover-border: 1px solid hsla(220, 15%, 50%, 0.25);
+}
+
+/* Main container background */
+body.graphiql-dark .graphiql-container {
+  background: linear-gradient(180deg, hsl(220, 15%, 8%) 0%, hsl(220, 12%, 12%) 100%);
+}
+
+/* Sidebar styling */
+body.graphiql-dark .graphiql-sidebar {
+  background: hsla(220, 15%, 6%, 0.95);
+  border-right: 1px solid hsla(220, 15%, 50%, 0.15);
+}
+
+body.graphiql-dark .graphiql-sidebar button {
+  color: hsla(220, 10%, 70%, 0.7);
+}
+
+body.graphiql-dark .graphiql-sidebar button:hover {
+  color: hsl(220, 10%, 85%);
+  background: hsla(220, 15%, 50%, 0.1);
+}
+
+body.graphiql-dark .graphiql-sidebar button.active {
+  color: hsl(210, 60%, 60%);
+  background: hsla(210, 60%, 55%, 0.15);
+}
+
+/* Editor panels */
+body.graphiql-dark .graphiql-editors {
+  background: hsla(220, 15%, 8%, 0.9);
+  border-radius: 2px;
+}
+
+body.graphiql-dark .graphiql-editor {
+  background: transparent;
+}
+
+/* Session header / tabs */
+body.graphiql-dark .graphiql-session-header {
+  background: hsla(220, 15%, 6%, 0.95);
+  border-bottom: 1px solid hsla(220, 15%, 50%, 0.1);
+}
+
+body.graphiql-dark .graphiql-tab {
+  color: hsla(220, 10%, 65%, 0.8);
+  border: 1px solid transparent;
+}
+
+body.graphiql-dark .graphiql-tab:hover {
+  color: hsl(220, 10%, 85%);
+  background: hsla(220, 15%, 50%, 0.05);
+}
+
+body.graphiql-dark .graphiql-tab.graphiql-tab-active {
+  color: hsl(220, 10%, 85%);
+  background: hsla(220, 15%, 50%, 0.1);
+  border-color: hsla(220, 15%, 50%, 0.25);
+}
+
+/* Buttons */
+body.graphiql-dark .graphiql-button {
+  color: hsl(220, 10%, 75%);
+  background: hsla(220, 15%, 15%, 0.8);
+  border: 1px solid hsla(220, 15%, 50%, 0.2);
+}
+
+body.graphiql-dark .graphiql-button:hover {
+  color: hsl(220, 10%, 90%);
+  background: hsla(220, 15%, 20%, 0.9);
+  border-color: hsla(220, 15%, 50%, 0.35);
+}
+
+body.graphiql-dark .graphiql-button:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px hsla(210, 60%, 55%, 0.3);
+}
+
+/* Execute button */
+body.graphiql-dark .graphiql-execute-button {
+  background: hsl(210, 60%, 45%);
+  border: 1px solid hsl(210, 60%, 55%);
+  color: white;
+}
+
+body.graphiql-dark .graphiql-execute-button:hover {
+  background: hsl(210, 60%, 50%);
+}
+
+/* Toolbar */
+body.graphiql-dark .graphiql-toolbar {
+  background: hsla(220, 15%, 8%, 0.9);
+  border-top: 1px solid hsla(220, 15%, 50%, 0.1);
+}
+
+/* Editor tools (variables, headers tabs) */
+body.graphiql-dark .graphiql-editor-tools {
+  background: hsla(220, 15%, 6%, 0.95);
+  border-top: 1px solid hsla(220, 15%, 50%, 0.1);
+}
+
+body.graphiql-dark .graphiql-editor-tools button {
+  color: hsla(220, 10%, 65%, 0.8);
+}
+
+body.graphiql-dark .graphiql-editor-tools button.active {
+  color: hsl(220, 10%, 85%);
+  border-bottom-color: hsl(210, 60%, 55%);
+}
+
+/* Response panel */
+body.graphiql-dark .graphiql-response {
+  background: hsla(220, 15%, 8%, 0.9);
+  border-left: 1px solid hsla(220, 15%, 50%, 0.1);
+}
+
+/* Dropdowns and menus */
+body.graphiql-dark .graphiql-dropdown-content {
+  background: hsla(220, 15%, 10%, 0.98);
+  border: 1px solid hsla(220, 15%, 50%, 0.2);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+body.graphiql-dark .graphiql-dropdown-item {
+  color: hsl(220, 10%, 75%);
+}
+
+body.graphiql-dark .graphiql-dropdown-item:hover {
+  background: hsla(220, 15%, 50%, 0.1);
+  color: hsl(220, 10%, 90%);
+}
+
+/* Dialog/Modal */
+body.graphiql-dark .graphiql-dialog {
+  background: hsla(220, 15%, 10%, 0.98);
+  border: 1px solid hsla(220, 15%, 50%, 0.25);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+
+/* Input fields */
+body.graphiql-dark .graphiql-container input {
+  background: hsla(220, 15%, 8%, 0.9);
+  border: 1px solid hsla(220, 15%, 50%, 0.2);
+  color: hsl(220, 10%, 85%);
+}
+
+body.graphiql-dark .graphiql-container input:focus {
+  border-color: hsla(210, 60%, 55%, 0.5);
+  box-shadow: 0 0 0 2px hsla(210, 60%, 55%, 0.15);
+  outline: none;
+}
+
+/* Scrollbars */
+body.graphiql-dark .graphiql-container ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+body.graphiql-dark .graphiql-container ::-webkit-scrollbar-track {
+  background: hsla(220, 15%, 8%, 0.5);
+}
+
+body.graphiql-dark .graphiql-container ::-webkit-scrollbar-thumb {
+  background: hsla(220, 15%, 50%, 0.25);
+  border-radius: 4px;
+}
+
+body.graphiql-dark .graphiql-container ::-webkit-scrollbar-thumb:hover {
+  background: hsla(220, 15%, 50%, 0.4);
+}
+
+/* Explorer plugin */
+body.graphiql-dark .graphiql-plugin {
+  background: hsla(220, 15%, 8%, 0.95);
+  border-left: 1px solid hsla(220, 15%, 50%, 0.1);
+}
+
+body.graphiql-dark .doc-explorer-title {
+  color: hsl(220, 10%, 85%);
+}
+
+body.graphiql-dark .doc-explorer-contents {
+  color: hsl(220, 10%, 75%);
+}
+
+/* History pane */
+body.graphiql-dark .graphiql-history {
+  background: hsla(220, 15%, 8%, 0.95);
+}
+
+body.graphiql-dark .graphiql-history-item {
+  color: hsl(220, 10%, 75%);
+  border-bottom: 1px solid hsla(220, 15%, 50%, 0.1);
+}
+
+body.graphiql-dark .graphiql-history-item:hover {
+  background: hsla(220, 15%, 50%, 0.08);
+}
+
+/* Tooltips */
+body.graphiql-dark .graphiql-tooltip {
+  background: hsla(220, 15%, 12%, 0.98);
+  border: 1px solid hsla(220, 15%, 50%, 0.25);
+  color: hsl(220, 10%, 85%);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+/* Logo area */
+body.graphiql-dark .graphiql-logo {
+  color: hsl(210, 60%, 60%);
+}
+
+/* Error states */
+body.graphiql-dark .graphiql-container .error {
+  color: hsl(0, 85%, 65%);
+  background: hsla(0, 100%, 50%, 0.1);
+  border-color: hsla(0, 100%, 50%, 0.3);
+}
+
+/* CodeMirror overrides for syntax highlighting */
+body.graphiql-dark .CodeMirror {
+  background: transparent !important;
+  color: hsl(220, 10%, 80%) !important;
+}
+
+body.graphiql-dark .CodeMirror-gutters {
+  background: hsla(220, 15%, 6%, 0.5) !important;
+  border-right: 1px solid hsla(220, 15%, 50%, 0.1) !important;
+}
+
+body.graphiql-dark .CodeMirror-linenumber {
+  color: hsla(220, 10%, 50%, 0.6) !important;
+}
+
+body.graphiql-dark .CodeMirror-cursor {
+  border-left: 2px solid hsl(220, 10%, 75%) !important;
+}
+
+body.graphiql-dark .CodeMirror-selected {
+  background: hsla(210, 60%, 55%, 0.2) !important;
+}
+
+/* Syntax colors - muted palette */
+body.graphiql-dark .cm-keyword {
+  color: hsl(210, 60%, 65%) !important;
+}
+
+body.graphiql-dark .cm-def {
+  color: hsl(180, 50%, 60%) !important;
+}
+
+body.graphiql-dark .cm-property {
+  color: hsl(220, 50%, 70%) !important;
+}
+
+body.graphiql-dark .cm-variable {
+  color: hsl(220, 10%, 80%) !important;
+}
+
+body.graphiql-dark .cm-string {
+  color: hsl(80, 50%, 55%) !important;
+}
+
+body.graphiql-dark .cm-number {
+  color: hsl(30, 60%, 60%) !important;
+}
+
+body.graphiql-dark .cm-atom {
+  color: hsl(210, 50%, 65%) !important;
+}
+
+body.graphiql-dark .cm-comment {
+  color: hsla(220, 10%, 50%, 0.7) !important;
+  font-style: italic;
+}
+
+body.graphiql-dark .cm-punctuation {
+  color: hsla(220, 10%, 65%, 0.8) !important;
+}
+
+body.graphiql-dark .cm-attribute {
+  color: hsl(40, 55%, 60%) !important;
+}
+
+body.graphiql-dark .cm-qualifier {
+  color: hsl(180, 50%, 60%) !important;
+}
+
+/* Error Boundary styling */
+.error-boundary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  width: 100vw;
+  background: linear-gradient(180deg, hsl(220, 15%, 8%) 0%, hsl(220, 12%, 12%) 100%);
+}
+
+.error-content {
+  text-align: center;
+  padding: 40px;
+  background: hsla(220, 15%, 10%, 0.9);
+  border: 1px solid hsla(0, 65%, 50%, 0.3);
+  border-radius: 4px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  max-width: 500px;
+}
+
+.error-icon {
+  width: 60px;
+  height: 60px;
+  margin: 0 auto 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  font-weight: bold;
+  color: hsl(0, 65%, 55%);
+  border: 2px solid hsl(0, 65%, 55%);
+  border-radius: 50%;
+}
+
+.error-content h1 {
+  color: hsl(0, 65%, 65%);
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 24px;
+  margin: 0 0 15px;
+}
+
+.error-message {
+  color: hsla(220, 10%, 70%, 0.9);
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 14px;
+  margin: 0 0 25px;
+  line-height: 1.6;
+}
+
+.retry-button {
+  padding: 12px 30px;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 14px;
+  color: hsl(210, 60%, 65%);
+  background: hsla(210, 60%, 55%, 0.1);
+  border: 1px solid hsla(210, 60%, 55%, 0.4);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.retry-button:hover {
+  color: hsl(210, 60%, 75%);
+  background: hsla(210, 60%, 55%, 0.2);
+  border-color: hsla(210, 60%, 55%, 0.6);
+}
+
+.retry-button:active {
+  transform: scale(0.98);
+}
+
+/* Query Editor Page */
+.gj-query-editor {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  height: 100%;
+}
+
+.gj-query-editor .graphiql-container {
+  flex: 1;
+  height: 100%;
+}
+
+/* API Docs Page - Swagger UI Overrides */
+.gj-api-docs {
+  display: flex;
+  flex-direction: column;
+}
+
+.gj-swagger-container {
+  flex: 1;
+  overflow: auto;
+  padding: 0;
+}
+
+.gj-swagger-container .swagger-ui {
+  font-family: "SF Mono", "Fira Code", monospace;
+}
+
+.gj-swagger-container .swagger-ui .wrapper {
+  padding: 0;
+  margin:0 !important;
+}
+
+.gj-swagger-container .swagger-ui .topbar {
+  display: none;
+}
+
+.gj-swagger-container .swagger-ui .info {
+  margin: 20px 0;
+}
+
+.gj-swagger-container .swagger-ui .info .title {
+  color: hsl(220, 10%, 85%);
+}
+
+.gj-swagger-container .swagger-ui .info .description {
+  color: hsl(220, 10%, 65%);
+}
+
+.gj-swagger-container .swagger-ui .opblock {
+  background: hsla(220, 15%, 10%, 0.8);
+  border-color: hsla(220, 15%, 50%, 0.15);
+}
+
+.gj-swagger-container .swagger-ui .opblock .opblock-summary {
+  border-color: hsla(220, 15%, 50%, 0.15);
+}
+
+.gj-swagger-container .swagger-ui .opblock.opblock-get {
+  background: hsla(210, 60%, 50%, 0.05);
+  border-color: hsla(210, 60%, 50%, 0.2);
+}
+
+.gj-swagger-container .swagger-ui .opblock.opblock-post {
+  background: hsla(140, 50%, 45%, 0.05);
+  border-color: hsla(140, 50%, 45%, 0.2);
+}
+
+.gj-swagger-container .swagger-ui .opblock.opblock-put {
+  background: hsla(40, 60%, 50%, 0.05);
+  border-color: hsla(40, 60%, 50%, 0.2);
+}
+
+.gj-swagger-container .swagger-ui .opblock.opblock-delete {
+  background: hsla(0, 60%, 50%, 0.05);
+  border-color: hsla(0, 60%, 50%, 0.2);
+}
+
+.gj-swagger-container .swagger-ui .btn {
+  font-family: "SF Mono", "Fira Code", monospace;
+}
+
+.gj-swagger-container .swagger-ui section.models {
+  border-color: hsla(220, 15%, 50%, 0.15);
+}
+
+.gj-swagger-container .swagger-ui section.models h4 {
+  color: hsl(220, 10%, 85%);
+}
+
+.gj-swagger-container .swagger-ui .scheme-container {
+  background: transparent;
+}
+
+.gj-swagger-container .swagger-ui .scheme-container select {
+  background: hsla(220, 15%, 10%, 0.8);
+  color: hsl(220, 10%, 85%);
+  border: 1px solid hsla(220, 15%, 50%, 0.15);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-family: "SF Mono", "Fira Code", monospace;
+}
+
+/* ========================================
+   Admin Page Styles
+   ======================================== */
+
+/* Schema Explorer Layout */
+.gj-schema-layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 20px;
+  height: calc(100vh - var(--gj-header-height) - 120px);
+}
+
+.gj-schema-sidebar {
+  overflow-y: auto;
+}
+
+.gj-schema-content {
+  overflow-y: auto;
+}
+
+.gj-table-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.gj-table-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--gj-text-secondary);
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+  width: 100%;
+}
+
+.gj-table-item:hover {
+  background: hsla(220, 15%, 50%, 0.05);
+  border-color: var(--gj-border-color);
+  color: var(--gj-text-primary);
+}
+
+.gj-table-item.active {
+  background: hsla(210, 60%, 55%, 0.1);
+  border-color: var(--gj-border-hover);
+  color: var(--gj-accent-cyan);
+}
+
+.gj-table-item:focus {
+  outline: 2px solid var(--gj-accent-cyan);
+  outline-offset: 2px;
+}
+
+.gj-table-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gj-table-meta {
+  font-size: 11px;
+  color: var(--gj-text-muted);
+  margin-left: 8px;
+}
+
+.gj-table-comment {
+  font-size: 13px;
+  color: var(--gj-text-muted);
+  margin: 0 0 16px 0;
+  font-style: italic;
+}
+
+/* Data Table */
+.gj-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 13px;
+}
+
+.gj-data-table th,
+.gj-data-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--gj-border-color);
+}
+
+.gj-data-table th {
+  color: var(--gj-text-muted);
+  font-weight: 500;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.gj-data-table td {
+  color: var(--gj-text-secondary);
+}
+
+.gj-data-table tr:hover td {
+  background: hsla(220, 15%, 50%, 0.03);
+}
+
+.gj-col-name {
+  color: var(--gj-text-primary) !important;
+}
+
+.gj-col-type {
+  color: var(--gj-accent-cyan) !important;
+  font-size: 12px;
+}
+
+/* Badges */
+.gj-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.gj-badge-pk {
+  background: hsla(210, 60%, 55%, 0.2);
+  color: var(--gj-accent-purple);
+}
+
+.gj-badge-fk {
+  background: hsla(210, 60%, 55%, 0.2);
+  color: var(--gj-accent-cyan);
+  margin-left: 4px;
+}
+
+.gj-badge-query {
+  background: hsla(210, 60%, 55%, 0.2);
+  color: var(--gj-accent-cyan);
+}
+
+.gj-badge-mutation {
+  background: hsla(210, 60%, 55%, 0.2);
+  color: var(--gj-accent-purple);
+}
+
+/* Schema Sections */
+.gj-schema-section {
+  margin-top: 20px;
+}
+
+.gj-section-title {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gj-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 12px 0;
+}
+
+/* Relationships */
+.gj-rel-group {
+  margin-bottom: 16px;
+}
+
+.gj-rel-heading {
+  font-size: 12px;
+  color: var(--gj-text-muted);
+  margin: 0 0 8px 0;
+  font-weight: 500;
+}
+
+.gj-rel-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 13px;
+}
+
+.gj-rel-name {
+  color: var(--gj-text-primary);
+}
+
+.gj-rel-arrow {
+  color: var(--gj-text-muted);
+}
+
+.gj-rel-table {
+  color: var(--gj-accent-cyan);
+}
+
+.gj-rel-type {
+  color: var(--gj-text-muted);
+  font-size: 11px;
+}
+
+/* Info Grid (Database Info) */
+.gj-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.gj-card-wide {
+  grid-column: 1 / -1;
+}
+
+.gj-info-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.gj-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--gj-border-color);
+}
+
+.gj-info-row:last-child {
+  border-bottom: none;
+}
+
+.gj-info-label {
+  font-size: 13px;
+  color: var(--gj-text-muted);
+}
+
+.gj-info-value {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 13px;
+  color: var(--gj-text-primary);
+}
+
+.gj-info-highlight {
+  color: var(--gj-accent-cyan);
+}
+
+.gj-info-number {
+  color: var(--gj-accent-purple);
+}
+
+/* Pool Stats */
+.gj-pool-stats {
+  display: flex;
+  justify-content: space-around;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--gj-border-color);
+  margin-bottom: 16px;
+}
+
+.gj-pool-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.gj-pool-value {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--gj-text-primary);
+}
+
+.gj-pool-active {
+  color: var(--gj-accent-cyan);
+}
+
+.gj-pool-idle {
+  color: var(--gj-accent-green);
+}
+
+.gj-pool-label {
+  font-size: 11px;
+  color: var(--gj-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.gj-pool-details {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 24px;
+}
+
+/* Config Sections */
+.gj-config-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gj-config-section {
+  overflow: hidden;
+}
+
+.gj-config-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.gj-config-header:focus {
+  outline: 2px solid var(--gj-accent-cyan);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.gj-config-header .gj-card-title {
+  margin: 0;
+}
+
+.gj-config-toggle {
+  color: var(--gj-text-muted);
+  transition: transform 0.2s ease;
+}
+
+.gj-config-toggle.open {
+  transform: rotate(180deg);
+}
+
+.gj-config-content {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--gj-border-color);
+}
+
+.gj-config-empty {
+  color: var(--gj-text-muted);
+  font-style: italic;
+  font-size: 13px;
+}
+
+.gj-info-muted {
+  color: var(--gj-text-muted) !important;
+  font-style: italic;
+}
+
+.gj-sensitive {
+  color: var(--gj-text-muted) !important;
+  font-family: "SF Mono", "Fira Code", monospace;
+  letter-spacing: 2px;
+}
+
+/* Roles Section */
+.gj-roles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gj-role-item {
+  border: 1px solid var(--gj-border-color);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.gj-role-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 16px;
+  background: hsla(220, 15%, 50%, 0.03);
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.gj-role-header:hover {
+  background: hsla(220, 15%, 50%, 0.08);
+}
+
+.gj-role-header:focus {
+  outline: 2px solid var(--gj-accent-cyan);
+  outline-offset: -2px;
+}
+
+.gj-role-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.gj-role-name {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--gj-text-primary);
+}
+
+.gj-role-comment {
+  font-size: 12px;
+  color: var(--gj-text-muted);
+  font-style: italic;
+}
+
+.gj-role-meta {
+  font-size: 11px;
+  color: var(--gj-text-muted);
+  background: hsla(220, 15%, 50%, 0.1);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.gj-role-tables {
+  padding: 16px;
+  border-top: 1px solid var(--gj-border-color);
+  background: var(--gj-bg-tertiary);
+}
+
+.gj-role-match {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--gj-border-color);
+}
+
+/* Compact table for role permissions */
+.gj-data-table-compact {
+  font-size: 12px;
+}
+
+.gj-data-table-compact th,
+.gj-data-table-compact td {
+  padding: 6px 10px;
+}
+
+/* Small tags */
+.gj-tag-small {
+  padding: 2px 6px;
+  font-size: 10px;
+}
+
+.gj-tag-muted {
+  background: hsla(220, 15%, 50%, 0.05);
+  color: var(--gj-text-muted);
+}
+
+/* Tags */
+.gj-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gj-tag {
+  display: inline-block;
+  padding: 4px 10px;
+  background: hsla(220, 15%, 50%, 0.1);
+  border: 1px solid var(--gj-border-color);
+  border-radius: 3px;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 12px;
+  color: var(--gj-text-primary);
+}
+
+/* Queries Layout */
+.gj-queries-layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 20px;
+  height: calc(100vh - var(--gj-header-height) - 120px);
+}
+
+.gj-queries-sidebar {
+  overflow-y: auto;
+}
+
+.gj-queries-content {
+  overflow-y: auto;
+}
+
+/* Search Box */
+.gj-search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--gj-bg-tertiary);
+  border: 1px solid var(--gj-border-color);
+  border-radius: 4px;
+  margin-bottom: 16px;
+}
+
+.gj-search-box svg {
+  color: var(--gj-text-muted);
+  flex-shrink: 0;
+}
+
+.gj-search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--gj-text-primary);
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 13px;
+  outline: none;
+}
+
+.gj-search-input::placeholder {
+  color: var(--gj-text-muted);
+}
+
+.gj-search-box:focus-within {
+  border-color: var(--gj-accent-cyan);
+  box-shadow: 0 0 0 2px hsla(210, 60%, 55%, 0.15);
+}
+
+/* Query List */
+.gj-query-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.gj-query-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+  width: 100%;
+}
+
+.gj-query-item:hover {
+  background: hsla(220, 15%, 50%, 0.05);
+  border-color: var(--gj-border-color);
+}
+
+.gj-query-item.active {
+  background: hsla(210, 60%, 55%, 0.1);
+  border-color: var(--gj-border-hover);
+}
+
+.gj-query-item:focus {
+  outline: 2px solid var(--gj-accent-cyan);
+  outline-offset: 2px;
+}
+
+.gj-query-type {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.gj-query-query {
+  background: hsla(210, 60%, 55%, 0.2);
+  color: var(--gj-accent-cyan);
+}
+
+.gj-query-mutation {
+  background: hsla(210, 60%, 55%, 0.2);
+  color: var(--gj-accent-purple);
+}
+
+.gj-query-info {
+  flex: 1;
+  overflow: hidden;
+}
+
+.gj-query-name {
+  display: block;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 13px;
+  color: var(--gj-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gj-query-namespace {
+  display: block;
+  font-size: 11px;
+  color: var(--gj-text-muted);
+  margin-top: 2px;
+}
+
+.gj-query-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.gj-query-meta {
+  font-size: 12px;
+  color: var(--gj-text-muted);
+  margin: 0 0 16px 0;
+}
+
+/* Fragments */
+.gj-mt {
+  margin-top: 24px;
+}
+
+.gj-fragment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gj-fragment-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 13px;
+}
+
+.gj-fragment-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: hsla(140, 50%, 45%, 0.2);
+  color: var(--gj-accent-green);
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.gj-fragment-name {
+  color: var(--gj-text-secondary);
+}
+
+/* Code Block */
+.gj-code-section {
+  margin-top: 20px;
+}
+
+.gj-code-block {
+  background: var(--gj-bg-primary);
+  border: 1px solid var(--gj-border-color);
+  border-radius: 4px;
+  padding: 16px;
+  overflow-x: auto;
+  margin: 0;
+}
+
+.gj-code-block code {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 13px;
+  color: var(--gj-text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Empty Small */
+.gj-empty-small {
+  padding: 20px;
+  text-align: center;
+  color: var(--gj-text-muted);
+  font-size: 13px;
+}
+
+/* Error Small */
+.gj-error-small {
+  padding: 12px;
+  text-align: center;
+  color: var(--gj-accent-red, hsl(0, 70%, 60%));
+  font-size: 12px;
+  background: hsla(0, 100%, 50%, 0.05);
+  border: 1px solid hsla(0, 100%, 50%, 0.2);
+  border-radius: 4px;
+  margin-top: 16px;
+}
+
+.gj-error-small p {
+  margin: 0;
+}
+
+/* Mobile Responsiveness for Admin Pages */
+@media (max-width: 900px) {
+  .gj-schema-layout,
+  .gj-queries-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .gj-schema-sidebar,
+  .gj-queries-sidebar {
+    max-height: 40vh;
+  }
+
+  .gj-pool-details {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .gj-info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .gj-pool-stats {
+    flex-wrap: wrap;
+    gap: 20px;
+  }
+
+  .gj-pool-value {
+    font-size: 22px;
+  }
+}
+
+/* ========================================
+   Multi-Database Grid Styles
+   ======================================== */
+
+.gj-databases-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+.gj-database-card {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.gj-database-card.gj-database-default {
+  border-color: var(--gj-accent-cyan);
+  box-shadow: 0 0 0 1px hsla(210, 60%, 55%, 0.15);
+}
+
+.gj-database-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+  gap: 12px;
+}
+
+.gj-database-header .gj-card-title {
+  margin: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gj-database-badges {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.gj-badge-type {
+  background: hsla(220, 15%, 50%, 0.15);
+  color: var(--gj-text-secondary);
+  text-transform: uppercase;
+  font-size: 10px;
+  padding: 3px 8px;
+}
+
+.gj-badge-default {
+  background: hsla(210, 60%, 55%, 0.2);
+  color: var(--gj-accent-cyan);
+  text-transform: uppercase;
+  font-size: 10px;
+  padding: 3px 8px;
+}
+
+.gj-pool-stats-compact {
+  padding: 16px 0;
+  margin-bottom: 12px;
+}
+
+.gj-pool-stats-compact .gj-pool-value {
+  font-size: 22px;
+}
+
+.gj-pool-details-compact {
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+.gj-pool-details-compact .gj-info-row {
+  padding: 8px 0;
+}
+
+@media (max-width: 600px) {
+  .gj-databases-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .gj-database-header {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .gj-database-badges {
+    align-self: flex-start;
+  }
+}

@@ -1,4 +1,4 @@
-# GraphJin, A New Kind of ORM
+# GraphJin - A New Kind of JIT Compiler for Your Data
 
 [![Apache 2.0](https://img.shields.io/github/license/dosco/graphjin.svg?style=for-the-badge)](https://github.com/dosco/graphjin/blob/master/LICENSE)
 [![NPM Package](https://img.shields.io/npm/v/graphjin?style=for-the-badge)](https://www.npmjs.com/package/graphjin)
@@ -7,91 +7,148 @@
 [![GoDoc](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=for-the-badge&logo=go)](https://pkg.go.dev/github.com/dosco/graphjin/core/v3)
 [![GoReport](https://goreportcard.com/badge/github.com/gojp/goreportcard?style=for-the-badge)](https://goreportcard.com/report/github.com/dosco/graphjin/core/v3)
 
-## Build APIs in 5 minutes not weeks
+Point GraphJin at a database and start querying. It introspects your schema, discovers relationships from foreign keys, and understands your data model automatically. No models to define. No resolvers to write. No configuration required.
 
-Just use a simple GraphQL query to define your API and GraphJin automagically converts it into SQL and fetches the data you need. Build your backend APIs **100X** faster. Works with **NodeJS** and **GO**. Supports **8 databases**: **PostgreSQL**, **MySQL**, **MariaDB**, **MSSQL**, **Oracle**, **SQLite**, **MongoDB**, and **CockroachDB** (plus AWS Aurora/RDS, Google Cloud SQL, YugabyteDB)
+Write a GraphQL query and GraphJin compiles it to the native query language of each data source - SQL for Postgres/MySQL, aggregation pipelines for MongoDB, REST calls for remote APIs. One request can query multiple databases simultaneously. No N+1 queries.
 
-The following GraphQL query fetches a list of products, their owners, and other category information, including a cursor for retrieving more products.
-GraphJin will do auto-discovery of your database schema and relationships and generate the most efficient single SQL query to fetch all this data including a cursor to fetch the next 20 item. You don't have to do a single thing besides write the GraphQL query.
+## Query Multiple Databases in One Request
+
+```graphql
+query Dashboard {
+  # Users from PostgreSQL
+  users(limit: 5, order_by: { id: asc }) {
+    id
+    full_name
+    email
+  }
+
+  # Events from MongoDB
+  events(limit: 10, order_by: { id: desc }) {
+    id
+    type
+    timestamp
+  }
+
+  # Audit logs from SQLite
+  audit_logs(limit: 5) {
+    id
+    action
+    created_at
+  }
+}
+```
+
+One request. Three databases. Each queried in its native language. Response merged automatically.
+
+## Zero Configuration
+
+```go
+db, _ := sql.Open("pgx", "postgres://localhost/myapp")
+gj, _ := core.NewGraphJin(nil, db)  // nil config - nothing to configure
+```
+
+That's the entire setup. GraphJin connects to your database and:
+- Reads all table structures
+- Discovers relationships from foreign keys
+- Infers naming conventions (user_id → users table)
+- Builds the full data graph
+
+You're ready to query. No schema files. No model definitions. No relationship mapping.
+
+## Complex Nested Queries, Single Optimized Query
+
+GraphJin auto-discovers your schema and relationships. This GraphQL:
 
 ```graphql
 query getProducts {
   products(
-    # returns only 20 items
     limit: 20
-
-    # orders the response items by highest price
     order_by: { price: desc }
-
-    # only items with a price >= 20 and < 50 are returned
-    where: { price: { and: { greater_or_equals: 20, lt: 50 } } }
+    where: { price: { gte: 20, lt: 50 } }
   ) {
     id
     name
     price
-
-    # also fetch the owner of the product
     owner {
       full_name
-      picture: avatar
       email
-
-      # and the categories the owner has products under
       category_counts(limit: 3) {
         count
-        category {
-          name
-        }
+        category { name }
       }
     }
-
-    # and the categories of the product itself
     category(limit: 3) {
       id
       name
     }
   }
-  # also return a cursor that we can use to fetch the next
-  # batch of products
   products_cursor
 }
 ```
 
-**Note**: The corresponding SQL for creating the table (POSTGRES)
-  
-  ```sql
-  CREATE TABLE products (
-    id SERIAL NOT NULL,
-    name TEXT NOT NULL,
-    price INTEGER NOT NULL,
-    owner_id INTEGER NOT NULL,
-    category_id INTEGER NOT NULL,
-    PRIMARY KEY(id)
-  );
-  ```
+Becomes one efficient SQL statement. No N+1. No multiple round trips. Just data.
 
-## Secure out of the box
+## Why GraphJin Exists
 
-In production all queries are always read from locally saved copies not from what the client sends hence clients cannot modify the query. This makes
-GraphJin very secure as its similar to building APIs by hand. The idea that GraphQL means that clients can change the query as they wish **does not** apply to GraphJin
+Every product I worked on had the same problem: weeks spent building API backends that all do the same thing - query a database and reshape data for the frontend.
 
-## Great Documentation
+The pattern is always identical: figure out what the UI needs, write an endpoint, wrestle with an ORM, transform the response. Repeat for every feature. Every change.
 
-Detailed docs on GraphQL syntax, usecases, JS and GO code examples and it's actively updated.
+I realized this is a compiler problem. GraphQL already describes what data you want. Why manually translate that to SQL?
 
-## [![Docs](https://img.shields.io/badge/Docs-graphjin.com-red?style=for-the-badge)](https://graphjin.com)
+So I built a compiler that does it automatically. GraphJin takes your GraphQL and generates optimized queries in the native language of each data source. The result is a single SQL statement (or MongoDB aggregation, or REST call) that fetches exactly what you asked for.
 
-## [![Example Code](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=for-the-badge&logo=go&label=Example+Code)](https://pkg.go.dev/github.com/dosco/graphjin/tests/v3)
+No backend code to write. No resolvers to maintain. Just GraphQL queries that work.
 
-## Comprehensive Feature Reference
+## Database Support
 
-For a complete guide to all **50+ GraphJin features** with examples, see **[docs/FEATURES.md](docs/FEATURES.md)**
+| Database | Queries | Mutations | Subscriptions | Arrays | Full-Text |
+|----------|---------|-----------|---------------|--------|-----------|
+| PostgreSQL | Yes | Yes | Yes | Yes | Yes |
+| MySQL | Yes | Yes | Yes | No | Yes |
+| MariaDB | Yes | Yes | Yes | No | Yes |
+| MSSQL | Yes | Yes | Yes | No | No |
+| Oracle | Yes | Yes | Yes | No | No |
+| SQLite | Yes | Yes | Yes | No | FTS5 |
+| MongoDB | Yes | Yes | Yes | Yes | Yes |
+| CockroachDB | Yes | Yes | Yes | Yes | Yes |
 
-Covers: Complex queries, nested mutations, recursive relationships, real-time subscriptions, role-based security, remote API joins, database functions, and much more.
+Also works with AWS Aurora/RDS, Google Cloud SQL, and YugabyteDB.
 
-## Use with NodeJS
+## What You Get
 
-GraphJin allows you to use GraphQL and the full power of GraphJin to access to create instant APIs without writing and maintaining lines and lines of database code. GraphJin NodeJS currently only supports Postgres compatible databases working on adding MySQL support as well. Example app in [/examples/nodejs](https://github.com/dosco/graphjin/tree/master/examples/nodejs)
+**Query Power**
+- Nested queries compiled to single optimized statements
+- Full-text search, aggregations, cursor pagination
+- Recursive relationships (parent/child trees)
+- Polymorphic types
+- Remote API joins (combine database + REST in one query)
+
+**Mutations**
+- Atomic nested inserts/updates across tables
+- Connect/disconnect relationships in single mutation
+- Validation with @constraint directives
+
+**Real-time**
+- GraphQL subscriptions with automatic change detection
+- Cursor-based pagination for subscriptions
+
+**Security**
+- Role and attribute-based access control
+- Row-level and column-level permissions
+- Query allow-lists (clients can't modify queries in production)
+- JWT support (Auth0, JWKS, Firebase, etc.)
+
+**Developer Experience**
+- Auto-discovers schema and relationships
+- Works with Node.js and Go
+- Built-in Web UI for query development
+- Database migrations and seeding
+- Tracing support (Zipkin, Prometheus, X-Ray, Stackdriver)
+- Small Docker image, low memory footprint
+- Hot-deploy and rollback
+
+## Quick Start: Node.js
 
 ```console
 npm install graphjin
@@ -99,8 +156,6 @@ npm install graphjin
 
 ```javascript
 import graphjin from "graphjin";
-import express from "express";
-import http from "http";
 import pg from "pg";
 
 const { Client } = pg;
@@ -109,275 +164,145 @@ const db = new Client({
   port: 5432,
   user: "postgres",
   password: "postgres",
-  database: "appdb-development",
+  database: "myapp",
 });
-
 await db.connect();
 
-// config can either be a file (eg. `dev.yml`) or an object
-// const config = { production: true, default_limit: 50 };
+const gj = await graphjin("./config", "dev.yml", db);
 
-var gj = await graphjin("./config", "dev.yml", db);
-var app = express();
-var server = http.createServer(app);
+// Query
+const result = await gj.query(
+  "query { users(id: $id) { id email } }",
+  { id: 1 },
+  { userID: 1 }
+);
+console.log(result.data());
 
-// subscriptions allow you to have a callback function triggerd
-// automatically when data in your database changes
-const res1 = await gj.subscribe(
-  "subscription getUpdatedUser { users(id: $userID) { id email } }",
+// Subscribe to changes
+const sub = await gj.subscribe(
+  "subscription { users(id: $id) { id email } }",
   null,
   { userID: 2 }
 );
-
-res1.data(function (res) {
-  console.log(">", res.data());
-});
-
-// queries allow you to use graphql to query and update your database
-app.get("/", async function (req, resp) {
-  const res2 = await gj.query(
-    "query getUser { users(id: $id) { id email } }",
-    { id: 1 },
-    { userID: 1 }
-  );
-
-  resp.send(res2.data());
-});
-
-server.listen(3000);
-console.log("Express server started on port %s", server.address().port);
+sub.data((res) => console.log(res.data()));
 ```
 
-## Use with GO
-
-You can use GraphJin as a library within your own code. The [serv](https://pkg.go.dev/github.com/dosco/graphjin/serv/v3) package exposes the entirely GraphJin standlone service as a library while the [core](https://pkg.go.dev/github.com/dosco/graphjin/core/v3) package exposes just the GraphJin compiler. The [Go docs](https://pkg.go.dev/github.com/dosco/graphjin/tests/v3#pkg-examples) are filled with examples on how to use GraphJin within your own apps as a sort of alternative to using ORM packages. GraphJin allows you to use GraphQL and the full power of GraphJin to access your data instead of a limiting ORM.
-
-### Use GraphJin Core
+## Quick Start: Go
 
 ```console
 go get github.com/dosco/graphjin/core/v3
 ```
 
-```golang
+```go
 package main
 
 import (
-	"context"
-	"database/sql"
-	"log"
-	"net/http"
-
-	"github.com/dosco/graphjin/core"
-	"github.com/go-chi/chi/v5"
-	_ "github.com/jackc/pgx/v5/stdlib"
+    "context"
+    "database/sql"
+    "log"
+    "github.com/dosco/graphjin/core/v3"
+    _ "github.com/jackc/pgx/v5/stdlib"
 )
 
 func main() {
-	db, err := sql.Open("pgx", "postgres://postgres:@localhost:5432/exampledb?sslmode=disable")
-	if err != nil {
-		log.Fatal(err)
-	}
+    db, err := sql.Open("pgx", "postgres://postgres:@localhost:5432/myapp")
+    if err != nil {
+        log.Fatal(err)
+    }
 
-	gj, err := core.NewGraphJin(nil, db)
-	if err != nil {
-		log.Fatal(err)
-	}
+    gj, err := core.NewGraphJin(nil, db)
+    if err != nil {
+        log.Fatal(err)
+    }
 
-	query := `
-    query getPosts {
-        posts {
-            id
-            title
-        }
-        posts_cursor
-    }`
+    query := `query { posts { id title } }`
 
-	router := chi.NewRouter()
-	router.Get("/", func(w http.ResponseWriter, request *http.Request) {
-		context := context.WithValue(request.Context(), core.UserIDKey, 1)
-		res, err := gj.GraphQL(context, query, nil, nil)
-		if err != nil {
-			log.Fatal(err)
-			return
-		}
-		w.Write(res.Data)
-	})
+    ctx := context.WithValue(context.Background(), core.UserIDKey, 1)
+    res, err := gj.GraphQL(ctx, query, nil, nil)
+    if err != nil {
+        log.Fatal(err)
+    }
 
-	log.Println("Go server started on port 3000")
-  http.ListenAndServe(":3000", router)
-
+    log.Println(string(res.Data))
 }
-
-```
-
-### Use GraphJin Service
-
-```golang
-import (
-  "github.com/dosco/graphjin/serv/v2"
-)
-
-gj, err := serv.NewGraphJinService(conf, opt...)
-if err != nil {
- return err
-}
-
-if err := gj.Start(); err != nil {
- return err
-}
-
-// if err := gj.Attach(chiRouter); err != nil {
-//  return err
-// }
 ```
 
 ## Standalone Service
 
-### Quick install
-
-```
-# Mac (Homebrew)
+```bash
+# Mac
 brew install dosco/graphjin/graphjin
 
-# Ubuntu (Snap)
+# Ubuntu
 sudo snap install --classic graphjin
+
+# Create new app
+graphjin new myapp
+
+# Deploy
+graphjin deploy --host=https://your-server.com --secret="your-key"
 ```
 
-Debian and Redhat ([releases](https://github.com/dosco/graphjin/releases))
-Download the .deb or .rpm from the releases page and install with dpkg -i and rpm -i respectively.
-
-### Quickly create and deploy new apps
-
-```bash
-graphjin new <app_name>
-```
-
-### Instantly deploy new versions
-
-```bash
-# Deploy a new config
-graphjin deploy --host=https://your-server.com --secret="your-secret-key"
-
-# Rollback the last deployment
-graphjin deploy rollback --host=https://your-server.com --secret="your-secret-key"
-```
-
-### Secrets Management
-
-```bash
-# Secure save secrets like database passwords and JWT secret keys
-graphjin secrets
-```
-
-### Database Management
-
-```bash
-# Create, Migrate and Seed your database
-graphjin db
-```
-
-## Built in Web-UI to help craft GraphQL queries
+Built-in web UI for developing queries:
 
 ![graphjin-screenshot-final](https://user-images.githubusercontent.com/832235/108806955-1c363180-7571-11eb-8bfa-488ece2e51ae.png)
 
-## Support the Project
+## Production Security
 
-GraphJin is an open source project made possible by the support of awesome backers. It has collectively saved teams 1000's of hours dev. time and allowing them to focus on their product and be 100x more productive. If your team uses it please consider becoming a sponsor.
+In production, queries are read from saved files, not from client requests. Clients cannot modify queries. This makes GraphJin as secure as hand-written APIs - the "clients can send any query" concern with GraphQL doesn't apply here.
 
-<div float="left">
-<a href="https://42papers.com">
-<img src="https://user-images.githubusercontent.com/832235/135753560-39e34be6-5734-440a-98e7-f7e160c2efb5.png" width="75" target="_blank">
-</a>
-<a href="https://www.exo.com.ar/">
-<img src="https://user-images.githubusercontent.com/832235/112428182-259def80-8d11-11eb-88b8-ccef9206b535.png" width="100" target="_blank">
-</a>
-</div>
+## AI Integration (MCP)
 
-## About GraphJin
+GraphJin includes native [Model Context Protocol (MCP)](https://modelcontextprotocol.io) support, allowing AI assistants like Claude to query your database directly. **MCP is enabled by default.**
 
-After working on several products through my career I found that we spend way too much time on building API backends. Most APIs also need constant updating, and this costs time and money.
+**To disable MCP:**
+```yaml
+mcp:
+  disable: true
+```
 
-It's always the same thing, figure out what the UI needs then build an endpoint for it. Most API code involves struggling with an ORM to query a database and mangle the data into a shape that the UI expects to see.
+**Claude Desktop integration** - add to `claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "my-database": {
+      "command": "graphjin",
+      "args": ["mcp", "--config", "/path/to/config"],
+      "env": {
+        "GRAPHJIN_USER_ID": "admin",
+        "GRAPHJIN_USER_ROLE": "admin"
+      }
+    }
+  }
+}
+```
 
-I didn't want to write this code anymore, I wanted the computer to do it. Enter GraphQL, to me it sounded great, but it still required me to write all the same database query code.
+**HTTP endpoints** (when service is running):
+- SSE: `GET /api/v1/mcp`
+- HTTP: `POST /api/v1/mcp/message`
 
-Having worked with compilers before I saw this as a compiler problem. Why not build a compiler that converts GraphQL to highly efficient SQL.
+**16 MCP tools** including:
+- Schema discovery (list tables, describe relationships)
+- Query execution (GraphQL queries/mutations)
+- Syntax reference (teaches LLMs GraphJin's DSL)
+- Saved query search
 
-This compiler is what sits at the heart of GraphJin, with layers of useful functionality around it like authentication, remote joins, rails integration, database migrations, and everything else needed for you to build production-ready apps with it.
-
-## Better APIs Faster!
-
-Lets take for example a simple blog app. You'll probably need the following APIs user management, posts, comments, votes. Each of these areas need apis for listing, creating, updating, deleting. Off the top of my head thats like 12 APIs if not more. This is just for managing things for rendering the blog posts, home page, profile page you probably need many more view apis that fetch a whole bunch of things at the same time. This is a lot and we're still talking something simple like a basic blogging app. All these APIs have to be coded up by someone and then the code maintained, updated, made secure, fast, etc. We are talking weeks to months of work if not more. Also remember your mobile and web developers have to wait around till this is all done.
-
-With GraphJin your web and mobile developers can start building instantly. All they have to do is just build the GraphQL queries they need and GraphJin fetches the data. Nothing to maintain no backend API code, its secure, lighting fast and has tons of useful features like subscriptions, rate limiting, etc built-in. With GraphJin your building APIs in minutes not days.
-
-## Database Support
-
-| Database | Queries | Mutations | Subscriptions | Arrays | Full-Text |
-|----------|---------|-----------|---------------|--------|-----------|
-| PostgreSQL | Yes | Yes | Yes | Yes | Yes |
-| MySQL | Yes | Yes | Polling | No | Yes |
-| MariaDB | Yes | Yes | Polling | No | Yes |
-| MSSQL | Yes | Yes | No | No | No |
-| Oracle | Yes | Yes | No | No | No |
-| SQLite | Yes | Yes | No | No | FTS5 |
-| MongoDB | Yes | Yes | Yes | Yes | Yes |
-| CockroachDB | Yes | Yes | Yes | Yes | Yes |
-
-Also works with: **AWS Aurora/RDS**, **Google Cloud SQL**, **YugabyteDB**
-
-Supports REST, GraphQL and Websocket APIs
-
-## Feature Highlights
-
-### Query Power
-- Complex nested queries compiled to single optimized SQL
-- Full-text search, aggregations, and cursor pagination
-- Recursive relationship traversal (parent/child trees)
-- Polymorphic/union type support
-- Remote API joins (combine database with REST APIs)
-
-### Mutation Capabilities
-- Atomic nested inserts/updates across multiple tables
-- Connect/disconnect relationships in single mutation
-- Data validation with @constraint directives
-
-### Real-time
-- GraphQL subscriptions with automatic change detection
-- Cursor-based subscription pagination
-
-### Security
-- Role and attribute-based access control
-- Row-level and column-level permissions
-- Query allow-lists for production security
-- JWT tokens supported (Auth0, JWKS, Firebase, etc)
-
-### Developer Experience
-- Auto-discovers database schema and relationships
-- Works with Node.js and Go
-- Built-in Web UI for query development
-- Database migrations and seeding tools
-- OpenCensus Support: Zipkin, Prometheus, X-Ray, Stackdriver
-- Tiny docker image and low memory requirements
-- Instant hot-deploy and rollbacks
-
-See **[docs/FEATURES.md](docs/FEATURES.md)** for complete documentation with examples
+See [MCP Documentation](docs/DESIGN-MCP.md) for full details.
 
 ## Documentation
 
-[Quick Start](https://graphjin.com/posts/start)
+- [Quick Start](https://graphjin.com/posts/start)
+- [Full Documentation](https://graphjin.com)
+- [Feature Reference](docs/FEATURES.md) - All 50+ features with examples
+- [Go Examples](https://pkg.go.dev/github.com/dosco/graphjin/core#pkg-examples)
 
-[Documentation](https://graphjin.com)
+## Support
 
-[GraphJin GO Examples](https://pkg.go.dev/github.com/dosco/graphjin/core#pkg-examples)
+GraphJin is open source and saves teams months of development time. If your team uses it, consider becoming a sponsor.
 
-## Reach out
+## Get in Touch
 
-We're happy to help you leverage GraphJin reach out if you have questions
-
-[twitter/dosco](https://twitter.com/dosco)
-
-[discord/graphjin](https://discord.gg/6pSWCTZ) (Chat)
+[Twitter @dosco](https://twitter.com/dosco) | [Discord](https://discord.gg/6pSWCTZ)
 
 ## License
 

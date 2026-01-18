@@ -1,0 +1,1 @@
+function d(i,l){var e,n;const{levels:t,indentLevel:o}=i;return((!t||t.length===0?o:t.at(-1)-(!((e=this.electricInput)===null||e===void 0)&&e.test(l)?1:0))||0)*(((n=this.config)===null||n===void 0?void 0:n.indentUnit)||0)}export{d as i};

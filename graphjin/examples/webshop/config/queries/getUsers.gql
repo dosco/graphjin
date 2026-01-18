@@ -1,0 +1,10 @@
+# Welcome to GraphJin
+# Use this editor to build and test your GraphQL queries
+
+query getUsers {
+  users(limit: 10) {
+    id
+    full_name
+    email
+  }
+}

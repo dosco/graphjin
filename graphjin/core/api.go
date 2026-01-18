@@ -12,6 +12,7 @@ import (
 	_log "log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -43,6 +44,18 @@ const (
 const (
 	APQ_PX = "_apq"
 )
+
+// dbContext holds per-database state for multi-database support.
+// Each database gets its own connection pool, schema discovery, and SQL compiler.
+type dbContext struct {
+	name          string           // Database name (key in Config.Databases)
+	db            *sql.DB          // Connection pool for this database
+	dbtype        string           // Database type (postgres, mysql, sqlite, etc.)
+	dbinfo        *sdata.DBInfo    // Raw schema metadata
+	schema        *sdata.DBSchema  // Processed schema with relationships
+	qcodeCompiler *qcode.Compiler  // GraphQL to QCode compiler (validates against this DB's schema)
+	psqlCompiler  *psql.Compiler   // QCode to SQL compiler (generates this DB's dialect)
+}
 
 // GraphJin struct is an instance of the GraphJin engine it holds all the required information like
 // datase schemas, relationships, etc that the GraphQL to SQL compiler would need to do it's job.
@@ -76,6 +89,12 @@ type graphjinEngine struct {
 	printFormat           []byte
 	opts                  []Option
 	done                  chan bool
+
+	// Multi-database support: map of database name to context
+	// When nil or empty, single-database mode is used (backward compatible)
+	databases map[string]*dbContext
+	// Name of the default database (used when table has no explicit database)
+	defaultDB string
 }
 
 type GraphJin struct {
@@ -182,6 +201,19 @@ func (g *GraphJin) newGraphJin(conf *Config,
 	}
 
 	if err = gj.initCompilers(); err != nil {
+		return
+	}
+
+	// Initialize multi-database support if configured
+	if err = gj.initMultiDB(); err != nil {
+		return
+	}
+
+	// Set database names on tables for multi-DB routing
+	gj.setTableDatabases()
+
+	// Initialize compilers for additional databases
+	if err = gj.initMultiDBCompilers(); err != nil {
 		return
 	}
 
@@ -569,4 +601,436 @@ func getFS(conf *Config) (fs FS, err error) {
 func newError(err error) (errList []Error) {
 	errList = []Error{{Message: err.Error()}}
 	return
+}
+
+// TableInfo represents basic table information for MCP/API consumers
+type TableInfo struct {
+	Name        string `json:"name"`
+	Schema      string `json:"schema,omitempty"`
+	Type        string `json:"type"` // table, view, etc.
+	Comment     string `json:"comment,omitempty"`
+	ColumnCount int    `json:"column_count"`
+}
+
+// ColumnInfo represents column information for MCP/API consumers
+type ColumnInfo struct {
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	Nullable   bool   `json:"nullable"`
+	PrimaryKey bool   `json:"primary_key"`
+	ForeignKey string `json:"foreign_key,omitempty"` // "schema.table.column" if FK
+	Array      bool   `json:"array,omitempty"`
+}
+
+// RelationInfo represents a relationship between tables
+type RelationInfo struct {
+	Name       string `json:"name"`         // Field name to use in queries
+	Table      string `json:"table"`        // Related table name
+	Type       string `json:"type"`         // one_to_one, one_to_many, many_to_many
+	ForeignKey string `json:"foreign_key"`  // The FK column
+	Through    string `json:"through,omitempty"` // Join table for many-to-many
+}
+
+// TableSchema represents full table schema with relationships
+type TableSchema struct {
+	Name          string         `json:"name"`
+	Schema        string         `json:"schema,omitempty"`
+	Type          string         `json:"type"`
+	Comment       string         `json:"comment,omitempty"`
+	PrimaryKey    string         `json:"primary_key,omitempty"`
+	Columns       []ColumnInfo   `json:"columns"`
+	Relationships struct {
+		Outgoing []RelationInfo `json:"outgoing"` // Tables this table references
+		Incoming []RelationInfo `json:"incoming"` // Tables that reference this table
+	} `json:"relationships"`
+}
+
+// PathStep represents a step in a relationship path
+type PathStep struct {
+	From     string `json:"from"`
+	To       string `json:"to"`
+	Via      string `json:"via,omitempty"` // Column or join table
+	Relation string `json:"relation"`      // Relationship type
+}
+
+// GetTables returns a list of all tables in the database schema
+func (g *GraphJin) GetTables() []TableInfo {
+	gj := g.Load().(*graphjinEngine)
+	tables := gj.schema.GetTables()
+
+	result := make([]TableInfo, 0, len(tables))
+	for _, t := range tables {
+		// Skip virtual tables and blocked tables
+		if t.Type == "virtual" || t.Blocked {
+			continue
+		}
+		result = append(result, TableInfo{
+			Name:        t.Name,
+			Schema:      t.Schema,
+			Type:        t.Type,
+			Comment:     t.Comment,
+			ColumnCount: len(t.Columns),
+		})
+	}
+	return result
+}
+
+// GetTableSchema returns detailed schema for a specific table including relationships
+func (g *GraphJin) GetTableSchema(tableName string) (*TableSchema, error) {
+	gj := g.Load().(*graphjinEngine)
+
+	// Find the table
+	t, err := gj.schema.Find("", tableName)
+	if err != nil {
+		return nil, fmt.Errorf("table not found: %s", tableName)
+	}
+
+	schema := &TableSchema{
+		Name:    t.Name,
+		Schema:  t.Schema,
+		Type:    t.Type,
+		Comment: t.Comment,
+	}
+
+	if t.PrimaryCol.Name != "" {
+		schema.PrimaryKey = t.PrimaryCol.Name
+	}
+
+	// Add columns
+	for _, col := range t.Columns {
+		ci := ColumnInfo{
+			Name:       col.Name,
+			Type:       col.Type,
+			Nullable:   !col.NotNull,
+			PrimaryKey: col.PrimaryKey,
+			Array:      col.Array,
+		}
+		if col.FKeyTable != "" {
+			ci.ForeignKey = fmt.Sprintf("%s.%s", col.FKeyTable, col.FKeyCol)
+		}
+		schema.Columns = append(schema.Columns, ci)
+	}
+
+	// Get relationships
+	firstDegree, err := gj.schema.GetFirstDegree(t)
+	if err != nil {
+		return schema, nil // Return schema without relationships
+	}
+
+	for _, rel := range firstDegree {
+		ri := RelationInfo{
+			Name:  rel.Name,
+			Table: rel.Table.Name,
+			Type:  relTypeToString(rel.Type),
+		}
+
+		// Determine if outgoing or incoming
+		if rel.Type == sdata.RelOneToMany {
+			// This table is referenced by another (incoming)
+			schema.Relationships.Incoming = append(schema.Relationships.Incoming, ri)
+		} else {
+			// This table references another (outgoing)
+			schema.Relationships.Outgoing = append(schema.Relationships.Outgoing, ri)
+		}
+	}
+
+	return schema, nil
+}
+
+// FindRelationshipPath finds the path between two tables
+func (g *GraphJin) FindRelationshipPath(fromTable, toTable string) ([]PathStep, error) {
+	gj := g.Load().(*graphjinEngine)
+
+	paths, err := gj.schema.FindPath(fromTable, toTable, "")
+	if err != nil {
+		return nil, err
+	}
+
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("no path found between %s and %s", fromTable, toTable)
+	}
+
+	// Each TPath is a step in the path
+	result := make([]PathStep, 0, len(paths))
+	for _, p := range paths {
+		step := PathStep{
+			From:     p.LT.Name,
+			To:       p.RT.Name,
+			Relation: relTypeToString(p.Rel),
+		}
+		if p.LC.Name != "" {
+			step.Via = p.LC.Name
+		}
+		result = append(result, step)
+	}
+
+	return result, nil
+}
+
+// relTypeToString converts RelType to a human-readable string
+func relTypeToString(rt sdata.RelType) string {
+	switch rt {
+	case sdata.RelOneToOne:
+		return "one_to_one"
+	case sdata.RelOneToMany:
+		return "one_to_many"
+	case sdata.RelPolymorphic:
+		return "polymorphic"
+	case sdata.RelRecursive:
+		return "recursive"
+	case sdata.RelEmbedded:
+		return "embedded"
+	case sdata.RelRemote:
+		return "remote"
+	default:
+		return "unknown"
+	}
+}
+
+// SavedQueryInfo represents a saved query from the allow list
+type SavedQueryInfo struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace,omitempty"`
+	Operation string `json:"operation"` // query or mutation
+}
+
+// SavedQueryDetails represents full details of a saved query
+type SavedQueryDetails struct {
+	Name      string                 `json:"name"`
+	Namespace string                 `json:"namespace,omitempty"`
+	Operation string                 `json:"operation"`
+	Query     string                 `json:"query"`
+	Variables map[string]interface{} `json:"variables,omitempty"`
+}
+
+// ListSavedQueries returns all saved queries from the allow list
+func (g *GraphJin) ListSavedQueries() ([]SavedQueryInfo, error) {
+	gj := g.Load().(*graphjinEngine)
+
+	items, err := gj.allowList.ListAll()
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]SavedQueryInfo, 0, len(items))
+	for _, item := range items {
+		result = append(result, SavedQueryInfo{
+			Name:      item.Name,
+			Namespace: item.Namespace,
+			Operation: item.Operation,
+		})
+	}
+	return result, nil
+}
+
+// GetSavedQuery returns details of a specific saved query
+func (g *GraphJin) GetSavedQuery(name string) (*SavedQueryDetails, error) {
+	gj := g.Load().(*graphjinEngine)
+
+	item, err := gj.allowList.GetByName(name, false)
+	if err != nil {
+		return nil, err
+	}
+
+	details := &SavedQueryDetails{
+		Name:      item.Name,
+		Namespace: item.Namespace,
+		Operation: item.Operation,
+		Query:     string(item.Query),
+	}
+
+	// Parse action JSON if present
+	if len(item.ActionJSON) > 0 {
+		details.Variables = make(map[string]interface{})
+		for k, v := range item.ActionJSON {
+			var val interface{}
+			if err := json.Unmarshal(v, &val); err == nil {
+				details.Variables[k] = val
+			}
+		}
+	}
+
+	return details, nil
+}
+
+// FragmentInfo represents a fragment from the allow list
+type FragmentInfo struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace,omitempty"`
+}
+
+// FragmentDetails represents full details of a fragment
+type FragmentDetails struct {
+	Name       string `json:"name"`
+	Namespace  string `json:"namespace,omitempty"`
+	Definition string `json:"definition"`
+	On         string `json:"on,omitempty"` // The type the fragment is defined on
+}
+
+// ListFragments returns all fragments from the allow list
+func (g *GraphJin) ListFragments() ([]FragmentInfo, error) {
+	gj := g.Load().(*graphjinEngine)
+
+	fragments, err := gj.allowList.ListFragments()
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]FragmentInfo, 0, len(fragments))
+	for _, f := range fragments {
+		ns, name := splitFragmentName(f.Name)
+		result = append(result, FragmentInfo{
+			Name:      name,
+			Namespace: ns,
+		})
+	}
+	return result, nil
+}
+
+// GetFragment returns details of a specific fragment
+func (g *GraphJin) GetFragment(name string) (*FragmentDetails, error) {
+	gj := g.Load().(*graphjinEngine)
+
+	fragment, err := gj.allowList.GetFragment(name)
+	if err != nil {
+		return nil, err
+	}
+
+	ns, fragName := splitFragmentName(fragment.Name)
+
+	details := &FragmentDetails{
+		Name:       fragName,
+		Namespace:  ns,
+		Definition: string(fragment.Value),
+	}
+
+	// Try to extract the "on" type from the fragment definition
+	// Format: fragment FragmentName on TypeName { ... }
+	def := string(fragment.Value)
+	if idx := strings.Index(def, " on "); idx != -1 {
+		rest := def[idx+4:]
+		if endIdx := strings.IndexAny(rest, " {"); endIdx != -1 {
+			details.On = strings.TrimSpace(rest[:endIdx])
+		}
+	}
+
+	return details, nil
+}
+
+// splitFragmentName splits a fragment name into namespace and name
+func splitFragmentName(name string) (string, string) {
+	i := strings.LastIndex(name, ".")
+	if i == -1 {
+		return "", name
+	} else if i < len(name)-1 {
+		return name[:i], name[(i + 1):]
+	}
+	return "", ""
+}
+
+// DatabaseStats represents statistics and info for a database connection
+type DatabaseStats struct {
+	Name       string     `json:"name"`
+	Type       string     `json:"type"`
+	IsDefault  bool       `json:"isDefault"`
+	TableCount int        `json:"tableCount"`
+	Pool       *PoolStats `json:"pool,omitempty"`
+}
+
+// PoolStats represents connection pool statistics
+type PoolStats struct {
+	MaxOpen           int    `json:"maxOpen"`
+	Open              int    `json:"open"`
+	InUse             int    `json:"inUse"`
+	Idle              int    `json:"idle"`
+	WaitCount         int64  `json:"waitCount"`
+	WaitDuration      string `json:"waitDuration"`
+	MaxIdleClosed     int64  `json:"maxIdleClosed"`
+	MaxLifetimeClosed int64  `json:"maxLifetimeClosed"`
+}
+
+// GetAllDatabaseStats returns statistics for all configured databases.
+// In single-database mode, returns a single entry for the main connection.
+// In multi-database mode, returns stats for each configured database.
+func (g *GraphJin) GetAllDatabaseStats() []DatabaseStats {
+	gj := g.Load().(*graphjinEngine)
+
+	// Multi-database mode
+	if gj.databases != nil && len(gj.databases) > 0 {
+		stats := make([]DatabaseStats, 0, len(gj.databases))
+		for name, ctx := range gj.databases {
+			ds := DatabaseStats{
+				Name:      name,
+				Type:      ctx.dbtype,
+				IsDefault: name == gj.defaultDB,
+			}
+
+			// Get table count from schema
+			if ctx.schema != nil {
+				tables := ctx.schema.GetTables()
+				// Count non-virtual, non-blocked tables
+				count := 0
+				for _, t := range tables {
+					if t.Type != "virtual" && !t.Blocked {
+						count++
+					}
+				}
+				ds.TableCount = count
+			}
+
+			// Get pool stats if DB connection exists
+			if ctx.db != nil {
+				dbStats := ctx.db.Stats()
+				ds.Pool = &PoolStats{
+					MaxOpen:           dbStats.MaxOpenConnections,
+					Open:              dbStats.OpenConnections,
+					InUse:             dbStats.InUse,
+					Idle:              dbStats.Idle,
+					WaitCount:         dbStats.WaitCount,
+					WaitDuration:      dbStats.WaitDuration.String(),
+					MaxIdleClosed:     dbStats.MaxIdleClosed,
+					MaxLifetimeClosed: dbStats.MaxLifetimeClosed,
+				}
+			}
+
+			stats = append(stats, ds)
+		}
+		return stats
+	}
+
+	// Single-database mode (backward compatible)
+	ds := DatabaseStats{
+		Name:      "default",
+		Type:      gj.dbtype,
+		IsDefault: true,
+	}
+
+	// Get table count from schema
+	if gj.schema != nil {
+		tables := gj.schema.GetTables()
+		count := 0
+		for _, t := range tables {
+			if t.Type != "virtual" && !t.Blocked {
+				count++
+			}
+		}
+		ds.TableCount = count
+	}
+
+	// Get pool stats
+	if gj.db != nil {
+		dbStats := gj.db.Stats()
+		ds.Pool = &PoolStats{
+			MaxOpen:           dbStats.MaxOpenConnections,
+			Open:              dbStats.OpenConnections,
+			InUse:             dbStats.InUse,
+			Idle:              dbStats.Idle,
+			WaitCount:         dbStats.WaitCount,
+			WaitDuration:      dbStats.WaitDuration.String(),
+			MaxIdleClosed:     dbStats.MaxIdleClosed,
+			MaxLifetimeClosed: dbStats.MaxLifetimeClosed,
+		}
+	}
+
+	return []DatabaseStats{ds}
 }

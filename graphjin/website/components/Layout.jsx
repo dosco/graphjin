@@ -18,8 +18,8 @@ export const Layout = ({
         <meta name="twitter:title" content={title} />
         <meta name="twitter:card" content="summary" />
         <meta name="twitter:site" content={twitter} />
-        <meta name="twitter:image" content={image} href={image} />
-        <meta name="twitter:image:alt" content={`{title} Logo`} />
+        <meta name="twitter:image" content={image} />
+        <meta name="twitter:image:alt" content={`${title} Logo`} />
         <meta property="og:image" content={image} />
       </Head>
 
@@ -31,10 +31,10 @@ export const Layout = ({
             </h1>
 
             <div className="flex gap-4">
-              <a href="https://twitter.com/dosco" target="_blank">
+              <a href="https://twitter.com/dosco" target="_blank" rel="noopener noreferrer">
                 <FaTwitter size={40} className="text-red-500" />
               </a>
-              <a href="https://github.com/dosco/graphjin" target="_blank">
+              <a href="https://github.com/dosco/graphjin" target="_blank" rel="noopener noreferrer">
                 <FaGithub size={40} className="text-red-500" />
               </a>
             </div>

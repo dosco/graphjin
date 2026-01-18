@@ -101,11 +101,12 @@ func _() {
 	_ = x[SkipTypeUserNeeded-3]
 	_ = x[SkipTypeBlocked-4]
 	_ = x[SkipTypeRemote-5]
+	_ = x[SkipTypeDatabaseJoin-6]
 }
 
-const _SkipType_name = "SkipTypeNoneSkipTypeDropSkipTypeNulledSkipTypeUserNeededSkipTypeBlockedSkipTypeRemote"
+const _SkipType_name = "SkipTypeNoneSkipTypeDropSkipTypeNulledSkipTypeUserNeededSkipTypeBlockedSkipTypeRemoteSkipTypeDatabaseJoin"
 
-var _SkipType_index = [...]uint8{0, 12, 24, 38, 56, 71, 85}
+var _SkipType_index = [...]uint8{0, 12, 24, 38, 56, 71, 85, 105}
 
 func (i SkipType) String() string {
 	if i < 0 || i >= SkipType(len(_SkipType_index)-1) {

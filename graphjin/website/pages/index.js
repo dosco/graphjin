@@ -51,7 +51,7 @@ export default function Home({ posts }) {
         </p>
 
         <div className="flex gap-2 items-center">
-          <a href="https://github.com/dosco/graphjin" target="_blank">
+          <a href="https://github.com/dosco/graphjin" target="_blank" rel="noopener noreferrer">
             <FaGithub size={50} className="mr-2" />
           </a>
           <div
@@ -64,7 +64,7 @@ export default function Home({ posts }) {
         </div>
       </div>
 
-      <div className="list-none mt-6">
+      <ul className="list-none mt-6">
         {posts.map((post, i) => (
           <li key={i} className="p-2">
             <a
@@ -76,7 +76,7 @@ export default function Home({ posts }) {
             <div className="text-lg">{post.description}</div>
           </li>
         ))}
-      </div>
+      </ul>
     </Layout>
   );
 }

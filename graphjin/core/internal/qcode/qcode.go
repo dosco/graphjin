@@ -49,6 +49,10 @@ const (
 	SkipTypeUserNeeded
 	SkipTypeBlocked
 	SkipTypeRemote
+	// SkipTypeDatabaseJoin indicates this select targets a different database
+	// and needs to be handled via cross-database join (similar to remote join
+	// but for in-process database calls rather than HTTP)
+	SkipTypeDatabaseJoin
 )
 
 type ColKey struct {
@@ -90,6 +94,9 @@ type Select struct {
 	Typename   bool
 	Table      string
 	Schema     string
+	// Database is the target database for this select (multi-database support).
+	// Empty string means the default database.
+	Database   string
 	Fields     []Field
 	BCols      []Column
 	IArgs      []Arg
@@ -583,6 +590,12 @@ func (co *Compiler) addRelInfo(
 			return graphError(err, childName, parentName, sel.through)
 		}
 		sel.Rel = sdata.PathToRel(path[0])
+
+		// Check if this is a cross-database relationship
+		// If so, convert to RelDatabaseJoin for special handling
+		if sel.Rel.IsCrossDatabase() {
+			sel.Rel.Type = sdata.RelDatabaseJoin
+		}
 
 		// for _, p := range path {
 		// 	rel := sdata.PathToRel(p)

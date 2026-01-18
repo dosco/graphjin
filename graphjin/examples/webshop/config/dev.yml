@@ -173,7 +173,7 @@ database:
   host: localhost
   port: 5432
   dbname: webshop_development
-  user: postgres
+  user: vr
   password: postgres
 
   # alternatively you can use a connection string

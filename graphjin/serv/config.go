@@ -119,6 +119,9 @@ type Serv struct {
 
 	// Database configuration
 	DB Database `mapstructure:"database" jsonschema:"title=Database"`
+
+	// MCP (Model Context Protocol) server configuration
+	MCP MCPConfig `mapstructure:"mcp" jsonschema:"title=MCP Configuration"`
 }
 
 // Database configuration
@@ -174,6 +177,36 @@ type RateLimiter struct {
 
 	// The header that contains the client ip
 	IPHeader string `mapstructure:"ip_header" jsonschema:"title=IP From HTTP Header,example=X-Forwarded-For"`
+}
+
+// MCPConfig configures the Model Context Protocol (MCP) server
+// MCP enables AI assistants to interact with GraphJin via function calling
+//
+// Transport is implicit based on context:
+// - CLI (`graphjin mcp`) uses stdio transport for Claude Desktop and CLI clients
+// - HTTP service uses SSE/HTTP transport at /api/v1/mcp endpoint
+//
+// Authentication:
+// - HTTP transport uses the same auth as GraphQL/REST (JWT, headers, etc.)
+// - Stdio transport uses env vars (GRAPHJIN_USER_ID, GRAPHJIN_USER_ROLE) or config values
+type MCPConfig struct {
+	// Disable the MCP server (MCP is enabled by default)
+	Disable bool `jsonschema:"title=Disable MCP Server,default=false"`
+
+	// Enable search functionality for saved queries and fragments
+	EnableSearch bool `mapstructure:"enable_search" jsonschema:"title=Enable Query Search,default=true"`
+
+	// Allow mutation operations via MCP
+	AllowMutations bool `mapstructure:"allow_mutations" jsonschema:"title=Allow Mutations,default=true"`
+
+	// Allow arbitrary GraphQL queries (vs only saved queries from allow-list)
+	AllowRawQueries bool `mapstructure:"allow_raw_queries" jsonschema:"title=Allow Raw Queries,default=true"`
+
+	// Default user ID for stdio transport (CLI). Can be overridden by GRAPHJIN_USER_ID env var.
+	StdioUserID string `mapstructure:"stdio_user_id" jsonschema:"title=Stdio User ID"`
+
+	// Default user role for stdio transport (CLI). Can be overridden by GRAPHJIN_USER_ROLE env var.
+	StdioUserRole string `mapstructure:"stdio_user_role" jsonschema:"title=Stdio User Role"`
 }
 
 // Telemetry struct contains OpenCensus metrics and tracing related config
@@ -350,6 +383,12 @@ func newViperWithDefaults() *viper.Viper {
 	vi.BindEnv("port", "PORT")  //nolint:errcheck
 
 	vi.SetDefault("auth.subs_creds_in_vars", false)
+
+	// MCP defaults (MCP enabled by default, use mcp.disable: true to turn off)
+	vi.SetDefault("mcp.disable", false)
+	vi.SetDefault("mcp.enable_search", true)
+	vi.SetDefault("mcp.allow_mutations", true)
+	vi.SetDefault("mcp.allow_raw_queries", true)
 
 	return vi
 }

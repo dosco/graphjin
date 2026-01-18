@@ -119,10 +119,26 @@ func getDBTableAliases(c *Config) map[string][]string {
 }
 
 // addTables adds tables to the database info
-func addTables(conf *Config, dbInfo *sdata.DBInfo) error {
+// targetDB is the database name to process (empty means primary/default)
+func addTables(conf *Config, dbInfo *sdata.DBInfo, targetDB string) error {
 	var err error
 
 	for _, t := range conf.Tables {
+		// Skip tables that belong to a different database
+		// If targetDB is empty, only process tables with empty Database field
+		// If targetDB is set, only process tables matching that database
+		if targetDB == "" {
+			// Processing primary database - skip tables explicitly marked for other databases
+			if t.Database != "" {
+				continue
+			}
+		} else {
+			// Processing secondary database - only include tables for this database
+			if t.Database != targetDB {
+				continue
+			}
+		}
+
 		// skip aliases
 		if t.Table != "" && t.Type == "" {
 			continue
@@ -148,13 +164,19 @@ func addTables(conf *Config, dbInfo *sdata.DBInfo) error {
 
 // updateTable updates the table info in the database info
 func updateTable(conf *Config, dbInfo *sdata.DBInfo, table Table) error {
-	t1, err := dbInfo.GetTable(table.Schema, table.Name)
+	// Use dbinfo's default schema if not specified in table config
+	schema := table.Schema
+	if schema == "" {
+		schema = dbInfo.Schema
+	}
+
+	t1, err := dbInfo.GetTable(schema, table.Name)
 	if err != nil {
 		return fmt.Errorf("table: %w", err)
 	}
 
 	for _, c := range table.Columns {
-		c1, err := dbInfo.GetColumn(table.Schema, table.Name, c.Name)
+		c1, err := dbInfo.GetColumn(schema, table.Name, c.Name)
 		if err != nil {
 			return err
 		}
@@ -262,8 +284,24 @@ func addVirtualTable(conf *Config, di *sdata.DBInfo, t Table) error {
 }
 
 // addForeignKeys adds foreign keys to the database info
-func addForeignKeys(conf *Config, di *sdata.DBInfo) error {
+// targetDB is the database name to process (empty means primary/default)
+func addForeignKeys(conf *Config, di *sdata.DBInfo, targetDB string) error {
 	for _, t := range conf.Tables {
+		// Skip tables that belong to a different database
+		// If targetDB is empty, only process tables with empty Database field
+		// If targetDB is set, only process tables matching that database
+		if targetDB == "" {
+			// Processing primary database - skip tables explicitly marked for other databases
+			if t.Database != "" {
+				continue
+			}
+		} else {
+			// Processing secondary database - only include tables for this database
+			if t.Database != targetDB {
+				continue
+			}
+		}
+
 		if t.Type == "polymorphic" {
 			continue
 		}

@@ -20,7 +20,23 @@ GraphJin is a compiler that turns GraphQL into database queries. For SQL databas
 | `core/internal/qcode` | **IR Compiler** | Front-end compiler. Parses GraphQL -> `QCode` (Intermediate Representation). |
 | `core/internal/psql` | **SQL Compiler** | Back-end compiler. `QCode` -> SQL. Handles dialect differences. |
 | `core/internal/dialect` | **Dialect Interface** | Database-specific SQL generation methods. Each dialect implements this interface. |
+| `core/internal/graph` | **GraphQL Parser** | Lexer and parser for GraphQL input. Builds AST. |
+| `core/internal/jsn` | **JSON Processing** | High-performance JSON parsing and filtering utilities. |
+| `serv/` | **HTTP Service** | Standalone server with REST, GraphQL, and WebSocket APIs. |
+| `auth/` | **Authentication** | Auth providers: JWT, Auth0, Firebase, Rails session. |
+| `cmd/` | **CLI Tool** | Command-line interface for migrations, deployment, and management. |
+| `conf/` | **Configuration** | YAML-based config loading and validation. |
+| `wasm/` | **WebAssembly** | WASM build for NodeJS integration. |
 | `mongodriver/` | **MongoDB Driver** | Custom database/sql-compatible driver for MongoDB. Translates JSON DSL to aggregation pipelines. |
+
+## Build Commands
+
+```bash
+make build    # Build for current platform
+make test     # Run tests (requires Docker for database containers)
+make lint     # Lint code
+make gen      # Generate code (stringer, etc.)
+```
 
 ## Coding Guidelines
 
@@ -49,11 +65,15 @@ If you need to change how GraphJin discovers tables or relationships:
 -   **Zero Allocation**: Strive for zero-allocation in the hot path (`GraphQL` execution).
 -   **Pre-computation**: Do heavy lifting (schema analysis, allow-list preparation) at initialization time, not request time.
 
+### 5. Configuration
+-   **YAML Config**: Use `dev.yml` for development, `prod.yml` for production.
+-   **Production Mode**: In production, all queries must be pre-saved (no dynamic client queries). This is a security feature.
+-   **Environment Variables**: Secrets and connection strings should come from environment variables, not config files.
+
 ## Testing Guidelines
 
 ### 1. Running Tests
 -   **Requirement**: Docker must be running.
--   **Command**: `make test`
 -   **Command**: `make test`
 -   **Note**: This command runs integration tests that require a real database connection.
 -   **Mechanism**: The tests will automatically spin up a Postgres container.
@@ -74,6 +94,10 @@ To avoid running the entire suite (which can be slow):
 -   **Regression/Feature Tests**: Add a new `Example_` function in `tests/query_test.go` or a new file in `tests/`.
 -   **Database Changes**: If your test requires new schema elements, update `tests/postgres.sql`.
 -   **Output Verification**: Use the `// Output:` comment at the end of your example function. The test runner checks stdout against this comment.
+
+### 4. Fuzz Testing
+-   **Security-critical components**: Use Go's built-in fuzz testing (`go test -fuzz=FuzzName`) for parsers and input validation.
+-   **Focus areas**: GraphQL lexer/parser, JSON processing, SQL generation edge cases.
 
 ## Key constraints
 -   **Do not use ORMs** internally.
