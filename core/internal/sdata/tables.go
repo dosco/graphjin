@@ -32,6 +32,9 @@ type DBTable struct {
 	Schema       string
 	Name         string
 	Type         string
+	// Database is the name of the database this table belongs to (for multi-database support).
+	// Empty string means the default database.
+	Database     string
 	Columns      []DBColumn
 	PrimaryCol   DBColumn
 	SecondaryCol DBColumn

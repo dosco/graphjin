@@ -32,8 +32,8 @@ const oembedConfig = () => {
 };
 
 const prettyCodeOptions = {
-  // Use one of Shiki's packaged themes
-  theme: "material-palenight",
+  // Use one of Shiki's bundled themes
+  theme: "github-dark",
 
   onVisitLine(node) {
     // Prevent lines from collapsing in `display: grid` mode, and

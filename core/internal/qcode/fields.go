@@ -245,6 +245,15 @@ func (co *Compiler) addRelColumns(qc *QCode, sel *Select, rel sdata.DBRel) error
 		psel.addField(f)
 		sel.SkipRender = SkipTypeRemote
 
+	case sdata.RelDatabaseJoin:
+		// Cross-database join: add the foreign key column to parent for ID extraction,
+		// and mark this select to be handled by the database join execution path
+		f := Field{Type: FieldTypeCol, Col: rel.Right.Col, FieldName: rel.Left.Col.Name}
+		psel.addField(f)
+		sel.SkipRender = SkipTypeDatabaseJoin
+		// Set the target database from the table info
+		sel.Database = sel.Ti.Database
+
 	case sdata.RelPolymorphic:
 		typeCol := rel.Left.Col
 		typeCol.Name = rel.Left.Col.FKeyCol

@@ -44,6 +44,9 @@ const (
 	RelEmbedded
 	RelRemote
 	RelSkip
+	// RelDatabaseJoin represents a cross-database relationship (multi-database support).
+	// Similar to RelRemote but for in-process database joins rather than HTTP calls.
+	RelDatabaseJoin
 )
 
 // DBRelLeft represents database information
@@ -64,6 +67,21 @@ type DBRel struct {
 	Type  RelType
 	Left  DBRelLeft
 	Right DBRelRight
+}
+
+// IsCrossDatabase returns true if this relationship crosses database boundaries.
+// This is used to determine if a join needs to be executed as a database join
+// rather than a SQL join.
+func (r *DBRel) IsCrossDatabase() bool {
+	leftDB := r.Left.Ti.Database
+	rightDB := r.Right.Ti.Database
+
+	// If either is empty, they're in the default/same database
+	if leftDB == "" || rightDB == "" {
+		return false
+	}
+
+	return leftDB != rightDB
 }
 
 // NewDBSchema creates a new database schema

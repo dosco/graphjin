@@ -8,12 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 
-
-
+	"github.com/dosco/graphjin/core/v3/internal/graph"
 	"github.com/dosco/graphjin/core/v3/internal/psql"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 )
@@ -27,6 +27,15 @@ type gstate struct {
 	dhash [sha256.Size]byte
 	role  string
 	verrs []qcode.ValidErr
+	// database is the target database name for multi-database support.
+	// Empty string means default database (backward compatible single-DB mode).
+	database string
+	// multiDB is true when the query spans multiple databases and requires
+	// parallel execution with result merging.
+	multiDB bool
+	// dbGroups maps database names to their root field names for multi-DB queries.
+	// Only populated when multiDB is true.
+	dbGroups map[string][]string
 }
 
 type cstate struct {
@@ -116,7 +125,53 @@ func (s *gstate) compileQueryForRole() (err error) {
 		vars = s.vmap
 	}
 
-	if st.qc, err = s.gj.qcodeCompiler.Compile(
+	// Multi-DB mode: check if query spans multiple databases
+	if s.gj.isMultiDB() {
+		roots := s.extractAllRootFields()
+		if len(roots) > 0 {
+			byDB := s.groupRootsByDatabase(roots)
+
+			// Multiple databases - mark for parallel execution
+			if len(byDB) > 1 {
+				s.multiDB = true
+				s.dbGroups = byDB
+				// Store role info for parallel execution
+				if s.cs == nil {
+					s.cs = &cstate{st: st}
+				} else {
+					s.cs.st = st
+				}
+				// Compilation will be done per-database in executeParallelRoots
+				return nil
+			}
+
+			// Single database - use that database's compilers
+			for db := range byDB {
+				if db != "_default" && db != s.gj.defaultDB {
+					dbCtx, found := s.gj.GetDatabase(db)
+					if !found {
+						err = fmt.Errorf("database not found: %s", db)
+						return
+					}
+					return s.compileForDatabase(st, vars, dbCtx)
+				}
+			}
+		}
+	}
+
+	// Default path: compile with default compilers
+	return s.compileWithCompilers(st, vars, s.gj.qcodeCompiler, s.gj.psqlCompiler, "")
+}
+
+// compileForDatabase compiles the query using a specific database's compilers.
+func (s *gstate) compileForDatabase(st stmt, vars map[string]json.RawMessage, dbCtx *dbContext) (err error) {
+	s.database = dbCtx.name
+	return s.compileWithCompilers(st, vars, dbCtx.qcodeCompiler, dbCtx.psqlCompiler, dbCtx.name)
+}
+
+// compileWithCompilers performs the actual compilation with the given compilers.
+func (s *gstate) compileWithCompilers(st stmt, vars map[string]json.RawMessage, qcc *qcode.Compiler, pc *psql.Compiler, dbName string) (err error) {
+	if st.qc, err = qcc.Compile(
 		s.r.query,
 		vars,
 		s.role,
@@ -125,11 +180,12 @@ func (s *gstate) compileQueryForRole() (err error) {
 	}
 
 	var w bytes.Buffer
-	if st.md, err = s.gj.psqlCompiler.Compile(&w, st.qc); err != nil {
+	if st.md, err = pc.Compile(&w, st.qc); err != nil {
 		return
 	}
 
 	st.sql = w.String()
+	s.database = dbName
 
 	if s.cs == nil {
 		s.cs = &cstate{st: st}
@@ -140,7 +196,101 @@ func (s *gstate) compileQueryForRole() (err error) {
 	return
 }
 
+// extractAllRootFields parses the GraphQL query to extract all root field names
+// without performing schema validation. Uses the graph parser for robust parsing.
+func (s *gstate) extractAllRootFields() []string {
+	op, err := graph.Parse(s.r.query)
+	if err != nil {
+		return nil
+	}
+
+	var roots []string
+	for _, f := range op.Fields {
+		// Root fields have ParentID == -1
+		if f.ParentID == -1 && f.Type != graph.FieldKeyword {
+			roots = append(roots, f.Name)
+		}
+	}
+	return roots
+}
+
+// groupRootsByDatabase maps root field names to their target databases.
+// Returns a map of database name to list of root field names.
+func (s *gstate) groupRootsByDatabase(roots []string) map[string][]string {
+	byDB := make(map[string][]string)
+
+	for _, root := range roots {
+		db := s.gj.defaultDB // default
+		if db == "" {
+			db = "_default"
+		}
+
+		// Look up the table's database from config
+		for _, t := range s.gj.conf.Tables {
+			if t.Name == root && t.Database != "" {
+				db = t.Database
+				break
+			}
+		}
+		byDB[db] = append(byDB[db], root)
+	}
+	return byDB
+}
+
+// determineTargetDatabase returns the single target database if all roots
+// belong to the same database, or empty string if multiple databases or no config.
+// This is used for backward compatibility with single-database queries.
+func (s *gstate) determineTargetDatabase() string {
+	roots := s.extractAllRootFields()
+	if len(roots) == 0 {
+		return ""
+	}
+
+	byDB := s.groupRootsByDatabase(roots)
+
+	// If all roots belong to one database, return it
+	if len(byDB) == 1 {
+		for db := range byDB {
+			if db != "_default" {
+				return db
+			}
+		}
+	}
+	return ""
+}
+
+// getTargetDB returns the *sql.DB for the target database.
+// If s.database is set (non-default database), returns that database's connection.
+// Otherwise returns the default database connection.
+func (s *gstate) getTargetDB() *sql.DB {
+	if s.database != "" {
+		if dbCtx, ok := s.gj.GetDatabase(s.database); ok {
+			return dbCtx.db
+		}
+	}
+	return s.gj.db
+}
+
 func (s *gstate) compileAndExecuteWrapper(c context.Context) (err error) {
+	// Check for multi-database queries BEFORE compilation
+	// This is done by parsing root fields without schema validation
+	if s.gj.isMultiDB() {
+		roots := s.extractAllRootFields()
+		if len(roots) > 0 {
+			byDB := s.groupRootsByDatabase(roots)
+			if len(byDB) > 1 {
+				// Multi-database parallel execution path
+				s.multiDB = true
+				s.dbGroups = byDB
+				if err = s.executeParallelRoots(c); err != nil {
+					return
+				}
+				return
+			}
+		}
+	}
+
+	// Single database execution path (handles compilation internally)
 	if err = s.compileAndExecute(c); err != nil {
 		return
 	}
@@ -155,8 +305,16 @@ func (s *gstate) compileAndExecuteWrapper(c context.Context) (err error) {
 
 	cs := s.cs
 
+	// Handle remote joins (HTTP calls to external APIs)
 	if cs.st.qc.Remotes != 0 {
 		if err = s.execRemoteJoin(c); err != nil {
+			return
+		}
+	}
+
+	// Handle cross-database joins (in-process calls to other databases)
+	if s.gj.isMultiDB() && countDatabaseJoins(cs.st.qc) > 0 {
+		if err = s.execDatabaseJoins(c); err != nil {
 			return
 		}
 	}
@@ -179,15 +337,46 @@ func (s *gstate) compileAndExecute(c context.Context) (err error) {
 		return
 	}
 
-	var conn *sql.Conn
+	var defaultConn *sql.Conn
 
-	if s.tx() == nil {
-		// get a new database connection
-		c1, span1 := s.gj.spanStart(c, "Get Connection")
+	// For ABAC, we need to execute role query first using default database
+	if s.role == "user" && s.gj.abacEnabled && s.tx() == nil {
+		c1, span1 := s.gj.spanStart(c, "Get Default Connection for ABAC")
 		defer span1.End()
 
 		err = retryOperation(c1, func() (err1 error) {
-			conn, err1 = s.gj.db.Conn(c1)
+			defaultConn, err1 = s.gj.db.Conn(c1)
+			return
+		})
+		if err != nil {
+			span1.Error(err)
+			return
+		}
+		defer defaultConn.Close()
+
+		if err = s.executeRoleQuery(c, defaultConn); err != nil {
+			return
+		}
+	}
+
+	// Compile query for the role (this also determines target database for multi-DB)
+	if err = s.compile(); err != nil {
+		return
+	}
+
+	// set default variables
+	s.setDefaultVars()
+
+	var conn *sql.Conn
+
+	if s.tx() == nil {
+		// get a database connection from the target database
+		c1, span1 := s.gj.spanStart(c, "Get Connection")
+		defer span1.End()
+
+		db := s.getTargetDB()
+		err = retryOperation(c1, func() (err1 error) {
+			conn, err1 = db.Conn(c1)
 			return
 		})
 		if err != nil {
@@ -210,19 +399,6 @@ func (s *gstate) compileAndExecute(c context.Context) (err error) {
 			return
 		}
 	}
-	if s.role == "user" && s.gj.abacEnabled {
-		if err = s.executeRoleQuery(c, conn); err != nil {
-			return
-		}
-	}
-
-	// compile query for the role
-	if err = s.compile(); err != nil {
-		return
-	}
-
-	// set default variables
-	s.setDefaultVars()
 
 	// execute query
 	err = s.execute(c, conn)
@@ -422,11 +598,17 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 	}
 
 	if span.IsRecording() {
-		span.SetAttributesString(
-			StringAttr{"query.namespace", s.r.namespace},
-			StringAttr{"query.operation", cs.st.qc.Type.String()},
-			StringAttr{"query.name", cs.st.qc.Name},
-			StringAttr{"query.role", cs.st.role})
+		attrs := []StringAttr{
+			{"query.namespace", s.r.namespace},
+			{"query.operation", cs.st.qc.Type.String()},
+			{"query.name", cs.st.qc.Name},
+			{"query.role", cs.st.role},
+		}
+		// Add database attribute for multi-database observability
+		if s.database != "" {
+			attrs = append(attrs, StringAttr{"query.database", s.database})
+		}
+		span.SetAttributesString(attrs...)
 	}
 
 	if err == sql.ErrNoRows {
@@ -536,6 +718,18 @@ func (s *gstate) tx() (tx *sql.Tx) {
 }
 
 func (s *gstate) key() (key string) {
-	key = s.r.namespace + s.r.name + s.role
+	// CRITICAL: Include database in cache key to prevent cross-database cache collisions.
+	// Same query name with different databases must have different cache entries.
+	if s.multiDB && len(s.dbGroups) > 0 {
+		// For multi-DB queries, include sorted list of ALL databases
+		dbs := make([]string, 0, len(s.dbGroups))
+		for db := range s.dbGroups {
+			dbs = append(dbs, db)
+		}
+		sort.Strings(dbs)
+		key = s.r.namespace + s.r.name + s.role + strings.Join(dbs, ",")
+	} else {
+		key = s.r.namespace + s.r.name + s.role + s.database
+	}
 	return
 }

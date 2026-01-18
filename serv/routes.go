@@ -10,6 +10,8 @@ const (
 	routeGraphQL = "/api/v1/graphql"
 	routeREST    = "/api/v1/rest/*"
 	routeOpenAPI = "/api/v1/openapi.json"
+	routeMCP     = "/api/v1/mcp"
+	routeMCPMsg  = "/api/v1/mcp/message"
 	healthRoute  = "/health"
 )
 
@@ -33,6 +35,16 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 
 	if s.conf.WebUI {
 		mux.Handle("/*", s1.WebUI("/", routeGraphQL))
+
+		// Admin API routes for Web UI
+		mux.Handle("/api/v1/admin/tables", adminTablesHandler(s1))
+		mux.Handle("/api/v1/admin/tables/*", adminTableSchemaHandler(s1))
+		mux.Handle("/api/v1/admin/queries", adminQueriesHandler(s1))
+		mux.Handle("/api/v1/admin/queries/*", adminQueryDetailHandler(s1))
+		mux.Handle("/api/v1/admin/fragments", adminFragmentsHandler(s1))
+		mux.Handle("/api/v1/admin/config", adminConfigHandler(s1))
+		mux.Handle("/api/v1/admin/database", adminDatabaseHandler(s1))
+		mux.Handle("/api/v1/admin/databases", adminDatabasesHandler(s1))
 	}
 
 	ah, err := auth.NewAuthHandlerFunc(s.conf.Auth)
@@ -53,6 +65,16 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 		mux.Handle(routeGraphQL, s1.GraphQLWithNS(ah, *ns))
 		mux.Handle(routeREST, s1.RESTWithNS(ah, *ns))
 		mux.Handle(routeOpenAPI, s1.OpenAPIWithNS(*ns))
+	}
+
+	// MCP (Model Context Protocol) API
+	// Transport is implicit: HTTP service uses SSE/HTTP, CLI uses stdio via RunMCPStdio()
+	// Auth: Uses same auth middleware as GraphQL/REST endpoints
+	if !s.conf.MCP.Disable {
+		// SSE transport for web-based integrations (with auth)
+		mux.Handle(routeMCP, s1.MCPHandlerWithAuth(ah))
+		// HTTP transport for stateless API integrations (with auth)
+		mux.Handle(routeMCPMsg, s1.MCPMessageHandlerWithAuth(ah))
 	}
 
 	return setServerHeader(mux), nil

@@ -108,6 +108,53 @@ type Config struct {
 
 	// The filesystem to use for this instance of GraphJin
 	FS interface{} `mapstructure:"-" jsonschema:"-" json:"-"`
+
+	// Multiple database configurations for multi-database support.
+	// When set, allows querying across multiple databases in a single GraphQL request.
+	// Each database gets its own connection pool, schema, and SQL compiler.
+	Databases map[string]DatabaseConfig `mapstructure:"databases" json:"databases" yaml:"databases" jsonschema:"title=Databases"`
+}
+
+// DatabaseConfig defines configuration for a single database in multi-database mode
+type DatabaseConfig struct {
+	// Database type (postgres, mysql, mariadb, sqlite, oracle, mongodb)
+	Type string `mapstructure:"type" json:"type" yaml:"type" jsonschema:"title=Database Type,enum=postgres,enum=mysql,enum=mariadb,enum=sqlite,enum=oracle,enum=mongodb"`
+
+	// Whether this is the default database when no database is specified for a table
+	Default bool `mapstructure:"default" json:"default" yaml:"default" jsonschema:"title=Default Database,default=false"`
+
+	// Connection string for the database (alternative to individual params)
+	ConnString string `mapstructure:"conn_string" json:"conn_string" yaml:"conn_string" jsonschema:"title=Connection String"`
+
+	// Database host
+	Host string `mapstructure:"host" json:"host" yaml:"host" jsonschema:"title=Host"`
+
+	// Database port
+	Port int `mapstructure:"port" json:"port" yaml:"port" jsonschema:"title=Port"`
+
+	// Database name
+	DBName string `mapstructure:"dbname" json:"dbname" yaml:"dbname" jsonschema:"title=Database Name"`
+
+	// Database user
+	User string `mapstructure:"user" json:"user" yaml:"user" jsonschema:"title=User"`
+
+	// Database password
+	Password string `mapstructure:"password" json:"password" yaml:"password" jsonschema:"title=Password"`
+
+	// File path for SQLite databases
+	Path string `mapstructure:"path" json:"path" yaml:"path" jsonschema:"title=File Path (SQLite)"`
+
+	// Maximum number of open connections
+	MaxOpenConns int `mapstructure:"max_open_conns" json:"max_open_conns" yaml:"max_open_conns" jsonschema:"title=Max Open Connections"`
+
+	// Maximum number of idle connections
+	MaxIdleConns int `mapstructure:"max_idle_conns" json:"max_idle_conns" yaml:"max_idle_conns" jsonschema:"title=Max Idle Connections"`
+
+	// Schema name to use (for databases that support schemas)
+	Schema string `mapstructure:"schema" json:"schema" yaml:"schema" jsonschema:"title=Schema"`
+
+	// Tables that belong to this database (can also be set per-table via Table.Database)
+	Tables []string `mapstructure:"tables" json:"tables" yaml:"tables" jsonschema:"title=Tables"`
 }
 
 // Configuration for a database table
@@ -116,6 +163,9 @@ type Table struct {
 	Schema    string
 	Table     string // Inherits Table
 	Type      string
+	// Database name for multi-database support. References a key in Config.Databases.
+	// If empty, uses the default database.
+	Database  string `mapstructure:"database" json:"database" yaml:"database" jsonschema:"title=Database"`
 	Blocklist []string
 	Columns   []Column
 	// Permitted order by options

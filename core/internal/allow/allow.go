@@ -243,6 +243,73 @@ func splitName(name string) (string, string) {
 	return "", ""
 }
 
+// ListFragments returns all fragments from the fragments directory
+func (al *List) ListFragments() ([]Fragment, error) {
+	fragPath := filepath.Join(QUERY_PATH, "fragments")
+	files, err := al.fs.List(fragPath)
+	if err != nil {
+		// Return empty list if fragments directory doesn't exist
+		return []Fragment{}, nil
+	}
+
+	fragments := make([]Fragment, 0, len(files))
+	for _, file := range files {
+		// Only process .gql and .graphql files
+		if !strings.HasSuffix(file, ".gql") && !strings.HasSuffix(file, ".graphql") {
+			continue
+		}
+
+		// Extract fragment name (remove extension)
+		var name string
+		if strings.HasSuffix(file, ".gql") {
+			name = strings.TrimSuffix(file, ".gql")
+		} else {
+			name = strings.TrimSuffix(file, ".graphql")
+		}
+
+		// Read fragment content
+		fp := filepath.Join(fragPath, file)
+		value, err := al.fs.Get(fp)
+		if err != nil {
+			continue
+		}
+
+		fragments = append(fragments, Fragment{
+			Name:  name,
+			Value: value,
+		})
+	}
+
+	return fragments, nil
+}
+
+// GetFragment returns a specific fragment by name
+func (al *List) GetFragment(name string) (*Fragment, error) {
+	fragPath := filepath.Join(QUERY_PATH, "fragments")
+
+	// Try .gql extension first
+	fp := filepath.Join(fragPath, name+".gql")
+	if ok, _ := al.fs.Exists(fp); ok {
+		value, err := al.fs.Get(fp)
+		if err != nil {
+			return nil, err
+		}
+		return &Fragment{Name: name, Value: value}, nil
+	}
+
+	// Try .graphql extension
+	fp = filepath.Join(fragPath, name+".graphql")
+	if ok, _ := al.fs.Exists(fp); ok {
+		value, err := al.fs.Get(fp)
+		if err != nil {
+			return nil, err
+		}
+		return &Fragment{Name: name, Value: value}, nil
+	}
+
+	return nil, fmt.Errorf("fragment not found: %s", name)
+}
+
 // ListAll returns all queries in the allow list
 func (al *List) ListAll() (items []Item, err error) {
 	files, err := al.fs.List(QUERY_PATH)

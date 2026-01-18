@@ -172,11 +172,11 @@ func (gj *graphjinEngine) _initSchema() (err error) {
 		}
 	}
 
-	if err = addTables(gj.conf, gj.dbinfo); err != nil {
+	if err = addTables(gj.conf, gj.dbinfo, ""); err != nil {
 		return
 	}
 
-	if err = addForeignKeys(gj.conf, gj.dbinfo); err != nil {
+	if err = addForeignKeys(gj.conf, gj.dbinfo, ""); err != nil {
 		return
 	}
 
