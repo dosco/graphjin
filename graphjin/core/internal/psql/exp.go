@@ -2,6 +2,7 @@ package psql
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
@@ -128,6 +129,35 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 	// Handle TsQuery early - it generates a self-contained condition without column prefix
 	if ex.Op == qcode.OpTsQuery {
 		c.dialect.RenderTsQuery(c, c.ti, ex)
+		return
+	}
+
+	// Handle GIS operators - they generate self-contained spatial conditions
+	if qcode.IsGeoOp(ex.Op) {
+		var table string
+		if ex.Left.Table == "" {
+			table = ex.Left.Col.Table
+		} else {
+			table = ex.Left.Table
+		}
+
+		// Add table ID suffix for proper aliasing (e.g., "locations" -> "locations_0")
+		if ex.Left.ID != -1 {
+			table = table + "_" + strconv.Itoa(int(ex.Left.ID))
+		}
+
+		var colName string
+		if ex.Left.ColName != "" {
+			colName = ex.Left.ColName
+		} else {
+			colName = ex.Left.Col.Name
+		}
+
+		c.w.WriteString(`(`)
+		if err := c.dialect.RenderGeoOp(c, table, colName, ex); err != nil {
+			c.err = err
+		}
+		c.w.WriteString(`)`)
 		return
 	}
 

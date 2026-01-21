@@ -338,3 +338,25 @@ GO
 
 -- Note: Full-Text Search is not available in MSSQL Express/Docker container
 -- The Example_queryBySearch test is skipped for MSSQL
+
+-- GIS test table for spatial queries (MSSQL geography type)
+-- Note: MSSQL geography::Point uses (latitude, longitude) order
+CREATE TABLE locations (
+  id BIGINT NOT NULL IDENTITY(1,1) PRIMARY KEY,
+  name NVARCHAR(100),
+  geom GEOGRAPHY NOT NULL
+);
+GO
+
+-- Create spatial index for performance
+CREATE SPATIAL INDEX idx_locations_geom ON locations(geom);
+GO
+
+-- Insert test locations using geography::Point(lat, lon, SRID)
+INSERT INTO locations (name, geom) VALUES
+  (N'San Francisco', geography::Point(37.7749, -122.4194, 4326)),
+  (N'Oakland', geography::Point(37.8044, -122.2711, 4326)),
+  (N'San Jose', geography::Point(37.3382, -121.8853, 4326)),
+  (N'Berkeley', geography::Point(37.8716, -122.2727, 4326)),
+  (N'Palo Alto', geography::Point(37.4419, -122.1430, 4326));
+GO

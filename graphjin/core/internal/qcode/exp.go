@@ -1,8 +1,10 @@
 package qcode
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/graph"
@@ -187,6 +189,11 @@ func (ast *aexpst) parseNode(av aexp, node *graph.Node, selID int32) (*Exp, erro
 				return ex, nil
 			}
 			return nil, fmt.Errorf("[Where] unknown operator: %s", name)
+		}
+
+		// GIS operators have their own parameter parsing, skip value type detection
+		if ex.Geo != nil {
+			return ex, nil
 		}
 
 		if ast.savePath {
@@ -388,6 +395,27 @@ func (ast *aexpst) processOpAndVal(av aexp, ex *Exp, node *graph.Node) (bool, er
 	case "dis", "distinct":
 		ex.Op = OpDistinct
 		ex.Right.Val = node.Val
+
+	// GIS/Spatial operators
+	case "st_dwithin", "stDWithin", "st_d_within", "dwithin":
+		return ast.processGeoOp(ex, node, OpGeoDistance)
+	case "st_within", "stWithin", "within":
+		return ast.processGeoOp(ex, node, OpGeoWithin)
+	case "st_contains", "stContains", "geoContains":
+		return ast.processGeoOp(ex, node, OpGeoContains)
+	case "st_intersects", "stIntersects", "intersects":
+		return ast.processGeoOp(ex, node, OpGeoIntersects)
+	case "st_coveredby", "stCoveredBy", "coveredBy", "covered_by":
+		return ast.processGeoOp(ex, node, OpGeoCoveredBy)
+	case "st_covers", "stCovers", "covers":
+		return ast.processGeoOp(ex, node, OpGeoCovers)
+	case "st_touches", "stTouches", "touches":
+		return ast.processGeoOp(ex, node, OpGeoTouches)
+	case "st_overlaps", "stOverlaps", "overlaps":
+		return ast.processGeoOp(ex, node, OpGeoOverlaps)
+	case "near", "geoNear":
+		return ast.processGeoOp(ex, node, OpGeoNear)
+
 	default:
 		return false, nil
 	}
@@ -441,6 +469,219 @@ func setListVal(ex *Exp, node *graph.Node) {
 	if len(node.Children) == 0 {
 		ex.Right.ValType = ValList
 		ex.Right.ListVal = append(ex.Right.ListVal, node.Val)
+	}
+}
+
+// processGeoOp parses GIS operator with nested parameters like:
+// st_dwithin: { point: [-122.4, 37.7], distance: 1000 }
+func (ast *aexpst) processGeoOp(ex *Exp, node *graph.Node, op ExpOp) (bool, error) {
+	ex.Op = op
+	ex.Geo = &GeoExp{
+		SRID: 4326, // Default to WGS84
+		Unit: GeoUnitMeters,
+	}
+
+	// GIS operators expect an object with parameters
+	if node.Type != graph.NodeObj {
+		return false, fmt.Errorf("GIS operator requires object parameters, got: %v", node.Type)
+	}
+
+	for _, child := range node.Children {
+		switch child.Name {
+		case "point":
+			if err := ast.parseGeoPoint(ex.Geo, child); err != nil {
+				return false, err
+			}
+		case "polygon":
+			if err := ast.parseGeoPolygon(ex.Geo, child); err != nil {
+				return false, err
+			}
+		case "geometry":
+			if err := ast.parseGeoJSON(ex.Geo, child); err != nil {
+				return false, err
+			}
+		case "distance":
+			if child.Type == graph.NodeVar {
+				ex.Geo.DistanceVar = child.Val
+			} else {
+				val, err := strconv.ParseFloat(child.Val, 64)
+				if err != nil {
+					return false, fmt.Errorf("invalid distance value: %s", child.Val)
+				}
+				ex.Geo.Distance = val
+			}
+		case "maxDistance":
+			val, err := strconv.ParseFloat(child.Val, 64)
+			if err != nil {
+				return false, fmt.Errorf("invalid maxDistance value: %s", child.Val)
+			}
+			ex.Geo.Distance = val
+		case "minDistance":
+			val, err := strconv.ParseFloat(child.Val, 64)
+			if err != nil {
+				return false, fmt.Errorf("invalid minDistance value: %s", child.Val)
+			}
+			ex.Geo.MinDistance = val
+		case "unit":
+			ex.Geo.Unit = parseGeoUnit(child.Val)
+		case "srid":
+			val, err := strconv.Atoi(child.Val)
+			if err != nil {
+				return false, fmt.Errorf("invalid srid value: %s", child.Val)
+			}
+			ex.Geo.SRID = val
+		case "spherical":
+			ex.Geo.Spherical = strings.EqualFold(child.Val, "true")
+		}
+	}
+
+	return true, nil
+}
+
+// parseGeoPoint parses a point from [longitude, latitude] array or variable
+func (ast *aexpst) parseGeoPoint(geo *GeoExp, node *graph.Node) error {
+	// Handle variable reference
+	if node.Type == graph.NodeVar {
+		geo.GeoJSON = []byte(fmt.Sprintf(`{"$var":"%s"}`, node.Val))
+		return nil
+	}
+
+	if node.Type != graph.NodeList {
+		return fmt.Errorf("point must be [longitude, latitude] array or variable")
+	}
+
+	if len(node.Children) < 2 {
+		return fmt.Errorf("point must have at least 2 coordinates [longitude, latitude]")
+	}
+
+	geo.Point = make([]float64, 2)
+	for i := 0; i < 2; i++ {
+		val, err := strconv.ParseFloat(node.Children[i].Val, 64)
+		if err != nil {
+			return fmt.Errorf("invalid coordinate value: %s", node.Children[i].Val)
+		}
+		geo.Point[i] = val
+	}
+	return nil
+}
+
+// parseGeoPolygon parses a polygon from array of [lon, lat] coordinate pairs
+func (ast *aexpst) parseGeoPolygon(geo *GeoExp, node *graph.Node) error {
+	// Handle variable reference
+	if node.Type == graph.NodeVar {
+		geo.GeoJSON = []byte(fmt.Sprintf(`{"$var":"%s"}`, node.Val))
+		return nil
+	}
+
+	if node.Type != graph.NodeList {
+		return fmt.Errorf("polygon must be an array of coordinate pairs or variable")
+	}
+
+	if len(node.Children) < 3 {
+		return fmt.Errorf("polygon must have at least 3 points")
+	}
+
+	geo.Polygon = make([][]float64, len(node.Children))
+	for i, child := range node.Children {
+		if child.Type != graph.NodeList || len(child.Children) < 2 {
+			return fmt.Errorf("each polygon point must be [longitude, latitude] pair")
+		}
+		lon, err := strconv.ParseFloat(child.Children[0].Val, 64)
+		if err != nil {
+			return fmt.Errorf("invalid longitude value: %s", child.Children[0].Val)
+		}
+		lat, err := strconv.ParseFloat(child.Children[1].Val, 64)
+		if err != nil {
+			return fmt.Errorf("invalid latitude value: %s", child.Children[1].Val)
+		}
+		geo.Polygon[i] = []float64{lon, lat}
+	}
+	return nil
+}
+
+// parseGeoJSON parses a GeoJSON geometry object
+func (ast *aexpst) parseGeoJSON(geo *GeoExp, node *graph.Node) error {
+	// Handle variable reference
+	if node.Type == graph.NodeVar {
+		geo.GeoJSON = []byte(fmt.Sprintf(`{"$var":"%s"}`, node.Val))
+		return nil
+	}
+
+	if node.Type != graph.NodeObj {
+		return fmt.Errorf("geometry must be a GeoJSON object or variable")
+	}
+
+	// Convert the node back to JSON
+	geoJSON, err := graphNodeToGeoJSON(node)
+	if err != nil {
+		return err
+	}
+	geo.GeoJSON = geoJSON
+	return nil
+}
+
+// graphNodeToGeoJSON converts a graph.Node to JSON bytes for GeoJSON
+func graphNodeToGeoJSON(node *graph.Node) ([]byte, error) {
+	obj := make(map[string]interface{})
+	for _, child := range node.Children {
+		val, err := graphNodeToValue(child)
+		if err != nil {
+			return nil, err
+		}
+		obj[child.Name] = val
+	}
+	return json.Marshal(obj)
+}
+
+// graphNodeToValue converts a graph.Node to its corresponding Go value
+func graphNodeToValue(node *graph.Node) (interface{}, error) {
+	switch node.Type {
+	case graph.NodeStr:
+		return node.Val, nil
+	case graph.NodeNum:
+		// Try integer first, then float
+		if i, err := strconv.ParseInt(node.Val, 10, 64); err == nil {
+			return i, nil
+		}
+		return strconv.ParseFloat(node.Val, 64)
+	case graph.NodeBool:
+		return strconv.ParseBool(node.Val)
+	case graph.NodeList:
+		arr := make([]interface{}, len(node.Children))
+		for i, child := range node.Children {
+			val, err := graphNodeToValue(child)
+			if err != nil {
+				return nil, err
+			}
+			arr[i] = val
+		}
+		return arr, nil
+	case graph.NodeObj:
+		obj := make(map[string]interface{})
+		for _, child := range node.Children {
+			val, err := graphNodeToValue(child)
+			if err != nil {
+				return nil, err
+			}
+			obj[child.Name] = val
+		}
+		return obj, nil
+	default:
+		return node.Val, nil
+	}
+}
+
+// parseGeoUnit converts a string to GeoUnit
+func parseGeoUnit(val string) GeoUnit {
+	switch strings.ToLower(val) {
+	case "kilometers", "km":
+		return GeoUnitKilometers
+	case "miles", "mi":
+		return GeoUnitMiles
+	case "feet", "ft":
+		return GeoUnitFeet
+	default:
+		return GeoUnitMeters
 	}
 }
 
@@ -597,7 +838,17 @@ func (ast *aexpst) isOperator(name string) (bool, error) {
 		"hasInCommon", "has_in_common",
 		"hasKey", "has_key", "hasKeyAny", "has_key_any", "hasKeyAll", "has_key_all",
 		"isNull", "is_null", "notDistinct", "ndis", "not_distinct",
-		"dis", "distinct":
+		"dis", "distinct",
+		// GIS/Spatial operators
+		"st_dwithin", "stDWithin", "st_d_within", "dwithin",
+		"st_within", "stWithin", "within",
+		"st_contains", "stContains", "geoContains",
+		"st_intersects", "stIntersects", "intersects",
+		"st_coveredby", "stCoveredBy", "coveredBy", "covered_by",
+		"st_covers", "stCovers", "covers",
+		"st_touches", "stTouches", "touches",
+		"st_overlaps", "stOverlaps", "overlaps",
+		"near", "geoNear":
 		return true, nil
 	}
 	return false, nil

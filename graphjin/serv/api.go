@@ -175,7 +175,7 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*graphjinS
 		conf = &Config{Core: Core{Debug: true}}
 	}
 
-	zlog := util.NewLogger(conf.LogFormat == "json")
+	zlog := util.NewLogger(conf.ShouldUseJSONLogs())
 	prod := conf.Serv.Production
 	conf.Core.Production = prod
 

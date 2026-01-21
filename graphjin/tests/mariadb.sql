@@ -336,4 +336,21 @@ VALUES ('a', 'node a'),
   ('c', 'node c');
 INSERT INTO graph_edge (src_node, dst_node)
 VALUES ('a', 'b'),
-  ('a', 'c')
+  ('a', 'c');
+
+-- GIS test table for spatial queries (MariaDB built-in spatial support)
+-- Note: MariaDB 10.x doesn't support SRID constraint in column definition like MySQL 8.0+
+CREATE TABLE locations (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(100),
+  geom POINT NOT NULL,
+  SPATIAL INDEX idx_locations_geom (geom)
+);
+
+-- Note: MariaDB uses standard WKT (longitude, latitude) order, NOT MySQL 8.0's (lat, lon)
+INSERT INTO locations (id, name, geom) VALUES
+  (1, 'San Francisco', ST_GeomFromText('POINT(-122.4194 37.7749)', 4326)),
+  (2, 'Oakland', ST_GeomFromText('POINT(-122.2711 37.8044)', 4326)),
+  (3, 'San Jose', ST_GeomFromText('POINT(-121.8853 37.3382)', 4326)),
+  (4, 'Berkeley', ST_GeomFromText('POINT(-122.2727 37.8716)', 4326)),
+  (5, 'Palo Alto', ST_GeomFromText('POINT(-122.1430 37.4419)', 4326));

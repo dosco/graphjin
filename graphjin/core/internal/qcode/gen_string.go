@@ -23,10 +23,11 @@ const _QType_name = "UnknownQuerySubcriptionMutationInsertUpdateDeleteUpsert"
 var _QType_index = [...]uint8{0, 7, 12, 23, 31, 37, 43, 49, 55}
 
 func (i QType) String() string {
-	if i < 0 || i >= QType(len(_QType_index)-1) {
+	idx := int(i) - 0
+	if i < 0 || idx >= len(_QType_index)-1 {
 		return "QType(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _QType_name[_QType_index[i]:_QType_index[i+1]]
+	return _QType_name[_QType_index[idx]:_QType_index[idx+1]]
 }
 func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
@@ -47,11 +48,11 @@ const _MType_name = "MTInsertMTUpdateMTUpsertMTDeleteMTConnectMTDisconnectMTNone
 var _MType_index = [...]uint8{0, 8, 16, 24, 32, 41, 53, 59, 68}
 
 func (i MType) String() string {
-	i -= 1
-	if i >= MType(len(_MType_index)-1) {
-		return "MType(" + strconv.FormatInt(int64(i+1), 10) + ")"
+	idx := int(i) - 1
+	if i < 1 || idx >= len(_MType_index)-1 {
+		return "MType(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _MType_name[_MType_index[i]:_MType_index[i+1]]
+	return _MType_name[_MType_index[idx]:_MType_index[idx+1]]
 }
 func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
@@ -67,10 +68,11 @@ const _SelType_name = "SelTypeNoneSelTypeUnionSelTypeMember"
 var _SelType_index = [...]uint8{0, 11, 23, 36}
 
 func (i SelType) String() string {
-	if i < 0 || i >= SelType(len(_SelType_index)-1) {
+	idx := int(i) - 0
+	if i < 0 || idx >= len(_SelType_index)-1 {
 		return "SelType(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _SelType_name[_SelType_index[i]:_SelType_index[i+1]]
+	return _SelType_name[_SelType_index[idx]:_SelType_index[idx+1]]
 }
 func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
@@ -86,10 +88,11 @@ const _FieldType_name = "FieldTypeTableFieldTypeColFieldTypeFunc"
 var _FieldType_index = [...]uint8{0, 14, 26, 39}
 
 func (i FieldType) String() string {
-	if i < 0 || i >= FieldType(len(_FieldType_index)-1) {
+	idx := int(i) - 0
+	if i < 0 || idx >= len(_FieldType_index)-1 {
 		return "FieldType(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _FieldType_name[_FieldType_index[i]:_FieldType_index[i+1]]
+	return _FieldType_name[_FieldType_index[idx]:_FieldType_index[idx+1]]
 }
 func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
@@ -109,10 +112,11 @@ const _SkipType_name = "SkipTypeNoneSkipTypeDropSkipTypeNulledSkipTypeUserNeeded
 var _SkipType_index = [...]uint8{0, 12, 24, 38, 56, 71, 85, 105}
 
 func (i SkipType) String() string {
-	if i < 0 || i >= SkipType(len(_SkipType_index)-1) {
+	idx := int(i) - 0
+	if i < 0 || idx >= len(_SkipType_index)-1 {
 		return "SkipType(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _SkipType_name[_SkipType_index[i]:_SkipType_index[i+1]]
+	return _SkipType_name[_SkipType_index[idx]:_SkipType_index[idx+1]]
 }
 func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
@@ -128,10 +132,11 @@ const _PagingType_name = "PTOffsetPTForwardPTBackward"
 var _PagingType_index = [...]uint8{0, 8, 17, 27}
 
 func (i PagingType) String() string {
-	if i < 0 || i >= PagingType(len(_PagingType_index)-1) {
+	idx := int(i) - 0
+	if i < 0 || idx >= len(_PagingType_index)-1 {
 		return "PagingType(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _PagingType_name[_PagingType_index[i]:_PagingType_index[i+1]]
+	return _PagingType_name[_PagingType_index[idx]:_PagingType_index[idx+1]]
 }
 func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
@@ -149,11 +154,11 @@ const _AggregrateOp_name = "AgCountAgSumAgAvgAgMaxAgMin"
 var _AggregrateOp_index = [...]uint8{0, 7, 12, 17, 22, 27}
 
 func (i AggregrateOp) String() string {
-	i -= 1
-	if i < 0 || i >= AggregrateOp(len(_AggregrateOp_index)-1) {
-		return "AggregrateOp(" + strconv.FormatInt(int64(i+1), 10) + ")"
+	idx := int(i) - 1
+	if i < 1 || idx >= len(_AggregrateOp_index)-1 {
+		return "AggregrateOp(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _AggregrateOp_name[_AggregrateOp_index[i]:_AggregrateOp_index[i+1]]
+	return _AggregrateOp_name[_AggregrateOp_index[idx]:_AggregrateOp_index[idx+1]]
 }
 func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
@@ -165,18 +170,20 @@ func _() {
 	_ = x[ValList-4]
 	_ = x[ValObj-5]
 	_ = x[ValVar-6]
+	_ = x[ValDBVar-7]
+	_ = x[ValSubQuery-8]
 }
 
-const _ValType_name = "ValStrValNumValBoolValListValObjValVar"
+const _ValType_name = "ValStrValNumValBoolValListValObjValVarValDBVarValSubQuery"
 
-var _ValType_index = [...]uint8{0, 6, 12, 19, 26, 32, 38}
+var _ValType_index = [...]uint8{0, 6, 12, 19, 26, 32, 38, 46, 57}
 
 func (i ValType) String() string {
-	i -= 1
-	if i < 0 || i >= ValType(len(_ValType_index)-1) {
-		return "ValType(" + strconv.FormatInt(int64(i+1), 10) + ")"
+	idx := int(i) - 1
+	if i < 1 || idx >= len(_ValType_index)-1 {
+		return "ValType(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _ValType_name[_ValType_index[i]:_ValType_index[i+1]]
+	return _ValType_name[_ValType_index[idx]:_ValType_index[idx+1]]
 }
 func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
@@ -221,15 +228,25 @@ func _() {
 	_ = x[OpSelectExists-36]
 	_ = x[OpJSONPath-37]
 	_ = x[OpJSONPathText-38]
+	_ = x[OpGeoDistance-39]
+	_ = x[OpGeoWithin-40]
+	_ = x[OpGeoContains-41]
+	_ = x[OpGeoIntersects-42]
+	_ = x[OpGeoCoveredBy-43]
+	_ = x[OpGeoCovers-44]
+	_ = x[OpGeoTouches-45]
+	_ = x[OpGeoOverlaps-46]
+	_ = x[OpGeoNear-47]
 }
 
-const _ExpOp_name = "OpNopOpAndOpOrOpNotOpEqualsOpNotEqualsOpGreaterOrEqualsOpLesserOrEqualsOpGreaterThanOpLesserThanOpInOpNotInOpLikeOpNotLikeOpILikeOpNotILikeOpSimilarOpNotSimilarOpRegexOpNotRegexOpIRegexOpNotIRegexOpContainsOpContainedInOpHasInCommonOpHasKeyOpHasKeyAnyOpHasKeyAllOpIsNullOpIsNotNullOpTsQueryOpFalseOpNotDistinctOpDistinctOpEqualsTrueOpNotEqualsTrueOpSelectExistsJSON path operator (->)JSON path text operator (->>)"
+const _ExpOp_name = "OpNopOpAndOpOrOpNotOpEqualsOpNotEqualsOpGreaterOrEqualsOpLesserOrEqualsOpGreaterThanOpLesserThanOpInOpNotInOpLikeOpNotLikeOpILikeOpNotILikeOpSimilarOpNotSimilarOpRegexOpNotRegexOpIRegexOpNotIRegexOpContainsOpContainedInOpHasInCommonOpHasKeyOpHasKeyAnyOpHasKeyAllOpIsNullOpIsNotNullOpTsQueryOpFalseOpNotDistinctOpDistinctOpEqualsTrueOpNotEqualsTrueOpSelectExistsJSON path operator (->)JSON path text operator (->>)ST_DWithin - distance-based filteringST_Within - geometry A within BST_Contains - geometry A contains BST_Intersects - geometries intersectST_CoveredBy - geometry A covered by BST_Covers - geometry A covers BST_Touches - geometries touch at boundaryST_Overlaps - geometries overlapMongoDB $near / $nearSphere"
 
-var _ExpOp_index = [...]uint16{0, 5, 10, 14, 19, 27, 38, 55, 71, 84, 96, 100, 107, 113, 122, 129, 139, 148, 160, 167, 177, 185, 196, 206, 219, 232, 240, 251, 262, 270, 281, 290, 297, 310, 320, 332, 347, 361, 384, 413}
+var _ExpOp_index = [...]uint16{0, 5, 10, 14, 19, 27, 38, 55, 71, 84, 96, 100, 107, 113, 122, 129, 139, 148, 160, 167, 177, 185, 196, 206, 219, 232, 240, 251, 262, 270, 281, 290, 297, 310, 320, 332, 347, 361, 384, 413, 450, 481, 516, 552, 590, 621, 662, 694, 721}
 
 func (i ExpOp) String() string {
-	if i < 0 || i >= ExpOp(len(_ExpOp_index)-1) {
+	idx := int(i) - 0
+	if i < 0 || idx >= len(_ExpOp_index)-1 {
 		return "ExpOp(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _ExpOp_name[_ExpOp_index[i]:_ExpOp_index[i+1]]
+	return _ExpOp_name[_ExpOp_index[idx]:_ExpOp_index[idx+1]]
 }

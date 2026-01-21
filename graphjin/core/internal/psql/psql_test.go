@@ -125,6 +125,16 @@ func TestMain(m *testing.M) {
 		log.Fatal(err)
 	}
 
+	err = qcompile.AddRole("user", "public", "locations", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "geom", "boundary"},
+		},
+	})
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	vars := map[string]string{
 		"admin_account_id": "5",
 		"get_price":        "sql:select price from prices where id = $product_id",

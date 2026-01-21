@@ -67,6 +67,7 @@ type Dialect interface {
 	RenderJSONPath(ctx Context, table, col string, path []string)
 	RenderList(ctx Context, ex *qcode.Exp)
 	RenderOp(op qcode.ExpOp) (string, error)
+	RenderGeoOp(ctx Context, table, col string, ex *qcode.Exp) error // GIS spatial operator rendering
 	RenderValPrefix(ctx Context, ex *qcode.Exp) bool
 	RenderTsQuery(ctx Context, ti sdata.DBTable, ex *qcode.Exp)
 	RenderSearchRank(ctx Context, sel *qcode.Select, f qcode.Field)

@@ -1,6 +1,8 @@
 package dialect
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -435,6 +437,137 @@ func (d *PostgresDialect) RenderOp(op qcode.ExpOp) (string, error) {
 		return `!~*`, nil
 	}
 	return "", nil
+}
+
+// RenderGeoOp renders PostGIS spatial operations
+func (d *PostgresDialect) RenderGeoOp(ctx Context, table, col string, ex *qcode.Exp) error {
+	geo := ex.Geo
+	if geo == nil {
+		return fmt.Errorf("GIS expression missing geometry data")
+	}
+
+	switch ex.Op {
+	case qcode.OpGeoDistance:
+		// ST_DWithin(geography, geography, distance_meters)
+		ctx.WriteString(`ST_DWithin(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`::geography, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`::geography, `)
+		d.renderGeoDistance(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoWithin:
+		ctx.WriteString(`ST_Within(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoContains:
+		ctx.WriteString(`ST_Contains(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoIntersects:
+		ctx.WriteString(`ST_Intersects(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoCoveredBy:
+		ctx.WriteString(`ST_CoveredBy(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoCovers:
+		ctx.WriteString(`ST_Covers(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoTouches:
+		ctx.WriteString(`ST_Touches(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoOverlaps:
+		ctx.WriteString(`ST_Overlaps(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoNear:
+		// For PostgreSQL, use ST_DWithin with distance
+		ctx.WriteString(`ST_DWithin(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`::geography, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`::geography, `)
+		d.renderGeoDistance(ctx, geo)
+		ctx.WriteString(`)`)
+
+	default:
+		return fmt.Errorf("unsupported GIS operator: %v", ex.Op)
+	}
+	return nil
+}
+
+// renderGeoGeometry renders the geometry expression for PostGIS
+func (d *PostgresDialect) renderGeoGeometry(ctx Context, geo *qcode.GeoExp) {
+	if len(geo.Point) == 2 {
+		// ST_SetSRID(ST_MakePoint(lon, lat), srid)
+		ctx.WriteString(fmt.Sprintf(`ST_SetSRID(ST_MakePoint(%f, %f), %d)`,
+			geo.Point[0], geo.Point[1], geo.SRID))
+	} else if len(geo.Polygon) > 0 {
+		// ST_SetSRID(ST_GeomFromText('POLYGON((...))'), srid)
+		ctx.WriteString(`ST_SetSRID(ST_GeomFromText('POLYGON((`)
+		for i, pt := range geo.Polygon {
+			if i > 0 {
+				ctx.WriteString(`, `)
+			}
+			ctx.WriteString(fmt.Sprintf(`%f %f`, pt[0], pt[1]))
+		}
+		ctx.WriteString(fmt.Sprintf(`))'), %d)`, geo.SRID))
+	} else if len(geo.GeoJSON) > 0 {
+		// Check if it's a variable reference
+		if bytes.Contains(geo.GeoJSON, []byte(`"$var"`)) {
+			var varRef struct {
+				Var string `json:"$var"`
+			}
+			if err := json.Unmarshal(geo.GeoJSON, &varRef); err == nil && varRef.Var != "" {
+				ctx.WriteString(`ST_SetSRID(ST_GeomFromGeoJSON(`)
+				ctx.AddParam(Param{Name: varRef.Var, Type: "json"})
+				ctx.WriteString(fmt.Sprintf(`), %d)`, geo.SRID))
+				return
+			}
+		}
+		ctx.WriteString(fmt.Sprintf(`ST_SetSRID(ST_GeomFromGeoJSON('%s'), %d)`,
+			string(geo.GeoJSON), geo.SRID))
+	}
+}
+
+// renderGeoDistance renders the distance value for PostGIS
+func (d *PostgresDialect) renderGeoDistance(ctx Context, geo *qcode.GeoExp) {
+	if geo.DistanceVar != "" {
+		ctx.AddParam(Param{Name: geo.DistanceVar, Type: "float8"})
+		// Apply unit conversion if needed
+		if geo.Unit != qcode.GeoUnitMeters {
+			ctx.WriteString(fmt.Sprintf(` * %f`, geo.Unit.ToMeters(1)))
+		}
+	} else {
+		distance := geo.Unit.ToMeters(geo.Distance)
+		ctx.WriteString(fmt.Sprintf(`%f`, distance))
+	}
 }
 
 func (d *PostgresDialect) BindVar(i int) string {

@@ -30,7 +30,14 @@ SELECT
         ) THEN 1
         ELSE 0
     END AS is_array,
-    0 AS full_text,
+    CASE WHEN EXISTS (
+        SELECT 1 FROM all_indexes ai
+        JOIN all_ind_columns aic ON ai.owner = aic.index_owner AND ai.index_name = aic.index_name
+        WHERE ai.owner = tc.owner
+          AND ai.table_name = tc.table_name
+          AND aic.column_name = tc.column_name
+          AND ai.ityp_name = 'CONTEXT'
+    ) THEN 1 ELSE 0 END AS full_text,
     NVL((
         SELECT r_ac.owner FROM all_constraints ac
         JOIN all_cons_columns acc ON ac.constraint_name = acc.constraint_name AND ac.owner = acc.owner
@@ -53,4 +60,5 @@ SELECT
     ), ' ') AS foreignkey_column
 FROM all_tab_columns tc
 WHERE owner NOT IN ('SYS', 'SYSTEM', 'OUTLN', 'DBSNMP', 'APPQOSSYS', 'XDB', 'WMSYS', 'CTXSYS', 'MDSYS', 'ORDSYS', 'ORDDATA', 'ORDPLUGINS', 'SI_INFORMTN_SCHEMA', 'OLAPSYS', 'MDDATA', 'SPATIAL_WFS_ADMIN_USR', 'SPATIAL_CSW_ADMIN_USR', 'SYSMAN', 'FLOWS_FILES', 'APEX_040200', 'APEX_PUBLIC_USER', 'LBACSYS', 'DVF', 'DVSYS', 'AUDSYS', 'GSMADMIN_INTERNAL', 'GSMCATUSER', 'GSMUSER', 'REMOTE_SCHEDULER_AGENT', 'GGSYS', 'DBSFWUSER', 'ANONYMOUS', 'XS$NULL', 'OJVMSYS', 'ORACLE_OCM', 'ORDPLUGINS')
+  AND tc.table_name NOT LIKE 'DR$%'
 ORDER BY owner, table_name, column_id

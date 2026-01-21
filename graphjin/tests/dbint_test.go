@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"regexp"
 	"strings"
@@ -31,17 +32,43 @@ import (
 	_ "github.com/sijms/go-ora/v2"
 )
 
+// SpatialiteAvailable tracks if SpatiaLite extension was loaded
+var SpatialiteAvailable bool
+
 func init() {
 	sql.Register("sqlite3_regexp", &sqlite3.SQLiteDriver{
 		ConnectHook: func(conn *sqlite3.SQLiteConn) error {
+			// Register REGEXP function
 			if err := conn.RegisterFunc("REGEXP", func(re, s string) (bool, error) {
 				return regexp.MatchString(re, s)
 			}, true); err != nil {
 				return err
 			}
-			return conn.RegisterFunc("regexp", func(re, s string) (bool, error) {
+			if err := conn.RegisterFunc("regexp", func(re, s string) (bool, error) {
 				return regexp.MatchString(re, s)
-			}, true)
+			}, true); err != nil {
+				return err
+			}
+
+			// Try to load SpatiaLite extension from various paths
+			// Note: Entry point "sqlite3_modspatialite_init" is required for SpatiaLite 5.x
+			spatialitePaths := []string{
+				"/usr/lib/aarch64-linux-gnu/mod_spatialite.so", // Debian/Ubuntu ARM64
+				"/usr/lib/x86_64-linux-gnu/mod_spatialite.so",  // Debian/Ubuntu x86_64
+				"/usr/local/lib/mod_spatialite.dylib",          // macOS Homebrew
+				"/opt/homebrew/lib/mod_spatialite.dylib",       // macOS Homebrew ARM64
+				"mod_spatialite",                               // System default
+			}
+			entryPoints := []string{"sqlite3_modspatialite_init", ""} // Try explicit entry point first
+			for _, path := range spatialitePaths {
+				for _, ep := range entryPoints {
+					if err := conn.LoadExtension(path, ep); err == nil {
+						return nil // Successfully loaded
+					}
+				}
+			}
+			// SpatiaLite not found - continue without it (not an error)
+			return nil
 		},
 	})
 }
@@ -86,7 +113,7 @@ func setupMultiDB(ctx context.Context) ([]func(context.Context) error, error) {
 	go func() {
 		defer wg.Done()
 		container, err := postgres.Run(ctx,
-			"postgres:12.5",
+			"postgis/postgis:12-3.3",
 			postgres.WithUsername("tester"),
 			postgres.WithPassword("tester"),
 			postgres.WithDatabase("db"),
@@ -309,7 +336,7 @@ func TestMain(m *testing.M) {
 			driver: "postgres",
 			startFunc: func(ctx context.Context) (func(context.Context) error, string, error) {
 				container, err := postgres.Run(ctx,
-					"postgres:12.5",
+					"postgis/postgis:12-3.3",
 					postgres.WithUsername("tester"),
 					postgres.WithPassword("tester"),
 					postgres.WithDatabase("db"),
@@ -457,25 +484,41 @@ func TestMain(m *testing.M) {
 			startFunc: func(ctx context.Context) (func(context.Context) error, string, error) {
 				// Use shared in-memory DB
 				connStr := "file:memdb1?mode=memory&cache=shared&_busy_timeout=5000"
-				
-				
+
 				// Initialize DB
 				db, err := sql.Open("sqlite3_regexp", connStr)
 				if err != nil {
 					return nil, "", err
 				}
-				// defer db.Close() // Keep open for shared memory DB
-				
+
+				// Check if SpatiaLite extension was loaded
+				var version string
+				if err := db.QueryRow("SELECT spatialite_version()").Scan(&version); err == nil {
+					SpatialiteAvailable = true
+					log.Printf("SpatiaLite %s detected", version)
+				}
+
 				script, err := os.ReadFile("./sqlite.sql")
 				if err != nil {
 					db.Close()
 					return nil, "", err
 				}
-				
+
 				_, err = db.Exec(string(script))
 				if err != nil {
 					db.Close() // Cleanup on error
 					return nil, "", fmt.Errorf("failed to init sqlite: %w", err)
+				}
+
+				// Load SpatiaLite schema if extension is available
+				if SpatialiteAvailable {
+					spatialScript, err := os.ReadFile("./sqlite_spatialite.sql")
+					if err == nil {
+						if _, err := db.Exec(string(spatialScript)); err != nil {
+							log.Printf("Warning: Failed to load SpatiaLite schema: %v", err)
+							SpatialiteAvailable = false // Mark as unavailable if schema fails
+						}
+					}
 				}
 
 				cleanup := func(ctx context.Context) error {
@@ -490,7 +533,7 @@ func TestMain(m *testing.M) {
 			startFunc: func(ctx context.Context) (func(context.Context) error, string, error) {
 				req := testcontainers.GenericContainerRequest{
 					ContainerRequest: testcontainers.ContainerRequest{
-						Image:        "gvenzl/oracle-free:23-slim",
+						Image:        "gvenzl/oracle-free:23-full",
 						ExposedPorts: []string{"1521/tcp"},
 						Env: map[string]string{
 							"ORACLE_PASSWORD":    "tester_password",
@@ -859,6 +902,23 @@ func TestMain(m *testing.M) {
 					})
 				}
 				chatsCol.InsertMany(ctx, chatDocs)
+
+				// Create locations collection for GIS tests
+				locationsCol := testDB.Collection("locations")
+				locationDocs := []interface{}{
+					bson.M{"_id": int64(1), "name": "San Francisco", "geom": bson.M{"type": "Point", "coordinates": []float64{-122.4194, 37.7749}}},
+					bson.M{"_id": int64(2), "name": "Los Angeles", "geom": bson.M{"type": "Point", "coordinates": []float64{-118.2437, 34.0522}}},
+					bson.M{"_id": int64(3), "name": "New York", "geom": bson.M{"type": "Point", "coordinates": []float64{-74.0060, 40.7128}}},
+				}
+				locationsCol.InsertMany(ctx, locationDocs)
+
+				// Create 2dsphere index for geospatial queries
+				_, err = locationsCol.Indexes().CreateOne(ctx, mongo.IndexModel{
+					Keys: bson.D{{Key: "geom", Value: "2dsphere"}},
+				})
+				if err != nil {
+					return nil, nil, fmt.Errorf("failed to create locations geo index: %w", err)
+				}
 
 				// Create sql.DB using mongodriver
 				connector := mongodriver.NewConnector(client, "graphjin_test")

@@ -431,8 +431,83 @@ func (d *MongoDBDialect) RenderOp(op qcode.ExpOp) (string, error) {
 		return "$or", nil
 	case qcode.OpNot:
 		return "$not", nil
+	case qcode.OpGeoNear:
+		return "$near", nil
+	case qcode.OpGeoWithin, qcode.OpGeoCoveredBy:
+		return "$geoWithin", nil
+	case qcode.OpGeoIntersects:
+		return "$geoIntersects", nil
 	default:
 		return "", fmt.Errorf("mongodb: unsupported operator %d", op)
+	}
+}
+
+// RenderGeoOp renders MongoDB geospatial operations
+func (d *MongoDBDialect) RenderGeoOp(ctx Context, table, col string, ex *qcode.Exp) error {
+	geo := ex.Geo
+	if geo == nil {
+		return fmt.Errorf("GIS expression missing geometry data")
+	}
+
+	// MongoDB GIS operations are rendered inline as JSON in the match stage
+	// Format: {"field": {"$near": {"$geometry": {...}, "$maxDistance": N}}}
+	ctx.WriteString(`"`)
+	ctx.WriteString(col)
+	ctx.WriteString(`":{`)
+
+	switch ex.Op {
+	case qcode.OpGeoDistance, qcode.OpGeoNear:
+		ctx.WriteString(`"$near":{"$geometry":`)
+		d.renderGeoJSON(ctx, geo)
+		if geo.Distance > 0 {
+			distance := geo.Unit.ToMeters(geo.Distance)
+			ctx.WriteString(fmt.Sprintf(`,"$maxDistance":%f`, distance))
+		}
+		if geo.MinDistance > 0 {
+			ctx.WriteString(fmt.Sprintf(`,"$minDistance":%f`, geo.MinDistance))
+		}
+		ctx.WriteString(`}`)
+
+	case qcode.OpGeoWithin, qcode.OpGeoCoveredBy:
+		ctx.WriteString(`"$geoWithin":{"$geometry":`)
+		d.renderGeoJSON(ctx, geo)
+		ctx.WriteString(`}`)
+
+	case qcode.OpGeoIntersects:
+		ctx.WriteString(`"$geoIntersects":{"$geometry":`)
+		d.renderGeoJSON(ctx, geo)
+		ctx.WriteString(`}`)
+
+	case qcode.OpGeoContains:
+		// MongoDB doesn't have $geoContains, use $geoIntersects
+		ctx.WriteString(`"$geoIntersects":{"$geometry":`)
+		d.renderGeoJSON(ctx, geo)
+		ctx.WriteString(`}`)
+
+	default:
+		return fmt.Errorf("unsupported GIS operator in MongoDB: %v", ex.Op)
+	}
+
+	ctx.WriteString(`}`)
+	return nil
+}
+
+// renderGeoJSON renders the GeoJSON geometry for MongoDB
+func (d *MongoDBDialect) renderGeoJSON(ctx Context, geo *qcode.GeoExp) {
+	if len(geo.Point) == 2 {
+		ctx.WriteString(fmt.Sprintf(`{"type":"Point","coordinates":[%f,%f]}`,
+			geo.Point[0], geo.Point[1]))
+	} else if len(geo.Polygon) > 0 {
+		ctx.WriteString(`{"type":"Polygon","coordinates":[[`)
+		for i, pt := range geo.Polygon {
+			if i > 0 {
+				ctx.WriteString(`,`)
+			}
+			ctx.WriteString(fmt.Sprintf(`[%f,%f]`, pt[0], pt[1]))
+		}
+		ctx.WriteString(`]]}`)
+	} else if len(geo.GeoJSON) > 0 {
+		ctx.WriteString(string(geo.GeoJSON))
 	}
 }
 
@@ -1995,12 +2070,26 @@ func (d *MongoDBDialect) renderAggregateQuery(ctx Context, qc *qcode.QCode, sel 
 
 	pipelineDepth := 0
 
-	// Add $match stage if there's a filter (excluding variable conditions)
+	// Add $geoNear stage FIRST if there's a geo filter (required by MongoDB)
+	// $geoNear must be the first stage in an aggregation pipeline
+	if sel.Where.Exp != nil {
+		geoExp := extractGeoExpression(sel.Where.Exp)
+		if geoExp != nil {
+			d.renderGeoNearStage(ctx, geoExp)
+			pipelineDepth++
+		}
+	}
+
+	// Add $match stage if there's a filter (excluding variable conditions and geo ops)
 	// Variable conditions (OpEqualsTrue/OpNotEqualsTrue) are for @include(ifVar:$var)/@skip(ifVar:$var)
 	// and should not be used in $match - they're handled via the condition field
 	if sel.Where.Exp != nil {
 		filteredExp := filterOutVariableConditions(sel.Where.Exp)
+		filteredExp = filterOutGeoExpressions(filteredExp)
 		if filteredExp != nil {
+			if pipelineDepth > 0 {
+				ctx.WriteString(`,`)
+			}
 			d.renderMatchStage(ctx, filteredExp)
 			pipelineDepth++
 		}
@@ -3298,6 +3387,138 @@ func (d *MongoDBDialect) renderMatchStage(ctx Context, exp *qcode.Exp) {
 	ctx.WriteString(`}}`)
 }
 
+// renderGeoNearStage renders a $geoNear aggregation pipeline stage
+// $geoNear must be the first stage in an aggregation pipeline
+func (d *MongoDBDialect) renderGeoNearStage(ctx Context, exp *qcode.Exp) {
+	geo := exp.Geo
+	if geo == nil {
+		return
+	}
+
+	colName := exp.Left.Col.Name
+	if colName == "" {
+		colName = exp.Left.ColName
+	}
+
+	ctx.WriteString(`{"$geoNear":{"near":`)
+
+	// Render the geometry
+	if len(geo.Point) == 2 {
+		ctx.WriteString(fmt.Sprintf(`{"type":"Point","coordinates":[%f,%f]}`,
+			geo.Point[0], geo.Point[1]))
+	} else if len(geo.Polygon) > 0 {
+		ctx.WriteString(`{"type":"Polygon","coordinates":[[`)
+		for i, pt := range geo.Polygon {
+			if i > 0 {
+				ctx.WriteString(`,`)
+			}
+			ctx.WriteString(fmt.Sprintf(`[%f,%f]`, pt[0], pt[1]))
+		}
+		ctx.WriteString(`]]}`)
+	} else if len(geo.GeoJSON) > 0 {
+		ctx.WriteString(string(geo.GeoJSON))
+	}
+
+	ctx.WriteString(`,"distanceField":"__geo_dist","key":"`)
+	ctx.WriteString(colName)
+	ctx.WriteString(`"`)
+
+	// Add maxDistance if specified (convert to meters)
+	if geo.Distance > 0 {
+		distance := geo.Unit.ToMeters(geo.Distance)
+		ctx.WriteString(fmt.Sprintf(`,"maxDistance":%f`, distance))
+	}
+
+	// Add minDistance if specified
+	if geo.MinDistance > 0 {
+		ctx.WriteString(fmt.Sprintf(`,"minDistance":%f`, geo.MinDistance))
+	}
+
+	// Use spherical for WGS84 coordinates
+	ctx.WriteString(`,"spherical":true}}`)
+}
+
+// extractGeoExpression finds and returns the first geo DISTANCE expression from an expression tree
+// Only distance-based queries (st_dwithin, near) require $geoNear stage
+// Polygon-based queries (st_within, st_contains, etc.) use $geoWithin in $match
+func extractGeoExpression(exp *qcode.Exp) *qcode.Exp {
+	if exp == nil {
+		return nil
+	}
+
+	// Check if this is a distance-based geo operation that requires $geoNear
+	if isGeoDistanceOp(exp.Op) {
+		return exp
+	}
+
+	// Recursively search children
+	for _, child := range exp.Children {
+		if geoExp := extractGeoExpression(child); geoExp != nil {
+			return geoExp
+		}
+	}
+
+	return nil
+}
+
+// filterOutGeoExpressions removes distance-based geo expressions from an expression tree
+// Polygon-based queries are kept in $match and rendered with $geoWithin/$geoIntersects
+func filterOutGeoExpressions(exp *qcode.Exp) *qcode.Exp {
+	if exp == nil {
+		return nil
+	}
+
+	// If this is a distance-based geo operation, filter it out (handled by $geoNear)
+	if isGeoDistanceOp(exp.Op) {
+		return nil
+	}
+
+	// For AND/OR operations, filter children
+	if exp.Op == qcode.OpAnd || exp.Op == qcode.OpOr {
+		var filteredChildren []*qcode.Exp
+		for _, child := range exp.Children {
+			filteredChild := filterOutGeoExpressions(child)
+			if filteredChild != nil {
+				filteredChildren = append(filteredChildren, filteredChild)
+			}
+		}
+
+		if len(filteredChildren) == 0 {
+			return nil
+		}
+		if len(filteredChildren) == 1 {
+			return filteredChildren[0]
+		}
+
+		// Create new expression with filtered children
+		newExp := *exp
+		newExp.Children = filteredChildren
+		return &newExp
+	}
+
+	return exp
+}
+
+// isGeoDistanceOp checks if an operation is a distance-based geo operation that requires $geoNear
+func isGeoDistanceOp(op qcode.ExpOp) bool {
+	switch op {
+	case qcode.OpGeoDistance, qcode.OpGeoNear:
+		return true
+	}
+	return false
+}
+
+// isGeoOp checks if an operation is any geo/spatial operation
+func isGeoOp(op qcode.ExpOp) bool {
+	switch op {
+	case qcode.OpGeoDistance, qcode.OpGeoNear, qcode.OpGeoWithin, qcode.OpGeoContains,
+		qcode.OpGeoIntersects, qcode.OpGeoCoveredBy, qcode.OpGeoCovers,
+		qcode.OpGeoTouches, qcode.OpGeoOverlaps:
+		return true
+	}
+	return false
+}
+
 // hasTableRef checks if an expression references a specific table (recursively)
 func hasTableRef(exp *qcode.Exp, tableName string) bool {
 	if exp == nil {
@@ -3435,6 +3656,15 @@ func (d *MongoDBDialect) renderExpression(ctx Context, exp *qcode.Exp) {
 			ctx.WriteString(`":{"$exists":true}}`)
 		}
 		ctx.WriteString(`]`)
+	case qcode.OpGeoDistance, qcode.OpGeoNear, qcode.OpGeoWithin, qcode.OpGeoContains,
+		qcode.OpGeoIntersects, qcode.OpGeoCoveredBy, qcode.OpGeoCovers,
+		qcode.OpGeoTouches, qcode.OpGeoOverlaps:
+		// GIS/Spatial operators - delegate to RenderGeoOp
+		colName := exp.Left.Col.Name
+		if colName == "" {
+			colName = exp.Left.ColName
+		}
+		d.RenderGeoOp(ctx, "", colName, exp)
 	default:
 		// Simple comparison: field op value
 		colName := exp.Left.Col.Name

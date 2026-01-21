@@ -452,11 +452,109 @@ func (d *SQLiteDialect) RenderOp(op qcode.ExpOp) (string, error) {
 		return `REGEXP`, nil // If REGEXP extension loaded
 	case qcode.OpNotRegex, qcode.OpNotIRegex:
 		return `NOT REGEXP`, nil
-    case qcode.OpContains:
-         // json_each or custom check
-         return "", fmt.Errorf("operator not supported in SQLite: %d", op)
+	case qcode.OpContains:
+		// json_each or custom check
+		return "", fmt.Errorf("operator not supported in SQLite: %d", op)
 	}
 	return "", nil
+}
+
+// RenderGeoOp renders SpatiaLite spatial operations
+// Requires SpatiaLite extension to be loaded
+func (d *SQLiteDialect) RenderGeoOp(ctx Context, table, col string, ex *qcode.Exp) error {
+	geo := ex.Geo
+	if geo == nil {
+		return fmt.Errorf("GIS expression missing geometry data")
+	}
+
+	switch ex.Op {
+	case qcode.OpGeoDistance, qcode.OpGeoNear:
+		// SpatiaLite: ST_Distance with ellipsoid calculation
+		ctx.WriteString(`ST_Distance(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`, 1) <= `) // 1 = use ellipsoid
+		d.renderGeoDistance(ctx, geo)
+
+	case qcode.OpGeoWithin:
+		ctx.WriteString(`ST_Within(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoContains:
+		ctx.WriteString(`ST_Contains(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoIntersects:
+		ctx.WriteString(`ST_Intersects(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoCoveredBy:
+		ctx.WriteString(`ST_CoveredBy(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoCovers:
+		ctx.WriteString(`ST_Covers(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoTouches:
+		ctx.WriteString(`ST_Touches(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoOverlaps:
+		ctx.WriteString(`ST_Overlaps(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`)`)
+
+	default:
+		return fmt.Errorf("unsupported GIS operator in SQLite: %v", ex.Op)
+	}
+	return nil
+}
+
+// renderGeoGeometry renders the geometry expression for SpatiaLite
+func (d *SQLiteDialect) renderGeoGeometry(ctx Context, geo *qcode.GeoExp) {
+	if len(geo.Point) == 2 {
+		ctx.WriteString(fmt.Sprintf(`MakePoint(%f, %f, %d)`,
+			geo.Point[0], geo.Point[1], geo.SRID))
+	} else if len(geo.Polygon) > 0 {
+		ctx.WriteString(`GeomFromText('POLYGON((`)
+		for i, pt := range geo.Polygon {
+			if i > 0 {
+				ctx.WriteString(`, `)
+			}
+			ctx.WriteString(fmt.Sprintf(`%f %f`, pt[0], pt[1]))
+		}
+		ctx.WriteString(fmt.Sprintf(`))', %d)`, geo.SRID))
+	} else if len(geo.GeoJSON) > 0 {
+		ctx.WriteString(fmt.Sprintf(`GeomFromGeoJSON('%s')`, string(geo.GeoJSON)))
+	}
+}
+
+// renderGeoDistance renders the distance value for SpatiaLite (in meters)
+func (d *SQLiteDialect) renderGeoDistance(ctx Context, geo *qcode.GeoExp) {
+	distance := geo.Unit.ToMeters(geo.Distance)
+	ctx.WriteString(fmt.Sprintf(`%f`, distance))
 }
 
 func (d *SQLiteDialect) BindVar(i int) string {

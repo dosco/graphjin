@@ -555,10 +555,10 @@ func (d *MySQLDialect) RenderArray(ctx Context, items []string) {
 
 func (d *MySQLDialect) RenderOp(op qcode.ExpOp) (string, error) {
 	switch op {
-	case qcode.OpContains, qcode.OpContainedIn, qcode.OpHasInCommon, 
+	case qcode.OpContains, qcode.OpContainedIn, qcode.OpHasInCommon,
 		 qcode.OpHasKey, qcode.OpHasKeyAny, qcode.OpHasKeyAll:
 		return "", fmt.Errorf("operator not supported in MySQL: %d", op)
-	
+
 	case qcode.OpIn:
 		return `IN`, nil
 	case qcode.OpNotIn:
@@ -575,6 +575,110 @@ func (d *MySQLDialect) RenderOp(op qcode.ExpOp) (string, error) {
 		return `NOT REGEXP`, nil
 	}
 	return "", nil
+}
+
+// RenderGeoOp renders MySQL spatial operations
+func (d *MySQLDialect) RenderGeoOp(ctx Context, table, col string, ex *qcode.Exp) error {
+	geo := ex.Geo
+	if geo == nil {
+		return fmt.Errorf("GIS expression missing geometry data")
+	}
+
+	switch ex.Op {
+	case qcode.OpGeoDistance, qcode.OpGeoNear:
+		// MySQL: ST_Distance_Sphere for geography calculations
+		ctx.WriteString(`ST_Distance_Sphere(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`) <= `)
+		d.renderGeoDistance(ctx, geo)
+
+	case qcode.OpGeoWithin:
+		ctx.WriteString(`ST_Within(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoContains:
+		ctx.WriteString(`ST_Contains(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoIntersects:
+		ctx.WriteString(`ST_Intersects(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoCoveredBy:
+		// MySQL doesn't have ST_CoveredBy, use ST_Within as approximation
+		ctx.WriteString(`ST_Within(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoCovers:
+		// MySQL doesn't have ST_Covers, use ST_Contains as approximation
+		ctx.WriteString(`ST_Contains(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoTouches:
+		ctx.WriteString(`ST_Touches(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoOverlaps:
+		ctx.WriteString(`ST_Overlaps(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`)`)
+
+	default:
+		return fmt.Errorf("unsupported GIS operator in MySQL: %v", ex.Op)
+	}
+	return nil
+}
+
+// renderGeoGeometry renders the geometry expression for MySQL
+// Note: MySQL 8.0+ with SRID 4326 uses (latitude, longitude) order per OGC standard
+func (d *MySQLDialect) renderGeoGeometry(ctx Context, geo *qcode.GeoExp) {
+	if len(geo.Point) == 2 {
+		// MySQL 8.0+: ST_GeomFromText with SRID parameter
+		// geo.Point[0] is longitude, geo.Point[1] is latitude from GraphQL input
+		// MySQL expects (latitude, longitude) order for SRID 4326
+		ctx.WriteString(fmt.Sprintf(`ST_GeomFromText('POINT(%f %f)', %d)`,
+			geo.Point[1], geo.Point[0], geo.SRID))
+	} else if len(geo.Polygon) > 0 {
+		ctx.WriteString(`ST_GeomFromText('POLYGON((`)
+		for i, pt := range geo.Polygon {
+			if i > 0 {
+				ctx.WriteString(`, `)
+			}
+			// pt[0] is longitude, pt[1] is latitude - swap for MySQL
+			ctx.WriteString(fmt.Sprintf(`%f %f`, pt[1], pt[0]))
+		}
+		ctx.WriteString(fmt.Sprintf(`))', %d)`, geo.SRID))
+	} else if len(geo.GeoJSON) > 0 {
+		ctx.WriteString(fmt.Sprintf(`ST_GeomFromGeoJSON('%s')`, string(geo.GeoJSON)))
+	}
+}
+
+// renderGeoDistance renders the distance value for MySQL (in meters)
+func (d *MySQLDialect) renderGeoDistance(ctx Context, geo *qcode.GeoExp) {
+	distance := geo.Unit.ToMeters(geo.Distance)
+	ctx.WriteString(fmt.Sprintf(`%f`, distance))
 }
 
 func (d *MySQLDialect) BindVar(i int) string {

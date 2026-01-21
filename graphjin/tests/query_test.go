@@ -553,10 +553,10 @@ func Example_queryByID() {
 }
 
 func Example_queryBySearch() {
-	// Skip for MSSQL/Oracle: Full-Text Search is not available in Docker containers
+	// Skip for MSSQL: Full-Text Search is not available in MSSQL Docker containers
 	// Skip for MongoDB: MongoDB's $text returns all matching documents sorted by relevance,
 	// not just phrase matches. Product 3 is first but other products containing "Product" are also returned.
-	if dbType == "mssql" || dbType == "oracle" || dbType == "mongodb" {
+	if dbType == "mssql" || dbType == "mongodb" {
 		fmt.Println(`{"products":[{"id":3,"name":"Product 3"}]}`)
 		return
 	}

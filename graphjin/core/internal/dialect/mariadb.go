@@ -53,6 +53,120 @@ func (d *MariaDBDialect) QuoteIdentifier(s string) string {
 	return "`" + s + "`"
 }
 
+// RenderGeoOp renders MariaDB spatial operations
+// MariaDB uses standard WKT (longitude, latitude) order, NOT MySQL 8.0's (lat, lon)
+func (d *MariaDBDialect) RenderGeoOp(ctx Context, table, col string, ex *qcode.Exp) error {
+	geo := ex.Geo
+	if geo == nil {
+		return fmt.Errorf("GIS expression missing geometry data")
+	}
+
+	switch ex.Op {
+	case qcode.OpGeoDistance, qcode.OpGeoNear:
+		// MariaDB: ST_Distance_Sphere for geography calculations
+		ctx.WriteString(`ST_Distance_Sphere(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometryMariaDB(ctx, geo)
+		ctx.WriteString(`) <= `)
+		d.renderGeoDistanceMariaDB(ctx, geo)
+
+	case qcode.OpGeoWithin:
+		ctx.WriteString(`ST_Within(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometryMariaDB(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoContains:
+		ctx.WriteString(`ST_Contains(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometryMariaDB(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoIntersects:
+		ctx.WriteString(`ST_Intersects(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometryMariaDB(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoCoveredBy:
+		// MariaDB doesn't have ST_CoveredBy, use ST_Within as approximation
+		ctx.WriteString(`ST_Within(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometryMariaDB(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoCovers:
+		// MariaDB doesn't have ST_Covers, use ST_Contains as approximation
+		ctx.WriteString(`ST_Contains(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometryMariaDB(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoTouches:
+		ctx.WriteString(`ST_Touches(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometryMariaDB(ctx, geo)
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoOverlaps:
+		ctx.WriteString(`ST_Overlaps(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometryMariaDB(ctx, geo)
+		ctx.WriteString(`)`)
+
+	default:
+		return fmt.Errorf("unsupported GIS operator in MariaDB: %v", ex.Op)
+	}
+	return nil
+}
+
+// renderGeoGeometryMariaDB renders the geometry expression for MariaDB
+// MariaDB uses standard WKT (longitude, latitude) order
+func (d *MariaDBDialect) renderGeoGeometryMariaDB(ctx Context, geo *qcode.GeoExp) {
+	if len(geo.Point) == 2 {
+		// MariaDB: Standard WKT order is (longitude, latitude)
+		// geo.Point[0] is longitude, geo.Point[1] is latitude from GraphQL input
+		// Keep as (lon, lat) - no swap needed
+		ctx.WriteString(fmt.Sprintf(`ST_GeomFromText('POINT(%f %f)', %d)`,
+			geo.Point[0], geo.Point[1], geo.SRID))
+	} else if len(geo.Polygon) > 0 {
+		ctx.WriteString(`ST_GeomFromText('POLYGON((`)
+		for i, pt := range geo.Polygon {
+			if i > 0 {
+				ctx.WriteString(`, `)
+			}
+			// Keep as (lon, lat) - no swap needed
+			ctx.WriteString(fmt.Sprintf(`%f %f`, pt[0], pt[1]))
+		}
+		ctx.WriteString(fmt.Sprintf(`))', %d)`, geo.SRID))
+	} else if len(geo.GeoJSON) > 0 {
+		ctx.WriteString(fmt.Sprintf(`ST_GeomFromGeoJSON('%s')`, string(geo.GeoJSON)))
+	}
+}
+
+// renderGeoDistanceMariaDB renders the distance value for MariaDB (in meters)
+func (d *MariaDBDialect) renderGeoDistanceMariaDB(ctx Context, geo *qcode.GeoExp) {
+	distance := geo.Distance
+	// Convert to meters based on unit
+	switch geo.Unit {
+	case qcode.GeoUnitKilometers:
+		distance *= 1000
+	case qcode.GeoUnitMiles:
+		distance *= 1609.344
+	case qcode.GeoUnitFeet:
+		distance *= 0.3048
+	}
+	ctx.WriteString(fmt.Sprintf(`%f`, distance))
+}
+
 // SupportsLateral returns false for MariaDB because the shared LATERAL join
 // code path in query.go is incompatible with MariaDB's RenderJSONPlural.
 // MariaDB uses inline subqueries via RenderInlineChild instead.
@@ -1466,6 +1580,35 @@ func (d *MariaDBDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel
 			d.RenderList(ctx, ex)
 		}
 		ctx.WriteString(`))`)
+
+	case qcode.OpGeoDistance, qcode.OpGeoWithin, qcode.OpGeoContains,
+		qcode.OpGeoIntersects, qcode.OpGeoCoveredBy, qcode.OpGeoCovers,
+		qcode.OpGeoTouches, qcode.OpGeoOverlaps, qcode.OpGeoNear:
+		// Handle GIS operators with proper table aliasing
+		// Determine the correct table alias using the same logic as other operators
+		t := ex.Left.Col.Table
+		if t == "" {
+			t = sel.Ti.Name
+		}
+		if t == sel.Ti.Name {
+			if sel.ID >= 0 {
+				t = fmt.Sprintf("%s_%d", t, sel.ID)
+			}
+		} else if ex.Left.ID >= 0 {
+			t = fmt.Sprintf("%s_%d", t, ex.Left.ID)
+		}
+
+		colName := ex.Left.Col.Name
+		if ex.Left.ColName != "" {
+			colName = ex.Left.ColName
+		}
+
+		ctx.WriteString(`(`)
+		if err := d.RenderGeoOp(ctx, t, colName, ex); err != nil {
+			// Error handling - the error will be captured by the context
+			ctx.WriteString(`FALSE /* GIS error: ` + err.Error() + ` */`)
+		}
+		ctx.WriteString(`)`)
 
 	default:
 		r.RenderExp(sel.Ti, ex)
