@@ -51,21 +51,32 @@ To add support for a new SQL feature (e.g., a new aggregation or function):
     -   Return an error from the implementation if the feature is not supported by that dialect.
     -   **DO NOT** use `if dialect == ...` checks in the shared `psql` logic.
 
-### 2. Modifying Schema Discovery
+### 2. MCP Maintenance
+
+When adding new features to GraphJin (operators, syntax, capabilities), remember to update the MCP syntax documentation:
+
+-   **File**: `serv/mcp_syntax.go`
+-   **What to update**:
+    -   `FilterOperators` struct - add new filter operators
+    -   `querySyntaxReference` - add operator lists and syntax descriptions
+    -   `queryExamples` - add example queries demonstrating new features
+-   **Why**: AI assistants using MCP call `get_query_syntax` to learn available operators. Undocumented operators won't be used by AI agents.
+
+### 3. Modifying Schema Discovery
 If you need to change how GraphJin discovers tables or relationships:
 -   Focus on `core/internal/sdata/schema.go` and `tables.go`.
 -   Modifications here affect the graph used for query planning.
 
-### 3. Error Handling
+### 4. Error Handling
 -   Use standard Go error wrapping (`fmt.Errorf("%w", err)`).
 -   Fail fast during initialization (`NewGraphJin`).
 -   During query execution, return meaningful error messages that help the user debug their GraphQL query.
 
-### 4. Performance
+### 5. Performance
 -   **Zero Allocation**: Strive for zero-allocation in the hot path (`GraphQL` execution).
 -   **Pre-computation**: Do heavy lifting (schema analysis, allow-list preparation) at initialization time, not request time.
 
-### 5. Configuration
+### 6. Configuration
 -   **YAML Config**: Use `dev.yml` for development, `prod.yml` for production.
 -   **Production Mode**: In production, all queries must be pre-saved (no dynamic client queries). This is a security feature.
 -   **Environment Variables**: Secrets and connection strings should come from environment variables, not config files.

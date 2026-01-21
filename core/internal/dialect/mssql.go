@@ -524,6 +524,92 @@ func (d *MSSQLDialect) RenderOp(op qcode.ExpOp) (string, error) {
 	}
 }
 
+// RenderGeoOp renders MSSQL Spatial operations
+func (d *MSSQLDialect) RenderGeoOp(ctx Context, table, col string, ex *qcode.Exp) error {
+	geo := ex.Geo
+	if geo == nil {
+		return fmt.Errorf("GIS expression missing geometry data")
+	}
+
+	switch ex.Op {
+	case qcode.OpGeoDistance, qcode.OpGeoNear:
+		// MSSQL: column.STDistance(geography) <= distance
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`.STDistance(`)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`) <= `)
+		distance := geo.Unit.ToMeters(geo.Distance)
+		ctx.WriteString(fmt.Sprintf(`%f`, distance))
+
+	case qcode.OpGeoWithin:
+		// geometry.STContains(column) = 1 (inverse of within)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`.STContains(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`) = 1`)
+
+	case qcode.OpGeoContains:
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`.STContains(`)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`) = 1`)
+
+	case qcode.OpGeoIntersects:
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`.STIntersects(`)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`) = 1`)
+
+	case qcode.OpGeoCoveredBy:
+		// MSSQL doesn't have STCoveredBy, use STWithin
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`.STContains(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`) = 1`)
+
+	case qcode.OpGeoCovers:
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`.STContains(`)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`) = 1`)
+
+	case qcode.OpGeoTouches:
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`.STTouches(`)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`) = 1`)
+
+	case qcode.OpGeoOverlaps:
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`.STOverlaps(`)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`) = 1`)
+
+	default:
+		return fmt.Errorf("unsupported GIS operator in MSSQL: %v", ex.Op)
+	}
+	return nil
+}
+
+// renderGeoGeometry renders the geometry expression for MSSQL
+// Note: MSSQL geography::Point uses (lat, lon) order, not (lon, lat)
+func (d *MSSQLDialect) renderGeoGeometry(ctx Context, geo *qcode.GeoExp) {
+	if len(geo.Point) == 2 {
+		// geography::Point(lat, lon, SRID) - note lat/lon order
+		ctx.WriteString(fmt.Sprintf(`geography::Point(%f, %f, %d)`,
+			geo.Point[1], geo.Point[0], geo.SRID))
+	} else if len(geo.Polygon) > 0 {
+		ctx.WriteString(`geography::STGeomFromText('POLYGON((`)
+		for i, pt := range geo.Polygon {
+			if i > 0 {
+				ctx.WriteString(`, `)
+			}
+			ctx.WriteString(fmt.Sprintf(`%f %f`, pt[0], pt[1]))
+		}
+		ctx.WriteString(fmt.Sprintf(`))', %d)`, geo.SRID))
+	}
+}
+
 func (d *MSSQLDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
 	// Handle array column overlap operations
 	// OpHasInCommon is used when comparing array columns to a list
@@ -1960,6 +2046,39 @@ func (d *MSSQLDialect) renderExp(ctx Context, r InlineChildRenderer, psel, sel *
 				}
 				d.renderExistsExp(ctx, r, psel, sel, child, relatedTable, relatedAlias)
 			}
+		}
+		ctx.WriteString(`)`)
+
+	case qcode.OpGeoDistance, qcode.OpGeoWithin, qcode.OpGeoContains,
+		qcode.OpGeoIntersects, qcode.OpGeoCoveredBy, qcode.OpGeoCovers,
+		qcode.OpGeoTouches, qcode.OpGeoOverlaps, qcode.OpGeoNear:
+		// Handle GIS operators with proper table aliasing
+		// Determine the correct table alias using the same logic as renderColumn
+		t := ex.Left.Table
+		if t == "" {
+			t = ex.Left.Col.Table
+			if t == "" {
+				t = sel.Ti.Name
+			}
+		}
+
+		if t == sel.Ti.Name {
+			if sel.ID >= 0 {
+				t = fmt.Sprintf("%s_%d", t, sel.ID)
+			}
+		} else if ex.Left.ID >= 0 {
+			t = fmt.Sprintf("%s_%d", t, ex.Left.ID)
+		}
+
+		colName := ex.Left.Col.Name
+		if ex.Left.ColName != "" {
+			colName = ex.Left.ColName
+		}
+
+		ctx.WriteString(`(`)
+		if err := d.RenderGeoOp(ctx, t, colName, ex); err != nil {
+			// Error handling - render FALSE with error message
+			ctx.WriteString(`0=1 /* GIS error: ` + err.Error() + ` */`)
 		}
 		ctx.WriteString(`)`)
 

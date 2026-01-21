@@ -350,4 +350,20 @@ VALUES ('a', 'node a'),
   ('c', 'node c');
 INSERT INTO graph_edge (src_node, dst_node)
 VALUES ('a', 'b'),
-  ('a', 'c')
+  ('a', 'c');
+
+-- GIS test table for spatial queries (MySQL 8.0+ built-in spatial support)
+CREATE TABLE locations (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(100),
+  geom POINT NOT NULL SRID 4326,
+  SPATIAL INDEX idx_locations_geom (geom)
+);
+
+-- Note: MySQL 8.0 SRID 4326 uses (latitude, longitude) order per OGC standard
+INSERT INTO locations (id, name, geom) VALUES
+  (1, 'San Francisco', ST_GeomFromText('POINT(37.7749 -122.4194)', 4326)),
+  (2, 'Oakland', ST_GeomFromText('POINT(37.8044 -122.2711)', 4326)),
+  (3, 'San Jose', ST_GeomFromText('POINT(37.3382 -121.8853)', 4326)),
+  (4, 'Berkeley', ST_GeomFromText('POINT(37.8716 -122.2727)', 4326)),
+  (5, 'Palo Alto', ST_GeomFromText('POINT(37.4419 -122.1430)', 4326))

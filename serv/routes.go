@@ -33,48 +33,55 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 		mux.Handle(DeployRoute, adminDeployHandler(s1))
 	}
 
-	if s.conf.WebUI {
-		mux.Handle("/*", s1.WebUI("/", routeGraphQL))
+	// Skip non-MCP APIs in MCP-only mode
+	if !s.conf.MCP.Only {
+		if s.conf.WebUI {
+			mux.Handle("/*", s1.WebUI("/", routeGraphQL))
 
-		// Admin API routes for Web UI
-		mux.Handle("/api/v1/admin/tables", adminTablesHandler(s1))
-		mux.Handle("/api/v1/admin/tables/*", adminTableSchemaHandler(s1))
-		mux.Handle("/api/v1/admin/queries", adminQueriesHandler(s1))
-		mux.Handle("/api/v1/admin/queries/*", adminQueryDetailHandler(s1))
-		mux.Handle("/api/v1/admin/fragments", adminFragmentsHandler(s1))
-		mux.Handle("/api/v1/admin/config", adminConfigHandler(s1))
-		mux.Handle("/api/v1/admin/database", adminDatabaseHandler(s1))
-		mux.Handle("/api/v1/admin/databases", adminDatabasesHandler(s1))
-	}
+			// Admin API routes for Web UI
+			mux.Handle("/api/v1/admin/tables", adminTablesHandler(s1))
+			mux.Handle("/api/v1/admin/tables/*", adminTableSchemaHandler(s1))
+			mux.Handle("/api/v1/admin/queries", adminQueriesHandler(s1))
+			mux.Handle("/api/v1/admin/queries/*", adminQueryDetailHandler(s1))
+			mux.Handle("/api/v1/admin/fragments", adminFragmentsHandler(s1))
+			mux.Handle("/api/v1/admin/config", adminConfigHandler(s1))
+			mux.Handle("/api/v1/admin/database", adminDatabaseHandler(s1))
+			mux.Handle("/api/v1/admin/databases", adminDatabasesHandler(s1))
+		}
 
-	ah, err := auth.NewAuthHandlerFunc(s.conf.Auth)
-	if err != nil {
-		s.log.Fatalf("api: error initializing auth handler: %s", err)
-	}
+		ah, err := auth.NewAuthHandlerFunc(s.conf.Auth)
+		if err != nil {
+			s.log.Fatalf("api: error initializing auth handler: %s", err)
+		}
 
-	if s.conf.Auth.Development {
-		s.log.Warn("api: auth.development=true this allows clients to bypass authentication")
-	}
+		if s.conf.Auth.Development {
+			s.log.Warn("api: auth.development=true this allows clients to bypass authentication")
+		}
 
-	// GraphQL / REST API
-	if ns == nil {
-		mux.Handle(routeGraphQL, s1.GraphQL(ah))
-		mux.Handle(routeREST, s1.REST(ah))
-		mux.Handle(routeOpenAPI, s1.OpenAPI())
-	} else {
-		mux.Handle(routeGraphQL, s1.GraphQLWithNS(ah, *ns))
-		mux.Handle(routeREST, s1.RESTWithNS(ah, *ns))
-		mux.Handle(routeOpenAPI, s1.OpenAPIWithNS(*ns))
+		// GraphQL / REST API
+		if ns == nil {
+			mux.Handle(routeGraphQL, s1.GraphQL(ah))
+			mux.Handle(routeREST, s1.REST(ah))
+			mux.Handle(routeOpenAPI, s1.OpenAPI())
+		} else {
+			mux.Handle(routeGraphQL, s1.GraphQLWithNS(ah, *ns))
+			mux.Handle(routeREST, s1.RESTWithNS(ah, *ns))
+			mux.Handle(routeOpenAPI, s1.OpenAPIWithNS(*ns))
+		}
 	}
 
 	// MCP (Model Context Protocol) API
 	// Transport is implicit: HTTP service uses SSE/HTTP, CLI uses stdio via RunMCPStdio()
 	// Auth: Uses same auth middleware as GraphQL/REST endpoints
 	if !s.conf.MCP.Disable {
+		mcpAuth, err := auth.NewAuthHandlerFunc(s.conf.Auth)
+		if err != nil {
+			s.log.Fatalf("api: error initializing MCP auth handler: %s", err)
+		}
 		// SSE transport for web-based integrations (with auth)
-		mux.Handle(routeMCP, s1.MCPHandlerWithAuth(ah))
+		mux.Handle(routeMCP, s1.MCPHandlerWithAuth(mcpAuth))
 		// HTTP transport for stateless API integrations (with auth)
-		mux.Handle(routeMCPMsg, s1.MCPMessageHandlerWithAuth(ah))
+		mux.Handle(routeMCPMsg, s1.MCPMessageHandlerWithAuth(mcpAuth))
 	}
 
 	return setServerHeader(mux), nil

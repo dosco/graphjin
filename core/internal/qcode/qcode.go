@@ -190,6 +190,7 @@ type Exp struct {
 		ListVal  []string
 		Path     []string
 	}
+	Geo       *GeoExp // GIS-specific expression data
 	Children  []*Exp
 	childrenA [5]*Exp
 }
@@ -293,6 +294,17 @@ const (
 	OpSelectExists
 	OpJSONPath      // JSON path operator (->)
 	OpJSONPathText  // JSON path text operator (->>)
+
+	// GIS/Spatial operators
+	OpGeoDistance   // ST_DWithin - distance-based filtering
+	OpGeoWithin     // ST_Within - geometry A within B
+	OpGeoContains   // ST_Contains - geometry A contains B
+	OpGeoIntersects // ST_Intersects - geometries intersect
+	OpGeoCoveredBy  // ST_CoveredBy - geometry A covered by B
+	OpGeoCovers     // ST_Covers - geometry A covers B
+	OpGeoTouches    // ST_Touches - geometries touch at boundary
+	OpGeoOverlaps   // ST_Overlaps - geometries overlap
+	OpGeoNear       // MongoDB $near / $nearSphere
 )
 
 type ValType int8
@@ -307,6 +319,48 @@ const (
 	ValDBVar
 	ValSubQuery
 )
+
+// GeoUnit represents distance units for GIS operations
+type GeoUnit int8
+
+const (
+	GeoUnitMeters GeoUnit = iota
+	GeoUnitKilometers
+	GeoUnitMiles
+	GeoUnitFeet
+)
+
+// ToMeters converts a distance value to meters based on the unit
+func (u GeoUnit) ToMeters(val float64) float64 {
+	switch u {
+	case GeoUnitKilometers:
+		return val * 1000
+	case GeoUnitMiles:
+		return val * 1609.344
+	case GeoUnitFeet:
+		return val * 0.3048
+	default:
+		return val
+	}
+}
+
+// GeoExp holds GIS-specific expression data
+type GeoExp struct {
+	// Geometry specification (one of these will be set)
+	Point   []float64   // [longitude, latitude] for point
+	Polygon [][]float64 // Array of [lon, lat] pairs for polygon ring
+	GeoJSON []byte      // Full GeoJSON geometry object
+
+	// Operation parameters
+	Distance    float64 // Distance value for st_dwithin
+	DistanceVar string  // Variable name for distance if parameterized
+	Unit        GeoUnit // Distance unit (meters, km, miles, feet)
+	SRID        int     // Spatial Reference ID (default 4326 = WGS84)
+
+	// For MongoDB
+	MinDistance float64 // $minDistance for $near
+	Spherical   bool    // Use spherical calculations
+}
 
 type AggregrateOp int8
 
@@ -1313,4 +1367,14 @@ func (sel *Select) GetInternalArg(name string) (Arg, bool) {
 		}
 	}
 	return arg, false
+}
+
+// IsGeoOp returns true if the operator is a GIS/spatial operator
+func IsGeoOp(op ExpOp) bool {
+	switch op {
+	case OpGeoDistance, OpGeoWithin, OpGeoContains, OpGeoIntersects,
+		OpGeoCoveredBy, OpGeoCovers, OpGeoTouches, OpGeoOverlaps, OpGeoNear:
+		return true
+	}
+	return false
 }

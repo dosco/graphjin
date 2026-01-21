@@ -36,6 +36,7 @@ replace (
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
+	github.com/Code-Hex/dd v1.1.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
@@ -46,6 +47,7 @@ require (
 	github.com/mark3labs/mcp-go v0.43.2 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
 	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect
+	github.com/thessem/zap-prettyconsole v0.6.0 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect

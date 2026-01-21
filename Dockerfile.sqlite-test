@@ -1,0 +1,24 @@
+# Dockerfile for running SQLite tests with SpatiaLite extension
+FROM golang:1.24rc1-bookworm
+
+# Install SpatiaLite and required dependencies
+RUN apt-get update && apt-get install -y \
+    libspatialite-dev \
+    libsqlite3-mod-spatialite \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy entire project (uses Go workspace)
+COPY . .
+
+# Remove wasm from go.work since it's excluded by .dockerignore
+RUN sed -i '/wasm/d' go.work
+
+# Allow Go to auto-download required toolchain version
+ENV GOTOOLCHAIN=auto
+ENV CGO_ENABLED=1
+
+# Download dependencies
+RUN go work sync

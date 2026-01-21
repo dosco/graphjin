@@ -307,3 +307,18 @@ BEGIN
   SELECT user_id as id, user_data as result_data;
 END;
 $$;
+
+-- GIS test table for spatial queries (PostGIS extension)
+CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE TABLE locations (
+  id BIGSERIAL PRIMARY KEY,
+  name VARCHAR(100),
+  geom GEOMETRY(Point, 4326)
+);
+CREATE INDEX idx_locations_geom ON locations USING GIST (geom);
+INSERT INTO locations (name, geom) VALUES
+  ('San Francisco', ST_SetSRID(ST_MakePoint(-122.4194, 37.7749), 4326)),
+  ('Oakland', ST_SetSRID(ST_MakePoint(-122.2711, 37.8044), 4326)),
+  ('San Jose', ST_SetSRID(ST_MakePoint(-121.8853, 37.3382), 4326)),
+  ('Berkeley', ST_SetSRID(ST_MakePoint(-122.2727, 37.8716), 4326)),
+  ('Palo Alto', ST_SetSRID(ST_MakePoint(-122.1430, 37.4419), 4326));

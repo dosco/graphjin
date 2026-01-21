@@ -2,10 +2,12 @@ package serv
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -112,6 +114,7 @@ func startHTTP(s1 *HttpService) {
 	}
 
 	s.zlog.Info("GraphJin started", fields...)
+	printDevModeInfo(s)
 
 	l, err := net.Listen("tcp", s.conf.hostPort)
 	if err != nil {
@@ -134,4 +137,79 @@ func setServerHeader(h http.Handler) http.Handler {
 		h.ServeHTTP(w, r)
 	}
 	return http.HandlerFunc(fn)
+}
+
+// printDevModeInfo prints useful development information on startup
+func printDevModeInfo(s *graphjinService) {
+	if s.conf.Serv.Production {
+		return
+	}
+
+	// Convert 0.0.0.0 to localhost for display
+	hostPort := s.conf.hostPort
+	displayHost := hostPort
+	if strings.HasPrefix(hostPort, "0.0.0.0:") {
+		displayHost = "localhost" + hostPort[7:]
+	}
+
+	fmt.Println()
+	fmt.Println("Development Server URLs")
+	fmt.Println("───────────────────────")
+
+	if s.conf.WebUI && !s.conf.MCP.Only {
+		fmt.Printf("  Web UI:      http://%s/\n", displayHost)
+	}
+	if !s.conf.MCP.Only {
+		fmt.Printf("  GraphQL:     http://%s/api/v1/graphql\n", displayHost)
+		fmt.Printf("  REST API:    http://%s/api/v1/rest/\n", displayHost)
+	}
+	if !s.conf.MCP.Disable {
+		fmt.Printf("  MCP (SSE):   http://%s/api/v1/mcp\n", displayHost)
+	}
+
+	if !s.conf.MCP.Disable {
+		fmt.Println()
+		fmt.Println("Claude Desktop Configuration")
+		fmt.Println("────────────────────────────")
+		fmt.Println("Add to claude_desktop_config.json:")
+		fmt.Println()
+		printClaudeConfig(s.conf)
+	}
+	fmt.Println()
+}
+
+// printClaudeConfig prints a Claude Desktop configuration snippet
+func printClaudeConfig(conf *Config) {
+	execPath, _ := os.Executable()
+	if execPath == "" {
+		execPath = "graphjin"
+	}
+
+	configPath := conf.Serv.ConfigPath
+	if configPath == "" {
+		configPath = "./config"
+	}
+
+	userID := conf.MCP.StdioUserID
+	if userID == "" {
+		userID = "1"
+	}
+	userRole := conf.MCP.StdioUserRole
+	if userRole == "" {
+		userRole = "user"
+	}
+
+	fmt.Printf(`  {
+    "mcpServers": {
+      "%s": {
+        "command": "%s",
+        "args": ["mcp", "--path", "%s"],
+        "env": {
+          "GRAPHJIN_USER_ID": "%s",
+          "GRAPHJIN_USER_ROLE": "%s"
+        }
+      }
+    }
+  }
+`, conf.AppName, execPath, configPath, userID, userRole)
 }

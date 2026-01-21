@@ -10,7 +10,7 @@ type Cache struct {
 
 // initCache initializes the cache
 func (gj *graphjinEngine) initCache() (err error) {
-	gj.cache.cache, err = lru.New2Q[string, []byte](500)
+	gj.cache.cache, err = lru.New2Q[string, []byte](5000)
 	return
 }
 

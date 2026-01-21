@@ -29,6 +29,23 @@ func (d *OracleDialect) RenderLimit(ctx Context, sel *qcode.Select) {
 		return
 	}
 
+	// Add default ORDER BY for deterministic results when no ORDER BY specified
+	// Oracle's FETCH/OFFSET without ORDER BY returns rows in undefined order
+	// Skip for:
+	// - JSON virtual tables (Type == "json") which don't have a real primary key
+	// - Recursive relationships where order depends on traversal pattern
+	if len(sel.OrderBy) == 0 && sel.Ti.Type != "json" && sel.Rel.Type != sdata.RelRecursive {
+		needsOrderBy := sel.Singular ||
+			sel.Paging.LimitVar != "" ||
+			sel.Paging.Limit != 0 ||
+			sel.Paging.OffsetVar != "" ||
+			sel.Paging.Offset != 0
+		if needsOrderBy && sel.Ti.PrimaryCol.Name != "" {
+			ctx.WriteString(` ORDER BY `)
+			ctx.ColWithTable(sel.Ti.Name, sel.Ti.PrimaryCol.Name)
+		}
+	}
+
 	if sel.Singular {
 		ctx.WriteString(` FETCH FIRST 1 ROWS ONLY`)
 		return
@@ -573,6 +590,101 @@ func (d *OracleDialect) RenderOp(op qcode.ExpOp) (string, error) {
 		return `NOT LIKE`, nil
 	}
 	return "", nil
+}
+
+// RenderGeoOp renders Oracle Spatial operations
+func (d *OracleDialect) RenderGeoOp(ctx Context, table, col string, ex *qcode.Exp) error {
+	geo := ex.Geo
+	if geo == nil {
+		return fmt.Errorf("GIS expression missing geometry data")
+	}
+
+	switch ex.Op {
+	case qcode.OpGeoDistance, qcode.OpGeoNear:
+		// SDO_WITHIN_DISTANCE(geometry1, geometry2, 'distance=X unit=M')
+		ctx.WriteString(`SDO_WITHIN_DISTANCE(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		distance := geo.Unit.ToMeters(geo.Distance)
+		ctx.WriteString(fmt.Sprintf(`, 'distance=%f unit=M') = 'TRUE'`, distance))
+
+	case qcode.OpGeoWithin:
+		// SDO_INSIDE for "within"
+		ctx.WriteString(`SDO_INSIDE(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`) = 'TRUE'`)
+
+	case qcode.OpGeoContains:
+		ctx.WriteString(`SDO_CONTAINS(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`) = 'TRUE'`)
+
+	case qcode.OpGeoIntersects:
+		// SDO_ANYINTERACT for intersects
+		ctx.WriteString(`SDO_ANYINTERACT(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`) = 'TRUE'`)
+
+	case qcode.OpGeoCoveredBy:
+		ctx.WriteString(`SDO_COVEREDBY(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`) = 'TRUE'`)
+
+	case qcode.OpGeoCovers:
+		ctx.WriteString(`SDO_COVERS(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`) = 'TRUE'`)
+
+	case qcode.OpGeoTouches:
+		ctx.WriteString(`SDO_TOUCH(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`) = 'TRUE'`)
+
+	case qcode.OpGeoOverlaps:
+		ctx.WriteString(`SDO_OVERLAPS(`)
+		ctx.ColWithTable(table, col)
+		ctx.WriteString(`, `)
+		d.renderGeoGeometry(ctx, geo)
+		ctx.WriteString(`) = 'TRUE'`)
+
+	default:
+		return fmt.Errorf("unsupported GIS operator in Oracle: %v", ex.Op)
+	}
+	return nil
+}
+
+// renderGeoGeometry renders the geometry expression for Oracle Spatial
+func (d *OracleDialect) renderGeoGeometry(ctx Context, geo *qcode.GeoExp) {
+	if len(geo.Point) == 2 {
+		// SDO_GEOMETRY(2001, SRID, SDO_POINT_TYPE(lon, lat, NULL), NULL, NULL)
+		ctx.WriteString(fmt.Sprintf(
+			`SDO_GEOMETRY(2001, %d, SDO_POINT_TYPE(%f, %f, NULL), NULL, NULL)`,
+			geo.SRID, geo.Point[0], geo.Point[1]))
+	} else if len(geo.Polygon) > 0 {
+		// SDO_GEOMETRY for polygon
+		ctx.WriteString(fmt.Sprintf(`SDO_GEOMETRY(2003, %d, NULL, `, geo.SRID))
+		ctx.WriteString(`SDO_ELEM_INFO_ARRAY(1, 1003, 1), SDO_ORDINATE_ARRAY(`)
+		for i, pt := range geo.Polygon {
+			if i > 0 {
+				ctx.WriteString(`, `)
+			}
+			ctx.WriteString(fmt.Sprintf(`%f, %f`, pt[0], pt[1]))
+		}
+		ctx.WriteString(`))`)
+	}
 }
 
 func (d *OracleDialect) BindVar(i int) string {

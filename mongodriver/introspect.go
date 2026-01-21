@@ -290,7 +290,20 @@ func inferBSONType(v any) string {
 		return "date"
 	case bson.A, []any:
 		return "array"
-	case bson.M, map[string]any:
+	case bson.M:
+		if isGeoJSON(val) {
+			return "geojson"
+		}
+		return "object"
+	case bson.D:
+		if isGeoJSOND(val) {
+			return "geojson"
+		}
+		return "object"
+	case map[string]any:
+		if isGeoJSONMap(val) {
+			return "geojson"
+		}
 		return "object"
 	case bson.Binary:
 		return "binData"
@@ -304,6 +317,68 @@ func inferBSONType(v any) string {
 		}
 		return "string" // Default fallback
 	}
+}
+
+// isGeoJSON checks if a bson.M value is a GeoJSON object.
+func isGeoJSON(m bson.M) bool {
+	typeVal, hasType := m["type"]
+	_, hasCoords := m["coordinates"]
+	if !hasType || !hasCoords {
+		return false
+	}
+	typeStr, ok := typeVal.(string)
+	if !ok {
+		return false
+	}
+	switch typeStr {
+	case "Point", "LineString", "Polygon", "MultiPoint", "MultiLineString", "MultiPolygon", "GeometryCollection":
+		return true
+	}
+	return false
+}
+
+// isGeoJSONMap checks if a map[string]any value is a GeoJSON object.
+func isGeoJSONMap(m map[string]any) bool {
+	typeVal, hasType := m["type"]
+	_, hasCoords := m["coordinates"]
+	if !hasType || !hasCoords {
+		return false
+	}
+	typeStr, ok := typeVal.(string)
+	if !ok {
+		return false
+	}
+	switch typeStr {
+	case "Point", "LineString", "Polygon", "MultiPoint", "MultiLineString", "MultiPolygon", "GeometryCollection":
+		return true
+	}
+	return false
+}
+
+// isGeoJSOND checks if a bson.D value is a GeoJSON object.
+func isGeoJSOND(d bson.D) bool {
+	var typeVal any
+	var hasType, hasCoords bool
+	for _, elem := range d {
+		if elem.Key == "type" {
+			typeVal = elem.Value
+			hasType = true
+		} else if elem.Key == "coordinates" {
+			hasCoords = true
+		}
+	}
+	if !hasType || !hasCoords {
+		return false
+	}
+	typeStr, ok := typeVal.(string)
+	if !ok {
+		return false
+	}
+	switch typeStr {
+	case "Point", "LineString", "Polygon", "MultiPoint", "MultiLineString", "MultiPolygon", "GeometryCollection":
+		return true
+	}
+	return false
 }
 
 // normalizeBSONType handles bsonType being string or array.
@@ -346,6 +421,8 @@ func bsonTypeToSQL(bsonType string) string {
 		return "jsonb"
 	case "object":
 		return "jsonb"
+	case "geojson":
+		return "geometry" // GeoJSON objects map to geometry for GIS operations
 	case "binData":
 		return "bytea"
 	case "null":

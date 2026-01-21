@@ -28,6 +28,7 @@ type FilterOperators struct {
 	Null       []string `json:"null"`
 	Text       []string `json:"text"`
 	JSON       []string `json:"json"`
+	Spatial    []string `json:"spatial"`
 }
 
 // PaginationSyntax shows pagination options
@@ -108,6 +109,7 @@ type QueryExamples struct {
 	Aggregations  []QueryExample `json:"aggregations"`
 	Recursive     []QueryExample `json:"recursive"`
 	Mutations     []QueryExample `json:"mutations"`
+	Spatial       []QueryExample `json:"spatial"`
 }
 
 // querySyntaxReference is the static reference data for query syntax
@@ -118,6 +120,7 @@ var querySyntaxReference = QuerySyntaxReference{
 		Null:       []string{"is_null"},
 		Text:       []string{"like", "ilike", "regex", "iregex", "similar"},
 		JSON:       []string{"has_key", "has_key_any", "has_key_all", "contains", "contained_in"},
+		Spatial:    []string{"st_dwithin", "st_within", "st_contains", "st_intersects", "st_coveredby", "st_covers", "st_touches", "st_overlaps", "near"},
 	},
 	LogicalOperators: []string{"and", "or", "not"},
 	Pagination: PaginationSyntax{
@@ -230,6 +233,14 @@ var queryExamples = QueryExamples{
 		{Description: "Delete", Query: "mutation { products(delete: true, where: { id: { eq: $id } }) { id } }"},
 		{Description: "Connect existing record", Query: "mutation { products(insert: { name: $name, owner: { connect: { id: $owner_id } } }) { id } }"},
 	},
+	Spatial: []QueryExample{
+		{Description: "Find within distance (meters)", Query: "{ locations(where: { geom: { st_dwithin: { point: [-122.4, 37.7], distance: 1000 } } }) { id name } }"},
+		{Description: "Find within distance (miles)", Query: "{ locations(where: { geom: { st_dwithin: { point: [-122.4, 37.7], distance: 5, unit: \"miles\" } } }) { id name } }"},
+		{Description: "Point in polygon", Query: "{ locations(where: { geom: { st_within: { polygon: [[-122.5, 37.7], [-122.3, 37.7], [-122.3, 37.9], [-122.5, 37.9], [-122.5, 37.7]] } } }) { id } }"},
+		{Description: "Polygon contains point", Query: "{ regions(where: { boundary: { st_contains: { point: [-122.4, 37.7] } } }) { id name } }"},
+		{Description: "Geometry intersection (GeoJSON)", Query: "{ parcels(where: { geom: { st_intersects: { geometry: { type: \"Polygon\", coordinates: [[[-122.5, 37.7], [-122.3, 37.7], [-122.3, 37.9], [-122.5, 37.9], [-122.5, 37.7]]] } } } }) { id } }"},
+		{Description: "MongoDB near query", Query: "{ locations(where: { geom: { near: { point: [-122.4, 37.7], maxDistance: 5000 } } }) { id name } }"},
+	},
 }
 
 // registerSyntaxTools registers the syntax reference tools
@@ -295,6 +306,8 @@ func (ms *mcpServer) handleGetQueryExamples(ctx context.Context, req mcp.CallToo
 		result = map[string][]QueryExample{"recursive": queryExamples.Recursive}
 	case "mutations":
 		result = map[string][]QueryExample{"mutations": queryExamples.Mutations}
+	case "spatial":
+		result = map[string][]QueryExample{"spatial": queryExamples.Spatial}
 	default:
 		result = queryExamples
 	}

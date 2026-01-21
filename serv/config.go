@@ -63,8 +63,9 @@ type Serv struct {
 	// Logging level must be one of debug, error, warn, info
 	LogLevel string `mapstructure:"log_level" jsonschema:"title=Log Level,enum=debug,enum=error,enum=warn,enum=info"`
 
-	// Logging Format must me either json or simple
-	LogFormat string `mapstructure:"log_format" jsonschema:"title=Logging Level,enum=json,enum=simple"`
+	// Logging Format: "auto" (default, colored console in dev, JSON in production),
+	// "json" (always JSON), or "simple" (always colored console)
+	LogFormat string `mapstructure:"log_format" jsonschema:"title=Logging Format,enum=auto,enum=json,enum=simple"`
 
 	// The host and port the service runs on. Example localhost:8080
 	HostPort string `mapstructure:"host_port" jsonschema:"title=Host and Port"`
@@ -207,6 +208,10 @@ type MCPConfig struct {
 
 	// Default user role for stdio transport (CLI). Can be overridden by GRAPHJIN_USER_ROLE env var.
 	StdioUserRole string `mapstructure:"stdio_user_role" jsonschema:"title=Stdio User Role"`
+
+	// Run in MCP-only mode - disables GraphQL, REST, WebUI, and OpenAPI endpoints
+	// Only health check and MCP endpoints will be available
+	Only bool `mapstructure:"only" jsonschema:"title=MCP Only Mode,default=false"`
 }
 
 // Telemetry struct contains OpenCensus metrics and tracing related config
@@ -364,7 +369,7 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("seed_file", "seed.js")
 
 	vi.SetDefault("log_level", "info")
-	vi.SetDefault("log_format", "json")
+	vi.SetDefault("log_format", "auto")
 
 	vi.SetDefault("default_block", true)
 
@@ -389,6 +394,7 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("mcp.enable_search", true)
 	vi.SetDefault("mcp.allow_mutations", true)
 	vi.SetDefault("mcp.allow_raw_queries", true)
+	vi.SetDefault("mcp.only", false)
 
 	return vi
 }
@@ -433,6 +439,19 @@ func (c *Config) SetName(name string) {
 // rateLimiterEnable returns true if the rate limiter is enabled
 func (c *Config) rateLimiterEnable() bool {
 	return c.RateLimiter.Rate > 0 && c.RateLimiter.Bucket > 0
+}
+
+// ShouldUseJSONLogs returns true if logs should be in JSON format.
+// Returns true if log_format is "json" OR if log_format is "auto" and production mode is enabled.
+// Returns false otherwise (colored console output for dev mode).
+func (c *Config) ShouldUseJSONLogs() bool {
+	if c.LogFormat == "json" {
+		return true
+	}
+	if c.LogFormat == "auto" && c.Serv.Production {
+		return true
+	}
+	return false
 }
 
 // GetConfigName returns the name of the configuration
