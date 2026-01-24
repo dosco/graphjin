@@ -216,14 +216,15 @@ func (gj *graphjinEngine) initIntro() (err error) {
 // Initializes the qcode compilers
 func (gj *graphjinEngine) initCompilers() (err error) {
 	qcc := qcode.Config{
-		TConfig:         gj.tmap,
-		DefaultBlock:    gj.conf.DefaultBlock,
-		DefaultLimit:    gj.conf.DefaultLimit,
-		DisableAgg:      gj.conf.DisableAgg,
-		DisableFuncs:    gj.conf.DisableFuncs,
-		EnableCamelcase: gj.conf.EnableCamelcase,
-		DBSchema:        gj.schema.DBSchema(),
-		Validators:      valid.Validators,
+		TConfig:             gj.tmap,
+		DefaultBlock:        gj.conf.DefaultBlock,
+		DefaultLimit:        gj.conf.DefaultLimit,
+		DisableAgg:          gj.conf.DisableAgg,
+		DisableFuncs:        gj.conf.DisableFuncs,
+		EnableCamelcase:     gj.conf.EnableCamelcase,
+		DBSchema:            gj.schema.DBSchema(),
+		Validators:          valid.Validators,
+		EnableCacheTracking: gj.conf.CacheTrackingEnabled,
 	}
 
 	gj.qcodeCompiler, err = qcode.NewCompiler(gj.schema, qcc)
@@ -345,6 +346,11 @@ func (r *Result) CacheControl() string {
 	return r.cacheControl
 }
 
+// CacheHit returns true if the response was served from cache
+func (r *Result) CacheHit() bool {
+	return r.cacheHit
+}
+
 // func (c *gstate) addTrace(sel []qcode.Select, id int32, st time.Time) {
 // 	et := time.Now()
 // 	du := et.Sub(st)
@@ -408,7 +414,7 @@ func (s *gstate) debugLogStmt() {
 
 // Saved the query qcode to the allow list
 func (gj *graphjinEngine) saveToAllowList(qc *qcode.QCode, ns string) (err error) {
-	if gj.conf.DisableAllowList {
+	if qc == nil || gj.conf.DisableAllowList {
 		return nil
 	}
 

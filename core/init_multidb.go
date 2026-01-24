@@ -118,13 +118,14 @@ func (gj *graphjinEngine) initDBContext(name string, db *sql.DB, dbConf Database
 
 	// Create QCode compiler for this database
 	qcc := qcode.Config{
-		TConfig:         gj.tmap,
-		DefaultBlock:    gj.conf.DefaultBlock,
-		DefaultLimit:    gj.conf.DefaultLimit,
-		DisableAgg:      gj.conf.DisableAgg,
-		DisableFuncs:    gj.conf.DisableFuncs,
-		EnableCamelcase: gj.conf.EnableCamelcase,
-		DBSchema:        ctx.schema.DBSchema(),
+		TConfig:             gj.tmap,
+		DefaultBlock:        gj.conf.DefaultBlock,
+		DefaultLimit:        gj.conf.DefaultLimit,
+		DisableAgg:          gj.conf.DisableAgg,
+		DisableFuncs:        gj.conf.DisableFuncs,
+		EnableCamelcase:     gj.conf.EnableCamelcase,
+		DBSchema:            ctx.schema.DBSchema(),
+		EnableCacheTracking: gj.conf.CacheTrackingEnabled,
 	}
 
 	ctx.qcodeCompiler, err = qcode.NewCompiler(ctx.schema, qcc)

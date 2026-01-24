@@ -35,6 +35,12 @@ func (co *Compiler) compileFields(
 	}
 
 	co.addOrderByColumns(sel)
+
+	// Inject __gj_id field for cache tracking if enabled
+	if co.c.EnableCacheTracking && qc.Type == QTQuery {
+		co.addCacheTrackingField(sel)
+	}
+
 	return nil
 }
 
@@ -349,4 +355,40 @@ func (sel *Select) bcolExists(name string) int {
 		}
 	}
 	return -1
+}
+
+// addCacheTrackingField injects __gj_id field with primary key for cache row tracking
+func (co *Compiler) addCacheTrackingField(sel *Select) {
+	// Skip if table has no primary key
+	pk := sel.Ti.PrimaryCol
+	if pk.Name == "" {
+		return
+	}
+
+	// Skip if __gj_id already exists or pk column is already requested
+	for _, f := range sel.Fields {
+		if f.FieldName == "__gj_id" {
+			return
+		}
+		// If user already requested the PK column, use it with alias
+		if f.Type == FieldTypeCol && strings.EqualFold(f.Col.Name, pk.Name) {
+			return
+		}
+	}
+
+	// Add the injected field
+	field := Field{
+		ID:        int32(len(sel.Fields)),
+		ParentID:  sel.ID,
+		Type:      FieldTypeCol,
+		Col:       pk,
+		FieldName: "__gj_id",
+	}
+
+	sel.Fields = append(sel.Fields, field)
+
+	// Also add to base columns if not already present
+	if sel.bcolExists(pk.Name) == -1 {
+		sel.BCols = append(sel.BCols, Column{Col: pk, FieldName: "__gj_id"})
+	}
 }

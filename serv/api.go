@@ -90,6 +90,7 @@ type graphjinService struct {
 	adminCount   int32
 	namespace    *string
 	tracer       trace.Tracer
+	cache        ResponseCache // Response cache (Redis or in-memory)
 }
 
 type Option func(*graphjinService) error
@@ -211,6 +212,11 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*graphjinS
 		return nil, err
 	}
 
+	// Initialize Redis cache (non-fatal if unavailable)
+	if err := s.initResponseCache(); err != nil {
+		s.log.Warnf("response cache init error: %s", err)
+	}
+
 	if s.deployActive {
 		err = s.hotStart()
 	} else {
@@ -233,6 +239,10 @@ func (s *graphjinService) normalStart() error {
 	}
 	if s.namespace != nil {
 		opts = append(opts, core.OptionSetNamespace(*s.namespace))
+	}
+	// Add response cache if enabled
+	if s.cache != nil {
+		opts = append(opts, core.OptionSetResponseCache(s.cache))
 	}
 
 	var err error
@@ -277,6 +287,10 @@ func (s *graphjinService) hotStart() error {
 	if s.namespace != nil {
 		opts = append(opts,
 			core.OptionSetNamespace(*s.namespace))
+	}
+	// Add response cache if enabled
+	if s.cache != nil {
+		opts = append(opts, core.OptionSetResponseCache(s.cache))
 	}
 
 	s.gj, err = core.NewGraphJin(&s.conf.Core, s.db, opts...)

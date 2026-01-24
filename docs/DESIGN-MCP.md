@@ -1,16 +1,8 @@
-# GraphJin MCP (Model Context Protocol) Design & Architecture
-
-GraphJin provides native support for the Model Context Protocol (MCP), enabling AI assistants and LLMs to interact with your database through GraphQL using function calling (tools).
+# MCP Implementation Design
 
 ## Overview
 
-**Model Context Protocol (MCP)** is an open standard by Anthropic (November 2024) that standardizes how AI applications connect with external tools and data sources. GraphJin's MCP integration allows AI assistants like Claude to:
-
-- Execute GraphQL queries and mutations against your database
-- Discover available saved queries
-- Search for relevant queries by name or description
-- Explore database schema (tables, columns, relationships)
-- Generate OpenAPI specifications
+GraphJin's MCP (Model Context Protocol) implementation enables AI assistants and LLMs to interact with databases through GraphQL using function calling (tools). The implementation follows the MCP specification from Anthropic (November 2024).
 
 ## Architecture
 
@@ -21,7 +13,7 @@ GraphJin provides native support for the Model Context Protocol (MCP), enabling 
                             │ JSON-RPC 2.0
                             ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    MCP Transport Layer                           │
+│                    Transport Layer (implicit)                    │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
 │  │    Stdio    │  │     SSE     │  │    Streamable HTTP      │  │
 │  │  (CLI use)  │  │ (web embed) │  │   (API integration)     │  │
@@ -29,13 +21,11 @@ GraphJin provides native support for the Model Context Protocol (MCP), enabling 
 └───────────────────────────┬─────────────────────────────────────┘
                             ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                     serv/mcp.go                                  │
+│                       mcpServer struct                           │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │                    MCP Server                               ││
-│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐   ││
-│  │  │ Query Tools │ │ Discovery   │ │ Schema Tools        │   ││
-│  │  │             │ │ Tools       │ │                     │   ││
-│  │  └─────────────┘ └─────────────┘ └─────────────────────┘   ││
+│  │  srv     *server.MCPServer   // MCP SDK server              ││
+│  │  service *graphjinService    // GraphJin service            ││
+│  │  ctx     context.Context     // Auth context (user_id, role)││
 │  └─────────────────────────────────────────────────────────────┘│
 └───────────────────────────┬─────────────────────────────────────┘
                             ▼
@@ -49,737 +39,271 @@ GraphJin provides native support for the Model Context Protocol (MCP), enabling 
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-## Transport Protocols
+## File Structure
 
-GraphJin MCP supports multiple transport mechanisms. **Transport is implicit based on context** - no configuration needed:
+| File | Lines | Purpose |
+|------|-------|---------|
+| `serv/mcp.go` | ~145 | Server init, transport handlers, auth context |
+| `serv/mcp_syntax.go` | ~320 | DSL reference data structures & syntax tools |
+| `serv/mcp_schema.go` | ~480 | Schema discovery tools (incl. validate_where_clause) |
+| `serv/mcp_prompts.go` | ~210 | MCP prompts (write_where_clause) |
+| `serv/mcp_tools.go` | ~184 | Query execution tools |
+| `serv/mcp_search.go` | ~230 | Saved query discovery & fuzzy search |
+| `serv/mcp_fragments.go` | ~198 | Fragment discovery tools |
+| `serv/config.go` | (partial) | MCPConfig struct definition |
+
+## Core Data Structures
+
+### mcpServer (mcp.go:14-18)
+
+```go
+type mcpServer struct {
+    srv     *server.MCPServer   // MCP Go SDK server
+    service *graphjinService    // GraphJin service instance
+    ctx     context.Context     // Auth context (user_id, user_role)
+}
+```
+
+### MCPConfig (config.go:193-214)
+
+```go
+type MCPConfig struct {
+    Disable         bool   // Disable MCP server (default: false)
+    EnableSearch    bool   // Enable query/fragment search (default: true)
+    AllowMutations  bool   // Allow mutation operations (default: true)
+    AllowRawQueries bool   // Allow arbitrary GraphQL (default: true)
+    StdioUserID     string // Default user ID for CLI
+    StdioUserRole   string // Default user role for CLI
+    Only            bool   // MCP-only mode (disables other endpoints)
+}
+```
+
+## Tool Registration Flow
+
+```
+newMCPServerWithContext()
+    ↓
+registerTools()
+    ├── registerSyntaxTools()      → 2 tools
+    ├── registerSchemaTools()      → 6 tools
+    ├── registerExecutionTools()   → 2 tools
+    ├── registerQueryDiscoveryTools() → 3 tools
+    └── registerFragmentTools()    → 3 tools
+    ↓
+registerPrompts()
+    └── write_where_clause         → 1 prompt
+```
+
+## Tools Inventory (16 Total)
+
+### 1. Syntax Reference Tools (mcp_syntax.go)
+
+| Tool | Description | Config Check |
+|------|-------------|--------------|
+| `get_query_syntax` | Returns complete query DSL reference with examples | None |
+| `get_mutation_syntax` | Returns mutation DSL reference with examples | None |
+
+**Design Note**: These tools are critical because GraphJin uses a custom DSL that differs from standard GraphQL. LLMs trained on standard GraphQL won't know this syntax, so these tools teach the DSL. Examples are embedded directly in the syntax references for a better LLM experience.
+
+### 2. Query Execution Tools (mcp_tools.go)
+
+| Tool | Description | Config Check |
+|------|-------------|--------------|
+| `execute_graphql` | Execute arbitrary GraphQL queries/mutations | `AllowRawQueries`, `AllowMutations` |
+| `execute_saved_query` | Execute pre-defined saved queries by name | None |
+
+**Key Functions**:
+- `handleExecuteGraphQL()` - Executes via `service.gj.GraphQL()`
+- `handleExecuteSavedQuery()` - Executes via `service.gj.GraphQLByName()`
+- `isMutation()` - Simple heuristic to detect mutations (checks for "mutation" keyword)
+
+### 3. Schema Discovery Tools (mcp_schema.go)
+
+| Tool | Description | Core API Used |
+|------|-------------|---------------|
+| `list_tables` | List all database tables | `gj.GetTables()` |
+| `describe_table` | Get detailed schema for a table | `gj.GetTableSchema()` |
+| `find_path` | Find relationship path between tables | `gj.FindRelationshipPath()` |
+| `validate_graphql` | Validate query without executing | `gj.GraphQL()` (reads result) |
+| `explain_graphql` | Show generated SQL for a query | `gj.GraphQL()` (reads SQL) |
+| `validate_where_clause` | Validate where clause syntax and types | `gj.GetTableSchema()` |
+
+### 4. Saved Query Discovery Tools (mcp_search.go)
+
+| Tool | Description | Config Check |
+|------|-------------|--------------|
+| `list_saved_queries` | List all saved queries from allow-list | `EnableSearch` |
+| `search_saved_queries` | Search queries by name (fuzzy) | `EnableSearch` |
+| `get_saved_query` | Get full details of a saved query | None |
+
+### 5. Fragment Discovery Tools (mcp_fragments.go)
+
+| Tool | Description | Config Check |
+|------|-------------|--------------|
+| `list_fragments` | List all available GraphQL fragments | `EnableSearch` |
+| `get_fragment` | Get full fragment definition and usage | None |
+| `search_fragments` | Search fragments by name (fuzzy) | `EnableSearch` |
+
+## MCP Prompts (mcp_prompts.go)
+
+MCP prompts provide structured guidance to help LLMs construct valid queries.
+
+| Prompt | Description | Arguments |
+|--------|-------------|-----------|
+| `write_where_clause` | Generate where clause guidance | `table` (required), `intent` (required) |
+
+The `write_where_clause` prompt:
+1. Fetches table schema via `gj.GetTableSchema(table)`
+2. Builds operator-type mapping based on column types
+3. Returns structured guidance with examples for each operator type
+
+### Operator-Type Mapping
+
+| Column Type | Valid Operators |
+|-------------|-----------------|
+| numeric (int, float, decimal) | eq, neq, gt, gte, lt, lte, in, nin, is_null |
+| text (varchar, text, char) | eq, neq, like, ilike, regex, in, nin, is_null |
+| boolean | eq, neq, is_null |
+| json/jsonb | has_key, has_key_any, has_key_all, contains, contained_in, is_null |
+| array | contains, contained_in, has_in_common, is_null |
+| geometry | st_dwithin, st_within, st_contains, st_intersects, near |
+| timestamp/date | eq, neq, gt, gte, lt, lte, in, is_null |
+| uuid | eq, neq, in, nin, is_null |
+
+## Fuzzy Search Algorithm (mcp_search.go:186-230)
+
+The search tools use a scoring algorithm:
+
+| Match Type | Score |
+|------------|-------|
+| Exact match | 100 |
+| Starts with | 90 |
+| Contains | 70 |
+| Word boundary (prefix of word segment) | 60 |
+| Character-by-character fuzzy | 0-50 (weighted) |
+
+```go
+func fuzzyScore(search, target string) int
+```
+
+## Transport Mechanisms
 
 ### 1. Stdio Transport (CLI)
 
-For CLI usage and local AI assistants like Claude Desktop:
-
-```bash
-graphjin mcp --config ./config
+```go
+func (s *HttpService) RunMCPStdio(ctx context.Context) error
 ```
 
-Configure in `claude_desktop_config.json`:
-```json
-{
-  "mcpServers": {
-    "graphjin": {
-      "command": "graphjin",
-      "args": ["mcp", "--config", "/path/to/config"],
-      "env": {
-        "GRAPHJIN_USER_ID": "admin-user",
-        "GRAPHJIN_USER_ROLE": "admin"
-      }
-    }
-  }
-}
-```
+- Entry point: `graphjin mcp --config ./config`
+- Auth: Environment variables (`GRAPHJIN_USER_ID`, `GRAPHJIN_USER_ROLE`) or config defaults
+- Uses: `server.ServeStdio(mcpSrv.srv)`
 
 ### 2. SSE Transport (Server-Sent Events)
 
-For web-based integrations. Automatically enabled when MCP is enabled and the HTTP service is running.
+```go
+func (s *HttpService) MCPHandler() http.Handler
+func (s *HttpService) MCPHandlerWithAuth(ah auth.HandlerFunc) http.Handler
+```
 
-Endpoint: `GET /api/v1/mcp`
+- Endpoint: `GET /api/v1/mcp`
+- Uses: `server.NewSSEServer(mcpSrv.srv).ServeHTTP()`
 
 ### 3. Streamable HTTP Transport
 
-For stateless API integrations. Automatically enabled alongside SSE.
-
-Endpoint: `POST /api/v1/mcp/message`
-
-**Note**: Both SSE and HTTP endpoints are registered automatically (MCP is enabled by default). Use `mcp.disable: true` to turn off.
-
-## Critical: GraphJin Query DSL
-
-**GraphJin is NOT standard GraphQL.** It has its own Domain-Specific Language (DSL) with specific operators and syntax that differs from standard GraphQL:
-
-| Feature | Standard GraphQL | GraphJin DSL |
-|---------|------------------|--------------|
-| Filtering | Args defined in schema | `where: { price: { gt: 10 } }` |
-| Operators | Schema-dependent | 15+ built-in: `eq`, `neq`, `gt`, `in`, `has_key`, etc. |
-| Pagination | `first`/`after` (Relay) | `limit`, `first`/`after` + `_cursor` field |
-| Ordering | Schema-dependent | `order_by: { price: desc }` |
-| Aggregations | Requires schema | `count_id`, `sum_price`, `avg_price` |
-| Recursive | Not supported | `find: "parents"` / `find: "children"` |
-| Full-text | Not built-in | `search: "term"` |
-
-**LLMs trained on standard GraphQL won't know this syntax.** The MCP tools include syntax reference tools to teach the DSL.
-
-## Available Tools (16 Total)
-
-### 1. Syntax Reference Tools (Call First!)
-
-These tools teach the LLM GraphJin's query DSL. **Call `get_query_syntax` before writing queries.**
-
-#### `get_query_syntax`
-
-Returns the complete GraphJin query syntax reference.
-
-**Input:** None
-
-**Output:**
-```json
-{
-  "filter_operators": {
-    "comparison": ["eq", "neq", "gt", "gte", "lt", "lte"],
-    "list": ["in", "nin"],
-    "null": ["is_null"],
-    "text": ["like", "ilike", "regex", "iregex", "similar"],
-    "json": ["has_key", "has_key_any", "has_key_all", "contains", "contained_in"]
-  },
-  "logical_operators": ["and", "or", "not"],
-  "pagination": {
-    "limit_offset": "limit: 10, offset: 20",
-    "cursor": "first: 10, after: $cursor",
-    "cursor_field": "<table>_cursor returns encrypted cursor"
-  },
-  "ordering": {
-    "simple": "order_by: { price: desc }",
-    "multiple": "order_by: { price: desc, id: asc }",
-    "nested": "order_by: { owner: { name: asc } }"
-  },
-  "aggregations": ["count_<col>", "sum_<col>", "avg_<col>", "min_<col>", "max_<col>"],
-  "recursive": {
-    "find_parents": "comments(find: \"parents\")",
-    "find_children": "comments(find: \"children\")"
-  },
-  "full_text_search": "products(search: \"term\")",
-  "example_query": "{ products(where: { price: { gt: 10 } }, order_by: { price: desc }, limit: 5) { id name } }"
-}
-```
-
-#### `get_mutation_syntax`
-
-Returns the GraphJin mutation syntax reference.
-
-**Input:** None
-
-**Output:**
-```json
-{
-  "operations": {
-    "insert": "products(insert: { name: \"New\", price: 10 })",
-    "bulk_insert": "products(insert: $items)",
-    "update": "products(id: $id, update: { name: \"Updated\" })",
-    "upsert": "products(upsert: { id: $id, name: \"Name\" })",
-    "delete": "products(delete: true, where: { id: { eq: $id } })"
-  },
-  "nested_mutations": "purchases(insert: { quantity: 5, customer: { email: \"new@test.com\" } })",
-  "connect_disconnect": {
-    "connect": "products(insert: { name: \"X\", owner: { connect: { id: 5 } } })",
-    "disconnect": "users(id: $id, update: { products: { disconnect: { id: 10 } } })"
-  },
-  "validation": "@constraint(variable: \"email\", format: \"email\")"
-}
-```
-
-#### `get_query_examples`
-
-Returns annotated example queries for common patterns.
-
-**Input:**
-```json
-{
-  "category": "filtering"  // Optional: basic, filtering, relationships, pagination, mutations
-}
-```
-
-**Output:**
-```json
-{
-  "examples": [
-    {"description": "Filter with comparison", "query": "{ products(where: { price: { gt: 50 } }) { id name } }"},
-    {"description": "Filter with AND/OR", "query": "{ products(where: { and: [{ price: { gt: 10 } }, { price: { lt: 100 } }] }) { id } }"},
-    {"description": "Filter on relationship", "query": "{ products(where: { owner: { email: { eq: $email } } }) { id } }"}
-  ]
-}
-```
-
-### 2. Query Execution Tools
-
-#### `execute_graphql`
-
-Execute a GraphQL query or mutation against the database.
-
-**Input:**
-```json
-{
-  "query": "{ products(where: { price: { gt: 10 } }, limit: 5) { id name price } }",
-  "variables": {},
-  "namespace": "optional_namespace"
-}
-```
-
-**Output:**
-```json
-{
-  "data": {"products": [...]},
-  "errors": [],
-  "sql": "SELECT ... FROM products WHERE price > 10 LIMIT 5"
-}
-```
-
-#### `execute_saved_query`
-
-Execute a pre-defined saved query from the allow-list.
-
-**Input:**
-```json
-{
-  "name": "get_products_by_price",
-  "variables": {"min_price": 10},
-  "namespace": "optional_namespace"
-}
-```
-
-**Output:** Same as `execute_graphql`
-
-### 3. Schema Discovery Tools
-
-#### `list_tables`
-
-List all database tables available for querying.
-
-**Input:**
-```json
-{
-  "namespace": "optional_namespace"
-}
-```
-
-**Output:**
-```json
-{
-  "tables": [
-    {"name": "users", "type": "table", "columns_count": 8},
-    {"name": "products", "type": "table", "columns_count": 12},
-    {"name": "hot_products", "type": "view", "columns_count": 3}
-  ]
-}
-```
-
-#### `describe_table`
-
-Get detailed schema information with incoming and outgoing relationships.
-
-**Input:**
-```json
-{
-  "table": "products"
-}
-```
-
-**Output:**
-```json
-{
-  "name": "products",
-  "columns": [
-    {"name": "id", "type": "integer", "nullable": false, "primary_key": true},
-    {"name": "name", "type": "text", "nullable": false},
-    {"name": "price", "type": "numeric", "nullable": false},
-    {"name": "owner_id", "type": "integer", "nullable": false, "foreign_key": "users.id"}
-  ],
-  "relationships": {
-    "outgoing": [
-      {"field": "owner", "target_table": "users", "type": "many_to_one", "foreign_key": "owner_id"}
-    ],
-    "incoming": [
-      {"field": "purchases", "source_table": "purchases", "type": "one_to_many", "foreign_key": "product_id"},
-      {"field": "customers", "source_table": "users", "type": "many_to_many", "through": "purchases"}
-    ]
-  }
-}
-```
-
-#### `find_path`
-
-Find the relationship path between two tables.
-
-**Input:**
-```json
-{
-  "from_table": "users",
-  "to_table": "categories"
-}
-```
-
-**Output:**
-```json
-{
-  "path": [
-    {"from": "users", "to": "products", "via": "owner_id", "relation": "one_to_many"},
-    {"from": "products", "to": "categories", "via": "category_id", "relation": "many_to_one"}
-  ],
-  "example_query": "{ users { products { category { name } } } }"
-}
-```
-
-### 4. Saved Query Discovery Tools
-
-#### `list_saved_queries`
-
-List all saved queries from the allow-list.
-
-**Input:** None
-
-**Output:**
-```json
-{
-  "queries": [
-    {"name": "get_users", "operation": "query", "description": "Fetch users"},
-    {"name": "create_user", "operation": "mutation", "description": "Create user"}
-  ]
-}
-```
-
-#### `search_saved_queries`
-
-Search saved queries by name or description.
-
-**Input:**
-```json
-{
-  "query": "user",
-  "limit": 10
-}
-```
-
-**Output:** Same as `list_saved_queries` (filtered)
-
-#### `get_saved_query`
-
-Get full details of a saved query.
-
-**Input:**
-```json
-{
-  "name": "get_users"
-}
-```
-
-**Output:**
-```json
-{
-  "name": "get_users",
-  "operation": "query",
-  "query": "query get_users($role: String) { users(where: {role: {eq: $role}}) { id name } }",
-  "variables_schema": {"role": {"type": "string", "required": false}},
-  "description": "Fetch users with optional role filter"
-}
-```
-
-### 5. Fragment Discovery Tools
-
-#### `list_fragments`
-
-List all available GraphQL fragments.
-
-**Input:**
-```json
-{
-  "namespace": "optional_namespace"
-}
-```
-
-**Output:**
-```json
-{
-  "fragments": [
-    {"name": "UserFields", "namespace": ""},
-    {"name": "ProductFields", "namespace": ""}
-  ],
-  "count": 2,
-  "usage": "To use a fragment, add: #import \"./fragments/<name>\" at the top of your query"
-}
-```
-
-#### `get_fragment`
-
-Get full details of a fragment including its definition.
-
-**Input:**
-```json
-{
-  "name": "UserFields"
-}
-```
-
-**Output:**
-```json
-{
-  "name": "UserFields",
-  "on": "users",
-  "definition": "fragment UserFields on users {\n  id\n  email\n  name\n}",
-  "import_directive": "#import \"./fragments/UserFields\"",
-  "usage_example": "query { users { ...UserFields } }"
-}
-```
-
-#### `search_fragments`
-
-Search fragments by name using fuzzy matching.
-
-**Input:**
-```json
-{
-  "query": "user",
-  "limit": 10
-}
-```
-
-**Output:**
-```json
-{
-  "fragments": [
-    {"name": "UserFields", "namespace": ""}
-  ],
-  "count": 1
-}
-```
-
-### 6. Utility Tools
-
-#### `validate_graphql`
-
-Validate a query without executing it.
-
-**Input:**
-```json
-{
-  "query": "{ products(where: { price: { gt: 10 } }) { id name } }"
-}
-```
-
-**Output:**
-```json
-{
-  "valid": true,
-  "errors": [],
-  "sql": "SELECT ... FROM products WHERE price > 10"
-}
-```
-
-#### `explain_graphql`
-
-Show the generated SQL for a query.
-
-**Input:**
-```json
-{
-  "query": "{ products { id name owner { email } } }",
-  "variables": {}
-}
-```
-
-**Output:**
-```json
-{
-  "sql": "SELECT jsonb_build_object('products', ...) FROM products LEFT JOIN LATERAL (SELECT ... FROM users WHERE users.id = products.owner_id) AS owner ON true",
-  "tables_accessed": ["products", "users"],
-  "estimated_rows": 100
-}
-```
-
-## Configuration
-
-### Basic Configuration
-
-MCP is **enabled by default**. No configuration needed to use it.
-
-```yaml
-# MCP works out of the box - these are the defaults:
-mcp:
-  # disable: false           # MCP is ON by default
-  enable_search: true        # Enable search_queries tool
-  allow_mutations: true      # Allow mutation operations
-  allow_raw_queries: true    # Allow arbitrary GraphQL (vs only named queries)
-```
-
-**Note**: Transport is implicit based on context - no configuration needed:
-- CLI (`graphjin mcp`) → stdio transport automatically
-- HTTP service → SSE/HTTP transport at `/api/v1/mcp` automatically
-
-### Disabling MCP
-
-To turn off MCP:
-
-```yaml
-mcp:
-  disable: true
-```
-
-### Security Configuration
-
-For production environments, consider restricting MCP capabilities:
-
-```yaml
-mcp:
-  allow_mutations: false     # Disable mutations for safety
-  allow_raw_queries: false   # Only allow pre-defined queries
-```
-
-### Stdio Authentication
-
-For CLI usage with `graphjin mcp`, configure default credentials:
-
-```yaml
-mcp:
-  stdio_user_id: "admin-123"     # Default user ID for CLI
-  stdio_user_role: "admin"       # Default user role for CLI
-```
-
-These can be overridden via environment variables:
-- `GRAPHJIN_USER_ID` - overrides `stdio_user_id`
-- `GRAPHJIN_USER_ROLE` - overrides `stdio_user_role`
-
-### Full Configuration Reference
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `disable` | bool | false | Disable MCP server (MCP is ON by default) |
-| `enable_search` | bool | true | Enable query search functionality |
-| `allow_mutations` | bool | true | Allow mutation operations |
-| `allow_raw_queries` | bool | true | Allow arbitrary GraphQL queries |
-| `stdio_user_id` | string | "" | Default user ID for stdio transport (CLI) |
-| `stdio_user_role` | string | "" | Default user role for stdio transport (CLI) |
-
-## Security Considerations
-
-### 1. Query Restrictions
-
-Control what operations AI can perform:
-
-- **`allow_raw_queries: false`**: Only pre-defined queries from allow-list can execute
-- **`allow_mutations: false`**: Disable all write operations
-
-### 2. Authentication
-
-MCP integrates with GraphJin's existing authentication system. Auth context (user_id, user_role) flows through to query execution, enabling role-based access control and user-scoped queries.
-
-#### HTTP Transport (SSE/HTTP)
-
-MCP HTTP endpoints (`/api/v1/mcp`, `/api/v1/mcp/message`) use the same authentication middleware as GraphQL/REST endpoints:
-
-**JWT Authentication:**
-```yaml
-auth:
-  type: jwt
-  jwt:
-    provider: auth0  # or firebase, jwks, generic
-    audience: "my-api"
-    issuer: "https://my-tenant.auth0.com/"
-```
-
-Token via `Authorization: Bearer <token>` header or cookie.
-
-**Header-based Authentication:**
-```yaml
-auth:
-  type: header
-  header:
-    name: X-API-Key
-    value: $API_KEY
-```
-
-**Development Mode:**
-```yaml
-auth:
-  development: true
-```
-
-Allows `X-User-ID` and `X-User-Role` headers for testing.
-
-#### Stdio Transport (CLI)
-
-For `graphjin mcp` CLI usage, authentication is provided via:
-
-**1. Environment Variables (recommended for Claude Desktop):**
-```bash
-export GRAPHJIN_USER_ID="admin-123"
-export GRAPHJIN_USER_ROLE="admin"
-graphjin mcp --config ./config
-```
-
-**2. Claude Desktop Configuration:**
-```json
-{
-  "mcpServers": {
-    "graphjin": {
-      "command": "graphjin",
-      "args": ["mcp", "--config", "/path/to/config"],
-      "env": {
-        "GRAPHJIN_USER_ID": "admin-user",
-        "GRAPHJIN_USER_ROLE": "admin"
-      }
-    }
-  }
-}
-```
-
-**3. Config File (fallback defaults):**
-```yaml
-mcp:
-  stdio_user_id: "default-user"
-  stdio_user_role: "user"
-```
-
-Environment variables take precedence over config file values.
-
-### 3. Rate Limiting
-
-MCP endpoints use the same rate limiting as other GraphJin APIs:
-
-```yaml
-rate_limiter:
-  rate: 100.0
-  bucket: 20
-```
-
-### 4. Audit Logging
-
-All MCP tool invocations are logged with:
-- Tool name and parameters
-- User context (if authenticated)
-- Timestamp and duration
-- Generated SQL (if enabled)
-
-## Usage Examples
-
-### Claude Desktop Integration
-
-1. Install GraphJin globally or ensure it's in PATH
-2. Add to `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "my-database": {
-      "command": "graphjin",
-      "args": ["mcp", "--config", "/path/to/config.yaml"],
-      "env": {
-        "GRAPHJIN_USER_ID": "admin-user",
-        "GRAPHJIN_USER_ROLE": "admin"
-      }
-    }
-  }
-}
-```
-
-3. Restart Claude Desktop
-4. Ask Claude: "List all tables in my database"
-
-### Web Application Integration
-
-MCP is enabled by default. Simply connect from your application:
-
-```javascript
-const eventSource = new EventSource('/api/v1/mcp');
-// Handle MCP protocol messages
-```
-
-### Programmatic Access
-
-Use the MCP Go SDK:
-
 ```go
-import "github.com/mark3labs/mcp-go/client"
-
-mcpClient := client.NewSSEMCPClient("http://localhost:8080/api/v1/mcp")
-if err := mcpClient.Start(ctx); err != nil {
-    log.Fatal(err)
-}
-
-result, err := mcpClient.CallTool(ctx, "list_tables", map[string]any{})
-if err != nil {
-    log.Fatal(err)
-}
+func (s *HttpService) MCPMessageHandler() http.Handler
+func (s *HttpService) MCPMessageHandlerWithAuth(ah auth.HandlerFunc) http.Handler
 ```
 
-## File Structure
+- Endpoint: `POST /api/v1/mcp/message`
+- Note: Currently reuses SSE server which handles both
+
+## Auth Context Flow
 
 ```
-serv/
-├── mcp.go              # MCP server setup, transport handlers, auth integration
-├── mcp_syntax.go       # Syntax reference data (query/mutation DSL)
-├── mcp_schema.go       # Schema discovery tools (list_tables, describe_table, find_path)
-├── mcp_tools.go        # Execution tools (execute_graphql, execute_saved_query)
-├── mcp_search.go       # Saved query discovery and search
-├── mcp_fragments.go    # Fragment discovery tools (list_fragments, get_fragment, search_fragments)
-└── config.go           # MCPConfig struct (includes MCP auth config)
+Request/CLI
+    ↓
+Auth extraction (env vars, JWT, headers)
+    ↓
+context.WithValue(ctx, core.UserIDKey, userID)
+context.WithValue(ctx, core.UserRoleKey, userRole)
+    ↓
+mcpServer.ctx
+    ↓
+Passed to gj.GraphQL() calls
+    ↓
+Used for role-based access control in queries
 ```
+
+## Security Controls
+
+1. **Query Restrictions**:
+   - `AllowRawQueries: false` → Only `execute_saved_query` works
+   - `AllowMutations: false` → All mutations blocked in `execute_graphql`
+
+2. **Search Restrictions**:
+   - `EnableSearch: false` → Disables `list_saved_queries`, `search_saved_queries`, `list_fragments`, `search_fragments`
+
+3. **Auth Integration**:
+   - HTTP: Uses same auth middleware as GraphQL/REST endpoints
+   - CLI: Environment variables or config defaults
+
+## DSL Reference Data (mcp_syntax.go)
+
+Static reference data is defined as Go variables:
+
+- `querySyntaxReference` - Filter operators, pagination, ordering, aggregations, recursive, directives
+- `mutationSyntaxReference` - Insert, update, upsert, delete, nested mutations, connect/disconnect
+- `queryExamples` - Categorized examples (basic, filtering, relationships, pagination, aggregations, recursive, mutations, spatial)
+
+### Filter Operators
+
+| Category | Operators |
+|----------|-----------|
+| Comparison | eq, neq, gt, gte, lt, lte |
+| List | in, nin |
+| Null | is_null |
+| Text | like, ilike, regex, iregex, similar |
+| JSON | has_key, has_key_any, has_key_all, contains, contained_in |
+| Spatial | st_dwithin, st_within, st_contains, st_intersects, st_coveredby, st_covers, st_touches, st_overlaps, near |
 
 ## Dependencies
 
 - `github.com/mark3labs/mcp-go` - MCP Go SDK
+  - `server.MCPServer` - Main server type
+  - `server.ServeStdio()` - Stdio transport
+  - `server.NewSSEServer()` - SSE transport
+  - `mcp.NewTool()` - Tool definition
+  - `mcp.CallToolRequest` - Tool call request
+  - `mcp.NewToolResultText()` / `mcp.NewToolResultError()` - Results
 
-## Comparison with Other Endpoints
+## Response Format
 
-| Feature | GraphQL | REST | WebSocket | MCP |
-|---------|---------|------|-----------|-----|
-| Query execution | Yes | Yes | Yes | Yes |
-| Mutations | Yes | Yes | No | Configurable |
-| Subscriptions | No | No | Yes | No (use WebSocket) |
-| Schema discovery | Introspection | OpenAPI | No | Yes |
-| Query search | No | No | No | Yes |
-| Syntax reference | No | No | No | Yes |
-| Query validation | No | No | No | Yes |
-| AI-optimized | No | No | No | Yes |
+All tools return JSON-formatted responses via `mcp.NewToolResultText(string(data))`:
 
-## Future Enhancements
+```go
+data, err := json.MarshalIndent(result, "", "  ")
+if err != nil {
+    return mcp.NewToolResultError(err.Error()), nil
+}
+return mcp.NewToolResultText(string(data)), nil
+```
 
-1. **MCP Resources**: Expose database tables as MCP resources
-2. **MCP Prompts**: Pre-defined prompt templates for common operations
-3. **Subscription Support**: Polling-based subscriptions for real-time data
-4. **Semantic Search**: Vector-based query search using embeddings
-5. **MCP-Native OAuth 2.1**: Full MCP specification compliance (see below)
+Execution tools include:
+- `data` - Query result
+- `errors` - Any errors
+- `sql` - Generated SQL (for debugging/transparency)
 
----
+## Key Design Decisions
 
-## MCP Protocol-Native OAuth (Deferred)
+1. **DSL Education First**: Syntax tools are registered first and should be called before writing queries, because GraphJin DSL differs from standard GraphQL.
 
-The MCP specification (November 2025) includes its own OAuth 2.1-based authorization standard. This is documented here for future reference.
+2. **Transport Abstraction**: Transport is implicit based on context (CLI vs HTTP) - no configuration needed.
 
-### MCP OAuth 2.1 Specification
+3. **Namespace Support**: Most tools accept optional `namespace` parameter for multi-tenant deployments.
 
-| Requirement | Details |
-|-------------|---------|
-| **OAuth 2.1** | MCP servers SHOULD implement OAuth 2.1 for HTTP transports |
-| **PKCE** | Mandatory - clients MUST use S256 code challenge |
-| **Discovery** | `/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource` |
-| **Client Registration** | CIMD (Client ID Metadata Documents) preferred over DCR |
-| **Step-up Auth** | Incremental scope requests supported |
-| **Resource Indicators** | RFC 8707 for token binding |
+4. **Safety by Default**: MCP is enabled by default but can be restricted via configuration.
 
-### Current Ecosystem Adoption (January 2026)
+5. **Fuzzy Search**: Search tools use intelligent scoring to help find relevant queries/fragments even with partial matches.
 
-| Client | OAuth 2.1 | CIMD Support | Notes |
-|--------|-----------|--------------|-------|
-| Claude Desktop | Yes | Partial | Works with standard OAuth |
-| Claude.ai (Web) | Yes | Limited | Still uses Dynamic Registration |
-| Cursor | Yes | In Progress | Community requesting CIMD |
-| MCP-Inspector | Yes | Yes | Official test tool |
-
-### Why We Defer MCP-Native OAuth
-
-GraphJin currently uses its existing JWT/header-based authentication for MCP, which:
-- Works with current Claude Desktop and Cursor implementations
-- Leverages existing auth infrastructure
-- Is simpler for private/internal deployments
-
-Full MCP OAuth 2.1 implementation would require:
-- OAuth 2.1 authorization server endpoints
-- PKCE implementation
-- `.well-known` discovery documents
-- Token generation and validation
-- Client registration (CIMD)
-
-**Recommendation**: Revisit when CIMD support is stable across major clients, or when building public MCP APIs.
-
-### References
-
-- [MCP Specification 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25)
-- [MCP Auth Updates (Auth0)](https://auth0.com/blog/mcp-specs-update-all-about-auth/)
-- [November 2025 Authorization Changes](https://den.dev/blog/mcp-november-authorization-spec/)
-- [MCP Authorization Guide (Stytch)](https://stytch.com/blog/MCP-authentication-and-authorization-guide/)
+6. **Auth Context Preservation**: User context flows through to query execution, enabling role-based access control.

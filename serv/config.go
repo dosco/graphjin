@@ -123,6 +123,12 @@ type Serv struct {
 
 	// MCP (Model Context Protocol) server configuration
 	MCP MCPConfig `mapstructure:"mcp" jsonschema:"title=MCP Configuration"`
+
+	// Redis configuration
+	Redis RedisConfig `mapstructure:"redis" jsonschema:"title=Redis Configuration"`
+
+	// Response caching configuration
+	Caching CachingConfig `mapstructure:"caching" jsonschema:"title=Caching Configuration"`
 }
 
 // Database configuration
@@ -212,6 +218,30 @@ type MCPConfig struct {
 	// Run in MCP-only mode - disables GraphQL, REST, WebUI, and OpenAPI endpoints
 	// Only health check and MCP endpoints will be available
 	Only bool `mapstructure:"only" jsonschema:"title=MCP Only Mode,default=false"`
+}
+
+// RedisConfig configures Redis connection
+type RedisConfig struct {
+	// Redis connection URL (e.g., redis://localhost:6379/0)
+	URL string `mapstructure:"url" jsonschema:"title=Redis URL"`
+}
+
+// CachingConfig configures response caching
+// Caching is enabled by default using in-memory LRU cache
+// Configure redis.url to use Redis for distributed caching
+// Responses are cached with automatic invalidation when mutations modify related tables
+type CachingConfig struct {
+	// Disable response caching (caching is enabled by default)
+	Disable bool `mapstructure:"disable" jsonschema:"title=Disable Caching,default=false"`
+
+	// Default TTL for cached responses in seconds (hard TTL)
+	TTL int `mapstructure:"ttl" jsonschema:"title=Cache TTL,default=3600"`
+
+	// Soft TTL for stale-while-revalidate in seconds (0 = disabled)
+	FreshTTL int `mapstructure:"fresh_ttl" jsonschema:"title=Fresh TTL for SWR,default=300"`
+
+	// Tables to exclude from caching
+	ExcludeTables []string `mapstructure:"exclude_tables" jsonschema:"title=Exclude Tables"`
 }
 
 // Telemetry struct contains OpenCensus metrics and tracing related config
@@ -395,6 +425,11 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("mcp.allow_mutations", true)
 	vi.SetDefault("mcp.allow_raw_queries", true)
 	vi.SetDefault("mcp.only", false)
+
+	// Caching defaults
+	vi.SetDefault("caching.enable", false)
+	vi.SetDefault("caching.ttl", 3600)
+	vi.SetDefault("caching.fresh_ttl", 300)
 
 	return vi
 }

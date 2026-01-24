@@ -11,6 +11,9 @@ type Config struct {
 	DBSchema        string
 	Validators      map[string]Validator
 
+	// EnableCacheTracking injects __gj_id fields with primary keys for cache row tracking
+	EnableCacheTracking bool
+
 	defTrv trval
 }
 

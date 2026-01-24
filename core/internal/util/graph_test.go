@@ -53,7 +53,8 @@ func TestGraph1(t *testing.T) {
 	})
 
 	edges := g.GetEdges(b, b)
-	assert.Equals(t, edges, []util.Edge{{ID: 13, OppID: 2, Weight: 0, Name: "test"}})
+	// AddEdge creates edge with OppID: -1 and the weight passed (2)
+	assert.Equals(t, edges, []util.Edge{{ID: 13, OppID: -1, Weight: 2, Name: "test"}})
 }
 
 /*

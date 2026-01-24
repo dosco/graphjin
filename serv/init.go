@@ -126,3 +126,43 @@ func (s *graphjinService) basePath() (string, error) {
 	}
 	return s.conf.Serv.ConfigPath, nil
 }
+
+// initResponseCache initializes the response cache (Redis or in-memory)
+func (s *graphjinService) initResponseCache() error {
+	// Caching is enabled by default unless explicitly disabled
+	if s.conf.Caching.Disable {
+		s.log.Info("Response cache disabled")
+		return nil
+	}
+
+	if s.conf.Redis.URL != "" {
+		// Try to use Redis
+		cache, err := NewRedisCache(s.conf.Redis.URL, s.conf.Caching)
+		if err != nil {
+			s.log.Warnf("Redis unavailable, falling back to in-memory cache: %s", err)
+			s.cache, err = NewMemoryCache(s.conf.Caching, defaultMemoryCacheSize)
+			if err != nil {
+				s.log.Warnf("Failed to initialize memory cache: %s", err)
+				return nil
+			}
+			s.log.Info("Using in-memory response cache (Redis unavailable)")
+		} else {
+			s.cache = cache
+			s.log.Info("Redis response cache enabled")
+		}
+	} else {
+		// No Redis URL - use in-memory cache
+		var err error
+		s.cache, err = NewMemoryCache(s.conf.Caching, defaultMemoryCacheSize)
+		if err != nil {
+			s.log.Warnf("Failed to initialize memory cache: %s", err)
+			return nil
+		}
+		s.log.Info("Using in-memory response cache (no Redis URL configured)")
+	}
+
+	// Enable cache tracking in qcode compiler (injects __gj_id fields)
+	s.conf.Core.CacheTrackingEnabled = true
+
+	return nil
+}

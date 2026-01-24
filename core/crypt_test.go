@@ -55,14 +55,16 @@ func TestCryptBadDecrypt(t *testing.T) {
 func TestCryptFirstEncyptedValue(t *testing.T) {
 	prefix := "__gc:foobar:"
 
-	js := `{ 
-		me: "null", 
+	js := `{
+		me: "null",
 		a_cursor: "%s1,ABCDEFG",
 		b_cursor: "%s0,12345"
 	}`
 
 	jsb := []byte(fmt.Sprintf(js, prefix, prefix))
-	exp := []byte(`0,12345`)
+	// firstCursorValue returns the full cursor from prefix to closing quote
+	// It finds the first cursor in the data (a_cursor with value "1,ABCDEFG")
+	exp := []byte(`__gc:foobar:1,ABCDEFG`)
 
 	out := firstCursorValue(jsb, []byte(prefix))
 	assert.Equals(t, exp, out)

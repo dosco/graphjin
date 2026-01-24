@@ -9,16 +9,27 @@ import (
 
 // QuerySyntaxReference contains the complete GraphJin query DSL reference
 type QuerySyntaxReference struct {
-	FilterOperators   FilterOperators   `json:"filter_operators"`
-	LogicalOperators  []string          `json:"logical_operators"`
-	Pagination        PaginationSyntax  `json:"pagination"`
-	Ordering          OrderingSyntax    `json:"ordering"`
-	Aggregations      []string          `json:"aggregations"`
-	Recursive         RecursiveSyntax   `json:"recursive"`
-	FullTextSearch    string            `json:"full_text_search"`
-	Directives        map[string]string `json:"directives"`
-	JSONPaths         string            `json:"json_paths"`
-	ExampleQuery      string            `json:"example_query"`
+	FilterOperators  FilterOperators        `json:"filter_operators"`
+	LogicalOperators []string               `json:"logical_operators"`
+	Pagination       PaginationSyntax       `json:"pagination"`
+	Ordering         OrderingSyntax         `json:"ordering"`
+	Aggregations     []string               `json:"aggregations"`
+	Recursive        RecursiveSyntax        `json:"recursive"`
+	FullTextSearch   string                 `json:"full_text_search"`
+	Directives       map[string]string      `json:"directives"`
+	JSONPaths        string                 `json:"json_paths"`
+	Examples         QueryExamplesForSyntax `json:"examples"`
+}
+
+// QueryExamplesForSyntax contains categorized query examples
+type QueryExamplesForSyntax struct {
+	Basic         []QueryExample `json:"basic"`
+	Filtering     []QueryExample `json:"filtering"`
+	Relationships []QueryExample `json:"relationships"`
+	Pagination    []QueryExample `json:"pagination"`
+	Aggregations  []QueryExample `json:"aggregations"`
+	Recursive     []QueryExample `json:"recursive"`
+	Spatial       []QueryExample `json:"spatial"`
 }
 
 // FilterOperators groups filter operators by category
@@ -57,11 +68,11 @@ type RecursiveSyntax struct {
 
 // MutationSyntaxReference contains the GraphJin mutation DSL reference
 type MutationSyntaxReference struct {
-	Operations        MutationOperations  `json:"operations"`
-	NestedMutations   NestedMutationInfo  `json:"nested_mutations"`
-	ConnectDisconnect ConnectDisconnect   `json:"connect_disconnect"`
-	Validation        ValidationSyntax    `json:"validation"`
-	ExampleMutation   string              `json:"example_mutation"`
+	Operations        MutationOperations `json:"operations"`
+	NestedMutations   NestedMutationInfo `json:"nested_mutations"`
+	ConnectDisconnect ConnectDisconnect  `json:"connect_disconnect"`
+	Validation        ValidationSyntax   `json:"validation"`
+	Examples          []QueryExample     `json:"examples"`
 }
 
 // MutationOperations shows mutation operation syntax
@@ -98,18 +109,6 @@ type QueryExample struct {
 	Description string `json:"description"`
 	Query       string `json:"query"`
 	Variables   string `json:"variables,omitempty"`
-}
-
-// QueryExamples contains categorized example queries
-type QueryExamples struct {
-	Basic         []QueryExample `json:"basic"`
-	Filtering     []QueryExample `json:"filtering"`
-	Relationships []QueryExample `json:"relationships"`
-	Pagination    []QueryExample `json:"pagination"`
-	Aggregations  []QueryExample `json:"aggregations"`
-	Recursive     []QueryExample `json:"recursive"`
-	Mutations     []QueryExample `json:"mutations"`
-	Spatial       []QueryExample `json:"spatial"`
 }
 
 // querySyntaxReference is the static reference data for query syntax
@@ -158,8 +157,52 @@ var querySyntaxReference = QuerySyntaxReference{
 		"@schema(name:)":      "Use specific database schema",
 		"@through(table:)":    "Specify join table for many-to-many",
 	},
-	JSONPaths:    "For JSONB columns, use underscore notation: metadata_key_subkey maps to metadata->'key'->'subkey'",
-	ExampleQuery: "query { products(where: { price: { gt: 10 } }, order_by: { price: desc }, limit: 5) { id name price owner { email } } }",
+	JSONPaths: "For JSONB columns, use underscore notation: metadata_key_subkey maps to metadata->'key'->'subkey'",
+	Examples: QueryExamplesForSyntax{
+		Basic: []QueryExample{
+			{Description: "Fetch products with limit", Query: "{ products(limit: 10) { id name } }"},
+			{Description: "Fetch by ID", Query: "{ products(id: $id) { id name price } }", Variables: "{\"id\": 1}"},
+			{Description: "Fetch single object", Query: "{ product @object { id name } }"},
+		},
+		Filtering: []QueryExample{
+			{Description: "Filter with comparison", Query: "{ products(where: { price: { gt: 50 } }) { id name } }"},
+			{Description: "Filter with AND", Query: "{ products(where: { and: [{ price: { gt: 10 } }, { price: { lt: 100 } }] }) { id } }"},
+			{Description: "Filter with OR", Query: "{ products(where: { or: { name: { ilike: \"%phone%\" }, name: { ilike: \"%tablet%\" } } }) { id } }"},
+			{Description: "Filter with NOT", Query: "{ products(where: { not: { price: { is_null: true } } }) { id } }"},
+			{Description: "Filter on relationship", Query: "{ products(where: { owner: { email: { eq: $email } } }) { id } }"},
+			{Description: "Filter with IN list", Query: "{ products(where: { id: { in: $ids } }) { id name } }", Variables: "{\"ids\": [1, 2, 3]}"},
+			{Description: "Full-text search", Query: "{ products(search: \"wireless\") { id name } }"},
+			{Description: "JSON field filter", Query: "{ products(where: { metadata: { has_key: \"color\" } }) { id } }"},
+		},
+		Relationships: []QueryExample{
+			{Description: "Parent to children (one-to-many)", Query: "{ users { email products { name } } }"},
+			{Description: "Child to parent (many-to-one)", Query: "{ products { name owner { email } } }"},
+			{Description: "Many-to-many through join table", Query: "{ products { name customers { email } } }"},
+			{Description: "Deep nesting", Query: "{ users { products { purchases { customer { email } } } } }"},
+		},
+		Pagination: []QueryExample{
+			{Description: "Limit and offset", Query: "{ products(limit: 10, offset: 20) { id name } }"},
+			{Description: "Cursor pagination", Query: "{ products(first: 10, after: $cursor) { id name } products_cursor }"},
+			{Description: "Distinct results", Query: "{ products(distinct: [category_id]) { category_id } }"},
+		},
+		Aggregations: []QueryExample{
+			{Description: "Count records", Query: "{ products { count_id } }"},
+			{Description: "Sum values", Query: "{ products { sum_price } }"},
+			{Description: "Multiple aggregations", Query: "{ products { count_id sum_price avg_price min_price max_price } }"},
+		},
+		Recursive: []QueryExample{
+			{Description: "Find all children (descendants)", Query: "{ comments(id: $id) { id body replies: comments(find: \"children\") { id body } } }"},
+			{Description: "Find all parents (ancestors)", Query: "{ comments(id: $id) { id body thread: comments(find: \"parents\") { id body } } }"},
+		},
+		Spatial: []QueryExample{
+			{Description: "Find within distance (meters)", Query: "{ locations(where: { geom: { st_dwithin: { point: [-122.4, 37.7], distance: 1000 } } }) { id name } }"},
+			{Description: "Find within distance (miles)", Query: "{ locations(where: { geom: { st_dwithin: { point: [-122.4, 37.7], distance: 5, unit: \"miles\" } } }) { id name } }"},
+			{Description: "Point in polygon", Query: "{ locations(where: { geom: { st_within: { polygon: [[-122.5, 37.7], [-122.3, 37.7], [-122.3, 37.9], [-122.5, 37.9], [-122.5, 37.7]] } } }) { id } }"},
+			{Description: "Polygon contains point", Query: "{ regions(where: { boundary: { st_contains: { point: [-122.4, 37.7] } } }) { id name } }"},
+			{Description: "Geometry intersection (GeoJSON)", Query: "{ parcels(where: { geom: { st_intersects: { geometry: { type: \"Polygon\", coordinates: [[[-122.5, 37.7], [-122.3, 37.7], [-122.3, 37.9], [-122.5, 37.9], [-122.5, 37.7]]] } } } }) { id } }"},
+			{Description: "MongoDB near query", Query: "{ locations(where: { geom: { near: { point: [-122.4, 37.7], maxDistance: 5000 } } }) { id name } }"},
+		},
+	},
 }
 
 // mutationSyntaxReference is the static reference data for mutation syntax
@@ -185,61 +228,13 @@ var mutationSyntaxReference = MutationSyntaxReference{
 		Options:   []string{"format", "min", "max", "required", "requiredIf", "greaterThan", "lessThan"},
 		Example:   "mutation @constraint(variable: \"email\", format: \"email\") { users(insert: { email: $email }) { id } }",
 	},
-	ExampleMutation: "mutation { users(insert: { email: $email, full_name: $name }) { id email } }",
-}
-
-// queryExamples contains categorized example queries
-var queryExamples = QueryExamples{
-	Basic: []QueryExample{
-		{Description: "Fetch products with limit", Query: "{ products(limit: 10) { id name } }"},
-		{Description: "Fetch by ID", Query: "{ products(id: $id) { id name price } }", Variables: "{\"id\": 1}"},
-		{Description: "Fetch single object", Query: "{ product @object { id name } }"},
-	},
-	Filtering: []QueryExample{
-		{Description: "Filter with comparison", Query: "{ products(where: { price: { gt: 50 } }) { id name } }"},
-		{Description: "Filter with AND", Query: "{ products(where: { and: [{ price: { gt: 10 } }, { price: { lt: 100 } }] }) { id } }"},
-		{Description: "Filter with OR", Query: "{ products(where: { or: { name: { ilike: \"%phone%\" }, name: { ilike: \"%tablet%\" } } }) { id } }"},
-		{Description: "Filter with NOT", Query: "{ products(where: { not: { price: { is_null: true } } }) { id } }"},
-		{Description: "Filter on relationship", Query: "{ products(where: { owner: { email: { eq: $email } } }) { id } }"},
-		{Description: "Filter with IN list", Query: "{ products(where: { id: { in: $ids } }) { id name } }", Variables: "{\"ids\": [1, 2, 3]}"},
-		{Description: "Full-text search", Query: "{ products(search: \"wireless\") { id name } }"},
-		{Description: "JSON field filter", Query: "{ products(where: { metadata: { has_key: \"color\" } }) { id } }"},
-	},
-	Relationships: []QueryExample{
-		{Description: "Parent to children (one-to-many)", Query: "{ users { email products { name } } }"},
-		{Description: "Child to parent (many-to-one)", Query: "{ products { name owner { email } } }"},
-		{Description: "Many-to-many through join table", Query: "{ products { name customers { email } } }"},
-		{Description: "Deep nesting", Query: "{ users { products { purchases { customer { email } } } } }"},
-	},
-	Pagination: []QueryExample{
-		{Description: "Limit and offset", Query: "{ products(limit: 10, offset: 20) { id name } }"},
-		{Description: "Cursor pagination", Query: "{ products(first: 10, after: $cursor) { id name } products_cursor }"},
-		{Description: "Distinct results", Query: "{ products(distinct: [category_id]) { category_id } }"},
-	},
-	Aggregations: []QueryExample{
-		{Description: "Count records", Query: "{ products { count_id } }"},
-		{Description: "Sum values", Query: "{ products { sum_price } }"},
-		{Description: "Multiple aggregations", Query: "{ products { count_id sum_price avg_price min_price max_price } }"},
-	},
-	Recursive: []QueryExample{
-		{Description: "Find all children (descendants)", Query: "{ comments(id: $id) { id body replies: comments(find: \"children\") { id body } } }"},
-		{Description: "Find all parents (ancestors)", Query: "{ comments(id: $id) { id body thread: comments(find: \"parents\") { id body } } }"},
-	},
-	Mutations: []QueryExample{
+	Examples: []QueryExample{
 		{Description: "Simple insert", Query: "mutation { users(insert: { email: $email }) { id } }"},
 		{Description: "Insert with nested create", Query: "mutation { purchases(insert: { quantity: 1, product: { name: $name, price: $price } }) { id } }"},
 		{Description: "Update by ID", Query: "mutation { products(id: $id, update: { price: $price }) { id price } }"},
 		{Description: "Upsert (insert or update)", Query: "mutation { products(upsert: { id: $id, name: $name }) { id name } }"},
 		{Description: "Delete", Query: "mutation { products(delete: true, where: { id: { eq: $id } }) { id } }"},
 		{Description: "Connect existing record", Query: "mutation { products(insert: { name: $name, owner: { connect: { id: $owner_id } } }) { id } }"},
-	},
-	Spatial: []QueryExample{
-		{Description: "Find within distance (meters)", Query: "{ locations(where: { geom: { st_dwithin: { point: [-122.4, 37.7], distance: 1000 } } }) { id name } }"},
-		{Description: "Find within distance (miles)", Query: "{ locations(where: { geom: { st_dwithin: { point: [-122.4, 37.7], distance: 5, unit: \"miles\" } } }) { id name } }"},
-		{Description: "Point in polygon", Query: "{ locations(where: { geom: { st_within: { polygon: [[-122.5, 37.7], [-122.3, 37.7], [-122.3, 37.9], [-122.5, 37.9], [-122.5, 37.7]] } } }) { id } }"},
-		{Description: "Polygon contains point", Query: "{ regions(where: { boundary: { st_contains: { point: [-122.4, 37.7] } } }) { id name } }"},
-		{Description: "Geometry intersection (GeoJSON)", Query: "{ parcels(where: { geom: { st_intersects: { geometry: { type: \"Polygon\", coordinates: [[[-122.5, 37.7], [-122.3, 37.7], [-122.3, 37.9], [-122.5, 37.9], [-122.5, 37.7]]] } } } }) { id } }"},
-		{Description: "MongoDB near query", Query: "{ locations(where: { geom: { near: { point: [-122.4, 37.7], maxDistance: 5000 } } }) { id name } }"},
 	},
 }
 
@@ -256,15 +251,6 @@ func (ms *mcpServer) registerSyntaxTools() {
 		"get_mutation_syntax",
 		mcp.WithDescription("Get GraphJin mutation syntax reference. Call this before writing mutations to learn insert, update, upsert, delete, and nested mutation syntax."),
 	), ms.handleGetMutationSyntax)
-
-	// get_query_examples - Returns annotated example queries
-	ms.srv.AddTool(mcp.NewTool(
-		"get_query_examples",
-		mcp.WithDescription("Get annotated example queries for common patterns. Optionally filter by category."),
-		mcp.WithString("category",
-			mcp.Description("Filter examples by category: basic, filtering, relationships, pagination, aggregations, recursive, mutations"),
-		),
-	), ms.handleGetQueryExamples)
 }
 
 // handleGetQuerySyntax returns the query syntax reference
@@ -279,40 +265,6 @@ func (ms *mcpServer) handleGetQuerySyntax(ctx context.Context, req mcp.CallToolR
 // handleGetMutationSyntax returns the mutation syntax reference
 func (ms *mcpServer) handleGetMutationSyntax(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	data, err := json.MarshalIndent(mutationSyntaxReference, "", "  ")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
-}
-
-// handleGetQueryExamples returns example queries, optionally filtered by category
-func (ms *mcpServer) handleGetQueryExamples(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	argsMap := req.GetArguments()
-	category, _ := argsMap["category"].(string)
-
-	var result any
-	switch category {
-	case "basic":
-		result = map[string][]QueryExample{"basic": queryExamples.Basic}
-	case "filtering":
-		result = map[string][]QueryExample{"filtering": queryExamples.Filtering}
-	case "relationships":
-		result = map[string][]QueryExample{"relationships": queryExamples.Relationships}
-	case "pagination":
-		result = map[string][]QueryExample{"pagination": queryExamples.Pagination}
-	case "aggregations":
-		result = map[string][]QueryExample{"aggregations": queryExamples.Aggregations}
-	case "recursive":
-		result = map[string][]QueryExample{"recursive": queryExamples.Recursive}
-	case "mutations":
-		result = map[string][]QueryExample{"mutations": queryExamples.Mutations}
-	case "spatial":
-		result = map[string][]QueryExample{"spatial": queryExamples.Spatial}
-	default:
-		result = queryExamples
-	}
-
-	data, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}

@@ -95,6 +95,11 @@ type graphjinEngine struct {
 	databases map[string]*dbContext
 	// Name of the default database (used when table has no explicit database)
 	defaultDB string
+
+	// Response cache provider (optional, set via OptionSetResponseCache)
+	responseCache ResponseCacheProvider
+	// Cache key builder
+	cacheKeyBuilder *CacheKeyBuilder
 }
 
 type GraphJin struct {
@@ -272,6 +277,16 @@ func OptionSetResolver(name string, fn ResolverFn) Option {
 	}
 }
 
+// OptionSetResponseCache sets the response cache provider for caching query results.
+// The cache provider is typically the Redis cache from the serv package.
+func OptionSetResponseCache(cache ResponseCacheProvider) Option {
+	return func(s *graphjinEngine) error {
+		s.responseCache = cache
+		s.cacheKeyBuilder = NewCacheKeyBuilder()
+		return nil
+	}
+}
+
 type Error struct {
 	Message string `json:"message"`
 }
@@ -285,6 +300,7 @@ type Result struct {
 	sql          string
 	role         string
 	cacheControl string
+	cacheHit     bool
 	Vars         json.RawMessage   `json:"-"`
 	Data         json.RawMessage   `json:"data,omitempty"`
 	Hash         [sha256.Size]byte `json:"-"`
@@ -534,9 +550,15 @@ func (gj *graphjinEngine) query(c context.Context, r GraphqlReq) (
 	resp.res.sql = s.sql()
 	resp.res.cacheControl = s.cacheHeader()
 	resp.res.Vars = r.vars
+	// Strip internal __gj_id fields unconditionally when cache tracking is enabled.
+	// This handles all code paths: cache hits, multi-DB queries, and regular queries.
+	if gj.conf.CacheTrackingEnabled {
+		s.data = stripGjIdFields(s.data)
+	}
 	resp.res.Data = json.RawMessage(s.data)
 	resp.res.Hash = s.dhash
 	resp.res.role = s.role
+	resp.res.cacheHit = s.cacheHit
 
 	if err != nil {
 		resp.res.Errors = newError(err)
@@ -601,6 +623,44 @@ func getFS(conf *Config) (fs FS, err error) {
 func newError(err error) (errList []Error) {
 	errList = []Error{{Message: err.Error()}}
 	return
+}
+
+// stripGjIdFields removes all "__gj_id" fields from JSON response.
+// Uses JSON parse/delete/marshal for correctness - doesn't depend on QCode.
+// This is used to unconditionally strip internal tracking fields from all responses,
+// including cache hits where s.cs is nil.
+func stripGjIdFields(data []byte) []byte {
+	if len(data) == 0 {
+		return data
+	}
+
+	var obj interface{}
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return data // Return original on parse error
+	}
+
+	removeGjIdKey(obj)
+
+	result, err := json.Marshal(obj)
+	if err != nil {
+		return data // Return original on marshal error
+	}
+	return result
+}
+
+// removeGjIdKey recursively removes "__gj_id" from all objects in the JSON structure.
+func removeGjIdKey(v interface{}) {
+	switch val := v.(type) {
+	case map[string]interface{}:
+		delete(val, "__gj_id")
+		for _, child := range val {
+			removeGjIdKey(child)
+		}
+	case []interface{}:
+		for _, item := range val {
+			removeGjIdKey(item)
+		}
+	}
 }
 
 // TableInfo represents basic table information for MCP/API consumers
