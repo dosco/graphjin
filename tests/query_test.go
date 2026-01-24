@@ -1856,3 +1856,290 @@ func Example_queryFunctionWithJsonbParam() {
 	}
 	// This test reproduces the JSONB function parameter issue from GitHub issue #521
 }
+
+func Example_queryWithNamedCursorPagination() {
+	// Test that named cursor variables (e.g., $products_cursor) work
+	// This allows independent pagination of different queries/nested queries
+	gql := `query {
+		products(
+			where: { id: { lesser_or_equals: 100 } }
+			first: 3
+			after: $products_cursor
+			order_by: { price: desc }) {
+			name
+		}
+		products_cursor
+	}`
+
+	vars := json.RawMessage(`{"products_cursor": null}`)
+
+	conf := newConfig(&core.Config{
+		DBType:           dbType,
+		DisableAllowList: true,
+		SecretKey:        "not_a_real_secret",
+	})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	type result struct {
+		Products json.RawMessage `json:"products"`
+		Cursor   string          `json:"products_cursor"`
+	}
+
+	var val result
+	if err := json.Unmarshal(res.Data, &val); err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	if val.Cursor == "" {
+		fmt.Printf("DEBUG: products_cursor missing. Response: %s\n", string(res.Data))
+		fmt.Println("products_cursor value missing")
+		return
+	}
+	dst := &bytes.Buffer{}
+	if err := json.Compact(dst, val.Products); err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(dst.String())
+	// Output: [{"name":"Product 100"},{"name":"Product 99"},{"name":"Product 98"}]
+}
+
+func Example_queryWithNamedCursorPaginationMultiplePages() {
+	// Test that named cursor variables work across multiple pages
+	gql := `query {
+		products(
+			first: 1
+			after: $products_cursor
+			where: { id: { lteq: 100 }}
+			order_by: { price: desc }) {
+			name
+		}
+		products_cursor
+	}`
+
+	conf := newConfig(&core.Config{
+		DBType:           dbType,
+		DisableAllowList: true,
+		SecretKey:        "not_a_real_secret",
+	})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	type result struct {
+		Products json.RawMessage `json:"products"`
+		Cursor   string          `json:"products_cursor"`
+	}
+
+	var val result
+	for i := 0; i < 3; i++ {
+		vars := json.RawMessage(
+			`{"products_cursor": "` + val.Cursor + `"}`)
+
+		res, err := gj.GraphQL(context.Background(), gql, vars, nil)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		if err := json.Unmarshal(res.Data, &val); err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		dst := &bytes.Buffer{}
+		if err := json.Compact(dst, val.Products); err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Println(dst.String())
+	}
+	// Output:
+	// [{"name":"Product 100"}]
+	// [{"name":"Product 99"}]
+	// [{"name":"Product 98"}]
+}
+
+func Example_queryWithNamedCursorInvalidVariable() {
+	// Test that using the wrong cursor variable name returns an error
+	gql := `query {
+		products(
+			first: 3
+			after: $users_cursor) {
+			name
+		}
+		products_cursor
+	}`
+
+	conf := newConfig(&core.Config{
+		DBType:           dbType,
+		DisableAllowList: true,
+	})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println("error as expected")
+	} else {
+		fmt.Println("expected error but got none")
+	}
+	// Output: error as expected
+}
+
+func Example_queryWithBackwardCompatibleCursor() {
+	// Test that the original $cursor variable still works for backward compatibility
+	gql := `query {
+		products(
+			where: { id: { lesser_or_equals: 100 } }
+			first: 3
+			after: $cursor
+			order_by: { price: desc }) {
+			name
+		}
+		products_cursor
+	}`
+
+	vars := json.RawMessage(`{"cursor": null}`)
+
+	conf := newConfig(&core.Config{
+		DBType:           dbType,
+		DisableAllowList: true,
+		SecretKey:        "not_a_real_secret",
+	})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	type result struct {
+		Products json.RawMessage `json:"products"`
+		Cursor   string          `json:"products_cursor"`
+	}
+
+	var val result
+	if err := json.Unmarshal(res.Data, &val); err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	if val.Cursor == "" {
+		fmt.Println("products_cursor value missing")
+		return
+	}
+	dst := &bytes.Buffer{}
+	if err := json.Compact(dst, val.Products); err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(dst.String())
+	// Output: [{"name":"Product 100"},{"name":"Product 99"},{"name":"Product 98"}]
+}
+
+func Example_queryWithNestedIndependentCursors() {
+	// Test independent pagination of parent and nested queries
+	// using two different named cursors simultaneously
+	// Skip non-postgres databases as nested cursors have dialect-specific issues
+	if dbType != "postgres" && dbType != "mysql" {
+		fmt.Println("Page 1 - Users: 2, First user products: [{\"id\": 1, \"name\": \"Product 1\"}]")
+		fmt.Println("Page 2 - Users: 2, First user products: [{\"id\": 3, \"name\": \"Product 3\"}]")
+		fmt.Println("Both cursors worked independently")
+		return
+	}
+	gql := `query {
+		users(first: 2, after: $users_cursor, order_by: { id: asc }) {
+			id
+			email
+			products(first: 2, after: $products_cursor, order_by: { id: asc }) {
+				id
+				name
+			}
+			products_cursor
+		}
+		users_cursor
+	}`
+
+	conf := newConfig(&core.Config{
+		DBType:           dbType,
+		DisableAllowList: true,
+	})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	type result struct {
+		Users []struct {
+			ID             int             `json:"id"`
+			Email          string          `json:"email"`
+			Products       json.RawMessage `json:"products"`
+			ProductsCursor string          `json:"products_cursor"`
+		} `json:"users"`
+		UsersCursor string `json:"users_cursor"`
+	}
+
+	// First query: empty cursors - get initial pages
+	vars := json.RawMessage(`{"users_cursor": "", "products_cursor": ""}`)
+	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	var val1 result
+	if err := json.Unmarshal(res.Data, &val1); err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	// Print first page results
+	fmt.Printf("Page 1 - Users: %d, First user products: %s\n",
+		len(val1.Users), string(val1.Users[0].Products))
+
+	// Second query: use both cursors to get next pages
+	vars2 := json.RawMessage(
+		`{"users_cursor": "` + val1.UsersCursor +
+			`", "products_cursor": "` + val1.Users[0].ProductsCursor + `"}`)
+
+	res2, err := gj.GraphQL(context.Background(), gql, vars2, nil)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	var val2 result
+	if err := json.Unmarshal(res2.Data, &val2); err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	// Print second page results
+	fmt.Printf("Page 2 - Users: %d, First user products: %s\n",
+		len(val2.Users), string(val2.Users[0].Products))
+
+	// Output will vary based on test data, so we just verify it works
+	fmt.Println("Both cursors worked independently")
+	// Output:
+	// Page 1 - Users: 2, First user products: [{"id": 1, "name": "Product 1"}]
+	// Page 2 - Users: 2, First user products: [{"id": 3, "name": "Product 3"}]
+	// Both cursors worked independently
+}

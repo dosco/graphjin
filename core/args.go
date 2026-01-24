@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/psql"
 )
@@ -76,7 +77,15 @@ func (gj *graphjinEngine) argList(c context.Context,
 			ar.cindxs = append(ar.cindxs, i)
 
 		default:
-			if v, ok := fields[p.Name]; ok {
+			// Check for named cursor variables (e.g., products_cursor, users_cursor)
+			if strings.HasSuffix(p.Name, "_cursor") {
+				if v, ok := fields[p.Name]; ok && len(v) > 0 && v[0] == '"' {
+					vl[i] = string(v[1 : len(v)-1])
+				} else {
+					vl[i] = nil
+				}
+				ar.cindxs = append(ar.cindxs, i)
+			} else if v, ok := fields[p.Name]; ok {
 				varIsNull := bytes.Equal(v, []byte("null"))
 
 				switch {

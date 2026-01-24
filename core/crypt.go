@@ -111,7 +111,7 @@ func decryptValues(data, prefix []byte, key [32]byte) ([]byte, error) {
 	for {
 		var fail bool
 
-		evs := (s + e + pl)
+		evs := e + pl
 		q := bytes.IndexByte(data[evs:], '"')
 		if q == -1 {
 			break
@@ -149,12 +149,13 @@ func decryptValues(data, prefix []byte, key [32]byte) ([]byte, error) {
 		if !fail {
 			b.Write(out1)
 		} else {
-			b.Write(data[(s + e):eve])
+			b.Write(data[e:eve])
 		}
 		s = eve
 		if e = bytes.Index(data[s:], prefix); e == -1 {
 			break
 		}
+		e += s // Convert relative offset to absolute position
 	}
 	b.Write(data[s:])
 	return b.Bytes(), nil

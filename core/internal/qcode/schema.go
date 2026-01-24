@@ -120,10 +120,14 @@ func parseTFieldsFunction(fn *sdata.DBFunction, fields []graph.TField) (
 		if err != nil {
 			return
 		}
+		paramType := pascalToSnakeSpace(f.Type)
+		if dir.TypeSuffix != "" {
+			paramType += "(" + dir.TypeSuffix + ")"
+		}
 		p := sdata.DBFuncParam{
 			ID:   i,
 			Name: f.Name,
-			Type: pascalToSnakeSpace(f.Type),
+			Type: paramType,
 		}
 		switch {
 		case dir.Input:
@@ -200,6 +204,13 @@ func parseTFieldDirectives(ft string, dir []graph.Directive) (tfi tfieldInfo, er
 			tfi.Blocked = true
 
 		case "type":
+			arg, err = getArg(d.Args, "args", graph.NodeStr, graph.NodeLabel)
+			if err != nil {
+				break
+			}
+			tfi.TypeSuffix = arg.Val.Val
+
+		case "type_args":
 			arg, err = getArg(d.Args, "args", graph.NodeStr, graph.NodeLabel)
 			if err != nil {
 				break

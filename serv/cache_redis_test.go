@@ -93,7 +93,6 @@ func TestCompress_SavingsForLargeData(t *testing.T) {
 	}
 
 	ratio := float64(len(compressed)) / float64(len(data))
-	t.Logf("Original: %d bytes, Compressed: %d bytes, Ratio: %.2f", len(data), len(compressed), ratio)
 
 	// Expect significant compression for repetitive JSON
 	if ratio > 0.5 {

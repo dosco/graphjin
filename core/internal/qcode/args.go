@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/graph"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
@@ -346,16 +347,26 @@ func (co *Compiler) compileArgAfterBefore(sel *Select, arg graph.Arg, pt PagingT
 	}
 
 	node := arg.Val
+	varName := node.Val
 
-	if node.Val != "cursor" {
-		return fmt.Errorf("value for argument '%s' must be a variable named $cursor", arg.Name)
+	// Accept "cursor" (backward compatible) or "<fieldname>_cursor"
+	expectedNamed := sel.FieldName + "_cursor"
+	if varName != "cursor" && varName != expectedNamed {
+		return fmt.Errorf("value for argument '%s' must be $cursor or $%s",
+			arg.Name, expectedNamed)
 	}
 
 	sel.Paging.Type = pt
+	sel.Paging.CursorVar = varName // Store the variable name
 	if !sel.Singular {
 		sel.Paging.Cursor = true
 	}
 	return
+}
+
+// isCursorVar checks if a variable name is a cursor variable (either "cursor" or ends with "_cursor")
+func isCursorVar(name string) bool {
+	return name == "cursor" || strings.HasSuffix(name, "_cursor")
 }
 
 func (co *Compiler) compileFieldArgs(sel *Select, f *Field, args []graph.Arg, role string) (err error) {

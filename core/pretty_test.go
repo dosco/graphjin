@@ -88,9 +88,6 @@ func TestPrettify(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := prettify(tt.query, tt.dbType)
-            // Log for debugging
-            t.Logf("Got:\n%s", got)
-            
 			for _, c := range tt.contains {
                 // We use strings.Contains, but we need to match carefully because we insert newlines
                 // The expected strings in `contains` assume \n is present.

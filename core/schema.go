@@ -28,7 +28,7 @@ const schemaTemplate = `
 
 {{- define "function_directive"}}
 {{- " @function" }}
-{{- if (ne .Type "")}}(return_type: {{ .Type }}){{end}}
+{{- if (ne .Type "")}}(return_type: {{ .Type | printf "%q" }}){{end}}
 {{- end}}
 
 {{- define "column_type"}}
@@ -54,13 +54,13 @@ const schemaTemplate = `
 
 {{- define "func_args"}}
 {{ "\t" }}
-{{- .Name }}:
+{{- if ne .Name "" }}{{ .Name }}{{ else }}_arg{{ .ID }}{{ end }}:
 {{- "\t"}}
 {{- $var := .Type|dbtype }}
 {{- (index $var 0)|pascal }}
 {{- if .Array}}[]{{end}}
 {{- "\t"}}
-{{- if ne (index $var 1) ""}} @type_args({{ (index $var 1) }}){{end}}
+{{- if ne (index $var 1) ""}} @type_args(args: {{ (index $var 1) | printf "%q" }}){{end}}
 {{- end -}}
 
 {{range .Tables -}}

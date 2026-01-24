@@ -67,14 +67,8 @@ func TestReproSubHang(t *testing.T) {
 
 	for i := 0; i < 4; i++ {
 		select {
-		case msg := <-m.Result:
-			t.Logf("Received message %d: %s", i+1, string(msg.Data))
-			t.Logf("SQL for message %d: %s", i+1, msg.SQL())
-			// Extract cursor from data to see if it changed
-			var data map[string]interface{}
-			if err := json.Unmarshal(msg.Data, &data); err == nil {
-				t.Logf("Cursor for message %d: %v", i+1, data["chats_cursor"])
-			}
+		case <-m.Result:
+			// Message received successfully
 		case <-ctx.Done():
 			t.Fatalf("Timed out waiting for message %d", i+1)
 		}

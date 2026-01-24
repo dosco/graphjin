@@ -171,12 +171,16 @@ func (d *OracleDialect) RenderCursorCTE(ctx Context, sel *qcode.Select) {
 	}
 	// Oracle: Parse comma-separated cursor using REGEXP_SUBSTR
 	ctx.WriteString(`WITH "__CUR" AS (SELECT `)
+	cursorVar := sel.Paging.CursorVar
+	if cursorVar == "" {
+		cursorVar = "cursor"
+	}
 	for i, ob := range sel.OrderBy {
 		if i != 0 {
 			ctx.WriteString(`, `)
 		}
 		ctx.WriteString(`CAST(REGEXP_SUBSTR(`)
-		ctx.AddParam(Param{Name: "cursor", Type: "text"})
+		ctx.AddParam(Param{Name: cursorVar, Type: "text"})
 		ctx.WriteString(`, '[^,]+', 1, `)
 		ctx.Write(fmt.Sprintf("%d", i+2)) // Skip first element (ID)
 		ctx.WriteString(`) AS `)
