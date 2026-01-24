@@ -218,6 +218,10 @@ func Example_insertWithPresets() {
 	} else {
 		printJSON(res.Data)
 	}
+
+	// Cleanup: delete the inserted product to avoid polluting other tests
+	_, _ = db.Exec("DELETE FROM products WHERE id = 2001")
+
 	// Output: {"products":[{"id":2001,"name":"Product 2001","owner":{"email":"user3@test.com","id":3}}]}
 }
 
@@ -316,6 +320,12 @@ func Example_insertIntoMultipleRelatedTables() {
 	} else {
 		printJSON(res.Data)
 	}
+
+	// Cleanup: delete inserted data to avoid polluting other tests
+	_, _ = db.Exec("DELETE FROM purchases WHERE id = 3001")
+	_, _ = db.Exec("DELETE FROM products WHERE id = 2002")
+	_, _ = db.Exec("DELETE FROM users WHERE id = 1004")
+
 	// Output: {"purchases":[{"customer":{"email":"user1004@test.com","full_name":"User 1004","id":1004},"product":{"id":2002,"name":"Product 2002","price":2012.5},"quantity":5}]}
 }
 
@@ -365,6 +375,11 @@ func Example_insertIntoTableAndRelatedTable1() {
 	} else {
 		printJSON(res.Data)
 	}
+
+	// Cleanup: delete inserted data to avoid polluting other tests
+	_, _ = db.Exec("DELETE FROM products WHERE id = 2003")
+	_, _ = db.Exec("DELETE FROM users WHERE id = 1005")
+
 	// Output: {"users":[{"email":"user1005@test.com","full_name":"User 1005","id":1005,"products":[{"id":2003,"name":"Product 2003","price":2013.5}]}]}
 }
 
@@ -476,6 +491,10 @@ func Example_insertIntoTableBulkInsertIntoRelatedTable() {
 		printJSON(res.Data)
 	}
 
+	// Cleanup: delete inserted data to avoid polluting other tests
+	_, _ = db.Exec("DELETE FROM products WHERE id IN (20031, 20032)")
+	_, _ = db.Exec("DELETE FROM users WHERE id = 10051")
+
 	// Output: {"users":[{"email":"user10051@test.com","full_name":"User 10051","id":10051,"products":[{"id":20031,"name":"Product 20031","price":2013.5},{"id":20032,"name":"Product 20032","price":2014.5}]}]}
 }
 
@@ -565,6 +584,10 @@ func Example_insertWithCamelToSnakeCase() {
 	} else {
 		printJSON(res.Data)
 	}
+
+	// Cleanup: delete inserted data to avoid polluting other tests
+	_, _ = db.Exec("DELETE FROM products WHERE id = 2007")
+
 	// Output: {"products":[{"id":2007,"name":"Product 2007","owner":{"email":"user3@test.com","id":3}}]}
 }
 

@@ -105,13 +105,17 @@ func (d *SQLiteDialect) RenderCursorCTE(ctx Context, sel *qcode.Select) {
 	// SQLite: Parse comma-separated cursor as JSON array
 	// Convert "val1,val2,val3" to '["val1","val2","val3"]' then use json_each
 	ctx.WriteString(`WITH __cur AS (SELECT `)
+	cursorVar := sel.Paging.CursorVar
+	if cursorVar == "" {
+		cursorVar = "cursor"
+	}
 	for i, ob := range sel.OrderBy {
 		if i != 0 {
 			ctx.WriteString(`, `)
 		}
 		// Use json_extract with array index (0-based in SQLite JSON)
 		ctx.WriteString(`CAST(json_extract('["' || replace(NULLIF(`)
-		ctx.AddParam(Param{Name: "cursor", Type: "text"})
+		ctx.AddParam(Param{Name: cursorVar, Type: "text"})
 		ctx.WriteString(`, ''), ',', '","') || '"]', '$[`)
 		ctx.WriteString(fmt.Sprintf("%d", i+1))
 		ctx.WriteString(`]') AS `)

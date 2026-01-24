@@ -286,7 +286,11 @@ func (d *MSSQLDialect) RenderCursorCTE(ctx Context, sel *qcode.Select) {
 	// Use VALUES to pass the cursor parameter once, then CROSS APPLY to strip prefix
 	// This avoids multiple parameter placeholders for the same value
 	ctx.WriteString(` FROM (VALUES (`)
-	ctx.AddParam(Param{Name: "cursor", Type: "text"})
+	cursorVar := sel.Paging.CursorVar
+	if cursorVar == "" {
+		cursorVar = "cursor"
+	}
+	ctx.AddParam(Param{Name: cursorVar, Type: "text"})
 	ctx.WriteString(`)) AS [_p]([v]) CROSS APPLY (SELECT CASE WHEN [_p].[v] LIKE 'gj-%' THEN STUFF([_p].[v], 1, CHARINDEX(':', [_p].[v], 4), '') ELSE [_p].[v] END AS [v]) AS [c]) `)
 }
 

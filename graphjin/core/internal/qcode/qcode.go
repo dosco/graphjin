@@ -240,6 +240,7 @@ type Paging struct {
 	OffsetVar string
 	Offset    int32
 	Cursor    bool
+	CursorVar string // "cursor" or "<fieldname>_cursor" for named cursor pagination
 	NoLimit   bool
 }
 

@@ -118,7 +118,11 @@ func (d *PostgresDialect) RenderCursorCTE(ctx Context, sel *qcode.Select) {
 		}
 	}
 	ctx.WriteString(` FROM STRING_TO_ARRAY(`)
-	ctx.AddParam(Param{Name: "cursor", Type: "text"})
+	cursorVar := sel.Paging.CursorVar
+	if cursorVar == "" {
+		cursorVar = "cursor"
+	}
+	ctx.AddParam(Param{Name: cursorVar, Type: "text"})
 	ctx.WriteString(`, ',') AS a) `)
 }
 
