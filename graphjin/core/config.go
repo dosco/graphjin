@@ -113,6 +113,10 @@ type Config struct {
 	// When set, allows querying across multiple databases in a single GraphQL request.
 	// Each database gets its own connection pool, schema, and SQL compiler.
 	Databases map[string]DatabaseConfig `mapstructure:"databases" json:"databases" yaml:"databases" jsonschema:"title=Databases"`
+
+	// CacheTrackingEnabled enables injection of __gj_id fields for cache row tracking.
+	// This is set by the service layer when Redis caching is enabled.
+	CacheTrackingEnabled bool `mapstructure:"-" json:"-" yaml:"-" jsonschema:"-"`
 }
 
 // DatabaseConfig defines configuration for a single database in multi-database mode

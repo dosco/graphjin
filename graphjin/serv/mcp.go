@@ -28,6 +28,7 @@ func (s *graphjinService) newMCPServerWithContext(ctx context.Context) *mcpServe
 		"graphjin",
 		version,
 		server.WithToolCapabilities(true),
+		server.WithPromptCapabilities(true),
 	)
 
 	ms := &mcpServer{
@@ -38,6 +39,9 @@ func (s *graphjinService) newMCPServerWithContext(ctx context.Context) *mcpServe
 
 	// Register all MCP tools
 	ms.registerTools()
+
+	// Register MCP prompts
+	ms.registerPrompts()
 
 	return ms
 }

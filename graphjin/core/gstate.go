@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dosco/graphjin/core/v3/internal/graph"
 	"github.com/dosco/graphjin/core/v3/internal/psql"
@@ -36,6 +37,12 @@ type gstate struct {
 	// dbGroups maps database names to their root field names for multi-DB queries.
 	// Only populated when multiDB is true.
 	dbGroups map[string][]string
+
+	// Cache-related fields
+	cacheKey     string    // Cache key for this query
+	queryStarted time.Time // When query started (for race condition detection)
+	cacheHit     bool      // True if response was served from cache
+	skipCache    bool      // True if caching should be skipped for this query
 }
 
 type cstate struct {
@@ -272,6 +279,16 @@ func (s *gstate) getTargetDB() *sql.DB {
 }
 
 func (s *gstate) compileAndExecuteWrapper(c context.Context) (err error) {
+	// Record query start time for cache race condition detection
+	s.queryStarted = time.Now()
+
+	// Try cache lookup for queries (before compilation)
+	if s.gj.responseCache != nil && s.r.operation == qcode.QTQuery {
+		if s.tryCacheGet(c) {
+			return nil
+		}
+	}
+
 	// Check for multi-database queries BEFORE compilation
 	// This is done by parsing root fields without schema validation
 	if s.gj.isMultiDB() {
@@ -316,6 +333,15 @@ func (s *gstate) compileAndExecuteWrapper(c context.Context) (err error) {
 	if s.gj.isMultiDB() && countDatabaseJoins(cs.st.qc) > 0 {
 		if err = s.execDatabaseJoins(c); err != nil {
 			return
+		}
+	}
+
+	// Cache the response for queries, or invalidate cache for mutations
+	if s.gj.responseCache != nil {
+		if s.r.operation == qcode.QTQuery && !s.skipCache {
+			s.tryCacheSet(c)
+		} else if s.r.operation != qcode.QTQuery {
+			s.invalidateCache(c)
 		}
 	}
 
@@ -733,3 +759,126 @@ func (s *gstate) key() (key string) {
 	}
 	return
 }
+
+// tryCacheGet attempts to retrieve the response from cache.
+// Returns true if cache hit (s.data is populated), false otherwise.
+func (s *gstate) tryCacheGet(c context.Context) bool {
+	if s.gj.responseCache == nil || s.gj.cacheKeyBuilder == nil {
+		return false
+	}
+
+	// Build cache key
+	s.cacheKey = s.gj.cacheKeyBuilder.Build(c, s.r.name, s.getAPQKey(), s.r.query, s.r.vars, s.role)
+
+	// Skip if anonymous query (no operation name or APQ key)
+	if s.cacheKey == "" || !s.gj.cacheKeyBuilder.ShouldCache(s.r.name, s.getAPQKey()) {
+		s.skipCache = true
+		return false
+	}
+
+	// Try to get from cache
+	data, isStale, found := s.gj.responseCache.Get(c, s.cacheKey)
+	if !found {
+		return false
+	}
+
+	// Cache hit - populate response data
+	s.data = data
+	s.cacheHit = true
+
+	// TODO: Handle SWR (stale-while-revalidate) for isStale == true
+	_ = isStale
+
+	return true
+}
+
+// tryCacheSet stores the response in cache with row-level indices.
+func (s *gstate) tryCacheSet(c context.Context) {
+	if s.gj.responseCache == nil || s.cacheKey == "" || len(s.data) == 0 || s.cacheHit {
+		return
+	}
+
+	cs := s.cs
+	if cs == nil || cs.st.qc == nil {
+		return
+	}
+
+	qc := cs.st.qc
+
+	// Skip caching for offset-based pagination (pages shift on insert/delete)
+	if s.hasOffsetPagination(qc) {
+		return
+	}
+
+	// Skip caching for responses that are too large
+	if len(s.data) > maxResponseSize {
+		return
+	}
+
+	// Process response to extract row refs and clean __gj_id fields
+	processor := NewResponseProcessor(qc)
+	cleaned, refs, err := processor.ProcessForCache(s.data)
+	if err != nil {
+		return
+	}
+
+	// Store in cache
+	_ = s.gj.responseCache.Set(c, s.cacheKey, cleaned, refs, s.queryStarted)
+}
+
+// invalidateCache invalidates cache entries for rows affected by a mutation.
+func (s *gstate) invalidateCache(c context.Context) {
+	if s.gj.responseCache == nil || len(s.data) == 0 {
+		return
+	}
+
+	cs := s.cs
+	if cs == nil || cs.st.qc == nil {
+		return
+	}
+
+	// Extract affected row IDs from mutation response
+	refs := ExtractMutationRefs(cs.st.qc, s.data)
+	if len(refs) > 0 {
+		_ = s.gj.responseCache.InvalidateRows(c, refs)
+	}
+}
+
+// stripInternalFields removes internal tracking fields (__gj_id) from response.
+// Called unconditionally for all operations when cache tracking is enabled.
+func (s *gstate) stripInternalFields() {
+	if len(s.data) == 0 {
+		return
+	}
+	cs := s.cs
+	if cs == nil || cs.st.qc == nil {
+		return
+	}
+	processor := NewResponseProcessor(cs.st.qc)
+	if cleaned, _, err := processor.ProcessForCache(s.data); err == nil {
+		s.data = cleaned
+	}
+}
+
+// getAPQKey returns the APQ key if one was provided in the request.
+func (s *gstate) getAPQKey() string {
+	if s.r.requestconfig != nil && s.r.requestconfig.APQKey != "" {
+		return s.r.requestconfig.APQKey
+	}
+	return ""
+}
+
+// hasOffsetPagination checks if any selection uses offset-based pagination.
+// Offset pagination is not cacheable because pages shift on insert/delete.
+func (s *gstate) hasOffsetPagination(qc *qcode.QCode) bool {
+	for i := range qc.Selects {
+		sel := &qc.Selects[i]
+		if sel.Paging.Type == qcode.PTOffset && sel.Paging.Offset > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// maxResponseSize is the maximum response size to cache (1MB)
+const maxResponseSize = 1 << 20

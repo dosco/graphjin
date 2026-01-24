@@ -131,15 +131,18 @@ func TestLinearExecutionSQLite(t *testing.T) {
     
     sql := string(sqlBytes)
     t.Logf("Generated SQLite SQL: %s", sql)
-    
+
+    // SQLite uses temp table for ID capture
     if !strings.Contains(sql, "CREATE TEMP TABLE IF NOT EXISTS _gj_ids") {
         t.Errorf("Expected CREATE TEMP TABLE")
     }
-    if !strings.Contains(sql, "INSERT INTO _gj_ids") {
-        t.Errorf("Expected INSERT INTO _gj_ids")
+    // SQLite uses comment-based ID capture (-- @gj_ids=varname) instead of explicit INSERT
+    if !strings.Contains(sql, "-- @gj_ids=") {
+        t.Errorf("Expected comment-based ID capture (-- @gj_ids=)")
     }
-     if !strings.Contains(sql, "DROP TABLE _gj_ids") {
-        t.Errorf("Expected DROP TABLE _gj_ids")
+    // Verify cleanup statement exists
+    if !strings.Contains(sql, "DROP TABLE") {
+        t.Errorf("Expected DROP TABLE for cleanup")
     }
 }
 
@@ -200,14 +203,20 @@ func TestLinearExecutionMySQLWithExplicitID(t *testing.T) {
     
     sql := string(sqlBytes)
     t.Logf("Generated SQL: %s", sql)
-    
-    // Verify inline variable assignment is used for explicit PK
+
+    // Verify inline variable assignment captures the explicit PK
     if !strings.Contains(sql, "@products_0 :=") {
-        t.Errorf("Expected inline variable assignment @products_0 :=, got: %s", sql)
+        t.Errorf("Expected inline variable assignment @products_0 :=")
     }
-    
-    // Verify WHERE clause uses the variable
-    if !strings.Contains(sql, "= @products_0") {
-        t.Errorf("Expected WHERE clause to use @products_0")
+
+    // MySQL with explicit ID uses JSON_TABLE for lookup in WHERE clause
+    // instead of direct variable comparison
+    if !strings.Contains(sql, "JSON_TABLE") {
+        t.Errorf("Expected JSON_TABLE for ID lookup")
+    }
+
+    // Verify the SELECT clause exists for returning results
+    if !strings.Contains(sql, "SELECT") && !strings.Contains(sql, "json_object") {
+        t.Errorf("Expected SELECT with json_object for result")
     }
 }

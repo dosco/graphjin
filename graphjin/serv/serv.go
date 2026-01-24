@@ -83,6 +83,9 @@ func startHTTP(s1 *HttpService) {
 		if s.closeFn != nil {
 			s.closeFn()
 		}
+		if s.cache != nil {
+			s.cache.Close()
+		}
 		if s.db != nil {
 			s.db.Close()
 		}

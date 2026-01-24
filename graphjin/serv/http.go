@@ -346,6 +346,7 @@ func (s *graphjinService) reqLog(res *core.Result, rc core.RequestConfig, resTim
 			zap.String("name", res.QueryName()),
 			zap.String("role", res.Role()),
 			zap.Int64("responseTimeMs", resTimeMs),
+			zap.Bool("cacheHit", res.CacheHit()),
 		}
 	}
 
@@ -353,7 +354,7 @@ func (s *graphjinService) reqLog(res *core.Result, rc core.RequestConfig, resTim
 		fields = append(fields, zap.String("namespace", ns))
 	}
 
-	if res.Vars != nil && s.conf.Core.LogVars {
+	if res != nil && res.Vars != nil && s.conf.Core.LogVars {
 		var vars map[string]interface{}
 		err := json.Unmarshal(res.Vars, &vars)
 		if err != nil {
@@ -364,10 +365,6 @@ func (s *graphjinService) reqLog(res *core.Result, rc core.RequestConfig, resTim
 
 	if sql != "" && s.logLevel >= logLevelDebug {
 		fields = append(fields, zap.String("sql", sql))
-	}
-
-	if sql != "" && s.conf.Core.Debug {
-		s.log.Info(sql)
 	}
 
 	if err != nil {
