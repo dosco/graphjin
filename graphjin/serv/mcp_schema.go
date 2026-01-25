@@ -14,7 +14,9 @@ func (ms *mcpServer) registerSchemaTools() {
 	// list_tables - List all database tables
 	ms.srv.AddTool(mcp.NewTool(
 		"list_tables",
-		mcp.WithDescription("List all database tables available for querying. Returns table names, types, and column counts."),
+		mcp.WithDescription("List all database tables. Call this FIRST to discover available data. "+
+			"Returns table names, types, and column counts. "+
+			"Follow up with describe_table for column details and available aggregation functions."),
 		mcp.WithString("namespace",
 			mcp.Description("Optional namespace for multi-tenant deployments"),
 		),
@@ -23,7 +25,9 @@ func (ms *mcpServer) registerSchemaTools() {
 	// describe_table - Get detailed table schema with relationships
 	ms.srv.AddTool(mcp.NewTool(
 		"describe_table",
-		mcp.WithDescription("Get detailed schema information for a table, including columns, types, and relationships (both incoming and outgoing)."),
+		mcp.WithDescription("Get detailed schema for a table including columns, types, relationships, "+
+			"and available aggregation functions (count, sum, avg, min, max). "+
+			"Call this BEFORE writing queries to understand the schema and what aggregations are available."),
 		mcp.WithString("table",
 			mcp.Required(),
 			mcp.Description("Name of the table to describe"),
@@ -36,7 +40,9 @@ func (ms *mcpServer) registerSchemaTools() {
 	// find_path - Find relationship path between tables
 	ms.srv.AddTool(mcp.NewTool(
 		"find_path",
-		mcp.WithDescription("Find the relationship path between two tables. Useful for understanding how to join tables in queries."),
+		mcp.WithDescription("Find relationship path between two tables. Use this when you need to "+
+			"join tables that aren't directly related - it shows the join path through intermediate tables "+
+			"and generates an example query showing the nesting structure."),
 		mcp.WithString("from_table",
 			mcp.Required(),
 			mcp.Description("Starting table name"),
@@ -50,7 +56,9 @@ func (ms *mcpServer) registerSchemaTools() {
 	// validate_graphql - Validate a query without executing
 	ms.srv.AddTool(mcp.NewTool(
 		"validate_graphql",
-		mcp.WithDescription("Validate a GraphJin GraphQL query without executing it. Returns validation errors or the generated SQL if valid."),
+		mcp.WithDescription("Validate a GraphJin query and see the generated SQL. "+
+			"Call this BEFORE execute_graphql to catch syntax errors early and verify the query logic. "+
+			"Returns validation errors or the generated SQL if valid."),
 		mcp.WithString("query",
 			mcp.Required(),
 			mcp.Description("The GraphQL query to validate"),
@@ -60,7 +68,8 @@ func (ms *mcpServer) registerSchemaTools() {
 	// explain_graphql - Show generated SQL for a query
 	ms.srv.AddTool(mcp.NewTool(
 		"explain_graphql",
-		mcp.WithDescription("Show the SQL that would be generated for a GraphQL query. Useful for understanding query execution."),
+		mcp.WithDescription("Show the SQL that would be generated for a GraphQL query. "+
+			"Use this to understand how GraphJin translates queries and verify joins are correct."),
 		mcp.WithString("query",
 			mcp.Required(),
 			mcp.Description("The GraphQL query to explain"),
@@ -73,7 +82,9 @@ func (ms *mcpServer) registerSchemaTools() {
 	// validate_where_clause - Validate where clause syntax and type compatibility
 	ms.srv.AddTool(mcp.NewTool(
 		"validate_where_clause",
-		mcp.WithDescription("Validate a where clause for syntax and type compatibility. Checks that operators match column types and returns detailed error messages with suggestions."),
+		mcp.WithDescription("Validate a where clause for syntax and type compatibility. "+
+			"Checks that operators match column types and returns detailed error messages with suggestions. "+
+			"Use this to verify your filter logic before including it in a full query."),
 		mcp.WithString("table",
 			mcp.Required(),
 			mcp.Description("Table name to validate against"),
@@ -83,6 +94,13 @@ func (ms *mcpServer) registerSchemaTools() {
 			mcp.Description("The where clause to validate (e.g., '{ price: { gt: 50 } }')"),
 		),
 	), ms.handleValidateWhereClause)
+
+	// get_workflow_guide - Returns recommended workflow for using MCP tools
+	ms.srv.AddTool(mcp.NewTool(
+		"get_workflow_guide",
+		mcp.WithDescription("Get the recommended workflow for using GraphJin MCP tools effectively. "+
+			"Call this if you're unsure about the right sequence of tool calls for queries or mutations."),
+	), ms.handleGetWorkflowGuide)
 }
 
 // handleListTables returns all available tables
@@ -104,7 +122,19 @@ func (ms *mcpServer) handleListTables(ctx context.Context, req mcp.CallToolReque
 	return mcp.NewToolResultText(string(data)), nil
 }
 
-// handleDescribeTable returns detailed schema for a table
+// AggregationInfo describes available aggregation functions for a table
+type AggregationInfo struct {
+	Available []string `json:"available"`
+	Usage     string   `json:"usage"`
+}
+
+// TableSchemaWithAggregations extends TableSchema with aggregation information
+type TableSchemaWithAggregations struct {
+	*core.TableSchema
+	Aggregations AggregationInfo `json:"aggregations"`
+}
+
+// handleDescribeTable returns detailed schema for a table including aggregations
 func (ms *mcpServer) handleDescribeTable(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := req.GetArguments()
 	table, _ := args["table"].(string)
@@ -115,14 +145,48 @@ func (ms *mcpServer) handleDescribeTable(ctx context.Context, req mcp.CallToolRe
 
 	schema, err := ms.service.gj.GetTableSchema(table)
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		return mcp.NewToolResultError(enhanceError(err.Error(), "describe_table")), nil
 	}
 
-	data, err := json.MarshalIndent(schema, "", "  ")
+	// Generate available aggregations based on column types
+	aggregations := generateAggregations(schema)
+
+	result := TableSchemaWithAggregations{
+		TableSchema:  schema,
+		Aggregations: aggregations,
+	}
+
+	data, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	return mcp.NewToolResultText(string(data)), nil
+}
+
+// generateAggregations creates the list of available aggregation functions based on column types
+func generateAggregations(schema *core.TableSchema) AggregationInfo {
+	var available []string
+
+	for _, col := range schema.Columns {
+		// All columns support count
+		available = append(available, fmt.Sprintf("count_%s", col.Name))
+
+		// Numeric columns support sum, avg, min, max
+		normalizedType := normalizeColumnType(col.Type)
+		if normalizedType == "numeric" {
+			available = append(available,
+				fmt.Sprintf("sum_%s", col.Name),
+				fmt.Sprintf("avg_%s", col.Name),
+				fmt.Sprintf("min_%s", col.Name),
+				fmt.Sprintf("max_%s", col.Name),
+			)
+		}
+	}
+
+	return AggregationInfo{
+		Available: available,
+		Usage:     fmt.Sprintf("{ %s { count_id sum_<numeric_col> avg_<numeric_col> } }", schema.Name),
+	}
 }
 
 // handleFindPath finds the relationship path between two tables
@@ -287,6 +351,138 @@ func (ms *mcpServer) getNamespace() string {
 		return *ms.service.namespace
 	}
 	return ""
+}
+
+// WorkflowGuide contains the recommended workflow for using GraphJin MCP tools
+type WorkflowGuide struct {
+	QueryWorkflow    []string          `json:"query_workflow"`
+	MutationWorkflow []string          `json:"mutation_workflow"`
+	Tips             []string          `json:"tips"`
+	ToolSequences    map[string]string `json:"tool_sequences"`
+}
+
+// handleGetWorkflowGuide returns the recommended workflow for MCP tool usage
+func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	guide := WorkflowGuide{
+		QueryWorkflow: []string{
+			"1. Call get_query_syntax to learn GraphJin DSL (it differs from standard GraphQL)",
+			"2. Call list_tables to see available data",
+			"3. Call describe_table for schema details + available aggregation functions",
+			"4. Check list_saved_queries - a saved query may already exist for your need",
+			"5. If building a new query, call validate_graphql to check syntax",
+			"6. Call execute_graphql (or execute_saved_query if one exists)",
+			"7. For pagination, save cursor IDs from response for next page requests",
+		},
+		MutationWorkflow: []string{
+			"1. Call get_mutation_syntax to learn insert/update/upsert/delete syntax",
+			"2. Call describe_table to understand required columns and types",
+			"3. Check list_saved_queries for existing mutation queries",
+			"4. Call validate_graphql to verify your mutation",
+			"5. Call execute_graphql with the mutation",
+		},
+		Tips: []string{
+			"PREFER execute_saved_query over execute_graphql when a matching saved query exists",
+			"Use validate_graphql BEFORE execute_graphql to catch errors early",
+			"Use find_path when joining tables that aren't directly related",
+			"Aggregations like count_id, sum_price are available on all tables (see describe_table)",
+			"Use the write_where_clause prompt for help building complex filters",
+			"Use @object directive when you expect a single result: { user @object { id } }",
+		},
+		ToolSequences: map[string]string{
+			"simple_query":       "get_query_syntax → list_tables → describe_table → validate_graphql → execute_graphql",
+			"complex_query":      "get_query_syntax → list_tables → describe_table → find_path → validate_graphql → execute_graphql",
+			"use_saved_query":    "list_saved_queries → get_saved_query → execute_saved_query",
+			"mutation":           "get_mutation_syntax → describe_table → validate_graphql → execute_graphql",
+			"explore_schema":     "list_tables → describe_table (for each relevant table) → find_path",
+			"build_where_clause": "describe_table → use write_where_clause prompt → validate_where_clause",
+		},
+	}
+
+	data, err := json.MarshalIndent(guide, "", "  ")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return mcp.NewToolResultText(string(data)), nil
+}
+
+// EnhancedError represents an error with recovery suggestions
+type EnhancedError struct {
+	Message     string `json:"message"`
+	Suggestion  string `json:"suggestion,omitempty"`
+	RelatedTool string `json:"related_tool,omitempty"`
+}
+
+// enhanceError adds helpful suggestions to common error messages
+func enhanceError(errMsg, currentTool string) string {
+	enhanced := EnhancedError{Message: errMsg}
+
+	// Pattern matching for common errors
+	switch {
+	case contains(errMsg, "table not found", "unknown table", "table"):
+		enhanced.Suggestion = "Check spelling or use list_tables to see available tables"
+		enhanced.RelatedTool = "list_tables"
+	case contains(errMsg, "column not found", "unknown column", "column"):
+		enhanced.Suggestion = "Check spelling or use describe_table to see available columns"
+		enhanced.RelatedTool = "describe_table"
+	case contains(errMsg, "invalid operator", "operator"):
+		enhanced.Suggestion = "Use get_query_syntax to see valid operators for each type"
+		enhanced.RelatedTool = "get_query_syntax"
+	case contains(errMsg, "syntax error", "parse error", "unexpected"):
+		enhanced.Suggestion = "Use validate_graphql first, or check get_query_syntax for correct syntax"
+		enhanced.RelatedTool = "validate_graphql"
+	case contains(errMsg, "permission", "access denied", "not allowed"):
+		enhanced.Suggestion = "Check if mutations are enabled in config or if the operation requires authentication"
+		enhanced.RelatedTool = ""
+	default:
+		// No enhancement for unrecognized errors
+		return errMsg
+	}
+
+	data, err := json.Marshal(enhanced)
+	if err != nil {
+		return errMsg
+	}
+	return string(data)
+}
+
+// contains checks if the message contains any of the substrings (case-insensitive)
+func contains(msg string, substrs ...string) bool {
+	msgLower := stringToLower(msg)
+	for _, s := range substrs {
+		if stringContains(msgLower, stringToLower(s)) {
+			return true
+		}
+	}
+	return false
+}
+
+// stringToLower converts a string to lowercase
+func stringToLower(s string) string {
+	result := make([]byte, len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		result[i] = c
+	}
+	return string(result)
+}
+
+// stringContains checks if s contains substr
+func stringContains(s, substr string) bool {
+	return len(substr) <= len(s) && (s == substr || len(substr) == 0 ||
+		(len(substr) <= len(s) && findSubstring(s, substr) >= 0))
+}
+
+// findSubstring finds the index of substr in s, returns -1 if not found
+func findSubstring(s, substr string) int {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return i
+		}
+	}
+	return -1
 }
 
 // WhereValidationResult represents the result of where clause validation

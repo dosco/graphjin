@@ -15,7 +15,9 @@ func (ms *mcpServer) registerQueryDiscoveryTools() {
 	// list_saved_queries - List all saved queries from the allow-list
 	ms.srv.AddTool(mcp.NewTool(
 		"list_saved_queries",
-		mcp.WithDescription("List all saved queries from the allow-list. These are pre-defined, validated queries that can be executed by name."),
+		mcp.WithDescription("List all saved queries from the allow-list. "+
+			"Check this BEFORE writing new queries - a saved query may already exist for your need. "+
+			"Saved queries are pre-validated and safer to execute."),
 		mcp.WithString("namespace",
 			mcp.Description("Optional namespace filter"),
 		),
@@ -24,7 +26,8 @@ func (ms *mcpServer) registerQueryDiscoveryTools() {
 	// search_saved_queries - Search saved queries by name
 	ms.srv.AddTool(mcp.NewTool(
 		"search_saved_queries",
-		mcp.WithDescription("Search for saved queries by name. Uses fuzzy matching to find relevant queries."),
+		mcp.WithDescription("Search for saved queries by name using fuzzy matching. "+
+			"Use this to find queries related to a specific feature or table."),
 		mcp.WithString("query",
 			mcp.Required(),
 			mcp.Description("Search term to match against query names"),
@@ -37,7 +40,8 @@ func (ms *mcpServer) registerQueryDiscoveryTools() {
 	// get_saved_query - Get full details of a saved query
 	ms.srv.AddTool(mcp.NewTool(
 		"get_saved_query",
-		mcp.WithDescription("Get full details of a saved query including the query text and variable schema."),
+		mcp.WithDescription("Get full details of a saved query including the query text and variable schema. "+
+			"Use this to understand what variables are needed before calling execute_saved_query."),
 		mcp.WithString("name",
 			mcp.Required(),
 			mcp.Description("Name of the saved query"),

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/dosco/graphjin/core/v3"
 )
@@ -163,6 +164,43 @@ func (s *graphjinService) initResponseCache() error {
 
 	// Enable cache tracking in qcode compiler (injects __gj_id fields)
 	s.conf.Core.CacheTrackingEnabled = true
+
+	return nil
+}
+
+// initCursorCache initializes the MCP cursor cache (Redis or in-memory)
+// This cache maps short numeric IDs to encrypted cursor strings for LLM-friendly pagination
+func (s *graphjinService) initCursorCache() error {
+	// Skip if MCP is disabled
+	if s.conf.MCP.Disable {
+		return nil
+	}
+
+	ttl := time.Duration(s.conf.MCP.CursorCacheTTL) * time.Second
+	if ttl == 0 {
+		ttl = 30 * time.Minute // Default 30 minutes
+	}
+
+	maxEntries := s.conf.MCP.CursorCacheSize
+	if maxEntries == 0 {
+		maxEntries = 10000 // Default 10k entries
+	}
+
+	if s.conf.Redis.URL != "" {
+		// Try to use Redis
+		cache, err := NewRedisCursorCache(s.conf.Redis.URL, ttl)
+		if err != nil {
+			s.log.Warnf("Redis unavailable for cursor cache, using in-memory: %s", err)
+			s.cursorCache = NewMemoryCursorCache(maxEntries, ttl)
+			s.log.Info("MCP cursor cache: in-memory (Redis unavailable)")
+		} else {
+			s.cursorCache = cache
+			s.log.Info("MCP cursor cache: Redis")
+		}
+	} else {
+		s.cursorCache = NewMemoryCursorCache(maxEntries, ttl)
+		s.log.Info("MCP cursor cache: in-memory")
+	}
 
 	return nil
 }
