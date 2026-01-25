@@ -91,6 +91,7 @@ type graphjinService struct {
 	namespace    *string
 	tracer       trace.Tracer
 	cache        ResponseCache // Response cache (Redis or in-memory)
+	cursorCache  CursorCache   // MCP cursor cache for short numeric IDs
 }
 
 type Option func(*graphjinService) error
@@ -215,6 +216,11 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*graphjinS
 	// Initialize Redis cache (non-fatal if unavailable)
 	if err := s.initResponseCache(); err != nil {
 		s.log.Warnf("response cache init error: %s", err)
+	}
+
+	// Initialize MCP cursor cache (non-fatal if unavailable)
+	if err := s.initCursorCache(); err != nil {
+		s.log.Warnf("cursor cache init error: %s", err)
 	}
 
 	if s.deployActive {

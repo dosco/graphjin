@@ -14,7 +14,9 @@ func (ms *mcpServer) registerExecutionTools() {
 	// execute_graphql - Execute a GraphQL query or mutation
 	ms.srv.AddTool(mcp.NewTool(
 		"execute_graphql",
-		mcp.WithDescription("Execute a GraphJin GraphQL query or mutation against the database. Use get_query_syntax first to learn the DSL."),
+		mcp.WithDescription("Execute a GraphJin GraphQL query or mutation against the database. "+
+			"IMPORTANT: Call validate_graphql first to catch errors before execution. "+
+			"Use get_query_syntax to learn the DSL syntax."),
 		mcp.WithString("query",
 			mcp.Required(),
 			mcp.Description("The GraphQL query or mutation to execute. Use GraphJin DSL syntax."),
@@ -30,7 +32,9 @@ func (ms *mcpServer) registerExecutionTools() {
 	// execute_saved_query - Execute a pre-defined saved query
 	ms.srv.AddTool(mcp.NewTool(
 		"execute_saved_query",
-		mcp.WithDescription("Execute a pre-defined saved query from the allow-list by name. Safer than raw queries as they are pre-validated."),
+		mcp.WithDescription("Execute a pre-defined saved query from the allow-list by name. "+
+			"PREFER this over execute_graphql when a matching saved query exists - "+
+			"saved queries are pre-validated and safer. Use list_saved_queries to find available queries."),
 		mcp.WithString("name",
 			mcp.Required(),
 			mcp.Description("Name of the saved query to execute"),
@@ -79,8 +83,12 @@ func (ms *mcpServer) handleExecuteGraphQL(ctx context.Context, req mcp.CallToolR
 	// Convert variables map to JSON
 	var varsJSON json.RawMessage
 	if vars, ok := args["variables"].(map[string]any); ok && len(vars) > 0 {
-		var err error
-		varsJSON, err = json.Marshal(vars)
+		// Expand cursor IDs to full encrypted cursors
+		expandedVars, err := ms.expandCursorIDs(ctx, vars)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("cursor lookup failed: %v", err)), nil
+		}
+		varsJSON, err = json.Marshal(expandedVars)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("invalid variables: %v", err)), nil
 		}
@@ -97,12 +105,13 @@ func (ms *mcpServer) handleExecuteGraphQL(ctx context.Context, req mcp.CallToolR
 
 	result := ExecuteResult{}
 	if err != nil {
-		result.Errors = []ErrorInfo{{Message: err.Error()}}
+		result.Errors = []ErrorInfo{{Message: enhanceError(err.Error(), "execute_graphql")}}
 	} else {
-		result.Data = res.Data
+		// Replace encrypted cursors with short numeric IDs for LLM-friendly responses
+		result.Data = ms.processCursorsForMCP(ctx, res.Data)
 		result.SQL = res.SQL()
 		for _, e := range res.Errors {
-			result.Errors = append(result.Errors, ErrorInfo{Message: e.Message})
+			result.Errors = append(result.Errors, ErrorInfo{Message: enhanceError(e.Message, "execute_graphql")})
 		}
 	}
 
@@ -126,8 +135,12 @@ func (ms *mcpServer) handleExecuteSavedQuery(ctx context.Context, req mcp.CallTo
 	// Convert variables map to JSON
 	var varsJSON json.RawMessage
 	if vars, ok := args["variables"].(map[string]any); ok && len(vars) > 0 {
-		var err error
-		varsJSON, err = json.Marshal(vars)
+		// Expand cursor IDs to full encrypted cursors
+		expandedVars, err := ms.expandCursorIDs(ctx, vars)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("cursor lookup failed: %v", err)), nil
+		}
+		varsJSON, err = json.Marshal(expandedVars)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("invalid variables: %v", err)), nil
 		}
@@ -144,12 +157,13 @@ func (ms *mcpServer) handleExecuteSavedQuery(ctx context.Context, req mcp.CallTo
 
 	result := ExecuteResult{}
 	if err != nil {
-		result.Errors = []ErrorInfo{{Message: err.Error()}}
+		result.Errors = []ErrorInfo{{Message: enhanceError(err.Error(), "execute_saved_query")}}
 	} else {
-		result.Data = res.Data
+		// Replace encrypted cursors with short numeric IDs for LLM-friendly responses
+		result.Data = ms.processCursorsForMCP(ctx, res.Data)
 		result.SQL = res.SQL()
 		for _, e := range res.Errors {
-			result.Errors = append(result.Errors, ErrorInfo{Message: e.Message})
+			result.Errors = append(result.Errors, ErrorInfo{Message: enhanceError(e.Message, "execute_saved_query")})
 		}
 	}
 

@@ -218,6 +218,13 @@ type MCPConfig struct {
 	// Run in MCP-only mode - disables GraphQL, REST, WebUI, and OpenAPI endpoints
 	// Only health check and MCP endpoints will be available
 	Only bool `mapstructure:"only" jsonschema:"title=MCP Only Mode,default=false"`
+
+	// CursorCacheTTL in seconds for cursor ID cache (default: 1800 = 30 min)
+	// Cursors are cached to allow short numeric IDs for LLM-friendly pagination
+	CursorCacheTTL int `mapstructure:"cursor_cache_ttl" jsonschema:"title=Cursor Cache TTL,default=1800"`
+
+	// CursorCacheSize max entries for in-memory cursor cache fallback (default: 10000)
+	CursorCacheSize int `mapstructure:"cursor_cache_size" jsonschema:"title=Cursor Cache Size,default=10000"`
 }
 
 // RedisConfig configures Redis connection
@@ -425,6 +432,8 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("mcp.allow_mutations", true)
 	vi.SetDefault("mcp.allow_raw_queries", true)
 	vi.SetDefault("mcp.only", false)
+	vi.SetDefault("mcp.cursor_cache_ttl", 1800)   // 30 minutes
+	vi.SetDefault("mcp.cursor_cache_size", 10000) // max in-memory entries
 
 	// Caching defaults
 	vi.SetDefault("caching.enable", false)

@@ -15,7 +15,8 @@ func (ms *mcpServer) registerFragmentTools() {
 	// list_fragments - List all available fragments
 	ms.srv.AddTool(mcp.NewTool(
 		"list_fragments",
-		mcp.WithDescription("List all available GraphQL fragments. Fragments are reusable field selections stored in /queries/fragments/."),
+		mcp.WithDescription("List all available GraphQL fragments. Fragments are reusable field selections "+
+			"that reduce query duplication. Use fragments for commonly-requested field sets."),
 		mcp.WithString("namespace",
 			mcp.Description("Optional namespace filter"),
 		),
@@ -24,7 +25,8 @@ func (ms *mcpServer) registerFragmentTools() {
 	// get_fragment - Get full details of a fragment
 	ms.srv.AddTool(mcp.NewTool(
 		"get_fragment",
-		mcp.WithDescription("Get full details of a fragment including its definition and the type it's defined on. Use this to see how to use a fragment in your queries."),
+		mcp.WithDescription("Get full details of a fragment including its definition, the type it applies to, "+
+			"and usage examples showing how to include it in queries."),
 		mcp.WithString("name",
 			mcp.Required(),
 			mcp.Description("Name of the fragment"),
@@ -34,7 +36,8 @@ func (ms *mcpServer) registerFragmentTools() {
 	// search_fragments - Search fragments by name
 	ms.srv.AddTool(mcp.NewTool(
 		"search_fragments",
-		mcp.WithDescription("Search for fragments by name. Uses fuzzy matching to find relevant fragments."),
+		mcp.WithDescription("Search for fragments by name using fuzzy matching. "+
+			"Use this to find reusable field selections for specific tables or features."),
 		mcp.WithString("query",
 			mcp.Required(),
 			mcp.Description("Search term to match against fragment names"),
