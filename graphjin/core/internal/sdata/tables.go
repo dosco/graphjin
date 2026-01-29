@@ -144,20 +144,22 @@ func NewDBInfo(
 	}
 
 	type st struct {
-		schema string
-		table  string
+		database string
+		schema   string
+		table    string
 	}
 
 	tm := make(map[st][]DBColumn)
 	for i, c := range cols {
 		di.colMap[(c.Schema + ":" + c.Table + ":" + c.Name)] = i
 
-		k := st{c.Schema, c.Table}
+		k := st{c.Database, c.Schema, c.Table}
 		tm[k] = append(tm[k], c)
 	}
 
 	for k, tcols := range tm {
 		ti := NewDBTable(k.schema, k.table, "", tcols)
+		ti.Database = k.database
 		if strings.HasPrefix(ti.Name, "_gj_") {
 			continue
 		}
@@ -280,6 +282,12 @@ type DBColumn struct {
 	Blocked     bool
 	Table       string
 	Schema      string
+	Database    string
+	Default     string
+	Index       bool
+	IndexName   string
+	FKOnDelete  string
+	FKOnUpdate  string
 }
 
 // DiscoverColumns returns the columns of a table

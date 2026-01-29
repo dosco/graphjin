@@ -124,12 +124,12 @@ func (ms *mcpServer) expandCursorIDs(ctx context.Context, vars map[string]any) (
 }
 
 // isCursorKey checks if a variable key is a cursor variable
-// Matches: "cursor", "after", "before", "*_cursor"
+// Matches: "cursor", "after", "before", "*_cursor*" (e.g., users_cursor, users_cursor_1)
 func isCursorKey(key string) bool {
 	lower := strings.ToLower(key)
 	return lower == "cursor" ||
 		lower == "after" ||
 		lower == "before" ||
-		strings.HasSuffix(lower, "_cursor") ||
-		strings.HasSuffix(lower, "cursor")
+		strings.Contains(lower, "_cursor") ||
+		strings.Contains(lower, "cursor")
 }

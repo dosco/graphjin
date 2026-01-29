@@ -832,18 +832,26 @@ func (d *OracleDialect) RenderTryCast(ctx Context, val func(), typ string) {
 
 func (d *OracleDialect) RenderSubscriptionUnbox(ctx Context, params []Param, innerSQL string) {
 	// Oracle subscription batching with cursor CTE extraction
-	// The cursor CTE may be nested inside LATERAL joins, so we search for it anywhere in the SQL.
-	// We extract it, modify it to reference "_GJ_SUB" instead of DUAL, and move it to the outer level.
+	// CTEs cannot be inside CROSS APPLY, so we extract cursor CTE and merge with subscription CTE.
 	//
 	// Structure when cursor CTE exists:
 	// WITH "_GJ_SUB" AS (SELECT * FROM JSON_TABLE(...)),
-	//      "__CUR" AS (SELECT ... FROM "_GJ_SUB")  -- extracted and modified
+	//      "__CUR" AS (SELECT ... FROM "_GJ_SUB")  -- extracted and modified to reference _GJ_SUB
 	// SELECT "_GJ_SUB_DATA"."__ROOT"
 	// FROM "_GJ_SUB" CROSS APPLY (...innerSQL without cursor CTE...) "_GJ_SUB_DATA"
 
 	sql := innerSQL
 
-	// Search for cursor CTE anywhere in the SQL: WITH "__CUR" AS (...)
+	// Find the cursor parameter index (1-based for Oracle bind vars)
+	cursorParamIdx := -1
+	for i, p := range params {
+		if strings.ToLower(p.Name) == "cursor" {
+			cursorParamIdx = i + 1 // Oracle uses 1-based bind variables
+			break
+		}
+	}
+
+	// Search for cursor CTE: WITH "__CUR" AS (SELECT ... FROM DUAL)
 	cursorCTE := ""
 	cursorCTEMarker := `WITH "__CUR" AS (SELECT `
 	if cteStart := strings.Index(sql, cursorCTEMarker); cteStart != -1 {
@@ -852,15 +860,20 @@ func (d *OracleDialect) RenderSubscriptionUnbox(ctx Context, params []Param, inn
 		if dualEnd := strings.Index(sql[cteStart:], dualMarker); dualEnd != -1 {
 			cteEnd := cteStart + dualEnd + len(dualMarker)
 			cursorCTE = sql[cteStart:cteEnd]
-			// Remove the cursor CTE from the SQL, leaving the rest intact
+			// Remove the cursor CTE from the inner SQL
 			sql = sql[:cteStart] + sql[cteEnd:]
 
-			// Modify cursor CTE: change FROM DUAL to FROM "_GJ_SUB"
-			// This allows the cursor CTE to access the subscription parameters
+			// Replace cursor bind variable with reference to _GJ_SUB column
+			// The cursor CTE uses :N where N is the cursor param index
+			if cursorParamIdx > 0 {
+				bindVar := fmt.Sprintf(":%d", cursorParamIdx)
+				cursorCTE = strings.ReplaceAll(cursorCTE, bindVar, `"_GJ_SUB"."CURSOR"`)
+			}
+
+			// Change FROM DUAL to FROM "_GJ_SUB" so the CTE can access _GJ_SUB columns
 			cursorCTE = strings.Replace(cursorCTE, "FROM DUAL)", `FROM "_GJ_SUB")`, 1)
-			// Remove the WITH prefix since we'll add it ourselves
+			// Remove the WITH prefix since we'll merge it with the subscription CTE
 			cursorCTE = strings.TrimPrefix(cursorCTE, "WITH ")
-			// Ensure it ends cleanly (trim trailing space)
 			cursorCTE = strings.TrimSuffix(cursorCTE, " ")
 		}
 	}

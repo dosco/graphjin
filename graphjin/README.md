@@ -102,16 +102,16 @@ No backend code to write. No resolvers to maintain. Just GraphQL queries that wo
 
 ## Database Support
 
-| Database | Queries | Mutations | Subscriptions | Arrays | Full-Text |
-|----------|---------|-----------|---------------|--------|-----------|
-| PostgreSQL | Yes | Yes | Yes | Yes | Yes |
-| MySQL | Yes | Yes | Yes | No | Yes |
-| MariaDB | Yes | Yes | Yes | No | Yes |
-| MSSQL | Yes | Yes | Yes | No | No |
-| Oracle | Yes | Yes | Yes | No | No |
-| SQLite | Yes | Yes | Yes | No | FTS5 |
-| MongoDB | Yes | Yes | Yes | Yes | Yes |
-| CockroachDB | Yes | Yes | Yes | Yes | Yes |
+| Database | Queries | Mutations | Subscriptions | Arrays | Full-Text | GIS/Spatial |
+|----------|---------|-----------|---------------|--------|-----------|-------------|
+| PostgreSQL | Yes | Yes | Yes | Yes | Yes | PostGIS |
+| MySQL | Yes | Yes | Yes | No | Yes | 8.0+ |
+| MariaDB | Yes | Yes | Yes | No | Yes | Yes |
+| MSSQL | Yes | Yes | Yes | No | No | Yes |
+| Oracle | Yes | Yes | Yes | No | No | Yes |
+| SQLite | Yes | Yes | Yes | No | FTS5 | SpatiaLite |
+| MongoDB | Yes | Yes | Yes | Yes | Yes | Yes |
+| CockroachDB | Yes | Yes | Yes | Yes | Yes | No |
 
 Also works with AWS Aurora/RDS, Google Cloud SQL, and YugabyteDB.
 
@@ -123,6 +123,7 @@ Also works with AWS Aurora/RDS, Google Cloud SQL, and YugabyteDB.
 - Recursive relationships (parent/child trees)
 - Polymorphic types
 - Remote API joins (combine database + REST in one query)
+- Spatial/GIS queries: `st_dwithin`, `st_within`, `st_intersects`
 
 **Mutations**
 - Atomic nested inserts/updates across tables
@@ -144,6 +145,8 @@ Also works with AWS Aurora/RDS, Google Cloud SQL, and YugabyteDB.
 - Works with Node.js and Go
 - Built-in Web UI for query development
 - Database migrations and seeding
+- Redis response caching with in-memory fallback
+- Cursor caching for LLM-friendly pagination
 - Tracing support (Zipkin, Prometheus, X-Ray, Stackdriver)
 - Small Docker image, low memory footprint
 - Hot-deploy and rollback
@@ -247,9 +250,58 @@ Built-in web UI for developing queries:
 
 ![graphjin-screenshot-final](https://user-images.githubusercontent.com/832235/108806955-1c363180-7571-11eb-8bfa-488ece2e51ae.png)
 
+## Try It Instantly
+
+```bash
+# Start with the webshop example (PostgreSQL by default)
+graphjin demo --path examples/webshop/config
+
+# Or specify a different database
+graphjin demo --path examples/webshop/config --db mysql
+
+# Persist data between restarts
+graphjin demo --path examples/webshop/config --persist
+```
+
+No Docker knowledge required. GraphJin handles container setup, schema sync, and seeding automatically. Supports PostgreSQL, MySQL, MariaDB, SQLite, Oracle, MSSQL, and MongoDB.
+
 ## Production Security
 
 In production, queries are read from saved files, not from client requests. Clients cannot modify queries. This makes GraphJin as secure as hand-written APIs - the "clients can send any query" concern with GraphQL doesn't apply here.
+
+## Schema Management
+
+Define your database schema in `db.graphql`:
+
+```graphql
+type users {
+  id: BigInt! @id
+  name: Varchar!
+  email: Varchar! @unique
+  posts: [posts] @relation(type: posts, field: user_id)
+}
+
+type posts {
+  id: BigInt! @id
+  title: Varchar!
+  user_id: BigInt @relation(type: users, field: id)
+  content: Text @search
+}
+```
+
+Manage schema changes with CLI commands:
+
+```bash
+# Preview changes
+graphjin db diff
+
+# Apply changes
+graphjin db sync
+
+# Include destructive changes (DROP statements)
+graphjin db diff --destructive
+graphjin db sync --destructive --yes
+```
 
 ## AI Integration (MCP)
 

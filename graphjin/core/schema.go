@@ -12,11 +12,14 @@ import (
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
 
-const schemaTemplate = `
-# dbinfo:{{if .Type}}{{ .Type }}{{else}}postgres{{end}},{{- .Version }},{{- .Schema }}
+const schemaTemplate = `# dbinfo:{{if .Type}}{{ .Type }}{{else}}postgres{{end}},{{- .Version }},{{- .Schema }}
 
 {{ define "schema_directive"}}
 {{- if and (ne .Schema "public") (ne .Schema "")}} @schema(name: {{ .Schema }}){{end}}
+{{- end}}
+
+{{- define "database_directive"}}
+{{- if (ne .Database "")}} @database(name: {{ .Database }}){{end}}
 {{- end}}
 
 {{- define "relation_directive"}}
@@ -64,7 +67,8 @@ const schemaTemplate = `
 {{- end -}}
 
 {{range .Tables -}}
-type {{.Name}} 
+type {{.Name}}
+{{- template "database_directive" .}}
 {{- template "schema_directive" .}} {
 {{- range .Columns}}{{template "column" .}}{{end}}
 }

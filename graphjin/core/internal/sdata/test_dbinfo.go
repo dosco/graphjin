@@ -114,3 +114,36 @@ func GetTestSchema() (*DBSchema, error) {
 
 	return NewDBSchema(GetTestDBInfo(), aliases)
 }
+
+// GetTestDBInfoWithDatabase returns a DBInfo with tables that have Database field set
+// for testing multi-database support with @database directive
+func GetTestDBInfoWithDatabase() *DBInfo {
+	columns := [][]DBColumn{
+		// Default database (empty) - users table
+		{
+			{Schema: "public", Table: "users", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			{Schema: "public", Table: "users", Name: "full_name", Type: "character varying", NotNull: true, PrimaryKey: false, UniqueKey: false},
+			{Schema: "public", Table: "users", Name: "email", Type: "character varying", NotNull: true, PrimaryKey: false, UniqueKey: false},
+		},
+		// Analytics database - events table
+		{
+			{Schema: "public", Table: "events", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true, Database: "analytics"},
+			{Schema: "public", Table: "events", Name: "event_type", Type: "character varying", NotNull: true, PrimaryKey: false, UniqueKey: false, Database: "analytics"},
+			{Schema: "public", Table: "events", Name: "user_id", Type: "bigint", NotNull: false, PrimaryKey: false, UniqueKey: false, FKeySchema: "public", FKeyTable: "users", FKeyCol: "id", Database: "analytics"},
+		},
+		// Logs database - audit_logs table
+		{
+			{Schema: "public", Table: "audit_logs", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true, Database: "logs"},
+			{Schema: "public", Table: "audit_logs", Name: "action", Type: "character varying", NotNull: true, PrimaryKey: false, UniqueKey: false, Database: "logs"},
+			{Schema: "public", Table: "audit_logs", Name: "created_at", Type: "timestamp without time zone", NotNull: true, PrimaryKey: false, UniqueKey: false, Database: "logs"},
+		},
+	}
+
+	var cols []DBColumn
+	for _, colset := range columns {
+		cols = append(cols, colset...)
+	}
+
+	di := NewDBInfo("postgres", 140000, "public", "db", cols, nil, nil)
+	return di
+}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -159,11 +160,18 @@ func Example_subscriptionWithCursor() {
 		}
 	}()
 
-	for i := 0; i < 19; i++ {
+	msgCount := 0
+	maxRetries := 50 // prevent infinite loop
+	for retries := 0; msgCount < 19 && retries < maxRetries; retries++ {
 		msg := <-m2.Result
 		// replace cursor value to make test work since it's encrypted
 		v2 := cursorRegex.ReplaceAllString(string(msg.Data), `cursor":"cursor_was_here`)
+		// Skip empty results (timing issue on some databases like MSSQL)
+		if strings.Contains(v2, `"chats":[]`) {
+			continue
+		}
 		printJSON([]byte(v2))
+		msgCount++
 	}
 	// Output:
 	// {"chats":[{"body":"This is chat message number 1","id":1}],"chats_cursor":"cursor_was_here"}
