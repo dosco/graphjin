@@ -77,8 +77,8 @@ func (gj *graphjinEngine) argList(c context.Context,
 			ar.cindxs = append(ar.cindxs, i)
 
 		default:
-			// Check for named cursor variables (e.g., products_cursor, users_cursor)
-			if strings.HasSuffix(p.Name, "_cursor") {
+			// Check for named cursor variables (e.g., products_cursor, users_cursor, products_cursor_1)
+			if strings.Contains(p.Name, "_cursor") {
 				if v, ok := fields[p.Name]; ok && len(v) > 0 && v[0] == '"' {
 					vl[i] = string(v[1 : len(v)-1])
 				} else {

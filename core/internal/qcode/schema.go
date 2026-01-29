@@ -59,7 +59,7 @@ func ParseSchema(b []byte) (ds Schema, err error) {
 
 		} else {
 			var cols []sdata.DBColumn
-			cols, err = parseTFieldsColumns(ti.Schema, t.Name, t.Fields)
+			cols, err = parseTFieldsColumns(ti.Schema, t.Name, ti.Database, t.Fields)
 			if err != nil {
 				break
 			}
@@ -72,7 +72,7 @@ func ParseSchema(b []byte) (ds Schema, err error) {
 	return
 }
 
-func parseTFieldsColumns(tableSchema, tableName string, fields []graph.TField) (
+func parseTFieldsColumns(tableSchema, tableName, tableDatabase string, fields []graph.TField) (
 	cols []sdata.DBColumn, err error,
 ) {
 	var dir tfieldInfo
@@ -93,6 +93,7 @@ func parseTFieldsColumns(tableSchema, tableName string, fields []graph.TField) (
 			ID:          int32(i),
 			Schema:      tableSchema,
 			Table:       tableName,
+			Database:    tableDatabase,
 			Name:        f.Name,
 			Type:        colType,
 			Array:       f.List,
@@ -105,6 +106,11 @@ func parseTFieldsColumns(tableSchema, tableName string, fields []graph.TField) (
 			FKeyTable:   dir.RelatedType,
 			FKeyCol:     dir.RelatedField,
 			FKRecursive: isRecursive,
+			Default:     dir.Default,
+			Index:       dir.Index,
+			IndexName:   dir.IndexName,
+			FKOnDelete:  dir.OnDelete,
+			FKOnUpdate:  dir.OnUpdate,
 		}
 		cols = append(cols, col)
 	}
@@ -144,6 +150,7 @@ func parseTFieldsFunction(fn *sdata.DBFunction, fields []graph.TField) (
 
 type typeInfo struct {
 	Schema     string
+	Database   string
 	ReturnType string
 }
 
@@ -157,6 +164,13 @@ func parseTypeDirectives(dir []graph.Directive) (ti typeInfo, err error) {
 				break
 			}
 			ti.Schema = arg.Val.Val
+
+		case "database":
+			arg, err = getArg(d.Args, "name", graph.NodeStr, graph.NodeLabel)
+			if err != nil {
+				break
+			}
+			ti.Database = arg.Val.Val
 
 		case "function":
 			arg, err = getArg(d.Args, "return_type", graph.NodeStr, graph.NodeLabel)
@@ -184,6 +198,11 @@ type tfieldInfo struct {
 	RelatedSchema string
 	Input         bool
 	Output        bool
+	Default       string
+	Index         bool
+	IndexName     string
+	OnDelete      string
+	OnUpdate      string
 }
 
 func parseTFieldDirectives(ft string, dir []graph.Directive) (tfi tfieldInfo, err error) {
@@ -245,6 +264,40 @@ func parseTFieldDirectives(ft string, dir []graph.Directive) (tfi tfieldInfo, er
 			}
 			if ok {
 				tfi.RelatedSchema = arg.Val.Val
+			}
+
+			arg, ok, err = getOptionalArg(d.Args, "onDelete", graph.NodeStr, graph.NodeLabel)
+			if err != nil {
+				break
+			}
+			if ok {
+				tfi.OnDelete = arg.Val.Val
+			}
+
+			arg, ok, err = getOptionalArg(d.Args, "onUpdate", graph.NodeStr, graph.NodeLabel)
+			if err != nil {
+				break
+			}
+			if ok {
+				tfi.OnUpdate = arg.Val.Val
+			}
+
+		case "default":
+			arg, err = getArg(d.Args, "value", graph.NodeStr, graph.NodeLabel)
+			if err != nil {
+				break
+			}
+			tfi.Default = arg.Val.Val
+
+		case "index":
+			tfi.Index = true
+			var hasName bool
+			arg, hasName, err = getOptionalArg(d.Args, "name", graph.NodeStr, graph.NodeLabel)
+			if err != nil {
+				break
+			}
+			if hasName {
+				tfi.IndexName = arg.Val.Val
 			}
 
 		case "input":

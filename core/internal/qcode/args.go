@@ -349,11 +349,11 @@ func (co *Compiler) compileArgAfterBefore(sel *Select, arg graph.Arg, pt PagingT
 	node := arg.Val
 	varName := node.Val
 
-	// Accept "cursor" (backward compatible) or "<fieldname>_cursor"
+	// Accept "cursor" (backward compatible) or "<fieldname>_cursor" prefix (e.g., products_cursor_1)
 	expectedNamed := sel.FieldName + "_cursor"
-	if varName != "cursor" && varName != expectedNamed {
-		return fmt.Errorf("value for argument '%s' must be $cursor or $%s",
-			arg.Name, expectedNamed)
+	if varName != "cursor" && !strings.HasPrefix(varName, expectedNamed) {
+		return fmt.Errorf("value for argument '%s' must be $cursor or $%s (or $%s_*)",
+			arg.Name, expectedNamed, expectedNamed)
 	}
 
 	sel.Paging.Type = pt
@@ -364,9 +364,9 @@ func (co *Compiler) compileArgAfterBefore(sel *Select, arg graph.Arg, pt PagingT
 	return
 }
 
-// isCursorVar checks if a variable name is a cursor variable (either "cursor" or ends with "_cursor")
+// isCursorVar checks if a variable name is a cursor variable (either "cursor" or contains "_cursor")
 func isCursorVar(name string) bool {
-	return name == "cursor" || strings.HasSuffix(name, "_cursor")
+	return name == "cursor" || strings.Contains(name, "_cursor")
 }
 
 func (co *Compiler) compileFieldArgs(sel *Select, f *Field, args []graph.Arg, role string) (err error) {
