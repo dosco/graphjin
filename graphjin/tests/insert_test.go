@@ -734,7 +734,7 @@ func TestAllowListWithMutations(t *testing.T) {
 
 	dir, err := os.MkdirTemp("", "test")
 	assert.NoError(t, err)
-	defer os.RemoveAll(dir)
+	defer os.RemoveAll(dir) //nolint:errcheck
 
 	fs := core.NewOsFS(dir)
 	assert.NoError(t, err)

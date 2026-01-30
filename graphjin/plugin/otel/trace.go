@@ -44,9 +44,9 @@ func (s *span) End() {
 }
 
 func (s *span) Error(err error) {
-	if s.Span.IsRecording() {
-		s.Span.RecordError(err)
-		s.Span.SetStatus(codes.Error, err.Error())
+	if s.IsRecording() {
+		s.RecordError(err)
+		s.SetStatus(codes.Error, err.Error())
 	}
 }
 
@@ -59,5 +59,5 @@ func (s *span) SetAttributesString(attrs ...core.StringAttr) {
 	for _, a := range attrs {
 		as = append(as, attribute.String(a.Name, a.Value))
 	}
-	s.Span.SetAttributes(as...)
+	s.SetAttributes(as...)
 }

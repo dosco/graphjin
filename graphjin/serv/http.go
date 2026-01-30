@@ -60,12 +60,12 @@ func apiV1Handler(s1 *HttpService, ns *string, h http.Handler, ah auth.HandlerFu
 	var zlog *zap.Logger
 	s := s1.Load().(*graphjinService)
 
-	if s.conf.Core.Debug {
+	if s.conf.Debug {
 		zlog = s.zlog
 	}
 
 	if ah != nil {
-		authOpt := auth.Options{AuthFailBlock: s.conf.Serv.AuthFailBlock}
+		authOpt := auth.Options{AuthFailBlock: s.conf.AuthFailBlock}
 		useAuth, err := auth.NewAuth(s.conf.Auth, zlog, authOpt, ah)
 		if err != nil {
 			s.log.Fatalf("api: error with auth: %s", err)
@@ -136,7 +136,7 @@ func (s1 *HttpService) apiV1GraphQL(ns *string, ah auth.HandlerFunc) http.Handle
 			var b []byte
 			b, err = io.ReadAll(io.LimitReader(r.Body, maxReadBytes))
 			if err == nil {
-				defer r.Body.Close()
+				defer r.Body.Close() //nolint:errcheck
 				err = json.Unmarshal(b, &req)
 			}
 
@@ -163,7 +163,7 @@ func (s1 *HttpService) apiV1GraphQL(ns *string, ah auth.HandlerFunc) http.Handle
 			rc.APQKey = (req.OpName + req.Ext.Persisted.Sha256Hash)
 		}
 
-		if rc.Vars == nil && len(s.conf.Core.HeaderVars) != 0 {
+		if rc.Vars == nil && len(s.conf.HeaderVars) != 0 {
 			rc.Vars = s.setHeaderVars(r)
 		}
 
@@ -260,7 +260,7 @@ func (s1 *HttpService) apiV1Rest(ns *string, ah auth.HandlerFunc) http.Handler {
 
 		var rc core.RequestConfig
 
-		if rc.Vars == nil && len(s.conf.Core.HeaderVars) != 0 {
+		if rc.Vars == nil && len(s.conf.HeaderVars) != 0 {
 			rc.Vars = s.setHeaderVars(r)
 		}
 
@@ -354,7 +354,7 @@ func (s *graphjinService) reqLog(res *core.Result, rc core.RequestConfig, resTim
 		fields = append(fields, zap.String("namespace", ns))
 	}
 
-	if res != nil && res.Vars != nil && s.conf.Core.LogVars {
+	if res != nil && res.Vars != nil && s.conf.LogVars {
 		var vars map[string]interface{}
 		err := json.Unmarshal(res.Vars, &vars)
 		if err != nil {
@@ -378,7 +378,7 @@ func (s *graphjinService) reqLog(res *core.Result, rc core.RequestConfig, resTim
 // setHeaderVars sets the header variables
 func (s *graphjinService) setHeaderVars(r *http.Request) map[string]interface{} {
 	vars := make(map[string]interface{})
-	for k, v := range s.conf.Core.HeaderVars {
+	for k, v := range s.conf.HeaderVars {
 		vars[k] = func() string {
 			if v1, ok := r.Header[v]; ok {
 				return v1[0]
@@ -412,7 +412,7 @@ func parseBody(r *http.Request) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer r.Body.Close()
+	defer r.Body.Close() //nolint:errcheck
 	return b, nil
 }
 

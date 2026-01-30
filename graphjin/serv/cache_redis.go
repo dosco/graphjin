@@ -529,7 +529,7 @@ func decompress(data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer r.Close()
+	defer r.Close() //nolint:errcheck
 	return io.ReadAll(r)
 }
 
@@ -576,7 +576,7 @@ func (p *SWRWorkerPool) worker() {
 			ctx := context.Background()
 			data, refs, err := job.RefreshFn()
 			if err == nil && len(data) > 0 {
-				p.cache.Set(ctx, job.Key, data, refs, time.Now())
+				p.cache.Set(ctx, job.Key, data, refs, time.Now()) //nolint:errcheck
 				p.cache.recordSWRRefresh(ctx)
 			}
 			return nil, err

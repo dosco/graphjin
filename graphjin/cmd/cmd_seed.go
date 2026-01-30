@@ -22,6 +22,7 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	babel "github.com/jvatic/goja-babel"
 	"github.com/spf13/cobra"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // cmdSeed is the cobra CLI for the seed subcommand
@@ -38,7 +39,7 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 	conf.DisableAllowList = true
 	conf.DBSchemaPollDuration = -1
 
-	conf.Core.Blocklist = nil
+	conf.Blocklist = nil
 	seed := filepath.Join(cpath, "seed.js")
 
 	log.Infof("Seed script started (please wait)")
@@ -54,7 +55,7 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 func compileAndRunJS(seed string, db *sql.DB) error {
 	b, err := os.ReadFile(seed)
 	if err != nil {
-		return fmt.Errorf("Failed to read seed file %s: %s", seed, err)
+		return fmt.Errorf("failed to read seed file %s: %s", seed, err)
 	}
 
 	gj, err := core.NewGraphJin(&conf.Core, db)
@@ -186,26 +187,22 @@ func graphQLFunc(gj *core.GraphJin, query string, data interface{}, opt map[stri
 	// 	role = "user"
 	// }
 
-	if conf.Debug {
-		log.Debugf("Seed query: %s", query)
-	}
-
 	var vars []byte
 	var err error
 
 	if vars, err = json.Marshal(data); err != nil {
-		log.Fatalf("Failed parsing seed query variables: %s", err)
+		log.Fatalf("Failed parsing seed query variables: %s\nQuery: %s", err, query)
 	}
 
 	res, err := gj.GraphQL(ct, query, vars, nil)
 	if err != nil {
-		log.Fatalf("Seed query failed: %s", err)
+		log.Fatalf("Seed query failed: %s\nQuery: %s", err, query)
 	}
 
 	val := make(map[string]interface{})
 
 	if err = json.Unmarshal(res.Data, &val); err != nil {
-		log.Fatalf("Seed query failed: %s", err)
+		log.Fatalf("Seed query failed: %s\nQuery: %s", err, query)
 	}
 
 	return val
@@ -222,7 +219,7 @@ func NewCSVSource(filename string, sep rune) (*csvSource, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	if sep == 0 {
 		sep = ','
@@ -548,4 +545,14 @@ func setUtilFuncs(f *goja.Object) {
 	f.Set("make_slug", slug.Make)
 	f.Set("make_slug_lang", slug.MakeLang)
 	f.Set("shuffle_strings", gofakeit.ShuffleStrings)
+	f.Set("hash_password", hashPassword)
+}
+
+// hashPassword hashes a password using bcrypt
+func hashPassword(password string) string {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		log.Fatalf("Failed to hash password: %s", err)
+	}
+	return string(hash)
 }

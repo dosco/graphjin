@@ -88,10 +88,11 @@ func sortTablesByDependency(tables []sdata.DBTable) []sdata.DBTable {
 	}
 
 	// Build dependency graph: table -> tables it depends on (FK references)
+	// Exclude self-referential FKs (e.g., comments.reply_to_id -> comments.id)
 	deps := make(map[string][]string)
 	for _, t := range tables {
 		for _, col := range t.Columns {
-			if col.FKeyTable != "" {
+			if col.FKeyTable != "" && col.FKeyTable != t.Name {
 				deps[t.Name] = append(deps[t.Name], col.FKeyTable)
 			}
 		}

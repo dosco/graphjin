@@ -33,7 +33,7 @@ func webuiHandler(routePrefix string, gqlEndpoint string) http.Handler {
 
 		f, err := webRoot.Open(path)
 		if err == nil {
-			defer f.Close()
+			defer f.Close() //nolint:errcheck
 			stat, statErr := f.Stat()
 			if statErr == nil && !stat.IsDir() {
 				// File exists - serve it normally
@@ -48,10 +48,10 @@ func webuiHandler(routePrefix string, gqlEndpoint string) http.Handler {
 			http.Error(w, "index.html not found", http.StatusNotFound)
 			return
 		}
-		defer indexFile.Close()
+		defer indexFile.Close() //nolint:errcheck
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		io.Copy(w, indexFile)
+		io.Copy(w, indexFile) //nolint:errcheck
 	}
 
 	if !strings.HasSuffix(routePrefix, "/") {

@@ -31,13 +31,13 @@ func initLogLevel(s *graphjinService) {
 func validateConf(s *graphjinService) {
 	var anonFound bool
 
-	for _, r := range s.conf.Core.Roles {
+	for _, r := range s.conf.Roles {
 		if r.Name == "anon" {
 			anonFound = true
 		}
 	}
 
-	if !anonFound && s.conf.Core.DefaultBlock {
+	if !anonFound && s.conf.DefaultBlock {
 		s.log.Warn("unauthenticated requests will be blocked. no role 'anon' defined")
 		s.conf.AuthFailBlock = false
 	}
@@ -63,8 +63,8 @@ func (s *graphjinService) initConfig() error {
 	c.dirty = true
 
 	// copy over db_type from database.type
-	if c.Core.DBType == "" {
-		c.Core.DBType = c.DB.Type
+	if c.DBType == "" {
+		c.DBType = c.DB.Type
 	}
 
 	if c.HotDeploy {
@@ -76,7 +76,7 @@ func (s *graphjinService) initConfig() error {
 	}
 
 	if c.Auth.Type == "" || c.Auth.Type == "none" {
-		c.Core.DefaultBlock = false
+		c.DefaultBlock = false
 	}
 
 	hp := strings.SplitN(s.conf.HostPort, ":", 2)
@@ -118,14 +118,14 @@ func (s *graphjinService) initDB() error {
 
 // basePath returns the base path
 func (s *graphjinService) basePath() (string, error) {
-	if s.conf.Serv.ConfigPath == "" {
+	if s.conf.ConfigPath == "" {
 		if cp, err := os.Getwd(); err == nil {
 			return filepath.Join(cp, "config"), nil
 		} else {
 			return "", err
 		}
 	}
-	return s.conf.Serv.ConfigPath, nil
+	return s.conf.ConfigPath, nil
 }
 
 // initResponseCache initializes the response cache (Redis or in-memory)
@@ -163,7 +163,7 @@ func (s *graphjinService) initResponseCache() error {
 	}
 
 	// Enable cache tracking in qcode compiler (injects __gj_id fields)
-	s.conf.Core.CacheTrackingEnabled = true
+	s.conf.CacheTrackingEnabled = true
 
 	return nil
 }

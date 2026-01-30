@@ -52,6 +52,8 @@ func assertToolError(t *testing.T, result *mcp.CallToolResult, contains string) 
 }
 
 // assertToolSuccess asserts that the result is a success and returns the text content
+//
+//nolint:unused
 func assertToolSuccess(t *testing.T, result *mcp.CallToolResult) string {
 	t.Helper()
 	if result == nil {
@@ -412,8 +414,8 @@ func TestMCP_CursorDeduplication(t *testing.T) {
 	result2 := ms.processCursorsForMCP(ctx, input2)
 
 	var parsed1, parsed2 map[string]any
-	json.Unmarshal(result1, &parsed1)
-	json.Unmarshal(result2, &parsed2)
+	json.Unmarshal(result1, &parsed1) //nolint:errcheck
+	json.Unmarshal(result2, &parsed2) //nolint:errcheck
 
 	cursor1 := parsed1["users_cursor"].(string)
 	cursor2 := parsed2["users_cursor"].(string)

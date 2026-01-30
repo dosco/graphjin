@@ -18,7 +18,7 @@ func TestMemoryCache_BasicOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create memory cache: %v", err)
 	}
-	defer mc.Close()
+	defer mc.Close() //nolint:errcheck
 
 	ctx := context.Background()
 	key := "test-key"
@@ -56,7 +56,7 @@ func TestMemoryCache_Miss(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create memory cache: %v", err)
 	}
-	defer mc.Close()
+	defer mc.Close() //nolint:errcheck
 
 	ctx := context.Background()
 	_, _, found := mc.Get(ctx, "nonexistent-key")
@@ -76,7 +76,7 @@ func TestMemoryCache_InvalidateRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create memory cache: %v", err)
 	}
-	defer mc.Close()
+	defer mc.Close() //nolint:errcheck
 
 	ctx := context.Background()
 	key := "test-key"
@@ -122,7 +122,7 @@ func TestMemoryCache_ExcludeTables(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create memory cache: %v", err)
 	}
-	defer mc.Close()
+	defer mc.Close() //nolint:errcheck
 
 	refs := []core.RowRef{
 		{Table: "users", ID: "1"},
@@ -144,7 +144,7 @@ func TestMemoryCache_Compression(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create memory cache: %v", err)
 	}
-	defer mc.Close()
+	defer mc.Close() //nolint:errcheck
 
 	ctx := context.Background()
 	key := "large-key"
@@ -180,7 +180,7 @@ func TestMemoryCache_LRUEviction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create memory cache: %v", err)
 	}
-	defer mc.Close()
+	defer mc.Close() //nolint:errcheck
 
 	ctx := context.Background()
 	data := []byte(`{}`)

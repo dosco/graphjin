@@ -81,7 +81,7 @@ func (s *graphjinService) apiV1Ws(w http.ResponseWriter, r *http.Request, ah aut
 		renderErr(w, err)
 		return
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 	conn.SetReadLimit(2048)
 
 	wc := wsConn{
@@ -138,7 +138,7 @@ func (s *graphjinService) subSwitch(wc *wsConn, req wsReq) (err error) {
 		if wc.c, err = wc.ah(wc.w, wc.r); err != nil {
 			return
 		}
-		if s.conf.Serv.AuthFailBlock && !auth.IsAuth(wc.c) {
+		if s.conf.AuthFailBlock && !auth.IsAuth(wc.c) {
 			err = auth.Err401
 			return
 		}
@@ -158,7 +158,7 @@ func (s *graphjinService) subSwitch(wc *wsConn, req wsReq) (err error) {
 		}
 
 		c := wc.c
-		if s.conf.Serv.Auth.Development {
+		if s.conf.Auth.Development {
 			var x authHeaders
 			if err = json.Unmarshal(p.Vars, &x); err != nil {
 				break
@@ -234,7 +234,7 @@ func (s *graphjinService) waitForData(wc *wsConn, st *wsState, useNext bool) {
 			if err != nil {
 				s.zlog.Error("Subscription", []zapcore.Field{zap.Error(err)}...)
 				sendError(wc, st.ID, err) //nolint:errcheck
-				break
+				return
 			}
 
 		case v := <-st.done:

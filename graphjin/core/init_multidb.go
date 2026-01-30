@@ -13,7 +13,7 @@ import (
 // It creates a dbContext for each configured database.
 func (gj *graphjinEngine) initMultiDB() error {
 	// Check if multi-DB is configured
-	if gj.conf.Databases == nil || len(gj.conf.Databases) == 0 {
+	if len(gj.conf.Databases) == 0 {
 		return nil
 	}
 
@@ -66,7 +66,7 @@ func (gj *graphjinEngine) initMultiDB() error {
 // initMultiDBCompilers initializes compilers for all database contexts.
 // This must be called after initCompilers() to ensure the main compilers are ready.
 func (gj *graphjinEngine) initMultiDBCompilers() error {
-	if gj.databases == nil || len(gj.databases) == 0 {
+	if len(gj.databases) == 0 {
 		return nil
 	}
 
@@ -221,7 +221,7 @@ func (gj *graphjinEngine) ListDatabases() []string {
 // setTableDatabases assigns database names to tables based on configuration.
 // This is called during schema initialization to tag tables with their source database.
 func (gj *graphjinEngine) setTableDatabases() {
-	if gj.conf.Databases == nil || len(gj.conf.Databases) == 0 {
+	if len(gj.conf.Databases) == 0 {
 		return
 	}
 

@@ -1016,7 +1016,7 @@ func (g *GraphJin) GetAllDatabaseStats() []DatabaseStats {
 	gj := g.Load().(*graphjinEngine)
 
 	// Multi-database mode
-	if gj.databases != nil && len(gj.databases) > 0 {
+	if len(gj.databases) > 0 {
 		stats := make([]DatabaseStats, 0, len(gj.databases))
 		for name, ctx := range gj.databases {
 			ds := DatabaseStats{

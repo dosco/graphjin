@@ -17,11 +17,6 @@ type mcpServer struct {
 	ctx     context.Context // Auth context (user_id, user_role)
 }
 
-// newMCPServer creates a new MCP server for the graphjin service
-func (s *graphjinService) newMCPServer() *mcpServer {
-	return s.newMCPServerWithContext(context.Background())
-}
-
 // newMCPServerWithContext creates a new MCP server with an auth context
 func (s *graphjinService) newMCPServerWithContext(ctx context.Context) *mcpServer {
 	mcpSrv := server.NewMCPServer(
@@ -137,7 +132,3 @@ func (s *HttpService) MCPMessageHandlerWithAuth(ah auth.HandlerFunc) http.Handle
 	return apiV1Handler(s, nil, s.MCPMessageHandler(), ah)
 }
 
-// mcpEnabled returns true if MCP is enabled (enabled by default)
-func (s *graphjinService) mcpEnabled() bool {
-	return !s.conf.MCP.Disable
-}

@@ -72,7 +72,7 @@ func encryptValues(
 		if _, err := b64.Write(ev); err != nil {
 			return nil, err
 		}
-		b64.Close()
+		b64.Close() //nolint:errcheck
 		s = eve
 
 		if e = bytes.Index(data[s:], encPrefix); e == -1 {

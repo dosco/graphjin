@@ -24,8 +24,8 @@ import (
 )
 
 var (
-	demoPersist  bool              // --persist: Use Docker volumes for data persistence
-	demoDBFlags  []string          // --db: Can be used multiple times
+	demoPersist  bool               // --persist: Use Docker volumes for data persistence
+	demoDBFlags  []string           // --db: Can be used multiple times
 	multiDBConns map[string]*sql.DB // Store multi-DB connections for migrations
 )
 
@@ -197,7 +197,7 @@ func startDemoContainer(ctx context.Context, dbType string, persist bool) (
 // withVolumeMounts creates a customizer that adds volume mounts to the container
 func withVolumeMounts(mounts testcontainers.ContainerMounts) testcontainers.CustomizeRequestOption {
 	return func(req *testcontainers.GenericContainerRequest) error {
-		req.ContainerRequest.Mounts = append(req.ContainerRequest.Mounts, mounts...)
+		req.Mounts = append(req.Mounts, mounts...)
 		return nil
 	}
 }
@@ -243,6 +243,19 @@ func startPostgresDemo(ctx context.Context, persist bool) (func(context.Context)
 	}
 
 	log.Infof("PostgreSQL running on %s:%s", host, port.Port())
+
+	// Wait for database to be fully ready
+	for i := 0; i < 30; i++ {
+		testDB, err := sql.Open("postgres", connStr)
+		if err == nil {
+			if err = testDB.Ping(); err == nil {
+				testDB.Close() //nolint:errcheck
+				break
+			}
+			testDB.Close() //nolint:errcheck
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 
 	return container.Terminate, &DemoConnInfo{
 		Host:     host,
@@ -335,7 +348,7 @@ func startMariaDBDemo(ctx context.Context, persist bool) (func(context.Context) 
 	}
 
 	if persist {
-		req.ContainerRequest.Mounts = testcontainers.ContainerMounts{
+		req.Mounts = testcontainers.ContainerMounts{
 			{
 				Source: testcontainers.DockerVolumeMountSource{Name: "graphjin-demo-mariadb"},
 				Target: "/var/lib/mysql",
@@ -368,10 +381,10 @@ func startMariaDBDemo(ctx context.Context, persist bool) (func(context.Context) 
 		testDB, err := sql.Open("mysql", connStr)
 		if err == nil {
 			if err = testDB.Ping(); err == nil {
-				testDB.Close()
+				testDB.Close() //nolint:errcheck
 				break
 			}
-			testDB.Close()
+			testDB.Close() //nolint:errcheck
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
@@ -468,7 +481,7 @@ func startOracleDemo(ctx context.Context, persist bool) (func(context.Context) e
 	}
 
 	if persist {
-		req.ContainerRequest.Mounts = testcontainers.ContainerMounts{
+		req.Mounts = testcontainers.ContainerMounts{
 			{
 				Source: testcontainers.DockerVolumeMountSource{Name: "graphjin-demo-oracle"},
 				Target: "/opt/oracle/oradata",
@@ -525,7 +538,7 @@ func startMSSQLDemo(ctx context.Context, persist bool) (func(context.Context) er
 	}
 
 	if persist {
-		req.ContainerRequest.Mounts = testcontainers.ContainerMounts{
+		req.Mounts = testcontainers.ContainerMounts{
 			{
 				Source: testcontainers.DockerVolumeMountSource{Name: "graphjin-demo-mssql"},
 				Target: "/var/opt/mssql",
@@ -561,7 +574,7 @@ func startMSSQLDemo(ctx context.Context, persist bool) (func(context.Context) er
 			if err = initDB.Ping(); err == nil {
 				break
 			}
-			initDB.Close()
+			initDB.Close() //nolint:errcheck
 		}
 		time.Sleep(1 * time.Second)
 	}
@@ -573,11 +586,11 @@ func startMSSQLDemo(ctx context.Context, persist bool) (func(context.Context) er
 	// Create the demo database
 	_, err = initDB.Exec("IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = 'graphjin_demo') CREATE DATABASE graphjin_demo")
 	if err != nil {
-		initDB.Close()
+		initDB.Close() //nolint:errcheck
 		container.Terminate(ctx) //nolint:errcheck
 		return nil, nil, fmt.Errorf("failed to create mssql database: %w", err)
 	}
-	initDB.Close()
+	initDB.Close() //nolint:errcheck
 
 	// Connection string for the demo database
 	connStr := fmt.Sprintf("sqlserver://sa:GraphJin!Passw0rd@%s:%s?database=graphjin_demo", host, port.Port())
@@ -726,7 +739,7 @@ func openDemoConnection(connInfo *DemoConnInfo) (*sql.DB, error) {
 	}
 
 	if err := conn.Ping(); err != nil {
-		conn.Close()
+		conn.Close() //nolint:errcheck
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
@@ -754,7 +767,7 @@ func applyMultiDBContainerConfig(name string, connInfo *DemoConnInfo) {
 func cleanupAll(ctx context.Context, cleanups []func(context.Context) error) {
 	for _, cleanup := range cleanups {
 		if cleanup != nil {
-			cleanup(ctx) // Best effort, ignore errors
+			cleanup(ctx) //nolint:errcheck // Best effort, ignore errors
 		}
 	}
 }
@@ -788,7 +801,7 @@ func runDemoMigrations() {
 
 	// Compute schema diff
 	opts := core.DiffOptions{Destructive: false}
-	ops, err := core.SchemaDiff(db, conf.DB.Type, schemaBytes, conf.Core.Blocklist, opts)
+	ops, err := core.SchemaDiff(db, conf.DB.Type, schemaBytes, conf.Blocklist, opts)
 	if err != nil {
 		log.Warnf("Error computing schema diff: %s", err)
 		return
@@ -809,7 +822,6 @@ func runDemoMigrations() {
 	}
 
 	for _, sqlStmt := range sqls {
-		log.Debugf("Executing: %s", sqlStmt)
 		if _, err := tx.ExecContext(ctx, sqlStmt); err != nil {
 			if rbErr := tx.Rollback(); rbErr != nil {
 				log.Warnf("Rollback failed: %s", rbErr)
@@ -850,7 +862,7 @@ func runDemoMigrationsMultiDB() {
 
 	// Compute schema diff for all databases
 	opts := core.DiffOptions{Destructive: false}
-	results, err := core.SchemaDiffMultiDB(multiDBConns, dbTypes, schemaBytes, conf.Core.Blocklist, opts)
+	results, err := core.SchemaDiffMultiDB(multiDBConns, dbTypes, schemaBytes, conf.Blocklist, opts)
 	if err != nil {
 		log.Warnf("Error computing schema diff: %s", err)
 		return
@@ -875,7 +887,6 @@ func runDemoMigrationsMultiDB() {
 
 		var failed bool
 		for _, sqlStmt := range sqls {
-			log.Debugf("[%s] Executing: %s", dbName, sqlStmt)
 			if _, err := tx.ExecContext(ctx, sqlStmt); err != nil {
 				if rbErr := tx.Rollback(); rbErr != nil {
 					log.Warnf("Rollback failed for %s: %s", dbName, rbErr)
@@ -928,7 +939,7 @@ func runDemoSeed() {
 	conf.DefaultBlock = false
 	conf.DisableAllowList = true
 	conf.DBSchemaPollDuration = -1
-	conf.Core.Blocklist = nil
+	conf.Blocklist = nil
 
 	if err := compileAndRunJS(seedPath, db); err != nil {
 		log.Warnf("Failed to execute seed file: %s", err)

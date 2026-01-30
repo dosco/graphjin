@@ -8,7 +8,7 @@ import (
 
 func TestMemoryCursorCache_SetGet(t *testing.T) {
 	cache := NewMemoryCursorCache(100, time.Hour)
-	defer cache.Close()
+	defer cache.Close() //nolint:errcheck
 
 	ctx := context.Background()
 	cursor := "__gj-enc:abc123xyz789"
@@ -36,7 +36,7 @@ func TestMemoryCursorCache_SetGet(t *testing.T) {
 
 func TestMemoryCursorCache_Deduplication(t *testing.T) {
 	cache := NewMemoryCursorCache(100, time.Hour)
-	defer cache.Close()
+	defer cache.Close() //nolint:errcheck
 
 	ctx := context.Background()
 	cursor := "__gj-enc:abc123xyz789"
@@ -60,7 +60,7 @@ func TestMemoryCursorCache_Deduplication(t *testing.T) {
 
 func TestMemoryCursorCache_DifferentCursors(t *testing.T) {
 	cache := NewMemoryCursorCache(100, time.Hour)
-	defer cache.Close()
+	defer cache.Close() //nolint:errcheck
 
 	ctx := context.Background()
 	cursor1 := "__gj-enc:abc123"
@@ -101,7 +101,7 @@ func TestMemoryCursorCache_DifferentCursors(t *testing.T) {
 
 func TestMemoryCursorCache_NotFound(t *testing.T) {
 	cache := NewMemoryCursorCache(100, time.Hour)
-	defer cache.Close()
+	defer cache.Close() //nolint:errcheck
 
 	ctx := context.Background()
 
@@ -115,7 +115,7 @@ func TestMemoryCursorCache_NotFound(t *testing.T) {
 func TestMemoryCursorCache_Expiration(t *testing.T) {
 	// Very short TTL
 	cache := NewMemoryCursorCache(100, 10*time.Millisecond)
-	defer cache.Close()
+	defer cache.Close() //nolint:errcheck
 
 	ctx := context.Background()
 	cursor := "__gj-enc:abc123"
@@ -144,7 +144,7 @@ func TestMemoryCursorCache_Expiration(t *testing.T) {
 func TestMemoryCursorCache_Eviction(t *testing.T) {
 	// Small cache
 	cache := NewMemoryCursorCache(3, time.Hour)
-	defer cache.Close()
+	defer cache.Close() //nolint:errcheck
 
 	ctx := context.Background()
 

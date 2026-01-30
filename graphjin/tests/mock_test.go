@@ -16,7 +16,7 @@ func TestMockDB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
+	defer os.RemoveAll(dir) //nolint:errcheck
 
 	// Copy test-db.graphql to db.graphql in temp dir
 	dbGraphql, err := os.ReadFile("test-db.graphql")

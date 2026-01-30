@@ -1035,6 +1035,7 @@ func (d *oracleDialect) CreateIndex(tableName string, col sdata.DBColumn) string
 }
 
 // parseTypeWithSize extracts base type and size from type aliases like "Varchar255" or "Decimal10_2"
+// Also handles types with parentheses like "numeric(7,2)" from @type(args: "7,2") directive
 func parseTypeWithSize(typeName string) (baseType string, size string) {
 	typeName = strings.ToLower(typeName)
 
@@ -1055,6 +1056,9 @@ func parseTypeWithSize(typeName string) (baseType string, size string) {
 			if suffix == "" {
 				return "", ""
 			}
+			// Strip parentheses if present (from @type(args: "7,2") -> "numeric(7,2)")
+			suffix = strings.TrimPrefix(suffix, "(")
+			suffix = strings.TrimSuffix(suffix, ")")
 			// Convert underscore to comma for decimal types (e.g., "10_2" -> "10,2")
 			size = strings.ReplaceAll(suffix, "_", ",")
 			return p.base, size

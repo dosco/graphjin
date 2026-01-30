@@ -180,10 +180,10 @@ func captureStdout(f func()) string {
 
 	f()
 
-	w.Close()
+	w.Close() //nolint:errcheck
 	os.Stdout = old
 
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	io.Copy(&buf, r) //nolint:errcheck
 	return buf.String()
 }

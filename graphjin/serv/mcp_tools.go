@@ -15,7 +15,6 @@ func (ms *mcpServer) registerExecutionTools() {
 	ms.srv.AddTool(mcp.NewTool(
 		"execute_graphql",
 		mcp.WithDescription("Execute a GraphJin GraphQL query or mutation against the database. "+
-			"IMPORTANT: Call validate_graphql first to catch errors before execution. "+
 			"Use get_query_syntax to learn the DSL syntax."),
 		mcp.WithString("query",
 			mcp.Required(),
@@ -52,7 +51,6 @@ func (ms *mcpServer) registerExecutionTools() {
 type ExecuteResult struct {
 	Data   json.RawMessage `json:"data"`
 	Errors []ErrorInfo     `json:"errors,omitempty"`
-	SQL    string          `json:"sql,omitempty"`
 }
 
 // ErrorInfo represents an error from query execution
@@ -109,7 +107,6 @@ func (ms *mcpServer) handleExecuteGraphQL(ctx context.Context, req mcp.CallToolR
 	} else {
 		// Replace encrypted cursors with short numeric IDs for LLM-friendly responses
 		result.Data = ms.processCursorsForMCP(ctx, res.Data)
-		result.SQL = res.SQL()
 		for _, e := range res.Errors {
 			result.Errors = append(result.Errors, ErrorInfo{Message: enhanceError(e.Message, "execute_graphql")})
 		}
@@ -161,7 +158,6 @@ func (ms *mcpServer) handleExecuteSavedQuery(ctx context.Context, req mcp.CallTo
 	} else {
 		// Replace encrypted cursors with short numeric IDs for LLM-friendly responses
 		result.Data = ms.processCursorsForMCP(ctx, res.Data)
-		result.SQL = res.SQL()
 		for _, e := range res.Errors {
 			result.Errors = append(result.Errors, ErrorInfo{Message: enhanceError(e.Message, "execute_saved_query")})
 		}

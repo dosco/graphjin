@@ -84,10 +84,10 @@ func startHTTP(s1 *HttpService) {
 			s.closeFn()
 		}
 		if s.cache != nil {
-			s.cache.Close()
+			s.cache.Close() //nolint:errcheck
 		}
 		if s.db != nil {
-			s.db.Close()
+			s.db.Close() //nolint:errcheck
 		}
 		s.log.Info("shutdown complete")
 	})
@@ -188,7 +188,7 @@ func printClaudeConfig(conf *Config) {
 		execPath = "graphjin"
 	}
 
-	configPath := conf.Serv.ConfigPath
+	configPath := conf.ConfigPath
 	if configPath == "" {
 		configPath = "./config"
 	}
