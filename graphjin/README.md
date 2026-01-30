@@ -73,6 +73,27 @@ mutation {
 }
 ```
 
+## Real-time Subscriptions
+
+Get live updates when your data changes. GraphJin handles thousands of concurrent subscribers with a single database query - not one per subscriber.
+
+```graphql
+subscription {
+  orders(where: { user_id: { eq: $user_id } }) {
+    id total status
+    items { product { name } }
+  }
+}
+```
+
+**Why it's efficient:**
+- Traditional approach: 1,000 subscribers = 1,000 database queries
+- GraphJin: 1,000 subscribers = 1 optimized batch query
+- Automatic change detection - updates only sent when data actually changes
+- Built-in cursor pagination for feeds and infinite scroll
+
+Works from Node.js, Go, or any WebSocket client.
+
 ## MCP Tools
 
 GraphJin exposes 15 tools that guide AI models to write valid queries. Key tools: `list_tables` and `describe_table` for schema discovery, `get_query_syntax` for learning the DSL, `execute_graphql` for running queries, and `execute_saved_query` for production-approved queries. Prompts like `write_query` and `fix_query_error` help models construct and debug queries.
