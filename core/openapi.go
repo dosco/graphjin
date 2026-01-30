@@ -9,6 +9,8 @@ import (
 	"github.com/dosco/graphjin/core/v3/internal/graph"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // OpenAPI 3.0 Specification Types
@@ -182,7 +184,7 @@ func (g *GraphJin) generateComponents(components *OpenAPIComponents, gj *graphji
 			continue
 		}
 
-		tableName := strings.Title(table.Name)
+		tableName := cases.Title(language.English).String(table.Name)
 
 		// Generate table object schema
 		tableSchema := Schema{
@@ -341,7 +343,7 @@ func (g *GraphJin) generateDataSchemaFromQCode(qc *qcode.QCode, gj *graphjinEngi
 		rootSel := &qc.Selects[qc.Roots[0]]
 		tableName := rootSel.Ti.Name
 		if tableName != "" {
-			schemaName := strings.Title(tableName)
+			schemaName := cases.Title(language.English).String(tableName)
 			if rootSel.Singular {
 				return Schema{Ref: fmt.Sprintf("#/components/schemas/%s", schemaName)}
 			}
@@ -364,7 +366,7 @@ func (g *GraphJin) generateDataSchemaFromQCode(qc *qcode.QCode, gj *graphjinEngi
 		rootSel := &qc.Selects[rootID]
 		tableName := rootSel.Ti.Name
 		if tableName != "" {
-			schemaName := strings.Title(tableName)
+			schemaName := cases.Title(language.English).String(tableName)
 			if rootSel.Singular {
 				schema.Properties[rootSel.FieldName] = Schema{Ref: fmt.Sprintf("#/components/schemas/%s", schemaName)}
 			} else {
@@ -381,75 +383,6 @@ func (g *GraphJin) generateDataSchemaFromQCode(qc *qcode.QCode, gj *graphjinEngi
 	return schema
 }
 
-// generateSelectSchemaFromQCode generates schema for a specific select using GraphJin's compiled structure
-func (g *GraphJin) generateSelectSchemaFromQCode(qc *qcode.QCode, sel *qcode.Select, gj *graphjinEngine, seen map[string]bool) Schema {
-	tableName := sel.Ti.Name
-
-	// For any table with a known name, use $ref to component schemas to avoid cycles
-	// This is the OpenAPI-standard way to handle potentially recursive schemas
-	if tableName != "" {
-		schemaName := strings.Title(tableName)
-		if sel.Singular {
-			return Schema{
-				Ref: fmt.Sprintf("#/components/schemas/%s", schemaName),
-			}
-		}
-		return Schema{
-			Type: "array",
-			Items: &Schema{
-				Ref: fmt.Sprintf("#/components/schemas/%s", schemaName),
-			},
-		}
-	}
-
-	// For selects without a table name, build inline schema
-	objectSchema := Schema{
-		Type:       "object",
-		Properties: make(map[string]Schema),
-	}
-
-	// Add __typename if requested
-	if sel.Typename {
-		objectSchema.Properties["__typename"] = Schema{
-			Type:        "string",
-			Description: "GraphQL type name",
-		}
-	}
-
-	// Add regular fields
-	for _, field := range sel.Fields {
-		fieldSchema := g.generateFieldSchemaFromQCode(field, nil)
-		objectSchema.Properties[field.FieldName] = fieldSchema
-	}
-
-	// Add child relationships - use $ref for any child with a table name
-	for _, childID := range sel.Children {
-		childSel := &qc.Selects[childID]
-		childSchema := g.generateSelectSchemaFromQCode(qc, childSel, gj, seen)
-		objectSchema.Properties[childSel.FieldName] = childSchema
-	}
-
-	if !sel.Singular {
-		return Schema{
-			Type:  "array",
-			Items: &objectSchema,
-		}
-	}
-
-	return objectSchema
-}
-
-// generateFieldSchemaFromQCode generates schema for a field using GraphJin's type system
-func (g *GraphJin) generateFieldSchemaFromQCode(field qcode.Field, tableInfo *sdata.DBTable) Schema {
-	switch field.Type {
-	case qcode.FieldTypeCol:
-		return g.columnToOpenAPISchema(field.Col)
-	case qcode.FieldTypeFunc:
-		return g.functionToOpenAPISchema(field.Func)
-	default:
-		return Schema{Type: "string", Description: "Unknown field type"}
-	}
-}
 
 // columnToOpenAPISchema converts a database column to OpenAPI schema
 // Uses the same logic as GraphJin's getType and getTypeFromColumn functions
@@ -508,36 +441,6 @@ func (g *GraphJin) columnToOpenAPISchema(col sdata.DBColumn) Schema {
 	return schema
 }
 
-// functionToOpenAPISchema converts a database function to OpenAPI schema
-func (g *GraphJin) functionToOpenAPISchema(fn sdata.DBFunction) Schema {
-	// Use GraphJin's type mapping for function return types
-	gqlType, isList := getType(fn.Type)
-
-	baseType := "string"
-	description := ""
-
-	switch gqlType {
-	case "String":
-		baseType = "string"
-	case "Int":
-		baseType = "integer"
-	case "Float":
-		baseType = "number"
-	case "Boolean":
-		baseType = "boolean"
-	case "JSON":
-		return Schema{Type: "object", AdditionalProperties: true}
-	default:
-		description = fmt.Sprintf("Function: %s", fn.Name)
-	}
-
-	if isList {
-		innerSchema := Schema{Type: baseType}
-		return Schema{Type: "array", Items: &innerSchema, Description: description}
-	}
-
-	return Schema{Type: baseType, Description: description}
-}
 
 // getHTTPMethods determines appropriate HTTP methods for the operation
 func (g *GraphJin) getHTTPMethods(opType, subType qcode.QType) []string {
@@ -571,7 +474,7 @@ func (g *GraphJin) generatePathItem(analysis *QueryAnalysis, components *OpenAPI
 			Summary:     fmt.Sprintf("Execute %s query", analysis.Item.Name),
 			Description: fmt.Sprintf("Executes the %s GraphQL query via REST", analysis.Item.Name),
 			OperationID: fmt.Sprintf("%s_%s", strings.ToLower(method), analysis.Item.Name),
-			Tags:        []string{strings.Title(analysis.Item.Operation)},
+			Tags:        []string{cases.Title(language.English).String(analysis.Item.Operation)},
 			Responses: map[string]Response{
 				"200": {
 					Description: "Successful response",

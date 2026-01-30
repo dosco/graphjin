@@ -160,7 +160,7 @@ func (s *gstate) executeDatabaseJoinQuery(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get connection: %w", err)
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	// Build and execute query
 	// Note: This is a placeholder - the actual implementation would need to:
@@ -258,74 +258,6 @@ type dbResult struct {
 	err      error
 }
 
-// executeMultiDBRoots executes root-level queries to different databases in parallel
-// and merges the results.
-func (s *gstate) executeMultiDBRoots(c context.Context) error {
-	groups := s.groupSelectsByDatabase()
-
-	if len(groups) <= 1 {
-		// Single database or no groups - use standard execution
-		return nil
-	}
-
-	var wg sync.WaitGroup
-	results := make([]dbResult, len(groups))
-
-	for i, group := range groups {
-		wg.Add(1)
-		go func(idx int, g dbGroup) {
-			defer wg.Done()
-
-			dbCtx, ok := s.gj.databases[g.database]
-			if !ok {
-				results[idx] = dbResult{
-					database: g.database,
-					err:      fmt.Errorf("database not found: %s", g.database),
-				}
-				return
-			}
-
-			// Execute query against this database
-			// Note: This would need to compile a subset QCode for just this database's roots
-			ctx1, span := s.gj.spanStart(c, "Execute Multi-DB Root")
-			span.SetAttributesString(StringAttr{"query.database", g.database})
-
-			data, err := s.executeForDatabase(ctx1, dbCtx, g.selects)
-			span.End()
-
-			results[idx] = dbResult{
-				database: g.database,
-				data:     data,
-				err:      err,
-			}
-		}(i, group)
-	}
-
-	wg.Wait()
-	return s.mergeRootResults(results)
-}
-
-// executeForDatabase executes a query against a specific database for the given selects.
-func (s *gstate) executeForDatabase(
-	ctx context.Context,
-	dbCtx *dbContext,
-	selectIDs []int32,
-) (json.RawMessage, error) {
-	// This is a placeholder - the full implementation would:
-	// 1. Build a new QCode with only the specified selects
-	// 2. Compile to SQL using dbCtx's compiler
-	// 3. Execute against dbCtx's connection pool
-	// 4. Return the JSON result
-
-	conn, err := dbCtx.db.Conn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get connection for %s: %w", dbCtx.name, err)
-	}
-	defer conn.Close()
-
-	// Placeholder: return empty object
-	return json.RawMessage(`{}`), nil
-}
 
 // mergeRootResults merges results from multiple databases into a single JSON response.
 // Root-level results are JSON objects that need to be combined.
@@ -378,48 +310,10 @@ func (s *gstate) mergeRootResults(results []dbResult) error {
 	return nil
 }
 
-// getDBContext returns the database context for a given database name.
-// If name is empty, returns the default database context.
-func (gj *graphjinEngine) getDBContext(name string) (*dbContext, error) {
-	if name == "" {
-		name = gj.defaultDB
-	}
-
-	if gj.databases == nil || len(gj.databases) == 0 {
-		// Single database mode - return nil to use legacy path
-		return nil, nil
-	}
-
-	dbCtx, ok := gj.databases[name]
-	if !ok {
-		return nil, fmt.Errorf("database not found: %s", name)
-	}
-
-	return dbCtx, nil
-}
 
 // isMultiDB returns true if the engine is configured for multiple databases.
 func (gj *graphjinEngine) isMultiDB() bool {
-	return gj.databases != nil && len(gj.databases) > 0
-}
-
-// getConnection returns a database connection for the given database name.
-// For single-database mode, it returns a connection from the default pool.
-// For multi-database mode, it returns a connection from the specified database.
-func (gj *graphjinEngine) getConnection(ctx context.Context, dbName string) (*sql.Conn, error) {
-	if !gj.isMultiDB() {
-		return gj.db.Conn(ctx)
-	}
-
-	dbCtx, err := gj.getDBContext(dbName)
-	if err != nil {
-		return nil, err
-	}
-	if dbCtx == nil {
-		return gj.db.Conn(ctx)
-	}
-
-	return dbCtx.db.Conn(ctx)
+	return len(gj.databases) > 0
 }
 
 // buildDatabaseQuery creates a new GraphQL query containing only the specified root fields.
@@ -690,7 +584,7 @@ func (s *gstate) executeForDatabaseRoots(ctx context.Context, dbName string, roo
 	if err != nil {
 		return nil, fmt.Errorf("failed to get connection for %s: %w", dbName, err)
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	// Build argument list
 	args, err := s.gj.argList(ctx, md, vars, s.r.requestconfig, false)

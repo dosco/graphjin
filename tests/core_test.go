@@ -23,7 +23,7 @@ func TestReadInConfigWithEnvVars(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
+	defer os.RemoveAll(dir) //nolint:errcheck
 
 	fs := core.NewOsFS(dir)
 	fs.Put("dev.yml", []byte(devConfig))
@@ -116,7 +116,7 @@ func TestAllowList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
+	defer os.RemoveAll(dir) //nolint:errcheck
 
 	fs := core.NewOsFS(dir)
 	err = fs.Put("queries/getProducts.gql", []byte(gql1))
@@ -178,7 +178,7 @@ func TestAllowListWithNamespace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
+	defer os.RemoveAll(dir) //nolint:errcheck
 	fs := core.NewOsFS(dir)
 
 	conf1 := newConfig(&core.Config{DBType: dbType})
@@ -279,7 +279,7 @@ func TestEnableSchema(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer os.RemoveAll(dir)
+	defer os.RemoveAll(dir) //nolint:errcheck
 
 	fs := core.NewOsFS(dir)
 

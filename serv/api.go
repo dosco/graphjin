@@ -107,7 +107,7 @@ func NewGraphJinService(conf *Config, options ...Option) (*HttpService, error) {
 		return nil, err
 	}
 
-	s1 := &HttpService{opt: options, cpath: conf.Serv.ConfigPath}
+	s1 := &HttpService{opt: options, cpath: conf.ConfigPath}
 	s1.Store(s)
 
 	if s.conf.WatchAndReload {
@@ -156,6 +156,16 @@ func OptionSetFS(fs core.FS) Option {
 // OptionSetZapLogger sets service structured logger
 func OptionSetZapLogger(zlog *zap.Logger) Option {
 	return func(s *graphjinService) error {
+		s.zlog = zlog
+		s.log = zlog.Sugar()
+		return nil
+	}
+}
+
+// OptionSetLogOutput sets the log output writer (e.g., os.Stderr for MCP stdio mode)
+func OptionSetLogOutput(output zapcore.WriteSyncer) Option {
+	return func(s *graphjinService) error {
+		zlog := util.NewLoggerWithOutput(s.conf.ShouldUseJSONLogs(), output)
 		s.zlog = zlog
 		s.log = zlog.Sugar()
 		return nil

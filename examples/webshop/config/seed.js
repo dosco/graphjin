@@ -18,8 +18,7 @@ for (let i = 0; i < 3; i++) {
     avatar: fake.avatar_url(),
     phone: fake.phone(),
     email: "user" + i + "@demo.com",
-    password: pwd,
-    password_confirmation: pwd,
+    encrypted_password: util.hash_password(pwd),
     created_at: "now",
     updated_at: "now",
   };
@@ -43,8 +42,7 @@ for (let i = 0; i < user_count; i++) {
     avatar: fake.avatar_url(),
     phone: fake.phone(),
     email: "user_" + i + "_" + fake.email(),
-    password: pwd,
-    password_confirmation: pwd,
+    encrypted_password: util.hash_password(pwd),
     created_at: "now",
     updated_at: "now",
   };
@@ -73,8 +71,7 @@ for (let i = 0; i < customer_count; i++) {
     full_name: fake.name(),
     phone: fake.phone(),
     email: fake.email(),
-    password: pwd,
-    password_confirmation: pwd,
+    encrypted_password: util.hash_password(pwd),
   };
 
   let q = `mutation {

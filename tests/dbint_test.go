@@ -141,12 +141,12 @@ func setupMultiDB(ctx context.Context) ([]func(context.Context) error, error) {
 				if err = testDB.Ping(); err == nil {
 					var count int
 					err = testDB.QueryRow("SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'users'").Scan(&count)
-					testDB.Close()
+					testDB.Close() //nolint:errcheck
 					if err == nil && count > 0 {
 						break
 					}
 				}
-				testDB.Close()
+				testDB.Close() //nolint:errcheck
 			}
 			time.Sleep(500 * time.Millisecond)
 		}
@@ -181,7 +181,7 @@ func setupMultiDB(ctx context.Context) ([]func(context.Context) error, error) {
 
 		script, err := os.ReadFile("./multidb_sqlite.sql")
 		if err != nil {
-			initDB.Close()
+			initDB.Close() //nolint:errcheck
 			mu.Lock()
 			setupErr = fmt.Errorf("sqlite script read failed: %w", err)
 			mu.Unlock()
@@ -189,7 +189,7 @@ func setupMultiDB(ctx context.Context) ([]func(context.Context) error, error) {
 		}
 
 		if _, err = initDB.Exec(string(script)); err != nil {
-			initDB.Close()
+			initDB.Close() //nolint:errcheck
 			mu.Lock()
 			setupErr = fmt.Errorf("sqlite init failed: %w", err)
 			mu.Unlock()
@@ -226,7 +226,7 @@ func setupMultiDB(ctx context.Context) ([]func(context.Context) error, error) {
 
 		client, err := mongo.Connect(options.Client().ApplyURI(connStr))
 		if err != nil {
-			container.Terminate(ctx)
+			container.Terminate(ctx) //nolint:errcheck
 			mu.Lock()
 			setupErr = fmt.Errorf("mongodb connect failed: %w", err)
 			mu.Unlock()
@@ -251,7 +251,7 @@ func setupMultiDB(ctx context.Context) ([]func(context.Context) error, error) {
 			bson.M{"_id": int64(2), "type": "click", "user_id": int64(1), "element": "buy_btn", "created_at": time.Now()},
 			bson.M{"_id": int64(3), "type": "page_view", "user_id": int64(2), "page": "/products", "created_at": time.Now()},
 		}
-		eventsCol.InsertMany(ctx, eventDocs)
+		eventsCol.InsertMany(ctx, eventDocs) //nolint:errcheck
 
 		// Create users collection (for disambiguation tests - same table name as postgres)
 		usersCol := testDB.Collection("users")
@@ -260,7 +260,7 @@ func setupMultiDB(ctx context.Context) ([]func(context.Context) error, error) {
 			bson.M{"_id": int64(2), "full_name": "Mongo User 2", "email": "muser2@test.com", "activity_score": 200},
 			bson.M{"_id": int64(3), "full_name": "Mongo User 3", "email": "muser3@test.com", "activity_score": 300},
 		}
-		usersCol.InsertMany(ctx, userDocs)
+		usersCol.InsertMany(ctx, userDocs) //nolint:errcheck
 
 		// Create sql.DB using mongodriver
 		connector := mongodriver.NewConnector(client, "graphjin_multidb")
@@ -270,8 +270,8 @@ func setupMultiDB(ctx context.Context) ([]func(context.Context) error, error) {
 		multiDBs["mongodb"] = sqlDB
 		multiDBTypes["mongodb"] = "mongodb"
 		cleanups = append(cleanups, func(ctx context.Context) error {
-			sqlDB.Close()
-			client.Disconnect(ctx)
+			sqlDB.Close() //nolint:errcheck
+			client.Disconnect(ctx) //nolint:errcheck
 			return container.Terminate(ctx)
 		})
 		mu.Unlock()
@@ -282,7 +282,7 @@ func setupMultiDB(ctx context.Context) ([]func(context.Context) error, error) {
 	if setupErr != nil {
 		// Cleanup any successful containers
 		for _, cleanup := range cleanups {
-			cleanup(ctx)
+			cleanup(ctx) //nolint:errcheck
 		}
 		return nil, setupErr
 	}
@@ -359,12 +359,12 @@ func TestMain(m *testing.M) {
 							// Test that our schema is loaded by checking for a table
 							var count int
 							err = testDB.QueryRow("SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'users'").Scan(&count)
-							testDB.Close()
+							testDB.Close() //nolint:errcheck
 							if err == nil && count > 0 {
 								break
 							}
 						}
-						testDB.Close()
+						testDB.Close() //nolint:errcheck
 					}
 					time.Sleep(500 * time.Millisecond)
 				}
@@ -406,12 +406,12 @@ func TestMain(m *testing.M) {
 							// Test that our schema is loaded by checking for a table
 							var count int
 							err = testDB.QueryRow("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'db' AND table_name = 'users'").Scan(&count)
-							testDB.Close()
+							testDB.Close() //nolint:errcheck
 							if err == nil && count > 0 {
 								break
 							}
 						}
-						testDB.Close()
+						testDB.Close() //nolint:errcheck
 					}
 					time.Sleep(500 * time.Millisecond)
 				}
@@ -458,14 +458,14 @@ func TestMain(m *testing.M) {
 						if err = initDB.Ping(); err == nil {
 							break
 						}
-						initDB.Close()
+						initDB.Close() //nolint:errcheck
 					}
 					time.Sleep(500 * time.Millisecond)
 				}
 				if err != nil {
 					return nil, "", fmt.Errorf("failed to connect to mariadb: %w", err)
 				}
-				defer initDB.Close()
+				defer initDB.Close() //nolint:errcheck
 
 				script, err := os.ReadFile("./mariadb.sql")
 				if err != nil {
@@ -500,13 +500,13 @@ func TestMain(m *testing.M) {
 
 				script, err := os.ReadFile("./sqlite.sql")
 				if err != nil {
-					db.Close()
+					db.Close() //nolint:errcheck
 					return nil, "", err
 				}
 
 				_, err = db.Exec(string(script))
 				if err != nil {
-					db.Close() // Cleanup on error
+					db.Close() //nolint:errcheck // Cleanup on error
 					return nil, "", fmt.Errorf("failed to init sqlite: %w", err)
 				}
 
@@ -561,7 +561,7 @@ func TestMain(m *testing.M) {
 				if err != nil {
 					return nil, "", err
 				}
-				defer db.Close()
+				defer db.Close() //nolint:errcheck
 
 				script, err := os.ReadFile("./oracle.sql")
 				if err != nil {
@@ -640,7 +640,7 @@ func TestMain(m *testing.M) {
 						if err = initDB.Ping(); err == nil {
 							break
 						}
-						initDB.Close()
+						initDB.Close() //nolint:errcheck
 					}
 					time.Sleep(1 * time.Second)
 				}
@@ -650,10 +650,10 @@ func TestMain(m *testing.M) {
 
 				// Create the test database
 				if _, err := initDB.Exec("IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = 'db') CREATE DATABASE db"); err != nil {
-					initDB.Close()
+					initDB.Close() //nolint:errcheck
 					return nil, "", fmt.Errorf("failed to create mssql database: %w", err)
 				}
-				initDB.Close()
+				initDB.Close() //nolint:errcheck
 
 				// Connect to the test database and run init script
 				connStr = fmt.Sprintf("sqlserver://sa:YourStrong!Passw0rd@%s:%s?database=db", host, port.Port())
@@ -661,7 +661,7 @@ func TestMain(m *testing.M) {
 				if err != nil {
 					return nil, "", err
 				}
-				defer initDB.Close()
+				defer initDB.Close() //nolint:errcheck
 
 				script, err := os.ReadFile("./mssql.sql")
 				if err != nil {
@@ -702,7 +702,7 @@ func TestMain(m *testing.M) {
 				// Connect to MongoDB using the official driver
 				client, err := mongo.Connect(options.Client().ApplyURI(connStr))
 				if err != nil {
-					container.Terminate(ctx)
+					container.Terminate(ctx) //nolint:errcheck
 					return nil, nil, err
 				}
 
@@ -737,7 +737,7 @@ func TestMain(m *testing.M) {
 						"created_at":      time.Date(2021, 1, 9, 16, 37, 1, 0, time.UTC),
 					})
 				}
-				usersCol.InsertMany(ctx, userDocs)
+				usersCol.InsertMany(ctx, userDocs) //nolint:errcheck
 
 				// Create categories collection
 				categoriesCol := testDB.Collection("categories")
@@ -750,7 +750,7 @@ func TestMain(m *testing.M) {
 						"created_at":  time.Date(2021, 1, 9, 16, 37, 1, 0, time.UTC),
 					})
 				}
-				categoriesCol.InsertMany(ctx, categoryDocs)
+				categoriesCol.InsertMany(ctx, categoryDocs) //nolint:errcheck
 
 				// Create products collection
 				productsCol := testDB.Collection("products")
@@ -776,7 +776,7 @@ func TestMain(m *testing.M) {
 						"created_at":   time.Date(2021, 1, 9, 16, 37, 1, 0, time.UTC),
 					})
 				}
-				productsCol.InsertMany(ctx, productDocs)
+				productsCol.InsertMany(ctx, productDocs) //nolint:errcheck
 
 				// Create text index for full-text search on products collection
 				_, err = productsCol.Indexes().CreateOne(ctx, mongo.IndexModel{
@@ -802,7 +802,7 @@ func TestMain(m *testing.M) {
 						"created_at":  time.Date(2021, 1, 9, 16, 37, 1, 0, time.UTC),
 					})
 				}
-				purchasesCol.InsertMany(ctx, purchaseDocs)
+				purchasesCol.InsertMany(ctx, purchaseDocs) //nolint:errcheck
 
 				// Create comments collection
 				commentsCol := testDB.Collection("comments")
@@ -820,7 +820,7 @@ func TestMain(m *testing.M) {
 					}
 					commentDocs = append(commentDocs, doc)
 				}
-				commentsCol.InsertMany(ctx, commentDocs)
+				commentsCol.InsertMany(ctx, commentDocs) //nolint:errcheck
 
 				// Create quotations collection for JSON path tests
 				quotationsCol := testDB.Collection("quotations")
@@ -850,7 +850,7 @@ func TestMain(m *testing.M) {
 						},
 					},
 				}
-				quotationsCol.InsertMany(ctx, quotationDocs)
+				quotationsCol.InsertMany(ctx, quotationDocs) //nolint:errcheck
 
 				// Create graph_node collection for self-referencing M2M tests
 				graphNodeCol := testDB.Collection("graph_node")
@@ -859,7 +859,7 @@ func TestMain(m *testing.M) {
 					bson.M{"_id": "b", "label": "node b"},
 					bson.M{"_id": "c", "label": "node c"},
 				}
-				graphNodeCol.InsertMany(ctx, graphNodeDocs)
+				graphNodeCol.InsertMany(ctx, graphNodeDocs) //nolint:errcheck
 
 				// Create graph_edge collection (join table for graph_node M2M)
 				graphEdgeCol := testDB.Collection("graph_edge")
@@ -867,7 +867,7 @@ func TestMain(m *testing.M) {
 					bson.M{"_id": int64(1), "src_node": "a", "dst_node": "b"},
 					bson.M{"_id": int64(2), "src_node": "a", "dst_node": "c"},
 				}
-				graphEdgeCol.InsertMany(ctx, graphEdgeDocs)
+				graphEdgeCol.InsertMany(ctx, graphEdgeDocs) //nolint:errcheck
 
 				// Create notifications collection for polymorphic relationship tests
 				notificationsCol := testDB.Collection("notifications")
@@ -889,7 +889,7 @@ func TestMain(m *testing.M) {
 						"created_at":   time.Date(2021, 1, 9, 16, 37, 1, 0, time.UTC),
 					},
 				}
-				notificationsCol.InsertMany(ctx, notificationDocs)
+				notificationsCol.InsertMany(ctx, notificationDocs) //nolint:errcheck
 
 				// Create chats collection for subscription cursor tests
 				chatsCol := testDB.Collection("chats")
@@ -901,7 +901,7 @@ func TestMain(m *testing.M) {
 						"created_at": time.Date(2021, 1, 9, 16, 37, 1, 0, time.UTC),
 					})
 				}
-				chatsCol.InsertMany(ctx, chatDocs)
+				chatsCol.InsertMany(ctx, chatDocs) //nolint:errcheck
 
 				// Create locations collection for GIS tests
 				locationsCol := testDB.Collection("locations")
@@ -910,7 +910,7 @@ func TestMain(m *testing.M) {
 					bson.M{"_id": int64(2), "name": "Los Angeles", "geom": bson.M{"type": "Point", "coordinates": []float64{-118.2437, 34.0522}}},
 					bson.M{"_id": int64(3), "name": "New York", "geom": bson.M{"type": "Point", "coordinates": []float64{-74.0060, 40.7128}}},
 				}
-				locationsCol.InsertMany(ctx, locationDocs)
+				locationsCol.InsertMany(ctx, locationDocs) //nolint:errcheck
 
 				// Create 2dsphere index for geospatial queries
 				_, err = locationsCol.Indexes().CreateOne(ctx, mongo.IndexModel{
@@ -925,8 +925,8 @@ func TestMain(m *testing.M) {
 				sqlDB := sql.OpenDB(connector)
 
 				cleanup := func(ctx context.Context) error {
-					sqlDB.Close()
-					client.Disconnect(ctx)
+					sqlDB.Close()           //nolint:errcheck
+					client.Disconnect(ctx)  //nolint:errcheck
 					return container.Terminate(ctx)
 				}
 

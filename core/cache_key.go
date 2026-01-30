@@ -57,7 +57,7 @@ func (b *CacheKeyBuilder) Build(
 
 	// Include user_id from context for user isolation
 	if userID := ctx.Value(UserIDKey); userID != nil {
-		fmt.Fprintf(h, ":uid:%v", userID)
+		fmt.Fprintf(h, ":uid:%v", userID) //nolint:errcheck
 	}
 
 	return hex.EncodeToString(h.Sum(nil))

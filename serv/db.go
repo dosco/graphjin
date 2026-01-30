@@ -53,15 +53,15 @@ func newDB(
 	if cs := conf.DB.ConnString; cs != "" {
 		// Check if the connection string has the required prefix or type is set to postgres
 		if strings.HasPrefix(cs, "postgres://") || strings.HasPrefix(cs, "postgresql://") || conf.DB.Type == "postgres" {
-			conf.Core.DBType = "postgres"
+			conf.DBType = "postgres"
 		}
 		if strings.HasPrefix(cs, "mysql://") {
-			conf.Core.DBType = "mysql"
+			conf.DBType = "mysql"
 			conf.DB.ConnString = strings.TrimPrefix(cs, "mysql://")
 		}
 	}
 
-	switch conf.Core.DBType {
+	switch conf.DBType {
 	case "mysql":
 		dc, err = initMysql(conf, openDB, useTelemetry, fs)
 	default:
@@ -82,7 +82,7 @@ func newDB(
 			if err := db.Ping(); err == nil {
 				return db, nil
 			} else {
-				db.Close()
+				db.Close() //nolint:errcheck
 				log.Warnf("database ping: %s", err)
 			}
 

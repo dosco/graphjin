@@ -678,7 +678,6 @@ func (ms *mcpServer) handleFixQueryError(ctx context.Context, req mcp.GetPromptR
 		sb.WriteString("2. Ensure proper comma usage between fields\n")
 		sb.WriteString("3. Verify string values are quoted: `{ eq: \"value\" }`\n")
 		sb.WriteString("4. Check that `where:` is properly formatted as an object\n")
-		sb.WriteString("5. Use `validate_graphql` tool to get detailed syntax errors\n")
 
 	case strings.Contains(errorLower, "permission") || strings.Contains(errorLower, "access") || strings.Contains(errorLower, "denied"):
 		sb.WriteString("**Problem**: Permission or access denied\n\n")
@@ -703,17 +702,15 @@ func (ms *mcpServer) handleFixQueryError(ctx context.Context, req mcp.GetPromptR
 
 	default:
 		sb.WriteString("**General debugging steps**:\n\n")
-		sb.WriteString("1. Use `validate_graphql` to check query syntax\n")
-		sb.WriteString("2. Use `list_tables` and `describe_table` to verify schema\n")
-		sb.WriteString("3. Use `get_query_syntax` or `get_mutation_syntax` for syntax reference\n")
-		sb.WriteString("4. Simplify the query and add complexity incrementally\n")
-		sb.WriteString("5. Check if a working saved query exists with `list_saved_queries`\n")
+		sb.WriteString("1. Use `list_tables` and `describe_table` to verify schema\n")
+		sb.WriteString("2. Use `get_query_syntax` or `get_mutation_syntax` for syntax reference\n")
+		sb.WriteString("3. Simplify the query and add complexity incrementally\n")
+		sb.WriteString("4. Check if a working saved query exists with `list_saved_queries`\n")
 	}
 
 	sb.WriteString("\n## Recommended Next Steps\n\n")
 	sb.WriteString("1. Fix the identified issue\n")
-	sb.WriteString("2. Run `validate_graphql` to verify the fix\n")
-	sb.WriteString("3. Execute the corrected query\n")
+	sb.WriteString("2. Execute the corrected query\n")
 
 	return mcp.NewGetPromptResult(
 		"Query error analysis",

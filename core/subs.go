@@ -448,8 +448,7 @@ func (gj *graphjinEngine) subCheckUpdates(sub *sub, mv mval, start int) {
 						}
 					}
 				}
-				var row *sql.Row
-				row = gj.db.QueryRowContext(c, sub.s.cs.st.sql, values...)
+				row := gj.db.QueryRowContext(c, sub.s.cs.st.sql, values...)
 				var b []byte
 				if err := row.Scan(&b); err != nil {
 					return err
@@ -485,7 +484,7 @@ func (gj *graphjinEngine) subCheckUpdates(sub *sub, mv mval, start int) {
 		gj.log.Printf(errSubs, "query", err)
 		return
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	var b []byte
 	i := 0
@@ -706,19 +705,20 @@ func (c *stringContext) AddParam(p dialect.Param) string {
 	return ""
 }
 func (c *stringContext) Quote(s string) {
-	if c.ct == "mysql" {
+	switch c.ct {
+	case "mysql":
 		c.sb.WriteString("`")
 		c.sb.WriteString(s)
 		c.sb.WriteString("`")
-	} else if c.ct == "oracle" {
+	case "oracle":
 		c.sb.WriteString(`"`)
 		c.sb.WriteString(strings.ToUpper(s))
 		c.sb.WriteString(`"`)
-	} else if c.ct == "mssql" {
+	case "mssql":
 		c.sb.WriteString(`[`)
 		c.sb.WriteString(s)
 		c.sb.WriteString(`]`)
-	} else {
+	default:
 		c.sb.WriteString(`"`)
 		c.sb.WriteString(s)
 		c.sb.WriteString(`"`)

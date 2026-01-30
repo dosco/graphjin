@@ -76,7 +76,7 @@ func (r *remoteAPI) Resolve(c context.Context, rr ResolverReq) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to '%s': %v", uri, err)
 	}
-	defer res.Body.Close()
+	defer res.Body.Close() //nolint:errcheck
 
 	if r.Debug {
 		reqDump, err := httputil.DumpRequestOut(req, true)

@@ -10,7 +10,7 @@ import (
 func Example_queryWithGeoFilter() {
 	// Skip for databases without spatial support
 	// Supports: PostGIS, MySQL 8.0+, MariaDB, SQLite with SpatiaLite, MSSQL, Oracle Spatial, MongoDB
-	if dbType != "postgres" && dbType != "mysql" && dbType != "mariadb" && dbType != "mssql" && dbType != "oracle" && dbType != "mongodb" && !(dbType == "sqlite" && SpatialiteAvailable) {
+	if dbType != "postgres" && dbType != "mysql" && dbType != "mariadb" && dbType != "mssql" && dbType != "oracle" && dbType != "mongodb" && (dbType != "sqlite" || !SpatialiteAvailable) {
 		fmt.Println(`{"locations":[{"id":1,"name":"San Francisco"}]}`)
 		return
 	}
@@ -45,7 +45,7 @@ func Example_queryWithGeoFilter() {
 func Example_queryWithGeoContains() {
 	// Skip for databases without spatial support
 	// Supports: PostGIS, MySQL 8.0+, MariaDB, SQLite with SpatiaLite, MSSQL, Oracle Spatial, MongoDB
-	if dbType != "postgres" && dbType != "mysql" && dbType != "mariadb" && dbType != "mssql" && dbType != "oracle" && dbType != "mongodb" && !(dbType == "sqlite" && SpatialiteAvailable) {
+	if dbType != "postgres" && dbType != "mysql" && dbType != "mariadb" && dbType != "mssql" && dbType != "oracle" && dbType != "mongodb" && (dbType != "sqlite" || !SpatialiteAvailable) {
 		fmt.Println(`{"locations":[{"id":1,"name":"San Francisco"}]}`)
 		return
 	}

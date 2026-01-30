@@ -18,7 +18,7 @@ func TestReproSubHang(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	_, err = db.Exec(`
 		CREATE TABLE chats (

@@ -244,27 +244,6 @@ func (s *gstate) groupRootsByDatabase(roots []string) map[string][]string {
 	return byDB
 }
 
-// determineTargetDatabase returns the single target database if all roots
-// belong to the same database, or empty string if multiple databases or no config.
-// This is used for backward compatibility with single-database queries.
-func (s *gstate) determineTargetDatabase() string {
-	roots := s.extractAllRootFields()
-	if len(roots) == 0 {
-		return ""
-	}
-
-	byDB := s.groupRootsByDatabase(roots)
-
-	// If all roots belong to one database, return it
-	if len(byDB) == 1 {
-		for db := range byDB {
-			if db != "_default" {
-				return db
-			}
-		}
-	}
-	return ""
-}
 
 // getTargetDB returns the *sql.DB for the target database.
 // If s.database is set (non-default database), returns that database's connection.
@@ -378,7 +357,7 @@ func (s *gstate) compileAndExecute(c context.Context) (err error) {
 			span1.Error(err)
 			return
 		}
-		defer defaultConn.Close()
+		defer defaultConn.Close() //nolint:errcheck
 
 		if err = s.executeRoleQuery(c, defaultConn); err != nil {
 			return
@@ -409,7 +388,7 @@ func (s *gstate) compileAndExecute(c context.Context) (err error) {
 			span1.Error(err)
 			return
 		}
-		defer conn.Close()
+		defer conn.Close() //nolint:errcheck
 	}
 
 	// set the local user id on the connection if needed
@@ -515,8 +494,8 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 				if err1 != nil {
 					err = err1 // Propagate error
 				} else {
-					defer rows.Close()
-					
+					defer rows.Close() //nolint:errcheck
+
 					var ids []string
 					
 					for rows.Next() {
@@ -844,21 +823,6 @@ func (s *gstate) invalidateCache(c context.Context) {
 	}
 }
 
-// stripInternalFields removes internal tracking fields (__gj_id) from response.
-// Called unconditionally for all operations when cache tracking is enabled.
-func (s *gstate) stripInternalFields() {
-	if len(s.data) == 0 {
-		return
-	}
-	cs := s.cs
-	if cs == nil || cs.st.qc == nil {
-		return
-	}
-	processor := NewResponseProcessor(cs.st.qc)
-	if cleaned, _, err := processor.ProcessForCache(s.data); err == nil {
-		s.data = cleaned
-	}
-}
 
 // getAPQKey returns the APQ key if one was provided in the request.
 func (s *gstate) getAPQKey() string {

@@ -91,3 +91,19 @@ func (f *JSFS) createDir(path string) (err error) {
 	f.fs.Call("mkdirSync", path, opts)
 	return nil
 }
+
+func (f *JSFS) List(path string) (entries []string, err error) {
+	path = filepath.Join(f.bp, path)
+	defer func() {
+		if err1 := recover(); err1 != nil {
+			err = toError(err1)
+		}
+	}()
+	result := f.fs.Call("readdirSync", path)
+	length := result.Get("length").Int()
+	entries = make([]string, length)
+	for i := 0; i < length; i++ {
+		entries[i] = result.Index(i).String()
+	}
+	return entries, nil
+}

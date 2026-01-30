@@ -654,7 +654,7 @@ type %s {
 		assert.Error(t, err, "expected NOT NULL violation")
 	case "mysql", "mariadb":
 		// MySQL in strict mode will reject NULL
-		_, err = db.Exec(fmt.Sprintf("INSERT INTO `%s` (required_field) VALUES (NULL)", tableName))
+		_, _ = db.Exec(fmt.Sprintf("INSERT INTO `%s` (required_field) VALUES (NULL)", tableName)) //nolint:errcheck
 		// Note: MySQL behavior depends on sql_mode, so we just verify the table was created
 	case "sqlite":
 		_, err = db.Exec(fmt.Sprintf(`INSERT INTO "%s" (required_field) VALUES (NULL)`, tableName))

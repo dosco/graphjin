@@ -98,6 +98,11 @@ func initDB(openDB bool) {
 
 // newLogger creates a new logger
 func newLogger(json bool) *zap.Logger {
+	return newLoggerWithOutput(json, os.Stdout)
+}
+
+// newLoggerWithOutput creates a new logger with a custom output
+func newLoggerWithOutput(json bool, output zapcore.WriteSyncer) *zap.Logger {
 	econf := zapcore.EncoderConfig{
 		MessageKey:     "msg",
 		LevelKey:       "level",
@@ -110,10 +115,10 @@ func newLogger(json bool) *zap.Logger {
 	var core zapcore.Core
 
 	if json {
-		core = zapcore.NewCore(zapcore.NewJSONEncoder(econf), os.Stdout, zap.DebugLevel)
+		core = zapcore.NewCore(zapcore.NewJSONEncoder(econf), output, zap.DebugLevel)
 	} else {
 		econf.EncodeLevel = zapcore.CapitalColorLevelEncoder
-		core = zapcore.NewCore(zapcore.NewConsoleEncoder(econf), os.Stdout, zap.DebugLevel)
+		core = zapcore.NewCore(zapcore.NewConsoleEncoder(econf), output, zap.DebugLevel)
 	}
 	return zap.New(core)
 }

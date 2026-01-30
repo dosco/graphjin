@@ -353,7 +353,7 @@ func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
 	}
 
 	config := &Config{viper: viper}
-	config.Serv.ConfigPath = cp
+	config.ConfigPath = cp
 
 	if err := viper.Unmarshal(&config); err != nil {
 		return nil, fmt.Errorf("failed to decode config, %v", err)
@@ -467,7 +467,7 @@ func (c *Config) AbsolutePath(p string) string {
 	if filepath.IsAbs(p) {
 		return p
 	}
-	return filepath.Join(c.Serv.ConfigPath, p)
+	return filepath.Join(c.ConfigPath, p)
 }
 
 // SetHash sets the hash value of the configuration

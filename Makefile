@@ -99,7 +99,13 @@ gen: download-tools
 $(BINARY):
 	@CGO_ENABLED=0 GOTOOLCHAIN=auto go build $(BUILD_FLAGS) -o $(BINARY) cmd/*.go
 $(WASM):
-	@cp $(GOROOT)/misc/wasm/wasm_exec.js ./wasm/js/
+	@if [ -f "$(GOROOT)/lib/wasm/wasm_exec.js" ]; then \
+		cp "$(GOROOT)/lib/wasm/wasm_exec.js" ./wasm/js/; \
+	elif [ -f "$(GOROOT)/misc/wasm/wasm_exec.js" ]; then \
+		cp "$(GOROOT)/misc/wasm/wasm_exec.js" ./wasm/js/; \
+	else \
+		echo "Error: wasm_exec.js not found in Go installation"; exit 1; \
+	fi
 	@GOOS=js GOARCH=wasm GOTOOLCHAIN=auto go build -o ./wasm/graphjin.wasm ./wasm/*.go
 
 clean:

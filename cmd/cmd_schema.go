@@ -213,7 +213,7 @@ func computeSchemaDiff(destructive bool) ([]core.SchemaOperation, error) {
 		Destructive: destructive,
 	}
 
-	ops, err := core.SchemaDiff(db, conf.DB.Type, schemaBytes, conf.Core.Blocklist, opts)
+	ops, err := core.SchemaDiff(db, conf.DB.Type, schemaBytes, conf.Blocklist, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -291,7 +291,6 @@ func applyChanges(sqls []string) error {
 	}
 
 	for _, sql := range sqls {
-		log.Debugf("Executing: %s", sql)
 		if _, err := tx.ExecContext(ctx, sql); err != nil {
 			if rbErr := tx.Rollback(); rbErr != nil {
 				log.Warnf("Rollback failed: %s", rbErr)
@@ -335,7 +334,7 @@ func openMultiDBConnections() (map[string]*sql.DB, error) {
 		if err != nil {
 			// Close any already opened connections
 			for _, c := range connections {
-				c.Close()
+				c.Close() //nolint:errcheck
 			}
 			return nil, fmt.Errorf("failed to connect to database '%s': %w", name, err)
 		}
@@ -361,7 +360,7 @@ func computeSchemaDiffMulti(destructive bool) (map[string][]core.SchemaOperation
 	}
 	defer func() {
 		for _, conn := range connections {
-			conn.Close()
+			conn.Close() //nolint:errcheck
 		}
 	}()
 
@@ -376,7 +375,7 @@ func computeSchemaDiffMulti(destructive bool) (map[string][]core.SchemaOperation
 		Destructive: destructive,
 	}
 
-	return core.SchemaDiffMultiDB(connections, dbTypes, schemaBytes, conf.Core.Blocklist, opts)
+	return core.SchemaDiffMultiDB(connections, dbTypes, schemaBytes, conf.Blocklist, opts)
 }
 
 // outputSQLMulti prints the operations for all databases as SQL statements
@@ -434,7 +433,7 @@ func applyChangesMulti(results map[string][]core.SchemaOperation) error {
 	}
 	defer func() {
 		for _, conn := range connections {
-			conn.Close()
+			conn.Close() //nolint:errcheck
 		}
 	}()
 
@@ -456,7 +455,6 @@ func applyChangesMulti(results map[string][]core.SchemaOperation) error {
 
 		var failed bool
 		for _, sqlStmt := range sqls {
-			log.Debugf("[%s] Executing: %s", dbName, sqlStmt)
 			if _, err := tx.ExecContext(ctx, sqlStmt); err != nil {
 				if rbErr := tx.Rollback(); rbErr != nil {
 					log.Warnf("Rollback failed for %s: %s", dbName, rbErr)

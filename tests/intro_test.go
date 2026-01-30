@@ -49,7 +49,7 @@ func TestIntrospection(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer os.RemoveAll(dir)
+	defer os.RemoveAll(dir) //nolint:errcheck
 	fs := core.NewOsFS(dir)
 
 	conf := newConfig(&core.Config{DBType: dbType, EnableIntrospection: true})

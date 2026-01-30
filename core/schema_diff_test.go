@@ -1206,6 +1206,11 @@ func TestParseTypeWithSize(t *testing.T) {
 		{"decimal10_2", "decimal", "10,2"},
 		{"decimal19_4", "decimal", "19,4"},
 		{"numeric15_3", "numeric", "15,3"},
+		// Types with parentheses from @type(args: "...") directive
+		{"numeric(7,2)", "numeric", "7,2"},
+		{"decimal(10,2)", "decimal", "10,2"},
+		{"varchar(100)", "varchar", "100"},
+		{"char(36)", "char", "36"},
 		{"varchar", "", ""},
 		{"text", "", ""},
 		{"integer", "", ""},

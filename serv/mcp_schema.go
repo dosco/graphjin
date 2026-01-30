@@ -53,32 +53,6 @@ func (ms *mcpServer) registerSchemaTools() {
 		),
 	), ms.handleFindPath)
 
-	// validate_graphql - Validate a query without executing
-	ms.srv.AddTool(mcp.NewTool(
-		"validate_graphql",
-		mcp.WithDescription("Validate a GraphJin query and see the generated SQL. "+
-			"Call this BEFORE execute_graphql to catch syntax errors early and verify the query logic. "+
-			"Returns validation errors or the generated SQL if valid."),
-		mcp.WithString("query",
-			mcp.Required(),
-			mcp.Description("The GraphQL query to validate"),
-		),
-	), ms.handleValidateGraphQL)
-
-	// explain_graphql - Show generated SQL for a query
-	ms.srv.AddTool(mcp.NewTool(
-		"explain_graphql",
-		mcp.WithDescription("Show the SQL that would be generated for a GraphQL query. "+
-			"Use this to understand how GraphJin translates queries and verify joins are correct."),
-		mcp.WithString("query",
-			mcp.Required(),
-			mcp.Description("The GraphQL query to explain"),
-		),
-		mcp.WithObject("variables",
-			mcp.Description("Optional query variables"),
-		),
-	), ms.handleExplainGraphQL)
-
 	// validate_where_clause - Validate where clause syntax and type compatibility
 	ms.srv.AddTool(mcp.NewTool(
 		"validate_where_clause",
@@ -243,108 +217,6 @@ func generatePathExampleQuery(from, to string, path []core.PathStep) string {
 	return query
 }
 
-// handleValidateGraphQL validates a query without executing
-func (ms *mcpServer) handleValidateGraphQL(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args := req.GetArguments()
-	query, _ := args["query"].(string)
-
-	if query == "" {
-		return mcp.NewToolResultError("query is required"), nil
-	}
-
-	// Execute with empty variables to validate
-	var rc core.RequestConfig
-	rc.SetNamespace(ms.getNamespace())
-
-	res, err := ms.service.gj.GraphQL(ctx, query, nil, &rc)
-
-	result := struct {
-		Valid  bool     `json:"valid"`
-		Errors []string `json:"errors,omitempty"`
-		SQL    string   `json:"sql,omitempty"`
-	}{}
-
-	if err != nil {
-		result.Valid = false
-		result.Errors = []string{err.Error()}
-	} else if len(res.Errors) > 0 {
-		result.Valid = false
-		for _, e := range res.Errors {
-			result.Errors = append(result.Errors, e.Message)
-		}
-	} else {
-		result.Valid = true
-		result.SQL = res.SQL()
-	}
-
-	data, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
-}
-
-// handleExplainGraphQL shows the SQL generated for a query
-func (ms *mcpServer) handleExplainGraphQL(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args := req.GetArguments()
-	query, _ := args["query"].(string)
-
-	if query == "" {
-		return mcp.NewToolResultError("query is required"), nil
-	}
-
-	// Convert variables map to JSON
-	var varsJSON json.RawMessage
-	if vars, ok := args["variables"].(map[string]any); ok && len(vars) > 0 {
-		var err error
-		varsJSON, err = json.Marshal(vars)
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("invalid variables: %v", err)), nil
-		}
-	}
-
-	var rc core.RequestConfig
-	rc.SetNamespace(ms.getNamespace())
-
-	res, err := ms.service.gj.GraphQL(ctx, query, varsJSON, &rc)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("query error: %v", err)), nil
-	}
-
-	if len(res.Errors) > 0 {
-		errMsgs := make([]string, len(res.Errors))
-		for i, e := range res.Errors {
-			errMsgs[i] = e.Message
-		}
-		return mcp.NewToolResultError(fmt.Sprintf("query errors: %v", errMsgs)), nil
-	}
-
-	// Convert operation type to string
-	opStr := "unknown"
-	switch res.Operation() {
-	case core.OpQuery:
-		opStr = "query"
-	case core.OpMutation:
-		opStr = "mutation"
-	}
-
-	result := struct {
-		SQL          string `json:"sql"`
-		Operation    string `json:"operation"`
-		CacheControl string `json:"cache_control,omitempty"`
-	}{
-		SQL:          res.SQL(),
-		Operation:    opStr,
-		CacheControl: res.CacheControl(),
-	}
-
-	data, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
-}
-
 // getNamespace returns the configured namespace
 func (ms *mcpServer) getNamespace() string {
 	if ms.service.namespace != nil {
@@ -369,30 +241,27 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 			"2. Call list_tables to see available data",
 			"3. Call describe_table for schema details + available aggregation functions",
 			"4. Check list_saved_queries - a saved query may already exist for your need",
-			"5. If building a new query, call validate_graphql to check syntax",
-			"6. Call execute_graphql (or execute_saved_query if one exists)",
-			"7. For pagination, save cursor IDs from response for next page requests",
+			"5. Call execute_graphql (or execute_saved_query if one exists)",
+			"6. For pagination, save cursor IDs from response for next page requests",
 		},
 		MutationWorkflow: []string{
 			"1. Call get_mutation_syntax to learn insert/update/upsert/delete syntax",
 			"2. Call describe_table to understand required columns and types",
 			"3. Check list_saved_queries for existing mutation queries",
-			"4. Call validate_graphql to verify your mutation",
-			"5. Call execute_graphql with the mutation",
+			"4. Call execute_graphql with the mutation",
 		},
 		Tips: []string{
 			"PREFER execute_saved_query over execute_graphql when a matching saved query exists",
-			"Use validate_graphql BEFORE execute_graphql to catch errors early",
 			"Use find_path when joining tables that aren't directly related",
 			"Aggregations like count_id, sum_price are available on all tables (see describe_table)",
 			"Use the write_where_clause prompt for help building complex filters",
 			"Use @object directive when you expect a single result: { user @object { id } }",
 		},
 		ToolSequences: map[string]string{
-			"simple_query":       "get_query_syntax → list_tables → describe_table → validate_graphql → execute_graphql",
-			"complex_query":      "get_query_syntax → list_tables → describe_table → find_path → validate_graphql → execute_graphql",
+			"simple_query":       "get_query_syntax → list_tables → describe_table → execute_graphql",
+			"complex_query":      "get_query_syntax → list_tables → describe_table → find_path → execute_graphql",
 			"use_saved_query":    "list_saved_queries → get_saved_query → execute_saved_query",
-			"mutation":           "get_mutation_syntax → describe_table → validate_graphql → execute_graphql",
+			"mutation":           "get_mutation_syntax → describe_table → execute_graphql",
 			"explore_schema":     "list_tables → describe_table (for each relevant table) → find_path",
 			"build_where_clause": "describe_table → use write_where_clause prompt → validate_where_clause",
 		},
@@ -428,8 +297,8 @@ func enhanceError(errMsg, currentTool string) string {
 		enhanced.Suggestion = "Use get_query_syntax to see valid operators for each type"
 		enhanced.RelatedTool = "get_query_syntax"
 	case contains(errMsg, "syntax error", "parse error", "unexpected"):
-		enhanced.Suggestion = "Use validate_graphql first, or check get_query_syntax for correct syntax"
-		enhanced.RelatedTool = "validate_graphql"
+		enhanced.Suggestion = "Check get_query_syntax for correct syntax"
+		enhanced.RelatedTool = "get_query_syntax"
 	case contains(errMsg, "permission", "access denied", "not allowed"):
 		enhanced.Suggestion = "Check if mutations are enabled in config or if the operation requires authentication"
 		enhanced.RelatedTool = ""

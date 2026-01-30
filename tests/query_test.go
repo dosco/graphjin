@@ -1316,7 +1316,7 @@ func Example_queryWithRemoteAPIJoin() {
 	mux.HandleFunc("/payments/", func(w http.ResponseWriter, r *http.Request) {
 		id := r.URL.Path[10:]
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"data":[{"desc":"Payment 1 for %s"},{"desc": "Payment 2 for %s"}]}`,
+		fmt.Fprintf(w, `{"data":[{"desc":"Payment 1 for %s"},{"desc": "Payment 2 for %s"}]}`, //nolint:errcheck
 			id, id)
 	})
 
@@ -1341,7 +1341,7 @@ func Example_queryWithRemoteAPIJoin() {
 	for i := 0; i < 100; i++ {
 		resp, err := http.Get(fmt.Sprintf("http://localhost:%d/payments/test", port))
 		if err == nil {
-			resp.Body.Close()
+			resp.Body.Close() //nolint:errcheck
 			break
 		}
 		time.Sleep(50 * time.Millisecond)

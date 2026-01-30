@@ -278,7 +278,7 @@ func (gj *graphjinEngine) executeRoleQuery(c context.Context,
 			span.Error(err)
 			return
 		}
-		defer conn.Close()
+		defer conn.Close() //nolint:errcheck
 	}
 
 	c1, span := gj.spanStart(c, "Execute Role Query")

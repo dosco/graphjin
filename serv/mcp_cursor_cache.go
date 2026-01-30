@@ -78,7 +78,7 @@ func (c *RedisCursorCache) Set(ctx context.Context, cursor string) (uint64, erro
 		pipe := c.client.Pipeline()
 		pipe.Expire(ctx, revKey, c.ttl)
 		pipe.Expire(ctx, cursorIDKey+fmt.Sprintf("%d", existingID), c.ttl)
-		pipe.Exec(ctx)
+		pipe.Exec(ctx) //nolint:errcheck
 		return existingID, nil
 	}
 

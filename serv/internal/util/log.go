@@ -17,6 +17,13 @@ func shortTimeEncoder(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
 // NewLogger creates a new zap logger instance
 // json - if true logs are in json format
 func NewLogger(json bool) *zap.Logger {
+	return NewLoggerWithOutput(json, os.Stdout)
+}
+
+// NewLoggerWithOutput creates a new zap logger instance with a custom output
+// json - if true logs are in json format
+// output - the output writer (e.g., os.Stdout, os.Stderr)
+func NewLoggerWithOutput(json bool, output zapcore.WriteSyncer) *zap.Logger {
 	econf := zapcore.EncoderConfig{
 		MessageKey:     "msg",
 		LevelKey:       "level",
@@ -30,12 +37,12 @@ func NewLogger(json bool) *zap.Logger {
 	var core zapcore.Core
 
 	if json {
-		core = zapcore.NewCore(zapcore.NewJSONEncoder(econf), os.Stdout, zap.DebugLevel)
+		core = zapcore.NewCore(zapcore.NewJSONEncoder(econf), output, zap.DebugLevel)
 	} else {
 		// Use prettyconsole for human-readable key=value output
 		pcfg := prettyconsole.NewEncoderConfig()
 		pcfg.EncodeTime = shortTimeEncoder
-		core = zapcore.NewCore(prettyconsole.NewEncoder(pcfg), os.Stdout, zap.DebugLevel)
+		core = zapcore.NewCore(prettyconsole.NewEncoder(pcfg), output, zap.DebugLevel)
 	}
 	return zap.New(core)
 }

@@ -429,11 +429,7 @@ func addRoles(c *Config, qc *qcode.Compiler) error {
 
 // addRole adds a role to the compiler
 func addRole(qc *qcode.Compiler, r Role, t RoleTable, defaultBlock bool) error {
-	ro := false // read-only
-
-	if defaultBlock && r.Name == "anon" {
-		ro = true
-	}
+	ro := defaultBlock && r.Name == "anon"
 
 	if t.ReadOnly {
 		ro = true
