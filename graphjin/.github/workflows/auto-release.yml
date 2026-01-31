@@ -165,10 +165,17 @@ jobs:
           release_name: Release v${{ steps.new_version.outputs.new_version }}
           body: |
             Auto-generated release v${{ steps.new_version.outputs.new_version }}
-            
+
             **Changes:**
             ${{ github.event.head_commit.message }}
-            
+
             **Commit:** ${{ github.sha }}
           draft: false
-          prerelease: false 
+          prerelease: false
+
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc
+          npm publish --access public
