@@ -1,0 +1,18 @@
+# GraphJin Database Schema
+# Use 'graphjin db diff' to preview changes and 'graphjin db sync' to apply
+
+type users {
+  id: BigInt! @id
+  full_name: Varchar!
+  email: Varchar!
+  created_at: Timestamp!
+  updated_at: Timestamp
+}
+
+type products {
+  id: BigInt! @id
+  name: Varchar!
+  user_id: BigInt @relation(type: users, field: id)
+  created_at: Timestamp!
+  updated_at: Timestamp
+}

@@ -47,10 +47,9 @@ func Cmd() {
 	rootCmd.AddCommand(demoCmd())
 	rootCmd.AddCommand(mcpCmd())
 	rootCmd.AddCommand(versionCmd())
-	rootCmd.AddCommand(initCmd())
-	rootCmd.AddCommand(deployCmd())
+	rootCmd.AddCommand(adminCmd())
 	rootCmd.AddCommand(dbCmd())
-
+	rootCmd.AddCommand(testCmd())
 
 	// rootCmd.AddCommand(&cobra.Command{
 	// 	Use:   fmt.Sprintf("conf:dump [%s]", strings.Join(viper.SupportedExts, "|")),

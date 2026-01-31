@@ -2,7 +2,6 @@ package serv
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -84,7 +83,7 @@ func (ms *mcpServer) handleListFragments(ctx context.Context, req mcp.CallToolRe
 		Usage:     `To use a fragment, add: #import "./fragments/<name>" at the top of your query, then use ...FragmentName in your selection set`,
 	}
 
-	data, err := json.MarshalIndent(result, "", "  ")
+	data, err := mcpMarshalJSON(result, true)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -116,7 +115,7 @@ func (ms *mcpServer) handleGetFragment(ctx context.Context, req mcp.CallToolRequ
 		UsageExample:    fmt.Sprintf("query { %s { ...%s } }", details.On, details.Name),
 	}
 
-	data, err := json.MarshalIndent(result, "", "  ")
+	data, err := mcpMarshalJSON(result, true)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -192,7 +191,7 @@ func (ms *mcpServer) handleSearchFragments(ctx context.Context, req mcp.CallTool
 		Count:     len(results),
 	}
 
-	data, err := json.MarshalIndent(result, "", "  ")
+	data, err := mcpMarshalJSON(result, true)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}

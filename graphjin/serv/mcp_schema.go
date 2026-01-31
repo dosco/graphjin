@@ -89,7 +89,7 @@ func (ms *mcpServer) handleListTables(ctx context.Context, req mcp.CallToolReque
 		Count:  len(tables),
 	}
 
-	data, err := json.MarshalIndent(result, "", "  ")
+	data, err := mcpMarshalJSON(result, true)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -130,7 +130,7 @@ func (ms *mcpServer) handleDescribeTable(ctx context.Context, req mcp.CallToolRe
 		Aggregations: aggregations,
 	}
 
-	data, err := json.MarshalIndent(result, "", "  ")
+	data, err := mcpMarshalJSON(result, true)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -189,7 +189,7 @@ func (ms *mcpServer) handleFindPath(ctx context.Context, req mcp.CallToolRequest
 		ExampleQuery: exampleQuery,
 	}
 
-	data, err := json.MarshalIndent(result, "", "  ")
+	data, err := mcpMarshalJSON(result, true)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -267,7 +267,7 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 		},
 	}
 
-	data, err := json.MarshalIndent(guide, "", "  ")
+	data, err := mcpMarshalJSON(guide, true)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -416,7 +416,7 @@ func (ms *mcpServer) handleValidateWhereClause(ctx context.Context, req mcp.Call
 				},
 			},
 		}
-		data, _ := json.MarshalIndent(result, "", "  ")
+		data, _ := mcpMarshalJSON(result, true)
 		return mcp.NewToolResultText(string(data)), nil
 	}
 
@@ -438,7 +438,7 @@ func (ms *mcpServer) handleValidateWhereClause(ctx context.Context, req mcp.Call
 		ColumnInfo: columnInfo,
 	}
 
-	data, err := json.MarshalIndent(result, "", "  ")
+	data, err := mcpMarshalJSON(result, true)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}

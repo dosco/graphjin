@@ -2,7 +2,6 @@ package serv
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -83,7 +82,7 @@ func (ms *mcpServer) handleListSavedQueries(ctx context.Context, req mcp.CallToo
 		Count:   len(queries),
 	}
 
-	data, err := json.MarshalIndent(result, "", "  ")
+	data, err := mcpMarshalJSON(result, true)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -159,7 +158,7 @@ func (ms *mcpServer) handleSearchSavedQueries(ctx context.Context, req mcp.CallT
 		Count:   len(results),
 	}
 
-	data, err := json.MarshalIndent(result, "", "  ")
+	data, err := mcpMarshalJSON(result, true)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -180,7 +179,7 @@ func (ms *mcpServer) handleGetSavedQuery(ctx context.Context, req mcp.CallToolRe
 		return mcp.NewToolResultError(fmt.Sprintf("failed to get query: %v", err)), nil
 	}
 
-	data, err := json.MarshalIndent(details, "", "  ")
+	data, err := mcpMarshalJSON(details, true)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}

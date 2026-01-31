@@ -193,26 +193,13 @@ func printClaudeConfig(conf *Config) {
 		configPath = "./config"
 	}
 
-	userID := conf.MCP.StdioUserID
-	if userID == "" {
-		userID = "1"
-	}
-	userRole := conf.MCP.StdioUserRole
-	if userRole == "" {
-		userRole = "user"
-	}
-
 	fmt.Printf(`  {
     "mcpServers": {
       "%s": {
         "command": "%s",
-        "args": ["mcp", "--path", "%s"],
-        "env": {
-          "GRAPHJIN_USER_ID": "%s",
-          "GRAPHJIN_USER_ROLE": "%s"
-        }
+        "args": ["mcp", "--path", "%s"]
       }
     }
   }
-`, conf.AppName, execPath, configPath, userID, userRole)
+`, conf.AppName, execPath, configPath)
 }

@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"syscall"
 	"time"
 
@@ -251,10 +253,12 @@ func printMCPConfig(conf *serv.Config, demoMode bool) {
 	}
 
 	// Get app name from config, default to "graphjin"
+	// Use slugified version for MCP server name (no spaces/special chars)
 	appName := conf.AppName
 	if appName == "" {
 		appName = "graphjin"
 	}
+	serverName := slugify(appName)
 
 	// Build args
 	var cmdArgs []string
@@ -267,7 +271,7 @@ func printMCPConfig(conf *serv.Config, demoMode bool) {
 	// Build the config structure
 	mcpConfig := map[string]interface{}{
 		"mcpServers": map[string]interface{}{
-			appName: map[string]interface{}{
+			serverName: map[string]interface{}{
 				"command": execPath,
 				"args":    cmdArgs,
 			},
@@ -281,4 +285,26 @@ func printMCPConfig(conf *serv.Config, demoMode bool) {
 	}
 
 	fmt.Println(string(output))
+}
+
+// slugify converts a string to a URL-safe slug
+// e.g., "Webshop Development" -> "webshop-development"
+func slugify(s string) string {
+	// Convert to lowercase
+	s = strings.ToLower(s)
+	// Replace spaces and underscores with hyphens
+	s = strings.ReplaceAll(s, " ", "-")
+	s = strings.ReplaceAll(s, "_", "-")
+	// Remove any character that isn't alphanumeric or hyphen
+	reg := regexp.MustCompile(`[^a-z0-9-]+`)
+	s = reg.ReplaceAllString(s, "")
+	// Remove multiple consecutive hyphens
+	reg = regexp.MustCompile(`-+`)
+	s = reg.ReplaceAllString(s, "-")
+	// Trim leading/trailing hyphens
+	s = strings.Trim(s, "-")
+	if s == "" {
+		return "graphjin"
+	}
+	return s
 }

@@ -44,7 +44,7 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 
 	log.Infof("Seed script started (please wait)")
 
-	if err := compileAndRunJS(seed, db); err != nil {
+	if err := compileAndRunJS(seed, db, cpath); err != nil {
 		log.Fatalf("Failed to execute seed file %s: %s", seed, err)
 	}
 
@@ -52,13 +52,13 @@ func cmdDBSeed(cmd *cobra.Command, args []string) {
 }
 
 // compileAndRunJS compiles and runs the seed script
-func compileAndRunJS(seed string, db *sql.DB) error {
+func compileAndRunJS(seed string, db *sql.DB, configPath string) error {
 	b, err := os.ReadFile(seed)
 	if err != nil {
 		return fmt.Errorf("failed to read seed file %s: %s", seed, err)
 	}
 
-	gj, err := core.NewGraphJin(&conf.Core, db)
+	gj, err := core.NewGraphJinWithFS(&conf.Core, db, core.NewOsFS(configPath))
 	if err != nil {
 		return err
 	}

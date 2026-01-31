@@ -941,7 +941,7 @@ func runDemoSeed() {
 	conf.DBSchemaPollDuration = -1
 	conf.Blocklist = nil
 
-	if err := compileAndRunJS(seedPath, db); err != nil {
+	if err := compileAndRunJS(seedPath, db, cpath); err != nil {
 		log.Warnf("Failed to execute seed file: %s", err)
 		return
 	}

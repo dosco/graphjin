@@ -30,14 +30,12 @@ enable_tracing: true
 # with the new configs when a change is detected
 reload_on_config_change: true
 
+# Enable db.graphql schema management
+# Use 'graphjin db diff' to preview and 'graphjin db sync' to apply changes
+enable_schema: false
 
 # File that points to the database seeding script
 # seed_file: seed.js
-
-
-# Path pointing to where the migrations can be found
-# this must be a relative path under the config path
-migrations_path: ./migrations
 
 # Secret key for general encryption operations like 
 # encrypting the cursor data

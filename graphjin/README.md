@@ -1,4 +1,4 @@
-# GraphJin - Connect AI to Your Database
+# GraphJin - A Compiler to Connect AI to Your Databases
 
 [![Apache 2.0](https://img.shields.io/github/license/dosco/graphjin.svg?style=for-the-badge)](https://github.com/dosco/graphjin/blob/master/LICENSE)
 [![NPM Package](https://img.shields.io/npm/v/graphjin?style=for-the-badge)](https://www.npmjs.com/package/graphjin)
@@ -163,10 +163,6 @@ graphjin mcp --user-id admin --user-role admin
     "my-database": {
       "command": "graphjin",
       "args": ["mcp", "--path", "/path/to/config"],
-      "env": {
-        "GRAPHJIN_USER_ID": "admin",
-        "GRAPHJIN_USER_ROLE": "admin"
-      }
     }
   }
 }

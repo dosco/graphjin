@@ -2,7 +2,6 @@ package serv
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -326,7 +325,7 @@ func (ms *mcpServer) registerSyntaxTools() {
 
 // handleGetQuerySyntax returns the query syntax reference
 func (ms *mcpServer) handleGetQuerySyntax(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	data, err := json.MarshalIndent(querySyntaxReference, "", "  ")
+	data, err := mcpMarshalJSON(querySyntaxReference, true)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -335,7 +334,7 @@ func (ms *mcpServer) handleGetQuerySyntax(ctx context.Context, req mcp.CallToolR
 
 // handleGetMutationSyntax returns the mutation syntax reference
 func (ms *mcpServer) handleGetMutationSyntax(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	data, err := json.MarshalIndent(mutationSyntaxReference, "", "  ")
+	data, err := mcpMarshalJSON(mutationSyntaxReference, true)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}

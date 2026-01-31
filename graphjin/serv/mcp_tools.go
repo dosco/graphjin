@@ -112,7 +112,7 @@ func (ms *mcpServer) handleExecuteGraphQL(ctx context.Context, req mcp.CallToolR
 		}
 	}
 
-	data, err := json.MarshalIndent(result, "", "  ")
+	data, err := mcpMarshalJSON(result, true)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -163,7 +163,7 @@ func (ms *mcpServer) handleExecuteSavedQuery(ctx context.Context, req mcp.CallTo
 		}
 	}
 
-	data, err := json.MarshalIndent(result, "", "  ")
+	data, err := mcpMarshalJSON(result, true)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}

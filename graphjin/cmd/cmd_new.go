@@ -146,16 +146,9 @@ func cmdNew(cmd *cobra.Command, args []string) {
 		}
 	})
 
-	// Create app migrations folder and add relevant files
-
-	appMigrationsPath := filepath.Join(appConfigPath, "migrations")
-
-	ifNotExists(appMigrationsPath, func(p string) error {
-		return os.Mkdir(p, os.ModePerm)
-	})
-
-	ifNotExists(path.Join(appMigrationsPath, "0_init.sql"), func(p string) error {
-		if v, err := tmpl.get("0_init.sql"); err == nil {
+	// Create db.graphql schema file
+	ifNotExists(path.Join(appConfigPath, "db.graphql"), func(p string) error {
+		if v, err := tmpl.get("db.graphql"); err == nil {
 			return os.WriteFile(p, v, 0o600)
 		} else {
 			return err

@@ -35,9 +35,6 @@ reload_on_config_change: false
 # File that points to the database seeding script
 # seed_file: seed.js
 
-# Path pointing to where the migrations can be found
-# migrations_path: ./migrations
-
 # Secret key for general encryption operations like 
 # encrypting the cursor data
 # secret_key: supercalifajalistics

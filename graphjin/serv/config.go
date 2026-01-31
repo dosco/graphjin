@@ -97,9 +97,6 @@ type Serv struct {
 	// Enable blocking requests with a HTTP 401 on auth failure
 	AuthFailBlock bool `mapstructure:"auth_fail_block" jsonschema:"title=Block Request on Authorization Failure"`
 
-	// This is the path to the database migration files
-	MigrationsPath string `mapstructure:"migrations_path" jsonschema:"title=Migrations Path"`
-
 	// Sets the HTTP CORS Access-Control-Allow-Origin header
 	AllowedOrigins []string `mapstructure:"cors_allowed_origins" jsonschema:"title=HTTP CORS Allowed Origins"`
 
@@ -225,6 +222,11 @@ type MCPConfig struct {
 
 	// CursorCacheSize max entries for in-memory cursor cache fallback (default: 10000)
 	CursorCacheSize int `mapstructure:"cursor_cache_size" jsonschema:"title=Cursor Cache Size,default=10000"`
+
+	// AllowConfigUpdates enables MCP tools that can modify GraphJin configuration
+	// WARNING: Allows LLMs to change database connections, table configs, and roles
+	// Only enable in trusted environments. Default: false
+	AllowConfigUpdates bool `mapstructure:"allow_config_updates" jsonschema:"title=Allow Config Updates,default=false"`
 }
 
 // RedisConfig configures Redis connection
@@ -432,8 +434,9 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("mcp.allow_mutations", true)
 	vi.SetDefault("mcp.allow_raw_queries", true)
 	vi.SetDefault("mcp.only", false)
-	vi.SetDefault("mcp.cursor_cache_ttl", 1800)   // 30 minutes
-	vi.SetDefault("mcp.cursor_cache_size", 10000) // max in-memory entries
+	vi.SetDefault("mcp.cursor_cache_ttl", 1800)       // 30 minutes
+	vi.SetDefault("mcp.cursor_cache_size", 10000)    // max in-memory entries
+	vi.SetDefault("mcp.allow_config_updates", false) // disabled by default for security
 
 	// Caching defaults
 	vi.SetDefault("caching.enable", false)

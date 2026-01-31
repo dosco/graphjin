@@ -16,6 +16,17 @@ var (
 	secret string
 )
 
+// adminCmd returns the admin parent command with init and deploy subcommands
+func adminCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "admin",
+		Short: "Admin commands for hot-deploy and database setup",
+	}
+	c.AddCommand(initCmd())
+	c.AddCommand(deployCmd())
+	return c
+}
+
 // deployCmd deploys a new config or rolls back the active config
 func deployCmd() *cobra.Command {
 	c := &cobra.Command{

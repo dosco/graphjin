@@ -1,14 +1,35 @@
 package serv
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/dosco/graphjin/auth/v3"
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
+
+// mcpMarshalJSON marshals data to JSON without HTML escaping.
+// This ensures characters like <, >, and & are not converted to Unicode escapes
+// (e.g., \u003c, \u003e, \u0026) making output more readable for LLM clients.
+func mcpMarshalJSON(v any, indent bool) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if indent {
+		enc.SetIndent("", "  ")
+	}
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	// Encode adds a trailing newline; trim it to match MarshalIndent behavior
+	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
+}
 
 // mcpServer wraps the MCP server instance
 type mcpServer struct {
@@ -19,11 +40,23 @@ type mcpServer struct {
 
 // newMCPServerWithContext creates a new MCP server with an auth context
 func (s *graphjinService) newMCPServerWithContext(ctx context.Context) *mcpServer {
+	// Create hooks to handle prefixed tool names from Claude Desktop
+	// Claude Desktop may prefix tool names with "server_name:" when calling tools
+	hooks := &server.Hooks{}
+	hooks.AddBeforeCallTool(func(ctx context.Context, id any, req *mcp.CallToolRequest) {
+		// Strip any "server_name:" prefix from tool name
+		// e.g., "webshop-development:list_tables" -> "list_tables"
+		if idx := strings.LastIndex(req.Params.Name, ":"); idx != -1 {
+			req.Params.Name = req.Params.Name[idx+1:]
+		}
+	})
+
 	mcpSrv := server.NewMCPServer(
 		"graphjin",
 		version,
 		server.WithToolCapabilities(true),
 		server.WithPromptCapabilities(true),
+		server.WithHooks(hooks),
 	)
 
 	ms := &mcpServer{
@@ -57,6 +90,9 @@ func (ms *mcpServer) registerTools() {
 
 	// Fragment Discovery Tools
 	ms.registerFragmentTools()
+
+	// Configuration Update Tools (conditionally registered)
+	ms.registerConfigTools()
 }
 
 // RunMCPStdio runs the MCP server using stdio transport (for CLI/Claude Desktop)
