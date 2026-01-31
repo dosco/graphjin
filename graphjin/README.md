@@ -197,23 +197,7 @@ graphjin mcp --user-id admin --user-role admin
 
 ## Also a GraphQL API
 
-GraphJin works as a traditional API too - use it from Node.js, Go, or as a standalone service.
-
-### Node.js
-```bash
-npm install graphjin-js
-```
-```javascript
-import graphjin from "graphjin-js";
-import pg from "pg";
-
-const db = new pg.Client({ host: "localhost", database: "myapp" });
-await db.connect();
-
-const gj = await graphjin("./config", "dev.yml", db);
-const result = await gj.query("{ users(id: $id) { id email } }", { id: 1 });
-console.log(result.data());
-```
+GraphJin works as a traditional API too - use it from Go or as a standalone service.
 
 ### Go
 ```bash

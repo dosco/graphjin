@@ -14,7 +14,7 @@ find . -name 'go.mod' -exec sh -c '
         echo "Processing $file"
         # Use sed to update the version of packages starting with github.com/dosco/graphjin
         # Note: -i "" for BSD/macOS sed compatibility, use -i for GNU/Linux
-        sed -i"" -e "/github.com\/dosco\/graphjin\//s/v[0-9]*\.[0-9]*\.[0-9]*/v$new_version/" "$file"
+        sed -i"" -e "/github.com\/dosco\/graphjin\//s/v[0-9]*\.[0-9]*\.[0-9]*[^ ]*/v$new_version/" "$file"
     done
 ' sh {} +
 

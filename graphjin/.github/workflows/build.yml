@@ -99,14 +99,8 @@ jobs:
           VERSION=${GITHUB_REF/refs\/tags\/v/}
           sudo apt-get install -y jq
           jq '.version = $newVal' --arg newVal $VERSION package.json > tmp.$$.json && mv tmp.$$.json package.json
-          jq '.version = $newVal' --arg newVal $VERSION wasm/package.json > tmp.$$.json && mv tmp.$$.json wasm/package.json
 
       - name: Publish CLI package
         run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Publish JS library
-        run: cd wasm && npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -128,7 +128,7 @@ jobs:
           # Delete existing tags locally and remotely if they exist (handles re-runs gracefully)
           for tag in "auth/v$NEW_VERSION" "cmd/v$NEW_VERSION" "conf/v$NEW_VERSION" \
                      "core/v$NEW_VERSION" "plugin/otel/v$NEW_VERSION" "serv/v$NEW_VERSION" \
-                     "tests/v$NEW_VERSION" "wasm/v$NEW_VERSION" "v$NEW_VERSION"; do
+                     "tests/v$NEW_VERSION" "v$NEW_VERSION"; do
             git tag -d "$tag" 2>/dev/null || true
             git push origin --delete "$tag" 2>/dev/null || true
           done
@@ -141,7 +141,6 @@ jobs:
           git tag "plugin/otel/v$NEW_VERSION"
           git tag "serv/v$NEW_VERSION"
           git tag "tests/v$NEW_VERSION"
-          git tag "wasm/v$NEW_VERSION"
           git tag "v$NEW_VERSION"
 
           # Push changes and tags
@@ -149,6 +148,13 @@ jobs:
           git push --tags
 
           echo "Created and pushed tags for version $NEW_VERSION"
+
+      - name: Delete existing release if any
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
+          gh release delete "v$NEW_VERSION" --yes 2>/dev/null || true
 
       - name: Create GitHub Release
         uses: actions/create-release@v1
