@@ -88,11 +88,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Update version in package.json
-        run: |
-          sudo apt-get install jq
-          jq '.version = $newVal' --arg newVal ${GITHUB_REF/refs\/tags\/v/} package.json > tmp.$$.json && mv tmp.$$.json package.json
-
-      - uses: JS-DevTools/npm-publish@v1
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          token: ${{ secrets.NPM_TOKEN }}
+          node-version: '18'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Update version in package.json files
+        run: |
+          VERSION=${GITHUB_REF/refs\/tags\/v/}
+          sudo apt-get install -y jq
+          jq '.version = $newVal' --arg newVal $VERSION package.json > tmp.$$.json && mv tmp.$$.json package.json
+          jq '.version = $newVal' --arg newVal $VERSION wasm/package.json > tmp.$$.json && mv tmp.$$.json wasm/package.json
+
+      - name: Publish CLI package
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish JS library
+        run: cd wasm && npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

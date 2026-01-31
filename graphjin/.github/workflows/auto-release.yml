@@ -18,7 +18,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GR_TOKEN }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -124,7 +124,15 @@ jobs:
       - name: Create and push tags
         run: |
           NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
-          
+
+          # Delete existing tags locally and remotely if they exist (handles re-runs gracefully)
+          for tag in "auth/v$NEW_VERSION" "cmd/v$NEW_VERSION" "conf/v$NEW_VERSION" \
+                     "core/v$NEW_VERSION" "plugin/otel/v$NEW_VERSION" "serv/v$NEW_VERSION" \
+                     "tests/v$NEW_VERSION" "wasm/v$NEW_VERSION" "v$NEW_VERSION"; do
+            git tag -d "$tag" 2>/dev/null || true
+            git push origin --delete "$tag" 2>/dev/null || true
+          done
+
           # Create all module tags
           git tag "auth/v$NEW_VERSION"
           git tag "cmd/v$NEW_VERSION"
@@ -135,11 +143,11 @@ jobs:
           git tag "tests/v$NEW_VERSION"
           git tag "wasm/v$NEW_VERSION"
           git tag "v$NEW_VERSION"
-          
+
           # Push changes and tags
           git push origin master
           git push --tags
-          
+
           echo "Created and pushed tags for version $NEW_VERSION"
 
       - name: Create GitHub Release

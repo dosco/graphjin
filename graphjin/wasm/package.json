@@ -1,0 +1,39 @@
+{
+  "name": "graphjin-js",
+  "version": "3.1.4",
+  "description": "GraphJin Node.js library - GraphQL to SQL compiler",
+  "type": "module",
+  "main": "./js/graphjin.js",
+  "files": [
+    "./config",
+    "./runtime",
+    "./graphjin.wasm",
+    "./js/*.js"
+  ],
+  "scripts": {
+    "postinstall": "node ./js/install.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dosco/graphjin.git"
+  },
+  "keywords": [
+    "graphql",
+    "sql",
+    "database",
+    "api",
+    "postgres",
+    "mysql",
+    "wasm",
+    "webassembly"
+  ],
+  "author": "Vikram <https://twitter.com/dosco>",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/dosco/graphjin/issues"
+  },
+  "homepage": "https://graphjin.com",
+  "dependencies": {
+    "fs-extra": "^11.1.0"
+  }
+}

@@ -11,6 +11,33 @@ Point GraphJin at any database and AI assistants can query it instantly. Auto-di
 
 Works with PostgreSQL, MySQL, MongoDB, SQLite, Oracle, MSSQL - and models from Claude/GPT-4 to local 7B models.
 
+## Installation
+
+**npm (all platforms)**
+```bash
+npm install -g graphjin
+```
+
+**macOS (Homebrew)**
+```bash
+brew install dosco/graphjin/graphjin
+```
+
+**Windows (Scoop)**
+```bash
+scoop bucket add graphjin https://github.com/dosco/graphjin-scoop
+scoop install graphjin
+```
+
+**Linux**
+
+Download .deb/.rpm from [releases](https://github.com/dosco/graphjin/releases)
+
+**Docker**
+```bash
+docker pull dosco/graphjin
+```
+
 ## Try It Now
 
 ```bash
@@ -174,10 +201,10 @@ GraphJin works as a traditional API too - use it from Node.js, Go, or as a stand
 
 ### Node.js
 ```bash
-npm install graphjin
+npm install graphjin-js
 ```
 ```javascript
-import graphjin from "graphjin";
+import graphjin from "graphjin-js";
 import pg from "pg";
 
 const db = new pg.Client({ host: "localhost", database: "myapp" });

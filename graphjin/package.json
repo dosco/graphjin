@@ -1,27 +1,29 @@
 {
   "name": "graphjin",
   "version": "3.1.4",
-  "description": "GraphJin - Build APIs in 5 minutes with GraphQL",
-  "type": "module",
-  "main": "./wasm/js/graphjin.js",
+  "description": "GraphJin CLI - Build APIs in 5 minutes with GraphQL",
+  "bin": {
+    "graphjin": "./bin/graphjin.js"
+  },
   "files": [
-    "./wasm/config",
-    "./wasm/runtime",
-    "./wasm/graphjin.wasm",
-    "./wasm/js/*.js"
+    "./bin"
   ],
   "scripts": {
-    "postinstall": "node ./wasm/js/install.js"
+    "postinstall": "node ./bin/install.js"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/dosco/graphjin.git"
   },
   "keywords": [
+    "graphql",
+    "sql",
+    "database",
+    "api",
+    "cli",
     "postgres",
     "mysql",
-    "graphql",
-    "sql"
+    "mcp"
   ],
   "author": "Vikram <https://twitter.com/dosco>",
   "license": "Apache-2.0",
@@ -30,6 +32,6 @@
   },
   "homepage": "https://graphjin.com",
   "dependencies": {
-    "fs-extra": "^11.1.0"
+    "tar": "^7.0.0"
   }
 }
