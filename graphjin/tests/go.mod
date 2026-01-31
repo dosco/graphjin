@@ -3,9 +3,9 @@ module github.com/dosco/graphjin/tests/v3
 go 1.24.0
 
 require (
-	github.com/dosco/graphjin/conf/v3 v-00010101000000-000000000000
-	github.com/dosco/graphjin/core/v3 v-00010101000000-000000000000
-	github.com/dosco/graphjin/mongodriver v-00010101000000-000000000000
+	github.com/dosco/graphjin/conf/v3 v3.2.0
+	github.com/dosco/graphjin/core/v3 v3.2.0
+	github.com/dosco/graphjin/mongodriver v0.0.0
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/lib/pq v1.10.9
 	github.com/mattn/go-sqlite3 v1.14.32

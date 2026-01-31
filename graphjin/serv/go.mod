@@ -3,9 +3,9 @@ module github.com/dosco/graphjin/serv/v3
 go 1.24.0
 
 require (
-	github.com/dosco/graphjin/auth/v3 v-00010101000000-000000000000
-	github.com/dosco/graphjin/core/v3 v-00010101000000-000000000000
-	github.com/dosco/graphjin/plugin/otel/v3 v-00010101000000-000000000000
+	github.com/dosco/graphjin/auth/v3 v3.2.0
+	github.com/dosco/graphjin/core/v3 v3.2.0
+	github.com/dosco/graphjin/plugin/otel/v3 v3.2.0
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/go-http-utils/headers v0.0.0-20181008091004-fed159eddc2a
 	github.com/go-pkgz/expirable-cache v1.0.0
