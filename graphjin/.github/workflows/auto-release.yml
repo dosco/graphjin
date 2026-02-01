@@ -156,22 +156,22 @@ jobs:
           NEW_VERSION="${{ steps.new_version.outputs.new_version }}"
           gh release delete "v$NEW_VERSION" --yes 2>/dev/null || true
 
-      - name: Create GitHub Release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Import GPG key
+        id: import_gpg
+        uses: crazy-max/ghaction-import-gpg@v4
         with:
-          tag_name: v${{ steps.new_version.outputs.new_version }}
-          release_name: Release v${{ steps.new_version.outputs.new_version }}
-          body: |
-            Auto-generated release v${{ steps.new_version.outputs.new_version }}
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
 
-            **Changes:**
-            ${{ github.event.head_commit.message }}
-
-            **Commit:** ${{ github.sha }}
-          draft: false
-          prerelease: false
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v4
+        with:
+          distribution: goreleaser
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GR_TOKEN }}
+          GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
 
       - name: Publish to npm
         env:

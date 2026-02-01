@@ -79,7 +79,7 @@ brews:
     homepage: https://graphjin.com
     description: "Build APIs in 5 minutes. An automagical GraphQL to SQL compiler."
     license: Apache-2.0
-    skip_upload: auto
+    skip_upload: false
 
 scoops:
   - repository:
