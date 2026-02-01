@@ -3,7 +3,7 @@
   "version": "3.2.1",
   "description": "GraphJin CLI - Build APIs in 5 minutes with GraphQL",
   "bin": {
-    "graphjin": "./bin/graphjin.js"
+    "graphjin": "bin/graphjin.js"
   },
   "files": [
     "./bin"
@@ -13,7 +13,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/dosco/graphjin.git"
+    "url": "git+https://github.com/dosco/graphjin.git"
   },
   "keywords": [
     "graphql",
