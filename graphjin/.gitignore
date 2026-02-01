@@ -42,7 +42,9 @@ release
 /dist
 .idea
 node_modules
-bin
+# Ignore Go binary but not npm bin directory
+/graphjin
+!/bin/
 ./package-lock.json
 slim.report.json
 examples/nodejs/config/**/*.gql
