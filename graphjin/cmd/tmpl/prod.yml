@@ -74,7 +74,7 @@ hot_deploy: true
 # GJ_ADMIN_SECRET_KEY
 # admin_secret_key: blahblah
 
-# Postgres related environment Variables
+# Database related environment Variables
 # GJ_DATABASE_HOST
 # GJ_DATABASE_PORT
 # GJ_DATABASE_USER
@@ -105,6 +105,9 @@ database:
   user: {{ .DBUser }}
   password: {{ .DBPass }}
   #schema: "public"
+
+  # See dev.yml for database configuration examples for:
+  # PostgreSQL, MySQL, MariaDB, SQLite, Oracle, MS SQL Server, MongoDB
 
   # Size of database connection pool
   # pool_size: 15

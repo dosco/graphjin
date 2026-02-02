@@ -5,17 +5,13 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/dosco/graphjin/core/v3"
-	"github.com/dosco/graphjin/serv/v3"
 	"github.com/mattn/go-sqlite3"
-	"github.com/spf13/cobra"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/mongodb"
 	"github.com/testcontainers/testcontainers-go/modules/mysql"
@@ -29,31 +25,54 @@ var (
 	multiDBConns map[string]*sql.DB // Store multi-DB connections for migrations
 )
 
-// demoCmd creates the demo command
-func demoCmd() *cobra.Command {
-	c := &cobra.Command{
-		Use:   "demo",
-		Short: "Run GraphJin with temporary database container(s)",
-		Long: `Start GraphJin using your config with fresh database container(s).
+// StartDemo starts demo containers, runs migrations and seeds.
+// Returns cleanup functions for graceful shutdown.
+func StartDemo(ctx context.Context, persist bool, dbFlags []string) ([]func(context.Context) error, error) {
+	primaryType, dbOverrides := parseDBFlags(dbFlags)
 
-Reads config folder, detects database configuration, starts appropriate
-container(s), runs migrations and seed scripts, then launches GraphJin.
+	var cleanups []func(context.Context) error
 
-For single-database configs (using 'database:' key):
-  graphjin demo                    # Use type from config, default to postgres
-  graphjin demo --db mysql         # Override to mysql
+	// Check if multi-database mode (conf.Core.Databases is populated)
+	if len(conf.Databases) > 0 {
+		// Multi-database mode
+		var err error
+		cleanups, err = startMultiDBDemo(ctx, primaryType, dbOverrides, persist)
+		if err != nil {
+			return nil, fmt.Errorf("failed to start containers: %w", err)
+		}
+	} else {
+		// Single-database mode
+		dbType := conf.DB.Type
+		if primaryType != "" {
+			dbType = primaryType
+		}
+		if dbType == "" {
+			dbType = "postgres" // Default
+		}
 
-For multi-database configs (using 'databases:' map):
-  graphjin demo                    # Start containers for ALL configured databases
-  graphjin demo --db postgres      # Set the primary/default database type
-  graphjin demo --db primary=postgres --db analytics=mysql  # Override per database name
+		log.Infof("Starting %s container...", dbType)
+		cleanup, connInfo, err := startDemoContainer(ctx, dbType, persist)
+		if err != nil {
+			return nil, fmt.Errorf("failed to start container: %w", err)
+		}
 
-Supported databases: postgres, mysql, mariadb, sqlite, oracle, mssql, mongodb`,
-		Run: cmdDemo,
+		log.Infof("Container started successfully")
+		cleanups = append(cleanups, cleanup)
+
+		// Override config with container connection
+		applyContainerConfig(connInfo)
 	}
-	c.Flags().BoolVar(&demoPersist, "persist", false, "Persist data using Docker volumes")
-	c.Flags().StringArrayVar(&demoDBFlags, "db", nil, "Database type override(s). Use 'type' for primary or 'name=type' for multi-db")
-	return c
+
+	// Initialize database connection
+	initDB(true)
+
+	// Run migrations if available
+	runDemoMigrations()
+
+	// Run seed script if available
+	runDemoSeed()
+
+	return cleanups, nil
 }
 
 // DemoConnInfo holds database connection information
@@ -82,91 +101,6 @@ func parseDBFlags(flags []string) (primaryType string, overrides map[string]stri
 	return
 }
 
-// cmdDemo is the handler for the demo subcommand
-func cmdDemo(cmd *cobra.Command, args []string) {
-	printBanner()
-	setup(cpath)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	primaryType, dbOverrides := parseDBFlags(demoDBFlags)
-
-	var cleanups []func(context.Context) error
-
-	// Check if multi-database mode (conf.Core.Databases is populated)
-	if len(conf.Databases) > 0 {
-		// Multi-database mode
-		var err error
-		cleanups, err = startMultiDBDemo(ctx, primaryType, dbOverrides, demoPersist)
-		if err != nil {
-			log.Fatalf("Failed to start containers: %s", err)
-		}
-	} else {
-		// Single-database mode
-		dbType := conf.DB.Type
-		if primaryType != "" {
-			dbType = primaryType
-		}
-		if dbType == "" {
-			dbType = "postgres" // Default
-		}
-
-		log.Infof("Starting %s container...", dbType)
-		cleanup, connInfo, err := startDemoContainer(ctx, dbType, demoPersist)
-		if err != nil {
-			log.Fatalf("Failed to start container: %s", err)
-		}
-
-		log.Infof("Container started successfully")
-		cleanups = append(cleanups, cleanup)
-
-		// Override config with container connection
-		applyContainerConfig(connInfo)
-	}
-
-	// Initialize database connection
-	initDB(true)
-
-	// Run migrations if available
-	runDemoMigrations()
-
-	// Run seed script if available
-	runDemoSeed()
-
-	// Setup graceful shutdown
-	done := make(chan struct{})
-	go func() {
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-		<-sigCh
-
-		log.Info("Shutting down...")
-
-		// Cancel context to stop any ongoing operations
-		cancel()
-
-		// Cleanup all containers
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer shutdownCancel()
-		cleanupAll(shutdownCtx, cleanups)
-		log.Info("Container(s) terminated")
-
-		close(done)
-	}()
-
-	// Start GraphJin
-	gj, err := serv.NewGraphJinService(conf)
-	if err != nil {
-		log.Fatalf("Failed to create GraphJin service: %s", err)
-	}
-
-	if err := gj.Start(); err != nil {
-		log.Fatalf("Failed to start GraphJin: %s", err)
-	}
-
-	<-done
-}
 
 // startDemoContainer starts the appropriate database container based on type
 func startDemoContainer(ctx context.Context, dbType string, persist bool) (

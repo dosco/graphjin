@@ -44,10 +44,9 @@ func Cmd() {
 
 	rootCmd.AddCommand(newCmd())
 	rootCmd.AddCommand(servCmd())
-	rootCmd.AddCommand(demoCmd())
 	rootCmd.AddCommand(mcpCmd())
 	rootCmd.AddCommand(versionCmd())
-	rootCmd.AddCommand(adminCmd())
+	// rootCmd.AddCommand(adminCmd())
 	rootCmd.AddCommand(dbCmd())
 	rootCmd.AddCommand(testCmd())
 

@@ -154,7 +154,7 @@ auth:
   #   exists: true
   #   value: localhost:8080
 
-# Postgres related environment Variables
+# Database related environment Variables
 # GJ_DATABASE_HOST
 # GJ_DATABASE_PORT
 # GJ_DATABASE_USER
@@ -175,6 +175,66 @@ database:
 
   # alternatively you can use a connection string
   #connection_string: postgres://jack:secret@pg.example.com:5432/mydb?sslmode=verify-ca&pool_max_conns=10
+
+  # ============================================================================
+  # DATABASE CONFIGURATION EXAMPLES
+  # ============================================================================
+  # Uncomment and modify the section for your database type.
+  # You can use either individual fields OR a connection_string (not both).
+  # Supported types: postgres, mysql, sqlite, oracle, mssql, mongodb
+  # ============================================================================
+
+  # --- PostgreSQL (default) ---
+  # type: postgres
+  # host: localhost
+  # port: 5432
+  # dbname: myapp
+  # user: postgres
+  # password: secret
+  # schema: "public"
+  # connection_string: postgres://user:password@localhost:5432/myapp?sslmode=disable
+
+  # --- MySQL / MariaDB ---
+  # type: mysql
+  # host: localhost
+  # port: 3306
+  # dbname: myapp
+  # user: root
+  # password: secret
+  # connection_string: user:password@tcp(localhost:3306)/myapp?multiStatements=true&parseTime=true&interpolateParams=true
+  # Note: multiStatements, parseTime, and interpolateParams are recommended for full functionality
+
+  # --- SQLite ---
+  # type: sqlite
+  # File-based: set host to the database file path
+  # host: /path/to/database.db
+  # In-memory with shared cache:
+  # connection_string: file:memdb?mode=memory&cache=shared&_busy_timeout=5000
+
+  # --- Oracle ---
+  # type: oracle
+  # host: localhost
+  # port: 1521
+  # dbname: FREEPDB1
+  # user: myuser
+  # password: secret
+  # connection_string: oracle://user:password@localhost:1521/FREEPDB1
+
+  # --- MS SQL Server ---
+  # type: mssql
+  # host: localhost
+  # port: 1433
+  # dbname: myapp
+  # user: sa
+  # password: YourStrong!Passw0rd
+  # connection_string: sqlserver://sa:YourStrong!Passw0rd@localhost:1433?database=myapp
+
+  # --- MongoDB ---
+  # type: mongodb
+  # host: localhost
+  # port: 27017
+  # dbname: myapp
+  # Note: MongoDB has no foreign keys, so relationships must be configured explicitly
 
   # Size of database connection pool
   # pool_size: 15

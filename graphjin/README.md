@@ -42,8 +42,8 @@ docker pull dosco/graphjin
 
 ```bash
 # With Claude Desktop - run the demo
-graphjin mcp demo --path examples/webshop/config
-graphjin mcp demo info  # Copy output to Claude Desktop config
+graphjin mcp --demo --path examples/webshop/config
+graphjin mcp info --demo  # Copy output to Claude Desktop config
 
 # With your own database
 graphjin mcp --path /path/to/config
@@ -96,12 +96,12 @@ Within minutes, ask Claude: "What products do we have?" or "Show me orders from 
 
 1. **Start the demo**
    ```bash
-   graphjin mcp demo --path examples/webshop/config
+   graphjin mcp --demo --path examples/webshop/config
    ```
 
 2. **Get config and add to Claude Desktop**
    ```bash
-   graphjin mcp demo info --path examples/webshop/config
+   graphjin mcp info --demo --path examples/webshop/config
    ```
 
 3. **Ask Claude questions like:**
@@ -229,19 +229,22 @@ graphjin mcp --path /path/to/config
 graphjin mcp info
 
 # Run with temporary database container
-graphjin mcp demo --path examples/webshop/config
+graphjin mcp --demo --path examples/webshop/config
 
 # Show demo mode config JSON
-graphjin mcp demo info
+graphjin mcp info --demo
 
 # Keep data between restarts
-graphjin mcp demo --persist
+graphjin mcp --demo --persist
 
 # Override database type
-graphjin mcp demo --db mysql
+graphjin mcp --demo --db mysql
 
 # Set auth context
 graphjin mcp --user-id admin --user-role admin
+
+# HTTP server with demo database
+graphjin serve --demo --path examples/webshop/config
 ```
 
 **Claude Desktop config** (`claude_desktop_config.json`):
