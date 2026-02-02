@@ -34,10 +34,10 @@ jobs:
 
       - name: Determine version increment
         id: version_increment
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
           # Check commit message for version increment hints
-          COMMIT_MSG="${{ github.event.head_commit.message }}"
-          
           if [[ "$COMMIT_MSG" == *"[major]"* ]]; then
             INCREMENT_TYPE="major"
           elif [[ "$COMMIT_MSG" == *"[minor]"* ]] || [[ "$COMMIT_MSG" == *"feat:"* ]] || [[ "$COMMIT_MSG" == *"feature:"* ]]; then
@@ -45,7 +45,7 @@ jobs:
           else
             INCREMENT_TYPE="patch"
           fi
-          
+
           echo "increment_type=$INCREMENT_TYPE" >> $GITHUB_OUTPUT
           echo "Version increment type: $INCREMENT_TYPE"
 
