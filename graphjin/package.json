@@ -1,6 +1,6 @@
 {
   "name": "graphjin",
-  "version": "3.2.3",
+  "version": "3.2.4",
   "description": "GraphJin CLI - Build APIs in 5 minutes with GraphQL",
   "bin": {
     "graphjin": "bin/graphjin.js"
