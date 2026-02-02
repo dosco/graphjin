@@ -52,6 +52,67 @@ graphjin mcp info  # Copy output to Claude Desktop config
 
 Within minutes, ask Claude: "What products do we have?" or "Show me orders from last week"
 
+## Using with Claude Desktop
+
+### Option A: Local Mode (Starts with Claude)
+
+1. **Install GraphJin**
+   ```bash
+   npm install -g graphjin
+   ```
+
+2. **Get the config JSON**
+   ```bash
+   graphjin mcp info --path /path/to/your/config
+   ```
+
+3. **Add to Claude Desktop**
+   - Open Claude Desktop settings
+   - Edit `claude_desktop_config.json`
+   - Paste the JSON output
+   - Restart Claude Desktop
+
+### Option B: Remote Mode (Always-On Server)
+
+1. **Start GraphJin on server**
+   ```bash
+   graphjin serve --path /path/to/config
+   ```
+
+2. **Get the proxy config** (on your local machine)
+   ```bash
+   # For local server
+   graphjin mcp info --server 127.0.0.1:8080
+
+   # For remote server
+   graphjin mcp info --server 10.0.0.5:8080
+   ```
+
+3. **Add to Claude Desktop**
+   - Paste the JSON into `claude_desktop_config.json`
+   - Restart Claude Desktop
+
+### Try the Webshop Demo
+
+1. **Start the demo**
+   ```bash
+   graphjin mcp demo --path examples/webshop/config
+   ```
+
+2. **Get config and add to Claude Desktop**
+   ```bash
+   graphjin mcp demo info --path examples/webshop/config
+   ```
+
+3. **Ask Claude questions like:**
+   - "What tables are in the database?"
+   - "Show me all products under $50"
+   - "List customers and their purchases"
+   - "What's the total revenue by product?"
+   - "Find products with 'wireless' in the name"
+   - "Add a new product called 'USB-C Cable' for $19.99"
+   - "Which customers have returned items?"
+
 ## How It Works
 
 1. **Connects to database** - Reads your schema automatically
