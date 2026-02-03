@@ -133,8 +133,8 @@ func (s *HttpService) RunMCPStdio(ctx context.Context) error {
 	return server.ServeStdio(mcpSrv.srv)
 }
 
-// MCPHandler returns an HTTP handler for MCP SSE transport (without auth)
-// For authenticated MCP, use MCPHandlerWithAuth instead
+// MCPHandler returns an HTTP handler for MCP HTTP transport (stateless)
+// This uses StreamableHTTPServer which handles POST requests directly
 func (s *HttpService) MCPHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s1 := s.Load().(*graphjinService)
@@ -146,21 +146,36 @@ func (s *HttpService) MCPHandler() http.Handler {
 
 		// Use request context (may contain auth info from middleware)
 		mcpSrv := s1.newMCPServerWithContext(r.Context())
-		sseServer := server.NewSSEServer(mcpSrv.srv)
-		sseServer.ServeHTTP(w, r)
+		// Use StreamableHTTPServer with stateless mode
+		httpServer := server.NewStreamableHTTPServer(mcpSrv.srv, server.WithStateLess(true))
+		httpServer.ServeHTTP(w, r)
 	})
 }
 
-// MCPHandlerWithAuth returns an HTTP handler for MCP SSE transport with authentication
+// MCPHandlerWithAuth returns an HTTP handler for MCP HTTP transport with authentication
 // This wraps the MCP handler with the same auth middleware as GraphQL/REST endpoints
 func (s *HttpService) MCPHandlerWithAuth(ah auth.HandlerFunc) http.Handler {
 	return apiV1Handler(s, nil, s.MCPHandler(), ah)
 }
 
-// MCPMessageHandler returns an HTTP handler for MCP HTTP transport (streamable)
-// Note: This uses the SSE server which handles both SSE and regular HTTP requests
+// MCPMessageHandler returns an HTTP handler for MCP HTTP transport (stateless)
+// This uses StreamableHTTPServer which handles POST requests directly without SSE
 func (s *HttpService) MCPMessageHandler() http.Handler {
-	return s.MCPHandler()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s1 := s.Load().(*graphjinService)
+
+		if s1.conf.MCP.Disable {
+			http.Error(w, "MCP is disabled", http.StatusNotFound)
+			return
+		}
+
+		// Use request context (may contain auth info from middleware)
+		mcpSrv := s1.newMCPServerWithContext(r.Context())
+		// Use StreamableHTTPServer with stateless mode for the HTTP transport
+		// This handles POST requests directly without requiring an SSE session
+		httpServer := server.NewStreamableHTTPServer(mcpSrv.srv, server.WithStateLess(true))
+		httpServer.ServeHTTP(w, r)
+	})
 }
 
 // MCPMessageHandlerWithAuth returns an HTTP handler for MCP HTTP transport with authentication

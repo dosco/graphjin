@@ -167,7 +167,7 @@ func printDevModeInfo(s *graphjinService) {
 		fmt.Printf("  REST API:    http://%s/api/v1/rest/\n", displayHost)
 	}
 	if !s.conf.MCP.Disable {
-		fmt.Printf("  MCP (SSE):   http://%s/api/v1/mcp\n", displayHost)
+		fmt.Printf("  MCP:         http://%s/api/v1/mcp\n", displayHost)
 	}
 
 	if !s.conf.MCP.Disable {
@@ -176,30 +176,27 @@ func printDevModeInfo(s *graphjinService) {
 		fmt.Println("────────────────────────────")
 		fmt.Println("Add to claude_desktop_config.json:")
 		fmt.Println()
-		printClaudeConfig(s.conf)
+		printClaudeConfig(s.conf, displayHost)
 	}
 	fmt.Println()
 }
 
 // printClaudeConfig prints a Claude Desktop configuration snippet
-func printClaudeConfig(conf *Config) {
+func printClaudeConfig(conf *Config, displayHost string) {
 	execPath, _ := os.Executable()
 	if execPath == "" {
 		execPath = "graphjin"
 	}
 
-	configPath := conf.ConfigPath
-	if configPath == "" {
-		configPath = "./config"
-	}
+	serverURL := fmt.Sprintf("http://%s", displayHost)
 
 	fmt.Printf(`  {
     "mcpServers": {
       "%s": {
         "command": "%s",
-        "args": ["mcp", "--path", "%s"]
+        "args": ["mcp", "--server", "%s"]
       }
     }
   }
-`, conf.AppName, execPath, configPath)
+`, conf.AppName, execPath, serverURL)
 }
