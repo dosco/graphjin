@@ -42,6 +42,11 @@ func Cmd() {
 	rootCmd.PersistentFlags().StringVar(&cpath,
 		"path", "./config", "path to config files")
 
+	// Add --config as an alias for --path
+	rootCmd.PersistentFlags().StringVar(&cpath,
+		"config", "./config", "alias for --path")
+	rootCmd.PersistentFlags().MarkHidden("config")
+
 	rootCmd.AddCommand(newCmd())
 	rootCmd.AddCommand(servCmd())
 	rootCmd.AddCommand(mcpCmd())

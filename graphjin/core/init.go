@@ -14,6 +14,11 @@ import (
 func (gj *graphjinEngine) initConfig() error {
 	c := gj.conf
 
+	// Validate configuration before proceeding
+	if err := c.Validate(); err != nil {
+		return err
+	}
+
 	tableMap := make(map[string]struct{})
 
 	for _, table := range c.Tables {

@@ -67,6 +67,11 @@ func (s *graphjinService) initConfig() error {
 		c.DBType = c.DB.Type
 	}
 
+	// Validate database type early
+	if err := core.ValidateDBType(c.DBType); err != nil {
+		return err
+	}
+
 	if c.HotDeploy {
 		if c.AdminSecretKey != "" {
 			s.asec = sha256.Sum256([]byte(s.conf.AdminSecretKey))
@@ -101,11 +106,34 @@ func (s *graphjinService) initConfig() error {
 	return nil
 }
 
+// isDatabaseConfigured checks if a database connection is configured
+func (s *graphjinService) isDatabaseConfigured() bool {
+	// Check if connection string is provided
+	if s.conf.DB.ConnString != "" {
+		return true
+	}
+	// Check if host and dbname are provided (minimal required fields for auto-connect)
+	if s.conf.DB.Host != "" && s.conf.DB.DBName != "" {
+		return true
+	}
+	// Check if multi-database configs exist
+	if len(s.conf.Core.Databases) > 0 {
+		return true
+	}
+	return false
+}
+
 // initDB initializes the database
 func (s *graphjinService) initDB() error {
 	var err error
 
 	if s.db != nil {
+		return nil
+	}
+
+	// In dev mode, allow starting without a database configured
+	if !s.conf.Serv.Production && !s.isDatabaseConfigured() {
+		s.log.Warn("No databases configured. Use MCP to add a database configuration.")
 		return nil
 	}
 

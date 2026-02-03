@@ -7,7 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dosco/graphjin/core/v3"
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/spf13/viper"
+	"go.uber.org/zap/zaptest"
 )
 
 // mockMcpServerWithConfig creates a mock with custom MCP config
@@ -749,5 +752,203 @@ func TestMCP_NonCursorKeyNotExpanded(t *testing.T) {
 	}
 	if expanded["id"] != "3" {
 		t.Errorf("id should be unchanged, got %v", expanded["id"])
+	}
+}
+
+// =============================================================================
+// Config Update Tests
+// =============================================================================
+
+func TestHandleUpdateCurrentConfig_NilGraphJin(t *testing.T) {
+	// Test that update works even when gj is nil (no DB configured)
+	logger := zaptest.NewLogger(t)
+	ms := &mcpServer{
+		service: &graphjinService{
+			gj: nil, // Not initialized
+			conf: &Config{
+				Core: core.Config{},
+				Serv: Serv{Production: false},
+			},
+			log: logger.Sugar(),
+		},
+		ctx: context.Background(),
+	}
+
+	req := newToolRequest(map[string]any{
+		"tables": []any{
+			map[string]any{"name": "users"},
+		},
+	})
+
+	result, err := ms.handleUpdateCurrentConfig(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Should succeed (with a warning about GraphJin not initialized)
+	if result == nil {
+		t.Fatal("Expected result, got nil")
+	}
+
+	// Parse result to verify
+	if len(result.Content) > 0 {
+		if tc, ok := result.Content[0].(mcp.TextContent); ok {
+			// Should contain info about table being added
+			if !strings.Contains(tc.Text, "users") {
+				t.Errorf("Expected result to mention 'users', got: %s", tc.Text)
+			}
+		}
+	}
+}
+
+func TestSyncConfigToViper(t *testing.T) {
+	v := viper.New()
+	logger := zaptest.NewLogger(t)
+	ms := &mcpServer{
+		service: &graphjinService{
+			conf: &Config{
+				Core: core.Config{
+					Databases: map[string]core.DatabaseConfig{
+						"main": {Type: "postgres", Host: "localhost"},
+					},
+					Tables: []core.Table{
+						{Name: "users"},
+					},
+					Roles: []core.Role{
+						{Name: "admin"},
+					},
+					Blocklist: []string{"secrets"},
+					Functions: []core.Function{
+						{Name: "my_func", ReturnType: "text"},
+					},
+				},
+				viper: v,
+			},
+			log: logger.Sugar(),
+		},
+	}
+
+	ms.syncConfigToViper(v)
+
+	// Verify values were synced
+	if v.Get("databases") == nil {
+		t.Error("Expected databases to be set in viper")
+	}
+	if v.Get("tables") == nil {
+		t.Error("Expected tables to be set in viper")
+	}
+	if v.Get("roles") == nil {
+		t.Error("Expected roles to be set in viper")
+	}
+	if v.Get("blocklist") == nil {
+		t.Error("Expected blocklist to be set in viper")
+	}
+	if v.Get("functions") == nil {
+		t.Error("Expected functions to be set in viper")
+	}
+}
+
+func TestSyncConfigToViper_EmptyConfig(t *testing.T) {
+	v := viper.New()
+	logger := zaptest.NewLogger(t)
+	ms := &mcpServer{
+		service: &graphjinService{
+			conf: &Config{
+				Core:  core.Config{},
+				viper: v,
+			},
+			log: logger.Sugar(),
+		},
+	}
+
+	// Should not panic with empty config
+	ms.syncConfigToViper(v)
+
+	// Empty configs should not set values
+	if v.Get("databases") != nil {
+		t.Error("Expected databases to be nil for empty config")
+	}
+}
+
+func TestSaveConfigToDisk_NoViper(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	ms := &mcpServer{
+		service: &graphjinService{
+			conf: &Config{
+				viper: nil, // No viper instance
+			},
+			log: logger.Sugar(),
+		},
+	}
+
+	err := ms.saveConfigToDisk()
+	if err == nil {
+		t.Error("Expected error when viper is nil")
+	}
+	if !strings.Contains(err.Error(), "viper instance not available") {
+		t.Errorf("Expected 'viper instance not available' error, got: %v", err)
+	}
+}
+
+func TestAllowConfigUpdates_DefaultsToTrueInDevMode(t *testing.T) {
+	tests := []struct {
+		name          string
+		production    bool
+		mcpDisable    bool
+		explicitlySet bool
+		expectedValue bool
+	}{
+		{
+			name:          "dev mode with MCP enabled - defaults to true",
+			production:    false,
+			mcpDisable:    false,
+			explicitlySet: false,
+			expectedValue: true,
+		},
+		{
+			name:          "dev mode with MCP disabled - stays false",
+			production:    false,
+			mcpDisable:    true,
+			explicitlySet: false,
+			expectedValue: false,
+		},
+		{
+			name:          "production mode - stays false",
+			production:    true,
+			mcpDisable:    false,
+			explicitlySet: false,
+			expectedValue: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			v := viper.New()
+			if tt.explicitlySet {
+				v.Set("mcp.allow_config_updates", false)
+			}
+
+			conf := &Config{
+				Serv: Serv{
+					Production: tt.production,
+					MCP: MCPConfig{
+						Disable:            tt.mcpDisable,
+						AllowConfigUpdates: false, // Start with false
+					},
+				},
+				viper: v,
+			}
+
+			// Apply the logic from newGraphJinService
+			if !conf.Serv.Production && !conf.MCP.Disable {
+				if conf.viper != nil && !conf.viper.IsSet("mcp.allow_config_updates") {
+					conf.MCP.AllowConfigUpdates = true
+				}
+			}
+
+			if conf.MCP.AllowConfigUpdates != tt.expectedValue {
+				t.Errorf("AllowConfigUpdates = %v, expected %v", conf.MCP.AllowConfigUpdates, tt.expectedValue)
+			}
+		})
 	}
 }

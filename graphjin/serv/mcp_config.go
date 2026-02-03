@@ -7,6 +7,7 @@ import (
 
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/spf13/viper"
 )
 
 // registerConfigTools registers the configuration management tools
@@ -385,17 +386,34 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		return mcp.NewToolResultText(string(data)), nil
 	}
 
+	// Save to disk first (dev mode only)
+	if len(changes) > 0 && !ms.service.conf.Serv.Production {
+		if err := ms.saveConfigToDisk(); err != nil {
+			ms.service.log.Warnf("Failed to save config to disk: %v", err)
+			errors = append(errors, fmt.Sprintf("config save warning: %v (changes applied in-memory only)", err))
+		} else {
+			ms.service.log.Info("Configuration saved to disk")
+			changes = append(changes, "configuration saved to disk")
+		}
+	}
+
 	// Attempt to reload with new config
 	if len(changes) > 0 {
-		if err := ms.service.gj.Reload(); err != nil {
-			result := ConfigUpdateResult{
-				Success: false,
-				Message: fmt.Sprintf("Config updated but reload failed: %v", err),
-				Changes: changes,
-				Errors:  append(errors, fmt.Sprintf("reload error: %v", err)),
+		if ms.service.gj != nil {
+			if err := ms.service.gj.Reload(); err != nil {
+				result := ConfigUpdateResult{
+					Success: false,
+					Message: fmt.Sprintf("Config updated but reload failed: %v", err),
+					Changes: changes,
+					Errors:  append(errors, fmt.Sprintf("reload error: %v", err)),
+				}
+				data, _ := mcpMarshalJSON(result, true)
+				return mcp.NewToolResultText(string(data)), nil
 			}
-			data, _ := mcpMarshalJSON(result, true)
-			return mcp.NewToolResultText(string(data)), nil
+		} else {
+			// GraphJin not initialized yet - this happens when no DB was configured at startup
+			// The saved config will be used on next restart, or we can try to initialize now
+			errors = append(errors, "GraphJin not initialized - restart server or add database to activate")
 		}
 	}
 
@@ -769,4 +787,48 @@ func parseFunctionConfig(m map[string]any) (core.Function, error) {
 	}
 
 	return fn, nil
+}
+
+// saveConfigToDisk persists the current configuration to the config file
+func (ms *mcpServer) saveConfigToDisk() error {
+	v := ms.service.conf.viper
+	if v == nil {
+		return fmt.Errorf("viper instance not available")
+	}
+
+	// Sync current config state to viper
+	ms.syncConfigToViper(v)
+
+	// Write the config file
+	if err := v.WriteConfig(); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+
+	return nil
+}
+
+// syncConfigToViper updates viper with the current config values for sections that can be modified
+func (ms *mcpServer) syncConfigToViper(v *viper.Viper) {
+	conf := &ms.service.conf.Core
+
+	// Sync databases
+	if len(conf.Databases) > 0 {
+		v.Set("databases", conf.Databases)
+	}
+	// Sync tables
+	if len(conf.Tables) > 0 {
+		v.Set("tables", conf.Tables)
+	}
+	// Sync roles
+	if len(conf.Roles) > 0 {
+		v.Set("roles", conf.Roles)
+	}
+	// Sync blocklist
+	if len(conf.Blocklist) > 0 {
+		v.Set("blocklist", conf.Blocklist)
+	}
+	// Sync functions
+	if len(conf.Functions) > 0 {
+		v.Set("functions", conf.Functions)
+	}
 }

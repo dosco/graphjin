@@ -62,10 +62,12 @@ func newDB(
 	}
 
 	switch conf.DBType {
-	case "mysql":
+	case "", "postgres":
+		dc, err = initPostgres(conf, openDB, useTelemetry, fs)
+	case "mysql", "mariadb":
 		dc, err = initMysql(conf, openDB, useTelemetry, fs)
 	default:
-		dc, err = initPostgres(conf, openDB, useTelemetry, fs)
+		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb", conf.DBType)
 	}
 
 	if err != nil {

@@ -74,10 +74,11 @@ func (gj *graphjinEngine) initDiscover() (err error) {
 	switch gj.conf.DBType {
 	case "":
 		gj.dbtype = "postgres"
-	case "mssql":
-		gj.dbtype = "mssql"
-	default:
+	case "postgres", "mysql", "mariadb", "sqlite", "oracle", "mssql":
 		gj.dbtype = gj.conf.DBType
+	default:
+		return fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql",
+			gj.conf.DBType)
 	}
 
 	if err = gj._initDiscover(); err != nil {

@@ -206,6 +206,15 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*graphjinS
 		return nil, err
 	}
 
+	// Default AllowConfigUpdates to true in dev mode when MCP is enabled
+	if !s.conf.Serv.Production && !s.conf.MCP.Disable {
+		// Only set default if not explicitly configured by user
+		if s.conf.viper != nil && !s.conf.viper.IsSet("mcp.allow_config_updates") {
+			s.conf.MCP.AllowConfigUpdates = true
+			s.log.Info("MCP config updates enabled by default (dev mode)")
+		}
+	}
+
 	if err := s.initFS(); err != nil {
 		return nil, err
 	}
@@ -249,6 +258,12 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*graphjinS
 
 // normalStart starts the service in normal mode
 func (s *graphjinService) normalStart() error {
+	// Skip GraphJin core initialization if no database is configured (dev mode only)
+	if s.db == nil && !s.conf.Serv.Production {
+		s.log.Info("GraphJin core not initialized - waiting for database configuration via MCP")
+		return nil
+	}
+
 	opts := []core.Option{
 		core.OptionSetFS(s.fs),
 		core.OptionSetTrace(otelPlugin.NewTracerFrom(s.tracer)),

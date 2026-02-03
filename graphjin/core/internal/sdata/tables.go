@@ -69,6 +69,8 @@ func GetDBInfo(
 		var row *sql.Row
 
 		switch dbType {
+		case "postgres", "":
+			row = db.QueryRow(postgresInfo)
 		case "mysql":
 			row = db.QueryRow(mysqlInfo)
 		case "mariadb":
@@ -83,7 +85,7 @@ func GetDBInfo(
 			// MongoDB returns info via the driver's introspection
 			row = db.QueryRow(mongodbInfo)
 		default:
-			row = db.QueryRow(postgresInfo)
+			return fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, mongodb", dbType)
 		}
 
 		if err := row.Scan(&dbVersion, &dbSchema, &dbName); err != nil {
@@ -295,6 +297,8 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 	var sqlStmt string
 
 	switch dbtype {
+	case "postgres", "":
+		sqlStmt = postgresColumnsStmt
 	case "mysql":
 		sqlStmt = mysqlColumnsStmt
 	case "mariadb":
@@ -309,7 +313,7 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 		// MongoDB uses JSON query DSL - the driver handles introspection
 		sqlStmt = mongodbColumnsStmt
 	default:
-		sqlStmt = postgresColumnsStmt
+		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, mongodb", dbtype)
 	}
 
 	rows, err := db.Query(sqlStmt)
@@ -436,6 +440,8 @@ func DiscoverFunctions(db *sql.DB, dbtype string, blockList []string) ([]DBFunct
 	var sqlStmt string
 
 	switch dbtype {
+	case "postgres", "":
+		sqlStmt = postgresFunctionsStmt
 	case "mysql":
 		sqlStmt = mysqlFunctionsStmt
 	case "mariadb":
@@ -450,7 +456,7 @@ func DiscoverFunctions(db *sql.DB, dbtype string, blockList []string) ([]DBFunct
 		// MongoDB doesn't have user-defined functions in the SQL sense
 		return nil, nil
 	default:
-		sqlStmt = postgresFunctionsStmt
+		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, mongodb", dbtype)
 	}
 
 	rows, err := db.Query(sqlStmt)

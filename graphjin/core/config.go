@@ -10,6 +10,57 @@ import (
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 )
 
+// SupportedDBTypes lists the database types supported for single-database mode
+var SupportedDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle"}
+
+// SupportedMultiDBTypes lists the database types supported for multi-database mode
+var SupportedMultiDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle", "mongodb", "mssql"}
+
+// ValidateDBType checks if the given database type is supported
+func ValidateDBType(dbType string) error {
+	if dbType == "" {
+		return nil // Empty defaults to postgres, which is valid
+	}
+	for _, t := range SupportedDBTypes {
+		if strings.EqualFold(dbType, t) {
+			return nil
+		}
+	}
+	return fmt.Errorf("unsupported database type %q: supported types are %s",
+		dbType, strings.Join(SupportedDBTypes, ", "))
+}
+
+// ValidateMultiDBType checks if the given database type is supported for multi-database mode
+func ValidateMultiDBType(dbType string) error {
+	if dbType == "" {
+		return nil // Empty defaults to postgres, which is valid
+	}
+	for _, t := range SupportedMultiDBTypes {
+		if strings.EqualFold(dbType, t) {
+			return nil
+		}
+	}
+	return fmt.Errorf("unsupported database type %q: supported types are %s",
+		dbType, strings.Join(SupportedMultiDBTypes, ", "))
+}
+
+// Validate checks the configuration for errors
+func (c *Config) Validate() error {
+	// Validate primary database type
+	if err := ValidateDBType(c.DBType); err != nil {
+		return err
+	}
+
+	// Validate multi-database types
+	for name, dbConf := range c.Databases {
+		if err := ValidateMultiDBType(dbConf.Type); err != nil {
+			return fmt.Errorf("database %q: %w", name, err)
+		}
+	}
+
+	return nil
+}
+
 // Configuration for the GraphJin compiler core
 type Config struct {
 	// Is used to encrypt opaque values such as the cursor. Auto-generated when not set
