@@ -101,7 +101,6 @@ graphjin serve --path ./my-app
 **Step 3: Add to Claude Desktop config file**
 
 Copy paste the Claude Desktop Config provided by `graphjin serve` into the Claude Desktop MCP config file. How to do this has been defined clearly above in the `Try it Now` section.
-```
 
 **Step 4: Restart Claude Desktop**
 
