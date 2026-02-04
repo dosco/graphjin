@@ -11,7 +11,7 @@ import (
 )
 
 // SupportedDBTypes lists the database types supported for single-database mode
-var SupportedDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle"}
+var SupportedDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle", "mssql"}
 
 // SupportedMultiDBTypes lists the database types supported for multi-database mode
 var SupportedMultiDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle", "mongodb", "mssql"}
@@ -117,8 +117,8 @@ type Config struct {
 	// and 'anon' when it's not. Use the 'Roles Query' config to add more custom roles
 	Roles []Role
 
-	// Database type name Defaults to 'postgres' (options: postgres, mysql, mariadb, sqlite, oracle)
-	DBType string `mapstructure:"db_type" json:"db_type" yaml:"db_type" jsonschema:"title=Database Type,enum=postgres,enum=mysql,enum=mariadb,enum=sqlite,enum=oracle"`
+	// Database type name Defaults to 'postgres' (options: postgres, mysql, mariadb, sqlite, oracle, mssql)
+	DBType string `mapstructure:"db_type" json:"db_type" yaml:"db_type" jsonschema:"title=Database Type,enum=postgres,enum=mysql,enum=mariadb,enum=sqlite,enum=oracle,enum=mssql"`
 
 	// Log warnings and other debug information
 	Debug bool `jsonschema:"title=Debug,default=false"`

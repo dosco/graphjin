@@ -2,6 +2,7 @@ package serv
 
 import (
 	// "crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -103,6 +104,17 @@ func (s *graphjinService) initConfig() error {
 	}
 
 	c.Core.Production = c.Serv.Production
+	return nil
+}
+
+// ErrGraphJinNotInitialized is returned when GraphJin core is not initialized
+var ErrGraphJinNotInitialized = errors.New("GraphJin not initialized - no database configured")
+
+// checkGraphJinInitialized returns an error if GraphJin core is not initialized
+func (s *graphjinService) checkGraphJinInitialized() error {
+	if s.gj == nil {
+		return ErrGraphJinNotInitialized
+	}
 	return nil
 }
 

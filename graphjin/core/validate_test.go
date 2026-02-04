@@ -20,7 +20,7 @@ func TestValidateDBType(t *testing.T) {
 		{"case insensitive", "PostgreS", false},
 		{"invalid type", "invalid", true},
 		{"mongodb not in single db types", "mongodb", true},
-		{"mssql not in single db types", "mssql", true},
+		{"mssql is valid", "mssql", false},
 	}
 
 	for _, tt := range tests {

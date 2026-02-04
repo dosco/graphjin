@@ -178,6 +178,11 @@ func (s1 *HttpService) apiV1GraphQL(ns *string, ah auth.HandlerFunc) http.Handle
 			return
 		}
 
+		if err := s.checkGraphJinInitialized(); err != nil {
+			renderErr(w, err)
+			return
+		}
+
 		res, err := s.gj.GraphQL(ctx, req.Query, req.Vars, &rc)
 		if res == nil && err != nil {
 			renderErr(w, err)
@@ -266,6 +271,11 @@ func (s1 *HttpService) apiV1Rest(ns *string, ah auth.HandlerFunc) http.Handler {
 
 		if ns != nil {
 			rc.SetNamespace(*ns)
+		}
+
+		if err := s.checkGraphJinInitialized(); err != nil {
+			renderErr(w, err)
+			return
 		}
 
 		res, err := s.gj.GraphQLByName(ctx, queryName, vars, &rc)

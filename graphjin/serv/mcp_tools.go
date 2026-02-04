@@ -99,6 +99,10 @@ func (ms *mcpServer) handleExecuteGraphQL(ctx context.Context, req mcp.CallToolR
 		rc.SetNamespace(ms.getNamespace())
 	}
 
+	if err := ms.service.checkGraphJinInitialized(); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
 	res, err := ms.service.gj.GraphQL(ctx, query, varsJSON, &rc)
 
 	result := ExecuteResult{}
@@ -148,6 +152,10 @@ func (ms *mcpServer) handleExecuteSavedQuery(ctx context.Context, req mcp.CallTo
 		rc.SetNamespace(namespace)
 	} else {
 		rc.SetNamespace(ms.getNamespace())
+	}
+
+	if err := ms.service.checkGraphJinInitialized(); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
 	}
 
 	res, err := ms.service.gj.GraphQLByName(ctx, name, varsJSON, &rc)
