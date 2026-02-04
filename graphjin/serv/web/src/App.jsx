@@ -27,7 +27,7 @@ const App = () => {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <BrowserRouter basename={import.meta.env.BASE_URL}>
+        <BrowserRouter basename="/">
           <Layout>
             <Routes>
               <Route path="/" element={<QueryEditor />} />

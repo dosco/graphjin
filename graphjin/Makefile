@@ -82,7 +82,7 @@ release: linux/amd64 windows/amd64 darwin/amd64
 
 all: lint test $(BINARY)
 
-build: $(BINARY) $(WASM)
+build: $(BINARY)
 
 wasm-build: $(WASM)
 

@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+@theme {
+  /* Colors - Light monochrome palette */
+  --color-gj-bg: #E8E4E0;           /* Light warm gray background */
+  --color-gj-surface: #F5F3F0;      /* Slightly lighter for cards */
+  --color-gj-text: #000000;         /* Black text */
+  --color-gj-muted: #666666;        /* Gray for secondary text */
+  --color-gj-border: #D0CCC8;       /* Subtle borders */
+  --color-gj-dark: #333333;         /* Dark gray for accents */
+
+  /* Typography */
+  --font-display: 'Space Grotesk', system-ui;
+  --font-body: 'Inter', system-ui;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+/* Base Styles */
+@layer base {
+  html {
+    background-color: var(--color-gj-bg);
+    color: var(--color-gj-text);
+    font-family: var(--font-body);
+    scroll-behavior: smooth;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    font-weight: 700;
+  }
+}
+
+/* Utilities */
+@layer components {
+  .container-wide {
+    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+
+  .btn-primary {
+    @apply bg-gj-text text-gj-bg font-bold px-6 py-3 rounded-lg hover:bg-gj-dark transition-colors duration-200 inline-flex items-center gap-2;
+  }
+
+  .btn-secondary {
+    @apply bg-transparent text-gj-text font-medium px-6 py-3 rounded-lg hover:bg-black/5 transition-colors duration-200 inline-flex items-center gap-2 border border-gj-border;
+  }
+
+  .glass {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+}

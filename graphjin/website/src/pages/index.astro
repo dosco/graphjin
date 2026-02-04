@@ -1,0 +1,24 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Navbar from '../components/Navbar.astro';
+import Hero from '../components/Hero.astro';
+import DatabaseLogos from '../components/DatabaseLogos.astro';
+import QueryShowcase from '../components/react/QueryShowcase';
+import FeatureGrid from '../components/FeatureGrid.astro';
+import QuickStart from '../components/react/QuickStart';
+import Footer from '../components/Footer.astro';
+---
+
+<Layout title="GraphJin - The Compiler for AI & Data">
+  <Navbar />
+
+  <main>
+    <Hero />
+    <QuickStart client:visible />
+    <DatabaseLogos />
+    <QueryShowcase client:visible />
+    <FeatureGrid />
+  </main>
+
+  <Footer />
+</Layout>

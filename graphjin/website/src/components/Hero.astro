@@ -1,0 +1,51 @@
+---
+import ParticleField from './react/ParticleField';
+---
+
+<section class="relative min-h-screen flex flex-col pt-20 overflow-hidden">
+  {/* Particle mesh wave background */}
+  <ParticleField client:load />
+
+  <div class="container-wide w-full z-10 flex-1 flex flex-col justify-between py-16">
+    {/* Top section - Label */}
+    <div class="mb-auto">
+      <span class="text-xs font-mono tracking-[0.3em] text-gj-muted uppercase">
+        AI + COMPILER + DATABASES
+      </span>
+    </div>
+
+    {/* Middle section - Main headline */}
+    <div class="my-auto">
+      <h1 class="text-7xl md:text-8xl lg:text-[10rem] font-display font-bold text-gj-text tracking-tight leading-[0.9]">
+        Graphjin
+      </h1>
+      <p class="text-3xl md:text-4xl lg:text-5xl font-display font-bold text-gj-muted tracking-tight mt-2">
+         A Compiler to Connect AI to Your Databases
+      </p>
+    </div>
+
+    {/* Bottom section - Two columns */}
+    <div class="mt-auto grid grid-cols-1 md:grid-cols-2 gap-12 md:gap-24 pt-16">
+      {/* Left column */}
+      <div>
+        <div class="flex items-center gap-4">
+          <a href="#quickstart" class="btn-primary">
+            Quick Start
+          </a>
+          <a href="https://github.com/dosco/graphjin" target="_blank" rel="noopener noreferrer" class="btn-secondary">
+            GitHub
+          </a>
+        </div>
+      </div>
+
+      {/* Right column */}
+      <div class="flex items-end">
+        <p class="text-base md:text-lg text-gj-muted leading-relaxed max-w-md">
+          GraphJin is a compiler that connects AI assistants
+          to any database. Zero configuration. Instant schema
+          discovery across PostgreSQL, MySQL, MongoDB and more.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>

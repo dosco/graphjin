@@ -51,7 +51,7 @@ cd graphjin
 
 Now launch the Graphjin service that you installed using the install options above
 ```bash
-graphjin serve --demo --path examples/webshop/config
+graphjin serve --demo --path examples/webshop
 ```
 
 You'll see output like this:

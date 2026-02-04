@@ -1,0 +1,59 @@
+---
+import { Check, X, Minus } from 'lucide-react';
+
+const databases = [
+  { name: 'PostgreSQL', query: true, mutation: true, sub: true, fts: true, gis: 'PostGIS' },
+  { name: 'MySQL', query: true, mutation: true, sub: true, fts: true, gis: '8.0+' },
+  { name: 'MariaDB', query: true, mutation: true, sub: true, fts: true, gis: true },
+  { name: 'SQLite', query: true, mutation: true, sub: true, fts: 'FTS5', gis: 'SpatiaLite' },
+  { name: 'MongoDB', query: true, mutation: true, sub: true, fts: true, gis: true },
+  { name: 'MSSQL', query: true, mutation: true, sub: true, fts: false, gis: true },
+  { name: 'Oracle', query: true, mutation: true, sub: true, fts: false, gis: true },
+];
+---
+
+<section class="py-24 bg-gj-dark">
+  <div class="container-wide">
+    <div class="text-center max-w-3xl mx-auto mb-16">
+      <h2 class="text-3xl md:text-5xl font-display font-bold text-white mb-6">Works With Your Stack</h2>
+      <p class="text-gj-muted text-lg">
+        GraphJin speaks the native language of your database. No need to migrate or change your schema.
+      </p>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full border-collapse">
+        <thead>
+          <tr class="border-b border-white/10">
+            <th class="py-4 px-6 text-left text-gj-muted font-mono text-sm uppercase tracking-wider">Database</th>
+            <th class="py-4 px-6 text-center text-gj-muted font-mono text-sm uppercase tracking-wider">Queries</th>
+            <th class="py-4 px-6 text-center text-gj-muted font-mono text-sm uppercase tracking-wider">Mutations</th>
+            <th class="py-4 px-6 text-center text-gj-muted font-mono text-sm uppercase tracking-wider">Real-time</th>
+            <th class="py-4 px-6 text-center text-gj-muted font-mono text-sm uppercase tracking-wider">Full-Text</th>
+            <th class="py-4 px-6 text-center text-gj-muted font-mono text-sm uppercase tracking-wider">GIS / Spatial</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-white/5">
+          {databases.map(db => (
+            <tr class="hover:bg-white/5 transition-colors">
+              <td class="py-4 px-6 text-white font-bold">{db.name}</td>
+              <td class="py-4 px-6 text-center text-emerald-400"><Check className="w-5 h-5 mx-auto" /></td>
+              <td class="py-4 px-6 text-center text-emerald-400"><Check className="w-5 h-5 mx-auto" /></td>
+              <td class="py-4 px-6 text-center text-emerald-400"><Check className="w-5 h-5 mx-auto" /></td>
+              <td class="py-4 px-6 text-center">
+                {db.fts === true ? <Check className="w-5 h-5 mx-auto text-emerald-400" /> : 
+                 db.fts === false ? <Minus className="w-5 h-5 mx-auto text-white/20" /> :
+                 <span class="text-xs font-mono px-2 py-1 rounded bg-white/10 text-white">{db.fts}</span>}
+              </td>
+              <td class="py-4 px-6 text-center">
+                 {db.gis === true ? <Check className="w-5 h-5 mx-auto text-emerald-400" /> : 
+                  typeof db.gis === 'string' ? <span class="text-xs font-mono px-2 py-1 rounded bg-white/10 text-white">{db.gis}</span> :
+                  <Check className="w-5 h-5 mx-auto text-emerald-400" />}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
