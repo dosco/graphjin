@@ -218,18 +218,6 @@ roles:
 
 **Response caching** - Redis with in-memory fallback. Automatic cache invalidation.
 
-**Claude Desktop config** (`claude_desktop_config.json`):
-```json
-{
-  "mcpServers": {
-    "my-database": {
-      "command": "graphjin",
-      "args": ["mcp", "--path", "/path/to/config"],
-    }
-  }
-}
-```
-
 ## Also a GraphQL API
 
 GraphJin works as a traditional API too - use it from Go or as a standalone service.
