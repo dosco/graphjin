@@ -218,34 +218,6 @@ roles:
 
 **Response caching** - Redis with in-memory fallback. Automatic cache invalidation.
 
-## CLI Reference
-
-```bash
-# Run MCP server (stdio mode for Claude Desktop)
-graphjin mcp --path /path/to/config
-
-# Show Claude Desktop config JSON
-graphjin mcp info
-
-# Run with temporary database container
-graphjin mcp --demo --path examples/webshop/config
-
-# Show demo mode config JSON
-graphjin mcp info --demo
-
-# Keep data between restarts
-graphjin mcp --demo --persist
-
-# Override database type
-graphjin mcp --demo --db mysql
-
-# Set auth context
-graphjin mcp --user-id admin --user-role admin
-
-# HTTP server with demo database
-graphjin serve --demo --path examples/webshop/config
-```
-
 **Claude Desktop config** (`claude_desktop_config.json`):
 ```json
 {
