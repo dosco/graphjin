@@ -40,78 +40,78 @@ docker pull dosco/graphjin
 
 ## Try It Now
 
-```bash
-# With Claude Desktop - run the demo
-graphjin mcp --demo --path examples/webshop/config
-graphjin mcp info --demo  # Copy output to Claude Desktop config
+This is a quick way to try out GraphJin we'll use the `--demo` command which automatically
+starts a database using docker and loads it with demo data.
 
-# With your own database
-graphjin mcp --path /path/to/config
-graphjin mcp info  # Copy output to Claude Desktop config
+Download the source which contains the `webshop` demo
+```
+git clone https://github.com/dosco/graphjin
+cd graphjin
 ```
 
-Within minutes, ask Claude: "What products do we have?" or "Show me orders from last week"
+Now launch the Graphjin service that you installed using the install options above
+```bash
+graphjin serve --demo --path examples/webshop/config
+```
 
-## Using with Claude Desktop
+You'll see output like this:
+```
+GraphJin started
+───────────────────────
+  Web UI:      http://localhost:8080/
+  GraphQL:     http://localhost:8080/api/v1/graphql
+  REST API:    http://localhost:8080/api/v1/rest/
+  MCP:         http://localhost:8080/api/v1/mcp
 
-### Option A: Local Mode (Starts with Claude)
+Claude Desktop Configuration
+────────────────────────────
+Add to claude_desktop_config.json:
 
-1. **Install GraphJin**
-   ```bash
-   npm install -g graphjin
-   ```
+  {
+    "mcpServers": {
+      "Webshop Development": {
+        "command": "/path/to/graphjin",
+        "args": ["mcp", "--server", "http://localhost:8080"]
+      }
+    }
+  }
+```
 
-2. **Get the config JSON**
-   ```bash
-   graphjin mcp info --path /path/to/your/config
-   ```
+Copy the JSON config shown and add it to your Claude Desktop config file (see below for file location). You can also click `File > Settings > Developer` to get to it in Claude Desktop. You will also need to **Restart Claude Desktop**
 
-3. **Add to Claude Desktop**
-   - Open Claude Desktop settings
-   - Edit `claude_desktop_config.json`
-   - Paste the JSON output
-   - Restart Claude Desktop
+| OS | Possible config file locations |
+|----|---------------------|
+| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
 
-### Option B: Remote Mode (Always-On Server)
+## Getting started
 
-1. **Start GraphJin on server**
-   ```bash
-   graphjin serve --path /path/to/config
-   ```
+To use GraphJin with your own databases you have to first create a new GraphJin app, then configure it using its config files and then launch GraphJin.
 
-2. **Get the proxy config** (on your local machine)
-   ```bash
-   # For local server
-   graphjin mcp info --server 127.0.0.1:8080
+**Step 1: Create New GraphJin App** 
+```bash
+graphjin new my-app
+```
 
-   # For remote server
-   graphjin mcp info --server 10.0.0.5:8080
-   ```
+**Step 2: Start the GraphJin Service**
+```bash
+graphjin serve --path ./my-app
+```
 
-3. **Add to Claude Desktop**
-   - Paste the JSON into `claude_desktop_config.json`
-   - Restart Claude Desktop
+**Step 3: Add to Claude Desktop config file**
 
-### Try the Webshop Demo
+Copy paste the Claude Desktop Config provided by `graphjin serve` into the Claude Desktop MCP config file. How to do this has been defined clearly above in the `Try it Now` section.
+```
 
-1. **Start the demo**
-   ```bash
-   graphjin mcp --demo --path examples/webshop/config
-   ```
+**Step 4: Restart Claude Desktop**
 
-2. **Get config and add to Claude Desktop**
-   ```bash
-   graphjin mcp info --demo --path examples/webshop/config
-   ```
-
-3. **Ask Claude questions like:**
-   - "What tables are in the database?"
-   - "Show me all products under $50"
-   - "List customers and their purchases"
-   - "What's the total revenue by product?"
-   - "Find products with 'wireless' in the name"
-   - "Add a new product called 'USB-C Cable' for $19.99"
-   - "Which customers have returned items?"
+**Step 5: Ask Claude questions like:**
+- "What tables are in the database?"
+- "Show me all products under $50"
+- "List customers and their purchases"
+- "What's the total revenue by product?"
+- "Find products with 'wireless' in the name"
+- "Add a new product called 'USB-C Cable' for $19.99"
 
 ## How It Works
 
@@ -184,7 +184,7 @@ Works from Node.js, Go, or any WebSocket client.
 
 ## MCP Tools
 
-GraphJin exposes 15 tools that guide AI models to write valid queries. Key tools: `list_tables` and `describe_table` for schema discovery, `get_query_syntax` for learning the DSL, `execute_graphql` for running queries, and `execute_saved_query` for production-approved queries. Prompts like `write_query` and `fix_query_error` help models construct and debug queries.
+GraphJin exposes several tools that guide AI models to write valid queries. Key tools: `list_tables` and `describe_table` for schema discovery, `get_query_syntax` for learning the DSL, `execute_graphql` for running queries, and `execute_saved_query` for production-approved queries. Prompts like `write_query` and `fix_query_error` help models construct and debug queries.
 
 ## Database Support
 
@@ -284,8 +284,9 @@ Built-in web UI at `http://localhost:8080` for query development.
 
 ## Documentation
 
-- [Quick Start](https://graphjin.com/posts/start)
-- [Full Documentation](https://graphjin.com)
+
+
+- [Configuration Reference](CONFIG.md)
 - [Feature Reference](docs/FEATURES.md)
 - [Go Examples](https://pkg.go.dev/github.com/dosco/graphjin/core#pkg-examples)
 

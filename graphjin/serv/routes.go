@@ -28,10 +28,10 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 	mux.Handle(healthRoute, healthCheckHandler(s1))
 
 	// Hot deploy API
-	if s.conf.HotDeploy {
-		mux.Handle(RollbackRoute, adminRollbackHandler(s1))
-		mux.Handle(DeployRoute, adminDeployHandler(s1))
-	}
+	// if s.conf.HotDeploy {
+	// 	mux.Handle(RollbackRoute, adminRollbackHandler(s1))
+	// 	mux.Handle(DeployRoute, adminDeployHandler(s1))
+	// }
 
 	// Skip non-MCP APIs in MCP-only mode
 	if !s.conf.MCP.Only {

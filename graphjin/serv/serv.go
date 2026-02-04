@@ -38,15 +38,15 @@ func initConfigWatcher(s1 *HttpService) {
 }
 
 // Initialize the hot deploy watcher
-func initHotDeployWatcher(s1 *HttpService) {
-	s := s1.Load().(*graphjinService)
-	go func() {
-		err := startHotDeployWatcher(s1)
-		if err != nil {
-			s.log.Fatalf("error in hot deploy watcher: %s", err)
-		}
-	}()
-}
+// func initHotDeployWatcher(s1 *HttpService) {
+// 	s := s1.Load().(*graphjinService)
+// 	go func() {
+// 		err := startHotDeployWatcher(s1)
+// 		if err != nil {
+// 			s.log.Fatalf("error in hot deploy watcher: %s", err)
+// 		}
+// 	}()
+// }
 
 // Start the HTTP server
 func startHTTP(s1 *HttpService) {
@@ -93,7 +93,7 @@ func startHTTP(s1 *HttpService) {
 	})
 
 	ver := version
-	dep := s.conf.name
+	// dep := s.conf.name
 
 	if ver == "" {
 		ver = "not-set"
@@ -104,7 +104,7 @@ func startHTTP(s1 *HttpService) {
 		zap.String("host-port", s.conf.hostPort),
 		zap.String("app-name", s.conf.AppName),
 		zap.String("env", os.Getenv("GO_ENV")),
-		zap.Bool("hot-deploy", s.conf.HotDeploy),
+		// zap.Bool("hot-deploy", s.conf.HotDeploy),
 		zap.Bool("production", s.conf.Core.Production),
 	}
 
@@ -112,9 +112,9 @@ func startHTTP(s1 *HttpService) {
 		fields = append(fields, zap.String("namespace", *s.namespace))
 	}
 
-	if s.conf.HotDeploy {
-		fields = append(fields, zap.String("deployment-name", dep))
-	}
+	// if s.conf.HotDeploy {
+	// 	fields = append(fields, zap.String("deployment-name", dep))
+	// }
 
 	s.zlog.Info("GraphJin started", fields...)
 	printDevModeInfo(s)

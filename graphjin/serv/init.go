@@ -1,7 +1,7 @@
 package serv
 
 import (
-	"crypto/sha256"
+	// "crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -72,13 +72,13 @@ func (s *graphjinService) initConfig() error {
 		return err
 	}
 
-	if c.HotDeploy {
-		if c.AdminSecretKey != "" {
-			s.asec = sha256.Sum256([]byte(s.conf.AdminSecretKey))
-		} else {
-			return fmt.Errorf("please set an admin_secret_key")
-		}
-	}
+	// if c.HotDeploy {
+	// 	if c.AdminSecretKey != "" {
+	// 		s.asec = sha256.Sum256([]byte(s.conf.AdminSecretKey))
+	// 	} else {
+	// 		return fmt.Errorf("please set an admin_secret_key")
+	// 	}
+	// }
 
 	if c.Auth.Type == "" || c.Auth.Type == "none" {
 		c.DefaultBlock = false

@@ -45,6 +45,21 @@ func (ms *mcpServer) registerConfigTools() {
 			mcp.WithArray("functions",
 				mcp.Description("Array of database function configs. Each function has name and return_type."),
 			),
+			mcp.WithArray("remove_databases",
+				mcp.Description("Array of database names to remove from configuration."),
+			),
+			mcp.WithArray("remove_tables",
+				mcp.Description("Array of table names to remove from configuration."),
+			),
+			mcp.WithArray("remove_roles",
+				mcp.Description("Array of role names to remove from configuration."),
+			),
+			mcp.WithArray("remove_blocklist_items",
+				mcp.Description("Array of blocklist entries to remove."),
+			),
+			mcp.WithArray("remove_functions",
+				mcp.Description("Array of function names to remove from configuration."),
+			),
 		), ms.handleUpdateCurrentConfig)
 	}
 }
@@ -376,6 +391,78 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		}
 	}
 
+	// Process remove_databases
+	if removeDBs, ok := args["remove_databases"].([]any); ok {
+		for _, item := range removeDBs {
+			if name, ok := item.(string); ok && name != "" {
+				if _, exists := conf.Databases[name]; exists {
+					delete(conf.Databases, name)
+					changes = append(changes, fmt.Sprintf("removed database: %s", name))
+				}
+			}
+		}
+	}
+
+	// Process remove_tables
+	if removeTables, ok := args["remove_tables"].([]any); ok {
+		for _, item := range removeTables {
+			if name, ok := item.(string); ok && name != "" {
+				for i, t := range conf.Tables {
+					if strings.EqualFold(t.Name, name) {
+						conf.Tables = append(conf.Tables[:i], conf.Tables[i+1:]...)
+						changes = append(changes, fmt.Sprintf("removed table: %s", name))
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// Process remove_roles
+	if removeRoles, ok := args["remove_roles"].([]any); ok {
+		for _, item := range removeRoles {
+			if name, ok := item.(string); ok && name != "" {
+				for i, r := range conf.Roles {
+					if strings.EqualFold(r.Name, name) {
+						conf.Roles = append(conf.Roles[:i], conf.Roles[i+1:]...)
+						changes = append(changes, fmt.Sprintf("removed role: %s", name))
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// Process remove_blocklist_items
+	if removeBlocklist, ok := args["remove_blocklist_items"].([]any); ok {
+		for _, item := range removeBlocklist {
+			if s, ok := item.(string); ok && s != "" {
+				for i, existing := range conf.Blocklist {
+					if strings.EqualFold(existing, s) {
+						conf.Blocklist = append(conf.Blocklist[:i], conf.Blocklist[i+1:]...)
+						changes = append(changes, fmt.Sprintf("removed from blocklist: %s", s))
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// Process remove_functions
+	if removeFunctions, ok := args["remove_functions"].([]any); ok {
+		for _, item := range removeFunctions {
+			if name, ok := item.(string); ok && name != "" {
+				for i, f := range conf.Functions {
+					if strings.EqualFold(f.Name, name) {
+						conf.Functions = append(conf.Functions[:i], conf.Functions[i+1:]...)
+						changes = append(changes, fmt.Sprintf("removed function: %s", name))
+						break
+					}
+				}
+			}
+		}
+	}
+
 	// If no changes were made, return early
 	if len(changes) == 0 && len(errors) == 0 {
 		result := ConfigUpdateResult{
@@ -386,24 +473,13 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		return mcp.NewToolResultText(string(data)), nil
 	}
 
-	// Save to disk first (dev mode only)
-	if len(changes) > 0 && !ms.service.conf.Serv.Production {
-		if err := ms.saveConfigToDisk(); err != nil {
-			ms.service.log.Warnf("Failed to save config to disk: %v", err)
-			errors = append(errors, fmt.Sprintf("config save warning: %v (changes applied in-memory only)", err))
-		} else {
-			ms.service.log.Info("Configuration saved to disk")
-			changes = append(changes, "configuration saved to disk")
-		}
-	}
-
-	// Attempt to reload with new config
+	// Attempt to reload with new config first (validates the config)
 	if len(changes) > 0 {
 		if ms.service.gj != nil {
 			if err := ms.service.gj.Reload(); err != nil {
 				result := ConfigUpdateResult{
 					Success: false,
-					Message: fmt.Sprintf("Config updated but reload failed: %v", err),
+					Message: fmt.Sprintf("Config reload failed, changes not persisted: %v", err),
 					Changes: changes,
 					Errors:  append(errors, fmt.Sprintf("reload error: %v", err)),
 				}
@@ -414,6 +490,17 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			// GraphJin not initialized yet - this happens when no DB was configured at startup
 			// The saved config will be used on next restart, or we can try to initialize now
 			errors = append(errors, "GraphJin not initialized - restart server or add database to activate")
+		}
+	}
+
+	// Save to disk only after successful reload (dev mode only)
+	if len(changes) > 0 && !ms.service.conf.Serv.Production {
+		if err := ms.saveConfigToDisk(); err != nil {
+			ms.service.log.Warnf("Failed to save config to disk: %v", err)
+			errors = append(errors, fmt.Sprintf("config save warning: %v (changes applied in-memory only)", err))
+		} else {
+			ms.service.log.Info("Configuration saved to disk")
+			changes = append(changes, "configuration saved to disk")
 		}
 	}
 

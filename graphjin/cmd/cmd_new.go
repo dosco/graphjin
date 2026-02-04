@@ -96,33 +96,7 @@ func cmdNew(cmd *cobra.Command, args []string) {
 		return os.Mkdir(p, os.ModePerm)
 	})
 
-	ifNotExists(path.Join(appPath, "Dockerfile"), func(p string) error {
-		if v, err := tmpl.get("Dockerfile"); err == nil {
-			return os.WriteFile(p, v, 0o600)
-		} else {
-			return err
-		}
-	})
-
-	if dbURL == "" {
-		ifNotExists(path.Join(appPath, "docker-compose.yml"), func(p string) error {
-			if v, err := tmpl.get("docker-compose.yml"); err == nil {
-				return os.WriteFile(p, v, 0o600)
-			} else {
-				return err
-			}
-		})
-	}
-
-	// Create app config folder and add relevant files
-
-	appConfigPath := filepath.Join(appPath, "config")
-
-	ifNotExists(appConfigPath, func(p string) error {
-		return os.Mkdir(p, os.ModePerm)
-	})
-
-	ifNotExists(path.Join(appConfigPath, "dev.yml"), func(p string) error {
+	ifNotExists(path.Join(appPath, "dev.yml"), func(p string) error {
 		if v, err := tmpl.get("dev.yml"); err == nil {
 			return os.WriteFile(p, v, 0o600)
 		} else {
@@ -130,49 +104,8 @@ func cmdNew(cmd *cobra.Command, args []string) {
 		}
 	})
 
-	ifNotExists(path.Join(appConfigPath, "prod.yml"), func(p string) error {
+	ifNotExists(path.Join(appPath, "prod.yml"), func(p string) error {
 		if v, err := tmpl.get("prod.yml"); err == nil {
-			return os.WriteFile(p, v, 0o600)
-		} else {
-			return err
-		}
-	})
-
-	ifNotExists(path.Join(appConfigPath, "seed.js"), func(p string) error {
-		if v, err := tmpl.get("seed.js"); err == nil {
-			return os.WriteFile(p, v, 0o600)
-		} else {
-			return err
-		}
-	})
-
-	// Create db.graphql schema file
-	ifNotExists(path.Join(appConfigPath, "db.graphql"), func(p string) error {
-		if v, err := tmpl.get("db.graphql"); err == nil {
-			return os.WriteFile(p, v, 0o600)
-		} else {
-			return err
-		}
-	})
-
-	// Create folder to hold scripts
-
-	scriptsPath := filepath.Join(appConfigPath, "scripts")
-
-	ifNotExists(scriptsPath, func(p string) error {
-		return os.Mkdir(p, os.ModePerm)
-	})
-
-	// Create queries folder and add a sample query
-
-	appQueriesPath := filepath.Join(appConfigPath, "queries")
-
-	ifNotExists(appQueriesPath, func(p string) error {
-		return os.Mkdir(p, os.ModePerm)
-	})
-
-	ifNotExists(path.Join(appQueriesPath, "getUsers.gql"), func(p string) error {
-		if v, err := tmpl.get("getUsers.gql"); err == nil {
 			return os.WriteFile(p, v, 0o600)
 		} else {
 			return err

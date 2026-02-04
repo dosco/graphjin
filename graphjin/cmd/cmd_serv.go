@@ -13,10 +13,10 @@ import (
 )
 
 var (
-	deployActive  bool
-	servDemoMode  bool
-	servPersist   bool
-	servDBFlags   []string
+	// deployActive  bool
+	servDemoMode bool
+	servPersist  bool
+	servDBFlags  []string
 )
 
 // ANSI color codes
@@ -79,7 +79,7 @@ Demo mode (--demo):
   graphjin serve --demo --persist          # Persist data using Docker volumes`,
 		Run: cmdServ,
 	}
-	c.Flags().BoolVar(&deployActive, "deploy-active", false, "Deploy active config")
+	// c.Flags().BoolVar(&deployActive, "deploy-active", false, "Deploy active config")
 	c.Flags().BoolVar(&servDemoMode, "demo", false, "Run with temporary database container(s)")
 	c.Flags().BoolVar(&servPersist, "persist", false, "Persist data using Docker volumes (requires --demo)")
 	c.Flags().StringArrayVar(&servDBFlags, "db", nil, "Database type override(s) (requires --demo)")
@@ -112,9 +112,9 @@ func cmdServ(cmd *cobra.Command, args []string) {
 	}
 
 	var opt []serv.Option
-	if deployActive {
-		opt = append(opt, serv.OptionDeployActive())
-	}
+	// if deployActive {
+	// 	opt = append(opt, serv.OptionDeployActive())
+	// }
 
 	gj, err := serv.NewGraphJinService(conf, opt...)
 	if err != nil {

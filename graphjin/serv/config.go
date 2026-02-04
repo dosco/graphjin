@@ -29,7 +29,7 @@ type Config struct {
 	Serv `mapstructure:",squash" jsonschema:"title=Service Configuration"`
 
 	// Configuration for admin service
-	Admin `mapstructure:",squash" jsonschema:"title=Admin Configuration"`
+	// Admin `mapstructure:",squash" jsonschema:"title=Admin Configuration"`
 
 	hostPort string
 	hash     string
@@ -39,13 +39,13 @@ type Config struct {
 }
 
 // Configuration for admin service
-type Admin struct {
-	// Enables the ability to hot-deploy a new configuration
-	HotDeploy bool `mapstructure:"hot_deploy" jsonschema:"title=Enable Hot Deploy"`
-
-	// Secret key used to control access to the admin api
-	AdminSecretKey string `mapstructure:"admin_secret_key" jsonschema:"title=Admin API Secret Key"`
-}
+// type Admin struct {
+// 	// Enables the ability to hot-deploy a new configuration
+// 	HotDeploy bool `mapstructure:"hot_deploy" jsonschema:"title=Enable Hot Deploy"`
+//
+// 	// Secret key used to control access to the admin api
+// 	AdminSecretKey string `mapstructure:"admin_secret_key" jsonschema:"title=Admin API Secret Key"`
+// }
 
 // Configuration for the GraphJin Service
 type Serv struct {

@@ -37,11 +37,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
+	// "fmt"
 	"net/http"
 	"os"
-	"path/filepath"
-	"strings"
+	// "path/filepath"
+	// "strings"
 	"sync/atomic"
 
 	"github.com/dosco/graphjin/auth/v3"
@@ -79,15 +79,15 @@ type graphjinService struct {
 	db           *sql.DB            // database connection pool
 	gj           *core.GraphJin
 	srv          *http.Server
-	fs           core.FS
-	asec         [32]byte
-	closeFn      func()
-	chash        string
-	state        servState
-	hook         HookFn
-	prod         bool
-	deployActive bool
-	adminCount   int32
+	fs      core.FS
+	// asec         [32]byte
+	closeFn func()
+	chash   string
+	state   servState
+	hook    HookFn
+	prod    bool
+	// deployActive bool
+	// adminCount   int32
 	namespace    *string
 	tracer       trace.Tracer
 	cache        ResponseCache // Response cache (Redis or in-memory)
@@ -114,9 +114,9 @@ func NewGraphJinService(conf *Config, options ...Option) (*HttpService, error) {
 		initConfigWatcher(s1)
 	}
 
-	if s.conf.HotDeploy {
-		initHotDeployWatcher(s1)
-	}
+	// if s.conf.HotDeploy {
+	// 	initHotDeployWatcher(s1)
+	// }
 
 	return s1, nil
 }
@@ -173,12 +173,12 @@ func OptionSetLogOutput(output zapcore.WriteSyncer) Option {
 }
 
 // OptionDeployActive caused the active config to be deployed on
-func OptionDeployActive() Option {
-	return func(s *graphjinService) error {
-		s.deployActive = true
-		return nil
-	}
-}
+// func OptionDeployActive() Option {
+// 	return func(s *graphjinService) error {
+// 		s.deployActive = true
+// 		return nil
+// 	}
+// }
 
 // newGraphJinService creates a new service
 func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*graphjinService, error) {
@@ -192,14 +192,13 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*graphjinS
 	conf.Core.Production = prod
 
 	s := &graphjinService{
-		conf:         conf,
-		zlog:         zlog,
-		log:          zlog.Sugar(),
-		db:           db,
-		chash:        conf.hash,
-		prod:         prod,
-		deployActive: prod && conf.HotDeploy && db == nil,
-		tracer:       otel.Tracer("graphjin.com/serv"),
+		conf:   conf,
+		zlog:   zlog,
+		log:    zlog.Sugar(),
+		db:     db,
+		chash:  conf.hash,
+		prod:   prod,
+		tracer: otel.Tracer("graphjin.com/serv"),
 	}
 
 	if err := s.initConfig(); err != nil {
@@ -242,11 +241,11 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*graphjinS
 		s.log.Warnf("cursor cache init error: %s", err)
 	}
 
-	if s.deployActive {
-		err = s.hotStart()
-	} else {
-		err = s.normalStart()
-	}
+	// if s.deployActive {
+	// 	err = s.hotStart()
+	// } else {
+	err = s.normalStart()
+	// }
 
 	if err != nil {
 		return nil, err
@@ -282,51 +281,51 @@ func (s *graphjinService) normalStart() error {
 }
 
 // hotStart starts the service in hot-deploy mode
-func (s *graphjinService) hotStart() error {
-	ab, err := fetchActiveBundle(s.db)
-	if err != nil {
-		if strings.Contains(err.Error(), "_graphjin.") {
-			return fmt.Errorf("please run 'graphjin init' to setup database for hot-deploy")
-		}
-		return err
-	}
-
-	if ab == nil {
-		return s.normalStart()
-	}
-
-	cf := s.conf.viper.ConfigFileUsed()
-	cf = filepath.Base(strings.TrimSuffix(cf, filepath.Ext(cf)))
-	cf = filepath.Join("/", cf)
-
-	bfs, err := bundle2Fs(ab.name, ab.hash, cf, ab.bundle)
-	if err != nil {
-		return err
-	}
-	s.conf = bfs.conf
-	s.chash = bfs.conf.hash
-
-	if err := s.initConfig(); err != nil {
-		return err
-	}
-
-	opts := []core.Option{
-		core.OptionSetFS(newAferoFS(bfs.fs, "/")),
-		core.OptionSetTrace(otelPlugin.NewTracerFrom(s.tracer)),
-	}
-
-	if s.namespace != nil {
-		opts = append(opts,
-			core.OptionSetNamespace(*s.namespace))
-	}
-	// Add response cache if enabled
-	if s.cache != nil {
-		opts = append(opts, core.OptionSetResponseCache(s.cache))
-	}
-
-	s.gj, err = core.NewGraphJin(&s.conf.Core, s.db, opts...)
-	return err
-}
+// func (s *graphjinService) hotStart() error {
+// 	ab, err := fetchActiveBundle(s.db)
+// 	if err != nil {
+// 		if strings.Contains(err.Error(), "_graphjin.") {
+// 			return fmt.Errorf("please run 'graphjin init' to setup database for hot-deploy")
+// 		}
+// 		return err
+// 	}
+//
+// 	if ab == nil {
+// 		return s.normalStart()
+// 	}
+//
+// 	cf := s.conf.viper.ConfigFileUsed()
+// 	cf = filepath.Base(strings.TrimSuffix(cf, filepath.Ext(cf)))
+// 	cf = filepath.Join("/", cf)
+//
+// 	bfs, err := bundle2Fs(ab.name, ab.hash, cf, ab.bundle)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	s.conf = bfs.conf
+// 	s.chash = bfs.conf.hash
+//
+// 	if err := s.initConfig(); err != nil {
+// 		return err
+// 	}
+//
+// 	opts := []core.Option{
+// 		core.OptionSetFS(newAferoFS(bfs.fs, "/")),
+// 		core.OptionSetTrace(otelPlugin.NewTracerFrom(s.tracer)),
+// 	}
+//
+// 	if s.namespace != nil {
+// 		opts = append(opts,
+// 			core.OptionSetNamespace(*s.namespace))
+// 	}
+// 	// Add response cache if enabled
+// 	if s.cache != nil {
+// 		opts = append(opts, core.OptionSetResponseCache(s.cache))
+// 	}
+//
+// 	s.gj, err = core.NewGraphJin(&s.conf.Core, s.db, opts...)
+// 	return err
+// }
 
 // Deploy a new configuration
 func (s *HttpService) Deploy(conf *Config, options ...Option) error {
@@ -385,7 +384,7 @@ func (s *HttpService) attach(mux Mux, ns *string) error {
 		zap.String("app-name", s1.conf.AppName),
 		zap.String("deployment-name", dep),
 		zap.String("env", os.Getenv("GO_ENV")),
-		zap.Bool("hot-deploy", s1.conf.HotDeploy),
+		// zap.Bool("hot-deploy", s1.conf.HotDeploy),
 		zap.Bool("production", s1.conf.Core.Production),
 	}
 
@@ -393,9 +392,9 @@ func (s *HttpService) attach(mux Mux, ns *string) error {
 		fields = append(fields, zap.String("namespace", *s1.namespace))
 	}
 
-	if s1.conf.HotDeploy {
-		fields = append(fields, zap.String("deployment-name", dep))
-	}
+	// if s1.conf.HotDeploy {
+	// 	fields = append(fields, zap.String("deployment-name", dep))
+	// }
 
 	s1.zlog.Info("GraphJin attached to router", fields...)
 	return nil

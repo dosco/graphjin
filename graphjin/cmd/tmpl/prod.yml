@@ -74,12 +74,6 @@ hot_deploy: true
 # GJ_ADMIN_SECRET_KEY
 # admin_secret_key: blahblah
 
-# Database related environment Variables
-# GJ_DATABASE_HOST
-# GJ_DATABASE_PORT
-# GJ_DATABASE_USER
-# GJ_DATABASE_PASSWORD
-
 # Auth related environment Variables
 # GJ_AUTH_JWT_PUBLIC_KEY_FILE
 
@@ -93,21 +87,53 @@ hot_deploy: true
 #     endpoint: "http://zipkin:9411/api/v2/spans"
 #     sample: 0.6
 
+# ============================================================================
+# MCP (Model Context Protocol) CONFIGURATION
+# ============================================================================
+# MCP enables AI assistants to interact with GraphJin for schema exploration
+# and query building. In production, config updates are disabled for security.
+# ============================================================================
+
+mcp:
+  # Disable MCP endpoints entirely
+  disable: false
+
+  # SECURITY: Config updates disabled in production
+  # Databases, tables, roles must be configured in this file or via hot deploy
+  allow_config_updates: false
+
+  # Enable search functionality through MCP
+  enable_search: true
+
+  # Allow mutations (insert/update/delete) through MCP
+  allow_mutations: true
+
+  # SECURITY: Only allow saved queries in production (not raw GraphQL)
+  allow_raw_queries: false
+
+# ============================================================================
+# DATABASE CONFIGURATION
+# ============================================================================
+# Production mode REQUIRES a database to be configured.
+# Use environment variables for sensitive values:
+#   GJ_DATABASE_HOST, GJ_DATABASE_PORT, GJ_DATABASE_NAME,
+#   GJ_DATABASE_USER, GJ_DATABASE_PASSWORD
+#
+# See dev.yml for database configuration examples for:
+# PostgreSQL, MySQL, MariaDB, SQLite, Oracle, MS SQL Server, MongoDB
+# ============================================================================
+
 database:
-  type: {{ .DBType }}
-  host: {{ .DBHost }}
-  port: {{ .DBPort }}
-  {{- if eq .DBName "" }}
-  dbname: {{ .AppNameSlug -}}_production
-  {{- else }}
-  dbname: {{ .DBName }}
-  {{- end }}
-  user: {{ .DBUser }}
-  password: {{ .DBPass }}
+  type: postgres
+  host: ${GJ_DATABASE_HOST}
+  port: ${GJ_DATABASE_PORT}
+  dbname: ${GJ_DATABASE_NAME}
+  user: ${GJ_DATABASE_USER}
+  password: ${GJ_DATABASE_PASSWORD}
   #schema: "public"
 
-  # See dev.yml for database configuration examples for:
-  # PostgreSQL, MySQL, MariaDB, SQLite, Oracle, MS SQL Server, MongoDB
+  # alternatively you can use a connection string
+  #connection_string: ${GJ_DATABASE_URL}
 
   # Size of database connection pool
   # pool_size: 15
@@ -120,7 +146,7 @@ database:
 
   # Max time after which database connections are not reused
   # max_connection_life_time: 0s
-  
+
   #log_level: "debug"
 
   # database ping timeout is used for db health checking
