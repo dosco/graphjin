@@ -227,6 +227,15 @@ type MCPConfig struct {
 	// WARNING: Allows LLMs to change database connections, table configs, and roles
 	// Only enable in trusted environments. Default: false
 	AllowConfigUpdates bool `mapstructure:"allow_config_updates" jsonschema:"title=Allow Config Updates,default=false"`
+
+	// AllowSchemaReload enables the MCP reload_schema tool for manual schema refresh
+	// Useful when user adds tables and wants immediate discovery without waiting for poll
+	// Default: false (auto-enabled in dev mode if not explicitly set)
+	AllowSchemaReload bool `mapstructure:"allow_schema_reload" jsonschema:"title=Allow Schema Reload,default=false"`
+
+	// AllowSchemaUpdates enables MCP tools to preview and apply database schema changes (DDL)
+	// Uses db.graphql format. Auto-enabled in dev mode. Default: false
+	AllowSchemaUpdates bool `mapstructure:"allow_schema_updates" jsonschema:"title=Allow Schema Updates,default=false"`
 }
 
 // RedisConfig configures Redis connection
@@ -437,6 +446,8 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("mcp.cursor_cache_ttl", 1800)       // 30 minutes
 	vi.SetDefault("mcp.cursor_cache_size", 10000)    // max in-memory entries
 	vi.SetDefault("mcp.allow_config_updates", false) // disabled by default for security
+	vi.SetDefault("mcp.allow_schema_reload", false)   // disabled by default, auto-enabled in dev mode
+	vi.SetDefault("mcp.allow_schema_updates", false)  // disabled by default, auto-enabled in dev mode
 
 	// Caching defaults
 	vi.SetDefault("caching.enable", false)

@@ -529,6 +529,7 @@ Model Context Protocol (MCP) enables AI assistants to interact with GraphJin.
 | `mcp.cursor_cache_ttl` | integer | `1800` | Cursor cache TTL in seconds (30 min) |
 | `mcp.cursor_cache_size` | integer | `10000` | Max in-memory cursor cache entries |
 | `mcp.allow_config_updates` | boolean | `false` | Allow LLMs to modify config (dangerous) |
+| `mcp.allow_schema_reload` | boolean | `false` | Allow schema reload via MCP (auto-enabled in dev mode) |
 
 ### Example
 
@@ -543,6 +544,7 @@ mcp:
   cursor_cache_ttl: 3600
   cursor_cache_size: 5000
   allow_config_updates: false  # Keep disabled for security
+  allow_schema_reload: true  # Enabled by default in dev mode
 ```
 
 ---

@@ -147,7 +147,13 @@ func (gj *graphjinEngine) initSchema() error {
 
 func (gj *graphjinEngine) _initSchema() (err error) {
 	if len(gj.dbinfo.Tables) == 0 {
-		return fmt.Errorf("no tables found in database")
+		ps := gj.conf.DBSchemaPollDuration
+		if ps < 5*time.Second {
+			ps = 10 * time.Second
+		}
+		gj.log.Printf("warning: no tables found in database '%s', rechecking every %s",
+			gj.dbinfo.Name, ps)
+		return nil
 	}
 
 	schema := gj.dbinfo.Schema

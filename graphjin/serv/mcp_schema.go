@@ -75,10 +75,25 @@ func (ms *mcpServer) registerSchemaTools() {
 		mcp.WithDescription("Get the recommended workflow for using GraphJin MCP tools effectively. "+
 			"Call this if you're unsure about the right sequence of tool calls for queries or mutations."),
 	), ms.handleGetWorkflowGuide)
+
+	// reload_schema - Only registered when allow_schema_reload is true
+	if ms.service.conf.MCP.AllowSchemaReload {
+		ms.srv.AddTool(mcp.NewTool(
+			"reload_schema",
+			mcp.WithDescription("Reload the database schema to discover new or modified tables. "+
+				"Use this tool when: (1) the user says a table exists but list_tables doesn't show it, "+
+				"(2) the user has just created new tables or modified the database structure, "+
+				"(3) the user explicitly asks to reload, refresh, or recheck the database schema. "+
+				"This triggers immediate discovery without waiting for the automatic polling interval."),
+		), ms.handleReloadSchema)
+	}
 }
 
 // handleListTables returns all available tables
 func (ms *mcpServer) handleListTables(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if ms.service.gj == nil {
+		return mcp.NewToolResultError("GraphJin not initialized - no database connection configured"), nil
+	}
 	tables := ms.service.gj.GetTables()
 
 	result := struct {
@@ -110,6 +125,9 @@ type TableSchemaWithAggregations struct {
 
 // handleDescribeTable returns detailed schema for a table including aggregations
 func (ms *mcpServer) handleDescribeTable(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if ms.service.gj == nil {
+		return mcp.NewToolResultError("GraphJin not initialized - no database connection configured"), nil
+	}
 	args := req.GetArguments()
 	table, _ := args["table"].(string)
 
@@ -165,6 +183,9 @@ func generateAggregations(schema *core.TableSchema) AggregationInfo {
 
 // handleFindPath finds the relationship path between two tables
 func (ms *mcpServer) handleFindPath(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if ms.service.gj == nil {
+		return mcp.NewToolResultError("GraphJin not initialized - no database connection configured"), nil
+	}
 	args := req.GetArguments()
 	fromTable, _ := args["from_table"].(string)
 	toTable, _ := args["to_table"].(string)
@@ -274,6 +295,45 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 	return mcp.NewToolResultText(string(data)), nil
 }
 
+// handleReloadSchema triggers a schema reload
+func (ms *mcpServer) handleReloadSchema(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if ms.service.gj == nil {
+		return mcp.NewToolResultError("GraphJin not initialized - no database connection configured"), nil
+	}
+	err := ms.service.gj.Reload()
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to reload schema: %s", err.Error())), nil
+	}
+
+	// Get updated table list to confirm
+	tables := ms.service.gj.GetTables()
+
+	result := struct {
+		Success    bool     `json:"success"`
+		Message    string   `json:"message"`
+		TableCount int      `json:"table_count"`
+		Tables     []string `json:"tables,omitempty"`
+	}{
+		Success:    true,
+		Message:    "Schema reloaded successfully",
+		TableCount: len(tables),
+	}
+
+	// Include table names if not too many
+	if len(tables) <= 20 {
+		for _, t := range tables {
+			result.Tables = append(result.Tables, t.Name)
+		}
+	}
+
+	data, err := mcpMarshalJSON(result, true)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultText(string(data)), nil
+}
+
 // EnhancedError represents an error with recovery suggestions
 type EnhancedError struct {
 	Message     string `json:"message"`
@@ -378,6 +438,9 @@ type ColumnTypeInfo struct {
 
 // handleValidateWhereClause validates a where clause for syntax and type compatibility
 func (ms *mcpServer) handleValidateWhereClause(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if ms.service.gj == nil {
+		return mcp.NewToolResultError("GraphJin not initialized - no database connection configured"), nil
+	}
 	args := req.GetArguments()
 	table, _ := args["table"].(string)
 	whereClause, _ := args["where"].(string)

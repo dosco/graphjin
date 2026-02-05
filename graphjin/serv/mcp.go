@@ -93,6 +93,9 @@ func (ms *mcpServer) registerTools() {
 
 	// Configuration Update Tools (conditionally registered)
 	ms.registerConfigTools()
+
+	// DDL Tools - schema modifications (conditionally registered)
+	ms.registerDDLTools()
 }
 
 // RunMCPStdio runs the MCP server using stdio transport (for CLI/Claude Desktop)

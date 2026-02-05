@@ -201,33 +201,36 @@ func (g *GraphJin) newGraphJin(conf *Config,
 		return
 	}
 
-	if err = gj.initAllowList(); err != nil {
-		return
-	}
+	// Only initialize compilers and dependent features if schema exists (tables found)
+	if gj.schema != nil {
+		if err = gj.initAllowList(); err != nil {
+			return
+		}
 
-	if err = gj.initCompilers(); err != nil {
-		return
-	}
+		if err = gj.initCompilers(); err != nil {
+			return
+		}
 
-	// Initialize multi-database support if configured
-	if err = gj.initMultiDB(); err != nil {
-		return
-	}
+		// Initialize multi-database support if configured
+		if err = gj.initMultiDB(); err != nil {
+			return
+		}
 
-	// Set database names on tables for multi-DB routing
-	gj.setTableDatabases()
+		// Set database names on tables for multi-DB routing
+		gj.setTableDatabases()
 
-	// Initialize compilers for additional databases
-	if err = gj.initMultiDBCompilers(); err != nil {
-		return
-	}
+		// Initialize compilers for additional databases
+		if err = gj.initMultiDBCompilers(); err != nil {
+			return
+		}
 
-	if err = gj.prepareRoleStmt(); err != nil {
-		return
-	}
+		if err = gj.prepareRoleStmt(); err != nil {
+			return
+		}
 
-	if err = gj.initIntro(); err != nil {
-		return
+		if err = gj.initIntro(); err != nil {
+			return
+		}
 	}
 
 	if conf.SecretKey != "" {
@@ -539,6 +542,10 @@ func (gj *graphjinEngine) query(c context.Context, r GraphqlReq) (
 		return
 	}
 
+	if gj.schema == nil {
+		err = fmt.Errorf("no tables found in database '%s'; schema not initialized", gj.dbinfo.Name)
+		return
+	}
 
 	s, err := newGState(c, gj, r)
 	if err != nil {

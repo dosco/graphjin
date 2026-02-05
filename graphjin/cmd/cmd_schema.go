@@ -15,6 +15,66 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// cmdDBGenerate generates db.graphql from the current database schema
+func cmdDBGenerate(cmd *cobra.Command, args []string) {
+	setup(cpath)
+
+	outputPath, _ := cmd.Flags().GetString("output")
+	if outputPath == "" {
+		outputPath = filepath.Join(cpath, "db.graphql")
+	}
+
+	// Multi-DB mode
+	if isMultiDBMode() {
+		connections, err := openMultiDBConnections()
+		if err != nil {
+			log.Fatalf("Failed to connect to databases: %s", err)
+		}
+		defer func() {
+			for _, conn := range connections {
+				conn.Close() //nolint:errcheck
+			}
+		}()
+
+		// Generate schema for each database
+		for dbName, dbConn := range connections {
+			dbConf := conf.Databases[dbName]
+			schemaBytes, err := core.GenerateSchema(dbConn, dbConf.Type, conf.Blocklist)
+			if err != nil {
+				log.Fatalf("Failed to generate schema for database '%s': %s", dbName, err)
+			}
+
+			// Use database-specific output path if multiple databases
+			dbOutputPath := outputPath
+			if len(connections) > 1 {
+				ext := filepath.Ext(outputPath)
+				base := strings.TrimSuffix(outputPath, ext)
+				dbOutputPath = fmt.Sprintf("%s_%s%s", base, dbName, ext)
+			}
+
+			if err := os.WriteFile(dbOutputPath, schemaBytes, 0644); err != nil {
+				log.Fatalf("Failed to write schema file '%s': %s", dbOutputPath, err)
+			}
+			log.Infof("Generated schema for database '%s': %s", dbName, dbOutputPath)
+		}
+		return
+	}
+
+	// Single-DB mode
+	initDB(true)
+
+	schemaBytes, err := core.GenerateSchema(db, conf.DB.Type, conf.Blocklist)
+	if err != nil {
+		log.Fatalf("Failed to generate schema: %s", err)
+	}
+
+	if err := os.WriteFile(outputPath, schemaBytes, 0644); err != nil {
+		log.Fatalf("Failed to write schema file: %s", err)
+	}
+
+	log.Infof("Generated schema: %s", outputPath)
+}
+
 // cmdDBDiff shows the SQL diff between db.graphql and the database
 func cmdDBDiff(cmd *cobra.Command, args []string) {
 	setup(cpath)

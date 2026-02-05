@@ -3,14 +3,14 @@ import ParticleField from './react/ParticleField';
 ---
 
 <section class="relative min-h-screen flex flex-col pt-20 overflow-hidden">
-  {/* Particle mesh wave background */}
+  {/* Particle background */}
   <ParticleField client:load />
 
   <div class="container-wide w-full z-10 flex-1 flex flex-col justify-between py-16">
     {/* Top section - Label */}
     <div class="mb-auto">
       <span class="text-xs font-mono tracking-[0.3em] text-gj-muted uppercase">
-        AI + COMPILER + DATABASES
+        MCP SERVER FOR AI ASSISTANTS
       </span>
     </div>
 
@@ -19,9 +19,41 @@ import ParticleField from './react/ParticleField';
       <h1 class="text-7xl md:text-8xl lg:text-[10rem] font-display font-bold text-gj-text tracking-tight leading-[0.9]">
         Graphjin
       </h1>
-      <p class="text-3xl md:text-4xl lg:text-5xl font-display font-bold text-gj-muted tracking-tight mt-2">
-         A Compiler to Connect AI to Your Databases
+      <p class="text-3xl md:text-4xl lg:text-5xl font-display font-bold tracking-tight mt-2 bg-clip-text text-transparent bg-gradient-to-r from-emerald-500 via-teal-400 to-violet-500">
+         Connect AI to Your Database via MCP
       </p>
+      <div class="mt-6 inline-flex items-center gap-3 bg-gj-dark/90 rounded-lg px-5 py-3 font-mono text-sm md:text-base">
+        <span class="text-white/50 select-none">$</span>
+        <code class="text-white">npm i graphjin</code>
+        <span class="text-white/30 text-xs ml-2 hidden sm:inline">// try it now</span>
+        <button
+          id="copy-cmd"
+          class="ml-2 text-white/40 hover:text-white/80 transition-colors cursor-pointer"
+          aria-label="Copy command to clipboard"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+        </button>
+      </div>
+      <script>
+        document.getElementById('copy-cmd')?.addEventListener('click', async (e) => {
+          const btn = e.currentTarget as HTMLButtonElement;
+          await navigator.clipboard.writeText('npm i graphjin');
+          btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+          setTimeout(() => {
+            btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+          }, 2000);
+        });
+      </script>
+      <div class="mt-4 flex flex-wrap items-center gap-2">
+        <span class="text-xs text-gj-muted">Works with:</span>
+        <span class="text-xs font-medium text-gj-dark bg-gj-surface border border-gj-border rounded-md px-2.5 py-1">Claude Desktop</span>
+        <span class="text-xs font-medium text-gj-dark bg-gj-surface border border-gj-border rounded-md px-2.5 py-1">Cursor</span>
+        <span class="text-xs font-medium text-gj-dark bg-gj-surface border border-gj-border rounded-md px-2.5 py-1">Windsurf</span>
+        <span class="text-xs font-medium text-gj-dark bg-gj-surface border border-gj-border rounded-md px-2.5 py-1">Any MCP Client</span>
+      </div>
     </div>
 
     {/* Bottom section - Two columns */}
@@ -40,10 +72,10 @@ import ParticleField from './react/ParticleField';
 
       {/* Right column */}
       <div class="flex items-end">
-        <p class="text-base md:text-lg text-gj-muted leading-relaxed max-w-md">
-          GraphJin is a compiler that connects AI assistants
-          to any database. Zero configuration. Instant schema
-          discovery across PostgreSQL, MySQL, MongoDB and more.
+        <p class="text-base md:text-lg text-gj-dark leading-relaxed max-w-md">
+          An MCP server that gives AI assistants structured
+          access to your database. Auto-discovers schemas,
+          tables, and relationships. Zero configuration.
         </p>
       </div>
     </div>

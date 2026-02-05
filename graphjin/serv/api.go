@@ -214,6 +214,22 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*graphjinS
 		}
 	}
 
+	// Default AllowSchemaReload to true in dev mode when MCP is enabled
+	if !s.conf.Serv.Production && !s.conf.MCP.Disable {
+		if s.conf.viper != nil && !s.conf.viper.IsSet("mcp.allow_schema_reload") {
+			s.conf.MCP.AllowSchemaReload = true
+			s.log.Info("MCP schema reload enabled by default (dev mode)")
+		}
+	}
+
+	// Default AllowSchemaUpdates to true in dev mode when MCP is enabled
+	if !s.conf.Serv.Production && !s.conf.MCP.Disable {
+		if s.conf.viper != nil && !s.conf.viper.IsSet("mcp.allow_schema_updates") {
+			s.conf.MCP.AllowSchemaUpdates = true
+			s.log.Info("MCP schema updates enabled by default (dev mode)")
+		}
+	}
+
 	if err := s.initFS(); err != nil {
 		return nil, err
 	}

@@ -31,6 +31,25 @@ Use --destructive to also show DROP operations.`,
 	diffCmd.Flags().String("format", "sql", "Output format: sql or json")
 	c.AddCommand(diffCmd)
 
+	// Generate command - generate db.graphql from database
+	generateCmd := &cobra.Command{
+		Use:   "generate",
+		Short: "Generate db.graphql from current database schema",
+		Long: `Introspect the current database and generate a db.graphql schema file.
+
+This command connects to the configured database, discovers all tables and columns,
+and writes the schema to a GraphQL file that can be used for schema management.
+
+The generated schema includes:
+- All tables as GraphQL types
+- All columns with appropriate GraphQL types
+- Primary keys (@id), unique constraints (@unique), and relationships (@relation)
+- Database functions (if any)`,
+		Run: cmdDBGenerate,
+	}
+	generateCmd.Flags().StringP("output", "o", "", "Output file path (default: <config-path>/db.graphql)")
+	c.AddCommand(generateCmd)
+
 	// Sync command - apply schema changes
 	syncCmd := &cobra.Command{
 		Use:   "sync",

@@ -48,6 +48,19 @@ func (g *GraphJin) startDBWatcher(ps time.Duration) {
 			continue
 		}
 
+		// Check if we're waiting for tables (schema is nil)
+		if gj.schema == nil {
+			if len(latestDi.Tables) > 0 {
+				gj.log.Println("tables discovered, initializing schema...")
+				if err := g.reload(latestDi); err != nil {
+					gj.log.Println(err)
+				}
+			}
+			// Continue polling - don't check hash when waiting for tables
+			continue
+		}
+
+		// Normal operation - check for schema changes
 		if latestDi.Hash() == gj.dbinfo.Hash() {
 			continue
 		}

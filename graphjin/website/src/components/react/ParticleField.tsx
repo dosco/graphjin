@@ -40,7 +40,7 @@ export default function ParticleField() {
           x: baseX,
           y: baseY,
           z: 0,
-          size: 2,
+          size: 2.5,
         });
       }
     }
@@ -89,12 +89,19 @@ export default function ParticleField() {
       const scale = PERSPECTIVE / (PERSPECTIVE + p.z);
       p.x = centerX + (p.baseX - centerX) * scale;
       p.y = centerY + (p.baseY - centerY) * scale + p.z * 0.3;
-      p.size = 2 * scale;
+      p.size = 2.5 * scale;
     }
 
+    // Grayscale color: light black to gray shades based on normalized z
+    const grayColor = (z: number, opacity: number) => {
+      const t = (z + WAVE_AMPLITUDE) / (WAVE_AMPLITUDE * 2); // 0..1
+      // dark gray (40) -> mid gray (100) -> light gray (160)
+      const v = Math.round(40 + t * 120);
+      return `rgba(${v}, ${v}, ${v}, ${opacity})`;
+    };
+
     // Draw connections (mesh lines)
-    ctx.strokeStyle = 'rgba(51, 51, 51, 0.08)';
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1.5;
 
     for (let row = 0; row < GRID_ROWS; row++) {
       for (let col = 0; col < GRID_COLS; col++) {
@@ -105,8 +112,8 @@ export default function ParticleField() {
         if (col < GRID_COLS - 1) {
           const pRight = particles[i + 1];
           const avgZ = (p.z + pRight.z) / 2;
-          const opacity = 0.06 + (avgZ / WAVE_AMPLITUDE) * 0.04;
-          ctx.strokeStyle = `rgba(51, 51, 51, ${Math.max(0.02, Math.min(0.12, opacity))})`;
+          const opacity = 0.15 + (avgZ / WAVE_AMPLITUDE) * 0.10;
+          ctx.strokeStyle = grayColor(avgZ, Math.max(0.08, Math.min(0.30, opacity)));
           ctx.beginPath();
           ctx.moveTo(p.x, p.y);
           ctx.lineTo(pRight.x, pRight.y);
@@ -117,8 +124,8 @@ export default function ParticleField() {
         if (row < GRID_ROWS - 1) {
           const pDown = particles[i + GRID_COLS];
           const avgZ = (p.z + pDown.z) / 2;
-          const opacity = 0.06 + (avgZ / WAVE_AMPLITUDE) * 0.04;
-          ctx.strokeStyle = `rgba(51, 51, 51, ${Math.max(0.02, Math.min(0.12, opacity))})`;
+          const opacity = 0.15 + (avgZ / WAVE_AMPLITUDE) * 0.10;
+          ctx.strokeStyle = grayColor(avgZ, Math.max(0.08, Math.min(0.30, opacity)));
           ctx.beginPath();
           ctx.moveTo(p.x, p.y);
           ctx.lineTo(pDown.x, pDown.y);
@@ -133,9 +140,9 @@ export default function ParticleField() {
 
       // Opacity based on depth (closer = more visible)
       const depthFactor = (p.z + WAVE_AMPLITUDE) / (WAVE_AMPLITUDE * 2);
-      const opacity = 0.3 + depthFactor * 0.4;
+      const opacity = 0.5 + depthFactor * 0.5;
 
-      ctx.fillStyle = `rgba(51, 51, 51, ${opacity})`;
+      ctx.fillStyle = grayColor(p.z, opacity);
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
       ctx.fill();
@@ -209,7 +216,7 @@ export default function ParticleField() {
   return (
     <canvas
       ref={canvasRef}
-      className="absolute inset-0 w-full h-full -z-10"
+      className="absolute inset-0 w-full h-full z-0"
       style={{ pointerEvents: 'auto' }}
       aria-hidden="true"
     />

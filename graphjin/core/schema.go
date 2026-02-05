@@ -1,6 +1,8 @@
 package core
 
 import (
+	"bytes"
+	"database/sql"
 	"fmt"
 	"io"
 	"regexp"
@@ -130,4 +132,18 @@ func parseDBType(name string) (res [2]string, err error) {
 		err = fmt.Errorf("invalid db type: %s", name)
 	}
 	return
+}
+
+// GenerateSchema generates a db.graphql schema from database introspection
+func GenerateSchema(db *sql.DB, dbType string, blocklist []string) ([]byte, error) {
+	dbinfo, err := sdata.GetDBInfo(db, dbType, blocklist)
+	if err != nil {
+		return nil, fmt.Errorf("failed to introspect database: %w", err)
+	}
+
+	var buf bytes.Buffer
+	if err := writeSchema(dbinfo, &buf); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
