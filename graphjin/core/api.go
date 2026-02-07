@@ -104,7 +104,8 @@ type graphjinEngine struct {
 
 type GraphJin struct {
 	atomic.Value
-	done chan bool
+	done     chan bool
+	reloadMu sync.Mutex // serializes reload operations
 }
 
 type Option func(*graphjinEngine) error
@@ -579,14 +580,10 @@ func (gj *graphjinEngine) query(c context.Context, r GraphqlReq) (
 
 // Reload redoes database discover and reinitializes GraphJin.
 func (g *GraphJin) Reload() error {
-	return g.reload(nil)
-}
-
-// reload redoes database discover and reinitializes GraphJin.
-func (g *GraphJin) reload(di *sdata.DBInfo) (err error) {
+	g.reloadMu.Lock()
+	defer g.reloadMu.Unlock()
 	gj := g.Load().(*graphjinEngine)
-	err = g.newGraphJin(gj.conf, gj.db, di, gj.fs, gj.opts...)
-	return
+	return g.newGraphJin(gj.conf, gj.db, nil, gj.fs, gj.opts...)
 }
 
 // IsProd return true for production mode or false for development mode

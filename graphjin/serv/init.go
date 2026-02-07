@@ -149,9 +149,26 @@ func (s *graphjinService) initDB() error {
 		return nil
 	}
 
-	s.db, err = newDB(s.conf, true, true, s.log, s.fs)
+	// Bridge multi-database config to traditional DB fields
+	if len(s.conf.Core.Databases) > 0 {
+		bridgeDatabaseConfig(s.conf)
+	}
+
+	// In production mode, use retry loop to ensure DB is available
+	if s.conf.Serv.Production {
+		s.db, err = newDB(s.conf, true, true, s.log, s.fs)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
+	// In dev mode, attempt a single connection — don't block startup
+	s.db, err = newDBOnce(s.conf, true, true, s.log, s.fs)
 	if err != nil {
-		return err
+		s.log.Warnf("Database connection failed: %s. Server starting without database — use MCP to configure.", err)
+		s.db = nil
+		return nil
 	}
 	return nil
 }

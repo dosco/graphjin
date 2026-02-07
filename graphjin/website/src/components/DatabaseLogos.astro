@@ -1,23 +1,25 @@
 ---
+const base = import.meta.env.BASE_URL;
+
 const primaryDatabases = [
-  { name: 'PostgreSQL', logo: '/logos/postgresql.svg' },
-  { name: 'MySQL', logo: '/logos/mysql.svg' },
-  { name: 'MariaDB', logo: '/logos/mariadb.svg' },
-  { name: 'MongoDB', logo: '/logos/mongodb.svg' },
-  { name: 'SQLite', logo: '/logos/sqlite.svg' },
-  { name: 'SQL Server', logo: '/logos/mssql.svg' },
-  { name: 'Oracle', logo: '/logos/oracle.svg' },
-  { name: 'CockroachDB', logo: '/logos/cockroachdb.svg' },
+  { name: 'PostgreSQL', logo: `${base}/logos/postgresql.svg` },
+  { name: 'MySQL', logo: `${base}/logos/mysql.svg` },
+  { name: 'MariaDB', logo: `${base}/logos/mariadb.svg` },
+  { name: 'MongoDB', logo: `${base}/logos/mongodb.svg` },
+  { name: 'SQLite', logo: `${base}/logos/sqlite.svg` },
+  { name: 'SQL Server', logo: `${base}/logos/mssql.svg` },
+  { name: 'Oracle', logo: `${base}/logos/oracle.svg` },
+  { name: 'CockroachDB', logo: `${base}/logos/cockroachdb.svg` },
 ];
 
 const cloudDatabases = [
-  { name: 'AWS Aurora', logo: '/logos/aws-aurora.svg' },
-  { name: 'Google Cloud SQL', logo: '/logos/google-cloud-sql.svg' },
-  { name: 'YugabyteDB', logo: '/logos/yugabytedb.svg' },
+  { name: 'AWS Aurora', logo: `${base}/logos/aws-aurora.svg` },
+  { name: 'Google Cloud SQL', logo: `${base}/logos/google-cloud-sql.svg` },
+  { name: 'YugabyteDB', logo: `${base}/logos/yugabytedb.svg` },
 ];
 ---
 
-<section class="py-16 border-t border-gj-border">
+<section class="py-16 border-t border-white/10">
   <div class="container-wide">
     <p class="text-center text-gj-muted text-sm uppercase tracking-wider mb-10">
       Works with your database
@@ -30,7 +32,7 @@ const cloudDatabases = [
           class="group relative flex flex-col items-center gap-2"
           title={db.name}
         >
-          <div class="w-12 h-12 md:w-14 md:h-14 flex items-center justify-center grayscale opacity-40 hover:opacity-70 transition-opacity duration-300">
+          <div class="w-12 h-12 md:w-14 md:h-14 flex items-center justify-center opacity-70 hover:opacity-100 transition-opacity duration-300">
             <img
               src={db.logo}
               alt={db.name}
@@ -52,7 +54,7 @@ const cloudDatabases = [
           class="group relative flex flex-col items-center gap-2"
           title={db.name}
         >
-          <div class="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center grayscale opacity-30 hover:opacity-60 transition-opacity duration-300">
+          <div class="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity duration-300">
             <img
               src={db.logo}
               alt={db.name}

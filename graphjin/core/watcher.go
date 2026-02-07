@@ -51,10 +51,15 @@ func (g *GraphJin) startDBWatcher(ps time.Duration) {
 		// Check if we're waiting for tables (schema is nil)
 		if gj.schema == nil {
 			if len(latestDi.Tables) > 0 {
-				gj.log.Println("tables discovered, initializing schema...")
-				if err := g.reload(latestDi); err != nil {
-					gj.log.Println(err)
+				g.reloadMu.Lock()
+				gj = g.Load().(*graphjinEngine)
+				if gj.schema == nil {
+					gj.log.Println("tables discovered, initializing schema...")
+					if err := g.newGraphJin(gj.conf, gj.db, latestDi, gj.fs, gj.opts...); err != nil {
+						gj.log.Println(err)
+					}
 				}
+				g.reloadMu.Unlock()
 			}
 			// Continue polling - don't check hash when waiting for tables
 			continue
@@ -65,11 +70,16 @@ func (g *GraphJin) startDBWatcher(ps time.Duration) {
 			continue
 		}
 
-		gj.log.Println("database change detected. reinitializing...")
-
-		if err := g.reload(latestDi); err != nil {
-			gj.log.Println(err)
+		g.reloadMu.Lock()
+		// Re-check after lock — another reload may have already updated the engine
+		gj = g.Load().(*graphjinEngine)
+		if latestDi.Hash() != gj.dbinfo.Hash() {
+			gj.log.Println("database change detected. reinitializing...")
+			if err := g.newGraphJin(gj.conf, gj.db, latestDi, gj.fs, gj.opts...); err != nil {
+				gj.log.Println(err)
+			}
 		}
+		g.reloadMu.Unlock()
 
 		select {
 		case <-g.done:

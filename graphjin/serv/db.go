@@ -4,17 +4,24 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/mongodriver"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"go.uber.org/zap"
 
 	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/microsoft/go-mssqldb"
+	_ "github.com/sijms/go-ora/v2"
+	_ "modernc.org/sqlite"
 )
 
 const (
@@ -32,6 +39,7 @@ const (
 type dbConf struct {
 	driverName string
 	connString string
+	connector  driver.Connector // for drivers that require sql.OpenDB (e.g. MongoDB)
 }
 
 // Config holds the configuration for the service
@@ -39,19 +47,9 @@ func NewDB(conf *Config, openDB bool, log *zap.SugaredLogger, fs core.FS) (*sql.
 	return newDB(conf, openDB, false, log, fs)
 }
 
-// newDB initializes the database
-func newDB(
-	conf *Config,
-	openDB, useTelemetry bool,
-	log *zap.SugaredLogger,
-	fs core.FS,
-) (*sql.DB, error) {
-	var db *sql.DB
-	var dc *dbConf
-	var err error
-
+// detectDBType detects the database type from the connection string and updates conf.DBType
+func detectDBType(conf *Config) {
 	if cs := conf.DB.ConnString; cs != "" {
-		// Check if the connection string has the required prefix or type is set to postgres
 		if strings.HasPrefix(cs, "postgres://") || strings.HasPrefix(cs, "postgresql://") || conf.DB.Type == "postgres" {
 			conf.DBType = "postgres"
 		}
@@ -59,23 +57,71 @@ func newDB(
 			conf.DBType = "mysql"
 			conf.DB.ConnString = strings.TrimPrefix(cs, "mysql://")
 		}
+		if strings.HasPrefix(cs, "sqlserver://") {
+			conf.DBType = "mssql"
+		}
+		if strings.HasPrefix(cs, "oracle://") {
+			conf.DBType = "oracle"
+		}
+		if strings.HasPrefix(cs, "mongodb://") || strings.HasPrefix(cs, "mongodb+srv://") {
+			conf.DBType = "mongodb"
+		}
 	}
+}
+
+// initDBDriver initializes the database driver config based on the DB type
+func initDBDriver(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf, error) {
+	detectDBType(conf)
+
+	var dc *dbConf
+	var err error
 
 	switch conf.DBType {
 	case "", "postgres":
 		dc, err = initPostgres(conf, openDB, useTelemetry, fs)
 	case "mysql", "mariadb":
 		dc, err = initMysql(conf, openDB, useTelemetry, fs)
+	case "mssql":
+		dc, err = initMssql(conf, openDB, useTelemetry, fs)
+	case "sqlite":
+		dc, err = initSqlite(conf, openDB, useTelemetry, fs)
+	case "oracle":
+		dc, err = initOracle(conf, openDB, useTelemetry, fs)
+	case "mongodb":
+		dc, err = initMongo(conf, openDB, useTelemetry, fs)
 	default:
-		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb", conf.DBType)
+		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, mssql, sqlite, oracle, mongodb", conf.DBType)
 	}
 
 	if err != nil {
 		return nil, fmt.Errorf("database init: %v", err)
 	}
+	return dc, nil
+}
+
+// newDB initializes the database with a retry loop
+func newDB(
+	conf *Config,
+	openDB, useTelemetry bool,
+	log *zap.SugaredLogger,
+	fs core.FS,
+) (*sql.DB, error) {
+	var db *sql.DB
+	var err error
+
+	dc, err := initDBDriver(conf, openDB, useTelemetry, fs)
+	if err != nil {
+		return nil, err
+	}
 
 	for i := 0; ; {
-		if db, err = sql.Open(dc.driverName, dc.connString); err == nil {
+		if dc.connector != nil {
+			db = sql.OpenDB(dc.connector)
+			err = nil
+		} else {
+			db, err = sql.Open(dc.driverName, dc.connString)
+		}
+		if err == nil {
 			db.SetMaxIdleConns(conf.DB.PoolSize)
 			db.SetMaxOpenConns(conf.DB.MaxConnections)
 			db.SetConnMaxIdleTime(conf.DB.MaxConnIdleTime)
@@ -100,6 +146,41 @@ func newDB(
 			i++
 		}
 	}
+}
+
+// newDBOnce attempts a single database connection without retries
+func newDBOnce(
+	conf *Config,
+	openDB, useTelemetry bool,
+	log *zap.SugaredLogger,
+	fs core.FS,
+) (*sql.DB, error) {
+	dc, err := initDBDriver(conf, openDB, useTelemetry, fs)
+	if err != nil {
+		return nil, err
+	}
+
+	var db *sql.DB
+	if dc.connector != nil {
+		db = sql.OpenDB(dc.connector)
+	} else {
+		db, err = sql.Open(dc.driverName, dc.connString)
+		if err != nil {
+			return nil, fmt.Errorf("database open: %w", err)
+		}
+	}
+
+	db.SetMaxIdleConns(conf.DB.PoolSize)
+	db.SetMaxOpenConns(conf.DB.MaxConnections)
+	db.SetConnMaxIdleTime(conf.DB.MaxConnIdleTime)
+	db.SetConnMaxLifetime(conf.DB.MaxConnLifeTime)
+
+	if err := db.Ping(); err != nil {
+		db.Close() //nolint:errcheck
+		return nil, fmt.Errorf("database ping: %w", err)
+	}
+
+	return db, nil
 }
 
 // initPostgres initializes the postgres database
@@ -197,7 +278,7 @@ func initPostgres(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf,
 		}
 	}
 
-	return &dbConf{"pgx", stdlib.RegisterConnConfig(config)}, nil
+	return &dbConf{driverName: "pgx", connString: stdlib.RegisterConnConfig(config)}, nil
 }
 
 // initMysql initializes the mysql database
@@ -215,7 +296,102 @@ func initMysql(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf, er
 		connString += c.DB.DBName
 	}
 
-	return &dbConf{"mysql", connString}, nil
+	return &dbConf{driverName: "mysql", connString: connString}, nil
+}
+
+// initMssql initializes the mssql database
+func initMssql(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf, error) {
+	var connString string
+	c := conf
+
+	if c.DB.ConnString == "" {
+		port := c.DB.Port
+		if port == 0 || (c.DB.Type != "postgres" && port == 5432) {
+			port = 1433
+		}
+		connString = fmt.Sprintf("sqlserver://%s:%s@%s:%d",
+			c.DB.User, c.DB.Password, c.DB.Host, port)
+	} else {
+		connString = c.DB.ConnString
+	}
+
+	if openDB && c.DB.DBName != "" {
+		if strings.Contains(connString, "?") {
+			connString += "&database=" + c.DB.DBName
+		} else {
+			connString += "?database=" + c.DB.DBName
+		}
+	}
+
+	return &dbConf{driverName: "sqlserver", connString: connString}, nil
+}
+
+// initSqlite initializes the sqlite database
+func initSqlite(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf, error) {
+	connString := conf.DB.ConnString
+	if connString == "" {
+		connString = conf.DB.Path
+	}
+	if connString == "" {
+		return nil, fmt.Errorf("sqlite requires a connection string or path")
+	}
+
+	return &dbConf{driverName: "sqlite", connString: connString}, nil
+}
+
+// initOracle initializes the oracle database
+func initOracle(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf, error) {
+	var connString string
+	c := conf
+
+	if c.DB.ConnString == "" {
+		port := c.DB.Port
+		if port == 0 || (c.DB.Type != "postgres" && port == 5432) {
+			port = 1521
+		}
+		connString = fmt.Sprintf("oracle://%s:%s@%s:%d",
+			c.DB.User, c.DB.Password, c.DB.Host, port)
+	} else {
+		connString = c.DB.ConnString
+	}
+
+	if openDB && c.DB.DBName != "" {
+		connString += "/" + c.DB.DBName
+	}
+
+	return &dbConf{driverName: "oracle", connString: connString}, nil
+}
+
+// initMongo initializes the mongodb database using the mongodriver connector
+func initMongo(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf, error) {
+	connString := conf.DB.ConnString
+	if connString == "" {
+		if conf.DB.Host == "" {
+			return nil, fmt.Errorf("mongodb requires a connection string or host")
+		}
+		port := conf.DB.Port
+		if port == 0 || (conf.DB.Type != "postgres" && port == 5432) {
+			port = 27017
+		}
+		connString = fmt.Sprintf("mongodb://%s:%d", conf.DB.Host, port)
+		if conf.DB.User != "" {
+			connString = fmt.Sprintf("mongodb://%s:%s@%s:%d",
+				conf.DB.User, conf.DB.Password, conf.DB.Host, port)
+		}
+	}
+
+	dbName := conf.DB.DBName
+	if dbName == "" {
+		dbName = "graphjin"
+	}
+
+	client, err := mongo.Connect(options.Client().ApplyURI(connString))
+	if err != nil {
+		return nil, fmt.Errorf("mongodb connect: %w", err)
+	}
+
+	connector := mongodriver.NewConnector(client, dbName)
+	return &dbConf{driverName: "mongodb", connector: connector}, nil
 }
 
 // loadX509KeyPair loads a X509 key pair from a file system

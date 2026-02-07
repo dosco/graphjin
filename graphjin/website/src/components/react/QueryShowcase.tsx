@@ -117,7 +117,7 @@ export default function QueryShowcase() {
   const activeExample = examples.find(ex => ex.id === activeId) || examples[0];
 
   return (
-    <section className="py-24 bg-gj-surface/50" id="examples">
+    <section className="py-24" id="examples">
       <div className="max-w-6xl mx-auto px-4">
         <div className="text-center mb-12">
           <h2 className="text-3xl md:text-5xl font-display font-bold text-gj-text mb-4">
@@ -138,7 +138,7 @@ export default function QueryShowcase() {
               className={`px-5 py-2 rounded-lg text-sm font-medium transition-all duration-200
                 ${activeId === ex.id
                   ? 'bg-gj-text text-gj-bg'
-                  : 'bg-gj-dark/5 text-gj-muted hover:bg-gj-dark/10 hover:text-gj-text'}`}
+                  : 'bg-white/5 text-gj-muted hover:bg-white/10 hover:text-gj-text'}`}
             >
               {ex.label}
             </button>
@@ -146,7 +146,7 @@ export default function QueryShowcase() {
         </div>
 
         {/* Code Window */}
-        <div className="bg-gj-dark rounded-2xl border border-gj-border overflow-hidden shadow-2xl">
+        <div className="bg-black rounded-2xl border border-white/10 overflow-hidden shadow-2xl">
           {/* Window Header */}
           <div className="bg-black/90 px-4 py-3 border-b border-white/10 flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-[#FF5F56]" />

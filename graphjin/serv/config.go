@@ -131,13 +131,16 @@ type Serv struct {
 // Database configuration
 type Database struct {
 	ConnString string `mapstructure:"connection_string" jsonschema:"title=Connection String"`
-	Type       string `jsonschema:"title=Type,enum=postgres,enum=mysql"`
+	Type       string `jsonschema:"title=Type,enum=postgres,enum=mysql,enum=mariadb,enum=mssql,enum=sqlite,enum=oracle,enum=mongodb"`
 	Host       string `jsonschema:"title=Host"`
 	Port       uint16 `jsonschema:"title=Port"`
 	DBName     string `jsonschema:"title=Database Name"`
 	User       string `jsonschema:"title=User"`
 	Password   string `jsonschema:"title=Password"`
 	Schema     string `jsonschema:"title=Postgres Schema"`
+
+	// File path for SQLite databases
+	Path       string `jsonschema:"title=File Path (SQLite)"`
 
 	// Size of database connection pool
 	PoolSize int `mapstructure:"pool_size" jsonschema:"title=Connection Pool Size"`

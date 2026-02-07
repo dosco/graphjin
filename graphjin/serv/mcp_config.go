@@ -609,9 +609,12 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 				return mcp.NewToolResultText(string(data)), nil
 			}
 		} else {
-			// GraphJin not initialized yet - this happens when no DB was configured at startup
-			// The saved config will be used on next restart, or we can try to initialize now
-			errors = append(errors, "GraphJin not initialized - restart server or add database to activate")
+			// GraphJin not initialized — try to connect and initialize now
+			if err := ms.tryInitializeGraphJin(); err != nil {
+				errors = append(errors, fmt.Sprintf("GraphJin initialization failed: %v", err))
+			} else {
+				changes = append(changes, "GraphJin initialized with new database configuration")
+			}
 		}
 	}
 
@@ -685,7 +688,7 @@ func parseDBConfig(m map[string]any) (core.DatabaseConfig, error) {
 	}
 	validTypes := map[string]bool{
 		"postgres": true, "mysql": true, "mariadb": true,
-		"sqlite": true, "oracle": true, "mongodb": true,
+		"mssql": true, "sqlite": true, "oracle": true, "mongodb": true,
 	}
 	if !validTypes[strings.ToLower(conf.Type)] {
 		return conf, fmt.Errorf("invalid database type: %s", conf.Type)
@@ -996,6 +999,77 @@ func parseFunctionConfig(m map[string]any) (core.Function, error) {
 	}
 
 	return fn, nil
+}
+
+// bridgeDatabaseConfig copies the first (or default) entry from conf.Core.Databases
+// into conf.DB so that newDBOnce/newDB can use it (they read from conf.DB)
+func bridgeDatabaseConfig(conf *Config) bool {
+	if len(conf.Core.Databases) == 0 {
+		return false
+	}
+
+	// Find the default database, or use the first one
+	var dbConf core.DatabaseConfig
+	found := false
+	for _, db := range conf.Core.Databases {
+		if db.Default {
+			dbConf = db
+			found = true
+			break
+		}
+	}
+	if !found {
+		// Use the first entry
+		for _, db := range conf.Core.Databases {
+			dbConf = db
+			break
+		}
+	}
+
+	conf.DB.Type = dbConf.Type
+	conf.DB.Host = dbConf.Host
+	if dbConf.Port > 0 {
+		conf.DB.Port = uint16(dbConf.Port)
+	}
+	conf.DB.DBName = dbConf.DBName
+	conf.DB.User = dbConf.User
+	conf.DB.Password = dbConf.Password
+	conf.DB.Schema = dbConf.Schema
+	conf.DB.Path = dbConf.Path
+	conf.DB.ConnString = dbConf.ConnString
+	conf.DBType = dbConf.Type
+	return true
+}
+
+// tryInitializeGraphJin attempts to connect to the database and initialize GraphJin core.
+// This is called from the MCP handler when gj == nil (no DB was available at startup).
+func (ms *mcpServer) tryInitializeGraphJin() error {
+	s := ms.service
+
+	// Bridge Databases map -> conf.DB fields
+	if !bridgeDatabaseConfig(s.conf) {
+		return fmt.Errorf("no database configuration found in databases map")
+	}
+
+	// Attempt a single DB connection
+	db, err := newDBOnce(s.conf, true, true, s.log, s.fs)
+	if err != nil {
+		return fmt.Errorf("database connection failed: %w", err)
+	}
+
+	s.db = db
+
+	// Initialize GraphJin core
+	if err := s.normalStart(); err != nil {
+		// Clean up on failure
+		s.db.Close() //nolint:errcheck
+		s.db = nil
+		s.gj = nil
+		return fmt.Errorf("GraphJin initialization failed: %w", err)
+	}
+
+	s.log.Info("GraphJin initialized via MCP configuration")
+	return nil
 }
 
 // saveConfigToDisk persists the current configuration to the config file

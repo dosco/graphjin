@@ -1,34 +1,38 @@
 ---
-import ParticleField from './react/ParticleField';
+import GraphField from './react/GraphField';
 ---
 
 <section class="relative min-h-screen flex flex-col pt-20 overflow-hidden">
+  {/* Background image with overlay */}
+  <div class="absolute inset-0 z-0" style={`background-image: url('${import.meta.env.BASE_URL}/assets/bg2.webp'); background-size: cover; background-position: center;`}></div>
+   <div class="absolute inset-0 z-0 bg-black/40"></div>
+
   {/* Particle background */}
-  <ParticleField client:load />
+  <GraphField client:load />
 
   <div class="container-wide w-full z-10 flex-1 flex flex-col justify-between py-16">
     {/* Top section - Label */}
     <div class="mb-auto">
       <span class="text-xs font-mono tracking-[0.3em] text-gj-muted uppercase">
-        MCP SERVER FOR AI ASSISTANTS
+        A NEW KIND OF COMPILER
       </span>
     </div>
 
     {/* Middle section - Main headline */}
     <div class="my-auto">
-      <h1 class="text-7xl md:text-8xl lg:text-[10rem] font-display font-bold text-gj-text tracking-tight leading-[0.9]">
+      <h1 class="text-7xl md:text-8xl lg:text-[10rem] font-display font-bold text-gj-text tracking-tight leading-[0.9] text-white">
         Graphjin
       </h1>
-      <p class="text-3xl md:text-4xl lg:text-5xl font-display font-bold tracking-tight mt-2 bg-clip-text text-transparent bg-gradient-to-r from-emerald-500 via-teal-400 to-violet-500">
-         Connect AI to Your Database via MCP
+      <p class="text-3xl md:text-4xl lg:text-5xl font-display font-bold tracking-tight mt-2 bg-clip-text text-transparent bg-gradient-to-r from-yellow-500 via-teal-200 to-violet-300">
+         Connect AI to Your Databases via MCP
       </p>
-      <div class="mt-6 inline-flex items-center gap-3 bg-gj-dark/90 rounded-lg px-5 py-3 font-mono text-sm md:text-base">
-        <span class="text-white/50 select-none">$</span>
-        <code class="text-white">npm i graphjin</code>
-        <span class="text-white/30 text-xs ml-2 hidden sm:inline">// try it now</span>
+      <div class="mt-6 inline-flex items-center gap-3 bg-gray-900 rounded-lg px-5 py-3 font-mono text-md md:text-lg shadow-lg">
+        <span class="text-gray-500 select-none">$</span>
+        <code class="text-white">npx graphjin serve</code>
+        <span class="text-gray-500 text-xs ml-2 hidden sm:inline">// try it now</span>
         <button
           id="copy-cmd"
-          class="ml-2 text-white/40 hover:text-white/80 transition-colors cursor-pointer"
+          class="ml-2 text-gray-400 hover:text-white transition-colors cursor-pointer"
           aria-label="Copy command to clipboard"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -47,37 +51,13 @@ import ParticleField from './react/ParticleField';
           }, 2000);
         });
       </script>
-      <div class="mt-4 flex flex-wrap items-center gap-2">
-        <span class="text-xs text-gj-muted">Works with:</span>
-        <span class="text-xs font-medium text-gj-dark bg-gj-surface border border-gj-border rounded-md px-2.5 py-1">Claude Desktop</span>
-        <span class="text-xs font-medium text-gj-dark bg-gj-surface border border-gj-border rounded-md px-2.5 py-1">Cursor</span>
-        <span class="text-xs font-medium text-gj-dark bg-gj-surface border border-gj-border rounded-md px-2.5 py-1">Windsurf</span>
-        <span class="text-xs font-medium text-gj-dark bg-gj-surface border border-gj-border rounded-md px-2.5 py-1">Any MCP Client</span>
-      </div>
+      <p class="mt-6 text-white text-xl text-gj-muted leading-relaxed max-w-2xl">
+        LLMs struggle with databases, diverse SQL dialects, custom query methods like MongoDB,
+        complex joins. GraphJin is a compiler that auto-learns your entire schema and generates
+        efficient queries from simple GraphQL. Even smaller models can describe exactly what data
+        they need, and GraphJin handles the rest. Nothing like this exists for AI, works with Claude Desktop or any MCP client.
+      </p>
     </div>
 
-    {/* Bottom section - Two columns */}
-    <div class="mt-auto grid grid-cols-1 md:grid-cols-2 gap-12 md:gap-24 pt-16">
-      {/* Left column */}
-      <div>
-        <div class="flex items-center gap-4">
-          <a href="#quickstart" class="btn-primary">
-            Quick Start
-          </a>
-          <a href="https://github.com/dosco/graphjin" target="_blank" rel="noopener noreferrer" class="btn-secondary">
-            GitHub
-          </a>
-        </div>
-      </div>
-
-      {/* Right column */}
-      <div class="flex items-end">
-        <p class="text-base md:text-lg text-gj-dark leading-relaxed max-w-md">
-          An MCP server that gives AI assistants structured
-          access to your database. Auto-discovers schemas,
-          tables, and relationships. Zero configuration.
-        </p>
-      </div>
-    </div>
   </div>
 </section>

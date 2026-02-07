@@ -4,33 +4,28 @@ import { motion } from 'framer-motion';
 
 const tabs = [
   {
-    id: 'docker',
-    label: 'Docker',
-    command: 'docker run -p 8080:8080 dosco/graphjin:latest',
-    description: 'Fastest way to try GraphJin',
-  },
-  {
-    id: 'go',
-    label: 'Go',
-    command: 'go install github.com/dosco/graphjin@latest',
-    description: 'Install the Go binary',
-  },
-  {
     id: 'npm',
-    label: 'npm',
+    label: 'Global',
     command: 'npx graphjin serve',
     description: 'Use with Node.js projects',
   },
   {
-    id: 'mcp',
-    label: 'MCP (AI)',
-    command: 'graphjin mcp --db-url postgres://localhost/mydb',
-    description: 'Connect Claude or GPT to your database',
+    id: 'brew',
+    label: 'MacOS',
+    command: 'brew install dosco/graphjin/graphjin',
+    description: 'Install the GraphJin binary',
   },
+  { 
+    id: 'scoop',
+    label: 'Windows',
+    command: 'scoop install graphjin',
+    description: 'Install the GraphJin binary',
+  },
+  
 ];
 
 export default function QuickStart() {
-  const [activeTab, setActiveTab] = useState('docker');
+  const [activeTab, setActiveTab] = useState('npm');
   const [copied, setCopied] = useState(false);
   const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 });
   const tabsRef = useRef<(HTMLButtonElement | null)[]>([]);
@@ -57,7 +52,7 @@ export default function QuickStart() {
   };
 
   return (
-    <section id="quickstart" className="py-24 bg-gj-bg">
+    <section id="quickstart" className="py-24">
       <div className="max-w-4xl mx-auto px-4">
         <div className="flex items-center gap-2 mb-6">
           <span className="text-xl text-gj-text">&#10095;</span>
@@ -67,7 +62,7 @@ export default function QuickStart() {
         </div>
 
         {/* Terminal Window */}
-        <div className="rounded-2xl border border-gj-border bg-gj-dark overflow-hidden shadow-xl">
+        <div className="rounded-2xl border border-white/10 bg-black overflow-hidden shadow-xl">
           {/* Header with tabs */}
           <div className="bg-black/90 px-4 py-4 border-b border-white/10">
             <div className="flex items-center justify-between">
@@ -125,7 +120,7 @@ export default function QuickStart() {
           </div>
 
           {/* Command */}
-          <div className="p-8 bg-gj-dark">
+          <div className="p-8 bg-black">
             <div className="flex items-start gap-4 font-mono">
               <span className="text-white/50 text-lg select-none">$</span>
               <motion.code

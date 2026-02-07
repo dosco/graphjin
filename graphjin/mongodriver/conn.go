@@ -28,6 +28,11 @@ func (c *Conn) Close() error {
 	return nil
 }
 
+// Ping verifies the MongoDB connection is alive.
+func (c *Conn) Ping(ctx context.Context) error {
+	return c.client.Ping(ctx, nil)
+}
+
 // Begin starts a transaction. MongoDB transactions require replica sets.
 func (c *Conn) Begin() (driver.Tx, error) {
 	return nil, fmt.Errorf("mongodriver: transactions require BeginTx with context")

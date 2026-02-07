@@ -1,13 +1,15 @@
 @import "tailwindcss";
 
 @theme {
-  /* Colors - Light monochrome palette */
-  --color-gj-bg: #E8E4E0;           /* Light warm gray background */
-  --color-gj-surface: #F5F3F0;      /* Slightly lighter for cards */
-  --color-gj-text: #000000;         /* Black text */
-  --color-gj-muted: #666666;        /* Gray for secondary text */
-  --color-gj-border: #D0CCC8;       /* Subtle borders */
-  --color-gj-dark: #333333;         /* Dark gray for accents */
+  /* Colors - Dark theme */
+  --color-gj-bg: #000;              /* Black background */
+  --color-gj-surface: #111;         /* Slightly lighter for cards */
+  --color-gj-text: #fff;            /* White text */
+  --color-gj-muted: #888;           /* Gray for secondary */
+  --color-gj-border: rgba(255,255,255,0.1);  /* Subtle white borders */
+  --color-gj-dark: #0a0a0a;         /* Darker for depth */
+  --color-gj-accent: #0891b2;       /* Cyan accent for signals */
+  --color-gj-gold: #f59e0b;         /* Gold accent */
 
   /* Typography */
   --font-display: 'Space Grotesk', system-ui;
@@ -37,16 +39,17 @@
   }
 
   .btn-primary {
-    @apply bg-gj-text text-gj-bg font-bold px-6 py-3 rounded-lg hover:bg-gj-dark transition-colors duration-200 inline-flex items-center gap-2;
+    @apply bg-gj-text text-gj-bg font-bold px-6 py-3 rounded-lg hover:bg-gray-200 transition-colors duration-200 inline-flex items-center gap-2;
   }
 
   .btn-secondary {
-    @apply bg-transparent text-gj-text font-medium px-6 py-3 rounded-lg hover:bg-black/5 transition-colors duration-200 inline-flex items-center gap-2 border border-gj-border;
+    @apply bg-transparent text-gj-text font-medium px-6 py-3 rounded-lg hover:bg-white/10 transition-colors duration-200 inline-flex items-center gap-2 border border-white/10;
   }
 
   .glass {
-    background: rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.05);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
   }
 }
