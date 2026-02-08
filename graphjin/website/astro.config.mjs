@@ -6,8 +6,7 @@ import react from '@astrojs/react';
 
 // https://astro.build/config
 export default defineConfig({
-  site: 'https://dosco.github.io',
-  base: '/graphjin',
+  site: 'https://graphjin.com',
   vite: {
     plugins: [tailwindcss()]
   },

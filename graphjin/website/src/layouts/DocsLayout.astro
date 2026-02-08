@@ -4,16 +4,14 @@ import Navbar from '../components/Navbar.astro';
 import Footer from '../components/Footer.astro';
 
 const { title } = Astro.props;
-const base = import.meta.env.BASE_URL;
 
 const sidebar = [
   { heading: 'Getting Started', items: [
-    { name: 'Introduction', href: `${base}/docs` },
-    { name: 'Installation', href: `${base}/docs/start` },
+    { name: 'Introduction', href: '/docs' },
   ]},
   { heading: 'Reference', items: [
-    { name: 'Cheatsheet', href: `${base}/docs/cheatsheet` },
-    { name: 'Queries', href: `${base}/docs/queries` },
+    { name: 'Cheatsheet', href: '/docs/cheatsheet' },
+    { name: 'Queries', href: '/docs/queries' },
   ]},
 ];
 ---

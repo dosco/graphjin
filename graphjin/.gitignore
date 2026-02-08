@@ -57,3 +57,5 @@ examples/nodejs/config/**/*.gql
 *.log
 test.db
 
+cmd/cmd
+
