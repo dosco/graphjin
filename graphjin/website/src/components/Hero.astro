@@ -5,28 +5,31 @@ import GraphField from './react/GraphField';
 <section class="relative min-h-screen flex flex-col pt-20 overflow-hidden">
   {/* Background image with overlay */}
   <div class="absolute inset-0 z-0" style="background-image: url('/assets/bg2.webp'); background-size: cover; background-position: center;"></div>
-   <div class="absolute inset-0 z-0 bg-black/40"></div>
+  <div class="absolute inset-0 z-0 bg-gradient-to-b from-black/5 via-black/10 to-black/5"></div>
 
   {/* Particle background */}
   <GraphField client:load />
 
-  <div class="container-wide w-full z-10 flex-1 flex flex-col justify-between py-16">
+  <div class="container-wide w-full z-10 flex-1 flex flex-col items-center justify-between py-16 text-center">
     {/* Top section - Label */}
     <div class="mb-auto">
-      <span class="text-xs font-mono tracking-[0.3em] text-gj-muted uppercase">
+      <span class="text-xs font-mono tracking-[0.3em] text-white/50 uppercase" style="text-shadow: 0 1px 12px rgba(0,0,0,0.6)">
         A NEW KIND OF COMPILER
       </span>
     </div>
 
     {/* Middle section - Main headline */}
-    <div class="my-auto">
-      <h1 class="text-7xl md:text-8xl lg:text-[10rem] font-display font-bold text-gj-text tracking-tight leading-[0.9] text-white">
-        Graphjin
+    <div class="my-auto flex flex-col items-center">
+      <h1 class="text-7xl md:text-8xl lg:text-[10rem] font-display font-bold text-gj-text tracking-tight leading-[0.9] text-white" style="text-shadow: 0 2px 40px rgba(0,0,0,0.5), 0 0 80px rgba(0,0,0,0.3)">
+        GraphJin
       </h1>
-      <p class="text-3xl md:text-4xl lg:text-5xl font-display font-bold tracking-tight mt-2 bg-clip-text text-transparent bg-gradient-to-r from-yellow-500 via-teal-200 to-violet-300">
-         Connect AI to Your Databases via MCP
+      <p class="text-3xl md:text-4xl lg:text-5xl font-display font-bold tracking-tight mt-2 bg-clip-text text-transparent bg-gradient-to-r from-yellow-500 via-teal-200 to-violet-300" style="text-shadow: 0 2px 20px rgba(0,0,0,0.4)">
+        Connect AI to Your Databases
       </p>
-      <div class="mt-6 inline-flex items-center gap-3 bg-gray-900 rounded-lg px-5 py-3 font-mono text-md md:text-lg shadow-lg">
+      <p class="text-xl md:text-2xl font-display tracking-tight mt-1 text-white/50" style="text-shadow: 0 2px 20px rgba(0,0,0,0.4)">
+        Use with Claude Desktop + MCP
+      </p>
+      <div class="mt-6 inline-flex items-center gap-3 bg-gray-900 rounded-lg px-5 py-3 font-mono text-md md:text-lg shadow-lg border-1">
         <span class="text-gray-500 select-none">$</span>
         <code class="text-white">npx graphjin serve</code>
         <span class="text-gray-500 text-xs ml-2 hidden sm:inline">// try it now</span>
@@ -44,20 +47,21 @@ import GraphField from './react/GraphField';
       <script>
         document.getElementById('copy-cmd')?.addEventListener('click', async (e) => {
           const btn = e.currentTarget as HTMLButtonElement;
-          await navigator.clipboard.writeText('npm i graphjin');
+          await navigator.clipboard.writeText('npx graphjin serve');
           btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
           setTimeout(() => {
             btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
           }, 2000);
         });
       </script>
-      <p class="mt-6 text-white text-xl text-gj-muted leading-relaxed max-w-2xl">
-        LLMs struggle with databases, diverse SQL dialects, custom query methods like MongoDB,
-        complex joins. GraphJin is a compiler that auto-learns your entire schema and generates
-        efficient queries from simple GraphQL. Even smaller models can describe exactly what data
-        they need, and GraphJin handles the rest. Nothing like this exists for AI, works with Claude Desktop or any MCP client.
-      </p>
     </div>
 
+  </div>
+
+  {/* Scroll indicator */}
+  <div class="absolute bottom-8 left-1/2 -translate-x-1/2 z-10 animate-bounce">
+    <svg class="w-6 h-6 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+    </svg>
   </div>
 </section>

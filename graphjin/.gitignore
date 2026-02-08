@@ -55,6 +55,8 @@ examples/nodejs/config/**/*.gql
 *.ac3
 *.webm
 *.log
+*.txt
+
 test.db
 
 cmd/cmd

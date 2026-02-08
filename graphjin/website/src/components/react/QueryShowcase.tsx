@@ -109,6 +109,32 @@ const examples = [
     }
   ]
 }`
+  },
+  {
+    id: 'subscription',
+    label: 'Subscription',
+    graphql: `subscription {
+  products(where: { price: { gt: 50 } }) {
+    id
+    name
+    price
+    owner {
+      full_name
+    }
+  }
+}`,
+    result: `{
+  "products": [
+    {
+      "id": 104,
+      "name": "Mechanical Keyboard",
+      "price": 149.99,
+      "owner": {
+        "full_name": "Alice Dev"
+      }
+    }
+  ]
+}`
   }
 ];
 
@@ -124,7 +150,7 @@ export default function QueryShowcase() {
             Simple & Powerful
           </h2>
           <p className="text-gj-muted text-lg max-w-xl mx-auto">
-            Write GraphQL, get optimized SQL. Queries, mutations, and aggregations — all in one query.
+            Write GraphQL, get optimized SQL. Queries, mutations, subscriptions, and aggregations — all in one query.
           </p>
         </div>
 

@@ -54,12 +54,9 @@ export default function QuickStart() {
   return (
     <section id="quickstart" className="py-24">
       <div className="max-w-4xl mx-auto px-4">
-        <div className="flex items-center gap-2 mb-6">
-          <span className="text-xl text-gj-text">&#10095;</span>
-          <h2 className="text-2xl md:text-3xl font-display font-bold text-gj-text">
-            Quick Start
-          </h2>
-        </div>
+        <h2 className="text-2xl md:text-3xl font-display font-bold text-gj-text text-center mb-6">
+          Quick Start
+        </h2>
 
         {/* Terminal Window */}
         <div className="rounded-2xl border border-white/10 bg-black overflow-hidden shadow-xl">
