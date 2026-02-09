@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/dosco/graphjin/serv/v3"
@@ -12,6 +13,8 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 var (
@@ -79,6 +82,40 @@ func setup(cpath string) {
 	}
 
 	cn := serv.GetConfigName()
+
+	// Auto-create config directory and default config file only if the
+	// config directory itself does not exist. If the directory is already
+	// present we preserve the original behaviour and let ReadInConfig
+	// report any missing file errors.
+	if _, err := os.Stat(cp); os.IsNotExist(err) {
+		if err := os.MkdirAll(cp, os.ModePerm); err != nil {
+			log.Fatalf("Failed to create config directory: %s", err)
+		}
+
+		cwd, err := os.Getwd()
+		if err != nil {
+			log.Fatal(err)
+		}
+		appNameSlug := strings.ToLower(filepath.Base(cwd))
+		en := cases.Title(language.English)
+		appName := en.String(appNameSlug)
+
+		tmpl := newTempl(map[string]interface{}{
+			"AppName":     appName,
+			"AppNameSlug": appNameSlug,
+		})
+
+		configFile := filepath.Join(cp, cn+".yml")
+		v, err := tmpl.get(cn + ".yml")
+		if err != nil {
+			log.Fatalf("Failed to generate default config: %s", err)
+		}
+		if err := os.WriteFile(configFile, v, 0o600); err != nil {
+			log.Fatalf("Failed to write default config: %s", err)
+		}
+		log.Infof("Created default config: %s", configFile)
+	}
+
 	if conf, err = serv.ReadInConfig(path.Join(cp, cn)); err != nil {
 		log.Fatal(err)
 	}
