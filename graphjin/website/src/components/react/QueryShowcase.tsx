@@ -144,7 +144,7 @@ export default function QueryShowcase() {
 
   return (
     <section className="py-24" id="examples">
-      <div className="max-w-6xl mx-auto px-4">
+      <div className="mx-auto px-4">
         <div className="text-center mb-12">
           <h2 className="text-3xl md:text-5xl font-display font-bold text-gj-text mb-4">
             Simple & Powerful
@@ -155,7 +155,7 @@ export default function QueryShowcase() {
         </div>
 
         {/* Tabs */}
-        <div className="flex justify-center gap-2 mb-8">
+        <div className="flex flex-wrap justify-center gap-2 mb-8">
           {examples.map(ex => (
             <button
               type="button"
