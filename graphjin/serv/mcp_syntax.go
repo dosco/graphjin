@@ -52,6 +52,7 @@ type QueryExamplesForSyntax struct {
 	Aggregations  []QueryExample `json:"aggregations"`
 	Recursive     []QueryExample `json:"recursive"`
 	Spatial       []QueryExample `json:"spatial"`
+	RemoteJoins   []QueryExample `json:"remote_joins"`
 }
 
 // FilterOperators groups filter operators by category
@@ -257,6 +258,10 @@ var querySyntaxReference = QuerySyntaxReference{
 			{Description: "Polygon contains point", Query: "{ regions(where: { boundary: { st_contains: { point: [-122.4, 37.7] } } }) { id name } }"},
 			{Description: "Geometry intersection (GeoJSON)", Query: "{ parcels(where: { geom: { st_intersects: { geometry: { type: \"Polygon\", coordinates: [[[-122.5, 37.7], [-122.3, 37.7], [-122.3, 37.9], [-122.5, 37.9], [-122.5, 37.7]]] } } } }) { id } }"},
 			{Description: "MongoDB near query", Query: "{ locations(where: { geom: { near: { point: [-122.4, 37.7], maxDistance: 5000 } } }) { id name } }"},
+		},
+		RemoteJoins: []QueryExample{
+			{Description: "Query with remote API join (resolver)", Query: "{ users { email payments { desc amount } } }"},
+			{Description: "Remote join - resolver fetches data from external API using DB column as $id", Query: "{ customers(limit: 10) { name stripe_subscriptions { plan status } } }"},
 		},
 	},
 }

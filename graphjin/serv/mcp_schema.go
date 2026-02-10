@@ -277,14 +277,16 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 			"Aggregations like count_id, sum_price are available on all tables (see describe_table)",
 			"Use the write_where_clause prompt for help building complex filters",
 			"Use @object directive when you expect a single result: { user @object { id } }",
+			"Use resolvers to join DB tables with remote APIs - configure via update_current_config with resolvers parameter",
 		},
 		ToolSequences: map[string]string{
-			"simple_query":       "get_query_syntax → list_tables → describe_table → execute_graphql",
-			"complex_query":      "get_query_syntax → list_tables → describe_table → find_path → execute_graphql",
-			"use_saved_query":    "list_saved_queries → get_saved_query → execute_saved_query",
-			"mutation":           "get_mutation_syntax → describe_table → execute_graphql",
-			"explore_schema":     "list_tables → describe_table (for each relevant table) → find_path",
-			"build_where_clause": "describe_table → use write_where_clause prompt → validate_where_clause",
+			"simple_query":        "get_query_syntax → list_tables → describe_table → execute_graphql",
+			"complex_query":       "get_query_syntax → list_tables → describe_table → find_path → execute_graphql",
+			"use_saved_query":     "list_saved_queries → get_saved_query → execute_saved_query",
+			"mutation":            "get_mutation_syntax → describe_table → execute_graphql",
+			"explore_schema":      "list_tables → describe_table (for each relevant table) → find_path",
+			"build_where_clause":  "describe_table → use write_where_clause prompt → validate_where_clause",
+			"configure_resolver":  "get_current_config(section: resolvers) → update_current_config(resolvers: [...]) → reload_schema → execute_graphql",
 		},
 	}
 

@@ -821,6 +821,9 @@ func TestSyncConfigToViper(t *testing.T) {
 					Functions: []core.Function{
 						{Name: "my_func", ReturnType: "text"},
 					},
+					Resolvers: []core.ResolverConfig{
+						{Name: "payments", Type: "remote_api", Table: "users"},
+					},
 				},
 				viper: v,
 			},
@@ -845,6 +848,9 @@ func TestSyncConfigToViper(t *testing.T) {
 	}
 	if v.Get("functions") == nil {
 		t.Error("Expected functions to be set in viper")
+	}
+	if v.Get("resolvers") == nil {
+		t.Error("Expected resolvers to be set in viper")
 	}
 }
 
@@ -950,5 +956,619 @@ func TestAllowConfigUpdates_DefaultsToTrueInDevMode(t *testing.T) {
 				t.Errorf("AllowConfigUpdates = %v, expected %v", conf.MCP.AllowConfigUpdates, tt.expectedValue)
 			}
 		})
+	}
+}
+
+// =============================================================================
+// Resolver Config Tests
+// =============================================================================
+
+func TestParseResolverConfig_FullConfig(t *testing.T) {
+	input := map[string]any{
+		"name":         "payments",
+		"type":         "remote_api",
+		"table":        "customers",
+		"column":       "stripe_id",
+		"schema":       "public",
+		"strip_path":   "data",
+		"url":          "http://payments-service/payments/$id",
+		"debug":        true,
+		"pass_headers": []any{"cookie", "authorization"},
+		"set_headers": []any{
+			map[string]any{"name": "Host", "value": "payments-service"},
+			map[string]any{"name": "X-Api-Key", "value": "secret"},
+		},
+	}
+
+	rc, err := parseResolverConfig(input)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if rc.Name != "payments" {
+		t.Errorf("Expected name 'payments', got %q", rc.Name)
+	}
+	if rc.Type != "remote_api" {
+		t.Errorf("Expected type 'remote_api', got %q", rc.Type)
+	}
+	if rc.Table != "customers" {
+		t.Errorf("Expected table 'customers', got %q", rc.Table)
+	}
+	if rc.Column != "stripe_id" {
+		t.Errorf("Expected column 'stripe_id', got %q", rc.Column)
+	}
+	if rc.Schema != "public" {
+		t.Errorf("Expected schema 'public', got %q", rc.Schema)
+	}
+	if rc.StripPath != "data" {
+		t.Errorf("Expected strip_path 'data', got %q", rc.StripPath)
+	}
+
+	// Verify Props
+	if rc.Props == nil {
+		t.Fatal("Expected Props to be set")
+	}
+	if rc.Props["url"] != "http://payments-service/payments/$id" {
+		t.Errorf("Expected url in Props, got %v", rc.Props["url"])
+	}
+	if rc.Props["debug"] != true {
+		t.Errorf("Expected debug=true in Props, got %v", rc.Props["debug"])
+	}
+	passHeaders, ok := rc.Props["pass_headers"].([]string)
+	if !ok {
+		t.Fatal("Expected pass_headers to be []string")
+	}
+	if len(passHeaders) != 2 || passHeaders[0] != "cookie" || passHeaders[1] != "authorization" {
+		t.Errorf("Expected pass_headers [cookie, authorization], got %v", passHeaders)
+	}
+	setHeaders, ok := rc.Props["set_headers"].(map[string]string)
+	if !ok {
+		t.Fatal("Expected set_headers to be map[string]string")
+	}
+	if setHeaders["Host"] != "payments-service" {
+		t.Errorf("Expected Host header 'payments-service', got %q", setHeaders["Host"])
+	}
+	if setHeaders["X-Api-Key"] != "secret" {
+		t.Errorf("Expected X-Api-Key header 'secret', got %q", setHeaders["X-Api-Key"])
+	}
+}
+
+func TestParseResolverConfig_MinimalConfig(t *testing.T) {
+	input := map[string]any{
+		"name":  "payments",
+		"type":  "remote_api",
+		"table": "customers",
+	}
+
+	rc, err := parseResolverConfig(input)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	if rc.Name != "payments" {
+		t.Errorf("Expected name 'payments', got %q", rc.Name)
+	}
+	if rc.Props != nil {
+		t.Errorf("Expected nil Props for minimal config, got %v", rc.Props)
+	}
+}
+
+func TestParseResolverConfig_MissingName(t *testing.T) {
+	input := map[string]any{
+		"type":  "remote_api",
+		"table": "customers",
+	}
+
+	_, err := parseResolverConfig(input)
+	if err == nil {
+		t.Fatal("Expected error for missing name")
+	}
+	if !strings.Contains(err.Error(), "resolver name is required") {
+		t.Errorf("Expected 'resolver name is required' error, got: %v", err)
+	}
+}
+
+func TestParseResolverConfig_MissingType(t *testing.T) {
+	input := map[string]any{
+		"name":  "payments",
+		"table": "customers",
+	}
+
+	_, err := parseResolverConfig(input)
+	if err == nil {
+		t.Fatal("Expected error for missing type")
+	}
+	if !strings.Contains(err.Error(), "resolver type is required") {
+		t.Errorf("Expected 'resolver type is required' error, got: %v", err)
+	}
+}
+
+func TestParseResolverConfig_InvalidType(t *testing.T) {
+	input := map[string]any{
+		"name":  "payments",
+		"type":  "graphql",
+		"table": "customers",
+	}
+
+	_, err := parseResolverConfig(input)
+	if err == nil {
+		t.Fatal("Expected error for invalid type")
+	}
+	if !strings.Contains(err.Error(), "invalid resolver type") {
+		t.Errorf("Expected 'invalid resolver type' error, got: %v", err)
+	}
+}
+
+func TestParseResolverConfig_MissingTable(t *testing.T) {
+	input := map[string]any{
+		"name": "payments",
+		"type": "remote_api",
+	}
+
+	_, err := parseResolverConfig(input)
+	if err == nil {
+		t.Fatal("Expected error for missing table")
+	}
+	if !strings.Contains(err.Error(), "resolver table is required") {
+		t.Errorf("Expected 'resolver table is required' error, got: %v", err)
+	}
+}
+
+func TestParseResolverConfig_EmptySetHeaders(t *testing.T) {
+	input := map[string]any{
+		"name":        "payments",
+		"type":        "remote_api",
+		"table":       "customers",
+		"set_headers": []any{},
+	}
+
+	rc, err := parseResolverConfig(input)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Empty set_headers should not be added to Props
+	if rc.Props != nil {
+		if _, exists := rc.Props["set_headers"]; exists {
+			t.Error("Expected set_headers to be absent from Props when empty")
+		}
+	}
+}
+
+func TestHandleGetCurrentConfig_ResolversSection(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	ms := &mcpServer{
+		service: &graphjinService{
+			conf: &Config{
+				Core: core.Config{
+					Resolvers: []core.ResolverConfig{
+						{
+							Name:  "payments",
+							Type:  "remote_api",
+							Table: "customers",
+						},
+					},
+				},
+			},
+			log: logger.Sugar(),
+		},
+		ctx: context.Background(),
+	}
+
+	req := newToolRequest(map[string]any{
+		"section": "resolvers",
+	})
+
+	result, err := ms.handleGetCurrentConfig(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	text := assertToolSuccess(t, result)
+
+	if !strings.Contains(text, "payments") {
+		t.Errorf("Expected result to contain 'payments', got: %s", text)
+	}
+	if !strings.Contains(text, "remote_api") {
+		t.Errorf("Expected result to contain 'remote_api', got: %s", text)
+	}
+}
+
+func TestHandleGetCurrentConfig_AllIncludesResolvers(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	ms := &mcpServer{
+		service: &graphjinService{
+			conf: &Config{
+				Core: core.Config{
+					Resolvers: []core.ResolverConfig{
+						{
+							Name:  "subscriptions",
+							Type:  "remote_api",
+							Table: "users",
+						},
+					},
+				},
+			},
+			log: logger.Sugar(),
+		},
+		ctx: context.Background(),
+	}
+
+	req := newToolRequest(map[string]any{
+		"section": "all",
+	})
+
+	result, err := ms.handleGetCurrentConfig(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	text := assertToolSuccess(t, result)
+
+	if !strings.Contains(text, "subscriptions") {
+		t.Errorf("Expected 'all' section to include resolvers, got: %s", text)
+	}
+}
+
+func TestHandleGetCurrentConfig_UnknownSectionListsResolvers(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	ms := &mcpServer{
+		service: &graphjinService{
+			conf: &Config{
+				Core: core.Config{},
+			},
+			log: logger.Sugar(),
+		},
+		ctx: context.Background(),
+	}
+
+	req := newToolRequest(map[string]any{
+		"section": "invalid_section",
+	})
+
+	result, err := ms.handleGetCurrentConfig(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	assertToolError(t, result, "resolvers")
+}
+
+func TestHandleUpdateCurrentConfig_AddResolver(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	ms := &mcpServer{
+		service: &graphjinService{
+			gj: nil,
+			conf: &Config{
+				Core: core.Config{},
+				Serv: Serv{Production: false},
+			},
+			log: logger.Sugar(),
+		},
+		ctx: context.Background(),
+	}
+
+	req := newToolRequest(map[string]any{
+		"resolvers": []any{
+			map[string]any{
+				"name":  "payments",
+				"type":  "remote_api",
+				"table": "customers",
+				"url":   "http://payments-api/payments/$id",
+			},
+		},
+	})
+
+	result, err := ms.handleUpdateCurrentConfig(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	text := assertToolSuccess(t, result)
+	if !strings.Contains(text, "added resolver: payments") {
+		t.Errorf("Expected 'added resolver: payments' in result, got: %s", text)
+	}
+
+	// Verify resolver was actually added to config
+	if len(ms.service.conf.Core.Resolvers) != 1 {
+		t.Fatalf("Expected 1 resolver, got %d", len(ms.service.conf.Core.Resolvers))
+	}
+	if ms.service.conf.Core.Resolvers[0].Name != "payments" {
+		t.Errorf("Expected resolver name 'payments', got %q", ms.service.conf.Core.Resolvers[0].Name)
+	}
+}
+
+func TestHandleUpdateCurrentConfig_UpdateResolver(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	ms := &mcpServer{
+		service: &graphjinService{
+			gj: nil,
+			conf: &Config{
+				Core: core.Config{
+					Resolvers: []core.ResolverConfig{
+						{
+							Name:  "payments",
+							Type:  "remote_api",
+							Table: "customers",
+						},
+					},
+				},
+				Serv: Serv{Production: false},
+			},
+			log: logger.Sugar(),
+		},
+		ctx: context.Background(),
+	}
+
+	req := newToolRequest(map[string]any{
+		"resolvers": []any{
+			map[string]any{
+				"name":  "payments",
+				"type":  "remote_api",
+				"table": "orders",
+				"url":   "http://new-api/payments/$id",
+			},
+		},
+	})
+
+	result, err := ms.handleUpdateCurrentConfig(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	text := assertToolSuccess(t, result)
+	if !strings.Contains(text, "updated resolver: payments") {
+		t.Errorf("Expected 'updated resolver: payments' in result, got: %s", text)
+	}
+
+	// Verify it was updated, not appended
+	if len(ms.service.conf.Core.Resolvers) != 1 {
+		t.Fatalf("Expected 1 resolver after update, got %d", len(ms.service.conf.Core.Resolvers))
+	}
+	if ms.service.conf.Core.Resolvers[0].Table != "orders" {
+		t.Errorf("Expected table 'orders' after update, got %q", ms.service.conf.Core.Resolvers[0].Table)
+	}
+}
+
+func TestHandleUpdateCurrentConfig_UpdateResolverCaseInsensitive(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	ms := &mcpServer{
+		service: &graphjinService{
+			gj: nil,
+			conf: &Config{
+				Core: core.Config{
+					Resolvers: []core.ResolverConfig{
+						{Name: "Payments", Type: "remote_api", Table: "customers"},
+					},
+				},
+				Serv: Serv{Production: false},
+			},
+			log: logger.Sugar(),
+		},
+		ctx: context.Background(),
+	}
+
+	req := newToolRequest(map[string]any{
+		"resolvers": []any{
+			map[string]any{
+				"name":  "payments", // lowercase, should match "Payments"
+				"type":  "remote_api",
+				"table": "orders",
+			},
+		},
+	})
+
+	result, err := ms.handleUpdateCurrentConfig(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	text := assertToolSuccess(t, result)
+	if !strings.Contains(text, "updated resolver") {
+		t.Errorf("Expected update (not add) for case-insensitive match, got: %s", text)
+	}
+	if len(ms.service.conf.Core.Resolvers) != 1 {
+		t.Fatalf("Expected 1 resolver after case-insensitive update, got %d", len(ms.service.conf.Core.Resolvers))
+	}
+}
+
+func TestHandleUpdateCurrentConfig_RemoveResolver(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	ms := &mcpServer{
+		service: &graphjinService{
+			gj: nil,
+			conf: &Config{
+				Core: core.Config{
+					Resolvers: []core.ResolverConfig{
+						{Name: "payments", Type: "remote_api", Table: "customers"},
+						{Name: "subscriptions", Type: "remote_api", Table: "users"},
+					},
+				},
+				Serv: Serv{Production: false},
+			},
+			log: logger.Sugar(),
+		},
+		ctx: context.Background(),
+	}
+
+	req := newToolRequest(map[string]any{
+		"remove_resolvers": []any{"payments"},
+	})
+
+	result, err := ms.handleUpdateCurrentConfig(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	text := assertToolSuccess(t, result)
+	if !strings.Contains(text, "removed resolver: payments") {
+		t.Errorf("Expected 'removed resolver: payments' in result, got: %s", text)
+	}
+
+	// Verify only the correct resolver was removed
+	if len(ms.service.conf.Core.Resolvers) != 1 {
+		t.Fatalf("Expected 1 resolver after removal, got %d", len(ms.service.conf.Core.Resolvers))
+	}
+	if ms.service.conf.Core.Resolvers[0].Name != "subscriptions" {
+		t.Errorf("Expected 'subscriptions' to remain, got %q", ms.service.conf.Core.Resolvers[0].Name)
+	}
+}
+
+func TestHandleUpdateCurrentConfig_RemoveResolverCaseInsensitive(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	ms := &mcpServer{
+		service: &graphjinService{
+			gj: nil,
+			conf: &Config{
+				Core: core.Config{
+					Resolvers: []core.ResolverConfig{
+						{Name: "Payments", Type: "remote_api", Table: "customers"},
+					},
+				},
+				Serv: Serv{Production: false},
+			},
+			log: logger.Sugar(),
+		},
+		ctx: context.Background(),
+	}
+
+	req := newToolRequest(map[string]any{
+		"remove_resolvers": []any{"payments"}, // lowercase
+	})
+
+	result, err := ms.handleUpdateCurrentConfig(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	text := assertToolSuccess(t, result)
+	if !strings.Contains(text, "removed resolver") {
+		t.Errorf("Expected resolver removal with case-insensitive match, got: %s", text)
+	}
+	if len(ms.service.conf.Core.Resolvers) != 0 {
+		t.Errorf("Expected 0 resolvers after removal, got %d", len(ms.service.conf.Core.Resolvers))
+	}
+}
+
+func TestHandleUpdateCurrentConfig_InvalidResolverConfig(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	ms := &mcpServer{
+		service: &graphjinService{
+			gj: nil,
+			conf: &Config{
+				Core: core.Config{},
+				Serv: Serv{Production: false},
+			},
+			log: logger.Sugar(),
+		},
+		ctx: context.Background(),
+	}
+
+	req := newToolRequest(map[string]any{
+		"resolvers": []any{
+			map[string]any{
+				"name": "payments",
+				"type": "graphql", // invalid type
+			},
+		},
+	})
+
+	result, err := ms.handleUpdateCurrentConfig(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	text := assertToolSuccess(t, result)
+	if !strings.Contains(text, "invalid resolver type") {
+		t.Errorf("Expected error about invalid resolver type, got: %s", text)
+	}
+}
+
+func TestHandleUpdateCurrentConfig_InvalidResolverNotMap(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	ms := &mcpServer{
+		service: &graphjinService{
+			gj: nil,
+			conf: &Config{
+				Core: core.Config{},
+				Serv: Serv{Production: false},
+			},
+			log: logger.Sugar(),
+		},
+		ctx: context.Background(),
+	}
+
+	req := newToolRequest(map[string]any{
+		"resolvers": []any{
+			"not-a-map",
+		},
+	})
+
+	result, err := ms.handleUpdateCurrentConfig(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	text := assertToolSuccess(t, result)
+	if !strings.Contains(text, "invalid resolver config") {
+		t.Errorf("Expected error about invalid resolver config, got: %s", text)
+	}
+}
+
+func TestSyncConfigToViper_WithResolvers(t *testing.T) {
+	v := viper.New()
+	logger := zaptest.NewLogger(t)
+	ms := &mcpServer{
+		service: &graphjinService{
+			conf: &Config{
+				Core: core.Config{
+					Resolvers: []core.ResolverConfig{
+						{Name: "payments", Type: "remote_api", Table: "customers"},
+					},
+				},
+				viper: v,
+			},
+			log: logger.Sugar(),
+		},
+	}
+
+	ms.syncConfigToViper(v)
+
+	if v.Get("resolvers") == nil {
+		t.Error("Expected resolvers to be set in viper")
+	}
+}
+
+func TestSyncConfigToViper_EmptyResolvers(t *testing.T) {
+	v := viper.New()
+	logger := zaptest.NewLogger(t)
+	ms := &mcpServer{
+		service: &graphjinService{
+			conf: &Config{
+				Core:  core.Config{},
+				viper: v,
+			},
+			log: logger.Sugar(),
+		},
+	}
+
+	ms.syncConfigToViper(v)
+
+	if v.Get("resolvers") != nil {
+		t.Error("Expected resolvers to be nil for empty config")
+	}
+}
+
+func TestQuerySyntaxReference_HasRemoteJoins(t *testing.T) {
+	if len(querySyntaxReference.Examples.RemoteJoins) == 0 {
+		t.Error("Expected RemoteJoins examples in query syntax reference")
+	}
+	for _, example := range querySyntaxReference.Examples.RemoteJoins {
+		if example.Description == "" {
+			t.Error("Expected description for remote join example")
+		}
+		if example.Query == "" {
+			t.Error("Expected query for remote join example")
+		}
 	}
 }

@@ -15,10 +15,10 @@ func (ms *mcpServer) registerConfigTools() {
 	// get_current_config - Always available (read-only, safe)
 	ms.srv.AddTool(mcp.NewTool(
 		"get_current_config",
-		mcp.WithDescription("Get current GraphJin configuration. Returns databases, tables, roles, blocklist, and functions. "+
+		mcp.WithDescription("Get current GraphJin configuration. Returns databases, tables, roles, blocklist, functions, and resolvers. "+
 			"Use this to understand the current configuration before making changes."),
 		mcp.WithString("section",
-			mcp.Description("Optional section to retrieve: 'databases', 'tables', 'roles', 'blocklist', 'functions', or 'all' (default)"),
+			mcp.Description("Optional section to retrieve: 'databases', 'tables', 'roles', 'blocklist', 'functions', 'resolvers', or 'all' (default)"),
 		),
 	), ms.handleGetCurrentConfig)
 
@@ -28,6 +28,7 @@ func (ms *mcpServer) registerConfigTools() {
 			"update_current_config",
 			mcp.WithDescription("Update GraphJin configuration and automatically reload. "+
 				"Changes are applied in-memory and take effect immediately. "+
+				"Supports databases, tables, roles, blocklist, functions, and resolvers. "+
 				"WARNING: Changes are lost on restart unless persisted separately. "+
 				"Use get_current_config first to understand the current state."),
 			mcp.WithObject("databases",
@@ -182,6 +183,40 @@ func (ms *mcpServer) registerConfigTools() {
 				mcp.Description("Array of function names to remove from configuration."),
 				mcp.WithStringItems(),
 			),
+			mcp.WithArray("resolvers",
+				mcp.Description("Array of resolver configs to add/update. Resolvers join DB tables with remote APIs."),
+				mcp.Items(map[string]any{
+					"type":     "object",
+					"required": []string{"name", "type", "table"},
+					"properties": map[string]any{
+						"name":         map[string]any{"type": "string", "description": "Resolver name, used as the virtual table name in queries (required)"},
+						"type":         map[string]any{"type": "string", "description": "Resolver type: 'remote_api' (required)"},
+						"table":        map[string]any{"type": "string", "description": "DB table whose column provides the $id value (required)"},
+						"column":       map[string]any{"type": "string", "description": "DB column used as $id (defaults to primary key)"},
+						"schema":       map[string]any{"type": "string", "description": "DB schema name"},
+						"strip_path":   map[string]any{"type": "string", "description": "Dot-path to extract from API response (e.g., 'data')"},
+						"url":          map[string]any{"type": "string", "description": "Remote API URL with $id placeholder (e.g., 'http://api/payments/$id')"},
+						"debug":        map[string]any{"type": "boolean", "description": "Log HTTP request/response"},
+						"pass_headers": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Headers to forward from original request"},
+						"set_headers": map[string]any{
+							"type":        "array",
+							"description": "Headers to set on remote request",
+							"items": map[string]any{
+								"type":     "object",
+								"required": []string{"name", "value"},
+								"properties": map[string]any{
+									"name":  map[string]any{"type": "string", "description": "Header name"},
+									"value": map[string]any{"type": "string", "description": "Header value"},
+								},
+							},
+						},
+					},
+				}),
+			),
+			mcp.WithArray("remove_resolvers",
+				mcp.Description("Array of resolver names to remove from configuration."),
+				mcp.WithStringItems(),
+			),
 		), ms.handleUpdateCurrentConfig)
 	}
 }
@@ -193,6 +228,7 @@ type MCPConfigResponse struct {
 	Roles     []RoleInfo                     `json:"roles,omitempty"`
 	Blocklist []string                       `json:"blocklist,omitempty"`
 	Functions []core.Function                `json:"functions,omitempty"`
+	Resolvers []core.ResolverConfig          `json:"resolvers,omitempty"`
 }
 
 // RoleInfo provides role information safe for JSON serialization
@@ -225,14 +261,17 @@ func (ms *mcpServer) handleGetCurrentConfig(ctx context.Context, req mcp.CallToo
 		result.Blocklist = conf.Blocklist
 	case "functions":
 		result.Functions = conf.Functions
+	case "resolvers":
+		result.Resolvers = conf.Resolvers
 	case "all":
 		result.Databases = conf.Databases
 		result.Tables = conf.Tables
 		result.Roles = convertRolesToInfo(conf.Roles)
 		result.Blocklist = conf.Blocklist
 		result.Functions = conf.Functions
+		result.Resolvers = conf.Resolvers
 	default:
-		return mcp.NewToolResultError(fmt.Sprintf("unknown section: %s. Valid sections: databases, tables, roles, blocklist, functions, all", section)), nil
+		return mcp.NewToolResultError(fmt.Sprintf("unknown section: %s. Valid sections: databases, tables, roles, blocklist, functions, resolvers, all", section)), nil
 	}
 
 	data, err := mcpMarshalJSON(result, true)
@@ -363,6 +402,26 @@ type FunctionConfigInput struct {
 	Name       string `json:"name"`
 	Schema     string `json:"schema,omitempty"`
 	ReturnType string `json:"return_type"`
+}
+
+// ResolverConfigInput represents a resolver config for input
+type ResolverConfigInput struct {
+	Name        string           `json:"name"`
+	Type        string           `json:"type"`
+	Schema      string           `json:"schema,omitempty"`
+	Table       string           `json:"table"`
+	Column      string           `json:"column,omitempty"`
+	StripPath   string           `json:"strip_path,omitempty"`
+	URL         string           `json:"url,omitempty"`
+	Debug       bool             `json:"debug,omitempty"`
+	PassHeaders []string         `json:"pass_headers,omitempty"`
+	SetHeaders  []SetHeaderInput `json:"set_headers,omitempty"`
+}
+
+// SetHeaderInput represents a header name-value pair for resolver config
+type SetHeaderInput struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 // ConfigUpdateResult represents the result of a config update
@@ -513,6 +572,36 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		}
 	}
 
+	// Process resolvers
+	if resolvers, ok := args["resolvers"].([]any); ok && len(resolvers) > 0 {
+		for _, rAny := range resolvers {
+			rMap, ok := rAny.(map[string]any)
+			if !ok {
+				errors = append(errors, "invalid resolver config")
+				continue
+			}
+			rc, err := parseResolverConfig(rMap)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("resolver: %v", err))
+				continue
+			}
+			// Update existing or add new
+			found := false
+			for i, r := range conf.Resolvers {
+				if strings.EqualFold(r.Name, rc.Name) {
+					conf.Resolvers[i] = rc
+					found = true
+					changes = append(changes, fmt.Sprintf("updated resolver: %s", rc.Name))
+					break
+				}
+			}
+			if !found {
+				conf.Resolvers = append(conf.Resolvers, rc)
+				changes = append(changes, fmt.Sprintf("added resolver: %s", rc.Name))
+			}
+		}
+	}
+
 	// Process remove_databases
 	if removeDBs, ok := args["remove_databases"].([]any); ok {
 		for _, item := range removeDBs {
@@ -578,6 +667,21 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 					if strings.EqualFold(f.Name, name) {
 						conf.Functions = append(conf.Functions[:i], conf.Functions[i+1:]...)
 						changes = append(changes, fmt.Sprintf("removed function: %s", name))
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// Process remove_resolvers
+	if removeResolvers, ok := args["remove_resolvers"].([]any); ok {
+		for _, item := range removeResolvers {
+			if name, ok := item.(string); ok && name != "" {
+				for i, r := range conf.Resolvers {
+					if strings.EqualFold(r.Name, name) {
+						conf.Resolvers = append(conf.Resolvers[:i], conf.Resolvers[i+1:]...)
+						changes = append(changes, fmt.Sprintf("removed resolver: %s", name))
 						break
 					}
 				}
@@ -1001,6 +1105,84 @@ func parseFunctionConfig(m map[string]any) (core.Function, error) {
 	return fn, nil
 }
 
+// parseResolverConfig parses a resolver config from a map
+func parseResolverConfig(m map[string]any) (core.ResolverConfig, error) {
+	var rc core.ResolverConfig
+
+	if name, ok := m["name"].(string); ok && name != "" {
+		rc.Name = name
+	} else {
+		return rc, fmt.Errorf("resolver name is required")
+	}
+
+	if t, ok := m["type"].(string); ok && t != "" {
+		if !strings.EqualFold(t, "remote_api") {
+			return rc, fmt.Errorf("invalid resolver type: %s (must be 'remote_api')", t)
+		}
+		rc.Type = t
+	} else {
+		return rc, fmt.Errorf("resolver type is required")
+	}
+
+	if table, ok := m["table"].(string); ok && table != "" {
+		rc.Table = table
+	} else {
+		return rc, fmt.Errorf("resolver table is required")
+	}
+
+	if column, ok := m["column"].(string); ok {
+		rc.Column = column
+	}
+	if schema, ok := m["schema"].(string); ok {
+		rc.Schema = schema
+	}
+	if stripPath, ok := m["strip_path"].(string); ok {
+		rc.StripPath = stripPath
+	}
+
+	// Build Props map from url, debug, pass_headers, set_headers
+	props := make(core.ResolverProps)
+
+	if url, ok := m["url"].(string); ok && url != "" {
+		props["url"] = url
+	}
+	if debug, ok := m["debug"].(bool); ok {
+		props["debug"] = debug
+	}
+	if passHeaders, ok := m["pass_headers"].([]any); ok {
+		var headers []string
+		for _, h := range passHeaders {
+			if s, ok := h.(string); ok {
+				headers = append(headers, s)
+			}
+		}
+		if len(headers) > 0 {
+			props["pass_headers"] = headers
+		}
+	}
+	if setHeaders, ok := m["set_headers"].([]any); ok {
+		headerMap := make(map[string]string)
+		for _, sh := range setHeaders {
+			if shMap, ok := sh.(map[string]any); ok {
+				name, _ := shMap["name"].(string)
+				value, _ := shMap["value"].(string)
+				if name != "" {
+					headerMap[name] = value
+				}
+			}
+		}
+		if len(headerMap) > 0 {
+			props["set_headers"] = headerMap
+		}
+	}
+
+	if len(props) > 0 {
+		rc.Props = props
+	}
+
+	return rc, nil
+}
+
 // bridgeDatabaseConfig copies the first (or default) entry from conf.Core.Databases
 // into conf.DB so that newDBOnce/newDB can use it (they read from conf.DB)
 func bridgeDatabaseConfig(conf *Config) bool {
@@ -1113,5 +1295,9 @@ func (ms *mcpServer) syncConfigToViper(v *viper.Viper) {
 	// Sync functions
 	if len(conf.Functions) > 0 {
 		v.Set("functions", conf.Functions)
+	}
+	// Sync resolvers
+	if len(conf.Resolvers) > 0 {
+		v.Set("resolvers", conf.Resolvers)
 	}
 }
