@@ -12,7 +12,8 @@ before:
     - go mod download
     - make gen
 builds:
-  - main: ./cmd
+  - id: graphjin
+    main: ./cmd
     ldflags:
       - -s -w
       - -X main.version={{ .Version }}
@@ -33,6 +34,28 @@ builds:
     ignore:
       - goos: windows
         goarch: arm
+
+kos:
+  - id: graphjin-docker
+    build: graphjin
+    main: ./cmd
+    repositories:
+      - dosco/graphjin
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    tags:
+      - latest
+      - "{{ .Version }}"
+    bare: true
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+      - -X main.date={{ .Date }}
+      - -X github.com/dosco/graphjin/serv/v3.version={{ .Version }}
+    env:
+      - CGO_ENABLED=0
 
 signs:
   - artifacts: checksum
