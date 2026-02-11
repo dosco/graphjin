@@ -360,7 +360,7 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 			c.Type = strings.ToLower(c.Type)
 			c.FKeyTable = strings.ToLower(c.FKeyTable)
 			c.FKeySchema = strings.ToLower(c.FKeySchema)
-			c.FKeyCol = strings.ToLower(c.FKeyCol)
+			c.FKeyCol = util.ToSnake(c.FKeyCol)
 		}
 
 		k := (c.Schema + ":" + c.Table + ":" + c.Name)
