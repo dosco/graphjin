@@ -141,6 +141,7 @@ func (gj *graphjinEngine) initDBContext(name string, db *sql.DB, dbConf Database
 		SecPrefix:       gj.printFormat,
 		EnableCamelcase: gj.conf.EnableCamelcase,
 	})
+	ctx.psqlCompiler.SetSchemaInfo(ctx.schema.GetTables())
 
 	return ctx, nil
 }

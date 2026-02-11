@@ -31,6 +31,8 @@ type DBTable struct {
 	Comment      string
 	Schema       string
 	Name         string
+	OrigName     string // Original name before normalization (e.g., PascalCase for MSSQL)
+	OrigSchema   string // Original schema before normalization
 	Type         string
 	// Database is the name of the database this table belongs to (for multi-database support).
 	// Empty string means the default database.
@@ -213,6 +215,12 @@ func NewDBTable(schema, name, _type string, cols []DBColumn) DBTable {
 		colMap:  make(map[string]int, len(cols)),
 	}
 
+	// Propagate original table/schema names from the first column (MSSQL)
+	if len(cols) > 0 && cols[0].OrigTable != "" {
+		ti.OrigName = cols[0].OrigTable
+		ti.OrigSchema = cols[0].OrigSchema
+	}
+
 	for i, c := range cols {
 		cols[i].Schema = schema
 		cols[i].Table = name
@@ -271,6 +279,7 @@ type DBColumn struct {
 	Comment     string
 	ID          int32
 	Name        string
+	OrigName    string // Original name before normalization (e.g., PascalCase for MSSQL)
 	Type        string
 	Array       bool
 	NotNull     bool
@@ -290,6 +299,13 @@ type DBColumn struct {
 	IndexName   string
 	FKOnDelete  string
 	FKOnUpdate  string
+
+	// Original names before normalization (used to build dialect name maps for MSSQL)
+	OrigTable    string
+	OrigSchema   string
+	OrigFKeyTable  string
+	OrigFKeySchema string
+	OrigFKeyCol    string
 }
 
 // DiscoverColumns returns the columns of a table
@@ -351,6 +367,15 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 
 		if err != nil {
 			return nil, err
+		}
+
+		if dbtype == "mssql" {
+			c.OrigName = c.Name
+			c.OrigTable = c.Table
+			c.OrigSchema = c.Schema
+			c.OrigFKeyTable = c.FKeyTable
+			c.OrigFKeySchema = c.FKeySchema
+			c.OrigFKeyCol = c.FKeyCol
 		}
 
 		if dbtype == "sqlite" || dbtype == "oracle" || dbtype == "mssql" {

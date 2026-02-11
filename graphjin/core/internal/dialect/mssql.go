@@ -86,6 +86,7 @@ import (
 type MSSQLDialect struct {
 	DBVersion       int
 	EnableCamelcase bool
+	NameMap         map[string]string // normalized→original identifier mapping
 }
 
 func (d *MSSQLDialect) Name() string {
@@ -93,7 +94,39 @@ func (d *MSSQLDialect) Name() string {
 }
 
 func (d *MSSQLDialect) QuoteIdentifier(s string) string {
+	if d.NameMap != nil {
+		if orig, ok := d.NameMap[s]; ok {
+			return "[" + orig + "]"
+		}
+	}
 	return "[" + s + "]"
+}
+
+// SetNameMap builds a normalized→original name mapping from discovered tables.
+func (d *MSSQLDialect) SetNameMap(tables []sdata.DBTable) {
+	d.NameMap = make(map[string]string)
+	for _, t := range tables {
+		if t.OrigName != "" && t.OrigName != t.Name {
+			d.NameMap[t.Name] = t.OrigName
+		}
+		if t.OrigSchema != "" && t.OrigSchema != t.Schema {
+			d.NameMap[t.Schema] = t.OrigSchema
+		}
+		for _, c := range t.Columns {
+			if c.OrigName != "" && c.OrigName != c.Name {
+				d.NameMap[c.Name] = c.OrigName
+			}
+			if c.OrigFKeyCol != "" && c.OrigFKeyCol != c.FKeyCol {
+				d.NameMap[c.FKeyCol] = c.OrigFKeyCol
+			}
+			if c.OrigFKeyTable != "" && c.OrigFKeyTable != c.FKeyTable {
+				d.NameMap[c.FKeyTable] = c.OrigFKeyTable
+			}
+			if c.OrigFKeySchema != "" && c.OrigFKeySchema != c.FKeySchema {
+				d.NameMap[c.FKeySchema] = c.OrigFKeySchema
+			}
+		}
+	}
 }
 
 // BindVar returns the parameter placeholder for MSSQL.

@@ -182,6 +182,13 @@ type Dialect interface {
 	RequiresNullOnEmptySelect() bool    // MySQL/SQLite/MariaDB need NULL when no columns rendered
 }
 
+// NameMapSetter is an optional interface that dialects can implement
+// to receive a mapping of normalized→original identifier names.
+// This is used by MSSQL to preserve PascalCase identifiers in generated SQL.
+type NameMapSetter interface {
+	SetNameMap(tables []sdata.DBTable)
+}
+
 // FullQueryCompiler is an optional interface that dialects can implement
 // to handle entire query compilation themselves (bypassing SQL generation).
 // This is used by MongoDB which generates JSON query DSL, not SQL.

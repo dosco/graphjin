@@ -61,6 +61,13 @@ func (c *Compiler) GetDialect() dialect.Dialect {
 	return c.dialect
 }
 
+// SetSchemaInfo passes table metadata to the dialect for identifier mapping.
+func (c *Compiler) SetSchemaInfo(tables []sdata.DBTable) {
+	if nms, ok := c.dialect.(dialect.NameMapSetter); ok {
+		nms.SetNameMap(tables)
+	}
+}
+
 func NewCompiler(conf Config) *Compiler {
 	var d dialect.Dialect
 	switch conf.DBType {

@@ -250,6 +250,7 @@ func (gj *graphjinEngine) initCompilers() (err error) {
 		SecPrefix:       gj.printFormat,
 		EnableCamelcase: gj.conf.EnableCamelcase,
 	})
+	gj.psqlCompiler.SetSchemaInfo(gj.schema.GetTables())
 	return
 }
 
