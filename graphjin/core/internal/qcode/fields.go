@@ -253,11 +253,13 @@ func (co *Compiler) addRelColumns(qc *QCode, sel *Select, rel sdata.DBRel) error
 
 	case sdata.RelDatabaseJoin:
 		// Cross-database join: add the foreign key column to parent for ID extraction,
-		// and mark this select to be handled by the database join execution path
-		f := Field{Type: FieldTypeCol, Col: rel.Right.Col, FieldName: rel.Left.Col.Name}
+		// and mark this select to be handled by the database join execution path.
+		// Use a synthetic placeholder name (__%s_db_join) so it's unique and matches
+		// what databaseJoinFieldIds() searches for during result stitching.
+		placeholderName := fmt.Sprintf("__%s_db_join", sel.FieldName)
+		f := Field{Type: FieldTypeCol, Col: rel.Right.Col, FieldName: placeholderName}
 		psel.addField(f)
 		sel.SkipRender = SkipTypeDatabaseJoin
-		// Set the target database from the table info
 		sel.Database = sel.Ti.Database
 
 	case sdata.RelPolymorphic:

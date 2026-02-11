@@ -944,6 +944,47 @@ tables:
     database: legacy
 ```
 
+### Cross-Database Relationships
+
+Tables in different databases can have foreign key relationships. GraphJin automatically detects cross-database relationships and handles them via result stitching (similar to remote API joins but for in-process database calls).
+
+Configure a cross-database foreign key using `related_to` in the table config:
+
+```yaml
+databases:
+  primary:
+    type: postgres
+    default: true
+  analytics:
+    type: sqlite
+    host: /data/analytics.db
+    tables:
+      - user_events
+
+tables:
+  - name: user_events
+    database: analytics
+    columns:
+      - name: user_id
+        related_to: users.id   # 'users' is in the primary database
+```
+
+Now queries that join across these databases work transparently:
+
+```graphql
+query {
+  users {
+    name
+    user_events {   # Fetched from analytics DB automatically
+      event_type
+      created_at
+    }
+  }
+}
+```
+
+**How it works:** GraphJin executes the parent query, extracts foreign key values from the result, builds a filtered query for the child table in the target database, executes it, and merges the child data into the parent response. Null foreign keys produce `null` child results gracefully.
+
 ### Environment Variables for Multiple Databases
 
 Environment variables can override any nested config key using the `GJ_` prefix. Underscores are progressively converted to dots to match config paths.

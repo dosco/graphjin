@@ -151,7 +151,7 @@ func (s *graphjinService) initDB() error {
 
 	// Bridge multi-database config to traditional DB fields
 	if len(s.conf.Core.Databases) > 0 {
-		bridgeDatabaseConfig(s.conf)
+		syncDBFromDatabases(s.conf)
 	}
 
 	// In production mode, use retry loop to ensure DB is available

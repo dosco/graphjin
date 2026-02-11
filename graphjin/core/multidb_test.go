@@ -1,10 +1,12 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"testing"
 
+	"github.com/dosco/graphjin/core/v3/internal/jsn"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
@@ -471,4 +473,405 @@ func TestRelDatabaseJoinString(t *testing.T) {
 	if s != "RelDatabaseJoin" {
 		t.Errorf("String() = %q, want %q", s, "RelDatabaseJoin")
 	}
+}
+
+// TestBuildChildGraphQLQuery tests construction of GraphQL sub-queries
+// for cross-database child table fetching.
+func TestBuildChildGraphQLQuery(t *testing.T) {
+	tests := []struct {
+		name     string
+		sel      *qcode.Select
+		selects  []qcode.Select
+		fkCol    string
+		parentID []byte
+		want     string
+	}{
+		{
+			name: "simple numeric parent ID",
+			sel: &qcode.Select{
+				Table: "orders",
+				Fields: []qcode.Field{
+					{FieldName: "id"},
+					{FieldName: "total"},
+				},
+			},
+			selects:  []qcode.Select{},
+			fkCol:    "user_id",
+			parentID: []byte("42"),
+			want:     "query { orders(where: {user_id: {eq: 42}}) { id total } }",
+		},
+		{
+			name: "string parent ID (quoted)",
+			sel: &qcode.Select{
+				Table: "orders",
+				Fields: []qcode.Field{
+					{FieldName: "id"},
+					{FieldName: "total"},
+				},
+			},
+			selects:  []qcode.Select{},
+			fkCol:    "user_id",
+			parentID: []byte(`"abc"`),
+			want:     `query { orders(where: {user_id: {eq: "abc"}}) { id total } }`,
+		},
+		{
+			name: "with nested children",
+			sel: &qcode.Select{
+				Field: qcode.Field{ID: 0},
+				Table: "orders",
+				Fields: []qcode.Field{
+					{FieldName: "id"},
+					{FieldName: "total"},
+				},
+				Children: []int32{1},
+			},
+			selects: []qcode.Select{
+				{}, // placeholder for index 0 (the parent sel itself)
+				{
+					Field: qcode.Field{
+						FieldName:  "items",
+						SkipRender: qcode.SkipTypeNone,
+					},
+					Table: "items",
+					Fields: []qcode.Field{
+						{FieldName: "name"},
+						{FieldName: "qty"},
+					},
+				},
+			},
+			fkCol:    "user_id",
+			parentID: []byte("7"),
+			want:     "query { orders(where: {user_id: {eq: 7}}) { id total items { name qty } } }",
+		},
+		{
+			name: "skips cross-DB children",
+			sel: &qcode.Select{
+				Field: qcode.Field{ID: 0},
+				Table: "orders",
+				Fields: []qcode.Field{
+					{FieldName: "id"},
+				},
+				Children: []int32{1, 2},
+			},
+			selects: []qcode.Select{
+				{}, // placeholder for index 0
+				{
+					Field: qcode.Field{
+						FieldName:  "warehouse",
+						SkipRender: qcode.SkipTypeDatabaseJoin,
+					},
+					Table: "warehouse",
+				},
+				{
+					Field: qcode.Field{
+						FieldName:  "api_data",
+						SkipRender: qcode.SkipTypeRemote,
+					},
+					Table: "api_data",
+				},
+			},
+			fkCol:    "user_id",
+			parentID: []byte("99"),
+			want:     "query { orders(where: {user_id: {eq: 99}}) { id } }",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := string(buildChildGraphQLQuery(tt.sel, tt.selects, tt.fkCol, tt.parentID))
+			if got != tt.want {
+				t.Errorf("buildChildGraphQLQuery() =\n  %q\nwant:\n  %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestWriteSelectFields tests field list generation for cross-database queries.
+func TestWriteSelectFields(t *testing.T) {
+	tests := []struct {
+		name    string
+		sel     *qcode.Select
+		selects []qcode.Select
+		want    string
+	}{
+		{
+			name: "fields only no children",
+			sel: &qcode.Select{
+				Fields: []qcode.Field{
+					{FieldName: "id"},
+					{FieldName: "name"},
+					{FieldName: "email"},
+				},
+			},
+			selects: []qcode.Select{},
+			want:    "id name email",
+		},
+		{
+			name: "with child selects",
+			sel: &qcode.Select{
+				Field: qcode.Field{ID: 0},
+				Fields: []qcode.Field{
+					{FieldName: "id"},
+				},
+				Children: []int32{1},
+			},
+			selects: []qcode.Select{
+				{}, // placeholder for index 0
+				{
+					Field: qcode.Field{
+						FieldName:  "address",
+						SkipRender: qcode.SkipTypeNone,
+					},
+					Fields: []qcode.Field{
+						{FieldName: "street"},
+						{FieldName: "city"},
+					},
+				},
+			},
+			want: "id address { street city }",
+		},
+		{
+			name: "skips DatabaseJoin and Remote children",
+			sel: &qcode.Select{
+				Field: qcode.Field{ID: 0},
+				Fields: []qcode.Field{
+					{FieldName: "id"},
+				},
+				Children: []int32{1, 2, 3},
+			},
+			selects: []qcode.Select{
+				{}, // placeholder for index 0
+				{
+					Field: qcode.Field{
+						FieldName:  "remote_svc",
+						SkipRender: qcode.SkipTypeRemote,
+					},
+				},
+				{
+					Field: qcode.Field{
+						FieldName:  "cross_db",
+						SkipRender: qcode.SkipTypeDatabaseJoin,
+					},
+				},
+				{
+					Field: qcode.Field{
+						FieldName:  "local",
+						SkipRender: qcode.SkipTypeNone,
+					},
+					Fields: []qcode.Field{
+						{FieldName: "val"},
+					},
+				},
+			},
+			want: "id local { val }",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			writeSelectFields(&buf, tt.sel, tt.selects)
+			got := buf.String()
+			if got != tt.want {
+				t.Errorf("writeSelectFields() =\n  %q\nwant:\n  %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestResolveDatabaseJoinsNullID verifies that null/empty parent IDs produce null output.
+func TestResolveDatabaseJoinsNullID(t *testing.T) {
+	tests := []struct {
+		name      string
+		idValue   []byte
+		wantValue string
+	}{
+		{
+			name:      "null parent ID",
+			idValue:   []byte("null"),
+			wantValue: "null",
+		},
+		{
+			name:      "quoted empty string parent ID",
+			idValue:   []byte(`""`),
+			wantValue: "null",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sel := &qcode.Select{
+				Field: qcode.Field{
+					ID:         1,
+					FieldName:  "orders",
+					SkipRender: qcode.SkipTypeDatabaseJoin,
+				},
+				Table:    "orders",
+				Database: "analytics",
+			}
+
+			selects := []qcode.Select{
+				{
+					Field: qcode.Field{ID: 0, FieldName: "users"},
+					Table: "users",
+				},
+				*sel,
+			}
+
+			from := []jsn.Field{
+				{Key: []byte("__orders_db_join"), Value: tt.idValue},
+			}
+			sfmap := map[string]*qcode.Select{
+				"__orders_db_join": &selects[1],
+			}
+
+			s := &gstate{
+				gj: &graphjinEngine{
+					databases: map[string]*dbContext{
+						"analytics": {name: "analytics"},
+					},
+				},
+				cs: &cstate{
+					st: stmt{
+						qc: &qcode.QCode{
+							Selects: selects,
+						},
+					},
+				},
+			}
+
+			to, err := s.resolveDatabaseJoins(context.Background(), from, sfmap)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if len(to) != 1 {
+				t.Fatalf("expected 1 result, got %d", len(to))
+			}
+
+			if string(to[0].Value) != tt.wantValue {
+				t.Errorf("Value = %q, want %q", string(to[0].Value), tt.wantValue)
+			}
+
+			if string(to[0].Key) != "orders" {
+				t.Errorf("Key = %q, want %q", string(to[0].Key), "orders")
+			}
+		})
+	}
+}
+
+// TestNormalizeDatabases verifies config normalization behavior.
+func TestNormalizeDatabases(t *testing.T) {
+	t.Run("old-style config with DBType only", func(t *testing.T) {
+		conf := Config{
+			DBType: "mysql",
+		}
+		conf.NormalizeDatabases()
+
+		if len(conf.Databases) != 1 {
+			t.Fatalf("expected 1 database, got %d", len(conf.Databases))
+		}
+		dbConf, ok := conf.Databases[DefaultDBName]
+		if !ok {
+			t.Fatalf("expected %q entry in Databases", DefaultDBName)
+		}
+		if dbConf.Type != "mysql" {
+			t.Errorf("Type = %q, want %q", dbConf.Type, "mysql")
+		}
+		if !dbConf.Default {
+			t.Error("expected Default to be true")
+		}
+	})
+
+	t.Run("empty DBType defaults to postgres", func(t *testing.T) {
+		conf := Config{}
+		conf.NormalizeDatabases()
+
+		dbConf := conf.Databases[DefaultDBName]
+		if dbConf.Type != "postgres" {
+			t.Errorf("Type = %q, want %q", dbConf.Type, "postgres")
+		}
+		if conf.DBType != "postgres" {
+			t.Errorf("DBType = %q, want %q", conf.DBType, "postgres")
+		}
+	})
+
+	t.Run("databases map with tables preserved", func(t *testing.T) {
+		conf := Config{
+			Databases: map[string]DatabaseConfig{
+				"main": {Type: "postgres", Default: true},
+				"analytics": {Type: "sqlite"},
+			},
+			Tables: []Table{
+				{Name: "users"},
+				{Name: "orders", Database: "analytics"},
+			},
+		}
+		conf.NormalizeDatabases()
+
+		// users should be tagged with "main" (the default)
+		if conf.Tables[0].Database != "main" {
+			t.Errorf("users.Database = %q, want %q", conf.Tables[0].Database, "main")
+		}
+		// orders should keep "analytics"
+		if conf.Tables[1].Database != "analytics" {
+			t.Errorf("orders.Database = %q, want %q", conf.Tables[1].Database, "analytics")
+		}
+	})
+
+	t.Run("explicit database on table preserved", func(t *testing.T) {
+		conf := Config{
+			DBType: "postgres",
+			Tables: []Table{
+				{Name: "events", Database: "analytics"},
+			},
+		}
+		conf.NormalizeDatabases()
+
+		if conf.Tables[0].Database != "analytics" {
+			t.Errorf("events.Database = %q, want %q", conf.Tables[0].Database, "analytics")
+		}
+	})
+
+	t.Run("idempotency", func(t *testing.T) {
+		conf := Config{
+			DBType: "postgres",
+			Tables: []Table{
+				{Name: "users"},
+			},
+		}
+		conf.NormalizeDatabases()
+		conf.NormalizeDatabases() // second call
+
+		if len(conf.Databases) != 1 {
+			t.Fatalf("expected 1 database after double normalization, got %d", len(conf.Databases))
+		}
+		if conf.Tables[0].Database != DefaultDBName {
+			t.Errorf("users.Database = %q, want %q", conf.Tables[0].Database, DefaultDBName)
+		}
+		// Check deduplication of tables list
+		dbConf := conf.Databases[DefaultDBName]
+		count := 0
+		for _, tn := range dbConf.Tables {
+			if tn == "users" {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Errorf("users appeared %d times in default DatabaseConfig.Tables, want 1", count)
+		}
+	})
+
+	t.Run("DBType synced from default entry", func(t *testing.T) {
+		conf := Config{
+			Databases: map[string]DatabaseConfig{
+				"primary": {Type: "mysql", Default: true},
+			},
+		}
+		conf.NormalizeDatabases()
+
+		if conf.DBType != "mysql" {
+			t.Errorf("DBType = %q, want %q", conf.DBType, "mysql")
+		}
+	})
 }

@@ -1183,9 +1183,9 @@ func parseResolverConfig(m map[string]any) (core.ResolverConfig, error) {
 	return rc, nil
 }
 
-// bridgeDatabaseConfig copies the first (or default) entry from conf.Core.Databases
+// syncDBFromDatabases copies the first (or default) entry from conf.Core.Databases
 // into conf.DB so that newDBOnce/newDB can use it (they read from conf.DB)
-func bridgeDatabaseConfig(conf *Config) bool {
+func syncDBFromDatabases(conf *Config) bool {
 	if len(conf.Core.Databases) == 0 {
 		return false
 	}
@@ -1229,7 +1229,7 @@ func (ms *mcpServer) tryInitializeGraphJin() error {
 	s := ms.service
 
 	// Bridge Databases map -> conf.DB fields
-	if !bridgeDatabaseConfig(s.conf) {
+	if !syncDBFromDatabases(s.conf) {
 		return fmt.Errorf("no database configuration found in databases map")
 	}
 

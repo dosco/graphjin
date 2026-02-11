@@ -88,12 +88,15 @@ func (s *gstate) resolveDatabaseJoins(
 
 		// Extract parent ID value
 		idVal := jsn.Value(id.Value)
-		if len(idVal) == 0 {
-			return nil, fmt.Errorf("invalid database join field id")
-		}
 
 		go func(n int, idVal []byte, sel *qcode.Select, dbCtx *dbContext, parentTable string) {
 			defer wg.Done()
+
+			// Handle null/empty parent IDs gracefully
+			if len(idVal) == 0 || string(idVal) == "null" {
+				to[n] = jsn.Field{Key: []byte(sel.FieldName), Value: []byte("null")}
+				return
+			}
 
 			ctx1, span := s.gj.spanStart(ctx, "Execute Database Join")
 			if span.IsRecording() {
@@ -118,6 +121,9 @@ func (s *gstate) resolveDatabaseJoins(
 				return
 			}
 
+			// Unwrap root JSON object: {"orders": [...]} -> [...]
+			b = jsn.Strip(b, [][]byte{[]byte(sel.Table)})
+
 			// Filter to only requested fields if specified
 			var ob bytes.Buffer
 			if len(sel.Fields) != 0 {
@@ -129,7 +135,7 @@ func (s *gstate) resolveDatabaseJoins(
 					return
 				}
 			} else {
-				ob.WriteString("null")
+				ob.Write(b)
 			}
 
 			to[n] = jsn.Field{Key: []byte(sel.FieldName), Value: ob.Bytes()}
@@ -141,19 +147,32 @@ func (s *gstate) resolveDatabaseJoins(
 }
 
 // executeDatabaseJoinQuery executes a query against a target database for a cross-DB join.
+// It builds a GraphQL sub-query for the child table filtered by the parent ID,
+// compiles it using the target database's compilers, and executes it.
 func (s *gstate) executeDatabaseJoinQuery(
 	ctx context.Context,
 	dbCtx *dbContext,
 	sel *qcode.Select,
 	parentID []byte,
 ) ([]byte, error) {
-	// Build the query for the child table with the parent ID filter
-	// This is a simplified version - in a full implementation, we would
-	// compile a proper QCode and SQL for the child query
+	selects := s.cs.st.qc.Selects
 
-	// For now, we'll use a simple approach: query the child table
-	// filtered by the foreign key column
-	var data []byte
+	// Build a GraphQL sub-query for the child table
+	fkColName := sel.Rel.Left.Col.Name
+	subQuery := buildChildGraphQLQuery(sel, selects, fkColName, parentID)
+
+	// Compile QCode using the target database's compiler
+	qc, err := dbCtx.qcodeCompiler.Compile(subQuery, nil, s.role, s.r.namespace)
+	if err != nil {
+		return nil, fmt.Errorf("qcode compile failed: %w", err)
+	}
+
+	// Compile to SQL using the target database's SQL compiler
+	var sqlBuf bytes.Buffer
+	md, err := dbCtx.psqlCompiler.Compile(&sqlBuf, qc)
+	if err != nil {
+		return nil, fmt.Errorf("sql compile failed: %w", err)
+	}
 
 	// Get a connection from the target database pool
 	conn, err := dbCtx.db.Conn(ctx)
@@ -162,17 +181,80 @@ func (s *gstate) executeDatabaseJoinQuery(
 	}
 	defer conn.Close() //nolint:errcheck
 
-	// Build and execute query
-	// Note: This is a placeholder - the actual implementation would need to:
-	// 1. Build a proper QCode for the child query
-	// 2. Compile it to SQL using the target database's compiler
-	// 3. Execute with proper parameter handling
+	// Build argument list
+	args, err := s.gj.argList(ctx, md, nil, s.r.requestconfig, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build args: %w", err)
+	}
 
-	// For the initial implementation, we return the ID as a placeholder
-	// The full implementation would compile and execute the actual query
-	data = parentID
+	// Execute the query
+	var data []byte
+	row := conn.QueryRowContext(ctx, sqlBuf.String(), args.values...)
+	if err := row.Scan(&data); err != nil {
+		if err == sql.ErrNoRows {
+			if sel.Singular {
+				return []byte(`{"` + sel.Table + `": null}`), nil
+			}
+			return []byte(`{"` + sel.Table + `": []}`), nil
+		}
+		return nil, fmt.Errorf("query execution failed: %w", err)
+	}
 
 	return data, nil
+}
+
+// buildChildGraphQLQuery constructs a GraphQL query for a cross-database child table.
+// For example: query { orders(where: {user_id: {eq: 42}}) { id total items { name qty } } }
+func buildChildGraphQLQuery(sel *qcode.Select, selects []qcode.Select, fkColName string, parentID []byte) []byte {
+	var buf bytes.Buffer
+
+	buf.WriteString("query { ")
+	buf.WriteString(sel.Table)
+
+	// Add WHERE filter on the FK column matching the parent ID
+	buf.WriteString("(where: {")
+	buf.WriteString(fkColName)
+	buf.WriteString(": {eq: ")
+	// Write the parent ID value — if it's a string (quoted), keep it; if numeric, write as-is
+	buf.Write(parentID)
+	buf.WriteString("}})")
+
+	// Write the requested fields
+	buf.WriteString(" { ")
+	writeSelectFields(&buf, sel, selects)
+	buf.WriteString(" }")
+
+	buf.WriteString(" }")
+	return buf.Bytes()
+}
+
+// writeSelectFields writes the field list for a Select, recursing into children.
+func writeSelectFields(buf *bytes.Buffer, sel *qcode.Select, selects []qcode.Select) {
+	first := true
+	for _, f := range sel.Fields {
+		if !first {
+			buf.WriteString(" ")
+		}
+		first = false
+		buf.WriteString(f.FieldName)
+	}
+
+	// Recurse into child selects (nested relationships within the same target DB)
+	for _, cid := range sel.Children {
+		csel := &selects[cid]
+		// Skip cross-database join children — they'll be handled separately
+		if csel.SkipRender == qcode.SkipTypeDatabaseJoin || csel.SkipRender == qcode.SkipTypeRemote {
+			continue
+		}
+		if !first {
+			buf.WriteString(" ")
+		}
+		first = false
+		buf.WriteString(csel.FieldName)
+		buf.WriteString(" { ")
+		writeSelectFields(buf, csel, selects)
+		buf.WriteString(" }")
+	}
 }
 
 // databaseJoinFieldIds finds fields that require cross-database joins.
@@ -537,7 +619,7 @@ func (s *gstate) executeForDatabaseRoots(ctx context.Context, dbName string, roo
 	var qcodeCompiler *qcode.Compiler
 	var psqlCompiler *psql.Compiler
 
-	if dbName == "_default" || dbName == s.gj.defaultDB || dbName == "" {
+	if dbName == s.gj.defaultDB {
 		// Use default compilers and connection
 		db = s.gj.db
 		qcodeCompiler = s.gj.qcodeCompiler

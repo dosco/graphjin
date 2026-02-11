@@ -1,6 +1,7 @@
 package qcode
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
@@ -149,5 +150,70 @@ func TestSelectTiDatabaseField(t *testing.T) {
 
 	if sel.Ti.Database != "analytics" {
 		t.Errorf("Ti.Database = %q, want %q", sel.Ti.Database, "analytics")
+	}
+}
+
+// TestAddRelColumnsForDatabaseJoin verifies that addRelColumns handles
+// RelDatabaseJoin correctly: adds a placeholder field to the parent select,
+// sets SkipRender to SkipTypeDatabaseJoin, and sets the Database field.
+func TestAddRelColumnsForDatabaseJoin(t *testing.T) {
+	// Create a minimal compiler (addRelColumns doesn't use the compiler's fields)
+	co := &Compiler{}
+
+	// Set up parent and child selects
+	parentSel := Select{
+		Field: Field{ID: 0, FieldName: "users"},
+		Table: "users",
+		Fields: []Field{},
+		BCols:  []Column{},
+	}
+	childSel := Select{
+		Field: Field{ID: 1, ParentID: 0, FieldName: "orders"},
+		Table: "orders",
+		Ti:    sdata.DBTable{Name: "orders", Database: "analytics"},
+		Fields: []Field{},
+		BCols:  []Column{},
+		Rel: sdata.DBRel{
+			Type: sdata.RelDatabaseJoin,
+			Right: sdata.DBRelRight{
+				Col: sdata.DBColumn{Name: "user_id", Table: "users", Schema: "public"},
+			},
+		},
+	}
+
+	qc := &QCode{
+		Selects: []Select{parentSel, childSel},
+	}
+
+	err := co.addRelColumns(qc, &qc.Selects[1], qc.Selects[1].Rel)
+	if err != nil {
+		t.Fatalf("addRelColumns() error: %v", err)
+	}
+
+	// Verify parent select got a placeholder field with the right name
+	expectedPlaceholder := fmt.Sprintf("__%s_db_join", "orders")
+	foundPlaceholder := false
+	for _, f := range qc.Selects[0].Fields {
+		if f.FieldName == expectedPlaceholder {
+			foundPlaceholder = true
+			if f.Col.Name != "user_id" {
+				t.Errorf("placeholder field Col.Name = %q, want %q", f.Col.Name, "user_id")
+			}
+			break
+		}
+	}
+	if !foundPlaceholder {
+		t.Errorf("parent select missing placeholder field %q; fields: %v",
+			expectedPlaceholder, qc.Selects[0].Fields)
+	}
+
+	// Verify child select has SkipRender set to SkipTypeDatabaseJoin
+	if qc.Selects[1].SkipRender != SkipTypeDatabaseJoin {
+		t.Errorf("child SkipRender = %v, want %v", qc.Selects[1].SkipRender, SkipTypeDatabaseJoin)
+	}
+
+	// Verify child select has Database set
+	if qc.Selects[1].Database != "analytics" {
+		t.Errorf("child Database = %q, want %q", qc.Selects[1].Database, "analytics")
 	}
 }

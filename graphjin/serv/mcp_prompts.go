@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/dosco/graphjin/core/v3"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -113,6 +114,9 @@ func (ms *mcpServer) registerPrompts() {
 			mcp.ArgumentDescription("What you want to filter (e.g., 'products over $50', 'users created this week')"),
 			mcp.RequiredArgument(),
 		),
+		mcp.WithArgument("database",
+			mcp.ArgumentDescription("Optional database name for multi-database deployments"),
+		),
 	), ms.handleWriteWhereClause)
 
 	// write_query - Help LLMs construct complete GraphJin queries
@@ -135,6 +139,9 @@ func (ms *mcpServer) registerPrompts() {
 		mcp.WithArgument("pagination",
 			mcp.ArgumentDescription("Pagination style: 'limit' for limit/offset, 'cursor' for cursor-based"),
 		),
+		mcp.WithArgument("database",
+			mcp.ArgumentDescription("Optional database name for multi-database deployments"),
+		),
 	), ms.handleWriteQuery)
 
 	// write_mutation - Help LLMs construct GraphJin mutations
@@ -154,6 +161,9 @@ func (ms *mcpServer) registerPrompts() {
 		),
 		mcp.WithArgument("nested",
 			mcp.ArgumentDescription("Related records to create/connect (e.g., 'create order with products')"),
+		),
+		mcp.WithArgument("database",
+			mcp.ArgumentDescription("Optional database name for multi-database deployments"),
 		),
 	), ms.handleWriteMutation)
 
@@ -176,13 +186,20 @@ func (ms *mcpServer) registerPrompts() {
 func (ms *mcpServer) handleWriteWhereClause(ctx context.Context, req mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 	table := req.Params.Arguments["table"]
 	intent := req.Params.Arguments["intent"]
+	database := req.Params.Arguments["database"]
 
 	if table == "" {
 		return nil, fmt.Errorf("table argument is required")
 	}
 
 	// Fetch table schema
-	schema, err := ms.service.gj.GetTableSchema(table)
+	var schema *core.TableSchema
+	var err error
+	if database != "" {
+		schema, err = ms.service.gj.GetTableSchemaForDatabase(database, table)
+	} else {
+		schema, err = ms.service.gj.GetTableSchema(table)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema for table '%s': %w", table, err)
 	}
@@ -292,13 +309,20 @@ func (ms *mcpServer) handleWriteQuery(ctx context.Context, req mcp.GetPromptRequ
 	relationships := req.Params.Arguments["relationships"]
 	filterIntent := req.Params.Arguments["filter_intent"]
 	pagination := req.Params.Arguments["pagination"]
+	database := req.Params.Arguments["database"]
 
 	if table == "" {
 		return nil, fmt.Errorf("table argument is required")
 	}
 
 	// Fetch table schema
-	schema, err := ms.service.gj.GetTableSchema(table)
+	var schema *core.TableSchema
+	var err error
+	if database != "" {
+		schema, err = ms.service.gj.GetTableSchemaForDatabase(database, table)
+	} else {
+		schema, err = ms.service.gj.GetTableSchema(table)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema for table '%s': %w", table, err)
 	}
@@ -453,6 +477,7 @@ func (ms *mcpServer) handleWriteMutation(ctx context.Context, req mcp.GetPromptR
 	table := req.Params.Arguments["table"]
 	dataIntent := req.Params.Arguments["data_intent"]
 	nested := req.Params.Arguments["nested"]
+	database := req.Params.Arguments["database"]
 
 	if operation == "" {
 		return nil, fmt.Errorf("operation argument is required (insert, update, upsert, delete)")
@@ -468,7 +493,13 @@ func (ms *mcpServer) handleWriteMutation(ctx context.Context, req mcp.GetPromptR
 	}
 
 	// Fetch table schema
-	schema, err := ms.service.gj.GetTableSchema(table)
+	var schema *core.TableSchema
+	var err error
+	if database != "" {
+		schema, err = ms.service.gj.GetTableSchemaForDatabase(database, table)
+	} else {
+		schema, err = ms.service.gj.GetTableSchema(table)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema for table '%s': %w", table, err)
 	}

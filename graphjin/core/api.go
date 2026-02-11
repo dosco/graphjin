@@ -184,6 +184,20 @@ func (g *GraphJin) newGraphJin(conf *Config,
 		return
 	}
 
+	// Set defaultDB from the normalized config
+	for name, dbConf := range gj.conf.Databases {
+		if dbConf.Default {
+			gj.defaultDB = name
+			break
+		}
+	}
+	if gj.defaultDB == "" {
+		for name := range gj.conf.Databases {
+			gj.defaultDB = name
+			break
+		}
+	}
+
 	for _, op := range options {
 		if err = op(gj); err != nil {
 			return
@@ -671,6 +685,7 @@ func removeGjIdKey(v interface{}) {
 type TableInfo struct {
 	Name        string `json:"name"`
 	Schema      string `json:"schema,omitempty"`
+	Database    string `json:"database,omitempty"`
 	Type        string `json:"type"` // table, view, etc.
 	Comment     string `json:"comment,omitempty"`
 	ColumnCount int    `json:"column_count"`
@@ -699,6 +714,7 @@ type RelationInfo struct {
 type TableSchema struct {
 	Name          string         `json:"name"`
 	Schema        string         `json:"schema,omitempty"`
+	Database      string         `json:"database,omitempty"`
 	Type          string         `json:"type"`
 	Comment       string         `json:"comment,omitempty"`
 	PrimaryKey    string         `json:"primary_key,omitempty"`
@@ -717,14 +733,52 @@ type PathStep struct {
 	Relation string `json:"relation"`      // Relationship type
 }
 
-// GetTables returns a list of all tables in the database schema
+// GetTables returns a list of all tables across all databases (in multi-DB mode)
+// or from the default database (in single-DB mode)
 func (g *GraphJin) GetTables() []TableInfo {
 	gj := g.Load().(*graphjinEngine)
-	tables := gj.schema.GetTables()
+	return gj.getTables("")
+}
 
+// GetTablesForDatabase returns tables from a specific database.
+// If database is empty, returns tables from all databases.
+func (g *GraphJin) GetTablesForDatabase(database string) []TableInfo {
+	gj := g.Load().(*graphjinEngine)
+	return gj.getTables(database)
+}
+
+// getTables returns tables, optionally filtered by database name.
+// In multi-DB mode with empty database, returns tables from all databases.
+// In single-DB mode, returns tables from the default schema.
+func (gj *graphjinEngine) getTables(database string) []TableInfo {
+	if gj.isMultiDB() {
+		var result []TableInfo
+		for dbName, ctx := range gj.databases {
+			if database != "" && dbName != database {
+				continue
+			}
+			tables := ctx.schema.GetTables()
+			for _, t := range tables {
+				if t.Type == "virtual" || t.Blocked {
+					continue
+				}
+				result = append(result, TableInfo{
+					Name:        t.Name,
+					Schema:      t.Schema,
+					Database:    dbName,
+					Type:        t.Type,
+					Comment:     t.Comment,
+					ColumnCount: len(t.Columns),
+				})
+			}
+		}
+		return result
+	}
+
+	// Single-DB mode: existing behavior
+	tables := gj.schema.GetTables()
 	result := make([]TableInfo, 0, len(tables))
 	for _, t := range tables {
-		// Skip virtual tables and blocked tables
 		if t.Type == "virtual" || t.Blocked {
 			continue
 		}
@@ -739,21 +793,58 @@ func (g *GraphJin) GetTables() []TableInfo {
 	return result
 }
 
-// GetTableSchema returns detailed schema for a specific table including relationships
+// GetTableSchema returns detailed schema for a specific table including relationships.
+// In multi-DB mode, searches across all databases.
 func (g *GraphJin) GetTableSchema(tableName string) (*TableSchema, error) {
 	gj := g.Load().(*graphjinEngine)
+	return gj.getTableSchema("", tableName)
+}
 
-	// Find the table
-	t, err := gj.schema.Find("", tableName)
+// GetTableSchemaForDatabase returns detailed schema for a table in a specific database.
+// If database is empty, searches across all databases.
+func (g *GraphJin) GetTableSchemaForDatabase(database, tableName string) (*TableSchema, error) {
+	gj := g.Load().(*graphjinEngine)
+	return gj.getTableSchema(database, tableName)
+}
+
+// getTableSchema finds and returns the schema for a table, optionally in a specific database.
+func (gj *graphjinEngine) getTableSchema(database, tableName string) (*TableSchema, error) {
+	if gj.isMultiDB() {
+		if database != "" {
+			// Specific database requested
+			ctx, ok := gj.GetDatabase(database)
+			if !ok {
+				return nil, fmt.Errorf("database not found: %s", database)
+			}
+			return gj.buildTableSchema(ctx.schema, database, tableName)
+		}
+		// Search all databases
+		for dbName, ctx := range gj.databases {
+			ts, err := gj.buildTableSchema(ctx.schema, dbName, tableName)
+			if err == nil {
+				return ts, nil
+			}
+		}
+		return nil, fmt.Errorf("table not found: %s (searched all databases)", tableName)
+	}
+
+	// Single-DB mode
+	return gj.buildTableSchema(gj.schema, "", tableName)
+}
+
+// buildTableSchema builds a TableSchema from a specific database schema.
+func (gj *graphjinEngine) buildTableSchema(dbSchema *sdata.DBSchema, dbName, tableName string) (*TableSchema, error) {
+	t, err := dbSchema.Find("", tableName)
 	if err != nil {
 		return nil, fmt.Errorf("table not found: %s", tableName)
 	}
 
 	schema := &TableSchema{
-		Name:    t.Name,
-		Schema:  t.Schema,
-		Type:    t.Type,
-		Comment: t.Comment,
+		Name:     t.Name,
+		Schema:   t.Schema,
+		Database: dbName,
+		Type:     t.Type,
+		Comment:  t.Comment,
 	}
 
 	if t.PrimaryCol.Name != "" {
@@ -776,7 +867,7 @@ func (g *GraphJin) GetTableSchema(tableName string) (*TableSchema, error) {
 	}
 
 	// Get relationships
-	firstDegree, err := gj.schema.GetFirstDegree(t)
+	firstDegree, err := dbSchema.GetFirstDegree(t)
 	if err != nil {
 		return schema, nil // Return schema without relationships
 	}
@@ -790,10 +881,8 @@ func (g *GraphJin) GetTableSchema(tableName string) (*TableSchema, error) {
 
 		// Determine if outgoing or incoming
 		if rel.Type == sdata.RelOneToMany {
-			// This table is referenced by another (incoming)
 			schema.Relationships.Incoming = append(schema.Relationships.Incoming, ri)
 		} else {
-			// This table references another (outgoing)
 			schema.Relationships.Outgoing = append(schema.Relationships.Outgoing, ri)
 		}
 	}
@@ -801,11 +890,47 @@ func (g *GraphJin) GetTableSchema(tableName string) (*TableSchema, error) {
 	return schema, nil
 }
 
-// FindRelationshipPath finds the path between two tables
+// FindRelationshipPath finds the path between two tables.
+// In multi-DB mode, searches across all databases.
 func (g *GraphJin) FindRelationshipPath(fromTable, toTable string) ([]PathStep, error) {
 	gj := g.Load().(*graphjinEngine)
+	return gj.findRelationshipPath("", fromTable, toTable)
+}
 
-	paths, err := gj.schema.FindPath(fromTable, toTable, "")
+// FindRelationshipPathForDatabase finds the path between two tables in a specific database.
+// If database is empty, searches across all databases.
+func (g *GraphJin) FindRelationshipPathForDatabase(database, fromTable, toTable string) ([]PathStep, error) {
+	gj := g.Load().(*graphjinEngine)
+	return gj.findRelationshipPath(database, fromTable, toTable)
+}
+
+// findRelationshipPath finds the path between two tables, optionally in a specific database.
+func (gj *graphjinEngine) findRelationshipPath(database, fromTable, toTable string) ([]PathStep, error) {
+	if gj.isMultiDB() {
+		if database != "" {
+			ctx, ok := gj.GetDatabase(database)
+			if !ok {
+				return nil, fmt.Errorf("database not found: %s", database)
+			}
+			return gj.buildPath(ctx.schema, fromTable, toTable)
+		}
+		// Search all databases
+		for _, ctx := range gj.databases {
+			path, err := gj.buildPath(ctx.schema, fromTable, toTable)
+			if err == nil {
+				return path, nil
+			}
+		}
+		return nil, fmt.Errorf("no path found between %s and %s (searched all databases)", fromTable, toTable)
+	}
+
+	// Single-DB mode
+	return gj.buildPath(gj.schema, fromTable, toTable)
+}
+
+// buildPath builds the relationship path between two tables using a specific schema.
+func (gj *graphjinEngine) buildPath(dbSchema *sdata.DBSchema, fromTable, toTable string) ([]PathStep, error) {
+	paths, err := dbSchema.FindPath(fromTable, toTable, "")
 	if err != nil {
 		return nil, err
 	}
@@ -814,7 +939,6 @@ func (g *GraphJin) FindRelationshipPath(fromTable, toTable string) ([]PathStep, 
 		return nil, fmt.Errorf("no path found between %s and %s", fromTable, toTable)
 	}
 
-	// Each TPath is a step in the path
 	result := make([]PathStep, 0, len(paths))
 	for _, p := range paths {
 		step := PathStep{
@@ -848,6 +972,493 @@ func relTypeToString(rt sdata.RelType) string {
 		return "remote"
 	default:
 		return "unknown"
+	}
+}
+
+// --- explain_query structs ---
+
+// ParamInfo represents a query parameter
+type ParamInfo struct {
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	IsArray bool   `json:"is_array,omitempty"`
+}
+
+// SelectInfo represents a table selection in a compiled query
+type SelectInfo struct {
+	Table    string `json:"table"`
+	Schema   string `json:"schema,omitempty"`
+	Database string `json:"database,omitempty"`
+	Singular bool   `json:"singular,omitempty"`
+	Children int    `json:"children,omitempty"`
+}
+
+// QueryExplanation represents the compiled form of a GraphQL query
+type QueryExplanation struct {
+	SQL         string       `json:"sql"`
+	Params      []ParamInfo  `json:"params"`
+	Operation   string       `json:"operation"`
+	Name        string       `json:"name,omitempty"`
+	Role        string       `json:"role"`
+	Database    string       `json:"database,omitempty"`
+	Tables      []SelectInfo `json:"tables"`
+	JoinDepth   int          `json:"join_depth"`
+	CacheHeader string       `json:"cache_header,omitempty"`
+	Errors      []string     `json:"errors,omitempty"`
+}
+
+// --- explore_relationships structs ---
+
+// GraphNode represents a table node in the relationship graph
+type GraphNode struct {
+	Name        string `json:"name"`
+	Schema      string `json:"schema,omitempty"`
+	Database    string `json:"database,omitempty"`
+	Type        string `json:"type"`
+	ColumnCount int    `json:"column_count"`
+}
+
+// GraphEdge represents a relationship edge in the graph
+type GraphEdge struct {
+	From      string `json:"from"`
+	To        string `json:"to"`
+	Type      string `json:"type"`
+	Weight    int    `json:"weight"`
+	ViaColumn string `json:"via_column,omitempty"`
+}
+
+// RelationshipGraph represents the data model neighborhood around a table
+type RelationshipGraph struct {
+	CenterTable string      `json:"center_table"`
+	Depth       int         `json:"depth"`
+	Nodes       []GraphNode `json:"nodes"`
+	Edges       []GraphEdge `json:"edges"`
+}
+
+// --- audit_role_permissions structs ---
+
+// OperationPermission represents the permission details for a single operation
+type OperationPermission struct {
+	Allowed          bool              `json:"allowed"`
+	Blocked          bool              `json:"blocked,omitempty"`
+	Limit            int               `json:"limit,omitempty"`
+	Filters          []string          `json:"filters,omitempty"`
+	Columns          []string          `json:"columns,omitempty"`
+	Presets          map[string]string `json:"presets,omitempty"`
+	DisableFunctions bool              `json:"disable_functions,omitempty"`
+}
+
+// TablePermissions represents per-table permission details for a role
+type TablePermissions struct {
+	TableName string               `json:"table_name"`
+	Schema    string               `json:"schema,omitempty"`
+	ReadOnly  bool                 `json:"read_only,omitempty"`
+	Query     *OperationPermission `json:"query"`
+	Insert    *OperationPermission `json:"insert"`
+	Update    *OperationPermission `json:"update"`
+	Upsert    *OperationPermission `json:"upsert"`
+	Delete    *OperationPermission `json:"delete"`
+}
+
+// RoleAudit represents the complete permission audit for a role
+type RoleAudit struct {
+	Name     string             `json:"name"`
+	Match    string             `json:"match,omitempty"`
+	Tables   []TablePermissions `json:"tables"`
+	FixGuide string             `json:"fix_guide"`
+}
+
+// ExplainQuery compiles a GraphQL query to SQL without executing it.
+// Returns the SQL, parameters, tables touched, join depth, and cache info.
+func (g *GraphJin) ExplainQuery(query string, vars json.RawMessage, role string) (*QueryExplanation, error) {
+	gj := g.Load().(*graphjinEngine)
+	return gj.explainQuery(query, vars, role)
+}
+
+// ExploreRelationships returns a graph of all reachable tables from the given table up to the specified depth.
+func (g *GraphJin) ExploreRelationships(table string, depth int) (*RelationshipGraph, error) {
+	gj := g.Load().(*graphjinEngine)
+	return gj.exploreRelationships("", table, depth)
+}
+
+// ExploreRelationshipsForDatabase returns a relationship graph for a table in a specific database.
+func (g *GraphJin) ExploreRelationshipsForDatabase(database, table string, depth int) (*RelationshipGraph, error) {
+	gj := g.Load().(*graphjinEngine)
+	return gj.exploreRelationships(database, table, depth)
+}
+
+// AuditRolePermissions returns a complete permission matrix for a single role.
+func (g *GraphJin) AuditRolePermissions(role string) (*RoleAudit, error) {
+	gj := g.Load().(*graphjinEngine)
+	return gj.auditRolePermissions(role)
+}
+
+// AuditAllRoles returns permission matrices for all configured roles.
+func (g *GraphJin) AuditAllRoles() ([]RoleAudit, error) {
+	gj := g.Load().(*graphjinEngine)
+	var audits []RoleAudit
+	for _, r := range gj.conf.Roles {
+		audit, err := gj.auditRolePermissions(r.Name)
+		if err != nil {
+			return nil, err
+		}
+		audits = append(audits, *audit)
+	}
+	return audits, nil
+}
+
+// explainQuery compiles a query through the full pipeline without executing it.
+func (gj *graphjinEngine) explainQuery(query string, vars json.RawMessage, role string) (*QueryExplanation, error) {
+	if gj.schema == nil {
+		return nil, fmt.Errorf("schema not initialized")
+	}
+
+	queryBytes := []byte(query)
+
+	h, err := graph.FastParseBytes(queryBytes)
+	if err != nil {
+		return &QueryExplanation{
+			Errors: []string{fmt.Sprintf("parse error: %s", err.Error())},
+		}, nil
+	}
+
+	r := gj.newGraphqlReq(nil, h.Operation, h.Name, queryBytes, vars)
+
+	s, err := newGState(context.Background(), gj, r)
+	if err != nil {
+		return &QueryExplanation{
+			Errors: []string{fmt.Sprintf("state error: %s", err.Error())},
+		}, nil
+	}
+
+	if role != "" {
+		s.role = role
+	}
+
+	err = s.compileQueryForRole()
+	if err != nil {
+		return &QueryExplanation{
+			Operation: h.Operation,
+			Name:      h.Name,
+			Role:      s.role,
+			Errors:    []string{err.Error()},
+		}, nil
+	}
+
+	// Handle multi-DB queries that can't be explained as a single SQL statement
+	if s.cs.st.qc == nil {
+		return &QueryExplanation{
+			Operation: h.Operation,
+			Name:      h.Name,
+			Role:      s.role,
+			Errors:    []string{"multi-database queries compile to separate SQL statements per database and cannot be explained as a single query"},
+		}, nil
+	}
+
+	exp := &QueryExplanation{
+		SQL:       s.cs.st.sql,
+		Operation: s.cs.st.qc.Type.String(),
+		Name:      s.cs.st.qc.Name,
+		Role:      s.cs.st.role,
+		Database:  s.database,
+	}
+
+	// Extract params
+	params := s.cs.st.md.Params()
+	for _, p := range params {
+		exp.Params = append(exp.Params, ParamInfo{
+			Name:    p.Name,
+			Type:    p.Type,
+			IsArray: p.IsArray,
+		})
+	}
+
+	// Extract tables and compute join depth
+	maxDepth := 0
+	for i := range s.cs.st.qc.Selects {
+		sel := &s.cs.st.qc.Selects[i]
+		if sel.SkipRender != 0 {
+			continue
+		}
+		exp.Tables = append(exp.Tables, SelectInfo{
+			Table:    sel.Table,
+			Schema:   sel.Schema,
+			Database: sel.Database,
+			Singular: sel.Singular,
+			Children: len(sel.Children),
+		})
+
+		// Compute depth by walking ParentID chain
+		depth := 0
+		pid := sel.ParentID
+		for pid != -1 {
+			depth++
+			if int(pid) < len(s.cs.st.qc.Selects) {
+				pid = s.cs.st.qc.Selects[pid].ParentID
+			} else {
+				break
+			}
+		}
+		if depth > maxDepth {
+			maxDepth = depth
+		}
+	}
+	exp.JoinDepth = maxDepth
+
+	// Cache header
+	if s.cs.st.qc.Cache.Header != "" {
+		exp.CacheHeader = s.cs.st.qc.Cache.Header
+	}
+
+	return exp, nil
+}
+
+// exploreRelationships performs BFS over the relationship graph.
+func (gj *graphjinEngine) exploreRelationships(database, tableName string, depth int) (*RelationshipGraph, error) {
+	if depth < 1 {
+		depth = 1
+	}
+	if depth > 3 {
+		depth = 3
+	}
+
+	var dbSchema *sdata.DBSchema
+	if gj.isMultiDB() && database != "" {
+		ctx, ok := gj.GetDatabase(database)
+		if !ok {
+			return nil, fmt.Errorf("database not found: %s", database)
+		}
+		dbSchema = ctx.schema
+	} else if gj.isMultiDB() {
+		// Search all databases
+		for dbName, ctx := range gj.databases {
+			if _, err := ctx.schema.Find("", tableName); err == nil {
+				dbSchema = ctx.schema
+				database = dbName
+				break
+			}
+		}
+		if dbSchema == nil {
+			return nil, fmt.Errorf("table not found: %s (searched all databases)", tableName)
+		}
+	} else {
+		dbSchema = gj.schema
+	}
+
+	if dbSchema == nil {
+		return nil, fmt.Errorf("schema not initialized")
+	}
+
+	centerTable, err := dbSchema.Find("", tableName)
+	if err != nil {
+		return nil, fmt.Errorf("table not found: %s", tableName)
+	}
+
+	result := &RelationshipGraph{
+		CenterTable: centerTable.Name,
+		Depth:       depth,
+	}
+
+	nodeSet := make(map[string]bool)
+	edgeSet := make(map[string]bool)
+
+	// Add center node
+	nodeKey := centerTable.Schema + ":" + centerTable.Name
+	nodeSet[nodeKey] = true
+	result.Nodes = append(result.Nodes, GraphNode{
+		Name:        centerTable.Name,
+		Schema:      centerTable.Schema,
+		Database:    database,
+		Type:        centerTable.Type,
+		ColumnCount: len(centerTable.Columns),
+	})
+
+	// BFS expansion
+	type bfsItem struct {
+		table sdata.DBTable
+		level int
+	}
+	queue := []bfsItem{{table: centerTable, level: 0}}
+
+	for len(queue) > 0 {
+		item := queue[0]
+		queue = queue[1:]
+
+		if item.level >= depth {
+			continue
+		}
+
+		rels, err := dbSchema.GetFirstDegree(item.table)
+		if err != nil {
+			continue
+		}
+
+		for _, rel := range rels {
+			relNodeKey := rel.Table.Schema + ":" + rel.Table.Name
+
+			// Add node if not seen
+			if !nodeSet[relNodeKey] {
+				nodeSet[relNodeKey] = true
+				result.Nodes = append(result.Nodes, GraphNode{
+					Name:        rel.Table.Name,
+					Schema:      rel.Table.Schema,
+					Database:    database,
+					Type:        rel.Table.Type,
+					ColumnCount: len(rel.Table.Columns),
+				})
+				queue = append(queue, bfsItem{table: rel.Table, level: item.level + 1})
+			}
+
+			// Add edge if not seen
+			edgeKey := item.table.Name + "->" + rel.Table.Name + ":" + rel.Name
+			if !edgeSet[edgeKey] {
+				edgeSet[edgeKey] = true
+				result.Edges = append(result.Edges, GraphEdge{
+					From:      item.table.Name,
+					To:        rel.Table.Name,
+					Type:      relTypeToString(rel.Type),
+					Weight:    relTypeWeight(rel.Type),
+					ViaColumn: rel.Name,
+				})
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// relTypeWeight returns a weight for a relationship type
+func relTypeWeight(rt sdata.RelType) int {
+	switch rt {
+	case sdata.RelOneToOne, sdata.RelOneToMany:
+		return 1
+	case sdata.RelEmbedded:
+		return 5
+	case sdata.RelRemote:
+		return 8
+	case sdata.RelRecursive:
+		return 10
+	case sdata.RelPolymorphic:
+		return 15
+	default:
+		return 1
+	}
+}
+
+// auditRolePermissions returns a permission audit for a single role.
+func (gj *graphjinEngine) auditRolePermissions(roleName string) (*RoleAudit, error) {
+	var role *Role
+	for i := range gj.conf.Roles {
+		if strings.EqualFold(gj.conf.Roles[i].Name, roleName) {
+			role = &gj.conf.Roles[i]
+			break
+		}
+	}
+	if role == nil {
+		return nil, fmt.Errorf("role not found: %s", roleName)
+	}
+
+	audit := &RoleAudit{
+		Name:  role.Name,
+		Match: role.Match,
+	}
+
+	for _, rt := range role.Tables {
+		tp := TablePermissions{
+			TableName: rt.Name,
+			Schema:    rt.Schema,
+			ReadOnly:  rt.ReadOnly,
+			Query:     buildQueryPermission(rt.Query),
+			Insert:    buildInsertPermission(rt.Insert, rt.ReadOnly),
+			Update:    buildUpdatePermission(rt.Update, rt.ReadOnly),
+			Upsert:    buildUpsertPermission(rt.Upsert, rt.ReadOnly),
+			Delete:    buildDeletePermission(rt.Delete, rt.ReadOnly),
+		}
+		audit.Tables = append(audit.Tables, tp)
+	}
+
+	audit.FixGuide = fmt.Sprintf(
+		"To modify permissions for role '%s', use the update_current_config tool with the roles parameter. "+
+			"Example: update_current_config(roles: [{name: \"%s\", tables: [{name: \"<table>\", query: {block: true}}]}])",
+		role.Name, role.Name)
+
+	return audit, nil
+}
+
+func buildQueryPermission(q *Query) *OperationPermission {
+	if q == nil {
+		return &OperationPermission{Allowed: true}
+	}
+	return &OperationPermission{
+		Allowed:          !q.Block,
+		Blocked:          q.Block,
+		Limit:            q.Limit,
+		Filters:          q.Filters,
+		Columns:          q.Columns,
+		DisableFunctions: q.DisableFunctions,
+	}
+}
+
+func buildInsertPermission(ins *Insert, readOnly bool) *OperationPermission {
+	if readOnly {
+		return &OperationPermission{Allowed: false, Blocked: true}
+	}
+	if ins == nil {
+		return &OperationPermission{Allowed: true}
+	}
+	return &OperationPermission{
+		Allowed: !ins.Block,
+		Blocked: ins.Block,
+		Filters: ins.Filters,
+		Columns: ins.Columns,
+		Presets: ins.Presets,
+	}
+}
+
+func buildUpdatePermission(upd *Update, readOnly bool) *OperationPermission {
+	if readOnly {
+		return &OperationPermission{Allowed: false, Blocked: true}
+	}
+	if upd == nil {
+		return &OperationPermission{Allowed: true}
+	}
+	return &OperationPermission{
+		Allowed: !upd.Block,
+		Blocked: upd.Block,
+		Filters: upd.Filters,
+		Columns: upd.Columns,
+		Presets: upd.Presets,
+	}
+}
+
+func buildUpsertPermission(ups *Upsert, readOnly bool) *OperationPermission {
+	if readOnly {
+		return &OperationPermission{Allowed: false, Blocked: true}
+	}
+	if ups == nil {
+		return &OperationPermission{Allowed: true}
+	}
+	return &OperationPermission{
+		Allowed: !ups.Block,
+		Blocked: ups.Block,
+		Filters: ups.Filters,
+		Columns: ups.Columns,
+		Presets: ups.Presets,
+	}
+}
+
+func buildDeletePermission(del *Delete, readOnly bool) *OperationPermission {
+	if readOnly {
+		return &OperationPermission{Allowed: false, Blocked: true}
+	}
+	if del == nil {
+		return &OperationPermission{Allowed: true}
+	}
+	return &OperationPermission{
+		Allowed: !del.Block,
+		Blocked: del.Block,
+		Filters: del.Filters,
+		Columns: del.Columns,
 	}
 }
 

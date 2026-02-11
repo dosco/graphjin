@@ -11,9 +11,11 @@ import (
 
 // initMultiDB initializes multi-database support if configured.
 // It creates a dbContext for each configured database.
+// After normalization, Databases always has at least 1 entry (the default).
+// Single-DB configs (1 entry) don't trigger multi-DB infrastructure unless
+// OptionSetDatabases pre-populated gj.databases.
 func (gj *graphjinEngine) initMultiDB() error {
-	// Check if multi-DB is configured
-	if len(gj.conf.Databases) == 0 {
+	if len(gj.conf.Databases) <= 1 && len(gj.databases) == 0 {
 		return nil
 	}
 
@@ -22,21 +24,7 @@ func (gj *graphjinEngine) initMultiDB() error {
 		gj.databases = make(map[string]*dbContext)
 	}
 
-	// Find the default database
-	for name, dbConf := range gj.conf.Databases {
-		if dbConf.Default {
-			gj.defaultDB = name
-			break
-		}
-	}
-
-	// If no default specified, use the first one or "default"
-	if gj.defaultDB == "" {
-		for name := range gj.conf.Databases {
-			gj.defaultDB = name
-			break
-		}
-	}
+	// gj.defaultDB is already set after initConfig/normalization (in newGraphJin)
 
 	// Create/update the default database context from the passed-in connection
 	// This maintains backward compatibility - the main db connection becomes
@@ -108,6 +96,11 @@ func (gj *graphjinEngine) initDBContext(name string, db *sql.DB, dbConf Database
 	// Process foreign keys configured for this database
 	if err = addForeignKeys(gj.conf, dbinfo, name); err != nil {
 		return nil, fmt.Errorf("database %s: add foreign keys failed: %w", name, err)
+	}
+
+	// Process full-text search configuration for this database
+	if err = addFullTextColumns(gj.conf, dbinfo, name); err != nil {
+		return nil, fmt.Errorf("database %s: add fulltext columns failed: %w", name, err)
 	}
 
 	// Create schema
@@ -222,7 +215,9 @@ func (gj *graphjinEngine) ListDatabases() []string {
 // setTableDatabases assigns database names to tables based on configuration.
 // This is called during schema initialization to tag tables with their source database.
 func (gj *graphjinEngine) setTableDatabases() {
-	if len(gj.conf.Databases) == 0 {
+	// Only tag tables when actually in multi-DB mode (more than 1 configured database
+	// or OptionSetDatabases populated the runtime map)
+	if len(gj.conf.Databases) <= 1 && len(gj.databases) == 0 {
 		return
 	}
 
@@ -264,21 +259,7 @@ func OptionSetDatabases(connections map[string]*sql.DB) Option {
 			gj.databases = make(map[string]*dbContext)
 		}
 
-		// Determine the default database from config (since gj.defaultDB may not be set yet)
-		defaultDB := ""
-		for name, dbConf := range gj.conf.Databases {
-			if dbConf.Default {
-				defaultDB = name
-				break
-			}
-		}
-		// If no default specified, use the first one
-		if defaultDB == "" {
-			for name := range gj.conf.Databases {
-				defaultDB = name
-				break
-			}
-		}
+		// gj.defaultDB is already set after initConfig/normalization
 
 		for name, db := range connections {
 			dbConf, ok := gj.conf.Databases[name]
@@ -288,7 +269,7 @@ func OptionSetDatabases(connections map[string]*sql.DB) Option {
 
 			// For the default database, just store the connection
 			// The default database is initialized through the normal path
-			if name == defaultDB {
+			if name == gj.defaultDB {
 				gj.databases[name] = &dbContext{
 					name:   name,
 					db:     db,

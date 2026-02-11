@@ -10,6 +10,10 @@ import (
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 )
 
+// DefaultDBName is the canonical name used for the primary/default database
+// after config normalization. It replaces the empty-string and "_default" sentinels.
+const DefaultDBName = "default"
+
 // SupportedDBTypes lists the database types supported for single-database mode
 var SupportedDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle", "mssql"}
 
@@ -59,6 +63,67 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+// NormalizeDatabases ensures the primary database is represented as an entry
+// in the Databases map, eliminating special-casing of empty targetDB strings.
+// It is idempotent and should be called during core initialization.
+func (c *Config) NormalizeDatabases() {
+	// If no databases configured, create a default entry
+	if len(c.Databases) == 0 {
+		dbType := c.DBType
+		if dbType == "" {
+			dbType = "postgres"
+		}
+		c.Databases = map[string]DatabaseConfig{
+			DefaultDBName: {
+				Type:    dbType,
+				Default: true,
+			},
+		}
+	}
+
+	// Find the default database name (entry with Default: true, or first entry)
+	defaultName := ""
+	for name, dbConf := range c.Databases {
+		if dbConf.Default {
+			defaultName = name
+			break
+		}
+	}
+	if defaultName == "" {
+		for name := range c.Databases {
+			defaultName = name
+			break
+		}
+	}
+
+	// Sync DBType with the default entry's Type
+	defConf := c.Databases[defaultName]
+	if defConf.Type == "" && c.DBType != "" {
+		defConf.Type = c.DBType
+		c.Databases[defaultName] = defConf
+	} else if defConf.Type != "" && c.DBType == "" {
+		c.DBType = defConf.Type
+	}
+
+	// Tag tables that have empty Database with the default name,
+	// and add them to the default DatabaseConfig.Tables list (deduped)
+	existing := make(map[string]bool)
+	for _, tn := range defConf.Tables {
+		existing[tn] = true
+	}
+
+	for i := range c.Tables {
+		if c.Tables[i].Database == "" {
+			c.Tables[i].Database = defaultName
+			if !existing[c.Tables[i].Name] {
+				defConf.Tables = append(defConf.Tables, c.Tables[i].Name)
+				existing[c.Tables[i].Name] = true
+			}
+		}
+	}
+	c.Databases[defaultName] = defConf
 }
 
 // Configuration for the GraphJin compiler core

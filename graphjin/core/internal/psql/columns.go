@@ -63,7 +63,8 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 		csel := &c.qc.Selects[cid]
 
 		if csel.SkipRender == qcode.SkipTypeDrop ||
-			csel.SkipRender == qcode.SkipTypeRemote {
+			csel.SkipRender == qcode.SkipTypeRemote ||
+			csel.SkipRender == qcode.SkipTypeDatabaseJoin {
 			continue
 		}
 
@@ -317,7 +318,8 @@ func (c *compilerContext) renderJSONFields(sel *qcode.Select) {
 	for _, cid := range sel.Children {
 		csel := &c.qc.Selects[cid]
 
-		if csel.SkipRender == qcode.SkipTypeRemote {
+		if csel.SkipRender == qcode.SkipTypeRemote ||
+			csel.SkipRender == qcode.SkipTypeDatabaseJoin {
 			continue
 		}
 

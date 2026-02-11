@@ -19,6 +19,9 @@ func (gj *graphjinEngine) initConfig() error {
 		return err
 	}
 
+	// Normalize databases so the primary DB is always an entry in Databases
+	c.NormalizeDatabases()
+
 	tableMap := make(map[string]struct{})
 
 	for _, table := range c.Tables {
@@ -124,24 +127,15 @@ func getDBTableAliases(c *Config) map[string][]string {
 }
 
 // addTables adds tables to the database info
-// targetDB is the database name to process (empty means primary/default)
+// targetDB is the database name to process (after normalization, all tables have Database set)
 func addTables(conf *Config, dbInfo *sdata.DBInfo, targetDB string) error {
 	var err error
 
 	for _, t := range conf.Tables {
-		// Skip tables that belong to a different database
-		// If targetDB is empty, only process tables with empty Database field
-		// If targetDB is set, only process tables matching that database
-		if targetDB == "" {
-			// Processing primary database - skip tables explicitly marked for other databases
-			if t.Database != "" {
-				continue
-			}
-		} else {
-			// Processing secondary database - only include tables for this database
-			if t.Database != targetDB {
-				continue
-			}
+		// After normalization, every table has a Database set.
+		// Only process tables matching the target database.
+		if t.Database != targetDB {
+			continue
 		}
 
 		// skip aliases
@@ -289,22 +283,12 @@ func addVirtualTable(conf *Config, di *sdata.DBInfo, t Table) error {
 }
 
 // addForeignKeys adds foreign keys to the database info
-// targetDB is the database name to process (empty means primary/default)
+// targetDB is the database name to process (after normalization, all tables have Database set)
 func addForeignKeys(conf *Config, di *sdata.DBInfo, targetDB string) error {
 	for _, t := range conf.Tables {
-		// Skip tables that belong to a different database
-		// If targetDB is empty, only process tables with empty Database field
-		// If targetDB is set, only process tables matching that database
-		if targetDB == "" {
-			// Processing primary database - skip tables explicitly marked for other databases
-			if t.Database != "" {
-				continue
-			}
-		} else {
-			// Processing secondary database - only include tables for this database
-			if t.Database != targetDB {
-				continue
-			}
+		// After normalization, every table has a Database set.
+		if t.Database != targetDB {
+			continue
 		}
 
 		if t.Type == "polymorphic" {
@@ -378,8 +362,13 @@ func addForeignKey(conf *Config, di *sdata.DBInfo, c Column, t Table) error {
 }
 
 // addFullTextColumns applies full-text search configuration to database columns
-func addFullTextColumns(conf *Config, di *sdata.DBInfo) error {
+// targetDB is the database name to process (after normalization, all tables have Database set)
+func addFullTextColumns(conf *Config, di *sdata.DBInfo, targetDB string) error {
 	for _, t := range conf.Tables {
+		// After normalization, every table has a Database set.
+		if t.Database != targetDB {
+			continue
+		}
 		schema := t.Schema
 		if schema == "" {
 			schema = di.Schema

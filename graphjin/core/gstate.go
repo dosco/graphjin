@@ -154,7 +154,7 @@ func (s *gstate) compileQueryForRole() (err error) {
 
 			// Single database - use that database's compilers
 			for db := range byDB {
-				if db != "_default" && db != s.gj.defaultDB {
+				if db != s.gj.defaultDB {
 					dbCtx, found := s.gj.GetDatabase(db)
 					if !found {
 						err = fmt.Errorf("database not found: %s", db)
@@ -223,14 +223,12 @@ func (s *gstate) extractAllRootFields() []string {
 
 // groupRootsByDatabase maps root field names to their target databases.
 // Returns a map of database name to list of root field names.
+// After normalization, gj.defaultDB is always set and all tables have Database set.
 func (s *gstate) groupRootsByDatabase(roots []string) map[string][]string {
 	byDB := make(map[string][]string)
 
 	for _, root := range roots {
-		db := s.gj.defaultDB // default
-		if db == "" {
-			db = "_default"
-		}
+		db := s.gj.defaultDB
 
 		// Look up the table's database from config
 		for _, t := range s.gj.conf.Tables {

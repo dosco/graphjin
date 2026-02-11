@@ -230,6 +230,14 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*graphjinS
 		}
 	}
 
+	// Default AllowDevTools to true in dev mode when MCP is enabled
+	if !s.conf.Serv.Production && !s.conf.MCP.Disable {
+		if s.conf.viper != nil && !s.conf.viper.IsSet("mcp.allow_dev_tools") {
+			s.conf.MCP.AllowDevTools = true
+			s.log.Info("MCP dev tools enabled by default (dev mode)")
+		}
+	}
+
 	if err := s.initFS(); err != nil {
 		return nil, err
 	}

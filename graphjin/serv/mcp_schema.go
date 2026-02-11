@@ -20,6 +20,9 @@ func (ms *mcpServer) registerSchemaTools() {
 		mcp.WithString("namespace",
 			mcp.Description("Optional namespace for multi-tenant deployments"),
 		),
+		mcp.WithString("database",
+			mcp.Description("Optional database name to filter tables. Omit to see tables from ALL databases."),
+		),
 	), ms.handleListTables)
 
 	// describe_table - Get detailed table schema with relationships
@@ -34,6 +37,9 @@ func (ms *mcpServer) registerSchemaTools() {
 		),
 		mcp.WithString("namespace",
 			mcp.Description("Optional namespace for multi-tenant deployments"),
+		),
+		mcp.WithString("database",
+			mcp.Description("Optional database name. Omit to search all databases."),
 		),
 	), ms.handleDescribeTable)
 
@@ -51,6 +57,9 @@ func (ms *mcpServer) registerSchemaTools() {
 			mcp.Required(),
 			mcp.Description("Target table name"),
 		),
+		mcp.WithString("database",
+			mcp.Description("Optional database name. Omit to search all databases."),
+		),
 	), ms.handleFindPath)
 
 	// validate_where_clause - Validate where clause syntax and type compatibility
@@ -66,6 +75,9 @@ func (ms *mcpServer) registerSchemaTools() {
 		mcp.WithString("where",
 			mcp.Required(),
 			mcp.Description("The where clause to validate (e.g., '{ price: { gt: 50 } }')"),
+		),
+		mcp.WithString("database",
+			mcp.Description("Optional database name. Omit to search all databases."),
 		),
 	), ms.handleValidateWhereClause)
 
@@ -94,7 +106,15 @@ func (ms *mcpServer) handleListTables(ctx context.Context, req mcp.CallToolReque
 	if ms.service.gj == nil {
 		return mcp.NewToolResultError("GraphJin not initialized - no database connection configured"), nil
 	}
-	tables := ms.service.gj.GetTables()
+	args := req.GetArguments()
+	database, _ := args["database"].(string)
+
+	var tables []core.TableInfo
+	if database != "" {
+		tables = ms.service.gj.GetTablesForDatabase(database)
+	} else {
+		tables = ms.service.gj.GetTables()
+	}
 
 	result := struct {
 		Tables []core.TableInfo `json:"tables"`
@@ -130,12 +150,19 @@ func (ms *mcpServer) handleDescribeTable(ctx context.Context, req mcp.CallToolRe
 	}
 	args := req.GetArguments()
 	table, _ := args["table"].(string)
+	database, _ := args["database"].(string)
 
 	if table == "" {
 		return mcp.NewToolResultError("table name is required"), nil
 	}
 
-	schema, err := ms.service.gj.GetTableSchema(table)
+	var schema *core.TableSchema
+	var err error
+	if database != "" {
+		schema, err = ms.service.gj.GetTableSchemaForDatabase(database, table)
+	} else {
+		schema, err = ms.service.gj.GetTableSchema(table)
+	}
 	if err != nil {
 		return mcp.NewToolResultError(enhanceError(err.Error(), "describe_table")), nil
 	}
@@ -189,12 +216,19 @@ func (ms *mcpServer) handleFindPath(ctx context.Context, req mcp.CallToolRequest
 	args := req.GetArguments()
 	fromTable, _ := args["from_table"].(string)
 	toTable, _ := args["to_table"].(string)
+	database, _ := args["database"].(string)
 
 	if fromTable == "" || toTable == "" {
 		return mcp.NewToolResultError("both from_table and to_table are required"), nil
 	}
 
-	path, err := ms.service.gj.FindRelationshipPath(fromTable, toTable)
+	var path []core.PathStep
+	var err error
+	if database != "" {
+		path, err = ms.service.gj.FindRelationshipPathForDatabase(database, fromTable, toTable)
+	} else {
+		path, err = ms.service.gj.FindRelationshipPath(fromTable, toTable)
+	}
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -278,15 +312,23 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 			"Use the write_where_clause prompt for help building complex filters",
 			"Use @object directive when you expect a single result: { user @object { id } }",
 			"Use resolvers to join DB tables with remote APIs - configure via update_current_config with resolvers parameter",
+			"For multi-database deployments, use the `database` parameter in list_tables and describe_table to filter by database. Omitting it returns results from all databases.",
+			"Use explain_query to see the exact SQL that will run before executing — great for debugging and optimization",
+			"Use explore_relationships to map out the data model neighborhood around any table",
+			"Use audit_role_permissions to understand what each role can access",
 		},
 		ToolSequences: map[string]string{
-			"simple_query":        "get_query_syntax → list_tables → describe_table → execute_graphql",
-			"complex_query":       "get_query_syntax → list_tables → describe_table → find_path → execute_graphql",
-			"use_saved_query":     "list_saved_queries → get_saved_query → execute_saved_query",
-			"mutation":            "get_mutation_syntax → describe_table → execute_graphql",
-			"explore_schema":      "list_tables → describe_table (for each relevant table) → find_path",
-			"build_where_clause":  "describe_table → use write_where_clause prompt → validate_where_clause",
-			"configure_resolver":  "get_current_config(section: resolvers) → update_current_config(resolvers: [...]) → reload_schema → execute_graphql",
+			"simple_query":               "get_query_syntax → list_tables → describe_table → execute_graphql",
+			"complex_query":              "get_query_syntax → list_tables → describe_table → find_path → execute_graphql",
+			"use_saved_query":            "list_saved_queries → get_saved_query → execute_saved_query",
+			"mutation":                   "get_mutation_syntax → describe_table → execute_graphql",
+			"explore_schema":             "list_tables → describe_table (for each relevant table) → find_path",
+			"build_where_clause":         "describe_table → use write_where_clause prompt → validate_where_clause",
+			"configure_resolver":         "get_current_config(section: resolvers) → update_current_config(resolvers: [...]) → reload_schema → execute_graphql",
+			"multi_database_exploration": "list_tables → describe_table(database: 'db_name') → execute_graphql",
+			"debug_query":               "explain_query → (fix issues) → execute_graphql",
+			"explore_data_model":         "list_tables → explore_relationships(depth: 2) → describe_table",
+			"security_audit":             "audit_role_permissions(role: 'all') → update_current_config(roles: [...]) → audit_role_permissions (verify)",
 		},
 	}
 
@@ -350,7 +392,7 @@ func enhanceError(errMsg, currentTool string) string {
 	// Pattern matching for common errors
 	switch {
 	case contains(errMsg, "table not found", "unknown table", "table"):
-		enhanced.Suggestion = "Check spelling or use list_tables to see available tables"
+		enhanced.Suggestion = "Check spelling or use list_tables to see available tables. The table may exist in a different database - use list_tables to see all databases."
 		enhanced.RelatedTool = "list_tables"
 	case contains(errMsg, "column not found", "unknown column", "column"):
 		enhanced.Suggestion = "Check spelling or use describe_table to see available columns"
@@ -446,6 +488,7 @@ func (ms *mcpServer) handleValidateWhereClause(ctx context.Context, req mcp.Call
 	args := req.GetArguments()
 	table, _ := args["table"].(string)
 	whereClause, _ := args["where"].(string)
+	database, _ := args["database"].(string)
 
 	if table == "" {
 		return mcp.NewToolResultError("table name is required"), nil
@@ -455,7 +498,13 @@ func (ms *mcpServer) handleValidateWhereClause(ctx context.Context, req mcp.Call
 	}
 
 	// Get table schema
-	schema, err := ms.service.gj.GetTableSchema(table)
+	var schema *core.TableSchema
+	var err error
+	if database != "" {
+		schema, err = ms.service.gj.GetTableSchemaForDatabase(database, table)
+	} else {
+		schema, err = ms.service.gj.GetTableSchema(table)
+	}
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to get schema for table '%s': %v", table, err)), nil
 	}

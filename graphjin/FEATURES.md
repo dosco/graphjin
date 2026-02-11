@@ -1139,6 +1139,43 @@ GraphJin supports 8 databases with the same GraphQL syntax:
 
 Also works with: **AWS Aurora/RDS**, **Google Cloud SQL**, **YugabyteDB**
 
+### Cross-Database Joins
+
+When tables live in different databases, GraphJin automatically handles cross-database joins. Write a normal nested query — GraphJin fetches the parent from one database, extracts the foreign key, queries the child table in the target database, and stitches the results together:
+
+```graphql
+query {
+  orders {
+    id
+    total
+    customer {   # 'customer' lives in a different database
+      name
+      email
+    }
+  }
+}
+```
+
+Configure the relationship in your config:
+
+```yaml
+databases:
+  main:
+    type: postgres
+    default: true
+  crm:
+    type: postgres
+    tables: [customers]
+
+tables:
+  - name: orders
+    columns:
+      - name: customer_id
+        related_to: customers.id
+```
+
+The join is transparent — no special query syntax needed. GraphJin handles ID extraction, cross-database querying, and result stitching automatically.
+
 ---
 
 ## Configuration Reference

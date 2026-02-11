@@ -239,6 +239,11 @@ type MCPConfig struct {
 	// AllowSchemaUpdates enables MCP tools to preview and apply database schema changes (DDL)
 	// Uses db.graphql format. Auto-enabled in dev mode. Default: false
 	AllowSchemaUpdates bool `mapstructure:"allow_schema_updates" jsonschema:"title=Allow Schema Updates,default=false"`
+
+	// AllowDevTools enables advanced introspection MCP tools (explain_query, explore_relationships, audit_role_permissions).
+	// These expose SQL, relationship graphs, and role permissions — useful for development/debugging.
+	// Auto-enabled in dev mode. Default: false
+	AllowDevTools bool `mapstructure:"allow_dev_tools" jsonschema:"title=Allow Dev Tools,default=false"`
 }
 
 // RedisConfig configures Redis connection
@@ -451,6 +456,7 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("mcp.allow_config_updates", false) // disabled by default for security
 	vi.SetDefault("mcp.allow_schema_reload", false)   // disabled by default, auto-enabled in dev mode
 	vi.SetDefault("mcp.allow_schema_updates", false)  // disabled by default, auto-enabled in dev mode
+	vi.SetDefault("mcp.allow_dev_tools", false)        // disabled by default, auto-enabled in dev mode
 
 	// Caching defaults
 	vi.SetDefault("caching.enable", false)
