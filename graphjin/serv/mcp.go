@@ -81,6 +81,7 @@ func (ms *mcpServer) registerTools() {
 
 	// Schema Discovery Tools
 	ms.registerSchemaTools()
+	ms.registerExploreTools()
 
 	// Query Execution Tools
 	ms.registerExecutionTools()
@@ -99,8 +100,8 @@ func (ms *mcpServer) registerTools() {
 
 	// Dev Tools - advanced introspection (conditionally registered)
 	ms.registerExplainTools()
-	ms.registerExploreTools()
 	ms.registerAuditTools()
+	ms.registerDiscoverTools()
 }
 
 // RunMCPStdio runs the MCP server using stdio transport (for CLI/Claude Desktop)

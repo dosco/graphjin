@@ -172,6 +172,12 @@ type Database struct {
 
 	// Required for TLS. Can be a file path or the contents of the pem file
 	ClientKey string `mapstructure:"client_key" jsonschema:"title=Client Key"`
+
+	// MSSQL: disable TLS encryption (default: true in go-mssqldb)
+	Encrypt *bool `mapstructure:"encrypt" jsonschema:"title=MSSQL Encrypt"`
+
+	// MSSQL: trust server certificate without validation
+	TrustServerCertificate *bool `mapstructure:"trust_server_certificate" jsonschema:"title=MSSQL Trust Server Certificate"`
 }
 
 // RateLimiter sets the API rate limits

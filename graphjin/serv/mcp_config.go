@@ -1219,6 +1219,8 @@ func syncDBFromDatabases(conf *Config) bool {
 	conf.DB.Schema = dbConf.Schema
 	conf.DB.Path = dbConf.Path
 	conf.DB.ConnString = dbConf.ConnString
+	conf.DB.Encrypt = dbConf.Encrypt
+	conf.DB.TrustServerCertificate = dbConf.TrustServerCertificate
 	conf.DBType = dbConf.Type
 	return true
 }

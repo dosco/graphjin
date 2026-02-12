@@ -185,6 +185,108 @@ Works from Node.js, Go, or any WebSocket client.
 
 GraphJin exposes several tools that guide AI models to write valid queries. Key tools: `list_tables` and `describe_table` for schema discovery, `get_query_syntax` for learning the DSL, `execute_graphql` for running queries, and `execute_saved_query` for production-approved queries. Prompts like `write_query` and `fix_query_error` help models construct and debug queries.
 
+## Chat Walkthroughs
+
+Real conversations showing how an AI assistant uses GraphJin MCP tools to help you go from zero to running queries.
+
+### "I have databases running but don't know the details"
+
+> **You:** I have some databases running locally but I'm not sure about the ports or connection details. Can you help me set up GraphJin?
+
+> **Claude:** Let me scan your system to find running databases.
+>
+> *calls `discover_databases`*
+>
+> I found 2 databases on your system:
+> - **PostgreSQL** on localhost:5432 (TCP) — listening, auth: ok (user: postgres), databases: `myapp`, `myapp_test`
+> - **MySQL** on localhost:3306 (TCP) — listening, auth: auth_failed — default credentials failed, provide username and password
+>
+> The PostgreSQL instance has databases `myapp` and `myapp_test`. Which one would you like to configure GraphJin with?
+
+> **You:** Let's go with the "myapp" database on Postgres.
+
+> **Claude:** I'll configure GraphJin to connect to your PostgreSQL database.
+>
+> *calls `update_current_config` with databases: {"main": {type: "postgres", host: "localhost", port: 5432, user: "postgres", dbname: "myapp"}}*
+>
+> Connected successfully! Let me see what tables you have.
+>
+> *calls `list_tables`*
+>
+> Your database has these tables: `users`, `orders`, `products`, `reviews`. Want me to write a query?
+
+> **You:** Show me users with their orders.
+
+> **Claude:** *calls `get_query_syntax` then `execute_graphql`*
+> ```graphql
+> { users { id name email orders { id total status } } }
+> ```
+> Here are the results — 24 users returned, each with their associated orders.
+
+### "I have a Docker Compose project with MySQL"
+
+> **You:** I'm running a Docker Compose stack with MySQL. Help me connect GraphJin to it.
+
+> **Claude:** Let me check what database containers you have running.
+>
+> *calls `discover_databases`*
+>
+> Found a MySQL Docker container:
+> - **MySQL** via Docker — container `myapp-db-1`, image `mysql:8.0`, port mapped to localhost:13306
+>
+> I'll configure GraphJin with the discovered connection details.
+>
+> *calls `update_current_config` with databases: {"main": {type: "mysql", host: "localhost", port: 13306, user: "root", dbname: ""}}*
+>
+> What's the database name and password for your MySQL instance?
+
+> **You:** Database is "shop_db", password is "secret123".
+
+> **Claude:** *calls `update_current_config` with the full credentials*
+>
+> Connected! Let me explore the schema.
+>
+> *calls `list_tables`*
+>
+> Tables found: `customers`, `products`, `orders`, `order_items`, `categories`. Let me check how they relate.
+>
+> *calls `explore_relationships` with table: "orders"*
+>
+> `orders` connects to `customers` (via customer_id) and `order_items` (via order_id), and `order_items` links to `products`. Here's a nested query:
+>
+> ```graphql
+> { orders { id total customer { name email } order_items { quantity product { name price } } } }
+> ```
+
+### "I want to query my SQLite app database"
+
+> **You:** I have a SQLite database file in my project. Can GraphJin work with it?
+
+> **Claude:** Absolutely! Let me scan your project directory for SQLite files.
+>
+> *calls `discover_databases` with scan_dir: "."*
+>
+> Found 1 SQLite database:
+> - **data/app.sqlite3** — file found
+>
+> I'll configure GraphJin to use it.
+>
+> *calls `update_current_config` with databases: {"main": {type: "sqlite", path: "data/app.sqlite3"}}*
+>
+> Connected! Let me see your tables.
+>
+> *calls `list_tables`*
+>
+> Tables: `tasks`, `projects`, `tags`, `task_tags`. Want to query something?
+
+> **You:** Show me all tasks with their project name, sorted by due date.
+
+> **Claude:** *calls `execute_graphql`*
+> ```graphql
+> { tasks(order_by: {due_date: asc}) { id title due_date completed project { name } } }
+> ```
+> Here are your 12 tasks sorted by due date, each showing the parent project name.
+
 ## Database Support
 
 | Database | Queries | Mutations | Subscriptions | Full-Text | GIS |

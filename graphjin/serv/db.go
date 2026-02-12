@@ -7,6 +7,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -310,20 +311,36 @@ func initMssql(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf, er
 			port = 1433
 		}
 		connString = fmt.Sprintf("sqlserver://%s:%s@%s:%d",
-			c.DB.User, c.DB.Password, c.DB.Host, port)
+			url.PathEscape(c.DB.User), url.PathEscape(c.DB.Password), c.DB.Host, port)
 	} else {
 		connString = c.DB.ConnString
 	}
 
 	if openDB && c.DB.DBName != "" {
-		if strings.Contains(connString, "?") {
-			connString += "&database=" + c.DB.DBName
+		connString += queryParamSep(connString) + "database=" + c.DB.DBName
+	}
+
+	// MSSQL-specific connection params
+	if c.DB.Encrypt != nil {
+		if *c.DB.Encrypt {
+			connString += queryParamSep(connString) + "encrypt=true"
 		} else {
-			connString += "?database=" + c.DB.DBName
+			connString += queryParamSep(connString) + "encrypt=disable"
 		}
+	}
+	if c.DB.TrustServerCertificate != nil && *c.DB.TrustServerCertificate {
+		connString += queryParamSep(connString) + "trustservercertificate=true"
 	}
 
 	return &dbConf{driverName: "sqlserver", connString: connString}, nil
+}
+
+// queryParamSep returns "?" if no query params exist yet, otherwise "&"
+func queryParamSep(s string) string {
+	if strings.Contains(s, "?") {
+		return "&"
+	}
+	return "?"
 }
 
 // initSqlite initializes the sqlite database

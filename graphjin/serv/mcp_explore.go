@@ -8,10 +8,6 @@ import (
 
 // registerExploreTools registers the explore_relationships tool
 func (ms *mcpServer) registerExploreTools() {
-	if !ms.service.conf.MCP.AllowDevTools {
-		return
-	}
-
 	ms.srv.AddTool(mcp.NewTool(
 		"explore_relationships",
 		mcp.WithDescription("Map out the data model neighborhood around a table. "+

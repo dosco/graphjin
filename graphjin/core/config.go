@@ -273,6 +273,12 @@ type DatabaseConfig struct {
 	// Schema name to use (for databases that support schemas)
 	Schema string `mapstructure:"schema" json:"schema" yaml:"schema" jsonschema:"title=Schema"`
 
+	// MSSQL-specific: disable TLS encryption (go-mssqldb defaults to encrypt=true)
+	Encrypt *bool `mapstructure:"encrypt" json:"encrypt,omitempty" yaml:"encrypt,omitempty" jsonschema:"title=MSSQL Encrypt"`
+
+	// MSSQL-specific: trust server certificate without validation
+	TrustServerCertificate *bool `mapstructure:"trust_server_certificate" json:"trust_server_certificate,omitempty" yaml:"trust_server_certificate,omitempty" jsonschema:"title=MSSQL Trust Server Certificate"`
+
 	// Tables that belong to this database (can also be set per-table via Table.Database)
 	Tables []string `mapstructure:"tables" json:"tables" yaml:"tables" jsonschema:"title=Tables"`
 }
