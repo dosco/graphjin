@@ -313,7 +313,7 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 			"Use @object directive when you expect a single result: { user @object { id } }",
 			"Use resolvers to join DB tables with remote APIs - configure via update_current_config with resolvers parameter",
 			"For multi-database deployments, use the `database` parameter in list_tables and describe_table to filter by database. Omitting it returns results from all databases.",
-			"Use explain_query to see the exact SQL that will run before executing — great for debugging and optimization",
+			"Use explain_query to see the exact compiled query that will run before executing — great for debugging and optimization",
 			"Use explore_relationships to map out the data model neighborhood around any table",
 			"Use audit_role_permissions to understand what each role can access",
 		},

@@ -3,6 +3,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -995,7 +996,7 @@ type SelectInfo struct {
 
 // QueryExplanation represents the compiled form of a GraphQL query
 type QueryExplanation struct {
-	SQL         string       `json:"sql"`
+	CompiledQuery string       `json:"compiled_query"`
 	Params      []ParamInfo  `json:"params"`
 	Operation   string       `json:"operation"`
 	Name        string       `json:"name,omitempty"`
@@ -1004,7 +1005,9 @@ type QueryExplanation struct {
 	Tables      []SelectInfo `json:"tables"`
 	JoinDepth   int          `json:"join_depth"`
 	CacheHeader string       `json:"cache_header,omitempty"`
-	Errors      []string     `json:"errors,omitempty"`
+	Errors        []string           `json:"errors,omitempty"`
+	MultiDatabase bool               `json:"multi_database,omitempty"`
+	Queries       []QueryExplanation `json:"queries,omitempty"`
 }
 
 // --- explore_relationships structs ---
@@ -1068,8 +1071,8 @@ type RoleAudit struct {
 	FixGuide string             `json:"fix_guide"`
 }
 
-// ExplainQuery compiles a GraphQL query to SQL without executing it.
-// Returns the SQL, parameters, tables touched, join depth, and cache info.
+// ExplainQuery compiles a GraphQL query without executing it.
+// Returns the compiled query, parameters, tables touched, join depth, and cache info.
 func (g *GraphJin) ExplainQuery(query string, vars json.RawMessage, role string) (*QueryExplanation, error) {
 	gj := g.Load().(*graphjinEngine)
 	return gj.explainQuery(query, vars, role)
@@ -1145,18 +1148,23 @@ func (gj *graphjinEngine) explainQuery(query string, vars json.RawMessage, role 
 		}, nil
 	}
 
-	// Handle multi-DB queries that can't be explained as a single SQL statement
-	if s.cs.st.qc == nil {
-		return &QueryExplanation{
-			Operation: h.Operation,
-			Name:      h.Name,
-			Role:      s.role,
-			Errors:    []string{"multi-database queries compile to separate SQL statements per database and cannot be explained as a single query"},
-		}, nil
+	// Handle multi-DB queries by compiling each per-database sub-query
+	if s.multiDB && len(s.dbGroups) > 0 {
+		exp := &QueryExplanation{
+			Operation:     h.Operation,
+			Name:          h.Name,
+			Role:          s.role,
+			MultiDatabase: true,
+		}
+		for dbName, rootFields := range s.dbGroups {
+			subExp := gj.explainForDatabase(&s, dbName, rootFields)
+			exp.Queries = append(exp.Queries, *subExp)
+		}
+		return exp, nil
 	}
 
 	exp := &QueryExplanation{
-		SQL:       s.cs.st.sql,
+		CompiledQuery: s.cs.st.sql,
 		Operation: s.cs.st.qc.Type.String(),
 		Name:      s.cs.st.qc.Name,
 		Role:      s.cs.st.role,
@@ -1211,6 +1219,120 @@ func (gj *graphjinEngine) explainQuery(query string, vars json.RawMessage, role 
 	}
 
 	return exp, nil
+}
+
+// explainForDatabase compiles a sub-query for a single database and returns its explanation.
+func (gj *graphjinEngine) explainForDatabase(s *gstate, dbName string, rootFields []string) *QueryExplanation {
+	// Get compilers for the target database
+	var qcodeCompiler *qcode.Compiler
+	var psqlCompiler *psql.Compiler
+
+	if dbName == gj.defaultDB {
+		qcodeCompiler = gj.qcodeCompiler
+		psqlCompiler = gj.psqlCompiler
+	} else {
+		dbCtx, ok := gj.GetDatabase(dbName)
+		if !ok {
+			return &QueryExplanation{
+				Database: dbName,
+				Errors:   []string{fmt.Sprintf("database not found: %s", dbName)},
+			}
+		}
+		qcodeCompiler = dbCtx.qcodeCompiler
+		psqlCompiler = dbCtx.psqlCompiler
+	}
+
+	// Build a sub-query with only this database's root fields
+	subQuery, err := s.buildDatabaseQuery(rootFields)
+	if err != nil {
+		return &QueryExplanation{
+			Database: dbName,
+			Errors:   []string{fmt.Sprintf("failed to build sub-query: %s", err.Error())},
+		}
+	}
+
+	// Get vars
+	var vars map[string]json.RawMessage
+	if len(s.r.aschema) != 0 {
+		vars = s.r.aschema
+	} else {
+		vars = s.vmap
+	}
+
+	// Compile QCode
+	qc, err := qcodeCompiler.Compile(subQuery, vars, s.role, s.r.namespace)
+	if err != nil {
+		return &QueryExplanation{
+			Database: dbName,
+			Errors:   []string{fmt.Sprintf("qcode compile failed: %s", err.Error())},
+		}
+	}
+
+	// Compile query (SQL or MongoDB pipeline depending on dialect)
+	var sqlBuf bytes.Buffer
+	md, err := psqlCompiler.Compile(&sqlBuf, qc)
+	if err != nil {
+		return &QueryExplanation{
+			Database: dbName,
+			Errors:   []string{fmt.Sprintf("query compile failed: %s", err.Error())},
+		}
+	}
+
+	exp := &QueryExplanation{
+		CompiledQuery: sqlBuf.String(),
+		Operation:     qc.Type.String(),
+		Name:          qc.Name,
+		Role:          s.role,
+		Database:      dbName,
+	}
+
+	// Extract params
+	params := md.Params()
+	for _, p := range params {
+		exp.Params = append(exp.Params, ParamInfo{
+			Name:    p.Name,
+			Type:    p.Type,
+			IsArray: p.IsArray,
+		})
+	}
+
+	// Extract tables and compute join depth
+	maxDepth := 0
+	for i := range qc.Selects {
+		sel := &qc.Selects[i]
+		if sel.SkipRender != 0 {
+			continue
+		}
+		exp.Tables = append(exp.Tables, SelectInfo{
+			Table:    sel.Table,
+			Schema:   sel.Schema,
+			Database: sel.Database,
+			Singular: sel.Singular,
+			Children: len(sel.Children),
+		})
+
+		depth := 0
+		pid := sel.ParentID
+		for pid != -1 {
+			depth++
+			if int(pid) < len(qc.Selects) {
+				pid = qc.Selects[pid].ParentID
+			} else {
+				break
+			}
+		}
+		if depth > maxDepth {
+			maxDepth = depth
+		}
+	}
+	exp.JoinDepth = maxDepth
+
+	// Cache header
+	if qc.Cache.Header != "" {
+		exp.CacheHeader = qc.Cache.Header
+	}
+
+	return exp
 }
 
 // exploreRelationships performs BFS over the relationship graph.

@@ -15,9 +15,11 @@ func (ms *mcpServer) registerExplainTools() {
 
 	ms.srv.AddTool(mcp.NewTool(
 		"explain_query",
-		mcp.WithDescription("Compile a GraphQL query to SQL WITHOUT executing it. "+
-			"Returns the generated SQL, parameter bindings, tables touched, join depth, and cache info. "+
-			"Use this to debug performance, verify correctness, and understand the SQL before running it."),
+		mcp.WithDescription("Compile a GraphQL query WITHOUT executing it. "+
+			"Returns the compiled query (SQL for relational databases, aggregation pipeline for MongoDB), "+
+			"parameter bindings, tables touched, join depth, and cache info. "+
+			"For multi-database queries, returns per-database explanations. "+
+			"Use this to debug performance, verify correctness, and understand the query before running it."),
 		mcp.WithString("query",
 			mcp.Required(),
 			mcp.Description("The GraphQL query to explain"),
@@ -31,7 +33,7 @@ func (ms *mcpServer) registerExplainTools() {
 	), ms.handleExplainQuery)
 }
 
-// handleExplainQuery compiles a query to SQL and returns the explanation
+// handleExplainQuery compiles a query and returns the explanation
 func (ms *mcpServer) handleExplainQuery(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	if ms.service.gj == nil {
 		return mcp.NewToolResultError("GraphJin not initialized - no database connection configured"), nil
