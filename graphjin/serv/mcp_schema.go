@@ -9,6 +9,19 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
+const errNoDB = "No databases have been configured yet. " +
+	"Use the discover_databases tool to find available databases, " +
+	"then update_current_config to set up a connection."
+
+// requireDB checks that GraphJin is initialized with a usable schema.
+// Returns an error result if not ready, or nil if ready to proceed.
+func (ms *mcpServer) requireDB() *mcp.CallToolResult {
+	if ms.service.gj == nil || !ms.service.gj.SchemaReady() {
+		return mcp.NewToolResultError(errNoDB)
+	}
+	return nil
+}
+
 // registerSchemaTools registers the schema discovery tools
 func (ms *mcpServer) registerSchemaTools() {
 	// list_tables - List all database tables
@@ -103,8 +116,8 @@ func (ms *mcpServer) registerSchemaTools() {
 
 // handleListTables returns all available tables
 func (ms *mcpServer) handleListTables(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if ms.service.gj == nil {
-		return mcp.NewToolResultError("GraphJin not initialized - no database connection configured"), nil
+	if err := ms.requireDB(); err != nil {
+		return err, nil
 	}
 	args := req.GetArguments()
 	database, _ := args["database"].(string)
@@ -145,8 +158,8 @@ type TableSchemaWithAggregations struct {
 
 // handleDescribeTable returns detailed schema for a table including aggregations
 func (ms *mcpServer) handleDescribeTable(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if ms.service.gj == nil {
-		return mcp.NewToolResultError("GraphJin not initialized - no database connection configured"), nil
+	if err := ms.requireDB(); err != nil {
+		return err, nil
 	}
 	args := req.GetArguments()
 	table, _ := args["table"].(string)
@@ -210,8 +223,8 @@ func generateAggregations(schema *core.TableSchema) AggregationInfo {
 
 // handleFindPath finds the relationship path between two tables
 func (ms *mcpServer) handleFindPath(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if ms.service.gj == nil {
-		return mcp.NewToolResultError("GraphJin not initialized - no database connection configured"), nil
+	if err := ms.requireDB(); err != nil {
+		return err, nil
 	}
 	args := req.GetArguments()
 	fromTable, _ := args["from_table"].(string)
@@ -341,8 +354,8 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 
 // handleReloadSchema triggers a schema reload
 func (ms *mcpServer) handleReloadSchema(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if ms.service.gj == nil {
-		return mcp.NewToolResultError("GraphJin not initialized - no database connection configured"), nil
+	if err := ms.requireDB(); err != nil {
+		return err, nil
 	}
 	err := ms.service.gj.Reload()
 	if err != nil {
@@ -482,8 +495,8 @@ type ColumnTypeInfo struct {
 
 // handleValidateWhereClause validates a where clause for syntax and type compatibility
 func (ms *mcpServer) handleValidateWhereClause(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if ms.service.gj == nil {
-		return mcp.NewToolResultError("GraphJin not initialized - no database connection configured"), nil
+	if err := ms.requireDB(); err != nil {
+		return err, nil
 	}
 	args := req.GetArguments()
 	table, _ := args["table"].(string)

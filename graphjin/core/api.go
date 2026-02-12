@@ -741,6 +741,20 @@ func (g *GraphJin) GetTables() []TableInfo {
 	return gj.getTables("")
 }
 
+// SchemaReady returns true if the engine has a usable schema.
+// Use this to check before calling methods that access the schema
+// to avoid nil pointer dereferences during partial initialization.
+func (g *GraphJin) SchemaReady() bool {
+	gj, ok := g.Load().(*graphjinEngine)
+	if !ok || gj == nil {
+		return false
+	}
+	if gj.isMultiDB() {
+		return len(gj.databases) > 0
+	}
+	return gj.schema != nil
+}
+
 // GetTablesForDatabase returns tables from a specific database.
 // If database is empty, returns tables from all databases.
 func (g *GraphJin) GetTablesForDatabase(database string) []TableInfo {
@@ -756,6 +770,9 @@ func (gj *graphjinEngine) getTables(database string) []TableInfo {
 		var result []TableInfo
 		for dbName, ctx := range gj.databases {
 			if database != "" && dbName != database {
+				continue
+			}
+			if ctx.schema == nil {
 				continue
 			}
 			tables := ctx.schema.GetTables()
@@ -777,6 +794,9 @@ func (gj *graphjinEngine) getTables(database string) []TableInfo {
 	}
 
 	// Single-DB mode: existing behavior
+	if gj.schema == nil {
+		return nil
+	}
 	tables := gj.schema.GetTables()
 	result := make([]TableInfo, 0, len(tables))
 	for _, t := range tables {
@@ -830,6 +850,9 @@ func (gj *graphjinEngine) getTableSchema(database, tableName string) (*TableSche
 	}
 
 	// Single-DB mode
+	if gj.schema == nil {
+		return nil, fmt.Errorf("schema not initialized")
+	}
 	return gj.buildTableSchema(gj.schema, "", tableName)
 }
 
@@ -917,6 +940,9 @@ func (gj *graphjinEngine) findRelationshipPath(database, fromTable, toTable stri
 		}
 		// Search all databases
 		for _, ctx := range gj.databases {
+			if ctx.schema == nil {
+				continue
+			}
 			path, err := gj.buildPath(ctx.schema, fromTable, toTable)
 			if err == nil {
 				return path, nil
@@ -926,6 +952,9 @@ func (gj *graphjinEngine) findRelationshipPath(database, fromTable, toTable stri
 	}
 
 	// Single-DB mode
+	if gj.schema == nil {
+		return nil, fmt.Errorf("schema not initialized")
+	}
 	return gj.buildPath(gj.schema, fromTable, toTable)
 }
 

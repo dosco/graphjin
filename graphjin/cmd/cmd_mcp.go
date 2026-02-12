@@ -17,12 +17,12 @@ import (
 )
 
 var (
-	mcpUserID   string
-	mcpUserRole string
+	mcpUserID    string
+	mcpUserRole  string
 	mcpServerURL string
-	mcpDemoMode bool
-	mcpPersist  bool
-	mcpDBFlags  []string
+	mcpDemoMode  bool
+	mcpPersist   bool
+	mcpDBFlags   []string
 )
 
 func mcpCmd() *cobra.Command {
@@ -181,7 +181,6 @@ func printMCPConfig(conf *serv.Config, demoMode bool) {
 	if appName == "" {
 		appName = "graphjin"
 	}
-	serverName := slugify(appName)
 
 	// Build args
 	var cmdArgs []string
@@ -194,7 +193,7 @@ func printMCPConfig(conf *serv.Config, demoMode bool) {
 	// Build the config structure
 	mcpConfig := map[string]interface{}{
 		"mcpServers": map[string]interface{}{
-			serverName: map[string]interface{}{
+			"GraphJin": map[string]interface{}{
 				"command": execPath,
 				"args":    cmdArgs,
 			},

@@ -31,6 +31,51 @@ func mcpMarshalJSON(v any, indent bool) ([]byte, error) {
 	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
 }
 
+// mcpToolList returns the names of MCP tools that will be registered
+// based on the current configuration flags.
+func mcpToolList(conf *Config) []string {
+	if conf.MCP.Disable {
+		return nil
+	}
+
+	// Always-on tools
+	tools := []string{
+		"get_query_syntax",
+		"get_mutation_syntax",
+		"list_tables",
+		"describe_table",
+		"find_path",
+		"validate_where_clause",
+		"get_workflow_guide",
+		"explore_relationships",
+		"execute_graphql",
+		"execute_saved_query",
+		"list_saved_queries",
+		"search_saved_queries",
+		"get_saved_query",
+		"list_fragments",
+		"get_fragment",
+		"search_fragments",
+		"get_current_config",
+	}
+
+	// Conditionally registered
+	if conf.MCP.AllowConfigUpdates {
+		tools = append(tools, "update_current_config")
+	}
+	if conf.MCP.AllowSchemaReload {
+		tools = append(tools, "reload_schema")
+	}
+	if conf.MCP.AllowSchemaUpdates {
+		tools = append(tools, "preview_schema_changes", "apply_schema_changes")
+	}
+	if conf.MCP.AllowDevTools {
+		tools = append(tools, "explain_query", "audit_role_permissions", "discover_databases")
+	}
+
+	return tools
+}
+
 // mcpServer wraps the MCP server instance
 type mcpServer struct {
 	srv     *server.MCPServer

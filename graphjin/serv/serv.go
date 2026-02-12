@@ -106,6 +106,7 @@ func startHTTP(s1 *HttpService) {
 		zap.String("env", os.Getenv("GO_ENV")),
 		// zap.Bool("hot-deploy", s.conf.HotDeploy),
 		zap.Bool("production", s.conf.Core.Production),
+		zap.String("mcp-mode", mcpMode(s)),
 	}
 
 	if s.namespace != nil {
@@ -118,6 +119,7 @@ func startHTTP(s1 *HttpService) {
 
 	s.zlog.Info("GraphJin started", fields...)
 	printDevModeInfo(s)
+	printMCPInfo(s)
 
 	l, err := net.Listen("tcp", s.conf.hostPort)
 	if err != nil {
@@ -181,6 +183,61 @@ func printDevModeInfo(s *graphjinService) {
 	fmt.Println()
 }
 
+// mcpMode returns a short string describing the MCP server mode
+func mcpMode(s *graphjinService) string {
+	if s.conf.MCP.Disable {
+		return "disabled"
+	}
+	if s.conf.MCP.Only {
+		return "mcp-only"
+	}
+	return "enabled"
+}
+
+// printMCPInfo prints which MCP tools are registered on startup (debug log level only)
+func printMCPInfo(s *graphjinService) {
+	if s.conf.MCP.Disable || s.conf.LogLevel != "debug" {
+		return
+	}
+
+	mode := "production"
+	if !s.conf.Serv.Production {
+		mode = "development"
+	}
+
+	tools := mcpToolList(s.conf)
+
+	var coreParts, devParts []string
+	for _, t := range tools {
+		if isConditionalTool(t) {
+			devParts = append(devParts, t)
+		} else {
+			coreParts = append(coreParts, t)
+		}
+	}
+
+	fmt.Println("MCP Tools")
+	fmt.Println("─────────")
+	fmt.Printf("  Mode:  %s\n", mode)
+	fmt.Printf("  Tools: %d registered\n", len(tools))
+	fmt.Printf("  Core:      %s\n", strings.Join(coreParts, ", "))
+	if len(devParts) > 0 {
+		fmt.Printf("  Dev/Admin: %s\n", strings.Join(devParts, ", "))
+	}
+	fmt.Println()
+}
+
+// isConditionalTool returns true for tools that are conditionally registered
+func isConditionalTool(name string) bool {
+	switch name {
+	case "update_current_config", "reload_schema",
+		"preview_schema_changes", "apply_schema_changes",
+		"explain_query", "audit_role_permissions", "discover_databases":
+		return true
+	}
+	return false
+}
+
 // printClaudeConfig prints a Claude Desktop configuration snippet
 func printClaudeConfig(conf *Config, displayHost string) {
 	execPath, _ := os.Executable()
@@ -192,11 +249,11 @@ func printClaudeConfig(conf *Config, displayHost string) {
 
 	fmt.Printf(`  {
     "mcpServers": {
-      "%s": {
+      "GraphJin": {
         "command": "%s",
         "args": ["mcp", "--server", "%s"]
       }
     }
   }
-`, conf.AppName, execPath, serverURL)
+`, execPath, serverURL)
 }

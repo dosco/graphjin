@@ -426,10 +426,11 @@ type SetHeaderInput struct {
 
 // ConfigUpdateResult represents the result of a config update
 type ConfigUpdateResult struct {
-	Success bool     `json:"success"`
-	Message string   `json:"message"`
-	Changes []string `json:"changes,omitempty"`
-	Errors  []string `json:"errors,omitempty"`
+	Success   bool     `json:"success"`
+	Message   string   `json:"message"`
+	Changes   []string `json:"changes,omitempty"`
+	Errors    []string `json:"errors,omitempty"`
+	Databases []string `json:"databases,omitempty"`
 }
 
 // handleUpdateCurrentConfig updates the configuration and reloads
@@ -456,6 +457,10 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			if err != nil {
 				errors = append(errors, fmt.Sprintf("database '%s': %v", name, err))
 				continue
+			}
+			// Infer dbname from map key if not explicitly set
+			if dbConf.DBName == "" && dbConf.ConnString == "" {
+				dbConf.DBName = name
 			}
 			conf.Databases[name] = dbConf
 			changes = append(changes, fmt.Sprintf("added/updated database: %s", name))
@@ -700,6 +705,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 	}
 
 	// Attempt to reload with new config first (validates the config)
+	var availableDBs []string
 	if len(changes) > 0 {
 		if ms.service.gj != nil {
 			if err := ms.service.gj.Reload(); err != nil {
@@ -712,13 +718,29 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 				data, _ := mcpMarshalJSON(result, true)
 				return mcp.NewToolResultText(string(data)), nil
 			}
+			// Verify schema is ready after reload
+			if !ms.service.gj.SchemaReady() {
+				result := ConfigUpdateResult{
+					Success: false,
+					Message: "Config reloaded but schema discovery found no tables",
+					Changes: changes,
+					Errors:  append(errors, "schema not ready after reload"),
+				}
+				data, _ := mcpMarshalJSON(result, true)
+				return mcp.NewToolResultText(string(data)), nil
+			}
+			if ms.service.db != nil {
+				availableDBs, _ = listDatabaseNames(ms.service.db, ms.service.conf.DBType)
+			}
 		} else {
 			// GraphJin not initialized — try to connect and initialize now
-			if err := ms.tryInitializeGraphJin(); err != nil {
+			dbNames, err := ms.tryInitializeGraphJin()
+			if err != nil {
 				errors = append(errors, fmt.Sprintf("GraphJin initialization failed: %v", err))
 			} else {
 				changes = append(changes, "GraphJin initialized with new database configuration")
 			}
+			availableDBs = dbNames
 		}
 	}
 
@@ -734,10 +756,11 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 	}
 
 	result := ConfigUpdateResult{
-		Success: len(errors) == 0,
-		Message: "Configuration updated and reloaded successfully",
-		Changes: changes,
-		Errors:  errors,
+		Success:   len(errors) == 0,
+		Message:   "Configuration updated and reloaded successfully",
+		Changes:   changes,
+		Errors:    errors,
+		Databases: availableDBs,
 	}
 
 	if len(errors) > 0 {
@@ -1227,18 +1250,19 @@ func syncDBFromDatabases(conf *Config) bool {
 
 // tryInitializeGraphJin attempts to connect to the database and initialize GraphJin core.
 // This is called from the MCP handler when gj == nil (no DB was available at startup).
-func (ms *mcpServer) tryInitializeGraphJin() error {
+// Returns a list of databases found on the server (even on failure) alongside the error.
+func (ms *mcpServer) tryInitializeGraphJin() ([]string, error) {
 	s := ms.service
 
 	// Bridge Databases map -> conf.DB fields
 	if !syncDBFromDatabases(s.conf) {
-		return fmt.Errorf("no database configuration found in databases map")
+		return nil, fmt.Errorf("no database configuration found in databases map")
 	}
 
 	// Attempt a single DB connection
 	db, err := newDBOnce(s.conf, true, true, s.log, s.fs)
 	if err != nil {
-		return fmt.Errorf("database connection failed: %w", err)
+		return nil, fmt.Errorf("database connection failed: %w", err)
 	}
 
 	s.db = db
@@ -1249,11 +1273,33 @@ func (ms *mcpServer) tryInitializeGraphJin() error {
 		s.db.Close() //nolint:errcheck
 		s.db = nil
 		s.gj = nil
-		return fmt.Errorf("GraphJin initialization failed: %w", err)
+		return nil, fmt.Errorf("GraphJin initialization failed: %w", err)
+	}
+
+	// Verify schema is ready before returning success
+	if s.gj == nil || !s.gj.SchemaReady() {
+		// Query available databases before cleanup
+		var dbNames []string
+		if s.db != nil {
+			dbNames, _ = listDatabaseNames(s.db, s.conf.DBType)
+		}
+		// Clean up so next call retries from scratch
+		s.gj = nil
+		if s.db != nil {
+			s.db.Close() //nolint:errcheck
+			s.db = nil
+		}
+		return dbNames, fmt.Errorf("database connected but schema discovery found no tables")
+	}
+
+	// On success, also list databases for the response
+	var dbNames []string
+	if s.db != nil {
+		dbNames, _ = listDatabaseNames(s.db, s.conf.DBType)
 	}
 
 	s.log.Info("GraphJin initialized via MCP configuration")
-	return nil
+	return dbNames, nil
 }
 
 // saveConfigToDisk persists the current configuration to the config file

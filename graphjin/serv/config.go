@@ -459,10 +459,6 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("mcp.only", false)
 	vi.SetDefault("mcp.cursor_cache_ttl", 1800)       // 30 minutes
 	vi.SetDefault("mcp.cursor_cache_size", 10000)    // max in-memory entries
-	vi.SetDefault("mcp.allow_config_updates", false) // disabled by default for security
-	vi.SetDefault("mcp.allow_schema_reload", false)   // disabled by default, auto-enabled in dev mode
-	vi.SetDefault("mcp.allow_schema_updates", false)  // disabled by default, auto-enabled in dev mode
-	vi.SetDefault("mcp.allow_dev_tools", false)        // disabled by default, auto-enabled in dev mode
 
 	// Caching defaults
 	vi.SetDefault("caching.enable", false)

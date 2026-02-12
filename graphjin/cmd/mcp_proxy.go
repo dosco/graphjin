@@ -217,7 +217,7 @@ func printMCPProxyConfig(serverURL string) {
 
 	mcpConfig := map[string]interface{}{
 		"mcpServers": map[string]interface{}{
-			"graphjin-proxy": map[string]interface{}{
+			"GraphJin": map[string]interface{}{
 				"command": execPath,
 				"args":    []string{"mcp", "--server", serverURL},
 			},
