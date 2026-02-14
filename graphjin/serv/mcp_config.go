@@ -1479,14 +1479,26 @@ func (ms *mcpServer) saveConfigToDisk() error {
 }
 
 // syncConfigToViper updates viper with the current config values for sections that can be modified.
-// Always syncs all sections, including empty ones, to ensure stale values are cleared.
+// Only sets values that are non-nil to avoid polluting viper with empty entries.
 func (ms *mcpServer) syncConfigToViper(v *viper.Viper) {
 	conf := &ms.service.conf.Core
 
-	v.Set("databases", conf.Databases)
-	v.Set("tables", conf.Tables)
-	v.Set("roles", conf.Roles)
-	v.Set("blocklist", conf.Blocklist)
-	v.Set("functions", conf.Functions)
-	v.Set("resolvers", conf.Resolvers)
+	if conf.Databases != nil {
+		v.Set("databases", conf.Databases)
+	}
+	if conf.Tables != nil {
+		v.Set("tables", conf.Tables)
+	}
+	if conf.Roles != nil {
+		v.Set("roles", conf.Roles)
+	}
+	if conf.Blocklist != nil {
+		v.Set("blocklist", conf.Blocklist)
+	}
+	if conf.Functions != nil {
+		v.Set("functions", conf.Functions)
+	}
+	if conf.Resolvers != nil {
+		v.Set("resolvers", conf.Resolvers)
+	}
 }
