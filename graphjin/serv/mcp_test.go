@@ -504,6 +504,16 @@ func TestIsMutation(t *testing.T) {
 		{"\n\tmutation { createUser { id } }", true},
 		{"\r\n  mutation { createUser { id } }", true},
 
+		// Comment handling
+		{"# comment\nmutation { createUser { id } }", true},
+		{"# line1\n# line2\nmutation { createUser { id } }", true},
+		{"# comment\n  mutation { createUser { id } }", true},
+		{"# comment\nquery { users { id } }", false},
+
+		// Case-insensitive
+		{"mUtAtIoN { createUser { id } }", true},
+		{"MuTaTiOn { createUser { id } }", true},
+
 		// Negative cases - queries
 		{"{ users { id } }", false},
 		{"query { users { id } }", false},
@@ -1570,5 +1580,189 @@ func TestQuerySyntaxReference_HasRemoteJoins(t *testing.T) {
 		if example.Query == "" {
 			t.Error("Expected query for remote join example")
 		}
+	}
+}
+
+// =============================================================================
+// enhanceError Tests
+// =============================================================================
+
+func TestEnhanceError(t *testing.T) {
+	testCases := []struct {
+		name           string
+		errMsg         string
+		currentTool    string
+		shouldEnhance  bool
+		expectedTool   string
+		notContains    string // substring that should NOT appear in enhanced output
+	}{
+		// Table-related errors
+		{
+			name:          "table not found",
+			errMsg:        "table not found: users",
+			currentTool:   "execute_graphql",
+			shouldEnhance: true,
+			expectedTool:  "list_tables",
+		},
+		{
+			name:          "relation does not exist",
+			errMsg:        "ERROR: relation \"orders\" does not exist",
+			currentTool:   "execute_graphql",
+			shouldEnhance: true,
+			expectedTool:  "list_tables",
+		},
+		{
+			name:          "no such table",
+			errMsg:        "no such table: products",
+			currentTool:   "execute_graphql",
+			shouldEnhance: true,
+			expectedTool:  "list_tables",
+		},
+		{
+			name:          "unknown table",
+			errMsg:        "unknown table 'items'",
+			currentTool:   "execute_graphql",
+			shouldEnhance: true,
+			expectedTool:  "list_tables",
+		},
+
+		// Column-related errors
+		{
+			name:          "column not found",
+			errMsg:        "column not found: email",
+			currentTool:   "execute_graphql",
+			shouldEnhance: true,
+			expectedTool:  "describe_table",
+		},
+		{
+			name:          "unknown column",
+			errMsg:        "unknown column 'age' in field list",
+			currentTool:   "execute_graphql",
+			shouldEnhance: true,
+			expectedTool:  "describe_table",
+		},
+		{
+			name:          "no such column",
+			errMsg:        "no such column: phone",
+			currentTool:   "execute_graphql",
+			shouldEnhance: true,
+			expectedTool:  "describe_table",
+		},
+
+		// Operator-related errors
+		{
+			name:          "invalid operator",
+			errMsg:        "invalid operator: LIKE",
+			currentTool:   "execute_graphql",
+			shouldEnhance: true,
+			expectedTool:  "get_query_syntax",
+		},
+		{
+			name:          "unsupported operator",
+			errMsg:        "unsupported operator 'between'",
+			currentTool:   "execute_graphql",
+			shouldEnhance: true,
+			expectedTool:  "get_query_syntax",
+		},
+
+		// Syntax errors
+		{
+			name:          "syntax error",
+			errMsg:        "syntax error at or near '}'",
+			currentTool:   "execute_graphql",
+			shouldEnhance: true,
+			expectedTool:  "get_query_syntax",
+		},
+		{
+			name:          "parse error",
+			errMsg:        "parse error: unexpected token",
+			currentTool:   "execute_graphql",
+			shouldEnhance: true,
+			expectedTool:  "get_query_syntax",
+		},
+
+		// Permission errors
+		{
+			name:          "permission denied",
+			errMsg:        "permission denied for table users",
+			currentTool:   "execute_graphql",
+			shouldEnhance: true,
+			expectedTool:  "",
+		},
+		{
+			name:          "access denied",
+			errMsg:        "access denied for user 'guest'",
+			currentTool:   "execute_graphql",
+			shouldEnhance: true,
+			expectedTool:  "",
+		},
+
+		// Should NOT enhance - avoid false positives from Bug 3 fix
+		{
+			name:          "generic error with table word in context",
+			errMsg:        "pivot table calculation failed",
+			currentTool:   "execute_graphql",
+			shouldEnhance: false,
+		},
+		{
+			name:          "generic error with column word in context",
+			errMsg:        "column chart rendering error",
+			currentTool:   "execute_graphql",
+			shouldEnhance: false,
+		},
+		{
+			name:          "generic error with operator word in context",
+			errMsg:        "operator needs training",
+			currentTool:   "execute_graphql",
+			shouldEnhance: false,
+		},
+		{
+			name:          "completely unrelated error",
+			errMsg:        "connection timeout after 30s",
+			currentTool:   "execute_graphql",
+			shouldEnhance: false,
+		},
+		{
+			name:          "empty error",
+			errMsg:        "",
+			currentTool:   "execute_graphql",
+			shouldEnhance: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := enhanceError(tc.errMsg, tc.currentTool)
+
+			if tc.shouldEnhance {
+				// Should return JSON with suggestion
+				if result == tc.errMsg {
+					t.Errorf("Expected enhanced error for %q, but got original message back", tc.errMsg)
+					return
+				}
+
+				// Parse the JSON to verify structure
+				var enhanced EnhancedError
+				if err := json.Unmarshal([]byte(result), &enhanced); err != nil {
+					t.Errorf("Expected valid JSON for enhanced error, got: %s", result)
+					return
+				}
+
+				if enhanced.Message != tc.errMsg {
+					t.Errorf("Expected message %q, got %q", tc.errMsg, enhanced.Message)
+				}
+				if enhanced.Suggestion == "" {
+					t.Error("Expected non-empty suggestion")
+				}
+				if tc.expectedTool != "" && enhanced.RelatedTool != tc.expectedTool {
+					t.Errorf("Expected related tool %q, got %q", tc.expectedTool, enhanced.RelatedTool)
+				}
+			} else {
+				// Should return original message unchanged
+				if result != tc.errMsg {
+					t.Errorf("Expected original error %q, but got enhanced: %s", tc.errMsg, result)
+				}
+			}
+		})
 	}
 }

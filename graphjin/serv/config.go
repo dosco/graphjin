@@ -250,6 +250,10 @@ type MCPConfig struct {
 	// These expose SQL, relationship graphs, and role permissions — useful for development/debugging.
 	// Auto-enabled in dev mode. Default: false
 	AllowDevTools bool `mapstructure:"allow_dev_tools" jsonschema:"title=Allow Dev Tools,default=false"`
+
+	// DefaultDBAllowed when true allows configuring and discovering system/default
+	// databases (e.g. postgres, mysql, master). Default: false
+	DefaultDBAllowed bool `mapstructure:"default_db_allowed" jsonschema:"title=Allow Default Databases,default=false"`
 }
 
 // RedisConfig configures Redis connection

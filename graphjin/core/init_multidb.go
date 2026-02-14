@@ -224,14 +224,7 @@ func (gj *graphjinEngine) setTableDatabases() {
 	// Build a map of table name to database
 	tableToDb := make(map[string]string)
 
-	// First, process tables listed in DatabaseConfig.Tables
-	for dbName, dbConf := range gj.conf.Databases {
-		for _, tableName := range dbConf.Tables {
-			tableToDb[tableName] = dbName
-		}
-	}
-
-	// Then, process tables with explicit Database field in config
+	// Process tables with explicit Database field in config
 	for _, t := range gj.conf.Tables {
 		if t.Database != "" {
 			tableToDb[t.Name] = t.Database

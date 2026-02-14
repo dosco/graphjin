@@ -35,8 +35,8 @@ func (ms *mcpServer) registerExplainTools() {
 
 // handleExplainQuery compiles a query and returns the explanation
 func (ms *mcpServer) handleExplainQuery(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if ms.service.gj == nil {
-		return mcp.NewToolResultError("GraphJin not initialized - no database connection configured"), nil
+	if err := ms.requireDB(); err != nil {
+		return err, nil
 	}
 
 	args := req.GetArguments()

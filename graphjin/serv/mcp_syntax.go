@@ -313,6 +313,80 @@ var mutationSyntaxReference = MutationSyntaxReference{
 	},
 }
 
+// registerResources registers MCP Resources for static content that clients can prefetch
+func (ms *mcpServer) registerResources() {
+	// Query syntax guide resource
+	ms.srv.AddResource(
+		mcp.NewResource(
+			"graphjin://syntax/query",
+			"GraphJin Query Syntax Guide",
+			mcp.WithResourceDescription("Complete GraphJin query DSL reference including operators, pagination, aggregations, and examples"),
+			mcp.WithMIMEType("application/json"),
+		),
+		func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
+			data, err := mcpMarshalJSON(querySyntaxReference, true)
+			if err != nil {
+				return nil, err
+			}
+			return []mcp.ResourceContents{
+				mcp.TextResourceContents{URI: req.Params.URI, MIMEType: "application/json", Text: string(data)},
+			}, nil
+		},
+	)
+
+	// Mutation syntax guide resource
+	ms.srv.AddResource(
+		mcp.NewResource(
+			"graphjin://syntax/mutation",
+			"GraphJin Mutation Syntax Guide",
+			mcp.WithResourceDescription("Complete GraphJin mutation DSL reference including insert, update, upsert, delete, and nested mutations"),
+			mcp.WithMIMEType("application/json"),
+		),
+		func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
+			data, err := mcpMarshalJSON(mutationSyntaxReference, true)
+			if err != nil {
+				return nil, err
+			}
+			return []mcp.ResourceContents{
+				mcp.TextResourceContents{URI: req.Params.URI, MIMEType: "application/json", Text: string(data)},
+			}, nil
+		},
+	)
+
+	// Workflow guide resource
+	ms.srv.AddResource(
+		mcp.NewResource(
+			"graphjin://guides/workflow",
+			"GraphJin MCP Workflow Guide",
+			mcp.WithResourceDescription("Recommended workflow for using GraphJin MCP tools including tool sequences for common tasks"),
+			mcp.WithMIMEType("application/json"),
+		),
+		func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
+			guide := WorkflowGuide{
+				QueryWorkflow: []string{
+					"1. Call get_query_syntax to learn GraphJin DSL",
+					"2. Call list_tables to see available data",
+					"3. Call describe_table for schema details",
+					"4. Check list_saved_queries for existing queries",
+					"5. Call execute_graphql or execute_saved_query",
+				},
+				MutationWorkflow: []string{
+					"1. Call get_mutation_syntax to learn mutation syntax",
+					"2. Call describe_table to understand required columns",
+					"3. Call execute_graphql with the mutation",
+				},
+			}
+			data, err := mcpMarshalJSON(guide, true)
+			if err != nil {
+				return nil, err
+			}
+			return []mcp.ResourceContents{
+				mcp.TextResourceContents{URI: req.Params.URI, MIMEType: "application/json", Text: string(data)},
+			}, nil
+		},
+	)
+}
+
 // registerSyntaxTools registers the syntax reference tools
 func (ms *mcpServer) registerSyntaxTools() {
 	// get_query_syntax - Returns GraphJin query DSL reference

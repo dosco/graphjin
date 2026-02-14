@@ -201,97 +201,103 @@ mcp:
 # GJ_DATABASE_USER
 # GJ_DATABASE_PASSWORD
 
-# database:
-#   type: postgres
-#   host: localhost
-#   port: 5432
-#   dbname: {{ .AppNameSlug -}}_development
-#   user: postgres
-#   password: postgres
-#   #schema: "public"
+# databases:
+#   default:
+#     type: postgres
+#     host: localhost
+#     port: 5432
+#     dbname: {{ .AppNameSlug -}}_development
+#     user: postgres
+#     password: postgres
+#     #schema: "public"
+#     # alternatively you can use a connection string
+#     #connection_string: postgres://jack:secret@pg.example.com:5432/mydb?sslmode=verify-ca&pool_max_conns=10
 
-#   # alternatively you can use a connection string
-#   #connection_string: postgres://jack:secret@pg.example.com:5432/mydb?sslmode=verify-ca&pool_max_conns=10
-
-# --- PostgreSQL (default) ---
-# database:
-#   type: postgres
-#   host: localhost
-#   port: 5432
-#   dbname: myapp
-#   user: postgres
-#   password: secret
-#   schema: "public"
-#   # connection_string: postgres://user:password@localhost:5432/myapp?sslmode=disable
+# --- PostgreSQL ---
+# databases:
+#   default:
+#     type: postgres
+#     host: localhost
+#     port: 5432
+#     dbname: myapp
+#     user: postgres
+#     password: secret
+#     schema: "public"
+#     # connection_string: postgres://user:password@localhost:5432/myapp?sslmode=disable
 
 # --- MySQL / MariaDB ---
-# database:
-#   type: mysql
-#   host: localhost
-#   port: 3306
-#   dbname: myapp
-#   user: root
-#   password: secret
-#   # connection_string: user:password@tcp(localhost:3306)/myapp?multiStatements=true&parseTime=true&interpolateParams=true
-#   # Note: multiStatements, parseTime, and interpolateParams are recommended for full functionality
+# databases:
+#   default:
+#     type: mysql
+#     host: localhost
+#     port: 3306
+#     dbname: myapp
+#     user: root
+#     password: secret
+#     # connection_string: user:password@tcp(localhost:3306)/myapp?multiStatements=true&parseTime=true&interpolateParams=true
+#     # Note: multiStatements, parseTime, and interpolateParams are recommended for full functionality
 
 # --- SQLite ---
-# database:
-#   type: sqlite
-#   # File-based: set host to the database file path
-#   host: /path/to/database.db
-#   # In-memory with shared cache:
-#   # connection_string: file:memdb?mode=memory&cache=shared&_busy_timeout=5000
+# databases:
+#   default:
+#     type: sqlite
+#     # File-based: set host to the database file path
+#     host: /path/to/database.db
+#     # In-memory with shared cache:
+#     # connection_string: file:memdb?mode=memory&cache=shared&_busy_timeout=5000
 
 # --- Oracle ---
-# database:
-#   type: oracle
-#   host: localhost
-#   port: 1521
-#   dbname: FREEPDB1
-#   user: myuser
-#   password: secret
-#   # connection_string: oracle://user:password@localhost:1521/FREEPDB1
+# databases:
+#   default:
+#     type: oracle
+#     host: localhost
+#     port: 1521
+#     dbname: FREEPDB1
+#     user: myuser
+#     password: secret
+#     # connection_string: oracle://user:password@localhost:1521/FREEPDB1
 
 # --- MS SQL Server ---
-# database:
-#   type: mssql
-#   host: localhost
-#   port: 1433
-#   dbname: myapp
-#   user: sa
-#   password: YourStrong!Passw0rd
-#   # connection_string: sqlserver://sa:YourStrong!Passw0rd@localhost:1433?database=myapp
+# databases:
+#   default:
+#     type: mssql
+#     host: localhost
+#     port: 1433
+#     dbname: myapp
+#     user: sa
+#     password: YourStrong!Passw0rd
+#     # connection_string: sqlserver://sa:YourStrong!Passw0rd@localhost:1433?database=myapp
 
 # --- MongoDB ---
-# database:
-#   type: mongodb
-#   host: localhost
-#   port: 27017
-#   dbname: myapp
-#   # Note: MongoDB has no foreign keys, so relationships must be configured explicitly
+# databases:
+#   default:
+#     type: mongodb
+#     host: localhost
+#     port: 27017
+#     dbname: myapp
+#     # Note: MongoDB has no foreign keys, so relationships must be configured explicitly
 
 # --- Database Connection Options (apply to any database type) ---
-#   # Size of database connection pool
-#   pool_size: 15
+#     # Size of database connection pool
+#     pool_size: 15
 #
-#   # Max number of active database connections allowed
-#   max_connections: 25
+#     # Max number of active database connections allowed
+#     max_connections: 25
 #
-#   # Max time after which idle database connections are closed
-#   max_connection_idle_time: 5s
+#     # Max time after which idle database connections are closed
+#     max_connection_idle_time: 5s
 #
-#   # Max time after which database connections are not reused
-#   max_connection_life_time: 0s
+#     # Max time after which database connections are not reused
+#     max_connection_life_time: 0s
 #
-#   # Database query log level
-#   log_level: "debug"
+#     # Database query log level
+#     log_level: "debug"
 #
-#   # database ping timeout is used for db health checking
-#   ping_timeout: 1m
+#     # database ping timeout is used for db health checking
+#     ping_timeout: 1m
 #
-#   # Set up an secure tls encrypted db connection
-#   enable_tls: false
+#     # Set up an secure tls encrypted db connection
+#     enable_tls: false
 #
 #   # Required for tls. For example with Google Cloud SQL it's
 #   # <gcp-project-id>:<cloud-sql-instance>"

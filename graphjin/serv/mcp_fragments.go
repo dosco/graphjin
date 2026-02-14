@@ -11,6 +11,10 @@ import (
 
 // registerFragmentTools registers the fragment discovery tools
 func (ms *mcpServer) registerFragmentTools() {
+	if !ms.service.conf.MCP.EnableSearch {
+		return
+	}
+
 	// list_fragments - List all available fragments
 	ms.srv.AddTool(mcp.NewTool(
 		"list_fragments",

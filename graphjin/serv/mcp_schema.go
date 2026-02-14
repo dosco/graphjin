@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -153,7 +154,14 @@ type AggregationInfo struct {
 // TableSchemaWithAggregations extends TableSchema with aggregation information
 type TableSchemaWithAggregations struct {
 	*core.TableSchema
-	Aggregations AggregationInfo `json:"aggregations"`
+	Aggregations   AggregationInfo `json:"aggregations"`
+	ExampleQueries []ExampleQuery  `json:"example_queries,omitempty"`
+}
+
+// ExampleQuery represents an example GraphQL query for a table
+type ExampleQuery struct {
+	Description string `json:"description"`
+	Query       string `json:"query"`
 }
 
 // handleDescribeTable returns detailed schema for a table including aggregations
@@ -183,9 +191,13 @@ func (ms *mcpServer) handleDescribeTable(ctx context.Context, req mcp.CallToolRe
 	// Generate available aggregations based on column types
 	aggregations := generateAggregations(schema)
 
+	// Generate example queries
+	examples := generateExampleQueries(schema)
+
 	result := TableSchemaWithAggregations{
-		TableSchema:  schema,
-		Aggregations: aggregations,
+		TableSchema:    schema,
+		Aggregations:   aggregations,
+		ExampleQueries: examples,
 	}
 
 	data, err := mcpMarshalJSON(result, true)
@@ -219,6 +231,55 @@ func generateAggregations(schema *core.TableSchema) AggregationInfo {
 		Available: available,
 		Usage:     fmt.Sprintf("{ %s { count_id sum_<numeric_col> avg_<numeric_col> } }", schema.Name),
 	}
+}
+
+// generateExampleQueries creates example GraphQL queries for a table
+func generateExampleQueries(schema *core.TableSchema) []ExampleQuery {
+	var examples []ExampleQuery
+	name := schema.Name
+
+	// Collect column names for the basic query (up to 5)
+	var colNames []string
+	for _, col := range schema.Columns {
+		colNames = append(colNames, col.Name)
+		if len(colNames) >= 5 {
+			break
+		}
+	}
+	colList := "id"
+	if len(colNames) > 0 {
+		colList = strings.Join(colNames, " ")
+	}
+
+	// 1. Basic fetch
+	examples = append(examples, ExampleQuery{
+		Description: fmt.Sprintf("Fetch %s with limit", name),
+		Query:       fmt.Sprintf("{ %s(limit: 10) { %s } }", name, colList),
+	})
+
+	// 2. Relationship join (if any relationships exist)
+	allRels := append(schema.Relationships.Outgoing, schema.Relationships.Incoming...)
+	if len(allRels) > 0 {
+		rel := allRels[0]
+		examples = append(examples, ExampleQuery{
+			Description: fmt.Sprintf("Fetch %s with related %s", name, rel.Table),
+			Query:       fmt.Sprintf("{ %s(limit: 10) { %s %s { id } } }", name, colList, rel.Table),
+		})
+	}
+
+	// 3. Aggregation (if numeric columns exist)
+	for _, col := range schema.Columns {
+		normalizedType := normalizeColumnType(col.Type)
+		if normalizedType == "numeric" {
+			examples = append(examples, ExampleQuery{
+				Description: fmt.Sprintf("Aggregate %s statistics", name),
+				Query:       fmt.Sprintf("{ %s { count_id sum_%s avg_%s } }", name, col.Name, col.Name),
+			})
+			break
+		}
+	}
+
+	return examples
 }
 
 // handleFindPath finds the relationship path between two tables
@@ -404,13 +465,13 @@ func enhanceError(errMsg, currentTool string) string {
 
 	// Pattern matching for common errors
 	switch {
-	case contains(errMsg, "table not found", "unknown table", "table"):
+	case contains(errMsg, "table not found", "unknown table", "does not exist", "no such table", "table doesn't exist"):
 		enhanced.Suggestion = "Check spelling or use list_tables to see available tables. The table may exist in a different database - use list_tables to see all databases."
 		enhanced.RelatedTool = "list_tables"
-	case contains(errMsg, "column not found", "unknown column", "column"):
+	case contains(errMsg, "column not found", "unknown column", "column does not exist", "no such column", "unknown field"):
 		enhanced.Suggestion = "Check spelling or use describe_table to see available columns"
 		enhanced.RelatedTool = "describe_table"
-	case contains(errMsg, "invalid operator", "operator"):
+	case contains(errMsg, "invalid operator", "unknown operator", "unsupported operator"):
 		enhanced.Suggestion = "Use get_query_syntax to see valid operators for each type"
 		enhanced.RelatedTool = "get_query_syntax"
 	case contains(errMsg, "syntax error", "parse error", "unexpected"):

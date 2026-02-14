@@ -121,10 +121,12 @@ func NewGraphJin(conf *Config, db *sql.DB, options ...Option) (g *GraphJin, err 
 
 	g = &GraphJin{done: make(chan bool)}
 	if err = g.newGraphJin(conf, db, nil, fs, options...); err != nil {
+		g = nil
 		return
 	}
 
 	if err = g.initDBWatcher(); err != nil {
+		g = nil
 		return
 	}
 	return
@@ -134,13 +136,29 @@ func NewGraphJin(conf *Config, db *sql.DB, options ...Option) (g *GraphJin, err 
 func NewGraphJinWithFS(conf *Config, db *sql.DB, fs FS, options ...Option) (g *GraphJin, err error) {
 	g = &GraphJin{done: make(chan bool)}
 	if err = g.newGraphJin(conf, db, nil, fs, options...); err != nil {
+		g = nil
 		return
 	}
 
 	if err = g.initDBWatcher(); err != nil {
+		g = nil
 		return
 	}
 	return
+}
+
+var errEngineNotInitialized = errors.New("graphjin: engine not initialized")
+
+func (g *GraphJin) getEngine() (*graphjinEngine, error) {
+	v := g.Load()
+	if v == nil {
+		return nil, errEngineNotInitialized
+	}
+	gj, ok := v.(*graphjinEngine)
+	if !ok || gj == nil {
+		return nil, errEngineNotInitialized
+	}
+	return gj, nil
 }
 
 // newGraphJinWithDBInfo creates the GraphJin struct, this involves querying the database to learn its
@@ -368,7 +386,10 @@ func (g *GraphJin) GraphQL(c context.Context,
 	vars json.RawMessage,
 	rc *RequestConfig,
 ) (res *Result, err error) {
-	gj := g.Load().(*graphjinEngine)
+	gj, err := g.getEngine()
+	if err != nil {
+		return
+	}
 
 	c1, span := gj.spanStart(c, "GraphJin Query")
 	defer span.End()
@@ -449,7 +470,10 @@ func (g *GraphJin) GraphQLByName(c context.Context,
 	vars json.RawMessage,
 	rc *RequestConfig,
 ) (res *Result, err error) {
-	gj := g.Load().(*graphjinEngine)
+	gj, err := g.getEngine()
+	if err != nil {
+		return
+	}
 
 	c1, span := gj.spanStart(c, "GraphJin Query")
 	defer span.End()
@@ -597,13 +621,19 @@ func (gj *graphjinEngine) query(c context.Context, r GraphqlReq) (
 func (g *GraphJin) Reload() error {
 	g.reloadMu.Lock()
 	defer g.reloadMu.Unlock()
-	gj := g.Load().(*graphjinEngine)
+	gj, err := g.getEngine()
+	if err != nil {
+		return err
+	}
 	return g.newGraphJin(gj.conf, gj.db, nil, gj.fs, gj.opts...)
 }
 
 // IsProd return true for production mode or false for development mode
 func (g *GraphJin) IsProd() bool {
-	gj := g.Load().(*graphjinEngine)
+	gj, err := g.getEngine()
+	if err != nil {
+		return false
+	}
 	return gj.prod
 }
 
@@ -737,7 +767,10 @@ type PathStep struct {
 // GetTables returns a list of all tables across all databases (in multi-DB mode)
 // or from the default database (in single-DB mode)
 func (g *GraphJin) GetTables() []TableInfo {
-	gj := g.Load().(*graphjinEngine)
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil
+	}
 	return gj.getTables("")
 }
 
@@ -758,7 +791,10 @@ func (g *GraphJin) SchemaReady() bool {
 // GetTablesForDatabase returns tables from a specific database.
 // If database is empty, returns tables from all databases.
 func (g *GraphJin) GetTablesForDatabase(database string) []TableInfo {
-	gj := g.Load().(*graphjinEngine)
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil
+	}
 	return gj.getTables(database)
 }
 
@@ -817,14 +853,20 @@ func (gj *graphjinEngine) getTables(database string) []TableInfo {
 // GetTableSchema returns detailed schema for a specific table including relationships.
 // In multi-DB mode, searches across all databases.
 func (g *GraphJin) GetTableSchema(tableName string) (*TableSchema, error) {
-	gj := g.Load().(*graphjinEngine)
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil, err
+	}
 	return gj.getTableSchema("", tableName)
 }
 
 // GetTableSchemaForDatabase returns detailed schema for a table in a specific database.
 // If database is empty, searches across all databases.
 func (g *GraphJin) GetTableSchemaForDatabase(database, tableName string) (*TableSchema, error) {
-	gj := g.Load().(*graphjinEngine)
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil, err
+	}
 	return gj.getTableSchema(database, tableName)
 }
 
@@ -917,14 +959,20 @@ func (gj *graphjinEngine) buildTableSchema(dbSchema *sdata.DBSchema, dbName, tab
 // FindRelationshipPath finds the path between two tables.
 // In multi-DB mode, searches across all databases.
 func (g *GraphJin) FindRelationshipPath(fromTable, toTable string) ([]PathStep, error) {
-	gj := g.Load().(*graphjinEngine)
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil, err
+	}
 	return gj.findRelationshipPath("", fromTable, toTable)
 }
 
 // FindRelationshipPathForDatabase finds the path between two tables in a specific database.
 // If database is empty, searches across all databases.
 func (g *GraphJin) FindRelationshipPathForDatabase(database, fromTable, toTable string) ([]PathStep, error) {
-	gj := g.Load().(*graphjinEngine)
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil, err
+	}
 	return gj.findRelationshipPath(database, fromTable, toTable)
 }
 
@@ -1103,31 +1151,46 @@ type RoleAudit struct {
 // ExplainQuery compiles a GraphQL query without executing it.
 // Returns the compiled query, parameters, tables touched, join depth, and cache info.
 func (g *GraphJin) ExplainQuery(query string, vars json.RawMessage, role string) (*QueryExplanation, error) {
-	gj := g.Load().(*graphjinEngine)
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil, err
+	}
 	return gj.explainQuery(query, vars, role)
 }
 
 // ExploreRelationships returns a graph of all reachable tables from the given table up to the specified depth.
 func (g *GraphJin) ExploreRelationships(table string, depth int) (*RelationshipGraph, error) {
-	gj := g.Load().(*graphjinEngine)
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil, err
+	}
 	return gj.exploreRelationships("", table, depth)
 }
 
 // ExploreRelationshipsForDatabase returns a relationship graph for a table in a specific database.
 func (g *GraphJin) ExploreRelationshipsForDatabase(database, table string, depth int) (*RelationshipGraph, error) {
-	gj := g.Load().(*graphjinEngine)
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil, err
+	}
 	return gj.exploreRelationships(database, table, depth)
 }
 
 // AuditRolePermissions returns a complete permission matrix for a single role.
 func (g *GraphJin) AuditRolePermissions(role string) (*RoleAudit, error) {
-	gj := g.Load().(*graphjinEngine)
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil, err
+	}
 	return gj.auditRolePermissions(role)
 }
 
 // AuditAllRoles returns permission matrices for all configured roles.
 func (g *GraphJin) AuditAllRoles() ([]RoleAudit, error) {
-	gj := g.Load().(*graphjinEngine)
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil, err
+	}
 	var audits []RoleAudit
 	for _, r := range gj.conf.Roles {
 		audit, err := gj.auditRolePermissions(r.Name)
@@ -1631,7 +1694,10 @@ type SavedQueryDetails struct {
 
 // ListSavedQueries returns all saved queries from the allow list
 func (g *GraphJin) ListSavedQueries() ([]SavedQueryInfo, error) {
-	gj := g.Load().(*graphjinEngine)
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil, err
+	}
 
 	items, err := gj.allowList.ListAll()
 	if err != nil {
@@ -1651,7 +1717,10 @@ func (g *GraphJin) ListSavedQueries() ([]SavedQueryInfo, error) {
 
 // GetSavedQuery returns details of a specific saved query
 func (g *GraphJin) GetSavedQuery(name string) (*SavedQueryDetails, error) {
-	gj := g.Load().(*graphjinEngine)
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil, err
+	}
 
 	item, err := gj.allowList.GetByName(name, false)
 	if err != nil {
@@ -1695,7 +1764,10 @@ type FragmentDetails struct {
 
 // ListFragments returns all fragments from the allow list
 func (g *GraphJin) ListFragments() ([]FragmentInfo, error) {
-	gj := g.Load().(*graphjinEngine)
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil, err
+	}
 
 	fragments, err := gj.allowList.ListFragments()
 	if err != nil {
@@ -1715,7 +1787,10 @@ func (g *GraphJin) ListFragments() ([]FragmentInfo, error) {
 
 // GetFragment returns details of a specific fragment
 func (g *GraphJin) GetFragment(name string) (*FragmentDetails, error) {
-	gj := g.Load().(*graphjinEngine)
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil, err
+	}
 
 	fragment, err := gj.allowList.GetFragment(name)
 	if err != nil {
@@ -1779,7 +1854,10 @@ type PoolStats struct {
 // In single-database mode, returns a single entry for the main connection.
 // In multi-database mode, returns stats for each configured database.
 func (g *GraphJin) GetAllDatabaseStats() []DatabaseStats {
-	gj := g.Load().(*graphjinEngine)
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil
+	}
 
 	// Multi-database mode
 	if len(gj.databases) > 0 {

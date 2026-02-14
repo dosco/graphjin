@@ -102,7 +102,6 @@ func TestDatabaseConfigParsing(t *testing.T) {
 		User:       "testuser",
 		Password:   "testpass",
 		Schema:     "public",
-		Tables:     []string{"users", "orders"},
 	}
 
 	if conf.Type != "postgres" {
@@ -110,9 +109,6 @@ func TestDatabaseConfigParsing(t *testing.T) {
 	}
 	if !conf.Default {
 		t.Error("Default should be true")
-	}
-	if len(conf.Tables) != 2 {
-		t.Errorf("Tables length = %d, want 2", len(conf.Tables))
 	}
 }
 
@@ -848,17 +844,6 @@ func TestNormalizeDatabases(t *testing.T) {
 		}
 		if conf.Tables[0].Database != DefaultDBName {
 			t.Errorf("users.Database = %q, want %q", conf.Tables[0].Database, DefaultDBName)
-		}
-		// Check deduplication of tables list
-		dbConf := conf.Databases[DefaultDBName]
-		count := 0
-		for _, tn := range dbConf.Tables {
-			if tn == "users" {
-				count++
-			}
-		}
-		if count != 1 {
-			t.Errorf("users appeared %d times in default DatabaseConfig.Tables, want 1", count)
 		}
 	})
 

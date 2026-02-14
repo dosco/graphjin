@@ -391,7 +391,7 @@ func TestDefaultCredentials(t *testing.T) {
 		expectMinLen  int
 		expectFirst   string // expected first username
 	}{
-		{"postgres", 2, "postgres"},
+		{"postgres", 3, "postgres"},
 		{"mysql", 2, "root"},
 		{"mariadb", 2, "root"},
 		{"mssql", 1, "sa"},
@@ -422,10 +422,10 @@ func TestDefaultCredentials_PostgresOrder(t *testing.T) {
 		t.Errorf("Expected first cred postgres/'', got %s/%s", creds[0].user, creds[0].password)
 	}
 
-	// Last should be postgres with 'postgres' password
+	// Last should be root with empty password
 	last := creds[len(creds)-1]
-	if last.user != "postgres" || last.password != "postgres" {
-		t.Errorf("Expected last cred postgres/postgres, got %s/%s", last.user, last.password)
+	if last.user != "root" || last.password != "" {
+		t.Errorf("Expected last cred root/'', got %s/%s", last.user, last.password)
 	}
 }
 
@@ -465,7 +465,7 @@ func TestBuildProbeConnString_AllTypes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.dbType, func(t *testing.T) {
-			driver, connStr := buildProbeConnString(tt.dbType, tt.host, tt.port, tt.filePath, tt.user, tt.password, tt.source)
+			driver, connStr := buildProbeConnString(tt.dbType, tt.host, tt.port, tt.filePath, tt.user, tt.password, tt.source, "")
 			if tt.expectNonEmpty {
 				if driver != tt.expectDriver {
 					t.Errorf("Expected driver %q, got %q", tt.expectDriver, driver)
@@ -484,7 +484,7 @@ func TestBuildProbeConnString_AllTypes(t *testing.T) {
 
 func TestBuildProbeConnString_UnixSocket(t *testing.T) {
 	t.Run("postgres unix socket", func(t *testing.T) {
-		driver, connStr := buildProbeConnString("postgres", "/tmp/.s.PGSQL.5432", 5432, "", "postgres", "", "unix_socket")
+		driver, connStr := buildProbeConnString("postgres", "/tmp/.s.PGSQL.5432", 5432, "", "postgres", "", "unix_socket", "")
 		if driver != "pgx" {
 			t.Errorf("Expected driver pgx, got %q", driver)
 		}
@@ -494,7 +494,7 @@ func TestBuildProbeConnString_UnixSocket(t *testing.T) {
 	})
 
 	t.Run("mysql unix socket", func(t *testing.T) {
-		driver, connStr := buildProbeConnString("mysql", "/tmp/mysql.sock", 3306, "", "root", "", "unix_socket")
+		driver, connStr := buildProbeConnString("mysql", "/tmp/mysql.sock", 3306, "", "root", "", "unix_socket", "")
 		if driver != "mysql" {
 			t.Errorf("Expected driver mysql, got %q", driver)
 		}
@@ -505,7 +505,7 @@ func TestBuildProbeConnString_UnixSocket(t *testing.T) {
 }
 
 func TestBuildProbeConnString_MSSQLSpecialChars(t *testing.T) {
-	driver, connStr := buildProbeConnString("mssql", "localhost", 1433, "", "sa", "P@ss!word", "tcp")
+	driver, connStr := buildProbeConnString("mssql", "localhost", 1433, "", "sa", "P@ss!word", "tcp", "")
 	if driver != "sqlserver" {
 		t.Errorf("Expected driver sqlserver, got %q", driver)
 	}
@@ -529,6 +529,8 @@ func TestIsAuthError(t *testing.T) {
 		{"mongodb auth", fmt.Errorf("authentication failed"), true},
 		{"connection refused", fmt.Errorf("dial tcp 127.0.0.1:5432: connect: connection refused"), false},
 		{"timeout", fmt.Errorf("i/o timeout"), false},
+		{"postgres role missing", fmt.Errorf(`FATAL: role "postgres" does not exist (SQLSTATE 28000)`), true},
+		{"mssql role ddl error", fmt.Errorf(`Cannot alter the role 'db_datareader', because it does not exist`), false},
 		{"generic error", fmt.Errorf("something went wrong"), false},
 	}
 

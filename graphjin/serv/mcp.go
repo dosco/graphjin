@@ -48,18 +48,20 @@ func mcpToolList(conf *Config) []string {
 		"validate_where_clause",
 		"get_workflow_guide",
 		"explore_relationships",
-		"execute_graphql",
 		"execute_saved_query",
-		"list_saved_queries",
-		"search_saved_queries",
-		"get_saved_query",
-		"list_fragments",
-		"get_fragment",
-		"search_fragments",
 		"get_current_config",
 	}
 
 	// Conditionally registered
+	if conf.MCP.AllowRawQueries {
+		tools = append(tools, "execute_graphql")
+	}
+	if conf.MCP.EnableSearch {
+		tools = append(tools,
+			"list_saved_queries", "search_saved_queries", "get_saved_query",
+			"list_fragments", "get_fragment", "search_fragments",
+		)
+	}
 	if conf.MCP.AllowConfigUpdates {
 		tools = append(tools, "update_current_config")
 	}
@@ -70,7 +72,11 @@ func mcpToolList(conf *Config) []string {
 		tools = append(tools, "preview_schema_changes", "apply_schema_changes")
 	}
 	if conf.MCP.AllowDevTools {
-		tools = append(tools, "explain_query", "audit_role_permissions", "discover_databases")
+		tools = append(tools, "explain_query", "audit_role_permissions", "discover_databases",
+			"list_databases", "check_health")
+	}
+	if conf.MCP.AllowDevTools && conf.MCP.AllowConfigUpdates {
+		tools = append(tools, "quick_setup")
 	}
 
 	return tools
@@ -101,6 +107,7 @@ func (s *graphjinService) newMCPServerWithContext(ctx context.Context) *mcpServe
 		version,
 		server.WithToolCapabilities(true),
 		server.WithPromptCapabilities(true),
+		server.WithResourceCapabilities(false, false),
 		server.WithHooks(hooks),
 	)
 
@@ -115,6 +122,9 @@ func (s *graphjinService) newMCPServerWithContext(ctx context.Context) *mcpServe
 
 	// Register MCP prompts
 	ms.registerPrompts()
+
+	// Register MCP resources
+	ms.registerResources()
 
 	return ms
 }
@@ -147,6 +157,8 @@ func (ms *mcpServer) registerTools() {
 	ms.registerExplainTools()
 	ms.registerAuditTools()
 	ms.registerDiscoverTools()
+	ms.registerHealthTools()
+	ms.registerQuickSetupTools()
 }
 
 // RunMCPStdio runs the MCP server using stdio transport (for CLI/Claude Desktop)

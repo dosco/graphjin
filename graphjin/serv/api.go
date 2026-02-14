@@ -272,7 +272,14 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*graphjinS
 	// }
 
 	if err != nil {
-		return nil, err
+		if !s.conf.Serv.Production {
+			s.gj = nil // Ensure gj is nil so checkGraphJinInitialized() works
+			s.log.Warnf("GraphJin core initialization failed: %s", err)
+			s.log.Warn("Server starting without query engine — use MCP to fix the configuration")
+			// Continue with gj = nil, MCP tools still work
+		} else {
+			return nil, err
+		}
 	}
 
 	s.state = servStarted
@@ -484,6 +491,9 @@ func (s *HttpService) GetDB() *sql.DB {
 // Reload re-runs database discover and reinitializes service.
 func (s *HttpService) Reload() error {
 	s1 := s.Load().(*graphjinService)
+	if s1.gj == nil {
+		return errors.New("graphjin: engine not initialized")
+	}
 	return s1.gj.Reload()
 }
 

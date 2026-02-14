@@ -107,20 +107,10 @@ func (c *Config) NormalizeDatabases() {
 		c.DBType = defConf.Type
 	}
 
-	// Tag tables that have empty Database with the default name,
-	// and add them to the default DatabaseConfig.Tables list (deduped)
-	existing := make(map[string]bool)
-	for _, tn := range defConf.Tables {
-		existing[tn] = true
-	}
-
+	// Tag tables that have empty Database with the default name
 	for i := range c.Tables {
 		if c.Tables[i].Database == "" {
 			c.Tables[i].Database = defaultName
-			if !existing[c.Tables[i].Name] {
-				defConf.Tables = append(defConf.Tables, c.Tables[i].Name)
-				existing[c.Tables[i].Name] = true
-			}
 		}
 	}
 	c.Databases[defaultName] = defConf
@@ -244,7 +234,7 @@ type DatabaseConfig struct {
 	Default bool `mapstructure:"default" json:"default" yaml:"default" jsonschema:"title=Default Database,default=false"`
 
 	// Connection string for the database (alternative to individual params)
-	ConnString string `mapstructure:"conn_string" json:"conn_string" yaml:"conn_string" jsonschema:"title=Connection String"`
+	ConnString string `mapstructure:"connection_string" json:"connection_string" yaml:"connection_string" jsonschema:"title=Connection String"`
 
 	// Database host
 	Host string `mapstructure:"host" json:"host" yaml:"host" jsonschema:"title=Host"`
@@ -273,14 +263,28 @@ type DatabaseConfig struct {
 	// Schema name to use (for databases that support schemas)
 	Schema string `mapstructure:"schema" json:"schema" yaml:"schema" jsonschema:"title=Schema"`
 
+	// Connection pool settings
+	PoolSize        int           `mapstructure:"pool_size" json:"pool_size" yaml:"pool_size" jsonschema:"title=Connection Pool Size"`
+	MaxConnections  int           `mapstructure:"max_connections" json:"max_connections" yaml:"max_connections" jsonschema:"title=Maximum Connections"`
+	MaxConnIdleTime time.Duration `mapstructure:"max_connection_idle_time" json:"max_connection_idle_time" yaml:"max_connection_idle_time" jsonschema:"title=Connection Idle Time"`
+	MaxConnLifeTime time.Duration `mapstructure:"max_connection_life_time" json:"max_connection_life_time" yaml:"max_connection_life_time" jsonschema:"title=Connection Life Time"`
+
+	// Health check
+	PingTimeout time.Duration `mapstructure:"ping_timeout" json:"ping_timeout" yaml:"ping_timeout" jsonschema:"title=Healthcheck Ping Timeout"`
+
+	// TLS settings
+	EnableTLS  bool   `mapstructure:"enable_tls" json:"enable_tls" yaml:"enable_tls" jsonschema:"title=Enable TLS"`
+	ServerName string `mapstructure:"server_name" json:"server_name" yaml:"server_name" jsonschema:"title=TLS Server Name"`
+	ServerCert string `mapstructure:"server_cert" json:"server_cert" yaml:"server_cert" jsonschema:"title=Server Certificate"`
+	ClientCert string `mapstructure:"client_cert" json:"client_cert" yaml:"client_cert" jsonschema:"title=Client Certificate"`
+	ClientKey  string `mapstructure:"client_key" json:"client_key" yaml:"client_key" jsonschema:"title=Client Key"`
+
 	// MSSQL-specific: disable TLS encryption (go-mssqldb defaults to encrypt=true)
 	Encrypt *bool `mapstructure:"encrypt" json:"encrypt,omitempty" yaml:"encrypt,omitempty" jsonschema:"title=MSSQL Encrypt"`
 
 	// MSSQL-specific: trust server certificate without validation
 	TrustServerCertificate *bool `mapstructure:"trust_server_certificate" json:"trust_server_certificate,omitempty" yaml:"trust_server_certificate,omitempty" jsonschema:"title=MSSQL Trust Server Certificate"`
 
-	// Tables that belong to this database (can also be set per-table via Table.Database)
-	Tables []string `mapstructure:"tables" json:"tables" yaml:"tables" jsonschema:"title=Tables"`
 }
 
 // Configuration for a database table

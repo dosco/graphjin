@@ -26,8 +26,8 @@ func (ms *mcpServer) registerAuditTools() {
 
 // handleAuditRolePermissions returns the permission audit for one or all roles
 func (ms *mcpServer) handleAuditRolePermissions(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if ms.service.gj == nil {
-		return mcp.NewToolResultError("GraphJin not initialized - no database connection configured"), nil
+	if err := ms.requireDB(); err != nil {
+		return err, nil
 	}
 
 	args := req.GetArguments()

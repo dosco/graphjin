@@ -29,6 +29,9 @@ func (ms *mcpServer) registerConfigTools() {
 			mcp.WithDescription("Update GraphJin configuration and automatically reload. "+
 				"Changes are applied in-memory and take effect immediately. "+
 				"Supports databases, tables, roles, blocklist, functions, and resolvers. "+
+				"System database names (postgres, mysql, information_schema, master, etc.) "+
+				"are rejected by default — use a user database name instead. "+
+				"Use create_if_not_exists: true to create a new database on the server before connecting (dev mode only). "+
 				"WARNING: Changes are lost on restart unless persisted separately. "+
 				"Use get_current_config first to understand the current state."),
 			mcp.WithObject("databases",
@@ -163,6 +166,11 @@ func (ms *mcpServer) registerConfigTools() {
 					},
 				}),
 			),
+			mcp.WithBoolean("create_if_not_exists",
+				mcp.Description("Dev mode only. When true, creates databases on the server if they don't exist before connecting. "+
+					"Works for PostgreSQL, MySQL/MariaDB, MSSQL, and Oracle. "+
+					"SQLite and MongoDB create databases automatically."),
+			),
 			mcp.WithArray("remove_databases",
 				mcp.Description("Array of database names to remove from configuration."),
 				mcp.WithStringItems(),
@@ -223,12 +231,13 @@ func (ms *mcpServer) registerConfigTools() {
 
 // MCPConfigResponse represents a section of the configuration for MCP
 type MCPConfigResponse struct {
-	Databases map[string]core.DatabaseConfig `json:"databases,omitempty"`
-	Tables    []core.Table                   `json:"tables,omitempty"`
-	Roles     []RoleInfo                     `json:"roles,omitempty"`
-	Blocklist []string                       `json:"blocklist,omitempty"`
-	Functions []core.Function                `json:"functions,omitempty"`
-	Resolvers []core.ResolverConfig          `json:"resolvers,omitempty"`
+	ActiveDatabase string                         `json:"active_database,omitempty"`
+	Databases      map[string]core.DatabaseConfig `json:"databases,omitempty"`
+	Tables         []core.Table                   `json:"tables,omitempty"`
+	Roles          []RoleInfo                     `json:"roles,omitempty"`
+	Blocklist      []string                       `json:"blocklist,omitempty"`
+	Functions      []core.Function                `json:"functions,omitempty"`
+	Resolvers      []core.ResolverConfig          `json:"resolvers,omitempty"`
 }
 
 // RoleInfo provides role information safe for JSON serialization
@@ -249,6 +258,9 @@ func (ms *mcpServer) handleGetCurrentConfig(ctx context.Context, req mcp.CallToo
 
 	conf := &ms.service.conf.Core
 	result := MCPConfigResponse{}
+
+	// Determine the active database
+	result.ActiveDatabase = ms.getActiveDatabase()
 
 	switch strings.ToLower(section) {
 	case "databases":
@@ -281,6 +293,34 @@ func (ms *mcpServer) handleGetCurrentConfig(ctx context.Context, req mcp.CallToo
 	return mcp.NewToolResultText(string(data)), nil
 }
 
+// getActiveDatabase returns the name of the currently active database connection.
+func (ms *mcpServer) getActiveDatabase() string {
+	conf := &ms.service.conf.Core
+	// Check for a database entry marked as Default
+	for name, db := range conf.Databases {
+		if db.Default {
+			return name
+		}
+	}
+	// Fall back to matching against conf.DB.DBName
+	dbName := ms.service.conf.DB.DBName
+	if dbName != "" {
+		for name, db := range conf.Databases {
+			if strings.EqualFold(db.DBName, dbName) || strings.EqualFold(name, dbName) {
+				return name
+			}
+		}
+		return dbName
+	}
+	// If only one database configured, that's the active one
+	if len(conf.Databases) == 1 {
+		for name := range conf.Databases {
+			return name
+		}
+	}
+	return ""
+}
+
 // convertRolesToInfo converts roles to a JSON-safe format
 func convertRolesToInfo(roles []core.Role) []RoleInfo {
 	result := make([]RoleInfo, len(roles))
@@ -308,7 +348,7 @@ type ConfigUpdateRequest struct {
 type DatabaseConfigInput struct {
 	Type       string `json:"type"`
 	Default    bool   `json:"default,omitempty"`
-	ConnString string `json:"conn_string,omitempty"`
+	ConnString string `json:"connection_string,omitempty"`
 	Host       string `json:"host,omitempty"`
 	Port       int    `json:"port,omitempty"`
 	DBName     string `json:"dbname,omitempty"`
@@ -442,11 +482,24 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 
 	conf := &ms.service.conf.Core
 
-	// Process databases
+	// Parse create_if_not_exists early
+	createIfNotExists := false
+	if ci, ok := args["create_if_not_exists"].(bool); ok {
+		createIfNotExists = ci
+	}
+	if createIfNotExists && ms.service.conf.Serv.Production {
+		errors = append(errors, "create_if_not_exists is only available in dev mode")
+		createIfNotExists = false
+	}
+
+	// Process databases: parse, validate, test connections, then commit
+	type parsedDB struct {
+		name   string
+		config core.DatabaseConfig
+	}
+	var parsedDBs []parsedDB
+
 	if databases, ok := args["databases"].(map[string]any); ok && len(databases) > 0 {
-		if conf.Databases == nil {
-			conf.Databases = make(map[string]core.DatabaseConfig)
-		}
 		for name, dbAny := range databases {
 			dbMap, ok := dbAny.(map[string]any)
 			if !ok {
@@ -462,8 +515,69 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			if dbConf.DBName == "" && dbConf.ConnString == "" {
 				dbConf.DBName = name
 			}
-			conf.Databases[name] = dbConf
-			changes = append(changes, fmt.Sprintf("added/updated database: %s", name))
+			// Guard: reject system/default database names unless allowed
+			dbType := strings.ToLower(dbConf.Type)
+			effectiveDBName := dbConf.DBName
+			if effectiveDBName == "" {
+				effectiveDBName = name
+			}
+			if !ms.service.conf.MCP.DefaultDBAllowed && isSystemDatabase(dbType, effectiveDBName) {
+				errors = append(errors, systemDatabaseError(dbType, effectiveDBName))
+				continue
+			}
+			parsedDBs = append(parsedDBs, parsedDB{name: name, config: dbConf})
+		}
+
+		// Pre-commit: test each new/updated database connection
+		var connErrors []string
+		for _, pdb := range parsedDBs {
+			dbConf := pdb.config
+			dbType := strings.ToLower(dbConf.Type)
+			host := dbConf.Host
+			port := dbConf.Port
+			user := dbConf.User
+			password := dbConf.Password
+			dbName := dbConf.DBName
+
+			// Skip connection test for SQLite (file-based)
+			if dbType == "sqlite" {
+				continue
+			}
+
+			// If create_if_not_exists, try to create the database first
+			if createIfNotExists {
+				if err := createDatabaseOnServer(dbType, host, port, user, password, dbName, ms.service.log); err != nil {
+					ms.service.log.Warnf("create_if_not_exists for '%s': %v", pdb.name, err)
+				}
+			}
+
+			// Test connectivity
+			_, err := testDatabaseConnection(dbType, host, port, user, password, dbName)
+			if err != nil {
+				connErrors = append(connErrors, fmt.Sprintf("database '%s' (%s@%s:%d/%s): connection failed: %v",
+					pdb.name, user, host, port, dbName, err))
+			}
+		}
+
+		// If ANY connection test failed, skip ALL database config changes
+		if len(connErrors) > 0 {
+			errors = append(errors, connErrors...)
+			result := ConfigUpdateResult{
+				Success: false,
+				Message: "Database connection test failed — config changes not applied",
+				Errors:  errors,
+			}
+			data, _ := mcpMarshalJSON(result, true)
+			return mcp.NewToolResultText(string(data)), nil
+		}
+
+		// All connections passed — commit database configs
+		if conf.Databases == nil {
+			conf.Databases = make(map[string]core.DatabaseConfig)
+		}
+		for _, pdb := range parsedDBs {
+			conf.Databases[pdb.name] = pdb.config
+			changes = append(changes, fmt.Sprintf("added/updated database: %s", pdb.name))
 		}
 	}
 
@@ -720,21 +834,32 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			}
 			// Verify schema is ready after reload
 			if !ms.service.gj.SchemaReady() {
+				var reloadDBs []string
+				if ms.service.db != nil {
+					reloadDBs, _ = listDatabaseNames(ms.service.db, ms.service.conf.DBType)
+					if !ms.service.conf.MCP.DefaultDBAllowed {
+						reloadDBs = filterSystemDatabases(ms.service.conf.DBType, reloadDBs)
+					}
+				}
 				result := ConfigUpdateResult{
-					Success: false,
-					Message: "Config reloaded but schema discovery found no tables",
-					Changes: changes,
-					Errors:  append(errors, "schema not ready after reload"),
+					Success:   false,
+					Message:   "Config reloaded but schema discovery found no tables. The database may be empty. Try a different database from the databases list, or create tables first.",
+					Changes:   changes,
+					Errors:    append(errors, "schema not ready after reload"),
+					Databases: reloadDBs,
 				}
 				data, _ := mcpMarshalJSON(result, true)
 				return mcp.NewToolResultText(string(data)), nil
 			}
 			if ms.service.db != nil {
 				availableDBs, _ = listDatabaseNames(ms.service.db, ms.service.conf.DBType)
+				if !ms.service.conf.MCP.DefaultDBAllowed {
+					availableDBs = filterSystemDatabases(ms.service.conf.DBType, availableDBs)
+				}
 			}
 		} else {
 			// GraphJin not initialized — try to connect and initialize now
-			dbNames, err := ms.tryInitializeGraphJin()
+			dbNames, err := ms.tryInitializeGraphJin(createIfNotExists)
 			if err != nil {
 				errors = append(errors, fmt.Sprintf("GraphJin initialization failed: %v", err))
 			} else {
@@ -784,7 +909,7 @@ func parseDBConfig(m map[string]any) (core.DatabaseConfig, error) {
 	if def, ok := m["default"].(bool); ok {
 		conf.Default = def
 	}
-	if cs, ok := m["conn_string"].(string); ok {
+	if cs, ok := m["connection_string"].(string); ok {
 		conf.ConnString = cs
 	}
 	if h, ok := m["host"].(string); ok {
@@ -1242,6 +1367,25 @@ func syncDBFromDatabases(conf *Config) bool {
 	conf.DB.Schema = dbConf.Schema
 	conf.DB.Path = dbConf.Path
 	conf.DB.ConnString = dbConf.ConnString
+
+	// Connection pool settings
+	if dbConf.PoolSize > 0 {
+		conf.DB.PoolSize = dbConf.PoolSize
+	}
+	if dbConf.MaxConnections > 0 {
+		conf.DB.MaxConnections = dbConf.MaxConnections
+	}
+	conf.DB.MaxConnIdleTime = dbConf.MaxConnIdleTime
+	conf.DB.MaxConnLifeTime = dbConf.MaxConnLifeTime
+	conf.DB.PingTimeout = dbConf.PingTimeout
+
+	// TLS settings
+	conf.DB.EnableTLS = dbConf.EnableTLS
+	conf.DB.ServerName = dbConf.ServerName
+	conf.DB.ServerCert = dbConf.ServerCert
+	conf.DB.ClientCert = dbConf.ClientCert
+	conf.DB.ClientKey = dbConf.ClientKey
+
 	conf.DB.Encrypt = dbConf.Encrypt
 	conf.DB.TrustServerCertificate = dbConf.TrustServerCertificate
 	conf.DBType = dbConf.Type
@@ -1251,12 +1395,20 @@ func syncDBFromDatabases(conf *Config) bool {
 // tryInitializeGraphJin attempts to connect to the database and initialize GraphJin core.
 // This is called from the MCP handler when gj == nil (no DB was available at startup).
 // Returns a list of databases found on the server (even on failure) alongside the error.
-func (ms *mcpServer) tryInitializeGraphJin() ([]string, error) {
+func (ms *mcpServer) tryInitializeGraphJin(createIfNotExists bool) ([]string, error) {
 	s := ms.service
 
 	// Bridge Databases map -> conf.DB fields
 	if !syncDBFromDatabases(s.conf) {
 		return nil, fmt.Errorf("no database configuration found in databases map")
+	}
+
+	// Create the database on the server if requested
+	if createIfNotExists {
+		if err := createDatabaseIfNotExists(s.conf, s.log); err != nil {
+			s.log.Warnf("create_if_not_exists: %v", err)
+			// Don't fail hard — the DB may already exist
+		}
 	}
 
 	// Attempt a single DB connection
@@ -1282,6 +1434,9 @@ func (ms *mcpServer) tryInitializeGraphJin() ([]string, error) {
 		var dbNames []string
 		if s.db != nil {
 			dbNames, _ = listDatabaseNames(s.db, s.conf.DBType)
+			if !ms.service.conf.MCP.DefaultDBAllowed {
+				dbNames = filterSystemDatabases(s.conf.DBType, dbNames)
+			}
 		}
 		// Clean up so next call retries from scratch
 		s.gj = nil
@@ -1289,13 +1444,16 @@ func (ms *mcpServer) tryInitializeGraphJin() ([]string, error) {
 			s.db.Close() //nolint:errcheck
 			s.db = nil
 		}
-		return dbNames, fmt.Errorf("database connected but schema discovery found no tables")
+		return dbNames, fmt.Errorf("database connected but schema discovery found no tables — try a different database from the returned databases list, or create tables first")
 	}
 
 	// On success, also list databases for the response
 	var dbNames []string
 	if s.db != nil {
 		dbNames, _ = listDatabaseNames(s.db, s.conf.DBType)
+		if !ms.service.conf.MCP.DefaultDBAllowed {
+			dbNames = filterSystemDatabases(s.conf.DBType, dbNames)
+		}
 	}
 
 	s.log.Info("GraphJin initialized via MCP configuration")
@@ -1320,32 +1478,15 @@ func (ms *mcpServer) saveConfigToDisk() error {
 	return nil
 }
 
-// syncConfigToViper updates viper with the current config values for sections that can be modified
+// syncConfigToViper updates viper with the current config values for sections that can be modified.
+// Always syncs all sections, including empty ones, to ensure stale values are cleared.
 func (ms *mcpServer) syncConfigToViper(v *viper.Viper) {
 	conf := &ms.service.conf.Core
 
-	// Sync databases
-	if len(conf.Databases) > 0 {
-		v.Set("databases", conf.Databases)
-	}
-	// Sync tables
-	if len(conf.Tables) > 0 {
-		v.Set("tables", conf.Tables)
-	}
-	// Sync roles
-	if len(conf.Roles) > 0 {
-		v.Set("roles", conf.Roles)
-	}
-	// Sync blocklist
-	if len(conf.Blocklist) > 0 {
-		v.Set("blocklist", conf.Blocklist)
-	}
-	// Sync functions
-	if len(conf.Functions) > 0 {
-		v.Set("functions", conf.Functions)
-	}
-	// Sync resolvers
-	if len(conf.Resolvers) > 0 {
-		v.Set("resolvers", conf.Resolvers)
-	}
+	v.Set("databases", conf.Databases)
+	v.Set("tables", conf.Tables)
+	v.Set("roles", conf.Roles)
+	v.Set("blocklist", conf.Blocklist)
+	v.Set("functions", conf.Functions)
+	v.Set("resolvers", conf.Resolvers)
 }

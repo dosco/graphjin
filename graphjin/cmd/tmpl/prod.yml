@@ -123,47 +123,48 @@ mcp:
 # PostgreSQL, MySQL, MariaDB, SQLite, Oracle, MS SQL Server, MongoDB
 # ============================================================================
 
-database:
-  type: postgres
-  host: ${GJ_DATABASE_HOST}
-  port: ${GJ_DATABASE_PORT}
-  dbname: ${GJ_DATABASE_NAME}
-  user: ${GJ_DATABASE_USER}
-  password: ${GJ_DATABASE_PASSWORD}
-  #schema: "public"
+databases:
+  default:
+    type: postgres
+    host: ${GJ_DATABASE_HOST}
+    port: ${GJ_DATABASE_PORT}
+    dbname: ${GJ_DATABASE_NAME}
+    user: ${GJ_DATABASE_USER}
+    password: ${GJ_DATABASE_PASSWORD}
+    #schema: "public"
 
-  # alternatively you can use a connection string
-  #connection_string: ${GJ_DATABASE_URL}
+    # alternatively you can use a connection string
+    #connection_string: ${GJ_DATABASE_URL}
 
-  # Size of database connection pool
-  # pool_size: 15
+    # Size of database connection pool
+    # pool_size: 15
 
-  # Max number of active database connections allowed
-  # max_connections: 25
+    # Max number of active database connections allowed
+    # max_connections: 25
 
-  # Max time after which idle database connections are closed
-  # max_connection_idle_time: 5s
+    # Max time after which idle database connections are closed
+    # max_connection_idle_time: 5s
 
-  # Max time after which database connections are not reused
-  # max_connection_life_time: 0s
+    # Max time after which database connections are not reused
+    # max_connection_life_time: 0s
 
-  #log_level: "debug"
+    #log_level: "debug"
 
-  # database ping timeout is used for db health checking
-  ping_timeout: 5m
+    # database ping timeout is used for db health checking
+    ping_timeout: 5m
 
-  # Set up an secure tls encrypted db connection
-  enable_tls: false
+    # Set up an secure tls encrypted db connection
+    enable_tls: false
 
-  # Required for tls. For example with Google Cloud SQL it's
-  # <gcp-project-id>:<cloud-sql-instance>"
-  # server_name: blah
+    # Required for tls. For example with Google Cloud SQL it's
+    # <gcp-project-id>:<cloud-sql-instance>"
+    # server_name: blah
 
-  # Required for tls. Can be a file path or the contents of the pem file
-  # server_cert: ./server-ca.pem
+    # Required for tls. Can be a file path or the contents of the pem file
+    # server_cert: ./server-ca.pem
 
-  # Required for tls. Can be a file path or the contents of the pem file
-  # client_cert: ./client-cert.pem
+    # Required for tls. Can be a file path or the contents of the pem file
+    # client_cert: ./client-cert.pem
 
-  # Required for tls. Can be a file path or the contents of the pem file
-  # client_key: ./client-key.pem
+    # Required for tls. Can be a file path or the contents of the pem file
+    # client_key: ./client-key.pem

@@ -94,7 +94,10 @@ func (g *GraphJin) Subscribe(
 		return
 	}
 
-	gj := g.Load().(*graphjinEngine)
+	gj, err := g.getEngine()
+	if err != nil {
+		return
+	}
 
 	// create the request object
 	r := gj.newGraphqlReq(rc, "subscription", h.Name, nil, vars)
@@ -124,7 +127,10 @@ func (g *GraphJin) SubscribeByName(
 	vars json.RawMessage,
 	rc *RequestConfig,
 ) (m *Member, err error) {
-	gj := g.Load().(*graphjinEngine)
+	gj, err := g.getEngine()
+	if err != nil {
+		return
+	}
 
 	item, err := gj.allowList.GetByName(name, gj.prod)
 	if err != nil {

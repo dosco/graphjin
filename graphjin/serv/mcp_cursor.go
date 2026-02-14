@@ -130,6 +130,5 @@ func isCursorKey(key string) bool {
 	return lower == "cursor" ||
 		lower == "after" ||
 		lower == "before" ||
-		strings.Contains(lower, "_cursor") ||
 		strings.Contains(lower, "cursor")
 }

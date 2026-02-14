@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -11,22 +12,24 @@ import (
 
 // registerExecutionTools registers the query execution tools
 func (ms *mcpServer) registerExecutionTools() {
-	// execute_graphql - Execute a GraphQL query or mutation
-	ms.srv.AddTool(mcp.NewTool(
-		"execute_graphql",
-		mcp.WithDescription("Execute a GraphJin GraphQL query or mutation against the database. "+
-			"Use get_query_syntax to learn the DSL syntax."),
-		mcp.WithString("query",
-			mcp.Required(),
-			mcp.Description("The GraphQL query or mutation to execute. Use GraphJin DSL syntax."),
-		),
-		mcp.WithObject("variables",
-			mcp.Description("Variables to pass to the query"),
-		),
-		mcp.WithString("namespace",
-			mcp.Description("Optional namespace for multi-tenant deployments"),
-		),
-	), ms.handleExecuteGraphQL)
+	// execute_graphql - Only registered when AllowRawQueries is true
+	if ms.service.conf.MCP.AllowRawQueries {
+		ms.srv.AddTool(mcp.NewTool(
+			"execute_graphql",
+			mcp.WithDescription("Execute a GraphJin GraphQL query or mutation against the database. "+
+				"Use get_query_syntax to learn the DSL syntax."),
+			mcp.WithString("query",
+				mcp.Required(),
+				mcp.Description("The GraphQL query or mutation to execute. Use GraphJin DSL syntax."),
+			),
+			mcp.WithObject("variables",
+				mcp.Description("Variables to pass to the query"),
+			),
+			mcp.WithString("namespace",
+				mcp.Description("Optional namespace for multi-tenant deployments"),
+			),
+		), ms.handleExecuteGraphQL)
+	}
 
 	// execute_saved_query - Execute a pre-defined saved query
 	ms.srv.AddTool(mcp.NewTool(
@@ -180,21 +183,28 @@ func (ms *mcpServer) handleExecuteSavedQuery(ctx context.Context, req mcp.CallTo
 
 // isMutation checks if a query is a mutation (simple heuristic)
 func isMutation(query string) bool {
-	// Quick check - look for mutation keyword at the start
-	for i := 0; i < len(query); i++ {
+	// Quick check - look for mutation keyword at the start, skipping whitespace and comments
+	i := 0
+	for i < len(query) {
 		c := query[i]
 		// Skip whitespace
 		if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
+			i++
 			continue
 		}
-		// Check if starts with 'm' or 'M' (mutation)
-		if c == 'm' || c == 'M' {
-			if len(query) > i+8 {
-				word := query[i : i+8]
-				return word == "mutation" || word == "Mutation" || word == "MUTATION"
+		// Skip # comment lines
+		if c == '#' {
+			for i < len(query) && query[i] != '\n' {
+				i++
 			}
+			continue
 		}
-		// If it starts with anything else, it's a query
+		// Check if starts with "mutation" (case-insensitive)
+		if len(query) >= i+8 {
+			word := query[i : i+8]
+			return strings.EqualFold(word, "mutation")
+		}
+		// If it starts with anything else (or too short), it's a query
 		return false
 	}
 	return false

@@ -11,6 +11,10 @@ import (
 
 // registerQueryDiscoveryTools registers the saved query discovery tools
 func (ms *mcpServer) registerQueryDiscoveryTools() {
+	if !ms.service.conf.MCP.EnableSearch {
+		return
+	}
+
 	// list_saved_queries - List all saved queries from the allow-list
 	ms.srv.AddTool(mcp.NewTool(
 		"list_saved_queries",

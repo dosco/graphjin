@@ -103,7 +103,10 @@ type QueryAnalysis struct {
 
 // GenerateOpenAPISpec generates a complete OpenAPI specification for all REST endpoints
 func (g *GraphJin) GenerateOpenAPISpec() (*OpenAPIDocument, error) {
-	gj := g.Load().(*graphjinEngine)
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil, err
+	}
 
 	// Get all queries from allow list
 	items, err := gj.allowList.ListAll()
@@ -213,7 +216,10 @@ func (g *GraphJin) generateComponents(components *OpenAPIComponents, gj *graphji
 
 // analyzeQuery analyzes a single query and extracts type information using GraphJin's compilation
 func (g *GraphJin) analyzeQuery(item allow.Item) (*QueryAnalysis, error) {
-	gj := g.Load().(*graphjinEngine)
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil, err
+	}
 
 	// Parse the GraphQL query using GraphJin's parser
 	op, err := graph.Parse(item.Query)

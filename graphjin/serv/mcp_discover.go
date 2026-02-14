@@ -37,7 +37,10 @@ func (ms *mcpServer) registerDiscoverTools() {
 			"Then attempts to connect using default credentials and lists database names inside each instance. "+
 			"If defaults fail, reports auth_failed so you can re-call with user/password. "+
 			"Use this before configuring GraphJin to find which databases are available. "+
-			"Does NOT require an existing database connection."),
+			"Does NOT require an existing database connection. "+
+			"Note: system databases (postgres, mysql, information_schema, master, etc.) "+
+			"are filtered from the databases list by default. "+
+			"If no user databases exist, use update_current_config with create_if_not_exists: true to create one."),
 		mcp.WithString("scan_dir",
 			mcp.Description("Directory to scan for SQLite files (default: current working directory)")),
 		mcp.WithBoolean("skip_docker",
@@ -49,6 +52,30 @@ func (ms *mcpServer) registerDiscoverTools() {
 		mcp.WithString("password",
 			mcp.Description("Password to try when probing")),
 	), ms.handleDiscoverDatabases)
+
+	// list_databases - List databases on all connected servers
+	ms.srv.AddTool(mcp.NewTool(
+		"list_databases",
+		mcp.WithDescription("List databases on all configured database servers. "+
+			"Unlike discover_databases (which scans for new servers), this queries EXISTING configured connections "+
+			"for their database lists. Use after initial setup to see what databases are available on each server."),
+	), ms.handleListDatabases)
+}
+
+// DatabaseConnection represents a single database server connection for list_databases
+type DatabaseConnection struct {
+	Name      string   `json:"name"`
+	Type      string   `json:"type"`
+	Host      string   `json:"host"`
+	Databases []string `json:"databases"`
+	Active    bool     `json:"active"`
+	Error     string   `json:"error,omitempty"`
+}
+
+// ListDatabasesResult is the response from list_databases
+type ListDatabasesResult struct {
+	Connections    []DatabaseConnection `json:"connections"`
+	TotalDatabases int                  `json:"total_databases"`
 }
 
 // DiscoveredDatabase represents a database found during discovery
@@ -99,6 +126,84 @@ type dbProbe struct {
 type socketProbe struct {
 	dbType string
 	path   string
+}
+
+// handleListDatabases queries all configured database connections for their database lists
+func (ms *mcpServer) handleListDatabases(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	conf := &ms.service.conf.Core
+	activeDB := ms.getActiveDatabase()
+	var connections []DatabaseConnection
+	totalDBs := 0
+
+	// Query the primary connection
+	if ms.service.db != nil {
+		primaryName := "default"
+		if activeDB != "" {
+			primaryName = activeDB
+		}
+		names, err := listDatabaseNames(ms.service.db, ms.service.conf.DBType)
+		if !ms.service.conf.MCP.DefaultDBAllowed {
+			names = filterSystemDatabases(ms.service.conf.DBType, names)
+		}
+		conn := DatabaseConnection{
+			Name:   primaryName,
+			Type:   ms.service.conf.DBType,
+			Host:   fmt.Sprintf("%s:%d", ms.service.conf.DB.Host, ms.service.conf.DB.Port),
+			Active: true,
+		}
+		if err != nil {
+			conn.Error = err.Error()
+		} else {
+			conn.Databases = names
+			totalDBs += len(names)
+		}
+		connections = append(connections, conn)
+	}
+
+	// Query each additional configured database
+	queried := make(map[string]bool) // track host:port to avoid duplicates
+	if ms.service.db != nil {
+		queried[fmt.Sprintf("%s:%d", ms.service.conf.DB.Host, ms.service.conf.DB.Port)] = true
+	}
+
+	for name, dbConf := range conf.Databases {
+		hostPort := fmt.Sprintf("%s:%d", dbConf.Host, dbConf.Port)
+		if queried[hostPort] {
+			continue
+		}
+		queried[hostPort] = true
+
+		dbType := strings.ToLower(dbConf.Type)
+		names, err := testDatabaseConnection(dbType, dbConf.Host, dbConf.Port, dbConf.User, dbConf.Password, dbConf.DBName)
+		if !ms.service.conf.MCP.DefaultDBAllowed {
+			names = filterSystemDatabases(dbType, names)
+		}
+
+		conn := DatabaseConnection{
+			Name:   name,
+			Type:   dbConf.Type,
+			Host:   hostPort,
+			Active: name == activeDB,
+		}
+		if err != nil {
+			conn.Error = err.Error()
+		} else {
+			conn.Databases = names
+			totalDBs += len(names)
+		}
+		connections = append(connections, conn)
+	}
+
+	result := ListDatabasesResult{
+		Connections:    connections,
+		TotalDatabases: totalDBs,
+	}
+
+	data, err := mcpMarshalJSON(result, true)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to marshal result: %v", err)), nil
+	}
+	return mcp.NewToolResultText(string(data)), nil
 }
 
 // handleDiscoverDatabases scans the local system for running databases
@@ -241,6 +346,24 @@ func (ms *mcpServer) handleDiscoverDatabases(ctx context.Context, req mcp.CallTo
 			}(&databases[i])
 		}
 		probeWg.Wait()
+	}
+
+	// Filter system databases from results (unless allowed by config)
+	if !ms.service.conf.MCP.DefaultDBAllowed {
+		for i := range databases {
+			if len(databases[i].Databases) > 0 {
+				origLen := len(databases[i].Databases)
+				databases[i].Databases = filterSystemDatabases(
+					databases[i].Type, databases[i].Databases)
+				// If all databases were filtered, add a hint
+				if len(databases[i].Databases) == 0 && origLen > 0 {
+					databases[i].AuthError = fmt.Sprintf(
+						"all %d databases are system databases (filtered). "+
+							"Use update_current_config with create_if_not_exists: true to create a new database.",
+						origLen)
+				}
+			}
+		}
 	}
 
 	// Build summary
@@ -538,7 +661,7 @@ func probeDatabase(db *DiscoveredDatabase, userParam, passwordParam string) {
 	seen := make(map[string]bool)
 
 	for _, cred := range creds {
-		driverName, connString := buildProbeConnString(dbType, host, port, filePath, cred.user, cred.password, db.Source)
+		driverName, connString := buildProbeConnString(dbType, host, port, filePath, cred.user, cred.password, db.Source, "")
 		if connString == "" {
 			continue
 		}
@@ -572,6 +695,14 @@ func probeDatabase(db *DiscoveredDatabase, userParam, passwordParam string) {
 		// Update config snippet with working credentials
 		db.ConfigSnippet["user"] = cred.user
 		db.ConfigSnippet["password"] = cred.password
+
+		// Set dbname to first non-system database if available
+		if db.ConfigSnippet["dbname"] == "" || db.ConfigSnippet["dbname"] == nil {
+			filtered := filterSystemDatabases(dbType, names)
+			if len(filtered) > 0 {
+				db.ConfigSnippet["dbname"] = filtered[0]
+			}
+		}
 		return
 	}
 
@@ -651,6 +782,14 @@ func probeMongoDBEntry(db *DiscoveredDatabase, userParam, passwordParam string) 
 			db.ConfigSnippet["user"] = cred.user
 			db.ConfigSnippet["password"] = cred.password
 		}
+
+		// Set dbname to first non-system database if available
+		if db.ConfigSnippet["dbname"] == "" || db.ConfigSnippet["dbname"] == nil {
+			filtered := filterSystemDatabases("mongodb", names)
+			if len(filtered) > 0 {
+				db.ConfigSnippet["dbname"] = filtered[0]
+			}
+		}
 		return
 	}
 
@@ -691,7 +830,10 @@ func defaultCredentials(dbType string) []dbCredential {
 		if osUser != "" && osUser != "postgres" {
 			creds = append(creds, dbCredential{user: osUser, password: ""})
 		}
-		creds = append(creds, dbCredential{user: "postgres", password: "postgres"})
+		creds = append(creds,
+			dbCredential{user: "postgres", password: "postgres"},
+			dbCredential{user: "root", password: ""},
+		)
 		return creds
 	case "mysql", "mariadb":
 		return []dbCredential{
@@ -713,25 +855,32 @@ func defaultCredentials(dbType string) []dbCredential {
 }
 
 // buildProbeConnString builds a driver name and connection string for probing
-func buildProbeConnString(dbType, host string, port int, filePath, user, password, source string) (string, string) {
+func buildProbeConnString(dbType, host string, port int, filePath, user, password, source, dbName string) (string, string) {
 	switch dbType {
 	case "postgres":
-		return buildPostgresProbeConn(host, port, user, password, source)
+		return buildPostgresProbeConn(host, port, user, password, source, dbName)
 	case "mysql", "mariadb":
-		return buildMySQLProbeConn(host, port, user, password, source)
+		return buildMySQLProbeConn(host, port, user, password, source, dbName)
 	case "mssql":
 		if port == 0 {
 			port = 1433
 		}
 		connString := fmt.Sprintf("sqlserver://%s:%s@%s:%d?encrypt=disable",
 			url.PathEscape(user), url.PathEscape(password), host, port)
+		if dbName != "" {
+			connString += "&database=" + url.QueryEscape(dbName)
+		}
 		return "sqlserver", connString
 	case "oracle":
 		if port == 0 {
 			port = 1521
 		}
-		connString := fmt.Sprintf("oracle://%s:%s@%s:%d/",
-			user, password, host, port)
+		dbPath := "/"
+		if dbName != "" {
+			dbPath = "/" + dbName
+		}
+		connString := fmt.Sprintf("oracle://%s:%s@%s:%d%s",
+			user, password, host, port, dbPath)
 		return "oracle", connString
 	case "sqlite":
 		return "sqlite", filePath
@@ -741,20 +890,25 @@ func buildProbeConnString(dbType, host string, port int, filePath, user, passwor
 }
 
 // buildPostgresProbeConn builds a pgx connection for probing
-func buildPostgresProbeConn(host string, port int, user, password, source string) (string, string) {
+func buildPostgresProbeConn(host string, port int, user, password, source, dbName string) (string, string) {
 	if port == 0 {
 		port = 5432
+	}
+
+	dbPath := "/"
+	if dbName != "" {
+		dbPath = "/" + url.PathEscape(dbName)
 	}
 
 	var connStr string
 	if source == "unix_socket" {
 		// host is the socket path; extract directory
 		socketDir := filepath.Dir(host)
-		connStr = fmt.Sprintf("postgres://%s:%s@/?host=%s&port=%d&sslmode=disable",
-			url.PathEscape(user), url.PathEscape(password), url.PathEscape(socketDir), port)
+		connStr = fmt.Sprintf("postgres://%s:%s@%s?host=%s&port=%d&sslmode=disable",
+			url.PathEscape(user), url.PathEscape(password), dbPath, url.PathEscape(socketDir), port)
 	} else {
-		connStr = fmt.Sprintf("postgres://%s:%s@%s:%d/?sslmode=disable",
-			url.PathEscape(user), url.PathEscape(password), host, port)
+		connStr = fmt.Sprintf("postgres://%s:%s@%s:%d%s?sslmode=disable",
+			url.PathEscape(user), url.PathEscape(password), host, port, dbPath)
 	}
 
 	config, err := pgx.ParseConfig(connStr)
@@ -766,16 +920,16 @@ func buildPostgresProbeConn(host string, port int, user, password, source string
 }
 
 // buildMySQLProbeConn builds a MySQL connection string for probing
-func buildMySQLProbeConn(host string, port int, user, password, source string) (string, string) {
+func buildMySQLProbeConn(host string, port int, user, password, source, dbName string) (string, string) {
 	if port == 0 {
 		port = 3306
 	}
 
 	var connString string
 	if source == "unix_socket" {
-		connString = fmt.Sprintf("%s:%s@unix(%s)/", user, password, host)
+		connString = fmt.Sprintf("%s:%s@unix(%s)/%s", user, password, host, dbName)
 	} else {
-		connString = fmt.Sprintf("%s:%s@tcp(%s:%d)/", user, password, host, port)
+		connString = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", user, password, host, port, dbName)
 	}
 	return "mysql", connString
 }
@@ -878,6 +1032,11 @@ func isAuthError(err error) bool {
 		if strings.Contains(msg, pattern) {
 			return true
 		}
+	}
+	// PostgreSQL: FATAL: role "X" does not exist (SQLSTATE 28000) — e.g., Homebrew installs
+	// Require "fatal" prefix to avoid false positives from MSSQL/Oracle DDL errors
+	if strings.Contains(msg, "fatal") && strings.Contains(msg, "role") && strings.Contains(msg, "does not exist") {
+		return true
 	}
 	return false
 }
