@@ -3,7 +3,7 @@ module github.com/dosco/graphjin/plugin/otel/v3
 go 1.24.0
 
 require (
-	github.com/dosco/graphjin/core/v3 v3.10.2
+	github.com/dosco/graphjin/core/v3 v3.10.3
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.63.0
 	go.opentelemetry.io/otel v1.38.0
 	go.opentelemetry.io/otel/trace v1.38.0
