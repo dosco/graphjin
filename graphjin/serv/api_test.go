@@ -1,6 +1,7 @@
 package serv
 
 import (
+	"database/sql"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,7 +11,7 @@ import (
 func TestNormalStart_NilDBInDevMode(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	s := &graphjinService{
-		db: nil,
+		dbs: make(map[string]*sql.DB),
 		conf: &Config{
 			Serv: Serv{Production: false}, // dev mode
 		},

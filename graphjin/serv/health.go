@@ -20,7 +20,13 @@ func healthCheckHandler(s1 *HttpService) http.Handler {
 		c1, span := s.spanStart(c, "Health Check Request")
 		defer span.End()
 
-		if err := s.db.PingContext(c1); err != nil {
+		db := s.anyDB()
+		if db == nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("no database connection"))
+			return
+		}
+		if err := db.PingContext(c1); err != nil {
 			spanError(span, err)
 
 			s.zlog.Error("Health Check", []zapcore.Field{zap.Error(err)}...)

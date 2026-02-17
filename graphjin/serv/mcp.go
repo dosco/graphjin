@@ -73,10 +73,11 @@ func mcpToolList(conf *Config) []string {
 	}
 	if conf.MCP.AllowDevTools {
 		tools = append(tools, "explain_query", "audit_role_permissions", "discover_databases",
-			"list_databases", "check_health")
+			"list_databases", "check_health", "plan_database_setup",
+			"test_database_connection", "get_onboarding_status")
 	}
 	if conf.MCP.AllowDevTools && conf.MCP.AllowConfigUpdates {
-		tools = append(tools, "quick_setup")
+		tools = append(tools, "quick_setup", "apply_database_setup")
 	}
 
 	return tools
@@ -159,6 +160,7 @@ func (ms *mcpServer) registerTools() {
 	ms.registerDiscoverTools()
 	ms.registerHealthTools()
 	ms.registerQuickSetupTools()
+	ms.registerOnboardingTools()
 }
 
 // RunMCPStdio runs the MCP server using stdio transport (for CLI/Claude Desktop)
@@ -248,4 +250,3 @@ func (s *HttpService) MCPMessageHandler() http.Handler {
 func (s *HttpService) MCPMessageHandlerWithAuth(ah auth.HandlerFunc) http.Handler {
 	return apiV1Handler(s, nil, s.MCPMessageHandler(), ah)
 }
-

@@ -181,8 +181,18 @@ func (g *GraphJin) generateComponents(components *OpenAPIComponents, gj *graphji
 		Required: []string{"message"},
 	}
 
-	// Generate schema objects for each table using introspection logic
-	for _, table := range gj.schema.GetTables() {
+	// Generate schema objects for each table using introspection logic (deterministic order)
+	for _, dbName := range gj.sortedDatabaseNames() {
+		ctx := gj.databases[dbName]
+		if ctx.schema == nil {
+			continue
+		}
+		g.generateTablesForSchema(ctx.schema, components)
+	}
+}
+
+func (g *GraphJin) generateTablesForSchema(dbSchema *sdata.DBSchema, components *OpenAPIComponents) {
+	for _, table := range dbSchema.GetTables() {
 		if table.Blocked || len(table.Columns) == 0 {
 			continue
 		}
@@ -227,10 +237,25 @@ func (g *GraphJin) analyzeQuery(item allow.Item) (*QueryAnalysis, error) {
 		return nil, fmt.Errorf("failed to parse query %s: %w", item.Name, err)
 	}
 
-	// Compile the query using GraphJin's compiler to get exact type information
-	qc, err := gj.qcodeCompiler.Compile(item.Query, nil, "admin", item.Namespace)
-	if err != nil {
-		return nil, fmt.Errorf("failed to compile query %s: %w", item.Name, err)
+	// Compile the query using GraphJin's compiler to get exact type information.
+	// Try all databases in deterministic order to find one that can compile this query.
+	var qc *qcode.QCode
+	var compileErr error
+	for _, dbName := range gj.sortedDatabaseNames() {
+		ctx := gj.databases[dbName]
+		if ctx.qcodeCompiler == nil {
+			continue
+		}
+		qc, compileErr = ctx.qcodeCompiler.Compile(item.Query, nil, "admin", item.Namespace)
+		if compileErr == nil {
+			break
+		}
+	}
+	if qc == nil {
+		if compileErr != nil {
+			return nil, fmt.Errorf("failed to compile query %s: %w", item.Name, compileErr)
+		}
+		return nil, fmt.Errorf("failed to compile query %s: no database with compiler available", item.Name)
 	}
 
 	analysis := &QueryAnalysis{

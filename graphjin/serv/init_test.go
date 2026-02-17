@@ -1,6 +1,7 @@
 package serv
 
 import (
+	"database/sql"
 	"testing"
 
 	"github.com/dosco/graphjin/core/v3"
@@ -97,11 +98,12 @@ func TestInitDB_DevModeWithoutDatabase(t *testing.T) {
 		},
 		log:  logger.Sugar(),
 		zlog: logger,
+		dbs:  make(map[string]*sql.DB),
 	}
 
 	err := s.initDB()
 	assert.NoError(t, err)
-	assert.Nil(t, s.db) // db should remain nil
+	assert.Empty(t, s.dbs) // dbs should remain empty
 }
 
 func TestInitDB_ExistingDBNotReplaced(t *testing.T) {
@@ -115,10 +117,10 @@ func TestInitDB_ExistingDBNotReplaced(t *testing.T) {
 		},
 		log:  logger.Sugar(),
 		zlog: logger,
-		db:   nil, // Normally would have a real db
+		dbs:  make(map[string]*sql.DB),
 	}
 
-	// When db is nil but not configured, it should return nil without error in dev mode
+	// When dbs is empty but not configured, it should return nil without error in dev mode
 	err := s.initDB()
 	assert.NoError(t, err)
 }
@@ -146,8 +148,7 @@ func TestSyncDBFromDatabases_MSSQL(t *testing.T) {
 					Schema:                 "dbo",
 					Encrypt:                &boolFalse,
 					TrustServerCertificate: &boolTrue,
-					Default:                true,
-				},
+					},
 			},
 		},
 	}
@@ -172,8 +173,8 @@ func TestSyncDBFromDatabases_DefaultDB(t *testing.T) {
 	conf := &Config{
 		Core: core.Config{
 			Databases: map[string]core.DatabaseConfig{
+				"primary":   {Type: "postgres", Host: "pghost"},
 				"secondary": {Type: "mssql", Host: "mssqlhost"},
-				"primary":   {Type: "postgres", Host: "pghost", Default: true},
 			},
 		},
 	}
@@ -207,13 +208,12 @@ func TestMultiDB_MSSQLViaDatabasesConfig_ConnString(t *testing.T) {
 		Core: core.Config{
 			Databases: map[string]core.DatabaseConfig{
 				"postgres": {
-					Type:    "postgres",
-					Host:    "pghost",
-					Port:    5432,
-					DBName:  "pgdb",
-					User:    "pguser",
+					Type:     "postgres",
+					Host:     "pghost",
+					Port:     5432,
+					DBName:   "pgdb",
+					User:     "pguser",
 					Password: "pgpass",
-					Default: true,
 				},
 				"mssql": {
 					Type:                   "mssql",

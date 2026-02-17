@@ -1,112 +1,187 @@
 package core
 
 import (
+	"bytes"
 	"database/sql"
 	"fmt"
+	"sort"
+	"strings"
+	"time"
 
 	"github.com/dosco/graphjin/core/v3/internal/psql"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
 
-// initMultiDB initializes multi-database support if configured.
-// It creates a dbContext for each configured database.
-// After normalization, Databases always has at least 1 entry (the default).
-// Single-DB configs (1 entry) don't trigger multi-DB infrastructure unless
-// OptionSetDatabases pre-populated gj.databases.
-func (gj *graphjinEngine) initMultiDB() error {
-	if len(gj.conf.Databases) <= 1 && len(gj.databases) == 0 {
+// discoverAllDatabases runs Phase 1: schema discovery for all databases.
+// This populates ctx.dbinfo for each database context.
+func (gj *graphjinEngine) discoverAllDatabases() error {
+	for _, ctx := range gj.databases {
+		if err := gj.discoverDatabase(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// discoverDatabase discovers raw schema metadata for a single database.
+func (gj *graphjinEngine) discoverDatabase(ctx *dbContext) error {
+	// Validate dbtype
+	if ctx.dbtype == "" {
+		ctx.dbtype = "postgres"
+	}
+
+	// If dbinfo already provided (e.g., from watcher or tests), skip discovery
+	if ctx.dbinfo != nil {
 		return nil
 	}
 
-	// Don't reinitialize if OptionSetDatabases already set up databases
-	if gj.databases == nil {
-		gj.databases = make(map[string]*dbContext)
+	isPrimary := (ctx.name == gj.defaultDB)
+
+	// For the primary DB: load schema from db.graphql when in MockDB mode
+	// or when EnableSchema is on in production.
+	if isPrimary && ((gj.prod && gj.conf.EnableSchema) || gj.conf.MockDB) {
+		b, err := gj.fs.Get("db.graphql")
+		if err != nil {
+			if gj.conf.MockDB {
+				return fmt.Errorf("mock_db is enabled but db.graphql not found: %w", err)
+			}
+			// EnableSchema in prod but file not found — fall through to live discovery
+		} else {
+			ds, err := qcode.ParseSchema(b)
+			if err != nil {
+				return err
+			}
+			ctx.dbinfo = sdata.NewDBInfo(ds.Type, ds.Version, ds.Schema, "",
+				ds.Columns, ds.Functions, gj.conf.Blocklist)
+		}
 	}
 
-	// gj.defaultDB is already set after initConfig/normalization (in newGraphJin)
+	// dbinfo could already be set from the above block
+	if ctx.dbinfo != nil {
+		return nil
+	}
 
-	// Create/update the default database context from the passed-in connection
-	// This maintains backward compatibility - the main db connection becomes
-	// the default database in multi-DB mode
-	if gj.db != nil {
-		if existingCtx, ok := gj.databases[gj.defaultDB]; ok {
-			// Update existing context with schema/dbinfo from discovery
-			existingCtx.dbinfo = gj.dbinfo
-			existingCtx.schema = gj.schema
-		} else {
-			// Create new context
-			defaultCtx := &dbContext{
-				name:   gj.defaultDB,
-				db:     gj.db,
-				dbtype: gj.dbtype,
-				dbinfo: gj.dbinfo,
-				schema: gj.schema,
-				// Compilers will be set after initialization
-			}
-			gj.databases[gj.defaultDB] = defaultCtx
+	if gj.conf.MockDB {
+		return fmt.Errorf("mock_db is enabled but db.graphql not found")
+	}
+
+	// No DB connection — nothing to discover
+	if ctx.db == nil {
+		return nil
+	}
+
+	dbinfo, err := sdata.GetDBInfo(ctx.db, ctx.dbtype, gj.conf.Blocklist)
+	if err != nil {
+		return fmt.Errorf("database %s: schema discovery failed: %w", ctx.name, err)
+	}
+	ctx.dbinfo = dbinfo
+
+	// In dev mode with EnableSchema, write the schema out for future use
+	if isPrimary && !gj.prod && gj.conf.EnableSchema {
+		var buf bytes.Buffer
+		if err := writeSchema(ctx.dbinfo, &buf); err != nil {
+			return err
+		}
+		if err := gj.fs.Put("db.graphql", buf.Bytes()); err != nil {
+			return err
 		}
 	}
 
 	return nil
 }
 
-// initMultiDBCompilers initializes compilers for all database contexts.
-// This must be called after initCompilers() to ensure the main compilers are ready.
-func (gj *graphjinEngine) initMultiDBCompilers() error {
-	if len(gj.databases) == 0 {
-		return nil
+// finalizeAllDatabases runs Phase 3: schema + compiler creation for all databases.
+// This must be called after initResolvers() which may add remote tables to the
+// primary database's dbinfo.
+func (gj *graphjinEngine) finalizeAllDatabases() error {
+	for _, ctx := range gj.databases {
+		if err := gj.finalizeDatabaseSchema(ctx); err != nil {
+			return err
+		}
 	}
-
-	// Set compilers for the default database context
-	if ctx, ok := gj.databases[gj.defaultDB]; ok {
-		ctx.qcodeCompiler = gj.qcodeCompiler
-		ctx.psqlCompiler = gj.psqlCompiler
-	}
-
 	return nil
 }
 
-// initDBContext creates a new database context for a specific database configuration.
-// This is used when adding additional databases beyond the default.
-func (gj *graphjinEngine) initDBContext(name string, db *sql.DB, dbConf DatabaseConfig) (*dbContext, error) {
-	ctx := &dbContext{
-		name:   name,
-		db:     db,
-		dbtype: dbConf.Type,
+// finalizeDatabaseSchema creates schema and compilers for a single database.
+func (gj *graphjinEngine) finalizeDatabaseSchema(ctx *dbContext) error {
+	if ctx.dbinfo == nil {
+		return nil
 	}
 
-	// Determine the database type
-	if ctx.dbtype == "" {
-		ctx.dbtype = "postgres"
+	// Graceful degradation: if no tables were discovered, log a warning
+	// and return nil — the watcher will re-check periodically.
+	if len(ctx.dbinfo.Tables) == 0 {
+		ps := gj.conf.DBSchemaPollDuration
+		if ps < 5*time.Second {
+			ps = 10 * time.Second
+		}
+		gj.log.Printf("warning: no tables found in database '%s', rechecking every %s",
+			ctx.dbinfo.Name, ps)
+		return nil
 	}
 
-	// Discover schema for this database
-	dbinfo, err := sdata.GetDBInfo(db, ctx.dbtype, gj.conf.Blocklist)
-	if err != nil {
-		return nil, fmt.Errorf("database %s: schema discovery failed: %w", name, err)
+	// Process table config info (order-by config, etc.) for tables belonging to this database.
+	// Also fill in empty Schema fields and handle Oracle lowercase.
+	{
+		schema := ctx.dbinfo.Schema
+		for i, t := range gj.conf.Tables {
+			// Only process tables that belong to this database
+			if t.Database != "" && t.Database != ctx.name {
+				continue
+			}
+			// Oracle requires lowercase identifiers
+			if ctx.dbtype == "oracle" {
+				gj.conf.Tables[i].Schema = strings.ToLower(gj.conf.Tables[i].Schema)
+				gj.conf.Tables[i].Name = strings.ToLower(gj.conf.Tables[i].Name)
+				gj.conf.Tables[i].Table = strings.ToLower(gj.conf.Tables[i].Table)
+				t = gj.conf.Tables[i]
+			}
+			// Fill in empty Schema from dbinfo.Schema
+			if t.Schema == "" {
+				gj.conf.Tables[i].Schema = schema
+				t.Schema = schema
+			}
+			// Skip aliases
+			if t.Table != "" && t.Type == "" {
+				continue
+			}
+			if err := gj.addTableInfo(t); err != nil {
+				return err
+			}
+		}
 	}
-	ctx.dbinfo = dbinfo
+
+	// Tag all discovered tables with the owning database name
+	for i := range ctx.dbinfo.Tables {
+		ctx.dbinfo.Tables[i].Database = ctx.name
+	}
 
 	// Process tables configured for this database
-	if err = addTables(gj.conf, dbinfo, name); err != nil {
-		return nil, fmt.Errorf("database %s: add tables failed: %w", name, err)
+	if err := addTables(gj.conf, ctx.dbinfo, ctx.name); err != nil {
+		return fmt.Errorf("database %s: add tables failed: %w", ctx.name, err)
 	}
 
 	// Process foreign keys configured for this database
-	if err = addForeignKeys(gj.conf, dbinfo, name); err != nil {
-		return nil, fmt.Errorf("database %s: add foreign keys failed: %w", name, err)
+	if err := addForeignKeys(gj.conf, ctx.dbinfo, ctx.name); err != nil {
+		return fmt.Errorf("database %s: add foreign keys failed: %w", ctx.name, err)
 	}
 
 	// Process full-text search configuration for this database
-	if err = addFullTextColumns(gj.conf, dbinfo, name); err != nil {
-		return nil, fmt.Errorf("database %s: add fulltext columns failed: %w", name, err)
+	if err := addFullTextColumns(gj.conf, ctx.dbinfo, ctx.name); err != nil {
+		return fmt.Errorf("database %s: add fulltext columns failed: %w", ctx.name, err)
+	}
+
+	// Process functions for all databases
+	if err := addFunctions(gj.conf, ctx.dbinfo); err != nil {
+		return fmt.Errorf("database %s: add functions failed: %w", ctx.name, err)
 	}
 
 	// Create schema
-	ctx.schema, err = sdata.NewDBSchema(dbinfo, getDBTableAliases(gj.conf))
+	var err error
+	ctx.schema, err = sdata.NewDBSchema(ctx.dbinfo, getDBTableAliases(gj.conf))
 	if err != nil {
-		return nil, fmt.Errorf("database %s: schema creation failed: %w", name, err)
+		return fmt.Errorf("database %s: schema creation failed: %w", ctx.name, err)
 	}
 
 	// Create QCode compiler for this database
@@ -123,7 +198,12 @@ func (gj *graphjinEngine) initDBContext(name string, db *sql.DB, dbConf Database
 
 	ctx.qcodeCompiler, err = qcode.NewCompiler(ctx.schema, qcc)
 	if err != nil {
-		return nil, fmt.Errorf("database %s: qcode compiler failed: %w", name, err)
+		return fmt.Errorf("database %s: qcode compiler failed: %w", ctx.name, err)
+	}
+
+	// Add roles to the compiler
+	if err := addRoles(gj.conf, ctx.qcodeCompiler); err != nil {
+		return fmt.Errorf("database %s: add roles failed: %w", ctx.name, err)
 	}
 
 	// Create SQL compiler for this database's dialect
@@ -135,6 +215,25 @@ func (gj *graphjinEngine) initDBContext(name string, db *sql.DB, dbConf Database
 		EnableCamelcase: gj.conf.EnableCamelcase,
 	})
 	ctx.psqlCompiler.SetSchemaInfo(ctx.schema.GetTables())
+
+	return nil
+}
+
+// initDBContext creates a fully initialized database context for runtime additions.
+// This is used by AddDatabase after GraphJin is already running.
+func (gj *graphjinEngine) initDBContext(name string, db *sql.DB, dbConf DatabaseConfig) (*dbContext, error) {
+	ctx := &dbContext{
+		name:   name,
+		db:     db,
+		dbtype: dbConf.Type,
+	}
+
+	if err := gj.discoverDatabase(ctx); err != nil {
+		return nil, err
+	}
+	if err := gj.finalizeDatabaseSchema(ctx); err != nil {
+		return nil, err
+	}
 
 	return ctx, nil
 }
@@ -157,8 +256,8 @@ func (gj *graphjinEngine) AddDatabase(name string, db *sql.DB, dbConf DatabaseCo
 
 	gj.databases[name] = ctx
 
-	// If this is marked as default and we don't have one, set it
-	if dbConf.Default && gj.defaultDB == "" {
+	// If we don't have a default yet, set it
+	if gj.defaultDB == "" {
 		gj.defaultDB = name
 	}
 
@@ -212,47 +311,37 @@ func (gj *graphjinEngine) ListDatabases() []string {
 	return names
 }
 
-// setTableDatabases assigns database names to tables based on configuration.
-// This is called during schema initialization to tag tables with their source database.
-func (gj *graphjinEngine) setTableDatabases() {
-	// Only tag tables when actually in multi-DB mode (more than 1 configured database
-	// or OptionSetDatabases populated the runtime map)
-	if len(gj.conf.Databases) <= 1 && len(gj.databases) == 0 {
-		return
+// sortedDatabaseNames returns database names in deterministic order:
+// the default database first, then the rest in alphabetical order.
+func (gj *graphjinEngine) sortedDatabaseNames() []string {
+	if len(gj.databases) == 0 {
+		return nil
 	}
-
-	// Build a map of table name to database
-	tableToDb := make(map[string]string)
-
-	// Process tables with explicit Database field in config
-	for _, t := range gj.conf.Tables {
-		if t.Database != "" {
-			tableToDb[t.Name] = t.Database
+	names := make([]string, 0, len(gj.databases))
+	defaultFound := false
+	for name := range gj.databases {
+		if name == gj.defaultDB {
+			defaultFound = true
+			continue
 		}
+		names = append(names, name)
 	}
-
-	// Apply to dbinfo tables
-	if gj.dbinfo != nil {
-		for i := range gj.dbinfo.Tables {
-			if dbName, ok := tableToDb[gj.dbinfo.Tables[i].Name]; ok {
-				gj.dbinfo.Tables[i].Database = dbName
-			} else {
-				// Assign default database
-				gj.dbinfo.Tables[i].Database = gj.defaultDB
-			}
-		}
+	sort.Strings(names)
+	if defaultFound {
+		return append([]string{gj.defaultDB}, names...)
 	}
+	return names
 }
 
 // OptionSetDatabases sets multiple database connections for multi-database mode.
 // The connections map should use the same keys as Config.Databases.
+// Only stores bare dbContexts — full initialization happens in discoverAllDatabases
+// and finalizeAllDatabases.
 func OptionSetDatabases(connections map[string]*sql.DB) Option {
 	return func(gj *graphjinEngine) error {
 		if gj.databases == nil {
 			gj.databases = make(map[string]*dbContext)
 		}
-
-		// gj.defaultDB is already set after initConfig/normalization
 
 		for name, db := range connections {
 			dbConf, ok := gj.conf.Databases[name]
@@ -260,23 +349,12 @@ func OptionSetDatabases(connections map[string]*sql.DB) Option {
 				return fmt.Errorf("database %s not found in config", name)
 			}
 
-			// For the default database, just store the connection
-			// The default database is initialized through the normal path
-			if name == gj.defaultDB {
-				gj.databases[name] = &dbContext{
-					name:   name,
-					db:     db,
-					dbtype: dbConf.Type,
-				}
-				continue
+			// Store bare context — full init happens later
+			gj.databases[name] = &dbContext{
+				name:   name,
+				db:     db,
+				dbtype: dbConf.Type,
 			}
-
-			// For non-default databases, fully initialize with schema discovery
-			ctx, err := gj.initDBContext(name, db, dbConf)
-			if err != nil {
-				return fmt.Errorf("failed to initialize database %s: %w", name, err)
-			}
-			gj.databases[name] = ctx
 		}
 
 		return nil

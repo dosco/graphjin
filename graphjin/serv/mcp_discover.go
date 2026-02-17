@@ -3,13 +3,16 @@ package serv
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"net"
 	"net/url"
 	"os"
 	"os/exec"
 	osuser "os/user"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,6 +50,21 @@ func (ms *mcpServer) registerDiscoverTools() {
 			mcp.Description("Skip Docker container detection (default: false)")),
 		mcp.WithBoolean("skip_probe",
 			mcp.Description("Skip connection probing and database listing (default: false)")),
+		mcp.WithBoolean("scan_local",
+			mcp.Description("Scan localhost ports/sockets/sqlite files (default: true)")),
+		mcp.WithArray("targets",
+			mcp.Description("Optional explicit targets to probe. Each item: {type?, host, port?, source_label?, user?, password?, dbname?}."),
+		),
+		mcp.WithArray("scan_ports",
+			mcp.Description("Optional custom port list for localhost scanning (default uses known DB ports)."),
+			mcp.WithNumberItems(),
+		),
+		mcp.WithNumber("probe_timeout_ms",
+			mcp.Description("Probe timeout in milliseconds (default: 500)")),
+		mcp.WithBoolean("include_system_databases",
+			mcp.Description("Include system databases in discovered database lists (default from mcp.default_db_allowed)")),
+		mcp.WithNumber("sqlite_max_depth",
+			mcp.Description("SQLite file scan depth from scan_dir (default: 1, 0 = only scan_dir)")),
 		mcp.WithString("user",
 			mcp.Description("Username to try when probing (tried before defaults)")),
 		mcp.WithString("password",
@@ -84,6 +102,12 @@ type DiscoveredDatabase struct {
 	Host          string         `json:"host,omitempty"`
 	Port          int            `json:"port,omitempty"`
 	FilePath      string         `json:"file_path,omitempty"`
+	CandidateID   string         `json:"candidate_id,omitempty"`
+	Rank          int            `json:"rank,omitempty"`
+	Confidence    string         `json:"confidence,omitempty"`
+	Reasons       []string       `json:"reasons,omitempty"`
+	NextActions   []string       `json:"next_actions,omitempty"`
+	ProbeStatus   string         `json:"probe_status_code,omitempty"`
 	Source        string         `json:"source"`
 	Status        string         `json:"status"`
 	Databases     []string       `json:"databases,omitempty"`
@@ -116,6 +140,31 @@ type DiscoverSummary struct {
 	ScanDurationMs int64    `json:"scan_duration_ms"`
 }
 
+type discoverOptions struct {
+	scanDir               string
+	skipDocker            bool
+	skipProbe             bool
+	user                  string
+	password              string
+	scanLocal             bool
+	scanPorts             []int
+	probeTimeout          time.Duration
+	includeSystemDatabase bool
+	sqliteMaxDepth        int
+	targets               []DiscoverTarget
+}
+
+// DiscoverTarget is an explicit host target to probe (local or remote).
+type DiscoverTarget struct {
+	Type        string `json:"type,omitempty"`
+	Host        string `json:"host"`
+	Port        int    `json:"port,omitempty"`
+	SourceLabel string `json:"source_label,omitempty"`
+	User        string `json:"user,omitempty"`
+	Password    string `json:"password,omitempty"`
+	DBName      string `json:"dbname,omitempty"`
+}
+
 // dbProbe defines a port to probe for a specific database type
 type dbProbe struct {
 	dbType string
@@ -135,21 +184,40 @@ func (ms *mcpServer) handleListDatabases(ctx context.Context, req mcp.CallToolRe
 	var connections []DatabaseConnection
 	totalDBs := 0
 
-	// Query the primary connection
-	if ms.service.db != nil {
-		primaryName := "default"
-		if activeDB != "" {
-			primaryName = activeDB
+	// Query all configured database connections
+	queried := make(map[string]bool) // track host:port to avoid duplicates
+
+	// Sort s.dbs keys for deterministic output order
+	dbNames := make([]string, 0, len(ms.service.dbs))
+	for name := range ms.service.dbs {
+		dbNames = append(dbNames, name)
+	}
+	sort.Strings(dbNames)
+	for _, name := range dbNames {
+		db := ms.service.dbs[name]
+		dbConf, ok := conf.Databases[name]
+		if !ok {
+			continue
 		}
-		names, err := listDatabaseNames(ms.service.db, ms.service.conf.DBType)
+		hostPort := fmt.Sprintf("%s:%d", dbConf.Host, dbConf.Port)
+		if queried[hostPort] {
+			continue
+		}
+		queried[hostPort] = true
+
+		dbType := strings.ToLower(dbConf.Type)
+		if dbType == "" {
+			dbType = ms.service.conf.DBType
+		}
+		names, err := listDatabaseNames(db, dbType)
 		if !ms.service.conf.MCP.DefaultDBAllowed {
-			names = filterSystemDatabases(ms.service.conf.DBType, names)
+			names = filterSystemDatabases(dbType, names)
 		}
 		conn := DatabaseConnection{
-			Name:   primaryName,
-			Type:   ms.service.conf.DBType,
-			Host:   fmt.Sprintf("%s:%d", ms.service.conf.DB.Host, ms.service.conf.DB.Port),
-			Active: true,
+			Name:   name,
+			Type:   dbConf.Type,
+			Host:   hostPort,
+			Active: name == activeDB,
 		}
 		if err != nil {
 			conn.Error = err.Error()
@@ -160,13 +228,14 @@ func (ms *mcpServer) handleListDatabases(ctx context.Context, req mcp.CallToolRe
 		connections = append(connections, conn)
 	}
 
-	// Query each additional configured database
-	queried := make(map[string]bool) // track host:port to avoid duplicates
-	if ms.service.db != nil {
-		queried[fmt.Sprintf("%s:%d", ms.service.conf.DB.Host, ms.service.conf.DB.Port)] = true
+	// Sort conf.Databases keys for deterministic output order
+	confNames := make([]string, 0, len(conf.Databases))
+	for name := range conf.Databases {
+		confNames = append(confNames, name)
 	}
-
-	for name, dbConf := range conf.Databases {
+	sort.Strings(confNames)
+	for _, name := range confNames {
+		dbConf := conf.Databases[name]
 		hostPort := fmt.Sprintf("%s:%d", dbConf.Host, dbConf.Port)
 		if queried[hostPort] {
 			continue
@@ -208,31 +277,32 @@ func (ms *mcpServer) handleListDatabases(ctx context.Context, req mcp.CallToolRe
 
 // handleDiscoverDatabases scans the local system for running databases
 func (ms *mcpServer) handleDiscoverDatabases(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	start := time.Now()
 	args := req.GetArguments()
+	result, err := ms.runDiscovery(args)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	ms.cacheCandidates(result.Databases)
 
-	scanDir, _ := args["scan_dir"].(string)
-	if scanDir == "" {
-		scanDir, _ = os.Getwd()
+	data, err := mcpMarshalJSON(result, true)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to marshal result: %v", err)), nil
+	}
+	return mcp.NewToolResultText(string(data)), nil
+}
+
+func (ms *mcpServer) runDiscovery(args map[string]any) (DiscoverResult, error) {
+	start := time.Now()
+
+	opts, err := parseDiscoverOptions(ms, args)
+	if err != nil {
+		return DiscoverResult{}, err
 	}
 
-	skipDocker := false
-	if sd, ok := args["skip_docker"].(bool); ok {
-		skipDocker = sd
-	}
-
-	skipProbe := false
-	if sp, ok := args["skip_probe"].(bool); ok {
-		skipProbe = sp
-	}
-
-	userParam, _ := args["user"].(string)
-	passwordParam, _ := args["password"].(string)
-
-	timeout := 500 * time.Millisecond
+	timeout := opts.probeTimeout
 
 	// TCP port probes for all supported database types
-	tcpProbes := []dbProbe{
+	defaultTCPProbes := []dbProbe{
 		{"postgres", 5432},
 		{"postgres", 5433},
 		{"postgres", 5434},
@@ -244,6 +314,13 @@ func (ms *mcpServer) handleDiscoverDatabases(ctx context.Context, req mcp.CallTo
 		{"oracle", 1522},
 		{"mongodb", 27017},
 		{"mongodb", 27018},
+	}
+	tcpProbes := defaultTCPProbes
+	if len(opts.scanPorts) > 0 {
+		tcpProbes = make([]dbProbe, 0, len(opts.scanPorts))
+		for _, p := range opts.scanPorts {
+			tcpProbes = append(tcpProbes, dbProbe{dbType: inferDBTypeFromPort(p), port: p})
+		}
 	}
 
 	// Unix socket probes
@@ -264,66 +341,99 @@ func (ms *mcpServer) handleDiscoverDatabases(ctx context.Context, req mcp.CallTo
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
-	// Phase 1: TCP port probes (concurrent)
-	for _, probe := range tcpProbes {
-		wg.Add(1)
-		go func(p dbProbe) {
-			defer wg.Done()
-			if checkTCPPort("127.0.0.1", p.port, timeout) {
-				db := DiscoveredDatabase{
-					Type:          p.dbType,
-					Host:          "localhost",
-					Port:          p.port,
-					Source:        "tcp",
-					Status:        "listening",
-					ConfigSnippet: buildConfigSnippet(p.dbType, "localhost", p.port, ""),
+	if opts.scanLocal {
+		// Phase 1: TCP port probes (concurrent)
+		for _, probe := range tcpProbes {
+			wg.Add(1)
+			go func(p dbProbe) {
+				defer wg.Done()
+				if checkTCPPort("127.0.0.1", p.port, timeout) {
+					db := DiscoveredDatabase{
+						Type:          p.dbType,
+						Host:          "localhost",
+						Port:          p.port,
+						Source:        "tcp",
+						Status:        "listening",
+						ConfigSnippet: buildConfigSnippet(p.dbType, "localhost", p.port, ""),
+					}
+					mu.Lock()
+					databases = append(databases, db)
+					mu.Unlock()
 				}
-				mu.Lock()
-				databases = append(databases, db)
-				mu.Unlock()
-			}
-		}(probe)
-	}
+			}(probe)
+		}
 
-	// Phase 2: Unix socket checks (concurrent)
-	for _, probe := range unixProbes {
-		wg.Add(1)
-		go func(p socketProbe) {
-			defer wg.Done()
-			if checkUnixSocket(p.path, timeout) {
-				db := DiscoveredDatabase{
-					Type:          p.dbType,
-					Host:          p.path,
-					Port:          defaultPortForType(p.dbType),
-					Source:        "unix_socket",
-					Status:        "listening",
-					ConfigSnippet: buildConfigSnippet(p.dbType, p.path, 0, ""),
+		// Phase 2: Unix socket checks (concurrent)
+		for _, probe := range unixProbes {
+			wg.Add(1)
+			go func(p socketProbe) {
+				defer wg.Done()
+				if checkUnixSocket(p.path, timeout) {
+					db := DiscoveredDatabase{
+						Type:          p.dbType,
+						Host:          p.path,
+						Port:          defaultPortForType(p.dbType),
+						Source:        "unix_socket",
+						Status:        "listening",
+						ConfigSnippet: buildConfigSnippet(p.dbType, p.path, 0, ""),
+					}
+					mu.Lock()
+					databases = append(databases, db)
+					mu.Unlock()
 				}
-				mu.Lock()
-				databases = append(databases, db)
-				mu.Unlock()
-			}
-		}(probe)
-	}
+			}(probe)
+		}
 
-	// Phase 3: SQLite file scan (synchronous, fast)
-	sqliteFiles := findSQLiteFiles(scanDir)
-	for _, f := range sqliteFiles {
-		databases = append(databases, DiscoveredDatabase{
-			Type:          "sqlite",
-			FilePath:      f,
-			Source:        "file",
-			Status:        "found",
-			ConfigSnippet: buildConfigSnippet("sqlite", "", 0, f),
-		})
+		// Phase 3: SQLite file scan
+		sqliteFiles := findSQLiteFiles(opts.scanDir, opts.sqliteMaxDepth)
+		for _, f := range sqliteFiles {
+			databases = append(databases, DiscoveredDatabase{
+				Type:          "sqlite",
+				FilePath:      f,
+				Source:        "file",
+				Status:        "found",
+				ConfigSnippet: buildConfigSnippet("sqlite", "", 0, f),
+			})
+		}
 	}
 
 	// Wait for TCP and socket probes to finish
 	wg.Wait()
 
-	// Phase 4: Docker detection
+	// Phase 4: Explicit targets (local or remote)
+	for _, target := range opts.targets {
+		dbType := strings.ToLower(target.Type)
+		if dbType == "" {
+			dbType = inferDBTypeFromPort(target.Port)
+			if dbType == "" {
+				dbType = "unknown"
+			}
+		}
+		port := target.Port
+		if port == 0 {
+			port = defaultPortForType(dbType)
+		}
+		source := "target"
+		if target.SourceLabel != "" {
+			source = "target:" + target.SourceLabel
+		}
+		status := "unreachable"
+		if target.Host != "" && port > 0 && checkTCPPort(target.Host, port, timeout) {
+			status = "listening"
+		}
+		databases = append(databases, DiscoveredDatabase{
+			Type:          dbType,
+			Host:          target.Host,
+			Port:          port,
+			Source:        source,
+			Status:        status,
+			ConfigSnippet: buildConfigSnippet(dbType, target.Host, port, ""),
+		})
+	}
+
+	// Phase 5: Docker detection
 	dockerStatus := "skipped"
-	if !skipDocker {
+	if !opts.skipDocker {
 		dockerDBs, status := discoverDockerDatabases()
 		dockerStatus = status
 		if len(dockerDBs) > 0 {
@@ -331,25 +441,37 @@ func (ms *mcpServer) handleDiscoverDatabases(ctx context.Context, req mcp.CallTo
 		}
 	}
 
-	// Deduplicate: if Docker found a specific type (e.g. mariadb) on a port
-	// that was also found via TCP as "mysql", prefer the Docker label
+	// Deduplicate merged candidates by endpoint identity.
 	databases = deduplicateDatabases(databases)
 
-	// Phase 5: Connection probing (concurrent)
-	if !skipProbe && len(databases) > 0 {
+	// Phase 6: Connection probing (concurrent)
+	if !opts.skipProbe && len(databases) > 0 {
 		var probeWg sync.WaitGroup
 		for i := range databases {
 			probeWg.Add(1)
 			go func(db *DiscoveredDatabase) {
 				defer probeWg.Done()
-				probeDatabase(db, userParam, passwordParam)
+				credUser := opts.user
+				credPassword := opts.password
+				if db.Source == "target" || strings.HasPrefix(db.Source, "target:") {
+					for _, t := range opts.targets {
+						if t.Host == db.Host && t.Port == db.Port {
+							if t.User != "" {
+								credUser = t.User
+								credPassword = t.Password
+							}
+							break
+						}
+					}
+				}
+				probeDatabase(db, credUser, credPassword)
 			}(&databases[i])
 		}
 		probeWg.Wait()
 	}
 
-	// Filter system databases from results (unless allowed by config)
-	if !ms.service.conf.MCP.DefaultDBAllowed {
+	// Filter system databases from results (unless allowed by option/config)
+	if !opts.includeSystemDatabase {
 		for i := range databases {
 			if len(databases[i].Databases) > 0 {
 				origLen := len(databases[i].Databases)
@@ -366,6 +488,11 @@ func (ms *mcpServer) handleDiscoverDatabases(ctx context.Context, req mcp.CallTo
 		}
 	}
 
+	for i := range databases {
+		enrichDiscoveredDatabase(&databases[i])
+	}
+	sortDiscoveredDatabases(databases)
+
 	// Build summary
 	typeSet := make(map[string]bool)
 	for _, db := range databases {
@@ -375,6 +502,7 @@ func (ms *mcpServer) handleDiscoverDatabases(ctx context.Context, req mcp.CallTo
 	for t := range typeSet {
 		types = append(types, t)
 	}
+	sort.Strings(types)
 
 	result := DiscoverResult{
 		Databases: databases,
@@ -385,12 +513,7 @@ func (ms *mcpServer) handleDiscoverDatabases(ctx context.Context, req mcp.CallTo
 		},
 		DockerStatus: dockerStatus,
 	}
-
-	data, err := mcpMarshalJSON(result, true)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to marshal result: %v", err)), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return result, nil
 }
 
 // checkTCPPort attempts a TCP connection to host:port with the given timeout
@@ -415,15 +538,30 @@ func checkUnixSocket(path string, timeout time.Duration) bool {
 }
 
 // findSQLiteFiles searches for SQLite database files in the given directory
-func findSQLiteFiles(dir string) []string {
-	var files []string
-	patterns := []string{"*.db", "*.sqlite", "*.sqlite3"}
-	for _, pattern := range patterns {
-		matches, err := filepath.Glob(filepath.Join(dir, pattern))
-		if err == nil {
-			files = append(files, matches...)
-		}
+func findSQLiteFiles(dir string, maxDepth int) []string {
+	if maxDepth < 0 {
+		maxDepth = 0
 	}
+	var files []string
+	patterns := map[string]bool{".db": true, ".sqlite": true, ".sqlite3": true}
+	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			rel, relErr := filepath.Rel(dir, path)
+			if relErr == nil && rel != "." && strings.Count(rel, string(filepath.Separator)) >= maxDepth {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		ext := strings.ToLower(filepath.Ext(d.Name()))
+		if patterns[ext] {
+			files = append(files, path)
+		}
+		return nil
+	})
+	sort.Strings(files)
 	return files
 }
 
@@ -439,15 +577,19 @@ func discoverDockerDatabases() ([]DiscoveredDatabase, string) {
 		return nil, "unavailable"
 	}
 
-	// Docker image prefix to DB type mapping
-	imageMap := map[string]string{
-		"postgres":                   "postgres",
-		"mysql":                      "mysql",
-		"mariadb":                    "mariadb",
-		"mcr.microsoft.com/mssql":   "mssql",
-		"mongo":                      "mongodb",
-		"oracle":                     "oracle",
-		"gvenzl/oracle":             "oracle",
+	// Docker image prefix to DB type mapping (ordered slice for deterministic matching)
+	type imageMapping struct {
+		prefix string
+		dbType string
+	}
+	imageMappings := []imageMapping{
+		{"postgres", "postgres"},
+		{"mysql", "mysql"},
+		{"mariadb", "mariadb"},
+		{"mcr.microsoft.com/mssql", "mssql"},
+		{"mongo", "mongodb"},
+		{"oracle", "oracle"},
+		{"gvenzl/oracle", "oracle"},
 	}
 
 	var databases []DiscoveredDatabase
@@ -467,9 +609,9 @@ func discoverDockerDatabases() ([]DiscoveredDatabase, string) {
 
 		// Match image to DB type
 		var dbType string
-		for prefix, t := range imageMap {
-			if strings.HasPrefix(image, prefix) {
-				dbType = t
+		for _, m := range imageMappings {
+			if strings.HasPrefix(image, m.prefix) {
+				dbType = m.dbType
 				break
 			}
 		}
@@ -590,25 +732,60 @@ func buildConfigSnippet(dbType, host string, port int, filePath string) map[stri
 // deduplicateDatabases removes TCP entries when Docker provides a more specific type
 // (e.g., Docker says "mariadb" on port 3306, TCP says "mysql" on port 3306 — keep Docker)
 func deduplicateDatabases(dbs []DiscoveredDatabase) []DiscoveredDatabase {
-	// Build a set of docker-discovered host:port pairs with their specific types
-	dockerPorts := make(map[string]string) // "host:port" -> dbType
-	for _, db := range dbs {
-		if db.Source == "docker" && db.Port > 0 {
-			key := fmt.Sprintf("%s:%d", db.Host, db.Port)
-			dockerPorts[key] = db.Type
+	type bucket struct {
+		db       DiscoveredDatabase
+		priority int
+	}
+	sourcePriority := func(source string) int {
+		switch {
+		case source == "docker":
+			return 5
+		case strings.HasPrefix(source, "target"):
+			return 4
+		case source == "tcp":
+			return 3
+		case source == "unix_socket":
+			return 2
+		case source == "file":
+			return 1
+		default:
+			return 0
+		}
+	}
+	keyFor := func(db DiscoveredDatabase) string {
+		switch db.Source {
+		case "file":
+			return "file:" + db.FilePath
+		case "unix_socket":
+			return "unix:" + db.Host
+		default:
+			return fmt.Sprintf("tcp:%s:%d", strings.ToLower(db.Host), db.Port)
 		}
 	}
 
-	var result []DiscoveredDatabase
+	merged := make(map[string]bucket, len(dbs))
 	for _, db := range dbs {
-		if db.Source == "tcp" && db.Port > 0 {
-			key := fmt.Sprintf("%s:%d", db.Host, db.Port)
-			if _, dockerHasIt := dockerPorts[key]; dockerHasIt {
-				// Docker provides a more specific label; skip the generic TCP entry
-				continue
-			}
+		key := keyFor(db)
+		pr := sourcePriority(db.Source)
+		existing, ok := merged[key]
+		if !ok || pr > existing.priority {
+			merged[key] = bucket{db: db, priority: pr}
+			continue
 		}
-		result = append(result, db)
+		// Preserve docker/container metadata and discovered names where useful.
+		cur := existing.db
+		if cur.DockerInfo == nil && db.DockerInfo != nil {
+			cur.DockerInfo = db.DockerInfo
+		}
+		if len(cur.Databases) == 0 && len(db.Databases) > 0 {
+			cur.Databases = db.Databases
+		}
+		merged[key] = bucket{db: cur, priority: existing.priority}
+	}
+
+	result := make([]DiscoveredDatabase, 0, len(merged))
+	for _, v := range merged {
+		result = append(result, v.db)
 	}
 	return result
 }
@@ -678,6 +855,7 @@ func probeDatabase(db *DiscoveredDatabase, userParam, passwordParam string) {
 			// Non-auth error
 			db.AuthStatus = "error"
 			db.AuthError = err.Error()
+			db.ProbeStatus = classifyProbeError(err)
 			return
 		}
 
@@ -690,6 +868,7 @@ func probeDatabase(db *DiscoveredDatabase, userParam, passwordParam string) {
 		db.Databases = names
 		if err != nil {
 			db.AuthError = fmt.Sprintf("connected but failed to list databases: %v", err)
+			db.ProbeStatus = classifyProbeError(err)
 		}
 
 		// Update config snippet with working credentials
@@ -710,6 +889,7 @@ func probeDatabase(db *DiscoveredDatabase, userParam, passwordParam string) {
 	db.AuthStatus = "auth_failed"
 	db.AuthError = fmt.Sprintf("default credentials failed — tried users: %s — provide username and password",
 		strings.Join(triedUsers, ", "))
+	db.ProbeStatus = "auth_failed"
 }
 
 // probeSQLite opens a SQLite file and lists its tables
@@ -718,6 +898,7 @@ func probeSQLite(db *DiscoveredDatabase) {
 	if filePath == "" {
 		db.AuthStatus = "error"
 		db.AuthError = "no file path"
+		db.ProbeStatus = "bad_input"
 		return
 	}
 
@@ -725,6 +906,7 @@ func probeSQLite(db *DiscoveredDatabase) {
 	if err != nil {
 		db.AuthStatus = "error"
 		db.AuthError = err.Error()
+		db.ProbeStatus = classifyProbeError(err)
 		return
 	}
 	defer sqlDB.Close()
@@ -734,6 +916,7 @@ func probeSQLite(db *DiscoveredDatabase) {
 	db.Databases = names
 	if err != nil {
 		db.AuthError = fmt.Sprintf("opened but failed to list tables: %v", err)
+		db.ProbeStatus = classifyProbeError(err)
 	}
 }
 
@@ -772,6 +955,7 @@ func probeMongoDBEntry(db *DiscoveredDatabase, userParam, passwordParam string) 
 			}
 			db.AuthStatus = "error"
 			db.AuthError = err.Error()
+			db.ProbeStatus = classifyProbeError(err)
 			return
 		}
 
@@ -795,6 +979,7 @@ func probeMongoDBEntry(db *DiscoveredDatabase, userParam, passwordParam string) 
 
 	db.AuthStatus = "auth_failed"
 	db.AuthError = "authentication failed — provide username and password"
+	db.ProbeStatus = "auth_failed"
 }
 
 // probeMongoDB connects to MongoDB and lists database names
@@ -1023,10 +1208,10 @@ func isAuthError(err error) bool {
 	msg := strings.ToLower(err.Error())
 	authPatterns := []string{
 		"password authentication failed", // postgres
-		"access denied",                   // mysql/mariadb
-		"login failed",                    // mssql
-		"ora-01017",                       // oracle
-		"authentication failed",           // mongodb
+		"access denied",                  // mysql/mariadb
+		"login failed",                   // mssql
+		"ora-01017",                      // oracle
+		"authentication failed",          // mongodb
 	}
 	for _, pattern := range authPatterns {
 		if strings.Contains(msg, pattern) {
@@ -1047,4 +1232,214 @@ func currentOSUser() string {
 		return u.Username
 	}
 	return os.Getenv("USER")
+}
+
+func inferDBTypeFromPort(port int) string {
+	switch port {
+	case 5432, 5433, 5434:
+		return "postgres"
+	case 3306, 3307:
+		return "mysql"
+	case 1433, 1434:
+		return "mssql"
+	case 1521, 1522:
+		return "oracle"
+	case 27017, 27018:
+		return "mongodb"
+	default:
+		return ""
+	}
+}
+
+func classifyProbeError(err error) string {
+	if err == nil {
+		return "ok"
+	}
+	msg := strings.ToLower(err.Error())
+	switch {
+	case isAuthError(err):
+		return "auth_failed"
+	case strings.Contains(msg, "timeout") || strings.Contains(msg, "i/o timeout"):
+		return "timeout"
+	case strings.Contains(msg, "no such host"), strings.Contains(msg, "connection refused"),
+		strings.Contains(msg, "network is unreachable"):
+		return "network_unreachable"
+	case strings.Contains(msg, "ssl"), strings.Contains(msg, "tls"), strings.Contains(msg, "certificate"):
+		return "tls_required"
+	default:
+		return "error"
+	}
+}
+
+func enrichDiscoveredDatabase(db *DiscoveredDatabase) {
+	if db.CandidateID == "" {
+		db.CandidateID = buildCandidateID(*db)
+	}
+	var reasons []string
+	switch db.Source {
+	case "docker":
+		reasons = append(reasons, "detected via docker container")
+	case "tcp":
+		reasons = append(reasons, "detected open TCP port")
+	case "unix_socket":
+		reasons = append(reasons, "detected unix socket")
+	case "file":
+		reasons = append(reasons, "detected sqlite file")
+	default:
+		if strings.HasPrefix(db.Source, "target") {
+			reasons = append(reasons, "explicitly targeted endpoint")
+		}
+	}
+
+	rank := 10
+	if db.AuthStatus == "ok" {
+		rank += 60
+		reasons = append(reasons, "authentication succeeded")
+	}
+	if len(db.Databases) > 0 {
+		rank += 20
+		reasons = append(reasons, "listed databases successfully")
+	}
+	if db.Status == "listening" || db.Status == "running" {
+		rank += 10
+	}
+	if db.Source == "docker" {
+		rank += 5
+	}
+	if strings.HasPrefix(db.Source, "target") {
+		rank += 5
+	}
+	db.Rank = rank
+	db.Reasons = reasons
+
+	switch {
+	case db.AuthStatus == "ok":
+		db.Confidence = "high"
+	case db.Status == "listening" || db.Status == "running":
+		db.Confidence = "medium"
+	default:
+		db.Confidence = "low"
+	}
+
+	var actions []string
+	switch db.AuthStatus {
+	case "ok":
+		actions = append(actions, "select_candidate", "apply_config")
+	case "auth_failed":
+		actions = append(actions, "provide_credentials", "retest_connection")
+	default:
+		actions = append(actions, "test_connection")
+	}
+	db.NextActions = actions
+
+	if db.ProbeStatus == "" {
+		if db.AuthStatus == "ok" {
+			db.ProbeStatus = "ok"
+		} else if db.AuthStatus == "auth_failed" {
+			db.ProbeStatus = "auth_failed"
+		}
+	}
+}
+
+func sortDiscoveredDatabases(dbs []DiscoveredDatabase) {
+	sort.SliceStable(dbs, func(i, j int) bool {
+		if dbs[i].Rank != dbs[j].Rank {
+			return dbs[i].Rank > dbs[j].Rank
+		}
+		if dbs[i].Type != dbs[j].Type {
+			return dbs[i].Type < dbs[j].Type
+		}
+		if dbs[i].Host != dbs[j].Host {
+			return dbs[i].Host < dbs[j].Host
+		}
+		return dbs[i].Port < dbs[j].Port
+	})
+}
+
+func buildCandidateID(db DiscoveredDatabase) string {
+	base := map[string]any{
+		"type":      db.Type,
+		"host":      strings.ToLower(db.Host),
+		"port":      db.Port,
+		"file_path": db.FilePath,
+		"source":    db.Source,
+	}
+	b, _ := json.Marshal(base)
+	h := fnv.New64a()
+	_, _ = h.Write(b)
+	return fmt.Sprintf("db-%x", h.Sum64())
+}
+
+func parseDiscoverOptions(ms *mcpServer, args map[string]any) (discoverOptions, error) {
+	scanDir, _ := args["scan_dir"].(string)
+	if scanDir == "" {
+		scanDir, _ = os.Getwd()
+	}
+
+	opts := discoverOptions{
+		scanDir:               scanDir,
+		skipDocker:            false,
+		skipProbe:             false,
+		scanLocal:             true,
+		probeTimeout:          500 * time.Millisecond,
+		includeSystemDatabase: ms.service.conf.MCP.DefaultDBAllowed,
+		sqliteMaxDepth:        1,
+	}
+	opts.user, _ = args["user"].(string)
+	opts.password, _ = args["password"].(string)
+	if v, ok := args["skip_docker"].(bool); ok {
+		opts.skipDocker = v
+	}
+	if v, ok := args["skip_probe"].(bool); ok {
+		opts.skipProbe = v
+	}
+	if v, ok := args["scan_local"].(bool); ok {
+		opts.scanLocal = v
+	}
+	if v, ok := args["include_system_databases"].(bool); ok {
+		opts.includeSystemDatabase = v
+	}
+	if v, ok := args["probe_timeout_ms"].(float64); ok && v > 0 {
+		opts.probeTimeout = time.Duration(v) * time.Millisecond
+	}
+	if v, ok := args["sqlite_max_depth"].(float64); ok && v >= 0 {
+		opts.sqliteMaxDepth = int(v)
+	}
+	if raw, ok := args["scan_ports"].([]any); ok {
+		for _, p := range raw {
+			switch val := p.(type) {
+			case float64:
+				if val > 0 {
+					opts.scanPorts = append(opts.scanPorts, int(val))
+				}
+			case int:
+				if val > 0 {
+					opts.scanPorts = append(opts.scanPorts, val)
+				}
+			}
+		}
+	}
+	if rawTargets, ok := args["targets"].([]any); ok && len(rawTargets) > 0 {
+		for _, raw := range rawTargets {
+			tm, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			var t DiscoverTarget
+			t.Type, _ = tm["type"].(string)
+			t.Host, _ = tm["host"].(string)
+			t.SourceLabel, _ = tm["source_label"].(string)
+			t.User, _ = tm["user"].(string)
+			t.Password, _ = tm["password"].(string)
+			t.DBName, _ = tm["dbname"].(string)
+			if p, ok := tm["port"].(float64); ok {
+				t.Port = int(p)
+			}
+			if t.Host == "" {
+				continue
+			}
+			opts.targets = append(opts.targets, t)
+		}
+	}
+	return opts, nil
 }

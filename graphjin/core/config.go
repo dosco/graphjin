@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"time"
 
@@ -15,7 +16,7 @@ import (
 const DefaultDBName = "default"
 
 // SupportedDBTypes lists the database types supported for single-database mode
-var SupportedDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle", "mssql"}
+var SupportedDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle", "mssql", "mongodb"}
 
 // SupportedMultiDBTypes lists the database types supported for multi-database mode
 var SupportedMultiDBTypes = []string{"postgres", "mysql", "mariadb", "sqlite", "oracle", "mongodb", "mssql"}
@@ -77,26 +78,19 @@ func (c *Config) NormalizeDatabases() {
 		}
 		c.Databases = map[string]DatabaseConfig{
 			DefaultDBName: {
-				Type:    dbType,
-				Default: true,
+				Type: dbType,
 			},
 		}
 	}
 
-	// Find the default database name (entry with Default: true, or first entry)
-	defaultName := ""
-	for name, dbConf := range c.Databases {
-		if dbConf.Default {
-			defaultName = name
-			break
-		}
+	// Pick the first entry (sorted) as the representative default
+	// Sorting ensures deterministic behavior across Go map iterations.
+	names := make([]string, 0, len(c.Databases))
+	for name := range c.Databases {
+		names = append(names, name)
 	}
-	if defaultName == "" {
-		for name := range c.Databases {
-			defaultName = name
-			break
-		}
-	}
+	sort.Strings(names)
+	defaultName := names[0]
 
 	// Sync DBType with the default entry's Type
 	defConf := c.Databases[defaultName]
@@ -229,9 +223,6 @@ type Config struct {
 type DatabaseConfig struct {
 	// Database type (postgres, mysql, mariadb, sqlite, oracle, mongodb)
 	Type string `mapstructure:"type" json:"type" yaml:"type" jsonschema:"title=Database Type,enum=postgres,enum=mysql,enum=mariadb,enum=sqlite,enum=oracle,enum=mongodb"`
-
-	// Whether this is the default database when no database is specified for a table
-	Default bool `mapstructure:"default" json:"default" yaml:"default" jsonschema:"title=Default Database,default=false"`
 
 	// Connection string for the database (alternative to individual params)
 	ConnString string `mapstructure:"connection_string" json:"connection_string" yaml:"connection_string" jsonschema:"title=Connection String"`

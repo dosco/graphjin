@@ -13,6 +13,7 @@ import (
 	_log "log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -62,13 +63,9 @@ type dbContext struct {
 // datase schemas, relationships, etc that the GraphQL to SQL compiler would need to do it's job.
 type graphjinEngine struct {
 	conf                  *Config
-	db                    *sql.DB
 	log                   *_log.Logger
 	fs                    FS
 	trace                 Tracer
-	dbtype                string
-	dbinfo                *sdata.DBInfo
-	schema                *sdata.DBSchema
 	allowList             *allow.List
 	encryptionKey         [32]byte
 	encryptionKeySet      bool
@@ -81,8 +78,6 @@ type graphjinEngine struct {
 	rtmap                 map[string]ResolverFn
 	rmap                  map[string]resItem
 	abacEnabled           bool
-	qcodeCompiler         *qcode.Compiler
-	psqlCompiler          *psql.Compiler
 	subs                  sync.Map
 	prod                  bool
 	prodSec               bool
@@ -91,16 +86,33 @@ type graphjinEngine struct {
 	opts                  []Option
 	done                  chan bool
 
-	// Multi-database support: map of database name to context
-	// When nil or empty, single-database mode is used (backward compatible)
+	// All databases (including the primary/default) live here.
 	databases map[string]*dbContext
-	// Name of the default database (used when table has no explicit database)
+	// Name of the default database (used as the map key for the primary DB)
 	defaultDB string
 
 	// Response cache provider (optional, set via OptionSetResponseCache)
 	responseCache ResponseCacheProvider
 	// Cache key builder
 	cacheKeyBuilder *CacheKeyBuilder
+}
+
+// primaryDB returns the default database context.
+func (gj *graphjinEngine) primaryDB() *dbContext {
+	if ctx, ok := gj.databases[gj.defaultDB]; ok {
+		return ctx
+	}
+	return nil
+}
+
+// anyDatabaseReady returns true if at least one database has an initialized schema.
+func (gj *graphjinEngine) anyDatabaseReady() bool {
+	for _, ctx := range gj.databases {
+		if ctx.schema != nil {
+			return true
+		}
+	}
+	return false
 }
 
 type GraphJin struct {
@@ -177,8 +189,6 @@ func (g *GraphJin) newGraphJin(conf *Config,
 
 	gj := &graphjinEngine{
 		conf:        conf,
-		db:          db,
-		dbinfo:      dbinfo,
 		log:         _log.New(os.Stdout, "", 0),
 		prod:        conf.Production,
 		prodSec:     conf.Production,
@@ -203,18 +213,32 @@ func (g *GraphJin) newGraphJin(conf *Config,
 		return
 	}
 
-	// Set defaultDB from the normalized config
-	for name, dbConf := range gj.conf.Databases {
-		if dbConf.Default {
-			gj.defaultDB = name
-			break
+	// Set defaultDB from the normalized config (first entry, sorted for determinism)
+	if gj.defaultDB == "" {
+		names := make([]string, 0, len(gj.conf.Databases))
+		for name := range gj.conf.Databases {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		if len(names) > 0 {
+			gj.defaultDB = names[0]
 		}
 	}
-	if gj.defaultDB == "" {
-		for name := range gj.conf.Databases {
-			gj.defaultDB = name
-			break
-		}
+
+	// Determine dbtype for the primary database
+	dbtype := conf.DBType
+	if dbtype == "" {
+		dbtype = "postgres"
+	}
+
+	// Store the primary DB as a bare context in gj.databases.
+	// Always create the entry even when db is nil (e.g. MockDB mode).
+	gj.databases = make(map[string]*dbContext)
+	gj.databases[gj.defaultDB] = &dbContext{
+		name:   gj.defaultDB,
+		db:     db,     // may be nil for MockDB
+		dbtype: dbtype,
+		dbinfo: dbinfo, // may be preset from watcher/tests
 	}
 
 	for _, op := range options {
@@ -223,38 +247,24 @@ func (g *GraphJin) newGraphJin(conf *Config,
 		}
 	}
 
-	if err = gj.initDiscover(); err != nil {
+	// Phase 1: Discover all databases (get raw schema metadata)
+	if err = gj.discoverAllDatabases(); err != nil {
 		return
 	}
 
+	// Phase 2: Resolvers (adds remote tables to primary DB's dbinfo)
 	if err = gj.initResolvers(); err != nil {
 		return
 	}
 
-	if err = gj.initSchema(); err != nil {
+	// Phase 3: Finalize schemas and compilers for all databases
+	if err = gj.finalizeAllDatabases(); err != nil {
 		return
 	}
 
-	// Only initialize compilers and dependent features if schema exists (tables found)
-	if gj.schema != nil {
+	// Only initialize dependent features if at least one database has a schema
+	if gj.anyDatabaseReady() {
 		if err = gj.initAllowList(); err != nil {
-			return
-		}
-
-		if err = gj.initCompilers(); err != nil {
-			return
-		}
-
-		// Initialize multi-database support if configured
-		if err = gj.initMultiDB(); err != nil {
-			return
-		}
-
-		// Set database names on tables for multi-DB routing
-		gj.setTableDatabases()
-
-		// Initialize compilers for additional databases
-		if err = gj.initMultiDBCompilers(); err != nil {
 			return
 		}
 
@@ -582,8 +592,8 @@ func (gj *graphjinEngine) query(c context.Context, r GraphqlReq) (
 		return
 	}
 
-	if gj.schema == nil {
-		err = fmt.Errorf("no tables found in database '%s'; schema not initialized", gj.dbinfo.Name)
+	if !gj.anyDatabaseReady() {
+		err = fmt.Errorf("no tables found in any database; schema not initialized")
 		return
 	}
 
@@ -625,7 +635,33 @@ func (g *GraphJin) Reload() error {
 	if err != nil {
 		return err
 	}
-	return g.newGraphJin(gj.conf, gj.db, nil, gj.fs, gj.opts...)
+	var db *sql.DB
+	if pdb := gj.primaryDB(); pdb != nil {
+		db = pdb.db
+	}
+	return g.newGraphJin(gj.conf, db, nil, gj.fs, gj.opts...)
+}
+
+// ReloadWithDB redoes database discover with a new primary DB connection.
+func (g *GraphJin) ReloadWithDB(db *sql.DB) error {
+	g.reloadMu.Lock()
+	defer g.reloadMu.Unlock()
+	gj, err := g.getEngine()
+	if err != nil {
+		return err
+	}
+	return g.newGraphJin(gj.conf, db, nil, gj.fs, gj.opts...)
+}
+
+// SetOptions replaces the options slice so the next Reload picks them up.
+func (g *GraphJin) SetOptions(opts ...Option) {
+	g.reloadMu.Lock()
+	defer g.reloadMu.Unlock()
+	gj, err := g.getEngine()
+	if err != nil {
+		return
+	}
+	gj.opts = opts
 }
 
 // IsProd return true for production mode or false for development mode
@@ -782,10 +818,12 @@ func (g *GraphJin) SchemaReady() bool {
 	if !ok || gj == nil {
 		return false
 	}
-	if gj.isMultiDB() {
-		return len(gj.databases) > 0
+	for _, ctx := range gj.databases {
+		if ctx.schema != nil {
+			return true
+		}
 	}
-	return gj.schema != nil
+	return false
 }
 
 // GetTablesForDatabase returns tables from a specific database.
@@ -799,53 +837,31 @@ func (g *GraphJin) GetTablesForDatabase(database string) []TableInfo {
 }
 
 // getTables returns tables, optionally filtered by database name.
-// In multi-DB mode with empty database, returns tables from all databases.
-// In single-DB mode, returns tables from the default schema.
+// With empty database, returns tables from all databases.
 func (gj *graphjinEngine) getTables(database string) []TableInfo {
-	if gj.isMultiDB() {
-		var result []TableInfo
-		for dbName, ctx := range gj.databases {
-			if database != "" && dbName != database {
-				continue
-			}
-			if ctx.schema == nil {
-				continue
-			}
-			tables := ctx.schema.GetTables()
-			for _, t := range tables {
-				if t.Type == "virtual" || t.Blocked {
-					continue
-				}
-				result = append(result, TableInfo{
-					Name:        t.Name,
-					Schema:      t.Schema,
-					Database:    dbName,
-					Type:        t.Type,
-					Comment:     t.Comment,
-					ColumnCount: len(t.Columns),
-				})
-			}
-		}
-		return result
-	}
-
-	// Single-DB mode: existing behavior
-	if gj.schema == nil {
-		return nil
-	}
-	tables := gj.schema.GetTables()
-	result := make([]TableInfo, 0, len(tables))
-	for _, t := range tables {
-		if t.Type == "virtual" || t.Blocked {
+	var result []TableInfo
+	for _, dbName := range gj.sortedDatabaseNames() {
+		if database != "" && dbName != database {
 			continue
 		}
-		result = append(result, TableInfo{
-			Name:        t.Name,
-			Schema:      t.Schema,
-			Type:        t.Type,
-			Comment:     t.Comment,
-			ColumnCount: len(t.Columns),
-		})
+		ctx := gj.databases[dbName]
+		if ctx.schema == nil {
+			continue
+		}
+		tables := ctx.schema.GetTables()
+		for _, t := range tables {
+			if t.Type == "virtual" || t.Blocked {
+				continue
+			}
+			result = append(result, TableInfo{
+				Name:        t.Name,
+				Schema:      t.Schema,
+				Database:    dbName,
+				Type:        t.Type,
+				Comment:     t.Comment,
+				ColumnCount: len(t.Columns),
+			})
+		}
 	}
 	return result
 }
@@ -872,30 +888,25 @@ func (g *GraphJin) GetTableSchemaForDatabase(database, tableName string) (*Table
 
 // getTableSchema finds and returns the schema for a table, optionally in a specific database.
 func (gj *graphjinEngine) getTableSchema(database, tableName string) (*TableSchema, error) {
-	if gj.isMultiDB() {
-		if database != "" {
-			// Specific database requested
-			ctx, ok := gj.GetDatabase(database)
-			if !ok {
-				return nil, fmt.Errorf("database not found: %s", database)
-			}
-			return gj.buildTableSchema(ctx.schema, database, tableName)
+	if database != "" {
+		ctx, ok := gj.GetDatabase(database)
+		if !ok {
+			return nil, fmt.Errorf("database not found: %s", database)
 		}
-		// Search all databases
-		for dbName, ctx := range gj.databases {
-			ts, err := gj.buildTableSchema(ctx.schema, dbName, tableName)
-			if err == nil {
-				return ts, nil
-			}
+		return gj.buildTableSchema(ctx.schema, database, tableName)
+	}
+	// Search all databases (deterministic order)
+	for _, dbName := range gj.sortedDatabaseNames() {
+		ctx := gj.databases[dbName]
+		if ctx.schema == nil {
+			continue
 		}
-		return nil, fmt.Errorf("table not found: %s (searched all databases)", tableName)
+		ts, err := gj.buildTableSchema(ctx.schema, dbName, tableName)
+		if err == nil {
+			return ts, nil
+		}
 	}
-
-	// Single-DB mode
-	if gj.schema == nil {
-		return nil, fmt.Errorf("schema not initialized")
-	}
-	return gj.buildTableSchema(gj.schema, "", tableName)
+	return nil, fmt.Errorf("table not found: %s (searched all databases)", tableName)
 }
 
 // buildTableSchema builds a TableSchema from a specific database schema.
@@ -978,32 +989,25 @@ func (g *GraphJin) FindRelationshipPathForDatabase(database, fromTable, toTable 
 
 // findRelationshipPath finds the path between two tables, optionally in a specific database.
 func (gj *graphjinEngine) findRelationshipPath(database, fromTable, toTable string) ([]PathStep, error) {
-	if gj.isMultiDB() {
-		if database != "" {
-			ctx, ok := gj.GetDatabase(database)
-			if !ok {
-				return nil, fmt.Errorf("database not found: %s", database)
-			}
-			return gj.buildPath(ctx.schema, fromTable, toTable)
+	if database != "" {
+		ctx, ok := gj.GetDatabase(database)
+		if !ok {
+			return nil, fmt.Errorf("database not found: %s", database)
 		}
-		// Search all databases
-		for _, ctx := range gj.databases {
-			if ctx.schema == nil {
-				continue
-			}
-			path, err := gj.buildPath(ctx.schema, fromTable, toTable)
-			if err == nil {
-				return path, nil
-			}
+		return gj.buildPath(ctx.schema, fromTable, toTable)
+	}
+	// Search all databases (deterministic order)
+	for _, dbName := range gj.sortedDatabaseNames() {
+		ctx := gj.databases[dbName]
+		if ctx.schema == nil {
+			continue
 		}
-		return nil, fmt.Errorf("no path found between %s and %s (searched all databases)", fromTable, toTable)
+		path, err := gj.buildPath(ctx.schema, fromTable, toTable)
+		if err == nil {
+			return path, nil
+		}
 	}
-
-	// Single-DB mode
-	if gj.schema == nil {
-		return nil, fmt.Errorf("schema not initialized")
-	}
-	return gj.buildPath(gj.schema, fromTable, toTable)
+	return nil, fmt.Errorf("no path found between %s and %s (searched all databases)", fromTable, toTable)
 }
 
 // buildPath builds the relationship path between two tables using a specific schema.
@@ -1204,7 +1208,7 @@ func (g *GraphJin) AuditAllRoles() ([]RoleAudit, error) {
 
 // explainQuery compiles a query through the full pipeline without executing it.
 func (gj *graphjinEngine) explainQuery(query string, vars json.RawMessage, role string) (*QueryExplanation, error) {
-	if gj.schema == nil {
+	if !gj.anyDatabaseReady() {
 		return nil, fmt.Errorf("schema not initialized")
 	}
 
@@ -1316,23 +1320,15 @@ func (gj *graphjinEngine) explainQuery(query string, vars json.RawMessage, role 
 // explainForDatabase compiles a sub-query for a single database and returns its explanation.
 func (gj *graphjinEngine) explainForDatabase(s *gstate, dbName string, rootFields []string) *QueryExplanation {
 	// Get compilers for the target database
-	var qcodeCompiler *qcode.Compiler
-	var psqlCompiler *psql.Compiler
-
-	if dbName == gj.defaultDB {
-		qcodeCompiler = gj.qcodeCompiler
-		psqlCompiler = gj.psqlCompiler
-	} else {
-		dbCtx, ok := gj.GetDatabase(dbName)
-		if !ok {
-			return &QueryExplanation{
-				Database: dbName,
-				Errors:   []string{fmt.Sprintf("database not found: %s", dbName)},
-			}
+	dbCtx, ok := gj.GetDatabase(dbName)
+	if !ok {
+		return &QueryExplanation{
+			Database: dbName,
+			Errors:   []string{fmt.Sprintf("database not found: %s", dbName)},
 		}
-		qcodeCompiler = dbCtx.qcodeCompiler
-		psqlCompiler = dbCtx.psqlCompiler
 	}
+	qcodeCompiler := dbCtx.qcodeCompiler
+	psqlCompiler := dbCtx.psqlCompiler
 
 	// Build a sub-query with only this database's root fields
 	subQuery, err := s.buildDatabaseQuery(rootFields)
@@ -1437,15 +1433,19 @@ func (gj *graphjinEngine) exploreRelationships(database, tableName string, depth
 	}
 
 	var dbSchema *sdata.DBSchema
-	if gj.isMultiDB() && database != "" {
+	if database != "" {
 		ctx, ok := gj.GetDatabase(database)
 		if !ok {
 			return nil, fmt.Errorf("database not found: %s", database)
 		}
 		dbSchema = ctx.schema
-	} else if gj.isMultiDB() {
-		// Search all databases
-		for dbName, ctx := range gj.databases {
+	} else {
+		// Search all databases (deterministic order)
+		for _, dbName := range gj.sortedDatabaseNames() {
+			ctx := gj.databases[dbName]
+			if ctx.schema == nil {
+				continue
+			}
 			if _, err := ctx.schema.Find("", tableName); err == nil {
 				dbSchema = ctx.schema
 				database = dbName
@@ -1455,8 +1455,6 @@ func (gj *graphjinEngine) exploreRelationships(database, tableName string, depth
 		if dbSchema == nil {
 			return nil, fmt.Errorf("table not found: %s (searched all databases)", tableName)
 		}
-	} else {
-		dbSchema = gj.schema
 	}
 
 	if dbSchema == nil {
@@ -1851,90 +1849,53 @@ type PoolStats struct {
 }
 
 // GetAllDatabaseStats returns statistics for all configured databases.
-// In single-database mode, returns a single entry for the main connection.
-// In multi-database mode, returns stats for each configured database.
 func (g *GraphJin) GetAllDatabaseStats() []DatabaseStats {
 	gj, err := g.getEngine()
 	if err != nil {
 		return nil
 	}
 
-	// Multi-database mode
-	if len(gj.databases) > 0 {
-		stats := make([]DatabaseStats, 0, len(gj.databases))
-		for name, ctx := range gj.databases {
-			ds := DatabaseStats{
-				Name:      name,
-				Type:      ctx.dbtype,
-				IsDefault: name == gj.defaultDB,
-			}
+	stats := make([]DatabaseStats, 0, len(gj.databases))
+	for _, name := range gj.sortedDatabaseNames() {
+		ctx := gj.databases[name]
+		ds := DatabaseStats{
+			Name:      name,
+			Type:      ctx.dbtype,
+			IsDefault: name == gj.defaultDB,
+		}
 
-			// Get table count from schema
-			if ctx.schema != nil {
-				tables := ctx.schema.GetTables()
-				// Count non-virtual, non-blocked tables
-				count := 0
-				for _, t := range tables {
-					if t.Type != "virtual" && !t.Blocked {
-						count++
-					}
-				}
-				ds.TableCount = count
-			}
-
-			// Get pool stats if DB connection exists
-			if ctx.db != nil {
-				dbStats := ctx.db.Stats()
-				ds.Pool = &PoolStats{
-					MaxOpen:           dbStats.MaxOpenConnections,
-					Open:              dbStats.OpenConnections,
-					InUse:             dbStats.InUse,
-					Idle:              dbStats.Idle,
-					WaitCount:         dbStats.WaitCount,
-					WaitDuration:      dbStats.WaitDuration.String(),
-					MaxIdleClosed:     dbStats.MaxIdleClosed,
-					MaxLifetimeClosed: dbStats.MaxLifetimeClosed,
+		// Get table count from schema
+		if ctx.schema != nil {
+			tables := ctx.schema.GetTables()
+			count := 0
+			for _, t := range tables {
+				if t.Type != "virtual" && !t.Blocked {
+					count++
 				}
 			}
-
-			stats = append(stats, ds)
+			ds.TableCount = count
 		}
-		return stats
-	}
 
-	// Single-database mode (backward compatible)
-	ds := DatabaseStats{
-		Name:      "default",
-		Type:      gj.dbtype,
-		IsDefault: true,
-	}
-
-	// Get table count from schema
-	if gj.schema != nil {
-		tables := gj.schema.GetTables()
-		count := 0
-		for _, t := range tables {
-			if t.Type != "virtual" && !t.Blocked {
-				count++
+		// Get pool stats if DB connection exists
+		if ctx.db != nil {
+			dbStats := ctx.db.Stats()
+			ds.Pool = &PoolStats{
+				MaxOpen:           dbStats.MaxOpenConnections,
+				Open:              dbStats.OpenConnections,
+				InUse:             dbStats.InUse,
+				Idle:              dbStats.Idle,
+				WaitCount:         dbStats.WaitCount,
+				WaitDuration:      dbStats.WaitDuration.String(),
+				MaxIdleClosed:     dbStats.MaxIdleClosed,
+				MaxLifetimeClosed: dbStats.MaxLifetimeClosed,
 			}
 		}
-		ds.TableCount = count
+
+		stats = append(stats, ds)
 	}
 
-	// Get pool stats
-	if gj.db != nil {
-		dbStats := gj.db.Stats()
-		ds.Pool = &PoolStats{
-			MaxOpen:           dbStats.MaxOpenConnections,
-			Open:              dbStats.OpenConnections,
-			InUse:             dbStats.InUse,
-			Idle:              dbStats.Idle,
-			WaitCount:         dbStats.WaitCount,
-			WaitDuration:      dbStats.WaitDuration.String(),
-			MaxIdleClosed:     dbStats.MaxIdleClosed,
-			MaxLifetimeClosed: dbStats.MaxLifetimeClosed,
-		}
+	if len(stats) == 0 {
+		return []DatabaseStats{{Name: "default", IsDefault: true}}
 	}
-
-	return []DatabaseStats{ds}
+	return stats
 }

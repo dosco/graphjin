@@ -166,8 +166,9 @@ func (s *gstate) compileQueryForRole() (err error) {
 		}
 	}
 
-	// Default path: compile with default compilers
-	return s.compileWithCompilers(st, vars, s.gj.qcodeCompiler, s.gj.psqlCompiler, "")
+	// Default path: compile with default (primary) database's compilers
+	pdb := s.gj.primaryDB()
+	return s.compileWithCompilers(st, vars, pdb.qcodeCompiler, pdb.psqlCompiler, "")
 }
 
 // compileForDatabase compiles the query using a specific database's compilers.
@@ -243,16 +244,28 @@ func (s *gstate) groupRootsByDatabase(roots []string) map[string][]string {
 }
 
 
+// getTargetDBCtx returns the dbContext for the target database.
+// If s.database is set, returns that database's context.
+// Otherwise returns the default database context.
+func (s *gstate) getTargetDBCtx() *dbContext {
+	name := s.database
+	if name == "" {
+		name = s.gj.defaultDB
+	}
+	ctx, _ := s.gj.GetDatabase(name)
+	return ctx
+}
+
+// getTargetPsqlCompiler returns the psql compiler for the target database.
+func (s *gstate) getTargetPsqlCompiler() *psql.Compiler {
+	return s.getTargetDBCtx().psqlCompiler
+}
+
 // getTargetDB returns the *sql.DB for the target database.
 // If s.database is set (non-default database), returns that database's connection.
 // Otherwise returns the default database connection.
 func (s *gstate) getTargetDB() *sql.DB {
-	if s.database != "" {
-		if dbCtx, ok := s.gj.GetDatabase(s.database); ok {
-			return dbCtx.db
-		}
-	}
-	return s.gj.db
+	return s.getTargetDBCtx().db
 }
 
 func (s *gstate) compileAndExecuteWrapper(c context.Context) (err error) {
@@ -348,7 +361,7 @@ func (s *gstate) compileAndExecute(c context.Context) (err error) {
 		defer span1.End()
 
 		err = retryOperation(c1, func() (err1 error) {
-			defaultConn, err1 = s.gj.db.Conn(c1)
+			defaultConn, err1 = s.gj.primaryDB().db.Conn(c1)
 			return
 		})
 		if err != nil {
@@ -435,7 +448,7 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 	cs := s.cs
 
     // Use Dialect to check for multi-statement scripts (e.g., SQLite)
-    dialect := s.gj.psqlCompiler.GetDialect()
+    dialect := s.getTargetPsqlCompiler().GetDialect()
     parts := dialect.SplitQuery(cs.st.sql)
 
     if len(parts) > 1 {
@@ -635,14 +648,14 @@ func (s *gstate) executeRoleQuery(c context.Context, conn *sql.Conn) (err error)
 }
 
 func (s *gstate) argList(c context.Context) (args args, err error) {
-	args, err = s.gj.argList(c, s.cs.st.md, s.vmap, s.r.requestconfig, false)
+	args, err = s.gj.argList(c, s.cs.st.md, s.vmap, s.r.requestconfig, false, s.getTargetPsqlCompiler())
 	return
 }
 
 func (s *gstate) argListForSub(c context.Context,
 	vmap map[string]json.RawMessage,
 ) (args args, err error) {
-	args, err = s.gj.argList(c, s.cs.st.md, vmap, s.r.requestconfig, true)
+	args, err = s.gj.argList(c, s.cs.st.md, vmap, s.r.requestconfig, true, s.getTargetPsqlCompiler())
 	return
 }
 
@@ -658,7 +671,7 @@ func (s *gstate) setLocalUserID(c context.Context, conn *sql.Conn) (err error) {
 			val = strconv.Itoa(v1)
 		}
 		
-		q := s.gj.psqlCompiler.RenderSetSessionVar("user.id", val)
+		q := s.getTargetPsqlCompiler().RenderSetSessionVar("user.id", val)
 		if q == "" {
 			return nil
 		}

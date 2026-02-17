@@ -21,8 +21,7 @@ func newMultiDBConfig(conf *core.Config) *core.Config {
 	// Configure multi-DB
 	conf.Databases = map[string]core.DatabaseConfig{
 		"postgres": {
-			Type:    "postgres",
-			Default: true,
+			Type: "postgres",
 		},
 		"sqlite": {
 			Type: "sqlite",

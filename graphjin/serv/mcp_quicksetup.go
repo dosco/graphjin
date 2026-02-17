@@ -132,7 +132,6 @@ func (ms *mcpServer) handleQuickSetup(ctx context.Context, req mcp.CallToolReque
 		DBName:   dbName,
 		User:     user,
 		Password: password,
-		Default:  true,
 	}
 
 	// Step 5: Initialize/reload

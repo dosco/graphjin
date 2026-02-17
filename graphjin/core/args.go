@@ -24,6 +24,7 @@ func (gj *graphjinEngine) argList(c context.Context,
 	fields map[string]json.RawMessage,
 	rc *RequestConfig,
 	buildJSON bool,
+	pc *psql.Compiler,
 ) (ar args, err error) {
 	ar = args{}
 	params := md.Params()
@@ -109,7 +110,7 @@ func (gj *graphjinEngine) argList(c context.Context,
 				// Some databases (Oracle, MSSQL) require JSON arrays/objects to be passed as strings
 				// because the drivers don't handle json.RawMessage properly
 				// Also handle CLOB columns that may contain JSON data
-				needsStringConversion := gj.psqlCompiler.GetDialect().RequiresJSONAsString() &&
+				needsStringConversion := pc.GetDialect().RequiresJSONAsString() &&
 					(p.Type == "json" || p.Type == "clob" || p.Type == "nclob") &&
 					(v[0] == '[' || v[0] == '{')
 				if needsStringConversion {
@@ -119,7 +120,7 @@ func (gj *graphjinEngine) argList(c context.Context,
 				}
 				// Oracle's PL/SQL BOOLEAN can't be used in SQL WHERE clauses
 				// Convert Go bool to int (1/0) before it reaches the driver
-				vl[i] = gj.convertBoolIfNeeded(vl[i])
+				vl[i] = convertBoolIfNeeded(pc, vl[i])
 
 			} else if rc != nil {
 				if v, ok := rc.Vars[p.Name]; ok {
@@ -129,9 +130,9 @@ func (gj *graphjinEngine) argList(c context.Context,
 					case (func() int):
 						vl[i] = v1()
 					case (func() bool):
-						vl[i] = gj.convertBoolIfNeeded(v1())
+						vl[i] = convertBoolIfNeeded(pc, v1())
 					default:
-						vl[i] = gj.convertBoolIfNeeded(v)
+						vl[i] = convertBoolIfNeeded(pc, v)
 					}
 				}
 			} else {
@@ -189,8 +190,8 @@ func argErr(p psql.Param) error {
 
 // convertBoolIfNeeded converts Go bool to int (1/0) for databases like Oracle
 // where PL/SQL BOOLEAN cannot be used in SQL WHERE clauses
-func (gj *graphjinEngine) convertBoolIfNeeded(v interface{}) interface{} {
-	if b, ok := v.(bool); ok && gj.psqlCompiler.GetDialect().RequiresBooleanAsInt() {
+func convertBoolIfNeeded(pc *psql.Compiler, v interface{}) interface{} {
+	if b, ok := v.(bool); ok && pc.GetDialect().RequiresBooleanAsInt() {
 		if b {
 			return 1
 		}

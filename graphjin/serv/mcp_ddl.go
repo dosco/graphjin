@@ -119,7 +119,7 @@ func (ms *mcpServer) computeSchemaOps(schema string, destructive bool) ([]core.S
 	schemaBytes := ms.prepareSchema(schema)
 	opts := core.DiffOptions{Destructive: destructive}
 	return core.SchemaDiff(
-		ms.service.db,
+		ms.service.anyDB(),
 		ms.service.conf.DB.Type,
 		schemaBytes,
 		ms.service.conf.Blocklist,
@@ -129,7 +129,7 @@ func (ms *mcpServer) computeSchemaOps(schema string, destructive bool) ([]core.S
 
 // handlePreviewSchemaChanges previews schema changes without applying them
 func (ms *mcpServer) handlePreviewSchemaChanges(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if ms.service.db == nil {
+	if ms.service.anyDB() == nil {
 		return mcp.NewToolResultError("no database connection configured"), nil
 	}
 
@@ -196,7 +196,7 @@ func (ms *mcpServer) handlePreviewSchemaChanges(ctx context.Context, req mcp.Cal
 
 // handleApplySchemaChanges applies schema changes to the database
 func (ms *mcpServer) handleApplySchemaChanges(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if ms.service.db == nil {
+	if ms.service.anyDB() == nil {
 		return mcp.NewToolResultError("no database connection configured"), nil
 	}
 
@@ -236,7 +236,7 @@ func (ms *mcpServer) handleApplySchemaChanges(ctx context.Context, req mcp.CallT
 	}
 
 	// Apply changes in a transaction
-	tx, err := ms.service.db.BeginTx(ctx, nil)
+	tx, err := ms.service.anyDB().BeginTx(ctx, nil)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to begin transaction: %v", err)), nil
 	}

@@ -109,7 +109,7 @@ func TestCheckUnixSocket_NonexistentPath(t *testing.T) {
 
 func TestFindSQLiteFiles_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
-	files := findSQLiteFiles(dir)
+	files := findSQLiteFiles(dir, 1)
 	if len(files) != 0 {
 		t.Errorf("Expected 0 files in empty dir, got %d", len(files))
 	}
@@ -133,7 +133,7 @@ func TestFindSQLiteFiles_WithDBFiles(t *testing.T) {
 		t.Fatalf("Failed to create non-matching file: %v", err)
 	}
 
-	files := findSQLiteFiles(dir)
+	files := findSQLiteFiles(dir, 1)
 	if len(files) != 3 {
 		t.Errorf("Expected 3 SQLite files, got %d: %v", len(files), files)
 	}
@@ -387,9 +387,9 @@ func TestDiscoverResult_JSONStructure(t *testing.T) {
 
 func TestDefaultCredentials(t *testing.T) {
 	tests := []struct {
-		dbType        string
-		expectMinLen  int
-		expectFirst   string // expected first username
+		dbType       string
+		expectMinLen int
+		expectFirst  string // expected first username
 	}{
 		{"postgres", 3, "postgres"},
 		{"mysql", 2, "root"},
@@ -444,14 +444,14 @@ func TestDefaultCredentials_MySQLOrder(t *testing.T) {
 
 func TestBuildProbeConnString_AllTypes(t *testing.T) {
 	tests := []struct {
-		dbType       string
-		host         string
-		port         int
-		filePath     string
-		user         string
-		password     string
-		source       string
-		expectDriver string
+		dbType         string
+		host           string
+		port           int
+		filePath       string
+		user           string
+		password       string
+		source         string
+		expectDriver   string
 		expectNonEmpty bool
 	}{
 		{"postgres", "localhost", 5432, "", "postgres", "", "tcp", "pgx", true},

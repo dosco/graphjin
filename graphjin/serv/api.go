@@ -42,6 +42,7 @@ import (
 	"os"
 	// "path/filepath"
 	// "strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/dosco/graphjin/auth/v3"
@@ -72,14 +73,14 @@ const (
 type HookFn func(*core.Result)
 
 type graphjinService struct {
-	log          *zap.SugaredLogger // logger
-	zlog         *zap.Logger        // faster logger
-	logLevel     int                // log level
-	conf         *Config            // parsed config
-	db           *sql.DB            // database connection pool
-	gj           *core.GraphJin
-	srv          *http.Server
-	fs      core.FS
+	log      *zap.SugaredLogger // logger
+	zlog     *zap.Logger        // faster logger
+	logLevel int                // log level
+	conf     *Config            // parsed config
+	dbs      map[string]*sql.DB // named database connections (all equal)
+	gj       *core.GraphJin
+	srv      *http.Server
+	fs       core.FS
 	// asec         [32]byte
 	closeFn func()
 	chash   string
@@ -88,10 +89,39 @@ type graphjinService struct {
 	prod    bool
 	// deployActive bool
 	// adminCount   int32
-	namespace    *string
-	tracer       trace.Tracer
-	cache        ResponseCache // Response cache (Redis or in-memory)
-	cursorCache  CursorCache   // MCP cursor cache for short numeric IDs
+	namespace            *string
+	tracer               trace.Tracer
+	cache                ResponseCache // Response cache (Redis or in-memory)
+	cursorCache          CursorCache   // MCP cursor cache for short numeric IDs
+	onboardingMu         sync.RWMutex
+	onboardingCandidates map[string]cachedDiscoveredCandidate
+}
+
+// anyDB returns any single connection from the dbs map (for callers
+// that just need a live connection, e.g. health checks, DDL, listing).
+func (s *graphjinService) anyDB() *sql.DB {
+	for _, db := range s.dbs {
+		return db
+	}
+	return nil
+}
+
+// buildCoreOptions returns core.Option slice including OptionSetDatabases.
+func (s *graphjinService) buildCoreOptions() []core.Option {
+	opts := []core.Option{
+		core.OptionSetFS(s.fs),
+		core.OptionSetTrace(otelPlugin.NewTracerFrom(s.tracer)),
+	}
+	if s.namespace != nil {
+		opts = append(opts, core.OptionSetNamespace(*s.namespace))
+	}
+	if s.cache != nil {
+		opts = append(opts, core.OptionSetResponseCache(s.cache))
+	}
+	if len(s.dbs) > 0 {
+		opts = append(opts, core.OptionSetDatabases(s.dbs))
+	}
+	return opts
 }
 
 type Option func(*graphjinService) error
@@ -121,10 +151,14 @@ func NewGraphJinService(conf *Config, options ...Option) (*HttpService, error) {
 	return s1, nil
 }
 
-// OptionSetDB sets a new db client
+// OptionSetDB sets a new db client. The connection is stored under the
+// DefaultDBName key in the dbs map for backward compatibility.
 func OptionSetDB(db *sql.DB) Option {
 	return func(s *graphjinService) error {
-		s.db = db
+		if s.dbs == nil {
+			s.dbs = make(map[string]*sql.DB)
+		}
+		s.dbs[core.DefaultDBName] = db
 		return nil
 	}
 }
@@ -181,7 +215,7 @@ func OptionSetLogOutput(output zapcore.WriteSyncer) Option {
 // }
 
 // newGraphJinService creates a new service
-func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*graphjinService, error) {
+func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option) (*graphjinService, error) {
 	var err error
 	if conf == nil {
 		conf = &Config{Core: Core{Debug: true}}
@@ -195,10 +229,13 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*graphjinS
 		conf:   conf,
 		zlog:   zlog,
 		log:    zlog.Sugar(),
-		db:     db,
+		dbs:    dbs,
 		chash:  conf.hash,
 		prod:   prod,
 		tracer: otel.Tracer("graphjin.com/serv"),
+	}
+	if s.dbs == nil {
+		s.dbs = make(map[string]*sql.DB)
 	}
 
 	if err := s.initConfig(); err != nil {
@@ -289,25 +326,15 @@ func newGraphJinService(conf *Config, db *sql.DB, options ...Option) (*graphjinS
 // normalStart starts the service in normal mode
 func (s *graphjinService) normalStart() error {
 	// Skip GraphJin core initialization if no database is configured (dev mode only)
-	if s.db == nil && !s.conf.Serv.Production {
+	if len(s.dbs) == 0 && !s.conf.Serv.Production {
 		s.log.Info("GraphJin core not initialized - waiting for database configuration via MCP")
 		return nil
 	}
 
-	opts := []core.Option{
-		core.OptionSetFS(s.fs),
-		core.OptionSetTrace(otelPlugin.NewTracerFrom(s.tracer)),
-	}
-	if s.namespace != nil {
-		opts = append(opts, core.OptionSetNamespace(*s.namespace))
-	}
-	// Add response cache if enabled
-	if s.cache != nil {
-		opts = append(opts, core.OptionSetResponseCache(s.cache))
-	}
+	opts := s.buildCoreOptions()
 
 	var err error
-	s.gj, err = core.NewGraphJin(&s.conf.Core, s.db, opts...)
+	s.gj, err = core.NewGraphJin(&s.conf.Core, s.anyDB(), opts...)
 	return err
 }
 
@@ -367,7 +394,7 @@ func (s *HttpService) Deploy(conf *Config, options ...Option) error {
 		return nil
 	}
 
-	s1, err := newGraphJinService(conf, os.db, options...)
+	s1, err := newGraphJinService(conf, os.dbs, options...)
 	if err != nil {
 		return err
 	}
@@ -482,10 +509,10 @@ func (s *HttpService) GetGraphJin() *core.GraphJin {
 	return s1.gj
 }
 
-// GetDB fetching internal db client
+// GetDB fetching internal db client (returns any connection from the pool)
 func (s *HttpService) GetDB() *sql.DB {
 	s1 := s.Load().(*graphjinService)
-	return s1.db
+	return s1.anyDB()
 }
 
 // Reload re-runs database discover and reinitializes service.

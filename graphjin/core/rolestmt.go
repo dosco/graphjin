@@ -17,11 +17,16 @@ func (gj *graphjinEngine) prepareRoleStmt() error {
 		return fmt.Errorf("roles_query: $user_id variable missing")
 	}
 
+	pdb := gj.primaryDB()
+	if pdb == nil || pdb.psqlCompiler == nil {
+		return fmt.Errorf("roles_query: primary database not initialized")
+	}
+
 	w := &bytes.Buffer{}
-	dialect := gj.psqlCompiler.GetDialect()
+	dialect := pdb.psqlCompiler.GetDialect()
 
 	io.WriteString(w, `SELECT (CASE WHEN EXISTS (`)
-	gj.psqlCompiler.RenderVar(w, &gj.roleStatementMetadata, gj.conf.RolesQuery)
+	pdb.psqlCompiler.RenderVar(w, &gj.roleStatementMetadata, gj.conf.RolesQuery)
 	io.WriteString(w, `) THEN `)
 
 	// Use dialect-specific SELECT prefix (e.g., MSSQL uses TOP instead of LIMIT)
@@ -41,7 +46,7 @@ func (gj *graphjinEngine) prepareRoleStmt() error {
 	}
 
 	io.WriteString(w, ` ELSE 'user' END) FROM (`)
-	gj.psqlCompiler.RenderVar(w, &gj.roleStatementMetadata, gj.conf.RolesQuery)
+	pdb.psqlCompiler.RenderVar(w, &gj.roleStatementMetadata, gj.conf.RolesQuery)
 	// Use dialect-specific LIMIT suffix
 	io.WriteString(w, dialect.RoleLimitSuffix())
 

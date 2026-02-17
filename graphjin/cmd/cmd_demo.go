@@ -614,9 +614,6 @@ func startMultiDBDemo(ctx context.Context, primaryType string, overrides map[str
 		// Check for override
 		if override, ok := overrides[name]; ok {
 			dbType = override
-		} else if dbConf.Default && primaryType != "" {
-			// Apply primary type override to default database
-			dbType = primaryType
 		}
 
 		if dbType == "" {

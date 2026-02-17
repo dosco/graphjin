@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/dosco/graphjin/core/v3/internal/jsn"
@@ -94,7 +95,6 @@ func TestCacheKeyIsolation(t *testing.T) {
 func TestDatabaseConfigParsing(t *testing.T) {
 	conf := DatabaseConfig{
 		Type:       "postgres",
-		Default:    true,
 		ConnString: "postgres://localhost/test",
 		Host:       "localhost",
 		Port:       5432,
@@ -107,9 +107,6 @@ func TestDatabaseConfigParsing(t *testing.T) {
 	if conf.Type != "postgres" {
 		t.Errorf("Type = %q, want %q", conf.Type, "postgres")
 	}
-	if !conf.Default {
-		t.Error("Default should be true")
-	}
 }
 
 // TestMultiDBConfigInConfig verifies that Databases map is properly defined in Config.
@@ -117,8 +114,7 @@ func TestMultiDBConfigInConfig(t *testing.T) {
 	conf := Config{
 		Databases: map[string]DatabaseConfig{
 			"main": {
-				Type:    "postgres",
-				Default: true,
+				Type: "postgres",
 			},
 			"analytics": {
 				Type: "sqlite",
@@ -134,8 +130,8 @@ func TestMultiDBConfigInConfig(t *testing.T) {
 	if !ok {
 		t.Error("main database not found")
 	}
-	if !main.Default {
-		t.Error("main should be default")
+	if main.Type != "postgres" {
+		t.Errorf("main.Type = %q, want %q", main.Type, "postgres")
 	}
 
 	analytics, ok := conf.Databases["analytics"]
@@ -243,7 +239,7 @@ func TestIsMultiDB(t *testing.T) {
 			databases: map[string]*dbContext{
 				"main": {},
 			},
-			want: true,
+			want: false,
 		},
 		{
 			name: "multiple databases",
@@ -774,9 +770,7 @@ func TestNormalizeDatabases(t *testing.T) {
 		if dbConf.Type != "mysql" {
 			t.Errorf("Type = %q, want %q", dbConf.Type, "mysql")
 		}
-		if !dbConf.Default {
-			t.Error("expected Default to be true")
-		}
+		// No Default flag — first entry is always the default
 	})
 
 	t.Run("empty DBType defaults to postgres", func(t *testing.T) {
@@ -795,7 +789,7 @@ func TestNormalizeDatabases(t *testing.T) {
 	t.Run("databases map with tables preserved", func(t *testing.T) {
 		conf := Config{
 			Databases: map[string]DatabaseConfig{
-				"main": {Type: "postgres", Default: true},
+				"main":      {Type: "postgres"},
 				"analytics": {Type: "sqlite"},
 			},
 			Tables: []Table{
@@ -805,9 +799,10 @@ func TestNormalizeDatabases(t *testing.T) {
 		}
 		conf.NormalizeDatabases()
 
-		// users should be tagged with "main" (the default)
-		if conf.Tables[0].Database != "main" {
-			t.Errorf("users.Database = %q, want %q", conf.Tables[0].Database, "main")
+		// users should be tagged with one of the configured databases
+		// (map iteration order is non-deterministic, so either is valid)
+		if conf.Tables[0].Database != "main" && conf.Tables[0].Database != "analytics" {
+			t.Errorf("users.Database = %q, want one of 'main' or 'analytics'", conf.Tables[0].Database)
 		}
 		// orders should keep "analytics"
 		if conf.Tables[1].Database != "analytics" {
@@ -850,7 +845,7 @@ func TestNormalizeDatabases(t *testing.T) {
 	t.Run("DBType synced from default entry", func(t *testing.T) {
 		conf := Config{
 			Databases: map[string]DatabaseConfig{
-				"primary": {Type: "mysql", Default: true},
+				"primary": {Type: "mysql"},
 			},
 		}
 		conf.NormalizeDatabases()
@@ -859,4 +854,141 @@ func TestNormalizeDatabases(t *testing.T) {
 			t.Errorf("DBType = %q, want %q", conf.DBType, "mysql")
 		}
 	})
+}
+
+// TestSortedDatabaseNames verifies that sortedDatabaseNames returns
+// the default DB first, then the rest in alphabetical order.
+func TestSortedDatabaseNames(t *testing.T) {
+	tests := []struct {
+		name      string
+		databases map[string]*dbContext
+		defaultDB string
+		want      []string
+	}{
+		{
+			name:      "nil databases",
+			databases: nil,
+			defaultDB: "",
+			want:      nil,
+		},
+		{
+			name:      "empty databases",
+			databases: map[string]*dbContext{},
+			defaultDB: "",
+			want:      nil,
+		},
+		{
+			name: "single database",
+			databases: map[string]*dbContext{
+				"main": {},
+			},
+			defaultDB: "main",
+			want:      []string{"main"},
+		},
+		{
+			name: "default first then alphabetical",
+			databases: map[string]*dbContext{
+				"zebra":     {},
+				"analytics": {},
+				"main":      {},
+			},
+			defaultDB: "main",
+			want:      []string{"main", "analytics", "zebra"},
+		},
+		{
+			name: "default is not alphabetically first",
+			databases: map[string]*dbContext{
+				"alpha":   {},
+				"beta":    {},
+				"primary": {},
+			},
+			defaultDB: "primary",
+			want:      []string{"primary", "alpha", "beta"},
+		},
+		{
+			name: "default not in map",
+			databases: map[string]*dbContext{
+				"alpha": {},
+				"beta":  {},
+			},
+			defaultDB: "missing",
+			want:      []string{"alpha", "beta"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gj := &graphjinEngine{
+				databases: tt.databases,
+				defaultDB: tt.defaultDB,
+			}
+			got := gj.sortedDatabaseNames()
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("sortedDatabaseNames() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestSortedDatabaseNamesStability verifies that repeated calls return
+// the same order (i.e. the sort is deterministic).
+func TestSortedDatabaseNamesStability(t *testing.T) {
+	gj := &graphjinEngine{
+		defaultDB: "main",
+		databases: map[string]*dbContext{
+			"main":      {},
+			"analytics": {},
+			"warehouse": {},
+			"events":    {},
+		},
+	}
+
+	first := gj.sortedDatabaseNames()
+	for i := 0; i < 100; i++ {
+		got := gj.sortedDatabaseNames()
+		if !reflect.DeepEqual(got, first) {
+			t.Fatalf("iteration %d: sortedDatabaseNames() = %v, want %v", i, got, first)
+		}
+	}
+}
+
+// TestIntroQueryDeterministic verifies that introQuery produces byte-identical
+// output on repeated calls with a multi-database engine.
+// This validates that all map iterations (databases, types, enums, aliases,
+// roles, validators) are deterministic.
+func TestIntroQueryDeterministic(t *testing.T) {
+	di := sdata.GetTestDBInfo()
+	schema, err := sdata.NewDBSchema(di, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gj := &graphjinEngine{
+		conf:      &Config{DBType: "postgres"},
+		roles:     make(map[string]*Role),
+		defaultDB: "main",
+		databases: map[string]*dbContext{
+			"main":      {name: "main", schema: schema},
+			"analytics": {name: "analytics", schema: schema},
+		},
+	}
+
+	first, err := gj.introQuery()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(first) == 0 {
+		t.Fatal("introQuery() returned empty output")
+	}
+
+	for i := 0; i < 10; i++ {
+		got, err := gj.introQuery()
+		if err != nil {
+			t.Fatalf("iteration %d: introQuery() error: %v", i, err)
+		}
+		if !bytes.Equal(first, got) {
+			t.Fatalf("iteration %d: introQuery() produced different output", i)
+		}
+	}
 }

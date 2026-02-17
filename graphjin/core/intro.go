@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -200,9 +201,8 @@ type Introspection struct {
 
 // introQuery returns the introspection query result
 func (gj *graphjinEngine) introQuery() (result json.RawMessage, err error) {
-	// Initialize the introscpection object
+	// Initialize the introspection object
 	in := Introspection{
-		schema:      gj.schema,
 		camelCase:   gj.conf.EnableCamelcase,
 		types:       make(map[string]FullType),
 		enumValues:  make(map[string]EnumValue),
@@ -246,21 +246,49 @@ func (gj *graphjinEngine) introQuery() (result json.RawMessage, err error) {
 
 	// Add the roles
 	in.addRolesEnumType(gj.roles)
-	in.addTablesEnumType()
 
-	// Get all the alias and add to the schema
-	for alias, t := range in.schema.GetAliases() {
-		if err = in.addTable(t, alias); err != nil {
-			return
+	// Aggregate tables and aliases from all database schemas (deterministic order)
+	for _, dbName := range gj.sortedDatabaseNames() {
+		ctx := gj.databases[dbName]
+		if ctx.schema == nil {
+			continue
+		}
+		// Set the current schema for relationship lookups within addTable
+		in.schema = ctx.schema
+
+		// Add tables enum type for this schema's tables
+		for _, t := range ctx.schema.GetTables() {
+			if t.Blocked {
+				continue
+			}
+			// Add to the global tables enum
+			in.addToTablesEnum(t)
+		}
+
+		// Get all the aliases and add to the schema (sorted for determinism)
+		aliases := ctx.schema.GetAliases()
+		aliasNames := make([]string, 0, len(aliases))
+		for name := range aliases {
+			aliasNames = append(aliasNames, name)
+		}
+		sort.Strings(aliasNames)
+		for _, alias := range aliasNames {
+			t := aliases[alias]
+			if err = in.addTable(t, alias); err != nil {
+				return
+			}
+		}
+
+		// Get all the tables and add to the schema
+		for _, t := range ctx.schema.GetTables() {
+			if err = in.addTable(t, ""); err != nil {
+				return
+			}
 		}
 	}
 
-	// Get all the tables and add to the schema
-	for _, t := range in.schema.GetTables() {
-		if err = in.addTable(t, ""); err != nil {
-			return
-		}
-	}
+	// Finalize the tables enum type
+	in.finalizeTablesEnum()
 
 	// Add the directives
 	for _, dt := range dirTypes {
@@ -268,9 +296,14 @@ func (gj *graphjinEngine) introQuery() (result json.RawMessage, err error) {
 	}
 	in.addDirValidateType()
 
-	// Add the types to the schema
-	for _, v := range in.types {
-		in.result.Schema.Types = append(in.result.Schema.Types, v)
+	// Add the types to the schema (sorted for determinism)
+	typeNames := make([]string, 0, len(in.types))
+	for name := range in.types {
+		typeNames = append(typeNames, name)
+	}
+	sort.Strings(typeNames)
+	for _, name := range typeNames {
+		in.result.Schema.Types = append(in.result.Schema.Types, in.types[name])
 	}
 
 	result, err = json.Marshal(in.result)
@@ -390,8 +423,15 @@ func (in *Introspection) addTableTypeWithDepth(
 		return
 	}
 
-	for _, fn := range in.schema.GetFunctions() {
-		ty := in.addArgsType(table, fn)
+	functions := in.schema.GetFunctions()
+	fnNames := make([]string, 0, len(functions))
+	for name := range functions {
+		fnNames = append(fnNames, name)
+	}
+	sort.Strings(fnNames)
+
+	for _, name := range fnNames {
+		ty := in.addArgsType(table, functions[name])
 		in.addType(ty)
 	}
 
@@ -413,8 +453,8 @@ func (in *Introspection) addTableTypeWithDepth(
 		ft.Fields = append(ft.Fields, f1)
 	}
 
-	for _, fn := range in.schema.GetFunctions() {
-		f1 := in.getFunctionField(table, fn)
+	for _, name := range fnNames {
+		f1 := in.getFunctionField(table, functions[name])
 		ft.Fields = append(ft.Fields, f1)
 	}
 
@@ -495,21 +535,28 @@ func (in *Introspection) addColumnsEnumType(t sdata.DBTable) (err error) {
 	return
 }
 
-// addTablesEnumType adds an enum type for the tables
-func (in *Introspection) addTablesEnumType() {
+// addToTablesEnum accumulates a table into the tables enum (called per-database).
+func (in *Introspection) addToTablesEnum(t sdata.DBTable) {
+	in.enumValues[in.getName(t.Name)] = EnumValue{
+		Name:        in.getName(t.Name),
+		Description: t.Comment,
+	}
+}
+
+// finalizeTablesEnum writes the accumulated tables enum type.
+func (in *Introspection) finalizeTablesEnum() {
 	ft := FullType{
 		Kind:        KIND_ENUM,
 		Name:        ("tables" + SUFFIX_ENUM),
 		Description: "All available tables",
 	}
-	for _, t := range in.schema.GetTables() {
-		if t.Blocked {
-			continue
-		}
-		ft.EnumValues = append(ft.EnumValues, EnumValue{
-			Name:        in.getName(t.Name),
-			Description: t.Comment,
-		})
+	evNames := make([]string, 0, len(in.enumValues))
+	for name := range in.enumValues {
+		evNames = append(evNames, name)
+	}
+	sort.Strings(evNames)
+	for _, name := range evNames {
+		ft.EnumValues = append(ft.EnumValues, in.enumValues[name])
 	}
 	in.addType(ft)
 }
@@ -521,7 +568,13 @@ func (in *Introspection) addRolesEnumType(roles map[string]*Role) {
 		Name:        ("roles" + SUFFIX_ENUM),
 		Description: "All available roles",
 	}
-	for name, ro := range roles {
+	roleNames := make([]string, 0, len(roles))
+	for name := range roles {
+		roleNames = append(roleNames, name)
+	}
+	sort.Strings(roleNames)
+	for _, name := range roleNames {
+		ro := roles[name]
 		cmt := ro.Comment
 		if ro.Match != "" {
 			cmt = fmt.Sprintf("%s (Match: %s)", cmt, ro.Match)
@@ -837,7 +890,12 @@ func (in *Introspection) addDirValidateType() {
 		Name:        ("validateFormat" + SUFFIX_ENUM),
 		Description: "Various formats supported by @validate",
 	}
+	fmtNames := make([]string, 0, len(valid.Formats))
 	for k := range valid.Formats {
+		fmtNames = append(fmtNames, k)
+	}
+	sort.Strings(fmtNames)
+	for _, k := range fmtNames {
 		ft.EnumValues = append(ft.EnumValues, EnumValue{
 			Name: k,
 		})
@@ -855,7 +913,13 @@ func (in *Introspection) addDirValidateType() {
 		Description: "Variable to add the validation on",
 		Type:        newTypeRef(KIND_NONNULL, "", newTypeRef("", "String", nil)),
 	})
-	for k, v := range valid.Validators {
+	valNames := make([]string, 0, len(valid.Validators))
+	for k := range valid.Validators {
+		valNames = append(valNames, k)
+	}
+	sort.Strings(valNames)
+	for _, k := range valNames {
+		v := valid.Validators[k]
 		if v.Type == "" {
 			continue
 		}

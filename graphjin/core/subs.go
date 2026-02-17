@@ -239,8 +239,9 @@ func (gj *graphjinEngine) initSub(c context.Context, sub *sub) (err error) {
 	}
 
 	// Only wrap subscriptions for batching if the dialect supports it
-	if len(sub.s.cs.st.md.Params()) != 0 && dialectSupportsSubscriptionBatching(gj.schema.DBType()) {
-		sub.s.cs.st.sql = renderSubWrap(sub.s.cs.st, gj.schema.DBType())
+	targetCtx := sub.s.getTargetDBCtx()
+	if len(sub.s.cs.st.md.Params()) != 0 && dialectSupportsSubscriptionBatching(targetCtx.schema.DBType()) {
+		sub.s.cs.st.sql = renderSubWrap(sub.s.cs.st, targetCtx.schema.DBType())
 	}
 
 	go gj.subController(sub)
@@ -417,7 +418,8 @@ func (gj *graphjinEngine) subCheckUpdates(sub *sub, mv mval, start int) {
 	}
 
 	hasParams := len(sub.s.cs.st.md.Params()) != 0
-	supportsBatching := dialectSupportsSubscriptionBatching(gj.schema.DBType())
+	subDBCtx := sub.s.getTargetDBCtx()
+	supportsBatching := dialectSupportsSubscriptionBatching(subDBCtx.schema.DBType())
 
 	var rows *sql.Rows
 	var err error
@@ -454,7 +456,7 @@ func (gj *graphjinEngine) subCheckUpdates(sub *sub, mv mval, start int) {
 						}
 					}
 				}
-				row := gj.db.QueryRowContext(c, sub.s.cs.st.sql, values...)
+				row := subDBCtx.db.QueryRowContext(c, sub.s.cs.st.sql, values...)
 				var b []byte
 				if err := row.Scan(&b); err != nil {
 					return err
@@ -479,10 +481,10 @@ func (gj *graphjinEngine) subCheckUpdates(sub *sub, mv mval, start int) {
 	err = retryOperation(c, func() (err1 error) {
 		if hasParams {
 			//nolint: sqlclosecheck
-			rows, err1 = gj.db.QueryContext(c, sub.s.cs.st.sql, string(params))
+			rows, err1 = subDBCtx.db.QueryContext(c, sub.s.cs.st.sql, string(params))
 		} else {
 			//nolint: sqlclosecheck
-			rows, err1 = gj.db.QueryContext(c, sub.s.cs.st.sql)
+			rows, err1 = subDBCtx.db.QueryContext(c, sub.s.cs.st.sql)
 		}
 		return
 	})
@@ -528,7 +530,8 @@ func (gj *graphjinEngine) subFirstQuery(sub *sub, m *Member) (mmsg, error) {
 	var mm mmsg
 	var err error
 
-	supportsBatching := dialectSupportsSubscriptionBatching(gj.schema.DBType())
+	subDBCtx := sub.s.getTargetDBCtx()
+	supportsBatching := dialectSupportsSubscriptionBatching(subDBCtx.schema.DBType())
 
 	if sub.js != nil {
 		js = sub.js
@@ -540,15 +543,15 @@ func (gj *graphjinEngine) subFirstQuery(sub *sub, m *Member) (mmsg, error) {
 			if m.params != nil {
 				if supportsBatching {
 					// Use JSON array for batching-enabled dialects
-					row = gj.db.QueryRowContext(c, q,
+					row = subDBCtx.db.QueryRowContext(c, q,
 						string(renderJSONArray([]json.RawMessage{m.params})))
 				} else {
 					// Use m.vl (value list) directly for non-batching dialects
 					// m.vl contains the parsed values in the correct order
-					row = gj.db.QueryRowContext(c, q, m.vl...)
+					row = subDBCtx.db.QueryRowContext(c, q, m.vl...)
 				}
 			} else {
-				row = gj.db.QueryRowContext(c, q)
+				row = subDBCtx.db.QueryRowContext(c, q)
 			}
 			var b []byte
 			if err := row.Scan(&b); err != nil {

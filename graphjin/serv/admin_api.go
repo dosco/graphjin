@@ -618,7 +618,12 @@ func adminDatabaseHandler(s1 *HttpService) http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 
 		// Get connection pool stats
-		stats := s.db.Stats()
+		db := s.anyDB()
+		if db == nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "no database connection")
+			return
+		}
+		stats := db.Stats()
 
 		// Get table and query counts
 		tables := s.gj.GetTables()

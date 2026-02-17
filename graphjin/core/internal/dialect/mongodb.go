@@ -2218,7 +2218,11 @@ func (d *MongoDBDialect) renderCursorInfo(ctx Context, sel *qcode.Select) {
 
 	// Add cursor_param so the driver knows which parameter contains the cursor value
 	ctx.WriteString(`,"cursor_param":"`)
-	ctx.AddParam(Param{Name: "cursor", Type: "text"})
+	cursorVar := sel.Paging.CursorVar
+	if cursorVar == "" {
+		cursorVar = "cursor"
+	}
+	ctx.AddParam(Param{Name: cursorVar, Type: "text"})
 	ctx.WriteString(`"`)
 }
 

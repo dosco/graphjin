@@ -63,7 +63,8 @@ func (ms *mcpServer) handleCheckHealth(ctx context.Context, req mcp.CallToolRequ
 	}
 
 	// Check if database is connected
-	if ms.service.db == nil {
+	db := ms.service.anyDB()
+	if db == nil {
 		result.Status = "disconnected"
 		result.Error = "no database connection"
 		data, _ := mcpMarshalJSON(result, true)
@@ -75,21 +76,21 @@ func (ms *mcpServer) handleCheckHealth(ctx context.Context, req mcp.CallToolRequ
 	defer cancel()
 
 	start := time.Now()
-	err := ms.service.db.PingContext(pingCtx)
+	err := db.PingContext(pingCtx)
 	latency := time.Since(start)
 
 	if err != nil {
 		result.Status = "unhealthy"
 		result.PingLatency = latency.String()
 		result.Error = fmt.Sprintf("ping failed: %v", err)
-		result.PoolStats = poolStatsFromDB(ms.service.db)
+		result.PoolStats = poolStatsFromDB(db)
 		data, _ := mcpMarshalJSON(result, true)
 		return mcp.NewToolResultText(string(data)), nil
 	}
 
 	result.Status = "healthy"
 	result.PingLatency = latency.String()
-	result.PoolStats = poolStatsFromDB(ms.service.db)
+	result.PoolStats = poolStatsFromDB(db)
 
 	// Check schema readiness
 	if ms.service.gj != nil {

@@ -32,12 +32,17 @@ func (gj *graphjinEngine) initResolvers() error {
 		gj.rtmap = gj.newRTMap()
 	}
 
+	pdb := gj.primaryDB()
+	if pdb == nil || pdb.dbinfo == nil {
+		return nil
+	}
+
 	for i, r := range gj.conf.Resolvers {
 		if r.Schema == "" {
-			gj.conf.Resolvers[i].Schema = gj.dbinfo.Schema
-			r.Schema = gj.dbinfo.Schema
+			gj.conf.Resolvers[i].Schema = pdb.dbinfo.Schema
+			r.Schema = pdb.dbinfo.Schema
 		}
-		if err := gj.initRemote(r, gj.rtmap); err != nil {
+		if err := gj.initRemote(r, gj.rtmap, pdb.dbinfo); err != nil {
 			return fmt.Errorf("resolvers: %w", err)
 		}
 	}
@@ -46,13 +51,13 @@ func (gj *graphjinEngine) initResolvers() error {
 
 // initRemote initializes the remote resolver
 func (gj *graphjinEngine) initRemote(
-	rc ResolverConfig, rtmap map[string]ResolverFn,
+	rc ResolverConfig, rtmap map[string]ResolverFn, dbinfo *sdata.DBInfo,
 ) error {
 	// Defines the table column to be used as an id in the
 	// remote reques
 	var col sdata.DBColumn
 
-	ti, err := gj.dbinfo.GetTable(rc.Schema, rc.Table)
+	ti, err := dbinfo.GetTable(rc.Schema, rc.Table)
 	if err != nil {
 		return err
 	}
@@ -84,7 +89,7 @@ func (gj *graphjinEngine) initRemote(
 	nt := sdata.NewDBTable(rc.Schema, rc.Name, "remote", nil)
 	nt.PrimaryCol = col1
 
-	gj.dbinfo.AddTable(nt)
+	dbinfo.AddTable(nt)
 
 	// The function thats called to resolve this remote
 	// data request

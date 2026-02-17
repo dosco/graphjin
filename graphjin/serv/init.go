@@ -2,10 +2,12 @@ package serv
 
 import (
 	// "crypto/sha256"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -128,18 +130,18 @@ func (s *graphjinService) isDatabaseConfigured() bool {
 	if s.conf.DB.Host != "" && s.conf.DB.DBName != "" {
 		return true
 	}
-	// Check if multi-database configs exist
-	if len(s.conf.Core.Databases) > 0 {
-		return true
+	// Check if multi-database configs exist with actual connection info
+	for _, dbConf := range s.conf.Core.Databases {
+		if dbConf.ConnString != "" || dbConf.Host != "" || dbConf.Path != "" {
+			return true
+		}
 	}
 	return false
 }
 
-// initDB initializes the database
+// initDB initializes database connections for all entries in conf.Core.Databases.
 func (s *graphjinService) initDB() error {
-	var err error
-
-	if s.db != nil {
+	if len(s.dbs) > 0 {
 		return nil
 	}
 
@@ -149,28 +151,148 @@ func (s *graphjinService) initDB() error {
 		return nil
 	}
 
-	// Bridge multi-database config to traditional DB fields
-	if len(s.conf.Core.Databases) > 0 {
-		syncDBFromDatabases(s.conf)
+	// If there are entries in conf.Core.Databases with connection info, use them.
+	// Otherwise fall back to the legacy single-DB path via conf.DB.
+	if s.hasDatabaseConfigs() {
+		return s.initAllDBs()
 	}
 
-	// In production mode, use retry loop to ensure DB is available
+	// Legacy single-DB path: create one connection from conf.DB
+	return s.initLegacyDB()
+}
+
+// hasDatabaseConfigs returns true if any entry in conf.Core.Databases
+// has enough info to create a connection.
+func (s *graphjinService) hasDatabaseConfigs() bool {
+	for _, dbConf := range s.conf.Core.Databases {
+		if dbConf.ConnString != "" || dbConf.Host != "" || dbConf.Path != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// initAllDBs creates connections for every entry in conf.Core.Databases.
+func (s *graphjinService) initAllDBs() error {
+	dbNames := make([]string, 0, len(s.conf.Core.Databases))
+	for name := range s.conf.Core.Databases {
+		dbNames = append(dbNames, name)
+	}
+	sort.Strings(dbNames)
+	for _, name := range dbNames {
+		dbConf := s.conf.Core.Databases[name]
+		db, err := s.newDBFromDatabaseConfig(name, dbConf)
+		if err != nil {
+			if s.conf.Serv.Production {
+				return fmt.Errorf("database %s: %w", name, err)
+			}
+			s.log.Warnf("Database '%s' connection failed: %s. Skipping.", name, err)
+			continue
+		}
+		s.dbs[name] = db
+	}
+	// Sync legacy conf.DB from first database for code that still reads it
+	if len(s.dbs) > 0 {
+		syncDBFromDatabases(s.conf)
+	}
+	return nil
+}
+
+// initLegacyDB creates a single connection from the legacy conf.DB fields.
+func (s *graphjinService) initLegacyDB() error {
+	var db *sql.DB
+	var err error
+
 	if s.conf.Serv.Production {
-		s.db, err = newDB(s.conf, true, true, s.log, s.fs)
+		db, err = newDB(s.conf, true, true, s.log, s.fs)
 		if err != nil {
 			return err
 		}
-		return nil
+	} else {
+		db, err = newDBOnce(s.conf, true, true, s.log, s.fs)
+		if err != nil {
+			s.log.Warnf("Database connection failed: %s. Server starting without database — use MCP to configure.", err)
+			return nil
+		}
 	}
 
-	// In dev mode, attempt a single connection — don't block startup
-	s.db, err = newDBOnce(s.conf, true, true, s.log, s.fs)
-	if err != nil {
-		s.log.Warnf("Database connection failed: %s. Server starting without database — use MCP to configure.", err)
-		s.db = nil
-		return nil
+	// Store under the first Databases key (sorted for determinism)
+	name := core.DefaultDBName
+	if len(s.conf.Core.Databases) > 0 {
+		names := make([]string, 0, len(s.conf.Core.Databases))
+		for n := range s.conf.Core.Databases {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		name = names[0]
 	}
+	s.dbs[name] = db
 	return nil
+}
+
+// newDBFromDatabaseConfig creates a *sql.DB from a core.DatabaseConfig.
+func (s *graphjinService) newDBFromDatabaseConfig(name string, dbConf core.DatabaseConfig) (*sql.DB, error) {
+	dbType := strings.ToLower(dbConf.Type)
+	if dbType == "" {
+		dbType = "postgres"
+	}
+
+	// For SQLite, just use tryConnect directly
+	if dbType == "sqlite" {
+		path := dbConf.Path
+		if path == "" {
+			path = dbConf.ConnString
+		}
+		if path == "" {
+			return nil, fmt.Errorf("sqlite database '%s' requires a path or connection_string", name)
+		}
+		return tryConnect("sqlite", path)
+	}
+
+	// Build connection using probe helpers (reuses mcp_discover.go logic)
+	host := dbConf.Host
+	port := dbConf.Port
+	user := dbConf.User
+	password := dbConf.Password
+	dbName := dbConf.DBName
+	if dbName == "" {
+		dbName = name
+	}
+
+	if dbConf.ConnString != "" {
+		// Use connection string directly
+		driverName := driverForType(dbType)
+		if dbType == "postgres" {
+			driverName, _ = buildProbeConnString(dbType, "", 0, "", "", "", "tcp", dbName)
+			// Fall back to raw conn string
+			return tryConnect("pgx", dbConf.ConnString)
+		}
+		return tryConnect(driverName, dbConf.ConnString)
+	}
+
+	driverName, connString := buildProbeConnString(dbType, host, port, "", user, password, "tcp", dbName)
+	if connString == "" {
+		return nil, fmt.Errorf("could not build connection string for database '%s' (type=%s)", name, dbType)
+	}
+	return tryConnect(driverName, connString)
+}
+
+// driverForType returns the Go SQL driver name for a database type.
+func driverForType(dbType string) string {
+	switch dbType {
+	case "postgres":
+		return "pgx"
+	case "mysql", "mariadb":
+		return "mysql"
+	case "mssql":
+		return "sqlserver"
+	case "oracle":
+		return "oracle"
+	case "sqlite":
+		return "sqlite"
+	default:
+		return dbType
+	}
 }
 
 // basePath returns the base path

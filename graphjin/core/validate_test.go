@@ -19,7 +19,7 @@ func TestValidateDBType(t *testing.T) {
 		{"oracle is valid", "oracle", false},
 		{"case insensitive", "PostgreS", false},
 		{"invalid type", "invalid", true},
-		{"mongodb not in single db types", "mongodb", true},
+		{"mongodb is valid", "mongodb", false},
 		{"mssql is valid", "mssql", false},
 	}
 

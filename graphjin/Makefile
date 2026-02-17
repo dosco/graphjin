@@ -15,12 +15,18 @@ endif
 # Build-time Go variables
 BUILD_FLAGS ?= -ldflags '-s -w -X "main.version=${BUILD_VERSION}" -X "main.commit=${BUILD}" -X "main.date=${BUILD_DATE}" -X "github.com/dosco/graphjin/serv/v3.version=${BUILD_VERSION}"'
 
-.PHONY: all download-tools build wasm-build gen clean tidy test test-norace run run-github-actions lint changlog release version help $(PLATFORMS)
+.PHONY: all download-tools build wasm-build gen clean tidy test test-parallel-dbs test-sequential test-norace run run-github-actions lint changlog release version help test-mongodb $(PLATFORMS)
 
 tidy:
 	@find . -name "go.mod" -execdir go mod tidy \;
 
-test: test-postgres test-mysql test-mariadb test-sqlite test-oracle test-mssql
+test: test-parallel-dbs
+	@go test -v -race $(PACKAGES)
+
+test-parallel-dbs:
+	@bash scripts/test-parallel.sh
+
+test-sequential: test-postgres test-mysql test-mariadb test-sqlite test-oracle test-mssql test-mongodb
 	@go test -v -race $(PACKAGES)
 
 test-postgres:
@@ -46,6 +52,10 @@ test-oracle:
 test-mssql:
 	@echo "Running MSSQL tests..."
 	@cd tests; go test -v -timeout 30m -race -db=mssql -tags mssql .
+
+test-mongodb:
+	@echo "Running MongoDB tests..."
+	@cd tests; go test -v -timeout 30m -race -db=mongodb .
 
 BIN_DIR := $(GOPATH)/bin
 WEB_BUILD_DIR := ./serv/web/build/manifest.json
@@ -143,7 +153,8 @@ help:
 	@echo " make [platform]    		- Build for platform [linux|darwin|windows]"
 	@echo " make release       		- Build all platforms"
 	@echo " make run           		- Run graphjin (eg. make run ARGS=\"help\")"
-	@echo " make test          		- Run all tests"
+	@echo " make test          		- Run all tests (DB suites in parallel)"
+	@echo " make test-sequential		- Run all tests (DB suites sequentially)"
 	@echo " make run-github-actions	- Run Github Actions locally (brew install act)"
 	@echo " make help          		- This help"
 	@echo

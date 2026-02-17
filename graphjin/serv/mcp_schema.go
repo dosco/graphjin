@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/dosco/graphjin/core/v3"
@@ -367,6 +368,7 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 	guide := WorkflowGuide{
 		QueryWorkflow: []string{
 			"1. Call get_query_syntax to learn GraphJin DSL (it differs from standard GraphQL)",
+			"1.5 If no database is configured, use plan_database_setup → test_database_connection → apply_database_setup",
 			"2. Call list_tables to see available data",
 			"3. Call describe_table for schema details + available aggregation functions",
 			"4. Check list_saved_queries - a saved query may already exist for your need",
@@ -381,6 +383,8 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 		},
 		Tips: []string{
 			"PREFER execute_saved_query over execute_graphql when a matching saved query exists",
+			"Use plan_database_setup for ranked discover results and explicit candidate selection",
+			"Use test_database_connection before apply_database_setup when credentials are uncertain",
 			"Use find_path when joining tables that aren't directly related",
 			"Aggregations like count_id, sum_price are available on all tables (see describe_table)",
 			"Use the write_where_clause prompt for help building complex filters",
@@ -392,6 +396,7 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 			"Use audit_role_permissions to understand what each role can access",
 		},
 		ToolSequences: map[string]string{
+			"db_onboarding_guided":       "discover_databases → plan_database_setup → test_database_connection → apply_database_setup → list_tables",
 			"simple_query":               "get_query_syntax → list_tables → describe_table → execute_graphql",
 			"complex_query":              "get_query_syntax → list_tables → describe_table → find_path → execute_graphql",
 			"use_saved_query":            "list_saved_queries → get_saved_query → execute_saved_query",
@@ -400,7 +405,7 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 			"build_where_clause":         "describe_table → use write_where_clause prompt → validate_where_clause",
 			"configure_resolver":         "get_current_config(section: resolvers) → update_current_config(resolvers: [...]) → reload_schema → execute_graphql",
 			"multi_database_exploration": "list_tables → describe_table(database: 'db_name') → execute_graphql",
-			"debug_query":               "explain_query → (fix issues) → execute_graphql",
+			"debug_query":                "explain_query → (fix issues) → execute_graphql",
 			"explore_data_model":         "list_tables → explore_relationships(depth: 2) → describe_table",
 			"security_audit":             "audit_role_permissions(role: 'all') → update_current_config(roles: [...]) → audit_role_permissions (verify)",
 		},
@@ -640,7 +645,13 @@ func validateWhereClause(where map[string]any, columnTypes map[string]core.Colum
 	// Logical operators
 	logicalOps := map[string]bool{"and": true, "or": true, "not": true}
 
-	for key, value := range where {
+	whereKeys := make([]string, 0, len(where))
+	for key := range where {
+		whereKeys = append(whereKeys, key)
+	}
+	sort.Strings(whereKeys)
+	for _, key := range whereKeys {
+		value := where[key]
 		currentPath := key
 		if path != "" {
 			currentPath = path + "." + key
@@ -728,7 +739,13 @@ func validateColumnOperators(operators map[string]any, col core.ColumnInfo, path
 
 	normalizedType := normalizeColumnType(col.Type)
 
-	for op, value := range operators {
+	opKeys := make([]string, 0, len(operators))
+	for op := range operators {
+		opKeys = append(opKeys, op)
+	}
+	sort.Strings(opKeys)
+	for _, op := range opKeys {
+		value := operators[op]
 		opPath := path + "." + op
 
 		// Check if operator is valid for this column type

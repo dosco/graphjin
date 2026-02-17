@@ -39,47 +39,53 @@ func (g *GraphJin) startDBWatcher(ps time.Duration) {
 	for range ticker.C {
 		gj := g.Load().(*graphjinEngine)
 
-		latestDi, err := sdata.GetDBInfo(
-			gj.db,
-			gj.dbtype,
-			gj.conf.Blocklist)
-		if err != nil {
-			gj.log.Println(err)
-			continue
-		}
+		needsReload := false
 
-		// Check if we're waiting for tables (schema is nil)
-		if gj.schema == nil {
-			if len(latestDi.Tables) > 0 {
-				g.reloadMu.Lock()
-				gj = g.Load().(*graphjinEngine)
-				if gj.schema == nil {
-					gj.log.Println("tables discovered, initializing schema...")
-					if err := g.newGraphJin(gj.conf, gj.db, latestDi, gj.fs, gj.opts...); err != nil {
-						gj.log.Println(err)
-					}
+		// Check all databases for schema changes
+		for _, ctx := range gj.databases {
+			if ctx.db == nil {
+				continue
+			}
+
+			latestDi, err := sdata.GetDBInfo(
+				ctx.db,
+				ctx.dbtype,
+				gj.conf.Blocklist)
+			if err != nil {
+				gj.log.Printf("database %s: schema poll error: %v", ctx.name, err)
+				continue
+			}
+
+			// Check if we're waiting for tables (schema is nil)
+			if ctx.schema == nil {
+				if len(latestDi.Tables) > 0 {
+					gj.log.Printf("database %s: tables discovered, reinitializing...", ctx.name)
+					needsReload = true
+					break
 				}
-				g.reloadMu.Unlock()
+				continue
 			}
-			// Continue polling - don't check hash when waiting for tables
-			continue
-		}
 
-		// Normal operation - check for schema changes
-		if latestDi.Hash() == gj.dbinfo.Hash() {
-			continue
-		}
-
-		g.reloadMu.Lock()
-		// Re-check after lock — another reload may have already updated the engine
-		gj = g.Load().(*graphjinEngine)
-		if latestDi.Hash() != gj.dbinfo.Hash() {
-			gj.log.Println("database change detected. reinitializing...")
-			if err := g.newGraphJin(gj.conf, gj.db, latestDi, gj.fs, gj.opts...); err != nil {
-				gj.log.Println(err)
+			// Normal operation - check for schema changes
+			if latestDi.Hash() != ctx.dbinfo.Hash() {
+				gj.log.Printf("database %s: schema change detected, reinitializing...", ctx.name)
+				needsReload = true
+				break
 			}
 		}
-		g.reloadMu.Unlock()
+
+		if needsReload {
+			g.reloadMu.Lock()
+			// Re-check after lock — another reload may have already updated the engine
+			gj = g.Load().(*graphjinEngine)
+			pdb := gj.primaryDB()
+			if pdb != nil {
+				if err := g.newGraphJin(gj.conf, pdb.db, nil, gj.fs, gj.opts...); err != nil {
+					gj.log.Println(err)
+				}
+			}
+			g.reloadMu.Unlock()
+		}
 
 		select {
 		case <-g.done:

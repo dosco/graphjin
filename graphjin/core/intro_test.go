@@ -22,9 +22,12 @@ func TestIntrospectionIncludesUnderscoreOperators(t *testing.T) {
 
 	// Create a GraphJin engine directly
 	gj := &graphjinEngine{
-		schema: schema,
-		conf:   conf,
-		roles:  make(map[string]*Role),
+		conf:      conf,
+		roles:     make(map[string]*Role),
+		defaultDB: "default",
+		databases: map[string]*dbContext{
+			"default": {name: "default", schema: schema},
+		},
 	}
 
 	result, err := gj.introQuery()
@@ -105,9 +108,12 @@ func TestIntrospectionIncludesBothOperatorFormats(t *testing.T) {
 
 	// Create a GraphJin engine directly
 	gj := &graphjinEngine{
-		schema: schema,
-		conf:   conf,
-		roles:  make(map[string]*Role),
+		conf:      conf,
+		roles:     make(map[string]*Role),
+		defaultDB: "default",
+		databases: map[string]*dbContext{
+			"default": {name: "default", schema: schema},
+		},
 	}
 
 	result, err := gj.introQuery()

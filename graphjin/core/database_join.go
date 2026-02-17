@@ -182,7 +182,7 @@ func (s *gstate) executeDatabaseJoinQuery(
 	defer conn.Close() //nolint:errcheck
 
 	// Build argument list
-	args, err := s.gj.argList(ctx, md, nil, s.r.requestconfig, false)
+	args, err := s.gj.argList(ctx, md, nil, s.r.requestconfig, false, dbCtx.psqlCompiler)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build args: %w", err)
 	}
@@ -395,7 +395,7 @@ func (s *gstate) mergeRootResults(results []dbResult) error {
 
 // isMultiDB returns true if the engine is configured for multiple databases.
 func (gj *graphjinEngine) isMultiDB() bool {
-	return len(gj.databases) > 0
+	return len(gj.databases) > 1
 }
 
 // buildDatabaseQuery creates a new GraphQL query containing only the specified root fields.
@@ -619,20 +619,13 @@ func (s *gstate) executeForDatabaseRoots(ctx context.Context, dbName string, roo
 	var qcodeCompiler *qcode.Compiler
 	var psqlCompiler *psql.Compiler
 
-	if dbName == s.gj.defaultDB {
-		// Use default compilers and connection
-		db = s.gj.db
-		qcodeCompiler = s.gj.qcodeCompiler
-		psqlCompiler = s.gj.psqlCompiler
-	} else {
-		dbCtx, ok := s.gj.GetDatabase(dbName)
-		if !ok {
-			return nil, fmt.Errorf("database not found: %s", dbName)
-		}
-		db = dbCtx.db
-		qcodeCompiler = dbCtx.qcodeCompiler
-		psqlCompiler = dbCtx.psqlCompiler
+	dbCtx, ok := s.gj.GetDatabase(dbName)
+	if !ok {
+		return nil, fmt.Errorf("database not found: %s", dbName)
 	}
+	db = dbCtx.db
+	qcodeCompiler = dbCtx.qcodeCompiler
+	psqlCompiler = dbCtx.psqlCompiler
 
 	// Build a sub-query with only this database's root fields
 	subQuery, err := s.buildDatabaseQuery(rootFields)
@@ -669,7 +662,7 @@ func (s *gstate) executeForDatabaseRoots(ctx context.Context, dbName string, roo
 	defer conn.Close() //nolint:errcheck
 
 	// Build argument list
-	args, err := s.gj.argList(ctx, md, vars, s.r.requestconfig, false)
+	args, err := s.gj.argList(ctx, md, vars, s.r.requestconfig, false, psqlCompiler)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build args for %s: %w", dbName, err)
 	}
