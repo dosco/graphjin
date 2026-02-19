@@ -27,6 +27,18 @@ func (ms *mcpServer) registerOnboardingTools() {
 		mcp.WithDescription("Plan database setup without changing config. Returns ranked candidates and required next actions."),
 		mcp.WithArray("targets",
 			mcp.Description("Optional explicit targets to check. Each item: {type?, host, port?, user?, password?, dbname?}."),
+			mcp.Items(map[string]any{
+				"type":     "object",
+				"required": []string{"host"},
+				"properties": map[string]any{
+					"type":     map[string]any{"type": "string", "description": "Database type (postgres, mysql, mssql, oracle, mongodb)"},
+					"host":     map[string]any{"type": "string", "description": "Hostname or IP address"},
+					"port":     map[string]any{"type": "number", "description": "Port number"},
+					"user":     map[string]any{"type": "string", "description": "Username for authentication"},
+					"password": map[string]any{"type": "string", "description": "Password for authentication"},
+					"dbname":   map[string]any{"type": "string", "description": "Database name"},
+				},
+			}),
 		),
 		mcp.WithBoolean("scan_local",
 			mcp.Description("Scan localhost ports/sockets/files (default true)."),
