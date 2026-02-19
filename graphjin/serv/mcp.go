@@ -49,10 +49,12 @@ func mcpToolList(conf *Config) []string {
 		"get_workflow_guide",
 		"explore_relationships",
 		"execute_saved_query",
-		"get_current_config",
 	}
 
 	// Conditionally registered
+	if !conf.Serv.Production {
+		tools = append(tools, "get_current_config")
+	}
 	if conf.MCP.AllowRawQueries {
 		tools = append(tools, "execute_graphql")
 	}
@@ -77,7 +79,7 @@ func mcpToolList(conf *Config) []string {
 			"test_database_connection", "get_onboarding_status")
 	}
 	if conf.MCP.AllowDevTools && conf.MCP.AllowConfigUpdates {
-		tools = append(tools, "quick_setup", "apply_database_setup")
+		tools = append(tools, "apply_database_setup")
 	}
 
 	return tools
@@ -159,7 +161,6 @@ func (ms *mcpServer) registerTools() {
 	ms.registerAuditTools()
 	ms.registerDiscoverTools()
 	ms.registerHealthTools()
-	ms.registerQuickSetupTools()
 	ms.registerOnboardingTools()
 }
 

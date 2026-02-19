@@ -3,6 +3,8 @@ package core
 import (
 	"database/sql"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
@@ -344,7 +346,7 @@ func GenerateDiffSQL(ops []SchemaOperation) []string {
 
 // SchemaDiffMultiDB computes schema diffs across multiple databases.
 // Tables are assigned to databases based on the @database directive in the schema.
-// Tables without a @database directive are assigned to the default database (first in dbTypes).
+// Every table must have a @database directive when multiple databases are configured.
 func SchemaDiffMultiDB(
 	connections map[string]*sql.DB,
 	dbTypes map[string]string,
@@ -358,22 +360,41 @@ func SchemaDiffMultiDB(
 		return nil, fmt.Errorf("failed to parse schema: %w", err)
 	}
 
+	// Validate that all tables have a @database directive
+	missingTables := make(map[string]bool)
+	for _, col := range ds.Columns {
+		if col.Database == "" {
+			missingTables[col.Table] = true
+		}
+	}
+	if len(missingTables) > 0 {
+		// Collect missing table names sorted for deterministic output
+		names := make([]string, 0, len(missingTables))
+		for name := range missingTables {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+
+		// Collect available database names sorted
+		dbNames := make([]string, 0, len(connections))
+		for name := range connections {
+			dbNames = append(dbNames, name)
+		}
+		sort.Strings(dbNames)
+
+		return nil, fmt.Errorf(
+			"tables missing @database directive: %s (available databases: %s). "+
+				"In multi-database mode, every table must have a @database(name: \"...\") directive",
+			strings.Join(names, ", "),
+			strings.Join(dbNames, ", "),
+		)
+	}
+
 	// Group columns by database (from @database directive)
 	columnsByDB := make(map[string][]sdata.DBColumn)
 
-	// Determine default database from first connection
-	var defaultDB string
-	for dbName := range connections {
-		defaultDB = dbName
-		break
-	}
-
 	for _, col := range ds.Columns {
-		dbName := col.Database
-		if dbName == "" {
-			dbName = defaultDB
-		}
-		columnsByDB[dbName] = append(columnsByDB[dbName], col)
+		columnsByDB[col.Database] = append(columnsByDB[col.Database], col)
 	}
 
 	results := make(map[string][]SchemaOperation)

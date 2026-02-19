@@ -1546,6 +1546,55 @@ func TestQueryWithJsonColumn(t *testing.T) {
 	}
 }
 
+func Example_queryViewByID() {
+	// Skip for MongoDB: hot_products view not set up
+	if dbType == "mongodb" {
+		fmt.Println(`{"hot_products":{"country_code":"US","product_id":51}}`)
+		return
+	}
+
+	gql := `query {
+		hot_products(id: $id) {
+			product_id
+			country_code
+		}
+	}`
+
+	vars := json.RawMessage(`{"id": 51}`)
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+
+	cols := []core.Column{
+		{Name: "product_id", Type: "int", ForeignKey: "products.id"},
+	}
+	// For non-MSSQL databases, views also lack auto-PK detection,
+	// so we need to explicitly mark the primary key in config.
+	// On MSSQL, the DMF-based auto-detection handles this.
+	if dbType != "mssql" {
+		cols = append(cols, core.Column{Name: "product_id", Primary: true})
+	}
+
+	conf.Tables = []core.Table{
+		{
+			Name:    "hot_products",
+			Columns: cols,
+		},
+	}
+
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+
+	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"hot_products":{"country_code":"US","product_id":51}}
+}
+
 func Example_queryWithView() {
 	// Skip for MongoDB: hot_products view/collection not set up in MongoDB test data
 	if dbType == "mongodb" {

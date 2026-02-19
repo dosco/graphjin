@@ -14,15 +14,17 @@ import (
 
 // registerConfigTools registers the configuration management tools
 func (ms *mcpServer) registerConfigTools() {
-	// get_current_config - Always available (read-only, safe)
-	ms.srv.AddTool(mcp.NewTool(
-		"get_current_config",
-		mcp.WithDescription("Get current GraphJin configuration. Returns databases, tables, roles, blocklist, functions, and resolvers. "+
-			"Use this to understand the current configuration before making changes."),
-		mcp.WithString("section",
-			mcp.Description("Optional section to retrieve: 'databases', 'tables', 'roles', 'blocklist', 'functions', 'resolvers', or 'all' (default)"),
-		),
-	), ms.handleGetCurrentConfig)
+	// get_current_config - Dev mode only (read-only)
+	if !ms.service.conf.Serv.Production {
+		ms.srv.AddTool(mcp.NewTool(
+			"get_current_config",
+			mcp.WithDescription("Get current GraphJin configuration. Returns databases, tables, roles, blocklist, functions, and resolvers. "+
+				"Use this to understand the current configuration before making changes."),
+			mcp.WithString("section",
+				mcp.Description("Optional section to retrieve: 'databases', 'tables', 'roles', 'blocklist', 'functions', 'resolvers', or 'all' (default)"),
+			),
+		), ms.handleGetCurrentConfig)
+	}
 
 	// update_current_config - Only registered when allow_config_updates is true
 	if ms.service.conf.MCP.AllowConfigUpdates {
@@ -244,9 +246,9 @@ type MCPConfigResponse struct {
 
 // RoleInfo provides role information safe for JSON serialization
 type RoleInfo struct {
-	Name    string          `json:"name"`
-	Comment string          `json:"comment,omitempty"`
-	Match   string          `json:"match,omitempty"`
+	Name    string           `json:"name"`
+	Comment string           `json:"comment,omitempty"`
+	Match   string           `json:"match,omitempty"`
 	Tables  []core.RoleTable `json:"tables,omitempty"`
 }
 
@@ -366,9 +368,9 @@ type ColumnConfigInput struct {
 
 // RoleConfigInput represents a role config for input
 type RoleConfigInput struct {
-	Name    string                `json:"name"`
-	Comment string                `json:"comment,omitempty"`
-	Match   string                `json:"match,omitempty"`
+	Name    string                 `json:"name"`
+	Comment string                 `json:"comment,omitempty"`
+	Match   string                 `json:"match,omitempty"`
 	Tables  []RoleTableConfigInput `json:"tables,omitempty"`
 }
 

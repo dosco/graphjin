@@ -433,6 +433,34 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 		i++
 	}
 
+	// For MSSQL, run a supplementary query to detect PKs for views.
+	// Views lack sys.indexes entries, so the main query reports primary_key=0
+	// for all view columns. This uses sys.dm_exec_describe_first_result_set
+	// to trace view columns back to their source base table PKs.
+	if dbtype == "mssql" {
+		rows2, err := db.Query(mssqlViewPKsStmt)
+		if err == nil {
+			defer rows2.Close()
+			for rows2.Next() {
+				var schema, table, column string
+				if err := rows2.Scan(&schema, &table, &column); err != nil {
+					continue
+				}
+				column = util.ToSnake(column)
+				table = strings.ToLower(table)
+				schema = strings.ToLower(schema)
+
+				k := schema + ":" + table + ":" + column
+				if v, ok := cmap[k]; ok && !v.PrimaryKey {
+					v.PrimaryKey = true
+					v.UniqueKey = true
+					cmap[k] = v
+				}
+			}
+		}
+		// Silently ignore errors — falls back to config-based override
+	}
+
 	var cols []DBColumn
 	for _, c := range cmap {
 		cols = append(cols, c)

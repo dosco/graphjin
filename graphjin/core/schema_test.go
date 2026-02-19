@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"database/sql"
 	"fmt"
 	"strings"
 	"testing"
@@ -229,5 +230,94 @@ type orders {
 			t.Errorf("table %s: expected empty Database in DBTable, got %q",
 				tbl.Name, tbl.Database)
 		}
+	}
+}
+
+func TestSchemaDiffMultiDB_RequiresDatabaseDirective(t *testing.T) {
+	schema := []byte(`
+# dbinfo:postgres,140000,public
+
+type users {
+	id:	Bigint!	@id
+	name:	CharacterVarying!
+}
+
+type events @database(name: analytics) {
+	id:	Bigint!	@id
+	event_type:	CharacterVarying!
+}
+
+type audit_logs {
+	id:	Bigint!	@id
+	action:	CharacterVarying!
+}
+`)
+
+	connections := map[string]*sql.DB{
+		"analytics": nil,
+		"logs":      nil,
+	}
+	dbTypes := map[string]string{
+		"analytics": "postgres",
+		"logs":      "postgres",
+	}
+
+	_, err := SchemaDiffMultiDB(connections, dbTypes, schema, nil, DiffOptions{})
+	if err == nil {
+		t.Fatal("expected error for tables missing @database directive, got nil")
+	}
+
+	errMsg := err.Error()
+
+	// Verify the error mentions the missing tables (sorted order)
+	if !strings.Contains(errMsg, "audit_logs") {
+		t.Errorf("error should mention 'audit_logs', got: %s", errMsg)
+	}
+	if !strings.Contains(errMsg, "users") {
+		t.Errorf("error should mention 'users', got: %s", errMsg)
+	}
+
+	// Verify the error mentions available databases
+	if !strings.Contains(errMsg, "analytics") {
+		t.Errorf("error should mention available database 'analytics', got: %s", errMsg)
+	}
+	if !strings.Contains(errMsg, "logs") {
+		t.Errorf("error should mention available database 'logs', got: %s", errMsg)
+	}
+
+	// Verify it mentions the @database directive
+	if !strings.Contains(errMsg, "@database") {
+		t.Errorf("error should mention '@database' directive, got: %s", errMsg)
+	}
+}
+
+func TestSchemaDiffMultiDB_AllTablesHaveDatabase(t *testing.T) {
+	schema := []byte(`
+# dbinfo:postgres,140000,public
+
+type users @database(name: analytics) {
+	id:	Bigint!	@id
+	name:	CharacterVarying!
+}
+
+type events @database(name: analytics) {
+	id:	Bigint!	@id
+	event_type:	CharacterVarying!
+}
+
+type audit_logs @database(name: logs) {
+	id:	Bigint!	@id
+	action:	CharacterVarying!
+}
+`)
+
+	// Use empty connections — validation only checks the schema columns,
+	// so the loop over connections doesn't need to execute.
+	connections := map[string]*sql.DB{}
+	dbTypes := map[string]string{}
+
+	_, err := SchemaDiffMultiDB(connections, dbTypes, schema, nil, DiffOptions{})
+	if err != nil {
+		t.Fatalf("expected no validation error when all tables have @database, got: %v", err)
 	}
 }

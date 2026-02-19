@@ -57,6 +57,9 @@ func (ms *mcpServer) handleListFragments(ctx context.Context, req mcp.CallToolRe
 	if !ms.service.conf.MCP.EnableSearch {
 		return mcp.NewToolResultError("fragment listing is not enabled. Enable enable_search in config."), nil
 	}
+	if err := ms.requireDB(); err != nil {
+		return err, nil
+	}
 
 	args := req.GetArguments()
 	namespace, _ := args["namespace"].(string)
@@ -96,6 +99,10 @@ func (ms *mcpServer) handleListFragments(ctx context.Context, req mcp.CallToolRe
 
 // handleGetFragment returns details of a specific fragment
 func (ms *mcpServer) handleGetFragment(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if err := ms.requireDB(); err != nil {
+		return err, nil
+	}
+
 	args := req.GetArguments()
 	name, _ := args["name"].(string)
 
@@ -131,6 +138,9 @@ func (ms *mcpServer) handleSearchFragments(ctx context.Context, req mcp.CallTool
 	// Check if search is enabled
 	if !ms.service.conf.MCP.EnableSearch {
 		return mcp.NewToolResultError("fragment search is not enabled. Enable enable_search in config."), nil
+	}
+	if err := ms.requireDB(); err != nil {
+		return err, nil
 	}
 
 	args := req.GetArguments()

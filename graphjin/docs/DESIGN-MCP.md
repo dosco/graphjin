@@ -244,7 +244,14 @@ Used for role-based access control in queries
 2. **Search Restrictions**:
    - `EnableSearch: false` → Disables `list_saved_queries`, `search_saved_queries`, `list_fragments`, `search_fragments`
 
-3. **Auth Integration**:
+3. **Environment Restrictions**:
+   - `get_current_config` is exposed only in development mode (`production: false`).
+
+4. **Onboarding Surface**:
+   - `quick_setup` is not exposed.
+   - Guided onboarding uses `plan_database_setup` → `test_database_connection` → `apply_database_setup`.
+
+5. **Auth Integration**:
    - HTTP: Uses same auth middleware as GraphQL/REST endpoints
    - CLI: Environment variables or config defaults
 

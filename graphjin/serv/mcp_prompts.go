@@ -182,6 +182,13 @@ func (ms *mcpServer) registerPrompts() {
 	), ms.handleFixQueryError)
 }
 
+func (ms *mcpServer) requirePromptDB() error {
+	if ms.service.gj == nil || !ms.service.gj.SchemaReady() {
+		return fmt.Errorf(errNoDB)
+	}
+	return nil
+}
+
 // handleWriteWhereClause returns structured guidance for constructing where clauses
 func (ms *mcpServer) handleWriteWhereClause(ctx context.Context, req mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 	table := req.Params.Arguments["table"]
@@ -190,6 +197,9 @@ func (ms *mcpServer) handleWriteWhereClause(ctx context.Context, req mcp.GetProm
 
 	if table == "" {
 		return nil, fmt.Errorf("table argument is required")
+	}
+	if err := ms.requirePromptDB(); err != nil {
+		return nil, err
 	}
 
 	// Fetch table schema
@@ -313,6 +323,9 @@ func (ms *mcpServer) handleWriteQuery(ctx context.Context, req mcp.GetPromptRequ
 
 	if table == "" {
 		return nil, fmt.Errorf("table argument is required")
+	}
+	if err := ms.requirePromptDB(); err != nil {
+		return nil, err
 	}
 
 	// Fetch table schema
@@ -484,6 +497,9 @@ func (ms *mcpServer) handleWriteMutation(ctx context.Context, req mcp.GetPromptR
 	}
 	if table == "" {
 		return nil, fmt.Errorf("table argument is required")
+	}
+	if err := ms.requirePromptDB(); err != nil {
+		return nil, err
 	}
 
 	// Validate operation

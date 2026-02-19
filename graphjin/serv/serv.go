@@ -233,7 +233,7 @@ func printMCPInfo(s *graphjinService) {
 // isConditionalTool returns true for tools that are conditionally registered
 func isConditionalTool(name string) bool {
 	switch name {
-	case "update_current_config", "reload_schema",
+	case "get_current_config", "update_current_config", "reload_schema",
 		"preview_schema_changes", "apply_schema_changes",
 		"explain_query", "audit_role_permissions", "discover_databases":
 		return true

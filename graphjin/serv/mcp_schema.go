@@ -403,7 +403,7 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 			"mutation":                   "get_mutation_syntax → describe_table → execute_graphql",
 			"explore_schema":             "list_tables → describe_table (for each relevant table) → find_path",
 			"build_where_clause":         "describe_table → use write_where_clause prompt → validate_where_clause",
-			"configure_resolver":         "get_current_config(section: resolvers) → update_current_config(resolvers: [...]) → reload_schema → execute_graphql",
+			"configure_resolver":         "dev mode: get_current_config(section: resolvers) → update_current_config(resolvers: [...]) → reload_schema → execute_graphql",
 			"multi_database_exploration": "list_tables → describe_table(database: 'db_name') → execute_graphql",
 			"debug_query":                "explain_query → (fix issues) → execute_graphql",
 			"explore_data_model":         "list_tables → explore_relationships(depth: 2) → describe_table",

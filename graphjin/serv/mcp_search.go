@@ -58,6 +58,9 @@ func (ms *mcpServer) handleListSavedQueries(ctx context.Context, req mcp.CallToo
 	if !ms.service.conf.MCP.EnableSearch {
 		return mcp.NewToolResultError("query search/listing is not enabled. Enable enable_search in config."), nil
 	}
+	if err := ms.requireDB(); err != nil {
+		return err, nil
+	}
 
 	args := req.GetArguments()
 	namespace, _ := args["namespace"].(string)
@@ -98,6 +101,9 @@ func (ms *mcpServer) handleSearchSavedQueries(ctx context.Context, req mcp.CallT
 	// Check if search is enabled
 	if !ms.service.conf.MCP.EnableSearch {
 		return mcp.NewToolResultError("query search is not enabled. Enable enable_search in config."), nil
+	}
+	if err := ms.requireDB(); err != nil {
+		return err, nil
 	}
 
 	args := req.GetArguments()
@@ -171,6 +177,10 @@ func (ms *mcpServer) handleSearchSavedQueries(ctx context.Context, req mcp.CallT
 
 // handleGetSavedQuery returns details of a specific saved query
 func (ms *mcpServer) handleGetSavedQuery(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if err := ms.requireDB(); err != nil {
+		return err, nil
+	}
+
 	args := req.GetArguments()
 	name, _ := args["name"].(string)
 
