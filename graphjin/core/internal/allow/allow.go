@@ -40,9 +40,14 @@ type Fragment struct {
 	Value []byte
 }
 
+type saveReq struct {
+	item Item
+	done chan error
+}
+
 type List struct {
 	cache    *lru.TwoQueueCache[string, Item]
-	saveChan chan Item
+	saveChan chan saveReq
 	fs       FS
 }
 
@@ -61,18 +66,16 @@ func New(log *_log.Logger, fs FS, readOnly bool) (al *List, err error) {
 	if readOnly {
 		return
 	}
-	al.saveChan = make(chan Item)
+	al.saveChan = make(chan saveReq)
 
 	go func() {
-		for {
-			v, ok := <-al.saveChan
-			if !ok {
-				break
+		for req := range al.saveChan {
+			saveErr := al.save(req.item)
+			if saveErr != nil && log != nil {
+				log.Println("WRN allow list:", saveErr)
 			}
-			err = al.save(v)
-			if err != nil && log != nil {
-				log.Println("WRN allow list:", err)
-			}
+			req.done <- saveErr
+			close(req.done)
 		}
 	}()
 
@@ -89,8 +92,13 @@ func (al *List) Set(item Item) error {
 		return errors.New("empty query")
 	}
 
-	al.saveChan <- item
-	return nil
+	req := saveReq{
+		item: item,
+		done: make(chan error, 1),
+	}
+
+	al.saveChan <- req
+	return <-req.done
 }
 
 // GetByName returns a query by name

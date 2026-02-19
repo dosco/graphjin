@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func Example_insert() {
@@ -733,60 +735,62 @@ func TestAllowListWithMutations(t *testing.T) {
 	}`
 
 	dir, err := os.MkdirTemp("", "test")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer os.RemoveAll(dir) //nolint:errcheck
 
 	fs := core.NewOsFS(dir)
-	assert.NoError(t, err)
 
 	conf1 := newConfig(&core.Config{DBType: dbType, DisableAllowList: false})
 	gj1, err := core.NewGraphJin(conf1, db, core.OptionSetFS(fs))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	vars1 := json.RawMessage(`{
+	baseID := int(time.Now().UnixNano()%1_000_000) + 90000
+	id1, id2, id3 := baseID+1, baseID+2, baseID+3
+
+	vars1 := json.RawMessage(fmt.Sprintf(`{
 		"data": {
-			"id": 90011,
-			"email": "user90011@test.com",
-			"full_name": "User 90011"
+			"id": %d,
+			"email": "user%d@test.com",
+			"full_name": "User %d"
 		}
-	}`)
+	}`, id1, id1, id1))
 
-	exp1 := `{"users": [{"id": 90011}]}`
+	exp1 := fmt.Sprintf(`{"users": [{"id": %d}]}`, id1)
 
 	res1, err := gj1.GraphQL(context.Background(), gql, vars1, nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.JSONEq(t, exp1, string(res1.Data))
 
 	conf2 := newConfig(&core.Config{DBType: dbType, Production: true})
 	gj2, err := core.NewGraphJin(conf2, db, core.OptionSetFS(fs))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	vars2 := json.RawMessage(`{
+	vars2 := json.RawMessage(fmt.Sprintf(`{
 		"data": {
-			"id": 90012,
-			"email": "user90012@test.com",
-			"full_name": "User 90012"
+			"id": %d,
+			"email": "user%d@test.com",
+			"full_name": "User %d"
 		}
-	}`)
+	}`, id2, id2, id2))
 
-	exp2 := `{"users": [{"id": 90012}]}`
+	exp2 := fmt.Sprintf(`{"users": [{"id": %d}]}`, id2)
 
 	res2, err := gj2.GraphQL(context.Background(), gql, vars2, nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.JSONEq(t, exp2, string(res2.Data))
 
-	vars3 := json.RawMessage(`{
+	vars3 := json.RawMessage(fmt.Sprintf(`{
 		"data": {
-			"id": 90013,
-			"email": "user90013@test.com",
-			"full_name": "User 90013",
-			"stripe_id": "payment_id_90013"
+			"id": %d,
+			"email": "user%d@test.com",
+			"full_name": "User %d",
+			"stripe_id": "payment_id_%d"
 		}
-	}`)
+	}`, id3, id3, id3, id3))
 
-	exp3 := `{"users": [{"id": 90013}]}`
+	exp3 := fmt.Sprintf(`{"users": [{"id": %d}]}`, id3)
 
 	res3, err := gj2.GraphQL(context.Background(), gql, vars3, nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.JSONEq(t, exp3, string(res3.Data))
 }
