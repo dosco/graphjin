@@ -47,6 +47,22 @@ func TestRegisterDiscoverTools_Gating(t *testing.T) {
 	})
 }
 
+func TestRegisterDiscoverTools_SchemaIncludesScanUnixSockets(t *testing.T) {
+	ms := mockMcpServerWithConfig(MCPConfig{
+		AllowDevTools: true,
+	})
+	ms.srv = server.NewMCPServer("test", "0.0.0")
+	ms.registerDiscoverTools()
+
+	tool, ok := ms.srv.ListTools()["discover_databases"]
+	if !ok {
+		t.Fatal("discover_databases should be registered")
+	}
+	if _, ok := tool.Tool.InputSchema.Properties["scan_unix_sockets"]; !ok {
+		t.Fatal("discover_databases schema should include scan_unix_sockets")
+	}
+}
+
 // =============================================================================
 // Handler Tests
 // =============================================================================
@@ -88,6 +104,12 @@ func TestHandleDiscoverDatabases_NoGJRequired(t *testing.T) {
 	if resp.DockerStatus != "skipped" {
 		t.Errorf("Expected docker_status 'skipped', got %q", resp.DockerStatus)
 	}
+	if resp.Next == nil {
+		t.Fatal("expected next guidance in discover response")
+	}
+	if resp.Next.StateCode == "" {
+		t.Fatal("expected non-empty next.state_code")
+	}
 }
 
 // =============================================================================
@@ -104,6 +126,33 @@ func TestCheckTCPPort_ClosedPort(t *testing.T) {
 func TestCheckUnixSocket_NonexistentPath(t *testing.T) {
 	if checkUnixSocket("/tmp/nonexistent_socket_path_12345.sock", 100*1e6) {
 		t.Error("Expected false for nonexistent socket path")
+	}
+}
+
+func TestParseDiscoverOptions_Defaults(t *testing.T) {
+	ms := mockMcpServerWithConfig(MCPConfig{})
+	opts, err := parseDiscoverOptions(ms, map[string]any{})
+	if err != nil {
+		t.Fatalf("parseDiscoverOptions returned error: %v", err)
+	}
+	if !opts.scanLocal {
+		t.Fatal("expected scan_local default to true")
+	}
+	if opts.scanUnixSockets {
+		t.Fatal("expected scan_unix_sockets default to false")
+	}
+}
+
+func TestParseDiscoverOptions_ScanUnixSockets(t *testing.T) {
+	ms := mockMcpServerWithConfig(MCPConfig{})
+	opts, err := parseDiscoverOptions(ms, map[string]any{
+		"scan_unix_sockets": true,
+	})
+	if err != nil {
+		t.Fatalf("parseDiscoverOptions returned error: %v", err)
+	}
+	if !opts.scanUnixSockets {
+		t.Fatal("expected scan_unix_sockets=true when provided")
 	}
 }
 
@@ -281,6 +330,31 @@ func TestDefaultPortForType(t *testing.T) {
 			result := defaultPortForType(tt.dbType)
 			if result != tt.expected {
 				t.Errorf("defaultPortForType(%q) = %d, expected %d", tt.dbType, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestInferDBTypeFromPort(t *testing.T) {
+	tests := []struct {
+		port     int
+		expected string
+	}{
+		{5432, "postgres"},
+		{3306, "mysql"},
+		{1521, "oracle"},
+		{27017, "mongodb"},
+		{27018, "mongodb"},
+		{27019, "mongodb"},
+		{27020, "mongodb"},
+		{9999, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("port_%d", tt.port), func(t *testing.T) {
+			got := inferDBTypeFromPort(tt.port)
+			if got != tt.expected {
+				t.Fatalf("inferDBTypeFromPort(%d) = %q, expected %q", tt.port, got, tt.expected)
 			}
 		})
 	}
@@ -656,6 +730,37 @@ func TestProbeDatabase_SkippedForUnknownType(t *testing.T) {
 
 	if discovered.AuthStatus != "skipped" {
 		t.Errorf("Expected auth_status 'skipped', got %q", discovered.AuthStatus)
+	}
+}
+
+func TestEnrichDiscoveredDatabase_UnixSocketActions(t *testing.T) {
+	db := DiscoveredDatabase{
+		Type:       "postgres",
+		Host:       "/tmp/.s.PGSQL.5432",
+		Port:       5432,
+		Source:     "unix_socket",
+		Status:     "listening",
+		AuthStatus: "ok",
+	}
+
+	enrichDiscoveredDatabase(&db)
+
+	hasApplyConfig := false
+	hasTestConnection := false
+	for _, action := range db.NextActions {
+		if action == "apply_config" {
+			hasApplyConfig = true
+		}
+		if action == "test_connection" {
+			hasTestConnection = true
+		}
+	}
+
+	if hasApplyConfig {
+		t.Fatalf("unix socket candidate should not suggest apply_config, got actions: %v", db.NextActions)
+	}
+	if !hasTestConnection {
+		t.Fatalf("unix socket candidate should suggest test_connection, got actions: %v", db.NextActions)
 	}
 }
 

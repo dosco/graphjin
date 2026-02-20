@@ -40,6 +40,22 @@ func TestRegisterOnboardingTools_Gating(t *testing.T) {
 	})
 }
 
+func TestRegisterOnboardingTools_SchemaIncludesScanUnixSockets(t *testing.T) {
+	ms := mockMcpServerWithConfig(MCPConfig{
+		AllowDevTools: true,
+	})
+	ms.srv = server.NewMCPServer("test", "0.0.0")
+	ms.registerOnboardingTools()
+
+	tool, ok := ms.srv.ListTools()["plan_database_setup"]
+	if !ok {
+		t.Fatal("plan_database_setup should be registered")
+	}
+	if _, ok := tool.Tool.InputSchema.Properties["scan_unix_sockets"]; !ok {
+		t.Fatal("plan_database_setup schema should include scan_unix_sockets")
+	}
+}
+
 func TestResolveCandidate_FromExplicitConfig(t *testing.T) {
 	ms := mockMcpServerWithConfig(MCPConfig{AllowDevTools: true})
 	args := map[string]any{
@@ -85,6 +101,12 @@ func TestHandlePlanDatabaseSetup_ReturnsChecklist(t *testing.T) {
 	}
 	if len(out.Checklist) == 0 {
 		t.Fatal("expected checklist entries")
+	}
+	if out.Next == nil {
+		t.Fatal("expected next guidance in setup plan response")
+	}
+	if out.Next.StateCode == "" {
+		t.Fatal("expected non-empty next.state_code")
 	}
 }
 
@@ -158,6 +180,12 @@ func TestHandleApplyDatabaseSetup_BlocksUnverifiedByDefault(t *testing.T) {
 	}
 	if out.Applied {
 		t.Fatal("expected applied=false for unverified candidate")
+	}
+	if out.Next == nil {
+		t.Fatal("expected next guidance")
+	}
+	if out.Next.RecommendedTool != "test_database_connection" {
+		t.Fatalf("expected recommended tool test_database_connection, got %s", out.Next.RecommendedTool)
 	}
 	if len(ms.service.conf.Core.Databases) != 0 {
 		t.Fatal("expected no config mutation when candidate is unverified")

@@ -383,6 +383,7 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 		},
 		Tips: []string{
 			"PREFER execute_saved_query over execute_graphql when a matching saved query exists",
+			"Prefer the `next` field returned by onboarding/config tools for machine-readable follow-up actions",
 			"Use plan_database_setup for ranked discover results and explicit candidate selection",
 			"Use test_database_connection before apply_database_setup when credentials are uncertain",
 			"Use find_path when joining tables that aren't directly related",

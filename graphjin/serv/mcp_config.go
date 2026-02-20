@@ -36,6 +36,7 @@ func (ms *mcpServer) registerConfigTools() {
 				"System database names (postgres, mysql, information_schema, master, etc.) "+
 				"are rejected by default — use a user database name instead. "+
 				"Use create_if_not_exists: true to create a new database on the server before connecting (dev mode only). "+
+				"Response includes machine-readable next-step guidance in the `next` field. "+
 				"WARNING: Changes are lost on restart unless persisted separately. "+
 				"Use get_current_config first to understand the current state."),
 			mcp.WithObject("databases",
@@ -455,11 +456,12 @@ type SetHeaderInput struct {
 
 // ConfigUpdateResult represents the result of a config update
 type ConfigUpdateResult struct {
-	Success   bool     `json:"success"`
-	Message   string   `json:"message"`
-	Changes   []string `json:"changes,omitempty"`
-	Errors    []string `json:"errors,omitempty"`
-	Databases []string `json:"databases,omitempty"`
+	Success   bool          `json:"success"`
+	Message   string        `json:"message"`
+	Changes   []string      `json:"changes,omitempty"`
+	Errors    []string      `json:"errors,omitempty"`
+	Databases []string      `json:"databases,omitempty"`
+	Next      *NextGuidance `json:"next,omitempty"`
 }
 
 // handleUpdateCurrentConfig updates the configuration and reloads
@@ -562,6 +564,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 				Message: "Database connection test failed — config changes not applied",
 				Errors:  errors,
 			}
+			result.Next = ms.nextForConfigUpdate(result)
 			data, _ := mcpMarshalJSON(result, true)
 			return mcp.NewToolResultText(string(data)), nil
 		}
@@ -809,6 +812,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			Success: true,
 			Message: "No changes provided",
 		}
+		result.Next = ms.nextForConfigUpdate(result)
 		data, _ := mcpMarshalJSON(result, true)
 		return mcp.NewToolResultText(string(data)), nil
 	}
@@ -831,6 +835,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 					Changes: changes,
 					Errors:  append(errors, fmt.Sprintf("reload error: %v", err)),
 				}
+				result.Next = ms.nextForConfigUpdate(result)
 				data, _ := mcpMarshalJSON(result, true)
 				return mcp.NewToolResultText(string(data)), nil
 			}
@@ -850,6 +855,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 					Errors:    append(errors, "schema not ready after reload"),
 					Databases: reloadDBs,
 				}
+				result.Next = ms.nextForConfigUpdate(result)
 				data, _ := mcpMarshalJSON(result, true)
 				return mcp.NewToolResultText(string(data)), nil
 			}
@@ -893,6 +899,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 	if len(errors) > 0 {
 		result.Message = "Configuration partially updated with some errors"
 	}
+	result.Next = ms.nextForConfigUpdate(result)
 
 	data, err := mcpMarshalJSON(result, true)
 	if err != nil {

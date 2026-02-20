@@ -35,10 +35,11 @@ func (ms *mcpServer) registerDiscoverTools() {
 		"discover_databases",
 		mcp.WithDescription("Scan the local system for running databases. "+
 			"Probes well-known TCP ports on localhost for PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, and MongoDB. "+
-			"Checks Unix domain sockets for PostgreSQL and MySQL. "+
+			"Optionally checks Unix domain sockets for PostgreSQL and MySQL when scan_unix_sockets is true. "+
 			"Searches for SQLite database files. Detects database Docker containers. "+
 			"Then attempts to connect using default credentials and lists database names inside each instance. "+
 			"If defaults fail, reports auth_failed so you can re-call with user/password. "+
+			"Response includes machine-readable next-step guidance in the `next` field. "+
 			"Use this before configuring GraphJin to find which databases are available. "+
 			"Does NOT require an existing database connection. "+
 			"Note: system databases (postgres, mysql, information_schema, master, etc.) "+
@@ -51,7 +52,9 @@ func (ms *mcpServer) registerDiscoverTools() {
 		mcp.WithBoolean("skip_probe",
 			mcp.Description("Skip connection probing and database listing (default: false)")),
 		mcp.WithBoolean("scan_local",
-			mcp.Description("Scan localhost ports/sockets/sqlite files (default: true)")),
+			mcp.Description("Scan localhost ports and sqlite files (default: true)")),
+		mcp.WithBoolean("scan_unix_sockets",
+			mcp.Description("Scan local Unix sockets for PostgreSQL/MySQL/MongoDB (default: false)")),
 		mcp.WithArray("targets",
 			mcp.Description("Optional explicit targets to probe. Each item: {type?, host, port?, source_label?, user?, password?, dbname?}."),
 			mcp.Items(map[string]any{
@@ -144,6 +147,7 @@ type DiscoverResult struct {
 	Databases    []DiscoveredDatabase `json:"databases"`
 	Summary      DiscoverSummary      `json:"summary"`
 	DockerStatus string               `json:"docker_status"`
+	Next         *NextGuidance        `json:"next,omitempty"`
 }
 
 // DiscoverSummary summarizes the discovery scan
@@ -160,6 +164,7 @@ type discoverOptions struct {
 	user                  string
 	password              string
 	scanLocal             bool
+	scanUnixSockets       bool
 	scanPorts             []int
 	probeTimeout          time.Duration
 	includeSystemDatabase bool
@@ -296,6 +301,7 @@ func (ms *mcpServer) handleDiscoverDatabases(ctx context.Context, req mcp.CallTo
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	ms.cacheCandidates(result.Databases)
+	result.Next = ms.nextForDiscover(result)
 
 	data, err := mcpMarshalJSON(result, true)
 	if err != nil {
@@ -327,6 +333,8 @@ func (ms *mcpServer) runDiscovery(args map[string]any) (DiscoverResult, error) {
 		{"oracle", 1522},
 		{"mongodb", 27017},
 		{"mongodb", 27018},
+		{"mongodb", 27019},
+		{"mongodb", 27020},
 	}
 	tcpProbes := defaultTCPProbes
 	if len(opts.scanPorts) > 0 {
@@ -376,25 +384,27 @@ func (ms *mcpServer) runDiscovery(args map[string]any) (DiscoverResult, error) {
 			}(probe)
 		}
 
-		// Phase 2: Unix socket checks (concurrent)
-		for _, probe := range unixProbes {
-			wg.Add(1)
-			go func(p socketProbe) {
-				defer wg.Done()
-				if checkUnixSocket(p.path, timeout) {
-					db := DiscoveredDatabase{
-						Type:          p.dbType,
-						Host:          p.path,
-						Port:          defaultPortForType(p.dbType),
-						Source:        "unix_socket",
-						Status:        "listening",
-						ConfigSnippet: buildConfigSnippet(p.dbType, p.path, 0, ""),
+		// Phase 2: Unix socket checks (concurrent, opt-in)
+		if opts.scanUnixSockets {
+			for _, probe := range unixProbes {
+				wg.Add(1)
+				go func(p socketProbe) {
+					defer wg.Done()
+					if checkUnixSocket(p.path, timeout) {
+						db := DiscoveredDatabase{
+							Type:          p.dbType,
+							Host:          p.path,
+							Port:          defaultPortForType(p.dbType),
+							Source:        "unix_socket",
+							Status:        "listening",
+							ConfigSnippet: buildConfigSnippet(p.dbType, p.path, 0, ""),
+						}
+						mu.Lock()
+						databases = append(databases, db)
+						mu.Unlock()
 					}
-					mu.Lock()
-					databases = append(databases, db)
-					mu.Unlock()
-				}
-			}(probe)
+				}(probe)
+			}
 		}
 
 		// Phase 3: SQLite file scan
@@ -1257,7 +1267,7 @@ func inferDBTypeFromPort(port int) string {
 		return "mssql"
 	case 1521, 1522:
 		return "oracle"
-	case 27017, 27018:
+	case 27017, 27018, 27019, 27020:
 		return "mongodb"
 	default:
 		return ""
@@ -1337,7 +1347,11 @@ func enrichDiscoveredDatabase(db *DiscoveredDatabase) {
 	var actions []string
 	switch db.AuthStatus {
 	case "ok":
-		actions = append(actions, "select_candidate", "apply_config")
+		if db.Source == "unix_socket" {
+			actions = append(actions, "select_candidate", "test_connection")
+		} else {
+			actions = append(actions, "select_candidate", "apply_config")
+		}
 	case "auth_failed":
 		actions = append(actions, "provide_credentials", "retest_connection")
 	default:
@@ -1394,6 +1408,7 @@ func parseDiscoverOptions(ms *mcpServer, args map[string]any) (discoverOptions, 
 		skipDocker:            false,
 		skipProbe:             false,
 		scanLocal:             true,
+		scanUnixSockets:       false,
 		probeTimeout:          500 * time.Millisecond,
 		includeSystemDatabase: ms.service.conf.MCP.DefaultDBAllowed,
 		sqliteMaxDepth:        1,
@@ -1408,6 +1423,9 @@ func parseDiscoverOptions(ms *mcpServer, args map[string]any) (discoverOptions, 
 	}
 	if v, ok := args["scan_local"].(bool); ok {
 		opts.scanLocal = v
+	}
+	if v, ok := args["scan_unix_sockets"].(bool); ok {
+		opts.scanUnixSockets = v
 	}
 	if v, ok := args["include_system_databases"].(bool); ok {
 		opts.includeSystemDatabase = v

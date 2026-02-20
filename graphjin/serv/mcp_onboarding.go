@@ -24,7 +24,8 @@ func (ms *mcpServer) registerOnboardingTools() {
 
 	ms.srv.AddTool(mcp.NewTool(
 		"plan_database_setup",
-		mcp.WithDescription("Plan database setup without changing config. Returns ranked candidates and required next actions."),
+		mcp.WithDescription("Plan database setup without changing config. Returns ranked candidates and required next actions. "+
+			"Response includes machine-readable next-step guidance in the `next` field."),
 		mcp.WithArray("targets",
 			mcp.Description("Optional explicit targets to check. Each item: {type?, host, port?, user?, password?, dbname?}."),
 			mcp.Items(map[string]any{
@@ -41,13 +42,17 @@ func (ms *mcpServer) registerOnboardingTools() {
 			}),
 		),
 		mcp.WithBoolean("scan_local",
-			mcp.Description("Scan localhost ports/sockets/files (default true)."),
+			mcp.Description("Scan localhost ports and sqlite files (default true)."),
+		),
+		mcp.WithBoolean("scan_unix_sockets",
+			mcp.Description("Scan local Unix sockets for PostgreSQL/MySQL/MongoDB (default false)."),
 		),
 	), ms.handlePlanDatabaseSetup)
 
 	ms.srv.AddTool(mcp.NewTool(
 		"test_database_connection",
-		mcp.WithDescription("Test one candidate or explicit database config without mutating GraphJin config."),
+		mcp.WithDescription("Test one candidate or explicit database config without mutating GraphJin config. "+
+			"Response includes machine-readable next-step guidance in the `next` field."),
 		mcp.WithString("candidate_id",
 			mcp.Description("Candidate ID from discover_databases/plan_database_setup."),
 		),
@@ -64,13 +69,15 @@ func (ms *mcpServer) registerOnboardingTools() {
 
 	ms.srv.AddTool(mcp.NewTool(
 		"get_onboarding_status",
-		mcp.WithDescription("Get current onboarding status: configured databases, active database, schema readiness and table counts."),
+		mcp.WithDescription("Get current onboarding status: configured databases, active database, schema readiness and table counts. "+
+			"Response includes machine-readable next-step guidance in the `next` field."),
 	), ms.handleGetOnboardingStatus)
 
 	if ms.service.conf.MCP.AllowConfigUpdates {
 		ms.srv.AddTool(mcp.NewTool(
 			"apply_database_setup",
-			mcp.WithDescription("Apply selected database setup to GraphJin config and reload schema. Requires explicit selection."),
+			mcp.WithDescription("Apply selected database setup to GraphJin config and reload schema. Requires explicit selection. "+
+				"Response includes machine-readable next-step guidance in the `next` field."),
 			mcp.WithString("candidate_id",
 				mcp.Description("Candidate ID to apply (recommended)."),
 			),
@@ -100,6 +107,7 @@ type SetupPlanResult struct {
 	Candidates  []DiscoveredDatabase `json:"candidates"`
 	Checklist   []string             `json:"selection_checklist"`
 	Recommended string               `json:"recommended_candidate_id,omitempty"`
+	Next        *NextGuidance        `json:"next,omitempty"`
 }
 
 func (ms *mcpServer) handlePlanDatabaseSetup(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -122,6 +130,7 @@ func (ms *mcpServer) handlePlanDatabaseSetup(ctx context.Context, req mcp.CallTo
 	if len(result.Databases) > 0 {
 		plan.Recommended = result.Databases[0].CandidateID
 	}
+	plan.Next = ms.nextForSetupPlan(plan)
 
 	data, err := mcpMarshalJSON(plan, true)
 	if err != nil {
@@ -134,6 +143,7 @@ type ConnectionTestResult struct {
 	Success       bool               `json:"success"`
 	Candidate     DiscoveredDatabase `json:"candidate"`
 	RecommendedDB string             `json:"recommended_dbname,omitempty"`
+	Next          *NextGuidance      `json:"next,omitempty"`
 }
 
 func (ms *mcpServer) handleTestDatabaseConnection(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -156,6 +166,7 @@ func (ms *mcpServer) handleTestDatabaseConnection(ctx context.Context, req mcp.C
 	if dbname, _ := candidate.ConfigSnippet["dbname"].(string); dbname != "" {
 		test.RecommendedDB = dbname
 	}
+	test.Next = ms.nextForConnectionTest(test)
 
 	data, err := mcpMarshalJSON(test, true)
 	if err != nil {
@@ -165,11 +176,12 @@ func (ms *mcpServer) handleTestDatabaseConnection(ctx context.Context, req mcp.C
 }
 
 type OnboardingStatusResult struct {
-	ConfiguredDatabases []string `json:"configured_databases"`
-	ActiveDatabase      string   `json:"active_database,omitempty"`
-	SchemaReady         bool     `json:"schema_ready"`
-	TableCount          int      `json:"table_count"`
-	Warnings            []string `json:"warnings,omitempty"`
+	ConfiguredDatabases []string      `json:"configured_databases"`
+	ActiveDatabase      string        `json:"active_database,omitempty"`
+	SchemaReady         bool          `json:"schema_ready"`
+	TableCount          int           `json:"table_count"`
+	Warnings            []string      `json:"warnings,omitempty"`
+	Next                *NextGuidance `json:"next,omitempty"`
 }
 
 func (ms *mcpServer) handleGetOnboardingStatus(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -193,6 +205,7 @@ func (ms *mcpServer) handleGetOnboardingStatus(ctx context.Context, req mcp.Call
 	if !result.SchemaReady {
 		result.Warnings = append(result.Warnings, "schema not ready")
 	}
+	result.Next = ms.nextForOnboardingStatus(result)
 
 	data, err := mcpMarshalJSON(result, true)
 	if err != nil {
@@ -210,6 +223,7 @@ type ApplyDatabaseSetupResult struct {
 	Tables        []string          `json:"tables,omitempty"`
 	Verification  ApplyVerification `json:"verification"`
 	Errors        []string          `json:"errors,omitempty"`
+	Next          *NextGuidance     `json:"next,omitempty"`
 }
 
 type ApplyVerification struct {
@@ -270,6 +284,7 @@ func (ms *mcpServer) handleApplyDatabaseSetup(ctx context.Context, req mcp.CallT
 				"use test_database_connection with credentials, or set allow_unverified_apply: true",
 			},
 		}
+		out.Next = ms.nextForApplyDatabaseSetup(out)
 		data, mErr := mcpMarshalJSON(out, true)
 		if mErr != nil {
 			return mcp.NewToolResultError(mErr.Error()), nil
@@ -342,6 +357,7 @@ func (ms *mcpServer) handleApplyDatabaseSetup(ctx context.Context, req mcp.CallT
 	if len(errs) > 0 {
 		out.Message = "database setup applied with errors"
 	}
+	out.Next = ms.nextForApplyDatabaseSetup(out)
 
 	data, err := mcpMarshalJSON(out, true)
 	if err != nil {
