@@ -2,6 +2,7 @@ package serv
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 
@@ -30,6 +31,10 @@ func (ms *mcpServer) registerDDLTools() {
 		mcp.WithBoolean("destructive",
 			mcp.Description("Include DROP TABLE/COLUMN operations. Default: false"),
 		),
+		mcp.WithString("database",
+			mcp.Required(),
+			mcp.Description("Database name to target (as configured in the databases map)."),
+		),
 	), ms.handlePreviewSchemaChanges)
 
 	// apply_schema_changes - Apply schema changes to the database
@@ -46,6 +51,10 @@ func (ms *mcpServer) registerDDLTools() {
 		),
 		mcp.WithBoolean("destructive",
 			mcp.Description("Allow DROP TABLE/COLUMN operations. Default: false"),
+		),
+		mcp.WithString("database",
+			mcp.Required(),
+			mcp.Description("Database name to target (as configured in the databases map)."),
 		),
 	), ms.handleApplySchemaChanges)
 }
@@ -83,8 +92,20 @@ type DDLApplyResult struct {
 	Message           string   `json:"message"`
 }
 
-// prepareSchema ensures the schema bytes have the required dbinfo header
-func (ms *mcpServer) prepareSchema(schema string) []byte {
+// getDBByName returns the *sql.DB for the given database name.
+// If database is empty or not found, falls back to anyDB().
+func (ms *mcpServer) getDBByName(database string) *sql.DB {
+	if database != "" {
+		if db, ok := ms.service.dbs[database]; ok {
+			return db
+		}
+	}
+	return ms.service.anyDB()
+}
+
+// prepareSchema ensures the schema bytes have the required dbinfo header.
+// If database is provided, the matching DatabaseConfig is used for type/schema.
+func (ms *mcpServer) prepareSchema(schema, database string) []byte {
 	s := strings.TrimSpace(schema)
 
 	// If schema already has a dbinfo header, use as-is
@@ -93,8 +114,19 @@ func (ms *mcpServer) prepareSchema(schema string) []byte {
 	}
 
 	// Build header from database config
-	dbType := ms.service.conf.DB.Type
-	dbSchema := ms.service.conf.DB.Schema
+	var dbType, dbSchema string
+	if database != "" {
+		if dbConf, ok := ms.service.conf.Core.Databases[database]; ok {
+			dbType = dbConf.Type
+			dbSchema = dbConf.Schema
+		}
+	}
+	if dbType == "" {
+		dbType = ms.service.conf.DB.Type
+	}
+	if dbSchema == "" {
+		dbSchema = ms.service.conf.DB.Schema
+	}
 	if dbSchema == "" {
 		switch dbType {
 		case "postgres", "postgresql":
@@ -114,13 +146,23 @@ func (ms *mcpServer) prepareSchema(schema string) []byte {
 	return []byte(header + s)
 }
 
-// computeSchemaOps computes schema operations from the provided schema string
-func (ms *mcpServer) computeSchemaOps(schema string, destructive bool) ([]core.SchemaOperation, error) {
-	schemaBytes := ms.prepareSchema(schema)
+// computeSchemaOps computes schema operations from the provided schema string.
+// database selects which configured database to target.
+func (ms *mcpServer) computeSchemaOps(schema string, destructive bool, database string) ([]core.SchemaOperation, error) {
+	schemaBytes := ms.prepareSchema(schema, database)
+	db := ms.getDBByName(database)
+
+	dbType := ms.service.conf.DB.Type
+	if database != "" {
+		if dbConf, ok := ms.service.conf.Core.Databases[database]; ok {
+			dbType = dbConf.Type
+		}
+	}
+
 	opts := core.DiffOptions{Destructive: destructive}
 	return core.SchemaDiff(
-		ms.service.anyDB(),
-		ms.service.conf.DB.Type,
+		db,
+		dbType,
 		schemaBytes,
 		ms.service.conf.Blocklist,
 		opts,
@@ -129,19 +171,24 @@ func (ms *mcpServer) computeSchemaOps(schema string, destructive bool) ([]core.S
 
 // handlePreviewSchemaChanges previews schema changes without applying them
 func (ms *mcpServer) handlePreviewSchemaChanges(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if ms.service.anyDB() == nil {
-		return mcp.NewToolResultError("no database connection configured"), nil
-	}
-
 	args := req.GetArguments()
 	schema, _ := args["schema"].(string)
 	destructive, _ := args["destructive"].(bool)
+	database, _ := args["database"].(string)
 
 	if schema == "" {
 		return mcp.NewToolResultError("schema is required"), nil
 	}
+	if database == "" {
+		return mcp.NewToolResultError("database is required"), nil
+	}
 
-	ops, err := ms.computeSchemaOps(schema, destructive)
+	db := ms.getDBByName(database)
+	if db == nil {
+		return mcp.NewToolResultError(fmt.Sprintf("database %q not found", database)), nil
+	}
+
+	ops, err := ms.computeSchemaOps(schema, destructive, database)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to compute schema diff: %v", err)), nil
 	}
@@ -196,19 +243,24 @@ func (ms *mcpServer) handlePreviewSchemaChanges(ctx context.Context, req mcp.Cal
 
 // handleApplySchemaChanges applies schema changes to the database
 func (ms *mcpServer) handleApplySchemaChanges(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if ms.service.anyDB() == nil {
-		return mcp.NewToolResultError("no database connection configured"), nil
-	}
-
 	args := req.GetArguments()
 	schema, _ := args["schema"].(string)
 	destructive, _ := args["destructive"].(bool)
+	database, _ := args["database"].(string)
 
 	if schema == "" {
 		return mcp.NewToolResultError("schema is required"), nil
 	}
+	if database == "" {
+		return mcp.NewToolResultError("database is required"), nil
+	}
 
-	ops, err := ms.computeSchemaOps(schema, destructive)
+	db := ms.getDBByName(database)
+	if db == nil {
+		return mcp.NewToolResultError(fmt.Sprintf("database %q not found", database)), nil
+	}
+
+	ops, err := ms.computeSchemaOps(schema, destructive, database)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to compute schema diff: %v", err)), nil
 	}
@@ -236,7 +288,7 @@ func (ms *mcpServer) handleApplySchemaChanges(ctx context.Context, req mcp.CallT
 	}
 
 	// Apply changes in a transaction
-	tx, err := ms.service.anyDB().BeginTx(ctx, nil)
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to begin transaction: %v", err)), nil
 	}
