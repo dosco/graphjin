@@ -132,6 +132,7 @@ databases:
     user: ${GJ_DATABASE_USER}
     password: ${GJ_DATABASE_PASSWORD}
     #schema: "public"
+    #read_only: false  # Set to true to block all mutations and DDL (tamper-protected at runtime)
 
     # alternatively you can use a connection string
     #connection_string: ${GJ_DATABASE_URL}

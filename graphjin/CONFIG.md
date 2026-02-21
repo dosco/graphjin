@@ -901,6 +901,7 @@ databases:
     dbname: analytics
     user: readonly
     password: secret
+    read_only: true  # Blocks all mutations and DDL against this database
     tables:
       - events
       - metrics
@@ -913,6 +914,26 @@ databases:
     user: app_user
     password: secret
 ```
+
+### Per-Database Read-Only Mode
+
+Set `read_only: true` on a database to block all mutations and DDL (schema changes) against it. This is useful for production/reporting databases that should never be modified by an LLM or application code.
+
+```yaml
+databases:
+  production_replica:
+    type: postgres
+    host: replica.example.com
+    dbname: myapp
+    read_only: true  # No mutations or DDL allowed
+```
+
+**Tamper protection:** Once `read_only: true` is set in the config file, MCP tools (including `update_current_config`) cannot change it to `false` at runtime. The value is snapshotted at startup and enforced immutably.
+
+When a database is read-only:
+- `apply_schema_changes` targeting that database returns an error
+- All tables in the database inherit `read_only: true` for role-level enforcement
+- `update_current_config` preserves the `read_only: true` flag even if the LLM tries to change it
 
 ### Assigning Tables to Databases
 

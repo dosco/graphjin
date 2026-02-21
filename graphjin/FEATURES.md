@@ -31,6 +31,7 @@ GraphJin is a high-performance GraphQL to SQL compiler that automatically genera
   - [Role-Based Access Control](#role-based-access-control)
   - [Row-Level Security](#row-level-security)
   - [Column Blocking](#column-blocking)
+  - [Read-Only Databases](#read-only-databases)
   - [Query Allow Lists](#query-allow-lists)
 - [Advanced Features](#advanced-features)
   - [Synthetic Tables](#synthetic-tables)
@@ -1016,6 +1017,21 @@ conf.AddRoleTable("anon", "products", core.Query{
     DisableFunctions: true,
 })
 ```
+
+### Read-Only Databases
+
+Mark a database as read-only to block all mutations (insert, update, delete) and DDL operations while still allowing queries:
+
+```yaml
+databases:
+  analytics:
+    type: postgres
+    host: analytics-db.example.com
+    dbname: analytics
+    read_only: true  # All mutations blocked, queries allowed
+```
+
+Once set in config, `read_only` cannot be disabled at runtime — even by MCP tools or LLM-driven config updates. This tamper protection ensures reporting and replica databases are never accidentally modified.
 
 ### Query Allow Lists
 

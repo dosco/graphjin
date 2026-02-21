@@ -87,9 +87,10 @@ func mcpToolList(conf *Config) []string {
 
 // mcpServer wraps the MCP server instance
 type mcpServer struct {
-	srv     *server.MCPServer
-	service *graphjinService
-	ctx     context.Context // Auth context (user_id, user_role)
+	srv         *server.MCPServer
+	service     *graphjinService
+	ctx         context.Context    // Auth context (user_id, user_role)
+	readOnlyDBs map[string]bool    // snapshot from config at startup, immutable at runtime
 }
 
 // newMCPServerWithContext creates a new MCP server with an auth context
@@ -114,10 +115,20 @@ func (s *graphjinService) newMCPServerWithContext(ctx context.Context) *mcpServe
 		server.WithHooks(hooks),
 	)
 
+	// Snapshot which databases are read-only from the config file.
+	// This snapshot is immutable — MCP config updates cannot change it.
+	readOnlyDBs := make(map[string]bool)
+	for name, dbConf := range s.conf.Core.Databases {
+		if dbConf.ReadOnly {
+			readOnlyDBs[name] = true
+		}
+	}
+
 	ms := &mcpServer{
-		srv:     mcpSrv,
-		service: s,
-		ctx:     ctx,
+		srv:         mcpSrv,
+		service:     s,
+		ctx:         ctx,
+		readOnlyDBs: readOnlyDBs,
 	}
 
 	// Register all MCP tools
@@ -162,6 +173,13 @@ func (ms *mcpServer) registerTools() {
 	ms.registerDiscoverTools()
 	ms.registerHealthTools()
 	ms.registerOnboardingTools()
+}
+
+// isDBReadOnly checks the startup snapshot to determine if a database is read-only.
+// This checks the immutable snapshot, not the current config, so runtime config
+// changes by MCP tools cannot bypass the read-only flag.
+func (ms *mcpServer) isDBReadOnly(database string) bool {
+	return ms.readOnlyDBs[database]
 }
 
 // RunMCPStdio runs the MCP server using stdio transport (for CLI/Claude Desktop)

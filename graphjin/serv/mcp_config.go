@@ -40,7 +40,7 @@ func (ms *mcpServer) registerConfigTools() {
 				"WARNING: Changes are lost on restart unless persisted separately. "+
 				"Use get_current_config first to understand the current state."),
 			mcp.WithObject("databases",
-				mcp.Description("Map of database configs to add/update. Key is database name, value is DatabaseConfig with type, host, port, dbname, user, password, etc."),
+				mcp.Description("Map of database configs to add/update. Key is database name, value is DatabaseConfig with type, host, port, dbname, user, password, read_only, etc. NOTE: read_only cannot be changed from true to false at runtime if it was set in the config file."),
 			),
 			mcp.WithArray("tables",
 				mcp.Description("Array of table configs to add/update. Each table has name, database (optional), blocklist (optional), columns (optional), order_by (optional)."),
@@ -346,6 +346,7 @@ type DatabaseConfigInput struct {
 	Password   string `json:"password,omitempty"`
 	Path       string `json:"path,omitempty"`
 	Schema     string `json:"schema,omitempty"`
+	ReadOnly   bool   `json:"read_only,omitempty"`
 }
 
 // TableConfigInput represents a table config for input
@@ -574,6 +575,13 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			conf.Databases = make(map[string]core.DatabaseConfig)
 		}
 		for _, pdb := range parsedDBs {
+			// Tamper protection: if the startup snapshot says this DB is read-only,
+			// preserve that setting regardless of what the LLM sends.
+			if ms.readOnlyDBs[pdb.name] && !pdb.config.ReadOnly {
+				pdb.config.ReadOnly = true
+				ms.service.log.Warnf("database %q: read_only is protected and cannot be changed to false at runtime", pdb.name)
+				changes = append(changes, fmt.Sprintf("database %s: read_only preserved as true (tamper-protected)", pdb.name))
+			}
 			conf.Databases[pdb.name] = pdb.config
 			changes = append(changes, fmt.Sprintf("added/updated database: %s", pdb.name))
 		}
@@ -938,6 +946,9 @@ func parseDBConfig(m map[string]any) (core.DatabaseConfig, error) {
 	}
 	if s, ok := m["schema"].(string); ok {
 		conf.Schema = s
+	}
+	if ro, ok := m["read_only"].(bool); ok {
+		conf.ReadOnly = ro
 	}
 
 	// Validate type

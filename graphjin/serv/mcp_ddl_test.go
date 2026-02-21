@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 // mockDDLServer creates an mcpServer with DDL-relevant config.
@@ -25,7 +26,14 @@ func mockDDLServer(databases map[string]core.DatabaseConfig, dbs map[string]*sql
 		conf: conf,
 		dbs:  dbs,
 	}
-	return &mcpServer{service: svc, ctx: context.Background()}
+	// Snapshot read-only databases (mirrors production init logic)
+	readOnlyDBs := make(map[string]bool)
+	for name, dbConf := range databases {
+		if dbConf.ReadOnly {
+			readOnlyDBs[name] = true
+		}
+	}
+	return &mcpServer{service: svc, ctx: context.Background(), readOnlyDBs: readOnlyDBs}
 }
 
 // =============================================================================
@@ -217,5 +225,77 @@ func TestPrepareSchema_DefaultSchemaForType(t *testing.T) {
 				t.Errorf("Expected %q in header, got:\n%s", expected, result)
 			}
 		})
+	}
+}
+
+// =============================================================================
+// Read-only database tests
+// =============================================================================
+
+func TestHandleApplySchemaChanges_ReadOnlyDB(t *testing.T) {
+	databases := map[string]core.DatabaseConfig{
+		"prod_replica": {Type: "postgres", ReadOnly: true},
+	}
+	ms := mockDDLServer(databases, nil)
+	ctx := context.Background()
+
+	req := newToolRequest(map[string]any{
+		"schema":   "type products { id: BigInt! @id\n name: Text! }",
+		"database": "prod_replica",
+	})
+
+	result, err := ms.handleApplySchemaChanges(ctx, req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	assertToolError(t, result, "read-only")
+}
+
+func TestHandleApplySchemaChanges_NonReadOnlyDB(t *testing.T) {
+	// Non-read-only DB should NOT be blocked by read-only check
+	// (it will fail at a later stage since there's no real DB connection,
+	// but should NOT return "read-only" error)
+	databases := map[string]core.DatabaseConfig{
+		"writable": {Type: "postgres", ReadOnly: false},
+	}
+	ms := mockDDLServer(databases, nil)
+	ctx := context.Background()
+
+	req := newToolRequest(map[string]any{
+		"schema":   "type products { id: BigInt! @id\n name: Text! }",
+		"database": "writable",
+	})
+
+	result, err := ms.handleApplySchemaChanges(ctx, req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	// Should NOT contain read-only error (may contain other errors like "not found")
+	if result.IsError {
+		if len(result.Content) > 0 {
+			if tc, ok := result.Content[0].(mcp.TextContent); ok {
+				if strings.Contains(tc.Text, "read-only") {
+					t.Errorf("Non-read-only DB should not be blocked: %s", tc.Text)
+				}
+			}
+		}
+	}
+}
+
+func TestIsDBReadOnly(t *testing.T) {
+	databases := map[string]core.DatabaseConfig{
+		"readonly_db": {Type: "postgres", ReadOnly: true},
+		"normal_db":   {Type: "postgres", ReadOnly: false},
+	}
+	ms := mockDDLServer(databases, nil)
+
+	if !ms.isDBReadOnly("readonly_db") {
+		t.Error("Expected readonly_db to be read-only")
+	}
+	if ms.isDBReadOnly("normal_db") {
+		t.Error("Expected normal_db to NOT be read-only")
+	}
+	if ms.isDBReadOnly("nonexistent") {
+		t.Error("Expected nonexistent DB to NOT be read-only")
 	}
 }

@@ -255,6 +255,11 @@ func (ms *mcpServer) handleApplySchemaChanges(ctx context.Context, req mcp.CallT
 		return mcp.NewToolResultError("database is required"), nil
 	}
 
+	// Block DDL on read-only databases (uses startup snapshot, tamper-proof)
+	if ms.isDBReadOnly(database) {
+		return mcp.NewToolResultError(fmt.Sprintf("database %q is read-only: schema changes are not allowed", database)), nil
+	}
+
 	db := ms.getDBByName(database)
 	if db == nil {
 		return mcp.NewToolResultError(fmt.Sprintf("database %q not found", database)), nil

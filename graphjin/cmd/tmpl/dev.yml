@@ -210,6 +210,7 @@ mcp:
 #     user: postgres
 #     password: postgres
 #     #schema: "public"
+#     #read_only: false  # Set to true to block all mutations and DDL (tamper-protected at runtime)
 #     # alternatively you can use a connection string
 #     #connection_string: postgres://jack:secret@pg.example.com:5432/mydb?sslmode=verify-ca&pool_max_conns=10
 

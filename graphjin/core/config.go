@@ -107,6 +107,27 @@ func (c *Config) NormalizeDatabases() {
 			c.Tables[i].Database = defaultName
 		}
 	}
+
+	// Propagate database-level ReadOnly to all roles' table entries
+	// belonging to that database. This leverages the existing table-level
+	// read_only enforcement in the core engine.
+	for dbName, dbConf := range c.Databases {
+		if !dbConf.ReadOnly {
+			continue
+		}
+		for ri := range c.Roles {
+			for ti := range c.Roles[ri].Tables {
+				rt := &c.Roles[ri].Tables[ti]
+				// Match tables that belong to this database
+				for _, tbl := range c.Tables {
+					if tbl.Database == dbName && strings.EqualFold(tbl.Name, rt.Name) {
+						rt.ReadOnly = true
+					}
+				}
+			}
+		}
+	}
+
 	c.Databases[defaultName] = defConf
 }
 
@@ -276,6 +297,9 @@ type DatabaseConfig struct {
 	// MSSQL-specific: trust server certificate without validation
 	TrustServerCertificate *bool `mapstructure:"trust_server_certificate" json:"trust_server_certificate,omitempty" yaml:"trust_server_certificate,omitempty" jsonschema:"title=MSSQL Trust Server Certificate"`
 
+	// Read-only mode — blocks all mutations and DDL against this database.
+	// Once set in config, cannot be changed at runtime via MCP tools.
+	ReadOnly bool `mapstructure:"read_only" json:"read_only" yaml:"read_only" jsonschema:"title=Read Only"`
 }
 
 // Configuration for a database table

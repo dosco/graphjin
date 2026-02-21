@@ -1832,6 +1832,7 @@ type DatabaseStats struct {
 	Name       string     `json:"name"`
 	Type       string     `json:"type"`
 	IsDefault  bool       `json:"isDefault"`
+	ReadOnly   bool       `json:"readOnly"`
 	TableCount int        `json:"tableCount"`
 	Pool       *PoolStats `json:"pool,omitempty"`
 }
@@ -1858,10 +1859,16 @@ func (g *GraphJin) GetAllDatabaseStats() []DatabaseStats {
 	stats := make([]DatabaseStats, 0, len(gj.databases))
 	for _, name := range gj.sortedDatabaseNames() {
 		ctx := gj.databases[name]
+		// Check if database is read-only from config
+		readOnly := false
+		if dbConf, ok := gj.conf.Databases[name]; ok {
+			readOnly = dbConf.ReadOnly
+		}
 		ds := DatabaseStats{
 			Name:      name,
 			Type:      ctx.dbtype,
 			IsDefault: name == gj.defaultDB,
+			ReadOnly:  readOnly,
 		}
 
 		// Get table count from schema

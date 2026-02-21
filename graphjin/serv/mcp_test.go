@@ -1587,6 +1587,179 @@ func TestQuerySyntaxReference_HasRemoteJoins(t *testing.T) {
 // enhanceError Tests
 // =============================================================================
 
+// =============================================================================
+// Read-Only Database Tests
+// =============================================================================
+
+func TestHandleUpdateCurrentConfig_ReadOnlyTamperProtection(t *testing.T) {
+	// Simulate a DB that was read_only: true in the config file.
+	// Use SQLite to skip connection tests (file-based, no server needed).
+	logger := zaptest.NewLogger(t)
+	ms := &mcpServer{
+		service: &graphjinService{
+			gj: nil,
+			conf: &Config{
+				Core: core.Config{
+					Databases: map[string]core.DatabaseConfig{
+						"prod": {Type: "sqlite", Path: "/tmp/test_ro.db", ReadOnly: true},
+					},
+				},
+				Serv: Serv{Production: false},
+			},
+			log: logger.Sugar(),
+		},
+		ctx:         context.Background(),
+		readOnlyDBs: map[string]bool{"prod": true}, // startup snapshot
+	}
+
+	// LLM tries to update the database with read_only: false
+	req := newToolRequest(map[string]any{
+		"databases": map[string]any{
+			"prod": map[string]any{
+				"type":      "sqlite",
+				"path":      "/tmp/test_ro.db",
+				"read_only": false, // Trying to disable read-only
+			},
+		},
+	})
+
+	result, err := ms.handleUpdateCurrentConfig(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Should succeed but preserve read_only: true
+	text := assertToolSuccess(t, result)
+	if !strings.Contains(text, "tamper-protected") {
+		t.Errorf("Expected tamper-protection message, got: %s", text)
+	}
+
+	// Verify the config still has read_only: true
+	dbConf := ms.service.conf.Core.Databases["prod"]
+	if !dbConf.ReadOnly {
+		t.Error("Expected read_only to remain true after tamper attempt")
+	}
+}
+
+func TestHandleUpdateCurrentConfig_ReadOnlyNewDBNotProtected(t *testing.T) {
+	// A new DB added via MCP should be able to set read_only: true
+	// (only the startup snapshot is immutable)
+	logger := zaptest.NewLogger(t)
+	ms := &mcpServer{
+		service: &graphjinService{
+			gj: nil,
+			conf: &Config{
+				Core: core.Config{
+					Databases: map[string]core.DatabaseConfig{},
+				},
+				Serv: Serv{Production: false},
+			},
+			log: logger.Sugar(),
+		},
+		ctx:         context.Background(),
+		readOnlyDBs: map[string]bool{}, // empty snapshot (no DBs at startup)
+	}
+
+	// Adding a new DB with read_only: true should work
+	req := newToolRequest(map[string]any{
+		"databases": map[string]any{
+			"newdb": map[string]any{
+				"type":      "sqlite",
+				"path":      "/tmp/test.db",
+				"read_only": true,
+			},
+		},
+	})
+
+	result, err := ms.handleUpdateCurrentConfig(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	text := assertToolSuccess(t, result)
+	if !strings.Contains(text, "added/updated database: newdb") {
+		t.Errorf("Expected database to be added, got: %s", text)
+	}
+	// Should NOT have tamper-protection warning since it wasn't in the snapshot
+	if strings.Contains(text, "tamper-protected") {
+		t.Errorf("New DB should not trigger tamper protection, got: %s", text)
+	}
+}
+
+func TestNormalizeDatabases_PropagatesReadOnly(t *testing.T) {
+	conf := &core.Config{
+		Databases: map[string]core.DatabaseConfig{
+			"readonly_db": {Type: "postgres", ReadOnly: true},
+			"writable_db": {Type: "postgres", ReadOnly: false},
+		},
+		Tables: []core.Table{
+			{Name: "orders", Database: "readonly_db"},
+			{Name: "users", Database: "writable_db"},
+		},
+		Roles: []core.Role{
+			{
+				Name: "user",
+				Tables: []core.RoleTable{
+					{Name: "orders"},
+					{Name: "users"},
+				},
+			},
+		},
+	}
+
+	conf.NormalizeDatabases()
+
+	// Find the role table entries
+	for _, rt := range conf.Roles[0].Tables {
+		if rt.Name == "orders" {
+			if !rt.ReadOnly {
+				t.Error("Expected 'orders' role table to be read-only (propagated from readonly_db)")
+			}
+		}
+		if rt.Name == "users" {
+			if rt.ReadOnly {
+				t.Error("Expected 'users' role table to NOT be read-only")
+			}
+		}
+	}
+}
+
+func TestParseDBConfig_ReadOnly(t *testing.T) {
+	m := map[string]any{
+		"type":      "postgres",
+		"host":      "localhost",
+		"read_only": true,
+	}
+
+	conf, err := parseDBConfig(m)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if !conf.ReadOnly {
+		t.Error("Expected ReadOnly to be true")
+	}
+
+	// Test with read_only: false
+	m["read_only"] = false
+	conf, err = parseDBConfig(m)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if conf.ReadOnly {
+		t.Error("Expected ReadOnly to be false")
+	}
+
+	// Test without read_only (should default to false)
+	delete(m, "read_only")
+	conf, err = parseDBConfig(m)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if conf.ReadOnly {
+		t.Error("Expected ReadOnly to default to false")
+	}
+}
+
 func TestEnhanceError(t *testing.T) {
 	testCases := []struct {
 		name           string
