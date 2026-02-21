@@ -157,6 +157,12 @@ func (gj *graphjinEngine) finalizeDatabaseSchema(ctx *dbContext) error {
 		ctx.dbinfo.Tables[i].Database = ctx.name
 	}
 
+	// Ensure conf.Tables has entries for all discovered tables in this database.
+	// Without this, groupRootsByDatabase cannot route queries/mutations to
+	// non-default databases because it only checks conf.Tables.
+	// This runs on both init and Reload(), so dynamic config changes are covered.
+	gj.ensureDiscoveredTablesInConfig(ctx)
+
 	// Process tables configured for this database
 	if err := addTables(gj.conf, ctx.dbinfo, ctx.name); err != nil {
 		return fmt.Errorf("database %s: add tables failed: %w", ctx.name, err)
@@ -331,6 +337,42 @@ func (gj *graphjinEngine) sortedDatabaseNames() []string {
 		return append([]string{gj.defaultDB}, names...)
 	}
 	return names
+}
+
+// ensureDiscoveredTablesInConfig adds minimal conf.Tables entries for tables
+// discovered in a database's schema that don't already have config entries.
+// This ensures groupRootsByDatabase can route queries/mutations to the correct
+// database even when the user hasn't explicitly configured every table.
+func (gj *graphjinEngine) ensureDiscoveredTablesInConfig(ctx *dbContext) {
+	if ctx.dbinfo == nil {
+		return
+	}
+
+	for _, dt := range ctx.dbinfo.Tables {
+		// Skip internal/virtual tables
+		if dt.Name == "" {
+			continue
+		}
+
+		// Check if a config entry already exists for this table name
+		found := false
+		for _, t := range gj.conf.Tables {
+			if strings.EqualFold(t.Name, dt.Name) {
+				found = true
+				break
+			}
+		}
+		if found {
+			continue
+		}
+
+		// Add a minimal config entry so groupRootsByDatabase can find it
+		gj.conf.Tables = append(gj.conf.Tables, Table{
+			Name:     dt.Name,
+			Schema:   dt.Schema,
+			Database: ctx.name,
+		})
+	}
 }
 
 // OptionSetDatabases sets multiple database connections for multi-database mode.

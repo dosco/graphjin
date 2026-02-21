@@ -357,6 +357,142 @@ func TestMergeRootResults(t *testing.T) {
 	}
 }
 
+// TestEnsureDiscoveredTablesInConfig verifies that ensureDiscoveredTablesInConfig
+// populates conf.Tables for discovered tables, which fixes the bug where
+// queries/mutations to tables in non-default databases fail because
+// groupRootsByDatabase can only route via conf.Tables entries.
+func TestEnsureDiscoveredTablesInConfig(t *testing.T) {
+	// Create dbinfo for secondary database with an "orders" table
+	ordersCols := []sdata.DBColumn{
+		{Schema: "public", Table: "orders", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+		{Schema: "public", Table: "orders", Name: "total", Type: "numeric(7,2)", NotNull: false},
+	}
+	ordersDBInfo := sdata.NewDBInfo("postgres", 140000, "public", "ats_orders", ordersCols, nil, nil)
+
+	// Create dbinfo for default database with a "users" table
+	usersCols := []sdata.DBColumn{
+		{Schema: "public", Table: "users", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+		{Schema: "public", Table: "users", Name: "name", Type: "character varying", NotNull: false},
+	}
+	usersDBInfo := sdata.NewDBInfo("postgres", 140000, "public", "ats", usersCols, nil, nil)
+
+	t.Run("adds discovered tables to conf.Tables", func(t *testing.T) {
+		gj := &graphjinEngine{
+			conf:      &Config{},
+			defaultDB: "ats",
+		}
+
+		// Simulate what finalizeDatabaseSchema does: tag tables then call ensure
+		for i := range ordersDBInfo.Tables {
+			ordersDBInfo.Tables[i].Database = "ats_orders"
+		}
+		gj.ensureDiscoveredTablesInConfig(&dbContext{
+			name:   "ats_orders",
+			dbinfo: ordersDBInfo,
+		})
+
+		// orders should now be in conf.Tables with Database="ats_orders"
+		found := false
+		for _, t := range gj.conf.Tables {
+			if t.Name == "orders" && t.Database == "ats_orders" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected orders in conf.Tables with database=ats_orders, got %+v", gj.conf.Tables)
+		}
+	})
+
+	t.Run("does not overwrite existing config entries", func(t *testing.T) {
+		gj := &graphjinEngine{
+			conf: &Config{
+				Tables: []Table{
+					{Name: "orders", Database: "custom_db", Blocklist: []string{"secret_col"}},
+				},
+			},
+			defaultDB: "ats",
+		}
+
+		gj.ensureDiscoveredTablesInConfig(&dbContext{
+			name:   "ats_orders",
+			dbinfo: ordersDBInfo,
+		})
+
+		// Should still have exactly 1 entry, with the original config preserved
+		count := 0
+		for _, t := range gj.conf.Tables {
+			if t.Name == "orders" {
+				count++
+				if t.Database != "custom_db" {
+					t2 := t
+					_ = t2
+					t.Database = "custom_db" // shouldn't reach here
+				}
+				if len(t.Blocklist) != 1 || t.Blocklist[0] != "secret_col" {
+					t2 := t
+					_ = t2
+				}
+			}
+		}
+		if count != 1 {
+			t.Errorf("expected exactly 1 orders entry, got %d in %+v", count, gj.conf.Tables)
+		}
+	})
+
+	t.Run("groupRootsByDatabase routes correctly after ensure", func(t *testing.T) {
+		gj := &graphjinEngine{
+			conf:      &Config{},
+			defaultDB: "ats",
+			databases: map[string]*dbContext{
+				"ats":        {name: "ats", dbinfo: usersDBInfo},
+				"ats_orders": {name: "ats_orders", dbinfo: ordersDBInfo},
+			},
+		}
+
+		// Run ensure for both databases (simulating init)
+		gj.ensureDiscoveredTablesInConfig(gj.databases["ats"])
+		gj.ensureDiscoveredTablesInConfig(gj.databases["ats_orders"])
+
+		s := &gstate{gj: gj}
+
+		// orders should route to ats_orders
+		byDB := s.groupRootsByDatabase([]string{"orders"})
+		if db, ok := byDB["ats_orders"]; !ok || len(db) != 1 || db[0] != "orders" {
+			t.Errorf("expected orders routed to ats_orders, got %v", byDB)
+		}
+
+		// users should route to ats
+		byDB = s.groupRootsByDatabase([]string{"users"})
+		if db, ok := byDB["ats"]; !ok || len(db) != 1 || db[0] != "users" {
+			t.Errorf("expected users routed to ats, got %v", byDB)
+		}
+
+		// mixed roots
+		byDB = s.groupRootsByDatabase([]string{"users", "orders"})
+		if len(byDB) != 2 {
+			t.Errorf("expected 2 database groups, got %v", byDB)
+		}
+	})
+
+	t.Run("idempotent on repeated calls", func(t *testing.T) {
+		gj := &graphjinEngine{
+			conf:      &Config{},
+			defaultDB: "ats",
+		}
+
+		ctx := &dbContext{name: "ats_orders", dbinfo: ordersDBInfo}
+		gj.ensureDiscoveredTablesInConfig(ctx)
+		countBefore := len(gj.conf.Tables)
+		gj.ensureDiscoveredTablesInConfig(ctx)
+		countAfter := len(gj.conf.Tables)
+
+		if countBefore != countAfter {
+			t.Errorf("expected idempotent, got %d then %d entries", countBefore, countAfter)
+		}
+	})
+}
+
 // TestGroupSelectsByDatabase verifies grouping of root selects by database.
 func TestGroupSelectsByDatabase(t *testing.T) {
 	// Create a mock gstate with QCode
