@@ -55,6 +55,8 @@ Authentication:
 
 	// Add subcommands
 	c.AddCommand(mcpInfoCmd())
+	c.AddCommand(mcpInstallCmd())
+	c.AddCommand(mcpPluginCmd())
 
 	return c
 }

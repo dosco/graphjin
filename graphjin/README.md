@@ -84,6 +84,44 @@ Copy the JSON config shown and add it to your Claude Desktop config file (see be
 | macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
 | Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
 
+### MCP install for OpenAI Codex + Claude Code
+
+GraphJin includes a guided installer that configures MCP for OpenAI Codex, Claude Code, or both.
+
+```bash
+# Guided mode (asks target client, scope, and mode)
+graphjin mcp install
+```
+
+#### OpenAI Codex
+
+<img src="website/public/logos/openai-codex.svg" alt="OpenAI Codex logo" width="280">
+
+```bash
+graphjin mcp install --client codex --scope project --yes
+```
+
+#### Claude Code
+
+<img src="website/public/logos/claude-code.svg" alt="Claude Code logo" width="280">
+
+```bash
+graphjin mcp install --client claude --scope project --yes
+```
+
+Backwards compatibility alias:
+
+```bash
+graphjin mcp plugin install
+```
+
+#### Troubleshooting
+
+- `graphjin mcp install` uses your `--path` value for stdio mode (`graphjin mcp --path <config-path>`).
+- If Codex CLI does not support `codex mcp add --scope` (older versions), GraphJin automatically falls back to updating:
+  - global scope: `~/.codex/config.toml`
+  - local scope: `.codex/config.toml`
+
 ## Getting started
 
 To use GraphJin with your own databases you have to first create a new GraphJin app, then configure it using its config files and then launch GraphJin.

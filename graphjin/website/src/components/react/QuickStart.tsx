@@ -24,9 +24,27 @@ const tabs = [
   
 ];
 
+const mcpClients = [
+  {
+    id: 'claude-code',
+    name: 'Claude Code',
+    logo: '/logos/claude-code.svg',
+    command: 'graphjin mcp install --client claude --scope project --yes',
+    description: 'Project-scoped non-interactive install for Claude Code',
+  },
+  {
+    id: 'openai-codex',
+    name: 'OpenAI Codex',
+    logo: '/logos/openai-codex.svg',
+    command: 'graphjin mcp install --client codex --scope project --yes',
+    description: 'Project-scoped non-interactive install for OpenAI Codex',
+  },
+];
+
 export default function QuickStart() {
   const [activeTab, setActiveTab] = useState('npm');
   const [copied, setCopied] = useState(false);
+  const [copiedMCP, setCopiedMCP] = useState<string | null>(null);
   const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 });
   const tabsRef = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -49,6 +67,12 @@ export default function QuickStart() {
     navigator.clipboard.writeText(activeCommand);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCopyMCP = (id: string, command: string) => {
+    navigator.clipboard.writeText(command);
+    setCopiedMCP(id);
+    setTimeout(() => setCopiedMCP(null), 2000);
   };
 
   return (
@@ -106,6 +130,7 @@ export default function QuickStart() {
                 onClick={handleCopy}
                 className="p-2 text-white/50 hover:text-white transition-colors rounded-lg hover:bg-white/5"
                 title="Copy to clipboard"
+                aria-label={`Copy install command for ${activeTabData?.label || 'active tab'}`}
               >
                 {copied ? (
                   <Check className="w-5 h-5 text-emerald-400" />
@@ -142,6 +167,58 @@ export default function QuickStart() {
               {activeDescription}
             </motion.p>
           </div>
+        </div>
+
+        <div className="mt-6 rounded-2xl border border-white/10 bg-black/80 p-4 md:p-6">
+          <div className="flex items-center justify-between gap-4">
+            <h3 className="text-base md:text-lg font-semibold tracking-wide text-white/90">
+              MCP Client Setup
+            </h3>
+            <span className="text-xs text-white/40">Copy and run one command</span>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+            {mcpClients.map((client) => (
+              <div
+                key={client.id}
+                className="rounded-xl border border-white/10 bg-black p-5"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <img
+                      src={client.logo}
+                      alt={`${client.name} logo`}
+                      className="w-[180px] h-[40px] md:w-[220px] md:h-[48px] object-contain object-left"
+                      loading="lazy"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleCopyMCP(client.id, client.command)}
+                    className="p-2 text-white/50 hover:text-white transition-colors rounded-lg hover:bg-white/5"
+                    title={`Copy ${client.name} command`}
+                    aria-label={`Copy MCP install command for ${client.name}`}
+                  >
+                    {copiedMCP === client.id ? (
+                      <Check className="w-4 h-4 text-emerald-400" />
+                    ) : (
+                      <Copy className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+
+                <p className="mt-3 text-sm text-white/50">{client.description}</p>
+                <code className="mt-3 block text-sm md:text-[15px] font-mono text-white/90 break-all leading-relaxed">
+                  {client.command}
+                </code>
+              </div>
+            ))}
+          </div>
+
+          <p className="mt-4 text-xs text-white/50">
+            Prefer interactive setup? Run: <code className="font-mono text-white/80">graphjin mcp install</code>
+          </p>
         </div>
 
         <p className="text-center text-gj-muted text-sm mt-8">

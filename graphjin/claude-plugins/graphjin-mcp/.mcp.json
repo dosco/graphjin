@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "graphjin": {
+      "command": "graphjin",
+      "args": [
+        "mcp",
+        "--path",
+        "${GRAPHJIN_CONFIG_PATH:-./config}"
+      ]
+    }
+  }
+}

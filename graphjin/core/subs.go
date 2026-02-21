@@ -362,37 +362,50 @@ func (s *sub) updateMember(msg mmsg) error {
 	return nil
 }
 
-// fanOutJobs function is called on the sub struct to fan out jobs.
-func (s *sub) fanOutJobs(gj *graphjinEngine) {
-	// Take a point-in-time snapshot of current members and their params for safe concurrent reads.
-	// Deep copy mi slice to prevent race conditions on the values slice.
-	miCopy := make([]minfo, len(s.mi))
-	for i, mi := range s.mi {
-		miCopy[i] = mi
-		if len(mi.values) > 0 {
-			miCopy[i].values = make([]interface{}, len(mi.values))
-			copy(miCopy[i].values, mi.values)
-		}
-	}
-	s.mval = mval{
+// snapshotMembers creates a point-in-time copy of member data for worker goroutines.
+// The subscription controller owns live state mutation in s.params/s.mi/s.res/s.ids.
+func (s *sub) snapshotMembers() mval {
+	mv := mval{
 		params: append([]json.RawMessage(nil), s.params...),
-		mi:     miCopy,
+		mi:     make([]minfo, len(s.mi)),
 		res:    append([]chan *Result(nil), s.res...),
 		ids:    append([]uint64(nil), s.ids...),
 	}
 
+	for i, mi := range s.mi {
+		mv.mi[i] = mi
+
+		if len(mi.values) != 0 {
+			mv.mi[i].values = make([]interface{}, len(mi.values))
+			copy(mv.mi[i].values, mi.values)
+		}
+
+		if len(mi.cindxs) != 0 {
+			mv.mi[i].cindxs = make([]int, len(mi.cindxs))
+			copy(mv.mi[i].cindxs, mi.cindxs)
+		}
+	}
+
+	return mv
+}
+
+// fanOutJobs function is called on the sub struct to fan out jobs.
+func (s *sub) fanOutJobs(gj *graphjinEngine) {
+	// Workers must only read from this immutable per-poll snapshot.
+	mv := s.snapshotMembers()
+
 	switch {
-	case len(s.ids) == 0:
+	case len(mv.ids) == 0:
 		return
 
-	case len(s.ids) <= maxMembersPerWorker:
-		go gj.subCheckUpdates(s, s.mval, 0)
+	case len(mv.ids) <= maxMembersPerWorker:
+		go gj.subCheckUpdates(s, mv, 0)
 
 	default:
 		// fan out chunks of work to multiple routines
 		// separated by a random duration
-		for i := 0; i < len(s.ids); i += maxMembersPerWorker {
-			gj.subCheckUpdates(s, s.mval, i)
+		for i := 0; i < len(mv.ids); i += maxMembersPerWorker {
+			gj.subCheckUpdates(s, mv, i)
 		}
 	}
 }
@@ -740,10 +753,10 @@ func (c *stringContext) ColWithTable(table, col string) {
 	}
 	c.Quote(col)
 }
-func (c *stringContext) RenderJSONFields(sel *qcode.Select) {}
-func (c *stringContext) IsTableMutated(table string) bool  { return false }
+func (c *stringContext) RenderJSONFields(sel *qcode.Select)      {}
+func (c *stringContext) IsTableMutated(table string) bool        { return false }
 func (c *stringContext) GetStaticVar(name string) (string, bool) { return "", false }
-func (c *stringContext) GetSecPrefix() string { return "" }
+func (c *stringContext) GetSecPrefix() string                    { return "" }
 func (c *stringContext) RenderExp(ti sdata.DBTable, ex *qcode.Exp) {
 	// Not implemented for stringContext - only used for subscription unboxing
 }

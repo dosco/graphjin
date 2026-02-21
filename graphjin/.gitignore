@@ -61,3 +61,5 @@ test.db
 
 cmd/cmd
 
+.claude-plugins
+.claude
