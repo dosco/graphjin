@@ -540,7 +540,7 @@ func TestMain(m *testing.M) {
 							"APP_USER":           "tester",
 							"APP_USER_PASSWORD":  "tester_password",
 						},
-						WaitingFor: wait.ForLog("DATABASE IS READY TO USE!"),
+						WaitingFor: wait.ForListeningPort("1521/tcp").WithStartupTimeout(8 * time.Minute),
 					},
 					Started: true,
 				}
@@ -562,6 +562,17 @@ func TestMain(m *testing.M) {
 					return nil, "", err
 				}
 				defer db.Close() //nolint:errcheck
+
+				var pingErr error
+				for i := 0; i < 180; i++ {
+					if pingErr = db.Ping(); pingErr == nil {
+						break
+					}
+					time.Sleep(2 * time.Second)
+				}
+				if pingErr != nil {
+					return nil, "", fmt.Errorf("failed to ping oracle after startup: %w", pingErr)
+				}
 
 				script, err := os.ReadFile("./oracle.sql")
 				if err != nil {

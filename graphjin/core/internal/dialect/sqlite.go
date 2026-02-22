@@ -422,13 +422,13 @@ func (d *SQLiteDialect) RenderJoinTables(ctx Context, sel *qcode.Select) {
 }
 
 func (d *SQLiteDialect) RenderValArrayColumn(ctx Context, ex *qcode.Exp, table string, pid int32) {
-	ctx.WriteString(`(SELECT value FROM json_each(`)
+	ctx.WriteString(`SELECT value FROM json_each(`)
 	t := table
 	if pid >= 0 {
 		t = fmt.Sprintf("%s_%d", table, pid)
 	}
 	ctx.ColWithTable(t, ex.Right.Col.Name)
-	ctx.WriteString(`))`)
+	ctx.WriteString(`)`)
 }
 
 func (d *SQLiteDialect) RenderArray(ctx Context, items []string) {

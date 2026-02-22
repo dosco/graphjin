@@ -567,7 +567,7 @@ func (d *OracleDialect) RenderValArrayColumn(ctx Context, ex *qcode.Exp, table s
 	}
 	// For Oracle, JSON array columns need to be unpacked using JSON_TABLE
 	// The column is typically a CLOB containing JSON array like [1,2,3]
-	ctx.WriteString(`(SELECT "VALUE" FROM JSON_TABLE(`)
+	ctx.WriteString(`SELECT "VALUE" FROM JSON_TABLE(`)
 	ctx.ColWithTable(t, ex.Right.Col.Name)
 	ctx.WriteString(`, '$[*]' COLUMNS("VALUE" `)
 	// Map the column type
@@ -579,7 +579,7 @@ func (d *OracleDialect) RenderValArrayColumn(ctx Context, ex *qcode.Exp, table s
 	default:
 		ctx.WriteString("VARCHAR2(4000)")
 	}
-	ctx.WriteString(` PATH '$')))`)
+	ctx.WriteString(` PATH '$'))`)
 }
 
 func (d *OracleDialect) RenderOp(op qcode.ExpOp) (string, error) {

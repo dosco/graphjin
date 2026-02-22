@@ -34,11 +34,12 @@ type sub struct {
 	s  gstate
 	js json.RawMessage
 
-	idgen uint64
-	add   chan *Member
-	del   chan *Member
-	updt  chan mmsg
-	done  chan struct{}
+	idgen        uint64
+	pollInFlight uint32
+	add          chan *Member
+	del          chan *Member
+	updt         chan mmsg
+	done         chan struct{}
 
 	mval
 	sync.Once
@@ -389,25 +390,39 @@ func (s *sub) snapshotMembers() mval {
 	return mv
 }
 
+func (s *sub) beginPollCycle() bool {
+	return atomic.CompareAndSwapUint32(&s.pollInFlight, 0, 1)
+}
+
+func (s *sub) endPollCycle() {
+	atomic.StoreUint32(&s.pollInFlight, 0)
+}
+
 // fanOutJobs function is called on the sub struct to fan out jobs.
 func (s *sub) fanOutJobs(gj *graphjinEngine) {
-	// Workers must only read from this immutable per-poll snapshot.
-	mv := s.snapshotMembers()
-
-	switch {
-	case len(mv.ids) == 0:
+	// Do not start a new poll while the previous cycle is still running.
+	// Overlapping polls can use stale cursor snapshots and re-emit already
+	// delivered rows, which is most visible on slower databases.
+	if !s.beginPollCycle() {
 		return
+	}
 
-	case len(mv.ids) <= maxMembersPerWorker:
-		go gj.subCheckUpdates(s, mv, 0)
+	// Run the full poll cycle asynchronously so the controller can continue
+	// handling add/remove/update events while polling is in progress.
+	go func() {
+		defer s.endPollCycle()
 
-	default:
-		// fan out chunks of work to multiple routines
-		// separated by a random duration
+		// Workers must only read from this immutable per-poll snapshot.
+		mv := s.snapshotMembers()
+		if len(mv.ids) == 0 {
+			return
+		}
+
+		// Process members in fixed-size chunks within one poll cycle.
 		for i := 0; i < len(mv.ids); i += maxMembersPerWorker {
 			gj.subCheckUpdates(s, mv, i)
 		}
-	}
+	}()
 }
 
 // subCheckUpdates function is called on the graphjin struct to check updates.

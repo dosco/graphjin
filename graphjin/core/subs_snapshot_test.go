@@ -71,3 +71,21 @@ func TestSubSnapshotMembersIsolatedFromLiveState(t *testing.T) {
 		t.Fatal("snapshot result channel changed")
 	}
 }
+
+func TestSubPollCycleGuard(t *testing.T) {
+	s := &sub{}
+
+	if !s.beginPollCycle() {
+		t.Fatal("expected first poll cycle to start")
+	}
+
+	if s.beginPollCycle() {
+		t.Fatal("expected second poll cycle to be blocked while in-flight")
+	}
+
+	s.endPollCycle()
+
+	if !s.beginPollCycle() {
+		t.Fatal("expected poll cycle to start after release")
+	}
+}
