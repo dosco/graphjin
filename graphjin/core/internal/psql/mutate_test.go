@@ -111,11 +111,29 @@ func delete(t *testing.T) {
 // 	}
 // }
 
+func multiRootDelete(t *testing.T) {
+	gql := `mutation {
+		d1: products(delete: true, where: { id: { eq: 3 } }) {
+			id
+			name
+		}
+		d2: products(delete: true, where: { id: { eq: 4 } }) {
+			id
+			name
+		}
+	}`
+
+	vars := map[string]json.RawMessage{}
+
+	compileGQLToPSQL(t, gql, vars, "user")
+}
+
 func TestCompileMutate(t *testing.T) {
 	t.Run("singleUpsert", singleUpsert)
 	t.Run("singleUpsertWhere", singleUpsertWhere)
 	// t.Run("bulkUpsert", bulkUpsert)
 	t.Run("delete", delete)
+	t.Run("multiRootDelete", multiRootDelete)
 	// t.Run("blockedInsert", blockedInsert)
 	// t.Run("blockedUpdate", blockedUpdate)
 }

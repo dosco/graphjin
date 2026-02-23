@@ -666,6 +666,21 @@ func blockedFunctions(t *testing.T) {
 	compileGQLToPSQLExpectErr(t, gql, nil, "bad_dude")
 }
 
+func multiRootSameTable(t *testing.T) {
+	gql := `query {
+		q1: products(where: { id: { eq: 3 } }) {
+			id
+			name
+		}
+		q2: products(where: { id: { eq: 4 } }) {
+			id
+			name
+		}
+	}`
+
+	compileGQLToPSQL(t, gql, nil, "user")
+}
+
 func TestCompileQuery(t *testing.T) {
 	t.Run("simpleQuery", simpleQuery)
 	t.Run("withVariableLimit", withVariableLimit)
@@ -708,6 +723,7 @@ func TestCompileQuery(t *testing.T) {
 	t.Run("nullForAuthRequiredInAnon", nullForAuthRequiredInAnon)
 	t.Run("blockedQuery", blockedQuery)
 	t.Run("blockedFunctions", blockedFunctions)
+	t.Run("multiRootSameTable", multiRootSameTable)
 }
 
 var benchGQL = []byte(`query {

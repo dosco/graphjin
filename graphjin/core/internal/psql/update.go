@@ -25,7 +25,7 @@ func (c *compilerContext) renderUpdate() {
 }
 
 func (c *compilerContext) renderUpdateStmt(m qcode.Mutate, embedded bool) {
-	sel := c.qc.Selects[0]
+	sel := c.qc.Selects[m.SelID]
 
 	n := c.renderOneToManyModifiers(m)
 	if n != 0 {

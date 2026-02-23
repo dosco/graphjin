@@ -79,7 +79,8 @@ type QCode struct {
 	Typename  bool
 	Query     []byte
 	Fragments []Fragment
-	actionArg graph.Arg
+	actionArg  graph.Arg
+	actionArgs map[string]graph.Arg
 }
 
 type Fragment struct {
@@ -1061,44 +1062,79 @@ func addFilters(qc *QCode, where *Filter, trv trval) bool {
 func (co *Compiler) setMutationType(qc *QCode, op *graph.Operation, role string) error {
 	var err error
 
-	setActionVar := func(arg graph.Arg) error {
+	validateActionArg := func(arg graph.Arg) error {
 		v := arg.Val
 		if v.Type != graph.NodeVar && v.Type != graph.NodeObj &&
 			(v.Type != graph.NodeList || len(v.Children) == 0 && v.Children[0].Type != graph.NodeObj) {
 			return argErr(arg, "variable, an object or a list of objects")
 		}
-		qc.ActionVar = arg.Val.Val
-		qc.actionArg = arg
 		return nil
 	}
 
-	args := op.Fields[0].Args
-
-	for _, arg := range args {
-		switch arg.Name {
-		case "insert":
-			qc.SType = QTInsert
-			err = setActionVar(arg)
-		case "update":
-			qc.SType = QTUpdate
-			err = setActionVar(arg)
-		case "upsert":
-			qc.SType = QTUpsert
-			err = setActionVar(arg)
-		case "delete":
-			qc.SType = QTDelete
-			if ifNotArg(arg, graph.NodeBool) || ifNotArgVal(arg, "true") {
-				err = errors.New("value for 'delete' must be 'true'")
-			}
-		}
-
-		if err != nil {
-			return err
+	// Collect all root fields
+	var rootFields []graph.Field
+	for _, f := range op.Fields {
+		if f.ParentID == -1 {
+			rootFields = append(rootFields, f)
 		}
 	}
 
-	if qc.SType == QTUnknown {
+	if len(rootFields) == 0 {
 		return errors.New(`mutations must contains one of the following arguments (insert, update, upsert or delete)`)
+	}
+
+	qc.actionArgs = make(map[string]graph.Arg, len(rootFields))
+
+	for ri, rf := range rootFields {
+		var fieldType QType
+		var actionArg graph.Arg
+
+		for _, arg := range rf.Args {
+			switch arg.Name {
+			case "insert":
+				fieldType = QTInsert
+				actionArg = arg
+				err = validateActionArg(arg)
+			case "update":
+				fieldType = QTUpdate
+				actionArg = arg
+				err = validateActionArg(arg)
+			case "upsert":
+				fieldType = QTUpsert
+				actionArg = arg
+				err = validateActionArg(arg)
+			case "delete":
+				fieldType = QTDelete
+				if ifNotArg(arg, graph.NodeBool) || ifNotArgVal(arg, "true") {
+					err = errors.New("value for 'delete' must be 'true'")
+				}
+			}
+
+			if err != nil {
+				return err
+			}
+		}
+
+		if fieldType == QTUnknown {
+			return errors.New(`mutations must contains one of the following arguments (insert, update, upsert or delete)`)
+		}
+
+		if ri == 0 {
+			qc.SType = fieldType
+			if actionArg.Val != nil {
+				qc.ActionVar = actionArg.Val.Val
+			}
+			qc.actionArg = actionArg
+		} else if fieldType != qc.SType {
+			return errors.New("all root mutations must be of the same type (insert, update, upsert or delete)")
+		}
+
+		// Key by alias if present, otherwise by field name
+		key := rf.Alias
+		if key == "" {
+			key = rf.Name
+		}
+		qc.actionArgs[key] = actionArg
 	}
 
 	return nil

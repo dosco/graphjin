@@ -267,6 +267,26 @@ func nestedUpdateRecursive(t *testing.T) {
 	compileGQLToPSQL(t, gql, vars, "user")
 }
 
+func multiRootUpdate(t *testing.T) {
+	gql := `mutation {
+		o516: products(update: $data1, where: { id: { eq: 3 } }) {
+			id
+			name
+		}
+		o517: products(update: $data2, where: { id: { eq: 4 } }) {
+			id
+			name
+		}
+	}`
+
+	vars := map[string]json.RawMessage{
+		"data1": json.RawMessage(`{"name": "Product A", "price": 1.50}`),
+		"data2": json.RawMessage(`{"name": "Product B", "price": 2.50}`),
+	}
+
+	compileGQLToPSQL(t, gql, vars, "admin")
+}
+
 func TestCompileUpdate(t *testing.T) {
 	t.Run("singleUpdate", singleUpdate)
 	t.Run("simpleUpdateWithPresets", simpleUpdateWithPresets)
@@ -278,5 +298,5 @@ func TestCompileUpdate(t *testing.T) {
 	t.Run("nestedUpdateOneToOneWithDisconnect", nestedUpdateOneToOneWithDisconnect)
 	t.Run("nestedUpdateOneToOneWithDisconnectArray", nestedUpdateOneToOneWithDisconnectArray)
 	t.Run("nestedUpdateRecursive", nestedUpdateRecursive)
-
+	t.Run("multiRootUpdate", multiRootUpdate)
 }

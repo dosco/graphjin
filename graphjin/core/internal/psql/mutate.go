@@ -155,7 +155,7 @@ func (c *compilerContext) compileLinearMutation() {
 						// For child updates (m.ParentID != -1), the JSON input doesn't contain the child's PK.
 						// The row to update is determined by the parent's FK, not by JSON table join.
 						// Only add JSON table join for root updates that need it.
-						if m.ParentID == -1 && (len(c.qc.Selects) == 0 || c.qc.Selects[0].Where.Exp == nil) {
+						if m.ParentID == -1 && (len(c.qc.Selects) == 0 || c.qc.Selects[m.SelID].Where.Exp == nil) {
 							c.colWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
 							c.w.WriteString(" = ")
 							c.colWithTable("t", m.Ti.PrimaryCol.Name)
@@ -168,8 +168,8 @@ func (c *compilerContext) compileLinearMutation() {
 					if hasWhere {
 						c.w.WriteString(" AND ")
 					}
-					if len(c.qc.Selects) > 0 && c.qc.Selects[0].Where.Exp != nil {
-						c.renderExp(m.Ti, c.qc.Selects[0].Where.Exp, false)
+					if len(c.qc.Selects) > 0 && c.qc.Selects[m.SelID].Where.Exp != nil {
+						c.renderExp(m.Ti, c.qc.Selects[m.SelID].Where.Exp, false)
 						hasWhere = true
 					}
 				}
@@ -531,22 +531,33 @@ func (c *compilerContext) renderUpsert() {
 	})
 
 	c.w.WriteString(` WHERE `)
-	c.renderExp(m.Ti, c.qc.Selects[0].Where.Exp, false)
+	c.renderExp(m.Ti, c.qc.Selects[m.SelID].Where.Exp, false)
 	c.dialect.RenderReturning(c, &m)
 }
 
 func (c *compilerContext) renderDelete() {
-	sel := c.qc.Selects[0]
-	m := c.qc.Mutates[0]
+	for i, m := range c.qc.Mutates {
+		if m.Type != qcode.MTDelete {
+			continue
+		}
+		sel := c.qc.Selects[m.SelID]
 
-	c.w.WriteString(`WITH `)
-	c.quoted(sel.Table)
-	c.w.WriteString(` AS (`)
-	c.dialect.RenderDelete(c, &m, func() {
-		c.renderExp(sel.Ti, sel.Where.Exp, false)
-	})
-	c.dialect.RenderReturning(c, &m)
-	c.w.WriteString(`)`)
+		if i != 0 {
+			c.w.WriteString(`, `)
+		}
+		c.w.WriteString(`WITH `)
+		if m.Multi {
+			c.renderCteNameWithID(m)
+		} else {
+			c.quoted(sel.Table)
+		}
+		c.w.WriteString(` AS (`)
+		c.dialect.RenderDelete(c, &m, func() {
+			c.renderExp(sel.Ti, sel.Where.Exp, false)
+		})
+		c.dialect.RenderReturning(c, &m)
+		c.w.WriteString(`)`)
+	}
 }
 
 func (c *compilerContext) renderOneToManyConnectStmt(m qcode.Mutate) {

@@ -48,6 +48,7 @@ type Mutate struct {
 
 	ID        int32
 	ParentID  int32
+	SelID     int32
 	DependsOn map[int32]struct{}
 	Type      MType
 	// CType     uint8
@@ -83,10 +84,11 @@ type MTable struct {
 }
 
 type mState struct {
-	st *util.StackInf
-	qc *QCode
-	mt MType
-	id int32
+	st        *util.StackInf
+	qc        *QCode
+	mt        MType
+	id        int32
+	rootSelID int32
 }
 
 func (co *Compiler) compileMutation(qc *QCode,
@@ -98,60 +100,90 @@ func (co *Compiler) compileMutation(qc *QCode,
 
 	var whereReq bool
 
-	sel := &qc.Selects[0]
-	m := Mutate{
-		Field:    Field{Type: FieldTypeTable},
-		ParentID: -1,
-		Key:      sel.Table,
-		Ti:       sel.Ti,
-	}
-
 	switch qc.SType {
 	case QTInsert:
-		m.Type = MTInsert
 	case QTUpdate:
-		m.Type = MTUpdate
 		whereReq = true
 	case QTUpsert:
-		m.Type = MTUpsert
 		whereReq = true
 	case QTDelete:
-		m.Type = MTDelete
 		whereReq = true
 	default:
 		return errors.New("valid mutations: insert, update, upsert, delete'")
 	}
 
-	if whereReq && qc.Selects[0].Where.Exp == nil {
-		return errors.New("where clause required")
-	}
-
-	if m.Type == MTDelete {
-		m.render = true
-		qc.Mutates = append(qc.Mutates, m)
-		return nil
-	}
-
-	m.mData, err = parseMutationData(qc)
-	if err != nil {
-		return err
-	}
-
 	mutates := []Mutate{}
 	mmap := map[int32]int32{-1: -1}
 	mids := map[string][]int32{}
-
 	st := util.NewStackInf()
+	var nextID int32
 
-	if m.Data.Type == graph.NodeList {
-		for _, v := range co.processList(m) {
-			st.Push(v)
+	// Process each root select as a separate root mutation
+	for _, rootID := range qc.Roots {
+		sel := &qc.Selects[rootID]
+
+		if whereReq && sel.Where.Exp == nil {
+			return errors.New("where clause required")
 		}
-	} else {
-		st.Push(m)
+
+		m := Mutate{
+			Field:    Field{Type: FieldTypeTable},
+			ID:       nextID,
+			ParentID: -1,
+			Key:      sel.Table,
+			Ti:       sel.Ti,
+			SelID:    rootID,
+		}
+		nextID++
+
+		switch qc.SType {
+		case QTInsert:
+			m.Type = MTInsert
+		case QTUpdate:
+			m.Type = MTUpdate
+		case QTUpsert:
+			m.Type = MTUpsert
+		case QTDelete:
+			m.Type = MTDelete
+		}
+
+		if m.Type == MTDelete {
+			m.render = true
+			st.Push(m)
+			continue
+		}
+
+		m.mData, err = parseMutationDataFromArg(qc, sel.FieldName, vmap)
+		if err != nil {
+			return err
+		}
+
+		if m.Data.Type == graph.NodeList {
+			for _, v := range co.processList(m) {
+				st.Push(v)
+			}
+		} else {
+			st.Push(m)
+		}
 	}
 
-	ms := mState{st: st, qc: qc, mt: m.Type, id: int32(st.Len() + 1)}
+	// Convert QType to MType for mState
+	var mt MType
+	switch qc.SType {
+	case QTInsert:
+		mt = MTInsert
+	case QTUpdate:
+		mt = MTUpdate
+	case QTUpsert:
+		mt = MTUpsert
+	case QTDelete:
+		mt = MTDelete
+	}
+	msID := int32(st.Len() + 1)
+	if nextID > msID {
+		msID = nextID
+	}
+	ms := mState{st: st, qc: qc, mt: mt, id: msID}
 
 	for {
 		if st.Len() == 0 {
@@ -168,6 +200,7 @@ func (co *Compiler) compileMutation(qc *QCode,
 			continue
 		}
 
+		ms.rootSelID = item.SelID
 		if err := co.newMutate(&ms, item, role); err != nil {
 			return err
 		}
@@ -255,6 +288,44 @@ func parseMutationData(qc *QCode) (mData, error) {
 			return md, err
 		}
 		md.IsJSON = true
+
+	default:
+		md.Data = av
+	}
+	return md, nil
+}
+
+func parseMutationDataFromArg(qc *QCode, key string, vmap map[string]json.RawMessage) (mData, error) {
+	var md mData
+	var err error
+
+	arg, ok := qc.actionArgs[key]
+	if !ok {
+		return parseMutationData(qc)
+	}
+
+	av := arg.Val
+	if av == nil {
+		return parseMutationData(qc)
+	}
+
+	multiRoot := len(qc.Roots) > 1
+
+	switch av.Type {
+	case graph.NodeVar:
+		val := vmap[av.Val]
+		if len(val) == 0 {
+			return md, fmt.Errorf("variable not found: %s", av.Val)
+		}
+		md.Data, err = graph.ParseArgValue(string(val), true)
+		if err != nil {
+			return md, err
+		}
+		// For multi-root mutations, each root must use its own inline data
+		// rather than the shared _sg_input CTE which only binds one ActionVar.
+		if !multiRoot {
+			md.IsJSON = true
+		}
 
 	default:
 		md.Data = av
@@ -383,7 +454,7 @@ func (co *Compiler) processNestedMutations(ms *mState, m *Mutate, data *graph.No
 			ti := rel.Left.Ti
 
 			if rel.Type != sdata.RelRecursive &&
-				ms.id == 1 && ti.Name == ms.qc.Selects[0].Ti.Name {
+				ms.id == 1 && ti.Name == ms.qc.Selects[ms.rootSelID].Ti.Name {
 				return nil, fmt.Errorf("remove json root '%s' from '%s' data", k, ms.qc.SType)
 			}
 
