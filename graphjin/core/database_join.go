@@ -627,6 +627,13 @@ func (s *gstate) executeForDatabaseRoots(ctx context.Context, dbName string, roo
 	qcodeCompiler = dbCtx.qcodeCompiler
 	psqlCompiler = dbCtx.psqlCompiler
 
+	// Block mutations on read-only databases (absolute, independent of roles)
+	if s.r.operation == qcode.QTMutation {
+		if dbConf, ok := s.gj.conf.Databases[dbName]; ok && dbConf.ReadOnly {
+			return nil, fmt.Errorf("mutations blocked: database %s is read-only", dbName)
+		}
+	}
+
 	// Build a sub-query with only this database's root fields
 	subQuery, err := s.buildDatabaseQuery(rootFields)
 	if err != nil {

@@ -380,6 +380,18 @@ func (s *gstate) compileAndExecute(c context.Context) (err error) {
 		return
 	}
 
+	// Block mutations on read-only databases (absolute, independent of roles)
+	if s.r.operation == qcode.QTMutation {
+		dbName := s.database
+		if dbName == "" {
+			dbName = s.gj.defaultDB
+		}
+		if dbConf, ok := s.gj.conf.Databases[dbName]; ok && dbConf.ReadOnly {
+			err = fmt.Errorf("mutations blocked: database %s is read-only", dbName)
+			return
+		}
+	}
+
 	// set default variables
 	s.setDefaultVars()
 
