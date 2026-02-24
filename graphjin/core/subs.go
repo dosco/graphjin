@@ -364,7 +364,8 @@ func (s *sub) updateMember(msg mmsg) error {
 }
 
 // snapshotMembers creates a point-in-time copy of member data for worker goroutines.
-// The subscription controller owns live state mutation in s.params/s.mi/s.res/s.ids.
+// The subscription controller owns live state mutation in s.params/s.mi/s.res/s.ids,
+// so this must be called on the controller goroutine before poll workers start.
 func (s *sub) snapshotMembers() mval {
 	mv := mval{
 		params: append([]json.RawMessage(nil), s.params...),
@@ -407,22 +408,24 @@ func (s *sub) fanOutJobs(gj *graphjinEngine) {
 		return
 	}
 
+	// Snapshot member state on the controller goroutine before launching
+	// async workers to avoid races with live add/remove/update operations.
+	mv := s.snapshotMembers()
+	if len(mv.ids) == 0 {
+		s.endPollCycle()
+		return
+	}
+
 	// Run the full poll cycle asynchronously so the controller can continue
 	// handling add/remove/update events while polling is in progress.
-	go func() {
+	go func(mv mval) {
 		defer s.endPollCycle()
-
-		// Workers must only read from this immutable per-poll snapshot.
-		mv := s.snapshotMembers()
-		if len(mv.ids) == 0 {
-			return
-		}
 
 		// Process members in fixed-size chunks within one poll cycle.
 		for i := 0; i < len(mv.ids); i += maxMembersPerWorker {
 			gj.subCheckUpdates(s, mv, i)
 		}
-	}()
+	}(mv)
 }
 
 // subCheckUpdates function is called on the graphjin struct to check updates.

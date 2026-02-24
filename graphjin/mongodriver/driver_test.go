@@ -3,6 +3,7 @@ package mongodriver
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"testing"
 	"time"
@@ -83,6 +84,67 @@ func TestParamSubstitution(t *testing.T) {
 	}
 	if match["name"] != "John" {
 		t.Errorf("Expected name = John, got %v", match["name"])
+	}
+}
+
+func TestParamSubstitutionMultiMutation(t *testing.T) {
+	query := `{
+		"operation":"multi_mutation",
+		"queries":[
+			{"operation":"updateOne","collection":"users","field_name":"u1","filter":{"id":"$1"},"update":{"$set":{"full_name":"$2"}}},
+			{"operation":"deleteOne","collection":"users","field_name":"u2","filter":{"id":"$3"}}
+		]
+	}`
+
+	q, err := ParseQuery(query)
+	if err != nil {
+		t.Fatalf("ParseQuery() error = %v", err)
+	}
+
+	if err := q.SubstituteParams([]any{101, "Alice", 102}); err != nil {
+		t.Fatalf("SubstituteParams() error = %v", err)
+	}
+
+	if got := q.Queries[0].Filter["id"]; got != 101 {
+		t.Fatalf("query[0] filter.id = %v, want 101", got)
+	}
+	setMap := q.Queries[0].Update["$set"].(map[string]any)
+	if got := setMap["full_name"]; got != "Alice" {
+		t.Fatalf("query[0] update.$set.full_name = %v, want Alice", got)
+	}
+	if got := q.Queries[1].Filter["id"]; got != 102 {
+		t.Fatalf("query[1] filter.id = %v, want 102", got)
+	}
+}
+
+func TestExecuteMultiMutationAsQueryWithNullOps(t *testing.T) {
+	conn := &Conn{}
+	q := &QueryDSL{
+		Operation: OpMultiMutation,
+		Queries: []*QueryDSL{
+			{Operation: OpNull, FieldName: "p1"},
+			{Operation: OpNull, FieldName: "p2"},
+		},
+	}
+
+	rows, err := conn.executeMultiMutationAsQuery(context.Background(), q)
+	if err != nil {
+		t.Fatalf("executeMultiMutationAsQuery() error = %v", err)
+	}
+	defer rows.Close()
+
+	dest := make([]driver.Value, 1)
+	if err := rows.Next(dest); err != nil {
+		t.Fatalf("rows.Next() error = %v", err)
+	}
+
+	b, ok := dest[0].([]byte)
+	if !ok {
+		t.Fatalf("expected []byte row value, got %T", dest[0])
+	}
+
+	if string(b) != `{"p1":null,"p2":null}` {
+		t.Fatalf("unexpected merged payload: %s", string(b))
 	}
 }
 

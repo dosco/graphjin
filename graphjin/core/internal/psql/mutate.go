@@ -68,16 +68,16 @@ func (co *Compiler) compileMutation(
 }
 
 func (c *compilerContext) compileLinearMutation() {
-    // Linear execution: Flat script of statements
-    
-    // Setup (e.g. Create Temp Table)
-    c.dialect.RenderSetup(c)
+	// Linear execution: Flat script of statements
 
-    // 1. Sort mutations by dependency 
-    //    Naive approach: Sort by ID? No.
-    //    Use m.DependsOn.
-    
-    	ordered := c.sortMutations()
+	// Setup (e.g. Create Temp Table)
+	c.dialect.RenderSetup(c)
+
+	// 1. Sort mutations by dependency
+	//    Naive approach: Sort by ID? No.
+	//    Use m.DependsOn.
+
+	ordered := c.sortMutations()
 
 	for _, mid := range ordered {
 		m := c.qc.Mutates[mid]
@@ -122,7 +122,6 @@ func (c *compilerContext) compileLinearMutation() {
 			c.renderColumnValue(m, col)
 		}
 
-
 		switch m.Type {
 		case qcode.MTInsert:
 			c.dialect.RenderLinearInsert(c, &m, c.qc, vName, renderColVal)
@@ -133,17 +132,17 @@ func (c *compilerContext) compileLinearMutation() {
 				// m.Where (path args)
 				// join conditions (parent/child)
 				// m.Where.Exp
-				
+
 				// Wait, `RenderLinearUpdate` in SQLite/MySQL implementation calls `renderWhere`.
 				// In SQLite I added logic to `renderWhere` closure to call `c.renderExp` and handle parent join.
 				// In MySQL I called `c.renderExp`.
 				// But `c.renderExp` is not exported.
 				// Oh, `c` IS `compilerContext` here. It has `renderExp` method.
-				
+
 				// The Dialect `RenderLinearUpdate` logic I wrote calls `renderWhere()` inside `RunUpdate`.
 				// It handles its own `hasWhere` logic for JSON joins.
 				// So here I should just render the standard filters.
-				
+
 				hasWhere := false
 				if m.IsJSON {
 					if c.dialect.Name() == "postgres" {
@@ -173,11 +172,11 @@ func (c *compilerContext) compileLinearMutation() {
 						hasWhere = true
 					}
 				}
-				
+
 				if m.Where.Exp != nil {
-                    if hasWhere {
-                         c.w.WriteString(" AND ")
-                    }
+					if hasWhere {
+						c.w.WriteString(" AND ")
+					}
 				}
 				c.renderExpPath(m.Ti, m.Where.Exp, false, nil)
 
@@ -198,8 +197,8 @@ func (c *compilerContext) compileLinearMutation() {
 						}
 						pm := c.qc.Mutates[m.ParentID]
 
-					c.colWithTable(m.Ti.Name, childCol)
-					c.w.WriteString(" = ")
+						c.colWithTable(m.Ti.Name, childCol)
+						c.w.WriteString(" = ")
 
 						if dialectName == "sqlite" {
 							// SQLite uses subquery
@@ -222,24 +221,39 @@ func (c *compilerContext) compileLinearMutation() {
 				}
 			}
 			c.dialect.RenderLinearUpdate(c, &m, c.qc, vName, renderColVal, renderWhere)
-			
+		case qcode.MTDelete:
+			renderWhere := func() {
+				if m.ParentID == -1 && m.SelID >= 0 && int(m.SelID) < len(c.qc.Selects) {
+					sel := c.qc.Selects[m.SelID]
+					if sel.Where.Exp != nil {
+						c.renderExp(m.Ti, sel.Where.Exp, false)
+						return
+					}
+				}
+				if c.dialect.Name() == "postgres" {
+					c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
+				} else {
+					c.renderExpPath(m.Ti, m.Where.Exp, false, nil)
+				}
+			}
+			c.dialect.RenderDelete(c, &m, renderWhere)
 		case qcode.MTConnect:
 			renderFilter := func() {
-                 if c.dialect.Name() == "postgres" {
-                     c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
-                 } else {
-                     c.renderExpPath(m.Ti, m.Where.Exp, false, nil)
-                 }
+				if c.dialect.Name() == "postgres" {
+					c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
+				} else {
+					c.renderExpPath(m.Ti, m.Where.Exp, false, nil)
+				}
 			}
 			c.dialect.RenderLinearConnect(c, &m, c.qc, vName, renderFilter)
 
 		case qcode.MTDisconnect:
 			renderFilter := func() {
 				if c.dialect.Name() == "postgres" {
-                     c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
-                 } else {
-                     c.renderExpPath(m.Ti, m.Where.Exp, false, nil)
-                 }
+					c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
+				} else {
+					c.renderExpPath(m.Ti, m.Where.Exp, false, nil)
+				}
 			}
 			c.dialect.RenderLinearDisconnect(c, &m, c.qc, vName, renderFilter)
 		}
@@ -251,7 +265,7 @@ func (c *compilerContext) compileLinearMutation() {
 		c.dialect.RenderQueryPrefix(c, c.qc)
 		c.Compiler.CompileQuery(c.w, c.qc, c.md)
 	}
-	
+
 	// Teardown (e.g. Drop Temp Table)
 	c.dialect.RenderTeardown(c)
 
@@ -261,39 +275,39 @@ func (c *compilerContext) sortMutations() []int {
 	if len(c.qc.Mutates) == 0 {
 		return nil
 	}
-	
-    // DFS topological sort
-    // Check qc.Mutates for graph
-    visited := make(map[int]bool)
-    var stack []int
-    
-    var visit func(int)
-    visit = func(id int) {
-        if visited[id] { return }
-        visited[id] = true
-        
-        m := c.qc.Mutates[id]
-        // Visit dependencies first
-        for depID := range m.DependsOn {
-            visit(int(depID))
-        }
-        stack = append(stack, id)
-    }
-    
-    for i := range c.qc.Mutates {
-        visit(i)
-    }
-    return stack
+
+	// DFS topological sort
+	// Check qc.Mutates for graph
+	visited := make(map[int]bool)
+	var stack []int
+
+	var visit func(int)
+	visit = func(id int) {
+		if visited[id] {
+			return
+		}
+		visited[id] = true
+
+		m := c.qc.Mutates[id]
+		// Visit dependencies first
+		for depID := range m.DependsOn {
+			visit(int(depID))
+		}
+		stack = append(stack, id)
+	}
+
+	for i := range c.qc.Mutates {
+		visit(i)
+	}
+	return stack
 }
 
 func (c *compilerContext) getVarName(m qcode.Mutate) string {
-    return m.Ti.Name + "_" + fmt.Sprintf("%d", m.ID)
+	return m.Ti.Name + "_" + fmt.Sprintf("%d", m.ID)
 }
 
 // Removed renderLinearInsert, renderLinearUpdate, renderLinearConnect, renderLinearDisconnect which are now handled by dialect
 // Removed renderUnionStmt which is now handled by dialect
-
-
 
 func (c *compilerContext) renderInsertUpdateValues(m qcode.Mutate) int {
 	i := 0
@@ -536,16 +550,18 @@ func (c *compilerContext) renderUpsert() {
 }
 
 func (c *compilerContext) renderDelete() {
-	for i, m := range c.qc.Mutates {
+	deleteCount := 0
+	for _, m := range c.qc.Mutates {
 		if m.Type != qcode.MTDelete {
 			continue
 		}
 		sel := c.qc.Selects[m.SelID]
 
-		if i != 0 {
+		if deleteCount == 0 {
+			c.w.WriteString(`WITH `)
+		} else {
 			c.w.WriteString(`, `)
 		}
-		c.w.WriteString(`WITH `)
 		if m.Multi {
 			c.renderCteNameWithID(m)
 		} else {
@@ -557,6 +573,7 @@ func (c *compilerContext) renderDelete() {
 		})
 		c.dialect.RenderReturning(c, &m)
 		c.w.WriteString(`)`)
+		deleteCount++
 	}
 }
 
@@ -640,8 +657,8 @@ func (c *compilerContext) renderOneToManyDisconnectStmt(m qcode.Mutate) {
 
 		if m.IsJSON {
 			c.w.WriteString(` FROM `)
-		c.quoted("_sg_input")
-		c.w.WriteString(` i, `)
+			c.quoted("_sg_input")
+			c.w.WriteString(` i, `)
 		} else {
 			c.w.WriteString(` FROM `)
 		}
@@ -649,10 +666,10 @@ func (c *compilerContext) renderOneToManyDisconnectStmt(m qcode.Mutate) {
 
 		c.w.WriteString(` WHERE `)
 		if c.dialect.Name() == "postgres" {
-		c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
-	} else {
-		c.renderExpPath(m.Ti, m.Where.Exp, false, nil)
-	}
+			c.renderExpPath(m.Ti, m.Where.Exp, false, m.Path)
+		} else {
+			c.renderExpPath(m.Ti, m.Where.Exp, false, nil)
+		}
 	}
 
 	c.w.WriteString(` LIMIT 1))`)
@@ -809,5 +826,3 @@ func (c *compilerContext) renderComma(i int) int {
 	}
 	return i + 1
 }
-
-

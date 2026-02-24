@@ -5,6 +5,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 
@@ -456,6 +457,114 @@ func (c *Conn) executeMultiAggregate(ctx context.Context, q *QueryDSL) (driver.R
 	}
 
 	return NewSingleValueRows(jsonBytes, []string{"__root"}), nil
+}
+
+func readSingleJSONValue(rows driver.Rows) ([]byte, error) {
+	defer rows.Close() //nolint:errcheck
+
+	dest := make([]driver.Value, 1)
+	if err := rows.Next(dest); err != nil {
+		if err == io.EOF {
+			return []byte("{}"), nil
+		}
+		return nil, err
+	}
+
+	switch v := dest[0].(type) {
+	case []byte:
+		return v, nil
+	case string:
+		return []byte(v), nil
+	case nil:
+		return []byte("{}"), nil
+	default:
+		return nil, fmt.Errorf("mongodriver: unexpected row value type %T", v)
+	}
+}
+
+// executeMultiMutationAsQuery runs multiple mutation queries and merges results.
+// This is used for multi-root GraphQL mutations where each root has a unique alias.
+func (c *Conn) executeMultiMutationAsQuery(ctx context.Context, q *QueryDSL) (driver.Rows, error) {
+	if len(q.Queries) == 0 {
+		return nil, fmt.Errorf("mongodriver: multi_mutation requires queries array")
+	}
+
+	type kv struct {
+		key string
+		val json.RawMessage
+	}
+	pairs := make([]kv, 0, len(q.Queries))
+	seen := make(map[string]int)
+
+	for _, subQ := range q.Queries {
+		var (
+			rows driver.Rows
+			err  error
+		)
+
+		switch subQ.Operation {
+		case OpInsertOne:
+			rows, err = c.executeInsertOneAsQuery(ctx, subQ)
+		case OpInsertMany:
+			rows, err = c.executeInsertManyAsQuery(ctx, subQ)
+		case OpUpdateOne:
+			rows, err = c.executeUpdateOneAsQuery(ctx, subQ)
+		case OpDeleteOne:
+			rows, err = c.executeDeleteOneAsQuery(ctx, subQ)
+		case OpNestedInsert:
+			rows, err = c.executeNestedInsert(ctx, subQ)
+		case OpNestedUpdate:
+			rows, err = c.executeNestedUpdate(ctx, subQ)
+		case OpNull:
+			rows = NewSingleValueRows([]byte(fmt.Sprintf(`{"%s":null}`, subQ.FieldName)), []string{"__root"})
+		default:
+			err = fmt.Errorf("mongodriver: unsupported sub-mutation operation: %s", subQ.Operation)
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		payload, err := readSingleJSONValue(rows)
+		if err != nil {
+			return nil, fmt.Errorf("mongodriver: read sub-mutation result: %w", err)
+		}
+
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal(payload, &obj); err != nil {
+			return nil, fmt.Errorf("mongodriver: parse sub-mutation result: %w", err)
+		}
+
+		if len(obj) == 0 && subQ.FieldName != "" {
+			obj = map[string]json.RawMessage{subQ.FieldName: json.RawMessage("null")}
+		}
+
+		for k, v := range obj {
+			if idx, ok := seen[k]; ok {
+				pairs[idx] = kv{key: k, val: v}
+				continue
+			}
+			seen[k] = len(pairs)
+			pairs = append(pairs, kv{key: k, val: v})
+		}
+	}
+
+	var b strings.Builder
+	b.WriteByte('{')
+	for i, p := range pairs {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		keyJSON, err := json.Marshal(p.key)
+		if err != nil {
+			return nil, fmt.Errorf("mongodriver: marshal mutation key: %w", err)
+		}
+		b.Write(keyJSON)
+		b.WriteByte(':')
+		b.Write(p.val)
+	}
+	b.WriteByte('}')
+
+	return NewSingleValueRows([]byte(b.String()), []string{"__root"}), nil
 }
 
 // executeFind runs a find query.
@@ -1464,6 +1573,80 @@ func (c *Conn) executeDeleteOne(ctx context.Context, q *QueryDSL) (driver.Result
 	return &Result{
 		rowsAffected: result.DeletedCount,
 	}, nil
+}
+
+// executeDeleteOneAsQuery deletes a document and returns it as query results.
+// This mirrors insert/update query-mode behavior used by GraphQL mutations.
+func (c *Conn) executeDeleteOneAsQuery(ctx context.Context, q *QueryDSL) (driver.Rows, error) {
+	if q.Collection == "" {
+		return nil, fmt.Errorf("mongodriver: deleteOne requires collection")
+	}
+
+	filter := bson.M{}
+	if q.Filter != nil {
+		filter = translateFieldsInMap(q.Filter)
+	}
+
+	coll := c.db.Collection(q.Collection)
+	var finalDoc bson.M
+
+	// Read the document before deletion so we can return it.
+	if len(q.ReturnPipeline) > 0 {
+		pipeline := make(bson.A, 0, len(q.ReturnPipeline)+1)
+		pipeline = append(pipeline, bson.M{"$match": filter})
+		for _, stage := range q.ReturnPipeline {
+			translated := translateFieldsInMap(stage)
+			pipeline = append(pipeline, convertSortOrderedToSort(translated))
+		}
+
+		cursor, err := coll.Aggregate(ctx, pipeline)
+		if err != nil {
+			return nil, fmt.Errorf("mongodriver: aggregate before delete: %w", err)
+		}
+
+		var results []bson.M
+		if err := cursor.All(ctx, &results); err != nil {
+			cursor.Close(ctx)
+			return nil, fmt.Errorf("mongodriver: aggregate results before delete: %w", err)
+		}
+		cursor.Close(ctx)
+		if len(results) > 0 {
+			finalDoc = results[0]
+		}
+	} else {
+		_ = coll.FindOne(ctx, filter).Decode(&finalDoc)
+	}
+
+	if _, err := coll.DeleteOne(ctx, filter); err != nil {
+		return nil, fmt.Errorf("mongodriver: deleteOne: %w", err)
+	}
+
+	var finalResult any
+	if finalDoc != nil {
+		finalDoc = translateIDFieldsBack(finalDoc)
+		if q.Singular {
+			finalResult = finalDoc
+		} else {
+			finalResult = []any{finalDoc}
+		}
+	} else {
+		if q.Singular {
+			finalResult = nil
+		} else {
+			finalResult = []any{}
+		}
+	}
+
+	if q.FieldName != "" {
+		finalResult = map[string]any{q.FieldName: finalResult}
+	}
+
+	jsonBytes, err := json.Marshal(finalResult)
+	if err != nil {
+		return nil, fmt.Errorf("mongodriver: marshal delete result: %w", err)
+	}
+
+	return NewSingleValueRows(jsonBytes, []string{"__root"}), nil
 }
 
 // executeDeleteMany deletes multiple documents.

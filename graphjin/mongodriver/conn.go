@@ -122,6 +122,8 @@ func (c *Conn) executeQuery(ctx context.Context, q *QueryDSL) (driver.Rows, erro
 		return c.executeAggregate(ctx, q)
 	case OpMultiAggregate:
 		return c.executeMultiAggregate(ctx, q)
+	case OpMultiMutation:
+		return c.executeMultiMutationAsQuery(ctx, q)
 	case OpInsertOne:
 		// Handle insertOne as a query that returns the inserted document
 		return c.executeInsertOneAsQuery(ctx, q)
@@ -134,6 +136,9 @@ func (c *Conn) executeQuery(ctx context.Context, q *QueryDSL) (driver.Rows, erro
 	case OpUpdateOne:
 		// Handle updateOne as a query that returns the updated document
 		return c.executeUpdateOneAsQuery(ctx, q)
+	case OpDeleteOne:
+		// Handle deleteOne as a query that returns the deleted document
+		return c.executeDeleteOneAsQuery(ctx, q)
 	case OpNestedUpdate:
 		// Handle nested update (update multiple related collections)
 		return c.executeNestedUpdate(ctx, q)

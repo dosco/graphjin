@@ -876,8 +876,43 @@ func (d *MongoDBDialect) CompileFullMutation(ctx Context, qc *qcode.QCode) bool 
 		return false
 	}
 
+	// Preserve GraphQL root order for deterministic multi-root response construction.
+	rootMutationsBySelID := make(map[int32][]*qcode.Mutate)
+	for _, m := range rootMutations {
+		rootMutationsBySelID[m.SelID] = append(rootMutationsBySelID[m.SelID], m)
+	}
+	orderedRootMutations := make([]*qcode.Mutate, 0, len(rootMutations))
+	for _, rootID := range qc.Roots {
+		orderedRootMutations = append(orderedRootMutations, rootMutationsBySelID[rootID]...)
+		delete(rootMutationsBySelID, rootID)
+	}
+	for _, mm := range rootMutationsBySelID {
+		orderedRootMutations = append(orderedRootMutations, mm...)
+	}
+	rootMutations = orderedRootMutations
+
+	// Multi-root update/delete/upsert mutations should return one sub-result per root alias.
+	if len(rootMutations) > 1 {
+		switch rootMutations[0].Type {
+		case qcode.MTUpdate, qcode.MTDelete, qcode.MTUpsert:
+			d.renderMultiMutation(ctx, qc, rootMutations)
+			return true
+		}
+	}
+
 	// For inline bulk inserts: multiple root mutations of type MTInsert
 	if len(rootMutations) > 1 && rootMutations[0].Type == qcode.MTInsert {
+		allSameSelID := true
+		for _, m := range rootMutations[1:] {
+			if m.SelID != rootMutations[0].SelID {
+				allSameSelID = false
+				break
+			}
+		}
+		if !allSameSelID {
+			d.renderMultiMutation(ctx, qc, rootMutations)
+			return true
+		}
 		d.renderInsertManyMutation(ctx, qc, rootMutations)
 		return true
 	}
@@ -944,6 +979,45 @@ func (d *MongoDBDialect) CompileFullMutation(ctx Context, qc *qcode.QCode) bool 
 	return true
 }
 
+func getMutationRootSelect(qc *qcode.QCode, m *qcode.Mutate) *qcode.Select {
+	if m != nil && m.SelID >= 0 && int(m.SelID) < len(qc.Selects) {
+		return &qc.Selects[m.SelID]
+	}
+	if len(qc.Roots) > 0 {
+		rootID := qc.Roots[0]
+		if int(rootID) < len(qc.Selects) {
+			return &qc.Selects[rootID]
+		}
+	}
+	return nil
+}
+
+func (d *MongoDBDialect) renderMultiMutation(ctx Context, qc *qcode.QCode, rootMutations []*qcode.Mutate) {
+	ctx.WriteString(`{"operation":"multi_mutation","queries":[`)
+	for i, m := range rootMutations {
+		if i > 0 {
+			ctx.WriteString(`,`)
+		}
+		switch m.Type {
+		case qcode.MTInsert:
+			d.renderInsertMutation(ctx, qc, m)
+		case qcode.MTUpdate:
+			d.renderUpdateMutation(ctx, qc, m)
+		case qcode.MTDelete:
+			d.renderDeleteMutation(ctx, qc, m)
+		case qcode.MTUpsert:
+			d.renderUpsertMutation(ctx, qc, m)
+		default:
+			ctx.WriteString(`{"operation":"null","field_name":"`)
+			if sel := getMutationRootSelect(qc, m); sel != nil {
+				ctx.WriteString(escapeJSONString(sel.FieldName))
+			}
+			ctx.WriteString(`"}`)
+		}
+	}
+	ctx.WriteString(`]}`)
+}
+
 // renderInsertMutation generates a MongoDB insertOne operation
 func (d *MongoDBDialect) renderInsertMutation(ctx Context, qc *qcode.QCode, m *qcode.Mutate) {
 	ctx.WriteString(`{"operation":"insertOne","collection":"`)
@@ -997,8 +1071,8 @@ func (d *MongoDBDialect) renderInsertMutation(ctx Context, qc *qcode.QCode, m *q
 
 	// Add field_name for result wrapping
 	var rootSel *qcode.Select
-	if len(qc.Roots) > 0 {
-		rootSel = &qc.Selects[qc.Roots[0]]
+	if sel := getMutationRootSelect(qc, m); sel != nil {
+		rootSel = sel
 		ctx.WriteString(`,"field_name":"`)
 		ctx.WriteString(rootSel.FieldName)
 		ctx.WriteString(`"`)
@@ -1060,8 +1134,8 @@ func (d *MongoDBDialect) renderInsertManyMutation(ctx Context, qc *qcode.QCode, 
 
 	// Add field_name for result wrapping
 	var rootSel *qcode.Select
-	if len(qc.Roots) > 0 {
-		rootSel = &qc.Selects[qc.Roots[0]]
+	if sel := getMutationRootSelect(qc, m); sel != nil {
+		rootSel = sel
 		ctx.WriteString(`,"field_name":"`)
 		ctx.WriteString(rootSel.FieldName)
 		ctx.WriteString(`"`)
@@ -1200,8 +1274,8 @@ func (d *MongoDBDialect) renderNestedInsertMutation(ctx Context, qc *qcode.QCode
 
 	// Add field_name for result wrapping
 	var rootSel *qcode.Select
-	if len(qc.Roots) > 0 {
-		rootSel = &qc.Selects[qc.Roots[0]]
+	if sel := getMutationRootSelect(qc, rootMutate); sel != nil {
+		rootSel = sel
 		ctx.WriteString(`,"field_name":"`)
 		ctx.WriteString(rootSel.FieldName)
 		ctx.WriteString(`"`)
@@ -1459,8 +1533,9 @@ func (d *MongoDBDialect) renderUpdateMutation(ctx Context, qc *qcode.QCode, m *q
 	// Render where clause for the filter
 	// Check both the mutation's WHERE and the root select's WHERE (for id: $id style filters)
 	hasFilter := false
-	if len(qc.Selects) > 0 && qc.Selects[0].Where.Exp != nil {
-		d.renderExpression(ctx, qc.Selects[0].Where.Exp)
+	rootSel := getMutationRootSelect(qc, m)
+	if m.ParentID == -1 && rootSel != nil && rootSel.Where.Exp != nil {
+		d.renderExpression(ctx, rootSel.Where.Exp)
 		hasFilter = true
 	}
 	if m.Where.Exp != nil {
@@ -1521,9 +1596,7 @@ func (d *MongoDBDialect) renderUpdateMutation(ctx Context, qc *qcode.QCode, m *q
 	ctx.WriteString(`}}`)
 
 	// Add field_name for result wrapping
-	var rootSel *qcode.Select
-	if len(qc.Roots) > 0 {
-		rootSel = &qc.Selects[qc.Roots[0]]
+	if rootSel != nil {
 		ctx.WriteString(`,"field_name":"`)
 		ctx.WriteString(rootSel.FieldName)
 		ctx.WriteString(`"`)
@@ -1599,8 +1672,8 @@ func (d *MongoDBDialect) renderNestedUpdateMutation(ctx Context, qc *qcode.QCode
 
 	// Add field_name for result wrapping
 	var rootSel *qcode.Select
-	if len(qc.Roots) > 0 {
-		rootSel = &qc.Selects[qc.Roots[0]]
+	if sel := getMutationRootSelect(qc, rootMutate); sel != nil {
+		rootSel = sel
 		ctx.WriteString(`,"field_name":"`)
 		ctx.WriteString(rootSel.FieldName)
 		ctx.WriteString(`"`)
@@ -1710,8 +1783,9 @@ func (d *MongoDBDialect) renderNestedUpdateItem(ctx Context, qc *qcode.QCode, m 
 		}
 	} else {
 		// For update, use the root select's where or mutation's where
-		if len(qc.Selects) > 0 && m.ParentID == -1 && qc.Selects[0].Where.Exp != nil {
-			d.renderExpression(ctx, qc.Selects[0].Where.Exp)
+		rootSel := getMutationRootSelect(qc, m)
+		if m.ParentID == -1 && rootSel != nil && rootSel.Where.Exp != nil {
+			d.renderExpression(ctx, rootSel.Where.Exp)
 		} else if m.Where.Exp != nil {
 			d.renderExpression(ctx, m.Where.Exp)
 		} else if m.ParentID != -1 {
@@ -1777,11 +1851,49 @@ func (d *MongoDBDialect) renderDeleteMutation(ctx Context, qc *qcode.QCode, m *q
 	ctx.WriteString(m.Ti.Name)
 	ctx.WriteString(`","filter":{`)
 
-	if m.Where.Exp != nil {
+	rootSel := getMutationRootSelect(qc, m)
+	if m.ParentID == -1 && rootSel != nil && rootSel.Where.Exp != nil {
+		d.renderExpression(ctx, rootSel.Where.Exp)
+	} else if m.Where.Exp != nil {
 		d.renderExpression(ctx, m.Where.Exp)
 	}
 
-	ctx.WriteString(`}}`)
+	ctx.WriteString(`}`)
+
+	if rootSel != nil {
+		ctx.WriteString(`,"field_name":"`)
+		ctx.WriteString(rootSel.FieldName)
+		ctx.WriteString(`"`)
+		if rootSel.Singular {
+			ctx.WriteString(`,"singular":true`)
+		}
+
+		if len(rootSel.Fields) > 0 || len(rootSel.Children) > 0 {
+			ctx.WriteString(`,"return_pipeline":[`)
+
+			pipelineDepth := 0
+			for _, childID := range rootSel.Children {
+				child := &qc.Selects[childID]
+				if child.SkipRender != qcode.SkipTypeNone {
+					continue
+				}
+				if pipelineDepth > 0 {
+					ctx.WriteString(`,`)
+				}
+				d.renderLookupStageWithQC(ctx, rootSel, child, qc)
+				pipelineDepth++
+			}
+
+			if pipelineDepth > 0 {
+				ctx.WriteString(`,`)
+			}
+			d.renderProjectStageWithChildren(ctx, rootSel, qc)
+
+			ctx.WriteString(`]`)
+		}
+	}
+
+	ctx.WriteString(`}`)
 }
 
 // renderUpsertMutation generates a MongoDB updateOne operation with upsert: true
@@ -1790,7 +1902,10 @@ func (d *MongoDBDialect) renderUpsertMutation(ctx Context, qc *qcode.QCode, m *q
 	ctx.WriteString(m.Ti.Name)
 	ctx.WriteString(`","filter":{`)
 
-	if m.Where.Exp != nil {
+	rootSel := getMutationRootSelect(qc, m)
+	if m.ParentID == -1 && rootSel != nil && rootSel.Where.Exp != nil {
+		d.renderExpression(ctx, rootSel.Where.Exp)
+	} else if m.Where.Exp != nil {
 		d.renderExpression(ctx, m.Where.Exp)
 	}
 
@@ -1819,7 +1934,41 @@ func (d *MongoDBDialect) renderUpsertMutation(ctx Context, qc *qcode.QCode, m *q
 		first = false
 	}
 
-	ctx.WriteString(`}},"options":{"upsert":true}}`)
+	ctx.WriteString(`}},"options":{"upsert":true}`)
+
+	if rootSel != nil {
+		ctx.WriteString(`,"field_name":"`)
+		ctx.WriteString(rootSel.FieldName)
+		ctx.WriteString(`"`)
+		if rootSel.Singular {
+			ctx.WriteString(`,"singular":true`)
+		}
+		if len(rootSel.Fields) > 0 || len(rootSel.Children) > 0 {
+			ctx.WriteString(`,"return_pipeline":[`)
+
+			pipelineDepth := 0
+			for _, childID := range rootSel.Children {
+				child := &qc.Selects[childID]
+				if child.SkipRender != qcode.SkipTypeNone {
+					continue
+				}
+				if pipelineDepth > 0 {
+					ctx.WriteString(`,`)
+				}
+				d.renderLookupStageWithQC(ctx, rootSel, child, qc)
+				pipelineDepth++
+			}
+
+			if pipelineDepth > 0 {
+				ctx.WriteString(`,`)
+			}
+			d.renderProjectStageWithChildren(ctx, rootSel, qc)
+
+			ctx.WriteString(`]`)
+		}
+	}
+
+	ctx.WriteString(`}`)
 }
 
 // renderInsertDocument builds the document for insert mutations with individual field variables

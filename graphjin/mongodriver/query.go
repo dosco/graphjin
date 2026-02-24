@@ -105,6 +105,7 @@ type CursorColumn struct {
 const (
 	OpAggregate         = "aggregate"
 	OpMultiAggregate    = "multi_aggregate"
+	OpMultiMutation     = "multi_mutation"
 	OpFind              = "find"
 	OpFindOne           = "findOne"
 	OpInsertOne         = "insertOne"
@@ -236,7 +237,7 @@ func (q *QueryDSL) SubstituteParams(args []any) error {
 		}
 	}
 
-	// Substitute in nested queries (for multi_aggregate)
+	// Substitute in nested queries (for multi_aggregate and multi_mutation)
 	for _, subQ := range q.Queries {
 		if err := subQ.SubstituteParams(args); err != nil {
 			return err

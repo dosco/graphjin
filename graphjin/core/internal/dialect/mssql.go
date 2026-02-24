@@ -1079,7 +1079,7 @@ func (d *MSSQLDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, pse
 			// Use COALESCE to handle empty result set
 			// Use renderInlineJSONFields instead of renderBaseColumns to exclude _ord_ columns from JSON
 
-		if sel.Paging.Cursor {
+			if sel.Paging.Cursor {
 				// Cursor pagination: wrap output with json/cursor structure
 				// Structure: (SELECT [json], [cursor] FOR JSON PATH, WITHOUT_ARRAY_WRAPPER)
 				// where [json] = JSON array of results, [cursor] = cursor string
@@ -2563,7 +2563,6 @@ func (d *MSSQLDialect) RenderDelete(ctx Context, m *qcode.Mutate, where func()) 
 		ctx.WriteString(`.`)
 	}
 	ctx.Quote(m.Ti.Name)
-	ctx.WriteString(` OUTPUT DELETED.* `)
 	if where != nil {
 		ctx.WriteString(` WHERE `)
 		where()
@@ -3229,11 +3228,23 @@ func (d *MSSQLDialect) ModifySelectsForMutation(qc *qcode.QCode) {
 			continue
 		}
 
-		// Collect ALL mutations for this table
+		// Prefer mutations tied to this exact root selection to avoid collapsing
+		// same-table multi-root aliases into a shared filter.
 		var mutations []qcode.Mutate
 		for _, m := range qc.Mutates {
-			if m.Ti.Name == sel.Table && (m.Type == qcode.MTInsert || m.Type == qcode.MTUpdate || m.Type == qcode.MTUpsert) {
+			if m.SelID == sel.ID &&
+				m.Ti.Name == sel.Table &&
+				(m.Type == qcode.MTInsert || m.Type == qcode.MTUpdate || m.Type == qcode.MTUpsert) {
 				mutations = append(mutations, m)
+			}
+		}
+		// Fallback for legacy/edge cases where SelID might not be set.
+		if len(mutations) == 0 {
+			for _, m := range qc.Mutates {
+				if m.Ti.Name == sel.Table &&
+					(m.Type == qcode.MTInsert || m.Type == qcode.MTUpdate || m.Type == qcode.MTUpsert) {
+					mutations = append(mutations, m)
+				}
 			}
 		}
 

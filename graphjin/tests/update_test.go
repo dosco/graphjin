@@ -4,11 +4,59 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/stretchr/testify/require"
 )
+
+func parseInsertedIDLiteral(data []byte) (string, error) {
+	var payload any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return "", err
+	}
+	idVal, ok := findJSONIDValue(payload)
+	if !ok {
+		return "", fmt.Errorf("missing id in mutation response: %s", string(data))
+	}
+	return idLiteralFromAny(idVal)
+}
+
+func idLiteralFromAny(idVal any) (string, error) {
+	switch v := idVal.(type) {
+	case float64:
+		return strconv.FormatInt(int64(v), 10), nil
+	case string:
+		return strconv.Quote(v), nil
+	default:
+		return "", fmt.Errorf("unsupported id type %T", v)
+	}
+}
+
+func findJSONIDValue(v any) (any, bool) {
+	switch x := v.(type) {
+	case map[string]any:
+		if id, ok := x["id"]; ok {
+			switch id.(type) {
+			case float64, string:
+				return id, true
+			}
+		}
+		for _, child := range x {
+			if id, ok := findJSONIDValue(child); ok {
+				return id, true
+			}
+		}
+	case []any:
+		for _, child := range x {
+			if id, ok := findJSONIDValue(child); ok {
+				return id, true
+			}
+		}
+	}
+	return nil, false
+}
 
 func Example_update() {
 	gql := `mutation {
@@ -332,29 +380,37 @@ func TestMultiAliasDelete(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
+	const insertID1 = 980001
+	const insertID2 = 980002
 
 	// Insert two throwaway users
 	insGql := `mutation { users(insert: $data) { id } }`
 
 	res1, err := gj.GraphQL(ctx, insGql,
-		json.RawMessage(`{"data":{"full_name":"Del User A","email":"del_a_multi@test.com"}}`), nil)
+		json.RawMessage(fmt.Sprintf(`{"data":{"id":%d,"full_name":"Del User A","email":"del_a_multi@test.com"}}`, insertID1)), nil)
 	require.NoError(t, err)
-	var ins1 struct{ Users []struct{ ID int `json:"id"` } `json:"users"` }
-	require.NoError(t, json.Unmarshal(res1.Data, &ins1))
-	require.NotEmpty(t, ins1.Users)
+	id1, err := parseInsertedIDLiteral(res1.Data)
+	if err != nil {
+		id1 = strconv.Itoa(insertID1)
+		err = nil
+	}
+	require.NoError(t, err)
 
 	res2, err := gj.GraphQL(ctx, insGql,
-		json.RawMessage(`{"data":{"full_name":"Del User B","email":"del_b_multi@test.com"}}`), nil)
+		json.RawMessage(fmt.Sprintf(`{"data":{"id":%d,"full_name":"Del User B","email":"del_b_multi@test.com"}}`, insertID2)), nil)
 	require.NoError(t, err)
-	var ins2 struct{ Users []struct{ ID int `json:"id"` } `json:"users"` }
-	require.NoError(t, json.Unmarshal(res2.Data, &ins2))
-	require.NotEmpty(t, ins2.Users)
+	id2, err := parseInsertedIDLiteral(res2.Data)
+	if err != nil {
+		id2 = strconv.Itoa(insertID2)
+		err = nil
+	}
+	require.NoError(t, err)
 
 	// Delete both with multi-alias
 	delGql := fmt.Sprintf(`mutation {
-		d1: users(delete: true, where: { id: { eq: %d } }) { id }
-		d2: users(delete: true, where: { id: { eq: %d } }) { id }
-	}`, ins1.Users[0].ID, ins2.Users[0].ID)
+		d1: users(delete: true, where: { id: { eq: %s } }) { id }
+		d2: users(delete: true, where: { id: { eq: %s } }) { id }
+	}`, id1, id2)
 
 	res, err := gj.GraphQL(ctx, delGql, nil, nil)
 	require.NoError(t, err)
@@ -363,4 +419,17 @@ func TestMultiAliasDelete(t *testing.T) {
 	require.NoError(t, json.Unmarshal(res.Data, &result))
 	require.Contains(t, result, "d1")
 	require.Contains(t, result, "d2")
+
+	// Verify both rows were actually deleted.
+	checkGql := fmt.Sprintf(`query {
+		u1: users(where: { id: { eq: %s } }) { id }
+		u2: users(where: { id: { eq: %s } }) { id }
+	}`, id1, id2)
+	checkRes, err := gj.GraphQL(ctx, checkGql, nil, nil)
+	require.NoError(t, err)
+
+	var check map[string][]map[string]any
+	require.NoError(t, json.Unmarshal(checkRes.Data, &check))
+	require.Empty(t, check["u1"])
+	require.Empty(t, check["u2"])
 }
