@@ -154,25 +154,48 @@ main() {
     info "Install directory: $install_dir"
     echo ""
 
-    # Build download URL
-    local ext="tar.gz"
+    # Build download URL candidates. New releases include version in the
+    # archive filename; keep legacy fallback names for older tags.
+    local release_base="https://github.com/dosco/graphjin/releases/download/v${version}"
+    local filenames=()
     if [ "$os" = "windows" ]; then
-        ext="zip"
+        filenames=(
+            "graphjin_${version}_${os}_${arch}.tar.gz"
+            "graphjin_${version}_${os}_${arch}.zip"
+            "graphjin_${os}_${arch}.tar.gz"
+            "graphjin_${os}_${arch}.zip"
+        )
+    else
+        filenames=(
+            "graphjin_${version}_${os}_${arch}.tar.gz"
+            "graphjin_${os}_${arch}.tar.gz"
+        )
     fi
-    local filename="graphjin_${os}_${arch}.${ext}"
-    local url="https://github.com/dosco/graphjin/releases/download/v${version}/${filename}"
 
     # Create temp directory
     local tmp_dir=$(mktemp -d)
     trap "rm -rf $tmp_dir" EXIT
 
-    local archive_path="$tmp_dir/$filename"
+    local archive_path=""
+    local selected_filename=""
 
     info "Downloading GraphJin v${version}..."
-    download "$url" "$archive_path" || error "Failed to download from $url"
+    for filename in "${filenames[@]}"; do
+        local url="${release_base}/${filename}"
+        archive_path="$tmp_dir/$filename"
+        if download "$url" "$archive_path"; then
+            selected_filename="$filename"
+            break
+        fi
+        rm -f "$archive_path"
+    done
+
+    if [ -z "$selected_filename" ]; then
+        error "Failed to download GraphJin v${version}. Tried: ${filenames[*]}"
+    fi
 
     info "Extracting..."
-    if [ "$os" = "windows" ]; then
+    if [[ "$selected_filename" == *.zip ]]; then
         unzip -q "$archive_path" -d "$tmp_dir"
     else
         tar -xzf "$archive_path" -C "$tmp_dir"
@@ -216,7 +239,7 @@ main() {
     echo ""
     echo "Get started:"
     echo "  graphjin new myapp    # Create a new project"
-    echo "  graphjin serv         # Start the server"
+    echo "  graphjin serve        # Start the server"
     echo ""
     echo "Documentation: https://graphjin.com"
     echo ""

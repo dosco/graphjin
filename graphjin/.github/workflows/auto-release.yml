@@ -1,22 +1,23 @@
 name: Auto Release
 
 on:
-  push:
-    branches: [master]
-    paths-ignore: 
-      - "**.md"
-      - "docs/**"
-      - ".github/workflows/**"
-      - "website/**"
+  workflow_run:
+    workflows: ["Build"]
+    types: [completed]
 
 jobs:
   auto-release:
     runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, '[skip-release]')"
+    if: |
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'master' &&
+      !contains(github.event.workflow_run.head_commit.message, '[skip-release]')
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
           token: ${{ secrets.GR_TOKEN }}
 
@@ -35,7 +36,7 @@ jobs:
       - name: Determine version increment
         id: version_increment
         env:
-          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          COMMIT_MSG: ${{ github.event.workflow_run.head_commit.message }}
         run: |
           # Check commit message for version increment hints
           if [[ "$COMMIT_MSG" == *"[major]"* ]]; then
@@ -144,7 +145,7 @@ jobs:
           git tag "v$NEW_VERSION"
 
           # Push changes and tags
-          git push origin master
+          git push origin HEAD:master
           git push --tags
 
           echo "Created and pushed tags for version $NEW_VERSION"

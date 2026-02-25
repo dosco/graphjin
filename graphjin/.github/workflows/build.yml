@@ -4,6 +4,13 @@ on:
   pull_request:
     branches: [master]
     paths-ignore: ["**.md", "docs/**"]
+  push:
+    branches: [master]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".github/workflows/**"
+      - "website/**"
 
 jobs:
   lint-and-test:

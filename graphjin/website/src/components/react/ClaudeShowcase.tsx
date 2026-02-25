@@ -53,7 +53,7 @@ const results = [
 export default function ClaudeShowcase() {
   return (
     <section className="py-24 border-t border-black/10">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="text-center max-w-2xl mx-auto mb-14">
           <motion.h2

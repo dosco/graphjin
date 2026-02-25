@@ -48,6 +48,23 @@ func (ms *mcpServer) registerExecutionTools() {
 			mcp.Description("Optional namespace for multi-tenant deployments"),
 		),
 	), ms.handleExecuteSavedQuery)
+
+	// execute_workflow - Execute a named JS workflow from ./workflows
+	ms.srv.AddTool(mcp.NewTool(
+		"execute_workflow",
+		mcp.WithDescription("Execute a named JavaScript workflow from ./workflows/<name>.js. "+
+			"Use get_js_runtime_api first to see runtime globals and callable gj.tools.* functions."),
+		mcp.WithString("name",
+			mcp.Required(),
+			mcp.Description("Workflow name, with or without .js extension"),
+		),
+		mcp.WithObject("variables",
+			mcp.Description("Workflow input payload passed to global `input` and `main(input)`"),
+		),
+		mcp.WithString("namespace",
+			mcp.Description("Optional namespace for multi-tenant deployments"),
+		),
+	), ms.handleExecuteWorkflow)
 }
 
 // ExecuteResult represents the result of a query execution
@@ -175,6 +192,43 @@ func (ms *mcpServer) handleExecuteSavedQuery(ctx context.Context, req mcp.CallTo
 	}
 
 	data, err := mcpMarshalJSON(result, true)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return mcp.NewToolResultText(string(data)), nil
+}
+
+// handleExecuteWorkflow executes a named JS workflow from ./workflows.
+func (ms *mcpServer) handleExecuteWorkflow(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := req.GetArguments()
+	name, _ := args["name"].(string)
+	namespace, _ := args["namespace"].(string)
+
+	if name == "" {
+		return mcp.NewToolResultError("workflow name is required"), nil
+	}
+
+	input := map[string]any{}
+	if vars, ok := args["variables"].(map[string]any); ok {
+		input = vars
+	}
+
+	ns := namespace
+	if ns == "" {
+		ns = ms.getNamespace()
+	}
+
+	var nsPtr *string
+	if ns != "" {
+		nsPtr = &ns
+	}
+
+	out, err := ms.service.runNamedWorkflow(ctx, name, input, nsPtr)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	data, err := mcpMarshalJSON(map[string]any{"data": out}, true)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}

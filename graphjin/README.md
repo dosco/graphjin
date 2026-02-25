@@ -61,6 +61,7 @@ GraphJin started
   Web UI:      http://localhost:8080/
   GraphQL:     http://localhost:8080/api/v1/graphql
   REST API:    http://localhost:8080/api/v1/rest/
+  Workflows:   http://localhost:8080/api/v1/workflows/<name>
   MCP:         http://localhost:8080/api/v1/mcp
 
 Claude Desktop Configuration
@@ -155,7 +156,8 @@ Copy paste the Claude Desktop Config provided by `graphjin serve` into the Claud
 1. **Connects to database** - Reads your schema automatically
 2. **Discovers relationships** - Foreign keys become navigable joins
 3. **Exposes MCP tools** - Teach any LLM the query syntax
-4. **Compiles to SQL** - Every request becomes a single optimized query
+4. **Runs JS workflows** - Chain multiple GraphJin MCP tools in one reusable workflow
+5. **Compiles to SQL** - Every request becomes a single optimized query
 
 No resolvers. No ORM. No N+1 queries. Just point and query.
 
@@ -221,7 +223,45 @@ Works from Node.js, Go, or any WebSocket client.
 
 ## MCP Tools
 
-GraphJin exposes several tools that guide AI models to write valid queries. Key tools: `list_tables` and `describe_table` for schema discovery, `get_query_syntax` for learning the DSL, `execute_graphql` for running queries, and `execute_saved_query` for production-approved queries. Prompts like `write_query` and `fix_query_error` help models construct and debug queries.
+GraphJin exposes several tools that guide AI models to write valid queries. Key tools: `list_tables` and `describe_table` for schema discovery, `get_query_syntax` for learning the DSL, `execute_graphql` for running queries, and `execute_saved_query` for production-approved queries.
+
+For JS orchestration, use:
+- `get_js_runtime_api` to discover exactly which globals/functions are available inside workflow scripts
+- `execute_workflow` to run `./workflows/<name>.js` with input variables
+
+Prompts like `write_query` and `fix_query_error` help models construct and debug queries.
+
+## JS Workflows (MCP + REST)
+
+Workflows let an LLM run multi-step logic in JavaScript while still using GraphJin MCP tools for DB-aware operations.
+
+Create a file in `./workflows`, for example `./workflows/customer_insights.js`:
+
+```js
+function main(input) {
+  const tables = gj.tools.listTables({});
+  const top = gj.tools.executeSavedQuery({
+    name: "top_customers",
+    variables: { limit: input.limit || 5 }
+  });
+  return { tables, top };
+}
+```
+
+### Run via MCP
+
+Call:
+- `get_js_runtime_api` first (for exact runtime schema)
+- `execute_workflow` with:
+  - `name`: workflow file name (with or without `.js`)
+  - `variables`: input payload passed to global `input` and `main(input)`
+
+### Run via REST
+
+- `POST /api/v1/workflows/<name>` with JSON body
+- `GET /api/v1/workflows/<name>?variables={...json...}`
+
+Both map variables to the same workflow input object.
 
 ## Chat Walkthroughs
 

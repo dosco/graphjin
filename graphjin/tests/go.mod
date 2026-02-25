@@ -6,6 +6,7 @@ require (
 	github.com/dosco/graphjin/conf/v3 v3.11.3
 	github.com/dosco/graphjin/core/v3 v3.11.3
 	github.com/dosco/graphjin/mongodriver v0.0.0
+	github.com/dosco/graphjin/serv/v3 v3.11.2
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/lib/pq v1.10.9
 	github.com/mattn/go-sqlite3 v1.14.32
@@ -24,6 +25,7 @@ replace (
 	github.com/dosco/graphjin/conf/v3 => ../conf
 	github.com/dosco/graphjin/core/v3 => ../core
 	github.com/dosco/graphjin/mongodriver => ../mongodriver
+	github.com/dosco/graphjin/serv/v3 => ../serv
 )
 
 require (

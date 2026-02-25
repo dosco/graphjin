@@ -3,8 +3,9 @@
   "type": "module",
   "version": "0.0.1",
   "scripts": {
-    "dev": "astro dev",
-    "build": "astro build",
+    "sync:install-script": "node ./scripts/sync-install-script.mjs",
+    "dev": "npm run sync:install-script && astro dev",
+    "build": "npm run sync:install-script && astro build",
     "preview": "astro preview",
     "astro": "astro"
   },

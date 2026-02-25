@@ -19,8 +19,8 @@ import Footer from '../components/Footer.astro';
     <DatabaseLogos />
 
     {/* Value proposition section */}
-    <section class="py-20 md:py-28 border-t border-white/10">
-      <div class="container-wide max-w-5xl text-center">
+    <section class="py-24 border-t border-white/10">
+      <div class="container-wide max-w-6xl text-center">
         <p class="text-2xl md:text-3xl lg:text-4xl font-display leading-relaxed text-gj-muted">
           LLMs struggle with databases, diverse SQL dialects, custom query methods like MongoDB, complex joins.
           <span class="block mt-6 text-3xl md:text-4xl lg:text-5xl font-bold leading-tight bg-clip-text text-transparent bg-gradient-to-r from-yellow-500 via-teal-200 to-violet-300">
@@ -35,9 +35,95 @@ import Footer from '../components/Footer.astro';
 
     <QuickStart client:visible />
     <QueryShowcase client:visible />
-    <FeatureGrid client:visible />
-    <GetStarted client:visible />
-    <ClaudeShowcase client:visible />
+    <FeatureGrid client:load />
+    <GetStarted client:load />
+    <ClaudeShowcase client:load />
+
+    <section id="workflows" class="py-24 border-t border-white/10">
+      <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center max-w-2xl mx-auto mb-12">
+          <h2 class="text-3xl md:text-5xl font-display font-bold text-gj-text mb-4">
+            JS Workflows
+          </h2>
+          <p class="text-gj-muted text-lg">
+            Chain queries, transform data, add business logic — things a single GraphQL call can't do. Invoke from MCP or REST.
+          </p>
+        </div>
+
+        <div class="bg-black rounded-2xl border border-white/10 overflow-hidden shadow-2xl">
+          <div class="bg-black/90 px-4 py-3 border-b border-white/10 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <div class="w-3 h-3 rounded-full bg-[#FF5F56]"></div>
+              <div class="w-3 h-3 rounded-full bg-[#FFBD2E]"></div>
+              <div class="w-3 h-3 rounded-full bg-[#27C93F]"></div>
+            </div>
+            <span class="text-xs text-white/30 font-mono">workflows/customer_report.js</span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-white/10">
+            <div class="p-6">
+              <div class="flex items-center gap-2 text-xs text-white/40 mb-4 font-mono">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
+                workflow.js
+              </div>
+              <pre class="text-sm text-amber-300/90 leading-relaxed overflow-x-auto"><code>{`function main(input) {
+  const top = gj.tools.executeGraphQL({
+    query: \`{
+      customers(
+        limit: 3,
+        order_by: {total_spend: desc}
+      ) {
+        id full_name total_spend
+      }
+    }\`
+  });
+
+  return top.map(c => ({
+    name: c.full_name,
+    spend: "$" + c.total_spend,
+    tier: c.total_spend > 500
+      ? "VIP" : "Standard"
+  }));
+}`}</code></pre>
+            </div>
+
+            <div class="p-6 bg-black/20">
+              <div class="flex items-center justify-between text-xs mb-4">
+                <span class="flex items-center gap-2 text-white/40 font-mono">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
+                  result.json
+                </span>
+                <span class="text-emerald-400 flex items-center gap-1">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                  24ms
+                </span>
+              </div>
+              <pre class="text-sm text-emerald-300/80 leading-relaxed overflow-x-auto"><code>{`[
+  {
+    "name": "Antwan Friesen",
+    "spend": "$928.45",
+    "tier": "VIP"
+  },
+  {
+    "name": "Lon Cruickshank",
+    "spend": "$586.50",
+    "tier": "VIP"
+  },
+  {
+    "name": "Susana Schaefer",
+    "spend": "$580.72",
+    "tier": "VIP"
+  }
+]`}</code></pre>
+            </div>
+          </div>
+        </div>
+
+        <p class="text-center text-gj-muted text-sm mt-6">
+          <code class="font-mono text-white/60">curl localhost:8080/api/v1/workflows/customer_report</code>
+        </p>
+      </div>
+    </section>
   </main>
 
   <Footer />

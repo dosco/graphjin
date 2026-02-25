@@ -67,11 +67,11 @@ type FilterOperators struct {
 
 // PaginationSyntax shows pagination options
 type PaginationSyntax struct {
-	LimitOffset     string `json:"limit_offset"`
-	ForwardCursor   string `json:"forward_cursor"`
-	BackwardCursor  string `json:"backward_cursor"`
-	CursorField     string `json:"cursor_field"`
-	Distinct        string `json:"distinct"`
+	LimitOffset    string `json:"limit_offset"`
+	ForwardCursor  string `json:"forward_cursor"`
+	BackwardCursor string `json:"backward_cursor"`
+	CursorField    string `json:"cursor_field"`
+	Distinct       string `json:"distinct"`
 }
 
 // OrderingSyntax shows ordering options
@@ -370,6 +370,7 @@ func (ms *mcpServer) registerResources() {
 					"3. Call describe_table for schema details",
 					"4. Check list_saved_queries for existing queries",
 					"5. Call execute_graphql or execute_saved_query",
+					"6. For JS orchestration, call get_js_runtime_api then execute_workflow",
 				},
 				MutationWorkflow: []string{
 					"1. Call get_mutation_syntax to learn mutation syntax",
@@ -386,6 +387,9 @@ func (ms *mcpServer) registerResources() {
 			}, nil
 		},
 	)
+
+	// JS runtime API resource
+	ms.registerJSRuntimeResources()
 }
 
 // registerSyntaxTools registers the syntax reference tools

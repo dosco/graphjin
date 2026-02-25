@@ -59,7 +59,6 @@ type Serv struct {
 	// The default path to find all configuration files and scripts
 	ConfigPath string `mapstructure:"config_path" jsonschema:"title=Config Path"`
 
-
 	// Logging level must be one of debug, error, warn, info
 	LogLevel string `mapstructure:"log_level" jsonschema:"title=Log Level,enum=debug,enum=error,enum=warn,enum=info"`
 
@@ -140,7 +139,7 @@ type Database struct {
 	Schema     string `jsonschema:"title=Postgres Schema"`
 
 	// File path for SQLite databases
-	Path       string `jsonschema:"title=File Path (SQLite)"`
+	Path string `jsonschema:"title=File Path (SQLite)"`
 
 	// Size of database connection pool
 	PoolSize int `mapstructure:"pool_size" jsonschema:"title=Connection Pool Size"`
@@ -221,8 +220,8 @@ type MCPConfig struct {
 	// Default user role for stdio transport (CLI). Can be overridden by GRAPHJIN_USER_ROLE env var.
 	StdioUserRole string `mapstructure:"stdio_user_role" jsonschema:"title=Stdio User Role"`
 
-	// Run in MCP-only mode - disables GraphQL, REST, WebUI, and OpenAPI endpoints
-	// Only health check and MCP endpoints will be available
+	// Run in MCP-only mode - disables GraphQL, REST saved-query API, WebUI, and OpenAPI endpoints.
+	// Health check, MCP endpoints, and /api/v1/workflows/* remain available.
 	Only bool `mapstructure:"only" jsonschema:"title=MCP Only Mode,default=false"`
 
 	// CursorCacheTTL in seconds for cursor ID cache (default: 1800 = 30 min)
@@ -337,7 +336,6 @@ func ReadInConfig(configFile string) (*Config, error) {
 func ReadInConfigFS(configFile string, fs afero.Fs) (*Config, error) {
 	return readInConfig(configFile, fs)
 }
-
 
 // readInConfig function reads in the config file for the environment specified in the GO_ENV
 func readInConfig(configFile string, fs afero.Fs) (*Config, error) {
@@ -461,8 +459,8 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("mcp.allow_mutations", true)
 	vi.SetDefault("mcp.allow_raw_queries", true)
 	vi.SetDefault("mcp.only", false)
-	vi.SetDefault("mcp.cursor_cache_ttl", 1800)       // 30 minutes
-	vi.SetDefault("mcp.cursor_cache_size", 10000)    // max in-memory entries
+	vi.SetDefault("mcp.cursor_cache_ttl", 1800)   // 30 minutes
+	vi.SetDefault("mcp.cursor_cache_size", 10000) // max in-memory entries
 
 	// Caching defaults
 	vi.SetDefault("caching.enable", false)
@@ -485,7 +483,6 @@ func newViper(configPath, configFile string) *viper.Viper {
 
 	return vi
 }
-
 
 // func (c *Config) telemetryEnabled() bool {
 // 	return c.Telemetry.Debug || c.Telemetry.Metrics.Exporter != "" || c.Telemetry.Tracing.Exporter != ""

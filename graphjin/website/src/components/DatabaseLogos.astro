@@ -17,8 +17,8 @@ const cloudDatabases = [
 ];
 ---
 
-<section class="py-16 border-t border-white/10">
-  <div class="container-wide">
+<section class="py-24 border-t border-white/10">
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
     <p class="text-center text-gj-muted text-sm uppercase tracking-wider mb-10">
       Works with all your database
     </p>
@@ -30,7 +30,7 @@ const cloudDatabases = [
           class="group relative flex flex-col items-center gap-2"
           title={db.name}
         >
-          <div class="w-12 h-12 md:w-14 md:h-14 flex items-center justify-center opacity-70 hover:opacity-100 transition-opacity duration-300">
+          <div class="w-12 h-12 md:w-14 md:h-14 flex items-center justify-center opacity-50 group-hover:opacity-100 group-hover:scale-110 transition-all duration-300">
             <img
               src={db.logo}
               alt={db.name}
@@ -38,7 +38,7 @@ const cloudDatabases = [
               loading="lazy"
             />
           </div>
-          <span class="text-xs text-gj-muted opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap">
+          <span class="text-xs text-gj-muted opacity-0 group-hover:opacity-100 translate-y-1 group-hover:translate-y-0 transition-all duration-300 whitespace-nowrap">
             {db.name}
           </span>
         </div>
@@ -52,7 +52,7 @@ const cloudDatabases = [
           class="group relative flex flex-col items-center gap-2"
           title={db.name}
         >
-          <div class="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity duration-300">
+          <div class="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center opacity-40 group-hover:opacity-100 group-hover:scale-110 transition-all duration-300">
             <img
               src={db.logo}
               alt={db.name}
@@ -60,7 +60,7 @@ const cloudDatabases = [
               loading="lazy"
             />
           </div>
-          <span class="text-xs text-gj-muted opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap">
+          <span class="text-xs text-gj-muted opacity-0 group-hover:opacity-100 translate-y-1 group-hover:translate-y-0 transition-all duration-300 whitespace-nowrap">
             {db.name}
           </span>
         </div>

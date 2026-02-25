@@ -171,6 +171,7 @@ func printDevModeInfo(s *graphjinService) {
 		fmt.Printf("  GraphQL:     http://%s/api/v1/graphql\n", displayHost)
 		fmt.Printf("  REST API:    http://%s/api/v1/rest/\n", displayHost)
 	}
+	fmt.Printf("  Workflows:   http://%s/api/v1/workflows/<name>\n", displayHost)
 	if !s.conf.MCP.Disable {
 		fmt.Printf("  MCP:         http://%s/api/v1/mcp\n", displayHost)
 	}

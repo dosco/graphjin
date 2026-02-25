@@ -478,6 +478,18 @@ func (s *HttpService) RESTWithNS(ah auth.HandlerFunc, ns string) http.Handler {
 	return s.apiHandler(&ns, ah, true)
 }
 
+// Workflows is the http handler for named JS workflows.
+func (s *HttpService) Workflows(ah auth.HandlerFunc) http.Handler {
+	h := s.apiV1Workflows(nil)
+	return apiV1Handler(s, nil, h, ah)
+}
+
+// WorkflowsWithNS is the namespaced http handler for named JS workflows.
+func (s *HttpService) WorkflowsWithNS(ah auth.HandlerFunc, ns string) http.Handler {
+	h := s.apiV1Workflows(&ns)
+	return apiV1Handler(s, &ns, h, ah)
+}
+
 // OpenAPI is the http handler for the OpenAPI specification endpoint
 func (s *HttpService) OpenAPI() http.Handler {
 	return s.openAPIHandler(nil)

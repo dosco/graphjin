@@ -7,12 +7,13 @@ import (
 )
 
 const (
-	routeGraphQL = "/api/v1/graphql"
-	routeREST    = "/api/v1/rest/*"
-	routeOpenAPI = "/api/v1/openapi.json"
-	routeMCP     = "/api/v1/mcp"
-	routeMCPMsg  = "/api/v1/mcp/message"
-	healthRoute  = "/health"
+	routeGraphQL   = "/api/v1/graphql"
+	routeREST      = "/api/v1/rest/*"
+	routeWorkflows = "/api/v1/workflows/*"
+	routeOpenAPI   = "/api/v1/openapi.json"
+	routeMCP       = "/api/v1/mcp"
+	routeMCPMsg    = "/api/v1/mcp/message"
+	healthRoute    = "/health"
 )
 
 type Mux interface {
@@ -33,7 +34,7 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 	// 	mux.Handle(DeployRoute, adminDeployHandler(s1))
 	// }
 
-	// Skip non-MCP APIs in MCP-only mode
+	// Skip GraphQL/REST/OpenAPI/WebUI in MCP-only mode.
 	if !s.conf.MCP.Only {
 		if s.conf.WebUI {
 			mux.Handle("/*", s1.WebUI("/", routeGraphQL))
@@ -62,11 +63,31 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 		if ns == nil {
 			mux.Handle(routeGraphQL, s1.GraphQL(ah))
 			mux.Handle(routeREST, s1.REST(ah))
+			mux.Handle(routeWorkflows, s1.Workflows(ah))
 			mux.Handle(routeOpenAPI, s1.OpenAPI())
 		} else {
 			mux.Handle(routeGraphQL, s1.GraphQLWithNS(ah, *ns))
 			mux.Handle(routeREST, s1.RESTWithNS(ah, *ns))
+			mux.Handle(routeWorkflows, s1.WorkflowsWithNS(ah, *ns))
 			mux.Handle(routeOpenAPI, s1.OpenAPIWithNS(*ns))
+		}
+	}
+
+	// Keep workflow endpoint available in MCP-only mode for JS orchestration.
+	if s.conf.MCP.Only {
+		ah, err := auth.NewAuthHandlerFunc(s.conf.Auth)
+		if err != nil {
+			s.log.Fatalf("api: error initializing auth handler: %s", err)
+		}
+
+		if s.conf.Auth.Development {
+			s.log.Warn("api: auth.development=true this allows clients to bypass authentication")
+		}
+
+		if ns == nil {
+			mux.Handle(routeWorkflows, s1.Workflows(ah))
+		} else {
+			mux.Handle(routeWorkflows, s1.WorkflowsWithNS(ah, *ns))
 		}
 	}
 

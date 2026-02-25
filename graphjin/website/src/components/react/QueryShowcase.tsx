@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Terminal, Database } from 'lucide-react';
 
 const examples = [
@@ -144,7 +145,7 @@ export default function QueryShowcase() {
 
   return (
     <section className="py-24" id="examples">
-      <div className="mx-auto px-4">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-12">
           <h2 className="text-3xl md:text-5xl font-display font-bold text-gj-text mb-4">
             Simple & Powerful
@@ -180,33 +181,42 @@ export default function QueryShowcase() {
             <div className="w-3 h-3 rounded-full bg-[#27C93F]" />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-white/10">
-            {/* Input */}
-            <div className="p-6">
-              <div className="flex items-center gap-2 text-xs text-white/40 mb-4 font-mono">
-                <Terminal className="w-3 h-3" /> query.graphql
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeId}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.2 }}
+              className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-white/10"
+            >
+              {/* Input */}
+              <div className="p-6">
+                <div className="flex items-center gap-2 text-xs text-white/40 mb-4 font-mono">
+                  <Terminal className="w-3 h-3" /> query.graphql
+                </div>
+                <pre className="text-sm text-purple-300 leading-relaxed overflow-x-auto">
+                  {activeExample.graphql}
+                </pre>
               </div>
-              <pre className="text-sm text-purple-300 leading-relaxed overflow-x-auto">
-                {activeExample.graphql}
-              </pre>
-            </div>
 
-            {/* Output */}
-            <div className="p-6 bg-black/20">
-              <div className="flex items-center justify-between text-xs mb-4">
-                <span className="flex items-center gap-2 text-white/40 font-mono">
-                  <Database className="w-3 h-3" /> result.json
-                </span>
-                <span className="text-emerald-400 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                  18ms
-                </span>
+              {/* Output */}
+              <div className="p-6 bg-black/20">
+                <div className="flex items-center justify-between text-xs mb-4">
+                  <span className="flex items-center gap-2 text-white/40 font-mono">
+                    <Database className="w-3 h-3" /> result.json
+                  </span>
+                  <span className="text-emerald-400 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    18ms
+                  </span>
+                </div>
+                <pre className="text-sm text-emerald-300/80 leading-relaxed overflow-x-auto">
+                  {activeExample.result}
+                </pre>
               </div>
-              <pre className="text-sm text-emerald-300/80 leading-relaxed overflow-x-auto">
-                {activeExample.result}
-              </pre>
-            </div>
-          </div>
+            </motion.div>
+          </AnimatePresence>
         </div>
       </div>
     </section>

@@ -29,28 +29,110 @@ import GraphField from './react/GraphField';
       <p class="text-xl md:text-2xl font-display tracking-tight mt-1 text-white/50" style="text-shadow: 0 2px 20px rgba(0,0,0,0.4)">
         Use with Claude Desktop + MCP
       </p>
-      <div class="mt-6 inline-flex items-center gap-3 bg-gray-900 rounded-lg px-5 py-3 font-mono text-md md:text-lg shadow-lg border-1">
-        <span class="text-gray-500 select-none">$</span>
-        <code class="text-white">npx graphjin serve</code>
-        <span class="text-gray-500 text-xs ml-2 hidden sm:inline">// try it now</span>
-        <button
-          id="copy-cmd"
-          class="ml-2 text-gray-400 hover:text-white transition-colors cursor-pointer"
-          aria-label="Copy command to clipboard"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-          </svg>
-        </button>
+      <div class="mt-6 w-full max-w-4xl px-4">
+        <div class="flex items-center justify-between gap-3 bg-black rounded-lg px-5 py-3 font-mono text-sm md:text-base shadow-lg border border-white/10">
+          <div class="min-w-0 flex items-center gap-3">
+            <span class="text-gray-500 select-none">$</span>
+            <code id="hero-command" class="text-white break-all">npx graphjin serve</code>
+            <span id="hero-command-hint" class="text-gray-500 text-xs ml-2 hidden sm:inline">// run without install</span>
+          </div>
+          <button
+            id="hero-copy-cmd"
+            type="button"
+            class="text-gray-400 hover:text-white transition-colors cursor-pointer"
+            aria-label="Copy command to clipboard"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+          </button>
+        </div>
+
+        <div class="mt-2 inline-flex items-center gap-1 rounded-lg border border-white/15 bg-gray-950/85 p-1 font-mono text-xs md:text-sm shadow-lg">
+          <button
+            type="button"
+            data-hero-cmd-tab="npx"
+            class="rounded-md px-2.5 py-1 text-white bg-white/10 transition-colors"
+            aria-pressed="true"
+          >
+            npx
+          </button>
+          <button
+            type="button"
+            data-hero-cmd-tab="brew"
+            class="rounded-md px-2.5 py-1 text-white/60 hover:text-white transition-colors"
+            aria-pressed="false"
+          >
+            brew
+          </button>
+          <button
+            type="button"
+            data-hero-cmd-tab="curl"
+            class="rounded-md px-2.5 py-1 text-white/60 hover:text-white transition-colors"
+            aria-pressed="false"
+          >
+            curl
+          </button>
+        </div>
       </div>
       <script>
-        document.getElementById('copy-cmd')?.addEventListener('click', async (e) => {
+        const heroCommands = {
+          npx: {
+            command: 'npx graphjin serve',
+            hint: '// run without install',
+          },
+          brew: {
+            command: 'brew install dosco/graphjin/graphjin && graphjin serve',
+            hint: '// install with Homebrew',
+          },
+          curl: {
+            command: 'curl -fsSL https://graphjin.com/install.sh | bash && graphjin serve',
+            hint: '// install with script',
+          },
+        } as const;
+
+        type HeroCommandId = keyof typeof heroCommands;
+
+        const tabButtons = Array.from(document.querySelectorAll('[data-hero-cmd-tab]')) as HTMLButtonElement[];
+        const commandEl = document.getElementById('hero-command');
+        const hintEl = document.getElementById('hero-command-hint');
+        const copyBtn = document.getElementById('hero-copy-cmd');
+        const copyIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+        const checkIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+
+        let activeCommand: HeroCommandId = 'npx';
+
+        const setActiveTab = (id: HeroCommandId) => {
+          activeCommand = id;
+
+          if (commandEl) commandEl.textContent = heroCommands[id].command;
+          if (hintEl) hintEl.textContent = heroCommands[id].hint;
+
+          tabButtons.forEach((btn) => {
+            const isActive = btn.dataset.heroCmdTab === id;
+            btn.classList.toggle('bg-white/10', isActive);
+            btn.classList.toggle('text-white', isActive);
+            btn.classList.toggle('text-white/60', !isActive);
+            btn.classList.toggle('hover:text-white', !isActive);
+            btn.setAttribute('aria-pressed', String(isActive));
+          });
+        };
+
+        tabButtons.forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const id = btn.dataset.heroCmdTab as HeroCommandId | undefined;
+            if (!id) return;
+            setActiveTab(id);
+          });
+        });
+
+        copyBtn?.addEventListener('click', async (e) => {
           const btn = e.currentTarget as HTMLButtonElement;
-          await navigator.clipboard.writeText('npx graphjin serve');
-          btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+          await navigator.clipboard.writeText(heroCommands[activeCommand].command);
+          btn.innerHTML = checkIcon;
           setTimeout(() => {
-            btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+            btn.innerHTML = copyIcon;
           }, 2000);
         });
       </script>

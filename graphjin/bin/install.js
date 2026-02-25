@@ -39,6 +39,29 @@ async function download(url, dest) {
   });
 }
 
+async function downloadWithFallback(candidates, binDir) {
+  let lastErr;
+
+  for (const candidate of candidates) {
+    const archivePath = path.join(binDir, candidate.filename);
+
+    try {
+      await download(candidate.url, archivePath);
+      return {
+        archivePath,
+        filename: candidate.filename,
+      };
+    } catch (err) {
+      lastErr = err;
+      try {
+        fs.unlinkSync(archivePath);
+      } catch {}
+    }
+  }
+
+  throw lastErr || new Error('No download candidates available');
+}
+
 async function extract(tarPath, destDir) {
   // Use tar module for extraction
   const tar = require('tar');
@@ -62,14 +85,28 @@ async function install() {
     process.exit(1);
   }
 
-  const ext = platform === 'windows' ? '.zip' : '.tar.gz';
-  const filename = `graphjin_${platform}_${arch}${ext}`;
-  const url = `https://github.com/dosco/graphjin/releases/download/v${version}/${filename}`;
-
   const binDir = __dirname;
-  const archivePath = path.join(binDir, filename);
   const binaryName = platform === 'windows' ? 'graphjin.exe' : 'graphjin';
   const binaryPath = path.join(binDir, binaryName);
+  const releaseBase = `https://github.com/dosco/graphjin/releases/download/v${version}`;
+
+  // New releases include version in the archive name. Keep legacy fallback
+  // names to remain backward compatible with older tags.
+  const filenames = platform === 'windows'
+    ? [
+        `graphjin_${version}_${platform}_${arch}.tar.gz`,
+        `graphjin_${version}_${platform}_${arch}.zip`,
+        `graphjin_${platform}_${arch}.tar.gz`,
+        `graphjin_${platform}_${arch}.zip`,
+      ]
+    : [
+        `graphjin_${version}_${platform}_${arch}.tar.gz`,
+        `graphjin_${platform}_${arch}.tar.gz`,
+      ];
+  const candidates = filenames.map((filename) => ({
+    filename,
+    url: `${releaseBase}/${filename}`,
+  }));
 
   // Skip if binary already exists
   if (fs.existsSync(binaryPath)) {
@@ -79,12 +116,17 @@ async function install() {
 
   console.log(`Downloading GraphJin v${version} for ${platform}/${arch}...`);
 
+  let archivePath = '';
+  let selectedFilename = '';
+
   try {
-    await download(url, archivePath);
+    const selected = await downloadWithFallback(candidates, binDir);
+    archivePath = selected.archivePath;
+    selectedFilename = selected.filename;
 
     console.log('Extracting...');
 
-    if (platform === 'windows') {
+    if (platform === 'windows' && selectedFilename.endsWith('.zip')) {
       // For Windows, use PowerShell to extract
       execSync(`powershell -command "Expand-Archive -Path '${archivePath}' -DestinationPath '${binDir}' -Force"`, {
         stdio: 'inherit',

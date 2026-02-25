@@ -42,6 +42,7 @@ func mcpToolList(conf *Config) []string {
 	tools := []string{
 		"get_query_syntax",
 		"get_mutation_syntax",
+		"get_js_runtime_api",
 		"list_tables",
 		"describe_table",
 		"find_path",
@@ -49,6 +50,7 @@ func mcpToolList(conf *Config) []string {
 		"get_workflow_guide",
 		"explore_relationships",
 		"execute_saved_query",
+		"execute_workflow",
 	}
 
 	// Conditionally registered
@@ -89,8 +91,8 @@ func mcpToolList(conf *Config) []string {
 type mcpServer struct {
 	srv         *server.MCPServer
 	service     *graphjinService
-	ctx         context.Context    // Auth context (user_id, user_role)
-	readOnlyDBs map[string]bool    // snapshot from config at startup, immutable at runtime
+	ctx         context.Context // Auth context (user_id, user_role)
+	readOnlyDBs map[string]bool // snapshot from config at startup, immutable at runtime
 }
 
 // newMCPServerWithContext creates a new MCP server with an auth context
@@ -147,6 +149,7 @@ func (s *graphjinService) newMCPServerWithContext(ctx context.Context) *mcpServe
 func (ms *mcpServer) registerTools() {
 	// Syntax Reference Tools (call these first!)
 	ms.registerSyntaxTools()
+	ms.registerJSRuntimeTools()
 
 	// Schema Discovery Tools
 	ms.registerSchemaTools()
