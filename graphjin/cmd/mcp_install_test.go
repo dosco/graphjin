@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -64,34 +65,6 @@ func TestNormalizeInstallScope(t *testing.T) {
 	}
 }
 
-func TestNormalizeInstallMode(t *testing.T) {
-	tests := []struct {
-		in      string
-		want    string
-		wantErr bool
-	}{
-		{in: "stdio", want: "stdio"},
-		{in: "http", want: "http"},
-		{in: "tcp", wantErr: true},
-	}
-
-	for _, tt := range tests {
-		got, err := normalizeInstallMode(tt.in)
-		if tt.wantErr {
-			if err == nil {
-				t.Fatalf("normalizeInstallMode(%q): expected error", tt.in)
-			}
-			continue
-		}
-		if err != nil {
-			t.Fatalf("normalizeInstallMode(%q): unexpected error: %s", tt.in, err)
-		}
-		if got != tt.want {
-			t.Fatalf("normalizeInstallMode(%q) = %q, want %q", tt.in, got, tt.want)
-		}
-	}
-}
-
 func TestResolveInstallOptions_DefaultsNonInteractive(t *testing.T) {
 	opts, err := resolveInstallOptions(mcpInstallResolveInput{
 		Interactive: false,
@@ -106,8 +79,8 @@ func TestResolveInstallOptions_DefaultsNonInteractive(t *testing.T) {
 	if opts.Scope != "project" {
 		t.Fatalf("scope = %q, want project", opts.Scope)
 	}
-	if opts.Mode != "stdio" {
-		t.Fatalf("mode = %q, want stdio", opts.Mode)
+	if opts.Server != defaultMCPServerURL {
+		t.Fatalf("server = %q, want default %q", opts.Server, defaultMCPServerURL)
 	}
 }
 
@@ -118,9 +91,7 @@ func TestResolveInstallOptions_ExplicitFlagsOverridePrompts(t *testing.T) {
 		ClientSet:   true,
 		Scope:       "global",
 		ScopeSet:    true,
-		Mode:        "http",
-		ModeSet:     true,
-		Server:      "http://localhost:9090/api/v1/mcp",
+		Server:      "http://localhost:9090/",
 		ServerSet:   true,
 		Interactive: true,
 		PromptFn: func(kind, prompt string, options []string, defaultValue string) (string, error) {
@@ -135,10 +106,10 @@ func TestResolveInstallOptions_ExplicitFlagsOverridePrompts(t *testing.T) {
 	if calls != 0 {
 		t.Fatalf("expected no prompt calls when explicit flags are set, got %d", calls)
 	}
-	if opts.Client != "both" || opts.Scope != "global" || opts.Mode != "http" {
+	if opts.Client != "both" || opts.Scope != "global" {
 		t.Fatalf("unexpected resolved values: %+v", opts)
 	}
-	if opts.Server != "http://localhost:9090/api/v1/mcp" {
+	if opts.Server != "http://localhost:9090/" {
 		t.Fatalf("server = %q, want explicit URL", opts.Server)
 	}
 }
@@ -152,8 +123,6 @@ func TestResolveInstallOptions_InteractivePrompts(t *testing.T) {
 				return "both", nil
 			case "scope":
 				return "local", nil
-			case "mode":
-				return "http", nil
 			default:
 				return defaultValue, nil
 			}
@@ -163,11 +132,24 @@ func TestResolveInstallOptions_InteractivePrompts(t *testing.T) {
 		t.Fatalf("unexpected error: %s", err)
 	}
 
-	if opts.Client != "both" || opts.Scope != "local" || opts.Mode != "http" {
+	if opts.Client != "both" || opts.Scope != "local" {
 		t.Fatalf("unexpected resolved values: %+v", opts)
 	}
 	if opts.Server != defaultMCPServerURL {
 		t.Fatalf("server = %q, want default %q", opts.Server, defaultMCPServerURL)
+	}
+}
+
+func TestResolveInstallOptions_InvalidServer(t *testing.T) {
+	_, err := resolveInstallOptions(mcpInstallResolveInput{
+		Server:    "not-a-url",
+		ServerSet: true,
+	})
+	if err == nil {
+		t.Fatal("expected invalid --server error")
+	}
+	if !strings.Contains(err.Error(), "invalid --server") {
+		t.Fatalf("unexpected error: %s", err)
 	}
 }
 
@@ -182,29 +164,66 @@ func TestCodexHelpHasScope(t *testing.T) {
 
 func TestBuildCodexAddArgs(t *testing.T) {
 	opts := mcpInstallOptions{
-		Scope:      "global",
-		Mode:       "stdio",
-		ConfigPath: "/tmp/config",
+		Scope:  "global",
+		Server: "http://localhost:8080/",
 	}
 
 	args := buildCodexAddArgs(opts, true)
-	want := []string{"mcp", "add", "graphjin", "--scope", "user", "--", "graphjin", "mcp", "--path", "/tmp/config"}
+	want := []string{"mcp", "add", "graphjin", "--scope", "user", "--url", "http://localhost:8080/"}
 	if strings.Join(args, "|") != strings.Join(want, "|") {
 		t.Fatalf("args = %v, want %v", args, want)
 	}
 }
 
-func TestBuildCodexAddArgsHTTP(t *testing.T) {
+func TestBuildCodexAddArgs_WithoutScope(t *testing.T) {
 	opts := mcpInstallOptions{
 		Scope:  "project",
-		Mode:   "http",
-		Server: "http://localhost:8080/api/v1/mcp",
+		Server: "http://localhost:9090/",
 	}
 
 	args := buildCodexAddArgs(opts, false)
-	want := []string{"mcp", "add", "graphjin", "--url", "http://localhost:8080/api/v1/mcp"}
+	want := []string{"mcp", "add", "graphjin", "--url", "http://localhost:9090/"}
 	if strings.Join(args, "|") != strings.Join(want, "|") {
 		t.Fatalf("args = %v, want %v", args, want)
+	}
+}
+
+func TestGraphjinCommandForMCP(t *testing.T) {
+	orig := resolveGraphJinPathForMCP
+	defer func() { resolveGraphJinPathForMCP = orig }()
+
+	resolveGraphJinPathForMCP = func() (string, error) {
+		return "/opt/bin/graphjin", nil
+	}
+	if got := graphjinCommandForMCP(); got != "/opt/bin/graphjin" {
+		t.Fatalf("graphjinCommandForMCP() = %q, want /opt/bin/graphjin", got)
+	}
+
+	resolveGraphJinPathForMCP = func() (string, error) {
+		return "", errors.New("missing")
+	}
+	if got := graphjinCommandForMCP(); got != "graphjin" {
+		t.Fatalf("graphjinCommandForMCP() fallback = %q, want graphjin", got)
+	}
+}
+
+func TestCodexConfigTargetPath(t *testing.T) {
+	wd := "/tmp/work"
+
+	got, err := codexConfigTargetPath("project", wd)
+	if err != nil {
+		t.Fatalf("unexpected error for project scope: %s", err)
+	}
+	if got != "/tmp/work/.codex/config.toml" {
+		t.Fatalf("project target path = %q, want %q", got, "/tmp/work/.codex/config.toml")
+	}
+
+	got, err = codexConfigTargetPath("local", wd)
+	if err != nil {
+		t.Fatalf("unexpected error for local scope: %s", err)
+	}
+	if got != "/tmp/work/.codex/config.toml" {
+		t.Fatalf("local target path = %q, want %q", got, "/tmp/work/.codex/config.toml")
 	}
 }
 
@@ -215,10 +234,7 @@ func TestUpsertCodexConfig_PreservesUnrelated(t *testing.T) {
 approval_policy = "on-request"
 `)
 
-	out, err := upsertCodexConfig(input, "graphjin", codexServerConfig{
-		Command: "graphjin",
-		Args:    []string{"mcp", "--path", "/tmp/config"},
-	})
+	out, err := upsertCodexConfig(input, "graphjin", codexServerConfig{URL: "http://localhost:8080/"})
 	if err != nil {
 		t.Fatalf("unexpected error: %s", err)
 	}
@@ -230,7 +246,15 @@ approval_policy = "on-request"
 	if !strings.Contains(s, "[mcp_servers.graphjin]") {
 		t.Fatalf("expected mcp server section:\n%s", s)
 	}
-	if !strings.Contains(s, "command =") || !strings.Contains(s, "graphjin") {
-		t.Fatalf("expected graphjin command:\n%s", s)
+	if !strings.Contains(s, "url =") || !strings.Contains(s, "http://localhost:8080/") {
+		t.Fatalf("expected graphjin URL:\n%s", s)
+	}
+}
+
+func TestBuildClaudeMCPServerArgs(t *testing.T) {
+	got := buildClaudeMCPServerArgs(mcpInstallOptions{Server: "http://localhost:8080/"})
+	want := []string{"mcp", "--server", "http://localhost:8080/"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("buildClaudeMCPServerArgs() = %v, want %v", got, want)
 	}
 }

@@ -29,19 +29,20 @@ import GraphField from './react/GraphField';
       <p class="text-xl md:text-2xl font-display tracking-tight mt-1 text-white/50" style="text-shadow: 0 2px 20px rgba(0,0,0,0.4)">
         Use with Claude Desktop + MCP
       </p>
-      <div class="mt-6 w-full max-w-4xl px-4">
-        <div class="flex items-center justify-between gap-3 bg-black rounded-lg px-5 py-3 font-mono text-sm md:text-base shadow-lg border border-white/10">
+      <div class="mt-6 w-full max-w-5xl px-4">
+        <div class="flex items-center justify-between gap-3 bg-black/75 backdrop-blur-sm rounded-lg px-5 py-3 font-mono text-sm md:text-base shadow-lg border border-white/20">
           <div class="min-w-0 flex items-center gap-3">
             <span class="text-gray-500 select-none">$</span>
-            <code id="hero-command" class="text-white break-all">npx graphjin serve</code>
-            <span id="hero-command-hint" class="text-gray-500 text-xs ml-2 hidden sm:inline">// run without install</span>
+            <code id="hero-command" class="text-white break-all">curl -fsSL https://graphjin.com/install.sh | bash</code>
+            <span id="hero-command-hint" class="text-gray-500 text-xs ml-2 hidden sm:inline">// then run: graphjin serve</span>
           </div>
           <button
             id="hero-copy-cmd"
             type="button"
-            class="text-gray-400 hover:text-white transition-colors cursor-pointer"
+            class="inline-flex items-center gap-2 rounded-md border border-white/30 bg-white/15 px-3 py-1.5 text-white hover:bg-white/25 transition-colors cursor-pointer"
             aria-label="Copy command to clipboard"
           >
+            <span id="hero-copy-cmd-label">Copy</span>
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
               <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
@@ -53,8 +54,8 @@ import GraphField from './react/GraphField';
           <button
             type="button"
             data-hero-cmd-tab="npx"
-            class="rounded-md px-2.5 py-1 text-white bg-white/10 transition-colors"
-            aria-pressed="true"
+            class="rounded-md px-2.5 py-1 text-white/60 hover:text-white transition-colors"
+            aria-pressed="false"
           >
             npx
           </button>
@@ -69,8 +70,8 @@ import GraphField from './react/GraphField';
           <button
             type="button"
             data-hero-cmd-tab="curl"
-            class="rounded-md px-2.5 py-1 text-white/60 hover:text-white transition-colors"
-            aria-pressed="false"
+            class="rounded-md px-2.5 py-1 text-white bg-white/10 transition-colors"
+            aria-pressed="true"
           >
             curl
           </button>
@@ -87,8 +88,8 @@ import GraphField from './react/GraphField';
             hint: '// install with Homebrew',
           },
           curl: {
-            command: 'curl -fsSL https://graphjin.com/install.sh | bash && graphjin serve',
-            hint: '// install with script',
+            command: 'curl -fsSL https://graphjin.com/install.sh | bash',
+            hint: '// then run: graphjin serve',
           },
         } as const;
 
@@ -98,10 +99,9 @@ import GraphField from './react/GraphField';
         const commandEl = document.getElementById('hero-command');
         const hintEl = document.getElementById('hero-command-hint');
         const copyBtn = document.getElementById('hero-copy-cmd');
-        const copyIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
-        const checkIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+        const copyLabel = document.getElementById('hero-copy-cmd-label');
 
-        let activeCommand: HeroCommandId = 'npx';
+        let activeCommand: HeroCommandId = 'curl';
 
         const setActiveTab = (id: HeroCommandId) => {
           activeCommand = id;
@@ -128,11 +128,10 @@ import GraphField from './react/GraphField';
         });
 
         copyBtn?.addEventListener('click', async (e) => {
-          const btn = e.currentTarget as HTMLButtonElement;
           await navigator.clipboard.writeText(heroCommands[activeCommand].command);
-          btn.innerHTML = checkIcon;
+          if (copyLabel) copyLabel.textContent = 'Copied';
           setTimeout(() => {
-            btn.innerHTML = copyIcon;
+            if (copyLabel) copyLabel.textContent = 'Copy';
           }, 2000);
         });
       </script>

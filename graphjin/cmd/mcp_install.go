@@ -18,25 +18,23 @@ import (
 )
 
 const (
-	defaultMCPServerURL = "http://localhost:8080/api/v1/mcp"
+	defaultMCPServerURL = "http://localhost:8080/"
 	graphjinMCPName     = "graphjin"
+	claudeMCPServerName = "GraphJin"
 )
 
 var (
-	lookPathFn       = exec.LookPath
-	commandContextFn = exec.CommandContext
+	lookPathFn                = exec.LookPath
+	commandContextFn          = exec.CommandContext
+	resolveGraphJinPathForMCP = resolveGraphJinBinaryPath
 )
 
 type mcpInstallOptions struct {
-	Client                  string
-	Scope                   string
-	Mode                    string
-	Server                  string
-	Yes                     bool
-	ConfigPath              string
-	ClaudeMarketplaceSource string
-	ClaudeMarketplaceName   string
-	ClaudePluginName        string
+	Client     string
+	Scope      string
+	Server     string
+	Yes        bool
+	ConfigPath string
 }
 
 type mcpInstallResolveInput struct {
@@ -44,8 +42,6 @@ type mcpInstallResolveInput struct {
 	ClientSet   bool
 	Scope       string
 	ScopeSet    bool
-	Mode        string
-	ModeSet     bool
 	Server      string
 	ServerSet   bool
 	Yes         bool
@@ -84,7 +80,7 @@ func mcpInstallCmd() *cobra.Command {
 Defaults:
   client: codex
   scope:  project
-  mode:   stdio
+  server: http://localhost:8080/
 
 When run in an interactive terminal, this command asks guided questions unless --yes is used.`,
 	})
@@ -93,12 +89,8 @@ When run in an interactive terminal, this command asks guided questions unless -
 func newMCPInstallCommand(cfg mcpInstallCommandConfig) *cobra.Command {
 	var client string
 	var scope string
-	var mode string
 	var server string
 	var yes bool
-	var claudeSource string
-	var claudeMarketplace string
-	var claudePluginName string
 
 	c := &cobra.Command{
 		Use:   cfg.Use,
@@ -121,8 +113,6 @@ func newMCPInstallCommand(cfg mcpInstallCommandConfig) *cobra.Command {
 				ClientSet:   cmd.Flags().Changed("client"),
 				Scope:       scope,
 				ScopeSet:    cmd.Flags().Changed("scope"),
-				Mode:        mode,
-				ModeSet:     cmd.Flags().Changed("mode"),
 				Server:      server,
 				ServerSet:   cmd.Flags().Changed("server"),
 				Yes:         yes,
@@ -135,9 +125,6 @@ func newMCPInstallCommand(cfg mcpInstallCommandConfig) *cobra.Command {
 			}
 
 			opts.ConfigPath = absConfigPath
-			opts.ClaudeMarketplaceSource = claudeSource
-			opts.ClaudeMarketplaceName = claudeMarketplace
-			opts.ClaudePluginName = claudePluginName
 
 			if err := validateInstallPrereqs(opts); err != nil {
 				log.Fatalf("%s", err)
@@ -184,17 +171,8 @@ func newMCPInstallCommand(cfg mcpInstallCommandConfig) *cobra.Command {
 
 	c.Flags().StringVar(&client, "client", "", "Target client: claude, codex, or both")
 	c.Flags().StringVar(&scope, "scope", "", "Install scope: project, global, or local")
-	c.Flags().StringVar(&mode, "mode", "", "Transport mode: stdio or http")
-	c.Flags().StringVar(&server, "server", "", "HTTP MCP server URL (used with --mode http)")
+	c.Flags().StringVar(&server, "server", "", "HTTP MCP server URL (default http://localhost:8080/)")
 	c.Flags().BoolVar(&yes, "yes", false, "Skip interactive prompts and confirmation")
-
-	// Advanced Claude plugin overrides.
-	c.Flags().StringVar(&claudeSource, "source", "dosco/graphjin", "Claude marketplace source (owner/repo or local path)")
-	c.Flags().StringVar(&claudeMarketplace, "marketplace", "graphjin", "Claude marketplace name")
-	c.Flags().StringVar(&claudePluginName, "name", "graphjin-mcp", "Claude plugin name")
-	c.Flags().MarkHidden("source")      //nolint:errcheck
-	c.Flags().MarkHidden("marketplace") //nolint:errcheck
-	c.Flags().MarkHidden("name")        //nolint:errcheck
 
 	if cfg.HideClient {
 		c.Flags().MarkHidden("client") //nolint:errcheck
@@ -245,26 +223,11 @@ func resolveInstallOptions(in mcpInstallResolveInput) (mcpInstallOptions, error)
 		}
 	}
 
-	modeValue := in.Mode
-	if !in.ModeSet {
-		if in.Interactive && in.PromptFn != nil {
-			v, err := in.PromptFn(
-				"mode",
-				"Select connection mode",
-				[]string{"stdio", "http"},
-				"stdio",
-			)
-			if err != nil {
-				return opts, err
-			}
-			modeValue = v
-		} else {
-			modeValue = "stdio"
-		}
-	}
-
 	serverValue := in.Server
-	if !in.ServerSet && strings.EqualFold(modeValue, "http") {
+	if !in.ServerSet {
+		serverValue = defaultMCPServerURL
+	}
+	if serverValue == "" {
 		serverValue = defaultMCPServerURL
 	}
 
@@ -278,25 +241,12 @@ func resolveInstallOptions(in mcpInstallResolveInput) (mcpInstallOptions, error)
 		return opts, err
 	}
 
-	mode, err := normalizeInstallMode(modeValue)
-	if err != nil {
-		return opts, err
-	}
-
-	if mode == "http" {
-		if serverValue == "" {
-			serverValue = defaultMCPServerURL
-		}
-		if _, err := url.ParseRequestURI(serverValue); err != nil {
-			return opts, fmt.Errorf("invalid --server %q: %w", serverValue, err)
-		}
-	} else {
-		serverValue = ""
+	if _, err := url.ParseRequestURI(serverValue); err != nil {
+		return opts, fmt.Errorf("invalid --server %q: %w", serverValue, err)
 	}
 
 	opts.Client = client
 	opts.Scope = scope
-	opts.Mode = mode
 	opts.Server = serverValue
 
 	return opts, nil
@@ -321,16 +271,6 @@ func normalizeInstallScope(v string) (string, error) {
 		return "global", nil
 	default:
 		return "", fmt.Errorf("invalid --scope %q (valid: project, global, local)", v)
-	}
-}
-
-func normalizeInstallMode(v string) (string, error) {
-	v = strings.ToLower(strings.TrimSpace(v))
-	switch v {
-	case "stdio", "http":
-		return v, nil
-	default:
-		return "", fmt.Errorf("invalid --mode %q (valid: stdio, http)", v)
 	}
 }
 
@@ -363,7 +303,7 @@ func buildCodexInstallPlan(cmd *cobra.Command, opts mcpInstallOptions) (codexIns
 		return codexInstallPlan{}, err
 	}
 
-	if supportsScope || opts.Scope == "project" {
+	if supportsScope {
 		return codexInstallPlan{
 			UseCLI:         true,
 			ScopeSupported: supportsScope,
@@ -401,12 +341,7 @@ func buildCodexAddArgs(opts mcpInstallOptions, includeScope bool) []string {
 		args = append(args, "--scope", codexScopeValue(opts.Scope))
 	}
 
-	if opts.Mode == "http" {
-		args = append(args, "--url", opts.Server)
-		return args
-	}
-
-	args = append(args, "--", "graphjin", "mcp", "--path", opts.ConfigPath)
+	args = append(args, "--url", opts.Server)
 	return args
 }
 
@@ -421,7 +356,7 @@ func codexScopeValue(scope string) string {
 
 func codexConfigTargetPath(scope, wd string) (string, error) {
 	switch scope {
-	case "local":
+	case "project", "local":
 		return filepath.Join(wd, ".codex", "config.toml"), nil
 	case "global":
 		home, err := os.UserHomeDir()
@@ -435,16 +370,38 @@ func codexConfigTargetPath(scope, wd string) (string, error) {
 }
 
 func runClaudeInstall(cmd *cobra.Command, opts mcpInstallOptions) error {
-	if err := runExternalCommand(cmd,
-		"claude", "plugin", "marketplace", "add",
-		opts.ClaudeMarketplaceSource, "--name", opts.ClaudeMarketplaceName); err != nil {
-		// Marketplace add is idempotent; plugin install is the source of truth.
-		log.Infof("Skipping Claude marketplace add: %s", err)
+	return runClaudeMCPAddInstall(cmd, opts)
+}
+
+func runClaudeMCPAddInstall(cmd *cobra.Command, opts mcpInstallOptions) error {
+	graphjinPath, err := resolveGraphJinPathForMCP()
+	if err != nil {
+		return err
 	}
 
-	pluginRef := fmt.Sprintf("%s@%s", opts.ClaudePluginName, opts.ClaudeMarketplaceName)
 	claudeScope := normalizeClaudeScope(opts.Scope)
-	return runExternalCommand(cmd, "claude", "plugin", "install", pluginRef, "--scope", claudeScope)
+	// Best effort: remove existing config to allow deterministic updates.
+	_ = runExternalCommand(cmd, "claude", "mcp", "remove", "--scope", claudeScope, claudeMCPServerName)
+
+	addArgs := []string{"mcp", "add", "--scope", claudeScope, claudeMCPServerName, "--", graphjinPath}
+	addArgs = append(addArgs, buildClaudeMCPServerArgs(opts)...)
+	return runExternalCommand(cmd, "claude", addArgs...)
+}
+
+func resolveGraphJinBinaryPath() (string, error) {
+	if p, err := lookPathFn("graphjin"); err == nil {
+		return p, nil
+	}
+
+	p, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("failed to locate graphjin executable: %w", err)
+	}
+	return p, nil
+}
+
+func buildClaudeMCPServerArgs(opts mcpInstallOptions) []string {
+	return []string{"mcp", "--server", opts.Server}
 }
 
 func normalizeClaudeScope(scope string) string {
@@ -466,13 +423,15 @@ func runCodexInstall(cmd *cobra.Command, opts mcpInstallOptions, plan codexInsta
 }
 
 func codexServerConfigFromOptions(opts mcpInstallOptions) codexServerConfig {
-	if opts.Mode == "http" {
-		return codexServerConfig{URL: opts.Server}
+	return codexServerConfig{URL: opts.Server}
+}
+
+func graphjinCommandForMCP() string {
+	p, err := resolveGraphJinPathForMCP()
+	if err != nil || p == "" {
+		return "graphjin"
 	}
-	return codexServerConfig{
-		Command: "graphjin",
-		Args:    []string{"mcp", "--path", opts.ConfigPath},
-	}
+	return p
 }
 
 func writeCodexConfig(path, serverName string, cfg codexServerConfig) error {
@@ -545,10 +504,7 @@ func printResolvedInstallOptions(w io.Writer, opts mcpInstallOptions) {
 	fmt.Fprintf(w, "Resolved options:\n")
 	fmt.Fprintf(w, "  client: %s\n", opts.Client)
 	fmt.Fprintf(w, "  scope:  %s\n", opts.Scope)
-	fmt.Fprintf(w, "  mode:   %s\n", opts.Mode)
-	if opts.Mode == "http" {
-		fmt.Fprintf(w, "  server: %s\n", opts.Server)
-	}
+	fmt.Fprintf(w, "  server: %s\n", opts.Server)
 	fmt.Fprintf(w, "\n")
 }
 
@@ -556,10 +512,8 @@ func printInstallPlan(w io.Writer, opts mcpInstallOptions, codexPlan codexInstal
 	fmt.Fprintf(w, "Planned actions:\n")
 
 	if usesClaude(opts.Client) {
-		pluginRef := fmt.Sprintf("%s@%s", opts.ClaudePluginName, opts.ClaudeMarketplaceName)
 		claudeScope := normalizeClaudeScope(opts.Scope)
-		fmt.Fprintf(w, "  - claude plugin marketplace add %s --name %s\n", opts.ClaudeMarketplaceSource, opts.ClaudeMarketplaceName)
-		fmt.Fprintf(w, "  - claude plugin install %s --scope %s\n", pluginRef, claudeScope)
+		fmt.Fprintf(w, "  - claude mcp add --scope %s %s -- graphjin %s\n", claudeScope, claudeMCPServerName, strings.Join(buildClaudeMCPServerArgs(opts), " "))
 	}
 
 	if usesCodex(opts.Client) {

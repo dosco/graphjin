@@ -17,7 +17,7 @@ func TestPluginAliasForcesClaudeClient(t *testing.T) {
 	if opts.Scope != "project" {
 		t.Fatalf("expected default scope project, got %q", opts.Scope)
 	}
-	if opts.Mode != "stdio" {
-		t.Fatalf("expected default mode stdio, got %q", opts.Mode)
+	if opts.Server != defaultMCPServerURL {
+		t.Fatalf("expected default server %q, got %q", defaultMCPServerURL, opts.Server)
 	}
 }

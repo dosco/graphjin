@@ -1,56 +1,57 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Copy, Check } from 'lucide-react';
-import { motion } from 'framer-motion';
+import React, { useState, useRef, useEffect } from "react";
+import { Copy, Check } from "lucide-react";
+import { motion } from "framer-motion";
 
 const tabs = [
   {
-    id: 'npm',
-    label: 'Global',
-    command: 'npx graphjin serve',
-    description: 'Use with Node.js projects',
+    id: "npm",
+    label: "Global",
+    command: "npx graphjin serve",
+    description: "Use with Node.js projects",
   },
   {
-    id: 'brew',
-    label: 'MacOS',
-    command: 'brew install dosco/graphjin/graphjin',
-    description: 'Install the GraphJin binary',
+    id: "brew",
+    label: "MacOS",
+    command: "brew install dosco/graphjin/graphjin",
+    description: "Install the GraphJin binary",
   },
-  { 
-    id: 'scoop',
-    label: 'Windows',
-    command: 'scoop install graphjin',
-    description: 'Install the GraphJin binary',
+  {
+    id: "scoop",
+    label: "Windows",
+    command: "scoop install graphjin",
+    description: "Install the GraphJin binary",
   },
-  
 ];
 
 const mcpClients = [
   {
-    id: 'claude-code',
-    name: 'Claude Code',
-    logo: '/logos/claude-code.svg',
-    command: 'graphjin mcp install --client claude --scope project --yes',
-    description: 'Project-scoped non-interactive install for Claude Code',
+    id: "claude-code",
+    name: "Claude Code",
+    logo: "/logos/claude-code.svg",
+    command: "graphjin mcp install --client claude --scope global --yes",
+    description:
+      "Global-scoped non-interactive install for Claude Code (default server: http://localhost:8080/)",
   },
   {
-    id: 'openai-codex',
-    name: 'OpenAI Codex',
-    logo: '/logos/openai-codex.svg',
-    command: 'graphjin mcp install --client codex --scope project --yes',
-    description: 'Project-scoped non-interactive install for OpenAI Codex',
+    id: "openai-codex",
+    name: "OpenAI Codex",
+    logo: "/logos/openai-codex.svg",
+    command: "graphjin mcp install --client codex --scope global --yes",
+    description:
+      "Global-scoped non-interactive install for OpenAI Codex (default server: http://localhost:8080/)",
   },
 ];
 
 export default function QuickStart() {
-  const [activeTab, setActiveTab] = useState('npm');
+  const [activeTab, setActiveTab] = useState("npm");
   const [copied, setCopied] = useState(false);
   const [copiedMCP, setCopiedMCP] = useState<string | null>(null);
   const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 });
   const tabsRef = useRef<(HTMLButtonElement | null)[]>([]);
 
   const activeTabData = tabs.find((t) => t.id === activeTab);
-  const activeCommand = activeTabData?.command || '';
-  const activeDescription = activeTabData?.description || '';
+  const activeCommand = activeTabData?.command || "";
+  const activeDescription = activeTabData?.description || "";
 
   useEffect(() => {
     const activeIndex = tabs.findIndex((t) => t.id === activeTab);
@@ -101,7 +102,7 @@ export default function QuickStart() {
                       left: indicatorStyle.left,
                       width: indicatorStyle.width,
                     }}
-                    transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
                   />
 
                   {tabs.map((tab, index) => (
@@ -115,8 +116,8 @@ export default function QuickStart() {
                       className={`relative z-10 px-4 py-1.5 text-sm font-medium rounded-md transition-colors
                         ${
                           activeTab === tab.id
-                            ? 'text-white'
-                            : 'text-white/50 hover:text-white/80'
+                            ? "text-white"
+                            : "text-white/50 hover:text-white/80"
                         }`}
                     >
                       {tab.label}
@@ -130,7 +131,7 @@ export default function QuickStart() {
                 onClick={handleCopy}
                 className="p-2 text-white/50 hover:text-white transition-colors rounded-lg hover:bg-white/5"
                 title="Copy to clipboard"
-                aria-label={`Copy install command for ${activeTabData?.label || 'active tab'}`}
+                aria-label={`Copy install command for ${activeTabData?.label || "active tab"}`}
               >
                 {copied ? (
                   <Check className="w-5 h-5 text-emerald-400" />
@@ -174,7 +175,9 @@ export default function QuickStart() {
             <h3 className="text-base md:text-lg font-semibold tracking-wide text-white/90">
               MCP Client Setup
             </h3>
-            <span className="text-xs text-white/40">Copy and run one command</span>
+            <span className="text-xs text-white/40">
+              Copy and run one command
+            </span>
           </div>
 
           <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -208,7 +211,9 @@ export default function QuickStart() {
                   </button>
                 </div>
 
-                <p className="mt-3 text-sm text-white/50">{client.description}</p>
+                <p className="mt-3 text-sm text-white/50">
+                  {client.description}
+                </p>
                 <code className="mt-3 block text-sm md:text-[15px] font-mono text-white/90 break-all leading-relaxed">
                   {client.command}
                 </code>
@@ -217,7 +222,10 @@ export default function QuickStart() {
           </div>
 
           <p className="mt-4 text-xs text-white/50">
-            Prefer interactive setup? Run: <code className="font-mono text-white/80">graphjin mcp install</code>
+            Prefer interactive setup? Run:{" "}
+            <code className="font-mono text-white/80">
+              graphjin mcp install
+            </code>
           </p>
         </div>
 

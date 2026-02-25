@@ -90,7 +90,7 @@ Copy the JSON config shown and add it to your Claude Desktop config file (see be
 GraphJin includes a guided installer that configures MCP for OpenAI Codex, Claude Code, or both.
 
 ```bash
-# Guided mode (asks target client, scope, and mode)
+# Guided mode (asks target client and scope)
 graphjin mcp install
 ```
 
@@ -110,15 +110,12 @@ graphjin mcp install --client codex --scope project --yes
 graphjin mcp install --client claude --scope project --yes
 ```
 
-Backwards compatibility alias:
-
-```bash
-graphjin mcp plugin install
-```
-
 #### Troubleshooting
 
-- `graphjin mcp install` uses your `--path` value for stdio mode (`graphjin mcp --path <config-path>`).
+- `graphjin mcp install` defaults to `--server http://localhost:8080/`.
+- Set a custom server URL with `--server`, for example:
+  - `graphjin mcp install --client codex --server http://my-host:8080/ --yes`
+- Claude installs use `graphjin mcp --server <url>` under the hood.
 - If Codex CLI does not support `codex mcp add --scope` (older versions), GraphJin automatically falls back to updating:
   - global scope: `~/.codex/config.toml`
   - local scope: `.codex/config.toml`
