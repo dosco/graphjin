@@ -1760,14 +1760,47 @@ func TestParseDBConfig_ReadOnly(t *testing.T) {
 	}
 }
 
+func TestParseDBConfig_SnowflakeConnectionString(t *testing.T) {
+	m := map[string]any{
+		"type":              "snowflake",
+		"connection_string": "user:pass@localhost:8080/test_db/public?account=test&protocol=http&warehouse=dummy",
+	}
+
+	conf, err := parseDBConfig(m)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if conf.Type != "snowflake" {
+		t.Fatalf("Expected Type to be snowflake, got %q", conf.Type)
+	}
+	if conf.ConnString == "" {
+		t.Fatal("Expected non-empty connection string")
+	}
+}
+
+func TestParseDBConfig_SnowflakeRequiresConnectionString(t *testing.T) {
+	m := map[string]any{
+		"type": "snowflake",
+		"host": "localhost",
+	}
+
+	_, err := parseDBConfig(m)
+	if err == nil {
+		t.Fatal("Expected error for snowflake without connection_string")
+	}
+	if !strings.Contains(err.Error(), "snowflake requires connection_string") {
+		t.Fatalf("Expected snowflake connection_string error, got: %v", err)
+	}
+}
+
 func TestEnhanceError(t *testing.T) {
 	testCases := []struct {
-		name           string
-		errMsg         string
-		currentTool    string
-		shouldEnhance  bool
-		expectedTool   string
-		notContains    string // substring that should NOT appear in enhanced output
+		name          string
+		errMsg        string
+		currentTool   string
+		shouldEnhance bool
+		expectedTool  string
+		notContains   string // substring that should NOT appear in enhanced output
 	}{
 		// Table-related errors
 		{

@@ -87,6 +87,9 @@ func Example_update() {
 	} else {
 		printJSON(res.Data)
 	}
+	// Cleanup: restore product 100 to original state
+	_, _ = db.Exec(`UPDATE products SET name = 'Product 100', description = 'Description for product 100' WHERE id = 100`)
+
 	// Output: {"products":{"id":100,"name":"Updated Product 100"}}
 }
 
@@ -129,6 +132,11 @@ func Example_updateMultipleRelatedTables1() {
 	} else {
 		printJSON(res.Data)
 	}
+	// Cleanup: restore data to original state
+	_, _ = db.Exec(`UPDATE purchases SET quantity = 1000 WHERE id = 100`)
+	_, _ = db.Exec(`UPDATE users SET full_name = 'User 1' WHERE id = 1`)
+	_, _ = db.Exec(`UPDATE products SET description = 'Description for product 100' WHERE id = 100`)
+
 	// Output: {"purchases":{"customer":{"full_name":"Updated user related to purchase 100"},"product":{"description":"Updated product related to purchase 100"},"quantity":6}}
 }
 
@@ -166,6 +174,11 @@ func Example_updateTableAndConnectToRelatedTables() {
 	} else {
 		printJSON(res.Data)
 	}
+	// Cleanup: restore product ownership to original state
+	_, _ = db.Exec(`UPDATE products SET owner_id = 99 WHERE id = 99`)
+	_, _ = db.Exec(`UPDATE products SET owner_id = 100 WHERE id = 100`)
+	_, _ = db.Exec(`UPDATE users SET full_name = 'User 100' WHERE id = 100`)
+
 	// Output: {"users":{"full_name":"Updated user 100","products":[{"id":99}]}}
 }
 
@@ -203,6 +216,10 @@ func Example_updateTableAndRelatedTable() {
 	} else {
 		printJSON(res.Data)
 	}
+	// Cleanup: restore data to original state
+	_, _ = db.Exec(`UPDATE users SET full_name = 'User 90' WHERE id = 90`)
+	_, _ = db.Exec(`UPDATE products SET name = 'Product 90' WHERE id = 90`)
+
 	// Output: {"users":{"full_name":"Updated user 90","products":[{"id":90}]}}
 }
 
@@ -228,6 +245,9 @@ func Example_setArrayColumnToValue() {
 		printJSON(res.Data)
 	}
 
+	// Cleanup: restore tags to original state
+	_, _ = db.Exec(`UPDATE products SET tags = list_value('Tag 1', 'Tag 2', 'Tag 3', 'Tag 4', 'Tag 5') WHERE id = 100`)
+
 	// Output: {"products":[{"id":100,"tags":["super","great","wow"]}]}
 }
 
@@ -252,6 +272,9 @@ func Example_setArrayColumnToEmpty() {
 	} else {
 		printJSON(res.Data)
 	}
+
+	// Cleanup: restore tags to original state
+	_, _ = db.Exec(`UPDATE products SET tags = list_value('Tag 1', 'Tag 2', 'Tag 3', 'Tag 4', 'Tag 5') WHERE id = 100`)
 
 	// Output: {"products":[{"id":100,"tags":[]}]}
 }

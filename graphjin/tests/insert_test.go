@@ -629,6 +629,9 @@ func Example_insertIntoRecursiveRelationship() {
 	} else {
 		printJSON(res.Data)
 	}
+	// Cleanup: remove inserted data
+	_, _ = db.Exec(`DELETE FROM comments WHERE id IN (5001, 5002)`)
+
 	// Output: {"comments":[{"id":5001,"reply_to_id":null},{"id":5002,"reply_to_id":5001}]}
 }
 
@@ -666,6 +669,10 @@ func Example_insertIntoRecursiveRelationshipAndConnectTable1() {
 	} else {
 		printJSON(res.Data)
 	}
+	// Cleanup: restore comment 5 and remove inserted data
+	_, _ = db.Exec(`UPDATE comments SET reply_to_id = 4 WHERE id = 5`)
+	_, _ = db.Exec(`DELETE FROM comments WHERE id = 5003`)
+
 	// Output: {"comments":[{"id":5003,"reply_to_id":null},{"id":5,"reply_to_id":5003}]}
 }
 
@@ -723,6 +730,10 @@ func Example_insertIntoRecursiveRelationshipAndConnectTable2() {
 	} else {
 		printJSON(res.Data)
 	}
+	// Cleanup: restore comment 6 and remove inserted data
+	_, _ = db.Exec(`UPDATE comments SET reply_to_id = 5 WHERE id = 6`)
+	_, _ = db.Exec(`DELETE FROM comments WHERE id = 5004`)
+
 	// Output: {"comments":{"commenter":{"id":3},"comments":[{"id":6}],"id":5004,"product":{"id":26}}}
 }
 

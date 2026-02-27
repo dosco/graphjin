@@ -183,3 +183,50 @@ func TestInitMssql_AllOptions(t *testing.T) {
 	expected := "sqlserver://sa:GraphJin%21Passw0rd@mssqlhost:1433?database=testdb&encrypt=disable&trustservercertificate=true"
 	assert.Equal(t, expected, dc.connString)
 }
+
+func TestInitSnowflake_RequiresConnectionString(t *testing.T) {
+	conf := &Config{
+		Serv: Serv{
+			DB: Database{
+				Type: "snowflake",
+			},
+		},
+	}
+
+	_, err := initSnowflake(conf, true, false, core.NewOsFS(""))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "snowflake requires connection_string")
+}
+
+func TestInitSnowflake_UsesConnectionString(t *testing.T) {
+	conn := "user:pass@localhost:8080/test_db/public?account=test&protocol=http&warehouse=dummy"
+	conf := &Config{
+		Serv: Serv{
+			DB: Database{
+				Type:       "snowflake",
+				ConnString: conn,
+			},
+		},
+	}
+
+	dc, err := initSnowflake(conf, true, false, core.NewOsFS(""))
+	require.NoError(t, err)
+	assert.Equal(t, "snowflake", dc.driverName)
+	assert.Equal(t, conn, dc.connString)
+}
+
+func TestInitDBDriver_DBTypeFallbackToDatabaseType(t *testing.T) {
+	conf := &Config{
+		Serv: Serv{
+			DB: Database{
+				Type:       "snowflake",
+				ConnString: "user:pass@localhost:8080/test_db/public?account=test&protocol=http&warehouse=dummy",
+			},
+		},
+	}
+
+	dc, err := initDBDriver(conf, true, false, core.NewOsFS(""))
+	require.NoError(t, err)
+	assert.Equal(t, "snowflake", conf.DBType)
+	assert.Equal(t, "snowflake", dc.driverName)
+}

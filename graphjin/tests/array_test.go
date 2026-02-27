@@ -53,14 +53,14 @@ func TestQueryParentAndChildrenViaArrayColumn(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	
+
 	exp := `{"categories":[{"name":"Category 1","products":[{"name":"Product 1"},{"name":"Product 2"}]},{"name":"Category 2","products":[{"name":"Product 1"},{"name":"Product 2"}]}],"products":[{"categories":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"}],"name":"Product 1","price":11.5},{"categories":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"}],"name":"Product 2","price":12.5}]}`
 	assert.Equal(t, exp, stdJSON(res.Data))
 }
 
 func TestInsertIntoTableAndConnectToRelatedTableWithArrayColumn(t *testing.T) {
-	if dbType == "sqlite" || dbType == "mssql" {
-		t.Skip("skipping test for sqlite/mssql (array column inserts with connect not fully working)")
+	if dbType == "sqlite" || dbType == "mssql" || dbType == "snowflake" {
+		t.Skip("skipping test for sqlite/mssql/snowflake (array-column connect mutations are not fully implemented)")
 	}
 
 	gql := `mutation {
@@ -102,7 +102,7 @@ func TestInsertIntoTableAndConnectToRelatedTableWithArrayColumn(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	
+
 	exp := `{"products":[{"categories":[{"id":1,"name":"Category 1"},{"id":2,"name":"Category 2"},{"id":3,"name":"Category 3"},{"id":4,"name":"Category 4"},{"id":5,"name":"Category 5"}],"id":100006,"name":"Product 100006"}]}`
 	assert.Equal(t, exp, stdJSON(res.Data))
 }
@@ -133,7 +133,7 @@ func TestVeryComplexQueryWithArrayColumns(t *testing.T) {
 				full_name
 				picture : avatar
 				email
-				category_counts(limit: 2) {
+				category_counts(limit: 2, order_by: { category_id: asc }) {
 					count
 					category {
 						name

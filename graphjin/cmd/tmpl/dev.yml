@@ -192,7 +192,7 @@ mcp:
 #
 # Uncomment and modify the section for your database type.
 # You can use either individual fields OR a connection_string (not both).
-# Supported types: postgres, mysql, sqlite, oracle, mssql, mongodb
+# Supported types: postgres, mysql, sqlite, oracle, mssql, mongodb, snowflake
 # ============================================================================
 
 # Database related environment Variables
@@ -277,6 +277,15 @@ mcp:
 #     port: 27017
 #     dbname: myapp
 #     # Note: MongoDB has no foreign keys, so relationships must be configured explicitly
+
+# --- Snowflake ---
+# databases:
+#   default:
+#     type: snowflake
+#     # Snowflake requires connection_string (host/port fields are not used)
+#     # Example (emulator style):
+#     # connection_string: user:pass@localhost:8080/test_db/public?account=test&protocol=http&warehouse=dummy
+#     connection_string: <snowflake_connection_string>
 
 # --- Database Connection Options (apply to any database type) ---
 #     # Size of database connection pool

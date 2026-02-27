@@ -21,6 +21,7 @@ func TestSystemDatabases(t *testing.T) {
 		{"mssql", []string{"master", "model", "msdb", "tempdb"}},
 		{"oracle", []string{"DBSNMP", "OUTLN", "SYS", "SYSTEM", "XDB"}},
 		{"mongodb", []string{"admin", "config", "local"}},
+		{"snowflake", []string{"snowflake", "snowflake_sample_data"}},
 	}
 
 	for _, tc := range tests {
@@ -90,6 +91,11 @@ func TestIsSystemDatabase(t *testing.T) {
 		{"mongodb config", "mongodb", "config", true},
 		{"mongodb local", "mongodb", "local", true},
 		{"mongodb user db", "mongodb", "myapp", false},
+
+		// snowflake
+		{"snowflake system db", "snowflake", "snowflake", true},
+		{"snowflake sample data", "snowflake", "SNOWFLAKE_SAMPLE_DATA", true},
+		{"snowflake user db", "snowflake", "analytics", false},
 
 		// edge cases
 		{"unknown type always false", "cockroachdb", "anything", false},

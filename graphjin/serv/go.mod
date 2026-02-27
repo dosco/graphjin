@@ -23,6 +23,7 @@ require (
 	github.com/redis/go-redis/v9 v9.17.2
 	github.com/rs/cors v1.11.1
 	github.com/sijms/go-ora/v2 v2.9.0
+	github.com/snowflakedb/gosnowflake v1.19.0
 	github.com/spf13/afero v1.15.0
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1

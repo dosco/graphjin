@@ -120,7 +120,8 @@ mcp:
 #   GJ_DATABASE_USER, GJ_DATABASE_PASSWORD
 #
 # See dev.yml for database configuration examples for:
-# PostgreSQL, MySQL, MariaDB, SQLite, Oracle, MS SQL Server, MongoDB
+# PostgreSQL, MySQL, MariaDB, SQLite, Oracle, MS SQL Server, MongoDB, Snowflake
+# Note: Snowflake requires connection_string.
 # ============================================================================
 
 databases:

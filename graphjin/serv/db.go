@@ -22,6 +22,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/microsoft/go-mssqldb"
 	_ "github.com/sijms/go-ora/v2"
+	_ "github.com/snowflakedb/gosnowflake"
 	_ "modernc.org/sqlite"
 )
 
@@ -67,11 +68,19 @@ func detectDBType(conf *Config) {
 		if strings.HasPrefix(cs, "mongodb://") || strings.HasPrefix(cs, "mongodb+srv://") {
 			conf.DBType = "mongodb"
 		}
+		if strings.HasPrefix(cs, "snowflake://") {
+			conf.DBType = "snowflake"
+		}
 	}
 }
 
 // initDBDriver initializes the database driver config based on the DB type
 func initDBDriver(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf, error) {
+	// Honor explicit database.type when db_type is unset.
+	if conf.DBType == "" && conf.DB.Type != "" {
+		conf.DBType = strings.ToLower(conf.DB.Type)
+	}
+
 	detectDBType(conf)
 
 	var dc *dbConf
@@ -90,8 +99,10 @@ func initDBDriver(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf,
 		dc, err = initOracle(conf, openDB, useTelemetry, fs)
 	case "mongodb":
 		dc, err = initMongo(conf, openDB, useTelemetry, fs)
+	case "snowflake":
+		dc, err = initSnowflake(conf, openDB, useTelemetry, fs)
 	default:
-		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, mssql, sqlite, oracle, mongodb", conf.DBType)
+		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, mssql, sqlite, oracle, mongodb, snowflake", conf.DBType)
 	}
 
 	if err != nil {
@@ -409,6 +420,17 @@ func initMongo(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf, er
 
 	connector := mongodriver.NewConnector(client, dbName)
 	return &dbConf{driverName: "mongodb", connector: connector}, nil
+}
+
+// initSnowflake initializes the snowflake database.
+// Snowflake requires a full DSN in connection_string.
+func initSnowflake(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf, error) {
+	connString := strings.TrimSpace(conf.DB.ConnString)
+	if connString == "" {
+		return nil, fmt.Errorf("snowflake requires connection_string")
+	}
+
+	return &dbConf{driverName: "snowflake", connString: connString}, nil
 }
 
 // loadX509KeyPair loads a X509 key pair from a file system

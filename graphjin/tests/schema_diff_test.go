@@ -31,6 +31,8 @@ func dropTable(t *testing.T, tableName string) {
 		sql = fmt.Sprintf("IF OBJECT_ID('%s', 'U') IS NOT NULL DROP TABLE [%s]", tableName, tableName)
 	case "oracle":
 		sql = fmt.Sprintf(`BEGIN EXECUTE IMMEDIATE 'DROP TABLE "%s" CASCADE CONSTRAINTS'; EXCEPTION WHEN OTHERS THEN IF SQLCODE != -942 THEN RAISE; END IF; END;`, strings.ToUpper(tableName))
+	case "snowflake":
+		sql = fmt.Sprintf(`DROP TABLE IF EXISTS "%s"`, tableName)
 	default:
 		sql = fmt.Sprintf(`DROP TABLE IF EXISTS "%s"`, tableName)
 	}
@@ -49,6 +51,8 @@ func dropIndex(t *testing.T, tableName, indexName string) {
 		sql = fmt.Sprintf("IF EXISTS (SELECT * FROM sys.indexes WHERE name = '%s') DROP INDEX [%s] ON [%s]", indexName, indexName, tableName)
 	case "oracle":
 		sql = fmt.Sprintf(`BEGIN EXECUTE IMMEDIATE 'DROP INDEX "%s"'; EXCEPTION WHEN OTHERS THEN IF SQLCODE != -1418 THEN RAISE; END IF; END;`, strings.ToUpper(indexName))
+	case "snowflake":
+		sql = fmt.Sprintf(`DROP INDEX IF EXISTS "%s"`, indexName)
 	default:
 		sql = fmt.Sprintf(`DROP INDEX IF EXISTS "%s"`, indexName)
 	}
@@ -68,13 +72,23 @@ func schemaForDB() string {
 		return "dbo"
 	case "oracle":
 		return "TESTER"
+	case "snowflake":
+		return "main"
 	default:
 		return "public"
 	}
 }
 
+func skipSchemaDiffUnsupported(t *testing.T) {
+	if dbType == "mongodb" {
+		t.Skip("schema diff not applicable for MongoDB")
+	}
+}
+
 // TestSchemaDiff_CreateTable tests creating new tables from schema diff
 func TestSchemaDiff_CreateTable(t *testing.T) {
+	skipSchemaDiffUnsupported(t)
+
 	// Skip for MongoDB (no schema support)
 	if dbType == "mongodb" {
 		t.Skip("schema diff not applicable for MongoDB")
@@ -128,6 +142,12 @@ type %s {
 		err = db.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM sys.tables WHERE name = '%s'`, tableName)).Scan(&count)
 	case "oracle":
 		err = db.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM user_tables WHERE table_name = '%s'`, strings.ToUpper(tableName))).Scan(&count)
+	case "snowflake":
+		var rowCount int
+		err = db.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM "%s"`, tableName)).Scan(&rowCount)
+		if err == nil {
+			count = 1
+		}
 	}
 	require.NoError(t, err)
 	assert.Equal(t, 1, count, "table should exist in database")
@@ -135,6 +155,8 @@ type %s {
 
 // TestSchemaDiff_AddColumn tests adding columns to existing tables
 func TestSchemaDiff_AddColumn(t *testing.T) {
+	skipSchemaDiffUnsupported(t)
+
 	if dbType == "mongodb" {
 		t.Skip("schema diff not applicable for MongoDB")
 	}
@@ -191,6 +213,8 @@ type %s {
 
 // TestSchemaDiff_ForeignKey tests foreign key constraint creation
 func TestSchemaDiff_ForeignKey(t *testing.T) {
+	skipSchemaDiffUnsupported(t)
+
 	if dbType == "mongodb" {
 		t.Skip("schema diff not applicable for MongoDB")
 	}
@@ -248,8 +272,13 @@ type %s {
 
 // TestSchemaDiff_UniqueIndex tests @unique directive produces correct indexes
 func TestSchemaDiff_UniqueIndex(t *testing.T) {
+	skipSchemaDiffUnsupported(t)
+
 	if dbType == "mongodb" {
 		t.Skip("schema diff not applicable for MongoDB")
+	}
+	if dbType == "snowflake" {
+		t.Skip("unique index test not applicable for snowflake emulator constraint DDL")
 	}
 
 	tableName := "test_sd_unique_" + randomSuffix()
@@ -312,8 +341,10 @@ type %s {
 
 // TestSchemaDiff_SearchIndex tests @search directive produces correct full-text indexes
 func TestSchemaDiff_SearchIndex(t *testing.T) {
+	skipSchemaDiffUnsupported(t)
+
 	// Skip for databases that don't support full-text search in the same way
-	if dbType == "mongodb" || dbType == "sqlite" || dbType == "mssql" || dbType == "oracle" {
+	if dbType == "mongodb" || dbType == "sqlite" || dbType == "mssql" || dbType == "oracle" || dbType == "snowflake" {
 		t.Skip("search index test not applicable for " + dbType)
 	}
 
@@ -362,6 +393,8 @@ type %s {
 
 // TestSchemaDiff_Destructive tests DROP operations with destructive flag
 func TestSchemaDiff_Destructive(t *testing.T) {
+	skipSchemaDiffUnsupported(t)
+
 	if dbType == "mongodb" {
 		t.Skip("schema diff not applicable for MongoDB")
 	}
@@ -421,6 +454,8 @@ type %s {
 
 // TestSchemaDiff_DropTable tests DROP TABLE with destructive flag
 func TestSchemaDiff_DropTable(t *testing.T) {
+	skipSchemaDiffUnsupported(t)
+
 	if dbType == "mongodb" {
 		t.Skip("schema diff not applicable for MongoDB")
 	}
@@ -465,6 +500,8 @@ type %s {
 
 // TestSchemaDiff_Idempotency tests that applying diff twice produces no changes
 func TestSchemaDiff_Idempotency(t *testing.T) {
+	skipSchemaDiffUnsupported(t)
+
 	if dbType == "mongodb" {
 		t.Skip("schema diff not applicable for MongoDB")
 	}
@@ -506,6 +543,8 @@ type %s {
 
 // TestSchemaDiff_DialectSpecific verifies correct DDL syntax per database
 func TestSchemaDiff_DialectSpecific(t *testing.T) {
+	skipSchemaDiffUnsupported(t)
+
 	if dbType == "mongodb" {
 		t.Skip("schema diff not applicable for MongoDB")
 	}
@@ -551,6 +590,9 @@ type %s {
 	case "oracle":
 		assert.Contains(t, createSQL, `"ID"`, "Oracle should use uppercase double-quote identifiers")
 		assert.Contains(t, createSQL, "GENERATED BY DEFAULT AS IDENTITY", "Oracle should use identity column")
+	case "snowflake":
+		assert.Contains(t, createSQL, `"id"`, "Snowflake should use double-quote identifiers")
+		assert.Contains(t, createSQL, "PRIMARY KEY", "Snowflake should define a primary key")
 	}
 
 	// Verify SQL executes successfully
@@ -562,6 +604,8 @@ type %s {
 
 // TestSchemaDiff_MultipleTypes tests creating multiple tables in one schema
 func TestSchemaDiff_MultipleTypes(t *testing.T) {
+	skipSchemaDiffUnsupported(t)
+
 	if dbType == "mongodb" {
 		t.Skip("schema diff not applicable for MongoDB")
 	}
@@ -611,6 +655,8 @@ type %s {
 
 // TestSchemaDiff_NotNullColumn tests NOT NULL constraint handling
 func TestSchemaDiff_NotNullColumn(t *testing.T) {
+	skipSchemaDiffUnsupported(t)
+
 	if dbType == "mongodb" {
 		t.Skip("schema diff not applicable for MongoDB")
 	}
@@ -689,6 +735,8 @@ func dropTableOnDB(t *testing.T, db *sql.DB, dbType, tableName string) {
 		sqlStmt = fmt.Sprintf("IF OBJECT_ID('%s', 'U') IS NOT NULL DROP TABLE [%s]", tableName, tableName)
 	case "oracle":
 		sqlStmt = fmt.Sprintf(`BEGIN EXECUTE IMMEDIATE 'DROP TABLE "%s" CASCADE CONSTRAINTS'; EXCEPTION WHEN OTHERS THEN IF SQLCODE != -942 THEN RAISE; END IF; END;`, strings.ToUpper(tableName))
+	case "snowflake":
+		sqlStmt = fmt.Sprintf(`DROP TABLE IF EXISTS "%s"`, tableName)
 	default:
 		sqlStmt = fmt.Sprintf(`DROP TABLE IF EXISTS "%s"`, tableName)
 	}

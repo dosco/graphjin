@@ -12,10 +12,16 @@ var dbTypes map[string]string = map[string]string{
 	"bigserial":                   "Int",
 	"decimal":                     "Float",
 	"numeric":                     "Float",
+	"number":                      "Float",
 	"real":                        "Float",
 	"double precision":            "Float",
+	"double":                      "Float",
 	"money":                       "Float",
 	"boolean":                     "Boolean",
+	"varchar":                     "String",
+	"timestamp_ntz":               "String",
+	"timestamp_ltz":               "String",
+	"timestamp_tz":                "String",
 }
 
 type dirArg struct {

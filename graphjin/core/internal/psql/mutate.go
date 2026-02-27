@@ -150,6 +150,22 @@ func (c *compilerContext) compileLinearMutation() {
 						c.w.WriteString(" = ")
 						c.colWithTable("t", m.Ti.PrimaryCol.Name)
 						hasWhere = true
+					} else if c.dialect.Name() == "snowflake" {
+						pkAlias := ""
+						for _, col := range m.Cols {
+							if col.Col.Name == m.Ti.PrimaryCol.Name {
+								pkAlias = col.FieldName
+								break
+							}
+						}
+						// Snowflake JSON updates should only join on PK when the PK is explicitly present
+						// in the input payload. Root updates by where/id usually don't include id in payload.
+						if pkAlias != "" {
+							c.colWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
+							c.w.WriteString(" = ")
+							c.colWithTable("t", pkAlias)
+							hasWhere = true
+						}
 					} else if c.dialect.Name() == "mysql" || c.dialect.Name() == "mariadb" {
 						// For child updates (m.ParentID != -1), the JSON input doesn't contain the child's PK.
 						// The row to update is determined by the parent's FK, not by JSON table join.
@@ -183,7 +199,7 @@ func (c *compilerContext) compileLinearMutation() {
 				// Handle parent join for child updates
 				if m.ParentID != -1 {
 					dialectName := c.dialect.Name()
-					if dialectName == "sqlite" || dialectName == "mysql" || dialectName == "mariadb" || dialectName == "mssql" || dialectName == "oracle" {
+					if dialectName == "sqlite" || dialectName == "snowflake" || dialectName == "mysql" || dialectName == "mariadb" || dialectName == "mssql" || dialectName == "oracle" {
 						if m.Where.Exp != nil || hasWhere { // Check if anything was rendered before
 							c.w.WriteString(" AND ")
 						}
@@ -200,10 +216,10 @@ func (c *compilerContext) compileLinearMutation() {
 						c.colWithTable(m.Ti.Name, childCol)
 						c.w.WriteString(" = ")
 
-						if dialectName == "sqlite" {
-							// SQLite uses subquery
-							c.w.WriteString("(SELECT ")
-							c.quoted(parentCol)
+							if dialectName == "sqlite" || dialectName == "snowflake" {
+								// SQLite uses subquery
+								c.w.WriteString("(SELECT ")
+								c.quoted(parentCol)
 							c.w.WriteString(" FROM ")
 							c.quoted(pm.Ti.Name)
 							c.w.WriteString(" WHERE ")
@@ -476,6 +492,8 @@ func (c *compilerContext) renderNestedRelColumns(m qcode.Mutate, values bool, pr
 				if !c.willBeArray(i) {
 					if c.dialect.Name() == "postgres" {
 						c.w.WriteString(`ARRAY(SELECT `)
+					} else if c.dialect.Name() == "snowflake" {
+						c.w.WriteString(`(SELECT array_agg(`)
 					} else {
 						// MariaDB/MySQL/SQLite use JSON_ARRAYAGG
 						c.w.WriteString(`(SELECT JSON_ARRAYAGG(`)
@@ -484,7 +502,11 @@ func (c *compilerContext) renderNestedRelColumns(m qcode.Mutate, values bool, pr
 					c.w.WriteString(`(SELECT `)
 				}
 				c.quoted(col.VCol.Name)
-				c.w.WriteString(` FROM `)
+				if c.dialect.Name() == "snowflake" && !c.willBeArray(i) {
+					c.w.WriteString(`) FROM `)
+				} else {
+					c.w.WriteString(` FROM `)
+				}
 				c.quoted(col.VCol.Table)
 				c.w.WriteString(`)`)
 			} else {

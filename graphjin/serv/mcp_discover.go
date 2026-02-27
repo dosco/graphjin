@@ -36,6 +36,7 @@ func (ms *mcpServer) registerDiscoverTools() {
 		mcp.WithDescription("Scan the local system for running databases. "+
 			"Probes well-known TCP ports on localhost for PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, and MongoDB. "+
 			"Optionally checks Unix domain sockets for PostgreSQL and MySQL when scan_unix_sockets is true. "+
+			"Snowflake is not auto-scanned on localhost; provide it explicitly via connection_string in targets or MCP config flows. "+
 			"Searches for SQLite database files. Detects database Docker containers. "+
 			"Then attempts to connect using default credentials and lists database names inside each instance. "+
 			"If defaults fail, reports auth_failed so you can re-call with user/password. "+
@@ -56,18 +57,18 @@ func (ms *mcpServer) registerDiscoverTools() {
 		mcp.WithBoolean("scan_unix_sockets",
 			mcp.Description("Scan local Unix sockets for PostgreSQL/MySQL/MongoDB (default: false)")),
 		mcp.WithArray("targets",
-			mcp.Description("Optional explicit targets to probe. Each item: {type?, host, port?, source_label?, user?, password?, dbname?}."),
+			mcp.Description("Optional explicit targets to probe. Each item: {type?, host?, port?, source_label?, user?, password?, dbname?, connection_string?}."),
 			mcp.Items(map[string]any{
-				"type":     "object",
-				"required": []string{"host"},
+				"type": "object",
 				"properties": map[string]any{
-					"type":         map[string]any{"type": "string", "description": "Database type (postgres, mysql, mssql, oracle, mongodb)"},
-					"host":         map[string]any{"type": "string", "description": "Hostname or IP address"},
-					"port":         map[string]any{"type": "number", "description": "Port number"},
-					"source_label": map[string]any{"type": "string", "description": "Label for this target source"},
-					"user":         map[string]any{"type": "string", "description": "Username for authentication"},
-					"password":     map[string]any{"type": "string", "description": "Password for authentication"},
-					"dbname":       map[string]any{"type": "string", "description": "Database name"},
+					"type":              map[string]any{"type": "string", "description": "Database type (postgres, mysql, mssql, oracle, mongodb, snowflake)"},
+					"host":              map[string]any{"type": "string", "description": "Hostname or IP address"},
+					"port":              map[string]any{"type": "number", "description": "Port number"},
+					"source_label":      map[string]any{"type": "string", "description": "Label for this target source"},
+					"user":              map[string]any{"type": "string", "description": "Username for authentication"},
+					"password":          map[string]any{"type": "string", "description": "Password for authentication"},
+					"dbname":            map[string]any{"type": "string", "description": "Database name"},
+					"connection_string": map[string]any{"type": "string", "description": "Direct connection string (required for Snowflake targets)"},
 				},
 			}),
 		),
@@ -174,13 +175,14 @@ type discoverOptions struct {
 
 // DiscoverTarget is an explicit host target to probe (local or remote).
 type DiscoverTarget struct {
-	Type        string `json:"type,omitempty"`
-	Host        string `json:"host"`
-	Port        int    `json:"port,omitempty"`
-	SourceLabel string `json:"source_label,omitempty"`
-	User        string `json:"user,omitempty"`
-	Password    string `json:"password,omitempty"`
-	DBName      string `json:"dbname,omitempty"`
+	Type             string `json:"type,omitempty"`
+	Host             string `json:"host"`
+	Port             int    `json:"port,omitempty"`
+	SourceLabel      string `json:"source_label,omitempty"`
+	User             string `json:"user,omitempty"`
+	Password         string `json:"password,omitempty"`
+	DBName           string `json:"dbname,omitempty"`
+	ConnectionString string `json:"connection_string,omitempty"`
 }
 
 // dbProbe defines a port to probe for a specific database type
@@ -218,10 +220,15 @@ func (ms *mcpServer) handleListDatabases(ctx context.Context, req mcp.CallToolRe
 			continue
 		}
 		hostPort := fmt.Sprintf("%s:%d", dbConf.Host, dbConf.Port)
-		if queried[hostPort] {
+		queryKey := hostPort
+		if dbConf.ConnString != "" && dbConf.Host == "" {
+			hostPort = "connection_string"
+			queryKey = "connection_string:" + name
+		}
+		if queried[queryKey] {
 			continue
 		}
-		queried[hostPort] = true
+		queried[queryKey] = true
 
 		dbType := strings.ToLower(dbConf.Type)
 		if dbType == "" {
@@ -255,13 +262,18 @@ func (ms *mcpServer) handleListDatabases(ctx context.Context, req mcp.CallToolRe
 	for _, name := range confNames {
 		dbConf := conf.Databases[name]
 		hostPort := fmt.Sprintf("%s:%d", dbConf.Host, dbConf.Port)
-		if queried[hostPort] {
+		queryKey := hostPort
+		if dbConf.ConnString != "" && dbConf.Host == "" {
+			hostPort = "connection_string"
+			queryKey = "connection_string:" + name
+		}
+		if queried[queryKey] {
 			continue
 		}
-		queried[hostPort] = true
+		queried[queryKey] = true
 
 		dbType := strings.ToLower(dbConf.Type)
-		names, err := testDatabaseConnection(dbType, dbConf.Host, dbConf.Port, dbConf.User, dbConf.Password, dbConf.DBName)
+		names, err := testDatabaseConnection(dbType, dbConf.Host, dbConf.Port, dbConf.User, dbConf.Password, dbConf.DBName, dbConf.ConnString)
 		if !ms.service.conf.MCP.DefaultDBAllowed {
 			names = filterSystemDatabases(dbType, names)
 		}
@@ -424,7 +436,7 @@ func (ms *mcpServer) runDiscovery(args map[string]any) (DiscoverResult, error) {
 	wg.Wait()
 
 	// Phase 4: Explicit targets (local or remote)
-	for _, target := range opts.targets {
+	for i, target := range opts.targets {
 		dbType := strings.ToLower(target.Type)
 		if dbType == "" {
 			dbType = inferDBTypeFromPort(target.Port)
@@ -436,21 +448,35 @@ func (ms *mcpServer) runDiscovery(args map[string]any) (DiscoverResult, error) {
 		if port == 0 {
 			port = defaultPortForType(dbType)
 		}
+		targetHost := target.Host
+		if targetHost == "" && strings.TrimSpace(target.ConnectionString) != "" {
+			targetHost = fmt.Sprintf("connection_string_%d", i)
+		}
+
 		source := "target"
 		if target.SourceLabel != "" {
 			source = "target:" + target.SourceLabel
 		}
 		status := "unreachable"
-		if target.Host != "" && port > 0 && checkTCPPort(target.Host, port, timeout) {
+		if strings.TrimSpace(target.ConnectionString) != "" {
+			status = "configured"
+		} else if target.Host != "" && port > 0 && checkTCPPort(target.Host, port, timeout) {
 			status = "listening"
+		}
+		snippet := buildConfigSnippet(dbType, targetHost, port, "")
+		if target.DBName != "" {
+			snippet["dbname"] = target.DBName
+		}
+		if strings.TrimSpace(target.ConnectionString) != "" {
+			snippet["connection_string"] = target.ConnectionString
 		}
 		databases = append(databases, DiscoveredDatabase{
 			Type:          dbType,
-			Host:          target.Host,
+			Host:          targetHost,
 			Port:          port,
 			Source:        source,
 			Status:        status,
-			ConfigSnippet: buildConfigSnippet(dbType, target.Host, port, ""),
+			ConfigSnippet: snippet,
 		})
 	}
 
@@ -747,6 +773,9 @@ func buildConfigSnippet(dbType, host string, port int, filePath string) map[stri
 		snippet["dbname"] = ""
 	case "mongodb":
 		snippet["dbname"] = ""
+	case "snowflake":
+		snippet["dbname"] = ""
+		snippet["connection_string"] = ""
 	}
 
 	return snippet
@@ -829,7 +858,7 @@ func probeDatabase(db *DiscoveredDatabase, userParam, passwordParam string) {
 
 	// Unknown types get skipped
 	switch dbType {
-	case "postgres", "mysql", "mariadb", "mssql", "oracle", "sqlite", "mongodb":
+	case "postgres", "mysql", "mariadb", "mssql", "oracle", "sqlite", "mongodb", "snowflake":
 	default:
 		db.AuthStatus = "skipped"
 		return
@@ -844,6 +873,51 @@ func probeDatabase(db *DiscoveredDatabase, userParam, passwordParam string) {
 	// MongoDB: use native driver
 	if dbType == "mongodb" {
 		probeMongoDBEntry(db, userParam, passwordParam)
+		return
+	}
+
+	// Explicit connection string flow (required for Snowflake, optional for other SQL DBs).
+	if connString, _ := db.ConfigSnippet["connection_string"].(string); strings.TrimSpace(connString) != "" {
+		driverName := driverForType(dbType)
+		if dbType != "snowflake" && driverName == dbType {
+			driverName = ""
+		}
+		if driverName == "" {
+			db.AuthStatus = "error"
+			db.AuthError = fmt.Sprintf("unsupported database type: %s", dbType)
+			db.ProbeStatus = "bad_input"
+			return
+		}
+
+		sqlDB, err := tryConnect(driverName, connString)
+		if err != nil {
+			db.AuthStatus = "error"
+			db.AuthError = err.Error()
+			db.ProbeStatus = classifyProbeError(err)
+			return
+		}
+		defer sqlDB.Close()
+
+		names, err := listDatabaseNames(sqlDB, dbType)
+		db.AuthStatus = "ok"
+		db.Databases = names
+		if err != nil {
+			db.AuthError = fmt.Sprintf("connected but failed to list databases: %v", err)
+			db.ProbeStatus = classifyProbeError(err)
+		}
+		if db.ConfigSnippet["dbname"] == "" || db.ConfigSnippet["dbname"] == nil {
+			filtered := filterSystemDatabases(dbType, names)
+			if len(filtered) > 0 {
+				db.ConfigSnippet["dbname"] = filtered[0]
+			}
+		}
+		return
+	}
+
+	if dbType == "snowflake" {
+		db.AuthStatus = "error"
+		db.AuthError = "snowflake probing requires connection_string"
+		db.ProbeStatus = "bad_input"
 		return
 	}
 
@@ -1057,6 +1131,9 @@ func defaultCredentials(dbType string) []dbCredential {
 			{user: "system", password: ""},
 			{user: "system", password: "oracle"},
 		}
+	case "snowflake":
+		// Snowflake is connection_string-first and does not have safe default credential probing.
+		return nil
 	default:
 		return nil
 	}
@@ -1173,6 +1250,8 @@ func listDatabaseNames(db *sql.DB, dbType string) ([]string, error) {
 		query = "SELECT username FROM all_users WHERE oracle_maintained = 'N'"
 	case "sqlite":
 		query = "SELECT name FROM sqlite_master WHERE type='table'"
+	case "snowflake":
+		query = "SELECT database_name FROM information_schema.databases"
 	default:
 		return nil, fmt.Errorf("unsupported database type: %s", dbType)
 	}
@@ -1235,6 +1314,7 @@ func isAuthError(err error) bool {
 		"login failed",                   // mssql
 		"ora-01017",                      // oracle
 		"authentication failed",          // mongodb
+		"incorrect username or password", // snowflake
 	}
 	for _, pattern := range authPatterns {
 		if strings.Contains(msg, pattern) {
@@ -1463,10 +1543,11 @@ func parseDiscoverOptions(ms *mcpServer, args map[string]any) (discoverOptions, 
 			t.User, _ = tm["user"].(string)
 			t.Password, _ = tm["password"].(string)
 			t.DBName, _ = tm["dbname"].(string)
+			t.ConnectionString, _ = tm["connection_string"].(string)
 			if p, ok := tm["port"].(float64); ok {
 				t.Port = int(p)
 			}
-			if t.Host == "" {
+			if t.Host == "" && strings.TrimSpace(t.ConnectionString) == "" {
 				continue
 			}
 			opts.targets = append(opts.targets, t)

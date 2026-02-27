@@ -138,10 +138,8 @@ func newMCPInstallCommand(cfg mcpInstallCommandConfig) *cobra.Command {
 				}
 			}
 
-			printResolvedInstallOptions(cmd.OutOrStdout(), opts)
-			printInstallPlan(cmd.OutOrStdout(), opts, codexPlan)
-
 			if interactive {
+				printInstallPreview(cmd.OutOrStdout(), opts)
 				ok, err := promptConfirm(newPromptIO(cmd.InOrStdin(), cmd.OutOrStdout()),
 					"Proceed with MCP install?", false)
 				if err != nil {
@@ -165,7 +163,7 @@ func newMCPInstallCommand(cfg mcpInstallCommandConfig) *cobra.Command {
 				}
 			}
 
-			fmt.Fprintln(cmd.OutOrStdout(), "MCP install complete.")
+			printPostInstallGuide(cmd.OutOrStdout(), opts, codexPlan)
 		},
 	}
 
@@ -345,6 +343,14 @@ func buildCodexAddArgs(opts mcpInstallOptions, includeScope bool) []string {
 	return args
 }
 
+func buildCodexRemoveArgs(opts mcpInstallOptions, includeScope bool) []string {
+	args := []string{"mcp", "remove", graphjinMCPName}
+	if includeScope {
+		args = append(args, "--scope", codexScopeValue(opts.Scope))
+	}
+	return args
+}
+
 func codexScopeValue(scope string) string {
 	switch scope {
 	case "global":
@@ -415,6 +421,8 @@ func normalizeClaudeScope(scope string) string {
 
 func runCodexInstall(cmd *cobra.Command, opts mcpInstallOptions, plan codexInstallPlan) error {
 	if plan.UseCLI {
+		// Best effort: remove existing config entry so re-runs update instead of duplicate.
+		_ = runExternalCommand(cmd, "codex", buildCodexRemoveArgs(opts, plan.ScopeSupported)...)
 		return runExternalCommand(cmd, "codex", plan.AddArgs...)
 	}
 
@@ -500,31 +508,34 @@ func usesCodex(client string) bool {
 	return client == "codex" || client == "both"
 }
 
-func printResolvedInstallOptions(w io.Writer, opts mcpInstallOptions) {
-	fmt.Fprintf(w, "Resolved options:\n")
-	fmt.Fprintf(w, "  client: %s\n", opts.Client)
-	fmt.Fprintf(w, "  scope:  %s\n", opts.Scope)
-	fmt.Fprintf(w, "  server: %s\n", opts.Server)
-	fmt.Fprintf(w, "\n")
+func printInstallPreview(w io.Writer, opts mcpInstallOptions) {
+	fmt.Fprintf(w, "Install target: %s\n", opts.Client)
+	fmt.Fprintf(w, "Scope: %s\n", opts.Scope)
+	fmt.Fprintf(w, "Server: %s\n\n", opts.Server)
 }
 
-func printInstallPlan(w io.Writer, opts mcpInstallOptions, codexPlan codexInstallPlan) {
-	fmt.Fprintf(w, "Planned actions:\n")
+func printPostInstallGuide(w io.Writer, opts mcpInstallOptions, codexPlan codexInstallPlan) {
+	fmt.Fprintf(w, "GraphJin MCP setup complete.\n")
+	fmt.Fprintf(w, "Server: %s\n", opts.Server)
 
 	if usesClaude(opts.Client) {
-		claudeScope := normalizeClaudeScope(opts.Scope)
-		fmt.Fprintf(w, "  - claude mcp add --scope %s %s -- graphjin %s\n", claudeScope, claudeMCPServerName, strings.Join(buildClaudeMCPServerArgs(opts), " "))
+		fmt.Fprintf(w, "\nClaude Desktop / Claude Code\n")
+		fmt.Fprintf(w, "  1) Restart Claude Desktop.\n")
+		fmt.Fprintf(w, "  2) Verify with: claude mcp list\n")
+		fmt.Fprintf(w, "  3) In Chat tab: Customizer -> Plugins -> search \"GraphJin\" -> Install.\n")
+		fmt.Fprintf(w, "  4) If not listed, add it as a custom plugin in Customizer.\n")
 	}
 
 	if usesCodex(opts.Client) {
-		if codexPlan.UseCLI {
-			fmt.Fprintf(w, "  - codex %s\n", strings.Join(codexPlan.AddArgs, " "))
-		} else {
-			fmt.Fprintf(w, "  - update %s (set mcp_servers.%s)\n", codexPlan.ConfigPath, graphjinMCPName)
+		fmt.Fprintf(w, "\nOpenAI Codex\n")
+		fmt.Fprintf(w, "  1) Start a new Codex session.\n")
+		fmt.Fprintf(w, "  2) Verify with: codex mcp list\n")
+		if !codexPlan.UseCLI {
+			fmt.Fprintf(w, "  3) Config written to: %s\n", codexPlan.ConfigPath)
 		}
 	}
 
-	fmt.Fprintf(w, "\n")
+	fmt.Fprintln(w)
 }
 
 func runExternalCommand(cmd *cobra.Command, name string, args ...string) error {

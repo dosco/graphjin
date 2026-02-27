@@ -134,8 +134,8 @@ func Example_queryWithWhereInWithStaticNumericArrayColumn() {
 }
 
 func Example_queryWithFunctionFields() {
-	// Skip for MongoDB: custom database functions not supported
-	if dbType == "mongodb" {
+	// Skip for MongoDB/Snowflake emulator: custom database functions not supported
+	if dbType == "mongodb" || dbType == "snowflake" {
 		fmt.Println(`{"products":{"id":51,"is_hot_product":true,"name":"Product 51"}}`)
 		return
 	}
@@ -167,8 +167,8 @@ func Example_queryWithFunctionFields() {
 }
 
 func Example_queryWithFunctionFieldsArgList() {
-	// Skip for MongoDB: custom database functions not supported
-	if dbType == "mongodb" {
+	// Skip for MongoDB/Snowflake emulator: custom database functions not supported
+	if dbType == "mongodb" || dbType == "snowflake" {
 		fmt.Println(`{"products":{"id":51,"is_hot_product":true,"name":"Product 51"}}`)
 		return
 	}
@@ -200,8 +200,8 @@ func Example_queryWithFunctionFieldsArgList() {
 }
 
 func Example_queryWithFunctionReturingTables() {
-	// Skip for MongoDB: custom database functions not supported
-	if dbType == "mongodb" {
+	// Skip for MongoDB/Snowflake emulator: custom database functions not supported
+	if dbType == "mongodb" || dbType == "snowflake" {
 		fmt.Println(`{"get_oldest5_products":[{"id":1,"name":"Product 1"},{"id":2,"name":"Product 2"},{"id":3,"name":"Product 3"}]}`)
 		return
 	}
@@ -229,8 +229,8 @@ func Example_queryWithFunctionReturingTables() {
 }
 
 func Example_queryWithFunctionReturingTablesWithArgs() {
-	// Skip for MongoDB: custom database functions not supported
-	if dbType == "mongodb" {
+	// Skip for MongoDB/Snowflake emulator: custom database functions not supported
+	if dbType == "mongodb" || dbType == "snowflake" {
 		fmt.Println(`{"get_oldest_users":[{"full_name":"User 1","id":1,"tag_name":"boo"},{"full_name":"User 2","id":2,"tag_name":"boo"}]}`)
 		return
 	}
@@ -260,8 +260,8 @@ func Example_queryWithFunctionReturingTablesWithArgs() {
 }
 
 func Example_queryWithFunctionReturingTablesWithNamedArgs() {
-	// Skip for MongoDB: custom database functions not supported
-	if dbType == "mongodb" {
+	// Skip for MongoDB/Snowflake emulator: custom database functions not supported
+	if dbType == "mongodb" || dbType == "snowflake" {
 		fmt.Println(`{"get_oldest_users":[{"full_name":"User 1","id":1,"tag_name":"boo"},{"full_name":"User 2","id":2,"tag_name":"boo"}]}`)
 		return
 	}
@@ -291,8 +291,8 @@ func Example_queryWithFunctionReturingTablesWithNamedArgs() {
 }
 
 func Example_queryWithFunctionReturingUserDefinedTypes() {
-	// Skip for MongoDB: custom database functions not supported
-	if dbType == "mongodb" {
+	// Skip for MongoDB/Snowflake emulator: custom database functions not supported
+	if dbType == "mongodb" || dbType == "snowflake" {
 		fmt.Println(`{"get_product":[{"id":1,"name":"Product 1"},{"id":2,"name":"Product 2"}]}`)
 		return
 	}
@@ -320,8 +320,8 @@ func Example_queryWithFunctionReturingUserDefinedTypes() {
 }
 
 func Example_queryWithFunctionAndDirectives() {
-	// Skip for MongoDB: custom database functions not supported
-	if dbType == "mongodb" {
+	// Skip for MongoDB/Snowflake emulator: custom database functions not supported
+	if dbType == "mongodb" || dbType == "snowflake" {
 		fmt.Println(`{"products":{"id":51,"is_hot_product":null,"name":"Product 51"}}`)
 		return
 	}
@@ -385,6 +385,9 @@ func TestMutiSchema(t *testing.T) {
 	}
 	if dbType == "mssql" {
 		t.Skip("skipping test for mssql: boolean literal rendering needs work")
+	}
+	if dbType == "snowflake" {
+		t.Skip("skipping test for snowflake: test uses Postgres-specific DDL (BIGSERIAL/JSONB/TIMESTAMPTZ)")
 	}
 	if dbType == "mongodb" {
 		t.Skip("skipping test for mongodb: MongoDB uses databases instead of schemas")

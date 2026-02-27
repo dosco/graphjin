@@ -174,7 +174,7 @@ func (ms *mcpServer) registerConfigTools() {
 			mcp.WithBoolean("create_if_not_exists",
 				mcp.Description("Dev mode only. When true, creates databases on the server if they don't exist before connecting. "+
 					"Works for PostgreSQL, MySQL/MariaDB, MSSQL, and Oracle. "+
-					"SQLite and MongoDB create databases automatically."),
+					"SQLite and MongoDB create databases automatically. Snowflake is not supported for create_if_not_exists."),
 			),
 			mcp.WithArray("remove_databases",
 				mcp.Description("Array of database names to remove from configuration."),
@@ -546,11 +546,14 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			if createIfNotExists {
 				if err := createDatabaseOnServer(dbType, host, port, user, password, dbName, ms.service.log); err != nil {
 					ms.service.log.Warnf("create_if_not_exists for '%s': %v", pdb.name, err)
+					if dbType == "snowflake" {
+						changes = append(changes, fmt.Sprintf("database %s: create_if_not_exists is not supported for snowflake; continuing with connection test", pdb.name))
+					}
 				}
 			}
 
 			// Test connectivity
-			_, err := testDatabaseConnection(dbType, host, port, user, password, dbName)
+			_, err := testDatabaseConnection(dbType, host, port, user, password, dbName, dbConf.ConnString)
 			if err != nil {
 				connErrors = append(connErrors, fmt.Sprintf("database '%s' (%s@%s:%d/%s): connection failed: %v",
 					pdb.name, user, host, port, dbName, err))
@@ -955,12 +958,13 @@ func parseDBConfig(m map[string]any) (core.DatabaseConfig, error) {
 	if conf.Type == "" {
 		return conf, fmt.Errorf("database type is required")
 	}
-	validTypes := map[string]bool{
-		"postgres": true, "mysql": true, "mariadb": true,
-		"mssql": true, "sqlite": true, "oracle": true, "mongodb": true,
+	conf.Type = strings.ToLower(strings.TrimSpace(conf.Type))
+	if err := core.ValidateMultiDBType(conf.Type); err != nil {
+		return conf, err
 	}
-	if !validTypes[strings.ToLower(conf.Type)] {
-		return conf, fmt.Errorf("invalid database type: %s", conf.Type)
+
+	if conf.Type == "snowflake" && strings.TrimSpace(conf.ConnString) == "" {
+		return conf, fmt.Errorf("snowflake requires connection_string")
 	}
 
 	return conf, nil

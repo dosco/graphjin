@@ -243,7 +243,6 @@ func (s *gstate) groupRootsByDatabase(roots []string) map[string][]string {
 	return byDB
 }
 
-
 // getTargetDBCtx returns the dbContext for the target database.
 // If s.database is set, returns that database's context.
 // Otherwise returns the default database context.
@@ -438,15 +437,12 @@ func (s *gstate) setDefaultVars() {
 		s.vmap = make(map[string]json.RawMessage, vlen)
 	}
 
-
 	for _, v := range s.cs.st.qc.Vars {
 		s.vmap[v.Name] = v.Val
 	}
 }
 
 func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
-
-
 
 	if err = s.validateAndUpdateVars(c); err != nil {
 		return
@@ -459,21 +455,21 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 
 	cs := s.cs
 
-    // Use Dialect to check for multi-statement scripts (e.g., SQLite)
-    dialect := s.getTargetPsqlCompiler().GetDialect()
-    parts := dialect.SplitQuery(cs.st.sql)
+	// Use Dialect to check for multi-statement scripts (e.g., SQLite)
+	dialect := s.getTargetPsqlCompiler().GetDialect()
+	parts := dialect.SplitQuery(cs.st.sql)
 
-    if len(parts) > 1 {
-        // Multi-statement script execution
-        c1, span := s.gj.spanStart(c, "Execute Script")
-        defer span.End()
+	if len(parts) > 1 {
+		// Multi-statement script execution
+		c1, span := s.gj.spanStart(c, "Execute Script")
+		defer span.End()
 
-        argIdx := 0
-        		for i, stmt := range parts {
+		argIdx := 0
+		for i, stmt := range parts {
 			// Count parameters (?) in this statement to slice arguments
 			nParams := strings.Count(stmt, "?")
 			var stmtArgs []interface{}
-			
+
 			if nParams > 0 {
 				if argIdx+nParams > len(args.values) {
 					span.Error(fmt.Errorf("script: not enough arguments for statement %d", i))
@@ -483,11 +479,17 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 				argIdx += nParams
 			}
 
+			stmt, stmtArgs, err = prepareQueryArgsForDB(s.getTargetDBCtx().dbtype, stmt, stmtArgs)
+			if err != nil {
+				span.Error(err)
+				return err
+			}
+
 			upperStmt := strings.ToUpper(strings.TrimSpace(stmt))
 
 			isReturning := strings.Contains(upperStmt, "RETURNING")
 			isSelect := (strings.HasPrefix(upperStmt, "SELECT") && !strings.Contains(upperStmt, " INTO ")) || strings.HasPrefix(upperStmt, "WITH")
-			
+
 			// Check for @gj_ids hint
 			gjIdsHint := strings.Index(stmt, "-- @gj_ids=")
 			var gjIdsKey string
@@ -500,7 +502,6 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 					gjIdsKey = strings.TrimSpace(remainder)
 				}
 			}
-
 
 			if gjIdsKey != "" {
 				// Bulk Capture Path for SQLite (handles RETURNING and SELECT)
@@ -520,32 +521,32 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 					defer rows.Close() //nolint:errcheck
 
 					var ids []string
-					
+
 					for rows.Next() {
 						var b []byte
 						if err = rows.Scan(&b); err != nil {
 							return err
 						}
 						// b is JSON object from RETURNING json_object(...)
-						
+
 						// Parse ID from JSON
 						var rowMap map[string]interface{}
 						if err = json.Unmarshal(b, &rowMap); err != nil {
 							return err
 						}
-						
+
 						if idVal, ok := rowMap["id"]; ok {
 							ids = append(ids, fmt.Sprintf("%v", idVal))
 						}
 					}
-					
+
 					if err = rows.Err(); err != nil {
 						return err
 					}
-					
+
 					// Note: We do NOT set s.data here - the final SELECT will set the response
 					// We only capture IDs into _gj_ids for the scoping CTE
-					
+
 					// Insert captured IDs into _gj_ids
 					if len(ids) > 0 {
 						var ib strings.Builder
@@ -566,57 +567,63 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 					}
 				}
 			} else if isReturning || isSelect {
-                // Statement returns data (e.g. INSERT ... RETURNING or SELECT ...)
-                var row *sql.Row
-                if tx := s.tx(); tx != nil {
-                    row = tx.QueryRowContext(c1, stmt, stmtArgs...)
-                    err = row.Scan(&s.data)
-                } else {
-                    err = retryOperation(c1, func() (err1 error) {
-                        row = conn.QueryRowContext(c1, stmt, stmtArgs...)
-                        return row.Scan(&s.data)
-                    })
-                }
+				// Statement returns data (e.g. INSERT ... RETURNING or SELECT ...)
+				var row *sql.Row
+				if tx := s.tx(); tx != nil {
+					row = tx.QueryRowContext(c1, stmt, stmtArgs...)
+					err = row.Scan(&s.data)
+				} else {
+					err = retryOperation(c1, func() (err1 error) {
+						row = conn.QueryRowContext(c1, stmt, stmtArgs...)
+						return row.Scan(&s.data)
+					})
+				}
 
-            } else {
-                // Intermediate statement: Use Exec
-                if tx := s.tx(); tx != nil {
-                    _, err = tx.ExecContext(c1, stmt, stmtArgs...)
-                } else {
-                    err = retryOperation(c1, func() (err1 error) {
-                        _, err1 = conn.ExecContext(c1, stmt, stmtArgs...)
-                        return
-                    })
-                }
-            }
+			} else {
+				// Intermediate statement: Use Exec
+				if tx := s.tx(); tx != nil {
+					_, err = tx.ExecContext(c1, stmt, stmtArgs...)
+				} else {
+					err = retryOperation(c1, func() (err1 error) {
+						_, err1 = conn.ExecContext(c1, stmt, stmtArgs...)
+						return
+					})
+				}
+			}
 
-            if err != nil {
-                 if err != sql.ErrNoRows {
-                    span.Error(err)
-                 }
-                 return
-            }
-        }
-        
-        if err == nil {
-            s.dhash = sha256.Sum256(s.data)
-            s.data, err = encryptValues(s.data,
-                s.gj.printFormat, decPrefix, s.dhash[:], s.gj.encryptionKey)
-        }
-        return
-    }
+			if err != nil {
+				if err != sql.ErrNoRows {
+					span.Error(err)
+				}
+				return
+			}
+		}
 
-    // Standard Single-Statement Execution
+		if err == nil {
+			s.dhash = sha256.Sum256(s.data)
+			s.data, err = encryptValues(s.data,
+				s.gj.printFormat, decPrefix, s.dhash[:], s.gj.encryptionKey)
+		}
+		return
+	}
+
+	// Standard Single-Statement Execution
 	c1, span := s.gj.spanStart(c, "Execute Query")
 	defer span.End()
 
+	querySQL, queryArgs, err := prepareQueryArgsForDB(s.getTargetDBCtx().dbtype, cs.st.sql, args.values)
+	if err != nil {
+		span.Error(err)
+		return err
+	}
+
 	var row *sql.Row
 	if tx := s.tx(); tx != nil {
-		row = tx.QueryRowContext(c1, cs.st.sql, args.values...)
+		row = tx.QueryRowContext(c1, querySQL, queryArgs...)
 		err = row.Scan(&s.data)
 	} else {
 		err = retryOperation(c1, func() (err1 error) {
-			row = conn.QueryRowContext(c1, cs.st.sql, args.values...)
+			row = conn.QueryRowContext(c1, querySQL, queryArgs...)
 			return row.Scan(&s.data)
 		})
 	}
@@ -682,7 +689,7 @@ func (s *gstate) setLocalUserID(c context.Context, conn *sql.Conn) (err error) {
 		case int:
 			val = strconv.Itoa(v1)
 		}
-		
+
 		q := s.getTargetPsqlCompiler().RenderSetSessionVar("user.id", val)
 		if q == "" {
 			return nil
@@ -845,7 +852,6 @@ func (s *gstate) invalidateCache(c context.Context) {
 		_ = s.gj.responseCache.InvalidateRows(c, refs)
 	}
 }
-
 
 // getAPQKey returns the APQ key if one was provided in the request.
 func (s *gstate) getAPQKey() string {

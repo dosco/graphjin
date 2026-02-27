@@ -37,6 +37,8 @@ func getDDLDialect(dbType string) DDLDialect {
 		return &mssqlDialect{}
 	case "oracle":
 		return &oracleDialect{}
+	case "snowflake":
+		return &snowflakeDDLDialect{}
 	default:
 		return &postgresDialect{}
 	}
@@ -478,6 +480,196 @@ type mariadbDialect struct {
 }
 
 func (d *mariadbDialect) Name() string { return "mariadb" }
+
+// Snowflake dialect
+type snowflakeDDLDialect struct{}
+
+func (d *snowflakeDDLDialect) Name() string { return "snowflake" }
+
+func (d *snowflakeDDLDialect) QuoteIdentifier(s string) string {
+	return `"` + s + `"`
+}
+
+func (d *snowflakeDDLDialect) MapType(graphqlType string, notNull bool, primaryKey bool) string {
+	t := strings.ToLower(graphqlType)
+
+	if primaryKey {
+		switch t {
+		case "int", "integer":
+			return "INTEGER NOT NULL PRIMARY KEY"
+		case "bigint", "big int":
+			return "BIGINT NOT NULL PRIMARY KEY"
+		case "smallint", "small int":
+			return "SMALLINT NOT NULL PRIMARY KEY"
+		default:
+			return d.mapBaseType(t) + " NOT NULL PRIMARY KEY"
+		}
+	}
+
+	baseType := d.mapBaseType(t)
+	if notNull {
+		return baseType + " NOT NULL"
+	}
+	return baseType
+}
+
+func (d *snowflakeDDLDialect) mapBaseType(t string) string {
+	// Handle type aliases with embedded sizes
+	if baseType, size := parseTypeWithSize(t); size != "" {
+		switch baseType {
+		case "varchar":
+			return fmt.Sprintf("VARCHAR(%s)", size)
+		case "char":
+			return fmt.Sprintf("CHAR(%s)", size)
+		case "decimal", "numeric":
+			return fmt.Sprintf("NUMBER(%s)", size)
+		}
+	}
+
+	switch t {
+	case "int", "integer":
+		return "INTEGER"
+	case "bigint", "big int":
+		return "BIGINT"
+	case "smallint", "small int":
+		return "SMALLINT"
+	case "float", "real":
+		return "FLOAT"
+	case "double", "double precision":
+		return "DOUBLE"
+	case "decimal", "numeric":
+		return "NUMBER(10,2)"
+	case "boolean", "bool":
+		return "BOOLEAN"
+	case "text", "string":
+		return "VARCHAR"
+	case "varchar", "character varying":
+		return "VARCHAR(255)"
+	case "char", "character":
+		return "CHAR(1)"
+	case "timestamp", "timestamp with time zone", "timestamptz", "timestamp without time zone":
+		return "TIMESTAMP"
+	case "date":
+		return "DATE"
+	case "time", "time with time zone", "timetz", "time without time zone":
+		return "TIME"
+	case "interval":
+		return "VARCHAR"
+	case "json", "jsonb":
+		return "JSON"
+	case "uuid":
+		return "VARCHAR(36)"
+	case "bytea", "bytes":
+		return "BINARY"
+	case "money":
+		return "NUMBER(19,4)"
+	case "xml":
+		return "VARCHAR"
+	case "serial", "bigserial", "big serial":
+		return "BIGINT"
+	default:
+		return "VARCHAR"
+	}
+}
+
+func (d *snowflakeDDLDialect) MapDefault(defaultVal string) string {
+	return defaultVal
+}
+
+func (d *snowflakeDDLDialect) CreateTable(table sdata.DBTable) string {
+	var cols []string
+	var constraints []string
+
+	for _, col := range table.Columns {
+		colDef := fmt.Sprintf("  %s %s",
+			d.QuoteIdentifier(col.Name),
+			d.MapType(col.Type, col.NotNull, col.PrimaryKey))
+		if col.Default != "" {
+			colDef += fmt.Sprintf(" DEFAULT %s", d.MapDefault(col.Default))
+		}
+		cols = append(cols, colDef)
+
+		if col.FKeyTable != "" && col.FKeyCol != "" {
+			fkName := fmt.Sprintf("fk_%s_%s", table.Name, col.Name)
+			fkDef := fmt.Sprintf("  CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s(%s)",
+				d.QuoteIdentifier(fkName),
+				d.QuoteIdentifier(col.Name),
+				d.QuoteIdentifier(col.FKeyTable),
+				d.QuoteIdentifier(col.FKeyCol))
+			if col.FKOnDelete != "" {
+				fkDef += fmt.Sprintf(" ON DELETE %s", col.FKOnDelete)
+			}
+			if col.FKOnUpdate != "" {
+				fkDef += fmt.Sprintf(" ON UPDATE %s", col.FKOnUpdate)
+			}
+			constraints = append(constraints, fkDef)
+		}
+	}
+
+	tableParts := append(cols, constraints...)
+	return fmt.Sprintf("CREATE TABLE %s (\n%s\n);",
+		d.QuoteIdentifier(table.Name),
+		strings.Join(tableParts, ",\n"))
+}
+
+func (d *snowflakeDDLDialect) AddColumn(tableName string, col sdata.DBColumn) string {
+	colDef := d.MapType(col.Type, col.NotNull, false)
+	if col.Default != "" {
+		colDef += fmt.Sprintf(" DEFAULT %s", d.MapDefault(col.Default))
+	}
+	return fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s;",
+		d.QuoteIdentifier(tableName),
+		d.QuoteIdentifier(col.Name),
+		colDef)
+}
+
+func (d *snowflakeDDLDialect) DropColumn(tableName, colName string) string {
+	return fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s;",
+		d.QuoteIdentifier(tableName),
+		d.QuoteIdentifier(colName))
+}
+
+func (d *snowflakeDDLDialect) DropTable(tableName string) string {
+	return fmt.Sprintf("DROP TABLE %s;", d.QuoteIdentifier(tableName))
+}
+
+func (d *snowflakeDDLDialect) AddForeignKey(tableName string, col sdata.DBColumn) string {
+	if col.FKeyTable == "" || col.FKeyCol == "" {
+		return ""
+	}
+	fkName := fmt.Sprintf("fk_%s_%s", tableName, col.Name)
+	sql := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s(%s)",
+		d.QuoteIdentifier(tableName),
+		d.QuoteIdentifier(fkName),
+		d.QuoteIdentifier(col.Name),
+		d.QuoteIdentifier(col.FKeyTable),
+		d.QuoteIdentifier(col.FKeyCol))
+	if col.FKOnDelete != "" {
+		sql += fmt.Sprintf(" ON DELETE %s", col.FKOnDelete)
+	}
+	if col.FKOnUpdate != "" {
+		sql += fmt.Sprintf(" ON UPDATE %s", col.FKOnUpdate)
+	}
+	return sql + ";"
+}
+
+func (d *snowflakeDDLDialect) CreateSearchIndex(_ string, _ sdata.DBColumn) string {
+	// Snowflake uses Search Optimization Service instead of CREATE INDEX-based FTS.
+	return ""
+}
+
+func (d *snowflakeDDLDialect) CreateUniqueIndex(tableName string, col sdata.DBColumn) string {
+	idxName := fmt.Sprintf("idx_%s_%s_unique", tableName, col.Name)
+	return fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (%s);",
+		d.QuoteIdentifier(tableName),
+		d.QuoteIdentifier(idxName),
+		d.QuoteIdentifier(col.Name))
+}
+
+func (d *snowflakeDDLDialect) CreateIndex(_ string, _ sdata.DBColumn) string {
+	// Snowflake has no user-managed B-tree indexes.
+	return ""
+}
 
 // SQLite dialect
 type sqliteDialect struct{}

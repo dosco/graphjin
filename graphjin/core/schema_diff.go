@@ -75,6 +75,8 @@ func defaultSchemaForDBType(dbType string) string {
 		return "dbo"
 	case "oracle":
 		return "TESTER"
+	case "snowflake":
+		return "main"
 	default:
 		return "public"
 	}

@@ -94,12 +94,18 @@ func (gj *graphjinEngine) executeRoleQuery(c context.Context,
 	c1, span := gj.spanStart(c, "Execute Role Query")
 	defer span.End()
 
+	roleQuery, roleArgs, err := prepareQueryArgsForDB(pdb.dbtype, gj.roleStatement, ar.values)
+	if err != nil {
+		span.Error(err)
+		return
+	}
+
 	err = retryOperation(c1, func() error {
 		var row *sql.Row
 		if rc != nil && rc.Tx != nil {
-			row = rc.Tx.QueryRowContext(c1, gj.roleStatement, ar.values...)
+			row = rc.Tx.QueryRowContext(c1, roleQuery, roleArgs...)
 		} else {
-			row = conn.QueryRowContext(c1, gj.roleStatement, ar.values...)
+			row = conn.QueryRowContext(c1, roleQuery, roleArgs...)
 		}
 		return row.Scan(&role)
 	})

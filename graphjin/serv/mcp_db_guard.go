@@ -47,6 +47,11 @@ func systemDatabases(dbType string) map[string]bool {
 			"config": true,
 			"local":  true,
 		}
+	case "snowflake":
+		return map[string]bool{
+			"snowflake":             true,
+			"snowflake_sample_data": true,
+		}
 	default:
 		return nil
 	}
@@ -174,6 +179,8 @@ func createDatabaseOnServer(dbType, host string, port int, user, password, dbNam
 	switch dbType {
 	case "sqlite", "mongodb":
 		return nil
+	case "snowflake":
+		return fmt.Errorf("create_if_not_exists not supported for snowflake")
 	}
 
 	// Build a probe connection to the "postgres" admin database (for PostgreSQL)
@@ -212,12 +219,37 @@ func createDatabaseOnServer(dbType, host string, port int, user, password, dbNam
 
 // testDatabaseConnection tests connectivity to a database server using explicit params.
 // Returns the list of databases found on the server (if any) and any error.
-func testDatabaseConnection(dbType, host string, port int, user, password, dbName string) ([]string, error) {
+func testDatabaseConnection(dbType, host string, port int, user, password, dbName, connString string) ([]string, error) {
 	dbType = strings.ToLower(dbType)
 
 	// SQLite: just check the file exists (or will be created)
 	if dbType == "sqlite" {
 		return nil, nil
+	}
+
+	// If a connection string is provided, test using that directly.
+	if strings.TrimSpace(connString) != "" {
+		if dbType == "mongodb" {
+			names, err := probeMongoDB(connString)
+			return names, err
+		}
+
+		driverName := driverForType(dbType)
+		if dbType != "snowflake" && driverName == dbType {
+			driverName = ""
+		}
+		if driverName == "" {
+			return nil, fmt.Errorf("unsupported database type: %s", dbType)
+		}
+
+		sqlDB, err := tryConnect(driverName, connString)
+		if err != nil {
+			return nil, err
+		}
+		defer sqlDB.Close()
+
+		names, _ := listDatabaseNames(sqlDB, dbType)
+		return names, nil
 	}
 
 	// MongoDB: use native driver

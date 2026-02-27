@@ -21,6 +21,7 @@ func TestValidateDBType(t *testing.T) {
 		{"invalid type", "invalid", true},
 		{"mongodb is valid", "mongodb", false},
 		{"mssql is valid", "mssql", false},
+		{"snowflake is valid", "snowflake", false},
 	}
 
 	for _, tt := range tests {
@@ -50,6 +51,7 @@ func TestValidateMultiDBType(t *testing.T) {
 		{"oracle is valid", "oracle", false},
 		{"mongodb is valid for multi-db", "mongodb", false},
 		{"mssql is valid for multi-db", "mssql", false},
+		{"snowflake is valid for multi-db", "snowflake", false},
 		{"case insensitive", "PostgreS", false},
 		{"invalid type", "invalid", true},
 	}
@@ -114,6 +116,16 @@ func TestConfigValidate(t *testing.T) {
 				DBType: "postgres",
 				Databases: map[string]DatabaseConfig{
 					"mongo": {Type: "mongodb"},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "snowflake valid in multi-db",
+			config: Config{
+				DBType: "postgres",
+				Databases: map[string]DatabaseConfig{
+					"snowflake": {Type: "snowflake"},
 				},
 			},
 			wantErr: false,

@@ -137,6 +137,8 @@ func (ms *mcpServer) prepareSchema(schema, database string) []byte {
 			dbSchema = "main"
 		case "mssql":
 			dbSchema = "dbo"
+		case "snowflake":
+			dbSchema = "main"
 		default:
 			dbSchema = "public"
 		}

@@ -28,12 +28,12 @@ type DBInfo struct {
 
 // DBTable holds the database table information
 type DBTable struct {
-	Comment      string
-	Schema       string
-	Name         string
-	OrigName     string // Original name before normalization (e.g., PascalCase for MSSQL)
-	OrigSchema   string // Original schema before normalization
-	Type         string
+	Comment    string
+	Schema     string
+	Name       string
+	OrigName   string // Original name before normalization (e.g., PascalCase for MSSQL)
+	OrigSchema string // Original schema before normalization
+	Type       string
 	// Database is the name of the database this table belongs to (for multi-database support).
 	// Empty string means the default database.
 	Database     string
@@ -83,11 +83,13 @@ func GetDBInfo(
 			row = db.QueryRow(oracleInfo)
 		case "mssql":
 			row = db.QueryRow(mssqlInfo)
+		case "snowflake":
+			row = db.QueryRow(snowflakeInfo)
 		case "mongodb":
 			// MongoDB returns info via the driver's introspection
 			row = db.QueryRow(mongodbInfo)
 		default:
-			return fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, mongodb", dbType)
+			return fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, mongodb", dbType)
 		}
 
 		if err := row.Scan(&dbVersion, &dbSchema, &dbName); err != nil {
@@ -301,8 +303,8 @@ type DBColumn struct {
 	FKOnUpdate  string
 
 	// Original names before normalization (used to build dialect name maps for MSSQL)
-	OrigTable    string
-	OrigSchema   string
+	OrigTable      string
+	OrigSchema     string
 	OrigFKeyTable  string
 	OrigFKeySchema string
 	OrigFKeyCol    string
@@ -325,11 +327,13 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 		sqlStmt = oracleColumnsStmt
 	case "mssql":
 		sqlStmt = mssqlColumnsStmt
+	case "snowflake":
+		sqlStmt = snowflakeColumnsStmt
 	case "mongodb":
 		// MongoDB uses JSON query DSL - the driver handles introspection
 		sqlStmt = mongodbColumnsStmt
 	default:
-		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, mongodb", dbtype)
+		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, mongodb", dbtype)
 	}
 
 	rows, err := db.Query(sqlStmt)
@@ -360,7 +364,7 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 			&c.FKeySchema,
 			&c.FKeyTable,
 			&c.FKeyCol)
-		
+
 		c.FKeySchema = strings.TrimSpace(c.FKeySchema)
 		c.FKeyTable = strings.TrimSpace(c.FKeyTable)
 		c.FKeyCol = strings.TrimSpace(c.FKeyCol)
@@ -378,7 +382,7 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 			c.OrigFKeyCol = c.FKeyCol
 		}
 
-		if dbtype == "sqlite" || dbtype == "oracle" || dbtype == "mssql" {
+		if dbtype == "sqlite" || dbtype == "oracle" || dbtype == "mssql" || dbtype == "snowflake" {
 			c.Name = util.ToSnake(c.Name)
 			c.Table = strings.ToLower(c.Table)
 			c.Schema = strings.ToLower(c.Schema)
@@ -505,11 +509,15 @@ func DiscoverFunctions(db *sql.DB, dbtype string, blockList []string) ([]DBFunct
 		sqlStmt = oracleFunctionsStmt
 	case "mssql":
 		sqlStmt = mssqlFunctionsStmt
+	case "snowflake":
+		// Snowflake emulator does not expose information_schema.functions consistently.
+		// Return no discovered functions for now.
+		return nil, nil
 	case "mongodb":
 		// MongoDB doesn't have user-defined functions in the SQL sense
 		return nil, nil
 	default:
-		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, mongodb", dbtype)
+		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, mongodb", dbtype)
 	}
 
 	rows, err := db.Query(sqlStmt)

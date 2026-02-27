@@ -30,6 +30,7 @@ import (
 	"github.com/mattn/go-sqlite3"
 	_ "github.com/microsoft/go-mssqldb"
 	_ "github.com/sijms/go-ora/v2"
+	_ "github.com/snowflakedb/gosnowflake"
 )
 
 // SpatialiteAvailable tracks if SpatiaLite extension was loaded
@@ -270,7 +271,7 @@ func setupMultiDB(ctx context.Context) ([]func(context.Context) error, error) {
 		multiDBs["mongodb"] = sqlDB
 		multiDBTypes["mongodb"] = "mongodb"
 		cleanups = append(cleanups, func(ctx context.Context) error {
-			sqlDB.Close() //nolint:errcheck
+			sqlDB.Close()          //nolint:errcheck
 			client.Disconnect(ctx) //nolint:errcheck
 			return container.Terminate(ctx)
 		})
@@ -373,8 +374,8 @@ func TestMain(m *testing.M) {
 			},
 		},
 		{
-			name:    "mysql",
-			driver:  "mysql",
+			name:   "mysql",
+			driver: "mysql",
 			startFunc: func(ctx context.Context) (func(context.Context) error, string, error) {
 				container, err := mysql.Run(ctx,
 					"mysql:8.0",
@@ -536,9 +537,9 @@ func TestMain(m *testing.M) {
 						Image:        "gvenzl/oracle-free:23-full",
 						ExposedPorts: []string{"1521/tcp"},
 						Env: map[string]string{
-							"ORACLE_PASSWORD":    "tester_password",
-							"APP_USER":           "tester",
-							"APP_USER_PASSWORD":  "tester_password",
+							"ORACLE_PASSWORD":   "tester_password",
+							"APP_USER":          "tester",
+							"APP_USER_PASSWORD": "tester_password",
 						},
 						WaitingFor: wait.ForListeningPort("1521/tcp").WithStartupTimeout(8 * time.Minute),
 					},
@@ -690,6 +691,65 @@ func TestMain(m *testing.M) {
 					}
 					if _, err := initDB.Exec(block); err != nil {
 						return nil, "", fmt.Errorf("failed to init mssql: %w\nSQL: %s", err, block)
+					}
+				}
+
+				return container.Terminate, connStr, nil
+			},
+		},
+		{
+			name:   "snowflake",
+			driver: "snowflake",
+			startFunc: func(ctx context.Context) (func(context.Context) error, string, error) {
+				req := testcontainers.GenericContainerRequest{
+					ContainerRequest: testcontainers.ContainerRequest{
+						Image:        "ghcr.io/nnnkkk7/snowflake-emulator:latest",
+						ExposedPorts: []string{"8080/tcp"},
+						WaitingFor:   wait.ForListeningPort("8080/tcp").WithStartupTimeout(120 * time.Second),
+					},
+					Started: true,
+				}
+				container, err := testcontainers.GenericContainer(ctx, req)
+				if err != nil {
+					return nil, "", err
+				}
+
+				host, _ := container.Host(ctx)
+				port, _ := container.MappedPort(ctx, "8080")
+
+				// gosnowflake DSN for local emulator endpoint.
+				// Format follows emulator examples: user:pass@host:port/db/schema?...
+				connStr := fmt.Sprintf("dummy:dummy@%s:%s/test_db/public?account=test&protocol=http&warehouse=dummy", host, port.Port())
+
+				var initDB *sql.DB
+				for i := 0; i < 60; i++ {
+					initDB, err = sql.Open("snowflake", connStr)
+					if err == nil {
+						if err = initDB.Ping(); err == nil {
+							break
+						}
+						initDB.Close() //nolint:errcheck
+					}
+					time.Sleep(1 * time.Second)
+				}
+				if err != nil {
+					return nil, "", fmt.Errorf("failed to connect to snowflake emulator: %w", err)
+				}
+				defer initDB.Close() //nolint:errcheck
+
+				script, err := os.ReadFile("./snowflake.sql")
+				if err != nil {
+					return nil, "", err
+				}
+
+				// Snowflake DDL/DML script uses standard semicolon terminators.
+				for _, stmt := range strings.Split(string(script), ";") {
+					stmt = strings.TrimSpace(stmt)
+					if stmt == "" {
+						continue
+					}
+					if _, err := initDB.Exec(stmt); err != nil {
+						return nil, "", fmt.Errorf("failed to init snowflake emulator: %w\nSQL: %s", err, stmt)
 					}
 				}
 
@@ -936,8 +996,8 @@ func TestMain(m *testing.M) {
 				sqlDB := sql.OpenDB(connector)
 
 				cleanup := func(ctx context.Context) error {
-					sqlDB.Close()           //nolint:errcheck
-					client.Disconnect(ctx)  //nolint:errcheck
+					sqlDB.Close()          //nolint:errcheck
+					client.Disconnect(ctx) //nolint:errcheck
 					return container.Terminate(ctx)
 				}
 
@@ -986,10 +1046,10 @@ func TestMain(m *testing.M) {
 		// Configure connection pool settings to prevent "closing bad idle connection" errors
 		// Use reasonable limits for test scenarios and ensure connections are recycled
 		// before MySQL's default wait_timeout (8 hours)
-		db.SetMaxIdleConns(20)                      // Reduced from 300
-		db.SetMaxOpenConns(100)                     // Reduced from 600
-		db.SetConnMaxLifetime(5 * time.Minute)      // Recycle connections after 5 minutes
-		db.SetConnMaxIdleTime(2 * time.Minute)      // Close idle connections after 2 minutes
+		db.SetMaxIdleConns(20)                 // Reduced from 300
+		db.SetMaxOpenConns(100)                // Reduced from 600
+		db.SetConnMaxLifetime(5 * time.Minute) // Recycle connections after 5 minutes
+		db.SetConnMaxIdleTime(2 * time.Minute) // Close idle connections after 2 minutes
 		dbType = v.name
 
 		res := m.Run()

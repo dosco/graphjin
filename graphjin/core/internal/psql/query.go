@@ -87,6 +87,14 @@ func NewCompiler(conf Config) *Compiler {
 			DBVersion:       conf.DBVersion,
 			EnableCamelcase: conf.EnableCamelcase,
 		}
+	case "snowflake":
+		d = &dialect.SnowflakeDialect{
+			PostgresDialect: dialect.PostgresDialect{
+				DBVersion:       conf.DBVersion,
+				EnableCamelcase: conf.EnableCamelcase,
+				SecPrefix:       conf.SecPrefix,
+			},
+		}
 	case "mongodb":
 		d = &dialect.MongoDBDialect{EnableCamelcase: conf.EnableCamelcase}
 	default:
@@ -124,8 +132,9 @@ func (co *Compiler) Compile(w *bytes.Buffer, qc *qcode.QCode) (Metadata, error) 
 		return md, fmt.Errorf("qcode is nil")
 	}
 
-	// Skip SQL comment for MongoDB (it generates JSON, not SQL)
-	if co.dialect.Name() != "mongodb" {
+	// Skip SQL comment for MongoDB (it generates JSON, not SQL) and Snowflake emulator.
+	// The current Snowflake emulator drops result rows when a leading block comment is present.
+	if co.dialect.Name() != "mongodb" && co.dialect.Name() != "snowflake" {
 		w.WriteString(`/* action='` + qc.Name + `',controller='graphql',framework='graphjin' */ `)
 	}
 
@@ -143,9 +152,8 @@ func (co *Compiler) Compile(w *bytes.Buffer, qc *qcode.QCode) (Metadata, error) 
 		err = fmt.Errorf("unknown operation type %d", qc.Type)
 	}
 
-
 	// md.ct = qc.Schema.DBType()
-	
+
 	return md, err
 }
 
@@ -157,19 +165,19 @@ func (co *Compiler) RenderSetSessionVar(name, value string) string {
 		// minimal context, methods not used by RenderSetSessionVar should be safe or not called
 	}
 	// We need 'WriteString' which compilerContext has via *bytes.Buffer?
-    // No, compilerContext has w *bytes.Buffer. It needs to implement Context interface.
-    // compilerContext DOES implement Context (implicitly via methods in other files? or we need to ensure it).
-    // Let's check if compilerContext implements Context.
-    // It has `w *bytes.Buffer`.
-    // Dialect expects `Context` interface: WriteString, Quote, etc.
-    // `compilerContext` in `query.go` (and probably `common.go` which I missed reading fully but saw `dialect/common.go` earlier failure)
-    // usually implements these.
-    // I should create a temporary context safe for this.
-    
-    if co.dialect.RenderSetSessionVar(ctx, name, value) {
-    	return w.String()
-    }
-    return ""
+	// No, compilerContext has w *bytes.Buffer. It needs to implement Context interface.
+	// compilerContext DOES implement Context (implicitly via methods in other files? or we need to ensure it).
+	// Let's check if compilerContext implements Context.
+	// It has `w *bytes.Buffer`.
+	// Dialect expects `Context` interface: WriteString, Quote, etc.
+	// `compilerContext` in `query.go` (and probably `common.go` which I missed reading fully but saw `dialect/common.go` earlier failure)
+	// usually implements these.
+	// I should create a temporary context safe for this.
+
+	if co.dialect.RenderSetSessionVar(ctx, name, value) {
+		return w.String()
+	}
+	return ""
 }
 
 func (co *Compiler) CompileQuery(
@@ -229,22 +237,21 @@ func (co *Compiler) CompileQuery(
 	// RenderJSONRoot(ctx, sel)
 	// original: SELECT json_object( or jsonb_build_object(
 	// It didn't use sel. It used qc.Name if qc.Typename.
-	
+
 	// Wait, original:
 	// switch c.ct { ... SELECT ... }
 	// if qc.Typename { c.w.WriteString(...) }
-	
+
 	// RenderJSONRoot should maybe handle the whole SELECT part?
 	// My Dialect.RenderJSONRoot implementation just writes SELECT ..._object(
 	// Then logic continues.
-	
+
 	if qc.Typename {
 		c.dialect.RenderJSONRootField(c, "__typename", func() {
 			c.squoted(qc.Name)
 		})
 		i++
 	}
-
 
 	for _, id := range qc.Roots {
 		sel := &qc.Selects[id]
@@ -271,16 +278,16 @@ func (co *Compiler) CompileQuery(
 
 		default:
 			c.dialect.RenderJSONRootField(c, sel.FieldName, func() {
-			if !c.dialect.SupportsLateral() {
-				// Dialects without LATERAL use inline subqueries
-				// Each dialect implements its own RenderInlineChild
-				c.dialect.RenderChildValue(c, sel, func() {
-					c.dialect.RenderInlineChild(c, c, nil, sel)
-				})
-			} else {
-				c.colWithTableID("__sj", sel.ID, "json")
-			}
-		})
+				if !c.dialect.SupportsLateral() {
+					// Dialects without LATERAL use inline subqueries
+					// Each dialect implements its own RenderInlineChild
+					c.dialect.RenderChildValue(c, sel, func() {
+						c.dialect.RenderInlineChild(c, c, nil, sel)
+					})
+				} else {
+					c.colWithTableID("__sj", sel.ID, "json")
+				}
+			})
 
 			// return the cursor for the this child selector as part of the parents json
 			if sel.Paging.Cursor {
@@ -341,8 +348,6 @@ func (co *Compiler) CompileQuery(
 	c.w.WriteString(`)`)
 	c.dialect.RenderTableAlias(c, "__root_x")
 	c.renderQuery(st, true)
-	
-
 
 	return c.err
 }
@@ -403,14 +408,13 @@ func (c *compilerContext) renderInlineChild(sel *qcode.Select) {
 	c.w.WriteString(`)`)
 }
 
-
 func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 	if sel.Singular {
 		return
 	}
 
-	// SQLite and MariaDB cursor workaround: return json_object containing both json and cursor
-	if sel.Paging.Cursor && (c.dialect.Name() == "sqlite" || c.dialect.Name() == "mariadb") {
+	// SQLite, MariaDB and Snowflake cursor workaround: return json_object containing both json and cursor
+	if sel.Paging.Cursor && (c.dialect.Name() == "sqlite" || c.dialect.Name() == "mariadb" || c.dialect.Name() == "snowflake") {
 		c.w.WriteString(`SELECT json_object('json', `)
 
 		if sel.FieldFilter.Exp != nil {
@@ -613,8 +617,6 @@ func (c *compilerContext) renderJoin(join qcode.Join) {
 	c.w.WriteString(`))`)
 }
 
-
-
 func (c *compilerContext) renderBaseSelect(sel *qcode.Select) {
 	c.renderCursorCTE(sel)
 	c.w.WriteString(`SELECT `)
@@ -632,10 +634,6 @@ func (c *compilerContext) renderBaseSelect(sel *qcode.Select) {
 func (c *compilerContext) renderLimit(sel *qcode.Select) {
 	c.dialect.RenderLimit(c, sel)
 }
-
-
-
-
 
 func (c *compilerContext) renderFrom(sel *qcode.Select) {
 	c.w.WriteString(` FROM `)
@@ -673,10 +671,6 @@ func (c *compilerContext) renderFromCursor(sel *qcode.Select) {
 	}
 }
 
-
-
-
-
 func (c *compilerContext) renderCursorCTE(sel *qcode.Select) {
 	c.dialect.RenderCursorCTE(c, sel)
 }
@@ -706,8 +700,6 @@ func (c *compilerContext) renderGroupBy(sel *qcode.Select) {
 func (c *compilerContext) renderOrderBy(sel *qcode.Select) {
 	c.dialect.RenderOrderBy(c, sel)
 }
-
-
 
 func (c *compilerContext) renderDistinctOn(sel *qcode.Select) {
 	c.dialect.RenderDistinctOn(c, sel)

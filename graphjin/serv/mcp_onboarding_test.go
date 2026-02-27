@@ -54,6 +54,15 @@ func TestRegisterOnboardingTools_SchemaIncludesScanUnixSockets(t *testing.T) {
 	if _, ok := tool.Tool.InputSchema.Properties["scan_unix_sockets"]; !ok {
 		t.Fatal("plan_database_setup schema should include scan_unix_sockets")
 	}
+	if targets, ok := tool.Tool.InputSchema.Properties["targets"].(map[string]any); ok {
+		if items, ok := targets["items"].(map[string]any); ok {
+			if props, ok := items["properties"].(map[string]any); ok {
+				if _, ok := props["connection_string"]; !ok {
+					t.Fatal("plan_database_setup targets schema should include connection_string")
+				}
+			}
+		}
+	}
 }
 
 func TestResolveCandidate_FromExplicitConfig(t *testing.T) {
@@ -76,6 +85,20 @@ func TestResolveCandidate_FromExplicitConfig(t *testing.T) {
 	}
 	if c.Type != "postgres" {
 		t.Fatalf("expected postgres, got %s", c.Type)
+	}
+}
+
+func TestResolveCandidate_SnowflakeRequiresConnectionString(t *testing.T) {
+	ms := mockMcpServerWithConfig(MCPConfig{AllowDevTools: true})
+	args := map[string]any{
+		"config": map[string]any{
+			"type": "snowflake",
+			"host": "localhost",
+		},
+	}
+	_, err := ms.resolveCandidate(args)
+	if err == nil {
+		t.Fatal("expected error for snowflake without connection_string")
 	}
 }
 

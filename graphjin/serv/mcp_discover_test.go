@@ -61,6 +61,15 @@ func TestRegisterDiscoverTools_SchemaIncludesScanUnixSockets(t *testing.T) {
 	if _, ok := tool.Tool.InputSchema.Properties["scan_unix_sockets"]; !ok {
 		t.Fatal("discover_databases schema should include scan_unix_sockets")
 	}
+	if targets, ok := tool.Tool.InputSchema.Properties["targets"].(map[string]any); ok {
+		if items, ok := targets["items"].(map[string]any); ok {
+			if props, ok := items["properties"].(map[string]any); ok {
+				if _, ok := props["connection_string"]; !ok {
+					t.Fatal("discover_databases targets schema should include connection_string")
+				}
+			}
+		}
+	}
 }
 
 // =============================================================================
@@ -153,6 +162,30 @@ func TestParseDiscoverOptions_ScanUnixSockets(t *testing.T) {
 	}
 	if !opts.scanUnixSockets {
 		t.Fatal("expected scan_unix_sockets=true when provided")
+	}
+}
+
+func TestParseDiscoverOptions_TargetWithConnectionString(t *testing.T) {
+	ms := mockMcpServerWithConfig(MCPConfig{})
+	opts, err := parseDiscoverOptions(ms, map[string]any{
+		"targets": []any{
+			map[string]any{
+				"type":              "snowflake",
+				"connection_string": "user:pass@localhost:8080/test_db/public?account=test&protocol=http&warehouse=dummy",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("parseDiscoverOptions returned error: %v", err)
+	}
+	if len(opts.targets) != 1 {
+		t.Fatalf("expected 1 target, got %d", len(opts.targets))
+	}
+	if opts.targets[0].Type != "snowflake" {
+		t.Fatalf("expected snowflake target, got %q", opts.targets[0].Type)
+	}
+	if opts.targets[0].ConnectionString == "" {
+		t.Fatal("expected target connection_string to be preserved")
 	}
 }
 
@@ -264,6 +297,7 @@ func TestBuildConfigSnippet_AllTypes(t *testing.T) {
 		{"mssql", "localhost", 1433, "", "sa", false},
 		{"oracle", "localhost", 1521, "", "system", false},
 		{"mongodb", "localhost", 27017, "", "", false},
+		{"snowflake", "localhost", 0, "", "", false},
 		{"sqlite", "", 0, "/data/app.db", "", true},
 	}
 
@@ -306,6 +340,11 @@ func TestBuildConfigSnippet_AllTypes(t *testing.T) {
 					t.Error("Expected dbname in snippet")
 				}
 			}
+			if tt.dbType == "snowflake" {
+				if _, ok := snippet["connection_string"]; !ok {
+					t.Error("Expected connection_string hint for snowflake snippet")
+				}
+			}
 		})
 	}
 }
@@ -321,6 +360,7 @@ func TestDefaultPortForType(t *testing.T) {
 		{"mssql", 1433},
 		{"oracle", 1521},
 		{"mongodb", 27017},
+		{"snowflake", 0},
 		{"sqlite", 0},
 		{"unknown", 0},
 	}
@@ -534,6 +574,7 @@ func TestBuildProbeConnString_AllTypes(t *testing.T) {
 		{"mssql", "localhost", 1433, "", "sa", "", "tcp", "sqlserver", true},
 		{"oracle", "localhost", 1521, "", "system", "", "tcp", "oracle", true},
 		{"sqlite", "", 0, "/tmp/test.db", "", "", "file", "sqlite", true},
+		{"snowflake", "localhost", 0, "", "", "", "tcp", "", false},
 		{"unknown", "localhost", 1234, "", "user", "", "tcp", "", false},
 	}
 
@@ -601,6 +642,7 @@ func TestIsAuthError(t *testing.T) {
 		{"mssql login failed", fmt.Errorf("Login failed for user 'sa'"), true},
 		{"oracle auth", fmt.Errorf("ORA-01017: invalid username/password"), true},
 		{"mongodb auth", fmt.Errorf("authentication failed"), true},
+		{"snowflake auth", fmt.Errorf("Incorrect username or password was specified"), true},
 		{"connection refused", fmt.Errorf("dial tcp 127.0.0.1:5432: connect: connection refused"), false},
 		{"timeout", fmt.Errorf("i/o timeout"), false},
 		{"postgres role missing", fmt.Errorf(`FATAL: role "postgres" does not exist (SQLSTATE 28000)`), true},
@@ -730,6 +772,27 @@ func TestProbeDatabase_SkippedForUnknownType(t *testing.T) {
 
 	if discovered.AuthStatus != "skipped" {
 		t.Errorf("Expected auth_status 'skipped', got %q", discovered.AuthStatus)
+	}
+}
+
+func TestProbeDatabase_SnowflakeRequiresConnectionString(t *testing.T) {
+	discovered := &DiscoveredDatabase{
+		Type:          "snowflake",
+		Source:        "target",
+		Status:        "configured",
+		ConfigSnippet: map[string]any{"type": "snowflake"},
+	}
+
+	probeDatabase(discovered, "", "")
+
+	if discovered.AuthStatus != "error" {
+		t.Fatalf("Expected auth_status 'error', got %q", discovered.AuthStatus)
+	}
+	if discovered.ProbeStatus != "bad_input" {
+		t.Fatalf("Expected probe_status 'bad_input', got %q", discovered.ProbeStatus)
+	}
+	if !strings.Contains(discovered.AuthError, "connection_string") {
+		t.Fatalf("Expected connection_string error, got %q", discovered.AuthError)
 	}
 }
 

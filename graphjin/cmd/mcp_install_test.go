@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"strings"
 	"testing"
@@ -188,6 +189,30 @@ func TestBuildCodexAddArgs_WithoutScope(t *testing.T) {
 	}
 }
 
+func TestBuildCodexRemoveArgs(t *testing.T) {
+	opts := mcpInstallOptions{
+		Scope: "global",
+	}
+
+	args := buildCodexRemoveArgs(opts, true)
+	want := []string{"mcp", "remove", "graphjin", "--scope", "user"}
+	if strings.Join(args, "|") != strings.Join(want, "|") {
+		t.Fatalf("args = %v, want %v", args, want)
+	}
+}
+
+func TestBuildCodexRemoveArgs_WithoutScope(t *testing.T) {
+	opts := mcpInstallOptions{
+		Scope: "project",
+	}
+
+	args := buildCodexRemoveArgs(opts, false)
+	want := []string{"mcp", "remove", "graphjin"}
+	if strings.Join(args, "|") != strings.Join(want, "|") {
+		t.Fatalf("args = %v, want %v", args, want)
+	}
+}
+
 func TestGraphjinCommandForMCP(t *testing.T) {
 	orig := resolveGraphJinPathForMCP
 	defer func() { resolveGraphJinPathForMCP = orig }()
@@ -256,5 +281,53 @@ func TestBuildClaudeMCPServerArgs(t *testing.T) {
 	want := []string{"mcp", "--server", "http://localhost:8080/"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("buildClaudeMCPServerArgs() = %v, want %v", got, want)
+	}
+}
+
+func TestPrintInstallPreview(t *testing.T) {
+	var b bytes.Buffer
+	printInstallPreview(&b, mcpInstallOptions{
+		Client: "both",
+		Scope:  "global",
+		Server: "http://localhost:8080/",
+	})
+
+	out := b.String()
+	if !strings.Contains(out, "Install target: both") {
+		t.Fatalf("expected install target in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Scope: global") {
+		t.Fatalf("expected scope in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Server: http://localhost:8080/") {
+		t.Fatalf("expected server in output, got:\n%s", out)
+	}
+}
+
+func TestPrintPostInstallGuide(t *testing.T) {
+	var b bytes.Buffer
+	printPostInstallGuide(&b, mcpInstallOptions{
+		Client: "both",
+		Server: "http://localhost:8080/",
+	}, codexInstallPlan{
+		UseCLI:     false,
+		ConfigPath: "/tmp/.codex/config.toml",
+	})
+
+	out := b.String()
+	if !strings.Contains(out, "GraphJin MCP setup complete.") {
+		t.Fatalf("expected completion message, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Claude Desktop / Claude Code") {
+		t.Fatalf("expected claude quick guide, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Customizer -> Plugins -> search \"GraphJin\" -> Install.") {
+		t.Fatalf("expected claude chat note, got:\n%s", out)
+	}
+	if !strings.Contains(out, "OpenAI Codex") {
+		t.Fatalf("expected codex quick guide, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Config written to: /tmp/.codex/config.toml") {
+		t.Fatalf("expected codex config path note, got:\n%s", out)
 	}
 }

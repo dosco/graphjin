@@ -1,15 +1,16 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "graphjin",
-  "description": "GraphJin Claude Code plugin marketplace",
+  "metadata": {
+    "description": "GraphJin is a GraphQL-to-database query compiler that lets Claude safely query and mutate SQL and MongoDB through MCP tools."
+  },
   "owner": {
-    "name": "GraphJin",
-    "email": "maintainers@graphjin.com"
+    "name": "@dosco"
   },
   "plugins": [
     {
       "name": "graphjin-mcp",
-      "description": "GraphJin MCP server plugin for Claude Code",
+      "description": "Connect Claude to your SQL or MongoDB databases using GraphJin's schema-aware MCP server.",
       "category": "development",
       "source": "./claude-plugins/graphjin-mcp",
       "homepage": "https://github.com/dosco/graphjin/tree/master/claude-plugins/graphjin-mcp"

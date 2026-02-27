@@ -189,7 +189,11 @@ func (s *gstate) executeDatabaseJoinQuery(
 
 	// Execute the query
 	var data []byte
-	row := conn.QueryRowContext(ctx, sqlBuf.String(), args.values...)
+	querySQL, queryArgs, err := prepareQueryArgsForDB(dbCtx.dbtype, sqlBuf.String(), args.values)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare query args: %w", err)
+	}
+	row := conn.QueryRowContext(ctx, querySQL, queryArgs...)
 	if err := row.Scan(&data); err != nil {
 		if err == sql.ErrNoRows {
 			if sel.Singular {
@@ -340,7 +344,6 @@ type dbResult struct {
 	err      error
 }
 
-
 // mergeRootResults merges results from multiple databases into a single JSON response.
 // Root-level results are JSON objects that need to be combined.
 func (s *gstate) mergeRootResults(results []dbResult) error {
@@ -391,7 +394,6 @@ func (s *gstate) mergeRootResults(results []dbResult) error {
 	s.data = data
 	return nil
 }
-
 
 // isMultiDB returns true if the engine is configured for multiple databases.
 func (gj *graphjinEngine) isMultiDB() bool {
@@ -676,7 +678,11 @@ func (s *gstate) executeForDatabaseRoots(ctx context.Context, dbName string, roo
 
 	// Execute query
 	var data []byte
-	row := conn.QueryRowContext(ctx, sqlBuf.String(), args.values...)
+	querySQL, queryArgs, err := prepareQueryArgsForDB(dbCtx.dbtype, sqlBuf.String(), args.values)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare query args for %s: %w", dbName, err)
+	}
+	row := conn.QueryRowContext(ctx, querySQL, queryArgs...)
 	if err := row.Scan(&data); err != nil {
 		if err == sql.ErrNoRows {
 			return json.RawMessage(`{}`), nil

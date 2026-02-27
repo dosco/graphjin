@@ -12,7 +12,7 @@
 set -u
 
 # All supported database suites
-ALL_DBS="postgres mysql mariadb sqlite oracle mssql mongodb"
+ALL_DBS="postgres mysql mariadb sqlite oracle mssql mongodb snowflake"
 
 # Allow caller to select a subset via env var
 DBS="${PARALLEL_DBS:-$ALL_DBS}"

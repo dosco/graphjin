@@ -487,7 +487,11 @@ func (gj *graphjinEngine) subCheckUpdates(sub *sub, mv mval, start int) {
 						}
 					}
 				}
-				row := subDBCtx.db.QueryRowContext(c, sub.s.cs.st.sql, values...)
+				q, qargs, err := prepareQueryArgsForDB(subDBCtx.dbtype, sub.s.cs.st.sql, values)
+				if err != nil {
+					return err
+				}
+				row := subDBCtx.db.QueryRowContext(c, q, qargs...)
 				var b []byte
 				if err := row.Scan(&b); err != nil {
 					return err
@@ -511,8 +515,12 @@ func (gj *graphjinEngine) subCheckUpdates(sub *sub, mv mval, start int) {
 
 	err = retryOperation(c, func() (err1 error) {
 		if hasParams {
+			q, qargs, err2 := prepareQueryArgsForDB(subDBCtx.dbtype, sub.s.cs.st.sql, []interface{}{string(params)})
+			if err2 != nil {
+				return err2
+			}
 			//nolint: sqlclosecheck
-			rows, err1 = subDBCtx.db.QueryContext(c, sub.s.cs.st.sql, string(params))
+			rows, err1 = subDBCtx.db.QueryContext(c, q, qargs...)
 		} else {
 			//nolint: sqlclosecheck
 			rows, err1 = subDBCtx.db.QueryContext(c, sub.s.cs.st.sql)
@@ -574,12 +582,20 @@ func (gj *graphjinEngine) subFirstQuery(sub *sub, m *Member) (mmsg, error) {
 			if m.params != nil {
 				if supportsBatching {
 					// Use JSON array for batching-enabled dialects
-					row = subDBCtx.db.QueryRowContext(c, q,
-						string(renderJSONArray([]json.RawMessage{m.params})))
+					sqlQuery, sqlArgs, err2 := prepareQueryArgsForDB(subDBCtx.dbtype, q,
+						[]interface{}{string(renderJSONArray([]json.RawMessage{m.params}))})
+					if err2 != nil {
+						return err2
+					}
+					row = subDBCtx.db.QueryRowContext(c, sqlQuery, sqlArgs...)
 				} else {
 					// Use m.vl (value list) directly for non-batching dialects
 					// m.vl contains the parsed values in the correct order
-					row = subDBCtx.db.QueryRowContext(c, q, m.vl...)
+					sqlQuery, sqlArgs, err2 := prepareQueryArgsForDB(subDBCtx.dbtype, q, m.vl)
+					if err2 != nil {
+						return err2
+					}
+					row = subDBCtx.db.QueryRowContext(c, sqlQuery, sqlArgs...)
 				}
 			} else {
 				row = subDBCtx.db.QueryRowContext(c, q)
@@ -702,6 +718,8 @@ func getDialectForType(ct string) dialect.Dialect {
 		return &dialect.SQLiteDialect{}
 	case "mssql":
 		return &dialect.MSSQLDialect{}
+	case "snowflake":
+		return &dialect.SnowflakeDialect{}
 	case "mongodb":
 		return &dialect.MongoDBDialect{}
 	default:

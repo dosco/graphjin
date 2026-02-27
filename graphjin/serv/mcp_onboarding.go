@@ -27,17 +27,17 @@ func (ms *mcpServer) registerOnboardingTools() {
 		mcp.WithDescription("Plan database setup without changing config. Returns ranked candidates and required next actions. "+
 			"Response includes machine-readable next-step guidance in the `next` field."),
 		mcp.WithArray("targets",
-			mcp.Description("Optional explicit targets to check. Each item: {type?, host, port?, user?, password?, dbname?}."),
+			mcp.Description("Optional explicit targets to check. Each item: {type?, host?, port?, user?, password?, dbname?, connection_string?}."),
 			mcp.Items(map[string]any{
-				"type":     "object",
-				"required": []string{"host"},
+				"type": "object",
 				"properties": map[string]any{
-					"type":     map[string]any{"type": "string", "description": "Database type (postgres, mysql, mssql, oracle, mongodb)"},
-					"host":     map[string]any{"type": "string", "description": "Hostname or IP address"},
-					"port":     map[string]any{"type": "number", "description": "Port number"},
-					"user":     map[string]any{"type": "string", "description": "Username for authentication"},
-					"password": map[string]any{"type": "string", "description": "Password for authentication"},
-					"dbname":   map[string]any{"type": "string", "description": "Database name"},
+					"type":              map[string]any{"type": "string", "description": "Database type (postgres, mysql, mssql, oracle, mongodb, snowflake)"},
+					"host":              map[string]any{"type": "string", "description": "Hostname or IP address"},
+					"port":              map[string]any{"type": "number", "description": "Port number"},
+					"user":              map[string]any{"type": "string", "description": "Username for authentication"},
+					"password":          map[string]any{"type": "string", "description": "Password for authentication"},
+					"dbname":            map[string]any{"type": "string", "description": "Database name"},
+					"connection_string": map[string]any{"type": "string", "description": "Direct connection string (required for Snowflake targets)"},
 				},
 			}),
 		),
@@ -57,7 +57,7 @@ func (ms *mcpServer) registerOnboardingTools() {
 			mcp.Description("Candidate ID from discover_databases/plan_database_setup."),
 		),
 		mcp.WithObject("config",
-			mcp.Description("Explicit config: {type, host?, port?, path?, user?, password?, dbname?}."),
+			mcp.Description("Explicit config: {type, host?, port?, path?, user?, password?, dbname?, connection_string?}. For Snowflake, connection_string is required."),
 		),
 		mcp.WithObject("discovery_options",
 			mcp.Description("Optional options used when resolving candidate_id."),
@@ -82,7 +82,7 @@ func (ms *mcpServer) registerOnboardingTools() {
 				mcp.Description("Candidate ID to apply (recommended)."),
 			),
 			mcp.WithObject("config",
-				mcp.Description("Explicit config override: {type, host?, port?, path?, user?, password?, dbname?}."),
+				mcp.Description("Explicit config override: {type, host?, port?, path?, user?, password?, dbname?, connection_string?}. For Snowflake, connection_string is required."),
 			),
 			mcp.WithString("database_alias",
 				mcp.Description("Config key for this database. Defaults to dbname or graphjin_dev."),
@@ -263,6 +263,7 @@ func (ms *mcpServer) handleApplyDatabaseSetup(ctx context.Context, req mcp.CallT
 	user, _ := candidate.ConfigSnippet["user"].(string)
 	password, _ := candidate.ConfigSnippet["password"].(string)
 	path, _ := candidate.ConfigSnippet["path"].(string)
+	connString, _ := candidate.ConfigSnippet["connection_string"].(string)
 
 	probeDatabase(&candidate, user, password)
 	enrichDiscoveredDatabase(&candidate)
@@ -301,13 +302,14 @@ func (ms *mcpServer) handleApplyDatabaseSetup(ctx context.Context, req mcp.CallT
 		conf.Databases = make(map[string]core.DatabaseConfig)
 	}
 	conf.Databases[dbAlias] = core.DatabaseConfig{
-		Type:     dbType,
-		Host:     host,
-		Port:     port,
-		DBName:   dbName,
-		User:     user,
-		Password: password,
-		Path:     path,
+		Type:       dbType,
+		Host:       host,
+		Port:       port,
+		DBName:     dbName,
+		User:       user,
+		Password:   password,
+		Path:       path,
+		ConnString: connString,
 	}
 
 	if createIfNotExists {
@@ -415,11 +417,15 @@ func parseConfigAsCandidate(cfgAny map[string]any) (DiscoveredDatabase, error) {
 		ConfigSnippet: map[string]any{},
 	}
 	db.Type, _ = cfgAny["type"].(string)
+	db.Type = strings.ToLower(strings.TrimSpace(db.Type))
 	db.Host, _ = cfgAny["host"].(string)
 	if p, ok := cfgAny["port"].(float64); ok {
 		db.Port = int(p)
 	}
 	db.FilePath, _ = cfgAny["path"].(string)
+	if cs, ok := cfgAny["connection_string"].(string); ok {
+		db.ConfigSnippet["connection_string"] = strings.TrimSpace(cs)
+	}
 	if u, ok := cfgAny["user"].(string); ok {
 		db.ConfigSnippet["user"] = u
 	}
@@ -437,6 +443,11 @@ func parseConfigAsCandidate(cfgAny map[string]any) (DiscoveredDatabase, error) {
 			return DiscoveredDatabase{}, fmt.Errorf("config.path is required for sqlite")
 		}
 		db.ConfigSnippet["path"] = db.FilePath
+	}
+	if db.Type == "snowflake" {
+		if cs, _ := db.ConfigSnippet["connection_string"].(string); strings.TrimSpace(cs) == "" {
+			return DiscoveredDatabase{}, fmt.Errorf("config.connection_string is required for snowflake")
+		}
 	}
 	if db.ConfigSnippet["type"] == nil {
 		db.ConfigSnippet["type"] = db.Type
@@ -459,8 +470,11 @@ func parseSnapshotCandidate(snapshot map[string]any) (DiscoveredDatabase, error)
 	if v, ok := snapshot["file_path"].(string); ok {
 		cfg["path"] = v
 	}
+	if v, ok := snapshot["connection_string"].(string); ok {
+		cfg["connection_string"] = v
+	}
 	if cs, ok := snapshot["config_snippet"].(map[string]any); ok {
-		for _, key := range []string{"user", "password", "dbname", "path", "type", "host", "port"} {
+		for _, key := range []string{"user", "password", "dbname", "path", "type", "host", "port", "connection_string"} {
 			if _, exists := cfg[key]; !exists {
 				if cv, ok := cs[key]; ok {
 					cfg[key] = cv

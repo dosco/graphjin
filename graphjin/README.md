@@ -99,7 +99,7 @@ graphjin mcp install
 <img src="website/public/logos/openai-codex.svg" alt="OpenAI Codex logo" width="280">
 
 ```bash
-graphjin mcp install --client codex --scope project --yes
+graphjin mcp install --client codex --scope global --yes
 ```
 
 #### Claude Code
@@ -107,7 +107,7 @@ graphjin mcp install --client codex --scope project --yes
 <img src="website/public/logos/claude-code.svg" alt="Claude Code logo" width="280">
 
 ```bash
-graphjin mcp install --client claude --scope project --yes
+graphjin mcp install --client claude --scope global --yes
 ```
 
 #### Troubleshooting

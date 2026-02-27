@@ -59,6 +59,15 @@ var mssqlColumnsStmt string
 //go:embed sql/mssql_view_pks.sql
 var mssqlViewPKsStmt string
 
+//go:embed sql/snowflake_functions.sql
+var snowflakeFunctionsStmt string
+
+//go:embed sql/snowflake_info.sql
+var snowflakeInfo string
+
+//go:embed sql/snowflake_columns.sql
+var snowflakeColumnsStmt string
+
 //go:embed sql/mongodb_info.json
 var mongodbInfo string
 
