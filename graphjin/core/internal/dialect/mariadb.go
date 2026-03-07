@@ -256,7 +256,7 @@ func (d *MariaDBDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, p
 			// This allows the parent table to be visible in the WHERE clause
 			ctx.WriteString(`COALESCE(json_arrayagg(json_object(`)
 			d.renderInlineJSONFields(ctx, r, sel)
-			ctx.WriteString(`))`)
+			ctx.WriteString(`)`)
 			// Add ORDER BY inside aggregation if needed
 			if len(sel.OrderBy) > 0 {
 				ctx.WriteString(` ORDER BY `)
@@ -277,7 +277,7 @@ func (d *MariaDBDialect) RenderInlineChild(ctx Context, r InlineChildRenderer, p
 					}
 				}
 			}
-			ctx.WriteString(`, '[]')`)
+			ctx.WriteString(`), '[]')`)
 
 			ctx.WriteString(` FROM `)
 			d.renderFromTable(ctx, r, sel, psel)
@@ -2585,6 +2585,5 @@ func (d *MariaDBDialect) RequiresJSONQueryWrapper() bool {
 func (d *MariaDBDialect) RequiresNullOnEmptySelect() bool {
 	return true // MariaDB needs NULL when no columns rendered
 }
-
 
 
