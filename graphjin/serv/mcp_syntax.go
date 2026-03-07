@@ -370,7 +370,8 @@ func (ms *mcpServer) registerResources() {
 					"3. Call describe_table for schema details",
 					"4. Check list_saved_queries for existing queries",
 					"5. Call execute_graphql or execute_saved_query",
-					"6. For JS orchestration, call get_js_runtime_api then execute_workflow",
+					"6. Check list_workflows for reusable JS workflows",
+					"7. For new orchestration: get_js_runtime_api → save_workflow → execute_workflow",
 				},
 				MutationWorkflow: []string{
 					"1. Call get_mutation_syntax to learn mutation syntax",

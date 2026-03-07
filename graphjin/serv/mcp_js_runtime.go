@@ -122,6 +122,12 @@ func (ms *mcpServer) buildJSRuntimeAPI() JSRuntimeAPI {
 			},
 		},
 		Notes: []string{
+			"IMPORTANT: All gj.tools.* functions return DECODED native JavaScript objects — ready to use directly.",
+			"Example: var result = gj.tools.executeGraphql({query: 'query GetOrders { orders { id total } }'}); var orders = result.data.orders;",
+			"GraphQL queries MUST be named (e.g., 'query GetOrders { ... }'). Unnamed queries like '{ orders { ... } }' will return null data.",
+			"Example: var tables = gj.tools.listTables().tables;",
+			"Example: var schema = gj.tools.describeTable({name: 'orders'}).table;",
+			"Tool errors throw JavaScript exceptions — use try/catch to handle them.",
 			"Tool-level auth and policy checks are enforced exactly as in direct MCP calls.",
 			"Function names are generated from MCP tool names by converting snake_case to camelCase.",
 			"Example: list_tables -> gj.tools.listTables",
@@ -143,7 +149,8 @@ func (ms *mcpServer) jsToolFunctions() []JSRuntimeFunction {
 
 	names := make([]string, 0, len(tools))
 	for name := range tools {
-		if name == "get_js_runtime_api" || name == "execute_workflow" {
+		if name == "get_js_runtime_api" || name == "execute_workflow" ||
+			name == "save_workflow" || name == "list_workflows" {
 			continue
 		}
 		names = append(names, name)

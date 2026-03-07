@@ -396,6 +396,8 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 			"Use explain_query to see the exact compiled query that will run before executing — great for debugging and optimization",
 			"Use explore_relationships to map out the data model neighborhood around any table",
 			"Use audit_role_permissions to understand what each role can access",
+			"ALWAYS call list_workflows first — a reusable workflow may already exist for the user's question",
+			"Use save_workflow to persist new workflows so future queries can reuse them",
 			"Use get_js_runtime_api before authoring JS workflows so function names and argument schemas are exact",
 			"Use execute_workflow to run ./workflows/<name>.js with variables passed as `input`",
 		},
@@ -412,8 +414,8 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 			"debug_query":                "explain_query → (fix issues) → execute_graphql",
 			"explore_data_model":         "list_tables → explore_relationships(depth: 2) → describe_table",
 			"security_audit":             "audit_role_permissions(role: 'all') → update_current_config(roles: [...]) → audit_role_permissions (verify)",
-			"js_workflow":                "get_js_runtime_api → execute_workflow",
-			"js_workflow_authoring":      "get_js_runtime_api → list_tables → describe_table → execute_workflow",
+			"js_workflow_reuse":          "list_workflows → execute_workflow",
+			"js_workflow_authoring":      "list_workflows → get_js_runtime_api → list_tables → describe_table → save_workflow → execute_workflow",
 		},
 	}
 

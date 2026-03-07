@@ -267,6 +267,14 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 		}
 	}
 
+	// Default AllowWorkflowUpdates to true in dev mode when MCP is enabled
+	if !s.conf.Serv.Production && !s.conf.MCP.Disable {
+		if s.conf.viper != nil && !s.conf.viper.IsSet("mcp.allow_workflow_updates") {
+			s.conf.MCP.AllowWorkflowUpdates = true
+			s.log.Info("MCP workflow updates enabled by default (dev mode)")
+		}
+	}
+
 	// Default AllowDevTools to true in dev mode when MCP is enabled
 	if !s.conf.Serv.Production && !s.conf.MCP.Disable {
 		if s.conf.viper != nil && !s.conf.viper.IsSet("mcp.allow_dev_tools") {

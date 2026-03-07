@@ -51,9 +51,13 @@ func mcpToolList(conf *Config) []string {
 		"explore_relationships",
 		"execute_saved_query",
 		"execute_workflow",
+		"list_workflows",
 	}
 
 	// Conditionally registered
+	if conf.MCP.AllowWorkflowUpdates {
+		tools = append(tools, "save_workflow")
+	}
 	if !conf.Serv.Production {
 		tools = append(tools, "get_current_config")
 	}
@@ -163,6 +167,9 @@ func (ms *mcpServer) registerTools() {
 
 	// Fragment Discovery Tools
 	ms.registerFragmentTools()
+
+	// Workflow Management Tools
+	ms.registerWorkflowMgmtTools()
 
 	// Configuration Update Tools (conditionally registered)
 	ms.registerConfigTools()

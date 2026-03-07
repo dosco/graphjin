@@ -221,7 +221,8 @@ func (ms *mcpServer) newWorkflowGlobals(vm *goja.Runtime, ctx context.Context, n
 	toolMap := ms.srv.ListTools()
 	toolNames := make([]string, 0, len(toolMap))
 	for name := range toolMap {
-		if name == "get_js_runtime_api" || name == "execute_workflow" {
+		if name == "get_js_runtime_api" || name == "execute_workflow" ||
+			name == "save_workflow" || name == "list_workflows" {
 			continue
 		}
 		toolNames = append(toolNames, name)

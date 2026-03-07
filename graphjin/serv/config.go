@@ -245,6 +245,12 @@ type MCPConfig struct {
 	// Uses db.graphql format. Auto-enabled in dev mode. Default: false
 	AllowSchemaUpdates bool `mapstructure:"allow_schema_updates" jsonschema:"title=Allow Schema Updates,default=false"`
 
+	// AllowWorkflowUpdates enables the save_workflow MCP tool so LLMs can author
+	// and persist JavaScript workflows to ./workflows/. Saved workflows are
+	// discoverable via list_workflows and executable via execute_workflow.
+	// Auto-enabled in dev mode. Default: false
+	AllowWorkflowUpdates bool `mapstructure:"allow_workflow_updates" jsonschema:"title=Allow Workflow Updates,default=false"`
+
 	// AllowDevTools enables advanced introspection MCP tools (explain_query, explore_relationships, audit_role_permissions).
 	// These expose SQL, relationship graphs, and role permissions — useful for development/debugging.
 	// Auto-enabled in dev mode. Default: false
