@@ -448,8 +448,8 @@ func (g *GraphJin) GraphQL(c context.Context,
 		gj.cache.Set((APQ_PX + rc.APQKey), r.query)
 	}
 
-	// if not production then save to allow list
-	if !gj.prod && r.name != "IntrospectionQuery" {
+	// if not production then save named queries to allow list
+	if !gj.prod && r.name != "" && r.name != "IntrospectionQuery" {
 		if err = gj.saveToAllowList(resp.qc, resp.res.namespace); err != nil {
 			return
 		}
