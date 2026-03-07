@@ -320,7 +320,9 @@ func (d *SnowflakeDialect) RenderList(ctx Context, ex *qcode.Exp) {
 func (d *SnowflakeDialect) RenderValVar(ctx Context, ex *qcode.Exp, val string) bool {
 	if strings.HasPrefix(ex.Right.Val, "__gj_ids_key:") {
 		key := strings.TrimPrefix(ex.Right.Val, "__gj_ids_key:")
-		ctx.WriteString(`(SELECT id FROM _gj_ids WHERE k = '`)
+		ctx.WriteString(`(SELECT id FROM `)
+		ctx.WriteString(d.idsTableName(ctx))
+		ctx.WriteString(` WHERE k = '`)
 		ctx.WriteString(strings.ReplaceAll(key, `'`, `''`))
 		ctx.WriteString(`')`)
 		return true
@@ -535,15 +537,27 @@ func (d *SnowflakeDialect) SupportsLinearExecution() bool {
 }
 
 func (d *SnowflakeDialect) RenderSetup(ctx Context) {
-	ctx.WriteString(`DROP TABLE IF EXISTS _gj_ids; DROP TABLE IF EXISTS _gj_prev_ids; `)
-	ctx.WriteString(`CREATE TEMP TABLE _gj_ids (k VARCHAR, id BIGINT); `)
-	ctx.WriteString(`CREATE TEMP TABLE _gj_prev_ids (k VARCHAR, id BIGINT); `)
+	ctx.WriteString(`DROP TABLE IF EXISTS `)
+	ctx.WriteString(d.idsTableName(ctx))
+	ctx.WriteString(`; DROP TABLE IF EXISTS `)
+	ctx.WriteString(d.prevIDsTableName(ctx))
+	ctx.WriteString(`; `)
+	ctx.WriteString(`CREATE TEMP TABLE `)
+	ctx.WriteString(d.idsTableName(ctx))
+	ctx.WriteString(` (k VARCHAR, id BIGINT); `)
+	ctx.WriteString(`CREATE TEMP TABLE `)
+	ctx.WriteString(d.prevIDsTableName(ctx))
+	ctx.WriteString(` (k VARCHAR, id BIGINT); `)
 }
 
 func (d *SnowflakeDialect) RenderBegin(ctx Context) {}
 
 func (d *SnowflakeDialect) RenderTeardown(ctx Context) {
-	ctx.WriteString(`; DROP TABLE IF EXISTS _gj_prev_ids; DROP TABLE IF EXISTS _gj_ids; `)
+	ctx.WriteString(`; DROP TABLE IF EXISTS `)
+	ctx.WriteString(d.prevIDsTableName(ctx))
+	ctx.WriteString(`; DROP TABLE IF EXISTS `)
+	ctx.WriteString(d.idsTableName(ctx))
+	ctx.WriteString(`; `)
 }
 
 func (d *SnowflakeDialect) RenderVarDeclaration(ctx Context, name, typeName string) {}
@@ -551,16 +565,22 @@ func (d *SnowflakeDialect) RenderVarDeclaration(ctx Context, name, typeName stri
 func (d *SnowflakeDialect) RenderIDCapture(ctx Context, varName string) {}
 
 func (d *SnowflakeDialect) RenderVar(ctx Context, name string) {
-	ctx.WriteString(`(SELECT id FROM _gj_ids WHERE k = '`)
+	ctx.WriteString(`(SELECT id FROM `)
+	ctx.WriteString(d.idsTableName(ctx))
+	ctx.WriteString(` WHERE k = '`)
 	ctx.WriteString(name)
 	ctx.WriteString(`' ORDER BY id DESC LIMIT 1)`)
 }
 
 func (d *SnowflakeDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderColVal func(qcode.MColumn)) {
-	ctx.WriteString(`DELETE FROM _gj_prev_ids WHERE k = '`)
+	ctx.WriteString(`DELETE FROM `)
+	ctx.WriteString(d.prevIDsTableName(ctx))
+	ctx.WriteString(` WHERE k = '`)
 	ctx.WriteString(varName)
 	ctx.WriteString(`'; `)
-	ctx.WriteString(`INSERT INTO _gj_prev_ids (k, id) SELECT '`)
+	ctx.WriteString(`INSERT INTO `)
+	ctx.WriteString(d.prevIDsTableName(ctx))
+	ctx.WriteString(` (k, id) SELECT '`)
 	ctx.WriteString(varName)
 	ctx.WriteString(`', `)
 	ctx.Quote(m.Ti.PrimaryCol.Name)
@@ -630,7 +650,9 @@ func (d *SnowflakeDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *
 		ctx.WriteString(`)`)
 	}
 
-	ctx.WriteString(`; INSERT INTO _gj_ids (k, id) SELECT '`)
+	ctx.WriteString(`; INSERT INTO `)
+	ctx.WriteString(d.idsTableName(ctx))
+	ctx.WriteString(` (k, id) SELECT '`)
 	ctx.WriteString(varName)
 	ctx.WriteString(`', `)
 	ctx.Quote(m.Ti.PrimaryCol.Name)
@@ -638,13 +660,17 @@ func (d *SnowflakeDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *
 	d.renderTableRef(ctx, m.Ti.Schema, m.Ti.Name)
 	ctx.WriteString(` EXCEPT SELECT '`)
 	ctx.WriteString(varName)
-	ctx.WriteString(`', id FROM _gj_prev_ids WHERE k = '`)
+	ctx.WriteString(`', id FROM `)
+	ctx.WriteString(d.prevIDsTableName(ctx))
+	ctx.WriteString(` WHERE k = '`)
 	ctx.WriteString(varName)
 	ctx.WriteString(`'`)
 }
 
 func (d *SnowflakeDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderColVal func(qcode.MColumn), renderWhere func()) {
-	ctx.WriteString(`INSERT INTO _gj_ids (k, id) SELECT '`)
+	ctx.WriteString(`INSERT INTO `)
+	ctx.WriteString(d.idsTableName(ctx))
+	ctx.WriteString(` (k, id) SELECT '`)
 	ctx.WriteString(varName)
 	ctx.WriteString(`', `)
 	ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
@@ -696,7 +722,9 @@ func (d *SnowflakeDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *
 
 func (d *SnowflakeDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
 	// Capture current FK value before updating
-	ctx.WriteString(`INSERT INTO _gj_ids (k, id) SELECT '`)
+	ctx.WriteString(`INSERT INTO `)
+	ctx.WriteString(d.idsTableName(ctx))
+	ctx.WriteString(` (k, id) SELECT '`)
 	ctx.WriteString(varName)
 	ctx.WriteString(`', `)
 	ctx.ColWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
@@ -715,7 +743,7 @@ func (d *SnowflakeDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc 
 	}
 	if parentVar != "" {
 		// Update FK to point to parent (no FROM recordset needed -
-		// the parent ID comes from _gj_ids via RenderVar, filter is a literal condition)
+		// the parent ID comes from the mutation-scoped ID capture table via RenderVar.)
 		ctx.WriteString(`; UPDATE `)
 		ctx.Quote(m.Ti.Name)
 		ctx.WriteString(` SET `)
@@ -729,7 +757,9 @@ func (d *SnowflakeDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc 
 
 func (d *SnowflakeDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
 	// Capture current FK value before nullifying
-	ctx.WriteString(`INSERT INTO _gj_ids (k, id) SELECT '`)
+	ctx.WriteString(`INSERT INTO `)
+	ctx.WriteString(d.idsTableName(ctx))
+	ctx.WriteString(` (k, id) SELECT '`)
 	ctx.WriteString(varName)
 	ctx.WriteString(`', `)
 	ctx.ColWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
@@ -945,11 +975,11 @@ func (d *SnowflakeDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate,
 			ctx.WriteString(`') AS "_gj_pkt"`)
 		}
 
-			ctx.WriteString(` FROM `)
-			ctx.WriteString(`json_each(`)
-			renderRoot()
-			if len(m.Path) > 0 {
-				ctx.WriteString(`, '$.`)
+		ctx.WriteString(` FROM `)
+		ctx.WriteString(`json_each(`)
+		renderRoot()
+		if len(m.Path) > 0 {
+			ctx.WriteString(`, '$.`)
 			ctx.WriteString(strings.Join(m.Path, "."))
 			ctx.WriteString(`'`)
 		}
@@ -967,42 +997,42 @@ func (d *SnowflakeDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate,
 		}
 		first = false
 
-			if col.Col.Name == m.Ti.PrimaryCol.Name {
-				hasPK = true
-			}
+		if col.Col.Name == m.Ti.PrimaryCol.Name {
+			hasPK = true
+		}
 
-			pathPrefix := ""
-			if len(m.Path) > 0 {
-				pathPrefix = strings.Join(m.Path, ".") + `.`
-			}
-			if !col.Col.Array && !d.isJSONLikeType(col.Col.Type) {
-				if d.isStringType(col.Col.Type) {
-					ctx.WriteString(`json_extract_string(`)
-					renderRoot()
-					ctx.WriteString(`, '$.`)
-					ctx.WriteString(pathPrefix)
-					ctx.WriteString(col.FieldName)
-					ctx.WriteString(`') AS `)
-				} else {
-					ctx.WriteString(`TRY_CAST(json_extract(`)
-					renderRoot()
-					ctx.WriteString(`, '$.`)
-					ctx.WriteString(pathPrefix)
-					ctx.WriteString(col.FieldName)
-					ctx.WriteString(`') AS `)
-					ctx.WriteString(d.snowflakeCastType(col.Col.Type))
-					ctx.WriteString(`) AS `)
-				}
-			} else {
-				ctx.WriteString(`json_extract(`)
+		pathPrefix := ""
+		if len(m.Path) > 0 {
+			pathPrefix = strings.Join(m.Path, ".") + `.`
+		}
+		if !col.Col.Array && !d.isJSONLikeType(col.Col.Type) {
+			if d.isStringType(col.Col.Type) {
+				ctx.WriteString(`json_extract_string(`)
 				renderRoot()
 				ctx.WriteString(`, '$.`)
 				ctx.WriteString(pathPrefix)
 				ctx.WriteString(col.FieldName)
 				ctx.WriteString(`') AS `)
+			} else {
+				ctx.WriteString(`TRY_CAST(json_extract(`)
+				renderRoot()
+				ctx.WriteString(`, '$.`)
+				ctx.WriteString(pathPrefix)
+				ctx.WriteString(col.FieldName)
+				ctx.WriteString(`') AS `)
+				ctx.WriteString(d.snowflakeCastType(col.Col.Type))
+				ctx.WriteString(`) AS `)
 			}
-			ctx.Quote(col.FieldName)
+		} else {
+			ctx.WriteString(`json_extract(`)
+			renderRoot()
+			ctx.WriteString(`, '$.`)
+			ctx.WriteString(pathPrefix)
+			ctx.WriteString(col.FieldName)
+			ctx.WriteString(`') AS `)
 		}
+		ctx.Quote(col.FieldName)
+	}
 
 	if !hasPK {
 		if !first {
@@ -1024,6 +1054,40 @@ func (d *SnowflakeDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate,
 
 func (d *SnowflakeDialect) RequiresNullOnEmptySelect() bool {
 	return true
+}
+
+func (d *SnowflakeDialect) idsTableName(ctx Context) string {
+	return d.tempTableName(ctx, "_gj_ids")
+}
+
+func (d *SnowflakeDialect) prevIDsTableName(ctx Context) string {
+	return d.tempTableName(ctx, "_gj_prev_ids")
+}
+
+func (d *SnowflakeDialect) tempTableName(ctx Context, base string) string {
+	prefix := strings.TrimSuffix(ctx.GetSecPrefix(), ":")
+	prefix = strings.TrimPrefix(prefix, "gj-")
+	if prefix == "" {
+		return base
+	}
+
+	var b strings.Builder
+	b.Grow(len(base) + len(prefix) + 1)
+	b.WriteString(base)
+	b.WriteByte('_')
+	for _, r := range prefix {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
 }
 
 func (d *SnowflakeDialect) getVarName(m qcode.Mutate) string {
