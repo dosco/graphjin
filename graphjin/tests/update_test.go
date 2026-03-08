@@ -83,6 +83,7 @@ func Example_update() {
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
 	if err != nil {
+		logSnowflakeQueryFailure(gj, gql, vars, err)
 		fmt.Println(err)
 	} else {
 		printJSON(res.Data)
@@ -128,6 +129,7 @@ func Example_updateMultipleRelatedTables1() {
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
 	if err != nil {
+		logSnowflakeQueryFailure(gj, gql, vars, err)
 		fmt.Println(err)
 	} else {
 		printJSON(res.Data)
@@ -170,6 +172,7 @@ func Example_updateTableAndConnectToRelatedTables() {
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
 	if err != nil {
+		logSnowflakeQueryFailure(gj, gql, vars, err)
 		fmt.Println(err)
 	} else {
 		printJSON(res.Data)
@@ -212,6 +215,7 @@ func Example_updateTableAndRelatedTable() {
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
 	if err != nil {
+		logSnowflakeQueryFailure(gj, gql, vars, err)
 		fmt.Println(err)
 	} else {
 		printJSON(res.Data)
@@ -240,6 +244,7 @@ func Example_setArrayColumnToValue() {
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, nil, nil)
 	if err != nil {
+		logSnowflakeQueryFailure(gj, gql, nil, err)
 		fmt.Println(err)
 	} else {
 		printJSON(res.Data)
@@ -268,6 +273,7 @@ func Example_setArrayColumnToEmpty() {
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, nil, nil)
 	if err != nil {
+		logSnowflakeQueryFailure(gj, gql, nil, err)
 		fmt.Println(err)
 	} else {
 		printJSON(res.Data)

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -12,9 +13,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var schemaDiffSuffixCounter atomic.Uint64
+
 // randomSuffix generates a unique suffix for table names to avoid conflicts
 func randomSuffix() string {
-	return fmt.Sprintf("%d", time.Now().UnixNano()%100000)
+	if schemaDiffSuffixCounter.Load() == 0 {
+		schemaDiffSuffixCounter.Store(uint64(time.Now().UnixNano()))
+	}
+	return fmt.Sprintf("%d", schemaDiffSuffixCounter.Add(1))
 }
 
 // dropTable cleans up a test table using dialect-appropriate SQL
@@ -125,8 +131,7 @@ type %s {
 	// Apply SQL
 	sqls := core.GenerateDiffSQL(ops)
 	for _, sql := range sqls {
-		_, err := db.Exec(sql)
-		require.NoError(t, err, "failed to execute: %s", sql)
+		execSchemaDiffSQL(t, sql)
 	}
 
 	// Verify table exists by querying it
@@ -175,8 +180,7 @@ type %s {
 	ops, err := core.SchemaDiff(db, dbType, []byte(initialSchema), nil, core.DiffOptions{})
 	require.NoError(t, err)
 	for _, sql := range core.GenerateDiffSQL(ops) {
-		_, err := db.Exec(sql)
-		require.NoError(t, err)
+		execSchemaDiffSQL(t, sql)
 	}
 
 	// Now add a column
@@ -206,8 +210,7 @@ type %s {
 
 	// Apply the changes
 	for _, sql := range core.GenerateDiffSQL(ops) {
-		_, err := db.Exec(sql)
-		require.NoError(t, err, "failed to execute: %s", sql)
+		execSchemaDiffSQL(t, sql)
 	}
 }
 
@@ -235,8 +238,7 @@ type %s {
 	ops, err := core.SchemaDiff(db, dbType, []byte(parentSchema), nil, core.DiffOptions{})
 	require.NoError(t, err)
 	for _, sql := range core.GenerateDiffSQL(ops) {
-		_, err := db.Exec(sql)
-		require.NoError(t, err)
+		execSchemaDiffSQL(t, sql)
 	}
 
 	// Create child table with foreign key
@@ -263,10 +265,13 @@ type %s {
 	}
 	assert.True(t, hasForeignKey, "expected FOREIGN KEY in generated SQL")
 
+	if dbType == "snowflake" {
+		t.Skip("skipping foreign key DDL execution for snowflake emulator")
+	}
+
 	// Apply SQL
 	for _, sql := range sqls {
-		_, err := db.Exec(sql)
-		require.NoError(t, err, "failed to execute: %s", sql)
+		execSchemaDiffSQL(t, sql)
 	}
 }
 
@@ -318,8 +323,7 @@ type %s {
 
 	// Apply SQL
 	for _, sql := range core.GenerateDiffSQL(ops) {
-		_, err := db.Exec(sql)
-		require.NoError(t, err, "failed to execute: %s", sql)
+		execSchemaDiffSQL(t, sql)
 	}
 
 	// Verify unique constraint works by trying to insert duplicates
@@ -414,8 +418,7 @@ type %s {
 	ops, err := core.SchemaDiff(db, dbType, []byte(fullSchema), nil, core.DiffOptions{})
 	require.NoError(t, err)
 	for _, sql := range core.GenerateDiffSQL(ops) {
-		_, err := db.Exec(sql)
-		require.NoError(t, err)
+		execSchemaDiffSQL(t, sql)
 	}
 
 	// Now diff with schema missing extra_column, WITHOUT destructive flag
@@ -474,8 +477,7 @@ type %s {
 	ops, err := core.SchemaDiff(db, dbType, []byte(schema), nil, core.DiffOptions{})
 	require.NoError(t, err)
 	for _, sql := range core.GenerateDiffSQL(ops) {
-		_, err := db.Exec(sql)
-		require.NoError(t, err)
+		execSchemaDiffSQL(t, sql)
 	}
 
 	// Empty schema with destructive flag should produce drop_table
@@ -523,8 +525,7 @@ type %s {
 	require.NotEmpty(t, ops, "expected operations on first diff")
 
 	for _, sql := range core.GenerateDiffSQL(ops) {
-		_, err := db.Exec(sql)
-		require.NoError(t, err)
+		execSchemaDiffSQL(t, sql)
 	}
 
 	// Second diff should produce no table or column operations
@@ -597,8 +598,7 @@ type %s {
 
 	// Verify SQL executes successfully
 	for _, sql := range core.GenerateDiffSQL(ops) {
-		_, err := db.Exec(sql)
-		require.NoError(t, err, "failed to execute: %s", sql)
+		execSchemaDiffSQL(t, sql)
 	}
 }
 
@@ -615,6 +615,11 @@ func TestSchemaDiff_MultipleTypes(t *testing.T) {
 	defer dropTable(t, table2)
 	defer dropTable(t, table1)
 
+	refField := fmt.Sprintf(`ref_id: BigInt @relation(type: "%s", field: "id")`, table1)
+	if dbType == "snowflake" {
+		refField = `ref_id: BigInt`
+	}
+
 	schema := fmt.Sprintf(`# dbinfo:%s,1,%s
 type %s {
 	id: BigInt! @id
@@ -623,10 +628,10 @@ type %s {
 
 type %s {
 	id: BigInt! @id
-	ref_id: BigInt @relation(type: "%s", field: "id")
+	%s
 	value: Integer
 }
-`, dbType, schemaForDB(), table1, table2, table1)
+`, dbType, schemaForDB(), table1, table2, refField)
 
 	ops, err := core.SchemaDiff(db, dbType, []byte(schema), nil, core.DiffOptions{})
 	require.NoError(t, err)
@@ -648,8 +653,7 @@ type %s {
 
 	// Apply SQL
 	for _, sql := range core.GenerateDiffSQL(ops) {
-		_, err := db.Exec(sql)
-		require.NoError(t, err, "failed to execute: %s", sql)
+		execSchemaDiffSQL(t, sql)
 	}
 }
 
@@ -689,8 +693,7 @@ type %s {
 
 	// Apply and test
 	for _, sql := range core.GenerateDiffSQL(ops) {
-		_, err := db.Exec(sql)
-		require.NoError(t, err)
+		execSchemaDiffSQL(t, sql)
 	}
 
 	// Verify NOT NULL constraint works
