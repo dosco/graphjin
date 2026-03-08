@@ -50,13 +50,13 @@ const (
 // dbContext holds per-database state for multi-database support.
 // Each database gets its own connection pool, schema discovery, and SQL compiler.
 type dbContext struct {
-	name          string           // Database name (key in Config.Databases)
-	db            *sql.DB          // Connection pool for this database
-	dbtype        string           // Database type (postgres, mysql, sqlite, etc.)
-	dbinfo        *sdata.DBInfo    // Raw schema metadata
-	schema        *sdata.DBSchema  // Processed schema with relationships
-	qcodeCompiler *qcode.Compiler  // GraphQL to QCode compiler (validates against this DB's schema)
-	psqlCompiler  *psql.Compiler   // QCode to SQL compiler (generates this DB's dialect)
+	name          string          // Database name (key in Config.Databases)
+	db            *sql.DB         // Connection pool for this database
+	dbtype        string          // Database type (postgres, mysql, sqlite, etc.)
+	dbinfo        *sdata.DBInfo   // Raw schema metadata
+	schema        *sdata.DBSchema // Processed schema with relationships
+	qcodeCompiler *qcode.Compiler // GraphQL to QCode compiler (validates against this DB's schema)
+	psqlCompiler  *psql.Compiler  // QCode to SQL compiler (generates this DB's dialect)
 }
 
 // GraphJin struct is an instance of the GraphJin engine it holds all the required information like
@@ -192,7 +192,7 @@ func (g *GraphJin) newGraphJin(conf *Config,
 		log:         _log.New(os.Stdout, "", 0),
 		prod:        conf.Production,
 		prodSec:     conf.Production,
-		printFormat: []byte(fmt.Sprintf("gj-%x:", t.Unix())),
+		printFormat: []byte(fmt.Sprintf("gj-%x:", t.UnixNano())),
 		opts:        options,
 		fs:          fs,
 		trace:       &tracer{},
@@ -236,7 +236,7 @@ func (g *GraphJin) newGraphJin(conf *Config,
 	gj.databases = make(map[string]*dbContext)
 	gj.databases[gj.defaultDB] = &dbContext{
 		name:   gj.defaultDB,
-		db:     db,     // may be nil for MockDB
+		db:     db, // may be nil for MockDB
 		dbtype: dbtype,
 		dbinfo: dbinfo, // may be preset from watcher/tests
 	}
@@ -770,22 +770,22 @@ type ColumnInfo struct {
 
 // RelationInfo represents a relationship between tables
 type RelationInfo struct {
-	Name       string `json:"name"`         // Field name to use in queries
-	Table      string `json:"table"`        // Related table name
-	Type       string `json:"type"`         // one_to_one, one_to_many, many_to_many
-	ForeignKey string `json:"foreign_key"`  // The FK column
+	Name       string `json:"name"`              // Field name to use in queries
+	Table      string `json:"table"`             // Related table name
+	Type       string `json:"type"`              // one_to_one, one_to_many, many_to_many
+	ForeignKey string `json:"foreign_key"`       // The FK column
 	Through    string `json:"through,omitempty"` // Join table for many-to-many
 }
 
 // TableSchema represents full table schema with relationships
 type TableSchema struct {
-	Name          string         `json:"name"`
-	Schema        string         `json:"schema,omitempty"`
-	Database      string         `json:"database,omitempty"`
-	Type          string         `json:"type"`
-	Comment       string         `json:"comment,omitempty"`
-	PrimaryKey    string         `json:"primary_key,omitempty"`
-	Columns       []ColumnInfo   `json:"columns"`
+	Name          string       `json:"name"`
+	Schema        string       `json:"schema,omitempty"`
+	Database      string       `json:"database,omitempty"`
+	Type          string       `json:"type"`
+	Comment       string       `json:"comment,omitempty"`
+	PrimaryKey    string       `json:"primary_key,omitempty"`
+	Columns       []ColumnInfo `json:"columns"`
 	Relationships struct {
 		Outgoing []RelationInfo `json:"outgoing"` // Tables this table references
 		Incoming []RelationInfo `json:"incoming"` // Tables that reference this table
@@ -1077,15 +1077,15 @@ type SelectInfo struct {
 
 // QueryExplanation represents the compiled form of a GraphQL query
 type QueryExplanation struct {
-	CompiledQuery string       `json:"compiled_query"`
-	Params      []ParamInfo  `json:"params"`
-	Operation   string       `json:"operation"`
-	Name        string       `json:"name,omitempty"`
-	Role        string       `json:"role"`
-	Database    string       `json:"database,omitempty"`
-	Tables      []SelectInfo `json:"tables"`
-	JoinDepth   int          `json:"join_depth"`
-	CacheHeader string       `json:"cache_header,omitempty"`
+	CompiledQuery string             `json:"compiled_query"`
+	Params        []ParamInfo        `json:"params"`
+	Operation     string             `json:"operation"`
+	Name          string             `json:"name,omitempty"`
+	Role          string             `json:"role"`
+	Database      string             `json:"database,omitempty"`
+	Tables        []SelectInfo       `json:"tables"`
+	JoinDepth     int                `json:"join_depth"`
+	CacheHeader   string             `json:"cache_header,omitempty"`
 	Errors        []string           `json:"errors,omitempty"`
 	MultiDatabase bool               `json:"multi_database,omitempty"`
 	Queries       []QueryExplanation `json:"queries,omitempty"`
@@ -1261,10 +1261,10 @@ func (gj *graphjinEngine) explainQuery(query string, vars json.RawMessage, role 
 
 	exp := &QueryExplanation{
 		CompiledQuery: s.cs.st.sql,
-		Operation: s.cs.st.qc.Type.String(),
-		Name:      s.cs.st.qc.Name,
-		Role:      s.cs.st.role,
-		Database:  s.database,
+		Operation:     s.cs.st.qc.Type.String(),
+		Name:          s.cs.st.qc.Name,
+		Role:          s.cs.st.role,
+		Database:      s.database,
 	}
 
 	// Extract params
