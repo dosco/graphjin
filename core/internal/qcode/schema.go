@@ -84,7 +84,7 @@ func parseTFieldsColumns(tableSchema, tableName string, fields []graph.TField) (
 		isRecursive := (dir.RelatedSchema == tableSchema &&
 			dir.RelatedType == tableName)
 
-		colType := pascalToSnakeSpace(f.Type)
+		colType := typeToDB(f.Type)
 		if dir.TypeSuffix != "" {
 			colType += "(" + dir.TypeSuffix + ")"
 		}
@@ -123,7 +123,7 @@ func parseTFieldsFunction(fn *sdata.DBFunction, fields []graph.TField) (
 		p := sdata.DBFuncParam{
 			ID:   i,
 			Name: f.Name,
-			Type: pascalToSnakeSpace(f.Type),
+			Type: typeToDB(f.Type),
 		}
 		switch {
 		case dir.Input:
@@ -264,4 +264,11 @@ func pascalToSnakeSpace(s string) string {
 		result += strings.ToLower(string(r))
 	}
 	return result
+}
+
+// typeToDB normalizes a GraphQL type name to the DB form (snake_case).
+// Preserves verbatim snake_case (e.g. order_status) and converts PascalCase
+// or space-separated names to snake_case so enum types round-trip correctly.
+func typeToDB(s string) string {
+	return strings.ReplaceAll(pascalToSnakeSpace(s), " ", "_")
 }

@@ -33,7 +33,7 @@ const schemaTemplate = `
 
 {{- define "column_type"}}
 {{- $var := .Type|dbtype }}
-{{- $type := (index $var 0)|pascal }}
+{{- $type := (index $var 0)|snakeToPascal }}
 {{- if .Array}}[{{ $type }}]{{else}}{{ $type }}{{end}}
 {{- if .NotNull}}!{{end}}
 {{- "\t" }}
@@ -57,7 +57,7 @@ const schemaTemplate = `
 {{- .Name }}:
 {{- "\t"}}
 {{- $var := .Type|dbtype }}
-{{- (index $var 0)|pascal }}
+{{- (index $var 0)|snakeToPascal }}
 {{- if .Array}}[]{{end}}
 {{- "\t"}}
 {{- if ne (index $var 1) ""}} @type_args({{ (index $var 1) }}){{end}}
@@ -85,8 +85,8 @@ type {{.Name}}
 // writeSchema writes the schema to the given writer
 func writeSchema(s *sdata.DBInfo, out io.Writer) (err error) {
 	fn := template.FuncMap{
-		"pascal": toPascalCase,
-		"dbtype": parseDBType,
+		"dbtype":        parseDBType,
+		"snakeToPascal": snakeToPascal,
 	}
 
 	tmpl, err := template.
@@ -105,25 +105,43 @@ func writeSchema(s *sdata.DBInfo, out io.Writer) (err error) {
 	return
 }
 
-// toPascalCase converts a string to pascal case
-func toPascalCase(text string) string {
-	var sb strings.Builder
-	for _, v := range strings.Fields(text) {
-		sb.WriteRune(unicode.ToUpper(rune(v[0])))
-		sb.WriteString(v[1:])
+// snakeToPascal converts snake_case to PascalCase (e.g. order_status -> OrderStatus).
+// Types without underscores get only the first letter capitalized (e.g. integer -> Integer).
+// Ensures enum and custom type names round-trip correctly when the dump is read with typeToDB.
+func snakeToPascal(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return s
 	}
-	return sb.String()
+	parts := strings.Split(s, "_")
+	var out strings.Builder
+	for _, p := range parts {
+		if p == "" {
+			continue
+		}
+		r := []rune(p)
+		if len(r) > 0 {
+			out.WriteRune(unicode.ToUpper(r[0]))
+			out.WriteString(strings.ToLower(string(r[1:])))
+		}
+	}
+	return out.String()
 }
 
-var dbTypeRe = regexp.MustCompile(`([a-zA-Z ]+)(\((.+)\))?`)
+// dbTypeRe captures base type (letters, digits, underscores, spaces) and optional args in parens.
+// Including underscore preserves enum and custom type names (e.g. order_status) for snakeToPascal.
+var dbTypeRe = regexp.MustCompile(`([a-zA-Z0-9_ ]+)(\((.+)\))?`)
 
-// parseDBType parses the db type string
+// parseDBType parses the db type string into [baseType, typeArgs].
+// Base type is preserved in full so enum types like "order_status" round-trip correctly.
 func parseDBType(name string) (res [2]string, err error) {
 	v := dbTypeRe.FindStringSubmatch(name)
-	if len(v) == 4 {
-		res = [2]string{v[1], v[3]}
-	} else {
-		err = fmt.Errorf("invalid db type: %s", name)
+	if len(v) >= 2 {
+		res[0] = strings.TrimSpace(v[1])
+		if len(v) == 4 && v[3] != "" {
+			res[1] = v[3]
+		}
+		return res, nil
 	}
-	return
+	return res, fmt.Errorf("invalid db type: %s", name)
 }
