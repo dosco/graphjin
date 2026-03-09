@@ -105,14 +105,22 @@ func writeSchema(s *sdata.DBInfo, out io.Writer) (err error) {
 	return
 }
 
-// snakeToPascal converts snake_case to PascalCase (e.g. order_status -> OrderStatus).
-// Types without underscores get only the first letter capitalized (e.g. integer -> Integer).
-// Ensures enum and custom type names round-trip correctly when the dump is read with typeToDB.
+// snakeToPascal converts snake_case or space-separated db type names to
+// PascalCase GraphQL type names.
+// Examples:
+//   "order_status"              -> "OrderStatus"
+//   "character varying"         -> "CharacterVarying"
+//   "timestamp without time zone" -> "TimestampWithoutTimeZone"
+// Types without separators get only the first letter capitalized
+// (e.g. "integer" -> "Integer").
 func snakeToPascal(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return s
 	}
+	// Treat spaces and underscores as equivalent separators so multi-word
+	// db types (with spaces) become valid GraphQL type names.
+	s = strings.ReplaceAll(s, " ", "_")
 	parts := strings.Split(s, "_")
 	var out strings.Builder
 	for _, p := range parts {
@@ -120,10 +128,11 @@ func snakeToPascal(s string) string {
 			continue
 		}
 		r := []rune(p)
-		if len(r) > 0 {
-			out.WriteRune(unicode.ToUpper(r[0]))
-			out.WriteString(strings.ToLower(string(r[1:])))
+		if len(r) == 0 {
+			continue
 		}
+		out.WriteRune(unicode.ToUpper(r[0]))
+		out.WriteString(strings.ToLower(string(r[1:])))
 	}
 	return out.String()
 }

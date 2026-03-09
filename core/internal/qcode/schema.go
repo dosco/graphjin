@@ -266,9 +266,23 @@ func pascalToSnakeSpace(s string) string {
 	return result
 }
 
-// typeToDB normalizes a GraphQL type name to the DB form (snake_case).
-// Preserves verbatim snake_case (e.g. order_status) and converts PascalCase
-// or space-separated names to snake_case so enum types round-trip correctly.
+// dbTypesWithSpaces lists known built-in DB types that use spaces in their
+// canonical form (important for round-tripping schema dumps).
+var dbTypesWithSpaces = map[string]struct{}{
+	"character varying":           {},
+	"timestamp without time zone": {},
+	"timestamp with time zone":    {},
+	"double precision":            {},
+}
+
+// typeToDB normalizes a GraphQL type name to the DB form.
+// For enum and custom types it returns snake_case (order_status), while for
+// known built-in types with spaces it preserves the space-separated form
+// (e.g. "CharacterVarying" -> "character varying").
 func typeToDB(s string) string {
-	return strings.ReplaceAll(pascalToSnakeSpace(s), " ", "_")
+	base := pascalToSnakeSpace(s)
+	if _, ok := dbTypesWithSpaces[base]; ok {
+		return base
+	}
+	return strings.ReplaceAll(base, " ", "_")
 }
