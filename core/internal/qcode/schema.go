@@ -267,12 +267,16 @@ func pascalToSnakeSpace(s string) string {
 }
 
 // dbTypesWithSpaces lists known built-in DB types that use spaces in their
-// canonical form (important for round-tripping schema dumps).
+// canonical form (important for round-tripping schema dumps). Any type listed
+// here will be preserved as-is instead of being converted to snake_case.
 var dbTypesWithSpaces = map[string]struct{}{
 	"character varying":           {},
 	"timestamp without time zone": {},
 	"timestamp with time zone":    {},
+	"time without time zone":      {},
+	"time with time zone":         {},
 	"double precision":            {},
+	"bit varying":                 {},
 }
 
 // typeToDB normalizes a GraphQL type name to the DB form.
