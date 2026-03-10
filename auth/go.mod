@@ -5,7 +5,7 @@ go 1.18
 require (
 	github.com/adjust/gorails v0.0.0-20171013043634-2786ed0c03d3
 	github.com/bradfitz/gomemcache v0.0.0-20230905024940-24af94b03874
-	github.com/dosco/graphjin/core/v3 v
+	github.com/dosco/graphjin/core/v3 v3.0.0
 	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/gomodule/redigo v1.9.2
 	github.com/gorilla/websocket v1.5.3
@@ -14,6 +14,8 @@ require (
 	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.27.0
 )
+
+replace github.com/dosco/graphjin/core/v3 => ../core
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect

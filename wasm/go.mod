@@ -1,11 +1,13 @@
-module github.com/dosco/graphjin/wasm/v3
+module github.com/aegion-dynamic/graphjin/wasm/v3
 
 go 1.18
 
 require (
-	github.com/dosco/graphjin/conf/v3 v
-	github.com/dosco/graphjin/core/v3 v
+	github.com/aegion-dynamic/graphjin/conf/v3 v3.0.0
+	github.com/aegion-dynamic/graphjin/core/v3 v3.0.0
 )
+replace github.com/aegion-dynamic/graphjin/conf/v3 => ../conf
+replace github.com/aegion-dynamic/graphjin/core/v3 => ../core
 
 require (
 	github.com/hashicorp/golang-lru v0.5.4 // indirect

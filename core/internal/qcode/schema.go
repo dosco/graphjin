@@ -84,7 +84,7 @@ func parseTFieldsColumns(tableSchema, tableName string, fields []graph.TField) (
 		isRecursive := (dir.RelatedSchema == tableSchema &&
 			dir.RelatedType == tableName)
 
-		colType := pascalToSnakeSpace(f.Type)
+		colType := typeToDB(f.Type)
 		if dir.TypeSuffix != "" {
 			colType += "(" + dir.TypeSuffix + ")"
 		}
@@ -123,7 +123,7 @@ func parseTFieldsFunction(fn *sdata.DBFunction, fields []graph.TField) (
 		p := sdata.DBFuncParam{
 			ID:   i,
 			Name: f.Name,
-			Type: pascalToSnakeSpace(f.Type),
+			Type: typeToDB(f.Type),
 		}
 		switch {
 		case dir.Input:
@@ -264,4 +264,29 @@ func pascalToSnakeSpace(s string) string {
 		result += strings.ToLower(string(r))
 	}
 	return result
+}
+
+// dbTypesWithSpaces lists known built-in DB types that use spaces in their
+// canonical form (important for round-tripping schema dumps). Any type listed
+// here will be preserved as-is instead of being converted to snake_case.
+var dbTypesWithSpaces = map[string]struct{}{
+	"character varying":           {},
+	"timestamp without time zone": {},
+	"timestamp with time zone":    {},
+	"time without time zone":      {},
+	"time with time zone":         {},
+	"double precision":            {},
+	"bit varying":                 {},
+}
+
+// typeToDB normalizes a GraphQL type name to the DB form.
+// For enum and custom types it returns snake_case (order_status), while for
+// known built-in types with spaces it preserves the space-separated form
+// (e.g. "CharacterVarying" -> "character varying").
+func typeToDB(s string) string {
+	base := pascalToSnakeSpace(s)
+	if _, ok := dbTypesWithSpaces[base]; ok {
+		return base
+	}
+	return strings.ReplaceAll(base, " ", "_")
 }

@@ -5,9 +5,9 @@ go 1.23.0
 toolchain go1.23.5
 
 require (
-	github.com/dosco/graphjin/auth/v3 v
-	github.com/dosco/graphjin/core/v3 v
-	github.com/dosco/graphjin/plugin/otel/v3 v
+	github.com/dosco/graphjin/auth/v3 v3.0.0
+	github.com/dosco/graphjin/core/v3 v3.0.0
+	github.com/dosco/graphjin/plugin/otel/v3 v3.0.0
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/go-http-utils/headers v0.0.0-20181008091004-fed159eddc2a
 	github.com/go-pkgz/expirable-cache v1.0.0
@@ -31,6 +31,10 @@ require (
 	go.uber.org/zap v1.27.0
 	golang.org/x/time v0.11.0
 )
+
+replace github.com/dosco/graphjin/auth/v3 => ../auth
+replace github.com/dosco/graphjin/core/v3 => ../core
+replace github.com/dosco/graphjin/plugin/otel/v3 => ../plugin/otel
 
 require (
 	cloud.google.com/go/auth v0.4.1 // indirect

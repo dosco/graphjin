@@ -12,3 +12,8 @@ use (
 	./tests
 	./wasm
 )
+
+// Ensure all workspace modules use the local ./core for
+// github.com/aegion-dynamic/graphjin/core/v3 to avoid
+// conflicting replacements from individual go.mod files.
+replace github.com/aegion-dynamic/graphjin/core/v3 => ./core
