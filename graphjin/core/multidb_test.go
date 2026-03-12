@@ -1088,6 +1088,230 @@ func TestSortedDatabaseNamesStability(t *testing.T) {
 	}
 }
 
+// TestGetFKCrossDatabaseSyntax verifies parsing of the colon-separated database prefix
+// in foreign key references (e.g. "other_db:table.column").
+func TestGetFKCrossDatabaseSyntax(t *testing.T) {
+	tests := []struct {
+		name          string
+		foreignKey    string
+		defaultSchema string
+		wantOK        bool
+		wantDB        string
+		wantSchema    string
+		wantTable     string
+		wantColumn    string
+	}{
+		{
+			name:          "simple table.column",
+			foreignKey:    "users.id",
+			defaultSchema: "public",
+			wantOK:        true,
+			wantDB:        "",
+			wantSchema:    "public",
+			wantTable:     "users",
+			wantColumn:    "id",
+		},
+		{
+			name:          "schema.table.column",
+			foreignKey:    "myschema.users.id",
+			defaultSchema: "public",
+			wantOK:        true,
+			wantDB:        "",
+			wantSchema:    "myschema",
+			wantTable:     "users",
+			wantColumn:    "id",
+		},
+		{
+			name:          "cross-db table.column",
+			foreignKey:    "ats:employees.id",
+			defaultSchema: "public",
+			wantOK:        true,
+			wantDB:        "ats",
+			wantSchema:    "public",
+			wantTable:     "employees",
+			wantColumn:    "id",
+		},
+		{
+			name:          "cross-db schema.table.column",
+			foreignKey:    "ats:hr.employees.id",
+			defaultSchema: "public",
+			wantOK:        true,
+			wantDB:        "ats",
+			wantSchema:    "hr",
+			wantTable:     "employees",
+			wantColumn:    "id",
+		},
+		{
+			name:          "invalid single value",
+			foreignKey:    "users",
+			defaultSchema: "public",
+			wantOK:        false,
+		},
+		{
+			name:          "invalid cross-db single value",
+			foreignKey:    "ats:users",
+			defaultSchema: "public",
+			wantOK:        false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := Column{ForeignKey: tt.foreignKey}
+			fk, ok := c.getFK(tt.defaultSchema)
+			if ok != tt.wantOK {
+				t.Fatalf("getFK() ok = %v, want %v", ok, tt.wantOK)
+			}
+			if !ok {
+				return
+			}
+			if fk.Database != tt.wantDB {
+				t.Errorf("Database = %q, want %q", fk.Database, tt.wantDB)
+			}
+			if fk.Schema != tt.wantSchema {
+				t.Errorf("Schema = %q, want %q", fk.Schema, tt.wantSchema)
+			}
+			if fk.Table != tt.wantTable {
+				t.Errorf("Table = %q, want %q", fk.Table, tt.wantTable)
+			}
+			if fk.Column != tt.wantColumn {
+				t.Errorf("Column = %q, want %q", fk.Column, tt.wantColumn)
+			}
+		})
+	}
+}
+
+// TestAddForeignKeyCrossDatabase verifies that cross-database FK references
+// resolve against the target database's DBInfo and set FKeyDatabase on the column.
+func TestAddForeignKeyCrossDatabase(t *testing.T) {
+	// Source database: ats_orders with job_crew table
+	srcCols := []sdata.DBColumn{
+		{Schema: "public", Table: "job_crew", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+		{Schema: "public", Table: "job_crew", Name: "employee_id", Type: "integer", NotNull: false},
+	}
+	srcDBInfo := sdata.NewDBInfo("postgres", 140000, "public", "ats_orders", srcCols, nil, nil)
+
+	// Target database: ats with employees table
+	tgtCols := []sdata.DBColumn{
+		{Schema: "public", Table: "employees", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+		{Schema: "public", Table: "employees", Name: "name", Type: "text", NotNull: false},
+	}
+	tgtDBInfo := sdata.NewDBInfo("postgres", 140000, "public", "ats", tgtCols, nil, nil)
+
+	allDBInfos := map[string]*sdata.DBInfo{
+		"ats_orders": srcDBInfo,
+		"ats":        tgtDBInfo,
+	}
+
+	conf := &Config{
+		Tables: []Table{
+			{
+				Name:     "job_crew",
+				Database: "ats_orders",
+				Columns: []Column{
+					{Name: "employee_id", ForeignKey: "ats:employees.id"},
+				},
+			},
+		},
+	}
+
+	err := addForeignKeys(conf, srcDBInfo, "ats_orders", allDBInfos)
+	if err != nil {
+		t.Fatalf("addForeignKeys() error: %v", err)
+	}
+
+	// Verify the source column got the cross-db FK fields set
+	col, err := srcDBInfo.GetColumn("public", "job_crew", "employee_id")
+	if err != nil {
+		t.Fatalf("GetColumn() error: %v", err)
+	}
+
+	if col.FKeyDatabase != "ats" {
+		t.Errorf("FKeyDatabase = %q, want %q", col.FKeyDatabase, "ats")
+	}
+	if col.FKeyTable != "employees" {
+		t.Errorf("FKeyTable = %q, want %q", col.FKeyTable, "employees")
+	}
+	if col.FKeyCol != "id" {
+		t.Errorf("FKeyCol = %q, want %q", col.FKeyCol, "id")
+	}
+}
+
+// TestAddForeignKeyCrossDatabaseUnknownDB verifies error when referencing unknown database.
+func TestAddForeignKeyCrossDatabaseUnknownDB(t *testing.T) {
+	srcCols := []sdata.DBColumn{
+		{Schema: "public", Table: "job_crew", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+		{Schema: "public", Table: "job_crew", Name: "employee_id", Type: "integer", NotNull: false},
+	}
+	srcDBInfo := sdata.NewDBInfo("postgres", 140000, "public", "ats_orders", srcCols, nil, nil)
+
+	allDBInfos := map[string]*sdata.DBInfo{
+		"ats_orders": srcDBInfo,
+	}
+
+	conf := &Config{
+		Tables: []Table{
+			{
+				Name:     "job_crew",
+				Database: "ats_orders",
+				Columns: []Column{
+					{Name: "employee_id", ForeignKey: "nonexistent:employees.id"},
+				},
+			},
+		},
+	}
+
+	err := addForeignKeys(conf, srcDBInfo, "ats_orders", allDBInfos)
+	if err == nil {
+		t.Fatal("expected error for unknown database, got nil")
+	}
+}
+
+// TestAddForeignKeySameDBUnchanged verifies that same-database FK resolution
+// still works exactly as before (no regressions).
+func TestAddForeignKeySameDBUnchanged(t *testing.T) {
+	cols := []sdata.DBColumn{
+		{Schema: "public", Table: "orders", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+		{Schema: "public", Table: "orders", Name: "user_id", Type: "integer", NotNull: false},
+		{Schema: "public", Table: "users", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+	}
+	dbInfo := sdata.NewDBInfo("postgres", 140000, "public", "main", cols, nil, nil)
+
+	allDBInfos := map[string]*sdata.DBInfo{"main": dbInfo}
+
+	conf := &Config{
+		Tables: []Table{
+			{
+				Name:     "orders",
+				Database: "main",
+				Columns: []Column{
+					{Name: "user_id", ForeignKey: "users.id"},
+				},
+			},
+		},
+	}
+
+	err := addForeignKeys(conf, dbInfo, "main", allDBInfos)
+	if err != nil {
+		t.Fatalf("addForeignKeys() error: %v", err)
+	}
+
+	col, err := dbInfo.GetColumn("public", "orders", "user_id")
+	if err != nil {
+		t.Fatalf("GetColumn() error: %v", err)
+	}
+
+	if col.FKeyDatabase != "" {
+		t.Errorf("FKeyDatabase = %q, want empty", col.FKeyDatabase)
+	}
+	if col.FKeyTable != "users" {
+		t.Errorf("FKeyTable = %q, want %q", col.FKeyTable, "users")
+	}
+	if col.FKeyCol != "id" {
+		t.Errorf("FKeyCol = %q, want %q", col.FKeyCol, "id")
+	}
+}
+
 // TestIntroQueryDeterministic verifies that introQuery produces byte-identical
 // output on repeated calls with a multi-database engine.
 // This validates that all map iterations (databases, types, enums, aliases,
@@ -1126,5 +1350,49 @@ func TestIntroQueryDeterministic(t *testing.T) {
 		if !bytes.Equal(first, got) {
 			t.Fatalf("iteration %d: introQuery() produced different output", i)
 		}
+	}
+}
+
+// TestCloneConfigIsolation verifies that engine init does not mutate the
+// caller's original Config. This is critical for config reuse: creating
+// multiple GraphJin instances from the same *Config must be safe.
+func TestCloneConfigIsolation(t *testing.T) {
+	original := &Config{
+		DBType:           "postgres",
+		DisableAllowList: true,
+		Tables: []Table{
+			{Name: "orders"},
+		},
+	}
+
+	// Snapshot before init
+	origTablesLen := len(original.Tables)
+	origDB := original.Tables[0].Database
+	origSchema := original.Tables[0].Schema
+
+	clone := original.clone()
+
+	// Mutate the clone the way init would
+	clone.NormalizeDatabases()
+	clone.Tables = append(clone.Tables, Table{
+		Name: "users", Schema: "public", Database: DefaultDBName,
+	})
+	clone.Tables[0].Schema = "public"
+
+	// Original must be untouched
+	if len(original.Tables) != origTablesLen {
+		t.Errorf("original.Tables length changed: got %d, want %d",
+			len(original.Tables), origTablesLen)
+	}
+	if original.Tables[0].Database != origDB {
+		t.Errorf("original.Tables[0].Database changed: got %q, want %q",
+			original.Tables[0].Database, origDB)
+	}
+	if original.Tables[0].Schema != origSchema {
+		t.Errorf("original.Tables[0].Schema changed: got %q, want %q",
+			original.Tables[0].Schema, origSchema)
+	}
+	if original.Databases != nil {
+		t.Errorf("original.Databases should still be nil, got %v", original.Databases)
 	}
 }

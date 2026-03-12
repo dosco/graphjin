@@ -288,10 +288,11 @@ type DBColumn struct {
 	PrimaryKey  bool
 	UniqueKey   bool
 	FullText    bool
-	FKRecursive bool
-	FKeySchema  string
-	FKeyTable   string
-	FKeyCol     string
+	FKRecursive  bool
+	FKeyDatabase string // Target database for cross-database FKs (empty = same db)
+	FKeySchema   string
+	FKeyTable    string
+	FKeyCol      string
 	Blocked     bool
 	Table       string
 	Schema      string

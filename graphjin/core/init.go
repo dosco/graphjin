@@ -267,7 +267,7 @@ func addVirtualTable(conf *Config, di *sdata.DBInfo, t Table) error {
 		return fmt.Errorf("polymorphic table: no 'related_to' specified on id column")
 	}
 
-	s, ok := c.getFK(di.Schema)
+	fk, ok := c.getFK(di.Schema)
 	if !ok {
 		return fmt.Errorf("polymorphic table: foreign key must be <type column>.<foreign key column>")
 	}
@@ -275,16 +275,17 @@ func addVirtualTable(conf *Config, di *sdata.DBInfo, t Table) error {
 	di.VTables = append(di.VTables, sdata.VirtualTable{
 		Name:       t.Name,
 		IDColumn:   c.Name,
-		TypeColumn: s[1],
-		FKeyColumn: s[2],
+		TypeColumn: fk.Table,
+		FKeyColumn: fk.Column,
 	})
 
 	return nil
 }
 
-// addForeignKeys adds foreign keys to the database info
-// targetDB is the database name to process (after normalization, all tables have Database set)
-func addForeignKeys(conf *Config, di *sdata.DBInfo, targetDB string) error {
+// addForeignKeys adds foreign keys to the database info.
+// targetDB is the database name to process (after normalization, all tables have Database set).
+// allDBInfos provides access to other databases' metadata for cross-database FK resolution.
+func addForeignKeys(conf *Config, di *sdata.DBInfo, targetDB string, allDBInfos map[string]*sdata.DBInfo) error {
 	for _, t := range conf.Tables {
 		// After normalization, every table has a Database set.
 		if t.Database != targetDB {
@@ -298,7 +299,7 @@ func addForeignKeys(conf *Config, di *sdata.DBInfo, targetDB string) error {
 			if c.ForeignKey == "" {
 				continue
 			}
-			if err := addForeignKey(conf, di, c, t); err != nil {
+			if err := addForeignKey(conf, di, c, t, allDBInfos); err != nil {
 				return err
 			}
 		}
@@ -306,8 +307,9 @@ func addForeignKeys(conf *Config, di *sdata.DBInfo, targetDB string) error {
 	return nil
 }
 
-// addForeignKey adds a foreign key to the database info
-func addForeignKey(conf *Config, di *sdata.DBInfo, c Column, t Table) error {
+// addForeignKey adds a foreign key to the database info.
+// allDBInfos is used to resolve cross-database FK references.
+func addForeignKey(conf *Config, di *sdata.DBInfo, c Column, t Table, allDBInfos map[string]*sdata.DBInfo) error {
 	// Use di.Schema as default if table schema is not specified
 	schema := t.Schema
 	if schema == "" {
@@ -318,43 +320,64 @@ func addForeignKey(conf *Config, di *sdata.DBInfo, c Column, t Table) error {
 		return fmt.Errorf("config: add foreign key: %w", err)
 	}
 
-	v, ok := c.getFK(di.Schema)
+	fk, ok := c.getFK(di.Schema)
 	if !ok {
 		return fmt.Errorf(
 			"config: invalid foreign key defined for table '%s' and column '%s': %s",
 			t.Name, c.Name, c.ForeignKey)
 	}
 
+	// Cross-database FK: resolve against the target database's DBInfo
+	if fk.Database != "" {
+		targetDI, ok := allDBInfos[fk.Database]
+		if !ok {
+			return fmt.Errorf(
+				"config: foreign key for table '%s' and column '%s' references unknown database '%s'",
+				t.Name, c.Name, fk.Database)
+		}
+
+		c3, err := targetDI.GetColumn(fk.Schema, fk.Table, fk.Column)
+		if err != nil {
+			return fmt.Errorf(
+				"config: foreign key for table '%s' and column '%s' points to unknown table '%s:%s.%s' column '%s'",
+				t.Name, c.Name, fk.Database, fk.Schema, fk.Table, fk.Column)
+		}
+
+		c1.FKeyDatabase = fk.Database
+		c1.FKeySchema = fk.Schema
+		c1.FKeyTable = fk.Table
+		c1.FKeyCol = c3.Name
+		return nil
+	}
+
 	// check if it's a polymorphic foreign key
-	if _, err := di.GetColumn(schema, t.Name, v[1]); err == nil {
-		c2, err := di.GetColumn(schema, t.Name, v[2])
+	if _, err := di.GetColumn(schema, t.Name, fk.Table); err == nil {
+		c2, err := di.GetColumn(schema, t.Name, fk.Column)
 		if err != nil {
 			return fmt.Errorf(
 				"config: invalid column '%s' for polymorphic relationship on table '%s' and column '%s'",
-				v[2], t.Name, c.Name)
+				fk.Column, t.Name, c.Name)
 		}
 
 		c1.FKeySchema = schema
-		c1.FKeyTable = v[1]
+		c1.FKeyTable = fk.Table
 		c1.FKeyCol = c2.Name
 		return nil
 	}
 
-	fks, fkt, fkc := v[0], v[1], v[2]
-
-	c3, err := di.GetColumn(fks, fkt, fkc)
+	c3, err := di.GetColumn(fk.Schema, fk.Table, fk.Column)
 	if err != nil {
 		return fmt.Errorf(
 			"config: foreign key for table '%s' and column '%s' points to unknown table '%s.%s' and column '%s'",
-			t.Name, c.Name, fks, fkt, fkc)
+			t.Name, c.Name, fk.Schema, fk.Table, fk.Column)
 	}
 
-	c1.FKeySchema = fks
-	c1.FKeyTable = fkt
+	c1.FKeySchema = fk.Schema
+	c1.FKeyTable = fk.Table
 	c1.FKeyCol = c3.Name
 
 	// Check if this is a recursive FK (same table pointing to itself)
-	if fks == schema && fkt == t.Name {
+	if fk.Schema == schema && fk.Table == t.Name {
 		c1.FKRecursive = true
 	}
 
@@ -493,21 +516,38 @@ func (r *Role) GetTable(schema, name string) *RoleTable {
 	return r.tm[name]
 }
 
-// getFK returns the foreign key for the column
-func (c *Column) getFK(defaultSchema string) ([3]string, bool) {
-	var ret [3]string
-	var ok bool
+// fkTarget holds the parsed components of a foreign key reference.
+type fkTarget struct {
+	Database string // Target database (empty = same database)
+	Schema   string
+	Table    string
+	Column   string
+}
 
-	v := strings.SplitN(c.ForeignKey, ".", 3)
-	if len(v) == 2 {
-		ret = [3]string{defaultSchema, v[0], v[1]}
-		ok = true
+// getFK parses the foreign key reference string.
+// Supported formats:
+//   - "table.column"                  -> same db, default schema
+//   - "schema.table.column"           -> same db, explicit schema
+//   - "database:table.column"         -> cross-db, default schema
+//   - "database:schema.table.column"  -> cross-db, explicit schema
+func (c *Column) getFK(defaultSchema string) (fkTarget, bool) {
+	fk := c.ForeignKey
+
+	var database string
+	if idx := strings.IndexByte(fk, ':'); idx != -1 {
+		database = fk[:idx]
+		fk = fk[idx+1:]
 	}
-	if len(v) == 3 {
-		ret = [3]string{v[0], v[1], v[2]}
-		ok = true
+
+	v := strings.SplitN(fk, ".", 3)
+	switch len(v) {
+	case 2:
+		return fkTarget{Database: database, Schema: defaultSchema, Table: v[0], Column: v[1]}, true
+	case 3:
+		return fkTarget{Database: database, Schema: v[0], Table: v[1], Column: v[2]}, true
+	default:
+		return fkTarget{}, false
 	}
-	return ret, ok
 }
 
 // sanitize trims the value

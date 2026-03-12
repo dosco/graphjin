@@ -65,7 +65,7 @@ func (ms *mcpServer) registerConfigTools() {
 									"primary":    map[string]any{"type": "boolean", "description": "Is primary key"},
 									"array":      map[string]any{"type": "boolean", "description": "Is array type"},
 									"full_text":  map[string]any{"type": "boolean", "description": "Full-text search enabled"},
-									"related_to": map[string]any{"type": "string", "description": "Foreign key reference"},
+									"related_to": map[string]any{"type": "string", "description": "Foreign key reference (e.g. 'users.id' or 'other_db:users.id' for cross-database)"},
 								},
 							},
 						},

@@ -66,6 +66,32 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+// clone returns a shallow copy of Config with deep copies of the mutable
+// slices and maps (Tables, Databases, Roles, etc.) so that engine init
+// never mutates the caller's original Config.
+func (c *Config) clone() *Config {
+	out := *c // shallow copy all scalar/string fields
+
+	if c.Tables != nil {
+		out.Tables = make([]Table, len(c.Tables))
+		copy(out.Tables, c.Tables)
+	}
+
+	if c.Databases != nil {
+		out.Databases = make(map[string]DatabaseConfig, len(c.Databases))
+		for k, v := range c.Databases {
+			out.Databases[k] = v
+		}
+	}
+
+	if c.Roles != nil {
+		out.Roles = make([]Role, len(c.Roles))
+		copy(out.Roles, c.Roles)
+	}
+
+	return &out
+}
+
 // NormalizeDatabases ensures the primary database is represented as an entry
 // in the Databases map, eliminating special-casing of empty targetDB strings.
 // It is idempotent and should be called during core initialization.

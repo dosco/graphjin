@@ -158,3 +158,64 @@ func TestDBTableWithDatabaseInTestDBInfo(t *testing.T) {
 		_ = table.Database
 	}
 }
+
+// TestAddCrossDatabaseRelShadowNode verifies that addColumnRels creates a
+// shadow node for cross-database FK targets and the resulting edge has
+// different databases on left and right (so IsCrossDatabase returns true).
+func TestAddCrossDatabaseRelShadowNode(t *testing.T) {
+	// Create a DBInfo with a table that has a cross-database FK
+	cols := []DBColumn{
+		{Schema: "public", Table: "job_crew", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+		{Schema: "public", Table: "job_crew", Name: "employee_id", Type: "integer",
+			FKeyDatabase: "ats", FKeySchema: "public", FKeyTable: "employees", FKeyCol: "id"},
+	}
+
+	di := NewDBInfo("postgres", 140000, "public", "ats_orders", cols, nil, nil)
+
+	// Tag the table with its database
+	for i := range di.Tables {
+		di.Tables[i].Database = "ats_orders"
+	}
+
+	schema, err := NewDBSchema(di, nil)
+	if err != nil {
+		t.Fatalf("NewDBSchema() error: %v", err)
+	}
+
+	// The shadow node for "employees" should exist in the schema
+	_, err = schema.Find("public", "employees")
+	if err != nil {
+		t.Fatalf("shadow table 'employees' not found in schema: %v", err)
+	}
+
+	// Find the path from job_crew to employees — should exist
+	path, err := schema.FindPath("job_crew", "employees", "")
+	if err != nil {
+		t.Fatalf("FindPath() error: %v", err)
+	}
+
+	if len(path) == 0 {
+		t.Fatal("expected non-empty path from job_crew to employees")
+	}
+
+	// The relationship should be cross-database
+	rel := PathToRel(path[0])
+	if !rel.IsCrossDatabase() {
+		t.Error("expected IsCrossDatabase() = true for cross-database FK relationship")
+	}
+}
+
+// TestFKeyDatabaseFieldOnDBColumn verifies the FKeyDatabase field exists and works.
+func TestFKeyDatabaseFieldOnDBColumn(t *testing.T) {
+	col := DBColumn{
+		Name:         "employee_id",
+		FKeyDatabase: "ats",
+		FKeySchema:   "public",
+		FKeyTable:    "employees",
+		FKeyCol:      "id",
+	}
+
+	if col.FKeyDatabase != "ats" {
+		t.Errorf("FKeyDatabase = %q, want %q", col.FKeyDatabase, "ats")
+	}
+}

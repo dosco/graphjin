@@ -169,7 +169,7 @@ func (gj *graphjinEngine) finalizeDatabaseSchema(ctx *dbContext) error {
 	}
 
 	// Process foreign keys configured for this database
-	if err := addForeignKeys(gj.conf, ctx.dbinfo, ctx.name); err != nil {
+	if err := addForeignKeys(gj.conf, ctx.dbinfo, ctx.name, gj.collectDBInfos()); err != nil {
 		return fmt.Errorf("database %s: add foreign keys failed: %w", ctx.name, err)
 	}
 
@@ -373,6 +373,18 @@ func (gj *graphjinEngine) ensureDiscoveredTablesInConfig(ctx *dbContext) {
 			Database: ctx.name,
 		})
 	}
+}
+
+// collectDBInfos returns a map of database name -> DBInfo for all initialized databases.
+// Used to resolve cross-database foreign key references during config processing.
+func (gj *graphjinEngine) collectDBInfos() map[string]*sdata.DBInfo {
+	m := make(map[string]*sdata.DBInfo, len(gj.databases))
+	for name, ctx := range gj.databases {
+		if ctx.dbinfo != nil {
+			m[name] = ctx.dbinfo
+		}
+	}
+	return m
 }
 
 // OptionSetDatabases sets multiple database connections for multi-database mode.

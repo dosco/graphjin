@@ -185,6 +185,12 @@ func (g *GraphJin) newGraphJin(conf *Config,
 		conf = &Config{Debug: true}
 	}
 
+	// Deep-copy mutable slices/maps so that init never mutates the caller's
+	// Config. Without this, NormalizeDatabases, finalizeDatabaseSchema, and
+	// ensureDiscoveredTablesInConfig would accumulate side-effects across
+	// repeated NewGraphJin calls that share the same *Config.
+	conf = conf.clone()
+
 	t := time.Now()
 
 	gj := &graphjinEngine{

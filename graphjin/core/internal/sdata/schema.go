@@ -238,15 +238,23 @@ func (s *DBSchema) addColumnRels(t DBTable) error {
 			c.FKeySchema = t.Schema
 		}
 
+		if c.FKeyCol == "" {
+			continue
+		}
+
+		// Cross-database FK: create a shadow node for the foreign table
+		if c.FKeyDatabase != "" {
+			if err = s.addCrossDatabaseRel(t, c); err != nil {
+				return err
+			}
+			continue
+		}
+
 		v, ok := s.tindex[(c.FKeySchema + ":" + c.FKeyTable)]
 		if !ok {
 			return fmt.Errorf("foreign key table not found: %s.%s", c.FKeySchema, c.FKeyTable)
 		}
 		ft := s.tables[v.nodeID]
-
-		if c.FKeyCol == "" {
-			continue
-		}
 
 		fc, ok := ft.getColumn(c.FKeyCol)
 		if !ok {
@@ -269,6 +277,36 @@ func (s *DBSchema) addColumnRels(t DBTable) error {
 		}
 	}
 	return nil
+}
+
+// addCrossDatabaseRel adds a relationship edge for a cross-database foreign key.
+// It creates a shadow node in the local schema graph representing the foreign table
+// in the target database. This shadow node exists only for path-finding; actual SQL
+// compilation uses the target database's own schema/compiler.
+func (s *DBSchema) addCrossDatabaseRel(t DBTable, c DBColumn) error {
+	shadowKey := c.FKeySchema + ":" + c.FKeyTable
+
+	var shadowTable DBTable
+	if v, exists := s.tindex[shadowKey]; exists {
+		shadowTable = s.tables[v.nodeID]
+	} else {
+		shadowTable = DBTable{
+			Name:     c.FKeyTable,
+			Schema:   c.FKeySchema,
+			Database: c.FKeyDatabase,
+		}
+		s.addNode(shadowTable)
+	}
+
+	// Shadow column representing the FK target column
+	fc := DBColumn{
+		Name:     c.FKeyCol,
+		Schema:   c.FKeySchema,
+		Table:    c.FKeyTable,
+		Database: c.FKeyDatabase,
+	}
+
+	return s.addToGraph(t, c, shadowTable, fc, RelOneToMany)
 }
 
 // addVirtual adds a virtual table to the schema
