@@ -205,9 +205,6 @@ type MCPConfig struct {
 	// Disable the MCP server (MCP is enabled by default)
 	Disable bool `jsonschema:"title=Disable MCP Server,default=false"`
 
-	// Enable search functionality for saved queries and fragments
-	EnableSearch bool `mapstructure:"enable_search" jsonschema:"title=Enable Query Search,default=true"`
-
 	// Allow mutation operations via MCP
 	AllowMutations bool `mapstructure:"allow_mutations" jsonschema:"title=Allow Mutations,default=true"`
 
@@ -461,7 +458,6 @@ func newViperWithDefaults() *viper.Viper {
 
 	// MCP defaults (MCP enabled by default, use mcp.disable: true to turn off)
 	vi.SetDefault("mcp.disable", false)
-	vi.SetDefault("mcp.enable_search", true)
 	vi.SetDefault("mcp.allow_mutations", true)
 	vi.SetDefault("mcp.allow_raw_queries", true)
 	vi.SetDefault("mcp.only", false)

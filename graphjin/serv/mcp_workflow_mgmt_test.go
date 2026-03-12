@@ -24,6 +24,14 @@ func TestHandleSaveWorkflow(t *testing.T) {
 		"description": "Fetch all orders and compute profit & loss",
 		"code":        "function main(input) {\n  var tables = gj.tools.listTables();\n  return { tables: tables };\n}\n",
 		"tags":        []any{"orders", "finance", "pnl"},
+		"variables": []any{
+			map[string]any{
+				"name":        "customer_id",
+				"type":        "number",
+				"description": "Customer to analyze",
+				"required":    true,
+			},
+		},
 	}))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -50,8 +58,48 @@ func TestHandleSaveWorkflow(t *testing.T) {
 	if !strings.Contains(string(src), "@graphjin-workflow") {
 		t.Fatalf("missing metadata header in saved file")
 	}
+	if !strings.Contains(string(src), `"variables":[{"name":"customer_id","type":"number","description":"Customer to analyze","required":true}]`) {
+		t.Fatalf("missing variables metadata in saved file: %s", src)
+	}
 	if !strings.Contains(string(src), "function main(input)") {
 		t.Fatalf("missing code in saved file")
+	}
+}
+
+func TestHandleSaveWorkflow_LegacyObjectTagsStillAccepted(t *testing.T) {
+	mem := afero.NewMemMapFs()
+	s := &graphjinService{
+		fs:   newAferoFS(mem, "/"),
+		conf: &Config{},
+	}
+	s.conf.MCP.AllowWorkflowUpdates = true
+	ms := s.newMCPServerWithContext(context.Background())
+
+	res, err := ms.handleSaveWorkflow(context.Background(), newToolRequest(map[string]any{
+		"name":        "legacy_tags",
+		"description": "Save a workflow using legacy object tags",
+		"code":        "function main(input) { return input; }\n",
+		"tags": map[string]any{
+			"one": "orders",
+			"two": "finance",
+		},
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	text := assertToolSuccess(t, res)
+	if !strings.Contains(text, "legacy_tags") {
+		t.Fatalf("expected workflow response to mention legacy_tags, got: %s", text)
+	}
+
+	src, err := afero.ReadFile(mem, "/workflows/legacy_tags.js")
+	if err != nil {
+		t.Fatalf("workflow file not written: %v", err)
+	}
+	if !strings.Contains(string(src), `"tags":["orders","finance"]`) &&
+		!strings.Contains(string(src), `"tags":["finance","orders"]`) {
+		t.Fatalf("expected legacy object tags to be normalized into metadata, got: %s", src)
 	}
 }
 
@@ -62,7 +110,7 @@ func TestHandleListWorkflows(t *testing.T) {
 	}
 
 	// Write a workflow with metadata
-	meta := `// @graphjin-workflow {"description":"Compute P&L from orders","tags":["orders","pnl"]}
+	meta := `// @graphjin-workflow {"description":"Compute P&L from orders","tags":["orders","pnl"],"variables":[{"name":"customer_id","type":"number","required":true}]}
 function main(input) { return {}; }
 `
 	if err := afero.WriteFile(mem, "/workflows/order_pnl.js", []byte(meta), 0o644); err != nil {
@@ -109,6 +157,9 @@ function main(input) { return {}; }
 			}
 			if len(w.Tags) != 2 || w.Tags[0] != "orders" {
 				t.Fatalf("wrong tags: %v", w.Tags)
+			}
+			if len(w.Variables) != 1 || w.Variables[0].Name != "customer_id" || !w.Variables[0].Required {
+				t.Fatalf("wrong variables: %v", w.Variables)
 			}
 		}
 	}
@@ -178,7 +229,7 @@ func TestHandleSaveWorkflow_ValidationErrors(t *testing.T) {
 }
 
 func TestParseWorkflowMeta(t *testing.T) {
-	src := `// @graphjin-workflow {"description":"Test workflow","tags":["a","b"]}
+	src := `// @graphjin-workflow {"description":"Test workflow","tags":["a","b"],"variables":[{"name":"limit","type":"number","required":true}]}
 function main() { return 1; }
 `
 	meta, ok := parseWorkflowMeta(src)
@@ -191,6 +242,9 @@ function main() { return 1; }
 	if len(meta.Tags) != 2 {
 		t.Fatalf("wrong tags count: %d", len(meta.Tags))
 	}
+	if len(meta.Variables) != 1 || meta.Variables[0].Name != "limit" || !meta.Variables[0].Required {
+		t.Fatalf("wrong variables: %v", meta.Variables)
+	}
 
 	// No metadata
 	_, ok = parseWorkflowMeta("function main() {}")
@@ -199,3 +253,27 @@ function main() { return 1; }
 	}
 }
 
+func TestHandleSaveWorkflow_RejectsInvalidVariables(t *testing.T) {
+	mem := afero.NewMemMapFs()
+	s := &graphjinService{
+		fs:   newAferoFS(mem, "/"),
+		conf: &Config{},
+	}
+	s.conf.MCP.AllowWorkflowUpdates = true
+	ms := s.newMCPServerWithContext(context.Background())
+
+	res, err := ms.handleSaveWorkflow(context.Background(), newToolRequest(map[string]any{
+		"name":        "bad_vars",
+		"description": "Invalid workflow variable names",
+		"code":        "function main(input) { return input; }\n",
+		"variables": []any{
+			map[string]any{"name": "bad-name", "required": true},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected invalid workflow variables to be rejected")
+	}
+}

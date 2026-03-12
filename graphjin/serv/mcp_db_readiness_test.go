@@ -55,7 +55,7 @@ func TestSearchAndFragmentHandlers_RequireDB(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			ms := mockMcpServerWithConfig(MCPConfig{EnableSearch: true})
+			ms := mockMcpServerWithConfig(MCPConfig{})
 			result, err := tc.call(ms)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)

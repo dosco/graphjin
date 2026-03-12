@@ -87,9 +87,10 @@ func (ms *mcpServer) registerSchemaTools() {
 			mcp.Required(),
 			mcp.Description("Table name to validate against"),
 		),
-		mcp.WithString("where",
+		mcp.WithObject("where",
 			mcp.Required(),
-			mcp.Description("The where clause to validate (e.g., '{ price: { gt: 50 } }')"),
+			mcp.Description("The where clause object to validate (for example: { price: { gt: 50 } }). "+
+				"Legacy callers may still pass a JSON string."),
 		),
 		mcp.WithString("database",
 			mcp.Description("Optional database name. Omit to search all databases."),
@@ -365,58 +366,183 @@ type WorkflowGuide struct {
 
 // handleGetWorkflowGuide returns the recommended workflow for MCP tool usage
 func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	toolSet := ms.availableToolSet()
+	has := func(name string) bool { return toolSet[name] }
 	guide := WorkflowGuide{
-		QueryWorkflow: []string{
-			"1. Call get_query_syntax to learn GraphJin DSL (it differs from standard GraphQL)",
+		ToolSequences: make(map[string]string),
+	}
+
+	guide.QueryWorkflow = append(guide.QueryWorkflow,
+		"1. Call get_query_syntax to learn GraphJin DSL (it differs from standard GraphQL)",
+	)
+	if has("plan_database_setup") && has("test_database_connection") && has("apply_database_setup") {
+		guide.QueryWorkflow = append(guide.QueryWorkflow,
 			"1.5 If no database is configured, use plan_database_setup → test_database_connection → apply_database_setup",
-			"2. Call list_tables to see available data",
-			"3. Call describe_table for schema details + available aggregation functions",
-			"4. Check list_saved_queries - a saved query may already exist for your need",
-			"5. Call execute_graphql (or execute_saved_query if one exists)",
-			"6. For pagination, save cursor IDs from response for next page requests",
-			"7. For reusable orchestration, call get_js_runtime_api and then execute_workflow",
-		},
-		MutationWorkflow: []string{
-			"1. Call get_mutation_syntax to learn insert/update/upsert/delete syntax",
-			"2. Call describe_table to understand required columns and types",
-			"3. Check list_saved_queries for existing mutation queries",
-			"4. Call execute_graphql with the mutation",
-		},
-		Tips: []string{
-			"PREFER execute_saved_query over execute_graphql when a matching saved query exists",
-			"Prefer the `next` field returned by onboarding/config tools for machine-readable follow-up actions",
-			"Use plan_database_setup for ranked discover results and explicit candidate selection",
-			"Use test_database_connection before apply_database_setup when credentials are uncertain",
-			"Use find_path when joining tables that aren't directly related",
-			"Aggregations like count_id, sum_price are available on all tables (see describe_table)",
-			"Use the write_where_clause prompt for help building complex filters",
-			"Use @object directive when you expect a single result: { user @object { id } }",
-			"Use resolvers to join DB tables with remote APIs - configure via update_current_config with resolvers parameter",
-			"For multi-database deployments, use the `database` parameter in list_tables and describe_table to filter by database. Omitting it returns results from all databases.",
-			"Use explain_query to see the exact compiled query that will run before executing — great for debugging and optimization",
-			"Use explore_relationships to map out the data model neighborhood around any table",
-			"Use audit_role_permissions to understand what each role can access",
-			"ALWAYS call list_workflows first — a reusable workflow may already exist for the user's question",
-			"Use save_workflow to persist new workflows so future queries can reuse them",
-			"Use get_js_runtime_api before authoring JS workflows so function names and argument schemas are exact",
-			"Use execute_workflow to run ./workflows/<name>.js with variables passed as `input`",
-		},
-		ToolSequences: map[string]string{
-			"db_onboarding_guided":       "discover_databases → plan_database_setup → test_database_connection → apply_database_setup → list_tables",
-			"simple_query":               "get_query_syntax → list_tables → describe_table → execute_graphql",
-			"complex_query":              "get_query_syntax → list_tables → describe_table → find_path → execute_graphql",
-			"use_saved_query":            "list_saved_queries → get_saved_query → execute_saved_query",
-			"mutation":                   "get_mutation_syntax → describe_table → execute_graphql",
-			"explore_schema":             "list_tables → describe_table (for each relevant table) → find_path",
-			"build_where_clause":         "describe_table → use write_where_clause prompt → validate_where_clause",
-			"configure_resolver":         "dev mode: get_current_config(section: resolvers) → update_current_config(resolvers: [...]) → reload_schema → execute_graphql",
-			"multi_database_exploration": "list_tables → describe_table(database: 'db_name') → execute_graphql",
-			"debug_query":                "explain_query → (fix issues) → execute_graphql",
-			"explore_data_model":         "list_tables → explore_relationships(depth: 2) → describe_table",
-			"security_audit":             "audit_role_permissions(role: 'all') → update_current_config(roles: [...]) → audit_role_permissions (verify)",
-			"js_workflow_reuse":          "list_workflows → execute_workflow",
-			"js_workflow_authoring":      "list_workflows → get_js_runtime_api → list_tables → describe_table → save_workflow → execute_workflow",
-		},
+		)
+	}
+	guide.QueryWorkflow = append(guide.QueryWorkflow,
+		"2. Call list_tables to see available data",
+		"3. Call describe_table for schema details + available aggregation functions",
+		"4. Check list_saved_queries - a saved query may already exist for your need",
+	)
+	if has("execute_graphql") {
+		guide.QueryWorkflow = append(guide.QueryWorkflow,
+			"5. Prefer execute_saved_query when a matching saved query exists, otherwise call execute_graphql",
+		)
+	} else {
+		guide.QueryWorkflow = append(guide.QueryWorkflow,
+			"5. Raw queries are disabled, so inspect saved queries first and execute them with execute_saved_query",
+		)
+	}
+	guide.QueryWorkflow = append(guide.QueryWorkflow,
+		"6. For pagination, save cursor IDs from response for next page requests",
+	)
+	if has("get_js_runtime_api") && has("execute_workflow") {
+		guide.QueryWorkflow = append(guide.QueryWorkflow,
+			"7. For reusable orchestration, inspect get_js_runtime_api and reuse execute_workflow when a workflow already exists",
+		)
+	}
+
+	guide.MutationWorkflow = append(guide.MutationWorkflow,
+		"1. Call get_mutation_syntax to learn insert/update/upsert/delete syntax",
+		"2. Call describe_table to understand required columns and types",
+		"3. Check list_saved_queries for existing mutation queries",
+	)
+	if has("execute_graphql") {
+		guide.MutationWorkflow = append(guide.MutationWorkflow, "4. Call execute_graphql with the mutation")
+	} else {
+		guide.MutationWorkflow = append(guide.MutationWorkflow, "4. Raw mutations are disabled, so execute a saved mutation with execute_saved_query")
+	}
+
+	guide.Tips = append(guide.Tips,
+		"PREFER execute_saved_query over execute_graphql when a matching saved query exists",
+		"Use find_path when joining tables that aren't directly related",
+		"Aggregations like count_id, sum_price are available on all tables (see describe_table)",
+		"Use the write_where_clause prompt for help building complex filters",
+		"Use @object directive when you expect a single result: { user @object { id } }",
+		"For multi-database deployments, use the `database` parameter in list_tables and describe_table to filter by database. Omitting it now errors when a table name is ambiguous across databases.",
+		"ALWAYS call list_workflows first — a reusable workflow may already exist for the user's question",
+	)
+	if has("update_current_config") {
+		guide.Tips = append(guide.Tips, "Use resolvers to join DB tables with remote APIs - configure via update_current_config with resolvers parameter")
+	}
+	if has("update_current_config") || has("apply_database_setup") {
+		guide.Tips = append(guide.Tips, "Prefer the `next` field returned by onboarding/config tools for machine-readable follow-up actions")
+	}
+	if has("plan_database_setup") {
+		guide.Tips = append(guide.Tips, "Use plan_database_setup for ranked discover results and explicit candidate selection")
+	}
+	if has("test_database_connection") && has("apply_database_setup") {
+		guide.Tips = append(guide.Tips, "Use test_database_connection before apply_database_setup when credentials are uncertain")
+	}
+	if has("explain_query") {
+		guide.Tips = append(guide.Tips, "Use explain_query to see the exact compiled query that will run before executing — great for debugging and optimization")
+	}
+	if has("explore_relationships") {
+		guide.Tips = append(guide.Tips, "Use explore_relationships to map out the data model neighborhood around any table")
+	}
+	if has("audit_role_permissions") {
+		guide.Tips = append(guide.Tips, "Use audit_role_permissions to understand what each role can access")
+	}
+	if has("save_workflow") {
+		guide.Tips = append(guide.Tips, "Use save_workflow to persist new workflows so future queries can reuse them")
+	}
+	if has("get_js_runtime_api") && has("save_workflow") {
+		guide.Tips = append(guide.Tips, "Use get_js_runtime_api before authoring JS workflows so function names and argument schemas are exact")
+	}
+	if has("execute_workflow") {
+		guide.Tips = append(guide.Tips, "Use execute_workflow to run ./workflows/<name>.js with variables passed as `input`")
+	}
+
+	addSequence := func(name string, required []string, sequence string) {
+		for _, tool := range required {
+			if !has(tool) {
+				return
+			}
+		}
+		guide.ToolSequences[name] = sequence
+	}
+
+	if has("plan_database_setup") && has("test_database_connection") && has("apply_database_setup") {
+		addSequence("db_onboarding_guided",
+			[]string{"discover_databases", "plan_database_setup", "test_database_connection", "apply_database_setup", "list_tables"},
+			"discover_databases → plan_database_setup → test_database_connection → apply_database_setup → list_tables",
+		)
+	}
+	if has("execute_graphql") {
+		addSequence("simple_query",
+			[]string{"get_query_syntax", "list_tables", "describe_table", "execute_graphql"},
+			"get_query_syntax → list_tables → describe_table → execute_graphql",
+		)
+		addSequence("complex_query",
+			[]string{"get_query_syntax", "list_tables", "describe_table", "find_path", "execute_graphql"},
+			"get_query_syntax → list_tables → describe_table → find_path → execute_graphql",
+		)
+		addSequence("mutation",
+			[]string{"get_mutation_syntax", "describe_table", "execute_graphql"},
+			"get_mutation_syntax → describe_table → execute_graphql",
+		)
+		addSequence("multi_database_exploration",
+			[]string{"list_tables", "describe_table", "execute_graphql"},
+			"list_tables → describe_table(database: 'db_name') → execute_graphql",
+		)
+	} else {
+		addSequence("saved_query_only",
+			[]string{"list_saved_queries", "get_saved_query", "execute_saved_query"},
+			"list_saved_queries → get_saved_query → execute_saved_query",
+		)
+		addSequence("mutation",
+			[]string{"list_saved_queries", "get_saved_query", "execute_saved_query"},
+			"list_saved_queries → get_saved_query → execute_saved_query",
+		)
+	}
+	addSequence("use_saved_query",
+		[]string{"list_saved_queries", "get_saved_query", "execute_saved_query"},
+		"list_saved_queries → get_saved_query → execute_saved_query",
+	)
+	addSequence("explore_schema",
+		[]string{"list_tables", "describe_table", "find_path"},
+		"list_tables → describe_table (for each relevant table) → find_path",
+	)
+	addSequence("build_where_clause",
+		[]string{"describe_table", "validate_where_clause"},
+		"describe_table → use write_where_clause prompt → validate_where_clause",
+	)
+	if has("get_current_config") && has("update_current_config") && has("reload_schema") && has("execute_graphql") {
+		addSequence("configure_resolver",
+			[]string{"get_current_config", "update_current_config", "reload_schema", "execute_graphql"},
+			"dev mode: get_current_config(section: resolvers) → update_current_config(resolvers: [...]) → reload_schema → execute_graphql",
+		)
+	}
+	if has("explain_query") && has("execute_graphql") {
+		addSequence("debug_query",
+			[]string{"explain_query", "execute_graphql"},
+			"explain_query → (fix issues) → execute_graphql",
+		)
+	}
+	if has("explore_relationships") {
+		addSequence("explore_data_model",
+			[]string{"list_tables", "explore_relationships", "describe_table"},
+			"list_tables → explore_relationships(depth: 2) → describe_table",
+		)
+	}
+	if has("audit_role_permissions") && has("update_current_config") {
+		addSequence("security_audit",
+			[]string{"audit_role_permissions", "update_current_config"},
+			"audit_role_permissions(role: 'all') → update_current_config(roles: [...]) → audit_role_permissions (verify)",
+		)
+	}
+	if has("execute_workflow") {
+		addSequence("js_workflow_reuse",
+			[]string{"list_workflows", "execute_workflow"},
+			"list_workflows → execute_workflow",
+		)
+	}
+	if has("save_workflow") {
+		addSequence("js_workflow_authoring",
+			[]string{"list_workflows", "get_js_runtime_api", "list_tables", "describe_table", "save_workflow", "execute_workflow"},
+			"list_workflows → get_js_runtime_api → list_tables → describe_table → save_workflow → execute_workflow",
+		)
 	}
 
 	data, err := mcpMarshalJSON(guide, true)
@@ -574,13 +700,13 @@ func (ms *mcpServer) handleValidateWhereClause(ctx context.Context, req mcp.Call
 	}
 	args := req.GetArguments()
 	table, _ := args["table"].(string)
-	whereClause, _ := args["where"].(string)
+	rawWhere, hasWhere := args["where"]
 	database, _ := args["database"].(string)
 
 	if table == "" {
 		return mcp.NewToolResultError("table name is required"), nil
 	}
-	if whereClause == "" {
+	if !hasWhere || rawWhere == nil {
 		return mcp.NewToolResultError("where clause is required"), nil
 	}
 
@@ -602,9 +728,8 @@ func (ms *mcpServer) handleValidateWhereClause(ctx context.Context, req mcp.Call
 		columnTypes[col.Name] = col
 	}
 
-	// Parse the where clause as JSON
-	var whereData map[string]any
-	if err := json.Unmarshal([]byte(whereClause), &whereData); err != nil {
+	whereData, err := parseWhereClauseArg(rawWhere)
+	if err != nil {
 		// Return parse error
 		result := WhereValidationResult{
 			Valid: false,
@@ -612,8 +737,8 @@ func (ms *mcpServer) handleValidateWhereClause(ctx context.Context, req mcp.Call
 				{
 					Path:       "",
 					Error:      "parse_error",
-					Message:    fmt.Sprintf("Failed to parse where clause as JSON: %v", err),
-					Suggestion: "Ensure the where clause is valid JSON, e.g., { \"price\": { \"gt\": 50 } }",
+					Message:    fmt.Sprintf("Failed to parse where clause: %v", err),
+					Suggestion: "Pass the where clause as an object like { price: { gt: 50 } }, or as a valid JSON string for legacy callers.",
 				},
 			},
 		}
@@ -644,6 +769,33 @@ func (ms *mcpServer) handleValidateWhereClause(ctx context.Context, req mcp.Call
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	return mcp.NewToolResultText(string(data)), nil
+}
+
+func (ms *mcpServer) availableToolSet() map[string]bool {
+	tools := ms.srv.ListTools()
+	available := make(map[string]bool, len(tools))
+	for name := range tools {
+		available[name] = true
+	}
+	return available
+}
+
+func parseWhereClauseArg(value any) (map[string]any, error) {
+	switch v := value.(type) {
+	case map[string]any:
+		return v, nil
+	case string:
+		if strings.TrimSpace(v) == "" {
+			return nil, fmt.Errorf("empty where clause")
+		}
+		var whereData map[string]any
+		if err := json.Unmarshal([]byte(v), &whereData); err != nil {
+			return nil, err
+		}
+		return whereData, nil
+	default:
+		return nil, fmt.Errorf("unsupported where clause type %T", value)
+	}
 }
 
 // validateWhereClause recursively validates a where clause structure

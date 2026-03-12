@@ -34,58 +34,78 @@ var operatorTypeMapping = map[string][]string{
 
 // normalizeColumnType maps database-specific types to general categories
 func normalizeColumnType(dbType string) string {
-	dbType = strings.ToLower(dbType)
+	dbType = strings.ToLower(strings.TrimSpace(dbType))
+	compactedType := strings.ReplaceAll(dbType, " ", "")
 
-	// Numeric types
-	if strings.Contains(dbType, "int") ||
-		strings.Contains(dbType, "serial") ||
-		strings.Contains(dbType, "decimal") ||
-		strings.Contains(dbType, "numeric") ||
-		strings.Contains(dbType, "float") ||
-		strings.Contains(dbType, "double") ||
-		strings.Contains(dbType, "real") ||
-		strings.Contains(dbType, "money") {
-		return "numeric"
-	}
-
-	// Boolean types
-	if strings.Contains(dbType, "bool") {
+	// Dialect-specific boolean aliases must win before numeric detection.
+	if isBooleanColumnType(compactedType) {
 		return "boolean"
 	}
 
+	// Numeric types
+	if strings.Contains(compactedType, "int") ||
+		strings.Contains(compactedType, "serial") ||
+		strings.Contains(compactedType, "decimal") ||
+		strings.Contains(compactedType, "numeric") ||
+		strings.Contains(compactedType, "number") ||
+		strings.Contains(compactedType, "float") ||
+		strings.Contains(compactedType, "double") ||
+		strings.Contains(compactedType, "real") ||
+		strings.Contains(compactedType, "money") {
+		return "numeric"
+	}
+
 	// JSON types
-	if strings.Contains(dbType, "json") {
+	if strings.Contains(compactedType, "json") {
 		return "json"
 	}
 
 	// Array types
-	if strings.HasSuffix(dbType, "[]") || strings.Contains(dbType, "array") {
+	if strings.HasSuffix(compactedType, "[]") || strings.Contains(compactedType, "array") {
 		return "array"
 	}
 
 	// Geometry/Geography types
-	if strings.Contains(dbType, "geometry") ||
-		strings.Contains(dbType, "geography") ||
-		strings.Contains(dbType, "point") ||
-		strings.Contains(dbType, "polygon") ||
-		strings.Contains(dbType, "linestring") {
+	if strings.Contains(compactedType, "geometry") ||
+		strings.Contains(compactedType, "geography") ||
+		strings.Contains(compactedType, "point") ||
+		strings.Contains(compactedType, "polygon") ||
+		strings.Contains(compactedType, "linestring") {
 		return "geometry"
 	}
 
 	// Timestamp/Date types
-	if strings.Contains(dbType, "timestamp") ||
-		strings.Contains(dbType, "date") ||
-		strings.Contains(dbType, "time") {
+	if strings.Contains(compactedType, "timestamp") ||
+		strings.Contains(compactedType, "date") ||
+		strings.Contains(compactedType, "time") {
 		return "timestamp"
 	}
 
 	// UUID types
-	if strings.Contains(dbType, "uuid") {
+	if strings.Contains(compactedType, "uuid") {
 		return "uuid"
 	}
 
 	// Default to text for varchar, char, text, etc.
 	return "text"
+}
+
+func isBooleanColumnType(dbType string) bool {
+	switch dbType {
+	case "bool", "boolean", "bit":
+		return true
+	}
+
+	if strings.HasPrefix(dbType, "tinyint(") && strings.HasSuffix(dbType, ")") {
+		return dbType == "tinyint(1)"
+	}
+
+	if strings.HasPrefix(dbType, "number(") && strings.HasSuffix(dbType, ")") {
+		precision := strings.TrimSuffix(strings.TrimPrefix(dbType, "number("), ")")
+		return precision == "1" || precision == "1,0"
+	}
+
+	return false
 }
 
 // getValidOperators returns the valid operators for a given database column type

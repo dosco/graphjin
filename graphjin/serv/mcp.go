@@ -64,12 +64,10 @@ func mcpToolList(conf *Config) []string {
 	if conf.MCP.AllowRawQueries {
 		tools = append(tools, "execute_graphql")
 	}
-	if conf.MCP.EnableSearch {
-		tools = append(tools,
-			"list_saved_queries", "search_saved_queries", "get_saved_query",
-			"list_fragments", "get_fragment", "search_fragments",
-		)
-	}
+	tools = append(tools,
+		"list_saved_queries", "search_saved_queries", "get_saved_query",
+		"list_fragments", "get_fragment", "search_fragments",
+	)
 	if conf.MCP.AllowConfigUpdates {
 		tools = append(tools, "update_current_config")
 	}

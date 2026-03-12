@@ -109,6 +109,41 @@ function main() {
 	}
 }
 
+func TestRunNamedWorkflow_CanExecuteGraphQLWhenAllowed(t *testing.T) {
+	ms := newSQLiteReadyMCPServer(t, nil, nil)
+	ms.service.conf.MCP.AllowRawQueries = true
+
+	if err := ms.service.fs.Put("/workflows/query.js", []byte(`
+function main(input) {
+  return gj.tools.executeGraphql({
+    query: "query { users(where: { id: { eq: $id } }) { id name } }",
+    variables: { id: input.id }
+  });
+}
+`)); err != nil {
+		t.Fatalf("write workflow: %v", err)
+	}
+
+	out, err := ms.service.runNamedWorkflow(context.Background(), "query", map[string]any{"id": 1}, nil)
+	if err != nil {
+		t.Fatalf("runNamedWorkflow error: %v", err)
+	}
+
+	res, ok := out.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map result, got %T", out)
+	}
+
+	data, ok := res["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected executeGraphql data payload, got %#v", res)
+	}
+	users, ok := data["users"].([]any)
+	if !ok || len(users) != 1 {
+		t.Fatalf("expected one user, got %#v", data["users"])
+	}
+}
+
 func TestHandleExecuteWorkflow_PassesVariables(t *testing.T) {
 	mem := afero.NewMemMapFs()
 	if err := mem.MkdirAll("/workflows", 0o755); err != nil {
@@ -145,6 +180,60 @@ func TestHandleExecuteWorkflow_PassesVariables(t *testing.T) {
 
 	if got, _ := out.Data["seen"].(float64); got != 42 {
 		t.Fatalf("expected seen=42, got %v", out.Data["seen"])
+	}
+}
+
+func TestHandleExecuteWorkflow_RequiresDeclaredVariables(t *testing.T) {
+	mem := afero.NewMemMapFs()
+	if err := mem.MkdirAll("/workflows", 0o755); err != nil {
+		t.Fatalf("mkdir workflows: %v", err)
+	}
+	src := `// @graphjin-workflow {"description":"Echo named input","variables":[{"name":"value","type":"number","required":true}]}
+function main(input) { return { seen: input.value }; }
+`
+	if err := afero.WriteFile(mem, "/workflows/echo.js", []byte(src), 0o644); err != nil {
+		t.Fatalf("write workflow: %v", err)
+	}
+
+	s := &graphjinService{
+		fs:   newAferoFS(mem, "/"),
+		conf: &Config{},
+	}
+	ms := &mcpServer{service: s}
+
+	res, err := ms.handleExecuteWorkflow(context.Background(), newToolRequest(map[string]any{
+		"name":      "echo",
+		"variables": map[string]any{},
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !res.IsError {
+		t.Fatal("expected missing required workflow variable to fail")
+	}
+	assertToolError(t, res, "workflow requires variables")
+	assertToolError(t, res, "value")
+
+	res, err = ms.handleExecuteWorkflow(context.Background(), newToolRequest(map[string]any{
+		"name": "echo",
+		"variables": map[string]any{
+			"value": 7,
+		},
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	text := assertToolSuccess(t, res)
+	var out struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(text), &out); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got, _ := out.Data["seen"].(float64); got != 7 {
+		t.Fatalf("expected seen=7 after providing required workflow variable, got %v", out.Data["seen"])
 	}
 }
 
@@ -199,6 +288,37 @@ function main() {
 	}
 
 	if !strings.Contains(err.Error(), "cannot be called from workflow runtime") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunNamedWorkflow_BlocksWorkflowMutationTools(t *testing.T) {
+	mem := afero.NewMemMapFs()
+	if err := mem.MkdirAll("/workflows", 0o755); err != nil {
+		t.Fatalf("mkdir workflows: %v", err)
+	}
+	if err := afero.WriteFile(mem, "/workflows/nope.js", []byte(`
+function main() {
+  return gj.tools.call("save_workflow", {
+    name: "oops",
+    description: "nope",
+    code: "function main(input) { return input; }"
+  });
+}
+`), 0o644); err != nil {
+		t.Fatalf("write workflow: %v", err)
+	}
+
+	s := &graphjinService{
+		fs:   newAferoFS(mem, "/"),
+		conf: &Config{},
+	}
+
+	_, err := s.runNamedWorkflow(context.Background(), "nope", map[string]any{}, nil)
+	if err == nil {
+		t.Fatal("expected blocked workflow mutation tool error")
+	}
+	if !strings.Contains(err.Error(), "save_workflow") || !strings.Contains(err.Error(), "cannot be called from workflow runtime") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

@@ -3,6 +3,7 @@ package serv
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/server"
@@ -12,7 +13,6 @@ func TestHandleGetJSRuntimeAPI_IncludesMappedTools(t *testing.T) {
 	ms := mockMcpServerWithConfig(MCPConfig{
 		AllowRawQueries:    true,
 		AllowMutations:     true,
-		EnableSearch:       true,
 		AllowConfigUpdates: true,
 		AllowSchemaReload:  true,
 		AllowSchemaUpdates: true,
@@ -42,8 +42,8 @@ func TestHandleGetJSRuntimeAPI_IncludesMappedTools(t *testing.T) {
 	if !hasJSFunction(api.Functions, "gj.tools.executeGraphql") {
 		t.Fatal("expected gj.tools.executeGraphql to be exposed when raw queries are enabled")
 	}
-	if !hasJSFunction(api.Functions, "gj.tools.getCurrentConfig") {
-		t.Fatal("expected gj.tools.getCurrentConfig in development mode")
+	if hasJSFunction(api.Functions, "gj.tools.getCurrentConfig") {
+		t.Fatal("did not expect get_current_config to be exposed inside workflow runtime")
 	}
 	if hasJSFunction(api.Functions, "gj.tools.getJsRuntimeApi") {
 		t.Fatal("did not expect get_js_runtime_api to be exposed as a runtime tool function")
@@ -51,13 +51,35 @@ func TestHandleGetJSRuntimeAPI_IncludesMappedTools(t *testing.T) {
 	if hasJSFunction(api.Functions, "gj.tools.executeWorkflow") {
 		t.Fatal("did not expect execute_workflow to be exposed as a runtime tool function")
 	}
+	if hasJSFunction(api.Functions, "gj.tools.saveWorkflow") {
+		t.Fatal("did not expect save_workflow to be exposed as a runtime tool function")
+	}
+	if !hasNote(api.Notes, "describeTable({table: 'orders'})") {
+		t.Fatal("expected describeTable example to use the table argument")
+	}
+	if !hasNote(api.Notes, "Only workflow-callable tools are available inside scripts") {
+		t.Fatal("expected runtime notes to describe workflow tool allowlist")
+	}
+	if hasNote(api.Notes, ".table;") {
+		t.Fatal("did not expect describeTable docs to mention a .table suffix")
+	}
+	if hasNote(api.Notes, "GraphQL queries MUST be named") {
+		t.Fatal("did not expect unsupported named-query guidance in JS runtime notes")
+	}
+
+	describeTable := findJSFunction(api.Functions, "gj.tools.describeTable")
+	if describeTable == nil {
+		t.Fatal("expected gj.tools.describeTable to be exposed")
+	}
+	if _, ok := describeTable.Arguments["table"]; !ok {
+		t.Fatal("expected gj.tools.describeTable arguments to expose table")
+	}
 }
 
 func TestHandleGetJSRuntimeAPI_RespectsToolGates(t *testing.T) {
 	ms := mockMcpServerWithConfig(MCPConfig{
 		AllowRawQueries: false,
 		AllowMutations:  true,
-		EnableSearch:    false,
 	})
 	ms.service.conf.Serv.Production = true
 	ms.srv = server.NewMCPServer("test", "0.0.0")
@@ -78,13 +100,31 @@ func TestHandleGetJSRuntimeAPI_RespectsToolGates(t *testing.T) {
 		t.Fatal("execute_graphql should not be exposed when raw queries are disabled")
 	}
 	if hasJSFunction(api.Functions, "gj.tools.getCurrentConfig") {
-		t.Fatal("get_current_config should not be exposed in production mode")
+		t.Fatal("get_current_config should not be exposed in workflow runtime")
 	}
 }
 
 func hasJSFunction(functions []JSRuntimeFunction, name string) bool {
 	for _, f := range functions {
 		if f.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func findJSFunction(functions []JSRuntimeFunction, name string) *JSRuntimeFunction {
+	for i := range functions {
+		if functions[i].Name == name {
+			return &functions[i]
+		}
+	}
+	return nil
+}
+
+func hasNote(notes []string, fragment string) bool {
+	for _, note := range notes {
+		if strings.Contains(note, fragment) {
 			return true
 		}
 	}

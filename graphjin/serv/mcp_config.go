@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -472,7 +473,8 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 	var changes []string
 	var errors []string
 
-	conf := &ms.service.conf.Core
+	stagedCore := cloneCoreConfig(ms.service.conf.Core)
+	conf := &stagedCore
 
 	// Parse create_if_not_exists early
 	createIfNotExists := false
@@ -828,63 +830,38 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		return mcp.NewToolResultText(string(data)), nil
 	}
 
-	// Ensure connections exist for all configured databases
-	if len(changes) > 0 {
-		ms.ensureDBConnections()
-	}
-
-	// Attempt to reload with new config first (validates the config)
 	var availableDBs []string
 	if len(changes) > 0 {
-		if ms.service.gj != nil {
-			// Update options so reload picks up new databases
-			ms.service.gj.SetOptions(ms.service.buildCoreOptions()...)
-			if err := ms.service.gj.ReloadWithDB(ms.service.anyDB()); err != nil {
-				result := ConfigUpdateResult{
-					Success: false,
-					Message: fmt.Sprintf("Config reload failed, changes not persisted: %v", err),
-					Changes: changes,
-					Errors:  append(errors, fmt.Sprintf("reload error: %v", err)),
-				}
-				result.Next = ms.nextForConfigUpdate(result)
-				data, _ := mcpMarshalJSON(result, true)
-				return mcp.NewToolResultText(string(data)), nil
+		stage, err := ms.prepareStagedRuntime(conf, createIfNotExists)
+		if err != nil {
+			if stage != nil {
+				availableDBs = stage.availableDBs
+				stage.close()
 			}
-			// Verify schema is ready after reload
-			if !ms.service.gj.SchemaReady() {
-				var reloadDBs []string
-				if db := ms.service.anyDB(); db != nil {
-					reloadDBs, _ = listDatabaseNames(db, ms.service.conf.DBType)
-					if !ms.service.conf.MCP.DefaultDBAllowed {
-						reloadDBs = filterSystemDatabases(ms.service.conf.DBType, reloadDBs)
-					}
-				}
-				result := ConfigUpdateResult{
-					Success:   false,
-					Message:   "Config reloaded but schema discovery found no tables. The database may be empty. Try a different database from the databases list, or create tables first.",
-					Changes:   changes,
-					Errors:    append(errors, "schema not ready after reload"),
-					Databases: reloadDBs,
-				}
-				result.Next = ms.nextForConfigUpdate(result)
-				data, _ := mcpMarshalJSON(result, true)
-				return mcp.NewToolResultText(string(data)), nil
+
+			message := fmt.Sprintf("Config reload failed, changes not persisted: %v", err)
+			errs := append(errors, fmt.Sprintf("reload error: %v", err))
+			if stage != nil && stage.schemaNotReady {
+				message = "Config validation failed, changes not applied: database connected but schema discovery found no tables. Try a different database from the databases list, or create tables first."
+				errs = append(errs, "schema not ready after staged reload")
 			}
-			if db := ms.service.anyDB(); db != nil {
-				availableDBs, _ = listDatabaseNames(db, ms.service.conf.DBType)
-				if !ms.service.conf.MCP.DefaultDBAllowed {
-					availableDBs = filterSystemDatabases(ms.service.conf.DBType, availableDBs)
-				}
+
+			result := ConfigUpdateResult{
+				Success:   false,
+				Message:   message,
+				Changes:   changes,
+				Errors:    errs,
+				Databases: availableDBs,
 			}
-		} else {
-			// GraphJin not initialized — try to connect and initialize now
-			dbNames, err := ms.tryInitializeGraphJin(createIfNotExists)
-			if err != nil {
-				errors = append(errors, fmt.Sprintf("GraphJin initialization failed: %v", err))
-			} else {
-				changes = append(changes, "GraphJin initialized with new database configuration")
-			}
-			availableDBs = dbNames
+			result.Next = ms.nextForConfigUpdate(result)
+			data, _ := mcpMarshalJSON(result, true)
+			return mcp.NewToolResultText(string(data)), nil
+		}
+
+		availableDBs = stage.availableDBs
+		ms.commitStagedRuntime(stagedCore, stage)
+		if ms.service.gj != nil && ms.service.gj.SchemaReady() {
+			changes = append(changes, "configuration validated and runtime reloaded transactionally")
 		}
 	}
 
@@ -1350,6 +1327,278 @@ func parseResolverConfig(m map[string]any) (core.ResolverConfig, error) {
 	}
 
 	return rc, nil
+}
+
+type stagedRuntimeState struct {
+	dbs            map[string]*sql.DB
+	gj             *core.GraphJin
+	availableDBs   []string
+	newConnections map[string]*sql.DB
+	schemaNotReady bool
+}
+
+func (st *stagedRuntimeState) close() {
+	if st.gj != nil {
+		st.gj.Close()
+	}
+	for _, db := range st.newConnections {
+		if db != nil {
+			db.Close() //nolint:errcheck
+		}
+	}
+}
+
+func cloneCoreConfig(src core.Config) core.Config {
+	dst := src
+
+	if src.Databases != nil {
+		dst.Databases = make(map[string]core.DatabaseConfig, len(src.Databases))
+		for name, dbConf := range src.Databases {
+			dst.Databases[name] = dbConf
+		}
+	}
+	if src.Tables != nil {
+		dst.Tables = append([]core.Table(nil), src.Tables...)
+		for i := range dst.Tables {
+			if src.Tables[i].Blocklist != nil {
+				dst.Tables[i].Blocklist = append([]string(nil), src.Tables[i].Blocklist...)
+			}
+			if src.Tables[i].Columns != nil {
+				dst.Tables[i].Columns = append([]core.Column(nil), src.Tables[i].Columns...)
+			}
+			if src.Tables[i].OrderBy != nil {
+				dst.Tables[i].OrderBy = make(map[string][]string, len(src.Tables[i].OrderBy))
+				for key, cols := range src.Tables[i].OrderBy {
+					dst.Tables[i].OrderBy[key] = append([]string(nil), cols...)
+				}
+			}
+		}
+	}
+	if src.Roles != nil {
+		dst.Roles = append([]core.Role(nil), src.Roles...)
+		for i := range dst.Roles {
+			dst.Roles[i].Tables = append([]core.RoleTable(nil), src.Roles[i].Tables...)
+			for j := range dst.Roles[i].Tables {
+				dst.Roles[i].Tables[j] = cloneRoleTable(src.Roles[i].Tables[j])
+			}
+		}
+	}
+	if src.Blocklist != nil {
+		dst.Blocklist = append([]string(nil), src.Blocklist...)
+	}
+	if src.Functions != nil {
+		dst.Functions = append([]core.Function(nil), src.Functions...)
+	}
+	if src.Resolvers != nil {
+		dst.Resolvers = append([]core.ResolverConfig(nil), src.Resolvers...)
+		for i := range dst.Resolvers {
+			if src.Resolvers[i].Props != nil {
+				dst.Resolvers[i].Props = make(core.ResolverProps, len(src.Resolvers[i].Props))
+				for key, val := range src.Resolvers[i].Props {
+					dst.Resolvers[i].Props[key] = val
+				}
+			}
+		}
+	}
+
+	return dst
+}
+
+func cloneRoleTable(src core.RoleTable) core.RoleTable {
+	dst := src
+	if src.Query != nil {
+		query := *src.Query
+		query.Filters = append([]string(nil), src.Query.Filters...)
+		query.Columns = append([]string(nil), src.Query.Columns...)
+		dst.Query = &query
+	}
+	if src.Insert != nil {
+		insert := *src.Insert
+		insert.Filters = append([]string(nil), src.Insert.Filters...)
+		insert.Columns = append([]string(nil), src.Insert.Columns...)
+		if src.Insert.Presets != nil {
+			insert.Presets = make(map[string]string, len(src.Insert.Presets))
+			for key, val := range src.Insert.Presets {
+				insert.Presets[key] = val
+			}
+		}
+		dst.Insert = &insert
+	}
+	if src.Update != nil {
+		update := *src.Update
+		update.Filters = append([]string(nil), src.Update.Filters...)
+		update.Columns = append([]string(nil), src.Update.Columns...)
+		if src.Update.Presets != nil {
+			update.Presets = make(map[string]string, len(src.Update.Presets))
+			for key, val := range src.Update.Presets {
+				update.Presets[key] = val
+			}
+		}
+		dst.Update = &update
+	}
+	if src.Upsert != nil {
+		upsert := *src.Upsert
+		upsert.Filters = append([]string(nil), src.Upsert.Filters...)
+		upsert.Columns = append([]string(nil), src.Upsert.Columns...)
+		if src.Upsert.Presets != nil {
+			upsert.Presets = make(map[string]string, len(src.Upsert.Presets))
+			for key, val := range src.Upsert.Presets {
+				upsert.Presets[key] = val
+			}
+		}
+		dst.Upsert = &upsert
+	}
+	if src.Delete != nil {
+		del := *src.Delete
+		del.Filters = append([]string(nil), src.Delete.Filters...)
+		del.Columns = append([]string(nil), src.Delete.Columns...)
+		dst.Delete = &del
+	}
+	return dst
+}
+
+func anyDBFromMap(dbs map[string]*sql.DB) *sql.DB {
+	names := make([]string, 0, len(dbs))
+	for name := range dbs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if dbs[name] != nil {
+			return dbs[name]
+		}
+	}
+	return nil
+}
+
+func primaryDBTypeFromCore(conf *core.Config) string {
+	if len(conf.Databases) == 0 {
+		return conf.DBType
+	}
+	names := make([]string, 0, len(conf.Databases))
+	for name := range conf.Databases {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return conf.Databases[names[0]].Type
+}
+
+func (ms *mcpServer) prepareStagedRuntime(stagedCore *core.Config, createIfNotExists bool) (*stagedRuntimeState, error) {
+	stage := &stagedRuntimeState{
+		dbs:            make(map[string]*sql.DB),
+		newConnections: make(map[string]*sql.DB),
+	}
+
+	if len(stagedCore.Databases) > 0 {
+		currentDBs := ms.service.dbs
+		currentConfigs := ms.service.conf.Core.Databases
+
+		dbNames := make([]string, 0, len(stagedCore.Databases))
+		for name := range stagedCore.Databases {
+			dbNames = append(dbNames, name)
+		}
+		sort.Strings(dbNames)
+
+		for _, name := range dbNames {
+			dbConf := stagedCore.Databases[name]
+			if existing, ok := currentDBs[name]; ok && reflect.DeepEqual(currentConfigs[name], dbConf) {
+				stage.dbs[name] = existing
+				continue
+			}
+
+			if createIfNotExists {
+				dbType := strings.ToLower(dbConf.Type)
+				dbName := dbConf.DBName
+				if dbName == "" {
+					dbName = name
+				}
+				if err := createDatabaseOnServer(dbType, dbConf.Host, dbConf.Port, dbConf.User, dbConf.Password, dbName, ms.service.log); err != nil {
+					ms.service.log.Warnf("create_if_not_exists for '%s': %v", name, err)
+				}
+			}
+
+			if dbConf.ConnString == "" && dbConf.Host == "" && dbConf.Path == "" {
+				continue
+			}
+
+			db, err := ms.service.newDBFromDatabaseConfig(name, dbConf)
+			if err != nil {
+				return stage, fmt.Errorf("database '%s' connection failed: %w", name, err)
+			}
+			stage.dbs[name] = db
+			stage.newConnections[name] = db
+		}
+
+		if len(stage.dbs) == 0 {
+			return stage, fmt.Errorf("database connection failed: no connections established")
+		}
+	} else if len(ms.service.dbs) > 0 {
+		for name, db := range ms.service.dbs {
+			stage.dbs[name] = db
+		}
+	} else {
+		return stage, nil
+	}
+
+	gj, err := core.NewGraphJin(stagedCore, anyDBFromMap(stage.dbs), ms.service.buildCoreOptionsWithDBs(stage.dbs)...)
+	if err != nil {
+		return stage, err
+	}
+	stage.gj = gj
+
+	if db := anyDBFromMap(stage.dbs); db != nil {
+		stage.availableDBs, _ = listDatabaseNames(db, primaryDBTypeFromCore(stagedCore))
+		if !ms.service.conf.MCP.DefaultDBAllowed {
+			stage.availableDBs = filterSystemDatabases(primaryDBTypeFromCore(stagedCore), stage.availableDBs)
+		}
+	}
+
+	if stage.gj != nil && !stage.gj.SchemaReady() {
+		stage.schemaNotReady = true
+		return stage, fmt.Errorf("database connected but schema discovery found no tables")
+	}
+
+	return stage, nil
+}
+
+func (ms *mcpServer) commitStagedRuntime(stagedCore core.Config, stage *stagedRuntimeState) {
+	oldGJ := ms.service.gj
+	oldDBs := ms.service.dbs
+	hadDatabaseMap := len(ms.service.conf.Core.Databases) > 0
+	prevLegacyDB := ms.service.conf.DB
+	prevDBType := ms.service.conf.DBType
+
+	ms.service.conf.Core = stagedCore
+	switch {
+	case len(stagedCore.Databases) > 0:
+		syncDBFromDatabases(ms.service.conf)
+	case hadDatabaseMap:
+		ms.service.conf.DB = Database{}
+		ms.service.conf.DBType = ""
+	default:
+		ms.service.conf.DB = prevLegacyDB
+		ms.service.conf.DBType = prevDBType
+	}
+
+	ms.service.dbs = stage.dbs
+	ms.service.gj = stage.gj
+	if oldGJ != nil && oldGJ != stage.gj {
+		oldGJ.Close()
+	}
+	ms.closeSupersededConnections(oldDBs, stage.dbs)
+}
+
+func (ms *mcpServer) closeSupersededConnections(oldDBs, newDBs map[string]*sql.DB) {
+	for name, db := range oldDBs {
+		if db == nil {
+			continue
+		}
+		if newDBs[name] == db {
+			continue
+		}
+		db.Close() //nolint:errcheck
+		ms.service.log.Infof("Closed replaced database connection: %s", name)
+	}
 }
 
 // syncDBFromDatabases copies the first entry from conf.Core.Databases

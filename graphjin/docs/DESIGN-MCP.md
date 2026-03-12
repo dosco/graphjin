@@ -69,7 +69,6 @@ type mcpServer struct {
 ```go
 type MCPConfig struct {
     Disable         bool   // Disable MCP server (default: false)
-    EnableSearch    bool   // Enable query/fragment search (default: true)
     AllowMutations  bool   // Allow mutation operations (default: true)
     AllowRawQueries bool   // Allow arbitrary GraphQL (default: true)
     StdioUserID     string // Default user ID for CLI
@@ -132,17 +131,17 @@ registerPrompts()
 
 | Tool | Description | Config Check |
 |------|-------------|--------------|
-| `list_saved_queries` | List all saved queries from allow-list | `EnableSearch` |
-| `search_saved_queries` | Search queries by name (fuzzy) | `EnableSearch` |
+| `list_saved_queries` | List all saved queries from allow-list | None |
+| `search_saved_queries` | Search queries by name (fuzzy) | None |
 | `get_saved_query` | Get full details of a saved query | None |
 
 ### 5. Fragment Discovery Tools (mcp_fragments.go)
 
 | Tool | Description | Config Check |
 |------|-------------|--------------|
-| `list_fragments` | List all available GraphQL fragments | `EnableSearch` |
+| `list_fragments` | List all available GraphQL fragments | None |
 | `get_fragment` | Get full fragment definition and usage | None |
-| `search_fragments` | Search fragments by name (fuzzy) | `EnableSearch` |
+| `search_fragments` | Search fragments by name (fuzzy) | None |
 
 ## MCP Prompts (mcp_prompts.go)
 
@@ -242,7 +241,7 @@ Used for role-based access control in queries
    - `AllowMutations: false` → All mutations blocked in `execute_graphql`
 
 2. **Search Restrictions**:
-   - `EnableSearch: false` → Disables `list_saved_queries`, `search_saved_queries`, `list_fragments`, `search_fragments`
+   - Saved-query and fragment discovery tools are always registered
 
 3. **Environment Restrictions**:
    - `get_current_config` is exposed only in development mode (`production: false`).

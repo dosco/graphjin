@@ -118,6 +118,7 @@ func (gj *graphjinEngine) anyDatabaseReady() bool {
 type GraphJin struct {
 	atomic.Value
 	done     chan bool
+	stopOnce sync.Once
 	reloadMu sync.Mutex // serializes reload operations
 }
 
@@ -171,6 +172,17 @@ func (g *GraphJin) getEngine() (*graphjinEngine, error) {
 		return nil, errEngineNotInitialized
 	}
 	return gj, nil
+}
+
+// Close stops GraphJin background tasks. It is safe to call multiple times.
+func (g *GraphJin) Close() {
+	if g == nil || g.done == nil {
+		return
+	}
+
+	g.stopOnce.Do(func() {
+		close(g.done)
+	})
 }
 
 // newGraphJinWithDBInfo creates the GraphJin struct, this involves querying the database to learn its
@@ -901,18 +913,12 @@ func (gj *graphjinEngine) getTableSchema(database, tableName string) (*TableSche
 		}
 		return gj.buildTableSchema(ctx.schema, database, tableName)
 	}
-	// Search all databases (deterministic order)
-	for _, dbName := range gj.sortedDatabaseNames() {
-		ctx := gj.databases[dbName]
-		if ctx.schema == nil {
-			continue
-		}
-		ts, err := gj.buildTableSchema(ctx.schema, dbName, tableName)
-		if err == nil {
-			return ts, nil
-		}
+
+	dbName, ctx, err := gj.resolveUniqueTableDatabase(tableName)
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("table not found: %s (searched all databases)", tableName)
+	return gj.buildTableSchema(ctx.schema, dbName, tableName)
 }
 
 // buildTableSchema builds a TableSchema from a specific database schema.
@@ -1002,18 +1008,12 @@ func (gj *graphjinEngine) findRelationshipPath(database, fromTable, toTable stri
 		}
 		return gj.buildPath(ctx.schema, fromTable, toTable)
 	}
-	// Search all databases (deterministic order)
-	for _, dbName := range gj.sortedDatabaseNames() {
-		ctx := gj.databases[dbName]
-		if ctx.schema == nil {
-			continue
-		}
-		path, err := gj.buildPath(ctx.schema, fromTable, toTable)
-		if err == nil {
-			return path, nil
-		}
+
+	_, ctx, err := gj.resolveUniquePathDatabase(fromTable, toTable)
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("no path found between %s and %s (searched all databases)", fromTable, toTable)
+	return gj.buildPath(ctx.schema, fromTable, toTable)
 }
 
 // buildPath builds the relationship path between two tables using a specific schema.
@@ -1446,21 +1446,12 @@ func (gj *graphjinEngine) exploreRelationships(database, tableName string, depth
 		}
 		dbSchema = ctx.schema
 	} else {
-		// Search all databases (deterministic order)
-		for _, dbName := range gj.sortedDatabaseNames() {
-			ctx := gj.databases[dbName]
-			if ctx.schema == nil {
-				continue
-			}
-			if _, err := ctx.schema.Find("", tableName); err == nil {
-				dbSchema = ctx.schema
-				database = dbName
-				break
-			}
+		dbName, ctx, err := gj.resolveUniqueTableDatabase(tableName)
+		if err != nil {
+			return nil, err
 		}
-		if dbSchema == nil {
-			return nil, fmt.Errorf("table not found: %s (searched all databases)", tableName)
-		}
+		dbSchema = ctx.schema
+		database = dbName
 	}
 
 	if dbSchema == nil {
@@ -1543,6 +1534,68 @@ func (gj *graphjinEngine) exploreRelationships(database, tableName string, depth
 	}
 
 	return result, nil
+}
+
+func (gj *graphjinEngine) resolveUniqueTableDatabase(tableName string) (string, *dbContext, error) {
+	matches := gj.findDatabasesWithTable(tableName)
+	switch len(matches) {
+	case 0:
+		return "", nil, fmt.Errorf("table not found: %s (searched all databases)", tableName)
+	case 1:
+		dbName := matches[0]
+		ctx := gj.databases[dbName]
+		return dbName, ctx, nil
+	default:
+		return "", nil, fmt.Errorf("table %q exists in multiple databases: %s; pass database to disambiguate",
+			tableName, strings.Join(matches, ", "))
+	}
+}
+
+func (gj *graphjinEngine) resolveUniquePathDatabase(fromTable, toTable string) (string, *dbContext, error) {
+	fromMatches := gj.findDatabasesWithTable(fromTable)
+	toMatches := gj.findDatabasesWithTable(toTable)
+
+	if len(fromMatches) == 0 || len(toMatches) == 0 {
+		return "", nil, fmt.Errorf("no path found between %s and %s (searched all databases)", fromTable, toTable)
+	}
+
+	toSet := make(map[string]struct{}, len(toMatches))
+	for _, dbName := range toMatches {
+		toSet[dbName] = struct{}{}
+	}
+
+	var common []string
+	for _, dbName := range fromMatches {
+		if _, ok := toSet[dbName]; ok {
+			common = append(common, dbName)
+		}
+	}
+
+	switch len(common) {
+	case 0:
+		return "", nil, fmt.Errorf("no path found between %s and %s (searched all databases)", fromTable, toTable)
+	case 1:
+		dbName := common[0]
+		ctx := gj.databases[dbName]
+		return dbName, ctx, nil
+	default:
+		return "", nil, fmt.Errorf("tables %q and %q exist in multiple databases: %s; pass database to disambiguate",
+			fromTable, toTable, strings.Join(common, ", "))
+	}
+}
+
+func (gj *graphjinEngine) findDatabasesWithTable(tableName string) []string {
+	var matches []string
+	for _, dbName := range gj.sortedDatabaseNames() {
+		ctx := gj.databases[dbName]
+		if ctx == nil || ctx.schema == nil {
+			continue
+		}
+		if _, err := ctx.schema.Find("", tableName); err == nil {
+			matches = append(matches, dbName)
+		}
+	}
+	return matches
 }
 
 // relTypeWeight returns a weight for a relationship type

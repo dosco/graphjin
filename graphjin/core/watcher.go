@@ -36,7 +36,13 @@ func (g *GraphJin) startDBWatcher(ps time.Duration) {
 	ticker := time.NewTicker(ps)
 	defer ticker.Stop()
 
-	for range ticker.C {
+	for {
+		select {
+		case <-g.done:
+			return
+		case <-ticker.C:
+		}
+
 		gj := g.Load().(*graphjinEngine)
 
 		needsReload := false
@@ -85,12 +91,6 @@ func (g *GraphJin) startDBWatcher(ps time.Duration) {
 				}
 			}
 			g.reloadMu.Unlock()
-		}
-
-		select {
-		case <-g.done:
-			return
-		default:
 		}
 	}
 }

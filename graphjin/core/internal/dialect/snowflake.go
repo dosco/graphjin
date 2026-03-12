@@ -542,10 +542,12 @@ func (d *SnowflakeDialect) RenderSetup(ctx Context) {
 	ctx.WriteString(`; DROP TABLE IF EXISTS `)
 	ctx.WriteString(d.prevIDsTableName(ctx))
 	ctx.WriteString(`; `)
-	ctx.WriteString(`CREATE TEMP TABLE `)
+	// Retry-safe on the same Snowflake session: if a previous attempt created the
+	// temp table before failing, recreate it empty instead of erroring on retry.
+	ctx.WriteString(`CREATE OR REPLACE TEMP TABLE `)
 	ctx.WriteString(d.idsTableName(ctx))
 	ctx.WriteString(` (k VARCHAR, id BIGINT); `)
-	ctx.WriteString(`CREATE TEMP TABLE `)
+	ctx.WriteString(`CREATE OR REPLACE TEMP TABLE `)
 	ctx.WriteString(d.prevIDsTableName(ctx))
 	ctx.WriteString(` (k VARCHAR, id BIGINT); `)
 }

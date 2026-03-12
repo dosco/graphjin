@@ -11,10 +11,6 @@ import (
 
 // registerFragmentTools registers the fragment discovery tools
 func (ms *mcpServer) registerFragmentTools() {
-	if !ms.service.conf.MCP.EnableSearch {
-		return
-	}
-
 	// list_fragments - List all available fragments
 	ms.srv.AddTool(mcp.NewTool(
 		"list_fragments",
@@ -33,6 +29,9 @@ func (ms *mcpServer) registerFragmentTools() {
 		mcp.WithString("name",
 			mcp.Required(),
 			mcp.Description("Name of the fragment"),
+		),
+		mcp.WithString("namespace",
+			mcp.Description("Optional namespace for fragments stored as <namespace>.<name>"),
 		),
 	), ms.handleGetFragment)
 
@@ -53,10 +52,6 @@ func (ms *mcpServer) registerFragmentTools() {
 
 // handleListFragments returns all available fragments
 func (ms *mcpServer) handleListFragments(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// Check if search is enabled
-	if !ms.service.conf.MCP.EnableSearch {
-		return mcp.NewToolResultError("fragment listing is not enabled. Enable enable_search in config."), nil
-	}
 	if err := ms.requireDB(); err != nil {
 		return err, nil
 	}
@@ -105,14 +100,24 @@ func (ms *mcpServer) handleGetFragment(ctx context.Context, req mcp.CallToolRequ
 
 	args := req.GetArguments()
 	name, _ := args["name"].(string)
+	namespace, _ := args["namespace"].(string)
 
 	if name == "" {
 		return mcp.NewToolResultError("fragment name is required"), nil
 	}
 
-	details, err := ms.service.gj.GetFragment(name)
+	qualifiedName := qualifyAllowListName(namespace, name)
+	details, err := ms.service.gj.GetFragment(qualifiedName)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to get fragment: %v", err)), nil
+	}
+
+	importName := qualifiedName
+	if importName == "" {
+		importName = details.Name
+		if details.Namespace != "" {
+			importName = details.Namespace + "." + details.Name
+		}
 	}
 
 	// Add usage example
@@ -122,7 +127,7 @@ func (ms *mcpServer) handleGetFragment(ctx context.Context, req mcp.CallToolRequ
 		UsageExample    string `json:"usage_example"`
 	}{
 		FragmentDetails: details,
-		ImportDirective: fmt.Sprintf(`#import "./fragments/%s"`, name),
+		ImportDirective: fmt.Sprintf(`#import "./fragments/%s"`, importName),
 		UsageExample:    fmt.Sprintf("query { %s { ...%s } }", details.On, details.Name),
 	}
 
@@ -135,10 +140,6 @@ func (ms *mcpServer) handleGetFragment(ctx context.Context, req mcp.CallToolRequ
 
 // handleSearchFragments searches fragments by name
 func (ms *mcpServer) handleSearchFragments(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// Check if search is enabled
-	if !ms.service.conf.MCP.EnableSearch {
-		return mcp.NewToolResultError("fragment search is not enabled. Enable enable_search in config."), nil
-	}
 	if err := ms.requireDB(); err != nil {
 		return err, nil
 	}

@@ -71,11 +71,42 @@ func TestSnowflakeMutationTempTablesUseScopedNames(t *testing.T) {
 	if strings.Contains(sql, "CREATE TEMP TABLE _gj_prev_ids (") {
 		t.Fatalf("expected scoped Snowflake temp table name, got SQL: %s", sql)
 	}
-	if !strings.Contains(sql, "CREATE TEMP TABLE _gj_ids_") {
+	if !strings.Contains(sql, "CREATE OR REPLACE TEMP TABLE _gj_ids_") {
 		t.Fatalf("expected scoped _gj_ids temp table, got SQL: %s", sql)
 	}
-	if !strings.Contains(sql, "CREATE TEMP TABLE _gj_prev_ids_") {
+	if !strings.Contains(sql, "CREATE OR REPLACE TEMP TABLE _gj_prev_ids_") {
 		t.Fatalf("expected scoped _gj_prev_ids temp table, got SQL: %s", sql)
+	}
+}
+
+func TestSnowflakeMutationTempTablesAreRetrySafe(t *testing.T) {
+	if dbType != "snowflake" {
+		t.Skip("snowflake-only test")
+	}
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gql := `mutation {
+		users(id: 90, update: { full_name: "retry-safe" }) {
+			id
+		}
+	}`
+
+	exp, err := gj.ExplainQuery(gql, nil, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sql := exp.CompiledQuery
+	if !strings.Contains(sql, "CREATE OR REPLACE TEMP TABLE _gj_ids_") {
+		t.Fatalf("expected retry-safe _gj_ids temp table setup, got SQL: %s", sql)
+	}
+	if !strings.Contains(sql, "CREATE OR REPLACE TEMP TABLE _gj_prev_ids_") {
+		t.Fatalf("expected retry-safe _gj_prev_ids temp table setup, got SQL: %s", sql)
 	}
 }
 

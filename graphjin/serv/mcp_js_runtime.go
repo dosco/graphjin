@@ -2,7 +2,6 @@ package serv
 
 import (
 	"context"
-	"sort"
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -109,9 +108,9 @@ func (ms *mcpServer) buildJSRuntimeAPI() JSRuntimeAPI {
 		Functions: []JSRuntimeFunction{
 			{
 				Name:        "gj.tools.call",
-				Description: "Call an exposed MCP tool by name. Equivalent to calling gj.tools.<camelCaseTool>(args).",
+				Description: "Call a workflow-callable MCP tool by name. Equivalent to calling gj.tools.<camelCaseTool>(args) for allowed tools.",
 				Arguments: map[string]any{
-					"tool": "string (MCP tool name, example: list_tables)",
+					"tool": "string (workflow-callable MCP tool name, example: list_tables)",
 					"args": "object (tool arguments)",
 				},
 				Required: []string{"tool"},
@@ -124,18 +123,20 @@ func (ms *mcpServer) buildJSRuntimeAPI() JSRuntimeAPI {
 		Notes: []string{
 			"IMPORTANT: All gj.tools.* functions return DECODED native JavaScript objects — ready to use directly.",
 			"Example: var result = gj.tools.executeGraphql({query: 'query GetOrders { orders { id total } }'}); var orders = result.data.orders;",
-			"GraphQL queries MUST be named (e.g., 'query GetOrders { ... }'). Unnamed queries like '{ orders { ... } }' will return null data.",
 			"Example: var tables = gj.tools.listTables().tables;",
-			"Example: var schema = gj.tools.describeTable({name: 'orders'}).table;",
+			"Example: var schema = gj.tools.describeTable({table: 'orders'});",
+			"Only workflow-callable tools are available inside scripts; config mutation, schema mutation, and workflow management tools are blocked.",
 			"Tool errors throw JavaScript exceptions — use try/catch to handle them.",
 			"Tool-level auth and policy checks are enforced exactly as in direct MCP calls.",
 			"Function names are generated from MCP tool names by converting snake_case to camelCase.",
 			"Example: list_tables -> gj.tools.listTables",
-			"`execute_workflow` is intentionally excluded/blocked inside workflow scripts to avoid recursive execution loops.",
+			"`execute_graphql` is available inside workflow scripts when allow_raw_queries is enabled.",
+			"`execute_workflow`, `save_workflow`, `list_workflows`, config updates, and schema update tools are intentionally blocked inside workflow scripts.",
 			"Named workflow execution endpoint: /api/v1/workflows/<name> (loads ./workflows/<name>.js).",
 			"Workflow variables are supported: POST JSON body is passed to global `input` and `main(input)`.",
 			"GET variables are supported via query param: /api/v1/workflows/<name>?variables={...json...}.",
 			"Inside scripts you can read variables from either `input` global or the `main(input)` argument.",
+			"When saving workflows, declare expected variables in workflow metadata so callers know which execute_workflow variables are required.",
 		},
 	}
 
@@ -147,17 +148,7 @@ func (ms *mcpServer) jsToolFunctions() []JSRuntimeFunction {
 	tools := ms.srv.ListTools()
 	out := make([]JSRuntimeFunction, 0, len(tools))
 
-	names := make([]string, 0, len(tools))
-	for name := range tools {
-		if name == "get_js_runtime_api" || name == "execute_workflow" ||
-			name == "save_workflow" || name == "list_workflows" {
-			continue
-		}
-		names = append(names, name)
-	}
-	sort.Strings(names)
-
-	for _, toolName := range names {
+	for _, toolName := range ms.workflowCallableToolNames() {
 		tool := tools[toolName].Tool
 		fn := JSRuntimeFunction{
 			Name:        "gj.tools." + snakeToCamel(toolName),

@@ -407,7 +407,6 @@ func buildMCPSection(conf *Config) ConfigSection {
 		Title: "MCP (Model Context Protocol)",
 		Fields: []ConfigField{
 			boolField("disabled", "Disabled", mcp.Disable),
-			boolField("enableSearch", "Enable Search", mcp.EnableSearch),
 			boolField("allowMutations", "Allow Mutations", mcp.AllowMutations),
 			boolField("allowRawQueries", "Allow Raw Queries", mcp.AllowRawQueries),
 			field("stdioUserID", "Stdio User ID", mcp.StdioUserID, "string"),
@@ -504,11 +503,11 @@ func buildRolesSection(conf *Config) ConfigSection {
 		}
 
 		roleObj := map[string]interface{}{
-			"name":        role.Name,
-			"comment":     role.Comment,
-			"match":       role.Match,
-			"tableCount":  len(role.Tables),
-			"tables":      tables,
+			"name":       role.Name,
+			"comment":    role.Comment,
+			"match":      role.Match,
+			"tableCount": len(role.Tables),
+			"tables":     tables,
 		}
 		fields = append(fields, ConfigField{
 			Key:   role.Name,
@@ -675,4 +674,3 @@ func adminDatabasesHandler(s1 *HttpService) http.Handler {
 		})
 	})
 }
-

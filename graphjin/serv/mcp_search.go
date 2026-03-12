@@ -11,10 +11,6 @@ import (
 
 // registerQueryDiscoveryTools registers the saved query discovery tools
 func (ms *mcpServer) registerQueryDiscoveryTools() {
-	if !ms.service.conf.MCP.EnableSearch {
-		return
-	}
-
 	// list_saved_queries - List all saved queries from the allow-list
 	ms.srv.AddTool(mcp.NewTool(
 		"list_saved_queries",
@@ -49,15 +45,14 @@ func (ms *mcpServer) registerQueryDiscoveryTools() {
 			mcp.Required(),
 			mcp.Description("Name of the saved query"),
 		),
+		mcp.WithString("namespace",
+			mcp.Description("Optional namespace for saved queries stored as <namespace>.<name>"),
+		),
 	), ms.handleGetSavedQuery)
 }
 
 // handleListSavedQueries returns all saved queries
 func (ms *mcpServer) handleListSavedQueries(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// Check if search is enabled
-	if !ms.service.conf.MCP.EnableSearch {
-		return mcp.NewToolResultError("query search/listing is not enabled. Enable enable_search in config."), nil
-	}
 	if err := ms.requireDB(); err != nil {
 		return err, nil
 	}
@@ -98,10 +93,6 @@ func (ms *mcpServer) handleListSavedQueries(ctx context.Context, req mcp.CallToo
 
 // handleSearchSavedQueries searches queries by name
 func (ms *mcpServer) handleSearchSavedQueries(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// Check if search is enabled
-	if !ms.service.conf.MCP.EnableSearch {
-		return mcp.NewToolResultError("query search is not enabled. Enable enable_search in config."), nil
-	}
 	if err := ms.requireDB(); err != nil {
 		return err, nil
 	}
@@ -183,12 +174,13 @@ func (ms *mcpServer) handleGetSavedQuery(ctx context.Context, req mcp.CallToolRe
 
 	args := req.GetArguments()
 	name, _ := args["name"].(string)
+	namespace, _ := args["namespace"].(string)
 
 	if name == "" {
 		return mcp.NewToolResultError("query name is required"), nil
 	}
 
-	details, err := ms.service.gj.GetSavedQuery(name)
+	details, err := ms.service.gj.GetSavedQuery(qualifyAllowListName(namespace, name))
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to get query: %v", err)), nil
 	}
@@ -244,4 +236,15 @@ func fuzzyScore(search, target string) int {
 	}
 
 	return 0
+}
+
+func qualifyAllowListName(namespace, name string) string {
+	namespace = strings.TrimSpace(namespace)
+	name = strings.TrimSpace(name)
+
+	if name == "" || namespace == "" || strings.Contains(name, ".") {
+		return name
+	}
+
+	return namespace + "." + name
 }

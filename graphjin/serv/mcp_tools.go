@@ -53,7 +53,8 @@ func (ms *mcpServer) registerExecutionTools() {
 	ms.srv.AddTool(mcp.NewTool(
 		"execute_workflow",
 		mcp.WithDescription("Execute a named JavaScript workflow from ./workflows/<name>.js. "+
-			"Use get_js_runtime_api first to see runtime globals and callable gj.tools.* functions."),
+			"Use get_js_runtime_api first to see runtime globals and callable gj.tools.* functions. "+
+			"If the workflow declares variables in metadata, provide them here."),
 		mcp.WithString("name",
 			mcp.Required(),
 			mcp.Description("Workflow name, with or without .js extension"),

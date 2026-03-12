@@ -174,9 +174,6 @@ mcp:
   # This enables dynamic database configuration without editing config files
   allow_config_updates: true
 
-  # Enable search functionality through MCP
-  enable_search: true
-
   # Allow mutations (insert/update/delete) through MCP
   allow_mutations: true
 

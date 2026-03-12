@@ -22,6 +22,23 @@ const (
 	workflowScriptTimeout = 5 * time.Second
 )
 
+var workflowCallableToolNames = map[string]struct{}{
+	"describe_table":        {},
+	"execute_graphql":       {},
+	"execute_saved_query":   {},
+	"find_path":             {},
+	"get_mutation_syntax":   {},
+	"get_query_syntax":      {},
+	"get_saved_query":       {},
+	"get_fragment":          {},
+	"list_fragments":        {},
+	"list_saved_queries":    {},
+	"list_tables":           {},
+	"search_fragments":      {},
+	"search_saved_queries":  {},
+	"validate_where_clause": {},
+}
+
 // apiV1Workflows handles REST execution of named JS workflows.
 // Route format: /api/v1/workflows/<name>
 func (s1 *HttpService) apiV1Workflows(ns *string) http.Handler {
@@ -105,6 +122,10 @@ func (s *graphjinService) runNamedWorkflow(ctx context.Context, name string, inp
 	src, err := s.fs.Get(scriptFile)
 	if err != nil {
 		return nil, fmt.Errorf("workflow not found: %s", normName)
+	}
+	meta, _ := parseWorkflowMeta(string(src))
+	if err := validateWorkflowInput(meta, input); err != nil {
+		return nil, err
 	}
 
 	ms := s.newMCPServerWithContext(ctx)
@@ -218,18 +239,7 @@ func (ms *mcpServer) newWorkflowGlobals(vm *goja.Runtime, ctx context.Context, n
 		return nil, err
 	}
 
-	toolMap := ms.srv.ListTools()
-	toolNames := make([]string, 0, len(toolMap))
-	for name := range toolMap {
-		if name == "get_js_runtime_api" || name == "execute_workflow" ||
-			name == "save_workflow" || name == "list_workflows" {
-			continue
-		}
-		toolNames = append(toolNames, name)
-	}
-	sort.Strings(toolNames)
-
-	for _, toolName := range toolNames {
+	for _, toolName := range ms.workflowCallableToolNames() {
 		toolName := toolName
 		fnName := snakeToCamel(toolName)
 		fn := func(call goja.FunctionCall) goja.Value {
@@ -306,14 +316,31 @@ func workflowContext(ctx context.Context, ns *string) map[string]any {
 	return data
 }
 
+func isWorkflowCallableTool(name string) bool {
+	_, ok := workflowCallableToolNames[name]
+	return ok
+}
+
+func (ms *mcpServer) workflowCallableToolNames() []string {
+	toolMap := ms.srv.ListTools()
+	names := make([]string, 0, len(toolMap))
+	for name := range toolMap {
+		if isWorkflowCallableTool(name) {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
 func (ms *mcpServer) invokeToolForWorkflow(
 	ctx context.Context,
 	toolName string,
 	args map[string]any,
 	ns *string,
 ) (any, error) {
-	if toolName == "execute_workflow" {
-		return nil, errors.New("execute_workflow cannot be called from workflow runtime")
+	if !isWorkflowCallableTool(toolName) {
+		return nil, fmt.Errorf("tool %s cannot be called from workflow runtime", toolName)
 	}
 
 	tool, ok := ms.srv.ListTools()[toolName]
@@ -346,6 +373,38 @@ func (ms *mcpServer) invokeToolForWorkflow(
 		return nil, err
 	}
 	return decodeWorkflowToolResult(res)
+}
+
+func validateWorkflowInput(meta WorkflowMeta, input any) error {
+	if len(meta.Variables) == 0 {
+		return nil
+	}
+
+	if input == nil {
+		input = map[string]any{}
+	}
+
+	inputMap, ok := input.(map[string]any)
+	if !ok {
+		return errors.New("workflow declares variables in metadata, so execute_workflow input must be an object")
+	}
+
+	var missing []string
+	for _, v := range meta.Variables {
+		if !v.Required {
+			continue
+		}
+		value, ok := inputMap[v.Name]
+		if !ok || value == nil {
+			missing = append(missing, v.Name)
+		}
+	}
+
+	if len(missing) > 0 {
+		return fmt.Errorf("workflow requires variables: %s", strings.Join(missing, ", "))
+	}
+
+	return nil
 }
 
 func decodeWorkflowToolResult(res *mcp.CallToolResult) (any, error) {

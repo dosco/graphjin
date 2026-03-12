@@ -520,7 +520,6 @@ Model Context Protocol (MCP) enables AI assistants to interact with GraphJin.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `mcp.disable` | boolean | `false` | Disable the MCP server |
-| `mcp.enable_search` | boolean | `true` | Enable search for saved queries |
 | `mcp.allow_mutations` | boolean | `true` | Allow mutation operations |
 | `mcp.allow_raw_queries` | boolean | `true` | Allow arbitrary GraphQL queries |
 | `mcp.stdio_user_id` | string | - | Default user ID for stdio transport |
@@ -536,7 +535,6 @@ Model Context Protocol (MCP) enables AI assistants to interact with GraphJin.
 ```yaml
 mcp:
   disable: false
-  enable_search: true
   allow_mutations: true
   allow_raw_queries: false  # Only allow saved queries
   stdio_user_id: "system"

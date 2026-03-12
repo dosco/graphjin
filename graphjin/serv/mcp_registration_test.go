@@ -44,7 +44,6 @@ func TestRegisterConfigTools_GetCurrentConfigDevOnly(t *testing.T) {
 func TestRegisterTools_QuickSetupNotRegistered(t *testing.T) {
 	ms := mockMcpServerWithConfig(MCPConfig{
 		AllowRawQueries:    true,
-		EnableSearch:       true,
 		AllowConfigUpdates: true,
 		AllowSchemaReload:  true,
 		AllowSchemaUpdates: true,
@@ -74,7 +73,6 @@ func TestMCPToolListMatchesRegisteredTools(t *testing.T) {
 			production: false,
 			cfg: MCPConfig{
 				AllowRawQueries:    true,
-				EnableSearch:       true,
 				AllowConfigUpdates: true,
 				AllowSchemaReload:  true,
 				AllowSchemaUpdates: true,
@@ -86,7 +84,6 @@ func TestMCPToolListMatchesRegisteredTools(t *testing.T) {
 			production: true,
 			cfg: MCPConfig{
 				AllowRawQueries:    true,
-				EnableSearch:       true,
 				AllowConfigUpdates: true,
 				AllowSchemaReload:  true,
 				AllowSchemaUpdates: true,
@@ -96,9 +93,7 @@ func TestMCPToolListMatchesRegisteredTools(t *testing.T) {
 		{
 			name:       "development minimal features",
 			production: false,
-			cfg: MCPConfig{
-				EnableSearch: false,
-			},
+			cfg:        MCPConfig{},
 		},
 	}
 

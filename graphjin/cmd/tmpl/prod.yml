@@ -102,9 +102,6 @@ mcp:
   # Databases, tables, roles must be configured in this file or via hot deploy
   allow_config_updates: false
 
-  # Enable search functionality through MCP
-  enable_search: true
-
   # Allow mutations (insert/update/delete) through MCP
   allow_mutations: true
 

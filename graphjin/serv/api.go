@@ -108,6 +108,10 @@ func (s *graphjinService) anyDB() *sql.DB {
 
 // buildCoreOptions returns core.Option slice including OptionSetDatabases.
 func (s *graphjinService) buildCoreOptions() []core.Option {
+	return s.buildCoreOptionsWithDBs(s.dbs)
+}
+
+func (s *graphjinService) buildCoreOptionsWithDBs(dbs map[string]*sql.DB) []core.Option {
 	opts := []core.Option{
 		core.OptionSetFS(s.fs),
 		core.OptionSetTrace(otelPlugin.NewTracerFrom(s.tracer)),
@@ -118,8 +122,8 @@ func (s *graphjinService) buildCoreOptions() []core.Option {
 	if s.cache != nil {
 		opts = append(opts, core.OptionSetResponseCache(s.cache))
 	}
-	if len(s.dbs) > 0 {
-		opts = append(opts, core.OptionSetDatabases(s.dbs))
+	if len(dbs) > 0 {
+		opts = append(opts, core.OptionSetDatabases(dbs))
 	}
 	return opts
 }
