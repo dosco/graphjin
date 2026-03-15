@@ -83,12 +83,7 @@ func (ms *mcpServer) handleListSavedQueries(ctx context.Context, req mcp.CallToo
 		Queries: queries,
 		Count:   len(queries),
 	}
-
-	data, err := mcpMarshalJSON(result, true)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("list_saved_queries", args, result)
 }
 
 // handleSearchSavedQueries searches queries by name
@@ -158,12 +153,7 @@ func (ms *mcpServer) handleSearchSavedQueries(ctx context.Context, req mcp.CallT
 		Queries: results,
 		Count:   len(results),
 	}
-
-	data, err := mcpMarshalJSON(result, true)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("search_saved_queries", args, result)
 }
 
 // handleGetSavedQuery returns details of a specific saved query
@@ -184,12 +174,7 @@ func (ms *mcpServer) handleGetSavedQuery(ctx context.Context, req mcp.CallToolRe
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to get query: %v", err)), nil
 	}
-
-	data, err := mcpMarshalJSON(details, true)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("get_saved_query", args, details)
 }
 
 // fuzzyScore returns a score for how well the search term matches the target

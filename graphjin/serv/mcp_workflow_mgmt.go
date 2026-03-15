@@ -116,11 +116,11 @@ func (ms *mcpServer) registerWorkflowMgmtTools() {
 
 // handleListWorkflows returns all workflows with their metadata.
 func (ms *mcpServer) handleListWorkflows(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := req.GetArguments()
 	files, err := ms.service.fs.List(workflowsPath)
 	if err != nil {
 		// No workflows directory yet — return empty list
-		data, _ := mcpMarshalJSON(map[string]any{"workflows": []any{}}, true)
-		return mcp.NewToolResultText(string(data)), nil
+		return ms.toolResultJSON("list_workflows", args, map[string]any{"workflows": []any{}, "count": 0})
 	}
 
 	workflows := make([]WorkflowInfo, 0, len(files))
@@ -145,14 +145,11 @@ func (ms *mcpServer) handleListWorkflows(ctx context.Context, req mcp.CallToolRe
 		workflows = append(workflows, info)
 	}
 
-	data, err := mcpMarshalJSON(map[string]any{
+	result := map[string]any{
 		"workflows": workflows,
 		"count":     len(workflows),
-	}, true)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
 	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("list_workflows", args, result)
 }
 
 // handleSaveWorkflow saves LLM-authored JS code as a workflow file.
@@ -240,7 +237,7 @@ func (ms *mcpServer) handleSaveWorkflow(ctx context.Context, req mcp.CallToolReq
 		return mcp.NewToolResultError(fmt.Sprintf("failed to save workflow: %v", err)), nil
 	}
 
-	data, err := mcpMarshalJSON(map[string]any{
+	result := map[string]any{
 		"saved":       true,
 		"name":        name,
 		"path":        filePath,
@@ -248,11 +245,8 @@ func (ms *mcpServer) handleSaveWorkflow(ctx context.Context, req mcp.CallToolReq
 		"tags":        tags,
 		"variables":   variables,
 		"hint":        "Now call execute_workflow with name: " + name,
-	}, true)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
 	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("save_workflow", args, result)
 }
 
 // parseWorkflowMeta extracts metadata from the first line of a workflow file.

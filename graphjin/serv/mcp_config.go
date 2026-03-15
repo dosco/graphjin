@@ -291,12 +291,7 @@ func (ms *mcpServer) handleGetCurrentConfig(ctx context.Context, req mcp.CallToo
 	default:
 		return mcp.NewToolResultError(fmt.Sprintf("unknown section: %s. Valid sections: databases, tables, roles, blocklist, functions, resolvers, all", section)), nil
 	}
-
-	data, err := mcpMarshalJSON(result, true)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to marshal config: %v", err)), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("get_current_config", args, result)
 }
 
 // getActiveDatabase returns the name of the first configured database (sorted).
@@ -572,7 +567,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			}
 			result.Next = ms.nextForConfigUpdate(result)
 			data, _ := mcpMarshalJSON(result, true)
-			return mcp.NewToolResultText(string(data)), nil
+			return mcpToolResultJSONBytes(data), nil
 		}
 
 		// All connections passed — commit database configs
@@ -827,7 +822,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 		}
 		result.Next = ms.nextForConfigUpdate(result)
 		data, _ := mcpMarshalJSON(result, true)
-		return mcp.NewToolResultText(string(data)), nil
+		return mcpToolResultJSONBytes(data), nil
 	}
 
 	var availableDBs []string
@@ -855,7 +850,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 			}
 			result.Next = ms.nextForConfigUpdate(result)
 			data, _ := mcpMarshalJSON(result, true)
-			return mcp.NewToolResultText(string(data)), nil
+			return mcpToolResultJSONBytes(data), nil
 		}
 
 		availableDBs = stage.availableDBs
@@ -893,7 +888,7 @@ func (ms *mcpServer) handleUpdateCurrentConfig(ctx context.Context, req mcp.Call
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to marshal result: %v", err)), nil
 	}
-	return mcp.NewToolResultText(string(data)), nil
+	return mcpToolResultJSONBytes(data), nil
 }
 
 // parseDBConfig parses a database config from a map

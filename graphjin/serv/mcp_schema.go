@@ -139,12 +139,7 @@ func (ms *mcpServer) handleListTables(ctx context.Context, req mcp.CallToolReque
 		Tables: tables,
 		Count:  len(tables),
 	}
-
-	data, err := mcpMarshalJSON(result, true)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("list_tables", args, result)
 }
 
 // AggregationInfo describes available aggregation functions for a table
@@ -201,12 +196,7 @@ func (ms *mcpServer) handleDescribeTable(ctx context.Context, req mcp.CallToolRe
 		Aggregations:   aggregations,
 		ExampleQueries: examples,
 	}
-
-	data, err := mcpMarshalJSON(result, true)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("describe_table", args, result)
 }
 
 // generateAggregations creates the list of available aggregation functions based on column types
@@ -319,12 +309,7 @@ func (ms *mcpServer) handleFindPath(ctx context.Context, req mcp.CallToolRequest
 		Path:         path,
 		ExampleQuery: exampleQuery,
 	}
-
-	data, err := mcpMarshalJSON(result, true)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("find_path", args, result)
 }
 
 // generatePathExampleQuery generates an example GraphQL query based on the path
@@ -385,6 +370,11 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 		"3. Call describe_table for schema details + available aggregation functions",
 		"4. Check list_saved_queries - a saved query may already exist for your need",
 	)
+	if has("write_query") {
+		guide.QueryWorkflow = append(guide.QueryWorkflow,
+			"4.5 Call write_query when you want a guided starter query with schema-aware examples",
+		)
+	}
 	if has("execute_graphql") {
 		guide.QueryWorkflow = append(guide.QueryWorkflow,
 			"5. Prefer execute_saved_query when a matching saved query exists, otherwise call execute_graphql",
@@ -408,6 +398,9 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 		"2. Call describe_table to understand required columns and types",
 		"3. Check list_saved_queries for existing mutation queries",
 	)
+	if has("write_mutation") {
+		guide.MutationWorkflow = append(guide.MutationWorkflow, "3.5 Call write_mutation for a guided mutation skeleton")
+	}
 	if has("execute_graphql") {
 		guide.MutationWorkflow = append(guide.MutationWorkflow, "4. Call execute_graphql with the mutation")
 	} else {
@@ -418,11 +411,20 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 		"PREFER execute_saved_query over execute_graphql when a matching saved query exists",
 		"Use find_path when joining tables that aren't directly related",
 		"Aggregations like count_id, sum_price are available on all tables (see describe_table)",
-		"Use the write_where_clause prompt for help building complex filters",
+		"Use the write_where_clause prompt or validate_where_clause tool for help building complex filters",
 		"Use @object directive when you expect a single result: { user @object { id } }",
 		"For multi-database deployments, use the `database` parameter in list_tables and describe_table to filter by database. Omitting it now errors when a table name is ambiguous across databases.",
 		"ALWAYS call list_workflows first — a reusable workflow may already exist for the user's question",
 	)
+	if has("write_query") {
+		guide.Tips = append(guide.Tips, "Use write_query to generate schema-aware starter queries when prompts/resources are not available in the client")
+	}
+	if has("write_mutation") {
+		guide.Tips = append(guide.Tips, "Use write_mutation to generate insert/update/upsert/delete skeletons before execution")
+	}
+	if has("fix_query_error") {
+		guide.Tips = append(guide.Tips, "Use fix_query_error with the exact query and error text after failed execute_graphql calls")
+	}
 	if has("update_current_config") {
 		guide.Tips = append(guide.Tips, "Use resolvers to join DB tables with remote APIs - configure via update_current_config with resolvers parameter")
 	}
@@ -508,6 +510,24 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 		[]string{"describe_table", "validate_where_clause"},
 		"describe_table → use write_where_clause prompt → validate_where_clause",
 	)
+	if has("write_query") && has("validate_where_clause") && has("execute_graphql") {
+		addSequence("query_authoring",
+			[]string{"get_query_syntax", "list_tables", "describe_table", "write_query", "validate_where_clause"},
+			"get_query_syntax → list_tables → describe_table → write_query → validate_where_clause → execute_graphql",
+		)
+	}
+	if has("write_mutation") && has("execute_graphql") {
+		addSequence("mutation_authoring",
+			[]string{"get_mutation_syntax", "describe_table", "write_mutation"},
+			"get_mutation_syntax → describe_table → write_mutation → execute_graphql",
+		)
+	}
+	if has("fix_query_error") && has("execute_graphql") {
+		addSequence("query_repair",
+			[]string{"fix_query_error", "get_query_syntax"},
+			"fix_query_error → get_query_syntax → execute_graphql",
+		)
+	}
 	if has("get_current_config") && has("update_current_config") && has("reload_schema") && has("execute_graphql") {
 		addSequence("configure_resolver",
 			[]string{"get_current_config", "update_current_config", "reload_schema", "execute_graphql"},
@@ -544,12 +564,7 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 			"list_workflows → get_js_runtime_api → list_tables → describe_table → save_workflow → execute_workflow",
 		)
 	}
-
-	data, err := mcpMarshalJSON(guide, true)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("get_workflow_guide", req.GetArguments(), guide)
 }
 
 // handleReloadSchema triggers a schema reload
@@ -583,12 +598,7 @@ func (ms *mcpServer) handleReloadSchema(ctx context.Context, req mcp.CallToolReq
 		}
 	}
 
-	data, err := mcpMarshalJSON(result, true)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("reload_schema", req.GetArguments(), result)
 }
 
 // EnhancedError represents an error with recovery suggestions
@@ -742,8 +752,7 @@ func (ms *mcpServer) handleValidateWhereClause(ctx context.Context, req mcp.Call
 				},
 			},
 		}
-		data, _ := mcpMarshalJSON(result, true)
-		return mcp.NewToolResultText(string(data)), nil
+		return ms.toolResultJSON("validate_where_clause", args, result)
 	}
 
 	// Validate the where clause
@@ -763,12 +772,7 @@ func (ms *mcpServer) handleValidateWhereClause(ctx context.Context, req mcp.Call
 		Errors:     errors,
 		ColumnInfo: columnInfo,
 	}
-
-	data, err := mcpMarshalJSON(result, true)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("validate_where_clause", args, result)
 }
 
 func (ms *mcpServer) availableToolSet() map[string]bool {

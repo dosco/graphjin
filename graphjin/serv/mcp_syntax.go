@@ -410,18 +410,10 @@ func (ms *mcpServer) registerSyntaxTools() {
 
 // handleGetQuerySyntax returns the query syntax reference
 func (ms *mcpServer) handleGetQuerySyntax(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	data, err := mcpMarshalJSON(querySyntaxReference, true)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("get_query_syntax", req.GetArguments(), querySyntaxReference)
 }
 
 // handleGetMutationSyntax returns the mutation syntax reference
 func (ms *mcpServer) handleGetMutationSyntax(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	data, err := mcpMarshalJSON(mutationSyntaxReference, true)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("get_mutation_syntax", req.GetArguments(), mutationSyntaxReference)
 }

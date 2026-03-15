@@ -31,6 +31,54 @@ func mcpMarshalJSON(v any, indent bool) ([]byte, error) {
 	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
 }
 
+// mcpToolResultJSONBytes returns a tool result with both JSON text fallback and
+// StructuredContent so MCP clients can consume typed data without reparsing text.
+func mcpToolResultJSONBytes(data []byte) *mcp.CallToolResult {
+	var structured any
+	if err := json.Unmarshal(data, &structured); err != nil {
+		return mcp.NewToolResultText(string(data))
+	}
+	return mcp.NewToolResultStructured(structured, string(data))
+}
+
+func mcpInjectNextJSON(data []byte, next *NextGuidance) ([]byte, error) {
+	if next == nil {
+		return data, nil
+	}
+
+	var payload any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return data, nil
+	}
+
+	body, ok := payload.(map[string]any)
+	if !ok {
+		return data, nil
+	}
+	if _, exists := body["next"]; exists {
+		return data, nil
+	}
+
+	body["next"] = next
+	return mcpMarshalJSON(body, true)
+}
+
+func (ms *mcpServer) toolResultJSON(tool string, args map[string]any, payload any) (*mcp.CallToolResult, error) {
+	data, err := mcpMarshalJSON(payload, true)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	if next := ms.nextForToolCall(tool, args, payload); next != nil {
+		data, err = mcpInjectNextJSON(data, next)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+	}
+
+	return mcpToolResultJSONBytes(data), nil
+}
+
 // mcpToolList returns the names of MCP tools that will be registered
 // based on the current configuration flags.
 func mcpToolList(conf *Config) []string {
@@ -43,6 +91,9 @@ func mcpToolList(conf *Config) []string {
 		"get_query_syntax",
 		"get_mutation_syntax",
 		"get_js_runtime_api",
+		"write_query",
+		"write_mutation",
+		"fix_query_error",
 		"list_tables",
 		"describe_table",
 		"find_path",
@@ -152,6 +203,7 @@ func (ms *mcpServer) registerTools() {
 	// Syntax Reference Tools (call these first!)
 	ms.registerSyntaxTools()
 	ms.registerJSRuntimeTools()
+	ms.registerGuidanceTools()
 
 	// Schema Discovery Tools
 	ms.registerSchemaTools()

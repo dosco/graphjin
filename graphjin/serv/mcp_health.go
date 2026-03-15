@@ -25,22 +25,22 @@ func (ms *mcpServer) registerHealthTools() {
 
 // HealthResult represents the health check response
 type HealthResult struct {
-	Status       string          `json:"status"`
-	DatabaseType string          `json:"database_type,omitempty"`
-	PingLatency  string          `json:"ping_latency,omitempty"`
-	SchemaReady  bool            `json:"schema_ready"`
-	TableCount   int             `json:"table_count"`
-	PoolStats    *PoolStatsInfo  `json:"pool_stats,omitempty"`
-	Error        string          `json:"error,omitempty"`
+	Status       string         `json:"status"`
+	DatabaseType string         `json:"database_type,omitempty"`
+	PingLatency  string         `json:"ping_latency,omitempty"`
+	SchemaReady  bool           `json:"schema_ready"`
+	TableCount   int            `json:"table_count"`
+	PoolStats    *PoolStatsInfo `json:"pool_stats,omitempty"`
+	Error        string         `json:"error,omitempty"`
 }
 
 // PoolStatsInfo represents database connection pool statistics
 type PoolStatsInfo struct {
-	MaxOpenConnections int `json:"max_open_connections"`
-	OpenConnections    int `json:"open_connections"`
-	InUse              int `json:"in_use"`
-	Idle               int `json:"idle"`
-	WaitCount          int64 `json:"wait_count"`
+	MaxOpenConnections int    `json:"max_open_connections"`
+	OpenConnections    int    `json:"open_connections"`
+	InUse              int    `json:"in_use"`
+	Idle               int    `json:"idle"`
+	WaitCount          int64  `json:"wait_count"`
 	WaitDuration       string `json:"wait_duration"`
 }
 
@@ -58,6 +58,7 @@ func poolStatsFromDB(db *sql.DB) *PoolStatsInfo {
 
 // handleCheckHealth checks database connection health
 func (ms *mcpServer) handleCheckHealth(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := req.GetArguments()
 	result := HealthResult{
 		DatabaseType: ms.service.conf.DBType,
 	}
@@ -67,8 +68,7 @@ func (ms *mcpServer) handleCheckHealth(ctx context.Context, req mcp.CallToolRequ
 	if db == nil {
 		result.Status = "disconnected"
 		result.Error = "no database connection"
-		data, _ := mcpMarshalJSON(result, true)
-		return mcp.NewToolResultText(string(data)), nil
+		return ms.toolResultJSON("check_health", args, result)
 	}
 
 	// Ping the database and measure latency
@@ -84,8 +84,7 @@ func (ms *mcpServer) handleCheckHealth(ctx context.Context, req mcp.CallToolRequ
 		result.PingLatency = latency.String()
 		result.Error = fmt.Sprintf("ping failed: %v", err)
 		result.PoolStats = poolStatsFromDB(db)
-		data, _ := mcpMarshalJSON(result, true)
-		return mcp.NewToolResultText(string(data)), nil
+		return ms.toolResultJSON("check_health", args, result)
 	}
 
 	result.Status = "healthy"
@@ -100,9 +99,5 @@ func (ms *mcpServer) handleCheckHealth(ctx context.Context, req mcp.CallToolRequ
 		}
 	}
 
-	data, err := mcpMarshalJSON(result, true)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("check_health", args, result)
 }

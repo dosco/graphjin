@@ -44,10 +44,5 @@ func (ms *mcpServer) handleAuditRolePermissions(ctx context.Context, req mcp.Cal
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-
-	data, err := mcpMarshalJSON(result, true)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("audit_role_permissions", args, result)
 }

@@ -136,7 +136,7 @@ func (ms *mcpServer) handlePlanDatabaseSetup(ctx context.Context, req mcp.CallTo
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	return mcp.NewToolResultText(string(data)), nil
+	return mcpToolResultJSONBytes(data), nil
 }
 
 type ConnectionTestResult struct {
@@ -172,7 +172,7 @@ func (ms *mcpServer) handleTestDatabaseConnection(ctx context.Context, req mcp.C
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	return mcp.NewToolResultText(string(data)), nil
+	return mcpToolResultJSONBytes(data), nil
 }
 
 type OnboardingStatusResult struct {
@@ -211,7 +211,7 @@ func (ms *mcpServer) handleGetOnboardingStatus(ctx context.Context, req mcp.Call
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	return mcp.NewToolResultText(string(data)), nil
+	return mcpToolResultJSONBytes(data), nil
 }
 
 type ApplyDatabaseSetupResult struct {
@@ -290,7 +290,7 @@ func (ms *mcpServer) handleApplyDatabaseSetup(ctx context.Context, req mcp.CallT
 		if mErr != nil {
 			return mcp.NewToolResultError(mErr.Error()), nil
 		}
-		return mcp.NewToolResultText(string(data)), nil
+		return mcpToolResultJSONBytes(data), nil
 	}
 
 	if dbName == "" {
@@ -365,7 +365,7 @@ func (ms *mcpServer) handleApplyDatabaseSetup(ctx context.Context, req mcp.CallT
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	return mcp.NewToolResultText(string(data)), nil
+	return mcpToolResultJSONBytes(data), nil
 }
 
 func (ms *mcpServer) resolveCandidate(args map[string]any) (DiscoveredDatabase, error) {

@@ -56,10 +56,5 @@ func (ms *mcpServer) handleExploreRelationships(ctx context.Context, req mcp.Cal
 	if err != nil {
 		return mcp.NewToolResultError(enhanceError(err.Error(), "explore_relationships")), nil
 	}
-
-	data, err := mcpMarshalJSON(graph, true)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("explore_relationships", args, graph)
 }

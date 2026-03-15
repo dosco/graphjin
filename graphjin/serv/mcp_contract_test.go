@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -38,6 +39,109 @@ func TestMCPToolSchemasMatchHandlerContracts(t *testing.T) {
 	}
 	if tagsSchema["type"] != "array" {
 		t.Fatalf("expected save_workflow.tags type=array, got %v", tagsSchema["type"])
+	}
+}
+
+func TestJSONToolResultsIncludeStructuredContent(t *testing.T) {
+	ms := newSQLiteReadyMCPServer(t, map[string]string{
+		"users_by_id": "query GetUsersByID { users { id name } }",
+	}, map[string]string{
+		"users_by_id": `{"id": 1}`,
+	})
+
+	res, err := ms.handleListSavedQueries(context.Background(), newToolRequest(map[string]any{}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	structured := assertToolStructuredMap(t, res)
+	if got, ok := structured["count"].(float64); !ok || got != 1 {
+		t.Fatalf("expected structured count=1, got %#v", structured["count"])
+	}
+	queries, ok := structured["queries"].([]any)
+	if !ok {
+		t.Fatalf("expected structured queries slice, got %T", structured["queries"])
+	}
+	if len(queries) != 1 {
+		t.Fatalf("expected 1 structured query, got %d", len(queries))
+	}
+	next, ok := structured["next"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected next guidance in structured response, got %T", structured["next"])
+	}
+	if next["recommended_tool"] != "get_saved_query" {
+		t.Fatalf("expected recommended_tool=get_saved_query, got %#v", next["recommended_tool"])
+	}
+	options, ok := next["options"].([]any)
+	if !ok || len(options) == 0 {
+		t.Fatalf("expected next options, got %#v", next["options"])
+	}
+	firstOpt, ok := options[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected first option to be an object, got %T", options[0])
+	}
+	argsTemplate, ok := firstOpt["args_template"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected args_template on first next option, got %T", firstOpt["args_template"])
+	}
+	if argsTemplate["name"] != "<saved_query_name>" {
+		t.Fatalf("expected next args_template to include name placeholder, got %#v", argsTemplate["name"])
+	}
+
+	var textBody map[string]any
+	if err := json.Unmarshal([]byte(assertToolSuccess(t, res)), &textBody); err != nil {
+		t.Fatalf("decode fallback text: %v", err)
+	}
+	if !reflect.DeepEqual(textBody, structured) {
+		t.Fatalf("expected text fallback to match structured content\ntext: %#v\nstructured: %#v", textBody, structured)
+	}
+}
+
+func TestGuidanceToolsReturnGuideAndNext(t *testing.T) {
+	ms := newSQLiteReadyMCPServer(t, nil, nil)
+
+	res, err := ms.handleWriteQueryTool(context.Background(), newToolRequest(map[string]any{
+		"table":      "users",
+		"fields":     "id, name",
+		"pagination": "limit",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var out struct {
+		Title         string        `json:"title"`
+		GuideMarkdown string        `json:"guide_markdown"`
+		Next          *NextGuidance `json:"next"`
+	}
+	if err := json.Unmarshal([]byte(assertToolSuccess(t, res)), &out); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if out.Title == "" {
+		t.Fatal("expected non-empty title")
+	}
+	if !strings.Contains(out.GuideMarkdown, "Query Guide for Table: users") {
+		t.Fatalf("expected users query guide markdown, got %q", out.GuideMarkdown)
+	}
+	if out.Next == nil {
+		t.Fatal("expected next guidance")
+	}
+	if out.Next.RecommendedTool != "validate_where_clause" {
+		t.Fatalf("expected recommended tool validate_where_clause, got %q", out.Next.RecommendedTool)
+	}
+	if len(out.Next.Options) == 0 || out.Next.Options[0].ArgsTemplate["table"] != "users" {
+		t.Fatalf("expected carried table in args_template, got %+v", out.Next.Options)
+	}
+
+	res, err = ms.handleFixQueryErrorTool(context.Background(), newToolRequest(map[string]any{
+		"query": "{ users { missing } }",
+		"error": "column missing not found",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(assertToolSuccess(t, res), "Query Error Analysis") {
+		t.Fatal("expected fix_query_error tool to return analysis markdown")
 	}
 }
 
