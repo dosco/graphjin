@@ -80,6 +80,24 @@ func assertToolSuccess(t *testing.T, result *mcp.CallToolResult) string {
 	return textContent.Text
 }
 
+func assertToolStructuredMap(t *testing.T, result *mcp.CallToolResult) map[string]any {
+	t.Helper()
+	if result == nil {
+		t.Fatal("Expected success result, got nil")
+	}
+	if result.IsError {
+		t.Fatal("Expected structured success result, got error")
+	}
+	if result.StructuredContent == nil {
+		t.Fatal("Expected StructuredContent, got nil")
+	}
+	out, ok := result.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("Expected StructuredContent to be map[string]any, got %T", result.StructuredContent)
+	}
+	return out
+}
+
 // =============================================================================
 // Execution Handler Tests
 // =============================================================================

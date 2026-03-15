@@ -71,11 +71,7 @@ func (ms *mcpServer) registerJSRuntimeResources() {
 }
 
 func (ms *mcpServer) handleGetJSRuntimeAPI(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	data, err := mcpMarshalJSON(ms.buildJSRuntimeAPI(), true)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("get_js_runtime_api", req.GetArguments(), ms.buildJSRuntimeAPI())
 }
 
 func (ms *mcpServer) buildJSRuntimeAPI() JSRuntimeAPI {

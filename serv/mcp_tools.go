@@ -136,12 +136,7 @@ func (ms *mcpServer) handleExecuteGraphQL(ctx context.Context, req mcp.CallToolR
 			result.Errors = append(result.Errors, ErrorInfo{Message: enhanceError(e.Message, "execute_graphql")})
 		}
 	}
-
-	data, err := mcpMarshalJSON(result, true)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("execute_graphql", args, result)
 }
 
 // handleExecuteSavedQuery executes a saved query by name
@@ -191,12 +186,7 @@ func (ms *mcpServer) handleExecuteSavedQuery(ctx context.Context, req mcp.CallTo
 			result.Errors = append(result.Errors, ErrorInfo{Message: enhanceError(e.Message, "execute_saved_query")})
 		}
 	}
-
-	data, err := mcpMarshalJSON(result, true)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("execute_saved_query", args, result)
 }
 
 // handleExecuteWorkflow executes a named JS workflow from ./workflows.
@@ -229,11 +219,7 @@ func (ms *mcpServer) handleExecuteWorkflow(ctx context.Context, req mcp.CallTool
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	data, err := mcpMarshalJSON(map[string]any{"data": out}, true)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("execute_workflow", args, map[string]any{"data": out})
 }
 
 // isMutation checks if a query is a mutation (simple heuristic)

@@ -200,8 +200,7 @@ func (ms *mcpServer) handlePreviewSchemaChanges(ctx context.Context, req mcp.Cal
 			Operations: []DDLOperationInfo{},
 			Summary:    DDLSummary{},
 		}
-		data, _ := mcpMarshalJSON(result, true)
-		return mcp.NewToolResultText(string(data)), nil
+		return ms.toolResultJSON("preview_schema_changes", args, result)
 	}
 
 	// Convert operations to response format
@@ -235,12 +234,7 @@ func (ms *mcpServer) handlePreviewSchemaChanges(ctx context.Context, req mcp.Cal
 		Operations: opInfos,
 		Summary:    summary,
 	}
-
-	data, err := mcpMarshalJSON(result, true)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to marshal result: %v", err)), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("preview_schema_changes", args, result)
 }
 
 // handleApplySchemaChanges applies schema changes to the database
@@ -278,8 +272,7 @@ func (ms *mcpServer) handleApplySchemaChanges(ctx context.Context, req mcp.CallT
 			OperationsApplied: 0,
 			Message:           "No schema changes needed - database already matches the provided schema",
 		}
-		data, _ := mcpMarshalJSON(result, true)
-		return mcp.NewToolResultText(string(data)), nil
+		return ms.toolResultJSON("apply_schema_changes", args, result)
 	}
 
 	// Generate SQL statements
@@ -290,8 +283,7 @@ func (ms *mcpServer) handleApplySchemaChanges(ctx context.Context, req mcp.CallT
 			OperationsApplied: 0,
 			Message:           "No SQL to execute",
 		}
-		data, _ := mcpMarshalJSON(result, true)
-		return mcp.NewToolResultText(string(data)), nil
+		return ms.toolResultJSON("apply_schema_changes", args, result)
 	}
 
 	// Apply changes in a transaction
@@ -339,10 +331,5 @@ func (ms *mcpServer) handleApplySchemaChanges(ctx context.Context, req mcp.CallT
 		ColumnsAdded:      columnsAdded,
 		Message:           "Schema changes applied successfully",
 	}
-
-	data, err := mcpMarshalJSON(result, true)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to marshal result: %v", err)), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("apply_schema_changes", args, result)
 }

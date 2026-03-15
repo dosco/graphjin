@@ -84,12 +84,7 @@ func (ms *mcpServer) handleListFragments(ctx context.Context, req mcp.CallToolRe
 		Count:     len(fragments),
 		Usage:     `To use a fragment, add: #import "./fragments/<name>" at the top of your query, then use ...FragmentName in your selection set`,
 	}
-
-	data, err := mcpMarshalJSON(result, true)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("list_fragments", args, result)
 }
 
 // handleGetFragment returns details of a specific fragment
@@ -130,12 +125,7 @@ func (ms *mcpServer) handleGetFragment(ctx context.Context, req mcp.CallToolRequ
 		ImportDirective: fmt.Sprintf(`#import "./fragments/%s"`, importName),
 		UsageExample:    fmt.Sprintf("query { %s { ...%s } }", details.On, details.Name),
 	}
-
-	data, err := mcpMarshalJSON(result, true)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("get_fragment", args, result)
 }
 
 // handleSearchFragments searches fragments by name
@@ -205,10 +195,5 @@ func (ms *mcpServer) handleSearchFragments(ctx context.Context, req mcp.CallTool
 		Fragments: results,
 		Count:     len(results),
 	}
-
-	data, err := mcpMarshalJSON(result, true)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("search_fragments", args, result)
 }

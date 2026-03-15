@@ -126,3 +126,39 @@ func TestPromptHandlers_RequireDB(t *testing.T) {
 		})
 	}
 }
+
+func TestGuidanceToolHandlers_RequireDB(t *testing.T) {
+	testCases := []struct {
+		name string
+		call func(ms *mcpServer) (*mcp.CallToolResult, error)
+	}{
+		{
+			name: "write_query",
+			call: func(ms *mcpServer) (*mcp.CallToolResult, error) {
+				return ms.handleWriteQueryTool(context.Background(), newToolRequest(map[string]any{
+					"table": "users",
+				}))
+			},
+		},
+		{
+			name: "write_mutation",
+			call: func(ms *mcpServer) (*mcp.CallToolResult, error) {
+				return ms.handleWriteMutationTool(context.Background(), newToolRequest(map[string]any{
+					"operation": "insert",
+					"table":     "users",
+				}))
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ms := mockMcpServerWithConfig(MCPConfig{})
+			result, err := tc.call(ms)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			assertToolError(t, result, "No databases have been configured yet")
+		})
+	}
+}

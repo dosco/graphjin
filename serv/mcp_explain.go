@@ -61,10 +61,5 @@ func (ms *mcpServer) handleExplainQuery(ctx context.Context, req mcp.CallToolReq
 	if err != nil {
 		return mcp.NewToolResultError("explain failed: " + err.Error()), nil
 	}
-
-	data, err := mcpMarshalJSON(explanation, true)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("explain_query", args, explanation)
 }

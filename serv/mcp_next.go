@@ -7,12 +7,13 @@ import (
 
 // NextOption is a machine-readable next-step option for MCP orchestration.
 type NextOption struct {
-	Tool         string   `json:"tool"`
-	Priority     int      `json:"priority"`
-	Reason       string   `json:"reason,omitempty"`
-	When         string   `json:"when,omitempty"`
-	RequiredArgs []string `json:"required_args,omitempty"`
-	OptionalArgs []string `json:"optional_args,omitempty"`
+	Tool         string         `json:"tool"`
+	Priority     int            `json:"priority"`
+	Reason       string         `json:"reason,omitempty"`
+	When         string         `json:"when,omitempty"`
+	RequiredArgs []string       `json:"required_args,omitempty"`
+	OptionalArgs []string       `json:"optional_args,omitempty"`
+	ArgsTemplate map[string]any `json:"args_template,omitempty"`
 }
 
 // NextGuidance contains the recommended next MCP tool call and alternatives.
@@ -41,21 +42,21 @@ func nextOption(
 }
 
 func (ms *mcpServer) toolAvailable(tool string) bool {
-	switch tool {
-	case "discover_databases", "plan_database_setup", "test_database_connection",
-		"get_onboarding_status", "list_databases", "check_health":
-		return ms.service.conf.MCP.AllowDevTools
-	case "apply_database_setup":
-		return ms.service.conf.MCP.AllowDevTools && ms.service.conf.MCP.AllowConfigUpdates
-	case "update_current_config":
-		return ms.service.conf.MCP.AllowConfigUpdates
-	case "reload_schema":
-		return ms.service.conf.MCP.AllowSchemaReload
-	case "list_tables":
-		return true
-	default:
+	if ms.srv != nil {
+		_, ok := ms.srv.ListTools()[tool]
+		return ok
+	}
+
+	if ms.service == nil || ms.service.conf == nil {
 		return false
 	}
+
+	for _, name := range mcpToolList(ms.service.conf) {
+		if name == tool {
+			return true
+		}
+	}
+	return false
 }
 
 func (ms *mcpServer) newNextGuidance(stateCode string, options []NextOption) *NextGuidance {
@@ -63,6 +64,7 @@ func (ms *mcpServer) newNextGuidance(stateCode string, options []NextOption) *Ne
 
 	for _, opt := range options {
 		if ms.toolAvailable(opt.Tool) {
+			opt.ArgsTemplate = ms.enrichNextOptionTemplate(opt)
 			out.Options = append(out.Options, opt)
 		}
 	}

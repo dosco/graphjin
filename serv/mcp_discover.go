@@ -297,12 +297,7 @@ func (ms *mcpServer) handleListDatabases(ctx context.Context, req mcp.CallToolRe
 		Connections:    connections,
 		TotalDatabases: totalDBs,
 	}
-
-	data, err := mcpMarshalJSON(result, true)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to marshal result: %v", err)), nil
-	}
-	return mcp.NewToolResultText(string(data)), nil
+	return ms.toolResultJSON("list_databases", req.GetArguments(), result)
 }
 
 // handleDiscoverDatabases scans the local system for running databases
@@ -319,7 +314,7 @@ func (ms *mcpServer) handleDiscoverDatabases(ctx context.Context, req mcp.CallTo
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to marshal result: %v", err)), nil
 	}
-	return mcp.NewToolResultText(string(data)), nil
+	return mcpToolResultJSONBytes(data), nil
 }
 
 func (ms *mcpServer) runDiscovery(args map[string]any) (DiscoverResult, error) {
