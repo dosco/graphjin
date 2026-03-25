@@ -10,6 +10,11 @@ import (
 func (c *compilerContext) renderColumns(sel *qcode.Select) {
 	i := 0
 	for _, f := range sel.Fields {
+		// Skip __gj_id in outer SELECT when aggregation + distinct is active —
+		// the inner subquery no longer includes this column.
+		if f.FieldName == "__gj_id" && sel.GroupCols && len(sel.DistinctOn) > 0 {
+			continue
+		}
 		if i != 0 {
 			c.w.WriteString(", ")
 		}
@@ -171,8 +176,26 @@ func (c *compilerContext) renderUnionColumn(sel, csel *qcode.Select) {
 }
 
 func (c *compilerContext) renderBaseColumns(sel *qcode.Select) {
+	// When aggregation + distinct are combined, only render the distinct columns
+	// (not the full BCols which includes PK for cursor/cache). Non-distinct columns
+	// like the PK would cause "must appear in GROUP BY" errors in Postgres.
+	renderCols := sel.BCols
+	if sel.GroupCols && len(sel.DistinctOn) > 0 {
+		filtered := make([]qcode.Column, 0, len(sel.DistinctOn))
+		distinctSet := make(map[string]bool, len(sel.DistinctOn))
+		for _, dc := range sel.DistinctOn {
+			distinctSet[dc.Name] = true
+		}
+		for _, col := range sel.BCols {
+			if distinctSet[col.Col.Name] {
+				filtered = append(filtered, col)
+			}
+		}
+		renderCols = filtered
+	}
+
 	i := 0
-	for _, col := range sel.BCols {
+	for _, col := range renderCols {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}
