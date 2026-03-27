@@ -689,6 +689,20 @@ func (c *compilerContext) renderGroupBy(sel *qcode.Select) {
 		return
 	}
 	c.w.WriteString(` GROUP BY `)
+
+	// When DISTINCT ON columns exist, use them for GROUP BY instead of all BCols.
+	// BCols includes the primary key (for cursor pagination, cache tracking, etc.)
+	// which makes every group unique and breaks aggregation counts.
+	if len(sel.DistinctOn) > 0 {
+		for i, col := range sel.DistinctOn {
+			if i != 0 {
+				c.w.WriteString(`, `)
+			}
+			c.colWithTable(sel.Table, col.Name)
+		}
+		return
+	}
+
 	for i, col := range sel.BCols {
 		if i != 0 {
 			c.w.WriteString(`, `)
