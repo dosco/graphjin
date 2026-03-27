@@ -1,6 +1,12 @@
 package serv
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"testing"
 
 	"github.com/dosco/graphjin/core/v3"
@@ -229,4 +235,108 @@ func TestInitDBDriver_DBTypeFallbackToDatabaseType(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "snowflake", conf.DBType)
 	assert.Equal(t, "snowflake", dc.driverName)
+}
+
+// generateTestRSAKeyPEM generates a PKCS#8 PEM-encoded RSA private key for testing.
+func generateTestRSAKeyPEM(t *testing.T) []byte {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	require.NoError(t, err)
+	return pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
+}
+
+func TestLoadSnowflakePrivateKey_ValidPKCS8(t *testing.T) {
+	pemData := generateTestRSAKeyPEM(t)
+	key, err := loadSnowflakePrivateKey(pemData, "")
+	require.NoError(t, err)
+	assert.NotNil(t, key)
+	assert.Equal(t, 2048, key.N.BitLen())
+}
+
+func TestLoadSnowflakePrivateKey_InvalidPEM(t *testing.T) {
+	_, err := loadSnowflakePrivateKey([]byte("not valid pem"), "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no PEM block found")
+}
+
+func TestLoadSnowflakePrivateKey_NonRSAKey(t *testing.T) {
+	ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	der, err := x509.MarshalPKCS8PrivateKey(ecKey)
+	require.NoError(t, err)
+	pemData := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
+
+	_, err = loadSnowflakePrivateKey(pemData, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not RSA")
+}
+
+func TestLoadSnowflakePrivateKey_PKCS1Rejected(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	// PKCS#1 format — should be rejected
+	pemData := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(key),
+	})
+
+	_, err = loadSnowflakePrivateKey(pemData, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "PKCS#8")
+}
+
+func TestInitSnowflake_KeyPairReturnsConnector(t *testing.T) {
+	pemData := generateTestRSAKeyPEM(t)
+	conf := &Config{
+		Serv: Serv{
+			DB: Database{
+				Type:          "snowflake",
+				ConnString:    "user:pass@localhost:8080/test_db/public?account=test&protocol=http&warehouse=dummy",
+				PrivateKeyPEM: string(pemData),
+			},
+		},
+	}
+
+	dc, err := initSnowflake(conf, true, false, core.NewOsFS(""))
+	require.NoError(t, err)
+	assert.NotNil(t, dc.connector, "key pair auth should return a connector")
+	assert.Empty(t, dc.connString, "key pair auth should not set connString")
+	assert.Empty(t, dc.driverName, "key pair auth should not set driverName")
+}
+
+func TestInitSnowflake_PlainDSNFallback(t *testing.T) {
+	conn := "user:pass@localhost:8080/test_db/public?account=test&protocol=http&warehouse=dummy"
+	conf := &Config{
+		Serv: Serv{
+			DB: Database{
+				Type:       "snowflake",
+				ConnString: conn,
+				// No PrivateKeyPath or PrivateKeyPEM
+			},
+		},
+	}
+
+	dc, err := initSnowflake(conf, true, false, core.NewOsFS(""))
+	require.NoError(t, err)
+	assert.Equal(t, "snowflake", dc.driverName)
+	assert.Equal(t, conn, dc.connString)
+	assert.Nil(t, dc.connector, "plain DSN should not use connector")
+}
+
+func TestInitSnowflake_InvalidKeyPEM(t *testing.T) {
+	conf := &Config{
+		Serv: Serv{
+			DB: Database{
+				Type:          "snowflake",
+				ConnString:    "user:pass@localhost:8080/test_db/public?account=test&protocol=http&warehouse=dummy",
+				PrivateKeyPEM: "not-a-pem",
+			},
+		},
+	}
+
+	_, err := initSnowflake(conf, true, false, core.NewOsFS(""))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no PEM block found")
 }

@@ -925,6 +925,15 @@ func parseDBConfig(m map[string]any) (core.DatabaseConfig, error) {
 	if ro, ok := m["read_only"].(bool); ok {
 		conf.ReadOnly = ro
 	}
+	if pkp, ok := m["private_key_path"].(string); ok {
+		conf.PrivateKeyPath = pkp
+	}
+	if pkpem, ok := m["private_key_pem"].(string); ok {
+		conf.PrivateKeyPEM = pkpem
+	}
+	if kp, ok := m["key_passphrase"].(string); ok {
+		conf.KeyPassphrase = kp
+	}
 
 	// Validate type
 	if conf.Type == "" {
@@ -1643,6 +1652,12 @@ func syncDBFromDatabases(conf *Config) bool {
 
 	conf.DB.Encrypt = dbConf.Encrypt
 	conf.DB.TrustServerCertificate = dbConf.TrustServerCertificate
+
+	// Snowflake key pair auth
+	conf.DB.PrivateKeyPath = dbConf.PrivateKeyPath
+	conf.DB.PrivateKeyPEM = dbConf.PrivateKeyPEM
+	conf.DB.KeyPassphrase = dbConf.KeyPassphrase
+
 	conf.DBType = dbConf.Type
 	return true
 }

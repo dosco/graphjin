@@ -208,6 +208,7 @@ cache_control: "public, max-age=300, s-maxage=600"
 | `oracle` | Yes | Yes | Oracle Database |
 | `mssql` | No | Yes | Microsoft SQL Server |
 | `mongodb` | No | Yes | MongoDB (multi-db only) |
+| `snowflake` | Yes | Yes | Requires `connection_string` |
 
 ### Database Configuration Examples
 
@@ -295,6 +296,54 @@ database:
   dbname: myapp
   # Note: MongoDB has no foreign keys; relationships must be configured explicitly
 ```
+
+#### Snowflake
+
+```yaml
+database:
+  type: snowflake
+  # Snowflake requires a connection string (host/port fields are not used)
+  connection_string: user@myaccount/mydb/public?warehouse=compute_wh&account=myaccount
+```
+
+##### Key Pair (JWT) Authentication
+
+Snowflake supports key pair authentication using RSA-2048 private keys in PKCS#8 PEM format. The gosnowflake driver handles JWT generation, signing, and the 60-second token expiry internally.
+
+```yaml
+database:
+  type: snowflake
+  connection_string: user@myaccount/mydb/public?warehouse=compute_wh&account=myaccount
+
+  # Path to PKCS#8 PEM-encoded RSA private key
+  private_key_path: /path/to/rsa_key.p8
+  # Or provide the PEM content inline
+  # private_key_pem: "-----BEGIN PRIVATE KEY-----\n..."
+
+  # Optional: passphrase if the key is encrypted
+  # key_passphrase: my-passphrase
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `private_key_path` | string | - | File path to PKCS#8 PEM private key |
+| `private_key_pem` | string | - | Inline PEM content (alternative to file path) |
+| `key_passphrase` | string | - | Passphrase for encrypted private keys |
+
+**Setup steps:**
+
+1. Generate an RSA-2048 key pair in PKCS#8 format:
+   ```bash
+   openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8 -nocrypt
+   ```
+2. Extract the public key:
+   ```bash
+   openssl rsa -in rsa_key.p8 -pubout -out rsa_key.pub
+   ```
+3. Register the public key on your Snowflake user:
+   ```sql
+   ALTER USER my_user SET RSA_PUBLIC_KEY='MIIBIjANBg...';
+   ```
 
 #### TLS Connection Example
 
