@@ -156,10 +156,10 @@ var querySyntaxReference = QuerySyntaxReference{
 	},
 	LogicalOperators: []string{"and", "or", "not"},
 	Pagination: PaginationSyntax{
-		LimitOffset:    "limit: 10, offset: 20",
-		ForwardCursor:  "first: 10, after: $cursor - paginate forward",
-		BackwardCursor: "last: 10, before: $cursor - paginate backward",
-		CursorField:    "<table>_cursor returns encrypted cursor for next/prev page",
+		LimitOffset:    "limit: 10, offset: 20 — WARNING: queries without an explicit limit return only default_limit rows (typically 20)",
+		ForwardCursor:  "first: 10, after: $<table>_cursor — cursor variable name MUST be $<table>_cursor (e.g. $products_cursor). Pass via variables object, not string interpolation",
+		BackwardCursor: "last: 10, before: $<table>_cursor — same naming rule as forward cursor",
+		CursorField:    "<table>_cursor — request this field at query root level to get the cursor for the next page. Returns null when no more pages exist",
 		Distinct:       "distinct: [column1, column2]",
 	},
 	Ordering: OrderingSyntax{
@@ -211,6 +211,8 @@ var querySyntaxReference = QuerySyntaxReference{
 		{Wrong: `products(id: 1)`, Right: `products(where: { id: { eq: 1 } })`, Reason: "Filtering requires where clause with operators (except for shorthand id lookup)"},
 		{Wrong: `where: { is_active: { eq: "true" } }`, Right: `where: { is_active: { eq: true } }`, Reason: "Boolean values must be true/false, not strings"},
 		{Wrong: `products(first: 10) { products_cursor }`, Right: `products(first: 10) { id } products_cursor`, Reason: "Cursor field must be at query root level, not inside the selection"},
+		{Wrong: `products(first: 10, after: "abc123")`, Right: `products(first: 10, after: $products_cursor)`, Reason: "Cursor must be a $variable (not a literal string) passed via the variables object. Variable name must be $<table>_cursor"},
+		{Wrong: `products(first: 100)`, Right: `products(first: 20)`, Reason: "Queries are capped at the server's default_limit (typically 20 rows). Use cursor pagination to fetch more"},
 	},
 	Examples: QueryExamplesForSyntax{
 		Basic: []QueryExample{
@@ -236,9 +238,9 @@ var querySyntaxReference = QuerySyntaxReference{
 		},
 		Pagination: []QueryExample{
 			{Description: "Limit and offset", Query: "{ products(limit: 10, offset: 20) { id name } }"},
-			{Description: "Forward cursor pagination", Query: "{ products(first: 10, after: $cursor) { id name } products_cursor }"},
-			{Description: "Backward cursor pagination", Query: "{ products(last: 10, before: $cursor) { id name } products_cursor }"},
-			{Description: "First page with cursor", Query: "{ products(first: 10) { id name } products_cursor }", Variables: "{}"},
+			{Description: "Forward cursor pagination", Query: "{ products(first: 10, after: $products_cursor) { id name } products_cursor }", Variables: "{\"products_cursor\": null}"},
+			{Description: "Backward cursor pagination", Query: "{ products(last: 10, before: $products_cursor) { id name } products_cursor }", Variables: "{\"products_cursor\": null}"},
+			{Description: "First page (no cursor needed)", Query: "{ products(first: 10) { id name } products_cursor }"},
 			{Description: "Distinct results", Query: "{ products(distinct: [category_id]) { category_id } }"},
 		},
 		Aggregations: []QueryExample{
