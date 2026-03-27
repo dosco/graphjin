@@ -145,6 +145,9 @@ func (co *Compiler) compileChildColumns(
 
 	if aggExists {
 		sel.GroupCols = true
+		// Remove injected __gj_id from BCols and Fields — including the
+		// primary key in GROUP BY makes every group unique (count always 1).
+		sel.removeCacheTrackingField()
 	}
 	return nil
 }
@@ -338,6 +341,23 @@ func (sel *Select) addField(f Field) {
 func (sel *Select) addBaseCol(col Column) {
 	if sel.bcolExists(col.Col.Name) == -1 {
 		sel.BCols = append(sel.BCols, col)
+	}
+}
+
+// removeCacheTrackingField strips the __gj_id column injected by
+// addCacheTrackingField. When aggregation functions are present the PK
+// must not appear in SELECT or GROUP BY — otherwise every group is
+// unique and counts are always 1. This applies to all database dialects.
+func (sel *Select) removeCacheTrackingField() {
+	for i := len(sel.BCols) - 1; i >= 0; i-- {
+		if sel.BCols[i].FieldName == "__gj_id" {
+			sel.BCols = append(sel.BCols[:i], sel.BCols[i+1:]...)
+		}
+	}
+	for i := len(sel.Fields) - 1; i >= 0; i-- {
+		if sel.Fields[i].FieldName == "__gj_id" {
+			sel.Fields = append(sel.Fields[:i], sel.Fields[i+1:]...)
+		}
 	}
 }
 

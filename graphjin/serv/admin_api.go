@@ -121,7 +121,11 @@ func adminTableSchemaHandler(s1 *HttpService) http.Handler {
 			return
 		}
 
-		schema, err := s.gj.GetTableSchema(tableName)
+		// Support ?database= query param to disambiguate tables that exist
+		// in multiple databases (e.g. cross-database FK phantom references)
+		database := r.URL.Query().Get("database")
+
+		schema, err := s.gj.GetTableSchemaForDatabase(database, tableName)
 		if err != nil {
 			writeJSONError(w, http.StatusNotFound, err.Error())
 			return

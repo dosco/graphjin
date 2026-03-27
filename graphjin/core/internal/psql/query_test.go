@@ -724,6 +724,107 @@ func TestCompileQuery(t *testing.T) {
 	t.Run("blockedQuery", blockedQuery)
 	t.Run("blockedFunctions", blockedFunctions)
 	t.Run("multiRootSameTable", multiRootSameTable)
+	t.Run("distinctWithAggCount", distinctWithAggCount)
+	t.Run("distinctWithAggMultiple", distinctWithAggMultiple)
+	t.Run("distinctWithAggAndWhere", distinctWithAggAndWhere)
+	t.Run("aggWithoutDistinct", aggWithoutDistinct)
+}
+
+// --- distinct + aggregation tests ---
+// These verify that GROUP BY uses only the distinct columns, not the PK.
+// Bug: __gj_id (PK) was included in GROUP BY making every group unique (count=1).
+
+func distinctWithAggCount(t *testing.T) {
+	gql := `query {
+		products(distinct: [name]) {
+			name
+			count_id
+		}
+	}`
+	sql := compileGQLToPSQLString(t, gql, nil, "user")
+
+	// GROUP BY should only contain the distinct column (name), not the PK (id)
+	if bytes.Contains([]byte(sql), []byte(`GROUP BY`)) {
+		if !bytes.Contains([]byte(sql), []byte(`"name"`)) {
+			t.Error("GROUP BY should contain the distinct column 'name'")
+		}
+		// The PK 'id' should not appear as a raw column in GROUP BY
+		// (it can appear inside count() which is fine)
+		groupByIdx := bytes.Index([]byte(sql), []byte(`GROUP BY`))
+		limitIdx := bytes.Index([]byte(sql), []byte(`LIMIT`))
+		if limitIdx == -1 {
+			limitIdx = len(sql)
+		}
+		groupByClause := sql[groupByIdx:limitIdx]
+		// Check that the group by section doesn't contain a bare "products"."id"
+		// outside of an aggregate function
+		if bytes.Contains([]byte(groupByClause), []byte(`"id"`)) {
+			t.Error("GROUP BY should NOT contain the PK 'id' when distinct + aggregation is used")
+		}
+	}
+}
+
+func distinctWithAggMultiple(t *testing.T) {
+	gql := `query {
+		products(distinct: [name]) {
+			name
+			count_id
+			max_price
+		}
+	}`
+	compileGQLToPSQL(t, gql, nil, "user")
+}
+
+func distinctWithAggAndWhere(t *testing.T) {
+	gql := `query {
+		products(distinct: [name], where: { price: { gt: 10 } }) {
+			name
+			count_id
+		}
+	}`
+	compileGQLToPSQL(t, gql, nil, "user")
+}
+
+func aggWithoutDistinct(t *testing.T) {
+	// Aggregation without distinct should still work (GROUP BY all BCols)
+	gql := `query {
+		products {
+			name
+			count_price
+		}
+	}`
+	compileGQLToPSQL(t, gql, nil, "user")
+}
+
+// compileGQLToPSQLString compiles and returns the SQL string for inspection
+func compileGQLToPSQLString(t *testing.T, gql string,
+	vars map[string]json.RawMessage,
+	role string,
+) string {
+	t.Helper()
+	var v json.RawMessage
+	var err error
+
+	if v, err = json.Marshal(vars); err != nil {
+		t.Fatal(err)
+	}
+
+	vm := make(map[string]json.RawMessage)
+	if err := json.Unmarshal(v, &vm); err != nil {
+		t.Fatal(err)
+	}
+
+	qc, err := qcompile.Compile([]byte(gql), vm, role, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, sqlBytes, err := pcompile.CompileEx(qc)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return string(sqlBytes)
 }
 
 var benchGQL = []byte(`query {
