@@ -121,6 +121,12 @@ func (ms *mcpServer) buildJSRuntimeAPI() JSRuntimeAPI {
 			"Example: var result = gj.tools.executeGraphql({query: 'query GetOrders { orders { id total } }'}); var orders = result.data.orders;",
 			"Example: var tables = gj.tools.listTables().tables;",
 			"Example: var schema = gj.tools.describeTable({table: 'orders'});",
+			"PAGINATION: Queries have a default row limit (typically 20). To fetch all rows, use cursor pagination with variables: " +
+				"var cursor = null; var all = []; while (true) { " +
+				"var r = gj.tools.executeGraphql({query: '{ orders(first: 20, after: $orders_cursor) { id } orders_cursor }', variables: { orders_cursor: cursor }}); " +
+				"var page = r.data.orders; if (!page || page.length === 0) break; " +
+				"all = all.concat(page); cursor = r.data.orders_cursor; if (!cursor) break; }",
+			"PAGINATION NOTE: The cursor variable name MUST match the pattern $<table>_cursor (e.g. $orders_cursor for the orders table). Pass it via the variables object — do NOT string-interpolate cursors into the query.",
 			"Only workflow-callable tools are available inside scripts; config mutation, schema mutation, and workflow management tools are blocked.",
 			"Tool errors throw JavaScript exceptions — use try/catch to handle them.",
 			"Tool-level auth and policy checks are enforced exactly as in direct MCP calls.",
