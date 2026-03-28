@@ -1151,9 +1151,10 @@ GraphJin supports 8 databases with the same GraphQL syntax:
 | Oracle | Yes | Yes | No | No | No |
 | SQLite | Yes | Yes | No | No | FTS5 |
 | MongoDB | Yes | Yes | Yes | Yes | Yes |
+| Snowflake | Yes | Yes | No | No | No |
 | CockroachDB | Yes | Yes | Yes | Yes | Yes |
 
-Also works with: **AWS Aurora/RDS**, **Google Cloud SQL**, **YugabyteDB**
+Also works with: **AWS Aurora/RDS**, **Google Cloud SQL**, **YugabyteDB**. Snowflake supports key pair (JWT) authentication.
 
 ### Cross-Database Joins
 

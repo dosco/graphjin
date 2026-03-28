@@ -1,10 +1,12 @@
 package serv
 
 import (
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net/url"
@@ -15,6 +17,7 @@ import (
 	"github.com/dosco/graphjin/mongodriver"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/snowflakedb/gosnowflake"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"go.uber.org/zap"
@@ -22,7 +25,6 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/microsoft/go-mssqldb"
 	_ "github.com/sijms/go-ora/v2"
-	_ "github.com/snowflakedb/gosnowflake"
 	_ "modernc.org/sqlite"
 )
 
@@ -424,13 +426,87 @@ func initMongo(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf, er
 
 // initSnowflake initializes the snowflake database.
 // Snowflake requires a full DSN in connection_string.
+// When private_key_path or private_key_pem is set, key pair (JWT) authentication
+// is used via the gosnowflake driver's built-in support.
 func initSnowflake(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf, error) {
 	connString := strings.TrimSpace(conf.DB.ConnString)
 	if connString == "" {
 		return nil, fmt.Errorf("snowflake requires connection_string")
 	}
 
-	return &dbConf{driverName: "snowflake", connString: connString}, nil
+	keyPath := strings.TrimSpace(conf.DB.PrivateKeyPath)
+	keyPEM := strings.TrimSpace(conf.DB.PrivateKeyPEM)
+
+	// No key pair config — plain DSN passthrough (existing behavior)
+	if keyPath == "" && keyPEM == "" {
+		return &dbConf{driverName: "snowflake", connString: connString}, nil
+	}
+
+	// Load PEM data from file or inline
+	var pemData []byte
+	if keyPath != "" {
+		data, err := fs.Get(keyPath)
+		if err != nil {
+			return nil, fmt.Errorf("snowflake: reading private key file %q: %w", keyPath, err)
+		}
+		pemData = data
+	} else {
+		pemData = []byte(keyPEM)
+	}
+
+	privKey, err := loadSnowflakePrivateKey(pemData, conf.DB.KeyPassphrase)
+	if err != nil {
+		return nil, fmt.Errorf("snowflake: %w", err)
+	}
+
+	cfg, err := gosnowflake.ParseDSN(connString)
+	if err != nil {
+		return nil, fmt.Errorf("snowflake: parsing connection_string: %w", err)
+	}
+
+	cfg.Authenticator = gosnowflake.AuthTypeJwt
+	cfg.PrivateKey = privKey
+
+	connector := gosnowflake.NewConnector(gosnowflake.SnowflakeDriver{}, *cfg)
+	return &dbConf{connector: connector}, nil
+}
+
+// loadSnowflakePrivateKey parses a PKCS#8 PEM-encoded RSA private key,
+// with optional passphrase decryption for encrypted keys.
+func loadSnowflakePrivateKey(pemData []byte, passphrase string) (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode(pemData)
+	if block == nil {
+		return nil, fmt.Errorf("invalid PEM data: no PEM block found")
+	}
+
+	var derBytes []byte
+
+	//nolint:staticcheck // x509.IsEncryptedPEMBlock is deprecated but needed for encrypted PEM support
+	if x509.IsEncryptedPEMBlock(block) {
+		if passphrase == "" {
+			return nil, fmt.Errorf("private key is encrypted but no key_passphrase provided")
+		}
+		//nolint:staticcheck // x509.DecryptPEMBlock is deprecated but needed for encrypted PEM support
+		decrypted, err := x509.DecryptPEMBlock(block, []byte(passphrase))
+		if err != nil {
+			return nil, fmt.Errorf("decrypting private key: %w (wrong passphrase?)", err)
+		}
+		derBytes = decrypted
+	} else {
+		derBytes = block.Bytes
+	}
+
+	key, err := x509.ParsePKCS8PrivateKey(derBytes)
+	if err != nil {
+		return nil, fmt.Errorf("parsing PKCS#8 private key: %w (ensure key is in PKCS#8 format: openssl pkcs8 -topk8)", err)
+	}
+
+	rsaKey, ok := key.(*rsa.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("private key is not RSA (got %T); Snowflake requires RSA-2048", key)
+	}
+
+	return rsaKey, nil
 }
 
 // loadX509KeyPair loads a X509 key pair from a file system

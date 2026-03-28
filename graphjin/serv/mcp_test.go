@@ -1811,6 +1811,40 @@ func TestParseDBConfig_SnowflakeRequiresConnectionString(t *testing.T) {
 	}
 }
 
+func TestParseDBConfig_SnowflakeKeyPair(t *testing.T) {
+	m := map[string]any{
+		"type":              "snowflake",
+		"connection_string": "user@account/db/schema?warehouse=wh&account=acct",
+		"private_key_path":  "/path/to/rsa_key.p8",
+		"key_passphrase":    "secret",
+	}
+
+	conf, err := parseDBConfig(m)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if conf.PrivateKeyPath != "/path/to/rsa_key.p8" {
+		t.Fatalf("expected private_key_path, got: %s", conf.PrivateKeyPath)
+	}
+	if conf.KeyPassphrase != "secret" {
+		t.Fatalf("expected key_passphrase, got: %s", conf.KeyPassphrase)
+	}
+
+	// Also test private_key_pem
+	m2 := map[string]any{
+		"type":              "snowflake",
+		"connection_string": "user@account/db/schema?warehouse=wh&account=acct",
+		"private_key_pem":   "-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----",
+	}
+	conf2, err := parseDBConfig(m2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if conf2.PrivateKeyPEM == "" {
+		t.Fatal("expected private_key_pem to be set")
+	}
+}
+
 func TestEnhanceError(t *testing.T) {
 	testCases := []struct {
 		name          string

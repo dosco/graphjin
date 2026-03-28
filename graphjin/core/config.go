@@ -323,9 +323,27 @@ type DatabaseConfig struct {
 	// MSSQL-specific: trust server certificate without validation
 	TrustServerCertificate *bool `mapstructure:"trust_server_certificate" json:"trust_server_certificate,omitempty" yaml:"trust_server_certificate,omitempty" jsonschema:"title=MSSQL Trust Server Certificate"`
 
+	// Snowflake key pair authentication (PKCS#8 PEM format).
+	// Generate key: openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8
+	PrivateKeyPath string `mapstructure:"private_key_path" json:"private_key_path" yaml:"private_key_path" jsonschema:"title=Private Key File Path (Snowflake)"`
+	PrivateKeyPEM  string `mapstructure:"private_key_pem" json:"private_key_pem" yaml:"private_key_pem" jsonschema:"title=Private Key PEM (Snowflake)"`
+	KeyPassphrase  string `mapstructure:"key_passphrase" json:"key_passphrase" yaml:"key_passphrase" jsonschema:"title=Key Passphrase (Snowflake)"`
+
 	// Read-only mode — blocks all mutations and DDL against this database.
 	// Once set in config, cannot be changed at runtime via MCP tools.
 	ReadOnly bool `mapstructure:"read_only" json:"read_only" yaml:"read_only" jsonschema:"title=Read Only"`
+}
+
+// SnowflakeKeyPairConfig allows external services to inject Snowflake key pair
+// credentials programmatically (e.g., separate pipelines for Marketo, Salesforce, etc.).
+type SnowflakeKeyPairConfig interface {
+	GetAccount() string
+	GetUser() string
+	GetPrivateKeyPEM() []byte
+	GetKeyPassphrase() string
+	GetWarehouse() string
+	GetDatabase() string
+	GetSchema() string
 }
 
 // Configuration for a database table

@@ -177,6 +177,12 @@ type Database struct {
 
 	// MSSQL: trust server certificate without validation
 	TrustServerCertificate *bool `mapstructure:"trust_server_certificate" jsonschema:"title=MSSQL Trust Server Certificate"`
+
+	// Snowflake key pair authentication (PKCS#8 PEM format).
+	// Generate key: openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8
+	PrivateKeyPath string `mapstructure:"private_key_path" jsonschema:"title=Private Key File Path (Snowflake)"`
+	PrivateKeyPEM  string `mapstructure:"private_key_pem" jsonschema:"title=Private Key PEM (Snowflake)"`
+	KeyPassphrase  string `mapstructure:"key_passphrase" jsonschema:"title=Key Passphrase (Snowflake)"`
 }
 
 // RateLimiter sets the API rate limits
