@@ -1,11 +1,13 @@
 package tests_test
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSnowflakeConnectorInit(t *testing.T) {
@@ -152,6 +154,92 @@ func TestSnowflakeMutationTempTablesDifferAcrossInstances(t *testing.T) {
 	}
 }
 
+func TestSnowflakeMutationUpdateConnectDisconnectStability(t *testing.T) {
+	if dbType != "snowflake" {
+		t.Skip("snowflake-only test")
+	}
+
+	gql := `mutation {
+		users(id: $id, update: $data) {
+			full_name
+			products {
+				id
+			}
+		}
+	}`
+
+	vars := json.RawMessage(`{
+		"id": 100,
+		"data": {
+			"full_name": "Updated user 100",
+			"products": {
+				"connect": { "id": 99 },
+				"disconnect": { "id": 100 }
+			}
+		}
+	}`)
+
+	runSnowflakeMutationStabilityTest(t, gql, vars,
+		`{"users":{"full_name":"Updated user 100","products":[{"id":99}]}}`,
+		func() {
+			_, _ = db.Exec(`UPDATE products SET owner_id = 99 WHERE id = 99`)
+			_, _ = db.Exec(`UPDATE products SET owner_id = 100 WHERE id = 100`)
+			_, _ = db.Exec(`UPDATE users SET full_name = 'User 100' WHERE id = 100`)
+		})
+}
+
+func TestSnowflakeMutationUpdateRelatedTableStability(t *testing.T) {
+	if dbType != "snowflake" {
+		t.Skip("snowflake-only test")
+	}
+
+	gql := `mutation {
+		users(id: $id, update: $data) {
+			full_name
+			products {
+				id
+			}
+		}
+	}`
+
+	vars := json.RawMessage(`{
+		"id": 90,
+		"data": {
+			"full_name": "Updated user 90",
+			"products": {
+				"where": { "id": { "gt": 1 } },
+				"name": "Updated Product 90"
+			}
+		}
+	}`)
+
+	runSnowflakeMutationStabilityTest(t, gql, vars,
+		`{"users":{"full_name":"Updated user 90","products":[{"id":90}]}}`,
+		func() {
+			_, _ = db.Exec(`UPDATE users SET full_name = 'User 90' WHERE id = 90`)
+			_, _ = db.Exec(`UPDATE products SET name = 'Product 90' WHERE id = 90`)
+		})
+}
+
+func TestSnowflakeMutationSetArrayEmptyStability(t *testing.T) {
+	if dbType != "snowflake" {
+		t.Skip("snowflake-only test")
+	}
+
+	gql := `mutation {
+		products(where: { id: 100 }, update: { tags: [] }) {
+			id
+			tags
+		}
+	}`
+
+	runSnowflakeMutationStabilityTest(t, gql, nil,
+		`{"products":[{"id":100,"tags":[]}]}`,
+		func() {
+			_, _ = db.Exec(`UPDATE products SET tags = list_value('Tag 1', 'Tag 2', 'Tag 3', 'Tag 4', 'Tag 5') WHERE id = 100`)
+		})
+}
+
 func extractSnowflakeTempTable(sql, prefix string) string {
 	idx := strings.Index(sql, prefix)
 	if idx == -1 {
@@ -168,4 +256,33 @@ func extractSnowflakeTempTable(sql, prefix string) string {
 		break
 	}
 	return sql[idx:end]
+}
+
+func runSnowflakeMutationStabilityTest(
+	t *testing.T,
+	gql string,
+	vars json.RawMessage,
+	expected string,
+	cleanup func(),
+) {
+	t.Helper()
+
+	const attempts = 5
+
+	for i := 0; i < attempts; i++ {
+		conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+		gj, err := core.NewGraphJin(conf, db)
+		require.NoError(t, err, "iteration %d: new graphjin", i+1)
+
+		ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
+		res, gqlErr := gj.GraphQL(ctx, gql, vars, nil)
+		cleanup()
+
+		if gqlErr != nil {
+			logSnowflakeQueryFailure(gj, gql, vars, gqlErr)
+		}
+
+		require.NoError(t, gqlErr, "iteration %d: graphql execution", i+1)
+		require.JSONEq(t, expected, string(res.Data), "iteration %d: response mismatch", i+1)
+	}
 }

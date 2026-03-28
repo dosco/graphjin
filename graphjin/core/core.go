@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"time"
 
 	"github.com/dosco/graphjin/core/v3/internal/allow"
 	"github.com/dosco/graphjin/core/v3/internal/jsn"
@@ -100,7 +99,7 @@ func (gj *graphjinEngine) executeRoleQuery(c context.Context,
 		return
 	}
 
-	err = retryOperation(c1, func() error {
+	err = retryOperationForDB(c1, pdb.dbtype, func() error {
 		var row *sql.Row
 		if rc != nil && rc.Tx != nil {
 			row = rc.Tx.QueryRowContext(c1, roleQuery, roleArgs...)
@@ -220,15 +219,7 @@ func (gj *graphjinEngine) spanStart(c context.Context, name string) (context.Con
 	return gj.trace.Start(c, name)
 }
 
-// Retry operation with jittered backoff at 50, 100, 200 ms
+// Retry operation with the default policy.
 func retryOperation(c context.Context, fn func() error) (err error) {
-	jitter := []int{50, 100, 200}
-	for i := 0; i < 3; i++ {
-		if err = fn(); err == nil {
-			return
-		}
-		d := time.Duration(jitter[i])
-		time.Sleep(d * time.Millisecond)
-	}
-	return
+	return retryOperationWithPolicy(c, defaultRetryPolicy, fn)
 }
