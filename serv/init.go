@@ -259,6 +259,20 @@ func (s *graphjinService) newDBFromDatabaseConfig(name string, dbConf core.Datab
 		dbName = name
 	}
 
+	// Snowflake with key pair auth needs the connector path
+	if dbType == "snowflake" && (dbConf.PrivateKeyPath != "" || dbConf.PrivateKeyPEM != "") {
+		conf := &Config{}
+		conf.DB.ConnString = dbConf.ConnString
+		conf.DB.PrivateKeyPath = dbConf.PrivateKeyPath
+		conf.DB.PrivateKeyPEM = dbConf.PrivateKeyPEM
+		conf.DB.KeyPassphrase = dbConf.KeyPassphrase
+		dc, err := initSnowflake(conf, true, false, core.NewOsFS(""))
+		if err != nil {
+			return nil, err
+		}
+		return sql.OpenDB(dc.connector), nil
+	}
+
 	if dbConf.ConnString != "" {
 		// Use connection string directly
 		driverName := driverForType(dbType)
