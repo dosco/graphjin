@@ -454,6 +454,7 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 	}
 
 	cs := s.cs
+	dbType := s.getTargetDBCtx().dbtype
 
 	// Use Dialect to check for multi-statement scripts (e.g., SQLite)
 	dialect := s.getTargetPsqlCompiler().GetDialect()
@@ -510,7 +511,7 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 				if tx := s.tx(); tx != nil {
 					rows, err1 = tx.QueryContext(c1, stmt, stmtArgs...)
 				} else {
-					err1 = retryOperation(c1, func() (err2 error) {
+					err1 = retryOperationForDB(c1, dbType, func() (err2 error) {
 						rows, err2 = conn.QueryContext(c1, stmt, stmtArgs...)
 						return
 					})
@@ -573,7 +574,7 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 					row = tx.QueryRowContext(c1, stmt, stmtArgs...)
 					err = row.Scan(&s.data)
 				} else {
-					err = retryOperation(c1, func() (err1 error) {
+					err = retryOperationForDB(c1, dbType, func() (err1 error) {
 						row = conn.QueryRowContext(c1, stmt, stmtArgs...)
 						return row.Scan(&s.data)
 					})
@@ -584,7 +585,7 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 				if tx := s.tx(); tx != nil {
 					_, err = tx.ExecContext(c1, stmt, stmtArgs...)
 				} else {
-					err = retryOperation(c1, func() (err1 error) {
+					err = retryOperationForDB(c1, dbType, func() (err1 error) {
 						_, err1 = conn.ExecContext(c1, stmt, stmtArgs...)
 						return
 					})
@@ -592,6 +593,9 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 			}
 
 			if err != nil {
+				if dbType == "snowflake" {
+					err = wrapSnowflakeScriptError(i, stmt, isReturning || isSelect || gjIdsKey != "", err)
+				}
 				if err != sql.ErrNoRows {
 					span.Error(err)
 				}
@@ -622,7 +626,7 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 		row = tx.QueryRowContext(c1, querySQL, queryArgs...)
 		err = row.Scan(&s.data)
 	} else {
-		err = retryOperation(c1, func() (err1 error) {
+		err = retryOperationForDB(c1, dbType, func() (err1 error) {
 			row = conn.QueryRowContext(c1, querySQL, queryArgs...)
 			return row.Scan(&s.data)
 		})
@@ -659,6 +663,29 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 		s.gj.printFormat, decPrefix, s.dhash[:], s.gj.encryptionKey)
 
 	return
+}
+
+func wrapSnowflakeScriptError(stmtIdx int, stmt string, usesQueryPath bool, err error) error {
+	kind := "exec"
+	if usesQueryPath {
+		kind = "query"
+	}
+
+	preview := strings.Join(strings.Fields(strings.TrimSpace(stmt)), " ")
+	const maxPreview = 180
+	if len(preview) > maxPreview {
+		preview = preview[:maxPreview-3] + "..."
+	}
+
+	msg := fmt.Sprintf("snowflake script statement %d (%s) failed", stmtIdx+1, kind)
+	if qid := snowflakeQueryID(err); qid != "" {
+		msg += fmt.Sprintf(" [query_id=%s]", qid)
+	}
+	if preview != "" {
+		msg += fmt.Sprintf(": %s", preview)
+	}
+
+	return fmt.Errorf("%s: %w", msg, err)
 }
 
 func (s *gstate) executeRoleQuery(c context.Context, conn *sql.Conn) (err error) {
