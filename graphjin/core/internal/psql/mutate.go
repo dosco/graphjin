@@ -213,13 +213,11 @@ func (c *compilerContext) compileLinearMutation() {
 						}
 						pm := c.qc.Mutates[m.ParentID]
 
-						c.colWithTable(m.Ti.Name, childCol)
-						c.w.WriteString(" = ")
-
-							if dialectName == "sqlite" || dialectName == "snowflake" {
-								// SQLite uses subquery
-								c.w.WriteString("(SELECT ")
-								c.quoted(parentCol)
+						if dialectName == "sqlite" {
+							c.colWithTable(m.Ti.Name, childCol)
+							c.w.WriteString(" = ")
+							c.w.WriteString("(SELECT ")
+							c.quoted(parentCol)
 							c.w.WriteString(" FROM ")
 							c.quoted(pm.Ti.Name)
 							c.w.WriteString(" WHERE ")
@@ -227,9 +225,32 @@ func (c *compilerContext) compileLinearMutation() {
 							c.w.WriteString(" = ")
 							c.dialect.RenderVar(c, c.getVarName(pm))
 							c.w.WriteString(")")
+						} else if dialectName == "snowflake" {
+							// Snowflake is more stable with a direct captured ID when the child
+							// join targets the parent's PK, and with an EXISTS predicate for
+							// non-PK lookups such as purchases.customer_id / product_id.
+							if parentCol == pm.Ti.PrimaryCol.Name {
+								c.colWithTable(m.Ti.Name, childCol)
+								c.w.WriteString(" = ")
+								c.dialect.RenderVar(c, c.getVarName(pm))
+							} else {
+								c.w.WriteString("EXISTS (SELECT 1 FROM ")
+								c.quoted(pm.Ti.Name)
+								c.w.WriteString(" WHERE ")
+								c.colWithTable(m.Ti.Name, childCol)
+								c.w.WriteString(" = ")
+								c.colWithTable(pm.Ti.Name, parentCol)
+								c.w.WriteString(" AND ")
+								c.colWithTable(pm.Ti.Name, pm.Ti.PrimaryCol.Name)
+								c.w.WriteString(" = ")
+								c.dialect.RenderVar(c, c.getVarName(pm))
+								c.w.WriteString(")")
+							}
 						} else {
 							// MySQL/MariaDB/MSSQL/Oracle use captured variable with FK column name
 							// Variable format: @parentTable_parentID_fkColumn (or v_ for Oracle)
+							c.colWithTable(m.Ti.Name, childCol)
+							c.w.WriteString(" = ")
 							parentVarName := c.getVarName(pm) + "_" + parentCol
 							c.dialect.RenderVar(c, parentVarName)
 						}

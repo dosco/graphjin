@@ -221,6 +221,45 @@ func TestSnowflakeMutationUpdateRelatedTableStability(t *testing.T) {
 		})
 }
 
+func TestSnowflakeMutationUpdateMultipleRelatedTablesStability(t *testing.T) {
+	if dbType != "snowflake" {
+		t.Skip("snowflake-only test")
+	}
+
+	gql := `mutation {
+		purchases(id: $id, update: $data) {
+			quantity
+			customer {
+				full_name
+			}
+			product {
+				description
+			}
+		}
+	}`
+
+	vars := json.RawMessage(`{
+		"id": 100,
+		"data": {
+			"quantity": 6,
+			"customer": {
+				"full_name": "Updated user related to purchase 100"
+			},
+			"product": {
+				"description": "Updated product related to purchase 100"
+			}
+		}
+	}`)
+
+	runSnowflakeMutationStabilityTest(t, gql, vars,
+		`{"purchases":{"customer":{"full_name":"Updated user related to purchase 100"},"product":{"description":"Updated product related to purchase 100"},"quantity":6}}`,
+		func() {
+			_, _ = db.Exec(`UPDATE purchases SET quantity = 1000 WHERE id = 100`)
+			_, _ = db.Exec(`UPDATE users SET full_name = 'User 1' WHERE id = 1`)
+			_, _ = db.Exec(`UPDATE products SET description = 'Description for product 100' WHERE id = 100`)
+		})
+}
+
 func TestSnowflakeMutationChildUpdateCaptureSkipsUnusedJSONJoin(t *testing.T) {
 	if dbType != "snowflake" {
 		t.Skip("snowflake-only test")
@@ -266,6 +305,118 @@ func TestSnowflakeMutationChildUpdateCaptureSkipsUnusedJSONJoin(t *testing.T) {
 	}
 	if strings.Contains(sql, childInsertWithJoin) {
 		t.Fatalf("expected child update ID capture to skip JSON join, got SQL: %s", sql)
+	}
+	if strings.Contains(sql, `"products"."owner_id" = (SELECT "id" FROM "users" WHERE "id" =`) {
+		t.Fatalf("expected child update ID capture to use captured parent ID directly, got SQL: %s", sql)
+	}
+	if !strings.Contains(sql, `"products"."owner_id" = (SELECT id FROM _gj_ids_`) {
+		t.Fatalf("expected child update ID capture to use the captured Snowflake parent ID directly, got SQL: %s", sql)
+	}
+}
+
+func TestSnowflakeMutationChildUpdateStringExpressionIsCasted(t *testing.T) {
+	if dbType != "snowflake" {
+		t.Skip("snowflake-only test")
+	}
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gql := `mutation {
+		purchases(id: $id, update: $data) {
+			quantity
+			customer {
+				full_name
+			}
+			product {
+				description
+			}
+		}
+	}`
+
+	vars := json.RawMessage(`{
+		"id": 100,
+		"data": {
+			"quantity": 6,
+			"customer": {
+				"full_name": "Updated user related to purchase 100"
+			},
+			"product": {
+				"description": "Updated product related to purchase 100"
+			}
+		}
+	}`)
+
+	exp, err := gj.ExplainQuery(gql, vars, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sql := exp.CompiledQuery
+	castedUpdate := `"full_name" = CAST(json_extract_string(?, '$.customer.full_name') AS VARCHAR)`
+	bareUpdate := `"full_name" = json_extract_string(?, '$.customer.full_name')`
+
+	if !strings.Contains(sql, castedUpdate) {
+		t.Fatalf("expected child string update to use CAST(json_extract_string(... ) AS VARCHAR), got SQL: %s", sql)
+	}
+	if strings.Contains(sql, bareUpdate) {
+		t.Fatalf("expected child string update to avoid bare json_extract_string in SET, got SQL: %s", sql)
+	}
+}
+
+func TestSnowflakeMutationChildUpdateNonPKParentJoinUsesExists(t *testing.T) {
+	if dbType != "snowflake" {
+		t.Skip("snowflake-only test")
+	}
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gql := `mutation {
+		purchases(id: $id, update: $data) {
+			quantity
+			customer {
+				full_name
+			}
+			product {
+				description
+			}
+		}
+	}`
+
+	vars := json.RawMessage(`{
+		"id": 100,
+		"data": {
+			"quantity": 6,
+			"customer": {
+				"full_name": "Updated user related to purchase 100"
+			},
+			"product": {
+				"description": "Updated product related to purchase 100"
+			}
+		}
+	}`)
+
+	exp, err := gj.ExplainQuery(gql, vars, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sql := exp.CompiledQuery
+	scalarJoin := `"users"."id" = (SELECT "customer_id" FROM "purchases" WHERE "id" =`
+	existsJoin := `EXISTS (SELECT 1 FROM "purchases" WHERE "users"."id" = "purchases"."customer_id" AND "purchases"."id" = (SELECT id FROM _gj_ids_`
+
+	if strings.Contains(sql, scalarJoin) {
+		t.Fatalf("expected Snowflake child update to avoid scalar parent-column subquery, got SQL: %s", sql)
+	}
+	if !strings.Contains(sql, existsJoin) {
+		t.Fatalf("expected Snowflake child update to use EXISTS for non-PK parent join, got SQL: %s", sql)
 	}
 }
 
