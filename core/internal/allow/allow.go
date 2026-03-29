@@ -7,6 +7,7 @@ import (
 	"fmt"
 	_log "log"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/graph"
@@ -20,7 +21,12 @@ type FS interface {
 	List(path string) (entries []string, err error)
 }
 
-var ErrUnknownGraphQLQuery = errors.New("unknown graphql query")
+var (
+	ErrUnknownGraphQLQuery = errors.New("unknown graphql query")
+	ErrInvalidLookupName   = errors.New("invalid query or fragment name")
+
+	lookupSegmentRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+)
 
 const (
 	QUERY_PATH = "/queries"
@@ -103,6 +109,11 @@ func (al *List) Set(item Item) error {
 
 // GetByName returns a query by name
 func (al *List) GetByName(name string, useCache bool) (item Item, err error) {
+	name, err = validateLookupName(name)
+	if err != nil {
+		return item, err
+	}
+
 	if useCache {
 		if v, ok := al.cache.Get(name); ok {
 			item = v
@@ -123,7 +134,7 @@ func (al *List) GetByName(name string, useCache bool) (item Item, err error) {
 	if ok, err = al.fs.Exists((fp + ".graphql")); err != nil {
 		return
 	} else if ok {
-		item, err = al.get(QUERY_PATH, name, ".gql", useCache)
+		item, err = al.get(QUERY_PATH, name, ".graphql", useCache)
 	} else {
 		err = ErrUnknownGraphQLQuery
 	}
@@ -251,6 +262,26 @@ func splitName(name string) (string, string) {
 	return "", ""
 }
 
+func validateLookupName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", ErrInvalidLookupName
+	}
+
+	if strings.ContainsAny(name, `/\`) {
+		return "", fmt.Errorf("%w: %q", ErrInvalidLookupName, name)
+	}
+
+	parts := strings.Split(name, ".")
+	for _, part := range parts {
+		if part == "" || !lookupSegmentRe.MatchString(part) {
+			return "", fmt.Errorf("%w: %q", ErrInvalidLookupName, name)
+		}
+	}
+
+	return name, nil
+}
+
 // ListFragments returns all fragments from the fragments directory
 func (al *List) ListFragments() ([]Fragment, error) {
 	fragPath := filepath.Join(QUERY_PATH, "fragments")
@@ -293,6 +324,11 @@ func (al *List) ListFragments() ([]Fragment, error) {
 
 // GetFragment returns a specific fragment by name
 func (al *List) GetFragment(name string) (*Fragment, error) {
+	name, err := validateLookupName(name)
+	if err != nil {
+		return nil, err
+	}
+
 	fragPath := filepath.Join(QUERY_PATH, "fragments")
 
 	// Try .gql extension first

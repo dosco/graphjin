@@ -140,8 +140,7 @@ func (d *PostgresDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
 			ctx.WriteString(` CASE WHEN `)
 			ctx.AddParam(Param{Name: ob.KeyVar, Type: "text"})
 			ctx.WriteString(` = `)
-			// ctx.squoted(ob.Key) // TODO: How to quote value?
-			ctx.WriteString(fmt.Sprintf("'%s'", ob.Key)) // Simple quote for now, careful with injections but these are keys
+			ctx.WriteString(fmt.Sprintf("'%s'", strings.ReplaceAll(ob.Key, "'", "''")))
 			ctx.WriteString(` THEN `)
 		}
 		if ob.Var != "" {
@@ -556,7 +555,7 @@ func (d *PostgresDialect) renderGeoGeometry(ctx Context, geo *qcode.GeoExp) {
 			}
 		}
 		ctx.WriteString(fmt.Sprintf(`ST_SetSRID(ST_GeomFromGeoJSON('%s'), %d)`,
-			string(geo.GeoJSON), geo.SRID))
+			strings.ReplaceAll(string(geo.GeoJSON), "'", "''"), geo.SRID))
 	}
 }
 

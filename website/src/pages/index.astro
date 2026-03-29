@@ -20,24 +20,22 @@ import Footer from '../components/Footer.astro';
 
     {/* Value proposition section */}
     <section class="py-24 border-t border-white/10">
-      <div class="container-wide max-w-6xl text-center">
-        <p class="text-2xl md:text-3xl lg:text-4xl font-display leading-relaxed text-gj-muted">
+      <div class="container-wide max-w-4xl text-center">
+        <p class="text-xl md:text-2xl lg:text-3xl font-display leading-relaxed text-gj-muted">
           LLMs struggle with databases, diverse SQL dialects, custom query methods like MongoDB, complex joins.
-          <span class="block mt-6 text-3xl md:text-4xl lg:text-5xl font-bold leading-tight bg-clip-text text-transparent bg-gradient-to-r from-yellow-500 via-teal-200 to-violet-300">
-            GraphJin is a compiler that auto-learns your entire schema and generates efficient queries from simple GraphQL.
-          </span>
-          <span class="block mt-6 text-2xl md:text-3xl lg:text-4xl text-gj-muted">
-            Even smaller models can describe exactly what data they need, and GraphJin handles the rest. Nothing like this exists for AI, works with Claude Desktop or any MCP client.
-          </span>
+        </p>
+        <p class="mt-6 text-2xl md:text-3xl lg:text-4xl font-display font-bold leading-tight bg-clip-text text-transparent bg-gradient-to-r from-orange-400 via-amber-200 to-white">
+          GraphJin is a compiler that auto-learns your entire schema and generates efficient queries from simple GraphQL.
+        </p>
+        <p class="mt-6 text-xl md:text-2xl lg:text-3xl font-display leading-relaxed text-gj-muted">
+          Even smaller models can describe exactly what data they need, and GraphJin handles the rest. Nothing like this exists for AI, works with Claude Desktop or any MCP client.
         </p>
       </div>
     </section>
 
-    <QuickStart client:visible />
+    <ClaudeShowcase client:visible />
     <QueryShowcase client:visible />
     <FeatureGrid client:load />
-    <GetStarted client:load />
-    <ClaudeShowcase client:load />
 
     <section id="workflows" class="py-24 border-t border-white/10">
       <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -124,6 +122,9 @@ import Footer from '../components/Footer.astro';
         </p>
       </div>
     </section>
+
+    <QuickStart client:visible />
+    <GetStarted client:load />
   </main>
 
   <Footer />

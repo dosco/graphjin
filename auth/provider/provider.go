@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	jwt "github.com/golang-jwt/jwt"
+	jwt "github.com/golang-jwt/jwt/v5"
 )
 
 // JWTConfig struct contains JWT authentication related config values used by

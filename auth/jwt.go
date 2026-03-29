@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 
-	jwt "github.com/golang-jwt/jwt"
+	jwt "github.com/golang-jwt/jwt/v5"
 
 	"github.com/dosco/graphjin/auth/v3/provider"
 )
@@ -34,7 +35,7 @@ func JwtHandler(ac Auth) (HandlerFunc, error) {
 		}
 
 		if tok == "" {
-			if ah := r.Header.Get(authHeader); len(ah) > 10 {
+			if ah := r.Header.Get(authHeader); len(ah) > 7 && strings.HasPrefix(ah, "Bearer ") {
 				tok = ah[7:]
 			}
 		}

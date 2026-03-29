@@ -218,7 +218,7 @@ func (d *MySQLDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
 			ctx.WriteString(` CASE WHEN `)
 			ctx.AddParam(Param{Name: ob.KeyVar, Type: "text"})
 			ctx.WriteString(` = `)
-			ctx.WriteString(fmt.Sprintf("'%s'", ob.Key))
+			ctx.WriteString(fmt.Sprintf("'%s'", strings.ReplaceAll(ob.Key, "'", "''")))
 			ctx.WriteString(` THEN `)
 		}
 		if ob.Var != "" {
@@ -675,7 +675,7 @@ func (d *MySQLDialect) renderGeoGeometry(ctx Context, geo *qcode.GeoExp) {
 		}
 		ctx.WriteString(fmt.Sprintf(`))', %d)`, geo.SRID))
 	} else if len(geo.GeoJSON) > 0 {
-		ctx.WriteString(fmt.Sprintf(`ST_GeomFromGeoJSON('%s')`, string(geo.GeoJSON)))
+		ctx.WriteString(fmt.Sprintf(`ST_GeomFromGeoJSON('%s')`, strings.ReplaceAll(string(geo.GeoJSON), "'", "''")))
 	}
 }
 

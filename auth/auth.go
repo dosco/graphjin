@@ -35,6 +35,7 @@ package auth
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"net/http"
@@ -246,7 +247,7 @@ func HeaderHandler(ac Auth) (HandlerFunc, error) {
 			fo1 = (value == "")
 
 		default:
-			fo1 = (value != hdr.Value)
+			fo1 = (subtle.ConstantTimeCompare([]byte(value), []byte(hdr.Value)) != 1)
 		}
 
 		if fo1 {
