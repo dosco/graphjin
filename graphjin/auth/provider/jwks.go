@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/dosco/graphjin/core/v3"
-	jwt "github.com/golang-jwt/jwt"
+	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/lestrrat-go/jwx/jwk"
 )
 
@@ -112,6 +112,11 @@ func (p *JWKSProvider) KeyFunc() jwt.Keyfunc {
 		if token.Header == nil {
 			return nil, errors.New("null token header")
 		}
+		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+			if _, ok := token.Method.(*jwt.SigningMethodECDSA); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+		}
 		kid, found := token.Header["kid"].(string)
 		if !found {
 			return nil, errors.New("kid not found")
@@ -132,7 +137,19 @@ func (p *JWKSProvider) VerifyAudience(claims jwt.MapClaims) bool {
 	if claims == nil {
 		return false
 	}
-	return claims.VerifyAudience(p.aud, p.aud != "")
+	if p.aud == "" {
+		return true
+	}
+	aud, err := claims.GetAudience()
+	if err != nil {
+		return false
+	}
+	for _, a := range aud {
+		if a == p.aud {
+			return true
+		}
+	}
+	return false
 }
 
 // VerifyIssuer checks if the issuer claim is valid
@@ -140,7 +157,14 @@ func (p *JWKSProvider) VerifyIssuer(claims jwt.MapClaims) bool {
 	if claims == nil {
 		return false
 	}
-	return claims.VerifyIssuer(p.issuer, p.issuer != "")
+	if p.issuer == "" {
+		return true
+	}
+	iss, err := claims.GetIssuer()
+	if err != nil {
+		return false
+	}
+	return iss == p.issuer
 }
 
 // SetContextValues sets the user ID and provider in the context

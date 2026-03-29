@@ -221,6 +221,54 @@ func TestSnowflakeMutationUpdateRelatedTableStability(t *testing.T) {
 		})
 }
 
+func TestSnowflakeMutationChildUpdateCaptureSkipsUnusedJSONJoin(t *testing.T) {
+	if dbType != "snowflake" {
+		t.Skip("snowflake-only test")
+	}
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gql := `mutation {
+		users(id: $id, update: $data) {
+			full_name
+			products {
+				id
+			}
+		}
+	}`
+
+	vars := json.RawMessage(`{
+		"id": 90,
+		"data": {
+			"full_name": "Updated user 90",
+			"products": {
+				"where": { "id": { "gt": 1 } },
+				"name": "Updated Product 90"
+			}
+		}
+	}`)
+
+	exp, err := gj.ExplainQuery(gql, vars, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sql := exp.CompiledQuery
+	childInsertNoJoin := `SELECT 'products_1', "products"."id" FROM "main"."products" AS "products" WHERE`
+	childInsertWithJoin := `SELECT 'products_1', "products"."id" FROM "main"."products" AS "products", (SELECT`
+
+	if !strings.Contains(sql, childInsertNoJoin) {
+		t.Fatalf("expected child update ID capture without JSON join, got SQL: %s", sql)
+	}
+	if strings.Contains(sql, childInsertWithJoin) {
+		t.Fatalf("expected child update ID capture to skip JSON join, got SQL: %s", sql)
+	}
+}
+
 func TestSnowflakeMutationSetArrayEmptyStability(t *testing.T) {
 	if dbType != "snowflake" {
 		t.Skip("snowflake-only test")

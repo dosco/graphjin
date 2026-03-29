@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -12,7 +13,7 @@ import (
 	"time"
 
 	"github.com/dosco/graphjin/core/v3"
-	jwt "github.com/golang-jwt/jwt"
+	jwt "github.com/golang-jwt/jwt/v5"
 )
 
 const (
@@ -57,7 +58,19 @@ func (p *FirebaseProvider) VerifyAudience(claims jwt.MapClaims) bool {
 	if claims == nil {
 		return false
 	}
-	return claims.VerifyAudience(p.aud, p.aud != "")
+	if p.aud == "" {
+		return true
+	}
+	aud, err := claims.GetAudience()
+	if err != nil {
+		return false
+	}
+	for _, a := range aud {
+		if a == p.aud {
+			return true
+		}
+	}
+	return false
 }
 
 // VerifyIssuer checks if the issuer claim is valid
@@ -65,7 +78,14 @@ func (p *FirebaseProvider) VerifyIssuer(claims jwt.MapClaims) bool {
 	if claims == nil {
 		return false
 	}
-	return claims.VerifyIssuer(p.issuer, p.issuer != "")
+	if p.issuer == "" {
+		return true
+	}
+	iss, err := claims.GetIssuer()
+	if err != nil {
+		return false
+	}
+	return iss == p.issuer
 }
 
 // SetContextValues sets the user ID and provider in the context
@@ -92,6 +112,12 @@ func (e *firebaseKeyError) Error() string {
 
 // firebaseKeyFunction returns the public key used to verify the JWT token
 func firebaseKeyFunction(token *jwt.Token) (interface{}, error) {
+	if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+		return nil, &firebaseKeyError{
+			Message: fmt.Sprintf("unexpected signing method: %v", token.Header["alg"]),
+		}
+	}
+
 	kid, ok := token.Header["kid"]
 
 	if !ok {
@@ -133,7 +159,7 @@ func firebaseKeyFunction(token *jwt.Token) (interface{}, error) {
 		ageToEnd := cachePolicy[ageIndex+8:]
 		endIndex := strings.Index(ageToEnd, ",")
 		if endIndex < 0 {
-			endIndex = len(ageToEnd) - 1
+			endIndex = len(ageToEnd)
 		}
 		ageString := ageToEnd[:endIndex]
 

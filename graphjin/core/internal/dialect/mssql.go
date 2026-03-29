@@ -417,7 +417,7 @@ func (d *MSSQLDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
 			ctx.WriteString(` CASE WHEN `)
 			ctx.AddParam(Param{Name: ob.KeyVar, Type: "text"})
 			ctx.WriteString(` = `)
-			ctx.WriteString(fmt.Sprintf("'%s'", ob.Key))
+			ctx.WriteString(fmt.Sprintf("'%s'", strings.ReplaceAll(ob.Key, "'", "''")))
 			ctx.WriteString(` THEN `)
 		}
 		if ob.Var != "" {
@@ -1789,7 +1789,7 @@ func (d *MSSQLDialect) renderOrderBy(ctx Context, r InlineChildRenderer, sel *qc
 			ctx.WriteString(`CASE WHEN `)
 			ctx.AddParam(Param{Name: ob.KeyVar, Type: "text"})
 			ctx.WriteString(` = `)
-			ctx.WriteString(fmt.Sprintf("'%s'", ob.Key))
+			ctx.WriteString(fmt.Sprintf("'%s'", strings.ReplaceAll(ob.Key, "'", "''")))
 			ctx.WriteString(` THEN `)
 		}
 

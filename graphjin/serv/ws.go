@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,13 +35,12 @@ type Payload struct {
 	Errors []core.Error    `json:"errors,omitempty"`
 }
 
-var upgrader = websocket.Upgrader{
+var baseUpgrader = websocket.Upgrader{
 	EnableCompression: true,
 	ReadBufferSize:    1024,
 	WriteBufferSize:   1024,
 	HandshakeTimeout:  10 * time.Second,
 	Subprotocols:      []string{"graphql-ws", "graphql-transport-ws"},
-	CheckOrigin:       func(r *http.Request) bool { return true },
 }
 
 var initMsg *websocket.PreparedMessage
@@ -76,6 +77,9 @@ type wsState struct {
 
 // apiV1Ws handles the websocket connection
 func (s *graphjinService) apiV1Ws(w http.ResponseWriter, r *http.Request, ah auth.HandlerFunc) {
+	upgrader := baseUpgrader
+	upgrader.CheckOrigin = s.checkWebSocketOrigin
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		renderErr(w, err)
@@ -120,6 +124,76 @@ func (s *graphjinService) apiV1Ws(w http.ResponseWriter, r *http.Request, ah aut
 		st.m.Unsubscribe()
 	}
 	wc.done <- true
+}
+
+func (s *graphjinService) checkWebSocketOrigin(r *http.Request) bool {
+	rawOrigin := strings.TrimSpace(r.Header.Get("Origin"))
+	if rawOrigin == "" {
+		return true
+	}
+
+	origin, ok := canonicalOrigin(rawOrigin)
+	if !ok {
+		return false
+	}
+
+	for _, allowed := range s.conf.AllowedOrigins {
+		allowed = strings.TrimSpace(allowed)
+		if allowed == "*" {
+			return true
+		}
+		if normalized, ok := canonicalOrigin(allowed); ok && normalized == origin {
+			return true
+		}
+	}
+
+	expected, ok := requestOrigin(r)
+	return ok && expected == origin
+}
+
+func requestOrigin(r *http.Request) (string, bool) {
+	host := firstHeaderValue(r.Header.Get("X-Forwarded-Host"))
+	if host == "" {
+		host = strings.TrimSpace(r.Host)
+	}
+	if host == "" {
+		return "", false
+	}
+
+	scheme := strings.ToLower(firstHeaderValue(r.Header.Get("X-Forwarded-Proto")))
+	switch {
+	case scheme != "":
+	case r.TLS != nil:
+		scheme = "https"
+	default:
+		scheme = "http"
+	}
+
+	return canonicalOrigin(scheme + "://" + host)
+}
+
+func canonicalOrigin(raw string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", false
+	}
+
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return "", false
+	}
+	if u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+		return "", false
+	}
+
+	return strings.ToLower(u.Scheme) + "://" + strings.ToLower(u.Host), true
+}
+
+func firstHeaderValue(value string) string {
+	if idx := strings.Index(value, ","); idx != -1 {
+		value = value[:idx]
+	}
+	return strings.TrimSpace(value)
 }
 
 type authHeaders struct {
@@ -250,6 +324,14 @@ func (s *graphjinService) waitForData(wc *wsConn, st *wsState, useNext bool) {
 	}
 }
 
+// allowedWSHeaders is the set of headers that clients are permitted to set
+// via the WebSocket connection_init payload.
+var allowedWSHeaders = map[string]bool{
+	"authorization":   true,
+	"x-request-id":    true,
+	"x-correlation-id": true,
+}
+
 // setHeaders sets the headers from the payload
 func setHeaders(req wsReq, r *http.Request) (err error) {
 	if len(req.Payload) == 0 {
@@ -260,6 +342,9 @@ func setHeaders(req wsReq, r *http.Request) (err error) {
 		return
 	}
 	for k, v := range p {
+		if !allowedWSHeaders[strings.ToLower(k)] {
+			continue
+		}
 		switch v1 := v.(type) {
 		case string:
 			r.Header.Set(k, v1)
