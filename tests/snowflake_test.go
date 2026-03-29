@@ -188,6 +188,62 @@ func TestSnowflakeMutationUpdateConnectDisconnectStability(t *testing.T) {
 		})
 }
 
+func TestSnowflakeMutationConnectDisconnectSkipsDeadIDCapture(t *testing.T) {
+	if dbType != "snowflake" {
+		t.Skip("snowflake-only test")
+	}
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gql := `mutation {
+		users(id: $id, update: $data) {
+			full_name
+			products {
+				id
+			}
+		}
+	}`
+
+	vars := json.RawMessage(`{
+		"id": 100,
+		"data": {
+			"full_name": "Updated user 100",
+			"products": {
+				"connect": { "id": 99 },
+				"disconnect": { "id": 100 }
+			}
+		}
+	}`)
+
+	exp, err := gj.ExplainQuery(gql, vars, "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sql := exp.CompiledQuery
+	disconnectCapture := `SELECT 'products_2', "products"."owner_id" FROM "products" WHERE (("products"."id") = 100)`
+	connectCapture := `SELECT 'products_3', "products"."owner_id" FROM "products" WHERE (("products"."id") = 99)`
+	disconnectUpdate := `UPDATE "main"."products" SET "owner_id" = NULL WHERE (("products"."id") = 100)`
+	connectUpdate := `UPDATE "main"."products" SET "owner_id" = (SELECT id FROM _gj_ids_`
+
+	if strings.Contains(sql, disconnectCapture) {
+		t.Fatalf("expected Snowflake disconnect to skip dead _gj_ids capture, got SQL: %s", sql)
+	}
+	if strings.Contains(sql, connectCapture) {
+		t.Fatalf("expected Snowflake connect to skip dead _gj_ids capture, got SQL: %s", sql)
+	}
+	if !strings.Contains(sql, disconnectUpdate) {
+		t.Fatalf("expected Snowflake disconnect update to remain, got SQL: %s", sql)
+	}
+	if !strings.Contains(sql, connectUpdate) {
+		t.Fatalf("expected Snowflake connect update to remain, got SQL: %s", sql)
+	}
+}
+
 func TestSnowflakeMutationUpdateRelatedTableStability(t *testing.T) {
 	if dbType != "snowflake" {
 		t.Skip("snowflake-only test")
