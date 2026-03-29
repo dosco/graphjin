@@ -1179,11 +1179,11 @@ func (d *SnowflakeDialect) renderMutationJSONValue(ctx Context, actionVar, jsonP
 	path := jsonPathPrefix + "." + col.FieldName
 	if !col.Col.Array && !d.isJSONLikeType(col.Col.Type) {
 		if d.isStringType(col.Col.Type) {
-			ctx.WriteString(`json_extract_string(`)
+			ctx.WriteString(`CAST(json_extract_string(`)
 			ctx.AddParam(Param{Name: actionVar, Type: "json"})
 			ctx.WriteString(`, '`)
 			ctx.WriteString(path)
-			ctx.WriteString(`')`)
+			ctx.WriteString(`') AS VARCHAR)`)
 			return
 		}
 
