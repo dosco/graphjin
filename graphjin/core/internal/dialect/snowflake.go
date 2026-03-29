@@ -773,17 +773,20 @@ func (d *SnowflakeDialect) renderChildUpdate(ctx Context, m *qcode.Mutate, qc *q
 }
 
 func (d *SnowflakeDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
-	// Capture current FK value before updating
-	ctx.WriteString(`INSERT INTO `)
-	ctx.WriteString(d.idsTableName(ctx))
-	ctx.WriteString(` (k, id) SELECT '`)
-	ctx.WriteString(strings.ReplaceAll(varName, "'", "''"))
-	ctx.WriteString(`', `)
-	ctx.ColWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
-	ctx.WriteString(` FROM `)
-	ctx.Quote(m.Ti.Name)
-	ctx.WriteString(` WHERE `)
-	renderFilter()
+	if qc.SType != qcode.QTUpdate {
+		// Insert-time connect keys are consumed by later insert values and final
+		// readback, so only skip capture for update mutations.
+		ctx.WriteString(`INSERT INTO `)
+		ctx.WriteString(d.idsTableName(ctx))
+		ctx.WriteString(` (k, id) SELECT '`)
+		ctx.WriteString(strings.ReplaceAll(varName, "'", "''"))
+		ctx.WriteString(`', `)
+		ctx.ColWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
+		ctx.WriteString(` FROM `)
+		d.renderTableRef(ctx, m.Ti.Schema, m.Ti.Name)
+		ctx.WriteString(` WHERE `)
+		renderFilter()
+	}
 
 	// Find parent mutation to get its captured ID
 	var parentVar string
@@ -794,10 +797,14 @@ func (d *SnowflakeDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc 
 		}
 	}
 	if parentVar != "" {
-		// Update FK to point to parent (no FROM recordset needed -
-		// the parent ID comes from the mutation-scoped ID capture table via RenderVar.)
-		ctx.WriteString(`; UPDATE `)
-		ctx.Quote(m.Ti.Name)
+		// Update FK to point to parent. Snowflake doesn't need a pre-update
+		// _gj_ids capture for update-time connect/disconnect, and skipping that
+		// extra Exec removes the last flaky linear-mutation statement shape.
+		if qc.SType != qcode.QTUpdate {
+			ctx.WriteString(`; `)
+		}
+		ctx.WriteString(`UPDATE `)
+		d.renderTableRef(ctx, m.Ti.Schema, m.Ti.Name)
 		ctx.WriteString(` SET `)
 		ctx.Quote(m.Rel.Left.Col.Name)
 		ctx.WriteString(` = `)
@@ -808,20 +815,24 @@ func (d *SnowflakeDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc 
 }
 
 func (d *SnowflakeDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
-	// Capture current FK value before nullifying
-	ctx.WriteString(`INSERT INTO `)
-	ctx.WriteString(d.idsTableName(ctx))
-	ctx.WriteString(` (k, id) SELECT '`)
-	ctx.WriteString(strings.ReplaceAll(varName, "'", "''"))
-	ctx.WriteString(`', `)
-	ctx.ColWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
-	ctx.WriteString(` FROM `)
-	ctx.Quote(m.Ti.Name)
-	ctx.WriteString(` WHERE `)
-	renderFilter()
-	// Set FK to NULL (no FROM recordset needed)
-	ctx.WriteString(`; UPDATE `)
-	ctx.Quote(m.Ti.Name)
+	if qc.SType != qcode.QTUpdate {
+		ctx.WriteString(`INSERT INTO `)
+		ctx.WriteString(d.idsTableName(ctx))
+		ctx.WriteString(` (k, id) SELECT '`)
+		ctx.WriteString(strings.ReplaceAll(varName, "'", "''"))
+		ctx.WriteString(`', `)
+		ctx.ColWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
+		ctx.WriteString(` FROM `)
+		d.renderTableRef(ctx, m.Ti.Schema, m.Ti.Name)
+		ctx.WriteString(` WHERE `)
+		renderFilter()
+		ctx.WriteString(`; `)
+	}
+
+	// Set FK to NULL. Snowflake final readback does not consume an update-time
+	// disconnect capture key, so avoid emitting that separate Exec in QTUpdate.
+	ctx.WriteString(`UPDATE `)
+	d.renderTableRef(ctx, m.Ti.Schema, m.Ti.Name)
 	ctx.WriteString(` SET `)
 	ctx.Quote(m.Rel.Left.Col.Name)
 	ctx.WriteString(` = NULL`)
