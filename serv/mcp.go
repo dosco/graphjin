@@ -166,7 +166,7 @@ func (s *graphjinService) newMCPServerWithContext(ctx context.Context) *mcpServe
 		version,
 		server.WithToolCapabilities(true),
 		server.WithPromptCapabilities(true),
-		server.WithResourceCapabilities(false, false),
+		server.WithResourceCapabilities(true, false),
 		server.WithHooks(hooks),
 	)
 

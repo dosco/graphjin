@@ -91,6 +91,16 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 		}
 	}
 
+	// Discovery API (Schema Bible)
+	// Available regardless of MCP-only mode — backend servers need this
+	{
+		discAuth, err := auth.NewAuthHandlerFunc(s.conf.Auth)
+		if err != nil {
+			s.log.Fatalf("api: error initializing discovery auth handler: %s", err)
+		}
+		mux.Handle(routeDiscovery, apiV1Handler(s1, ns, discoveryHandler(s1), discAuth))
+	}
+
 	// MCP (Model Context Protocol) API
 	// Transport is implicit: HTTP service uses SSE/HTTP, CLI uses stdio via RunMCPStdio()
 	// Auth: Uses same auth middleware as GraphQL/REST endpoints

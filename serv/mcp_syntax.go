@@ -393,6 +393,9 @@ func (ms *mcpServer) registerResources() {
 
 	// JS runtime API resource
 	ms.registerJSRuntimeResources()
+
+	// Schema discovery resources (Bible)
+	ms.registerDiscoveryResources()
 }
 
 // registerSyntaxTools registers the syntax reference tools
