@@ -17,9 +17,9 @@ import (
 )
 
 const (
-	workflowsPath         = "workflows"
-	workflowExt           = ".js"
-	workflowScriptTimeout = 5 * time.Second
+	workflowsPath                = "workflows"
+	workflowExt                  = ".js"
+	defaultWorkflowScriptTimeout = 5 // seconds
 )
 
 var workflowCallableToolNames = map[string]struct{}{
@@ -153,8 +153,14 @@ func (ms *mcpServer) runWorkflowScript(ctx context.Context, workflowName, script
 	vm := goja.New()
 	done := make(chan struct{})
 
-	timer := time.AfterFunc(workflowScriptTimeout, func() {
-		vm.Interrupt(fmt.Errorf("workflow execution exceeded %s", workflowScriptTimeout))
+	timeoutSecs := ms.service.conf.MCP.WorkflowTimeout
+	if timeoutSecs <= 0 {
+		timeoutSecs = defaultWorkflowScriptTimeout
+	}
+	timeout := time.Duration(timeoutSecs) * time.Second
+
+	timer := time.AfterFunc(timeout, func() {
+		vm.Interrupt(fmt.Errorf("workflow execution exceeded %s", timeout))
 	})
 	defer timer.Stop()
 

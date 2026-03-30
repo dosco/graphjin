@@ -110,6 +110,9 @@ func (g *GraphJin) GenerateDiscovery(ctx context.Context, database string) (*Dis
 	sb.WriteString(fmt.Sprintf("> Generated: %s | Hash: %s | Type: %s | Tables: %d | Rows: ~%s\n\n",
 		now.Format(time.RFC3339), hash, dbCtx.dbtype, len(visibleTables), formatCount(totalRows)))
 
+	// Table of contents
+	writeTableOfContents(&sb, visibleTables, len(gj.databases) > 1, len(dbCtx.schema.GetFunctions()) > 0)
+
 	// Query syntax cheat sheet (so agents know the DSL)
 	writeQuerySyntaxReference(&sb)
 
@@ -250,6 +253,26 @@ func (g *GraphJin) buildEnrichment(ctx context.Context, database string, tables 
 	}
 
 	return result
+}
+
+// writeTableOfContents writes a navigable index of the discovery document sections.
+func writeTableOfContents(sb *strings.Builder, tables []sdata.DBTable, multiDB bool, hasFunctions bool) {
+	sb.WriteString("## Table of Contents\n\n")
+	sb.WriteString("- [Query Syntax Reference](#query-syntax-reference)\n")
+	sb.WriteString(fmt.Sprintf("- [Tables](#tables) (%d tables)\n", len(tables)))
+	for _, t := range tables {
+		sb.WriteString(fmt.Sprintf("  - [%s](#%s)\n", t.Name, t.Name))
+	}
+	sb.WriteString("- [Relationship Paths](#relationship-paths)\n")
+	if multiDB {
+		sb.WriteString("- [Namespace Routing](#namespace-routing)\n")
+	}
+	sb.WriteString("- [Query Templates](#query-templates)\n")
+	sb.WriteString("- [Data Quality](#data-quality)\n")
+	if hasFunctions {
+		sb.WriteString("- [Functions](#functions)\n")
+	}
+	sb.WriteString("\n")
 }
 
 // writeQuerySyntaxReference writes the GraphJin DSL cheat sheet into the discovery document.

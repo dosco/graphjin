@@ -51,6 +51,35 @@ func TestDiscoveryGenerate(t *testing.T) {
 	t.Logf("Discovery document: %d bytes", len(md))
 }
 
+func TestDiscoveryTableOfContents(t *testing.T) {
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	require.NoError(t, err)
+	defer gj.Close()
+
+	md := gj.GetCombinedDiscovery()
+	require.NotEmpty(t, md)
+
+	// TOC section exists
+	assert.Contains(t, md, "## Table of Contents")
+
+	// TOC has section links
+	assert.Contains(t, md, "- [Query Syntax Reference](#query-syntax-reference)")
+	assert.Contains(t, md, "- [Tables](#tables)")
+	assert.Contains(t, md, "- [Relationship Paths](#relationship-paths)")
+	assert.Contains(t, md, "- [Query Templates](#query-templates)")
+	assert.Contains(t, md, "- [Data Quality](#data-quality)")
+
+	// TOC includes individual table links
+	assert.Contains(t, md, "  - [users](#users)")
+	assert.Contains(t, md, "  - [products](#products)")
+
+	// TOC appears before the Tables section
+	tocIdx := strings.Index(md, "## Table of Contents")
+	tablesIdx := strings.Index(md, "## Tables")
+	assert.Greater(t, tablesIdx, tocIdx, "TOC should appear before Tables section")
+}
+
 func TestDiscoveryLayer3Enrichment(t *testing.T) {
 	if dbType == "mongodb" {
 		t.Skip("MongoDB enrichment queries use different syntax")
