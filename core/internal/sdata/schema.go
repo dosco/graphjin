@@ -26,7 +26,8 @@ type DBSchema struct {
 	tables            []DBTable               // tables
 	virtualTables     map[string]VirtualTable // for polymorphic relationships
 	dbFunctions       map[string]DBFunction   // db functions
-	tindex            map[string]nodeInfo     // table index
+	tindex            map[string]nodeInfo     // table index (schema:name → node)
+	nameIndex         map[string][]int32      // name-only index (name → nodeIDs) for cross-schema fallback
 	tableAliasIndex   map[string]nodeInfo     // table alias index
 	edgesIndex        map[string][]edgeInfo   // edges index
 	allEdges          map[int32]TEdge         // all edges
@@ -97,6 +98,7 @@ func NewDBSchema(
 		virtualTables:     make(map[string]VirtualTable),
 		dbFunctions:       make(map[string]DBFunction),
 		tindex:            make(map[string]nodeInfo),
+		nameIndex:         make(map[string][]int32),
 		tableAliasIndex:   make(map[string]nodeInfo),
 		edgesIndex:        make(map[string][]edgeInfo),
 		allEdges:          make(map[int32]TEdge),

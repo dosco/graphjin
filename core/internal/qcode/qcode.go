@@ -398,10 +398,8 @@ type Compiler struct {
 
 func NewCompiler(s *sdata.DBSchema, c Config) (*Compiler, error) {
 	if c.DBSchema == "" {
-		if s.DBType() == "oracle" {
+		if s.DBType() != "sqlite" {
 			c.DBSchema = s.DBSchema()
-		} else if s.DBType() != "sqlite" {
-			c.DBSchema = "public"
 		}
 	}
 
