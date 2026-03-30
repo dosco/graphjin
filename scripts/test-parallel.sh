@@ -38,9 +38,20 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
-# Build the go test command for a given DB
+# Build the go test command for a given DB.
+# If a dedicated test-<db>.sh script exists, delegate to it so that
+# per-database retry logic and other hardening is reused in CI.
 db_test_cmd() {
     local db="$1"
+    local script_dir
+    script_dir="$(cd "$(dirname "$0")" && pwd)"
+    local wrapper="$script_dir/test-${db}.sh"
+
+    if [ -x "$wrapper" ]; then
+        echo "bash '$wrapper'"
+        return
+    fi
+
     local tags=""
     case "$db" in
         mysql)   tags="-tags mysql" ;;
