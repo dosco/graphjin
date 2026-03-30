@@ -703,7 +703,7 @@ func TestMain(m *testing.M) {
 			startFunc: func(ctx context.Context) (func(context.Context) error, string, error) {
 				req := testcontainers.GenericContainerRequest{
 					ContainerRequest: testcontainers.ContainerRequest{
-						Image:        "ghcr.io/nnnkkk7/snowflake-emulator:latest",
+						Image:        "ghcr.io/nnnkkk7/snowflake-emulator@sha256:a6be53ab4bf8d25719d10322c72ebf267d92140c1453ee92299b8d291663dcb2",
 						ExposedPorts: []string{"8080/tcp"},
 						WaitingFor:   wait.ForListeningPort("8080/tcp").WithStartupTimeout(120 * time.Second),
 					},
