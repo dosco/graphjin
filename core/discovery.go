@@ -110,6 +110,9 @@ func (g *GraphJin) GenerateDiscovery(ctx context.Context, database string) (*Dis
 	sb.WriteString(fmt.Sprintf("> Generated: %s | Hash: %s | Type: %s | Tables: %d | Rows: ~%s\n\n",
 		now.Format(time.RFC3339), hash, dbCtx.dbtype, len(visibleTables), formatCount(totalRows)))
 
+	// Query syntax cheat sheet (so agents know the DSL)
+	writeQuerySyntaxReference(&sb)
+
 	// Tables section
 	sb.WriteString("## Tables\n\n")
 	for _, t := range visibleTables {
@@ -247,6 +250,71 @@ func (g *GraphJin) buildEnrichment(ctx context.Context, database string, tables 
 	}
 
 	return result
+}
+
+// writeQuerySyntaxReference writes the GraphJin DSL cheat sheet into the discovery document.
+func writeQuerySyntaxReference(sb *strings.Builder) {
+	sb.WriteString("## Query Syntax Reference\n\n")
+
+	sb.WriteString("### Filter Operators (where clause)\n")
+	sb.WriteString("```\n")
+	sb.WriteString("Comparison: eq, neq, gt, gte, lt, lte\n")
+	sb.WriteString("List:       in, nin (not_in)          — MUST be arrays: { id: { in: [1,2,3] } }\n")
+	sb.WriteString("Null:       is_null                   — { col: { is_null: true } }\n")
+	sb.WriteString("Text:       like, ilike, regex        — ilike needs % wildcards: { name: { ilike: \"%bike%\" } }\n")
+	sb.WriteString("JSON:       has_key, has_key_any, has_key_all, contains, contained_in\n")
+	sb.WriteString("Logical:    and, or, not              — { and: [{ price: { gt: 10 } }, { price: { lt: 100 } }] }\n")
+	sb.WriteString("```\n\n")
+
+	sb.WriteString("### Aggregation Functions\n")
+	sb.WriteString("Use as field names with `<fn>_<column>` pattern:\n")
+	sb.WriteString("```graphql\n")
+	sb.WriteString("{ products { count_id sum_price avg_price min_price max_price } }\n")
+	sb.WriteString("```\n\n")
+
+	sb.WriteString("### Grouping (distinct, NOT group_by)\n")
+	sb.WriteString("GraphJin uses `distinct` (not `group_by`) to group aggregation results:\n")
+	sb.WriteString("```graphql\n")
+	sb.WriteString("# Group by category — returns one row per category with aggregates\n")
+	sb.WriteString("{ products(distinct: [category_id]) { category_id count_id sum_price avg_price } }\n")
+	sb.WriteString("```\n")
+	sb.WriteString("> **IMPORTANT:** `group_by` does NOT exist. Always use `distinct: [columns]`.\n")
+	sb.WriteString("> `distinct` only works on columns from the base table, not joined tables.\n\n")
+
+	sb.WriteString("### Pagination\n")
+	sb.WriteString("```graphql\n")
+	sb.WriteString("# Limit/offset\n")
+	sb.WriteString("{ products(limit: 10, offset: 20) { id name } }\n\n")
+	sb.WriteString("# Cursor pagination (preferred for large datasets)\n")
+	sb.WriteString("{ products(first: 10, after: $products_cursor) { id name } products_cursor }\n")
+	sb.WriteString("# Variables: {\"products_cursor\": null}  — cursor field MUST be at query root level\n")
+	sb.WriteString("```\n\n")
+
+	sb.WriteString("### Ordering\n")
+	sb.WriteString("```graphql\n")
+	sb.WriteString("{ products(order_by: { price: desc }) { id name } }\n")
+	sb.WriteString("{ products(order_by: { price: desc, id: asc }) { id name } }  # multiple\n")
+	sb.WriteString("{ products(order_by: { owner: { name: asc } }) { id } }       # nested\n")
+	sb.WriteString("```\n\n")
+
+	sb.WriteString("### Relationships (automatic via foreign keys)\n")
+	sb.WriteString("```graphql\n")
+	sb.WriteString("# Parent → children (one-to-many)\n")
+	sb.WriteString("{ users { email products { name price } } }\n\n")
+	sb.WriteString("# Child → parent (many-to-one)\n")
+	sb.WriteString("{ products { name owner { email } } }\n")
+	sb.WriteString("```\n\n")
+
+	sb.WriteString("### Common Mistakes\n")
+	sb.WriteString("| Wrong | Right | Why |\n")
+	sb.WriteString("|-------|-------|-----|\n")
+	sb.WriteString("| `group_by: [col]` | `distinct: [col]` | group_by does not exist |\n")
+	sb.WriteString("| `{ id: { in: 1 } }` | `{ id: { in: [1] } }` | in/nin need arrays |\n")
+	sb.WriteString("| `{ price: { gt: \"50\" } }` | `{ price: { gt: 50 } }` | numeric ops need numbers |\n")
+	sb.WriteString("| `{ name: { ilike: \"test\" } }` | `{ name: { ilike: \"%test%\" } }` | ilike needs % wildcards |\n")
+	sb.WriteString("| `{ is_active: { eq: \"true\" } }` | `{ is_active: { eq: true } }` | booleans not strings |\n")
+	sb.WriteString("| `products(first: 10) { products_cursor }` | `products(first: 10) { id } products_cursor` | cursor at root level |\n")
+	sb.WriteString("\n---\n\n")
 }
 
 // writeTableMarkdown writes the markdown section for a single table.
@@ -550,8 +618,8 @@ func (g *GraphJin) writeQueryTemplates(sb *strings.Builder, tables []sdata.DBTab
 
 			sb.WriteString(fmt.Sprintf("### Time-series: %s by %s\n", t.Name, dc.Name))
 			sb.WriteString("```graphql\n")
-			sb.WriteString(fmt.Sprintf("{\n  %s(\n    where: { %s: { gte: \"$START_DATE\" } }\n    order_by: { %s: asc }\n    limit: 100\n  ) {\n    %s\n    %s\n  }\n}\n",
-				t.Name, dc.Name, dc.Name, dc.Name, strings.Join(aggFields, "\n    ")))
+			sb.WriteString(fmt.Sprintf("{\n  %s(\n    where: { %s: { gte: \"$START_DATE\" } }\n    distinct: [%s]\n    order_by: { %s: asc }\n    limit: 100\n  ) {\n    %s\n    %s\n  }\n}\n",
+				t.Name, dc.Name, dc.Name, dc.Name, dc.Name, strings.Join(aggFields, "\n    ")))
 			sb.WriteString("```\n\n")
 			templatesWritten++
 		}
@@ -566,8 +634,8 @@ func (g *GraphJin) writeQueryTemplates(sb *strings.Builder, tables []sdata.DBTab
 
 			sb.WriteString(fmt.Sprintf("### Breakdown: %s by %s\n", t.Name, ec.Name))
 			sb.WriteString("```graphql\n")
-			sb.WriteString(fmt.Sprintf("{\n  %s {\n    %s\n    %s\n  }\n}\n",
-				t.Name, ec.Name, countField))
+			sb.WriteString(fmt.Sprintf("{\n  %s(distinct: [%s]) {\n    %s\n    %s\n  }\n}\n",
+				t.Name, ec.Name, ec.Name, countField))
 			sb.WriteString("```\n\n")
 			templatesWritten++
 		}
