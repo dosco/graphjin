@@ -3,6 +3,7 @@ package sdata
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/util"
 )
@@ -31,6 +32,7 @@ func (s *DBSchema) addNode(t DBTable) int32 {
 	n := s.relationshipGraph.AddNode()
 
 	s.tindex[(t.Schema + ":" + t.Name)] = nodeInfo{n}
+	s.nameIndex[t.Name] = append(s.nameIndex[t.Name], n)
 	return n
 }
 
@@ -38,6 +40,7 @@ func (s *DBSchema) addNode(t DBTable) int32 {
 func (s *DBSchema) addAliases(t DBTable, nodeID int32, aliases []string) {
 	for _, al := range aliases {
 		s.tindex[(t.Schema + ":" + al)] = nodeInfo{nodeID}
+		s.nameIndex[al] = append(s.nameIndex[al], nodeID)
 		s.tableAliasIndex[al] = nodeInfo{nodeID}
 	}
 }
@@ -212,7 +215,11 @@ func (s *DBSchema) addEdgeInfo(k string, ei edgeInfo) {
 	s.edgesIndex[k] = append(s.edgesIndex[k], ei)
 }
 
-// Find returns a table by schema and name
+// Find returns a table by schema and name. If an exact schema:name match
+// is not found, it falls back to searching across all discovered schemas.
+// When multiple schemas contain the same table name, the default schema
+// is preferred. If the table exists in multiple non-default schemas,
+// an error listing the available schemas is returned.
 func (s *DBSchema) Find(schema, name string) (DBTable, error) {
 	var t DBTable
 
@@ -220,12 +227,36 @@ func (s *DBSchema) Find(schema, name string) (DBTable, error) {
 		schema = s.DBSchema()
 	}
 
-	v, ok := s.tindex[(schema + ":" + name)]
-	if !ok {
+	// Fast path: exact schema:name match
+	if v, ok := s.tindex[(schema + ":" + name)]; ok {
+		return s.tables[v.nodeID], nil
+	}
+
+	// Fallback: search across all schemas by name
+	nodeIDs, ok := s.nameIndex[name]
+	if !ok || len(nodeIDs) == 0 {
 		return t, fmt.Errorf("table not found: %s.%s", schema, name)
 	}
 
-	return s.tables[v.nodeID], nil
+	// Single match: unambiguous, return it
+	if len(nodeIDs) == 1 {
+		return s.tables[nodeIDs[0]], nil
+	}
+
+	// Multiple matches: prefer the default schema
+	defSchema := s.DBSchema()
+	if v, ok := s.tindex[(defSchema + ":" + name)]; ok {
+		return s.tables[v.nodeID], nil
+	}
+
+	// Multiple matches, none in default schema: report ambiguity
+	schemas := make([]string, 0, len(nodeIDs))
+	for _, nid := range nodeIDs {
+		schemas = append(schemas, s.tables[nid].Schema)
+	}
+	return t, fmt.Errorf(
+		"table '%s' found in multiple schemas: %s (use schema prefix to disambiguate)",
+		name, strings.Join(schemas, ", "))
 }
 
 // TPath represents a table path
