@@ -226,21 +226,26 @@ func (c *compilerContext) compileLinearMutation() {
 							c.dialect.RenderVar(c, c.getVarName(pm))
 							c.w.WriteString(")")
 						} else if dialectName == "snowflake" {
-							// Snowflake is more stable with a direct captured ID when the child
-							// join targets the parent's PK, and with an EXISTS predicate for
-							// non-PK lookups such as purchases.customer_id / product_id.
+							// Snowflake child mutation WHERE: look up the
+							// FK value from the parent via a scalar subquery
+							// against the captured parent ID. This avoids
+							// unqualified table refs inside EXISTS that the
+							// Snowflake emulator cannot resolve.
 							if parentCol == pm.Ti.PrimaryCol.Name {
 								c.colWithTable(m.Ti.Name, childCol)
 								c.w.WriteString(" = ")
 								c.dialect.RenderVar(c, c.getVarName(pm))
 							} else {
-								c.w.WriteString("EXISTS (SELECT 1 FROM ")
+								c.colWithTable(m.Ti.Name, childCol)
+								c.w.WriteString(" = (SELECT ")
+								c.colWithTable(pm.Ti.Name, parentCol)
+								c.w.WriteString(" FROM ")
+								if pm.Ti.Schema != "" {
+									c.quoted(pm.Ti.Schema)
+									c.w.WriteString(".")
+								}
 								c.quoted(pm.Ti.Name)
 								c.w.WriteString(" WHERE ")
-								c.colWithTable(m.Ti.Name, childCol)
-								c.w.WriteString(" = ")
-								c.colWithTable(pm.Ti.Name, parentCol)
-								c.w.WriteString(" AND ")
 								c.colWithTable(pm.Ti.Name, pm.Ti.PrimaryCol.Name)
 								c.w.WriteString(" = ")
 								c.dialect.RenderVar(c, c.getVarName(pm))

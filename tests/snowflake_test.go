@@ -423,7 +423,7 @@ func TestSnowflakeMutationChildUpdateStringExpressionIsCasted(t *testing.T) {
 	}
 }
 
-func TestSnowflakeMutationChildUpdateNonPKParentJoinUsesExists(t *testing.T) {
+func TestSnowflakeMutationChildUpdateNonPKParentJoinUsesScalarSubquery(t *testing.T) {
 	if dbType != "snowflake" {
 		t.Skip("snowflake-only test")
 	}
@@ -465,14 +465,17 @@ func TestSnowflakeMutationChildUpdateNonPKParentJoinUsesExists(t *testing.T) {
 	}
 
 	sql := exp.CompiledQuery
-	scalarJoin := `"users"."id" = (SELECT "customer_id" FROM "purchases" WHERE "id" =`
-	existsJoin := `EXISTS (SELECT 1 FROM "purchases" WHERE "users"."id" = "purchases"."customer_id" AND "purchases"."id" = (SELECT id FROM _gj_ids_`
 
-	if strings.Contains(sql, scalarJoin) {
-		t.Fatalf("expected Snowflake child update to avoid scalar parent-column subquery, got SQL: %s", sql)
+	// Non-PK parent joins should use a schema-qualified scalar subquery
+	// to avoid unqualified table refs that the Snowflake emulator rejects.
+	scalarJoin := `"users"."id" = (SELECT "purchases"."customer_id" FROM "main"."purchases" WHERE "purchases"."id" =`
+	existsJoin := `EXISTS (SELECT 1 FROM "purchases"`
+
+	if strings.Contains(sql, existsJoin) {
+		t.Fatalf("expected Snowflake child update to use scalar subquery instead of EXISTS, got SQL: %s", sql)
 	}
-	if !strings.Contains(sql, existsJoin) {
-		t.Fatalf("expected Snowflake child update to use EXISTS for non-PK parent join, got SQL: %s", sql)
+	if !strings.Contains(sql, scalarJoin) {
+		t.Fatalf("expected Snowflake child update to use schema-qualified scalar subquery for non-PK parent join, got SQL: %s", sql)
 	}
 }
 
