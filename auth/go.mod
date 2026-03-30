@@ -3,7 +3,7 @@ module github.com/dosco/graphjin/auth/v3
 go 1.24.0
 
 require (
-	github.com/dosco/graphjin/core/v3 v3.14.4
+	github.com/dosco/graphjin/core/v3 v3.14.5
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/lestrrat-go/jwx v1.2.31
