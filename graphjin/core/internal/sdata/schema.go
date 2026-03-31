@@ -18,6 +18,20 @@ type nodeInfo struct {
 	nodeID int32
 }
 
+// CrossDBRel represents a cross-database foreign key relationship.
+// These are stored separately from the graph because they connect tables
+// across different databases — the target table doesn't exist in this schema's
+// graph. Resolution happens at runtime via database_join.go.
+type CrossDBRel struct {
+	SourceTable  DBTable  // local table containing the FK column
+	SourceCol    DBColumn // local FK column
+	TargetDB     string   // remote database name
+	TargetSchema string   // remote schema
+	TargetTable  string   // remote table name
+	TargetCol    string   // remote column name
+	IsOneToOne   bool     // true if target col is PK/unique
+}
+
 type DBSchema struct {
 	dbType            string                  // db type
 	version           int                     // db version
@@ -31,6 +45,7 @@ type DBSchema struct {
 	edgesIndex        map[string][]edgeInfo   // edges index
 	allEdges          map[int32]TEdge         // all edges
 	relationshipGraph *util.Graph             // relationship graph
+	crossDBRels       []CrossDBRel            // cross-database FK relationships
 }
 
 type RelType int
@@ -242,11 +257,19 @@ func (s *DBSchema) addColumnRels(t DBTable) error {
 			continue
 		}
 
-		// Cross-database FK: create a shadow node for the foreign table
+		// Cross-database FK: store as metadata rather than adding to the graph.
+		// The target table lives in another database and doesn't exist as a
+		// graph node. Path resolution for these is handled by FindCrossDBPath.
 		if c.FKeyDatabase != "" {
-			if err = s.addCrossDatabaseRel(t, c); err != nil {
-				return err
-			}
+			s.crossDBRels = append(s.crossDBRels, CrossDBRel{
+				SourceTable:  t,
+				SourceCol:    c,
+				TargetDB:     c.FKeyDatabase,
+				TargetSchema: c.FKeySchema,
+				TargetTable:  c.FKeyTable,
+				TargetCol:    c.FKeyCol,
+				IsOneToOne:   c.FKeyIsUnique,
+			})
 			continue
 		}
 
@@ -279,34 +302,68 @@ func (s *DBSchema) addColumnRels(t DBTable) error {
 	return nil
 }
 
-// addCrossDatabaseRel adds a relationship edge for a cross-database foreign key.
-// It creates a shadow node in the local schema graph representing the foreign table
-// in the target database. This shadow node exists only for path-finding; actual SQL
-// compilation uses the target database's own schema/compiler.
-func (s *DBSchema) addCrossDatabaseRel(t DBTable, c DBColumn) error {
-	shadowKey := c.FKeySchema + ":" + c.FKeyTable
-
-	var shadowTable DBTable
-	if v, exists := s.tindex[shadowKey]; exists {
-		shadowTable = s.tables[v.nodeID]
-	} else {
-		shadowTable = DBTable{
-			Name:     c.FKeyTable,
-			Schema:   c.FKeySchema,
-			Database: c.FKeyDatabase,
+// FindCrossDBPath checks cross-database FK metadata for a relationship between
+// two tables identified by their unqualified names (as used in GraphQL queries).
+// Returns a synthetic TPath if found, without requiring the target table to be
+// a node in the graph.
+func (s *DBSchema) FindCrossDBPath(childName, parentName string) (TPath, bool) {
+	for _, rel := range s.crossDBRels {
+		// Forward: source table is the parent (has the FK), target is the child
+		// e.g. job_crew.employee_id → ats:employees.id
+		// GraphQL: { job_crew { employees { ... } } }
+		// FindPath is called as FindPath("employees", "job_crew")
+		if rel.SourceTable.Name == parentName && rel.TargetTable == childName {
+			relType := RelOneToMany
+			if rel.IsOneToOne {
+				relType = RelOneToOne
+			}
+			return TPath{
+				Rel: relType,
+				LT:  rel.SourceTable,
+				LC:  rel.SourceCol,
+				RT: DBTable{
+					Name:     rel.TargetTable,
+					Schema:   rel.TargetSchema,
+					Database: rel.TargetDB,
+				},
+				RC: DBColumn{
+					Name:     rel.TargetCol,
+					Schema:   rel.TargetSchema,
+					Table:    rel.TargetTable,
+					Database: rel.TargetDB,
+				},
+			}, true
 		}
-		s.addNode(shadowTable)
+		// Reverse: child has the FK, parent is the remote target
+		if rel.TargetTable == parentName && rel.SourceTable.Name == childName {
+			relType := RelOneToOne
+			if rel.IsOneToOne {
+				relType = RelOneToMany
+			}
+			return TPath{
+				Rel: relType,
+				LT: DBTable{
+					Name:     rel.TargetTable,
+					Schema:   rel.TargetSchema,
+					Database: rel.TargetDB,
+				},
+				LC: DBColumn{
+					Name:     rel.TargetCol,
+					Schema:   rel.TargetSchema,
+					Table:    rel.TargetTable,
+					Database: rel.TargetDB,
+				},
+				RT:  rel.SourceTable,
+				RC:  rel.SourceCol,
+			}, true
+		}
 	}
+	return TPath{}, false
+}
 
-	// Shadow column representing the FK target column
-	fc := DBColumn{
-		Name:     c.FKeyCol,
-		Schema:   c.FKeySchema,
-		Table:    c.FKeyTable,
-		Database: c.FKeyDatabase,
-	}
-
-	return s.addToGraph(t, c, shadowTable, fc, RelOneToMany)
+// GetCrossDBRels returns all cross-database relationships in the schema.
+func (s *DBSchema) GetCrossDBRels() []CrossDBRel {
+	return s.crossDBRels
 }
 
 // addVirtual adds a virtual table to the schema

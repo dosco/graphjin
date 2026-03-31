@@ -147,3 +147,82 @@ func GetTestDBInfoWithDatabase() *DBInfo {
 	di := NewDBInfo("postgres", 140000, "public", "db", cols, nil, nil)
 	return di
 }
+
+// GetTestPartitionedDBInfo returns a DBInfo with partition keys set on the
+// products table for testing partition filter injection.
+func GetTestPartitionedDBInfo() *DBInfo {
+	di := GetTestDBInfo()
+	for i := range di.Tables {
+		if di.Tables[i].Name == "products" {
+			di.Tables[i].PartitionKey = "created_at"
+			di.Tables[i].PartitionRangeDays = 30
+		}
+	}
+	return di
+}
+
+// GetTestPartitionedSchema returns a DBSchema with partition config for testing.
+func GetTestPartitionedSchema() (*DBSchema, error) {
+	return NewDBSchema(GetTestPartitionedDBInfo(), nil)
+}
+
+// GetTestPartitionedWarnOnlyDBInfo returns a DBInfo with partition key but no
+// default range (warn-only mode).
+func GetTestPartitionedWarnOnlyDBInfo() *DBInfo {
+	di := GetTestDBInfo()
+	for i := range di.Tables {
+		if di.Tables[i].Name == "products" {
+			di.Tables[i].PartitionKey = "created_at"
+			di.Tables[i].PartitionRangeDays = 0
+		}
+	}
+	return di
+}
+
+// GetTestPartitionedWarnOnlySchema returns a DBSchema with warn-only partition config.
+func GetTestPartitionedWarnOnlySchema() (*DBSchema, error) {
+	return NewDBSchema(GetTestPartitionedWarnOnlyDBInfo(), nil)
+}
+
+// GetTestSnowflakeDBInfo returns a Snowflake DBInfo with clustering keys set
+// on the products table for testing clustering-aware cursor pagination.
+func GetTestSnowflakeDBInfo() *DBInfo {
+	columns := [][]DBColumn{
+		{
+			{Schema: "public", Table: "users", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			{Schema: "public", Table: "users", Name: "full_name", Type: "varchar", NotNull: true},
+			{Schema: "public", Table: "users", Name: "email", Type: "varchar", NotNull: true},
+			{Schema: "public", Table: "users", Name: "created_at", Type: "timestamp", NotNull: true},
+		},
+		{
+			{Schema: "public", Table: "products", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			{Schema: "public", Table: "products", Name: "name", Type: "varchar"},
+			{Schema: "public", Table: "products", Name: "price", Type: "numeric(7,2)"},
+			{Schema: "public", Table: "products", Name: "user_id", Type: "bigint", FKeySchema: "public", FKeyTable: "users", FKeyCol: "id"},
+			{Schema: "public", Table: "products", Name: "created_at", Type: "timestamp", NotNull: true},
+			{Schema: "public", Table: "products", Name: "updated_at", Type: "timestamp", NotNull: true},
+		},
+	}
+
+	var cols []DBColumn
+	for _, colset := range columns {
+		cols = append(cols, colset...)
+	}
+
+	di := NewDBInfo("snowflake", 0, "public", "db", cols, nil, nil)
+
+	// Set clustering keys on the products table and auto-derive partition key
+	for i := range di.Tables {
+		if di.Tables[i].Name == "products" {
+			di.Tables[i].ClusteringKeys = []string{"created_at", "user_id"}
+			autoSetPartitionFromClustering(&di.Tables[i])
+		}
+	}
+
+	return di
+}
+
+// GetTestSnowflakeSchema returns a DBSchema backed by Snowflake test data with clustering keys.
+func GetTestSnowflakeSchema() (*DBSchema, error) {
+	return NewDBSchema(GetTestSnowflakeDBInfo(), nil)
+}

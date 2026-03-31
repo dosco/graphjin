@@ -68,6 +68,9 @@ var snowflakeInfo string
 //go:embed sql/snowflake_columns.sql
 var snowflakeColumnsStmt string
 
+//go:embed sql/snowflake_clustering.sql
+var snowflakeClusteringStmt string
+
 //go:embed sql/mongodb_info.json
 var mongodbInfo string
 

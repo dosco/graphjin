@@ -301,6 +301,9 @@ func (c *expContext) renderVal(ex *qcode.Exp) {
 		c.quoted(ex.Right.Table)
 		c.w.WriteString(`)`)
 
+	case ex.Right.ValType == qcode.ValPartitionBound:
+		c.renderPartitionBound(ex.Right.Val)
+
 	case !ex.Right.Col.Array && (ex.Op == qcode.OpContains ||
 		ex.Op == qcode.OpContainedIn ||
 		ex.Op == qcode.OpHasInCommon):
@@ -408,4 +411,41 @@ func (c *expContext) renderJSONPathColumn(table, colName string, path []string, 
 		t = fmt.Sprintf("%s_%d", table, selID)
 	}
 	c.dialect.RenderJSONPath(c, t, colName, path)
+}
+
+// renderPartitionBound renders a dialect-specific "now minus N days" expression
+// for partition filter auto-injection. The days parameter is validated as a
+// positive integer to prevent SQL injection.
+func (c *expContext) renderPartitionBound(daysStr string) {
+	// Validate: must be a positive integer
+	n, err := strconv.Atoi(daysStr)
+	if err != nil || n <= 0 {
+		// Fallback to a safe default
+		daysStr = "30"
+	} else {
+		daysStr = strconv.Itoa(n)
+	}
+
+	switch c.dialect.Name() {
+	case "snowflake":
+		c.w.WriteString(`DATEADD(day, -`)
+		c.w.WriteString(daysStr)
+		c.w.WriteString(`, CURRENT_TIMESTAMP())`)
+	case "mysql", "mariadb":
+		c.w.WriteString(`DATE_SUB(NOW(), INTERVAL `)
+		c.w.WriteString(daysStr)
+		c.w.WriteString(` DAY)`)
+	case "mssql":
+		c.w.WriteString(`DATEADD(day, -`)
+		c.w.WriteString(daysStr)
+		c.w.WriteString(`, GETDATE())`)
+	case "oracle":
+		c.w.WriteString(`(SYSDATE - `)
+		c.w.WriteString(daysStr)
+		c.w.WriteString(`)`)
+	default: // postgres, sqlite
+		c.w.WriteString(`(CURRENT_TIMESTAMP - INTERVAL '`)
+		c.w.WriteString(daysStr)
+		c.w.WriteString(` days')`)
+	}
 }

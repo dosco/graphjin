@@ -611,7 +611,7 @@ func (c *compilerContext) GetStaticVar(name string) (string, bool) {
 
 func (c *compilerContext) renderJoin(join qcode.Join) {
 	c.w.WriteString(` INNER JOIN `)
-	c.w.WriteString(join.Rel.Left.Ti.Name)
+	c.table(nil, join.Rel.Left.Ti.Schema, join.Rel.Left.Ti.Name, false)
 	c.w.WriteString(` ON ((`)
 	c.renderExp(join.Rel.Left.Ti, join.Filter, false)
 	c.w.WriteString(`))`)
@@ -654,7 +654,7 @@ func (c *compilerContext) renderFrom(sel *qcode.Select) {
 
 	switch sel.Rel.Type {
 	case sdata.RelEmbedded:
-		c.w.WriteString(sel.Rel.Left.Col.Table)
+		c.table(nil, sel.Rel.Left.Col.Schema, sel.Rel.Left.Col.Table, false)
 		c.w.WriteString(`, `)
 
 		c.dialect.RenderFromEdge(c, sel)

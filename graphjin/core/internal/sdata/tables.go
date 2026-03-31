@@ -41,9 +41,12 @@ type DBTable struct {
 	PrimaryCol   DBColumn
 	SecondaryCol DBColumn
 	FullText     []DBColumn
-	Blocked      bool
-	Func         DBFunction
-	colMap       map[string]int
+	Blocked        bool
+	Func           DBFunction
+	ClusteringKeys    []string // Snowflake clustering key columns (normalized to snake_case)
+	PartitionKey      string   // Partition column name (from config, e.g., "created_at")
+	PartitionRangeDays int     // Default range in days for auto-injected partition filter (0 = warn only)
+	colMap            map[string]int
 }
 
 // VirtualTable holds the virtual table information
@@ -125,6 +128,26 @@ func GetDBInfo(
 		cols,
 		funcs,
 		blockList)
+
+	// For Snowflake, discover clustering keys and attach to tables.
+	// Non-fatal: if this fails we just skip clustering optimization.
+	if dbType == "snowflake" {
+		if ck, err := discoverClusteringKeys(db); err == nil {
+			for i := range di.Tables {
+				key := di.Tables[i].Schema + ":" + di.Tables[i].Name
+				if keys, ok := ck[key]; ok {
+					di.Tables[i].ClusteringKeys = keys
+
+					// Auto-set partition key from leading clustering column if
+					// it's a temporal type and no explicit partition config exists.
+					// This enables automatic "missing partition filter" warnings.
+					if di.Tables[i].PartitionKey == "" {
+						autoSetPartitionFromClustering(&di.Tables[i])
+					}
+				}
+			}
+		}
+	}
 
 	return di, nil
 }
@@ -240,6 +263,15 @@ func NewDBTable(schema, name, _type string, cols []DBColumn) DBTable {
 	return ti
 }
 
+// GetColumnIndex returns the index of a column in the table by name, and whether it was found.
+func (t *DBTable) GetColumnIndex(name string) (int, bool) {
+	if t.colMap == nil {
+		return 0, false
+	}
+	i, ok := t.colMap[name]
+	return i, ok
+}
+
 // AddTable adds a table to the DBInfo object
 func (di *DBInfo) AddTable(t DBTable) {
 	for i, c := range t.Columns {
@@ -293,6 +325,7 @@ type DBColumn struct {
 	FKeySchema   string
 	FKeyTable    string
 	FKeyCol      string
+	FKeyIsUnique bool   // True if FK target column is PK/unique (for correct rel type)
 	Blocked     bool
 	Table       string
 	Schema      string
@@ -596,4 +629,111 @@ func isInList(val string, s []string) bool {
 		}
 	}
 	return false
+}
+
+// discoverClusteringKeys queries Snowflake's information_schema.tables for
+// clustering key metadata. Returns a map of "schema:table" → []column_name.
+func discoverClusteringKeys(db *sql.DB) (map[string][]string, error) {
+	rows, err := db.Query(snowflakeClusteringStmt)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching clustering keys: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string][]string)
+	for rows.Next() {
+		var schema, table, clusterExpr string
+		if err := rows.Scan(&schema, &table, &clusterExpr); err != nil {
+			return nil, fmt.Errorf("error scanning clustering key row: %w", err)
+		}
+		if keys := ParseClusteringKey(clusterExpr); len(keys) > 0 {
+			result[schema+":"+table] = keys
+		}
+	}
+	return result, rows.Err()
+}
+
+// autoSetPartitionFromClustering checks if the leading clustering key column
+// is a temporal type (date, timestamp, etc.) and, if so, sets it as the
+// table's partition key with a default 90-day range filter. This enables
+// zero-config partition pruning for Snowflake tables clustered by a date
+// column — queries without an explicit filter on the clustering key get a
+// `WHERE created_at >= NOW() - 90 days` predicate automatically.
+//
+// The 60-day default is conservative enough for most workloads while still
+// preventing accidental full-table scans. Users can override via config
+// (setting PartitionRangeDays to a different value or 0 for warn-only).
+func autoSetPartitionFromClustering(t *DBTable) {
+	if len(t.ClusteringKeys) == 0 {
+		return
+	}
+	leadingKey := t.ClusteringKeys[0]
+	cid, ok := t.GetColumnIndex(leadingKey)
+	if !ok {
+		return
+	}
+	if isTemporalType(t.Columns[cid].Type) {
+		t.PartitionKey = leadingKey
+		t.PartitionRangeDays = 60
+	}
+}
+
+// isTemporalType returns true if the column type string represents a
+// date or timestamp type across common database dialects.
+func isTemporalType(colType string) bool {
+	t := strings.ToLower(colType)
+	switch {
+	case strings.Contains(t, "timestamp"):
+		return true
+	case strings.Contains(t, "datetime"):
+		return true
+	case t == "date":
+		return true
+	case strings.HasPrefix(t, "timestamp_"):
+		// Snowflake: TIMESTAMP_LTZ, TIMESTAMP_NTZ, TIMESTAMP_TZ
+		return true
+	default:
+		return false
+	}
+}
+
+// ParseClusteringKey parses Snowflake's clustering key expression into
+// a list of normalized column names. Snowflake returns expressions like:
+//
+//	LINEAR(CREATED_AT, USER_ID)
+//	LINEAR(CREATED_AT)
+//	(CREATED_AT, USER_ID)
+//
+// Returns nil for empty or unparseable expressions.
+func ParseClusteringKey(expr string) []string {
+	expr = strings.TrimSpace(expr)
+	if expr == "" {
+		return nil
+	}
+
+	// Strip optional LINEAR(...) wrapper
+	upper := strings.ToUpper(expr)
+	if strings.HasPrefix(upper, "LINEAR(") && strings.HasSuffix(expr, ")") {
+		expr = expr[7 : len(expr)-1]
+	} else if strings.HasPrefix(expr, "(") && strings.HasSuffix(expr, ")") {
+		// Strip bare parentheses
+		expr = expr[1 : len(expr)-1]
+	}
+
+	parts := strings.Split(expr, ",")
+	var keys []string
+	for _, p := range parts {
+		col := strings.TrimSpace(p)
+		if col == "" {
+			continue
+		}
+		// Normalize: snake_case first (to split PascalCase), then lowercase.
+		// Snowflake typically returns UPPER_CASE identifiers, but this order
+		// also handles the unlikely PascalCase edge case correctly.
+		// Note: expression-based clustering keys (e.g., CAST(col AS DATE))
+		// will not match any column and are gracefully skipped.
+		col = strings.ToLower(util.ToSnake(col))
+		keys = append(keys, col)
+	}
+	return keys
 }
