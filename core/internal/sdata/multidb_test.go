@@ -159,15 +159,16 @@ func TestDBTableWithDatabaseInTestDBInfo(t *testing.T) {
 	}
 }
 
-// TestAddCrossDatabaseRelShadowNode verifies that addColumnRels creates a
-// shadow node for cross-database FK targets and the resulting edge has
-// different databases on left and right (so IsCrossDatabase returns true).
-func TestAddCrossDatabaseRelShadowNode(t *testing.T) {
+// TestCrossDBRelStoredAsMetadata verifies that cross-database FKs are stored
+// as CrossDBRel metadata (not as shadow nodes in the graph), and that
+// FindCrossDBPath resolves them correctly.
+func TestCrossDBRelStoredAsMetadata(t *testing.T) {
 	// Create a DBInfo with a table that has a cross-database FK
 	cols := []DBColumn{
 		{Schema: "public", Table: "job_crew", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
 		{Schema: "public", Table: "job_crew", Name: "employee_id", Type: "integer",
-			FKeyDatabase: "ats", FKeySchema: "public", FKeyTable: "employees", FKeyCol: "id"},
+			FKeyDatabase: "ats", FKeySchema: "public", FKeyTable: "employees", FKeyCol: "id",
+			FKeyIsUnique: true},
 	}
 
 	di := NewDBInfo("postgres", 140000, "public", "ats_orders", cols, nil, nil)
@@ -182,26 +183,113 @@ func TestAddCrossDatabaseRelShadowNode(t *testing.T) {
 		t.Fatalf("NewDBSchema() error: %v", err)
 	}
 
-	// The shadow node for "employees" should exist in the schema
+	// The remote table should NOT exist as a node in the graph
 	_, err = schema.Find("public", "employees")
-	if err != nil {
-		t.Fatalf("shadow table 'employees' not found in schema: %v", err)
+	if err == nil {
+		t.Fatal("expected 'employees' to NOT be a graph node (should be cross-DB metadata only)")
 	}
 
-	// Find the path from job_crew to employees — should exist
-	path, err := schema.FindPath("job_crew", "employees", "")
-	if err != nil {
-		t.Fatalf("FindPath() error: %v", err)
+	// Cross-DB relationship should be stored in metadata
+	rels := schema.GetCrossDBRels()
+	if len(rels) != 1 {
+		t.Fatalf("expected 1 cross-DB rel, got %d", len(rels))
+	}
+	rel := rels[0]
+	if rel.TargetDB != "ats" {
+		t.Errorf("TargetDB = %q, want %q", rel.TargetDB, "ats")
+	}
+	if rel.TargetTable != "employees" {
+		t.Errorf("TargetTable = %q, want %q", rel.TargetTable, "employees")
+	}
+	if !rel.IsOneToOne {
+		t.Error("expected IsOneToOne = true for FK to PK column")
 	}
 
-	if len(path) == 0 {
-		t.Fatal("expected non-empty path from job_crew to employees")
+	// FindCrossDBPath should resolve the relationship
+	tp, ok := schema.FindCrossDBPath("employees", "job_crew")
+	if !ok {
+		t.Fatal("FindCrossDBPath() did not find cross-DB path")
 	}
 
-	// The relationship should be cross-database
-	rel := PathToRel(path[0])
-	if !rel.IsCrossDatabase() {
+	// Verify the TPath has correct database info for IsCrossDatabase
+	dbRel := PathToRel(tp)
+	if !dbRel.IsCrossDatabase() {
 		t.Error("expected IsCrossDatabase() = true for cross-database FK relationship")
+	}
+	if dbRel.Right.Ti.Database != "ats" {
+		t.Errorf("Right.Ti.Database = %q, want %q", dbRel.Right.Ti.Database, "ats")
+	}
+}
+
+// TestCrossDBRelNoGraphPollution verifies that cross-database FKs don't
+// add phantom tables to GetTables() or GetFirstDegree().
+func TestCrossDBRelNoGraphPollution(t *testing.T) {
+	cols := []DBColumn{
+		{Schema: "public", Table: "job_crew", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+		{Schema: "public", Table: "job_crew", Name: "employee_id", Type: "integer",
+			FKeyDatabase: "ats", FKeySchema: "public", FKeyTable: "employees", FKeyCol: "id"},
+	}
+
+	di := NewDBInfo("postgres", 140000, "public", "ats_orders", cols, nil, nil)
+	for i := range di.Tables {
+		di.Tables[i].Database = "ats_orders"
+	}
+
+	schema, err := NewDBSchema(di, nil)
+	if err != nil {
+		t.Fatalf("NewDBSchema() error: %v", err)
+	}
+
+	// Only the local table should appear in GetTables
+	tables := schema.GetTables()
+	for _, tbl := range tables {
+		if tbl.Name == "employees" {
+			t.Error("remote table 'employees' should not appear in GetTables()")
+		}
+	}
+}
+
+// TestCrossDBRelWithLocalCollision verifies that when a local table has the
+// same name as the cross-DB FK target, the cross-DB relationship still works
+// and doesn't interfere with the local table.
+func TestCrossDBRelWithLocalCollision(t *testing.T) {
+	cols := []DBColumn{
+		// Local employees table
+		{Schema: "public", Table: "employees", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+		{Schema: "public", Table: "employees", Name: "name", Type: "text"},
+		// job_crew table with cross-DB FK to ats:public.employees
+		{Schema: "public", Table: "job_crew", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+		{Schema: "public", Table: "job_crew", Name: "employee_id", Type: "integer",
+			FKeyDatabase: "ats", FKeySchema: "public", FKeyTable: "employees", FKeyCol: "id",
+			FKeyIsUnique: true},
+	}
+
+	di := NewDBInfo("postgres", 140000, "public", "ats_orders", cols, nil, nil)
+	for i := range di.Tables {
+		di.Tables[i].Database = "ats_orders"
+	}
+
+	schema, err := NewDBSchema(di, nil)
+	if err != nil {
+		t.Fatalf("NewDBSchema() error: %v", err)
+	}
+
+	// Local employees table should still be findable
+	localEmp, err := schema.Find("public", "employees")
+	if err != nil {
+		t.Fatalf("local employees table not found: %v", err)
+	}
+	if localEmp.Database != "ats_orders" {
+		t.Errorf("local employees.Database = %q, want %q", localEmp.Database, "ats_orders")
+	}
+
+	// Cross-DB path should still resolve to the REMOTE employees
+	tp, ok := schema.FindCrossDBPath("employees", "job_crew")
+	if !ok {
+		t.Fatal("FindCrossDBPath() should find cross-DB path even with local name collision")
+	}
+	if tp.RT.Database != "ats" {
+		t.Errorf("cross-DB path target Database = %q, want %q", tp.RT.Database, "ats")
 	}
 }
 

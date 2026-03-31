@@ -190,6 +190,12 @@ func updateTable(conf *Config, dbInfo *sdata.DBInfo, table Table) error {
 		}
 	}
 
+	// Apply partition configuration
+	if table.Partition != nil && table.Partition.Column != "" {
+		t1.PartitionKey = table.Partition.Column
+		t1.PartitionRangeDays = table.Partition.DefaultRangeDays
+	}
+
 	return nil
 }
 
@@ -347,6 +353,7 @@ func addForeignKey(conf *Config, di *sdata.DBInfo, c Column, t Table, allDBInfos
 		c1.FKeySchema = fk.Schema
 		c1.FKeyTable = fk.Table
 		c1.FKeyCol = c3.Name
+		c1.FKeyIsUnique = c3.PrimaryKey || c3.UniqueKey
 		return nil
 	}
 

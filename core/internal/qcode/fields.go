@@ -206,8 +206,36 @@ func parseArg(arg *graph.Node, f sdata.DBFunction, index int) (a Arg, err error)
 }
 
 func (co *Compiler) addOrderByColumns(sel *Select) {
+	// For warehouse databases (Snowflake, BigQuery), ORDER BY columns don't
+	// need to be in the inner SELECT list when:
+	//   - No cursor pagination (no LAST_VALUE extraction from outer query)
+	//   - No DISTINCT ON (SQL requires ORDER BY cols in SELECT with DISTINCT)
+	//   - No GROUP BY (ORDER BY cols must be aggregated or grouped)
+	//   - Not a recursive query (CTE column list must match SELECT)
+	// This avoids scanning extra columns that only serve the ORDER BY clause,
+	// which matters for cost on columnar stores where you pay per byte scanned.
+	skipProjection := !sel.Paging.Cursor &&
+		len(sel.DistinctOn) == 0 &&
+		!sel.GroupCols &&
+		sel.Rel.Type != sdata.RelRecursive &&
+		isWarehouseDB(co.s.DBType())
+
+	if skipProjection {
+		return
+	}
 	for _, ob := range sel.OrderBy {
 		sel.addBaseCol(Column{Col: ob.Col})
+	}
+}
+
+// isWarehouseDB returns true for columnar/warehouse databases where
+// projecting fewer columns directly reduces scan cost and credits.
+func isWarehouseDB(dbType string) bool {
+	switch dbType {
+	case "snowflake", "bigquery":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -277,6 +305,33 @@ func (co *Compiler) addRelColumns(qc *QCode, sel *Select, rel sdata.DBRel) error
 		sel.addBaseCol(Column{Col: rel.Right.Col})
 	}
 	return nil
+}
+
+// orderByClusterKeys prepends Snowflake clustering key columns to the ORDER BY
+// list when cursor pagination is active and the user hasn't specified an explicit
+// ORDER BY. This aligns the cursor seek with Snowflake's micro-partition layout
+// for better scan performance.
+func (co *Compiler) orderByClusterKeys(sel *Select) {
+	if co.s.DBType() != "snowflake" {
+		return
+	}
+	if len(sel.Ti.ClusteringKeys) == 0 {
+		return
+	}
+	// Only inject clustering ORDER BY when the user hasn't specified their own
+	if len(sel.OrderBy) > 0 {
+		return
+	}
+
+	for _, ckName := range sel.Ti.ClusteringKeys {
+		cid, ok := sel.Ti.GetColumnIndex(ckName)
+		if !ok {
+			continue
+		}
+		col := sel.Ti.Columns[cid]
+		sel.addBaseCol(Column{Col: col})
+		sel.OrderBy = append(sel.OrderBy, OrderBy{Col: col, Order: sel.order})
+	}
 }
 
 func (co *Compiler) orderByIDCol(sel *Select) error {

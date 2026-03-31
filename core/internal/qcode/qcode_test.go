@@ -3,6 +3,7 @@ package qcode_test
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
@@ -333,6 +334,773 @@ func BenchmarkQCompileP(b *testing.B) {
 			}
 		}
 	})
+}
+
+func TestClusteringKeysCursorPagination(t *testing.T) {
+	// Set up a Snowflake schema with clustering keys on the products table
+	sfSchema, err := sdata.GetTestSnowflakeSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	qc, err := qcode.NewCompiler(sfSchema, qcode.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "price", "created_at", "user_id"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Cursor pagination query with no explicit order_by
+	result, err := qc.Compile([]byte(`
+		query {
+			products(first: 20, after: $cursor) {
+				id
+				name
+				price
+			}
+		}`), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sel := result.Selects[0]
+
+	// Expect ORDER BY: created_at (cluster key), user_id (cluster key), id (PK tie-breaker)
+	if len(sel.OrderBy) < 3 {
+		t.Fatalf("expected at least 3 ORDER BY columns, got %d: %v",
+			len(sel.OrderBy), orderByNames(sel.OrderBy))
+	}
+
+	expectedOrder := []string{"created_at", "user_id", "id"}
+	for i, expected := range expectedOrder {
+		if sel.OrderBy[i].Col.Name != expected {
+			t.Errorf("ORDER BY[%d]: expected %q, got %q (full: %v)",
+				i, expected, sel.OrderBy[i].Col.Name, orderByNames(sel.OrderBy))
+		}
+	}
+}
+
+func TestClusteringKeysNotUsedWithExplicitOrderBy(t *testing.T) {
+	sfSchema, err := sdata.GetTestSnowflakeSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	qc, err := qcode.NewCompiler(sfSchema, qcode.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "price", "created_at", "user_id"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Cursor pagination with explicit order_by — clustering keys should NOT be injected
+	result, err := qc.Compile([]byte(`
+		query {
+			products(first: 20, after: $cursor, order_by: { price: desc }) {
+				id
+				name
+				price
+			}
+		}`), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sel := result.Selects[0]
+
+	// Expect ORDER BY: price (user-specified), id (PK tie-breaker) — no clustering cols injected
+	if len(sel.OrderBy) != 2 {
+		t.Fatalf("expected 2 ORDER BY columns, got %d: %v",
+			len(sel.OrderBy), orderByNames(sel.OrderBy))
+	}
+	if sel.OrderBy[0].Col.Name != "price" {
+		t.Errorf("ORDER BY[0]: expected %q, got %q", "price", sel.OrderBy[0].Col.Name)
+	}
+	if sel.OrderBy[1].Col.Name != "id" {
+		t.Errorf("ORDER BY[1]: expected %q, got %q", "id", sel.OrderBy[1].Col.Name)
+	}
+}
+
+func TestClusteringKeysNotUsedForPostgres(t *testing.T) {
+	// The default test DB is postgres — clustering keys should be ignored
+	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	_ = qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "price", "created_at"},
+		},
+	})
+
+	result, err := qc.Compile([]byte(`
+		query {
+			products(first: 20, after: $cursor) {
+				id
+				name
+			}
+		}`), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sel := result.Selects[0]
+
+	// For postgres, should only have PK tie-breaker
+	if len(sel.OrderBy) != 1 {
+		t.Fatalf("expected 1 ORDER BY column for postgres, got %d: %v",
+			len(sel.OrderBy), orderByNames(sel.OrderBy))
+	}
+	if sel.OrderBy[0].Col.Name != "id" {
+		t.Errorf("ORDER BY[0]: expected %q, got %q", "id", sel.OrderBy[0].Col.Name)
+	}
+}
+
+func TestClusteringKeysNonexistentColumnSkipped(t *testing.T) {
+	// Create a Snowflake DBInfo where clustering keys reference a column that
+	// doesn't exist in the table — should gracefully skip those columns.
+	di := sdata.GetTestSnowflakeDBInfo()
+	for i := range di.Tables {
+		if di.Tables[i].Name == "products" {
+			di.Tables[i].ClusteringKeys = []string{"nonexistent_col", "created_at"}
+		}
+	}
+
+	sfSchema, err := sdata.NewDBSchema(di, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	qc, err := qcode.NewCompiler(sfSchema, qcode.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "price", "created_at", "user_id"},
+		},
+	})
+
+	result, err := qc.Compile([]byte(`
+		query {
+			products(first: 20, after: $cursor) {
+				id
+				name
+			}
+		}`), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sel := result.Selects[0]
+
+	// Expect: created_at (valid cluster key), id (PK tie-breaker)
+	// nonexistent_col should be silently skipped
+	if len(sel.OrderBy) != 2 {
+		t.Fatalf("expected 2 ORDER BY columns, got %d: %v",
+			len(sel.OrderBy), orderByNames(sel.OrderBy))
+	}
+	if sel.OrderBy[0].Col.Name != "created_at" {
+		t.Errorf("ORDER BY[0]: expected %q, got %q", "created_at", sel.OrderBy[0].Col.Name)
+	}
+	if sel.OrderBy[1].Col.Name != "id" {
+		t.Errorf("ORDER BY[1]: expected %q, got %q", "id", sel.OrderBy[1].Col.Name)
+	}
+}
+
+func TestPartitionFilterInjected(t *testing.T) {
+	// Table with partition key and default range of 30 days
+	pSchema, err := sdata.GetTestPartitionedSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	qc, err := qcode.NewCompiler(pSchema, qcode.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "price", "created_at"},
+		},
+	})
+
+	// Query without any filter on the partition column
+	result, err := qc.Compile([]byte(`
+		query {
+			products {
+				id
+				name
+			}
+		}`), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sel := result.Selects[0]
+
+	// The WHERE clause should have a partition filter injected
+	if sel.Where.Exp == nil {
+		t.Fatal("expected WHERE clause to have partition filter, got nil")
+	}
+
+	// Should have no warnings (filter was injected, not just warned)
+	if len(result.Warnings) > 0 {
+		t.Errorf("expected no warnings when default range is set, got: %v", result.Warnings)
+	}
+
+	// Verify the injected filter references the partition column
+	if !qcode.HasFilterOnColumn(sel.Where.Exp, "created_at") {
+		t.Error("expected injected filter to reference partition column 'created_at'")
+	}
+}
+
+func TestPartitionFilterNotInjectedWhenUserFilters(t *testing.T) {
+	pSchema, err := sdata.GetTestPartitionedSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	qc, err := qcode.NewCompiler(pSchema, qcode.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "price", "created_at"},
+		},
+	})
+
+	// Query WITH a filter on the partition column
+	result, err := qc.Compile([]byte(`
+		query {
+			products(where: { created_at: { gte: $start_date } }) {
+				id
+				name
+			}
+		}`), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// No warnings — user already filtered on the partition column
+	if len(result.Warnings) > 0 {
+		t.Errorf("expected no warnings when user filters on partition column, got: %v",
+			result.Warnings)
+	}
+}
+
+func TestPartitionWarningWhenNoFilter(t *testing.T) {
+	// Table with partition key but NO default range (warn only)
+	pSchema, err := sdata.GetTestPartitionedWarnOnlySchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	qc, err := qcode.NewCompiler(pSchema, qcode.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "price", "created_at"},
+		},
+	})
+
+	// Query without filter on partition column, no default range
+	result, err := qc.Compile([]byte(`
+		query {
+			products {
+				id
+				name
+			}
+		}`), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should have a warning
+	if len(result.Warnings) == 0 {
+		t.Fatal("expected a warning about missing partition filter")
+	}
+
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "partition column") && strings.Contains(w, "created_at") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected warning about partition column 'created_at', got: %v", result.Warnings)
+	}
+}
+
+func TestSnowflakeAutoPartitionFilterInjected(t *testing.T) {
+	// Snowflake schema: clustering keys auto-derive partition key with a
+	// 60-day default range. Queries without an explicit filter on the
+	// leading temporal clustering key get a time-range predicate injected.
+	sfSchema, err := sdata.GetTestSnowflakeSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	qc, err := qcode.NewCompiler(sfSchema, qcode.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "price", "created_at", "user_id"},
+		},
+	})
+
+	// Query WITHOUT filtering on the auto-derived partition column
+	result, err := qc.Compile([]byte(`
+		query {
+			products {
+				id
+				name
+			}
+		}`), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should auto-inject a filter on created_at — no warning, no full scan
+	sel := result.Selects[0]
+	if !qcode.HasFilterOnColumn(sel.Where.Exp, "created_at") {
+		t.Fatal("expected auto-injected filter on partition column 'created_at'")
+	}
+
+	// No partition warning since the filter was injected
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "partition") {
+			t.Errorf("unexpected partition warning after auto-injection: %s", w)
+		}
+	}
+}
+
+func TestSnowflakeAutoPartitionNoWarningWhenFiltered(t *testing.T) {
+	sfSchema, err := sdata.GetTestSnowflakeSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	qc, err := qcode.NewCompiler(sfSchema, qcode.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "price", "created_at", "user_id"},
+		},
+	})
+
+	// Query WITH a filter on the auto-derived partition column
+	result, err := qc.Compile([]byte(`
+		query {
+			products(where: { created_at: { gte: $start_date } }) {
+				id
+				name
+			}
+		}`), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(result.Warnings) > 0 {
+		t.Errorf("expected no warnings when filtering on partition column, got: %v", result.Warnings)
+	}
+}
+
+func TestWarehouseOrderByColumnsNotProjected(t *testing.T) {
+	// Snowflake: ORDER BY columns should NOT be added to BCols when there's
+	// no cursor pagination, to avoid scanning extra columns in columnar storage.
+	sfSchema, err := sdata.GetTestSnowflakeSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	qc, err := qcode.NewCompiler(sfSchema, qcode.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "price", "created_at", "user_id"},
+		},
+	})
+
+	// ORDER BY price but no cursor pagination — price should NOT be in BCols
+	result, err := qc.Compile([]byte(`
+		query {
+			products(order_by: { price: desc }) {
+				id
+				name
+			}
+		}`), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sel := result.Selects[0]
+
+	// BCols should only contain user-requested columns (id, name), not price
+	for _, bc := range sel.BCols {
+		if bc.Col.Name == "price" {
+			t.Error("Snowflake: ORDER BY column 'price' should NOT be in BCols without cursor pagination")
+		}
+	}
+}
+
+func TestWarehouseOrderByProjectedWithCursor(t *testing.T) {
+	// When cursor pagination IS active, ORDER BY columns MUST be in BCols
+	// for LAST_VALUE extraction.
+	sfSchema, err := sdata.GetTestSnowflakeSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	qc, err := qcode.NewCompiler(sfSchema, qcode.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "price", "created_at", "user_id"},
+		},
+	})
+
+	// With cursor pagination, ORDER BY columns MUST be projected
+	result, err := qc.Compile([]byte(`
+		query {
+			products(first: 20, after: $cursor, order_by: { price: desc }) {
+				id
+				name
+			}
+		}`), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sel := result.Selects[0]
+
+	found := false
+	for _, bc := range sel.BCols {
+		if bc.Col.Name == "price" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Snowflake with cursor: ORDER BY column 'price' SHOULD be in BCols for LAST_VALUE")
+	}
+}
+
+func TestPostgresOrderByAlwaysProjected(t *testing.T) {
+	// For non-warehouse databases, ORDER BY columns should still be in BCols
+	// (existing behavior unchanged).
+	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	_ = qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "price"},
+		},
+	})
+
+	result, err := qc.Compile([]byte(`
+		query {
+			products(order_by: { price: desc }) {
+				id
+				name
+			}
+		}`), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sel := result.Selects[0]
+
+	found := false
+	for _, bc := range sel.BCols {
+		if bc.Col.Name == "price" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Postgres: ORDER BY column 'price' SHOULD still be in BCols (no projection optimization)")
+	}
+}
+
+func TestPartitionNoWarningForNonPartitionedTable(t *testing.T) {
+	// Standard postgres schema — no partition keys
+	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	_ = qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "price"},
+		},
+	})
+
+	result, err := qc.Compile([]byte(`
+		query {
+			products {
+				id
+				name
+			}
+		}`), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(result.Warnings) > 0 {
+		t.Errorf("expected no warnings for non-partitioned table, got: %v", result.Warnings)
+	}
+}
+
+// --- Dangerous query detection tests (Snowflake) ---
+
+func TestSnowflakeAggWithoutFilterAutoFixed(t *testing.T) {
+	// Aggregation without explicit filter on a clustered Snowflake table.
+	// The auto-derived partition filter (60-day range on created_at) is
+	// injected by checkPartitionFilter, so checkDangerousQuery sees a
+	// filter and does NOT warn about aggregation.
+	sfSchema, err := sdata.GetTestSnowflakeSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	qc, err := qcode.NewCompiler(sfSchema, qcode.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "price", "created_at", "user_id"},
+		},
+	})
+
+	result, err := qc.Compile([]byte(`
+		query {
+			products {
+				count_id
+			}
+		}`), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Partition filter auto-injected on created_at
+	sel := result.Selects[0]
+	if !qcode.HasFilterOnColumn(sel.Where.Exp, "created_at") {
+		t.Fatal("expected auto-injected partition filter on 'created_at'")
+	}
+
+	// No "aggregation without filter" warning since the partition filter was injected
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "aggregation") && strings.Contains(w, "no WHERE filter") {
+			t.Errorf("unexpected aggregation warning — partition filter should have been injected: %s", w)
+		}
+	}
+}
+
+func TestSnowflakeAggWithFilterNoWarning(t *testing.T) {
+	sfSchema, err := sdata.GetTestSnowflakeSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	qc, err := qcode.NewCompiler(sfSchema, qcode.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "price", "created_at", "user_id"},
+		},
+	})
+
+	// Aggregation WITH a clustering key filter — should NOT warn about aggregation
+	result, err := qc.Compile([]byte(`
+		query {
+			products(where: { created_at: { gt: "2024-01-01" } }) {
+				count_id
+			}
+		}`), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "aggregation") && strings.Contains(w, "no WHERE filter") {
+			t.Errorf("unexpected aggregation warning when WHERE filter is present: %s", w)
+		}
+	}
+}
+
+func TestSnowflakeNonClusteringFilterAutoFixed(t *testing.T) {
+	// User filters on 'name' (non-clustering), but the auto-derived partition
+	// filter on 'created_at' (first clustering key) is injected automatically.
+	// Since created_at IS a clustering key, no clustering warning fires.
+	sfSchema, err := sdata.GetTestSnowflakeSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	qc, err := qcode.NewCompiler(sfSchema, qcode.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "price", "created_at", "user_id"},
+		},
+	})
+
+	result, err := qc.Compile([]byte(`
+		query {
+			products(where: { name: { eq: "Widget" } }) {
+				id
+				name
+			}
+		}`), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Auto-injected partition filter covers the clustering key
+	sel := result.Selects[0]
+	if !qcode.HasFilterOnColumn(sel.Where.Exp, "created_at") {
+		t.Fatal("expected auto-injected partition filter on 'created_at'")
+	}
+
+	// No clustering warning because created_at (a clustering key) has a filter
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "clustering") {
+			t.Errorf("unexpected clustering warning — partition filter covers clustering key: %s", w)
+		}
+	}
+}
+
+func TestSnowflakeClusteringFilterNoWarning(t *testing.T) {
+	sfSchema, err := sdata.GetTestSnowflakeSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	qc, err := qcode.NewCompiler(sfSchema, qcode.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "price", "created_at", "user_id"},
+		},
+	})
+
+	// Filter on 'created_at' which IS a clustering key — no clustering warning
+	result, err := qc.Compile([]byte(`
+		query {
+			products(where: { created_at: { gt: "2024-01-01" } }) {
+				id
+				name
+			}
+		}`), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "clustering") {
+			t.Errorf("unexpected clustering warning when filtering on clustering key: %s", w)
+		}
+	}
+}
+
+func TestSnowflakeNoFilterAutoFixed(t *testing.T) {
+	// No explicit filter on a Snowflake clustered table. The auto-derived
+	// partition filter prevents a full scan — no dangerous query warnings.
+	sfSchema, err := sdata.GetTestSnowflakeSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	qc, err := qcode.NewCompiler(sfSchema, qcode.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "price", "created_at", "user_id"},
+		},
+	})
+
+	result, err := qc.Compile([]byte(`
+		query {
+			products {
+				id
+				name
+			}
+		}`), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Partition filter auto-injected
+	sel := result.Selects[0]
+	if !qcode.HasFilterOnColumn(sel.Where.Exp, "created_at") {
+		t.Fatal("expected auto-injected partition filter on 'created_at'")
+	}
+
+	// No full scan or clustering warnings
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "full table scan") || strings.Contains(w, "clustering") {
+			t.Errorf("unexpected dangerous query warning after auto-fix: %s", w)
+		}
+	}
+}
+
+func TestPostgresNoDangerousQueryWarnings(t *testing.T) {
+	// Postgres should never get dangerous query warnings
+	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	_ = qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "price"},
+		},
+	})
+
+	result, err := qc.Compile([]byte(`
+		query {
+			products {
+				count_id
+			}
+		}`), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "aggregation") || strings.Contains(w, "clustering") || strings.Contains(w, "full table scan") {
+			t.Errorf("Postgres should not get dangerous query warnings, got: %s", w)
+		}
+	}
+}
+
+func orderByNames(obs []qcode.OrderBy) []string {
+	names := make([]string, len(obs))
+	for i, ob := range obs {
+		names[i] = ob.Col.Name
+	}
+	return names
 }
 
 func BenchmarkQCompileFragment(b *testing.B) {

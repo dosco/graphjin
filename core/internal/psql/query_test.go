@@ -3,7 +3,12 @@ package psql_test
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
+
+	"github.com/dosco/graphjin/core/v3/internal/psql"
+	"github.com/dosco/graphjin/core/v3/internal/qcode"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
 
 func simpleQuery(t *testing.T) {
@@ -728,6 +733,8 @@ func TestCompileQuery(t *testing.T) {
 	t.Run("distinctWithAggMultiple", distinctWithAggMultiple)
 	t.Run("distinctWithAggAndWhere", distinctWithAggAndWhere)
 	t.Run("aggWithoutDistinct", aggWithoutDistinct)
+	t.Run("partitionFilterInSQL", partitionFilterInSQL)
+	t.Run("warehouseColumnProjection", warehouseColumnProjection)
 }
 
 // --- distinct + aggregation tests ---
@@ -825,6 +832,120 @@ func compileGQLToPSQLString(t *testing.T, gql string,
 	}
 
 	return string(sqlBytes)
+}
+
+func partitionFilterInSQL(t *testing.T) {
+	// Self-contained test: create a partitioned schema + compilers
+	pSchema, err := sdata.GetTestPartitionedSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pQCompile, err := qcode.NewCompiler(pSchema, qcode.Config{DBSchema: pSchema.DBSchema()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = pQCompile.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "price", "created_at"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pPCompile := psql.NewCompiler(psql.Config{})
+
+	gql := `query {
+		products {
+			id
+			name
+		}
+	}`
+
+	qc, err := pQCompile.Compile([]byte(gql), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, sqlBytes, err := pPCompile.CompileEx(qc)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sql := string(sqlBytes)
+
+	// The generated SQL should contain the partition bound expression
+	if !strings.Contains(sql, "CURRENT_TIMESTAMP - INTERVAL") {
+		t.Errorf("expected partition bound in SQL, got:\n%s", sql)
+	}
+
+	// Should reference the partition column
+	if !strings.Contains(sql, "created_at") {
+		t.Errorf("expected 'created_at' in SQL, got:\n%s", sql)
+	}
+
+	t.Logf("Generated SQL:\n%s", sql)
+}
+
+func warehouseColumnProjection(t *testing.T) {
+	// Snowflake: ORDER BY column not in user fields should NOT appear in inner SELECT
+	sfSchema, err := sdata.GetTestSnowflakeSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sfQCompile, err := qcode.NewCompiler(sfSchema, qcode.Config{DBSchema: sfSchema.DBSchema()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = sfQCompile.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "price", "created_at", "user_id"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sfPCompile := psql.NewCompiler(psql.Config{})
+
+	gql := `query {
+		products(order_by: { price: desc }) {
+			id
+			name
+		}
+	}`
+
+	qc, err := sfQCompile.Compile([]byte(gql), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, sqlBytes, err := sfPCompile.CompileEx(qc)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sql := string(sqlBytes)
+
+	// The innermost SELECT column list should only have id and name, NOT price.
+	// Extract the inner SELECT: between "SELECT " and " FROM" in the deepest subquery.
+	// The SQL should have: SELECT "products"."id", "products"."name" FROM
+	// NOT: SELECT "products"."id", "products"."name", "products"."price" FROM
+	innerSelect := sql[strings.LastIndex(sql, `SELECT "products"."`):]
+	innerSelect = innerSelect[:strings.Index(innerSelect, ` FROM`)]
+
+	if strings.Contains(innerSelect, `"price"`) {
+		t.Errorf("Snowflake: ORDER BY column 'price' should not be in inner SELECT columns.\nInner SELECT: %s", innerSelect)
+	}
+
+	// But ORDER BY should still reference price
+	if !strings.Contains(sql, `ORDER BY`) || !strings.Contains(sql, `"price"`) {
+		t.Errorf("Snowflake: ORDER BY clause should still reference 'price'.\nSQL: %s", sql)
+	}
+
+	t.Logf("Generated SQL:\n%s", sql)
 }
 
 var benchGQL = []byte(`query {

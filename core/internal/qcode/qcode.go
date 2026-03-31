@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/graph"
@@ -79,6 +80,7 @@ type QCode struct {
 	Typename  bool
 	Query     []byte
 	Fragments []Fragment
+	Warnings  []string // Non-fatal warnings (e.g., missing partition filter)
 	actionArg  graph.Arg
 	actionArgs map[string]graph.Arg
 }
@@ -320,6 +322,7 @@ const (
 	ValVar
 	ValDBVar
 	ValSubQuery
+	ValPartitionBound // Renders as NOW() - INTERVAL N days (dialect-specific)
 )
 
 // GeoUnit represents distance units for GIS operations
@@ -562,8 +565,18 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 			sel.SkipRender = SkipTypeUserNeeded
 		}
 
+		// Check partition key filter: inject default or warn
+		co.checkPartitionFilter(qc, sel)
+
+		// Detect dangerous Snowflake query patterns (broad scans, unfiltered aggs)
+		co.checkDangerousQuery(qc, sel)
+
 		// If an actual cursor is available
 		if sel.Paging.Cursor {
+			// Prepend clustering key columns to ORDER BY for better
+			// Snowflake micro-partition alignment during cursor seeks.
+			co.orderByClusterKeys(sel)
+
 			// Set tie-breaker order column for the cursor direction
 			// this column needs to be the last in the order series.
 			if err := co.orderByIDCol(sel); err != nil {
@@ -851,7 +864,20 @@ func (co *Compiler) FindPath(from, to, through string) ([]sdata.TPath, error) {
 		from = strings.TrimSuffix(from, singularSuffixCamel)
 		to = strings.TrimSuffix(to, singularSuffixCamel)
 	}
-	return co.s.FindPath(from, to, through)
+
+	// Try normal graph path first (same-database relationships)
+	path, err := co.s.FindPath(from, to, through)
+	if err == nil {
+		return path, nil
+	}
+
+	// Graph traversal failed — check cross-database FK metadata.
+	// Cross-DB target tables are not in the graph, so FindPath won't find them.
+	if tp, ok := co.s.FindCrossDBPath(from, to); ok {
+		return []sdata.TPath{tp}, nil
+	}
+
+	return nil, err
 }
 
 func buildFilter(rel sdata.DBRel, pid int32) *Exp {
@@ -1057,6 +1083,116 @@ func addFilters(qc *QCode, where *Filter, trv trval) bool {
 	}
 
 	return false
+}
+
+// checkPartitionFilter checks if a query filters on the table's partition key.
+// If the partition key is configured but no filter is present:
+//   - If a default range is configured, inject a time-range filter automatically
+//   - Otherwise, add a warning to the QCode
+func (co *Compiler) checkPartitionFilter(qc *QCode, sel *Select) {
+	if sel.Ti.PartitionKey == "" {
+		return
+	}
+	// Only applies to queries, not mutations
+	if qc.Type != QTQuery && qc.Type != QTSubscription {
+		return
+	}
+	if HasFilterOnColumn(sel.Where.Exp, sel.Ti.PartitionKey) {
+		return
+	}
+
+	if sel.Ti.PartitionRangeDays > 0 {
+		// Inject default partition filter
+		cid, ok := sel.Ti.GetColumnIndex(sel.Ti.PartitionKey)
+		if !ok {
+			qc.Warnings = append(qc.Warnings,
+				fmt.Sprintf("partition column %q not found in table %q",
+					sel.Ti.PartitionKey, sel.Ti.Name))
+			return
+		}
+		col := sel.Ti.Columns[cid]
+
+		ex := &Exp{Op: OpGreaterOrEquals}
+		ex.Left.Col = col
+		ex.Right.ValType = ValPartitionBound
+		ex.Right.Val = strconv.Itoa(sel.Ti.PartitionRangeDays)
+		addAndFilter(&sel.Where, ex)
+	} else {
+		qc.Warnings = append(qc.Warnings,
+			fmt.Sprintf("query on %q has no filter on partition column %q — this may scan all partitions",
+				sel.Ti.Name, sel.Ti.PartitionKey))
+	}
+}
+
+// HasFilterOnColumn walks the expression tree and returns true if any
+// comparison references the given column name.
+func HasFilterOnColumn(ex *Exp, colName string) bool {
+	if ex == nil {
+		return false
+	}
+	if ex.Left.Col.Name == colName {
+		return true
+	}
+	for _, child := range ex.Children {
+		if HasFilterOnColumn(child, colName) {
+			return true
+		}
+	}
+	return false
+}
+
+// checkDangerousQuery detects Snowflake query patterns that could trigger
+// expensive full-table scans and appends warnings to qc.Warnings.
+//
+// Patterns detected:
+//  1. Aggregation (GROUP BY) with no WHERE filter at all
+//  2. Query on a clustered table that doesn't filter on any clustering key
+//  3. Any query with no WHERE filter and a large or unlimited result set
+func (co *Compiler) checkDangerousQuery(qc *QCode, sel *Select) {
+	if co.s.DBType() != "snowflake" {
+		return
+	}
+	if qc.Type != QTQuery && qc.Type != QTSubscription {
+		return
+	}
+
+	hasFilter := sel.Where.Exp != nil
+
+	// 1. Aggregation without any filter — scans and groups the entire table
+	if sel.GroupCols && !hasFilter {
+		qc.Warnings = append(qc.Warnings,
+			fmt.Sprintf("query on %q uses aggregation with no WHERE filter — this will scan the entire table",
+				sel.Ti.Name))
+	}
+
+	// 2. Clustered table but no filter on any clustering key column
+	if len(sel.Ti.ClusteringKeys) > 0 {
+		if !hasFilter {
+			qc.Warnings = append(qc.Warnings,
+				fmt.Sprintf("query on %q has no filter on clustering key columns %v — full table scan required",
+					sel.Ti.Name, sel.Ti.ClusteringKeys))
+		} else {
+			hasClusterFilter := false
+			for _, ck := range sel.Ti.ClusteringKeys {
+				if HasFilterOnColumn(sel.Where.Exp, ck) {
+					hasClusterFilter = true
+					break
+				}
+			}
+			if !hasClusterFilter {
+				qc.Warnings = append(qc.Warnings,
+					fmt.Sprintf("query on %q filters on non-clustering columns — consider filtering on clustering keys %v for better pruning",
+						sel.Ti.Name, sel.Ti.ClusteringKeys))
+			}
+		}
+	}
+
+	// 3. No filter with unlimited or very large result set
+	if !hasFilter && (sel.Paging.NoLimit || sel.Paging.Limit > 10000) {
+		qc.Warnings = append(qc.Warnings,
+			fmt.Sprintf("query on %q has no WHERE filter with a large or unlimited result set — this will scan the entire table",
+				sel.Ti.Name))
+	}
 }
 
 func (co *Compiler) setMutationType(qc *QCode, op *graph.Operation, role string) error {
