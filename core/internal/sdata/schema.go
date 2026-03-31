@@ -47,6 +47,7 @@ type DBSchema struct {
 	allEdges          map[int32]TEdge         // all edges
 	relationshipGraph *util.Graph             // relationship graph
 	crossDBRels       []CrossDBRel            // cross-database FK relationships
+	compositeFKs      []CompositeFKInfo       // composite FK metadata (Postgres only)
 }
 
 type RelType int
@@ -80,9 +81,10 @@ type DBRelRight struct {
 
 // DBRel represents a database relationship
 type DBRel struct {
-	Type  RelType
-	Left  DBRelLeft
-	Right DBRelRight
+	Type       RelType
+	Left       DBRelLeft
+	Right      DBRelRight
+	ExtraPairs []ColPair // Additional column pairs for composite FKs
 }
 
 // IsCrossDatabase returns true if this relationship crosses database boundaries.
@@ -118,6 +120,7 @@ func NewDBSchema(
 		edgesIndex:        make(map[string][]edgeInfo),
 		allEdges:          make(map[int32]TEdge),
 		relationshipGraph: util.NewGraph(),
+		compositeFKs:      info.CompositeFKs,
 	}
 
 	for _, t := range info.Tables {
@@ -246,6 +249,21 @@ func (s *DBSchema) addRemoteRel(t DBTable) error {
 func (s *DBSchema) addColumnRels(t DBTable) error {
 	var err error
 
+	// Build lookup for composite FK columns belonging to this table.
+	// Key: column name → constraint name
+	compositeCols := make(map[string]string)
+	for _, cfk := range s.compositeFKs {
+		if cfk.Schema == t.Schema && cfk.Table == t.Name {
+			for _, col := range cfk.LocalCols {
+				compositeCols[col] = cfk.ConstraintName
+			}
+		}
+	}
+
+	// Track which composite FK constraints have already had their primary edge added.
+	// Key: constraint name → list of edge IDs (forward + reverse in s.allEdges)
+	compositeEdges := make(map[string][]int32)
+
 	for _, c := range t.Columns {
 		if c.FKeyTable == "" {
 			continue
@@ -286,6 +304,28 @@ func (s *DBSchema) addColumnRels(t DBTable) error {
 			return fmt.Errorf("foreign key column not found: %s.%s", c.FKeyTable, c.FKeyCol)
 		}
 
+		// Check if this column belongs to a composite FK
+		if conName, isComposite := compositeCols[c.Name]; isComposite {
+			if edgeIDs, already := compositeEdges[conName]; already {
+				// Subsequent column of the composite FK — attach to all existing edges
+				// (forward and reverse, with correct column orientation)
+				for _, eid := range edgeIDs {
+					edge := s.allEdges[eid]
+					if edge.L.Table == c.Table {
+						// Forward edge: local → foreign
+						edge.ExtraPairs = append(edge.ExtraPairs, ColPair{L: c, R: fc})
+					} else {
+						// Reverse edge: foreign → local
+						edge.ExtraPairs = append(edge.ExtraPairs, ColPair{L: fc, R: c})
+					}
+					s.allEdges[eid] = edge
+				}
+				continue
+			}
+			// First column of the composite FK — fall through to add edge normally,
+			// then record the edge IDs
+		}
+
 		var rt RelType
 
 		switch {
@@ -299,6 +339,23 @@ func (s *DBSchema) addColumnRels(t DBTable) error {
 
 		if err = s.addToGraph(t, c, ft, fc, rt); err != nil {
 			return err
+		}
+
+		// If this was the first column of a composite FK, record the edge IDs
+		// (both forward and reverse edges)
+		if conName, isComposite := compositeCols[c.Name]; isComposite {
+			k1 := t.Schema + ":" + t.Name
+			k2 := c.FKeySchema + ":" + c.FKeyTable
+			fn := s.tindex[k1].nodeID
+			tn := s.tindex[k2].nodeID
+			var edgeIDs []int32
+			for eid, edge := range s.allEdges {
+				if (edge.From == fn && edge.To == tn && edge.L.Name == c.Name) ||
+					(edge.From == tn && edge.To == fn && edge.R.Name == c.Name) {
+					edgeIDs = append(edgeIDs, eid)
+				}
+			}
+			compositeEdges[conName] = edgeIDs
 		}
 	}
 	return nil

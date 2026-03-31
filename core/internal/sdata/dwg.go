@@ -19,11 +19,12 @@ var (
 type TEdge struct {
 	From, To, Weight int32
 
-	Type   RelType
-	LT, RT DBTable
-	L, R   DBColumn
-	CName  string
-	name   string
+	Type       RelType
+	LT, RT     DBTable
+	L, R       DBColumn
+	CName      string
+	name       string
+	ExtraPairs []ColPair // Additional column pairs for composite FKs
 }
 
 // addNode adds a table node to the graph
@@ -261,11 +262,12 @@ func (s *DBSchema) Find(schema, name string) (DBTable, error) {
 
 // TPath represents a table path
 type TPath struct {
-	Rel RelType
-	LT  DBTable
-	LC  DBColumn
-	RT  DBTable
-	RC  DBColumn
+	Rel        RelType
+	LT         DBTable
+	LC         DBColumn
+	RT         DBTable
+	RC         DBColumn
+	ExtraPairs []ColPair // Additional column pairs for composite FKs
 }
 
 // FindPath returns a path between two tables
@@ -293,11 +295,12 @@ func (s *DBSchema) FindPath(from, to, through string) ([]TPath, error) {
 	for _, eid := range res.edges {
 		edge := s.allEdges[eid]
 		path = append(path, TPath{
-			Rel: edge.Type,
-			LT:  edge.LT,
-			LC:  edge.L,
-			RT:  edge.RT,
-			RC:  edge.R,
+			Rel:        edge.Type,
+			LT:         edge.LT,
+			LC:         edge.L,
+			RT:         edge.RT,
+			RC:         edge.R,
+			ExtraPairs: edge.ExtraPairs,
 		})
 	}
 	if len(path) == 0 {
@@ -437,9 +440,10 @@ func pickLine(lines []util.Edge, ei edgeInfo, peID int32) *util.Edge {
 // PathToRel converts a table path to a relationship
 func PathToRel(p TPath) DBRel {
 	return DBRel{
-		Type:  p.Rel,
-		Left:  DBRelLeft{Ti: p.LT, Col: p.LC},
-		Right: DBRelRight{Ti: p.RT, Col: p.RC},
+		Type:       p.Rel,
+		Left:       DBRelLeft{Ti: p.LT, Col: p.LC},
+		Right:      DBRelRight{Ti: p.RT, Col: p.RC},
+		ExtraPairs: p.ExtraPairs,
 	}
 }
 

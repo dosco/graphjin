@@ -18,12 +18,13 @@ type DBInfo struct {
 	Schema  string
 	Name    string
 
-	Tables    []DBTable
-	Functions []DBFunction
-	VTables   []VirtualTable `json:"-"`
-	colMap    map[string]int
-	tableMap  map[string]int
-	hash      int
+	Tables        []DBTable
+	Functions     []DBFunction
+	VTables       []VirtualTable  `json:"-"`
+	CompositeFKs  []CompositeFKInfo `json:"-"`
+	colMap        map[string]int
+	tableMap      map[string]int
+	hash          int
 }
 
 // DBTable holds the database table information
@@ -67,6 +68,7 @@ func GetDBInfo(
 	var dbSchema, dbName string
 	var cols []DBColumn
 	var funcs []DBFunction
+	var compositeFKs []CompositeFKInfo
 
 	g := errgroup.Group{}
 
@@ -113,6 +115,9 @@ func GetDBInfo(
 		if funcs, err = DiscoverFunctions(db, dbType, blockList); err != nil {
 			return err
 		}
+		if compositeFKs, err = DiscoverCompositeFKs(db, dbType); err != nil {
+			return err
+		}
 		return nil
 	})
 
@@ -128,6 +133,7 @@ func GetDBInfo(
 		cols,
 		funcs,
 		blockList)
+	di.CompositeFKs = compositeFKs
 
 	// For Snowflake, discover clustering keys and attach to tables.
 	// Non-fatal: if this fails we just skip clustering optimization.
@@ -344,6 +350,23 @@ type DBColumn struct {
 	OrigFKeyCol    string
 }
 
+// ColPair represents a column pair in a composite foreign key relationship.
+type ColPair struct {
+	L DBColumn // Local column
+	R DBColumn // Referenced (foreign) column
+}
+
+// CompositeFKInfo holds metadata about a composite (multi-column) foreign key constraint.
+type CompositeFKInfo struct {
+	Schema         string
+	Table          string
+	ConstraintName string
+	LocalCols      []string
+	FKeySchema     string
+	FKeyTable      string
+	FKeyCols       []string
+}
+
 // DiscoverColumns returns the columns of a table
 func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn, error) {
 	var sqlStmt string
@@ -505,6 +528,92 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 	}
 
 	return cols, nil
+}
+
+// DiscoverCompositeFKs returns metadata about composite (multi-column) foreign key
+// constraints. Currently only supported for Postgres.
+func DiscoverCompositeFKs(db *sql.DB, dbtype string) ([]CompositeFKInfo, error) {
+	if dbtype != "postgres" && dbtype != "" {
+		return nil, nil
+	}
+
+	const query = `
+SELECT
+	n.nspname AS schema_name,
+	c.relname AS table_name,
+	co.conname AS constraint_name,
+	array_agg(a.attname ORDER BY k.ord) AS local_columns,
+	fn.nspname AS fkey_schema,
+	fc.relname AS fkey_table,
+	array_agg(fa.attname ORDER BY k.ord) AS fkey_columns
+FROM pg_constraint co
+	JOIN pg_class c ON c.oid = co.conrelid
+	JOIN pg_namespace n ON n.oid = c.relnamespace
+	JOIN pg_class fc ON fc.oid = co.confrelid
+	JOIN pg_namespace fn ON fn.oid = fc.relnamespace
+	CROSS JOIN LATERAL unnest(co.conkey, co.confkey) WITH ORDINALITY AS k(local_attnum, foreign_attnum, ord)
+	JOIN pg_attribute a ON a.attrelid = co.conrelid AND a.attnum = k.local_attnum
+	JOIN pg_attribute fa ON fa.attrelid = co.confrelid AND fa.attnum = k.foreign_attnum
+WHERE co.contype = 'f'
+	AND n.nspname NOT IN ('_graphjin', 'information_schema', 'pg_catalog')
+	AND array_length(co.conkey, 1) > 1
+GROUP BY n.nspname, c.relname, co.conname, fn.nspname, fc.relname`
+
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching composite FKs: %w", err)
+	}
+	defer rows.Close()
+
+	var result []CompositeFKInfo
+	for rows.Next() {
+		var info CompositeFKInfo
+		var localCols, fkeyCols []string
+
+		if err := rows.Scan(
+			&info.Schema, &info.Table, &info.ConstraintName,
+			(*pgStringArray)(&localCols),
+			&info.FKeySchema, &info.FKeyTable,
+			(*pgStringArray)(&fkeyCols),
+		); err != nil {
+			return nil, fmt.Errorf("error scanning composite FK: %w", err)
+		}
+		info.LocalCols = localCols
+		info.FKeyCols = fkeyCols
+		result = append(result, info)
+	}
+	return result, rows.Err()
+}
+
+// pgStringArray implements sql.Scanner for Postgres text[] columns.
+type pgStringArray []string
+
+func (a *pgStringArray) Scan(src interface{}) error {
+	if src == nil {
+		*a = nil
+		return nil
+	}
+	var s string
+	switch v := src.(type) {
+	case []byte:
+		s = string(v)
+	case string:
+		s = v
+	default:
+		return fmt.Errorf("pgStringArray: unsupported type %T", src)
+	}
+	// Parse Postgres array literal: {val1,val2,...}
+	s = strings.TrimSpace(s)
+	if len(s) < 2 || s[0] != '{' || s[len(s)-1] != '}' {
+		return fmt.Errorf("pgStringArray: invalid format %q", s)
+	}
+	inner := s[1 : len(s)-1]
+	if inner == "" {
+		*a = nil
+		return nil
+	}
+	*a = strings.Split(inner, ",")
+	return nil
 }
 
 // DBFunction holds the database function information
