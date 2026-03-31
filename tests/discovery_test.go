@@ -28,25 +28,19 @@ func TestDiscoveryGenerate(t *testing.T) {
 	assert.Contains(t, md, "### purchases")
 	assert.Contains(t, md, "### comments")
 
-	// Columns table headers
-	assert.Contains(t, md, "| Column | Type | Nullable | Default | Key | FK | Index | Notes |")
-
-	// Verify key columns exist
+	// Compact table index format — column names, FKs, joins
 	assert.Contains(t, md, "full_name")
 	assert.Contains(t, md, "email")
-	assert.Contains(t, md, "owner_id")
-
-	// Relationships
-	assert.Contains(t, md, "#### Relationships")
-	assert.Contains(t, md, "users")
-
-	// Aggregations
-	assert.Contains(t, md, "#### Aggregations")
-	assert.Contains(t, md, "count_")
+	assert.Contains(t, md, "FKs:")
+	assert.Contains(t, md, "Columns:")
+	assert.Contains(t, md, "Joins:")
 
 	// Hash and timestamp in header
 	assert.Contains(t, md, "Hash:")
 	assert.Contains(t, md, "Generated:")
+
+	// Should NOT contain full column table (that's in full_tables section)
+	assert.NotContains(t, md, "| Column | Type | Nullable | Default | Key | FK | Index | Notes |")
 
 	t.Logf("Discovery document: %d bytes", len(md))
 }
@@ -80,6 +74,64 @@ func TestDiscoveryTableOfContents(t *testing.T) {
 	assert.Greater(t, tablesIdx, tocIdx, "TOC should appear before Tables section")
 }
 
+func TestDiscoverySections(t *testing.T) {
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	require.NoError(t, err)
+	defer gj.Close()
+
+	full := gj.GetCombinedDiscovery()
+	require.NotEmpty(t, full)
+
+	// Each section should be non-empty
+	overview := gj.GetCombinedDiscoverySection("overview")
+	syntax := gj.GetCombinedDiscoverySection("syntax")
+	tables := gj.GetCombinedDiscoverySection("tables")
+	fullTables := gj.GetCombinedDiscoverySection("full_tables")
+	insights := gj.GetCombinedDiscoverySection("insights")
+
+	assert.NotEmpty(t, overview, "overview section should not be empty")
+	assert.NotEmpty(t, syntax, "syntax section should not be empty")
+	assert.NotEmpty(t, tables, "tables section should not be empty")
+	assert.NotEmpty(t, fullTables, "full_tables section should not be empty")
+	assert.NotEmpty(t, insights, "insights section should not be empty")
+
+	// Overview has header and TOC but not table definitions
+	assert.Contains(t, overview, "# Schema Bible:")
+	assert.Contains(t, overview, "## Table of Contents")
+	assert.NotContains(t, overview, "## Tables")
+
+	// Syntax has DSL reference with nested aggregation example
+	assert.Contains(t, syntax, "## Query Syntax Reference")
+	assert.Contains(t, syntax, "distinct")
+	assert.Contains(t, syntax, "count_")
+	assert.Contains(t, syntax, "Nested Aggregation")
+
+	// Compact tables section has index entries
+	assert.Contains(t, tables, "## Tables")
+	assert.Contains(t, tables, "### users")
+	assert.Contains(t, tables, "### products")
+	assert.Contains(t, tables, "FKs:")
+	assert.Contains(t, tables, "Columns:")
+	assert.NotContains(t, tables, "| Column | Type | Nullable")
+
+	// Full tables section has detailed column definitions
+	assert.Contains(t, fullTables, "| Column | Type | Nullable | Default | Key | FK | Index | Notes |")
+	assert.Contains(t, fullTables, "#### Relationships")
+	assert.Contains(t, fullTables, "#### Aggregations")
+
+	// Insights has templates and relationships
+	assert.Contains(t, insights, "## Relationship Paths")
+	assert.Contains(t, insights, "## Query Templates")
+	assert.Contains(t, insights, "## Data Quality")
+
+	// Compact tables should be much smaller than full tables
+	assert.Greater(t, len(fullTables), len(tables)*2, "full tables should be significantly larger than compact index")
+
+	t.Logf("Section sizes — overview: %d, syntax: %d, tables: %d, full_tables: %d, insights: %d, total md: %d",
+		len(overview), len(syntax), len(tables), len(fullTables), len(insights), len(full))
+}
+
 func TestDiscoveryLayer3Enrichment(t *testing.T) {
 	if dbType == "mongodb" {
 		t.Skip("MongoDB enrichment queries use different syntax")
@@ -93,17 +145,16 @@ func TestDiscoveryLayer3Enrichment(t *testing.T) {
 	md := gj.GetCombinedDiscovery()
 	require.NotEmpty(t, md)
 
-	// Layer 3: Live data — row counts should be present for populated tables
+	// Layer 3: Live data — row counts should be present in compact table index
 	assert.Contains(t, md, "Rows:")
 
-	// Live data profile section should exist
-	assert.Contains(t, md, "#### Live Data Profile")
+	// Live data profile, date ranges, sample rows are in the full tables section
+	fullTables := gj.GetCombinedDiscoverySection("full_tables")
+	require.NotEmpty(t, fullTables)
 
-	// Date ranges — users/products/purchases all have created_at
-	assert.Contains(t, md, "Date range")
-
-	// Sample rows should be present
-	assert.Contains(t, md, "Sample rows")
+	assert.Contains(t, fullTables, "#### Live Data Profile")
+	assert.Contains(t, fullTables, "Date range")
+	assert.Contains(t, fullTables, "Sample rows")
 }
 
 func TestDiscoveryQueryTemplates(t *testing.T) {

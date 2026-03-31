@@ -17,6 +17,13 @@ type DiscoveryDocument struct {
 	Hash        string    `json:"hash"`
 	GeneratedAt time.Time `json:"generated_at"`
 	Markdown    string    `json:"content"`
+
+	// Sections — split for granular MCP resources so agents load only what they need
+	Overview   string `json:"overview"`    // header + TOC
+	Syntax     string `json:"syntax"`      // query syntax reference
+	Tables     string `json:"tables"`      // compact table index (names, FKs, key columns)
+	FullTables string `json:"full_tables"` // detailed table definitions (columns, types, live data)
+	Insights   string `json:"insights"`    // relationship paths, templates, data quality, functions
 }
 
 // GetDiscovery returns the cached discovery document for a database.
@@ -36,6 +43,38 @@ func (g *GraphJin) GetAllDiscovery() []*DiscoveryDocument {
 		return true
 	})
 	return docs
+}
+
+// GetCombinedDiscoverySection returns a combined section across all databases.
+// Valid sections: "overview", "syntax", "tables", "insights", or "" for full markdown.
+func (g *GraphJin) GetCombinedDiscoverySection(section string) string {
+	gj, err := g.getEngine()
+	if err != nil {
+		return ""
+	}
+
+	var sb strings.Builder
+	for _, name := range gj.sortedDatabaseNames() {
+		if v, ok := g.discovery.Load(name); ok {
+			doc := v.(*DiscoveryDocument)
+			switch section {
+			case "overview":
+				sb.WriteString(doc.Overview)
+			case "syntax":
+				sb.WriteString(doc.Syntax)
+			case "tables":
+				sb.WriteString(doc.Tables)
+			case "full_tables":
+				sb.WriteString(doc.FullTables)
+			case "insights":
+				sb.WriteString(doc.Insights)
+			default:
+				sb.WriteString(doc.Markdown)
+			}
+			sb.WriteString("\n")
+		}
+	}
+	return sb.String()
 }
 
 // GetCombinedDiscovery returns a single combined markdown Bible covering all databases.
@@ -113,35 +152,57 @@ func (g *GraphJin) GenerateDiscovery(ctx context.Context, database string) (*Dis
 	// Table of contents
 	writeTableOfContents(&sb, visibleTables, len(gj.databases) > 1, len(dbCtx.schema.GetFunctions()) > 0)
 
-	// Query syntax cheat sheet (so agents know the DSL)
-	writeQuerySyntaxReference(&sb)
-
-	// Tables section
-	sb.WriteString("## Tables\n\n")
-	for _, t := range visibleTables {
-		g.writeTableMarkdown(&sb, dbCtx.schema, database, t, enrichment[t.Name])
+	// ── Section: Syntax ──
+	var syntaxSB strings.Builder
+	defaultLimit := gj.conf.DefaultLimit
+	if defaultLimit == 0 {
+		defaultLimit = 20
 	}
+	writeQuerySyntaxReference(&syntaxSB, defaultLimit)
+	syntaxSection := syntaxSB.String()
+	sb.WriteString(syntaxSection)
 
-	// Relationship paths between key tables
-	g.writeRelationshipPaths(&sb, dbCtx.schema, visibleTables)
+	// ── Section: Table Index (compact — names, FKs, key columns only) ──
+	var tableIndexSB strings.Builder
+	tableIndexSB.WriteString("## Tables\n\n")
+	for _, t := range visibleTables {
+		g.writeTableIndexEntry(&tableIndexSB, dbCtx.schema, t, enrichment[t.Name])
+	}
+	tablesSection := tableIndexSB.String()
+	sb.WriteString(tablesSection)
 
-	// Namespace routing
-	g.writeNamespaceRouting(&sb, gj)
+	// ── Section: Full Tables (detailed — columns, types, live data, for describe_table-style deep dives) ──
+	var fullTablesSB strings.Builder
+	fullTablesSB.WriteString("## Tables (Full Detail)\n\n")
+	for _, t := range visibleTables {
+		g.writeTableMarkdown(&fullTablesSB, dbCtx.schema, database, t, enrichment[t.Name])
+	}
+	fullTablesSection := fullTablesSB.String()
 
-	// Query templates
-	g.writeQueryTemplates(&sb, visibleTables, enrichment)
+	// ── Section: Insights (relationship paths, namespace routing, templates, data quality, functions) ──
+	var insightsSB strings.Builder
+	g.writeRelationshipPaths(&insightsSB, dbCtx.schema, visibleTables)
+	g.writeNamespaceRouting(&insightsSB, gj)
+	g.writeQueryTemplates(&insightsSB, visibleTables, enrichment)
+	g.writeDataQuality(&insightsSB, visibleTables, enrichment)
+	g.writeFunctions(&insightsSB, dbCtx.schema)
+	insightsSection := insightsSB.String()
+	sb.WriteString(insightsSection)
 
-	// Data quality summary
-	g.writeDataQuality(&sb, visibleTables, enrichment)
-
-	// Functions
-	g.writeFunctions(&sb, dbCtx.schema)
+	// Overview = everything before the sections (header + TOC)
+	overviewEnd := strings.Index(sb.String(), syntaxSection)
+	overview := sb.String()[:overviewEnd]
 
 	doc := &DiscoveryDocument{
 		Database:    database,
 		Hash:        hash,
 		GeneratedAt: now,
 		Markdown:    sb.String(),
+		Overview:    overview,
+		Syntax:      syntaxSection,
+		Tables:      tablesSection,
+		FullTables:  fullTablesSection,
+		Insights:    insightsSection,
 	}
 
 	g.discovery.Store(database, doc)
@@ -276,8 +337,44 @@ func writeTableOfContents(sb *strings.Builder, tables []sdata.DBTable, multiDB b
 }
 
 // writeQuerySyntaxReference writes the GraphJin DSL cheat sheet into the discovery document.
-func writeQuerySyntaxReference(sb *strings.Builder) {
+func writeQuerySyntaxReference(sb *strings.Builder, defaultLimit int) {
 	sb.WriteString("## Query Syntax Reference\n\n")
+
+	// ── Critical operational rules — must be first so agents see them ──
+	sb.WriteString("### IMPORTANT: How to answer data questions\n\n")
+	sb.WriteString("**ALWAYS use workflows** (`execute_workflow`) to answer data questions.\n")
+	sb.WriteString("Do NOT use `execute_graphql` directly — tables can have hundreds of thousands\n")
+	sb.WriteString("of rows and you cannot predict result sizes in advance. Workflows paginate\n")
+	sb.WriteString("through data server-side and aggregate in JavaScript.\n\n")
+	sb.WriteString("1. Check `list_workflows` first — reuse an existing workflow if one fits.\n")
+	sb.WriteString("2. If none fits, write a new workflow using `execute_workflow`.\n")
+	sb.WriteString("3. Inside workflow queries, use **top-down nesting** (see below).\n\n")
+
+	sb.WriteString("### IMPORTANT: Query direction — ALWAYS top-down\n\n")
+	sb.WriteString("Start from the grouping/parent table and nest downward into children.\n")
+	sb.WriteString("NEVER start from a leaf table and filter upward through relationships.\n\n")
+	sb.WriteString("```graphql\n")
+	sb.WriteString("# CORRECT — top-down from territory into orders into details:\n")
+	sb.WriteString("{ salesterritory { name\n")
+	sb.WriteString("    salesorderheader {\n")
+	sb.WriteString("      salesorderdetail(distinct: [productid]) {\n")
+	sb.WriteString("        productid sum_orderqty\n")
+	sb.WriteString("      }\n")
+	sb.WriteString("    }\n")
+	sb.WriteString("  }\n")
+	sb.WriteString("}\n\n")
+	sb.WriteString("# WRONG — bottom-up filtering from detail through header to territory:\n")
+	sb.WriteString("{ salesorderdetail(where: { salesorderheader: { territoryid: { eq: 1 } } }) { ... } }\n")
+	sb.WriteString("```\n\n")
+
+	sb.WriteString("### IMPORTANT: Known limitations\n\n")
+	sb.WriteString(fmt.Sprintf("- **Default row limit is %d** — every query level (top AND nested) is silently\n", defaultLimit))
+	sb.WriteString("  capped unless you set an explicit `limit`. Always set limits on every level.\n")
+	sb.WriteString("- **Cannot order_by aggregation aliases** — `order_by: { sum_price: desc }` will\n")
+	sb.WriteString("  fail. Sort aggregated results in workflow JavaScript, not in the query.\n")
+	sb.WriteString("- **Use `find_path` or `explore_relationships`** to discover join paths between\n")
+	sb.WriteString("  tables — never guess at foreign key relationships.\n\n")
+	sb.WriteString("---\n\n")
 
 	sb.WriteString("### Filter Operators (where clause)\n")
 	sb.WriteString("```\n")
@@ -303,6 +400,36 @@ func writeQuerySyntaxReference(sb *strings.Builder) {
 	sb.WriteString("```\n")
 	sb.WriteString("> **IMPORTANT:** `group_by` does NOT exist. Always use `distinct: [columns]`.\n")
 	sb.WriteString("> `distinct` only works on columns from the base table, not joined tables.\n\n")
+
+	sb.WriteString("### Nested Aggregation (aggregating child tables)\n")
+	sb.WriteString("You can aggregate on nested/child tables. Each level has its own GROUP BY:\n")
+	sb.WriteString("```graphql\n")
+	sb.WriteString("# Revenue by product within a filtered parent\n")
+	sb.WriteString("{ orders(where: { region_id: { eq: 1 } }) {\n")
+	sb.WriteString("    order_items(distinct: [product_id]) {\n")
+	sb.WriteString("      product_id\n")
+	sb.WriteString("      sum_quantity\n")
+	sb.WriteString("      sum_revenue\n")
+	sb.WriteString("      count_id\n")
+	sb.WriteString("    }\n")
+	sb.WriteString("  }\n")
+	sb.WriteString("}\n")
+	sb.WriteString("```\n")
+	sb.WriteString("> This pushes the aggregation to the database — no need to paginate and\n")
+	sb.WriteString("> aggregate client-side. Use this instead of workflows that fetch all rows.\n\n")
+
+	sb.WriteString("### Default Row Limit\n")
+	sb.WriteString(fmt.Sprintf("> **CRITICAL:** Every query level (top-level AND nested) has a default limit of **%d rows**.\n", defaultLimit))
+	sb.WriteString("> If you do not specify an explicit `limit`, only the first ")
+	sb.WriteString(fmt.Sprintf("%d rows are returned — **silently, with no warning**.\n", defaultLimit))
+	sb.WriteString("> Always set an explicit `limit` on every level of your query, especially nested children.\n\n")
+	sb.WriteString("```graphql\n")
+	sb.WriteString("# BAD — nested salesorderdetail silently capped at ")
+	sb.WriteString(fmt.Sprintf("%d rows per parent:\n", defaultLimit))
+	sb.WriteString("{ salesorderheader { salesorderdetail { productid orderqty } } }\n\n")
+	sb.WriteString("# GOOD — explicit limit on nested children:\n")
+	sb.WriteString("{ salesorderheader { salesorderdetail(limit: 100) { productid orderqty } } }\n")
+	sb.WriteString("```\n\n")
 
 	sb.WriteString("### Pagination\n")
 	sb.WriteString("```graphql\n")
@@ -337,10 +464,107 @@ func writeQuerySyntaxReference(sb *strings.Builder) {
 	sb.WriteString("| `{ name: { ilike: \"test\" } }` | `{ name: { ilike: \"%test%\" } }` | ilike needs % wildcards |\n")
 	sb.WriteString("| `{ is_active: { eq: \"true\" } }` | `{ is_active: { eq: true } }` | booleans not strings |\n")
 	sb.WriteString("| `products(first: 10) { products_cursor }` | `products(first: 10) { id } products_cursor` | cursor at root level |\n")
+	sb.WriteString(fmt.Sprintf("| `{ orders { items { id } } }` | `{ orders { items(limit: 100) { id } } }` | nested default is %d — set explicit limit |\n", defaultLimit))
+	sb.WriteString("| `order_by: { sum_price: desc }` | Sort in JS after query | cannot order_by aggregation aliases |\n")
 	sb.WriteString("\n---\n\n")
 }
 
-// writeTableMarkdown writes the markdown section for a single table.
+// writeTableIndexEntry writes a compact index entry for a table — enough for an
+// LLM to judge relevance without needing describe_table. Full details are still
+// available via the describe_table tool.
+func (g *GraphJin) writeTableIndexEntry(sb *strings.Builder, schema *sdata.DBSchema, t sdata.DBTable, e *tableEnrichment) {
+	sb.WriteString(fmt.Sprintf("### %s\n", t.Name))
+	if t.Comment != "" {
+		sb.WriteString(fmt.Sprintf("%s\n", t.Comment))
+	}
+
+	// Meta line: type, schema, rows, PK
+	meta := "Type: table"
+	if t.Type != "" {
+		meta = fmt.Sprintf("Type: %s", t.Type)
+	}
+	if t.Schema != "" {
+		meta += fmt.Sprintf(" | Schema: %s", t.Schema)
+	}
+	if e != nil && e.RowCount > 0 {
+		meta += fmt.Sprintf(" | Rows: %s", formatCount(e.RowCount))
+	}
+	if t.PrimaryCol.Name != "" {
+		meta += fmt.Sprintf(" | PK: %s", t.PrimaryCol.Name)
+	}
+	sb.WriteString(meta + "\n")
+
+	// Foreign keys — critical for understanding joins
+	var fks []string
+	for _, col := range t.Columns {
+		if col.FKeyTable != "" {
+			target := col.FKeyTable
+			if col.FKeyDatabase != "" {
+				target = col.FKeyDatabase + ":" + target
+			}
+			fks = append(fks, fmt.Sprintf("%s → %s.%s", col.Name, target, col.FKeyCol))
+		}
+	}
+	if len(fks) > 0 {
+		sb.WriteString(fmt.Sprintf("FKs: %s\n", strings.Join(fks, ", ")))
+	}
+
+	// Key columns — just names, grouped by role
+	var numericCols, dateCols, textCols, otherCols []string
+	for _, col := range t.Columns {
+		if col.PrimaryKey || col.FKeyTable != "" {
+			continue // already shown in PK/FKs
+		}
+		name := col.Name
+		if isNumericType(col.Type) {
+			numericCols = append(numericCols, name)
+		} else if isDateType(col.Type) {
+			dateCols = append(dateCols, name)
+		} else if col.FullText {
+			textCols = append(textCols, name+" (fulltext)")
+		} else if col.Type == "text" || strings.HasPrefix(col.Type, "character") || strings.HasPrefix(col.Type, "varchar") || strings.HasPrefix(col.Type, "nvarchar") {
+			textCols = append(textCols, name)
+		} else {
+			otherCols = append(otherCols, name)
+		}
+	}
+
+	var colParts []string
+	if len(numericCols) > 0 {
+		colParts = append(colParts, fmt.Sprintf("numeric: %s", strings.Join(numericCols, ", ")))
+	}
+	if len(dateCols) > 0 {
+		colParts = append(colParts, fmt.Sprintf("dates: %s", strings.Join(dateCols, ", ")))
+	}
+	if len(textCols) > 0 {
+		colParts = append(colParts, fmt.Sprintf("text: %s", strings.Join(textCols, ", ")))
+	}
+	if len(otherCols) > 0 {
+		colParts = append(colParts, fmt.Sprintf("other: %s", strings.Join(otherCols, ", ")))
+	}
+	if len(colParts) > 0 {
+		sb.WriteString(fmt.Sprintf("Columns: %s\n", strings.Join(colParts, " | ")))
+	}
+
+	// Relationships — one-line summary
+	firstDegree, err := schema.GetFirstDegree(t)
+	if err == nil && len(firstDegree) > 0 {
+		var rels []string
+		for _, rel := range firstDegree {
+			arrow := "→"
+			if rel.Type == sdata.RelOneToMany {
+				arrow = "←"
+			}
+			rels = append(rels, fmt.Sprintf("%s %s", arrow, rel.Table.Name))
+		}
+		sb.WriteString(fmt.Sprintf("Joins: %s\n", strings.Join(rels, ", ")))
+	}
+
+	sb.WriteString("\n")
+}
+
+// writeTableMarkdown writes the full markdown section for a single table.
+// This is used for the full discovery document (graphjin://discovery/full).
 func (g *GraphJin) writeTableMarkdown(sb *strings.Builder, schema *sdata.DBSchema, dbName string, t sdata.DBTable, e *tableEnrichment) {
 	sb.WriteString(fmt.Sprintf("### %s\n", t.Name))
 	if t.Comment != "" {

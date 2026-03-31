@@ -408,13 +408,17 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 	}
 
 	guide.Tips = append(guide.Tips,
-		"PREFER execute_saved_query over execute_graphql when a matching saved query exists",
-		"Use find_path when joining tables that aren't directly related",
+		"ALWAYS use execute_workflow for data questions — NEVER execute_graphql directly. Tables can have hundreds of thousands of rows and you cannot predict sizes.",
+		"ALWAYS call list_workflows first — reuse an existing workflow if one fits the question.",
+		"Queries inside workflows must be TOP-DOWN: start from the grouping/parent table, nest into children. NEVER filter bottom-up from leaf tables.",
+		"Every query level has a silent default row limit. Always set explicit limits on every level, especially nested children.",
+		"order_by does NOT work on aggregation aliases (sum_*, count_*). Sort aggregated results in workflow JavaScript.",
+		"Use distinct: [columns] for GROUP BY — group_by does not exist.",
+		"Use find_path or explore_relationships to discover join paths — NEVER guess at FK relationships.",
 		"Aggregations like count_id, sum_price are available on all tables (see describe_table)",
 		"Use the write_where_clause prompt or validate_where_clause tool for help building complex filters",
 		"Use @object directive when you expect a single result: { user @object { id } }",
-		"For multi-database deployments, use the `database` parameter in list_tables and describe_table to filter by database. Omitting it now errors when a table name is ambiguous across databases.",
-		"ALWAYS call list_workflows first — a reusable workflow may already exist for the user's question",
+		"For multi-database deployments, use the `database` parameter in list_tables and describe_table to filter by database.",
 	)
 	if has("write_query") {
 		guide.Tips = append(guide.Tips, "Use write_query to generate schema-aware starter queries when prompts/resources are not available in the client")
@@ -471,15 +475,13 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 			"discover_databases → plan_database_setup → test_database_connection → apply_database_setup → list_tables",
 		)
 	}
+	if has("execute_workflow") {
+		addSequence("data_question",
+			[]string{"list_tables", "describe_table", "find_path", "list_workflows", "execute_workflow"},
+			"list_tables → describe_table → find_path → list_workflows → execute_workflow (ALWAYS use workflows for data questions)",
+		)
+	}
 	if has("execute_graphql") {
-		addSequence("simple_query",
-			[]string{"get_query_syntax", "list_tables", "describe_table", "execute_graphql"},
-			"get_query_syntax → list_tables → describe_table → execute_graphql",
-		)
-		addSequence("complex_query",
-			[]string{"get_query_syntax", "list_tables", "describe_table", "find_path", "execute_graphql"},
-			"get_query_syntax → list_tables → describe_table → find_path → execute_graphql",
-		)
 		addSequence("mutation",
 			[]string{"get_mutation_syntax", "describe_table", "execute_graphql"},
 			"get_mutation_syntax → describe_table → execute_graphql",
