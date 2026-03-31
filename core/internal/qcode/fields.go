@@ -273,6 +273,10 @@ func (co *Compiler) addRelColumns(qc *QCode, sel *Select, rel sdata.DBRel) error
 
 	case sdata.RelOneToOne, sdata.RelOneToMany:
 		psel.addBaseCol(Column{Col: rel.Right.Col})
+		// Composite FK: add extra pair columns to parent's base columns
+		for _, pair := range rel.ExtraPairs {
+			psel.addBaseCol(Column{Col: pair.R})
+		}
 
 	case sdata.RelEmbedded:
 		psel.addBaseCol(Column{Col: rel.Right.Col})

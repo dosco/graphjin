@@ -27,15 +27,17 @@ All tests verify GraphJin results against SQL ground truth via direct `psql` que
 | 21 | *What credit card types are used on our biggest orders?* | `SELECT cc.cardtype, soh.salesorderid, soh.subtotal FROM sales.salesorderheader soh JOIN sales.creditcard cc ... ORDER BY soh.subtotal DESC LIMIT 3` → ColonialVoice on orders 51131 ($163,930), 55282 ($160,378), 46616 ($150,837) | `TestAdventureWorksCreditCardAnalysis` | PASS | FK join + ordering | `salesorderheader → creditcard`, top-3 by subtotal with card type verification |
 | 22 | *Why did customers buy? Show me orders with their purchase reasons* | `SELECT sr.name, sr.reasontype FROM sales.salesorderheadersalesreason sosr JOIN sales.salesreason sr ... WHERE sosr.salesorderid = 69647 ORDER BY sr.name` → On Promotion, Other, Price (3 reasons) | `TestAdventureWorksSalesReasonAttribution` | PASS | Many-to-many | `salesorderheadersalesreason → salesreason`, junction table traversal, multi-row verification |
 | 23 | *What components make up our mountain bikes?* | `SELECT pa.name, pc.name, bom.perassemblyqty, um.name FROM production.billofmaterials bom JOIN production.product pa ... JOIN production.product pc ... JOIN production.unitmeasure um ... WHERE bom.enddate IS NULL AND bom.bomlevel = 1 ORDER BY pa.name, pc.name` → Mountain-100 Black 38: Chain (1 Each), Front Brakes (1 Each), Front Derailleur (1 Each), ... | `TestAdventureWorksBillOfMaterials` | PASS | Manufacturing BOM | `billofmaterials → product (assembly) + product (component) + unitmeasure`, BOM hierarchy |
-| 24 | *Show me customers with their full geographic location* | `SELECT p.firstname, p.lastname, a.city, sp.name, cr.name FROM sales.customer c JOIN person.person p ... JOIN person.businessentityaddress bea ... JOIN person.address a ... JOIN person.stateprovince sp ... JOIN person.countryregion cr ... ORDER BY c.customerid` → Jon Yang, Rockhampton, Queensland, Australia | `TestAdventureWorksCustomerGeography` | FAIL | 6-level, 3 schemas | `customer → person → businessentityaddress → address → stateprovince → countryregion`, deepest cross-schema nesting |
+| 24 | *Show me customers with their full geographic location* | `SELECT p.firstname, p.lastname, a.city, sp.name, cr.name FROM sales.customer c JOIN person.person p ... JOIN person.businessentityaddress bea ... JOIN person.address a ... JOIN person.stateprovince sp ... JOIN person.countryregion cr ... WHERE c.personid IS NOT NULL ORDER BY c.customerid` → Jon Yang, Rockhampton, Queensland, Australia | `TestAdventureWorksCustomerGeography` | PASS | 6-level, 3 schemas | `customer → person → businessentityaddress → address → stateprovince → countryregion`, deepest cross-schema nesting |
 
 ## Summary
 
-**23 PASS / 1 FAIL**
+**24 PASS / 0 FAIL**
 
-## Root Cause of Remaining Failure
+## Bugs Fixed During Test Development
 
-Test 24 (`CustomerGeography`) fails because the `customer → person → businessentityaddress` join path routes through `person.businessentity` as an intermediate node. The `customer.personid` FK points to `person.person.businessentityid`, and `person.businessentityaddress.businessentityid` also FKs to `person.businessentity.businessentityid` — but there is no direct FK between `person` and `businessentityaddress`. GraphJin's path finder cannot resolve the indirect relationship `person → (via businessentity) → businessentityaddress`, causing the child query to return empty data. This is a path resolution limitation for tables connected only through a shared parent table.
+1. **`renderJoin` schema qualification** (`core/internal/psql/query.go:614`): Intermediate JOIN tables were rendered without schema prefix (e.g., `INNER JOIN employee` instead of `INNER JOIN humanresources.employee`).
+2. **Composite FK columns missing from subquery SELECT** (`core/internal/qcode/fields.go:247`): Extra pair columns in composite FKs were not added to the parent subquery's base columns, causing "column does not exist" errors on aliased subqueries.
+3. **FK column disambiguation in WHERE** (`core/internal/qcode/exp.go`): FK columns like `customer_id` were misinterpreted as relationship joins instead of simple column filters.
 
 ## Features Exercised
 

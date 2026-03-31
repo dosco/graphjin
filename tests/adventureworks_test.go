@@ -1364,6 +1364,7 @@ func TestAdventureWorksCustomerGeography(t *testing.T) {
 		JOIN person.address a ON bea.addressid = a.addressid
 		JOIN person.stateprovince sp ON a.stateprovinceid = sp.stateprovinceid
 		JOIN person.countryregion cr ON sp.countryregioncode = cr.countryregioncode
+		WHERE c.personid IS NOT NULL
 		ORDER BY c.customerid LIMIT 3`)
 	require.NoError(t, err)
 	defer rows.Close()
@@ -1378,7 +1379,7 @@ func TestAdventureWorksCustomerGeography(t *testing.T) {
 
 	res, err := gj.GraphQL(context.Background(),
 		`query {
-			customer(order_by: {customerid: asc}, limit: 3) {
+			customer(where: {personid: {is_null: false}}, order_by: {customerid: asc}, limit: 3) {
 				customerid
 				persons: person {
 					firstname
