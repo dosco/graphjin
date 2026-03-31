@@ -1018,8 +1018,8 @@ func TestMain(m *testing.M) {
 				postgres.WithPassword("postgres"),
 				postgres.WithDatabase("adventureworks"),
 				postgres.WithInitScripts(
-					"./01_adventureworks_schema.sql",
-					"./02_adventureworks_data.sql",
+					"../tests-large/01_adventureworks_schema.sql",
+					"../tests-large/02_adventureworks_data.sql",
 				),
 				testcontainers.WithWaitStrategyAndDeadline(5*time.Minute,
 					wait.ForLog("database system is ready to accept connections").
