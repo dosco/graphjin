@@ -1401,22 +1401,16 @@ func (d *MySQLDialect) Quote(ctx Context, col string) {
 }
 
 func (d *MySQLDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
+	// Connect mutations use a WHERE filter (compiled from the connect data),
+	// not a JSON_TABLE record set. The filter values (e.g., id IN [1,2,3])
+	// are rendered by renderFilter(), so we don't need RenderMutateToRecordSet.
 	ctx.WriteString(`SELECT JSON_ARRAYAGG(`)
 	d.Quote(ctx, m.Ti.Name)
 	ctx.WriteString(".")
 	d.Quote(ctx, m.Rel.Left.Col.Name)
 	ctx.WriteString(`) INTO `)
 	d.RenderVar(ctx, varName)
-
-	if m.IsJSON {
-		ctx.WriteString(` FROM `)
-		d.RenderMutateToRecordSet(ctx, m, 0, func() {
-			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
-		})
-		ctx.WriteString(`, `)
-	} else {
-		ctx.WriteString(` FROM `)
-	}
+	ctx.WriteString(` FROM `)
 	d.Quote(ctx, m.Ti.Name)
 	ctx.WriteString(` WHERE `)
 	renderFilter()
@@ -1424,7 +1418,6 @@ func (d *MySQLDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qco
 
 	// If this is a One-to-Many connection (Child needs to point to Parent),
 	// we need to update the child table with the parent's ID.
-	// We check if we have a dependency on the parent table.
 	var parentVar string
 	for id := range m.DependsOn {
 		if qc.Mutates[id].Ti.Name == m.Rel.Right.Col.Table {
@@ -1436,17 +1429,8 @@ func (d *MySQLDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qco
 	if parentVar != "" {
 		ctx.WriteString("UPDATE ")
 		d.Quote(ctx, m.Ti.Name)
-		if m.IsJSON {
-			ctx.WriteString(", ")
-			d.RenderMutateToRecordSet(ctx, m, 0, func() {
-				ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
-			})
-		}
 		ctx.WriteString(" SET ")
-
-		// Fix quoting: m.Rel.Left.Col.Name is the column name.
 		d.Quote(ctx, m.Rel.Left.Col.Name)
-
 		ctx.WriteString(" = @")
 		ctx.WriteString(parentVar)
 		ctx.WriteString(" WHERE ")
@@ -1456,23 +1440,15 @@ func (d *MySQLDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qco
 }
 
 func (d *MySQLDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
+	// Disconnect mutations use a WHERE filter, not a JSON_TABLE record set.
 	ctx.WriteString(`SELECT JSON_ARRAYAGG(`)
 	d.Quote(ctx, m.Ti.Name)
 	ctx.WriteString(".")
 	d.Quote(ctx, m.Rel.Left.Col.Name)
 	ctx.WriteString(`) INTO `)
 	d.RenderVar(ctx, varName)
-
-	if m.IsJSON {
-		ctx.WriteString(` FROM `)
-		d.RenderMutateToRecordSet(ctx, m, 0, func() {
-			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
-		})
-		ctx.WriteString(`, `)
-	} else {
-		ctx.WriteString(` FROM `)
-	}
-	ctx.Quote(m.Ti.Name)
+	ctx.WriteString(` FROM `)
+	d.Quote(ctx, m.Ti.Name)
 	ctx.WriteString(` WHERE `)
 	renderFilter()
 	ctx.WriteString(`; `)
@@ -1480,12 +1456,6 @@ func (d *MySQLDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, qc *
 	// Perform the actual disconnect (UPDATE child SET fk = NULL)
 	ctx.WriteString("UPDATE ")
 	d.Quote(ctx, m.Ti.Name)
-	if m.IsJSON {
-		ctx.WriteString(", ")
-		d.RenderMutateToRecordSet(ctx, m, 0, func() {
-			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
-		})
-	}
 	ctx.WriteString(" SET ")
 	d.Quote(ctx, m.Rel.Left.Col.Name)
 	ctx.WriteString(" = NULL WHERE ")
