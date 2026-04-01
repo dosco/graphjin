@@ -124,6 +124,86 @@ func TestCompile4(t *testing.T) {
 	}
 }
 
+// TestWhereFKColumnNotMisinterpretedAsRelationship verifies that filtering on a
+// foreign key column (e.g. customer_id on purchases) uses a simple column filter,
+// not a relationship join to the customers table.
+func TestWhereFKColumnNotMisinterpretedAsRelationship(t *testing.T) {
+	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
+
+	// purchases.customer_id is an FK to customers.id — filtering on it should
+	// produce a column WHERE clause, not a nested EXISTS join to customers.
+	_, err := qc.Compile([]byte(`
+	query {
+		purchases(where: { customer_id: { eq: 5 } }) {
+			id
+			quantity
+		}
+	}`), nil, "user", "")
+
+	if err != nil {
+		t.Fatalf("expected FK column filter to compile, got: %v", err)
+	}
+}
+
+// TestWhereFKColumnProduct verifies product_id FK column filter on purchases.
+func TestWhereFKColumnProduct(t *testing.T) {
+	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
+
+	// purchases.product_id is an FK to products.id
+	_, err := qc.Compile([]byte(`
+	query {
+		purchases(where: { product_id: { eq: 10 } }) {
+			id
+			sale_type
+		}
+	}`), nil, "user", "")
+
+	if err != nil {
+		t.Fatalf("expected FK column filter to compile, got: %v", err)
+	}
+}
+
+// TestWhereNestedRelationshipStillWorks ensures genuine nested table where
+// clauses continue to work after the FK column disambiguation fix.
+func TestWhereNestedRelationshipStillWorks(t *testing.T) {
+	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
+
+	// "users" here is NOT a column on products — it should still be treated
+	// as a nested relationship filter (products → users via user_id FK).
+	_, err := qc.Compile([]byte(`
+	query {
+		products(where: { users: { email: { eq: "test@test.com" } } }) {
+			id
+			name
+		}
+	}`), nil, "user", "")
+
+	if err != nil {
+		t.Fatalf("expected nested relationship filter to compile, got: %v", err)
+	}
+}
+
+// TestWhereNestedFKColumnNotMisinterpreted verifies that filtering through a
+// relationship using an FK column on the intermediate table works correctly.
+// e.g. purchases → customers where customers.user_id = 5
+// user_id is an FK on customers pointing to users — it must be treated as a
+// column filter, not navigated further to the users table.
+func TestWhereNestedFKColumnNotMisinterpreted(t *testing.T) {
+	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
+
+	_, err := qc.Compile([]byte(`
+	query {
+		purchases(where: { customers: { user_id: { eq: 5 } } }) {
+			id
+			quantity
+		}
+	}`), nil, "user", "")
+
+	if err != nil {
+		t.Fatalf("expected nested FK column filter to compile, got: %v", err)
+	}
+}
+
 func TestInvalidCompile1(t *testing.T) {
 	qcompile, _ := qcode.NewCompiler(dbs, qcode.Config{})
 	_, err := qcompile.Compile([]byte(`#`), nil, "user", "")

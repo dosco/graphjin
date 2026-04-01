@@ -64,11 +64,16 @@ func (c *compilerContext) renderRecursiveSelect(sel *qcode.Select) {
 	// Postgres/MySQL: correlate with outer scope table alias
 	if !c.dialect.RenderRecursiveAnchorWhere(c, psel, sel.Ti, sel.Ti.PrimaryCol.Name) {
 		// Default: correlate with outer scope (works in Postgres/MySQL)
-		c.w.WriteString(`(`)
-		c.colWithTable(sel.Table, sel.Ti.PrimaryCol.Name)
-		c.w.WriteString(`) = (`)
-		c.colWithTableID(psel.Table, psel.ID, sel.Ti.PrimaryCol.Name)
-		c.w.WriteString(`)`)
+		for i, pkCol := range sel.Ti.PrimaryCols {
+			if i > 0 {
+				c.w.WriteString(` AND `)
+			}
+			c.w.WriteString(`(`)
+			c.colWithTable(sel.Table, pkCol.Name)
+			c.w.WriteString(`) = (`)
+			c.colWithTableID(psel.Table, psel.ID, pkCol.Name)
+			c.w.WriteString(`)`)
+		}
 	}
 	c.w.WriteString(` `)
 	// Use dialect-specific LIMIT 1 syntax

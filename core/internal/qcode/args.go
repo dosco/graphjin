@@ -101,13 +101,20 @@ func (co *Compiler) compileArgID(sel *Select, arg graph.Arg) (err error) {
 	if sel.ParentID != -1 {
 		return fmt.Errorf("can only be specified at the query root")
 	}
-	if err = validateArg(arg, graph.NodeNum, graph.NodeStr, graph.NodeVar); err != nil {
-		return
-	}
-	node := arg.Val
 
 	if sel.Ti.PrimaryCol.Name == "" {
 		return fmt.Errorf("no primary key column defined for '%s'", sel.Table)
+	}
+
+	node := arg.Val
+
+	// Composite PK: id is an object like {user_id: 1, session_id: 5}
+	if sel.Ti.HasCompositePK() && node.Type == graph.NodeObj {
+		return co.compileArgCompositeID(sel, node)
+	}
+
+	if err = validateArg(arg, graph.NodeNum, graph.NodeStr, graph.NodeVar); err != nil {
+		return
 	}
 
 	ex := newExpOp(OpEquals)
@@ -132,6 +139,44 @@ func (co *Compiler) compileArgID(sel *Select, arg graph.Arg) (err error) {
 	}
 
 	sel.Where.Exp = ex
+	sel.Singular = true
+	return nil
+}
+
+// compileArgCompositeID handles id: {col1: val1, col2: val2} for composite PK tables.
+func (co *Compiler) compileArgCompositeID(sel *Select, node *graph.Node) error {
+	and := newExpOp(OpAnd)
+
+	for _, pkCol := range sel.Ti.PrimaryCols {
+		child, ok := node.CMap[pkCol.Name]
+		if !ok {
+			return fmt.Errorf("composite id missing key '%s' for table '%s'", pkCol.Name, sel.Table)
+		}
+
+		ex := newExpOp(OpEquals)
+		ex.Left.Col = pkCol
+
+		switch child.Type {
+		case graph.NodeNum:
+			if _, err := strconv.ParseInt(child.Val, 10, 32); err != nil {
+				return err
+			}
+			ex.Right.ValType = ValNum
+			ex.Right.Val = child.Val
+		case graph.NodeStr:
+			ex.Right.ValType = ValStr
+			ex.Right.Val = child.Val
+		case graph.NodeVar:
+			ex.Right.ValType = ValVar
+			ex.Right.Val = child.Val
+		default:
+			return fmt.Errorf("invalid type for composite id key '%s'", pkCol.Name)
+		}
+
+		and.Children = append(and.Children, ex)
+	}
+
+	sel.Where.Exp = and
 	sel.Singular = true
 	return nil
 }

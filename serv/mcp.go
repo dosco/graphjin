@@ -166,8 +166,9 @@ func (s *graphjinService) newMCPServerWithContext(ctx context.Context) *mcpServe
 		version,
 		server.WithToolCapabilities(true),
 		server.WithPromptCapabilities(true),
-		server.WithResourceCapabilities(false, false),
+		server.WithResourceCapabilities(true, false),
 		server.WithHooks(hooks),
+		server.WithInstructions(serverInstructions),
 	)
 
 	// Snapshot which databases are read-only from the config file.

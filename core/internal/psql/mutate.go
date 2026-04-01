@@ -5,6 +5,7 @@ package psql
 import (
 	"bytes"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/dialect"
@@ -84,9 +85,14 @@ func (c *compilerContext) compileLinearMutation() {
 		// Skip if not needing variable? Or just declare all?
 		// We use variable for Primary Key capture.
 		vName := c.getVarName(m)
-		// Assuming type is Number for IDs usually?
-		// Or inspect m.Ti.PrimaryCol.Type
-		c.dialect.RenderVarDeclaration(c, vName, m.Ti.PrimaryCol.Type)
+		// Declare a variable for each PK column
+		for i, pkCol := range m.Ti.PrimaryCols {
+			n := vName
+			if i > 0 {
+				n = vName + "_pk" + strconv.Itoa(i)
+			}
+			c.dialect.RenderVarDeclaration(c, n, pkCol.Type)
+		}
 
 		// For MSSQL/MySQL/MariaDB: declare additional variables for all columns
 		// when there are child mutations that need FK values
@@ -146,35 +152,54 @@ func (c *compilerContext) compileLinearMutation() {
 				hasWhere := false
 				if m.IsJSON {
 					if c.dialect.Name() == "postgres" {
-						c.colWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
-						c.w.WriteString(" = ")
-						c.colWithTable("t", m.Ti.PrimaryCol.Name)
-						hasWhere = true
-					} else if c.dialect.Name() == "snowflake" {
-						pkAlias := ""
-						for _, col := range m.Cols {
-							if col.Col.Name == m.Ti.PrimaryCol.Name {
-								pkAlias = col.FieldName
-								break
+						for i, pkCol := range m.Ti.PrimaryCols {
+							if i > 0 {
+								c.w.WriteString(" AND ")
 							}
-						}
-						// Snowflake JSON updates should only join on PK when the PK is explicitly present
-						// in the input payload. Root updates by where/id usually don't include id in payload.
-						if pkAlias != "" {
-							c.colWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
+							c.colWithTable(m.Ti.Name, pkCol.Name)
 							c.w.WriteString(" = ")
-							c.colWithTable("t", pkAlias)
+							c.colWithTable("t", pkCol.Name)
+						}
+						if len(m.Ti.PrimaryCols) > 0 {
 							hasWhere = true
+						}
+					} else if c.dialect.Name() == "snowflake" {
+						for i, pkCol := range m.Ti.PrimaryCols {
+							pkAlias := ""
+							for _, col := range m.Cols {
+								if col.Col.Name == pkCol.Name {
+									pkAlias = col.FieldName
+									break
+								}
+							}
+							// Snowflake JSON updates should only join on PK when the PK is explicitly present
+							// in the input payload. Root updates by where/id usually don't include id in payload.
+							if pkAlias != "" {
+								if i > 0 && hasWhere {
+									c.w.WriteString(" AND ")
+								}
+								c.colWithTable(m.Ti.Name, pkCol.Name)
+								c.w.WriteString(" = ")
+								c.colWithTable("t", pkAlias)
+								hasWhere = true
+							}
 						}
 					} else if c.dialect.Name() == "mysql" || c.dialect.Name() == "mariadb" {
 						// For child updates (m.ParentID != -1), the JSON input doesn't contain the child's PK.
 						// The row to update is determined by the parent's FK, not by JSON table join.
 						// Only add JSON table join for root updates that need it.
 						if m.ParentID == -1 && (len(c.qc.Selects) == 0 || c.qc.Selects[m.SelID].Where.Exp == nil) {
-							c.colWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
-							c.w.WriteString(" = ")
-							c.colWithTable("t", m.Ti.PrimaryCol.Name)
-							hasWhere = true
+							for i, pkCol := range m.Ti.PrimaryCols {
+								if i > 0 {
+									c.w.WriteString(" AND ")
+								}
+								c.colWithTable(m.Ti.Name, pkCol.Name)
+								c.w.WriteString(" = ")
+								c.colWithTable("t", pkCol.Name)
+							}
+							if len(m.Ti.PrimaryCols) > 0 {
+								hasWhere = true
+							}
 						}
 					}
 				}
@@ -221,9 +246,7 @@ func (c *compilerContext) compileLinearMutation() {
 							c.w.WriteString(" FROM ")
 							c.quoted(pm.Ti.Name)
 							c.w.WriteString(" WHERE ")
-							c.quoted(pm.Ti.PrimaryCol.Name)
-							c.w.WriteString(" = ")
-							c.dialect.RenderVar(c, c.getVarName(pm))
+							c.renderPKWhereVars(pm)
 							c.w.WriteString(")")
 						} else if dialectName == "snowflake" {
 							// Snowflake child mutation WHERE: look up the
@@ -231,7 +254,7 @@ func (c *compilerContext) compileLinearMutation() {
 							// against the captured parent ID. This avoids
 							// unqualified table refs inside EXISTS that the
 							// Snowflake emulator cannot resolve.
-							if parentCol == pm.Ti.PrimaryCol.Name {
+							if pm.Ti.IsPKCol(parentCol) {
 								c.colWithTable(m.Ti.Name, childCol)
 								c.w.WriteString(" = ")
 								c.dialect.RenderVar(c, c.getVarName(pm))
@@ -246,9 +269,7 @@ func (c *compilerContext) compileLinearMutation() {
 								}
 								c.quoted(pm.Ti.Name)
 								c.w.WriteString(" WHERE ")
-								c.colWithTable(pm.Ti.Name, pm.Ti.PrimaryCol.Name)
-								c.w.WriteString(" = ")
-								c.dialect.RenderVar(c, c.getVarName(pm))
+								c.renderPKWhereVars(pm)
 								c.w.WriteString(")")
 							}
 						} else {
@@ -873,4 +894,22 @@ func (c *compilerContext) renderComma(i int) int {
 		c.w.WriteString(`, `)
 	}
 	return i + 1
+}
+
+// renderPKWhereVars renders: pk_col1 = @var AND pk_col2 = @var_pk1 ...
+// Used for parent lookups in child mutation WHERE clauses.
+func (c *compilerContext) renderPKWhereVars(m qcode.Mutate) {
+	vName := c.getVarName(m)
+	for i, pkCol := range m.Ti.PrimaryCols {
+		if i > 0 {
+			c.w.WriteString(" AND ")
+		}
+		c.quoted(pkCol.Name)
+		c.w.WriteString(" = ")
+		n := vName
+		if i > 0 {
+			n = vName + "_pk" + strconv.Itoa(i)
+		}
+		c.dialect.RenderVar(c, n)
+	}
 }

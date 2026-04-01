@@ -18,12 +18,13 @@ type DBInfo struct {
 	Schema  string
 	Name    string
 
-	Tables    []DBTable
-	Functions []DBFunction
-	VTables   []VirtualTable `json:"-"`
-	colMap    map[string]int
-	tableMap  map[string]int
-	hash      int
+	Tables        []DBTable
+	Functions     []DBFunction
+	VTables       []VirtualTable  `json:"-"`
+	CompositeFKs  []CompositeFKInfo `json:"-"`
+	colMap        map[string]int
+	tableMap      map[string]int
+	hash          int
 }
 
 // DBTable holds the database table information
@@ -38,7 +39,8 @@ type DBTable struct {
 	// Empty string means the default database.
 	Database     string
 	Columns      []DBColumn
-	PrimaryCol   DBColumn
+	PrimaryCols  []DBColumn
+	PrimaryCol   DBColumn // backward compat: alias for PrimaryCols[0]
 	SecondaryCol DBColumn
 	FullText     []DBColumn
 	Blocked        bool
@@ -67,6 +69,7 @@ func GetDBInfo(
 	var dbSchema, dbName string
 	var cols []DBColumn
 	var funcs []DBFunction
+	var compositeFKs []CompositeFKInfo
 
 	g := errgroup.Group{}
 
@@ -113,6 +116,9 @@ func GetDBInfo(
 		if funcs, err = DiscoverFunctions(db, dbType, blockList); err != nil {
 			return err
 		}
+		if compositeFKs, err = DiscoverCompositeFKs(db, dbType); err != nil {
+			return err
+		}
 		return nil
 	})
 
@@ -128,6 +134,7 @@ func GetDBInfo(
 		cols,
 		funcs,
 		blockList)
+	di.CompositeFKs = compositeFKs
 
 	// For Snowflake, discover clustering keys and attach to tables.
 	// Non-fatal: if this fails we just skip clustering optimization.
@@ -255,12 +262,39 @@ func NewDBTable(schema, name, _type string, cols []DBColumn) DBTable {
 			ti.FullText = append(ti.FullText, c)
 
 		case c.PrimaryKey:
-			ti.PrimaryCol = c
+			ti.PrimaryCols = append(ti.PrimaryCols, c)
 
 		}
 		ti.colMap[c.Name] = i
 	}
+	if len(ti.PrimaryCols) > 0 {
+		ti.PrimaryCol = ti.PrimaryCols[0]
+	}
 	return ti
+}
+
+// HasCompositePK returns true if the table has a multi-column primary key.
+func (t *DBTable) HasCompositePK() bool {
+	return len(t.PrimaryCols) > 1
+}
+
+// PKColNames returns the names of all primary key columns.
+func (t *DBTable) PKColNames() []string {
+	names := make([]string, len(t.PrimaryCols))
+	for i, c := range t.PrimaryCols {
+		names[i] = c.Name
+	}
+	return names
+}
+
+// IsPKCol returns true if the named column is part of the primary key.
+func (t *DBTable) IsPKCol(name string) bool {
+	for _, c := range t.PrimaryCols {
+		if c.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // GetColumnIndex returns the index of a column in the table by name, and whether it was found.
@@ -342,6 +376,23 @@ type DBColumn struct {
 	OrigFKeyTable  string
 	OrigFKeySchema string
 	OrigFKeyCol    string
+}
+
+// ColPair represents a column pair in a composite foreign key relationship.
+type ColPair struct {
+	L DBColumn // Local column
+	R DBColumn // Referenced (foreign) column
+}
+
+// CompositeFKInfo holds metadata about a composite (multi-column) foreign key constraint.
+type CompositeFKInfo struct {
+	Schema         string
+	Table          string
+	ConstraintName string
+	LocalCols      []string
+	FKeySchema     string
+	FKeyTable      string
+	FKeyCols       []string
 }
 
 // DiscoverColumns returns the columns of a table
@@ -505,6 +556,223 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 	}
 
 	return cols, nil
+}
+
+// DiscoverCompositeFKs returns metadata about composite (multi-column) foreign key
+// constraints for the given database type.
+func DiscoverCompositeFKs(db *sql.DB, dbtype string) ([]CompositeFKInfo, error) {
+	switch dbtype {
+	case "postgres", "":
+		return discoverCompositeFKsPostgres(db)
+	case "mysql":
+		return discoverCompositeFKsCSV(db, dbtype, compositeFKQueryMySQL)
+	case "mariadb":
+		return discoverCompositeFKsCSV(db, dbtype, compositeFKQueryMySQL) // identical to MySQL
+	case "sqlite":
+		return discoverCompositeFKsCSV(db, dbtype, compositeFKQuerySQLite)
+	case "oracle":
+		return discoverCompositeFKsCSV(db, dbtype, compositeFKQueryOracle)
+	case "mssql":
+		return discoverCompositeFKsCSV(db, dbtype, compositeFKQueryMSSQL)
+	case "snowflake":
+		// Snowflake uses a custom _gj_fk_metadata table that may not exist
+		result, err := discoverCompositeFKsCSV(db, dbtype, compositeFKQuerySnowflake)
+		if err != nil {
+			return nil, nil // non-fatal: table may not exist
+		}
+		return result, nil
+	default:
+		return nil, nil
+	}
+}
+
+const compositeFKQueryMySQL = `
+SELECT kcu.table_schema, kcu.table_name, kcu.constraint_name,
+       GROUP_CONCAT(kcu.column_name ORDER BY kcu.ordinal_position) AS local_columns,
+       kcu.referenced_table_schema, kcu.referenced_table_name,
+       GROUP_CONCAT(kcu.referenced_column_name ORDER BY kcu.ordinal_position) AS fkey_columns
+FROM information_schema.key_column_usage kcu
+JOIN information_schema.table_constraints tc
+  ON kcu.constraint_name = tc.constraint_name AND kcu.table_schema = tc.table_schema
+WHERE tc.constraint_type = 'FOREIGN KEY'
+  AND kcu.table_schema NOT IN ('_graphjin', 'information_schema', 'performance_schema', 'mysql', 'sys')
+GROUP BY kcu.table_schema, kcu.table_name, kcu.constraint_name,
+         kcu.referenced_table_schema, kcu.referenced_table_name
+HAVING COUNT(*) > 1`
+
+const compositeFKQuerySQLite = `
+SELECT 'main' AS schema_name, m.name AS table_name,
+       CAST(fk.id AS TEXT) AS constraint_name,
+       GROUP_CONCAT(fk."from", ',') AS local_columns,
+       'main' AS fkey_schema,
+       fk."table" AS fkey_table,
+       GROUP_CONCAT(fk."to", ',') AS fkey_columns
+FROM sqlite_master m
+CROSS JOIN pragma_foreign_key_list(m.name) fk
+WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite_%' AND m.name NOT LIKE '_gj_%'
+GROUP BY m.name, fk.id, fk."table"
+HAVING COUNT(*) > 1`
+
+const compositeFKQueryOracle = `
+SELECT ac.owner, ac.table_name, ac.constraint_name,
+       LISTAGG(acc.column_name, ',') WITHIN GROUP (ORDER BY acc.position) AS local_columns,
+       r_ac.owner AS fkey_schema, r_ac.table_name AS fkey_table,
+       LISTAGG(r_acc.column_name, ',') WITHIN GROUP (ORDER BY r_acc.position) AS fkey_columns
+FROM all_constraints ac
+JOIN all_cons_columns acc ON ac.constraint_name = acc.constraint_name AND ac.owner = acc.owner
+JOIN all_constraints r_ac ON ac.r_constraint_name = r_ac.constraint_name AND ac.r_owner = r_ac.owner
+JOIN all_cons_columns r_acc ON r_ac.constraint_name = r_acc.constraint_name AND r_ac.owner = r_acc.owner
+  AND acc.position = r_acc.position
+WHERE ac.constraint_type = 'R'
+  AND ac.owner NOT IN ('_GRAPHJIN', 'SYS', 'SYSTEM')
+GROUP BY ac.owner, ac.table_name, ac.constraint_name, r_ac.owner, r_ac.table_name
+HAVING COUNT(*) > 1`
+
+const compositeFKQueryMSSQL = `
+SELECT s.name, t.name, OBJECT_NAME(fkc.constraint_object_id),
+       STRING_AGG(c.name, ',') WITHIN GROUP (ORDER BY fkc.constraint_column_id) AS local_columns,
+       rs.name, rt.name,
+       STRING_AGG(rc.name, ',') WITHIN GROUP (ORDER BY fkc.constraint_column_id) AS fkey_columns
+FROM sys.foreign_key_columns fkc
+JOIN sys.columns c ON fkc.parent_object_id = c.object_id AND fkc.parent_column_id = c.column_id
+JOIN sys.columns rc ON fkc.referenced_object_id = rc.object_id AND fkc.referenced_column_id = rc.column_id
+JOIN sys.tables t ON fkc.parent_object_id = t.object_id
+JOIN sys.schemas s ON t.schema_id = s.schema_id
+JOIN sys.tables rt ON fkc.referenced_object_id = rt.object_id
+JOIN sys.schemas rs ON rt.schema_id = rs.schema_id
+GROUP BY s.name, t.name, fkc.constraint_object_id, rs.name, rt.name
+HAVING COUNT(*) > 1`
+
+const compositeFKQuerySnowflake = `
+SELECT table_schema, table_name,
+       table_schema || ':' || table_name || ':' || foreign_table_name AS constraint_name,
+       LISTAGG(column_name, ',') WITHIN GROUP (ORDER BY column_name) AS local_columns,
+       foreign_table_schema, foreign_table_name,
+       LISTAGG(foreign_column_name, ',') WITHIN GROUP (ORDER BY foreign_column_name) AS fkey_columns
+FROM _gj_fk_metadata
+GROUP BY table_schema, table_name, foreign_table_schema, foreign_table_name
+HAVING COUNT(*) > 1`
+
+func discoverCompositeFKsPostgres(db *sql.DB) ([]CompositeFKInfo, error) {
+	const query = `
+SELECT
+	n.nspname AS schema_name,
+	c.relname AS table_name,
+	co.conname AS constraint_name,
+	array_agg(a.attname ORDER BY k.ord) AS local_columns,
+	fn.nspname AS fkey_schema,
+	fc.relname AS fkey_table,
+	array_agg(fa.attname ORDER BY k.ord) AS fkey_columns
+FROM pg_constraint co
+	JOIN pg_class c ON c.oid = co.conrelid
+	JOIN pg_namespace n ON n.oid = c.relnamespace
+	JOIN pg_class fc ON fc.oid = co.confrelid
+	JOIN pg_namespace fn ON fn.oid = fc.relnamespace
+	CROSS JOIN LATERAL unnest(co.conkey, co.confkey) WITH ORDINALITY AS k(local_attnum, foreign_attnum, ord)
+	JOIN pg_attribute a ON a.attrelid = co.conrelid AND a.attnum = k.local_attnum
+	JOIN pg_attribute fa ON fa.attrelid = co.confrelid AND fa.attnum = k.foreign_attnum
+WHERE co.contype = 'f'
+	AND n.nspname NOT IN ('_graphjin', 'information_schema', 'pg_catalog')
+	AND array_length(co.conkey, 1) > 1
+GROUP BY n.nspname, c.relname, co.conname, fn.nspname, fc.relname`
+
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching composite FKs: %w", err)
+	}
+	defer rows.Close()
+
+	var result []CompositeFKInfo
+	for rows.Next() {
+		var info CompositeFKInfo
+		var localCols, fkeyCols []string
+		if err := rows.Scan(
+			&info.Schema, &info.Table, &info.ConstraintName,
+			(*pgStringArray)(&localCols),
+			&info.FKeySchema, &info.FKeyTable,
+			(*pgStringArray)(&fkeyCols),
+		); err != nil {
+			return nil, fmt.Errorf("error scanning composite FK: %w", err)
+		}
+		info.LocalCols = localCols
+		info.FKeyCols = fkeyCols
+		result = append(result, info)
+	}
+	return result, rows.Err()
+}
+
+// discoverCompositeFKsCSV handles composite FK discovery for databases that return
+// aggregated columns as comma-separated strings (MySQL, MariaDB, SQLite, Oracle, MSSQL, Snowflake).
+func discoverCompositeFKsCSV(db *sql.DB, dbtype, query string) ([]CompositeFKInfo, error) {
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching composite FKs: %w", err)
+	}
+	defer rows.Close()
+
+	normalize := dbtype == "oracle" || dbtype == "mssql" || dbtype == "snowflake"
+
+	var result []CompositeFKInfo
+	for rows.Next() {
+		var info CompositeFKInfo
+		var localCSV, fkeyCSV string
+		if err := rows.Scan(
+			&info.Schema, &info.Table, &info.ConstraintName,
+			&localCSV,
+			&info.FKeySchema, &info.FKeyTable,
+			&fkeyCSV,
+		); err != nil {
+			return nil, fmt.Errorf("error scanning composite FK: %w", err)
+		}
+		info.LocalCols = strings.Split(localCSV, ",")
+		info.FKeyCols = strings.Split(fkeyCSV, ",")
+
+		if normalize {
+			info.Schema = strings.ToLower(info.Schema)
+			info.Table = strings.ToLower(info.Table)
+			info.FKeySchema = strings.ToLower(info.FKeySchema)
+			info.FKeyTable = strings.ToLower(info.FKeyTable)
+			for i := range info.LocalCols {
+				info.LocalCols[i] = strings.ToLower(util.ToSnake(strings.TrimSpace(info.LocalCols[i])))
+			}
+			for i := range info.FKeyCols {
+				info.FKeyCols[i] = strings.ToLower(util.ToSnake(strings.TrimSpace(info.FKeyCols[i])))
+			}
+		}
+		result = append(result, info)
+	}
+	return result, rows.Err()
+}
+
+// pgStringArray implements sql.Scanner for Postgres text[] columns.
+type pgStringArray []string
+
+func (a *pgStringArray) Scan(src interface{}) error {
+	if src == nil {
+		*a = nil
+		return nil
+	}
+	var s string
+	switch v := src.(type) {
+	case []byte:
+		s = string(v)
+	case string:
+		s = v
+	default:
+		return fmt.Errorf("pgStringArray: unsupported type %T", src)
+	}
+	// Parse Postgres array literal: {val1,val2,...}
+	s = strings.TrimSpace(s)
+	if len(s) < 2 || s[0] != '{' || s[len(s)-1] != '}' {
+		return fmt.Errorf("pgStringArray: invalid format %q", s)
+	}
+	inner := s[1 : len(s)-1]
+	if inner == "" {
+		*a = nil
+		return nil
+	}
+	*a = strings.Split(inner, ",")
+	return nil
 }
 
 // DBFunction holds the database function information

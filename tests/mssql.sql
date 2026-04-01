@@ -360,3 +360,39 @@ INSERT INTO locations (name, geom) VALUES
   (N'Berkeley', geography::Point(37.8716, -122.2727, 4326)),
   (N'Palo Alto', geography::Point(37.4419, -122.1430, 4326));
 GO
+
+-- Composite FK test tables
+GO
+CREATE TABLE product_variants (
+  product_id BIGINT NOT NULL,
+  variant_id BIGINT NOT NULL,
+  variant_name NVARCHAR(100) NOT NULL,
+  sku NVARCHAR(50),
+  PRIMARY KEY (product_id, variant_id),
+  FOREIGN KEY (product_id) REFERENCES products(id)
+);
+GO
+CREATE TABLE order_items (
+  id BIGINT IDENTITY(1,1) PRIMARY KEY,
+  order_id BIGINT NOT NULL,
+  product_id BIGINT NOT NULL,
+  variant_id BIGINT NOT NULL,
+  quantity INTEGER NOT NULL DEFAULT 1,
+  price FLOAT NOT NULL,
+  FOREIGN KEY (product_id, variant_id) REFERENCES product_variants(product_id, variant_id)
+);
+GO
+INSERT INTO product_variants (product_id, variant_id, variant_name, sku) VALUES
+  (1, 1, N'Small', N'PROD1-S'),
+  (1, 2, N'Medium', N'PROD1-M'),
+  (1, 3, N'Large', N'PROD1-L'),
+  (2, 1, N'Red', N'PROD2-R'),
+  (2, 2, N'Blue', N'PROD2-B');
+GO
+INSERT INTO order_items (order_id, product_id, variant_id, quantity, price) VALUES
+  (1, 1, 1, 2, 19.99),
+  (2, 1, 2, 1, 24.99),
+  (3, 1, 3, 3, 29.99),
+  (4, 2, 1, 1, 14.99),
+  (5, 2, 2, 2, 14.99);
+GO

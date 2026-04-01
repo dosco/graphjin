@@ -182,12 +182,16 @@ func updateTable(conf *Config, dbInfo *sdata.DBInfo, table Table) error {
 
 		if c.Primary {
 			c1.PrimaryKey = true
-			t1.PrimaryCol = *c1
+			t1.PrimaryCols = append(t1.PrimaryCols, *c1)
 		}
 
 		if c.Array {
 			c1.Array = true
 		}
+	}
+
+	if len(t1.PrimaryCols) > 0 {
+		t1.PrimaryCol = t1.PrimaryCols[0]
 	}
 
 	// Apply partition configuration

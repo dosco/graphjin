@@ -367,13 +367,22 @@ func (ms *mcpServer) registerResources() {
 		func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
 			guide := WorkflowGuide{
 				QueryWorkflow: []string{
-					"1. Call get_query_syntax to learn GraphJin DSL",
-					"2. Call list_tables to see available data",
-					"3. Call describe_table for schema details",
-					"4. Check list_saved_queries for existing queries",
-					"5. Call execute_graphql or execute_saved_query",
-					"6. Check list_workflows for reusable JS workflows",
-					"7. For new orchestration: get_js_runtime_api → save_workflow → execute_workflow",
+					"1. Read graphjin://discovery/syntax — learn query DSL, limits, and rules",
+					"2. Read graphjin://discovery/tables — find relevant tables",
+					"3. Use find_path or explore_relationships to discover join paths — NEVER guess",
+					"4. Use describe_table for column details on specific tables",
+					"5. Check list_workflows for an existing workflow that answers the question",
+					"6. If none fits, write a new workflow using execute_workflow",
+					"",
+					"CRITICAL RULES:",
+					"- ALWAYS use workflows (execute_workflow) — NEVER execute_graphql for data questions",
+					"  Tables can have hundreds of thousands of rows. You cannot predict sizes in advance.",
+					"- Queries inside workflows must be TOP-DOWN: start from the grouping/parent table",
+					"  and nest into children. NEVER filter bottom-up from leaf tables.",
+					"- Every query level has a silent default row limit. Always set explicit limits.",
+					"- order_by does NOT work on aggregation aliases (sum_*, count_*, etc).",
+					"  Sort aggregated results in workflow JavaScript, not in the query.",
+					"- Use distinct: [columns] for GROUP BY — group_by does not exist.",
 				},
 				MutationWorkflow: []string{
 					"1. Call get_mutation_syntax to learn mutation syntax",
@@ -393,6 +402,9 @@ func (ms *mcpServer) registerResources() {
 
 	// JS runtime API resource
 	ms.registerJSRuntimeResources()
+
+	// Schema discovery resources (Bible)
+	ms.registerDiscoveryResources()
 }
 
 // registerSyntaxTools registers the syntax reference tools

@@ -54,11 +54,11 @@ SELECT n.nspname as "schema",
 	) AS foreignkey_table,
 	(
 		CASE
-			WHEN co.contype = ('f'::char) THEN (
-				SELECT f.attname
-				FROM pg_attribute f
-				WHERE f.attnum = co.confkey [1]
-					and f.attrelid = co.confrelid
+			WHEN co.contype = ('f'::char) AND array_position(co.conkey, f.attnum) IS NOT NULL THEN (
+				SELECT fa.attname
+				FROM pg_attribute fa
+				WHERE fa.attnum = co.confkey[array_position(co.conkey, f.attnum)]
+					and fa.attrelid = co.confrelid
 			)
 			ELSE ''::text
 		END

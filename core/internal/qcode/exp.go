@@ -860,6 +860,16 @@ func (ast *aexpst) processNestedTable(av aexp, ex *Exp, node *graph.Node) (bool,
 
 	ti := av.ti
 
+	// If the field name is a direct column on the current table, don't treat
+	// it as a nested table reference. This avoids FK columns (e.g. territoryid)
+	// being misinterpreted as relationship joins when they match a table name.
+	if node.Name != "" {
+		nn := ast.co.ParseName(node.Name)
+		if _, colErr := ti.GetColumn(nn); colErr == nil {
+			return false, nil
+		}
+	}
+
 	var prev, curr string
 	if ast.edge == "" {
 		prev = ti.Name
@@ -882,6 +892,16 @@ func (ast *aexpst) processNestedTable(av aexp, ex *Exp, node *graph.Node) (bool,
 		if curr == ti.Name {
 			continue
 			// return fmt.Errorf("selector table not allowed in where: %s", ti.Name)
+		}
+
+		// If curr is a column on the previously resolved table (prev), don't
+		// treat it as a relationship. This prevents FK columns like territoryid
+		// from being resolved as joins to salesterritory when used in nested
+		// WHERE filters like: { salesorderheader: { territoryid: { eq: 1 } } }
+		if prevTable, findErr := ast.co.s.Find("", prev); findErr == nil {
+			if _, colErr := prevTable.GetColumn(curr); colErr == nil {
+				break
+			}
 		}
 
 		var path []sdata.TPath
