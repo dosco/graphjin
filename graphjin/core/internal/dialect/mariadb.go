@@ -2259,9 +2259,8 @@ func (d *MariaDBDialect) renderSimpleExp(ctx Context, sel *qcode.Select, exp *qc
 }
 
 // RenderLinearConnect overrides MySQL's version for MariaDB.
-// MariaDB has issues with column resolution when JSON_TABLE derived table
-// is in the same FROM clause as the target table. We restructure the query
-// to use an explicit JOIN instead of a cartesian product.
+// Connect mutations use a WHERE filter (compiled from the connect data),
+// not a JSON_TABLE record set.
 func (d *MariaDBDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
 	ctx.WriteString(`SELECT JSON_ARRAYAGG(`)
 	d.Quote(ctx, m.Ti.Name)
@@ -2269,18 +2268,8 @@ func (d *MariaDBDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *q
 	d.Quote(ctx, m.Rel.Left.Col.Name)
 	ctx.WriteString(`) INTO `)
 	d.RenderVar(ctx, varName)
-
 	ctx.WriteString(` FROM `)
 	d.Quote(ctx, m.Ti.Name)
-
-	if m.IsJSON {
-		ctx.WriteString(` JOIN `)
-		d.RenderMutateToRecordSet(ctx, m, 0, func() {
-			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
-		})
-		ctx.WriteString(` ON TRUE`)
-	}
-
 	ctx.WriteString(` WHERE `)
 	renderFilter()
 	ctx.WriteString("; ")
@@ -2298,13 +2287,6 @@ func (d *MariaDBDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *q
 	if parentVar != "" {
 		ctx.WriteString("UPDATE ")
 		d.Quote(ctx, m.Ti.Name)
-		if m.IsJSON {
-			ctx.WriteString(" JOIN ")
-			d.RenderMutateToRecordSet(ctx, m, 0, func() {
-				ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
-			})
-			ctx.WriteString(" ON TRUE")
-		}
 		ctx.WriteString(" SET ")
 		d.Quote(ctx, m.Ti.Name)
 		ctx.WriteString(".")
@@ -2318,6 +2300,7 @@ func (d *MariaDBDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *q
 }
 
 // RenderLinearDisconnect overrides MySQL's version for MariaDB.
+// Disconnect mutations use a WHERE filter, not a JSON_TABLE record set.
 func (d *MariaDBDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
 	ctx.WriteString(`SELECT JSON_ARRAYAGG(`)
 	d.Quote(ctx, m.Ti.Name)
@@ -2325,18 +2308,8 @@ func (d *MariaDBDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, qc
 	d.Quote(ctx, m.Rel.Left.Col.Name)
 	ctx.WriteString(`) INTO `)
 	d.RenderVar(ctx, varName)
-
 	ctx.WriteString(` FROM `)
 	d.Quote(ctx, m.Ti.Name)
-
-	if m.IsJSON {
-		ctx.WriteString(` JOIN `)
-		d.RenderMutateToRecordSet(ctx, m, 0, func() {
-			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
-		})
-		ctx.WriteString(` ON TRUE`)
-	}
-
 	ctx.WriteString(` WHERE `)
 	renderFilter()
 	ctx.WriteString(`; `)
@@ -2344,13 +2317,6 @@ func (d *MariaDBDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, qc
 	// Perform the actual disconnect (UPDATE child SET fk = NULL)
 	ctx.WriteString("UPDATE ")
 	d.Quote(ctx, m.Ti.Name)
-	if m.IsJSON {
-		ctx.WriteString(" JOIN ")
-		d.RenderMutateToRecordSet(ctx, m, 0, func() {
-			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
-		})
-		ctx.WriteString(" ON TRUE")
-	}
 	ctx.WriteString(" SET ")
 	d.Quote(ctx, m.Ti.Name)
 	ctx.WriteString(".")

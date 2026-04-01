@@ -104,6 +104,50 @@ func TestHandleGetJSRuntimeAPI_RespectsToolGates(t *testing.T) {
 	}
 }
 
+func TestHandleGetJSRuntimeAPI_ExposesWorkflowTimeout(t *testing.T) {
+	// Configured timeout should be surfaced
+	ms := mockMcpServerWithConfig(MCPConfig{WorkflowTimeout: 120})
+	ms.srv = server.NewMCPServer("test", "0.0.0")
+	ms.registerTools()
+
+	res, err := ms.handleGetJSRuntimeAPI(context.Background(), newToolRequest(map[string]any{}))
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	text := assertToolSuccess(t, res)
+	var api JSRuntimeAPI
+	if err := json.Unmarshal([]byte(text), &api); err != nil {
+		t.Fatalf("failed to decode API response: %v", err)
+	}
+
+	if api.WorkflowTimeout != 120 {
+		t.Fatalf("expected workflow_timeout_seconds=120, got %d", api.WorkflowTimeout)
+	}
+}
+
+func TestHandleGetJSRuntimeAPI_DefaultWorkflowTimeout(t *testing.T) {
+	// When not configured, should show the default (5s)
+	ms := mockMcpServerWithConfig(MCPConfig{})
+	ms.srv = server.NewMCPServer("test", "0.0.0")
+	ms.registerTools()
+
+	res, err := ms.handleGetJSRuntimeAPI(context.Background(), newToolRequest(map[string]any{}))
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	text := assertToolSuccess(t, res)
+	var api JSRuntimeAPI
+	if err := json.Unmarshal([]byte(text), &api); err != nil {
+		t.Fatalf("failed to decode API response: %v", err)
+	}
+
+	if api.WorkflowTimeout != defaultWorkflowScriptTimeout {
+		t.Fatalf("expected default workflow_timeout_seconds=%d, got %d", defaultWorkflowScriptTimeout, api.WorkflowTimeout)
+	}
+}
+
 func hasJSFunction(functions []JSRuntimeFunction, name string) bool {
 	for _, f := range functions {
 		if f.Name == name {

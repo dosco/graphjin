@@ -628,11 +628,11 @@ func (d *SQLiteDialect) RenderUpdate(ctx Context, m *qcode.Mutate, set func(), f
 	ctx.WriteString(`INSERT INTO _gj_ids (k, id) SELECT '`)
 	ctx.WriteString(vName)
 	ctx.WriteString(`', `)
-	ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
+	renderPKIDExpr(ctx, m)
 	ctx.WriteString(` FROM `)
 	ctx.ColWithTable(m.Ti.Schema, m.Ti.Name)
-    ctx.WriteString(` AS `)
-    ctx.Quote(m.Ti.Name)
+	ctx.WriteString(` AS `)
+	ctx.Quote(m.Ti.Name)
 	if from != nil {
 		ctx.WriteString(`, `) // Comma for implicit join in SELECT
 		from()
@@ -641,24 +641,7 @@ func (d *SQLiteDialect) RenderUpdate(ctx Context, m *qcode.Mutate, set func(), f
 
 	// Add implicit join condition for JSON updates (only for Arrays where ID is in Input)
 	if m.IsJSON && m.Array {
-		pkAlias := m.Ti.PrimaryCol.Name
-        isExplicitPK := false
-		for _, col := range m.Cols {
-			if col.Col.Name == m.Ti.PrimaryCol.Name {
-				pkAlias = col.FieldName
-                isExplicitPK = true
-				break
-			}
-		}
-
-        // If PK is implicit, we aliased it as "_gj_pkt" in RenderMutateToRecordSet
-        if !isExplicitPK {
-            pkAlias = "_gj_pkt"
-        }
-
-		ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
-		ctx.WriteString(` = t.`)
-		ctx.Quote(pkAlias)
+		renderPKJSONJoin(ctx, m)
 		ctx.WriteString(` AND `)
 	}
 
@@ -677,24 +660,7 @@ func (d *SQLiteDialect) RenderUpdate(ctx Context, m *qcode.Mutate, set func(), f
 
 	// Add implicit join condition for JSON updates (only for Arrays where ID is in Input)
 	if m.IsJSON && m.Array {
-		pkAlias := m.Ti.PrimaryCol.Name
-        isExplicitPK := false
-		for _, col := range m.Cols {
-			if col.Col.Name == m.Ti.PrimaryCol.Name {
-				pkAlias = col.FieldName
-                isExplicitPK = true
-				break
-			}
-		}
-
-        // If PK is implicit, we aliased it as "_gj_pkt" in RenderMutateToRecordSet
-        if !isExplicitPK {
-            pkAlias = "_gj_pkt"
-        }
-
-		ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
-		ctx.WriteString(` = t.`)
-		ctx.Quote(pkAlias)
+		renderPKJSONJoin(ctx, m)
 		ctx.WriteString(` AND `)
 	}
 
@@ -724,7 +690,12 @@ func (d *SQLiteDialect) RenderUpsert(ctx Context, m *qcode.Mutate, insert func()
 		i++
 	}
 	if i == 0 {
-		ctx.WriteString(m.Ti.PrimaryCol.Name)
+		for j, pkCol := range m.Ti.PrimaryCols {
+			if j > 0 {
+				ctx.WriteString(`, `)
+			}
+			ctx.WriteString(pkCol.Name)
+		}
 	}
 	ctx.WriteString(`) DO UPDATE SET `)
 	updateSet()
@@ -733,9 +704,23 @@ func (d *SQLiteDialect) RenderUpsert(ctx Context, m *qcode.Mutate, insert func()
 func (d *SQLiteDialect) RenderReturning(ctx Context, m *qcode.Mutate) {
 	// SQLite 3.35+ supports RETURNING clause
 	// Return a JSON object with the ID for the execution layer to parse
-	ctx.WriteString(` RETURNING json_object('id', `)
-	ctx.Quote(m.Ti.PrimaryCol.Name)
-	ctx.WriteString(`)`)
+	if m.Ti.HasCompositePK() {
+		ctx.WriteString(` RETURNING json_object(`)
+		for i, pkCol := range m.Ti.PrimaryCols {
+			if i > 0 {
+				ctx.WriteString(`, `)
+			}
+			ctx.WriteString(`'`)
+			ctx.WriteString(pkCol.Name)
+			ctx.WriteString(`', `)
+			ctx.Quote(pkCol.Name)
+		}
+		ctx.WriteString(`)`)
+	} else {
+		ctx.WriteString(` RETURNING json_object('id', `)
+		ctx.Quote(m.Ti.PrimaryCol.Name)
+		ctx.WriteString(`)`)
+	}
 }
 
 func (d *SQLiteDialect) RenderAssign(ctx Context, col string, val string) {
@@ -905,9 +890,14 @@ func (d *SQLiteDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qco
 		}
 		
 		if i == 0 {
-			ctx.Quote(m.Ti.PrimaryCol.Name)
-			ctx.WriteString(" = ")
-			ctx.Quote(m.Ti.PrimaryCol.Name)
+			for j, pkCol := range m.Ti.PrimaryCols {
+				if j > 0 {
+					ctx.WriteString(`, `)
+				}
+				ctx.Quote(pkCol.Name)
+				ctx.WriteString(" = ")
+				ctx.Quote(pkCol.Name)
+			}
 		}
 	}, fromFunc, func() {
         // Where
@@ -929,7 +919,7 @@ func (d *SQLiteDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qco
 func (d *SQLiteDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
 	// Step 1: SELECT to capture IDs matching the filter
 	ctx.WriteString(`SELECT json_object('id', `)
-	ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
+	renderPKIDExpr(ctx, m)
 	ctx.WriteString(`)`)
 	
 	if m.IsJSON {
@@ -991,10 +981,8 @@ func (d *SQLiteDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qc
 			ctx.WriteString(` = (SELECT id FROM _gj_ids WHERE k = '`)
 			ctx.WriteString(parentVar)
 			ctx.WriteString(`' LIMIT 1) WHERE `)
-			ctx.Quote(m.Ti.PrimaryCol.Name)
-			ctx.WriteString(` IN (SELECT id FROM _gj_ids WHERE k = '`)
-			ctx.WriteString(varName)
-			ctx.WriteString(`'); `)
+			renderPKWhereGjIds(ctx, m.Ti, varName)
+			ctx.WriteString(`; `)
 		}
 	} else {
 		// For non-recursive relationships:
@@ -1021,10 +1009,8 @@ func (d *SQLiteDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qc
 			ctx.WriteString(` = (SELECT id FROM _gj_ids WHERE k = '`)
 			ctx.WriteString(varName)
 			ctx.WriteString(`' LIMIT 1) WHERE `)
-			ctx.Quote(parentMut.Ti.PrimaryCol.Name)
-			ctx.WriteString(` = (SELECT id FROM _gj_ids WHERE k = '`)
-			ctx.WriteString(parentVar)
-			ctx.WriteString(`' LIMIT 1); `)
+			renderPKWhereGjIds(ctx, parentMut.Ti, parentVar)
+			ctx.WriteString(`; `)
 		} else {
             // Check if Child (m.Ti) has FK pointing to Parent
             var childTableName string
@@ -1046,10 +1032,8 @@ func (d *SQLiteDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qc
                 ctx.WriteString(` = (SELECT id FROM _gj_ids WHERE k = '`)
                 ctx.WriteString(parentVar)
                 ctx.WriteString(`' LIMIT 1) WHERE `)
-                ctx.Quote(m.Ti.PrimaryCol.Name)
-                ctx.WriteString(` IN (SELECT id FROM _gj_ids WHERE k = '`)
-                ctx.WriteString(varName)
-                ctx.WriteString(`'); `)
+                renderPKWhereGjIds(ctx, m.Ti, varName)
+                ctx.WriteString(`; `)
             }
         }
 	}
@@ -1086,9 +1070,7 @@ func (d *SQLiteDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, qc 
     ctx.WriteString(` FROM `)
     ctx.Quote(pm.Ti.Name)
     ctx.WriteString(` WHERE `)
-    ctx.Quote(pm.Ti.PrimaryCol.Name)
-    ctx.WriteString(` = `)
-    d.RenderVar(ctx, d.getVarName(pm))
+    renderPKWhereVarsSQLite(ctx, d, pm)
     ctx.WriteString(`) AND `)
     renderFilter()
 
@@ -1181,27 +1163,15 @@ func (d *SQLiteDialect) ModifySelectsForMutation(qc *qcode.QCode) {
 		if len(mutations) == 1 {
 			m := mutations[0]
 			varName := m.Ti.Name + "_" + fmt.Sprintf("%d", m.ID)
-			exp = &qcode.Exp{Op: qcode.OpEquals}
-			col := m.Ti.PrimaryCol
-			col.Table = m.Ti.Name
-			exp.Left.Col = col
-			exp.Left.ID = -1
-			exp.Right.ValType = qcode.ValDBVar
-			exp.Right.Val = varName
+			exp = buildPKSelectExp(m.Ti, qcode.OpEquals, varName)
 		} else {
 			// Multiple mutations - use IN
 			m := mutations[0]
-			exp = &qcode.Exp{Op: qcode.OpIn}
-			col := m.Ti.PrimaryCol
-			col.Table = m.Ti.Name
-			exp.Left.Col = col
-			exp.Left.ID = -1
-			exp.Right.ValType = qcode.ValList 
-			exp.Right.ListType = qcode.ValDBVar
+			var varNames []string
 			for _, mut := range mutations {
-				varName := mut.Ti.Name + "_" + fmt.Sprintf("%d", mut.ID)
-				exp.Right.ListVal = append(exp.Right.ListVal, varName)
+				varNames = append(varNames, mut.Ti.Name+"_"+fmt.Sprintf("%d", mut.ID))
 			}
+			exp = buildPKSelectExp(m.Ti, qcode.OpIn, varNames...)
 		}
 		
 		sel.Where.Exp = exp
@@ -1228,7 +1198,7 @@ func (d *SQLiteDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, n 
 				ctx.WriteString(`, `)
 			}
             first = false
-			if col.Col.Name == m.Ti.PrimaryCol.Name {
+			if m.Ti.IsPKCol(col.Col.Name) {
 				hasPK = true
 			}
 			ctx.WriteString(`json_extract(value, '$.`)
@@ -1240,9 +1210,7 @@ func (d *SQLiteDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, n 
             if !first {
 			    ctx.WriteString(`, `)
             }
-			ctx.WriteString(`json_extract(value, '$.`)
-			ctx.WriteString(m.Ti.PrimaryCol.Name) 
-			ctx.WriteString(`') AS "_gj_pkt"`)
+			renderImplicitPKExtractArray(ctx, m)
 		}
 		ctx.WriteString(` FROM `)
 		if !d.SupportsLinearExecution() {
@@ -1267,7 +1235,7 @@ func (d *SQLiteDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, n 
 				ctx.WriteString(`, `)
 			}
             first = false
-			if col.Col.Name == m.Ti.PrimaryCol.Name {
+			if m.Ti.IsPKCol(col.Col.Name) {
 				hasPK = true
 			}
 			ctx.WriteString(`json_extract(`)
@@ -1283,18 +1251,10 @@ func (d *SQLiteDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, n 
 		}
 // ... Inside RenderMutateToRecordSet Single Object Block
 		if !hasPK {
-            if !first {
-			    ctx.WriteString(`, `)
-            }
-			ctx.WriteString(`CAST(json_extract(`)
-			renderRoot()
-			ctx.WriteString(`, '$.`)
-			if len(m.Path) > 0 {
-				ctx.WriteString(strings.Join(m.Path, "."))
-				ctx.WriteString(`.`)
+			if !first {
+				ctx.WriteString(`, `)
 			}
-			ctx.WriteString(m.Ti.PrimaryCol.Name)
-			ctx.WriteString(`') AS INTEGER) AS "_gj_pkt"`)
+			renderImplicitPKExtractSingle(ctx, m, renderRoot)
 		}
 		if !d.SupportsLinearExecution() {
 			ctx.WriteString(` FROM _sg_input AS i`)
@@ -1349,10 +1309,8 @@ func (d *SQLiteDialect) RenderQueryPrefix(ctx Context, qc *qcode.QCode) {
 		}
 		ctx.Quote(table)
 		ctx.WriteString(` WHERE `)
-		ctx.Quote(m.Ti.PrimaryCol.Name)
-		ctx.WriteString(` IN (SELECT id FROM _gj_ids WHERE k LIKE '`)
-		ctx.WriteString(table)
-		ctx.WriteString(`_%')) `)
+		renderPKWhereGjIds(ctx, m.Ti, table+"_%")
+		ctx.WriteString(`) `)
 	}
 }
 
@@ -1496,7 +1454,7 @@ func (d *SQLiteDialect) RenderLinearValues(ctx Context, m *qcode.Mutate, renderR
 			ctx.WriteString(`, `)
 		}
 		first = false
-		if col.Col.Name == m.Ti.PrimaryCol.Name {
+		if m.Ti.IsPKCol(col.Col.Name) {
 			hasPK = true
 		}
 
@@ -1539,22 +1497,14 @@ func (d *SQLiteDialect) RenderLinearValues(ctx Context, m *qcode.Mutate, renderR
 		if !first {
 			ctx.WriteString(`, `)
 		}
-        if m.Array {
-		    ctx.WriteString(`json_extract(value, '$.`)
-        } else {
-            ctx.WriteString(`json_extract(`)
-            renderRoot()
-            ctx.WriteString(`, '$.`)
-            if len(m.Path) > 0 {
-                ctx.WriteString(strings.Join(m.Path, "."))
-                ctx.WriteString(`.`)
-            }
-        }
-		ctx.WriteString(m.Ti.PrimaryCol.Name) 
-		ctx.WriteString(`') AS "_gj_pkt"`)
+		if m.Array {
+			renderImplicitPKExtractArray(ctx, m)
+		} else {
+			renderImplicitPKExtractSingle(ctx, m, renderRoot)
+		}
 	}
 
-    if m.Array {
+	if m.Array {
 	    ctx.WriteString(` FROM `)
 	    ctx.WriteString(`json_each(`)
 	    renderRoot()
@@ -1673,4 +1623,161 @@ func (d *SQLiteDialect) RequiresJSONQueryWrapper() bool {
 
 func (d *SQLiteDialect) RequiresNullOnEmptySelect() bool {
 	return true // SQLite needs NULL when no columns rendered
+}
+
+// renderPKIDExpr renders the expression stored as `id` in _gj_ids.
+// For single PK: just the column. For composite PK: json_object('col1', col1, 'col2', col2).
+func renderPKIDExpr(ctx Context, m *qcode.Mutate) {
+	if m.Ti.HasCompositePK() {
+		ctx.WriteString(`json_object(`)
+		for i, pkCol := range m.Ti.PrimaryCols {
+			if i > 0 {
+				ctx.WriteString(`, `)
+			}
+			ctx.WriteString(`'`)
+			ctx.WriteString(pkCol.Name)
+			ctx.WriteString(`', `)
+			ctx.ColWithTable(m.Ti.Name, pkCol.Name)
+		}
+		ctx.WriteString(`)`)
+	} else {
+		ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
+	}
+}
+
+// renderPKJSONJoin renders the JSON table join condition for PK columns.
+// For single PK: table.pk = t.pkAlias. For composite: ANDed conditions.
+func renderPKJSONJoin(ctx Context, m *qcode.Mutate) {
+	for i, pkCol := range m.Ti.PrimaryCols {
+		if i > 0 {
+			ctx.WriteString(` AND `)
+		}
+		pkAlias := pkCol.Name
+		isExplicitPK := false
+		for _, col := range m.Cols {
+			if col.Col.Name == pkCol.Name {
+				pkAlias = col.FieldName
+				isExplicitPK = true
+				break
+			}
+		}
+		if !isExplicitPK {
+			pkAlias = "_gj_pkt"
+			if i > 0 {
+				pkAlias = fmt.Sprintf("_gj_pkt%d", i)
+			}
+		}
+		ctx.ColWithTable(m.Ti.Name, pkCol.Name)
+		ctx.WriteString(` = t.`)
+		ctx.Quote(pkAlias)
+	}
+}
+
+// renderPKWhereGjIds renders WHERE clause matching PK against _gj_ids.
+// For single PK: pk IN (SELECT id FROM _gj_ids WHERE k LIKE 'pattern')
+// For composite PK: uses json_extract on the stored JSON id.
+func renderPKWhereGjIds(ctx Context, ti sdata.DBTable, kPattern string) {
+	isLike := strings.ContainsAny(kPattern, "%_")
+	if ti.HasCompositePK() {
+		for i, pkCol := range ti.PrimaryCols {
+			if i > 0 {
+				ctx.WriteString(` AND `)
+			}
+			ctx.Quote(pkCol.Name)
+			ctx.WriteString(` IN (SELECT json_extract(id, '$.`)
+			ctx.WriteString(pkCol.Name)
+			ctx.WriteString(`') FROM _gj_ids WHERE k `)
+			if isLike {
+				ctx.WriteString(`LIKE '`)
+			} else {
+				ctx.WriteString(`= '`)
+			}
+			ctx.WriteString(kPattern)
+			ctx.WriteString(`')`)
+		}
+	} else {
+		ctx.Quote(ti.PrimaryCol.Name)
+		ctx.WriteString(` IN (SELECT id FROM _gj_ids WHERE k `)
+		if isLike {
+			ctx.WriteString(`LIKE '`)
+		} else {
+			ctx.WriteString(`= '`)
+		}
+		ctx.WriteString(kPattern)
+		ctx.WriteString(`')`)
+	}
+}
+
+// renderPKWhereVarsSQLite renders WHERE pk = @var for parent lookup in disconnect.
+func renderPKWhereVarsSQLite(ctx Context, d *SQLiteDialect, pm qcode.Mutate) {
+	vName := getVarName(&pm)
+	for i, pkCol := range pm.Ti.PrimaryCols {
+		if i > 0 {
+			ctx.WriteString(` AND `)
+		}
+		ctx.Quote(pkCol.Name)
+		ctx.WriteString(` = `)
+		n := vName
+		if i > 0 {
+			n = vName + fmt.Sprintf("_pk%d", i)
+		}
+		d.RenderVar(ctx, n)
+	}
+}
+
+// renderImplicitPKExtractArray renders json_extract for implicit PK in array mode.
+func renderImplicitPKExtractArray(ctx Context, m *qcode.Mutate) {
+	// For simplicity, use first PK column as the implicit PK tracker
+	ctx.WriteString(`json_extract(value, '$.`)
+	ctx.WriteString(m.Ti.PrimaryCol.Name)
+	ctx.WriteString(`') AS "_gj_pkt"`)
+}
+
+// renderImplicitPKExtractSingle renders json_extract for implicit PK in single-object mode.
+func renderImplicitPKExtractSingle(ctx Context, m *qcode.Mutate, renderRoot func()) {
+	ctx.WriteString(`CAST(json_extract(`)
+	renderRoot()
+	ctx.WriteString(`, '$.`)
+	if len(m.Path) > 0 {
+		ctx.WriteString(strings.Join(m.Path, "."))
+		ctx.WriteString(`.`)
+	}
+	ctx.WriteString(m.Ti.PrimaryCol.Name)
+	ctx.WriteString(`') AS INTEGER) AS "_gj_pkt"`)
+}
+
+// buildPKSelectExp creates an expression to filter by PK using captured variables.
+func buildPKSelectExp(ti sdata.DBTable, op qcode.ExpOp, varNames ...string) *qcode.Exp {
+	if !ti.HasCompositePK() {
+		col := ti.PrimaryCol
+		col.Table = ti.Name
+		if op == qcode.OpIn {
+			exp := &qcode.Exp{Op: qcode.OpIn}
+			exp.Left.Col = col
+			exp.Left.ID = -1
+			exp.Right.ValType = qcode.ValList
+			exp.Right.ListType = qcode.ValDBVar
+			exp.Right.ListVal = varNames
+			return exp
+		}
+		exp := &qcode.Exp{Op: qcode.OpEquals}
+		exp.Left.Col = col
+		exp.Left.ID = -1
+		exp.Right.ValType = qcode.ValDBVar
+		exp.Right.Val = varNames[0]
+		return exp
+	}
+	// Composite PK: AND all PK columns with OpEquals
+	and := &qcode.Exp{Op: qcode.OpAnd}
+	for _, pkCol := range ti.PrimaryCols {
+		col := pkCol
+		col.Table = ti.Name
+		ex := &qcode.Exp{Op: qcode.OpEquals}
+		ex.Left.Col = col
+		ex.Left.ID = -1
+		ex.Right.ValType = qcode.ValDBVar
+		ex.Right.Val = varNames[0]
+		and.Children = append(and.Children, ex)
+	}
+	return and
 }

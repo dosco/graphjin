@@ -237,6 +237,64 @@ function main(input) { return { seen: input.value }; }
 	}
 }
 
+func TestRunNamedWorkflow_UsesConfiguredTimeout(t *testing.T) {
+	mem := afero.NewMemMapFs()
+	if err := mem.MkdirAll("/workflows", 0o755); err != nil {
+		t.Fatalf("mkdir workflows: %v", err)
+	}
+	// Workflow that spins forever — should be interrupted by the configured timeout
+	if err := afero.WriteFile(mem, "/workflows/spin.js", []byte(`function main() { while (true) {} }`), 0o644); err != nil {
+		t.Fatalf("write workflow: %v", err)
+	}
+
+	s := &graphjinService{
+		fs:   newAferoFS(mem, "/"),
+		conf: &Config{Serv: Serv{MCP: MCPConfig{WorkflowTimeout: 1}}}, // 1 second
+	}
+
+	start := time.Now()
+	_, err := s.runNamedWorkflow(context.Background(), "spin", map[string]any{}, nil)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if !strings.Contains(err.Error(), "exceeded") {
+		t.Fatalf("expected 'exceeded' in error, got: %v", err)
+	}
+	// Should complete around 1s, not the default 5s
+	if elapsed > 3*time.Second {
+		t.Fatalf("expected timeout around 1s, took %s — config was likely ignored", elapsed)
+	}
+}
+
+func TestRunNamedWorkflow_DefaultTimeoutWhenNotConfigured(t *testing.T) {
+	mem := afero.NewMemMapFs()
+	if err := mem.MkdirAll("/workflows", 0o755); err != nil {
+		t.Fatalf("mkdir workflows: %v", err)
+	}
+	if err := afero.WriteFile(mem, "/workflows/spin.js", []byte(`function main() { while (true) {} }`), 0o644); err != nil {
+		t.Fatalf("write workflow: %v", err)
+	}
+
+	s := &graphjinService{
+		fs:   newAferoFS(mem, "/"),
+		conf: &Config{}, // WorkflowTimeout not set — should default to 5s
+	}
+
+	start := time.Now()
+	_, err := s.runNamedWorkflow(context.Background(), "spin", map[string]any{}, nil)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	// Should be around 5s (the default), not instant
+	if elapsed < 4*time.Second || elapsed > 8*time.Second {
+		t.Fatalf("expected default timeout ~5s, took %s", elapsed)
+	}
+}
+
 func TestRunNamedWorkflow_RespectsContextCancellation(t *testing.T) {
 	mem := afero.NewMemMapFs()
 	if err := mem.MkdirAll("/workflows", 0o755); err != nil {

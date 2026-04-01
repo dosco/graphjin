@@ -248,6 +248,21 @@ func (s *graphjinService) subSwitch(wc *wsConn, req wsReq) (err error) {
 			}
 		}
 
+		// Check for _discovery subscription
+		if isDiscoverySubscription(p.Query) {
+			database := extractDiscoveryDatabase(p.Vars)
+			ds, subErr := s.gj.SubscribeDiscovery(c, database)
+			if subErr != nil {
+				err = subErr
+				break
+			}
+			st := wsState{ID: req.ID, done: make(chan bool)}
+			wc.sessions[st.ID] = st
+			useNext := req.Type == "subscribe"
+			go s.waitForDiscoveryData(wc, &st, ds, useNext)
+			break
+		}
+
 		st := wsState{ID: req.ID, done: make(chan bool)}
 		if st.m, err = s.gj.Subscribe(c, p.Query, p.Vars, nil); err != nil {
 			break
@@ -260,7 +275,9 @@ func (s *graphjinService) subSwitch(wc *wsConn, req wsReq) (err error) {
 	case "complete", "connection_terminate", "stop":
 		if st, ok := wc.sessions[req.ID]; ok {
 			st.done <- true
-			st.m.Unsubscribe()
+			if st.m != nil {
+				st.m.Unsubscribe()
+			}
 			delete(wc.sessions, req.ID)
 		}
 
@@ -353,6 +370,83 @@ func setHeaders(req wsReq, r *http.Request) (err error) {
 		}
 	}
 	return
+}
+
+// isDiscoverySubscription checks if the query is a _discovery subscription.
+func isDiscoverySubscription(query string) bool {
+	q := strings.TrimSpace(query)
+	// Match: subscription { _discovery ... } or subscription name { _discovery ... }
+	return strings.Contains(q, "_discovery")
+}
+
+// extractDiscoveryDatabase extracts the database name from subscription variables.
+func extractDiscoveryDatabase(vars json.RawMessage) string {
+	if len(vars) == 0 {
+		return ""
+	}
+	var v map[string]any
+	if err := json.Unmarshal(vars, &v); err != nil {
+		return ""
+	}
+	if db, ok := v["database"].(string); ok {
+		return db
+	}
+	return ""
+}
+
+// waitForDiscoveryData waits for discovery document updates and sends them over WebSocket.
+func (s *graphjinService) waitForDiscoveryData(wc *wsConn, st *wsState, ds *core.DiscoverySubscription, useNext bool) {
+	var buf bytes.Buffer
+
+	ptype := "data"
+	if useNext {
+		ptype = "next"
+	}
+
+	enc := json.NewEncoder(&buf)
+	for {
+		select {
+		case doc := <-ds.Result:
+			if doc == nil {
+				continue
+			}
+
+			payload := map[string]any{
+				"_discovery": map[string]any{
+					"database":     doc.Database,
+					"hash":         doc.Hash,
+					"generated_at": doc.GeneratedAt.Format("2006-01-02T15:04:05Z"),
+					"content":      doc.Markdown,
+				},
+			}
+			data, err := json.Marshal(payload)
+			if err != nil {
+				continue
+			}
+
+			res := wsRes{ID: st.ID, Type: ptype}
+			res.Payload.Data = data
+
+			if err := enc.Encode(res); err != nil {
+				break
+			}
+			msg := buf.Bytes()
+			buf.Reset()
+
+			wc.connMutex.Lock()
+			err = wc.conn.WriteMessage(websocket.TextMessage, msg)
+			wc.connMutex.Unlock()
+
+			if err != nil {
+				ds.Unsubscribe()
+				return
+			}
+
+		case <-st.done:
+			ds.Unsubscribe()
+			return
+		}
+	}
 }
 
 // sendError sends an error message to the client

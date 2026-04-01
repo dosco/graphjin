@@ -1006,6 +1006,56 @@ func TestMain(m *testing.M) {
 		},
 	}
 
+	// AdventureWorks: full-scale cross-schema Postgres database for integration testing
+	dbinfoList = append(dbinfoList, dbinfo{
+		name:    "adventureworks",
+		driver:  "postgres",
+		disable: true,
+		startFunc: func(ctx context.Context) (func(context.Context) error, string, error) {
+			container, err := postgres.Run(ctx,
+				"postgres:15",
+				postgres.WithUsername("postgres"),
+				postgres.WithPassword("postgres"),
+				postgres.WithDatabase("adventureworks"),
+				postgres.WithInitScripts(
+					"../tests-large/01_adventureworks_schema.sql",
+					"../tests-large/02_adventureworks_data.sql",
+				),
+				testcontainers.WithWaitStrategyAndDeadline(5*time.Minute,
+					wait.ForLog("database system is ready to accept connections").
+						WithOccurrence(2),
+				),
+			)
+			if err != nil {
+				return nil, "", err
+			}
+
+			connStr, err := container.ConnectionString(ctx, "sslmode=disable")
+			if err != nil {
+				return nil, "", err
+			}
+
+			// Wait for database to be fully ready with all data loaded
+			for i := 0; i < 60; i++ {
+				testDB, err := sql.Open("postgres", connStr)
+				if err == nil {
+					if err = testDB.Ping(); err == nil {
+						var count int
+						err = testDB.QueryRow("SELECT COUNT(*) FROM sales.salesorderdetail").Scan(&count)
+						testDB.Close() //nolint:errcheck
+						if err == nil && count > 0 {
+							break
+						}
+					}
+					testDB.Close() //nolint:errcheck
+				}
+				time.Sleep(1 * time.Second)
+			}
+
+			return container.Terminate, connStr, err
+		},
+	})
+
 	for _, v := range dbinfoList {
 		disable := v.disable
 
@@ -1051,6 +1101,10 @@ func TestMain(m *testing.M) {
 		db.SetConnMaxLifetime(5 * time.Minute) // Recycle connections after 5 minutes
 		db.SetConnMaxIdleTime(2 * time.Minute) // Close idle connections after 2 minutes
 		dbType = v.name
+		// AdventureWorks uses Postgres engine — set dbType accordingly
+		if v.name == "adventureworks" {
+			dbType = "postgres"
+		}
 
 		res := m.Run()
 		_ = cleanup(ctx)

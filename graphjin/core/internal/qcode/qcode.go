@@ -401,10 +401,8 @@ type Compiler struct {
 
 func NewCompiler(s *sdata.DBSchema, c Config) (*Compiler, error) {
 	if c.DBSchema == "" {
-		if s.DBType() == "oracle" {
+		if s.DBType() != "sqlite" {
 			c.DBSchema = s.DBSchema()
-		} else if s.DBType() != "sqlite" {
-			c.DBSchema = "public"
 		}
 	}
 
@@ -880,30 +878,44 @@ func (co *Compiler) FindPath(from, to, through string) ([]sdata.TPath, error) {
 	return nil, err
 }
 
+func buildSingleColFilter(leftCol, rightCol sdata.DBColumn, pid int32) *Exp {
+	ex := newExp()
+	switch {
+	case !leftCol.Array && rightCol.Array:
+		ex.Op = OpIn
+		ex.Left.Col = leftCol
+		ex.Right.ID = pid
+		ex.Right.Col = rightCol
+
+	case leftCol.Array && !rightCol.Array:
+		ex.Op = OpIn
+		ex.Left.ID = pid
+		ex.Left.Col = rightCol
+		ex.Right.Col = leftCol
+
+	default:
+		ex.Op = OpEquals
+		ex.Left.Col = leftCol
+		ex.Right.ID = pid
+		ex.Right.Col = rightCol
+	}
+	return ex
+}
+
 func buildFilter(rel sdata.DBRel, pid int32) *Exp {
 	switch rel.Type {
 	case sdata.RelOneToOne, sdata.RelOneToMany:
-		ex := newExp()
-		switch {
-		case !rel.Left.Col.Array && rel.Right.Col.Array:
-			ex.Op = OpIn
-			ex.Left.Col = rel.Left.Col
-			ex.Right.ID = pid
-			ex.Right.Col = rel.Right.Col
-
-		case rel.Left.Col.Array && !rel.Right.Col.Array:
-			ex.Op = OpIn
-			ex.Left.ID = pid
-			ex.Left.Col = rel.Right.Col
-			ex.Right.Col = rel.Left.Col
-
-		default:
-			ex.Op = OpEquals
-			ex.Left.Col = rel.Left.Col
-			ex.Right.ID = pid
-			ex.Right.Col = rel.Right.Col
+		primary := buildSingleColFilter(rel.Left.Col, rel.Right.Col, pid)
+		if len(rel.ExtraPairs) == 0 {
+			return primary
 		}
-		return ex
+		// Composite FK: AND all column pairs together
+		and := newExpOp(OpAnd)
+		and.Children = append(and.Children, primary)
+		for _, pair := range rel.ExtraPairs {
+			and.Children = append(and.Children, buildSingleColFilter(pair.L, pair.R, pid))
+		}
+		return and
 
 	case sdata.RelEmbedded:
 		ex := newExpOp(OpEquals)

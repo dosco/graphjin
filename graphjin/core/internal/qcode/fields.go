@@ -273,6 +273,10 @@ func (co *Compiler) addRelColumns(qc *QCode, sel *Select, rel sdata.DBRel) error
 
 	case sdata.RelOneToOne, sdata.RelOneToMany:
 		psel.addBaseCol(Column{Col: rel.Right.Col})
+		// Composite FK: add extra pair columns to parent's base columns
+		for _, pair := range rel.ExtraPairs {
+			psel.addBaseCol(Column{Col: pair.R})
+		}
 
 	case sdata.RelEmbedded:
 		psel.addBaseCol(Column{Col: rel.Right.Col})
@@ -335,21 +339,24 @@ func (co *Compiler) orderByClusterKeys(sel *Select) {
 }
 
 func (co *Compiler) orderByIDCol(sel *Select) error {
-	idCol := sel.Ti.PrimaryCol
-
-	if idCol.Name == "" {
+	if sel.Ti.PrimaryCol.Name == "" {
 		return fmt.Errorf("table requires primary key: %s", sel.Ti.Name)
 	}
 
-	sel.addBaseCol(Column{Col: idCol})
+	for _, pkCol := range sel.Ti.PrimaryCols {
+		sel.addBaseCol(Column{Col: pkCol})
 
-	for _, ob := range sel.OrderBy {
-		if ob.Col.Name == idCol.Name {
-			return nil
+		already := false
+		for _, ob := range sel.OrderBy {
+			if ob.Col.Name == pkCol.Name {
+				already = true
+				break
+			}
+		}
+		if !already {
+			sel.OrderBy = append(sel.OrderBy, OrderBy{Col: pkCol, Order: sel.order})
 		}
 	}
-
-	sel.OrderBy = append(sel.OrderBy, OrderBy{Col: idCol, Order: sel.order})
 	return nil
 }
 
@@ -442,18 +449,23 @@ func (co *Compiler) addCacheTrackingField(sel *Select) {
 		return
 	}
 
-	// Skip if __gj_id already exists or pk column is already requested
+	// Skip if __gj_id already exists
 	for _, f := range sel.Fields {
 		if f.FieldName == "__gj_id" {
 			return
 		}
-		// If user already requested the PK column, use it with alias
-		if f.Type == FieldTypeCol && strings.EqualFold(f.Col.Name, pk.Name) {
-			return
+	}
+
+	// For single PK, skip if PK column is already requested
+	if !sel.Ti.HasCompositePK() {
+		for _, f := range sel.Fields {
+			if f.Type == FieldTypeCol && strings.EqualFold(f.Col.Name, pk.Name) {
+				return
+			}
 		}
 	}
 
-	// Add the injected field
+	// Add the injected field (uses first PK column; cache_response.go extracts the value)
 	field := Field{
 		ID:        int32(len(sel.Fields)),
 		ParentID:  sel.ID,
@@ -464,8 +476,10 @@ func (co *Compiler) addCacheTrackingField(sel *Select) {
 
 	sel.Fields = append(sel.Fields, field)
 
-	// Also add to base columns if not already present
-	if sel.bcolExists(pk.Name) == -1 {
-		sel.BCols = append(sel.BCols, Column{Col: pk, FieldName: "__gj_id"})
+	// Also add all PK columns to base columns
+	for _, pkCol := range sel.Ti.PrimaryCols {
+		if sel.bcolExists(pkCol.Name) == -1 {
+			sel.BCols = append(sel.BCols, Column{Col: pkCol, FieldName: "__gj_id"})
+		}
 	}
 }

@@ -11,12 +11,13 @@ const jsRuntimeResourceURI = "graphjin://syntax/workflow-js"
 
 // JSRuntimeAPI describes the functions exposed in the GraphJin JS runtime.
 type JSRuntimeAPI struct {
-	Runtime       string              `json:"runtime"`
-	RuntimeStatus string              `json:"runtime_status"`
-	EntryPoint    string              `json:"entry_point"`
-	Globals       []JSRuntimeGlobal   `json:"globals"`
-	Functions     []JSRuntimeFunction `json:"functions"`
-	Notes         []string            `json:"notes,omitempty"`
+	Runtime          string              `json:"runtime"`
+	RuntimeStatus    string              `json:"runtime_status"`
+	EntryPoint       string              `json:"entry_point"`
+	WorkflowTimeout  int                 `json:"workflow_timeout_seconds"`
+	Globals          []JSRuntimeGlobal   `json:"globals"`
+	Functions        []JSRuntimeFunction `json:"functions"`
+	Notes            []string            `json:"notes,omitempty"`
 }
 
 // JSRuntimeGlobal describes one global in the JS runtime.
@@ -75,10 +76,16 @@ func (ms *mcpServer) handleGetJSRuntimeAPI(ctx context.Context, req mcp.CallTool
 }
 
 func (ms *mcpServer) buildJSRuntimeAPI() JSRuntimeAPI {
+	timeoutSecs := ms.service.conf.MCP.WorkflowTimeout
+	if timeoutSecs <= 0 {
+		timeoutSecs = defaultWorkflowScriptTimeout
+	}
+
 	api := JSRuntimeAPI{
-		Runtime:       "goja",
-		RuntimeStatus: "available",
-		EntryPoint:    "function main(input) { ... } // globals: gj, ctx, input",
+		Runtime:         "goja",
+		RuntimeStatus:   "available",
+		EntryPoint:      "function main(input) { ... } // globals: gj, ctx, input",
+		WorkflowTimeout: timeoutSecs,
 		Globals: []JSRuntimeGlobal{
 			{
 				Name:        "gj",

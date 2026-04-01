@@ -87,6 +87,7 @@ func (gj *graphjinEngine) initRemote(
 	}
 
 	nt := sdata.NewDBTable(rc.Schema, rc.Name, "remote", nil)
+	nt.PrimaryCols = []sdata.DBColumn{col1}
 	nt.PrimaryCol = col1
 
 	dbinfo.AddTable(nt)

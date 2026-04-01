@@ -159,10 +159,7 @@ func (co *Compiler) AddRole(role, schema, table string, trc TRConfig) error {
 	trv.delete.cols = makeSet(trc.Delete.Columns)
 	trv.delete.block = trc.Delete.Block
 
-	if schema == "" {
-		schema = co.s.DBSchema()
-	}
-	co.tr[(role + ":" + schema + ":" + table)] = trv
+	co.tr[(role + ":" + ti.Schema + ":" + ti.Name)] = trv
 
 	return nil
 }

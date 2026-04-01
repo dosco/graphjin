@@ -88,6 +88,9 @@ func (g *GraphJin) startDBWatcher(ps time.Duration) {
 			if pdb != nil {
 				if err := g.newGraphJin(gj.conf, pdb.db, nil, gj.fs, gj.opts...); err != nil {
 					gj.log.Println(err)
+				} else {
+					g.generateAllDiscovery()
+					g.fireAllSchemaCallbacks()
 				}
 			}
 			g.reloadMu.Unlock()

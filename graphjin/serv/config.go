@@ -262,6 +262,10 @@ type MCPConfig struct {
 	// DefaultDBAllowed when true allows configuring and discovering system/default
 	// databases (e.g. postgres, mysql, master). Default: false
 	DefaultDBAllowed bool `mapstructure:"default_db_allowed" jsonschema:"title=Allow Default Databases,default=false"`
+
+	// WorkflowTimeout in seconds for JavaScript workflow execution.
+	// Workflows that exceed this duration are interrupted. Default: 5
+	WorkflowTimeout int `mapstructure:"workflow_timeout" jsonschema:"title=Workflow Timeout (seconds),default=5"`
 }
 
 // RedisConfig configures Redis connection

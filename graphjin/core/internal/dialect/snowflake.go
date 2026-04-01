@@ -712,9 +712,14 @@ func (d *SnowflakeDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *
 	// Skip RCols for UPDATE: the WHERE clause already identifies the child row
 	// via the FK relationship. Setting the child's PK to the parent's ID is wrong.
 	if i == 0 {
-		ctx.Quote(m.Ti.PrimaryCol.Name)
-		ctx.WriteString(` = `)
-		ctx.Quote(m.Ti.PrimaryCol.Name)
+		for j, pkCol := range m.Ti.PrimaryCols {
+			if j > 0 {
+				ctx.WriteString(`, `)
+			}
+			ctx.Quote(pkCol.Name)
+			ctx.WriteString(` = `)
+			ctx.Quote(pkCol.Name)
+		}
 	}
 
 	if m.IsJSON {
@@ -763,9 +768,14 @@ func (d *SnowflakeDialect) renderChildUpdate(ctx Context, m *qcode.Mutate, qc *q
 	}
 
 	if i == 0 {
-		ctx.Quote(m.Ti.PrimaryCol.Name)
-		ctx.WriteString(` = `)
-		ctx.Quote(m.Ti.PrimaryCol.Name)
+		for j, pkCol := range m.Ti.PrimaryCols {
+			if j > 0 {
+				ctx.WriteString(`, `)
+			}
+			ctx.Quote(pkCol.Name)
+			ctx.WriteString(` = `)
+			ctx.Quote(pkCol.Name)
+		}
 	}
 
 	ctx.WriteString(` WHERE `)
@@ -1005,7 +1015,7 @@ func (d *SnowflakeDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate,
 			}
 			first = false
 
-			if col.Col.Name == m.Ti.PrimaryCol.Name {
+			if m.Ti.IsPKCol(col.Col.Name) {
 				hasPK = true
 			}
 
@@ -1034,7 +1044,7 @@ func (d *SnowflakeDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate,
 				ctx.WriteString(`, `)
 			}
 			ctx.WriteString(`json_extract(value, '$.`)
-			ctx.WriteString(m.Ti.PrimaryCol.Name)
+			ctx.WriteString(m.Ti.PrimaryCol.Name) // Use first PK col for implicit tracking
 			ctx.WriteString(`') AS "_gj_pkt"`)
 		}
 
@@ -1060,7 +1070,7 @@ func (d *SnowflakeDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate,
 		}
 		first = false
 
-		if col.Col.Name == m.Ti.PrimaryCol.Name {
+		if m.Ti.IsPKCol(col.Col.Name) {
 			hasPK = true
 		}
 
@@ -1159,7 +1169,7 @@ func (d *SnowflakeDialect) getVarName(m qcode.Mutate) string {
 
 func (d *SnowflakeDialect) mutationHasExplicitPK(m *qcode.Mutate) bool {
 	for _, col := range m.Cols {
-		if col.Col.Name == m.Ti.PrimaryCol.Name {
+		if m.Ti.IsPKCol(col.Col.Name) {
 			return true
 		}
 	}
