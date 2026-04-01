@@ -322,3 +322,36 @@ INSERT INTO locations (name, geom) VALUES
   ('San Jose', ST_SetSRID(ST_MakePoint(-121.8853, 37.3382), 4326)),
   ('Berkeley', ST_SetSRID(ST_MakePoint(-122.2727, 37.8716), 4326)),
   ('Palo Alto', ST_SetSRID(ST_MakePoint(-122.1430, 37.4419), 4326));
+-- Composite FK test tables
+CREATE TABLE product_variants (
+  product_id BIGINT NOT NULL,
+  variant_id BIGINT NOT NULL,
+  variant_name VARCHAR(100) NOT NULL,
+  sku VARCHAR(50),
+  PRIMARY KEY (product_id, variant_id),
+  FOREIGN KEY (product_id) REFERENCES products(id)
+);
+
+CREATE TABLE order_items (
+  id BIGSERIAL PRIMARY KEY,
+  order_id BIGINT NOT NULL,
+  product_id BIGINT NOT NULL,
+  variant_id BIGINT NOT NULL,
+  quantity INTEGER NOT NULL DEFAULT 1,
+  price FLOAT NOT NULL,
+  FOREIGN KEY (product_id, variant_id) REFERENCES product_variants(product_id, variant_id)
+);
+
+INSERT INTO product_variants (product_id, variant_id, variant_name, sku) VALUES
+  (1, 1, 'Small', 'PROD1-S'),
+  (1, 2, 'Medium', 'PROD1-M'),
+  (1, 3, 'Large', 'PROD1-L'),
+  (2, 1, 'Red', 'PROD2-R'),
+  (2, 2, 'Blue', 'PROD2-B');
+
+INSERT INTO order_items (order_id, product_id, variant_id, quantity, price) VALUES
+  (1, 1, 1, 2, 19.99),
+  (2, 1, 2, 1, 24.99),
+  (3, 1, 3, 3, 29.99),
+  (4, 2, 1, 1, 14.99),
+  (5, 2, 2, 2, 14.99);
