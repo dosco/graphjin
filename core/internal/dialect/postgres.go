@@ -689,10 +689,13 @@ func (d *PostgresDialect) RenderUpsert(ctx Context, m *qcode.Mutate, insert func
 		i++
 	}
 	// Fallback to primary key if no unique keys found in cols
-	// This mirrors psql/mutate.go behavior
-	// But we need access to Ti.PrimaryCol
 	if i == 0 {
-		ctx.WriteString(m.Ti.PrimaryCol.Name)
+		for j, pkCol := range m.Ti.PrimaryCols {
+			if j > 0 {
+				ctx.WriteString(`, `)
+			}
+			ctx.WriteString(pkCol.Name)
+		}
 	}
 	ctx.WriteString(`) DO UPDATE SET `)
 	updateSet()

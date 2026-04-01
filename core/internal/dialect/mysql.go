@@ -915,7 +915,7 @@ func (d *MySQLDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, n i
 		if col.Set {
 			continue
 		}
-		if col.FieldName == m.Ti.PrimaryCol.Name {
+		if m.Ti.IsPKCol(col.FieldName) {
 			hasPK = true
 		}
 		if i != 0 {
@@ -966,13 +966,16 @@ func (d *MySQLDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate, n i
 	}
 
 	if !hasPK {
-		if i != 0 {
-			ctx.WriteString(`, `)
+		for _, pkCol := range m.Ti.PrimaryCols {
+			if i != 0 {
+				ctx.WriteString(`, `)
+			}
+			ctx.WriteString(pkCol.Name)
+			ctx.WriteString(` BIGINT PATH '$.`)
+			ctx.WriteString(pkCol.Name)
+			ctx.WriteString(`' ERROR ON ERROR`)
+			i++
 		}
-		ctx.WriteString(m.Ti.PrimaryCol.Name)
-		ctx.WriteString(` BIGINT PATH '$.`) // Assume BIGINT for PK safest? Or use type from Col.
-		ctx.WriteString(m.Ti.PrimaryCol.Name)
-		ctx.WriteString(`' ERROR ON ERROR`)
 	}
 
 	ctx.WriteString(`)) AS _jt) AS `)
@@ -1075,7 +1078,7 @@ func (d *MySQLDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *qcod
 		if i != 0 {
 			ctx.WriteString(", ")
 		}
-		if col.Col.Name == m.Ti.PrimaryCol.Name {
+		if m.Ti.IsPKCol(col.Col.Name) {
 			ctx.WriteString("@")
 			ctx.WriteString(varName)
 			ctx.WriteString(" := ")
@@ -1208,7 +1211,7 @@ func (d *MySQLDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcod
 			// Logic to patch OpIn / OpEq
 			// If LHS is "id" (PK) and RHS is Var without dot
 			// append "." + m.Rel.Left.Col.Name
-			isPK := ex.Left.Col.Name == m.Ti.PrimaryCol.Name
+			isPK := m.Ti.IsPKCol(ex.Left.Col.Name)
 
 			if (ex.Op == qcode.OpEquals || ex.Op == qcode.OpIn) && isPK && ex.Right.ValType == qcode.ValVar {
 				if !strings.Contains(ex.Right.Val, ".") {
@@ -1285,9 +1288,14 @@ func (d *MySQLDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcod
 		}
 
 		if i == 0 {
-			ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
-			ctx.WriteString(" = ")
-			ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
+			for j, pkCol := range m.Ti.PrimaryCols {
+				if j > 0 {
+					ctx.WriteString(`, `)
+				}
+				ctx.ColWithTable(m.Ti.Name, pkCol.Name)
+				ctx.WriteString(" = ")
+				ctx.ColWithTable(m.Ti.Name, pkCol.Name)
+			}
 		}
 
 	}, fromFunc, func() {
@@ -1295,9 +1303,14 @@ func (d *MySQLDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *qcod
 		if m.IsJSON {
 			// Root-level update: may need JSON table join for WHERE
 			if m.SelID < 0 || int(m.SelID) >= len(qc.Selects) || qc.Selects[m.SelID].Where.Exp == nil {
-				ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
-				ctx.WriteString(" = ")
-				ctx.ColWithTable("t", m.Ti.PrimaryCol.Name)
+				for j, pkCol := range m.Ti.PrimaryCols {
+					if j > 0 {
+						ctx.WriteString(" AND ")
+					}
+					ctx.ColWithTable(m.Ti.Name, pkCol.Name)
+					ctx.WriteString(" = ")
+					ctx.ColWithTable("t", pkCol.Name)
+				}
 				ctx.WriteString(" AND ")
 			}
 		}
@@ -1367,9 +1380,14 @@ func (d *MySQLDialect) renderChildUpdate(ctx Context, m *qcode.Mutate, qc *qcode
 
 	if i == 0 {
 		// No columns to update - use identity update
-		d.Quote(ctx, m.Ti.PrimaryCol.Name)
-		ctx.WriteString(" = ")
-		d.Quote(ctx, m.Ti.PrimaryCol.Name)
+		for j, pkCol := range m.Ti.PrimaryCols {
+			if j > 0 {
+				ctx.WriteString(`, `)
+			}
+			d.Quote(ctx, pkCol.Name)
+			ctx.WriteString(" = ")
+			d.Quote(ctx, pkCol.Name)
+		}
 	}
 
 	ctx.WriteString(" WHERE ")
@@ -1535,7 +1553,7 @@ func (d *MySQLDialect) ModifySelectsForMutation(qc *qcode.QCode) {
 			hasExplicitPK := false
 			var pkName string
 			for _, col := range m.Cols {
-				if col.Col.Name == m.Ti.PrimaryCol.Name {
+				if m.Ti.IsPKCol(col.Col.Name) {
 					hasExplicitPK = true
 					pkName = col.FieldName // The JSON key
 					break

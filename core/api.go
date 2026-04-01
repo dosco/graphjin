@@ -903,6 +903,7 @@ type TableSchema struct {
 	Type          string       `json:"type"`
 	Comment       string       `json:"comment,omitempty"`
 	PrimaryKey    string       `json:"primary_key,omitempty"`
+	PrimaryKeys   []string     `json:"primary_keys,omitempty"`
 	Columns       []ColumnInfo `json:"columns"`
 	Relationships struct {
 		Outgoing []RelationInfo `json:"outgoing"` // Tables this table references
@@ -1038,6 +1039,9 @@ func (gj *graphjinEngine) buildTableSchema(dbSchema *sdata.DBSchema, dbName, tab
 
 	if t.PrimaryCol.Name != "" {
 		schema.PrimaryKey = t.PrimaryCol.Name
+	}
+	if len(t.PrimaryCols) > 1 {
+		schema.PrimaryKeys = t.PKColNames()
 	}
 
 	// Add columns

@@ -357,3 +357,87 @@ func TestIsInList(t *testing.T) {
 		}
 	}
 }
+
+// TestNewDBTableCompositePK verifies that NewDBTable correctly collects
+// multiple PrimaryKey columns into PrimaryCols and sets PrimaryCol to the first.
+func TestNewDBTableCompositePK(t *testing.T) {
+	cols := []DBColumn{
+		{Name: "user_id", Type: "integer", PrimaryKey: true},
+		{Name: "session_id", Type: "integer", PrimaryKey: true},
+		{Name: "data", Type: "text"},
+	}
+	ti := NewDBTable("public", "user_sessions", "table", cols)
+
+	if len(ti.PrimaryCols) != 2 {
+		t.Fatalf("expected 2 PrimaryCols, got %d", len(ti.PrimaryCols))
+	}
+	if ti.PrimaryCols[0].Name != "user_id" {
+		t.Errorf("expected PrimaryCols[0] = user_id, got %s", ti.PrimaryCols[0].Name)
+	}
+	if ti.PrimaryCols[1].Name != "session_id" {
+		t.Errorf("expected PrimaryCols[1] = session_id, got %s", ti.PrimaryCols[1].Name)
+	}
+	if ti.PrimaryCol.Name != "user_id" {
+		t.Errorf("expected PrimaryCol = user_id (alias for first), got %s", ti.PrimaryCol.Name)
+	}
+}
+
+// TestHasCompositePK verifies the HasCompositePK helper.
+func TestHasCompositePK(t *testing.T) {
+	single := NewDBTable("public", "users", "table", []DBColumn{
+		{Name: "id", Type: "integer", PrimaryKey: true},
+		{Name: "name", Type: "text"},
+	})
+	if single.HasCompositePK() {
+		t.Error("single PK table should not report HasCompositePK")
+	}
+
+	composite := NewDBTable("public", "user_sessions", "table", []DBColumn{
+		{Name: "user_id", Type: "integer", PrimaryKey: true},
+		{Name: "session_id", Type: "integer", PrimaryKey: true},
+	})
+	if !composite.HasCompositePK() {
+		t.Error("composite PK table should report HasCompositePK")
+	}
+
+	noPK := NewDBTable("public", "logs", "table", []DBColumn{
+		{Name: "data", Type: "text"},
+	})
+	if noPK.HasCompositePK() {
+		t.Error("no PK table should not report HasCompositePK")
+	}
+}
+
+// TestPKColNames verifies the PKColNames helper.
+func TestPKColNames(t *testing.T) {
+	ti := NewDBTable("public", "order_items", "table", []DBColumn{
+		{Name: "order_id", Type: "integer", PrimaryKey: true},
+		{Name: "product_id", Type: "integer", PrimaryKey: true},
+		{Name: "quantity", Type: "integer"},
+	})
+	names := ti.PKColNames()
+	if len(names) != 2 || names[0] != "order_id" || names[1] != "product_id" {
+		t.Errorf("expected [order_id product_id], got %v", names)
+	}
+}
+
+// TestIsPKCol verifies the IsPKCol helper.
+func TestIsPKCol(t *testing.T) {
+	ti := NewDBTable("public", "order_items", "table", []DBColumn{
+		{Name: "order_id", Type: "integer", PrimaryKey: true},
+		{Name: "product_id", Type: "integer", PrimaryKey: true},
+		{Name: "quantity", Type: "integer"},
+	})
+	if !ti.IsPKCol("order_id") {
+		t.Error("order_id should be a PK col")
+	}
+	if !ti.IsPKCol("product_id") {
+		t.Error("product_id should be a PK col")
+	}
+	if ti.IsPKCol("quantity") {
+		t.Error("quantity should not be a PK col")
+	}
+	if ti.IsPKCol("nonexistent") {
+		t.Error("nonexistent should not be a PK col")
+	}
+}

@@ -39,7 +39,8 @@ type DBTable struct {
 	// Empty string means the default database.
 	Database     string
 	Columns      []DBColumn
-	PrimaryCol   DBColumn
+	PrimaryCols  []DBColumn
+	PrimaryCol   DBColumn // backward compat: alias for PrimaryCols[0]
 	SecondaryCol DBColumn
 	FullText     []DBColumn
 	Blocked        bool
@@ -261,12 +262,39 @@ func NewDBTable(schema, name, _type string, cols []DBColumn) DBTable {
 			ti.FullText = append(ti.FullText, c)
 
 		case c.PrimaryKey:
-			ti.PrimaryCol = c
+			ti.PrimaryCols = append(ti.PrimaryCols, c)
 
 		}
 		ti.colMap[c.Name] = i
 	}
+	if len(ti.PrimaryCols) > 0 {
+		ti.PrimaryCol = ti.PrimaryCols[0]
+	}
 	return ti
+}
+
+// HasCompositePK returns true if the table has a multi-column primary key.
+func (t *DBTable) HasCompositePK() bool {
+	return len(t.PrimaryCols) > 1
+}
+
+// PKColNames returns the names of all primary key columns.
+func (t *DBTable) PKColNames() []string {
+	names := make([]string, len(t.PrimaryCols))
+	for i, c := range t.PrimaryCols {
+		names[i] = c.Name
+	}
+	return names
+}
+
+// IsPKCol returns true if the named column is part of the primary key.
+func (t *DBTable) IsPKCol(name string) bool {
+	for _, c := range t.PrimaryCols {
+		if c.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // GetColumnIndex returns the index of a column in the table by name, and whether it was found.

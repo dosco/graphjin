@@ -489,8 +489,9 @@ func (g *GraphJin) writeTableIndexEntry(sb *strings.Builder, schema *sdata.DBSch
 	if e != nil && e.RowCount > 0 {
 		meta += fmt.Sprintf(" | Rows: %s", formatCount(e.RowCount))
 	}
-	if t.PrimaryCol.Name != "" {
-		meta += fmt.Sprintf(" | PK: %s", t.PrimaryCol.Name)
+	if len(t.PrimaryCols) > 0 {
+		names := t.PKColNames()
+		meta += fmt.Sprintf(" | PK: %s", strings.Join(names, ", "))
 	}
 	sb.WriteString(meta + "\n")
 
@@ -581,8 +582,9 @@ func (g *GraphJin) writeTableMarkdown(sb *strings.Builder, schema *sdata.DBSchem
 	if e != nil && e.RowCount > 0 {
 		meta += fmt.Sprintf(" | Rows: %s", formatCount(e.RowCount))
 	}
-	if t.PrimaryCol.Name != "" {
-		meta += fmt.Sprintf(" | PK: %s", t.PrimaryCol.Name)
+	if len(t.PrimaryCols) > 0 {
+		names := t.PKColNames()
+		meta += fmt.Sprintf(" | PK: %s", strings.Join(names, ", "))
 	}
 	sb.WriteString(meta + "\n\n")
 
