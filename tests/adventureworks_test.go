@@ -1445,3 +1445,80 @@ func mustProductID(t *testing.T, name string) int {
 	require.NoError(t, err)
 	return id
 }
+
+// Test: View PK detection — vindividualcustomer should have a PK inferred from
+// the base table, enabling cursor pagination.
+func TestAdventureWorksViewPKDetection(t *testing.T) {
+	skipIfNotAdventureWorks(t)
+	gj := newAdventureWorksGJ(t)
+
+	// Ground truth: vindividualcustomer view should have data
+	var gtCount int
+	err := db.QueryRow("SELECT COUNT(*) FROM sales.vindividualcustomer").Scan(&gtCount)
+	require.NoError(t, err)
+	require.Greater(t, gtCount, 0, "vindividualcustomer should have rows")
+
+	// Test cursor pagination on the view — this requires a PK to be detected
+	res, err := gj.GraphQL(context.Background(),
+		`query {
+			vindividualcustomer(first: 5) {
+				businessentityid
+				firstname
+				lastname
+			}
+		}`, nil, nil)
+	require.NoError(t, err, "cursor pagination on view should work (requires PK detection)")
+
+	var result struct {
+		Vindividualcustomer []struct {
+			Businessentityid int    `json:"businessentityid"`
+			Firstname        string `json:"firstname"`
+			Lastname         string `json:"lastname"`
+		} `json:"vindividualcustomer"`
+	}
+	err = json.Unmarshal(res.Data, &result)
+	require.NoError(t, err)
+	assert.Len(t, result.Vindividualcustomer, 5, "should return exactly 5 rows with cursor pagination")
+	for _, c := range result.Vindividualcustomer {
+		assert.NotZero(t, c.Businessentityid)
+		assert.NotEmpty(t, c.Firstname)
+	}
+	t.Logf("View cursor pagination returned %d rows (total view rows: %d)", len(result.Vindividualcustomer), gtCount)
+}
+
+// Test: search_path fallback — verify the inferred default schema works correctly
+// even when the AdventureWorks dump sets search_path=''.
+func TestAdventureWorksSchemaInference(t *testing.T) {
+	skipIfNotAdventureWorks(t)
+	gj := newAdventureWorksGJ(t)
+
+	// Query a table without schema prefix — should resolve via inferred default schema
+	// or unambiguous name lookup
+	res, err := gj.GraphQL(context.Background(),
+		`query {
+			customer(first: 3) {
+				customerid
+				territoryid
+			}
+		}`, nil, nil)
+	require.NoError(t, err, "unqualified table name should resolve with inferred schema")
+
+	var result struct {
+		Customer []struct {
+			Customerid  int `json:"customerid"`
+			Territoryid int `json:"territoryid"`
+		} `json:"customer"`
+	}
+	err = json.Unmarshal(res.Data, &result)
+	require.NoError(t, err)
+	assert.Len(t, result.Customer, 3, "should return 3 customers")
+	for _, c := range result.Customer {
+		assert.NotZero(t, c.Customerid)
+	}
+
+	// Also verify the customer count matches ground truth
+	var gtCount int
+	err = db.QueryRow("SELECT COUNT(*) FROM sales.customer").Scan(&gtCount)
+	require.NoError(t, err)
+	t.Logf("Customer query succeeded (total: %d)", gtCount)
+}

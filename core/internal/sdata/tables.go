@@ -126,6 +126,14 @@ func GetDBInfo(
 		return nil, err
 	}
 
+	// When the database returns an empty default schema (e.g., PostgreSQL with
+	// search_path=''), infer it from discovered columns by picking the schema
+	// with the most tables. This ensures Find() lookups and cross-schema joins
+	// work correctly even with non-standard search_path configurations.
+	if dbSchema == "" && len(cols) > 0 {
+		dbSchema = inferDefaultSchema(cols)
+	}
+
 	di := NewDBInfo(
 		dbType,
 		dbVersion,
@@ -157,6 +165,139 @@ func GetDBInfo(
 	}
 
 	return di, nil
+}
+
+// inferDefaultSchema picks the schema that contains the most distinct tables
+// from the discovered columns. This is used as a fallback when the database
+// reports an empty default schema (e.g., PostgreSQL with search_path='').
+func inferDefaultSchema(cols []DBColumn) string {
+	// Count distinct tables per schema
+	type st struct{ schema, table string }
+	seen := make(map[st]bool)
+	counts := make(map[string]int)
+	for _, c := range cols {
+		if c.Schema == "" || strings.HasPrefix(c.Table, "_gj_") {
+			continue
+		}
+		k := st{c.Schema, c.Table}
+		if !seen[k] {
+			seen[k] = true
+			counts[c.Schema]++
+		}
+	}
+
+	var best string
+	var bestCount int
+	for schema, n := range counts {
+		if n > bestCount {
+			best = schema
+			bestCount = n
+		}
+	}
+	return best
+}
+
+// inferViewPKsFromBaseTables is a universal fallback for view PK detection.
+// For any table/view that has NO PK columns, it finds the "best matching"
+// base table by counting how many non-PK columns overlap. If exactly one
+// base table has the highest overlap AND all its PK columns appear in the
+// view, those view columns are marked as PKs.
+func inferViewPKsFromBaseTables(cmap map[string]DBColumn) {
+	type st struct{ schema, table string }
+
+	// Step 1: Build per-table column sets and PK sets
+	tableCols := make(map[st]map[string]bool) // all column names
+	tablePKs := make(map[st][]string)         // PK column names
+	hasPK := make(map[st]bool)
+
+	for _, c := range cmap {
+		key := st{c.Schema, c.Table}
+		if tableCols[key] == nil {
+			tableCols[key] = make(map[string]bool)
+		}
+		tableCols[key][c.Name] = true
+		if c.PrimaryKey {
+			hasPK[key] = true
+			tablePKs[key] = append(tablePKs[key], c.Name)
+		}
+	}
+
+	// Step 2: For each table with no PK, find the best matching base table
+	for viewKey, viewCols := range tableCols {
+		if hasPK[viewKey] {
+			continue
+		}
+		if strings.HasPrefix(viewKey.table, "_gj_") {
+			continue
+		}
+
+		type candidate struct {
+			table   st
+			overlap int      // number of non-PK columns shared
+			pkCols  []string // PK columns of this base table
+		}
+		var best candidate
+		var tied bool
+
+		for baseKey, basePKCols := range tablePKs {
+			if baseKey.schema != viewKey.schema || baseKey == viewKey {
+				continue
+			}
+
+			// Check if ALL PK columns of this base table appear in the view
+			allPKsPresent := true
+			for _, pk := range basePKCols {
+				if !viewCols[pk] {
+					allPKsPresent = false
+					break
+				}
+			}
+			if !allPKsPresent {
+				continue
+			}
+
+			// Count non-PK column overlap (base table non-PK cols that appear in view)
+			overlap := 0
+			baseCols := tableCols[baseKey]
+			for col := range baseCols {
+				if !contains(basePKCols, col) && viewCols[col] {
+					overlap++
+				}
+			}
+
+			if overlap == 0 {
+				continue
+			}
+
+			if overlap > best.overlap {
+				best = candidate{baseKey, overlap, basePKCols}
+				tied = false
+			} else if overlap == best.overlap && best.table != baseKey {
+				tied = true
+			}
+		}
+
+		// Only apply if we have an unambiguous winner with at least 1 non-PK overlap
+		if best.overlap > 0 && !tied {
+			for _, pkCol := range best.pkCols {
+				k := viewKey.schema + ":" + viewKey.table + ":" + pkCol
+				if v, ok := cmap[k]; ok && !v.PrimaryKey {
+					v.PrimaryKey = true
+					v.UniqueKey = true
+					cmap[k] = v
+				}
+			}
+		}
+	}
+}
+
+func contains(ss []string, s string) bool {
+	for _, v := range ss {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 // NewDBInfo returns a new DBInfo object
@@ -522,12 +663,32 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 		i++
 	}
 
-	// For MSSQL, run a supplementary query to detect PKs for views.
-	// Views lack sys.indexes entries, so the main query reports primary_key=0
-	// for all view columns. This uses sys.dm_exec_describe_first_result_set
-	// to trace view columns back to their source base table PKs.
-	if dbtype == "mssql" {
-		rows2, err := db.Query(mssqlViewPKsStmt)
+	// For MSSQL and PostgreSQL, run a supplementary query to detect PKs for views.
+	// Views lack PK constraints, so the main column query reports primary_key=false
+	// for all view columns. These queries trace view columns back to their source
+	// base table PKs.
+	// Run a supplementary query to detect PKs for views. Views lack PK constraints
+	// in system catalogs, so the main column query reports primary_key=false for all
+	// view columns. These queries trace view columns back to source base table PKs.
+	// Supported: PostgreSQL (pg_depend), MSSQL (dm_exec_describe_first_result_set),
+	// Oracle (ALL_DEPENDENCIES), MySQL 8.0+ (VIEW_TABLE_USAGE).
+	// Not supported: MariaDB, SQLite, Snowflake (no system catalog for view column tracing).
+	var viewPKStmt string
+	var needsNormalize bool
+	switch dbtype {
+	case "postgres", "":
+		viewPKStmt = postgresViewPKsStmt
+	case "mssql":
+		viewPKStmt = mssqlViewPKsStmt
+		needsNormalize = true
+	case "oracle":
+		viewPKStmt = oracleViewPKsStmt
+		needsNormalize = true
+	case "mysql":
+		viewPKStmt = mysqlViewPKsStmt
+	}
+	if viewPKStmt != "" {
+		rows2, err := db.Query(viewPKStmt)
 		if err == nil {
 			defer rows2.Close()
 			for rows2.Next() {
@@ -535,9 +696,11 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 				if err := rows2.Scan(&schema, &table, &column); err != nil {
 					continue
 				}
-				column = util.ToSnake(column)
-				table = strings.ToLower(table)
-				schema = strings.ToLower(schema)
+				if needsNormalize {
+					column = util.ToSnake(column)
+					table = strings.ToLower(table)
+					schema = strings.ToLower(schema)
+				}
 
 				k := schema + ":" + table + ":" + column
 				if v, ok := cmap[k]; ok && !v.PrimaryKey {
@@ -547,8 +710,14 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 				}
 			}
 		}
-		// Silently ignore errors — falls back to config-based override
+		// Silently ignore errors — falls back to code-level heuristic below
 	}
+
+	// Universal fallback for databases without SQL-level view PK detection
+	// (MariaDB, SQLite, Snowflake) or when the SQL query fails.
+	// For any table with NO PK columns, try to infer PKs by matching column
+	// names against PK columns from other tables in the same schema.
+	inferViewPKsFromBaseTables(cmap)
 
 	var cols []DBColumn
 	for _, c := range cmap {

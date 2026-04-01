@@ -421,6 +421,157 @@ func TestPKColNames(t *testing.T) {
 	}
 }
 
+// TestInferDefaultSchema verifies the search_path fallback logic.
+func TestInferDefaultSchema(t *testing.T) {
+	tests := []struct {
+		name string
+		cols []DBColumn
+		want string
+	}{
+		{
+			name: "picks schema with most tables",
+			cols: []DBColumn{
+				{Schema: "sales", Table: "orders", Name: "id"},
+				{Schema: "sales", Table: "orders", Name: "total"},
+				{Schema: "sales", Table: "customers", Name: "id"},
+				{Schema: "person", Table: "address", Name: "id"},
+			},
+			want: "sales", // 2 tables vs 1
+		},
+		{
+			name: "ignores _gj_ tables",
+			cols: []DBColumn{
+				{Schema: "internal", Table: "_gj_metadata", Name: "id"},
+				{Schema: "internal", Table: "_gj_config", Name: "id"},
+				{Schema: "public", Table: "users", Name: "id"},
+			},
+			want: "public",
+		},
+		{
+			name: "empty columns returns empty",
+			cols: nil,
+			want: "",
+		},
+		{
+			name: "single schema",
+			cols: []DBColumn{
+				{Schema: "myapp", Table: "users", Name: "id"},
+				{Schema: "myapp", Table: "products", Name: "id"},
+			},
+			want: "myapp",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := inferDefaultSchema(tt.cols)
+			if got != tt.want {
+				t.Errorf("inferDefaultSchema() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestInferViewPKsFromBaseTables verifies the universal view PK heuristic.
+func TestInferViewPKsFromBaseTables(t *testing.T) {
+	tests := []struct {
+		name     string
+		cols     map[string]DBColumn
+		wantPK   map[string]bool // keys that should become PK
+	}{
+		{
+			name: "view matches base table by non-PK column overlap",
+			cols: map[string]DBColumn{
+				// Base table: users (id=PK, full_name, email)
+				"public:users:id":        {Schema: "public", Table: "users", Name: "id", PrimaryKey: true},
+				"public:users:full_name":  {Schema: "public", Table: "users", Name: "full_name"},
+				"public:users:email":      {Schema: "public", Table: "users", Name: "email"},
+				// Base table: products (id=PK, name, price)
+				"public:products:id":      {Schema: "public", Table: "products", Name: "id", PrimaryKey: true},
+				"public:products:name":    {Schema: "public", Table: "products", Name: "name"},
+				"public:products:price":   {Schema: "public", Table: "products", Name: "price"},
+				// View: user_products (id, full_name, product_name) — no PK
+				"public:user_products:id":           {Schema: "public", Table: "user_products", Name: "id"},
+				"public:user_products:full_name":     {Schema: "public", Table: "user_products", Name: "full_name"},
+				"public:user_products:product_name":  {Schema: "public", Table: "user_products", Name: "product_name"},
+			},
+			// users has 1 non-PK overlap (full_name), products has 0 (name != product_name)
+			// → users wins → view's "id" becomes PK
+			wantPK: map[string]bool{"public:user_products:id": true},
+		},
+		{
+			name: "ambiguous overlap — no PK inferred",
+			cols: map[string]DBColumn{
+				"public:a:id":    {Schema: "public", Table: "a", Name: "id", PrimaryKey: true},
+				"public:a:name":  {Schema: "public", Table: "a", Name: "name"},
+				"public:b:id":    {Schema: "public", Table: "b", Name: "id", PrimaryKey: true},
+				"public:b:name":  {Schema: "public", Table: "b", Name: "name"},
+				// View has id AND name — ties between a and b
+				"public:v:id":   {Schema: "public", Table: "v", Name: "id"},
+				"public:v:name": {Schema: "public", Table: "v", Name: "name"},
+			},
+			wantPK: map[string]bool{}, // tied → no PK
+		},
+		{
+			name: "sqlite-like: many tables with id PK, users wins by full_name overlap",
+			cols: map[string]DBColumn{
+				// users: PK=id, has full_name
+				"main:users:id":        {Schema: "main", Table: "users", Name: "id", PrimaryKey: true},
+				"main:users:full_name":  {Schema: "main", Table: "users", Name: "full_name"},
+				"main:users:email":      {Schema: "main", Table: "users", Name: "email"},
+				// products: PK=id, has name, price
+				"main:products:id":      {Schema: "main", Table: "products", Name: "id", PrimaryKey: true},
+				"main:products:name":    {Schema: "main", Table: "products", Name: "name"},
+				"main:products:price":   {Schema: "main", Table: "products", Name: "price"},
+				// categories: PK=id
+				"main:categories:id":    {Schema: "main", Table: "categories", Name: "id", PrimaryKey: true},
+				"main:categories:name":  {Schema: "main", Table: "categories", Name: "name"},
+				// purchases: PK=id
+				"main:purchases:id":          {Schema: "main", Table: "purchases", Name: "id", PrimaryKey: true},
+				"main:purchases:customer_id": {Schema: "main", Table: "purchases", Name: "customer_id"},
+				"main:purchases:product_id":  {Schema: "main", Table: "purchases", Name: "product_id"},
+				// View: user_products (id, full_name, product_id, product_name) — no PK
+				"main:user_products:id":           {Schema: "main", Table: "user_products", Name: "id"},
+				"main:user_products:full_name":     {Schema: "main", Table: "user_products", Name: "full_name"},
+				"main:user_products:product_id":    {Schema: "main", Table: "user_products", Name: "product_id"},
+				"main:user_products:product_name":  {Schema: "main", Table: "user_products", Name: "product_name"},
+			},
+			// users has overlap=1 (full_name), products has overlap=0, categories=0, purchases has overlap=1 (product_id)
+			// Tie between users and purchases! Both have overlap=1
+			wantPK: map[string]bool{}, // tied → no PK
+		},
+		{
+			name: "table already has PK — not modified",
+			cols: map[string]DBColumn{
+				"public:users:id":       {Schema: "public", Table: "users", Name: "id", PrimaryKey: true},
+				"public:users:name":     {Schema: "public", Table: "users", Name: "name"},
+				"public:orders:id":      {Schema: "public", Table: "orders", Name: "id", PrimaryKey: true},
+				"public:orders:user_id": {Schema: "public", Table: "orders", Name: "user_id"},
+			},
+			wantPK: map[string]bool{}, // both already have PKs
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Record which keys were NOT PK before
+			wasPK := make(map[string]bool)
+			for k, c := range tt.cols {
+				wasPK[k] = c.PrimaryKey
+			}
+
+			inferViewPKsFromBaseTables(tt.cols)
+
+			for k, c := range tt.cols {
+				shouldBePK := tt.wantPK[k] || wasPK[k]
+				if c.PrimaryKey != shouldBePK {
+					t.Errorf("col %s: PrimaryKey=%v, want %v", k, c.PrimaryKey, shouldBePK)
+				}
+			}
+		})
+	}
+}
+
 // TestIsPKCol verifies the IsPKCol helper.
 func TestIsPKCol(t *testing.T) {
 	ti := NewDBTable("public", "order_items", "table", []DBColumn{

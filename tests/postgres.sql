@@ -355,3 +355,10 @@ INSERT INTO order_items (order_id, product_id, variant_id, quantity, price) VALU
   (3, 1, 3, 3, 29.99),
   (4, 2, 1, 1, 14.99),
   (5, 2, 2, 2, 14.99);
+
+-- View for testing PK detection on views (cursor pagination requires PK)
+CREATE VIEW user_products AS
+SELECT u.id AS id, u.full_name, p.id AS product_id, p.name AS product_name
+FROM users u
+JOIN purchases pu ON pu.customer_id = u.id
+JOIN products p ON p.id = pu.product_id;

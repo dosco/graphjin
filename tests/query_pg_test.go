@@ -465,3 +465,50 @@ func TestMutiSchema(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, exp, stdJSON(res.Data))
 }
+
+// TestViewCursorPagination verifies that cursor-based pagination works on
+// PostgreSQL views by detecting PKs from the underlying base tables.
+func TestViewCursorPagination(t *testing.T) {
+	if dbType != "postgres" {
+		t.Skipf("skipping for %s (PG-specific test file)", dbType)
+	}
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gj.Close()
+
+	// user_products view: SELECT u.id, u.full_name, p.id, p.name FROM users JOIN ...
+	// The view should inherit 'id' as PK from the users base table.
+	res, err := gj.GraphQL(context.Background(),
+		`query {
+			user_products(first: 3) {
+				id
+				full_name
+				product_name
+			}
+		}`, nil, nil)
+	if err != nil {
+		t.Fatalf("cursor pagination on view failed: %v", err)
+	}
+
+	var result struct {
+		UserProducts []struct {
+			ID          int    `json:"id"`
+			FullName    string `json:"full_name"`
+			ProductName string `json:"product_name"`
+		} `json:"user_products"`
+	}
+	if err := json.Unmarshal(res.Data, &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(result.UserProducts) == 0 {
+		t.Fatal("expected non-empty results from view with cursor pagination")
+	}
+	if len(result.UserProducts) > 3 {
+		t.Errorf("expected at most 3 results, got %d", len(result.UserProducts))
+	}
+	t.Logf("View cursor pagination returned %d rows", len(result.UserProducts))
+}
