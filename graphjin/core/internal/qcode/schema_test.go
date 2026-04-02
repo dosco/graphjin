@@ -133,6 +133,58 @@ type logs {
 	}
 }
 
+// TestParseSchemaWithCluster tests parsing @cluster type directive
+func TestParseSchemaWithCluster(t *testing.T) {
+	schema := []byte(`# dbinfo:snowflake,1,main
+type orders @cluster(columns: ["created_at", "region"]) {
+	id: BigInt! @id
+	created_at: Timestamptz!
+	region: Text!
+	amount: BigInt
+}
+`)
+
+	ds, err := ParseSchema(schema)
+	if err != nil {
+		t.Fatalf("ParseSchema failed: %v", err)
+	}
+
+	if len(ds.ClusteringKeys) != 1 {
+		t.Fatalf("expected 1 clustering key entry, got %d", len(ds.ClusteringKeys))
+	}
+
+	ck := ds.ClusteringKeys[0]
+	if ck.Table != "orders" {
+		t.Errorf("ClusteringKeys[0].Table = %q, want %q", ck.Table, "orders")
+	}
+	if ck.Schema != "main" {
+		t.Errorf("ClusteringKeys[0].Schema = %q, want %q", ck.Schema, "main")
+	}
+	if len(ck.Keys) != 2 {
+		t.Fatalf("expected 2 keys, got %d", len(ck.Keys))
+	}
+	if ck.Keys[0] != "created_at" {
+		t.Errorf("key[0] = %q, want %q", ck.Keys[0], "created_at")
+	}
+	if ck.Keys[1] != "region" {
+		t.Errorf("key[1] = %q, want %q", ck.Keys[1], "region")
+	}
+}
+
+// TestParseSchemaWithClusterNoColumns tests @cluster with missing columns arg
+func TestParseSchemaWithClusterNoColumns(t *testing.T) {
+	schema := []byte(`# dbinfo:snowflake,1,main
+type orders @cluster {
+	id: BigInt! @id
+}
+`)
+
+	_, err := ParseSchema(schema)
+	if err == nil {
+		t.Fatal("expected error for @cluster without columns arg")
+	}
+}
+
 // TestParseSchemaWithRelationCascade tests parsing @relation with onDelete/onUpdate
 func TestParseSchemaWithRelationCascade(t *testing.T) {
 	schema := []byte(`# dbinfo:postgres,1,public

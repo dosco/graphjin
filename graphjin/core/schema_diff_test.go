@@ -1666,3 +1666,161 @@ func TestComputeDiff_AddColumn_WithIndex(t *testing.T) {
 		t.Error("expected add_index operation for sku column")
 	}
 }
+
+// ============================================================================
+// Clustering Key Tests
+// ============================================================================
+
+func TestSnowflakeCreateTable_WithClusteringKeys(t *testing.T) {
+	d := &snowflakeDDLDialect{}
+
+	table := sdata.DBTable{
+		Name: "events",
+		Columns: []sdata.DBColumn{
+			{Name: "id", Type: "bigint", PrimaryKey: true, NotNull: true},
+			{Name: "created_at", Type: "timestamp", NotNull: true},
+			{Name: "region", Type: "varchar", NotNull: true},
+		},
+		ClusteringKeys: []string{"created_at", "region"},
+	}
+
+	sql := d.CreateTable(table)
+
+	if !strings.Contains(sql, "CLUSTER BY") {
+		t.Errorf("expected CLUSTER BY in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, `"created_at"`) {
+		t.Errorf("expected created_at in CLUSTER BY, got: %s", sql)
+	}
+	if !strings.Contains(sql, `"region"`) {
+		t.Errorf("expected region in CLUSTER BY, got: %s", sql)
+	}
+}
+
+func TestSnowflakeCreateTable_WithoutClusteringKeys(t *testing.T) {
+	d := &snowflakeDDLDialect{}
+
+	table := sdata.DBTable{
+		Name: "events",
+		Columns: []sdata.DBColumn{
+			{Name: "id", Type: "bigint", PrimaryKey: true, NotNull: true},
+		},
+	}
+
+	sql := d.CreateTable(table)
+
+	if strings.Contains(sql, "CLUSTER BY") {
+		t.Errorf("expected no CLUSTER BY in SQL, got: %s", sql)
+	}
+}
+
+func TestSnowflakeAlterClusteringKey(t *testing.T) {
+	d := &snowflakeDDLDialect{}
+
+	sql := d.AlterClusteringKey("events", []string{"created_at", "user_id"})
+
+	expected := `ALTER TABLE "events" CLUSTER BY ("created_at", "user_id");`
+	if sql != expected {
+		t.Errorf("got:\n%s\nwant:\n%s", sql, expected)
+	}
+}
+
+func TestSnowflakeAlterClusteringKey_Empty(t *testing.T) {
+	d := &snowflakeDDLDialect{}
+
+	sql := d.AlterClusteringKey("events", nil)
+	if sql != "" {
+		t.Errorf("expected empty string for nil keys, got: %s", sql)
+	}
+}
+
+func TestPostgresAlterClusteringKey_ReturnsEmpty(t *testing.T) {
+	d := &postgresDialect{}
+	sql := d.AlterClusteringKey("events", []string{"created_at"})
+	if sql != "" {
+		t.Errorf("expected empty string for postgres, got: %s", sql)
+	}
+}
+
+func TestComputeDiff_ClusteringKeyChange(t *testing.T) {
+	current := &sdata.DBInfo{
+		Type: "snowflake",
+		Tables: []sdata.DBTable{
+			{
+				Name: "events",
+				Columns: []sdata.DBColumn{
+					{Name: "id", Type: "bigint", PrimaryKey: true},
+					{Name: "created_at", Type: "timestamp"},
+					{Name: "region", Type: "varchar"},
+				},
+				ClusteringKeys: []string{"created_at"},
+			},
+		},
+	}
+
+	expected := &sdata.DBInfo{
+		Type: "snowflake",
+		Tables: []sdata.DBTable{
+			{
+				Name: "events",
+				Columns: []sdata.DBColumn{
+					{Name: "id", Type: "bigint", PrimaryKey: true},
+					{Name: "created_at", Type: "timestamp"},
+					{Name: "region", Type: "varchar"},
+				},
+				ClusteringKeys: []string{"created_at", "region"},
+			},
+		},
+	}
+
+	ops := computeDiff(current, expected, DiffOptions{})
+
+	var found bool
+	for _, op := range ops {
+		if op.Type == "alter_clustering_key" {
+			found = true
+			if !strings.Contains(op.SQL, "CLUSTER BY") {
+				t.Errorf("expected CLUSTER BY in SQL, got: %s", op.SQL)
+			}
+			if !strings.Contains(op.SQL, `"region"`) {
+				t.Errorf("expected region in SQL, got: %s", op.SQL)
+			}
+		}
+	}
+
+	if !found {
+		t.Error("expected alter_clustering_key operation")
+	}
+}
+
+func TestComputeDiff_ClusteringKeyUnchanged(t *testing.T) {
+	current := &sdata.DBInfo{
+		Type: "snowflake",
+		Tables: []sdata.DBTable{
+			{
+				Name:           "events",
+				Columns:        []sdata.DBColumn{{Name: "id", Type: "bigint", PrimaryKey: true}},
+				ClusteringKeys: []string{"created_at"},
+			},
+		},
+	}
+
+	expected := &sdata.DBInfo{
+		Type: "snowflake",
+		Tables: []sdata.DBTable{
+			{
+				Name:           "events",
+				Columns:        []sdata.DBColumn{{Name: "id", Type: "bigint", PrimaryKey: true}},
+				ClusteringKeys: []string{"created_at"},
+			},
+		},
+	}
+
+	ops := computeDiff(current, expected, DiffOptions{})
+
+	for _, op := range ops {
+		if op.Type == "alter_clustering_key" {
+			t.Errorf("unexpected alter_clustering_key op when keys are unchanged: %s", op.SQL)
+		}
+	}
+}

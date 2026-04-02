@@ -1459,9 +1459,12 @@ func validateArg(arg graph.Arg, validTypes ...graph.ParserType) (err error) {
 			if (i + 1) >= n {
 				continue
 			}
-			vt = validTypes[(i + 1)]
-			ty = arg.Val.Children[0].Type
+			childType := arg.Val.Children[0].Type
+			if childType == validTypes[(i+1)] {
+				return
+			}
 			i++
+			continue
 		}
 
 		if ty == graph.NodeStr && arg.Val.Val == "" {

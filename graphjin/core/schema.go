@@ -24,6 +24,10 @@ const schemaTemplate = `# dbinfo:{{if .Type}}{{ .Type }}{{else}}postgres{{end}},
 {{- if (ne .Database "")}} @database(name: {{ .Database }}){{end}}
 {{- end}}
 
+{{- define "cluster_directive"}}
+{{- if .ClusteringKeys}} @cluster(columns: [{{range $i, $c := .ClusteringKeys}}{{if $i}}, {{end}}"{{$c}}"{{end}}]){{end}}
+{{- end}}
+
 {{- define "relation_directive"}}
 {{- if (ne .FKeyTable "")}} @relation(type: {{ .FKeyTable }}
 {{- if (ne .FKeyCol "")}}, field: {{ .FKeyCol }}{{end -}}
@@ -71,7 +75,8 @@ const schemaTemplate = `# dbinfo:{{if .Type}}{{ .Type }}{{else}}postgres{{end}},
 {{range .Tables -}}
 type {{.Name}}
 {{- template "database_directive" .}}
-{{- template "schema_directive" .}} {
+{{- template "schema_directive" .}}
+{{- template "cluster_directive" .}} {
 {{- range .Columns}}{{template "column" .}}{{end}}
 }
 

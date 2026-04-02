@@ -321,3 +321,63 @@ type audit_logs @database(name: logs) {
 		t.Fatalf("expected no validation error when all tables have @database, got: %v", err)
 	}
 }
+
+func TestWriteSchemaWithClusteringKeys(t *testing.T) {
+	var buf bytes.Buffer
+
+	di := &sdata.DBInfo{
+		Type:    "snowflake",
+		Version: 1,
+		Schema:  "main",
+		Tables: []sdata.DBTable{
+			{
+				Name:   "events",
+				Schema: "main",
+				Columns: []sdata.DBColumn{
+					{Name: "id", Type: "bigint", PrimaryKey: true, NotNull: true, Schema: "main", Table: "events"},
+					{Name: "created_at", Type: "timestamp", NotNull: true, Schema: "main", Table: "events"},
+					{Name: "region", Type: "varchar", NotNull: true, Schema: "main", Table: "events"},
+				},
+				ClusteringKeys: []string{"created_at", "region"},
+			},
+		},
+	}
+
+	if err := writeSchema(di, &buf); err != nil {
+		t.Fatal(err)
+	}
+
+	output := buf.String()
+
+	if !strings.Contains(output, `@cluster(columns: ["created_at", "region"])`) {
+		t.Errorf("expected @cluster directive in output, got:\n%s", output)
+	}
+}
+
+func TestSchemaRoundTrip_ClusteringKeys(t *testing.T) {
+	schema := []byte(`# dbinfo:snowflake,1,main
+
+type events @cluster(columns: ["created_at", "region"]) {
+	id:	BigInt!	@id
+	created_at:	Timestamp!
+	region:	Varchar!
+}
+`)
+
+	ds, err := qcode.ParseSchema(schema)
+	if err != nil {
+		t.Fatalf("ParseSchema failed: %v", err)
+	}
+
+	if len(ds.ClusteringKeys) != 1 {
+		t.Fatalf("expected 1 clustering key entry, got %d", len(ds.ClusteringKeys))
+	}
+
+	ck := ds.ClusteringKeys[0]
+	if ck.Table != "events" {
+		t.Errorf("table = %q, want %q", ck.Table, "events")
+	}
+	if len(ck.Keys) != 2 || ck.Keys[0] != "created_at" || ck.Keys[1] != "region" {
+		t.Errorf("keys = %v, want [created_at, region]", ck.Keys)
+	}
+}

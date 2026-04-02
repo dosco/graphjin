@@ -11,11 +11,18 @@ import (
 )
 
 type Schema struct {
-	Type      string
-	Version   int
-	Schema    string
-	Columns   []sdata.DBColumn
-	Functions []sdata.DBFunction
+	Type           string
+	Version        int
+	Schema         string
+	Columns        []sdata.DBColumn
+	Functions      []sdata.DBFunction
+	ClusteringKeys []TableCluster
+}
+
+// TableCluster holds clustering key metadata parsed from a @cluster type directive.
+type TableCluster struct {
+	Schema, Database, Table string
+	Keys                    []string
 }
 
 func ParseSchema(b []byte) (ds Schema, err error) {
@@ -64,6 +71,15 @@ func ParseSchema(b []byte) (ds Schema, err error) {
 				break
 			}
 			ds.Columns = append(ds.Columns, cols...)
+
+			if len(ti.ClusteringKeys) > 0 {
+				ds.ClusteringKeys = append(ds.ClusteringKeys, TableCluster{
+					Schema:   ti.Schema,
+					Database: ti.Database,
+					Table:    t.Name,
+					Keys:     ti.ClusteringKeys,
+				})
+			}
 		}
 		if err != nil {
 			err = fmt.Errorf("%s: %w", t.Name, err)
@@ -149,9 +165,10 @@ func parseTFieldsFunction(fn *sdata.DBFunction, fields []graph.TField) (
 }
 
 type typeInfo struct {
-	Schema     string
-	Database   string
-	ReturnType string
+	Schema         string
+	Database       string
+	ReturnType     string
+	ClusteringKeys []string
 }
 
 func parseTypeDirectives(dir []graph.Directive) (ti typeInfo, err error) {
@@ -178,6 +195,13 @@ func parseTypeDirectives(dir []graph.Directive) (ti typeInfo, err error) {
 				break
 			}
 			ti.ReturnType = arg.Val.Val
+
+		case "cluster":
+			arg, err = getArg(d.Args, "columns", graph.NodeList, graph.NodeStr)
+			if err != nil {
+				break
+			}
+			ti.ClusteringKeys = extractStringList(arg)
 		}
 		if err != nil {
 			err = fmt.Errorf("type: %w", err)
@@ -317,6 +341,14 @@ func parseTFieldDirectives(ft string, dir []graph.Directive) (tfi tfieldInfo, er
 		}
 	}
 	return
+}
+
+func extractStringList(arg graph.Arg) []string {
+	var result []string
+	for _, child := range arg.Val.Children {
+		result = append(result, child.Val)
+	}
+	return result
 }
 
 func pascalToSnakeSpace(s string) string {

@@ -21,6 +21,7 @@ type DDLDialect interface {
 	CreateSearchIndex(tableName string, col sdata.DBColumn) string
 	CreateUniqueIndex(tableName string, col sdata.DBColumn) string
 	CreateIndex(tableName string, col sdata.DBColumn) string
+	AlterClusteringKey(tableName string, keys []string) string
 }
 
 func getDDLDialect(dbType string) DDLDialect {
@@ -265,6 +266,10 @@ func (d *postgresDialect) CreateIndex(tableName string, col sdata.DBColumn) stri
 		d.QuoteIdentifier(col.Name))
 }
 
+func (d *postgresDialect) AlterClusteringKey(_ string, _ []string) string {
+	return ""
+}
+
 // MySQL dialect
 type mysqlDialect struct{}
 
@@ -474,6 +479,10 @@ func (d *mysqlDialect) CreateIndex(tableName string, col sdata.DBColumn) string 
 		d.QuoteIdentifier(col.Name))
 }
 
+func (d *mysqlDialect) AlterClusteringKey(_ string, _ []string) string {
+	return ""
+}
+
 // MariaDB dialect (extends MySQL)
 type mariadbDialect struct {
 	mysqlDialect
@@ -607,9 +616,19 @@ func (d *snowflakeDDLDialect) CreateTable(table sdata.DBTable) string {
 	}
 
 	tableParts := append(cols, constraints...)
-	return fmt.Sprintf("CREATE TABLE %s (\n%s\n);",
+	sql := fmt.Sprintf("CREATE TABLE %s (\n%s\n)",
 		d.QuoteIdentifier(table.Name),
 		strings.Join(tableParts, ",\n"))
+
+	if len(table.ClusteringKeys) > 0 {
+		quoted := make([]string, len(table.ClusteringKeys))
+		for i, k := range table.ClusteringKeys {
+			quoted[i] = d.QuoteIdentifier(k)
+		}
+		sql += fmt.Sprintf(" CLUSTER BY (%s)", strings.Join(quoted, ", "))
+	}
+
+	return sql + ";"
 }
 
 func (d *snowflakeDDLDialect) AddColumn(tableName string, col sdata.DBColumn) string {
@@ -669,6 +688,19 @@ func (d *snowflakeDDLDialect) CreateUniqueIndex(tableName string, col sdata.DBCo
 func (d *snowflakeDDLDialect) CreateIndex(_ string, _ sdata.DBColumn) string {
 	// Snowflake has no user-managed B-tree indexes.
 	return ""
+}
+
+func (d *snowflakeDDLDialect) AlterClusteringKey(tableName string, keys []string) string {
+	if len(keys) == 0 {
+		return ""
+	}
+	quoted := make([]string, len(keys))
+	for i, k := range keys {
+		quoted[i] = d.QuoteIdentifier(k)
+	}
+	return fmt.Sprintf("ALTER TABLE %s CLUSTER BY (%s);",
+		d.QuoteIdentifier(tableName),
+		strings.Join(quoted, ", "))
 }
 
 // SQLite dialect
@@ -824,6 +856,10 @@ func (d *sqliteDialect) CreateIndex(tableName string, col sdata.DBColumn) string
 		d.QuoteIdentifier(idxName),
 		d.QuoteIdentifier(tableName),
 		d.QuoteIdentifier(col.Name))
+}
+
+func (d *sqliteDialect) AlterClusteringKey(_ string, _ []string) string {
+	return ""
 }
 
 // MSSQL dialect
@@ -1029,6 +1065,10 @@ func (d *mssqlDialect) CreateIndex(tableName string, col sdata.DBColumn) string 
 		d.QuoteIdentifier(col.Name))
 }
 
+func (d *mssqlDialect) AlterClusteringKey(_ string, _ []string) string {
+	return ""
+}
+
 // Oracle dialect
 type oracleDialect struct{}
 
@@ -1224,6 +1264,10 @@ func (d *oracleDialect) CreateIndex(tableName string, col sdata.DBColumn) string
 		d.QuoteIdentifier(idxName),
 		d.QuoteIdentifier(tableName),
 		d.QuoteIdentifier(col.Name))
+}
+
+func (d *oracleDialect) AlterClusteringKey(_ string, _ []string) string {
+	return ""
 }
 
 // parseTypeWithSize extracts base type and size from type aliases like "Varchar255" or "Decimal10_2"
