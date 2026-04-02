@@ -172,9 +172,16 @@ func (d *SQLiteDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
 			ctx.WriteString(ob.Col.Name)
 			ctx.WriteString(`"')`)
 		} else {
+			if ob.IsFunc {
+				ctx.WriteString(strings.ToUpper(ob.Func.Name))
+				ctx.WriteString(`(`)
+			}
 			ctx.ColWithTable(ob.Col.Table, ob.Col.Name)
+			if ob.IsFunc {
+				ctx.WriteString(`)`)
+			}
 		}
-		
+
 		if ob.KeyVar != "" && ob.Key != "" {
 			ctx.WriteString(` END `)
 		}

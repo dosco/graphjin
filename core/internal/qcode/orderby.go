@@ -2,6 +2,7 @@ package qcode
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/graph"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
@@ -129,12 +130,27 @@ func (co *Compiler) compileArgOrderByVar(sel *Select, node *graph.Node, cm map[s
 }
 
 func (co *Compiler) setOrderByColName(ti sdata.DBTable, ob *OrderBy, node *graph.Node) (err error) {
-	col, err := ti.GetColumn(co.ParseName(node.Name))
-	if err != nil {
-		return err
+	name := co.ParseName(node.Name)
+	col, err := ti.GetColumn(name)
+	if err == nil {
+		ob.Col = col
+		return nil
 	}
-	ob.Col = col
-	return nil
+	// Check if it's an aggregation function prefix (e.g., sum_orderqty → SUM(orderqty))
+	origErr := err
+	for k, v := range co.s.GetFunctions() {
+		if strings.HasPrefix(name, k+"_") {
+			col, err = ti.GetColumn(name[len(k)+1:])
+			if err != nil {
+				return err
+			}
+			ob.Col = col
+			ob.Func = v
+			ob.IsFunc = true
+			return nil
+		}
+	}
+	return origErr
 }
 
 func compileOrderBy(sel *Select,

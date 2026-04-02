@@ -1486,6 +1486,72 @@ func TestAdventureWorksViewPKDetection(t *testing.T) {
 	t.Logf("View cursor pagination returned %d rows (total view rows: %d)", len(result.Vindividualcustomer), gtCount)
 }
 
+// Test 25: Top products by territory — aggregation ORDER BY with nested where filter
+// Exercises: distinct + order_by on aggregation (sum_orderqty) + nested relationship filter
+func TestAdventureWorksTopProductsByTerritory(t *testing.T) {
+	skipIfNotAdventureWorks(t)
+	gj := newAdventureWorksGJ(t)
+
+	// Ground truth: top 5 products in Northwest (territory 1) by total qty sold
+	type productRow struct {
+		Productid int
+		TotalQty  int
+	}
+	var gtProducts []productRow
+	rows, err := db.Query(`
+		SELECT sod.productid, SUM(sod.orderqty) as total_qty
+		FROM sales.salesorderdetail sod
+		JOIN sales.salesorderheader soh ON sod.salesorderid = soh.salesorderid
+		WHERE soh.territoryid = 1
+		GROUP BY sod.productid
+		ORDER BY total_qty DESC
+		LIMIT 5`)
+	require.NoError(t, err)
+	defer rows.Close()
+	for rows.Next() {
+		var r productRow
+		err = rows.Scan(&r.Productid, &r.TotalQty)
+		require.NoError(t, err)
+		gtProducts = append(gtProducts, r)
+	}
+	require.NoError(t, rows.Err())
+	require.Len(t, gtProducts, 5, "ground truth should have 5 products")
+	t.Logf("Ground truth top 5 for Northwest: %v", gtProducts)
+
+	// GraphQL: order_by on aggregation column with nested territory filter
+	res, err := gj.GraphQL(context.Background(),
+		`query TopProducts($tid: Int!) {
+			salesorderdetail(
+				limit: 5
+				distinct: [productid]
+				order_by: { sum_orderqty: desc }
+				where: { salesorderheader: { territoryid: { eq: $tid } } }
+			) {
+				productid
+				sum_orderqty
+			}
+		}`,
+		json.RawMessage(`{"tid": 1}`), nil)
+	require.NoError(t, err)
+
+	var result struct {
+		Salesorderdetail []struct {
+			Productid   int `json:"productid"`
+			SumOrderqty int `json:"sum_orderqty"`
+		} `json:"salesorderdetail"`
+	}
+	err = json.Unmarshal(res.Data, &result)
+	require.NoError(t, err)
+	require.Len(t, result.Salesorderdetail, 5, "should return top 5 products")
+
+	// Verify results match ground truth (productid and total qty)
+	for i, gt := range gtProducts {
+		row := result.Salesorderdetail[i]
+		assert.Equal(t, gt.Productid, row.Productid, "productid mismatch at position %d", i)
+		assert.Equal(t, gt.TotalQty, row.SumOrderqty, "total qty mismatch for productid %d", gt.Productid)
+	}
+}
+
 // Test: search_path fallback — verify the inferred default schema works correctly
 // even when the AdventureWorks dump sets search_path=''.
 func TestAdventureWorksSchemaInference(t *testing.T) {
