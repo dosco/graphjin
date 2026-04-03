@@ -2,10 +2,14 @@ package sdata
 
 import (
 	"database/sql"
+	"database/sql/driver"
+	"errors"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/dosco/graphjin/core/v3/internal/util"
 	"golang.org/x/sync/errgroup"
@@ -18,13 +22,13 @@ type DBInfo struct {
 	Schema  string
 	Name    string
 
-	Tables        []DBTable
-	Functions     []DBFunction
-	VTables       []VirtualTable  `json:"-"`
-	CompositeFKs  []CompositeFKInfo `json:"-"`
-	colMap        map[string]int
-	tableMap      map[string]int
-	hash          int
+	Tables       []DBTable
+	Functions    []DBFunction
+	VTables      []VirtualTable    `json:"-"`
+	CompositeFKs []CompositeFKInfo `json:"-"`
+	colMap       map[string]int
+	tableMap     map[string]int
+	hash         int
 }
 
 // DBTable holds the database table information
@@ -37,18 +41,18 @@ type DBTable struct {
 	Type       string
 	// Database is the name of the database this table belongs to (for multi-database support).
 	// Empty string means the default database.
-	Database     string
-	Columns      []DBColumn
-	PrimaryCols  []DBColumn
-	PrimaryCol   DBColumn // backward compat: alias for PrimaryCols[0]
-	SecondaryCol DBColumn
-	FullText     []DBColumn
-	Blocked        bool
-	Func           DBFunction
-	ClusteringKeys    []string // Snowflake clustering key columns (normalized to snake_case)
-	PartitionKey      string   // Partition column name (from config, e.g., "created_at")
-	PartitionRangeDays int     // Default range in days for auto-injected partition filter (0 = warn only)
-	colMap            map[string]int
+	Database           string
+	Columns            []DBColumn
+	PrimaryCols        []DBColumn
+	PrimaryCol         DBColumn // backward compat: alias for PrimaryCols[0]
+	SecondaryCol       DBColumn
+	FullText           []DBColumn
+	Blocked            bool
+	Func               DBFunction
+	ClusteringKeys     []string // Snowflake clustering key columns (normalized to snake_case)
+	PartitionKey       string   // Partition column name (from config, e.g., "created_at")
+	PartitionRangeDays int      // Default range in days for auto-injected partition filter (0 = warn only)
+	colMap             map[string]int
 }
 
 // VirtualTable holds the virtual table information
@@ -61,6 +65,38 @@ type VirtualTable struct {
 
 // GetDBInfo returns the database schema information
 func GetDBInfo(
+	db *sql.DB,
+	dbType string,
+	blockList []string,
+) (*DBInfo, error) {
+	retryDelays := []time.Duration{
+		0,
+		50 * time.Millisecond,
+		100 * time.Millisecond,
+		250 * time.Millisecond,
+		500 * time.Millisecond,
+	}
+
+	var lastErr error
+	for i, delay := range retryDelays {
+		if i > 0 {
+			time.Sleep(delay)
+		}
+
+		di, err := getDBInfoOnce(db, dbType, blockList)
+		if err == nil {
+			return di, nil
+		}
+		if !isRetryableDiscoveryError(err) {
+			return nil, err
+		}
+		lastErr = err
+	}
+
+	return nil, lastErr
+}
+
+func getDBInfoOnce(
 	db *sql.DB,
 	dbType string,
 	blockList []string,
@@ -157,6 +193,23 @@ func GetDBInfo(
 	}
 
 	return di, nil
+}
+
+func isRetryableDiscoveryError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, driver.ErrBadConn) {
+		return true
+	}
+
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, " eof") ||
+		strings.HasSuffix(msg, "eof") ||
+		strings.Contains(msg, "unexpected eof") ||
+		strings.Contains(msg, "bad connection") ||
+		strings.Contains(msg, "connection reset by peer") ||
+		strings.Contains(msg, "broken pipe")
 }
 
 // NewDBInfo returns a new DBInfo object
@@ -344,31 +397,31 @@ func (di *DBInfo) GetTable(schema, table string) (*DBTable, error) {
 
 // DBColumn returns the column as a string
 type DBColumn struct {
-	Comment     string
-	ID          int32
-	Name        string
-	OrigName    string // Original name before normalization (e.g., PascalCase for MSSQL)
-	Type        string
-	Array       bool
-	NotNull     bool
-	PrimaryKey  bool
-	UniqueKey   bool
-	FullText    bool
+	Comment      string
+	ID           int32
+	Name         string
+	OrigName     string // Original name before normalization (e.g., PascalCase for MSSQL)
+	Type         string
+	Array        bool
+	NotNull      bool
+	PrimaryKey   bool
+	UniqueKey    bool
+	FullText     bool
 	FKRecursive  bool
 	FKeyDatabase string // Target database for cross-database FKs (empty = same db)
 	FKeySchema   string
 	FKeyTable    string
 	FKeyCol      string
-	FKeyIsUnique bool   // True if FK target column is PK/unique (for correct rel type)
-	Blocked     bool
-	Table       string
-	Schema      string
-	Database    string
-	Default     string
-	Index       bool
-	IndexName   string
-	FKOnDelete  string
-	FKOnUpdate  string
+	FKeyIsUnique bool // True if FK target column is PK/unique (for correct rel type)
+	Blocked      bool
+	Table        string
+	Schema       string
+	Database     string
+	Default      string
+	Index        bool
+	IndexName    string
+	FKOnDelete   string
+	FKOnUpdate   string
 
 	// Original names before normalization (used to build dialect name maps for MSSQL)
 	OrigTable      string
@@ -423,7 +476,7 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 
 	rows, err := db.Query(sqlStmt)
 	if err != nil {
-		return nil, fmt.Errorf("error fetching columns: %s", err)
+		return nil, fmt.Errorf("error fetching columns: %w", err)
 	}
 	defer rows.Close()
 
@@ -520,6 +573,10 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 		}
 		cmap[k] = v
 		i++
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error scanning columns: %w", err)
 	}
 
 	// For MSSQL, run a supplementary query to detect PKs for views.
@@ -824,7 +881,7 @@ func DiscoverFunctions(db *sql.DB, dbtype string, blockList []string) ([]DBFunct
 
 	rows, err := db.Query(sqlStmt)
 	if err != nil {
-		return nil, fmt.Errorf("error fetching functions: %s", err)
+		return nil, fmt.Errorf("error fetching functions: %w", err)
 	}
 	defer rows.Close()
 
@@ -868,6 +925,10 @@ func DiscoverFunctions(db *sql.DB, dbtype string, blockList []string) ([]DBFunct
 		case "OUT", "out":
 			funcs[i].Outputs = append(funcs[i].Outputs, param)
 		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error scanning functions: %w", err)
 	}
 
 	return funcs, nil

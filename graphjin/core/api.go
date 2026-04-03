@@ -302,7 +302,7 @@ func (g *GraphJin) newGraphJin(conf *Config,
 
 	gj := &graphjinEngine{
 		conf:        conf,
-		log:         _log.New(os.Stdout, "", 0),
+		log:         _log.New(os.Stderr, "", 0),
 		prod:        conf.Production,
 		prodSec:     conf.Production,
 		printFormat: []byte(fmt.Sprintf("gj-%x:", t.UnixNano())),
