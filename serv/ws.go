@@ -416,7 +416,7 @@ func (s *graphjinService) waitForDiscoveryData(wc *wsConn, st *wsState, ds *core
 					"database":     doc.Database,
 					"hash":         doc.Hash,
 					"generated_at": doc.GeneratedAt.Format("2006-01-02T15:04:05Z"),
-					"content":      doc.Markdown,
+					"tables":       doc.Tables,
 				},
 			}
 			data, err := json.Marshal(payload)
