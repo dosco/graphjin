@@ -11,15 +11,14 @@ import (
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
 
-// DiscoveryDocument holds a generated schema Bible for a database.
+// DiscoveryDocument holds a generated schema discovery document for a database.
+// Content is split into focused sections so agents load only what they need.
 type DiscoveryDocument struct {
 	Database    string    `json:"database"`
 	Hash        string    `json:"hash"`
 	GeneratedAt time.Time `json:"generated_at"`
-	Markdown    string    `json:"content"`
 
-	// Sections — split for granular MCP resources so agents load only what they need
-	Overview   string `json:"overview"`    // header + TOC
+	// Sections — served as individual MCP resources (graphjin://discovery/*)
 	Syntax     string `json:"syntax"`      // query syntax reference
 	Tables     string `json:"tables"`      // compact table index (names, FKs, key columns)
 	FullTables string `json:"full_tables"` // detailed table definitions (columns, types, live data)
@@ -47,7 +46,7 @@ func (g *GraphJin) GetAllDiscovery() []*DiscoveryDocument {
 }
 
 // GetCombinedDiscoverySection returns a combined section across all databases.
-// Valid sections: "overview", "syntax", "tables", "insights", or "" for full markdown.
+// Valid sections: "syntax", "tables", "full_tables", "insights".
 func (g *GraphJin) GetCombinedDiscoverySection(section string) string {
 	g.ensureDiscovery()
 	gj, err := g.getEngine()
@@ -60,8 +59,6 @@ func (g *GraphJin) GetCombinedDiscoverySection(section string) string {
 		if v, ok := g.discovery.Load(name); ok {
 			doc := v.(*DiscoveryDocument)
 			switch section {
-			case "overview":
-				sb.WriteString(doc.Overview)
 			case "syntax":
 				sb.WriteString(doc.Syntax)
 			case "tables":
@@ -70,8 +67,6 @@ func (g *GraphJin) GetCombinedDiscoverySection(section string) string {
 				sb.WriteString(doc.FullTables)
 			case "insights":
 				sb.WriteString(doc.Insights)
-			default:
-				sb.WriteString(doc.Markdown)
 			}
 			sb.WriteString("\n")
 		}
@@ -79,8 +74,8 @@ func (g *GraphJin) GetCombinedDiscoverySection(section string) string {
 	return sb.String()
 }
 
-// GetCombinedDiscovery returns a single combined markdown Bible covering all databases.
-// This is the primary method consumers should use.
+// GetCombinedDiscovery returns all sections concatenated for all databases.
+// Prefer GetCombinedDiscoverySection for loading individual sections.
 func (g *GraphJin) GetCombinedDiscovery() string {
 	g.ensureDiscovery()
 	gj, err := g.getEngine()
@@ -89,13 +84,12 @@ func (g *GraphJin) GetCombinedDiscovery() string {
 	}
 
 	var sb strings.Builder
-	names := gj.sortedDatabaseNames()
-
-	for _, name := range names {
+	for _, name := range gj.sortedDatabaseNames() {
 		if v, ok := g.discovery.Load(name); ok {
 			doc := v.(*DiscoveryDocument)
-			sb.WriteString(doc.Markdown)
-			sb.WriteString("\n")
+			sb.WriteString(doc.Syntax)
+			sb.WriteString(doc.Tables)
+			sb.WriteString(doc.Insights)
 		}
 	}
 
@@ -136,24 +130,8 @@ func (g *GraphJin) GenerateDiscovery(ctx context.Context, database string) (*Dis
 	// Build Layer 3 enrichment data
 	enrichment := g.buildEnrichment(ctx, database, visibleTables)
 
-	// Generate markdown
-	var sb strings.Builder
-
-	totalRows := int64(0)
-	for _, e := range enrichment {
-		totalRows += e.RowCount
-	}
-
 	hash := fmt.Sprintf("%x", dbCtx.dbinfo.Hash())
 	now := time.Now().UTC()
-
-	// Header
-	sb.WriteString(fmt.Sprintf("# Schema Bible: %s\n", database))
-	sb.WriteString(fmt.Sprintf("> Generated: %s | Hash: %s | Type: %s | Tables: %d | Rows: ~%s\n\n",
-		now.Format(time.RFC3339), hash, dbCtx.dbtype, len(visibleTables), formatCount(totalRows)))
-
-	// Table of contents
-	writeTableOfContents(&sb, visibleTables, len(gj.databases) > 1, len(dbCtx.schema.GetFunctions()) > 0)
 
 	// ── Section: Syntax ──
 	var syntaxSB strings.Builder
@@ -162,8 +140,6 @@ func (g *GraphJin) GenerateDiscovery(ctx context.Context, database string) (*Dis
 		defaultLimit = 20
 	}
 	writeQuerySyntaxReference(&syntaxSB, defaultLimit)
-	syntaxSection := syntaxSB.String()
-	sb.WriteString(syntaxSection)
 
 	// ── Section: Table Index (compact — names, FKs, key columns only) ──
 	var tableIndexSB strings.Builder
@@ -171,8 +147,6 @@ func (g *GraphJin) GenerateDiscovery(ctx context.Context, database string) (*Dis
 	for _, t := range visibleTables {
 		g.writeTableIndexEntry(&tableIndexSB, dbCtx.schema, t, enrichment[t.Name])
 	}
-	tablesSection := tableIndexSB.String()
-	sb.WriteString(tablesSection)
 
 	// ── Section: Full Tables (detailed — columns, types, live data, for describe_table-style deep dives) ──
 	var fullTablesSB strings.Builder
@@ -180,7 +154,6 @@ func (g *GraphJin) GenerateDiscovery(ctx context.Context, database string) (*Dis
 	for _, t := range visibleTables {
 		g.writeTableMarkdown(&fullTablesSB, dbCtx.schema, database, t, enrichment[t.Name])
 	}
-	fullTablesSection := fullTablesSB.String()
 
 	// ── Section: Insights (relationship paths, namespace routing, templates, data quality, functions) ──
 	var insightsSB strings.Builder
@@ -189,23 +162,15 @@ func (g *GraphJin) GenerateDiscovery(ctx context.Context, database string) (*Dis
 	g.writeQueryTemplates(&insightsSB, visibleTables, enrichment)
 	g.writeDataQuality(&insightsSB, visibleTables, enrichment)
 	g.writeFunctions(&insightsSB, dbCtx.schema)
-	insightsSection := insightsSB.String()
-	sb.WriteString(insightsSection)
-
-	// Overview = everything before the sections (header + TOC)
-	overviewEnd := strings.Index(sb.String(), syntaxSection)
-	overview := sb.String()[:overviewEnd]
 
 	doc := &DiscoveryDocument{
 		Database:    database,
 		Hash:        hash,
 		GeneratedAt: now,
-		Markdown:    sb.String(),
-		Overview:    overview,
-		Syntax:      syntaxSection,
-		Tables:      tablesSection,
-		FullTables:  fullTablesSection,
-		Insights:    insightsSection,
+		Syntax:      syntaxSB.String(),
+		Tables:      tableIndexSB.String(),
+		FullTables:  fullTablesSB.String(),
+		Insights:    insightsSB.String(),
 	}
 
 	g.discovery.Store(database, doc)
@@ -330,26 +295,6 @@ func (g *GraphJin) buildEnrichment(ctx context.Context, database string, tables 
 	}
 
 	return result
-}
-
-// writeTableOfContents writes a navigable index of the discovery document sections.
-func writeTableOfContents(sb *strings.Builder, tables []sdata.DBTable, multiDB bool, hasFunctions bool) {
-	sb.WriteString("## Table of Contents\n\n")
-	sb.WriteString("- [Query Syntax Reference](#query-syntax-reference)\n")
-	sb.WriteString(fmt.Sprintf("- [Tables](#tables) (%d tables)\n", len(tables)))
-	for _, t := range tables {
-		sb.WriteString(fmt.Sprintf("  - [%s](#%s)\n", t.Name, t.Name))
-	}
-	sb.WriteString("- [Relationship Paths](#relationship-paths)\n")
-	if multiDB {
-		sb.WriteString("- [Namespace Routing](#namespace-routing)\n")
-	}
-	sb.WriteString("- [Query Templates](#query-templates)\n")
-	sb.WriteString("- [Data Quality](#data-quality)\n")
-	if hasFunctions {
-		sb.WriteString("- [Functions](#functions)\n")
-	}
-	sb.WriteString("\n")
 }
 
 // writeQuerySyntaxReference writes the GraphJin DSL cheat sheet into the discovery document.

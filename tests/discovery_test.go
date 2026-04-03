@@ -25,12 +25,11 @@ func TestDiscovery(t *testing.T) {
 	gj := newDiscoveryGJ(t)
 
 	t.Run("Generate", func(t *testing.T) {
-		// Discovery is auto-generated at startup
+		// Discovery is lazily generated on first access
 		md := gj.GetCombinedDiscovery()
-		require.NotEmpty(t, md, "Combined discovery should be auto-generated at startup")
+		require.NotEmpty(t, md, "Combined discovery should be generated on first access")
 
-		// Layer 1: Raw schema — verify key tables present
-		assert.Contains(t, md, "# Schema Bible:")
+		// Verify key tables present
 		assert.Contains(t, md, "### users")
 		assert.Contains(t, md, "### products")
 		assert.Contains(t, md, "### purchases")
@@ -43,59 +42,21 @@ func TestDiscovery(t *testing.T) {
 		assert.Contains(t, md, "Columns:")
 		assert.Contains(t, md, "Joins:")
 
-		// Hash and timestamp in header
-		assert.Contains(t, md, "Hash:")
-		assert.Contains(t, md, "Generated:")
-
 		// Should NOT contain full column table (that's in full_tables section)
 		assert.NotContains(t, md, "| Column | Type | Nullable | Default | Key | FK | Index | Notes |")
 	})
 
-	t.Run("TableOfContents", func(t *testing.T) {
-		md := gj.GetCombinedDiscovery()
-		require.NotEmpty(t, md)
-
-		// TOC section exists
-		assert.Contains(t, md, "## Table of Contents")
-
-		// TOC has section links
-		assert.Contains(t, md, "- [Query Syntax Reference](#query-syntax-reference)")
-		assert.Contains(t, md, "- [Tables](#tables)")
-		assert.Contains(t, md, "- [Relationship Paths](#relationship-paths)")
-		assert.Contains(t, md, "- [Query Templates](#query-templates)")
-		assert.Contains(t, md, "- [Data Quality](#data-quality)")
-
-		// TOC includes individual table links
-		assert.Contains(t, md, "  - [users](#users)")
-		assert.Contains(t, md, "  - [products](#products)")
-
-		// TOC appears before the Tables section
-		tocIdx := strings.Index(md, "## Table of Contents")
-		tablesIdx := strings.Index(md, "## Tables")
-		assert.Greater(t, tablesIdx, tocIdx, "TOC should appear before Tables section")
-	})
-
 	t.Run("Sections", func(t *testing.T) {
-		full := gj.GetCombinedDiscovery()
-		require.NotEmpty(t, full)
-
 		// Each section should be non-empty
-		overview := gj.GetCombinedDiscoverySection("overview")
 		syntax := gj.GetCombinedDiscoverySection("syntax")
 		tables := gj.GetCombinedDiscoverySection("tables")
 		fullTables := gj.GetCombinedDiscoverySection("full_tables")
 		insights := gj.GetCombinedDiscoverySection("insights")
 
-		assert.NotEmpty(t, overview, "overview section should not be empty")
 		assert.NotEmpty(t, syntax, "syntax section should not be empty")
 		assert.NotEmpty(t, tables, "tables section should not be empty")
 		assert.NotEmpty(t, fullTables, "full_tables section should not be empty")
 		assert.NotEmpty(t, insights, "insights section should not be empty")
-
-		// Overview has header and TOC but not table definitions
-		assert.Contains(t, overview, "# Schema Bible:")
-		assert.Contains(t, overview, "## Table of Contents")
-		assert.NotContains(t, overview, "## Tables")
 
 		// Syntax has DSL reference with nested aggregation example
 		assert.Contains(t, syntax, "## Query Syntax Reference")
@@ -163,7 +124,7 @@ func TestDiscovery(t *testing.T) {
 	})
 
 	t.Run("Caching", func(t *testing.T) {
-		// Auto-generated at startup — should already be cached
+		// Lazily generated on first access — then cached
 		md1 := gj.GetCombinedDiscovery()
 		require.NotEmpty(t, md1)
 
@@ -215,10 +176,9 @@ func TestDiscovery(t *testing.T) {
 		select {
 		case doc := <-ds.Result:
 			require.NotNil(t, doc)
-			assert.NotEmpty(t, doc.Markdown)
 			assert.NotEmpty(t, doc.Hash)
-			assert.Contains(t, doc.Markdown, "# Schema Bible:")
-			assert.Contains(t, doc.Markdown, "### users")
+			assert.NotEmpty(t, doc.Tables)
+			assert.Contains(t, doc.Tables, "### users")
 		case <-time.After(10 * time.Second):
 			t.Fatal("Did not receive initial discovery document from subscription")
 		}
@@ -232,6 +192,10 @@ func TestDiscovery(t *testing.T) {
 	})
 
 	t.Run("DataQuality", func(t *testing.T) {
+		if dbType == "mongodb" {
+			t.Skip("MongoDB does not have nullable column metadata")
+		}
+
 		md := gj.GetCombinedDiscovery()
 		require.NotEmpty(t, md)
 
@@ -248,7 +212,6 @@ func TestDiscovery(t *testing.T) {
 		md := gj.GetCombinedDiscovery()
 		require.NotEmpty(t, md)
 
-		// The webshop has rich relationships
 		assert.Contains(t, md, "## Relationship Paths")
 	})
 
