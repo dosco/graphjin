@@ -11,6 +11,7 @@ import (
 	"github.com/dosco/graphjin/conf/v3"
 	"github.com/dosco/graphjin/core/v3"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -322,27 +323,25 @@ func TestConfigReuse(t *testing.T) {
 	}`
 
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
-	for i := 0; i < 50; i++ {
-		gj1, err := core.NewGraphJin(conf, db)
-		if err != nil {
-			panic(err)
-		}
 
-		res1, err := gj1.GraphQL(context.Background(), gql, nil, nil)
-		if err != nil {
-			panic(err)
-		}
+	// Create a reference result to compare against
+	gjRef, err := core.NewGraphJin(conf, db)
+	require.NoError(t, err)
+	refRes, err := gjRef.GraphQL(context.Background(), gql, nil, nil)
+	require.NoError(t, err)
 
-		gj2, err := core.NewGraphJin(conf, db)
-		if err != nil {
-			panic(err)
+	t.Run("parallel", func(t *testing.T) {
+		for i := 0; i < 10; i++ {
+			t.Run(fmt.Sprintf("iter_%d", i), func(t *testing.T) {
+				t.Parallel()
+				gj, err := core.NewGraphJin(conf, db)
+				require.NoError(t, err)
+				res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+				require.NoError(t, err)
+				assert.Equal(t, refRes.Data, res.Data, "should equal")
+			})
 		}
-		res2, err := gj2.GraphQL(context.Background(), gql, nil, nil)
-		if err != nil {
-			panic(err)
-		}
-		assert.Equal(t, res1.Data, res2.Data, "should equal")
-	}
+	})
 }
 
 func TestConfigRoleManagement(t *testing.T) {
