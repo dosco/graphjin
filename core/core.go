@@ -182,9 +182,6 @@ func (s *gstate) debugLogStmt() {
 			s.gj.log.Printf("Field skipped, blocked: %s", sel.FieldName)
 		}
 	}
-	for _, w := range st.qc.Warnings {
-		s.gj.log.Printf("WARNING: %s", w)
-	}
 }
 
 // Saved the query qcode to the allow list

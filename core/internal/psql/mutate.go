@@ -269,7 +269,7 @@ func (c *compilerContext) compileLinearMutation() {
 								}
 								c.quoted(pm.Ti.Name)
 								c.w.WriteString(" WHERE ")
-								c.renderPKWhereVars(pm)
+								c.renderPKWhereVarsWithTable(pm, pm.Ti.Name)
 								c.w.WriteString(")")
 							}
 						} else {
@@ -899,12 +899,20 @@ func (c *compilerContext) renderComma(i int) int {
 // renderPKWhereVars renders: pk_col1 = @var AND pk_col2 = @var_pk1 ...
 // Used for parent lookups in child mutation WHERE clauses.
 func (c *compilerContext) renderPKWhereVars(m qcode.Mutate) {
+	c.renderPKWhereVarsWithTable(m, "")
+}
+
+func (c *compilerContext) renderPKWhereVarsWithTable(m qcode.Mutate, table string) {
 	vName := c.getVarName(m)
 	for i, pkCol := range m.Ti.PrimaryCols {
 		if i > 0 {
 			c.w.WriteString(" AND ")
 		}
-		c.quoted(pkCol.Name)
+		if table != "" {
+			c.colWithTable(table, pkCol.Name)
+		} else {
+			c.quoted(pkCol.Name)
+		}
 		c.w.WriteString(" = ")
 		n := vName
 		if i > 0 {

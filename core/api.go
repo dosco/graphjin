@@ -197,19 +197,12 @@ func (g *GraphJin) generateAllDiscovery() {
 		if dbCtx.schema == nil {
 			continue
 		}
-		start := time.Now()
 		doc, err := g.GenerateDiscovery(ctx, name)
 		if err != nil {
 			gj.log.Printf("ERR discovery: %s: %v", name, err)
 			continue
 		}
-		dbLabel := name
-		if dbLabel == "" {
-			dbLabel = "(default)"
-		}
-		tables := len(dbCtx.schema.GetTables())
-		gj.log.Printf("INF discovery: %s — %d tables, %d bytes, hash %s (%s)",
-			dbLabel, tables, len(doc.Markdown), doc.Hash, time.Since(start).Round(time.Millisecond))
+		_ = doc
 	}
 }
 

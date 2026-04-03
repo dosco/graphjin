@@ -42,7 +42,6 @@ func TestDiscoveryGenerate(t *testing.T) {
 	// Should NOT contain full column table (that's in full_tables section)
 	assert.NotContains(t, md, "| Column | Type | Nullable | Default | Key | FK | Index | Notes |")
 
-	t.Logf("Discovery document: %d bytes", len(md))
 }
 
 func TestDiscoveryTableOfContents(t *testing.T) {
@@ -128,8 +127,6 @@ func TestDiscoverySections(t *testing.T) {
 	// Compact tables should be much smaller than full tables
 	assert.Greater(t, len(fullTables), len(tables)*2, "full tables should be significantly larger than compact index")
 
-	t.Logf("Section sizes — overview: %d, syntax: %d, tables: %d, full_tables: %d, insights: %d, total md: %d",
-		len(overview), len(syntax), len(tables), len(fullTables), len(insights), len(full))
 }
 
 func TestDiscoveryLayer3Enrichment(t *testing.T) {
