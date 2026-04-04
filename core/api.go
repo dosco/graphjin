@@ -124,10 +124,6 @@ type GraphJin struct {
 	// Schema change callbacks
 	schemaCallbacks []func(dbName string, hash string)
 	callbackMu      sync.RWMutex
-
-	// Discovery document cache (lazy — generated on first access)
-	discovery     sync.Map // map[string]*DiscoveryDocument
-	discoveryOnce sync.Once
 }
 
 type Option func(*graphjinEngine) error
@@ -184,34 +180,6 @@ func (g *GraphJin) fireAllSchemaCallbacks() {
 			g.fireSchemaCallbacks(name, fmt.Sprintf("%x", ctx.dbinfo.Hash()))
 		}
 	}
-}
-
-// ensureDiscovery lazily generates discovery documents for all databases on first access.
-func (g *GraphJin) ensureDiscovery() {
-	g.discoveryOnce.Do(func() {
-		gj, err := g.getEngine()
-		if err != nil {
-			return
-		}
-		ctx := context.Background()
-		for name, dbCtx := range gj.databases {
-			if dbCtx.schema == nil {
-				continue
-			}
-			if _, err := g.GenerateDiscovery(ctx, name); err != nil {
-				gj.log.Printf("ERR discovery: %s: %v", name, err)
-			}
-		}
-	})
-}
-
-// invalidateDiscovery clears the discovery cache so the next access regenerates it.
-func (g *GraphJin) invalidateDiscovery() {
-	g.discovery.Range(func(key, _ any) bool {
-		g.discovery.Delete(key)
-		return true
-	})
-	g.discoveryOnce = sync.Once{}
 }
 
 // NewGraphJin creates the GraphJin struct, this involves querying the database to learn its
@@ -754,7 +722,6 @@ func (g *GraphJin) Reload() error {
 	if err := g.newGraphJin(gj.conf, db, nil, gj.fs, gj.opts...); err != nil {
 		return err
 	}
-	g.invalidateDiscovery()
 	g.fireAllSchemaCallbacks()
 	return nil
 }
@@ -877,12 +844,19 @@ type TableInfo struct {
 
 // ColumnInfo represents column information for MCP/API consumers
 type ColumnInfo struct {
-	Name       string `json:"name"`
-	Type       string `json:"type"`
-	Nullable   bool   `json:"nullable"`
-	PrimaryKey bool   `json:"primary_key"`
-	ForeignKey string `json:"foreign_key,omitempty"` // "schema.table.column" if FK
-	Array      bool   `json:"array,omitempty"`
+	Name                string `json:"name"`
+	Type                string `json:"type"`
+	Nullable            bool   `json:"nullable"`
+	PrimaryKey          bool   `json:"primary_key"`
+	ForeignKey          string `json:"foreign_key,omitempty"` // "schema.table.column" if FK
+	Array               bool   `json:"array,omitempty"`
+	Default             string `json:"default,omitempty"`
+	UniqueKey           bool   `json:"unique_key,omitempty"`
+	Index               bool   `json:"index,omitempty"`
+	IndexName           string `json:"index_name,omitempty"`
+	FullText            bool   `json:"full_text,omitempty"`
+	ForeignKeyDatabase  string `json:"foreign_key_database,omitempty"`
+	ForeignKeyRecursive bool   `json:"foreign_key_recursive,omitempty"`
 }
 
 // RelationInfo represents a relationship between tables
@@ -896,18 +870,38 @@ type RelationInfo struct {
 
 // TableSchema represents full table schema with relationships
 type TableSchema struct {
-	Name          string       `json:"name"`
-	Schema        string       `json:"schema,omitempty"`
-	Database      string       `json:"database,omitempty"`
-	Type          string       `json:"type"`
-	Comment       string       `json:"comment,omitempty"`
-	PrimaryKey    string       `json:"primary_key,omitempty"`
-	PrimaryKeys   []string     `json:"primary_keys,omitempty"`
-	Columns       []ColumnInfo `json:"columns"`
-	Relationships struct {
+	Name            string       `json:"name"`
+	Schema          string       `json:"schema,omitempty"`
+	Database        string       `json:"database,omitempty"`
+	Type            string       `json:"type"`
+	Comment         string       `json:"comment,omitempty"`
+	Blocked         bool         `json:"blocked,omitempty"`
+	PrimaryKey      string       `json:"primary_key,omitempty"`
+	PrimaryKeys     []string     `json:"primary_keys,omitempty"`
+	FullTextColumns []string     `json:"full_text_columns,omitempty"`
+	Columns         []ColumnInfo `json:"columns"`
+	Relationships   struct {
 		Outgoing []RelationInfo `json:"outgoing"` // Tables this table references
 		Incoming []RelationInfo `json:"incoming"` // Tables that reference this table
 	} `json:"relationships"`
+}
+
+// FunctionParam represents a function input or output parameter
+type FunctionParam struct {
+	Name  string `json:"name"`
+	Type  string `json:"type"`
+	Array bool   `json:"array,omitempty"`
+}
+
+// FunctionInfo represents a database function
+type FunctionInfo struct {
+	Name      string          `json:"name"`
+	Schema    string          `json:"schema,omitempty"`
+	Type      string          `json:"type"`
+	Comment   string          `json:"comment,omitempty"`
+	Aggregate bool            `json:"aggregate,omitempty"`
+	Inputs    []FunctionParam `json:"inputs,omitempty"`
+	Outputs   []FunctionParam `json:"outputs,omitempty"`
 }
 
 // PathStep represents a step in a relationship path
@@ -984,6 +978,58 @@ func (gj *graphjinEngine) getTables(database string) []TableInfo {
 	return result
 }
 
+// GetFunctions returns database functions across all databases.
+func (g *GraphJin) GetFunctions() []FunctionInfo {
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil
+	}
+	return gj.getFunctions("")
+}
+
+// GetFunctionsForDatabase returns database functions for a specific database.
+func (g *GraphJin) GetFunctionsForDatabase(database string) []FunctionInfo {
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil
+	}
+	return gj.getFunctions(database)
+}
+
+func (gj *graphjinEngine) getFunctions(database string) []FunctionInfo {
+	var result []FunctionInfo
+	for _, dbName := range gj.sortedDatabaseNames() {
+		if database != "" && dbName != database {
+			continue
+		}
+		ctx := gj.databases[dbName]
+		if ctx.schema == nil {
+			continue
+		}
+		for _, fn := range ctx.schema.GetFunctions() {
+			fi := FunctionInfo{
+				Name:      fn.Name,
+				Schema:    fn.Schema,
+				Type:      fn.Type,
+				Comment:   fn.Comment,
+				Aggregate: fn.Agg,
+			}
+			for _, p := range fn.Inputs {
+				fi.Inputs = append(fi.Inputs, FunctionParam{
+					Name: p.Name, Type: p.Type, Array: p.Array,
+				})
+			}
+			for _, p := range fn.Outputs {
+				fi.Outputs = append(fi.Outputs, FunctionParam{
+					Name: p.Name, Type: p.Type, Array: p.Array,
+				})
+			}
+			result = append(result, fi)
+		}
+	}
+	return result
+}
+
 // GetTableSchema returns detailed schema for a specific table including relationships.
 // In multi-DB mode, searches across all databases.
 func (g *GraphJin) GetTableSchema(tableName string) (*TableSchema, error) {
@@ -1029,11 +1075,12 @@ func (gj *graphjinEngine) buildTableSchema(dbSchema *sdata.DBSchema, dbName, tab
 	}
 
 	schema := &TableSchema{
-		Name:     t.Name,
-		Schema:   t.Schema,
+		Name:    t.Name,
+		Schema:  t.Schema,
 		Database: dbName,
-		Type:     t.Type,
-		Comment:  t.Comment,
+		Type:    t.Type,
+		Comment: t.Comment,
+		Blocked: t.Blocked,
 	}
 
 	if t.PrimaryCol.Name != "" {
@@ -1042,15 +1089,25 @@ func (gj *graphjinEngine) buildTableSchema(dbSchema *sdata.DBSchema, dbName, tab
 	if len(t.PrimaryCols) > 1 {
 		schema.PrimaryKeys = t.PKColNames()
 	}
+	for _, ftCol := range t.FullText {
+		schema.FullTextColumns = append(schema.FullTextColumns, ftCol.Name)
+	}
 
 	// Add columns
 	for _, col := range t.Columns {
 		ci := ColumnInfo{
-			Name:       col.Name,
-			Type:       col.Type,
-			Nullable:   !col.NotNull,
-			PrimaryKey: col.PrimaryKey,
-			Array:      col.Array,
+			Name:                col.Name,
+			Type:                col.Type,
+			Nullable:            !col.NotNull,
+			PrimaryKey:          col.PrimaryKey,
+			Array:               col.Array,
+			Default:             col.Default,
+			UniqueKey:           col.UniqueKey,
+			Index:               col.Index,
+			IndexName:           col.IndexName,
+			FullText:            col.FullText,
+			ForeignKeyDatabase:  col.FKeyDatabase,
+			ForeignKeyRecursive: col.FKRecursive,
 		}
 		if col.FKeyTable != "" {
 			ci.ForeignKey = fmt.Sprintf("%s.%s", col.FKeyTable, col.FKeyCol)

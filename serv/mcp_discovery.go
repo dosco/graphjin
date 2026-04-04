@@ -53,7 +53,7 @@ func (ms *mcpServer) registerDiscoveryResources() {
 				mcp.WithMIMEType("text/markdown"),
 			),
 			func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
-				md := ms.service.gj.GetCombinedDiscoverySection(s.key)
+				md := ms.service.disc.CombinedSection(s.key)
 
 				if md == "" {
 					return []mcp.ResourceContents{

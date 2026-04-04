@@ -19,7 +19,7 @@ func discoveryHandler(s1 *HttpService) http.Handler {
 		}
 
 		s := s1.Load().(*graphjinService)
-		md := s.gj.GetCombinedDiscovery()
+		md := s.disc.Combined()
 
 		if md == "" {
 			http.Error(w, "Discovery not available. Schema may not be ready yet.", http.StatusServiceUnavailable)
