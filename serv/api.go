@@ -379,6 +379,16 @@ func (s *HttpService) RESTWithNS(ah auth.HandlerFunc, ns string) http.Handler {
 	return s.apiHandler(&ns, ah, true)
 }
 
+// OpenAPI is the http handler for the OpenAPI specification endpoint
+func (s *HttpService) OpenAPI() http.Handler {
+	return s.openAPIHandler(nil)
+}
+
+// OpenAPIWithNS is the http handler for the namespaced OpenAPI specification endpoint
+func (s *HttpService) OpenAPIWithNS(ns string) http.Handler {
+	return s.openAPIHandler(&ns)
+}
+
 func (s *HttpService) apiHandler(ns *string, ah auth.HandlerFunc, rest bool) http.Handler {
 	var h http.Handler
 	if rest {

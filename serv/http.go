@@ -447,3 +447,50 @@ func newDTrace(dtrace propagation.TextMapPropagator, r *http.Request) (context.C
 
 	return ctx, opts
 }
+
+// openAPIHandler generates and serves the OpenAPI specification
+func (s1 *HttpService) openAPIHandler(ns *string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		s := s1.Load().(*graphjinService)
+
+		// Set content type for JSON
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+		// Handle preflight requests
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		// Only allow GET requests
+		if r.Method != "GET" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Generate OpenAPI specification
+		spec, err := s.gj.GetOpenAPISpec()
+		if err != nil {
+			s.log.Error("Failed to generate OpenAPI spec", zap.Error(err))
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		// Add namespace info if applicable
+		if ns != nil {
+			// Note: In a real implementation, you might want to modify the spec
+			// to reflect the namespace in paths or descriptions
+			s.log.Debug("Serving OpenAPI spec for namespace", zap.String("namespace", *ns))
+		}
+
+		// Write the specification
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write(spec); err != nil {
+			s.log.Error("Failed to write OpenAPI spec", zap.Error(err))
+		}
+	})
+}
