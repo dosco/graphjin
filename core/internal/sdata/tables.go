@@ -687,9 +687,9 @@ HAVING COUNT(*) > 1`
 
 const compositeFKQueryMSSQL = `
 SELECT s.name, t.name, OBJECT_NAME(fkc.constraint_object_id),
-       STRING_AGG(c.name, ',') WITHIN GROUP (ORDER BY fkc.constraint_column_id) AS local_columns,
+       STRING_AGG(c.name, ',') AS local_columns,
        rs.name, rt.name,
-       STRING_AGG(rc.name, ',') WITHIN GROUP (ORDER BY fkc.constraint_column_id) AS fkey_columns
+       STRING_AGG(rc.name, ',') AS fkey_columns
 FROM sys.foreign_key_columns fkc
 JOIN sys.columns c ON fkc.parent_object_id = c.object_id AND fkc.parent_column_id = c.column_id
 JOIN sys.columns rc ON fkc.referenced_object_id = rc.object_id AND fkc.referenced_column_id = rc.column_id
