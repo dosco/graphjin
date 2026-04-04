@@ -118,7 +118,6 @@ func TestCompositeFKAllRowsMatch(t *testing.T) {
 		expected = append(expected, gt)
 	}
 	require.Len(t, expected, 5, "should have 5 order items")
-	t.Logf("Ground truth: %+v", expected)
 
 	res, err := gj.GraphQL(context.Background(),
 		`query {
