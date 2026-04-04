@@ -43,6 +43,8 @@ func Example_subscription() {
 		fmt.Println(err)
 		return
 	}
+	defer m.Unsubscribe()
+
 	for i := 0; i < 10; i++ {
 		msg := <-m.Result
 		printJSON(msg.Data)
@@ -139,6 +141,7 @@ func Example_subscriptionWithCursor() {
 		fmt.Println(err)
 		return
 	}
+	defer m2.Unsubscribe()
 
 	go func() {
 		for i := 6; i < 20; i++ {
