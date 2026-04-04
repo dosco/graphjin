@@ -168,7 +168,12 @@ func (co *Compiler) getRole(role, schema, table, field string) trval {
 	var k string
 
 	if co.s.IsAlias(field) {
-		k = (role + ":" + schema + ":" + field)
+		// Resolve alias to underlying table name to match how AddRole stores it
+		if ti, err := co.s.Find(schema, field); err == nil {
+			k = (role + ":" + ti.Schema + ":" + ti.Name)
+		} else {
+			k = (role + ":" + schema + ":" + field)
+		}
 	} else {
 		k = (role + ":" + schema + ":" + table)
 	}
