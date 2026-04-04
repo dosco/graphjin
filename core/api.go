@@ -125,8 +125,9 @@ type GraphJin struct {
 	schemaCallbacks []func(dbName string, hash string)
 	callbackMu      sync.RWMutex
 
-	// Discovery document cache
-	discovery sync.Map // map[string]*DiscoveryDocument
+	// Discovery document cache (lazy — generated on first access)
+	discovery     sync.Map // map[string]*DiscoveryDocument
+	discoveryOnce sync.Once
 }
 
 type Option func(*graphjinEngine) error
@@ -185,25 +186,32 @@ func (g *GraphJin) fireAllSchemaCallbacks() {
 	}
 }
 
-// generateAllDiscovery generates discovery documents for all databases with initialized schemas.
-// Called at startup and after schema changes.
-func (g *GraphJin) generateAllDiscovery() {
-	gj, err := g.getEngine()
-	if err != nil {
-		return
-	}
-	ctx := context.Background()
-	for name, dbCtx := range gj.databases {
-		if dbCtx.schema == nil {
-			continue
-		}
-		doc, err := g.GenerateDiscovery(ctx, name)
+// ensureDiscovery lazily generates discovery documents for all databases on first access.
+func (g *GraphJin) ensureDiscovery() {
+	g.discoveryOnce.Do(func() {
+		gj, err := g.getEngine()
 		if err != nil {
-			gj.log.Printf("ERR discovery: %s: %v", name, err)
-			continue
+			return
 		}
-		_ = doc
-	}
+		ctx := context.Background()
+		for name, dbCtx := range gj.databases {
+			if dbCtx.schema == nil {
+				continue
+			}
+			if _, err := g.GenerateDiscovery(ctx, name); err != nil {
+				gj.log.Printf("ERR discovery: %s: %v", name, err)
+			}
+		}
+	})
+}
+
+// invalidateDiscovery clears the discovery cache so the next access regenerates it.
+func (g *GraphJin) invalidateDiscovery() {
+	g.discovery.Range(func(key, _ any) bool {
+		g.discovery.Delete(key)
+		return true
+	})
+	g.discoveryOnce = sync.Once{}
 }
 
 // NewGraphJin creates the GraphJin struct, this involves querying the database to learn its
@@ -225,7 +233,6 @@ func NewGraphJin(conf *Config, db *sql.DB, options ...Option) (g *GraphJin, err 
 		return
 	}
 
-	g.generateAllDiscovery()
 	g.fireAllSchemaCallbacks()
 	return
 }
@@ -243,7 +250,6 @@ func NewGraphJinWithFS(conf *Config, db *sql.DB, fs FS, options ...Option) (g *G
 		return
 	}
 
-	g.generateAllDiscovery()
 	g.fireAllSchemaCallbacks()
 	return
 }
@@ -748,7 +754,7 @@ func (g *GraphJin) Reload() error {
 	if err := g.newGraphJin(gj.conf, db, nil, gj.fs, gj.opts...); err != nil {
 		return err
 	}
-	g.generateAllDiscovery()
+	g.invalidateDiscovery()
 	g.fireAllSchemaCallbacks()
 	return nil
 }

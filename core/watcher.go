@@ -89,7 +89,7 @@ func (g *GraphJin) startDBWatcher(ps time.Duration) {
 				if err := g.newGraphJin(gj.conf, pdb.db, nil, gj.fs, gj.opts...); err != nil {
 					gj.log.Println(err)
 				} else {
-					g.generateAllDiscovery()
+					g.invalidateDiscovery()
 					g.fireAllSchemaCallbacks()
 				}
 			}

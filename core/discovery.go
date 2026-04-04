@@ -26,17 +26,18 @@ type DiscoveryDocument struct {
 	Insights   string `json:"insights"`    // relationship paths, templates, data quality, functions
 }
 
-// GetDiscovery returns the cached discovery document for a database.
-// Returns nil if no document has been generated yet.
+// GetDiscovery returns the discovery document for a database, generating it lazily on first access.
 func (g *GraphJin) GetDiscovery(database string) *DiscoveryDocument {
+	g.ensureDiscovery()
 	if v, ok := g.discovery.Load(database); ok {
 		return v.(*DiscoveryDocument)
 	}
 	return nil
 }
 
-// GetAllDiscovery returns discovery documents for all databases.
+// GetAllDiscovery returns discovery documents for all databases, generating lazily on first access.
 func (g *GraphJin) GetAllDiscovery() []*DiscoveryDocument {
+	g.ensureDiscovery()
 	var docs []*DiscoveryDocument
 	g.discovery.Range(func(key, value any) bool {
 		docs = append(docs, value.(*DiscoveryDocument))
@@ -48,6 +49,7 @@ func (g *GraphJin) GetAllDiscovery() []*DiscoveryDocument {
 // GetCombinedDiscoverySection returns a combined section across all databases.
 // Valid sections: "overview", "syntax", "tables", "insights", or "" for full markdown.
 func (g *GraphJin) GetCombinedDiscoverySection(section string) string {
+	g.ensureDiscovery()
 	gj, err := g.getEngine()
 	if err != nil {
 		return ""
@@ -80,6 +82,7 @@ func (g *GraphJin) GetCombinedDiscoverySection(section string) string {
 // GetCombinedDiscovery returns a single combined markdown Bible covering all databases.
 // This is the primary method consumers should use.
 func (g *GraphJin) GetCombinedDiscovery() string {
+	g.ensureDiscovery()
 	gj, err := g.getEngine()
 	if err != nil {
 		return ""
