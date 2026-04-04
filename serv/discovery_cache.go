@@ -28,10 +28,18 @@ func NewDiscoveryManager(gj *core.GraphJin) *DiscoveryManager {
 
 // ensureDiscovery lazily generates discovery documents for all databases on
 // first access. Subsequent calls are no-ops until invalidate resets the once.
+// If the engine is not ready yet (DatabaseNames returns empty), the once is
+// reset so the next call retries rather than permanently caching nothing.
 func (dm *DiscoveryManager) EnsureDiscovery() {
 	dm.once.Do(func() {
+		names := dm.gj.DatabaseNames()
+		if len(names) == 0 {
+			// Engine not initialized yet — reset so next call retries.
+			dm.once = sync.Once{}
+			return
+		}
 		ctx := context.Background()
-		for _, name := range dm.gj.DatabaseNames() {
+		for _, name := range names {
 			doc, err := generateDiscovery(ctx, dm.gj, name)
 			if err != nil {
 				continue
