@@ -230,6 +230,9 @@ type numStats struct {
 func (g *GraphJin) buildEnrichment(ctx context.Context, database string, tables []sdata.DBTable) map[string]*tableEnrichment {
 	result := make(map[string]*tableEnrichment)
 
+	// Per-query timeout to prevent individual queries from hanging
+	const queryTimeout = 10 * time.Second
+
 	for _, t := range tables {
 		e := &tableEnrichment{
 			DateRanges:     make(map[string][2]string),
@@ -258,41 +261,49 @@ func (g *GraphJin) buildEnrichment(ctx context.Context, database string, tables 
 
 		// Row count
 		if t.PrimaryCol.Name != "" {
+			qctx, cancel := context.WithTimeout(ctx, queryTimeout)
 			q := fmt.Sprintf("{ %s(limit: 1) { count_%s } }", t.Name, t.PrimaryCol.Name)
-			if res, err := g.GraphQL(ctx, q, nil, rc); err == nil && res.Data != nil {
+			if res, err := g.GraphQL(qctx, q, nil, rc); err == nil && res.Data != nil {
 				e.RowCount = extractCountFromResult(res.Data, t.Name, t.PrimaryCol.Name)
 			}
+			cancel()
 		}
 
 		// Date ranges
 		for _, col := range dateCols {
+			qctx, cancel := context.WithTimeout(ctx, queryTimeout)
 			q := fmt.Sprintf("{ %s(limit: 1) { min_%s max_%s } }", t.Name, col.Name, col.Name)
-			if res, err := g.GraphQL(ctx, q, nil, rc); err == nil && res.Data != nil {
+			if res, err := g.GraphQL(qctx, q, nil, rc); err == nil && res.Data != nil {
 				min, max := extractMinMaxFromResult(res.Data, t.Name, col.Name)
 				if min != "" || max != "" {
 					e.DateRanges[col.Name] = [2]string{min, max}
 				}
 			}
+			cancel()
 		}
 
 		// Distinct values for enum columns
 		for _, col := range enumCols {
+			qctx, cancel := context.WithTimeout(ctx, queryTimeout)
 			q := fmt.Sprintf("{ %s(distinct: [%s], limit: 50) { %s } }", t.Name, col.Name, col.Name)
-			if res, err := g.GraphQL(ctx, q, nil, rc); err == nil && res.Data != nil {
+			if res, err := g.GraphQL(qctx, q, nil, rc); err == nil && res.Data != nil {
 				vals := extractDistinctFromResult(res.Data, t.Name, col.Name)
 				if len(vals) > 0 {
 					e.DistinctValues[col.Name] = vals
 				}
 			}
+			cancel()
 		}
 
 		// Value stats for numeric columns
 		for _, col := range numericCols {
+			qctx, cancel := context.WithTimeout(ctx, queryTimeout)
 			q := fmt.Sprintf("{ %s(limit: 1) { min_%s max_%s avg_%s sum_%s count_%s } }",
 				t.Name, col.Name, col.Name, col.Name, col.Name, col.Name)
-			if res, err := g.GraphQL(ctx, q, nil, rc); err == nil && res.Data != nil {
+			if res, err := g.GraphQL(qctx, q, nil, rc); err == nil && res.Data != nil {
 				e.ValueStats[col.Name] = extractStatsFromResult(res.Data, t.Name, col.Name)
 			}
+			cancel()
 		}
 
 		// Sample rows (5 most recent)
@@ -305,10 +316,12 @@ func (g *GraphJin) buildEnrichment(ctx context.Context, database string, tables 
 		if len(dateCols) > 0 {
 			orderClause = fmt.Sprintf(", order_by: { %s: desc }", dateCols[0].Name)
 		}
+		qctx, cancel := context.WithTimeout(ctx, queryTimeout)
 		q := fmt.Sprintf("{ %s(limit: 5%s) { %s } }", t.Name, orderClause, strings.Join(sampleCols, " "))
-		if res, err := g.GraphQL(ctx, q, nil, rc); err == nil && res.Data != nil {
+		if res, err := g.GraphQL(qctx, q, nil, rc); err == nil && res.Data != nil {
 			e.SampleRows = extractRowsFromResult(res.Data, t.Name)
 		}
+		cancel()
 
 		result[t.Name] = e
 	}

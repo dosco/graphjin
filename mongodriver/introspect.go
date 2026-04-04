@@ -92,7 +92,7 @@ func (c *Conn) introspectColumns(ctx context.Context, q *QueryDSL) (driver.Rows,
 				collName,              // table_name
 				fieldName,             // column_name
 				field.SQLType,         // data_type
-				!field.Required,       // is_nullable (NotNull in DBColumn)
+				field.Required,        // not_null (NotNull in DBColumn)
 				fieldName == "_id",    // is_primary_key
 				field.IsUnique,        // is_unique_key
 				field.IsArray,         // is_array
@@ -111,7 +111,7 @@ func (c *Conn) introspectColumns(ctx context.Context, q *QueryDSL) (driver.Rows,
 					collName,    // table_name
 					"id",        // column_name (alias for _id)
 					field.SQLType,
-					false, // is_nullable (id is required)
+					true,  // not_null (id is required)
 					true,  // is_primary_key
 					true,  // is_unique_key
 					false, // is_array

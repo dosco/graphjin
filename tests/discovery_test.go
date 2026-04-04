@@ -11,300 +11,252 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDiscoveryGenerate(t *testing.T) {
+// newDiscoveryGJ creates a shared GraphJin instance for discovery tests.
+func newDiscoveryGJ(t *testing.T) *core.GraphJin {
+	t.Helper()
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	require.NoError(t, err)
-	defer gj.Close()
-
-	// Discovery is auto-generated at startup
-	md := gj.GetCombinedDiscovery()
-	require.NotEmpty(t, md, "Combined discovery should be auto-generated at startup")
-
-	// Layer 1: Raw schema — verify key tables present
-	assert.Contains(t, md, "# Schema Bible:")
-	assert.Contains(t, md, "### users")
-	assert.Contains(t, md, "### products")
-	assert.Contains(t, md, "### purchases")
-	assert.Contains(t, md, "### comments")
-
-	// Compact table index format — column names, FKs, joins
-	assert.Contains(t, md, "full_name")
-	assert.Contains(t, md, "email")
-	assert.Contains(t, md, "FKs:")
-	assert.Contains(t, md, "Columns:")
-	assert.Contains(t, md, "Joins:")
-
-	// Hash and timestamp in header
-	assert.Contains(t, md, "Hash:")
-	assert.Contains(t, md, "Generated:")
-
-	// Should NOT contain full column table (that's in full_tables section)
-	assert.NotContains(t, md, "| Column | Type | Nullable | Default | Key | FK | Index | Notes |")
-
+	t.Cleanup(func() { gj.Close() })
+	return gj
 }
 
-func TestDiscoveryTableOfContents(t *testing.T) {
-	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
-	gj, err := core.NewGraphJin(conf, db)
-	require.NoError(t, err)
-	defer gj.Close()
+func TestDiscovery(t *testing.T) {
+	gj := newDiscoveryGJ(t)
 
-	md := gj.GetCombinedDiscovery()
-	require.NotEmpty(t, md)
+	t.Run("Generate", func(t *testing.T) {
+		// Discovery is auto-generated at startup
+		md := gj.GetCombinedDiscovery()
+		require.NotEmpty(t, md, "Combined discovery should be auto-generated at startup")
 
-	// TOC section exists
-	assert.Contains(t, md, "## Table of Contents")
+		// Layer 1: Raw schema — verify key tables present
+		assert.Contains(t, md, "# Schema Bible:")
+		assert.Contains(t, md, "### users")
+		assert.Contains(t, md, "### products")
+		assert.Contains(t, md, "### purchases")
+		assert.Contains(t, md, "### comments")
 
-	// TOC has section links
-	assert.Contains(t, md, "- [Query Syntax Reference](#query-syntax-reference)")
-	assert.Contains(t, md, "- [Tables](#tables)")
-	assert.Contains(t, md, "- [Relationship Paths](#relationship-paths)")
-	assert.Contains(t, md, "- [Query Templates](#query-templates)")
-	assert.Contains(t, md, "- [Data Quality](#data-quality)")
+		// Compact table index format — column names, FKs, joins
+		assert.Contains(t, md, "full_name")
+		assert.Contains(t, md, "email")
+		assert.Contains(t, md, "FKs:")
+		assert.Contains(t, md, "Columns:")
+		assert.Contains(t, md, "Joins:")
 
-	// TOC includes individual table links
-	assert.Contains(t, md, "  - [users](#users)")
-	assert.Contains(t, md, "  - [products](#products)")
+		// Hash and timestamp in header
+		assert.Contains(t, md, "Hash:")
+		assert.Contains(t, md, "Generated:")
 
-	// TOC appears before the Tables section
-	tocIdx := strings.Index(md, "## Table of Contents")
-	tablesIdx := strings.Index(md, "## Tables")
-	assert.Greater(t, tablesIdx, tocIdx, "TOC should appear before Tables section")
-}
+		// Should NOT contain full column table (that's in full_tables section)
+		assert.NotContains(t, md, "| Column | Type | Nullable | Default | Key | FK | Index | Notes |")
+	})
 
-func TestDiscoverySections(t *testing.T) {
-	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
-	gj, err := core.NewGraphJin(conf, db)
-	require.NoError(t, err)
-	defer gj.Close()
+	t.Run("TableOfContents", func(t *testing.T) {
+		md := gj.GetCombinedDiscovery()
+		require.NotEmpty(t, md)
 
-	full := gj.GetCombinedDiscovery()
-	require.NotEmpty(t, full)
+		// TOC section exists
+		assert.Contains(t, md, "## Table of Contents")
 
-	// Each section should be non-empty
-	overview := gj.GetCombinedDiscoverySection("overview")
-	syntax := gj.GetCombinedDiscoverySection("syntax")
-	tables := gj.GetCombinedDiscoverySection("tables")
-	fullTables := gj.GetCombinedDiscoverySection("full_tables")
-	insights := gj.GetCombinedDiscoverySection("insights")
+		// TOC has section links
+		assert.Contains(t, md, "- [Query Syntax Reference](#query-syntax-reference)")
+		assert.Contains(t, md, "- [Tables](#tables)")
+		assert.Contains(t, md, "- [Relationship Paths](#relationship-paths)")
+		assert.Contains(t, md, "- [Query Templates](#query-templates)")
+		assert.Contains(t, md, "- [Data Quality](#data-quality)")
 
-	assert.NotEmpty(t, overview, "overview section should not be empty")
-	assert.NotEmpty(t, syntax, "syntax section should not be empty")
-	assert.NotEmpty(t, tables, "tables section should not be empty")
-	assert.NotEmpty(t, fullTables, "full_tables section should not be empty")
-	assert.NotEmpty(t, insights, "insights section should not be empty")
+		// TOC includes individual table links
+		assert.Contains(t, md, "  - [users](#users)")
+		assert.Contains(t, md, "  - [products](#products)")
 
-	// Overview has header and TOC but not table definitions
-	assert.Contains(t, overview, "# Schema Bible:")
-	assert.Contains(t, overview, "## Table of Contents")
-	assert.NotContains(t, overview, "## Tables")
+		// TOC appears before the Tables section
+		tocIdx := strings.Index(md, "## Table of Contents")
+		tablesIdx := strings.Index(md, "## Tables")
+		assert.Greater(t, tablesIdx, tocIdx, "TOC should appear before Tables section")
+	})
 
-	// Syntax has DSL reference with nested aggregation example
-	assert.Contains(t, syntax, "## Query Syntax Reference")
-	assert.Contains(t, syntax, "distinct")
-	assert.Contains(t, syntax, "count_")
-	assert.Contains(t, syntax, "Nested Aggregation")
+	t.Run("Sections", func(t *testing.T) {
+		full := gj.GetCombinedDiscovery()
+		require.NotEmpty(t, full)
 
-	// Compact tables section has index entries
-	assert.Contains(t, tables, "## Tables")
-	assert.Contains(t, tables, "### users")
-	assert.Contains(t, tables, "### products")
-	assert.Contains(t, tables, "FKs:")
-	assert.Contains(t, tables, "Columns:")
-	assert.NotContains(t, tables, "| Column | Type | Nullable")
+		// Each section should be non-empty
+		overview := gj.GetCombinedDiscoverySection("overview")
+		syntax := gj.GetCombinedDiscoverySection("syntax")
+		tables := gj.GetCombinedDiscoverySection("tables")
+		fullTables := gj.GetCombinedDiscoverySection("full_tables")
+		insights := gj.GetCombinedDiscoverySection("insights")
 
-	// Full tables section has detailed column definitions
-	assert.Contains(t, fullTables, "| Column | Type | Nullable | Default | Key | FK | Index | Notes |")
-	assert.Contains(t, fullTables, "#### Relationships")
-	assert.Contains(t, fullTables, "#### Aggregations")
+		assert.NotEmpty(t, overview, "overview section should not be empty")
+		assert.NotEmpty(t, syntax, "syntax section should not be empty")
+		assert.NotEmpty(t, tables, "tables section should not be empty")
+		assert.NotEmpty(t, fullTables, "full_tables section should not be empty")
+		assert.NotEmpty(t, insights, "insights section should not be empty")
 
-	// Insights has templates and relationships
-	assert.Contains(t, insights, "## Relationship Paths")
-	assert.Contains(t, insights, "## Query Templates")
-	assert.Contains(t, insights, "## Data Quality")
+		// Overview has header and TOC but not table definitions
+		assert.Contains(t, overview, "# Schema Bible:")
+		assert.Contains(t, overview, "## Table of Contents")
+		assert.NotContains(t, overview, "## Tables")
 
-	// Compact tables should be much smaller than full tables
-	assert.Greater(t, len(fullTables), len(tables)*2, "full tables should be significantly larger than compact index")
+		// Syntax has DSL reference with nested aggregation example
+		assert.Contains(t, syntax, "## Query Syntax Reference")
+		assert.Contains(t, syntax, "distinct")
+		assert.Contains(t, syntax, "count_")
+		assert.Contains(t, syntax, "Nested Aggregation")
 
-}
+		// Compact tables section has index entries
+		assert.Contains(t, tables, "## Tables")
+		assert.Contains(t, tables, "### users")
+		assert.Contains(t, tables, "### products")
+		assert.Contains(t, tables, "FKs:")
+		assert.Contains(t, tables, "Columns:")
+		assert.NotContains(t, tables, "| Column | Type | Nullable")
 
-func TestDiscoveryLayer3Enrichment(t *testing.T) {
-	if dbType == "mongodb" {
-		t.Skip("MongoDB enrichment queries use different syntax")
-	}
+		// Full tables section has detailed column definitions
+		assert.Contains(t, fullTables, "| Column | Type | Nullable | Default | Key | FK | Index | Notes |")
+		assert.Contains(t, fullTables, "#### Relationships")
+		assert.Contains(t, fullTables, "#### Aggregations")
 
-	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
-	gj, err := core.NewGraphJin(conf, db)
-	require.NoError(t, err)
-	defer gj.Close()
+		// Insights has templates and relationships
+		assert.Contains(t, insights, "## Relationship Paths")
+		assert.Contains(t, insights, "## Query Templates")
+		assert.Contains(t, insights, "## Data Quality")
 
-	md := gj.GetCombinedDiscovery()
-	require.NotEmpty(t, md)
+		// Compact tables should be much smaller than full tables
+		assert.Greater(t, len(fullTables), len(tables)*2, "full tables should be significantly larger than compact index")
+	})
 
-	// Layer 3: Live data — row counts should be present in compact table index
-	assert.Contains(t, md, "Rows:")
+	t.Run("Layer3Enrichment", func(t *testing.T) {
+		if dbType == "mongodb" {
+			t.Skip("MongoDB enrichment queries use different syntax")
+		}
 
-	// Live data profile, date ranges, sample rows are in the full tables section
-	fullTables := gj.GetCombinedDiscoverySection("full_tables")
-	require.NotEmpty(t, fullTables)
+		md := gj.GetCombinedDiscovery()
+		require.NotEmpty(t, md)
 
-	assert.Contains(t, fullTables, "#### Live Data Profile")
-	assert.Contains(t, fullTables, "Date range")
-	assert.Contains(t, fullTables, "Sample rows")
-}
+		// Layer 3: Live data — row counts should be present in compact table index
+		assert.Contains(t, md, "Rows:")
 
-func TestDiscoveryQueryTemplates(t *testing.T) {
-	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
-	gj, err := core.NewGraphJin(conf, db)
-	require.NoError(t, err)
-	defer gj.Close()
+		// Live data profile, date ranges, sample rows are in the full tables section
+		fullTables := gj.GetCombinedDiscoverySection("full_tables")
+		require.NotEmpty(t, fullTables)
 
-	md := gj.GetCombinedDiscovery()
-	require.NotEmpty(t, md)
+		assert.Contains(t, fullTables, "#### Live Data Profile")
+		assert.Contains(t, fullTables, "Date range")
+		assert.Contains(t, fullTables, "Sample rows")
+	})
 
-	// Query templates section should exist
-	assert.Contains(t, md, "## Query Templates")
+	t.Run("QueryTemplates", func(t *testing.T) {
+		md := gj.GetCombinedDiscovery()
+		require.NotEmpty(t, md)
 
-	// Should have graphql code blocks
-	assert.Contains(t, md, "```graphql")
+		// Query templates section should exist
+		assert.Contains(t, md, "## Query Templates")
 
-	// Should have at least one template type
-	hasTemplate := strings.Contains(md, "### Time-series:") ||
-		strings.Contains(md, "### Breakdown:") ||
-		strings.Contains(md, "### Join:")
-	assert.True(t, hasTemplate, "Expected at least one query template")
-}
+		// Should have graphql code blocks
+		assert.Contains(t, md, "```graphql")
 
-func TestDiscoveryCaching(t *testing.T) {
-	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
-	gj, err := core.NewGraphJin(conf, db)
-	require.NoError(t, err)
-	defer gj.Close()
+		// Should have at least one template type
+		hasTemplate := strings.Contains(md, "### Time-series:") ||
+			strings.Contains(md, "### Breakdown:") ||
+			strings.Contains(md, "### Join:")
+		assert.True(t, hasTemplate, "Expected at least one query template")
+	})
 
-	// Auto-generated at startup — should already be cached
-	md1 := gj.GetCombinedDiscovery()
-	require.NotEmpty(t, md1)
+	t.Run("Caching", func(t *testing.T) {
+		// Auto-generated at startup — should already be cached
+		md1 := gj.GetCombinedDiscovery()
+		require.NotEmpty(t, md1)
 
-	// Second call returns same content (cached)
-	md2 := gj.GetCombinedDiscovery()
-	assert.Equal(t, md1, md2)
+		// Second call returns same content (cached)
+		md2 := gj.GetCombinedDiscovery()
+		assert.Equal(t, md1, md2)
 
-	// Per-database cache should also be populated
-	dbName := gj.DefaultDatabase()
-	doc := gj.GetDiscovery(dbName)
-	require.NotNil(t, doc)
-	assert.NotEmpty(t, doc.Hash)
+		// Per-database cache should also be populated
+		dbName := gj.DefaultDatabase()
+		doc := gj.GetDiscovery(dbName)
+		require.NotNil(t, doc)
+		assert.NotEmpty(t, doc.Hash)
 
-	// GetAllDiscovery should return at least one
-	all := gj.GetAllDiscovery()
-	assert.GreaterOrEqual(t, len(all), 1)
-}
+		// GetAllDiscovery should return at least one
+		all := gj.GetAllDiscovery()
+		assert.GreaterOrEqual(t, len(all), 1)
+	})
 
-func TestDiscoverySchemaChangeCallback(t *testing.T) {
-	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
-	gj, err := core.NewGraphJin(conf, db)
-	require.NoError(t, err)
-	defer gj.Close()
+	t.Run("SchemaChangeCallback", func(t *testing.T) {
+		callbackFired := make(chan string, 1)
+		gj.OnSchemaChange(func(dbName string, hash string) {
+			select {
+			case callbackFired <- hash:
+			default:
+			}
+		})
 
-	callbackFired := make(chan string, 1)
-	gj.OnSchemaChange(func(dbName string, hash string) {
+		// Reload triggers schema change callbacks
+		err := gj.Reload()
+		require.NoError(t, err)
+
 		select {
-		case callbackFired <- hash:
-		default:
+		case hash := <-callbackFired:
+			assert.NotEmpty(t, hash)
+		case <-time.After(5 * time.Second):
+			t.Fatal("Schema change callback did not fire after Reload()")
 		}
 	})
 
-	// Reload triggers schema change callbacks
-	err = gj.Reload()
-	require.NoError(t, err)
+	t.Run("Subscription", func(t *testing.T) {
+		ctx := context.Background()
+		dbName := gj.DefaultDatabase()
 
-	select {
-	case hash := <-callbackFired:
-		assert.NotEmpty(t, hash)
-	case <-time.After(5 * time.Second):
-		t.Fatal("Schema change callback did not fire after Reload()")
-	}
-}
+		ds, err := gj.SubscribeDiscovery(ctx, dbName)
+		require.NoError(t, err)
+		defer ds.Unsubscribe()
 
-func TestDiscoverySubscription(t *testing.T) {
-	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
-	gj, err := core.NewGraphJin(conf, db)
-	require.NoError(t, err)
-	defer gj.Close()
+		// Should receive initial document immediately
+		select {
+		case doc := <-ds.Result:
+			require.NotNil(t, doc)
+			assert.NotEmpty(t, doc.Markdown)
+			assert.NotEmpty(t, doc.Hash)
+			assert.Contains(t, doc.Markdown, "# Schema Bible:")
+			assert.Contains(t, doc.Markdown, "### users")
+		case <-time.After(10 * time.Second):
+			t.Fatal("Did not receive initial discovery document from subscription")
+		}
+	})
 
-	ctx := context.Background()
-	dbName := gj.DefaultDatabase()
+	t.Run("InvalidDatabase", func(t *testing.T) {
+		ctx := context.Background()
+		_, err := gj.GenerateDiscovery(ctx, "nonexistent_db")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+	})
 
-	ds, err := gj.SubscribeDiscovery(ctx, dbName)
-	require.NoError(t, err)
-	defer ds.Unsubscribe()
+	t.Run("DataQuality", func(t *testing.T) {
+		md := gj.GetCombinedDiscovery()
+		require.NotEmpty(t, md)
 
-	// Should receive initial document immediately
-	select {
-	case doc := <-ds.Result:
-		require.NotNil(t, doc)
-		assert.NotEmpty(t, doc.Markdown)
-		assert.NotEmpty(t, doc.Hash)
-		assert.Contains(t, doc.Markdown, "# Schema Bible:")
-		assert.Contains(t, doc.Markdown, "### users")
-	case <-time.After(10 * time.Second):
-		t.Fatal("Did not receive initial discovery document from subscription")
-	}
-}
+		// Data quality section should flag nullable columns
+		assert.Contains(t, md, "## Data Quality")
+		assert.Contains(t, md, "nullable")
+	})
 
-func TestDiscoveryInvalidDatabase(t *testing.T) {
-	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
-	gj, err := core.NewGraphJin(conf, db)
-	require.NoError(t, err)
-	defer gj.Close()
+	t.Run("RelationshipPaths", func(t *testing.T) {
+		if dbType == "mongodb" {
+			t.Skip("MongoDB relationship paths work differently")
+		}
 
-	ctx := context.Background()
-	_, err = gj.GenerateDiscovery(ctx, "nonexistent_db")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not found")
-}
+		md := gj.GetCombinedDiscovery()
+		require.NotEmpty(t, md)
 
-func TestDiscoveryDataQuality(t *testing.T) {
-	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
-	gj, err := core.NewGraphJin(conf, db)
-	require.NoError(t, err)
-	defer gj.Close()
+		// The webshop has rich relationships
+		assert.Contains(t, md, "## Relationship Paths")
+	})
 
-	md := gj.GetCombinedDiscovery()
-	require.NotEmpty(t, md)
+	t.Run("DatabaseNames", func(t *testing.T) {
+		names := gj.DatabaseNames()
+		assert.GreaterOrEqual(t, len(names), 1)
 
-	// Data quality section should flag nullable columns
-	assert.Contains(t, md, "## Data Quality")
-	assert.Contains(t, md, "nullable")
-}
-
-func TestDiscoveryRelationshipPaths(t *testing.T) {
-	if dbType == "mongodb" {
-		t.Skip("MongoDB relationship paths work differently")
-	}
-
-	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
-	gj, err := core.NewGraphJin(conf, db)
-	require.NoError(t, err)
-	defer gj.Close()
-
-	md := gj.GetCombinedDiscovery()
-	require.NotEmpty(t, md)
-
-	// The webshop has rich relationships
-	assert.Contains(t, md, "## Relationship Paths")
-}
-
-func TestDiscoveryDatabaseNames(t *testing.T) {
-	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
-	gj, err := core.NewGraphJin(conf, db)
-	require.NoError(t, err)
-	defer gj.Close()
-
-	names := gj.DatabaseNames()
-	assert.GreaterOrEqual(t, len(names), 1)
-
-	defaultDB := gj.DefaultDatabase()
-	assert.Contains(t, names, defaultDB)
+		defaultDB := gj.DefaultDatabase()
+		assert.Contains(t, names, defaultDB)
+	})
 }

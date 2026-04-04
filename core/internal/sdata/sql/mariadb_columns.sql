@@ -16,7 +16,7 @@ SELECT col.table_schema as "schema",
 	) as "type",
 	(
 		CASE
-			WHEN col.is_nullable = 'YES' THEN TRUE
+			WHEN col.is_nullable = 'NO' THEN TRUE
 			ELSE FALSE
 		END
 	) AS not_null,
