@@ -75,6 +75,14 @@ func (gj *graphjinEngine) discoverDatabase(ctx *dbContext) error {
 	if err != nil {
 		return fmt.Errorf("database %s: schema discovery failed: %w", ctx.name, err)
 	}
+
+	// Override the default schema if the config specifies one.
+	// This is important for MSSQL where SCHEMA_NAME() returns "dbo" (the user default)
+	// but the real tables with FK relationships may live in a different schema (e.g. "Data").
+	if dbConf, ok := gj.conf.Databases[ctx.name]; ok && dbConf.Schema != "" {
+		dbinfo.Schema = strings.ToLower(dbConf.Schema)
+	}
+
 	ctx.dbinfo = dbinfo
 
 	// In dev mode with EnableSchema, write the schema out for future use

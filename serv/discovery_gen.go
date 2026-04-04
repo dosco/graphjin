@@ -34,10 +34,11 @@ func generateDiscovery(ctx context.Context, gj *core.GraphJin, database string) 
 	// Sort by name
 	sort.Slice(allTables, func(i, j int) bool { return allTables[i].Name < allTables[j].Name })
 
-	// Get full schemas for each table
+	// Get full schemas for each table, passing the table's schema to avoid
+	// ambiguous resolution when the same table name exists in multiple schemas.
 	var schemas []*core.TableSchema
 	for _, t := range allTables {
-		s, err := gj.GetTableSchemaForDatabase(database, t.Name)
+		s, err := gj.GetTableSchemaWithSchema(database, t.Schema, t.Name)
 		if err != nil {
 			continue
 		}
@@ -56,22 +57,26 @@ func generateDiscovery(ctx context.Context, gj *core.GraphJin, database string) 
 	var syntaxSB strings.Builder
 	writeQuerySyntaxReference(&syntaxSB, defaultLimit)
 
+	// Build duplicate table index: names that appear in multiple schemas
+	duplicateSchemas := buildDuplicateIndex(schemas)
+
 	// ── Section: Table Index (compact — names, FKs, key columns only) ──
 	var tableIndexSB strings.Builder
 	tableIndexSB.WriteString("## Tables\n\n")
 	for _, s := range schemas {
-		writeTableIndexEntry(&tableIndexSB, s, enrichment[s.Name])
+		writeTableIndexEntry(&tableIndexSB, s, enrichment[s.Name], duplicateSchemas)
 	}
 
 	// ── Section: Full Tables (detailed — columns, types, live data) ──
 	var fullTablesSB strings.Builder
 	fullTablesSB.WriteString("## Tables (Full Detail)\n\n")
 	for _, s := range schemas {
-		writeTableMarkdown(&fullTablesSB, s, enrichment[s.Name])
+		writeTableMarkdown(&fullTablesSB, s, enrichment[s.Name], duplicateSchemas)
 	}
 
 	// ── Section: Insights ──
 	var insightsSB strings.Builder
+	writeDuplicateTableWarnings(&insightsSB, schemas)
 	writeRelationshipPaths(&insightsSB, gj, database, schemas)
 	writeNamespaceRouting(&insightsSB, gj)
 	writeQueryTemplates(&insightsSB, schemas, enrichment)
@@ -345,7 +350,48 @@ func writeQuerySyntaxReference(sb *strings.Builder, defaultLimit int) {
 }
 
 // writeTableIndexEntry writes a compact index entry for a table.
-func writeTableIndexEntry(sb *strings.Builder, schema *core.TableSchema, e *tableEnrichment) {
+// buildDuplicateIndex returns a map from table name to a list of schemas it appears in.
+// Only names that appear in more than one schema are included.
+func buildDuplicateIndex(schemas []*core.TableSchema) map[string][]string {
+	byName := make(map[string][]string)
+	for _, s := range schemas {
+		byName[s.Name] = append(byName[s.Name], s.Schema)
+	}
+	// Remove non-duplicates
+	for name, schemaList := range byName {
+		if len(schemaList) <= 1 {
+			delete(byName, name)
+		}
+	}
+	return byName
+}
+
+// duplicateWarning returns a warning string if this table exists in multiple schemas.
+func duplicateWarning(schema *core.TableSchema, duplicateSchemas map[string][]string) string {
+	schemaList, isDuplicate := duplicateSchemas[schema.Name]
+	if !isDuplicate {
+		return ""
+	}
+
+	hasFKs := false
+	for _, col := range schema.Columns {
+		if col.ForeignKey != "" {
+			hasFKs = true
+			break
+		}
+	}
+
+	if hasFKs {
+		return fmt.Sprintf(
+			"> **PREFERRED** — this schema has foreign key relationships. Use `@schema(name: \"%s\")` for joins. Also in: %s\n",
+			schema.Schema, strings.Join(schemaList, ", "))
+	}
+	return fmt.Sprintf(
+		"> **WARNING: duplicate table** — also exists in schemas: %s. This version has NO foreign keys — joins will not work. Use `@schema(name: ...)` to target the schema with FKs.\n",
+		strings.Join(schemaList, ", "))
+}
+
+func writeTableIndexEntry(sb *strings.Builder, schema *core.TableSchema, e *tableEnrichment, duplicateSchemas map[string][]string) {
 	sb.WriteString(fmt.Sprintf("### %s\n", schema.Name))
 	if schema.Comment != "" {
 		sb.WriteString(fmt.Sprintf("%s\n", schema.Comment))
@@ -368,6 +414,11 @@ func writeTableIndexEntry(sb *strings.Builder, schema *core.TableSchema, e *tabl
 		meta += fmt.Sprintf(" | PK: %s", schema.PrimaryKey)
 	}
 	sb.WriteString(meta + "\n")
+
+	// Duplicate table warning
+	if w := duplicateWarning(schema, duplicateSchemas); w != "" {
+		sb.WriteString(w)
+	}
 
 	// Foreign keys — critical for understanding joins
 	var fks []string
@@ -439,7 +490,7 @@ func writeTableIndexEntry(sb *strings.Builder, schema *core.TableSchema, e *tabl
 }
 
 // writeTableMarkdown writes the full markdown section for a single table.
-func writeTableMarkdown(sb *strings.Builder, schema *core.TableSchema, e *tableEnrichment) {
+func writeTableMarkdown(sb *strings.Builder, schema *core.TableSchema, e *tableEnrichment, duplicateSchemas map[string][]string) {
 	sb.WriteString(fmt.Sprintf("### %s\n", schema.Name))
 	if schema.Comment != "" {
 		sb.WriteString(fmt.Sprintf("%s\n", schema.Comment))
@@ -461,6 +512,11 @@ func writeTableMarkdown(sb *strings.Builder, schema *core.TableSchema, e *tableE
 		meta += fmt.Sprintf(" | PK: %s", schema.PrimaryKey)
 	}
 	sb.WriteString(meta + "\n\n")
+
+	// Duplicate table warning
+	if w := duplicateWarning(schema, duplicateSchemas); w != "" {
+		sb.WriteString(w + "\n")
+	}
 
 	// Columns table
 	sb.WriteString("#### Columns\n")
@@ -616,6 +672,68 @@ func writeTableMarkdown(sb *strings.Builder, schema *core.TableSchema, e *tableE
 	}
 
 	sb.WriteString("---\n\n")
+}
+
+// writeDuplicateTableWarnings detects tables that appear in multiple schemas and
+// warns agents about which schema has foreign keys (real table) vs which doesn't
+// (likely a view). This prevents agents from querying FK-less views by default.
+func writeDuplicateTableWarnings(sb *strings.Builder, schemas []*core.TableSchema) {
+	// Group tables by name
+	byName := make(map[string][]*core.TableSchema)
+	for _, s := range schemas {
+		byName[s.Name] = append(byName[s.Name], s)
+	}
+
+	// Find names that appear in multiple schemas
+	type duplicate struct {
+		name    string
+		entries []*core.TableSchema
+	}
+	var duplicates []duplicate
+	for name, entries := range byName {
+		if len(entries) > 1 {
+			duplicates = append(duplicates, duplicate{name: name, entries: entries})
+		}
+	}
+	if len(duplicates) == 0 {
+		return
+	}
+
+	sort.Slice(duplicates, func(i, j int) bool {
+		return duplicates[i].name < duplicates[j].name
+	})
+
+	sb.WriteString("## Duplicate Tables Across Schemas\n\n")
+	sb.WriteString("> **WARNING:** The following tables exist in multiple schemas. ")
+	sb.WriteString("When a table appears in more than one schema, the default schema may resolve to a ")
+	sb.WriteString("**view** with no foreign key relationships. Use `@schema(name: \"...\")` to target ")
+	sb.WriteString("the correct schema.\n\n")
+
+	sb.WriteString("| Table | Schema | Has FKs | Has Relationships | Recommendation |\n")
+	sb.WriteString("|-------|--------|---------|-------------------|----------------|\n")
+
+	for _, dup := range duplicates {
+		// Find which entry has FKs and relationships
+		for _, entry := range dup.entries {
+			hasFKs := false
+			for _, col := range entry.Columns {
+				if col.ForeignKey != "" {
+					hasFKs = true
+					break
+				}
+			}
+			hasRels := len(entry.Relationships.Outgoing) > 0 || len(entry.Relationships.Incoming) > 0
+			rec := ""
+			if hasFKs && hasRels {
+				rec = fmt.Sprintf("Use `@schema(name: \"%s\")`", entry.Schema)
+			} else if !hasFKs && !hasRels {
+				rec = "Avoid — no FK joins possible"
+			}
+			sb.WriteString(fmt.Sprintf("| %s | %s | %v | %v | %s |\n",
+				entry.Name, entry.Schema, hasFKs, hasRels, rec))
+		}
+	}
+	sb.WriteString("\n")
 }
 
 // writeRelationshipPaths writes relationship paths between hub tables.

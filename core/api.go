@@ -1037,7 +1037,7 @@ func (g *GraphJin) GetTableSchema(tableName string) (*TableSchema, error) {
 	if err != nil {
 		return nil, err
 	}
-	return gj.getTableSchema("", tableName)
+	return gj.getTableSchema("", "", tableName)
 }
 
 // GetTableSchemaForDatabase returns detailed schema for a table in a specific database.
@@ -1047,29 +1047,39 @@ func (g *GraphJin) GetTableSchemaForDatabase(database, tableName string) (*Table
 	if err != nil {
 		return nil, err
 	}
-	return gj.getTableSchema(database, tableName)
+	return gj.getTableSchema(database, "", tableName)
 }
 
-// getTableSchema finds and returns the schema for a table, optionally in a specific database.
-func (gj *graphjinEngine) getTableSchema(database, tableName string) (*TableSchema, error) {
+// GetTableSchemaWithSchema returns detailed schema for a table in a specific database and schema.
+// This avoids ambiguous resolution when the same table name exists in multiple schemas.
+func (g *GraphJin) GetTableSchemaWithSchema(database, schemaName, tableName string) (*TableSchema, error) {
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil, err
+	}
+	return gj.getTableSchema(database, schemaName, tableName)
+}
+
+// getTableSchema finds and returns the schema for a table, optionally in a specific database and schema.
+func (gj *graphjinEngine) getTableSchema(database, schemaName, tableName string) (*TableSchema, error) {
 	if database != "" {
 		ctx, ok := gj.GetDatabase(database)
 		if !ok {
 			return nil, fmt.Errorf("database not found: %s", database)
 		}
-		return gj.buildTableSchema(ctx.schema, database, tableName)
+		return gj.buildTableSchema(ctx.schema, database, schemaName, tableName)
 	}
 
 	dbName, ctx, err := gj.resolveUniqueTableDatabase(tableName)
 	if err != nil {
 		return nil, err
 	}
-	return gj.buildTableSchema(ctx.schema, dbName, tableName)
+	return gj.buildTableSchema(ctx.schema, dbName, schemaName, tableName)
 }
 
 // buildTableSchema builds a TableSchema from a specific database schema.
-func (gj *graphjinEngine) buildTableSchema(dbSchema *sdata.DBSchema, dbName, tableName string) (*TableSchema, error) {
-	t, err := dbSchema.Find("", tableName)
+func (gj *graphjinEngine) buildTableSchema(dbSchema *sdata.DBSchema, dbName, schemaName, tableName string) (*TableSchema, error) {
+	t, err := dbSchema.Find(schemaName, tableName)
 	if err != nil {
 		return nil, fmt.Errorf("table not found: %s", tableName)
 	}
