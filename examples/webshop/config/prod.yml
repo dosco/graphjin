@@ -1,0 +1,125 @@
+# Inherit config from this other config file
+# so I only need to overwrite some values
+inherits: dev
+
+app_name: "Webshop Production"
+host_port: 0.0.0.0:8080
+web_ui: false
+
+# Log levels: debug, error, warn, info
+log_level: "warn"
+
+# Log formats: json, plain
+log_format: "json"
+
+# Enable or disable http compression (uses gzip)
+http_compress: true
+
+# When production mode is 'true' only queries from the queries
+# folder can be used.
+production: true
+
+# Throw a 401 on auth failure for queries that need auth
+auth_fail_block: true
+
+# Latency tracing for database queries and remote joins
+# the resulting latency information is returned with the
+# response
+enable_tracing: false
+
+# Watch the config folder and reload GraphJin
+# with the new configs when a change is detected
+reload_on_config_change: false
+
+# File that points to the database seeding script
+# seed_file: seed.js
+
+# Path pointing to where the migrations can be found
+# migrations_path: ./migrations
+
+# Secret key for general encryption operations like
+# encrypting the cursor data
+# secret_key: supercalifajalistics
+
+# CORS: A list of origins a cross-domain request can be executed from.
+# If the special * value is present in the list, all origins will be allowed.
+# An origin may contain a wildcard (*) to replace 0 or more
+# characters (i.e.: http://*.domain.com).
+# cors_allowed_origins: ["*"]
+
+# CORS: A list of headers the client is allowed to use with cross-domain
+# requests. If the special "*" value is present in the list, all headers will be
+# allowed. Default value is ["Origin", "Accept", "Content-Type",
+# "X-Requested-With", "Authorization"]. Even if the list is empty, the "Origin"
+# is always appended to the list.
+# cors_allowed_headers: []
+
+# Debug Cross Origin Resource Sharing requests
+# cors_debug: false
+
+# Default API path prefix is /api you can change it if you like
+# api_path: "/data"
+
+# Cache-Control header can help cache queries if your CDN supports cache-control
+# cache_control: "public, max-age=300, s-maxage=600"
+
+# Subscriptions poll the database to query for updates
+# this sets the duration (in seconds) between requests.
+# Defaults to 5 seconds
+# poll_every_seconds: 5
+
+# Poll the database to detect schema changes. GraphJin is reinitialized
+# when a change is detected. Set to 0 to disable.
+db_schema_poll_every_seconds: 0
+
+# Postgres related environment Variables
+# GJ_DATABASE_HOST
+# GJ_DATABASE_PORT
+# GJ_DATABASE_USER
+# GJ_DATABASE_PASSWORD
+
+# Auth related environment Variables
+# GJ_AUTH_RAILS_COOKIE_SECRET_KEY_BASE
+# GJ_AUTH_RAILS_REDIS_URL
+# GJ_AUTH_RAILS_REDIS_PASSWORD
+# GJ_AUTH_JWT_PUBLIC_KEY_FILE
+
+# open opencensus tracing and metrics
+# telemetry:
+#   debug: false
+#   metrics:
+#     exporter: "prometheus"
+#   tracing:
+#     exporter: "zipkin"
+#     endpoint: "http://zipkin:9411/api/v2/spans"
+#     sample: 0.6
+
+database:
+  type: postgres
+  host: db
+  port: 5432
+  dbname: webshop_production
+  user: postgres
+  password: postgres
+  #pool_size: 10
+  #max_retries: 0
+  #log_level: "debug"
+
+  # database ping timeout is used for db health checking
+  ping_timeout: 5m
+
+  # Set up an secure tls encrypted db connection
+  enable_tls: false
+
+  # Required for tls. For example with Google Cloud SQL it's
+  # <gcp-project-id>:<cloud-sql-instance>"
+  # server_name: blah
+
+  # Required for tls. Can be a file path or the contents of the pem file
+  # server_cert: ./server-ca.pem
+
+  # Required for tls. Can be a file path or the contents of the pem file
+  # client_cert: ./client-cert.pem
+
+  # Required for tls. Can be a file path or the contents of the pem file
+  # client_key: ./client-key.pem

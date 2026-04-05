@@ -49,8 +49,6 @@ func (c *compilerContext) renderStdColumn(sel *qcode.Select, f qcode.Field) {
 		c.w.WriteString(` THEN `)
 	}
 
-
-
 	c.colWithTableID(sel.Table, sel.ID, f.Col.Name)
 
 	if f.FieldFilter.Exp != nil {
@@ -119,9 +117,9 @@ func (c *compilerContext) renderJoinColumns(sel *qcode.Select, n int) {
 				}
 			}
 
-				// return the cursor for the this child selector as part of the parents json
-				// Only for LATERAL supporting dialects - SQLite/MariaDB/Snowflake handle cursor differently
-				if csel.Paging.Cursor && (c.dialect.SupportsLateral() || c.dialect.Name() == "sqlite" || c.dialect.Name() == "mariadb" || c.dialect.Name() == "snowflake") {
+			// return the cursor for the this child selector as part of the parents json
+			// Only for LATERAL supporting dialects - SQLite/MariaDB/Snowflake handle cursor differently
+			if csel.Paging.Cursor && (c.dialect.SupportsLateral() || c.dialect.Name() == "sqlite" || c.dialect.Name() == "mariadb" || c.dialect.Name() == "snowflake") {
 				c.w.WriteString(`, `)
 				c.colWithTableID("__sj", csel.ID, "__cursor")
 				c.w.WriteString(` AS `)

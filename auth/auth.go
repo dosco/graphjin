@@ -73,7 +73,6 @@ type Auth struct {
 	// set the expiry parameter of this cookie (ex. "20m", "2h")
 	// CookieExpiry string `mapstructure:"cookie_expiry"`
 
-
 	// JWT authentication
 	JWT JWTConfig
 

@@ -28,7 +28,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: "18"
 
       - name: Get current version
         id: current_version
@@ -59,13 +59,13 @@ jobs:
         run: |
           CURRENT="${{ steps.current_version.outputs.current }}"
           INCREMENT_TYPE="${{ steps.version_increment.outputs.increment_type }}"
-          
+
           # Split version into parts
           IFS='.' read -ra VERSION_PARTS <<< "$CURRENT"
           MAJOR=${VERSION_PARTS[0]}
           MINOR=${VERSION_PARTS[1]}
           PATCH=${VERSION_PARTS[2]}
-          
+
           # Increment based on type
           case $INCREMENT_TYPE in
             "major")
@@ -81,7 +81,7 @@ jobs:
               PATCH=$((PATCH + 1))
               ;;
           esac
-          
+
           NEW_VERSION="$MAJOR.$MINOR.$PATCH"
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "New version: $NEW_VERSION"

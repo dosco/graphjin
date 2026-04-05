@@ -1,0 +1,128 @@
+# When production mode is 'true' only queries
+# from the allow list are permitted.
+production: false
+
+# Secret key for general encryption operations like
+# encrypting the cursor data
+secret_key: supercalifajalistics
+
+# Subscriptions poll the database to query for updates
+# this sets the duration (in seconds) between requests.
+# Defaults to 5 seconds
+subs_poll_every_seconds: 5
+
+# Default limit value to be used on queries and as the max
+# limit on all queries where a limit is defined as a query variable.
+# Defaults to 20
+default_limit: 20
+
+# Disables all aggregation functions like count, sum, etc
+# disable_agg_functions: false
+
+# Disables all functions like count, length, etc
+# disable_functions: false
+
+# Enables using camel case terms in GraphQL which are converted
+# to snake case in SQL
+# enable_camelcase: false
+
+# Set session variable "user.id" to the user id
+# Enable this if you need the user id in triggers, etc
+# Note: This will not work with subscriptions
+set_user_id: false
+
+# DefaultBlock ensures that in anonymous mode (role 'anon') all tables
+# are blocked from queries and mutations. To open access to tables in
+# anonymous mode they have to be added to the 'anon' role config.
+default_block: false
+
+# Define additional variables here to be used with filters
+# Variables used require a type suffix eg. $user_id:bigint
+variables:
+  #admin_account_id: "5"
+  admin_account_id: "sql:select id from users where admin = true limit 1"
+
+# Define variables set to values extracted from http headers
+header_variables:
+  remote_ip: "X-Forwarded-For"
+
+# Field and table names that you wish to block
+blocklist:
+  - ar_internal_metadata
+  - schema_migrations
+  - secret
+  - password
+  - encrypted
+  - token
+
+# resolvers:
+#   - name: payments
+#     type: remote_api
+#     table: customers
+#     column: stripe_id
+#     json_path: data
+#     debug: false
+#     url: http://payments/payments/$id
+#     pass_headers:
+#       - cookie
+#     set_headers:
+#       - name: Host
+#         value: 0.0.0.0
+#       # - name: Authorization
+#       #   value: Bearer <stripe_api_key>
+
+tables:
+  - # You can create new fields that have a
+    # real db table backing them
+    name: me
+    table: users
+
+  - name: users
+    order_by:
+      new_users: ["created_at desc", "id asc"]
+      id: ["id asc"]
+
+# Variables used require a type suffix eg. $user_id:bigint
+#roles_query: "SELECT * FROM users WHERE id = $user_id:bigint"
+
+roles:
+  # if `auth.type` is set to a valid auth type then
+  # all tables are blocked for the anon role unless
+  # added to the role like below.
+  # - name: anon
+  #   tables:
+  #     - name: users
+  #       query:
+  #         limit: 10
+
+  - name: user
+    tables:
+      - name: me
+        query:
+          filters: ["{ id: { _eq: $user_id } }"]
+
+      # - name: products
+      #   query:
+      #     limit: 50
+      #     filters: ["{ user_id: { eq: $user_id } }"]
+      #     disable_functions: false
+
+      #   insert:
+      #     filters: ["{ user_id: { eq: $user_id } }"]
+      #     presets:
+      #       - user_id: "$user_id"
+      #       - created_at: "now"
+
+      #   update:
+      #     filters: ["{ user_id: { eq: $user_id } }"]
+      #     presets:
+      #       - updated_at: "now"
+
+      #   delete:
+      #     block: true
+
+  # - name: admin
+  #   match: id = 1000
+  #   tables:
+  #     - name: users
+  #       filters: []

@@ -223,7 +223,7 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 		c.w.WriteString(`>`)
 	case qcode.OpLesserThan:
 		c.w.WriteString(`<`)
-	
+
 	case qcode.OpEqualsTrue:
 		c.dialect.RenderBooleanEqualsTrue(c, ex.Right.Val)
 		return
@@ -247,7 +247,6 @@ func (c *expContext) renderOp(ex *qcode.Exp) {
 			c.w.WriteString(`IS NOT NULL)`)
 		}
 		return
-
 
 	// Note: OpTsQuery is handled early in renderOp, before column prefix logic
 
@@ -397,12 +396,9 @@ func (c *expContext) renderList(ex *qcode.Exp) {
 	c.dialect.RenderList(c, ex)
 }
 
-
-
 func (c *compilerContext) renderValArrayColumn(ex *qcode.Exp, table string, pid int32) {
 	c.dialect.RenderValArrayColumn(c, ex, table, pid)
 }
-
 
 func (c *expContext) renderJSONPathColumn(table, colName string, path []string, selID int32) {
 	// Build the JSON path

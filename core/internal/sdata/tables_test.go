@@ -78,10 +78,10 @@ func TestParseClusteringKey(t *testing.T) {
 
 func TestAutoSetPartitionFromClustering(t *testing.T) {
 	tests := []struct {
-		name            string
-		clusteringKeys  []string
-		columns         []DBColumn
-		wantPartition   string
+		name           string
+		clusteringKeys []string
+		columns        []DBColumn
+		wantPartition  string
 	}{
 		{
 			name:           "leading temporal column becomes partition key",
@@ -216,14 +216,14 @@ func TestCompositeFKQueryConstants(t *testing.T) {
 // parses comma-separated column lists and applies normalization per DB type.
 func TestDiscoverCompositeFKsCSVParsing(t *testing.T) {
 	tests := []struct {
-		name           string
-		dbtype         string
-		localCSV       string
-		fkeyCSV        string
-		wantLocalCols  []string
-		wantFKeyCols   []string
-		wantSchema     string
-		inputSchema    string
+		name          string
+		dbtype        string
+		localCSV      string
+		fkeyCSV       string
+		wantLocalCols []string
+		wantFKeyCols  []string
+		wantSchema    string
+		inputSchema   string
 	}{
 		{
 			name:          "mysql: no normalization",

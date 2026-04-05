@@ -62,25 +62,25 @@ type ColKey struct {
 }
 
 type QCode struct {
-	Type      QType
-	SType     QType
-	Name      string
-	ActionVar string
-	ActionVal json.RawMessage
-	Vars      []Var
-	Selects   []Select
-	Consts    []Constraint
-	Roots     []int32
-	rootsA    [5]int32
-	Mutates   []Mutate
-	MUnions   map[string][]int32
-	Schema    *sdata.DBSchema
-	Remotes   int32
-	Cache     Cache
-	Typename  bool
-	Query     []byte
-	Fragments []Fragment
-	Warnings  []string // Non-fatal warnings (e.g., missing partition filter)
+	Type       QType
+	SType      QType
+	Name       string
+	ActionVar  string
+	ActionVal  json.RawMessage
+	Vars       []Var
+	Selects    []Select
+	Consts     []Constraint
+	Roots      []int32
+	rootsA     [5]int32
+	Mutates    []Mutate
+	MUnions    map[string][]int32
+	Schema     *sdata.DBSchema
+	Remotes    int32
+	Cache      Cache
+	Typename   bool
+	Query      []byte
+	Fragments  []Fragment
+	Warnings   []string // Non-fatal warnings (e.g., missing partition filter)
 	actionArg  graph.Arg
 	actionArgs map[string]graph.Arg
 }
@@ -92,11 +92,11 @@ type Fragment struct {
 
 type Select struct {
 	Field
-	Type       SelType
-	Singular   bool
-	Typename   bool
-	Table      string
-	Schema     string
+	Type     SelType
+	Singular bool
+	Typename bool
+	Table    string
+	Schema   string
 	// Database is the target database for this select (multi-database support).
 	// Empty string means the default database.
 	Database   string
@@ -296,8 +296,8 @@ const (
 	OpEqualsTrue
 	OpNotEqualsTrue
 	OpSelectExists
-	OpJSONPath      // JSON path operator (->)
-	OpJSONPathText  // JSON path text operator (->>)
+	OpJSONPath     // JSON path operator (->)
+	OpJSONPathText // JSON path text operator (->>)
 
 	// GIS/Spatial operators
 	OpGeoDistance   // ST_DWithin - distance-based filtering

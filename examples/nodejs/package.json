@@ -1,0 +1,19 @@
+{
+  "name": "nodejs-examples",
+  "type": "module",
+  "private": true,
+  "description": "Example app for using Graphjin with an NodeJS Express app",
+  "author": "Vikram <twitter.com/dosco>",
+  "license": "Apache-2.0",
+  "scripts": {},
+  "dependencies": {
+    "express": "^4.18.2",
+    "fs-extra": "^11.1.0",
+    "graphjin": "file:../..",
+    "mysql2": "^2.3.3",
+    "pg-pool": "^3.5.2"
+  },
+  "devDependencies": {
+    "path": "^0.12.7"
+  }
+}

@@ -412,8 +412,8 @@ func (s *DBSchema) FindCrossDBPath(childName, parentName string) (TPath, bool) {
 					Table:    rel.TargetTable,
 					Database: rel.TargetDB,
 				},
-				RT:  rel.SourceTable,
-				RC:  rel.SourceCol,
+				RT: rel.SourceTable,
+				RC: rel.SourceCol,
 			}, true
 		}
 	}

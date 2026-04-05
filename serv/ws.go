@@ -344,8 +344,8 @@ func (s *graphjinService) waitForData(wc *wsConn, st *wsState, useNext bool) {
 // allowedWSHeaders is the set of headers that clients are permitted to set
 // via the WebSocket connection_init payload.
 var allowedWSHeaders = map[string]bool{
-	"authorization":   true,
-	"x-request-id":    true,
+	"authorization":    true,
+	"x-request-id":     true,
 	"x-correlation-id": true,
 }
 

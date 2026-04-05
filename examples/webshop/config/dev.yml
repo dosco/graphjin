@@ -1,0 +1,341 @@
+app_name: "Webshop Development"
+host_port: 0.0.0.0:8080
+web_ui: true
+
+# Log levels: debug, error, warn, info
+log_level: "debug"
+
+# Log formats: json, plain
+log_format: "plain"
+
+# Enable or disable http compression (uses gzip)
+http_compress: true
+
+# enable or disable the server-timing http header
+server_timing: true
+
+# When production mode is 'true' only queries
+# from the allow list are permitted.
+production: false
+
+# Throw a 401 on auth failure for queries that need auth
+auth_fail_block: false
+
+# Latency tracing for database queries and remote joins
+# the resulting latency information is returned with the
+# response
+enable_tracing: true
+
+# Watch the config folder and reload GraphJin
+# with the new configs when a change is detected
+reload_on_config_change: true
+
+# File that points to the database seeding script
+# seed_file: seed.js
+
+# Path pointing to where the migrations can be found
+# this must be a relative path under the config path
+migrations_path: ./migrations
+
+# Secret key for general encryption operations like
+# encrypting the cursor data
+secret_key: supercalifajalistics
+
+# CORS: A list of origins a cross-domain request can be executed from.
+# If the special * value is present in the list, all origins will be allowed.
+# An origin may contain a wildcard (*) to replace 0 or more
+# characters (i.e.: http://*.domain.com).
+cors_allowed_origins: ["*"]
+
+# CORS: A list of headers the client is allowed to use with cross-domain
+# requests. If the special "*" value is present in the list, all headers will be
+# allowed. Default value is ["Origin", "Accept", "Content-Type",
+# "X-Requested-With", "Authorization"]. Even if the list is empty, the "Origin"
+# is always appended to the list.
+cors_allowed_headers: []
+
+# Debug Cross Origin Resource Sharing requests
+cors_debug: false
+
+# Default API path prefix is /api you can change it if you like
+# api_path: "/data"
+
+# Cache-Control header can help cache queries if your CDN supports cache-control
+# cache_control: "public, max-age=300, s-maxage=600"
+
+# Subscriptions poll the database to query for updates
+# this sets the duration (in seconds) between requests.
+# Defaults to 5 seconds
+# poll_every_seconds: 5
+
+# Default limit value to be used on queries and as the max
+# limit on all queries where a limit is defined as a query variable.
+# Defaults to 20
+default_limit: 20
+
+# Disables all aggregation functions like count, sum, etc
+# disable_agg_functions: false
+
+# Disables all functions like count, length, etc
+# disable_functions: false
+
+# Enables using camel case terms in GraphQL which are converted
+# to snake case in SQL
+# enable_camelcase: false
+
+# Set session variable "user.id" to the user id
+# Enable this if you need the user id in triggers, etc
+# Note: This will not work with subscriptions
+set_user_id: false
+
+# open opencensus tracing and metrics
+# telemetry:
+#   debug: true
+#   metrics:
+#     exporter: "prometheus"
+#   tracing:
+#     exporter: "zipkin"
+#     endpoint: "http://zipkin:9411/api/v2/spans"
+#     sample: 0.6
+
+# Rate is the number of events per second
+# Bucket a burst of at most 'bucket' number of events.
+# ip_header sets the header that contains the client ip.
+# https://en.wikipedia.org/wiki/Token_bucket
+# rate_limiter:
+#   rate: 100
+#   bucket: 20
+#   ip_header: X-Forwarded-For
+
+# Enable additional debugging logs
+debug: true
+
+# Poll the database to detect schema changes. GraphJin is reinitialized
+# when a change is detected. Set to 0 to disable.
+db_schema_poll_duration: 20s
+
+# Auth related environment Variables
+# GJ_AUTH_RAILS_COOKIE_SECRET_KEY_BASE
+# GJ_AUTH_RAILS_REDIS_URL
+# GJ_AUTH_RAILS_REDIS_PASSWORD
+# GJ_AUTH_JWT_PUBLIC_KEY_FILE
+
+auth:
+  # Can be 'none', 'rails', 'jwt' or 'header'
+  type: none
+  cookie: _webshop_session
+
+  # Comment this out if you want to disable setting
+  # the user_id via a header for testing.
+  # Disable in production
+  creds_in_header: true
+
+  # Useful for quickly debugging subscriptions WebSocket authorization.
+  # Disable in production
+  subs_creds_in_vars: true
+
+  rails:
+    # Rails version this is used for reading the
+    # various cookies formats.
+    version: 5.2
+
+    # Found in 'Rails.application.config.secret_key_base'
+    secret_key_base: 0a248500a64c01184edb4d7ad3a805488f8097ac761b76aaa6c17c01dcb7af03a2f18ba61b2868134b9c7b79a122bc0dadff4367414a2d173297bfea92be5566
+
+    # Remote cookie store. (memcache or redis)
+    # url: redis://redis:6379
+    # password: ""
+    # max_idle: 80
+    # max_active: 12000
+    # In most cases you don't need these
+    # salt: "encrypted cookie"
+    # sign_salt: "signed encrypted cookie"
+    # auth_salt: "authenticated encrypted cookie"
+
+  # jwt:
+  #   provider: auth0
+  #   secret: abc335bfcfdb04e50db5bb0a4d67ab9
+  #   public_key_file: /secrets/public_key.pem
+  #   public_key_type: ecdsa #rsa
+  # header:
+  #   name: dnt
+  #   exists: true
+  #   value: localhost:8080
+
+# Postgres related environment Variables
+# GJ_DATABASE_HOST
+# GJ_DATABASE_PORT
+# GJ_DATABASE_USER
+# GJ_DATABASE_PASSWORD
+
+database:
+  type: postgres
+  host: localhost
+  port: 5432
+  dbname: webshop_development
+  user: postgres
+  password: postgres
+
+  # alternatively you can use a connection string
+  #connection_string: postgres://jack:secret@pg.example.com:5432/mydb?sslmode=verify-ca&pool_max_conns=10
+
+  #schema: "public"
+  #pool_size: 10
+  #max_retries: 0
+  #log_level: "debug"
+
+  # database ping timeout is used for db health checking
+  ping_timeout: 1m
+
+  # Set up an secure tls encrypted db connection
+  enable_tls: false
+
+  # Required for tls. For example with Google Cloud SQL it's
+  # <gcp-project-id>:<cloud-sql-instance>"
+  # server_name: blah
+  # Required for tls. Can be a file path or the contents of the pem file
+  # server_cert: ./server-ca.pem
+  # Required for tls. Can be a file path or the contents of the pem file
+  # client_cert: ./client-cert.pem
+  # Required for tls. Can be a file path or the contents of the pem file
+  # client_key: ./client-key.pem
+
+# Define additional variables here to be used with filters
+variables:
+  #admin_account_id: "5"
+  # admin_account_id: "sql:select id from users where admin = true limit 1"
+
+# Define variables set to values extracted from http headers
+header_variables:
+  remote_ip: "X-Forwarded-For"
+
+# Field and table names that you wish to block
+blocklist:
+  - ar_internal_metadata
+  - schema_migrations
+  - secret
+  - password
+  - encrypted
+  - token
+
+resolvers:
+  - name: payments
+    type: remote_api
+    table: customers
+    column: stripe_id
+    json_path: data
+    debug: false
+    url: http://payments/payments/$id
+    pass_headers:
+      - cookie
+    set_headers:
+      - name: Host
+        value: 0.0.0.0
+      - name: Authorization
+        value: Bearer <stripe_api_key>
+
+tables:
+  - # You can create new fields that have a
+    # real db table backing them
+    name: me
+    table: users
+
+  - name: deals
+    table: products
+
+  - name: products
+    columns:
+      - name: category_ids
+        related_to: categories.id
+    order_by:
+      price_and_id: ["price desc", "id asc"]
+      just_id: ["id asc"]
+
+  - name: subject
+    type: polymorphic
+    columns:
+      - name: subject_id
+        related_to: subject_type.id
+
+  - name: chats
+    columns:
+      - name: reply_to_id
+        related_to: chats.id
+
+  - name: category_counts
+    table: users
+    type: jsonb
+    columns:
+      - name: category_id
+        related_to: categories.id
+        type: bigint
+      - name: count
+        type: integer
+
+#roles_query: "SELECT * FROM users WHERE id = $user_id:bigint"
+
+roles:
+  # if `auth.type` is set to a valid auth type then
+  # all tables are blocked for the anon role unless
+  # added to the role like below.
+  # - name: anon
+  #   tables:
+  #     - name: users
+  #     - name: products
+  #     - name: categories
+  #     - name: deals
+  #     - name: purchases
+  #     - name: customers
+  #     - name: notifications
+
+  - name: user
+    tables:
+      - name: me
+        query:
+          filters: ["{ id: { _eq: $user_id } }"]
+
+      - name: products
+        query:
+          limit: 50
+        insert:
+          presets:
+            - user_id: "$user_id"
+            - created_at: "now"
+            - updated_at: "now"
+        update:
+          filters: ["{ user_id: { eq: $user_id } }"]
+          columns:
+            - id
+            - name
+          presets:
+            - updated_at: "now"
+
+      - name: customers
+        insert:
+          presets:
+            - created_at: "now"
+            - updated_at: "now"
+        update:
+          presets:
+            - updated_at: "now"
+
+      - name: purchases
+        insert:
+          presets:
+            - created_at: "now"
+            - updated_at: "now"
+        update:
+          presets:
+            - updated_at: "now"
+
+      - name: notifications
+        insert:
+          presets:
+            - created_at: "now"
+            - updated_at: "now"
+
+  - name: admin
+    tables:
+      - name: me
+        query:
+          filters: ["{ id: { _eq: 3 } }"]

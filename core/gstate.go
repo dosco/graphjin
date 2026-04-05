@@ -443,7 +443,6 @@ func (s *gstate) setDefaultVars() {
 }
 
 func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
-
 	if err = s.validateAndUpdateVars(c); err != nil {
 		return
 	}

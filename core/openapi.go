@@ -290,7 +290,7 @@ func (g *GraphJin) extractParameters(varDefs []graph.VarDef) []Parameter {
 			typeName = varDef.Val.Name
 			// Check if it's a non-null type (required)
 			if varDef.Val.Type == graph.NodeLabel && len(varDef.Val.Children) > 0 &&
-			   varDef.Val.Children[0].Type == graph.NodeLabel {
+				varDef.Val.Children[0].Type == graph.NodeLabel {
 				required = true
 			}
 		}
@@ -414,7 +414,6 @@ func (g *GraphJin) generateDataSchemaFromQCode(qc *qcode.QCode, gj *graphjinEngi
 	return schema
 }
 
-
 // columnToOpenAPISchema converts a database column to OpenAPI schema
 // Uses the same logic as GraphJin's getType and getTypeFromColumn functions
 func (g *GraphJin) columnToOpenAPISchema(col sdata.DBColumn) Schema {
@@ -471,7 +470,6 @@ func (g *GraphJin) columnToOpenAPISchema(col sdata.DBColumn) Schema {
 
 	return schema
 }
-
 
 // getHTTPMethods determines appropriate HTTP methods for the operation
 func (g *GraphJin) getHTTPMethods(opType, subType qcode.QType) []string {
