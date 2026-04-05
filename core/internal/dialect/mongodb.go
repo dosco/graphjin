@@ -327,6 +327,10 @@ func (d *MongoDBDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
 		}
 		ctx.WriteString(`["`)
 		colName := ob.Col.Name
+		if ob.IsFunc {
+			// Aggregation pipeline uses the computed field name (e.g., sum_orderqty)
+			colName = ob.Func.Name + "_" + colName
+		}
 		// Translate "id" to "_id"
 		if colName == "id" {
 			colName = "_id"

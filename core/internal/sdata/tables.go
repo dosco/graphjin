@@ -198,6 +198,14 @@ func getDBInfoOnce(
 		return nil, err
 	}
 
+	// When the database returns an empty default schema (e.g., PostgreSQL with
+	// search_path=''), infer it from discovered columns by picking the schema
+	// with the most tables. This ensures Find() lookups and cross-schema joins
+	// work correctly even with non-standard search_path configurations.
+	if dbSchema == "" && len(cols) > 0 {
+		dbSchema = inferDefaultSchema(cols)
+	}
+
 	di := NewDBInfo(
 		dbType,
 		dbVersion,
@@ -655,39 +663,63 @@ func DiscoverColumns(ctx context.Context, db *sql.DB, dbtype string, blockList [
 		return nil, fmt.Errorf("error scanning columns: %w", err)
 	}
 
-	// For MSSQL, run a supplementary query to detect PKs for views.
-	// Views lack sys.indexes entries, so the main query reports primary_key=0
-	// for all view columns. This uses sys.dm_exec_describe_first_result_set
-	// to trace view columns back to their source base table PKs.
+	// View PK detection: views lack PK constraints in system catalogs, so the
+	// main column query reports primary_key=false for all view columns. We run
+	// a supplementary query to trace view columns back to source base table PKs.
 	//
-	// The DMF parses and compiles every view, which is expensive on schema-
-	// heavy production databases, so we preflight with a tiny TOP 1 query
-	// against sys.views and skip the expensive call entirely when the DB
-	// has no user-visible views.
-	if dbtype == "mssql" && mssqlHasUserViews(ctx, db) {
-		qctx2, cancel2 := context.WithTimeout(ctx, introspectionQueryTimeout)
-		defer cancel2()
-		rows2, err := db.QueryContext(qctx2, mssqlViewPKsStmt)
-		if err == nil {
-			defer rows2.Close()
-			for rows2.Next() {
-				var schema, table, column string
-				if err := rows2.Scan(&schema, &table, &column); err != nil {
-					continue
-				}
-				column = util.ToSnake(column)
-				table = strings.ToLower(table)
-				schema = strings.ToLower(schema)
+	// All paths are gated behind a cheap preflight check ("does this DB have
+	// user-visible views?") to avoid running expensive catalog queries when
+	// no views exist — the common case for most deployments.
+	if hasUserViews(ctx, db, dbtype) {
+		// Layer 1: SQL-level tracing via system catalogs (best accuracy).
+		// Supported: PostgreSQL, MSSQL, Oracle, MySQL 8.0+.
+		// Not supported: MariaDB, SQLite, Snowflake (no system catalog for view column tracing).
+		var viewPKStmt string
+		var needsNormalize bool
+		switch dbtype {
+		case "postgres", "":
+			viewPKStmt = postgresViewPKsStmt
+		case "mssql":
+			viewPKStmt = mssqlViewPKsStmt
+			needsNormalize = true
+		case "oracle":
+			viewPKStmt = oracleViewPKsStmt
+			needsNormalize = true
+		case "mysql":
+			viewPKStmt = mysqlViewPKsStmt
+		}
+		if viewPKStmt != "" {
+			qctx2, cancel2 := context.WithTimeout(ctx, introspectionQueryTimeout)
+			defer cancel2()
+			rows2, err := db.QueryContext(qctx2, viewPKStmt)
+			if err == nil {
+				defer rows2.Close()
+				for rows2.Next() {
+					var schema, table, column string
+					if err := rows2.Scan(&schema, &table, &column); err != nil {
+						continue
+					}
+					if needsNormalize {
+						column = util.ToSnake(column)
+						table = strings.ToLower(table)
+						schema = strings.ToLower(schema)
+					}
 
-				k := schema + ":" + table + ":" + column
-				if v, ok := cmap[k]; ok && !v.PrimaryKey {
-					v.PrimaryKey = true
-					v.UniqueKey = true
-					cmap[k] = v
+					k := schema + ":" + table + ":" + column
+					if v, ok := cmap[k]; ok && !v.PrimaryKey {
+						v.PrimaryKey = true
+						v.UniqueKey = true
+						cmap[k] = v
+					}
 				}
 			}
+			// Silently ignore errors — falls back to heuristic below
 		}
-		// Silently ignore errors — falls back to config-based override
+
+		// Layer 2: Code-level heuristic fallback. For databases without SQL-level
+		// view PK detection (MariaDB, SQLite, Snowflake) or when the SQL query fails,
+		// infer PKs by matching view columns against base table PKs in the same schema.
+		inferViewPKsFromBaseTables(cmap)
 	}
 
 	var cols []DBColumn
@@ -698,21 +730,170 @@ func DiscoverColumns(ctx context.Context, db *sql.DB, dbtype string, blockList [
 	return cols, nil
 }
 
-// mssqlHasUserViews runs a TOP 1 preflight against sys.views to decide
-// whether mssql_view_pks.sql (the expensive sys.dm_exec_describe_first_result_set
-// query) should be issued. Returns true only on success with a positive
-// result; any error (permission, driver hiccup) yields false so we skip
-// the expensive follow-up — the view-PK enrichment is non-essential and
-// users can override via config.
-func mssqlHasUserViews(ctx context.Context, db *sql.DB) bool {
+// hasUserViews returns true if the database has at least one user-visible view.
+// This is a cheap preflight check to avoid running expensive view PK detection
+// queries (which may compile every view) when no views exist. Returns false on
+// error or for unsupported database types — the view-PK enrichment is non-essential
+// and users can override via config.
+func hasUserViews(ctx context.Context, db *sql.DB, dbtype string) bool {
+	var stmt string
+	switch dbtype {
+	case "mssql":
+		stmt = mssqlHasViewsStmt
+	case "postgres", "":
+		stmt = `SELECT 1 FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid WHERE c.relkind IN ('v','m') AND n.nspname NOT IN ('pg_catalog','information_schema','_graphjin') LIMIT 1`
+	case "mysql":
+		stmt = `SELECT 1 FROM information_schema.VIEWS WHERE TABLE_SCHEMA NOT IN ('mysql','information_schema','performance_schema','sys') LIMIT 1`
+	case "mariadb":
+		stmt = `SELECT 1 FROM information_schema.VIEWS WHERE TABLE_SCHEMA NOT IN ('mysql','information_schema','performance_schema','sys') LIMIT 1`
+	case "oracle":
+		stmt = `SELECT 1 FROM all_views WHERE owner NOT IN ('SYS','SYSTEM','OUTLN','DBSNMP','APPQOSSYS','XDB','WMSYS','CTXSYS','MDSYS','ORDSYS','ORDDATA') AND ROWNUM = 1`
+	case "sqlite":
+		stmt = `SELECT 1 FROM sqlite_master WHERE type='view' LIMIT 1`
+	default:
+		return false
+	}
+
 	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
 	defer cancel()
 
 	var n int
-	if err := db.QueryRowContext(qctx, mssqlHasViewsStmt).Scan(&n); err != nil {
+	if err := db.QueryRowContext(qctx, stmt).Scan(&n); err != nil {
 		return false
 	}
 	return n > 0
+}
+
+// inferViewPKsFromBaseTables is a universal fallback for view PK detection.
+// For any table/view that has NO PK columns, it finds the "best matching"
+// base table by counting how many non-PK columns overlap. If exactly one
+// base table has the highest overlap AND all its PK columns appear in the
+// view, those view columns are marked as PKs.
+func inferViewPKsFromBaseTables(cmap map[string]DBColumn) {
+	type st struct{ schema, table string }
+
+	// Step 1: Build per-table column sets and PK sets
+	tableCols := make(map[st]map[string]bool)
+	tablePKs := make(map[st][]string)
+	hasPK := make(map[st]bool)
+
+	for _, c := range cmap {
+		key := st{c.Schema, c.Table}
+		if tableCols[key] == nil {
+			tableCols[key] = make(map[string]bool)
+		}
+		tableCols[key][c.Name] = true
+		if c.PrimaryKey {
+			hasPK[key] = true
+			tablePKs[key] = append(tablePKs[key], c.Name)
+		}
+	}
+
+	// Step 2: For each table with no PK, find the best matching base table
+	for viewKey, viewCols := range tableCols {
+		if hasPK[viewKey] {
+			continue
+		}
+		if strings.HasPrefix(viewKey.table, "_gj_") {
+			continue
+		}
+
+		type candidate struct {
+			table   st
+			overlap int
+			pkCols  []string
+		}
+		var best candidate
+		var tied bool
+
+		for baseKey, basePKCols := range tablePKs {
+			if baseKey.schema != viewKey.schema || baseKey == viewKey {
+				continue
+			}
+
+			// Check if ALL PK columns of this base table appear in the view
+			allPKsPresent := true
+			for _, pk := range basePKCols {
+				if !viewCols[pk] {
+					allPKsPresent = false
+					break
+				}
+			}
+			if !allPKsPresent {
+				continue
+			}
+
+			// Count non-PK column overlap
+			overlap := 0
+			baseCols := tableCols[baseKey]
+			for col := range baseCols {
+				if !containsStr(basePKCols, col) && viewCols[col] {
+					overlap++
+				}
+			}
+
+			if overlap == 0 {
+				continue
+			}
+
+			if overlap > best.overlap {
+				best = candidate{baseKey, overlap, basePKCols}
+				tied = false
+			} else if overlap == best.overlap && best.table != baseKey {
+				tied = true
+			}
+		}
+
+		// Only apply if we have an unambiguous winner
+		if best.overlap > 0 && !tied {
+			for _, pkCol := range best.pkCols {
+				k := viewKey.schema + ":" + viewKey.table + ":" + pkCol
+				if v, ok := cmap[k]; ok && !v.PrimaryKey {
+					v.PrimaryKey = true
+					v.UniqueKey = true
+					cmap[k] = v
+				}
+			}
+		}
+	}
+}
+
+func containsStr(ss []string, s string) bool {
+	for _, v := range ss {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+// inferDefaultSchema picks the schema that contains the most distinct tables
+// from the discovered columns. Used as a fallback when the database reports
+// an empty default schema (e.g., PostgreSQL with search_path='').
+func inferDefaultSchema(cols []DBColumn) string {
+	type st struct{ schema, table string }
+	seen := make(map[st]bool)
+	counts := make(map[string]int)
+	for _, c := range cols {
+		if c.Schema == "" || strings.HasPrefix(c.Table, "_gj_") {
+			continue
+		}
+		k := st{c.Schema, c.Table}
+		if !seen[k] {
+			seen[k] = true
+			counts[c.Schema]++
+		}
+	}
+
+	var best string
+	var bestCount int
+	for schema, n := range counts {
+		if n > bestCount {
+			best = schema
+			bestCount = n
+		}
+	}
+	return best
 }
 
 // DiscoverCompositeFKs returns metadata about composite (multi-column) foreign key
@@ -828,9 +1009,9 @@ HAVING COUNT(*) > 1`
 // would otherwise leak through.
 const compositeFKQueryMSSQL = `
 SELECT s.name, t.name, OBJECT_NAME(fkc.constraint_object_id),
-       STRING_AGG(c.name, ',') WITHIN GROUP (ORDER BY fkc.constraint_column_id) AS local_columns,
+       STRING_AGG(c.name, ',') AS local_columns,
        rs.name, rt.name,
-       STRING_AGG(rc.name, ',') WITHIN GROUP (ORDER BY fkc.constraint_column_id) AS fkey_columns
+       STRING_AGG(rc.name, ',') AS fkey_columns
 FROM sys.foreign_key_columns fkc
 JOIN sys.columns c ON fkc.parent_object_id = c.object_id AND fkc.parent_column_id = c.column_id
 JOIN sys.columns rc ON fkc.referenced_object_id = rc.object_id AND fkc.referenced_column_id = rc.column_id

@@ -251,7 +251,7 @@ func (s *graphjinService) subSwitch(wc *wsConn, req wsReq) (err error) {
 		// Check for _discovery subscription
 		if isDiscoverySubscription(p.Query) {
 			database := extractDiscoveryDatabase(p.Vars)
-			ds, subErr := s.gj.SubscribeDiscovery(c, database)
+			ds, subErr := s.disc.Subscribe(c, database)
 			if subErr != nil {
 				err = subErr
 				break
@@ -395,7 +395,7 @@ func extractDiscoveryDatabase(vars json.RawMessage) string {
 }
 
 // waitForDiscoveryData waits for discovery document updates and sends them over WebSocket.
-func (s *graphjinService) waitForDiscoveryData(wc *wsConn, st *wsState, ds *core.DiscoverySubscription, useNext bool) {
+func (s *graphjinService) waitForDiscoveryData(wc *wsConn, st *wsState, ds *DiscoverySubscription, useNext bool) {
 	var buf bytes.Buffer
 
 	ptype := "data"
@@ -416,7 +416,7 @@ func (s *graphjinService) waitForDiscoveryData(wc *wsConn, st *wsState, ds *core
 					"database":     doc.Database,
 					"hash":         doc.Hash,
 					"generated_at": doc.GeneratedAt.Format("2006-01-02T15:04:05Z"),
-					"content":      doc.Markdown,
+					"tables":       doc.Tables,
 				},
 			}
 			data, err := json.Marshal(payload)

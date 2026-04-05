@@ -192,7 +192,14 @@ func (d *SnowflakeDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
 		if ob.Var != "" {
 			ctx.ColWithTable(`_gj_ob_`+ob.Col.Name, "ord")
 		} else {
+			if ob.IsFunc {
+				ctx.WriteString(strings.ToUpper(ob.Func.Name))
+				ctx.WriteString(`(`)
+			}
 			ctx.ColWithTable(ob.Col.Table, ob.Col.Name)
+			if ob.IsFunc {
+				ctx.WriteString(`)`)
+			}
 		}
 		if ob.KeyVar != "" && ob.Key != "" {
 			ctx.WriteString(` END `)

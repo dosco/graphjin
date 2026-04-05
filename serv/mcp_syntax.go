@@ -403,7 +403,7 @@ func (ms *mcpServer) registerResources() {
 	// JS runtime API resource
 	ms.registerJSRuntimeResources()
 
-	// Schema discovery resources (Bible)
+	// Schema discovery resources
 	ms.registerDiscoveryResources()
 }
 

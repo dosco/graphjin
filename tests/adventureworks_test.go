@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/serv/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,7 +23,8 @@ func skipIfNotAdventureWorks(t *testing.T) {
 // It also verifies the ground truth via direct SQL before running the GraphQL query.
 func newAdventureWorksGJ(t *testing.T) *core.GraphJin {
 	t.Helper()
-	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	// AdventureWorks is always PostgreSQL, regardless of the -db flag value
+	conf := newConfig(&core.Config{DBType: "postgres", DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	require.NoError(t, err)
 	t.Cleanup(func() { gj.Close() })
@@ -43,7 +45,8 @@ func TestAdventureWorksDiscovery(t *testing.T) {
 	skipIfNotAdventureWorks(t)
 
 	gj := newAdventureWorksGJ(t)
-	md := gj.GetCombinedDiscovery()
+	dm := serv.NewDiscoveryManager(gj)
+	md := dm.Combined()
 	require.NotEmpty(t, md, "discovery should be generated")
 
 	// Verify cross-schema discovery found key schemas
