@@ -1004,6 +1004,16 @@ func TestMain(m *testing.M) {
 				return cleanup, sqlDB, nil
 			},
 		},
+		{
+			name:    "adventureworks",
+			driver:  "postgres",
+			disable: true,
+			startFunc: func(ctx context.Context) (func(context.Context) error, string, error) {
+				connStr := "postgres://postgres:postgres@localhost:5432/adventureworks?sslmode=disable"
+				cleanup := func(ctx context.Context) error { return nil }
+				return cleanup, connStr, nil
+			},
+		},
 	}
 	for _, v := range dbinfoList {
 		disable := v.disable
