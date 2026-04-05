@@ -38,6 +38,7 @@ func TestMockDB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer gj.Close()
 
 	gql := `query mockDBTest {
 		users {

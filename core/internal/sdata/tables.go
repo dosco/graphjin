@@ -1,6 +1,7 @@
 package sdata
 
 import (
+	"context"
 	"database/sql"
 	"database/sql/driver"
 	"errors"
@@ -14,6 +15,11 @@ import (
 	"github.com/dosco/graphjin/core/v3/internal/util"
 	"golang.org/x/sync/errgroup"
 )
+
+// introspectionQueryTimeout bounds each individual schema-discovery SQL
+// query. Without this, a hung network read from the driver (seen with
+// go-ora against Oracle) could block a test run indefinitely.
+const introspectionQueryTimeout = 30 * time.Second
 
 // DBInfo holds the database schema information
 type DBInfo struct {
@@ -63,8 +69,14 @@ type VirtualTable struct {
 	FKeyColumn string
 }
 
-// GetDBInfo returns the database schema information
+// GetDBInfo returns the database schema information.
+//
+// The context bounds the full discovery run (all queries + retries). Callers
+// that don't have a context can use context.Background(); an internal
+// per-query timeout (introspectionQueryTimeout) still applies on top so a
+// hung driver read can't block forever.
 func GetDBInfo(
+	ctx context.Context,
 	db *sql.DB,
 	dbType string,
 	blockList []string,
@@ -77,13 +89,21 @@ func GetDBInfo(
 		500 * time.Millisecond,
 	}
 
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	var lastErr error
 	for i, delay := range retryDelays {
 		if i > 0 {
-			time.Sleep(delay)
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 		}
 
-		di, err := getDBInfoOnce(db, dbType, blockList)
+		di, err := getDBInfoOnce(ctx, db, dbType, blockList)
 		if err == nil {
 			return di, nil
 		}
@@ -97,6 +117,7 @@ func GetDBInfo(
 }
 
 func getDBInfoOnce(
+	ctx context.Context,
 	db *sql.DB,
 	dbType string,
 	blockList []string,
@@ -107,29 +128,32 @@ func getDBInfoOnce(
 	var funcs []DBFunction
 	var compositeFKs []CompositeFKInfo
 
-	g := errgroup.Group{}
+	g, gctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
+		qctx, cancel := context.WithTimeout(gctx, introspectionQueryTimeout)
+		defer cancel()
+
 		var row *sql.Row
 
 		switch dbType {
 		case "postgres", "":
-			row = db.QueryRow(postgresInfo)
+			row = db.QueryRowContext(qctx, postgresInfo)
 		case "mysql":
-			row = db.QueryRow(mysqlInfo)
+			row = db.QueryRowContext(qctx, mysqlInfo)
 		case "mariadb":
-			row = db.QueryRow(mariadbInfo)
+			row = db.QueryRowContext(qctx, mariadbInfo)
 		case "sqlite":
-			row = db.QueryRow(sqliteInfo)
+			row = db.QueryRowContext(qctx, sqliteInfo)
 		case "oracle":
-			row = db.QueryRow(oracleInfo)
+			row = db.QueryRowContext(qctx, oracleInfo)
 		case "mssql":
-			row = db.QueryRow(mssqlInfo)
+			row = db.QueryRowContext(qctx, mssqlInfo)
 		case "snowflake":
-			row = db.QueryRow(snowflakeInfo)
+			row = db.QueryRowContext(qctx, snowflakeInfo)
 		case "mongodb":
 			// MongoDB returns info via the driver's introspection
-			row = db.QueryRow(mongodbInfo)
+			row = db.QueryRowContext(qctx, mongodbInfo)
 		default:
 			return fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, mongodb", dbType)
 		}
@@ -145,14 +169,26 @@ func getDBInfoOnce(
 
 	g.Go(func() error {
 		var err error
-		if cols, err = DiscoverColumns(db, dbType, blockList); err != nil {
+		if cols, err = DiscoverColumns(gctx, db, dbType, blockList); err != nil {
 			return err
 		}
 
-		if funcs, err = DiscoverFunctions(db, dbType, blockList); err != nil {
+		if funcs, err = DiscoverFunctions(gctx, db, dbType, blockList); err != nil {
 			return err
 		}
-		if compositeFKs, err = DiscoverCompositeFKs(db, dbType); err != nil {
+
+		// Short-circuit: if column-level FK data shows no table with
+		// 2+ columns pointing at the same foreign table, there cannot
+		// be any composite FKs and we can skip the expensive dialect-
+		// specific introspection query. This is the biggest single
+		// cost removal for the common case where test fixtures and
+		// small schemas have at most one composite FK.
+		if !hasCompositeFKCandidates(cols) {
+			compositeFKs = nil
+			return nil
+		}
+
+		if compositeFKs, err = DiscoverCompositeFKs(gctx, db, dbType); err != nil {
 			return err
 		}
 		return nil
@@ -175,7 +211,7 @@ func getDBInfoOnce(
 	// For Snowflake, discover clustering keys and attach to tables.
 	// Non-fatal: if this fails we just skip clustering optimization.
 	if dbType == "snowflake" {
-		if ck, err := discoverClusteringKeys(db); err == nil {
+		if ck, err := discoverClusteringKeys(ctx, db); err == nil {
 			for i := range di.Tables {
 				key := di.Tables[i].Schema + ":" + di.Tables[i].Name
 				if keys, ok := ck[key]; ok {
@@ -195,8 +231,34 @@ func getDBInfoOnce(
 	return di, nil
 }
 
+// hasCompositeFKCandidates returns true if any table in the column set has
+// two or more columns referencing the same foreign (schema, table). This is
+// a necessary condition for a composite foreign key to exist, derived
+// entirely from data already collected by DiscoverColumns. If it returns
+// false, the expensive DiscoverCompositeFKs query can be skipped.
+func hasCompositeFKCandidates(cols []DBColumn) bool {
+	counts := make(map[string]int)
+	for i := range cols {
+		c := &cols[i]
+		if c.FKeyTable == "" {
+			continue
+		}
+		k := c.Schema + ":" + c.Table + ":" + c.FKeySchema + ":" + c.FKeyTable
+		counts[k]++
+		if counts[k] > 1 {
+			return true
+		}
+	}
+	return false
+}
+
 func isRetryableDiscoveryError(err error) bool {
 	if err == nil {
+		return false
+	}
+	// Context cancellation / deadline errors are terminal — retrying will
+	// almost always hit the same timeout and just multiply the wait.
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
 	if errors.Is(err, io.EOF) || errors.Is(err, driver.ErrBadConn) {
@@ -449,7 +511,7 @@ type CompositeFKInfo struct {
 }
 
 // DiscoverColumns returns the columns of a table
-func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn, error) {
+func DiscoverColumns(ctx context.Context, db *sql.DB, dbtype string, blockList []string) ([]DBColumn, error) {
 	var sqlStmt string
 
 	switch dbtype {
@@ -474,9 +536,23 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, mongodb", dbtype)
 	}
 
-	rows, err := db.Query(sqlStmt)
+	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
+	defer cancel()
+
+	rows, err := db.QueryContext(qctx, sqlStmt)
 	if err != nil {
-		return nil, fmt.Errorf("error fetching columns: %w", err)
+		// Snowflake fallback: the primary query includes a UNION that reads
+		// from `_gj_fk_metadata`, an optional FK override table. Production
+		// Snowflake accounts that declare FKs via DDL won't have this table
+		// and the primary query fails. Re-run without the overlay UNION.
+		if dbtype == "snowflake" {
+			qctx2, cancel2 := context.WithTimeout(ctx, introspectionQueryTimeout)
+			defer cancel2()
+			rows, err = db.QueryContext(qctx2, snowflakeColumnsNoOverridesStmt)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("error fetching columns: %w", err)
+		}
 	}
 	defer rows.Close()
 
@@ -583,8 +659,15 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 	// Views lack sys.indexes entries, so the main query reports primary_key=0
 	// for all view columns. This uses sys.dm_exec_describe_first_result_set
 	// to trace view columns back to their source base table PKs.
-	if dbtype == "mssql" {
-		rows2, err := db.Query(mssqlViewPKsStmt)
+	//
+	// The DMF parses and compiles every view, which is expensive on schema-
+	// heavy production databases, so we preflight with a tiny TOP 1 query
+	// against sys.views and skip the expensive call entirely when the DB
+	// has no user-visible views.
+	if dbtype == "mssql" && mssqlHasUserViews(ctx, db) {
+		qctx2, cancel2 := context.WithTimeout(ctx, introspectionQueryTimeout)
+		defer cancel2()
+		rows2, err := db.QueryContext(qctx2, mssqlViewPKsStmt)
 		if err == nil {
 			defer rows2.Close()
 			for rows2.Next() {
@@ -615,34 +698,72 @@ func DiscoverColumns(db *sql.DB, dbtype string, blockList []string) ([]DBColumn,
 	return cols, nil
 }
 
+// mssqlHasUserViews runs a TOP 1 preflight against sys.views to decide
+// whether mssql_view_pks.sql (the expensive sys.dm_exec_describe_first_result_set
+// query) should be issued. Returns true only on success with a positive
+// result; any error (permission, driver hiccup) yields false so we skip
+// the expensive follow-up — the view-PK enrichment is non-essential and
+// users can override via config.
+func mssqlHasUserViews(ctx context.Context, db *sql.DB) bool {
+	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
+	defer cancel()
+
+	var n int
+	if err := db.QueryRowContext(qctx, mssqlHasViewsStmt).Scan(&n); err != nil {
+		return false
+	}
+	return n > 0
+}
+
 // DiscoverCompositeFKs returns metadata about composite (multi-column) foreign key
 // constraints for the given database type.
-func DiscoverCompositeFKs(db *sql.DB, dbtype string) ([]CompositeFKInfo, error) {
+//
+// Composite FK discovery is a best-effort enrichment: if the query errors or
+// times out, we return (nil, nil) and let the rest of the schema load normally.
+// Single-column FKs (the overwhelmingly common case) come from DiscoverColumns
+// and are unaffected. This prevents a slow/broken data-dictionary query from
+// failing the whole NewGraphJin init.
+func DiscoverCompositeFKs(ctx context.Context, db *sql.DB, dbtype string) ([]CompositeFKInfo, error) {
+	var (
+		result []CompositeFKInfo
+		err    error
+	)
 	switch dbtype {
 	case "postgres", "":
-		return discoverCompositeFKsPostgres(db)
+		result, err = discoverCompositeFKsPostgres(ctx, db)
 	case "mysql":
-		return discoverCompositeFKsCSV(db, dbtype, compositeFKQueryMySQL)
+		result, err = discoverCompositeFKsCSV(ctx, db, dbtype, compositeFKQueryMySQL)
 	case "mariadb":
-		return discoverCompositeFKsCSV(db, dbtype, compositeFKQueryMySQL) // identical to MySQL
+		result, err = discoverCompositeFKsCSV(ctx, db, dbtype, compositeFKQueryMySQL) // identical to MySQL
 	case "sqlite":
-		return discoverCompositeFKsCSV(db, dbtype, compositeFKQuerySQLite)
+		result, err = discoverCompositeFKsCSV(ctx, db, dbtype, compositeFKQuerySQLite)
 	case "oracle":
-		return discoverCompositeFKsCSV(db, dbtype, compositeFKQueryOracle)
+		result, err = discoverCompositeFKsCSV(ctx, db, dbtype, compositeFKQueryOracle)
 	case "mssql":
-		return discoverCompositeFKsCSV(db, dbtype, compositeFKQueryMSSQL)
+		result, err = discoverCompositeFKsCSV(ctx, db, dbtype, compositeFKQueryMSSQL)
 	case "snowflake":
-		// Snowflake uses a custom _gj_fk_metadata table that may not exist
-		result, err := discoverCompositeFKsCSV(db, dbtype, compositeFKQuerySnowflake)
-		if err != nil {
-			return nil, nil // non-fatal: table may not exist
-		}
-		return result, nil
+		// Snowflake composite FK discovery reads from the optional
+		// `_gj_fk_metadata` override table. No preflight — production
+		// deployments that declare FKs via DDL don't have this table at
+		// all, and the DuckDB-backed test emulator mis-quotes any query
+		// against `information_schema.tables`. The non-fatal error path
+		// below silently drops the enrichment if the table is missing.
+		result, err = discoverCompositeFKsCSV(ctx, db, dbtype, compositeFKQuerySnowflake)
 	default:
 		return nil, nil
 	}
+	if err != nil {
+		// Non-fatal: log nothing here (caller has no logger), just drop the
+		// enrichment. Single-column FKs are unaffected.
+		return nil, nil
+	}
+	return result, nil
 }
 
+// compositeFKQueryMySQL is scoped to the current DATABASE() to avoid scanning
+// every schema on the server — MySQL's information_schema views are synthesized
+// on demand and are prohibitively slow when unfiltered. The join also matches
+// on table_name so constraint-name collisions across tables cannot fan out.
 const compositeFKQueryMySQL = `
 SELECT kcu.table_schema, kcu.table_name, kcu.constraint_name,
        GROUP_CONCAT(kcu.column_name ORDER BY kcu.ordinal_position) AS local_columns,
@@ -650,9 +771,11 @@ SELECT kcu.table_schema, kcu.table_name, kcu.constraint_name,
        GROUP_CONCAT(kcu.referenced_column_name ORDER BY kcu.ordinal_position) AS fkey_columns
 FROM information_schema.key_column_usage kcu
 JOIN information_schema.table_constraints tc
-  ON kcu.constraint_name = tc.constraint_name AND kcu.table_schema = tc.table_schema
+  ON kcu.constraint_name = tc.constraint_name
+ AND kcu.table_schema = tc.table_schema
+ AND kcu.table_name = tc.table_name
 WHERE tc.constraint_type = 'FOREIGN KEY'
-  AND kcu.table_schema NOT IN ('_graphjin', 'information_schema', 'performance_schema', 'mysql', 'sys')
+  AND kcu.table_schema = DATABASE()
 GROUP BY kcu.table_schema, kcu.table_name, kcu.constraint_name,
          kcu.referenced_table_schema, kcu.referenced_table_name
 HAVING COUNT(*) > 1`
@@ -670,21 +793,39 @@ WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite_%' AND m.name NOT LIKE '_gj_%
 GROUP BY m.name, fk.id, fk."table"
 HAVING COUNT(*) > 1`
 
+// compositeFKQueryOracle discovers composite foreign keys owned by the current
+// session user.
+//
+// Local side  — user_constraints / user_cons_columns: owns only current-user
+// constraints, no security-predicate overhead, 10-100× faster than all_*.
+//
+// Referenced side — all_constraints / all_cons_columns: the target table may
+// live in a different schema (cross-schema FK). These are single indexed
+// key-lookups on r_constraint_name, not full scans, so the cost is O(1) per
+// FK constraint regardless of how many system schemas exist.
 const compositeFKQueryOracle = `
-SELECT ac.owner, ac.table_name, ac.constraint_name,
-       LISTAGG(acc.column_name, ',') WITHIN GROUP (ORDER BY acc.position) AS local_columns,
-       r_ac.owner AS fkey_schema, r_ac.table_name AS fkey_table,
+SELECT USER AS owner, uc.table_name, uc.constraint_name,
+       LISTAGG(ucc.column_name, ',') WITHIN GROUP (ORDER BY ucc.position) AS local_columns,
+       LOWER(r_ac.owner) AS fkey_schema, r_ac.table_name AS fkey_table,
        LISTAGG(r_acc.column_name, ',') WITHIN GROUP (ORDER BY r_acc.position) AS fkey_columns
-FROM all_constraints ac
-JOIN all_cons_columns acc ON ac.constraint_name = acc.constraint_name AND ac.owner = acc.owner
-JOIN all_constraints r_ac ON ac.r_constraint_name = r_ac.constraint_name AND ac.r_owner = r_ac.owner
-JOIN all_cons_columns r_acc ON r_ac.constraint_name = r_acc.constraint_name AND r_ac.owner = r_acc.owner
-  AND acc.position = r_acc.position
-WHERE ac.constraint_type = 'R'
-  AND ac.owner NOT IN ('_GRAPHJIN', 'SYS', 'SYSTEM')
-GROUP BY ac.owner, ac.table_name, ac.constraint_name, r_ac.owner, r_ac.table_name
+FROM user_constraints uc
+JOIN user_cons_columns ucc
+  ON uc.constraint_name = ucc.constraint_name
+JOIN all_constraints r_ac
+  ON uc.r_constraint_name = r_ac.constraint_name
+JOIN all_cons_columns r_acc
+  ON r_ac.constraint_name = r_acc.constraint_name
+ AND r_ac.owner           = r_acc.owner
+ AND ucc.position         = r_acc.position
+WHERE uc.constraint_type = 'R'
+GROUP BY uc.table_name, uc.constraint_name, r_ac.owner, r_ac.table_name
 HAVING COUNT(*) > 1`
 
+// compositeFKQueryMSSQL filters system and role schemas on BOTH sides of the
+// FK so the result set is consistent with mssql_columns.sql. sys.tables is
+// user-tables-only so sys/INFORMATION_SCHEMA are self-filtered, but CDC
+// (Change Data Capture) and audit schemas expose user-visible tables that
+// would otherwise leak through.
 const compositeFKQueryMSSQL = `
 SELECT s.name, t.name, OBJECT_NAME(fkc.constraint_object_id),
        STRING_AGG(c.name, ',') WITHIN GROUP (ORDER BY fkc.constraint_column_id) AS local_columns,
@@ -697,6 +838,18 @@ JOIN sys.tables t ON fkc.parent_object_id = t.object_id
 JOIN sys.schemas s ON t.schema_id = s.schema_id
 JOIN sys.tables rt ON fkc.referenced_object_id = rt.object_id
 JOIN sys.schemas rs ON rt.schema_id = rs.schema_id
+WHERE s.name NOT IN (
+    'sys', 'INFORMATION_SCHEMA', 'guest', 'cdc',
+    'db_owner', 'db_accessadmin', 'db_securityadmin', 'db_ddladmin',
+    'db_backupoperator', 'db_datareader', 'db_datawriter',
+    'db_denydatareader', 'db_denydatawriter'
+)
+AND rs.name NOT IN (
+    'sys', 'INFORMATION_SCHEMA', 'guest', 'cdc',
+    'db_owner', 'db_accessadmin', 'db_securityadmin', 'db_ddladmin',
+    'db_backupoperator', 'db_datareader', 'db_datawriter',
+    'db_denydatareader', 'db_denydatawriter'
+)
 GROUP BY s.name, t.name, fkc.constraint_object_id, rs.name, rt.name
 HAVING COUNT(*) > 1`
 
@@ -710,7 +863,7 @@ FROM _gj_fk_metadata
 GROUP BY table_schema, table_name, foreign_table_schema, foreign_table_name
 HAVING COUNT(*) > 1`
 
-func discoverCompositeFKsPostgres(db *sql.DB) ([]CompositeFKInfo, error) {
+func discoverCompositeFKsPostgres(ctx context.Context, db *sql.DB) ([]CompositeFKInfo, error) {
 	const query = `
 SELECT
 	n.nspname AS schema_name,
@@ -733,7 +886,10 @@ WHERE co.contype = 'f'
 	AND array_length(co.conkey, 1) > 1
 GROUP BY n.nspname, c.relname, co.conname, fn.nspname, fc.relname`
 
-	rows, err := db.Query(query)
+	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
+	defer cancel()
+
+	rows, err := db.QueryContext(qctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching composite FKs: %w", err)
 	}
@@ -760,8 +916,11 @@ GROUP BY n.nspname, c.relname, co.conname, fn.nspname, fc.relname`
 
 // discoverCompositeFKsCSV handles composite FK discovery for databases that return
 // aggregated columns as comma-separated strings (MySQL, MariaDB, SQLite, Oracle, MSSQL, Snowflake).
-func discoverCompositeFKsCSV(db *sql.DB, dbtype, query string) ([]CompositeFKInfo, error) {
-	rows, err := db.Query(query)
+func discoverCompositeFKsCSV(ctx context.Context, db *sql.DB, dbtype, query string) ([]CompositeFKInfo, error) {
+	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
+	defer cancel()
+
+	rows, err := db.QueryContext(qctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching composite FKs: %w", err)
 	}
@@ -852,7 +1011,7 @@ type DBFuncParam struct {
 }
 
 // DiscoverFunctions returns the functions of a database
-func DiscoverFunctions(db *sql.DB, dbtype string, blockList []string) ([]DBFunction, error) {
+func DiscoverFunctions(ctx context.Context, db *sql.DB, dbtype string, blockList []string) ([]DBFunction, error) {
 	var sqlStmt string
 
 	switch dbtype {
@@ -879,7 +1038,10 @@ func DiscoverFunctions(db *sql.DB, dbtype string, blockList []string) ([]DBFunct
 		return nil, fmt.Errorf("unsupported database type %q: supported types are postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake, mongodb", dbtype)
 	}
 
-	rows, err := db.Query(sqlStmt)
+	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
+	defer cancel()
+
+	rows, err := db.QueryContext(qctx, sqlStmt)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching functions: %w", err)
 	}
@@ -962,8 +1124,11 @@ func isInList(val string, s []string) bool {
 
 // discoverClusteringKeys queries Snowflake's information_schema.tables for
 // clustering key metadata. Returns a map of "schema:table" → []column_name.
-func discoverClusteringKeys(db *sql.DB) (map[string][]string, error) {
-	rows, err := db.Query(snowflakeClusteringStmt)
+func discoverClusteringKeys(ctx context.Context, db *sql.DB) (map[string][]string, error) {
+	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
+	defer cancel()
+
+	rows, err := db.QueryContext(qctx, snowflakeClusteringStmt)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching clustering keys: %w", err)
 	}

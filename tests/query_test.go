@@ -39,6 +39,7 @@ func Example_query() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -69,6 +70,7 @@ func Example_queryInTransaction() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	c := context.Background()
 	tx, err := db.BeginTx(c, nil)
@@ -112,6 +114,7 @@ func Example_queryJSONPathOperations() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -145,6 +148,7 @@ func Example_queryJSONPathOperationsAlternativeSyntax() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -171,6 +175,7 @@ func Example_queryWithUser() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 31)
 	res, err := gj.GraphQL(ctx, gql, nil, nil)
@@ -224,6 +229,7 @@ func Example_queryWithDynamicOrderBy() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	vars1 := json.RawMessage(`{ "order": "price_and_id" }`)
 
@@ -287,6 +293,7 @@ func Example_queryWithNestedOrderBy() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -315,6 +322,7 @@ func Example_queryWithOrderByList() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	vars := json.RawMessage(`{ "list": [3, 2, 1, 5] }`)
 	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
@@ -354,6 +362,7 @@ func Example_queryWithLimitOffsetOrderByDistinctAndWhere() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -387,6 +396,7 @@ func Example_queryWithWhere1() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
 	if err != nil {
@@ -413,6 +423,7 @@ func Example_queryWithWhereIn() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
 	if err != nil {
@@ -445,6 +456,7 @@ func Example_queryWithWhereNotIsNullAndGreaterThan() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -477,6 +489,7 @@ func Example_queryWithWhereGreaterThanOrLesserThan() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -503,6 +516,7 @@ func Example_queryWithWhereOnRelatedTable() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 2)
 	res, err := gj.GraphQL(ctx, gql, nil, nil)
@@ -529,6 +543,7 @@ func Example_queryWithAlternateFieldNames() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -556,6 +571,7 @@ func Example_queryByID() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
 	if err != nil {
@@ -592,6 +608,7 @@ func Example_queryBySearch() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
 	if err != nil {
@@ -618,6 +635,7 @@ func Example_queryParentsWithChildren() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -644,6 +662,7 @@ func Example_queryChildrenWithParent() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -672,6 +691,7 @@ func Example_queryManyToManyViaJoinTable1() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -698,6 +718,7 @@ func Example_queryManyToManyViaJoinTable2() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -727,6 +748,7 @@ func Example_queryManyToManyViaJoinTable3() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -749,6 +771,7 @@ func Example_queryWithAggregation() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -778,6 +801,7 @@ func Example_queryWithAggregationBlockedColumn() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -807,6 +831,7 @@ func Example_queryWithFunctionsBlocked() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -835,6 +860,7 @@ func Example_queryWithFunctionsWithWhere() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -866,6 +892,7 @@ func Example_queryWithSyntheticTables() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 1)
 	res, err := gj.GraphQL(ctx, gql, nil, nil)
@@ -894,6 +921,7 @@ func Example_queryWithVariables() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
 	if err != nil {
@@ -919,6 +947,7 @@ func Example_queryWithVariablesDefaultValue() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -954,6 +983,7 @@ func Example_queryWithMultipleTopLevelTables() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
 	if err != nil {
@@ -988,6 +1018,7 @@ func Example_queryWithFragments1() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -1023,6 +1054,7 @@ func Example_queryWithFragments2() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -1058,6 +1090,7 @@ func Example_queryWithFragments3() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -1104,6 +1137,7 @@ func Example_queryWithUnionForPolymorphicRelationships() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -1131,6 +1165,7 @@ func Example_queryWithSkipAndIncludeIfArg() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -1158,6 +1193,7 @@ func Example_queryWithSkipAndIncludeDirective1() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -1185,6 +1221,7 @@ func Example_queryWithSkipAndIncludeDirective2() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	c := context.WithValue(context.Background(), core.UserIDKey, 1)
 	res, err := gj.GraphQL(c, gql, nil, nil)
@@ -1223,6 +1260,7 @@ func Example_queryWithSkipAndIncludeDirective3() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
 	if err != nil {
@@ -1252,6 +1290,7 @@ func Example_queryWithSkipAndIncludeDirective4() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
 	if err != nil {
@@ -1279,6 +1318,7 @@ func Example_queryWithAddAndRemoveDirective1() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -1306,6 +1346,7 @@ func Example_queryWithAddAndRemoveDirective2() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -1376,6 +1417,7 @@ func Example_queryWithRemoteAPIJoin() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -1409,6 +1451,7 @@ func Example_queryWithCursorPagination1() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
 	if err != nil {
@@ -1462,6 +1505,7 @@ func Example_queryWithCursorPagination2() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	type result struct {
 		Products json.RawMessage `json:"products"`
@@ -1549,6 +1593,7 @@ func TestQueryWithJsonColumn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -1599,6 +1644,7 @@ func Example_queryViewByID() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
 	if err != nil {
@@ -1639,6 +1685,7 @@ func Example_queryWithView() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -1670,6 +1717,7 @@ func Example_queryWithRecursiveRelationship1() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
 	if err != nil {
@@ -1695,6 +1743,7 @@ func Example_queryWithRecursiveRelationship2() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -1727,6 +1776,7 @@ func Example_queryWithRecursiveRelationshipAndAggregations() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -1755,6 +1805,7 @@ func Example_queryWithSkippingAuthRequiredSelectors() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -1793,6 +1844,7 @@ func Example_queryBlockWithRoles() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 50)
 	res, err := gj.GraphQL(ctx, gql, nil, nil)
@@ -1835,6 +1887,7 @@ func Example_queryWithCamelToSnakeCase() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -1861,6 +1914,7 @@ func Example_queryWithWhereHasAnyKey() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -1887,6 +1941,7 @@ func Example_queryWithTypename() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, json.RawMessage(`{"id":2}`), nil)
 	if err != nil {
@@ -1910,6 +1965,7 @@ func Example_queryFunctionWithJsonbParam() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	vars := json.RawMessage(`{"userData": {"field": "Alex", "value": 123}}`)
 	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
@@ -1946,6 +2002,7 @@ func Example_queryWithNamedCursorPagination() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
 	if err != nil {
@@ -2000,6 +2057,7 @@ func Example_queryWithNamedCursorPaginationMultiplePages() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	type result struct {
 		Products json.RawMessage `json:"products"`
@@ -2054,6 +2112,7 @@ func Example_queryWithNamedCursorInvalidVariable() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	_, err = gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -2088,6 +2147,7 @@ func Example_queryWithBackwardCompatibleCursor() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
 	if err != nil {
@@ -2150,6 +2210,7 @@ func Example_queryWithNestedIndependentCursors() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	type result struct {
 		Users []struct {

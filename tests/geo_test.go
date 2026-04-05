@@ -32,6 +32,7 @@ func Example_queryWithGeoFilter() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -68,6 +69,7 @@ func Example_queryWithGeoContains() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {

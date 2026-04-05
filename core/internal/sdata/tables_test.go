@@ -1,9 +1,11 @@
 package sdata
 
 import (
+	"context"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dosco/graphjin/core/v3/internal/util"
 )
@@ -327,12 +329,100 @@ func TestDiscoverCompositeFKsCSVParsing(t *testing.T) {
 
 // TestDiscoverCompositeFKsUnsupportedDB verifies that unknown DB types return nil.
 func TestDiscoverCompositeFKsUnsupportedDB(t *testing.T) {
-	result, err := DiscoverCompositeFKs(nil, "cockroach")
+	result, err := DiscoverCompositeFKs(context.Background(), nil, "cockroach")
 	if err != nil {
 		t.Fatalf("expected nil error, got: %v", err)
 	}
 	if result != nil {
 		t.Fatalf("expected nil result for unsupported DB, got: %v", result)
+	}
+}
+
+// TestHasCompositeFKCandidates verifies that the short-circuit detector
+// correctly identifies whether DiscoverCompositeFKs could possibly find any
+// composite foreign keys, based on already-collected column-level FK data.
+// This short-circuit is the critical perf win: when no (table -> fkTable)
+// pair has two or more columns, the expensive dialect-specific composite FK
+// query can be skipped entirely.
+func TestHasCompositeFKCandidates(t *testing.T) {
+	tests := []struct {
+		name string
+		cols []DBColumn
+		want bool
+	}{
+		{
+			name: "no FKs at all",
+			cols: []DBColumn{
+				{Schema: "public", Table: "users", Name: "id"},
+				{Schema: "public", Table: "users", Name: "email"},
+			},
+			want: false,
+		},
+		{
+			name: "single-column FKs only",
+			cols: []DBColumn{
+				{Schema: "public", Table: "products", Name: "owner_id", FKeySchema: "public", FKeyTable: "users", FKeyCol: "id"},
+				{Schema: "public", Table: "comments", Name: "user_id", FKeySchema: "public", FKeyTable: "users", FKeyCol: "id"},
+			},
+			want: false,
+		},
+		{
+			name: "two cols in same table reference same fk table (composite candidate)",
+			cols: []DBColumn{
+				{Schema: "public", Table: "order_items", Name: "order_id", FKeySchema: "public", FKeyTable: "orders", FKeyCol: "id"},
+				{Schema: "public", Table: "order_items", Name: "order_line", FKeySchema: "public", FKeyTable: "orders", FKeyCol: "line"},
+			},
+			want: true,
+		},
+		{
+			name: "two cols in same table reference different fk tables (not a candidate)",
+			cols: []DBColumn{
+				{Schema: "public", Table: "purchases", Name: "customer_id", FKeySchema: "public", FKeyTable: "users", FKeyCol: "id"},
+				{Schema: "public", Table: "purchases", Name: "product_id", FKeySchema: "public", FKeyTable: "products", FKeyCol: "id"},
+			},
+			want: false,
+		},
+		{
+			name: "same col names but different tables — not a candidate",
+			cols: []DBColumn{
+				{Schema: "public", Table: "a", Name: "x", FKeySchema: "public", FKeyTable: "t", FKeyCol: "id"},
+				{Schema: "public", Table: "b", Name: "x", FKeySchema: "public", FKeyTable: "t", FKeyCol: "id"},
+			},
+			want: false,
+		},
+		{
+			name: "cross-schema candidate",
+			cols: []DBColumn{
+				{Schema: "sales", Table: "orders", Name: "region_id", FKeySchema: "geo", FKeyTable: "regions", FKeyCol: "id"},
+				{Schema: "sales", Table: "orders", Name: "country_id", FKeySchema: "geo", FKeyTable: "regions", FKeyCol: "country"},
+			},
+			want: true,
+		},
+		{
+			name: "empty column set",
+			cols: nil,
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hasCompositeFKCandidates(tt.cols); got != tt.want {
+				t.Errorf("hasCompositeFKCandidates() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestIntrospectionQueryTimeoutConstant pins the per-query timeout at 30s.
+// This is a defensive backstop: even if a future bad query hangs, the whole
+// GetDBInfo call must not block longer than a bounded multiple of this value.
+func TestIntrospectionQueryTimeoutConstant(t *testing.T) {
+	if introspectionQueryTimeout <= 0 {
+		t.Fatalf("introspectionQueryTimeout must be positive, got %v", introspectionQueryTimeout)
+	}
+	if introspectionQueryTimeout > 60*time.Second {
+		t.Errorf("introspectionQueryTimeout too large (%v) — defeats the purpose of a defensive timeout",
+			introspectionQueryTimeout)
 	}
 }
 

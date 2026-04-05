@@ -53,10 +53,11 @@ func TestIntrospection(t *testing.T) {
 	fs := core.NewOsFS(dir)
 
 	conf := newConfig(&core.Config{DBType: dbType, EnableIntrospection: true})
-	_, err = core.NewGraphJin(conf, db, core.OptionSetFS(fs))
+	gj, err := core.NewGraphJin(conf, db, core.OptionSetFS(fs))
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 	b, err := fs.Get("intro.json")
 	assert.NoError(t, err)
 	assert.NotEmpty(t, b)

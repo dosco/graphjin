@@ -37,6 +37,7 @@ func Example_subscription() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	m, err := gj.Subscribe(context.Background(), gql, vars, nil)
 	if err != nil {
@@ -104,6 +105,7 @@ func Example_subscriptionWithCursor() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	// struct to hold the cursor value from fetching the existing
 	// chat messages
@@ -208,6 +210,7 @@ func TestSubscription(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	g, ctx := errgroup.WithContext(context.Background())
 
