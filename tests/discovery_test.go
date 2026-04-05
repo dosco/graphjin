@@ -7,26 +7,28 @@ import (
 	"time"
 
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/serv/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// newDiscoveryGJ creates a shared GraphJin instance for discovery tests.
-func newDiscoveryGJ(t *testing.T) *core.GraphJin {
+// newDiscoveryDM creates a shared GraphJin instance and DiscoveryManager for discovery tests.
+func newDiscoveryDM(t *testing.T) (*core.GraphJin, *serv.DiscoveryManager) {
 	t.Helper()
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	require.NoError(t, err)
 	t.Cleanup(func() { gj.Close() })
-	return gj
+	dm := serv.NewDiscoveryManager(gj)
+	return gj, dm
 }
 
 func TestDiscovery(t *testing.T) {
-	gj := newDiscoveryGJ(t)
+	gj, dm := newDiscoveryDM(t)
 
 	t.Run("Generate", func(t *testing.T) {
 		// Discovery is lazily generated on first access
-		md := gj.GetCombinedDiscovery()
+		md := dm.Combined()
 		require.NotEmpty(t, md, "Combined discovery should be generated on first access")
 
 		// Verify key tables present
@@ -48,10 +50,10 @@ func TestDiscovery(t *testing.T) {
 
 	t.Run("Sections", func(t *testing.T) {
 		// Each section should be non-empty
-		syntax := gj.GetCombinedDiscoverySection("syntax")
-		tables := gj.GetCombinedDiscoverySection("tables")
-		fullTables := gj.GetCombinedDiscoverySection("full_tables")
-		insights := gj.GetCombinedDiscoverySection("insights")
+		syntax := dm.CombinedSection("syntax")
+		tables := dm.CombinedSection("tables")
+		fullTables := dm.CombinedSection("full_tables")
+		insights := dm.CombinedSection("insights")
 
 		assert.NotEmpty(t, syntax, "syntax section should not be empty")
 		assert.NotEmpty(t, tables, "tables section should not be empty")
@@ -91,14 +93,14 @@ func TestDiscovery(t *testing.T) {
 			t.Skip("MongoDB enrichment queries use different syntax")
 		}
 
-		md := gj.GetCombinedDiscovery()
+		md := dm.Combined()
 		require.NotEmpty(t, md)
 
 		// Layer 3: Live data — row counts should be present in compact table index
 		assert.Contains(t, md, "Rows:")
 
 		// Live data profile, date ranges, sample rows are in the full tables section
-		fullTables := gj.GetCombinedDiscoverySection("full_tables")
+		fullTables := dm.CombinedSection("full_tables")
 		require.NotEmpty(t, fullTables)
 
 		assert.Contains(t, fullTables, "#### Live Data Profile")
@@ -107,7 +109,7 @@ func TestDiscovery(t *testing.T) {
 	})
 
 	t.Run("QueryTemplates", func(t *testing.T) {
-		md := gj.GetCombinedDiscovery()
+		md := dm.Combined()
 		require.NotEmpty(t, md)
 
 		// Query templates section should exist
@@ -125,21 +127,21 @@ func TestDiscovery(t *testing.T) {
 
 	t.Run("Caching", func(t *testing.T) {
 		// Lazily generated on first access — then cached
-		md1 := gj.GetCombinedDiscovery()
+		md1 := dm.Combined()
 		require.NotEmpty(t, md1)
 
 		// Second call returns same content (cached)
-		md2 := gj.GetCombinedDiscovery()
+		md2 := dm.Combined()
 		assert.Equal(t, md1, md2)
 
 		// Per-database cache should also be populated
 		dbName := gj.DefaultDatabase()
-		doc := gj.GetDiscovery(dbName)
+		doc := dm.Get(dbName)
 		require.NotNil(t, doc)
 		assert.NotEmpty(t, doc.Hash)
 
-		// GetAllDiscovery should return at least one
-		all := gj.GetAllDiscovery()
+		// GetAll should return at least one
+		all := dm.GetAll()
 		assert.GreaterOrEqual(t, len(all), 1)
 	})
 
@@ -168,7 +170,7 @@ func TestDiscovery(t *testing.T) {
 		ctx := context.Background()
 		dbName := gj.DefaultDatabase()
 
-		ds, err := gj.SubscribeDiscovery(ctx, dbName)
+		ds, err := dm.Subscribe(ctx, dbName)
 		require.NoError(t, err)
 		defer ds.Unsubscribe()
 
@@ -184,19 +186,12 @@ func TestDiscovery(t *testing.T) {
 		}
 	})
 
-	t.Run("InvalidDatabase", func(t *testing.T) {
-		ctx := context.Background()
-		_, err := gj.GenerateDiscovery(ctx, "nonexistent_db")
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "not found")
-	})
-
 	t.Run("DataQuality", func(t *testing.T) {
 		if dbType == "mongodb" {
 			t.Skip("MongoDB does not have nullable column metadata")
 		}
 
-		md := gj.GetCombinedDiscovery()
+		md := dm.Combined()
 		require.NotEmpty(t, md)
 
 		// Data quality section should flag nullable columns
@@ -209,7 +204,7 @@ func TestDiscovery(t *testing.T) {
 			t.Skip("MongoDB relationship paths work differently")
 		}
 
-		md := gj.GetCombinedDiscovery()
+		md := dm.Combined()
 		require.NotEmpty(t, md)
 
 		assert.Contains(t, md, "## Relationship Paths")

@@ -79,6 +79,7 @@ type graphjinService struct {
 	conf     *Config            // parsed config
 	dbs      map[string]*sql.DB // named database connections (all equal)
 	gj       *core.GraphJin
+	disc     *DiscoveryManager
 	srv      *http.Server
 	fs       core.FS
 	// asec         [32]byte
@@ -347,7 +348,11 @@ func (s *graphjinService) normalStart() error {
 
 	var err error
 	s.gj, err = core.NewGraphJin(&s.conf.Core, s.anyDB(), opts...)
-	return err
+	if err != nil {
+		return err
+	}
+	s.disc = NewDiscoveryManager(s.gj)
+	return nil
 }
 
 // hotStart starts the service in hot-deploy mode

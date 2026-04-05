@@ -53,7 +53,16 @@ func (ms *mcpServer) registerDiscoveryResources() {
 				mcp.WithMIMEType("text/markdown"),
 			),
 			func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
-				md := ms.service.gj.GetCombinedDiscoverySection(s.key)
+				if ms.service.disc == nil {
+						return []mcp.ResourceContents{
+							mcp.TextResourceContents{
+								URI:      req.Params.URI,
+								MIMEType: "text/plain",
+								Text:     "Discovery not available. Schema may not be ready yet.",
+							},
+						}, nil
+					}
+					md := ms.service.disc.CombinedSection(s.key)
 
 				if md == "" {
 					return []mcp.ResourceContents{
