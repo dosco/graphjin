@@ -54,15 +54,15 @@ func (ms *mcpServer) registerDiscoveryResources() {
 			),
 			func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
 				if ms.service.disc == nil {
-						return []mcp.ResourceContents{
-							mcp.TextResourceContents{
-								URI:      req.Params.URI,
-								MIMEType: "text/plain",
-								Text:     "Discovery not available. Schema may not be ready yet.",
-							},
-						}, nil
-					}
-					md := ms.service.disc.CombinedSection(s.key)
+					return []mcp.ResourceContents{
+						mcp.TextResourceContents{
+							URI:      req.Params.URI,
+							MIMEType: "text/plain",
+							Text:     "Discovery not available. Schema may not be ready yet.",
+						},
+					}, nil
+				}
+				md := ms.service.disc.CombinedSection(s.key)
 
 				if md == "" {
 					return []mcp.ResourceContents{
