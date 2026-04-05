@@ -62,6 +62,15 @@ var mssqlViewPKsStmt string
 //go:embed sql/mssql_has_views.sql
 var mssqlHasViewsStmt string
 
+//go:embed sql/postgres_view_pks.sql
+var postgresViewPKsStmt string
+
+//go:embed sql/oracle_view_pks.sql
+var oracleViewPKsStmt string
+
+//go:embed sql/mysql_view_pks.sql
+var mysqlViewPKsStmt string
+
 //go:embed sql/snowflake_info.sql
 var snowflakeInfo string
 
