@@ -25,97 +25,55 @@ type DiscoveryDocument struct {
 	Insights   string `json:"insights"`    // relationship paths, templates, data quality, functions
 }
 
-// generateDiscovery generates the discovery document for a database using core's public API.
-// generateDiscoveryBase builds the discovery document using only schema metadata
-// (no live enrichment queries). This is fast — pure in-memory work.
-func generateDiscoveryBase(gj *core.GraphJin, database string, schemas []*core.TableSchema) *DiscoveryDocument {
-	hash := fmt.Sprintf("%x", time.Now().UnixNano())
-	now := time.Now().UTC()
+// --- Per-section generators ---
+// Each section generates independently so reading one resource never triggers
+// work for another. Only full_tables runs enrichment queries (expensive).
 
-	defaultLimit := 20
-	var syntaxSB strings.Builder
-	writeQuerySyntaxReference(&syntaxSB, defaultLimit)
-
-	duplicateSchemas := buildDuplicateIndex(schemas)
-
-	var tableIndexSB strings.Builder
-	tableIndexSB.WriteString("## Tables\n\n")
-	for _, s := range schemas {
-		writeTableIndexEntry(&tableIndexSB, s, nil, duplicateSchemas)
-	}
-
-	var fullTablesSB strings.Builder
-	fullTablesSB.WriteString("## Tables (Full Detail)\n\n")
-	for _, s := range schemas {
-		writeTableMarkdown(&fullTablesSB, s, nil, duplicateSchemas)
-	}
-
-	var insightsSB strings.Builder
-	writeDuplicateTableWarnings(&insightsSB, schemas)
-	writeRelationshipPaths(&insightsSB, gj, database, schemas)
-	writeNamespaceRouting(&insightsSB, gj)
-	writeQueryTemplates(&insightsSB, schemas, nil)
-	writeDataQuality(&insightsSB, schemas, nil)
-
-	functions := gj.GetFunctionsForDatabase(database)
-	writeFunctions(&insightsSB, functions)
-
-	return &DiscoveryDocument{
-		Database:    database,
-		Hash:        hash,
-		GeneratedAt: now,
-		Syntax:      syntaxSB.String(),
-		Tables:      tableIndexSB.String(),
-		FullTables:  fullTablesSB.String(),
-		Insights:    insightsSB.String(),
-	}
+// generateSyntax returns the static query syntax reference.
+// No database queries — pure string concatenation.
+func generateSyntax() string {
+	var sb strings.Builder
+	writeQuerySyntaxReference(&sb, 20)
+	return sb.String()
 }
 
-// generateDiscoveryEnriched rebuilds the discovery document with live enrichment
-// data (row counts, date ranges, distinct values, sample rows).
-func generateDiscoveryEnriched(ctx context.Context, gj *core.GraphJin, database string, schemas []*core.TableSchema) *DiscoveryDocument {
-	enrichment := buildEnrichment(ctx, gj, database, schemas)
-
-	hash := fmt.Sprintf("%x", time.Now().UnixNano())
-	now := time.Now().UTC()
-
-	defaultLimit := 20
-	var syntaxSB strings.Builder
-	writeQuerySyntaxReference(&syntaxSB, defaultLimit)
-
+// generateTablesCompact returns the compact table index.
+// Uses only in-memory schema metadata — no enrichment queries.
+func generateTablesCompact(gj *core.GraphJin, schemas []*core.TableSchema) string {
 	duplicateSchemas := buildDuplicateIndex(schemas)
-
-	var tableIndexSB strings.Builder
-	tableIndexSB.WriteString("## Tables\n\n")
+	var sb strings.Builder
+	sb.WriteString("## Tables\n\n")
 	for _, s := range schemas {
-		writeTableIndexEntry(&tableIndexSB, s, enrichment[s.Name], duplicateSchemas)
+		writeTableIndexEntry(&sb, s, nil, duplicateSchemas)
 	}
+	return sb.String()
+}
 
-	var fullTablesSB strings.Builder
-	fullTablesSB.WriteString("## Tables (Full Detail)\n\n")
+// generateTablesFull returns detailed table definitions with live enrichment.
+// This is the expensive section — runs enrichment queries per table.
+func generateTablesFull(ctx context.Context, gj *core.GraphJin, database string, schemas []*core.TableSchema) string {
+	enrichment := buildEnrichment(ctx, gj, database, schemas)
+	duplicateSchemas := buildDuplicateIndex(schemas)
+	var sb strings.Builder
+	sb.WriteString("## Tables (Full Detail)\n\n")
 	for _, s := range schemas {
-		writeTableMarkdown(&fullTablesSB, s, enrichment[s.Name], duplicateSchemas)
+		writeTableMarkdown(&sb, s, enrichment[s.Name], duplicateSchemas)
 	}
+	return sb.String()
+}
 
-	var insightsSB strings.Builder
-	writeDuplicateTableWarnings(&insightsSB, schemas)
-	writeRelationshipPaths(&insightsSB, gj, database, schemas)
-	writeNamespaceRouting(&insightsSB, gj)
-	writeQueryTemplates(&insightsSB, schemas, enrichment)
-	writeDataQuality(&insightsSB, schemas, enrichment)
-
+// generateInsights returns relationship paths, templates, data quality, functions.
+// Uses only in-memory schema metadata and graph traversal — no enrichment queries.
+func generateInsights(gj *core.GraphJin, database string, schemas []*core.TableSchema) string {
+	var sb strings.Builder
+	writeDuplicateTableWarnings(&sb, schemas)
+	writeRelationshipPaths(&sb, gj, database, schemas)
+	writeNamespaceRouting(&sb, gj)
+	writeQueryTemplates(&sb, schemas, nil)
+	writeDataQuality(&sb, schemas, nil)
 	functions := gj.GetFunctionsForDatabase(database)
-	writeFunctions(&insightsSB, functions)
-
-	return &DiscoveryDocument{
-		Database:    database,
-		Hash:        hash,
-		GeneratedAt: now,
-		Syntax:      syntaxSB.String(),
-		Tables:      tableIndexSB.String(),
-		FullTables:  fullTablesSB.String(),
-		Insights:    insightsSB.String(),
-	}
+	writeFunctions(&sb, functions)
+	return sb.String()
 }
 
 // tableEnrichment holds live data for a table.
@@ -945,23 +903,22 @@ func writeDataQuality(sb *strings.Builder, schemas []*core.TableSchema, enrichme
 	var flags []string
 
 	for _, schema := range schemas {
-		e := enrichment[schema.Name]
-		if e == nil {
-			continue
-		}
-
-		// Flag nullable columns
+		// Flag nullable columns (schema-only — no enrichment needed)
 		for _, col := range schema.Columns {
 			if col.Nullable && !col.PrimaryKey {
 				flags = append(flags, fmt.Sprintf("- `%s.%s`: nullable", schema.Name, col.Name))
 			}
 		}
 
-		// Flag enum columns with very few distinct values
-		for col, vals := range e.DistinctValues {
-			if len(vals) <= 2 {
-				flags = append(flags, fmt.Sprintf("- `%s.%s`: only %d distinct values (%s)",
-					schema.Name, col, len(vals), strings.Join(vals, ", ")))
+		// Flag enum columns with very few distinct values (needs enrichment)
+		if enrichment != nil {
+			if e := enrichment[schema.Name]; e != nil {
+				for col, vals := range e.DistinctValues {
+					if len(vals) <= 2 {
+						flags = append(flags, fmt.Sprintf("- `%s.%s`: only %d distinct values (%s)",
+							schema.Name, col, len(vals), strings.Join(vals, ", ")))
+					}
+				}
 			}
 		}
 	}
