@@ -2,6 +2,7 @@ package serv
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"sync"
 
@@ -10,6 +11,13 @@ import (
 
 // DiscoveryManager manages cached discovery documents and subscriptions.
 // It lazily generates documents on first access and invalidates on schema changes.
+//
+// Generation is two-phase:
+//  1. Base generation (instant) — builds documents from schema metadata only.
+//     This is what callers see immediately on first access.
+//  2. Enrichment (background) — runs live queries (row counts, date ranges,
+//     sample rows) and replaces the cached documents when done. Subsequent
+//     reads see the enriched version.
 type DiscoveryManager struct {
 	gj    *core.GraphJin
 	cache sync.Map // map[string]*DiscoveryDocument
@@ -26,8 +34,26 @@ func NewDiscoveryManager(gj *core.GraphJin) *DiscoveryManager {
 	return dm
 }
 
-// ensureDiscovery lazily generates discovery documents for all databases on
-// first access. Subsequent calls are no-ops until invalidate resets the once.
+// getSchemas returns sorted table schemas for a database.
+func getSchemas(gj *core.GraphJin, database string) []*core.TableSchema {
+	allTables := gj.GetTablesForDatabase(database)
+	sort.Slice(allTables, func(i, j int) bool { return allTables[i].Name < allTables[j].Name })
+
+	var schemas []*core.TableSchema
+	for _, t := range allTables {
+		s, err := gj.GetTableSchemaForDatabase(database, t.Name)
+		if err != nil {
+			continue
+		}
+		schemas = append(schemas, s)
+	}
+	return schemas
+}
+
+// EnsureDiscovery lazily generates discovery documents for all databases on
+// first access. Phase 1 (base) runs synchronously so callers get an immediate
+// response. Phase 2 (enrichment) runs in the background and updates the cache.
+//
 // If the engine is not ready yet (DatabaseNames returns empty), the once is
 // reset so the next call retries rather than permanently caching nothing.
 func (dm *DiscoveryManager) EnsureDiscovery() {
@@ -38,14 +64,28 @@ func (dm *DiscoveryManager) EnsureDiscovery() {
 			dm.once = sync.Once{}
 			return
 		}
-		ctx := context.Background()
-		for _, name := range names {
-			doc, err := generateDiscovery(ctx, dm.gj, name)
-			if err != nil {
-				continue
-			}
-			dm.cache.Store(name, doc)
+
+		// Phase 1: base generation (instant — schema metadata only)
+		type dbSchemas struct {
+			name    string
+			schemas []*core.TableSchema
 		}
+		var all []dbSchemas
+		for _, name := range names {
+			schemas := getSchemas(dm.gj, name)
+			doc := generateDiscoveryBase(dm.gj, name, schemas)
+			dm.cache.Store(name, doc)
+			all = append(all, dbSchemas{name, schemas})
+		}
+
+		// Phase 2: enrichment (background — live queries)
+		go func() {
+			ctx := context.Background()
+			for _, ds := range all {
+				doc := generateDiscoveryEnriched(ctx, dm.gj, ds.name, ds.schemas)
+				dm.cache.Store(ds.name, doc)
+			}
+		}()
 	})
 }
 
@@ -139,7 +179,8 @@ func (ds *DiscoverySubscription) Unsubscribe() {
 
 // Subscribe creates a live subscription for discovery document updates.
 // If database is non-empty only that database is tracked; otherwise all
-// databases are included. The initial document(s) are sent immediately.
+// databases are included. The initial document(s) are sent immediately
+// (base version without enrichment).
 func (dm *DiscoveryManager) Subscribe(ctx context.Context, database string) (*DiscoverySubscription, error) {
 	ds := &DiscoverySubscription{
 		Result:   make(chan *DiscoveryDocument, 4),
@@ -147,19 +188,15 @@ func (dm *DiscoveryManager) Subscribe(ctx context.Context, database string) (*Di
 		database: database,
 	}
 
-	// Send initial document(s).
+	// Send initial document(s) — base version (instant).
 	if database != "" {
-		doc, err := generateDiscovery(ctx, dm.gj, database)
-		if err != nil {
-			return nil, err
-		}
+		schemas := getSchemas(dm.gj, database)
+		doc := generateDiscoveryBase(dm.gj, database, schemas)
 		ds.Result <- doc
 	} else {
 		for _, name := range dm.gj.DatabaseNames() {
-			doc, err := generateDiscovery(ctx, dm.gj, name)
-			if err != nil {
-				continue
-			}
+			schemas := getSchemas(dm.gj, name)
+			doc := generateDiscoveryBase(dm.gj, name, schemas)
 			ds.Result <- doc
 		}
 	}
@@ -176,10 +213,8 @@ func (dm *DiscoveryManager) Subscribe(ctx context.Context, database string) (*Di
 			return
 		}
 
-		doc, err := generateDiscovery(ctx, dm.gj, dbName)
-		if err != nil {
-			return
-		}
+		schemas := getSchemas(dm.gj, dbName)
+		doc := generateDiscoveryBase(dm.gj, dbName, schemas)
 
 		select {
 		case ds.Result <- doc:

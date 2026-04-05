@@ -26,54 +26,77 @@ type DiscoveryDocument struct {
 }
 
 // generateDiscovery generates the discovery document for a database using core's public API.
-func generateDiscovery(ctx context.Context, gj *core.GraphJin, database string) (*DiscoveryDocument, error) {
-	// Get visible tables
-	allTables := gj.GetTablesForDatabase(database)
-	// allTables already excludes virtual/blocked
-
-	// Sort by name
-	sort.Slice(allTables, func(i, j int) bool { return allTables[i].Name < allTables[j].Name })
-
-	// Get full schemas for each table
-	var schemas []*core.TableSchema
-	for _, t := range allTables {
-		s, err := gj.GetTableSchemaForDatabase(database, t.Name)
-		if err != nil {
-			continue
-		}
-		schemas = append(schemas, s)
-	}
-
-	// Build enrichment
-	enrichment := buildEnrichment(ctx, gj, database, schemas)
-
-	// Build a simple hash from table names
+// generateDiscoveryBase builds the discovery document using only schema metadata
+// (no live enrichment queries). This is fast — pure in-memory work.
+func generateDiscoveryBase(gj *core.GraphJin, database string, schemas []*core.TableSchema) *DiscoveryDocument {
 	hash := fmt.Sprintf("%x", time.Now().UnixNano())
 	now := time.Now().UTC()
 
-	// ── Section: Syntax ──
 	defaultLimit := 20
 	var syntaxSB strings.Builder
 	writeQuerySyntaxReference(&syntaxSB, defaultLimit)
 
-	// Build duplicate table index: names that appear in multiple schemas
 	duplicateSchemas := buildDuplicateIndex(schemas)
 
-	// ── Section: Table Index (compact — names, FKs, key columns only) ──
+	var tableIndexSB strings.Builder
+	tableIndexSB.WriteString("## Tables\n\n")
+	for _, s := range schemas {
+		writeTableIndexEntry(&tableIndexSB, s, nil, duplicateSchemas)
+	}
+
+	var fullTablesSB strings.Builder
+	fullTablesSB.WriteString("## Tables (Full Detail)\n\n")
+	for _, s := range schemas {
+		writeTableMarkdown(&fullTablesSB, s, nil, duplicateSchemas)
+	}
+
+	var insightsSB strings.Builder
+	writeDuplicateTableWarnings(&insightsSB, schemas)
+	writeRelationshipPaths(&insightsSB, gj, database, schemas)
+	writeNamespaceRouting(&insightsSB, gj)
+	writeQueryTemplates(&insightsSB, schemas, nil)
+	writeDataQuality(&insightsSB, schemas, nil)
+
+	functions := gj.GetFunctionsForDatabase(database)
+	writeFunctions(&insightsSB, functions)
+
+	return &DiscoveryDocument{
+		Database:    database,
+		Hash:        hash,
+		GeneratedAt: now,
+		Syntax:      syntaxSB.String(),
+		Tables:      tableIndexSB.String(),
+		FullTables:  fullTablesSB.String(),
+		Insights:    insightsSB.String(),
+	}
+}
+
+// generateDiscoveryEnriched rebuilds the discovery document with live enrichment
+// data (row counts, date ranges, distinct values, sample rows).
+func generateDiscoveryEnriched(ctx context.Context, gj *core.GraphJin, database string, schemas []*core.TableSchema) *DiscoveryDocument {
+	enrichment := buildEnrichment(ctx, gj, database, schemas)
+
+	hash := fmt.Sprintf("%x", time.Now().UnixNano())
+	now := time.Now().UTC()
+
+	defaultLimit := 20
+	var syntaxSB strings.Builder
+	writeQuerySyntaxReference(&syntaxSB, defaultLimit)
+
+	duplicateSchemas := buildDuplicateIndex(schemas)
+
 	var tableIndexSB strings.Builder
 	tableIndexSB.WriteString("## Tables\n\n")
 	for _, s := range schemas {
 		writeTableIndexEntry(&tableIndexSB, s, enrichment[s.Name], duplicateSchemas)
 	}
 
-	// ── Section: Full Tables (detailed — columns, types, live data) ──
 	var fullTablesSB strings.Builder
 	fullTablesSB.WriteString("## Tables (Full Detail)\n\n")
 	for _, s := range schemas {
 		writeTableMarkdown(&fullTablesSB, s, enrichment[s.Name], duplicateSchemas)
 	}
 
-	// ── Section: Insights ──
 	var insightsSB strings.Builder
 	writeDuplicateTableWarnings(&insightsSB, schemas)
 	writeRelationshipPaths(&insightsSB, gj, database, schemas)
@@ -92,7 +115,7 @@ func generateDiscovery(ctx context.Context, gj *core.GraphJin, database string) 
 		Tables:      tableIndexSB.String(),
 		FullTables:  fullTablesSB.String(),
 		Insights:    insightsSB.String(),
-	}, nil
+	}
 }
 
 // tableEnrichment holds live data for a table.
@@ -249,8 +272,8 @@ func writeQuerySyntaxReference(sb *strings.Builder, defaultLimit int) {
 	sb.WriteString("### IMPORTANT: Known limitations\n\n")
 	sb.WriteString(fmt.Sprintf("- **Default row limit is %d** — every query level (top AND nested) is silently\n", defaultLimit))
 	sb.WriteString("  capped unless you set an explicit `limit`. Always set limits on every level.\n")
-	sb.WriteString("- **Cannot order_by aggregation aliases** — `order_by: { sum_price: desc }` will\n")
-	sb.WriteString("  fail. Sort aggregated results in workflow JavaScript, not in the query.\n")
+	sb.WriteString("- **order_by on aggregation columns is supported** — `order_by: { sum_price: desc }` works\n")
+	sb.WriteString("  when used with `distinct`. Cursor pagination is disabled for aggregated queries.\n")
 	sb.WriteString("- **Use `find_path` or `explore_relationships`** to discover join paths between\n")
 	sb.WriteString("  tables — never guess at foreign key relationships.\n\n")
 	sb.WriteString("---\n\n")
@@ -344,7 +367,7 @@ func writeQuerySyntaxReference(sb *strings.Builder, defaultLimit int) {
 	sb.WriteString("| `{ is_active: { eq: \"true\" } }` | `{ is_active: { eq: true } }` | booleans not strings |\n")
 	sb.WriteString("| `products(first: 10) { products_cursor }` | `products(first: 10) { id } products_cursor` | cursor at root level |\n")
 	sb.WriteString(fmt.Sprintf("| `{ orders { items { id } } }` | `{ orders { items(limit: 100) { id } } }` | nested default is %d — set explicit limit |\n", defaultLimit))
-	sb.WriteString("| `order_by: { sum_price: desc }` | Sort in JS after query | cannot order_by aggregation aliases |\n")
+	sb.WriteString("| `order_by: { sum_price: desc }` without `distinct` | `order_by: { sum_price: desc }` with `distinct: [col]` | order_by on aggregations requires distinct grouping |\n")
 	sb.WriteString("\n---\n\n")
 }
 
