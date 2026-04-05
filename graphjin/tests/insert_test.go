@@ -40,6 +40,7 @@ func Example_insert() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
@@ -79,6 +80,7 @@ func Example_insertWithTransaction() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	c := context.Background()
 	tx, err := db.BeginTx(c, nil)
@@ -123,6 +125,7 @@ func Example_insertInlineWithValidation() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
@@ -166,6 +169,7 @@ func Example_insertInlineBulk() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
@@ -212,6 +216,7 @@ func Example_insertWithPresets() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
@@ -258,6 +263,7 @@ func Example_insertBulk() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
@@ -314,6 +320,7 @@ func Example_insertIntoMultipleRelatedTables() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
@@ -369,6 +376,7 @@ func Example_insertIntoTableAndRelatedTable1() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
@@ -421,6 +429,7 @@ func Example_insertIntoTableAndRelatedTable2() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
@@ -484,6 +493,7 @@ func Example_insertIntoTableBulkInsertIntoRelatedTable() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
@@ -532,6 +542,7 @@ func Example_insertIntoTableAndConnectToRelatedTables() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
@@ -578,6 +589,7 @@ func Example_insertWithCamelToSnakeCase() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
@@ -621,6 +633,7 @@ func Example_insertIntoRecursiveRelationship() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
@@ -661,6 +674,7 @@ func Example_insertIntoRecursiveRelationshipAndConnectTable1() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
@@ -704,6 +718,7 @@ func Example_insertIntoRecursiveRelationshipAndConnectTable2() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	vars := json.RawMessage(`{
 			"data": {
@@ -754,6 +769,7 @@ func TestAllowListWithMutations(t *testing.T) {
 	conf1 := newConfig(&core.Config{DBType: dbType, DisableAllowList: false})
 	gj1, err := core.NewGraphJin(conf1, db, core.OptionSetFS(fs))
 	require.NoError(t, err)
+	defer gj1.Close()
 
 	baseID := int(time.Now().UnixNano()%1_000_000) + 90000
 	id1, id2, id3 := baseID+1, baseID+2, baseID+3
@@ -775,6 +791,7 @@ func TestAllowListWithMutations(t *testing.T) {
 	conf2 := newConfig(&core.Config{DBType: dbType, Production: true})
 	gj2, err := core.NewGraphJin(conf2, db, core.OptionSetFS(fs))
 	require.NoError(t, err)
+	defer gj2.Close()
 
 	vars2 := json.RawMessage(fmt.Sprintf(`{
 		"data": {

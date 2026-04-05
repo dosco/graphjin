@@ -59,14 +59,17 @@ var mssqlColumnsStmt string
 //go:embed sql/mssql_view_pks.sql
 var mssqlViewPKsStmt string
 
-//go:embed sql/snowflake_functions.sql
-var snowflakeFunctionsStmt string
+//go:embed sql/mssql_has_views.sql
+var mssqlHasViewsStmt string
 
 //go:embed sql/snowflake_info.sql
 var snowflakeInfo string
 
 //go:embed sql/snowflake_columns.sql
 var snowflakeColumnsStmt string
+
+//go:embed sql/snowflake_columns_no_overrides.sql
+var snowflakeColumnsNoOverridesStmt string
 
 //go:embed sql/snowflake_clustering.sql
 var snowflakeClusteringStmt string

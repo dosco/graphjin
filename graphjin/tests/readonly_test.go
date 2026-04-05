@@ -121,6 +121,7 @@ func TestReadOnlyDB_WithRolesAndTables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	assertMutationBlocked(t, gj, ctx, "blocked")
@@ -148,6 +149,7 @@ func TestReadOnlyDB_NoRolesNoTables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	assertMutationBlocked(t, gj, ctx, "read-only")
@@ -180,6 +182,7 @@ func TestReadOnlyDB_RolesButNoTableConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	assertMutationBlocked(t, gj, ctx, "read-only")
@@ -204,6 +207,7 @@ func TestReadOnlyDB_AnonRole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer gj.Close()
 
 	// No UserIDKey → anon role
 	ctx := context.Background()
@@ -229,6 +233,7 @@ func TestWritableDB_MutationsAllowed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 

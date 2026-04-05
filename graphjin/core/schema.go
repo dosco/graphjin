@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"fmt"
 	"io"
@@ -141,7 +142,7 @@ func parseDBType(name string) (res [2]string, err error) {
 
 // GenerateSchema generates a db.graphql schema from database introspection
 func GenerateSchema(db *sql.DB, dbType string, blocklist []string) ([]byte, error) {
-	dbinfo, err := sdata.GetDBInfo(db, dbType, blocklist)
+	dbinfo, err := sdata.GetDBInfo(context.Background(), db, dbType, blocklist)
 	if err != nil {
 		return nil, fmt.Errorf("failed to introspect database: %w", err)
 	}

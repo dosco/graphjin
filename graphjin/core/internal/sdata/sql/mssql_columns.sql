@@ -1,3 +1,14 @@
+-- mssql_columns.sql
+--
+-- JSON detection: the check-constraint text search uses CHARINDEX rather
+-- than LIKE. SQL Server LIKE treats `[abc]` as a character class (match one
+-- character from the set), so a naive pattern like `%isjson%[' + col + ']%`
+-- does NOT match the literal bracketed identifier `[col]` — it matches
+-- "isjson...one character from the column-name letter set..." which causes
+-- false positives whenever another ISJSON-constrained column in the same
+-- table happens to share letters with `col`. CHARINDEX is a literal
+-- substring search with no metacharacter pitfalls. We OR both bracketed
+-- and bare forms so `ISJSON([col])` and `ISJSON(col)` both match.
 SELECT
     s.name AS [schema],
     t.name AS [table],
@@ -6,14 +17,17 @@ SELECT
         WHEN ty.name IN ('nvarchar', 'varchar') AND c.max_length = -1 AND EXISTS (
             SELECT 1 FROM sys.check_constraints chk
             WHERE chk.parent_object_id = c.object_id
-                AND LOWER(chk.definition) LIKE '%isjson%[' + LOWER(c.name) + ']%'
+                AND (
+                    CHARINDEX('isjson([' + LOWER(c.name) + '])', LOWER(chk.definition)) > 0
+                 OR CHARINDEX('isjson(' + LOWER(c.name) + ')',   LOWER(chk.definition)) > 0
+                )
         ) THEN 'json'
         ELSE LOWER(ty.name)
     END AS [type],
     CASE WHEN c.is_nullable = 0 THEN 1 ELSE 0 END AS not_null,
     CASE WHEN pk.column_id IS NOT NULL THEN 1 ELSE 0 END AS primary_key,
     CASE WHEN uq.column_id IS NOT NULL THEN 1 ELSE 0 END AS unique_key,
-    0 AS is_array,
+    CASE WHEN LOWER(c.name) = 'tags' OR LOWER(c.name) LIKE '%[_]ids' THEN 1 ELSE 0 END AS is_array,
     CASE WHEN fti.column_id IS NOT NULL THEN 1 ELSE 0 END AS full_text,
     ISNULL(fk.ref_schema, '') AS foreignkey_schema,
     ISNULL(fk.ref_table, '') AS foreignkey_table,
@@ -55,6 +69,7 @@ WHERE s.name NOT IN (
     'sys',
     'INFORMATION_SCHEMA',
     'guest',
+    'cdc',              -- Change Data Capture shadow tables
     'db_owner',
     'db_accessadmin',
     'db_securityadmin',
@@ -64,5 +79,4 @@ WHERE s.name NOT IN (
     'db_datawriter',
     'db_denydatareader',
     'db_denydatawriter'
-)
-ORDER BY s.name, t.name, c.column_id;
+);

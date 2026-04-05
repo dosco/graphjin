@@ -4,8 +4,8 @@ SELECT
     SCHEMA_NAME(o.schema_id) AS func_schema,
     o.name AS func_name,
     CASE
-        WHEN o.type = 'TF' THEN 'record'
-        WHEN o.type = 'IF' THEN 'record'
+        -- Table-valued functions (T-SQL inline, T-SQL multi-statement, CLR) return a record.
+        WHEN o.type IN ('TF', 'IF', 'FT') THEN 'record'
         ELSE LOWER(ISNULL(TYPE_NAME(ret.user_type_id), 'void'))
     END AS data_type,
     p.parameter_id AS param_id,
@@ -15,7 +15,9 @@ SELECT
 FROM sys.objects o
 JOIN sys.parameters p ON o.object_id = p.object_id AND p.parameter_id > 0
 LEFT JOIN sys.parameters ret ON o.object_id = ret.object_id AND ret.parameter_id = 0
-WHERE o.type IN ('FN', 'IF', 'TF', 'AF')
+-- FN=T-SQL scalar, IF=inline TVF, TF=multi-statement TVF, AF=CLR aggregate,
+-- FS=CLR scalar, FT=CLR table-valued. Covers all user-defined function types.
+WHERE o.type IN ('FN', 'IF', 'TF', 'AF', 'FS', 'FT')
     AND SCHEMA_NAME(o.schema_id) NOT IN (
         'sys',
         'INFORMATION_SCHEMA'
@@ -35,7 +37,9 @@ SELECT
     'OUT' AS param_kind
 FROM sys.objects o
 JOIN sys.columns c ON o.object_id = c.object_id
-WHERE o.type IN ('IF', 'TF')
+-- IF=inline TVF, TF=multi-statement TVF, FT=CLR table-valued. All expose
+-- output columns via sys.columns. (FS=CLR scalar has no output columns.)
+WHERE o.type IN ('IF', 'TF', 'FT')
     AND SCHEMA_NAME(o.schema_id) NOT IN (
         'sys',
         'INFORMATION_SCHEMA'

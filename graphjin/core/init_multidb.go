@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"fmt"
 	"sort"
@@ -71,7 +72,7 @@ func (gj *graphjinEngine) discoverDatabase(ctx *dbContext) error {
 		return nil
 	}
 
-	dbinfo, err := sdata.GetDBInfo(ctx.db, ctx.dbtype, gj.conf.Blocklist)
+	dbinfo, err := sdata.GetDBInfo(context.Background(), ctx.db, ctx.dbtype, gj.conf.Blocklist)
 	if err != nil {
 		return fmt.Errorf("database %s: schema discovery failed: %w", ctx.name, err)
 	}

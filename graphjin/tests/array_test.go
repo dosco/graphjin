@@ -48,6 +48,7 @@ func TestQueryParentAndChildrenViaArrayColumn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -96,6 +97,7 @@ func TestInsertIntoTableAndConnectToRelatedTableWithArrayColumn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
@@ -177,6 +179,7 @@ func TestVeryComplexQueryWithArrayColumns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {

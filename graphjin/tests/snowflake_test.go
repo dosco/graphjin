@@ -20,6 +20,7 @@ func TestSnowflakeConnectorInit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer gj.Close()
 	if gj == nil {
 		t.Fatal("expected non-nil graphjin instance")
 	}
@@ -35,6 +36,7 @@ func TestSnowflakeMutationTempTablesUseScopedNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer gj.Close()
 
 	gql := `mutation {
 		purchases(id: $id, update: $data) {
@@ -91,6 +93,7 @@ func TestSnowflakeMutationTempTablesAreRetrySafe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer gj.Close()
 
 	gql := `mutation {
 		users(id: 90, update: { full_name: "retry-safe" }) {
@@ -123,10 +126,12 @@ func TestSnowflakeMutationTempTablesDifferAcrossInstances(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer gj1.Close()
 	gj2, err := core.NewGraphJin(conf, db)
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer gj2.Close()
 
 	gql := `mutation {
 		products(where: { id: 100 }, update: { tags: ["super", "great", "wow"] }) {
@@ -198,6 +203,7 @@ func TestSnowflakeMutationConnectDisconnectSkipsDeadIDCapture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer gj.Close()
 
 	gql := `mutation {
 		users(id: $id, update: $data) {
@@ -326,6 +332,7 @@ func TestSnowflakeMutationChildUpdateCaptureSkipsUnusedJSONJoin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer gj.Close()
 
 	gql := `mutation {
 		users(id: $id, update: $data) {
@@ -380,6 +387,7 @@ func TestSnowflakeMutationChildUpdateStringExpressionIsCasted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer gj.Close()
 
 	gql := `mutation {
 		purchases(id: $id, update: $data) {
@@ -433,6 +441,7 @@ func TestSnowflakeMutationChildUpdateNonPKParentJoinUsesScalarSubquery(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer gj.Close()
 
 	gql := `mutation {
 		purchases(id: $id, update: $data) {
@@ -542,5 +551,7 @@ func runSnowflakeMutationStabilityTest(
 
 		require.NoError(t, gqlErr, "iteration %d: graphql execution", i+1)
 		require.JSONEq(t, expected, string(res.Data), "iteration %d: response mismatch", i+1)
+
+		gj.Close()
 	}
 }

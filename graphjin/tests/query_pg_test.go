@@ -35,6 +35,7 @@ func Example_queryWithWhereInWithVariableArrayColumn() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
 	if err != nil {
@@ -63,6 +64,7 @@ func Example_queryWithWhereInWithStaticArrayColumn() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -95,6 +97,7 @@ func Example_queryWithWhereInWithVariableNumericArrayColumn() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
 	if err != nil {
@@ -123,6 +126,7 @@ func Example_queryWithWhereInWithStaticNumericArrayColumn() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -156,6 +160,7 @@ func Example_queryWithFunctionFields() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -189,6 +194,7 @@ func Example_queryWithFunctionFieldsArgList() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -218,6 +224,7 @@ func Example_queryWithFunctionReturingTables() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -248,6 +255,7 @@ func Example_queryWithFunctionReturingTablesWithArgs() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	vars := json.RawMessage(`{ "tag": "boo" }`)
 	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
@@ -279,6 +287,7 @@ func Example_queryWithFunctionReturingTablesWithNamedArgs() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	vars := json.RawMessage(`{ "tag": "boo" }`)
 	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
@@ -309,6 +318,7 @@ func Example_queryWithFunctionReturingUserDefinedTypes() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -340,6 +350,7 @@ func Example_queryWithFunctionAndDirectives() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
 	if err != nil {
@@ -366,6 +377,7 @@ func Example_queryWithVariableLimit() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	res, err := gj.GraphQL(context.Background(), gql, vars, nil)
 	if err != nil {
@@ -459,6 +471,7 @@ func TestMutiSchema(t *testing.T) {
 
 	gj, err := core.NewGraphJin(conf, db)
 	assert.NoError(t, err)
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 1)
 	res, err := gj.GraphQL(ctx, gql, nil, nil)

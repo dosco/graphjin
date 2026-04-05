@@ -11,7 +11,7 @@ WHERE v.type = 'V'
   AND r.source_table IS NOT NULL
   AND r.source_column IS NOT NULL
   AND r.is_part_of_unique_key = 1
-  AND s.name NOT IN ('sys', 'INFORMATION_SCHEMA', 'guest',
+  AND s.name NOT IN ('sys', 'INFORMATION_SCHEMA', 'guest', 'cdc',
       'db_owner', 'db_accessadmin', 'db_securityadmin',
       'db_ddladmin', 'db_backupoperator', 'db_datareader',
       'db_datawriter', 'db_denydatareader', 'db_denydatawriter')

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"sort"
@@ -55,7 +56,7 @@ func SchemaDiff(db *sql.DB, dbType string, schemaBytes []byte, blocklist []strin
 	attachClusteringKeys(expected, ds.ClusteringKeys, schema, dbType)
 
 	// Get current database schema
-	current, err := sdata.GetDBInfo(db, dbType, blocklist)
+	current, err := sdata.GetDBInfo(context.Background(), db, dbType, blocklist)
 	if err != nil {
 		return nil, fmt.Errorf("failed to discover database schema: %w", err)
 	}
@@ -452,7 +453,7 @@ func SchemaDiffMultiDB(
 		attachClusteringKeys(expected, ds.ClusteringKeys, schema, dbType)
 
 		// Get current database schema
-		current, err := sdata.GetDBInfo(dbConn, dbType, blocklist)
+		current, err := sdata.GetDBInfo(context.Background(), dbConn, dbType, blocklist)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get schema for %s: %w", dbName, err)
 		}

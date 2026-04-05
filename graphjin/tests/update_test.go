@@ -79,6 +79,7 @@ func Example_update() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
@@ -125,6 +126,7 @@ func Example_updateMultipleRelatedTables1() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
@@ -168,6 +170,7 @@ func Example_updateTableAndConnectToRelatedTables() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
@@ -211,6 +214,7 @@ func Example_updateTableAndRelatedTable() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
@@ -240,6 +244,7 @@ func Example_setArrayColumnToValue() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, nil, nil)
@@ -269,6 +274,7 @@ func Example_setArrayColumnToEmpty() {
 	if err != nil {
 		panic(err)
 	}
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, nil, nil)
@@ -305,6 +311,7 @@ func TestMultiAliasUpdate(t *testing.T) {
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	require.NoError(t, err)
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
@@ -361,6 +368,7 @@ func TestMultiAliasUpdateThreeRoots(t *testing.T) {
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	require.NoError(t, err)
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	res, err := gj.GraphQL(ctx, gql, vars, nil)
@@ -407,6 +415,7 @@ func TestMultiAliasDelete(t *testing.T) {
 	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
 	gj, err := core.NewGraphJin(conf, db)
 	require.NoError(t, err)
+	defer gj.Close()
 
 	ctx := context.WithValue(context.Background(), core.UserIDKey, 3)
 	const insertID1 = 980001
