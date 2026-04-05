@@ -1,4 +1,4 @@
-package core
+package serv
 
 import (
 	"context"
@@ -8,211 +8,75 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dosco/graphjin/core/v3/internal/sdata"
+	core "github.com/dosco/graphjin/core/v3"
 )
 
-// DiscoveryDocument holds a generated schema Bible for a database.
+// DiscoveryDocument holds a generated schema discovery document for a database.
+// Content is split into focused sections so agents load only what they need.
 type DiscoveryDocument struct {
 	Database    string    `json:"database"`
 	Hash        string    `json:"hash"`
 	GeneratedAt time.Time `json:"generated_at"`
-	Markdown    string    `json:"content"`
 
-	// Sections — split for granular MCP resources so agents load only what they need
-	Overview   string `json:"overview"`    // header + TOC
+	// Sections — served as individual MCP resources (graphjin://discovery/*)
 	Syntax     string `json:"syntax"`      // query syntax reference
 	Tables     string `json:"tables"`      // compact table index (names, FKs, key columns)
 	FullTables string `json:"full_tables"` // detailed table definitions (columns, types, live data)
 	Insights   string `json:"insights"`    // relationship paths, templates, data quality, functions
 }
 
-// GetDiscovery returns the discovery document for a database, generating it lazily on first access.
-func (g *GraphJin) GetDiscovery(database string) *DiscoveryDocument {
-	g.ensureDiscovery()
-	if v, ok := g.discovery.Load(database); ok {
-		return v.(*DiscoveryDocument)
-	}
-	return nil
-}
+// --- Per-section generators ---
+// Each section generates independently so reading one resource never triggers
+// work for another. Only full_tables runs enrichment queries (expensive).
 
-// GetAllDiscovery returns discovery documents for all databases, generating lazily on first access.
-func (g *GraphJin) GetAllDiscovery() []*DiscoveryDocument {
-	g.ensureDiscovery()
-	var docs []*DiscoveryDocument
-	g.discovery.Range(func(key, value any) bool {
-		docs = append(docs, value.(*DiscoveryDocument))
-		return true
-	})
-	return docs
-}
-
-// GetCombinedDiscoverySection returns a combined section across all databases.
-// Valid sections: "overview", "syntax", "tables", "insights", or "" for full markdown.
-func (g *GraphJin) GetCombinedDiscoverySection(section string) string {
-	g.ensureDiscovery()
-	gj, err := g.getEngine()
-	if err != nil {
-		return ""
-	}
-
+// generateSyntax returns the static query syntax reference.
+// No database queries — pure string concatenation.
+func generateSyntax() string {
 	var sb strings.Builder
-	for _, name := range gj.sortedDatabaseNames() {
-		if v, ok := g.discovery.Load(name); ok {
-			doc := v.(*DiscoveryDocument)
-			switch section {
-			case "overview":
-				sb.WriteString(doc.Overview)
-			case "syntax":
-				sb.WriteString(doc.Syntax)
-			case "tables":
-				sb.WriteString(doc.Tables)
-			case "full_tables":
-				sb.WriteString(doc.FullTables)
-			case "insights":
-				sb.WriteString(doc.Insights)
-			default:
-				sb.WriteString(doc.Markdown)
-			}
-			sb.WriteString("\n")
-		}
+	writeQuerySyntaxReference(&sb, 20)
+	return sb.String()
+}
+
+// generateTablesCompact returns the compact table index.
+// Uses only in-memory schema metadata — no enrichment queries.
+func generateTablesCompact(gj *core.GraphJin, schemas []*core.TableSchema) string {
+	duplicateSchemas := buildDuplicateIndex(schemas)
+	var sb strings.Builder
+	sb.WriteString("## Tables\n\n")
+	for _, s := range schemas {
+		writeTableIndexEntry(&sb, s, nil, duplicateSchemas)
 	}
 	return sb.String()
 }
 
-// GetCombinedDiscovery returns a single combined markdown Bible covering all databases.
-// This is the primary method consumers should use.
-func (g *GraphJin) GetCombinedDiscovery() string {
-	g.ensureDiscovery()
-	gj, err := g.getEngine()
-	if err != nil {
-		return ""
-	}
-
+// generateTablesFull returns detailed table definitions with live enrichment.
+// This is the expensive section — runs enrichment queries per table.
+func generateTablesFull(ctx context.Context, gj *core.GraphJin, database string, schemas []*core.TableSchema) string {
+	enrichment := buildEnrichment(ctx, gj, database, schemas)
+	duplicateSchemas := buildDuplicateIndex(schemas)
 	var sb strings.Builder
-	names := gj.sortedDatabaseNames()
-
-	for _, name := range names {
-		if v, ok := g.discovery.Load(name); ok {
-			doc := v.(*DiscoveryDocument)
-			sb.WriteString(doc.Markdown)
-			sb.WriteString("\n")
-		}
+	sb.WriteString("## Tables (Full Detail)\n\n")
+	for _, s := range schemas {
+		writeTableMarkdown(&sb, s, enrichment[s.Name], duplicateSchemas)
 	}
-
 	return sb.String()
 }
 
-// GenerateDiscovery generates (or regenerates) the discovery document for a database.
-// It builds Layer 1 (raw schema), Layer 3 (live enrichment), and deterministic Layer 2
-// (query templates, namespace routing, data quality flags).
-// The context is used for executing Layer 3 enrichment queries.
-func (g *GraphJin) GenerateDiscovery(ctx context.Context, database string) (*DiscoveryDocument, error) {
-	gj, err := g.getEngine()
-	if err != nil {
-		return nil, err
-	}
-
-	dbCtx, ok := gj.databases[database]
-	if !ok {
-		return nil, fmt.Errorf("database not found: %s", database)
-	}
-	if dbCtx.schema == nil {
-		return nil, fmt.Errorf("database %s: schema not ready", database)
-	}
-
-	tables := dbCtx.schema.GetTables()
-	var visibleTables []sdata.DBTable
-	for _, t := range tables {
-		if t.Type != "virtual" && !t.Blocked {
-			visibleTables = append(visibleTables, t)
-		}
-	}
-
-	// Sort tables by name for deterministic output
-	sort.Slice(visibleTables, func(i, j int) bool {
-		return visibleTables[i].Name < visibleTables[j].Name
-	})
-
-	// Build Layer 3 enrichment data
-	enrichment := g.buildEnrichment(ctx, database, visibleTables)
-
-	// Generate markdown
+// generateInsights returns relationship paths, templates, data quality, functions.
+// Uses only in-memory schema metadata and graph traversal — no enrichment queries.
+func generateInsights(gj *core.GraphJin, database string, schemas []*core.TableSchema) string {
 	var sb strings.Builder
-
-	totalRows := int64(0)
-	for _, e := range enrichment {
-		totalRows += e.RowCount
-	}
-
-	hash := fmt.Sprintf("%x", dbCtx.dbinfo.Hash())
-	now := time.Now().UTC()
-
-	// Header
-	sb.WriteString(fmt.Sprintf("# Schema Bible: %s\n", database))
-	sb.WriteString(fmt.Sprintf("> Generated: %s | Hash: %s | Type: %s | Tables: %d | Rows: ~%s\n\n",
-		now.Format(time.RFC3339), hash, dbCtx.dbtype, len(visibleTables), formatCount(totalRows)))
-
-	// Table of contents
-	writeTableOfContents(&sb, visibleTables, len(gj.databases) > 1, len(dbCtx.schema.GetFunctions()) > 0)
-
-	// ── Section: Syntax ──
-	var syntaxSB strings.Builder
-	defaultLimit := gj.conf.DefaultLimit
-	if defaultLimit == 0 {
-		defaultLimit = 20
-	}
-	writeQuerySyntaxReference(&syntaxSB, defaultLimit)
-	syntaxSection := syntaxSB.String()
-	sb.WriteString(syntaxSection)
-
-	// ── Section: Table Index (compact — names, FKs, key columns only) ──
-	var tableIndexSB strings.Builder
-	tableIndexSB.WriteString("## Tables\n\n")
-	for _, t := range visibleTables {
-		g.writeTableIndexEntry(&tableIndexSB, dbCtx.schema, t, enrichment[t.Name])
-	}
-	tablesSection := tableIndexSB.String()
-	sb.WriteString(tablesSection)
-
-	// ── Section: Full Tables (detailed — columns, types, live data, for describe_table-style deep dives) ──
-	var fullTablesSB strings.Builder
-	fullTablesSB.WriteString("## Tables (Full Detail)\n\n")
-	for _, t := range visibleTables {
-		g.writeTableMarkdown(&fullTablesSB, dbCtx.schema, database, t, enrichment[t.Name])
-	}
-	fullTablesSection := fullTablesSB.String()
-
-	// ── Section: Insights (relationship paths, namespace routing, templates, data quality, functions) ──
-	var insightsSB strings.Builder
-	g.writeRelationshipPaths(&insightsSB, dbCtx.schema, visibleTables)
-	g.writeNamespaceRouting(&insightsSB, gj)
-	g.writeQueryTemplates(&insightsSB, visibleTables, enrichment)
-	g.writeDataQuality(&insightsSB, visibleTables, enrichment)
-	g.writeFunctions(&insightsSB, dbCtx.schema)
-	insightsSection := insightsSB.String()
-	sb.WriteString(insightsSection)
-
-	// Overview = everything before the sections (header + TOC)
-	overviewEnd := strings.Index(sb.String(), syntaxSection)
-	overview := sb.String()[:overviewEnd]
-
-	doc := &DiscoveryDocument{
-		Database:    database,
-		Hash:        hash,
-		GeneratedAt: now,
-		Markdown:    sb.String(),
-		Overview:    overview,
-		Syntax:      syntaxSection,
-		Tables:      tablesSection,
-		FullTables:  fullTablesSection,
-		Insights:    insightsSection,
-	}
-
-	g.discovery.Store(database, doc)
-	return doc, nil
+	writeDuplicateTableWarnings(&sb, schemas)
+	writeRelationshipPaths(&sb, gj, database, schemas)
+	writeNamespaceRouting(&sb, gj)
+	writeQueryTemplates(&sb, schemas, nil)
+	writeDataQuality(&sb, schemas, nil)
+	functions := gj.GetFunctionsForDatabase(database)
+	writeFunctions(&sb, functions)
+	return sb.String()
 }
 
-// tableEnrichment holds Layer 3 live data for a table.
+// tableEnrichment holds live data for a table.
 type tableEnrichment struct {
 	RowCount       int64
 	DateRanges     map[string][2]string // column -> [min, max]
@@ -230,13 +94,13 @@ type numStats struct {
 }
 
 // buildEnrichment executes GraphQL queries against the database to gather live data.
-func (g *GraphJin) buildEnrichment(ctx context.Context, database string, tables []sdata.DBTable) map[string]*tableEnrichment {
+func buildEnrichment(ctx context.Context, gj *core.GraphJin, database string, schemas []*core.TableSchema) map[string]*tableEnrichment {
 	result := make(map[string]*tableEnrichment)
 
 	// Per-query timeout to prevent individual queries from hanging
 	const queryTimeout = 10 * time.Second
 
-	for _, t := range tables {
+	for _, schema := range schemas {
 		e := &tableEnrichment{
 			DateRanges:     make(map[string][2]string),
 			DistinctValues: make(map[string][]string),
@@ -244,9 +108,9 @@ func (g *GraphJin) buildEnrichment(ctx context.Context, database string, tables 
 		}
 
 		// Identify column types
-		var numericCols, dateCols, enumCols []sdata.DBColumn
+		var numericCols, dateCols, enumCols []core.ColumnInfo
 		var allColNames []string
-		for _, col := range t.Columns {
+		for _, col := range schema.Columns {
 			allColNames = append(allColNames, col.Name)
 			if isNumericType(col.Type) && !col.PrimaryKey && !strings.HasSuffix(col.Name, "_id") {
 				numericCols = append(numericCols, col)
@@ -254,20 +118,20 @@ func (g *GraphJin) buildEnrichment(ctx context.Context, database string, tables 
 			if isDateType(col.Type) {
 				dateCols = append(dateCols, col)
 			}
-			if isEnumCandidate(col) {
+			if isEnumCandidateCol(col) {
 				enumCols = append(enumCols, col)
 			}
 		}
 
-		rc := &RequestConfig{}
+		rc := &core.RequestConfig{}
 		rc.SetNamespace(database)
 
 		// Row count
-		if t.PrimaryCol.Name != "" {
+		if schema.PrimaryKey != "" {
 			qctx, cancel := context.WithTimeout(ctx, queryTimeout)
-			q := fmt.Sprintf("{ %s(limit: 1) { count_%s } }", t.Name, t.PrimaryCol.Name)
-			if res, err := g.GraphQL(qctx, q, nil, rc); err == nil && res.Data != nil {
-				e.RowCount = extractCountFromResult(res.Data, t.Name, t.PrimaryCol.Name)
+			q := fmt.Sprintf("{ %s(limit: 1) { count_%s } }", schema.Name, schema.PrimaryKey)
+			if res, err := gj.GraphQL(qctx, q, nil, rc); err == nil && res.Data != nil {
+				e.RowCount = extractCountFromResult(res.Data, schema.Name, schema.PrimaryKey)
 			}
 			cancel()
 		}
@@ -275,9 +139,9 @@ func (g *GraphJin) buildEnrichment(ctx context.Context, database string, tables 
 		// Date ranges
 		for _, col := range dateCols {
 			qctx, cancel := context.WithTimeout(ctx, queryTimeout)
-			q := fmt.Sprintf("{ %s(limit: 1) { min_%s max_%s } }", t.Name, col.Name, col.Name)
-			if res, err := g.GraphQL(qctx, q, nil, rc); err == nil && res.Data != nil {
-				min, max := extractMinMaxFromResult(res.Data, t.Name, col.Name)
+			q := fmt.Sprintf("{ %s(limit: 1) { min_%s max_%s } }", schema.Name, col.Name, col.Name)
+			if res, err := gj.GraphQL(qctx, q, nil, rc); err == nil && res.Data != nil {
+				min, max := extractMinMaxFromResult(res.Data, schema.Name, col.Name)
 				if min != "" || max != "" {
 					e.DateRanges[col.Name] = [2]string{min, max}
 				}
@@ -288,9 +152,9 @@ func (g *GraphJin) buildEnrichment(ctx context.Context, database string, tables 
 		// Distinct values for enum columns
 		for _, col := range enumCols {
 			qctx, cancel := context.WithTimeout(ctx, queryTimeout)
-			q := fmt.Sprintf("{ %s(distinct: [%s], limit: 50) { %s } }", t.Name, col.Name, col.Name)
-			if res, err := g.GraphQL(qctx, q, nil, rc); err == nil && res.Data != nil {
-				vals := extractDistinctFromResult(res.Data, t.Name, col.Name)
+			q := fmt.Sprintf("{ %s(distinct: [%s], limit: 50) { %s } }", schema.Name, col.Name, col.Name)
+			if res, err := gj.GraphQL(qctx, q, nil, rc); err == nil && res.Data != nil {
+				vals := extractDistinctFromResult(res.Data, schema.Name, col.Name)
 				if len(vals) > 0 {
 					e.DistinctValues[col.Name] = vals
 				}
@@ -302,9 +166,9 @@ func (g *GraphJin) buildEnrichment(ctx context.Context, database string, tables 
 		for _, col := range numericCols {
 			qctx, cancel := context.WithTimeout(ctx, queryTimeout)
 			q := fmt.Sprintf("{ %s(limit: 1) { min_%s max_%s avg_%s sum_%s count_%s } }",
-				t.Name, col.Name, col.Name, col.Name, col.Name, col.Name)
-			if res, err := g.GraphQL(qctx, q, nil, rc); err == nil && res.Data != nil {
-				e.ValueStats[col.Name] = extractStatsFromResult(res.Data, t.Name, col.Name)
+				schema.Name, col.Name, col.Name, col.Name, col.Name, col.Name)
+			if res, err := gj.GraphQL(qctx, q, nil, rc); err == nil && res.Data != nil {
+				e.ValueStats[col.Name] = extractStatsFromResult(res.Data, schema.Name, col.Name)
 			}
 			cancel()
 		}
@@ -320,36 +184,16 @@ func (g *GraphJin) buildEnrichment(ctx context.Context, database string, tables 
 			orderClause = fmt.Sprintf(", order_by: { %s: desc }", dateCols[0].Name)
 		}
 		qctx, cancel := context.WithTimeout(ctx, queryTimeout)
-		q := fmt.Sprintf("{ %s(limit: 5%s) { %s } }", t.Name, orderClause, strings.Join(sampleCols, " "))
-		if res, err := g.GraphQL(qctx, q, nil, rc); err == nil && res.Data != nil {
-			e.SampleRows = extractRowsFromResult(res.Data, t.Name)
+		q := fmt.Sprintf("{ %s(limit: 5%s) { %s } }", schema.Name, orderClause, strings.Join(sampleCols, " "))
+		if res, err := gj.GraphQL(qctx, q, nil, rc); err == nil && res.Data != nil {
+			e.SampleRows = extractRowsFromResult(res.Data, schema.Name)
 		}
 		cancel()
 
-		result[t.Name] = e
+		result[schema.Name] = e
 	}
 
 	return result
-}
-
-// writeTableOfContents writes a navigable index of the discovery document sections.
-func writeTableOfContents(sb *strings.Builder, tables []sdata.DBTable, multiDB bool, hasFunctions bool) {
-	sb.WriteString("## Table of Contents\n\n")
-	sb.WriteString("- [Query Syntax Reference](#query-syntax-reference)\n")
-	sb.WriteString(fmt.Sprintf("- [Tables](#tables) (%d tables)\n", len(tables)))
-	for _, t := range tables {
-		sb.WriteString(fmt.Sprintf("  - [%s](#%s)\n", t.Name, t.Name))
-	}
-	sb.WriteString("- [Relationship Paths](#relationship-paths)\n")
-	if multiDB {
-		sb.WriteString("- [Namespace Routing](#namespace-routing)\n")
-	}
-	sb.WriteString("- [Query Templates](#query-templates)\n")
-	sb.WriteString("- [Data Quality](#data-quality)\n")
-	if hasFunctions {
-		sb.WriteString("- [Functions](#functions)\n")
-	}
-	sb.WriteString("\n")
 }
 
 // writeQuerySyntaxReference writes the GraphJin DSL cheat sheet into the discovery document.
@@ -386,8 +230,8 @@ func writeQuerySyntaxReference(sb *strings.Builder, defaultLimit int) {
 	sb.WriteString("### IMPORTANT: Known limitations\n\n")
 	sb.WriteString(fmt.Sprintf("- **Default row limit is %d** — every query level (top AND nested) is silently\n", defaultLimit))
 	sb.WriteString("  capped unless you set an explicit `limit`. Always set limits on every level.\n")
-	sb.WriteString("- **Cannot order_by aggregation aliases** — `order_by: { sum_price: desc }` will\n")
-	sb.WriteString("  fail. Sort aggregated results in workflow JavaScript, not in the query.\n")
+	sb.WriteString("- **order_by on aggregation columns is supported** — `order_by: { sum_price: desc }` works\n")
+	sb.WriteString("  when used with `distinct`. Cursor pagination is disabled for aggregated queries.\n")
 	sb.WriteString("- **Use `find_path` or `explore_relationships`** to discover join paths between\n")
 	sb.WriteString("  tables — never guess at foreign key relationships.\n\n")
 	sb.WriteString("---\n\n")
@@ -481,45 +325,90 @@ func writeQuerySyntaxReference(sb *strings.Builder, defaultLimit int) {
 	sb.WriteString("| `{ is_active: { eq: \"true\" } }` | `{ is_active: { eq: true } }` | booleans not strings |\n")
 	sb.WriteString("| `products(first: 10) { products_cursor }` | `products(first: 10) { id } products_cursor` | cursor at root level |\n")
 	sb.WriteString(fmt.Sprintf("| `{ orders { items { id } } }` | `{ orders { items(limit: 100) { id } } }` | nested default is %d — set explicit limit |\n", defaultLimit))
-	sb.WriteString("| `order_by: { sum_price: desc }` | Sort in JS after query | cannot order_by aggregation aliases |\n")
+	sb.WriteString("| `order_by: { sum_price: desc }` without `distinct` | `order_by: { sum_price: desc }` with `distinct: [col]` | order_by on aggregations requires distinct grouping |\n")
 	sb.WriteString("\n---\n\n")
 }
 
-// writeTableIndexEntry writes a compact index entry for a table — enough for an
-// LLM to judge relevance without needing describe_table. Full details are still
-// available via the describe_table tool.
-func (g *GraphJin) writeTableIndexEntry(sb *strings.Builder, schema *sdata.DBSchema, t sdata.DBTable, e *tableEnrichment) {
-	sb.WriteString(fmt.Sprintf("### %s\n", t.Name))
-	if t.Comment != "" {
-		sb.WriteString(fmt.Sprintf("%s\n", t.Comment))
+// writeTableIndexEntry writes a compact index entry for a table.
+// buildDuplicateIndex returns a map from table name to a list of schemas it appears in.
+// Only names that appear in more than one schema are included.
+func buildDuplicateIndex(schemas []*core.TableSchema) map[string][]string {
+	byName := make(map[string][]string)
+	for _, s := range schemas {
+		byName[s.Name] = append(byName[s.Name], s.Schema)
+	}
+	// Remove non-duplicates
+	for name, schemaList := range byName {
+		if len(schemaList) <= 1 {
+			delete(byName, name)
+		}
+	}
+	return byName
+}
+
+// duplicateWarning returns a warning string if this table exists in multiple schemas.
+func duplicateWarning(schema *core.TableSchema, duplicateSchemas map[string][]string) string {
+	schemaList, isDuplicate := duplicateSchemas[schema.Name]
+	if !isDuplicate {
+		return ""
+	}
+
+	hasFKs := false
+	for _, col := range schema.Columns {
+		if col.ForeignKey != "" {
+			hasFKs = true
+			break
+		}
+	}
+
+	if hasFKs {
+		return fmt.Sprintf(
+			"> **PREFERRED** — this schema has foreign key relationships. Use `@schema(name: \"%s\")` for joins. Also in: %s\n",
+			schema.Schema, strings.Join(schemaList, ", "))
+	}
+	return fmt.Sprintf(
+		"> **WARNING: duplicate table** — also exists in schemas: %s. This version has NO foreign keys — joins will not work. Use `@schema(name: ...)` to target the schema with FKs.\n",
+		strings.Join(schemaList, ", "))
+}
+
+func writeTableIndexEntry(sb *strings.Builder, schema *core.TableSchema, e *tableEnrichment, duplicateSchemas map[string][]string) {
+	sb.WriteString(fmt.Sprintf("### %s\n", schema.Name))
+	if schema.Comment != "" {
+		sb.WriteString(fmt.Sprintf("%s\n", schema.Comment))
 	}
 
 	// Meta line: type, schema, rows, PK
 	meta := "Type: table"
-	if t.Type != "" {
-		meta = fmt.Sprintf("Type: %s", t.Type)
+	if schema.Type != "" {
+		meta = fmt.Sprintf("Type: %s", schema.Type)
 	}
-	if t.Schema != "" {
-		meta += fmt.Sprintf(" | Schema: %s", t.Schema)
+	if schema.Schema != "" {
+		meta += fmt.Sprintf(" | Schema: %s", schema.Schema)
 	}
 	if e != nil && e.RowCount > 0 {
 		meta += fmt.Sprintf(" | Rows: %s", formatCount(e.RowCount))
 	}
-	if len(t.PrimaryCols) > 0 {
-		names := t.PKColNames()
-		meta += fmt.Sprintf(" | PK: %s", strings.Join(names, ", "))
+	if len(schema.PrimaryKeys) > 0 {
+		meta += fmt.Sprintf(" | PK: %s", strings.Join(schema.PrimaryKeys, ", "))
+	} else if schema.PrimaryKey != "" {
+		meta += fmt.Sprintf(" | PK: %s", schema.PrimaryKey)
 	}
 	sb.WriteString(meta + "\n")
 
+	// Duplicate table warning
+	if w := duplicateWarning(schema, duplicateSchemas); w != "" {
+		sb.WriteString(w)
+	}
+
 	// Foreign keys — critical for understanding joins
 	var fks []string
-	for _, col := range t.Columns {
-		if col.FKeyTable != "" {
-			target := col.FKeyTable
-			if col.FKeyDatabase != "" {
-				target = col.FKeyDatabase + ":" + target
+	for _, col := range schema.Columns {
+		if col.ForeignKey != "" {
+			target := col.ForeignKey
+			if col.ForeignKeyDatabase != "" {
+				target = col.ForeignKeyDatabase + ":" + target
 			}
-			fks = append(fks, fmt.Sprintf("%s → %s.%s", col.Name, target, col.FKeyCol))
+			fks = append(fks, fmt.Sprintf("%s → %s", col.Name, target))
 		}
 	}
 	if len(fks) > 0 {
@@ -528,8 +417,8 @@ func (g *GraphJin) writeTableIndexEntry(sb *strings.Builder, schema *sdata.DBSch
 
 	// Key columns — just names, grouped by role
 	var numericCols, dateCols, textCols, otherCols []string
-	for _, col := range t.Columns {
-		if col.PrimaryKey || col.FKeyTable != "" {
+	for _, col := range schema.Columns {
+		if col.PrimaryKey || col.ForeignKey != "" {
 			continue // already shown in PK/FKs
 		}
 		name := col.Name
@@ -564,15 +453,15 @@ func (g *GraphJin) writeTableIndexEntry(sb *strings.Builder, schema *sdata.DBSch
 	}
 
 	// Relationships — one-line summary
-	firstDegree, err := schema.GetFirstDegree(t)
-	if err == nil && len(firstDegree) > 0 {
+	allRels := append(schema.Relationships.Outgoing, schema.Relationships.Incoming...)
+	if len(allRels) > 0 {
 		var rels []string
-		for _, rel := range firstDegree {
+		for _, rel := range allRels {
 			arrow := "→"
-			if rel.Type == sdata.RelOneToMany {
+			if rel.Type == "one_to_many" {
 				arrow = "←"
 			}
-			rels = append(rels, fmt.Sprintf("%s %s", arrow, rel.Table.Name))
+			rels = append(rels, fmt.Sprintf("%s %s", arrow, rel.Table))
 		}
 		sb.WriteString(fmt.Sprintf("Joins: %s\n", strings.Join(rels, ", ")))
 	}
@@ -581,41 +470,46 @@ func (g *GraphJin) writeTableIndexEntry(sb *strings.Builder, schema *sdata.DBSch
 }
 
 // writeTableMarkdown writes the full markdown section for a single table.
-// This is used for the full discovery document (graphjin://discovery/full).
-func (g *GraphJin) writeTableMarkdown(sb *strings.Builder, schema *sdata.DBSchema, dbName string, t sdata.DBTable, e *tableEnrichment) {
-	sb.WriteString(fmt.Sprintf("### %s\n", t.Name))
-	if t.Comment != "" {
-		sb.WriteString(fmt.Sprintf("%s\n", t.Comment))
+func writeTableMarkdown(sb *strings.Builder, schema *core.TableSchema, e *tableEnrichment, duplicateSchemas map[string][]string) {
+	sb.WriteString(fmt.Sprintf("### %s\n", schema.Name))
+	if schema.Comment != "" {
+		sb.WriteString(fmt.Sprintf("%s\n", schema.Comment))
 	}
 
-	meta := fmt.Sprintf("Type: %s", t.Type)
-	if t.Type == "" {
+	meta := fmt.Sprintf("Type: %s", schema.Type)
+	if schema.Type == "" {
 		meta = "Type: table"
 	}
-	if t.Schema != "" {
-		meta += fmt.Sprintf(" | Schema: %s", t.Schema)
+	if schema.Schema != "" {
+		meta += fmt.Sprintf(" | Schema: %s", schema.Schema)
 	}
 	if e != nil && e.RowCount > 0 {
 		meta += fmt.Sprintf(" | Rows: %s", formatCount(e.RowCount))
 	}
-	if len(t.PrimaryCols) > 0 {
-		names := t.PKColNames()
-		meta += fmt.Sprintf(" | PK: %s", strings.Join(names, ", "))
+	if len(schema.PrimaryKeys) > 0 {
+		meta += fmt.Sprintf(" | PK: %s", strings.Join(schema.PrimaryKeys, ", "))
+	} else if schema.PrimaryKey != "" {
+		meta += fmt.Sprintf(" | PK: %s", schema.PrimaryKey)
 	}
 	sb.WriteString(meta + "\n\n")
+
+	// Duplicate table warning
+	if w := duplicateWarning(schema, duplicateSchemas); w != "" {
+		sb.WriteString(w + "\n")
+	}
 
 	// Columns table
 	sb.WriteString("#### Columns\n")
 	sb.WriteString("| Column | Type | Nullable | Default | Key | FK | Index | Notes |\n")
 	sb.WriteString("|--------|------|----------|---------|-----|----|-------|-------|\n")
-	for _, col := range t.Columns {
+	for _, col := range schema.Columns {
 		colType := col.Type
 		if col.Array {
 			colType += "[]"
 		}
 
 		nullable := "YES"
-		if col.NotNull {
+		if !col.Nullable {
 			nullable = "NO"
 		}
 
@@ -632,11 +526,11 @@ func (g *GraphJin) writeTableMarkdown(sb *strings.Builder, schema *sdata.DBSchem
 		}
 
 		fk := "-"
-		if col.FKeyTable != "" {
-			if col.FKeyDatabase != "" {
-				fk = fmt.Sprintf("%s:%s.%s", col.FKeyDatabase, col.FKeyTable, col.FKeyCol)
+		if col.ForeignKey != "" {
+			if col.ForeignKeyDatabase != "" {
+				fk = col.ForeignKeyDatabase + ":" + col.ForeignKey
 			} else {
-				fk = fmt.Sprintf("%s.%s", col.FKeyTable, col.FKeyCol)
+				fk = col.ForeignKey
 			}
 		}
 
@@ -652,7 +546,7 @@ func (g *GraphJin) writeTableMarkdown(sb *strings.Builder, schema *sdata.DBSchem
 		if col.FullText {
 			notes = append(notes, "fulltext")
 		}
-		if col.FKRecursive {
+		if col.ForeignKeyRecursive {
 			notes = append(notes, "recursive")
 		}
 		noteStr := "-"
@@ -666,26 +560,26 @@ func (g *GraphJin) writeTableMarkdown(sb *strings.Builder, schema *sdata.DBSchem
 	sb.WriteString("\n")
 
 	// Relationships
-	firstDegree, err := schema.GetFirstDegree(t)
-	if err == nil && len(firstDegree) > 0 {
+	allRels := append(schema.Relationships.Outgoing, schema.Relationships.Incoming...)
+	if len(allRels) > 0 {
 		sb.WriteString("#### Relationships\n")
-		for _, rel := range firstDegree {
+		for _, rel := range allRels {
 			arrow := "→"
-			if rel.Type == sdata.RelOneToMany {
+			if rel.Type == "one_to_many" {
 				arrow = "←"
 			}
 			sb.WriteString(fmt.Sprintf("- %s %s (%s via %s)\n",
-				arrow, rel.Table.Name, relTypeToString(rel.Type), rel.Name))
+				arrow, rel.Table, rel.Type, rel.Name))
 		}
 		sb.WriteString("\n")
 	}
 
 	// Aggregations
 	var aggs []string
-	for _, col := range t.Columns {
+	for _, col := range schema.Columns {
 		aggs = append(aggs, fmt.Sprintf("count_%s", col.Name))
 	}
-	for _, col := range t.Columns {
+	for _, col := range schema.Columns {
 		if isNumericType(col.Type) {
 			aggs = append(aggs,
 				fmt.Sprintf("sum_%s", col.Name),
@@ -705,15 +599,11 @@ func (g *GraphJin) writeTableMarkdown(sb *strings.Builder, schema *sdata.DBSchem
 	}
 
 	// Full-text search columns
-	if len(t.FullText) > 0 {
-		var ftCols []string
-		for _, col := range t.FullText {
-			ftCols = append(ftCols, col.Name)
-		}
-		sb.WriteString(fmt.Sprintf("#### Full-Text Search\n%s\n\n", strings.Join(ftCols, ", ")))
+	if len(schema.FullTextColumns) > 0 {
+		sb.WriteString(fmt.Sprintf("#### Full-Text Search\n%s\n\n", strings.Join(schema.FullTextColumns, ", ")))
 	}
 
-	// Live data profile (Layer 3)
+	// Live data profile
 	if e != nil {
 		hasData := len(e.DateRanges) > 0 || len(e.DistinctValues) > 0 || len(e.ValueStats) > 0 || len(e.SampleRows) > 0
 		if hasData {
@@ -764,23 +654,85 @@ func (g *GraphJin) writeTableMarkdown(sb *strings.Builder, schema *sdata.DBSchem
 	sb.WriteString("---\n\n")
 }
 
+// writeDuplicateTableWarnings detects tables that appear in multiple schemas and
+// warns agents about which schema has foreign keys (real table) vs which doesn't
+// (likely a view). This prevents agents from querying FK-less views by default.
+func writeDuplicateTableWarnings(sb *strings.Builder, schemas []*core.TableSchema) {
+	// Group tables by name
+	byName := make(map[string][]*core.TableSchema)
+	for _, s := range schemas {
+		byName[s.Name] = append(byName[s.Name], s)
+	}
+
+	// Find names that appear in multiple schemas
+	type duplicate struct {
+		name    string
+		entries []*core.TableSchema
+	}
+	var duplicates []duplicate
+	for name, entries := range byName {
+		if len(entries) > 1 {
+			duplicates = append(duplicates, duplicate{name: name, entries: entries})
+		}
+	}
+	if len(duplicates) == 0 {
+		return
+	}
+
+	sort.Slice(duplicates, func(i, j int) bool {
+		return duplicates[i].name < duplicates[j].name
+	})
+
+	sb.WriteString("## Duplicate Tables Across Schemas\n\n")
+	sb.WriteString("> **WARNING:** The following tables exist in multiple schemas. ")
+	sb.WriteString("When a table appears in more than one schema, the default schema may resolve to a ")
+	sb.WriteString("**view** with no foreign key relationships. Use `@schema(name: \"...\")` to target ")
+	sb.WriteString("the correct schema.\n\n")
+
+	sb.WriteString("| Table | Schema | Has FKs | Has Relationships | Recommendation |\n")
+	sb.WriteString("|-------|--------|---------|-------------------|----------------|\n")
+
+	for _, dup := range duplicates {
+		// Find which entry has FKs and relationships
+		for _, entry := range dup.entries {
+			hasFKs := false
+			for _, col := range entry.Columns {
+				if col.ForeignKey != "" {
+					hasFKs = true
+					break
+				}
+			}
+			hasRels := len(entry.Relationships.Outgoing) > 0 || len(entry.Relationships.Incoming) > 0
+			rec := ""
+			if hasFKs && hasRels {
+				rec = fmt.Sprintf("Use `@schema(name: \"%s\")`", entry.Schema)
+			} else if !hasFKs && !hasRels {
+				rec = "Avoid — no FK joins possible"
+			}
+			sb.WriteString(fmt.Sprintf("| %s | %s | %v | %v | %s |\n",
+				entry.Name, entry.Schema, hasFKs, hasRels, rec))
+		}
+	}
+	sb.WriteString("\n")
+}
+
 // writeRelationshipPaths writes relationship paths between hub tables.
-func (g *GraphJin) writeRelationshipPaths(sb *strings.Builder, schema *sdata.DBSchema, tables []sdata.DBTable) {
+func writeRelationshipPaths(sb *strings.Builder, gj *core.GraphJin, database string, schemas []*core.TableSchema) {
 	// Find tables with FKs (hub tables)
 	type tableWithFKs struct {
-		t       sdata.DBTable
+		name    string
 		fkCount int
 	}
 	var hubs []tableWithFKs
-	for _, t := range tables {
+	for _, s := range schemas {
 		fkCount := 0
-		for _, col := range t.Columns {
-			if col.FKeyTable != "" {
+		for _, col := range s.Columns {
+			if col.ForeignKey != "" {
 				fkCount++
 			}
 		}
 		if fkCount > 0 {
-			hubs = append(hubs, tableWithFKs{t, fkCount})
+			hubs = append(hubs, tableWithFKs{s.Name, fkCount})
 		}
 	}
 	sort.Slice(hubs, func(i, j int) bool { return hubs[i].fkCount > hubs[j].fkCount })
@@ -799,16 +751,20 @@ func (g *GraphJin) writeRelationshipPaths(sb *strings.Builder, schema *sdata.DBS
 	pathsWritten := 0
 	for i := 0; i < limit && pathsWritten < 20; i++ {
 		for j := i + 1; j < limit && pathsWritten < 20; j++ {
-			paths, err := schema.FindPath(hubs[i].t.Name, hubs[j].t.Name, "")
+			paths, err := gj.FindRelationshipPathForDatabase(database, hubs[i].name, hubs[j].name)
 			if err != nil || len(paths) == 0 {
 				continue
 			}
 			var steps []string
 			for _, p := range paths {
-				steps = append(steps, fmt.Sprintf("%s.%s → %s.%s (%s)",
-					p.LT.Name, p.LC.Name, p.RT.Name, p.RC.Name, relTypeToString(p.Rel)))
+				step := fmt.Sprintf("%s → %s (%s", p.From, p.To, p.Relation)
+				if p.Via != "" {
+					step += " via " + p.Via
+				}
+				step += ")"
+				steps = append(steps, step)
 			}
-			sb.WriteString(fmt.Sprintf("- %s ↔ %s: %s\n", hubs[i].t.Name, hubs[j].t.Name, strings.Join(steps, " → ")))
+			sb.WriteString(fmt.Sprintf("- %s ↔ %s: %s\n", hubs[i].name, hubs[j].name, strings.Join(steps, " → ")))
 			pathsWritten++
 		}
 	}
@@ -816,54 +772,54 @@ func (g *GraphJin) writeRelationshipPaths(sb *strings.Builder, schema *sdata.DBS
 }
 
 // writeNamespaceRouting writes the namespace/database routing section.
-func (g *GraphJin) writeNamespaceRouting(sb *strings.Builder, gj *graphjinEngine) {
-	if len(gj.databases) <= 1 {
+func writeNamespaceRouting(sb *strings.Builder, gj *core.GraphJin) {
+	names := gj.DatabaseNames()
+	if len(names) <= 1 {
 		return
 	}
 
+	defaultDB := gj.DefaultDatabase()
+
 	sb.WriteString("## Namespace Routing\n\n")
-	for _, name := range gj.sortedDatabaseNames() {
-		ctx := gj.databases[name]
+	for _, name := range names {
 		isDefault := ""
-		if name == gj.defaultDB {
+		if name == defaultDB {
 			isDefault = " **(default)**"
 		}
-		tableCount := 0
-		if ctx.schema != nil {
-			tableCount = len(ctx.schema.GetTables())
-		}
-		sb.WriteString(fmt.Sprintf("- `%s`: %s, %d tables%s\n", name, ctx.dbtype, tableCount, isDefault))
+		tables := gj.GetTablesForDatabase(name)
+		tableCount := len(tables)
+		sb.WriteString(fmt.Sprintf("- `%s`: %d tables%s\n", name, tableCount, isDefault))
 	}
 	sb.WriteString("\n")
 }
 
 // writeQueryTemplates generates query templates based on schema patterns.
-func (g *GraphJin) writeQueryTemplates(sb *strings.Builder, tables []sdata.DBTable, enrichment map[string]*tableEnrichment) {
+func writeQueryTemplates(sb *strings.Builder, schemas []*core.TableSchema, enrichment map[string]*tableEnrichment) {
 	sb.WriteString("## Query Templates\n\n")
 	templatesWritten := 0
 
-	for _, t := range tables {
+	for _, schema := range schemas {
 		if templatesWritten >= 15 {
 			break
 		}
 
-		var dateCols, numericCols, enumCols []sdata.DBColumn
-		for _, col := range t.Columns {
+		var dateCols, numericCols, enumCols []core.ColumnInfo
+		for _, col := range schema.Columns {
 			if isDateType(col.Type) {
 				dateCols = append(dateCols, col)
 			}
 			if isNumericType(col.Type) && !col.PrimaryKey && !strings.HasSuffix(col.Name, "_id") {
 				numericCols = append(numericCols, col)
 			}
-			if isEnumCandidate(col) {
+			if isEnumCandidateCol(col) {
 				enumCols = append(enumCols, col)
 			}
 		}
 
 		hasFKs := false
-		var fkCols []sdata.DBColumn
-		for _, col := range t.Columns {
-			if col.FKeyTable != "" {
+		var fkCols []core.ColumnInfo
+		for _, col := range schema.Columns {
+			if col.ForeignKey != "" {
 				hasFKs = true
 				fkCols = append(fkCols, col)
 			}
@@ -879,12 +835,16 @@ func (g *GraphJin) writeQueryTemplates(sb *strings.Builder, tables []sdata.DBTab
 					break
 				}
 			}
-			aggFields = append(aggFields, "count_"+t.PrimaryCol.Name)
+			pkName := schema.PrimaryKey
+			if pkName == "" && len(schema.Columns) > 0 {
+				pkName = schema.Columns[0].Name
+			}
+			aggFields = append(aggFields, "count_"+pkName)
 
-			sb.WriteString(fmt.Sprintf("### Time-series: %s by %s\n", t.Name, dc.Name))
+			sb.WriteString(fmt.Sprintf("### Time-series: %s by %s\n", schema.Name, dc.Name))
 			sb.WriteString("```graphql\n")
 			sb.WriteString(fmt.Sprintf("{\n  %s(\n    where: { %s: { gte: \"$START_DATE\" } }\n    distinct: [%s]\n    order_by: { %s: asc }\n    limit: 100\n  ) {\n    %s\n    %s\n  }\n}\n",
-				t.Name, dc.Name, dc.Name, dc.Name, dc.Name, strings.Join(aggFields, "\n    ")))
+				schema.Name, dc.Name, dc.Name, dc.Name, dc.Name, strings.Join(aggFields, "\n    ")))
 			sb.WriteString("```\n\n")
 			templatesWritten++
 		}
@@ -892,15 +852,17 @@ func (g *GraphJin) writeQueryTemplates(sb *strings.Builder, tables []sdata.DBTab
 		// Breakdown template: table with enum/status column
 		if len(enumCols) > 0 && templatesWritten < 15 {
 			ec := enumCols[0]
-			countField := "count_" + t.PrimaryCol.Name
-			if t.PrimaryCol.Name == "" {
-				countField = "count_" + t.Columns[0].Name
+			countField := "count_" + schema.PrimaryKey
+			if schema.PrimaryKey == "" {
+				if len(schema.Columns) > 0 {
+					countField = "count_" + schema.Columns[0].Name
+				}
 			}
 
-			sb.WriteString(fmt.Sprintf("### Breakdown: %s by %s\n", t.Name, ec.Name))
+			sb.WriteString(fmt.Sprintf("### Breakdown: %s by %s\n", schema.Name, ec.Name))
 			sb.WriteString("```graphql\n")
 			sb.WriteString(fmt.Sprintf("{\n  %s(distinct: [%s]) {\n    %s\n    %s\n  }\n}\n",
-				t.Name, ec.Name, ec.Name, countField))
+				schema.Name, ec.Name, ec.Name, countField))
 			sb.WriteString("```\n\n")
 			templatesWritten++
 		}
@@ -908,20 +870,28 @@ func (g *GraphJin) writeQueryTemplates(sb *strings.Builder, tables []sdata.DBTab
 		// Join template: table with FKs
 		if hasFKs && templatesWritten < 15 {
 			fk := fkCols[0]
-			sb.WriteString(fmt.Sprintf("### Join: %s with %s\n", t.Name, fk.FKeyTable))
+			// Extract target table from ForeignKey string "table.col"
+			fkTarget := fk.ForeignKey
+			if idx := strings.Index(fkTarget, "."); idx >= 0 {
+				fkTarget = fkTarget[:idx]
+			}
+
+			sb.WriteString(fmt.Sprintf("### Join: %s with %s\n", schema.Name, fkTarget))
 			sb.WriteString("```graphql\n")
 
 			// Build field list for parent
 			var parentFields []string
-			parentFields = append(parentFields, t.PrimaryCol.Name)
-			for _, col := range t.Columns {
-				if !col.PrimaryKey && col.FKeyTable == "" && len(parentFields) < 4 {
+			if schema.PrimaryKey != "" {
+				parentFields = append(parentFields, schema.PrimaryKey)
+			}
+			for _, col := range schema.Columns {
+				if !col.PrimaryKey && col.ForeignKey == "" && len(parentFields) < 4 {
 					parentFields = append(parentFields, col.Name)
 				}
 			}
 
 			sb.WriteString(fmt.Sprintf("{\n  %s(limit: 10) {\n    %s\n    %s {\n      id\n    }\n  }\n}\n",
-				t.Name, strings.Join(parentFields, "\n    "), fk.FKeyTable))
+				schema.Name, strings.Join(parentFields, "\n    "), fkTarget))
 			sb.WriteString("```\n\n")
 			templatesWritten++
 		}
@@ -929,27 +899,26 @@ func (g *GraphJin) writeQueryTemplates(sb *strings.Builder, tables []sdata.DBTab
 }
 
 // writeDataQuality writes data quality flags.
-func (g *GraphJin) writeDataQuality(sb *strings.Builder, tables []sdata.DBTable, enrichment map[string]*tableEnrichment) {
+func writeDataQuality(sb *strings.Builder, schemas []*core.TableSchema, enrichment map[string]*tableEnrichment) {
 	var flags []string
 
-	for _, t := range tables {
-		e := enrichment[t.Name]
-		if e == nil {
-			continue
-		}
-
-		// Flag nullable columns
-		for _, col := range t.Columns {
-			if !col.NotNull && !col.PrimaryKey {
-				flags = append(flags, fmt.Sprintf("- `%s.%s`: nullable", t.Name, col.Name))
+	for _, schema := range schemas {
+		// Flag nullable columns (schema-only — no enrichment needed)
+		for _, col := range schema.Columns {
+			if col.Nullable && !col.PrimaryKey {
+				flags = append(flags, fmt.Sprintf("- `%s.%s`: nullable", schema.Name, col.Name))
 			}
 		}
 
-		// Flag enum columns with very few distinct values
-		for col, vals := range e.DistinctValues {
-			if len(vals) <= 2 {
-				flags = append(flags, fmt.Sprintf("- `%s.%s`: only %d distinct values (%s)",
-					t.Name, col, len(vals), strings.Join(vals, ", ")))
+		// Flag enum columns with very few distinct values (needs enrichment)
+		if enrichment != nil {
+			if e := enrichment[schema.Name]; e != nil {
+				for col, vals := range e.DistinctValues {
+					if len(vals) <= 2 {
+						flags = append(flags, fmt.Sprintf("- `%s.%s`: only %d distinct values (%s)",
+							schema.Name, col, len(vals), strings.Join(vals, ", ")))
+					}
+				}
 			}
 		}
 	}
@@ -969,9 +938,8 @@ func (g *GraphJin) writeDataQuality(sb *strings.Builder, tables []sdata.DBTable,
 }
 
 // writeFunctions writes database functions section.
-func (g *GraphJin) writeFunctions(sb *strings.Builder, schema *sdata.DBSchema) {
-	funcs := schema.GetFunctions()
-	if len(funcs) == 0 {
+func writeFunctions(sb *strings.Builder, functions []core.FunctionInfo) {
+	if len(functions) == 0 {
 		return
 	}
 
@@ -979,7 +947,7 @@ func (g *GraphJin) writeFunctions(sb *strings.Builder, schema *sdata.DBSchema) {
 	sb.WriteString("| Function | Schema | Type | Aggregate | Inputs | Outputs |\n")
 	sb.WriteString("|----------|--------|------|-----------|--------|---------|\n")
 
-	for _, fn := range funcs {
+	for _, fn := range functions {
 		var inputs, outputs []string
 		for _, p := range fn.Inputs {
 			pType := p.Type
@@ -997,7 +965,7 @@ func (g *GraphJin) writeFunctions(sb *strings.Builder, schema *sdata.DBSchema) {
 		}
 
 		agg := "NO"
-		if fn.Agg {
+		if fn.Aggregate {
 			agg = "YES"
 		}
 
@@ -1030,8 +998,8 @@ func isDateType(colType string) bool {
 		strings.Contains(t, "time")
 }
 
-func isEnumCandidate(col sdata.DBColumn) bool {
-	if col.PrimaryKey || col.FKeyTable != "" {
+func isEnumCandidateCol(col core.ColumnInfo) bool {
+	if col.PrimaryKey || col.ForeignKey != "" {
 		return false
 	}
 	name := strings.ToLower(col.Name)
@@ -1212,81 +1180,4 @@ func formatCount(n int64) string {
 		return fmt.Sprintf("%.1fK", float64(n)/1_000)
 	}
 	return fmt.Sprintf("%d", n)
-}
-
-// DiscoverySubscription receives discovery document updates when the schema changes.
-type DiscoverySubscription struct {
-	Result   chan *DiscoveryDocument
-	done     chan struct{}
-	database string
-}
-
-// Unsubscribe stops receiving discovery updates and cleans up resources.
-func (ds *DiscoverySubscription) Unsubscribe() {
-	select {
-	case <-ds.done:
-	default:
-		close(ds.done)
-	}
-}
-
-// SubscribeDiscovery returns a subscription that receives the full discovery document
-// whenever the schema changes. The initial document is sent immediately.
-// If database is empty, updates for all databases are sent.
-func (g *GraphJin) SubscribeDiscovery(ctx context.Context, database string) (*DiscoverySubscription, error) {
-	ds := &DiscoverySubscription{
-		Result:   make(chan *DiscoveryDocument, 4),
-		done:     make(chan struct{}),
-		database: database,
-	}
-
-	// Send initial document
-	if database != "" {
-		doc, err := g.GenerateDiscovery(ctx, database)
-		if err != nil {
-			return nil, err
-		}
-		ds.Result <- doc
-	} else {
-		gj, err := g.getEngine()
-		if err != nil {
-			return nil, err
-		}
-		for _, name := range gj.sortedDatabaseNames() {
-			if gj.databases[name].schema != nil {
-				doc, err := g.GenerateDiscovery(ctx, name)
-				if err != nil {
-					continue
-				}
-				ds.Result <- doc
-			}
-		}
-	}
-
-	// Register callback for future schema changes
-	g.OnSchemaChange(func(dbName string, hash string) {
-		select {
-		case <-ds.done:
-			return
-		default:
-		}
-
-		if database != "" && dbName != database {
-			return
-		}
-
-		doc, err := g.GenerateDiscovery(ctx, dbName)
-		if err != nil {
-			return
-		}
-
-		select {
-		case ds.Result <- doc:
-		case <-ds.done:
-		default:
-			// Drop if channel is full to avoid blocking
-		}
-	})
-
-	return ds, nil
 }

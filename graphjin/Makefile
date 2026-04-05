@@ -57,11 +57,9 @@ test-mongodb:
 	@echo "Running MongoDB tests..."
 	@cd tests; go test -v -timeout 30m -race -db=mongodb .
 
-test-adventureworks:
-	@echo "Running AdventureWorks tests..."
-	@cd tests; go test -v -timeout 60m -race -db=adventureworks -run TestAdventureWorks .
-
-test-large: test-adventureworks
+test-large:
+	@echo "Running large-scale tests..."
+	@echo "See tests-large/ for manual AdventureWorks tests"
 
 BIN_DIR := $(GOPATH)/bin
 WEB_BUILD_DIR := ./serv/web/build/manifest.json

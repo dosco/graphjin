@@ -146,7 +146,14 @@ func (d *PostgresDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
 		if ob.Var != "" {
 			ctx.ColWithTable(`_gj_ob_`+ob.Col.Name, "ord")
 		} else {
+			if ob.IsFunc {
+				ctx.WriteString(strings.ToUpper(ob.Func.Name))
+				ctx.WriteString(`(`)
+			}
 			ctx.ColWithTable(ob.Col.Table, ob.Col.Name)
+			if ob.IsFunc {
+				ctx.WriteString(`)`)
+			}
 		}
 		if ob.KeyVar != "" && ob.Key != "" {
 			ctx.WriteString(` END `)
@@ -171,6 +178,12 @@ func (d *PostgresDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
 
 func (d *PostgresDialect) RenderDistinctOn(ctx Context, sel *qcode.Select) {
 	if len(sel.DistinctOn) == 0 {
+		return
+	}
+	// Skip DISTINCT ON when GROUP BY is active — GROUP BY already handles
+	// grouping, and DISTINCT ON conflicts with ORDER BY on aggregation columns
+	// (PostgreSQL requires DISTINCT ON columns to match initial ORDER BY).
+	if sel.GroupCols {
 		return
 	}
 	ctx.WriteString(`DISTINCT ON (`)

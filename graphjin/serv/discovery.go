@@ -9,7 +9,7 @@ const (
 	routeDiscovery = "/api/v1/discovery"
 )
 
-// discoveryHandler returns the combined discovery Bible for the entire graph.
+// discoveryHandler returns the combined discovery document for the entire graph.
 // GET /api/v1/discovery
 func discoveryHandler(s1 *HttpService) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -19,7 +19,7 @@ func discoveryHandler(s1 *HttpService) http.Handler {
 		}
 
 		s := s1.Load().(*graphjinService)
-		md := s.gj.GetCombinedDiscovery()
+		md := s.disc.Combined()
 
 		if md == "" {
 			http.Error(w, "Discovery not available. Schema may not be ready yet.", http.StatusServiceUnavailable)

@@ -226,6 +226,8 @@ type OrderBy struct {
 	Col    sdata.DBColumn
 	Var    string
 	Order  Order
+	Func   sdata.DBFunction
+	IsFunc bool
 }
 
 type PagingType int8
@@ -571,19 +573,26 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 
 		// If an actual cursor is available
 		if sel.Paging.Cursor {
-			// Prepend clustering key columns to ORDER BY for better
-			// Snowflake micro-partition alignment during cursor seeks.
-			co.orderByClusterKeys(sel)
+			// Skip cursor PK ordering when aggregation is active — adding PK
+			// columns to ORDER BY conflicts with GROUP BY (they aren't grouped).
+			// Aggregated queries degrade to limit-only (no cursor returned).
+			if sel.GroupCols {
+				sel.Paging.Cursor = false
+			} else {
+				// Prepend clustering key columns to ORDER BY for better
+				// Snowflake micro-partition alignment during cursor seeks.
+				co.orderByClusterKeys(sel)
 
-			// Set tie-breaker order column for the cursor direction
-			// this column needs to be the last in the order series.
-			if err := co.orderByIDCol(sel); err != nil {
-				return err
-			}
+				// Set tie-breaker order column for the cursor direction
+				// this column needs to be the last in the order series.
+				if err := co.orderByIDCol(sel); err != nil {
+					return err
+				}
 
-			// Set filter chain needed to make the cursor work
-			if sel.Paging.Type != PTOffset {
-				co.addSeekPredicate(sel)
+				// Set filter chain needed to make the cursor work
+				if sel.Paging.Type != PTOffset {
+					co.addSeekPredicate(sel)
+				}
 			}
 		}
 

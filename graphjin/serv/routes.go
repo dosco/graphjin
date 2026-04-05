@@ -91,7 +91,7 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 		}
 	}
 
-	// Discovery API (Schema Bible)
+	// Discovery API
 	// Available regardless of MCP-only mode — backend servers need this
 	{
 		discAuth, err := auth.NewAuthHandlerFunc(s.conf.Auth)

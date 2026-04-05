@@ -531,3 +531,91 @@ func TestIsPKCol(t *testing.T) {
 		t.Error("nonexistent should not be a PK col")
 	}
 }
+
+func TestInferDefaultSchema(t *testing.T) {
+	tests := []struct {
+		name string
+		cols []DBColumn
+		want string
+	}{
+		{
+			name: "picks schema with most tables",
+			cols: []DBColumn{
+				{Schema: "sales", Table: "orders", Name: "id"},
+				{Schema: "sales", Table: "orders", Name: "total"},
+				{Schema: "sales", Table: "customers", Name: "id"},
+				{Schema: "person", Table: "address", Name: "id"},
+			},
+			want: "sales",
+		},
+		{
+			name: "ignores _gj_ tables",
+			cols: []DBColumn{
+				{Schema: "internal", Table: "_gj_metadata", Name: "id"},
+				{Schema: "internal", Table: "_gj_config", Name: "id"},
+				{Schema: "public", Table: "users", Name: "id"},
+			},
+			want: "public",
+		},
+		{
+			name: "empty columns returns empty",
+			cols: nil,
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := inferDefaultSchema(tt.cols)
+			if got != tt.want {
+				t.Errorf("inferDefaultSchema() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInferViewPKsFromBaseTables(t *testing.T) {
+	tests := []struct {
+		name   string
+		cols   map[string]DBColumn
+		wantPK []string // keys that should become PK
+	}{
+		{
+			name: "view matches base table by non-PK column overlap",
+			cols: map[string]DBColumn{
+				"public:users:id":                  {Schema: "public", Table: "users", Name: "id", PrimaryKey: true},
+				"public:users:full_name":           {Schema: "public", Table: "users", Name: "full_name"},
+				"public:users:email":               {Schema: "public", Table: "users", Name: "email"},
+				"public:products:id":               {Schema: "public", Table: "products", Name: "id", PrimaryKey: true},
+				"public:products:name":             {Schema: "public", Table: "products", Name: "name"},
+				"public:user_products:id":          {Schema: "public", Table: "user_products", Name: "id"},
+				"public:user_products:full_name":   {Schema: "public", Table: "user_products", Name: "full_name"},
+				"public:user_products:product_name": {Schema: "public", Table: "user_products", Name: "product_name"},
+			},
+			wantPK: []string{"public:user_products:id"},
+		},
+		{
+			name: "ambiguous overlap — no PK inferred",
+			cols: map[string]DBColumn{
+				"public:a:id":   {Schema: "public", Table: "a", Name: "id", PrimaryKey: true},
+				"public:a:name": {Schema: "public", Table: "a", Name: "name"},
+				"public:b:id":   {Schema: "public", Table: "b", Name: "id", PrimaryKey: true},
+				"public:b:name": {Schema: "public", Table: "b", Name: "name"},
+				"public:v:id":   {Schema: "public", Table: "v", Name: "id"},
+				"public:v:name": {Schema: "public", Table: "v", Name: "name"},
+			},
+			wantPK: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inferViewPKsFromBaseTables(tt.cols)
+			for _, k := range tt.wantPK {
+				if !tt.cols[k].PrimaryKey {
+					t.Errorf("expected %s to become PK", k)
+				}
+			}
+		})
+	}
+}

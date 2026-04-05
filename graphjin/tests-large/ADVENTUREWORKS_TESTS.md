@@ -29,9 +29,11 @@ All tests verify GraphJin results against SQL ground truth via direct `psql` que
 | 23 | *What components make up our mountain bikes?* | `SELECT pa.name, pc.name, bom.perassemblyqty, um.name FROM production.billofmaterials bom JOIN production.product pa ... JOIN production.product pc ... JOIN production.unitmeasure um ... WHERE bom.enddate IS NULL AND bom.bomlevel = 1 ORDER BY pa.name, pc.name` → Mountain-100 Black 38: Chain (1 Each), Front Brakes (1 Each), Front Derailleur (1 Each), ... | `TestAdventureWorksBillOfMaterials` | PASS | Manufacturing BOM | `billofmaterials → product (assembly) + product (component) + unitmeasure`, BOM hierarchy |
 | 24 | *Show me customers with their full geographic location* | `SELECT p.firstname, p.lastname, a.city, sp.name, cr.name FROM sales.customer c JOIN person.person p ... JOIN person.businessentityaddress bea ... JOIN person.address a ... JOIN person.stateprovince sp ... JOIN person.countryregion cr ... WHERE c.personid IS NOT NULL ORDER BY c.customerid` → Jon Yang, Rockhampton, Queensland, Australia | `TestAdventureWorksCustomerGeography` | PASS | 6-level, 3 schemas | `customer → person → businessentityaddress → address → stateprovince → countryregion`, deepest cross-schema nesting |
 
+| 25 | *What are our top selling products in each sales territory?* | `SELECT p.name, SUM(sod.orderqty) FROM sales.salesorderdetail sod JOIN sales.salesorderheader soh ... JOIN production.product p ... WHERE soh.territoryid = 1 GROUP BY p.productid, p.name ORDER BY SUM(sod.orderqty) DESC LIMIT 5` → Water Bottle 30oz (947), AWC Logo Cap (887), Sport-100 Helmet Blue (794), Sport-100 Helmet Black (738), Sport-100 Helmet Red (689) | `TestAdventureWorksTopProductsByTerritory` | PASS | Aggregation + nested filter | `salesorderdetail → salesorderheader (nested where) + product`, `distinct` + `order_by` on `sum_orderqty`, cross-schema aggregation |
+
 ## Summary
 
-**24 PASS / 0 FAIL**
+**25 PASS / 0 FAIL**
 
 ## Bugs Fixed During Test Development
 
@@ -48,6 +50,7 @@ All tests verify GraphJin results against SQL ground truth via direct `psql` que
 - **Many-to-many**: Test 22 traverses junction table
 - **Large dataset**: Test 13 queries 121K rows with ordering
 - **Filter predicates**: Tests 11, 17 use `is_null`, Tests 4, 13 use `gt`/`desc`
-- **Variable binding**: Test 17 uses `$name` variable
+- **Aggregation order_by**: Test 25 orders by `sum_orderqty` (aggregation function in order_by)
+- **Variable binding**: Test 17 uses `$name` variable, Test 25 uses `$tid`
 - **Schema discovery**: Test 2 validates 160-table cross-schema discovery
 - **Ground truth verification**: Every test runs the equivalent SQL query first and compares results
