@@ -292,6 +292,12 @@ func (s *HttpService) MCPHandler() http.Handler {
 			return
 		}
 
+		// MCP tool calls (notably execute_workflow) can run JS for up to
+		// MCP.WorkflowTimeout seconds. The global http.Server WriteTimeout
+		// is 10s, so without this lift the connection would be killed long
+		// before any non-trivial workflow could send its response.
+		extendDeadlineForWorkflow(w, s1.conf)
+
 		// Use request context (may contain auth info from middleware)
 		mcpSrv := s1.newMCPServerWithContext(r.Context())
 		// Use StreamableHTTPServer with stateless mode
@@ -316,6 +322,9 @@ func (s *HttpService) MCPMessageHandler() http.Handler {
 			http.Error(w, "MCP is disabled", http.StatusNotFound)
 			return
 		}
+
+		// See MCPHandler — same WriteTimeout extension applies here.
+		extendDeadlineForWorkflow(w, s1.conf)
 
 		// Use request context (may contain auth info from middleware)
 		mcpSrv := s1.newMCPServerWithContext(r.Context())
