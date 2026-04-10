@@ -39,6 +39,28 @@ var workflowCallableToolNames = map[string]struct{}{
 	"validate_where_clause": {},
 }
 
+// extendDeadlineForWorkflow lifts the per-request read/write deadlines so a
+// handler that may execute a long-running JS workflow is not killed by the
+// global http.Server WriteTimeout (10s by default in serv.go). The new
+// deadline is workflow_timeout + 30s (response serialization buffer), or
+// the default workflow timeout if MCP.WorkflowTimeout is unset.
+//
+// Falls through silently if the underlying ResponseWriter does not support
+// deadline control (test stubs, intermediaries) — the global timeout still
+// applies in that case.
+func extendDeadlineForWorkflow(w http.ResponseWriter, conf *Config) {
+	timeoutSecs := conf.MCP.WorkflowTimeout
+	if timeoutSecs <= 0 {
+		timeoutSecs = defaultWorkflowScriptTimeout
+	}
+	deadline := time.Now().Add(time.Duration(timeoutSecs+30) * time.Second)
+	rc := http.NewResponseController(w)
+	if err := rc.SetWriteDeadline(deadline); err != nil {
+		return
+	}
+	_ = rc.SetReadDeadline(deadline)
+}
+
 // apiV1Workflows handles REST execution of named JS workflows.
 // Route format: /api/v1/workflows/<name>
 func (s1 *HttpService) apiV1Workflows(ns *string) http.Handler {
@@ -47,6 +69,7 @@ func (s1 *HttpService) apiV1Workflows(ns *string) http.Handler {
 	h := func(w http.ResponseWriter, r *http.Request) {
 		s := s1.Load().(*graphjinService)
 		w.Header().Set("Content-Type", "application/json")
+		extendDeadlineForWorkflow(w, s.conf)
 
 		if len(r.RequestURI) < rLen {
 			renderErr(w, errors.New("no workflow name defined"))
