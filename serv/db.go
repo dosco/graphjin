@@ -459,9 +459,11 @@ func initSnowflake(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf
 		return nil, fmt.Errorf("snowflake: %w", err)
 	}
 
-	cfg, err := gosnowflake.ParseDSN(connString)
+	// Build the gosnowflake Config directly instead of using ParseDSN,
+	// which rejects empty passwords even when JWT auth makes them unnecessary.
+	cfg, err := parseSnowflakeDSN(connString)
 	if err != nil {
-		return nil, fmt.Errorf("snowflake: parsing connection_string: %w", err)
+		return nil, fmt.Errorf("snowflake: %w", err)
 	}
 
 	cfg.Authenticator = gosnowflake.AuthTypeJwt
@@ -469,6 +471,82 @@ func initSnowflake(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf
 
 	connector := gosnowflake.NewConnector(gosnowflake.SnowflakeDriver{}, *cfg)
 	return &dbConf{connector: connector}, nil
+}
+
+// parseSnowflakeDSN parses a Snowflake connection string into a gosnowflake.Config
+// without requiring a password. This is needed because gosnowflake.ParseDSN
+// rejects empty passwords even when JWT authentication will be used.
+//
+// Accepted format: user[:password]@account/database/schema[?key=value&...]
+func parseSnowflakeDSN(dsn string) (*gosnowflake.Config, error) {
+	// Split user info from the rest at '@'
+	atIdx := strings.IndexByte(dsn, '@')
+	if atIdx < 0 {
+		return nil, fmt.Errorf("invalid connection_string: missing '@' separator")
+	}
+	userInfo := dsn[:atIdx]
+	rest := dsn[atIdx+1:] // account/database/schema?params
+
+	var user, password string
+	if colonIdx := strings.IndexByte(userInfo, ':'); colonIdx >= 0 {
+		user = userInfo[:colonIdx]
+		password = userInfo[colonIdx+1:]
+	} else {
+		user = userInfo
+	}
+
+	if user == "" {
+		return nil, fmt.Errorf("invalid connection_string: user is empty")
+	}
+
+	// Split query params
+	var pathPart, queryPart string
+	if qIdx := strings.IndexByte(rest, '?'); qIdx >= 0 {
+		pathPart = rest[:qIdx]
+		queryPart = rest[qIdx+1:]
+	} else {
+		pathPart = rest
+	}
+
+	// Parse account/database/schema from the path
+	parts := strings.SplitN(pathPart, "/", 3)
+	if len(parts) < 1 || parts[0] == "" {
+		return nil, fmt.Errorf("invalid connection_string: account is empty")
+	}
+
+	cfg := &gosnowflake.Config{
+		User:     user,
+		Password: password,
+		Account:  parts[0],
+	}
+	if len(parts) > 1 {
+		cfg.Database = parts[1]
+	}
+	if len(parts) > 2 {
+		cfg.Schema = parts[2]
+	}
+
+	// Parse query parameters
+	if queryPart != "" {
+		params, err := url.ParseQuery(queryPart)
+		if err != nil {
+			return nil, fmt.Errorf("invalid connection_string query params: %w", err)
+		}
+		if v := params.Get("warehouse"); v != "" {
+			cfg.Warehouse = v
+		}
+		if v := params.Get("role"); v != "" {
+			cfg.Role = v
+		}
+		if v := params.Get("account"); v != "" {
+			cfg.Account = v
+		}
+		if v := params.Get("protocol"); v != "" {
+			cfg.Protocol = v
+		}
+	}
+
+	return cfg, nil
 }
 
 // loadSnowflakePrivateKey parses a PKCS#8 PEM-encoded RSA private key,
