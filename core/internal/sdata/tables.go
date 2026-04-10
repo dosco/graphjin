@@ -557,6 +557,15 @@ func DiscoverColumns(ctx context.Context, db *sql.DB, dbtype string, blockList [
 			qctx2, cancel2 := context.WithTimeout(ctx, introspectionQueryTimeout)
 			defer cancel2()
 			rows, err = db.QueryContext(qctx2, snowflakeColumnsNoOverridesStmt)
+			// Second Snowflake fallback: KEY_COLUMN_USAGE does not exist in
+			// many Snowflake accounts (it is not a standard Snowflake
+			// INFORMATION_SCHEMA view). Fall back to columns-only discovery
+			// without PK/UK/FK metadata.
+			if err != nil {
+				qctx3, cancel3 := context.WithTimeout(ctx, introspectionQueryTimeout)
+				defer cancel3()
+				rows, err = db.QueryContext(qctx3, snowflakeColumnsBasicStmt)
+			}
 		}
 		if err != nil {
 			return nil, fmt.Errorf("error fetching columns: %w", err)
