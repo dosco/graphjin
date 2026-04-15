@@ -11,6 +11,21 @@ import (
 func (co *Compiler) isFunction(sel *Select, name string, f graph.Field) (
 	fn Function, isFunc bool, err error,
 ) {
+	// New path: any field carrying an `expr:` argument is treated as a
+	// scalar-expression aggregate (`<aggregate>(expr: ...)`) regardless
+	// of the legacy `<fn>_<col>` naming convention. This must be checked
+	// before the search/legacy paths because the field name (e.g. "sum")
+	// would otherwise be ambiguous.
+	if exprArg, ok := findArg(f.Args, "expr"); ok {
+		fn, isFunc, err = co.compileExprFunction(sel, name, exprArg)
+		if err != nil || isFunc {
+			if err == nil && co.c.DisableAgg && fn.Agg {
+				err = fmt.Errorf("aggreation disabled: db function '%s' cannot be used", fn.Name)
+			}
+			return
+		}
+	}
+
 	switch {
 	case name == "search_rank":
 		isFunc = true
@@ -50,6 +65,98 @@ func (co *Compiler) isFunction(sel *Select, name string, f graph.Field) (
 	}
 
 	return
+}
+
+// compileExprFunction handles the `<name>(expr: <expression>)` syntax.
+// If <name> is a known aggregate (sum/avg/min/max/count), the expression
+// is wrapped in that aggregate at SQL render time. Otherwise, the
+// expression is emitted bare — used for ratio-of-aggregates patterns
+// where the expression itself contains aggregate-of-expression nodes.
+//
+// MongoDB doesn't support arithmetic in aggregation pipelines (v2 scope);
+// this path errors clearly when the active dialect is mongodb.
+func (co *Compiler) compileExprFunction(sel *Select, name string, exprArg graph.Arg) (
+	fn Function, isFunc bool, err error,
+) {
+	if co.s.DBType() == "mongodb" {
+		err = fmt.Errorf("expression aggregates are not supported on MongoDB (deferred to a future release)")
+		return
+	}
+
+	exprRoot, err := co.compileExprArg(sel, exprArg.Val)
+	if err != nil {
+		return
+	}
+
+	// Wrap-in-aggregate vs bare-expression decision is based on whether
+	// the field name matches a registered aggregate function. This keeps
+	// the schema's function registry as the source of truth.
+	dbFn, isAgg := co.s.GetFunctions()[name]
+	hasInnerAgg := exprContainsAgg(exprRoot)
+
+	if isAgg && dbFn.Agg {
+		// `sum(expr: ...)` — wrap in SUM(<expr>). The inner expression
+		// must NOT contain its own aggregates (would be SUM(SUM(...))).
+		if hasInnerAgg {
+			err = fmt.Errorf("expr inside %s(...) must not contain aggregate nodes", name)
+			return
+		}
+		fn.Name = name
+		fn.Func = dbFn
+		fn.Agg = true
+	} else {
+		// Bare expression — used for ratio-of-aggregates or other
+		// composed aggregates. Must contain at least one aggregate node
+		// or the resulting SQL would fail GROUP BY validation when used
+		// alongside aggregates on the same selection.
+		if !hasInnerAgg {
+			err = fmt.Errorf("expr field %q must either use a known aggregate name (sum, avg, min, max, count) or contain aggregate nodes inside the expression", name)
+			return
+		}
+		fn.Name = name
+		fn.Agg = true // treated as aggregate for GROUP BY purposes
+	}
+
+	fn.Args = []Arg{{Type: ArgTypeExpr, Expr: exprRoot}}
+	isFunc = true
+	return
+}
+
+// exprContainsAgg reports whether the expression tree includes any
+// aggregate-of-expression op (OpAggSum/OpAggAvg/...). Used to decide
+// between wrap-in-aggregate and bare-expression compilation paths.
+func exprContainsAgg(ex *Exp) bool {
+	if ex == nil {
+		return false
+	}
+	switch ex.Op {
+	case OpAggSum, OpAggAvg, OpAggMin, OpAggMax, OpAggCount:
+		return true
+	}
+	for _, c := range ex.Children {
+		if exprContainsAgg(c) {
+			return true
+		}
+	}
+	for _, arm := range ex.CaseArms {
+		if exprContainsAgg(arm.Then) {
+			return true
+		}
+	}
+	if exprContainsAgg(ex.Else) {
+		return true
+	}
+	return false
+}
+
+// findArg returns the named argument from a graph.Field's args, if present.
+func findArg(args []graph.Arg, name string) (graph.Arg, bool) {
+	for i := range args {
+		if args[i].Name == name {
+			return args[i], true
+		}
+	}
+	return graph.Arg{}, false
 }
 
 type funcInfo struct {

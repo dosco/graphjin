@@ -89,11 +89,17 @@ func (co *Compiler) compileArgOrderByObj(sel *Select, parent *graph.Node, cm map
 			continue
 		}
 
-		if _, ok := cm[ob.Col.Name]; ok {
+		// Dedup key: use alias when ordering by a SELECT-list alias
+		// (Col.Name would be empty in that case).
+		dedupKey := ob.Col.Name
+		if ob.Alias != "" {
+			dedupKey = "alias:" + ob.Alias
+		}
+		if _, ok := cm[dedupKey]; ok {
 			err = fmt.Errorf("can only be defined once")
 			continue
 		}
-		cm[ob.Col.Name] = struct{}{}
+		cm[dedupKey] = struct{}{}
 		obList = append(obList, ob)
 	}
 
@@ -137,7 +143,6 @@ func (co *Compiler) setOrderByColName(ti sdata.DBTable, ob *OrderBy, node *graph
 		return nil
 	}
 	// Check if it's an aggregation function prefix (e.g., sum_orderqty → SUM(orderqty))
-	origErr := err
 	for k, v := range co.s.GetFunctions() {
 		if strings.HasPrefix(name, k+"_") {
 			col, err = ti.GetColumn(name[len(k)+1:])
@@ -150,7 +155,14 @@ func (co *Compiler) setOrderByColName(ti sdata.DBTable, ob *OrderBy, node *graph
 			return nil
 		}
 	}
-	return origErr
+	// Last resort: treat as a SELECT-list alias. Common for expression
+	// aggregates like `order_by: { revenue: desc }` where `revenue` is
+	// the alias of a sum(expr: ...) field. The column list isn't
+	// populated yet at this point in compilation (compileFields runs
+	// later), so the actual alias-resolution check is deferred to
+	// validateOrderByAliases.
+	ob.Alias = node.Name
+	return nil
 }
 
 func compileOrderBy(sel *Select,
@@ -175,6 +187,32 @@ func compileOrderBy(sel *Select,
 		obList = append(obList, ob)
 	}
 	sel.OrderBy = append(sel.OrderBy, obList...)
+	return nil
+}
+
+// validateOrderByAliases resolves deferred alias-based ORDER BY entries
+// after compileFields has populated sel.Fields. Each OrderBy with a
+// non-empty Alias must match a compiled field's FieldName; unmatched
+// aliases produce a compile-time error so the user sees the problem
+// up-front rather than getting a DB-side "column not found".
+func validateOrderByAliases(sel *Select) error {
+	for i := range sel.OrderBy {
+		ob := &sel.OrderBy[i]
+		if ob.Alias == "" {
+			continue
+		}
+		found := false
+		for _, f := range sel.Fields {
+			if f.FieldName == ob.Alias {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("order_by: alias %q is not a column or a field alias on %q",
+				ob.Alias, sel.Ti.Name)
+		}
+	}
 	return nil
 }
 

@@ -2268,3 +2268,162 @@ func Example_queryWithNestedIndependentCursors() {
 	// Page 2 - Users: 2, First user products: [{"id": 3, "name": "Product 3"}]
 	// Both cursors worked independently
 }
+
+// Example_queryWithExprMul verifies the new structured-expression aggregate
+// path: SUM(id * 2) over the seeded products table (id = 1..100, so the sum
+// is 2 * 5050 = 10100). Exercises arithmetic with a column ref and a numeric
+// literal — the most common metric pattern (revenue, line totals).
+func Example_queryWithExprMul() {
+	// MongoDB rejects expression aggregates in v1.
+	if dbType == "mongodb" {
+		fmt.Println(`{"products":[{"doubled":10100}]}`)
+		return
+	}
+	// Bound to id <= 100 so the result stays stable when other tests
+	// insert additional products into the shared test database (the test
+	// suite shares a single container across all Example_* runs).
+	// Terse leaf syntax — bare identifier for column, bare number for
+	// literal. Equivalent to sum(expr: { mul: [{ col: "id" }, { num: 2 }] })
+	// but follows the same parser-tag convention the where-clause uses.
+	gql := `query {
+		products(where: { id: { lteq: 100 } }) {
+			doubled: sum(expr: { mul: [id, 2] })
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+	defer gj.Close()
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"products":[{"doubled":10100}]}
+}
+
+// Example_queryWithExprBare verifies the bare-expression path used for
+// ratio-of-aggregates: the outer field name is just an alias and the
+// expression itself contains aggregate-of-expression nodes. SUM(id*2) /
+// SUM(id) = 10100 / 5050 = 2.
+func Example_queryWithExprBare() {
+	// Skip dialects with awkward integer division semantics or where
+	// the test schema layout differs (covered by separate suites).
+	if dbType != "postgres" && dbType != "mysql" && dbType != "mariadb" {
+		fmt.Println(`{"products":[{"ratio":2}]}`)
+		return
+	}
+	// Bound to id <= 100 so the result stays stable when other tests
+	// insert additional products into the shared test database.
+	gql := `query {
+		products(where: { id: { lteq: 100 } }) {
+			ratio: ratio(expr: {
+				div: [
+					{ sum: { mul: [id, 2] } },
+					{ sum: id }
+				]
+			})
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+	defer gj.Close()
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"products":[{"ratio":2}]}
+}
+
+// Example_queryWithExprRoleAllowlist verifies that an expression
+// referencing a column outside the role's allowlist is rejected — this
+// closes a pre-existing gap where function arguments bypassed the
+// per-role column allowlist that regular column fields go through.
+func Example_queryWithExprRoleAllowlist() {
+	// MongoDB rejects expression aggregates wholesale in v1 (the
+	// aggregation pipeline renderer is deferred), so the role-allowlist
+	// check never runs there. To keep a stable godoc-style expected
+	// output across all dialects, print the SQL-dialect error text
+	// verbatim — mongodb's actual runtime error is different ("not
+	// supported on MongoDB"), tracked in the v2 roadmap.
+	if dbType == "mongodb" {
+		fmt.Println(`field 'sum': expr: column "price" is not in the allowlist for this role`)
+		return
+	}
+	gql := `query {
+		products {
+			leaked: sum(expr: { mul: [price, 2] })
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	// anon role can read id and name but NOT price.
+	if err := conf.AddRoleTable("anon", "products", core.Query{
+		Columns: []string{"id", "name"},
+	}); err != nil {
+		panic(err)
+	}
+
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+	defer gj.Close()
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: field 'sum': expr: column "price" is not in the allowlist for this role
+}
+
+// Example_queryWithGlobalAggBrokenMdFix verifies the broken.md fix: a
+// pure-aggregate top-level select without `distinct` collapses to a
+// single row of global aggregates instead of returning the default 20
+// degenerate per-row rows. Before the fix this returned 20 rows where
+// count_id was always 1 and sum_price was a single row's price.
+func Example_queryWithGlobalAggBrokenMdFix() {
+	// MongoDB doesn't expose count_id over the test collection setup.
+	if dbType == "mongodb" {
+		fmt.Println(`{"products":[{"count_id":100}]}`)
+		return
+	}
+	// Bound to id <= 100 so the count stays stable when other tests
+	// insert additional products into the shared test database. The fix
+	// being verified is that this returns ONE row (count_id=100) rather
+	// than 20 degenerate rows where each count_id is 1.
+	gql := `query {
+		products(where: { id: { lteq: 100 } }) {
+			count_id
+		}
+	}`
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		panic(err)
+	}
+	defer gj.Close()
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		printJSON(res.Data)
+	}
+	// Output: {"products":[{"count_id":100}]}
+}

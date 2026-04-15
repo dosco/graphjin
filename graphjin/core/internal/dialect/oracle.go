@@ -237,6 +237,11 @@ func (d *OracleDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
 			ctx.WriteString(`"_GJ_OB_`)
 			ctx.WriteString(strings.ToUpper(ob.Col.Name))
 			ctx.WriteString(`"."ORD"`)
+		} else if ob.Alias != "" {
+			// Oracle normalizes unquoted identifiers to upper case, so
+			// emit the alias via ctx.Quote which uses the dialect's
+			// QuoteIdentifier (applies the correct casing rules).
+			ctx.Quote(ob.Alias)
 		} else {
 			if ob.IsFunc {
 				ctx.WriteString(strings.ToUpper(ob.Func.Name))
@@ -592,6 +597,10 @@ func (d *OracleDialect) RenderValArrayColumn(ctx Context, ex *qcode.Exp, table s
 		ctx.WriteString("VARCHAR2(4000)")
 	}
 	ctx.WriteString(` PATH '$'))`)
+}
+
+func (d *OracleDialect) RenderArithOp(op qcode.ExpOp) (string, error) {
+	return RenderStandardArithOp(op)
 }
 
 func (d *OracleDialect) RenderOp(op qcode.ExpOp) (string, error) {

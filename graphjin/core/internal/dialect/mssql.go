@@ -427,6 +427,8 @@ func (d *MSSQLDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
 			ctx.WriteString(` AS NVARCHAR(MAX)) + ',', ',' + `)
 			ctx.AddParam(Param{Name: ob.Var, Type: "text"})
 			ctx.WriteString(` + ',')`)
+		} else if ob.Alias != "" {
+			ctx.Quote(ob.Alias)
 		} else {
 			if ob.IsFunc {
 				ctx.WriteString(strings.ToUpper(ob.Func.Name))
@@ -517,6 +519,10 @@ func (d *MSSQLDialect) RenderList(ctx Context, ex *qcode.Exp) {
 		}
 	}
 	ctx.WriteString(`)`)
+}
+
+func (d *MSSQLDialect) RenderArithOp(op qcode.ExpOp) (string, error) {
+	return RenderStandardArithOp(op)
 }
 
 func (d *MSSQLDialect) RenderOp(op qcode.ExpOp) (string, error) {
@@ -1423,7 +1429,22 @@ func (d *MSSQLDialect) renderInlineJSONFields(ctx Context, r InlineChildRenderer
 			ctx.WriteString(` THEN `)
 		}
 
-		if f.Func.Name != "" {
+		// Expression-aggregate path: route through the shared scalar-expr
+		// renderer.
+		if len(f.Args) == 1 && f.Args[0].Type == qcode.ArgTypeExpr {
+			if f.Func.Name != "" {
+				ctx.WriteString(f.Func.Name)
+				ctx.WriteString(`(`)
+			} else {
+				ctx.WriteString(`(`)
+			}
+			if err := r.RenderScalarExp(sel, f.Args[0].Expr); err != nil {
+				ctx.WriteString(`/* expr error: `)
+				ctx.WriteString(err.Error())
+				ctx.WriteString(` */`)
+			}
+			ctx.WriteString(`)`)
+		} else if f.Func.Name != "" {
 			// MSSQL requires user-defined functions to be called with at least a two-part name
 			// Built-in aggregates (count, sum, max, etc.) have Agg=true and empty Schema - no prefix needed
 			if f.Func.Schema != "" {

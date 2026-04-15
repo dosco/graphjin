@@ -402,6 +402,14 @@ func (d *MongoDBDialect) RenderList(ctx Context, ex *qcode.Exp) {
 	ctx.WriteString(`]`)
 }
 
+// RenderArithOp returns an error on MongoDB because the aggregation
+// pipeline uses operators like $multiply / $add embedded in the document
+// shape, not infix tokens. Expression aggregates are deferred to a
+// future release; this dialect explicitly rejects them at compile time.
+func (d *MongoDBDialect) RenderArithOp(op qcode.ExpOp) (string, error) {
+	return "", fmt.Errorf("expression aggregates are not supported on MongoDB (deferred to a future release)")
+}
+
 func (d *MongoDBDialect) RenderOp(op qcode.ExpOp) (string, error) {
 	// Map GraphJin operators to MongoDB operators
 	switch op {

@@ -45,6 +45,12 @@ type InlineChildRenderer interface {
 	Quoted(s string)
 	Squoted(s string)
 	RenderExp(ti sdata.DBTable, ex *qcode.Exp)
+	// RenderScalarExp emits SQL for a scalar expression tree (arithmetic,
+	// case, cast, coalesce, agg-of-expr, ...). Exposed here so dialects
+	// that build their own JSON-field renderer (mariadb, mssql inline
+	// path) can delegate expression aggregate rendering to the shared
+	// psql implementation instead of duplicating it.
+	RenderScalarExp(sel *qcode.Select, ex *qcode.Exp) error
 	GetConfigVar(name string) (string, bool) // Returns config var value and whether it exists
 	GetSecPrefix() string
 	GetRootWithCursor() *qcode.Select // Returns first root select with cursor pagination
@@ -67,6 +73,13 @@ type Dialect interface {
 	RenderJSONPath(ctx Context, table, col string, path []string)
 	RenderList(ctx Context, ex *qcode.Exp)
 	RenderOp(op qcode.ExpOp) (string, error)
+	// RenderArithOp returns the SQL infix operator for a scalar arithmetic
+	// op (OpAdd, OpSub, OpMul, OpDiv, OpMod). Kept separate from RenderOp
+	// because boolean and arithmetic operators have different rendering
+	// rules, and overloading would mask "wrong op kind" bugs as garbage
+	// SQL. Dialects that don't support inline arithmetic (mongodb)
+	// return an error.
+	RenderArithOp(op qcode.ExpOp) (string, error)
 	RenderGeoOp(ctx Context, table, col string, ex *qcode.Exp) error // GIS spatial operator rendering
 	RenderValPrefix(ctx Context, ex *qcode.Exp) bool
 	RenderTsQuery(ctx Context, ti sdata.DBTable, ex *qcode.Exp)
