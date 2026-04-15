@@ -10,9 +10,12 @@ import (
 func (c *compilerContext) renderColumns(sel *qcode.Select) {
 	i := 0
 	for _, f := range sel.Fields {
-		// Skip __gj_id in outer SELECT when aggregation + distinct is active —
-		// the inner subquery no longer includes this column.
-		if f.FieldName == "__gj_id" && sel.GroupCols && len(sel.DistinctOn) > 0 {
+		// Skip __gj_id in outer SELECT when aggregation is active. Two
+		// cases: (1) aggregation + distinct — the inner subquery already
+		// dropped __gj_id; (2) global-aggregate (no distinct) — same
+		// reason, and emitting __gj_id here would resurrect the broken.md
+		// per-row degenerate aggregates.
+		if f.FieldName == "__gj_id" && sel.GroupCols && (len(sel.DistinctOn) > 0 || sel.GlobalAgg) {
 			continue
 		}
 		if i != 0 {
@@ -192,6 +195,12 @@ func (c *compilerContext) renderBaseColumns(sel *qcode.Select) {
 			}
 		}
 		renderCols = filtered
+	} else if sel.GlobalAgg {
+		// Global aggregate (no distinct) — emit no base columns at all.
+		// All output is aggregate functions, which don't reference any
+		// non-aggregated column. Including BCols here would force a
+		// per-row GROUP BY and produce the broken.md degenerate result.
+		renderCols = nil
 	}
 
 	i := 0
