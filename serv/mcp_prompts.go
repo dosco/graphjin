@@ -482,16 +482,49 @@ func (ms *mcpServer) handleWriteQuery(ctx context.Context, req mcp.GetPromptRequ
 	sb.WriteString("## Available Aggregations\n\n")
 	sb.WriteString("```graphql\n")
 	sb.WriteString(fmt.Sprintf("{ %s { count_id } }  # Count rows\n", table))
-	// Find a numeric column for example
+	// Find two numeric columns for a richer example (arithmetic needs at
+	// least one; the second demonstrates the expression aggregate form).
+	var firstNumeric, secondNumeric string
 	for _, col := range schema.Columns {
-		normalizedType := normalizeColumnType(col.Type)
-		if normalizedType == "numeric" {
-			sb.WriteString(fmt.Sprintf("{ %s { sum_%s avg_%s min_%s max_%s } }  # Numeric aggregations\n",
-				table, col.Name, col.Name, col.Name, col.Name))
+		if normalizeColumnType(col.Type) != "numeric" {
+			continue
+		}
+		if firstNumeric == "" {
+			firstNumeric = col.Name
+			continue
+		}
+		if secondNumeric == "" {
+			secondNumeric = col.Name
 			break
 		}
 	}
-	sb.WriteString("```\n")
+	if firstNumeric != "" {
+		sb.WriteString(fmt.Sprintf("{ %s { sum_%s avg_%s min_%s max_%s } }  # Numeric aggregations\n",
+			table, firstNumeric, firstNumeric, firstNumeric, firstNumeric))
+	}
+	sb.WriteString("```\n\n")
+
+	// Expression aggregates (the `<fn>_<col>` form only handles single
+	// columns — any arithmetic across columns needs the expr: syntax).
+	if firstNumeric != "" && secondNumeric != "" {
+		sb.WriteString("## Expression Aggregates (for arithmetic metrics)\n\n")
+		sb.WriteString("For metrics that multiply, subtract, or divide across columns (revenue, ")
+		sb.WriteString("margin, weighted averages), use `sum(expr: ...)` — not `sum_<col>` × `sum_<col>`, ")
+		sb.WriteString("which is mathematically wrong: `AVG(a) × SUM(b) ≠ SUM(a × b)`.\n\n")
+		sb.WriteString("Leaves: bare identifier (column), quoted string (qualified column), ")
+		sb.WriteString("number (literal), `$var` (bind).\n\n")
+		sb.WriteString("```graphql\n")
+		sb.WriteString(fmt.Sprintf("# SUM(%s × %s) as one server-side aggregate\n", firstNumeric, secondNumeric))
+		sb.WriteString(fmt.Sprintf("{ %s { revenue: sum(expr: { mul: [%s, %s] }) } }\n\n", table, firstNumeric, secondNumeric))
+		sb.WriteString("# Top N by computed metric — order_by on the alias\n")
+		sb.WriteString(fmt.Sprintf("{ %s(distinct: [id], order_by: { revenue: desc }, limit: 10) {\n", table))
+		sb.WriteString(fmt.Sprintf("    id revenue: sum(expr: { mul: [%s, %s] })\n", firstNumeric, secondNumeric))
+		sb.WriteString("  }\n")
+		sb.WriteString("}\n")
+		sb.WriteString("```\n")
+		sb.WriteString("\nSee `graphjin://discovery/syntax` for the full expression grammar ")
+		sb.WriteString("(add/sub/div, case, cast, coalesce, dot-notation for joined columns).\n")
+	}
 
 	return mcp.NewGetPromptResult(
 		fmt.Sprintf("Query guide for %s", table),

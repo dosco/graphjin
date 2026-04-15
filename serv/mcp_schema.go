@@ -221,7 +221,12 @@ func generateAggregations(schema *core.TableSchema) AggregationInfo {
 
 	return AggregationInfo{
 		Available: available,
-		Usage:     fmt.Sprintf("{ %s { count_id sum_<numeric_col> avg_<numeric_col> } }", schema.Name),
+		Usage: fmt.Sprintf(
+			"Single column: { %s { count_id sum_<numeric_col> avg_<numeric_col> } }. "+
+				"Arithmetic across columns (revenue, margin, ratios): "+
+				"{ %s { revenue: sum(expr: { mul: [col_a, col_b] }) } } — "+
+				"see graphjin://discovery/syntax for the full expression grammar.",
+			schema.Name, schema.Name),
 	}
 }
 
