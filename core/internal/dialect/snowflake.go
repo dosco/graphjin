@@ -191,6 +191,8 @@ func (d *SnowflakeDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
 		}
 		if ob.Var != "" {
 			ctx.ColWithTable(`_gj_ob_`+ob.Col.Name, "ord")
+		} else if ob.Alias != "" {
+			ctx.Quote(ob.Alias)
 		} else {
 			if ob.IsFunc {
 				ctx.WriteString(strings.ToUpper(ob.Func.Name))
@@ -269,6 +271,10 @@ func (d *SnowflakeDialect) RenderRecursiveAnchorWhere(ctx Context, psel *qcode.S
 		return true
 	}
 	return false
+}
+
+func (d *SnowflakeDialect) RenderArithOp(op qcode.ExpOp) (string, error) {
+	return RenderStandardArithOp(op)
 }
 
 func (d *SnowflakeDialect) RenderOp(op qcode.ExpOp) (string, error) {

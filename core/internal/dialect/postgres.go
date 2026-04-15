@@ -145,6 +145,11 @@ func (d *PostgresDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
 		}
 		if ob.Var != "" {
 			ctx.ColWithTable(`_gj_ob_`+ob.Col.Name, "ord")
+		} else if ob.Alias != "" {
+			// Ordering by a SELECT-list alias — emit the bare quoted
+			// identifier. Postgres resolves this against the output
+			// column list.
+			ctx.Quote(ob.Alias)
 		} else {
 			if ob.IsFunc {
 				ctx.WriteString(strings.ToUpper(ob.Func.Name))
@@ -409,6 +414,10 @@ func (d *PostgresDialect) RenderArray(ctx Context, items []string) {
 		ctx.WriteString(item)
 	}
 	ctx.WriteString(`]`)
+}
+
+func (d *PostgresDialect) RenderArithOp(op qcode.ExpOp) (string, error) {
+	return RenderStandardArithOp(op)
 }
 
 func (d *PostgresDialect) RenderOp(op qcode.ExpOp) (string, error) {

@@ -163,6 +163,8 @@ func (d *SQLiteDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
 		
 		if ob.Var != "" {
 			ctx.ColWithTable("_gj_ob_"+ob.Col.Name, "ord")
+		} else if ob.Alias != "" {
+			ctx.Quote(ob.Alias)
 		} else if sel.Rel.Type == sdata.RelEmbedded {
 			// Embedded JSON relationships in SQLite are rendered from json_each
 			// rows, so order by expressions must read from __sr_<id>.value.
@@ -455,6 +457,10 @@ func (d *SQLiteDialect) RenderArray(ctx Context, items []string) {
 		ctx.WriteString(item)
 	}
 	ctx.WriteString(`)`)
+}
+
+func (d *SQLiteDialect) RenderArithOp(op qcode.ExpOp) (string, error) {
+	return RenderStandardArithOp(op)
 }
 
 func (d *SQLiteDialect) RenderOp(op qcode.ExpOp) (string, error) {

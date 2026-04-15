@@ -238,11 +238,28 @@ func _() {
 	_ = x[OpGeoTouches-45]
 	_ = x[OpGeoOverlaps-46]
 	_ = x[OpGeoNear-47]
+	_ = x[OpAdd-48]
+	_ = x[OpSub-49]
+	_ = x[OpMul-50]
+	_ = x[OpDiv-51]
+	_ = x[OpMod-52]
+	_ = x[OpNeg-53]
+	_ = x[OpCoalesce-54]
+	_ = x[OpNullIf-55]
+	_ = x[OpCase-56]
+	_ = x[OpCast-57]
+	_ = x[OpLiteral-58]
+	_ = x[OpColRef-59]
+	_ = x[OpAggSum-60]
+	_ = x[OpAggAvg-61]
+	_ = x[OpAggMin-62]
+	_ = x[OpAggMax-63]
+	_ = x[OpAggCount-64]
 }
 
-const _ExpOp_name = "OpNopOpAndOpOrOpNotOpEqualsOpNotEqualsOpGreaterOrEqualsOpLesserOrEqualsOpGreaterThanOpLesserThanOpInOpNotInOpLikeOpNotLikeOpILikeOpNotILikeOpSimilarOpNotSimilarOpRegexOpNotRegexOpIRegexOpNotIRegexOpContainsOpContainedInOpHasInCommonOpHasKeyOpHasKeyAnyOpHasKeyAllOpIsNullOpIsNotNullOpTsQueryOpFalseOpNotDistinctOpDistinctOpEqualsTrueOpNotEqualsTrueOpSelectExistsJSON path operator (->)JSON path text operator (->>)ST_DWithin - distance-based filteringST_Within - geometry A within BST_Contains - geometry A contains BST_Intersects - geometries intersectST_CoveredBy - geometry A covered by BST_Covers - geometry A covers BST_Touches - geometries touch at boundaryST_Overlaps - geometries overlapMongoDB $near / $nearSphere"
+const _ExpOp_name = "OpNopOpAndOpOrOpNotOpEqualsOpNotEqualsOpGreaterOrEqualsOpLesserOrEqualsOpGreaterThanOpLesserThanOpInOpNotInOpLikeOpNotLikeOpILikeOpNotILikeOpSimilarOpNotSimilarOpRegexOpNotRegexOpIRegexOpNotIRegexOpContainsOpContainedInOpHasInCommonOpHasKeyOpHasKeyAnyOpHasKeyAllOpIsNullOpIsNotNullOpTsQueryOpFalseOpNotDistinctOpDistinctOpEqualsTrueOpNotEqualsTrueOpSelectExistsJSON path operator (->)JSON path text operator (->>)ST_DWithin - distance-based filteringST_Within - geometry A within BST_Contains - geometry A contains BST_Intersects - geometries intersectST_CoveredBy - geometry A covered by BST_Covers - geometry A covers BST_Touches - geometries touch at boundaryST_Overlaps - geometries overlapMongoDB $near / $nearSpherea + b (variadic)a - b (variadic; subtracts left-to-right)a * b (variadic)a / b (binary)a % b (binary)-a    (unary)COALESCE(a, b, ...)NULLIF(a, b)CASE WHEN ... THEN ... ELSE ... END (uses CaseArms + Else)CAST(a AS type) — uses CastTypenumeric/string/bool literal — uses Litcolumn reference leaf — uses Left.ColOpAggSumOpAggAvgOpAggMinOpAggMaxOpAggCount"
 
-var _ExpOp_index = [...]uint16{0, 5, 10, 14, 19, 27, 38, 55, 71, 84, 96, 100, 107, 113, 122, 129, 139, 148, 160, 167, 177, 185, 196, 206, 219, 232, 240, 251, 262, 270, 281, 290, 297, 310, 320, 332, 347, 361, 384, 413, 450, 481, 516, 552, 590, 621, 662, 694, 721}
+var _ExpOp_index = [...]uint16{0, 5, 10, 14, 19, 27, 38, 55, 71, 84, 96, 100, 107, 113, 122, 129, 139, 148, 160, 167, 177, 185, 196, 206, 219, 232, 240, 251, 262, 270, 281, 290, 297, 310, 320, 332, 347, 361, 384, 413, 450, 481, 516, 552, 590, 621, 662, 694, 721, 737, 778, 794, 808, 822, 835, 854, 866, 924, 957, 997, 1036, 1044, 1052, 1060, 1068, 1078}
 
 func (i ExpOp) String() string {
 	idx := int(i) - 0

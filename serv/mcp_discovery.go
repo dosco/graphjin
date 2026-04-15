@@ -20,7 +20,7 @@ func (ms *mcpServer) registerDiscoveryResources() {
 		{
 			uri:  "graphjin://discovery/syntax",
 			name: "Query Syntax",
-			desc: "GraphJin DSL cheat sheet: filter operators, aggregation functions (count_, sum_, avg_), GROUP BY via distinct, pagination, ordering. Essential before writing any query.",
+			desc: "GraphJin DSL cheat sheet: filter operators, aggregation functions (count_, sum_, avg_), expression aggregates for arithmetic metrics (sum(expr: { mul: [...] }) — revenue, margin, ratios), GROUP BY via distinct, pagination, ordering. Essential before writing any query.",
 			key:  "syntax",
 		},
 		{
