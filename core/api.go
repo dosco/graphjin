@@ -963,6 +963,7 @@ func (gj *graphjinEngine) getTables(database string) []TableInfo {
 			continue
 		}
 		tables := ctx.schema.GetTables()
+		start := len(result)
 		for _, t := range tables {
 			if t.Type == "virtual" || t.Blocked {
 				continue
@@ -976,6 +977,16 @@ func (gj *graphjinEngine) getTables(database string) []TableInfo {
 				ColumnCount: len(t.Columns),
 			})
 		}
+		// Sort this database's slice by (schema, name) so output is deterministic
+		// regardless of the order returned by the underlying schema walker.
+		// Outer iteration is already in sorted database order.
+		sub := result[start:]
+		sort.SliceStable(sub, func(i, j int) bool {
+			if sub[i].Schema != sub[j].Schema {
+				return sub[i].Schema < sub[j].Schema
+			}
+			return sub[i].Name < sub[j].Name
+		})
 	}
 	return result
 }
@@ -1930,6 +1941,14 @@ func (g *GraphJin) ListSavedQueries() ([]SavedQueryInfo, error) {
 			Operation: item.Operation,
 		})
 	}
+	// Sort by (namespace, name) so output is deterministic across runs
+	// regardless of the order returned by the underlying allow-list walk.
+	sort.SliceStable(result, func(i, j int) bool {
+		if result[i].Namespace != result[j].Namespace {
+			return result[i].Namespace < result[j].Namespace
+		}
+		return result[i].Name < result[j].Name
+	})
 	return result, nil
 }
 
@@ -2000,6 +2019,14 @@ func (g *GraphJin) ListFragments() ([]FragmentInfo, error) {
 			Namespace: ns,
 		})
 	}
+	// Sort by (namespace, name) so output is deterministic across runs
+	// regardless of the order returned by the underlying allow-list walk.
+	sort.SliceStable(result, func(i, j int) bool {
+		if result[i].Namespace != result[j].Namespace {
+			return result[i].Namespace < result[j].Namespace
+		}
+		return result[i].Name < result[j].Name
+	})
 	return result, nil
 }
 

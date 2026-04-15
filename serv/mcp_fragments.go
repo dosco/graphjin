@@ -3,6 +3,7 @@ package serv
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/dosco/graphjin/core/v3"
@@ -74,6 +75,8 @@ func (ms *mcpServer) handleListFragments(ctx context.Context, req mcp.CallToolRe
 		}
 		fragments = filtered
 	}
+
+	// core.ListFragments returns results sorted by (namespace, name).
 
 	result := struct {
 		Fragments []core.FragmentInfo `json:"fragments"`
@@ -168,14 +171,12 @@ func (ms *mcpServer) handleSearchFragments(ctx context.Context, req mcp.CallTool
 		}
 	}
 
-	// Sort by score (higher is better)
-	for i := 0; i < len(scored); i++ {
-		for j := i + 1; j < len(scored); j++ {
-			if scored[j].Score > scored[i].Score {
-				scored[i], scored[j] = scored[j], scored[i]
-			}
-		}
-	}
+	// Sort by score (higher is better). Input is already in (namespace, name)
+	// order from core.ListFragments, so SliceStable preserves that as the
+	// tiebreaker.
+	sort.SliceStable(scored, func(i, j int) bool {
+		return scored[i].Score > scored[j].Score
+	})
 
 	// Limit results
 	if len(scored) > limit {
@@ -197,3 +198,4 @@ func (ms *mcpServer) handleSearchFragments(ctx context.Context, req mcp.CallTool
 	}
 	return ms.toolResultJSON("search_fragments", args, result)
 }
+
