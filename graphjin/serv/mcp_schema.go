@@ -131,6 +131,7 @@ func (ms *mcpServer) handleListTables(ctx context.Context, req mcp.CallToolReque
 	} else {
 		tables = ms.service.gj.GetTables()
 	}
+	// core.GetTables sorts by (database, schema, name) for determinism.
 
 	result := struct {
 		Tables []core.TableInfo `json:"tables"`

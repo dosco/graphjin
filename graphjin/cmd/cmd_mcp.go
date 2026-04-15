@@ -48,15 +48,32 @@ Authentication:
 
 	c.Flags().StringVar(&mcpUserID, "user-id", "", "User ID for MCP session")
 	c.Flags().StringVar(&mcpUserRole, "user-role", "", "User role for MCP session")
-	c.Flags().StringVar(&mcpServerURL, "server", "", "Remote MCP server URL to proxy to (mutually exclusive with --path)")
+	// --server is promoted to a persistent flag so client-mode subcommands
+	// (query, schema, audit, ...) inherit it. `mcp` stdio proxy mode and
+	// `mcp info` keep reading the same mcpServerURL variable.
+	c.PersistentFlags().StringVar(&mcpServerURL, "server", "", "Remote MCP server URL (env GRAPHJIN_SERVER). For stdio proxy mode on `mcp`, mutually exclusive with --path.")
 	c.Flags().BoolVar(&mcpDemoMode, "demo", false, "Run with temporary database container(s)")
 	c.Flags().BoolVar(&mcpPersist, "persist", false, "Persist data using Docker volumes (requires --demo)")
 	c.Flags().StringArrayVar(&mcpDBFlags, "db", nil, "Database type override(s) (requires --demo)")
 
-	// Add subcommands
+	// Existing subcommands
 	c.AddCommand(mcpInfoCmd())
 	c.AddCommand(mcpInstallCmd())
 	c.AddCommand(mcpPluginCmd())
+
+	// Client-mode subcommands (HTTP clients that call MCP tools on a running
+	// GraphJin server). Shared persistent flags --token/--header/--timeout/
+	// --format are attached by addMCPClientFlags. --server is already a
+	// local flag on `mcp` and is inherited by children via InheritedFlags.
+	addMCPClientFlags(c)
+	c.AddCommand(mcpQueryCmd())
+	c.AddCommand(mcpFragmentCmd())
+	c.AddCommand(mcpWorkflowCmd())
+	c.AddCommand(mcpSchemaCmd())
+	c.AddCommand(mcpExplainCmd())
+	c.AddCommand(mcpAuditCmd())
+	c.AddCommand(mcpHealthCmd())
+	c.AddCommand(mcpConfigCmd())
 
 	return c
 }
@@ -148,7 +165,7 @@ Use --demo to include the --demo flag in the generated config.`,
 		Run: cmdMCPInfo,
 	}
 
-	c.Flags().StringVar(&mcpServerURL, "server", "", "Remote MCP server URL for proxy mode config")
+	// --server is inherited from the parent `mcp` command's persistent flag.
 	c.Flags().BoolVar(&mcpInfoDemoMode, "demo", false, "Include --demo flag in generated config")
 
 	return c

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -144,6 +145,11 @@ func (ms *mcpServer) handleListWorkflows(ctx context.Context, req mcp.CallToolRe
 
 		workflows = append(workflows, info)
 	}
+
+	// Sort by name so output is deterministic regardless of fs.List ordering.
+	sort.SliceStable(workflows, func(i, j int) bool {
+		return workflows[i].Name < workflows[j].Name
+	})
 
 	result := map[string]any{
 		"workflows": workflows,

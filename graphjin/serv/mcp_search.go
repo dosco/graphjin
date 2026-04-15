@@ -3,6 +3,7 @@ package serv
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/dosco/graphjin/core/v3"
@@ -76,6 +77,8 @@ func (ms *mcpServer) handleListSavedQueries(ctx context.Context, req mcp.CallToo
 		queries = filtered
 	}
 
+	// core.ListSavedQueries returns results sorted by (namespace, name).
+
 	result := struct {
 		Queries []core.SavedQueryInfo `json:"queries"`
 		Count   int                   `json:"count"`
@@ -126,14 +129,12 @@ func (ms *mcpServer) handleSearchSavedQueries(ctx context.Context, req mcp.CallT
 		}
 	}
 
-	// Sort by score (higher is better)
-	for i := 0; i < len(scored); i++ {
-		for j := i + 1; j < len(scored); j++ {
-			if scored[j].Score > scored[i].Score {
-				scored[i], scored[j] = scored[j], scored[i]
-			}
-		}
-	}
+	// Sort by score (higher is better). Input is already in (namespace, name)
+	// order from core.ListSavedQueries, so SliceStable preserves that as the
+	// tiebreaker.
+	sort.SliceStable(scored, func(i, j int) bool {
+		return scored[i].Score > scored[j].Score
+	})
 
 	// Limit results
 	if len(scored) > limit {
