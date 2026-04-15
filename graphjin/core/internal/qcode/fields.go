@@ -36,8 +36,16 @@ func (co *Compiler) compileFields(
 
 	co.addOrderByColumns(sel)
 
-	// Inject __gj_id field for cache tracking if enabled
-	if co.c.EnableCacheTracking && qc.Type == QTQuery {
+	// Inject __gj_id field for cache tracking if enabled.
+	//
+	// Skip for aggregated queries (GroupCols): row-level cache tracking
+	// is incoherent when the result is an aggregation over many rows —
+	// there is no single PK that identifies the output row. More
+	// importantly, re-adding __gj_id to BCols here would undo the work
+	// of removeCacheTrackingField (called from compileChildColumns when
+	// aggregates are detected) and force a per-row GROUP BY, producing
+	// the broken.md degenerate result (20 rows of count_id:1).
+	if co.c.EnableCacheTracking && qc.Type == QTQuery && !sel.GroupCols {
 		co.addCacheTrackingField(sel)
 	}
 
@@ -109,6 +117,25 @@ func (co *Compiler) compileChildColumns(
 			field.Func = fn.Func
 			field.Args = fn.Args
 			aggExists = fn.Agg
+			// For the new expression-aggregate path, run the AST validator
+			// with the role's column allowlist. This enforces type-checks
+			// (numeric columns under arithmetic), depth/node caps, and
+			// rejects any column reference the role isn't allowed to read.
+			// Closes a pre-existing gap where function arguments bypassed
+			// the allowlist that regular column fields go through.
+			if len(fn.Args) == 1 && fn.Args[0].Type == ArgTypeExpr {
+				// Convention (matches columnAllowed in config.go): an
+				// empty allowlist means "no restrictions". Pass nil to
+				// skip the role check in that case so unconfigured roles
+				// behave the same as for plain column fields.
+				var allowed map[string]struct{}
+				if len(tr.query.cols) > 0 {
+					allowed = tr.query.cols
+				}
+				if err := validateExprTree(fn.Args[0].Expr, sel.Ti, allowed); err != nil {
+					return fmt.Errorf("field '%s': %w", name, err)
+				}
+			}
 		default:
 			return fmt.Errorf("field '%s' is not a column or a function", name)
 		}
@@ -137,7 +164,14 @@ func (co *Compiler) compileChildColumns(
 		// and therefore the column to run to aggregation function
 		// on should be included in the base columns
 		if isFunc && fn.Agg && sel.Rel.Type == sdata.RelRecursive {
-			sel.addBaseCol(Column{Col: fn.Args[0].Col})
+			// Expression-aggregate fields don't have a single source column
+			// to add to BCols (the expression may reference multiple). The
+			// recursive-select base-column injection is a workaround for the
+			// legacy single-column path; for the expression path, the
+			// caller is expected to use distinct + non-recursive selection.
+			if len(fn.Args) > 0 && fn.Args[0].Type == ArgTypeCol {
+				sel.addBaseCol(Column{Col: fn.Args[0].Col})
+			}
 		}
 		sel.addField(field)
 		id++
@@ -148,8 +182,43 @@ func (co *Compiler) compileChildColumns(
 		// Remove injected __gj_id from BCols and Fields — including the
 		// primary key in GROUP BY makes every group unique (count always 1).
 		sel.removeCacheTrackingField()
+
+		// Detect the global-aggregate case: top-level selection consists
+		// ONLY of aggregate fields (no regular columns) and has no
+		// `distinct` clause. In this case the entire result is one row of
+		// aggregates with no grouping dimension — emit no GROUP BY,
+		// no per-row LIMIT, no PK in SELECT.
+		//
+		// If the user mixes regular columns with aggregates (e.g.
+		// `{ products { name count_id } }`), the regular column needs to
+		// appear in GROUP BY — that path is unchanged. broken.md's bug
+		// only manifests for the pure-aggregate case where the SQL
+		// should collapse to a single row but currently emits LIMIT 20.
+		if len(sel.DistinctOn) == 0 && sel.Rel.Type == sdata.RelNone &&
+			!hasNonAggField(sel.Fields) {
+			sel.GlobalAgg = true
+			// Suppress LIMIT — a global aggregate produces exactly one
+			// row. Without this override, the default limit (20) applied
+			// by setLimit would land in the SQL and trigger the per-row
+			// degenerate result described in broken.md.
+			sel.Paging.NoLimit = true
+			sel.Paging.Limit = 0
+		}
 	}
 	return nil
+}
+
+// hasNonAggField reports whether the field list contains any FieldTypeCol
+// (regular column) field. Used to distinguish global-aggregate selections
+// (only FieldTypeFunc fields) from mixed selections that need GROUP BY on
+// the regular columns.
+func hasNonAggField(fields []Field) bool {
+	for _, f := range fields {
+		if f.Type == FieldTypeCol {
+			return true
+		}
+	}
+	return false
 }
 
 func newArgs(sel *Select, f sdata.DBFunction, arg graph.Arg) (args []Arg, err error) {
@@ -379,9 +448,14 @@ func validateField(qc *QCode, f Field, tr trval) error {
 		if tr.isFuncsBlocked() {
 			return validateErr(tr, f.Func.Name, "all db functions blocked")
 		}
-		if len(f.Args) != 0 && !tr.columnAllowed(qc, f.Args[0].Col.Name) {
+		if len(f.Args) != 0 && f.Args[0].Type == ArgTypeCol &&
+			!tr.columnAllowed(qc, f.Args[0].Col.Name) {
 			return validateErr(tr, f.Args[0].Col.Name, "db column blocked")
 		}
+		// ArgTypeExpr: column-allowlist enforcement happens in
+		// compileChildColumns via validateExprTree, which walks the
+		// entire expression tree (multi-column refs, case sub-trees,
+		// etc.) — a single Args[0].Col check here would miss them.
 	}
 
 	return nil

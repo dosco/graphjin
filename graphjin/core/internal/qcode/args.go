@@ -426,6 +426,15 @@ func (co *Compiler) compileFieldArgs(sel *Select, f *Field, args []graph.Arg, ro
 		case "skipIf", "skip_if":
 			err = co.compileArgSkipIncludeIf(true, sel, f, a, role)
 
+		case "expr":
+			// Consumed by isFunction during expression-aggregate compilation.
+			// Reaching this branch with a non-function field would mean the
+			// user attached `expr:` to a regular column field, which doesn't
+			// make sense — error explicitly.
+			if f.Type != FieldTypeFunc {
+				err = fmt.Errorf("`expr:` is only valid on aggregate fields, not on column %q", f.FieldName)
+			}
+
 		default:
 			err = unknownArg(a)
 		}

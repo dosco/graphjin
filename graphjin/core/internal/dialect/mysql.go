@@ -228,6 +228,9 @@ func (d *MySQLDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
 			ctx.WriteString(`, (SELECT GROUP_CONCAT(id) FROM JSON_TABLE(`)
 			ctx.AddParam(Param{Name: ob.Var, Type: "text"})
 			ctx.WriteString(`, '$[*]' COLUMNS (id ` + ob.Col.Type + ` PATH '$')) AS a))`)
+		} else if ob.Alias != "" {
+			// Ordering by SELECT-list alias (expression aggregate).
+			ctx.Quote(ob.Alias)
 		} else {
 			if ob.IsFunc {
 				ctx.WriteString(strings.ToUpper(ob.Func.Name))
@@ -562,6 +565,10 @@ func (d *MySQLDialect) RenderArray(ctx Context, items []string) {
 		ctx.WriteString(item)
 	}
 	ctx.WriteString(`)`)
+}
+
+func (d *MySQLDialect) RenderArithOp(op qcode.ExpOp) (string, error) {
+	return RenderStandardArithOp(op)
 }
 
 func (d *MySQLDialect) RenderOp(op qcode.ExpOp) (string, error) {
