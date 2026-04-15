@@ -2282,9 +2282,12 @@ func Example_queryWithExprMul() {
 	// Bound to id <= 100 so the result stays stable when other tests
 	// insert additional products into the shared test database (the test
 	// suite shares a single container across all Example_* runs).
+	// Terse leaf syntax — bare identifier for column, bare number for
+	// literal. Equivalent to sum(expr: { mul: [{ col: "id" }, { num: 2 }] })
+	// but follows the same parser-tag convention the where-clause uses.
 	gql := `query {
 		products(where: { id: { lteq: 100 } }) {
-			doubled: sum(expr: { mul: [{ col: "id" }, { num: 2 }] })
+			doubled: sum(expr: { mul: [id, 2] })
 		}
 	}`
 
@@ -2321,8 +2324,8 @@ func Example_queryWithExprBare() {
 		products(where: { id: { lteq: 100 } }) {
 			ratio: ratio(expr: {
 				div: [
-					{ sum: { mul: [{ col: "id" }, { num: 2 }] } },
-					{ sum: { col: "id" } }
+					{ sum: { mul: [id, 2] } },
+					{ sum: id }
 				]
 			})
 		}
@@ -2361,7 +2364,7 @@ func Example_queryWithExprRoleAllowlist() {
 	}
 	gql := `query {
 		products {
-			leaked: sum(expr: { mul: [{ col: "price" }, { num: 2 }] })
+			leaked: sum(expr: { mul: [price, 2] })
 		}
 	}`
 

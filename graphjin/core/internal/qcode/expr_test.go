@@ -47,6 +47,112 @@ func TestExprBasicArithmetic(t *testing.T) {
 	}
 }
 
+// TestExprTerseLeaves verifies the bare-leaf shorthand — identifiers,
+// quoted strings, numbers, and $vars at expression positions resolve
+// to the same AST as the explicit { col: ... } / { num: ... } / { var: ... }
+// wrappers.
+func TestExprTerseLeaves(t *testing.T) {
+	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	if err := qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{Columns: []string{"id", "name", "price"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Terse form: bare identifier × number literal.
+	q, err := qc.Compile([]byte(`
+		query { products(distinct: [id]) {
+			id
+			doubled: sum(expr: { mul: [price, 2] })
+		} }`), nil, "user", "")
+	if err != nil {
+		t.Fatalf("terse form compile failed: %v", err)
+	}
+	var terse *qcode.Exp
+	for _, f := range q.Selects[0].Fields {
+		if f.FieldName == "doubled" {
+			terse = f.Args[0].Expr
+		}
+	}
+	if terse == nil || terse.Op != qcode.OpMul {
+		t.Fatalf("terse form root op = %v, want OpMul", terse)
+	}
+	if terse.Children[0].Op != qcode.OpColRef || terse.Children[0].Left.Col.Name != "price" {
+		t.Errorf("terse form child 0 should be col ref to price, got %v (%s)",
+			terse.Children[0].Op, terse.Children[0].Left.Col.Name)
+	}
+	if terse.Children[1].Op != qcode.OpLiteral || terse.Children[1].Lit.Val != "2" {
+		t.Errorf("terse form child 1 should be literal 2, got %v (%s)",
+			terse.Children[1].Op, terse.Children[1].Lit.Val)
+	}
+
+	// Explicit form (backwards compat) — must produce an equivalent tree.
+	q2, err := qc.Compile([]byte(`
+		query { products(distinct: [id]) {
+			id
+			doubled: sum(expr: { mul: [{ col: "price" }, { num: 2 }] })
+		} }`), nil, "user", "")
+	if err != nil {
+		t.Fatalf("explicit form compile failed: %v", err)
+	}
+	var explicit *qcode.Exp
+	for _, f := range q2.Selects[0].Fields {
+		if f.FieldName == "doubled" {
+			explicit = f.Args[0].Expr
+		}
+	}
+	if explicit == nil || explicit.Op != qcode.OpMul {
+		t.Fatal("explicit form did not compile to OpMul")
+	}
+	if explicit.Children[0].Left.Col.Name != "price" {
+		t.Error("explicit form lost column name")
+	}
+}
+
+// TestExprTerseDotNotation verifies the bare quoted-string form with a
+// dot routes to relationship-qualified column resolution, same path as
+// the explicit { col: "rel.col" } wrapper.
+func TestExprTerseDotNotation(t *testing.T) {
+	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})
+	if err := qc.AddRole("user", "public", "purchases", qcode.TRConfig{
+		Query: qcode.QueryConfig{Columns: []string{"id", "quantity", "product_id"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{Columns: []string{"id", "price"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	q, err := qc.Compile([]byte(`
+		query { purchases(distinct: [id]) {
+			id
+			revenue: sum(expr: { mul: [quantity, "products.price"] })
+		} }`), nil, "user", "")
+	if err != nil {
+		t.Fatalf("terse dot-notation compile failed: %v", err)
+	}
+
+	var expr *qcode.Exp
+	for _, f := range q.Selects[0].Fields {
+		if f.FieldName == "revenue" {
+			expr = f.Args[0].Expr
+		}
+	}
+	if expr == nil {
+		t.Fatal("revenue not found")
+	}
+	relRef := expr.Children[1]
+	if len(relRef.RelPath) == 0 {
+		t.Error("dot-notation terse form should produce a non-empty RelPath")
+	}
+	if relRef.Left.Col.Name != "price" || relRef.Left.Col.Table != "products" {
+		t.Errorf("terse dot-notation target = %s.%s, want products.price",
+			relRef.Left.Col.Table, relRef.Left.Col.Name)
+	}
+}
+
 // TestExprBackwardsCompat verifies the legacy `<fn>_<col>` path still
 // compiles unchanged when no `expr:` arg is present.
 func TestExprBackwardsCompat(t *testing.T) {
