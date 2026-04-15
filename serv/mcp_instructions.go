@@ -37,35 +37,45 @@ Before you reach for sum_<col>, check: does the metric multiply, subtract, or di
 across columns? If yes, use sum(expr: ...) with a structured operator tree. The query
 compiler emits one server-side SQL aggregate — correct, fast, no client-side math.
 
+Leaf values follow the parser-tag convention the where: clause already uses:
+  bare identifier    — column reference:           price, qty
+  quoted string      — column ref (dots allowed):  "product.standardcost"
+  number             — numeric literal:            100, 2.5
+  $var               — bind parameter:             $bump
+  { op: ... }        — nested operator:            { mul: [...] }, { case: {...} }
+
+(The explicit wrapper forms { col: "price" }, { num: 2 }, { var: "bump" } still
+work and are accepted as equivalents for disambiguation.)
+
 Three patterns you WILL use frequently:
 
 1. SUM(a × b) — revenue, line totals, weighted sums:
    {
      salesorderdetail(distinct: [productid]) {
        productid
-       revenue: sum(expr: { mul: [{ col: "unitprice" }, { col: "orderqty" }] })
+       revenue: sum(expr: { mul: [unitprice, orderqty] })
      }
    }
 
 2. Global single-row total — no distinct, no other fields needed:
    { salesorderdetail {
-       total_revenue: sum(expr: { mul: [{ col: "unitprice" }, { col: "orderqty" }] })
+       total_revenue: sum(expr: { mul: [unitprice, orderqty] })
      }
    }
 
 3. Top N by computed metric — order_by on the expression alias:
    { salesorderdetail(distinct: [productid], order_by: { revenue: desc }, limit: 10) {
        productid
-       revenue: sum(expr: { mul: [{ col: "unitprice" }, { col: "orderqty" }] })
+       revenue: sum(expr: { mul: [unitprice, orderqty] })
      }
    }
 
 Other operators: add, sub, div, mod, neg, coalesce, nullif, case, cast.
-Leaves: col (column), num (literal), str (literal), var (bind variable).
 Aggregate nodes inside expressions (for ratio-of-aggregates):
-  ratio: ratio(expr: { div: [{ sum: { col: "revenue" } }, { sum: { col: "cost" } }] })
+  ratio: ratio(expr: { div: [{ sum: revenue }, { sum: cost }] })
 
-Joined columns: { col: "related.field" } traverses FK joins (up to 3 hops).
+Joined columns: "related.field" (quoted, dots allowed) traverses FK joins
+up to 3 hops.
 
 For the full grammar and more patterns, read graphjin://discovery/syntax.
 

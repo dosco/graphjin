@@ -43,9 +43,39 @@ func (co *Compiler) compileExprNode(sel *Select, node *graph.Node, depth int) (*
 		return nil, errors.New("expr: empty node")
 	}
 
-	// Each expression node is an object with exactly one operator key.
+	// Bare-leaf shorthand: a parser-tagged leaf value (identifier, quoted
+	// string, number, variable, boolean) is treated as the equivalent
+	// explicit-wrapper form at the same position. This matches the way
+	// the where-clause parser already dispatches on NodeLabel / NodeStr /
+	// NodeNum / NodeVar. The explicit `{ col: ... }` / `{ num: ... }` /
+	// `{ var: ... }` forms still work (handled below) for backwards
+	// compat and for cases where explicit disambiguation is preferred.
+	switch node.Type {
+	case graph.NodeLabel:
+		return co.compileExprColFromName(sel, node.Val)
+	case graph.NodeStr:
+		// Quoted strings are column references (the dot-notation case
+		// needs quotes because GraphQL identifiers can't contain dots).
+		// v1 has no string literals in expressions; if one is needed
+		// later, { str: "..." } remains available as an escape hatch.
+		return co.compileExprColFromName(sel, node.Val)
+	case graph.NodeNum:
+		ex := newExpOp(OpLiteral)
+		ex.Lit = ExpLit{Val: node.Val, ValType: ValNum}
+		return ex, nil
+	case graph.NodeVar:
+		ex := newExpOp(OpLiteral)
+		ex.Lit = ExpLit{Val: node.Val, ValType: ValVar}
+		return ex, nil
+	case graph.NodeBool:
+		ex := newExpOp(OpLiteral)
+		ex.Lit = ExpLit{Val: node.Val, ValType: ValBool}
+		return ex, nil
+	}
+
+	// Otherwise: object with exactly one operator key.
 	if node.Type != graph.NodeObj || len(node.Children) != 1 {
-		return nil, fmt.Errorf("expr: each expression node must be an object with exactly one operator key, got %s with %d children",
+		return nil, fmt.Errorf("expr: each expression node must be a column (bare identifier or quoted string), a number, a $var, or an object with exactly one operator key — got %s with %d children",
 			parserTypeName(node.Type), len(node.Children))
 	}
 
@@ -95,25 +125,31 @@ func (co *Compiler) compileExprNode(sel *Select, node *graph.Node, depth int) (*
 }
 
 func (co *Compiler) compileExprCol(sel *Select, node *graph.Node) (*Exp, error) {
-	if node.Type != graph.NodeStr {
-		return nil, fmt.Errorf("expr.col: expected string column name, got %s", parserTypeName(node.Type))
+	if node.Type != graph.NodeStr && node.Type != graph.NodeLabel {
+		return nil, fmt.Errorf("expr.col: expected column name, got %s", parserTypeName(node.Type))
 	}
+	return co.compileExprColFromName(sel, node.Val)
+}
 
-	// Dot-notation routes to a related table: "relname.colname".
-	// Only single-hop belongs-to relationships are supported (the current
-	// row has a scalar FK pointing at the related row's PK). One-to-many
-	// dereferencing doesn't make sense in a scalar expression — there
-	// could be many matching rows, so there is no single value to use.
-	if i := strings.IndexByte(node.Val, '.'); i > 0 {
-		return co.compileExprRelCol(sel, node.Val[:i], node.Val[i+1:])
+// compileExprColFromName resolves a column name string (from either the
+// bare-leaf shorthand `price` or the explicit `{ col: "price" }` wrapper)
+// to an OpColRef expression. Dot-notation routes to a related table
+// (e.g. "product.standardcost"); relationship traversal is delegated to
+// compileExprRelCol which supports single-hop and multi-hop belongs-to
+// chains up to exprMaxRelHops.
+func (co *Compiler) compileExprColFromName(sel *Select, name string) (*Exp, error) {
+	if name == "" {
+		return nil, errors.New("expr: empty column name")
 	}
-
-	col, err := sel.Ti.GetColumn(node.Val)
+	if i := strings.IndexByte(name, '.'); i > 0 {
+		return co.compileExprRelCol(sel, name[:i], name[i+1:])
+	}
+	col, err := sel.Ti.GetColumn(name)
 	if err != nil {
 		return nil, fmt.Errorf("expr.col: %w", err)
 	}
 	if col.Blocked {
-		return nil, fmt.Errorf("expr.col: column %q is blocked", node.Val)
+		return nil, fmt.Errorf("expr.col: column %q is blocked", name)
 	}
 	ex := newExpOp(OpColRef)
 	ex.Left.Col = col
@@ -254,9 +290,8 @@ func (co *Compiler) compileExprVariadic(sel *Select, node *graph.Node, op ExpOp,
 }
 
 func (co *Compiler) compileExprUnary(sel *Select, node *graph.Node, op ExpOp, depth int) (*Exp, error) {
-	if node.Type != graph.NodeObj {
-		return nil, fmt.Errorf("expr.neg: expected expression object, got %s", parserTypeName(node.Type))
-	}
+	// Accept any expression node (bare leaf or nested operator object) —
+	// compileExprNode handles both forms. E.g. { neg: price } is valid.
 	child, err := co.compileExprNode(sel, node, depth+1)
 	if err != nil {
 		return nil, err
@@ -415,9 +450,8 @@ func (co *Compiler) compileExprCast(sel *Select, node *graph.Node, depth int) (*
 // div(expr: { num_: { sum: { col: "..." } }, den: ... }). The validator
 // enforces this.
 func (co *Compiler) compileExprAgg(sel *Select, node *graph.Node, op ExpOp, depth int) (*Exp, error) {
-	if node.Type != graph.NodeObj {
-		return nil, fmt.Errorf("expr.%s: expected expression object, got %s", opLowerName(op), parserTypeName(node.Type))
-	}
+	// Accept any expression node (bare leaf or nested operator object).
+	// { sum: price } and { sum: { mul: [...] } } are both valid.
 	child, err := co.compileExprNode(sel, node, depth+1)
 	if err != nil {
 		return nil, err
