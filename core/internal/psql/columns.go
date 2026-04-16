@@ -3,9 +3,20 @@ package psql
 import (
 	"strconv"
 
+	"github.com/dosco/graphjin/core/v3/internal/dialect"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
+
+// baseColumnWrapper is optionally implemented by dialects that need to
+// transform base-SELECT column references before they flow into the outer
+// JSON construct (e.g. Snowflake casts DOUBLE→NUMBER so OBJECT_CONSTRUCT
+// emits decimal instead of scientific notation). When present and it
+// returns true, the dialect has emitted the full column expression with
+// its alias; otherwise the caller falls through to the plain reference.
+type baseColumnWrapper interface {
+	WrapBaseColumn(ctx dialect.Context, colType, colName string, emit func()) bool
+}
 
 func (c *compilerContext) renderColumns(sel *qcode.Select) {
 	i := 0
@@ -231,6 +242,12 @@ func (c *compilerContext) renderBaseColumns(sel *qcode.Select) {
 			c.w.WriteString(col.Col.Name)
 			c.w.WriteString(`"') AS `)
 			c.quoted(col.Col.Name)
+		} else if w, ok := c.dialect.(baseColumnWrapper); ok {
+			col := col
+			emit := func() { c.colWithTable(col.Col.Table, col.Col.Name) }
+			if !w.WrapBaseColumn(c, col.Col.Type, col.Col.Name, emit) {
+				emit()
+			}
 		} else {
 			c.colWithTable(col.Col.Table, col.Col.Name)
 		}

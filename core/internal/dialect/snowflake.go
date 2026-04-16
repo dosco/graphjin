@@ -1611,6 +1611,39 @@ func (d *SnowflakeDialect) snowflakeArrayCastType(_ string) string {
 	return "ARRAY"
 }
 
+// WrapBaseColumn intercepts the inner `__sr_N` projection for DOUBLE/FLOAT
+// columns and casts them to NUMBER(18,4). Without the cast Snowflake
+// serializes DOUBLE/FLOAT inside OBJECT_CONSTRUCT_KEEP_NULL in scientific
+// notation (e.g. `1.150000000000000e+01`) instead of the decimal form
+// every other dialect emits (`11.5`). Because the cast happens at the
+// base SELECT, the outer reference `"__sr_N"."price"` is already NUMBER
+// when the JSON assembler reads it, so OBJECT_CONSTRUCT emits a plain
+// decimal literal.
+//
+// Returns true — and emits the full `CAST(...) AS "col"` form — when the
+// column is float-like. Returns false otherwise so the caller falls back
+// to the plain column reference.
+func (d *SnowflakeDialect) WrapBaseColumn(ctx Context, colType, colName string, emit func()) bool {
+	if !d.isFloatType(colType) {
+		return false
+	}
+	ctx.WriteString(`CAST(`)
+	emit()
+	ctx.WriteString(` AS NUMBER(18,4)) AS `)
+	ctx.Quote(colName)
+	return true
+}
+
+func (d *SnowflakeDialect) isFloatType(t string) bool {
+	switch strings.ToLower(strings.TrimSpace(d.baseType(t))) {
+	case "float", "float4", "float8",
+		"double", "double precision",
+		"real":
+		return true
+	}
+	return false
+}
+
 func (d *SnowflakeDialect) baseType(t string) string {
 	t = strings.TrimSpace(t)
 	for strings.HasSuffix(t, "[]") {

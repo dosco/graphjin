@@ -732,12 +732,12 @@ func Example_queryManyToManyViaJoinTable2() {
 func Example_queryManyToManyViaJoinTable3() {
 	gql := `
 	query {
-		graph_node {
+		graph_node(order_by: { id: asc }) {
 			id
-			dst_node  {
+			dst_node(order_by: { id: asc }) {
 				id
 			}
-			src_node {
+			src_node(order_by: { id: asc }) {
 				id
 			}
 		}

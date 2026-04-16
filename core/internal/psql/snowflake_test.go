@@ -244,6 +244,60 @@ func TestSnowflakeEmptyProjectionEmitsNULL(t *testing.T) {
 	}
 }
 
+// TestSnowflakeFloatCastsToNumber verifies that DOUBLE/FLOAT/REAL columns
+// are wrapped in CAST(... AS NUMBER(18,4)) at the inner `__sr_N`
+// projection. Without this cast Snowflake serializes DOUBLE inside
+// OBJECT_CONSTRUCT_KEEP_NULL as scientific notation
+// (e.g. `1.150000000000000e+01`), diverging from every other dialect's
+// decimal output.
+func TestSnowflakeFloatCastsToNumber(t *testing.T) {
+	di := sdata.NewDBInfo("snowflake", 0, "public", "db", []sdata.DBColumn{
+		{Schema: "public", Table: "widgets", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+		{Schema: "public", Table: "widgets", Name: "weight", Type: "float"},
+		{Schema: "public", Table: "widgets", Name: "height", Type: "double"},
+		{Schema: "public", Table: "widgets", Name: "count", Type: "bigint"},
+		{Schema: "public", Table: "widgets", Name: "name", Type: "varchar"},
+	}, nil, nil)
+
+	schema, err := sdata.NewDBSchema(di, nil)
+	if err != nil {
+		t.Fatalf("schema: %v", err)
+	}
+	qc, err := qcode.NewCompiler(schema, qcode.Config{DBSchema: schema.DBSchema()})
+	if err != nil {
+		t.Fatalf("qcode: %v", err)
+	}
+	pc := psql.NewCompiler(psql.Config{DBType: "snowflake"})
+
+	qcomp, err := qc.Compile([]byte(`{ widgets(limit: 1) { id weight height count name } }`), nil, "anon", "")
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	_, sqlBytes, err := pc.CompileEx(qcomp)
+	if err != nil {
+		t.Fatalf("psql compile: %v", err)
+	}
+	sql := string(sqlBytes)
+
+	for _, want := range []string{
+		`CAST("widgets"."weight" AS NUMBER(18,4)) AS "weight"`,
+		`CAST("widgets"."height" AS NUMBER(18,4)) AS "height"`,
+	} {
+		if !strings.Contains(sql, want) {
+			t.Errorf("missing float-column cast %q in SQL:\n%s", want, sql)
+		}
+	}
+	for _, notWant := range []string{
+		`CAST("widgets"."id"`,
+		`CAST("widgets"."count"`,
+		`CAST("widgets"."name"`,
+	} {
+		if strings.Contains(sql, notWant) {
+			t.Errorf("non-float column incorrectly wrapped %q in SQL:\n%s", notWant, sql)
+		}
+	}
+}
+
 // TestSnowflakeIncludeDirectiveLiteralBool checks that @include(if: true)
 // and @skip(if: false) preserve the field, while @include(if: false) and
 // @skip(if: true) drop it.
