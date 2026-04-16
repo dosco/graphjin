@@ -13,7 +13,7 @@ var (
 	mcpExplainVarsFile string
 )
 
-// mcpExplainCmd wires `graphjin mcp explain <graphql>` which compiles a query
+// mcpExplainCmd wires `graphjin cli explain <graphql>` which compiles a query
 // via the explain_query MCP tool without executing it.
 // Server-gated: requires mcp.allow_dev_tools.
 func mcpExplainCmd() *cobra.Command {
@@ -25,8 +25,8 @@ func mcpExplainCmd() *cobra.Command {
 Server-gated: requires mcp.allow_dev_tools. Pass "-" to read GraphQL from
 stdin, e.g.:
 
-  graphjin mcp explain 'query { users { id } }' --role user
-  cat query.graphql | graphjin mcp explain - --role anon`,
+  graphjin cli explain 'query { users { id } }' --role user
+  cat query.graphql | graphjin cli explain - --role anon`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			query, err := readGraphQLArg(args[0])

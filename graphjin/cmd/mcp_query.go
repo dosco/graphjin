@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// mcpQueryCmd wires `graphjin mcp query ...` subcommands that call the
+// mcpQueryCmd wires `graphjin cli query ...` subcommands that call the
 // list_saved_queries / search_saved_queries / get_saved_query /
 // execute_saved_query / execute_graphql MCP tools on a running GraphJin
 // server. Output is JSON on stdout by default; server-side gates (e.g.
@@ -117,8 +117,8 @@ require mcp.allow_mutations.
 
 Pass the GraphQL body as a positional argument, or "-" to read from stdin:
 
-  graphjin mcp query exec 'query { users { id email } }'
-  cat query.graphql | graphjin mcp query exec -`,
+  graphjin cli query exec 'query { users { id email } }'
+  cat query.graphql | graphjin cli query exec -`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			query, err := readGraphQLArg(args[0])

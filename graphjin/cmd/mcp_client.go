@@ -16,11 +16,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// MCP HTTP-client persistent flags. These are attached to the `mcp` cobra
+// MCP HTTP-client persistent flags. These are attached to the `cli` cobra
 // parent so every client-mode subcommand (query, schema, audit, ...) inherits
-// them. Existing subcommands (mcp stdio, mcp info, mcp install) use the same
-// --server variable (declared in cmd_mcp.go), so we leave that alone and add
-// the rest here.
+// them. The `mcp` command also shares the --server variable (declared in
+// cmd_mcp.go) for its stdio proxy mode.
 var (
 	mcpClientToken   string
 	mcpClientHeaders []string
@@ -33,11 +32,11 @@ var (
 const defaultMCPClientServerURL = "http://localhost:8080/"
 
 // addMCPClientFlags attaches the shared persistent flags for all client-mode
-// subcommands to the given parent command. Call once on the `mcp` parent.
+// subcommands to the given parent command. Call once on the `cli` parent.
 func addMCPClientFlags(c *cobra.Command) {
-	// --server is already declared as a Flags() on mcp in cmd_mcp.go; we do not
-	// re-declare it. We only add the client-only flags as persistent so they
-	// propagate to children.
+	// --server is declared as a persistent flag on `cli` in cmd_cli.go; we do
+	// not re-declare it here. We only add the remaining client-only flags as
+	// persistent so they propagate to children.
 	c.PersistentFlags().StringVar(&mcpClientToken, "token", "",
 		"Bearer token for server auth (env: GRAPHJIN_TOKEN, GRAPHJIN_MCP_AUTH)")
 	c.PersistentFlags().StringArrayVar(&mcpClientHeaders, "header", nil,
