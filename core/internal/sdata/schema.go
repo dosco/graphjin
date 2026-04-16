@@ -169,7 +169,19 @@ func NewDBSchema(
 			if _, ok := schema.edgesIndex[alias]; ok {
 				continue
 			}
-			if e, ok := schema.edgesIndex[t]; ok {
+			// Look up the source table's edges in the exact-case index
+			// first, then fall back to CI. Config typically uses
+			// lowercase table names (`{name: me, table: users}`) but
+			// the edges were registered under the discovered storage
+			// name (Snowflake stores UPPERCASE `USERS`). Without the
+			// CI fallback the alias never gets edges and nested
+			// selections against the alias fail with
+			// "table not found: me".
+			e, ok := schema.edgesIndex[t]
+			if !ok {
+				e, ok = schema.edgesIndexCI[strings.ToLower(t)]
+			}
+			if ok {
 				schema.edgesIndex[alias] = e
 				// Mirror the alias into the CI index so lowercase
 				// GraphQL references to an alias resolve alongside
