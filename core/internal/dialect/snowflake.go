@@ -49,7 +49,7 @@ func (d *SnowflakeDialect) UseNamedParams() bool {
 
 func (d *SnowflakeDialect) RenderJSONRoot(ctx Context, sel *qcode.Select) {
 	// Real Snowflake: OBJECT_CONSTRUCT (DuckDB equivalent was json_object)
-	ctx.WriteString(`SELECT CAST(OBJECT_CONSTRUCT(`)
+	ctx.WriteString(`SELECT CAST(OBJECT_CONSTRUCT_KEEP_NULL(`)
 }
 
 func (d *SnowflakeDialect) RenderJSONSelect(ctx Context, sel *qcode.Select) {
@@ -72,12 +72,12 @@ func (d *SnowflakeDialect) RenderJSONSelect(ctx Context, sel *qcode.Select) {
 	// Root selections (Rel.Type == RelNone) are not correlated and
 	// don't need wrapping.
 	if sel.Singular && sel.Rel.Type != 0 { // RelNone == 0
-		ctx.WriteString(`SELECT ANY_VALUE(OBJECT_CONSTRUCT(`)
+		ctx.WriteString(`SELECT ANY_VALUE(OBJECT_CONSTRUCT_KEEP_NULL(`)
 		ctx.RenderJSONFields(sel)
 		ctx.WriteString(`))`)
 		return
 	}
-	ctx.WriteString(`SELECT OBJECT_CONSTRUCT(`)
+	ctx.WriteString(`SELECT OBJECT_CONSTRUCT_KEEP_NULL(`)
 	ctx.RenderJSONFields(sel)
 	ctx.WriteString(`)`)
 }
@@ -87,7 +87,7 @@ func (d *SnowflakeDialect) RenderJSONPlural(ctx Context, sel *qcode.Select) {
 	// Identifiers MUST be double-quoted: inner aliases emitted by the compiler
 	// are quoted-lowercase ("__sj_0", "json"), and Snowflake's default folding
 	// would otherwise uppercase the unquoted reference and miss the target.
-	ctx.WriteString(`COALESCE(ARRAY_AGG("__sj_`)
+	ctx.WriteString(`COALESCE(ARRAY_AGG("__sjb_`)
 	ctx.WriteString(strconv.Itoa(int(sel.ID)))
 	ctx.WriteString(`"."json"), ARRAY_CONSTRUCT())`)
 }
@@ -135,15 +135,35 @@ func (d *SnowflakeDialect) RenderJSONRootSuffix(ctx Context) {
 }
 
 func (d *SnowflakeDialect) SupportsLateral() bool {
-	// Snowflake supports LATERAL natively, but flipping this to true breaks
-	// the generated SQL with `invalid identifier '"__sj_0"."json"'`: the
-	// compiler's LEFT JOIN LATERAL path emits a __sj_N derived-table alias
-	// that's referenced from outer scopes in a way Snowflake's scoping
-	// rejects. Left false until the __sj binding is threaded through
-	// dialect hooks. The correlated-subquery variant compiles cleanly on
-	// most queries; the remaining "Unsupported subquery type" cases require
-	// a deeper compiler rewrite (LEFT JOIN LATERAL with proper aliases).
+	// Tried SupportsLateral=true: on Snowflake it trades one failure mode
+	// for another — correlated subqueries that were rejected with
+	// "Unsupported subquery type" now compile into nested LATERAL joins
+	// that Snowflake's optimizer aborts with internal error 300010, and
+	// some queries come back with empty payloads that downstream JSON
+	// parsers can't read. The correlated-subquery form is a closer fit for
+	// Snowflake's planner; fixing the remaining cases requires inlining
+	// singular children (removing the inner `(SELECT ... LIMIT 1) AS T`
+	// wrapper) rather than toggling LATERAL.
 	return false
+}
+
+// RenderLimit drops `LIMIT 1` on child singular selects. Snowflake rejects
+// correlated scalar subqueries that contain a derived table with LIMIT with
+// "Unsupported subquery type cannot be evaluated". For child singular
+// selects (Rel.Type != RelNone) the relationship is FK-unique so at most one
+// row matches; the outer query already wraps the result in ANY_VALUE() so
+// multi-row fallback is harmless. Root singulars keep their LIMIT 1.
+func (d *SnowflakeDialect) RenderLimit(ctx Context, sel *qcode.Select) {
+	if sel.Singular && sel.Rel.Type != sdata.RelNone {
+		if sel.Paging.OffsetVar != "" {
+			ctx.WriteString(` OFFSET `)
+			ctx.AddParam(Param{Name: sel.Paging.OffsetVar, Type: "integer"})
+		} else if sel.Paging.Offset != 0 {
+			ctx.WriteString(fmt.Sprintf(` OFFSET %d`, sel.Paging.Offset))
+		}
+		return
+	}
+	d.PostgresDialect.RenderLimit(ctx, sel)
 }
 
 func (d *SnowflakeDialect) RenderInlineChild(ctx Context, renderer InlineChildRenderer, psel, sel *qcode.Select) {

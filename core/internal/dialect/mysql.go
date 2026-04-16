@@ -161,7 +161,7 @@ func (d *MySQLDialect) RenderJSONSelect(ctx Context, sel *qcode.Select) {
 
 func (d *MySQLDialect) RenderJSONPlural(ctx Context, sel *qcode.Select) {
 	ctx.WriteString(`CAST(COALESCE(json_arrayagg(`)
-	ctx.Quote("__sj_" + strconv.Itoa(int(sel.ID)))
+	ctx.Quote("__sjb_" + strconv.Itoa(int(sel.ID)))
 	ctx.WriteString(`.json), '[]') AS JSON)`)
 }
 

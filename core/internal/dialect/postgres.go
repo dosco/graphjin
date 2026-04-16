@@ -75,7 +75,7 @@ func (d *PostgresDialect) RenderJSONSelect(ctx Context, sel *qcode.Select) {
 }
 
 func (d *PostgresDialect) RenderJSONPlural(ctx Context, sel *qcode.Select) {
-	ctx.WriteString(`COALESCE(jsonb_agg(__sj_`)
+	ctx.WriteString(`COALESCE(jsonb_agg(__sjb_`)
 	ctx.Write(fmt.Sprintf("%d", sel.ID))
 	ctx.WriteString(`.json), '[]')`)
 }

@@ -89,7 +89,7 @@ func (d *OracleDialect) RenderJSONSelect(ctx Context, sel *qcode.Select) {
 
 func (d *OracleDialect) RenderJSONPlural(ctx Context, sel *qcode.Select) {
 	ctx.WriteString(`COALESCE(JSON_ARRAYAGG(`)
-	ctx.Quote("__sj_" + strconv.Itoa(int(sel.ID)))
+	ctx.Quote("__sjb_" + strconv.Itoa(int(sel.ID)))
 	ctx.WriteString(`.json), '[]')`)
 }
 

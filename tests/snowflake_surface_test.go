@@ -230,7 +230,7 @@ func TestSnowflakeFKDiscoveryLive(t *testing.T) {
 		`{ purchases(where: {id: {eq: 1}}) { id customer { full_name } } }`,
 		nil, "anon")
 	require.NoError(t, err, "SHOW IMPORTED KEYS must surface purchases.customer → users edge at compile time")
-	require.Contains(t, exp.CompiledQuery, `ANY_VALUE(OBJECT_CONSTRUCT('full_name'`,
+	require.Contains(t, exp.CompiledQuery, `ANY_VALUE(OBJECT_CONSTRUCT_KEEP_NULL('full_name'`,
 		"singular child subquery must be wrapped in ANY_VALUE for Snowflake")
 }
 

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -619,6 +620,9 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 	if err != nil {
 		span.Error(err)
 		return err
+	}
+	if os.Getenv("GJ_DEBUG_SQL") != "" {
+		fmt.Printf("[DEBUG SQL]\n%s\n", querySQL)
 	}
 
 	var row *sql.Row

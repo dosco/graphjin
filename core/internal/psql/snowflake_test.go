@@ -43,20 +43,20 @@ func snowflakeCompile(t *testing.T, gql string, vars map[string]json.RawMessage)
 }
 
 // TestSnowflakeJSONPluralQuoting is a regression guard for the
-// `COALESCE(ARRAY_AGG(__sj_0.json), ...)` bug where unquoted identifiers
+// `COALESCE(ARRAY_AGG(__sjb_0.json), ...)` bug where unquoted identifiers
 // got uppercased by Snowflake and missed the quoted-lowercase inner aliases.
-// After the fix the compiled SQL must contain `"__sj_0"."json"` (both parts
-// quoted).
+// The inner derived-table alias is `__sjb_N` (the LATERAL outer keeps
+// `__sj_N`); both parts must be double-quoted.
 func TestSnowflakeJSONPluralQuoting(t *testing.T) {
 	sql, err := snowflakeCompile(t, `{ products(limit: 3) { id name } }`, nil)
 	if err != nil {
 		t.Fatalf("compile err: %v", err)
 	}
-	if !strings.Contains(sql, `ARRAY_AGG("__sj_0"."json")`) {
-		t.Errorf(`expected ARRAY_AGG("__sj_0"."json") (quoted both sides), got:\n%s`, sql)
+	if !strings.Contains(sql, `ARRAY_AGG("__sjb_0"."json")`) {
+		t.Errorf(`expected ARRAY_AGG("__sjb_0"."json") (quoted both sides), got:\n%s`, sql)
 	}
-	if strings.Contains(sql, `ARRAY_AGG(__sj_0.json)`) {
-		t.Errorf(`unquoted ARRAY_AGG(__sj_0.json) leaked; SQL:\n%s`, sql)
+	if strings.Contains(sql, `ARRAY_AGG(__sjb_0.json)`) {
+		t.Errorf(`unquoted ARRAY_AGG(__sjb_0.json) leaked; SQL:\n%s`, sql)
 	}
 }
 

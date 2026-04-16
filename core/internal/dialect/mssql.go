@@ -225,7 +225,7 @@ func (d *MSSQLDialect) RenderJSONSelect(ctx Context, sel *qcode.Select) {
 // Uses STRING_AGG to aggregate JSON objects into an array.
 func (d *MSSQLDialect) RenderJSONPlural(ctx Context, sel *qcode.Select) {
 	ctx.WriteString(`COALESCE('[' + STRING_AGG(`)
-	ctx.Quote("__sj_" + fmt.Sprintf("%d", sel.ID))
+	ctx.Quote("__sjb_" + fmt.Sprintf("%d", sel.ID))
 	ctx.WriteString(`.[json], ',') + ']', '[]')`)
 }
 

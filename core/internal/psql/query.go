@@ -477,7 +477,13 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 		if sel.FieldFilter.Exp != nil {
 			c.w.WriteString(`) ELSE null END)`)
 		}
-		c.w.WriteString(` AS json`)
+		// Quote `json` explicitly so case-preserving backends (Snowflake
+		// folds unquoted identifiers to UPPERCASE) keep it lowercase — the
+		// outer scope reads back `"__sj_N"."json"` via colWithTableID, which
+		// always emits quoted-lowercase. An unquoted `AS json` here becomes
+		// `JSON` on Snowflake and the outer read misses.
+		c.w.WriteString(` AS `)
+		c.quoted("json")
 
 		// Build the cursor value string
 		if sel.Paging.Cursor && c.dialect.SupportsLateral() {
@@ -582,7 +588,15 @@ func (c *compilerContext) renderSelectClose(sel *qcode.Select) {
 
 	if !sel.Singular {
 		c.w.WriteString(`)`)
-		c.aliasWithID("__sj", sel.ID)
+		// On LATERAL-supporting backends the outer LATERAL alias is also
+		// `__sj_N` (renderLateralJoinClose). Using the same name for the
+		// inner derived table works on Postgres/MySQL because the inner
+		// scope shadows the outer cleanly, but Snowflake's optimizer
+		// aborts with internal error 300010 on the collision. Rename the
+		// inner alias to `__sjb_N` ("__sj base") so outer and inner don't
+		// clash; dialects' RenderJSONPlural reference the inner alias
+		// directly and have been updated in lockstep.
+		c.aliasWithID("__sjb", sel.ID)
 	}
 }
 
