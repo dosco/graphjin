@@ -22,6 +22,12 @@ var dbTypes map[string]string = map[string]string{
 	"timestamp_ntz":               "String",
 	"timestamp_ltz":               "String",
 	"timestamp_tz":                "String",
+	// Snowflake native types
+	"variant":   "JSON",
+	"object":    "JSON",
+	"array":     "JSON",
+	"geography": "String",
+	"geometry":  "String",
 }
 
 type dirArg struct {

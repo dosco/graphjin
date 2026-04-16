@@ -303,17 +303,22 @@ database:
 database:
   type: snowflake
   # Snowflake requires a connection string (host/port fields are not used)
-  connection_string: user@myaccount/mydb/public?warehouse=compute_wh&account=myaccount
+  # Format: user@account/database/schema?warehouse=WH&role=ROLE
+  connection_string: MY_USER@myaccount/MY_DB/PUBLIC?warehouse=COMPUTE_WH
 ```
+
+##### Identifier Casing
+
+Snowflake stores unquoted identifiers as UPPERCASE. GraphJin preserves whatever case `INFORMATION_SCHEMA` reports (typically uppercase for unquoted objects, original case for quoted objects). GraphQL queries written in lowercase (e.g., `{ accounts { id } }`) are resolved via case-insensitive lookup and work against uppercase-stored tables like `ACCOUNTS`.
 
 ##### Key Pair (JWT) Authentication
 
-Snowflake supports key pair authentication using RSA-2048 private keys in PKCS#8 PEM format. The gosnowflake driver handles JWT generation, signing, and the 60-second token expiry internally.
+Snowflake supports key pair authentication using RSA-2048+ private keys in PKCS#8 PEM format. PKCS#1 keys (`-----BEGIN RSA PRIVATE KEY-----`) are not supported — see conversion command below. The gosnowflake driver handles JWT generation, signing, and the 60-second token expiry internally.
 
 ```yaml
 database:
   type: snowflake
-  connection_string: user@myaccount/mydb/public?warehouse=compute_wh&account=myaccount
+  connection_string: MY_USER@myaccount/MY_DB/PUBLIC?warehouse=COMPUTE_WH
 
   # Path to PKCS#8 PEM-encoded RSA private key
   private_key_path: /path/to/rsa_key.p8
