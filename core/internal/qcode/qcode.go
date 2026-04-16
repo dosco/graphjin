@@ -165,6 +165,12 @@ type Column struct {
 	Col         sdata.DBColumn
 	FieldFilter Filter
 	FieldName   string
+	// AggInput marks this column as present in BCols *only* because it is the
+	// input to an aggregate function (e.g. the `id` inside `count_id`). The
+	// column must still be available in the inner SELECT for the aggregate to
+	// reference, but it must NOT be added to GROUP BY — including it would
+	// make every group unique and collapse aggregates to count=1 per row.
+	AggInput bool
 }
 
 type Function struct {
@@ -1600,9 +1606,12 @@ func argTypes(types []graph.ParserType) string {
 	lastIndex := len(types) - 1
 	for i, t := range types {
 		if !list {
-			if i == lastIndex {
+			switch {
+			case i == 0:
+				// first type — no separator
+			case i == lastIndex:
 				sb.WriteString(" or ")
-			} else if i != 0 {
+			default:
 				sb.WriteString(", ")
 			}
 		}

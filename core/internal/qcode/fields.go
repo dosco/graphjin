@@ -170,7 +170,11 @@ func (co *Compiler) compileChildColumns(
 			// legacy single-column path; for the expression path, the
 			// caller is expected to use distinct + non-recursive selection.
 			if len(fn.Args) > 0 && fn.Args[0].Type == ArgTypeCol {
-				sel.addBaseCol(Column{Col: fn.Args[0].Col})
+				// Mark the arg column as aggregate-only so renderGroupBy
+				// excludes it (see BUG-G1). Without this flag, a query like
+				// { t { product count_id } } would GROUP BY both product AND
+				// id → each group has exactly 1 row and count is always 1.
+				sel.addBaseCol(Column{Col: fn.Args[0].Col, AggInput: fn.Agg})
 			}
 		}
 		sel.addField(field)
@@ -293,7 +297,11 @@ func (co *Compiler) addOrderByColumns(sel *Select) {
 		return
 	}
 	for _, ob := range sel.OrderBy {
-		sel.addBaseCol(Column{Col: ob.Col})
+		// When order_by targets an aggregate function (e.g. count_id), the
+		// underlying column is referenced ONLY inside the aggregate. Mark it
+		// as aggregate-input so renderGroupBy excludes it — otherwise it
+		// lands in GROUP BY and collapses every group to 1 row (BUG-G1).
+		sel.addBaseCol(Column{Col: ob.Col, AggInput: ob.IsFunc})
 	}
 }
 

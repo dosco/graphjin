@@ -143,6 +143,35 @@ func (co *Compiler) compileDirectiveSkipInclude(
 
 	for _, arg := range d.Args {
 		switch arg.Name {
+		case "if":
+			// Standard GraphQL spec: @include(if: Boolean!) / @skip(if: Boolean!).
+			// Accepts either a variable (treated like `ifVar` below) or a
+			// literal boolean (resolved at compile time so the field is
+			// either rendered or dropped without emitting extra SQL).
+			if arg.Val.Type == graph.NodeVar {
+				var ex *Exp
+				if skip {
+					ex = newExpOp(OpNotEqualsTrue)
+				} else {
+					ex = newExpOp(OpEqualsTrue)
+				}
+				ex.Right.ValType = ValVar
+				ex.Right.Val = arg.Val.Val
+				addAndFilter(&f.FieldFilter, ex)
+				if f.Type == FieldTypeTable {
+					addAndFilter(&sel.Where, ex)
+				}
+				continue
+			}
+			if arg.Val.Type != graph.NodeBool {
+				err = fmt.Errorf("argument 'if' must be a Boolean or a variable, got %s", arg.Val.Type)
+				return
+			}
+			truthy := strings.EqualFold(arg.Val.Val, "true")
+			// @skip(if: true) and @include(if: false) → drop the field.
+			if (skip && truthy) || (!skip && !truthy) {
+				f.SkipRender = SkipTypeDrop
+			}
 		case "ifVar", "if_var":
 			if err = validateArg(arg, graph.NodeVar); err != nil {
 				return

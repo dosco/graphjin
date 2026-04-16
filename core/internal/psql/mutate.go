@@ -18,7 +18,7 @@ func (co *Compiler) compileMutation(
 	w *bytes.Buffer,
 	qc *qcode.QCode,
 	md *Metadata,
-) {
+) error {
 	c := compilerContext{
 		md:       md,
 		w:        w,
@@ -27,17 +27,39 @@ func (co *Compiler) compileMutation(
 		Compiler: co,
 	}
 
+	// All mutation code paths (linear, JSON CTE, classic) assume the target
+	// table has at least one primary key column — they generate SQL that
+	// references it (e.g. for change capture, upsert conflict resolution,
+	// child-row tracking). On Snowflake this is a common failure mode because
+	// Snowflake constraints are informational-only and many production tables
+	// never declare a PK. Detect this at compile time and return a clear,
+	// actionable error rather than letting the dialect emit SQL with an empty
+	// quoted identifier.
+	for i := range qc.Mutates {
+		m := &qc.Mutates[i]
+		if m.Type == qcode.MTNone || m.Type == qcode.MTKeyword {
+			continue
+		}
+		if len(m.Ti.PrimaryCols) == 0 {
+			return fmt.Errorf(
+				"mutation target table %q has no primary key; "+
+					"declare one in the database (e.g. ALTER TABLE %s ADD PRIMARY KEY (col)) "+
+					"or in GraphJin config under tables[].columns[].primary: true",
+				m.Ti.Name, m.Ti.Name)
+		}
+	}
+
 	// Check if the dialect wants to handle the entire mutation compilation itself
 	// This is used by MongoDB which generates JSON mutation DSL, not SQL
 	if fmc, ok := co.dialect.(dialect.FullMutationCompiler); ok {
 		if fmc.CompileFullMutation(&c, qc) {
-			return
+			return nil
 		}
 	}
 
 	if co.dialect.SupportsLinearExecution() {
 		c.compileLinearMutation()
-		return
+		return nil
 	}
 
 	if qc.SType != qcode.QTDelete {
@@ -59,13 +81,12 @@ func (co *Compiler) compileMutation(
 	case qcode.QTDelete:
 		c.renderDelete()
 	default:
-		return
+		return nil
 	}
 
 	co.dialect.RenderMutationPostamble(&c, qc)
 	c.w.WriteString(` `)
-	co.CompileQuery(w, qc, c.md)
-
+	return co.CompileQuery(w, qc, c.md)
 }
 
 func (c *compilerContext) compileLinearMutation() {

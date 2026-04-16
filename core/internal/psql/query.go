@@ -146,7 +146,7 @@ func (co *Compiler) Compile(w *bytes.Buffer, qc *qcode.QCode) (Metadata, error) 
 		err = co.CompileQuery(w, qc, &md)
 
 	case qcode.QTMutation:
-		co.compileMutation(w, qc, &md)
+		err = co.compileMutation(w, qc, &md)
 
 	default:
 		err = fmt.Errorf("unknown operation type %d", qc.Type)
@@ -413,9 +413,17 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 		return
 	}
 
-	// SQLite, MariaDB and Snowflake cursor workaround: return json_object containing both json and cursor
+	// SQLite, MariaDB and Snowflake cursor workaround: return a JSON object
+	// containing both the row data and the cursor token.
 	if sel.Paging.Cursor && (c.dialect.Name() == "sqlite" || c.dialect.Name() == "mariadb" || c.dialect.Name() == "snowflake") {
-		c.w.WriteString(`SELECT json_object('json', `)
+		isSnowflake := c.dialect.Name() == "snowflake"
+
+		// Real Snowflake uses OBJECT_CONSTRUCT; SQLite/MariaDB use json_object.
+		if isSnowflake {
+			c.w.WriteString(`SELECT OBJECT_CONSTRUCT('json', `)
+		} else {
+			c.w.WriteString(`SELECT json_object('json', `)
+		}
 
 		if sel.FieldFilter.Exp != nil {
 			c.w.WriteString(`(CASE WHEN `)
@@ -435,17 +443,26 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 		int32String(c.w, int32(sel.ID))
 
 		for i := 0; i < len(sel.OrderBy); i++ {
-			if c.dialect.Name() == "mariadb" {
-				// MariaDB uses colon separator to match RenderCursorCTE parsing
-				// json_group_array is SQLite. MariaDB uses json_arrayagg.
+			switch c.dialect.Name() {
+			case "mariadb":
+				// MariaDB uses colon separator to match RenderCursorCTE parsing.
+				// json_arrayagg is the MariaDB equivalent of SQLite's json_group_array.
 				c.w.WriteString(` || ':' || (CASE WHEN COUNT(*) > 0 THEN json_extract(json_arrayagg(__cur_`)
-			} else {
+				int32String(c.w, int32(i))
+				c.w.WriteString(`), '$[' || (COUNT(*) - 1) || ']') ELSE NULL END)`)
+			case "snowflake":
+				// Real Snowflake: ARRAY_AGG + array indexing.
+				// Equivalent SQLite emission was json_extract(json_group_array(...), '$[...]').
+				c.w.WriteString(` || ',' || IFF(COUNT(*) > 0, ARRAY_AGG(__cur_`)
+				int32String(c.w, int32(i))
+				c.w.WriteString(`)[COUNT(*) - 1], NULL)`)
+			default: // sqlite
 				c.w.WriteString(` || ',' || (CASE WHEN COUNT(*) > 0 THEN json_extract(json_group_array(__cur_`)
+				int32String(c.w, int32(i))
+				c.w.WriteString(`), '$[' || (COUNT(*) - 1) || ']') ELSE NULL END)`)
 			}
-			int32String(c.w, int32(i))
-			c.w.WriteString(`), '$[' || (COUNT(*) - 1) || ']') ELSE NULL END)`)
 		}
-		c.w.WriteString(`) as __cursor`) // Sub-select 1 column (the json_object)
+		c.w.WriteString(`) as __cursor`) // Sub-select 1 column (the JSON object)
 
 	} else {
 		c.w.WriteString(`SELECT `)
@@ -688,12 +705,11 @@ func (c *compilerContext) renderGroupBy(sel *qcode.Select) {
 	if !sel.GroupCols || len(sel.BCols) == 0 {
 		return
 	}
-	c.w.WriteString(` GROUP BY `)
 
-	// When DISTINCT ON columns exist, use them for GROUP BY instead of all BCols.
-	// BCols includes the primary key (for cursor pagination, cache tracking, etc.)
-	// which makes every group unique and breaks aggregation counts.
+	// When DISTINCT ON columns exist, use them for GROUP BY — overrides the
+	// BCols path entirely.
 	if len(sel.DistinctOn) > 0 {
+		c.w.WriteString(` GROUP BY `)
 		for i, col := range sel.DistinctOn {
 			if i != 0 {
 				c.w.WriteString(`, `)
@@ -703,7 +719,25 @@ func (c *compilerContext) renderGroupBy(sel *qcode.Select) {
 		return
 	}
 
-	for i, col := range sel.BCols {
+	// Exclude aggregate-input columns from GROUP BY (e.g. the `id` inside
+	// `count_id`). They must appear in SELECT for the aggregate to reference
+	// but including them in GROUP BY collapses every group to a single row
+	// and makes counts always 1. Without this filter a query like
+	// `{ products { name count_id } }` groups by (name, id) so every group
+	// has one row (BUG-G1).
+	var groupCols []qcode.Column
+	for _, col := range sel.BCols {
+		if col.AggInput {
+			continue
+		}
+		groupCols = append(groupCols, col)
+	}
+
+	if len(groupCols) == 0 {
+		return
+	}
+	c.w.WriteString(` GROUP BY `)
+	for i, col := range groupCols {
 		if i != 0 {
 			c.w.WriteString(`, `)
 		}

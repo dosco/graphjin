@@ -1789,14 +1789,21 @@ func (d *MSSQLDialect) renderGroupBy(ctx Context, r InlineChildRenderer, sel *qc
 	if !sel.GroupCols || len(sel.BCols) == 0 {
 		return
 	}
-	ctx.WriteString(` GROUP BY `)
-	for i, col := range sel.BCols {
-		if i != 0 {
-			ctx.WriteString(`, `)
+	// Exclude aggregate-input columns (see BUG-G1 in psql.renderGroupBy).
+	first := true
+	t := sel.Ti.Name
+	if sel.ID >= 0 {
+		t = fmt.Sprintf("%s_%d", t, sel.ID)
+	}
+	for _, col := range sel.BCols {
+		if col.AggInput {
+			continue
 		}
-		t := sel.Ti.Name
-		if sel.ID >= 0 {
-			t = fmt.Sprintf("%s_%d", t, sel.ID)
+		if first {
+			ctx.WriteString(` GROUP BY `)
+			first = false
+		} else {
+			ctx.WriteString(`, `)
 		}
 		r.ColWithTable(t, col.Col.Name)
 	}

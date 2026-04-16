@@ -195,22 +195,35 @@ func compileOrderBy(sel *Select,
 // non-empty Alias must match a compiled field's FieldName; unmatched
 // aliases produce a compile-time error so the user sees the problem
 // up-front rather than getting a DB-side "column not found".
+//
+// When the alias resolves to a plain column field (not a function or
+// expression aggregate), this also rewrites the OrderBy to address the
+// underlying column directly and clears Alias. This is what makes queries
+// like `{ t(order_by: {age: desc}) { age: customer_age } }` work — the
+// ORDER BY in the innermost SELECT can't see the outer projection's
+// alias, so we translate back to the real column name there.
+// Function/expression aliases (sum(expr:...), etc.) keep Alias set and
+// are rendered as `ORDER BY "alias"` in the outer scope.
 func validateOrderByAliases(sel *Select) error {
 	for i := range sel.OrderBy {
 		ob := &sel.OrderBy[i]
 		if ob.Alias == "" {
 			continue
 		}
-		found := false
-		for _, f := range sel.Fields {
-			if f.FieldName == ob.Alias {
-				found = true
+		var matched *Field
+		for j := range sel.Fields {
+			if sel.Fields[j].FieldName == ob.Alias {
+				matched = &sel.Fields[j]
 				break
 			}
 		}
-		if !found {
+		if matched == nil {
 			return fmt.Errorf("order_by: alias %q is not a column or a field alias on %q",
 				ob.Alias, sel.Ti.Name)
+		}
+		if matched.Type == FieldTypeCol && matched.Col.Name != "" {
+			ob.Col = matched.Col
+			ob.Alias = ""
 		}
 	}
 	return nil

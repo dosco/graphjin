@@ -201,6 +201,21 @@ func (c *compilerContext) renderBaseColumns(sel *qcode.Select) {
 		// non-aggregated column. Including BCols here would force a
 		// per-row GROUP BY and produce the broken.md degenerate result.
 		renderCols = nil
+	} else if sel.GroupCols {
+		// Drop AggInput columns from the inner projection. They exist in
+		// BCols only because they're inputs to aggregate functions; the
+		// aggregate renderer emits them inside count()/sum()/etc. directly
+		// and they must not appear as raw projection items — otherwise SQL
+		// engines either group by them (collapsing aggregates to count=1)
+		// or reject the query with "column must appear in GROUP BY".
+		filtered := make([]qcode.Column, 0, len(sel.BCols))
+		for _, col := range sel.BCols {
+			if col.AggInput {
+				continue
+			}
+			filtered = append(filtered, col)
+		}
+		renderCols = filtered
 	}
 
 	i := 0
@@ -244,10 +259,27 @@ func (c *compilerContext) renderBaseColumns(sel *qcode.Select) {
 		c.alias(f.FieldName)
 		i++
 	}
+	// Guard against empty projection. When every selected field is dropped
+	// via @include(if: false) / @skip(if: true) / role-level column blocks,
+	// the rendered SELECT list becomes empty and the query fails to parse.
+	// Emit NULL so the outer wrappers still produce a syntactically valid
+	// (but empty-projection) row that JSON assembly handles gracefully.
+	if i == 0 {
+		c.w.WriteString(`NULL`)
+	}
 }
 
 func (c *compilerContext) renderTypename(sel *qcode.Select) {
-	c.squoted(sel.Table)
+	// Emit the user-typed field name rather than the stored table name so
+	// __typename matches the GraphQL query's casing. This matters for
+	// case-preserving databases (Snowflake, Oracle) where the storage
+	// casing (UPPERCASE) would otherwise leak through and break cross-DB
+	// response consistency.
+	name := sel.FieldName
+	if name == "" {
+		name = sel.Table
+	}
+	c.squoted(name)
 	// Oracle uppercases all quoted identifiers, so we need to use uppercase
 	// to match when the column is later referenced
 	if c.dialect.Name() == "oracle" {
