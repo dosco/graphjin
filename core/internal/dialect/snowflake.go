@@ -629,23 +629,27 @@ func (d *SnowflakeDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
 	}
 
 	if (ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn) && ex.Right.Col.Array && ex.Right.Col.Name != "" {
+		// ARRAY_CONTAINS(<element>::VARIANT, <array>) — first-class
+		// array-membership predicate. Replaces the earlier EXISTS +
+		// LATERAL FLATTEN form which Snowflake rejected as
+		// "Unsupported subquery type" whenever the outer column
+		// reference crossed a correlated subquery scope (the common
+		// case for array-column joins like
+		// `EXISTS (FLATTEN(products.category_ids) WHERE value::NUMBER = categories.id)`
+		// nested inside an OBJECT_CONSTRUCT scalar subquery).
 		if ex.Op == qcode.OpNotIn {
-			ctx.WriteString(`(NOT `)
+			ctx.WriteString(`(NOT ARRAY_CONTAINS(`)
 		} else {
-			ctx.WriteString(`(`)
+			ctx.WriteString(`ARRAY_CONTAINS(`)
 		}
-
-		// Snowflake array membership: LATERAL FLATTEN the right-hand
-		// array column, coerce each `value` (VARIANT) to the left-hand's
-		// type via `::` (TRY_CAST on VARIANT is rejected), and compare.
-		ctx.WriteString(`EXISTS (SELECT 1 FROM LATERAL FLATTEN(INPUT => `)
-		d.renderOperand(ctx, ex.Right.Col.Table, ex.Right.Table, ex.Right.ID, ex.Right.Col.Name, ex.Right.ColName)
-		ctx.WriteString(`) AS __gj_flat WHERE __gj_flat.value::`)
-		ctx.WriteString(d.snowflakeCastType(ex.Left.Col.Type))
-		ctx.WriteString(` = `)
 		d.renderOperand(ctx, ex.Left.Col.Table, ex.Left.Table, ex.Left.ID, ex.Left.Col.Name, ex.Left.ColName)
-		ctx.WriteString(`))`)
-
+		ctx.WriteString(`::VARIANT, `)
+		d.renderOperand(ctx, ex.Right.Col.Table, ex.Right.Table, ex.Right.ID, ex.Right.Col.Name, ex.Right.ColName)
+		if ex.Op == qcode.OpNotIn {
+			ctx.WriteString(`))`)
+		} else {
+			ctx.WriteString(`)`)
+		}
 		return true
 	}
 
@@ -746,10 +750,18 @@ func (d *SnowflakeDialect) RenderSetup(ctx Context) {
 	// Retry-safe on the same Snowflake session: if a previous attempt
 	// created the temp table before failing, CREATE OR REPLACE rebuilds
 	// it empty instead of erroring on retry.
-	ctx.WriteString(`CREATE OR REPLACE TEMP TABLE `)
+	// Use regular (non-TEMP) tables for _gj_ids / _gj_prev_ids. TEMP
+	// tables are session-scoped on Snowflake and evaporate when the Go
+	// sql.Conn hands the statement off to a new driver session — which
+	// the gosnowflake driver does across multi-statement scripts, leaving
+	// the downstream `SELECT id FROM _gj_ids` subqueries returning NULL.
+	// The hex suffix still makes each GraphJin call's table unique and
+	// RenderTeardown drops them afterwards, so the on-disk cost is a
+	// short-lived scratch table.
+	ctx.WriteString(`CREATE OR REPLACE TABLE `)
 	ctx.WriteString(d.idsTableName(ctx))
 	ctx.WriteString(` (k VARCHAR, id VARCHAR); `)
-	ctx.WriteString(`CREATE OR REPLACE TEMP TABLE `)
+	ctx.WriteString(`CREATE OR REPLACE TABLE `)
 	ctx.WriteString(d.prevIDsTableName(ctx))
 	ctx.WriteString(` (k VARCHAR, id VARCHAR); `)
 }
