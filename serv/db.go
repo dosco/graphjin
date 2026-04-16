@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dosco/graphjin/core/v3"
@@ -424,11 +425,24 @@ func initMongo(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf, er
 	return &dbConf{driverName: "mongodb", connector: connector}, nil
 }
 
+// snowflakeLogOnce silences gosnowflake's ERRO logging for query failures the
+// caller intentionally handles (e.g. probing INFORMATION_SCHEMA views that
+// don't exist in the target account during column discovery).
+var snowflakeLogOnce sync.Once
+
+func silenceSnowflakeDriverLogs() {
+	snowflakeLogOnce.Do(func() {
+		_ = gosnowflake.GetLogger().SetLogLevel("fatal")
+	})
+}
+
 // initSnowflake initializes the snowflake database.
 // Snowflake requires a full DSN in connection_string.
 // When private_key_path or private_key_pem is set, key pair (JWT) authentication
 // is used via the gosnowflake driver's built-in support.
 func initSnowflake(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf, error) {
+	silenceSnowflakeDriverLogs()
+
 	connString := strings.TrimSpace(conf.DB.ConnString)
 	if connString == "" {
 		return nil, fmt.Errorf("snowflake requires connection_string")
@@ -557,6 +571,13 @@ func loadSnowflakePrivateKey(pemData []byte, passphrase string) (*rsa.PrivateKey
 		return nil, fmt.Errorf("invalid PEM data: no PEM block found")
 	}
 
+	// Detect PKCS#1 format (not supported by Snowflake) and give actionable guidance.
+	if block.Type == "RSA PRIVATE KEY" {
+		return nil, fmt.Errorf("private key is in PKCS#1 format (\"RSA PRIVATE KEY\"); " +
+			"Snowflake requires PKCS#8 (\"PRIVATE KEY\"). Convert with: " +
+			"openssl pkcs8 -topk8 -inform PEM -in old.key -out new.p8 -nocrypt")
+	}
+
 	var derBytes []byte
 
 	//nolint:staticcheck // x509.IsEncryptedPEMBlock is deprecated but needed for encrypted PEM support
@@ -581,7 +602,12 @@ func loadSnowflakePrivateKey(pemData []byte, passphrase string) (*rsa.PrivateKey
 
 	rsaKey, ok := key.(*rsa.PrivateKey)
 	if !ok {
-		return nil, fmt.Errorf("private key is not RSA (got %T); Snowflake requires RSA-2048", key)
+		return nil, fmt.Errorf("private key is not RSA (got %T); Snowflake requires RSA-2048 or larger", key)
+	}
+
+	// Validate minimum key size (Snowflake requires at least RSA-2048).
+	if rsaKey.N.BitLen() < 2048 {
+		return nil, fmt.Errorf("RSA key is %d bits; Snowflake requires at least 2048 bits", rsaKey.N.BitLen())
 	}
 
 	return rsaKey, nil
