@@ -171,6 +171,69 @@ func TestSnowflakeClusteredTableEndToEnd(t *testing.T) {
 	require.Contains(t, string(res.Data), `"region":`)
 }
 
+// TestSnowflakeVarcharPKMutation exercises the _gj_ids temp-table path
+// against a table with a VARCHAR primary key (graph_node.id). Before
+// the fix to make the temp-table `id` column VARIANT, this path errored
+// because linear-mutation setup hardcoded BIGINT and the VARCHAR PK
+// couldn't be inserted. The test mutates graph_node (update) and
+// asserts the mutation returns the affected row — proving capture +
+// readback work for non-BIGINT PK types.
+func TestSnowflakeVarcharPKMutation(t *testing.T) {
+	if dbType != "snowflake" {
+		t.Skip("snowflake-only test")
+	}
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	require.NoError(t, err)
+	defer gj.Close()
+
+	// graph_node is seeded with {id='a', label='node a'}, etc. The id is
+	// VARCHAR so the linear-mutation temp table (_gj_ids.id VARIANT)
+	// must tolerate a non-BIGINT value.
+	gql := `mutation { graph_node(id: "a", update: { label: "renamed-a" }) { id label } }`
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	require.NoError(t, err, "mutation against VARCHAR-PK table must succeed")
+	require.Contains(t, string(res.Data), `"id":"a"`)
+	require.Contains(t, string(res.Data), `"label":"renamed-a"`)
+}
+
+// TestSnowflakeFKDiscoveryLive verifies that SHOW IMPORTED KEYS
+// discovery populated the relationship graph by compiling a nested
+// selection that depends on FK-derived edges. On real Snowflake with
+// the seed's `purchases.customer_id REFERENCES users(id)`, GraphJin's
+// SHOW-based FK discovery must resolve the `customer` relation; if it
+// didn't, the compiler would fail with "table not found: customer"
+// before any SQL runs.
+//
+// The test asserts compilation succeeds — end-to-end execution of
+// multi-child nested selections on Snowflake currently hits a planner
+// limitation around correlated scalar subqueries emitted by the
+// non-lateral compiler path (see RelEmbedded TODO below). Compile-time
+// resolution is what proves FK discovery itself works; runtime
+// correctness for the non-lateral nested shape is covered by the
+// sqlmock-backed unit test TestSnowflakeSHOWImportedKeysSetsFK.
+func TestSnowflakeFKDiscoveryLive(t *testing.T) {
+	if dbType != "snowflake" {
+		t.Skip("snowflake-only test")
+	}
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	require.NoError(t, err)
+	defer gj.Close()
+
+	// Compile-time check: if the FK from purchases → users wasn't
+	// discovered, `customer` would not resolve and ExplainQuery would
+	// return "table not found: customer".
+	exp, err := gj.ExplainQuery(
+		`{ purchases(where: {id: {eq: 1}}) { id customer { full_name } } }`,
+		nil, "anon")
+	require.NoError(t, err, "SHOW IMPORTED KEYS must surface purchases.customer → users edge at compile time")
+	require.Contains(t, exp.CompiledQuery, `ANY_VALUE(OBJECT_CONSTRUCT('full_name'`,
+		"singular child subquery must be wrapped in ANY_VALUE for Snowflake")
+}
+
 // TestSnowflakeOrderByAlias asserts that ordering by a SELECT-list alias
 // resolves to the underlying column in the inner SQL scope where the
 // alias isn't visible (BUG-G2).

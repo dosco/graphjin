@@ -53,7 +53,30 @@ func (d *SnowflakeDialect) RenderJSONRoot(ctx Context, sel *qcode.Select) {
 }
 
 func (d *SnowflakeDialect) RenderJSONSelect(ctx Context, sel *qcode.Select) {
-	// Real Snowflake: OBJECT_CONSTRUCT (DuckDB equivalent was json_object)
+	// For inline child selections that resolve to a singular value
+	// (e.g. `{ purchases { product { name } } }` — one product per
+	// purchase), the compiler wraps this SELECT in a correlated scalar
+	// subquery. Snowflake does NOT support correlated scalar subqueries
+	// that return a derived-table row — it raises
+	//   "Unsupported subquery type cannot be evaluated".
+	// Snowflake DOES accept correlated subqueries whose outermost
+	// projection is aggregated. Wrap OBJECT_CONSTRUCT with ANY_VALUE()
+	// so the subquery is classified as an aggregate query; with the
+	// inner LIMIT 1 there's always exactly one input row, so
+	// ANY_VALUE returns it unchanged. This is the idiomatic
+	// Snowflake pattern for per-row JSON construction in correlated
+	// subqueries.
+	//
+	// Plural children use ARRAY_AGG at the outer level (emitted by
+	// RenderJSONPlural) so their inner OBJECT_CONSTRUCT stays raw.
+	// Root selections (Rel.Type == RelNone) are not correlated and
+	// don't need wrapping.
+	if sel.Singular && sel.Rel.Type != 0 { // RelNone == 0
+		ctx.WriteString(`SELECT ANY_VALUE(OBJECT_CONSTRUCT(`)
+		ctx.RenderJSONFields(sel)
+		ctx.WriteString(`))`)
+		return
+	}
 	ctx.WriteString(`SELECT OBJECT_CONSTRUCT(`)
 	ctx.RenderJSONFields(sel)
 	ctx.WriteString(`)`)
@@ -633,23 +656,30 @@ func (d *SnowflakeDialect) RenderSetup(ctx Context) {
 	ctx.WriteString(`; DROP TABLE IF EXISTS `)
 	ctx.WriteString(d.prevIDsTableName(ctx))
 	ctx.WriteString(`; `)
-	// The `id` column is VARIANT rather than BIGINT so it can hold any PK
-	// type — BIGINT, VARCHAR, UUID-as-text, composite-as-string, etc. A
-	// single session may run mutations against multiple tables with
-	// mixed PK types (graph_node.id VARCHAR vs users.id BIGINT) and the
-	// temp table has to store all of them without loss. Readers cast
-	// back to the target type via TRY_CAST wherever the value is
-	// consumed (see RenderVar).
+	// The `id` column is VARCHAR so it can hold any PK representation —
+	// BIGINT, VARCHAR, UUID-as-text, composite-as-string, etc. A single
+	// session may run mutations across tables with mixed PK types
+	// (graph_node.id VARCHAR vs users.id BIGINT), and VARCHAR accepts
+	// all of them via TO_VARCHAR() at the INSERT site. Readers rely on
+	// Snowflake's implicit VARCHAR→BIGINT coercion in comparison
+	// contexts, which always succeeds for well-formed numeric strings
+	// (the BIGINT values we wrote via TO_VARCHAR are always valid
+	// integer literals).
+	//
+	// Previous iteration used VARIANT, but Snowflake rejects the
+	// implicit VARCHAR→VARIANT coercion on INSERT so every write site
+	// would have needed a TO_VARIANT wrapper — VARCHAR keeps the INSERT
+	// site simpler and still round-trips correctly.
 	//
 	// Retry-safe on the same Snowflake session: if a previous attempt
 	// created the temp table before failing, CREATE OR REPLACE rebuilds
 	// it empty instead of erroring on retry.
 	ctx.WriteString(`CREATE OR REPLACE TEMP TABLE `)
 	ctx.WriteString(d.idsTableName(ctx))
-	ctx.WriteString(` (k VARCHAR, id VARIANT); `)
+	ctx.WriteString(` (k VARCHAR, id VARCHAR); `)
 	ctx.WriteString(`CREATE OR REPLACE TEMP TABLE `)
 	ctx.WriteString(d.prevIDsTableName(ctx))
-	ctx.WriteString(` (k VARCHAR, id VARIANT); `)
+	ctx.WriteString(` (k VARCHAR, id VARCHAR); `)
 }
 
 func (d *SnowflakeDialect) RenderBegin(ctx Context) {}
@@ -684,9 +714,9 @@ func (d *SnowflakeDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *
 	ctx.WriteString(d.prevIDsTableName(ctx))
 	ctx.WriteString(` (k, id) SELECT '`)
 	ctx.WriteString(strings.ReplaceAll(varName, "'", "''"))
-	ctx.WriteString(`', `)
+	ctx.WriteString(`', TO_VARCHAR(`)
 	ctx.Quote(m.Ti.PrimaryCol.Name)
-	ctx.WriteString(` FROM `)
+	ctx.WriteString(`) FROM `)
 	d.renderTableRef(ctx, m.Ti.Schema, m.Ti.Name)
 	ctx.WriteString(`; `)
 
@@ -756,9 +786,9 @@ func (d *SnowflakeDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *
 	ctx.WriteString(d.idsTableName(ctx))
 	ctx.WriteString(` (k, id) SELECT '`)
 	ctx.WriteString(strings.ReplaceAll(varName, "'", "''"))
-	ctx.WriteString(`', `)
+	ctx.WriteString(`', TO_VARCHAR(`)
 	ctx.Quote(m.Ti.PrimaryCol.Name)
-	ctx.WriteString(` FROM `)
+	ctx.WriteString(`) FROM `)
 	d.renderTableRef(ctx, m.Ti.Schema, m.Ti.Name)
 	ctx.WriteString(` EXCEPT SELECT '`)
 	ctx.WriteString(strings.ReplaceAll(varName, "'", "''"))
@@ -779,9 +809,9 @@ func (d *SnowflakeDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *
 	ctx.WriteString(d.idsTableName(ctx))
 	ctx.WriteString(` (k, id) SELECT '`)
 	ctx.WriteString(strings.ReplaceAll(varName, "'", "''"))
-	ctx.WriteString(`', `)
+	ctx.WriteString(`', TO_VARCHAR(`)
 	ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
-	ctx.WriteString(` FROM `)
+	ctx.WriteString(`) FROM `)
 	d.renderTableRef(ctx, m.Ti.Schema, m.Ti.Name)
 	ctx.WriteString(` AS `)
 	ctx.Quote(m.Ti.Name)
@@ -837,9 +867,9 @@ func (d *SnowflakeDialect) renderChildUpdate(ctx Context, m *qcode.Mutate, qc *q
 	ctx.WriteString(d.idsTableName(ctx))
 	ctx.WriteString(` (k, id) SELECT '`)
 	ctx.WriteString(strings.ReplaceAll(varName, "'", "''"))
-	ctx.WriteString(`', `)
+	ctx.WriteString(`', TO_VARCHAR(`)
 	ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
-	ctx.WriteString(` FROM `)
+	ctx.WriteString(`) FROM `)
 	d.renderTableRef(ctx, m.Ti.Schema, m.Ti.Name)
 	ctx.WriteString(` AS `)
 	ctx.Quote(m.Ti.Name)
@@ -890,9 +920,9 @@ func (d *SnowflakeDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc 
 		ctx.WriteString(d.idsTableName(ctx))
 		ctx.WriteString(` (k, id) SELECT '`)
 		ctx.WriteString(strings.ReplaceAll(varName, "'", "''"))
-		ctx.WriteString(`', `)
+		ctx.WriteString(`', TO_VARCHAR(`)
 		ctx.ColWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
-		ctx.WriteString(` FROM `)
+		ctx.WriteString(`) FROM `)
 		d.renderTableRef(ctx, m.Ti.Schema, m.Ti.Name)
 		ctx.WriteString(` WHERE `)
 		renderFilter()
@@ -930,9 +960,9 @@ func (d *SnowflakeDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, 
 		ctx.WriteString(d.idsTableName(ctx))
 		ctx.WriteString(` (k, id) SELECT '`)
 		ctx.WriteString(strings.ReplaceAll(varName, "'", "''"))
-		ctx.WriteString(`', `)
+		ctx.WriteString(`', TO_VARCHAR(`)
 		ctx.ColWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
-		ctx.WriteString(` FROM `)
+		ctx.WriteString(`) FROM `)
 		d.renderTableRef(ctx, m.Ti.Schema, m.Ti.Name)
 		ctx.WriteString(` WHERE `)
 		renderFilter()
