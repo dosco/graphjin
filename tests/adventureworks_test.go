@@ -1,3 +1,10 @@
+//go:build adventureworks
+
+// AdventureWorks is a large, manually-provisioned Postgres corpus that isn't
+// part of the default integration harness. Gating the file behind a build tag
+// keeps the default test binary free of SKIP noise from `skipIfNotAdventureWorks`.
+// Run with: go test -tags=adventureworks -db=adventureworks ./tests/...
+
 package tests_test
 
 import (
