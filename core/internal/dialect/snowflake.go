@@ -33,7 +33,10 @@ func (d *SnowflakeDialect) Name() string {
 }
 
 func (d *SnowflakeDialect) QuoteIdentifier(s string) string {
-	return `"` + s + `"`
+	// Snowflake escapes embedded `"` in a quoted identifier by doubling it.
+	// Unescaped `"` inside the identifier would terminate the identifier
+	// early — rare in practice but a correctness requirement.
+	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
 func (d *SnowflakeDialect) BindVar(i int) string {
@@ -351,6 +354,12 @@ func (d *SnowflakeDialect) RenderOp(op qcode.ExpOp) (string, error) {
 		qcode.OpIRegex, qcode.OpNotIRegex:
 		return "", fmt.Errorf("pattern operator not supported in snowflake: %d", op)
 	default:
+		// Ops not handled here fall through to the generic operator switch
+		// in psql/exp.go (equals, greater, less, etc.), which writes the
+		// SQL operator directly. Returning an empty string signals "not
+		// a dialect-specific op" rather than an error. If the op is truly
+		// unknown the caller sees an empty op in the emitted SQL and a
+		// clear syntax error at the DB.
 		return "", nil
 	}
 }
@@ -411,19 +420,19 @@ func (d *SnowflakeDialect) RenderValVar(ctx Context, ex *qcode.Exp, val string) 
 
 func (d *SnowflakeDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
 	if ex.Op == qcode.OpHasInCommon && ex.Left.Col.Array {
-		ctx.WriteString(`EXISTS (SELECT 1 FROM UNNEST(`)
+		// Snowflake has no UNNEST — iterate array elements via FLATTEN
+		// which exposes the element under the `value` column.
+		ctx.WriteString(`EXISTS (SELECT 1 FROM LATERAL FLATTEN(INPUT => `)
 		d.renderOperand(ctx, ex.Left.Col.Table, ex.Left.Table, ex.Left.ID, ex.Left.Col.Name, ex.Left.ColName)
-		ctx.WriteString(`) AS __gj_l("x") WHERE TRY_CAST(__gj_l."x" AS `)
+		ctx.WriteString(`) AS __gj_l WHERE TRY_CAST(__gj_l.value AS `)
 		ctx.WriteString(d.snowflakeCastType(d.baseType(ex.Left.Col.Type)))
 		ctx.WriteString(`) IN `)
 
 		switch ex.Right.ValType {
 		case qcode.ValVar:
-			// Real Snowflake: LATERAL FLATTEN(input => PARSE_JSON(...)).
-			// (DuckDB equivalent was UNNEST(CAST(json(...) AS T[])).)
 			ctx.WriteString(`(SELECT TRY_CAST(__gj_r.value AS `)
 			ctx.WriteString(d.snowflakeCastType(d.baseType(ex.Left.Col.Type)))
-			ctx.WriteString(`) FROM LATERAL FLATTEN(input => PARSE_JSON(`)
+			ctx.WriteString(`) FROM LATERAL FLATTEN(INPUT => PARSE_JSON(`)
 			ctx.AddParam(Param{Name: ex.Right.Val, Type: "json", IsArray: true})
 			ctx.WriteString(`)) __gj_r)`)
 		case qcode.ValList:
@@ -443,11 +452,11 @@ func (d *SnowflakeDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
 			}
 			ctx.WriteString(`)`)
 		default:
-			ctx.WriteString(`(SELECT TRY_CAST(__gj_r."x" AS `)
+			ctx.WriteString(`(SELECT TRY_CAST(__gj_r.value AS `)
 			ctx.WriteString(d.snowflakeCastType(d.baseType(ex.Left.Col.Type)))
-			ctx.WriteString(`) FROM UNNEST(`)
+			ctx.WriteString(`) FROM LATERAL FLATTEN(INPUT => `)
 			d.renderOperand(ctx, ex.Right.Col.Table, ex.Right.Table, ex.Right.ID, ex.Right.Col.Name, ex.Right.ColName)
-			ctx.WriteString(`) AS __gj_r("x"))`)
+			ctx.WriteString(`) __gj_r)`)
 		}
 
 		ctx.WriteString(`)`)
@@ -531,9 +540,12 @@ func (d *SnowflakeDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
 			ctx.WriteString(`(`)
 		}
 
-		ctx.WriteString(`EXISTS (SELECT 1 FROM UNNEST(`)
+		// Snowflake array membership: LATERAL FLATTEN the right-hand
+		// array column, CAST each `value` to the left-hand's type, and
+		// compare.
+		ctx.WriteString(`EXISTS (SELECT 1 FROM LATERAL FLATTEN(INPUT => `)
 		d.renderOperand(ctx, ex.Right.Col.Table, ex.Right.Table, ex.Right.ID, ex.Right.Col.Name, ex.Right.ColName)
-		ctx.WriteString(`) AS __gj_flat("value") WHERE TRY_CAST(__gj_flat."value" AS `)
+		ctx.WriteString(`) AS __gj_flat WHERE TRY_CAST(__gj_flat.value AS `)
 		ctx.WriteString(d.snowflakeCastType(ex.Left.Col.Type))
 		ctx.WriteString(`) = `)
 		d.renderOperand(ctx, ex.Left.Col.Table, ex.Left.Table, ex.Left.ID, ex.Left.Col.Name, ex.Left.ColName)
@@ -621,14 +633,23 @@ func (d *SnowflakeDialect) RenderSetup(ctx Context) {
 	ctx.WriteString(`; DROP TABLE IF EXISTS `)
 	ctx.WriteString(d.prevIDsTableName(ctx))
 	ctx.WriteString(`; `)
-	// Retry-safe on the same Snowflake session: if a previous attempt created the
-	// temp table before failing, recreate it empty instead of erroring on retry.
+	// The `id` column is VARIANT rather than BIGINT so it can hold any PK
+	// type — BIGINT, VARCHAR, UUID-as-text, composite-as-string, etc. A
+	// single session may run mutations against multiple tables with
+	// mixed PK types (graph_node.id VARCHAR vs users.id BIGINT) and the
+	// temp table has to store all of them without loss. Readers cast
+	// back to the target type via TRY_CAST wherever the value is
+	// consumed (see RenderVar).
+	//
+	// Retry-safe on the same Snowflake session: if a previous attempt
+	// created the temp table before failing, CREATE OR REPLACE rebuilds
+	// it empty instead of erroring on retry.
 	ctx.WriteString(`CREATE OR REPLACE TEMP TABLE `)
 	ctx.WriteString(d.idsTableName(ctx))
-	ctx.WriteString(` (k VARCHAR, id BIGINT); `)
+	ctx.WriteString(` (k VARCHAR, id VARIANT); `)
 	ctx.WriteString(`CREATE OR REPLACE TEMP TABLE `)
 	ctx.WriteString(d.prevIDsTableName(ctx))
-	ctx.WriteString(` (k VARCHAR, id BIGINT); `)
+	ctx.WriteString(` (k VARCHAR, id VARIANT); `)
 }
 
 func (d *SnowflakeDialect) RenderBegin(ctx Context) {}
@@ -987,14 +1008,27 @@ func (d *SnowflakeDialect) ModifySelectsForMutation(qc *qcode.QCode) {
 
 func (d *SnowflakeDialect) SplitQuery(query string) (parts []string) {
 	var buf strings.Builder
-	var inStr, inQuote, inComment bool
+	var inStr, inQuote, inLineComment, inBlockComment bool
 	var depth int
 
 	for i := 0; i < len(query); i++ {
 		ch := query[i]
-		if inComment {
+		if inLineComment {
 			if ch == '\n' {
-				inComment = false
+				inLineComment = false
+			}
+			buf.WriteByte(ch)
+			continue
+		}
+		if inBlockComment {
+			// Terminate on `*/`. A `;` inside a block comment must not
+			// split the statement.
+			if ch == '*' && i+1 < len(query) && query[i+1] == '/' {
+				buf.WriteByte(ch)
+				i++
+				buf.WriteByte(query[i])
+				inBlockComment = false
+				continue
 			}
 			buf.WriteByte(ch)
 			continue
@@ -1027,7 +1061,16 @@ func (d *SnowflakeDialect) SplitQuery(query string) (parts []string) {
 		switch ch {
 		case '-':
 			if i+1 < len(query) && query[i+1] == '-' {
-				inComment = true
+				inLineComment = true
+				buf.WriteByte(ch)
+				i++
+				buf.WriteByte(query[i])
+				continue
+			}
+			buf.WriteByte(ch)
+		case '/':
+			if i+1 < len(query) && query[i+1] == '*' {
+				inBlockComment = true
 				buf.WriteByte(ch)
 				i++
 				buf.WriteByte(query[i])
