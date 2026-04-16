@@ -34,6 +34,13 @@ func (s *DBSchema) addNode(t DBTable) int32 {
 
 	s.tindex[(t.Schema + ":" + t.Name)] = nodeInfo{n}
 	s.nameIndex[t.Name] = append(s.nameIndex[t.Name], n)
+
+	// Case-insensitive secondary indexes for case-preserving dialects
+	// (Snowflake, primarily). Lookups try exact first and fall back here.
+	ciKey := strings.ToLower(t.Schema + ":" + t.Name)
+	s.tindexCI[ciKey] = nodeInfo{n}
+	ciName := strings.ToLower(t.Name)
+	s.nameIndexCI[ciName] = append(s.nameIndexCI[ciName], n)
 	return n
 }
 
@@ -43,6 +50,12 @@ func (s *DBSchema) addAliases(t DBTable, nodeID int32, aliases []string) {
 		s.tindex[(t.Schema + ":" + al)] = nodeInfo{nodeID}
 		s.nameIndex[al] = append(s.nameIndex[al], nodeID)
 		s.tableAliasIndex[al] = nodeInfo{nodeID}
+
+		ciKey := strings.ToLower(t.Schema + ":" + al)
+		s.tindexCI[ciKey] = nodeInfo{nodeID}
+		ciAlias := strings.ToLower(al)
+		s.nameIndexCI[ciAlias] = append(s.nameIndexCI[ciAlias], nodeID)
+		s.tableAliasIndexCI[ciAlias] = nodeInfo{nodeID}
 	}
 }
 
@@ -210,17 +223,40 @@ func (s *DBSchema) addEdgeInfo(k string, ei edgeInfo) {
 			}
 			edgeIDs := append(v.edgeIDs, ei.edgeIDs[0])
 			s.edgesIndex[k][i].edgeIDs = edgeIDs
+			// Mirror the append into the CI index so FindPath's case-
+			// insensitive fallback stays in sync with the canonical one.
+			ciKey := strings.ToLower(k)
+			if ciList, ok := s.edgesIndexCI[ciKey]; ok {
+				for j, w := range ciList {
+					if w.nodeID == ei.nodeID {
+						s.edgesIndexCI[ciKey][j].edgeIDs = edgeIDs
+						break
+					}
+				}
+			}
 			return
 		}
 	}
 	s.edgesIndex[k] = append(s.edgesIndex[k], ei)
+	// Mirror the new entry into the lowercase-keyed CI index. GraphQL
+	// callers may write `{ purchases { product {...} } }` against a
+	// Snowflake account that stores `PRODUCTS`/`PRODUCT_ID` uppercase —
+	// GetRelName produces `PRODUCT` as the edge name, and without this
+	// fallback the lowercase lookup in FindPath misses the edge.
+	ciKey := strings.ToLower(k)
+	s.edgesIndexCI[ciKey] = append(s.edgesIndexCI[ciKey], ei)
 }
 
-// Find returns a table by schema and name. If an exact schema:name match
-// is not found, it falls back to searching across all discovered schemas.
-// When multiple schemas contain the same table name, the default schema
-// is preferred. If the table exists in multiple non-default schemas,
-// an error listing the available schemas is returned.
+// Find returns a table by schema and name. Lookup proceeds:
+//  1. exact schema:name match (tindex)
+//  2. case-insensitive schema:name match (tindexCI) — needed for case-
+//     preserving dialects like Snowflake where stored names are often
+//     UPPERCASE but callers pass lowercase
+//  3. cross-schema search by name only
+//  4. default-schema preference when multiple schemas have the same name
+//
+// If the table exists in multiple non-default schemas, an error listing
+// the available schemas is returned.
 func (s *DBSchema) Find(schema, name string) (DBTable, error) {
 	var t DBTable
 
@@ -228,14 +264,22 @@ func (s *DBSchema) Find(schema, name string) (DBTable, error) {
 		schema = s.DBSchema()
 	}
 
-	// Fast path: exact schema:name match
+	// (1) exact match
 	if v, ok := s.tindex[(schema + ":" + name)]; ok {
 		return s.tables[v.nodeID], nil
 	}
 
-	// Fallback: search across all schemas by name
+	// (2) case-insensitive exact match
+	if v, ok := s.tindexCI[strings.ToLower(schema+":"+name)]; ok {
+		return s.tables[v.nodeID], nil
+	}
+
+	// (3) cross-schema search by name only — exact then CI
 	nodeIDs, ok := s.nameIndex[name]
 	if !ok || len(nodeIDs) == 0 {
+		nodeIDs = s.nameIndexCI[strings.ToLower(name)]
+	}
+	if len(nodeIDs) == 0 {
 		return t, fmt.Errorf("table not found: %s.%s", schema, name)
 	}
 
@@ -244,9 +288,12 @@ func (s *DBSchema) Find(schema, name string) (DBTable, error) {
 		return s.tables[nodeIDs[0]], nil
 	}
 
-	// Multiple matches: prefer the default schema
+	// (4) Multiple matches: prefer the default schema (exact then CI)
 	defSchema := s.DBSchema()
 	if v, ok := s.tindex[(defSchema + ":" + name)]; ok {
+		return s.tables[v.nodeID], nil
+	}
+	if v, ok := s.tindexCI[strings.ToLower(defSchema+":"+name)]; ok {
 		return s.tables[v.nodeID], nil
 	}
 
@@ -274,10 +321,21 @@ type TPath struct {
 func (s *DBSchema) FindPath(from, to, through string) ([]TPath, error) {
 	fl, ok := s.edgesIndex[from]
 	if !ok {
+		// Case-insensitive fallback — GraphQL callers may write
+		// `{ purchases { product {...} } }` (lowercase) against a
+		// Snowflake schema that stored `PRODUCT` uppercase. The
+		// canonical edgesIndex preserves storage case; edgesIndexCI
+		// mirrors it with lowercase keys.
+		fl, ok = s.edgesIndexCI[strings.ToLower(from)]
+	}
+	if !ok {
 		return nil, ErrFromEdgeNotFound
 	}
 
 	tl, ok := s.edgesIndex[to]
+	if !ok {
+		tl, ok = s.edgesIndexCI[strings.ToLower(to)]
+	}
 	if !ok {
 		return nil, ErrToEdgeNotFound
 	}

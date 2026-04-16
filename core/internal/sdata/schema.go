@@ -46,7 +46,8 @@ type DBSchema struct {
 	nameIndexCI       map[string][]int32      // case-insensitive name-only index (lower(name) → nodeIDs)
 	tableAliasIndex   map[string]nodeInfo     // table alias index
 	tableAliasIndexCI map[string]nodeInfo     // case-insensitive alias index (lower(alias) → node)
-	edgesIndex        map[string][]edgeInfo   // edges index
+	edgesIndex        map[string][]edgeInfo   // edges index (exact case)
+	edgesIndexCI      map[string][]edgeInfo   // case-insensitive edges index (lower(name) → edges)
 	allEdges          map[int32]TEdge         // all edges
 	relationshipGraph *util.Graph             // relationship graph
 	crossDBRels       []CrossDBRel            // cross-database FK relationships
@@ -124,6 +125,7 @@ func NewDBSchema(
 		tableAliasIndex:   make(map[string]nodeInfo),
 		tableAliasIndexCI: make(map[string]nodeInfo),
 		edgesIndex:        make(map[string][]edgeInfo),
+		edgesIndexCI:      make(map[string][]edgeInfo),
 		allEdges:          make(map[int32]TEdge),
 		relationshipGraph: util.NewGraph(),
 		compositeFKs:      info.CompositeFKs,
@@ -155,6 +157,10 @@ func NewDBSchema(
 			}
 			if e, ok := schema.edgesIndex[t]; ok {
 				schema.edgesIndex[alias] = e
+				// Mirror the alias into the CI index so lowercase
+				// GraphQL references to an alias resolve alongside
+				// lowercase references to the canonical name.
+				schema.edgesIndexCI[strings.ToLower(alias)] = e
 			}
 		}
 	}
@@ -580,23 +586,40 @@ func (s *DBSchema) GetFunctions() map[string]DBFunction {
 	return s.dbFunctions
 }
 
-// GetRelName returns the relationship name
+// hasSuffixFold is a case-insensitive strings.HasSuffix.
+func hasSuffixFold(s, suffix string) bool {
+	return len(s) >= len(suffix) && strings.EqualFold(s[len(s)-len(suffix):], suffix)
+}
+
+// hasPrefixFold is a case-insensitive strings.HasPrefix.
+func hasPrefixFold(s, prefix string) bool {
+	return len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix)
+}
+
+// GetRelName returns the relationship name.
+//
+// Suffix/prefix checks are case-insensitive so column names stored
+// UPPERCASE (Snowflake, Oracle) or mixed-case produce the same
+// stripped-stem as lowercase. Without this, `PRODUCT_ID` would be
+// treated as a normal column and no relation edge would be keyed
+// under its stem — breaking `{ purchases { product { ... } } }`
+// nested selections against case-preserving backends.
 func GetRelName(colName string) string {
 	cn := colName
 
-	if strings.HasSuffix(cn, "_id") {
+	if hasSuffixFold(cn, "_id") {
 		return colName[:len(colName)-3]
 	}
 
-	if strings.HasSuffix(cn, "_ids") {
+	if hasSuffixFold(cn, "_ids") {
 		return colName[:len(colName)-4]
 	}
 
-	if strings.HasPrefix(cn, "id_") {
+	if hasPrefixFold(cn, "id_") {
 		return colName[3:]
 	}
 
-	if strings.HasPrefix(cn, "ids_") {
+	if hasPrefixFold(cn, "ids_") {
 		return colName[4:]
 	}
 
