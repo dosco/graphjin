@@ -8,5 +8,6 @@ SELECT t.table_schema AS schema_name,
 	t.clustering_key
 FROM information_schema.tables t
 WHERE t.table_schema NOT IN ('INFORMATION_SCHEMA')
+	AND t.table_schema = CURRENT_SCHEMA()
 	AND t.clustering_key IS NOT NULL
 	AND t.clustering_key != '';

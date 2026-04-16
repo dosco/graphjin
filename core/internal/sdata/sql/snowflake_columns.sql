@@ -37,4 +37,11 @@ SELECT col.table_schema AS schema_name,
 	'' AS foreignkey_table,
 	'' AS foreignkey_column
 FROM information_schema.columns col
-WHERE col.table_schema NOT IN ('INFORMATION_SCHEMA');
+WHERE col.table_schema NOT IN ('INFORMATION_SCHEMA')
+  -- Scope discovery to the connection's current schema so orphan
+  -- schemas from prior test runs (or unrelated app data in the same
+  -- database) don't leak in as duplicate table entries — GraphJin's
+  -- compiler would then pin one table copy to schema A and another
+  -- copy to schema B in the same query, producing invalid cross-schema
+  -- SQL at mutation/insert time.
+  AND col.table_schema = CURRENT_SCHEMA();
