@@ -563,6 +563,29 @@ func (c *compilerContext) renderSelect(sel *qcode.Select) {
 				c.w.WriteString(`) OVER() AS "__CUR_`)
 				int32String(c.w, int32(i))
 				c.w.WriteString(`"`)
+			} else if c.dialect.Name() == "snowflake" {
+				// Snowflake rejects LAST_VALUE(...) OVER() — it
+				// requires an explicit ORDER BY in the window spec.
+				// Mirror the query's OrderBy so LAST_VALUE returns
+				// the last row's value in the same ordering as the
+				// outer LIMIT/ORDER BY.
+				c.w.WriteString(`, LAST_VALUE(`)
+				c.colWithTableID(sel.Table, sel.ID, ob.Col.Name)
+				c.w.WriteString(`) OVER (ORDER BY `)
+				for j, ob2 := range sel.OrderBy {
+					if j != 0 {
+						c.w.WriteString(`, `)
+					}
+					c.colWithTableID(sel.Table, sel.ID, ob2.Col.Name)
+					switch ob2.Order {
+					case qcode.OrderDesc, qcode.OrderDescNullsFirst, qcode.OrderDescNullsLast:
+						c.w.WriteString(` DESC`)
+					default:
+						c.w.WriteString(` ASC`)
+					}
+				}
+				c.w.WriteString(` ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS __cur_`)
+				int32String(c.w, int32(i))
 			} else {
 				c.w.WriteString(`, LAST_VALUE(`)
 				c.colWithTableID(sel.Table, sel.ID, ob.Col.Name)

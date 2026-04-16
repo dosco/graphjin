@@ -215,7 +215,12 @@ func (d *SnowflakeDialect) RenderCursorCTE(ctx Context, sel *qcode.Select) {
 		cursorVar = "cursor"
 	}
 
-	ctx.WriteString(`WITH __cur AS (SELECT `)
+	// Quote the CTE name — Snowflake folds unquoted `__cur` to `__CUR`
+	// but the compiled references are always `"__cur"` quoted-lowercase
+	// (via colWithTable). Without the double-quotes here the folded
+	// uppercase `__CUR` doesn't match the reference and the query fails
+	// with `Object '"__cur"' does not exist`.
+	ctx.WriteString(`WITH "__cur" AS (SELECT `)
 	for i, ob := range sel.OrderBy {
 		if i != 0 {
 			ctx.WriteString(`, `)
@@ -514,25 +519,23 @@ func (d *SnowflakeDialect) RenderValVar(ctx Context, ex *qcode.Exp, val string) 
 
 func (d *SnowflakeDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
 	if ex.Op == qcode.OpHasInCommon && ex.Left.Col.Array {
-		// Iterate array elements via FLATTEN. `value` is VARIANT, so
-		// use `::type` for scalar coercion (Snowflake rejects TRY_CAST
-		// from VARIANT sources).
-		elemType := d.snowflakeCastType(d.baseType(ex.Left.Col.Type))
-		ctx.WriteString(`EXISTS (SELECT 1 FROM LATERAL FLATTEN(INPUT => `)
+		// Use ARRAYS_OVERLAP for array ∩ array tests. The earlier
+		// EXISTS + LATERAL FLATTEN form was correlated against the
+		// outer row and Snowflake rejected it with "Unsupported
+		// subquery type cannot be evaluated" when nested inside a
+		// scalar OBJECT_CONSTRUCT subquery. ARRAYS_OVERLAP is a
+		// first-class array function, composable anywhere.
+		ctx.WriteString(`ARRAYS_OVERLAP(`)
 		d.renderOperand(ctx, ex.Left.Col.Table, ex.Left.Table, ex.Left.ID, ex.Left.Col.Name, ex.Left.ColName)
-		ctx.WriteString(`) AS __gj_l WHERE __gj_l.value::`)
-		ctx.WriteString(elemType)
-		ctx.WriteString(` IN `)
+		ctx.WriteString(`, `)
 
 		switch ex.Right.ValType {
 		case qcode.ValVar:
-			ctx.WriteString(`(SELECT __gj_r.value::`)
-			ctx.WriteString(elemType)
-			ctx.WriteString(` FROM LATERAL FLATTEN(INPUT => PARSE_JSON(`)
+			ctx.WriteString(`PARSE_JSON(`)
 			ctx.AddParam(Param{Name: ex.Right.Val, Type: "json", IsArray: true})
-			ctx.WriteString(`)) __gj_r)`)
+			ctx.WriteString(`)`)
 		case qcode.ValList:
-			ctx.WriteString(`(`)
+			ctx.WriteString(`ARRAY_CONSTRUCT(`)
 			for i := range ex.Right.ListVal {
 				if i != 0 {
 					ctx.WriteString(`, `)
@@ -548,11 +551,7 @@ func (d *SnowflakeDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
 			}
 			ctx.WriteString(`)`)
 		default:
-			ctx.WriteString(`(SELECT __gj_r.value::`)
-			ctx.WriteString(elemType)
-			ctx.WriteString(` FROM LATERAL FLATTEN(INPUT => `)
 			d.renderOperand(ctx, ex.Right.Col.Table, ex.Right.Table, ex.Right.ID, ex.Right.Col.Name, ex.Right.ColName)
-			ctx.WriteString(`) __gj_r)`)
 		}
 
 		ctx.WriteString(`)`)
