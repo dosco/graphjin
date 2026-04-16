@@ -199,9 +199,12 @@ func (d *SnowflakeDialect) RenderJoinTables(ctx Context, sel *qcode.Select) {
 		// Real Snowflake: LATERAL FLATTEN(input => PARSE_JSON(...)) exposes columns
 		// `value` and `index` per row. (DuckDB equivalent was json_each(CAST(... AS JSON))
 		// returning `value` and `key`.)
-		ctx.WriteString(` JOIN (SELECT TRY_CAST(_gj_f.value AS `)
+		// `value::type` rather than TRY_CAST(value AS type) — the
+		// FLATTEN output's `value` column is VARIANT and Snowflake
+		// rejects TRY_CAST from VARIANT to scalar types.
+		ctx.WriteString(` JOIN (SELECT _gj_f.value::`)
 		ctx.WriteString(d.snowflakeCastType(ob.Col.Type))
-		ctx.WriteString(`) AS id, _gj_f.index + 1 AS ord FROM LATERAL FLATTEN(input => PARSE_JSON(`)
+		ctx.WriteString(` AS id, _gj_f.index + 1 AS ord FROM LATERAL FLATTEN(input => PARSE_JSON(`)
 		ctx.AddParam(Param{Name: ob.Var, Type: "json"})
 		ctx.WriteString(`)) _gj_f) AS _gj_ob_`)
 		ctx.WriteString(ob.Col.Name)
@@ -335,10 +338,22 @@ func (d *SnowflakeDialect) RenderJSONPath(ctx Context, table, col string, path [
 }
 
 func (d *SnowflakeDialect) RenderTryCast(ctx Context, val func(), typ string) {
+	// Same VARIANT / ARRAY special-case as RenderCast — Snowflake
+	// rejects TRY_CAST from scalar to VARIANT/ARRAY. PARSE_JSON is
+	// the correct conversion and returns NULL on malformed input
+	// (matching TRY_CAST semantics).
+	target := d.snowflakeCastType(typ)
+	switch target {
+	case "VARIANT", "ARRAY":
+		ctx.WriteString(`PARSE_JSON(`)
+		val()
+		ctx.WriteString(`)`)
+		return
+	}
 	ctx.WriteString(`TRY_CAST(`)
 	val()
 	ctx.WriteString(` AS `)
-	ctx.WriteString(d.snowflakeCastType(typ))
+	ctx.WriteString(target)
 	ctx.WriteString(`)`)
 }
 
@@ -430,11 +445,12 @@ func (d *SnowflakeDialect) RenderValVar(ctx Context, ex *qcode.Exp, val string) 
 		return false
 	}
 
-	// Real Snowflake: LATERAL FLATTEN(input => PARSE_JSON(...)) over a JSON array param.
-	// (DuckDB equivalent was UNNEST(CAST(json(...) AS T[])) AS _gj(x).)
-	ctx.WriteString(`(SELECT TRY_CAST(_gj.value AS `)
+	// Real Snowflake: LATERAL FLATTEN(input => PARSE_JSON(...)) over a
+	// JSON array param. FLATTEN's `value` is VARIANT — use `::type`,
+	// not TRY_CAST (which Snowflake rejects on VARIANT sources).
+	ctx.WriteString(`(SELECT _gj.value::`)
 	ctx.WriteString(d.snowflakeCastType(d.baseType(ex.Left.Col.Type)))
-	ctx.WriteString(`) FROM LATERAL FLATTEN(input => PARSE_JSON(`)
+	ctx.WriteString(` FROM LATERAL FLATTEN(input => PARSE_JSON(`)
 	ctx.AddParam(Param{Name: ex.Right.Val, Type: "json", IsArray: true})
 	ctx.WriteString(`)) _gj)`)
 
@@ -443,19 +459,21 @@ func (d *SnowflakeDialect) RenderValVar(ctx Context, ex *qcode.Exp, val string) 
 
 func (d *SnowflakeDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
 	if ex.Op == qcode.OpHasInCommon && ex.Left.Col.Array {
-		// Snowflake has no UNNEST — iterate array elements via FLATTEN
-		// which exposes the element under the `value` column.
+		// Iterate array elements via FLATTEN. `value` is VARIANT, so
+		// use `::type` for scalar coercion (Snowflake rejects TRY_CAST
+		// from VARIANT sources).
+		elemType := d.snowflakeCastType(d.baseType(ex.Left.Col.Type))
 		ctx.WriteString(`EXISTS (SELECT 1 FROM LATERAL FLATTEN(INPUT => `)
 		d.renderOperand(ctx, ex.Left.Col.Table, ex.Left.Table, ex.Left.ID, ex.Left.Col.Name, ex.Left.ColName)
-		ctx.WriteString(`) AS __gj_l WHERE TRY_CAST(__gj_l.value AS `)
-		ctx.WriteString(d.snowflakeCastType(d.baseType(ex.Left.Col.Type)))
-		ctx.WriteString(`) IN `)
+		ctx.WriteString(`) AS __gj_l WHERE __gj_l.value::`)
+		ctx.WriteString(elemType)
+		ctx.WriteString(` IN `)
 
 		switch ex.Right.ValType {
 		case qcode.ValVar:
-			ctx.WriteString(`(SELECT TRY_CAST(__gj_r.value AS `)
-			ctx.WriteString(d.snowflakeCastType(d.baseType(ex.Left.Col.Type)))
-			ctx.WriteString(`) FROM LATERAL FLATTEN(INPUT => PARSE_JSON(`)
+			ctx.WriteString(`(SELECT __gj_r.value::`)
+			ctx.WriteString(elemType)
+			ctx.WriteString(` FROM LATERAL FLATTEN(INPUT => PARSE_JSON(`)
 			ctx.AddParam(Param{Name: ex.Right.Val, Type: "json", IsArray: true})
 			ctx.WriteString(`)) __gj_r)`)
 		case qcode.ValList:
@@ -475,9 +493,9 @@ func (d *SnowflakeDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
 			}
 			ctx.WriteString(`)`)
 		default:
-			ctx.WriteString(`(SELECT TRY_CAST(__gj_r.value AS `)
-			ctx.WriteString(d.snowflakeCastType(d.baseType(ex.Left.Col.Type)))
-			ctx.WriteString(`) FROM LATERAL FLATTEN(INPUT => `)
+			ctx.WriteString(`(SELECT __gj_r.value::`)
+			ctx.WriteString(elemType)
+			ctx.WriteString(` FROM LATERAL FLATTEN(INPUT => `)
 			d.renderOperand(ctx, ex.Right.Col.Table, ex.Right.Table, ex.Right.ID, ex.Right.Col.Name, ex.Right.ColName)
 			ctx.WriteString(`) __gj_r)`)
 		}
@@ -564,13 +582,13 @@ func (d *SnowflakeDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
 		}
 
 		// Snowflake array membership: LATERAL FLATTEN the right-hand
-		// array column, CAST each `value` to the left-hand's type, and
-		// compare.
+		// array column, coerce each `value` (VARIANT) to the left-hand's
+		// type via `::` (TRY_CAST on VARIANT is rejected), and compare.
 		ctx.WriteString(`EXISTS (SELECT 1 FROM LATERAL FLATTEN(INPUT => `)
 		d.renderOperand(ctx, ex.Right.Col.Table, ex.Right.Table, ex.Right.ID, ex.Right.Col.Name, ex.Right.ColName)
-		ctx.WriteString(`) AS __gj_flat WHERE TRY_CAST(__gj_flat.value AS `)
+		ctx.WriteString(`) AS __gj_flat WHERE __gj_flat.value::`)
 		ctx.WriteString(d.snowflakeCastType(ex.Left.Col.Type))
-		ctx.WriteString(`) = `)
+		ctx.WriteString(` = `)
 		d.renderOperand(ctx, ex.Left.Col.Table, ex.Left.Table, ex.Left.ID, ex.Left.Col.Name, ex.Left.ColName)
 		ctx.WriteString(`))`)
 
@@ -741,11 +759,13 @@ func (d *SnowflakeDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *
 	}
 	ctx.WriteString(`)`)
 
-	if m.IsJSON {
-		ctx.WriteString(` SELECT `)
-	} else {
-		ctx.WriteString(` VALUES (`)
-	}
+	// Always SELECT rather than VALUES — Snowflake's VALUES clause
+	// rejects function calls like PARSE_JSON / ARRAY_CONSTRUCT
+	// ("Invalid expression [PARSE_JSON('...')] in VALUES clause"),
+	// which would otherwise break inserts into VARIANT / ARRAY
+	// columns. A single-row SELECT from a dummy source is equivalent
+	// in plan shape and accepts every expression Snowflake supports.
+	ctx.WriteString(` SELECT `)
 
 	i = 0
 	for _, col := range m.Cols {
@@ -779,7 +799,9 @@ func (d *SnowflakeDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *
 			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
 		})
 	} else {
-		ctx.WriteString(`)`)
+		// Dummy FROM so the SELECT is well-formed. Snowflake requires
+		// a FROM clause for projection-only SELECTs in INSERT ... SELECT.
+		ctx.WriteString(` FROM (SELECT 1) AS _gj_dummy`)
 	}
 
 	ctx.WriteString(`; INSERT INTO `)
@@ -1144,10 +1166,24 @@ func (d *SnowflakeDialect) SplitQuery(query string) (parts []string) {
 }
 
 func (d *SnowflakeDialect) RenderCast(ctx Context, val func(), typ string) {
+	// Snowflake rejects CAST(<string> AS VARIANT) in VALUES /
+	// projection contexts with "Invalid expression ... in VALUES
+	// clause". PARSE_JSON is the documented conversion from a string
+	// literal to VARIANT. Same applies to ARRAY targets — Snowflake
+	// only accepts ARRAY_CONSTRUCT(...) or PARSE_JSON('[...]') for
+	// literal-to-array coercion.
+	target := d.snowflakeCastType(typ)
+	switch target {
+	case "VARIANT", "ARRAY":
+		ctx.WriteString(`PARSE_JSON(`)
+		val()
+		ctx.WriteString(`)`)
+		return
+	}
 	ctx.WriteString(`CAST(`)
 	val()
 	ctx.WriteString(` AS `)
-	ctx.WriteString(d.snowflakeCastType(typ))
+	ctx.WriteString(target)
 	ctx.WriteString(`)`)
 }
 
@@ -1175,17 +1211,19 @@ func (d *SnowflakeDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate,
 			}
 
 			if !col.Col.Array && !d.isJSONLikeType(col.Col.Type) {
-				if d.isStringType(col.Col.Type) {
-					ctx.WriteString(`GET_PATH(t.value, '`)
-					ctx.WriteString(col.FieldName)
-					ctx.WriteString(`')::VARCHAR AS `)
-				} else {
-					ctx.WriteString(`TRY_CAST(GET_PATH(t.value, '`)
-					ctx.WriteString(col.FieldName)
-					ctx.WriteString(`') AS `)
-					ctx.WriteString(d.snowflakeCastType(col.Col.Type))
-					ctx.WriteString(`) AS `)
-				}
+				// Use `::type` (the colon-colon cast) rather than
+				// TRY_CAST because Snowflake rejects TRY_CAST from
+				// VARIANT to scalar types ("Function TRY_CAST cannot
+				// be used with arguments of types VARIANT and
+				// NUMBER/FLOAT/TIMESTAMP_NTZ"). The `::` syntax is the
+				// canonical VARIANT-to-scalar extraction on Snowflake
+				// and yields NULL on malformed input just like
+				// TRY_CAST would on scalar inputs.
+				ctx.WriteString(`GET_PATH(t.value, '`)
+				ctx.WriteString(col.FieldName)
+				ctx.WriteString(`')::`)
+				ctx.WriteString(d.snowflakeCastType(col.Col.Type))
+				ctx.WriteString(` AS `)
 			} else {
 				ctx.WriteString(`GET_PATH(t.value, '`)
 				ctx.WriteString(col.FieldName)
@@ -1215,7 +1253,12 @@ func (d *SnowflakeDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate,
 			renderRoot()
 			ctx.WriteString(`)`)
 		}
-		ctx.WriteString(`)) AS t`)
+		// Alias quoted-lowercase — the cross-dialect psql caller emits
+		// `"t"."col"` references against this derived table. Without
+		// quoting, Snowflake's default identifier folding uppercases
+		// the unquoted `AS t` to `T`, and the quoted `"t"` reference
+		// can't resolve it ("invalid identifier '"t"."id"'").
+		ctx.WriteString(`)) AS "t"`)
 		return
 	}
 
@@ -1238,25 +1281,19 @@ func (d *SnowflakeDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate,
 			pathPrefix = strings.Join(m.Path, ".") + `.`
 		}
 		if !col.Col.Array && !d.isJSONLikeType(col.Col.Type) {
-			if d.isStringType(col.Col.Type) {
-				// Real Snowflake: GET_PATH(PARSE_JSON(...))::VARCHAR
-				// (DuckDB equivalent was json_extract_string with '$.path' syntax.)
-				ctx.WriteString(`GET_PATH(PARSE_JSON(`)
-				renderRoot()
-				ctx.WriteString(`), '`)
-				ctx.WriteString(pathPrefix)
-				ctx.WriteString(col.FieldName)
-				ctx.WriteString(`')::VARCHAR AS `)
-			} else {
-				ctx.WriteString(`TRY_CAST(GET_PATH(PARSE_JSON(`)
-				renderRoot()
-				ctx.WriteString(`), '`)
-				ctx.WriteString(pathPrefix)
-				ctx.WriteString(col.FieldName)
-				ctx.WriteString(`') AS `)
-				ctx.WriteString(d.snowflakeCastType(col.Col.Type))
-				ctx.WriteString(`) AS `)
-			}
+			// Use `::type` (colon-colon cast) rather than TRY_CAST —
+			// same reasoning as the array branch above. Snowflake
+			// rejects TRY_CAST VARIANT → scalar; the `::` form is
+			// the canonical VARIANT extraction and returns NULL on
+			// malformed paths.
+			ctx.WriteString(`GET_PATH(PARSE_JSON(`)
+			renderRoot()
+			ctx.WriteString(`), '`)
+			ctx.WriteString(pathPrefix)
+			ctx.WriteString(col.FieldName)
+			ctx.WriteString(`')::`)
+			ctx.WriteString(d.snowflakeCastType(col.Col.Type))
+			ctx.WriteString(` AS `)
 		} else {
 			ctx.WriteString(`GET_PATH(PARSE_JSON(`)
 			renderRoot()
@@ -1272,7 +1309,9 @@ func (d *SnowflakeDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate,
 		if !first {
 			ctx.WriteString(`, `)
 		}
-		ctx.WriteString(`TRY_CAST(GET_PATH(PARSE_JSON(`)
+		// Same VARIANT → scalar `::BIGINT` pattern for the implicit
+		// PK-tracking column added when the user didn't select the PK.
+		ctx.WriteString(`GET_PATH(PARSE_JSON(`)
 		renderRoot()
 		ctx.WriteString(`), '`)
 		if len(m.Path) > 0 {
@@ -1280,10 +1319,11 @@ func (d *SnowflakeDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate,
 			ctx.WriteString(`.`)
 		}
 		ctx.WriteString(m.Ti.PrimaryCol.Name)
-		ctx.WriteString(`') AS BIGINT) AS "_gj_pkt"`)
+		ctx.WriteString(`')::BIGINT AS "_gj_pkt"`)
 	}
 
-	ctx.WriteString(` FROM (SELECT 1) AS _gj_dummy) AS t`)
+	// Quoted-lowercase alias — see note in the Array branch above.
+	ctx.WriteString(` FROM (SELECT 1) AS _gj_dummy) AS "t"`)
 }
 
 func (d *SnowflakeDialect) RequiresNullOnEmptySelect() bool {
@@ -1371,13 +1411,14 @@ func (d *SnowflakeDialect) renderMutationJSONValue(ctx Context, actionVar, jsonP
 			return
 		}
 
-		ctx.WriteString(`TRY_CAST(GET_PATH(PARSE_JSON(`)
+		// VARIANT → scalar via `::type`; TRY_CAST from VARIANT is
+		// rejected by Snowflake for non-string scalar types.
+		ctx.WriteString(`GET_PATH(PARSE_JSON(`)
 		ctx.AddParam(Param{Name: actionVar, Type: "json"})
 		ctx.WriteString(`), '`)
 		ctx.WriteString(path)
-		ctx.WriteString(`') AS `)
+		ctx.WriteString(`')::`)
 		ctx.WriteString(d.snowflakeCastType(col.Col.Type))
-		ctx.WriteString(`)`)
 		return
 	}
 
