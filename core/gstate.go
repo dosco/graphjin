@@ -486,6 +486,9 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 				span.Error(err)
 				return err
 			}
+			if os.Getenv("GJ_DEBUG_SQL") != "" {
+				fmt.Printf("[DEBUG SQL script %d]\n%s\n", i, stmt)
+			}
 
 			upperStmt := strings.ToUpper(strings.TrimSpace(stmt))
 

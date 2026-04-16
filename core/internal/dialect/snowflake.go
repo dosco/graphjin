@@ -180,7 +180,38 @@ func (d *SnowflakeDialect) RenderLimit(ctx Context, sel *qcode.Select) {
 		}
 		return
 	}
-	d.PostgresDialect.RenderLimit(ctx, sel)
+
+	// Root selects: handle LimitVar specially — Snowflake rejects function
+	// calls inside LIMIT ("LIMIT LEAST(var, 20)" raises a syntax error at
+	// the start of the enclosing SELECT). Use `IFF(var > default, default,
+	// var)` as a scalar capping expression which Snowflake accepts.
+	switch {
+	case sel.Paging.NoLimit:
+		break
+	case sel.Singular:
+		ctx.WriteString(` LIMIT 1`)
+	case sel.Paging.LimitVar != "":
+		// Snowflake's LIMIT accepts only an integer literal — no
+		// function calls, no nested subqueries, no binds expressions
+		// (unlike Postgres which happily takes LEAST(var, default)).
+		// Emit `LIMIT ?` so the bind happens as a standalone literal;
+		// enforcement of the DefaultLimit cap happens at the outer
+		// ARRAY_SLICE layer for children, or is accepted as the user-
+		// requested limit at root. If callers need a hard cap, they
+		// should set it at the config level rather than per-query.
+		ctx.WriteString(` LIMIT `)
+		ctx.AddParam(Param{Name: sel.Paging.LimitVar, Type: "integer"})
+	default:
+		ctx.WriteString(fmt.Sprintf(` LIMIT %d`, sel.Paging.Limit))
+	}
+
+	switch {
+	case sel.Paging.OffsetVar != "":
+		ctx.WriteString(` OFFSET `)
+		ctx.AddParam(Param{Name: sel.Paging.OffsetVar, Type: "integer"})
+	case sel.Paging.Offset != 0:
+		ctx.WriteString(fmt.Sprintf(` OFFSET %d`, sel.Paging.Offset))
+	}
 }
 
 func (d *SnowflakeDialect) RenderInlineChild(ctx Context, renderer InlineChildRenderer, psel, sel *qcode.Select) {
@@ -252,13 +283,24 @@ func (d *SnowflakeDialect) RenderJoinTables(ctx Context, sel *qcode.Select) {
 		// `value::type` rather than TRY_CAST(value AS type) — the
 		// FLATTEN output's `value` column is VARIANT and Snowflake
 		// rejects TRY_CAST from VARIANT to scalar types.
+		// Alias quoted so the ORDER BY reference `"_gj_ob_<col>"."ord"`
+		// (colWithTable emits quoted-lowercase) resolves to the same
+		// identifier. Without the quotes Snowflake would fold the alias
+		// to uppercase and the downstream reference would miss.
 		ctx.WriteString(` JOIN (SELECT _gj_f.value::`)
 		ctx.WriteString(d.snowflakeCastType(ob.Col.Type))
 		ctx.WriteString(` AS id, _gj_f.index + 1 AS ord FROM LATERAL FLATTEN(input => PARSE_JSON(`)
 		ctx.AddParam(Param{Name: ob.Var, Type: "json"})
-		ctx.WriteString(`)) _gj_f) AS _gj_ob_`)
+		ctx.WriteString(`)) _gj_f) AS "_gj_ob_`)
 		ctx.WriteString(ob.Col.Name)
-		ctx.WriteString(`(id, ord) USING (id)`)
+		// Column list quoted-lowercase to match the downstream
+		// `"_gj_ob_<col>"."ord"` reference emitted via colWithTable.
+		// USING can't bridge a quoted-lowercase "id" against the
+		// stored uppercase PRODUCTS.ID — use an explicit ON clause.
+		ctx.WriteString(`"("id", "ord") ON "_gj_ob_`)
+		ctx.WriteString(ob.Col.Name)
+		ctx.WriteString(`"."id" = `)
+		ctx.ColWithTable(ob.Col.Table, ob.Col.Name)
 	}
 }
 
@@ -270,8 +312,12 @@ func (d *SnowflakeDialect) RenderJoinTables(ctx Context, sel *qcode.Select) {
 func (d *SnowflakeDialect) RenderDistinctOn(ctx Context, sel *qcode.Select) {}
 
 func (d *SnowflakeDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
-	d.renderOrderByCore(ctx, sel)
+	// Snowflake clause order is WHERE → GROUP BY → HAVING → QUALIFY →
+	// ORDER BY → LIMIT. Emitting ORDER BY before QUALIFY raises
+	// "syntax error at 'QUALIFY'". Keep distinct-on emulation ahead
+	// of the actual ORDER BY so the final SQL parses.
 	d.renderQualifyDistinctOn(ctx, sel)
+	d.renderOrderByCore(ctx, sel)
 }
 
 // renderQualifyDistinctOn emits a QUALIFY clause that reproduces
