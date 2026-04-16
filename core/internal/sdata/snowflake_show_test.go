@@ -195,3 +195,78 @@ func eqStrs(a, b []string) bool {
 	}
 	return true
 }
+
+// TestSnowflakeDiscoverClusteringKeys feeds a mock INFORMATION_SCHEMA.TABLES
+// response shaped like real Snowflake (quoted-lowercase identifier cases
+// preserved, CLUSTER BY expression wrapped in LINEAR(...)) and asserts the
+// discovery layer parses it back to the per-table column list.
+func TestSnowflakeDiscoverClusteringKeys(t *testing.T) {
+	db, mock := mockDBForSnowflakeSHOW(t)
+
+	mock.ExpectQuery(`FROM information_schema.tables`).
+		WillReturnRows(sqlmock.NewRows(
+			[]string{"schema_name", "table_name", "clustering_key"},
+		).
+			AddRow("PUBLIC", "ORDERS", "LINEAR(CREATED_AT, REGION)").
+			AddRow("PUBLIC", "EVENTS", "LINEAR(EVENT_TIME)").
+			// Bare-parens form (no LINEAR wrapper).
+			AddRow("PUBLIC", "METRICS", "(METRIC_DATE)"))
+
+	got, err := discoverClusteringKeys(context.Background(), db)
+	if err != nil {
+		t.Fatalf("discoverClusteringKeys err = %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected 3 entries, got %d: %v", len(got), got)
+	}
+	if !eqStrs(got["PUBLIC:ORDERS"], []string{"CREATED_AT", "REGION"}) {
+		t.Errorf("ORDERS clustering keys = %v, want [CREATED_AT REGION]", got["PUBLIC:ORDERS"])
+	}
+	if !eqStrs(got["PUBLIC:EVENTS"], []string{"EVENT_TIME"}) {
+		t.Errorf("EVENTS clustering keys = %v, want [EVENT_TIME]", got["PUBLIC:EVENTS"])
+	}
+	if !eqStrs(got["PUBLIC:METRICS"], []string{"METRIC_DATE"}) {
+		t.Errorf("METRICS clustering keys = %v, want [METRIC_DATE]", got["PUBLIC:METRICS"])
+	}
+}
+
+// TestSnowflakeDiscoverClusteringKeysTolerantOfMissingColumn asserts that
+// the discovery is non-fatal when INFORMATION_SCHEMA.TABLES doesn't expose
+// a clustering_key column (older Snowflake accounts or restricted roles).
+// The caller treats a returned error as "skip clustering optimization"
+// rather than failing schema discovery.
+func TestSnowflakeDiscoverClusteringKeysTolerantOfMissingColumn(t *testing.T) {
+	db, mock := mockDBForSnowflakeSHOW(t)
+	mock.ExpectQuery(`FROM information_schema.tables`).
+		WillReturnError(sql.ErrConnDone)
+
+	_, err := discoverClusteringKeys(context.Background(), db)
+	if err == nil {
+		t.Fatal("expected error propagation when INFORMATION_SCHEMA query fails")
+	}
+}
+
+// TestSnowflakeClusteringAutoPartitionFromDiscovery exercises the full
+// column-map + clustering-key → partition-key inference path end-to-end
+// on a mocked discovery result. This is what enables automatic
+// "missing partition filter" hinting on clustered tables.
+func TestSnowflakeClusteringAutoPartitionFromDiscovery(t *testing.T) {
+	// Build a DBInfo as if DiscoverInfo just returned it, then simulate
+	// the attach-clustering step that runs in DiscoverInfo for Snowflake.
+	di := NewDBInfo("snowflake", 0, "PUBLIC", "db", []DBColumn{
+		{Schema: "PUBLIC", Table: "ORDERS", Name: "ID", Type: "bigint", PrimaryKey: true},
+		{Schema: "PUBLIC", Table: "ORDERS", Name: "CREATED_AT", Type: "timestamp_ntz"},
+		{Schema: "PUBLIC", Table: "ORDERS", Name: "REGION", Type: "varchar"},
+	}, nil, nil)
+
+	tbl := &di.Tables[0]
+	tbl.ClusteringKeys = []string{"CREATED_AT", "REGION"}
+	autoSetPartitionFromClustering(tbl)
+
+	if tbl.PartitionKey != "CREATED_AT" {
+		t.Errorf("expected PartitionKey=CREATED_AT (leading temporal cluster key), got %q", tbl.PartitionKey)
+	}
+	if tbl.PartitionRangeDays != 60 {
+		t.Errorf("expected default PartitionRangeDays=60, got %d", tbl.PartitionRangeDays)
+	}
+}

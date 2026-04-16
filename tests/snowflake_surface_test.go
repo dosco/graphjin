@@ -135,6 +135,42 @@ func TestSnowflakeIncludeDirectiveEmptyProjection(t *testing.T) {
 	require.Contains(t, string(res.Data), `"users":[{}`)
 }
 
+// TestSnowflakeClusteredTableEndToEnd asserts that Snowflake accepts the
+// seed's `CLUSTER BY (event_time, region)` DDL on the `events` fixture,
+// GraphJin discovers that clustering via INFORMATION_SCHEMA.TABLES, and
+// the derived PartitionKey auto-filter emits SQL that runs successfully.
+//
+// The events table uses CURRENT_TIMESTAMP on seed so rows fall inside
+// the default 60-day partition window — without that, the auto-filter
+// would correctly exclude 2021-dated seed rows and the test would show
+// an empty result (passing the filter but not proving the query
+// completed end-to-end).
+//
+// Full clustering-key DISCOVERY unit coverage (INFORMATION_SCHEMA.TABLES
+// parse → ClusteringKeys, auto-partition) lives in:
+//   - core/internal/sdata/snowflake_show_test.go
+//     (TestSnowflakeDiscoverClusteringKeys,
+//      TestSnowflakeDiscoverClusteringKeysTolerantOfMissingColumn,
+//      TestSnowflakeClusteringAutoPartitionFromDiscovery)
+func TestSnowflakeClusteredTableEndToEnd(t *testing.T) {
+	if dbType != "snowflake" {
+		t.Skip("snowflake-only test")
+	}
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	require.NoError(t, err)
+	defer gj.Close()
+
+	res, err := gj.GraphQL(context.Background(),
+		`{ events(limit: 5) { id event_time region } }`, nil, nil)
+	require.NoError(t, err, "query against clustered table must not error")
+	// Seed inserts 10 rows with CURRENT_TIMESTAMP — at least one should
+	// be within the 60-day auto-partition window, so the query must
+	// return at least one row with a region value ('US' or 'EU').
+	require.Contains(t, string(res.Data), `"region":`)
+}
+
 // TestSnowflakeOrderByAlias asserts that ordering by a SELECT-list alias
 // resolves to the underlying column in the inner SQL scope where the
 // alias isn't visible (BUG-G2).

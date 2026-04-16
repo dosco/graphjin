@@ -1232,6 +1232,14 @@ func (co *Compiler) checkPartitionFilter(qc *QCode, sel *Select) {
 
 		ex := &Exp{Op: OpGreaterOrEquals}
 		ex.Left.Col = col
+		// Reference the column at the base table (unaliased with no `_N`
+		// suffix). Without explicit -1, ID defaults to 0 and the exp
+		// renderer appends `_0` to the table name — that suffix refers
+		// to the *middle* subquery wrapper whose projection only carries
+		// user-selected columns, so a filter on the partition column
+		// (which the user didn't select) emits `"TABLE_0"."partition_col"`
+		// and fails with "invalid identifier".
+		ex.Left.ID = -1
 		ex.Right.ValType = ValPartitionBound
 		ex.Right.Val = strconv.Itoa(sel.Ti.PartitionRangeDays)
 		addAndFilter(&sel.Where, ex)

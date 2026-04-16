@@ -53,6 +53,28 @@ CREATE TABLE products (
   updated_at TIMESTAMP_NTZ
 );
 
+-- Dedicated fixture for clustering/partition-key tests. Keeps the CLUSTER
+-- BY behavior (auto-partition filter injection on temporal leading key)
+-- isolated from the shared `products` table — otherwise the default
+-- 60-day range would exclude the static 2021-dated seed rows and break
+-- every non-clustering test that reads products.
+CREATE TABLE events (
+  id BIGINT NOT NULL PRIMARY KEY,
+  event_time TIMESTAMP_NTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  region VARCHAR,
+  payload VARIANT
+) CLUSTER BY (event_time, region);
+
+-- Seed with CURRENT_TIMESTAMP so the auto 60-day partition filter keeps
+-- the rows visible (rows older than 60 days would be excluded).
+INSERT INTO events (id, event_time, region, payload)
+SELECT
+  seq4() + 1,
+  CURRENT_TIMESTAMP,
+  CASE WHEN MOD(seq4(), 2) = 0 THEN 'US' ELSE 'EU' END,
+  PARSE_JSON('{"k":"v"}')
+FROM TABLE(GENERATOR(ROWCOUNT => 10));
+
 CREATE TABLE purchases (
   id BIGINT NOT NULL PRIMARY KEY,
   customer_id BIGINT REFERENCES users(id),
