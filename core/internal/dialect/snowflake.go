@@ -351,16 +351,21 @@ func (d *SnowflakeDialect) RenderJSONPath(ctx Context, table, col string, path [
 }
 
 func (d *SnowflakeDialect) RenderTryCast(ctx Context, val func(), typ string) {
-	// Same VARIANT / ARRAY special-case as RenderCast — Snowflake
-	// rejects TRY_CAST from scalar to VARIANT/ARRAY. PARSE_JSON is
-	// the correct conversion and returns NULL on malformed input
-	// (matching TRY_CAST semantics).
+	// VARIANT: Snowflake rejects TRY_CAST into VARIANT; PARSE_JSON is
+	// the correct string→VARIANT conversion and returns NULL on bad
+	// input (matching TRY_CAST semantics).
+	// ARRAY: ARRAY_CONSTRUCT emits an ARRAY directly — wrapping it in
+	// PARSE_JSON raises "Invalid argument types for PARSE_JSON: (ARRAY)".
+	// Pass val() through unchanged (see RenderCast for the full rationale).
 	target := d.snowflakeCastType(typ)
 	switch target {
-	case "VARIANT", "ARRAY":
+	case "VARIANT":
 		ctx.WriteString(`PARSE_JSON(`)
 		val()
 		ctx.WriteString(`)`)
+		return
+	case "ARRAY":
+		val()
 		return
 	}
 	ctx.WriteString(`TRY_CAST(`)
@@ -1182,15 +1187,27 @@ func (d *SnowflakeDialect) RenderCast(ctx Context, val func(), typ string) {
 	// Snowflake rejects CAST(<string> AS VARIANT) in VALUES /
 	// projection contexts with "Invalid expression ... in VALUES
 	// clause". PARSE_JSON is the documented conversion from a string
-	// literal to VARIANT. Same applies to ARRAY targets — Snowflake
-	// only accepts ARRAY_CONSTRUCT(...) or PARSE_JSON('[...]') for
-	// literal-to-array coercion.
+	// literal to VARIANT.
+	//
+	// ARRAY targets need special care: in mutation contexts val() is
+	// RenderArray which emits ARRAY_CONSTRUCT(...) — wrapping that in
+	// PARSE_JSON fails ("Invalid argument types for PARSE_JSON: (ARRAY)").
+	// ARRAY_CONSTRUCT IS already an ARRAY so we pass it through
+	// unchanged. For non-ARRAY_CONSTRUCT sources targeting ARRAY (e.g.
+	// CAST('[1,2]' AS ARRAY) in an expression), the upstream caller
+	// should route through expressions that eventually hit PARSE_JSON
+	// themselves; the common mutation path sidesteps it entirely.
 	target := d.snowflakeCastType(typ)
 	switch target {
-	case "VARIANT", "ARRAY":
+	case "VARIANT":
 		ctx.WriteString(`PARSE_JSON(`)
 		val()
 		ctx.WriteString(`)`)
+		return
+	case "ARRAY":
+		// ARRAY_CONSTRUCT emits an ARRAY directly — no coercion needed.
+		// This matches every call site in mutate.go (renderArrayValue).
+		val()
 		return
 	}
 	ctx.WriteString(`CAST(`)
