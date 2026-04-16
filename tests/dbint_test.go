@@ -698,63 +698,9 @@ func TestMain(m *testing.M) {
 			},
 		},
 		{
-			name:   "snowflake",
-			driver: "snowflake",
-			startFunc: func(ctx context.Context) (func(context.Context) error, string, error) {
-				req := testcontainers.GenericContainerRequest{
-					ContainerRequest: testcontainers.ContainerRequest{
-						Image:        "ghcr.io/nnnkkk7/snowflake-emulator@sha256:a6be53ab4bf8d25719d10322c72ebf267d92140c1453ee92299b8d291663dcb2",
-						ExposedPorts: []string{"8080/tcp"},
-						WaitingFor:   wait.ForListeningPort("8080/tcp").WithStartupTimeout(120 * time.Second),
-					},
-					Started: true,
-				}
-				container, err := testcontainers.GenericContainer(ctx, req)
-				if err != nil {
-					return nil, "", err
-				}
-
-				host, _ := container.Host(ctx)
-				port, _ := container.MappedPort(ctx, "8080")
-
-				// gosnowflake DSN for local emulator endpoint.
-				// Format follows emulator examples: user:pass@host:port/db/schema?...
-				connStr := fmt.Sprintf("dummy:dummy@%s:%s/test_db/public?account=test&protocol=http&warehouse=dummy", host, port.Port())
-
-				var initDB *sql.DB
-				for i := 0; i < 60; i++ {
-					initDB, err = sql.Open("snowflake", connStr)
-					if err == nil {
-						if err = initDB.Ping(); err == nil {
-							break
-						}
-						initDB.Close() //nolint:errcheck
-					}
-					time.Sleep(1 * time.Second)
-				}
-				if err != nil {
-					return nil, "", fmt.Errorf("failed to connect to snowflake emulator: %w", err)
-				}
-				defer initDB.Close() //nolint:errcheck
-
-				script, err := os.ReadFile("./snowflake.sql")
-				if err != nil {
-					return nil, "", err
-				}
-
-				// Snowflake DDL/DML script uses standard semicolon terminators.
-				for _, stmt := range strings.Split(string(script), ";") {
-					stmt = strings.TrimSpace(stmt)
-					if stmt == "" {
-						continue
-					}
-					if _, err := initDB.Exec(stmt); err != nil {
-						return nil, "", fmt.Errorf("failed to init snowflake emulator: %w\nSQL: %s", err, stmt)
-					}
-				}
-
-				return container.Terminate, connStr, nil
-			},
+			name:      "snowflake",
+			driver:    "snowflake",
+			startFunc: startSnowflake,
 		},
 		{
 			name:   "mongodb",
