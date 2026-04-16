@@ -131,9 +131,23 @@ func NewDBSchema(
 		compositeFKs:      info.CompositeFKs,
 	}
 
+	// Build a case-insensitive view of the alias map — config entries
+	// typically use lowercase (`{name: me, table: users}`), but the
+	// discovered table name preserves storage case (Snowflake stores
+	// unquoted identifiers UPPERCASE so t.Name is "USERS"). Without a
+	// case-fold lookup, aliases never attach to the real table and
+	// role configs referencing the alias fail with "table not found".
+	aliasesCI := make(map[string][]string, len(aliases))
+	for k, v := range aliases {
+		aliasesCI[strings.ToLower(k)] = v
+	}
 	for _, t := range info.Tables {
 		nid := schema.addNode(t)
-		schema.addAliases(schema.tables[nid], nid, aliases[t.Name])
+		al := aliases[t.Name]
+		if len(al) == 0 {
+			al = aliasesCI[strings.ToLower(t.Name)]
+		}
+		schema.addAliases(schema.tables[nid], nid, al)
 	}
 
 	for _, t := range info.VTables {
@@ -305,7 +319,14 @@ func (s *DBSchema) addColumnRels(t DBTable) error {
 			continue
 		}
 
+		// FK resolution falls back to case-insensitive lookup so
+		// cross-case config (lowercase `users.id` from YAML) resolves
+		// against discovered UPPERCASE storage names on case-preserving
+		// backends (Snowflake, Oracle).
 		v, ok := s.tindex[(c.FKeySchema + ":" + c.FKeyTable)]
+		if !ok {
+			v, ok = s.tindexCI[strings.ToLower(c.FKeySchema+":"+c.FKeyTable)]
+		}
 		if !ok {
 			return fmt.Errorf("foreign key table not found: %s.%s", c.FKeySchema, c.FKeyTable)
 		}

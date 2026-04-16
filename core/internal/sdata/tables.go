@@ -468,12 +468,22 @@ func (di *DBInfo) GetColumn(schema, table, column string) (*DBColumn, error) {
 
 // GetTable returns a table from the DBInfo object
 func (di *DBInfo) GetTable(schema, table string) (*DBTable, error) {
-	tid, ok := di.tableMap[(schema + ":" + table)]
-	if !ok {
-		return nil, fmt.Errorf("table: '%s.%s' not found", schema, table)
+	// Exact-case first (fast path + preserves behaviour for
+	// case-sensitive dialects with colliding names).
+	if tid, ok := di.tableMap[(schema + ":" + table)]; ok {
+		return &di.Tables[tid], nil
 	}
-
-	return &di.Tables[tid], nil
+	// Case-insensitive fallback — required for Snowflake (stores
+	// UPPERCASE) where callers pass lowercase table names from config
+	// (e.g. `tables: [{name: me, table: users}]`). Same pattern used
+	// in DBTable.GetColumnIndex and DBSchema.Find.
+	want := strings.ToLower(schema + ":" + table)
+	for k, tid := range di.tableMap {
+		if strings.EqualFold(k, want) {
+			return &di.Tables[tid], nil
+		}
+	}
+	return nil, fmt.Errorf("table: '%s.%s' not found", schema, table)
 }
 
 // DBColumn returns the column as a string
