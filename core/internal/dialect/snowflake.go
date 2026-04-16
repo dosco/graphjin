@@ -87,6 +87,25 @@ func (d *SnowflakeDialect) RenderJSONPlural(ctx Context, sel *qcode.Select) {
 	// Identifiers MUST be double-quoted: inner aliases emitted by the compiler
 	// are quoted-lowercase ("__sj_0", "json"), and Snowflake's default folding
 	// would otherwise uppercase the unquoted reference and miss the target.
+	// Child plurals wrap with ARRAY_SLICE to apply the LIMIT here rather
+	// than on the inner correlated base-SELECT — Snowflake rejects
+	// LIMIT/ORDER BY/GROUP BY inside a correlated scalar subquery.
+	// RenderLimit elides the inner LIMIT for child selects and we reapply
+	// it post-aggregation via ARRAY_SLICE. Root plurals (Rel.Type ==
+	// RelNone) aren't correlated so keep the plain ARRAY_AGG form.
+	useSlice := sel.Rel.Type != sdata.RelNone && !sel.Paging.NoLimit
+	if useSlice {
+		ctx.WriteString(`COALESCE(ARRAY_SLICE(ARRAY_AGG("__sjb_`)
+		ctx.WriteString(strconv.Itoa(int(sel.ID)))
+		ctx.WriteString(`"."json"), `)
+		if sel.Paging.Offset > 0 {
+			ctx.WriteString(fmt.Sprintf("%d, %d", sel.Paging.Offset, sel.Paging.Offset+sel.Paging.Limit))
+		} else {
+			ctx.WriteString(fmt.Sprintf("0, %d", sel.Paging.Limit))
+		}
+		ctx.WriteString(`), ARRAY_CONSTRUCT())`)
+		return
+	}
 	ctx.WriteString(`COALESCE(ARRAY_AGG("__sjb_`)
 	ctx.WriteString(strconv.Itoa(int(sel.ID)))
 	ctx.WriteString(`"."json"), ARRAY_CONSTRUCT())`)
@@ -135,26 +154,24 @@ func (d *SnowflakeDialect) RenderJSONRootSuffix(ctx Context) {
 }
 
 func (d *SnowflakeDialect) SupportsLateral() bool {
-	// Tried SupportsLateral=true: on Snowflake it trades one failure mode
-	// for another — correlated subqueries that were rejected with
-	// "Unsupported subquery type" now compile into nested LATERAL joins
-	// that Snowflake's optimizer aborts with internal error 300010, and
-	// some queries come back with empty payloads that downstream JSON
-	// parsers can't read. The correlated-subquery form is a closer fit for
-	// Snowflake's planner; fixing the remaining cases requires inlining
-	// singular children (removing the inner `(SELECT ... LIMIT 1) AS T`
-	// wrapper) rather than toggling LATERAL.
+	// Re-tried SupportsLateral=true after the __sjb alias split; Snowflake
+	// still aborts with internal error 300010 on nested LATERAL JSON
+	// constructions. Keep false; the correlated-subquery form is the
+	// reliable shape.
 	return false
 }
 
-// RenderLimit drops `LIMIT 1` on child singular selects. Snowflake rejects
-// correlated scalar subqueries that contain a derived table with LIMIT with
-// "Unsupported subquery type cannot be evaluated". For child singular
-// selects (Rel.Type != RelNone) the relationship is FK-unique so at most one
-// row matches; the outer query already wraps the result in ANY_VALUE() so
-// multi-row fallback is harmless. Root singulars keep their LIMIT 1.
+// RenderLimit moves LIMIT enforcement off the inner base-SELECT for any
+// CHILD select (singular or plural). Snowflake rejects correlated scalar
+// subqueries that contain a derived table with LIMIT/ORDER BY/GROUP BY
+// ("Unsupported subquery type cannot be evaluated"). For child selects we
+// drop the inner LIMIT here; the limit is still enforced — it's reapplied
+// at the ARRAY_AGG layer via ARRAY_SLICE in RenderJSONPlural for plurals,
+// and child singulars are FK-unique so at most one row matches. Root
+// selects (Rel.Type == RelNone) are not correlated and keep their LIMIT
+// intact.
 func (d *SnowflakeDialect) RenderLimit(ctx Context, sel *qcode.Select) {
-	if sel.Singular && sel.Rel.Type != sdata.RelNone {
+	if sel.Rel.Type != sdata.RelNone {
 		if sel.Paging.OffsetVar != "" {
 			ctx.WriteString(` OFFSET `)
 			ctx.AddParam(Param{Name: sel.Paging.OffsetVar, Type: "integer"})
@@ -1269,13 +1286,13 @@ func (d *SnowflakeDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate,
 				// canonical VARIANT-to-scalar extraction on Snowflake
 				// and yields NULL on malformed input just like
 				// TRY_CAST would on scalar inputs.
-				ctx.WriteString(`GET_PATH(t.value, '`)
+				ctx.WriteString(`GET_PATH(_gj_f.value, '`)
 				ctx.WriteString(col.FieldName)
 				ctx.WriteString(`')::`)
 				ctx.WriteString(d.snowflakeCastType(col.Col.Type))
 				ctx.WriteString(` AS `)
 			} else {
-				ctx.WriteString(`GET_PATH(t.value, '`)
+				ctx.WriteString(`GET_PATH(_gj_f.value, '`)
 				ctx.WriteString(col.FieldName)
 				ctx.WriteString(`') AS `)
 			}
@@ -1286,7 +1303,7 @@ func (d *SnowflakeDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate,
 			if !first {
 				ctx.WriteString(`, `)
 			}
-			ctx.WriteString(`GET_PATH(t.value, '`)
+			ctx.WriteString(`GET_PATH(_gj_f.value, '`)
 			ctx.WriteString(m.Ti.PrimaryCol.Name) // Use first PK col for implicit tracking
 			ctx.WriteString(`') AS "_gj_pkt"`)
 		}
@@ -1303,12 +1320,13 @@ func (d *SnowflakeDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate,
 			renderRoot()
 			ctx.WriteString(`)`)
 		}
-		// Alias quoted-lowercase — the cross-dialect psql caller emits
-		// `"t"."col"` references against this derived table. Without
-		// quoting, Snowflake's default identifier folding uppercases
-		// the unquoted `AS t` to `T`, and the quoted `"t"` reference
-		// can't resolve it ("invalid identifier '"t"."id"'").
-		ctx.WriteString(`)) AS "t"`)
+		// `_gj_f` names the LATERAL FLATTEN output so the surrounding
+		// SELECT can reach `_gj_f.value` / `.index` without ambiguity; the
+		// outer `AS "t"` below is the derived-table alias the cross-dialect
+		// psql caller references via `"t"."col"`. Without these two
+		// aliases the FLATTEN's output columns aren't in scope inside the
+		// SELECT list and Snowflake raises `invalid identifier '"t".VALUE'`.
+		ctx.WriteString(`) AS _gj_f) AS "t"`)
 		return
 	}
 

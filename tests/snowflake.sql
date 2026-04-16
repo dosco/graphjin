@@ -213,3 +213,36 @@ INSERT INTO graph_node (id, label) VALUES
 INSERT INTO graph_edge (src_node, dst_node) VALUES
   ('a', 'b'),
   ('a', 'c');
+
+CREATE TABLE product_variants (
+  product_id BIGINT NOT NULL,
+  variant_id BIGINT NOT NULL,
+  variant_name VARCHAR NOT NULL,
+  sku VARCHAR,
+  PRIMARY KEY (product_id, variant_id),
+  FOREIGN KEY (product_id) REFERENCES products(id)
+);
+
+CREATE TABLE order_items (
+  id BIGINT NOT NULL PRIMARY KEY,
+  order_id BIGINT NOT NULL,
+  product_id BIGINT NOT NULL,
+  variant_id BIGINT NOT NULL,
+  quantity INTEGER NOT NULL DEFAULT 1,
+  price DOUBLE NOT NULL,
+  FOREIGN KEY (product_id, variant_id) REFERENCES product_variants(product_id, variant_id)
+);
+
+INSERT INTO product_variants (product_id, variant_id, variant_name, sku) VALUES
+  (1, 1, 'Small', 'PROD1-S'),
+  (1, 2, 'Medium', 'PROD1-M'),
+  (1, 3, 'Large', 'PROD1-L'),
+  (2, 1, 'Red', 'PROD2-R'),
+  (2, 2, 'Blue', 'PROD2-B');
+
+INSERT INTO order_items (id, order_id, product_id, variant_id, quantity, price) VALUES
+  (1, 1, 1, 1, 2, 19.99),
+  (2, 2, 1, 2, 1, 24.99),
+  (3, 3, 1, 3, 3, 29.99),
+  (4, 4, 2, 1, 1, 14.99),
+  (5, 5, 2, 2, 2, 14.99);
