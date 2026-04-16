@@ -220,15 +220,19 @@ func addJsonTable(conf *Config, dbInfo *sdata.DBInfo, table Table) error {
 		return fmt.Errorf("json table: %w", err)
 	}
 
-	// Allow json, jsonb, clob, and text types
-	// MariaDB stores JSON as longtext, so we need to accept text types as well
+	// Allow JSON/JSONB (Postgres), CLOB/TEXT variants (MariaDB/MySQL),
+	// VARIANT/OBJECT/ARRAY (Snowflake's schemaless JSON storage).
+	// Snowflake VARIANT is functionally equivalent to Postgres JSONB for
+	// GraphJin's purposes — the column holds a JSON document and the
+	// virtual-table layer exposes its fields as rows.
 	validJSONTypes := map[string]bool{
 		"json": true, "jsonb": true, "clob": true,
 		"longtext": true, "text": true, "mediumtext": true,
+		"variant": true, "object": true, "array": true,
 	}
-	if !validJSONTypes[bc.Type] {
+	if !validJSONTypes[strings.ToLower(bc.Type)] {
 		return fmt.Errorf(
-			"json table: column '%s' in table '%s' is of type '%s'. Only JSON, JSONB, CLOB, or TEXT types are valid",
+			"json table: column '%s' in table '%s' is of type '%s'. Only JSON/JSONB/CLOB/TEXT/VARIANT/OBJECT/ARRAY types are valid",
 			table.Name, table.Table, bc.Type)
 	}
 

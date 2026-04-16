@@ -1077,16 +1077,23 @@ func newConfig(c *core.Config) *core.Config {
 }
 
 func stdJSON(val []byte) string {
+	// Empty input — upstream query likely errored. Don't panic so the
+	// test that produced it can fail cleanly with its own error
+	// message instead of taking the whole suite down via a runtime
+	// panic. Same for parse failures (e.g. truncated output).
+	if len(val) == 0 {
+		return ""
+	}
 	var m map[string]interface{}
 
 	if err := json.Unmarshal(val, &m); err != nil {
-		panic(err)
+		return string(val)
 	}
 
 	if v, err := json.Marshal(m); err == nil {
 		return string(v)
 	} else {
-		panic(err)
+		return string(val)
 	}
 }
 

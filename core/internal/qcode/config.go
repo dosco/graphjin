@@ -1,5 +1,7 @@
 package qcode
 
+import "strings"
+
 type Config struct {
 	Vars            map[string]string
 	TConfig         map[string]TConfig
@@ -209,21 +211,26 @@ func (trv *trval) filter(qt QType) (*Exp, bool) {
 }
 
 func (trv *trval) columnAllowed(qt *QCode, name string) bool {
+	// Match makeSet's lowercasing — the allow-sets are stored in
+	// lowercase so config written for one DB's storage case (typically
+	// lowercase) works uniformly against backends that preserve case
+	// (Snowflake, Oracle) where discovered column names differ.
+	n := strings.ToLower(name)
 	switch qt.SType {
 	case QTQuery:
-		_, ok := trv.query.cols[name]
+		_, ok := trv.query.cols[n]
 		return ok || len(trv.query.cols) == 0
 	case QTInsert:
-		_, ok := trv.insert.cols[name]
+		_, ok := trv.insert.cols[n]
 		return ok || len(trv.insert.cols) == 0
 	case QTUpdate:
-		_, ok := trv.update.cols[name]
+		_, ok := trv.update.cols[n]
 		return ok || len(trv.update.cols) == 0
 	case QTUpsert:
-		_, ok := trv.upsert.cols[name]
+		_, ok := trv.upsert.cols[n]
 		return ok || len(trv.upsert.cols) == 0
 	case QTDelete:
-		_, ok := trv.delete.cols[name]
+		_, ok := trv.delete.cols[n]
 		return ok || len(trv.delete.cols) == 0
 	}
 	return false
@@ -290,8 +297,12 @@ func (trv *trval) getPresets(mt MType) map[string]string {
 func makeSet(list []string) map[string]struct{} {
 	m := make(map[string]struct{}, len(list))
 
+	// Lowercase entries so columnAllowed's lookup can match against
+	// discovered column names regardless of storage case (Snowflake
+	// stores unquoted identifiers UPPERCASE; config files typically
+	// use lowercase). Same normalisation applied on the lookup side.
 	for i := range list {
-		m[list[i]] = struct{}{}
+		m[strings.ToLower(list[i])] = struct{}{}
 	}
 	return m
 }
