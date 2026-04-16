@@ -519,7 +519,7 @@ func (v *exprValidator) walk(ex *Exp, depth int, underArith bool) error {
 		// enforcement on related tables to a follow-up.
 		if len(ex.RelPath) == 0 && v.allowedCols != nil {
 			if _, ok := v.allowedCols[ex.Left.Col.Name]; !ok {
-				return fmt.Errorf("expr: column %q is not in the allowlist for this role", ex.Left.Col.Name)
+				return fmt.Errorf("expr: column %q is not in the allowlist for this role", strings.ToLower(ex.Left.Col.Name))
 			}
 		}
 		if underArith && !isNumericSQLType(ex.Left.Col.Type) {
@@ -620,7 +620,7 @@ func (v *exprValidator) walkBool(ex *Exp, depth int) error {
 	}
 	if v.allowedCols != nil && ex.Left.Col.Name != "" {
 		if _, ok := v.allowedCols[ex.Left.Col.Name]; !ok {
-			return fmt.Errorf("expr.case.when: column %q is not in the allowlist for this role", ex.Left.Col.Name)
+			return fmt.Errorf("expr.case.when: column %q is not in the allowlist for this role", strings.ToLower(ex.Left.Col.Name))
 		}
 	}
 	for _, c := range ex.Children {

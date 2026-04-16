@@ -182,7 +182,10 @@ INSERT INTO notifications (id, verb, subject_type, subject_id, user_id, created_
 SELECT
   seq4() + 1,
   CASE WHEN MOD(seq4() + 1, 2) = 0 THEN 'Bought' ELSE 'Joined' END,
-  CASE WHEN MOD(seq4() + 1, 2) = 0 THEN 'products' ELSE 'users' END,
+  -- Uppercase matches Snowflake's stored table names (PRODUCTS/USERS).
+  -- Compiled polymorphic SQL emits `subject_type = 'PRODUCTS'` using the
+  -- stored-case identifier, so lowercase seed values wouldn't match.
+  CASE WHEN MOD(seq4() + 1, 2) = 0 THEN 'PRODUCTS' ELSE 'USERS' END,
   seq4() + 1,
   CASE WHEN (seq4() + 1) >= 2 THEN seq4() ELSE NULL END,
   '2021-01-09 16:37:01'::TIMESTAMP_NTZ

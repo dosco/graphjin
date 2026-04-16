@@ -450,7 +450,11 @@ func validateField(qc *QCode, f Field, tr trval) error {
 	switch f.Type {
 	case FieldTypeCol:
 		if !tr.columnAllowed(qc, f.Col.Name) {
-			return validateErr(tr, f.Col.Name, "db column blocked")
+			// Lowercase the column name in the error so cross-dialect
+			// tests don't diverge on stored case — Snowflake's
+			// UPPERCASE storage would otherwise surface 'PRICE' here
+			// while Postgres returns 'price'.
+			return validateErr(tr, strings.ToLower(f.Col.Name), "db column blocked")
 		}
 	case FieldTypeFunc:
 		if tr.isFuncsBlocked() {
@@ -458,7 +462,7 @@ func validateField(qc *QCode, f Field, tr trval) error {
 		}
 		if len(f.Args) != 0 && f.Args[0].Type == ArgTypeCol &&
 			!tr.columnAllowed(qc, f.Args[0].Col.Name) {
-			return validateErr(tr, f.Args[0].Col.Name, "db column blocked")
+			return validateErr(tr, strings.ToLower(f.Args[0].Col.Name), "db column blocked")
 		}
 		// ArgTypeExpr: column-allowlist enforcement happens in
 		// compileChildColumns via validateExprTree, which walks the
