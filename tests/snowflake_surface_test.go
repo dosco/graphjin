@@ -2,7 +2,6 @@ package tests_test
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/dosco/graphjin/core/v3"
@@ -77,16 +76,15 @@ func TestSnowflakeGroupByAutoDerive(t *testing.T) {
 	require.NoError(t, err)
 	defer gj.Close()
 
+	// `country_code` is seeded as `'US'` for every row, so GROUP BY
+	// country_code must collapse all 100 rows into one group. If BUG-G1
+	// were reintroduced (id leaking into GROUP BY) we'd see 100 groups
+	// of count=1 instead of 1 group of count=100.
 	res, err := gj.GraphQL(context.Background(),
-		`{ products { owner: owner_id count_id } }`, nil, nil)
+		`{ products { country: country_code count_id } }`, nil, nil)
 	require.NoError(t, err)
-	// The response should show groups with count > 1 for owners that have
-	// multiple products — confirming GROUP BY on owner alone.
-	hasHigherThanOne := strings.Contains(string(res.Data), `"count_id":2`) ||
-		strings.Contains(string(res.Data), `"count_id":3`) ||
-		strings.Contains(string(res.Data), `"count_id":4`)
-	require.True(t, hasHigherThanOne,
-		"expected at least one group with count_id > 1; got %s", string(res.Data))
+	require.Contains(t, string(res.Data), `"count_id":100`,
+		"expected a single group with count_id=100 (all products share country_code='US')")
 }
 
 // TestSnowflakeMutationWithPK asserts mutations still work when the target

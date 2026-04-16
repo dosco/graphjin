@@ -8,7 +8,20 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/snowflakedb/gosnowflake"
 )
+
+// Silence the gosnowflake driver's own logrus logger for the test run.
+// It logs every failed query at ERRO level — including probes the
+// caller intentionally expects to fail (e.g. the `_gj_fk_metadata`
+// overlay probe during schema discovery). Keeping these at ERRO floods
+// test output with alarming-looking errors that are actually handled
+// gracefully by GraphJin. The `serv` package does the same for its
+// binary startup path (see serv/db.go silenceSnowflakeDriverLogs).
+func init() {
+	_ = gosnowflake.GetLogger().SetLogLevel("fatal")
+}
 
 // startSnowflake is the integration-test harness entry point for Snowflake.
 // It follows the same shape as the other per-DB startFuncs in dbint_test.go

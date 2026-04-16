@@ -256,7 +256,7 @@ func Example_setArrayColumnToValue() {
 	}
 
 	// Cleanup: restore tags to original state
-	_, _ = db.Exec(`UPDATE products SET tags = list_value('Tag 1', 'Tag 2', 'Tag 3', 'Tag 4', 'Tag 5') WHERE id = 100`)
+	_, _ = db.Exec(`UPDATE products SET tags = ARRAY_CONSTRUCT('Tag 1', 'Tag 2', 'Tag 3', 'Tag 4', 'Tag 5') WHERE id = 100`)
 
 	// Output: {"products":[{"id":100,"tags":["super","great","wow"]}]}
 }
@@ -286,7 +286,7 @@ func Example_setArrayColumnToEmpty() {
 	}
 
 	// Cleanup: restore tags to original state
-	_, _ = db.Exec(`UPDATE products SET tags = list_value('Tag 1', 'Tag 2', 'Tag 3', 'Tag 4', 'Tag 5') WHERE id = 100`)
+	_, _ = db.Exec(`UPDATE products SET tags = ARRAY_CONSTRUCT('Tag 1', 'Tag 2', 'Tag 3', 'Tag 4', 'Tag 5') WHERE id = 100`)
 
 	// Output: {"products":[{"id":100,"tags":[]}]}
 }
