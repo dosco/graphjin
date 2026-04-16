@@ -217,8 +217,13 @@ func NewDBSchema(
 // addRels adds relationships to the schema
 func (s *DBSchema) addRels(t DBTable) error {
 	var err error
-	switch t.Type {
-	case "json", "jsonb":
+	// Lowercase compare so Snowflake's VARIANT/OBJECT/ARRAY (stored in
+	// upper case by discovery) and MySQL's TEXT family (stored mixed-case)
+	// are still recognized as JSON-virtual-table source columns.
+	switch strings.ToLower(t.Type) {
+	case "json", "jsonb",
+		"variant", "object", "array",
+		"clob", "longtext", "text", "mediumtext":
 		err = s.addJsonRel(t)
 	case "virtual":
 		err = s.addPolymorphicRel(t)

@@ -135,6 +135,14 @@ func (d *SnowflakeDialect) RenderJSONRootSuffix(ctx Context) {
 }
 
 func (d *SnowflakeDialect) SupportsLateral() bool {
+	// Snowflake supports LATERAL natively, but flipping this to true breaks
+	// the generated SQL with `invalid identifier '"__sj_0"."json"'`: the
+	// compiler's LEFT JOIN LATERAL path emits a __sj_N derived-table alias
+	// that's referenced from outer scopes in a way Snowflake's scoping
+	// rejects. Left false until the __sj binding is threaded through
+	// dialect hooks. The correlated-subquery variant compiles cleanly on
+	// most queries; the remaining "Unsupported subquery type" cases require
+	// a deeper compiler rewrite (LEFT JOIN LATERAL with proper aliases).
 	return false
 }
 
@@ -305,9 +313,14 @@ func (d *SnowflakeDialect) renderOrderByCore(ctx Context, sel *qcode.Select) {
 }
 
 func (d *SnowflakeDialect) RenderFromEdge(ctx Context, sel *qcode.Select) {
-	// Real Snowflake: GET_PATH for field access, LATERAL FLATTEN for array iteration.
-	// (DuckDB equivalent was json_extract with '$.path' syntax + json_each.)
-	ctx.WriteString(`(SELECT `)
+	// Snowflake JSON-virtual-table: expose the VARIANT column's elements as
+	// rows via TABLE(FLATTEN()). Wrap in a LATERAL inline view so the
+	// FLATTEN's `input => users.category_counts` can reference the parent
+	// table from the outer FROM clause. Bare `(SELECT ... FROM LATERAL
+	// FLATTEN(input => users.x))` fails with "invalid identifier 'USERS.X'"
+	// because the inner SELECT is a separate scope — LATERAL is required to
+	// thread the parent row in.
+	ctx.WriteString(`LATERAL (SELECT `)
 	for i, col := range sel.Ti.Columns {
 		if i != 0 {
 			ctx.WriteString(`, `)
@@ -319,9 +332,9 @@ func (d *SnowflakeDialect) RenderFromEdge(ctx Context, sel *qcode.Select) {
 		ctx.WriteString(`) AS `)
 		ctx.Quote(col.Name)
 	}
-	ctx.WriteString(` FROM LATERAL FLATTEN(input => `)
+	ctx.WriteString(` FROM TABLE(FLATTEN(input => `)
 	ctx.ColWithTable(sel.Rel.Left.Col.Table, sel.Rel.Left.Col.Name)
-	ctx.WriteString(`) AS j) AS `)
+	ctx.WriteString(`)) AS j) AS `)
 	ctx.Quote(sel.Table)
 }
 
