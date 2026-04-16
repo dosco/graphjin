@@ -45,19 +45,25 @@ func (d *SnowflakeDialect) UseNamedParams() bool {
 }
 
 func (d *SnowflakeDialect) RenderJSONRoot(ctx Context, sel *qcode.Select) {
-	ctx.WriteString(`SELECT CAST(json_object(`)
+	// Real Snowflake: OBJECT_CONSTRUCT (DuckDB equivalent was json_object)
+	ctx.WriteString(`SELECT CAST(OBJECT_CONSTRUCT(`)
 }
 
 func (d *SnowflakeDialect) RenderJSONSelect(ctx Context, sel *qcode.Select) {
-	ctx.WriteString(`SELECT json_object(`)
+	// Real Snowflake: OBJECT_CONSTRUCT (DuckDB equivalent was json_object)
+	ctx.WriteString(`SELECT OBJECT_CONSTRUCT(`)
 	ctx.RenderJSONFields(sel)
 	ctx.WriteString(`)`)
 }
 
 func (d *SnowflakeDialect) RenderJSONPlural(ctx Context, sel *qcode.Select) {
-	ctx.WriteString(`COALESCE(array_agg(__sj_`)
+	// Real Snowflake: ARRAY_AGG / ARRAY_CONSTRUCT (DuckDB equivalents were array_agg / list_value).
+	// Identifiers MUST be double-quoted: inner aliases emitted by the compiler
+	// are quoted-lowercase ("__sj_0", "json"), and Snowflake's default folding
+	// would otherwise uppercase the unquoted reference and miss the target.
+	ctx.WriteString(`COALESCE(ARRAY_AGG("__sj_`)
 	ctx.WriteString(strconv.Itoa(int(sel.ID)))
-	ctx.WriteString(`.json), list_value())`)
+	ctx.WriteString(`"."json"), ARRAY_CONSTRUCT())`)
 }
 
 func (d *SnowflakeDialect) RenderJSONField(ctx Context, fieldName string, tableAlias string, colName string, isNull bool, isJSON bool) {
@@ -111,16 +117,18 @@ func (d *SnowflakeDialect) RenderInlineChild(ctx Context, renderer InlineChildRe
 }
 
 func (d *SnowflakeDialect) RenderChildCursor(ctx Context, renderChild func()) {
-	ctx.WriteString(`json_extract(`)
+	// Real Snowflake: GET_PATH (DuckDB equivalent was json_extract with '$.path' syntax)
+	ctx.WriteString(`GET_PATH(`)
 	renderChild()
-	ctx.WriteString(`, '$.cursor')`)
+	ctx.WriteString(`, 'cursor')`)
 }
 
 func (d *SnowflakeDialect) RenderChildValue(ctx Context, sel *qcode.Select, renderChild func()) {
 	if sel.Paging.Cursor {
-		ctx.WriteString(`json_extract(`)
+		// Real Snowflake: GET_PATH (DuckDB equivalent was json_extract with '$.path' syntax)
+		ctx.WriteString(`GET_PATH(`)
 		renderChild()
-		ctx.WriteString(`, '$.json')`)
+		ctx.WriteString(`, 'json')`)
 		return
 	}
 	renderChild()
@@ -162,17 +170,60 @@ func (d *SnowflakeDialect) RenderJoinTables(ctx Context, sel *qcode.Select) {
 		if ob.Var == "" {
 			continue
 		}
-		ctx.WriteString(` JOIN (SELECT TRY_CAST(value AS `)
+		// Real Snowflake: LATERAL FLATTEN(input => PARSE_JSON(...)) exposes columns
+		// `value` and `index` per row. (DuckDB equivalent was json_each(CAST(... AS JSON))
+		// returning `value` and `key`.)
+		ctx.WriteString(` JOIN (SELECT TRY_CAST(_gj_f.value AS `)
 		ctx.WriteString(d.snowflakeCastType(ob.Col.Type))
-		ctx.WriteString(`) AS id, TRY_CAST(key AS BIGINT) + 1 AS ord FROM json_each(CAST(`)
+		ctx.WriteString(`) AS id, _gj_f.index + 1 AS ord FROM LATERAL FLATTEN(input => PARSE_JSON(`)
 		ctx.AddParam(Param{Name: ob.Var, Type: "json"})
-		ctx.WriteString(` AS JSON))) AS _gj_ob_`)
+		ctx.WriteString(`)) _gj_f) AS _gj_ob_`)
 		ctx.WriteString(ob.Col.Name)
 		ctx.WriteString(`(id, ord) USING (id)`)
 	}
 }
 
+// RenderDistinctOn is intentionally a noop on Snowflake — Snowflake does not
+// support Postgres's `SELECT DISTINCT ON (...)` syntax. The equivalent
+// semantics are emitted via QUALIFY ROW_NUMBER() OVER (...) inside
+// RenderOrderBy below, which runs at the end of the SELECT body just
+// before LIMIT.
+func (d *SnowflakeDialect) RenderDistinctOn(ctx Context, sel *qcode.Select) {}
+
 func (d *SnowflakeDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
+	d.renderOrderByCore(ctx, sel)
+	d.renderQualifyDistinctOn(ctx, sel)
+}
+
+// renderQualifyDistinctOn emits a QUALIFY clause that reproduces
+// `SELECT DISTINCT ON (...)` semantics using ROW_NUMBER() OVER. Only fires
+// when the user asked for distinct_on AND the query isn't already grouped
+// (GROUP BY + distinct_on would conflict).
+func (d *SnowflakeDialect) renderQualifyDistinctOn(ctx Context, sel *qcode.Select) {
+	if sel.GroupCols || len(sel.DistinctOn) == 0 {
+		return
+	}
+	ctx.WriteString(` QUALIFY ROW_NUMBER() OVER (PARTITION BY `)
+	for i, col := range sel.DistinctOn {
+		if i != 0 {
+			ctx.WriteString(`, `)
+		}
+		ctx.ColWithTable(col.Table, col.Name)
+	}
+	// If the user supplied an ORDER BY, Snowflake requires the window's ORDER BY
+	// to be deterministic — reuse the distinct_on cols as the window order.
+	// This matches Postgres DISTINCT ON semantics (first row per partition).
+	ctx.WriteString(` ORDER BY `)
+	for i, col := range sel.DistinctOn {
+		if i != 0 {
+			ctx.WriteString(`, `)
+		}
+		ctx.ColWithTable(col.Table, col.Name)
+	}
+	ctx.WriteString(`) = 1`)
+}
+
+func (d *SnowflakeDialect) renderOrderByCore(ctx Context, sel *qcode.Select) {
 	if len(sel.OrderBy) == 0 {
 		return
 	}
@@ -225,19 +276,21 @@ func (d *SnowflakeDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
 }
 
 func (d *SnowflakeDialect) RenderFromEdge(ctx Context, sel *qcode.Select) {
+	// Real Snowflake: GET_PATH for field access, LATERAL FLATTEN for array iteration.
+	// (DuckDB equivalent was json_extract with '$.path' syntax + json_each.)
 	ctx.WriteString(`(SELECT `)
 	for i, col := range sel.Ti.Columns {
 		if i != 0 {
 			ctx.WriteString(`, `)
 		}
-		ctx.WriteString(`CAST(json_extract(j.value, '$.`)
+		ctx.WriteString(`CAST(GET_PATH(j.value, '`)
 		ctx.WriteString(col.Name)
 		ctx.WriteString(`') AS `)
 		ctx.WriteString(d.snowflakeCastType(col.Type))
 		ctx.WriteString(`) AS `)
 		ctx.Quote(col.Name)
 	}
-	ctx.WriteString(` FROM json_each(`)
+	ctx.WriteString(` FROM LATERAL FLATTEN(input => `)
 	ctx.ColWithTable(sel.Rel.Left.Col.Table, sel.Rel.Left.Col.Name)
 	ctx.WriteString(`) AS j) AS `)
 	ctx.Quote(sel.Table)
@@ -345,13 +398,13 @@ func (d *SnowflakeDialect) RenderValVar(ctx Context, ex *qcode.Exp, val string) 
 		return false
 	}
 
-	ctx.WriteString(`(SELECT TRY_CAST(x AS `)
+	// Real Snowflake: LATERAL FLATTEN(input => PARSE_JSON(...)) over a JSON array param.
+	// (DuckDB equivalent was UNNEST(CAST(json(...) AS T[])) AS _gj(x).)
+	ctx.WriteString(`(SELECT TRY_CAST(_gj.value AS `)
 	ctx.WriteString(d.snowflakeCastType(d.baseType(ex.Left.Col.Type)))
-	ctx.WriteString(`) FROM UNNEST(CAST(json(`)
+	ctx.WriteString(`) FROM LATERAL FLATTEN(input => PARSE_JSON(`)
 	ctx.AddParam(Param{Name: ex.Right.Val, Type: "json", IsArray: true})
-	ctx.WriteString(`) AS `)
-	ctx.WriteString(d.snowflakeArrayCastType(d.baseType(ex.Left.Col.Type)))
-	ctx.WriteString(`)) AS _gj(x))`)
+	ctx.WriteString(`)) _gj)`)
 
 	return true
 }
@@ -366,13 +419,13 @@ func (d *SnowflakeDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
 
 		switch ex.Right.ValType {
 		case qcode.ValVar:
-			ctx.WriteString(`(SELECT TRY_CAST(x AS `)
+			// Real Snowflake: LATERAL FLATTEN(input => PARSE_JSON(...)).
+			// (DuckDB equivalent was UNNEST(CAST(json(...) AS T[])).)
+			ctx.WriteString(`(SELECT TRY_CAST(__gj_r.value AS `)
 			ctx.WriteString(d.snowflakeCastType(d.baseType(ex.Left.Col.Type)))
-			ctx.WriteString(`) FROM UNNEST(CAST(json(`)
+			ctx.WriteString(`) FROM LATERAL FLATTEN(input => PARSE_JSON(`)
 			ctx.AddParam(Param{Name: ex.Right.Val, Type: "json", IsArray: true})
-			ctx.WriteString(`) AS `)
-			ctx.WriteString(d.snowflakeArrayCastType(d.baseType(ex.Left.Col.Type)))
-			ctx.WriteString(`)) AS __gj_r(x))`)
+			ctx.WriteString(`)) __gj_r)`)
 		case qcode.ValList:
 			ctx.WriteString(`(`)
 			for i := range ex.Right.ListVal {
@@ -402,13 +455,18 @@ func (d *SnowflakeDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
 	}
 
 	if ex.Op == qcode.OpRegex || ex.Op == qcode.OpIRegex || ex.Op == qcode.OpNotRegex || ex.Op == qcode.OpNotIRegex {
+		// Snowflake's REGEXP_LIKE requires the pattern to match the ENTIRE
+		// string (full anchored match), which breaks the partial-match
+		// semantics users expect from GraphQL regex: (and that Postgres/MySQL
+		// provide). Use REGEXP_INSTR(col, pat [, 1, 1, 0, 'i']) > 0 instead —
+		// it returns the 1-based position of the first substring match, or 0
+		// if not found. This gives substring-match semantics while preserving
+		// anchored patterns like `^foo` and `bar$`.
 		if ex.Op == qcode.OpNotRegex || ex.Op == qcode.OpNotIRegex {
-			ctx.WriteString(`(NOT `)
+			ctx.WriteString(`(REGEXP_INSTR(`)
 		} else {
-			ctx.WriteString(`(`)
+			ctx.WriteString(`(REGEXP_INSTR(`)
 		}
-
-		ctx.WriteString(`regexp_matches(`)
 		d.renderOperand(ctx, ex.Left.Col.Table, ex.Left.Table, ex.Left.ID, ex.Left.Col.Name, ex.Left.ColName)
 		ctx.WriteString(`, `)
 
@@ -421,10 +479,16 @@ func (d *SnowflakeDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
 		}
 
 		if ex.Op == qcode.OpIRegex || ex.Op == qcode.OpNotIRegex {
-			ctx.WriteString(`, 'i'`)
+			// REGEXP_INSTR optional args: position=1, occurrence=1, option=0,
+			// parameters='i' (case-insensitive).
+			ctx.WriteString(`, 1, 1, 0, 'i'`)
 		}
 
-		ctx.WriteString(`))`)
+		if ex.Op == qcode.OpNotRegex || ex.Op == qcode.OpNotIRegex {
+			ctx.WriteString(`) = 0)`)
+		} else {
+			ctx.WriteString(`) > 0)`)
+		}
 		return true
 	}
 
@@ -449,9 +513,10 @@ func (d *SnowflakeDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
 			if i != 0 {
 				ctx.WriteString(op)
 			}
-			ctx.WriteString(`json_extract(`)
+			// Real Snowflake: GET_PATH (DuckDB equivalent was json_extract with '$.path').
+			ctx.WriteString(`GET_PATH(`)
 			d.renderOperand(ctx, ex.Left.Col.Table, ex.Left.Table, ex.Left.ID, ex.Left.Col.Name, ex.Left.ColName)
-			ctx.WriteString(`, '$.`)
+			ctx.WriteString(`, '`)
 			ctx.WriteString(strings.ReplaceAll(key, `'`, `''`))
 			ctx.WriteString(`') IS NOT NULL`)
 		}
@@ -495,7 +560,8 @@ func (d *SnowflakeDialect) RenderTsQuery(ctx Context, ti sdata.DBTable, ex *qcod
 }
 
 func (d *SnowflakeDialect) RenderArray(ctx Context, items []string) {
-	ctx.WriteString(`list_value(`)
+	// Real Snowflake: ARRAY_CONSTRUCT (DuckDB equivalent was list_value).
+	ctx.WriteString(`ARRAY_CONSTRUCT(`)
 	for i, item := range items {
 		if i != 0 {
 			ctx.WriteString(`, `)
@@ -1018,6 +1084,9 @@ func (d *SnowflakeDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate,
 	}
 
 	if m.Array {
+		// Real Snowflake: GET_PATH for field access, LATERAL FLATTEN for array iteration.
+		// (DuckDB equivalents were json_extract / json_extract_string / json_each.)
+		// Note: LATERAL FLATTEN exposes a per-row column accessed via the alias t.value.
 		ctx.WriteString(`(SELECT `)
 		hasPK := false
 		first := true
@@ -1034,18 +1103,18 @@ func (d *SnowflakeDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate,
 
 			if !col.Col.Array && !d.isJSONLikeType(col.Col.Type) {
 				if d.isStringType(col.Col.Type) {
-					ctx.WriteString(`json_extract_string(value, '$.`)
+					ctx.WriteString(`GET_PATH(t.value, '`)
 					ctx.WriteString(col.FieldName)
-					ctx.WriteString(`') AS `)
+					ctx.WriteString(`')::VARCHAR AS `)
 				} else {
-					ctx.WriteString(`TRY_CAST(json_extract(value, '$.`)
+					ctx.WriteString(`TRY_CAST(GET_PATH(t.value, '`)
 					ctx.WriteString(col.FieldName)
 					ctx.WriteString(`') AS `)
 					ctx.WriteString(d.snowflakeCastType(col.Col.Type))
 					ctx.WriteString(`) AS `)
 				}
 			} else {
-				ctx.WriteString(`json_extract(value, '$.`)
+				ctx.WriteString(`GET_PATH(t.value, '`)
 				ctx.WriteString(col.FieldName)
 				ctx.WriteString(`') AS `)
 			}
@@ -1056,18 +1125,22 @@ func (d *SnowflakeDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate,
 			if !first {
 				ctx.WriteString(`, `)
 			}
-			ctx.WriteString(`json_extract(value, '$.`)
+			ctx.WriteString(`GET_PATH(t.value, '`)
 			ctx.WriteString(m.Ti.PrimaryCol.Name) // Use first PK col for implicit tracking
 			ctx.WriteString(`') AS "_gj_pkt"`)
 		}
 
-		ctx.WriteString(` FROM `)
-		ctx.WriteString(`json_each(`)
-		renderRoot()
+		ctx.WriteString(` FROM LATERAL FLATTEN(input => `)
 		if len(m.Path) > 0 {
-			ctx.WriteString(`, '$.`)
+			ctx.WriteString(`GET_PATH(PARSE_JSON(`)
+			renderRoot()
+			ctx.WriteString(`), '`)
 			ctx.WriteString(strings.Join(m.Path, "."))
-			ctx.WriteString(`'`)
+			ctx.WriteString(`')`)
+		} else {
+			ctx.WriteString(`PARSE_JSON(`)
+			renderRoot()
+			ctx.WriteString(`)`)
 		}
 		ctx.WriteString(`)) AS t`)
 		return
@@ -1093,16 +1166,18 @@ func (d *SnowflakeDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate,
 		}
 		if !col.Col.Array && !d.isJSONLikeType(col.Col.Type) {
 			if d.isStringType(col.Col.Type) {
-				ctx.WriteString(`json_extract_string(`)
+				// Real Snowflake: GET_PATH(PARSE_JSON(...))::VARCHAR
+				// (DuckDB equivalent was json_extract_string with '$.path' syntax.)
+				ctx.WriteString(`GET_PATH(PARSE_JSON(`)
 				renderRoot()
-				ctx.WriteString(`, '$.`)
+				ctx.WriteString(`), '`)
 				ctx.WriteString(pathPrefix)
 				ctx.WriteString(col.FieldName)
-				ctx.WriteString(`') AS `)
+				ctx.WriteString(`')::VARCHAR AS `)
 			} else {
-				ctx.WriteString(`TRY_CAST(json_extract(`)
+				ctx.WriteString(`TRY_CAST(GET_PATH(PARSE_JSON(`)
 				renderRoot()
-				ctx.WriteString(`, '$.`)
+				ctx.WriteString(`), '`)
 				ctx.WriteString(pathPrefix)
 				ctx.WriteString(col.FieldName)
 				ctx.WriteString(`') AS `)
@@ -1110,9 +1185,9 @@ func (d *SnowflakeDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate,
 				ctx.WriteString(`) AS `)
 			}
 		} else {
-			ctx.WriteString(`json_extract(`)
+			ctx.WriteString(`GET_PATH(PARSE_JSON(`)
 			renderRoot()
-			ctx.WriteString(`, '$.`)
+			ctx.WriteString(`), '`)
 			ctx.WriteString(pathPrefix)
 			ctx.WriteString(col.FieldName)
 			ctx.WriteString(`') AS `)
@@ -1124,9 +1199,9 @@ func (d *SnowflakeDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate,
 		if !first {
 			ctx.WriteString(`, `)
 		}
-		ctx.WriteString(`CAST(json_extract(`)
+		ctx.WriteString(`TRY_CAST(GET_PATH(PARSE_JSON(`)
 		renderRoot()
-		ctx.WriteString(`, '$.`)
+		ctx.WriteString(`), '`)
 		if len(m.Path) > 0 {
 			ctx.WriteString(strings.Join(m.Path, "."))
 			ctx.WriteString(`.`)
@@ -1210,20 +1285,22 @@ func (d *SnowflakeDialect) renderMutationPresetValue(ctx Context, col qcode.MCol
 }
 
 func (d *SnowflakeDialect) renderMutationJSONValue(ctx Context, actionVar, jsonPathPrefix string, col qcode.MColumn) {
-	path := jsonPathPrefix + "." + col.FieldName
+	// Real Snowflake: GET_PATH(PARSE_JSON(...)) (DuckDB equivalent was json_extract(...,'$.path')).
+	// Path strings are stored with leading "$." (json_extract syntax) — strip for GET_PATH.
+	path := strings.TrimPrefix(jsonPathPrefix+"."+col.FieldName, "$.")
 	if !col.Col.Array && !d.isJSONLikeType(col.Col.Type) {
 		if d.isStringType(col.Col.Type) {
-			ctx.WriteString(`CAST(json_extract_string(`)
+			ctx.WriteString(`GET_PATH(PARSE_JSON(`)
 			ctx.AddParam(Param{Name: actionVar, Type: "json"})
-			ctx.WriteString(`, '`)
+			ctx.WriteString(`), '`)
 			ctx.WriteString(path)
-			ctx.WriteString(`') AS VARCHAR)`)
+			ctx.WriteString(`')::VARCHAR`)
 			return
 		}
 
-		ctx.WriteString(`TRY_CAST(json_extract(`)
+		ctx.WriteString(`TRY_CAST(GET_PATH(PARSE_JSON(`)
 		ctx.AddParam(Param{Name: actionVar, Type: "json"})
-		ctx.WriteString(`, '`)
+		ctx.WriteString(`), '`)
 		ctx.WriteString(path)
 		ctx.WriteString(`') AS `)
 		ctx.WriteString(d.snowflakeCastType(col.Col.Type))
@@ -1231,9 +1308,9 @@ func (d *SnowflakeDialect) renderMutationJSONValue(ctx Context, actionVar, jsonP
 		return
 	}
 
-	ctx.WriteString(`json_extract(`)
+	ctx.WriteString(`GET_PATH(PARSE_JSON(`)
 	ctx.AddParam(Param{Name: actionVar, Type: "json"})
-	ctx.WriteString(`, '`)
+	ctx.WriteString(`), '`)
 	ctx.WriteString(path)
 	ctx.WriteString(`')`)
 }
@@ -1255,39 +1332,44 @@ func (d *SnowflakeDialect) snowflakeCastType(t string) string {
 	switch strings.ToLower(strings.TrimSpace(d.baseType(tt))) {
 	case "int", "integer", "int4", "int8", "bigint", "smallint":
 		return "BIGINT"
-	case "float", "float4", "float8", "double", "real", "numeric", "decimal", "number":
+	case "float", "float4", "float8", "double", "real":
 		return "DOUBLE"
+	case "numeric", "decimal", "number":
+		return "NUMBER"
 	case "boolean", "bool":
 		return "BOOLEAN"
-	case "json", "jsonb", "variant", "object", "array":
-		return "JSON"
-	case "timestamp", "timestamptz", "timestamp without time zone", "timestamp with time zone":
-		return "TIMESTAMP"
+	case "variant", "object":
+		return "VARIANT"
+	case "array":
+		return "ARRAY"
+	case "json", "jsonb":
+		// JSON-like Postgres types map to Snowflake VARIANT (the closest equivalent).
+		return "VARIANT"
+	case "timestamp", "timestamp without time zone", "timestamp_ntz":
+		return "TIMESTAMP_NTZ"
+	case "timestamptz", "timestamp with time zone", "timestamp_tz":
+		return "TIMESTAMP_TZ"
+	case "timestamp_ltz":
+		return "TIMESTAMP_LTZ"
 	case "date":
 		return "DATE"
 	case "time", "time without time zone", "time with time zone":
 		return "TIME"
 	case "text", "varchar", "character varying", "string", "uuid", "clob", "nclob":
 		return "VARCHAR"
+	case "geography":
+		return "GEOGRAPHY"
+	case "geometry":
+		return "GEOMETRY"
 	default:
-		// Preserve unknown custom types as upper-case identifier.
-		return strings.ToUpper(strings.TrimSpace(t))
+		// Preserve unknown custom types in their original case (case-preservation goal).
+		return strings.TrimSpace(t)
 	}
 }
 
-func (d *SnowflakeDialect) snowflakeArrayCastType(t string) string {
-	switch strings.ToLower(strings.TrimSpace(d.baseType(t))) {
-	case "int", "integer", "int4", "int8", "bigint", "smallint":
-		return "BIGINT[]"
-	case "float", "float4", "float8", "double", "real", "numeric", "decimal", "number":
-		return "DOUBLE[]"
-	case "boolean", "bool":
-		return "BOOLEAN[]"
-	case "json", "jsonb", "variant", "object", "array":
-		return "JSON[]"
-	default:
-		return "VARCHAR[]"
-	}
+func (d *SnowflakeDialect) snowflakeArrayCastType(_ string) string {
+	// Snowflake has only an untyped ARRAY type. Element type ignored.
+	return "ARRAY"
 }
 
 func (d *SnowflakeDialect) baseType(t string) string {
