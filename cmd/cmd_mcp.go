@@ -48,10 +48,9 @@ Authentication:
 
 	c.Flags().StringVar(&mcpUserID, "user-id", "", "User ID for MCP session")
 	c.Flags().StringVar(&mcpUserRole, "user-role", "", "User role for MCP session")
-	// --server is promoted to a persistent flag so client-mode subcommands
-	// (query, schema, audit, ...) inherit it. `mcp` stdio proxy mode and
-	// `mcp info` keep reading the same mcpServerURL variable.
-	c.PersistentFlags().StringVar(&mcpServerURL, "server", "", "Remote MCP server URL (env GRAPHJIN_SERVER). For stdio proxy mode on `mcp`, mutually exclusive with --path.")
+	// --server enables stdio proxy mode: `graphjin mcp --server <url>` forwards
+	// to a remote MCP server instead of running locally.
+	c.PersistentFlags().StringVar(&mcpServerURL, "server", "", "Remote MCP server URL (env GRAPHJIN_SERVER). Mutually exclusive with --path.")
 	c.Flags().BoolVar(&mcpDemoMode, "demo", false, "Run with temporary database container(s)")
 	c.Flags().BoolVar(&mcpPersist, "persist", false, "Persist data using Docker volumes (requires --demo)")
 	c.Flags().StringArrayVar(&mcpDBFlags, "db", nil, "Database type override(s) (requires --demo)")
@@ -60,20 +59,6 @@ Authentication:
 	c.AddCommand(mcpInfoCmd())
 	c.AddCommand(mcpInstallCmd())
 	c.AddCommand(mcpPluginCmd())
-
-	// Client-mode subcommands (HTTP clients that call MCP tools on a running
-	// GraphJin server). Shared persistent flags --token/--header/--timeout/
-	// --format are attached by addMCPClientFlags. --server is already a
-	// local flag on `mcp` and is inherited by children via InheritedFlags.
-	addMCPClientFlags(c)
-	c.AddCommand(mcpQueryCmd())
-	c.AddCommand(mcpFragmentCmd())
-	c.AddCommand(mcpWorkflowCmd())
-	c.AddCommand(mcpSchemaCmd())
-	c.AddCommand(mcpExplainCmd())
-	c.AddCommand(mcpAuditCmd())
-	c.AddCommand(mcpHealthCmd())
-	c.AddCommand(mcpConfigCmd())
 
 	return c
 }

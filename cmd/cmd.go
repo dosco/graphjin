@@ -53,6 +53,7 @@ func Cmd() {
 	rootCmd.AddCommand(newCmd())
 	rootCmd.AddCommand(servCmd())
 	rootCmd.AddCommand(mcpCmd())
+	rootCmd.AddCommand(cliCmd())
 	rootCmd.AddCommand(versionCmd())
 	// rootCmd.AddCommand(adminCmd())
 	rootCmd.AddCommand(dbCmd())

@@ -2,7 +2,7 @@ package main
 
 import "github.com/spf13/cobra"
 
-// mcpHealthCmd wires `graphjin mcp health` which calls the check_health MCP
+// mcpHealthCmd wires `graphjin cli health` which calls the check_health MCP
 // tool (server-gated: AllowDevTools). Exits non-zero on tool error.
 func mcpHealthCmd() *cobra.Command {
 	return &cobra.Command{

@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// mcpWorkflowCmd wires `graphjin mcp workflow ...` subcommands.
+// mcpWorkflowCmd wires `graphjin cli workflow ...` subcommands.
 func mcpWorkflowCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "workflow",

@@ -2,7 +2,7 @@ package main
 
 import "github.com/spf13/cobra"
 
-// mcpConfigCmd wires `graphjin mcp config show [section]` which calls the
+// mcpConfigCmd wires `graphjin cli config show [section]` which calls the
 // get_current_config MCP tool. Server-gated: the server only exposes this
 // when not running in Production mode.
 func mcpConfigCmd() *cobra.Command {

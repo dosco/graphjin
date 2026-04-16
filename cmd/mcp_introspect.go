@@ -2,7 +2,7 @@ package main
 
 import "github.com/spf13/cobra"
 
-// mcpSchemaCmd wires `graphjin mcp schema ...` — schema introspection tools.
+// mcpSchemaCmd wires `graphjin cli schema ...` — schema introspection tools.
 // The cobra command is named `schema`; the *file* is mcp_introspect.go to
 // avoid visual collision with cmd_schema.go (DB DDL under `db`).
 func mcpSchemaCmd() *cobra.Command {
