@@ -150,6 +150,21 @@ func (co *Compiler) compileArgCompositeID(sel *Select, node *graph.Node) error {
 	for _, pkCol := range sel.Ti.PrimaryCols {
 		child, ok := node.CMap[pkCol.Name]
 		if !ok {
+			// Case-insensitive fallback — GraphQL callers always write
+			// lowercase keys (`id: { variant_id: 2 }`) but on
+			// case-preserving backends (Snowflake, Oracle) PrimaryCols
+			// carry the UPPERCASE storage name. Try a CI match before
+			// failing.
+			lower := strings.ToLower(pkCol.Name)
+			for k, v := range node.CMap {
+				if strings.EqualFold(k, lower) {
+					child = v
+					ok = true
+					break
+				}
+			}
+		}
+		if !ok {
 			return fmt.Errorf("composite id missing key '%s' for table '%s'", pkCol.Name, sel.Table)
 		}
 
