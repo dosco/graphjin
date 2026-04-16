@@ -16,25 +16,29 @@ func TestParseClusteringKey(t *testing.T) {
 		expr string
 		want []string
 	}{
+		// ParseClusteringKey preserves Snowflake identifier case — unquoted
+		// Snowflake objects are stored UPPERCASE, and downstream lookups in
+		// dwg.go are case-insensitive, so normalizing here would only mask
+		// the true storage casing.
 		{
 			name: "LINEAR with two columns",
 			expr: "LINEAR(CREATED_AT, USER_ID)",
-			want: []string{"created_at", "user_id"},
+			want: []string{"CREATED_AT", "USER_ID"},
 		},
 		{
 			name: "LINEAR with single column",
 			expr: "LINEAR(ORDER_DATE)",
-			want: []string{"order_date"},
+			want: []string{"ORDER_DATE"},
 		},
 		{
 			name: "bare parentheses",
 			expr: "(CREATED_AT, USER_ID)",
-			want: []string{"created_at", "user_id"},
+			want: []string{"CREATED_AT", "USER_ID"},
 		},
 		{
 			name: "single column bare parens",
 			expr: "(ID)",
-			want: []string{"id"},
+			want: []string{"ID"},
 		},
 		{
 			name: "empty string",
@@ -49,22 +53,22 @@ func TestParseClusteringKey(t *testing.T) {
 		{
 			name: "columns with extra spaces",
 			expr: "LINEAR(  CREATED_AT ,  USER_ID  )",
-			want: []string{"created_at", "user_id"},
+			want: []string{"CREATED_AT", "USER_ID"},
 		},
 		{
-			name: "lowercase input",
+			name: "lowercase input preserved",
 			expr: "LINEAR(created_at, user_id)",
 			want: []string{"created_at", "user_id"},
 		},
 		{
-			name: "mixed case PascalCase columns",
+			name: "mixed case preserved",
 			expr: "LINEAR(CreatedAt, UserId)",
-			want: []string{"created_at", "user_id"},
+			want: []string{"CreatedAt", "UserId"},
 		},
 		{
 			name: "expression-based key won't match columns (gracefully skipped)",
 			expr: "LINEAR(CAST(CREATED_AT AS DATE), REGION)",
-			want: []string{"cast(created_at_as_date)", "region"},
+			want: []string{"CAST(CREATED_AT AS DATE)", "REGION"},
 		},
 	}
 
@@ -258,13 +262,13 @@ func TestDiscoverCompositeFKsCSVParsing(t *testing.T) {
 			inputSchema:   "dbo",
 		},
 		{
-			name:          "snowflake: uppercase normalized",
+			name:          "snowflake: uppercase preserved (case-sensitive discovery)",
 			dbtype:        "snowflake",
 			localCSV:      "SPECIAL_OFFER_ID,PRODUCT_ID",
 			fkeyCSV:       "SPECIAL_OFFER_ID,PRODUCT_ID",
-			wantLocalCols: []string{"special_offer_id", "product_id"},
-			wantFKeyCols:  []string{"special_offer_id", "product_id"},
-			wantSchema:    "public",
+			wantLocalCols: []string{"SPECIAL_OFFER_ID", "PRODUCT_ID"},
+			wantFKeyCols:  []string{"SPECIAL_OFFER_ID", "PRODUCT_ID"},
+			wantSchema:    "PUBLIC",
 			inputSchema:   "PUBLIC",
 		},
 		{
@@ -291,7 +295,8 @@ func TestDiscoverCompositeFKsCSVParsing(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			normalize := tt.dbtype == "oracle" || tt.dbtype == "mssql" || tt.dbtype == "snowflake"
+			normalize := tt.dbtype == "oracle" || tt.dbtype == "mssql"
+			trimOnly := tt.dbtype == "snowflake"
 
 			info := CompositeFKInfo{
 				Schema:         tt.inputSchema,
@@ -303,7 +308,8 @@ func TestDiscoverCompositeFKsCSVParsing(t *testing.T) {
 			info.LocalCols = strings.Split(tt.localCSV, ",")
 			info.FKeyCols = strings.Split(tt.fkeyCSV, ",")
 
-			if normalize {
+			switch {
+			case normalize:
 				info.Schema = strings.ToLower(info.Schema)
 				info.FKeySchema = strings.ToLower(info.FKeySchema)
 				for i := range info.LocalCols {
@@ -311,6 +317,13 @@ func TestDiscoverCompositeFKsCSVParsing(t *testing.T) {
 				}
 				for i := range info.FKeyCols {
 					info.FKeyCols[i] = strings.ToLower(util.ToSnake(strings.TrimSpace(info.FKeyCols[i])))
+				}
+			case trimOnly:
+				for i := range info.LocalCols {
+					info.LocalCols[i] = strings.TrimSpace(info.LocalCols[i])
+				}
+				for i := range info.FKeyCols {
+					info.FKeyCols[i] = strings.TrimSpace(info.FKeyCols[i])
 				}
 			}
 

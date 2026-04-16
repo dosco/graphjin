@@ -77,12 +77,6 @@ var snowflakeInfo string
 //go:embed sql/snowflake_columns.sql
 var snowflakeColumnsStmt string
 
-//go:embed sql/snowflake_columns_no_overrides.sql
-var snowflakeColumnsNoOverridesStmt string
-
-//go:embed sql/snowflake_columns_basic.sql
-var snowflakeColumnsBasicStmt string
-
 //go:embed sql/snowflake_clustering.sql
 var snowflakeClusteringStmt string
 

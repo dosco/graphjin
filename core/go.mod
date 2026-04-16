@@ -8,3 +8,5 @@ require (
 	golang.org/x/sync v0.19.0
 	golang.org/x/text v0.33.0
 )
+
+require github.com/DATA-DOG/go-sqlmock v1.5.2 // indirect

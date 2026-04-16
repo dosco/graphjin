@@ -41,8 +41,11 @@ type DBSchema struct {
 	virtualTables     map[string]VirtualTable // for polymorphic relationships
 	dbFunctions       map[string]DBFunction   // db functions
 	tindex            map[string]nodeInfo     // table index (schema:name → node)
+	tindexCI          map[string]nodeInfo     // case-insensitive table index (lower(schema):lower(name) → node)
 	nameIndex         map[string][]int32      // name-only index (name → nodeIDs) for cross-schema fallback
+	nameIndexCI       map[string][]int32      // case-insensitive name-only index (lower(name) → nodeIDs)
 	tableAliasIndex   map[string]nodeInfo     // table alias index
+	tableAliasIndexCI map[string]nodeInfo     // case-insensitive alias index (lower(alias) → node)
 	edgesIndex        map[string][]edgeInfo   // edges index
 	allEdges          map[int32]TEdge         // all edges
 	relationshipGraph *util.Graph             // relationship graph
@@ -115,8 +118,11 @@ func NewDBSchema(
 		virtualTables:     make(map[string]VirtualTable),
 		dbFunctions:       make(map[string]DBFunction),
 		tindex:            make(map[string]nodeInfo),
+		tindexCI:          make(map[string]nodeInfo),
 		nameIndex:         make(map[string][]int32),
+		nameIndexCI:       make(map[string][]int32),
 		tableAliasIndex:   make(map[string]nodeInfo),
+		tableAliasIndexCI: make(map[string]nodeInfo),
 		edgesIndex:        make(map[string][]edgeInfo),
 		allEdges:          make(map[int32]TEdge),
 		relationshipGraph: util.NewGraph(),
@@ -538,11 +544,19 @@ func (s *DBSchema) getRelNodes(fromID, toID int32) (items []RelNode) {
 	return
 }
 
-// getColumn returns a column from a table
+// getColumn returns a column from a table. Lookup is exact first, then falls
+// back to case-insensitive — needed so GraphQL callers can use a natural
+// lowercase/snake_case identifier style regardless of how the underlying
+// database stored the column (e.g. Snowflake UPPERCASE, Oracle UPPERCASE).
 func (ti *DBTable) getColumn(name string) (DBColumn, bool) {
 	var c DBColumn
 	if i, ok := ti.colMap[name]; ok {
 		return ti.Columns[i], true
+	}
+	for k, i := range ti.colMap {
+		if strings.EqualFold(k, name) {
+			return ti.Columns[i], true
+		}
 	}
 	return c, false
 }

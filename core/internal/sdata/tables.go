@@ -9,6 +9,7 @@ import (
 	"hash/fnv"
 	"io"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -421,12 +422,22 @@ func (t *DBTable) IsPKCol(name string) bool {
 }
 
 // GetColumnIndex returns the index of a column in the table by name, and whether it was found.
+// Lookup is exact first, then falls back to case-insensitive (needed for
+// Snowflake where stored names are often UPPERCASE but callers may pass
+// lowercase).
 func (t *DBTable) GetColumnIndex(name string) (int, bool) {
 	if t.colMap == nil {
 		return 0, false
 	}
-	i, ok := t.colMap[name]
-	return i, ok
+	if i, ok := t.colMap[name]; ok {
+		return i, true
+	}
+	for k, i := range t.colMap {
+		if strings.EqualFold(k, name) {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 // AddTable adds a table to the DBInfo object
@@ -447,7 +458,7 @@ func (di *DBInfo) GetColumn(schema, table, column string) (*DBColumn, error) {
 		return nil, err
 	}
 
-	cid, ok := t.colMap[column]
+	cid, ok := t.GetColumnIndex(column)
 	if !ok {
 		return nil, fmt.Errorf("column: '%s.%s.%s' not found", schema, table, column)
 	}
@@ -549,27 +560,13 @@ func DiscoverColumns(ctx context.Context, db *sql.DB, dbtype string, blockList [
 
 	rows, err := db.QueryContext(qctx, sqlStmt)
 	if err != nil {
-		// Snowflake fallback: the primary query includes a UNION that reads
-		// from `_gj_fk_metadata`, an optional FK override table. Production
-		// Snowflake accounts that declare FKs via DDL won't have this table
-		// and the primary query fails. Re-run without the overlay UNION.
+		// Snowflake fallback: if INFORMATION_SCHEMA.COLUMNS is unreachable
+		// (restricted role), fall back to SHOW COLUMNS IN DATABASE which
+		// reads from the metadata service and has broader visibility.
 		if dbtype == "snowflake" {
-			qctx2, cancel2 := context.WithTimeout(ctx, introspectionQueryTimeout)
-			defer cancel2()
-			rows, err = db.QueryContext(qctx2, snowflakeColumnsNoOverridesStmt)
-			// Second Snowflake fallback: KEY_COLUMN_USAGE does not exist in
-			// many Snowflake accounts (it is not a standard Snowflake
-			// INFORMATION_SCHEMA view). Fall back to columns-only discovery
-			// without PK/UK/FK metadata.
-			if err != nil {
-				qctx3, cancel3 := context.WithTimeout(ctx, introspectionQueryTimeout)
-				defer cancel3()
-				rows, err = db.QueryContext(qctx3, snowflakeColumnsBasicStmt)
-			}
+			return discoverColumnsSnowflakeSHOW(ctx, db)
 		}
-		if err != nil {
-			return nil, fmt.Errorf("error fetching columns: %w", err)
-		}
+		return nil, fmt.Errorf("error fetching columns: %w", err)
 	}
 	defer rows.Close()
 
@@ -613,7 +610,7 @@ func DiscoverColumns(ctx context.Context, db *sql.DB, dbtype string, blockList [
 			c.OrigFKeyCol = c.FKeyCol
 		}
 
-		if dbtype == "sqlite" || dbtype == "oracle" || dbtype == "mssql" || dbtype == "snowflake" {
+		if dbtype == "sqlite" || dbtype == "oracle" || dbtype == "mssql" {
 			c.Name = util.ToSnake(c.Name)
 			c.Table = strings.ToLower(c.Table)
 			c.Schema = strings.ToLower(c.Schema)
@@ -621,6 +618,14 @@ func DiscoverColumns(ctx context.Context, db *sql.DB, dbtype string, blockList [
 			c.FKeyTable = strings.ToLower(c.FKeyTable)
 			c.FKeySchema = strings.ToLower(c.FKeySchema)
 			c.FKeyCol = util.ToSnake(c.FKeyCol)
+		}
+
+		// Snowflake preserves identifier case (real Snowflake stores unquoted
+		// identifiers as UPPERCASE; we keep what discovery returned). Only
+		// the type string is lowercased so it matches the snowflakeCastType
+		// switch table.
+		if dbtype == "snowflake" {
+			c.Type = strings.ToLower(strings.TrimSpace(c.Type))
 		}
 
 		k := (c.Schema + ":" + c.Table + ":" + c.Name)
@@ -670,6 +675,18 @@ func DiscoverColumns(ctx context.Context, db *sql.DB, dbtype string, blockList [
 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error scanning columns: %w", err)
+	}
+
+	// Snowflake: enrich the column map with PK/UK/FK info from SHOW commands.
+	// INFORMATION_SCHEMA on Snowflake does not expose column-level constraint
+	// info (no KEY_COLUMN_USAGE view), so the columns query above leaves
+	// primary_key/unique_key/FK fields empty. The SHOW commands are the
+	// Snowflake-native source. All errors are non-fatal — accounts without
+	// declared constraints, or emulator environments that don't implement the
+	// SHOW commands, simply skip this enrichment and fall back to the
+	// _gj_fk_metadata overlay (if present) or config-declared relationships.
+	if dbtype == "snowflake" {
+		enrichSnowflakeFromSHOW(ctx, db, cmap)
 	}
 
 	// View PK detection: views lack PK constraints in system catalogs, so the
@@ -932,13 +949,7 @@ func DiscoverCompositeFKs(ctx context.Context, db *sql.DB, dbtype string) ([]Com
 	case "mssql":
 		result, err = discoverCompositeFKsCSV(ctx, db, dbtype, compositeFKQueryMSSQL)
 	case "snowflake":
-		// Snowflake composite FK discovery reads from the optional
-		// `_gj_fk_metadata` override table. No preflight — production
-		// deployments that declare FKs via DDL don't have this table at
-		// all, and the DuckDB-backed test emulator mis-quotes any query
-		// against `information_schema.tables`. The non-fatal error path
-		// below silently drops the enrichment if the table is missing.
-		result, err = discoverCompositeFKsCSV(ctx, db, dbtype, compositeFKQuerySnowflake)
+		result, err = discoverCompositeFKsSnowflake(ctx, db)
 	default:
 		return nil, nil
 	}
@@ -1043,6 +1054,13 @@ AND rs.name NOT IN (
 GROUP BY s.name, t.name, fkc.constraint_object_id, rs.name, rt.name
 HAVING COUNT(*) > 1`
 
+// compositeFKQuerySnowflake reads composite FKs from the optional
+// _gj_fk_metadata overlay table (opt-in declaration for accounts that don't
+// want FKs in DDL, and for the DuckDB-backed emulator used in integration
+// tests). Real Snowflake composite FKs declared in DDL are discovered via
+// SHOW IMPORTED KEYS by discoverCompositeFKsSnowflake below — Snowflake's
+// INFORMATION_SCHEMA does not expose KEY_COLUMN_USAGE, so the standard-SQL
+// constraint views cannot be joined to column names.
 const compositeFKQuerySnowflake = `
 SELECT table_schema, table_name,
        table_schema || ':' || table_name || ':' || foreign_table_name AS constraint_name,
@@ -1052,6 +1070,77 @@ SELECT table_schema, table_name,
 FROM _gj_fk_metadata
 GROUP BY table_schema, table_name, foreign_table_schema, foreign_table_name
 HAVING COUNT(*) > 1`
+
+// discoverCompositeFKsSnowflake combines two Snowflake-native sources for
+// composite (multi-column) foreign keys:
+//
+//  1. SHOW IMPORTED KEYS IN DATABASE — returns per-column FK rows with fk_name,
+//     grouped here by constraint name to identify multi-column FKs.
+//  2. _gj_fk_metadata overlay — opt-in table read via compositeFKQuerySnowflake.
+//
+// Both are non-fatal: SHOW fails on the DuckDB-backed emulator; the overlay
+// fails when the table doesn't exist in production accounts.
+func discoverCompositeFKsSnowflake(ctx context.Context, db *sql.DB) ([]CompositeFKInfo, error) {
+	var all []CompositeFKInfo
+	seen := make(map[string]bool)
+
+	// 1. SHOW IMPORTED KEYS grouped by fk_name → composite FKs.
+	type fkRow struct {
+		keySeq  int
+		fkCol   string
+		pkCol   string
+	}
+	groups := make(map[string]*CompositeFKInfo)
+	rowsByKey := make(map[string][]fkRow)
+
+	querySnowflakeSHOWByName(ctx, db, "SHOW IMPORTED KEYS IN DATABASE",
+		[]string{"fk_schema_name", "fk_table_name", "fk_column_name",
+			"pk_schema_name", "pk_table_name", "pk_column_name",
+			"fk_name", "key_sequence"},
+		func(vals []string) {
+			fkSchema, fkTable, fkCol := vals[0], vals[1], vals[2]
+			pkSchema, pkTable, pkCol := vals[3], vals[4], vals[5]
+			fkName := vals[6]
+			seq := 0
+			fmt.Sscanf(vals[7], "%d", &seq)
+
+			key := fkSchema + ":" + fkTable + ":" + fkName
+			if groups[key] == nil {
+				groups[key] = &CompositeFKInfo{
+					Schema:         fkSchema,
+					Table:          fkTable,
+					ConstraintName: fkName,
+					FKeySchema:     pkSchema,
+					FKeyTable:      pkTable,
+				}
+			}
+			rowsByKey[key] = append(rowsByKey[key], fkRow{keySeq: seq, fkCol: fkCol, pkCol: pkCol})
+		})
+
+	for key, rs := range rowsByKey {
+		if len(rs) < 2 {
+			continue
+		}
+		sort.Slice(rs, func(i, j int) bool { return rs[i].keySeq < rs[j].keySeq })
+		info := groups[key]
+		for _, r := range rs {
+			info.LocalCols = append(info.LocalCols, r.fkCol)
+			info.FKeyCols = append(info.FKeyCols, r.pkCol)
+		}
+		all = append(all, *info)
+		seen[info.Schema+":"+info.Table+":"+info.ConstraintName] = true
+	}
+
+	// 2. _gj_fk_metadata overlay (skip entries already claimed by SHOW).
+	overlay, _ := discoverCompositeFKsCSV(ctx, db, "snowflake", compositeFKQuerySnowflake)
+	for _, o := range overlay {
+		if !seen[o.Schema+":"+o.Table+":"+o.ConstraintName] {
+			all = append(all, o)
+		}
+	}
+
+	return all, nil
+}
 
 func discoverCompositeFKsPostgres(ctx context.Context, db *sql.DB) ([]CompositeFKInfo, error) {
 	const query = `
@@ -1116,7 +1205,10 @@ func discoverCompositeFKsCSV(ctx context.Context, db *sql.DB, dbtype, query stri
 	}
 	defer rows.Close()
 
-	normalize := dbtype == "oracle" || dbtype == "mssql" || dbtype == "snowflake"
+	// Oracle/MSSQL: lowercase + snake_case columns to match column-discovery normalization.
+	// Snowflake: identifiers preserved in original case (per discovery), only trim
+	// whitespace from CSV-split column lists.
+	normalize := dbtype == "oracle" || dbtype == "mssql"
 
 	var result []CompositeFKInfo
 	for rows.Next() {
@@ -1143,6 +1235,13 @@ func discoverCompositeFKsCSV(ctx context.Context, db *sql.DB, dbtype, query stri
 			}
 			for i := range info.FKeyCols {
 				info.FKeyCols[i] = strings.ToLower(util.ToSnake(strings.TrimSpace(info.FKeyCols[i])))
+			}
+		} else if dbtype == "snowflake" {
+			for i := range info.LocalCols {
+				info.LocalCols[i] = strings.TrimSpace(info.LocalCols[i])
+			}
+			for i := range info.FKeyCols {
+				info.FKeyCols[i] = strings.TrimSpace(info.FKeyCols[i])
 			}
 		}
 		result = append(result, info)
@@ -1218,9 +1317,7 @@ func DiscoverFunctions(ctx context.Context, db *sql.DB, dbtype string, blockList
 	case "mssql":
 		sqlStmt = mssqlFunctionsStmt
 	case "snowflake":
-		// Snowflake emulator does not expose information_schema.functions consistently.
-		// Return no discovered functions for now.
-		return nil, nil
+		return discoverFunctionsSnowflake(ctx, db)
 	case "mongodb":
 		// MongoDB doesn't have user-defined functions in the SQL sense
 		return nil, nil
@@ -1411,13 +1508,393 @@ func ParseClusteringKey(expr string) []string {
 		if col == "" {
 			continue
 		}
-		// Normalize: snake_case first (to split PascalCase), then lowercase.
-		// Snowflake typically returns UPPER_CASE identifiers, but this order
-		// also handles the unlikely PascalCase edge case correctly.
-		// Note: expression-based clustering keys (e.g., CAST(col AS DATE))
-		// will not match any column and are gracefully skipped.
-		col = strings.ToLower(util.ToSnake(col))
+		// Preserve identifier case (Snowflake stores unquoted as UPPERCASE).
+		// Callers should match against discovered columns case-insensitively
+		// (e.g. with strings.EqualFold). Expression-based clustering keys
+		// (e.g. CAST(col AS DATE)) will not match any column and are gracefully
+		// skipped at lookup time.
 		keys = append(keys, col)
 	}
 	return keys
+}
+
+// discoverColumnsSnowflakeSHOW is the last-resort discovery fallback for Snowflake.
+// It uses SHOW COLUMNS IN DATABASE which reads from the metadata service and is
+// available even when INFORMATION_SCHEMA views are restricted by the Snowflake role.
+// PK/UK/FK information is not available via SHOW commands.
+func discoverColumnsSnowflakeSHOW(ctx context.Context, db *sql.DB) ([]DBColumn, error) {
+	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
+	defer cancel()
+
+	rows, err := db.QueryContext(qctx, "SHOW COLUMNS IN DATABASE")
+	if err != nil {
+		return nil, fmt.Errorf("snowflake SHOW COLUMNS fallback failed: %w", err)
+	}
+	defer rows.Close()
+
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+
+	// SHOW COLUMNS IN DATABASE returns many columns — we need: table_name,
+	// schema_name, column_name, data_type. Position varies by Snowflake version;
+	// find by column name.
+	colIdx := make(map[string]int, len(cols))
+	for i, c := range cols {
+		colIdx[strings.ToLower(c)] = i
+	}
+
+	mustGet := func(name string) (int, error) {
+		if idx, ok := colIdx[name]; ok {
+			return idx, nil
+		}
+		return 0, fmt.Errorf("snowflake SHOW COLUMNS: missing expected column %q", name)
+	}
+
+	iSchema, err := mustGet("schema_name")
+	if err != nil {
+		return nil, err
+	}
+	iTable, err := mustGet("table_name")
+	if err != nil {
+		return nil, err
+	}
+	iCol, err := mustGet("column_name")
+	if err != nil {
+		return nil, err
+	}
+	iType, err := mustGet("data_type")
+	if err != nil {
+		return nil, err
+	}
+	iNull := -1
+	if idx, ok := colIdx["is_nullable"]; ok {
+		iNull = idx
+	} else if idx, ok := colIdx["null?"]; ok {
+		iNull = idx
+	}
+
+	var result []DBColumn
+	for rows.Next() {
+		// Scan all columns into interface{} slice
+		vals := make([]interface{}, len(cols))
+		ptrs := make([]interface{}, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			return nil, err
+		}
+
+		toString := func(v interface{}) string {
+			if v == nil {
+				return ""
+			}
+			return fmt.Sprintf("%v", v)
+		}
+
+		schema := toString(vals[iSchema])
+		table := toString(vals[iTable])
+		col := toString(vals[iCol])
+		colType := strings.ToLower(toString(vals[iType]))
+
+		// Skip INFORMATION_SCHEMA tables
+		if strings.EqualFold(schema, "INFORMATION_SCHEMA") {
+			continue
+		}
+
+		// data_type from SHOW comes as a JSON blob like {"type":"NUMBER","precision":38,"scale":0}
+		// Try to extract just the type field.
+		if strings.HasPrefix(colType, "{") {
+			if idx := strings.Index(colType, `"type":"`); idx >= 0 {
+				rest := colType[idx+8:]
+				if end := strings.Index(rest, `"`); end >= 0 {
+					colType = strings.ToLower(rest[:end])
+				}
+			}
+		}
+
+		notNull := false
+		if iNull >= 0 {
+			nv := strings.ToLower(toString(vals[iNull]))
+			notNull = nv == "no" || nv == "n" || nv == "false"
+		}
+
+		result = append(result, DBColumn{
+			Schema:  schema,
+			Table:   table,
+			Name:    col,
+			Type:    colType,
+			NotNull: notNull,
+		})
+	}
+	return result, rows.Err()
+}
+
+// enrichSnowflakeFromSHOW augments the column map with PK/UK/FK information
+// discovered via Snowflake-native SHOW commands. Snowflake's INFORMATION_SCHEMA
+// doesn't expose KEY_COLUMN_USAGE so constraint info cannot be read from
+// standard views; SHOW PRIMARY KEYS / SHOW UNIQUE KEYS / SHOW IMPORTED KEYS are
+// the supported path. Also overlays `_gj_fk_metadata` rows when the table
+// exists (test emulator and opt-in config-driven FK declarations in prod).
+//
+// All queries are non-fatal — the enrichment is strictly additive. Accounts
+// without declared constraints, restricted roles, or environments where SHOW
+// is unsupported (DuckDB-backed emulator) simply skip forward.
+func enrichSnowflakeFromSHOW(ctx context.Context, db *sql.DB, cmap map[string]DBColumn) {
+	setCol := func(schema, table, column string, apply func(*DBColumn)) {
+		k := schema + ":" + table + ":" + column
+		if v, ok := cmap[k]; ok {
+			apply(&v)
+			cmap[k] = v
+		}
+	}
+
+	// SHOW PRIMARY KEYS IN DATABASE → mark PK columns
+	querySnowflakeSHOWByName(ctx, db, "SHOW PRIMARY KEYS IN DATABASE",
+		[]string{"schema_name", "table_name", "column_name"},
+		func(vals []string) {
+			setCol(vals[0], vals[1], vals[2], func(c *DBColumn) {
+				c.PrimaryKey = true
+				c.UniqueKey = true
+			})
+		})
+
+	// SHOW UNIQUE KEYS IN DATABASE → mark UNIQUE columns
+	querySnowflakeSHOWByName(ctx, db, "SHOW UNIQUE KEYS IN DATABASE",
+		[]string{"schema_name", "table_name", "column_name"},
+		func(vals []string) {
+			setCol(vals[0], vals[1], vals[2], func(c *DBColumn) {
+				c.UniqueKey = true
+			})
+		})
+
+	// SHOW IMPORTED KEYS IN DATABASE → attach FK reference to the local column
+	querySnowflakeSHOWByName(ctx, db, "SHOW IMPORTED KEYS IN DATABASE",
+		[]string{"fk_schema_name", "fk_table_name", "fk_column_name",
+			"pk_schema_name", "pk_table_name", "pk_column_name"},
+		func(vals []string) {
+			setCol(vals[0], vals[1], vals[2], func(c *DBColumn) {
+				c.FKeySchema = vals[3]
+				c.FKeyTable = vals[4]
+				c.FKeyCol = vals[5]
+				if c.FKeySchema == c.Schema && c.FKeyTable == c.Table {
+					c.FKRecursive = true
+				}
+			})
+		})
+
+	// _gj_fk_metadata overlay: opt-in table used by the Snowflake emulator
+	// (where SHOW IMPORTED KEYS isn't implemented) and by production users who
+	// prefer to declare FKs in data rather than DDL.
+	enrichSnowflakeFromFKMetadata(ctx, db, cmap)
+}
+
+// querySnowflakeSHOWByName runs a SHOW command and projects the named columns
+// into the callback (position lookups are tolerant — missing columns are
+// empty strings). Errors are swallowed; the caller uses this for best-effort
+// enrichment only.
+func querySnowflakeSHOWByName(
+	ctx context.Context,
+	db *sql.DB,
+	stmt string,
+	wantCols []string,
+	onRow func([]string),
+) {
+	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
+	defer cancel()
+
+	rows, err := db.QueryContext(qctx, stmt)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	cols, err := rows.Columns()
+	if err != nil {
+		return
+	}
+	idx := make(map[string]int, len(cols))
+	for i, c := range cols {
+		idx[strings.ToLower(c)] = i
+	}
+	positions := make([]int, len(wantCols))
+	for i, name := range wantCols {
+		if p, ok := idx[name]; ok {
+			positions[i] = p
+		} else {
+			positions[i] = -1
+		}
+	}
+
+	scanBuf := make([]interface{}, len(cols))
+	scanPtrs := make([]interface{}, len(cols))
+	for i := range scanBuf {
+		scanPtrs[i] = &scanBuf[i]
+	}
+
+	for rows.Next() {
+		if err := rows.Scan(scanPtrs...); err != nil {
+			return
+		}
+		out := make([]string, len(wantCols))
+		for i, p := range positions {
+			if p < 0 || scanBuf[p] == nil {
+				continue
+			}
+			out[i] = fmt.Sprintf("%v", scanBuf[p])
+		}
+		onRow(out)
+	}
+}
+
+// enrichSnowflakeFromFKMetadata reads the optional _gj_fk_metadata overlay
+// table and applies its FK rows to the column map. Non-fatal: the table is
+// optional. Overlay entries only apply when the SHOW-based enrichment did
+// not already set an FK on the same column.
+func enrichSnowflakeFromFKMetadata(ctx context.Context, db *sql.DB, cmap map[string]DBColumn) {
+	const q = `SELECT table_schema, table_name, column_name,
+	              foreign_table_schema, foreign_table_name, foreign_column_name
+	       FROM _gj_fk_metadata`
+
+	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
+	defer cancel()
+
+	rows, err := db.QueryContext(qctx, q)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var schema, table, column, fkSchema, fkTable, fkCol string
+		if err := rows.Scan(&schema, &table, &column, &fkSchema, &fkTable, &fkCol); err != nil {
+			return
+		}
+		k := schema + ":" + table + ":" + column
+		v, ok := cmap[k]
+		if !ok {
+			continue
+		}
+		if v.FKeyTable != "" {
+			// Already set by SHOW IMPORTED KEYS — keep the DDL-declared value.
+			continue
+		}
+		v.FKeySchema = fkSchema
+		v.FKeyTable = fkTable
+		v.FKeyCol = fkCol
+		if v.FKeySchema == v.Schema && v.FKeyTable == v.Table {
+			v.FKRecursive = true
+		}
+		cmap[k] = v
+	}
+}
+
+// discoverFunctionsSnowflake queries INFORMATION_SCHEMA.FUNCTIONS and parses
+// the ARGUMENT_SIGNATURE column to extract typed parameters.
+func discoverFunctionsSnowflake(ctx context.Context, db *sql.DB) ([]DBFunction, error) {
+	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
+	defer cancel()
+
+	rows, err := db.QueryContext(qctx, `
+		SELECT function_schema, function_name, data_type, argument_signature
+		FROM information_schema.functions
+		WHERE function_schema NOT IN ('INFORMATION_SCHEMA')
+		ORDER BY function_schema, function_name`)
+	if err != nil {
+		// If INFORMATION_SCHEMA.FUNCTIONS is unavailable, silently return empty.
+		return nil, nil //nolint:nilerr
+	}
+	defer rows.Close()
+
+	var funcs []DBFunction
+	for rows.Next() {
+		var schema, name, retType, argSig string
+		if err := rows.Scan(&schema, &name, &retType, &argSig); err != nil {
+			return nil, err
+		}
+
+		params := parseSnowflakeArgumentSignature(argSig)
+		inputs := make([]DBFuncParam, len(params))
+		for i, p := range params {
+			inputs[i] = DBFuncParam{ID: i, Name: p.name, Type: p.typ}
+		}
+
+		funcs = append(funcs, DBFunction{
+			Schema: schema,
+			Name:   name,
+			Type:   retType,
+			Inputs: inputs,
+		})
+	}
+	return funcs, rows.Err()
+}
+
+type sfArgParam struct {
+	name string
+	typ  string
+}
+
+// parseSnowflakeArgumentSignature parses Snowflake's ARGUMENT_SIGNATURE strings
+// like "(A VARCHAR, B NUMBER(38,0), C VARIANT)" into typed parameters.
+// Handles: empty "()", types with parens "NUMBER(38,0)", nested parens, and no-name args.
+func parseSnowflakeArgumentSignature(sig string) []sfArgParam {
+	sig = strings.TrimSpace(sig)
+	if sig == "" || sig == "()" {
+		return nil
+	}
+	// Strip outer parens
+	if strings.HasPrefix(sig, "(") && strings.HasSuffix(sig, ")") {
+		sig = sig[1 : len(sig)-1]
+	}
+	sig = strings.TrimSpace(sig)
+	if sig == "" {
+		return nil
+	}
+
+	// Split by commas, respecting paren depth (e.g., NUMBER(38,0))
+	var params []sfArgParam
+	depth := 0
+	start := 0
+	for i := 0; i < len(sig); i++ {
+		switch sig[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case ',':
+			if depth == 0 {
+				params = append(params, parseSingleSfArg(sig[start:i]))
+				start = i + 1
+			}
+		}
+	}
+	params = append(params, parseSingleSfArg(sig[start:]))
+	return params
+}
+
+func parseSingleSfArg(s string) sfArgParam {
+	s = strings.TrimSpace(s)
+	// Expected format: "NAME TYPE" or just "TYPE"
+	// Split on first space that isn't inside parens
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case ' ', '\t':
+			if depth == 0 {
+				name := strings.TrimSpace(s[:i])
+				typ := strings.TrimSpace(s[i+1:])
+				if typ != "" {
+					return sfArgParam{name: name, typ: typ}
+				}
+			}
+		}
+	}
+	// No space found — it's just a type with no name
+	return sfArgParam{typ: s}
 }

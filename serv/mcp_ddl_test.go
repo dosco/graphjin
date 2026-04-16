@@ -209,7 +209,7 @@ func TestPrepareSchema_DefaultSchemaForType(t *testing.T) {
 		{"mariadb", "db"},
 		{"sqlite", "main"},
 		{"mssql", "dbo"},
-		{"snowflake", "main"},
+		{"snowflake", "PUBLIC"},
 		{"unknown", "public"},
 	}
 
