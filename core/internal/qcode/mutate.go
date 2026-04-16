@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/dosco/graphjin/core/v3/internal/graph"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
@@ -679,11 +680,29 @@ func (co *Compiler) addTablesAndColumns(m *Mutate, items []Mutate, data *graph.N
 func (co *Compiler) getColumnsFromData(m *Mutate, data *graph.Node, trv trval, cm map[string]struct{}) ([]MColumn, error) {
 	var cols []MColumn
 
+	// Build a case-insensitive view of cm so case-preserving backends
+	// (Snowflake, Oracle) don't double-insert an FK column when the
+	// user also provides it literally. The RCols path populates cm with
+	// the stored-case name (UPPERCASE on Snowflake), while preset /
+	// user keys come through ParseName lowercase.
+	containsCI := func(key string) bool {
+		if _, ok := cm[key]; ok {
+			return true
+		}
+		lower := strings.ToLower(key)
+		for k := range cm {
+			if strings.EqualFold(k, lower) {
+				return true
+			}
+		}
+		return false
+	}
+
 	for k, v := range trv.getPresets(m.Type) {
 		k1 := k
 		k := co.ParseName(k)
 
-		if _, ok := cm[k]; ok {
+		if containsCI(k) {
 			continue
 		}
 
@@ -724,7 +743,7 @@ func (co *Compiler) getColumnsFromData(m *Mutate, data *graph.Node, trv trval, c
 		k1 := k
 		k := co.ParseName(k)
 
-		if _, ok := cm[k]; ok {
+		if containsCI(k) {
 			continue
 		}
 
