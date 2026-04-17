@@ -375,8 +375,8 @@ func (ms *mcpServer) registerResources() {
 		func(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
 			guide := WorkflowGuide{
 				QueryWorkflow: []string{
-					"1. Read graphjin://discovery/syntax — learn query DSL, limits, and rules",
-					"2. Read graphjin://discovery/tables — find relevant tables",
+					"1. Call get_query_syntax — learn query DSL, limits, and rules",
+					"2. Call list_tables — find relevant tables",
 					"3. Use find_path or explore_relationships to discover join paths — NEVER guess",
 					"4. Use describe_table for column details on specific tables",
 					"5. Check list_workflows for an existing workflow that answers the question",
@@ -408,11 +408,7 @@ func (ms *mcpServer) registerResources() {
 		},
 	)
 
-	// JS runtime API resource
 	ms.registerJSRuntimeResources()
-
-	// Schema discovery resources
-	ms.registerDiscoveryResources()
 }
 
 // registerSyntaxTools registers the syntax reference tools

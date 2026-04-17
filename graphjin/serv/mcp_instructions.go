@@ -4,8 +4,8 @@ const serverInstructions = `GraphJin is a GraphQL-to-SQL compiler. You query dat
 
 ## Before answering any data question
 
-1. Read resource graphjin://discovery/syntax — learn the query DSL.
-2. Read resource graphjin://discovery/tables — find relevant tables.
+1. Call tool get_query_syntax — learn the query DSL.
+2. Call tool list_tables — find relevant tables.
 3. Use find_path or explore_relationships to understand how tables connect — do NOT guess join paths.
 4. Use describe_table for column details on the specific tables you need.
 5. Check list_workflows for an existing workflow that already answers the question.
@@ -77,11 +77,11 @@ Aggregate nodes inside expressions (for ratio-of-aggregates):
 Joined columns: "related.field" (quoted, dots allowed) traverses FK joins
 up to 3 hops.
 
-For the full grammar and more patterns, read graphjin://discovery/syntax.
+For the full grammar and more patterns, call get_query_syntax.
 
 ## CRITICAL: Default row limits
 
-Every query — top-level AND nested — has a default row limit (check graphjin://discovery/syntax for the exact value).
+Every query — top-level AND nested — has a default row limit (call get_query_syntax for the exact value).
 If you omit an explicit limit, results are SILENTLY truncated. You will get incomplete data with no error or warning.
 ALWAYS set an explicit limit on EVERY level of your query, especially nested children:
 

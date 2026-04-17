@@ -46,18 +46,23 @@ func TestAdventureWorksDiscovery(t *testing.T) {
 
 	gj := newAdventureWorksGJ(t)
 	dm := serv.NewDiscoveryManager(gj)
-	md := dm.Combined()
-	require.NotEmpty(t, md, "discovery should be generated")
+	payload := dm.Payload(gj.DefaultDatabase())
+	require.NotNil(t, payload)
+	require.NotEmpty(t, payload.Tables, "discovery should produce tables")
 
-	// Verify cross-schema discovery found key schemas
+	schemas := map[string]bool{}
+	names := map[string]bool{}
+	for _, entry := range payload.Tables {
+		schemas[entry.Schema] = true
+		names[entry.Name] = true
+	}
 	for _, schema := range []string{"person", "production", "sales", "purchasing", "humanresources"} {
-		assert.Contains(t, md, schema)
+		assert.True(t, schemas[schema], "schema %q not found in discovery", schema)
 	}
-	// Verify key tables
 	for _, table := range []string{"salesorderheader", "salesorderdetail", "product", "employee", "vendor"} {
-		assert.Contains(t, md, table)
+		assert.True(t, names[table], "table %q not found in discovery", table)
 	}
-	t.Logf("Discovery document: %d bytes", len(md))
+	t.Logf("Discovery: %d tables across %d schemas", len(payload.Tables), len(schemas))
 }
 
 // Test 1: Sales order → detail join (basic parent-child)
