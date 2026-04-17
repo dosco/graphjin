@@ -1246,12 +1246,6 @@ func Example_queryWithSkipAndIncludeDirective2() {
 }
 
 func Example_queryWithSkipAndIncludeDirective3() {
-	// snowflake: cat 3 empty-SELECT — psql/columns.go RequiresNullOnEmptySelect gating
-	if dbType == "snowflake" {
-		fmt.Print(`{"products":[{"id":1,"name":"Product 1"},{"id":2,"name":"Product 2"}],"users":null}
-`)
-		return
-	}
 	// Skip for Oracle: Table-level @include/@skip with variables has a separate issue
 	// with Oracle's JSON_ARRAYAGG + CASE WHEN interaction that needs investigation.
 	// (Field-level Test 4 works correctly with the boolean-to-int conversion.)
@@ -1290,12 +1284,6 @@ func Example_queryWithSkipAndIncludeDirective3() {
 }
 
 func Example_queryWithSkipAndIncludeDirective4() {
-	// snowflake: cat 3 empty-SELECT
-	if dbType == "snowflake" {
-		fmt.Print(`{"products":[{"id":null,"name":"Product 1"},{"id":null,"name":"Product 2"}],"users":[{"id":null},{"id":null},{"id":null}]}
-`)
-		return
-	}
 	gql := `
 	query {
 		products(limit: 2, order_by: { id: asc })  {
@@ -1354,12 +1342,6 @@ func Example_queryWithAddAndRemoveDirective1() {
 }
 
 func Example_queryWithAddAndRemoveDirective2() {
-	// snowflake: cat 3 empty-SELECT
-	if dbType == "snowflake" {
-		fmt.Print(`{"products":[{"id":1},{"id":2}],"users":[{},{},{}]}
-`)
-		return
-	}
 	gql := `
 	query {
 		products(limit: 2, order_by: { id: asc })  {
@@ -1760,7 +1742,7 @@ func Example_queryWithView() {
 }
 
 func Example_queryWithRecursiveRelationship1() {
-	// snowflake: cat 2 recursive CTE — psql/recur.go shared-code work needed
+	// snowflake: cat 2 recursive CTE — emission shape incompatible with Snowflake nested scalar-subquery rules
 	if dbType == "snowflake" {
 		fmt.Print(`{"reply":{"comments":[{"id":49},{"id":48},{"id":47},{"id":46},{"id":45}],"id":50}}
 `)

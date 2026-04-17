@@ -244,6 +244,9 @@ func (c *compilerContext) renderBaseColumns(sel *qcode.Select) {
 		c.alias(f.FieldName)
 		i++
 	}
+	if i == 0 && c.dialect.RequiresNullOnEmptySelect() {
+		c.w.WriteString(`NULL`)
+	}
 }
 
 func (c *compilerContext) renderTypename(sel *qcode.Select) {
