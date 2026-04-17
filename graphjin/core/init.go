@@ -225,6 +225,7 @@ func addJsonTable(conf *Config, dbInfo *sdata.DBInfo, table Table) error {
 	validJSONTypes := map[string]bool{
 		"json": true, "jsonb": true, "clob": true,
 		"longtext": true, "text": true, "mediumtext": true,
+		"variant": true, "object": true, "array": true,
 	}
 	if !validJSONTypes[bc.Type] {
 		return fmt.Errorf(

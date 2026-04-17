@@ -415,7 +415,11 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 
 	// SQLite, MariaDB and Snowflake cursor workaround: return json_object containing both json and cursor
 	if sel.Paging.Cursor && (c.dialect.Name() == "sqlite" || c.dialect.Name() == "mariadb" || c.dialect.Name() == "snowflake") {
-		c.w.WriteString(`SELECT json_object('json', `)
+		if c.dialect.Name() == "snowflake" {
+			c.w.WriteString(`SELECT OBJECT_CONSTRUCT('json', `)
+		} else {
+			c.w.WriteString(`SELECT json_object('json', `)
+		}
 
 		if sel.FieldFilter.Exp != nil {
 			c.w.WriteString(`(CASE WHEN `)
@@ -439,11 +443,17 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 				// MariaDB uses colon separator to match RenderCursorCTE parsing
 				// json_group_array is SQLite. MariaDB uses json_arrayagg.
 				c.w.WriteString(` || ':' || (CASE WHEN COUNT(*) > 0 THEN json_extract(json_arrayagg(__cur_`)
+				int32String(c.w, int32(i))
+				c.w.WriteString(`), '$[' || (COUNT(*) - 1) || ']') ELSE NULL END)`)
+			} else if c.dialect.Name() == "snowflake" {
+				c.w.WriteString(` || ',' || COALESCE(TO_VARCHAR(GET(ARRAY_AGG(__cur_`)
+				int32String(c.w, int32(i))
+				c.w.WriteString(`), COUNT(*) - 1)), '')`)
 			} else {
 				c.w.WriteString(` || ',' || (CASE WHEN COUNT(*) > 0 THEN json_extract(json_group_array(__cur_`)
+				int32String(c.w, int32(i))
+				c.w.WriteString(`), '$[' || (COUNT(*) - 1) || ']') ELSE NULL END)`)
 			}
-			int32String(c.w, int32(i))
-			c.w.WriteString(`), '$[' || (COUNT(*) - 1) || ']') ELSE NULL END)`)
 		}
 		c.w.WriteString(`) as __cursor`) // Sub-select 1 column (the json_object)
 
@@ -452,13 +462,21 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 		if sel.FieldFilter.Exp != nil {
 			c.w.WriteString(`(CASE WHEN `)
 			c.renderExp(sel.Ti, sel.FieldFilter.Exp, false)
-			c.w.WriteString(` THEN (SELECT `)
+			if c.dialect.Name() == "snowflake" {
+				c.w.WriteString(` THEN `)
+			} else {
+				c.w.WriteString(` THEN (SELECT `)
+			}
 		}
 
 		c.dialect.RenderJSONPlural(c, sel)
 
 		if sel.FieldFilter.Exp != nil {
-			c.w.WriteString(`) ELSE null END)`)
+			if c.dialect.Name() == "snowflake" {
+				c.w.WriteString(` ELSE null END)`)
+			} else {
+				c.w.WriteString(`) ELSE null END)`)
+			}
 		}
 		c.w.WriteString(` AS json`)
 
@@ -540,6 +558,11 @@ func (c *compilerContext) renderSelect(sel *qcode.Select) {
 				c.w.WriteString(`) OVER() AS "__CUR_`)
 				int32String(c.w, int32(i))
 				c.w.WriteString(`"`)
+			} else if c.dialect.Name() == "snowflake" {
+				c.w.WriteString(`, `)
+				c.colWithTableID(sel.Table, sel.ID, ob.Col.Name)
+				c.w.WriteString(` AS __cur_`)
+				int32String(c.w, int32(i))
 			} else {
 				c.w.WriteString(`, LAST_VALUE(`)
 				c.colWithTableID(sel.Table, sel.ID, ob.Col.Name)
