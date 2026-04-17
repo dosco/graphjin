@@ -931,13 +931,7 @@ func DiscoverCompositeFKs(ctx context.Context, db *sql.DB, dbtype string) ([]Com
 	case "mssql":
 		result, err = discoverCompositeFKsCSV(ctx, db, dbtype, compositeFKQueryMSSQL)
 	case "snowflake":
-		// Snowflake composite FK discovery reads from the optional
-		// `_gj_fk_metadata` override table. No preflight — production
-		// deployments that declare FKs via DDL don't have this table at
-		// all, and the DuckDB-backed test emulator mis-quotes any query
-		// against `information_schema.tables`. The non-fatal error path
-		// below silently drops the enrichment if the table is missing.
-		result, err = discoverCompositeFKsCSV(ctx, db, dbtype, compositeFKQuerySnowflake)
+		result, err = discoverSnowflakeCompositeFKsViaShow(ctx, db)
 	default:
 		return nil, nil
 	}
@@ -1309,6 +1303,70 @@ func isInList(val string, s []string) bool {
 		}
 	}
 	return false
+}
+
+func discoverSnowflakeCompositeFKsViaShow(ctx context.Context, db *sql.DB) ([]CompositeFKInfo, error) {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	sctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
+	defer cancel()
+	if _, err := conn.ExecContext(sctx, "SHOW IMPORTED KEYS IN DATABASE"); err != nil {
+		return nil, err
+	}
+	var qid string
+	if err := conn.QueryRowContext(sctx, "SELECT LAST_QUERY_ID()").Scan(&qid); err != nil {
+		return nil, err
+	}
+
+	aggQuery := `
+SELECT "fk_schema_name" AS table_schema,
+       "fk_table_name" AS table_name,
+       "fk_name" AS constraint_name,
+       LISTAGG("fk_column_name", ',') WITHIN GROUP (ORDER BY "key_sequence") AS local_columns,
+       "pk_schema_name" AS fkey_schema,
+       "pk_table_name" AS fkey_table,
+       LISTAGG("pk_column_name", ',') WITHIN GROUP (ORDER BY "key_sequence") AS fkey_columns
+FROM TABLE(RESULT_SCAN(?))
+GROUP BY "fk_schema_name", "fk_table_name", "fk_name", "pk_schema_name", "pk_table_name"
+HAVING COUNT(*) > 1`
+
+	rows, err := db.QueryContext(ctx, aggQuery, qid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []CompositeFKInfo
+	for rows.Next() {
+		var info CompositeFKInfo
+		var localCSV, fkeyCSV string
+		if err := rows.Scan(
+			&info.Schema, &info.Table, &info.ConstraintName,
+			&localCSV,
+			&info.FKeySchema, &info.FKeyTable,
+			&fkeyCSV,
+		); err != nil {
+			return nil, err
+		}
+		info.LocalCols = strings.Split(localCSV, ",")
+		info.FKeyCols = strings.Split(fkeyCSV, ",")
+		info.Schema = strings.ToLower(info.Schema)
+		info.Table = strings.ToLower(info.Table)
+		info.FKeySchema = strings.ToLower(info.FKeySchema)
+		info.FKeyTable = strings.ToLower(info.FKeyTable)
+		for i := range info.LocalCols {
+			info.LocalCols[i] = strings.ToLower(util.ToSnake(strings.TrimSpace(info.LocalCols[i])))
+		}
+		for i := range info.FKeyCols {
+			info.FKeyCols[i] = strings.ToLower(util.ToSnake(strings.TrimSpace(info.FKeyCols[i])))
+		}
+		result = append(result, info)
+	}
+	return result, rows.Err()
 }
 
 func discoverSnowflakeColumnsViaShow(ctx context.Context, db *sql.DB) (*sql.Rows, error) {
