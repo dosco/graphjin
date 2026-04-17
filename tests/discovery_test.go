@@ -2,6 +2,7 @@ package tests_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -24,24 +25,31 @@ func newDiscoveryDM(t *testing.T) (*core.GraphJin, *serv.DiscoveryManager) {
 func TestDiscovery(t *testing.T) {
 	gj, dm := newDiscoveryDM(t)
 
-	t.Run("Sections", func(t *testing.T) {
-		assert.NotEmpty(t, dm.CombinedSection("syntax"))
-		assert.NotEmpty(t, dm.CombinedSection("tables"))
-		assert.NotEmpty(t, dm.CombinedSection("insights"))
-		assert.NotEmpty(t, dm.Combined())
+	t.Run("TableIndex", func(t *testing.T) {
+		dbName := gj.DefaultDatabase()
+		tables := dm.TableIndex(dbName)
+		require.NotEmpty(t, tables, "expected at least one table in the index")
+		for _, entry := range tables {
+			assert.NotEmpty(t, entry.Name)
+		}
+	})
+
+	t.Run("Payload", func(t *testing.T) {
+		payload := dm.Payload(gj.DefaultDatabase())
+		require.NotNil(t, payload)
+		assert.NotEmpty(t, payload.Tables)
+		assert.Equal(t, gj.DefaultDatabase(), payload.Database)
+	})
+
+	t.Run("Insights", func(t *testing.T) {
+		insights := dm.Insights(gj.DefaultDatabase())
+		assert.Equal(t, gj.DefaultDatabase(), insights.Database)
 	})
 
 	t.Run("Caching", func(t *testing.T) {
-		md1 := dm.Combined()
-		md2 := dm.Combined()
-		assert.Equal(t, md1, md2)
-
-		doc := dm.Get(gj.DefaultDatabase())
-		require.NotNil(t, doc)
-		assert.NotEmpty(t, doc.Hash)
-
-		all := dm.GetAll()
-		assert.GreaterOrEqual(t, len(all), 1)
+		a, _ := json.Marshal(dm.Payload(gj.DefaultDatabase()))
+		b, _ := json.Marshal(dm.Payload(gj.DefaultDatabase()))
+		assert.JSONEq(t, string(a), string(b))
 	})
 
 	t.Run("SchemaChange", func(t *testing.T) {
@@ -69,11 +77,11 @@ func TestDiscovery(t *testing.T) {
 		defer ds.Unsubscribe()
 
 		select {
-		case doc := <-ds.Result:
-			require.NotNil(t, doc)
-			assert.NotEmpty(t, doc.Tables)
+		case payload := <-ds.Result:
+			require.NotNil(t, payload)
+			assert.NotEmpty(t, payload.Tables)
 		case <-time.After(5 * time.Second):
-			t.Fatal("no initial document")
+			t.Fatal("no initial payload")
 		}
 	})
 

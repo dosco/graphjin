@@ -2,39 +2,36 @@ package serv
 
 import (
 	"context"
-	"fmt"
 	"sort"
-	"strings"
 	"sync"
-	"time"
 
 	core "github.com/dosco/graphjin/core/v3"
 )
 
-// DiscoveryManager manages cached discovery sections and subscriptions.
-// Each section (syntax, tables, full_tables, insights) generates independently
-// on first access. Only full_tables runs enrichment queries — the other
-// sections return instantly from in-memory schema metadata.
 type DiscoveryManager struct {
 	gj *core.GraphJin
 
-	// Per-section lazy gates. Uses mutex + bool instead of sync.Once
-	// because sync.Once cannot be safely reset concurrently.
 	mu           sync.Mutex
-	syntaxDone   bool
 	tablesDone   bool
 	fullDone     bool
 	insightsDone bool
 
-	// Cached section content: "dbname" → section string
-	syntaxCache   sync.Map
 	tablesCache   sync.Map
 	fullCache     sync.Map
 	insightsCache sync.Map
 }
 
-// NewDiscoveryManager creates a DiscoveryManager and registers an OnSchemaChange
-// callback so caches are invalidated whenever any database schema changes.
+type dbTablesPayload struct {
+	Tables           []TableIndexEntry
+	DatabaseOverview DatabaseOverview
+}
+
+type dbFullPayload struct {
+	Tables           []TableDetailEntry
+	DatabaseOverview DatabaseOverview
+	Profiles         map[string]*TableProfile
+}
+
 func NewDiscoveryManager(gj *core.GraphJin) *DiscoveryManager {
 	dm := &DiscoveryManager{gj: gj}
 	gj.OnSchemaChange(func(dbName, hash string) {
@@ -43,7 +40,6 @@ func NewDiscoveryManager(gj *core.GraphJin) *DiscoveryManager {
 	return dm
 }
 
-// getSchemas returns sorted table schemas for a database.
 func getSchemas(gj *core.GraphJin, database string) []*core.TableSchema {
 	allTables := gj.GetTablesForDatabase(database)
 	sort.Slice(allTables, func(i, j int) bool { return allTables[i].Name < allTables[j].Name })
@@ -57,28 +53,6 @@ func getSchemas(gj *core.GraphJin, database string) []*core.TableSchema {
 		schemas = append(schemas, s)
 	}
 	return schemas
-}
-
-func (dm *DiscoveryManager) ensureSyntax() {
-	dm.mu.Lock()
-	if dm.syntaxDone {
-		dm.mu.Unlock()
-		return
-	}
-	dm.mu.Unlock()
-
-	names := dm.gj.DatabaseNames()
-	if len(names) == 0 {
-		return
-	}
-	content := generateSyntax()
-	for _, name := range names {
-		dm.syntaxCache.Store(name, content)
-	}
-
-	dm.mu.Lock()
-	dm.syntaxDone = true
-	dm.mu.Unlock()
 }
 
 func (dm *DiscoveryManager) ensureTables() {
@@ -95,7 +69,9 @@ func (dm *DiscoveryManager) ensureTables() {
 	}
 	for _, name := range names {
 		schemas := getSchemas(dm.gj, name)
-		dm.tablesCache.Store(name, generateTablesCompact(dm.gj, schemas))
+		index := buildTableIndex(schemas, nil)
+		overview := buildDatabaseOverview(name, schemas, nil, dm.gj.GetFunctionsForDatabase(name))
+		dm.tablesCache.Store(name, &dbTablesPayload{Tables: index, DatabaseOverview: overview})
 	}
 
 	dm.mu.Lock()
@@ -118,7 +94,14 @@ func (dm *DiscoveryManager) ensureFullTables() {
 	ctx := context.Background()
 	for _, name := range names {
 		schemas := getSchemas(dm.gj, name)
-		dm.fullCache.Store(name, generateTablesFull(ctx, dm.gj, name, schemas))
+		profiles := buildEnrichment(ctx, dm.gj, name, schemas)
+		details := buildTableDetails(schemas, profiles)
+		overview := buildDatabaseOverview(name, schemas, profiles, dm.gj.GetFunctionsForDatabase(name))
+		dm.fullCache.Store(name, &dbFullPayload{
+			Tables:           details,
+			DatabaseOverview: overview,
+			Profiles:         profiles,
+		})
 	}
 
 	dm.mu.Lock()
@@ -140,7 +123,8 @@ func (dm *DiscoveryManager) ensureInsights() {
 	}
 	for _, name := range names {
 		schemas := getSchemas(dm.gj, name)
-		dm.insightsCache.Store(name, generateInsights(dm.gj, name, schemas))
+		insights := buildSchemaInsights(dm.gj, name, schemas, nil)
+		dm.insightsCache.Store(name, &insights)
 	}
 
 	dm.mu.Lock()
@@ -148,116 +132,95 @@ func (dm *DiscoveryManager) ensureInsights() {
 	dm.mu.Unlock()
 }
 
-// invalidate clears all caches and resets all generation flags.
 func (dm *DiscoveryManager) invalidate() {
 	dm.mu.Lock()
-	dm.syntaxDone = false
 	dm.tablesDone = false
 	dm.fullDone = false
 	dm.insightsDone = false
 	dm.mu.Unlock()
 
-	dm.syntaxCache.Range(func(k, _ any) bool { dm.syntaxCache.Delete(k); return true })
 	dm.tablesCache.Range(func(k, _ any) bool { dm.tablesCache.Delete(k); return true })
 	dm.fullCache.Range(func(k, _ any) bool { dm.fullCache.Delete(k); return true })
 	dm.insightsCache.Range(func(k, _ any) bool { dm.insightsCache.Delete(k); return true })
 }
 
-// Get returns a DiscoveryDocument assembled from cached sections.
-// Triggers syntax, tables, and insights (NOT full_tables).
-func (dm *DiscoveryManager) Get(database string) *DiscoveryDocument {
-	dm.ensureSyntax()
+func (dm *DiscoveryManager) TableIndex(database string) []TableIndexEntry {
 	dm.ensureTables()
-	dm.ensureInsights()
-
-	doc := &DiscoveryDocument{
-		Database:    database,
-		Hash:        fmt.Sprintf("%x", time.Now().UnixNano()),
-		GeneratedAt: time.Now().UTC(),
-	}
-	if v, ok := dm.syntaxCache.Load(database); ok {
-		doc.Syntax = v.(string)
-	}
 	if v, ok := dm.tablesCache.Load(database); ok {
-		doc.Tables = v.(string)
+		return v.(*dbTablesPayload).Tables
 	}
-	if v, ok := dm.insightsCache.Load(database); ok {
-		doc.Insights = v.(string)
-	}
-	return doc
+	return nil
 }
 
-// GetAll returns discovery documents for every known database.
-func (dm *DiscoveryManager) GetAll() []*DiscoveryDocument {
-	var docs []*DiscoveryDocument
-	for _, name := range dm.gj.DatabaseNames() {
-		docs = append(docs, dm.Get(name))
-	}
-	return docs
-}
-
-// CombinedSection returns a single section concatenated across all databases.
-// Only triggers generation of the requested section.
-func (dm *DiscoveryManager) CombinedSection(section string) string {
-	var cache *sync.Map
-	switch section {
-	case "syntax":
-		dm.ensureSyntax()
-		cache = &dm.syntaxCache
-	case "tables":
-		dm.ensureTables()
-		cache = &dm.tablesCache
-	case "full_tables":
-		dm.ensureFullTables()
-		cache = &dm.fullCache
-	case "insights":
-		dm.ensureInsights()
-		cache = &dm.insightsCache
-	default:
-		return ""
-	}
-
-	var sb strings.Builder
-	for _, name := range dm.gj.DatabaseNames() {
-		if v, ok := cache.Load(name); ok {
-			sb.WriteString(v.(string))
-			sb.WriteString("\n")
-		}
-	}
-	return sb.String()
-}
-
-// Combined returns syntax + tables + insights for every database.
-// Does NOT include full_tables.
-func (dm *DiscoveryManager) Combined() string {
-	dm.ensureSyntax()
+func (dm *DiscoveryManager) DatabaseOverview(database string) DatabaseOverview {
 	dm.ensureTables()
-	dm.ensureInsights()
-
-	var sb strings.Builder
-	for _, name := range dm.gj.DatabaseNames() {
-		if v, ok := dm.syntaxCache.Load(name); ok {
-			sb.WriteString(v.(string))
-		}
-		if v, ok := dm.tablesCache.Load(name); ok {
-			sb.WriteString(v.(string))
-		}
-		if v, ok := dm.insightsCache.Load(name); ok {
-			sb.WriteString(v.(string))
-		}
+	if v, ok := dm.tablesCache.Load(database); ok {
+		return v.(*dbTablesPayload).DatabaseOverview
 	}
-	return sb.String()
+	return DatabaseOverview{Database: database}
 }
 
-// DiscoverySubscription represents a live subscription to discovery document
-// updates. Callers receive new documents on Result whenever the schema changes.
+func (dm *DiscoveryManager) FullTables(database string) []TableDetailEntry {
+	dm.ensureFullTables()
+	if v, ok := dm.fullCache.Load(database); ok {
+		return v.(*dbFullPayload).Tables
+	}
+	return nil
+}
+
+func (dm *DiscoveryManager) FullDatabaseOverview(database string) DatabaseOverview {
+	dm.ensureFullTables()
+	if v, ok := dm.fullCache.Load(database); ok {
+		return v.(*dbFullPayload).DatabaseOverview
+	}
+	return DatabaseOverview{Database: database}
+}
+
+func (dm *DiscoveryManager) Insights(database string) SchemaInsights {
+	dm.ensureInsights()
+	if v, ok := dm.insightsCache.Load(database); ok {
+		return *(v.(*SchemaInsights))
+	}
+	return SchemaInsights{Database: database}
+}
+
+func (dm *DiscoveryManager) Profile(database, table string) *TableProfile {
+	dm.ensureFullTables()
+	if v, ok := dm.fullCache.Load(database); ok {
+		if p, ok := v.(*dbFullPayload).Profiles[table]; ok {
+			return p
+		}
+	}
+	return nil
+}
+
+func (dm *DiscoveryManager) Databases() []string {
+	return dm.gj.DatabaseNames()
+}
+
+func (dm *DiscoveryManager) Payload(database string) *DiscoveryPayload {
+	return &DiscoveryPayload{
+		Database:         database,
+		Tables:           dm.TableIndex(database),
+		Insights:         dm.Insights(database),
+		DatabaseOverview: dm.DatabaseOverview(database),
+	}
+}
+
+func (dm *DiscoveryManager) FullPayload(database string) *DiscoveryFullPayload {
+	return &DiscoveryFullPayload{
+		Database:         database,
+		Tables:           dm.FullTables(database),
+		DatabaseOverview: dm.FullDatabaseOverview(database),
+	}
+}
+
 type DiscoverySubscription struct {
-	Result   chan *DiscoveryDocument
+	Result   chan *DiscoveryPayload
 	done     chan struct{}
 	database string
 }
 
-// Unsubscribe terminates the subscription and stops future deliveries.
 func (ds *DiscoverySubscription) Unsubscribe() {
 	select {
 	case <-ds.done:
@@ -266,20 +229,18 @@ func (ds *DiscoverySubscription) Unsubscribe() {
 	}
 }
 
-// Subscribe creates a live subscription for discovery document updates.
-// Initial documents are sent immediately (no full_tables).
 func (dm *DiscoveryManager) Subscribe(ctx context.Context, database string) (*DiscoverySubscription, error) {
 	ds := &DiscoverySubscription{
-		Result:   make(chan *DiscoveryDocument, 4),
+		Result:   make(chan *DiscoveryPayload, 4),
 		done:     make(chan struct{}),
 		database: database,
 	}
 
 	if database != "" {
-		ds.Result <- dm.Get(database)
+		ds.Result <- dm.Payload(database)
 	} else {
 		for _, name := range dm.gj.DatabaseNames() {
-			ds.Result <- dm.Get(name)
+			ds.Result <- dm.Payload(name)
 		}
 	}
 
@@ -292,9 +253,9 @@ func (dm *DiscoveryManager) Subscribe(ctx context.Context, database string) (*Di
 		if database != "" && dbName != database {
 			return
 		}
-		doc := dm.Get(dbName)
+		payload := dm.Payload(dbName)
 		select {
-		case ds.Result <- doc:
+		case ds.Result <- payload:
 		case <-ds.done:
 		default:
 		}

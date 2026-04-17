@@ -99,6 +99,7 @@ func mcpToolList(conf *Config) []string {
 		"find_path",
 		"validate_where_clause",
 		"get_workflow_guide",
+		"get_schema_insights",
 		"explore_relationships",
 		"execute_saved_query",
 		"execute_workflow",
@@ -208,6 +209,7 @@ func (ms *mcpServer) registerTools() {
 
 	// Schema Discovery Tools
 	ms.registerSchemaTools()
+	ms.registerInsightsTools()
 	ms.registerExploreTools()
 
 	// Query Execution Tools
