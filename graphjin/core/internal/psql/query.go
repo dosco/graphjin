@@ -446,9 +446,9 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 				int32String(c.w, int32(i))
 				c.w.WriteString(`), '$[' || (COUNT(*) - 1) || ']') ELSE NULL END)`)
 			} else if c.dialect.Name() == "snowflake" {
-				c.w.WriteString(` || ',' || COALESCE(TO_VARCHAR(MAX(__cur_`)
+				c.w.WriteString(` || ',' || COALESCE(TO_VARCHAR(GET(ARRAY_AGG(__cur_`)
 				int32String(c.w, int32(i))
-				c.w.WriteString(`)), '')`)
+				c.w.WriteString(`), COUNT(*) - 1)), '')`)
 			} else {
 				c.w.WriteString(` || ',' || (CASE WHEN COUNT(*) > 0 THEN json_extract(json_group_array(__cur_`)
 				int32String(c.w, int32(i))
@@ -551,22 +551,9 @@ func (c *compilerContext) renderSelect(sel *qcode.Select) {
 				int32String(c.w, int32(i))
 				c.w.WriteString(`"`)
 			} else if c.dialect.Name() == "snowflake" {
-				c.w.WriteString(`, LAST_VALUE(`)
+				c.w.WriteString(`, `)
 				c.colWithTableID(sel.Table, sel.ID, ob.Col.Name)
-				c.w.WriteString(`) OVER (ORDER BY `)
-				for j, ob2 := range sel.OrderBy {
-					if j != 0 {
-						c.w.WriteString(`, `)
-					}
-					c.colWithTableID(sel.Table, sel.ID, ob2.Col.Name)
-					switch ob2.Order {
-					case qcode.OrderDesc, qcode.OrderDescNullsFirst, qcode.OrderDescNullsLast:
-						c.w.WriteString(` DESC`)
-					default:
-						c.w.WriteString(` ASC`)
-					}
-				}
-				c.w.WriteString(` ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS __cur_`)
+				c.w.WriteString(` AS __cur_`)
 				int32String(c.w, int32(i))
 			} else {
 				c.w.WriteString(`, LAST_VALUE(`)
