@@ -1,6 +1,6 @@
-SELECT LOWER(col.table_schema) AS schema_name,
-	LOWER(col.table_name) AS table_name,
-	LOWER(col.column_name) AS column_name,
+SELECT col.table_schema AS schema_name,
+	col.table_name AS table_name,
+	col.column_name AS column_name,
 	LOWER(col.data_type) AS col_type,
 	(
 		CASE
@@ -23,9 +23,9 @@ SELECT LOWER(col.table_schema) AS schema_name,
 FROM information_schema.columns col
 WHERE col.table_schema NOT IN ('INFORMATION_SCHEMA')
 UNION
-SELECT LOWER(kcu.table_schema) AS schema_name,
-	LOWER(kcu.table_name) AS table_name,
-	LOWER(kcu.column_name) AS column_name,
+SELECT kcu.table_schema AS schema_name,
+	kcu.table_name AS table_name,
+	kcu.column_name AS column_name,
 	'' AS col_type,
 	FALSE AS not_null,
 	(
@@ -53,18 +53,18 @@ FROM information_schema.key_column_usage kcu
 	)
 WHERE kcu.table_schema NOT IN ('INFORMATION_SCHEMA')
 UNION
-SELECT LOWER(fk_kcu.table_schema) AS schema_name,
-	LOWER(fk_kcu.table_name) AS table_name,
-	LOWER(fk_kcu.column_name) AS column_name,
+SELECT fk_kcu.table_schema AS schema_name,
+	fk_kcu.table_name AS table_name,
+	fk_kcu.column_name AS column_name,
 	'' AS col_type,
 	FALSE AS not_null,
 	FALSE AS primary_key,
 	FALSE AS unique_key,
 	FALSE AS is_array,
 	FALSE AS full_text,
-	LOWER(pk_kcu.table_schema) AS foreignkey_schema,
-	LOWER(pk_kcu.table_name) AS foreignkey_table,
-	LOWER(pk_kcu.column_name) AS foreignkey_column
+	pk_kcu.table_schema AS foreignkey_schema,
+	pk_kcu.table_name AS foreignkey_table,
+	pk_kcu.column_name AS foreignkey_column
 FROM information_schema.referential_constraints rc
 	JOIN information_schema.key_column_usage fk_kcu ON (
 		rc.constraint_catalog = fk_kcu.constraint_catalog
@@ -79,16 +79,16 @@ FROM information_schema.referential_constraints rc
 	)
 WHERE fk_kcu.table_schema NOT IN ('INFORMATION_SCHEMA')
 UNION
-SELECT LOWER(m.table_schema) AS schema_name,
-	LOWER(m.table_name) AS table_name,
-	LOWER(m.column_name) AS column_name,
+SELECT m.table_schema AS schema_name,
+	m.table_name AS table_name,
+	m.column_name AS column_name,
 	'' AS col_type,
 	FALSE AS not_null,
 	FALSE AS primary_key,
 	FALSE AS unique_key,
 	FALSE AS is_array,
 	FALSE AS full_text,
-	LOWER(m.foreign_table_schema) AS foreignkey_schema,
-	LOWER(m.foreign_table_name) AS foreignkey_table,
-	LOWER(m.foreign_column_name) AS foreignkey_column
+	m.foreign_table_schema AS foreignkey_schema,
+	m.foreign_table_name AS foreignkey_table,
+	m.foreign_column_name AS foreignkey_column
 FROM _gj_fk_metadata m;

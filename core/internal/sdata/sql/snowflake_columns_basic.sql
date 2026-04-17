@@ -12,9 +12,9 @@
 --
 -- Activated only when both snowflake_columns.sql and
 -- snowflake_columns_no_overrides.sql fail.
-SELECT LOWER(col.table_schema) AS schema_name,
-	LOWER(col.table_name) AS table_name,
-	LOWER(col.column_name) AS column_name,
+SELECT col.table_schema AS schema_name,
+	col.table_name AS table_name,
+	col.column_name AS column_name,
 	LOWER(col.data_type) AS col_type,
 	(
 		CASE

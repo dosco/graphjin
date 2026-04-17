@@ -603,7 +603,7 @@ func DiscoverColumns(ctx context.Context, db *sql.DB, dbtype string, blockList [
 			return nil, err
 		}
 
-		if dbtype == "mssql" {
+		if dbtype == "mssql" || dbtype == "snowflake" {
 			c.OrigName = c.Name
 			c.OrigTable = c.Table
 			c.OrigSchema = c.Schema

@@ -20,15 +20,15 @@ fks AS (
         "fk_schema_name"  AS sch_name,
         "fk_table_name"   AS tbl_name,
         "fk_column_name"  AS col_name,
-        LOWER("pk_schema_name") AS pk_sch,
-        LOWER("pk_table_name")  AS pk_tbl,
-        LOWER("pk_column_name") AS pk_col
+        "pk_schema_name" AS pk_sch,
+        "pk_table_name"  AS pk_tbl,
+        "pk_column_name" AS pk_col
     FROM TABLE(RESULT_SCAN(?))
 )
 SELECT
-    LOWER(c.sch_name) AS schema_name,
-    LOWER(c.tbl_name) AS table_name,
-    LOWER(c.col_name) AS column_name,
+    c.sch_name AS schema_name,
+    c.tbl_name AS table_name,
+    c.col_name AS column_name,
     LOWER(CASE c.show_type
         WHEN 'FIXED' THEN 'number'
         WHEN 'REAL'  THEN 'float'
