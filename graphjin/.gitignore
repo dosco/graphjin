@@ -63,3 +63,5 @@ cmd/cmd
 
 .claude-plugins
 .claude
+# Local WIP status files (never commit)
+snowflake-wip.md
