@@ -415,7 +415,11 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 
 	// SQLite, MariaDB and Snowflake cursor workaround: return json_object containing both json and cursor
 	if sel.Paging.Cursor && (c.dialect.Name() == "sqlite" || c.dialect.Name() == "mariadb" || c.dialect.Name() == "snowflake") {
-		c.w.WriteString(`SELECT json_object('json', `)
+		if c.dialect.Name() == "snowflake" {
+			c.w.WriteString(`SELECT OBJECT_CONSTRUCT('json', `)
+		} else {
+			c.w.WriteString(`SELECT json_object('json', `)
+		}
 
 		if sel.FieldFilter.Exp != nil {
 			c.w.WriteString(`(CASE WHEN `)
@@ -439,11 +443,17 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 				// MariaDB uses colon separator to match RenderCursorCTE parsing
 				// json_group_array is SQLite. MariaDB uses json_arrayagg.
 				c.w.WriteString(` || ':' || (CASE WHEN COUNT(*) > 0 THEN json_extract(json_arrayagg(__cur_`)
+				int32String(c.w, int32(i))
+				c.w.WriteString(`), '$[' || (COUNT(*) - 1) || ']') ELSE NULL END)`)
+			} else if c.dialect.Name() == "snowflake" {
+				c.w.WriteString(` || ',' || COALESCE(TO_VARCHAR(MAX(__cur_`)
+				int32String(c.w, int32(i))
+				c.w.WriteString(`)), '')`)
 			} else {
 				c.w.WriteString(` || ',' || (CASE WHEN COUNT(*) > 0 THEN json_extract(json_group_array(__cur_`)
+				int32String(c.w, int32(i))
+				c.w.WriteString(`), '$[' || (COUNT(*) - 1) || ']') ELSE NULL END)`)
 			}
-			int32String(c.w, int32(i))
-			c.w.WriteString(`), '$[' || (COUNT(*) - 1) || ']') ELSE NULL END)`)
 		}
 		c.w.WriteString(`) as __cursor`) // Sub-select 1 column (the json_object)
 
@@ -540,6 +550,24 @@ func (c *compilerContext) renderSelect(sel *qcode.Select) {
 				c.w.WriteString(`) OVER() AS "__CUR_`)
 				int32String(c.w, int32(i))
 				c.w.WriteString(`"`)
+			} else if c.dialect.Name() == "snowflake" {
+				c.w.WriteString(`, LAST_VALUE(`)
+				c.colWithTableID(sel.Table, sel.ID, ob.Col.Name)
+				c.w.WriteString(`) OVER (ORDER BY `)
+				for j, ob2 := range sel.OrderBy {
+					if j != 0 {
+						c.w.WriteString(`, `)
+					}
+					c.colWithTableID(sel.Table, sel.ID, ob2.Col.Name)
+					switch ob2.Order {
+					case qcode.OrderDesc, qcode.OrderDescNullsFirst, qcode.OrderDescNullsLast:
+						c.w.WriteString(` DESC`)
+					default:
+						c.w.WriteString(` ASC`)
+					}
+				}
+				c.w.WriteString(` ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS __cur_`)
+				int32String(c.w, int32(i))
 			} else {
 				c.w.WriteString(`, LAST_VALUE(`)
 				c.colWithTableID(sel.Table, sel.ID, ob.Col.Name)

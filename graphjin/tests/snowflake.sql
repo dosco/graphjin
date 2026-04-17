@@ -26,7 +26,7 @@ CREATE TABLE products (
   tags ARRAY,
   metadata VARIANT,
   country_code VARCHAR,
-  price DOUBLE,
+  price NUMBER(10,2),
   count_likes BIGINT,
   owner_id BIGINT REFERENCES users(id),
   category_ids ARRAY,
@@ -206,7 +206,7 @@ CREATE TABLE order_items (
   product_id BIGINT NOT NULL,
   variant_id BIGINT NOT NULL,
   quantity INTEGER NOT NULL DEFAULT 1,
-  price DOUBLE NOT NULL,
+  price NUMBER(10,2) NOT NULL,
   FOREIGN KEY (product_id, variant_id) REFERENCES product_variants(product_id, variant_id)
 );
 
