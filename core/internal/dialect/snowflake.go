@@ -82,7 +82,7 @@ func (d *SnowflakeDialect) RenderJSONSelect(ctx Context, sel *qcode.Select) {
 func (d *SnowflakeDialect) RenderJSONPlural(ctx Context, sel *qcode.Select) {
 	useSlice := sel.Rel.Type != sdata.RelNone && !sel.Paging.NoLimit
 	if useSlice {
-		ctx.WriteString(`COALESCE(ARRAY_SLICE(ARRAY_AGG("__sjb_`)
+		ctx.WriteString(`COALESCE(ARRAY_SLICE(ARRAY_AGG("__sj_`)
 		ctx.WriteString(strconv.Itoa(int(sel.ID)))
 		ctx.WriteString(`"."json"), `)
 		if sel.Paging.Offset > 0 {
@@ -93,7 +93,7 @@ func (d *SnowflakeDialect) RenderJSONPlural(ctx Context, sel *qcode.Select) {
 		ctx.WriteString(`), ARRAY_CONSTRUCT())`)
 		return
 	}
-	ctx.WriteString(`COALESCE(ARRAY_AGG("__sjb_`)
+	ctx.WriteString(`COALESCE(ARRAY_AGG("__sj_`)
 	ctx.WriteString(strconv.Itoa(int(sel.ID)))
 	ctx.WriteString(`"."json"), ARRAY_CONSTRUCT())`)
 }

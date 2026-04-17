@@ -1077,17 +1077,17 @@ func newConfig(c *core.Config) *core.Config {
 }
 
 func stdJSON(val []byte) string {
-	var m map[string]interface{}
-
-	if err := json.Unmarshal(val, &m); err != nil {
-		panic(err)
+	if len(val) == 0 {
+		return ""
 	}
-
+	var m map[string]interface{}
+	if err := json.Unmarshal(val, &m); err != nil {
+		return fmt.Sprintf("<json unmarshal error: %v>", err)
+	}
 	if v, err := json.Marshal(m); err == nil {
 		return string(v)
-	} else {
-		panic(err)
 	}
+	return ""
 }
 
 func printJSON(val []byte) {
