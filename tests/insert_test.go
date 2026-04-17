@@ -276,6 +276,7 @@ func Example_insertBulk() {
 }
 
 func Example_insertIntoMultipleRelatedTables() {
+	// snowflake: cat 4 linear mutation — nested insert child→parent PK flow not yet wired in dialect
 	if dbType == "snowflake" {
 		fmt.Print(`{"purchases":[{"customer":{"email":"user1004@test.com","full_name":"User 1004","id":1004},"product":{"id":2002,"name":"Product 2002","price":2012.5},"quantity":5}]}
 `)
@@ -344,6 +345,7 @@ func Example_insertIntoMultipleRelatedTables() {
 }
 
 func Example_insertIntoTableAndRelatedTable1() {
+	// snowflake: cat 4 linear mutation — see RenderLinearInsert follow-up
 	if dbType == "snowflake" {
 		fmt.Print(`{"users":[{"email":"user1005@test.com","full_name":"User 1005","id":1005,"products":[{"id":2003,"name":"Product 2003","price":2013.5}]}]}
 `)
@@ -404,11 +406,6 @@ func Example_insertIntoTableAndRelatedTable1() {
 }
 
 func Example_insertIntoTableAndRelatedTable2() {
-	if dbType == "snowflake" {
-		fmt.Print(`{"products":[{"id":2004,"name":"Product 2004","owner":{"email":"user1006@test.com","full_name":"User 1006","id":1006}}]}
-`)
-		return
-	}
 	gql := `mutation {
 		products(insert: $data) {
 			id
@@ -457,6 +454,7 @@ func Example_insertIntoTableAndRelatedTable2() {
 }
 
 func Example_insertIntoTableBulkInsertIntoRelatedTable() {
+	// snowflake: cat 4 linear mutation — bulk-insert _gj_ids threading
 	if dbType == "snowflake" {
 		fmt.Print(`{"users":[{"email":"user10051@test.com","full_name":"User 10051","id":10051,"products":[{"id":20031,"name":"Product 20031","price":2013.5},{"id":20032,"name":"Product 20032","price":2014.5}]}]}
 `)
@@ -626,11 +624,6 @@ func Example_insertWithCamelToSnakeCase() {
 }
 
 func Example_insertIntoRecursiveRelationship() {
-	if dbType == "snowflake" {
-		fmt.Print(`{"comments":[{"id":5001,"reply_to_id":null},{"id":5002,"reply_to_id":5001}]}
-`)
-		return
-	}
 
 	gql := `mutation {
 		comments(insert: $data, where: { id: { in: [5001, 5002] }}) {
@@ -674,11 +667,6 @@ func Example_insertIntoRecursiveRelationship() {
 }
 
 func Example_insertIntoRecursiveRelationshipAndConnectTable1() {
-	if dbType == "snowflake" {
-		fmt.Print(`{"comments":[{"id":5003,"reply_to_id":null},{"id":5,"reply_to_id":5003}]}
-`)
-		return
-	}
 
 	gql := `mutation {
 		comments(insert: $data, where: { id: { in: [5, 5003] } }, order_by: { id: desc }) {
@@ -721,6 +709,7 @@ func Example_insertIntoRecursiveRelationshipAndConnectTable1() {
 }
 
 func Example_insertIntoRecursiveRelationshipAndConnectTable2() {
+	// snowflake: cat 4 linear mutation — recursive FK connect path
 	if dbType == "snowflake" {
 		fmt.Print(`{"comments":{"commenter":{"id":3},"comments":[{"id":6}],"id":5004,"product":{"id":26}}}
 `)
