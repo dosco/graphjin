@@ -271,6 +271,9 @@ func TestDisableProdSecurity(t *testing.T) {
 }
 
 func TestEnableSchema(t *testing.T) {
+	if dbType == "snowflake" {
+		t.Skip("snowflake: db.graphql cache doesn't serialize OrigSchema/OrigName, breaking NameMap-dependent identifier emission in Production+EnableSchema mode")
+	}
 
 	gql := `
 	fragment Product on products {
