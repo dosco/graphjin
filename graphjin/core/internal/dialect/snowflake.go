@@ -24,6 +24,7 @@ import (
 // - RelEmbedded/RenderFromEdge parity may need a Snowflake-specific approach.
 type SnowflakeDialect struct {
 	PostgresDialect
+	NameMap map[string]string
 }
 
 var _ Dialect = (*SnowflakeDialect)(nil)
@@ -33,7 +34,38 @@ func (d *SnowflakeDialect) Name() string {
 }
 
 func (d *SnowflakeDialect) QuoteIdentifier(s string) string {
+	if d.NameMap != nil {
+		if orig, ok := d.NameMap[s]; ok {
+			return `"` + orig + `"`
+		}
+	}
 	return `"` + s + `"`
+}
+
+func (d *SnowflakeDialect) SetNameMap(tables []sdata.DBTable) {
+	d.NameMap = make(map[string]string)
+	for _, t := range tables {
+		if t.OrigName != "" && t.OrigName != t.Name {
+			d.NameMap[t.Name] = t.OrigName
+		}
+		if t.OrigSchema != "" && t.OrigSchema != t.Schema {
+			d.NameMap[t.Schema] = t.OrigSchema
+		}
+		for _, c := range t.Columns {
+			if c.OrigName != "" && c.OrigName != c.Name {
+				d.NameMap[c.Name] = c.OrigName
+			}
+			if c.OrigFKeyCol != "" && c.OrigFKeyCol != c.FKeyCol {
+				d.NameMap[c.FKeyCol] = c.OrigFKeyCol
+			}
+			if c.OrigFKeyTable != "" && c.OrigFKeyTable != c.FKeyTable {
+				d.NameMap[c.FKeyTable] = c.OrigFKeyTable
+			}
+			if c.OrigFKeySchema != "" && c.OrigFKeySchema != c.FKeySchema {
+				d.NameMap[c.FKeySchema] = c.OrigFKeySchema
+			}
+		}
+	}
 }
 
 func (d *SnowflakeDialect) BindVar(i int) string {

@@ -11,9 +11,9 @@
 -- This file must stay byte-identical to snowflake_columns.sql except for
 -- the missing 4th UNION — any other divergence silently changes column
 -- metadata in the fallback path.
-SELECT LOWER(col.table_schema) AS schema_name,
-	LOWER(col.table_name) AS table_name,
-	LOWER(col.column_name) AS column_name,
+SELECT col.table_schema AS schema_name,
+	col.table_name AS table_name,
+	col.column_name AS column_name,
 	LOWER(col.data_type) AS col_type,
 	(
 		CASE
@@ -36,9 +36,9 @@ SELECT LOWER(col.table_schema) AS schema_name,
 FROM information_schema.columns col
 WHERE col.table_schema NOT IN ('INFORMATION_SCHEMA')
 UNION
-SELECT LOWER(kcu.table_schema) AS schema_name,
-	LOWER(kcu.table_name) AS table_name,
-	LOWER(kcu.column_name) AS column_name,
+SELECT kcu.table_schema AS schema_name,
+	kcu.table_name AS table_name,
+	kcu.column_name AS column_name,
 	'' AS col_type,
 	FALSE AS not_null,
 	(
@@ -66,18 +66,18 @@ FROM information_schema.key_column_usage kcu
 	)
 WHERE kcu.table_schema NOT IN ('INFORMATION_SCHEMA')
 UNION
-SELECT LOWER(fk_kcu.table_schema) AS schema_name,
-	LOWER(fk_kcu.table_name) AS table_name,
-	LOWER(fk_kcu.column_name) AS column_name,
+SELECT fk_kcu.table_schema AS schema_name,
+	fk_kcu.table_name AS table_name,
+	fk_kcu.column_name AS column_name,
 	'' AS col_type,
 	FALSE AS not_null,
 	FALSE AS primary_key,
 	FALSE AS unique_key,
 	FALSE AS is_array,
 	FALSE AS full_text,
-	LOWER(pk_kcu.table_schema) AS foreignkey_schema,
-	LOWER(pk_kcu.table_name) AS foreignkey_table,
-	LOWER(pk_kcu.column_name) AS foreignkey_column
+	pk_kcu.table_schema AS foreignkey_schema,
+	pk_kcu.table_name AS foreignkey_table,
+	pk_kcu.column_name AS foreignkey_column
 FROM information_schema.referential_constraints rc
 	JOIN information_schema.key_column_usage fk_kcu ON (
 		rc.constraint_catalog = fk_kcu.constraint_catalog
