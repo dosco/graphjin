@@ -25,8 +25,7 @@ SELECT LOWER(col.table_schema) AS schema_name,
 	FALSE AS unique_key,
 	(
 		CASE
-			WHEN UPPER(col.data_type) = 'ARRAY'
-			OR col.data_type LIKE '%[]' THEN TRUE
+			WHEN col.data_type LIKE '%[]' THEN TRUE
 			ELSE FALSE
 		END
 	) AS is_array,
