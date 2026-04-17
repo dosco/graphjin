@@ -9,19 +9,6 @@ import (
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
 
-// SnowflakeDialect is implementation-ready but intentionally not wired into
-// compiler/service selection yet (single-file delivery constraint).
-//
-// TODO(follow-up outside this file):
-// 1) Add case "snowflake" in psql.NewCompiler (core/internal/psql/query.go)
-// 2) Add case "snowflake" in core/subs.go getDialectForType
-// 3) Add snowflake to DB type validation lists
-// 4) Add Snowflake schema discovery SQL + service driver wiring
-//
-// TODO(parity):
-// - GIS operators are intentionally unsupported in this phase.
-// - Postgres-specific array/json key ops are intentionally unsupported.
-// - RelEmbedded/RenderFromEdge parity may need a Snowflake-specific approach.
 type SnowflakeDialect struct {
 	PostgresDialect
 	NameMap map[string]string
@@ -36,10 +23,10 @@ func (d *SnowflakeDialect) Name() string {
 func (d *SnowflakeDialect) QuoteIdentifier(s string) string {
 	if d.NameMap != nil {
 		if orig, ok := d.NameMap[s]; ok {
-			return `"` + orig + `"`
+			return `"` + strings.ReplaceAll(orig, `"`, `""`) + `"`
 		}
 	}
-	return `"` + s + `"`
+	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
 func (d *SnowflakeDialect) SetNameMap(tables []sdata.DBTable) {
@@ -77,19 +64,38 @@ func (d *SnowflakeDialect) UseNamedParams() bool {
 }
 
 func (d *SnowflakeDialect) RenderJSONRoot(ctx Context, sel *qcode.Select) {
-	ctx.WriteString(`SELECT CAST(json_object(`)
+	ctx.WriteString(`SELECT CAST(OBJECT_CONSTRUCT_KEEP_NULL(`)
 }
 
 func (d *SnowflakeDialect) RenderJSONSelect(ctx Context, sel *qcode.Select) {
-	ctx.WriteString(`SELECT json_object(`)
+	if sel.Singular && sel.Rel.Type != 0 { // RelNone == 0
+		ctx.WriteString(`SELECT ANY_VALUE(OBJECT_CONSTRUCT_KEEP_NULL(`)
+		ctx.RenderJSONFields(sel)
+		ctx.WriteString(`))`)
+		return
+	}
+	ctx.WriteString(`SELECT OBJECT_CONSTRUCT_KEEP_NULL(`)
 	ctx.RenderJSONFields(sel)
 	ctx.WriteString(`)`)
 }
 
 func (d *SnowflakeDialect) RenderJSONPlural(ctx Context, sel *qcode.Select) {
-	ctx.WriteString(`COALESCE(array_agg(__sj_`)
+	useSlice := sel.Rel.Type != sdata.RelNone && !sel.Paging.NoLimit
+	if useSlice {
+		ctx.WriteString(`COALESCE(ARRAY_SLICE(ARRAY_AGG("__sjb_`)
+		ctx.WriteString(strconv.Itoa(int(sel.ID)))
+		ctx.WriteString(`"."json"), `)
+		if sel.Paging.Offset > 0 {
+			ctx.WriteString(fmt.Sprintf("%d, %d", sel.Paging.Offset, sel.Paging.Offset+sel.Paging.Limit))
+		} else {
+			ctx.WriteString(fmt.Sprintf("0, %d", sel.Paging.Limit))
+		}
+		ctx.WriteString(`), ARRAY_CONSTRUCT())`)
+		return
+	}
+	ctx.WriteString(`COALESCE(ARRAY_AGG("__sjb_`)
 	ctx.WriteString(strconv.Itoa(int(sel.ID)))
-	ctx.WriteString(`.json), list_value())`)
+	ctx.WriteString(`"."json"), ARRAY_CONSTRUCT())`)
 }
 
 func (d *SnowflakeDialect) RenderJSONField(ctx Context, fieldName string, tableAlias string, colName string, isNull bool, isJSON bool) {
@@ -138,21 +144,53 @@ func (d *SnowflakeDialect) SupportsLateral() bool {
 	return false
 }
 
+func (d *SnowflakeDialect) RenderLimit(ctx Context, sel *qcode.Select) {
+	if sel.Rel.Type != sdata.RelNone {
+		if sel.Paging.OffsetVar != "" {
+			ctx.WriteString(` OFFSET `)
+			ctx.AddParam(Param{Name: sel.Paging.OffsetVar, Type: "integer"})
+		} else if sel.Paging.Offset != 0 {
+			ctx.WriteString(fmt.Sprintf(` OFFSET %d`, sel.Paging.Offset))
+		}
+		return
+	}
+
+	switch {
+	case sel.Paging.NoLimit:
+		break
+	case sel.Singular:
+		ctx.WriteString(` LIMIT 1`)
+	case sel.Paging.LimitVar != "":
+		ctx.WriteString(` LIMIT `)
+		ctx.AddParam(Param{Name: sel.Paging.LimitVar, Type: "integer"})
+	default:
+		ctx.WriteString(fmt.Sprintf(` LIMIT %d`, sel.Paging.Limit))
+	}
+
+	switch {
+	case sel.Paging.OffsetVar != "":
+		ctx.WriteString(` OFFSET `)
+		ctx.AddParam(Param{Name: sel.Paging.OffsetVar, Type: "integer"})
+	case sel.Paging.Offset != 0:
+		ctx.WriteString(fmt.Sprintf(` OFFSET %d`, sel.Paging.Offset))
+	}
+}
+
 func (d *SnowflakeDialect) RenderInlineChild(ctx Context, renderer InlineChildRenderer, psel, sel *qcode.Select) {
 	renderer.RenderDefaultInlineChild(sel)
 }
 
 func (d *SnowflakeDialect) RenderChildCursor(ctx Context, renderChild func()) {
-	ctx.WriteString(`json_extract(`)
+	ctx.WriteString(`GET_PATH(`)
 	renderChild()
-	ctx.WriteString(`, '$.cursor')`)
+	ctx.WriteString(`, 'cursor')`)
 }
 
 func (d *SnowflakeDialect) RenderChildValue(ctx Context, sel *qcode.Select, renderChild func()) {
 	if sel.Paging.Cursor {
-		ctx.WriteString(`json_extract(`)
+		ctx.WriteString(`GET_PATH(`)
 		renderChild()
-		ctx.WriteString(`, '$.json')`)
+		ctx.WriteString(`, 'json')`)
 		return
 	}
 	renderChild()
@@ -168,7 +206,7 @@ func (d *SnowflakeDialect) RenderCursorCTE(ctx Context, sel *qcode.Select) {
 		cursorVar = "cursor"
 	}
 
-	ctx.WriteString(`WITH __cur AS (SELECT `)
+	ctx.WriteString(`WITH "__cur" AS (SELECT `)
 	for i, ob := range sel.OrderBy {
 		if i != 0 {
 			ctx.WriteString(`, `)
@@ -194,17 +232,48 @@ func (d *SnowflakeDialect) RenderJoinTables(ctx Context, sel *qcode.Select) {
 		if ob.Var == "" {
 			continue
 		}
-		ctx.WriteString(` JOIN (SELECT TRY_CAST(value AS `)
+		ctx.WriteString(` JOIN (SELECT _gj_f.value::`)
 		ctx.WriteString(d.snowflakeCastType(ob.Col.Type))
-		ctx.WriteString(`) AS id, TRY_CAST(key AS BIGINT) + 1 AS ord FROM json_each(CAST(`)
+		ctx.WriteString(` AS id, _gj_f.index + 1 AS ord FROM LATERAL FLATTEN(input => PARSE_JSON(`)
 		ctx.AddParam(Param{Name: ob.Var, Type: "json"})
-		ctx.WriteString(` AS JSON))) AS _gj_ob_`)
+		ctx.WriteString(`)) _gj_f) AS "_gj_ob_`)
 		ctx.WriteString(ob.Col.Name)
-		ctx.WriteString(`(id, ord) USING (id)`)
+		ctx.WriteString(`"("id", "ord") ON "_gj_ob_`)
+		ctx.WriteString(ob.Col.Name)
+		ctx.WriteString(`"."id" = `)
+		ctx.ColWithTable(ob.Col.Table, ob.Col.Name)
 	}
 }
 
+func (d *SnowflakeDialect) RenderDistinctOn(ctx Context, sel *qcode.Select) {}
+
 func (d *SnowflakeDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
+	d.renderQualifyDistinctOn(ctx, sel)
+	d.renderOrderByCore(ctx, sel)
+}
+
+func (d *SnowflakeDialect) renderQualifyDistinctOn(ctx Context, sel *qcode.Select) {
+	if sel.GroupCols || len(sel.DistinctOn) == 0 {
+		return
+	}
+	ctx.WriteString(` QUALIFY ROW_NUMBER() OVER (PARTITION BY `)
+	for i, col := range sel.DistinctOn {
+		if i != 0 {
+			ctx.WriteString(`, `)
+		}
+		ctx.ColWithTable(col.Table, col.Name)
+	}
+	ctx.WriteString(` ORDER BY `)
+	for i, col := range sel.DistinctOn {
+		if i != 0 {
+			ctx.WriteString(`, `)
+		}
+		ctx.ColWithTable(col.Table, col.Name)
+	}
+	ctx.WriteString(`) = 1`)
+}
+
+func (d *SnowflakeDialect) renderOrderByCore(ctx Context, sel *qcode.Select) {
 	if len(sel.OrderBy) == 0 {
 		return
 	}
@@ -257,21 +326,21 @@ func (d *SnowflakeDialect) RenderOrderBy(ctx Context, sel *qcode.Select) {
 }
 
 func (d *SnowflakeDialect) RenderFromEdge(ctx Context, sel *qcode.Select) {
-	ctx.WriteString(`(SELECT `)
+	ctx.WriteString(`LATERAL (SELECT `)
 	for i, col := range sel.Ti.Columns {
 		if i != 0 {
 			ctx.WriteString(`, `)
 		}
-		ctx.WriteString(`CAST(json_extract(j.value, '$.`)
+		ctx.WriteString(`CAST(GET_PATH(j.value, '`)
 		ctx.WriteString(col.Name)
 		ctx.WriteString(`') AS `)
 		ctx.WriteString(d.snowflakeCastType(col.Type))
 		ctx.WriteString(`) AS `)
 		ctx.Quote(col.Name)
 	}
-	ctx.WriteString(` FROM json_each(`)
+	ctx.WriteString(` FROM TABLE(FLATTEN(input => `)
 	ctx.ColWithTable(sel.Rel.Left.Col.Table, sel.Rel.Left.Col.Name)
-	ctx.WriteString(`) AS j) AS `)
+	ctx.WriteString(`)) AS j) AS `)
 	ctx.Quote(sel.Table)
 }
 
@@ -288,16 +357,25 @@ func (d *SnowflakeDialect) RenderJSONPath(ctx Context, table, col string, path [
 }
 
 func (d *SnowflakeDialect) RenderTryCast(ctx Context, val func(), typ string) {
+	target := d.snowflakeCastType(typ)
+	switch target {
+	case "VARIANT":
+		ctx.WriteString(`PARSE_JSON(`)
+		val()
+		ctx.WriteString(`)`)
+		return
+	case "ARRAY":
+		val()
+		return
+	}
 	ctx.WriteString(`TRY_CAST(`)
 	val()
 	ctx.WriteString(` AS `)
-	ctx.WriteString(d.snowflakeCastType(typ))
+	ctx.WriteString(target)
 	ctx.WriteString(`)`)
 }
 
 func (d *SnowflakeDialect) RenderRecursiveAnchorWhere(ctx Context, psel *qcode.Select, ti sdata.DBTable, pkCol string) bool {
-	// DuckDB/Snowflake emulator doesn't support outer scope correlation in recursive CTEs.
-	// Inline the parent's WHERE expression instead (same approach as Oracle/MSSQL).
 	if psel.Where.Exp != nil {
 		ctx.RenderExp(ti, psel.Where.Exp)
 		return true
@@ -377,36 +455,28 @@ func (d *SnowflakeDialect) RenderValVar(ctx Context, ex *qcode.Exp, val string) 
 		return false
 	}
 
-	ctx.WriteString(`(SELECT TRY_CAST(x AS `)
+	ctx.WriteString(`(SELECT _gj.value::`)
 	ctx.WriteString(d.snowflakeCastType(d.baseType(ex.Left.Col.Type)))
-	ctx.WriteString(`) FROM UNNEST(CAST(json(`)
+	ctx.WriteString(` FROM LATERAL FLATTEN(input => PARSE_JSON(`)
 	ctx.AddParam(Param{Name: ex.Right.Val, Type: "json", IsArray: true})
-	ctx.WriteString(`) AS `)
-	ctx.WriteString(d.snowflakeArrayCastType(d.baseType(ex.Left.Col.Type)))
-	ctx.WriteString(`)) AS _gj(x))`)
+	ctx.WriteString(`)) _gj)`)
 
 	return true
 }
 
 func (d *SnowflakeDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
 	if ex.Op == qcode.OpHasInCommon && ex.Left.Col.Array {
-		ctx.WriteString(`EXISTS (SELECT 1 FROM UNNEST(`)
+		ctx.WriteString(`ARRAYS_OVERLAP(`)
 		d.renderOperand(ctx, ex.Left.Col.Table, ex.Left.Table, ex.Left.ID, ex.Left.Col.Name, ex.Left.ColName)
-		ctx.WriteString(`) AS __gj_l("x") WHERE TRY_CAST(__gj_l."x" AS `)
-		ctx.WriteString(d.snowflakeCastType(d.baseType(ex.Left.Col.Type)))
-		ctx.WriteString(`) IN `)
+		ctx.WriteString(`, `)
 
 		switch ex.Right.ValType {
 		case qcode.ValVar:
-			ctx.WriteString(`(SELECT TRY_CAST(x AS `)
-			ctx.WriteString(d.snowflakeCastType(d.baseType(ex.Left.Col.Type)))
-			ctx.WriteString(`) FROM UNNEST(CAST(json(`)
+			ctx.WriteString(`PARSE_JSON(`)
 			ctx.AddParam(Param{Name: ex.Right.Val, Type: "json", IsArray: true})
-			ctx.WriteString(`) AS `)
-			ctx.WriteString(d.snowflakeArrayCastType(d.baseType(ex.Left.Col.Type)))
-			ctx.WriteString(`)) AS __gj_r(x))`)
+			ctx.WriteString(`)`)
 		case qcode.ValList:
-			ctx.WriteString(`(`)
+			ctx.WriteString(`ARRAY_CONSTRUCT(`)
 			for i := range ex.Right.ListVal {
 				if i != 0 {
 					ctx.WriteString(`, `)
@@ -422,11 +492,7 @@ func (d *SnowflakeDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
 			}
 			ctx.WriteString(`)`)
 		default:
-			ctx.WriteString(`(SELECT TRY_CAST(__gj_r."x" AS `)
-			ctx.WriteString(d.snowflakeCastType(d.baseType(ex.Left.Col.Type)))
-			ctx.WriteString(`) FROM UNNEST(`)
 			d.renderOperand(ctx, ex.Right.Col.Table, ex.Right.Table, ex.Right.ID, ex.Right.Col.Name, ex.Right.ColName)
-			ctx.WriteString(`) AS __gj_r("x"))`)
 		}
 
 		ctx.WriteString(`)`)
@@ -435,12 +501,10 @@ func (d *SnowflakeDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
 
 	if ex.Op == qcode.OpRegex || ex.Op == qcode.OpIRegex || ex.Op == qcode.OpNotRegex || ex.Op == qcode.OpNotIRegex {
 		if ex.Op == qcode.OpNotRegex || ex.Op == qcode.OpNotIRegex {
-			ctx.WriteString(`(NOT `)
+			ctx.WriteString(`(REGEXP_INSTR(`)
 		} else {
-			ctx.WriteString(`(`)
+			ctx.WriteString(`(REGEXP_INSTR(`)
 		}
-
-		ctx.WriteString(`regexp_matches(`)
 		d.renderOperand(ctx, ex.Left.Col.Table, ex.Left.Table, ex.Left.ID, ex.Left.Col.Name, ex.Left.ColName)
 		ctx.WriteString(`, `)
 
@@ -453,10 +517,14 @@ func (d *SnowflakeDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
 		}
 
 		if ex.Op == qcode.OpIRegex || ex.Op == qcode.OpNotIRegex {
-			ctx.WriteString(`, 'i'`)
+			ctx.WriteString(`, 1, 1, 0, 'i'`)
 		}
 
-		ctx.WriteString(`))`)
+		if ex.Op == qcode.OpNotRegex || ex.Op == qcode.OpNotIRegex {
+			ctx.WriteString(`) = 0)`)
+		} else {
+			ctx.WriteString(`) > 0)`)
+		}
 		return true
 	}
 
@@ -481,9 +549,9 @@ func (d *SnowflakeDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
 			if i != 0 {
 				ctx.WriteString(op)
 			}
-			ctx.WriteString(`json_extract(`)
+			ctx.WriteString(`GET_PATH(`)
 			d.renderOperand(ctx, ex.Left.Col.Table, ex.Left.Table, ex.Left.ID, ex.Left.Col.Name, ex.Left.ColName)
-			ctx.WriteString(`, '$.`)
+			ctx.WriteString(`, '`)
 			ctx.WriteString(strings.ReplaceAll(key, `'`, `''`))
 			ctx.WriteString(`') IS NOT NULL`)
 		}
@@ -493,19 +561,18 @@ func (d *SnowflakeDialect) RenderValPrefix(ctx Context, ex *qcode.Exp) bool {
 
 	if (ex.Op == qcode.OpIn || ex.Op == qcode.OpNotIn) && ex.Right.Col.Array && ex.Right.Col.Name != "" {
 		if ex.Op == qcode.OpNotIn {
-			ctx.WriteString(`(NOT `)
+			ctx.WriteString(`(NOT ARRAY_CONTAINS(`)
 		} else {
-			ctx.WriteString(`(`)
+			ctx.WriteString(`ARRAY_CONTAINS(`)
 		}
-
-		ctx.WriteString(`EXISTS (SELECT 1 FROM UNNEST(`)
-		d.renderOperand(ctx, ex.Right.Col.Table, ex.Right.Table, ex.Right.ID, ex.Right.Col.Name, ex.Right.ColName)
-		ctx.WriteString(`) AS __gj_flat("value") WHERE TRY_CAST(__gj_flat."value" AS `)
-		ctx.WriteString(d.snowflakeCastType(ex.Left.Col.Type))
-		ctx.WriteString(`) = `)
 		d.renderOperand(ctx, ex.Left.Col.Table, ex.Left.Table, ex.Left.ID, ex.Left.Col.Name, ex.Left.ColName)
-		ctx.WriteString(`))`)
-
+		ctx.WriteString(`::VARIANT, `)
+		d.renderOperand(ctx, ex.Right.Col.Table, ex.Right.Table, ex.Right.ID, ex.Right.Col.Name, ex.Right.ColName)
+		if ex.Op == qcode.OpNotIn {
+			ctx.WriteString(`))`)
+		} else {
+			ctx.WriteString(`)`)
+		}
 		return true
 	}
 
@@ -527,7 +594,7 @@ func (d *SnowflakeDialect) RenderTsQuery(ctx Context, ti sdata.DBTable, ex *qcod
 }
 
 func (d *SnowflakeDialect) RenderArray(ctx Context, items []string) {
-	ctx.WriteString(`list_value(`)
+	ctx.WriteString(`ARRAY_CONSTRUCT(`)
 	for i, item := range items {
 		if i != 0 {
 			ctx.WriteString(`, `)
@@ -587,14 +654,12 @@ func (d *SnowflakeDialect) RenderSetup(ctx Context) {
 	ctx.WriteString(`; DROP TABLE IF EXISTS `)
 	ctx.WriteString(d.prevIDsTableName(ctx))
 	ctx.WriteString(`; `)
-	// Retry-safe on the same Snowflake session: if a previous attempt created the
-	// temp table before failing, recreate it empty instead of erroring on retry.
-	ctx.WriteString(`CREATE OR REPLACE TEMP TABLE `)
+	ctx.WriteString(`CREATE OR REPLACE TABLE `)
 	ctx.WriteString(d.idsTableName(ctx))
-	ctx.WriteString(` (k VARCHAR, id BIGINT); `)
-	ctx.WriteString(`CREATE OR REPLACE TEMP TABLE `)
+	ctx.WriteString(` (k VARCHAR, id VARCHAR); `)
+	ctx.WriteString(`CREATE OR REPLACE TABLE `)
 	ctx.WriteString(d.prevIDsTableName(ctx))
-	ctx.WriteString(` (k VARCHAR, id BIGINT); `)
+	ctx.WriteString(` (k VARCHAR, id VARCHAR); `)
 }
 
 func (d *SnowflakeDialect) RenderBegin(ctx Context) {}
@@ -629,9 +694,9 @@ func (d *SnowflakeDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *
 	ctx.WriteString(d.prevIDsTableName(ctx))
 	ctx.WriteString(` (k, id) SELECT '`)
 	ctx.WriteString(strings.ReplaceAll(varName, "'", "''"))
-	ctx.WriteString(`', `)
+	ctx.WriteString(`', TO_VARCHAR(`)
 	ctx.Quote(m.Ti.PrimaryCol.Name)
-	ctx.WriteString(` FROM `)
+	ctx.WriteString(`) FROM `)
 	d.renderTableRef(ctx, m.Ti.Schema, m.Ti.Name)
 	ctx.WriteString(`; `)
 
@@ -656,11 +721,7 @@ func (d *SnowflakeDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *
 	}
 	ctx.WriteString(`)`)
 
-	if m.IsJSON {
-		ctx.WriteString(` SELECT `)
-	} else {
-		ctx.WriteString(` VALUES (`)
-	}
+	ctx.WriteString(` SELECT `)
 
 	i = 0
 	for _, col := range m.Cols {
@@ -694,16 +755,16 @@ func (d *SnowflakeDialect) RenderLinearInsert(ctx Context, m *qcode.Mutate, qc *
 			ctx.AddParam(Param{Name: qc.ActionVar, Type: "json"})
 		})
 	} else {
-		ctx.WriteString(`)`)
+		ctx.WriteString(` FROM (SELECT 1) AS _gj_dummy`)
 	}
 
 	ctx.WriteString(`; INSERT INTO `)
 	ctx.WriteString(d.idsTableName(ctx))
 	ctx.WriteString(` (k, id) SELECT '`)
 	ctx.WriteString(strings.ReplaceAll(varName, "'", "''"))
-	ctx.WriteString(`', `)
+	ctx.WriteString(`', TO_VARCHAR(`)
 	ctx.Quote(m.Ti.PrimaryCol.Name)
-	ctx.WriteString(` FROM `)
+	ctx.WriteString(`) FROM `)
 	d.renderTableRef(ctx, m.Ti.Schema, m.Ti.Name)
 	ctx.WriteString(` EXCEPT SELECT '`)
 	ctx.WriteString(strings.ReplaceAll(varName, "'", "''"))
@@ -724,9 +785,9 @@ func (d *SnowflakeDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *
 	ctx.WriteString(d.idsTableName(ctx))
 	ctx.WriteString(` (k, id) SELECT '`)
 	ctx.WriteString(strings.ReplaceAll(varName, "'", "''"))
-	ctx.WriteString(`', `)
+	ctx.WriteString(`', TO_VARCHAR(`)
 	ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
-	ctx.WriteString(` FROM `)
+	ctx.WriteString(`) FROM `)
 	d.renderTableRef(ctx, m.Ti.Schema, m.Ti.Name)
 	ctx.WriteString(` AS `)
 	ctx.Quote(m.Ti.Name)
@@ -754,8 +815,6 @@ func (d *SnowflakeDialect) RenderLinearUpdate(ctx Context, m *qcode.Mutate, qc *
 		renderColVal(col)
 		i++
 	}
-	// Skip RCols for UPDATE: the WHERE clause already identifies the child row
-	// via the FK relationship. Setting the child's PK to the parent's ID is wrong.
 	if i == 0 {
 		for j, pkCol := range m.Ti.PrimaryCols {
 			if j > 0 {
@@ -782,9 +841,9 @@ func (d *SnowflakeDialect) renderChildUpdate(ctx Context, m *qcode.Mutate, qc *q
 	ctx.WriteString(d.idsTableName(ctx))
 	ctx.WriteString(` (k, id) SELECT '`)
 	ctx.WriteString(strings.ReplaceAll(varName, "'", "''"))
-	ctx.WriteString(`', `)
+	ctx.WriteString(`', TO_VARCHAR(`)
 	ctx.ColWithTable(m.Ti.Name, m.Ti.PrimaryCol.Name)
-	ctx.WriteString(` FROM `)
+	ctx.WriteString(`) FROM `)
 	d.renderTableRef(ctx, m.Ti.Schema, m.Ti.Name)
 	ctx.WriteString(` AS `)
 	ctx.Quote(m.Ti.Name)
@@ -829,21 +888,18 @@ func (d *SnowflakeDialect) renderChildUpdate(ctx Context, m *qcode.Mutate, qc *q
 
 func (d *SnowflakeDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc *qcode.QCode, varName string, renderFilter func()) {
 	if qc.SType != qcode.QTUpdate {
-		// Insert-time connect keys are consumed by later insert values and final
-		// readback, so only skip capture for update mutations.
 		ctx.WriteString(`INSERT INTO `)
 		ctx.WriteString(d.idsTableName(ctx))
 		ctx.WriteString(` (k, id) SELECT '`)
 		ctx.WriteString(strings.ReplaceAll(varName, "'", "''"))
-		ctx.WriteString(`', `)
+		ctx.WriteString(`', TO_VARCHAR(`)
 		ctx.ColWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
-		ctx.WriteString(` FROM `)
+		ctx.WriteString(`) FROM `)
 		d.renderTableRef(ctx, m.Ti.Schema, m.Ti.Name)
 		ctx.WriteString(` WHERE `)
 		renderFilter()
 	}
 
-	// Find parent mutation to get its captured ID
 	var parentVar string
 	for id := range m.DependsOn {
 		if qc.Mutates[id].Ti.Name == m.Rel.Right.Col.Table {
@@ -852,9 +908,6 @@ func (d *SnowflakeDialect) RenderLinearConnect(ctx Context, m *qcode.Mutate, qc 
 		}
 	}
 	if parentVar != "" {
-		// Update FK to point to parent. Snowflake doesn't need a pre-update
-		// _gj_ids capture for update-time connect/disconnect, and skipping that
-		// extra Exec removes the last flaky linear-mutation statement shape.
 		if qc.SType != qcode.QTUpdate {
 			ctx.WriteString(`; `)
 		}
@@ -875,17 +928,15 @@ func (d *SnowflakeDialect) RenderLinearDisconnect(ctx Context, m *qcode.Mutate, 
 		ctx.WriteString(d.idsTableName(ctx))
 		ctx.WriteString(` (k, id) SELECT '`)
 		ctx.WriteString(strings.ReplaceAll(varName, "'", "''"))
-		ctx.WriteString(`', `)
+		ctx.WriteString(`', TO_VARCHAR(`)
 		ctx.ColWithTable(m.Ti.Name, m.Rel.Left.Col.Name)
-		ctx.WriteString(` FROM `)
+		ctx.WriteString(`) FROM `)
 		d.renderTableRef(ctx, m.Ti.Schema, m.Ti.Name)
 		ctx.WriteString(` WHERE `)
 		renderFilter()
 		ctx.WriteString(`; `)
 	}
 
-	// Set FK to NULL. Snowflake final readback does not consume an update-time
-	// disconnect capture key, so avoid emitting that separate Exec in QTUpdate.
 	ctx.WriteString(`UPDATE `)
 	d.renderTableRef(ctx, m.Ti.Schema, m.Ti.Name)
 	ctx.WriteString(` SET `)
@@ -953,14 +1004,25 @@ func (d *SnowflakeDialect) ModifySelectsForMutation(qc *qcode.QCode) {
 
 func (d *SnowflakeDialect) SplitQuery(query string) (parts []string) {
 	var buf strings.Builder
-	var inStr, inQuote, inComment bool
+	var inStr, inQuote, inLineComment, inBlockComment bool
 	var depth int
 
 	for i := 0; i < len(query); i++ {
 		ch := query[i]
-		if inComment {
+		if inLineComment {
 			if ch == '\n' {
-				inComment = false
+				inLineComment = false
+			}
+			buf.WriteByte(ch)
+			continue
+		}
+		if inBlockComment {
+			if ch == '*' && i+1 < len(query) && query[i+1] == '/' {
+				buf.WriteByte(ch)
+				i++
+				buf.WriteByte(query[i])
+				inBlockComment = false
+				continue
 			}
 			buf.WriteByte(ch)
 			continue
@@ -993,7 +1055,16 @@ func (d *SnowflakeDialect) SplitQuery(query string) (parts []string) {
 		switch ch {
 		case '-':
 			if i+1 < len(query) && query[i+1] == '-' {
-				inComment = true
+				inLineComment = true
+				buf.WriteByte(ch)
+				i++
+				buf.WriteByte(query[i])
+				continue
+			}
+			buf.WriteByte(ch)
+		case '/':
+			if i+1 < len(query) && query[i+1] == '*' {
+				inBlockComment = true
 				buf.WriteByte(ch)
 				i++
 				buf.WriteByte(query[i])
@@ -1037,10 +1108,21 @@ func (d *SnowflakeDialect) SplitQuery(query string) (parts []string) {
 }
 
 func (d *SnowflakeDialect) RenderCast(ctx Context, val func(), typ string) {
+	target := d.snowflakeCastType(typ)
+	switch target {
+	case "VARIANT":
+		ctx.WriteString(`PARSE_JSON(`)
+		val()
+		ctx.WriteString(`)`)
+		return
+	case "ARRAY":
+		val()
+		return
+	}
 	ctx.WriteString(`CAST(`)
 	val()
 	ctx.WriteString(` AS `)
-	ctx.WriteString(d.snowflakeCastType(typ))
+	ctx.WriteString(target)
 	ctx.WriteString(`)`)
 }
 
@@ -1065,19 +1147,13 @@ func (d *SnowflakeDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate,
 			}
 
 			if !col.Col.Array && !d.isJSONLikeType(col.Col.Type) {
-				if d.isStringType(col.Col.Type) {
-					ctx.WriteString(`json_extract_string(value, '$.`)
-					ctx.WriteString(col.FieldName)
-					ctx.WriteString(`') AS `)
-				} else {
-					ctx.WriteString(`TRY_CAST(json_extract(value, '$.`)
-					ctx.WriteString(col.FieldName)
-					ctx.WriteString(`') AS `)
-					ctx.WriteString(d.snowflakeCastType(col.Col.Type))
-					ctx.WriteString(`) AS `)
-				}
+				ctx.WriteString(`GET_PATH(_gj_f.value, '`)
+				ctx.WriteString(col.FieldName)
+				ctx.WriteString(`')::`)
+				ctx.WriteString(d.snowflakeCastType(col.Col.Type))
+				ctx.WriteString(` AS `)
 			} else {
-				ctx.WriteString(`json_extract(value, '$.`)
+				ctx.WriteString(`GET_PATH(_gj_f.value, '`)
 				ctx.WriteString(col.FieldName)
 				ctx.WriteString(`') AS `)
 			}
@@ -1088,20 +1164,24 @@ func (d *SnowflakeDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate,
 			if !first {
 				ctx.WriteString(`, `)
 			}
-			ctx.WriteString(`json_extract(value, '$.`)
+			ctx.WriteString(`GET_PATH(_gj_f.value, '`)
 			ctx.WriteString(m.Ti.PrimaryCol.Name) // Use first PK col for implicit tracking
 			ctx.WriteString(`') AS "_gj_pkt"`)
 		}
 
-		ctx.WriteString(` FROM `)
-		ctx.WriteString(`json_each(`)
-		renderRoot()
+		ctx.WriteString(` FROM LATERAL FLATTEN(input => `)
 		if len(m.Path) > 0 {
-			ctx.WriteString(`, '$.`)
+			ctx.WriteString(`GET_PATH(PARSE_JSON(`)
+			renderRoot()
+			ctx.WriteString(`), '`)
 			ctx.WriteString(strings.Join(m.Path, "."))
-			ctx.WriteString(`'`)
+			ctx.WriteString(`')`)
+		} else {
+			ctx.WriteString(`PARSE_JSON(`)
+			renderRoot()
+			ctx.WriteString(`)`)
 		}
-		ctx.WriteString(`)) AS t`)
+		ctx.WriteString(`) AS _gj_f) AS "t"`)
 		return
 	}
 
@@ -1124,27 +1204,18 @@ func (d *SnowflakeDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate,
 			pathPrefix = strings.Join(m.Path, ".") + `.`
 		}
 		if !col.Col.Array && !d.isJSONLikeType(col.Col.Type) {
-			if d.isStringType(col.Col.Type) {
-				ctx.WriteString(`json_extract_string(`)
-				renderRoot()
-				ctx.WriteString(`, '$.`)
-				ctx.WriteString(pathPrefix)
-				ctx.WriteString(col.FieldName)
-				ctx.WriteString(`') AS `)
-			} else {
-				ctx.WriteString(`TRY_CAST(json_extract(`)
-				renderRoot()
-				ctx.WriteString(`, '$.`)
-				ctx.WriteString(pathPrefix)
-				ctx.WriteString(col.FieldName)
-				ctx.WriteString(`') AS `)
-				ctx.WriteString(d.snowflakeCastType(col.Col.Type))
-				ctx.WriteString(`) AS `)
-			}
-		} else {
-			ctx.WriteString(`json_extract(`)
+			ctx.WriteString(`GET_PATH(PARSE_JSON(`)
 			renderRoot()
-			ctx.WriteString(`, '$.`)
+			ctx.WriteString(`), '`)
+			ctx.WriteString(pathPrefix)
+			ctx.WriteString(col.FieldName)
+			ctx.WriteString(`')::`)
+			ctx.WriteString(d.snowflakeCastType(col.Col.Type))
+			ctx.WriteString(` AS `)
+		} else {
+			ctx.WriteString(`GET_PATH(PARSE_JSON(`)
+			renderRoot()
+			ctx.WriteString(`), '`)
 			ctx.WriteString(pathPrefix)
 			ctx.WriteString(col.FieldName)
 			ctx.WriteString(`') AS `)
@@ -1156,18 +1227,18 @@ func (d *SnowflakeDialect) RenderMutateToRecordSet(ctx Context, m *qcode.Mutate,
 		if !first {
 			ctx.WriteString(`, `)
 		}
-		ctx.WriteString(`CAST(json_extract(`)
+		ctx.WriteString(`GET_PATH(PARSE_JSON(`)
 		renderRoot()
-		ctx.WriteString(`, '$.`)
+		ctx.WriteString(`), '`)
 		if len(m.Path) > 0 {
 			ctx.WriteString(strings.Join(m.Path, "."))
 			ctx.WriteString(`.`)
 		}
 		ctx.WriteString(m.Ti.PrimaryCol.Name)
-		ctx.WriteString(`') AS BIGINT) AS "_gj_pkt"`)
+		ctx.WriteString(`')::BIGINT AS "_gj_pkt"`)
 	}
 
-	ctx.WriteString(` FROM (SELECT 1) AS _gj_dummy) AS t`)
+	ctx.WriteString(` FROM (SELECT 1) AS _gj_dummy) AS "t"`)
 }
 
 func (d *SnowflakeDialect) RequiresNullOnEmptySelect() bool {
@@ -1242,30 +1313,29 @@ func (d *SnowflakeDialect) renderMutationPresetValue(ctx Context, col qcode.MCol
 }
 
 func (d *SnowflakeDialect) renderMutationJSONValue(ctx Context, actionVar, jsonPathPrefix string, col qcode.MColumn) {
-	path := jsonPathPrefix + "." + col.FieldName
+	path := strings.TrimPrefix(jsonPathPrefix+"."+col.FieldName, "$.")
 	if !col.Col.Array && !d.isJSONLikeType(col.Col.Type) {
 		if d.isStringType(col.Col.Type) {
-			ctx.WriteString(`CAST(json_extract_string(`)
+			ctx.WriteString(`GET_PATH(PARSE_JSON(`)
 			ctx.AddParam(Param{Name: actionVar, Type: "json"})
-			ctx.WriteString(`, '`)
+			ctx.WriteString(`), '`)
 			ctx.WriteString(path)
-			ctx.WriteString(`') AS VARCHAR)`)
+			ctx.WriteString(`')::VARCHAR`)
 			return
 		}
 
-		ctx.WriteString(`TRY_CAST(json_extract(`)
+		ctx.WriteString(`GET_PATH(PARSE_JSON(`)
 		ctx.AddParam(Param{Name: actionVar, Type: "json"})
-		ctx.WriteString(`, '`)
+		ctx.WriteString(`), '`)
 		ctx.WriteString(path)
-		ctx.WriteString(`') AS `)
+		ctx.WriteString(`')::`)
 		ctx.WriteString(d.snowflakeCastType(col.Col.Type))
-		ctx.WriteString(`)`)
 		return
 	}
 
-	ctx.WriteString(`json_extract(`)
+	ctx.WriteString(`GET_PATH(PARSE_JSON(`)
 	ctx.AddParam(Param{Name: actionVar, Type: "json"})
-	ctx.WriteString(`, '`)
+	ctx.WriteString(`), '`)
 	ctx.WriteString(path)
 	ctx.WriteString(`')`)
 }
@@ -1287,39 +1357,62 @@ func (d *SnowflakeDialect) snowflakeCastType(t string) string {
 	switch strings.ToLower(strings.TrimSpace(d.baseType(tt))) {
 	case "int", "integer", "int4", "int8", "bigint", "smallint":
 		return "BIGINT"
-	case "float", "float4", "float8", "double", "real", "numeric", "decimal", "number":
+	case "float", "float4", "float8", "double", "real":
 		return "DOUBLE"
+	case "numeric", "decimal", "number":
+		return "NUMBER"
 	case "boolean", "bool":
 		return "BOOLEAN"
-	case "json", "jsonb", "variant", "object", "array":
-		return "JSON"
-	case "timestamp", "timestamptz", "timestamp without time zone", "timestamp with time zone":
-		return "TIMESTAMP"
+	case "variant", "object":
+		return "VARIANT"
+	case "array":
+		return "ARRAY"
+	case "json", "jsonb":
+		return "VARIANT"
+	case "timestamp", "timestamp without time zone", "timestamp_ntz":
+		return "TIMESTAMP_NTZ"
+	case "timestamptz", "timestamp with time zone", "timestamp_tz":
+		return "TIMESTAMP_TZ"
+	case "timestamp_ltz":
+		return "TIMESTAMP_LTZ"
 	case "date":
 		return "DATE"
 	case "time", "time without time zone", "time with time zone":
 		return "TIME"
 	case "text", "varchar", "character varying", "string", "uuid", "clob", "nclob":
 		return "VARCHAR"
+	case "geography":
+		return "GEOGRAPHY"
+	case "geometry":
+		return "GEOMETRY"
 	default:
-		// Preserve unknown custom types as upper-case identifier.
-		return strings.ToUpper(strings.TrimSpace(t))
+		return strings.TrimSpace(t)
 	}
 }
 
-func (d *SnowflakeDialect) snowflakeArrayCastType(t string) string {
-	switch strings.ToLower(strings.TrimSpace(d.baseType(t))) {
-	case "int", "integer", "int4", "int8", "bigint", "smallint":
-		return "BIGINT[]"
-	case "float", "float4", "float8", "double", "real", "numeric", "decimal", "number":
-		return "DOUBLE[]"
-	case "boolean", "bool":
-		return "BOOLEAN[]"
-	case "json", "jsonb", "variant", "object", "array":
-		return "JSON[]"
-	default:
-		return "VARCHAR[]"
+func (d *SnowflakeDialect) snowflakeArrayCastType(_ string) string {
+	return "ARRAY"
+}
+
+func (d *SnowflakeDialect) WrapBaseColumn(ctx Context, colType, colName string, emit func()) bool {
+	if !d.isFloatType(colType) {
+		return false
 	}
+	ctx.WriteString(`CAST(`)
+	emit()
+	ctx.WriteString(` AS NUMBER(18,4)) AS `)
+	ctx.Quote(colName)
+	return true
+}
+
+func (d *SnowflakeDialect) isFloatType(t string) bool {
+	switch strings.ToLower(strings.TrimSpace(d.baseType(t))) {
+	case "float", "float4", "float8",
+		"double", "double precision",
+		"real":
+		return true
+	}
+	return false
 }
 
 func (d *SnowflakeDialect) baseType(t string) string {
