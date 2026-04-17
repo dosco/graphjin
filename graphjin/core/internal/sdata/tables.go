@@ -1331,6 +1331,7 @@ SELECT "fk_schema_name" AS table_schema,
        "pk_table_name" AS fkey_table,
        LISTAGG("pk_column_name", ',') WITHIN GROUP (ORDER BY "key_sequence") AS fkey_columns
 FROM TABLE(RESULT_SCAN(?))
+WHERE "fk_schema_name" = CURRENT_SCHEMA()
 GROUP BY "fk_schema_name", "fk_table_name", "fk_name", "pk_schema_name", "pk_table_name"
 HAVING COUNT(*) > 1`
 
