@@ -15,11 +15,6 @@ import (
 )
 
 func Example_query() {
-	if dbType == "snowflake" {
-		fmt.Print(`{"products":[{"count_likes":null,"id":1,"owner":{"fullName":"User 1","id":1}},{"count_likes":null,"id":2,"owner":{"fullName":"User 2","id":2}},{"count_likes":null,"id":3,"owner":{"fullName":"User 3","id":3}}]}
-`)
-		return
-	}
 	// Skip for MongoDB: count_likes column doesn't exist in MongoDB collection
 	// (MongoDB test data only has a likes array, no count_likes computed column)
 	if dbType == "mongodb" {
@@ -735,6 +730,7 @@ func Example_queryManyToManyViaJoinTable2() {
 }
 
 func Example_queryManyToManyViaJoinTable3() {
+	// snowflake: cat 5 ordering — test assumes postgres-style natural insertion order
 	if dbType == "snowflake" {
 		fmt.Print(`{"graph_node":[{"dst_node":[{"id":"b"},{"id":"c"}],"id":"a","src_node":[]},{"dst_node":[],"id":"b","src_node":[{"id":"a"}]}]}
 `)
@@ -1112,6 +1108,7 @@ func Example_queryWithFragments3() {
 }
 
 func Example_queryWithUnionForPolymorphicRelationships() {
+	// snowflake: cat 6 polymorphic — needs lateral-join compiler support
 	if dbType == "snowflake" {
 		fmt.Print(`{"notifications":[{"id":1,"subject":{"email":"user1@test.com"},"verb":"Joined"},{"id":2,"subject":{"name":"Product 2"},"verb":"Bought"}]}
 `)
@@ -1249,6 +1246,7 @@ func Example_queryWithSkipAndIncludeDirective2() {
 }
 
 func Example_queryWithSkipAndIncludeDirective3() {
+	// snowflake: cat 3 empty-SELECT — psql/columns.go RequiresNullOnEmptySelect gating
 	if dbType == "snowflake" {
 		fmt.Print(`{"products":[{"id":1,"name":"Product 1"},{"id":2,"name":"Product 2"}],"users":null}
 `)
@@ -1292,6 +1290,7 @@ func Example_queryWithSkipAndIncludeDirective3() {
 }
 
 func Example_queryWithSkipAndIncludeDirective4() {
+	// snowflake: cat 3 empty-SELECT
 	if dbType == "snowflake" {
 		fmt.Print(`{"products":[{"id":null,"name":"Product 1"},{"id":null,"name":"Product 2"}],"users":[{"id":null},{"id":null},{"id":null}]}
 `)
@@ -1355,6 +1354,7 @@ func Example_queryWithAddAndRemoveDirective1() {
 }
 
 func Example_queryWithAddAndRemoveDirective2() {
+	// snowflake: cat 3 empty-SELECT
 	if dbType == "snowflake" {
 		fmt.Print(`{"products":[{"id":1},{"id":2}],"users":[{},{},{}]}
 `)
@@ -1515,6 +1515,7 @@ func Example_queryWithCursorPagination1() {
 }
 
 func Example_queryWithCursorPagination2() {
+	// snowflake: cursor state flake — passes in isolation, fails in full-run context
 	if dbType == "snowflake" {
 		fmt.Print(`[{"name":"Product 100"}]
 [{"name":"Product 99"}]
@@ -1759,6 +1760,7 @@ func Example_queryWithView() {
 }
 
 func Example_queryWithRecursiveRelationship1() {
+	// snowflake: cat 2 recursive CTE — psql/recur.go shared-code work needed
 	if dbType == "snowflake" {
 		fmt.Print(`{"reply":{"comments":[{"id":49},{"id":48},{"id":47},{"id":46},{"id":45}],"id":50}}
 `)
@@ -1796,6 +1798,7 @@ func Example_queryWithRecursiveRelationship1() {
 }
 
 func Example_queryWithRecursiveRelationship2() {
+	// snowflake: cat 2 recursive CTE
 	if dbType == "snowflake" {
 		fmt.Print(`{"comments":{"id":95,"replies":[{"id":96},{"id":97},{"id":98},{"id":99},{"id":100}]}}
 `)
@@ -1828,6 +1831,7 @@ func Example_queryWithRecursiveRelationship2() {
 }
 
 func Example_queryWithRecursiveRelationshipAndAggregations() {
+	// snowflake: cat 2 recursive CTE
 	if dbType == "snowflake" {
 		fmt.Print(`{"comments":{"id":95,"replies":[{"count_id":5}]}}
 `)
@@ -2113,6 +2117,7 @@ func Example_queryWithNamedCursorPagination() {
 }
 
 func Example_queryWithNamedCursorPaginationMultiplePages() {
+	// snowflake: cursor state flake — passes in isolation, fails in full-run context
 	if dbType == "snowflake" {
 		fmt.Print(`[{"name":"Product 100"}]
 [{"name":"Product 99"}]
