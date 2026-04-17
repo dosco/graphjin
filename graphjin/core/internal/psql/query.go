@@ -462,13 +462,21 @@ func (c *compilerContext) renderPluralSelect(sel *qcode.Select) {
 		if sel.FieldFilter.Exp != nil {
 			c.w.WriteString(`(CASE WHEN `)
 			c.renderExp(sel.Ti, sel.FieldFilter.Exp, false)
-			c.w.WriteString(` THEN (SELECT `)
+			if c.dialect.Name() == "snowflake" {
+				c.w.WriteString(` THEN `)
+			} else {
+				c.w.WriteString(` THEN (SELECT `)
+			}
 		}
 
 		c.dialect.RenderJSONPlural(c, sel)
 
 		if sel.FieldFilter.Exp != nil {
-			c.w.WriteString(`) ELSE null END)`)
+			if c.dialect.Name() == "snowflake" {
+				c.w.WriteString(` ELSE null END)`)
+			} else {
+				c.w.WriteString(`) ELSE null END)`)
+			}
 		}
 		c.w.WriteString(` AS json`)
 

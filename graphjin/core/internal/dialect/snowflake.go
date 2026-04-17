@@ -383,6 +383,18 @@ func (d *SnowflakeDialect) RenderRecursiveAnchorWhere(ctx Context, psel *qcode.S
 	return false
 }
 
+func (d *SnowflakeDialect) RenderBooleanEqualsTrue(ctx Context, paramName string) {
+	ctx.WriteString(`(`)
+	ctx.AddParam(Param{Name: paramName, Type: "boolean"})
+	ctx.WriteString(` = TRUE)`)
+}
+
+func (d *SnowflakeDialect) RenderBooleanNotEqualsTrue(ctx Context, paramName string) {
+	ctx.WriteString(`(NOT COALESCE(`)
+	ctx.AddParam(Param{Name: paramName, Type: "boolean"})
+	ctx.WriteString(`, FALSE))`)
+}
+
 func (d *SnowflakeDialect) RenderArithOp(op qcode.ExpOp) (string, error) {
 	return RenderStandardArithOp(op)
 }
