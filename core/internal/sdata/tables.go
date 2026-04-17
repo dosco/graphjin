@@ -557,14 +557,13 @@ func DiscoverColumns(ctx context.Context, db *sql.DB, dbtype string, blockList [
 			qctx2, cancel2 := context.WithTimeout(ctx, introspectionQueryTimeout)
 			defer cancel2()
 			rows, err = db.QueryContext(qctx2, snowflakeColumnsNoOverridesStmt)
-			// Second Snowflake fallback: KEY_COLUMN_USAGE does not exist in
-			// many Snowflake accounts (it is not a standard Snowflake
-			// INFORMATION_SCHEMA view). Fall back to columns-only discovery
-			// without PK/UK/FK metadata.
 			if err != nil {
-				qctx3, cancel3 := context.WithTimeout(ctx, introspectionQueryTimeout)
-				defer cancel3()
-				rows, err = db.QueryContext(qctx3, snowflakeColumnsBasicStmt)
+				rows, err = discoverSnowflakeColumnsViaShow(ctx, db)
+				if err != nil {
+					qctx3, cancel3 := context.WithTimeout(ctx, introspectionQueryTimeout)
+					defer cancel3()
+					rows, err = db.QueryContext(qctx3, snowflakeColumnsBasicStmt)
+				}
 			}
 		}
 		if err != nil {
@@ -1310,6 +1309,46 @@ func isInList(val string, s []string) bool {
 		}
 	}
 	return false
+}
+
+func discoverSnowflakeColumnsViaShow(ctx context.Context, db *sql.DB) (*sql.Rows, error) {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	runShow := func(stmt string) (string, error) {
+		sctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
+		defer cancel()
+		if _, err := conn.ExecContext(sctx, stmt); err != nil {
+			return "", err
+		}
+		var qid string
+		if err := conn.QueryRowContext(sctx, "SELECT LAST_QUERY_ID()").Scan(&qid); err != nil {
+			return "", err
+		}
+		return qid, nil
+	}
+
+	colsQID, err := runShow("SHOW COLUMNS IN DATABASE")
+	if err != nil {
+		return nil, fmt.Errorf("snowflake SHOW COLUMNS: %w", err)
+	}
+	pksQID, err := runShow("SHOW PRIMARY KEYS IN DATABASE")
+	if err != nil {
+		return nil, fmt.Errorf("snowflake SHOW PRIMARY KEYS: %w", err)
+	}
+	uksQID, err := runShow("SHOW UNIQUE KEYS IN DATABASE")
+	if err != nil {
+		return nil, fmt.Errorf("snowflake SHOW UNIQUE KEYS: %w", err)
+	}
+	fksQID, err := runShow("SHOW IMPORTED KEYS IN DATABASE")
+	if err != nil {
+		return nil, fmt.Errorf("snowflake SHOW IMPORTED KEYS: %w", err)
+	}
+
+	return db.QueryContext(ctx, snowflakeColumnsShowStmt, colsQID, pksQID, uksQID, fksQID)
 }
 
 // discoverClusteringKeys queries Snowflake's information_schema.tables for
