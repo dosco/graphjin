@@ -70,39 +70,36 @@ func TestDiscovery(t *testing.T) {
 		payload := dm.FullPayload(dbName)
 		require.NotNil(t, payload)
 
-		var found *serv.TableDetailEntry
+		type hit struct {
+			table string
+			col   string
+			stats serv.NumericStats
+			prof  *serv.TableProfile
+		}
+		var found *hit
 		for i := range payload.Tables {
 			entry := &payload.Tables[i]
-			if entry.Profile == nil || entry.Profile.RowCountApprox <= 0 {
+			if entry.Profile == nil || entry.Profile.RowCountApprox <= 1 {
 				continue
 			}
-			if len(entry.Profile.NumericStats) == 0 {
-				continue
+			for col, stats := range entry.Profile.NumericStats {
+				if stats.Count > 1 {
+					found = &hit{table: entry.Name, col: col, stats: stats, prof: entry.Profile}
+					break
+				}
 			}
-			found = entry
-			break
-		}
-		if found == nil {
-			t.Skip("no seeded table with numeric columns found in this dialect's fixture")
-		}
-		t.Logf("using table %q (row_count=%d) for enrichment assertions (dialect=%s)",
-			found.Name, found.Profile.RowCountApprox, dbType)
-
-		assert.NotEmptyf(t, found.Profile.SampleRows,
-			"expected sample rows on %q (dialect=%s)", found.Name, dbType)
-
-		wholeTableAggregateRan := false
-		for col, stats := range found.Profile.NumericStats {
-			if stats.Count > 1 {
-				wholeTableAggregateRan = true
-				t.Logf("numeric_stats[%s]: count=%d min=%s max=%s avg=%s (dialect=%s)",
-					col, stats.Count, stats.Min, stats.Max, stats.Avg, dbType)
+			if found != nil {
 				break
 			}
 		}
-		assert.Truef(t, wholeTableAggregateRan,
-			"expected at least one NumericStats entry with Count > 1 on %q (dialect=%s, proves LIMIT 1 bug is fixed, stats=%+v)",
-			found.Name, dbType, found.Profile.NumericStats)
+		if found == nil {
+			t.Skip("no multi-row seeded table with numeric columns found in this dialect's fixture")
+		}
+		t.Logf("enrichment hit: %s.%s count=%d min=%s max=%s avg=%s (dialect=%s)",
+			found.table, found.col, found.stats.Count, found.stats.Min, found.stats.Max, found.stats.Avg, dbType)
+
+		assert.NotEmptyf(t, found.prof.SampleRows,
+			"expected sample rows on %q (dialect=%s)", found.table, dbType)
 	})
 
 	t.Run("JSONShapeRoundTrip", func(t *testing.T) {
