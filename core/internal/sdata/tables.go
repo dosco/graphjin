@@ -10,6 +10,7 @@ import (
 	"io"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dosco/graphjin/core/v3/internal/util"
@@ -20,6 +21,44 @@ import (
 // query. Without this, a hung network read from the driver (seen with
 // go-ora against Oracle) could block a test run indefinitely.
 const introspectionQueryTimeout = 30 * time.Second
+
+var snowflakeHasKCU sync.Map
+
+func snowflakeKeyColumnUsageAvailable(ctx context.Context, db *sql.DB) bool {
+	if v, ok := snowflakeHasKCU.Load(db); ok {
+		return v.(bool)
+	}
+	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
+	defer cancel()
+	var n int
+	err := db.QueryRowContext(qctx,
+		`SELECT COUNT(*) FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_SCHEMA = 'INFORMATION_SCHEMA' AND TABLE_NAME = 'KEY_COLUMN_USAGE'`,
+	).Scan(&n)
+	has := err == nil && n > 0
+	snowflakeHasKCU.Store(db, has)
+	return has
+}
+
+func discoverSnowflakeColumns(ctx context.Context, db *sql.DB) (*sql.Rows, error) {
+	if snowflakeKeyColumnUsageAvailable(ctx, db) {
+		qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
+		defer cancel()
+		if rows, err := db.QueryContext(qctx, snowflakeColumnsStmt); err == nil {
+			return rows, nil
+		}
+		qctx2, cancel2 := context.WithTimeout(ctx, introspectionQueryTimeout)
+		defer cancel2()
+		if rows, err := db.QueryContext(qctx2, snowflakeColumnsNoOverridesStmt); err == nil {
+			return rows, nil
+		}
+	}
+	if rows, err := discoverSnowflakeColumnsViaShow(ctx, db); err == nil {
+		return rows, nil
+	}
+	qctx3, cancel3 := context.WithTimeout(ctx, introspectionQueryTimeout)
+	defer cancel3()
+	return db.QueryContext(qctx3, snowflakeColumnsBasicStmt)
+}
 
 // DBInfo holds the database schema information
 type DBInfo struct {
@@ -547,28 +586,15 @@ func DiscoverColumns(ctx context.Context, db *sql.DB, dbtype string, blockList [
 	qctx, cancel := context.WithTimeout(ctx, introspectionQueryTimeout)
 	defer cancel()
 
-	rows, err := db.QueryContext(qctx, sqlStmt)
+	var rows *sql.Rows
+	var err error
+	if dbtype == "snowflake" {
+		rows, err = discoverSnowflakeColumns(ctx, db)
+	} else {
+		rows, err = db.QueryContext(qctx, sqlStmt)
+	}
 	if err != nil {
-		// Snowflake fallback: the primary query includes a UNION that reads
-		// from `_gj_fk_metadata`, an optional FK override table. Production
-		// Snowflake accounts that declare FKs via DDL won't have this table
-		// and the primary query fails. Re-run without the overlay UNION.
-		if dbtype == "snowflake" {
-			qctx2, cancel2 := context.WithTimeout(ctx, introspectionQueryTimeout)
-			defer cancel2()
-			rows, err = db.QueryContext(qctx2, snowflakeColumnsNoOverridesStmt)
-			if err != nil {
-				rows, err = discoverSnowflakeColumnsViaShow(ctx, db)
-				if err != nil {
-					qctx3, cancel3 := context.WithTimeout(ctx, introspectionQueryTimeout)
-					defer cancel3()
-					rows, err = db.QueryContext(qctx3, snowflakeColumnsBasicStmt)
-				}
-			}
-		}
-		if err != nil {
-			return nil, fmt.Errorf("error fetching columns: %w", err)
-		}
+		return nil, fmt.Errorf("error fetching columns: %w", err)
 	}
 	defer rows.Close()
 
