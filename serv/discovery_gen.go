@@ -17,12 +17,14 @@ const enumSampleCap = 101
 
 func buildEnrichment(ctx context.Context, gj *core.GraphJin, database string, schemas []*core.TableSchema) map[string]*TableProfile {
 	result := make(map[string]*TableProfile)
+	rowCounts := buildRowCounts(ctx, gj, database, schemas)
 
 	for _, schema := range schemas {
 		p := &TableProfile{
-			DateRanges:   make(map[string]DateRange),
-			EnumValues:   make(map[string]EnumProfile),
-			NumericStats: make(map[string]NumericStats),
+			RowCountApprox: rowCounts[schema.Name],
+			DateRanges:     make(map[string]DateRange),
+			EnumValues:     make(map[string]EnumProfile),
+			NumericStats:   make(map[string]NumericStats),
 		}
 
 		var numericCols, dateCols, enumCols []core.ColumnInfo
@@ -43,13 +45,9 @@ func buildEnrichment(ctx context.Context, gj *core.GraphJin, database string, sc
 		rc := &core.RequestConfig{}
 		rc.SetNamespace(database)
 
-		if schema.PrimaryKey != "" {
-			qctx, cancel := context.WithTimeout(ctx, enrichmentQueryTimeout)
-			q := fmt.Sprintf("{ %s { count_%s } }", schema.Name, schema.PrimaryKey)
-			if res, err := gj.GraphQL(qctx, q, nil, rc); err == nil && res.Data != nil {
-				p.RowCountApprox = extractCountFromResult(res.Data, schema.Name, schema.PrimaryKey)
-			}
-			cancel()
+		groupCol := schema.PrimaryKey
+		if groupCol == "" && len(schema.Columns) > 0 {
+			groupCol = schema.Columns[0].Name
 		}
 
 		for _, col := range dateCols {
@@ -65,14 +63,14 @@ func buildEnrichment(ctx context.Context, gj *core.GraphJin, database string, sc
 		}
 
 		for _, col := range enumCols {
-			if schema.PrimaryKey == "" {
+			if groupCol == "" {
 				continue
 			}
 			qctx, cancel := context.WithTimeout(ctx, enrichmentQueryTimeout)
 			q := fmt.Sprintf("{ %s(distinct: [%s], limit: %d, order_by: { count_%s: desc }) { %s count_%s } }",
-				schema.Name, col.Name, enumSampleCap, schema.PrimaryKey, col.Name, schema.PrimaryKey)
+				schema.Name, col.Name, enumSampleCap, groupCol, col.Name, groupCol)
 			if res, err := gj.GraphQL(qctx, q, nil, rc); err == nil && res.Data != nil {
-				p.EnumValues[col.Name] = extractEnumProfile(res.Data, schema.Name, col.Name, schema.PrimaryKey)
+				p.EnumValues[col.Name] = extractEnumProfile(res.Data, schema.Name, col.Name, groupCol)
 			}
 			cancel()
 		}

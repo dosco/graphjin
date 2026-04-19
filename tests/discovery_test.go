@@ -34,6 +34,31 @@ func TestDiscovery(t *testing.T) {
 		}
 	})
 
+	t.Run("RowCountsForSeededTables", func(t *testing.T) {
+		dbName := gj.DefaultDatabase()
+		tables := dm.TableIndex(dbName)
+		byName := map[string]serv.TableIndexEntry{}
+		for _, t := range tables {
+			byName[t.Name] = t
+		}
+		for _, want := range []struct {
+			name string
+			min  int64
+		}{
+			{"users", 100},
+			{"products", 1},
+			{"categories", 1},
+		} {
+			entry, ok := byName[want.name]
+			if !ok {
+				continue
+			}
+			assert.GreaterOrEqualf(t, entry.RowCountApprox, want.min,
+				"table %q: row_count_approx=%d expected >= %d (dialect=%s)",
+				want.name, entry.RowCountApprox, want.min, dbType)
+		}
+	})
+
 	t.Run("Payload", func(t *testing.T) {
 		payload := dm.Payload(gj.DefaultDatabase())
 		require.NotNil(t, payload)
