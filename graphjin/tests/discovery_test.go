@@ -35,6 +35,9 @@ func TestDiscovery(t *testing.T) {
 	})
 
 	t.Run("RowCountsForSeededTables", func(t *testing.T) {
+		if dbType == "mongodb" {
+			t.Skip("mongodb row counts are not supported via the SQL path")
+		}
 		dbName := gj.DefaultDatabase()
 		tables := dm.TableIndex(dbName)
 		byName := map[string]serv.TableIndexEntry{}
@@ -56,6 +59,63 @@ func TestDiscovery(t *testing.T) {
 			assert.GreaterOrEqualf(t, entry.RowCountApprox, want.min,
 				"table %q: row_count_approx=%d expected >= %d (dialect=%s)",
 				want.name, entry.RowCountApprox, want.min, dbType)
+		}
+	})
+
+	t.Run("EnrichmentForSeededTable", func(t *testing.T) {
+		if dbType == "mongodb" {
+			t.Skip("mongodb enrichment GraphQL is unverified on this driver")
+		}
+		dbName := gj.DefaultDatabase()
+		payload := dm.FullPayload(dbName)
+		require.NotNil(t, payload)
+
+		var found *serv.TableDetailEntry
+		for i := range payload.Tables {
+			entry := &payload.Tables[i]
+			if entry.Profile == nil || entry.Profile.RowCountApprox <= 0 {
+				continue
+			}
+			if len(entry.Profile.NumericStats) == 0 {
+				continue
+			}
+			found = entry
+			break
+		}
+		if found == nil {
+			t.Skip("no seeded table with numeric columns found in this dialect's fixture")
+		}
+		t.Logf("using table %q (row_count=%d) for enrichment assertions (dialect=%s)",
+			found.Name, found.Profile.RowCountApprox, dbType)
+
+		assert.NotEmptyf(t, found.Profile.SampleRows,
+			"expected sample rows on %q (dialect=%s)", found.Name, dbType)
+
+		wholeTableAggregateRan := false
+		for col, stats := range found.Profile.NumericStats {
+			if stats.Count > 1 {
+				wholeTableAggregateRan = true
+				t.Logf("numeric_stats[%s]: count=%d min=%s max=%s avg=%s (dialect=%s)",
+					col, stats.Count, stats.Min, stats.Max, stats.Avg, dbType)
+				break
+			}
+		}
+		assert.Truef(t, wholeTableAggregateRan,
+			"expected at least one NumericStats entry with Count > 1 on %q (dialect=%s, proves LIMIT 1 bug is fixed, stats=%+v)",
+			found.Name, dbType, found.Profile.NumericStats)
+	})
+
+	t.Run("JSONShapeRoundTrip", func(t *testing.T) {
+		dbName := gj.DefaultDatabase()
+		raw, err := json.Marshal(dm.FullPayload(dbName))
+		require.NoError(t, err)
+
+		var out serv.DiscoveryFullPayload
+		require.NoError(t, json.Unmarshal(raw, &out), "unmarshal back into DiscoveryFullPayload")
+		assert.Equal(t, dbName, out.Database)
+		assert.NotEmpty(t, out.Tables, "round-tripped tables slice should not be empty (dialect=%s)", dbType)
+		for _, entry := range out.Tables {
+			assert.NotEmpty(t, entry.Name)
 		}
 	})
 
