@@ -35,7 +35,7 @@ type dbFullPayload struct {
 func NewDiscoveryManager(gj *core.GraphJin) *DiscoveryManager {
 	dm := &DiscoveryManager{gj: gj}
 	gj.OnSchemaChange(func(dbName, hash string) {
-		dm.invalidate()
+		dm.Invalidate()
 	})
 	return dm
 }
@@ -73,7 +73,7 @@ func (dm *DiscoveryManager) ensureTables() {
 		rowCounts := buildRowCounts(ctx, dm.gj, name, schemas)
 		profiles := profilesFromRowCounts(rowCounts)
 		index := buildTableIndex(schemas, profiles)
-		overview := buildDatabaseOverview(name, schemas, profiles, dm.gj.GetFunctionsForDatabase(name))
+		overview := buildDatabaseOverview(name, schemas, profiles, dm.gj.GetFunctionsForDatabase(name), dm.gj.EffectiveAnalyticsMode(name))
 		dm.tablesCache.Store(name, &dbTablesPayload{Tables: index, DatabaseOverview: overview})
 	}
 
@@ -99,7 +99,7 @@ func (dm *DiscoveryManager) ensureFullTables() {
 		schemas := getSchemas(dm.gj, name)
 		profiles := buildEnrichment(ctx, dm.gj, name, schemas)
 		details := buildTableDetails(schemas, profiles)
-		overview := buildDatabaseOverview(name, schemas, profiles, dm.gj.GetFunctionsForDatabase(name))
+		overview := buildDatabaseOverview(name, schemas, profiles, dm.gj.GetFunctionsForDatabase(name), dm.gj.EffectiveAnalyticsMode(name))
 		dm.fullCache.Store(name, &dbFullPayload{
 			Tables:           details,
 			DatabaseOverview: overview,
@@ -135,7 +135,7 @@ func (dm *DiscoveryManager) ensureInsights() {
 	dm.mu.Unlock()
 }
 
-func (dm *DiscoveryManager) invalidate() {
+func (dm *DiscoveryManager) Invalidate() {
 	dm.mu.Lock()
 	dm.tablesDone = false
 	dm.fullDone = false

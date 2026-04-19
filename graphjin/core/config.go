@@ -248,6 +248,8 @@ type Config struct {
 	// the query or the table role config.
 	DefaultLimit int `mapstructure:"default_limit" json:"default_limit" yaml:"default_limit" jsonschema:"title=Default Row Limit,default=20"`
 
+	AnalyticsMode bool `mapstructure:"analytics_mode" json:"analytics_mode" yaml:"analytics_mode" jsonschema:"title=Analytics Mode,default=false,description=Disable implicit row-limit defaults for OLAP deployments"`
+
 	// Disable all aggregation functions like count, sum, etc
 	DisableAgg bool `mapstructure:"disable_agg_functions" json:"disable_agg_functions" yaml:"disable_agg_functions" jsonschema:"title=Disable Aggregations,default=false"`
 
@@ -350,6 +352,18 @@ type DatabaseConfig struct {
 	// Read-only mode — blocks all mutations and DDL against this database.
 	// Once set in config, cannot be changed at runtime via MCP tools.
 	ReadOnly bool `mapstructure:"read_only" json:"read_only" yaml:"read_only" jsonschema:"title=Read Only"`
+
+	AnalyticsMode *bool `mapstructure:"analytics_mode" json:"analytics_mode,omitempty" yaml:"analytics_mode,omitempty" jsonschema:"title=Analytics Mode (per-DB override)"`
+}
+
+func (c *Config) EffectiveAnalyticsMode(database string) bool {
+	if c == nil {
+		return false
+	}
+	if db, ok := c.Databases[database]; ok && db.AnalyticsMode != nil {
+		return *db.AnalyticsMode
+	}
+	return c.AnalyticsMode
 }
 
 // SnowflakeKeyPairConfig allows external services to inject Snowflake key pair
