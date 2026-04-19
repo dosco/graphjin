@@ -32,7 +32,59 @@ func TestAnalyticsMode_OffReturns20(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { gj.Close() })
 
-	assert.Equal(t, 20, runUsersQuery(t, gj), "OLTP default should cap at 20 rows")
+	assert.Equal(t, 20, runUsersQuery(t, gj), "OLTP default (unset) should cap at 20 rows")
+}
+
+func TestAnalyticsMode_ExplicitFalseReturns20(t *testing.T) {
+	if dbType != "postgres" {
+		t.Skip("gated to postgres")
+	}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, AnalyticsMode: false})
+	gj, err := core.NewGraphJin(conf, db)
+	require.NoError(t, err)
+	t.Cleanup(func() { gj.Close() })
+
+	assert.Equal(t, 20, runUsersQuery(t, gj), "analytics_mode: false explicitly should cap at 20 rows")
+}
+
+func TestAnalyticsMode_CustomDefaultLimit(t *testing.T) {
+	if dbType != "postgres" {
+		t.Skip("gated to postgres")
+	}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, DefaultLimit: 7})
+	gj, err := core.NewGraphJin(conf, db)
+	require.NoError(t, err)
+	t.Cleanup(func() { gj.Close() })
+
+	assert.Equal(t, 7, runUsersQuery(t, gj), "custom DefaultLimit should win over hardcoded 20 when analytics_mode is off")
+}
+
+func TestAnalyticsMode_OffNestedHasImplicitLimit(t *testing.T) {
+	if dbType != "postgres" {
+		t.Skip("gated to postgres")
+	}
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	require.NoError(t, err)
+	t.Cleanup(func() { gj.Close() })
+
+	res, err := gj.GraphQL(context.Background(),
+		`{ users { id products { id } } }`, nil, nil)
+	require.NoError(t, err)
+
+	var out struct {
+		Users []struct {
+			ID       int `json:"id"`
+			Products []struct {
+				ID int `json:"id"`
+			} `json:"products"`
+		} `json:"users"`
+	}
+	require.NoError(t, json.Unmarshal(res.Data, &out))
+	assert.Equal(t, 20, len(out.Users), "top level should cap at 20")
+	for i, u := range out.Users {
+		assert.LessOrEqualf(t, len(u.Products), 20, "nested products at user[%d] should also cap at 20 in OLTP mode", i)
+	}
 }
 
 func TestAnalyticsMode_OnReturnsAll(t *testing.T) {
