@@ -39,6 +39,12 @@ func approxRowCount(ctx context.Context, db *sql.DB, dbtype string, schema *core
 		return snowflakeRowCount(qctx, db, schema)
 	case "sqlite":
 		return sqliteRowCount(qctx, db, schema)
+	case "oracle":
+		return oracleRowCount(qctx, db, schema)
+	case "mssql":
+		return mssqlRowCount(qctx, db, schema)
+	case "mongodb":
+		return mongodbRowCount(qctx, db, schema)
 	}
 	return 0, false
 }
@@ -118,4 +124,58 @@ func sqliteRowCount(ctx context.Context, db *sql.DB, schema *core.TableSchema) (
 		return 0, false
 	}
 	return n, true
+}
+
+func oracleRowCount(ctx context.Context, db *sql.DB, schema *core.TableSchema) (int64, bool) {
+	if schema.Schema != "" {
+		var n sql.NullInt64
+		if err := db.QueryRowContext(ctx,
+			`SELECT NUM_ROWS FROM ALL_TABLES WHERE OWNER = UPPER(:1) AND TABLE_NAME = UPPER(:2)`,
+			schema.Schema, schema.Name,
+		).Scan(&n); err == nil && n.Valid && n.Int64 > 0 {
+			return n.Int64, true
+		} else if err != nil && err != sql.ErrNoRows {
+			log.Printf("discovery rowcount: oracle ALL_TABLES lookup failed for %s.%s: %v", schema.Schema, schema.Name, err)
+		}
+	}
+	quoted := `"` + strings.ToUpper(strings.ReplaceAll(schema.Name, `"`, `""`)) + `"`
+	if schema.Schema != "" {
+		quoted = `"` + strings.ToUpper(strings.ReplaceAll(schema.Schema, `"`, `""`)) + `".` + quoted
+	}
+	var n int64
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+quoted).Scan(&n); err != nil {
+		log.Printf("discovery rowcount: oracle count(*) failed for %s: %v", quoted, err)
+		return 0, false
+	}
+	return n, true
+}
+
+func mssqlRowCount(ctx context.Context, db *sql.DB, schema *core.TableSchema) (int64, bool) {
+	qual := mssqlBracketQuote(schema.Name)
+	if schema.Schema != "" {
+		qual = mssqlBracketQuote(schema.Schema) + "." + qual
+	}
+	var n sql.NullInt64
+	if err := db.QueryRowContext(ctx,
+		`SELECT SUM(row_count) FROM sys.dm_db_partition_stats WHERE object_id = OBJECT_ID(@p1) AND index_id IN (0, 1)`,
+		qual,
+	).Scan(&n); err == nil && n.Valid && n.Int64 > 0 {
+		return n.Int64, true
+	} else if err != nil && err != sql.ErrNoRows {
+		log.Printf("discovery rowcount: mssql sys.dm_db_partition_stats lookup failed for %s: %v", qual, err)
+	}
+	var count int64
+	if err := db.QueryRowContext(ctx, "SELECT COUNT_BIG(*) FROM "+qual).Scan(&count); err != nil {
+		log.Printf("discovery rowcount: mssql count_big(*) failed for %s: %v", qual, err)
+		return 0, false
+	}
+	return count, true
+}
+
+func mssqlBracketQuote(s string) string {
+	return "[" + strings.ReplaceAll(s, "]", "]]") + "]"
+}
+
+func mongodbRowCount(_ context.Context, _ *sql.DB, _ *core.TableSchema) (int64, bool) {
+	return 0, false
 }
