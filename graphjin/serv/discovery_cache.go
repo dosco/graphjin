@@ -67,10 +67,13 @@ func (dm *DiscoveryManager) ensureTables() {
 	if len(names) == 0 {
 		return
 	}
+	ctx := context.Background()
 	for _, name := range names {
 		schemas := getSchemas(dm.gj, name)
-		index := buildTableIndex(schemas, nil)
-		overview := buildDatabaseOverview(name, schemas, nil, dm.gj.GetFunctionsForDatabase(name))
+		rowCounts := buildRowCounts(ctx, dm.gj, name, schemas)
+		profiles := profilesFromRowCounts(rowCounts)
+		index := buildTableIndex(schemas, profiles)
+		overview := buildDatabaseOverview(name, schemas, profiles, dm.gj.GetFunctionsForDatabase(name))
 		dm.tablesCache.Store(name, &dbTablesPayload{Tables: index, DatabaseOverview: overview})
 	}
 
@@ -196,6 +199,17 @@ func (dm *DiscoveryManager) Profile(database, table string) *TableProfile {
 
 func (dm *DiscoveryManager) Databases() []string {
 	return dm.gj.DatabaseNames()
+}
+
+func profilesFromRowCounts(counts map[string]int64) map[string]*TableProfile {
+	if len(counts) == 0 {
+		return nil
+	}
+	out := make(map[string]*TableProfile, len(counts))
+	for name, n := range counts {
+		out[name] = &TableProfile{RowCountApprox: n}
+	}
+	return out
 }
 
 func (dm *DiscoveryManager) Payload(database string) *DiscoveryPayload {

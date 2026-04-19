@@ -950,6 +950,26 @@ func (g *GraphJin) GetTablesForDatabase(database string) []TableInfo {
 	return gj.getTables(database)
 }
 
+// DBForDatabase returns the read-only connection pool and database type for
+// `database`. Empty name resolves to the default database. Do not close the pool.
+func (g *GraphJin) DBForDatabase(database string) (*sql.DB, string, error) {
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil, "", err
+	}
+	ctx, ok := gj.GetDatabase(database)
+	if !ok || ctx == nil {
+		if database == "" {
+			return nil, "", fmt.Errorf("no default database configured")
+		}
+		return nil, "", fmt.Errorf("database %q not configured", database)
+	}
+	if ctx.db == nil {
+		return nil, ctx.dbtype, fmt.Errorf("database %q has no active connection", database)
+	}
+	return ctx.db, ctx.dbtype, nil
+}
+
 // getTables returns tables, optionally filtered by database name.
 // With empty database, returns tables from all databases.
 func (gj *graphjinEngine) getTables(database string) []TableInfo {
