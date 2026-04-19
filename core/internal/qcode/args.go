@@ -339,12 +339,14 @@ func (co *Compiler) compileArgLimit(sel *Select, arg graph.Arg) (err error) {
 			return
 		}
 		sel.Paging.Limit = int32(n)
+		sel.Paging.NoLimit = false
 
 	case graph.NodeVar:
 		if co.s.DBType() == "mysql" {
 			return dbArgErr("limit", "number", "mysql")
 		}
 		sel.Paging.LimitVar = node.Val
+		sel.Paging.NoLimit = false
 	}
 	return
 }

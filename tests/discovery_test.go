@@ -22,6 +22,27 @@ func newDiscoveryDM(t *testing.T) (*core.GraphJin, *serv.DiscoveryManager) {
 	return gj, dm
 }
 
+func ensureCatalogStats(t *testing.T) {
+	t.Helper()
+	seededTables := []string{"users", "categories", "products", "purchases", "notifications", "comments"}
+	switch dbType {
+	case "postgres":
+		_, _ = db.Exec("ANALYZE")
+	case "sqlite":
+		_, _ = db.Exec("ANALYZE")
+	case "mysql", "mariadb":
+		for _, tbl := range seededTables {
+			_, _ = db.Exec("ANALYZE TABLE " + tbl)
+		}
+	case "oracle":
+		for _, tbl := range seededTables {
+			_, _ = db.Exec("ANALYZE TABLE " + tbl + " COMPUTE STATISTICS")
+		}
+	case "mssql":
+		_, _ = db.Exec("EXEC sp_updatestats")
+	}
+}
+
 func TestDiscovery(t *testing.T) {
 	gj, dm := newDiscoveryDM(t)
 
@@ -38,7 +59,9 @@ func TestDiscovery(t *testing.T) {
 		if dbType == "mongodb" {
 			t.Skip("mongodb row counts are not supported via the SQL path")
 		}
+		ensureCatalogStats(t)
 		dbName := gj.DefaultDatabase()
+		dm.Invalidate()
 		tables := dm.TableIndex(dbName)
 		byName := map[string]serv.TableIndexEntry{}
 		for _, t := range tables {

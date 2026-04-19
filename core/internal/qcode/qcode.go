@@ -1058,21 +1058,22 @@ func (co *Compiler) setSelectorRoleConfig(role, fieldName string, qc *QCode, sel
 }
 
 func (co *Compiler) setLimit(tr trval, qc *QCode, sel *Select) {
-	if sel.Paging.Limit != 0 {
+	if sel.Paging.Limit != 0 || sel.Paging.NoLimit {
 		return
 	}
-	// Use limit from table role config
 	if l := tr.limit(qc.Type); l != 0 {
 		sel.Paging.Limit = l
-
-		// Else use default limit from config
-	} else if co.c.DefaultLimit != 0 {
-		sel.Paging.Limit = int32(co.c.DefaultLimit)
-
-		// Else just go with 20
-	} else {
-		sel.Paging.Limit = 20
+		return
 	}
+	if co.c.AnalyticsMode {
+		sel.Paging.NoLimit = true
+		return
+	}
+	if co.c.DefaultLimit != 0 {
+		sel.Paging.Limit = int32(co.c.DefaultLimit)
+		return
+	}
+	sel.Paging.Limit = 20
 }
 
 // This

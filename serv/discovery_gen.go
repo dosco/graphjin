@@ -205,11 +205,12 @@ func buildTableDetails(schemas []*core.TableSchema, enrichment map[string]*Table
 	return out
 }
 
-func buildDatabaseOverview(database string, schemas []*core.TableSchema, enrichment map[string]*TableProfile, functions []core.FunctionInfo) DatabaseOverview {
+func buildDatabaseOverview(database string, schemas []*core.TableSchema, enrichment map[string]*TableProfile, functions []core.FunctionInfo, analyticsMode bool) DatabaseOverview {
 	overview := DatabaseOverview{
-		Database:    database,
-		TotalTables: len(schemas),
-		Functions:   functions,
+		Database:      database,
+		AnalyticsMode: analyticsMode,
+		TotalTables:   len(schemas),
+		Functions:     functions,
 	}
 
 	schemaRollup := map[string]*SchemaStats{}

@@ -950,6 +950,14 @@ func (g *GraphJin) GetTablesForDatabase(database string) []TableInfo {
 	return gj.getTables(database)
 }
 
+func (g *GraphJin) EffectiveAnalyticsMode(database string) bool {
+	gj, err := g.getEngine()
+	if err != nil {
+		return false
+	}
+	return gj.conf.EffectiveAnalyticsMode(database)
+}
+
 // DBForDatabase returns the read-only connection pool and database type for
 // `database`. Empty name resolves to the default database. Do not close the pool.
 func (g *GraphJin) DBForDatabase(database string) (*sql.DB, string, error) {

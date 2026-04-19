@@ -59,6 +59,7 @@ type NumericStats struct {
 
 type DatabaseOverview struct {
 	Database         string              `json:"database"`
+	AnalyticsMode    bool                `json:"analytics_mode"`
 	TotalTables      int                 `json:"total_tables"`
 	TotalColumns     int                 `json:"total_columns"`
 	Schemas          []SchemaStats       `json:"schemas,omitempty"`

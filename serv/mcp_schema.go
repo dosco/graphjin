@@ -446,11 +446,22 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 		guide.MutationWorkflow = append(guide.MutationWorkflow, "4. Raw mutations are disabled, so execute a saved mutation with execute_saved_query")
 	}
 
+	analyticsMode := ms.service.gj != nil && ms.service.gj.EffectiveAnalyticsMode(ms.service.gj.DefaultDatabase())
+	if analyticsMode {
+		guide.Tips = append(guide.Tips,
+			"This database is in ANALYTICS MODE — compute answers server-side with aggregates (count_*, sum_*, sum(expr: { mul: [...] }), distinct: [group_col], filtered where:). Multiple targeted queries are fine; DO NOT paginate raw rows to build totals client-side. See get_query_syntax → Expression Aggregates.",
+			"Analytics mode: implicit row-limit defaults are OFF for this database. Queries without an explicit limit return the full result. Use explicit limit: only when you want a top-N.",
+		)
+	} else {
+		guide.Tips = append(guide.Tips,
+			"ALWAYS use execute_workflow for data questions — NEVER execute_graphql directly. Tables can have hundreds of thousands of rows and you cannot predict sizes.",
+			"Every query level has a silent default row limit. Always set explicit limits on every level, especially nested children.",
+		)
+	}
+
 	guide.Tips = append(guide.Tips,
-		"ALWAYS use execute_workflow for data questions — NEVER execute_graphql directly. Tables can have hundreds of thousands of rows and you cannot predict sizes.",
 		"ALWAYS call list_workflows first — reuse an existing workflow if one fits the question.",
 		"Queries inside workflows must be TOP-DOWN: start from the grouping/parent table, nest into children. NEVER filter bottom-up from leaf tables.",
-		"Every query level has a silent default row limit. Always set explicit limits on every level, especially nested children.",
 		"order_by does NOT work on aggregation aliases (sum_*, count_*). Sort aggregated results in workflow JavaScript.",
 		"Use distinct: [columns] for GROUP BY — group_by does not exist.",
 		"Use find_path or explore_relationships to discover join paths — NEVER guess at FK relationships.",
