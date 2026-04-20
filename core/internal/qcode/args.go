@@ -52,6 +52,9 @@ func (co *Compiler) compileSelectArgs(sel *Select, args []graph.Arg, role string
 		case "args":
 			err = co.compileArgArgs(sel, a)
 
+		case "unrestricted":
+			err = co.compileArgUnrestricted(sel, a)
+
 		// case "includeIf", "include_if":
 		// 	err = co.compileArgSkipIncludeIf(false, sel, &sel.Field, a, role)
 
@@ -385,6 +388,14 @@ func (co *Compiler) compileArgFirstLast(sel *Select, arg graph.Arg, order Order)
 	}
 
 	sel.order = order
+	return
+}
+
+func (co *Compiler) compileArgUnrestricted(sel *Select, arg graph.Arg) (err error) {
+	if err = validateArg(arg, graph.NodeBool); err != nil {
+		return err
+	}
+	sel.Unrestricted = (arg.Val.Val == "true")
 	return
 }
 

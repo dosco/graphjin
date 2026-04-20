@@ -91,7 +91,15 @@ func TestAnalyticsMode_OnReturnsAll(t *testing.T) {
 	if dbType != "postgres" {
 		t.Skip("gated to postgres")
 	}
-	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, AnalyticsMode: true})
+	conf := newConfig(&core.Config{
+		DBType:           dbType,
+		DisableAllowList: true,
+		AnalyticsMode:    true,
+		Tables: []core.Table{{
+			Name:      "users",
+			Partition: &core.PartitionConfig{None: true},
+		}},
+	})
 	gj, err := core.NewGraphJin(conf, db)
 	require.NoError(t, err)
 	t.Cleanup(func() { gj.Close() })
@@ -103,7 +111,15 @@ func TestAnalyticsMode_SingleAggregateQuery(t *testing.T) {
 	if dbType != "postgres" {
 		t.Skip("gated to postgres")
 	}
-	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true, AnalyticsMode: true})
+	conf := newConfig(&core.Config{
+		DBType:           dbType,
+		DisableAllowList: true,
+		AnalyticsMode:    true,
+		Tables: []core.Table{{
+			Name:      "users",
+			Partition: &core.PartitionConfig{None: true},
+		}},
+	})
 	gj, err := core.NewGraphJin(conf, db)
 	require.NoError(t, err)
 	t.Cleanup(func() { gj.Close() })

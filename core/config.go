@@ -66,11 +66,20 @@ func (c *Config) Validate() error {
 	// Validate partition configs
 	for _, t := range c.Tables {
 		if t.Partition != nil {
-			if t.Partition.Column == "" {
-				return fmt.Errorf("table %q: partition column must not be empty", t.Name)
-			}
-			if t.Partition.DefaultRangeDays < 0 {
-				return fmt.Errorf("table %q: partition default_range_days must not be negative", t.Name)
+			if t.Partition.None {
+				if t.Partition.Column != "" {
+					return fmt.Errorf("table %q: partition.none and partition.column are mutually exclusive", t.Name)
+				}
+				if t.Partition.DefaultRangeDays != 0 {
+					return fmt.Errorf("table %q: partition.none cannot be combined with default_range_days", t.Name)
+				}
+			} else {
+				if t.Partition.Column == "" {
+					return fmt.Errorf("table %q: partition column must not be empty", t.Name)
+				}
+				if t.Partition.DefaultRangeDays < 0 {
+					return fmt.Errorf("table %q: partition default_range_days must not be negative", t.Name)
+				}
 			}
 		}
 	}
@@ -407,6 +416,7 @@ type PartitionConfig struct {
 	// DefaultRangeDays is the number of days to auto-filter when no partition filter
 	// is present in the query. Set to 0 to only warn without injecting a filter.
 	DefaultRangeDays int `mapstructure:"default_range_days" json:"default_range_days,omitempty" yaml:"default_range_days,omitempty" jsonschema:"title=Default Range Days,example=30"`
+	None bool `mapstructure:"none" json:"none,omitempty" yaml:"none,omitempty" jsonschema:"title=Disable Partition Check"`
 }
 
 // Configuration for a database table column
