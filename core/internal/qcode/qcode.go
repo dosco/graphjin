@@ -126,6 +126,7 @@ type Select struct {
 	Unrestricted            bool
 	order                   Order
 	through                 string
+	throughKind             string
 	tc                      TConfig
 }
 
@@ -754,7 +755,12 @@ func (co *Compiler) addRelInfo(
 		parentName := co.ParseName(parentF.Name)
 		childName := co.ParseName(childF.Name)
 
-		path, err := co.FindPath(childName, parentName, sel.through)
+		var path []sdata.TPath
+		if sel.throughKind == "column" {
+			path, err = co.FindPathByColumn(childName, parentName, sel.through)
+		} else {
+			path, err = co.FindPath(childName, parentName, sel.through)
+		}
 		if err != nil {
 			return graphError(err, childName, parentName, sel.through)
 		}
@@ -978,6 +984,17 @@ func (co *Compiler) FindPath(from, to, through string) ([]sdata.TPath, error) {
 	}
 
 	return nil, err
+}
+
+func (co *Compiler) FindPathByColumn(from, to, col string) ([]sdata.TPath, error) {
+	if co.c.EnableCamelcase {
+		from = strings.TrimSuffix(from, singularSuffixSnake)
+		to = strings.TrimSuffix(to, singularSuffixSnake)
+	} else {
+		from = strings.TrimSuffix(from, singularSuffixCamel)
+		to = strings.TrimSuffix(to, singularSuffixCamel)
+	}
+	return co.s.FindPathByColumn(from, to, col)
 }
 
 func buildSingleColFilter(leftCol, rightCol sdata.DBColumn, pid int32) *Exp {
@@ -1255,22 +1272,13 @@ func (co *Compiler) enforcePartitionFilterOLAP(sel *Select) {
 	}
 
 	if sel.Ti.ImplicitPartitionKey != "" {
-		if HasFilterOnColumn(sel.Where.Exp, sel.Ti.ImplicitPartitionKey) {
+		if HasFilterOnColumn(sel.Where.Exp, sel.Ti.ImplicitPartitionKey) || sel.Unrestricted {
 			return
 		}
 		sel.PartitionFilterRequired = fmt.Sprintf(
 			"table %q requires a filter on temporal column %q (e.g., { %s: { gt: \"2026-01-01\" } }); pass `unrestricted: true` to override",
 			sel.Ti.Name, sel.Ti.ImplicitPartitionKey, sel.Ti.ImplicitPartitionKey)
-		return
 	}
-
-	if sel.Unrestricted {
-		return
-	}
-
-	sel.PartitionFilterRequired = fmt.Sprintf(
-		"table %q has no partition column configured and no temporal column (created_at / event_time / updated_at / timestamp / ingested_at) was found; pass `unrestricted: true` in the query to confirm an unbounded scan is safe, or set `partition: { none: true }` in the table config to whitelist permanently",
-		sel.Ti.Name)
 }
 
 // HasFilterOnColumn walks the expression tree and returns true if any

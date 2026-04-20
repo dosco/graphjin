@@ -402,6 +402,137 @@ func (s *DBSchema) pickEdges(path []int32, from, to edgeInfo) (edges []int32, al
 	return
 }
 
+// FindPathByColumn returns a path between two tables, disambiguating by the FK
+// column name when the two tables have multiple foreign keys between them.
+func (s *DBSchema) FindPathByColumn(from, to, col string) ([]TPath, error) {
+	fl, ok := s.edgesIndex[from]
+	if !ok {
+		return nil, ErrFromEdgeNotFound
+	}
+	tl, ok := s.edgesIndex[to]
+	if !ok {
+		return nil, ErrToEdgeNotFound
+	}
+
+	res, err := s.betweenByColumn(fl, tl, col)
+	if err != nil {
+		return nil, err
+	}
+
+	path := []TPath{}
+	for _, eid := range res.edges {
+		edge := s.allEdges[eid]
+		path = append(path, TPath{
+			Rel:        edge.Type,
+			LT:         edge.LT,
+			LC:         edge.L,
+			RT:         edge.RT,
+			RC:         edge.R,
+			ExtraPairs: edge.ExtraPairs,
+		})
+	}
+	if len(path) == 0 {
+		return nil, ErrPathNotFound
+	}
+	return path, nil
+}
+
+func (s *DBSchema) betweenByColumn(from, to []edgeInfo, col string) (res graphResult, err error) {
+	for _, f := range from {
+		for _, t := range to {
+			res, err = s.pickPathByColumn(f, t, col)
+			if err == ErrPathNotFound {
+				continue
+			}
+			return
+		}
+	}
+	return res, ErrPathNotFound
+}
+
+func (s *DBSchema) pickPathByColumn(from, to edgeInfo, col string) (res graphResult, err error) {
+	res.from = from
+	res.to = to
+
+	paths := s.relationshipGraph.AllPaths(from.nodeID, to.nodeID)
+	for _, path := range paths {
+		edges, ok := s.pickEdgesByColumn(path, from, to, col)
+		if ok {
+			res.edges = edges
+			return
+		}
+	}
+	return res, ErrPathNotFound
+}
+
+// pickEdgesByColumn mirrors pickEdges but restricts candidate edges at each
+// hop to those whose FK column (either side) matches col (case-insensitive).
+// This is how @through(column:) disambiguates when two tables share multiple
+// foreign keys.
+func (s *DBSchema) pickEdgesByColumn(path []int32, from, to edgeInfo, col string) (edges []int32, allFound bool) {
+	pathLen := len(path)
+	peID := int32(-2)
+
+	for i := 1; i < pathLen; i++ {
+		fn := path[i-1]
+		tn := path[i]
+		lines := s.filterLinesByColumn(s.relationshipGraph.GetEdges(fn, tn), col)
+		if len(lines) == 0 {
+			return
+		}
+
+		switch {
+		case i == 1:
+			v := pickLine(lines, from, peID)
+			if v == nil {
+				return
+			}
+			edges = append(edges, v.ID)
+			peID = v.ID
+
+		case i == (pathLen - 1):
+			if v := pickLine(lines, to, peID); v != nil {
+				edges = append(edges, v.ID)
+				peID = v.ID
+			} else {
+				v := minWeightedLine(lines, peID)
+				if v == nil {
+					return
+				}
+				edges = append(edges, v.ID)
+				peID = v.ID
+			}
+
+		default:
+			v := minWeightedLine(lines, peID)
+			if v == nil {
+				return
+			}
+			edges = append(edges, v.ID)
+			peID = v.ID
+		}
+	}
+	allFound = true
+	return
+}
+
+func (s *DBSchema) filterLinesByColumn(lines []util.Edge, col string) []util.Edge {
+	if col == "" {
+		return lines
+	}
+	out := make([]util.Edge, 0, len(lines))
+	for _, v := range lines {
+		edge, ok := s.allEdges[v.ID]
+		if !ok {
+			continue
+		}
+		if strings.EqualFold(edge.L.Name, col) || strings.EqualFold(edge.R.Name, col) {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 // pickThroughPath picks a path through a node
 func (s *DBSchema) pickThroughPath(paths [][]int32, through string) ([][]int32, error) {
 	var npaths [][]int32
