@@ -21,6 +21,22 @@ func init() {
 	cursorRegex = regexp.MustCompile(`cursor\"\:\s?\"([^\s\"]+)`)
 }
 
+func execWithLockRetry(q string) error {
+	const maxAttempts = 20
+	var err error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if _, err = db.Exec(q); err == nil {
+			return nil
+		}
+		msg := err.Error()
+		if !strings.Contains(msg, "database is locked") && !strings.Contains(msg, "database table is locked") {
+			return err
+		}
+		time.Sleep(time.Duration(50*(attempt+1)) * time.Millisecond)
+	}
+	return err
+}
+
 func Example_subscription() {
 	gql := `subscription test {
 		users(id: $id) {
@@ -154,7 +170,7 @@ func Example_subscriptionWithCursor() {
 			} else {
 				// SQL databases: use SQL insert
 				q := fmt.Sprintf(`INSERT INTO chats (id, body) VALUES (%d, 'New chat message %d')`, i, i)
-				if _, err := db.Exec(q); err != nil {
+				if err := execWithLockRetry(q); err != nil {
 					panic(err)
 				}
 			}
