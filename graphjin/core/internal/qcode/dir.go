@@ -247,6 +247,7 @@ func (co *Compiler) compileDirectiveThrough(sel *Select, d graph.Directive) (err
 				return
 			}
 			sel.through = a.Val.Val
+			sel.throughKind = "table"
 			return
 
 		case "column":
@@ -254,6 +255,7 @@ func (co *Compiler) compileDirectiveThrough(sel *Select, d graph.Directive) (err
 				return
 			}
 			sel.through = a.Val.Val
+			sel.throughKind = "column"
 			return
 
 		default:

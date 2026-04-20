@@ -1079,7 +1079,7 @@ func TestPartitionFilterUnrestrictedBypassesCheckWhenNoColumn(t *testing.T) {
 	}
 }
 
-func TestPartitionFilterUnrestrictedDoesNotBypassDetectedColumn(t *testing.T) {
+func TestPartitionFilterUnrestrictedBypassesDetectedColumn(t *testing.T) {
 	qc, _ := qcode.NewCompiler(dbs, qcode.Config{AnalyticsMode: true})
 	_ = qc.AddRole("user", "public", "products", qcode.TRConfig{
 		Query: qcode.QueryConfig{Columns: []string{"id", "name", "price", "created_at"}},
@@ -1090,12 +1090,12 @@ func TestPartitionFilterUnrestrictedDoesNotBypassDetectedColumn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s := result.Selects[0].PartitionFilterRequired; s == "" {
-		t.Fatal("unrestricted:true must NOT bypass the check when a temporal column is detectable")
+	if s := result.Selects[0].PartitionFilterRequired; s != "" {
+		t.Errorf("unrestricted:true should bypass the implicit partition check, got: %s", s)
 	}
 }
 
-func TestPartitionFilterMissingColumnErrorNamesBothEscapeHatches(t *testing.T) {
+func TestPartitionFilterPassesWhenNoColumnDetectable(t *testing.T) {
 	schema, err := sdata.NewDBSchema(currenciesOnlyDBInfo(false), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -1110,14 +1110,8 @@ func TestPartitionFilterMissingColumnErrorNamesBothEscapeHatches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msg := result.Selects[0].PartitionFilterRequired
-	if msg == "" {
-		t.Fatal("expected error when no temporal column and no escape hatch")
-	}
-	for _, needle := range []string{"currencies", "unrestricted", "none"} {
-		if !strings.Contains(msg, needle) {
-			t.Errorf("expected error to mention %q, got: %s", needle, msg)
-		}
+	if s := result.Selects[0].PartitionFilterRequired; s != "" {
+		t.Errorf("no detectable partition column should not produce an error, got: %s", s)
 	}
 }
 

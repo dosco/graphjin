@@ -156,7 +156,7 @@ var querySyntaxReference = QuerySyntaxReference{
 	},
 	LogicalOperators: []string{"and", "or", "not"},
 	Pagination: PaginationSyntax{
-		LimitOffset:    "limit: 10, offset: 20 — WARNING: queries without an explicit limit return only default_limit rows (typically 20)",
+		LimitOffset:    "limit: 10, offset: 20",
 		ForwardCursor:  "first: 10, after: $<table>_cursor — cursor variable name MUST be $<table>_cursor (e.g. $products_cursor). Pass via variables object, not string interpolation",
 		BackwardCursor: "last: 10, before: $<table>_cursor — same naming rule as forward cursor",
 		CursorField:    "<table>_cursor — request this field at query root level to get the cursor for the next page. Returns null when no more pages exist",
@@ -195,7 +195,8 @@ var querySyntaxReference = QuerySyntaxReference{
 		"@skip(ifVar:)":          "Skip field if variable is true",
 		"@object":                "Return single object instead of array",
 		"@schema(name:)":         "Use specific database schema",
-		"@through(table:)":       "Specify join table for many-to-many",
+		"@through(table:)":       "Specify the intermediate join table for many-to-many relationships",
+		"@through(column:)":      "Disambiguate when the parent and the nested target share multiple foreign keys — name the FK column to follow. Example: billofmaterials { product @through(column: \"componentid\") { name } }",
 		"@notRelated":            "Disable automatic relationship detection for a field",
 		"@cacheControl(maxAge:)": "Set cache TTL in seconds for this query",
 		"@database(name:)":       "Assign table to a named database (REQUIRED on every table when multiple databases are configured). Used in schema definitions, e.g.: type users @database(name: \"mydb\") { ... }",
@@ -214,7 +215,6 @@ var querySyntaxReference = QuerySyntaxReference{
 		{Wrong: `where: { is_active: { eq: "true" } }`, Right: `where: { is_active: { eq: true } }`, Reason: "Boolean values must be true/false, not strings"},
 		{Wrong: `products(first: 10) { products_cursor }`, Right: `products(first: 10) { id } products_cursor`, Reason: "Cursor field must be at query root level, not inside the selection"},
 		{Wrong: `products(first: 10, after: "abc123")`, Right: `products(first: 10, after: $products_cursor)`, Reason: "Cursor must be a $variable (not a literal string) passed via the variables object. Variable name must be $<table>_cursor"},
-		{Wrong: `products(first: 100)`, Right: `products(first: 20)`, Reason: "Queries are capped at the server's default_limit (typically 20 rows). Use cursor pagination to fetch more"},
 	},
 	Examples: QueryExamplesForSyntax{
 		Basic: []QueryExample{
@@ -237,6 +237,8 @@ var querySyntaxReference = QuerySyntaxReference{
 			{Description: "Child to parent (many-to-one)", Query: "{ products { name owner { email } } }"},
 			{Description: "Many-to-many through join table", Query: "{ products { name customers { email } } }"},
 			{Description: "Deep nesting", Query: "{ users { products { purchases { customer { email } } } } }"},
+			{Description: "Many-to-many when there are multiple possible join tables — @through(table:) picks the join table", Query: "{ products @through(table: \"categories\") { name } }"},
+			{Description: "Multiple FKs to the same target table — @through(column:) names the FK column to follow", Query: "{ billofmaterials { id product @through(column: \"componentid\") { name } } }"},
 		},
 		Pagination: []QueryExample{
 			{Description: "Limit and offset", Query: "{ products(limit: 10, offset: 20) { id name } }"},
@@ -387,7 +389,6 @@ func (ms *mcpServer) registerResources() {
 					"  Tables can have hundreds of thousands of rows. You cannot predict sizes in advance.",
 					"- Queries inside workflows must be TOP-DOWN: start from the grouping/parent table",
 					"  and nest into children. NEVER filter bottom-up from leaf tables.",
-					"- Every query level has a silent default row limit. Always set explicit limits.",
 					"- order_by does NOT work on aggregation aliases (sum_*, count_*, etc).",
 					"  Sort aggregated results in workflow JavaScript, not in the query.",
 					"- Use distinct: [columns] for GROUP BY — group_by does not exist.",

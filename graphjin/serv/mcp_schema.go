@@ -666,6 +666,9 @@ func enhanceError(errMsg, currentTool string) string {
 
 	// Pattern matching for common errors
 	switch {
+	case contains(errMsg, "@through"):
+		enhanced.Suggestion = "@through(table:) takes the name of an intermediate join table (for many-to-many). @through(column:) takes the name of the FK column to follow when the parent has multiple foreign keys to the same target table. Check the spelling of the table or column name."
+		enhanced.RelatedTool = "get_query_syntax"
 	case contains(errMsg, "table not found", "unknown table", "does not exist", "no such table", "table doesn't exist"):
 		enhanced.Suggestion = "Check spelling or use list_tables to see available tables. The table may exist in a different database - use list_tables to see all databases."
 		enhanced.RelatedTool = "list_tables"

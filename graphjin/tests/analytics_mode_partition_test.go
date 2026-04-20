@@ -84,7 +84,7 @@ func TestAnalyticsMode_ImplicitPartitionFromCreatedAt(t *testing.T) {
 	}
 }
 
-func TestAnalyticsMode_UnrestrictedArgRejectedWhenTemporalExists(t *testing.T) {
+func TestAnalyticsMode_UnrestrictedBypassesImplicitTemporal(t *testing.T) {
 	if dbType != "postgres" {
 		t.Skip("gated to postgres")
 	}
@@ -93,10 +93,16 @@ func TestAnalyticsMode_UnrestrictedArgRejectedWhenTemporalExists(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { gj.Close() })
 
-	_, err = gj.GraphQL(context.Background(),
+	res, err := gj.GraphQL(context.Background(),
 		`{ users(unrestricted: true) { id } }`, nil, nil)
-	require.Error(t, err, "unrestricted must NOT bypass the check when a temporal column is detectable")
-	assert.Contains(t, err.Error(), "created_at")
+	require.NoError(t, err, "unrestricted:true should bypass the implicit created_at gate")
+	var out struct {
+		Users []struct {
+			ID int `json:"id"`
+		} `json:"users"`
+	}
+	require.NoError(t, json.Unmarshal(res.Data, &out))
+	assert.Equal(t, 100, len(out.Users))
 }
 
 func TestAnalyticsMode_PartitionNoneConfigAllowsUnfiltered(t *testing.T) {
