@@ -94,10 +94,12 @@ type DBTable struct {
 	FullText           []DBColumn
 	Blocked            bool
 	Func               DBFunction
-	ClusteringKeys     []string // Snowflake clustering key columns (normalized to snake_case)
-	PartitionKey       string   // Partition column name (from config, e.g., "created_at")
-	PartitionRangeDays int      // Default range in days for auto-injected partition filter (0 = warn only)
-	colMap             map[string]int
+	ClusteringKeys       []string // Snowflake clustering key columns (normalized to snake_case)
+	PartitionKey         string   // Partition column name (from config, e.g., "created_at")
+	PartitionRangeDays   int      // Default range in days for auto-injected partition filter (0 = warn only)
+	PartitionNone        bool
+	ImplicitPartitionKey string
+	colMap               map[string]int
 }
 
 // VirtualTable holds the virtual table information
@@ -1484,6 +1486,25 @@ func autoSetPartitionFromClustering(t *DBTable) {
 		t.PartitionKey = leadingKey
 		t.PartitionRangeDays = 60
 	}
+}
+
+var implicitPartitionCandidates = []string{
+	"created_at",
+	"event_time",
+	"updated_at",
+	"timestamp",
+	"ingested_at",
+}
+
+func resolveImplicitPartitionKey(t *DBTable) string {
+	for _, cand := range implicitPartitionCandidates {
+		for i := range t.Columns {
+			if strings.EqualFold(t.Columns[i].Name, cand) && isTemporalType(t.Columns[i].Type) {
+				return t.Columns[i].Name
+			}
+		}
+	}
+	return ""
 }
 
 // isTemporalType returns true if the column type string represents a

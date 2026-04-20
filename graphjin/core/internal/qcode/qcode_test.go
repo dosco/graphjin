@@ -922,6 +922,225 @@ func TestPostgresOrderByAlwaysProjected(t *testing.T) {
 	}
 }
 
+func TestPartitionFilterRequiredInOLAPWhenNoUserFilter(t *testing.T) {
+	// analytics_mode=true + partition configured + no user filter on partition column
+	// → compile populates PartitionFilterRequired; no filter injected.
+	pSchema, err := sdata.GetTestPartitionedSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	qc, err := qcode.NewCompiler(pSchema, qcode.Config{AnalyticsMode: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "price", "created_at"},
+		},
+	})
+
+	result, err := qc.Compile([]byte(`
+		query {
+			products {
+				id
+				name
+			}
+		}`), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sel := result.Selects[0]
+	if sel.PartitionFilterRequired == "" {
+		t.Fatal("expected PartitionFilterRequired to be set in analytics_mode when user omits filter")
+	}
+	for _, needle := range []string{"products", "created_at"} {
+		if !strings.Contains(sel.PartitionFilterRequired, needle) {
+			t.Errorf("expected error to mention %q, got: %s", needle, sel.PartitionFilterRequired)
+		}
+	}
+
+	// Must NOT silently inject the default time-range filter in OLAP mode.
+	if qcode.HasFilterOnColumn(sel.Where.Exp, "created_at") {
+		t.Error("analytics_mode must not inject a default partition filter")
+	}
+}
+
+func TestPartitionFilterNotRequiredInOLAPWhenUserFilters(t *testing.T) {
+	// analytics_mode=true + user already filters on partition column
+	// → no error, no injection.
+	pSchema, err := sdata.GetTestPartitionedSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	qc, err := qcode.NewCompiler(pSchema, qcode.Config{AnalyticsMode: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{
+			Columns: []string{"id", "name", "price", "created_at"},
+		},
+	})
+
+	result, err := qc.Compile([]byte(`
+		query {
+			products(where: { created_at: { gte: $start_date } }) {
+				id
+				name
+			}
+		}`), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sel := result.Selects[0]
+	if sel.PartitionFilterRequired != "" {
+		t.Errorf("expected PartitionFilterRequired to be empty when user filters on partition column, got: %s",
+			sel.PartitionFilterRequired)
+	}
+}
+
+func TestPartitionFilterRequiredInOLAPFromImplicitTemporalColumn(t *testing.T) {
+	qc, _ := qcode.NewCompiler(dbs, qcode.Config{AnalyticsMode: true})
+	_ = qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{Columns: []string{"id", "name", "price", "created_at"}},
+	})
+
+	result, err := qc.Compile([]byte(`query { products { id name } }`), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sel := result.Selects[0]
+	if sel.PartitionFilterRequired == "" {
+		t.Fatal("expected implicit partition detection to require a filter in analytics_mode")
+	}
+	for _, needle := range []string{"products", "created_at", "unrestricted"} {
+		if !strings.Contains(sel.PartitionFilterRequired, needle) {
+			t.Errorf("expected error to mention %q, got: %s", needle, sel.PartitionFilterRequired)
+		}
+	}
+}
+
+func TestPartitionFilterSatisfiedByFilterOnImplicitKey(t *testing.T) {
+	qc, _ := qcode.NewCompiler(dbs, qcode.Config{AnalyticsMode: true})
+	_ = qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{Columns: []string{"id", "name", "price", "created_at"}},
+	})
+
+	result, err := qc.Compile([]byte(`
+		query { products(where: { created_at: { gt: $cutoff } }) { id name } }`),
+		nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := result.Selects[0].PartitionFilterRequired; s != "" {
+		t.Errorf("expected empty, got: %s", s)
+	}
+}
+
+func currenciesOnlyDBInfo(partitionNone bool) *sdata.DBInfo {
+	cols := []sdata.DBColumn{
+		{Schema: "public", Table: "currencies", Name: "code", Type: "varchar", NotNull: true, PrimaryKey: true, UniqueKey: true},
+		{Schema: "public", Table: "currencies", Name: "name", Type: "varchar"},
+	}
+	di := sdata.NewDBInfo("postgres", 110000, "public", "db", cols, nil, nil)
+	if partitionNone {
+		for i := range di.Tables {
+			if di.Tables[i].Name == "currencies" {
+				di.Tables[i].PartitionNone = true
+			}
+		}
+	}
+	return di
+}
+
+func TestPartitionFilterUnrestrictedBypassesCheckWhenNoColumn(t *testing.T) {
+	schema, err := sdata.NewDBSchema(currenciesOnlyDBInfo(false), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	qc, _ := qcode.NewCompiler(schema, qcode.Config{AnalyticsMode: true})
+	_ = qc.AddRole("user", "public", "currencies", qcode.TRConfig{
+		Query: qcode.QueryConfig{Columns: []string{"code", "name"}},
+	})
+
+	result, err := qc.Compile([]byte(`query { currencies(unrestricted: true) { code name } }`),
+		nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := result.Selects[0].PartitionFilterRequired; s != "" {
+		t.Errorf("expected unrestricted:true to bypass partition check, got: %s", s)
+	}
+}
+
+func TestPartitionFilterUnrestrictedDoesNotBypassDetectedColumn(t *testing.T) {
+	qc, _ := qcode.NewCompiler(dbs, qcode.Config{AnalyticsMode: true})
+	_ = qc.AddRole("user", "public", "products", qcode.TRConfig{
+		Query: qcode.QueryConfig{Columns: []string{"id", "name", "price", "created_at"}},
+	})
+
+	result, err := qc.Compile([]byte(`query { products(unrestricted: true) { id name } }`),
+		nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := result.Selects[0].PartitionFilterRequired; s == "" {
+		t.Fatal("unrestricted:true must NOT bypass the check when a temporal column is detectable")
+	}
+}
+
+func TestPartitionFilterMissingColumnErrorNamesBothEscapeHatches(t *testing.T) {
+	schema, err := sdata.NewDBSchema(currenciesOnlyDBInfo(false), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	qc, _ := qcode.NewCompiler(schema, qcode.Config{AnalyticsMode: true})
+	_ = qc.AddRole("user", "public", "currencies", qcode.TRConfig{
+		Query: qcode.QueryConfig{Columns: []string{"code", "name"}},
+	})
+
+	result, err := qc.Compile([]byte(`query { currencies { code name } }`), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := result.Selects[0].PartitionFilterRequired
+	if msg == "" {
+		t.Fatal("expected error when no temporal column and no escape hatch")
+	}
+	for _, needle := range []string{"currencies", "unrestricted", "none"} {
+		if !strings.Contains(msg, needle) {
+			t.Errorf("expected error to mention %q, got: %s", needle, msg)
+		}
+	}
+}
+
+func TestPartitionFilterNoneConfigBypassesCheck(t *testing.T) {
+	schema, err := sdata.NewDBSchema(currenciesOnlyDBInfo(true), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	qc, _ := qcode.NewCompiler(schema, qcode.Config{AnalyticsMode: true})
+	_ = qc.AddRole("user", "public", "currencies", qcode.TRConfig{
+		Query: qcode.QueryConfig{Columns: []string{"code", "name"}},
+	})
+
+	result, err := qc.Compile([]byte(`query { currencies { code name } }`), nil, "user", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := result.Selects[0].PartitionFilterRequired; s != "" {
+		t.Errorf("expected PartitionNone to bypass check, got: %s", s)
+	}
+}
+
 func TestPartitionNoWarningForNonPartitionedTable(t *testing.T) {
 	// Standard postgres schema — no partition keys
 	qc, _ := qcode.NewCompiler(dbs, qcode.Config{})

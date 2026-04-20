@@ -194,10 +194,13 @@ func updateTable(conf *Config, dbInfo *sdata.DBInfo, table Table) error {
 		t1.PrimaryCol = t1.PrimaryCols[0]
 	}
 
-	// Apply partition configuration
-	if table.Partition != nil && table.Partition.Column != "" {
-		t1.PartitionKey = table.Partition.Column
-		t1.PartitionRangeDays = table.Partition.DefaultRangeDays
+	if table.Partition != nil {
+		if table.Partition.None {
+			t1.PartitionNone = true
+		} else if table.Partition.Column != "" {
+			t1.PartitionKey = table.Partition.Column
+			t1.PartitionRangeDays = table.Partition.DefaultRangeDays
+		}
 	}
 
 	return nil
