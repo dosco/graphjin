@@ -194,7 +194,7 @@ func createDatabaseOnServer(dbType, host string, port int, user, password, dbNam
 		return fmt.Errorf("unsupported database type for create: %s", dbType)
 	}
 
-	adminDB, err := tryConnect(driverName, connString)
+	adminDB, err := tryConnect(driverName, connString, 2*time.Second)
 	if err != nil {
 		return fmt.Errorf("admin connection failed: %w", err)
 	}
@@ -242,7 +242,7 @@ func testDatabaseConnection(dbType, host string, port int, user, password, dbNam
 			return nil, fmt.Errorf("unsupported database type: %s", dbType)
 		}
 
-		sqlDB, err := tryConnect(driverName, connString)
+		sqlDB, err := tryConnect(driverName, connString, 10*time.Second)
 		if err != nil {
 			return nil, err
 		}
@@ -269,7 +269,7 @@ func testDatabaseConnection(dbType, host string, port int, user, password, dbNam
 		return nil, fmt.Errorf("unsupported database type: %s", dbType)
 	}
 
-	sqlDB, err := tryConnect(driverName, connString)
+	sqlDB, err := tryConnect(driverName, connString, 10*time.Second)
 	if err != nil {
 		return nil, err
 	}

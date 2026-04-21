@@ -2,6 +2,7 @@ package tests_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -21,27 +22,139 @@ func newDiscoveryDM(t *testing.T) (*core.GraphJin, *serv.DiscoveryManager) {
 	return gj, dm
 }
 
+func ensureCatalogStats(t *testing.T) {
+	t.Helper()
+	seededTables := []string{"users", "categories", "products", "purchases", "notifications", "comments"}
+	switch dbType {
+	case "postgres":
+		_, _ = db.Exec("ANALYZE")
+	case "sqlite":
+		_, _ = db.Exec("ANALYZE")
+	case "mysql", "mariadb":
+		for _, tbl := range seededTables {
+			_, _ = db.Exec("ANALYZE TABLE " + tbl)
+		}
+	case "oracle":
+		for _, tbl := range seededTables {
+			_, _ = db.Exec("ANALYZE TABLE " + tbl + " COMPUTE STATISTICS")
+		}
+	case "mssql":
+		_, _ = db.Exec("EXEC sp_updatestats")
+	}
+}
+
 func TestDiscovery(t *testing.T) {
 	gj, dm := newDiscoveryDM(t)
 
-	t.Run("Sections", func(t *testing.T) {
-		assert.NotEmpty(t, dm.CombinedSection("syntax"))
-		assert.NotEmpty(t, dm.CombinedSection("tables"))
-		assert.NotEmpty(t, dm.CombinedSection("insights"))
-		assert.NotEmpty(t, dm.Combined())
+	t.Run("TableIndex", func(t *testing.T) {
+		dbName := gj.DefaultDatabase()
+		tables := dm.TableIndex(dbName)
+		require.NotEmpty(t, tables, "expected at least one table in the index")
+		for _, entry := range tables {
+			assert.NotEmpty(t, entry.Name)
+		}
+	})
+
+	t.Run("RowCountsForSeededTables", func(t *testing.T) {
+		if dbType == "mongodb" {
+			t.Skip("mongodb row counts are not supported via the SQL path")
+		}
+		ensureCatalogStats(t)
+		dbName := gj.DefaultDatabase()
+		dm.Invalidate()
+		tables := dm.TableIndex(dbName)
+		byName := map[string]serv.TableIndexEntry{}
+		for _, t := range tables {
+			byName[t.Name] = t
+		}
+		for _, want := range []struct {
+			name string
+			min  int64
+		}{
+			{"users", 100},
+			{"products", 1},
+			{"categories", 1},
+		} {
+			entry, ok := byName[want.name]
+			if !ok {
+				continue
+			}
+			assert.GreaterOrEqualf(t, entry.RowCountApprox, want.min,
+				"table %q: row_count_approx=%d expected >= %d (dialect=%s)",
+				want.name, entry.RowCountApprox, want.min, dbType)
+		}
+	})
+
+	t.Run("EnrichmentForSeededTable", func(t *testing.T) {
+		if dbType == "mongodb" {
+			t.Skip("mongodb enrichment GraphQL is unverified on this driver")
+		}
+		dbName := gj.DefaultDatabase()
+		payload := dm.FullPayload(dbName)
+		require.NotNil(t, payload)
+
+		type hit struct {
+			table string
+			col   string
+			stats serv.NumericStats
+			prof  *serv.TableProfile
+		}
+		var found *hit
+		for i := range payload.Tables {
+			entry := &payload.Tables[i]
+			if entry.Profile == nil || entry.Profile.RowCountApprox <= 1 {
+				continue
+			}
+			for col, stats := range entry.Profile.NumericStats {
+				if stats.Count > 1 {
+					found = &hit{table: entry.Name, col: col, stats: stats, prof: entry.Profile}
+					break
+				}
+			}
+			if found != nil {
+				break
+			}
+		}
+		if found == nil {
+			t.Skip("no multi-row seeded table with numeric columns found in this dialect's fixture")
+		}
+		t.Logf("enrichment hit: %s.%s count=%d min=%s max=%s avg=%s (dialect=%s)",
+			found.table, found.col, found.stats.Count, found.stats.Min, found.stats.Max, found.stats.Avg, dbType)
+
+		assert.NotEmptyf(t, found.prof.SampleRows,
+			"expected sample rows on %q (dialect=%s)", found.table, dbType)
+	})
+
+	t.Run("JSONShapeRoundTrip", func(t *testing.T) {
+		dbName := gj.DefaultDatabase()
+		raw, err := json.Marshal(dm.FullPayload(dbName))
+		require.NoError(t, err)
+
+		var out serv.DiscoveryFullPayload
+		require.NoError(t, json.Unmarshal(raw, &out), "unmarshal back into DiscoveryFullPayload")
+		assert.Equal(t, dbName, out.Database)
+		assert.NotEmpty(t, out.Tables, "round-tripped tables slice should not be empty (dialect=%s)", dbType)
+		for _, entry := range out.Tables {
+			assert.NotEmpty(t, entry.Name)
+		}
+	})
+
+	t.Run("Payload", func(t *testing.T) {
+		payload := dm.Payload(gj.DefaultDatabase())
+		require.NotNil(t, payload)
+		assert.NotEmpty(t, payload.Tables)
+		assert.Equal(t, gj.DefaultDatabase(), payload.Database)
+	})
+
+	t.Run("Insights", func(t *testing.T) {
+		insights := dm.Insights(gj.DefaultDatabase())
+		assert.Equal(t, gj.DefaultDatabase(), insights.Database)
 	})
 
 	t.Run("Caching", func(t *testing.T) {
-		md1 := dm.Combined()
-		md2 := dm.Combined()
-		assert.Equal(t, md1, md2)
-
-		doc := dm.Get(gj.DefaultDatabase())
-		require.NotNil(t, doc)
-		assert.NotEmpty(t, doc.Hash)
-
-		all := dm.GetAll()
-		assert.GreaterOrEqual(t, len(all), 1)
+		a, _ := json.Marshal(dm.Payload(gj.DefaultDatabase()))
+		b, _ := json.Marshal(dm.Payload(gj.DefaultDatabase()))
+		assert.JSONEq(t, string(a), string(b))
 	})
 
 	t.Run("SchemaChange", func(t *testing.T) {
@@ -69,11 +182,11 @@ func TestDiscovery(t *testing.T) {
 		defer ds.Unsubscribe()
 
 		select {
-		case doc := <-ds.Result:
-			require.NotNil(t, doc)
-			assert.NotEmpty(t, doc.Tables)
+		case payload := <-ds.Result:
+			require.NotNil(t, payload)
+			assert.NotEmpty(t, payload.Tables)
 		case <-time.After(5 * time.Second):
-			t.Fatal("no initial document")
+			t.Fatal("no initial payload")
 		}
 	})
 

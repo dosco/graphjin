@@ -117,7 +117,6 @@ func (ms *mcpServer) registerSchemaTools() {
 	}
 }
 
-// handleListTables returns all available tables
 func (ms *mcpServer) handleListTables(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	if err := ms.requireDB(); err != nil {
 		return err, nil
@@ -125,20 +124,40 @@ func (ms *mcpServer) handleListTables(ctx context.Context, req mcp.CallToolReque
 	args := req.GetArguments()
 	database, _ := args["database"].(string)
 
-	var tables []core.TableInfo
-	if database != "" {
-		tables = ms.service.gj.GetTablesForDatabase(database)
-	} else {
-		tables = ms.service.gj.GetTables()
+	var entries []TableIndexEntry
+	if ms.service.disc != nil {
+		if database != "" {
+			entries = ms.service.disc.TableIndex(database)
+		} else {
+			for _, name := range ms.service.disc.Databases() {
+				entries = append(entries, ms.service.disc.TableIndex(name)...)
+			}
+		}
 	}
-	// core.GetTables sorts by (database, schema, name) for determinism.
+	if entries == nil {
+		var tables []core.TableInfo
+		if database != "" {
+			tables = ms.service.gj.GetTablesForDatabase(database)
+		} else {
+			tables = ms.service.gj.GetTables()
+		}
+		for _, t := range tables {
+			entries = append(entries, TableIndexEntry{
+				Name:     t.Name,
+				Schema:   t.Schema,
+				Database: t.Database,
+				Type:     t.Type,
+				Comment:  t.Comment,
+			})
+		}
+	}
 
 	result := struct {
-		Tables []core.TableInfo `json:"tables"`
-		Count  int              `json:"count"`
+		Tables []TableIndexEntry `json:"tables"`
+		Count  int               `json:"count"`
 	}{
-		Tables: tables,
-		Count:  len(tables),
+		Tables: entries,
+		Count:  len(entries),
 	}
 	return ms.toolResultJSON("list_tables", args, result)
 }
@@ -154,6 +173,7 @@ type TableSchemaWithAggregations struct {
 	*core.TableSchema
 	Aggregations   AggregationInfo `json:"aggregations"`
 	ExampleQueries []ExampleQuery  `json:"example_queries,omitempty"`
+	Profile        *TableProfile   `json:"profile,omitempty"`
 }
 
 // ExampleQuery represents an example GraphQL query for a table
@@ -192,10 +212,23 @@ func (ms *mcpServer) handleDescribeTable(ctx context.Context, req mcp.CallToolRe
 	// Generate example queries
 	examples := generateExampleQueries(schema)
 
+	var profile *TableProfile
+	if ms.service.disc != nil {
+		resolvedDB := database
+		if resolvedDB == "" {
+			resolvedDB = schema.Database
+		}
+		if resolvedDB == "" {
+			resolvedDB = ms.service.gj.DefaultDatabase()
+		}
+		profile = ms.service.disc.Profile(resolvedDB, table)
+	}
+
 	result := TableSchemaWithAggregations{
 		TableSchema:    schema,
 		Aggregations:   aggregations,
 		ExampleQueries: examples,
+		Profile:        profile,
 	}
 	return ms.toolResultJSON("describe_table", args, result)
 }
@@ -226,7 +259,7 @@ func generateAggregations(schema *core.TableSchema) AggregationInfo {
 			"Single column: { %s { count_id sum_<numeric_col> avg_<numeric_col> } }. "+
 				"Arithmetic across columns (revenue, margin, ratios): "+
 				"{ %s { revenue: sum(expr: { mul: [col_a, col_b] }) } } — "+
-				"see graphjin://discovery/syntax for the full expression grammar.",
+				"call get_query_syntax for the full expression grammar.",
 			schema.Name, schema.Name),
 	}
 }
@@ -413,11 +446,22 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 		guide.MutationWorkflow = append(guide.MutationWorkflow, "4. Raw mutations are disabled, so execute a saved mutation with execute_saved_query")
 	}
 
+	analyticsMode := ms.service.gj != nil && ms.service.gj.EffectiveAnalyticsMode(ms.service.gj.DefaultDatabase())
+	if analyticsMode {
+		guide.Tips = append(guide.Tips,
+			"This database is in ANALYTICS MODE — compute answers server-side with aggregates (count_*, sum_*, sum(expr: { mul: [...] }), distinct: [group_col], filtered where:). Multiple targeted queries are fine; DO NOT paginate raw rows to build totals client-side. See get_query_syntax → Expression Aggregates.",
+			"Analytics mode: implicit row-limit defaults are OFF for this database. Queries without an explicit limit return the full result. Use explicit limit: only when you want a top-N.",
+		)
+	} else {
+		guide.Tips = append(guide.Tips,
+			"ALWAYS use execute_workflow for data questions — NEVER execute_graphql directly. Tables can have hundreds of thousands of rows and you cannot predict sizes.",
+			"Every query level has a silent default row limit. Always set explicit limits on every level, especially nested children.",
+		)
+	}
+
 	guide.Tips = append(guide.Tips,
-		"ALWAYS use execute_workflow for data questions — NEVER execute_graphql directly. Tables can have hundreds of thousands of rows and you cannot predict sizes.",
 		"ALWAYS call list_workflows first — reuse an existing workflow if one fits the question.",
 		"Queries inside workflows must be TOP-DOWN: start from the grouping/parent table, nest into children. NEVER filter bottom-up from leaf tables.",
-		"Every query level has a silent default row limit. Always set explicit limits on every level, especially nested children.",
 		"order_by does NOT work on aggregation aliases (sum_*, count_*). Sort aggregated results in workflow JavaScript.",
 		"Use distinct: [columns] for GROUP BY — group_by does not exist.",
 		"Use find_path or explore_relationships to discover join paths — NEVER guess at FK relationships.",
@@ -622,6 +666,9 @@ func enhanceError(errMsg, currentTool string) string {
 
 	// Pattern matching for common errors
 	switch {
+	case contains(errMsg, "@through"):
+		enhanced.Suggestion = "@through(table:) takes the name of an intermediate join table (for many-to-many). @through(column:) takes the name of the FK column to follow when the parent has multiple foreign keys to the same target table. Check the spelling of the table or column name."
+		enhanced.RelatedTool = "get_query_syntax"
 	case contains(errMsg, "table not found", "unknown table", "does not exist", "no such table", "table doesn't exist"):
 		enhanced.Suggestion = "Check spelling or use list_tables to see available tables. The table may exist in a different database - use list_tables to see all databases."
 		enhanced.RelatedTool = "list_tables"

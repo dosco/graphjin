@@ -522,7 +522,7 @@ func (ms *mcpServer) handleWriteQuery(ctx context.Context, req mcp.GetPromptRequ
 		sb.WriteString("  }\n")
 		sb.WriteString("}\n")
 		sb.WriteString("```\n")
-		sb.WriteString("\nSee `graphjin://discovery/syntax` for the full expression grammar ")
+		sb.WriteString("\nCall `get_query_syntax` for the full expression grammar ")
 		sb.WriteString("(add/sub/div, case, cast, coalesce, dot-notation for joined columns).\n")
 	}
 

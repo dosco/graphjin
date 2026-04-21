@@ -66,11 +66,20 @@ func (c *Config) Validate() error {
 	// Validate partition configs
 	for _, t := range c.Tables {
 		if t.Partition != nil {
-			if t.Partition.Column == "" {
-				return fmt.Errorf("table %q: partition column must not be empty", t.Name)
-			}
-			if t.Partition.DefaultRangeDays < 0 {
-				return fmt.Errorf("table %q: partition default_range_days must not be negative", t.Name)
+			if t.Partition.None {
+				if t.Partition.Column != "" {
+					return fmt.Errorf("table %q: partition.none and partition.column are mutually exclusive", t.Name)
+				}
+				if t.Partition.DefaultRangeDays != 0 {
+					return fmt.Errorf("table %q: partition.none cannot be combined with default_range_days", t.Name)
+				}
+			} else {
+				if t.Partition.Column == "" {
+					return fmt.Errorf("table %q: partition column must not be empty", t.Name)
+				}
+				if t.Partition.DefaultRangeDays < 0 {
+					return fmt.Errorf("table %q: partition default_range_days must not be negative", t.Name)
+				}
 			}
 		}
 	}
@@ -248,6 +257,8 @@ type Config struct {
 	// the query or the table role config.
 	DefaultLimit int `mapstructure:"default_limit" json:"default_limit" yaml:"default_limit" jsonschema:"title=Default Row Limit,default=20"`
 
+	AnalyticsMode bool `mapstructure:"analytics_mode" json:"analytics_mode" yaml:"analytics_mode" jsonschema:"title=Analytics Mode,default=false,description=Disable implicit row-limit defaults for OLAP deployments"`
+
 	// Disable all aggregation functions like count, sum, etc
 	DisableAgg bool `mapstructure:"disable_agg_functions" json:"disable_agg_functions" yaml:"disable_agg_functions" jsonschema:"title=Disable Aggregations,default=false"`
 
@@ -350,6 +361,18 @@ type DatabaseConfig struct {
 	// Read-only mode — blocks all mutations and DDL against this database.
 	// Once set in config, cannot be changed at runtime via MCP tools.
 	ReadOnly bool `mapstructure:"read_only" json:"read_only" yaml:"read_only" jsonschema:"title=Read Only"`
+
+	AnalyticsMode *bool `mapstructure:"analytics_mode" json:"analytics_mode,omitempty" yaml:"analytics_mode,omitempty" jsonschema:"title=Analytics Mode (per-DB override)"`
+}
+
+func (c *Config) EffectiveAnalyticsMode(database string) bool {
+	if c == nil {
+		return false
+	}
+	if db, ok := c.Databases[database]; ok && db.AnalyticsMode != nil {
+		return *db.AnalyticsMode
+	}
+	return c.AnalyticsMode
 }
 
 // SnowflakeKeyPairConfig allows external services to inject Snowflake key pair
@@ -393,6 +416,7 @@ type PartitionConfig struct {
 	// DefaultRangeDays is the number of days to auto-filter when no partition filter
 	// is present in the query. Set to 0 to only warn without injecting a filter.
 	DefaultRangeDays int `mapstructure:"default_range_days" json:"default_range_days,omitempty" yaml:"default_range_days,omitempty" jsonschema:"title=Default Range Days,example=30"`
+	None bool `mapstructure:"none" json:"none,omitempty" yaml:"none,omitempty" jsonschema:"title=Disable Partition Check"`
 }
 
 // Configuration for a database table column

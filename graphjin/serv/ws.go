@@ -413,10 +413,10 @@ func (s *graphjinService) waitForDiscoveryData(wc *wsConn, st *wsState, ds *Disc
 
 			payload := map[string]any{
 				"_discovery": map[string]any{
-					"database":     doc.Database,
-					"hash":         doc.Hash,
-					"generated_at": doc.GeneratedAt.Format("2006-01-02T15:04:05Z"),
-					"tables":       doc.Tables,
+					"database":          doc.Database,
+					"tables":            doc.Tables,
+					"insights":          doc.Insights,
+					"database_overview": doc.DatabaseOverview,
 				},
 			}
 			data, err := json.Marshal(payload)
