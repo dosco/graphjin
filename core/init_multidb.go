@@ -196,6 +196,7 @@ func (gj *graphjinEngine) finalizeDatabaseSchema(ctx *dbContext) error {
 		TConfig:             gj.tmap,
 		DefaultBlock:        gj.conf.DefaultBlock,
 		DefaultLimit:        gj.conf.DefaultLimit,
+		AnalyticsMode:       gj.conf.EffectiveAnalyticsMode(ctx.name),
 		DisableAgg:          gj.conf.DisableAgg,
 		DisableFuncs:        gj.conf.DisableFuncs,
 		EnableCamelcase:     gj.conf.EnableCamelcase,

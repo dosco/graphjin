@@ -448,6 +448,14 @@ func (s *gstate) execute(c context.Context, conn *sql.Conn) (err error) {
 		return
 	}
 
+	if s.cs.st.qc != nil {
+		for i := range s.cs.st.qc.Selects {
+			if msg := s.cs.st.qc.Selects[i].PartitionFilterRequired; msg != "" {
+				return errors.New(msg)
+			}
+		}
+	}
+
 	var args args
 	if args, err = s.argList(c); err != nil {
 		return

@@ -123,6 +123,12 @@ func NewDBSchema(
 		compositeFKs:      info.CompositeFKs,
 	}
 
+	for i := range info.Tables {
+		if info.Tables[i].PartitionKey == "" && info.Tables[i].ImplicitPartitionKey == "" {
+			info.Tables[i].ImplicitPartitionKey = resolveImplicitPartitionKey(&info.Tables[i])
+		}
+	}
+
 	for _, t := range info.Tables {
 		nid := schema.addNode(t)
 		schema.addAliases(schema.tables[nid], nid, aliases[t.Name])

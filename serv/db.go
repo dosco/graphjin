@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dosco/graphjin/core/v3"
@@ -424,11 +425,21 @@ func initMongo(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf, er
 	return &dbConf{driverName: "mongodb", connector: connector}, nil
 }
 
+var snowflakeLogOnce sync.Once
+
+func silenceSnowflakeDriverLogs() {
+	snowflakeLogOnce.Do(func() {
+		_ = gosnowflake.GetLogger().SetLogLevel("fatal")
+	})
+}
+
 // initSnowflake initializes the snowflake database.
 // Snowflake requires a full DSN in connection_string.
 // When private_key_path or private_key_pem is set, key pair (JWT) authentication
 // is used via the gosnowflake driver's built-in support.
 func initSnowflake(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf, error) {
+	silenceSnowflakeDriverLogs()
+
 	connString := strings.TrimSpace(conf.DB.ConnString)
 	if connString == "" {
 		return nil, fmt.Errorf("snowflake requires connection_string")

@@ -99,6 +99,7 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 			s.log.Fatalf("api: error initializing discovery auth handler: %s", err)
 		}
 		mux.Handle(routeDiscovery, apiV1Handler(s1, ns, discoveryHandler(s1), discAuth))
+		mux.Handle(routeDiscovery+"/*", apiV1Handler(s1, ns, discoveryWildcardHandler(s1), discAuth))
 	}
 
 	// MCP (Model Context Protocol) API

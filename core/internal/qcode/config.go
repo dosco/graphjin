@@ -5,6 +5,7 @@ type Config struct {
 	TConfig         map[string]TConfig
 	DefaultBlock    bool
 	DefaultLimit    int
+	AnalyticsMode   bool
 	DisableAgg      bool
 	DisableFuncs    bool
 	EnableCamelcase bool

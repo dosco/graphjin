@@ -884,7 +884,7 @@ func probeDatabase(db *DiscoveredDatabase, userParam, passwordParam string) {
 			return
 		}
 
-		sqlDB, err := tryConnect(driverName, connString)
+		sqlDB, err := tryConnect(driverName, connString, 2*time.Second)
 		if err != nil {
 			db.AuthStatus = "error"
 			db.AuthError = err.Error()
@@ -935,7 +935,7 @@ func probeDatabase(db *DiscoveredDatabase, userParam, passwordParam string) {
 			continue
 		}
 
-		sqlDB, err := tryConnect(driverName, connString)
+		sqlDB, err := tryConnect(driverName, connString, 2*time.Second)
 		if err != nil {
 			if isAuthError(err) {
 				if !seen[cred.user] {
@@ -994,7 +994,7 @@ func probeSQLite(db *DiscoveredDatabase) {
 		return
 	}
 
-	sqlDB, err := tryConnect("sqlite", filePath)
+	sqlDB, err := tryConnect("sqlite", filePath, 2*time.Second)
 	if err != nil {
 		db.AuthStatus = "error"
 		db.AuthError = err.Error()
@@ -1214,14 +1214,17 @@ func buildMySQLProbeConn(host string, port int, user, password, source, dbName s
 	return "mysql", connString
 }
 
-// tryConnect opens a database connection and pings it with a 2s timeout
-func tryConnect(driverName, connString string) (*sql.DB, error) {
+// tryConnect opens a database connection and pings it with the given timeout.
+// Probe/discovery callers pass a tight budget (e.g. 2s); configured-database
+// callers should pass dbConf.PingTimeout (or a cloud-safe default) so cold TLS
+// handshakes against remote cloud databases are not cut off prematurely.
+func tryConnect(driverName, connString string, timeout time.Duration) (*sql.DB, error) {
 	db, err := sql.Open(driverName, connString)
 	if err != nil {
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	if err := db.PingContext(ctx); err != nil {

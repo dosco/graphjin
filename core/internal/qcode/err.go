@@ -15,7 +15,7 @@ func graphError(err error, from, to, through string) error {
 	case sdata.ErrPathNotFound:
 		return fmt.Errorf("relationship not found: %s -> %s", from, to)
 	case sdata.ErrThoughNodeNotFound:
-		return fmt.Errorf("table not found: %s", through)
+		return fmt.Errorf("@through(table: %q) not resolved: %q must be a table name (the intermediate/join table). To disambiguate multiple FKs to the same target table by FK column name, use @through(column: %q) instead", through, through, through)
 	default:
 		return err
 	}

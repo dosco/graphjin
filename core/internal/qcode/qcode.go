@@ -62,25 +62,25 @@ type ColKey struct {
 }
 
 type QCode struct {
-	Type      QType
-	SType     QType
-	Name      string
-	ActionVar string
-	ActionVal json.RawMessage
-	Vars      []Var
-	Selects   []Select
-	Consts    []Constraint
-	Roots     []int32
-	rootsA    [5]int32
-	Mutates   []Mutate
-	MUnions   map[string][]int32
-	Schema    *sdata.DBSchema
-	Remotes   int32
-	Cache     Cache
-	Typename  bool
-	Query     []byte
-	Fragments []Fragment
-	Warnings  []string // Non-fatal warnings (e.g., missing partition filter)
+	Type       QType
+	SType      QType
+	Name       string
+	ActionVar  string
+	ActionVal  json.RawMessage
+	Vars       []Var
+	Selects    []Select
+	Consts     []Constraint
+	Roots      []int32
+	rootsA     [5]int32
+	Mutates    []Mutate
+	MUnions    map[string][]int32
+	Schema     *sdata.DBSchema
+	Remotes    int32
+	Cache      Cache
+	Typename   bool
+	Query      []byte
+	Fragments  []Fragment
+	Warnings   []string // Non-fatal warnings (e.g., missing partition filter)
 	actionArg  graph.Arg
 	actionArgs map[string]graph.Arg
 }
@@ -92,11 +92,11 @@ type Fragment struct {
 
 type Select struct {
 	Field
-	Type       SelType
-	Singular   bool
-	Typename   bool
-	Table      string
-	Schema     string
+	Type     SelType
+	Singular bool
+	Typename bool
+	Table    string
+	Schema   string
 	// Database is the target database for this select (multi-database support).
 	// Empty string means the default database.
 	Database   string
@@ -116,15 +116,18 @@ type Select struct {
 	// result). Without this flag, the existing render path would emit
 	// `LIMIT 20` and produce 20 degenerate per-row rows of aggregates
 	// (the bug captured in broken.md).
-	GlobalAgg  bool
-	Paging     Paging
-	Children   []int32
-	Ti         sdata.DBTable
-	Rel        sdata.DBRel
-	Joins      []Join
-	order      Order
-	through    string
-	tc         TConfig
+	GlobalAgg bool
+	Paging    Paging
+	Children  []int32
+	Ti        sdata.DBTable
+	Rel       sdata.DBRel
+	Joins     []Join
+	PartitionFilterRequired string
+	Unrestricted            bool
+	order                   Order
+	through                 string
+	throughKind             string
+	tc                      TConfig
 }
 
 type Validation struct {
@@ -351,8 +354,8 @@ const (
 	OpEqualsTrue
 	OpNotEqualsTrue
 	OpSelectExists
-	OpJSONPath      // JSON path operator (->)
-	OpJSONPathText  // JSON path text operator (->>)
+	OpJSONPath     // JSON path operator (->)
+	OpJSONPathText // JSON path text operator (->>)
 
 	// GIS/Spatial operators
 	OpGeoDistance   // ST_DWithin - distance-based filtering
@@ -752,7 +755,12 @@ func (co *Compiler) addRelInfo(
 		parentName := co.ParseName(parentF.Name)
 		childName := co.ParseName(childF.Name)
 
-		path, err := co.FindPath(childName, parentName, sel.through)
+		var path []sdata.TPath
+		if sel.throughKind == "column" {
+			path, err = co.FindPathByColumn(childName, parentName, sel.through)
+		} else {
+			path, err = co.FindPath(childName, parentName, sel.through)
+		}
 		if err != nil {
 			return graphError(err, childName, parentName, sel.through)
 		}
@@ -978,6 +986,17 @@ func (co *Compiler) FindPath(from, to, through string) ([]sdata.TPath, error) {
 	return nil, err
 }
 
+func (co *Compiler) FindPathByColumn(from, to, col string) ([]sdata.TPath, error) {
+	if co.c.EnableCamelcase {
+		from = strings.TrimSuffix(from, singularSuffixSnake)
+		to = strings.TrimSuffix(to, singularSuffixSnake)
+	} else {
+		from = strings.TrimSuffix(from, singularSuffixCamel)
+		to = strings.TrimSuffix(to, singularSuffixCamel)
+	}
+	return co.s.FindPathByColumn(from, to, col)
+}
+
 func buildSingleColFilter(leftCol, rightCol sdata.DBColumn, pid int32) *Exp {
 	ex := newExp()
 	switch {
@@ -1058,21 +1077,22 @@ func (co *Compiler) setSelectorRoleConfig(role, fieldName string, qc *QCode, sel
 }
 
 func (co *Compiler) setLimit(tr trval, qc *QCode, sel *Select) {
-	if sel.Paging.Limit != 0 {
+	if sel.Paging.Limit != 0 || sel.Paging.NoLimit {
 		return
 	}
-	// Use limit from table role config
 	if l := tr.limit(qc.Type); l != 0 {
 		sel.Paging.Limit = l
-
-		// Else use default limit from config
-	} else if co.c.DefaultLimit != 0 {
-		sel.Paging.Limit = int32(co.c.DefaultLimit)
-
-		// Else just go with 20
-	} else {
-		sel.Paging.Limit = 20
+		return
 	}
+	if co.c.AnalyticsMode {
+		sel.Paging.NoLimit = true
+		return
+	}
+	if co.c.DefaultLimit != 0 {
+		sel.Paging.Limit = int32(co.c.DefaultLimit)
+		return
+	}
+	sel.Paging.Limit = 20
 }
 
 // This
@@ -1197,16 +1217,17 @@ func addFilters(qc *QCode, where *Filter, trv trval) bool {
 	return false
 }
 
-// checkPartitionFilter checks if a query filters on the table's partition key.
-// If the partition key is configured but no filter is present:
-//   - If a default range is configured, inject a time-range filter automatically
-//   - Otherwise, add a warning to the QCode
 func (co *Compiler) checkPartitionFilter(qc *QCode, sel *Select) {
-	if sel.Ti.PartitionKey == "" {
+	if qc.Type != QTQuery && qc.Type != QTSubscription {
 		return
 	}
-	// Only applies to queries, not mutations
-	if qc.Type != QTQuery && qc.Type != QTSubscription {
+
+	if co.c.AnalyticsMode {
+		co.enforcePartitionFilterOLAP(sel)
+		return
+	}
+
+	if sel.Ti.PartitionKey == "" {
 		return
 	}
 	if HasFilterOnColumn(sel.Where.Exp, sel.Ti.PartitionKey) {
@@ -1214,7 +1235,6 @@ func (co *Compiler) checkPartitionFilter(qc *QCode, sel *Select) {
 	}
 
 	if sel.Ti.PartitionRangeDays > 0 {
-		// Inject default partition filter
 		cid, ok := sel.Ti.GetColumnIndex(sel.Ti.PartitionKey)
 		if !ok {
 			qc.Warnings = append(qc.Warnings,
@@ -1233,6 +1253,31 @@ func (co *Compiler) checkPartitionFilter(qc *QCode, sel *Select) {
 		qc.Warnings = append(qc.Warnings,
 			fmt.Sprintf("query on %q has no filter on partition column %q — this may scan all partitions",
 				sel.Ti.Name, sel.Ti.PartitionKey))
+	}
+}
+
+func (co *Compiler) enforcePartitionFilterOLAP(sel *Select) {
+	if sel.Ti.PartitionNone {
+		return
+	}
+
+	if sel.Ti.PartitionKey != "" {
+		if HasFilterOnColumn(sel.Where.Exp, sel.Ti.PartitionKey) {
+			return
+		}
+		sel.PartitionFilterRequired = fmt.Sprintf(
+			"table %q requires a filter on partition column %q (e.g., { %s: { gt: \"2026-01-01\" } })",
+			sel.Ti.Name, sel.Ti.PartitionKey, sel.Ti.PartitionKey)
+		return
+	}
+
+	if sel.Ti.ImplicitPartitionKey != "" {
+		if HasFilterOnColumn(sel.Where.Exp, sel.Ti.ImplicitPartitionKey) || sel.Unrestricted {
+			return
+		}
+		sel.PartitionFilterRequired = fmt.Sprintf(
+			"table %q requires a filter on temporal column %q (e.g., { %s: { gt: \"2026-01-01\" } }); pass `unrestricted: true` to override",
+			sel.Ti.Name, sel.Ti.ImplicitPartitionKey, sel.Ti.ImplicitPartitionKey)
 	}
 }
 

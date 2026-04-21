@@ -237,6 +237,14 @@ func (s *graphjinService) newDBFromDatabaseConfig(name string, dbConf core.Datab
 		dbType = "postgres"
 	}
 
+	// Configured databases must honor the per-database ping_timeout. Fall back
+	// to 30s — generous enough for cold cloud-database TLS handshakes without
+	// hanging forever on a truly unreachable host.
+	pingTimeout := dbConf.PingTimeout
+	if pingTimeout <= 0 {
+		pingTimeout = 30 * time.Second
+	}
+
 	// For SQLite, just use tryConnect directly
 	if dbType == "sqlite" {
 		path := dbConf.Path
@@ -246,7 +254,7 @@ func (s *graphjinService) newDBFromDatabaseConfig(name string, dbConf core.Datab
 		if path == "" {
 			return nil, fmt.Errorf("sqlite database '%s' requires a path or connection_string", name)
 		}
-		return tryConnect("sqlite", path)
+		return tryConnect("sqlite", path, pingTimeout)
 	}
 
 	// Build connection using probe helpers (reuses mcp_discover.go logic)
@@ -279,16 +287,16 @@ func (s *graphjinService) newDBFromDatabaseConfig(name string, dbConf core.Datab
 		if dbType == "postgres" {
 			driverName, _ = buildProbeConnString(dbType, "", 0, "", "", "", "tcp", dbName)
 			// Fall back to raw conn string
-			return tryConnect("pgx", dbConf.ConnString)
+			return tryConnect("pgx", dbConf.ConnString, pingTimeout)
 		}
-		return tryConnect(driverName, dbConf.ConnString)
+		return tryConnect(driverName, dbConf.ConnString, pingTimeout)
 	}
 
 	driverName, connString := buildProbeConnString(dbType, host, port, "", user, password, "tcp", dbName)
 	if connString == "" {
 		return nil, fmt.Errorf("could not build connection string for database '%s' (type=%s)", name, dbType)
 	}
-	return tryConnect(driverName, connString)
+	return tryConnect(driverName, connString, pingTimeout)
 }
 
 // driverForType returns the Go SQL driver name for a database type.
