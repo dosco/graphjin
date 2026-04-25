@@ -13,10 +13,7 @@ import (
 
 const tableSampleQueryTimeout = 10 * time.Second
 
-func (dm *DiscoveryManager) TableSample(ctx context.Context, database, schemaName, table, mode string) (*TableSampleResult, error) {
-	if mode == "" {
-		mode = "light"
-	}
+func (dm *DiscoveryManager) TableSample(ctx context.Context, database, schemaName, table string) (*TableSampleResult, error) {
 	schema, resolvedDB, err := dm.resolveSampleSchema(database, schemaName, table)
 	if err != nil {
 		return nil, err
@@ -25,7 +22,7 @@ func (dm *DiscoveryManager) TableSample(ctx context.Context, database, schemaNam
 		schemaName = schema.Schema
 	}
 
-	key := profileCacheKey(resolvedDB, schemaName, table, mode)
+	key := profileCacheKey(resolvedDB, schemaName, table)
 	if v, ok := dm.profileCache.Load(key); ok {
 		result := *(v.(*TableSampleResult))
 		result.Cost.Cache = "hit"
@@ -36,17 +33,23 @@ func (dm *DiscoveryManager) TableSample(ctx context.Context, database, schemaNam
 		if cached, ok := dm.profileCache.Load(key); ok {
 			return cached, nil
 		}
-		profile, err := buildTableSample(ctx, dm.gj, resolvedDB, schema, mode)
+		profile, err := buildTableSample(ctx, dm.gj, resolvedDB, schema)
 		if err != nil {
 			return nil, err
 		}
 		result := &TableSampleResult{
-			Database: resolvedDB,
-			Schema:   schema.Schema,
-			Table:    schema.Name,
-			Mode:     mode,
-			Status:   "ready",
-			Stats:    profile,
+			Database:       resolvedDB,
+			Schema:         schema.Schema,
+			Table:          schema.Name,
+			Status:         "ready",
+			Stats:          profile,
+			PrimaryKeys:    primaryKeysFromSchema(schema),
+			ForeignKeys:    foreignKeysFromSchema(schema),
+			OutgoingRels:   relationshipRefs(schema.Relationships.Outgoing),
+			IncomingRels:   relationshipRefs(schema.Relationships.Incoming),
+			Indexes:        loadIndexes(ctx, dm.gj, resolvedDB, schema),
+			Aggregations:   aggregationInfoForSchema(schema),
+			ExampleQueries: generateExampleQueries(schema),
 			Cost: DiscoveryCost{
 				UsesLiveQueries: true,
 				Scope:           "single_table",
@@ -109,11 +112,11 @@ func addTableCandidates(err error, tables []core.TableInfo, table string) error 
 	return fmt.Errorf("%w; candidates: %s", err, strings.Join(matches, ", "))
 }
 
-func profileCacheKey(database, schemaName, table, mode string) string {
-	return database + ":" + schemaName + ":" + table + ":" + mode
+func profileCacheKey(database, schemaName, table string) string {
+	return database + ":" + schemaName + ":" + table
 }
 
-func buildTableSample(ctx context.Context, gj *core.GraphJin, database string, schema *core.TableSchema, mode string) (*TableProfile, error) {
+func buildTableSample(ctx context.Context, gj *core.GraphJin, database string, schema *core.TableSchema) (*TableProfile, error) {
 	db, dbtype, err := gj.DBForDatabase(database)
 	if err != nil {
 		return nil, err
@@ -131,8 +134,10 @@ func buildTableSample(ctx context.Context, gj *core.GraphJin, database string, s
 		NumericStats: make(map[string]NumericStats),
 	}
 	if n, ok := approxRowCount(qctx, db, dbtype, schema); ok {
-		profile.RowCountApprox = n
+		v := n
+		profile.RowCountApprox = &v
 	}
+	profile.ColumnStats = loadColumnStats(qctx, gj, database, schema)
 
 	var numericCols, dateCols, enumCols []core.ColumnInfo
 	var sampleCols []core.ColumnInfo
@@ -149,11 +154,6 @@ func buildTableSample(ctx context.Context, gj *core.GraphJin, database string, s
 		if isEnumCandidateCol(col) {
 			enumCols = append(enumCols, col)
 		}
-	}
-	if mode != "deep" {
-		numericCols = capColumns(numericCols, 5)
-		dateCols = capColumns(dateCols, 3)
-		enumCols = capColumns(enumCols, 3)
 	}
 
 	for _, col := range dateCols {
@@ -179,16 +179,13 @@ func buildTableSample(ctx context.Context, gj *core.GraphJin, database string, s
 		}
 	}
 
+	if profile.RowCountApprox != nil {
+		fillMostCommonCountsFromFractions(profile.ColumnStats, *profile.RowCountApprox)
+	}
+
 	rows, _ := directSampleRows(qctx, db, dbtype, schema, sampleCols)
 	profile.SampleRows = rows
 	return profile, nil
-}
-
-func capColumns(cols []core.ColumnInfo, n int) []core.ColumnInfo {
-	if len(cols) <= n {
-		return cols
-	}
-	return cols[:n]
 }
 
 func directMinMax(ctx context.Context, db *sql.DB, dbtype string, schema *core.TableSchema, col core.ColumnInfo) (string, string, bool) {
@@ -262,13 +259,21 @@ func directSampleRows(ctx context.Context, db *sql.DB, dbtype string, schema *co
 	for _, col := range cols {
 		names = append(names, quoteIdent(dbtype, col.Name))
 	}
-	q := fmt.Sprintf("SELECT %s FROM %s %s", strings.Join(names, ", "), qualifiedTable(dbtype, schema), limitClause(dbtype, 5))
-	if strings.Contains(strings.ToLower(dbtype), "mssql") {
-		q = fmt.Sprintf("SELECT TOP 5 %s FROM %s", strings.Join(names, ", "), qualifiedTable(dbtype, schema))
-	}
+	colList := strings.Join(names, ", ")
+	tableRef := qualifiedTable(dbtype, schema)
+
+	q := buildSampleQuery(dbtype, colList, tableRef, 5)
 	rows, err := db.QueryContext(ctx, q)
 	if err != nil {
-		return nil, false
+		// Fallback for views and backends that reject TABLESAMPLE/random().
+		fallback := fmt.Sprintf("SELECT %s FROM %s %s", colList, tableRef, limitClause(dbtype, 5))
+		if strings.Contains(strings.ToLower(dbtype), "mssql") {
+			fallback = fmt.Sprintf("SELECT TOP 5 %s FROM %s", colList, tableRef)
+		}
+		rows, err = db.QueryContext(ctx, fallback)
+		if err != nil {
+			return nil, false
+		}
 	}
 	defer rows.Close()
 
@@ -289,6 +294,29 @@ func directSampleRows(ctx context.Context, db *sql.DB, dbtype string, schema *co
 		out = append(out, row)
 	}
 	return out, true
+}
+
+// buildSampleQuery picks a randomized-sample SQL per dialect.
+func buildSampleQuery(dbtype, colList, tableRef string, limit int) string {
+	dt := strings.ToLower(dbtype)
+	switch dt {
+	case "postgres", "postgresql", "cockroachdb", "cockroach":
+		// BERNOULLI is row-level; LIMIT short-circuits the scan.
+		return fmt.Sprintf("SELECT %s FROM %s TABLESAMPLE BERNOULLI (1) LIMIT %d", colList, tableRef, limit)
+	case "mssql":
+		return fmt.Sprintf("SELECT TOP %d %s FROM %s TABLESAMPLE (1 PERCENT)", limit, colList, tableRef)
+	case "mysql", "mariadb":
+		return fmt.Sprintf("SELECT %s FROM %s ORDER BY RAND() LIMIT %d", colList, tableRef, limit)
+	case "sqlite":
+		return fmt.Sprintf("SELECT %s FROM %s ORDER BY RANDOM() LIMIT %d", colList, tableRef, limit)
+	case "oracle":
+		return fmt.Sprintf("SELECT * FROM (SELECT %s FROM %s SAMPLE(1) ORDER BY DBMS_RANDOM.VALUE) WHERE ROWNUM <= %d",
+			colList, tableRef, limit)
+	case "snowflake":
+		return fmt.Sprintf("SELECT %s FROM %s SAMPLE (%d ROWS)", colList, tableRef, limit)
+	default:
+		return fmt.Sprintf("SELECT %s FROM %s %s", colList, tableRef, limitClause(dbtype, limit))
+	}
 }
 
 func qualifiedTable(dbtype string, schema *core.TableSchema) string {
@@ -385,4 +413,53 @@ func normalizeValue(v any) any {
 	default:
 		return t
 	}
+}
+
+func primaryKeysFromSchema(schema *core.TableSchema) []string {
+	if len(schema.PrimaryKeys) > 0 {
+		out := make([]string, len(schema.PrimaryKeys))
+		copy(out, schema.PrimaryKeys)
+		return out
+	}
+	if schema.PrimaryKey != "" {
+		return []string{schema.PrimaryKey}
+	}
+	return nil
+}
+
+func foreignKeysFromSchema(schema *core.TableSchema) []ForeignKeyRef {
+	var fks []ForeignKeyRef
+	for _, col := range schema.Columns {
+		if col.ForeignKey != "" {
+			fks = append(fks, ForeignKeyRef{
+				Column:   col.Name,
+				Target:   col.ForeignKey,
+				Database: col.ForeignKeyDatabase,
+			})
+		}
+	}
+	return fks
+}
+
+func relationshipRefs(rels []core.RelationInfo) []RelationshipRef {
+	if len(rels) == 0 {
+		return nil
+	}
+	out := make([]RelationshipRef, 0, len(rels))
+	for _, r := range rels {
+		out = append(out, RelationshipRef{
+			Table:  r.Table,
+			Column: r.ForeignKey,
+			Type:   r.Type,
+		})
+	}
+	return out
+}
+
+func aggregationInfoForSchema(schema *core.TableSchema) *AggregationInfo {
+	if schema == nil || len(schema.Columns) == 0 {
+		return nil
+	}
+	a := generateAggregations(schema)
+	return &a
 }

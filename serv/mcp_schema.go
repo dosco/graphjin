@@ -126,10 +126,6 @@ func (ms *mcpServer) registerSchemaTools() {
 		mcp.WithString("schema",
 			mcp.Description("Optional database schema name."),
 		),
-		mcp.WithString("mode",
-			mcp.Description("Sampling mode. light caps profiled columns; deep profiles more columns."),
-			mcp.Enum("light", "deep"),
-		),
 		mcp.WithOutputSchema[TableSampleResult](),
 	), ms.handleGetTableSample)
 
@@ -337,12 +333,11 @@ func (ms *mcpServer) handleGetTableSample(ctx context.Context, req mcp.CallToolR
 	table, _ := args["table"].(string)
 	database, _ := args["database"].(string)
 	schemaName, _ := args["schema"].(string)
-	mode, _ := args["mode"].(string)
 	if table == "" {
 		return mcp.NewToolResultError("table name is required"), nil
 	}
 
-	result, err := ms.service.disc.TableSample(ctx, database, schemaName, table, mode)
+	result, err := ms.service.disc.TableSample(ctx, database, schemaName, table)
 	if err != nil {
 		return mcp.NewToolResultError(enhanceError(err.Error(), "get_table_sample")), nil
 	}

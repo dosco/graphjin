@@ -10,9 +10,7 @@ import (
 	core "github.com/dosco/graphjin/core/v3"
 )
 
-// buildNamespaceRollup runs one catalog query per dialect to enumerate
-// (database, schema) namespaces with table counts and approximate row totals.
-// Cost: O(1) round trips per call regardless of table count.
+// buildNamespaceRollup: one catalog query per dialect → all (db, schema) rows.
 func buildNamespaceRollup(ctx context.Context, gj *core.GraphJin, database string) ([]NamespaceRollup, error) {
 	db, dbtype, err := gj.DBForDatabase(database)
 	if err != nil {
@@ -147,9 +145,7 @@ GROUP BY s.name`
 	return scanNamespaceRollup(ctx, db, q, true)
 }
 
-// mongodbNamespaceRollup synthesizes one rollup row per database from
-// the loaded table list. Row counts are not available via the SQL path;
-// callers see RowCountAvailable=false.
+// mongodbNamespaceRollup: synthesized; row counts unavailable via SQL.
 func mongodbNamespaceRollup(gj *core.GraphJin, database string) []NamespaceRollup {
 	tables := gj.GetTablesForDatabase(database)
 	if len(tables) == 0 {
@@ -163,9 +159,7 @@ func mongodbNamespaceRollup(gj *core.GraphJin, database string) []NamespaceRollu
 	}}
 }
 
-// fallbackNamespaceRollup synthesizes a rollup from in-memory schema metadata
-// when a catalog query is not possible (unknown dialect, query failure).
-// RowCountAvailable is false to signal that row totals were not fetched.
+// fallbackNamespaceRollup: in-memory synth when catalog query fails.
 func fallbackNamespaceRollup(gj *core.GraphJin, database string) []NamespaceRollup {
 	tables := gj.GetTablesForDatabase(database)
 	if len(tables) == 0 {
@@ -192,9 +186,7 @@ func fallbackNamespaceRollup(gj *core.GraphJin, database string) []NamespaceRoll
 	return out
 }
 
-// scanNamespaceRollup executes a 4-column query (database, schema, table_count,
-// approx_row_total) and returns rollups with RowCountAvailable set per the
-// available flag.
+// scanNamespaceRollup: 4-column scan (db, schema, table_count, row_total).
 func scanNamespaceRollup(ctx context.Context, db *sql.DB, q string, rowCountsAvailable bool) ([]NamespaceRollup, error) {
 	rows, err := db.QueryContext(ctx, q)
 	if err != nil {
