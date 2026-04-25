@@ -116,5 +116,10 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 		mux.Handle(routeMCPMsg, s1.MCPMessageHandlerWithAuth(mcpAuth))
 	}
 
+	// Built-in OIDC login endpoints (only if auth_login.enabled)
+	if s.authLogin != nil {
+		s.authLogin.routes(mux)
+	}
+
 	return setServerHeader(mux), nil
 }

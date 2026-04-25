@@ -277,8 +277,13 @@ approval_policy = "on-request"
 }
 
 func TestBuildClaudeMCPServerArgs(t *testing.T) {
+	// The generated MCP-client config no longer embeds --server: `graphjin
+	// mcp` reads the server URL from ~/.config/graphjin/client.json, so the
+	// args list is simply ["mcp"]. This keeps the MCP client config
+	// credential-free and lets `graphjin mcp setup` rotate tokens without
+	// any MCP-client edits.
 	got := buildClaudeMCPServerArgs(mcpInstallOptions{Server: "http://localhost:8080/"})
-	want := []string{"mcp", "--server", "http://localhost:8080/"}
+	want := []string{"mcp"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("buildClaudeMCPServerArgs() = %v, want %v", got, want)
 	}

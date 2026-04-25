@@ -9,11 +9,24 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 )
+
+// TestMain ensures the test process has an isolated config dir so tests
+// can read/write client.json without clobbering the developer's real one.
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "graphjin-cmd-test-")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(dir)
+	initIsolatedConfigDir(dir)
+	os.Exit(m.Run())
+}
 
 // newTestMCPServer returns an httptest.Server that mimics GraphJin's MCP
 // HTTP transport enough to satisfy callTool. The handler inspects the
@@ -56,16 +69,52 @@ func newTestMCPServer(t *testing.T, handler func(req *jsonRPCRequest, httpReq *h
 	}))
 }
 
-// resetMCPClientFlags clears global flag state between tests.
+// resetMCPClientFlags clears the per-process client flags and seeds an
+// isolated client.json with the given server (token = "" — set with
+// seedTestClientToken if needed). Pass serverURL = "" to leave the saved
+// config absent (simulating "user hasn't run setup yet").
 func resetMCPClientFlags(serverURL string) {
-	mcpServerURL = serverURL
-	mcpClientToken = ""
 	mcpClientHeaders = nil
 	mcpClientTimeout = 0
 	mcpClientFormat = "json"
-	_ = os.Unsetenv("GRAPHJIN_TOKEN")
-	_ = os.Unsetenv("GRAPHJIN_MCP_AUTH")
-	_ = os.Unsetenv("GRAPHJIN_SERVER")
+	if testConfigDir == "" {
+		// initIsolatedConfigDir must be called from TestMain.
+		panic("test setup error: testConfigDir not initialized")
+	}
+	if serverURL == "" {
+		_ = DeleteClientConfig()
+		return
+	}
+	if err := SaveClientConfig(&ClientConfig{Server: serverURL}); err != nil {
+		panic(err)
+	}
+}
+
+// seedTestClientToken updates the saved client.json with a token (server
+// must already be set via resetMCPClientFlags).
+func seedTestClientToken(token string) {
+	cc, err := LoadClientConfig()
+	if err != nil || cc == nil {
+		panic("seedTestClientToken: no client.json — call resetMCPClientFlags first")
+	}
+	cc.Token = token
+	if err := SaveClientConfig(cc); err != nil {
+		panic(err)
+	}
+}
+
+var testConfigDir string
+
+// initIsolatedConfigDir redirects os.UserConfigDir() to a per-test-process
+// scratch directory so the real `~/.config/graphjin/client.json` is never
+// touched. Called from TestMain.
+func initIsolatedConfigDir(dir string) {
+	testConfigDir = dir
+	_ = os.Setenv("XDG_CONFIG_HOME", dir)
+	_ = os.Setenv("HOME", dir)
+	if runtime.GOOS == "windows" {
+		_ = os.Setenv("AppData", dir)
+	}
 }
 
 // newEmptyCobraCmd returns a fresh cobra command suitable for passing to
@@ -163,8 +212,8 @@ func TestCallTool_SurfacesHTTP401WithHint(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on 401")
 	}
-	if !strings.Contains(err.Error(), "401") || !strings.Contains(err.Error(), "--token") {
-		t.Fatalf("expected 401 + token hint, got %v", err)
+	if !strings.Contains(err.Error(), "401") || !strings.Contains(err.Error(), "graphjin cli setup") {
+		t.Fatalf("expected 401 + setup hint, got %v", err)
 	}
 }
 
@@ -176,8 +225,8 @@ func TestCallTool_ForwardsAuthAndHeaders(t *testing.T) {
 	})
 	defer srv.Close()
 	resetMCPClientFlags(srv.URL)
+	seedTestClientToken("shh")
 
-	mcpClientToken = "shh"
 	mcpClientHeaders = []string{"X-Trace: abc123", "X-Env:prod"}
 
 	_, err := callTool(context.Background(), newEmptyCobraCmd(), "list_tables", nil)
@@ -233,52 +282,46 @@ func TestCallTool_HandlesSSEResponse(t *testing.T) {
 	}
 }
 
-func TestResolveMCPServerURL_Precedence(t *testing.T) {
-	// Explicit flag wins.
-	resetMCPClientFlags("http://explicit.example:9000/")
+func TestResolveMCPServerURL_FromClientJSON(t *testing.T) {
+	resetMCPClientFlags("http://saved.example:9000/")
 	got := resolveMCPServerURL(newEmptyCobraCmd())
-	if !strings.Contains(got, "explicit.example") {
-		t.Fatalf("explicit URL not honored: %s", got)
+	if !strings.Contains(got, "saved.example") {
+		t.Fatalf("client.json URL not honored: %s", got)
 	}
 
-	// Env wins when flag empty.
+	// No client.json → empty (forces callers to surface "run setup" hint).
 	resetMCPClientFlags("")
-	t.Setenv("GRAPHJIN_SERVER", "http://env.example/")
-	got = resolveMCPServerURL(newEmptyCobraCmd())
-	if !strings.Contains(got, "env.example") {
-		t.Fatalf("env URL not honored: %s", got)
-	}
-
-	// Default otherwise.
-	resetMCPClientFlags("")
-	got = resolveMCPServerURL(newEmptyCobraCmd())
-	if !strings.Contains(got, "localhost:8080") {
-		t.Fatalf("default URL not used: %s", got)
+	if got := resolveMCPServerURL(newEmptyCobraCmd()); got != "" {
+		t.Fatalf("expected empty, got %q", got)
 	}
 }
 
-func TestResolveMCPAuth_Precedence(t *testing.T) {
-	// --token beats env.
-	resetMCPClientFlags("")
-	mcpClientToken = "flag-token"
-	t.Setenv("GRAPHJIN_TOKEN", "env-token")
-	if got := resolveMCPAuth(); got != "Bearer flag-token" {
-		t.Fatalf("flag precedence: %q", got)
+func TestResolveMCPAuth_FromClientJSON(t *testing.T) {
+	// Token from client.json is the only source.
+	resetMCPClientFlags("http://saved.example/")
+	seedTestClientToken("saved-token")
+	if got := resolveMCPAuth(); got != "Bearer saved-token" {
+		t.Fatalf("client.json token: %q", got)
 	}
 
-	// GRAPHJIN_TOKEN beats raw GRAPHJIN_MCP_AUTH when flag empty.
-	resetMCPClientFlags("")
-	t.Setenv("GRAPHJIN_TOKEN", "env-token")
-	t.Setenv("GRAPHJIN_MCP_AUTH", "Basic xyz")
-	if got := resolveMCPAuth(); got != "Bearer env-token" {
-		t.Fatalf("env token: %q", got)
+	// No token → empty (server may not need auth).
+	resetMCPClientFlags("http://saved.example/")
+	if got := resolveMCPAuth(); got != "" {
+		t.Fatalf("expected empty when no token, got %q", got)
 	}
 
-	// Raw MCP_AUTH used when nothing else.
+	// No client.json at all → empty.
 	resetMCPClientFlags("")
-	t.Setenv("GRAPHJIN_MCP_AUTH", "Basic xyz")
-	if got := resolveMCPAuth(); got != "Basic xyz" {
-		t.Fatalf("raw mcp auth: %q", got)
+	if got := resolveMCPAuth(); got != "" {
+		t.Fatalf("expected empty without client.json, got %q", got)
+	}
+}
+
+func TestCallTool_NoServerConfigured(t *testing.T) {
+	resetMCPClientFlags("")
+	_, err := callTool(context.Background(), newEmptyCobraCmd(), "list_tables", nil)
+	if err == nil || !strings.Contains(err.Error(), "graphjin cli setup") {
+		t.Fatalf("expected setup hint, got %v", err)
 	}
 }
 
