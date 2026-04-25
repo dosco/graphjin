@@ -25,7 +25,8 @@ var (
 
 // setupCmd returns a fresh `setup` cobra.Command tree. Called once for
 // `graphjin cli setup` and once for `graphjin mcp setup` so each subcommand
-// has an independent parent.
+// has an independent parent — cobra requires a Command instance to have a
+// single parent.
 func setupCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "setup [server-url]",
@@ -33,7 +34,8 @@ func setupCmd() *cobra.Command {
 		Long: `Point this CLI at a GraphJin server and (if the server has built-in login
 enabled) sign in via OIDC. The resulting JWT and the server URL are persisted
 to ~/.config/graphjin/client.json. Every subsequent ` + "`graphjin cli ...`" + ` and
-` + "`graphjin mcp ...`" + ` invocation reads from this file.
+` + "`graphjin mcp ...`" + ` invocation reads from this file — there is no --server
+or --token flag anywhere else.
 
 If the server has no built-in login (auth_login disabled), only the URL is
 saved and an empty token is stored — useful for local development and for
@@ -46,8 +48,8 @@ is reused.
 Examples:
   graphjin cli setup http://localhost:8080
   graphjin cli setup https://graphjin.example.com
-  graphjin cli setup
-  graphjin mcp setup https://graphjin.example.com`,
+  graphjin cli setup                                 # refresh token, same server
+  graphjin mcp setup https://graphjin.example.com    # alias for cli setup`,
 		Args: cobra.MaximumNArgs(1),
 		Run:  runSetup,
 	}
@@ -69,6 +71,8 @@ Examples:
 	return c
 }
 
+// resolveSetupServer picks the server URL from the positional arg or the
+// previously-saved client.json. Errors out if neither is available.
 func resolveSetupServer(args []string) (string, error) {
 	if len(args) == 1 {
 		s := strings.TrimRight(strings.TrimSpace(args[0]), "/")
@@ -90,6 +94,9 @@ func runSetup(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
+	// Refuse to overwrite a config bound to a *different* server unless
+	// --force is given. Same-server "refresh" is fine: that's the normal
+	// way to renew an expired token.
 	if existing, _ := LoadClientConfig(); existing != nil && existing.Server != "" && existing.Server != server && !setupForce {
 		fmt.Fprintf(os.Stderr, "warning: %s is already bound to %s; pass --force to switch to %s\n",
 			mustPath(), existing.Server, server)
@@ -105,6 +112,7 @@ func runSetup(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
+	// No-auth server: just save the URL and exit.
 	if !hasAuth {
 		cc := &ClientConfig{Server: server}
 		if err := SaveClientConfig(cc); err != nil {
@@ -181,9 +189,9 @@ func runSetupShow(cmd *cobra.Command, args []string) {
 	}
 	redacted := *cc
 	if len(redacted.Token) > 12 {
-		redacted.Token = redacted.Token[:8] + "..." + redacted.Token[len(redacted.Token)-4:]
+		redacted.Token = redacted.Token[:8] + "…" + redacted.Token[len(redacted.Token)-4:]
 	} else if redacted.Token != "" {
-		redacted.Token = "..."
+		redacted.Token = "…"
 	}
 	b, _ := json.MarshalIndent(redacted, "", "  ")
 	fmt.Println(string(b))
@@ -197,6 +205,8 @@ func runSetupLogout(cmd *cobra.Command, args []string) {
 	}
 	fmt.Println("Logged out.")
 }
+
+// ---- device-code HTTP client ----
 
 type deviceStartResp struct {
 	DeviceCode              string `json:"device_code"`
@@ -216,6 +226,10 @@ type deviceTokenResp struct {
 	ErrorDesc string `json:"error_description,omitempty"`
 }
 
+// startDeviceFlow returns (deviceStartResp, hasAuth, error). hasAuth is
+// false when the server's auth_login is disabled — detected via 404 / 405 on
+// the device endpoint, in which case the caller should save the server URL
+// alone (no token).
 func startDeviceFlow(ctx context.Context, server string) (*deviceStartResp, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server+"/api/v1/auth/device", bytes.NewReader([]byte("{}")))
 	if err != nil {
@@ -236,12 +250,18 @@ func startDeviceFlow(ctx context.Context, server string) (*deviceStartResp, bool
 		}
 		return &ds, true, nil
 	case http.StatusNotFound, http.StatusMethodNotAllowed:
+		// auth_login isn't enabled on this server. The mux returns 404 when
+		// the route was never registered; some intermediaries may rewrite
+		// to 405. Either way, treat it as "no built-in login".
 		return nil, false, nil
 	default:
 		return nil, false, fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
 	}
 }
 
+// pollDeviceToken polls once. Returns (token, true, nil) when the user has
+// completed sign-in, (nil, false, nil) to keep polling, and (nil, false, err)
+// on terminal failure.
 func pollDeviceToken(ctx context.Context, server, deviceCode string) (*deviceTokenResp, bool, error) {
 	body, _ := json.Marshal(map[string]string{"device_code": deviceCode})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server+"/api/v1/auth/device/token", bytes.NewReader(body))
@@ -280,6 +300,7 @@ func pollDeviceToken(ctx context.Context, server, deviceCode string) (*deviceTok
 	}
 }
 
+// tryOpenBrowser best-effort opens a URL in the user's default browser.
 func tryOpenBrowser(url string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {

@@ -77,10 +77,13 @@ func mcpInstallCmd() *cobra.Command {
 		Short: "Guided MCP setup for Claude Code and OpenAI Codex",
 		Long: `Install GraphJin MCP integration for Claude Code, OpenAI Codex, or both.
 
+Prerequisite: run ` + "`graphjin mcp setup <server-url>`" + ` first. The server URL is
+read from ~/.config/graphjin/client.json — the MCP-client config this command
+writes is credential-free, so rotating tokens needs no edits to Claude / Codex.
+
 Defaults:
   client: codex
   scope:  project
-  server: http://localhost:8080/
 
 When run in an interactive terminal, this command asks guided questions unless --yes is used.`,
 	})
@@ -89,7 +92,6 @@ When run in an interactive terminal, this command asks guided questions unless -
 func newMCPInstallCommand(cfg mcpInstallCommandConfig) *cobra.Command {
 	var client string
 	var scope string
-	var server string
 	var yes bool
 
 	c := &cobra.Command{
@@ -100,6 +102,15 @@ func newMCPInstallCommand(cfg mcpInstallCommandConfig) *cobra.Command {
 			absConfigPath, err := filepath.Abs(cpath)
 			if err != nil {
 				log.Fatalf("failed to get absolute config path: %s", err)
+			}
+
+			// The server URL is read from client.json, written by `graphjin
+			// mcp setup`. Refusing to install without it forces the user
+			// through the auth flow first — the MCP client config we write
+			// is credential-free, so the server must already be reachable.
+			cc, _ := LoadClientConfig()
+			if cc == nil || cc.Server == "" {
+				log.Fatal("no GraphJin server configured — run `graphjin mcp setup <server-url>` first")
 			}
 
 			interactive := isInteractiveTTY() && !yes
@@ -113,8 +124,8 @@ func newMCPInstallCommand(cfg mcpInstallCommandConfig) *cobra.Command {
 				ClientSet:   cmd.Flags().Changed("client"),
 				Scope:       scope,
 				ScopeSet:    cmd.Flags().Changed("scope"),
-				Server:      server,
-				ServerSet:   cmd.Flags().Changed("server"),
+				Server:      cc.Server,
+				ServerSet:   true,
 				Yes:         yes,
 				Interactive: interactive,
 				ForceClient: cfg.ForceClient,
@@ -169,7 +180,6 @@ func newMCPInstallCommand(cfg mcpInstallCommandConfig) *cobra.Command {
 
 	c.Flags().StringVar(&client, "client", "", "Target client: claude, codex, or both")
 	c.Flags().StringVar(&scope, "scope", "", "Install scope: project, global, or local")
-	c.Flags().StringVar(&server, "server", "", "HTTP MCP server URL (default http://localhost:8080/)")
 	c.Flags().BoolVar(&yes, "yes", false, "Skip interactive prompts and confirmation")
 
 	if cfg.HideClient {
@@ -385,12 +395,6 @@ func runClaudeMCPAddInstall(cmd *cobra.Command, opts mcpInstallOptions) error {
 		return err
 	}
 
-	// Best effort: bind the requested server into client.json when the file is
-	// absent (or present but missing a server). That lets Claude Desktop launch
-	// `graphjin mcp` without embedded `--server` args while preserving an
-	// existing binding to a different server.
-	_ = ensureClientConfigServer(opts.Server)
-
 	claudeScope := normalizeClaudeScope(opts.Scope)
 	// Best effort: remove existing config to allow deterministic updates.
 	_ = runExternalCommand(cmd, "claude", "mcp", "remove", "--scope", claudeScope, claudeMCPServerName)
@@ -412,39 +416,14 @@ func resolveGraphJinBinaryPath() (string, error) {
 	return p, nil
 }
 
+// buildClaudeMCPServerArgs returns the args Claude should use to spawn
+// `graphjin mcp`. The server URL is intentionally NOT included — `graphjin
+// mcp` reads it from ~/.config/graphjin/client.json, so the MCP client
+// config we write here stays credential-free and survives token rotation
+// (re-running `graphjin mcp setup` is enough; no MCP-client edits needed).
 func buildClaudeMCPServerArgs(opts mcpInstallOptions) []string {
-	if shouldUseSavedMCPServer(opts.Server) {
-		return []string{"mcp"}
-	}
-	return []string{"mcp", "--server", opts.Server}
-}
-
-func shouldUseSavedMCPServer(serverURL string) bool {
-	cc, err := LoadClientConfig()
-	if err != nil || cc == nil || cc.Server == "" {
-		return false
-	}
-	return normalizeMCPServerURL(cc.Server) == normalizeMCPServerURL(serverURL)
-}
-
-func ensureClientConfigServer(serverURL string) bool {
-	serverURL = strings.TrimRight(strings.TrimSpace(serverURL), "/")
-	if serverURL == "" {
-		return false
-	}
-
-	cc, err := LoadClientConfig()
-	if err != nil {
-		return false
-	}
-	if cc == nil {
-		return SaveClientConfig(&ClientConfig{Server: serverURL}) == nil
-	}
-	if cc.Server == "" {
-		cc.Server = serverURL
-		return SaveClientConfig(cc) == nil
-	}
-	return normalizeMCPServerURL(cc.Server) == normalizeMCPServerURL(serverURL)
+	_ = opts
+	return []string{"mcp"}
 }
 
 func normalizeClaudeScope(scope string) string {
@@ -559,9 +538,8 @@ func printPostInstallGuide(w io.Writer, opts mcpInstallOptions, codexPlan codexI
 		fmt.Fprintf(w, "\nClaude Desktop / Claude Code\n")
 		fmt.Fprintf(w, "  1) Restart Claude Desktop.\n")
 		fmt.Fprintf(w, "  2) Verify with: claude mcp list\n")
-		fmt.Fprintf(w, "  3) If the server requires login, run: graphjin mcp setup %s\n", opts.Server)
-		fmt.Fprintf(w, "  4) In Chat tab: Customizer -> Plugins -> search \"GraphJin\" -> Install.\n")
-		fmt.Fprintf(w, "  5) If not listed, add it as a custom plugin in Customizer.\n")
+		fmt.Fprintf(w, "  3) In Chat tab: Customizer -> Plugins -> search \"GraphJin\" -> Install.\n")
+		fmt.Fprintf(w, "  4) If not listed, add it as a custom plugin in Customizer.\n")
 	}
 
 	if usesCodex(opts.Client) {

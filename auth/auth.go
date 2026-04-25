@@ -98,6 +98,36 @@ type Auth struct {
 
 type HandlerFunc func(w http.ResponseWriter, r *http.Request) (context.Context, error)
 
+// authCtxKey is a private context-key type used to stash optional identity
+// claims (email, name) on the request context for audit logging. Read-back
+// is via UserEmail / UserName below.
+type authCtxKey int
+
+const (
+	userEmailKey authCtxKey = iota
+	userNameKey
+)
+
+// UserEmail returns the verified email claim attached to ctx by JwtHandler,
+// or "" if absent.
+func UserEmail(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	v, _ := ctx.Value(userEmailKey).(string)
+	return v
+}
+
+// UserName returns the verified name claim attached to ctx by JwtHandler,
+// or "" if absent.
+func UserName(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	v, _ := ctx.Value(userNameKey).(string)
+	return v
+}
+
 type Options struct {
 	// Return a HTTP '401 Unauthoized' when auth fails
 	AuthFailBlock bool
@@ -189,6 +219,13 @@ func NewAuth(ac Auth, log *zap.Logger, opt Options, hFn ...HandlerFunc) (
 				return
 			}
 
+			// Audit log: emit a single structured line per authenticated
+			// request when we have identity beyond just `sub`. Skipped on
+			// dev-mode handlers and unauthenticated requests.
+			if err == nil && c != nil && log != nil {
+				logAuthAudit(log, c, ac.Type, r)
+			}
+
 			if c != nil {
 				next.ServeHTTP(w, r.WithContext(c))
 			} else {
@@ -225,6 +262,34 @@ func SimpleHandler(ac Auth) (HandlerFunc, error) {
 }
 
 var Err401 = errors.New("401 unauthorized")
+
+// logAuthAudit emits one structured log line per authenticated request,
+// recording the verified identity claims so audit trails can answer "who
+// called this endpoint." Only fields that were actually present on the JWT
+// are emitted — never invent or leak missing claims.
+func logAuthAudit(log *zap.Logger, ctx context.Context, authType string, r *http.Request) {
+	uid := UserID(ctx)
+	email := UserEmail(ctx)
+	name := UserName(ctx)
+	if uid == nil && email == "" && name == "" {
+		return
+	}
+	fields := []zapcore.Field{
+		zap.String("auth_type", authType),
+		zap.String("method", r.Method),
+		zap.String("path", r.URL.Path),
+	}
+	if uid != nil {
+		fields = append(fields, zap.Any("user_id", uid))
+	}
+	if email != "" {
+		fields = append(fields, zap.String("email", email))
+	}
+	if name != "" {
+		fields = append(fields, zap.String("name", name))
+	}
+	log.Info("auth.request", fields...)
+}
 
 // HeaderHandler is a middleware that checks for a header value
 func HeaderHandler(ac Auth) (HandlerFunc, error) {

@@ -16,13 +16,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// MCP HTTP-client persistent flags. These are attached to the `cli` cobra
-// parent so every client-mode subcommand (query, schema, audit, ...) inherits
-// them.
+// MCP HTTP-client persistent flags. Attached to the `cli` and `mcp` parents
+// so every client-mode subcommand inherits them.
 //
 // Important: there is intentionally no --server or --token flag. Both come
 // from `~/.config/graphjin/client.json`, written by `graphjin cli setup` /
-// `graphjin mcp setup`.
+// `graphjin mcp setup`. Having a single source of truth avoids the "which
+// server am I actually talking to?" confusion and means MCP integrations
+// (Claude Desktop, Codex) don't need to embed credentials in their configs.
 var (
 	mcpClientHeaders []string
 	mcpClientTimeout time.Duration
@@ -59,7 +60,8 @@ func resolveMCPServerURL(_ *cobra.Command) string {
 }
 
 // resolveMCPAuth returns the Authorization header value (Bearer <token>) to
-// send on every MCP HTTP request, or "" when the saved config has no token.
+// send on every MCP HTTP request, or "" when the saved config has no token
+// (e.g. server has auth_login disabled).
 func resolveMCPAuth() string {
 	cc, _ := LoadClientConfig()
 	if cc == nil || cc.Token == "" {
@@ -106,30 +108,24 @@ type mcpContent struct {
 	Text string `json:"text,omitempty"`
 }
 
-type mcpReadResourceResult struct {
-	Contents []mcpResourceContent `json:"contents"`
-}
-
-type mcpResourceContent struct {
-	URI      string `json:"uri"`
-	MIMEType string `json:"mimeType,omitempty"`
-	Text     string `json:"text,omitempty"`
-	Blob     string `json:"blob,omitempty"`
-}
-
-// callMCPMethod POSTs a JSON-RPC request to the MCP server and returns the
-// raw `result` payload. Tool-specific helpers can decode that payload further.
-func callMCPMethod(ctx context.Context, cmd *cobra.Command, method string, params map[string]any) (json.RawMessage, error) {
+// callTool POSTs a tools/call JSON-RPC request to the MCP server and returns
+// the tool's payload as raw JSON (structured if present, otherwise the text
+// content parsed as JSON, otherwise the raw text wrapped in a JSON string).
+func callTool(ctx context.Context, cmd *cobra.Command, toolName string, args map[string]any) (json.RawMessage, error) {
 	serverURL := resolveMCPServerURL(cmd)
 	if serverURL == "" {
 		return nil, errors.New("no GraphJin server configured — run `graphjin cli setup <server-url>` first")
 	}
 
 	reqID := mcpClientReqID.Add(1)
+	params := map[string]any{"name": toolName}
+	if args != nil {
+		params["arguments"] = args
+	}
 	rpc := jsonRPCRequest{
 		JSONRPC: "2.0",
 		ID:      reqID,
-		Method:  method,
+		Method:  "tools/call",
 		Params:  params,
 	}
 	body, err := json.Marshal(rpc)
@@ -205,25 +201,11 @@ func callMCPMethod(ctx context.Context, cmd *cobra.Command, method string, param
 	if len(envelope.Result) == 0 {
 		return nil, errors.New("empty MCP response")
 	}
-	return envelope.Result, nil
-}
 
-// callTool POSTs a tools/call JSON-RPC request to the MCP server and returns
-// the tool's payload as raw JSON (structured if present, otherwise the text
-// content parsed as JSON, otherwise the raw text wrapped in a JSON string).
-func callTool(ctx context.Context, cmd *cobra.Command, toolName string, args map[string]any) (json.RawMessage, error) {
-	params := map[string]any{"name": toolName}
-	if args != nil {
-		params["arguments"] = args
-	}
-	resultPayload, err := callMCPMethod(ctx, cmd, "tools/call", params)
-	if err != nil {
-		return nil, err
-	}
 	var result mcpToolResult
-	if err := json.Unmarshal(resultPayload, &result); err != nil {
+	if err := json.Unmarshal(envelope.Result, &result); err != nil {
 		// Not a CallToolResult envelope — return raw result.
-		return resultPayload, nil
+		return envelope.Result, nil
 	}
 
 	if result.IsError {
@@ -248,41 +230,6 @@ func callTool(ctx context.Context, cmd *cobra.Command, toolName string, args map
 		return b, nil
 	}
 	return json.RawMessage("null"), nil
-}
-
-// readMCPResource POSTs a resources/read JSON-RPC request and returns the
-// resource text payload when the server provides a single text resource.
-func readMCPResource(ctx context.Context, cmd *cobra.Command, uri string) (json.RawMessage, error) {
-	resultPayload, err := callMCPMethod(ctx, cmd, "resources/read", map[string]any{"uri": uri})
-	if err != nil {
-		return nil, err
-	}
-
-	var result mcpReadResourceResult
-	if err := json.Unmarshal(resultPayload, &result); err != nil {
-		// Not a ReadResourceResult envelope — return raw result.
-		return resultPayload, nil
-	}
-
-	if len(result.Contents) == 0 {
-		return json.RawMessage("null"), nil
-	}
-
-	if len(result.Contents) == 1 {
-		content := result.Contents[0]
-		if content.Text != "" {
-			return json.RawMessage(content.Text), nil
-		}
-		if content.Blob != "" {
-			b, err := json.Marshal(content.Blob)
-			if err != nil {
-				return nil, err
-			}
-			return b, nil
-		}
-	}
-
-	return resultPayload, nil
 }
 
 // extractJSONRPCPayload returns the JSON-RPC envelope bytes from either an

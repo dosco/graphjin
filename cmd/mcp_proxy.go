@@ -176,7 +176,7 @@ func (p *mcpProxy) forwardRequest(ctx context.Context, body []byte) ([]byte, err
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	if auth := resolveMCPProxyAuth(); auth != "" {
+	if auth := resolveMCPAuth(); auth != "" {
 		req.Header.Set("Authorization", auth)
 	}
 
@@ -259,7 +259,7 @@ func (p *mcpProxy) probeConnectivity(ctx context.Context) error {
 		return err
 	}
 
-	if auth := resolveMCPProxyAuth(); auth != "" {
+	if auth := resolveMCPAuth(); auth != "" {
 		req.Header.Set("Authorization", auth)
 	}
 
@@ -576,19 +576,6 @@ func nextBackoff(current, initial, max time.Duration) time.Duration {
 	return n
 }
 
-func resolveMCPProxyAuth() string {
-	if auth := resolveMCPAuth(); auth != "" {
-		return auth
-	}
-	if t := os.Getenv("GRAPHJIN_TOKEN"); t != "" {
-		return "Bearer " + t
-	}
-	if auth := os.Getenv("GRAPHJIN_MCP_AUTH"); auth != "" {
-		return auth
-	}
-	return ""
-}
-
 func normalizeMCPServerURL(input string) string {
 	// Add scheme if missing
 	if !strings.HasPrefix(input, "http://") && !strings.HasPrefix(input, "https://") {
@@ -608,7 +595,10 @@ func normalizeMCPServerURL(input string) string {
 	return u.String()
 }
 
-// printMCPProxyConfig outputs the Claude Desktop configuration JSON for proxy mode
+// printMCPProxyConfig outputs the Claude Desktop configuration JSON for proxy
+// mode. The generated config no longer embeds --server: `graphjin mcp` reads
+// the server URL + token from ~/.config/graphjin/client.json on its own, so
+// the MCP client config stays credential-free.
 func printMCPProxyConfig(serverURL string) {
 	execPath, err := os.Executable()
 	if err != nil {
@@ -619,7 +609,7 @@ func printMCPProxyConfig(serverURL string) {
 		"mcpServers": map[string]interface{}{
 			"GraphJin": map[string]interface{}{
 				"command": execPath,
-				"args":    buildClaudeMCPServerArgs(mcpInstallOptions{Server: serverURL}),
+				"args":    []string{"mcp"},
 			},
 		},
 	}
@@ -630,4 +620,8 @@ func printMCPProxyConfig(serverURL string) {
 	}
 
 	fmt.Println(string(output))
+	fmt.Fprintf(os.Stderr,
+		"\n# Server resolved from ~/.config/graphjin/client.json (currently: %s)\n"+
+			"# Re-run `graphjin mcp setup <server-url>` to point at a different server.\n",
+		serverURL)
 }

@@ -37,7 +37,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	// "fmt"
+	"fmt"
 	"net/http"
 	"os"
 	// "path/filepath"
@@ -96,6 +96,7 @@ type graphjinService struct {
 	cursorCache          CursorCache   // MCP cursor cache for short numeric IDs
 	onboardingMu         sync.RWMutex
 	onboardingCandidates map[string]cachedDiscoveredCandidate
+	authLogin            *authLoginService // built-in OIDC login (optional)
 }
 
 // anyDB returns any single connection from the dbs map (for callers
@@ -313,6 +314,16 @@ func newGraphJinService(conf *Config, dbs map[string]*sql.DB, options ...Option)
 	// Initialize MCP cursor cache (non-fatal if unavailable)
 	if err := s.initCursorCache(); err != nil {
 		s.log.Warnf("cursor cache init error: %s", err)
+	}
+
+	// Initialize built-in OIDC login (non-fatal if disabled)
+	if s.conf.AuthLogin.Enabled {
+		als, err := newAuthLoginService(context.Background(), s.conf)
+		if err != nil {
+			return nil, fmt.Errorf("auth_login: %w", err)
+		}
+		s.authLogin = als
+		s.log.Infof("auth_login: enabled (oidc issuer: %s)", s.conf.AuthLogin.OIDC.IssuerURL)
 	}
 
 	// if s.deployActive {

@@ -85,13 +85,57 @@ Copy the JSON config shown and add it to your Claude Desktop config file (see be
 | macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
 | Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
 
-### MCP install for OpenAI Codex + Claude Code
+## Authenticate the CLI / MCP
 
-GraphJin includes a guided installer that configures MCP for OpenAI Codex, Claude Code, or both.
+Before `graphjin cli` or `graphjin mcp` can talk to a server, point them at one. There are no `--server` or `--token` flags — both come from a single saved config file (`~/.config/graphjin/client.json`, mode `0600`):
 
 ```bash
-# Guided mode (asks target client and scope)
-graphjin mcp install
+graphjin cli setup http://localhost:8080            # local dev, no auth needed
+graphjin cli setup https://graphjin.example.com     # signs in via the server's OIDC IdP
+```
+
+What `setup` does, depending on the server:
+
+- **No built-in login** (the server has `auth_login.enabled: false`): saves only the URL. CLI calls send no `Authorization` header.
+- **Built-in login enabled**: kicks off an [RFC 8628 device-code flow](https://www.rfc-editor.org/rfc/rfc8628). The CLI prints a verification URL + short code, opens your browser, you sign in with the configured identity provider (Google, Okta, Keycloak, Auth0-as-IdP, Azure AD — anything OIDC), and the server mints a 30-day JWT. Both URL and JWT are saved to `client.json`.
+
+After setup every `graphjin cli ...` command just works:
+
+```bash
+graphjin cli health
+graphjin cli query list
+graphjin cli schema tables
+graphjin cli setup show       # print the saved config (token redacted)
+graphjin cli setup logout     # delete client.json
+graphjin cli setup            # re-run sign-in against the same server (refresh token)
+```
+
+To enable built-in login, set this on the server:
+
+```yaml
+auth:
+  jwt:
+    secret: "long-random-shared-secret"   # used to sign and verify local JWTs
+
+auth_login:
+  enabled: true
+  audience_graphjin: true                 # shorthand for audience: "graphjin-cli"
+  oidc:
+    issuer_url: "https://accounts.google.com"
+    client_id: "..."
+    client_secret: "..."                  # or $GJ_AUTH_LOGIN_OIDC_CLIENT_SECRET
+    allowed_domains: ["example.com"]      # optional allow-list
+```
+
+Successful authentication is recorded in structured logs with the verified `email` and `name` claims (when present), giving you a clean audit trail of who called every endpoint.
+
+### MCP install for OpenAI Codex + Claude Code
+
+GraphJin includes a guided installer that configures MCP for OpenAI Codex, Claude Code, or both. Run `graphjin mcp setup <server-url>` first — `mcp install` reads the server URL from `client.json`, and the MCP-client config it writes is credential-free, so rotating tokens (re-running `mcp setup`) needs no edits to Claude / Codex.
+
+```bash
+graphjin mcp setup https://graphjin.example.com
+graphjin mcp install                                # guided: target client + scope
 ```
 
 #### OpenAI Codex
@@ -112,10 +156,8 @@ graphjin mcp install --client claude --scope global --yes
 
 #### Troubleshooting
 
-- `graphjin mcp install` defaults to `--server http://localhost:8080/`.
-- Set a custom server URL with `--server`, for example:
-  - `graphjin mcp install --client codex --server http://my-host:8080/ --yes`
-- Claude installs use `graphjin mcp --server <url>` under the hood.
+- `mcp install` requires a saved server URL — run `graphjin mcp setup <server-url>` first if you see "no GraphJin server configured".
+- The generated MCP-client config is `args: ["mcp"]`. `graphjin mcp` reads server + token from `client.json` on its own, in proxy mode when a server is saved or local mode when it's not.
 - If Codex CLI does not support `codex mcp add --scope` (older versions), GraphJin automatically falls back to updating:
   - global scope: `~/.codex/config.toml`
   - local scope: `.codex/config.toml`

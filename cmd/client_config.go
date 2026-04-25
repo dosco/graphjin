@@ -75,6 +75,7 @@ func SaveClientConfig(c *ClientConfig) error {
 	}
 	tmpName := tmp.Name()
 	defer func() {
+		// Best-effort cleanup on failure; Rename below removes the file on success.
 		if _, err := os.Stat(tmpName); err == nil {
 			_ = os.Remove(tmpName)
 		}

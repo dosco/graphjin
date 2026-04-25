@@ -31,5 +31,26 @@ production mode (conf.Serv.Production).`,
 			})
 		},
 	})
+	c.AddCommand(&cobra.Command{
+		Use:   "docs [variant]",
+		Short: "Print annotated example config files (MCP: get_config_docs)",
+		Long: `Print the annotated example GraphJin config templates.
+
+Optional variant: dev (verbose, default), prod (minimal), or both.
+
+These are the same templates that 'graphjin serve new' writes when scaffolding
+a new app — every config option is documented inline. Useful as a reference
+when authoring a config by hand or when prompting an LLM to generate one.`,
+		Args: cobra.MaximumNArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			variant := ""
+			if len(args) == 1 {
+				variant = args[0]
+			}
+			runToolCmd(cmd, "get_config_docs", map[string]any{
+				"variant": variant,
+			})
+		},
+	})
 	return c
 }
