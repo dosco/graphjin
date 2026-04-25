@@ -503,6 +503,7 @@ When `development: true`, you can set user context via headers:
 | `set_user_id` | boolean | `false` | Set database session variable `user.id` |
 | `default_block` | boolean | `true` | Block all tables for anonymous users |
 | `default_limit` | integer | `20` | Default row limit for queries |
+| `analytics_mode` | boolean | `false` | OLAP mode: skip implicit row limits and require partition filters on partitioned tables |
 | `subs_poll_duration` | duration | `5s` | Subscription polling interval |
 | `db_schema_poll_duration` | duration | `10s` | Schema change detection interval |
 | `disable_agg_functions` | boolean | `false` | Disable aggregation functions |
@@ -522,6 +523,7 @@ enable_introspection: true
 set_user_id: true
 default_block: true
 default_limit: 50
+analytics_mode: false
 subs_poll_duration: 2s
 db_schema_poll_duration: 20s
 disable_agg_functions: false
@@ -530,6 +532,23 @@ enable_camelcase: true
 debug: false
 log_vars: false
 ```
+
+### Analytics Mode
+
+When `analytics_mode: true`, GraphJin compiles queries for OLAP / data-warehouse
+workloads:
+
+- **No implicit row limit.** `default_limit` is ignored — queries return all
+  matching rows unless `limit` is set on the query or in the role's table
+  config. Use this for analytics dashboards over Snowflake, BigQuery-style
+  workloads, or any aggregate query where capping rows would corrupt results.
+- **Partition filters required.** On tables that declare a partition key,
+  queries must filter on that key. Unfiltered scans are rejected at compile
+  time to prevent unbounded warehouse scans.
+
+In multi-database deployments you can set `analytics_mode` globally and override
+it per database — typically `true` for an analytics warehouse and `false` for an
+OLTP application database. See [Multi-Database Configuration](#multi-database-configuration).
 
 ---
 
@@ -981,6 +1000,32 @@ When a database is read-only:
 - `apply_schema_changes` targeting that database returns an error
 - All tables in the database inherit `read_only: true` for role-level enforcement
 - `update_current_config` preserves the `read_only: true` flag even if the LLM tries to change it
+
+### Per-Database Analytics Mode
+
+`analytics_mode` can be set globally on the top-level config and overridden per
+database. This is the typical setup when GraphJin fronts both an OLTP
+application DB and an analytics warehouse:
+
+```yaml
+analytics_mode: false  # default for app DBs
+
+databases:
+  app:
+    type: postgres
+    host: app-db.example.com
+    dbname: myapp
+    # inherits analytics_mode: false
+
+  warehouse:
+    type: snowflake
+    host: xy12345.snowflakecomputing.com
+    dbname: ANALYTICS
+    analytics_mode: true  # OLAP rules for this DB only
+```
+
+The per-database value, when set, fully overrides the top-level value. See
+[Analytics Mode](#analytics-mode) for what the flag does.
 
 ### Assigning Tables to Databases
 
