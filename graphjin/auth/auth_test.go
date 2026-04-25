@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/dosco/graphjin/auth/v3"
+	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -36,4 +37,33 @@ func TestJWTTokenInAuthorizationHeader(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.Equal(t, 1234567890, auth.UserIDInt(c))
+	// The token has a `name` claim but no `email`. UserName should pick it
+	// up; UserEmail should report empty.
+	assert.Equal(t, "John Doe", auth.UserName(c))
+	assert.Equal(t, "", auth.UserEmail(c))
+}
+
+// TestJWTAttachesEmailAndName verifies that when the JWT contains email and
+// name claims, JwtHandler stashes them on the context for audit logging.
+func TestJWTAttachesEmailAndName(t *testing.T) {
+	const secret = "casper"
+	jwtTok := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub":   "42",
+		"email": "alice@example.com",
+		"name":  "Alice",
+	})
+	signed, err := jwtTok.SignedString([]byte(secret))
+	assert.NoError(t, err)
+
+	ah, err := auth.JwtHandler(auth.Auth{JWT: auth.JWTConfig{Secret: secret}})
+	assert.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodGet, "https://test.com", nil)
+	assert.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+signed)
+
+	c, err := ah(nil, req)
+	assert.NoError(t, err)
+	assert.Equal(t, "alice@example.com", auth.UserEmail(c))
+	assert.Equal(t, "Alice", auth.UserName(c))
 }

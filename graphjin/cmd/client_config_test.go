@@ -12,6 +12,8 @@ import (
 func withIsolatedConfigDir(t *testing.T) string {
 	t.Helper()
 	tmp := t.TempDir()
+	// UserConfigDir reads XDG_CONFIG_HOME on Linux and nowhere on macOS/Windows.
+	// Override HOME + XDG_CONFIG_HOME + AppData to cover all platforms.
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 	t.Setenv("HOME", tmp)
 	if runtime.GOOS == "windows" {
@@ -91,6 +93,7 @@ func TestSaveOverwritesAtomically(t *testing.T) {
 	if err != nil || got == nil || got.Server != "b" {
 		t.Fatalf("overwrite failed: err=%v got=%+v", err, got)
 	}
+	// No stray tmp files left behind.
 	p, _ := ClientConfigPath()
 	entries, err := os.ReadDir(filepath.Dir(p))
 	if err != nil {

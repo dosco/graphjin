@@ -1,0 +1,169 @@
+# Inherit config from this other config file
+# so I only need to overwrite some values
+inherits: dev
+
+app_name: "{{- .AppName }} Production"
+host_port: 0.0.0.0:8080
+web_ui: false
+
+# Log levels: debug, error, warn, info
+log_level: "warn"
+
+# Log formats: json, plain 
+log_format: "json"
+
+# Enable or disable http compression (uses gzip)
+http_compress: true
+
+# When production mode is 'true' only queries from the queries 
+# folder can be used.
+production: true
+
+# Throw a 401 on auth failure for queries that need auth
+auth_fail_block: true
+
+# Latency tracing for database queries and remote joins
+# the resulting latency information is returned with the
+# response
+enable_tracing: false
+
+# Watch the config folder and reload GraphJin
+# with the new configs when a change is detected
+reload_on_config_change: false
+
+
+# File that points to the database seeding script
+# seed_file: seed.js
+
+# Secret key for general encryption operations like 
+# encrypting the cursor data
+# secret_key: supercalifajalistics
+
+# CORS: A list of origins a cross-domain request can be executed from. 
+# If the special * value is present in the list, all origins will be allowed. 
+# An origin may contain a wildcard (*) to replace 0 or more 
+# characters (i.e.: http://*.domain.com).
+# cors_allowed_origins: ["*"]
+
+# CORS: A list of headers the client is allowed to use with cross-domain
+# requests. If the special "*" value is present in the list, all headers will be
+# allowed. Default value is ["Origin", "Accept", "Content-Type",
+# "X-Requested-With", "Authorization"]. Even if the list is empty, the "Origin"
+# is always appended to the list.
+# cors_allowed_headers: []
+
+# Debug Cross Origin Resource Sharing requests
+# cors_debug: false
+
+# Default API path prefix is /api you can change it if you like
+# api_path: "/data"
+
+# Cache-Control header can help cache queries if your CDN supports cache-control 
+# cache_control: "public, max-age=300, s-maxage=600"
+
+# Subscriptions poll the database to query for updates
+# this sets the duration between requests.
+# subs_poll_duration: 2s
+
+# Hot deploy allows you to deploy config changes
+# instantly without needing to build a new image
+hot_deploy: true
+
+# Admin secret key is the secret used to authorize access
+# to the admin api used by hot deploy and other features
+# GJ_ADMIN_SECRET_KEY
+# admin_secret_key: blahblah
+
+# Auth related environment Variables
+# GJ_AUTH_JWT_PUBLIC_KEY_FILE
+
+# open opencensus tracing and metrics
+# telemetry:
+#   debug: false
+#   metrics:
+#     exporter: "prometheus"
+#   tracing:
+#     exporter: "zipkin"
+#     endpoint: "http://zipkin:9411/api/v2/spans"
+#     sample: 0.6
+
+# ============================================================================
+# MCP (Model Context Protocol) CONFIGURATION
+# ============================================================================
+# MCP enables AI assistants to interact with GraphJin for schema exploration
+# and query building. In production, config updates are disabled for security.
+# ============================================================================
+
+mcp:
+  # Disable MCP endpoints entirely
+  disable: false
+
+  # SECURITY: Config updates disabled in production
+  # Databases, tables, roles must be configured in this file or via hot deploy
+  allow_config_updates: false
+
+  # Allow mutations (insert/update/delete) through MCP
+  allow_mutations: true
+
+  # SECURITY: Only allow saved queries in production (not raw GraphQL)
+  allow_raw_queries: false
+
+# ============================================================================
+# DATABASE CONFIGURATION
+# ============================================================================
+# Production mode REQUIRES a database to be configured.
+# Use environment variables for sensitive values:
+#   GJ_DATABASE_HOST, GJ_DATABASE_PORT, GJ_DATABASE_NAME,
+#   GJ_DATABASE_USER, GJ_DATABASE_PASSWORD
+#
+# See dev.yml for database configuration examples for:
+# PostgreSQL, MySQL, MariaDB, SQLite, Oracle, MS SQL Server, MongoDB, Snowflake
+# Note: Snowflake requires connection_string.
+# ============================================================================
+
+databases:
+  default:
+    type: postgres
+    host: ${GJ_DATABASE_HOST}
+    port: ${GJ_DATABASE_PORT}
+    dbname: ${GJ_DATABASE_NAME}
+    user: ${GJ_DATABASE_USER}
+    password: ${GJ_DATABASE_PASSWORD}
+    #schema: "public"
+    #read_only: false  # Set to true to block all mutations and DDL (tamper-protected at runtime)
+
+    # alternatively you can use a connection string
+    #connection_string: ${GJ_DATABASE_URL}
+
+    # Size of database connection pool
+    # pool_size: 15
+
+    # Max number of active database connections allowed
+    # max_connections: 25
+
+    # Max time after which idle database connections are closed
+    # max_connection_idle_time: 5s
+
+    # Max time after which database connections are not reused
+    # max_connection_life_time: 0s
+
+    #log_level: "debug"
+
+    # database ping timeout is used for db health checking
+    ping_timeout: 5m
+
+    # Set up an secure tls encrypted db connection
+    enable_tls: false
+
+    # Required for tls. For example with Google Cloud SQL it's
+    # <gcp-project-id>:<cloud-sql-instance>"
+    # server_name: blah
+
+    # Required for tls. Can be a file path or the contents of the pem file
+    # server_cert: ./server-ca.pem
+
+    # Required for tls. Can be a file path or the contents of the pem file
+    # client_cert: ./client-cert.pem
+
+    # Required for tls. Can be a file path or the contents of the pem file
+    # client_key: ./client-key.pem

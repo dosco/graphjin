@@ -277,48 +277,15 @@ approval_policy = "on-request"
 }
 
 func TestBuildClaudeMCPServerArgs(t *testing.T) {
-	resetMCPClientFlags("")
-	got := buildClaudeMCPServerArgs(mcpInstallOptions{Server: "http://localhost:8080/"})
-	want := []string{"mcp", "--server", "http://localhost:8080/"}
-	if strings.Join(got, "|") != strings.Join(want, "|") {
-		t.Fatalf("buildClaudeMCPServerArgs() = %v, want %v", got, want)
-	}
-}
-
-func TestBuildClaudeMCPServerArgs_UsesSavedBinding(t *testing.T) {
-	resetMCPClientFlags("http://localhost:8080/")
+	// The generated MCP-client config no longer embeds --server: `graphjin
+	// mcp` reads the server URL from ~/.config/graphjin/client.json, so the
+	// args list is simply ["mcp"]. This keeps the MCP client config
+	// credential-free and lets `graphjin mcp setup` rotate tokens without
+	// any MCP-client edits.
 	got := buildClaudeMCPServerArgs(mcpInstallOptions{Server: "http://localhost:8080/"})
 	want := []string{"mcp"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("buildClaudeMCPServerArgs() = %v, want %v", got, want)
-	}
-}
-
-func TestEnsureClientConfigServer_SeedsEmptyConfig(t *testing.T) {
-	resetMCPClientFlags("")
-	if ok := ensureClientConfigServer("http://localhost:8080/"); !ok {
-		t.Fatal("expected ensureClientConfigServer to seed client.json")
-	}
-	cc, err := LoadClientConfig()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cc == nil || cc.Server != "http://localhost:8080" {
-		t.Fatalf("client config = %+v, want server http://localhost:8080", cc)
-	}
-}
-
-func TestEnsureClientConfigServer_DoesNotOverrideDifferentBinding(t *testing.T) {
-	resetMCPClientFlags("http://other.example:8080/")
-	if ok := ensureClientConfigServer("http://localhost:8080/"); ok {
-		t.Fatal("expected ensureClientConfigServer to preserve a different binding")
-	}
-	cc, err := LoadClientConfig()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cc == nil || cc.Server != "http://other.example:8080/" {
-		t.Fatalf("client config = %+v, want original binding", cc)
 	}
 }
 
@@ -358,9 +325,6 @@ func TestPrintPostInstallGuide(t *testing.T) {
 	}
 	if !strings.Contains(out, "Claude Desktop / Claude Code") {
 		t.Fatalf("expected claude quick guide, got:\n%s", out)
-	}
-	if !strings.Contains(out, "graphjin mcp setup http://localhost:8080/") {
-		t.Fatalf("expected mcp setup hint, got:\n%s", out)
 	}
 	if !strings.Contains(out, "Customizer -> Plugins -> search \"GraphJin\" -> Install.") {
 		t.Fatalf("expected claude chat note, got:\n%s", out)

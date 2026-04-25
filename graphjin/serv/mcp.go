@@ -107,6 +107,7 @@ func mcpToolList(conf *Config) []string {
 		"execute_saved_query",
 		"execute_workflow",
 		"list_workflows",
+		"get_config_docs",
 	}
 
 	// Conditionally registered
@@ -226,6 +227,9 @@ func (ms *mcpServer) registerTools() {
 
 	// Workflow Management Tools
 	ms.registerWorkflowMgmtTools()
+
+	// Configuration Documentation Tool (always available)
+	ms.registerConfigDocsTool()
 
 	// Configuration Update Tools (conditionally registered)
 	ms.registerConfigTools()
