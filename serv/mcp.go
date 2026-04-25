@@ -97,6 +97,7 @@ func mcpToolList(conf *Config) []string {
 		"list_namespaces",
 		"list_tables",
 		"describe_table",
+		"get_discovery_schema",
 		"find_path",
 		"get_table_sample",
 		"validate_where_clause",
