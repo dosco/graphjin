@@ -156,6 +156,14 @@ func (ms *mcpServer) registerSchemaTools() {
 			"Call this if you're unsure about the right sequence of tool calls for queries or mutations."),
 	), ms.handleGetWorkflowGuide)
 
+	// get_discovery_schema - JSON schemas for every discovery tool's response.
+	ms.srv.AddTool(mcp.NewTool(
+		"get_discovery_schema",
+		mcp.WithDescription("Get JSON schemas for the discovery tools' responses "+
+			"(list_namespaces, list_tables, describe_table, get_table_sample, get_schema_insights). "+
+			"Use this to validate or generate code against the discovery contract."),
+	), ms.handleGetDiscoverySchema)
+
 	// reload_schema - Only registered when allow_schema_reload is true
 	if ms.service.conf.MCP.AllowSchemaReload {
 		ms.srv.AddTool(mcp.NewTool(
@@ -299,6 +307,11 @@ func (ms *mcpServer) handleDescribeTable(ctx context.Context, req mcp.CallToolRe
 		ExampleQueries: examples,
 	}
 	return ms.toolResultJSON("describe_table", args, result)
+}
+
+func (ms *mcpServer) handleGetDiscoverySchema(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := req.GetArguments()
+	return ms.toolResultJSON("get_discovery_schema", args, discoverySchema())
 }
 
 func (ms *mcpServer) handleListNamespaces(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
