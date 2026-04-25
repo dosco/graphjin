@@ -19,7 +19,7 @@ import (
 var (
 	mcpUserID    string
 	mcpUserRole  string
-	mcpServerURL string
+	mcpServerURL string // populated from client.json when proxy mode is auto-detected
 	mcpDemoMode  bool
 	mcpPersist   bool
 	mcpDBFlags   []string
@@ -28,34 +28,41 @@ var (
 func mcpCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "mcp",
-		Short: "Run MCP server in stdio mode (for Claude Desktop)",
+		Short: "Run MCP server in stdio mode (for Claude Desktop / Codex)",
 		Long: `Run the GraphJin MCP server using stdio transport.
 
-Designed for AI assistant integration (Claude Desktop, etc.).
-Communicates via stdin/stdout using the MCP protocol.
+Designed for AI assistant integration (Claude Desktop, Codex, etc.) which
+spawn this binary and talk to it over stdin/stdout using the MCP protocol.
 
-Demo mode (--demo):
+Two modes, auto-selected:
+
+  Proxy mode  — when ~/.config/graphjin/client.json exists, this command
+                forwards stdio MCP traffic to the remote GraphJin server
+                saved there. Sign in with: graphjin mcp setup <server-url>
+
+  Local mode  — when no client.json is present, runs an embedded MCP server
+                using --path config + the local database.
+
+Demo mode (--demo, local mode only):
   graphjin mcp --demo                    # Use database type from config, default to postgres
   graphjin mcp --demo --db mysql         # Override database type
   graphjin mcp --demo --persist          # Persist data using Docker volumes
 
-Authentication:
+Authentication for local mode:
   --user-id, --user-role flags (highest priority)
   GRAPHJIN_USER_ID, GRAPHJIN_USER_ROLE env vars
   mcp.stdio_user_id, mcp.stdio_user_role config`,
 		Run: cmdMCP,
 	}
 
-	c.Flags().StringVar(&mcpUserID, "user-id", "", "User ID for MCP session")
-	c.Flags().StringVar(&mcpUserRole, "user-role", "", "User role for MCP session")
-	// --server enables stdio proxy mode: `graphjin mcp --server <url>` forwards
-	// to a remote MCP server instead of running locally.
-	c.PersistentFlags().StringVar(&mcpServerURL, "server", "", "Remote MCP server URL (env GRAPHJIN_SERVER). Mutually exclusive with --path.")
-	c.Flags().BoolVar(&mcpDemoMode, "demo", false, "Run with temporary database container(s)")
+	c.Flags().StringVar(&mcpUserID, "user-id", "", "User ID for MCP session (local mode)")
+	c.Flags().StringVar(&mcpUserRole, "user-role", "", "User role for MCP session (local mode)")
+	c.Flags().BoolVar(&mcpDemoMode, "demo", false, "Run with temporary database container(s) (local mode)")
 	c.Flags().BoolVar(&mcpPersist, "persist", false, "Persist data using Docker volumes (requires --demo)")
 	c.Flags().StringArrayVar(&mcpDBFlags, "db", nil, "Database type override(s) (requires --demo)")
 
-	// Existing subcommands
+	// Subcommands
+	c.AddCommand(setupCmd())
 	c.AddCommand(mcpInfoCmd())
 	c.AddCommand(mcpInstallCmd())
 	c.AddCommand(mcpPluginCmd())
@@ -67,20 +74,17 @@ func cmdMCP(cmd *cobra.Command, args []string) {
 	// Redirect CLI logger to stderr before setup to avoid corrupting JSON-RPC stream
 	log = newLoggerWithOutput(false, os.Stderr).Sugar()
 
-	// Check mutual exclusivity of --server and --path
-	if mcpServerURL != "" && cmd.Flags().Changed("path") {
-		log.Fatal("--server and --path are mutually exclusive")
-	}
-
-	// Check that --persist and --db require --demo
-	if !mcpDemoMode && (mcpPersist || len(mcpDBFlags) > 0) {
-		log.Fatal("--persist and --db flags require --demo")
-	}
-
-	// If --server is provided, run in proxy mode
-	if mcpServerURL != "" {
+	// Auto-select proxy vs local mode based on whether the user has run
+	// `graphjin mcp setup`.
+	if cc, _ := LoadClientConfig(); cc != nil && cc.Server != "" {
+		mcpServerURL = cc.Server
 		runMCPProxy(cmd, args)
 		return
+	}
+
+	// Local mode from here on.
+	if !mcpDemoMode && (mcpPersist || len(mcpDBFlags) > 0) {
+		log.Fatal("--persist and --db flags require --demo")
 	}
 
 	setup(cpath)
@@ -157,8 +161,11 @@ Use --demo to include the --demo flag in the generated config.`,
 }
 
 func cmdMCPInfo(cmd *cobra.Command, args []string) {
-	if mcpServerURL != "" {
-		printMCPProxyConfig(mcpServerURL)
+	// Proxy-mode info: derived from client.json. The generated MCP-client
+	// config no longer embeds --server; `graphjin mcp` reads client.json on
+	// its own.
+	if cc, _ := LoadClientConfig(); cc != nil && cc.Server != "" {
+		printMCPProxyConfig(cc.Server)
 		return
 	}
 	setup(cpath)

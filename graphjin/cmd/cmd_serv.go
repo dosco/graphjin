@@ -83,6 +83,13 @@ Demo mode (--demo):
 	c.Flags().BoolVar(&servDemoMode, "demo", false, "Run with temporary database container(s)")
 	c.Flags().BoolVar(&servPersist, "persist", false, "Persist data using Docker volumes (requires --demo)")
 	c.Flags().StringArrayVar(&servDBFlags, "db", nil, "Database type override(s) (requires --demo)")
+
+	// Server-side lifecycle subcommands. These used to live at the top level
+	// (`graphjin db`, `graphjin new`, `graphjin test`) but were moved under
+	// `serve` since they all operate on the same server-side config and DB.
+	c.AddCommand(newCmd())
+	c.AddCommand(dbCmd())
+	c.AddCommand(testCmd())
 	return c
 }
 

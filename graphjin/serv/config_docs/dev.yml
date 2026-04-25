@@ -1,0 +1,417 @@
+app_name: "{{- .AppName }} Development"
+host_port: 0.0.0.0:8080
+web_ui: true
+
+# Log levels: debug, error, warn, info
+log_level: "info"
+
+# Log formats: json, plain 
+log_format: "plain"
+
+# Enable or disable http compression (uses gzip)
+http_compress: true
+
+# enable or disable the server-timing http header
+server_timing: true
+
+# When production mode is 'true' only queries from the queries 
+# folder can be used. 
+production: false
+
+# Throw a 401 on auth failure for queries that need auth
+auth_fail_block: false
+
+# Latency tracing for database queries and remote joins
+# the resulting latency information is returned with the
+# response
+enable_tracing: true
+
+# Watch the config folder and reload GraphJin
+# with the new configs when a change is detected
+reload_on_config_change: true
+
+# Enable db.graphql schema management
+# Use 'graphjin db diff' to preview and 'graphjin db sync' to apply changes
+enable_schema: false
+
+# File that points to the database seeding script
+# seed_file: seed.js
+
+# Secret key for general encryption operations like 
+# encrypting the cursor data
+secret_key: supercalifajalistics
+
+# CORS: A list of origins a cross-domain request can be executed from. 
+# If the special * value is present in the list, all origins will be allowed. 
+# An origin may contain a wildcard (*) to replace 0 or more 
+# characters (i.e.: http://*.domain.com).
+cors_allowed_origins: ["*"]
+
+# CORS: A list of headers the client is allowed to use with cross-domain
+# requests. If the special "*" value is present in the list, all headers will be
+# allowed. Default value is ["Origin", "Accept", "Content-Type",
+# "X-Requested-With", "Authorization"]. Even if the list is empty, the "Origin"
+# is always appended to the list.
+cors_allowed_headers: []
+
+# Debug Cross Origin Resource Sharing requests
+cors_debug: false
+
+# Default API path prefix is /api you can change it if you like
+# api_path: "/data"
+
+# Cache-Control header can help cache queries if your CDN supports cache-control 
+# cache_control: "public, max-age=300, s-maxage=600"
+
+# Subscriptions poll the database to query for updates
+# this sets the duration between requests.
+subs_poll_duration: 2s
+
+# Default limit value to be used on queries and as the max
+# limit on all queries where a limit is defined as a query variable.
+# Defaults to 20
+default_limit: 20
+
+# Disables all aggregation functions like count, sum, etc
+# disable_agg_functions: false
+
+# Disables all functions like count, length, etc
+# disable_functions: false
+
+# Enables using camel case terms in GraphQL which are converted 
+# to snake case in SQL
+# enable_camelcase: false
+
+# Set session variable "user.id" to the user id
+# Enable this if you need the user id in triggers, etc
+# Note: This will not work with subscriptions
+set_user_id: false
+
+# DefaultBlock ensures that in anonymous mode (role 'anon') all tables
+# are blocked from queries and mutations. To open access to tables in
+# anonymous mode they have to be added to the 'anon' role config.
+default_block: false
+
+# OpenCensus tracing and metrics: when debug is enabled you will get
+# a debug web ui. More info at https://opencensus.io/zpages/go/ 
+# Rpc Stats: http://<host>/telemetry/rpcz 
+# Trace Spans: http://<host>/telemetry/tracez
+#
+# telemetry:
+#   debug: true
+#   metrics:
+#     exporter: "prometheus"
+#   tracing:
+#     exporter: "zipkin"
+#     endpoint: "http://zipkin:9411/api/v2/spans"
+#     sample: 0.6
+
+# Rate is the number of events per second 
+# Bucket a burst of at most 'bucket' number of events.
+# ip_header sets the header that contains the client ip.
+# https://en.wikipedia.org/wiki/Token_bucket 
+# rate_limiter:
+#   rate: 2
+#   bucket: 3
+#   ip_header: X-Forwarded-For
+
+# Enable additional debugging logs
+debug: false
+
+# Hot deploy allows you to deploy config changes
+# instantly without needing to build a new image
+hot_deploy: false
+
+# Admin secret key is the secret used to authorize access
+# to the admin api used by hot deploy and other features
+admin_secret_key: blahblah
+
+# Auth related environment Variables
+# GJ_AUTH_JWT_PUBLIC_KEY_FILE
+
+auth:
+  # Can be 'none', 'jwt' or 'header'
+  type: none
+  cookie: _{{- .AppNameSlug -}}_session
+
+  # Useful for quickly debugging subscriptions WebSocket authorization.
+  # Disable in production
+  # subs_creds_in_vars: true
+
+    # In most cases you don't need these
+    # salt: "encrypted cookie"
+    # sign_salt: "signed encrypted cookie"
+    # auth_salt: "authenticated encrypted cookie"
+
+  # jwt:
+  #   provider: auth0
+  #   secret: abc335bfcfdb04e50db5bb0a4d67ab9
+  #   public_key_file: /secrets/public_key.pem
+  #   public_key_type: ecdsa #rsa
+
+  # header:
+  #   name: dnt
+  #   exists: true
+  #   value: localhost:8080
+
+# ============================================================================
+# MCP (Model Context Protocol) CONFIGURATION
+# ============================================================================
+# MCP enables AI assistants to interact with GraphJin for schema exploration,
+# query building, and configuration management.
+#
+# In development mode, GraphJin can start without a database configured.
+# Use the MCP config API to add databases dynamically:
+#   - get_current_config: View current configuration
+#   - update_current_config: Add/modify databases, tables, roles, etc.
+# ============================================================================
+
+mcp:
+  # Disable MCP endpoints entirely
+  disable: false
+
+  # Allow configuration updates via MCP (databases, tables, roles, blocklist, functions)
+  # This enables dynamic database configuration without editing config files
+  allow_config_updates: true
+
+  # Allow mutations (insert/update/delete) through MCP
+  allow_mutations: true
+
+  # Allow raw GraphQL queries (not just saved queries)
+  allow_raw_queries: true
+
+# ============================================================================
+# DATABASE CONFIGURATION
+# ============================================================================
+# In development mode, the database section is optional. You can:
+# 1. Configure a database below, OR
+# 2. Start without a database and add one via MCP config API
+#
+# Uncomment and modify the section for your database type.
+# You can use either individual fields OR a connection_string (not both).
+# Supported types: postgres, mysql, sqlite, oracle, mssql, mongodb, snowflake
+# ============================================================================
+
+# Database related environment Variables
+# GJ_DATABASE_HOST
+# GJ_DATABASE_PORT
+# GJ_DATABASE_USER
+# GJ_DATABASE_PASSWORD
+
+# databases:
+#   default:
+#     type: postgres
+#     host: localhost
+#     port: 5432
+#     dbname: {{ .AppNameSlug -}}_development
+#     user: postgres
+#     password: postgres
+#     #schema: "public"
+#     #read_only: false  # Set to true to block all mutations and DDL (tamper-protected at runtime)
+#     # alternatively you can use a connection string
+#     #connection_string: postgres://jack:secret@pg.example.com:5432/mydb?sslmode=verify-ca&pool_max_conns=10
+
+# --- PostgreSQL ---
+# databases:
+#   default:
+#     type: postgres
+#     host: localhost
+#     port: 5432
+#     dbname: myapp
+#     user: postgres
+#     password: secret
+#     schema: "public"
+#     # connection_string: postgres://user:password@localhost:5432/myapp?sslmode=disable
+
+# --- MySQL / MariaDB ---
+# databases:
+#   default:
+#     type: mysql
+#     host: localhost
+#     port: 3306
+#     dbname: myapp
+#     user: root
+#     password: secret
+#     # connection_string: user:password@tcp(localhost:3306)/myapp?multiStatements=true&parseTime=true&interpolateParams=true
+#     # Note: multiStatements, parseTime, and interpolateParams are recommended for full functionality
+
+# --- SQLite ---
+# databases:
+#   default:
+#     type: sqlite
+#     # File-based: set host to the database file path
+#     host: /path/to/database.db
+#     # In-memory with shared cache:
+#     # connection_string: file:memdb?mode=memory&cache=shared&_busy_timeout=5000
+
+# --- Oracle ---
+# databases:
+#   default:
+#     type: oracle
+#     host: localhost
+#     port: 1521
+#     dbname: FREEPDB1
+#     user: myuser
+#     password: secret
+#     # connection_string: oracle://user:password@localhost:1521/FREEPDB1
+
+# --- MS SQL Server ---
+# databases:
+#   default:
+#     type: mssql
+#     host: localhost
+#     port: 1433
+#     dbname: myapp
+#     user: sa
+#     password: YourStrong!Passw0rd
+#     # connection_string: sqlserver://sa:YourStrong!Passw0rd@localhost:1433?database=myapp
+
+# --- MongoDB ---
+# databases:
+#   default:
+#     type: mongodb
+#     host: localhost
+#     port: 27017
+#     dbname: myapp
+#     # Note: MongoDB has no foreign keys, so relationships must be configured explicitly
+
+# --- Snowflake ---
+# databases:
+#   default:
+#     type: snowflake
+#     # Snowflake requires connection_string (host/port fields are not used)
+#     # Example (emulator style):
+#     # connection_string: user:pass@localhost:8080/test_db/public?account=test&protocol=http&warehouse=dummy
+#     connection_string: <snowflake_connection_string>
+#     # Key pair (JWT) authentication — PKCS#8 PEM format
+#     # Generate: openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8
+#     # Register: ALTER USER <user> SET RSA_PUBLIC_KEY='<public_key>'
+#     # private_key_path: /path/to/rsa_key.p8
+#     # Or inline: private_key_pem: "-----BEGIN PRIVATE KEY-----\n..."
+#     # key_passphrase: optional-if-key-is-encrypted
+
+# --- Database Connection Options (apply to any database type) ---
+#     # Size of database connection pool
+#     pool_size: 15
+#
+#     # Max number of active database connections allowed
+#     max_connections: 25
+#
+#     # Max time after which idle database connections are closed
+#     max_connection_idle_time: 5s
+#
+#     # Max time after which database connections are not reused
+#     max_connection_life_time: 0s
+#
+#     # Database query log level
+#     log_level: "debug"
+#
+#     # database ping timeout is used for db health checking
+#     ping_timeout: 1m
+#
+#     # Set up an secure tls encrypted db connection
+#     enable_tls: false
+#
+#   # Required for tls. For example with Google Cloud SQL it's
+#   # <gcp-project-id>:<cloud-sql-instance>"
+#   server_name: blah
+#
+#   # Required for tls. Can be a file path or the contents of the pem file
+#   server_cert: ./server-ca.pem
+#
+#   # Required for tls. Can be a file path or the contents of the pem file
+#   client_cert: ./client-cert.pem
+#
+#   # Required for tls. Can be a file path or the contents of the pem file
+#   client_key: ./client-key.pem
+
+# Define additional variables here to be used with filters
+# Variables used require a type suffix eg. $user_id:bigint
+variables:
+  #admin_account_id: "5"
+  admin_account_id: "sql:select id from users where admin = true limit 1"
+
+# Define variables set to values extracted from http headers
+header_variables:
+  remote_ip: "X-Forwarded-For"
+
+# Field and table names that you wish to block
+blocklist:
+  - ar_internal_metadata
+  - schema_migrations
+  - secret
+  - password
+  - encrypted
+  - token
+
+# resolvers:
+#   - name: payments
+#     type: remote_api
+#     table: customers
+#     column: stripe_id
+#     json_path: data
+#     debug: false
+#     url: http://payments/payments/$id
+#     pass_headers:
+#       - cookie
+#     set_headers:
+#       - name: Host
+#         value: 0.0.0.0
+#       # - name: Authorization
+#       #   value: Bearer <stripe_api_key>
+
+tables:
+  - # You can create new fields that have a
+    # real db table backing them
+    name: me
+    table: users
+
+  - name: users
+    order_by:
+      new_users: [ "created_at desc", "id asc" ]
+      id: [ "id asc" ]
+
+# Variables used require a type suffix eg. $user_id:bigint
+#roles_query: "SELECT * FROM users WHERE id = $user_id:bigint"
+
+roles:
+  # if `auth.type` is set to a valid auth type then
+  # all tables are blocked for the anon role unless
+  # added to the role like below.
+  # - name: anon
+  #   tables:
+  #     - name: users
+  #       query:
+  #         limit: 10
+
+  - name: user
+    tables:
+      - name: me
+        query:
+          filters: ["{ id: { _eq: $user_id } }"]
+
+      # - name: products
+      #   query:
+      #     limit: 50
+      #     filters: ["{ user_id: { eq: $user_id } }"]
+      #     disable_functions: false
+
+      #   insert:
+      #     filters: ["{ user_id: { eq: $user_id } }"]
+      #     presets:
+      #       - user_id: "$user_id"
+      #       - created_at: "now"
+            
+      #   update:
+      #     filters: ["{ user_id: { eq: $user_id } }"]
+      #     presets:
+      #       - updated_at: "now"
+
+      #   delete:
+      #     block: true
+
+  # - name: admin
+  #   match: id = 1000
+  #   tables:
+  #     - name: users
+  #       filters: []

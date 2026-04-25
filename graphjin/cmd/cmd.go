@@ -50,14 +50,12 @@ func Cmd() {
 		"config", "./config", "alias for --path")
 	rootCmd.PersistentFlags().MarkHidden("config")
 
-	rootCmd.AddCommand(newCmd())
+	// Top-level commands. Server-side lifecycle commands (new, db, test) are
+	// children of `serve` — see servCmd() in cmd_serv.go.
 	rootCmd.AddCommand(servCmd())
 	rootCmd.AddCommand(mcpCmd())
 	rootCmd.AddCommand(cliCmd())
 	rootCmd.AddCommand(versionCmd())
-	// rootCmd.AddCommand(adminCmd())
-	rootCmd.AddCommand(dbCmd())
-	rootCmd.AddCommand(testCmd())
 
 	// rootCmd.AddCommand(&cobra.Command{
 	// 	Use:   fmt.Sprintf("conf:dump [%s]", strings.Join(viper.SupportedExts, "|")),

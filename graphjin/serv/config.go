@@ -125,6 +125,56 @@ type Serv struct {
 
 	// Response caching configuration
 	Caching CachingConfig `mapstructure:"caching" jsonschema:"title=Caching Configuration"`
+
+	// Built-in OIDC login that mints local JWTs for the CLI / MCP client
+	AuthLogin AuthLogin `mapstructure:"auth_login" jsonschema:"title=Built-in Login (OIDC)"`
+}
+
+// AuthLogin configures the built-in OIDC sign-in flow that issues local JWTs
+// for `graphjin cli` / `graphjin mcp` clients. When Enabled, the service
+// registers /api/v1/auth/* endpoints implementing RFC 8628 device-code flow
+// against a generic OIDC identity provider.
+type AuthLogin struct {
+	// Enable the built-in login flow
+	Enabled bool `jsonschema:"title=Enable Built-in Login,default=false"`
+
+	// TTL of issued local JWTs (default: 720h = 30 days)
+	TokenTTL time.Duration `mapstructure:"token_ttl" jsonschema:"title=Issued Token TTL"`
+
+	// Issuer value stamped onto every locally-minted JWT. Must match
+	// `auth.jwt.issuer` if that is set.
+	Issuer string `jsonschema:"title=JWT Issuer Claim"`
+
+	// Audience value stamped onto every locally-minted JWT. Must match
+	// `auth.jwt.audience` if that is set. Defaults to "graphjin-cli".
+	Audience string `jsonschema:"title=JWT Audience Claim"`
+
+	// AudienceGraphjin is a convenience shortcut: when true, the issued JWT's
+	// `aud` claim is set to the canonical value "graphjin-cli". Saves having
+	// to remember / type the magic string. Mutually exclusive with Audience.
+	AudienceGraphjin bool `mapstructure:"audience_graphjin" jsonschema:"title=Use GraphJin Default Audience (graphjin-cli)"`
+
+	// OIDC identity provider used to authenticate humans.
+	OIDC AuthLoginOIDC `jsonschema:"title=OIDC Provider"`
+}
+
+// AuthLoginOIDC configures a generic OIDC identity provider for AuthLogin.
+type AuthLoginOIDC struct {
+	// OIDC issuer URL — discovery happens at
+	// <issuer_url>/.well-known/openid-configuration
+	IssuerURL string `mapstructure:"issuer_url" jsonschema:"title=OIDC Issuer URL,example=https://accounts.google.com"`
+
+	// Registered OAuth client ID / secret for this GraphJin deployment.
+	ClientID     string `mapstructure:"client_id" jsonschema:"title=OAuth Client ID"`
+	ClientSecret string `mapstructure:"client_secret" jsonschema:"title=OAuth Client Secret"`
+
+	// Scopes requested. Defaults to ["openid","email","profile"].
+	Scopes []string `jsonschema:"title=Requested Scopes"`
+
+	// Optional post-authentication allow-lists. If both are empty, any verified
+	// identity is accepted.
+	AllowedEmails  []string `mapstructure:"allowed_emails" jsonschema:"title=Allowed Email Addresses"`
+	AllowedDomains []string `mapstructure:"allowed_domains" jsonschema:"title=Allowed Email Domains"`
 }
 
 // Database configuration
@@ -478,6 +528,11 @@ func newViperWithDefaults() *viper.Viper {
 	vi.SetDefault("caching.enable", false)
 	vi.SetDefault("caching.ttl", 3600)
 	vi.SetDefault("caching.fresh_ttl", 300)
+
+	// Built-in login defaults
+	vi.SetDefault("auth_login.enabled", false)
+	vi.SetDefault("auth_login.token_ttl", "720h")
+	vi.SetDefault("auth_login.audience", "graphjin-cli")
 
 	return vi
 }

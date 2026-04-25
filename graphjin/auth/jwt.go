@@ -62,7 +62,20 @@ func JwtHandler(ac Auth) (HandlerFunc, error) {
 			}
 
 			ctx, err = jwtProvider.SetContextValues(ctx, claims)
-			return ctx, err
+			if err != nil {
+				return ctx, err
+			}
+
+			// Attach optional identity claims for audit logging. These are
+			// strictly informational — the role / authorization decision is
+			// driven by sub / role.
+			if email, ok := claims["email"].(string); ok && email != "" {
+				ctx = context.WithValue(ctx, userEmailKey, email)
+			}
+			if name, ok := claims["name"].(string); ok && name != "" {
+				ctx = context.WithValue(ctx, userNameKey, name)
+			}
+			return ctx, nil
 		}
 		return nil, fmt.Errorf("invalid claims")
 	}, nil
