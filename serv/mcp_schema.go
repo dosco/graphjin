@@ -26,11 +26,23 @@ func (ms *mcpServer) requireDB() *mcp.CallToolResult {
 
 // registerSchemaTools registers the schema discovery tools
 func (ms *mcpServer) registerSchemaTools() {
+	// list_namespaces - One-query rollup of (database, schema) namespaces
+	ms.srv.AddTool(mcp.NewTool(
+		"list_namespaces",
+		mcp.WithDescription("List namespaces (databases/schemas) with table counts and approximate row totals. "+
+			"Call this BEFORE list_tables for large multi-schema deployments to choose a target namespace. "+
+			"One catalog query per call; cheap regardless of total table count."),
+		mcp.WithString("database",
+			mcp.Description("Optional database name. Omit to roll up across all configured databases."),
+		),
+		mcp.WithOutputSchema[ListNamespacesResult](),
+	), ms.handleListNamespaces)
+
 	// list_tables - List all database tables
 	ms.srv.AddTool(mcp.NewTool(
 		"list_tables",
 		mcp.WithDescription("List all database tables. Call this FIRST to discover available data. "+
-			"Returns table names, types, and column counts. "+
+			"Returns a cheap, paginated table index from in-memory schema metadata only. "+
 			"Follow up with describe_table for column details and available aggregation functions."),
 		mcp.WithString("namespace",
 			mcp.Description("Optional namespace for multi-tenant deployments"),
@@ -38,6 +50,21 @@ func (ms *mcpServer) registerSchemaTools() {
 		mcp.WithString("database",
 			mcp.Description("Optional database name to filter tables. Omit to see tables from ALL databases."),
 		),
+		mcp.WithString("schema",
+			mcp.Description("Optional database schema name to filter tables."),
+		),
+		mcp.WithString("search",
+			mcp.Description("Optional case-insensitive search across table, schema, database, and comment."),
+		),
+		mcp.WithNumber("limit",
+			mcp.Description("Maximum tables to return. Defaults to 100, max 500."),
+			mcp.Min(1),
+			mcp.Max(500),
+		),
+		mcp.WithString("cursor",
+			mcp.Description("Pagination cursor from a previous list_tables response."),
+		),
+		mcp.WithOutputSchema[ListTablesResult](),
 	), ms.handleListTables)
 
 	// describe_table - Get detailed table schema with relationships
@@ -56,6 +83,10 @@ func (ms *mcpServer) registerSchemaTools() {
 		mcp.WithString("database",
 			mcp.Description("Optional database name. Omit to search all databases."),
 		),
+		mcp.WithString("schema",
+			mcp.Description("Optional database schema name. Use with database to disambiguate duplicate table names across schemas."),
+		),
+		mcp.WithOutputSchema[TableSchemaWithAggregations](),
 	), ms.handleDescribeTable)
 
 	// find_path - Find relationship path between tables
@@ -75,7 +106,32 @@ func (ms *mcpServer) registerSchemaTools() {
 		mcp.WithString("database",
 			mcp.Description("Optional database name. Omit to search all databases."),
 		),
+		mcp.WithOutputSchema[struct {
+			Path         []core.PathStep `json:"path"`
+			ExampleQuery string          `json:"example_query"`
+		}](),
 	), ms.handleFindPath)
+
+	ms.srv.AddTool(mcp.NewTool(
+		"get_table_sample",
+		mcp.WithDescription("Get live-data statistics and sample rows for one table. "+
+			"This is the only schema discovery tool that runs data queries; call it only when row counts, value distributions, numeric/date stats, or sample rows are needed."),
+		mcp.WithString("table",
+			mcp.Required(),
+			mcp.Description("Table name to sample"),
+		),
+		mcp.WithString("database",
+			mcp.Description("Database name. Required when the table name is ambiguous across configured databases."),
+		),
+		mcp.WithString("schema",
+			mcp.Description("Optional database schema name."),
+		),
+		mcp.WithString("mode",
+			mcp.Description("Sampling mode. light caps profiled columns; deep profiles more columns."),
+			mcp.Enum("light", "deep"),
+		),
+		mcp.WithOutputSchema[TableSampleResult](),
+	), ms.handleGetTableSample)
 
 	// validate_where_clause - Validate where clause syntax and type compatibility
 	ms.srv.AddTool(mcp.NewTool(
@@ -123,43 +179,72 @@ func (ms *mcpServer) handleListTables(ctx context.Context, req mcp.CallToolReque
 	}
 	args := req.GetArguments()
 	database, _ := args["database"].(string)
+	opts := tableListOptionsFromArgs(args)
+
+	if ms.service.disc != nil {
+		result := ms.service.disc.TableIndexPage(ctx, database, opts)
+		return ms.toolResultJSON("list_tables", args, result)
+	}
 
 	var entries []TableIndexEntry
-	if ms.service.disc != nil {
-		if database != "" {
-			entries = ms.service.disc.TableIndex(database)
-		} else {
-			for _, name := range ms.service.disc.Databases() {
-				entries = append(entries, ms.service.disc.TableIndex(name)...)
-			}
-		}
+	var tables []core.TableInfo
+	if database != "" {
+		tables = ms.service.gj.GetTablesForDatabase(database)
+	} else {
+		tables = ms.service.gj.GetTables()
 	}
-	if entries == nil {
-		var tables []core.TableInfo
-		if database != "" {
-			tables = ms.service.gj.GetTablesForDatabase(database)
-		} else {
-			tables = ms.service.gj.GetTables()
-		}
-		for _, t := range tables {
-			entries = append(entries, TableIndexEntry{
-				Name:     t.Name,
-				Schema:   t.Schema,
-				Database: t.Database,
-				Type:     t.Type,
-				Comment:  t.Comment,
-			})
-		}
+	for _, t := range tables {
+		entries = append(entries, TableIndexEntry{
+			Name:        t.Name,
+			Schema:      t.Schema,
+			Database:    t.Database,
+			Type:        t.Type,
+			Comment:     t.Comment,
+			ColumnCount: t.ColumnCount,
+		})
 	}
 
-	result := struct {
-		Tables []TableIndexEntry `json:"tables"`
-		Count  int               `json:"count"`
-	}{
-		Tables: entries,
-		Count:  len(entries),
+	entries = filterTableIndex(entries, opts)
+	page, nextCursor, hasMore := paginateTableIndex(entries, opts)
+	result := ListTablesResult{
+		Database:   database,
+		Tables:     page,
+		Count:      len(page),
+		Total:      len(entries),
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
 	}
 	return ms.toolResultJSON("list_tables", args, result)
+}
+
+func tableListOptionsFromArgs(args map[string]any) TableListOptions {
+	search, _ := args["search"].(string)
+	schemaName, _ := args["schema"].(string)
+	cursor, _ := args["cursor"].(string)
+	return TableListOptions{
+		Search: search,
+		Schema: schemaName,
+		Limit:  intArg(args["limit"]),
+		Cursor: cursor,
+	}
+}
+
+func intArg(v any) int {
+	switch t := v.(type) {
+	case int:
+		return t
+	case int64:
+		return int(t)
+	case float64:
+		return int(t)
+	case float32:
+		return int(t)
+	case json.Number:
+		n, _ := t.Int64()
+		return int(n)
+	default:
+		return 0
+	}
 }
 
 // AggregationInfo describes available aggregation functions for a table
@@ -173,7 +258,6 @@ type TableSchemaWithAggregations struct {
 	*core.TableSchema
 	Aggregations   AggregationInfo `json:"aggregations"`
 	ExampleQueries []ExampleQuery  `json:"example_queries,omitempty"`
-	Profile        *TableProfile   `json:"profile,omitempty"`
 }
 
 // ExampleQuery represents an example GraphQL query for a table
@@ -190,6 +274,7 @@ func (ms *mcpServer) handleDescribeTable(ctx context.Context, req mcp.CallToolRe
 	args := req.GetArguments()
 	table, _ := args["table"].(string)
 	database, _ := args["database"].(string)
+	schemaName, _ := args["schema"].(string)
 
 	if table == "" {
 		return mcp.NewToolResultError("table name is required"), nil
@@ -197,8 +282,8 @@ func (ms *mcpServer) handleDescribeTable(ctx context.Context, req mcp.CallToolRe
 
 	var schema *core.TableSchema
 	var err error
-	if database != "" {
-		schema, err = ms.service.gj.GetTableSchemaForDatabase(database, table)
+	if database != "" || schemaName != "" {
+		schema, err = ms.service.gj.GetTableSchemaForDatabaseSchema(database, schemaName, table)
 	} else {
 		schema, err = ms.service.gj.GetTableSchema(table)
 	}
@@ -212,25 +297,54 @@ func (ms *mcpServer) handleDescribeTable(ctx context.Context, req mcp.CallToolRe
 	// Generate example queries
 	examples := generateExampleQueries(schema)
 
-	var profile *TableProfile
-	if ms.service.disc != nil {
-		resolvedDB := database
-		if resolvedDB == "" {
-			resolvedDB = schema.Database
-		}
-		if resolvedDB == "" {
-			resolvedDB = ms.service.gj.DefaultDatabase()
-		}
-		profile = ms.service.disc.Profile(resolvedDB, table)
-	}
-
 	result := TableSchemaWithAggregations{
 		TableSchema:    schema,
 		Aggregations:   aggregations,
 		ExampleQueries: examples,
-		Profile:        profile,
 	}
 	return ms.toolResultJSON("describe_table", args, result)
+}
+
+func (ms *mcpServer) handleListNamespaces(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if err := ms.requireDB(); err != nil {
+		return err, nil
+	}
+	if ms.service.disc == nil {
+		return mcp.NewToolResultError("Discovery not available yet."), nil
+	}
+	args := req.GetArguments()
+	database, _ := args["database"].(string)
+
+	rollup := ms.service.disc.Namespaces(ctx, database)
+	result := ListNamespacesResult{
+		Database:   database,
+		Namespaces: rollup,
+		Count:      len(rollup),
+	}
+	return ms.toolResultJSON("list_namespaces", args, result)
+}
+
+func (ms *mcpServer) handleGetTableSample(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if err := ms.requireDB(); err != nil {
+		return err, nil
+	}
+	if ms.service.disc == nil {
+		return mcp.NewToolResultError("Discovery not available yet."), nil
+	}
+	args := req.GetArguments()
+	table, _ := args["table"].(string)
+	database, _ := args["database"].(string)
+	schemaName, _ := args["schema"].(string)
+	mode, _ := args["mode"].(string)
+	if table == "" {
+		return mcp.NewToolResultError("table name is required"), nil
+	}
+
+	result, err := ms.service.disc.TableSample(ctx, database, schemaName, table, mode)
+	if err != nil {
+		return mcp.NewToolResultError(enhanceError(err.Error(), "get_table_sample")), nil
+	}
+	return ms.toolResultJSON("get_table_sample", args, result)
 }
 
 // generateAggregations creates the list of available aggregation functions based on column types

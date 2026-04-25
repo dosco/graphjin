@@ -18,8 +18,9 @@ func mcpQueryCmd() *cobra.Command {
 		Short: "Inspect and execute saved GraphQL queries on a running GraphJin server",
 		Long: `MCP-client commands for saved queries and raw GraphQL execution.
 
-Connects to a running GraphJin server at --server (default http://localhost:8080/,
-env GRAPHJIN_SERVER) and calls the corresponding MCP tool over HTTP.
+Uses the server saved in ~/.config/graphjin/client.json (set with
+` + "`graphjin cli setup <server-url>`" + `) and calls the corresponding MCP
+tool over HTTP.
 
 Output is JSON on stdout so that results compose with | jq, | grep, > file.
 Use --format=table for a human-readable flat-list view where applicable.`,

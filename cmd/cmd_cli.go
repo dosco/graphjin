@@ -10,24 +10,33 @@ func cliCmd() *cobra.Command {
 		Short: "HTTP client commands against a running GraphJin server",
 		Long: `Send commands to a running GraphJin server via the MCP HTTP/JSON-RPC API.
 
-Examples:
-  graphjin cli query list
-  graphjin cli fragment list
-  graphjin cli workflow list
-  graphjin cli schema tables
-  graphjin cli health
-  graphjin cli config show
+Configuration is read from ~/.config/graphjin/client.json. Run
+` + "`graphjin cli setup <server-url>`" + ` once to point this CLI at a server and
+sign in. After that, every subcommand below uses the saved server + token.
 
-Use --server to target a specific server (default: http://localhost:8080/).`,
+Examples:
+  graphjin cli setup http://localhost:8080
+  graphjin cli list_tables
+  graphjin cli describe_table --args '{"table":"users"}'
+  graphjin cli query_syntax
+  graphjin cli resources list
+  graphjin cli resources read graphjin://syntax/query
+  graphjin cli execute_graphql --args '{"query":"query { users { id } }"}'
+  graphjin cli check_health`,
 	}
 
-	// --server for pointing at the running GraphJin instance. Reuses the same
-	// mcpServerURL package variable as the mcp proxy mode.
-	c.PersistentFlags().StringVar(&mcpServerURL, "server", "",
-		"GraphJin server URL (env: GRAPHJIN_SERVER, default: http://localhost:8080/)")
-
-	// Shared client flags: --token, --header, --timeout, --format.
+	// Shared client flags: --header, --timeout, --format.
 	addMCPClientFlags(c)
+
+	c.AddCommand(setupCmd())
+
+	for _, cmd := range mcpParityToolCmds() {
+		c.AddCommand(cmd)
+	}
+	for _, cmd := range mcpParityResourceCmds() {
+		c.AddCommand(cmd)
+	}
+	c.AddCommand(mcpResourcesCmd())
 
 	c.AddCommand(mcpQueryCmd())
 	c.AddCommand(mcpFragmentCmd())

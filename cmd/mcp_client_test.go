@@ -9,11 +9,25 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
+	"github.com/dosco/graphjin/serv/v3"
 	"github.com/spf13/cobra"
 )
+
+// TestMain ensures the test process has an isolated config dir so tests
+// can read/write client.json without touching the developer's real one.
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "graphjin-cmd-test-")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(dir)
+	initIsolatedConfigDir(dir)
+	os.Exit(m.Run())
+}
 
 // newTestMCPServer returns an httptest.Server that mimics GraphJin's MCP
 // HTTP transport enough to satisfy callTool. The handler inspects the
@@ -56,22 +70,57 @@ func newTestMCPServer(t *testing.T, handler func(req *jsonRPCRequest, httpReq *h
 	}))
 }
 
-// resetMCPClientFlags clears global flag state between tests.
+// resetMCPClientFlags clears the per-process client flags and seeds an
+// isolated client.json with the given server (token = "" — set with
+// seedTestClientToken if needed). Pass serverURL = "" to leave the saved
+// config absent (simulating "user hasn't run setup yet").
 func resetMCPClientFlags(serverURL string) {
-	mcpServerURL = serverURL
-	mcpClientToken = ""
 	mcpClientHeaders = nil
 	mcpClientTimeout = 0
 	mcpClientFormat = "json"
-	_ = os.Unsetenv("GRAPHJIN_TOKEN")
-	_ = os.Unsetenv("GRAPHJIN_MCP_AUTH")
-	_ = os.Unsetenv("GRAPHJIN_SERVER")
+	if testConfigDir == "" {
+		panic("test setup error: testConfigDir not initialized")
+	}
+	if serverURL == "" {
+		_ = DeleteClientConfig()
+		return
+	}
+	if err := SaveClientConfig(&ClientConfig{Server: serverURL}); err != nil {
+		panic(err)
+	}
+}
+
+// seedTestClientToken updates the saved client.json with a token (server
+// must already be set via resetMCPClientFlags).
+func seedTestClientToken(token string) {
+	cc, err := LoadClientConfig()
+	if err != nil || cc == nil {
+		panic("seedTestClientToken: no client.json — call resetMCPClientFlags first")
+	}
+	cc.Token = token
+	if err := SaveClientConfig(cc); err != nil {
+		panic(err)
+	}
 }
 
 // newEmptyCobraCmd returns a fresh cobra command suitable for passing to
 // callTool/resolveMCPServerURL without triggering os.Exit paths.
 func newEmptyCobraCmd() *cobra.Command {
 	return &cobra.Command{Use: "test"}
+}
+
+var testConfigDir string
+
+// initIsolatedConfigDir redirects os.UserConfigDir() to a per-test-process
+// scratch directory so the real `~/.config/graphjin/client.json` is never
+// touched. Called from TestMain.
+func initIsolatedConfigDir(dir string) {
+	testConfigDir = dir
+	_ = os.Setenv("XDG_CONFIG_HOME", dir)
+	_ = os.Setenv("HOME", dir)
+	if runtime.GOOS == "windows" {
+		_ = os.Setenv("AppData", dir)
+	}
 }
 
 func TestCallTool_ReturnsStructuredContent(t *testing.T) {
@@ -102,6 +151,34 @@ func TestCallTool_ReturnsStructuredContent(t *testing.T) {
 	}
 	if len(tables) != 2 || tables[0]["name"] != "users" {
 		t.Fatalf("tables = %v", tables)
+	}
+}
+
+func TestCallMCPMethod_ReturnsRawResult(t *testing.T) {
+	srv := newTestMCPServer(t, func(req *jsonRPCRequest, _ *http.Request) (any, *jsonRPCError, int) {
+		if req.Method != "tools/list" {
+			t.Fatalf("method = %q, want tools/list", req.Method)
+		}
+		return map[string]any{
+			"tools": []any{
+				map[string]any{"name": "list_tables"},
+				map[string]any{"name": "get_table_sample"},
+			},
+		}, nil, http.StatusOK
+	})
+	defer srv.Close()
+	resetMCPClientFlags(srv.URL)
+
+	payload, err := callMCPMethod(context.Background(), newEmptyCobraCmd(), "tools/list", nil)
+	if err != nil {
+		t.Fatalf("callMCPMethod: %v", err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(payload, &out); err != nil {
+		t.Fatalf("unmarshal payload: %v (payload=%s)", err, string(payload))
+	}
+	if len(out["tools"].([]any)) != 2 {
+		t.Fatalf("tools = %v", out["tools"])
 	}
 }
 
@@ -163,8 +240,8 @@ func TestCallTool_SurfacesHTTP401WithHint(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on 401")
 	}
-	if !strings.Contains(err.Error(), "401") || !strings.Contains(err.Error(), "--token") {
-		t.Fatalf("expected 401 + token hint, got %v", err)
+	if !strings.Contains(err.Error(), "401") || !strings.Contains(err.Error(), "graphjin cli setup") {
+		t.Fatalf("expected 401 + setup hint, got %v", err)
 	}
 }
 
@@ -176,8 +253,7 @@ func TestCallTool_ForwardsAuthAndHeaders(t *testing.T) {
 	})
 	defer srv.Close()
 	resetMCPClientFlags(srv.URL)
-
-	mcpClientToken = "shh"
+	seedTestClientToken("shh")
 	mcpClientHeaders = []string{"X-Trace: abc123", "X-Env:prod"}
 
 	_, err := callTool(context.Background(), newEmptyCobraCmd(), "list_tables", nil)
@@ -233,52 +309,45 @@ func TestCallTool_HandlesSSEResponse(t *testing.T) {
 	}
 }
 
-func TestResolveMCPServerURL_Precedence(t *testing.T) {
-	// Explicit flag wins.
-	resetMCPClientFlags("http://explicit.example:9000/")
+func TestResolveMCPServerURL_FromClientJSON(t *testing.T) {
+	resetMCPClientFlags("http://saved.example:9000/")
 	got := resolveMCPServerURL(newEmptyCobraCmd())
-	if !strings.Contains(got, "explicit.example") {
-		t.Fatalf("explicit URL not honored: %s", got)
+	if !strings.Contains(got, "saved.example") {
+		t.Fatalf("client.json URL not honored: %s", got)
 	}
 
-	// Env wins when flag empty.
+	// No client.json -> empty (forces callers to surface the setup hint).
 	resetMCPClientFlags("")
-	t.Setenv("GRAPHJIN_SERVER", "http://env.example/")
-	got = resolveMCPServerURL(newEmptyCobraCmd())
-	if !strings.Contains(got, "env.example") {
-		t.Fatalf("env URL not honored: %s", got)
-	}
-
-	// Default otherwise.
-	resetMCPClientFlags("")
-	got = resolveMCPServerURL(newEmptyCobraCmd())
-	if !strings.Contains(got, "localhost:8080") {
-		t.Fatalf("default URL not used: %s", got)
+	if got := resolveMCPServerURL(newEmptyCobraCmd()); got != "" {
+		t.Fatalf("expected empty, got %q", got)
 	}
 }
 
-func TestResolveMCPAuth_Precedence(t *testing.T) {
-	// --token beats env.
-	resetMCPClientFlags("")
-	mcpClientToken = "flag-token"
-	t.Setenv("GRAPHJIN_TOKEN", "env-token")
-	if got := resolveMCPAuth(); got != "Bearer flag-token" {
-		t.Fatalf("flag precedence: %q", got)
+func TestResolveMCPAuth_FromClientJSON(t *testing.T) {
+	resetMCPClientFlags("http://saved.example/")
+	seedTestClientToken("saved-token")
+	if got := resolveMCPAuth(); got != "Bearer saved-token" {
+		t.Fatalf("client.json token: %q", got)
 	}
 
-	// GRAPHJIN_TOKEN beats raw GRAPHJIN_MCP_AUTH when flag empty.
-	resetMCPClientFlags("")
-	t.Setenv("GRAPHJIN_TOKEN", "env-token")
-	t.Setenv("GRAPHJIN_MCP_AUTH", "Basic xyz")
-	if got := resolveMCPAuth(); got != "Bearer env-token" {
-		t.Fatalf("env token: %q", got)
+	// No token -> empty (server may not need auth).
+	resetMCPClientFlags("http://saved.example/")
+	if got := resolveMCPAuth(); got != "" {
+		t.Fatalf("expected empty when no token, got %q", got)
 	}
 
-	// Raw MCP_AUTH used when nothing else.
+	// No client.json at all -> empty.
 	resetMCPClientFlags("")
-	t.Setenv("GRAPHJIN_MCP_AUTH", "Basic xyz")
-	if got := resolveMCPAuth(); got != "Basic xyz" {
-		t.Fatalf("raw mcp auth: %q", got)
+	if got := resolveMCPAuth(); got != "" {
+		t.Fatalf("expected empty without client.json, got %q", got)
+	}
+}
+
+func TestCallTool_NoServerConfigured(t *testing.T) {
+	resetMCPClientFlags("")
+	_, err := callTool(context.Background(), newEmptyCobraCmd(), "list_tables", nil)
+	if err == nil || !strings.Contains(err.Error(), "graphjin cli setup") {
+		t.Fatalf("expected setup hint, got %v", err)
 	}
 }
 
@@ -333,5 +402,145 @@ func TestLoadVars_InlineAndFile(t *testing.T) {
 
 	if got, err := loadVars("", ""); err != nil || got != nil {
 		t.Fatalf("empty: got=%v err=%v", got, err)
+	}
+}
+
+func TestCliCmdIncludesParityCommands(t *testing.T) {
+	cmd := cliCmd()
+	want := map[string]bool{"resources": false}
+	for _, name := range serv.MCPAllToolNames() {
+		want[name] = false
+	}
+	for _, spec := range serv.MCPCLIResources() {
+		want[spec.Command] = false
+	}
+	for _, child := range cmd.Commands() {
+		if _, ok := want[child.Name()]; ok {
+			want[child.Name()] = true
+		}
+	}
+	for name, seen := range want {
+		if !seen {
+			t.Fatalf("expected cliCmd to include %q", name)
+		}
+	}
+}
+
+func TestMCPExactToolCmdShape(t *testing.T) {
+	cmd := mcpExactToolCmd("list_tables")
+	if cmd.Use != "list_tables" {
+		t.Fatalf("unexpected use string: %q", cmd.Use)
+	}
+	if len(cmd.Commands()) != 0 {
+		t.Fatalf("expected no subcommands, got %d", len(cmd.Commands()))
+	}
+}
+
+func TestMCPExactToolCmdCallsTool(t *testing.T) {
+	srv := newTestMCPServer(t, func(req *jsonRPCRequest, _ *http.Request) (any, *jsonRPCError, int) {
+		if req.Method != "tools/call" {
+			t.Fatalf("method = %q, want tools/call", req.Method)
+		}
+		if req.Params["name"] != "list_tables" {
+			t.Fatalf("tool name = %v, want list_tables", req.Params["name"])
+		}
+		args, _ := req.Params["arguments"].(map[string]any)
+		if args["database"] != "sales" {
+			t.Fatalf("database = %v, want sales", args["database"])
+		}
+		return mcpToolResult{
+			StructuredContent: json.RawMessage(`{"ok":true}`),
+			Content:           []mcpContent{{Type: "text", Text: `{"ok":true}`}},
+		}, nil, http.StatusOK
+	})
+	defer srv.Close()
+	resetMCPClientFlags(srv.URL)
+
+	cmd := mcpExactToolCmd("list_tables")
+	if err := cmd.Flags().Set("args", `{"database":"sales"}`); err != nil {
+		t.Fatalf("set args: %v", err)
+	}
+	out := captureStdout(func() {
+		cmd.Run(cmd, []string{})
+	})
+	if !strings.Contains(out, `"ok": true`) {
+		t.Fatalf("unexpected output: %s", out)
+	}
+}
+
+func TestMCPResourcesCmdShape(t *testing.T) {
+	cmd := mcpResourcesCmd()
+	if cmd.Use != "resources" {
+		t.Fatalf("unexpected use string: %q", cmd.Use)
+	}
+	if len(cmd.Commands()) != 2 {
+		t.Fatalf("expected 2 subcommands, got %d", len(cmd.Commands()))
+	}
+}
+
+func TestMCPParityResourceCmdsMatchCatalog(t *testing.T) {
+	cmds := mcpParityResourceCmds()
+	specs := serv.MCPCLIResources()
+	if len(cmds) != len(specs) {
+		t.Fatalf("resource command count = %d, want %d", len(cmds), len(specs))
+	}
+	for i, spec := range specs {
+		if cmds[i].Use != spec.Command {
+			t.Fatalf("resource command %d use = %q, want %q", i, cmds[i].Use, spec.Command)
+		}
+	}
+}
+
+func TestMCPResourceShortcutReadsResource(t *testing.T) {
+	srv := newTestMCPServer(t, func(req *jsonRPCRequest, _ *http.Request) (any, *jsonRPCError, int) {
+		if req.Method != "resources/read" {
+			t.Fatalf("method = %q, want resources/read", req.Method)
+		}
+		if req.Params["uri"] != serv.QuerySyntaxResourceURI {
+			t.Fatalf("uri = %v, want %s", req.Params["uri"], serv.QuerySyntaxResourceURI)
+		}
+		return map[string]any{
+			"contents": []any{
+				map[string]any{
+					"uri":      serv.QuerySyntaxResourceURI,
+					"mimeType": "application/json",
+					"text":     `{"syntax":true}`,
+				},
+			},
+		}, nil, http.StatusOK
+	})
+	defer srv.Close()
+	resetMCPClientFlags(srv.URL)
+
+	cmd := mcpResourceShortcutCmd("query_syntax", "Read the GraphJin query syntax resource", serv.QuerySyntaxResourceURI)
+	out := captureStdout(func() {
+		cmd.Run(cmd, []string{})
+	})
+	if !strings.Contains(out, `"syntax": true`) {
+		t.Fatalf("unexpected output: %s", out)
+	}
+}
+
+func TestMCPResourcesListCmdListsResources(t *testing.T) {
+	srv := newTestMCPServer(t, func(req *jsonRPCRequest, _ *http.Request) (any, *jsonRPCError, int) {
+		if req.Method != "resources/list" {
+			t.Fatalf("method = %q, want resources/list", req.Method)
+		}
+		return map[string]any{
+			"resources": []any{
+				map[string]any{"uri": "graphjin://syntax/query"},
+				map[string]any{"uri": "graphjin://syntax/mutation"},
+			},
+		}, nil, http.StatusOK
+	})
+	defer srv.Close()
+	resetMCPClientFlags(srv.URL)
+
+	cmd := mcpResourcesListCmd()
+	out := captureStdout(func() {
+		cmd.Run(cmd, []string{})
+	})
+	if !strings.Contains(out, "graphjin://syntax/query") || !strings.Contains(out, "graphjin://syntax/mutation") {
+		t.Fatalf("unexpected output: %s", out)
 	}
 }

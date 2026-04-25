@@ -385,6 +385,12 @@ func runClaudeMCPAddInstall(cmd *cobra.Command, opts mcpInstallOptions) error {
 		return err
 	}
 
+	// Best effort: bind the requested server into client.json when the file is
+	// absent (or present but missing a server). That lets Claude Desktop launch
+	// `graphjin mcp` without embedded `--server` args while preserving an
+	// existing binding to a different server.
+	_ = ensureClientConfigServer(opts.Server)
+
 	claudeScope := normalizeClaudeScope(opts.Scope)
 	// Best effort: remove existing config to allow deterministic updates.
 	_ = runExternalCommand(cmd, "claude", "mcp", "remove", "--scope", claudeScope, claudeMCPServerName)
@@ -407,7 +413,38 @@ func resolveGraphJinBinaryPath() (string, error) {
 }
 
 func buildClaudeMCPServerArgs(opts mcpInstallOptions) []string {
+	if shouldUseSavedMCPServer(opts.Server) {
+		return []string{"mcp"}
+	}
 	return []string{"mcp", "--server", opts.Server}
+}
+
+func shouldUseSavedMCPServer(serverURL string) bool {
+	cc, err := LoadClientConfig()
+	if err != nil || cc == nil || cc.Server == "" {
+		return false
+	}
+	return normalizeMCPServerURL(cc.Server) == normalizeMCPServerURL(serverURL)
+}
+
+func ensureClientConfigServer(serverURL string) bool {
+	serverURL = strings.TrimRight(strings.TrimSpace(serverURL), "/")
+	if serverURL == "" {
+		return false
+	}
+
+	cc, err := LoadClientConfig()
+	if err != nil {
+		return false
+	}
+	if cc == nil {
+		return SaveClientConfig(&ClientConfig{Server: serverURL}) == nil
+	}
+	if cc.Server == "" {
+		cc.Server = serverURL
+		return SaveClientConfig(cc) == nil
+	}
+	return normalizeMCPServerURL(cc.Server) == normalizeMCPServerURL(serverURL)
 }
 
 func normalizeClaudeScope(scope string) string {
@@ -522,8 +559,9 @@ func printPostInstallGuide(w io.Writer, opts mcpInstallOptions, codexPlan codexI
 		fmt.Fprintf(w, "\nClaude Desktop / Claude Code\n")
 		fmt.Fprintf(w, "  1) Restart Claude Desktop.\n")
 		fmt.Fprintf(w, "  2) Verify with: claude mcp list\n")
-		fmt.Fprintf(w, "  3) In Chat tab: Customizer -> Plugins -> search \"GraphJin\" -> Install.\n")
-		fmt.Fprintf(w, "  4) If not listed, add it as a custom plugin in Customizer.\n")
+		fmt.Fprintf(w, "  3) If the server requires login, run: graphjin mcp setup %s\n", opts.Server)
+		fmt.Fprintf(w, "  4) In Chat tab: Customizer -> Plugins -> search \"GraphJin\" -> Install.\n")
+		fmt.Fprintf(w, "  5) If not listed, add it as a custom plugin in Customizer.\n")
 	}
 
 	if usesCodex(opts.Client) {

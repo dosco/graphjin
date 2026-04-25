@@ -1,127 +1,23 @@
 package serv
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
 	core "github.com/dosco/graphjin/core/v3"
 )
 
-const enrichmentQueryTimeout = 10 * time.Second
-
 const enumSampleCap = 101
-
-func buildEnrichment(ctx context.Context, gj *core.GraphJin, database string, schemas []*core.TableSchema) map[string]*TableProfile {
-	result := make(map[string]*TableProfile)
-	rowCounts := buildRowCounts(ctx, gj, database, schemas)
-
-	for _, schema := range schemas {
-		p := &TableProfile{
-			RowCountApprox: rowCounts[schema.Name],
-			DateRanges:     make(map[string]DateRange),
-			EnumValues:     make(map[string]EnumProfile),
-			NumericStats:   make(map[string]NumericStats),
-		}
-
-		var numericCols, dateCols, enumCols []core.ColumnInfo
-		var allColNames []string
-		for _, col := range schema.Columns {
-			allColNames = append(allColNames, col.Name)
-			if isNumericType(col.Type) && !col.PrimaryKey && !strings.HasSuffix(col.Name, "_id") {
-				numericCols = append(numericCols, col)
-			}
-			if isDateType(col.Type) {
-				dateCols = append(dateCols, col)
-			}
-			if isEnumCandidateCol(col) {
-				enumCols = append(enumCols, col)
-			}
-		}
-
-		rc := &core.RequestConfig{}
-		rc.SetNamespace(database)
-
-		groupCol := schema.PrimaryKey
-		if groupCol == "" && len(schema.Columns) > 0 {
-			groupCol = schema.Columns[0].Name
-		}
-
-		for _, col := range dateCols {
-			qctx, cancel := context.WithTimeout(ctx, enrichmentQueryTimeout)
-			q := fmt.Sprintf("{ %s { min_%s max_%s } }", schema.Name, col.Name, col.Name)
-			if res, err := gj.GraphQL(qctx, q, nil, rc); err == nil && res.Data != nil {
-				minV, maxV := extractMinMaxFromResult(res.Data, schema.Name, col.Name)
-				if minV != "" || maxV != "" {
-					p.DateRanges[col.Name] = DateRange{Min: minV, Max: maxV}
-				}
-			}
-			cancel()
-		}
-
-		for _, col := range enumCols {
-			if groupCol == "" {
-				continue
-			}
-			qctx, cancel := context.WithTimeout(ctx, enrichmentQueryTimeout)
-			q := fmt.Sprintf("{ %s(distinct: [%s], limit: %d, order_by: { count_%s: desc }) { %s count_%s } }",
-				schema.Name, col.Name, enumSampleCap, groupCol, col.Name, groupCol)
-			if res, err := gj.GraphQL(qctx, q, nil, rc); err == nil && res.Data != nil {
-				p.EnumValues[col.Name] = extractEnumProfile(res.Data, schema.Name, col.Name, groupCol)
-			}
-			cancel()
-		}
-
-		for _, col := range numericCols {
-			qctx, cancel := context.WithTimeout(ctx, enrichmentQueryTimeout)
-			q := fmt.Sprintf("{ %s { min_%s max_%s avg_%s sum_%s count_%s } }",
-				schema.Name, col.Name, col.Name, col.Name, col.Name, col.Name)
-			if res, err := gj.GraphQL(qctx, q, nil, rc); err == nil && res.Data != nil {
-				p.NumericStats[col.Name] = extractNumericStats(res.Data, schema.Name, col.Name)
-			}
-			cancel()
-		}
-
-		sampleCols := allColNames
-		if len(sampleCols) > 10 {
-			sampleCols = sampleCols[:10]
-		}
-		orderClause := ""
-		if len(dateCols) > 0 {
-			orderClause = fmt.Sprintf(", order_by: { %s: desc }", dateCols[0].Name)
-		}
-		qctx, cancel := context.WithTimeout(ctx, enrichmentQueryTimeout)
-		q := fmt.Sprintf("{ %s(limit: 5%s) { %s } }", schema.Name, orderClause, strings.Join(sampleCols, " "))
-		if res, err := gj.GraphQL(qctx, q, nil, rc); err == nil && res.Data != nil {
-			p.SampleRows = extractRowsFromResult(res.Data, schema.Name)
-		}
-		cancel()
-
-		result[schema.Name] = p
-	}
-
-	return result
-}
-
-func buildTableIndex(schemas []*core.TableSchema, enrichment map[string]*TableProfile) []TableIndexEntry {
-	duplicateSchemas := buildDuplicateIndex(schemas)
-	entries := make([]TableIndexEntry, 0, len(schemas))
-	for _, s := range schemas {
-		entries = append(entries, buildTableIndexEntry(s, enrichment[s.Name], duplicateSchemas))
-	}
-	return entries
-}
 
 func buildTableIndexEntry(schema *core.TableSchema, profile *TableProfile, duplicateSchemas map[string][]string) TableIndexEntry {
 	entry := TableIndexEntry{
-		Name:     schema.Name,
-		Schema:   schema.Schema,
-		Database: schema.Database,
-		Type:     schema.Type,
-		Comment:  schema.Comment,
+		Name:        schema.Name,
+		Schema:      schema.Schema,
+		Database:    schema.Database,
+		Type:        schema.Type,
+		Comment:     schema.Comment,
+		ColumnCount: len(schema.Columns),
 	}
 	if entry.Type == "" {
 		entry.Type = "table"
@@ -190,6 +86,25 @@ func buildTableIndexEntry(schema *core.TableSchema, profile *TableProfile, dupli
 	return entry
 }
 
+func buildCheapTableIndex(tables []core.TableInfo) []TableIndexEntry {
+	entries := make([]TableIndexEntry, 0, len(tables))
+	for _, t := range tables {
+		typ := t.Type
+		if typ == "" {
+			typ = "table"
+		}
+		entries = append(entries, TableIndexEntry{
+			Name:        t.Name,
+			Schema:      t.Schema,
+			Database:    t.Database,
+			Type:        typ,
+			Comment:     t.Comment,
+			ColumnCount: t.ColumnCount,
+		})
+	}
+	return entries
+}
+
 func buildTableDetails(schemas []*core.TableSchema, enrichment map[string]*TableProfile) []TableDetailEntry {
 	duplicateSchemas := buildDuplicateIndex(schemas)
 	out := make([]TableDetailEntry, 0, len(schemas))
@@ -215,12 +130,6 @@ func buildDatabaseOverview(database string, schemas []*core.TableSchema, enrichm
 
 	schemaRollup := map[string]*SchemaStats{}
 	var overallMin, overallMax string
-	type rowRef struct {
-		name   string
-		schema string
-		rows   int64
-	}
-	var refs []rowRef
 
 	for _, s := range schemas {
 		overview.TotalColumns += len(s.Columns)
@@ -237,8 +146,6 @@ func buildDatabaseOverview(database string, schemas []*core.TableSchema, enrichm
 		stats.TableCount++
 
 		if prof := enrichment[s.Name]; prof != nil {
-			stats.ApproxRowTotal += prof.RowCountApprox
-			refs = append(refs, rowRef{s.Name, s.Schema, prof.RowCountApprox})
 			for _, dr := range prof.DateRanges {
 				if dr.Min != "" && (overallMin == "" || dr.Min < overallMin) {
 					overallMin = dr.Min
@@ -259,25 +166,43 @@ func buildDatabaseOverview(database string, schemas []*core.TableSchema, enrichm
 		overview.Schemas = append(overview.Schemas, *schemaRollup[n])
 	}
 
-	sort.Slice(refs, func(i, j int) bool { return refs[i].rows > refs[j].rows })
-	top := 10
-	if len(refs) < top {
-		top = len(refs)
-	}
-	for i := 0; i < top; i++ {
-		r := refs[i]
-		if r.rows == 0 {
-			break
-		}
-		overview.TopTablesByRows = append(overview.TopTablesByRows, TableRef{
-			Name:           r.name,
-			Schema:         r.schema,
-			RowCountApprox: r.rows,
-		})
-	}
-
 	if overallMin != "" || overallMax != "" {
 		overview.OverallDateRange = &DateRange{Min: overallMin, Max: overallMax}
+	}
+
+	return overview
+}
+
+func buildCheapDatabaseOverview(database string, tables []core.TableInfo, functions []core.FunctionInfo, analyticsMode bool) DatabaseOverview {
+	overview := DatabaseOverview{
+		Database:      database,
+		AnalyticsMode: analyticsMode,
+		TotalTables:   len(tables),
+		Functions:     functions,
+	}
+
+	schemaRollup := map[string]*SchemaStats{}
+	for _, t := range tables {
+		overview.TotalColumns += t.ColumnCount
+		schemaName := t.Schema
+		if schemaName == "" {
+			schemaName = "public"
+		}
+		stats, ok := schemaRollup[schemaName]
+		if !ok {
+			stats = &SchemaStats{Name: schemaName}
+			schemaRollup[schemaName] = stats
+		}
+		stats.TableCount++
+	}
+
+	names := make([]string, 0, len(schemaRollup))
+	for n := range schemaRollup {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		overview.Schemas = append(overview.Schemas, *schemaRollup[n])
 	}
 
 	return overview
@@ -561,165 +486,3 @@ func isEnumCandidateCol(col core.ColumnInfo) bool {
 	return false
 }
 
-func extractCountFromResult(data json.RawMessage, tableName, colName string) int64 {
-	var parsed map[string]any
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		return 0
-	}
-	row := extractFirstRow(parsed, tableName)
-	if row == nil {
-		return 0
-	}
-	if count, ok := row["count_"+colName]; ok {
-		return toInt64(count)
-	}
-	return 0
-}
-
-func extractMinMaxFromResult(data json.RawMessage, tableName, colName string) (string, string) {
-	var parsed map[string]any
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		return "", ""
-	}
-	row := extractFirstRow(parsed, tableName)
-	if row == nil {
-		return "", ""
-	}
-	return optionalString(row["min_"+colName]), optionalString(row["max_"+colName])
-}
-
-func extractNumericStats(data json.RawMessage, tableName, colName string) NumericStats {
-	var parsed map[string]any
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		return NumericStats{}
-	}
-	row := extractFirstRow(parsed, tableName)
-	if row == nil {
-		return NumericStats{}
-	}
-	return NumericStats{
-		Min:   optionalString(row["min_"+colName]),
-		Max:   optionalString(row["max_"+colName]),
-		Avg:   optionalString(row["avg_"+colName]),
-		Sum:   optionalString(row["sum_"+colName]),
-		Count: toInt64(row["count_"+colName]),
-	}
-}
-
-func extractEnumProfile(data json.RawMessage, tableName, colName, pkName string) EnumProfile {
-	var parsed map[string]any
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		return EnumProfile{}
-	}
-	rows := extractAllRows(parsed, tableName)
-	profile := EnumProfile{DistinctCount: int64(len(rows))}
-	if len(rows) == 0 {
-		return profile
-	}
-	countKey := "count_" + pkName
-	reachedCap := len(rows) >= enumSampleCap
-	displayLimit := len(rows)
-	if reachedCap {
-		profile.Truncated = true
-		displayLimit = 0
-	} else if len(rows) > 20 {
-		profile.Truncated = true
-		displayLimit = 10
-	}
-	for i := 0; i < displayLimit && i < len(rows); i++ {
-		row := rows[i]
-		val := optionalString(row[colName])
-		if val == "" {
-			continue
-		}
-		profile.Values = append(profile.Values, EnumValue{
-			Value: val,
-			Count: toInt64(row[countKey]),
-		})
-	}
-	return profile
-}
-
-func extractRowsFromResult(data json.RawMessage, tableName string) []map[string]any {
-	var parsed map[string]any
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		return nil
-	}
-	return extractAllRows(parsed, tableName)
-}
-
-func extractFirstRow(parsed map[string]any, tableName string) map[string]any {
-	tableData, ok := parsed[tableName]
-	if !ok {
-		return nil
-	}
-	switch v := tableData.(type) {
-	case []any:
-		if len(v) > 0 {
-			if row, ok := v[0].(map[string]any); ok {
-				return row
-			}
-		}
-	case map[string]any:
-		return v
-	}
-	return nil
-}
-
-func extractAllRows(parsed map[string]any, tableName string) []map[string]any {
-	tableData, ok := parsed[tableName]
-	if !ok {
-		return nil
-	}
-	rows, ok := tableData.([]any)
-	if !ok {
-		return nil
-	}
-	var out []map[string]any
-	for _, r := range rows {
-		if row, ok := r.(map[string]any); ok {
-			out = append(out, row)
-		}
-	}
-	return out
-}
-
-func toInt64(v any) int64 {
-	switch n := v.(type) {
-	case float64:
-		return int64(n)
-	case int64:
-		return n
-	case int:
-		return int64(n)
-	case json.Number:
-		if i, err := n.Int64(); err == nil {
-			return i
-		}
-	}
-	return 0
-}
-
-func optionalString(v any) string {
-	if v == nil {
-		return ""
-	}
-	switch s := v.(type) {
-	case string:
-		return s
-	case json.Number:
-		return s.String()
-	case float64:
-		return fmt.Sprintf("%g", s)
-	case int64:
-		return fmt.Sprintf("%d", s)
-	case int:
-		return fmt.Sprintf("%d", s)
-	case bool:
-		if s {
-			return "true"
-		}
-		return "false"
-	}
-	return fmt.Sprintf("%v", v)
-}

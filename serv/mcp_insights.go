@@ -13,6 +13,7 @@ func (ms *mcpServer) registerInsightsTools() {
 		mcp.WithString("database",
 			mcp.Description("Optional database name. Omit to use the default database."),
 		),
+		mcp.WithOutputSchema[SchemaInsights](),
 	), ms.handleGetSchemaInsights)
 }
 
