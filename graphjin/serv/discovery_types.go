@@ -10,7 +10,9 @@ type TableIndexEntry struct {
 	Database          string          `json:"database,omitempty"`
 	Type              string          `json:"type,omitempty"`
 	Comment           string          `json:"comment,omitempty"`
-	RowCountApprox    int64           `json:"row_count_approx"`
+	ColumnCount       int             `json:"column_count,omitempty"`
+	// nil = unknown (catalog stats unavailable); 0 = measured zero.
+	RowCountApprox    *int64          `json:"row_count_approx,omitempty"`
 	PrimaryKeys       []string        `json:"primary_keys,omitempty"`
 	ForeignKeys       []ForeignKeyRef `json:"foreign_keys,omitempty"`
 	KeyColumns        []string        `json:"key_columns,omitempty"`
@@ -26,11 +28,28 @@ type ForeignKeyRef struct {
 }
 
 type TableProfile struct {
-	RowCountApprox int64                   `json:"row_count_approx"`
+	RowCountApprox *int64                  `json:"row_count_approx,omitempty"`
 	DateRanges     map[string]DateRange    `json:"date_ranges,omitempty"`
 	EnumValues     map[string]EnumProfile  `json:"enum_values,omitempty"`
 	NumericStats   map[string]NumericStats `json:"numeric_stats,omitempty"`
+	ColumnStats    map[string]ColumnStats  `json:"column_stats,omitempty"`
 	SampleRows     []map[string]any        `json:"sample_rows,omitempty"`
+}
+
+type ColumnStats struct {
+	NullFraction *float64 `json:"null_fraction,omitempty"`
+	// Negative = fraction-of-rows (postgres pg_stats convention).
+	DistinctCount    *float64    `json:"distinct_count,omitempty"`
+	MostCommonValues []EnumValue `json:"most_common_values,omitempty"`
+	HistogramBounds  []string    `json:"histogram_bounds,omitempty"`
+}
+
+type IndexInfo struct {
+	Name    string   `json:"name"`
+	Columns []string `json:"columns"`
+	Unique  bool     `json:"unique,omitempty"`
+	Primary bool     `json:"primary,omitempty"`
+	Type    string   `json:"type,omitempty"`
 }
 
 type EnumProfile struct {
@@ -58,14 +77,29 @@ type NumericStats struct {
 }
 
 type DatabaseOverview struct {
-	Database         string              `json:"database"`
-	AnalyticsMode    bool                `json:"analytics_mode"`
-	TotalTables      int                 `json:"total_tables"`
-	TotalColumns     int                 `json:"total_columns"`
-	Schemas          []SchemaStats       `json:"schemas,omitempty"`
-	TopTablesByRows  []TableRef          `json:"top_tables_by_rows,omitempty"`
-	OverallDateRange *DateRange          `json:"overall_date_range,omitempty"`
-	Functions        []core.FunctionInfo `json:"functions,omitempty"`
+	Database            string              `json:"database"`
+	AnalyticsMode       bool                `json:"analytics_mode"`
+	TotalTables         int                 `json:"total_tables"`
+	TotalColumns        int                 `json:"total_columns"`
+	ApproxRowTotal      int64               `json:"approx_row_total,omitempty"`
+	Schemas             []SchemaStats       `json:"schemas,omitempty"`
+	TopNamespacesByRows []NamespaceRollup   `json:"top_namespaces_by_rows,omitempty"`
+	OverallDateRange    *DateRange          `json:"overall_date_range,omitempty"`
+	Functions           []core.FunctionInfo `json:"functions,omitempty"`
+}
+
+type NamespaceRollup struct {
+	Database          string `json:"database"`
+	Schema            string `json:"schema,omitempty"`
+	TableCount        int    `json:"table_count"`
+	ApproxRowTotal    int64  `json:"approx_row_total"`
+	RowCountAvailable bool   `json:"row_count_available"`
+}
+
+type ListNamespacesResult struct {
+	Database   string            `json:"database,omitempty"`
+	Namespaces []NamespaceRollup `json:"namespaces"`
+	Count      int               `json:"count"`
 }
 
 type SchemaStats struct {
@@ -82,6 +116,7 @@ type TableRef struct {
 
 type SchemaInsights struct {
 	Database          string             `json:"database"`
+	DatabaseOverview  *DatabaseOverview  `json:"database_overview,omitempty"`
 	HubTables         []HubTable         `json:"hub_tables,omitempty"`
 	RelationshipPaths []RelationshipPath `json:"relationship_paths,omitempty"`
 	NamespaceRouting  []NamespaceRoute   `json:"namespace_routing,omitempty"`
@@ -146,4 +181,53 @@ type TableDetailEntry struct {
 	TableIndexEntry
 	Schema  *core.TableSchema `json:"schema,omitempty"`
 	Profile *TableProfile     `json:"profile,omitempty"`
+}
+
+type TableListOptions struct {
+	Search string
+	Schema string
+	Limit  int
+	Cursor string
+}
+
+type ListTablesResult struct {
+	Database        string            `json:"database,omitempty"`
+	Databases       []string          `json:"databases,omitempty"`
+	Schema          string            `json:"schema,omitempty"`
+	Tables          []TableIndexEntry `json:"tables"`
+	Count           int               `json:"count"`
+	Total           int               `json:"total"`
+	TopTablesByRows []TableRef        `json:"top_tables_by_rows,omitempty"`
+	NextCursor      string            `json:"next_cursor,omitempty"`
+	HasMore         bool              `json:"has_more,omitempty"`
+}
+
+type DiscoveryCost struct {
+	UsesLiveQueries bool   `json:"uses_live_queries"`
+	Scope           string `json:"scope,omitempty"`
+	Cache           string `json:"cache,omitempty"`
+}
+
+type TableSampleResult struct {
+	Database string        `json:"database"`
+	Schema   string        `json:"schema,omitempty"`
+	Table    string        `json:"table"`
+	Status   string        `json:"status"`
+	Stats    *TableProfile `json:"stats,omitempty"`
+
+	PrimaryKeys    []string          `json:"primary_keys,omitempty"`
+	ForeignKeys    []ForeignKeyRef   `json:"foreign_keys,omitempty"`
+	OutgoingRels   []RelationshipRef `json:"outgoing_relationships,omitempty"`
+	IncomingRels   []RelationshipRef `json:"incoming_relationships,omitempty"`
+	Indexes        []IndexInfo       `json:"indexes,omitempty"`
+	Aggregations   *AggregationInfo  `json:"aggregations,omitempty"`
+	ExampleQueries []ExampleQuery    `json:"example_queries,omitempty"`
+
+	Cost DiscoveryCost `json:"cost"`
+}
+
+type RelationshipRef struct {
+	Table  string `json:"table"`
+	Column string `json:"column,omitempty"`
+	Type   string `json:"type,omitempty"`
 }

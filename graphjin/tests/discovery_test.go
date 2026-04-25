@@ -43,6 +43,31 @@ func ensureCatalogStats(t *testing.T) {
 	}
 }
 
+// seededSchemaForDialect returns the namespace identifier where the test
+// fixture's seeded tables live. It reads the actual Schema value loaded
+// from core for the "users" table when available so we don't need to
+// guess per-dialect defaults.
+func seededSchemaForDialect(gj *core.GraphJin) string {
+	dbName := gj.DefaultDatabase()
+	for _, t := range gj.GetTablesForDatabase(dbName) {
+		if t.Name == "users" {
+			if t.Schema != "" {
+				return t.Schema
+			}
+			break
+		}
+	}
+	switch dbType {
+	case "mysql", "mariadb":
+		return dbName
+	case "postgres":
+		return "public"
+	case "mssql":
+		return "dbo"
+	}
+	return ""
+}
+
 func TestDiscovery(t *testing.T) {
 	gj, dm := newDiscoveryDM(t)
 
@@ -60,13 +85,13 @@ func TestDiscovery(t *testing.T) {
 			t.Skip("mongodb row counts are not supported via the SQL path")
 		}
 		ensureCatalogStats(t)
-		dbName := gj.DefaultDatabase()
 		dm.Invalidate()
-		tables := dm.TableIndex(dbName)
-		byName := map[string]serv.TableIndexEntry{}
-		for _, t := range tables {
-			byName[t.Name] = t
-		}
+		dbName := gj.DefaultDatabase()
+		schema := seededSchemaForDialect(gj)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		counts := dm.RowCountsForNamespace(ctx, dbName, schema)
+		require.NotEmpty(t, counts, "expected row counts for namespace %q (dialect=%s)", schema, dbType)
 		for _, want := range []struct {
 			name string
 			min  int64
@@ -75,14 +100,57 @@ func TestDiscovery(t *testing.T) {
 			{"products", 1},
 			{"categories", 1},
 		} {
-			entry, ok := byName[want.name]
+			n, ok := counts[want.name]
 			if !ok {
 				continue
 			}
-			assert.GreaterOrEqualf(t, entry.RowCountApprox, want.min,
-				"table %q: row_count_approx=%d expected >= %d (dialect=%s)",
-				want.name, entry.RowCountApprox, want.min, dbType)
+			assert.GreaterOrEqualf(t, n, want.min,
+				"table %q: row_count_approx=%d expected >= %d (dialect=%s, schema=%q)",
+				want.name, n, want.min, dbType, schema)
 		}
+	})
+
+	t.Run("NamespaceRollup", func(t *testing.T) {
+		dm.Invalidate()
+		dbName := gj.DefaultDatabase()
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		rollup := dm.Namespaces(ctx, dbName)
+		require.NotEmpty(t, rollup, "expected at least one namespace rollup entry (dialect=%s)", dbType)
+		var totalTables int
+		for _, n := range rollup {
+			assert.NotEmptyf(t, n.Database, "namespace rollup entry missing database (dialect=%s)", dbType)
+			totalTables += n.TableCount
+		}
+		assert.Greaterf(t, totalTables, 0, "expected non-zero table count across namespaces (dialect=%s)", dbType)
+		if dbType == "mongodb" {
+			for _, n := range rollup {
+				assert.Falsef(t, n.RowCountAvailable, "mongodb rollup should report row counts unavailable (got %+v)", n)
+			}
+		}
+	})
+
+	t.Run("TableIndexHasRowCounts", func(t *testing.T) {
+		if dbType == "mongodb" {
+			t.Skip("mongodb row counts are not supported via the SQL path")
+		}
+		ensureCatalogStats(t)
+		dm.Invalidate()
+		dbName := gj.DefaultDatabase()
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		// No schema filter — populate happens in ensureTables for ALL
+		// namespaces present in the loaded table list. Agents must never
+		// see RowCountApprox=0 lying about a non-empty seeded table.
+		page := dm.TableIndexPage(ctx, dbName, serv.TableListOptions{Limit: 500})
+		require.NotEmpty(t, page.Tables, "expected tables (dialect=%s)", dbType)
+		var sawUsersWithRows bool
+		for _, e := range page.Tables {
+			if e.Name == "users" && e.RowCountApprox != nil && *e.RowCountApprox >= 100 {
+				sawUsersWithRows = true
+			}
+		}
+		assert.Truef(t, sawUsersWithRows, "expected users.row_count_approx >= 100 on cheap path (dialect=%s)", dbType)
 	})
 
 	t.Run("EnrichmentForSeededTable", func(t *testing.T) {
@@ -102,7 +170,7 @@ func TestDiscovery(t *testing.T) {
 		var found *hit
 		for i := range payload.Tables {
 			entry := &payload.Tables[i]
-			if entry.Profile == nil || entry.Profile.RowCountApprox <= 1 {
+			if entry.Profile == nil || entry.Profile.RowCountApprox == nil || *entry.Profile.RowCountApprox <= 1 {
 				continue
 			}
 			for col, stats := range entry.Profile.NumericStats {

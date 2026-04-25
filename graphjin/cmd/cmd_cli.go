@@ -38,5 +38,14 @@ Examples:
 	c.AddCommand(mcpHealthCmd())
 	c.AddCommand(mcpConfigCmd())
 
+	// Tool-name parity: every MCP tool is a top-level subcommand.
+	for _, cmd := range mcpParityToolCmds() {
+		c.AddCommand(cmd)
+	}
+	for _, cmd := range mcpParityResourceCmds() {
+		c.AddCommand(cmd)
+	}
+	c.AddCommand(mcpResourcesCmd())
+
 	return c
 }

@@ -124,7 +124,6 @@ type GraphJin struct {
 	// Schema change callbacks
 	schemaCallbacks []func(dbName string, hash string)
 	callbackMu      sync.RWMutex
-
 }
 
 type Option func(*graphjinEngine) error
@@ -182,7 +181,6 @@ func (g *GraphJin) fireAllSchemaCallbacks() {
 		}
 	}
 }
-
 
 // NewGraphJin creates the GraphJin struct, this involves querying the database to learn its
 // schemas and relationships
@@ -1091,6 +1089,16 @@ func (g *GraphJin) GetTableSchemaForDatabase(database, tableName string) (*Table
 	return gj.getTableSchema(database, tableName)
 }
 
+// GetTableSchemaForDatabaseSchema returns detailed schema for a table in a
+// specific configured database and database schema.
+func (g *GraphJin) GetTableSchemaForDatabaseSchema(database, schemaName, tableName string) (*TableSchema, error) {
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil, err
+	}
+	return gj.getTableSchemaWithSchema(database, schemaName, tableName)
+}
+
 // getTableSchema finds and returns the schema for a table, optionally in a specific database.
 func (gj *graphjinEngine) getTableSchema(database, tableName string) (*TableSchema, error) {
 	if database != "" {
@@ -1108,9 +1116,52 @@ func (gj *graphjinEngine) getTableSchema(database, tableName string) (*TableSche
 	return gj.buildTableSchema(ctx.schema, dbName, tableName)
 }
 
+func (gj *graphjinEngine) getTableSchemaWithSchema(database, schemaName, tableName string) (*TableSchema, error) {
+	if schemaName == "" {
+		return gj.getTableSchema(database, tableName)
+	}
+
+	if database != "" {
+		ctx, ok := gj.GetDatabase(database)
+		if !ok {
+			return nil, fmt.Errorf("database not found: %s", database)
+		}
+		return gj.buildTableSchemaWithSchema(ctx.schema, database, schemaName, tableName)
+	}
+
+	var matches []string
+	var matchedCtx *dbContext
+	var matchedDB string
+	for _, dbName := range gj.sortedDatabaseNames() {
+		ctx := gj.databases[dbName]
+		if ctx.schema == nil {
+			continue
+		}
+		if _, err := ctx.schema.Find(schemaName, tableName); err == nil {
+			matches = append(matches, dbName)
+			matchedCtx = ctx
+			matchedDB = dbName
+		}
+	}
+
+	switch len(matches) {
+	case 0:
+		return nil, fmt.Errorf("table not found: %s.%s (searched all databases)", schemaName, tableName)
+	case 1:
+		return gj.buildTableSchemaWithSchema(matchedCtx.schema, matchedDB, schemaName, tableName)
+	default:
+		return nil, fmt.Errorf("table %q in schema %q exists in multiple databases: %s; pass database to disambiguate",
+			tableName, schemaName, strings.Join(matches, ", "))
+	}
+}
+
 // buildTableSchema builds a TableSchema from a specific database schema.
 func (gj *graphjinEngine) buildTableSchema(dbSchema *sdata.DBSchema, dbName, tableName string) (*TableSchema, error) {
-	t, err := dbSchema.Find("", tableName)
+	return gj.buildTableSchemaWithSchema(dbSchema, dbName, "", tableName)
+}
+
+func (gj *graphjinEngine) buildTableSchemaWithSchema(dbSchema *sdata.DBSchema, dbName, schemaName, tableName string) (*TableSchema, error) {
+	t, err := dbSchema.Find(schemaName, tableName)
 	if err != nil {
 		return nil, fmt.Errorf("table not found: %s", tableName)
 	}
