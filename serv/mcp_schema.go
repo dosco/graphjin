@@ -306,9 +306,11 @@ func (ms *mcpServer) handleDescribeTable(ctx context.Context, req mcp.CallToolRe
 }
 
 func (ms *mcpServer) handleListNamespaces(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if err := ms.requireDB(); err != nil {
-		return err, nil
-	}
+	// list_namespaces is intentionally NOT gated on SchemaReady — its
+	// whole purpose is to help when the schema cache is empty, by
+	// surfacing what databases/schemas exist so the caller can pick
+	// a target. It only needs a live DB connection (which DiscoveryManager
+	// reaches via gj.DBForDatabase).
 	if ms.service.disc == nil {
 		return mcp.NewToolResultError("Discovery not available yet."), nil
 	}

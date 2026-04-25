@@ -94,6 +94,7 @@ func mcpToolList(conf *Config) []string {
 		"write_query",
 		"write_mutation",
 		"fix_query_error",
+		"list_namespaces",
 		"list_tables",
 		"describe_table",
 		"find_path",
