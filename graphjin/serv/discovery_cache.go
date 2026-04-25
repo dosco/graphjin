@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	core "github.com/dosco/graphjin/core/v3"
 	"golang.org/x/sync/singleflight"
@@ -27,7 +28,12 @@ type DiscoveryManager struct {
 	profileGroup   singleflight.Group
 	namespaceGroup singleflight.Group
 	rowCountGroup  singleflight.Group
+
+	warmupMu     sync.Mutex
+	warmupCancel context.CancelFunc
 }
+
+const warmupTopK = 5
 
 type dbTablesPayload struct {
 	Tables           []TableIndexEntry
@@ -78,10 +84,37 @@ func (dm *DiscoveryManager) ensureTables(database string) {
 		}
 		tables := dm.gj.GetTablesForDatabase(database)
 		index := buildCheapTableIndex(tables)
+		dm.populateRowCounts(database, index)
 		overview := buildCheapDatabaseOverview(database, tables, dm.gj.GetFunctionsForDatabase(database), dm.gj.EffectiveAnalyticsMode(database))
 		dm.tablesCache.Store(database, &dbTablesPayload{Tables: index, DatabaseOverview: overview})
 		return nil, nil
 	})
+}
+
+// populateRowCounts fires one batched catalog query per namespace in
+// `index`. Cost: O(distinct namespaces). Cached in dm.rowCountCache.
+func (dm *DiscoveryManager) populateRowCounts(database string, index []TableIndexEntry) {
+	if len(index) == 0 {
+		return
+	}
+	bySchema := map[string][]int{}
+	for i, e := range index {
+		bySchema[e.Schema] = append(bySchema[e.Schema], i)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), rowCountQueryTimeout*2)
+	defer cancel()
+	for schema, idxs := range bySchema {
+		counts := dm.RowCountsForNamespace(ctx, database, schema)
+		if len(counts) == 0 {
+			continue
+		}
+		for _, i := range idxs {
+			if n, ok := counts[index[i].Name]; ok {
+				v := n
+				index[i].RowCountApprox = &v
+			}
+		}
+	}
 }
 
 func (dm *DiscoveryManager) ensureFullTables(database string) {
@@ -122,6 +155,12 @@ func (dm *DiscoveryManager) ensureInsights(database string) {
 }
 
 func (dm *DiscoveryManager) Invalidate() {
+	dm.warmupMu.Lock()
+	if dm.warmupCancel != nil {
+		dm.warmupCancel()
+		dm.warmupCancel = nil
+	}
+	dm.warmupMu.Unlock()
 	dm.tablesCache.Range(func(k, _ any) bool { dm.tablesCache.Delete(k); return true })
 	dm.fullCache.Range(func(k, _ any) bool { dm.fullCache.Delete(k); return true })
 	dm.insightsCache.Range(func(k, _ any) bool { dm.insightsCache.Delete(k); return true })
@@ -130,10 +169,7 @@ func (dm *DiscoveryManager) Invalidate() {
 	dm.rowCountCache.Range(func(k, _ any) bool { dm.rowCountCache.Delete(k); return true })
 }
 
-// Namespaces returns the Tier-0 rollup for a database: one entry per
-// (database, schema) namespace with table count and approximate row total.
-// Cached per database; invalidated on schema change. One catalog query
-// per cold call.
+// Namespaces returns one rollup entry per (database, schema). Cached.
 func (dm *DiscoveryManager) Namespaces(ctx context.Context, database string) []NamespaceRollup {
 	if database == "" {
 		var out []NamespaceRollup
@@ -154,6 +190,7 @@ func (dm *DiscoveryManager) Namespaces(ctx context.Context, database string) []N
 			return []NamespaceRollup(nil), nil
 		}
 		dm.namespaceCache.Store(database, rows)
+		dm.scheduleWarmup(database, rows)
 		return rows, nil
 	})
 	if v == nil {
@@ -162,10 +199,62 @@ func (dm *DiscoveryManager) Namespaces(ctx context.Context, database string) []N
 	return v.([]NamespaceRollup)
 }
 
-// RowCountsForNamespace returns table_name -> approx_row_count for every
-// table in a single (database, schema) namespace. Lazy: fired only when
-// the caller scopes a list_tables request to a specific schema. Cached
-// per (database, schema).
+// scheduleWarmup fires a goroutine that pre-warms the largest namespace.
+func (dm *DiscoveryManager) scheduleWarmup(database string, rollup []NamespaceRollup) {
+	if len(rollup) == 0 {
+		return
+	}
+	best := rollup[0]
+	for _, r := range rollup {
+		if r.ApproxRowTotal > best.ApproxRowTotal {
+			best = r
+		}
+	}
+	if best.TableCount == 0 {
+		return
+	}
+
+	dm.warmupMu.Lock()
+	if dm.warmupCancel != nil {
+		dm.warmupCancel()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	dm.warmupCancel = cancel
+	dm.warmupMu.Unlock()
+
+	go dm.runWarmup(ctx, database, best.Schema)
+}
+
+func (dm *DiscoveryManager) runWarmup(ctx context.Context, database, schema string) {
+	counts := dm.RowCountsForNamespace(ctx, database, schema)
+	if len(counts) == 0 {
+		return
+	}
+
+	type namedCount struct {
+		name string
+		n    int64
+	}
+	ranked := make([]namedCount, 0, len(counts))
+	for n, c := range counts {
+		ranked = append(ranked, namedCount{n, c})
+	}
+	sort.Slice(ranked, func(i, j int) bool { return ranked[i].n > ranked[j].n })
+	if len(ranked) > warmupTopK {
+		ranked = ranked[:warmupTopK]
+	}
+
+	for _, t := range ranked {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		_, _ = dm.TableSample(ctx, database, schema, t.name)
+	}
+}
+
+// RowCountsForNamespace returns table_name -> approx_row_count for one namespace.
 func (dm *DiscoveryManager) RowCountsForNamespace(ctx context.Context, database, schema string) map[string]int64 {
 	key := database + "\x00" + schema
 	if v, ok := dm.rowCountCache.Load(key); ok {
@@ -215,9 +304,6 @@ func (dm *DiscoveryManager) DatabaseOverview(database string) DatabaseOverview {
 	return ov
 }
 
-// decorateOverviewWithRollup injects Tier-0 totals (ApproxRowTotal,
-// TopNamespacesByRows, per-schema ApproxRowTotal) onto a DatabaseOverview
-// without forcing eager per-table fetches.
 func (dm *DiscoveryManager) decorateOverviewWithRollup(ov *DatabaseOverview, database string) {
 	rollup := dm.Namespaces(context.Background(), database)
 	if len(rollup) == 0 {
@@ -290,7 +376,7 @@ func (dm *DiscoveryManager) Insights(database string) SchemaInsights {
 }
 
 func (dm *DiscoveryManager) Profile(database, table string) *TableProfile {
-	key := profileCacheKey(database, "", table, "light")
+	key := profileCacheKey(database, "", table)
 	if v, ok := dm.profileCache.Load(key); ok {
 		return v.(*TableSampleResult).Stats
 	}
@@ -301,21 +387,13 @@ func (dm *DiscoveryManager) Databases() []string {
 	return dm.gj.DatabaseNames()
 }
 
-func (dm *DiscoveryManager) TableIndexPage(ctx context.Context, database string, opts TableListOptions) ListTablesResult {
+func (dm *DiscoveryManager) TableIndexPage(_ context.Context, database string, opts TableListOptions) ListTablesResult {
 	entries := dm.TableIndex(database)
 	filtered := filterTableIndex(entries, opts)
 
 	var topTables []TableRef
-	if opts.Schema != "" && database != "" && len(filtered) > 0 {
-		counts := dm.RowCountsForNamespace(ctx, database, opts.Schema)
-		if len(counts) > 0 {
-			for i := range filtered {
-				if n, ok := counts[filtered[i].Name]; ok {
-					filtered[i].RowCountApprox = n
-				}
-			}
-			topTables = topTablesByRows(filtered, 10)
-		}
+	if opts.Schema != "" && len(filtered) > 0 {
+		topTables = topTablesByRows(filtered, 10)
 	}
 
 	page, nextCursor, hasMore := paginateTableIndex(filtered, opts)
@@ -344,8 +422,8 @@ func topTablesByRows(entries []TableIndexEntry, limit int) []TableRef {
 	}
 	refs := make([]rowRef, 0, len(entries))
 	for _, e := range entries {
-		if e.RowCountApprox > 0 {
-			refs = append(refs, rowRef{e.Name, e.Schema, e.RowCountApprox})
+		if e.RowCountApprox != nil && *e.RowCountApprox > 0 {
+			refs = append(refs, rowRef{e.Name, e.Schema, *e.RowCountApprox})
 		}
 	}
 	sort.Slice(refs, func(i, j int) bool { return refs[i].rows > refs[j].rows })

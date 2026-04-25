@@ -22,8 +22,9 @@ func buildTableIndexEntry(schema *core.TableSchema, profile *TableProfile, dupli
 	if entry.Type == "" {
 		entry.Type = "table"
 	}
-	if profile != nil {
-		entry.RowCountApprox = profile.RowCountApprox
+	if profile != nil && profile.RowCountApprox != nil {
+		v := *profile.RowCountApprox
+		entry.RowCountApprox = &v
 	}
 	if len(schema.PrimaryKeys) > 0 {
 		entry.PrimaryKeys = append([]string{}, schema.PrimaryKeys...)

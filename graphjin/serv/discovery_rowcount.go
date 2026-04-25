@@ -13,9 +13,7 @@ import (
 
 const rowCountQueryTimeout = 5 * time.Second
 
-// approxRowCount fetches a single table's approximate row count from
-// dialect-native catalog stats. Used by TableSample (Tier 3) for per-table
-// drill-in. Tier 2 namespace-batched row counts use buildRowCountsForNamespace.
+// approxRowCount: single-table reltuples-equivalent lookup for TableSample.
 func approxRowCount(ctx context.Context, db *sql.DB, dbtype string, schema *core.TableSchema) (int64, bool) {
 	qctx, cancel := context.WithTimeout(ctx, rowCountQueryTimeout)
 	defer cancel()
@@ -164,10 +162,7 @@ func mongodbRowCount(_ context.Context, _ *sql.DB, _ *core.TableSchema) (int64, 
 	return 0, false
 }
 
-// buildRowCountsForNamespace fetches approximate row counts for every table
-// in a single (database, schema) namespace via one catalog query per dialect.
-// At Snowflake-scale (50 schemas × 100 tables) this turns 5000 round trips
-// into 1 round trip per namespace the caller actually visits.
+// buildRowCountsForNamespace: one catalog query returns counts for every table in one namespace.
 func buildRowCountsForNamespace(ctx context.Context, gj *core.GraphJin, database, schema string) (map[string]int64, error) {
 	out := map[string]int64{}
 	db, dbtype, err := gj.DBForDatabase(database)
@@ -200,9 +195,7 @@ func buildRowCountsForNamespace(ctx context.Context, gj *core.GraphJin, database
 	return out, nil
 }
 
-// namespaceForSingleTier returns the effective namespace identifier for
-// dialects where database == schema (mysql, mariadb). When the caller
-// supplies an empty schema we fall back to the database name.
+// namespaceForSingleTier: mysql/mariadb where database == schema.
 func namespaceForSingleTier(database, schema string) string {
 	if schema != "" {
 		return schema
@@ -214,9 +207,10 @@ func postgresNamespaceRowCounts(ctx context.Context, db *sql.DB, schema string) 
 	if schema == "" {
 		schema = "public"
 	}
+	// reltuples = -1 sentinel ("never analyzed") → NULL → skipped.
 	const q = `
 SELECT c.relname,
-       GREATEST(c.reltuples, 0)::bigint
+       CASE WHEN c.reltuples >= 0 THEN c.reltuples::bigint END
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE n.nspname = $1
@@ -228,8 +222,9 @@ func mysqlNamespaceRowCounts(ctx context.Context, db *sql.DB, schema string) (ma
 	if schema == "" {
 		return map[string]int64{}, nil
 	}
+	// NULL TABLE_ROWS → unknown (no COALESCE, omitempty preserves the signal).
 	const q = `
-SELECT TABLE_NAME, COALESCE(TABLE_ROWS, 0)
+SELECT TABLE_NAME, TABLE_ROWS
 FROM information_schema.TABLES
 WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'`
 	return scanRowCountPairs(ctx, db, q, schema)
@@ -239,8 +234,9 @@ func snowflakeNamespaceRowCounts(ctx context.Context, db *sql.DB, schema string)
 	if schema == "" {
 		return map[string]int64{}, nil
 	}
+	// NULL ROW_COUNT → unknown.
 	const q = `
-SELECT TABLE_NAME, COALESCE(ROW_COUNT, 0)
+SELECT TABLE_NAME, ROW_COUNT
 FROM INFORMATION_SCHEMA.TABLES
 WHERE UPPER(TABLE_SCHEMA) = UPPER(?) AND TABLE_TYPE = 'BASE TABLE'`
 	out, err := scanRowCountPairs(ctx, db, q, schema)
@@ -248,9 +244,10 @@ WHERE UPPER(TABLE_SCHEMA) = UPPER(?) AND TABLE_TYPE = 'BASE TABLE'`
 }
 
 func sqliteNamespaceRowCounts(ctx context.Context, db *sql.DB) (map[string]int64, error) {
+	// LEFT JOIN: tables without sqlite_stat1 entries get NULL → skipped.
 	const q = `
 SELECT m.name,
-       COALESCE(CAST(substr(s.stat,1,instr(s.stat||' ',' ')-1) AS INTEGER), 0)
+       CAST(substr(s.stat,1,instr(s.stat||' ',' ')-1) AS INTEGER)
 FROM sqlite_master m
 LEFT JOIN sqlite_stat1 s ON s.tbl = m.name
 WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite_%'`
@@ -261,8 +258,9 @@ func oracleNamespaceRowCounts(ctx context.Context, db *sql.DB, schema string) (m
 	if schema == "" {
 		return map[string]int64{}, nil
 	}
+	// NULL NUM_ROWS → never analyzed → unknown.
 	const q = `
-SELECT TABLE_NAME, COALESCE(NUM_ROWS, 0)
+SELECT TABLE_NAME, NUM_ROWS
 FROM ALL_TABLES
 WHERE OWNER = UPPER(:1)`
 	out, err := scanRowCountPairs(ctx, db, q, schema)
@@ -273,8 +271,9 @@ func mssqlNamespaceRowCounts(ctx context.Context, db *sql.DB, schema string) (ma
 	if schema == "" {
 		schema = "dbo"
 	}
+	// LEFT JOIN miss → SUM returns NULL → unknown.
 	const q = `
-SELECT t.name, COALESCE(SUM(CAST(p.row_count AS BIGINT)), 0)
+SELECT t.name, SUM(CAST(p.row_count AS BIGINT))
 FROM sys.tables t
 JOIN sys.schemas s ON s.schema_id = t.schema_id
 LEFT JOIN sys.dm_db_partition_stats p
@@ -284,9 +283,7 @@ GROUP BY t.name`
 	return scanRowCountPairs(ctx, db, q, schema)
 }
 
-// lowercaseKeys normalizes a row-count map's keys to lowercase. Oracle and
-// Snowflake store unquoted identifiers as uppercase in their catalog views;
-// core/internal/sdata lowercases on load, so we must match.
+// lowercaseKeys: oracle/snowflake catalog uppercases; core lowercases on load.
 func lowercaseKeys(in map[string]int64) map[string]int64 {
 	if len(in) == 0 {
 		return in
@@ -313,7 +310,8 @@ func scanRowCountPairs(ctx context.Context, db *sql.DB, q string, args ...any) (
 		if err := rows.Scan(&name, &n); err != nil {
 			return out, err
 		}
-		if name.Valid {
+		// NULL count = unknown; skip so callers don't confuse with measured zero.
+		if name.Valid && n.Valid {
 			out[name.String] = n.Int64
 		}
 	}

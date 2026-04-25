@@ -130,25 +130,27 @@ func TestDiscovery(t *testing.T) {
 		}
 	})
 
-	t.Run("TableIndexPageRowCountsLazy", func(t *testing.T) {
+	t.Run("TableIndexHasRowCounts", func(t *testing.T) {
 		if dbType == "mongodb" {
 			t.Skip("mongodb row counts are not supported via the SQL path")
 		}
 		ensureCatalogStats(t)
 		dm.Invalidate()
 		dbName := gj.DefaultDatabase()
-		schema := seededSchemaForDialect(gj)
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		page := dm.TableIndexPage(ctx, dbName, serv.TableListOptions{Schema: schema, Limit: 500})
-		require.NotEmpty(t, page.Tables, "expected tables in scoped page (dialect=%s, schema=%q)", dbType, schema)
+		// No schema filter — populate happens in ensureTables for ALL
+		// namespaces present in the loaded table list. Agents must never
+		// see RowCountApprox=0 lying about a non-empty seeded table.
+		page := dm.TableIndexPage(ctx, dbName, serv.TableListOptions{Limit: 500})
+		require.NotEmpty(t, page.Tables, "expected tables (dialect=%s)", dbType)
 		var sawUsersWithRows bool
 		for _, e := range page.Tables {
-			if e.Name == "users" && e.RowCountApprox >= 100 {
+			if e.Name == "users" && e.RowCountApprox != nil && *e.RowCountApprox >= 100 {
 				sawUsersWithRows = true
 			}
 		}
-		assert.Truef(t, sawUsersWithRows, "expected users.row_count_approx >= 100 in scoped page (dialect=%s)", dbType)
+		assert.Truef(t, sawUsersWithRows, "expected users.row_count_approx >= 100 on cheap path (dialect=%s)", dbType)
 	})
 
 	t.Run("EnrichmentForSeededTable", func(t *testing.T) {
@@ -168,7 +170,7 @@ func TestDiscovery(t *testing.T) {
 		var found *hit
 		for i := range payload.Tables {
 			entry := &payload.Tables[i]
-			if entry.Profile == nil || entry.Profile.RowCountApprox <= 1 {
+			if entry.Profile == nil || entry.Profile.RowCountApprox == nil || *entry.Profile.RowCountApprox <= 1 {
 				continue
 			}
 			for col, stats := range entry.Profile.NumericStats {

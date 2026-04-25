@@ -11,7 +11,8 @@ type TableIndexEntry struct {
 	Type              string          `json:"type,omitempty"`
 	Comment           string          `json:"comment,omitempty"`
 	ColumnCount       int             `json:"column_count,omitempty"`
-	RowCountApprox    int64           `json:"row_count_approx"`
+	// nil = unknown (catalog stats unavailable); 0 = measured zero.
+	RowCountApprox    *int64          `json:"row_count_approx,omitempty"`
 	PrimaryKeys       []string        `json:"primary_keys,omitempty"`
 	ForeignKeys       []ForeignKeyRef `json:"foreign_keys,omitempty"`
 	KeyColumns        []string        `json:"key_columns,omitempty"`
@@ -27,11 +28,28 @@ type ForeignKeyRef struct {
 }
 
 type TableProfile struct {
-	RowCountApprox int64                   `json:"row_count_approx"`
+	RowCountApprox *int64                  `json:"row_count_approx,omitempty"`
 	DateRanges     map[string]DateRange    `json:"date_ranges,omitempty"`
 	EnumValues     map[string]EnumProfile  `json:"enum_values,omitempty"`
 	NumericStats   map[string]NumericStats `json:"numeric_stats,omitempty"`
+	ColumnStats    map[string]ColumnStats  `json:"column_stats,omitempty"`
 	SampleRows     []map[string]any        `json:"sample_rows,omitempty"`
+}
+
+type ColumnStats struct {
+	NullFraction *float64 `json:"null_fraction,omitempty"`
+	// Negative = fraction-of-rows (postgres pg_stats convention).
+	DistinctCount    *float64    `json:"distinct_count,omitempty"`
+	MostCommonValues []EnumValue `json:"most_common_values,omitempty"`
+	HistogramBounds  []string    `json:"histogram_bounds,omitempty"`
+}
+
+type IndexInfo struct {
+	Name    string   `json:"name"`
+	Columns []string `json:"columns"`
+	Unique  bool     `json:"unique,omitempty"`
+	Primary bool     `json:"primary,omitempty"`
+	Type    string   `json:"type,omitempty"`
 }
 
 type EnumProfile struct {
@@ -194,8 +212,22 @@ type TableSampleResult struct {
 	Database string        `json:"database"`
 	Schema   string        `json:"schema,omitempty"`
 	Table    string        `json:"table"`
-	Mode     string        `json:"mode"`
 	Status   string        `json:"status"`
 	Stats    *TableProfile `json:"stats,omitempty"`
-	Cost     DiscoveryCost `json:"cost"`
+
+	PrimaryKeys    []string          `json:"primary_keys,omitempty"`
+	ForeignKeys    []ForeignKeyRef   `json:"foreign_keys,omitempty"`
+	OutgoingRels   []RelationshipRef `json:"outgoing_relationships,omitempty"`
+	IncomingRels   []RelationshipRef `json:"incoming_relationships,omitempty"`
+	Indexes        []IndexInfo       `json:"indexes,omitempty"`
+	Aggregations   *AggregationInfo  `json:"aggregations,omitempty"`
+	ExampleQueries []ExampleQuery    `json:"example_queries,omitempty"`
+
+	Cost DiscoveryCost `json:"cost"`
+}
+
+type RelationshipRef struct {
+	Table  string `json:"table"`
+	Column string `json:"column,omitempty"`
+	Type   string `json:"type,omitempty"`
 }
