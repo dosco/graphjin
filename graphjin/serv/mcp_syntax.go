@@ -331,7 +331,7 @@ func (ms *mcpServer) registerResources() {
 	// Query syntax guide resource
 	ms.srv.AddResource(
 		mcp.NewResource(
-			"graphjin://syntax/query",
+			QuerySyntaxResourceURI,
 			"GraphJin Query Syntax Guide",
 			mcp.WithResourceDescription("Complete GraphJin query DSL reference including operators, pagination, aggregations, and examples"),
 			mcp.WithMIMEType("application/json"),
@@ -350,7 +350,7 @@ func (ms *mcpServer) registerResources() {
 	// Mutation syntax guide resource
 	ms.srv.AddResource(
 		mcp.NewResource(
-			"graphjin://syntax/mutation",
+			MutationSyntaxResourceURI,
 			"GraphJin Mutation Syntax Guide",
 			mcp.WithResourceDescription("Complete GraphJin mutation DSL reference including insert, update, upsert, delete, and nested mutations"),
 			mcp.WithMIMEType("application/json"),
@@ -369,7 +369,7 @@ func (ms *mcpServer) registerResources() {
 	// Workflow guide resource
 	ms.srv.AddResource(
 		mcp.NewResource(
-			"graphjin://guides/workflow",
+			WorkflowGuideResourceURI,
 			"GraphJin MCP Workflow Guide",
 			mcp.WithResourceDescription("Recommended workflow for using GraphJin MCP tools including tool sequences for common tasks"),
 			mcp.WithMIMEType("application/json"),

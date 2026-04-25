@@ -3,6 +3,7 @@ package serv
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -24,6 +25,9 @@ func discoveryHandler(s1 *HttpService) http.Handler {
 		}
 
 		db := defaultDiscoveryDB(s)
+		if qdb := r.URL.Query().Get("database"); qdb != "" {
+			db = qdb
+		}
 		if db == "" {
 			http.Error(w, "Discovery not available. Schema may not be ready yet.", http.StatusServiceUnavailable)
 			return
@@ -50,6 +54,9 @@ func discoveryWildcardHandler(s1 *HttpService) http.Handler {
 			return
 		}
 		db := defaultDiscoveryDB(s)
+		if qdb := r.URL.Query().Get("database"); qdb != "" {
+			db = qdb
+		}
 		if db == "" {
 			http.Error(w, "Discovery not available. Schema may not be ready yet.", http.StatusServiceUnavailable)
 			return
@@ -61,13 +68,18 @@ func discoveryWildcardHandler(s1 *HttpService) http.Handler {
 		case "", "/":
 			writeDiscoveryJSON(w, s.disc.Payload(db))
 		case "tables":
-			writeDiscoveryJSON(w, map[string]any{
-				"database":          db,
-				"tables":            s.disc.TableIndex(db),
-				"database_overview": s.disc.DatabaseOverview(db),
-			})
+			writeDiscoveryJSON(w, s.disc.TableIndexPage(r.Context(), db, tableListOptionsFromRequest(r)))
 		case "tables/full":
-			writeDiscoveryJSON(w, s.disc.FullPayload(db))
+			payload := s.disc.FullPayload(db)
+			payload.Tables = s.disc.FullTablesPage(db, tableListOptionsFromRequest(r))
+			writeDiscoveryJSON(w, payload)
+		case "namespaces":
+			rollup := s.disc.Namespaces(r.Context(), db)
+			writeDiscoveryJSON(w, ListNamespacesResult{
+				Database:   db,
+				Namespaces: rollup,
+				Count:      len(rollup),
+			})
 		case "insights":
 			writeDiscoveryJSON(w, s.disc.Insights(db))
 		case "syntax":
@@ -75,10 +87,23 @@ func discoveryWildcardHandler(s1 *HttpService) http.Handler {
 				"query":    querySyntaxReference,
 				"mutation": mutationSyntaxReference,
 			})
+		case "schema":
+			writeDiscoveryJSON(w, discoverySchema())
 		default:
 			http.NotFound(w, r)
 		}
 	})
+}
+
+func tableListOptionsFromRequest(r *http.Request) TableListOptions {
+	q := r.URL.Query()
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	return TableListOptions{
+		Search: q.Get("search"),
+		Schema: q.Get("schema"),
+		Limit:  limit,
+		Cursor: q.Get("cursor"),
+	}
 }
 
 func defaultDiscoveryDB(s *graphjinService) string {

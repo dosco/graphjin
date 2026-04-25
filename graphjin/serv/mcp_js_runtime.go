@@ -7,17 +7,17 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
-const jsRuntimeResourceURI = "graphjin://syntax/workflow-js"
+const JSRuntimeResourceURI = "graphjin://syntax/workflow-js"
 
 // JSRuntimeAPI describes the functions exposed in the GraphJin JS runtime.
 type JSRuntimeAPI struct {
-	Runtime          string              `json:"runtime"`
-	RuntimeStatus    string              `json:"runtime_status"`
-	EntryPoint       string              `json:"entry_point"`
-	WorkflowTimeout  int                 `json:"workflow_timeout_seconds"`
-	Globals          []JSRuntimeGlobal   `json:"globals"`
-	Functions        []JSRuntimeFunction `json:"functions"`
-	Notes            []string            `json:"notes,omitempty"`
+	Runtime         string              `json:"runtime"`
+	RuntimeStatus   string              `json:"runtime_status"`
+	EntryPoint      string              `json:"entry_point"`
+	WorkflowTimeout int                 `json:"workflow_timeout_seconds"`
+	Globals         []JSRuntimeGlobal   `json:"globals"`
+	Functions       []JSRuntimeFunction `json:"functions"`
+	Notes           []string            `json:"notes,omitempty"`
 }
 
 // JSRuntimeGlobal describes one global in the JS runtime.
@@ -50,7 +50,7 @@ func (ms *mcpServer) registerJSRuntimeTools() {
 func (ms *mcpServer) registerJSRuntimeResources() {
 	ms.srv.AddResource(
 		mcp.NewResource(
-			jsRuntimeResourceURI,
+			JSRuntimeResourceURI,
 			"GraphJin JS Runtime API",
 			mcp.WithResourceDescription("Machine-readable API for GraphJin JS workflow runtime globals and callable functions."),
 			mcp.WithMIMEType("application/json"),

@@ -28,18 +28,30 @@ var (
 func mcpCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "mcp",
-		Short: "Run MCP server in stdio mode (for Claude Desktop)",
+		Short: "Run MCP server in stdio mode (for Claude Desktop / Codex)",
 		Long: `Run the GraphJin MCP server using stdio transport.
 
-Designed for AI assistant integration (Claude Desktop, etc.).
+Designed for AI assistant integration (Claude Desktop, Codex, etc.).
 Communicates via stdin/stdout using the MCP protocol.
 
-Demo mode (--demo):
+Three modes:
+
+  Explicit proxy mode  -- when --server is provided, stdio MCP traffic is
+                         forwarded to that remote GraphJin server.
+
+  Saved proxy mode     -- when ~/.config/graphjin/client.json exists, this
+                         command forwards stdio MCP traffic to the saved
+                         server. Sign in with: graphjin mcp setup <server-url>
+
+  Local mode           -- when no proxy target is configured, runs an
+                         embedded MCP server using --path config + the local DB.
+
+Demo mode (--demo, local mode only):
   graphjin mcp --demo                    # Use database type from config, default to postgres
   graphjin mcp --demo --db mysql         # Override database type
   graphjin mcp --demo --persist          # Persist data using Docker volumes
 
-Authentication:
+Authentication for local mode:
   --user-id, --user-role flags (highest priority)
   GRAPHJIN_USER_ID, GRAPHJIN_USER_ROLE env vars
   mcp.stdio_user_id, mcp.stdio_user_role config`,
@@ -48,14 +60,12 @@ Authentication:
 
 	c.Flags().StringVar(&mcpUserID, "user-id", "", "User ID for MCP session")
 	c.Flags().StringVar(&mcpUserRole, "user-role", "", "User role for MCP session")
-	// --server enables stdio proxy mode: `graphjin mcp --server <url>` forwards
-	// to a remote MCP server instead of running locally.
-	c.PersistentFlags().StringVar(&mcpServerURL, "server", "", "Remote MCP server URL (env GRAPHJIN_SERVER). Mutually exclusive with --path.")
+	c.PersistentFlags().StringVar(&mcpServerURL, "server", "", "Remote MCP server URL. Mutually exclusive with --path.")
 	c.Flags().BoolVar(&mcpDemoMode, "demo", false, "Run with temporary database container(s)")
 	c.Flags().BoolVar(&mcpPersist, "persist", false, "Persist data using Docker volumes (requires --demo)")
 	c.Flags().StringArrayVar(&mcpDBFlags, "db", nil, "Database type override(s) (requires --demo)")
 
-	// Existing subcommands
+	c.AddCommand(setupCmd())
 	c.AddCommand(mcpInfoCmd())
 	c.AddCommand(mcpInstallCmd())
 	c.AddCommand(mcpPluginCmd())
@@ -64,23 +74,27 @@ Authentication:
 }
 
 func cmdMCP(cmd *cobra.Command, args []string) {
-	// Redirect CLI logger to stderr before setup to avoid corrupting JSON-RPC stream
 	log = newLoggerWithOutput(false, os.Stderr).Sugar()
 
-	// Check mutual exclusivity of --server and --path
 	if mcpServerURL != "" && cmd.Flags().Changed("path") {
 		log.Fatal("--server and --path are mutually exclusive")
 	}
-
-	// Check that --persist and --db require --demo
 	if !mcpDemoMode && (mcpPersist || len(mcpDBFlags) > 0) {
 		log.Fatal("--persist and --db flags require --demo")
 	}
 
-	// If --server is provided, run in proxy mode
 	if mcpServerURL != "" {
 		runMCPProxy(cmd, args)
 		return
+	}
+
+	forceLocal := cmd.Flags().Changed("path") || mcpDemoMode || mcpPersist || len(mcpDBFlags) > 0 || mcpUserID != "" || mcpUserRole != ""
+	if !forceLocal {
+		if cc, _ := LoadClientConfig(); cc != nil && cc.Server != "" {
+			mcpServerURL = cc.Server
+			runMCPProxy(cmd, args)
+			return
+		}
 	}
 
 	setup(cpath)
@@ -90,7 +104,6 @@ func cmdMCP(cmd *cobra.Command, args []string) {
 
 	var cleanups []func(context.Context) error
 
-	// Start demo containers if --demo is set
 	if mcpDemoMode {
 		var err error
 		cleanups, err = StartDemo(ctx, mcpPersist, mcpDBFlags)
@@ -99,7 +112,6 @@ func cmdMCP(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	// Override env vars with flags if provided
 	if mcpUserID != "" {
 		os.Setenv("GRAPHJIN_USER_ID", mcpUserID) //nolint:errcheck
 	}
@@ -107,13 +119,11 @@ func cmdMCP(cmd *cobra.Command, args []string) {
 		os.Setenv("GRAPHJIN_USER_ROLE", mcpUserRole) //nolint:errcheck
 	}
 
-	// Use stderr for logging in MCP stdio mode to keep stdout clean for JSON-RPC
 	gj, err := serv.NewGraphJinService(conf, serv.OptionSetLogOutput(os.Stderr))
 	if err != nil {
 		log.Fatalf("failed to initialize GraphJin: %s", err)
 	}
 
-	// Graceful shutdown setup
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -150,7 +160,6 @@ Use --demo to include the --demo flag in the generated config.`,
 		Run: cmdMCPInfo,
 	}
 
-	// --server is inherited from the parent `mcp` command's persistent flag.
 	c.Flags().BoolVar(&mcpInfoDemoMode, "demo", false, "Include --demo flag in generated config")
 
 	return c
@@ -160,6 +169,12 @@ func cmdMCPInfo(cmd *cobra.Command, args []string) {
 	if mcpServerURL != "" {
 		printMCPProxyConfig(mcpServerURL)
 		return
+	}
+	if f := cmd.InheritedFlags().Lookup("path"); f == nil || !f.Changed {
+		if cc, _ := LoadClientConfig(); cc != nil && cc.Server != "" {
+			printMCPProxyConfig(cc.Server)
+			return
+		}
 	}
 	setup(cpath)
 	printMCPConfig(conf, mcpInfoDemoMode)

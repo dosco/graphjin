@@ -176,7 +176,7 @@ func (p *mcpProxy) forwardRequest(ctx context.Context, body []byte) ([]byte, err
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	if auth := os.Getenv("GRAPHJIN_MCP_AUTH"); auth != "" {
+	if auth := resolveMCPProxyAuth(); auth != "" {
 		req.Header.Set("Authorization", auth)
 	}
 
@@ -259,7 +259,7 @@ func (p *mcpProxy) probeConnectivity(ctx context.Context) error {
 		return err
 	}
 
-	if auth := os.Getenv("GRAPHJIN_MCP_AUTH"); auth != "" {
+	if auth := resolveMCPProxyAuth(); auth != "" {
 		req.Header.Set("Authorization", auth)
 	}
 
@@ -576,6 +576,19 @@ func nextBackoff(current, initial, max time.Duration) time.Duration {
 	return n
 }
 
+func resolveMCPProxyAuth() string {
+	if auth := resolveMCPAuth(); auth != "" {
+		return auth
+	}
+	if t := os.Getenv("GRAPHJIN_TOKEN"); t != "" {
+		return "Bearer " + t
+	}
+	if auth := os.Getenv("GRAPHJIN_MCP_AUTH"); auth != "" {
+		return auth
+	}
+	return ""
+}
+
 func normalizeMCPServerURL(input string) string {
 	// Add scheme if missing
 	if !strings.HasPrefix(input, "http://") && !strings.HasPrefix(input, "https://") {
@@ -606,7 +619,7 @@ func printMCPProxyConfig(serverURL string) {
 		"mcpServers": map[string]interface{}{
 			"GraphJin": map[string]interface{}{
 				"command": execPath,
-				"args":    []string{"mcp", "--server", serverURL},
+				"args":    buildClaudeMCPServerArgs(mcpInstallOptions{Server: serverURL}),
 			},
 		},
 	}
