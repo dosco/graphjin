@@ -13,20 +13,7 @@ import (
 
 const rowCountQueryTimeout = 5 * time.Second
 
-func buildRowCounts(ctx context.Context, gj *core.GraphJin, database string, schemas []*core.TableSchema) map[string]int64 {
-	out := make(map[string]int64, len(schemas))
-	db, dbtype, err := gj.DBForDatabase(database)
-	if err != nil || db == nil {
-		return out
-	}
-	for _, s := range schemas {
-		if n, ok := approxRowCount(ctx, db, dbtype, s); ok {
-			out[s.Name] = n
-		}
-	}
-	return out
-}
-
+// approxRowCount: single-table reltuples-equivalent lookup for TableSample.
 func approxRowCount(ctx context.Context, db *sql.DB, dbtype string, schema *core.TableSchema) (int64, bool) {
 	qctx, cancel := context.WithTimeout(ctx, rowCountQueryTimeout)
 	defer cancel()
@@ -173,4 +160,160 @@ func mssqlBracketQuote(s string) string {
 
 func mongodbRowCount(_ context.Context, _ *sql.DB, _ *core.TableSchema) (int64, bool) {
 	return 0, false
+}
+
+// buildRowCountsForNamespace: one catalog query returns counts for every table in one namespace.
+func buildRowCountsForNamespace(ctx context.Context, gj *core.GraphJin, database, schema string) (map[string]int64, error) {
+	out := map[string]int64{}
+	db, dbtype, err := gj.DBForDatabase(database)
+	if err != nil {
+		return out, err
+	}
+	if db == nil {
+		return out, nil
+	}
+
+	qctx, cancel := context.WithTimeout(ctx, rowCountQueryTimeout)
+	defer cancel()
+
+	switch strings.ToLower(dbtype) {
+	case "postgres", "postgresql", "cockroachdb", "cockroach":
+		return postgresNamespaceRowCounts(qctx, db, schema)
+	case "mysql", "mariadb":
+		return mysqlNamespaceRowCounts(qctx, db, namespaceForSingleTier(database, schema))
+	case "snowflake":
+		return snowflakeNamespaceRowCounts(qctx, db, schema)
+	case "sqlite":
+		return sqliteNamespaceRowCounts(qctx, db)
+	case "oracle":
+		return oracleNamespaceRowCounts(qctx, db, schema)
+	case "mssql":
+		return mssqlNamespaceRowCounts(qctx, db, schema)
+	case "mongodb":
+		return out, nil
+	}
+	return out, nil
+}
+
+// namespaceForSingleTier: mysql/mariadb where database == schema.
+func namespaceForSingleTier(database, schema string) string {
+	if schema != "" {
+		return schema
+	}
+	return database
+}
+
+func postgresNamespaceRowCounts(ctx context.Context, db *sql.DB, schema string) (map[string]int64, error) {
+	if schema == "" {
+		schema = "public"
+	}
+	// reltuples = -1 sentinel ("never analyzed") → NULL → skipped.
+	const q = `
+SELECT c.relname,
+       CASE WHEN c.reltuples >= 0 THEN c.reltuples::bigint END
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = $1
+  AND c.relkind IN ('r','p','m','f')`
+	return scanRowCountPairs(ctx, db, q, schema)
+}
+
+func mysqlNamespaceRowCounts(ctx context.Context, db *sql.DB, schema string) (map[string]int64, error) {
+	if schema == "" {
+		return map[string]int64{}, nil
+	}
+	// NULL TABLE_ROWS → unknown (no COALESCE, omitempty preserves the signal).
+	const q = `
+SELECT TABLE_NAME, TABLE_ROWS
+FROM information_schema.TABLES
+WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'`
+	return scanRowCountPairs(ctx, db, q, schema)
+}
+
+func snowflakeNamespaceRowCounts(ctx context.Context, db *sql.DB, schema string) (map[string]int64, error) {
+	if schema == "" {
+		return map[string]int64{}, nil
+	}
+	// NULL ROW_COUNT → unknown.
+	const q = `
+SELECT TABLE_NAME, ROW_COUNT
+FROM INFORMATION_SCHEMA.TABLES
+WHERE UPPER(TABLE_SCHEMA) = UPPER(?) AND TABLE_TYPE = 'BASE TABLE'`
+	out, err := scanRowCountPairs(ctx, db, q, schema)
+	return lowercaseKeys(out), err
+}
+
+func sqliteNamespaceRowCounts(ctx context.Context, db *sql.DB) (map[string]int64, error) {
+	// LEFT JOIN: tables without sqlite_stat1 entries get NULL → skipped.
+	const q = `
+SELECT m.name,
+       CAST(substr(s.stat,1,instr(s.stat||' ',' ')-1) AS INTEGER)
+FROM sqlite_master m
+LEFT JOIN sqlite_stat1 s ON s.tbl = m.name
+WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite_%'`
+	return scanRowCountPairs(ctx, db, q)
+}
+
+func oracleNamespaceRowCounts(ctx context.Context, db *sql.DB, schema string) (map[string]int64, error) {
+	if schema == "" {
+		return map[string]int64{}, nil
+	}
+	// NULL NUM_ROWS → never analyzed → unknown.
+	const q = `
+SELECT TABLE_NAME, NUM_ROWS
+FROM ALL_TABLES
+WHERE OWNER = UPPER(:1)`
+	out, err := scanRowCountPairs(ctx, db, q, schema)
+	return lowercaseKeys(out), err
+}
+
+func mssqlNamespaceRowCounts(ctx context.Context, db *sql.DB, schema string) (map[string]int64, error) {
+	if schema == "" {
+		schema = "dbo"
+	}
+	// LEFT JOIN miss → SUM returns NULL → unknown.
+	const q = `
+SELECT t.name, SUM(CAST(p.row_count AS BIGINT))
+FROM sys.tables t
+JOIN sys.schemas s ON s.schema_id = t.schema_id
+LEFT JOIN sys.dm_db_partition_stats p
+       ON p.object_id = t.object_id AND p.index_id IN (0, 1)
+WHERE s.name = @p1
+GROUP BY t.name`
+	return scanRowCountPairs(ctx, db, q, schema)
+}
+
+// lowercaseKeys: oracle/snowflake catalog uppercases; core lowercases on load.
+func lowercaseKeys(in map[string]int64) map[string]int64 {
+	if len(in) == 0 {
+		return in
+	}
+	out := make(map[string]int64, len(in))
+	for k, v := range in {
+		out[strings.ToLower(k)] = v
+	}
+	return out
+}
+
+func scanRowCountPairs(ctx context.Context, db *sql.DB, q string, args ...any) (map[string]int64, error) {
+	out := map[string]int64{}
+	rows, err := db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return out, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			name sql.NullString
+			n    sql.NullInt64
+		)
+		if err := rows.Scan(&name, &n); err != nil {
+			return out, err
+		}
+		// NULL count = unknown; skip so callers don't confuse with measured zero.
+		if name.Valid && n.Valid {
+			out[name.String] = n.Int64
+		}
+	}
+	return out, rows.Err()
 }

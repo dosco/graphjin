@@ -29,6 +29,7 @@ var workflowCallableToolNames = map[string]struct{}{
 	"find_path":             {},
 	"get_mutation_syntax":   {},
 	"get_query_syntax":      {},
+	"get_table_sample":      {},
 	"get_saved_query":       {},
 	"get_fragment":          {},
 	"list_fragments":        {},
