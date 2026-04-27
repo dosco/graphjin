@@ -477,11 +477,26 @@ func initSnowflake(conf *Config, openDB, useTelemetry bool, fs core.FS) (*dbConf
 		return nil, fmt.Errorf("snowflake: %w", err)
 	}
 
-	cfg.Authenticator = gosnowflake.AuthTypeJwt
-	cfg.PrivateKey = privKey
+	applySnowflakeJWT(cfg, privKey)
 
 	connector := gosnowflake.NewConnector(gosnowflake.SnowflakeDriver{}, *cfg)
 	return &dbConf{connector: connector}, nil
+}
+
+// applySnowflakeJWT configures a gosnowflake.Config for key pair (JWT) auth.
+// Sets ClientSessionKeepAlive so idle pooled connections don't hit the ~4h
+// master-token expiry — without it, the next query after expiry returns
+// "390114: Authentication token has expired" instead of transparently
+// re-signing a JWT. The keepalive flag is documented in gosnowflake as the
+// session parameter "client_session_keep_alive" (map[string]*string).
+func applySnowflakeJWT(cfg *gosnowflake.Config, privKey *rsa.PrivateKey) {
+	cfg.Authenticator = gosnowflake.AuthTypeJwt
+	cfg.PrivateKey = privKey
+	if cfg.Params == nil {
+		cfg.Params = map[string]*string{}
+	}
+	keepAlive := "true"
+	cfg.Params["client_session_keep_alive"] = &keepAlive
 }
 
 // parseSnowflakeDSN parses a Snowflake connection string into a gosnowflake.Config

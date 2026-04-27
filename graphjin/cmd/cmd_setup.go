@@ -244,6 +244,13 @@ func startDeviceFlow(ctx context.Context, server string) (*deviceStartResp, bool
 	b, _ := io.ReadAll(resp.Body)
 	switch resp.StatusCode {
 	case http.StatusOK:
+		// When auth_login is disabled the device route isn't registered, but
+		// the SPA fallback handler may serve the GraphQL editor's index.html
+		// at this path — a 200 with text/html. Treat any non-JSON 200 as
+		// "no built-in login" rather than failing to decode.
+		if !isJSONResponse(resp, b) {
+			return nil, false, nil
+		}
 		var ds deviceStartResp
 		if err := json.Unmarshal(b, &ds); err != nil {
 			return nil, false, fmt.Errorf("decode response: %w", err)
@@ -257,6 +264,24 @@ func startDeviceFlow(ctx context.Context, server string) (*deviceStartResp, bool
 	default:
 		return nil, false, fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
 	}
+}
+
+// isJSONResponse reports whether the response is JSON, by Content-Type or
+// by sniffing the first non-whitespace byte of the body. The body sniff
+// catches misconfigured servers/proxies that omit or lie about Content-Type.
+func isJSONResponse(resp *http.Response, body []byte) bool {
+	ct := resp.Header.Get("Content-Type")
+	if i := strings.IndexByte(ct, ';'); i >= 0 {
+		ct = ct[:i]
+	}
+	if strings.EqualFold(strings.TrimSpace(ct), "application/json") {
+		return true
+	}
+	trimmed := bytes.TrimLeft(body, " \t\r\n")
+	if len(trimmed) == 0 {
+		return false
+	}
+	return trimmed[0] == '{' || trimmed[0] == '['
 }
 
 // pollDeviceToken polls once. Returns (token, true, nil) when the user has
