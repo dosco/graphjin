@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/snowflakedb/gosnowflake"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -339,4 +340,47 @@ func TestInitSnowflake_InvalidKeyPEM(t *testing.T) {
 	_, err := initSnowflake(conf, true, false, core.NewOsFS(""))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no PEM block found")
+}
+
+// applySnowflakeJWT must enable client_session_keep_alive so idle pooled
+// connections don't hit Snowflake's master-token expiry and start returning
+// "390114: Authentication token has expired".
+func TestApplySnowflakeJWT_EnablesKeepAlive(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	cfg := &gosnowflake.Config{
+		User:    "u",
+		Account: "a",
+	}
+	applySnowflakeJWT(cfg, key)
+
+	assert.Equal(t, gosnowflake.AuthTypeJwt, cfg.Authenticator)
+	assert.Same(t, key, cfg.PrivateKey)
+
+	require.NotNil(t, cfg.Params, "Params map must be initialized")
+	v, ok := cfg.Params["client_session_keep_alive"]
+	require.True(t, ok, "client_session_keep_alive must be set")
+	require.NotNil(t, v)
+	assert.Equal(t, "true", *v)
+}
+
+// Pre-populated Params from DSN parsing must survive applySnowflakeJWT.
+func TestApplySnowflakeJWT_PreservesExistingParams(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	existing := "myrole"
+	cfg := &gosnowflake.Config{
+		Params: map[string]*string{"role": &existing},
+	}
+	applySnowflakeJWT(cfg, key)
+
+	if v, ok := cfg.Params["role"]; !ok || v == nil || *v != "myrole" {
+		t.Fatalf("existing Params entry was clobbered: %+v", cfg.Params)
+	}
+	v, ok := cfg.Params["client_session_keep_alive"]
+	require.True(t, ok)
+	require.NotNil(t, v)
+	assert.Equal(t, "true", *v)
 }
