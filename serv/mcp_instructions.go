@@ -8,8 +8,12 @@ const serverInstructions = `GraphJin is a GraphQL-to-SQL compiler. You query dat
 2. Call tool list_tables — find relevant tables.
 3. Use find_path or explore_relationships to understand how tables connect — do NOT guess join paths.
 4. Use describe_table for column details on the specific tables you need.
-5. Check list_workflows for an existing workflow that already answers the question.
-6. If no existing workflow fits, write a new workflow using execute_workflow.
+5. Use get_table_sample on any table whose VALUES matter — to see real column
+   values (status strings, enum labels, naming conventions like "leadid" vs
+   "lead_id"), distributions, and a few sample rows. Call this BEFORE writing
+   filters that depend on specific string values.
+6. Check list_workflows for an existing workflow that already answers the question.
+7. If no existing workflow fits, write a new workflow using execute_workflow.
 
 ## ALWAYS use workflows
 
