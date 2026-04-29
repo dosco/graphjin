@@ -733,6 +733,9 @@ func (ms *mcpServer) handleFixQueryError(ctx context.Context, req mcp.GetPromptR
 	var sb strings.Builder
 
 	sb.WriteString("# Query Error Analysis\n\n")
+	if ms.analyticsModeOn() {
+		sb.WriteString(analyticsModeBlockMarkdown())
+	}
 	sb.WriteString("## Error Message\n")
 	sb.WriteString("```\n")
 	sb.WriteString(errorMsg)
@@ -749,6 +752,21 @@ func (ms *mcpServer) handleFixQueryError(ctx context.Context, req mcp.GetPromptR
 	errorLower := strings.ToLower(errorMsg)
 
 	switch {
+	case strings.Contains(errorLower, "ambiguous relationship") ||
+		(strings.Contains(errorLower, "multiple foreign keys") && !strings.Contains(errorLower, "composite")):
+		sb.WriteString("**Problem**: Multiple foreign keys exist between these two tables; the compiler can't pick one without a hint.\n\n")
+		sb.WriteString("**Fix**: add `@through(column: \"<fk_column>\")` to the nested selection. The error message above lists the candidate columns — pick the one that matches the relationship semantics you want.\n\n")
+		sb.WriteString("```graphql\n")
+		sb.WriteString("query {\n")
+		sb.WriteString("  parent {\n")
+		sb.WriteString("    child @through(column: \"<fk_column>\") {\n")
+		sb.WriteString("      id\n")
+		sb.WriteString("    }\n")
+		sb.WriteString("  }\n")
+		sb.WriteString("}\n")
+		sb.WriteString("```\n")
+		sb.WriteString("\nFor composite foreign keys, naming any column of the composite is enough — the compiler uses the full constraint.\n")
+
 	case strings.Contains(errorLower, "table") && (strings.Contains(errorLower, "not found") || strings.Contains(errorLower, "unknown")):
 		sb.WriteString("**Problem**: Table name not found in schema\n\n")
 		sb.WriteString("**Solutions**:\n")
