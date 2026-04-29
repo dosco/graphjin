@@ -72,14 +72,18 @@ func startHTTP(s1 *HttpService) {
 		sigint := make(chan os.Signal, 1)
 		signal.Notify(sigint, os.Interrupt)
 		<-sigint
+		s.log.Info("shutdown signal received")
 
-		if err := s.srv.Shutdown(context.Background()); err != nil {
-			s.log.Warn("shutdown signal received")
+		// Bounded shutdown: don't wait forever on lingering connections
+		// (e.g. MCP SSE streams or idle keep-alives).
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		if err := s.srv.Shutdown(shutdownCtx); err != nil {
+			s.log.Warnf("graceful shutdown timed out, forcing close: %s", err)
+			s.srv.Close() //nolint:errcheck
 		}
-		close(idleConnsClosed)
-	}()
 
-	s.srv.RegisterOnShutdown(func() {
 		if s.closeFn != nil {
 			s.closeFn()
 		}
@@ -93,7 +97,8 @@ func startHTTP(s1 *HttpService) {
 			}
 		}
 		s.log.Info("shutdown complete")
-	})
+		close(idleConnsClosed)
+	}()
 
 	ver := version
 	// dep := s.conf.name
