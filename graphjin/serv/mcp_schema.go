@@ -107,10 +107,14 @@ func (ms *mcpServer) registerSchemaTools() {
 			mcp.Description("Optional database name. Omit to search all databases."),
 		),
 		mcp.WithOutputSchema[struct {
-			Path                 []core.PathStep      `json:"path"`
-			ExampleQuery         string               `json:"example_query"`
-			ExampleQueryCompiles bool                 `json:"example_query_compiles"`
-			ExampleQueryWarning  *FixQueryErrorResult `json:"example_query_warning,omitempty"`
+			Path                          []core.PathStep      `json:"path"`
+			ExampleQuery                  string               `json:"example_query"`
+			ExampleQueryCompiles          bool                 `json:"example_query_compiles"`
+			ExampleQueryWarning           *FixQueryErrorResult `json:"example_query_warning,omitempty"`
+			CollapsedExampleQuery         string               `json:"collapsed_example_query,omitempty"`
+			CollapsedExampleQueryCompiles bool                 `json:"collapsed_example_query_compiles,omitempty"`
+			CollapsedExampleQueryWarning  *FixQueryErrorResult `json:"collapsed_example_query_warning,omitempty"`
+			CollapsedNote                 string               `json:"collapsed_note,omitempty"`
 		}](),
 	), ms.handleFindPath)
 
@@ -489,16 +493,51 @@ func (ms *mcpServer) handleFindPath(ctx context.Context, req mcp.CallToolRequest
 	exampleQuery := generatePathExampleQuery(fromTable, path, ms.resolvePKColumn)
 	compiles, warning := ms.validateExampleQuery(exampleQuery)
 
+	// When the path has intermediates, also emit a collapsed form that
+	// nests `from` directly into the final `to`. GraphJin auto-traverses
+	// any single FK path between two tables, so this shape compiles and
+	// is what an analyst actually wants for per-dimension aggregations.
+	// Validating both proves the auto-traversal works on this schema.
+	var (
+		collapsedQuery    string
+		collapsedCompiles bool
+		collapsedWarning  *FixQueryErrorResult
+		collapsedNote     string
+	)
+	if len(path) >= 2 {
+		toTable := path[len(path)-1].To
+		collapsedQuery = generatePathExampleQuery(fromTable,
+			[]core.PathStep{{To: toTable}}, ms.resolvePKColumn)
+		collapsedCompiles, collapsedWarning = ms.validateExampleQuery(collapsedQuery)
+		if collapsedCompiles {
+			collapsedNote = "GraphJin auto-traverses the multi-hop FK path; you can nest `" +
+				fromTable + "` and `" + toTable + "` directly. Use this collapsed form for " +
+				"per-dimension aggregations (see get_query_syntax.patterns.metric_by_dimension)."
+		} else {
+			collapsedNote = "Auto-traversal between `" + fromTable + "` and `" + path[len(path)-1].To +
+				"` did not compile on this schema (see collapsed_example_query_warning); " +
+				"use the full nested example_query instead."
+		}
+	}
+
 	result := struct {
-		Path                 []core.PathStep      `json:"path"`
-		ExampleQuery         string               `json:"example_query"`
-		ExampleQueryCompiles bool                 `json:"example_query_compiles"`
-		ExampleQueryWarning  *FixQueryErrorResult `json:"example_query_warning,omitempty"`
+		Path                          []core.PathStep      `json:"path"`
+		ExampleQuery                  string               `json:"example_query"`
+		ExampleQueryCompiles          bool                 `json:"example_query_compiles"`
+		ExampleQueryWarning           *FixQueryErrorResult `json:"example_query_warning,omitempty"`
+		CollapsedExampleQuery         string               `json:"collapsed_example_query,omitempty"`
+		CollapsedExampleQueryCompiles bool                 `json:"collapsed_example_query_compiles,omitempty"`
+		CollapsedExampleQueryWarning  *FixQueryErrorResult `json:"collapsed_example_query_warning,omitempty"`
+		CollapsedNote                 string               `json:"collapsed_note,omitempty"`
 	}{
-		Path:                 path,
-		ExampleQuery:         exampleQuery,
-		ExampleQueryCompiles: compiles,
-		ExampleQueryWarning:  warning,
+		Path:                          path,
+		ExampleQuery:                  exampleQuery,
+		ExampleQueryCompiles:          compiles,
+		ExampleQueryWarning:           warning,
+		CollapsedExampleQuery:         collapsedQuery,
+		CollapsedExampleQueryCompiles: collapsedCompiles,
+		CollapsedExampleQueryWarning:  collapsedWarning,
+		CollapsedNote:                 collapsedNote,
 	}
 	return ms.toolResultJSON("find_path", args, result)
 }
