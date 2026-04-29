@@ -107,8 +107,10 @@ func (ms *mcpServer) registerSchemaTools() {
 			mcp.Description("Optional database name. Omit to search all databases."),
 		),
 		mcp.WithOutputSchema[struct {
-			Path         []core.PathStep `json:"path"`
-			ExampleQuery string          `json:"example_query"`
+			Path                 []core.PathStep      `json:"path"`
+			ExampleQuery         string               `json:"example_query"`
+			ExampleQueryCompiles bool                 `json:"example_query_compiles"`
+			ExampleQueryWarning  *FixQueryErrorResult `json:"example_query_warning,omitempty"`
 		}](),
 	), ms.handleFindPath)
 
@@ -462,17 +464,55 @@ func (ms *mcpServer) handleFindPath(ctx context.Context, req mcp.CallToolRequest
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	// Generate an example query
+	// Generate an example query and validate it compiles. Per agent feedback
+	// (P2), small models treat example_query as ground truth — returning a
+	// non-compiling example causes loops. We don't auto-repair the example
+	// (that'd require GraphQL AST manipulation), but we annotate so the
+	// agent knows to disambiguate via @through(column:) etc.
 	exampleQuery := generatePathExampleQuery(fromTable, toTable, path)
+	compiles, warning := ms.validateExampleQuery(exampleQuery)
 
 	result := struct {
-		Path         []core.PathStep `json:"path"`
-		ExampleQuery string          `json:"example_query"`
+		Path                 []core.PathStep      `json:"path"`
+		ExampleQuery         string               `json:"example_query"`
+		ExampleQueryCompiles bool                 `json:"example_query_compiles"`
+		ExampleQueryWarning  *FixQueryErrorResult `json:"example_query_warning,omitempty"`
 	}{
-		Path:         path,
-		ExampleQuery: exampleQuery,
+		Path:                 path,
+		ExampleQuery:         exampleQuery,
+		ExampleQueryCompiles: compiles,
+		ExampleQueryWarning:  warning,
 	}
 	return ms.toolResultJSON("find_path", args, result)
+}
+
+// validateExampleQuery runs the generated example through ExplainQuery
+// (compile-only, no execution) and returns either (true, nil) or
+// (false, structured-warning) depending on whether it compiles. Reuses
+// the fix_query_error machinery so the warning carries the same Kind /
+// Diagnosis / RepairedQuery shape the agent already knows how to read.
+//
+// ExplainQuery returns (explanation, nil) for COMPILE errors — it stuffs
+// the message into explanation.Errors rather than the Go error return —
+// so we have to check both channels.
+func (ms *mcpServer) validateExampleQuery(exampleQuery string) (bool, *FixQueryErrorResult) {
+	if exampleQuery == "" {
+		return false, nil
+	}
+	if ms == nil || ms.service == nil || ms.service.gj == nil {
+		return false, nil
+	}
+	exp, err := ms.service.gj.ExplainQuery(exampleQuery, nil, "")
+	switch {
+	case err != nil:
+		repair := buildFixQueryErrorRepair(exampleQuery, err.Error(), ms.analyticsModeOn())
+		return false, &repair
+	case exp != nil && len(exp.Errors) > 0:
+		repair := buildFixQueryErrorRepair(exampleQuery, exp.Errors[0], ms.analyticsModeOn())
+		return false, &repair
+	default:
+		return true, nil
+	}
 }
 
 // generatePathExampleQuery generates an example GraphQL query based on the path
