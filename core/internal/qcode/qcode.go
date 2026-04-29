@@ -1041,10 +1041,17 @@ func (co *Compiler) FindPath(from, to, through string) ([]sdata.TPath, error) {
 		return path, nil
 	}
 
-	// Graph traversal failed — check cross-database FK metadata.
-	// Cross-DB target tables are not in the graph, so FindPath won't find them.
-	if tp, ok := co.s.FindCrossDBPath(from, to); ok {
-		return []sdata.TPath{tp}, nil
+	// Cross-DB fallback: only fire when the in-graph relationship is
+	// genuinely missing (ErrPathNotFound or ErrFromEdgeNotFound /
+	// ErrToEdgeNotFound — the table isn't in this database's graph).
+	// Other errors — most importantly *AmbiguousPathError — must propagate
+	// unchanged, otherwise the cross-DB short-circuit silently hides
+	// legitimate compile-time signals from the caller.
+	switch err {
+	case sdata.ErrPathNotFound, sdata.ErrFromEdgeNotFound, sdata.ErrToEdgeNotFound:
+		if tp, ok := co.s.FindCrossDBPath(from, to); ok {
+			return []sdata.TPath{tp}, nil
+		}
 	}
 
 	return nil, err

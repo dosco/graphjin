@@ -412,7 +412,18 @@ func (s *DBSchema) detectDirectAmbiguity(paths [][]int32, from edgeInfo) []FKCan
 	}
 
 	lines := s.relationshipGraph.GetEdges(direct[0], direct[1])
-	seen := make(map[string]struct{})
+
+	// Dedup forward+reverse halves of the same FK constraint without
+	// silencing genuine multi-FK ambiguity. Two edges in the same bucket
+	// are "the same FK" iff they're each other's opposites — true only
+	// for self-referential FKs (recursive comments → comments). For
+	// non-recursive multi-FK (orders → users with two distinct FKs), the
+	// edges in either bucket are NOT each other's opposites — their
+	// OppIDs reference edges in the OTHER bucket. We track edge IDs as
+	// we iterate; subsequent edges that name an already-seen OppID are
+	// the recursive-pair we want to drop.
+	bucketSeen := make(map[int32]bool)
+	colSeen := make(map[string]struct{})
 	var cands []FKCandidate
 
 	for _, v := range lines {
@@ -420,40 +431,71 @@ func (s *DBSchema) detectDirectAmbiguity(paths [][]int32, from edgeInfo) []FKCan
 		if !ok {
 			continue
 		}
-		// Skip the reverse half of a self-referential FK: in the recursive
-		// comments→comments case both forward (L=fk, R=pk) and reverse (L=pk,
-		// R=fk) live in the same bucket. The forward edge is the one whose L
-		// column declares FKeyTable.
-		if edge.L.FKeyTable == "" {
+		// Self-referential dedup: if this edge's OppID is already in the
+		// bucket, we've already counted its constraint.
+		if v.OppID != -1 && bucketSeen[v.OppID] {
 			continue
 		}
-		anchored := false
-		for _, eid := range from.edgeIDs {
-			if eid == v.ID {
-				anchored = true
-				break
+		bucketSeen[v.ID] = true
+
+		// Anchor: if the caller's edgeInfo lists specific edges, only
+		// count those. Empty edgeIDs means "no anchor filter" (e.g. when
+		// pickPath was called from FindPath against a name index that
+		// matched the bucket directly).
+		if len(from.edgeIDs) > 0 {
+			anchored := false
+			for _, eid := range from.edgeIDs {
+				if eid == v.ID || eid == v.OppID {
+					anchored = true
+					break
+				}
+			}
+			if !anchored {
+				continue
 			}
 		}
-		if !anchored {
+
+		// Resolve the FK side of the edge: for forward edges L is the
+		// FK column; for reverse edges R is the FK column. The FK column
+		// is the one whose owning DBColumn declares FKeyTable.
+		var fkCol DBColumn
+		var fkTable, refCol string
+		switch {
+		case edge.L.FKeyTable != "":
+			fkCol = edge.L
+			fkTable = edge.LT.Name
+			refCol = edge.R.Name
+		case edge.R.FKeyTable != "":
+			fkCol = edge.R
+			fkTable = edge.RT.Name
+			refCol = edge.L.Name
+		default:
+			// Neither side declares an FK — skip (ambiguous edges from
+			// non-FK relationships like polymorphic / virtual tables).
 			continue
 		}
-		key := edge.L.Name
-		if _, dup := seen[key]; dup {
+		_ = fkTable
+
+		if _, dup := colSeen[fkCol.Name]; dup {
 			continue
 		}
-		seen[key] = struct{}{}
+		colSeen[fkCol.Name] = struct{}{}
 
 		c := FKCandidate{
-			Column:       edge.L.Name,
-			TargetTable:  edge.RT.Name,
-			TargetColumn: edge.R.Name,
+			Column:       fkCol.Name,
+			TargetTable:  fkCol.FKeyTable,
+			TargetColumn: refCol,
 		}
 		if len(edge.ExtraPairs) > 0 {
 			c.IsComposite = true
 			cols := make([]string, 0, len(edge.ExtraPairs)+1)
-			cols = append(cols, edge.L.Name)
+			cols = append(cols, fkCol.Name)
 			for _, p := range edge.ExtraPairs {
-				cols = append(cols, p.L.Name)
+				if p.L.FKeyTable != "" {
+					cols = append(cols, p.L.Name)
+				} else if p.R.FKeyTable != "" {
+					cols = append(cols, p.R.Name)
+				}
 			}
 			c.CompositeColumns = cols
 		}

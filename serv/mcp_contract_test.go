@@ -438,6 +438,105 @@ func TestHandleGetWorkflowGuide_UsesRegisteredToolSurface(t *testing.T) {
 	})
 }
 
+// newSQLiteMCPServerWithSchema is a sibling of newSQLiteReadyMCPServer that
+// accepts a custom schema/seed SQL slice. Used for multi-FK tests where the
+// default users-only schema can't reproduce ambiguity.
+func newSQLiteMCPServerWithSchema(t *testing.T, ddl []string) *mcpServer {
+	t.Helper()
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "app.sqlite3")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	for _, stmt := range ddl {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("exec %q: %v", stmt, err)
+		}
+	}
+
+	mem := afero.NewMemMapFs()
+	fs := newAferoFS(mem, "/")
+
+	conf := &Config{
+		Core: core.Config{DBType: "sqlite", Production: false},
+		Serv: Serv{Production: false},
+	}
+
+	svc := &graphjinService{
+		conf:   conf,
+		dbs:    map[string]*sql.DB{core.DefaultDBName: db},
+		fs:     fs,
+		log:    zaptest.NewLogger(t).Sugar(),
+		tracer: otel.Tracer("graphjin-serv-test"),
+	}
+
+	gj, err := core.NewGraphJin(&conf.Core, db, core.OptionSetFS(fs), core.OptionSetDatabases(svc.dbs))
+	if err != nil {
+		t.Fatalf("init graphjin: %v", err)
+	}
+	t.Cleanup(func() { gj.Close() })
+	// Force synchronous schema discovery so subsequent ExplainQuery calls
+	// see the tables immediately. NewGraphJin only kicks off async polling.
+	if err := gj.Reload(); err != nil {
+		t.Fatalf("reload schema: %v", err)
+	}
+
+	svc.gj = gj
+	return &mcpServer{service: svc, ctx: context.Background()}
+}
+
+func TestValidateExampleQuery_CleanPath(t *testing.T) {
+	ms := newSQLiteMCPServerWithSchema(t, []string{
+		`CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)`,
+		`CREATE TABLE orders (id INTEGER PRIMARY KEY, customer_id INTEGER REFERENCES users(id), amount NUMERIC)`,
+	})
+
+	compiles, warning := ms.validateExampleQuery("{ orders { id users { id } } }")
+	if !compiles {
+		t.Fatalf("expected clean path to compile; got warning: %+v", warning)
+	}
+	if warning != nil {
+		t.Fatalf("expected no warning on clean compile; got: %+v", warning)
+	}
+}
+
+func TestValidateExampleQuery_AmbiguousFK(t *testing.T) {
+	ms := newSQLiteMCPServerWithSchema(t, []string{
+		`CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)`,
+		`CREATE TABLE orders (
+			id INTEGER PRIMARY KEY,
+			customer_id INTEGER REFERENCES users(id),
+			salesperson_id INTEGER REFERENCES users(id),
+			amount NUMERIC
+		)`,
+	})
+
+	// Two FKs from orders to users — nesting users without @through(column:)
+	// must produce an *AmbiguousPathError at compile time.
+	compiles, warning := ms.validateExampleQuery("{ orders { id users { id } } }")
+	if compiles {
+		t.Fatal("expected ambiguous-FK example to fail compilation")
+	}
+	if warning == nil {
+		t.Fatal("expected structured warning on failed compile")
+	}
+	if warning.Kind != fixKindMultiFKAmbiguity {
+		t.Errorf("warning kind = %q; want %q (full warning: %+v)", warning.Kind, fixKindMultiFKAmbiguity, warning)
+	}
+	if !strings.Contains(warning.Diagnosis, "foreign keys") {
+		t.Errorf("diagnosis missing 'foreign keys' marker: %q", warning.Diagnosis)
+	}
+	// Repaired query should suggest @through(column: ...) with one of the
+	// candidate columns from the actual schema (customer_id or salesperson_id).
+	if !strings.Contains(warning.RepairedQuery, "customer_id") &&
+		!strings.Contains(warning.RepairedQuery, "salesperson_id") {
+		t.Errorf("repaired query should name a candidate column; got: %s", warning.RepairedQuery)
+	}
+}
+
 func newSQLiteReadyMCPServer(t *testing.T, queries map[string]string, queryVars map[string]string, fragments ...map[string]string) *mcpServer {
 	t.Helper()
 
