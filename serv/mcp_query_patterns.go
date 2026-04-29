@@ -3,14 +3,15 @@ package serv
 // Three canonical query shapes; Wrong/Right contrast is load-bearing for small-model pattern matching.
 
 type QueryPattern struct {
-	Name         string `json:"name"`
-	Title        string `json:"title"`
-	Question     string `json:"question"`
-	Rule         string `json:"rule"`
-	Why          string `json:"why"`
-	WrongExample string `json:"wrong_example,omitempty"`
-	WrongReason  string `json:"wrong_reason,omitempty"`
-	RightExample string `json:"right_example"`
+	Name              string `json:"name"`
+	Title             string `json:"title"`
+	Question          string `json:"question"`
+	Rule              string `json:"rule"`
+	Why               string `json:"why"`
+	WrongExample      string `json:"wrong_example,omitempty"`
+	WrongReason       string `json:"wrong_reason,omitempty"`
+	RightExample      string `json:"right_example"`
+	AutoTraversalNote string `json:"auto_traversal_note,omitempty"`
 }
 
 func canonicalQueryPatterns() []QueryPattern {
@@ -26,7 +27,7 @@ func canonicalQueryPatterns() []QueryPattern {
     sum_<metric>
   }
 }`,
-			WrongReason:  "distinct on a fact-table FK dedupes rows but does not produce per-dimension aggregates. The compiler will reject this when the nested join references a column outside the distinct list.",
+			WrongReason: "distinct on a fact-table FK dedupes rows but does not produce per-dimension aggregates. The compiler will reject this when the nested join references a column outside the distinct list.",
 			RightExample: `query {
   <dimension_table> {
     <pk_column>
@@ -36,6 +37,7 @@ func canonicalQueryPatterns() []QueryPattern {
     }
   }
 }`,
+			AutoTraversalNote: "When the dimension and fact tables are not directly related, you can still nest them directly — GraphJin auto-traverses any single FK path between them. For example, `{ productcategory { salesorderdetail { sum_amt: sum(<numeric_col>) } } }` works even if the underlying chain is productcategory → productsubcategory → product → specialofferproduct → salesorderdetail. Use this collapsed form for clean per-dimension aggregates; call find_path first to confirm a single FK path exists.",
 		},
 		{
 			Name:     "time_series",
@@ -65,7 +67,7 @@ func canonicalQueryPatterns() []QueryPattern {
 }
 # Nesting <other_dimension_table> would fail because its FK is NOT in
 # distinct. Only nest joins whose FK is the same column listed in distinct.`,
-			WrongReason:  "Nesting through a non-distinct FK column is rejected (a column dropped by GROUP BY cannot be a join key). Only nest joins whose FK column is itself in distinct.",
+			WrongReason: "Nesting through a non-distinct FK column is rejected (a column dropped by GROUP BY cannot be a join key). Only nest joins whose FK column is itself in distinct.",
 			RightExample: `query {
   <fact_table>(distinct: [<entity_fk>], order_by: { <metric_alias>: desc }, limit: 10) {
     <entity_fk>

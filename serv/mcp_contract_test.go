@@ -575,6 +575,85 @@ func TestValidateExampleQuery_AmbiguousFK(t *testing.T) {
 	}
 }
 
+// TestHandleFindPath_CollapsedExample verifies that find_path emits a
+// collapsed example query (`{ <from> { <to> } }`) alongside the full
+// nested example when the path has intermediates. The collapsed shape
+// is what an analyst actually wants for per-dimension aggregations —
+// GraphJin auto-traverses the FK chain. Teaching this through the
+// contract lets every consumer (MCP, CLI) get the lesson for free.
+func TestHandleFindPath_CollapsedExample(t *testing.T) {
+	ms := newSQLiteMCPServerWithSchema(t, []string{
+		`CREATE TABLE category (catid INTEGER PRIMARY KEY, label TEXT)`,
+		`CREATE TABLE product (pid INTEGER PRIMARY KEY, catid INTEGER REFERENCES category(catid), title TEXT)`,
+		`CREATE TABLE orderitem (oiid INTEGER PRIMARY KEY, pid INTEGER REFERENCES product(pid), amt NUMERIC)`,
+	})
+
+	req := newToolRequest(map[string]any{
+		"from_table": "category",
+		"to_table":   "orderitem",
+	})
+	result, err := ms.handleFindPath(context.Background(), req)
+	if err != nil {
+		t.Fatalf("handleFindPath: %v", err)
+	}
+	out := assertToolStructuredMap(t, result)
+
+	pathRaw, _ := out["path"].([]any)
+	if len(pathRaw) < 2 {
+		t.Fatalf("expected a 2+ hop path between category and orderitem, got %d hops: %+v", len(pathRaw), out)
+	}
+
+	collapsed, _ := out["collapsed_example_query"].(string)
+	if collapsed == "" {
+		t.Fatalf("expected collapsed_example_query when path has intermediates; got: %+v", out)
+	}
+	if !strings.Contains(collapsed, "category") || !strings.Contains(collapsed, "orderitem") {
+		t.Errorf("collapsed query must nest category and orderitem directly; got: %s", collapsed)
+	}
+	if strings.Contains(collapsed, "product") {
+		t.Errorf("collapsed query must NOT name the intermediate `product`; got: %s", collapsed)
+	}
+
+	compiles, _ := out["collapsed_example_query_compiles"].(bool)
+	if !compiles {
+		t.Errorf("collapsed example must compile via auto-traversal; got warning: %v", out["collapsed_example_query_warning"])
+	}
+
+	note, _ := out["collapsed_note"].(string)
+	if note == "" {
+		t.Errorf("collapsed_note must be populated when collapsed query is emitted")
+	} else if !strings.Contains(stringToLower(note), "auto-travers") {
+		t.Errorf("collapsed_note should mention auto-traversal; got: %q", note)
+	}
+}
+
+// TestHandleFindPath_DirectRelationship verifies that find_path does NOT
+// emit a collapsed query when the path is a single hop — the full and
+// collapsed forms would be identical.
+func TestHandleFindPath_DirectRelationship(t *testing.T) {
+	ms := newSQLiteMCPServerWithSchema(t, []string{
+		`CREATE TABLE users (uid INTEGER PRIMARY KEY, label TEXT)`,
+		`CREATE TABLE orders (oid INTEGER PRIMARY KEY, uid INTEGER REFERENCES users(uid), amt NUMERIC)`,
+	})
+
+	req := newToolRequest(map[string]any{
+		"from_table": "users",
+		"to_table":   "orders",
+	})
+	result, err := ms.handleFindPath(context.Background(), req)
+	if err != nil {
+		t.Fatalf("handleFindPath: %v", err)
+	}
+	out := assertToolStructuredMap(t, result)
+
+	if collapsed, ok := out["collapsed_example_query"]; ok && collapsed != "" {
+		t.Errorf("collapsed_example_query should be omitted for single-hop paths; got: %v", collapsed)
+	}
+	if note, ok := out["collapsed_note"]; ok && note != "" {
+		t.Errorf("collapsed_note should be omitted for single-hop paths; got: %v", note)
+	}
+}
+
 func newSQLiteReadyMCPServer(t *testing.T, queries map[string]string, queryVars map[string]string, fragments ...map[string]string) *mcpServer {
 	t.Helper()
 
@@ -900,6 +979,19 @@ func TestCanonicalQueryPatterns(t *testing.T) {
 	mbd := patterns[0]
 	if mbd.WrongExample == "" || mbd.WrongReason == "" {
 		t.Errorf("metric_by_dimension must include WrongExample and WrongReason (load-bearing per P3)")
+	}
+	// AutoTraversalNote teaches the collapsed `{ <dim> { <fact> } }`
+	// shape — this is what makes per-dimension aggregations clean even
+	// when dim and fact are not directly FK-linked. Must mention both
+	// auto-traversal and find_path so agents know to verify the path.
+	if mbd.AutoTraversalNote == "" {
+		t.Errorf("metric_by_dimension must include AutoTraversalNote so agents learn the collapsed shape")
+	} else {
+		for _, marker := range []string{"auto-travers", "find_path"} {
+			if !strings.Contains(stringToLower(mbd.AutoTraversalNote), stringToLower(marker)) {
+				t.Errorf("metric_by_dimension.AutoTraversalNote should mention %q; got: %q", marker, mbd.AutoTraversalNote)
+			}
+		}
 	}
 
 	// Patterns must use placeholder column names like <pk_column>,
