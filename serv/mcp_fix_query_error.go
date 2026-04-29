@@ -17,24 +17,26 @@ type FixQueryErrorResult struct {
 }
 
 const (
-	fixKindMultiFKAmbiguity   = "multi_fk_ambiguity"
-	fixKindDistinctJoinShape  = "distinct_aggregate_nested_join_shape"
-	fixKindPartitionFilter    = "partition_filter_required"
+	fixKindMultiFKAmbiguity    = "multi_fk_ambiguity"
+	fixKindDistinctJoinShape   = "distinct_aggregate_nested_join_shape"
+	fixKindPartitionFilter     = "partition_filter_required"
 	fixKindUnknownRelationship = "unknown_relationship"
-	fixKindTableNotFound      = "table_not_found"
-	fixKindColumnNotFound     = "column_not_found"
-	fixKindOperatorInvalid    = "operator_or_syntax_invalid"
-	fixKindSyntaxParse        = "syntax_or_parse_error"
-	fixKindPermission         = "permission_denied"
-	fixKindMutationNotAllowed = "mutation_not_allowed"
-	fixKindVariable           = "variable_error"
-	fixKindGeneric            = "generic"
+	fixKindTableNotFound       = "table_not_found"
+	fixKindColumnNotFound      = "column_not_found"
+	fixKindFieldNotOnTable     = "field_not_on_table"
+	fixKindOperatorInvalid     = "operator_or_syntax_invalid"
+	fixKindSyntaxParse         = "syntax_or_parse_error"
+	fixKindPermission          = "permission_denied"
+	fixKindMutationNotAllowed  = "mutation_not_allowed"
+	fixKindVariable            = "variable_error"
+	fixKindGeneric             = "generic"
 )
 
 var (
-	reAmbiguousRel = regexp.MustCompile(`ambiguous relationship\s+(\S+)\s*->\s*(\S+):\s*multiple foreign keys\s*\(([^)]+)\)`)
-	reNestedShape  = regexp.MustCompile(`nested selection '([^']+)' joins through parent column '([^']+)\.([^']+)', which is not in distinct: \[([^\]]+)\]`)
-	rePartitionReq = regexp.MustCompile(`table\s+"([^"]+)"\s+requires a filter on (?:partition|temporal) column\s+"([^"]+)"`)
+	reAmbiguousRel    = regexp.MustCompile(`ambiguous relationship\s+(\S+)\s*->\s*(\S+):\s*multiple foreign keys\s*\(([^)]+)\)`)
+	reNestedShape     = regexp.MustCompile(`nested selection '([^']+)' joins through parent column '([^']+)\.([^']+)', which is not in distinct: \[([^\]]+)\]`)
+	rePartitionReq    = regexp.MustCompile(`table\s+"([^"]+)"\s+requires a filter on (?:partition|temporal) column\s+"([^"]+)"`)
+	reFieldNotOnTable = regexp.MustCompile(`field '([^']+)' is not a column or a function`)
 )
 
 // buildFixQueryErrorRepair classifies a failing query+error and returns structured repair guidance.
@@ -49,6 +51,8 @@ func buildFixQueryErrorRepair(query, errorMsg string, analyticsMode bool) FixQue
 		fillDistinctJoinShapeArm(&res, errorMsg)
 	case rePartitionReq.MatchString(errorMsg):
 		fillPartitionFilterArm(&res, errorMsg)
+	case reFieldNotOnTable.MatchString(errorMsg):
+		fillFieldNotOnTableArm(&res, errorMsg)
 	case strings.Contains(errLower, "relationship not found"):
 		fillUnknownRelArm(&res, errorMsg)
 	case strings.Contains(errLower, "table") && (strings.Contains(errLower, "not found") || strings.Contains(errLower, "unknown")):
@@ -153,6 +157,34 @@ query {
     id
   }
 }`, table, col, table)
+}
+
+// fillFieldNotOnTableArm covers the common case where a copy-pasted pattern
+// uses placeholder column names (id, name) that don't exist on the actual
+// table. Almost always means the agent took a canonical pattern verbatim
+// instead of substituting in the table's real PK / name columns.
+func fillFieldNotOnTableArm(res *FixQueryErrorResult, errorMsg string) {
+	res.Kind = fixKindFieldNotOnTable
+	res.FollowUpTools = []string{"describe_table", "get_table_sample", "get_query_syntax"}
+
+	m := reFieldNotOnTable.FindStringSubmatch(errorMsg)
+	field := "<field>"
+	if m != nil {
+		field = m[1]
+	}
+	res.Diagnosis = fmt.Sprintf(
+		"Field '%s' isn't a column on the queried table. Most often this means a canonical pattern (e.g. metric_by_dimension) was copied verbatim — those templates use placeholder names like <pk_column> / <name_column> that need to be substituted with this table's real columns.",
+		field)
+	res.RepairedQuery = fmt.Sprintf(
+		`# Use describe_table to find the table's actual primary key and name
+# columns, then substitute them where the pattern said '%s'.
+query {
+  <table> {
+    <actual_pk_column>
+    <actual_name_column>
+    # ... the rest of your selection
+  }
+}`, field)
 }
 
 func fillUnknownRelArm(res *FixQueryErrorResult, errorMsg string) {

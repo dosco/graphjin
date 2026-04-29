@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -488,6 +489,43 @@ func newSQLiteMCPServerWithSchema(t *testing.T, ddl []string) *mcpServer {
 	return &mcpServer{service: svc, ctx: context.Background()}
 }
 
+func TestGeneratePathExampleQuery_UsesActualPK(t *testing.T) {
+	resolver := func(table string) string {
+		switch table {
+		case "salesorderdetail":
+			return "salesorderdetailid"
+		case "salesorderheader":
+			return "salesorderid"
+		case "customer":
+			return "customerid"
+		}
+		return ""
+	}
+
+	got := generatePathExampleQuery("salesorderdetail",
+		[]core.PathStep{{To: "salesorderheader"}, {To: "customer"}}, resolver)
+
+	for _, want := range []string{"salesorderdetailid", "salesorderid", "customerid"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected real PK %q in example, got:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "<pk_column>") {
+		t.Errorf("did not expect placeholder when resolver returns real PKs:\n%s", got)
+	}
+	if regexp.MustCompile(`(?:^|[\s{(\[,])(id|name)(?:[\s})\],]|$)`).MatchString(got) {
+		t.Errorf("example must not contain literal 'id' or 'name' tokens:\n%s", got)
+	}
+}
+
+func TestGeneratePathExampleQuery_FallsBackToPlaceholder(t *testing.T) {
+	got := generatePathExampleQuery("foo",
+		[]core.PathStep{{To: "bar"}}, func(string) string { return "" })
+	if !strings.Contains(got, "<pk_column>") {
+		t.Errorf("expected <pk_column> placeholder when resolver returns empty:\n%s", got)
+	}
+}
+
 func TestValidateExampleQuery_CleanPath(t *testing.T) {
 	ms := newSQLiteMCPServerWithSchema(t, []string{
 		`CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)`,
@@ -675,6 +713,13 @@ func TestBuildFixQueryErrorRepair_Arms(t *testing.T) {
 			wantTools: []string{"describe_table"},
 		},
 		{
+			name:         "field_not_on_table",
+			errorMsg:     `field 'id' is not a column or a function`,
+			wantKind:     fixKindFieldNotOnTable,
+			wantInRepair: []string{"<actual_pk_column>", "<actual_name_column>"},
+			wantTools:    []string{"describe_table", "get_query_syntax"},
+		},
+		{
 			name:     "generic_fallback",
 			errorMsg: `something completely unexpected happened`,
 			wantKind: fixKindGeneric,
@@ -855,6 +900,25 @@ func TestCanonicalQueryPatterns(t *testing.T) {
 	mbd := patterns[0]
 	if mbd.WrongExample == "" || mbd.WrongReason == "" {
 		t.Errorf("metric_by_dimension must include WrongExample and WrongReason (load-bearing per P3)")
+	}
+
+	// Patterns must use placeholder column names like <pk_column>,
+	// <name_column>, <date_column>. Literal 'id' / 'name' tokens
+	// inside example queries would tempt small models to copy them
+	// verbatim onto tables whose PKs are named differently
+	// (e.g. productcategoryid in AdventureWorks). Allow 'id' / 'name'
+	// as substrings of placeholders — only fail when they appear as
+	// bare identifiers between whitespace/braces.
+	bareIDName := regexp.MustCompile(`(?:^|[\s{(\[,])(id|name)(?:[\s})\],]|$)`)
+	for _, p := range patterns {
+		for label, ex := range map[string]string{"RightExample": p.RightExample, "WrongExample": p.WrongExample} {
+			if ex == "" {
+				continue
+			}
+			if bareIDName.MatchString(ex) {
+				t.Errorf("pattern %q.%s contains a bare 'id' or 'name' literal — use a <pk_column> / <name_column> placeholder so small models don't copy it verbatim:\n%s", p.Name, label, ex)
+			}
+		}
 	}
 }
 
