@@ -774,6 +774,57 @@ func TestClassifyExecError_AllDialects(t *testing.T) {
 	}
 }
 
+func TestAggregationLimitations(t *testing.T) {
+	limits := aggregationLimitations()
+	if len(limits) == 0 {
+		t.Fatal("expected non-empty aggregation limitations")
+	}
+	// Each limitation must be a complete sentence pointing at a remedy
+	// or a tool — agents read these and need actionable text.
+	for i, l := range limits {
+		if !strings.HasSuffix(l, ".") {
+			t.Errorf("limitation[%d] should end with a period: %q", i, l)
+		}
+	}
+	// The most load-bearing one (matches our Stage 3 compile error)
+	// must explicitly reference the metric_by_dimension pattern, since
+	// that's the canonical fix.
+	joined := strings.Join(limits, "\n")
+	for _, want := range []string{
+		"order_by",
+		"distinct",
+		"metric_by_dimension",
+		"MongoDB",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("limitations should mention %q; got:\n%s", want, joined)
+		}
+	}
+}
+
+func TestGenerateAggregations_UsageReferencesPatterns(t *testing.T) {
+	// Minimal in-memory schema with a numeric column so the aggregation
+	// generator emits sum_/avg_ entries.
+	schema := &core.TableSchema{
+		Name: "purchases",
+		Columns: []core.ColumnInfo{
+			{Name: "id", Type: "bigint", PrimaryKey: true},
+			{Name: "amount", Type: "numeric"},
+		},
+	}
+	agg := generateAggregations(schema)
+
+	if !strings.Contains(agg.Usage, "patterns") {
+		t.Errorf("Usage should reference get_query_syntax.patterns; got: %q", agg.Usage)
+	}
+	if !strings.Contains(agg.Usage, "fix_query_error") {
+		t.Errorf("Usage should reference fix_query_error; got: %q", agg.Usage)
+	}
+	if len(agg.Limitations) == 0 {
+		t.Errorf("Limitations should be populated alongside Usage")
+	}
+}
+
 func TestCanonicalQueryPatterns(t *testing.T) {
 	patterns := canonicalQueryPatterns()
 	if len(patterns) != 3 {
