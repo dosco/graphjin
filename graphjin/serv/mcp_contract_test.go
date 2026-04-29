@@ -575,12 +575,6 @@ func TestValidateExampleQuery_AmbiguousFK(t *testing.T) {
 	}
 }
 
-// TestHandleFindPath_CollapsedExample verifies that find_path emits a
-// collapsed example query (`{ <from> { <to> } }`) alongside the full
-// nested example when the path has intermediates. The collapsed shape
-// is what an analyst actually wants for per-dimension aggregations —
-// GraphJin auto-traverses the FK chain. Teaching this through the
-// contract lets every consumer (MCP, CLI) get the lesson for free.
 func TestHandleFindPath_CollapsedExample(t *testing.T) {
 	ms := newSQLiteMCPServerWithSchema(t, []string{
 		`CREATE TABLE category (catid INTEGER PRIMARY KEY, label TEXT)`,
@@ -627,9 +621,6 @@ func TestHandleFindPath_CollapsedExample(t *testing.T) {
 	}
 }
 
-// TestHandleFindPath_DirectRelationship verifies that find_path does NOT
-// emit a collapsed query when the path is a single hop — the full and
-// collapsed forms would be identical.
 func TestHandleFindPath_DirectRelationship(t *testing.T) {
 	ms := newSQLiteMCPServerWithSchema(t, []string{
 		`CREATE TABLE users (uid INTEGER PRIMARY KEY, label TEXT)`,
@@ -748,6 +739,7 @@ func TestBuildFixQueryErrorRepair_Arms(t *testing.T) {
 	cases := []struct {
 		name         string
 		errorMsg     string
+		query        string // optional; defaults to "query { foo { bar } }"
 		wantKind     string
 		wantInRepair []string
 		wantTools    []string
@@ -799,6 +791,21 @@ func TestBuildFixQueryErrorRepair_Arms(t *testing.T) {
 			wantTools:    []string{"describe_table", "get_query_syntax"},
 		},
 		{
+			name:         "wrong_dialect_argument",
+			errorMsg:     `unknown argument 'aggregation' on field 'orders'`,
+			wantKind:     fixKindWrongDialect,
+			wantInRepair: []string{"sum(expr:", "sum_<numeric_col>", "count_<pk_column>"},
+			wantTools:    []string{"get_query_syntax", "describe_table"},
+		},
+		{
+			name:         "wrong_dialect_aggregate_suffix",
+			errorMsg:     `table not found: orders_aggregate`,
+			query:        `query { orders_aggregate { aggregate { count } } }`,
+			wantKind:     fixKindWrongDialect,
+			wantInRepair: []string{"orders", "sum(expr:", "_aggregate"},
+			wantTools:    []string{"get_query_syntax"},
+		},
+		{
 			name:     "generic_fallback",
 			errorMsg: `something completely unexpected happened`,
 			wantKind: fixKindGeneric,
@@ -807,7 +814,11 @@ func TestBuildFixQueryErrorRepair_Arms(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			res := buildFixQueryErrorRepair("query { foo { bar } }", tc.errorMsg, false)
+			query := tc.query
+			if query == "" {
+				query = "query { foo { bar } }"
+			}
+			res := buildFixQueryErrorRepair(query, tc.errorMsg, false)
 			if res.Kind != tc.wantKind {
 				t.Fatalf("kind: got %q want %q", res.Kind, tc.wantKind)
 			}
@@ -980,10 +991,6 @@ func TestCanonicalQueryPatterns(t *testing.T) {
 	if mbd.WrongExample == "" || mbd.WrongReason == "" {
 		t.Errorf("metric_by_dimension must include WrongExample and WrongReason (load-bearing per P3)")
 	}
-	// AutoTraversalNote teaches the collapsed `{ <dim> { <fact> } }`
-	// shape — this is what makes per-dimension aggregations clean even
-	// when dim and fact are not directly FK-linked. Must mention both
-	// auto-traversal and find_path so agents know to verify the path.
 	if mbd.AutoTraversalNote == "" {
 		t.Errorf("metric_by_dimension must include AutoTraversalNote so agents learn the collapsed shape")
 	} else {
