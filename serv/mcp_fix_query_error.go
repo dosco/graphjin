@@ -100,19 +100,23 @@ func fillMultiFKArm(res *FixQueryErrorResult, errorMsg string) {
 
 func fillDistinctJoinShapeArm(res *FixQueryErrorResult, errorMsg string) {
 	res.Kind = fixKindDistinctJoinShape
-	res.FollowUpTools = []string{"get_workflow_guide", "get_table_sample", "describe_table"}
+	// get_query_syntax leads — most agents call it before authoring and
+	// it now carries the same QueryPatterns content. get_workflow_guide
+	// is listed too for the workflow-using minority.
+	res.FollowUpTools = []string{"get_query_syntax", "get_workflow_guide", "get_table_sample", "describe_table"}
 
 	m := reNestedShape.FindStringSubmatch(errorMsg)
 	if m == nil {
-		res.Diagnosis = "Cannot nest a join through a column outside the distinct/group-by; root the query at the dimension table instead."
+		res.Diagnosis = "Cannot nest a join through a column outside the distinct/group-by; root the query at the dimension table instead. See get_query_syntax → patterns → metric_by_dimension."
 		return
 	}
 	child, parent, parentCol, distinctCSV := m[1], m[2], m[3], m[4]
 	res.Diagnosis = fmt.Sprintf(
-		"Nested selection '%s' joins through '%s.%s', which is not in distinct: [%s]. The GROUP BY collapses '%s' away, leaving the join undefined. Root at the dimension instead — or drop the nested join.",
+		"Nested selection '%s' joins through '%s.%s', which is not in distinct: [%s]. The GROUP BY collapses '%s' away, leaving the join undefined. Root at the dimension instead (see get_query_syntax → patterns → metric_by_dimension) — or drop the nested join.",
 		child, parent, parentCol, distinctCSV, parentCol)
 	res.RepairedQuery = fmt.Sprintf(
 		`# Option A (preferred): root at the dimension table, nest the fact at the leaf.
+# This is the "metric_by_dimension" pattern — see get_query_syntax.patterns.
 query {
   <dimension_table> {
     id

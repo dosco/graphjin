@@ -9,6 +9,7 @@ import (
 // QuerySyntaxReference contains the complete GraphJin query DSL reference
 type QuerySyntaxReference struct {
 	AnalyticsModeRules []string               `json:"analytics_mode_rules,omitempty"`
+	Patterns           []QueryPattern         `json:"patterns,omitempty"`
 	FilterOperators    FilterOperators        `json:"filter_operators"`
 	LogicalOperators   []string               `json:"logical_operators"`
 	Pagination         PaginationSyntax       `json:"pagination"`
@@ -435,6 +436,10 @@ func (ms *mcpServer) handleGetQuerySyntax(ctx context.Context, req mcp.CallToolR
 	if ms.analyticsModeOn() {
 		ref.AnalyticsModeRules = analyticsModeRules()
 	}
+	// Three universal query shapes (metric-by-dimension, time-series,
+	// top-N). Surfaced unconditionally — patterns are general DSL-shape
+	// guidance, not analytics-mode-specific.
+	ref.Patterns = canonicalQueryPatterns()
 	return ms.toolResultJSON("get_query_syntax", req.GetArguments(), ref)
 }
 

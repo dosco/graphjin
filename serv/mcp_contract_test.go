@@ -547,8 +547,8 @@ func TestBuildFixQueryErrorRepair_Arms(t *testing.T) {
 			name:         "distinct_join_shape",
 			errorMsg:     `nested selection 'salesorderheader' joins through parent column 'salesorderdetail.salesorderid', which is not in distinct: [productid]. The GROUP BY collapses 'salesorderid' away.`,
 			wantKind:     fixKindDistinctJoinShape,
-			wantInRepair: []string{"<dimension_table>", "salesorderdetail", "salesorderheader", "productid"},
-			wantTools:    []string{"get_workflow_guide"},
+			wantInRepair: []string{"<dimension_table>", "salesorderdetail", "salesorderheader", "productid", "metric_by_dimension"},
+			wantTools:    []string{"get_query_syntax", "get_workflow_guide"},
 		},
 		{
 			name:         "partition_filter_required",
@@ -672,6 +672,39 @@ func TestClassifyExecError_AllDialects(t *testing.T) {
 				t.Errorf("column: got %q want %q", got.Column, tc.wantCol)
 			}
 		})
+	}
+}
+
+func TestCanonicalQueryPatterns(t *testing.T) {
+	patterns := canonicalQueryPatterns()
+	if len(patterns) != 3 {
+		t.Fatalf("expected 3 canonical patterns, got %d", len(patterns))
+	}
+
+	// Stable order: metric_by_dimension first (most common authoring
+	// mistake; should lead).
+	wantOrder := []string{"metric_by_dimension", "time_series", "top_n"}
+	names := make([]string, len(patterns))
+	for i, p := range patterns {
+		names[i] = p.Name
+	}
+	for i, want := range wantOrder {
+		if names[i] != want {
+			t.Errorf("patterns[%d].Name = %q; want %q (full order: %v)", i, names[i], want, names)
+		}
+	}
+
+	for _, p := range patterns {
+		if p.Title == "" || p.Rule == "" || p.Why == "" || p.RightExample == "" {
+			t.Errorf("pattern %q missing required field: %+v", p.Name, p)
+		}
+	}
+
+	// metric_by_dimension MUST carry the wrong/right contrast — the
+	// agent feedback (P3) flagged this as load-bearing for small models.
+	mbd := patterns[0]
+	if mbd.WrongExample == "" || mbd.WrongReason == "" {
+		t.Errorf("metric_by_dimension must include WrongExample and WrongReason (load-bearing per P3)")
 	}
 }
 
