@@ -24,6 +24,7 @@ const (
 	fixKindTableNotFound       = "table_not_found"
 	fixKindColumnNotFound      = "column_not_found"
 	fixKindFieldNotOnTable     = "field_not_on_table"
+	fixKindWrongDialect        = "wrong_dialect"
 	fixKindOperatorInvalid     = "operator_or_syntax_invalid"
 	fixKindSyntaxParse         = "syntax_or_parse_error"
 	fixKindPermission          = "permission_denied"
@@ -33,10 +34,12 @@ const (
 )
 
 var (
-	reAmbiguousRel    = regexp.MustCompile(`ambiguous relationship\s+(\S+)\s*->\s*(\S+):\s*multiple foreign keys\s*\(([^)]+)\)`)
-	reNestedShape     = regexp.MustCompile(`nested selection '([^']+)' joins through parent column '([^']+)\.([^']+)', which is not in distinct: \[([^\]]+)\]`)
-	rePartitionReq    = regexp.MustCompile(`table\s+"([^"]+)"\s+requires a filter on (?:partition|temporal) column\s+"([^"]+)"`)
-	reFieldNotOnTable = regexp.MustCompile(`field '([^']+)' is not a column or a function`)
+	reAmbiguousRel      = regexp.MustCompile(`ambiguous relationship\s+(\S+)\s*->\s*(\S+):\s*multiple foreign keys\s*\(([^)]+)\)`)
+	reNestedShape       = regexp.MustCompile(`nested selection '([^']+)' joins through parent column '([^']+)\.([^']+)', which is not in distinct: \[([^\]]+)\]`)
+	rePartitionReq      = regexp.MustCompile(`table\s+"([^"]+)"\s+requires a filter on (?:partition|temporal) column\s+"([^"]+)"`)
+	reFieldNotOnTable   = regexp.MustCompile(`field '([^']+)' is not a column or a function`)
+	reWrongDialectArg   = regexp.MustCompile(`unknown argument\s+['"` + "`" + `]?(aggregation|aggregate)['"` + "`" + `]?`)
+	reWrongDialectField = regexp.MustCompile(`(?i)([a-z0-9_]+)_aggregate\b`)
 )
 
 // buildFixQueryErrorRepair classifies a failing query+error and returns structured repair guidance.
@@ -53,6 +56,8 @@ func buildFixQueryErrorRepair(query, errorMsg string, analyticsMode bool) FixQue
 		fillPartitionFilterArm(&res, errorMsg)
 	case reFieldNotOnTable.MatchString(errorMsg):
 		fillFieldNotOnTableArm(&res, errorMsg)
+	case isWrongDialectError(errorMsg, query):
+		fillWrongDialectArm(&res, errorMsg, query)
 	case strings.Contains(errLower, "relationship not found"):
 		fillUnknownRelArm(&res, errorMsg)
 	case strings.Contains(errLower, "table") && (strings.Contains(errLower, "not found") || strings.Contains(errLower, "unknown")):
@@ -185,6 +190,48 @@ query {
     # ... the rest of your selection
   }
 }`, field)
+}
+
+// isWrongDialectError flags Hasura-style aggregate leakage: either the `aggregation:` argument or a `<table>_aggregate` field suffix in the source query.
+func isWrongDialectError(errorMsg, query string) bool {
+	if reWrongDialectArg.MatchString(errorMsg) {
+		return true
+	}
+	errLower := strings.ToLower(errorMsg)
+	if !(strings.Contains(errLower, "table") && (strings.Contains(errLower, "not found") || strings.Contains(errLower, "unknown") || strings.Contains(errLower, "does not exist"))) {
+		return false
+	}
+	return reWrongDialectField.MatchString(query)
+}
+
+func fillWrongDialectArm(res *FixQueryErrorResult, errorMsg, query string) {
+	res.Kind = fixKindWrongDialect
+	res.FollowUpTools = []string{"get_query_syntax", "describe_table", "get_table_sample"}
+
+	tableHint := "<table>"
+	if m := reWrongDialectField.FindStringSubmatch(query); m != nil {
+		tableHint = m[1]
+	}
+
+	if reWrongDialectArg.MatchString(errorMsg) {
+		res.Diagnosis = "Query used the Hasura/PostgREST `aggregation`/`aggregate` argument. GraphJin has no such argument — aggregates are leaf-level fields: `sum_<col>`, `avg_<col>`, `count_<col>`, or `<alias>: sum(expr: { mul: [<col_a>, <col_b>] })` for arithmetic. Call get_query_syntax for the full grammar."
+	} else {
+		res.Diagnosis = fmt.Sprintf(
+			"Query referenced `%s_aggregate` — the Hasura aggregate-table shape. GraphJin has no `_aggregate` suffix; aggregates live as leaf fields on the original table: `sum_<col>`, `count_<col>`, or `<alias>: sum(expr: { ... })` for arithmetic. Call get_query_syntax for the full grammar.",
+			tableHint)
+	}
+
+	res.RepairedQuery = fmt.Sprintf(
+		`# Aggregates are leaf fields on %s — no _aggregate selection, no aggregation: argument.
+query {
+  %s {
+    count_<pk_column>
+    sum_<numeric_col>
+    avg_<numeric_col>
+    revenue: sum(expr: { mul: [<col_a>, <col_b>] })
+  }
+}`,
+		tableHint, tableHint)
 }
 
 func fillUnknownRelArm(res *FixQueryErrorResult, errorMsg string) {

@@ -125,6 +125,7 @@ func (ms *mcpServer) buildJSRuntimeAPI() JSRuntimeAPI {
 		},
 		Notes: []string{
 			"IMPORTANT: All gj.tools.* functions return DECODED native JavaScript objects — ready to use directly.",
+			"Direct MCP callers (NOT inside gj.tools.*): tool results are MCP-wrapped — prefer `result.structuredContent` when present (populated for tools with output schemas); otherwise `JSON.parse(result.content[0].text)`. gj.tools.* unwraps this for you.",
 			"Example: var result = gj.tools.executeGraphql({query: 'query GetOrders { orders { id total } }'}); var orders = result.data.orders;",
 			"Example: var tables = gj.tools.listTables().tables;",
 			"Example: var schema = gj.tools.describeTable({table: 'orders'});",
