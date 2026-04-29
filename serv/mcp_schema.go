@@ -493,11 +493,7 @@ func (ms *mcpServer) handleFindPath(ctx context.Context, req mcp.CallToolRequest
 	exampleQuery := generatePathExampleQuery(fromTable, path, ms.resolvePKColumn)
 	compiles, warning := ms.validateExampleQuery(exampleQuery)
 
-	// When the path has intermediates, also emit a collapsed form that
-	// nests `from` directly into the final `to`. GraphJin auto-traverses
-	// any single FK path between two tables, so this shape compiles and
-	// is what an analyst actually wants for per-dimension aggregations.
-	// Validating both proves the auto-traversal works on this schema.
+	// When the path has intermediates, emit a collapsed `{ <from> { <to> } }` shape that GraphJin auto-traverses.
 	var (
 		collapsedQuery    string
 		collapsedCompiles bool
