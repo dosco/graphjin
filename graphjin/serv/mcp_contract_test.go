@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -438,6 +439,142 @@ func TestHandleGetWorkflowGuide_UsesRegisteredToolSurface(t *testing.T) {
 	})
 }
 
+// newSQLiteMCPServerWithSchema is a sibling of newSQLiteReadyMCPServer that
+// accepts a custom schema/seed SQL slice. Used for multi-FK tests where the
+// default users-only schema can't reproduce ambiguity.
+func newSQLiteMCPServerWithSchema(t *testing.T, ddl []string) *mcpServer {
+	t.Helper()
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "app.sqlite3")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	for _, stmt := range ddl {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("exec %q: %v", stmt, err)
+		}
+	}
+
+	mem := afero.NewMemMapFs()
+	fs := newAferoFS(mem, "/")
+
+	conf := &Config{
+		Core: core.Config{DBType: "sqlite", Production: false},
+		Serv: Serv{Production: false},
+	}
+
+	svc := &graphjinService{
+		conf:   conf,
+		dbs:    map[string]*sql.DB{core.DefaultDBName: db},
+		fs:     fs,
+		log:    zaptest.NewLogger(t).Sugar(),
+		tracer: otel.Tracer("graphjin-serv-test"),
+	}
+
+	gj, err := core.NewGraphJin(&conf.Core, db, core.OptionSetFS(fs), core.OptionSetDatabases(svc.dbs))
+	if err != nil {
+		t.Fatalf("init graphjin: %v", err)
+	}
+	t.Cleanup(func() { gj.Close() })
+	// Force synchronous schema discovery so subsequent ExplainQuery calls
+	// see the tables immediately. NewGraphJin only kicks off async polling.
+	if err := gj.Reload(); err != nil {
+		t.Fatalf("reload schema: %v", err)
+	}
+
+	svc.gj = gj
+	return &mcpServer{service: svc, ctx: context.Background()}
+}
+
+func TestGeneratePathExampleQuery_UsesActualPK(t *testing.T) {
+	resolver := func(table string) string {
+		switch table {
+		case "salesorderdetail":
+			return "salesorderdetailid"
+		case "salesorderheader":
+			return "salesorderid"
+		case "customer":
+			return "customerid"
+		}
+		return ""
+	}
+
+	got := generatePathExampleQuery("salesorderdetail",
+		[]core.PathStep{{To: "salesorderheader"}, {To: "customer"}}, resolver)
+
+	for _, want := range []string{"salesorderdetailid", "salesorderid", "customerid"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected real PK %q in example, got:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "<pk_column>") {
+		t.Errorf("did not expect placeholder when resolver returns real PKs:\n%s", got)
+	}
+	if regexp.MustCompile(`(?:^|[\s{(\[,])(id|name)(?:[\s})\],]|$)`).MatchString(got) {
+		t.Errorf("example must not contain literal 'id' or 'name' tokens:\n%s", got)
+	}
+}
+
+func TestGeneratePathExampleQuery_FallsBackToPlaceholder(t *testing.T) {
+	got := generatePathExampleQuery("foo",
+		[]core.PathStep{{To: "bar"}}, func(string) string { return "" })
+	if !strings.Contains(got, "<pk_column>") {
+		t.Errorf("expected <pk_column> placeholder when resolver returns empty:\n%s", got)
+	}
+}
+
+func TestValidateExampleQuery_CleanPath(t *testing.T) {
+	ms := newSQLiteMCPServerWithSchema(t, []string{
+		`CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)`,
+		`CREATE TABLE orders (id INTEGER PRIMARY KEY, customer_id INTEGER REFERENCES users(id), amount NUMERIC)`,
+	})
+
+	compiles, warning := ms.validateExampleQuery("{ orders { id users { id } } }")
+	if !compiles {
+		t.Fatalf("expected clean path to compile; got warning: %+v", warning)
+	}
+	if warning != nil {
+		t.Fatalf("expected no warning on clean compile; got: %+v", warning)
+	}
+}
+
+func TestValidateExampleQuery_AmbiguousFK(t *testing.T) {
+	ms := newSQLiteMCPServerWithSchema(t, []string{
+		`CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)`,
+		`CREATE TABLE orders (
+			id INTEGER PRIMARY KEY,
+			customer_id INTEGER REFERENCES users(id),
+			salesperson_id INTEGER REFERENCES users(id),
+			amount NUMERIC
+		)`,
+	})
+
+	// Two FKs from orders to users — nesting users without @through(column:)
+	// must produce an *AmbiguousPathError at compile time.
+	compiles, warning := ms.validateExampleQuery("{ orders { id users { id } } }")
+	if compiles {
+		t.Fatal("expected ambiguous-FK example to fail compilation")
+	}
+	if warning == nil {
+		t.Fatal("expected structured warning on failed compile")
+	}
+	if warning.Kind != fixKindMultiFKAmbiguity {
+		t.Errorf("warning kind = %q; want %q (full warning: %+v)", warning.Kind, fixKindMultiFKAmbiguity, warning)
+	}
+	if !strings.Contains(warning.Diagnosis, "foreign keys") {
+		t.Errorf("diagnosis missing 'foreign keys' marker: %q", warning.Diagnosis)
+	}
+	// Repaired query should suggest @through(column: ...) with one of the
+	// candidate columns from the actual schema (customer_id or salesperson_id).
+	if !strings.Contains(warning.RepairedQuery, "customer_id") &&
+		!strings.Contains(warning.RepairedQuery, "salesperson_id") {
+		t.Errorf("repaired query should name a candidate column; got: %s", warning.RepairedQuery)
+	}
+}
+
 func newSQLiteReadyMCPServer(t *testing.T, queries map[string]string, queryVars map[string]string, fragments ...map[string]string) *mcpServer {
 	t.Helper()
 
@@ -526,4 +663,328 @@ func mapValues(m map[string]string) []string {
 		values = append(values, value)
 	}
 	return values
+}
+
+func TestBuildFixQueryErrorRepair_Arms(t *testing.T) {
+	cases := []struct {
+		name         string
+		errorMsg     string
+		wantKind     string
+		wantInRepair []string
+		wantTools    []string
+	}{
+		{
+			name:         "multi_fk_ambiguity",
+			errorMsg:     `ambiguous relationship orders -> users: multiple foreign keys (customer_id, salesperson_id). Disambiguate by adding @through(column: "customer_id") or @through(column: "salesperson_id") on the nested selection`,
+			wantKind:     fixKindMultiFKAmbiguity,
+			wantInRepair: []string{`@through(column: "customer_id")`, "candidates: customer_id, salesperson_id"},
+			wantTools:    []string{"describe_table", "get_table_sample"},
+		},
+		{
+			name:         "distinct_join_shape",
+			errorMsg:     `nested selection 'salesorderheader' joins through parent column 'salesorderdetail.salesorderid', which is not in distinct: [productid]. The GROUP BY collapses 'salesorderid' away.`,
+			wantKind:     fixKindDistinctJoinShape,
+			wantInRepair: []string{"<dimension_table>", "salesorderdetail", "salesorderheader", "productid", "metric_by_dimension"},
+			wantTools:    []string{"get_query_syntax", "get_workflow_guide"},
+		},
+		{
+			name:         "partition_filter_required",
+			errorMsg:     `table "salesorderdetail" requires a filter on temporal column "modifieddate" (e.g., { modifieddate: { gt: "2026-01-01" } }); pass unrestricted: true to override`,
+			wantKind:     fixKindPartitionFilter,
+			wantInRepair: []string{"salesorderdetail", "modifieddate", "unrestricted: true"},
+			wantTools:    []string{"get_table_sample"},
+		},
+		{
+			name:      "unknown_relationship",
+			errorMsg:  `relationship not found: foo -> bar`,
+			wantKind:  fixKindUnknownRelationship,
+			wantTools: []string{"find_path"},
+		},
+		{
+			name:      "table_not_found",
+			errorMsg:  `table not found: usrs`,
+			wantKind:  fixKindTableNotFound,
+			wantTools: []string{"list_tables"},
+		},
+		{
+			name:      "column_not_found_postgres",
+			errorMsg:  `pq: column purchases_0.customer_id does not exist`,
+			wantKind:  fixKindColumnNotFound,
+			wantTools: []string{"describe_table"},
+		},
+		{
+			name:         "field_not_on_table",
+			errorMsg:     `field 'id' is not a column or a function`,
+			wantKind:     fixKindFieldNotOnTable,
+			wantInRepair: []string{"<actual_pk_column>", "<actual_name_column>"},
+			wantTools:    []string{"describe_table", "get_query_syntax"},
+		},
+		{
+			name:     "generic_fallback",
+			errorMsg: `something completely unexpected happened`,
+			wantKind: fixKindGeneric,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := buildFixQueryErrorRepair("query { foo { bar } }", tc.errorMsg, false)
+			if res.Kind != tc.wantKind {
+				t.Fatalf("kind: got %q want %q", res.Kind, tc.wantKind)
+			}
+			for _, s := range tc.wantInRepair {
+				if !strings.Contains(res.RepairedQuery, s) {
+					t.Errorf("RepairedQuery missing %q. Got:\n%s", s, res.RepairedQuery)
+				}
+			}
+			for _, s := range tc.wantTools {
+				found := false
+				for _, tool := range res.FollowUpTools {
+					if strings.Contains(tool, s) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("FollowUpTools missing %q. Got: %v", s, res.FollowUpTools)
+				}
+			}
+			if !strings.Contains(res.GuideMarkdown, "Query Error Analysis") {
+				t.Errorf("GuideMarkdown missing header")
+			}
+			if !strings.Contains(res.GuideMarkdown, res.Diagnosis) {
+				t.Errorf("GuideMarkdown missing diagnosis text")
+			}
+		})
+	}
+}
+
+func TestClassifyExecError_AllDialects(t *testing.T) {
+	cases := []struct {
+		name     string
+		dbType   string
+		errMsg   string
+		wantKind string
+		wantTbl  string
+		wantCol  string
+	}{
+		// postgres
+		{"pg_column", "postgres", `pq: column salesorderdetail_0.salesorderid does not exist`, ExecKindColumnNotFound, "salesorderdetail", "salesorderid"},
+		{"pg_table", "postgres", `pq: relation "users" does not exist`, ExecKindTableNotFound, "users", ""},
+		{"pg_type", "postgres", `pq: invalid input syntax for type integer: "abc"`, ExecKindTypeMismatch, "", "integer"},
+		{"pg_perm", "postgres", `pq: permission denied for relation "secrets"`, ExecKindPermission, "", "secrets"},
+		// mysql
+		{"my_column", "mysql", `Error 1054: Unknown column 'foo' in 'field list'`, ExecKindColumnNotFound, "", "foo"},
+		{"my_table", "mysql", `Error 1146: Table 'shop.orders' doesn't exist`, ExecKindTableNotFound, "orders", ""},
+		{"my_type", "mysql", `Error 1366: Incorrect integer value: 'abc' for column 'age' at row 1`, ExecKindTypeMismatch, "", "abc"},
+		// mariadb (same patterns as mysql)
+		{"maria_col", "mariadb", `Error 1054: Unknown column 'bar' in 'where clause'`, ExecKindColumnNotFound, "", "bar"},
+		// sqlite
+		{"sl_column", "sqlite", `no such column: orders.total`, ExecKindColumnNotFound, "orders", "total"},
+		{"sl_table", "sqlite", `no such table: orders`, ExecKindTableNotFound, "orders", ""},
+		{"sl_type", "sqlite", `datatype mismatch`, ExecKindTypeMismatch, "", ""},
+		// oracle
+		{"or_column", "oracle", `ORA-00904: "FOO": invalid identifier`, ExecKindColumnNotFound, "", "FOO"},
+		{"or_table", "oracle", `ORA-00942: table or view does not exist`, ExecKindTableNotFound, "", ""},
+		{"or_type", "oracle", `ORA-01722: invalid number`, ExecKindTypeMismatch, "", ""},
+		// mssql
+		{"ms_column", "mssql", `mssql: Invalid column name 'salesorderid'.`, ExecKindColumnNotFound, "", "salesorderid"},
+		{"ms_table", "mssql", `mssql: Invalid object name 'orders'.`, ExecKindTableNotFound, "orders", ""},
+		// snowflake
+		{"sf_column", "snowflake", `000904 (42000): SQL compilation error: error line 1 at position 7\ninvalid identifier 'NOT_A_COL'`, ExecKindColumnNotFound, "", "NOT_A_COL"},
+		{"sf_table", "snowflake", `Object 'PUBLIC.NOPE' does not exist or not authorized.`, ExecKindTableNotFound, "PUBLIC.NOPE", ""},
+		// mongodb
+		{"mg_field", "mongodb", `field path 'foo.bar' is invalid`, ExecKindColumnNotFound, "foo", "bar"},
+		{"mg_ns", "mongodb", `ns not found`, ExecKindTableNotFound, "", ""},
+		// unknown / aliases
+		{"empty_dbtype_pg_alias", "", `pq: column "x" does not exist`, ExecKindColumnNotFound, "", "x"},
+		{"sqlserver_alias", "sqlserver", `mssql: Invalid column name 'y'.`, ExecKindColumnNotFound, "", "y"},
+		{"unknown_dialect", "duckdb", `something went wrong`, ExecKindUnknown, "", ""},
+		{"empty_msg", "postgres", ``, ExecKindUnknown, "", ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := classifyExecError(tc.dbType, tc.errMsg)
+			if got.Kind != tc.wantKind {
+				t.Fatalf("kind: got %q want %q (msg=%q)", got.Kind, tc.wantKind, tc.errMsg)
+			}
+			if !strings.EqualFold(got.Table, tc.wantTbl) {
+				t.Errorf("table: got %q want %q", got.Table, tc.wantTbl)
+			}
+			if !strings.EqualFold(got.Column, tc.wantCol) {
+				t.Errorf("column: got %q want %q", got.Column, tc.wantCol)
+			}
+		})
+	}
+}
+
+func TestAggregationLimitations(t *testing.T) {
+	limits := aggregationLimitations()
+	if len(limits) == 0 {
+		t.Fatal("expected non-empty aggregation limitations")
+	}
+	// Each limitation must be a complete sentence pointing at a remedy
+	// or a tool — agents read these and need actionable text.
+	for i, l := range limits {
+		if !strings.HasSuffix(l, ".") {
+			t.Errorf("limitation[%d] should end with a period: %q", i, l)
+		}
+	}
+	// The most load-bearing one (matches our Stage 3 compile error)
+	// must explicitly reference the metric_by_dimension pattern, since
+	// that's the canonical fix.
+	joined := strings.Join(limits, "\n")
+	for _, want := range []string{
+		"order_by",
+		"distinct",
+		"metric_by_dimension",
+		"MongoDB",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("limitations should mention %q; got:\n%s", want, joined)
+		}
+	}
+}
+
+func TestGenerateAggregations_UsageReferencesPatterns(t *testing.T) {
+	// Minimal in-memory schema with a numeric column so the aggregation
+	// generator emits sum_/avg_ entries.
+	schema := &core.TableSchema{
+		Name: "purchases",
+		Columns: []core.ColumnInfo{
+			{Name: "id", Type: "bigint", PrimaryKey: true},
+			{Name: "amount", Type: "numeric"},
+		},
+	}
+	agg := generateAggregations(schema)
+
+	if !strings.Contains(agg.Usage, "patterns") {
+		t.Errorf("Usage should reference get_query_syntax.patterns; got: %q", agg.Usage)
+	}
+	if !strings.Contains(agg.Usage, "fix_query_error") {
+		t.Errorf("Usage should reference fix_query_error; got: %q", agg.Usage)
+	}
+	if len(agg.Limitations) == 0 {
+		t.Errorf("Limitations should be populated alongside Usage")
+	}
+}
+
+func TestCanonicalQueryPatterns(t *testing.T) {
+	patterns := canonicalQueryPatterns()
+	if len(patterns) != 3 {
+		t.Fatalf("expected 3 canonical patterns, got %d", len(patterns))
+	}
+
+	// Stable order: metric_by_dimension first (most common authoring
+	// mistake; should lead).
+	wantOrder := []string{"metric_by_dimension", "time_series", "top_n"}
+	names := make([]string, len(patterns))
+	for i, p := range patterns {
+		names[i] = p.Name
+	}
+	for i, want := range wantOrder {
+		if names[i] != want {
+			t.Errorf("patterns[%d].Name = %q; want %q (full order: %v)", i, names[i], want, names)
+		}
+	}
+
+	for _, p := range patterns {
+		if p.Title == "" || p.Rule == "" || p.Why == "" || p.RightExample == "" {
+			t.Errorf("pattern %q missing required field: %+v", p.Name, p)
+		}
+	}
+
+	// metric_by_dimension MUST carry the wrong/right contrast — the
+	// agent feedback (P3) flagged this as load-bearing for small models.
+	mbd := patterns[0]
+	if mbd.WrongExample == "" || mbd.WrongReason == "" {
+		t.Errorf("metric_by_dimension must include WrongExample and WrongReason (load-bearing per P3)")
+	}
+
+	// Patterns must use placeholder column names like <pk_column>,
+	// <name_column>, <date_column>. Literal 'id' / 'name' tokens
+	// inside example queries would tempt small models to copy them
+	// verbatim onto tables whose PKs are named differently
+	// (e.g. productcategoryid in AdventureWorks). Allow 'id' / 'name'
+	// as substrings of placeholders — only fail when they appear as
+	// bare identifiers between whitespace/braces.
+	bareIDName := regexp.MustCompile(`(?:^|[\s{(\[,])(id|name)(?:[\s})\],]|$)`)
+	for _, p := range patterns {
+		for label, ex := range map[string]string{"RightExample": p.RightExample, "WrongExample": p.WrongExample} {
+			if ex == "" {
+				continue
+			}
+			if bareIDName.MatchString(ex) {
+				t.Errorf("pattern %q.%s contains a bare 'id' or 'name' literal — use a <pk_column> / <name_column> placeholder so small models don't copy it verbatim:\n%s", p.Name, label, ex)
+			}
+		}
+	}
+}
+
+func TestStripAliasSuffix(t *testing.T) {
+	cases := map[string]string{
+		"":                       "",
+		"orders":                 "orders",
+		"orders_0":               "orders",
+		"salesorderdetail_42":    "salesorderdetail",
+		"order_items":            "order_items", // _items isn't numeric — preserved
+		"orders_":                "orders_",     // trailing underscore — preserved
+		"my_table_5_extra":       "my_table_5_extra", // not a trailing numeric suffix
+		"my_table_5":             "my_table",
+	}
+	for in, want := range cases {
+		if got := stripAliasSuffix(in); got != want {
+			t.Errorf("stripAliasSuffix(%q) = %q; want %q", in, got, want)
+		}
+	}
+}
+
+func TestBuildFixQueryErrorRepair_AnalyticsModeBlock(t *testing.T) {
+	res := buildFixQueryErrorRepair("query { x }", "table not found: x", true)
+	if !strings.Contains(res.GuideMarkdown, "Analytics Mode Rules") {
+		t.Fatalf("expected analytics-mode block when on; got:\n%s", res.GuideMarkdown)
+	}
+	res = buildFixQueryErrorRepair("query { x }", "table not found: x", false)
+	if strings.Contains(res.GuideMarkdown, "Analytics Mode Rules") {
+		t.Fatal("did not expect analytics-mode block when off")
+	}
+}
+
+func TestDetectFKDisambiguation(t *testing.T) {
+	out := detectFKDisambiguation([]RelationshipRef{
+		{Table: "users", Column: "user_id"},
+		{Table: "products", Column: "product_id"},
+	})
+	if len(out) != 0 {
+		t.Fatalf("expected empty disambiguation, got %+v", out)
+	}
+
+	out = detectFKDisambiguation([]RelationshipRef{
+		{Table: "users", Column: "customer_id"},
+		{Table: "users", Column: "salesperson_id"},
+		{Table: "products", Column: "product_id"},
+	})
+	if len(out) != 1 {
+		t.Fatalf("expected 1 disambiguation entry, got %d", len(out))
+	}
+	entry := out[0]
+	if entry.Target != "users" {
+		t.Fatalf("expected target=users, got %s", entry.Target)
+	}
+	if !entry.Ambiguous {
+		t.Fatal("expected Ambiguous=true")
+	}
+	if len(entry.Candidates) != 2 {
+		t.Fatalf("expected 2 candidates, got %d", len(entry.Candidates))
+	}
+	cols := entry.Candidates[0].Column + "," + entry.Candidates[1].Column
+	if !strings.Contains(cols, "customer_id") || !strings.Contains(cols, "salesperson_id") {
+		t.Fatalf("expected customer_id + salesperson_id, got %s", cols)
+	}
+	for _, c := range entry.Candidates {
+		if !strings.Contains(c.Snippet, "@through(column:") {
+			t.Fatalf("snippet missing @through(column:): %s", c.Snippet)
+		}
+	}
 }

@@ -718,7 +718,10 @@ func (ms *mcpServer) handleWriteMutation(ctx context.Context, req mcp.GetPromptR
 	), nil
 }
 
-// handleFixQueryError analyzes query errors and provides fix suggestions
+// handleFixQueryError analyzes query errors and provides structured fix
+// suggestions. The repair logic lives in buildFixQueryErrorRepair so the
+// tool variant can return both the markdown guide AND the structured
+// fields (kind, diagnosis, repaired_query, follow_up_tools).
 func (ms *mcpServer) handleFixQueryError(ctx context.Context, req mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 	query := req.Params.Arguments["query"]
 	errorMsg := req.Params.Arguments["error"]
@@ -730,94 +733,13 @@ func (ms *mcpServer) handleFixQueryError(ctx context.Context, req mcp.GetPromptR
 		return nil, fmt.Errorf("error argument is required")
 	}
 
-	var sb strings.Builder
-
-	sb.WriteString("# Query Error Analysis\n\n")
-	sb.WriteString("## Error Message\n")
-	sb.WriteString("```\n")
-	sb.WriteString(errorMsg)
-	sb.WriteString("\n```\n\n")
-
-	sb.WriteString("## Original Query\n")
-	sb.WriteString("```graphql\n")
-	sb.WriteString(query)
-	sb.WriteString("\n```\n\n")
-
-	// Analyze the error and provide suggestions
-	sb.WriteString("## Diagnosis & Suggestions\n\n")
-
-	errorLower := strings.ToLower(errorMsg)
-
-	switch {
-	case strings.Contains(errorLower, "table") && (strings.Contains(errorLower, "not found") || strings.Contains(errorLower, "unknown")):
-		sb.WriteString("**Problem**: Table name not found in schema\n\n")
-		sb.WriteString("**Solutions**:\n")
-		sb.WriteString("1. Check spelling of the table name\n")
-		sb.WriteString("2. Use `list_tables` tool to see available tables\n")
-		sb.WriteString("3. Table names are case-sensitive in some databases\n")
-
-	case strings.Contains(errorLower, "column") && (strings.Contains(errorLower, "not found") || strings.Contains(errorLower, "unknown")):
-		sb.WriteString("**Problem**: Column name not found in table\n\n")
-		sb.WriteString("**Solutions**:\n")
-		sb.WriteString("1. Check spelling of the column name\n")
-		sb.WriteString("2. Use `describe_table` tool to see available columns\n")
-		sb.WriteString("3. For JSON fields, use underscore notation: `metadata_key` for `metadata->key`\n")
-
-	case strings.Contains(errorLower, "operator") || strings.Contains(errorLower, "invalid"):
-		sb.WriteString("**Problem**: Invalid operator or syntax\n\n")
-		sb.WriteString("**Solutions**:\n")
-		sb.WriteString("1. Check operator spelling (eq, neq, gt, gte, lt, lte, in, nin, like, ilike)\n")
-		sb.WriteString("2. Numeric operators (gt, lt, etc.) need numeric values, not strings\n")
-		sb.WriteString("3. `in`/`nin` operators need arrays: `{ in: [1, 2] }` not `{ in: 1 }`\n")
-		sb.WriteString("4. Use `get_query_syntax` tool for complete operator reference\n")
-
-	case strings.Contains(errorLower, "syntax") || strings.Contains(errorLower, "parse"):
-		sb.WriteString("**Problem**: Query syntax error\n\n")
-		sb.WriteString("**Solutions**:\n")
-		sb.WriteString("1. Check for missing braces `{ }` or parentheses `( )`\n")
-		sb.WriteString("2. Ensure proper comma usage between fields\n")
-		sb.WriteString("3. Verify string values are quoted: `{ eq: \"value\" }`\n")
-		sb.WriteString("4. Check that `where:` is properly formatted as an object\n")
-
-	case strings.Contains(errorLower, "permission") || strings.Contains(errorLower, "access") || strings.Contains(errorLower, "denied"):
-		sb.WriteString("**Problem**: Permission or access denied\n\n")
-		sb.WriteString("**Solutions**:\n")
-		sb.WriteString("1. Check if mutations are enabled in config (`allow_mutations`)\n")
-		sb.WriteString("2. Check if raw queries are enabled (`allow_raw_queries`)\n")
-		sb.WriteString("3. Verify user has proper role for the operation\n")
-		sb.WriteString("4. Try using a saved query with `execute_saved_query` instead\n")
-
-	case strings.Contains(errorLower, "mutation") && strings.Contains(errorLower, "not allowed"):
-		sb.WriteString("**Problem**: Mutations are disabled\n\n")
-		sb.WriteString("**Solutions**:\n")
-		sb.WriteString("1. Enable mutations in config: `mcp.allow_mutations: true`\n")
-		sb.WriteString("2. Use a pre-approved saved mutation with `execute_saved_query`\n")
-
-	case strings.Contains(errorLower, "variable") || strings.Contains(errorLower, "$"):
-		sb.WriteString("**Problem**: Variable error\n\n")
-		sb.WriteString("**Solutions**:\n")
-		sb.WriteString("1. Ensure all `$variable` references have corresponding values\n")
-		sb.WriteString("2. Pass variables in the `variables` parameter\n")
-		sb.WriteString("3. Check variable types match expected values\n")
-
-	default:
-		sb.WriteString("**General debugging steps**:\n\n")
-		sb.WriteString("1. Use `list_tables` and `describe_table` to verify schema\n")
-		sb.WriteString("2. Use `get_query_syntax` or `get_mutation_syntax` for syntax reference\n")
-		sb.WriteString("3. Simplify the query and add complexity incrementally\n")
-		sb.WriteString("4. Check if a working saved query exists with `list_saved_queries`\n")
-	}
-
-	sb.WriteString("\n## Recommended Next Steps\n\n")
-	sb.WriteString("1. Fix the identified issue\n")
-	sb.WriteString("2. Execute the corrected query\n")
-
+	repair := buildFixQueryErrorRepair(query, errorMsg, ms.analyticsModeOn())
 	return mcp.NewGetPromptResult(
-		"Query error analysis",
+		repair.Title,
 		[]mcp.PromptMessage{
 			mcp.NewPromptMessage(
 				mcp.RoleAssistant,
-				mcp.NewTextContent(sb.String()),
+				mcp.NewTextContent(repair.GuideMarkdown),
 			),
 		},
 	), nil

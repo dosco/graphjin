@@ -15,6 +15,33 @@ var (
 	ErrThoughNodeNotFound = errors.New("though node not found")
 )
 
+// FKCandidate describes one foreign key option when an A→B relationship
+// has multiple FKs and disambiguation is required.
+type FKCandidate struct {
+	Column           string
+	TargetTable      string
+	TargetColumn     string
+	IsComposite      bool
+	CompositeColumns []string
+}
+
+// AmbiguousPathError is returned when a direct (single-hop) relationship
+// between two tables has multiple distinct foreign keys and the caller did
+// not provide a @through hint to disambiguate.
+type AmbiguousPathError struct {
+	From, To   string
+	Candidates []FKCandidate
+}
+
+func (e *AmbiguousPathError) Error() string {
+	cols := make([]string, len(e.Candidates))
+	for i, c := range e.Candidates {
+		cols[i] = c.Column
+	}
+	return fmt.Sprintf("ambiguous relationship %s -> %s: multiple foreign keys (%s)",
+		e.From, e.To, strings.Join(cols, ", "))
+}
+
 // TEdge represents a table edge for the graph
 type TEdge struct {
 	From, To, Weight int32
@@ -348,6 +375,14 @@ func (s *DBSchema) pickPath(from, to edgeInfo, through string) (res graphResult,
 		if err != nil {
 			return
 		}
+	} else {
+		if cands := s.detectDirectAmbiguity(paths, from); len(cands) > 1 {
+			return res, &AmbiguousPathError{
+				From:       s.tables[from.nodeID].Name,
+				To:         s.tables[to.nodeID].Name,
+				Candidates: cands,
+			}
+		}
 	}
 
 	for _, path := range paths {
@@ -358,6 +393,115 @@ func (s *DBSchema) pickPath(from, to edgeInfo, through string) (res graphResult,
 		}
 	}
 	return res, ErrPathNotFound
+}
+
+// detectDirectAmbiguity returns FK candidates when two tables share multiple
+// distinct foreign keys via a direct (single-hop) edge. Returns nil for
+// multi-hop or unambiguous relationships; multi-hop disambiguation goes
+// through the existing min-weight selection.
+func (s *DBSchema) detectDirectAmbiguity(paths [][]int32, from edgeInfo) []FKCandidate {
+	var direct []int32
+	for _, p := range paths {
+		if len(p) == 2 {
+			direct = p
+			break
+		}
+	}
+	if direct == nil {
+		return nil
+	}
+
+	lines := s.relationshipGraph.GetEdges(direct[0], direct[1])
+
+	// Dedup forward+reverse halves of the same FK constraint without
+	// silencing genuine multi-FK ambiguity. Two edges in the same bucket
+	// are "the same FK" iff they're each other's opposites — true only
+	// for self-referential FKs (recursive comments → comments). For
+	// non-recursive multi-FK (orders → users with two distinct FKs), the
+	// edges in either bucket are NOT each other's opposites — their
+	// OppIDs reference edges in the OTHER bucket. We track edge IDs as
+	// we iterate; subsequent edges that name an already-seen OppID are
+	// the recursive-pair we want to drop.
+	bucketSeen := make(map[int32]bool)
+	colSeen := make(map[string]struct{})
+	var cands []FKCandidate
+
+	for _, v := range lines {
+		edge, ok := s.allEdges[v.ID]
+		if !ok {
+			continue
+		}
+		// Self-referential dedup: if this edge's OppID is already in the
+		// bucket, we've already counted its constraint.
+		if v.OppID != -1 && bucketSeen[v.OppID] {
+			continue
+		}
+		bucketSeen[v.ID] = true
+
+		// Anchor: if the caller's edgeInfo lists specific edges, only
+		// count those. Empty edgeIDs means "no anchor filter" (e.g. when
+		// pickPath was called from FindPath against a name index that
+		// matched the bucket directly).
+		if len(from.edgeIDs) > 0 {
+			anchored := false
+			for _, eid := range from.edgeIDs {
+				if eid == v.ID || eid == v.OppID {
+					anchored = true
+					break
+				}
+			}
+			if !anchored {
+				continue
+			}
+		}
+
+		// Resolve the FK side of the edge: for forward edges L is the
+		// FK column; for reverse edges R is the FK column. The FK column
+		// is the one whose owning DBColumn declares FKeyTable.
+		var fkCol DBColumn
+		var fkTable, refCol string
+		switch {
+		case edge.L.FKeyTable != "":
+			fkCol = edge.L
+			fkTable = edge.LT.Name
+			refCol = edge.R.Name
+		case edge.R.FKeyTable != "":
+			fkCol = edge.R
+			fkTable = edge.RT.Name
+			refCol = edge.L.Name
+		default:
+			// Neither side declares an FK — skip (ambiguous edges from
+			// non-FK relationships like polymorphic / virtual tables).
+			continue
+		}
+		_ = fkTable
+
+		if _, dup := colSeen[fkCol.Name]; dup {
+			continue
+		}
+		colSeen[fkCol.Name] = struct{}{}
+
+		c := FKCandidate{
+			Column:       fkCol.Name,
+			TargetTable:  fkCol.FKeyTable,
+			TargetColumn: refCol,
+		}
+		if len(edge.ExtraPairs) > 0 {
+			c.IsComposite = true
+			cols := make([]string, 0, len(edge.ExtraPairs)+1)
+			cols = append(cols, fkCol.Name)
+			for _, p := range edge.ExtraPairs {
+				if p.L.FKeyTable != "" {
+					cols = append(cols, p.L.Name)
+				} else if p.R.FKeyTable != "" {
+					cols = append(cols, p.R.Name)
+				}
+			}
+			c.CompositeColumns = cols
+		}
+		cands = append(cands, c)
+	}
+	return cands
 }
 
 // pickEdges picks edges between two tables
@@ -526,7 +670,18 @@ func (s *DBSchema) filterLinesByColumn(lines []util.Edge, col string) []util.Edg
 		if !ok {
 			continue
 		}
-		if strings.EqualFold(edge.L.Name, col) || strings.EqualFold(edge.R.Name, col) {
+		match := strings.EqualFold(edge.L.Name, col) || strings.EqualFold(edge.R.Name, col)
+		if !match {
+			// Composite FKs: the first column lives in L/R, the rest in ExtraPairs.
+			// Naming any column of the composite is enough to identify it.
+			for _, p := range edge.ExtraPairs {
+				if strings.EqualFold(p.L.Name, col) || strings.EqualFold(p.R.Name, col) {
+					match = true
+					break
+				}
+			}
+		}
+		if match {
 			out = append(out, v)
 		}
 	}

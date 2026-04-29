@@ -107,8 +107,10 @@ func (ms *mcpServer) registerSchemaTools() {
 			mcp.Description("Optional database name. Omit to search all databases."),
 		),
 		mcp.WithOutputSchema[struct {
-			Path         []core.PathStep `json:"path"`
-			ExampleQuery string          `json:"example_query"`
+			Path                 []core.PathStep      `json:"path"`
+			ExampleQuery         string               `json:"example_query"`
+			ExampleQueryCompiles bool                 `json:"example_query_compiles"`
+			ExampleQueryWarning  *FixQueryErrorResult `json:"example_query_warning,omitempty"`
 		}](),
 	), ms.handleFindPath)
 
@@ -253,8 +255,9 @@ func intArg(v any) int {
 
 // AggregationInfo describes available aggregation functions for a table
 type AggregationInfo struct {
-	Available []string `json:"available"`
-	Usage     string   `json:"usage"`
+	Available   []string `json:"available"`
+	Usage       string   `json:"usage"`
+	Limitations []string `json:"limitations,omitempty"`
 }
 
 // TableSchemaWithAggregations extends TableSchema with aggregation information
@@ -382,9 +385,26 @@ func generateAggregations(schema *core.TableSchema) AggregationInfo {
 		Usage: fmt.Sprintf(
 			"Single column: { %s { count_id sum_<numeric_col> avg_<numeric_col> } }. "+
 				"Arithmetic across columns (revenue, margin, ratios): "+
-				"{ %s { revenue: sum(expr: { mul: [col_a, col_b] }) } } — "+
-				"call get_query_syntax for the full expression grammar.",
+				"{ %s { revenue: sum(expr: { mul: [col_a, col_b] }) } }. "+
+				"For metric-by-dimension shape (revenue by category, etc.) root at the dimension table — see get_query_syntax.patterns. "+
+				"On compile error, pass query+error to fix_query_error for a structured repair.",
 			schema.Name, schema.Name),
+		Limitations: aggregationLimitations(),
+	}
+}
+
+// aggregationLimitations enumerates the known compose-failures small
+// models might otherwise retry blindly. Static — same list for every
+// table. Each entry pairs the constraint with how to detect/repair it,
+// so the response is self-describing rather than requiring the agent to
+// hit the failure first.
+func aggregationLimitations() []string {
+	return []string{
+		"order_by does not work on aggregate aliases (sum_*, count_*, custom names from sum(expr:)). Sort aggregated results in workflow JavaScript.",
+		"Aggregates at non-root nested levels work but the GROUP BY happens at the root selection only. distinct: dedupes rows; it does not bucket.",
+		"Nesting a join through a column that is not in distinct: of an aggregating select is rejected at compile time — root at the dimension table instead. See get_query_syntax.patterns.metric_by_dimension.",
+		"Recursive (find:) selections cannot contain aggregate fields at the same level — fold via parent if needed.",
+		"MongoDB does not support expression aggregates (sum(expr:)) in the v1 driver — fall back to per-column aggregates.",
 	}
 }
 
@@ -462,29 +482,97 @@ func (ms *mcpServer) handleFindPath(ctx context.Context, req mcp.CallToolRequest
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	// Generate an example query
-	exampleQuery := generatePathExampleQuery(fromTable, toTable, path)
+	// Generate an example query that uses each step's actual PK column
+	// (small models would otherwise copy literal `id` and trip on tables
+	// whose PK is named differently — e.g. AdventureWorks productcategoryid).
+	// validateExampleQuery still runs as a belt-and-suspenders check.
+	exampleQuery := generatePathExampleQuery(fromTable, path, ms.resolvePKColumn)
+	compiles, warning := ms.validateExampleQuery(exampleQuery)
 
 	result := struct {
-		Path         []core.PathStep `json:"path"`
-		ExampleQuery string          `json:"example_query"`
+		Path                 []core.PathStep      `json:"path"`
+		ExampleQuery         string               `json:"example_query"`
+		ExampleQueryCompiles bool                 `json:"example_query_compiles"`
+		ExampleQueryWarning  *FixQueryErrorResult `json:"example_query_warning,omitempty"`
 	}{
-		Path:         path,
-		ExampleQuery: exampleQuery,
+		Path:                 path,
+		ExampleQuery:         exampleQuery,
+		ExampleQueryCompiles: compiles,
+		ExampleQueryWarning:  warning,
 	}
 	return ms.toolResultJSON("find_path", args, result)
 }
 
-// generatePathExampleQuery generates an example GraphQL query based on the path
-func generatePathExampleQuery(from, to string, path []core.PathStep) string {
+// validateExampleQuery runs the generated example through ExplainQuery
+// (compile-only, no execution) and returns either (true, nil) or
+// (false, structured-warning) depending on whether it compiles. Reuses
+// the fix_query_error machinery so the warning carries the same Kind /
+// Diagnosis / RepairedQuery shape the agent already knows how to read.
+//
+// ExplainQuery returns (explanation, nil) for COMPILE errors — it stuffs
+// the message into explanation.Errors rather than the Go error return —
+// so we have to check both channels.
+func (ms *mcpServer) validateExampleQuery(exampleQuery string) (bool, *FixQueryErrorResult) {
+	if exampleQuery == "" {
+		return false, nil
+	}
+	if ms == nil || ms.service == nil || ms.service.gj == nil {
+		return false, nil
+	}
+	exp, err := ms.service.gj.ExplainQuery(exampleQuery, nil, "")
+	switch {
+	case err != nil:
+		repair := buildFixQueryErrorRepair(exampleQuery, err.Error(), ms.analyticsModeOn())
+		return false, &repair
+	case exp != nil && len(exp.Errors) > 0:
+		repair := buildFixQueryErrorRepair(exampleQuery, exp.Errors[0], ms.analyticsModeOn())
+		return false, &repair
+	default:
+		return true, nil
+	}
+}
+
+// resolvePKColumn looks up a table's primary key column for example-query
+// substitution. Returns "" when the table is not found (caller substitutes
+// a placeholder).
+func (ms *mcpServer) resolvePKColumn(table string) string {
+	if ms == nil || ms.service == nil || ms.service.gj == nil {
+		return ""
+	}
+	schema, err := ms.service.gj.GetTableSchema(table)
+	if err != nil || schema == nil {
+		return ""
+	}
+	if schema.PrimaryKey != "" {
+		return schema.PrimaryKey
+	}
+	if len(schema.PrimaryKeys) > 0 {
+		return schema.PrimaryKeys[0]
+	}
+	return ""
+}
+
+// generatePathExampleQuery generates a nested example GraphQL query along
+// the resolved path. resolvePK is called per table to substitute the actual
+// PK column name (falls back to "<pk_column>" when unknown).
+func generatePathExampleQuery(from string, path []core.PathStep, resolvePK func(string) string) string {
 	if len(path) == 0 {
 		return ""
 	}
 
-	// Simple nested query structure
-	query := "{ " + from + " { id "
+	pkOrPlaceholder := func(table string) string {
+		if resolvePK == nil {
+			return "<pk_column>"
+		}
+		if pk := resolvePK(table); pk != "" {
+			return pk
+		}
+		return "<pk_column>"
+	}
+
+	query := "{ " + from + " { " + pkOrPlaceholder(from) + " "
 	for _, step := range path {
-		query += step.To + " { id "
+		query += step.To + " { " + pkOrPlaceholder(step.To) + " "
 	}
 
 	// Close all the braces
@@ -506,10 +594,12 @@ func (ms *mcpServer) getNamespace() string {
 
 // WorkflowGuide contains the recommended workflow for using GraphJin MCP tools
 type WorkflowGuide struct {
-	QueryWorkflow    []string          `json:"query_workflow"`
-	MutationWorkflow []string          `json:"mutation_workflow"`
-	Tips             []string          `json:"tips"`
-	ToolSequences    map[string]string `json:"tool_sequences"`
+	QueryWorkflow      []string          `json:"query_workflow"`
+	MutationWorkflow   []string          `json:"mutation_workflow"`
+	Tips               []string          `json:"tips"`
+	AnalyticsModeRules []string          `json:"analytics_mode_rules,omitempty"`
+	QueryPatterns      []QueryPattern    `json:"query_patterns,omitempty"`
+	ToolSequences      map[string]string `json:"tool_sequences"`
 }
 
 // handleGetWorkflowGuide returns the recommended workflow for MCP tool usage
@@ -570,18 +660,19 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 		guide.MutationWorkflow = append(guide.MutationWorkflow, "4. Raw mutations are disabled, so execute a saved mutation with execute_saved_query")
 	}
 
-	analyticsMode := ms.service.gj != nil && ms.service.gj.EffectiveAnalyticsMode(ms.service.gj.DefaultDatabase())
+	analyticsMode := ms.analyticsModeOn()
 	if analyticsMode {
-		guide.Tips = append(guide.Tips,
-			"This database is in ANALYTICS MODE — compute answers server-side with aggregates (count_*, sum_*, sum(expr: { mul: [...] }), distinct: [group_col], filtered where:). Multiple targeted queries are fine; DO NOT paginate raw rows to build totals client-side. See get_query_syntax → Expression Aggregates.",
-			"Analytics mode: implicit row-limit defaults are OFF for this database. Queries without an explicit limit return the full result. Use explicit limit: only when you want a top-N.",
-		)
+		guide.AnalyticsModeRules = analyticsModeRules()
 	} else {
 		guide.Tips = append(guide.Tips,
 			"ALWAYS use execute_workflow for data questions — NEVER execute_graphql directly. Tables can have hundreds of thousands of rows and you cannot predict sizes.",
 			"Every query level has a silent default row limit. Always set explicit limits on every level, especially nested children.",
 		)
 	}
+
+	// Three universal query shapes. Surfaced unconditionally — patterns
+	// are general DSL-shape guidance, not analytics-mode-specific.
+	guide.QueryPatterns = canonicalQueryPatterns()
 
 	guide.Tips = append(guide.Tips,
 		"ALWAYS call list_workflows first — reuse an existing workflow if one fits the question.",
@@ -782,6 +873,16 @@ type EnhancedError struct {
 	Message     string `json:"message"`
 	Suggestion  string `json:"suggestion,omitempty"`
 	RelatedTool string `json:"related_tool,omitempty"`
+	// Kind, Table, Column are populated by enhanceExecError when the
+	// error came from SQL execution and the dialect was identifiable.
+	// Consumers can switch on Kind without parsing the prose.
+	Kind   string `json:"kind,omitempty"`
+	Table  string `json:"table,omitempty"`
+	Column string `json:"column,omitempty"`
+	// Hint carries a structured rewrite when the schema cross-check
+	// detects that the error is misleading (e.g. column actually exists
+	// on the table but was dropped by a CTE projection).
+	Hint string `json:"hint,omitempty"`
 }
 
 // enhanceError adds helpful suggestions to common error messages
@@ -791,7 +892,7 @@ func enhanceError(errMsg, currentTool string) string {
 	// Pattern matching for common errors
 	switch {
 	case contains(errMsg, "@through"):
-		enhanced.Suggestion = "@through(table:) takes the name of an intermediate join table (for many-to-many). @through(column:) takes the name of the FK column to follow when the parent has multiple foreign keys to the same target table. Check the spelling of the table or column name."
+		enhanced.Suggestion = "@through(table:) takes the name of an intermediate join table (for many-to-many). @through(column:) takes the name of the FK column to follow when the parent has multiple foreign keys to the same target table — for composite FKs, naming any one column of the composite is sufficient. Check the spelling of the table or column name."
 		enhanced.RelatedTool = "get_query_syntax"
 	case contains(errMsg, "table not found", "unknown table", "does not exist", "no such table", "table doesn't exist"):
 		enhanced.Suggestion = "Check spelling or use list_tables to see available tables. The table may exist in a different database - use list_tables to see all databases."
