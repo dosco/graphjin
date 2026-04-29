@@ -615,6 +615,84 @@ func TestBuildFixQueryErrorRepair_Arms(t *testing.T) {
 	}
 }
 
+func TestClassifyExecError_AllDialects(t *testing.T) {
+	cases := []struct {
+		name     string
+		dbType   string
+		errMsg   string
+		wantKind string
+		wantTbl  string
+		wantCol  string
+	}{
+		// postgres
+		{"pg_column", "postgres", `pq: column salesorderdetail_0.salesorderid does not exist`, ExecKindColumnNotFound, "salesorderdetail", "salesorderid"},
+		{"pg_table", "postgres", `pq: relation "users" does not exist`, ExecKindTableNotFound, "users", ""},
+		{"pg_type", "postgres", `pq: invalid input syntax for type integer: "abc"`, ExecKindTypeMismatch, "", "integer"},
+		{"pg_perm", "postgres", `pq: permission denied for relation "secrets"`, ExecKindPermission, "", "secrets"},
+		// mysql
+		{"my_column", "mysql", `Error 1054: Unknown column 'foo' in 'field list'`, ExecKindColumnNotFound, "", "foo"},
+		{"my_table", "mysql", `Error 1146: Table 'shop.orders' doesn't exist`, ExecKindTableNotFound, "orders", ""},
+		{"my_type", "mysql", `Error 1366: Incorrect integer value: 'abc' for column 'age' at row 1`, ExecKindTypeMismatch, "", "abc"},
+		// mariadb (same patterns as mysql)
+		{"maria_col", "mariadb", `Error 1054: Unknown column 'bar' in 'where clause'`, ExecKindColumnNotFound, "", "bar"},
+		// sqlite
+		{"sl_column", "sqlite", `no such column: orders.total`, ExecKindColumnNotFound, "orders", "total"},
+		{"sl_table", "sqlite", `no such table: orders`, ExecKindTableNotFound, "orders", ""},
+		{"sl_type", "sqlite", `datatype mismatch`, ExecKindTypeMismatch, "", ""},
+		// oracle
+		{"or_column", "oracle", `ORA-00904: "FOO": invalid identifier`, ExecKindColumnNotFound, "", "FOO"},
+		{"or_table", "oracle", `ORA-00942: table or view does not exist`, ExecKindTableNotFound, "", ""},
+		{"or_type", "oracle", `ORA-01722: invalid number`, ExecKindTypeMismatch, "", ""},
+		// mssql
+		{"ms_column", "mssql", `mssql: Invalid column name 'salesorderid'.`, ExecKindColumnNotFound, "", "salesorderid"},
+		{"ms_table", "mssql", `mssql: Invalid object name 'orders'.`, ExecKindTableNotFound, "orders", ""},
+		// snowflake
+		{"sf_column", "snowflake", `000904 (42000): SQL compilation error: error line 1 at position 7\ninvalid identifier 'NOT_A_COL'`, ExecKindColumnNotFound, "", "NOT_A_COL"},
+		{"sf_table", "snowflake", `Object 'PUBLIC.NOPE' does not exist or not authorized.`, ExecKindTableNotFound, "PUBLIC.NOPE", ""},
+		// mongodb
+		{"mg_field", "mongodb", `field path 'foo.bar' is invalid`, ExecKindColumnNotFound, "foo", "bar"},
+		{"mg_ns", "mongodb", `ns not found`, ExecKindTableNotFound, "", ""},
+		// unknown / aliases
+		{"empty_dbtype_pg_alias", "", `pq: column "x" does not exist`, ExecKindColumnNotFound, "", "x"},
+		{"sqlserver_alias", "sqlserver", `mssql: Invalid column name 'y'.`, ExecKindColumnNotFound, "", "y"},
+		{"unknown_dialect", "duckdb", `something went wrong`, ExecKindUnknown, "", ""},
+		{"empty_msg", "postgres", ``, ExecKindUnknown, "", ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := classifyExecError(tc.dbType, tc.errMsg)
+			if got.Kind != tc.wantKind {
+				t.Fatalf("kind: got %q want %q (msg=%q)", got.Kind, tc.wantKind, tc.errMsg)
+			}
+			if !strings.EqualFold(got.Table, tc.wantTbl) {
+				t.Errorf("table: got %q want %q", got.Table, tc.wantTbl)
+			}
+			if !strings.EqualFold(got.Column, tc.wantCol) {
+				t.Errorf("column: got %q want %q", got.Column, tc.wantCol)
+			}
+		})
+	}
+}
+
+func TestStripAliasSuffix(t *testing.T) {
+	cases := map[string]string{
+		"":                       "",
+		"orders":                 "orders",
+		"orders_0":               "orders",
+		"salesorderdetail_42":    "salesorderdetail",
+		"order_items":            "order_items", // _items isn't numeric — preserved
+		"orders_":                "orders_",     // trailing underscore — preserved
+		"my_table_5_extra":       "my_table_5_extra", // not a trailing numeric suffix
+		"my_table_5":             "my_table",
+	}
+	for in, want := range cases {
+		if got := stripAliasSuffix(in); got != want {
+			t.Errorf("stripAliasSuffix(%q) = %q; want %q", in, got, want)
+		}
+	}
+}
+
 func TestBuildFixQueryErrorRepair_AnalyticsModeBlock(t *testing.T) {
 	res := buildFixQueryErrorRepair("query { x }", "table not found: x", true)
 	if !strings.Contains(res.GuideMarkdown, "Analytics Mode Rules") {

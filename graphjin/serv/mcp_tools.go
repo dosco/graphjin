@@ -128,12 +128,12 @@ func (ms *mcpServer) handleExecuteGraphQL(ctx context.Context, req mcp.CallToolR
 
 	result := ExecuteResult{}
 	if err != nil {
-		result.Errors = []ErrorInfo{{Message: enhanceError(err.Error(), "execute_graphql")}}
+		result.Errors = []ErrorInfo{{Message: ms.enhanceExecError(err.Error(), "execute_graphql")}}
 	} else {
 		// Replace encrypted cursors with short numeric IDs for LLM-friendly responses
 		result.Data = ms.processCursorsForMCP(ctx, res.Data)
 		for _, e := range res.Errors {
-			result.Errors = append(result.Errors, ErrorInfo{Message: enhanceError(e.Message, "execute_graphql")})
+			result.Errors = append(result.Errors, ErrorInfo{Message: ms.enhanceExecError(e.Message, "execute_graphql")})
 		}
 	}
 	return ms.toolResultJSON("execute_graphql", args, result)
@@ -178,12 +178,12 @@ func (ms *mcpServer) handleExecuteSavedQuery(ctx context.Context, req mcp.CallTo
 
 	result := ExecuteResult{}
 	if err != nil {
-		result.Errors = []ErrorInfo{{Message: enhanceError(err.Error(), "execute_saved_query")}}
+		result.Errors = []ErrorInfo{{Message: ms.enhanceExecError(err.Error(), "execute_saved_query")}}
 	} else {
 		// Replace encrypted cursors with short numeric IDs for LLM-friendly responses
 		result.Data = ms.processCursorsForMCP(ctx, res.Data)
 		for _, e := range res.Errors {
-			result.Errors = append(result.Errors, ErrorInfo{Message: enhanceError(e.Message, "execute_saved_query")})
+			result.Errors = append(result.Errors, ErrorInfo{Message: ms.enhanceExecError(e.Message, "execute_saved_query")})
 		}
 	}
 	return ms.toolResultJSON("execute_saved_query", args, result)
