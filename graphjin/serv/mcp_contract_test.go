@@ -528,6 +528,104 @@ func mapValues(m map[string]string) []string {
 	return values
 }
 
+func TestBuildFixQueryErrorRepair_Arms(t *testing.T) {
+	cases := []struct {
+		name         string
+		errorMsg     string
+		wantKind     string
+		wantInRepair []string
+		wantTools    []string
+	}{
+		{
+			name:         "multi_fk_ambiguity",
+			errorMsg:     `ambiguous relationship orders -> users: multiple foreign keys (customer_id, salesperson_id). Disambiguate by adding @through(column: "customer_id") or @through(column: "salesperson_id") on the nested selection`,
+			wantKind:     fixKindMultiFKAmbiguity,
+			wantInRepair: []string{`@through(column: "customer_id")`, "candidates: customer_id, salesperson_id"},
+			wantTools:    []string{"describe_table", "get_table_sample"},
+		},
+		{
+			name:         "distinct_join_shape",
+			errorMsg:     `nested selection 'salesorderheader' joins through parent column 'salesorderdetail.salesorderid', which is not in distinct: [productid]. The GROUP BY collapses 'salesorderid' away.`,
+			wantKind:     fixKindDistinctJoinShape,
+			wantInRepair: []string{"<dimension_table>", "salesorderdetail", "salesorderheader", "productid"},
+			wantTools:    []string{"get_workflow_guide"},
+		},
+		{
+			name:         "partition_filter_required",
+			errorMsg:     `table "salesorderdetail" requires a filter on temporal column "modifieddate" (e.g., { modifieddate: { gt: "2026-01-01" } }); pass unrestricted: true to override`,
+			wantKind:     fixKindPartitionFilter,
+			wantInRepair: []string{"salesorderdetail", "modifieddate", "unrestricted: true"},
+			wantTools:    []string{"get_table_sample"},
+		},
+		{
+			name:      "unknown_relationship",
+			errorMsg:  `relationship not found: foo -> bar`,
+			wantKind:  fixKindUnknownRelationship,
+			wantTools: []string{"find_path"},
+		},
+		{
+			name:      "table_not_found",
+			errorMsg:  `table not found: usrs`,
+			wantKind:  fixKindTableNotFound,
+			wantTools: []string{"list_tables"},
+		},
+		{
+			name:      "column_not_found_postgres",
+			errorMsg:  `pq: column purchases_0.customer_id does not exist`,
+			wantKind:  fixKindColumnNotFound,
+			wantTools: []string{"describe_table"},
+		},
+		{
+			name:     "generic_fallback",
+			errorMsg: `something completely unexpected happened`,
+			wantKind: fixKindGeneric,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := buildFixQueryErrorRepair("query { foo { bar } }", tc.errorMsg, false)
+			if res.Kind != tc.wantKind {
+				t.Fatalf("kind: got %q want %q", res.Kind, tc.wantKind)
+			}
+			for _, s := range tc.wantInRepair {
+				if !strings.Contains(res.RepairedQuery, s) {
+					t.Errorf("RepairedQuery missing %q. Got:\n%s", s, res.RepairedQuery)
+				}
+			}
+			for _, s := range tc.wantTools {
+				found := false
+				for _, tool := range res.FollowUpTools {
+					if strings.Contains(tool, s) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("FollowUpTools missing %q. Got: %v", s, res.FollowUpTools)
+				}
+			}
+			if !strings.Contains(res.GuideMarkdown, "Query Error Analysis") {
+				t.Errorf("GuideMarkdown missing header")
+			}
+			if !strings.Contains(res.GuideMarkdown, res.Diagnosis) {
+				t.Errorf("GuideMarkdown missing diagnosis text")
+			}
+		})
+	}
+}
+
+func TestBuildFixQueryErrorRepair_AnalyticsModeBlock(t *testing.T) {
+	res := buildFixQueryErrorRepair("query { x }", "table not found: x", true)
+	if !strings.Contains(res.GuideMarkdown, "Analytics Mode Rules") {
+		t.Fatalf("expected analytics-mode block when on; got:\n%s", res.GuideMarkdown)
+	}
+	res = buildFixQueryErrorRepair("query { x }", "table not found: x", false)
+	if strings.Contains(res.GuideMarkdown, "Analytics Mode Rules") {
+		t.Fatal("did not expect analytics-mode block when off")
+	}
+}
+
 func TestDetectFKDisambiguation(t *testing.T) {
 	out := detectFKDisambiguation([]RelationshipRef{
 		{Table: "users", Column: "user_id"},
