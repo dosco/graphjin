@@ -706,6 +706,70 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 		return errors.New("invalid query: no selectors found")
 	}
 
+	if err := validateGroupByJoinShape(qc); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateGroupByJoinShape rejects queries where a parent selection has both
+// a `distinct:` clause and an aggregate, AND nests a child whose join column
+// on the parent side is not in `distinct`. The compiler emits a GROUP BY CTE
+// that collapses the un-distinct'd FK column, leaving the nested lateral
+// join referencing a column the CTE no longer projects ("salesorderdetail_0
+// .salesorderid does not exist" / "purchases_0.customer_id does not exist").
+//
+// Semantically the query is ambiguous — many join-key values per group —
+// so silent SQL emission would be wrong even if it executed. The right
+// shape for "metric by dimension" is to root at the dimension table.
+func validateGroupByJoinShape(qc *QCode) error {
+	for i := range qc.Selects {
+		child := &qc.Selects[i]
+		if child.ParentID == -1 {
+			continue
+		}
+		switch child.Rel.Type {
+		case sdata.RelRemote, sdata.RelDatabaseJoin, sdata.RelNone, sdata.RelPolymorphic:
+			continue
+		}
+		parent := &qc.Selects[child.ParentID]
+		if !parent.GroupCols || len(parent.DistinctOn) == 0 {
+			continue
+		}
+
+		// The column on the parent side that the nested join uses.
+		// For single-hop nesting it lives on sel.Rel; for multi-hop, the
+		// hop touching the parent is Joins[0].
+		var joinCol string
+		if len(child.Joins) > 0 {
+			joinCol = child.Joins[0].Rel.Right.Col.Name
+		} else {
+			joinCol = child.Rel.Right.Col.Name
+		}
+		if joinCol == "" {
+			continue
+		}
+
+		inDistinct := false
+		for _, dc := range parent.DistinctOn {
+			if strings.EqualFold(dc.Name, joinCol) {
+				inDistinct = true
+				break
+			}
+		}
+		if inDistinct {
+			continue
+		}
+
+		distinctNames := make([]string, len(parent.DistinctOn))
+		for j, dc := range parent.DistinctOn {
+			distinctNames[j] = dc.Name
+		}
+		return fmt.Errorf(
+			"nested selection '%s' joins through parent column '%s.%s', which is not in distinct: [%s]. The GROUP BY collapses '%s' away, leaving many %s values per group with no defined join. Root the query at the dimension table instead — see get_workflow_guide for the metric-by-dimension pattern.",
+			child.Table, parent.Table, joinCol, strings.Join(distinctNames, ", "), joinCol, joinCol)
+	}
 	return nil
 }
 
