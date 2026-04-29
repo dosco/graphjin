@@ -796,6 +796,16 @@ type EnhancedError struct {
 	Message     string `json:"message"`
 	Suggestion  string `json:"suggestion,omitempty"`
 	RelatedTool string `json:"related_tool,omitempty"`
+	// Kind, Table, Column are populated by enhanceExecError when the
+	// error came from SQL execution and the dialect was identifiable.
+	// Consumers can switch on Kind without parsing the prose.
+	Kind   string `json:"kind,omitempty"`
+	Table  string `json:"table,omitempty"`
+	Column string `json:"column,omitempty"`
+	// Hint carries a structured rewrite when the schema cross-check
+	// detects that the error is misleading (e.g. column actually exists
+	// on the table but was dropped by a CTE projection).
+	Hint string `json:"hint,omitempty"`
 }
 
 // enhanceError adds helpful suggestions to common error messages
