@@ -482,12 +482,11 @@ func (ms *mcpServer) handleFindPath(ctx context.Context, req mcp.CallToolRequest
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	// Generate an example query and validate it compiles. Per agent feedback
-	// (P2), small models treat example_query as ground truth — returning a
-	// non-compiling example causes loops. We don't auto-repair the example
-	// (that'd require GraphQL AST manipulation), but we annotate so the
-	// agent knows to disambiguate via @through(column:) etc.
-	exampleQuery := generatePathExampleQuery(fromTable, toTable, path)
+	// Generate an example query that uses each step's actual PK column
+	// (small models would otherwise copy literal `id` and trip on tables
+	// whose PK is named differently — e.g. AdventureWorks productcategoryid).
+	// validateExampleQuery still runs as a belt-and-suspenders check.
+	exampleQuery := generatePathExampleQuery(fromTable, path, ms.resolvePKColumn)
 	compiles, warning := ms.validateExampleQuery(exampleQuery)
 
 	result := struct {
@@ -533,16 +532,47 @@ func (ms *mcpServer) validateExampleQuery(exampleQuery string) (bool, *FixQueryE
 	}
 }
 
-// generatePathExampleQuery generates an example GraphQL query based on the path
-func generatePathExampleQuery(from, to string, path []core.PathStep) string {
+// resolvePKColumn looks up a table's primary key column for example-query
+// substitution. Returns "" when the table is not found (caller substitutes
+// a placeholder).
+func (ms *mcpServer) resolvePKColumn(table string) string {
+	if ms == nil || ms.service == nil || ms.service.gj == nil {
+		return ""
+	}
+	schema, err := ms.service.gj.GetTableSchema(table)
+	if err != nil || schema == nil {
+		return ""
+	}
+	if schema.PrimaryKey != "" {
+		return schema.PrimaryKey
+	}
+	if len(schema.PrimaryKeys) > 0 {
+		return schema.PrimaryKeys[0]
+	}
+	return ""
+}
+
+// generatePathExampleQuery generates a nested example GraphQL query along
+// the resolved path. resolvePK is called per table to substitute the actual
+// PK column name (falls back to "<pk_column>" when unknown).
+func generatePathExampleQuery(from string, path []core.PathStep, resolvePK func(string) string) string {
 	if len(path) == 0 {
 		return ""
 	}
 
-	// Simple nested query structure
-	query := "{ " + from + " { id "
+	pkOrPlaceholder := func(table string) string {
+		if resolvePK == nil {
+			return "<pk_column>"
+		}
+		if pk := resolvePK(table); pk != "" {
+			return pk
+		}
+		return "<pk_column>"
+	}
+
+	query := "{ " + from + " { " + pkOrPlaceholder(from) + " "
 	for _, step := range path {
-		query += step.To + " { id "
+		query += step.To + " { " + pkOrPlaceholder(step.To) + " "
 	}
 
 	// Close all the braces
