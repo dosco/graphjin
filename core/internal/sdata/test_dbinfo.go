@@ -226,3 +226,79 @@ func GetTestSnowflakeDBInfo() *DBInfo {
 func GetTestSnowflakeSchema() (*DBSchema, error) {
 	return NewDBSchema(GetTestSnowflakeDBInfo(), nil)
 }
+
+// GetTestMultiFKDBInfo returns a DBInfo where the `orders` table has two
+// distinct foreign keys to `users` (customer_id, salesperson_id). Used to
+// exercise ambiguous-path detection.
+func GetTestMultiFKDBInfo() *DBInfo {
+	columns := [][]DBColumn{
+		{
+			{Schema: "public", Table: "users", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			{Schema: "public", Table: "users", Name: "name", Type: "character varying", NotNull: true},
+		},
+		{
+			{Schema: "public", Table: "orders", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			{Schema: "public", Table: "orders", Name: "customer_id", Type: "bigint", FKeySchema: "public", FKeyTable: "users", FKeyCol: "id"},
+			{Schema: "public", Table: "orders", Name: "salesperson_id", Type: "bigint", FKeySchema: "public", FKeyTable: "users", FKeyCol: "id"},
+			{Schema: "public", Table: "orders", Name: "amount", Type: "numeric(10,2)"},
+		},
+	}
+
+	var cols []DBColumn
+	for _, colset := range columns {
+		cols = append(cols, colset...)
+	}
+
+	di := NewDBInfo("postgres", 140000, "public", "db", cols, nil, nil)
+	return di
+}
+
+// GetTestMultiFKSchema returns a DBSchema with two FKs from orders to users.
+func GetTestMultiFKSchema() (*DBSchema, error) {
+	return NewDBSchema(GetTestMultiFKDBInfo(), nil)
+}
+
+// GetTestCompositeFKDBInfo returns a DBInfo where the `enrollment` table has a
+// composite FK to `course_offering` on (term_id, course_id). Used to verify
+// that @through(column:) matches a non-primary composite-FK column via
+// ExtraPairs (the second column of the composite).
+func GetTestCompositeFKDBInfo() *DBInfo {
+	columns := [][]DBColumn{
+		{
+			{Schema: "public", Table: "course_offering", Name: "term_id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			{Schema: "public", Table: "course_offering", Name: "course_id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			{Schema: "public", Table: "course_offering", Name: "title", Type: "character varying"},
+		},
+		{
+			{Schema: "public", Table: "enrollment", Name: "id", Type: "bigint", NotNull: true, PrimaryKey: true, UniqueKey: true},
+			{Schema: "public", Table: "enrollment", Name: "term_id", Type: "bigint", FKeySchema: "public", FKeyTable: "course_offering", FKeyCol: "term_id"},
+			{Schema: "public", Table: "enrollment", Name: "course_id", Type: "bigint", FKeySchema: "public", FKeyTable: "course_offering", FKeyCol: "course_id"},
+			{Schema: "public", Table: "enrollment", Name: "student_name", Type: "character varying"},
+		},
+	}
+
+	var cols []DBColumn
+	for _, colset := range columns {
+		cols = append(cols, colset...)
+	}
+
+	di := NewDBInfo("postgres", 140000, "public", "db", cols, nil, nil)
+	di.CompositeFKs = []CompositeFKInfo{
+		{
+			Schema:         "public",
+			Table:          "enrollment",
+			ConstraintName: "enrollment_offering_fkey",
+			LocalCols:      []string{"term_id", "course_id"},
+			FKeySchema:     "public",
+			FKeyTable:      "course_offering",
+			FKeyCols:       []string{"term_id", "course_id"},
+		},
+	}
+	return di
+}
+
+// GetTestCompositeFKSchema returns a DBSchema with a composite FK from
+// enrollment to course_offering.
+func GetTestCompositeFKSchema() (*DBSchema, error) {
+	return NewDBSchema(GetTestCompositeFKDBInfo(), nil)
+}

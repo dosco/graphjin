@@ -706,6 +706,70 @@ func (co *Compiler) compileQuery(qc *QCode, op *graph.Operation, role string) er
 		return errors.New("invalid query: no selectors found")
 	}
 
+	if err := validateGroupByJoinShape(qc); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateGroupByJoinShape rejects queries where a parent selection has both
+// a `distinct:` clause and an aggregate, AND nests a child whose join column
+// on the parent side is not in `distinct`. The compiler emits a GROUP BY CTE
+// that collapses the un-distinct'd FK column, leaving the nested lateral
+// join referencing a column the CTE no longer projects ("salesorderdetail_0
+// .salesorderid does not exist" / "purchases_0.customer_id does not exist").
+//
+// Semantically the query is ambiguous — many join-key values per group —
+// so silent SQL emission would be wrong even if it executed. The right
+// shape for "metric by dimension" is to root at the dimension table.
+func validateGroupByJoinShape(qc *QCode) error {
+	for i := range qc.Selects {
+		child := &qc.Selects[i]
+		if child.ParentID == -1 {
+			continue
+		}
+		switch child.Rel.Type {
+		case sdata.RelRemote, sdata.RelDatabaseJoin, sdata.RelNone, sdata.RelPolymorphic:
+			continue
+		}
+		parent := &qc.Selects[child.ParentID]
+		if !parent.GroupCols || len(parent.DistinctOn) == 0 {
+			continue
+		}
+
+		// The column on the parent side that the nested join uses.
+		// For single-hop nesting it lives on sel.Rel; for multi-hop, the
+		// hop touching the parent is Joins[0].
+		var joinCol string
+		if len(child.Joins) > 0 {
+			joinCol = child.Joins[0].Rel.Right.Col.Name
+		} else {
+			joinCol = child.Rel.Right.Col.Name
+		}
+		if joinCol == "" {
+			continue
+		}
+
+		inDistinct := false
+		for _, dc := range parent.DistinctOn {
+			if strings.EqualFold(dc.Name, joinCol) {
+				inDistinct = true
+				break
+			}
+		}
+		if inDistinct {
+			continue
+		}
+
+		distinctNames := make([]string, len(parent.DistinctOn))
+		for j, dc := range parent.DistinctOn {
+			distinctNames[j] = dc.Name
+		}
+		return fmt.Errorf(
+			"nested selection '%s' joins through parent column '%s.%s', which is not in distinct: [%s]. The GROUP BY collapses '%s' away, leaving many %s values per group with no defined join. Root the query at the dimension table instead — see get_workflow_guide for the metric-by-dimension pattern.",
+			child.Table, parent.Table, joinCol, strings.Join(distinctNames, ", "), joinCol, joinCol)
+	}
 	return nil
 }
 
@@ -977,10 +1041,17 @@ func (co *Compiler) FindPath(from, to, through string) ([]sdata.TPath, error) {
 		return path, nil
 	}
 
-	// Graph traversal failed — check cross-database FK metadata.
-	// Cross-DB target tables are not in the graph, so FindPath won't find them.
-	if tp, ok := co.s.FindCrossDBPath(from, to); ok {
-		return []sdata.TPath{tp}, nil
+	// Cross-DB fallback: only fire when the in-graph relationship is
+	// genuinely missing (ErrPathNotFound or ErrFromEdgeNotFound /
+	// ErrToEdgeNotFound — the table isn't in this database's graph).
+	// Other errors — most importantly *AmbiguousPathError — must propagate
+	// unchanged, otherwise the cross-DB short-circuit silently hides
+	// legitimate compile-time signals from the caller.
+	switch err {
+	case sdata.ErrPathNotFound, sdata.ErrFromEdgeNotFound, sdata.ErrToEdgeNotFound:
+		if tp, ok := co.s.FindCrossDBPath(from, to); ok {
+			return []sdata.TPath{tp}, nil
+		}
 	}
 
 	return nil, err
@@ -1266,7 +1337,7 @@ func (co *Compiler) enforcePartitionFilterOLAP(sel *Select) {
 			return
 		}
 		sel.PartitionFilterRequired = fmt.Sprintf(
-			"table %q requires a filter on partition column %q (e.g., { %s: { gt: \"2026-01-01\" } })",
+			"table %q requires a filter on partition column %q. Add one of: where: { %s: { gte: \"<date>\" } }; or pass unrestricted: true to override.",
 			sel.Ti.Name, sel.Ti.PartitionKey, sel.Ti.PartitionKey)
 		return
 	}
@@ -1276,7 +1347,7 @@ func (co *Compiler) enforcePartitionFilterOLAP(sel *Select) {
 			return
 		}
 		sel.PartitionFilterRequired = fmt.Sprintf(
-			"table %q requires a filter on temporal column %q (e.g., { %s: { gt: \"2026-01-01\" } }); pass `unrestricted: true` to override",
+			"table %q requires a filter on temporal column %q. Add one of: where: { %s: { gte: \"<date>\" } }; or pass unrestricted: true to override.",
 			sel.Ti.Name, sel.Ti.ImplicitPartitionKey, sel.Ti.ImplicitPartitionKey)
 	}
 }

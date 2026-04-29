@@ -159,9 +159,15 @@ func (ms *mcpServer) handleFixQueryErrorTool(ctx context.Context, req mcp.CallTo
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	res, err := ms.handleFixQueryError(ctx, promptReq)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+	query := promptReq.Params.Arguments["query"]
+	errorMsg := promptReq.Params.Arguments["error"]
+	if query == "" {
+		return mcp.NewToolResultError("query argument is required"), nil
 	}
-	return ms.guidanceToolResult("fix_query_error", req.GetArguments(), res)
+	if errorMsg == "" {
+		return mcp.NewToolResultError("error argument is required"), nil
+	}
+
+	repair := buildFixQueryErrorRepair(query, errorMsg, ms.analyticsModeOn())
+	return ms.toolResultJSON("fix_query_error", req.GetArguments(), repair)
 }

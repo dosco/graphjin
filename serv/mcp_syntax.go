@@ -8,18 +8,20 @@ import (
 
 // QuerySyntaxReference contains the complete GraphJin query DSL reference
 type QuerySyntaxReference struct {
-	FilterOperators  FilterOperators        `json:"filter_operators"`
-	LogicalOperators []string               `json:"logical_operators"`
-	Pagination       PaginationSyntax       `json:"pagination"`
-	Ordering         OrderingSyntax         `json:"ordering"`
-	Aggregations     AggregationsSyntax     `json:"aggregations"`
-	Recursive        RecursiveSyntax        `json:"recursive"`
-	FullTextSearch   string                 `json:"full_text_search"`
-	Directives       map[string]string      `json:"directives"`
-	Variables        VariablesSyntax        `json:"variables"`
-	JSONPaths        string                 `json:"json_paths"`
-	CommonMistakes   []MistakeExample       `json:"common_mistakes"`
-	Examples         QueryExamplesForSyntax `json:"examples"`
+	AnalyticsModeRules []string               `json:"analytics_mode_rules,omitempty"`
+	Patterns           []QueryPattern         `json:"patterns,omitempty"`
+	FilterOperators    FilterOperators        `json:"filter_operators"`
+	LogicalOperators   []string               `json:"logical_operators"`
+	Pagination         PaginationSyntax       `json:"pagination"`
+	Ordering           OrderingSyntax         `json:"ordering"`
+	Aggregations       AggregationsSyntax     `json:"aggregations"`
+	Recursive          RecursiveSyntax        `json:"recursive"`
+	FullTextSearch     string                 `json:"full_text_search"`
+	Directives         map[string]string      `json:"directives"`
+	Variables          VariablesSyntax        `json:"variables"`
+	JSONPaths          string                 `json:"json_paths"`
+	CommonMistakes     []MistakeExample       `json:"common_mistakes"`
+	Examples           QueryExamplesForSyntax `json:"examples"`
 }
 
 // AggregationsSyntax describes available aggregation functions
@@ -92,13 +94,14 @@ type RecursiveSyntax struct {
 
 // MutationSyntaxReference contains the GraphJin mutation DSL reference
 type MutationSyntaxReference struct {
-	Operations        MutationOperations `json:"operations"`
-	NestedMutations   NestedMutationInfo `json:"nested_mutations"`
-	ConnectDisconnect ConnectDisconnect  `json:"connect_disconnect"`
-	Returning         ReturningInfo      `json:"returning"`
-	Validation        ValidationSyntax   `json:"validation"`
-	CommonMistakes    []MistakeExample   `json:"common_mistakes"`
-	Examples          []QueryExample     `json:"examples"`
+	AnalyticsModeRules []string           `json:"analytics_mode_rules,omitempty"`
+	Operations         MutationOperations `json:"operations"`
+	NestedMutations    NestedMutationInfo `json:"nested_mutations"`
+	ConnectDisconnect  ConnectDisconnect  `json:"connect_disconnect"`
+	Returning          ReturningInfo      `json:"returning"`
+	Validation         ValidationSyntax   `json:"validation"`
+	CommonMistakes     []MistakeExample   `json:"common_mistakes"`
+	Examples           []QueryExample     `json:"examples"`
 }
 
 // ReturningInfo describes the returning clause behavior
@@ -196,7 +199,7 @@ var querySyntaxReference = QuerySyntaxReference{
 		"@object":                "Return single object instead of array",
 		"@schema(name:)":         "Use specific database schema",
 		"@through(table:)":       "Specify the intermediate join table for many-to-many relationships",
-		"@through(column:)":      "Disambiguate when the parent and the nested target share multiple foreign keys — name the FK column to follow. Example: billofmaterials { product @through(column: \"componentid\") { name } }",
+		"@through(column:)":      "Disambiguate when the parent and the nested target share multiple foreign keys — name the FK column to follow. For composite foreign keys, naming any one column of the composite is sufficient. Example: billofmaterials { product @through(column: \"componentid\") { name } }",
 		"@notRelated":            "Disable automatic relationship detection for a field",
 		"@cacheControl(maxAge:)": "Set cache TTL in seconds for this query",
 		"@database(name:)":       "Assign table to a named database (REQUIRED on every table when multiple databases are configured). Used in schema definitions, e.g.: type users @database(name: \"mydb\") { ... }",
@@ -429,10 +432,22 @@ func (ms *mcpServer) registerSyntaxTools() {
 
 // handleGetQuerySyntax returns the query syntax reference
 func (ms *mcpServer) handleGetQuerySyntax(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return ms.toolResultJSON("get_query_syntax", req.GetArguments(), querySyntaxReference)
+	ref := querySyntaxReference
+	if ms.analyticsModeOn() {
+		ref.AnalyticsModeRules = analyticsModeRules()
+	}
+	// Three universal query shapes (metric-by-dimension, time-series,
+	// top-N). Surfaced unconditionally — patterns are general DSL-shape
+	// guidance, not analytics-mode-specific.
+	ref.Patterns = canonicalQueryPatterns()
+	return ms.toolResultJSON("get_query_syntax", req.GetArguments(), ref)
 }
 
 // handleGetMutationSyntax returns the mutation syntax reference
 func (ms *mcpServer) handleGetMutationSyntax(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return ms.toolResultJSON("get_mutation_syntax", req.GetArguments(), mutationSyntaxReference)
+	ref := mutationSyntaxReference
+	if ms.analyticsModeOn() {
+		ref.AnalyticsModeRules = analyticsModeRules()
+	}
+	return ms.toolResultJSON("get_mutation_syntax", req.GetArguments(), ref)
 }

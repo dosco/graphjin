@@ -215,15 +215,32 @@ type TableSampleResult struct {
 	Status   string        `json:"status"`
 	Stats    *TableProfile `json:"stats,omitempty"`
 
-	PrimaryKeys    []string          `json:"primary_keys,omitempty"`
-	ForeignKeys    []ForeignKeyRef   `json:"foreign_keys,omitempty"`
-	OutgoingRels   []RelationshipRef `json:"outgoing_relationships,omitempty"`
-	IncomingRels   []RelationshipRef `json:"incoming_relationships,omitempty"`
-	Indexes        []IndexInfo       `json:"indexes,omitempty"`
-	Aggregations   *AggregationInfo  `json:"aggregations,omitempty"`
-	ExampleQueries []ExampleQuery    `json:"example_queries,omitempty"`
+	PrimaryKeys            []string                `json:"primary_keys,omitempty"`
+	ForeignKeys            []ForeignKeyRef         `json:"foreign_keys,omitempty"`
+	OutgoingRels           []RelationshipRef       `json:"outgoing_relationships,omitempty"`
+	IncomingRels           []RelationshipRef       `json:"incoming_relationships,omitempty"`
+	FKDisambiguation       []FKDisambiguationEntry `json:"fk_disambiguation,omitempty"`
+	Indexes                []IndexInfo             `json:"indexes,omitempty"`
+	Aggregations           *AggregationInfo        `json:"aggregations,omitempty"`
+	ExampleQueries         []ExampleQuery          `json:"example_queries,omitempty"`
+	AnalyticsModeRules     []string                `json:"analytics_mode_rules,omitempty"`
+	AggregationHint        string                  `json:"aggregation_hint,omitempty"`
+	TemporalFilterWarning  string                  `json:"temporal_filter_warning,omitempty"`
 
 	Cost DiscoveryCost `json:"cost"`
+}
+
+// FKDisambiguationEntry signals multiple FKs to the same target; needs @through(column:).
+type FKDisambiguationEntry struct {
+	Target     string                       `json:"target"`
+	Ambiguous  bool                         `json:"ambiguous"`
+	Candidates []FKDisambiguationCandidate  `json:"candidates"`
+	SyntaxHint string                       `json:"syntax_hint"`
+}
+
+type FKDisambiguationCandidate struct {
+	Column  string `json:"column"`
+	Snippet string `json:"snippet"`
 }
 
 type RelationshipRef struct {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/dosco/graphjin/core/v3/internal/psql"
@@ -198,4 +199,85 @@ func _compileGQLToPSQL(t *testing.T, gql string, vars json.RawMessage, role stri
 	}
 
 	return nil
+}
+
+// TestCompositeFK_ThroughColumn_EmitsFullJoinCondition is the end-to-end
+// verification for P5: Stage 1b made @through(column:) match any column
+// of a composite FK via ExtraPairs. This test confirms the SQL emitter
+// then uses ALL composite columns in the join condition (not just the
+// primary). If only the primary column appears in the emitted JOIN, the
+// composite FK isn't actually being honored downstream — which would be
+// a real bug to fix here.
+//
+// Schema (GetTestCompositeFKSchema):
+//   enrollment.(term_id, course_id) ─ composite FK ─→ course_offering.(term_id, course_id)
+//
+// The query names course_id — the SECOND composite column, which lives
+// in ExtraPairs not L/R. Pre-Stage-1b this returned "relationship not
+// found".
+func TestCompositeFK_ThroughColumn_EmitsFullJoinCondition(t *testing.T) {
+	schema, err := sdata.GetTestCompositeFKSchema()
+	if err != nil {
+		t.Fatalf("schema: %v", err)
+	}
+
+	qc, err := qcode.NewCompiler(schema, qcode.Config{DBSchema: schema.DBSchema()})
+	if err != nil {
+		t.Fatalf("qcode compiler: %v", err)
+	}
+	if err := qc.AddRole("user", "public", "enrollment", qcode.TRConfig{
+		Query: qcode.QueryConfig{Columns: []string{"id", "term_id", "course_id", "student_name"}},
+	}); err != nil {
+		t.Fatalf("add enrollment role: %v", err)
+	}
+	if err := qc.AddRole("user", "public", "course_offering", qcode.TRConfig{
+		Query: qcode.QueryConfig{Columns: []string{"term_id", "course_id", "title"}},
+	}); err != nil {
+		t.Fatalf("add course_offering role: %v", err)
+	}
+
+	pc := psql.NewCompiler(psql.Config{})
+
+	gql := `query {
+		enrollment {
+			id
+			course_offering @through(column: "course_id") {
+				term_id
+				course_id
+				title
+			}
+		}
+	}`
+
+	qcRes, err := qc.Compile([]byte(gql), nil, "user", "")
+	if err != nil {
+		t.Fatalf("qcode compile: %v", err)
+	}
+
+	_, sqlBytes, err := pc.CompileEx(qcRes)
+	if err != nil {
+		t.Fatalf("psql compile: %v", err)
+	}
+	sql := string(sqlBytes)
+
+	// Both composite columns must appear in the emitted join condition,
+	// not just somewhere in the SELECT. Look for term_id AND course_id
+	// after the WHERE keyword that follows the LATERAL course_offering
+	// subquery — that's where the join predicate lives.
+	loIdx := strings.Index(strings.ToLower(sql), "course_offering")
+	if loIdx < 0 {
+		t.Fatalf("emitted SQL missing course_offering join:\n%s", sql)
+	}
+	whereIdx := strings.Index(strings.ToLower(sql[loIdx:]), "where")
+	if whereIdx < 0 {
+		t.Fatalf("emitted SQL has course_offering but no WHERE clause for the join:\n%s", sql)
+	}
+	joinClause := sql[loIdx+whereIdx:]
+	if !strings.Contains(joinClause, "term_id") {
+		t.Errorf("join clause missing term_id (primary composite column).\nfull SQL:\n%s\njoin clause:\n%s", sql, joinClause)
+	}
+	if !strings.Contains(joinClause, "course_id") {
+		t.Errorf("join clause missing course_id (ExtraPairs composite column).\nfull SQL:\n%s\njoin clause:\n%s", sql, joinClause)
+	}
+	t.Logf("emitted SQL (composite-FK join verified):\n%s", sql)
 }
