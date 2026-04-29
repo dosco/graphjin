@@ -5,19 +5,8 @@ import (
 	"strings"
 )
 
-// Exec-time error classifier. Pulls structured info (kind, table, column)
-// out of dialect-specific error strings produced by the SQL drivers, so
-// the augment layer can:
-//   - emit a stable Kind field (consumers don't pattern-match prose)
-//   - cross-check against the schema (a "column does not exist" error
-//     where the column actually exists usually means the SQL emitter
-//     dropped it from a CTE projection — point at fix_query_error rather
-//     than describe_table)
-//
-// Coverage: postgres, mysql, mariadb, sqlite, oracle, mssql, snowflake,
-// mongodb. Patterns derived from each driver's documented error formats.
+// Exec-time error classifier: dialect-specific error strings → {Kind, Table, Column}. Covers all 8 supported dialects.
 
-// Kind constants. Stable strings — consumers may switch on them.
 const (
 	ExecKindColumnNotFound = "column_not_found"
 	ExecKindTableNotFound  = "table_not_found"
@@ -27,18 +16,14 @@ const (
 	ExecKindUnknown        = ""
 )
 
-// ExecErrorClass is the structured classification of a driver-level
-// error message.
+// ExecErrorClass is the parsed shape of a driver-level error.
 type ExecErrorClass struct {
 	Kind   string
-	Table  string // may be empty when not extractable
-	Column string // may be empty when not extractable
+	Table  string
+	Column string
 }
 
-// dialectPatterns maps each supported dbType to its per-kind regexes.
-// Patterns capture the offending identifier in submatch group 1 (the
-// extractor below normalizes "table.column" forms). Order within each
-// dialect is significant — first match wins.
+// dialectPatterns: per-dbType per-kind regex; first match wins, capture group 1 is the offending identifier.
 var dialectPatterns = map[string]map[string]*regexp.Regexp{
 	"postgres": {
 		ExecKindColumnNotFound: regexp.MustCompile(`(?i)column\s+"?([A-Za-z0-9_.]+)"?\s+does not exist`),
@@ -89,19 +74,14 @@ var dialectPatterns = map[string]map[string]*regexp.Regexp{
 		ExecKindPermission:     regexp.MustCompile(`(?i)Insufficient privileges to operate on`),
 	},
 	"mongodb": {
-		// MongoDB's failure model differs — the driver returns aggregation/projection errors
-		// rather than column-not-exist. Patterns below cover the most common shapes we
-		// surface up through the GraphJin MongoDB driver.
+		// MongoDB exposes projection/aggregation errors instead of column-not-exist.
 		ExecKindColumnNotFound: regexp.MustCompile(`(?i)field path\s+'([^']+)'\s+is invalid|FieldPath field names may not start with`),
 		ExecKindTableNotFound:  regexp.MustCompile(`(?i)collection\s+(\S+)\s+(?:does not exist|not found)|ns not found`),
 		ExecKindTypeMismatch:   regexp.MustCompile(`(?i)cannot apply\s+\$\w+\s+to\s+\S+|\$\w+ requires`),
 	},
 }
 
-// classifyExecError parses an exec-time error string into a structured
-// kind plus extracted identifiers. dbType uses the same canonical names
-// as core/internal/sdata (postgres/mysql/mariadb/sqlite/oracle/mssql/
-// snowflake/mongodb). Empty dbType is treated as postgres.
+// classifyExecError parses a driver error into {Kind, Table, Column}; empty dbType defaults to postgres.
 func classifyExecError(dbType, errMsg string) ExecErrorClass {
 	if errMsg == "" {
 		return ExecErrorClass{Kind: ExecKindUnknown}
@@ -136,8 +116,6 @@ func classifyExecError(dbType, errMsg string) ExecErrorClass {
 			ident = m[1]
 		}
 		table, column := splitIdentTableColumn(ident)
-		// For ColumnNotFound the captured ident may be just the column;
-		// for TableNotFound it's the table.
 		if kind == ExecKindTableNotFound {
 			return ExecErrorClass{Kind: kind, Table: stripAliasSuffix(ident)}
 		}
@@ -150,9 +128,7 @@ func classifyExecError(dbType, errMsg string) ExecErrorClass {
 	return ExecErrorClass{Kind: ExecKindUnknown}
 }
 
-// splitIdentTableColumn handles "table.column" and "schema.table.column"
-// forms emitted by various drivers. When only a single identifier is
-// present, it's treated as the column name.
+// splitIdentTableColumn parses "col" / "table.col" / "schema.table.col"; single token treated as column.
 func splitIdentTableColumn(ident string) (table, column string) {
 	if ident == "" {
 		return "", ""
@@ -164,16 +140,11 @@ func splitIdentTableColumn(ident string) (table, column string) {
 	case 2:
 		return parts[0], parts[1]
 	default:
-		// schema.table.column — keep last two
 		return parts[len(parts)-2], parts[len(parts)-1]
 	}
 }
 
-// stripAliasSuffix removes GraphJin's per-select alias suffix
-// (e.g. "salesorderdetail_0" -> "salesorderdetail"). The compiler tags
-// every select with a numeric index so its emitted CTEs don't collide;
-// when a Postgres error references "salesorderdetail_0.salesorderid"
-// the underlying table is salesorderdetail.
+// stripAliasSuffix unwinds the per-select numeric suffix (salesorderdetail_0 → salesorderdetail).
 func stripAliasSuffix(name string) string {
 	if name == "" {
 		return name
@@ -191,9 +162,7 @@ func stripAliasSuffix(name string) string {
 	return name[:i]
 }
 
-// normalizeDBType maps configured dbType values to the canonical key used
-// in dialectPatterns. Keeps "" → postgres (the historical default) and
-// also accepts "pg" / "postgresql" aliases.
+// normalizeDBType maps configured dbType values (incl. aliases like pg/sqlserver) to the canonical dialectPatterns key.
 func normalizeDBType(dbType string) string {
 	switch strings.ToLower(strings.TrimSpace(dbType)) {
 	case "", "postgres", "postgresql", "pg":

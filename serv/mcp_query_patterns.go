@@ -1,13 +1,6 @@
 package serv
 
-// Three canonical query shapes for GraphJin. Surfaced both in
-// get_workflow_guide and get_query_syntax so an agent reaches them
-// regardless of which discovery surface they land on.
-//
-// The Wrong/Right contrast is load-bearing: small models pattern-match
-// on counter-examples just as readily as on positive ones, and the most
-// common authoring mistake is rooting at the fact table for a
-// metric-by-dimension question.
+// Three canonical query shapes; Wrong/Right contrast is load-bearing for small-model pattern matching.
 
 type QueryPattern struct {
 	Name         string `json:"name"`

@@ -215,24 +215,22 @@ type TableSampleResult struct {
 	Status   string        `json:"status"`
 	Stats    *TableProfile `json:"stats,omitempty"`
 
-	PrimaryKeys        []string                `json:"primary_keys,omitempty"`
-	ForeignKeys        []ForeignKeyRef         `json:"foreign_keys,omitempty"`
-	OutgoingRels       []RelationshipRef       `json:"outgoing_relationships,omitempty"`
-	IncomingRels       []RelationshipRef       `json:"incoming_relationships,omitempty"`
-	FKDisambiguation   []FKDisambiguationEntry `json:"fk_disambiguation,omitempty"`
-	Indexes            []IndexInfo             `json:"indexes,omitempty"`
-	Aggregations       *AggregationInfo        `json:"aggregations,omitempty"`
-	ExampleQueries     []ExampleQuery          `json:"example_queries,omitempty"`
-	AnalyticsModeRules []string                `json:"analytics_mode_rules,omitempty"`
-	AggregationHint    string                  `json:"aggregation_hint,omitempty"`
+	PrimaryKeys            []string                `json:"primary_keys,omitempty"`
+	ForeignKeys            []ForeignKeyRef         `json:"foreign_keys,omitempty"`
+	OutgoingRels           []RelationshipRef       `json:"outgoing_relationships,omitempty"`
+	IncomingRels           []RelationshipRef       `json:"incoming_relationships,omitempty"`
+	FKDisambiguation       []FKDisambiguationEntry `json:"fk_disambiguation,omitempty"`
+	Indexes                []IndexInfo             `json:"indexes,omitempty"`
+	Aggregations           *AggregationInfo        `json:"aggregations,omitempty"`
+	ExampleQueries         []ExampleQuery          `json:"example_queries,omitempty"`
+	AnalyticsModeRules     []string                `json:"analytics_mode_rules,omitempty"`
+	AggregationHint        string                  `json:"aggregation_hint,omitempty"`
+	TemporalFilterWarning  string                  `json:"temporal_filter_warning,omitempty"`
 
 	Cost DiscoveryCost `json:"cost"`
 }
 
-// FKDisambiguationEntry signals that this table has multiple foreign keys to
-// the same target. Without a @through(column:) hint the compiler will reject
-// queries that nest the target. The Candidates list names the FK columns and
-// includes paste-ready GraphQL snippets.
+// FKDisambiguationEntry signals multiple FKs to the same target; needs @through(column:).
 type FKDisambiguationEntry struct {
 	Target     string                       `json:"target"`
 	Ambiguous  bool                         `json:"ambiguous"`

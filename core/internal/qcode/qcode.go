@@ -1337,7 +1337,7 @@ func (co *Compiler) enforcePartitionFilterOLAP(sel *Select) {
 			return
 		}
 		sel.PartitionFilterRequired = fmt.Sprintf(
-			"table %q requires a filter on partition column %q (e.g., { %s: { gt: \"2026-01-01\" } })",
+			"table %q requires a filter on partition column %q. Add one of: where: { %s: { gte: \"<date>\" } }; or pass unrestricted: true to override.",
 			sel.Ti.Name, sel.Ti.PartitionKey, sel.Ti.PartitionKey)
 		return
 	}
@@ -1347,7 +1347,7 @@ func (co *Compiler) enforcePartitionFilterOLAP(sel *Select) {
 			return
 		}
 		sel.PartitionFilterRequired = fmt.Sprintf(
-			"table %q requires a filter on temporal column %q (e.g., { %s: { gt: \"2026-01-01\" } }); pass `unrestricted: true` to override",
+			"table %q requires a filter on temporal column %q. Add one of: where: { %s: { gte: \"<date>\" } }; or pass unrestricted: true to override.",
 			sel.Ti.Name, sel.Ti.ImplicitPartitionKey, sel.Ti.ImplicitPartitionKey)
 	}
 }
