@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -2497,4 +2498,84 @@ func Example_queryWithGlobalAggBrokenMdFix() {
 		printJSON(res.Data)
 	}
 	// Output: {"products":[{"count_id":100}]}
+}
+
+// TestStage3_DistinctAggregateNestedJoinThroughNonDistinctColumn reproduces
+// the agent's reported failure, root-caused via AdventureWorks:
+//
+// When a query is rooted at a table with `distinct: [col_a]` AND any
+// aggregate AND a nested join referencing a FK column that is NOT in the
+// distinct list, the compiler emits a GROUP BY CTE that drops the FK
+// column, then a lateral join referencing it on the aliased CTE. Postgres
+// rejects with:
+//
+//	ERROR: column salesorderdetail_0.salesorderid does not exist
+//
+// The agent's original framing (sum(expr:) is required) is a red herring —
+// plain sum_<col> triggers the same path. The actual trigger is "GROUP BY
+// drops a column the nested lateral join still references".
+//
+// Semantically the query is ambiguous (many join-key values per group), so
+// the right fix is for the compiler to reject this shape with a clear
+// "cannot nest join through column outside distinct/group-by; root at the
+// dimension table instead" message — not to emit broken SQL.
+//
+// Skipped on mongodb (different aggregation model) and snowflake
+// (unrelated correlated-subquery limit).
+func TestStage3_DistinctAggregateNestedJoinThroughNonDistinctColumn(t *testing.T) {
+	if dbType == "mongodb" || dbType == "snowflake" {
+		t.Skipf("skipping for %s", dbType)
+	}
+
+	conf := newConfig(&core.Config{DBType: dbType, DisableAllowList: true})
+	gj, err := core.NewGraphJin(conf, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gj.Close()
+
+	// purchases (analog of salesorderdetail) has FKs to BOTH products
+	// (product_id) AND users (customer_id → users.id). Distinct on
+	// product_id then nesting users forces the lateral join to reference
+	// customer_id — which the GROUP BY collapses away, so the inner CTE
+	// no longer projects it. This is the exact shape that emitted
+	// `salesorderdetail_0.salesorderid does not exist` on AdventureWorks.
+	//
+	// Acceptable outcomes after the fix:
+	//   1. Compile-time rejection with a "shape mismatch" error that
+	//      mentions distinct/group-by (preferred — see commentary above).
+	//   2. Successful execution. Less clean since the query is ambiguous,
+	//      but acceptable if the compiler decides to auto-materialize the
+	//      column. We accept either here; we just refuse to ship broken
+	//      SQL that errors out at the database level.
+	gql := `query {
+		purchases(distinct: [product_id], where: { id: { lteq: 100 } }) {
+			product_id
+			sum_quantity
+			users {
+				id
+			}
+		}
+	}`
+
+	res, err := gj.GraphQL(context.Background(), gql, nil, nil)
+	if err != nil {
+		errStr := err.Error()
+		// Accept clean compile-time rejection.
+		if strings.Contains(errStr, "distinct") || strings.Contains(errStr, "group") || strings.Contains(errStr, "shape") {
+			return
+		}
+		// Reject the broken-SQL case the agent saw.
+		t.Fatalf("distinct + aggregate + nested join through non-distinct FK emitted broken SQL (Stage 3 bug): %v", err)
+	}
+
+	var out struct {
+		Purchases []map[string]any `json:"purchases"`
+	}
+	if err := json.Unmarshal(res.Data, &out); err != nil {
+		t.Fatalf("unmarshal: %v\nraw: %s", err, string(res.Data))
+	}
+	if len(out.Purchases) == 0 {
+		t.Fatal("expected at least one purchase row or a clean compile-time error, got neither")
+	}
 }
