@@ -255,8 +255,9 @@ func intArg(v any) int {
 
 // AggregationInfo describes available aggregation functions for a table
 type AggregationInfo struct {
-	Available []string `json:"available"`
-	Usage     string   `json:"usage"`
+	Available   []string `json:"available"`
+	Usage       string   `json:"usage"`
+	Limitations []string `json:"limitations,omitempty"`
 }
 
 // TableSchemaWithAggregations extends TableSchema with aggregation information
@@ -384,9 +385,26 @@ func generateAggregations(schema *core.TableSchema) AggregationInfo {
 		Usage: fmt.Sprintf(
 			"Single column: { %s { count_id sum_<numeric_col> avg_<numeric_col> } }. "+
 				"Arithmetic across columns (revenue, margin, ratios): "+
-				"{ %s { revenue: sum(expr: { mul: [col_a, col_b] }) } } — "+
-				"call get_query_syntax for the full expression grammar.",
+				"{ %s { revenue: sum(expr: { mul: [col_a, col_b] }) } }. "+
+				"For metric-by-dimension shape (revenue by category, etc.) root at the dimension table — see get_query_syntax.patterns. "+
+				"On compile error, pass query+error to fix_query_error for a structured repair.",
 			schema.Name, schema.Name),
+		Limitations: aggregationLimitations(),
+	}
+}
+
+// aggregationLimitations enumerates the known compose-failures small
+// models might otherwise retry blindly. Static — same list for every
+// table. Each entry pairs the constraint with how to detect/repair it,
+// so the response is self-describing rather than requiring the agent to
+// hit the failure first.
+func aggregationLimitations() []string {
+	return []string{
+		"order_by does not work on aggregate aliases (sum_*, count_*, custom names from sum(expr:)). Sort aggregated results in workflow JavaScript.",
+		"Aggregates at non-root nested levels work but the GROUP BY happens at the root selection only. distinct: dedupes rows; it does not bucket.",
+		"Nesting a join through a column that is not in distinct: of an aggregating select is rejected at compile time — root at the dimension table instead. See get_query_syntax.patterns.metric_by_dimension.",
+		"Recursive (find:) selections cannot contain aggregate fields at the same level — fold via parent if needed.",
+		"MongoDB does not support expression aggregates (sum(expr:)) in the v1 driver — fall back to per-column aggregates.",
 	}
 }
 
