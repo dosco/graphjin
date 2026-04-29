@@ -6,21 +6,16 @@ import (
 	"strings"
 )
 
-// FixQueryErrorResult is the structured tool-result envelope for
-// fix_query_error. It carries both the human-friendly markdown guide and
-// machine-readable repair fields. Small models can read RepairedQuery
-// directly without parsing the markdown; frontier models still get the
-// full prose.
+// FixQueryErrorResult is the structured tool-result envelope for fix_query_error.
 type FixQueryErrorResult struct {
 	Title         string   `json:"title"`
 	GuideMarkdown string   `json:"guide_markdown"`
-	Kind          string   `json:"kind"`                     // diagnosis class id, see kinds below
-	Diagnosis     string   `json:"diagnosis"`                // one-sentence cause
-	RepairedQuery string   `json:"repaired_query,omitempty"` // paste-ready GraphQL (may contain <placeholder>)
+	Kind          string   `json:"kind"`
+	Diagnosis     string   `json:"diagnosis"`
+	RepairedQuery string   `json:"repaired_query,omitempty"`
 	FollowUpTools []string `json:"follow_up_tools,omitempty"`
 }
 
-// Diagnosis kinds. Stable string ids so consumers can switch on them.
 const (
 	fixKindMultiFKAmbiguity   = "multi_fk_ambiguity"
 	fixKindDistinctJoinShape  = "distinct_aggregate_nested_join_shape"
@@ -42,9 +37,7 @@ var (
 	rePartitionReq = regexp.MustCompile(`table\s+"([^"]+)"\s+requires a filter on (?:partition|temporal) column\s+"([^"]+)"`)
 )
 
-// buildFixQueryErrorRepair classifies the failing query+error pair and
-// returns structured repair guidance. Pure function — no I/O, safe to
-// call from both the prompt and tool entry points.
+// buildFixQueryErrorRepair classifies a failing query+error and returns structured repair guidance.
 func buildFixQueryErrorRepair(query, errorMsg string, analyticsMode bool) FixQueryErrorResult {
 	res := FixQueryErrorResult{Title: "Query error analysis", Kind: fixKindGeneric}
 	errLower := strings.ToLower(errorMsg)
@@ -228,8 +221,7 @@ func splitAndTrim(csv string) []string {
 	return out
 }
 
-// renderFixMarkdown produces the human-readable guide. Backwards-compatible
-// with the prompt-style consumer that only sees text.
+// renderFixMarkdown produces the human-readable markdown guide.
 func renderFixMarkdown(query, errorMsg string, res *FixQueryErrorResult, analyticsMode bool) string {
 	var sb strings.Builder
 	sb.WriteString("# Query Error Analysis\n\n")

@@ -879,8 +879,10 @@ type TableSchema struct {
 	PrimaryKey      string       `json:"primary_key,omitempty"`
 	PrimaryKeys     []string     `json:"primary_keys,omitempty"`
 	FullTextColumns []string     `json:"full_text_columns,omitempty"`
-	Columns         []ColumnInfo `json:"columns"`
-	Relationships   struct {
+	PartitionKey         string       `json:"partition_key,omitempty"`
+	ImplicitPartitionKey string       `json:"implicit_partition_key,omitempty"`
+	Columns              []ColumnInfo `json:"columns"`
+	Relationships        struct {
 		Outgoing []RelationInfo `json:"outgoing"` // Tables this table references
 		Incoming []RelationInfo `json:"incoming"` // Tables that reference this table
 	} `json:"relationships"`
@@ -1181,6 +1183,9 @@ func (gj *graphjinEngine) buildTableSchemaWithSchema(dbSchema *sdata.DBSchema, d
 	if len(t.PrimaryCols) > 1 {
 		schema.PrimaryKeys = t.PKColNames()
 	}
+
+	schema.PartitionKey = t.PartitionKey
+	schema.ImplicitPartitionKey = t.ImplicitPartitionKey
 
 	// FullText columns
 	for _, ft := range t.FullText {

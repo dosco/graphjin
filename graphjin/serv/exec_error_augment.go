@@ -6,21 +6,7 @@ import (
 	"strings"
 )
 
-// enhanceExecError augments an exec-time error with structured repair
-// fields, a dialect-derived Kind, and — most importantly — a schema
-// cross-check. When a "column does not exist" error names a column that
-// actually exists on the table, the underlying cause is upstream (the
-// SQL emitter dropped the column from a CTE projection), and the right
-// next step is fix_query_error, NOT describe_table.
-//
-// Returns either:
-//   - the original errMsg unchanged, if no useful classification could
-//     be made and the legacy substring matcher in enhanceError doesn't
-//     hit either;
-//   - a JSON-encoded EnhancedError with structured fields populated.
-//
-// Augments rather than replaces — Message preserves the raw driver text
-// so consumers that already parse it keep working.
+// enhanceExecError augments a driver error with structured repair fields and a schema cross-check; falls back to enhanceError when unclassifiable.
 func (ms *mcpServer) enhanceExecError(errMsg, currentTool string) string {
 	if errMsg == "" {
 		return errMsg
@@ -28,11 +14,6 @@ func (ms *mcpServer) enhanceExecError(errMsg, currentTool string) string {
 
 	dbType := ms.execDBType()
 	class := classifyExecError(dbType, errMsg)
-
-	// If the dialect classifier didn't recognize the shape, fall back to
-	// the legacy substring-based enhanceError. This keeps coverage for
-	// errors that don't fit any per-dialect regex (driver bug strings,
-	// network errors that bubble up from below the SQL layer, etc.).
 	if class.Kind == ExecKindUnknown {
 		return enhanceError(errMsg, currentTool)
 	}
@@ -73,12 +54,7 @@ func (ms *mcpServer) enhanceExecError(errMsg, currentTool string) string {
 	return string(data)
 }
 
-// fillColumnNotFoundAugment is the dialect-agnostic schema cross-check.
-// When the named column actually exists on the named table, the error is
-// a downstream artifact of SQL generation (most commonly: distinct +
-// aggregate dropped the column from a CTE projection — see Stage 3
-// compile-time rejection). When the column genuinely doesn't exist, the
-// suggestion stays at describe_table.
+// fillColumnNotFoundAugment cross-checks against the schema and reframes the error when the column actually exists.
 func (ms *mcpServer) fillColumnNotFoundAugment(enhanced *EnhancedError, class ExecErrorClass) {
 	if class.Column == "" {
 		enhanced.Suggestion = "Column not found. Use describe_table to see available columns."
@@ -103,12 +79,7 @@ func (ms *mcpServer) fillColumnNotFoundAugment(enhanced *EnhancedError, class Ex
 	enhanced.RelatedTool = "describe_table"
 }
 
-// columnExistsAcrossSchema returns whether the column exists on the
-// named table, plus the resolved (case-corrected) table name. When the
-// extracted table name is empty (some dialects don't emit it), it walks
-// every table in the engine looking for the column — a crude fallback,
-// but it's only invoked once per error and the worst case is still
-// O(tables × columns), which is small.
+// columnExistsAcrossSchema reports whether the column exists on the named table; falls back to a full scan when table is empty.
 func (ms *mcpServer) columnExistsAcrossSchema(table, column string) (bool, string) {
 	if ms == nil || ms.service == nil || ms.service.gj == nil {
 		return false, ""
@@ -128,9 +99,6 @@ func (ms *mcpServer) columnExistsAcrossSchema(table, column string) (bool, strin
 		}
 	}
 
-	// Fallback: search across all tables. Useful when the dialect didn't
-	// give us a table name in the error (oracle ORA-00904 sometimes
-	// drops it; mongodb projections, etc.).
 	for _, t := range gj.GetTables() {
 		if schema, err := gj.GetTableSchema(t.Name); err == nil && schema != nil {
 			for _, c := range schema.Columns {
@@ -144,7 +112,6 @@ func (ms *mcpServer) columnExistsAcrossSchema(table, column string) (bool, strin
 }
 
 // execDBType returns the canonical dbType key for the default database.
-// Empty string is treated as postgres by classifyExecError.
 func (ms *mcpServer) execDBType() string {
 	if ms == nil || ms.service == nil || ms.service.gj == nil {
 		return ""

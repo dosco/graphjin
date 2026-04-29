@@ -2,10 +2,7 @@ package serv
 
 import "strings"
 
-// Single source of truth for the rules that apply when a database is in
-// analytics mode. Restated across every discovery surface so an agent that
-// reads `analytics_mode: true` early doesn't lose the implications by the
-// time they're building a query (they don't re-read the overview).
+// Single source of truth for analytics-mode rules; restated across every discovery surface.
 
 func analyticsModeRules() []string {
 	return []string{
@@ -32,8 +29,7 @@ func analyticsModeBlockMarkdown() string {
 	return sb.String()
 }
 
-// analyticsModeOn reports whether the default database is in analytics mode.
-// Returns false if the engine is not yet wired up (during onboarding).
+// analyticsModeOn reports analytics-mode for the default database (false if engine not yet wired).
 func (ms *mcpServer) analyticsModeOn() bool {
 	if ms == nil || ms.service == nil || ms.service.gj == nil {
 		return false

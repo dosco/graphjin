@@ -64,6 +64,7 @@ func (dm *DiscoveryManager) TableSample(ctx context.Context, database, schemaNam
 			if isFactShapedTable(schema, profile) {
 				result.AggregationHint = "This looks like a fact table (high row count, multiple outgoing FKs). To aggregate by a dimension, root your query at the dimension table (small side) and nest down to here, not the other way around. distinct: dedupes; it does not bucket."
 			}
+			result.TemporalFilterWarning = temporalFilterWarning(schema)
 		}
 		dm.profileCache.Store(key, result)
 		return result, nil
@@ -463,6 +464,25 @@ func relationshipRefs(rels []core.RelationInfo) []RelationshipRef {
 		})
 	}
 	return out
+}
+
+// temporalFilterWarning is the per-table paste-ready warning surfaced when analytics_mode requires a date filter.
+func temporalFilterWarning(schema *core.TableSchema) string {
+	if schema == nil {
+		return ""
+	}
+	col := schema.PartitionKey
+	kind := "partition"
+	if col == "" && schema.ImplicitPartitionKey != "" {
+		col = schema.ImplicitPartitionKey
+		kind = "temporal"
+	}
+	if col == "" {
+		return ""
+	}
+	return fmt.Sprintf(
+		"Analytics mode requires a filter on %s column %q. Add one of:\n  where: { %s: { gte: \"<date>\" } }\n  (unrestricted: true)  # full-scan override",
+		kind, col, col)
 }
 
 // isFactShapedTable returns true when the table looks like an analytics fact
