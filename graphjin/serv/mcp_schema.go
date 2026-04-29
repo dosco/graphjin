@@ -506,10 +506,22 @@ func (ms *mcpServer) getNamespace() string {
 
 // WorkflowGuide contains the recommended workflow for using GraphJin MCP tools
 type WorkflowGuide struct {
-	QueryWorkflow    []string          `json:"query_workflow"`
-	MutationWorkflow []string          `json:"mutation_workflow"`
-	Tips             []string          `json:"tips"`
-	ToolSequences    map[string]string `json:"tool_sequences"`
+	QueryWorkflow         []string          `json:"query_workflow"`
+	MutationWorkflow      []string          `json:"mutation_workflow"`
+	Tips                  []string          `json:"tips"`
+	AnalyticsModeRules    []string          `json:"analytics_mode_rules,omitempty"`
+	AggregateByDimension  *AggregationGuide `json:"aggregate_by_dimension,omitempty"`
+	ToolSequences         map[string]string `json:"tool_sequences"`
+}
+
+// AggregationGuide explains how to shape "measure-by-dimension" queries
+// against GraphJin's no-GROUP-BY-at-nested-levels model. Surfaced when
+// analytics mode is on; agents lose this rule between schema overview and
+// query authoring without explicit re-statement.
+type AggregationGuide struct {
+	Rule    string `json:"rule"`
+	Why     string `json:"why"`
+	Example string `json:"example"`
 }
 
 // handleGetWorkflowGuide returns the recommended workflow for MCP tool usage
@@ -570,12 +582,14 @@ func (ms *mcpServer) handleGetWorkflowGuide(ctx context.Context, req mcp.CallToo
 		guide.MutationWorkflow = append(guide.MutationWorkflow, "4. Raw mutations are disabled, so execute a saved mutation with execute_saved_query")
 	}
 
-	analyticsMode := ms.service.gj != nil && ms.service.gj.EffectiveAnalyticsMode(ms.service.gj.DefaultDatabase())
+	analyticsMode := ms.analyticsModeOn()
 	if analyticsMode {
-		guide.Tips = append(guide.Tips,
-			"This database is in ANALYTICS MODE — compute answers server-side with aggregates (count_*, sum_*, sum(expr: { mul: [...] }), distinct: [group_col], filtered where:). Multiple targeted queries are fine; DO NOT paginate raw rows to build totals client-side. See get_query_syntax → Expression Aggregates.",
-			"Analytics mode: implicit row-limit defaults are OFF for this database. Queries without an explicit limit return the full result. Use explicit limit: only when you want a top-N.",
-		)
+		guide.AnalyticsModeRules = analyticsModeRules()
+		guide.AggregateByDimension = &AggregationGuide{
+			Rule: "To aggregate a measure by a dimension, root the query at the dimension table (small side) and nest down to the fact table. Place sum/count at the leaf.",
+			Why:  "GraphJin has no GROUP BY at non-root selections. distinct: dedupes rows but does not bucket. Rooting at the fact table and trying to group via distinct will not produce per-dimension aggregates.",
+			Example: "query {\n  product_category {\n    name\n    product_subcategory {\n      product {\n        sales_order_detail {\n          revenue: sum(expr: { mul: [unitprice, orderqty] })\n        }\n      }\n    }\n  }\n}",
+		}
 	} else {
 		guide.Tips = append(guide.Tips,
 			"ALWAYS use execute_workflow for data questions — NEVER execute_graphql directly. Tables can have hundreds of thousands of rows and you cannot predict sizes.",

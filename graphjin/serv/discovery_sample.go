@@ -37,24 +37,33 @@ func (dm *DiscoveryManager) TableSample(ctx context.Context, database, schemaNam
 		if err != nil {
 			return nil, err
 		}
+		outgoing := relationshipRefs(schema.Relationships.Outgoing)
+		analyticsMode := dm.gj != nil && dm.gj.EffectiveAnalyticsMode(resolvedDB)
 		result := &TableSampleResult{
-			Database:       resolvedDB,
-			Schema:         schema.Schema,
-			Table:          schema.Name,
-			Status:         "ready",
-			Stats:          profile,
-			PrimaryKeys:    primaryKeysFromSchema(schema),
-			ForeignKeys:    foreignKeysFromSchema(schema),
-			OutgoingRels:   relationshipRefs(schema.Relationships.Outgoing),
-			IncomingRels:   relationshipRefs(schema.Relationships.Incoming),
-			Indexes:        loadIndexes(ctx, dm.gj, resolvedDB, schema),
-			Aggregations:   aggregationInfoForSchema(schema),
-			ExampleQueries: generateExampleQueries(schema),
+			Database:         resolvedDB,
+			Schema:           schema.Schema,
+			Table:            schema.Name,
+			Status:           "ready",
+			Stats:            profile,
+			PrimaryKeys:      primaryKeysFromSchema(schema),
+			ForeignKeys:      foreignKeysFromSchema(schema),
+			OutgoingRels:     outgoing,
+			IncomingRels:     relationshipRefs(schema.Relationships.Incoming),
+			FKDisambiguation: detectFKDisambiguation(outgoing),
+			Indexes:          loadIndexes(ctx, dm.gj, resolvedDB, schema),
+			Aggregations:     aggregationInfoForSchema(schema),
+			ExampleQueries:   generateExampleQueries(schema),
 			Cost: DiscoveryCost{
 				UsesLiveQueries: true,
 				Scope:           "single_table",
 				Cache:           "miss",
 			},
+		}
+		if analyticsMode {
+			result.AnalyticsModeRules = analyticsModeRules()
+			if isFactShapedTable(schema, profile) {
+				result.AggregationHint = "This looks like a fact table (high row count, multiple outgoing FKs). To aggregate by a dimension, root your query at the dimension table (small side) and nest down to here, not the other way around. distinct: dedupes; it does not bucket."
+			}
 		}
 		dm.profileCache.Store(key, result)
 		return result, nil
@@ -452,6 +461,60 @@ func relationshipRefs(rels []core.RelationInfo) []RelationshipRef {
 			Column: r.ForeignKey,
 			Type:   r.Type,
 		})
+	}
+	return out
+}
+
+// isFactShapedTable returns true when the table looks like an analytics fact
+// table — many outgoing FKs (the dimension keys) and a high approximate row
+// count. Used to attach an aggregation hint.
+func isFactShapedTable(schema *core.TableSchema, profile *TableProfile) bool {
+	if schema == nil {
+		return false
+	}
+	if len(schema.Relationships.Outgoing) < 2 {
+		return false
+	}
+	if profile == nil || profile.RowCountApprox == nil {
+		return false
+	}
+	return *profile.RowCountApprox >= 10000
+}
+
+// detectFKDisambiguation flags multi-FK targets: when this table has more
+// than one outgoing relationship to the same target table, the compiler
+// cannot pick a foreign key without an explicit @through(column:) hint.
+func detectFKDisambiguation(outgoing []RelationshipRef) []FKDisambiguationEntry {
+	groups := map[string][]RelationshipRef{}
+	order := []string{}
+	for _, r := range outgoing {
+		if r.Table == "" || r.Column == "" {
+			continue
+		}
+		if _, seen := groups[r.Table]; !seen {
+			order = append(order, r.Table)
+		}
+		groups[r.Table] = append(groups[r.Table], r)
+	}
+
+	var out []FKDisambiguationEntry
+	for _, target := range order {
+		rels := groups[target]
+		if len(rels) < 2 {
+			continue
+		}
+		entry := FKDisambiguationEntry{
+			Target:     target,
+			Ambiguous:  true,
+			SyntaxHint: `add @through(column: "<fk_column>") on the nested selection`,
+		}
+		for _, r := range rels {
+			entry.Candidates = append(entry.Candidates, FKDisambiguationCandidate{
+				Column:  r.Column,
+				Snippet: fmt.Sprintf(`%s @through(column: %q) { ... }`, target, r.Column),
+			})
+		}
+		out = append(out, entry)
 	}
 	return out
 }

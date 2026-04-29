@@ -527,3 +527,41 @@ func mapValues(m map[string]string) []string {
 	}
 	return values
 }
+
+func TestDetectFKDisambiguation(t *testing.T) {
+	out := detectFKDisambiguation([]RelationshipRef{
+		{Table: "users", Column: "user_id"},
+		{Table: "products", Column: "product_id"},
+	})
+	if len(out) != 0 {
+		t.Fatalf("expected empty disambiguation, got %+v", out)
+	}
+
+	out = detectFKDisambiguation([]RelationshipRef{
+		{Table: "users", Column: "customer_id"},
+		{Table: "users", Column: "salesperson_id"},
+		{Table: "products", Column: "product_id"},
+	})
+	if len(out) != 1 {
+		t.Fatalf("expected 1 disambiguation entry, got %d", len(out))
+	}
+	entry := out[0]
+	if entry.Target != "users" {
+		t.Fatalf("expected target=users, got %s", entry.Target)
+	}
+	if !entry.Ambiguous {
+		t.Fatal("expected Ambiguous=true")
+	}
+	if len(entry.Candidates) != 2 {
+		t.Fatalf("expected 2 candidates, got %d", len(entry.Candidates))
+	}
+	cols := entry.Candidates[0].Column + "," + entry.Candidates[1].Column
+	if !strings.Contains(cols, "customer_id") || !strings.Contains(cols, "salesperson_id") {
+		t.Fatalf("expected customer_id + salesperson_id, got %s", cols)
+	}
+	for _, c := range entry.Candidates {
+		if !strings.Contains(c.Snippet, "@through(column:") {
+			t.Fatalf("snippet missing @through(column:): %s", c.Snippet)
+		}
+	}
+}
