@@ -199,7 +199,7 @@ var querySyntaxReference = QuerySyntaxReference{
 		"@object":                "Return single object instead of array",
 		"@schema(name:)":         "Use specific database schema",
 		"@through(table:)":       "Specify the intermediate join table for many-to-many relationships",
-		"@through(column:)":      "Disambiguate when the parent and the nested target share multiple foreign keys — name the FK column to follow. Example: billofmaterials { product @through(column: \"componentid\") { name } }",
+		"@through(column:)":      "Disambiguate when the parent and the nested target share multiple foreign keys — name the FK column to follow. For composite foreign keys (e.g. (term_id, course_id)), naming any one column of the composite is sufficient: the compiler resolves the full constraint and emits all join conditions. Example: billofmaterials { product @through(column: \"componentid\") { name } }",
 		"@notRelated":            "Disable automatic relationship detection for a field",
 		"@cacheControl(maxAge:)": "Set cache TTL in seconds for this query",
 		"@database(name:)":       "Assign table to a named database (REQUIRED on every table when multiple databases are configured). Used in schema definitions, e.g.: type users @database(name: \"mydb\") { ... }",
