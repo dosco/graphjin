@@ -7,11 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"sync"
 	"time"
 
 	"github.com/dosco/graphjin/core/v3/fstable"
-	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
 )
 
@@ -303,17 +301,11 @@ func parsePositiveInt(s string) (int, error) {
 	return n, nil
 }
 
-// --- Engine wiring helpers ----------------------------------------------------
-
-// fsBackendsLock guards lazy init of the factory map on the engine.
-var fsBackendsLock sync.Mutex
-
-// registerLocalFilesystemFactory installs the built-in "local" factory
-// the first time it's needed. Other backends (s3, gcs) are registered
-// from outside core via OptionSetFilesystemBackend.
+// registerBuiltinFilesystemFactories installs the built-in "local"
+// factory if no caller already registered one via
+// OptionSetFilesystemBackend. Called during engine setup, which is
+// single-threaded per engine — no locking needed.
 func (gj *graphjinEngine) registerBuiltinFilesystemFactories() {
-	fsBackendsLock.Lock()
-	defer fsBackendsLock.Unlock()
 	if gj.fsFactories == nil {
 		gj.fsFactories = make(map[string]FilesystemBackendFactory)
 	}
@@ -324,8 +316,3 @@ func (gj *graphjinEngine) registerBuiltinFilesystemFactories() {
 		return fstable.NewLocal(fstable.LocalConfig{Root: conf.Root})
 	}
 }
-
-// silence unused-import linter when the package is built without the
-// hook for tests; the import is real once any backend uses qcode.Select
-// off req.Sel.
-var _ = qcode.QType(0)
