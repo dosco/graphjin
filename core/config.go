@@ -253,6 +253,20 @@ type Config struct {
 	// query for updates.
 	SubsPollDuration time.Duration `mapstructure:"subs_poll_duration" json:"subs_poll_duration" yaml:"subs_poll_duration" jsonschema:"title=Subscription Polling Duration,default=5s"`
 
+	// Upper bound on how many subscribers a single subscription poll cycle
+	// will batch into one database query. The adaptive sizer never grows
+	// past this value. When zero a sensible default is used.
+	SubsMaxMembersPerWorker int `mapstructure:"subs_max_members_per_worker" json:"subs_max_members_per_worker" yaml:"subs_max_members_per_worker" jsonschema:"title=Subscription Max Members Per Worker,default=5000"`
+
+	// Lower bound on the adaptive subscription chunk size; prevents the
+	// sizer from shrinking down to per-row queries under sustained load.
+	// When zero a sensible default is used.
+	SubsMinMembersPerWorker int `mapstructure:"subs_min_members_per_worker" json:"subs_min_members_per_worker" yaml:"subs_min_members_per_worker" jsonschema:"title=Subscription Min Members Per Worker,default=50"`
+
+	// Target query latency for the adaptive subscription chunk sizer.
+	// When zero it is auto-derived as one quarter of subs_poll_duration.
+	SubsTargetQueryLatency time.Duration `mapstructure:"subs_target_query_latency" json:"subs_target_query_latency" yaml:"subs_target_query_latency" jsonschema:"title=Subscription Target Query Latency,description=When zero this is auto-derived as 25% of subs_poll_duration"`
+
 	// The default max limit (number of rows) when a limit is not defined in
 	// the query or the table role config.
 	DefaultLimit int `mapstructure:"default_limit" json:"default_limit" yaml:"default_limit" jsonschema:"title=Default Row Limit,default=20"`
