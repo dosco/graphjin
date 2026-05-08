@@ -90,6 +90,7 @@ func Load(opts LoaderOptions, configs map[string]SpecConfig, logger *log.Logger)
 		}
 
 		cfg := expandSpecConfig(configs[key])
+		cfg = canonicaliseOpKeys(cfg, doc)
 
 		baseURL := cfg.BaseURL
 		if baseURL == "" && len(doc.Servers) > 0 {
@@ -138,6 +139,52 @@ func expandEnv(s string) string {
 		name := match[2 : len(match)-1]
 		return os.Getenv(name)
 	})
+}
+
+// canonicaliseOpKeys rewrites user-supplied Joins/Operations map keys
+// to match the spec's actual operationId casing. Viper lowercases all
+// map keys when unmarshalling, so without this step a user-configured
+// override for `exportUsers` ends up under `exportusers` and never
+// matches the classifier's lookup.
+func canonicaliseOpKeys(cfg SpecConfig, doc *openapi3.T) SpecConfig {
+	if doc == nil || doc.Paths == nil {
+		return cfg
+	}
+	canonical := map[string]string{}
+	for _, item := range doc.Paths.Map() {
+		if item == nil {
+			continue
+		}
+		for _, op := range item.Operations() {
+			if op != nil && op.OperationID != "" {
+				canonical[strings.ToLower(op.OperationID)] = op.OperationID
+			}
+		}
+	}
+
+	if len(cfg.Joins) > 0 {
+		out := make(map[string]JoinConfig, len(cfg.Joins))
+		for k, v := range cfg.Joins {
+			if c, ok := canonical[strings.ToLower(k)]; ok {
+				out[c] = v
+			} else {
+				out[k] = v
+			}
+		}
+		cfg.Joins = out
+	}
+	if len(cfg.Operations) > 0 {
+		out := make(map[string]OperationOverride, len(cfg.Operations))
+		for k, v := range cfg.Operations {
+			if c, ok := canonical[strings.ToLower(k)]; ok {
+				out[c] = v
+			} else {
+				out[k] = v
+			}
+		}
+		cfg.Operations = out
+	}
+	return cfg
 }
 
 // expandSpecConfig walks SpecConfig and applies env-var expansion to
