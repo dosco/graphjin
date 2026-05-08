@@ -236,8 +236,13 @@ func (s *DBSchema) addPolymorphicRel(t DBTable) error {
 	return s.addToGraph(t, t.PrimaryCol, pt, pc, RelPolymorphic)
 }
 
-// addRemoteRel adds a remote relationship to the schema
+// addRemoteRel adds a remote relationship to the schema. A remote with
+// no FKey target is parent-less (top-level virtual table) — no edge.
 func (s *DBSchema) addRemoteRel(t DBTable) error {
+	if t.PrimaryCol.FKeyTable == "" {
+		return nil
+	}
+
 	pt, err := s.Find(t.PrimaryCol.FKeySchema, t.PrimaryCol.FKeyTable)
 	if err != nil {
 		return err

@@ -312,8 +312,14 @@ func (gj *graphjinEngine) introQuery() (result json.RawMessage, err error) {
 
 // addTable adds a table to the introspection schema
 func (in *Introspection) addTable(table sdata.DBTable, alias string) (err error) {
-	if table.Blocked || len(table.Columns) == 0 {
+	if table.Blocked {
 		return
+	}
+	if len(table.Columns) == 0 && len(table.Args) == 0 {
+		return
+	}
+	if table.Type == "remote" {
+		return in.addRemoteTable(table, alias)
 	}
 	var ftQS FullType
 
@@ -346,6 +352,59 @@ func (in *Introspection) addTable(table sdata.DBTable, alias string) (err error)
 	in.addTypeTo("Subscription", ftQSByID)
 
 	return
+}
+
+// addRemoteTable surfaces a synthetic remote table (OpenAPI virtual)
+// as a single Query field. Skips the real-table machinery (mutations,
+// ByID, where/orderBy), which doesn't apply to remotes.
+func (in *Introspection) addRemoteTable(table sdata.DBTable, alias string) error {
+	ft := FullType{
+		Kind:        KIND_OBJECT,
+		InputFields: []InputValue{},
+		Interfaces:  []TypeRef{},
+	}
+	name := table.Name
+	if alias != "" {
+		name = alias
+	}
+	ft.Name = in.getName(name)
+	ft.Description = table.Comment
+
+	for _, c := range table.Columns {
+		if c.Blocked {
+			continue
+		}
+		f, err := in.getColumnField(c)
+		if err != nil {
+			return err
+		}
+		ft.Fields = append(ft.Fields, f)
+	}
+
+	for _, a := range table.Args {
+		base := remoteArgType(a.Type)
+		if a.NotNull {
+			base = newTypeRef(KIND_NONNULL, "", base)
+		}
+		ft.addArg(a.Name, base)
+	}
+
+	in.addType(ft)
+	in.addTypeTo("Query", ft)
+	return nil
+}
+
+func remoteArgType(t string) *TypeRef {
+	switch t {
+	case "bigint", "int", "integer", "smallint":
+		return newTypeRef("", "Int", nil)
+	case "boolean", "bool":
+		return newTypeRef("", "Boolean", nil)
+	case "numeric", "float", "double", "real", "double precision":
+		return newTypeRef("", "Float", nil)
+	default:
+		return newTypeRef("", "String", nil)
+	}
 }
 
 // addTypeTo adds a type to the introspection schema

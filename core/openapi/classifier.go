@@ -136,6 +136,7 @@ func classifyOne(
 	if ov, ok := cfg.Operations[d.OperationID]; ok && ov.ResultPath != "" {
 		d.ResultPath = splitPath(ov.ResultPath)
 	}
+	d.ResponseSchema = jsonContent.Schema
 
 	// Choose mode based on the path shape: a single trailing path param
 	// means single-record; no path params means a collection. Anything in

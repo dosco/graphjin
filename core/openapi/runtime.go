@@ -98,6 +98,23 @@ func NewRuntime(reg *Registry, httpClient *http.Client) (*Runtime, []string, err
 	return out, warnings, nil
 }
 
+// Operation returns the OpDescriptor for a (spec, operation) pair.
+func (r *Runtime) Operation(specKey, operationID string) (*OpDescriptor, bool) {
+	if r == nil {
+		return nil, false
+	}
+	rt, ok := r.specs[specKey]
+	if !ok || rt.spec == nil {
+		return nil, false
+	}
+	for i := range rt.spec.Operations {
+		if rt.spec.Operations[i].OperationID == operationID {
+			return &rt.spec.Operations[i], true
+		}
+	}
+	return nil, false
+}
+
 // Caller resolves an operation across every loaded spec. Returns nil
 // when no spec contains an operation with that id.
 func (r *Runtime) Caller(specKey, operationID string) (*Caller, bool) {

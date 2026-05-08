@@ -882,11 +882,48 @@ Every GET in the spec is classified into one of:
 | Mode | Path shape | Behaviour |
 |---|---|---|
 | **Row-join** | `GET /resource/{id}` with a matching `joins:` entry | Exposed as a child field on the parent DB table. The parent column's value populates the path parameter at query time. |
-| **Top-level (single)** | `GET /resource/{id}` without a `joins:` entry | Currently logged but not yet queryable as a top-level field. Coming in a follow-up. |
-| **Top-level (list)** | `GET /resources` with optional query filters | Currently logged but not yet queryable as a top-level field. Coming in a follow-up. |
+| **Top-level (single)** | `GET /resource/{id}` without a `joins:` entry | Exposed as a top-level GraphQL field. The path parameter becomes a required field argument. |
+| **Top-level (list)** | `GET /resources` with optional query filters | Exposed as a top-level GraphQL field. Each query parameter becomes an optional field argument. |
 | **Skipped** | Async (Location header), binary response, mutating verb (POST/PUT/PATCH/DELETE), nested or multi-segment path params | Reason logged at boot. |
 
-The first iteration of OpenAPI integration ships **row-joins only**. Top-level virtual tables (querying APIs without an existing parent DB row) require coordinated changes to the GraphJin schema/qcode pipeline and will land in a separate, focused PR.
+#### Top-level virtual tables
+
+Operations classified as top-level are queryable directly, with no parent DB row required:
+
+```graphql
+# Single-record by ID — path param becomes a required arg
+query {
+  is_get_user_by_id(userId: "u-42") {
+    id
+    email
+    lastSeenAt
+  }
+}
+
+# Collection — query params become args
+query {
+  is_audit_logs(actorId: "u-42") {
+    id
+    action
+  }
+}
+
+# Mixed — DB tables and OpenAPI virtuals in one query
+query {
+  users(where: { id: { eq: 1 } }) { id email }
+  is_audit_logs(actorId: "u-1") { id action }
+}
+```
+
+Default GraphQL field name is `<spec_key>_<operation_id_snake>`; override per-operation under `operations:`:
+
+```yaml
+openapi:
+  is:
+    operations:
+      listAuditLogs:
+        expose_as: audit_logs
+```
 
 ### Authentication
 
@@ -1008,12 +1045,12 @@ openapi: GET /jobs/{jobId}/status — skipped: async pattern (Location header on
 openapi: POST /users — skipped: mutating verb (write-side not yet supported)
 ```
 
-### Limitations (this iteration)
+### Limitations
 
 - **Read-only** — only GET operations are processed. Mutations (POST/PUT/PATCH/DELETE) are logged and skipped. Direct write support is planned.
-- **Row-joins only** — top-level virtual tables (querying APIs without a DB parent) are detected and logged but not yet exposed in the GraphQL schema. This requires coordinated schema/qcode changes and will land separately.
 - **Async/export endpoints** — out of scope. GraphJin is a query engine, not a data-replication system. Job-based or file-download endpoints are skipped at classification.
 - **Header pass-through** — multi-tenant header forwarding (`token_from_request`) is wired through the auth provider but the bridge layer to inbound HTTP headers isn't yet plumbed. Static `${ENV}` tokens work today.
+- **Top-level args are scalar literals only** — quote numbers and booleans (`limit: "50"`). Nested object/array args are not supported in v1.
 
 ---
 

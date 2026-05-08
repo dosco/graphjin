@@ -5,29 +5,22 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/dosco/graphjin/core/v3/internal/qcode"
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
 	"github.com/dosco/graphjin/core/v3/openapi"
 )
 
-// openapiBridge adapts a single openapi.Caller to the core.Resolver
-// interface. The existing remote-join machinery (resolve.go,
-// remote_join.go) consumes core.Resolver implementations without
-// caring whether they're backed by remote_api, the OpenAPI sub-package,
-// or any user-supplied implementation — the bridge is just glue.
-//
-// Construction is cheap; one bridge is built per registered operation
-// and held for the engine's lifetime.
 type openapiBridge struct {
 	caller   *openapi.Caller
-	pathName string // name of the path parameter that receives the join key
+	pathName string
+	op       *openapi.OpDescriptor
+	topLevel bool
 }
 
-// Resolve is invoked once per parent row in a row-join scenario. The
-// req.ID carries the parent column's value (already extracted by the
-// remote-join orchestrator) and is mapped onto the operation's path
-// parameter. Pass-through-from-headers is intentionally not wired up
-// in this iteration — RequestConfig doesn't currently carry inbound
-// HTTP headers, and adding that surface is a separate change.
 func (b *openapiBridge) Resolve(ctx context.Context, req ResolverReq) ([]byte, error) {
+	if b.topLevel {
+		return b.callTopLevel(ctx, req.Sel)
+	}
 	params := openapi.CallParams{}
 	if b.pathName != "" {
 		params.PathValues = map[string]string{b.pathName: req.ID}
@@ -35,14 +28,36 @@ func (b *openapiBridge) Resolve(ctx context.Context, req ResolverReq) ([]byte, e
 	return b.caller.Call(ctx, params)
 }
 
-// loadOpenAPIIntegration runs at the start of the resolver-init phase
-// of GraphJin boot. It walks config/specs, classifies operations, and
-// for every row-joinable operation it synthesises a ResolverConfig of
-// type "openapi" so the existing initResolvers loop can register the
-// remote table in the same code path that handles remote_api today.
-//
-// Returns early without error when the specs directory is missing —
-// OpenAPI integration is optional, not required.
+func (b *openapiBridge) callTopLevel(ctx context.Context, sel *qcode.Select) ([]byte, error) {
+	if sel == nil {
+		return nil, fmt.Errorf("openapi: top-level resolve called without a select")
+	}
+	if b.op == nil {
+		return nil, fmt.Errorf("openapi: top-level bridge missing operation metadata")
+	}
+	args := sel.ExtraArgs
+	p := openapi.CallParams{
+		PathValues:  map[string]string{},
+		QueryValues: map[string]string{},
+	}
+	for _, ps := range b.op.PathParams {
+		v, ok := args[ps.Name]
+		if !ok {
+			if ps.Required {
+				return nil, fmt.Errorf("openapi: required path param %q missing for %s", ps.Name, b.op.OperationID)
+			}
+			continue
+		}
+		p.PathValues[ps.Name] = v
+	}
+	for _, qs := range b.op.QueryParams {
+		if v, ok := args[qs.Name]; ok {
+			p.QueryValues[qs.Name] = v
+		}
+	}
+	return b.caller.Call(ctx, p)
+}
+
 func (gj *graphjinEngine) loadOpenAPIIntegration() error {
 	res, err := openapi.Load(
 		openapi.LoaderOptions{SpecsDir: gj.conf.OpenAPISpecsDir},
@@ -53,9 +68,6 @@ func (gj *graphjinEngine) loadOpenAPIIntegration() error {
 		return fmt.Errorf("openapi load: %w", err)
 	}
 	if res == nil || res.Registry == nil || len(res.Registry.Specs) == 0 {
-		// No specs found and no error — feature is dormant for this
-		// deployment. Surface any warnings so a misnamed config doesn't
-		// silently disappear.
 		for _, w := range res.Warnings {
 			gj.log.Println(w)
 		}
@@ -80,23 +92,43 @@ func (gj *graphjinEngine) loadOpenAPIIntegration() error {
 		gj.log.Println(w)
 	}
 
-	// Synthesise ResolverConfigs for row-joinable operations and prepend
-	// to gj.conf.Resolvers. The existing initRemote loop consumes them
-	// indistinguishably from manually-declared remote_api resolvers.
-	synth := synthesiseRowJoinResolvers(res.Registry)
-	if len(synth) > 0 {
-		if err := gj.validateOpenAPINoCollisions(synth); err != nil {
-			return err
-		}
-		gj.conf.Resolvers = append(gj.conf.Resolvers, synth...)
+	synth := synthesiseResolvers(res.Registry)
+	if len(synth) == 0 {
+		return nil
 	}
-
+	if err := gj.validateOpenAPINoCollisions(synth); err != nil {
+		return err
+	}
+	if err := gj.preRegisterOpenAPITables(res.Registry); err != nil {
+		return err
+	}
+	gj.conf.Resolvers = append(gj.conf.Resolvers, synth...)
 	return nil
 }
 
-// validateOpenAPINoCollisions guards against AddTable silently shadowing
-// a real table. Hard fail on real-table or cross-spec collisions; warn
-// on alias/resolver collisions.
+// preRegisterOpenAPITables registers synthetic remote tables for top-level
+// operations into the primary DB's dbinfo before initResolvers walks the
+// resolver list. Row-join tables are added later by initRemote itself.
+func (gj *graphjinEngine) preRegisterOpenAPITables(reg *openapi.Registry) error {
+	pdb := gj.primaryDB()
+	if pdb == nil || pdb.dbinfo == nil {
+		return nil
+	}
+	schema := pdb.dbinfo.Schema
+	for _, sp := range reg.Specs {
+		for i := range sp.Operations {
+			op := &sp.Operations[i]
+			if op.Mode != openapi.OpModeSingleByID && op.Mode != openapi.OpModeList {
+				continue
+			}
+			t := sdata.NewDBTable(schema, op.ExposeAs, "remote", openapi.SynthesiseColumns(schema, op.ExposeAs, op.ResponseSchema, op.ResultPath))
+			t.Args = openapi.SynthesiseArgs(schema, op.ExposeAs, *op)
+			pdb.dbinfo.AddTable(t)
+		}
+	}
+	return nil
+}
+
 func (gj *graphjinEngine) validateOpenAPINoCollisions(synth []ResolverConfig) error {
 	realTables := make(map[string]string)
 	pdb := gj.primaryDB()
@@ -158,45 +190,50 @@ func (gj *graphjinEngine) validateOpenAPINoCollisions(synth []ResolverConfig) er
 	return nil
 }
 
-// synthesiseRowJoinResolvers walks every loaded spec and emits one
-// ResolverConfig per OpModeRowJoin operation. The Props carry the
-// spec/operation identifiers the openapi rtmap factory needs to find
-// the right Caller; the rest of the ResolverConfig fields drive
-// initRemote's synthetic-table registration.
-func synthesiseRowJoinResolvers(reg *openapi.Registry) []ResolverConfig {
+// synthesiseResolvers emits one ResolverConfig per row-join AND per
+// top-level operation. Row-join entries carry a parent table; top-level
+// entries leave Table empty so initRemote takes the parent-less path.
+func synthesiseResolvers(reg *openapi.Registry) []ResolverConfig {
 	var out []ResolverConfig
 	for _, sp := range reg.Specs {
 		for i := range sp.Operations {
 			op := &sp.Operations[i]
-			if op.Mode != openapi.OpModeRowJoin || op.Join == nil {
-				continue
+			switch op.Mode {
+			case openapi.OpModeRowJoin:
+				if op.Join == nil {
+					continue
+				}
+				pathName := ""
+				if len(op.PathParams) > 0 {
+					pathName = op.PathParams[0].Name
+				}
+				out = append(out, ResolverConfig{
+					Name:   op.ExposeAs,
+					Type:   "openapi",
+					Table:  op.Join.ParentTable,
+					Column: op.Join.ParentColumn,
+					Props: ResolverProps{
+						"spec_key":     op.SpecKey,
+						"operation_id": op.OperationID,
+						"path_param":   pathName,
+					},
+				})
+			case openapi.OpModeSingleByID, openapi.OpModeList:
+				out = append(out, ResolverConfig{
+					Name: op.ExposeAs,
+					Type: "openapi",
+					// Table left empty: signals top-level to initRemote.
+					Props: ResolverProps{
+						"spec_key":     op.SpecKey,
+						"operation_id": op.OperationID,
+					},
+				})
 			}
-			// Use the operation's actual path param as the substitution
-			// key. Validated at classification: row-joinable operations
-			// have exactly one path param.
-			pathName := ""
-			if len(op.PathParams) > 0 {
-				pathName = op.PathParams[0].Name
-			}
-			out = append(out, ResolverConfig{
-				Name:   op.ExposeAs,
-				Type:   "openapi",
-				Table:  op.Join.ParentTable,
-				Column: op.Join.ParentColumn,
-				Props: ResolverProps{
-					"spec_key":     op.SpecKey,
-					"operation_id": op.OperationID,
-					"path_param":   pathName,
-				},
-			})
 		}
 	}
 	return out
 }
 
-// newOpenAPIResolverFn produces the rtmap factory for type "openapi".
-// It is invoked once per synthesised ResolverConfig at initRemote time
-// and returns a Resolver bound to a specific spec/operation.
 func (gj *graphjinEngine) newOpenAPIResolverFn() ResolverFn {
 	return func(props ResolverProps) (Resolver, error) {
 		specKey, _ := props["spec_key"].(string)
@@ -209,6 +246,11 @@ func (gj *graphjinEngine) newOpenAPIResolverFn() ResolverFn {
 		if !ok {
 			return nil, fmt.Errorf("openapi: operation %q in spec %q not found at runtime", opID, specKey)
 		}
-		return &openapiBridge{caller: caller, pathName: pathName}, nil
+		op, _ := gj.openapiRuntime.Operation(specKey, opID)
+		b := &openapiBridge{caller: caller, pathName: pathName, op: op}
+		if op != nil && (op.Mode == openapi.OpModeSingleByID || op.Mode == openapi.OpModeList) {
+			b.topLevel = true
+		}
+		return b, nil
 	}
 }

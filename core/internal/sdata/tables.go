@@ -100,6 +100,10 @@ type DBTable struct {
 	PartitionNone        bool
 	ImplicitPartitionKey string
 	colMap               map[string]int
+
+	// Args lists synthetic field-level arguments (used for top-level
+	// remote tables that take query/path params as GraphQL args).
+	Args []DBColumn
 }
 
 // VirtualTable holds the virtual table information

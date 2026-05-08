@@ -66,24 +66,34 @@ func (s *gstate) resolveRemotes(
 		if !ok {
 			return nil, fmt.Errorf("invalid remote field key")
 		}
-		p := selects[sel.ParentID]
 
-		// then use the Table name in the Select and it's parent
-		// to find the resolver to use for this relationship
-		r, ok := s.gj.rmap[(sel.Table + p.Table)]
-		if !ok {
-			return nil, fmt.Errorf("no resolver found")
+		// Lookup the resolver. Top-level remotes (ParentID == -1) are
+		// keyed by table name alone; row-joins are keyed by table+parent.
+		var (
+			r    resItem
+			rid  []byte
+			rkey string
+		)
+		if sel.ParentID == -1 {
+			rkey = sel.Table
+			r, ok = s.gj.rmap[rkey]
+		} else {
+			p := selects[sel.ParentID]
+			rkey = sel.Table + p.Table
+			r, ok = s.gj.rmap[rkey]
+			if ok {
+				rid = jsn.Value(id.Value)
+				if len(rid) == 0 {
+					return nil, fmt.Errorf("invalid remote field id")
+				}
+			}
 		}
-
-		id := jsn.Value(id.Value)
-		if len(id) == 0 {
-			return nil, fmt.Errorf("invalid remote field id")
+		if !ok {
+			return nil, fmt.Errorf("no resolver found for remote %q", rkey)
 		}
 
 		go func(n int, id []byte, sel *qcode.Select) {
 			defer wg.Done()
-
-			// st := time.Now()
 
 			ctx1, span := s.gj.spanStart(ctx, "Execute Remote Request")
 
@@ -123,7 +133,7 @@ func (s *gstate) resolveRemotes(
 			}
 
 			to[n] = jsn.Field{Key: []byte(sel.FieldName), Value: ob.Bytes()}
-		}(i, id, sel)
+		}(i, rid, sel)
 	}
 	wg.Wait()
 	return to, cerr
@@ -147,6 +157,15 @@ func (s *gstate) parentFieldIds() ([][]byte, map[string]*qcode.Select, error) {
 			continue
 		}
 
+		// Top-level remote: marker keyed by the field name itself; no
+		// parent row to extract an ID from.
+		if sel.ParentID == -1 {
+			marker := []byte(sel.FieldName)
+			fm = append(fm, marker)
+			sm[string(marker)] = &selects[i]
+			continue
+		}
+
 		p := selects[sel.ParentID]
 
 		if r, ok := s.gj.rmap[(sel.Table + p.Table)]; ok {
@@ -165,4 +184,26 @@ func fieldsToList(fields []qcode.Field) []string {
 		f = append(f, col.FieldName)
 	}
 	return f
+}
+
+// seedRemotePlaceholders builds JSON for the all-remote case where
+// executeQuery is skipped. Each top-level remote root gets a marker
+// keyed by its FieldName; execRemoteJoin uses the same key for lookup.
+func seedRemotePlaceholders(qc *qcode.QCode) []byte {
+	var b bytes.Buffer
+	b.WriteByte('{')
+	first := true
+	for _, rid := range qc.Roots {
+		sel := &qc.Selects[rid]
+		if sel.SkipRender != qcode.SkipTypeRemote {
+			continue
+		}
+		if !first {
+			b.WriteByte(',')
+		}
+		first = false
+		fmt.Fprintf(&b, "%q:%q", sel.FieldName, "__remote__:"+sel.FieldName)
+	}
+	b.WriteByte('}')
+	return b.Bytes()
 }

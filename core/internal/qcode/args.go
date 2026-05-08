@@ -64,6 +64,10 @@ func (co *Compiler) compileSelectArgs(sel *Select, args []graph.Arg, role string
 		case "insert", "update", "upsert", "delete":
 
 		default:
+			if sel.Ti.Type == "remote" {
+				err = co.compileArgRemoteExtra(sel, a)
+				break
+			}
 			return unknownArg(a)
 		}
 
@@ -72,6 +76,24 @@ func (co *Compiler) compileSelectArgs(sel *Select, args []graph.Arg, role string
 		}
 	}
 	return
+}
+
+// compileArgRemoteExtra accepts arbitrary scalar args on a remote table
+// and stashes them in sel.ExtraArgs for the resolver to consume.
+func (co *Compiler) compileArgRemoteExtra(sel *Select, arg graph.Arg) error {
+	if arg.Val == nil {
+		return fmt.Errorf("argument %q has no value", arg.Name)
+	}
+	switch arg.Val.Type {
+	case graph.NodeStr, graph.NodeNum, graph.NodeBool:
+	default:
+		return fmt.Errorf("argument %q on remote table must be a scalar literal", arg.Name)
+	}
+	if sel.ExtraArgs == nil {
+		sel.ExtraArgs = map[string]string{}
+	}
+	sel.ExtraArgs[arg.Name] = arg.Val.Val
+	return nil
 }
 
 func (co *Compiler) compileArgFind(sel *Select, arg graph.Arg) (err error) {

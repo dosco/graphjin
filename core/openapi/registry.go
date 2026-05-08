@@ -100,6 +100,11 @@ type OpDescriptor struct {
 	// operation is wired as a row join (Mode == OpModeRowJoin). Nil for
 	// auto-exposed top-level operations.
 	Join *JoinConfig
+
+	// ResponseSchema points at the success-response body schema. Used
+	// by the bridge to synthesise DBColumn entries for top-level virtual
+	// tables so they are visible to GraphQL introspection.
+	ResponseSchema *openapi3.SchemaRef
 }
 
 // Spec is the loader's per-file output: the parsed OpenAPI document, the
