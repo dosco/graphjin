@@ -30,6 +30,7 @@ Use --format=table for a human-readable flat-list view where applicable.`,
 	c.AddCommand(mcpQueryGetCmd())
 	c.AddCommand(mcpQueryRunCmd())
 	c.AddCommand(mcpQueryExecCmd())
+	c.AddCommand(mcpQuerySubscribeCmd())
 	return c
 }
 
@@ -142,5 +143,56 @@ Pass the GraphQL body as a positional argument, or "-" to read from stdin:
 	c.Flags().StringVar(&mcpQueryExecVars, "vars", "", "Variables as a JSON object string")
 	c.Flags().StringVar(&mcpQueryExecVarsFile, "vars-file", "", "Variables from a JSON file (use '-' for stdin)")
 	c.Flags().StringVar(&mcpQueryExecNamespace, "namespace", "", "Namespace for multi-tenant deployments")
+	return c
+}
+
+var (
+	mcpQuerySubVars      string
+	mcpQuerySubVarsFile  string
+	mcpQuerySubNamespace string
+)
+
+func mcpQuerySubscribeCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "subscribe <graphql|->",
+		Short: "Subscribe to a GraphQL subscription and stream results until interrupted",
+		Long: `Open a GraphQL subscription against the configured server and print
+each pushed result as JSON until the process is interrupted (Ctrl-C / SIGTERM)
+or the server ends the subscription.
+
+The transport is Server-Sent Events: POST /api/v1/graphql with
+Accept: text/event-stream. The same exchange can be reproduced with curl:
+
+  curl -N -H 'Accept: text/event-stream' -H 'Content-Type: application/json' \
+       -d '{"query":"subscription { users { id email } }"}' \
+       http://localhost:8080/api/v1/graphql
+
+Pass the GraphQL body as a positional argument, or "-" to read from stdin:
+
+  graphjin cli query subscribe 'subscription { users { id email } }'
+  cat sub.graphql | graphjin cli query subscribe -
+
+Note: the default /api/v1/graphql route resolves namespace from the route, not
+from the request body — --namespace is forwarded but a non-default value only
+takes effect if the server is configured with a namespace-prefixed route. For
+header-keyed namespace setups, use --header "X-Namespace: <ns>" instead.`,
+		Args: cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			query, err := readGraphQLArg(args[0])
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %s\n", err)
+				os.Exit(1)
+			}
+			vars, err := loadVars(mcpQuerySubVars, mcpQuerySubVarsFile)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %s\n", err)
+				os.Exit(1)
+			}
+			runSubscribe(cmd.Context(), query, vars, mcpQuerySubNamespace)
+		},
+	}
+	c.Flags().StringVar(&mcpQuerySubVars, "vars", "", "Variables as a JSON object string")
+	c.Flags().StringVar(&mcpQuerySubVarsFile, "vars-file", "", "Variables from a JSON file (use '-' for stdin)")
+	c.Flags().StringVar(&mcpQuerySubNamespace, "namespace", "", "Namespace for multi-tenant deployments (header-keyed: use --header instead)")
 	return c
 }
