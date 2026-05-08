@@ -65,3 +65,4 @@ cmd/cmd
 .claude
 # Local WIP status files (never commit)
 snowflake-wip.md
+docs/DESIGN-OPENAPI-TOPLEVEL.md
