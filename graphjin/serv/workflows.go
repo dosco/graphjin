@@ -72,12 +72,12 @@ func (s1 *HttpService) apiV1Workflows(ns *string) http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		extendDeadlineForWorkflow(w, s.conf)
 
-		if len(r.RequestURI) < rLen {
+		if len(r.RequestURI) <= rLen {
 			renderErr(w, errors.New("no workflow name defined"))
 			return
 		}
 
-		workflowName := r.RequestURI[rLen-1:]
+		workflowName := r.RequestURI[rLen:]
 		if n := strings.IndexRune(workflowName, '?'); n != -1 {
 			workflowName = workflowName[:n]
 		}
