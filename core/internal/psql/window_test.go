@@ -54,3 +54,49 @@ func TestWindow_PartitionOnlyOmitsOrderBy(t *testing.T) {
 		t.Errorf("ORDER BY should be absent when only partition is set, got:\n%s", sql)
 	}
 }
+
+// TestWindow_NumericFrameAndNulls confirms the parametric frame
+// patterns (e.g. ROWS BETWEEN <n> PRECEDING AND <n> FOLLOWING) reach
+// the SQL output verbatim, alongside NULLS FIRST/LAST in the OVER's
+// ORDER BY. These shapes are what Snowflake / Postgres / Oracle
+// analytics queries use most.
+func TestWindow_NumericFrameAndNulls(t *testing.T) {
+	gql := `query {
+		products {
+			id
+			running: sum_price @window(
+				partition: ["id"],
+				order: ["price desc nulls last"],
+				frame: "rows between 5 preceding and 5 following"
+			)
+		}
+	}`
+	sql := compileGQLToPSQLString(t, gql, nil, "user")
+
+	wants := []string{
+		"OVER (PARTITION BY",
+		"ORDER BY",
+		"DESC NULLS LAST",
+		"ROWS BETWEEN 5 PRECEDING AND 5 FOLLOWING",
+	}
+	for _, w := range wants {
+		if !strings.Contains(sql, w) {
+			t.Errorf("SQL missing %q\n----\n%s", w, sql)
+		}
+	}
+}
+
+// TestWindow_EmptyDirectiveEmitsBareOver: @window with no args is the
+// canonical OVER() form — a single SQL pair of parens, nothing inside.
+func TestWindow_EmptyDirectiveEmitsBareOver(t *testing.T) {
+	gql := `query {
+		products {
+			id
+			total: sum_price @window
+		}
+	}`
+	sql := compileGQLToPSQLString(t, gql, nil, "user")
+	if !strings.Contains(sql, "OVER ()") {
+		t.Errorf("expected bare OVER () in SQL, got:\n%s", sql)
+	}
+}
