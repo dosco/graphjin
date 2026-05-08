@@ -16,6 +16,7 @@ This document provides a comprehensive reference for all GraphJin configuration 
 - [Redis Configuration](#redis-configuration)
 - [Caching Configuration](#caching-configuration)
 - [Schema Configuration](#schema-configuration)
+- [OpenAPI Integration](#openapi-integration)
 - [Role-Based Access Control](#role-based-access-control)
 - [Multi-Database Configuration](#multi-database-configuration)
 - [Environment Variables Reference](#environment-variables-reference)
@@ -805,6 +806,214 @@ resolvers:
       - name: X-API-Key
         value: ${PAYMENTS_API_KEY}
 ```
+
+---
+
+## OpenAPI Integration
+
+GraphJin can join data from any HTTP API that publishes an **OpenAPI 3** specification. Drop the spec into `config/specs/`, declare credentials and join wiring in `config.yml`, and the API's GET endpoints become joinable from your existing tables — without writing a custom resolver per integration.
+
+The OpenAPI integration is the spec-driven counterpart to `remote_api` (above). Use `remote_api` for ad-hoc URL joins; use OpenAPI when the upstream publishes a spec and you want auth, parameter wiring, and response shape derived automatically.
+
+### Quick Start
+
+1. Drop an OpenAPI 3 spec into `config/specs/<name>.yaml`:
+
+   ```
+   config/
+     dev.yml
+     specs/
+       interaction_studio.yaml    # vendor-supplied, untouched
+   ```
+
+2. Add an `openapi:` section to your `config.yml`:
+
+   ```yaml
+   openapi_specs_dir: ./config/specs   # default
+
+   openapi:
+     interaction_studio:
+       base_url: https://${IS_ACCOUNT}.personalization.salesforce.com/api
+       auth:
+         scheme: token_exchange
+         token_url: https://${IS_ACCOUNT}.personalization.salesforce.com/api/token
+         request:
+           body:
+             apiKeyId: ${IS_API_KEY}
+             apiKeySecret: ${IS_API_SECRET}
+         response:
+           token_field: access_token
+           expires_field: expires_in
+
+       joins:
+         getUserById:
+           parent_table: users
+           parent_column: email
+           param: userId
+           expose_as: is_profile
+   ```
+
+3. Restart GraphJin. Boot logs report what was loaded:
+
+   ```
+   openapi: loaded interaction_studio.yaml (5 active, 12 skipped)
+   openapi: GET /exports/{jobId} — skipped: non-JSON response (application/octet-stream)
+   ```
+
+4. Query as a child field on the parent table:
+
+   ```graphql
+   query {
+     users(where: { id: { eq: 42 } }) {
+       id
+       email
+       is_profile {
+         lastSeenAt
+         segments { id name }
+       }
+     }
+   }
+   ```
+
+### Operation Classification
+
+Every GET in the spec is classified into one of:
+
+| Mode | Path shape | Behaviour |
+|---|---|---|
+| **Row-join** | `GET /resource/{id}` with a matching `joins:` entry | Exposed as a child field on the parent DB table. The parent column's value populates the path parameter at query time. |
+| **Top-level (single)** | `GET /resource/{id}` without a `joins:` entry | Currently logged but not yet queryable as a top-level field. Coming in a follow-up. |
+| **Top-level (list)** | `GET /resources` with optional query filters | Currently logged but not yet queryable as a top-level field. Coming in a follow-up. |
+| **Skipped** | Async (Location header), binary response, mutating verb (POST/PUT/PATCH/DELETE), nested or multi-segment path params | Reason logged at boot. |
+
+The first iteration of OpenAPI integration ships **row-joins only**. Top-level virtual tables (querying APIs without an existing parent DB row) require coordinated changes to the GraphJin schema/qcode pipeline and will land in a separate, focused PR.
+
+### Authentication
+
+Configure auth per spec under the `auth:` block. All credential-bearing fields support `${VAR}` env-var expansion at load time.
+
+#### Bearer (static or pass-through)
+
+```yaml
+auth:
+  scheme: bearer
+  token: ${API_TOKEN}
+  # Or, for multi-tenant deployments, forward the token from an inbound header:
+  # token_from_request:
+  #   header: X-User-Token
+```
+
+#### Basic
+
+```yaml
+auth:
+  scheme: basic
+  username: ${API_USER}
+  password: ${API_PASS}
+```
+
+#### API Key (header or query)
+
+```yaml
+auth:
+  scheme: api_key
+  key_name: X-API-Key
+  key_value: ${API_KEY}
+  key_in: header   # or "query"
+```
+
+#### OAuth2 client_credentials
+
+GraphJin fetches an access token at startup and refreshes it before expiry.
+
+```yaml
+auth:
+  scheme: oauth2_client_credentials
+  token_url: https://auth.example.com/oauth/token
+  client_id: ${CLIENT_ID}
+  client_secret: ${CLIENT_SECRET}
+  scopes: [read]
+```
+
+#### token_exchange (vendor-specific flows)
+
+For vendors that don't follow OAuth2 — including Salesforce Marketing Cloud Personalization (formerly Interaction Studio) — `token_exchange` lets you describe the request body shape and response field names directly:
+
+```yaml
+auth:
+  scheme: token_exchange
+  token_url: https://auth.example.com/api/token
+  request:
+    method: POST           # default
+    body_format: json      # or "form"
+    body:
+      apiKeyId: ${API_KEY_ID}
+      apiKeySecret: ${API_SECRET}
+    headers:
+      X-Custom-Header: foo
+  response:
+    token_field: access_token
+    expires_field: expires_in
+  cache_ttl: 3500s         # override when response omits expires_in
+```
+
+### Per-Spec Concurrency
+
+Each spec gets its own concurrency budget, applied collectively across every operation against that spec:
+
+```yaml
+openapi:
+  interaction_studio:
+    concurrency:
+      max_concurrent: 8           # in-flight requests cap (default: 8)
+      rate_limit_per_second: 50   # token-bucket RPS cap (default: 50)
+```
+
+Without these caps, a 1000-row parent select would spawn 1000 parallel requests upstream — a reliable way to get rate-limited.
+
+### Operation Overrides
+
+Tweak per-operation presentation without changing classification:
+
+```yaml
+openapi:
+  interaction_studio:
+    operations:
+      listAuditLogs:
+        expose_as: audit_logs       # rename auto-derived field
+        result_path: data.records   # override auto-detected wrapper path
+        disabled: false             # set true to hide an operation entirely
+```
+
+### Result Path Auto-Detection
+
+When the upstream wraps responses in `{data: [...]}`, `{items: [...]}`, `{results: [...]}`, or `{records: [...]}`, GraphJin strips the wrapper automatically. Other shapes need an explicit `result_path:` under `operations:`.
+
+### Naming Defaults
+
+Auto-derived field names use `<spec_key>_<operationId_snake>`:
+
+- Spec file `interaction_studio.yaml` + operation `getUserById` → `interaction_studio_get_user_by_id`
+
+Override per-operation via `expose_as:` (under `joins:` for row-joins, under `operations:` for everything else).
+
+### Boot Log Output
+
+GraphJin reports the OpenAPI integration state at startup so you can verify what's loaded before queries arrive:
+
+```
+openapi: loaded interaction_studio.yaml (5 active, 12 skipped)
+openapi: GET /exports/{jobId} — skipped: non-JSON response (application/octet-stream)
+openapi: GET /jobs/{jobId}/status — skipped: async pattern (Location header on success response)
+openapi: POST /users — skipped: mutating verb (write-side not yet supported)
+```
+
+### Limitations (this iteration)
+
+- **Read-only** — only GET operations are processed. Mutations (POST/PUT/PATCH/DELETE) are logged and skipped. Direct write support is planned.
+- **Row-joins only** — top-level virtual tables (querying APIs without a DB parent) are detected and logged but not yet exposed in the GraphQL schema. This requires coordinated schema/qcode changes and will land separately.
+- **Async/export endpoints** — out of scope. GraphJin is a query engine, not a data-replication system. Job-based or file-download endpoints are skipped at classification.
+- **Header pass-through** — multi-tenant header forwarding (`token_from_request`) is wired through the auth provider but the bridge layer to inbound HTTP headers isn't yet plumbed. Static `${ENV}` tokens work today.
 
 ---
 
