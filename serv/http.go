@@ -14,6 +14,7 @@ import (
 
 	"github.com/dosco/graphjin/auth/v3"
 	"github.com/dosco/graphjin/core/v3"
+	"github.com/dosco/graphjin/core/v3/fstable"
 	"github.com/dosco/graphjin/serv/v3/internal/etags"
 	"github.com/klauspost/compress/gzhttp"
 	"github.com/rs/cors"
@@ -140,7 +141,16 @@ func (s1 *HttpService) apiV1GraphQL(ns *string, ah auth.HandlerFunc) http.Handle
 					err = errMultipartDisabled
 					break
 				}
-				req, err = parseMultipartGraphQL(r, s.conf.Uploads)
+				var backend fstable.Backend
+				if name := s.conf.Uploads.Storage; name != "" {
+					b, ok := s.gj.FilesystemBackend(name)
+					if !ok {
+						err = fmt.Errorf("uploads: storage filesystem %q not configured", name)
+						break
+					}
+					backend = b
+				}
+				req, err = parseMultipartGraphQL(r, s.conf.Uploads, backend)
 				break
 			}
 			var b []byte

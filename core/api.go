@@ -252,6 +252,19 @@ func (g *GraphJin) getEngine() (*graphjinEngine, error) {
 	return gj, nil
 }
 
+// FilesystemBackend returns the backend instance configured under the
+// given filesystems[].name, or false if no such filesystem exists.
+// Useful for callers that want to bypass the GraphQL surface — e.g.
+// the multipart upload parser streaming directly to object storage.
+func (g *GraphJin) FilesystemBackend(name string) (fstable.Backend, bool) {
+	gj, err := g.getEngine()
+	if err != nil {
+		return nil, false
+	}
+	b, ok := gj.fsBackends[name]
+	return b, ok
+}
+
 // Close stops GraphJin background tasks. It is safe to call multiple times.
 func (g *GraphJin) Close() {
 	if g == nil || g.done == nil {
