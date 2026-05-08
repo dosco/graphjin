@@ -379,6 +379,23 @@ func (s *gstate) compileAndExecute(c context.Context) (err error) {
 		return
 	}
 
+	// All-remote shortcut: skip SQL when every root is a remote select.
+	// qc.Remotes counts every remote in the tree (incl. row-join children),
+	// so we check root selects specifically.
+	if qc := s.cs.st.qc; qc != nil && len(qc.Roots) > 0 {
+		allRemote := true
+		for _, rid := range qc.Roots {
+			if qc.Selects[rid].SkipRender != qcode.SkipTypeRemote {
+				allRemote = false
+				break
+			}
+		}
+		if allRemote {
+			s.data = seedRemotePlaceholders(qc)
+			return
+		}
+	}
+
 	// Block mutations on read-only databases (absolute, independent of roles)
 	if s.r.operation == qcode.QTMutation {
 		dbName := s.database

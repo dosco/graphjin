@@ -24,22 +24,17 @@ func silentLogger(t *testing.T) *_log.Logger {
 	return _log.New(io.Discard, "", 0)
 }
 
-// TestSynthesiseRowJoinResolvers verifies the bridge converts row-join
-// operations into the ResolverConfig shape that initRemote consumes.
-// Operations in other modes (skipped, top-level) must NOT produce
-// ResolverConfigs since they don't fit the row-join machinery.
-func TestSynthesiseRowJoinResolvers(t *testing.T) {
+func TestSynthesiseResolvers(t *testing.T) {
 	reg := &openapi.Registry{
 		Specs: []*openapi.Spec{{
 			Key: "is",
 			Operations: []openapi.OpDescriptor{
 				{
-					SpecKey:      "is",
-					OperationID:  "getUserById",
-					Mode:         openapi.OpModeRowJoin,
-					ExposeAs:     "is_profile",
-					PathTemplate: "/users/{userId}",
-					PathParams:   []openapi.ParamSpec{{Name: "userId", In: openapi.ParamInPath}},
+					SpecKey:     "is",
+					OperationID: "getUserById",
+					Mode:        openapi.OpModeRowJoin,
+					ExposeAs:    "is_profile",
+					PathParams:  []openapi.ParamSpec{{Name: "userId", In: openapi.ParamInPath}},
 					Join: &openapi.JoinConfig{
 						ParentTable:  "users",
 						ParentColumn: "email",
@@ -47,36 +42,42 @@ func TestSynthesiseRowJoinResolvers(t *testing.T) {
 					},
 				},
 				{
-					// Skipped op should not produce a ResolverConfig.
 					OperationID: "exportFile",
 					Mode:        openapi.OpModeSkipped,
 				},
 				{
-					// Top-level list op also shouldn't produce a row-join
-					// ResolverConfig (top-level support is a separate path).
+					SpecKey:     "is",
 					OperationID: "listAuditLogs",
 					Mode:        openapi.OpModeList,
+					ExposeAs:    "is_audit_logs",
+				},
+				{
+					SpecKey:     "is",
+					OperationID: "getOrgById",
+					Mode:        openapi.OpModeSingleByID,
+					ExposeAs:    "is_org",
 				},
 			},
 		}},
 	}
 
-	got := synthesiseRowJoinResolvers(reg)
-	if len(got) != 1 {
-		t.Fatalf("synthesised %d configs, want 1: %+v", len(got), got)
+	got := synthesiseResolvers(reg)
+	if len(got) != 3 {
+		t.Fatalf("synthesised %d configs, want 3: %+v", len(got), got)
 	}
-	rc := got[0]
-	if rc.Type != "openapi" {
-		t.Errorf("Type = %q", rc.Type)
+
+	rj := got[0]
+	if rj.Name != "is_profile" || rj.Table != "users" || rj.Column != "email" || rj.Props["path_param"] != "userId" {
+		t.Errorf("row-join config wrong: %+v", rj)
 	}
-	if rc.Name != "is_profile" || rc.Table != "users" || rc.Column != "email" {
-		t.Errorf("Name/Table/Column = %q/%q/%q", rc.Name, rc.Table, rc.Column)
-	}
-	if rc.Props["spec_key"] != "is" || rc.Props["operation_id"] != "getUserById" {
-		t.Errorf("props = %+v", rc.Props)
-	}
-	if rc.Props["path_param"] != "userId" {
-		t.Errorf("path_param = %v", rc.Props["path_param"])
+
+	for _, tl := range got[1:] {
+		if tl.Table != "" || tl.Column != "" {
+			t.Errorf("top-level config should have empty Table/Column: %+v", tl)
+		}
+		if tl.Props["spec_key"] != "is" {
+			t.Errorf("top-level missing spec_key: %+v", tl.Props)
+		}
 	}
 }
 
