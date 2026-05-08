@@ -2140,7 +2140,9 @@ func (d *MongoDBDialect) CompileFullQuery(ctx Context, qc *qcode.QCode) bool {
 			skipType := d.effectiveSkipRender(sel)
 
 			// SkipTypeDrop: completely omit from output (@add/@remove directives)
-			if skipType == qcode.SkipTypeDrop {
+			// SkipTypeRemote: top-level remote root — gstate injects a marker
+			// after SQL execution so execRemoteJoin can resolve the upstream call.
+			if skipType == qcode.SkipTypeDrop || skipType == qcode.SkipTypeRemote {
 				continue
 			}
 
