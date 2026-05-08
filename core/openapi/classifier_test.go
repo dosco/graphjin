@@ -298,6 +298,88 @@ func TestToSnakeCase(t *testing.T) {
 	}
 }
 
+func TestClassifyExposeTopLevelOptIn(t *testing.T) {
+	doc := loadDoc(t, `
+openapi: 3.0.0
+info: { title: Test, version: 1.0.0 }
+paths:
+  /api/dataset/{datasetId}/users.json:
+    get:
+      operationId: exportUsers
+      parameters:
+        - { name: datasetId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+`)
+
+	spec := &Spec{Key: "is"}
+
+	// Default: skipped.
+	ops, _ := classifyAll(spec, doc, SpecConfig{})
+	if len(ops) != 1 {
+		t.Fatalf("want 1 op, got %d", len(ops))
+	}
+	if ops[0].Mode != OpModeSkipped {
+		t.Errorf("default mode = %v, want OpModeSkipped", ops[0].Mode)
+	}
+	if !contains(ops[0].SkipReason, "expose_top_level") {
+		t.Errorf("SkipReason = %q; should mention expose_top_level", ops[0].SkipReason)
+	}
+
+	// Opt-in: classified as list (response wraps an array).
+	cfg := SpecConfig{Operations: map[string]OperationOverride{
+		"exportUsers": {ExposeTopLevel: true},
+	}}
+	ops, _ = classifyAll(spec, doc, cfg)
+	if ops[0].Mode != OpModeList {
+		t.Errorf("opt-in mode = %v, want OpModeList", ops[0].Mode)
+	}
+}
+
+func TestClassifyExposeTopLevelSingleObject(t *testing.T) {
+	doc := loadDoc(t, `
+openapi: 3.0.0
+info: { title: Test, version: 1.0.0 }
+paths:
+  /api/dataset/{datasetId}/summary.json:
+    get:
+      operationId: getDatasetSummary
+      parameters:
+        - { name: datasetId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+`)
+
+	spec := &Spec{Key: "is"}
+	cfg := SpecConfig{Operations: map[string]OperationOverride{
+		"getDatasetSummary": {ExposeTopLevel: true},
+	}}
+	ops, _ := classifyAll(spec, doc, cfg)
+	if ops[0].Mode != OpModeSingleByID {
+		t.Errorf("opt-in mode = %v, want OpModeSingleByID (object response, not array)", ops[0].Mode)
+	}
+}
+
 // contains is a tiny stand-in for strings.Contains kept local so the
 // classifier_test file doesn't drag in extra imports for one call site.
 func contains(s, sub string) bool {

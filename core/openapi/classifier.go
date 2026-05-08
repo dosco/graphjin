@@ -138,20 +138,24 @@ func classifyOne(
 	}
 	d.ResponseSchema = jsonContent.Schema
 
-	// Choose mode based on the path shape: a single trailing path param
-	// means single-record; no path params means a collection. Anything in
-	// between (multiple path params, params at non-trailing positions)
-	// is skipped — those usually represent nested resources whose
-	// semantics need explicit user intent to expose correctly.
+	override := cfg.Operations[d.OperationID]
 	switch len(pathParams) {
 	case 0:
 		d.Mode = OpModeList
 	case 1:
-		if !isSingleResourcePath(path) {
-			d.SkipReason = "path parameter not in trailing position"
+		switch {
+		case isSingleResourcePath(path):
+			d.Mode = OpModeSingleByID
+		case override.ExposeTopLevel:
+			if d.IsArrayResponse {
+				d.Mode = OpModeList
+			} else {
+				d.Mode = OpModeSingleByID
+			}
+		default:
+			d.SkipReason = "path parameter not in trailing position (set expose_top_level: true to opt in)"
 			return d
 		}
-		d.Mode = OpModeSingleByID
 	default:
 		d.SkipReason = fmt.Sprintf("multi-segment path (%d path params) — needs explicit join config", len(pathParams))
 		return d

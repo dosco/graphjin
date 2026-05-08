@@ -121,12 +121,12 @@ type JoinConfig struct {
 }
 
 // OperationOverride applies presentation tweaks to an auto-classified
-// operation without changing its classification. Use it to rename the
-// auto-derived top-level field or to point at a non-default response path.
+// operation without changing its classification.
 type OperationOverride struct {
-	ExposeAs   string `mapstructure:"expose_as" json:"expose_as" yaml:"expose_as"`
-	ResultPath string `mapstructure:"result_path" json:"result_path" yaml:"result_path"`
-	Disabled   bool   `mapstructure:"disabled" json:"disabled" yaml:"disabled"`
+	ExposeAs       string `mapstructure:"expose_as" json:"expose_as" yaml:"expose_as"`
+	ResultPath     string `mapstructure:"result_path" json:"result_path" yaml:"result_path"`
+	Disabled       bool   `mapstructure:"disabled" json:"disabled" yaml:"disabled"`
+	ExposeTopLevel bool   `mapstructure:"expose_top_level" json:"expose_top_level" yaml:"expose_top_level"`
 }
 
 // ConcurrencyConfig bounds outgoing-request fan-out per spec.
