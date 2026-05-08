@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -184,6 +185,38 @@ func fieldsToList(fields []qcode.Field) []string {
 		f = append(f, col.FieldName)
 	}
 	return f
+}
+
+// injectRemoteMarkers merges marker entries for top-level remote roots
+// into s.data after SQL execution. psql skips remote roots, so without
+// this step a mixed query (one real-table root + one remote root)
+// would leave the remote slot absent from s.data and execRemoteJoin
+// would fail to find anything to replace.
+func injectRemoteMarkers(data []byte, qc *qcode.QCode) []byte {
+	var m map[string]json.RawMessage
+	if len(data) > 0 {
+		_ = json.Unmarshal(data, &m)
+	}
+	if m == nil {
+		m = make(map[string]json.RawMessage)
+	}
+	added := false
+	for _, rid := range qc.Roots {
+		sel := &qc.Selects[rid]
+		if sel.SkipRender != qcode.SkipTypeRemote || sel.ParentID != -1 {
+			continue
+		}
+		m[sel.FieldName] = json.RawMessage(fmt.Sprintf("%q", "__remote__:"+sel.FieldName))
+		added = true
+	}
+	if !added && len(data) > 0 {
+		return data
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return data
+	}
+	return out
 }
 
 // seedRemotePlaceholders builds JSON for the all-remote case where

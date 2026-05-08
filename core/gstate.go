@@ -445,7 +445,16 @@ func (s *gstate) compileAndExecute(c context.Context) (err error) {
 	}
 
 	// execute query
-	err = s.execute(c, conn)
+	if err = s.execute(c, conn); err != nil {
+		return
+	}
+
+	// Mixed-roots: SQL output has only the real-table roots; inject
+	// markers for the top-level remote roots so execRemoteJoin can
+	// resolve them.
+	if qc := s.cs.st.qc; qc != nil && qc.Remotes > 0 {
+		s.data = injectRemoteMarkers(s.data, qc)
+	}
 	return
 }
 
