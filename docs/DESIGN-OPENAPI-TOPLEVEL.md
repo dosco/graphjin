@@ -193,34 +193,56 @@ Both can coexist in the same map because the row-join keys always have a non-emp
 
 ### 4.6 GraphQL args → CallParams
 
-Top-level operations carry their inputs as GraphQL field arguments. `interaction_studio_audit_logs(actorId: "u-7", limit: 50)` produces `sel.Args` (or equivalent — needs verification, see Open Questions).
+Per §8.1: today's qcode hard-rejects unknown arguments. Two changes are needed:
 
-The bridge's resolve method extends:
+**Step A — qcode storage (one new field, one switch branch):**
+
+```go
+// core/internal/qcode/qcode.go, on Select:
+ExtraArgs map[string]string
+
+// core/internal/qcode/args.go, replace the default case:
+default:
+    if sel.Ti.Type == "remote" {
+        v, ok := stringArgValue(a)
+        if !ok {
+            return fmt.Errorf("argument %q on remote table %q must be a string literal", a.Name, sel.Ti.Name)
+        }
+        if sel.ExtraArgs == nil {
+            sel.ExtraArgs = map[string]string{}
+        }
+        sel.ExtraArgs[a.Name] = v
+        continue
+    }
+    return unknownArg(a)
+```
+
+The `Type == "remote"` guard ensures real DB tables still hard-reject unknown args — unchanged behaviour for everything except synthetic remote tables.
+
+**Step B — bridge consumption:**
 
 ```go
 func (b *openapiBridge) Resolve(ctx context.Context, req ResolverReq) ([]byte, error) {
     if b.topLevel {
         return b.caller.Call(ctx, b.buildTopLevelParams(req.Sel))
     }
-    // Existing row-join path
     return b.caller.Call(ctx, openapi.CallParams{
         PathValues: map[string]string{b.pathName: req.ID},
     })
 }
 
 func (b *openapiBridge) buildTopLevelParams(sel *qcode.Select) openapi.CallParams {
-    args := extractFieldArgs(sel)
     p := openapi.CallParams{
         PathValues:  map[string]string{},
         QueryValues: map[string]string{},
     }
     for _, ps := range b.op.PathParams {
-        if v, ok := args[ps.Name]; ok {
+        if v, ok := sel.ExtraArgs[ps.Name]; ok {
             p.PathValues[ps.Name] = v
         }
     }
     for _, qs := range b.op.QueryParams {
-        if v, ok := args[qs.Name]; ok {
+        if v, ok := sel.ExtraArgs[qs.Name]; ok {
             p.QueryValues[qs.Name] = v
         }
     }
@@ -228,42 +250,71 @@ func (b *openapiBridge) buildTopLevelParams(sel *qcode.Select) openapi.CallParam
 }
 ```
 
-Argument extraction is the one place where qcode's representation matters and needs verification — `qcode.Select.Args` is currently typed for Postgres function arguments, not generic GraphQL field args.
+Validation (required path params present, type-correct values) lives in the bridge, not qcode — qcode shouldn't know about OpenAPI semantics. If a required path param is missing from `ExtraArgs`, the bridge errors before the HTTP call.
+
+**Limitation:** This stores args as `map[string]string`. Non-string scalars (numbers, booleans) need conversion when serialised onto the URL — the OpenAPI caller already does this for path/query params, so it's a non-issue for the wire. But qcode's GraphQL parser will refuse a non-string-literal value at the args layer; users will need to quote `limit: "50"`. Acceptable for v1; we can widen the storage to `interface{}` in a follow-up if it bites.
 
 ### 4.7 Schema visibility for arg validation
 
-For users to write `interaction_studio_audit_logs(actorId: "u-7")`, the GraphQL introspection layer (intro.go) needs to know:
-- That `interaction_studio_audit_logs` is a queryable field
-- That it accepts `actorId` (and other query params) as arguments
-- The argument types
+Per §8.3: `intro.go:315` early-returns on `len(table.Columns) == 0`, so synthetic remote tables are invisible to introspection today. Two things need to land together:
 
-This means the synthetic remote table needs not just an entry in `sdata.DBInfo` but also column-like entries describing the arguments. Probably easiest: register `OpDescriptor.QueryParams` and `OpDescriptor.PathParams` as virtual columns on the synthetic table. intro.go already walks columns to build the GraphQL schema.
+**Synthetic columns from the response shape.** The OpenAPI response schema lists the JSON fields a successful response carries (`id`, `email`, `lastSeenAt` for a user object). Walk the response schema at registry-build time and synthesise `DBColumn` entries on the synthetic table. These become the field selection set in GraphQL.
+
+**Synthetic columns or args from the request shape.** Path/query params don't fit cleanly as columns — they're not part of the response. Two options:
+
+- **(a)** Register them as columns with a sentinel flag (e.g., `IsArg bool`); intro.go renders them as field arguments rather than selectable fields.
+- **(b)** Store the arg metadata on the `DBTable` directly (e.g., `Args []DBColumn`) and teach intro.go to read both `Columns` and `Args` when building the GraphQL field.
+
+**Recommend (b)**. Keeps response-shape and request-shape concerns separate; doesn't require a sentinel flag in the column model.
+
+Concretely:
+
+```go
+// core/internal/sdata/tables.go, add to DBTable:
+Args []DBColumn  // populated for synthetic remote tables
+
+// core/intro.go addTable(), after the columns loop:
+if len(table.Args) > 0 {
+    for _, a := range table.Args {
+        ftQS.Args = append(ftQS.Args, in.argFromColumn(a))
+    }
+}
+```
+
+The synthetic table then carries both:
+- `Columns` — the response shape (selectable fields)
+- `Args` — the request shape (path + query params)
+
+intro.go's `len(Columns) == 0` early-return needs widening: skip only when both `len(Columns) == 0 && len(Args) == 0`.
+
+**Side benefit:** This same fix makes the just-landed row-join remote tables introspectable for the first time. Today `is_profile` works at runtime but isn't in the schema; this PR exposes it. Users who care about IDE auto-complete will notice.
 
 ## 5. File-by-File Change List
 
-Estimated diff size: ~600–900 LOC across these files.
+Revised after §8 investigation. Estimated diff size: ~700–1000 LOC.
 
 ### Modified files
 
 | File | Change | Est. LOC |
 |---|---|---|
+| `core/internal/sdata/tables.go` | Add `Args []DBColumn` field to `DBTable` for synthetic remotes carrying argument metadata | ~5 |
 | `core/internal/sdata/schema.go` | `addRemoteRel` early-returns for parent-less remotes (no FK lookup, no graph edge) | ~10 |
-| `core/internal/qcode/qcode.go` | After `co.Find()` for top-level selects, set `sel.Rel.Type = RelRemote` when `Ti.Type == "remote"` and `Ti.PrimaryCol.FKeyTable == ""` | ~10 |
-| `core/internal/qcode/fields.go` | Ensure `SkipTypeRemote` is set on top-level remote selects (currently happens via parent-add path which doesn't run for top-level) | ~10 |
-| `core/internal/psql/*.go` | Verify SQL emitter handles "all roots are SkipTypeRemote" — likely already does (since it skips remote selects) but needs a test | ~0–20 |
-| `core/gstate.go` | Skip SQL execution when `qc.Remotes == len(qc.Roots)`; seed `s.data` with placeholder JSON via `seedRemotePlaceholders` | ~30 |
-| `core/remote_join.go` | Branch `parentFieldIds` and `resolveRemotes` on `sel.ParentID == -1`; use field-name-based marker for top-level | ~50 |
-| `core/openapi_bridge.go` | Extend `openapiBridge` to handle top-level (no parent ID, build CallParams from sel args); register top-level synthetic tables and resolvers in addition to row-join ResolverConfigs | ~80 |
-| `core/internal/intro.go` (or equivalent) | Add the synthetic remote tables (with their args as columns) to GraphQL introspection output | ~40 |
-| `CONFIG.md` | Update the "Limitations" section to remove "row-joins only" and document top-level usage | ~30 |
+| `core/internal/qcode/qcode.go` | Add `ExtraArgs map[string]string` to `Select`; after `co.Find()` for top-level selects, set `sel.Rel.Type = RelRemote` when `Ti.Type == "remote"` and `Ti.PrimaryCol.FKeyTable == ""` | ~15 |
+| `core/internal/qcode/args.go` | In the `default` branch of `compileSelectArgs`, allow unknown string-valued args when `sel.Ti.Type == "remote"`; stash in `sel.ExtraArgs`. Real-table behaviour unchanged. | ~15 |
+| `core/internal/qcode/fields.go` | Ensure `SkipTypeRemote` is set on top-level remote selects (the parent-add path doesn't fire for top-level) | ~10 |
+| `core/gstate.go` | Skip SQL execution when `qc.Remotes == len(qc.Roots)`; seed `s.data` with placeholder JSON via new `seedRemotePlaceholders` | ~35 |
+| `core/remote_join.go` | Branch `parentFieldIds` and `resolveRemotes` on `sel.ParentID == -1`; use field-name-based marker for top-level | ~60 |
+| `core/openapi_bridge.go` | Extend `openapiBridge` (new `topLevel bool`, `op *OpDescriptor` fields); add `buildTopLevelParams`; honour `IsArrayResponse`; widen `validateOpenAPINoCollisions` to cover SingleByID/List ops; synthesise top-level resolvers and tables (with synthetic columns + args) in addition to row-join configs | ~150 |
+| `core/intro.go` | Widen the early-return in `addTable` from `len(Columns) == 0` to `len(Columns) == 0 && len(Args) == 0`; emit `Args` from `DBTable.Args` as field arguments. Side-benefit: row-join remotes become introspectable. | ~30 |
+| `CONFIG.md` | Update the "Limitations" section to remove "row-joins only" and document top-level usage | ~40 |
 
 ### New files
 
 | File | Purpose | Est. LOC |
 |---|---|---|
-| `core/openapi/args.go` | Helpers for argument-name normalisation (camelCase ↔ snake_case for GraphQL conventions) | ~50 |
-| `core/openapi_toplevel_test.go` | End-to-end test: spec → top-level query → mocked upstream → response | ~200 |
-| `core/openapi/integration_toplevel_test.go` | Sub-package level test of CallParams construction from various arg shapes | ~150 |
+| `core/openapi/columns.go` | Build synthetic `DBColumn` entries from an OpenAPI response schema (for `DBTable.Columns`) and from path/query params (for `DBTable.Args`) | ~120 |
+| `core/openapi_toplevel_test.go` | End-to-end engine test: spec → top-level query → mocked upstream → response. Mirrors `openapi_test.go` shape from the row-join PR. | ~250 |
+| `core/openapi/columns_test.go` | Unit tests for response-schema → DBColumn synthesis (table-driven across object, array, nested shapes) | ~150 |
 
 ## 6. Test Strategy
 
@@ -298,15 +349,17 @@ Run the full existing core test suite. The pipeline changes touch `gstate`, `qco
 
 ## 7. Risks and Rollback
 
-### Risks
+### Risks (post-investigation)
 
-1. **`qc.Remotes == len(qc.Roots)` is a narrower condition than expected.** A query with multiple roots where some are SQL and some are remote needs both code paths to coexist. Mitigation: scenario 3 + 4 in the test plan exercise this.
+1. **Mixed roots (some SQL, some remote) need both paths to coexist.** Mitigation: scenarios 3 + 4 in the test plan exercise this.
 
-2. **GraphQL argument representation.** `qcode.Select.Args` is currently typed for Postgres functions. May need a parallel field for OpenAPI args, or refactor Args to be generic. This is the single biggest unknown — needs verification before serious coding.
+2. **The qcode `ExtraArgs` change touches a hot, well-tested path.** §8.1 found the args switch hard-rejects unknowns. The fix is gated on `sel.Ti.Type == "remote"` so real-table behaviour is unchanged, but the qcode test suite must pass without modification — any breakage there means the gate is wrong. Mitigation: full qcode test run before merging the qcode commit.
 
-3. **psql edge cases.** Some dialects may emit weird things when passed a Select that has only `SkipRender == SkipTypeRemote` selects at the root. Requires testing against every supported DB type, or scoped feature-flag (Postgres + SQLite first).
+3. **psql edge cases when all roots are remote.** §8.2 confirmed psql doesn't skip remote roots — gstate guards SQL execution entirely (Option B from §4.3), so psql is bypassed in the all-remote case. Mixed queries still emit SQL through psql normally; verified safe.
 
-4. **Schema introspection visibility.** The `intro.go` layer might reject "tables with no columns" or "remote tables" for introspection — need to check. If users can't see top-level OpenAPI fields in the schema, IDEs/clients won't auto-complete them.
+4. **Introspection backfill changes the public schema for existing deployments.** §8.3 found row-join remotes are currently invisible. Once the `intro.go` widening lands, deployments that already have remote_api or row-join OpenAPI configs will see new fields appear in their schema output. Most clients won't care, but a few that lock-step the schema (e.g. via persisted-query frameworks with strict equality checks) might. Mitigation: call this out in the changelog and the §11.5 rollout note.
+
+5. **`IsArrayResponse` is now load-bearing.** §8.6 found it's set by the classifier but never read. The classifier's existing tests don't assert correctness of that flag against a wide variety of response schemas. Mitigation: add focused tests for `deriveResultPath` and `IsArrayResponse` derivation as part of step 5 (bridge work).
 
 ### Rollback
 
@@ -314,19 +367,53 @@ The feature can be disabled via a single config flag: `openapi.enable_top_level_
 
 Recommended rollout: ship with the flag default-false, run in a non-production environment for a sprint, then flip default-true in a follow-up version bump.
 
-## 8. Open Questions (need answers before coding)
+## 8. Resolved Questions (verified against the codebase)
 
-1. **What is the actual representation of GraphQL field arguments on a top-level `qcode.Select`?** `sel.Args` is typed for function args; need to trace what happens when a user writes `field(arg: value)` against a non-function table. May exist as `sel.Where` filter expressions — those would need translation into upstream query params.
+Investigation done before scoping (see commit history of this doc). Each answer below has been verified by reading the actual code, not inferred.
 
-2. **Does `psql` actually skip emission for `SkipTypeRemote` selects at the root, or only when they're children of a real table?** Verify with a small instrumented test before committing to "Option B" in §4.3.
+### 8.1 GraphQL field arguments on `qcode.Select` — **needs a qcode change**
 
-3. **Does `intro.go` automatically include synthetic remote tables in GraphQL introspection output?** Or does it filter by `Type == "table"`? If the latter, additional plumbing is needed to surface top-level OpenAPI fields to clients.
+`core/internal/qcode/args.go:13-75` is a fixed switch on a hard-coded set of arg names (`id`, `where`, `limit`, `offset`, `orderBy`, etc.). Any unknown arg returns `unknownArg(a)` (line 67) → `fmt.Errorf("unknown argument '%s'", arg.Name)`. There is **no catch-all field on `Select`**. `sel.IArgs` exists (`qcode.go:105`) but only stores recognised internal args.
 
-4. **Should top-level operations register on the primary DB's schema, or on a synthetic "openapi" schema?** Primary DB is simpler (everything in one place). Separate schema is cleaner architecturally (clear separation of "data we own" vs "data we proxy"). Initial recommendation: primary DB; revisit if it causes name collisions in practice.
+**Decision:** Add `ExtraArgs map[string]string` to `qcode.Select`. In `compileSelectArgs`, replace the `default: return unknownArg(a)` with a check: if `sel.Ti.Type == "remote"` and the arg has a string-valued literal, stash it in `sel.ExtraArgs`; otherwise still error. Scoped behaviour change — no impact on real DB tables.
 
-5. **How are GraphQL arg names normalised against OpenAPI param names?** Specs use camelCase (`actorId`); GraphJin's existing conventions favour snake_case. Probably accept both at the GraphQL surface and normalise to spec convention when calling. Decision: accept both, prefer the spec's exact name in introspection output, alias snake_case form for users.
+### 8.2 psql emission for `SkipTypeRemote` at root — **falls through to render**
 
-6. **Single-row vs list response shapes.** OpenAPI single-by-id returns `{user_object}`, list returns `[user_object, ...]`. GraphQL single-by-id should resolve to a `Type`, list to `[Type]`. The `IsArrayResponse` field on `OpDescriptor` already tracks this; introspection just needs to honour it.
+`core/internal/psql/query.go:256-335` only special-cases `SkipTypeDrop` (line 259), `SkipTypeUserNeeded`, `SkipTypeBlocked`, `SkipTypeNulled` (lines 267-277). `SkipTypeRemote` reaches the `default` and renders via `RenderJSONRootField`. Child columns *do* skip remote selects (`psql/columns.go:73-76`), but root selects don't. So a query with all-remote roots today emits broken SQL.
+
+**Decision:** Confirmed Option B from §4.3 — gstate is the gatekeeper. When `qc.Remotes == len(qc.Roots)`, skip SQL execution entirely and seed `s.data` directly with placeholders. Single-line guard in `gstate.compileAndExecute`.
+
+### 8.3 Introspection visibility for synthetic remote tables — **hidden today**
+
+`core/intro.go:315` early-returns when `len(table.Columns) == 0`. `initRemote` (`core/resolve.go:101`) creates synthetic remote tables with only an internal `__<name>_<col>` PK (line 89), which isn't exposed via `Columns`. Net effect: **row-join remotes from the just-landed PR are already invisible to introspection.** Today's `is_profile { ... }` works because qcode resolves the field via `tindex`, but `intro.go` skips it when serving the schema. Clients/IDEs can't auto-complete it.
+
+**Decision:** This is two distinct bugs. Fix in this PR:
+- Synthesise virtual columns for top-level path/query params, register them on the synthetic table, so `addTable` in intro.go emits both the type and its argument shape.
+- Modify `addTable` to additionally accept tables that have *args* but no columns, surfacing the type with its arguments.
+
+The row-join introspection invisibility is **a pre-existing bug surfaced by this investigation** — addressed in the `chore/sdata-strict-naming` PR (§12.7) alongside the AddTable/addAliases fixes, since those touch the same surface.
+
+### 8.4 Schema namespace for synthetic remotes — **default schema, easy to override**
+
+`DBSchema.tindex` is keyed by `<schema>:<name>` (`sdata/schema.go:43`); `nameIndex` provides name-only fallback (line 44). `DBTable.Schema` allows per-table override. Today `initRemote` uses `pdb.dbinfo.Schema` (the primary DB's default).
+
+**Decision:** Stay on the primary DB's default schema for now — simplest, no new namespace machinery, and the `<spec_key>_<op>` ExposeAs convention plus the §12 collision check handle the actual risk (name shadowing). A separate logical "openapi" schema can be a config option later if multi-spec deployments report friction.
+
+### 8.5 Argument name normalisation — **handled at compile time**
+
+`qcode/util.go:10-15` `ParseName()` honours `EnableCamelcase` to convert field names to snake_case. The args switch (`args.go:25-29`) already accepts both `orderBy` and `order_by`. So the GraphQL surface is bilingual.
+
+**Decision:** For OpenAPI args, register them in `ExtraArgs` under the spec's exact name (typically camelCase like `actorId`). Bridge looks up by exact name when building `CallParams`. If `EnableCamelcase` is on, the GraphQL parser already normalises field-level names; arg names pass through unchanged. No additional normalisation layer needed in this PR.
+
+### 8.6 Single-row vs list response shapes — **bridge must handle, today's row-join doesn't**
+
+`OpDescriptor.IsArrayResponse` is set by the classifier (`openapi/classifier.go:135`) but **never read** by `openapi_bridge.go` or `caller.go`. The row-join code happens to work because parents always expect a single object, and the result-path stripping plus `jsn.Replace` is shape-agnostic.
+
+For top-level:
+- `OpModeSingleByID` → JSON object → wraps as a single-element value in `s.data`.
+- `OpModeList` → JSON array → wraps as an array.
+
+**Decision:** Add a shape check in the bridge's top-level path. If `IsArrayResponse=true` and the upstream returns a non-array after result-path stripping, error out — the spec lied. If `IsArrayResponse=false` and the upstream returns an array, take element zero (or error if empty, depending on spec). The IsArrayResponse flag becomes load-bearing for the first time.
 
 ## 9. Sequencing
 
@@ -345,19 +432,30 @@ Each step is independently testable; if a step breaks more existing tests than e
 
 ## 10. Estimated Effort
 
-- Investigation of open questions: 0.5 day
-- Implementation steps 1–4 (schema/qcode/gstate/remote_join): 2 days
-- Implementation steps 5–6 (bridge/intro): 1 day
-- Tests (steps 1–6 inline + scenario tests): 1.5 days
+Investigation done (see §8); estimate reflects the qcode/intro work that grew once the actual code was read.
+
+- Implementation steps 1–4 (sdata `Args` field + parent-less remote, qcode `ExtraArgs` + args.go branch + RelRemote marking, gstate all-remote guard, remote_join parent-less branch): 2.5 days
+- Implementation steps 5–6 (bridge top-level + IsArrayResponse + collision-check widening + columns.go, intro.go widening): 1.5 days
+- Tests (unit + scenario, including `IsArrayResponse` derivation tests): 1.5 days
 - Documentation + polish: 0.5 day
 
-**Total: ~5.5 days of focused work.** Could be compressed to ~3 days if the open questions resolve quickly.
+**Total: ~6 days of focused work.** Slightly above the original estimate because qcode `ExtraArgs` and the synthetic-columns plumbing are bigger than first scoped, and the introspection backfill picks up extra surface area (synthetic columns from response schemas).
+
+## 11. What This Doesn't Cover (out of scope, again)
+
+Explicit non-goals so the PR stays focused:
+
+- Write-side support (POST/PUT/PATCH/DELETE → GraphQL mutations). Separate PR.
+- Async / export / file-download endpoints. Out of scope by design — GraphJin is a query engine.
+- GraphQL SDL or gRPC spec formats. OpenAPI 3 only for the foreseeable future.
+- Per-request auth pass-through via inbound HTTP headers. Already mentioned as deferred in row-join PR; remains deferred.
+- OpenAPI-only mode (no DB at all). The primary-DB requirement (`api.go:335`) stays; lifting it is a separate architecture change.
 
 ## 12. Collision Defence
 
 A real production hazard exists in the existing remote-join machinery and inherits into OpenAPI integration: `dbinfo.AddTable` (`core/internal/sdata/tables.go:474-482`) silently overwrites any existing entry in `tableMap[schema:name]` without a warning. Combined with `initRemote` (`core/resolve.go:101-105`) — which always calls `AddTable` for every registered resolver — this means a remote table named `users` will replace the real `users` table in the index at boot. The first GraphQL query to `users` returns OpenAPI data instead of DB data, with no log line and no error.
 
-This was true before this PR series. The row-join PR landed with the same gap; this section documents the defence that lands with it (commit `<hash>` on `feat/remote-joins`) and the wider checks the top-level PR must add.
+This was true before this PR series. The row-join PR landed with the same gap; this section documents the defence that lands with it (commit `978d9cb` on `feat/remote-joins`) and the wider checks the top-level PR must add.
 
 ### 12.1 Pure-DB collision handling (existing, for context)
 
@@ -483,13 +581,3 @@ Each commit is independently revertable. None has a data-layer impact.
 
 - **Two databases with identical schema-qualified table names** in *configured* (not just discovered) state will still collide if the user gives them the same logical name in `Config.Databases`. That's a config-validation problem, not an `sdata` problem.
 - **Cross-cutting name collisions across roles/permissions** — out of scope for this naming-disambiguation PR. Permission tables aren't in the same namespace as data tables today.
-
-## 11. What This Doesn't Cover (out of scope, again)
-
-Explicit non-goals so the PR stays focused:
-
-- Write-side support (POST/PUT/PATCH/DELETE → GraphQL mutations). Separate PR.
-- Async / export / file-download endpoints. Out of scope by design — GraphJin is a query engine.
-- GraphQL SDL or gRPC spec formats. OpenAPI 3 only for the foreseeable future.
-- Per-request auth pass-through via inbound HTTP headers. Already mentioned as deferred in row-join PR; remains deferred.
-- OpenAPI-only mode (no DB at all). The primary-DB requirement (`api.go:335`) stays; lifting it is a separate architecture change.
