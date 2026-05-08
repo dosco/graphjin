@@ -135,6 +135,14 @@ func (s1 *HttpService) apiV1GraphQL(ns *string, ah auth.HandlerFunc) http.Handle
 
 		switch r.Method {
 		case "POST":
+			if isMultipartRequest(r) {
+				if !s.conf.Uploads.Enabled {
+					err = errMultipartDisabled
+					break
+				}
+				req, err = parseMultipartGraphQL(r, s.conf.Uploads)
+				break
+			}
 			var b []byte
 			b, err = io.ReadAll(io.LimitReader(r.Body, maxReadBytes))
 			if err == nil {
