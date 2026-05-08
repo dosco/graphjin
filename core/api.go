@@ -97,6 +97,13 @@ type graphjinEngine struct {
 	responseCache ResponseCacheProvider
 	// Cache key builder
 	cacheKeyBuilder *CacheKeyBuilder
+
+	// Federation SDL is built lazily on first request and cached. The
+	// schema only changes via Reload, which constructs a fresh
+	// graphjinEngine, so cache invalidation is implicit.
+	federationSDLOnce sync.Once
+	federationSDL     string
+	federationSDLErr  error
 }
 
 // primaryDB returns the default database context.
@@ -667,6 +674,22 @@ func (gj *graphjinEngine) query(c context.Context, r GraphqlReq) (
 	if !gj.prodSec && r.name == "IntrospectionQuery" {
 		resp.res.Data, err = gj.getIntroResult()
 		return
+	}
+
+	// Federation v2: intercept `_service { sdl }` and `_entities` queries
+	// before the normal compile pipeline. The compiler doesn't know about
+	// these fields and would reject them as unknown root selections.
+	if gj.conf.Federation.Enabled && r.operation == qcode.QTQuery {
+		handled, data, ferr := gj.handleFederationQuery(r)
+		if ferr != nil {
+			resp.res.Errors = newError(ferr)
+			err = ferr
+			return
+		}
+		if handled {
+			resp.res.Data = data
+			return
+		}
 	}
 
 	if r.operation == qcode.QTSubscription {

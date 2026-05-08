@@ -321,6 +321,12 @@ type Config struct {
 	// CacheTrackingEnabled enables injection of __gj_id fields for cache row tracking.
 	// This is set by the service layer when Redis caching is enabled.
 	CacheTrackingEnabled bool `mapstructure:"-" json:"-" yaml:"-" jsonschema:"-"`
+
+	// Federation opts the engine into Apollo Federation v2 subgraph mode.
+	// When Federation.Enabled is true, `_service { sdl }` returns a
+	// federation-flavoured SDL describing the schema's tables. See
+	// FederationConfig for the full surface.
+	Federation FederationConfig `mapstructure:"federation" json:"federation" yaml:"federation" jsonschema:"title=Apollo Federation v2"`
 }
 
 // DatabaseConfig defines configuration for a single database in multi-database mode
