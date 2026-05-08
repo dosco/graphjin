@@ -126,6 +126,9 @@ type Serv struct {
 	// Response caching configuration
 	Caching CachingConfig `mapstructure:"caching" jsonschema:"title=Caching Configuration"`
 
+	// Multipart upload configuration (graphql-multipart-request-spec)
+	Uploads UploadsConfig `mapstructure:"uploads" jsonschema:"title=Multipart Uploads"`
+
 	// Built-in OIDC login that mints local JWTs for the CLI / MCP client
 	AuthLogin AuthLogin `mapstructure:"auth_login" jsonschema:"title=Built-in Login (OIDC)"`
 }
@@ -322,6 +325,38 @@ type MCPConfig struct {
 type RedisConfig struct {
 	// Redis connection URL (e.g., redis://localhost:6379/0)
 	URL string `mapstructure:"url" jsonschema:"title=Redis URL"`
+}
+
+// UploadsConfig configures the multipart-form upload endpoint following
+// the graphql-multipart-request-spec
+// (https://github.com/jaydenseric/graphql-multipart-request-spec).
+//
+// When Enabled, /api/v1/graphql accepts multipart/form-data POSTs in
+// addition to application/json. Each uploaded file is injected into
+// the GraphQL variables at the path declared in the `map` part as a
+// JSON object:
+//
+//	{
+//	  "filename":     "logo.png",
+//	  "content_type": "image/png",
+//	  "size":         12345,
+//	  "data":         "<base64 bytes>"
+//	}
+//
+// Mutations bind this object directly to a JSON/JSONB column or to a
+// PL/pgSQL function that decodes `data` into `bytea`. Per-role upload
+// gating belongs in the existing role config (column allowlist).
+type UploadsConfig struct {
+	// Enable multipart/form-data parsing on /api/v1/graphql
+	Enabled bool `mapstructure:"enabled" jsonschema:"title=Enable Uploads,default=false"`
+
+	// MaxSize is the per-request multipart body limit in bytes.
+	// Defaults to 25 MB when zero.
+	MaxSize int64 `mapstructure:"max_size" jsonschema:"title=Max Upload Size (bytes),default=26214400"`
+
+	// AllowedMIME, when non-empty, restricts the accepted content types.
+	// Glob patterns are supported: "image/*", "application/pdf".
+	AllowedMIME []string `mapstructure:"allowed_mime" jsonschema:"title=Allowed MIME Types"`
 }
 
 // CachingConfig configures response caching
