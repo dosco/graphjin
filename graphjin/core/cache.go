@@ -25,6 +25,24 @@ type ResponseCacheProvider interface {
 	InvalidateRows(ctx context.Context, refs []RowRef) error
 }
 
+// RefreshFn produces a fresh response for stale-while-revalidate.
+// Implementations should run the original query and return cleaned response
+// bytes plus row references suitable for cache indexing.
+type RefreshFn func() (data []byte, refs []RowRef, err error)
+
+// SWRRefresher is an optional interface a ResponseCacheProvider can implement
+// to support stale-while-revalidate background refreshes. When the cache
+// returns isStale=true on Get, callers may submit a refresh job; the provider
+// is responsible for de-duplicating concurrent submissions for the same key
+// and bounding the worker pool to avoid runaway goroutines.
+//
+// SubmitRefresh returns true if the job was accepted, false if the worker
+// pool is full or shutting down. The cache provider runs the RefreshFn,
+// stores the resulting data on success, and records the refresh in metrics.
+type SWRRefresher interface {
+	SubmitRefresh(key string, fn RefreshFn) bool
+}
+
 // Cache provides local in-memory caching for APQ and introspection
 type Cache struct {
 	cache *lru.TwoQueueCache[string, []byte]

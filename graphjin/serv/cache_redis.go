@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -15,7 +14,6 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
-	"golang.org/x/sync/singleflight"
 )
 
 // Hardcoded constants for cache behavior
@@ -113,8 +111,8 @@ func NewRedisCache(redisURL string, conf CachingConfig) (*RedisCache, error) {
 	rc.otelBytesSavedGauge, _ = meter.Int64UpDownCounter("graphjin.cache.bytes_saved",
 		metric.WithDescription("Bytes saved via compression"))
 
-	// Initialize SWR worker pool if fresh TTL > 0
-	if conf.FreshTTL > 0 {
+	// Initialize SWR worker pool when fresh TTL is set and shorter than hard TTL.
+	if conf.FreshTTL > 0 && conf.TTL > conf.FreshTTL {
 		rc.workerPool = NewSWRWorkerPool(swrWorkers, rc)
 	}
 
@@ -533,77 +531,13 @@ func decompress(data []byte) ([]byte, error) {
 	return io.ReadAll(r)
 }
 
-// SWRWorkerPool manages background refresh workers for stale-while-revalidate
-type SWRWorkerPool struct {
-	jobs         chan RefreshJob
-	cache        *RedisCache
-	wg           sync.WaitGroup
-	singleFlight singleflight.Group
-	shutdown     atomic.Bool
-}
-
-// RefreshJob represents a background cache refresh task
-type RefreshJob struct {
-	Key       string
-	RefreshFn func() ([]byte, []core.RowRef, error)
-}
-
-// NewSWRWorkerPool creates a new SWR worker pool
-func NewSWRWorkerPool(size int, cache *RedisCache) *SWRWorkerPool {
-	pool := &SWRWorkerPool{
-		jobs:  make(chan RefreshJob, size*2),
-		cache: cache,
-	}
-
-	// Start fixed number of workers
-	for i := 0; i < size; i++ {
-		pool.wg.Add(1)
-		go pool.worker()
-	}
-
-	return pool
-}
-
-func (p *SWRWorkerPool) worker() {
-	defer p.wg.Done()
-	for job := range p.jobs {
-		if p.shutdown.Load() {
-			return
-		}
-
-		// Single-flight: only one refresh per key at a time
-		_, _, _ = p.singleFlight.Do(job.Key, func() (interface{}, error) {
-			ctx := context.Background()
-			data, refs, err := job.RefreshFn()
-			if err == nil && len(data) > 0 {
-				p.cache.Set(ctx, job.Key, data, refs, time.Now()) //nolint:errcheck
-				p.cache.recordSWRRefresh(ctx)
-			}
-			return nil, err
-		})
-	}
-}
-
-// TrySubmit attempts to submit a job, returns false if pool is busy
-func (p *SWRWorkerPool) TrySubmit(job RefreshJob) bool {
-	if p.shutdown.Load() {
+// SubmitRefresh enqueues a stale-while-revalidate refresh on the worker pool.
+// Returns false if SWR is disabled, the pool is full, or the cache is unavailable.
+func (c *RedisCache) SubmitRefresh(key string, fn core.RefreshFn) bool {
+	if c.workerPool == nil || !c.isAvailable() {
 		return false
 	}
-
-	select {
-	case p.jobs <- job:
-		return true
-	default:
-		// Pool is full, skip this refresh
-		return false
-	}
-}
-
-// Shutdown gracefully shuts down the worker pool
-func (p *SWRWorkerPool) Shutdown() {
-	p.shutdown.Store(true)
-	close(p.jobs)
-	p.wg.Wait()
+	return c.workerPool.TrySubmit(key, fn)
 }
 
 // CacheMetrics tracks cache performance

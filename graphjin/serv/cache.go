@@ -20,6 +20,10 @@ type ResponseCache interface {
 	// InvalidateRows invalidates cache entries for specific rows (called after mutations)
 	InvalidateRows(ctx context.Context, refs []core.RowRef) error
 
+	// SubmitRefresh enqueues a stale-while-revalidate refresh on the worker pool.
+	// Returns false if SWR is disabled or the pool is full/shutdown.
+	SubmitRefresh(key string, fn core.RefreshFn) bool
+
 	// Metrics returns the cache metrics
 	Metrics() *CacheMetrics
 
