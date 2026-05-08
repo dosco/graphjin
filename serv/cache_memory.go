@@ -28,6 +28,7 @@ type MemoryCache struct {
 	conf         CachingConfig
 	metrics      *CacheMetrics
 	excludeTable map[string]bool
+	workerPool   *SWRWorkerPool
 
 	// Row index: rowKey -> set of response keys
 	rowIndex   map[string]map[string]bool
@@ -40,6 +41,7 @@ type MemoryCache struct {
 	otelMissCounter         metric.Int64Counter
 	otelInvalidationCounter metric.Int64Counter
 	otelErrorCounter        metric.Int64Counter
+	otelSWRRefreshCounter   metric.Int64Counter
 	otelBytesCachedGauge    metric.Int64UpDownCounter
 	otelBytesSavedGauge     metric.Int64UpDownCounter
 }
@@ -81,12 +83,30 @@ func NewMemoryCache(conf CachingConfig, maxEntries int) (*MemoryCache, error) {
 		metric.WithDescription("Number of cache invalidations"))
 	mc.otelErrorCounter, _ = meter.Int64Counter("graphjin.cache.errors",
 		metric.WithDescription("Number of cache errors"))
+	mc.otelSWRRefreshCounter, _ = meter.Int64Counter("graphjin.cache.swr_refreshes",
+		metric.WithDescription("Number of SWR background refreshes"))
 	mc.otelBytesCachedGauge, _ = meter.Int64UpDownCounter("graphjin.cache.bytes_cached",
 		metric.WithDescription("Total bytes stored in cache"))
 	mc.otelBytesSavedGauge, _ = meter.Int64UpDownCounter("graphjin.cache.bytes_saved",
 		metric.WithDescription("Bytes saved via compression"))
 
+	// Spin up SWR worker pool when stale-while-revalidate is enabled
+	// (FreshTTL must be strictly less than TTL, otherwise entries can never go stale).
+	if conf.FreshTTL > 0 && conf.TTL > conf.FreshTTL {
+		mc.workerPool = NewSWRWorkerPool(swrWorkers, mc)
+	}
+
+
 	return mc, nil
+}
+
+// SubmitRefresh enqueues a stale-while-revalidate refresh on the worker pool.
+// Returns false if SWR is disabled or the pool is full.
+func (mc *MemoryCache) SubmitRefresh(key string, fn core.RefreshFn) bool {
+	if mc.workerPool == nil {
+		return false
+	}
+	return mc.workerPool.TrySubmit(key, fn)
 }
 
 // Get retrieves a cached response
@@ -346,13 +366,23 @@ func (mc *MemoryCache) recordInvalidation(ctx context.Context, count int64) {
 	}
 }
 
+func (mc *MemoryCache) recordSWRRefresh(ctx context.Context) {
+	mc.metrics.SWRRefreshes.Add(1)
+	if mc.otelSWRRefreshCounter != nil {
+		mc.otelSWRRefreshCounter.Add(ctx, 1)
+	}
+}
+
 // Metrics returns the cache metrics
 func (mc *MemoryCache) Metrics() *CacheMetrics {
 	return mc.metrics
 }
 
-// Close is a no-op for memory cache
+// Close stops the SWR worker pool and purges the cache.
 func (mc *MemoryCache) Close() error {
+	if mc.workerPool != nil {
+		mc.workerPool.Shutdown()
+	}
 	mc.cache.Purge()
 	return nil
 }

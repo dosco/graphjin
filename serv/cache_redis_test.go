@@ -254,14 +254,14 @@ func TestCacheMetrics_HitRate(t *testing.T) {
 }
 
 func TestSWRWorkerPool_Shutdown(t *testing.T) {
-	// Create a minimal worker pool with a nil cache (won't actually process)
+	// Create a minimal worker pool with no workers (jobs channel only).
 	pool := &SWRWorkerPool{
-		jobs: make(chan RefreshJob, 10),
+		jobs: make(chan swrJob, 10),
 	}
 	pool.shutdown.Store(false)
 
 	// TrySubmit should work before shutdown
-	submitted := pool.TrySubmit(RefreshJob{Key: "test"})
+	submitted := pool.TrySubmit("test", func() ([]byte, []core.RowRef, error) { return nil, nil, nil })
 	if !submitted {
 		t.Errorf("expected job to be submitted before shutdown")
 	}
@@ -269,7 +269,7 @@ func TestSWRWorkerPool_Shutdown(t *testing.T) {
 	// Shutdown should prevent new submissions
 	pool.shutdown.Store(true)
 
-	submitted = pool.TrySubmit(RefreshJob{Key: "test2"})
+	submitted = pool.TrySubmit("test2", func() ([]byte, []core.RowRef, error) { return nil, nil, nil })
 	if submitted {
 		t.Errorf("expected job to be rejected after shutdown")
 	}
@@ -382,20 +382,22 @@ func TestRedisCache_AvailabilityFlag(t *testing.T) {
 func TestSWRWorkerPool_FullQueue(t *testing.T) {
 	// Create a pool with small queue size
 	pool := &SWRWorkerPool{
-		jobs: make(chan RefreshJob, 2), // Only 2 slots
+		jobs: make(chan swrJob, 2), // Only 2 slots
 	}
 	pool.shutdown.Store(false)
 
+	noopFn := func() ([]byte, []core.RowRef, error) { return nil, nil, nil }
+
 	// Fill the queue
-	submitted1 := pool.TrySubmit(RefreshJob{Key: "job1"})
-	submitted2 := pool.TrySubmit(RefreshJob{Key: "job2"})
+	submitted1 := pool.TrySubmit("job1", noopFn)
+	submitted2 := pool.TrySubmit("job2", noopFn)
 
 	if !submitted1 || !submitted2 {
 		t.Errorf("expected first two jobs to be submitted")
 	}
 
 	// Queue is now full - next submission should fail
-	submitted3 := pool.TrySubmit(RefreshJob{Key: "job3"})
+	submitted3 := pool.TrySubmit("job3", noopFn)
 	if submitted3 {
 		t.Errorf("expected third job to be rejected (queue full)")
 	}

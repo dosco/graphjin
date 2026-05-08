@@ -856,10 +856,117 @@ func (s *gstate) tryCacheGet(c context.Context) bool {
 	s.data = data
 	s.cacheHit = true
 
-	// TODO: Handle SWR (stale-while-revalidate) for isStale == true
-	_ = isStale
+	// Stale-while-revalidate: serve the cached payload immediately and
+	// dispatch a background refresh when the provider supports it.
+	if isStale {
+		s.submitSWRRefresh(c)
+	}
 
 	return true
+}
+
+// swrRefreshTimeout bounds how long a background refresh can run. The
+// original request context dies once the response is sent, so the refresh
+// uses a fresh context with this timeout instead of inheriting the deadline.
+const swrRefreshTimeout = 30 * time.Second
+
+// submitSWRRefresh enqueues a background refresh of a stale cache entry.
+// No-op if the cache provider does not implement SWRRefresher or the worker
+// pool refuses the job (full / shutdown). Concurrent refreshes for the same
+// key are deduplicated by the provider via singleflight.
+func (s *gstate) submitSWRRefresh(c context.Context) {
+	refresher, ok := s.gj.responseCache.(SWRRefresher)
+	if !ok || s.cacheKey == "" {
+		return
+	}
+
+	// Capture only what the closure needs; do not retain s itself —
+	// the request goroutine will mutate it as the response is finalized.
+	gj := s.gj
+	req := s.r
+	role := s.role
+	cacheKey := s.cacheKey
+	// Keep the auth values from the request context but drop the deadline,
+	// so the refresh isn't cancelled when the original response is sent.
+	parentCtx := context.WithoutCancel(c)
+
+	refresher.SubmitRefresh(cacheKey, func() (data []byte, refs []RowRef, err error) {
+		ctx, cancel := context.WithTimeout(parentCtx, swrRefreshTimeout)
+		defer cancel()
+
+		fresh := gstate{gj: gj, r: req, role: role}
+		if len(req.vars) != 0 {
+			var rawVars json.RawMessage
+			rawVars, err = decryptValues(req.vars, decPrefix, gj.encryptionKey)
+			if err != nil {
+				return
+			}
+			fresh.vmap = make(map[string]json.RawMessage, 5)
+			if err = json.Unmarshal(rawVars, &fresh.vmap); err != nil {
+				return
+			}
+		}
+		return fresh.runForRefresh(ctx)
+	})
+}
+
+// runForRefresh executes the full query pipeline (single or multi-DB) without
+// consulting or writing to the response cache, returning cleaned response
+// bytes and row refs suitable for SWR storage.
+func (s *gstate) runForRefresh(c context.Context) ([]byte, []RowRef, error) {
+	s.skipCache = true
+	s.queryStarted = time.Now()
+
+	if s.gj.isMultiDB() {
+		roots := s.extractAllRootFields()
+		if len(roots) > 0 {
+			byDB := s.groupRootsByDatabase(roots)
+			if len(byDB) > 1 {
+				s.multiDB = true
+				s.dbGroups = byDB
+				if err := s.executeParallelRoots(c); err != nil {
+					return nil, nil, err
+				}
+				return s.processRefreshResult()
+			}
+		}
+	}
+
+	if err := s.compileAndExecute(c); err != nil {
+		return nil, nil, err
+	}
+	if len(s.data) == 0 {
+		return nil, nil, nil
+	}
+
+	cs := s.cs
+	if cs.st.qc.Remotes != 0 {
+		if err := s.execRemoteJoin(c); err != nil {
+			return nil, nil, err
+		}
+	}
+	if s.gj.isMultiDB() && countDatabaseJoins(cs.st.qc) > 0 {
+		if err := s.execDatabaseJoins(c); err != nil {
+			return nil, nil, err
+		}
+	}
+	return s.processRefreshResult()
+}
+
+// processRefreshResult applies the same cacheability gates as tryCacheSet
+// (offset pagination, response size) and returns the cleaned payload.
+func (s *gstate) processRefreshResult() ([]byte, []RowRef, error) {
+	if len(s.data) == 0 || s.cs == nil || s.cs.st.qc == nil {
+		return nil, nil, nil
+	}
+	qc := s.cs.st.qc
+	if s.hasOffsetPagination(qc) {
+		return nil, nil, nil
+	}
+	if len(s.data) > maxResponseSize {
+		return nil, nil, nil
+	}
+	return NewResponseProcessor(qc).ProcessForCache(s.data)
 }
 
 // tryCacheSet stores the response in cache with row-level indices.
