@@ -353,6 +353,137 @@ Each step is independently testable; if a step breaks more existing tests than e
 
 **Total: ~5.5 days of focused work.** Could be compressed to ~3 days if the open questions resolve quickly.
 
+## 12. Collision Defence
+
+A real production hazard exists in the existing remote-join machinery and inherits into OpenAPI integration: `dbinfo.AddTable` (`core/internal/sdata/tables.go:474-482`) silently overwrites any existing entry in `tableMap[schema:name]` without a warning. Combined with `initRemote` (`core/resolve.go:101-105`) — which always calls `AddTable` for every registered resolver — this means a remote table named `users` will replace the real `users` table in the index at boot. The first GraphQL query to `users` returns OpenAPI data instead of DB data, with no log line and no error.
+
+This was true before this PR series. The row-join PR landed with the same gap; this section documents the defence that lands with it (commit `<hash>` on `feat/remote-joins`) and the wider checks the top-level PR must add.
+
+### 12.1 Pure-DB collision handling (existing, for context)
+
+| Surface | Mechanism | File:Line | Strict? |
+|---|---|---|---|
+| Same name across schemas | `Find()` errors with "use schema prefix to disambiguate" | `sdata/dwg.go:251-288` | ✅ Hard error |
+| Multi-database same name | `tableMap` keyed by `schema:name` only | `sdata/tables.go:481` | ⚠️ Last-writer-wins across DBs |
+| Joined-query column ambiguity | `colWithTableID` qualifies as `table_N.col` | `psql/util.go:20-28` | ✅ Structural, not name-based |
+| User-defined alias | `addAliases` writes to `tindex` | `sdata/dwg.go:68-74` | ❌ Silently shadows real tables |
+| Config-time duplicate tables | `tableMap[schema+name]` check at parse | `init.go:25-33` | ✅ Hard error at parse time |
+
+### 12.2 Rules for OpenAPI exposure
+
+Three rules, in order of strictness:
+
+1. **Hard fail at boot** if `ExposeAs` matches a real (non-remote) DB table in the primary schema. This is the production safety guarantee — never let a remote silently shadow a real table.
+2. **Hard fail at boot** if two OpenAPI operations resolve to the same `ExposeAs`. The default `<spec_key>_<operationId_snake>` namespacing makes this unlikely, but a user-supplied `expose_as` override can defeat it.
+3. **Warn (don't fail)** if `ExposeAs` matches a configured table alias or an existing user-declared resolver. Aliases and resolvers are explicit user choices, so we surface the conflict and let registration order decide.
+
+### 12.3 Where the check runs
+
+In `core/openapi_bridge.go` `loadOpenAPIIntegration`, between `synthesiseRowJoinResolvers(reg)` and the `append(gj.conf.Resolvers, synth...)`. At that point in boot:
+
+- Phase 1 (`discoverAllDatabases`) has populated `pdb.dbinfo.Tables` with real tables.
+- Phase 2 (`initResolvers`) has not yet added any synthetic remote tables.
+- The schema graph has not yet been built (Phase 3, `finalizeAllDatabases`), so we can still error out cleanly without partial state to roll back.
+
+### 12.4 Error message shape
+
+Errors must:
+
+- **Name the colliding identifier** — both the operation (`<spec>/<opID>`) and the value (`expose_as: "<name>"`).
+- **Tell the user how to fix it** — point at the YAML path, e.g., `openapi.<spec>.joins.<op>.expose_as`.
+- **Not leak internal types** — keep messages user-facing.
+
+Example:
+
+```
+openapi: operation is/getUserById exposes as "users" which collides with a real table in schema public; set 'expose_as' under openapi.is.joins.getUserById to a unique name
+```
+
+### 12.5 What the top-level PR adds on top
+
+When `OpModeSingleByID` and `OpModeList` operations also create `dbinfo` entries (per §4.1 of this doc), the same check needs to run for them. The validator in this row-join PR is scoped to synthesised row-join resolvers; the top-level PR widens it to all classifiable operations and their virtual columns (path/query params surfaced as GraphQL field arguments).
+
+Additionally:
+
+- **Argument-name collisions on a single virtual table** — two query params named `id` and a path param named `id` would collide in GraphQL field args. Detect at registry-build time.
+- **Virtual table name vs DB column name** — less critical (different namespaces in GraphQL), but worth a warning so introspection output is clean.
+
+### 12.6 Tests
+
+In this PR (`core/openapi_bridge_test.go`):
+
+- `TestCollisionWithRealTableErrors` — synth resolver named `users` against dbinfo with real `users` → hard error mentioning the operation, the name, and `expose_as`.
+- `TestCollisionAcrossSpecsErrors` — two synth resolvers both named `audit` from different specs → hard error naming both ops.
+- `TestCollisionWithAliasWarnsButPasses` — synth name matches a `Name != Table` alias in `conf.Tables` → log warning, no error.
+- `TestCollisionWithExistingResolverWarns` — synth name matches an existing user-declared resolver → log warning.
+- `TestNoCollisionsHappyPath` — clean config produces no errors and no log output.
+- `TestCollisionCheckHandlesMissingDBInfo` — mock-DB / no-dbinfo path still detects cross-spec collisions without panicking.
+
+In the top-level PR, additional scenarios:
+
+- Top-level virtual table whose name collides with a real table — same hard error.
+- Virtual table name collides with a row-join `ExposeAs` — same hard error (single global namespace).
+- Argument names within a single operation collide — hard error at classification time.
+
+### 12.7 Closing the pre-existing disambiguation gaps
+
+The OpenAPI-only check above is a band-aid: it stops *one* path (loadOpenAPIIntegration) from creating shadow tables. The underlying weaknesses — `AddTable` overwriting silently and `addAliases` shadowing silently — affect every code path that registers tables, including `remote_api`, future top-level OpenAPI work, and any direct caller. They should be closed at the source. This is a separate, smaller PR (call it `chore/sdata-strict-naming`) sequenced **after** the top-level PR lands, because it touches code paths every other feature depends on.
+
+#### Gap A — `sdata.DBInfo.AddTable` silent overwrite
+
+`tables.go:474-482` writes into `tableMap[schema:name]` unconditionally. Every caller assumes append semantics; the overwrite is a footgun nobody opted into.
+
+**Plan:**
+
+1. Audit all `AddTable` callers: `core/resolve.go:105` (remote registration), test fixtures, anywhere in `sdata` itself. Confirm none rely on overwrite semantics.
+2. Change `AddTable` signature to return `error`. On conflict (`tableMap[schema:name]` already populated), return `fmt.Errorf("sdata: table %s.%s already registered", schema, name)`.
+3. Add `ReplaceTable(t DBTable)` for the (rare) cases where overwrite is genuinely intended — should mostly be test-only.
+4. Update every caller. Most will just propagate the error; the OpenAPI bridge collision check then becomes belt-and-braces (the `sdata` layer is the actual guard).
+5. Test: a fixture registering the same `(schema, name)` twice via `AddTable` returns an error; `ReplaceTable` succeeds.
+
+**Effort:** ~half a day. Risk: low — caller audit reveals exactly two production sites today (`resolve.go` and `init.go` table loading), both of which already check elsewhere for duplicates.
+
+#### Gap B — `addAliases` silent shadow
+
+`dwg.go:68-74` writes alias names into `tindex` and `nameIndex` without checking whether the alias name collides with a real table or another alias. A user who aliases `customers → users` and also has a real table named `customers` will get the alias served instead, with no warning.
+
+**Plan:**
+
+1. In `addAliases`, before each `tindex[key] = idx` write, check if the key already maps to a table whose `Name != aliasName`. If so:
+   - If the existing entry is a real table (`Type != "remote"` and not itself an alias) → return error: `"sdata: alias %s collides with existing table; rename the alias"`.
+   - If the existing entry is another alias → return error naming both aliases.
+2. Same fix shape as Gap A: `addAliases` returns `error`, propagated up through `NewDBSchema`.
+3. Test: schema with an alias whose name matches a real table fails to build; schema with a non-colliding alias builds cleanly.
+
+**Effort:** ~half a day. Risk: moderate — there may be users who currently rely on silent shadow as a "rename a table" trick. Mitigation: search the `serv/` test fixtures for any such usage; if found, document the migration path before flipping the error on.
+
+#### Gap C — `tableMap` keyed by `schema:name` only (multi-DB)
+
+`tables.go:481`. Two databases with overlapping `(schema, name)` will collide in the index. Today this is masked by `crossDBRels[]` for FK relations, but direct `Find()` calls don't have that fallback.
+
+**Plan:**
+
+1. Extend the key to `db:schema:name`. Audit `Find()` and other readers to thread the database name through.
+2. Backfill: where the database name isn't readily available (legacy code paths), default to the empty string — preserves existing single-DB behaviour.
+3. Test: `multidb_test.go` already has a same-name-in-two-DBs scenario; assert that `Find()` resolves each correctly with database qualification.
+
+**Effort:** ~1 day. Risk: moderate — `Find()` is hot path; needs care to keep the fast-path lookup zero-allocation.
+
+#### Sequencing and rollback
+
+These three gaps are independent and can ship as separate commits within one PR:
+
+1. Gap A first (smallest blast radius — net new error returns at one well-known site).
+2. Gap B second (needs Gap A's error-return convention to be in place).
+3. Gap C third (largest, can be deferred indefinitely if multi-DB usage is sparse).
+
+Each commit is independently revertable. None has a data-layer impact.
+
+#### What this leaves unfixed
+
+- **Two databases with identical schema-qualified table names** in *configured* (not just discovered) state will still collide if the user gives them the same logical name in `Config.Databases`. That's a config-validation problem, not an `sdata` problem.
+- **Cross-cutting name collisions across roles/permissions** — out of scope for this naming-disambiguation PR. Permission tables aren't in the same namespace as data tables today.
+
 ## 11. What This Doesn't Cover (out of scope, again)
 
 Explicit non-goals so the PR stays focused:
