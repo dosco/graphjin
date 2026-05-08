@@ -65,7 +65,7 @@ func TestParseMultipart_SingleFile(t *testing.T) {
 		}{"0": {Filename: "logo.png", CType: "image/png", Body: pngBytes}},
 	)
 
-	req, err := parseMultipartGraphQL(r, UploadsConfig{Enabled: true})
+	req, err := parseMultipartGraphQL(r, UploadsConfig{Enabled: true}, nil)
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestParseMultipart_NestedPath(t *testing.T) {
 			Body     []byte
 		}{"0": {Filename: "a.bin", CType: "application/octet-stream", Body: []byte("hi")}},
 	)
-	req, err := parseMultipartGraphQL(r, UploadsConfig{Enabled: true})
+	req, err := parseMultipartGraphQL(r, UploadsConfig{Enabled: true}, nil)
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestParseMultipart_MissingMap(t *testing.T) {
 	r, _ := http.NewRequest("POST", "/", &buf)
 	r.Header.Set("Content-Type", mw.FormDataContentType())
 
-	_, err := parseMultipartGraphQL(r, UploadsConfig{Enabled: true})
+	_, err := parseMultipartGraphQL(r, UploadsConfig{Enabled: true}, nil)
 	if err == nil || !strings.Contains(err.Error(), "missing 'map'") {
 		t.Errorf("expected missing-map error, got %v", err)
 	}
@@ -147,7 +147,7 @@ func TestParseMultipart_MissingFile(t *testing.T) {
 			Body     []byte
 		}{}, // no file part for "0"
 	)
-	_, err := parseMultipartGraphQL(r, UploadsConfig{Enabled: true})
+	_, err := parseMultipartGraphQL(r, UploadsConfig{Enabled: true}, nil)
 	if err == nil || !strings.Contains(err.Error(), "missing from the request") {
 		t.Errorf("expected missing-file error, got %v", err)
 	}
@@ -164,7 +164,7 @@ func TestParseMultipart_MIMEAllowlist(t *testing.T) {
 		}{"0": {Filename: "evil.exe", CType: "application/x-msdownload", Body: []byte("\x00\x00")}},
 	)
 	conf := UploadsConfig{Enabled: true, AllowedMIME: []string{"image/*", "application/pdf"}}
-	_, err := parseMultipartGraphQL(r, conf)
+	_, err := parseMultipartGraphQL(r, conf, nil)
 	if err == nil || !strings.Contains(err.Error(), "disallowed content-type") {
 		t.Errorf("expected MIME rejection, got %v", err)
 	}

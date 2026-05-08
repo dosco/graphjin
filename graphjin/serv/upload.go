@@ -1,7 +1,10 @@
 package serv
 
 import (
+	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,8 +12,12 @@ import (
 	"mime"
 	"net/http"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/dosco/graphjin/core/v3/fstable"
 )
 
 // defaultMaxUploadSize is the fallback total body limit for multipart
@@ -43,12 +50,28 @@ func isMultipartRequest(r *http.Request) bool {
 	return mt == "multipart/form-data"
 }
 
+// storageRef is the JSON shape injected at each variable path when
+// uploads stream to a filesystem backend (UploadsConfig.Storage set).
+// Mutations bind this directly to a JSONB column.
+type storageRef struct {
+	Key         string `json:"key"`
+	ContentType string `json:"content_type"`
+	Size        int64  `json:"size"`
+	URL         string `json:"url,omitempty"`
+	ETag        string `json:"etag,omitempty"`
+	ModifiedAt  string `json:"modified_at,omitempty"`
+}
+
 // parseMultipartGraphQL parses a graphql-multipart-request-spec body
 // and returns a populated gqlReq with file values injected at the paths
 // declared in the `map` part.
 //
+// When `backend` is nil, files are inlined as base64 (legacy mode).
+// When `backend` is non-nil, files are streamed to the backend and
+// the injected variable becomes a storageRef pointing at the object.
+//
 // Spec: https://github.com/jaydenseric/graphql-multipart-request-spec
-func parseMultipartGraphQL(r *http.Request, conf UploadsConfig) (gqlReq, error) {
+func parseMultipartGraphQL(r *http.Request, conf UploadsConfig, backend fstable.Backend) (gqlReq, error) {
 	maxSize := conf.MaxSize
 	if maxSize <= 0 {
 		maxSize = defaultMaxUploadSize
@@ -97,6 +120,7 @@ func parseMultipartGraphQL(r *http.Request, conf UploadsConfig) (gqlReq, error) 
 	root := map[string]any{"variables": vars}
 
 	allowed := buildMIMEAllowlist(conf.AllowedMIME)
+	ctx := r.Context()
 
 	for partName, paths := range fileMap {
 		fhs, ok := r.MultipartForm.File[partName]
@@ -113,25 +137,38 @@ func parseMultipartGraphQL(r *http.Request, conf UploadsConfig) (gqlReq, error) 
 			return gqlReq{}, fmt.Errorf("multipart: file %q has disallowed content-type %q", fh.Filename, ct)
 		}
 
-		f, err := fh.Open()
-		if err != nil {
-			return gqlReq{}, fmt.Errorf("multipart: open file %q: %w", fh.Filename, err)
-		}
-		buf, err := io.ReadAll(f)
-		_ = f.Close()
-		if err != nil {
-			return gqlReq{}, fmt.Errorf("multipart: read file %q: %w", fh.Filename, err)
-		}
-
-		uf := uploadFile{
-			Filename:    fh.Filename,
-			ContentType: ct,
-			Size:        len(buf),
-			Data:        base64.StdEncoding.EncodeToString(buf),
+		var injected any
+		if backend != nil {
+			f, err := fh.Open()
+			if err != nil {
+				return gqlReq{}, fmt.Errorf("multipart: open %q: %w", fh.Filename, err)
+			}
+			ref, err := streamToBackend(ctx, backend, f, fh.Filename, ct, conf.StorageKeyPrefix)
+			_ = f.Close()
+			if err != nil {
+				return gqlReq{}, fmt.Errorf("multipart: stream %q: %w", fh.Filename, err)
+			}
+			injected = ref
+		} else {
+			f, err := fh.Open()
+			if err != nil {
+				return gqlReq{}, fmt.Errorf("multipart: open file %q: %w", fh.Filename, err)
+			}
+			buf, err := io.ReadAll(f)
+			_ = f.Close()
+			if err != nil {
+				return gqlReq{}, fmt.Errorf("multipart: read file %q: %w", fh.Filename, err)
+			}
+			injected = uploadFile{
+				Filename:    fh.Filename,
+				ContentType: ct,
+				Size:        len(buf),
+				Data:        base64.StdEncoding.EncodeToString(buf),
+			}
 		}
 
 		for _, p := range paths {
-			if err := setAtPath(root, p, uf); err != nil {
+			if err := setAtPath(root, p, injected); err != nil {
 				return gqlReq{}, fmt.Errorf("multipart: %w", err)
 			}
 		}
@@ -145,6 +182,59 @@ func parseMultipartGraphQL(r *http.Request, conf UploadsConfig) (gqlReq, error) 
 	ops.Vars = merged
 	return ops, nil
 }
+
+// streamToBackend uploads a file body to the given backend under a
+// generated key. The key combines the prefix template with a random
+// suffix and the original extension, so callers can predict where
+// files land and the backend rejects collisions naturally.
+func streamToBackend(
+	ctx context.Context,
+	backend fstable.Backend,
+	body io.Reader,
+	originalName, contentType, prefixTpl string,
+) (storageRef, error) {
+	key := generateUploadKey(prefixTpl, originalName)
+	entry, err := backend.Put(ctx, key, body, fstable.PutMeta{ContentType: contentType})
+	if err != nil {
+		return storageRef{}, err
+	}
+
+	url, perr := backend.Presign(ctx, entry.Key, fstable.PresignGet, 15*time.Minute)
+	if perr != nil && !errors.Is(perr, fstable.ErrUnsupported) {
+		return storageRef{}, fmt.Errorf("presign: %w", perr)
+	}
+
+	return storageRef{
+		Key:         entry.Key,
+		ContentType: entry.ContentType,
+		Size:        entry.Size,
+		URL:         url,
+		ETag:        entry.ETag,
+		ModifiedAt:  entry.ModifiedAt.UTC().Format(time.RFC3339Nano),
+	}, nil
+}
+
+// generateUploadKey produces a deterministic-looking storage key that
+// combines the prefix template, a random suffix for uniqueness, and
+// the original file extension. The {date} marker in prefixTpl is
+// substituted with YYYY/MM/DD at call time.
+func generateUploadKey(prefixTpl, originalName string) string {
+	prefix := strings.ReplaceAll(prefixTpl, "{date}", time.Now().UTC().Format("2006/01/02"))
+	prefix = strings.TrimRight(prefix, "/")
+	if prefix != "" {
+		prefix += "/"
+	}
+	suffix := randomHex(8)
+	ext := filepath.Ext(originalName)
+	return prefix + suffix + ext
+}
+
+func randomHex(n int) string {
+	buf := make([]byte, n)
+	_, _ = rand.Read(buf)
+	return hex.EncodeToString(buf)
+}
+
 
 // setAtPath writes value into root at a dotted path like
 // "variables.input.avatar" or "variables.files.0". Numeric path

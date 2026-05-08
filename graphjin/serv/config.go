@@ -332,20 +332,21 @@ type RedisConfig struct {
 // (https://github.com/jaydenseric/graphql-multipart-request-spec).
 //
 // When Enabled, /api/v1/graphql accepts multipart/form-data POSTs in
-// addition to application/json. Each uploaded file is injected into
-// the GraphQL variables at the path declared in the `map` part as a
-// JSON object:
+// addition to application/json. Files are then either:
 //
-//	{
-//	  "filename":     "logo.png",
-//	  "content_type": "image/png",
-//	  "size":         12345,
-//	  "data":         "<base64 bytes>"
-//	}
+//  1. Inlined as base64 into the variable at its declared path
+//     (default — Storage is empty):
 //
-// Mutations bind this object directly to a JSON/JSONB column or to a
-// PL/pgSQL function that decodes `data` into `bytea`. Per-role upload
-// gating belongs in the existing role config (column allowlist).
+//     { filename, content_type, size, data (base64) }
+//
+//  2. Streamed to a configured filesystem table (Storage="avatars"),
+//     with the variable replaced by the resulting object metadata:
+//
+//     { key, content_type, size, url, etag, modified_at }
+//
+// Mode 2 keeps large bodies out of the GraphQL request/response and
+// lets mutations write a single JSONB column whose value is a stable,
+// queryable file reference.
 type UploadsConfig struct {
 	// Enable multipart/form-data parsing on /api/v1/graphql
 	Enabled bool `mapstructure:"enabled" jsonschema:"title=Enable Uploads,default=false"`
@@ -357,6 +358,18 @@ type UploadsConfig struct {
 	// AllowedMIME, when non-empty, restricts the accepted content types.
 	// Glob patterns are supported: "image/*", "application/pdf".
 	AllowedMIME []string `mapstructure:"allowed_mime" jsonschema:"title=Allowed MIME Types"`
+
+	// Storage names a filesystems[].name to stream uploads into. When
+	// empty, the legacy inline-base64 mode is used. When set, files
+	// are written to the backend and the variable becomes the object
+	// metadata instead of inlined data.
+	Storage string `mapstructure:"storage" jsonschema:"title=Filesystem Table for Streaming"`
+
+	// StorageKeyPrefix is prepended to the backend key for every
+	// uploaded file. Useful for namespacing by tenant or role.
+	// Example: "avatars/{date}/" — the {date} marker is substituted
+	// at request time with YYYY/MM/DD.
+	StorageKeyPrefix string `mapstructure:"storage_key_prefix" jsonschema:"title=Storage Key Prefix"`
 }
 
 // CachingConfig configures response caching
