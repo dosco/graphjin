@@ -24,6 +24,7 @@ import (
 	"github.com/dosco/graphjin/core/v3/internal/psql"
 	"github.com/dosco/graphjin/core/v3/internal/qcode"
 	"github.com/dosco/graphjin/core/v3/internal/sdata"
+	"github.com/dosco/graphjin/core/v3/openapi"
 )
 
 type contextkey int
@@ -77,6 +78,7 @@ type graphjinEngine struct {
 	tmap                  map[string]qcode.TConfig
 	rtmap                 map[string]ResolverFn
 	rmap                  map[string]resItem
+	openapiRuntime        *openapi.Runtime
 	abacEnabled           bool
 	subs                  sync.Map
 	prod                  bool
