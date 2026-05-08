@@ -89,6 +89,9 @@ func (co *Compiler) compileFieldDirectives(sel *Select,
 		case "skip":
 			err = co.compileDirectiveSkipInclude(true, sel, f, d, role)
 
+		case "window":
+			err = co.compileDirectiveWindow(sel, f, d)
+
 		default:
 			err = fmt.Errorf("unknown field directive: %s", d.Name)
 		}
