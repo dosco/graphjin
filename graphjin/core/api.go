@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dosco/graphjin/core/v3/fstable"
 	"github.com/dosco/graphjin/core/v3/internal/allow"
 	"github.com/dosco/graphjin/core/v3/internal/graph"
 	"github.com/dosco/graphjin/core/v3/internal/psql"
@@ -104,6 +105,12 @@ type graphjinEngine struct {
 	federationSDLOnce sync.Once
 	federationSDL     string
 	federationSDLErr  error
+
+	// Filesystem virtual tables (local / S3 / GCS). Backend factories
+	// are registered by name via OptionSetFilesystemBackend; the engine
+	// instantiates one Backend per FilesystemConfig entry during init.
+	fsFactories map[string]FilesystemBackendFactory
+	fsBackends  map[string]fstable.Backend
 }
 
 // primaryDB returns the default database context.
@@ -409,6 +416,36 @@ func OptionSetResolver(name string, fn ResolverFn) Option {
 			return fmt.Errorf("duplicate resolver: %s", name)
 		}
 		s.rtmap[name] = fn
+		return nil
+	}
+}
+
+// OptionSetFilesystemBackend registers a filesystem backend factory by
+// name. The engine ships with the "local" factory built in; "s3" and
+// "gcs" are registered by the serv package (where their SDK
+// dependencies live). Custom backends can be plugged in here too —
+// e.g. an Azure Blob factory in user code:
+//
+//	gj, _ := core.NewGraphJin(conf, db,
+//	    core.OptionSetFilesystemBackend("azureblob", func(c core.FilesystemConfig) (fstable.Backend, error) {
+//	        return myazure.New(c.Bucket, c.Region)
+//	    }),
+//	)
+func OptionSetFilesystemBackend(name string, factory FilesystemBackendFactory) Option {
+	return func(s *graphjinEngine) error {
+		if name == "" {
+			return errors.New("filesystem backend: name is required")
+		}
+		if factory == nil {
+			return errors.New("filesystem backend: factory is nil")
+		}
+		if s.fsFactories == nil {
+			s.fsFactories = make(map[string]FilesystemBackendFactory)
+		}
+		if _, ok := s.fsFactories[name]; ok {
+			return fmt.Errorf("filesystem backend: duplicate name %q", name)
+		}
+		s.fsFactories[name] = factory
 		return nil
 	}
 }

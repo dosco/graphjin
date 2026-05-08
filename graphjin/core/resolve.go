@@ -25,6 +25,9 @@ func (gj *graphjinEngine) newRTMap() map[string]ResolverFn {
 		// from gj.openapiRuntime. The factory closes over gj so the
 		// runtime reference doesn't have to ride on every Props bag.
 		"openapi": gj.newOpenAPIResolverFn(),
+		// "filesystem" routes a synthesised remote table to one of the
+		// configured fstable.Backend instances by name.
+		"filesystem": gj.newFilesystemResolverFn(),
 	}
 }
 
@@ -37,6 +40,14 @@ func (gj *graphjinEngine) initResolvers() error {
 	// before the resolver loop so any synthesised ResolverConfigs are
 	// processed in the same pass as user-declared ones.
 	if err := gj.loadOpenAPIIntegration(); err != nil {
+		return err
+	}
+
+	// Filesystem virtual tables: install the built-in "local" factory
+	// before the bridge loads so locally-declared filesystems work
+	// out-of-the-box; serv layer adds s3/gcs via OptionSetFilesystemBackend.
+	gj.registerBuiltinFilesystemFactories()
+	if err := gj.loadFilesystemIntegration(); err != nil {
 		return err
 	}
 

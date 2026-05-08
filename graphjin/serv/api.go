@@ -127,6 +127,10 @@ func (s *graphjinService) buildCoreOptionsWithDBs(dbs map[string]*sql.DB) []core
 	if len(dbs) > 0 {
 		opts = append(opts, core.OptionSetDatabases(dbs))
 	}
+	// Register filesystem backends contributed by this package's
+	// init() blocks (s3, gcs) — gated by build tags. Local lives in
+	// core itself and is always available.
+	opts = append(opts, filesystemBackendOptions()...)
 	return opts
 }
 
