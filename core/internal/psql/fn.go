@@ -22,6 +22,7 @@ func (c *compilerContext) renderFieldFunction(sel *qcode.Select, f qcode.Field) 
 	// expression — or empty for the bare ratio-of-aggregates case.
 	if len(f.Args) == 1 && f.Args[0].Type == qcode.ArgTypeExpr {
 		c.renderFieldExprFunction(sel, f)
+		c.renderWindowOver(sel, f)
 		return
 	}
 	switch f.Func.Name {
@@ -32,6 +33,46 @@ func (c *compilerContext) renderFieldFunction(sel *qcode.Select, f qcode.Field) 
 	default:
 		c.renderFunction(f.Func.Name, f.Args)
 	}
+	c.renderWindowOver(sel, f)
+}
+
+// renderWindowOver appends the OVER (...) clause for fields tagged with
+// the @window directive. No-op when f.Window is nil.
+func (c *compilerContext) renderWindowOver(sel *qcode.Select, f qcode.Field) {
+	if f.Window == nil {
+		return
+	}
+	w := f.Window
+	c.w.WriteString(" OVER (")
+	if len(w.Partition) > 0 {
+		c.w.WriteString("PARTITION BY ")
+		for i, col := range w.Partition {
+			if i > 0 {
+				c.w.WriteString(", ")
+			}
+			c.colWithTable(sel.Table, col)
+		}
+	}
+	if len(w.OrderBy) > 0 {
+		if len(w.Partition) > 0 {
+			c.w.WriteString(" ")
+		}
+		c.w.WriteString("ORDER BY ")
+		for i, ord := range w.OrderBy {
+			if i > 0 {
+				c.w.WriteString(", ")
+			}
+			c.colWithTable(sel.Table, ord.Col)
+			if ord.Desc {
+				c.w.WriteString(" DESC")
+			}
+		}
+	}
+	if w.Frame != "" {
+		c.w.WriteString(" ")
+		c.w.WriteString(w.Frame)
+	}
+	c.w.WriteString(")")
 }
 
 // renderFieldExprFunction emits SQL for a `<name>(expr: ...)` field.

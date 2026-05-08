@@ -165,6 +165,10 @@ type Field struct {
 	FieldFilter Filter
 	Args        []Arg
 	SkipRender  SkipType
+	// Window, when non-nil, marks this aggregate/function field as a SQL
+	// window function. The SQL emitter wraps the function call with
+	// `OVER (PARTITION BY ... ORDER BY ... <frame>)`. Set via @window.
+	Window *WindowSpec
 }
 
 type Column struct {

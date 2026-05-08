@@ -98,7 +98,7 @@ func (co *Compiler) compileChildColumns(
 			continue
 		}
 
-		var isCol, isFunc bool
+		var isCol, isFunc, fieldAgg bool
 		var fn Function
 
 		field.Col, isCol = sel.Ti.ColumnExists(name)
@@ -116,7 +116,10 @@ func (co *Compiler) compileChildColumns(
 			field.Type = FieldTypeFunc
 			field.Func = fn.Func
 			field.Args = fn.Args
-			aggExists = fn.Agg
+			// Defer flipping the GROUP BY flag until after directive
+			// compilation: an aggregate carrying @window emits one row
+			// per input row and must NOT trigger GROUP BY.
+			fieldAgg = fn.Agg
 			// For the new expression-aggregate path, run the AST validator
 			// with the role's column allowlist. This enforces type-checks
 			// (numeric columns under arithmetic), depth/node caps, and
@@ -142,6 +145,12 @@ func (co *Compiler) compileChildColumns(
 
 		if err := co.compileFieldDirectives(sel, &field, f.Directives, role); err != nil {
 			return err
+		}
+
+		// Aggregates without @window participate in GROUP BY; windowed
+		// aggregates do not (the OVER clause produces a row per input).
+		if fieldAgg && field.Window == nil {
+			aggExists = true
 		}
 
 		if err := co.compileFieldArgs(sel, &field, f.Args, role); err != nil {
