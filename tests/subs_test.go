@@ -181,7 +181,16 @@ func Example_subscriptionWithCursor() {
 	msgCount := 0
 	maxRetries := 50 // prevent infinite loop
 	for retries := 0; msgCount < 19 && retries < maxRetries; retries++ {
-		msg := <-m2.Result
+		// Per-message timeout: insertions are 3s apart, so 15s is plenty.
+		// Without this, a stuck subscription would hang the test for the
+		// entire Go test timeout (default 10m, configurable to 30m+).
+		var msg *core.Result
+		select {
+		case msg = <-m2.Result:
+		case <-time.After(15 * time.Second):
+			fmt.Printf("timeout waiting for message %d/19 after %d empty results\n", msgCount+1, retries-msgCount)
+			return
+		}
 		// replace cursor value to make test work since it's encrypted
 		v2 := cursorRegex.ReplaceAllString(string(msg.Data), `cursor":"cursor_was_here`)
 		// Skip empty results (timing issue on some databases like MSSQL)
