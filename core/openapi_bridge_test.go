@@ -1,0 +1,300 @@
+package core
+
+import (
+	"bytes"
+	"context"
+	"io"
+	_log "log"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/dosco/graphjin/core/v3/internal/sdata"
+	"github.com/dosco/graphjin/core/v3/openapi"
+)
+
+// silentLogger discards log output so tests don't pollute stdout.
+// We don't need to assert on log content for these tests; the warnings
+// are exercised via the LoadResult.Warnings slice instead.
+func silentLogger(t *testing.T) *_log.Logger {
+	t.Helper()
+	return _log.New(io.Discard, "", 0)
+}
+
+func TestSynthesiseResolvers(t *testing.T) {
+	reg := &openapi.Registry{
+		Specs: []*openapi.Spec{{
+			Key: "is",
+			Operations: []openapi.OpDescriptor{
+				{
+					SpecKey:     "is",
+					OperationID: "getUserById",
+					Mode:        openapi.OpModeRowJoin,
+					ExposeAs:    "is_profile",
+					PathParams:  []openapi.ParamSpec{{Name: "userId", In: openapi.ParamInPath}},
+					Join: &openapi.JoinConfig{
+						ParentTable:  "users",
+						ParentColumn: "email",
+						Param:        "userId",
+					},
+				},
+				{
+					OperationID: "exportFile",
+					Mode:        openapi.OpModeSkipped,
+				},
+				{
+					SpecKey:     "is",
+					OperationID: "listAuditLogs",
+					Mode:        openapi.OpModeList,
+					ExposeAs:    "is_audit_logs",
+				},
+				{
+					SpecKey:     "is",
+					OperationID: "getOrgById",
+					Mode:        openapi.OpModeSingleByID,
+					ExposeAs:    "is_org",
+				},
+			},
+		}},
+	}
+
+	got := synthesiseResolvers(reg)
+	if len(got) != 3 {
+		t.Fatalf("synthesised %d configs, want 3: %+v", len(got), got)
+	}
+
+	rj := got[0]
+	if rj.Name != "is_profile" || rj.Table != "users" || rj.Column != "email" || rj.Props["path_param"] != "userId" {
+		t.Errorf("row-join config wrong: %+v", rj)
+	}
+
+	for _, tl := range got[1:] {
+		if tl.Table != "" || tl.Column != "" {
+			t.Errorf("top-level config should have empty Table/Column: %+v", tl)
+		}
+		if tl.Props["spec_key"] != "is" {
+			t.Errorf("top-level missing spec_key: %+v", tl.Props)
+		}
+	}
+}
+
+// TestOpenAPIBridgeResolve verifies the bridge translates the existing
+// ResolverReq (parent column value as req.ID) into an OpenAPI CallParams
+// with the join key in the right path-parameter slot.
+func TestOpenAPIBridgeResolve(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/users/u-99" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"u-99","name":"Test"}`))
+	}))
+	defer srv.Close()
+
+	op := openapi.OpDescriptor{
+		OperationID:  "getUserById",
+		Method:       "GET",
+		PathTemplate: "/users/{userId}",
+		Mode:         openapi.OpModeRowJoin,
+		PathParams:   []openapi.ParamSpec{{Name: "userId", In: openapi.ParamInPath, Required: true}},
+	}
+	spec := &openapi.Spec{
+		Key:        "is",
+		BaseURL:    srv.URL,
+		Operations: []openapi.OpDescriptor{op},
+	}
+	rt, err := openapi.NewSpecRuntime(spec, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	caller, ok := rt.Caller("getUserById")
+	if !ok {
+		t.Fatal("caller not found")
+	}
+
+	bridge := &openapiBridge{caller: caller, pathName: "userId"}
+	body, err := bridge.Resolve(context.Background(), ResolverReq{ID: "u-99"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != `{"id":"u-99","name":"Test"}` {
+		t.Errorf("body = %s", body)
+	}
+}
+
+// TestLoadOpenAPIIntegrationDormantWithoutSpecs confirms that a deployment
+// with no config/specs directory boots cleanly — OpenAPI integration
+// must be optional, never required.
+func TestLoadOpenAPIIntegrationDormantWithoutSpecs(t *testing.T) {
+	// Use an explicit non-existent dir rather than the default; the
+	// default may exist on a developer's box in the wrong way.
+	conf := &Config{OpenAPISpecsDir: filepath.Join(os.TempDir(), "graphjin-test-nonexistent-xyz")}
+	gj := &graphjinEngine{conf: conf, log: silentLogger(t)}
+	if err := gj.loadOpenAPIIntegration(); err != nil {
+		t.Errorf("loadOpenAPIIntegration with no specs should not error, got %v", err)
+	}
+	if gj.openapiRuntime != nil {
+		t.Error("runtime should be nil when no specs are loaded")
+	}
+}
+
+func newTestEngineWithTables(t *testing.T, conf *Config, primarySchema string, names ...string) (*graphjinEngine, *bytes.Buffer) {
+	t.Helper()
+	tables := make([]sdata.DBTable, 0, len(names))
+	for _, n := range names {
+		tables = append(tables, sdata.DBTable{Schema: primarySchema, Name: n, Type: "table"})
+	}
+	var logBuf bytes.Buffer
+	gj := &graphjinEngine{
+		conf:      conf,
+		log:       _log.New(&logBuf, "", 0),
+		defaultDB: "primary",
+		databases: map[string]*dbContext{
+			"primary": {name: "primary", dbinfo: &sdata.DBInfo{Schema: primarySchema, Tables: tables}},
+		},
+	}
+	return gj, &logBuf
+}
+
+func TestCollisionWithRealTableErrors(t *testing.T) {
+	gj, _ := newTestEngineWithTables(t, &Config{}, "public", "users", "orders")
+	synth := []ResolverConfig{
+		{
+			Name:  "users", // collides with real public.users
+			Type:  "openapi",
+			Table: "tenants", Column: "id",
+			Props: ResolverProps{"spec_key": "is", "operation_id": "getUserById"},
+		},
+	}
+	err := gj.validateOpenAPINoCollisions(synth)
+	if err == nil {
+		t.Fatal("expected error for collision with real table, got nil")
+	}
+	if !strings.Contains(err.Error(), `"users"`) {
+		t.Errorf("error should name the colliding table; got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "expose_as") {
+		t.Errorf("error should mention 'expose_as' as the fix; got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "is/getUserById") {
+		t.Errorf("error should identify the offending operation; got: %v", err)
+	}
+}
+
+func TestCollisionAcrossSpecsErrors(t *testing.T) {
+	gj, _ := newTestEngineWithTables(t, &Config{}, "public", "users")
+	synth := []ResolverConfig{
+		{
+			Name: "audit", Type: "openapi",
+			Table: "users", Column: "id",
+			Props: ResolverProps{"spec_key": "is", "operation_id": "getAudit"},
+		},
+		{
+			Name: "audit", // same expose_as as above
+			Type: "openapi",
+			Table: "orders", Column: "id",
+			Props: ResolverProps{"spec_key": "stripe", "operation_id": "getAuditEvent"},
+		},
+	}
+	err := gj.validateOpenAPINoCollisions(synth)
+	if err == nil {
+		t.Fatal("expected error for cross-spec ExposeAs collision, got nil")
+	}
+	if !strings.Contains(err.Error(), "is/getAudit") || !strings.Contains(err.Error(), "stripe/getAuditEvent") {
+		t.Errorf("error should identify both colliding operations; got: %v", err)
+	}
+}
+
+func TestCollisionWithAliasWarnsButPasses(t *testing.T) {
+	conf := &Config{
+		Tables: []Table{
+			{Name: "customers", Table: "users"}, // alias customers → users
+		},
+	}
+	gj, logBuf := newTestEngineWithTables(t, conf, "public", "users")
+	synth := []ResolverConfig{
+		{
+			Name: "customers", // collides with the alias, not a real table
+			Type: "openapi",
+			Table: "users", Column: "id",
+			Props: ResolverProps{"spec_key": "crm", "operation_id": "getCustomer"},
+		},
+	}
+	if err := gj.validateOpenAPINoCollisions(synth); err != nil {
+		t.Fatalf("alias collision should warn, not error; got: %v", err)
+	}
+	if !strings.Contains(logBuf.String(), "alias") {
+		t.Errorf("expected log warning mentioning alias; got log: %q", logBuf.String())
+	}
+	if !strings.Contains(logBuf.String(), "crm/getCustomer") {
+		t.Errorf("warning should identify the operation; got log: %q", logBuf.String())
+	}
+}
+
+func TestCollisionWithExistingResolverWarns(t *testing.T) {
+	conf := &Config{
+		Resolvers: []ResolverConfig{
+			{Name: "ledger", Type: "remote_api", Table: "accounts", Column: "id"},
+		},
+	}
+	gj, logBuf := newTestEngineWithTables(t, conf, "public", "accounts")
+	synth := []ResolverConfig{
+		{
+			Name: "ledger", // matches existing resolver name
+			Type: "openapi",
+			Table: "accounts", Column: "id",
+			Props: ResolverProps{"spec_key": "fin", "operation_id": "getLedger"},
+		},
+	}
+	if err := gj.validateOpenAPINoCollisions(synth); err != nil {
+		t.Fatalf("existing-resolver collision should warn, not error; got: %v", err)
+	}
+	if !strings.Contains(logBuf.String(), "fin/getLedger") {
+		t.Errorf("expected warning identifying the operation; got log: %q", logBuf.String())
+	}
+}
+
+func TestNoCollisionsHappyPath(t *testing.T) {
+	gj, logBuf := newTestEngineWithTables(t, &Config{}, "public", "users", "orders")
+	synth := []ResolverConfig{
+		{
+			Name: "is_get_user_by_id", Type: "openapi",
+			Table: "users", Column: "email",
+			Props: ResolverProps{"spec_key": "is", "operation_id": "getUserById"},
+		},
+		{
+			Name: "stripe_get_payment_by_id", Type: "openapi",
+			Table: "orders", Column: "stripe_id",
+			Props: ResolverProps{"spec_key": "stripe", "operation_id": "getPaymentById"},
+		},
+	}
+	if err := gj.validateOpenAPINoCollisions(synth); err != nil {
+		t.Fatalf("happy path should not error: %v", err)
+	}
+	if logBuf.Len() != 0 {
+		t.Errorf("happy path should produce no log output; got: %q", logBuf.String())
+	}
+}
+
+func TestCollisionCheckHandlesMissingDBInfo(t *testing.T) {
+	gj := &graphjinEngine{
+		conf:      &Config{},
+		log:       silentLogger(t),
+		defaultDB: "primary",
+		databases: map[string]*dbContext{"primary": {name: "primary"}}, // no dbinfo
+	}
+	synth := []ResolverConfig{
+		{Name: "x", Props: ResolverProps{"spec_key": "a", "operation_id": "op1"}},
+		{Name: "x", Props: ResolverProps{"spec_key": "b", "operation_id": "op2"}}, // dup
+	}
+	err := gj.validateOpenAPINoCollisions(synth)
+	if err == nil {
+		t.Fatal("cross-spec collision should still be detected without dbinfo")
+	}
+	if !strings.Contains(err.Error(), "a/op1") || !strings.Contains(err.Error(), "b/op2") {
+		t.Errorf("error should identify both ops; got: %v", err)
+	}
+}

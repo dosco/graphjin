@@ -121,6 +121,9 @@ type Select struct {
 	Children  []int32
 	Ti        sdata.DBTable
 	Rel       sdata.DBRel
+	// ExtraArgs holds GraphQL field arguments that don't match a known
+	// qcode arg name. Populated only for selects whose Ti.Type=="remote".
+	ExtraArgs map[string]string
 	Joins     []Join
 	PartitionFilterRequired string
 	Unrestricted            bool
@@ -873,6 +876,11 @@ func (co *Compiler) addRelInfo(
 		}
 	} else {
 		sel.Ti = sel.Rel.Left.Ti
+	}
+
+	if sel.ParentID == -1 && sel.Ti.Type == "remote" && sel.Ti.PrimaryCol.FKeyTable == "" {
+		sel.Rel = sdata.DBRel{Type: sdata.RelRemote}
+		sel.SkipRender = SkipTypeRemote
 	}
 
 	if sel.Ti.Blocked {

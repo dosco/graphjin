@@ -21,12 +21,24 @@ func (gj *graphjinEngine) newRTMap() map[string]ResolverFn {
 		"remote_api": func(v ResolverProps) (Resolver, error) {
 			return newRemoteAPI(v, gj.trace.NewHTTPClient())
 		},
+		// "openapi" wraps an openapi.Caller resolved at request time
+		// from gj.openapiRuntime. The factory closes over gj so the
+		// runtime reference doesn't have to ride on every Props bag.
+		"openapi": gj.newOpenAPIResolverFn(),
 	}
 }
 
 // initResolvers initializes the resolvers
 func (gj *graphjinEngine) initResolvers() error {
 	gj.rmap = make(map[string]resItem)
+
+	// Load OpenAPI integration before the rtmap is built so the
+	// "openapi" factory in newRTMap can see gj.openapiRuntime, and
+	// before the resolver loop so any synthesised ResolverConfigs are
+	// processed in the same pass as user-declared ones.
+	if err := gj.loadOpenAPIIntegration(); err != nil {
+		return err
+	}
 
 	if gj.rtmap == nil {
 		gj.rtmap = gj.newRTMap()
@@ -53,6 +65,10 @@ func (gj *graphjinEngine) initResolvers() error {
 func (gj *graphjinEngine) initRemote(
 	rc ResolverConfig, rtmap map[string]ResolverFn, dbinfo *sdata.DBInfo,
 ) error {
+	if rc.Table == "" {
+		return gj.initToplevelRemote(rc, rtmap, dbinfo)
+	}
+
 	// Defines the table column to be used as an id in the
 	// remote reques
 	var col sdata.DBColumn
@@ -123,5 +139,34 @@ func (gj *graphjinEngine) initRemote(
 	// Index resolver obj by IDField
 	gj.rmap[string(rf.IDField)] = rf
 
+	return nil
+}
+
+// initToplevelRemote registers a parent-less remote resolver. The synthetic
+// table is pre-registered in dbinfo by the bridge during loadOpenAPIIntegration.
+func (gj *graphjinEngine) initToplevelRemote(
+	rc ResolverConfig, rtmap map[string]ResolverFn, dbinfo *sdata.DBInfo,
+) error {
+	if _, err := dbinfo.GetTable(rc.Schema, rc.Name); err != nil {
+		return fmt.Errorf("top-level remote %q: synthetic table not registered: %w", rc.Name, err)
+	}
+
+	factory, ok := rtmap[rc.Type]
+	if !ok {
+		return fmt.Errorf("unknown resolver type: %s", rc.Type)
+	}
+	fn, err := factory(rc.Props)
+	if err != nil {
+		return err
+	}
+
+	var path [][]byte
+	if rc.StripPath != "" {
+		for _, p := range strings.Split(rc.StripPath, ".") {
+			path = append(path, []byte(p))
+		}
+	}
+
+	gj.rmap[rc.Name] = resItem{Path: path, Fn: fn}
 	return nil
 }
