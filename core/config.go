@@ -327,6 +327,73 @@ type Config struct {
 	// federation-flavoured SDL describing the schema's tables. See
 	// FederationConfig for the full surface.
 	Federation FederationConfig `mapstructure:"federation" json:"federation" yaml:"federation" jsonschema:"title=Apollo Federation v2"`
+
+	// Filesystems exposes object stores (local directories, S3, GCS) as
+	// virtual tables in the GraphQL schema. Each entry materialises one
+	// table with a fixed shape — key/size/content_type/etag/modified_at/url/data —
+	// and routes queries through a pluggable Backend.
+	Filesystems []FilesystemConfig `mapstructure:"filesystems" json:"filesystems" yaml:"filesystems" jsonschema:"title=Filesystem Tables"`
+}
+
+// FilesystemConfig declares one filesystem-backed virtual table.
+//
+//	filesystems:
+//	  - name: avatars
+//	    backend: s3
+//	    bucket: my-bucket
+//	    prefix: avatars/
+//	    region: us-east-1
+//	    presign_ttl: 15m
+//
+//	  - name: invoices
+//	    backend: gcs
+//	    bucket: invoices
+//	    prefix: 2026/
+//
+//	  - name: uploads_local
+//	    backend: local
+//	    root: /var/lib/graphjin/uploads
+//
+// Backend-specific options live alongside the common ones; unrecognised
+// fields per backend produce a clear error at startup rather than being
+// silently ignored.
+type FilesystemConfig struct {
+	// Name is the table name surfaced in GraphQL (e.g. "avatars").
+	Name string `mapstructure:"name" json:"name" yaml:"name" jsonschema:"title=Table Name"`
+
+	// Backend selects the implementation: "local", "s3", or "gcs".
+	// S3 and GCS are gated by build tags; on a slim build, configuring
+	// them produces a clear error.
+	Backend string `mapstructure:"backend" json:"backend" yaml:"backend" jsonschema:"title=Backend,enum=local,enum=s3,enum=gcs"`
+
+	// Bucket is the S3 bucket / GCS bucket name. Ignored for local.
+	Bucket string `mapstructure:"bucket" json:"bucket" yaml:"bucket" jsonschema:"title=Bucket"`
+
+	// Region is the S3 region (e.g. "us-east-1"). Ignored for local/gcs.
+	Region string `mapstructure:"region" json:"region" yaml:"region" jsonschema:"title=Region"`
+
+	// Endpoint, when non-empty, overrides the S3 endpoint URL — useful
+	// for MinIO, localstack, or non-AWS S3-compatible services.
+	Endpoint string `mapstructure:"endpoint" json:"endpoint" yaml:"endpoint" jsonschema:"title=Endpoint Override"`
+
+	// Prefix is prepended to every key. Effective root for the table.
+	Prefix string `mapstructure:"prefix" json:"prefix" yaml:"prefix" jsonschema:"title=Key Prefix"`
+
+	// Root is the local filesystem root directory. Required for the
+	// local backend; ignored otherwise.
+	Root string `mapstructure:"root" json:"root" yaml:"root" jsonschema:"title=Local Root Directory"`
+
+	// PresignTTL bounds how long generated presigned URLs are valid.
+	// Defaults to 15 minutes when zero. Local backend ignores this.
+	PresignTTL time.Duration `mapstructure:"presign_ttl" json:"presign_ttl" yaml:"presign_ttl" jsonschema:"title=Presigned URL TTL,default=15m"`
+
+	// PublicBaseURL, when set, replaces the presigned-URL host. Useful
+	// when objects are fronted by a CDN. The path is appended unchanged.
+	PublicBaseURL string `mapstructure:"public_base_url" json:"public_base_url" yaml:"public_base_url" jsonschema:"title=Public Base URL"`
+
+	// MaxListPageSize caps the number of entries returned per list call.
+	// Defaults to 1000 when zero.
+	MaxListPageSize int `mapstructure:"max_list_page_size" json:"max_list_page_size" yaml:"max_list_page_size" jsonschema:"title=Max List Page Size,default=1000"`
 }
 
 // DatabaseConfig defines configuration for a single database in multi-database mode
