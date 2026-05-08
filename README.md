@@ -223,6 +223,23 @@ No resolvers. No ORM. No N+1 queries. Just point and query.
 { products { count_id sum_price avg_price } }
 ```
 
+**Window functions** (`@window`):
+```graphql
+{
+  orders {
+    user_id
+    total
+    rank: row_number @window(partition: ["user_id"], order: ["total desc"])
+    running_total: sum_total @window(
+      partition: ["user_id"],
+      order: ["created_at"],
+      frame: "rows unbounded preceding"
+    )
+  }
+}
+```
+Compiles to `<func>(...) OVER (PARTITION BY ... ORDER BY ... <frame>)`. Frame clauses are validated against an allowlist; partition/order columns are validated against the table.
+
 **Mutations:**
 ```graphql
 mutation {
@@ -259,6 +276,88 @@ subscription {
 - Built-in cursor pagination for feeds and infinite scroll
 
 Subscribe over **WebSockets** (`graphql-ws` / `graphql-transport-ws` subprotocols) or **Server-Sent Events** — set `Accept: text/event-stream` on a `POST /api/v1/graphql` request and GraphJin streams `event: next` frames for each result, terminated by `event: complete`. Works from Node.js, Go, or any browser `EventSource` / WebSocket client.
+
+## Filesystem Tables (Local, S3, GCS)
+
+Object stores show up as ordinary tables in your GraphQL schema. Declare them in config and they get the same query surface as a database table — no per-storage GraphQL plumbing on your side.
+
+```yaml
+filesystems:
+  - name: avatars
+    backend: s3
+    bucket: my-bucket
+    prefix: avatars/
+    region: us-east-1
+    presign_ttl: 15m
+
+  - name: invoices
+    backend: gcs
+    bucket: invoices
+    prefix: 2026/
+
+  - name: uploads_local
+    backend: local
+    root: /var/lib/graphjin/uploads
+```
+
+Every filesystem table exposes the same columns regardless of backend:
+
+```graphql
+{ avatars(prefix: "users/", limit: 50) {
+    key size content_type modified_at url
+  }
+}
+
+{ avatars(key: "users/42.png", inline_data: true) {
+    key size url data    # data is base64; only populated when inline_data=true
+  }
+}
+```
+
+`url` is a presigned GET URL by default (15 min, configurable per table). Auth follows the standard credential chain: AWS env / `~/.aws` / IRSA / EC2 IMDS for S3, Application Default Credentials for GCS — never embedded in GraphJin config.
+
+Slim builds drop SDK weight: `-tags no_s3` or `-tags no_gcs` excludes either backend. Custom backends register through `core.OptionSetFilesystemBackend(name, factory)` — same SDK GraphJin uses for the built-ins.
+
+## File Uploads
+
+The GraphQL endpoint accepts multipart bodies per the [graphql-multipart-request-spec](https://github.com/jaydenseric/graphql-multipart-request-spec). Files can be inlined as base64 (default) or streamed straight to a filesystem table:
+
+```yaml
+uploads:
+  enabled: true
+  storage: avatars               # name of a filesystems[] entry; omit to inline as base64
+  storage_key_prefix: "{date}/"  # {date} → YYYY/MM/DD
+  max_size: 25_000_000
+  allowed_mime: ["image/*", "application/pdf"]
+```
+
+When `storage` is set, the file body is written to the backend and the GraphQL variable becomes a stable reference — mutations persist this directly into a JSONB column:
+
+```json
+{ "key": "2026/05/08/abc123.png",
+  "url":  "https://s3.../...?presigned",
+  "size": 12345,
+  "content_type": "image/png" }
+```
+
+When `storage` is empty the variable carries the bytes inline as `{filename, content_type, size, data}` (base64) — useful for small uploads going straight into `bytea`.
+
+## Apollo Federation v2
+
+GraphJin can register as a federation subgraph so it composes with other services behind Apollo Router / Cosmo / Hive Gateway:
+
+```yaml
+federation:
+  enabled: true
+  version: "v2.5"
+  keys:
+    users: ["id"]                  # auto-derived from PKs by default
+    orders: ["id", "tenant_id"]    # composite keys via override
+  shareable: ["Tag.name"]          # field-level @shareable
+  inaccessible: ["Users.encrypted_password"]
+```
+
+`_service { sdl }` returns a federation-flavoured SDL with `@link`, `@key`, `@shareable`, `@inaccessible`, `@tag`, `_Service`, and `_Entity`. Composition succeeds out of the box; `_entities` resolution is on the roadmap (the engine returns a clear error today, so gateways see the gap rather than silent failures).
 
 ## HTTP API Routes
 
@@ -469,7 +568,13 @@ roles:
 
 **JWT authentication** - Supports Auth0, Firebase, JWKS endpoints.
 
-**Response caching** - Redis with in-memory fallback. Automatic cache invalidation.
+**Response caching** - Redis with in-memory fallback. Automatic cache invalidation on mutations. **Stale-while-revalidate** support: serve cached responses immediately while a background worker refreshes the entry — concurrent refreshes for the same key are deduplicated via singleflight, and the worker pool is bounded so a thundering herd can't spawn unbounded goroutines.
+
+```yaml
+caching:
+  ttl: 3600          # hard expiry in seconds
+  fresh_ttl: 300     # soft expiry — entries past this trigger SWR refresh
+```
 
 ## Also a GraphQL API
 
