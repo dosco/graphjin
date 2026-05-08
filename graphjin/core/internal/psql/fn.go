@@ -66,6 +66,12 @@ func (c *compilerContext) renderWindowOver(sel *qcode.Select, f qcode.Field) {
 			if ord.Desc {
 				c.w.WriteString(" DESC")
 			}
+			switch ord.Nulls {
+			case qcode.NullsFirst:
+				c.w.WriteString(" NULLS FIRST")
+			case qcode.NullsLast:
+				c.w.WriteString(" NULLS LAST")
+			}
 		}
 	}
 	if w.Frame != "" {

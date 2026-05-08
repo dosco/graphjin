@@ -229,16 +229,16 @@ No resolvers. No ORM. No N+1 queries. Just point and query.
   orders {
     user_id
     total
-    rank: row_number @window(partition: ["user_id"], order: ["total desc"])
-    running_total: sum_total @window(
+    rank: row_number @window(partition: ["user_id"], order: ["total desc nulls last"])
+    running: sum_total @window(
       partition: ["user_id"],
       order: ["created_at"],
-      frame: "rows unbounded preceding"
+      frame: "rows between 5 preceding and current row"
     )
   }
 }
 ```
-Compiles to `<func>(...) OVER (PARTITION BY ... ORDER BY ... <frame>)`. Frame clauses are validated against an allowlist; partition/order columns are validated against the table.
+Compiles to `<func>(...) OVER (PARTITION BY ... ORDER BY ... <frame>)`. The frame parser accepts the standard SQL grammar — both `ROWS` and `RANGE`, `UNBOUNDED PRECEDING/FOLLOWING`, `CURRENT ROW`, numeric offsets (`<n> PRECEDING/FOLLOWING`), and full `BETWEEN <bound> AND <bound>` combinations. Partition and order columns are validated against the table; numeric offsets are parsed as integers (no SQL-fragment passthrough). Works on PostgreSQL, MySQL 8.0+, MariaDB 10.2+, MSSQL 2012+, Oracle, SQLite 3.25+, Snowflake, and CockroachDB. `NULLS FIRST/LAST` in the order clause is honoured by Snowflake/Postgres/Oracle and silently ignored elsewhere.
 
 **Mutations:**
 ```graphql
