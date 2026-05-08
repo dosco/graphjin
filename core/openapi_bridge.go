@@ -85,9 +85,76 @@ func (gj *graphjinEngine) loadOpenAPIIntegration() error {
 	// indistinguishably from manually-declared remote_api resolvers.
 	synth := synthesiseRowJoinResolvers(res.Registry)
 	if len(synth) > 0 {
+		if err := gj.validateOpenAPINoCollisions(synth); err != nil {
+			return err
+		}
 		gj.conf.Resolvers = append(gj.conf.Resolvers, synth...)
 	}
 
+	return nil
+}
+
+// validateOpenAPINoCollisions guards against AddTable silently shadowing
+// a real table. Hard fail on real-table or cross-spec collisions; warn
+// on alias/resolver collisions.
+func (gj *graphjinEngine) validateOpenAPINoCollisions(synth []ResolverConfig) error {
+	realTables := make(map[string]string)
+	pdb := gj.primaryDB()
+	if pdb != nil && pdb.dbinfo != nil {
+		primarySchema := pdb.dbinfo.Schema
+		for _, t := range pdb.dbinfo.Tables {
+			if t.Type == "remote" {
+				continue
+			}
+			if t.Schema == primarySchema || t.Schema == "" {
+				realTables[t.Name] = t.Schema
+			}
+		}
+	}
+
+	aliases := make(map[string]struct{})
+	for _, t := range gj.conf.Tables {
+		if t.Name != "" && t.Name != t.Table {
+			aliases[t.Name] = struct{}{}
+		}
+	}
+
+	existingResolvers := make(map[string]struct{})
+	for _, r := range gj.conf.Resolvers {
+		existingResolvers[r.Name] = struct{}{}
+	}
+
+	seen := make(map[string]string)
+	for _, rc := range synth {
+		specKey, _ := rc.Props["spec_key"].(string)
+		opID, _ := rc.Props["operation_id"].(string)
+		opIdent := fmt.Sprintf("%s/%s", specKey, opID)
+
+		if schema, ok := realTables[rc.Name]; ok {
+			if schema == "" {
+				schema = "(default)"
+			}
+			return fmt.Errorf(
+				"openapi: operation %s exposes as %q which collides with a real table in schema %s; set 'expose_as' under openapi.%s.joins.%s to a unique name",
+				opIdent, rc.Name, schema, specKey, opID,
+			)
+		}
+
+		if firstOp, ok := seen[rc.Name]; ok {
+			return fmt.Errorf(
+				"openapi: operations %s and %s both expose as %q; set 'expose_as' on one of them to disambiguate",
+				firstOp, opIdent, rc.Name,
+			)
+		}
+		seen[rc.Name] = opIdent
+
+		if _, ok := aliases[rc.Name]; ok {
+			gj.log.Printf("openapi: operation %s exposes as %q which matches a configured table alias; the OpenAPI remote will take precedence", opIdent, rc.Name)
+		}
+		if _, ok := existingResolvers[rc.Name]; ok {
+			gj.log.Printf("openapi: operation %s exposes as %q which collides with an existing resolver named the same; later registration will overwrite earlier", opIdent, rc.Name)
+		}
+	}
 	return nil
 }
 
