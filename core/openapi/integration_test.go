@@ -173,9 +173,58 @@ paths:
 	}
 }
 
-// TestLoadMissingDirectoryIsBenign confirms that an absent specs dir is
-// handled gracefully — OpenAPI integration should be optional, not
-// required, so deployments without specs work as before.
+func TestLoadCanonicalisesLowercaseOpKeys(t *testing.T) {
+	dir := t.TempDir()
+	specYAML := `
+openapi: 3.0.0
+info: { title: Test, version: '1.0' }
+paths:
+  /api/dataset/{datasetId}/users.json:
+    get:
+      operationId: exportUsers
+      parameters:
+        - { name: datasetId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { type: object, properties: { id: { type: string } } }
+`
+	if err := os.WriteFile(filepath.Join(dir, "is.yaml"), []byte(specYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate viper's lowercasing — user wrote exportUsers, viper stored it as exportusers.
+	configs := map[string]SpecConfig{
+		"is": {
+			Operations: map[string]OperationOverride{
+				"exportusers": {ExposeTopLevel: true, ExposeAs: "is_users"},
+			},
+		},
+	}
+
+	res, err := Load(LoaderOptions{SpecsDir: dir}, configs, nil)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(res.Registry.Specs) != 1 || len(res.Registry.Specs[0].Operations) != 1 {
+		t.Fatalf("expected 1 spec with 1 op, got %+v", res.Registry)
+	}
+	op := res.Registry.Specs[0].Operations[0]
+	if op.Mode != OpModeList {
+		t.Errorf("Mode = %v, want OpModeList — case-folded override should still match", op.Mode)
+	}
+	if op.ExposeAs != "is_users" {
+		t.Errorf("ExposeAs = %q, want is_users", op.ExposeAs)
+	}
+}
+
 func TestLoadMissingDirectoryIsBenign(t *testing.T) {
 	res, err := Load(LoaderOptions{SpecsDir: "/nonexistent/path/xyz"}, nil, nil)
 	if err != nil {
