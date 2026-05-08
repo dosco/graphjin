@@ -8,8 +8,8 @@ import (
 
 const (
 	routeGraphQL   = "/api/v1/graphql"
-	routeREST      = "/api/v1/rest/*"
-	routeWorkflows = "/api/v1/workflows/*"
+	routeREST      = "/api/v1/rest/"
+	routeWorkflows = "/api/v1/workflows/"
 	routeOpenAPI   = "/api/v1/openapi.json"
 	routeMCP       = "/api/v1/mcp"
 	routeMCPMsg    = "/api/v1/mcp/message"
@@ -46,13 +46,13 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 		}
 
 		if s.conf.WebUI {
-			mux.Handle("/*", s1.WebUI("/", routeGraphQL))
+			mux.Handle("/", s1.WebUI("/", routeGraphQL))
 
 			// Admin API routes for Web UI
 			mux.Handle("/api/v1/admin/tables", apiV1Handler(s1, ns, adminTablesHandler(s1), ah))
-			mux.Handle("/api/v1/admin/tables/*", apiV1Handler(s1, ns, adminTableSchemaHandler(s1), ah))
+			mux.Handle("/api/v1/admin/tables/", apiV1Handler(s1, ns, adminTableSchemaHandler(s1), ah))
 			mux.Handle("/api/v1/admin/queries", apiV1Handler(s1, ns, adminQueriesHandler(s1), ah))
-			mux.Handle("/api/v1/admin/queries/*", apiV1Handler(s1, ns, adminQueryDetailHandler(s1), ah))
+			mux.Handle("/api/v1/admin/queries/", apiV1Handler(s1, ns, adminQueryDetailHandler(s1), ah))
 			mux.Handle("/api/v1/admin/fragments", apiV1Handler(s1, ns, adminFragmentsHandler(s1), ah))
 			mux.Handle("/api/v1/admin/config", apiV1Handler(s1, ns, adminConfigHandler(s1), ah))
 			mux.Handle("/api/v1/admin/database", apiV1Handler(s1, ns, adminDatabaseHandler(s1), ah))
@@ -99,7 +99,7 @@ func routesHandler(s1 *HttpService, mux Mux, ns *string) (http.Handler, error) {
 			s.log.Fatalf("api: error initializing discovery auth handler: %s", err)
 		}
 		mux.Handle(routeDiscovery, apiV1Handler(s1, ns, discoveryHandler(s1), discAuth))
-		mux.Handle(routeDiscovery+"/*", apiV1Handler(s1, ns, discoveryWildcardHandler(s1), discAuth))
+		mux.Handle(routeDiscovery+"/", apiV1Handler(s1, ns, discoveryWildcardHandler(s1), discAuth))
 	}
 
 	// MCP (Model Context Protocol) API
