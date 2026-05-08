@@ -1,14 +1,15 @@
 package serv
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/dosco/graphjin/auth/v3"
-	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 )
 
@@ -37,6 +38,11 @@ func newWebSocketTestServer(t *testing.T, allowedOrigins []string) *httptest.Ser
 	return httptest.NewServer(hs.GraphQL(ah))
 }
 
+func dialWS(ctx context.Context, t *testing.T, url string, header http.Header) (*websocket.Conn, *http.Response, error) {
+	t.Helper()
+	return websocket.Dial(ctx, url, &websocket.DialOptions{HTTPHeader: header})
+}
+
 func TestWebSocketRejectsCrossOriginByDefault(t *testing.T) {
 	server := newWebSocketTestServer(t, nil)
 	defer server.Close()
@@ -46,11 +52,14 @@ func TestWebSocketRejectsCrossOriginByDefault(t *testing.T) {
 		"Origin": {"https://evil.example"},
 	}
 
-	_, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, resp, err := dialWS(ctx, t, wsURL, header)
 	if err == nil {
 		t.Fatal("expected cross-origin websocket handshake to fail")
 	}
-	if resp == nil || resp.StatusCode != 403 {
+	if resp == nil || resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected HTTP 403, got %+v", resp)
 	}
 }
@@ -64,16 +73,15 @@ func TestWebSocketAllowsConfiguredOrigin(t *testing.T) {
 		"Origin": {"https://allowed.example"},
 	}
 
-	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
-	if err != nil {
-		t.Fatalf("expected configured origin to succeed, got err=%v resp=%+v", err, resp)
-	}
-	defer conn.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	if err := conn.WriteControl(websocket.CloseMessage,
-		websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""),
-		time.Now().Add(time.Second)); err != nil {
-		t.Fatalf("send close control: %v", err)
+	conn, _, err := dialWS(ctx, t, wsURL, header)
+	if err != nil {
+		t.Fatalf("expected configured origin to succeed, got err=%v", err)
+	}
+	if err := conn.Close(websocket.StatusNormalClosure, ""); err != nil {
+		t.Fatalf("close: %v", err)
 	}
 }
 
@@ -98,16 +106,15 @@ func TestWebSocketAllowsSameOriginAndNoOrigin(t *testing.T) {
 				header["Origin"] = []string{tt.origin}
 			}
 
-			conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
-			if err != nil {
-				t.Fatalf("expected websocket handshake to succeed, got err=%v resp=%+v", err, resp)
-			}
-			defer conn.Close()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
 
-			if err := conn.WriteControl(websocket.CloseMessage,
-				websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""),
-				time.Now().Add(time.Second)); err != nil {
-				t.Fatalf("send close control: %v", err)
+			conn, _, err := dialWS(ctx, t, wsURL, header)
+			if err != nil {
+				t.Fatalf("expected websocket handshake to succeed, got err=%v", err)
+			}
+			if err := conn.Close(websocket.StatusNormalClosure, ""); err != nil {
+				t.Fatalf("close: %v", err)
 			}
 		})
 	}

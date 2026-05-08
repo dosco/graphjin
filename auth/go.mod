@@ -5,10 +5,10 @@ go 1.24.0
 require (
 	github.com/dosco/graphjin/core/v3 v3.18.10
 	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/gorilla/websocket v1.5.3
 	github.com/lestrrat-go/jwx v1.2.31
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/zap v1.27.0
+	golang.org/x/oauth2 v0.30.0
 )
 
 replace github.com/dosco/graphjin/core/v3 => ../core
@@ -81,7 +81,6 @@ require (
 	golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0 // indirect
 	golang.org/x/mod v0.31.0 // indirect
 	golang.org/x/net v0.48.0 // indirect
-	golang.org/x/oauth2 v0.30.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.39.0 // indirect
 	golang.org/x/telemetry v0.0.0-20251203150158-8fff8a5912fc // indirect

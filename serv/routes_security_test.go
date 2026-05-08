@@ -9,7 +9,6 @@ import (
 
 	"github.com/dosco/graphjin/auth/v3"
 	core "github.com/dosco/graphjin/core/v3"
-	"github.com/go-chi/chi/v5"
 	"github.com/spf13/afero"
 	"go.uber.org/zap"
 	_ "modernc.org/sqlite"
@@ -80,7 +79,7 @@ func newSecuredTestHandler(t *testing.T) http.Handler {
 	hs := &HttpService{}
 	hs.Store(svc)
 
-	router := chi.NewRouter()
+	router := http.NewServeMux()
 	handler, err := routesHandler(hs, router, nil)
 	if err != nil {
 		t.Fatalf("routes handler: %v", err)
