@@ -23,11 +23,16 @@ import (
 )
 
 const (
-	maxMembersPerWorker = 2000
-	errSubs             = "subscription: %s: %s"
+	errSubs = "subscription: %s: %s"
 )
 
 var minPollDuration = (200 * time.Millisecond)
+
+const (
+	defaultSubsInitialChunk = 2000
+	defaultSubsMinChunk     = 50
+	defaultSubsMaxChunk     = 5000
+)
 
 type sub struct {
 	k  string
@@ -40,6 +45,8 @@ type sub struct {
 	del          chan *Member
 	updt         chan mmsg
 	done         chan struct{}
+
+	sizer *chunkSizer
 
 	mval
 	sync.Once
@@ -176,12 +183,13 @@ func (gj *graphjinEngine) subscribe(c context.Context, r GraphqlReq) (
 	k := s.key()
 	for {
 		v, _ := gj.subs.LoadOrStore(k, &sub{
-			k:    k,
-			s:    s,
-			add:  make(chan *Member),
-			del:  make(chan *Member),
-			updt: make(chan mmsg, 10),
-			done: make(chan struct{}),
+			k:     k,
+			s:     s,
+			add:   make(chan *Member),
+			del:   make(chan *Member),
+			updt:  make(chan mmsg, 10),
+			done:  make(chan struct{}),
+			sizer: newChunkSizer(resolveSubsSizerConfig(gj.conf)),
 		})
 		sub := v.(*sub)
 
@@ -421,29 +429,23 @@ func (s *sub) fanOutJobs(gj *graphjinEngine) {
 	go func(mv mval) {
 		defer s.endPollCycle()
 
-		// Process members in fixed-size chunks within one poll cycle.
-		for i := 0; i < len(mv.ids); i += maxMembersPerWorker {
-			gj.subCheckUpdates(s, mv, i)
+		// Process members in adaptive chunks within one poll cycle.
+		// Re-read the sizer between chunks so observations from the
+		// previous chunk influence the next one.
+		for i := 0; i < len(mv.ids); {
+			chunk := s.sizer.current()
+			gj.subCheckUpdates(s, mv, i, chunk)
+			i += chunk
 		}
 	}(mv)
 }
 
 // subCheckUpdates function is called on the graphjin struct to check updates.
-func (gj *graphjinEngine) subCheckUpdates(sub *sub, mv mval, start int) {
+func (gj *graphjinEngine) subCheckUpdates(sub *sub, mv mval, start, chunk int) {
 	// Do not use the `mval` embedded inside sub since
 	// its not thread safe use the copy `mv mval`.
 
-	// random wait to prevent multiple queries hitting the db
-	// at the same time.
-	// ps := gj.conf.SubsPollDuration
-	// if ps < minPollDuration {
-	// 	ps = minPollDuration
-	// }
-
-	// rt := rand.Int63n(ps.Milliseconds()) // #nosec F404
-	// time.Sleep(time.Duration(rt) * time.Millisecond)
-
-	end := start + maxMembersPerWorker
+	end := start + chunk
 	if len(mv.ids) < end {
 		end = start + (len(mv.ids) - start)
 	}
@@ -513,6 +515,7 @@ func (gj *graphjinEngine) subCheckUpdates(sub *sub, mv mval, start int) {
 		params = renderJSONArray(mv.params[start:end])
 	}
 
+	t0 := time.Now()
 	err = retryOperationForDB(c, subDBCtx.dbtype, func() (err1 error) {
 		if hasParams {
 			q, qargs, err2 := prepareQueryArgsForDB(subDBCtx.dbtype, sub.s.cs.st.sql, []interface{}{string(params)})
@@ -528,9 +531,11 @@ func (gj *graphjinEngine) subCheckUpdates(sub *sub, mv mval, start int) {
 		return
 	})
 	if err != nil {
+		sub.sizer.observeError()
 		gj.log.Printf(errSubs, "query", err)
 		return
 	}
+	sub.sizer.observe(time.Since(t0))
 	defer rows.Close() //nolint:errcheck
 
 	var b []byte
@@ -809,6 +814,140 @@ func renderJSONArray(v []json.RawMessage) json.RawMessage {
 	}
 	w.WriteRune(']')
 	return json.RawMessage(w.Bytes())
+}
+
+// chunkSizer tunes the per-poll-cycle chunk size used when batching
+// subscriber queries to the database. It uses AIMD on top of an
+// EMA-smoothed observed latency: grow additively when queries finish
+// well under the target, shrink multiplicatively when they overshoot.
+//
+// All state is guarded by a single mutex; callers should read current()
+// once per chunk into a local so a concurrent observation cannot make
+// loop bounds inconsistent.
+type chunkSizer struct {
+	mu     sync.Mutex
+	cur    int
+	min    int
+	max    int
+	target time.Duration
+	ema    time.Duration
+	seeded bool
+}
+
+type sizerCfg struct {
+	min     int
+	max     int
+	target  time.Duration
+	initial int
+}
+
+// resolveSubsSizerConfig returns the effective bounds + target + initial
+// chunk size from a Config, applying defaults for zero values. Splitting
+// this from newChunkSizer keeps the resolution rules unit-testable
+// without constructing a sizer.
+func resolveSubsSizerConfig(c *Config) sizerCfg {
+	cfg := sizerCfg{
+		min: c.SubsMinMembersPerWorker,
+		max: c.SubsMaxMembersPerWorker,
+	}
+	if cfg.min <= 0 {
+		cfg.min = defaultSubsMinChunk
+	}
+	if cfg.max <= 0 {
+		cfg.max = defaultSubsMaxChunk
+	}
+	if cfg.min > cfg.max {
+		cfg.min = cfg.max
+	}
+
+	cfg.target = c.SubsTargetQueryLatency
+	if cfg.target <= 0 {
+		ps := c.SubsPollDuration
+		if ps < minPollDuration {
+			ps = minPollDuration
+		}
+		cfg.target = ps / 4
+	}
+
+	cfg.initial = defaultSubsInitialChunk
+	if cfg.initial > cfg.max {
+		cfg.initial = cfg.max
+	}
+	if cfg.initial < cfg.min {
+		cfg.initial = cfg.min
+	}
+	return cfg
+}
+
+func newChunkSizer(cfg sizerCfg) *chunkSizer {
+	return &chunkSizer{
+		cur:    cfg.initial,
+		min:    cfg.min,
+		max:    cfg.max,
+		target: cfg.target,
+	}
+}
+
+func (z *chunkSizer) current() int {
+	z.mu.Lock()
+	defer z.mu.Unlock()
+	return z.cur
+}
+
+// observe records a successful query latency and adjusts the chunk size
+// using AIMD with a deadband around the target.
+func (z *chunkSizer) observe(d time.Duration) {
+	if z == nil {
+		return
+	}
+	z.mu.Lock()
+	defer z.mu.Unlock()
+
+	// EMA with α = 0.3; first observation seeds the value to avoid a
+	// long warmup from zero.
+	if !z.seeded {
+		z.ema = d
+		z.seeded = true
+	} else {
+		// ema = ema*0.7 + d*0.3, in nanos to keep things integral.
+		z.ema = (z.ema*7 + d*3) / 10
+	}
+
+	low := (z.target * 8) / 10
+	high := (z.target * 12) / 10
+
+	switch {
+	case z.ema < low:
+		step := z.cur / 8
+		if step < 64 {
+			step = 64
+		}
+		z.cur += step
+		if z.cur > z.max {
+			z.cur = z.max
+		}
+	case z.ema > high:
+		next := (z.cur * 7) / 10
+		if next < z.min {
+			next = z.min
+		}
+		z.cur = next
+	}
+}
+
+// observeError records a failed query: shrink once, never grow,
+// and don't poison the EMA with a meaningless latency reading.
+func (z *chunkSizer) observeError() {
+	if z == nil {
+		return
+	}
+	z.mu.Lock()
+	defer z.mu.Unlock()
+	next := z.cur / 2
+	if next < z.min {
+		next = z.min
+	}
+	z.cur = next
 }
 
 // findByID function is called on the sub struct to find a member by id.
